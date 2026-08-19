@@ -31,6 +31,28 @@ router = APIRouter(prefix="/api/agent", tags=["agent"])
 
 AGENT_LOG_DIR = config.BASE_DIR / "agent_logs"
 
+# 문구를 실제로 전송하는 잡 종류.
+SEND_KINDS = ("deal_intro", "ir_delivery")
+# 방 이름만 대조하는 잡 (ROADMAP 2.5). 전송하지 않는다.
+VERIFY_KIND = "verify_room"
+
+VERIFY_VERDICTS = ("verified", "not_found", "ambiguous")
+VERIFY_ERRORS = {
+    "not_found": "카톡에서 같은 이름의 방을 찾지 못했습니다 (방 제목을 확인하세요)",
+    "ambiguous": "같은 이름의 방이 여러 개입니다 (카톡에서 방 이름을 고유하게 바꾸세요)",
+}
+
+
+def _requested_kinds(kinds: Optional[str]) -> list:
+    """에이전트가 처리할 수 있다고 밝힌 잡 종류.
+
+    기본값에 verify_room 을 넣지 않는 것이 핵심이다. 이미 각자 PC에 깔려 도는
+    **구버전 에이전트**는 잡 종류를 보지 않고 무조건 문구를 전송하므로, 확인 잡이
+    그쪽으로 흘러가면 안 된다. 새 에이전트만 ?kinds= 로 명시해 받아간다.
+    """
+    wanted = [k.strip() for k in (kinds or "").split(",") if k.strip()]
+    return wanted or list(SEND_KINDS)
+
 
 def _touch_device(db: Session, device: AgentDevice, hostname: Optional[str] = None,
                   version: Optional[str] = None, sender: Optional[str] = None) -> None:
@@ -46,16 +68,21 @@ def _touch_device(db: Session, device: AgentDevice, hostname: Optional[str] = No
 @router.get("/poll")
 def poll(
     response: Response,
+    kinds: Optional[str] = None,
     db: Session = Depends(get_db),
     device: AgentDevice = Depends(get_agent_device),
 ):
-    """Atomically claim the oldest queued job for this agent's user and return it."""
+    """Atomically claim the oldest queued job for this agent's user and return it.
+
+    `kinds` (CSV) = 이 에이전트가 처리할 수 있는 잡 종류. 생략하면 발송 잡만 준다.
+    """
     _touch_device(db, device)
 
     # Find a candidate queued job owned by this agent's user.
     candidate = db.execute(
         select(SendJob.id)
-        .where(SendJob.status == "queued", SendJob.user_id == device.user_id)
+        .where(SendJob.status == "queued", SendJob.user_id == device.user_id,
+               SendJob.kind.in_(_requested_kinds(kinds)))
         .order_by(SendJob.id)
         .limit(1)
     ).scalar_one_or_none()
@@ -93,6 +120,8 @@ class ItemResult(BaseModel):
     status: str  # sent | failed
     error: Optional[str] = None
     screenshot_b64: Optional[str] = None
+    # kind=verify_room 잡에서만: verified | not_found | ambiguous
+    verify_result: Optional[str] = None
 
 
 @router.post("/items/{item_id}/result")
@@ -113,7 +142,10 @@ def item_result(
         db.commit()
         return {"ok": True, "detail": "item canceled, result ignored"}
 
-    if body.status == "sent":
+    job = item.job
+    if job is not None and job.kind == VERIFY_KIND:
+        _apply_verify_result(item, body)
+    elif body.status == "sent":
         item.status = "sent"
         item.sent_at = now_iso()
         item.error = None
@@ -124,11 +156,30 @@ def item_result(
             item.screenshot_path = _save_screenshot(item_id, body.screenshot_b64)
 
     # Recompute job counters from items (source of truth).
-    job = item.job
     job.sent = sum(1 for i in job.items if i.status == "sent")
     job.failed = sum(1 for i in job.items if i.status == "failed")
     db.commit()
     return {"ok": True}
+
+
+def _apply_verify_result(item: SendItem, body: ItemResult) -> None:
+    """방 연결 확인 결과를 담당자 배지(vc_contacts.room_verified)에 반영한다.
+
+    화면에서는 '성공/실패'로 읽히는 편이 자연스러우므로 verified 만 sent 로 두고
+    not_found/ambiguous 는 사유가 보이도록 failed 로 남긴다 — 고쳐야 할 방이
+    실패 목록에 그대로 뜬다.
+    """
+    # 판정을 못 받았으면 '확인됨'으로 올리지 않는다 — 모르면 미확인 쪽이 안전하다.
+    verdict = body.verify_result if body.verify_result in VERIFY_VERDICTS else "not_found"
+
+    contact = item.contact
+    if contact is not None:
+        contact.room_verified = verdict
+    item.status = "sent" if verdict == "verified" else "failed"
+    item.sent_at = now_iso() if verdict == "verified" else None
+    item.error = None if verdict == "verified" else (
+        body.error or VERIFY_ERRORS.get(verdict, verdict)
+    )
 
 
 def _save_screenshot(item_id: int, b64: str) -> Optional[str]:

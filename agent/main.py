@@ -29,6 +29,12 @@ import yaml
 
 log = logging.getLogger("agent")
 
+# 이 에이전트가 처리할 수 있는 잡 종류. 서버 poll 에 그대로 알린다.
+# deal_intro/ir_delivery = 문구 전송, verify_room = 방 이름 대조(전송 없음).
+SEND_KINDS = ("deal_intro", "ir_delivery")
+VERIFY_KIND = "verify_room"
+SUPPORTED_KINDS = SEND_KINDS + (VERIFY_KIND,)
+
 DEFAULT_CONFIG = {
     "server_url": "http://127.0.0.1:8000",
     "token": "agt_demo_token_sprint1",
@@ -39,6 +45,10 @@ DEFAULT_CONFIG = {
     "delay_min_sec": 3,        # human-like inter-send delay (TECH_SPEC §5.5)
     "delay_max_sec": 7,
     "job_cap": 60,             # 1잡 상한 (계정 보호)
+    # 방 연결 확인은 메시지를 보내지 않아 검색만 반복한다. 그래도 사람 속도를 흉내낸다
+    # (연속 검색도 자동화로 읽힐 수 있음). 발송 지연과 별개 값으로 둔다.
+    "verify_delay_min_sec": 1,
+    "verify_delay_max_sec": 2,
     "mock": {"delay_min_sec": 0.5, "delay_max_sec": 1.5, "fail_rate": 0.15},
     "selectors_file": "agent/selectors.yaml",
 }
@@ -115,16 +125,21 @@ class AgentClient:
                                  timeout=10)
 
     def poll(self):
-        r = self.session.get(f"{self.base}/api/agent/poll", timeout=15)
+        # 처리할 수 있는 잡 종류를 함께 알린다. 서버는 모르는 종류를 주지 않는다
+        # (구버전 에이전트가 확인 잡을 발송으로 오해하는 사고를 구조적으로 막는다).
+        r = self.session.get(f"{self.base}/api/agent/poll",
+                             params={"kinds": ",".join(SUPPORTED_KINDS)}, timeout=15)
         if r.status_code == 204:
             return None
         r.raise_for_status()
         return r.json()
 
-    def report_item(self, item_id: int, status: str, error=None, screenshot_b64=None):
+    def report_item(self, item_id: int, status: str, error=None, screenshot_b64=None,
+                    verify_result=None):
         return self.session.post(
             f"{self.base}/api/agent/items/{item_id}/result",
-            json={"status": status, "error": error, "screenshot_b64": screenshot_b64},
+            json={"status": status, "error": error, "screenshot_b64": screenshot_b64,
+                  "verify_result": verify_result},
             timeout=15,
         )
 
@@ -144,6 +159,22 @@ class AgentClient:
 
 
 def process_job(client: AgentClient, sender, job: dict, cfg: dict):
+    """잡 종류로 갈린다 — 발송 잡만 문구를 전송한다.
+
+    모르는 종류는 **보내지 않고** 실패로 보고한다. 서버가 나중에 새 잡 종류를
+    추가했을 때 구형 에이전트가 그걸 발송으로 오해하는 쪽이 훨씬 위험하다.
+    """
+    kind = job.get("kind") or "deal_intro"
+    if kind == VERIFY_KIND:
+        return process_verify_job(client, sender, job, cfg)
+    if kind not in SEND_KINDS:
+        log.error("모르는 잡 종류 %r — 전송하지 않고 실패 처리합니다", kind)
+        for item in job.get("items", []):
+            client.report_item(item["id"], "failed",
+                               error=f"unsupported job kind: {kind} (에이전트 업데이트 필요)")
+        client.report_job(job["job_id"], "done_with_errors")
+        return
+
     job_id = job["job_id"]
     items = job.get("items", [])
     cap = int(cfg.get("job_cap", 60))
@@ -176,6 +207,38 @@ def process_job(client: AgentClient, sender, job: dict, cfg: dict):
     log.info("job %s complete (errors=%s)", job_id, any_fail)
 
 
+def process_verify_job(client: AgentClient, sender, job: dict, cfg: dict):
+    """방 이름 대조 잡 (ROADMAP 2.5) — 검색만 하고 **전송은 하지 않는다**.
+
+    방 제목이 실제와 다르면 발송이 통째로 skip 되므로, 실운영 전에 담당자 전원을
+    한 번에 대조해야 한다. 여기서는 sender.send_text 를 절대 호출하지 않는다.
+    """
+    job_id = job["job_id"]
+    items = job.get("items", [])
+    log.info("processing verify job %s (%d rooms)", job_id, len(items))
+
+    any_fail = False
+    for i, item in enumerate(items, start=1):
+        room = item["room_name"]
+        try:
+            verdict = sender.verify_room(room)
+        except Exception as exc:  # noqa: BLE001 - 한 건 실패로 전체를 멈추지 않는다
+            log.exception("verify 실패 room=%r", room)
+            verdict = "not_found"
+            client.report_item(item["id"], "failed", error=f"verify error: {exc}",
+                               verify_result=verdict)
+            any_fail = True
+        else:
+            ok = verdict == "verified"
+            any_fail = any_fail or not ok
+            client.report_item(item["id"], "sent" if ok else "failed", verify_result=verdict)
+            log.info("  [%d/%d] %s room=%r", i, len(items), verdict, room)
+        if i < len(items):
+            time.sleep(random.uniform(float(cfg.get("verify_delay_min_sec", 1)),
+                                      float(cfg.get("verify_delay_max_sec", 2))))
+
+    client.report_job(job_id, "done_with_errors" if any_fail else "done")
+    log.info("verify job %s complete (mismatch=%s)", job_id, any_fail)
 
 
 def collect_diagnostics(sender, kind: str, target_room=None, error=None) -> dict:

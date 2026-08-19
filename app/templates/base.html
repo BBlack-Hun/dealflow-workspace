@@ -16,7 +16,7 @@
         {% for m in menu %}
         <a class="menu-item {% if m.key == active %}active{% endif %}" href="{{ m.href }}">
           <span>{{ m.label }}</span>
-          {% if m.sprint != 1 %}<span class="menu-badge">S{{ m.sprint }}</span>{% endif %}
+          {% if m.badge %}<span class="menu-badge">{{ m.badge }}</span>{% endif %}
         </a>
         {% endfor %}
       </nav>

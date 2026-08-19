@@ -15,6 +15,10 @@ delay_min_sec: 3
 delay_max_sec: 7
 job_cap: 60          # 1회차 발송 상한
 
+# 방 연결 확인(verify_room)은 문구를 보내지 않고 검색만 한다 → 발송보다 짧게 잡는다.
+verify_delay_min_sec: 1
+verify_delay_max_sec: 2
+
 # selectors 외부화 (KakaoDesktopSender 전용)
 selectors_file: "agent/selectors.yaml"
 

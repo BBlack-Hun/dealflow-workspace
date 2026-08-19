@@ -64,6 +64,10 @@ delay_min_sec: 3
 delay_max_sec: 7
 job_cap: 60
 
+# 방 연결 확인(검색만 하고 전송하지 않음)
+verify_delay_min_sec: 1
+verify_delay_max_sec: 2
+
 selectors_file: "agent/selectors.yaml"
 
 # 카톡 창 조작 대기시간(초). 창이 늦게 뜨면 늘리세요.

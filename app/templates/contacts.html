@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+{% block title %}내 투자사 · dealflow{% endblock %}
+{% block content %}
+{#
+  7컬럼 고정 레이아웃 (FEATURE_SPEC §3, 피드백 #3 "엑셀시트 PC 한 화면에").
+  폭 합계 100% + table-layout:fixed + 셀 말줄임 → 어떤 데이터가 들어와도
+  1280px 에서 가로 스크롤이 생기지 않는다. 상세는 행 클릭 → 우측 패널.
+#}
+<header class="page-head">
+  <h1>내 투자사</h1>
+  <p class="muted">
+    담당자 <b data-filter-count>{{ rows|length }} / {{ rows|length }}명</b>
+    · 행을 클릭하면 오른쪽에 상세·활동 이력이 열립니다
+  </p>
+</header>
+
+<div class="toolbar">
+  <div class="quick-chips">
+    <button type="button" class="chip" data-preset="">전체</button>
+    <button type="button" class="chip" data-preset="channel=%EC%B9%B4%ED%86%A1">카톡 연결</button>
+    <button type="button" class="chip" data-preset="room=%E2%97%8B%20%EB%AF%B8%ED%99%95%EC%9D%B8">방 미확인</button>
+    <button type="button" class="chip" data-preset="reaction=%EB%B0%98%EC%9D%91%20%EC%97%86%EC%9D%8C">반응 없음</button>
+  </div>
+  <div class="toolbar-right">
+    <label class="density-toggle">
+      <input type="checkbox" id="density-toggle"> 촘촘히 보기
+    </label>
+    <button type="button" class="secondary-btn" id="verify-btn">방 연결 확인</button>
+    <button type="button" class="primary-btn inline" id="add-btn">담당자 추가</button>
+  </div>
+</div>
+
+<div class="chip-row" data-filter-chips></div>
+
+<div class="table-wrap">
+  <table class="grid-table" id="contacts-table">
+    <colgroup>
+      <col style="width:16%"><col style="width:8%"><col style="width:16%">
+      <col style="width:12%"><col style="width:12%"><col style="width:10%"><col style="width:26%">
+    </colgroup>
+    <thead>
+      <tr>
+        <th data-filters="group:그룹">담당자 / 투자사<div class="th-filters"></div></th>
+        <th data-filters="channel:채널|room:방 연결">채널<div class="th-filters"></div></th>
+        <th data-filters="stage:단계|sector:섹터">투자 성격<div class="th-filters"></div></th>
+        <th data-filters="recency:최근 딜소개">최근 딜소개<div class="th-filters"></div></th>
+        <th data-filters="reaction:반응">반응 <span class="hint">90일</span><div class="th-filters"></div></th>
+        <th data-filters="status:상태">상태<div class="th-filters"></div></th>
+        <th>메모 / 액션</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr class="data-row" data-id="{{ r.id }}"
+          data-f-group="{{ r.group_name }}"
+          data-f-channel="{{ r.channel_tags|join('|') }}"
+          data-f-room="{{ r.room_label }}"
+          data-f-stage="{{ r.stages|join('|') }}"
+          data-f-sector="{{ r.sectors|join('|') }}"
+          data-f-recency="{{ r.recency }}"
+          data-f-reaction="{{ r.reaction_tags|join('|') }}"
+          data-f-status="{{ r.status_label }}">
+        <td>
+          <div class="cell-main">{{ r.name }} <span class="muted">{{ r.title }}</span></div>
+          <div class="cell-sub muted">{{ r.firm }}{% if r.group_name %} · {{ r.group_name }}{% endif %}</div>
+        </td>
+        <td>
+          <div class="chan">
+            {% if r.channel_kakao %}<span title="카톡 연결">💬</span>{% endif %}
+            {% if r.channel_email %}<span title="메일 연결">✉</span>{% endif %}
+          </div>
+          <div class="cell-sub"><span class="room-dot {{ r.room_class }}"
+            title="{{ r.room_name or '카톡방 이름 미등록' }}">{{ r.room_label }}</span></div>
+        </td>
+        <td>
+          <div class="cell-main">
+            {% for s in r.stages[:3] %}<span class="tag">{{ s }}</span>{% endfor %}
+            {% if not r.stages %}<span class="muted">-</span>{% endif %}
+          </div>
+          <div class="cell-sub">
+            {% for s in r.sectors[:3] %}<span class="tag soft">{{ s }}</span>{% endfor %}
+            {% if r.sectors|length > 3 %}<span class="muted">+{{ r.sectors|length - 3 }}</span>{% endif %}
+          </div>
+        </td>
+        <td>
+          <div class="cell-main tabular">{{ r.last_deal_label }}</div>
+          <div class="cell-sub muted" title="{{ r.last_deal_note }}">{{ r.last_deal_note or r.recency }}</div>
+        </td>
+        <td>
+          <div class="cell-main tabular">IR {{ r.ir_recent }} · 미팅 {{ r.meet_recent }}</div>
+          <div class="cell-sub muted">누적 {{ r.ir_total + r.meet_total }}건</div>
+        </td>
+        <td><span class="pill {{ r.status }}">{{ r.status_label }}</span></td>
+        <td>
+          <div class="cell-main memo" title="{{ r.memo }}">{{ r.memo or '-' }}</div>
+          <div class="cell-sub row-actions">
+            <a href="/deals" class="linkbtn">딜소개</a>
+            <button type="button" class="linkbtn js-detail">상세</button>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% if not rows %}
+  <div class="placeholder-card">
+    <p class="ph-emoji">📇</p>
+    <p>등록된 담당자가 없습니다.</p>
+    <p class="muted">[담당자 추가] 로 직접 넣거나, 구글시트 CSV를 임포트하세요:<br>
+      <code>python scripts/import_sheets.py --sheet-a a.csv --user-id {{ user.id }}</code></p>
+  </div>
+  {% endif %}
+  <div class="placeholder-card" data-filter-empty hidden>
+    <p>조건에 맞는 담당자가 없습니다.</p>
+  </div>
+</div>
+
+{# 우측 슬라이드 상세 패널 — 표에는 요약만, 세부·수정은 여기서 #}
+<aside class="detail-panel" id="detail-panel" hidden>
+  <div class="detail-head">
+    <b id="detail-title">담당자</b>
+    <button type="button" class="linkbtn" id="detail-close">닫기 ✕</button>
+  </div>
+  <div class="detail-tabs">
+    <button type="button" class="detail-tab active" data-tab="info">기본 정보</button>
+    <button type="button" class="detail-tab" data-tab="timeline">활동 이력</button>
+  </div>
+
+  <div class="detail-body" data-panel="info">
+    <div class="form-grid">
+      <label class="field"><span>이름</span><input type="text" id="f-name"></label>
+      <label class="field"><span>직함</span><input type="text" id="f-title" placeholder="대표님 / 심사역"></label>
+      <label class="field"><span>투자사</span><input type="text" id="f-firm"></label>
+      <label class="field"><span>그룹</span><input type="text" id="f-group_name"></label>
+      <label class="field wide"><span>카톡방 이름 <b class="warn-text">정확히 일치해야 발송됩니다</b></span>
+        <input type="text" id="f-kakao_room_name"></label>
+      <label class="field"><span>초대완료여부</span><input type="text" id="f-invited_status" placeholder="완료"></label>
+      <label class="field"><span>상태</span>
+        <select id="f-status">
+          <option value="active">활발</option>
+          <option value="no_response">반응없음</option>
+          <option value="paused">검토중단</option>
+        </select>
+      </label>
+      <label class="field"><span>단계 태그 (쉼표)</span><input type="text" id="f-stages" placeholder="Seed,SeriesA"></label>
+      <label class="field"><span>섹터 태그 (쉼표)</span><input type="text" id="f-sectors" placeholder="AI,헬스케어"></label>
+      <label class="field wide"><span>투자분야 / 라운드 사이즈</span><input type="text" id="f-round_size"></label>
+      <label class="field"><span>이메일</span><input type="text" id="f-email"></label>
+      <label class="field"><span>연락처</span><input type="text" id="f-phone"></label>
+      <label class="field checks">
+        <span>채널</span>
+        <span class="check-row">
+          <label><input type="checkbox" id="f-channel_kakao"> 카톡</label>
+          <label><input type="checkbox" id="f-channel_email"> 메일</label>
+        </span>
+      </label>
+      <label class="field wide"><span>메모</span><textarea id="f-memo" rows="3"></textarea></label>
+    </div>
+    <div class="detail-actions">
+      <button type="button" class="primary-btn inline" id="save-btn">저장</button>
+      <button type="button" class="secondary-btn" id="verify-one-btn">이 방만 확인</button>
+      <button type="button" class="danger-btn" id="delete-btn">삭제</button>
+    </div>
+    <p class="hint" id="detail-msg"></p>
+  </div>
+
+  <div class="detail-body" data-panel="timeline" hidden>
+    <ul class="timeline" id="timeline"></ul>
+    <p class="hint">시트에서 임포트한 월별 기록과 서비스가 자동으로 쌓는 발송 이력이 함께 표시됩니다.</p>
+  </div>
+</aside>
+{% endblock %}
+{% block scripts %}
+<script src="/static/js/filters.js"></script>
+<script src="/static/js/contacts.js"></script>
+{% endblock %}
