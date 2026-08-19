@@ -1,4 +1,5 @@
-var MAX_COMPANIES = 10;  // 서버 MAX_COMPANIES_PER_SEND 와 동일하게 유지
+var MAX_COMPANIES = 10;   // 서버 MAX_COMPANIES_PER_SEND 와 동일하게 유지
+var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
 // 딜소개 보내기 — selection, preview, send-list creation (FEATURE_SPEC §5).
 (function () {
   var companyCbs = function () { return Array.prototype.slice.call(document.querySelectorAll(".company-cb")); };
@@ -55,10 +56,46 @@ var MAX_COMPANIES = 10;  // 서버 MAX_COMPANIES_PER_SEND 와 동일하게 유�
     }
   }
 
+
+  // ── 문구(템플릿) 선택 ─────────────────────────────────────
+  // 상황마다 인사말·안내문이 달라진다(첫 연락/재연락, 연말 인사 …).
+  // /templates 에서 만들어 둔 문구를 회차마다 골라 쓴다. 고르지 않으면 기본 동작.
+  function loadTemplates() {
+    fetch("/api/templates").then(function (r) { return r.json(); }).then(function (d) {
+      var byKind = {};
+      (d.templates || []).forEach(function (t) {
+        (byKind[t.kind] = byKind[t.kind] || []).push(t);
+      });
+      fill("tpl-opening", (byKind["opening_first"] || []).concat(byKind["opening_re"] || []));
+      fill("tpl-closing", byKind["closing_day1"] || []);
+    }).catch(function () { /* 문구 목록 실패해도 기본 문구로 발송 가능 */ });
+  }
+
+  function fill(selectId, list) {
+    var sel = document.getElementById(selectId);
+    if (!sel) return;
+    list.forEach(function (t) {
+      var o = document.createElement("option");
+      o.value = t.id;
+      o.textContent = t.name + " — " + t.body.replace(/\n/g, " ").slice(0, 30);
+      sel.appendChild(o);
+    });
+    sel.addEventListener("change", refreshPreview);
+  }
+
+  function selectedTemplateIds() {
+    var o = document.getElementById("tpl-opening");
+    var c = document.getElementById("tpl-closing");
+    return {
+      opening_template_id: o && o.value ? parseInt(o.value, 10) : null,
+      closing_template_id: c && c.value ? parseInt(c.value, 10) : null
+    };
+  }
+
   function updateCounts() {
     var nc = selectedCompanyIds().length;
     var nt = selectedContactIds().length;
-    companyCount.textContent = "선택: " + nc + " / 3";
+    companyCount.textContent = "선택: " + nc + " / " + MAX_COMPANIES;
     contactCount.textContent = "선택: " + nt + "명";
     // Enforce max company cap
     if (nc >= MAX_COMPANIES) {
@@ -76,19 +113,56 @@ var MAX_COMPANIES = 10;  // 서버 MAX_COMPANIES_PER_SEND 와 동일하게 유�
     if (el) el.addEventListener("change", applyCompanyFilter);
   });
 
+  // 미리보기는 **그대로 고쳐서 보낼 수 있다**.
+  // 자동 조합이 늘 완벽할 수는 없어서, 담당자별로 한 줄 덧붙이거나 표현을 바꾸는 일이 잦다.
+  // 고친 내용은 lastPreviews[i].message 에 남고 발송 시 그 문장이 그대로 나간다.
   function renderPreview(idx) {
     var p = lastPreviews[idx];
     if (!p) { previewArea.innerHTML = '<p class="muted">미리보기 없음</p>'; return; }
     Array.prototype.slice.call(previewTabs.children).forEach(function (t, i) {
       t.classList.toggle("active", i === idx);
     });
-    var over = p.too_long ? " over" : "";
     var roomLine = p.room_name ? ("💬 " + p.room_name) : ("⚠ " + (p.room_warning || "방 미등록"));
     previewArea.innerHTML =
       '<div class="bubble-meta">' + escapeHtml(p.name) + " " + escapeHtml(p.title || "") +
-      " · " + escapeHtml(roomLine) + (p.has_history ? " · 재연락" : " · 첫연락") + "</div>" +
-      '<div class="bubble">' + escapeHtml(p.message) + "</div>" +
-      '<div class="charcount' + over + '">' + p.char_count + "자</div>";
+      " · " + escapeHtml(roomLine) + (p.has_history ? " · 재연락" : " · 첫연락") +
+      ' <span class="edited-flag" id="edited-flag" hidden>· 수정함</span></div>' +
+      '<textarea class="bubble-edit" id="bubble-edit" spellcheck="false"></textarea>' +
+      '<div class="charcount" id="charcount"></div>';
+
+    var ta = document.getElementById("bubble-edit");
+    ta.value = p.message;               // innerHTML 이 아니라 value 로 넣어야 안전하다
+    var flag = document.getElementById("edited-flag");
+    flag.hidden = !p.edited;
+    updateCharCount(ta.value);
+
+    ta.addEventListener("input", function () {
+      p.message = ta.value;
+      p.edited = ta.value !== p.original;
+      flag.hidden = !p.edited;
+      updateCharCount(ta.value);
+      markTabEdited(idx, p.edited);
+    });
+  }
+
+  function updateCharCount(text) {
+    var el = document.getElementById("charcount");
+    if (!el) return;
+    var n = text.length;
+    el.textContent = n + "자";
+    el.className = "charcount" + (n > WARN_CHARS ? " over" : "");
+  }
+
+  function markTabEdited(idx, edited) {
+    var tab = previewTabs.children[idx];
+    if (tab) tab.classList.toggle("edited", !!edited);
+  }
+
+  // 고친 문구만 서버로 보낸다. 안 고친 담당자는 서버가 다시 조합한다.
+  function editedOverrides() {
+    return lastPreviews
+      .filter(function (p) { return p.edited && (p.message || "").trim(); })
+      .map(function (p) { return { contact_id: p.contact_id, message: p.message }; });
   }
 
   function refreshPreview() {
@@ -102,12 +176,13 @@ var MAX_COMPANIES = 10;  // 서버 MAX_COMPANIES_PER_SEND 와 동일하게 유�
     fetch("/api/deals/preview", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ company_ids: cids, contact_ids: tids })
+      body: JSON.stringify(Object.assign({ company_ids: cids, contact_ids: tids }, selectedTemplateIds()))
     })
       .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
       .then(function (res) {
         if (!res.ok) { previewArea.innerHTML = '<p class="muted">' + escapeHtml(res.d.detail || "미리보기 실패") + "</p>"; return; }
         lastPreviews = res.d.previews || [];
+        lastPreviews.forEach(function (p) { p.original = p.message; p.edited = false; });
         previewTabs.innerHTML = "";
         lastPreviews.forEach(function (p, i) {
           var b = document.createElement("button");
@@ -131,12 +206,16 @@ var MAX_COMPANIES = 10;  // 서버 MAX_COMPANIES_PER_SEND 와 동일하게 유�
     var cids = selectedCompanyIds();
     var tids = selectedContactIds();
     var title = (document.getElementById("batch-title").value || "딜소개 회차").trim();
-    if (!confirm("대상 " + tids.length + "명에게 발송 목록을 생성합니다.\n방 이름을 최종 확인하셨나요?")) return;
+    var edits = editedOverrides();
+    var editNote = edits.length ? "\n직접 수정한 문구 " + edits.length + "건이 그대로 발송됩니다." : "";
+    if (!confirm("대상 " + tids.length + "명에게 발송 목록을 생성합니다." + editNote +
+                 "\n방 이름을 최종 확인하셨나요?")) return;
     sendBtn.disabled = true;
     fetch("/api/deals/send", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ company_ids: cids, contact_ids: tids, title: title })
+      body: JSON.stringify(Object.assign({ company_ids: cids, contact_ids: tids, title: title,
+                                          overrides: editedOverrides() }, selectedTemplateIds()))
     })
       .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
       .then(function (res) {
@@ -165,4 +244,5 @@ var MAX_COMPANIES = 10;  // 서버 MAX_COMPANIES_PER_SEND 와 동일하게 유�
     updateCounts();
   });
   updateCounts();
+  loadTemplates();
 })();

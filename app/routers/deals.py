@@ -74,8 +74,22 @@ def _has_history(db: Session, contact_id: int) -> bool:
     ).scalar()
 
 
+def _template_body_by_id(db: Session, user: User, template_id: Optional[int]) -> Optional[str]:
+    """발송 화면에서 고른 문구. 남의 개인 문구는 쓸 수 없다."""
+    if not template_id:
+        return None
+    t = db.get(MessageTemplate, template_id)
+    if t is None:
+        return None
+    if t.user_id is not None and t.user_id != user.id:
+        return None
+    return t.body
+
+
 def _compose_for_contact(
-    db: Session, user: User, contact: VcContact, companies: List[IrCompany]
+    db: Session, user: User, contact: VcContact, companies: List[IrCompany],
+    opening_template_id: Optional[int] = None,
+    closing_template_id: Optional[int] = None,
 ) -> mc.ComposeResult:
     has_hist = _has_history(db, contact.id)
     opening_kind = mc.pick_opening_kind(has_hist)
@@ -88,6 +102,10 @@ def _compose_for_contact(
         db, user.id, "closing_day1",
         "핵심 딜 {개수}개사 간단히 공유드립니다.\n관심 가시는 기업 있으시면 IR Deck 공유드리겠습니다.",
     )
+    # 화면에서 고른 문구가 있으면 그것을 우선한다.
+    opening_body = _template_body_by_id(db, user, opening_template_id) or opening_body
+    closing_body = _template_body_by_id(db, user, closing_template_id) or closing_body
+
     return mc.compose_message(
         opening_body,
         closing_body,
@@ -129,12 +147,46 @@ def _load_companies(db: Session, company_ids: List[int]) -> List[IrCompany]:
 class PreviewRequest(BaseModel):
     company_ids: List[int]
     contact_ids: List[int]
+    # 발송 화면에서 고른 문구. 없으면 기존대로 활성 템플릿을 쓴다.
+    opening_template_id: Optional[int] = None
+    closing_template_id: Optional[int] = None
+
+
+class MessageOverride(BaseModel):
+    """미리보기에서 사람이 직접 고친 문구."""
+    contact_id: int
+    message: str
 
 
 class SendRequest(BaseModel):
     company_ids: List[int]
     contact_ids: List[int]
     title: Optional[str] = None
+    opening_template_id: Optional[int] = None
+    closing_template_id: Optional[int] = None
+    # 담당자별 수정본. 없는 담당자는 서버가 다시 조합한다.
+    overrides: List[MessageOverride] = []
+
+
+def _override_map(req: SendRequest, contact_ids: set) -> dict:
+    """수정본을 {contact_id: message} 로 정리한다.
+
+    발송 대상이 아닌 담당자의 수정본은 무시한다(화면에서 대상을 뺐는데
+    수정본만 남아 엉뚱한 사람에게 나가는 일을 막는다).
+    빈 문구는 사고이므로 조용히 넘기지 않고 막는다.
+    """
+    out = {}
+    for ov in req.overrides:
+        if ov.contact_id not in contact_ids:
+            continue
+        text = ov.message.strip()
+        if not text:
+            raise HTTPException(status_code=400,
+                                detail="수정한 문구가 비어 있습니다 — 내용을 확인하세요")
+        if len(text) > mc.MESSAGE_WARN_CHARS * 2:
+            raise HTTPException(status_code=400, detail="수정한 문구가 너무 깁니다")
+        out[ov.contact_id] = text
+    return out
 
 
 # --- endpoints -------------------------------------------------------------
@@ -157,7 +209,8 @@ def preview(
         contact = db.get(VcContact, contact_id)
         if contact is None or contact.user_id != user.id:
             continue
-        result = _compose_for_contact(db, user, contact, companies)
+        result = _compose_for_contact(db, user, contact, companies,
+                                      req.opening_template_id, req.closing_template_id)
         room_ok = bool(contact.kakao_room_name) and contact.room_verified in ("verified", "unverified")
         # 투자분야/단계/라운드 규모 적합도 — 성향과 어긋나는 딜은 발송 전 경고(DRAFT_REFERENCE).
         fit = matcher.evaluate_contact(contact, companies)
@@ -241,9 +294,16 @@ def create_send_list(
     db.add(job)
     db.flush()
 
+    overrides = _override_map(req, {c.id for c in contacts})
+
     for contact in contacts:
-        result = _compose_for_contact(db, user, contact, companies)
-        room_name, message = _apply_test_room(contact, result.text)
+        if contact.id in overrides:
+            text = overrides[contact.id]      # 사람이 고친 문구가 최우선
+        else:
+            text = _compose_for_contact(db, user, contact, companies,
+                                        req.opening_template_id,
+                                        req.closing_template_id).text
+        room_name, message = _apply_test_room(contact, text)
         db.add(SendItem(
             job_id=job.id,
             contact_id=contact.id,
