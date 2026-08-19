@@ -4,7 +4,10 @@
   if (!jobId) return;
   var timer = null;
 
-  var STATUS_KO = { pending: "대기", sending: "발송중", sent: "성공", failed: "실패", canceled: "취소" };
+  // 방 연결 확인 잡은 아무것도 보내지 않는다 → 같은 화면이지만 어휘가 달라야 한다.
+  var STATUS_KO = window.DEALFLOW_JOB_VERIFY
+    ? { pending: "대기", sending: "확인중", sent: "확인됨", failed: "불일치", canceled: "취소" }
+    : { pending: "대기", sending: "발송중", sent: "성공", failed: "실패", canceled: "취소" };
 
   function esc(s) {
     return String(s == null ? "" : s).replace(/[&<>"']/g, function (m) {
@@ -47,7 +50,10 @@
   }
 
   document.getElementById("cancel-btn").addEventListener("click", function () {
-    if (!confirm("발송을 중단하시겠습니까? 아직 발송되지 않은 건은 취소됩니다.")) return;
+    var q = window.DEALFLOW_JOB_VERIFY
+      ? "확인을 중단하시겠습니까? 남은 건은 미확인으로 남습니다."
+      : "발송을 중단하시겠습니까? 아직 발송되지 않은 건은 취소됩니다.";
+    if (!confirm(q)) return;
     fetch("/api/jobs/" + jobId + "/cancel", { method: "POST" }).then(poll);
   });
   document.getElementById("retry-btn").addEventListener("click", function () {

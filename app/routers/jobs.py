@@ -86,6 +86,6 @@ def retry_failed(job_id: int, db: Session = Depends(get_db), user: User = Depend
 
 
 @router.get("/agent-status")
-def get_agent_status(db: Session = Depends(get_db), _user: User = Depends(get_current_user)):
-    """Sidebar connection badge (FEATURE_SPEC §0.2)."""
-    return agent_status(db)
+def get_agent_status(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Sidebar connection badge (FEATURE_SPEC §0.2) — 지금 선택된 사용자의 기기 기준."""
+    return agent_status(db, user.id)

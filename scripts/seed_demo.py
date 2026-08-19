@@ -9,6 +9,7 @@ Idempotent: safe to run on every container start.
 """
 from __future__ import annotations
 
+import secrets
 import sys
 from pathlib import Path
 
@@ -25,6 +26,7 @@ from app.models import (  # noqa: E402
     User,
     VcContact,
 )
+from app.services.room_name import build_room_name  # noqa: E402
 
 # 실제 운영 중인 딜소개 스크립트 형식을 기본값으로 사용한다.
 #   안녕하세요, 박민수 팀장님
@@ -41,6 +43,29 @@ TEAM_TEMPLATES = [
     ("closing_remind", "지난번 공유드린 기업들 검토 중 궁금하신 점 있으시면 말씀 부탁드립니다."),
     ("closing_meeting", "다음주 또는 다다음주 20~30분 정도 간단히 미팅 가능하실지요?"),
 ]
+
+# 개발용 추가 사용자 (가상). Mac·Windows 두 기기로 **동시에** 테스트하려면 기기마다
+# 다른 사용자를 골라야 한다 — 같은 사용자로 두 대를 붙이면 먼저 poll 한 쪽이 잡을
+# 가져가 발송이 어디로 갈지 예측할 수 없다(사용자 1명 = 에이전트 1대).
+# 정식 로그인(휴대폰번호 + 비밀번호)은 다음 스프린트. 번호는 하이픈 없이 숫자만.
+EXTRA_USERS = [
+    dict(name="김영희", phone="01000000002", role="user"),
+    dict(name="이철수", phone="01000000003", role="user"),
+]
+
+# 사용자별 담당자 — 화면에서 '내 것만 보인다'가 실제로 확인되게 소량만 넣는다.
+EXTRA_CONTACTS = {
+    "01000000002": [
+        dict(group_name="A그룹", name="장하늘", title="심사역", firm="바사벤처스",
+             stages="Seed", sectors="커머스", memo="커머스 초기 위주"),
+        dict(group_name="B그룹", name="문재원", title="대표님", firm="아자캐피탈",
+             stages="SeriesB", sectors="제조", memo="후기 라운드"),
+    ],
+    "01000000003": [
+        dict(group_name="A그룹", name="오세라", title="팀장님", firm="카타인베스트",
+             stages="SeriesA", sectors="모빌리티", memo="모빌리티 관심"),
+    ],
+}
 
 DEMO_CONTACTS = [
     dict(group_name="A그룹", name="홍길동", title="대표님", firm="가나벤처스",
@@ -138,6 +163,30 @@ def main() -> None:
             defaults=dict(token=config.DEMO_AGENT_TOKEN, hostname="demo-agent", agent_version="0.1.0"),
         )
         created["agents"] += int(c)
+
+        # 개발용 추가 사용자 + 각자의 담당자·토큰
+        for spec in EXTRA_USERS:
+            extra, c = _get_or_create(db, User, phone=spec["phone"],
+                                      defaults=dict(name=spec["name"], role=spec["role"]))
+            created["users"] += int(c)
+            for contact in EXTRA_CONTACTS.get(spec["phone"], []):
+                _obj, c = _get_or_create(
+                    db, VcContact, name=contact["name"], firm=contact["firm"],
+                    defaults=dict(
+                        user_id=extra.id, channel_kakao=1, status="active",
+                        invited_status="완료",
+                        kakao_room_name=build_room_name(contact["name"], contact.get("title"),
+                                                        contact["firm"]),
+                        room_verified="unverified", **contact),
+                )
+                created["contacts"] += int(c)
+            # 토큰은 사용자마다 달라야 기기별로 잡이 갈린다. 공개 저장소에 고정 토큰을
+            # 더 늘리지 않도록 무작위로 발급하고, 값은 /setup 화면에서 확인한다.
+            _dev, c = _get_or_create(
+                db, AgentDevice, user_id=extra.id,
+                defaults=dict(token=f"agt_{secrets.token_hex(16)}", hostname="", agent_version=""),
+            )
+            created["agents"] += int(c)
 
         db.commit()
         print(f"[seed] done. created={created} (idempotent; existing rows kept)")

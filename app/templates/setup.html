@@ -10,12 +10,17 @@
 
 <div class="panel">
   <h2 class="panel-title">① 내려받기</h2>
+  <p class="whoami">지금 내려받는 에이전트는 <b>{{ user.name }}{% if user.phone %} ({{ user.phone }}){% endif %}</b>
+    계정으로 연결됩니다.</p>
   <div class="dl-row">
     <a class="btn primary" href="/download/agent?os_kind=windows">⬇ Windows용 다운로드</a>
     <a class="btn" href="/download/agent?os_kind=mac">⬇ macOS용 다운로드</a>
   </div>
   <p class="hint">
-    서버 주소와 내 토큰이 <b>이미 채워진 상태</b>로 내려받아집니다. 설정 파일을 손댈 필요 없습니다.
+    서버 주소와 내 토큰이 <b>이미 채워진 상태</b>로 내려받아집니다. 설정 파일을 손댈 필요 없습니다.<br>
+    <b>기기마다 다른 사용자를 선택해 각각 다운로드하세요.</b>
+    같은 사용자로 두 기기를 연결하면 발송이 어느 기기로 갈지 예측할 수 없습니다
+    (사용자 1명 = 에이전트 1대). 왼쪽 아래에서 사용자를 바꿨다면 <b>새로 받은 zip</b>을 쓰세요.
   </p>
 </div>
 
@@ -49,9 +54,10 @@
   <h2 class="panel-title">연결 정보</h2>
   <table class="kv">
     <tr><th>서버 주소</th><td><code>{{ server_url }}</code></td></tr>
+    <tr><th>사용자</th><td>{{ user.name }}{% if user.phone %} <code>{{ user.phone }}</code>{% endif %}</td></tr>
     <tr><th>내 에이전트 토큰</th><td><code class="token">{{ token }}</code></td></tr>
   </table>
-  <p class="hint">토큰은 내 계정의 발송 잡만 받아오는 열쇠입니다. 다른 사람과 공유하지 마세요.</p>
+  <p class="hint">토큰은 <b>이 사용자</b>의 발송 잡만 받아오는 열쇠입니다. 다른 사람과 공유하지 마세요.</p>
 </div>
 
 <div class="panel warn-panel">

@@ -59,7 +59,7 @@ gh pr merge --squash --delete-branch       # 검토 후 머지
 
 ## 4. 머지 전 체크리스트
 
-- [ ] 테스트 통과 (`docker exec dealflow-web-1 python -m pytest -q`)
+- [ ] 테스트 통과 (`docker exec dealflow-public-web-1 python -m pytest -q`)
 - [ ] 실명·API키가 섞이지 않았는가 (이 저장소는 **public**)
 - [ ] 발송 관련 변경이면 오발송 방지 로직이 그대로인가
 

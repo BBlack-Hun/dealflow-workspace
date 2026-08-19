@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import config
 from .routers import setup as setup_router
-from .routers import agent_api, deals, jobs, pages
+from .routers import agent_api, contacts, deals, jobs, pages
 
 
 def create_app() -> FastAPI:
@@ -20,6 +20,7 @@ def create_app() -> FastAPI:
 
     # API routers first (explicit prefixes), then HTML pages (which include a catch-all stub).
     app.include_router(deals.router)
+    app.include_router(contacts.router)
     app.include_router(jobs.router)
     app.include_router(agent_api.router)
     # /setup, /download 는 pages 의 캐치올(/{placeholder}) 보다 먼저 등록해야 가려지지 않는다.
