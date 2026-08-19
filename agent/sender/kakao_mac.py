@@ -68,12 +68,36 @@ def _type_text(text: str) -> None:
     _osa(f'tell application "System Events" to keystroke "{_esc(text)}"')
 
 
+class QuartzUnavailable(RuntimeError):
+    """pyobjc-framework-Quartz 미설치. 방 자동 열기만 불가하고 발송은 가능하다."""
+
+
+def quartz_available() -> bool:
+    try:
+        import Quartz  # noqa: F401
+    except Exception:  # noqa: BLE001
+        return False
+    return True
+
+
 def _double_click(x: int, y: int) -> None:
     """실제 마우스 더블클릭. 카톡 채팅 목록은 AXPress/Enter 로 열리지 않는다.
 
-    Quartz 로 클릭 이벤트를 합성한다(pyobjc-framework-Quartz 필요).
+    Quartz(pyobjc)로 클릭 이벤트를 합성한다.
+
+    ★ Quartz 는 **선택적 의존성**이다. Python 3.9 처럼 미리 빌드된 휠이 없는 환경에서는
+    설치에 컴파일러가 필요해 실패하는데(실기에서 발생), 그렇다고 발송 전체를 막을 이유는 없다.
+    이 함수는 '검색해서 방을 새로 여는' 경로에서만 쓰이므로, 대상 채팅방 창이 이미 열려
+    있으면 Quartz 없이도 발송된다. 없으면 명확한 예외를 던져 호출부가 안내하도록 한다.
     """
-    import Quartz
+    try:
+        import Quartz
+    except Exception as exc:  # noqa: BLE001
+        raise QuartzUnavailable(
+            "pyobjc-framework-Quartz 가 설치되지 않아 채팅방을 자동으로 열 수 없습니다. "
+            "카카오톡에서 대상 채팅방 창을 미리 열어두면 발송됩니다. "
+            "(자동 열기까지 쓰려면 Python 3.10+ 에서 설치하거나 xcode-select --install)"
+        ) from exc
 
     for click_state in (1, 2):
         for kind in (Quartz.kCGEventLeftMouseDown, Quartz.kCGEventLeftMouseUp):
@@ -195,7 +219,7 @@ class KakaoMacSender(Sender):
             x, y, w, h = [int(v) for v in raw.split("|")]
             _double_click(x + w // 2, y + h // 2)
             time.sleep(self.t_open_room)
-        except AccessibilityError:
+        except (AccessibilityError, QuartzUnavailable):
             raise
         except Exception:
             log.exception("_open_room_via_search 실패 room=%r", room_name)
@@ -280,7 +304,11 @@ class KakaoMacSender(Sender):
         try:
             # 1) 이미 열린 창이 있으면 그걸 쓰고, 없으면 검색으로 연다.
             if not self._focus_window(room_name):
-                self._open_room_via_search(room_name)
+                try:
+                    self._open_room_via_search(room_name)
+                except QuartzUnavailable as exc:
+                    # 창이 안 열려 있고 자동 열기도 불가 → 사용자가 창만 열어두면 된다.
+                    return SendResult(ok=False, error=f"room_not_open: {exc}")
                 if not self._focus_window(room_name):
                     return SendResult(ok=False, error=f"room_not_found: {room_name!r}")
 

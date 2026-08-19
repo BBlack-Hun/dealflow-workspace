@@ -42,12 +42,21 @@
   <h2 class="panel-title">② 설치 · 실행 (macOS)</h2>
   <ol class="steps">
     <li>시스템 설정 → 개인정보 보호 및 보안 → <b>손쉬운 사용</b> 에서 터미널 허용</li>
-    <li>압축 푼 폴더에서:
-      <pre class="code">python3 -m venv .venv-agent
-.venv-agent/bin/pip install requests pyyaml pyobjc-framework-Quartz
-.venv-agent/bin/python -m agent.main --config agent/config.yaml</pre>
+    <li>압축 푼 폴더에서 설치 <span class="hint">(필수/선택 패키지를 나눠 설치합니다)</span>
+      <pre class="code">bash setup.sh</pre>
+    </li>
+    <li>카카오톡 로그인 후 실행
+      <pre class="code">.venv-agent/bin/python -m agent.main --config agent/config.yaml</pre>
     </li>
   </ol>
+  <p class="hint">
+    <b>Python 3.10 이상 권장.</b>
+    3.9 에서는 채팅방 자동 열기용 <code>Quartz</code> 설치가 실패할 수 있습니다
+    (미리 빌드된 휠이 없어 컴파일러 필요). 이때도 <b>발송은 정상 동작</b>하며,
+    카카오톡에서 <b>보낼 채팅방 창을 미리 열어두면</b> 됩니다.<br>
+    자동 열기까지 쓰려면 Python 3.10+ 를 쓰거나 <code>xcode-select --install</code> 후 다시 설치하세요.<br>
+    압축은 iCloud Drive 같은 동기화 폴더보다 <b>로컬 경로</b>(예: <code>~/dealflow-agent</code>)에 푸는 편이 안정적입니다.
+  </p>
 </div>
 
 <div class="panel">
