@@ -49,6 +49,12 @@ a:hover { text-decoration: underline; }
 .menu-badge { font-size: 10px; background: #2a3342; color: #9aa7b8; border-radius: 6px; padding: 1px 6px; }
 .menu-item.active .menu-badge { background: rgba(255,255,255,.25); color: #fff; }
 .sidebar-foot { padding: 12px; border-top: 1px solid #232c39; }
+/* 개발용 사용자 전환 (정식 로그인은 다음 스프린트) */
+.user-switch { display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; }
+.user-switch label { font-size: 10px; color: #8b95a3; text-transform: none; }
+.user-switch select { width: 100%; padding: 5px 6px; font-size: 12px; border-radius: 6px;
+                      border: 1px solid #2a3342; background: #1b2330; color: #e6e9ee; }
+.switch-note { font-size: 10px; color: #6f7987; margin: 0 0 10px; line-height: 1.4; }
 .agent-badge { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; }
 .agent-badge .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--gray); }
 .agent-badge.on { color: #7ee2a8; } .agent-badge.on .dot { background: var(--green); box-shadow: 0 0 6px var(--green); }
@@ -124,6 +130,8 @@ a:hover { text-decoration: underline; }
 
 /* ── 에이전트 설치 화면 (/setup) ───────────────────────────── */
 .dl-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.whoami { background: #eef2ff; border: 1px solid #c7d7fb; color: #1f3f8f; border-radius: 8px;
+          padding: 8px 12px; font-size: 13px; margin: 0 0 10px; }
 .steps { margin: 6px 0 0 18px; padding: 0; line-height: 1.9; }
 .steps li { margin-bottom: 4px; }
 .kv { width: 100%; border-collapse: collapse; }

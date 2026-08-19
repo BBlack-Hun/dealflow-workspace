@@ -1,9 +1,10 @@
-"""Shared dependencies: current user (Sprint 1 hardcoded), agent auth, templates, helpers."""
+"""Shared dependencies: current user, agent auth, templates, helpers."""
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Optional
 
-from fastapi import Depends, Header, HTTPException
+from fastapi import Depends, Header, HTTPException, Request
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -19,9 +20,30 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def get_current_user(db: Session = Depends(get_db)) -> User:
-    """Sprint 1: single hardcoded user session. Real OTP auth arrives in Sprint 4."""
-    user = db.get(User, config.CURRENT_USER_ID)
+# 개발용 사용자 전환 쿠키. ★ 인증이 아니다.
+DEV_USER_COOKIE = "dealflow_dev_user"
+
+
+def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
+    """현재 사용자 — **개발용 임시 전환**(쿠키), 없으면 기본 사용자로 폴백.
+
+    ★ 이것은 인증이 아니다. 쿠키만 바꾸면 누구나 다른 사용자가 되므로 내부 테스트
+    전용이다. 정식 로그인(휴대폰번호 + 비밀번호)은 다음 스프린트에 붙는다.
+
+    지금 이게 필요한 이유: Mac·Windows 두 기기로 동시에 테스트할 때 모두가 같은
+    사용자로 잡히면 어느 기기가 잡을 가져갈지 예측할 수 없다. 기기마다 다른 사용자를
+    고르면 ``SendJob.user_id == AgentDevice.user_id`` 격리로 자연히 갈린다.
+
+    정식 로그인 도입 시 **이 함수 한 곳만** 세션 조회로 바꾸면 된다(쿠키 → 세션).
+    """
+    user = None
+    raw = request.cookies.get(DEV_USER_COOKIE)
+    if raw and raw.isdigit():
+        user = db.get(User, int(raw))
+        if user is not None and not user.is_active:
+            user = None
+    if user is None:
+        user = db.get(User, config.CURRENT_USER_ID)
     if user is None:
         raise HTTPException(status_code=500, detail="Seed data missing — run seed_demo.py")
     return user
@@ -43,10 +65,16 @@ def get_agent_device(
     return device
 
 
-def agent_status(db: Session) -> dict:
-    """Connection badge state for the current user's agent device."""
+def agent_status(db: Session, user_id: Optional[int] = None) -> dict:
+    """Connection badge state for a user's agent device.
+
+    사용자를 전환하면 배지도 그 사용자의 기기를 가리켜야 한다 — 그렇지 않으면
+    Mac 화면에서 Windows 에이전트가 '내 에이전트'처럼 보인다(실제로 겪은 혼선).
+    """
     device = db.execute(
-        select(AgentDevice).where(AgentDevice.user_id == config.CURRENT_USER_ID)
+        select(AgentDevice).where(
+            AgentDevice.user_id == (user_id if user_id is not None else config.CURRENT_USER_ID)
+        )
     ).scalar_one_or_none()
     online = False
     last_poll = None

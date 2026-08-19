@@ -21,6 +21,26 @@
         {% endfor %}
       </nav>
       <div class="sidebar-foot">
+        {#
+          개발용 사용자 전환 — 인증이 아니다(정식 로그인은 다음 스프린트:
+          휴대폰번호 + 비밀번호). Mac·Windows 두 기기로 동시 테스트할 때
+          기기마다 다른 사용자를 골라야 발송 잡이 어느 기기로 갈지 예측 가능하다.
+        #}
+        {% if users %}
+        <form class="user-switch" method="get" action="/dev/switch-user">
+          <label for="dev-user">보는 사람</label>
+          <select id="dev-user" name="user_id" onchange="this.form.submit()">
+            {% for u in users %}
+            <option value="{{ u.id }}" {% if u.id == user.id %}selected{% endif %}>
+              {{ u.name }}{% if u.phone %} ({{ u.phone }}){% endif %}{% if u.role == 'admin' %} · 관리자{% endif %}
+            </option>
+            {% endfor %}
+          </select>
+          <input type="hidden" name="next" value="{{ current_path or '/deals' }}">
+          <noscript><button type="submit" class="linkbtn">전환</button></noscript>
+        </form>
+        <p class="switch-note">개발용 임시 전환 · 정식 로그인(휴대폰번호 + 비밀번호)은 다음 스프린트</p>
+        {% endif %}
         <div id="agent-badge" class="agent-badge {% if agent.online %}on{% else %}off{% endif %}">
           <span class="dot"></span>
           <span id="agent-badge-label">{{ agent.label }}</span>

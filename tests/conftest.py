@@ -43,8 +43,8 @@ def users(db):
     """사용자 2명 + 각자의 에이전트 기기(토큰). 사용자 간 격리 검증용."""
     from app.models import AgentDevice, User
 
-    u1 = User(id=1, name="홍길동", phone="01000000001", role="user")
-    u2 = User(id=2, name="김영희", phone="01000000002", role="user")
+    u1 = User(id=1, name="강민준", phone="01000000001", role="user")
+    u2 = User(id=2, name="윤서아", phone="01000000002", role="user")
     db.add_all([u1, u2])
     db.flush()
     db.add_all([

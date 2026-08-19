@@ -1,27 +1,42 @@
 {% extends "base.html" %}
-{% block title %}발송 진행 · dealflow{% endblock %}
+{% block title %}{% if verify %}방 연결 확인{% else %}발송 진행{% endif %} · dealflow{% endblock %}
 {% block content %}
 <header class="page-head">
-  <h1>발송 진행</h1>
-  <p class="muted">잡 #{{ job_id }} · 2초마다 자동 갱신</p>
+  <h1>{% if verify %}방 연결 확인{% else %}발송 진행{% endif %}</h1>
+  <p class="muted">
+    잡 #{{ job_id }} · 2초마다 자동 갱신
+    {% if verify %}· <b>문구는 전송하지 않습니다</b> — 카톡방 이름만 대조합니다{% endif %}
+  </p>
 </header>
 
 {% if not job_exists %}
-<div class="placeholder-card"><p>해당 발송 잡을 찾을 수 없습니다. <a href="/deals">딜소개 보내기로 돌아가기</a></p></div>
+<div class="placeholder-card"><p>해당 잡을 찾을 수 없습니다. <a href="/deals">딜소개 보내기로 돌아가기</a></p></div>
 {% else %}
 <div class="counters" id="counters">
   <div class="counter"><span class="c-num" id="c-pending">0</span><span class="c-label">대기</span></div>
-  <div class="counter sending"><span class="c-num" id="c-sending">0</span><span class="c-label">발송중</span></div>
-  <div class="counter ok"><span class="c-num" id="c-sent">0</span><span class="c-label">성공</span></div>
-  <div class="counter fail"><span class="c-num" id="c-failed">0</span><span class="c-label">실패</span></div>
+  <div class="counter sending"><span class="c-num" id="c-sending">0</span><span class="c-label">{% if verify %}확인중{% else %}발송중{% endif %}</span></div>
+  <div class="counter ok"><span class="c-num" id="c-sent">0</span><span class="c-label">{% if verify %}확인됨{% else %}성공{% endif %}</span></div>
+  <div class="counter fail"><span class="c-num" id="c-failed">0</span><span class="c-label">{% if verify %}불일치{% else %}실패{% endif %}</span></div>
 </div>
 
 <div class="progress-actions">
   <span id="job-status-badge" class="status-badge">-</span>
   <button type="button" id="cancel-btn" class="danger-btn">중단</button>
-  <button type="button" id="retry-btn" class="secondary-btn" hidden>실패 재시도</button>
+  <button type="button" id="retry-btn" class="secondary-btn" hidden>{% if verify %}불일치 재확인{% else %}실패 재시도{% endif %}</button>
+  {% if verify %}
+  <a href="/contacts" class="linkbtn">내 투자사로</a>
+  {% else %}
   <a href="/deals" class="linkbtn">새 발송</a>
+  {% endif %}
 </div>
+
+{% if verify %}
+<div class="warn-box">
+  불일치 건은 카카오톡에서 방 제목을 확인한 뒤 <a href="/contacts">내 투자사</a> 상세에서
+  방 이름을 고치고 다시 확인하세요. 방 제목이 다르면 그 담당자에게는 <b>발송이 되지 않습니다</b>
+  (엉뚱한 방으로 가지는 않습니다).
+</div>
+{% endif %}
 
 <table class="log-table">
   <thead>
@@ -33,7 +48,10 @@
 {% endblock %}
 {% block scripts %}
 {% if job_exists %}
-<script>window.DEALFLOW_JOB_ID = {{ job_id }};</script>
+<script>
+  window.DEALFLOW_JOB_ID = {{ job_id }};
+  window.DEALFLOW_JOB_VERIFY = {{ 'true' if verify else 'false' }};
+</script>
 <script src="/static/js/progress.js"></script>
 {% endif %}
 {% endblock %}

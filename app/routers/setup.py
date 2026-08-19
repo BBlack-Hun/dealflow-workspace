@@ -18,11 +18,10 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import config
 from ..db import get_db
-from ..deps import agent_status, get_current_user, templates
+from ..deps import get_current_user, templates
 from ..models import AgentDevice, User
-from .pages import MENU
+from ..ui import base_ctx
 
 router = APIRouter(tags=["setup"])
 
@@ -125,20 +124,10 @@ def setup_page(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """에이전트 설치 안내 + 다운로드 링크."""
-    return templates.TemplateResponse(
-        "setup.html",
-        {
-            "request": request,
-            "menu": MENU,
-            "active": "setup",
-            "user": user,
-            "agent": agent_status(db),
-            "test_room": config.TEST_ROOM,
-            "server_url": _server_url(request),
-            "token": _ensure_token(db, user),
-        },
-    )
+    """에이전트 설치 안내 + 다운로드 링크. 토큰은 **지금 선택된 사용자**의 것이다."""
+    ctx = base_ctx(request, db, user, "setup")
+    ctx.update({"server_url": _server_url(request), "token": _ensure_token(db, user)})
+    return templates.TemplateResponse("setup.html", ctx)
 
 
 @router.get("/download/agent")
@@ -150,7 +139,9 @@ def download_agent(
 ):
     """에이전트 zip 을 즉석에서 조립해 내려준다 (설정 자동 주입)."""
     sender = "kakao_mac" if os_kind == "mac" else "kakao_windows"
-    config = CONFIG_TEMPLATE.format(
+    # 토큰은 **지금 선택된 사용자**의 것이다 → 기기마다 다른 사용자를 골라 받아야
+    # 발송 잡이 어느 기기로 갈지 예측 가능해진다(사용자 1명 = 에이전트 1대).
+    config_yaml = CONFIG_TEMPLATE.format(
         server_url=_server_url(request),
         token=_ensure_token(db, user),
         sender=sender,
@@ -167,7 +158,7 @@ def download_agent(
                 # Windows cmd 호환을 위해 CRLF 보장
                 data = data.replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
             zf.writestr(dest, data)
-        zf.writestr("agent/config.yaml", config)
+        zf.writestr("agent/config.yaml", config_yaml)
         zf.writestr("agent_logs/.keep", "")
 
     buf.seek(0)
