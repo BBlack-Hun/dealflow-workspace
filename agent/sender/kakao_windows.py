@@ -6,9 +6,11 @@ IMPORTANT — platform guard:
   So importing this file on macOS/Docker never raises (imports are deferred), which
   keeps the web image build and MockSender path clean.
 
-  ⚠ NOT verified on real hardware yet. Sprint 1 task 1.10 = Windows 실기 검증
-  (actual Kakao send, room-mismatch skip, ESC/FAILSAFE stop, supervisor overlay).
-  Treat every UI-interaction line below as TODO-until-verified-on-Windows.
+  ✅ 실기 검증 완료 (2026-08, Windows 11 + 카카오톡 PC): 실제 방으로 전송 성공.
+  검증 과정에서 확인된 것:
+    - set_focus() 만으로는 카톡이 앞으로 오지 않는다 → _force_foreground() 필요
+    - 포커스 미확보 상태로 키를 누르면 브라우저 등 엉뚱한 창에 입력된다
+      → 포커스 확인 전에는 절대 키 입력하지 않음
 
 Mis-send prevention (non-negotiable, ROADMAP 공통 원칙 4): after opening a room we
 re-read the window title and require an EXACT match with room_name; any mismatch →
