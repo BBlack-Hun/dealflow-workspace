@@ -60,6 +60,9 @@ class VcContact(TimestampMixin, Base):
     title: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     firm: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     round_size: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # 시트 A '초대완료여부' (카톡방 초대 상태) — SHEET_FINDINGS §2/§4.
+    # 시트마다 표기가 제각각(완료 / O / 초대완료)이라 정규화하지 않고 원문을 보존한다.
+    invited_status: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     channel_kakao: Mapped[int] = mapped_column(Integer, default=0)
     channel_email: Mapped[int] = mapped_column(Integer, default=0)
     email: Mapped[Optional[str]] = mapped_column(String, nullable=True)
@@ -72,6 +75,28 @@ class VcContact(TimestampMixin, Base):
     sectors: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # CSV: AI,헬스케어
     status: Mapped[str] = mapped_column(String, default="active")  # active | no_response | paused
     memo: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
+class ContactActivity(TimestampMixin, Base):
+    """담당자 활동 이력 (DATA_MODEL §2.6).
+
+    시트 A는 월이 갈수록 **3열 세트(딜소개/IR요청/미팅)가 오른쪽으로 무한히 늘어난다**
+    (SHEET_FINDINGS §2). 서비스에서는 그 셀들을 이 테이블의 **행**으로 정규화한다.
+    시트 대비 개선의 핵심 지점이라 임포트의 1급 산출물이다.
+    """
+
+    __tablename__ = "contact_activities"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    contact_id: Mapped[int] = mapped_column(ForeignKey("vc_contacts.id"))
+    month: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # 2026-08
+    # deal_intro | ir_request | meeting | memo
+    kind: Mapped[str] = mapped_column(String)
+    content: Mapped[str] = mapped_column(Text)
+    happened_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # 2026-08-13
+    source: Mapped[str] = mapped_column(String, default="import")  # import | system
+
+    contact: Mapped["VcContact"] = relationship()
 
 
 class IrCompany(TimestampMixin, Base):
