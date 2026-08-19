@@ -39,7 +39,7 @@ from app.services.room_name import build_room_name  # noqa: E402
 # 주의: 시트의 직함은 이미 '팀장님/대표님'처럼 '님'을 포함하므로 {직함} 뒤에 '님'을 또 쓰지 않는다.
 # 데모 계정 비밀번호. 운영에서는 관리자가 계정을 만들고 각자 변경한다.
 # (must_change_password=1 이면 첫 로그인 후 변경 화면으로 보낸다)
-DEMO_PASSWORD = "dealflow123"
+DEMO_PASSWORD = config.INITIAL_PASSWORD
 
 TEAM_TEMPLATES = [
     ("opening_first", "안녕하세요, {담당자명} {직함}\n우리브이씨 ASSET입니다."),
