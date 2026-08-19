@@ -28,6 +28,12 @@
       </div>
     </aside>
     <main class="content">
+      {% if test_room %}
+      <div class="test-banner">
+        🧪 <b>테스트 모드</b> — 모든 발송이 실제 담당자가 아니라
+        <code>{{ test_room }}</code> 방으로만 전송됩니다.
+      </div>
+      {% endif %}
       {% block content %}{% endblock %}
     </main>
   </div>

@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy import exists, select
 from sqlalchemy.orm import Session
 
+from .. import config
 from ..db import get_db
 from ..deps import get_current_user, now_iso
 from ..models import (
@@ -94,6 +95,21 @@ def _compose_for_contact(
         [_to_company_view(c) for c in companies],
         stage=mc.STAGE_DAY1,
     )
+
+
+def _apply_test_room(contact: VcContact, text: str) -> tuple:
+    """테스트 모드면 발송 대상 방을 테스트 방 하나로 바꾼다.
+
+    config.TEST_ROOM 이 설정돼 있으면 실제 담당자 방으로 나가지 않고 전부
+    그 방으로만 간다. 실투자사 150명에게 잘못 나가는 사고를 막기 위한 장치.
+    누구에게 갈 문구였는지 알 수 있도록 머리말을 붙인다.
+    """
+    if not config.TEST_ROOM:
+        return contact.kakao_room_name, text
+    who = f"{contact.name} {contact.title or ''}".strip()
+    firm = f" / {contact.firm}" if contact.firm else ""
+    banner = f"[테스트 발송 → {who}{firm}]\n원래 방: {contact.kakao_room_name}\n\n"
+    return config.TEST_ROOM, banner + text
 
 
 def _load_companies(db: Session, company_ids: List[int]) -> List[IrCompany]:
@@ -227,12 +243,13 @@ def create_send_list(
 
     for contact in contacts:
         result = _compose_for_contact(db, user, contact, companies)
+        room_name, message = _apply_test_room(contact, result.text)
         db.add(SendItem(
             job_id=job.id,
             contact_id=contact.id,
             stage=mc.STAGE_DAY1,
-            room_name=contact.kakao_room_name,
-            message=result.text,
+            room_name=room_name,
+            message=message,
             status="pending",
         ))
 

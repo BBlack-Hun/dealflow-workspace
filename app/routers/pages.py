@@ -6,6 +6,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .. import config
 from ..db import get_db
 from ..deps import agent_status, get_current_user, templates
 from ..models import IrCompany, SendJob, User, VcContact
@@ -31,6 +32,7 @@ def _base_ctx(request: Request, db: Session, user: User, active: str) -> dict:
         "active": active,
         "user": user,
         "agent": agent_status(db),
+        "test_room": config.TEST_ROOM,
     }
 
 
