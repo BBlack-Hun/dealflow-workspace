@@ -760,6 +760,10 @@ def apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
             _fill_if_empty(contact, "sectors", ",".join(pc.sectors))
         if source_label:
             contact.source_sheet = _append_label(contact.source_sheet, source_label)
+        # '메일로 발송' 처럼 메일 채널로 관리하는 담당자는 카톡 대상이 아니다.
+        # 방 확인에서 '실패'로 뜨면 고쳐야 할 건과 섞여 보이므로 채널로 구분한다.
+        if "메일" in (pc.invited_status or ""):
+            contact.channel_email = 1
         if is_invited(pc.invited_status or "") or is_invited(pc.kakao_joined or ""):
             # 초대/참여 완료 = 카톡방이 이미 있다 → 발송 대상 후보. 반대로 내리지는 않는다
             # (시트가 비어 있어도 서비스에서 연결해 둔 경우가 있으므로).

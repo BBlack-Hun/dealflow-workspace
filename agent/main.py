@@ -230,6 +230,18 @@ def process_verify_job(client: AgentClient, sender, job: dict, cfg: dict):
             found = []
             if hasattr(sender, "discover_rooms"):
                 found = sender.discover_rooms(query, marker=marker)
+                # 직함이 시트와 다를 수 있다(예: 시트 '제너럴파트너님' ↔ 방 '심사역님').
+                # 이름만으로 한 번 더 찾아본다.
+                name_only = (item.get("name") or "").strip()
+                if not found and name_only and name_only != query:
+                    found = sender.discover_rooms(name_only, marker=marker)
+                # 동명이인이면 회사명으로 가린다(방 제목에 회사가 들어가는 경우).
+                firm = (item.get("firm") or "").strip()
+                if len(found) > 1 and firm:
+                    key = firm.replace("(주)", "").replace("㈜", "").strip()
+                    narrowed = [f for f in found if key and key[:6] in f]
+                    if len(narrowed) == 1:
+                        found = narrowed
             if found:
                 verdict = "verified" if len(found) == 1 else "ambiguous"
             else:

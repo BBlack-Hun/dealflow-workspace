@@ -113,7 +113,11 @@ def poll(
             {"id": i.id, "room_name": i.room_name, "message": i.message, "stage": i.stage,
              # 방 확인 잡에만 검색어(이름+직함)를 함께 준다. message 는 빈 채로 두어
              # 구버전 에이전트가 이 잡을 발송으로 오해해도 보낼 내용이 없게 한다.
-             **({"query": f"{i.contact.name} {i.contact.title or ''}".strip()}
+             **({"query": f"{i.contact.name} {i.contact.title or ''}".strip(),
+                 # 직함이 시트와 실제 방에서 다른 경우가 있어(이직·표기 차이)
+                 # 이름만으로 재검색할 수 있게 함께 준다. 동명이인은 회사로 가린다.
+                 "name": i.contact.name,
+                 "firm": i.contact.firm or ""}
                 if job.kind == "verify_room" and i.contact is not None else {})}
             for i in pending_items
         ],
