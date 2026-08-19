@@ -78,6 +78,37 @@ class KakaoDesktopSender(Sender):
         win.wait("exists ready", timeout=self._t("window_wait", 5.0))
         return win
 
+    # --- 포커스 ---
+    def _foreground_title(self) -> str:
+        """지금 실제로 키 입력을 받는 창의 제목."""
+        try:
+            import win32gui  # type: ignore
+
+            return win32gui.GetWindowText(win32gui.GetForegroundWindow()) or ""
+        except Exception:  # noqa: BLE001
+            return ""
+
+    def _focus_verified(self, win, expect_title: Optional[str] = None) -> bool:
+        """창을 앞으로 올리고, **실제로 포그라운드가 됐는지 확인**한다.
+
+        ★ 이 확인이 없으면 큰 사고가 난다. set_focus() 가 실패했는데 그대로
+        Ctrl+F 를 누르면 그 키가 **그 순간 포커스를 가진 다른 앱**(예: 브라우저)으로
+        가서 엉뚱한 곳에 방 이름이 입력된다(실기에서 실제로 발생).
+        따라서 포커스가 확인되지 않으면 키 입력을 하지 않는다.
+        """
+        want = expect_title or self.sel.get("main_window_title_kw", "카카오톡")
+        for _ in range(int(self._t("focus_retries", 5))):
+            try:
+                win.set_focus()
+            except Exception:  # noqa: BLE001
+                log.debug("set_focus 실패, 재시도")
+            time.sleep(self._t("after_focus", 0.4))
+            fg = self._foreground_title()
+            if fg and (fg == want or want in fg):
+                return True
+            log.warning("포커스 미확보: 현재 포그라운드=%r, 기대=%r", fg, want)
+        return False
+
     def verify_room(self, room_name: str) -> str:
         """Search only; count EXACT-title matches. 1=verified, 0=not_found, >=2=ambiguous.
 
@@ -85,7 +116,9 @@ class KakaoDesktopSender(Sender):
         """
         try:
             win = self._kakao_window()
-            win.set_focus()
+            if not self._focus_verified(win):
+                log.warning("verify_room: 카톡 포커스 실패")
+                return "not_found"
             self._pyautogui.hotkey(*self.sel.get("search_hotkey", ["ctrl", "f"]))
             time.sleep(self._t("after_search_hotkey", 0.4))
             self._pyperclip.copy(room_name)
@@ -117,7 +150,14 @@ class KakaoDesktopSender(Sender):
         """
         try:
             win = self._kakao_window()
-            win.set_focus()
+            # ★ 포커스가 확인되지 않으면 키 입력을 하지 않는다.
+            #   (브라우저 등 다른 앱에 방 이름이 입력되는 사고 방지)
+            if not self._focus_verified(win):
+                return self._fail(
+                    room_name,
+                    "focus_failed: 카카오톡 창을 앞으로 가져오지 못했습니다. "
+                    "카톡이 최소화/다른 화면에 있지 않은지 확인하세요(전송 안 함)",
+                )
 
             # 2) search
             self._pyautogui.hotkey(*self.sel.get("search_hotkey", ["ctrl", "f"]))

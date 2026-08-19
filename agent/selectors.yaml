@@ -22,3 +22,9 @@ timings:
 # 실기에서 파악해 아래에 추가하고 kakao_windows.py의 정확 일치 검증에 연결.
 # search_result_list: { control_type: "List", ... }
 # chat_title_label: { control_type: "Text", ... }
+
+# 포커스 확보 재시도/대기 (카톡이 앞으로 안 나오면 키 입력을 하지 않는다)
+main_window_title_kw: "카카오톡"
+timings:
+  focus_retries: 5
+  after_focus: 0.4

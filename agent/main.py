@@ -162,12 +162,42 @@ def process_job(client: AgentClient, sender, job: dict, cfg: dict):
     log.info("job %s complete (errors=%s)", job_id, any_fail)
 
 
+
+def _setup_logging() -> None:
+    """콘솔 + 파일 로깅.
+
+    카톡 자동화 실패는 화면을 못 보는 상태에서 원인을 찾아야 하므로
+    (포커스를 뺏기면 안 되니 지켜보기 어렵다) 파일 로그가 사실상 유일한 단서다.
+    agent_logs/agent.log 에 회전 저장한다.
+    """
+    from logging.handlers import RotatingFileHandler
+
+    fmt = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+
+    console = logging.StreamHandler()
+    console.setFormatter(fmt)
+    root.addHandler(console)
+
+    log_dir = Path(__file__).resolve().parent.parent / "agent_logs"
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True)
+        fh = RotatingFileHandler(log_dir / "agent.log", maxBytes=2_000_000,
+                                 backupCount=3, encoding="utf-8")
+        fh.setFormatter(fmt)
+        root.addHandler(fh)
+        root.info("로그 파일: %s", log_dir / "agent.log")
+    except Exception as exc:  # noqa: BLE001
+        root.warning("파일 로그를 열지 못했습니다: %s", exc)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="dealflow sending agent")
     parser.add_argument("--config", default="agent/config.yaml")
     args = parser.parse_args(argv)
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    _setup_logging()
 
     cfg = load_config(args.config)
     log.info("agent starting; server=%s sender=%s", cfg["server_url"], cfg["sender"])
