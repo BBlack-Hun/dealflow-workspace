@@ -20,6 +20,7 @@ MENU = [
     {"key": "vc", "label": "내 투자사", "href": "/contacts", "sprint": 2},
     {"key": "su", "label": "딜 기업 DB", "href": "/companies", "sprint": 2},
     {"key": "admin", "label": "팀 현황", "href": "/team", "sprint": 4},
+    {"key": "setup", "label": "에이전트 설치", "href": "/setup", "sprint": 1},
 ]
 
 
