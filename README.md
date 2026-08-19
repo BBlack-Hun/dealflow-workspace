@@ -88,6 +88,7 @@ DEALFLOW_AGENT_TOKEN=agt_demo_token_sprint1 \
 | [docs/ROADMAP.md](docs/ROADMAP.md) | 스프린트 계획 |
 | [docs/SHEET_FINDINGS.md](docs/SHEET_FINDINGS.md) | 실제 구글시트 분석 결과 |
 | [docs/WINDOWS_TEST.md](docs/WINDOWS_TEST.md) | Windows 발송 테스트 절차 |
+| [docs/GIT_WORKFLOW.md](docs/GIT_WORKFLOW.md) | 브랜치·커밋·PR 규칙 |
 
 ---
 
