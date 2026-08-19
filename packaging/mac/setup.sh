@@ -5,18 +5,46 @@
 # 한 번에 설치하면 Quartz 빌드 실패가 전체를 롤백시켜 requests 까지 안 깔린다(실기 발생).
 
 set -uo pipefail
-cd "$(dirname "$0")/../.." || exit 1
+
+# 이 스크립트는 두 위치에서 실행된다:
+#   1) 저장소:      packaging/mac/setup.sh  → 저장소 루트로 올라가야 함
+#   2) 배포 zip:    setup.sh (agent/ 와 같은 위치) → 그 자리가 곧 루트
+# agent/ 디렉터리가 보이는 곳을 루트로 삼는다. (../.. 로 무조건 올라가면
+# zip 에서 실행할 때 압축 푼 폴더 밖에 venv 를 만들어 버린다 — 실기 확인)
+cd "$(dirname "$0")" || exit 1
+if [ ! -d "agent" ] && [ -d "../../agent" ]; then
+  cd ../.. || exit 1
+fi
+if [ ! -d "agent" ]; then
+  echo "[오류] agent/ 폴더를 찾을 수 없습니다. 압축을 푼 폴더에서 실행하세요."
+  exit 1
+fi
 
 VENV=".venv-agent"
-PY="${PYTHON:-python3}"
 
 echo "============================================"
 echo "  dealflow 발송 에이전트 설치 (macOS)"
 echo "============================================"
 echo
 
-# --- Python 버전 확인 -------------------------------------------------
-if ! command -v "$PY" >/dev/null 2>&1; then
+# --- Python 선택 ------------------------------------------------------
+# `python3` 가 pyenv 등으로 3.9 를 가리키는 경우가 흔하다(실기 확인).
+# 3.9 에는 Quartz 휠이 없어 소스 빌드로 넘어가 실패하므로,
+# 설치된 것 중 **3.10 이상을 우선** 찾아 쓴다. PYTHON 환경변수로 강제 지정 가능.
+pick_python() {
+  if [ -n "${PYTHON:-}" ]; then echo "$PYTHON"; return; fi
+  for c in python3.13 python3.12 python3.11 python3.10 \
+           /opt/homebrew/bin/python3 /usr/local/bin/python3 python3; do
+    if command -v "$c" >/dev/null 2>&1; then
+      v="$("$c" -c 'import sys; print(sys.version_info[0]*100+sys.version_info[1])' 2>/dev/null || echo 0)"
+      if [ "$v" -ge 310 ] 2>/dev/null; then echo "$c"; return; fi
+    fi
+  done
+  command -v python3 >/dev/null 2>&1 && echo "python3" || echo ""
+}
+
+PY="$(pick_python)"
+if [ -z "$PY" ]; then
   echo "[오류] python3 를 찾을 수 없습니다. https://www.python.org/downloads/ 에서 설치하세요."
   exit 1
 fi
