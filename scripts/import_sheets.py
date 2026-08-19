@@ -25,7 +25,10 @@
 from __future__ import annotations
 
 import argparse
+import re
 import sys
+import tempfile
+import urllib.request
 from datetime import date
 from pathlib import Path
 
@@ -40,7 +43,9 @@ from app.services.room_name import DEFAULT_SUFFIX  # noqa: E402
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="구글시트 CSV → dealflow 임포트")
     p.add_argument("--sheet-a", help="투자사 명단 시트 CSV 경로")
+    p.add_argument("--sheet-a-url", help="투자사 명단 시트 탭 URL (CSV 자동 다운로드)")
     p.add_argument("--sheet-b", help="기업 명단 시트(IR 기업현황 / 스타트업) CSV 경로")
+    p.add_argument("--sheet-b-url", help="기업 명단 시트 탭 URL (CSV 자동 다운로드)")
     p.add_argument("--user-id", type=int,
                    help="담당자 칸이 비었거나 계정이 없을 때 쓸 폴백 user_id (시트 A 임포트 시 필수)")
     p.add_argument("--label", help="이 시트의 이름표 (기본: 파일명). vc_contacts.source_sheet 에 기록")
@@ -53,8 +58,46 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
+SHEET_RE = re.compile(r"/spreadsheets/d/([A-Za-z0-9_-]+)")
+GID_RE = re.compile(r"[?#&]gid=(\d+)")
+
+
+def fetch_sheet(url: str, out_dir: str = "") -> str:
+    """구글시트 탭 URL → CSV 파일로 내려받고 경로를 돌려준다.
+
+    시트를 손으로 CSV 내보내는 단계를 없애기 위한 것. 탭이 12개나 되고 갱신도
+    잦아서, 링크만으로 최신 데이터를 가져올 수 있어야 실사용에 쓸 만하다.
+    (공유 설정이 '링크가 있는 사람'이어야 받아진다)
+    """
+    m = SHEET_RE.search(url)
+    if not m:
+        raise SystemExit(f"구글시트 URL 이 아닙니다: {url}")
+    doc_id = m.group(1)
+    gid = (GID_RE.search(url) or [None, "0"])[1]
+    export = f"https://docs.google.com/spreadsheets/d/{doc_id}/export?format=csv&gid={gid}"
+
+    dest = Path(out_dir or tempfile.gettempdir()) / f"sheet_{doc_id[:8]}_{gid}.csv"
+    with urllib.request.urlopen(export, timeout=60) as resp:
+        data = resp.read()
+    if data[:15].lstrip().lower().startswith(b"<!doctype html"):
+        raise SystemExit(
+            "시트를 CSV 로 받지 못했습니다(HTML 응답). 공유 설정을 "
+            "'링크가 있는 모든 사용자'로 바꾼 뒤 다시 시도하세요."
+        )
+    dest.write_bytes(data)
+    return str(dest)
+
+
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
+    # URL 이 주어지면 먼저 내려받아 경로로 바꾼다.
+    if getattr(args, "sheet_a_url", None):
+        args.sheet_a = fetch_sheet(args.sheet_a_url)
+        print(f"[다운로드] 시트 A → {args.sheet_a}")
+    if getattr(args, "sheet_b_url", None):
+        args.sheet_b = fetch_sheet(args.sheet_b_url)
+        print(f"[다운로드] 시트 B → {args.sheet_b}")
+
     if not args.sheet_a and not args.sheet_b:
         print("--sheet-a 또는 --sheet-b 중 하나는 필요합니다", file=sys.stderr)
         return 2
