@@ -119,6 +119,26 @@ def _double_click(x: int, y: int) -> None:
             time.sleep(0.06)
 
 
+def _wait_until(check, timeout: float, interval: float = 0.1):
+    """조건이 참이 될 때까지 짧게 반복 확인하고, 그 값을 돌려준다.
+
+    고정 sleep 은 느린 쪽에 맞춰 잡아야 해서 평소에도 그만큼 기다리게 된다.
+    조건이 충족되면 즉시 넘어가므로 체감 속도가 빨라지고, 느린 순간에는
+    timeout 까지 기다려 주므로 안정성도 함께 올라간다.
+    """
+    deadline = time.time() + timeout
+    while True:
+        try:
+            got = check()
+        except Exception:  # noqa: BLE001
+            got = None
+        if got:
+            return got
+        if time.time() >= deadline:
+            return None
+        time.sleep(interval)
+
+
 class KakaoMacSender(Sender):
     name = "kakao_mac"
 
@@ -137,7 +157,13 @@ class KakaoMacSender(Sender):
 
     def _activate(self) -> None:
         _osa(f'tell application "{APP}" to activate')
-        time.sleep(self.t_activate)
+        # 앱이 실제로 앞에 오면 즉시 진행(고정 대기 대신).
+        _wait_until(
+            lambda: _osa(
+                f'tell application "System Events" to return frontmost of process "{APP}"'
+            ) == "true",
+            timeout=self.t_activate + 1.0,
+        )
 
     def window_titles(self) -> List[str]:
         """카카오톡의 모든 창 제목. 방 열림 여부/정확 일치 검증의 근거."""
@@ -156,32 +182,23 @@ class KakaoMacSender(Sender):
         올린 뒤에는 창 순서가 반영될 때까지 잠깐 기다렸다가 검증한다.
         """
         esc = _esc(title)
+        # 올리기와 '실제로 앞에 왔는지' 확인을 **한 번의 AppleScript** 안에서 처리한다.
+        # 파이썬에서 폴링하면 osascript 프로세스를 매번 새로 띄우는데(1회 ~84ms),
+        # 그 오버헤드가 대기시간을 지배해 체감이 느려진다.
         script = (
             f'tell application "System Events" to tell process "{APP}"\n'
             f'  set frontmost to true\n'
-            f'  delay 0.3\n'
             f'  set matches to (every window whose name is "{esc}")\n'
             f'  if (count of matches) is 0 then return "none"\n'
             f'  perform action "AXRaise" of item 1 of matches\n'
-            f'  return "ok"\n'
+            f'  repeat 40 times\n'
+            f'    if (name of front window) is "{esc}" then return "front"\n'
+            f'    delay 0.05\n'
+            f'  end repeat\n'
+            f'  return "timeout"\n'
             f'end tell'
         )
-        if _osa(script) != "ok":
-            return False
-
-        # 창 순서가 실제로 바뀔 때까지 짧게 재확인(최대 ~2초).
-        for _ in range(10):
-            time.sleep(0.2)
-            try:
-                front = _osa(
-                    f'tell application "System Events" to tell process "{APP}" '
-                    f'to return name of front window'
-                )
-            except Exception:
-                continue
-            if front == title:
-                return True
-        return False
+        return _osa(script) == "front"
 
     def _keystroke(self, key: str, *, cmd: bool = False) -> None:
         mods = ' using command down' if cmd else ''
@@ -218,19 +235,27 @@ class KakaoMacSender(Sender):
             #      - Cmd+V(클립보드): 이 필드에서 동작하지 않을 때가 있음
             #    value 설정은 한글도 정확히 들어가고 카톡의 검색 필터도 반응한다.
             field = f'first UI element of ({main}) whose role is "AXTextField"'
+            # 값 설정 + 목록이 걸러질 때까지의 대기를 한 번의 호출로 끝낸다.
             _osa(
                 f'tell application "System Events" to tell process "{APP}"\n'
                 f'  set sf to {field}\n'
                 f'  set focused of sf to true\n'
                 f'  set value of sf to "{_esc(room_name)}"\n'
+                f'  repeat 40 times\n'
+                f'    if (count of rows of (first table of first scroll area of ({main}))) '
+                f'≤ {MAX_SEARCH_ROWS} then exit repeat\n'
+                f'    delay 0.05\n'
+                f'  end repeat\n'
                 f'end tell'
             )
-            time.sleep(self.t_query)
-
-            typed = _osa(
-                f'tell application "System Events" to tell process "{APP}" '
-                f'to return value of ({field})'
-            )
+            # 입력이 반영될 때까지 폴링(고정 대기 대신)
+            typed = _wait_until(
+                lambda: _osa(
+                    f'tell application "System Events" to tell process "{APP}" '
+                    f'to return value of ({field})'
+                ) or None,
+                timeout=self.t_query + 1.0,
+            ) or ""
             if typed != room_name:
                 raise RuntimeError(
                     f"검색어가 제대로 입력되지 않았습니다(입력됨={typed!r}, 기대={room_name!r})"
@@ -240,7 +265,15 @@ class KakaoMacSender(Sender):
             #    검색이 안 먹은 상태에서 첫 행을 더블클릭하면 **전체 대화목록의 맨 위 방**이
             #    열린다(실기에서 엉뚱한 방이 열림). 오발송 방지는 창 제목 검증이 막아주지만,
             #    애초에 남의 대화창을 여는 것 자체를 피해야 한다.
-            rows = _osa(
+            def _rows():
+                r = _osa(
+                    f'tell application "System Events" to tell process "{APP}" '
+                    f'to return count of rows of (first table of first scroll area of ({main}))'
+                )
+                # 필터가 반영돼 목록이 줄어들면 그때 통과시킨다.
+                return r if (r.isdigit() and 0 < int(r) <= MAX_SEARCH_ROWS) else None
+
+            rows = _wait_until(_rows, timeout=self.t_query + 1.5) or _osa(
                 f'tell application "System Events" to tell process "{APP}" '
                 f'to return count of rows of (first table of first scroll area of ({main}))'
             )
@@ -264,7 +297,16 @@ class KakaoMacSender(Sender):
             )
             x, y, w, h = [int(v) for v in raw.split("|")]
             _double_click(x + w // 2, y + h // 2)
-            time.sleep(self.t_open_room)
+            # 창이 뜨는 즉시 넘어간다 (대기는 AppleScript 안에서).
+            _osa(
+                f'tell application "System Events" to tell process "{APP}"\n'
+                f'  repeat 40 times\n'
+                f'    if (exists window "{_esc(room_name)}") then return "open"\n'
+                f'    delay 0.05\n'
+                f'  end repeat\n'
+                f'  return "timeout"\n'
+                f'end tell'
+            )
         except (AccessibilityError, QuartzUnavailable):
             raise
         except Exception:
@@ -302,9 +344,12 @@ class KakaoMacSender(Sender):
                 f'tell application "System Events" to tell process "{APP}"\n'
                 f'  set focused of ({self._input_ref(room_name)}) to true\n'
                 f'  set value of ({self._input_ref(room_name)}) to msg\n'
+                f'  repeat 30 times\n'
+                f'    if (value of ({self._input_ref(room_name)})) is not "" then exit repeat\n'
+                f'    delay 0.05\n'
+                f'  end repeat\n'
                 f'end tell'
             )
-            time.sleep(self.t_paste)
             return bool(self._get_input_text(room_name).strip())
         except AccessibilityError:
             raise
@@ -382,10 +427,14 @@ class KakaoMacSender(Sender):
 
             # 4) 전송 버튼 클릭 (Enter 보다 확실)
             _osa(
-                f'tell application "System Events" to tell process "{APP}" '
-                f'to click (button "전송" of (first window whose name is "{_esc(room_name)}"))'
+                f'tell application "System Events" to tell process "{APP}"\n'
+                f'  click (button "전송" of (first window whose name is "{_esc(room_name)}"))\n'
+                f'  repeat 30 times\n'
+                f'    if (value of ({self._input_ref(room_name)})) is "" then exit repeat\n'
+                f'    delay 0.05\n'
+                f'  end repeat\n'
+                f'end tell'
             )
-            time.sleep(self.t_send)
 
             # 5) ★ 실제 전송 검증: 입력창이 비었으면 전송된 것으로 본다.
             #    (예전엔 이 확인이 없어 '보냈다'고 거짓 보고하는 문제가 있었다.)
