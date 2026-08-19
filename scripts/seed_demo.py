@@ -19,6 +19,7 @@ from sqlalchemy import select  # noqa: E402
 
 from app import config  # noqa: E402
 from app.db import SessionLocal  # noqa: E402
+from app.services import auth as auth_svc  # noqa: E402
 from app.models import (  # noqa: E402
     AgentDevice,
     IrCompany,
@@ -36,6 +37,10 @@ from app.services.room_name import build_room_name  # noqa: E402
 #   관심 가시는 기업 있으시면 IR Deck 공유드리겠습니다.
 #   (빈 줄) 1) … 2) …
 # 주의: 시트의 직함은 이미 '팀장님/대표님'처럼 '님'을 포함하므로 {직함} 뒤에 '님'을 또 쓰지 않는다.
+# 데모 계정 비밀번호. 운영에서는 관리자가 계정을 만들고 각자 변경한다.
+# (must_change_password=1 이면 첫 로그인 후 변경 화면으로 보낸다)
+DEMO_PASSWORD = "dealflow123"
+
 TEAM_TEMPLATES = [
     ("opening_first", "안녕하세요, {담당자명} {직함}\n우리브이씨 ASSET입니다."),
     ("opening_re", "안녕하세요, {담당자명} {직함}\n우리브이씨 ASSET입니다."),
@@ -188,7 +193,14 @@ def main() -> None:
             )
             created["agents"] += int(c)
 
+        # 비밀번호가 없는 계정에 데모 비밀번호를 넣는다(기존 계정은 건드리지 않음).
+        for u in db.query(User).all():
+            if not u.password_hash:
+                u.password_hash = auth_svc.hash_password(DEMO_PASSWORD)
+                u.must_change_password = 1
+
         db.commit()
+        print(f"[seed] 데모 비밀번호: {DEMO_PASSWORD} (첫 로그인 후 변경 요구)")
         print(f"[seed] done. created={created} (idempotent; existing rows kept)")
         print(f"[seed] demo user id={user.id}, agent token={config.DEMO_AGENT_TOKEN}")
     finally:

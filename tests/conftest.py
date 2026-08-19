@@ -19,6 +19,9 @@ import pytest  # noqa: E402
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
+# 테스트 계정 공용 비밀번호
+DEMO_PASSWORD = "dealflow123"
+
 DEMO_TOKEN = "agt_test_token_user1"
 OTHER_TOKEN = "agt_test_token_user2"
 
@@ -43,8 +46,11 @@ def users(db):
     """사용자 2명 + 각자의 에이전트 기기(토큰). 사용자 간 격리 검증용."""
     from app.models import AgentDevice, User
 
-    u1 = User(id=1, name="강민준", phone="01000000001", role="user")
-    u2 = User(id=2, name="윤서아", phone="01000000002", role="user")
+    from app.services import auth as auth_svc
+
+    pw = auth_svc.hash_password(DEMO_PASSWORD)
+    u1 = User(id=1, name="강민준", phone="01000000001", role="user", password_hash=pw)
+    u2 = User(id=2, name="윤서아", phone="01000000002", role="user", password_hash=pw)
     db.add_all([u1, u2])
     db.flush()
     db.add_all([
@@ -63,6 +69,18 @@ def client(db, users):
 
     with TestClient(create_app()) as c:
         yield c
+
+
+@pytest.fixture()
+def demo_user_password():
+    return DEMO_PASSWORD
+
+
+@pytest.fixture()
+def logged_in(client, users):
+    """u1 으로 로그인된 클라이언트. 화면/사용자 API 테스트의 기본 상태."""
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    return client
 
 
 def auth(token: str) -> dict:
