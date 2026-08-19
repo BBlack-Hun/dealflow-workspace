@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}문구 관리 · dealflow{% endblock %}
+
+{% block content %}
+<h1 class="page-title">문구 관리</h1>
+<p class="muted">
+  딜소개 문구는 상황마다 다릅니다. 종류별로 여러 개를 만들어 두고
+  <b>발송할 때 골라 쓰세요.</b>
+</p>
+
+{% if msg %}<div class="panel"><p>{{ msg }}</p></div>{% endif %}
+
+<div class="panel">
+  <h2 class="panel-title">쓸 수 있는 치환 변수</h2>
+  <table class="kv">
+    {% for token, sample in variables %}
+    <tr><th><code>{{ token }}</code></th><td class="muted">{{ sample }}</td></tr>
+    {% endfor %}
+  </table>
+  <p class="hint">
+    직함에 '님'이 없으면 자동으로 붙습니다(심사역 → 심사역님).
+    이미 '님'이 있으면 중복되지 않습니다.
+  </p>
+</div>
+
+{% for g in grouped %}
+<div class="panel">
+  <h2 class="panel-title">{{ g.label }} <span class="hint">{{ g.desc }}</span></h2>
+
+  {% for row in g.rows %}
+  <form method="post" action="/templates/{{ row.t.id }}/edit" class="tpl-item">
+    <div class="tpl-head">
+      <input type="text" name="name" value="{{ row.t.name or '' }}"
+             placeholder="문구 이름 (예: 기본 인사)" {% if not row.editable %}disabled{% endif %}>
+      {% if row.t.user_id is none %}<span class="tag">팀 기본</span>{% endif %}
+    </div>
+    <textarea name="body" rows="3" {% if not row.editable %}disabled{% endif %}>{{ row.t.body }}</textarea>
+    {% if row.editable %}
+    <div class="tpl-actions">
+      <button class="btn" type="submit">저장</button>
+      <button class="btn danger" type="submit" formaction="/templates/{{ row.t.id }}/delete"
+              onclick="return confirm('이 문구를 삭제할까요?')">삭제</button>
+    </div>
+    {% else %}
+    <p class="hint">팀 기본 문구는 관리자만 수정할 수 있습니다.</p>
+    {% endif %}
+  </form>
+  {% endfor %}
+
+  <details class="tpl-new">
+    <summary>+ 이 종류로 새 문구 만들기</summary>
+    <form method="post" action="/templates/new">
+      <input type="hidden" name="kind" value="{{ g.kind }}">
+      <input type="text" name="name" placeholder="문구 이름 (예: 연말 인사)">
+      <textarea name="body" rows="3" placeholder="문구 내용" required></textarea>
+      <button class="btn primary" type="submit">추가</button>
+    </form>
+  </details>
+</div>
+{% endfor %}
+{% endblock %}

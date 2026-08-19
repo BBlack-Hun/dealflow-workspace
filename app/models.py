@@ -63,6 +63,9 @@ class MessageTemplate(TimestampMixin, Base):
     user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     # opening_first | opening_re | closing_day1 | closing_remind | closing_meeting | ir_delivery
     kind: Mapped[str] = mapped_column(String)
+    # 같은 종류(kind)의 템플릿을 여러 개 두고 골라 쓰기 위한 이름.
+    # 예: opening_first 에 '기본 인사', '연말 인사' 를 각각 만들어 회차마다 선택.
+    name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     body: Mapped[str] = mapped_column(Text)
     is_active: Mapped[int] = mapped_column(Integer, default=1)
 
