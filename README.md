@@ -42,7 +42,7 @@ docker exec dealflow-web-1 python -m pytest -q
 | sender | 대상 | 상태 |
 |---|---|---|
 | `kakao_mac` | macOS 카카오톡 | ✅ 실발송 검증 완료 |
-| `kakao_windows` | Windows 카카오톡 | ⏳ 실기 검증 필요 |
+| `kakao_windows` | Windows 카카오톡 | ✅ 실발송 검증 완료 |
 | `telegram` | 운영자 본인 텔레그램 | ✅ 문구 실물 확인용 |
 | `mock` | 가짜(로그만) | ✅ 개발/도커 기본값 |
 
@@ -100,7 +100,7 @@ DEALFLOW_AGENT_TOKEN=agt_demo_token_sprint1 \
 - [x] 문구 조합 엔진(오프닝/기업요약/클로징, 존칭 정규화)
 - [x] 투자 성향 매칭(분야·단계·라운드) 발송 전 경고
 - [x] macOS 카카오톡 실발송 검증
-- [ ] Windows 카카오톡 실기 검증
+- [x] Windows 카카오톡 실기 검증
 - [ ] **Sprint 2**: 구글시트 임포트(126명), 방 연결 확인, 한 페이지 표, 필터, IR 전달
 - [ ] Sprint 3: 후속 캐던스(D+6/7, D+11/14), 월 2회 정기 회차 스케줄러
 - [ ] Sprint 4: 휴대폰 로그인, RBAC, 팀 현황, 퇴사 삭제
