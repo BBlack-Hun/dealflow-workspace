@@ -364,6 +364,71 @@ class KakaoMacSender(Sender):
 
     # --- Sender 인터페이스 ---------------------------------------------------
 
+    def discover_rooms(self, query: str, marker: str = "") -> List[str]:
+        """검색어로 카톡방을 찾아 **실제 방 제목 목록**을 돌려준다.
+
+        방 이름을 우리가 만들어 맞추는 건 불가능하다는 게 실기에서 드러났다:
+        같은 캠페인 방인데도 어떤 방은 'Deal 공유'가 있고 없고, 끝에 담당자
+        이름이 붙기도 한다(예: '… 우리브이씨 Asset 담당자이름').
+        그래서 이름+직함으로 검색해 **실제 제목을 읽어온다.**
+
+        marker 가 주어지면 그 문자열을 포함한 방만 남긴다. 같은 사람과의 다른
+        대화방(1:1 등)을 걸러내고 딜소개 방만 고르기 위함이다.
+
+        방을 열지 않는다 — 검색 결과 행의 텍스트만 읽으므로 빠르고 부작용이 없다.
+        """
+        if not query.strip():
+            return []
+        self._activate()
+        if not self._focus_window("카카오톡"):
+            raise RuntimeError("카카오톡 메인 창을 앞으로 가져오지 못했습니다.")
+
+        main = 'first window whose name is "카카오톡"'
+        field = f'first UI element of ({main}) whose role is "AXTextField"'
+
+        # 검색어를 넣고, **결과가 실제로 갱신될 때까지** 기다린다.
+        # 카톡 검색 결과는 한 박자 늦게 반영돼서, 바로 읽으면 직전 검색의 결과가
+        # 잡힌다(실기 확인: '가나' 검색인데 '다라' 방이 나옴 → 엉뚱한 방 저장 위험).
+        # 그래서 "검색어의 이름이 포함된 행"이 나타날 때까지만 통과시킨다.
+        needle = query.split()[0] if query.split() else query
+        raw = _osa(
+            f'tell application "System Events" to tell process "{APP}"\n'
+            f'  set sf to {field}\n'
+            f'  set focused of sf to true\n'
+            f'  set value of sf to "{_esc(query)}"\n'
+            f'  set acc to ""\n'
+            f'  set emptyHits to 0\n'
+            f'  repeat 25 times\n'
+            f'    delay 0.08\n'
+            f'    set acc to ""\n'
+            f'    try\n'
+            f'      set t to first table of first scroll area of ({main})\n'
+            f'      set n to (count of rows of t)\n'
+            f'      -- 결과가 아예 없으면 몇 번만 더 보고 빨리 포기한다(없는 사람 대기 단축).\n'
+            f'      if n is 0 then\n'
+            f'        set emptyHits to emptyHits + 1\n'
+            f'        if emptyHits ≥ 3 then exit repeat\n'
+            f'      end if\n'
+            f'      if n ≤ {MAX_SEARCH_ROWS} and n > 0 then\n'
+            f'        repeat with rw in rows of t\n'
+            f'          try\n'
+            f'            set acc to acc & (value of (first static text of (UI element 1 of rw))) & "\\n"\n'
+            f'          end try\n'
+            f'        end repeat\n'
+            f'        if acc contains "{_esc(needle)}" then exit repeat\n'
+            f'      end if\n'
+            f'    end try\n'
+            f'  end repeat\n'
+            f'  return acc\n'
+            f'end tell'
+        )
+        titles = [t.strip() for t in raw.split("\n") if t.strip()]
+        # 이전 검색 결과가 섞이지 않도록 이름이 포함된 것만 인정한다.
+        titles = [t for t in titles if needle and needle in t]
+        if marker:
+            titles = [t for t in titles if marker in t]
+        return titles
+
     def verify_room(self, room_name: str) -> str:
         """방 존재/모호성 확인. 전송은 하지 않는다."""
         if not room_name or not room_name.strip():

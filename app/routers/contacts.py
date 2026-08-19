@@ -246,8 +246,14 @@ def verify_rooms(
         query = query.where(VcContact.id.in_(req.contact_ids))
     contacts = db.execute(query.order_by(VcContact.id)).scalars().all()
 
-    targets = [c for c in contacts if (c.kakao_room_name or "").strip()]
-    skipped = [c.name for c in contacts if not (c.kakao_room_name or "").strip()]
+    # 메일 채널로만 관리하는 담당자는 카톡방이 없는 게 정상이라 확인 대상이 아니다.
+    def _is_kakao(c) -> bool:
+        return bool((c.kakao_room_name or "").strip()) and not (
+            c.channel_email == 1 and c.channel_kakao == 0
+        )
+
+    targets = [c for c in contacts if _is_kakao(c)]
+    skipped = [c.name for c in contacts if not _is_kakao(c)]
     if not targets:
         raise HTTPException(status_code=400, detail="확인할 카톡방 이름이 등록된 담당자가 없습니다")
 

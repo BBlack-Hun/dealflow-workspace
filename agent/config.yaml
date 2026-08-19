@@ -3,6 +3,10 @@
 
 server_url: "http://127.0.0.1:8000"   # 같은 PC에서 웹앱 구동 시
 token: "agt_demo_token_sprint1"        # 데모 토큰 (운영 시 재발급)
+# 딜소개 방을 가려내는 표식. 방 제목에 반드시 들어가는 문자열을 넣으면
+# 같은 사람과의 다른 대화방을 걸러낼 수 있다. (예: "우리브이씨 Asset")
+room_marker: ""
+
 sender: "auto"                          # auto → Windows=kakao_windows, 그 외=mock
                                         # telegram = 테스트 수신(본인에게만 발송)
 

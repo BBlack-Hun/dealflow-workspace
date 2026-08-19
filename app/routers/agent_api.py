@@ -110,7 +110,15 @@ def poll(
         "job_id": job.id,
         "kind": job.kind,
         "items": [
-            {"id": i.id, "room_name": i.room_name, "message": i.message, "stage": i.stage}
+            {"id": i.id, "room_name": i.room_name, "message": i.message, "stage": i.stage,
+             # 방 확인 잡에만 검색어(이름+직함)를 함께 준다. message 는 빈 채로 두어
+             # 구버전 에이전트가 이 잡을 발송으로 오해해도 보낼 내용이 없게 한다.
+             **({"query": f"{i.contact.name} {i.contact.title or ''}".strip(),
+                 # 직함이 시트와 실제 방에서 다른 경우가 있어(이직·표기 차이)
+                 # 이름만으로 재검색할 수 있게 함께 준다. 동명이인은 회사로 가린다.
+                 "name": i.contact.name,
+                 "firm": i.contact.firm or ""}
+                if job.kind == "verify_room" and i.contact is not None else {})}
             for i in pending_items
         ],
     }
@@ -122,6 +130,10 @@ class ItemResult(BaseModel):
     screenshot_b64: Optional[str] = None
     # kind=verify_room 잡에서만: verified | not_found | ambiguous
     verify_result: Optional[str] = None
+    # 검색으로 찾아낸 실제 방 제목(단일 후보일 때만). 방 이름은 생성으로 맞출 수
+    # 없어서, 확인 잡이 곧 '방 이름 알아내기' 역할을 한다.
+    found_room: Optional[str] = None
+    candidates: Optional[list] = None
 
 
 @router.post("/items/{item_id}/result")
@@ -175,6 +187,14 @@ def _apply_verify_result(item: SendItem, body: ItemResult) -> None:
     contact = item.contact
     if contact is not None:
         contact.room_verified = verdict
+        # ★ 검색으로 찾아낸 실제 방 제목을 저장한다.
+        # 방 이름은 우리가 만들어 맞출 수 없다(접미사·담당자명이 방마다 다름).
+        # 확인 잡이 사실상 '방 이름 알아내기'이므로 결과를 반영해야 발송이 된다.
+        if verdict == "verified" and body.found_room:
+            found = body.found_room.strip()
+            if found and found != contact.kakao_room_name:
+                item.room_name = found
+                contact.kakao_room_name = found
     item.status = "sent" if verdict == "verified" else "failed"
     item.sent_at = now_iso() if verdict == "verified" else None
     item.error = None if verdict == "verified" else (
