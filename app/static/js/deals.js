@@ -18,6 +18,43 @@ var MAX_COMPANIES = 10;  // 서버 MAX_COMPANIES_PER_SEND 와 동일하게 유�
     return contactCbs().filter(function (c) { return c.checked; }).map(function (c) { return parseInt(c.value, 10); });
   }
 
+
+  // ── 기업 검색 ─────────────────────────────────────────────
+  // 소개 가능한 기업이 100개를 넘어가면 목록을 훑어서 고르기 어렵다.
+  // 검색으로 좁히되, **선택한 항목은 검색어와 무관하게 항상 보이게** 한다
+  // (검색어를 바꾸다 이미 고른 기업이 사라지면 몇 개 골랐는지 알 수 없다).
+  function applyCompanyFilter() {
+    var box = document.getElementById("company-search");
+    var onlyPicked = document.getElementById("only-picked");
+    var note = document.getElementById("company-filter-note");
+    if (!box) return;
+
+    var q = (box.value || "").trim().toLowerCase();
+    var pickedOnly = onlyPicked && onlyPicked.checked;
+    var shown = 0, total = 0;
+
+    document.querySelectorAll("#company-list .pick-card").forEach(function (card) {
+      var cb = card.querySelector(".company-cb");
+      var picked = cb && cb.checked;
+      var hay = card.getAttribute("data-search") || "";
+      var hit = !q || hay.indexOf(q) !== -1;
+      total += 1;
+      // 선택한 항목은 언제나 보인다.
+      var visible = picked || (hit && !pickedOnly);
+      card.hidden = !visible;
+      if (visible) shown += 1;
+    });
+
+    if (note) {
+      if (q || pickedOnly) {
+        note.hidden = false;
+        note.textContent = shown + " / " + total + "개 표시 중" + (q ? " (검색: " + box.value.trim() + ")" : "");
+      } else {
+        note.hidden = true;
+      }
+    }
+  }
+
   function updateCounts() {
     var nc = selectedCompanyIds().length;
     var nt = selectedContactIds().length;
@@ -30,7 +67,14 @@ var MAX_COMPANIES = 10;  // 서버 MAX_COMPANIES_PER_SEND 와 동일하게 유�
       companyCbs().forEach(function (c) { c.disabled = false; });
     }
     sendBtn.disabled = !(nc >= 1 && nc <= MAX_COMPANIES && nt >= 1);
+    applyCompanyFilter();   // 선택 항목은 검색 중에도 계속 보이게
   }
+
+  ["company-search", "only-picked"].forEach(function (id) {
+    var el = document.getElementById(id);
+    if (el) el.addEventListener("input", applyCompanyFilter);
+    if (el) el.addEventListener("change", applyCompanyFilter);
+  });
 
   function renderPreview(idx) {
     var p = lastPreviews[idx];

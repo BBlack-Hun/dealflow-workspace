@@ -13,13 +13,25 @@ from pathlib import Path
 
 import pytest
 
-JS_TEST = Path(__file__).resolve().parent / "js" / "filters_test.js"
+JS_DIR = Path(__file__).resolve().parent / "js"
+JS_TEST = JS_DIR / "filters_test.js"
+COMPANY_SEARCH_TEST = JS_DIR / "company_search_test.js"
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치 — 브라우저 로직 테스트 생략")
 def test_filters_js_rules():
     result = subprocess.run(
         [shutil.which("node"), str(JS_TEST)],
+        capture_output=True, text=True, timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치 — 브라우저 로직 테스트 생략")
+def test_company_search_rules():
+    """기업 검색: 선택한 기업은 검색어와 무관하게 계속 보여야 한다."""
+    result = subprocess.run(
+        [shutil.which("node"), str(COMPANY_SEARCH_TEST)],
         capture_output=True, text=True, timeout=60,
     )
     assert result.returncode == 0, result.stdout + result.stderr
