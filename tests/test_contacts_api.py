@@ -136,6 +136,49 @@ def test_detail_returns_timeline_of_import_and_system(client, db, contacts):
     assert "import" in sources and "system" in sources
 
 
+def test_timeline_shows_round_structure_for_viewing(client, db, contacts):
+    """'월별로 특정 주·요일에 보낸 딜 리스트'를 화면에서 확인할 수 있어야 한다."""
+    from app.models import IrCompany
+
+    db.add(IrCompany(name="샘플애그", summary_status="draft"))
+    hong = db.execute(select(VcContact).where(VcContact.name == "홍길동")).scalar_one()
+    db.add(ContactActivity(
+        contact_id=hong.id, month="2026-08", kind="deal_intro",
+        content="샘플애그, 미등록기업", happened_at="2026-08-19", weekday="수",
+        company_names='["샘플애그", "미등록기업"]', company_count=2,
+        raw_text="8/19(수) 샘플애그, 미등록기업", source="import",
+    ))
+    db.commit()
+
+    body = client.get(f"/api/contacts/{hong.id}").json()
+    entry = next(t for t in body["timeline"] if t["date"] == "2026-08-19")
+    assert entry["month"] == "2026-08" and entry["weekday"] == "수"
+    assert entry["week"] == 3                      # 셋째 주 (운영 리듬과 대조 가능)
+    assert entry["company_count"] == 2
+    # 딜 기업 DB에 있는 기업만 표시가 다르되, 없는 기업도 원문 그대로 보인다
+    assert entry["companies"] == [
+        {"name": "샘플애그", "known": True},
+        {"name": "미등록기업", "known": False},
+    ]
+
+
+def test_recent_deal_column_shows_count_and_weekday(client, db, contacts):
+    from app.models import User
+    from app.routers.contacts import contact_rows
+
+    hong = db.execute(select(VcContact).where(VcContact.name == "홍길동")).scalar_one()
+    db.add(ContactActivity(
+        contact_id=hong.id, month="2026-08", kind="deal_intro", content="샘플애그, 샘플메디",
+        happened_at="2026-08-19", weekday="수", company_names='["샘플애그", "샘플메디"]',
+        company_count=2, source="import",
+    ))
+    db.commit()
+
+    row = {r["name"]: r for r in contact_rows(db, db.get(User, 1))}["홍길동"]
+    assert row["last_deal_label"] == "08.19(수)"
+    assert row["last_deal_note"] == "2개사 · 샘플애그, 샘플메디"
+
+
 def test_editing_room_name_resets_verification(client, db, contacts):
     """방 이름이 바뀌면 이전 '확인됨'은 근거가 아니다 → 미확인으로 되돌린다."""
     hong = db.execute(select(VcContact).where(VcContact.name == "홍길동")).scalar_one()

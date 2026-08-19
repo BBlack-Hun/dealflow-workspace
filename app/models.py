@@ -63,6 +63,13 @@ class VcContact(TimestampMixin, Base):
     # 시트 A '초대완료여부' (카톡방 초대 상태) — SHEET_FINDINGS §2/§4.
     # 시트마다 표기가 제각각(완료 / O / 초대완료)이라 정규화하지 않고 원문을 보존한다.
     invited_status: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # 명단 시트들에만 있는 칸들. 표기가 자유로워(O/X/△/문장) 원문을 그대로 둔다.
+    interest_level: Mapped[Optional[str]] = mapped_column(String, nullable=True)   # 관심도(월말 기준)
+    kakao_joined: Mapped[Optional[str]] = mapped_column(String, nullable=True)     # 카톡방 참여여부
+    office_phone: Mapped[Optional[str]] = mapped_column(String, nullable=True)     # 유선전화
+    address: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # 어느 명단 시트에서 온 정보인지(여러 시트에 나뉜 같은 사람을 병합하므로 추적이 필요).
+    source_sheet: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     channel_kakao: Mapped[int] = mapped_column(Integer, default=0)
     channel_email: Mapped[int] = mapped_column(Integer, default=0)
     email: Mapped[Optional[str]] = mapped_column(String, nullable=True)
@@ -94,9 +101,32 @@ class ContactActivity(TimestampMixin, Base):
     kind: Mapped[str] = mapped_column(String)
     content: Mapped[str] = mapped_column(Text)
     happened_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # 2026-08-13
+    # 시트에 적힌 요일(월~일). 날짜에서 계산할 수도 있지만, 연도 추정이 틀리면
+    # 계산값이 어긋나므로 **사용자가 쓴 값**을 그대로 보존해 표시에 쓴다.
+    weekday: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # 회차에 포함된 기업명 원문 JSON 배열. ir_companies 에 없는 기업이 훨씬 많아
+    # 매칭 여부와 무관하게 원문을 남긴다.
+    company_names: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # '핵심 딜 8개사'처럼 개수만 적힌 회차 대응(기업 목록 없음).
+    company_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # 파싱 전 원문 조각 — 파싱이 틀렸을 때 무엇을 잘못 읽었는지 추적하는 근거.
+    raw_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     source: Mapped[str] = mapped_column(String, default="import")  # import | system
 
     contact: Mapped["VcContact"] = relationship()
+
+    @property
+    def companies(self) -> list:
+        """company_names(JSON) → 리스트. 값이 깨져 있어도 화면을 죽이지 않는다."""
+        import json
+
+        if not self.company_names:
+            return []
+        try:
+            data = json.loads(self.company_names)
+        except (ValueError, TypeError):
+            return []
+        return [str(x) for x in data] if isinstance(data, list) else []
 
 
 class IrCompany(TimestampMixin, Base):
@@ -115,6 +145,11 @@ class IrCompany(TimestampMixin, Base):
     is_top_deal: Mapped[int] = mapped_column(Integer, default=0)
     funding_status: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # 기업 쪽 연락 담당자(시트 '스타트업' 명단의 성함/연락처/이메일).
+    # owner_user_id(우리 팀 담당자)와 다른 사람이다 — 섞이지 않게 이름을 구분해 둔다.
+    contact_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    contact_phone: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    contact_email: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     # Amounts in 백만원 (millions of KRW); displayed in 억 (÷100).
     revenue_recent: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     funding_total: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)

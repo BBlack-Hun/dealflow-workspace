@@ -19,7 +19,8 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..deps import get_current_user
-from ..models import ContactActivity, SendItem, SendJob, User, VcContact
+from ..models import ContactActivity, IrCompany, SendItem, SendJob, User, VcContact
+from ..services import sheet_import
 from ..services.room_name import DEFAULT_SUFFIX, build_room_name
 
 router = APIRouter(prefix="/api/contacts", tags=["contacts"])
@@ -104,10 +105,11 @@ def contact_rows(db: Session, user: User) -> List[dict]:
         if c.id in sent_map:
             deal_dates.append(sent_map[c.id])
         last_deal = max(deal_dates) if deal_dates else None
-        last_deal_note = next(
-            (a.content for a in acts
+        last_round = next(
+            (a for a in acts
              if a.kind == "deal_intro" and _activity_date(a) == last_deal), None
         )
+        last_deal_note = _round_label(last_round) if last_round else ""
 
         ir_recent = sum(1 for a in acts if a.kind == "ir_request"
                         and (_activity_date(a) or "") >= cutoff)
@@ -138,8 +140,9 @@ def contact_rows(db: Session, user: User) -> List[dict]:
             "sectors": _split_csv(c.sectors),
             "round_size": c.round_size or "",
             "last_deal": last_deal,
-            "last_deal_label": f"{last_deal[5:7]}.{last_deal[8:10]}" if last_deal else "-",
+            "last_deal_label": _date_label(last_deal, last_round),
             "last_deal_note": last_deal_note or "",
+            "last_deal_full": (last_round.content if last_round else ""),
             "recency": _recency_bucket(last_deal, today),
             "ir_recent": ir_recent,
             "meet_recent": meet_recent,
@@ -152,6 +155,25 @@ def contact_rows(db: Session, user: User) -> List[dict]:
             "channel_tags": _channel_tags(c),
         })
     return rows
+
+
+def _date_label(last_deal: Optional[str], round_: Optional[ContactActivity]) -> str:
+    """`08.19(수)` — 요일까지 보여야 '셋째주 수요일' 운영 리듬과 대조된다."""
+    if not last_deal:
+        return "-"
+    weekday = (round_.weekday if round_ else None) or sheet_import.weekday_of(last_deal)
+    return f"{last_deal[5:7]}.{last_deal[8:10]}" + (f"({weekday})" if weekday else "")
+
+
+def _round_label(act: ContactActivity) -> str:
+    """`7개사 · 샘플애그, 샘플메디 …` — 몇 개사를 보냈는지가 먼저 보여야 한다."""
+    names = act.companies
+    count = act.company_count or len(names) or None
+    head = f"{count}개사" if count else ""
+    if names:
+        shown = ", ".join(names[:3]) + (f" 외 {len(names) - 3}" if len(names) > 3 else "")
+        return f"{head} · {shown}" if head else shown
+    return head or act.content
 
 
 def _reaction_tags(ir_recent: int, meet_recent: int) -> List[str]:
@@ -293,6 +315,7 @@ def get_contact(
         .order_by(SendItem.id.desc()).limit(20)
     ).all()
 
+    known = _known_company_names(db)
     return {
         "contact": {
             "id": contact.id,
@@ -314,16 +337,44 @@ def get_contact(
             "memo": contact.memo or "",
         },
         # 임포트된 월별 기록 + 서비스가 자동으로 쌓는 발송 이력을 한 줄기로 보여준다.
-        "timeline": [
-            {"date": _activity_date(a), "month": a.month, "kind": a.kind,
-             "content": a.content, "source": a.source}
-            for a in acts
-        ] + [
+        "timeline": [_activity_view(a, known) for a in acts] + [
             {"date": (item.sent_at or item.created_at or "")[:10], "month": None,
-             "kind": job.kind, "content": _send_summary(item, job), "source": "system"}
+             "kind": job.kind, "content": _send_summary(item, job), "source": "system",
+             "companies": [], "company_count": None, "weekday": None, "week": None}
             for item, job in sends
         ],
     }
+
+
+def _activity_view(act: ContactActivity, known: Dict[str, str]) -> dict:
+    """활동 1건 → 화면용. 회차마다 '몇째 주 · 무슨 요일 · 몇 개사 · 어떤 기업'이 보여야 한다.
+
+    기업명은 시트 원문 그대로 두고, 딜 기업 DB에 있는 이름만 표시(matched)만 남긴다
+    (DB에 없는 기업이 훨씬 많아 매칭 실패를 오류로 다루지 않는다).
+    """
+    date = _activity_date(act)
+    companies = act.companies
+    return {
+        "date": date,
+        "month": act.month or (date[:7] if date else None),
+        "kind": act.kind,
+        "content": act.content,
+        "source": act.source,
+        "weekday": act.weekday or (sheet_import.weekday_of(date) if date else None),
+        "week": sheet_import.week_of_month(date) if date else None,
+        "company_count": act.company_count or (len(companies) or None),
+        "companies": [
+            {"name": name, "known": sheet_import.normalize_company_name(name) in known}
+            for name in companies
+        ],
+        "raw_text": act.raw_text,
+    }
+
+
+def _known_company_names(db: Session) -> Dict[str, str]:
+    """딜 기업 DB의 기업명(법인 표기 제거) → 원래 이름."""
+    rows = db.execute(select(IrCompany.name)).scalars().all()
+    return {sheet_import.normalize_company_name(n): n for n in rows if n}
 
 
 def _send_summary(item: SendItem, job: SendJob) -> str:

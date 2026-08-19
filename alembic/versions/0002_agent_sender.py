@@ -16,9 +16,18 @@ branch_labels = None
 depends_on = None
 
 
+def _has_column(table: str, column: str) -> bool:
+    return column in {c["name"] for c in sa.inspect(op.get_bind()).get_columns(table)}
+
+
 def upgrade() -> None:
-    op.add_column("agent_devices", sa.Column("sender", sa.String(), nullable=True))
+    # 0001 이 Base.metadata.create_all() 로 **현재 모델 전체**를 만든다. 그래서 새 DB에서는
+    # 이 컬럼이 이미 생긴 채로 여기 도착한다(기존 DB에서는 없다). 두 경로 모두 head 까지
+    # 올라가야 하므로 존재 여부를 보고 건너뛴다.
+    if not _has_column("agent_devices", "sender"):
+        op.add_column("agent_devices", sa.Column("sender", sa.String(), nullable=True))
 
 
 def downgrade() -> None:
-    op.drop_column("agent_devices", "sender")
+    if _has_column("agent_devices", "sender"):
+        op.drop_column("agent_devices", "sender")

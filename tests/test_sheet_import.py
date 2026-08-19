@@ -14,11 +14,22 @@ YEAR = 2026
 
 
 def _rows_a():
+    """딜소개 현황 시트(월별 3열 세트가 있는 메인 명단)."""
     return si.read_csv(FIXTURES / "sheet_a_sample.csv")
+
+
+def _rows_a_list():
+    """연결 명단 시트(컬럼 구성이 다른 두 번째 투자사 명단)."""
+    return si.read_csv(FIXTURES / "sheet_a_list_sample.csv")
 
 
 def _rows_b():
     return si.read_csv(FIXTURES / "sheet_b_sample.csv")
+
+
+def _rows_b_startups():
+    """스타트업 명단(기업 쪽 연락 담당자가 있는 기업 시트)."""
+    return si.read_csv(FIXTURES / "sheet_b_startups_sample.csv")
 
 
 # ── 헤더/컬럼 탐지 ──────────────────────────────────────────────────────────
@@ -38,7 +49,7 @@ def test_header_detection_survives_inserted_rows():
 def test_month_columns_are_scanned_repeatedly():
     """3열 세트가 8→7→6월로 반복된다. 월 라벨은 병합 셀이라 첫 칸에만 있다."""
     rows = _rows_a()
-    cols = si.detect_activity_columns(rows, header_idx=1, start_col=6, year=YEAR)
+    cols = si.detect_activity_columns(rows, header_idx=1, year=YEAR, skip_cols=range(0, 7))
     assert [(c.month, c.kind) for c in cols] == [
         ("2026-08", si.KIND_DEAL_INTRO),
         ("2026-08", si.KIND_IR_REQUEST),
@@ -57,7 +68,7 @@ def test_activity_columns_extend_when_a_new_month_is_added():
     rows = [list(r) for r in _rows_a()]
     rows[0] += ["9월", "", ""]
     rows[1] += ["1차 딜소개", "IR 자료 요청 기업", "미팅 요청"]
-    cols = si.detect_activity_columns(rows, header_idx=1, start_col=6, year=YEAR)
+    cols = si.detect_activity_columns(rows, header_idx=1, year=YEAR, skip_cols=range(0, 7))
     assert [(c.month, c.kind) for c in cols][-3:] == [
         ("2026-09", si.KIND_DEAL_INTRO),
         ("2026-09", si.KIND_IR_REQUEST),
@@ -83,6 +94,61 @@ def test_continuation_line_joins_previous_round():
                                   "2026-08", si.KIND_DEAL_INTRO, YEAR)
     assert len(acts) == 1
     assert acts[0].content == "샘플페이, 샘플로지, 샘플에듀"
+
+
+def test_numbered_company_list_is_split():
+    """7월 형식: '1.(주)샘플가  2.샘플나  3.체인샘플' (구분자가 이중공백)."""
+    acts = si.parse_activity_cell("7/9(목) 1.(주)샘플가  2.샘플나  3.체인샘플",
+                                  "2026-07", si.KIND_DEAL_INTRO, YEAR)
+    assert len(acts) == 1
+    assert acts[0].companies == ["(주)샘플가", "샘플나", "체인샘플"]
+    assert acts[0].company_count == 3
+    assert acts[0].weekday == "목"
+    assert acts[0].happened_at == "2026-07-09"
+
+
+def test_comma_company_list_is_split():
+    acts = si.parse_activity_cell("8/13(목) 샘플애그, 샘플메디", "2026-08",
+                                  si.KIND_DEAL_INTRO, YEAR)
+    assert acts[0].companies == ["샘플애그", "샘플메디"] and acts[0].company_count == 2
+
+
+def test_count_only_round_keeps_number_without_inventing_names():
+    """'핵심 딜 8개사' — 기업명이 없다. 없는 목록을 지어내지 않는다."""
+    acts = si.parse_activity_cell("8/4(화) 핵심 딜 8개사", "2026-08",
+                                  si.KIND_DEAL_INTRO, YEAR)
+    assert acts[0].companies == [] and acts[0].company_count == 8
+
+
+def test_raw_text_is_kept_for_traceability():
+    """파싱이 틀렸을 때 원문을 볼 수 있어야 한다."""
+    acts = si.parse_activity_cell("8/19(수) 샘플페이,\n샘플로지", "2026-08",
+                                  si.KIND_DEAL_INTRO, YEAR)
+    assert acts[0].raw_text == "8/19(수) 샘플페이,\n샘플로지"
+
+
+def test_weekday_falls_back_to_the_date_when_not_written():
+    acts = si.parse_activity_cell("8/13 샘플애그", "2026-08", si.KIND_DEAL_INTRO, YEAR)
+    assert acts[0].weekday == "목"      # 2026-08-13 은 목요일
+
+
+def test_year_follows_the_month_column_not_only_the_flag():
+    """연말·연초가 섞인 시트: 컬럼의 월 라벨이 붙인 연도를 따른다."""
+    acts = si.parse_activity_cell("1/8(목) 샘플애그", "2027-01", si.KIND_DEAL_INTRO, YEAR)
+    assert acts[0].happened_at == "2027-01-08"
+
+
+def test_week_of_month_matches_sheet_wording():
+    """시트 헤더의 '첫째주 수요일 / 셋째주' 표기와 맞춘다."""
+    assert si.week_of_month("2026-08-04") == 1
+    assert si.week_of_month("2026-08-19") == 3
+
+
+def test_company_name_normalization_for_matching():
+    """법인 표기는 비교용으로만 떼고, 저장은 원문 그대로 한다."""
+    assert si.normalize_company_name("(주)샘플가") == "샘플가"
+    assert si.normalize_company_name("㈜샘플가") == "샘플가"
+    assert si.normalize_company_name("주식회사 샘플가") == "샘플가"
 
 
 def test_cell_without_date_keeps_raw_text():
@@ -188,13 +254,89 @@ def test_reimport_keeps_manually_fixed_room_name(db, users):
     assert hong.kakao_room_name == "홍길동 대표님 가나벤처스 (수정됨)"
 
 
-def test_sheet_a_scopes_contacts_to_the_given_user(db, users):
-    """시트 1개 = 사용자 1명. 같은 이름이어도 사용자별로 따로 쌓인다."""
-    rows = _rows_a()
-    si.apply_sheet_a(db, si.parse_sheet_a(rows, year=YEAR), user_id=1)
+def test_deal_rounds_are_stored_with_companies_and_weekday(db, users):
+    """월별 딜소개 회차를 화면에서 조회할 수 있게 구조화해 저장한다."""
+    si.apply_sheet_a(db, si.parse_sheet_a(_rows_a(), year=YEAR), user_id=1)
+    hong = db.execute(select(VcContact).where(VcContact.name == "홍길동")).scalar_one()
+    rounds = [a for a in db.execute(
+        select(ContactActivity).where(ContactActivity.contact_id == hong.id,
+                                      ContactActivity.kind == "deal_intro")
+    ).scalars().all()]
+    by_date = {a.happened_at: a for a in rounds}
+
+    assert by_date["2026-08-04"].company_count == 8
+    assert by_date["2026-08-04"].companies == []          # 개수만 적힌 회차
+    assert by_date["2026-08-13"].companies == ["샘플애그", "샘플메디"]
+    assert by_date["2026-08-13"].weekday == "목"
+    assert by_date["2026-08-13"].raw_text.startswith("8/13(목)")
+
+
+def test_owner_comes_from_the_sheet_column(db, users):
+    """한 시트에 여러 팀원의 담당분이 섞여 있다 → 담당자 컬럼이 소유자를 정한다."""
+    db.add(User(id=3, name="정훈", phone="01000000003"))
+    db.add(User(id=4, name="김영희", phone="01000000004"))
+    db.commit()
+
+    report = si.apply_sheet_a(db, si.parse_sheet_a(_rows_a(), year=YEAR), user_id=1)
+    owners = {c.name: c.user_id for c in db.query(VcContact).all()}
+    assert owners["홍길동"] == 3       # 담당자 '정훈'
+    assert owners["정민아"] == 4       # 담당자 '김영희'
+    # 계정이 없는 담당자·빈 담당자는 **버리지 않고** 폴백으로 배정하고 리포트에 남긴다
+    assert owners["박준호"] == 1 and owners["이서준"] == 1
+    assert any("없는담당자" in n for n in report.notes)
+    assert any("담당자 칸이 빈 행" in n for n in report.notes)
+
+
+def test_owner_is_not_stolen_by_a_sheet_without_the_column(db, users):
+    """담당자 칸이 없는 시트를 나중에 임포트해도 이미 정해진 담당을 뺏지 않는다."""
+    db.add(User(id=3, name="정훈", phone="01000000003"))
+    db.commit()
+    si.apply_sheet_a(db, si.parse_sheet_a(_rows_a(), year=YEAR), user_id=1)
+
+    rows = [list(r) for r in _rows_a()]
+    for row in rows[1:]:
+        if len(row) > 4:
+            row[4] = ""      # 담당자 컬럼을 비운 시트
     si.apply_sheet_a(db, si.parse_sheet_a(rows, year=YEAR), user_id=2)
-    assert db.query(VcContact).filter_by(user_id=1).count() == 5
-    assert db.query(VcContact).filter_by(user_id=2).count() == 5
+
+    hong = db.execute(select(VcContact).where(VcContact.name == "홍길동")).scalar_one()
+    assert hong.user_id == 3
+
+
+# ── 두 번째 명단 시트(컬럼 구성이 다름) ─────────────────────────────────────
+
+def test_second_list_sheet_uses_the_same_parser():
+    """컬럼이 달라도 헤더 이름으로 찾으므로 같은 파서가 읽는다."""
+    parsed = si.parse_sheet_a(_rows_a_list(), year=YEAR)
+    by_name = {c.name: c for c in parsed.contacts}
+    assert set(by_name) == {"홍길동", "한지우", "서동현"}
+
+    hong = by_name["홍길동"]
+    assert hong.firm == "가나벤처스"          # '딜소싱 참여 투자사' 칸에 속지 않는다
+    assert hong.owner_name == "정훈"
+    assert hong.interest_level == "O" and hong.kakao_joined == "완료"
+    assert hong.title == "대표"               # 직책 컬럼이 있으면 그쪽이 우선
+    assert hong.sectors == ["애그테크", "커머스"]
+    assert hong.round_size == "10~30억"
+    assert hong.phone and hong.office_phone and hong.address
+    assert parsed.activity_columns == []      # 이 시트엔 월별 컬럼이 없다
+
+
+def test_same_person_across_sheets_is_merged_not_duplicated(db, users):
+    """같은 사람이 여러 명단 시트에 나뉘어 있다 → (이름+투자사)로 병합한다."""
+    si.apply_sheet_a(db, si.parse_sheet_a(_rows_a(), year=YEAR), user_id=1,
+                     source_label="딜소개현황")
+    before = db.query(VcContact).count()
+
+    report = si.apply_sheet_a(db, si.parse_sheet_a(_rows_a_list(), year=YEAR), user_id=1,
+                              source_label="연결명단")
+    assert report.created == 2 and report.updated == 1        # 홍길동만 기존 행
+    assert db.query(VcContact).count() == before + 2
+
+    hong = db.execute(select(VcContact).where(VcContact.name == "홍길동")).scalar_one()
+    assert hong.interest_level == "O"                         # 두 번째 시트에서 채워짐
+    assert hong.title == "대표님"                              # 먼저 들어온 값은 지키고
+    assert hong.source_sheet == "딜소개현황,연결명단"           # 어디서 왔는지 추적 가능
 
 
 # ── 시트 B ──────────────────────────────────────────────────────────────────
@@ -239,6 +381,18 @@ def test_apply_sheet_b_upsert_and_owner_matching(db, users):
     again = si.apply_sheet_b(db, si.parse_sheet_b(_rows_b(), year=YEAR))
     assert again.created == 0 and again.updated == 4
     assert db.query(IrCompany).count() == 4
+
+
+def test_startup_sheet_adds_company_side_contacts(db, users):
+    """'스타트업' 명단은 기업 쪽 연락 담당자를 담고 있다(우리 팀 담당자와 다른 사람)."""
+    si.apply_sheet_b(db, si.parse_sheet_b(_rows_b(), year=YEAR))
+    si.apply_sheet_b(db, si.parse_sheet_b(_rows_b_startups(), year=YEAR))
+
+    ag = db.execute(select(IrCompany).where(IrCompany.name == "샘플애그")).scalar_one()
+    assert ag.contact_name == "구도현" and ag.contact_email == "sample-ag@example.com"
+    # 앞 시트에서 온 정보는 유지된다(병합이지 덮어쓰기가 아니다)
+    assert ag.sector_major == "애그테크"
+    assert db.query(IrCompany).count() == 5     # 샘플에듀 1개만 새로 생김
 
 
 def test_dry_run_writes_nothing(db, users):

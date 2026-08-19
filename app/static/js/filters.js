@@ -250,6 +250,7 @@
         list.appendChild(none2);
       }
       panel.appendChild(list);
+      panel.setAttribute("data-key", def.key);   // 같은 버튼을 다시 누르면 닫히도록
       def.th.appendChild(panel);
       openPanel = panel;
     }
@@ -264,7 +265,7 @@
         var wasOpen = openPanel && openPanel.parentNode === def.th &&
           openPanel.getAttribute("data-key") === def.key;
         closePanel();
-        if (!wasOpen) { openFor(def); openPanel.setAttribute("data-key", def.key); }
+        if (!wasOpen) openFor(def);
       };
       def.btn = btn;
       var host = def.th.querySelector(".th-filters") || def.th;

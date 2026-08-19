@@ -23,6 +23,7 @@
 from __future__ import annotations
 
 import csv
+import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -48,8 +49,16 @@ _KIND_KEYWORDS: Sequence[Tuple[str, Tuple[str, ...]]] = (
 )
 
 _MONTH_RE = re.compile(r"(\d{1,2})\s*월")
-# '8/13(목) 기업A, 기업B' · '8.4 핵심 딜' · '08/19(수)'
-_DATE_PREFIX_RE = re.compile(r"^\s*(\d{1,2})\s*[/.\-]\s*(\d{1,2})\s*(?:\([^)]*\))?\s*[:·\-]?\s*")
+# '8/13(목) 기업A, 기업B' · '8.4 핵심 딜' · '08/19(수)' — 요일 괄호는 있을 수도 없을 수도.
+_DATE_PREFIX_RE = re.compile(
+    r"^\s*(\d{1,2})\s*[/.\-]\s*(\d{1,2})\s*(?:\(\s*([월화수목금토일])?[^)]*\))?\s*[:·\-]?\s*"
+)
+# '핵심 딜 8개사' — 기업명 없이 개수만 적힌 회차.
+_COUNT_ONLY_RE = re.compile(r"(\d+)\s*개\s*사")
+# '1.샘플가  2.샘플나  3.샘플다' — 번호 매김(구분자가 이중공백일 수 있음).
+_NUMBERED_RE = re.compile(r"(?:^|\s)\d{1,2}\s*[.)]\s*")
+# 법인 표기 — 같은 기업이 '(주)샘플가 / ㈜샘플가 / 샘플가'로 섞여 적힌다.
+_CORP_MARKS = ("(주)", "㈜", "(유)", "주식회사", "유한회사", "(재)", "(사)")
 
 
 # ── 공통 유틸 ────────────────────────────────────────────────────────────────
@@ -142,16 +151,22 @@ class ActivityColumn:
 
 
 def detect_activity_columns(rows: Sequence[Sequence[str]], header_idx: int,
-                            start_col: int, year: int) -> List[ActivityColumn]:
-    """start_col 오른쪽의 월별 3열 세트를 **반복 스캔**한다.
+                            year: int, skip_cols: Sequence[int] = ()) -> List[ActivityColumn]:
+    """월별 3열 세트를 **반복 스캔**한다. (기본 정보 컬럼은 skip_cols 로 제외)
 
     달이 갈수록 열이 늘어나는 구조라 '6·7·8월' 같은 고정 목록을 쓰지 않는다.
     월 라벨이 없는 컬럼은 **직전 컬럼의 월을 이어받는다**(병합 셀 대응).
+
+    '기본 정보 컬럼 오른쪽'이라고 가정하지 않는 이유: 시트마다 담당자·연락처 같은
+    컬럼이 활동 컬럼보다 뒤에 오기도 한다. 위치가 아니라 **헤더 문맥**으로 가른다.
     """
     width = max((len(r) for r in rows), default=0)
+    skip = set(skip_cols)
     out: List[ActivityColumn] = []
     current_month: Optional[str] = None
-    for col in range(start_col, width):
+    for col in range(width):
+        if col in skip:
+            continue
         context = _column_context(rows, header_idx, col)
         if not context:
             continue
@@ -173,6 +188,10 @@ class ParsedActivity:
     kind: str
     content: str
     happened_at: Optional[str] = None
+    weekday: Optional[str] = None
+    companies: List[str] = field(default_factory=list)
+    company_count: Optional[int] = None
+    raw_text: Optional[str] = None
 
 
 def parse_activity_cell(text: str, month: Optional[str], kind: str,
@@ -181,11 +200,14 @@ def parse_activity_cell(text: str, month: Optional[str], kind: str,
 
         8/4(화) 핵심 딜 8개사
         (빈 줄)
-        8/13(목) 샘플기업A, 샘플기업B
-        8/19(수) 샘플기업C
+        8/13(목) 샘플애그, 샘플메디
+        8/19(수) 샘플페이
 
     → 3건. 날짜로 시작하지 않는 줄은 직전 회차의 내용에 이어 붙인다
     (기업 목록이 다음 줄로 넘어가는 경우가 잦다).
+
+    회차 안의 기업 목록은 **월마다 표기가 다르다**(쉼표 나열 / `1.A  2.B  3.C` 번호 매김 /
+    개수만). 세 형태를 모두 읽고, 원문 조각을 raw_text 로 함께 남긴다.
     """
     entries: List[ParsedActivity] = []
     for raw_line in (text or "").splitlines():
@@ -196,15 +218,106 @@ def parse_activity_cell(text: str, month: Optional[str], kind: str,
         if m:
             mm, dd = int(m.group(1)), int(m.group(2))
             content = norm(line[m.end():])
-            happened = _safe_date(year, mm, dd)
-            entries.append(ParsedActivity(month=month or (happened[:7] if happened else None),
-                                          kind=kind, content=content or line,
-                                          happened_at=happened))
+            happened = _safe_date(_year_for_month(year, month, mm), mm, dd)
+            entries.append(ParsedActivity(
+                month=month or (happened[:7] if happened else None),
+                kind=kind, content=content or line,
+                happened_at=happened, weekday=m.group(3),
+                raw_text=line,
+            ))
         elif entries:
             entries[-1].content = norm(f"{entries[-1].content} {line}")
+            entries[-1].raw_text = f"{entries[-1].raw_text}\n{line}"
         else:
-            entries.append(ParsedActivity(month=month, kind=kind, content=line))
+            entries.append(ParsedActivity(month=month, kind=kind, content=line, raw_text=line))
+
+    for entry in entries:
+        entry.companies, entry.company_count = parse_company_list(entry.content)
+        if entry.weekday is None and entry.happened_at:
+            entry.weekday = weekday_of(entry.happened_at)
     return entries
+
+
+def _year_for_month(sheet_year: int, month: Optional[str], cell_month: int) -> int:
+    """셀 안의 `8/13` 이 어느 해인지. 컬럼의 월 라벨이 있으면 그쪽 연도를 따른다.
+
+    연말·연초가 섞인 시트(12월 컬럼 옆에 1월 컬럼)에서 --year 만으로는 어긋난다.
+    컬럼 월과 셀 월이 다르면 컬럼 쪽을 믿되(그 칸의 소속이 명시적이므로), 연도만 취한다.
+    """
+    if month and len(month) >= 4 and month[:4].isdigit():
+        return int(month[:4])
+    return sheet_year
+
+
+def weekday_of(iso_date: str) -> Optional[str]:
+    try:
+        from datetime import date as _date
+
+        return "월화수목금토일"[_date.fromisoformat(iso_date[:10]).weekday()]
+    except (ValueError, TypeError, IndexError):
+        return None
+
+
+def week_of_month(iso_date: str) -> Optional[int]:
+    """그 달의 몇 번째 주인지 (시트 헤더의 '첫째주 수요일 / 셋째주' 표기와 맞춘다)."""
+    try:
+        return (int(iso_date[8:10]) - 1) // 7 + 1
+    except (ValueError, TypeError):
+        return None
+
+
+def parse_company_list(content: str) -> tuple:
+    """회차 내용 → (기업명 목록, 기업 수).
+
+    세 가지 표기를 모두 읽는다:
+      - `핵심 딜 8개사`            → ([], 8)          개수만 있고 목록이 없다
+      - `샘플애그, 샘플메디`        → ([2개], 2)       쉼표 나열
+      - `1.(주)샘플가  2.샘플나`    → ([2개], 2)       번호 매김(구분자가 이중공백일 수 있음)
+    """
+    text = norm(content)
+    if not text:
+        return ([], None)
+
+    numbered = [norm(p) for p in _NUMBERED_RE.split(text) if norm(p)]
+    if len(numbered) >= 2 and _NUMBERED_RE.search(text):
+        names = numbered
+    elif "," in text:
+        names = [norm(p) for p in text.split(",") if norm(p)]
+    else:
+        names = []
+
+    if not names:
+        m = _COUNT_ONLY_RE.search(text)
+        if m:
+            # 기업명이 적히지 않은 회차 — 개수만 남긴다(없는 목록을 지어내지 않는다).
+            return ([], int(m.group(1)))
+        # 단일 기업명으로 보이면 1건으로 센다. 서술형 메모는 기업으로 세지 않는다.
+        return (([text], 1) if _looks_like_company(text) else ([], None))
+
+    names = [n for n in names if _looks_like_company(n)]
+    return (names, len(names) or None)
+
+
+def _looks_like_company(name: str) -> bool:
+    """기업명 후보인지. 문장형 메모('검토 중', '핵심 딜 8개사')를 걸러낸다."""
+    t = norm(name)
+    if not t or len(t) > 40:
+        return False
+    if _COUNT_ONLY_RE.search(t):
+        return False
+    return True
+
+
+def normalize_company_name(name: str) -> str:
+    """법인 표기를 떼어 비교용 이름으로. `(주)샘플가` `㈜샘플가` `샘플가(주)` → `샘플가`.
+
+    ir_companies 매칭에만 쓰고 **저장은 원문 그대로** 한다 — DB에 없는 기업이 훨씬 많고,
+    시트 원문을 바꿔 두면 사용자가 자기 기록을 알아보지 못한다.
+    """
+    t = norm(name)
+    for mark in _CORP_MARKS:
+        t = t.replace(mark, " ")
+    return normalize_space(t)
 
 
 def _safe_date(year: int, month: int, day: int) -> Optional[str]:
@@ -246,9 +359,17 @@ class ParsedContact:
     title: Optional[str]
     firm: str
     group_name: Optional[str] = None
+    owner_name: Optional[str] = None        # 시트 '담당자' = 우리 팀원 이름
     invited_status: Optional[str] = None
+    interest_level: Optional[str] = None    # 관심도(월말 기준)
+    kakao_joined: Optional[str] = None      # 카톡방 참여여부
     profile_raw: Optional[str] = None       # 투자분야/라운드사이즈 원문
     sectors: List[str] = field(default_factory=list)
+    round_size: Optional[str] = None
+    memo: Optional[str] = None
+    phone: Optional[str] = None             # 연락처(휴대폰)
+    office_phone: Optional[str] = None      # 유선전화
+    address: Optional[str] = None
     activities: List[ParsedActivity] = field(default_factory=list)
 
 
@@ -268,31 +389,54 @@ class SheetAParse:
 
 
 def parse_sheet_a(rows: Sequence[Sequence[str]], year: int) -> SheetAParse:
-    """시트 A(투자사 관리) → 담당자 + 월별 활동."""
+    """투자사 명단 시트 → 담당자 + 월별 활동.
+
+    스프레드시트에는 명단 시트가 여러 장 있고 **컬럼 구성이 서로 다르다**
+    (딜소개 현황 시트: 그룹/초대완료여부/월별 3열 세트 · 연결 명단 시트: 관심도/
+    카톡방 참여여부/연락처/직책/주소…). 위치가 아니라 **헤더 이름**으로 찾으므로
+    한 파서가 두 형태를 모두 읽는다. 없는 컬럼은 그냥 비어 있는 값이 된다.
+    """
     out = SheetAParse()
-    header_idx = detect_header_row(rows, ["그룹", "이름", "투자사"])
+    header_idx = detect_header_row(rows, ["이름", "투자사"])
     if header_idx is None:
-        raise ValueError("헤더 행을 찾지 못했습니다 ('그룹/이름/투자사명'이 있는 행 필요)")
+        raise ValueError("헤더 행을 찾지 못했습니다 ('이름'과 '투자사명'이 있는 행 필요)")
     out.header_row = header_idx
     header = rows[header_idx]
 
-    col_group = find_column(header, ["그룹"])
     col_name = first_column(header, ["이름"], ["성함"])
-    col_firm = find_column(header, ["투자사"])
-    col_invited = find_column(header, ["초대"])
-    col_profile = first_column(header, ["투자분야"], ["라운드"])
+    # '딜소싱 참여 투자사'도 '투자사'를 포함한다 → 투자사'명'을 먼저 찾고, 없을 때만 넓게 본다.
+    col_firm = find_column(header, ["투자사명"])
+    if col_firm is None:
+        col_firm = find_column(header, ["투자사"], exclude=["딜소싱", "참여"])
     if col_name is None or col_firm is None:
         raise ValueError("'이름' 또는 '투자사명' 컬럼을 찾지 못했습니다")
 
-    base_last = max(x for x in (col_group, col_name, col_firm, col_invited, col_profile)
-                    if x is not None)
-    out.activity_columns = detect_activity_columns(rows, header_idx, base_last + 1, year)
+    cols = {
+        "name": col_name,
+        "firm": col_firm,
+        "group": find_column(header, ["그룹"]),
+        "owner": find_column(header, ["담당자"]),
+        "invited": find_column(header, ["초대"]),
+        "interest": find_column(header, ["관심도"]),
+        "kakao_joined": first_column(header, ["카톡방", "참여"], ["카톡", "연결"]),
+        "sectors": first_column(header, ["선호", "투자분야"], ["투자분야"]),
+        "round": find_column(header, ["라운드"]),
+        "memo": find_column(header, ["메모"]),
+        "phone": first_column(header, ["휴대"], ["연락처"]),
+        "office_phone": find_column(header, ["유선"]),
+        "position": first_column(header, ["직책"], ["직함"]),
+        "address": find_column(header, ["주소"]),
+    }
+    # 활동 컬럼은 기본 정보 컬럼을 빼고 헤더 문맥으로 찾는다(담당자 컬럼이 오른쪽에 있어도 안전).
+    out.activity_columns = detect_activity_columns(
+        rows, header_idx, year, skip_cols=[c for c in cols.values() if c is not None]
+    )
 
     for offset, row in enumerate(rows[header_idx + 1:], start=header_idx + 2):
         # 1-based 시트 행번호로 리포트한다(사용자가 시트에서 바로 찾을 수 있게).
         row_no = offset
-        name_cell = _cell(row, col_name)
-        firm = _cell(row, col_firm)
+        name_cell = _cell(row, cols["name"])
+        firm = _cell(row, cols["firm"])
         preview = " | ".join(norm(c) for c in row[:6] if norm(c))[:80]
 
         if not name_cell and not firm:
@@ -308,16 +452,32 @@ def parse_sheet_a(rows: Sequence[Sequence[str]], year: int) -> SheetAParse:
             continue
 
         name, title = split_name_title(name_cell)
-        profile = _cell(row, col_profile)
+        # 직책이 별도 컬럼이면 그쪽이 더 정확하다(이름 칸에서 떼어낸 추정보다 우선).
+        title = _cell(row, cols["position"]) or title
+
+        sectors_raw = _cell(row, cols["sectors"])
+        round_raw = _cell(row, cols["round"])
+        combined = cols["sectors"] is not None and cols["sectors"] == cols["round"]
+
         contact = ParsedContact(
             row_no=row_no,
             name=name,
             title=title,
             firm=firm,
-            group_name=_cell(row, col_group) or None,
-            invited_status=_cell(row, col_invited) or None,
-            profile_raw=profile or None,
-            sectors=split_sector_tags(profile),
+            group_name=_cell(row, cols["group"]) or None,
+            owner_name=_cell(row, cols["owner"]) or None,
+            invited_status=_cell(row, cols["invited"]) or None,
+            interest_level=_cell(row, cols["interest"]) or None,
+            kakao_joined=_cell(row, cols["kakao_joined"]) or None,
+            profile_raw=sectors_raw or round_raw or None,
+            # 한 칸에 '투자분야/라운드사이즈'가 합쳐진 시트는 원문을 라운드 칸에 남긴다
+            # (자유 서술이라 쪼개면 근거 없는 값이 된다 — split_sector_tags 참고).
+            sectors=split_sector_tags(sectors_raw),
+            round_size=(sectors_raw if combined else round_raw) or None,
+            memo=_cell(row, cols["memo"]) or None,
+            phone=_cell(row, cols["phone"]) or None,
+            office_phone=_cell(row, cols["office_phone"]) or None,
+            address=_cell(row, cols["address"]) or None,
         )
         for acol in out.activity_columns:
             cell_text = _raw_cell(row, acol.col)
@@ -357,6 +517,10 @@ class ParsedCompany:
     is_top_deal: int = 0
     funding_status: Optional[str] = None
     note: Optional[str] = None
+    # 기업 쪽 연락 담당자('스타트업' 명단 시트의 성함/연락처/이메일)
+    contact_name: Optional[str] = None
+    contact_phone: Optional[str] = None
+    contact_email: Optional[str] = None
 
 
 @dataclass
@@ -392,6 +556,10 @@ def parse_sheet_b(rows: Sequence[Sequence[str]], year: int) -> SheetBParse:
         "top": first_column(header, ["top"], ["핵심"]),
         "funding": find_column(header, ["투자유치"]),
         "note": find_column(header, ["비고"]),
+        # '스타트업' 명단 시트에만 있는 기업 쪽 연락 담당자
+        "contact_name": first_column(header, ["성함"], ["담당자명"]),
+        "contact_phone": first_column(header, ["연락처"], ["휴대"]),
+        "contact_email": find_column(header, ["이메일"]),
     }
     if cols["name"] is None:
         raise ValueError("'기업명' 컬럼을 찾지 못했습니다")
@@ -428,6 +596,9 @@ def parse_sheet_b(rows: Sequence[Sequence[str]], year: int) -> SheetBParse:
             is_top_deal=1 if _is_top(_cell(row, cols["top"])) else 0,
             funding_status=_cell(row, cols["funding"]) or None,
             note=note,
+            contact_name=_cell(row, cols["contact_name"]) or None,
+            contact_phone=_cell(row, cols["contact_phone"]) or None,
+            contact_email=_cell(row, cols["contact_email"]) or None,
         ))
     return out
 
@@ -497,10 +668,10 @@ class ImportReport:
 
 
 def _set_if_value(obj, attr: str, value) -> bool:
-    """값이 있을 때만 덮어쓴다.
+    """값이 있을 때만 덮어쓴다 — **상태 칸**용(초대완료여부·관심도·계약여부 등).
 
-    재임포트 시 시트의 빈 칸이 서비스에서 채워 넣은 값을 지우면 안 된다
-    (특히 방 이름·메모). 빈 값은 '모름'이지 '지워라'가 아니다.
+    이런 칸은 '지금 어떤 상태인가'라서 새 시트 값이 최신 판단이다.
+    반대로 시트의 빈 칸이 기존 값을 지우면 안 된다 — 빈 값은 '모름'이지 '지워라'가 아니다.
     """
     if value in (None, "") or getattr(obj, attr) == value:
         return False
@@ -508,47 +679,96 @@ def _set_if_value(obj, attr: str, value) -> bool:
     return True
 
 
+def _fill_if_empty(obj, attr: str, value) -> bool:
+    """비어 있을 때만 채운다 — **프로필·연락처·메모**용.
+
+    같은 사람이 여러 명단 시트에 조각조각 나뉘어 있어(한쪽엔 연락처, 다른 쪽엔 직책)
+    임포트는 병합이 원칙이다. 나중에 넣은 시트가 앞 시트의 값이나 사용자가 화면에서
+    다듬은 값을 밀어내면, 어느 시트를 먼저 넣었느냐에 따라 결과가 달라진다.
+    """
+    if value in (None, "") or getattr(obj, attr):
+        return False
+    setattr(obj, attr, value)
+    return True
+
+
 def apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
-                  room_suffix: str = DEFAULT_SUFFIX, dry_run: bool = False) -> ImportReport:
-    """담당자 upsert (이름+투자사 기준) + 활동 이력 정규화 적재."""
+                  room_suffix: str = DEFAULT_SUFFIX, dry_run: bool = False,
+                  source_label: Optional[str] = None) -> ImportReport:
+    """담당자 upsert (이름+투자사 기준) + 활동 이력 정규화 적재.
+
+    소유자(user_id)는 시트의 **담당자 컬럼**이 정한다. 한 시트에 여러 팀원의 담당분이
+    섞여 있기 때문이다. 이름이 계정과 매칭되지 않으면 **버리지 않고** 폴백 사용자
+    (`user_id` 인자)에게 붙이고 리포트에 남긴다 — 임포트에서 사람을 잃는 것이 가장 나쁘다.
+
+    매칭 키가 (이름, 투자사)뿐인 이유: 같은 사람이 여러 명단 시트에 나뉘어 있고 시트마다
+    담당자 표기가 비거나 다르다. 소유자를 키에 넣으면 시트 수만큼 중복 인물이 생긴다.
+    """
     report = ImportReport(skipped=list(parsed.skipped))
     months = sorted({c.month for c in parsed.activity_columns if c.month})
     report.notes.append(
         f"활동 컬럼 {len(parsed.activity_columns)}개 인식"
         + (f" (월: {', '.join(months)})" if months else " (월 라벨 없음)")
     )
+    owners: Dict[str, Optional[int]] = {}
+    unmatched_owners: Dict[str, int] = {}
+    no_owner_rows = 0
 
     for pc in parsed.contacts:
+        owner_id = None
+        if pc.owner_name:
+            if pc.owner_name not in owners:
+                found = db.execute(
+                    select(User).where(User.name == pc.owner_name)
+                ).scalars().first()
+                owners[pc.owner_name] = found.id if found else None
+            owner_id = owners[pc.owner_name]
+            if owner_id is None:
+                unmatched_owners[pc.owner_name] = unmatched_owners.get(pc.owner_name, 0) + 1
+        else:
+            no_owner_rows += 1
+
         contact = db.execute(
-            select(VcContact).where(
-                VcContact.user_id == user_id,
-                VcContact.name == pc.name,
-                VcContact.firm == pc.firm,
-            )
+            select(VcContact).where(VcContact.name == pc.name, VcContact.firm == pc.firm)
         ).scalars().first()
 
         if contact is None:
-            contact = VcContact(user_id=user_id, name=pc.name, firm=pc.firm, status="active")
+            contact = VcContact(user_id=owner_id or user_id, name=pc.name, firm=pc.firm,
+                                status="active")
             db.add(contact)
             report.created += 1
         else:
             report.updated += 1
+            # 소유자는 시트가 **명시적으로 지목했을 때만** 옮긴다. 담당자 칸이 빈 시트를
+            # 나중에 임포트했다고 해서 이미 정해진 담당을 폴백 사용자로 뺏으면 안 된다.
+            if owner_id:
+                contact.user_id = owner_id
 
-        _set_if_value(contact, "title", pc.title)
-        _set_if_value(contact, "group_name", pc.group_name)
+        # 상태 칸: 새 시트가 최신 판단 → 덮어쓴다
         _set_if_value(contact, "invited_status", pc.invited_status)
-        _set_if_value(contact, "round_size", pc.profile_raw)
+        _set_if_value(contact, "interest_level", pc.interest_level)
+        _set_if_value(contact, "kakao_joined", pc.kakao_joined)
+        # 프로필·연락처: 시트마다 조각이 나뉘어 있다 → 비어 있을 때만 채운다(병합)
+        _fill_if_empty(contact, "title", pc.title)
+        _fill_if_empty(contact, "group_name", pc.group_name)
+        _fill_if_empty(contact, "round_size", pc.round_size or pc.profile_raw)
+        _fill_if_empty(contact, "memo", pc.memo)
+        _fill_if_empty(contact, "phone", pc.phone)
+        _fill_if_empty(contact, "office_phone", pc.office_phone)
+        _fill_if_empty(contact, "address", pc.address)
         if pc.sectors:
-            _set_if_value(contact, "sectors", ",".join(pc.sectors))
-        if is_invited(pc.invited_status or ""):
-            # 초대 완료 = 카톡방이 이미 있다 → 발송 대상 후보. 반대로 내리지는 않는다
+            _fill_if_empty(contact, "sectors", ",".join(pc.sectors))
+        if source_label:
+            contact.source_sheet = _append_label(contact.source_sheet, source_label)
+        if is_invited(pc.invited_status or "") or is_invited(pc.kakao_joined or ""):
+            # 초대/참여 완료 = 카톡방이 이미 있다 → 발송 대상 후보. 반대로 내리지는 않는다
             # (시트가 비어 있어도 서비스에서 연결해 둔 경우가 있으므로).
             contact.channel_kakao = 1
         if not contact.kakao_room_name:
-            # 방 이름은 이름·직함·투자사에서 자동 생성한다(126명 수기 입력 회피).
+            # 방 이름은 이름·직함·투자사에서 자동 생성한다(128명 수기 입력 회피).
             # 이미 값이 있으면 손대지 않는다 — 사용자가 실제 방 제목에 맞춰 고친 값일 수 있고,
             # 방 제목이 틀리면 발송이 통째로 skip 된다.
-            contact.kakao_room_name = build_room_name(pc.name, pc.title, pc.firm,
+            contact.kakao_room_name = build_room_name(pc.name, contact.title, pc.firm,
                                                       suffix=room_suffix)
         db.flush()
 
@@ -569,15 +789,34 @@ def apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
                 continue
             db.add(ContactActivity(
                 contact_id=contact.id, month=act.month, kind=act.kind,
-                content=act.content, happened_at=act.happened_at, source="import",
+                content=act.content, happened_at=act.happened_at,
+                weekday=act.weekday, company_count=act.company_count,
+                company_names=json.dumps(act.companies, ensure_ascii=False) if act.companies else None,
+                raw_text=act.raw_text, source="import",
             ))
             report.activities_created += 1
+
+    if unmatched_owners:
+        detail = ", ".join(f"{n}({c}명)" for n, c in sorted(unmatched_owners.items()))
+        report.notes.append(
+            f"담당자 계정 미매칭 → 폴백 user_id={user_id} 로 배정(누락 없음): {detail}"
+        )
+    if no_owner_rows:
+        report.notes.append(f"담당자 칸이 빈 행 {no_owner_rows}건 → 폴백 user_id={user_id}")
 
     if dry_run:
         db.rollback()
     else:
         db.commit()
     return report
+
+
+def _append_label(current: Optional[str], label: str) -> str:
+    """어느 시트에서 온 정보인지 누적 기록(중복 없이)."""
+    labels = [x for x in (current or "").split(",") if x]
+    if label not in labels:
+        labels.append(label)
+    return ",".join(labels)
 
 
 def apply_sheet_b(db: Session, parsed: SheetBParse, dry_run: bool = False) -> ImportReport:
@@ -597,14 +836,20 @@ def apply_sheet_b(db: Session, parsed: SheetBParse, dry_run: bool = False) -> Im
         else:
             report.updated += 1
 
-        _set_if_value(company, "sector_major", pc.sector_major)
-        _set_if_value(company, "sector_minor", pc.sector_minor)
-        _set_if_value(company, "series", pc.series)
-        _set_if_value(company, "one_liner", pc.one_liner)
-        _set_if_value(company, "ir_drive_url", pc.ir_drive_url)
+        # 기업도 명단 시트가 여러 장이라 병합이 원칙(비어 있을 때만 채운다).
+        _fill_if_empty(company, "sector_major", pc.sector_major)
+        _fill_if_empty(company, "sector_minor", pc.sector_minor)
+        _fill_if_empty(company, "series", pc.series)
+        _fill_if_empty(company, "one_liner", pc.one_liner)
+        _fill_if_empty(company, "ir_drive_url", pc.ir_drive_url)
+        _fill_if_empty(company, "note", pc.note)
+        _fill_if_empty(company, "contact_name", pc.contact_name)
+        _fill_if_empty(company, "contact_phone", pc.contact_phone)
+        _fill_if_empty(company, "contact_email", pc.contact_email)
+        # 상태 칸은 새 시트가 최신 판단
         _set_if_value(company, "funding_status", pc.funding_status)
-        _set_if_value(company, "note", pc.note)
         _set_if_value(company, "contract_month", pc.contract_month)
+        # 계약·핵심 여부는 시트가 최신 판단이므로 덮어쓴다(빈 칸 = '아니오'가 맞는 칸들).
         company.contract_status = pc.contract_status
         company.is_top_deal = pc.is_top_deal
 

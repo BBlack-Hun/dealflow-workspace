@@ -54,22 +54,60 @@
     return body;
   }
 
+  // 활동 이력은 **월 단위로 묶어** 보여준다. 시트가 월별 컬럼이었기 때문에
+  // 사용자의 머릿속 단위도 '8월에 뭘 보냈지'다. 회차는 '몇째 주·요일·몇 개사'로 읽힌다.
   function renderTimeline(items) {
     var list = el("timeline");
     if (!items.length) {
       list.innerHTML = '<li class="muted">기록이 없습니다.</li>';
       return;
     }
-    items.sort(function (a, b) { return (b.date || "") < (a.date || "") ? -1 : 1; });
-    list.innerHTML = items.map(function (t) {
-      var when = t.date || t.month || "";
-      return '<li class="tl-item tl-' + esc(t.kind) + '">' +
-        '<span class="tl-date tabular">' + esc(when) + "</span>" +
+    items.sort(function (a, b) {
+      var x = a.date || a.month || "", y = b.date || b.month || "";
+      return x < y ? 1 : (x > y ? -1 : 0);
+    });
+
+    var html = "";
+    var lastMonth = null;
+    items.forEach(function (t) {
+      var month = t.month || (t.date ? t.date.slice(0, 7) : "");
+      if (month !== lastMonth) {
+        lastMonth = month;
+        html += '<li class="tl-month">' + esc(monthLabel(month)) + "</li>";
+      }
+      html += '<li class="tl-item tl-' + esc(t.kind) + '">' +
+        '<span class="tl-date tabular">' + esc(dayLabel(t)) + "</span>" +
         '<span class="tl-kind">' + esc(KIND_KO[t.kind] || t.kind) + "</span>" +
-        '<span class="tl-body">' + esc(t.content) + "</span>" +
+        '<span class="tl-body">' + bodyHtml(t) + "</span>" +
         (t.source === "import" ? '<span class="tl-src">시트</span>' : "") +
         "</li>";
-    }).join("");
+    });
+    list.innerHTML = html;
+  }
+
+  function monthLabel(month) {
+    if (!month) return "날짜 미상";
+    var parts = month.split("-");
+    return parts.length > 1 ? parts[0] + "년 " + parseInt(parts[1], 10) + "월" : month;
+  }
+
+  function dayLabel(t) {
+    if (!t.date) return "";
+    var d = t.date.slice(5).replace("-", ".");
+    return d + (t.weekday ? "(" + t.weekday + ")" : "");
+  }
+
+  function bodyHtml(t) {
+    var head = "";
+    if (t.week) head += '<span class="tl-week">' + t.week + "주차</span> ";
+    if (t.company_count) head += "<b>" + t.company_count + "개사</b> ";
+    if (t.companies && t.companies.length) {
+      // 딜 기업 DB에 있는 기업은 표시만 다르게(없는 기업이 더 많아 오류로 다루지 않는다).
+      return head + t.companies.map(function (c) {
+        return '<span class="tl-co' + (c.known ? " known" : "") + '">' + esc(c.name) + "</span>";
+      }).join(" ");
+    }
+    return head + esc(t.content);
   }
 
   function loadContact(id) {
