@@ -39,11 +39,21 @@ AGENT_FILES = [
     ("agent/sender/kakao_windows.py", "agent/sender/kakao_windows.py"),
     ("agent/sender/kakao_mac.py", "agent/sender/kakao_mac.py"),
     ("agent/sender/telegram.py", "agent/sender/telegram.py"),
-    ("packaging/windows/setup.bat", "setup.bat"),
-    ("packaging/windows/run_agent.bat", "run_agent.bat"),
-    ("packaging/windows/README-KR.txt", "README-KR.txt"),
-    ("requirements-agent-windows.txt", "requirements.txt"),
 ]
+
+# OS 별로 다른 파일. mac zip 에 windows 용 requirements 가 들어가던 버그를 막는다.
+OS_FILES = {
+    "windows": [
+        ("requirements-agent-windows.txt", "requirements.txt"),
+        ("packaging/windows/setup.bat", "setup.bat"),
+        ("packaging/windows/run_agent.bat", "run_agent.bat"),
+        ("packaging/windows/README-KR.txt", "README-KR.txt"),
+    ],
+    "mac": [
+        ("requirements-agent-mac.txt", "requirements.txt"),
+        ("packaging/mac/setup.sh", "setup.sh"),
+    ],
+}
 
 CONFIG_TEMPLATE = """# dealflow 발송 에이전트 설정 (웹에서 자동 생성됨)
 #
@@ -149,7 +159,7 @@ def download_agent(
 
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for src, dest in AGENT_FILES:
+        for src, dest in AGENT_FILES + OS_FILES.get(os_kind, OS_FILES["windows"]):
             path = ROOT / src
             if not path.exists():
                 continue  # 배포 구성에 따라 없을 수 있음(예: mac 전용 파일)

@@ -1,0 +1,17 @@
+# macOS 발송 에이전트 의존성 (KakaoMacSender)
+#
+# ★ 설치는 packaging/mac/setup.sh 로 하세요. 필수와 선택을 나눠 설치합니다.
+#   한 번에 설치하면 선택 패키지 실패가 전체 롤백을 일으켜 에이전트가 아예 못 뜹니다.
+
+# ── 필수 ──────────────────────────────────────────────────────────────
+requests>=2.31
+pyyaml>=6.0
+
+# ── 선택: 채팅방 자동 열기 ────────────────────────────────────────────
+# 없어도 발송됩니다. 대상 채팅방 창을 카카오톡에서 미리 열어두면 됩니다.
+#
+# Python 3.9 에는 미리 빌드된 휠이 없어 소스 빌드로 넘어가고,
+# Xcode Command Line Tools 가 없으면 "Cannot locate a working compiler" 로 실패합니다.
+#   → Python 3.10+ 를 쓰거나  xcode-select --install  후 설치하세요.
+#
+# pyobjc-framework-Quartz>=10

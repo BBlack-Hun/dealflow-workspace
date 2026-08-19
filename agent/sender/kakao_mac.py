@@ -64,16 +64,47 @@ def _set_clipboard(text: str) -> None:
 
 
 def _type_text(text: str) -> None:
-    """실제 키 입력으로 타이핑 (검색어처럼 앱이 입력 이벤트를 요구하는 곳에 사용)."""
+    """ASCII 전용 타이핑.
+
+    ⚠ AppleScript 의 keystroke 는 **한글을 보내지 못한다**. 한글을 넘기면
+    'ㅁㅁㅁ' 또는 'aaa' 처럼 깨진 문자가 입력된다(실기 확인).
+    한글이 섞일 수 있는 값(방 이름 등)은 반드시 _set_clipboard + Cmd+V 를 쓸 것.
+    """
+    if not text.isascii():
+        raise ValueError("keystroke 는 한글을 보낼 수 없습니다 — 클립보드 붙여넣기를 쓰세요.")
     _osa(f'tell application "System Events" to keystroke "{_esc(text)}"')
+
+
+class QuartzUnavailable(RuntimeError):
+    """pyobjc-framework-Quartz 미설치. 방 자동 열기만 불가하고 발송은 가능하다."""
+
+
+def quartz_available() -> bool:
+    try:
+        import Quartz  # noqa: F401
+    except Exception:  # noqa: BLE001
+        return False
+    return True
 
 
 def _double_click(x: int, y: int) -> None:
     """실제 마우스 더블클릭. 카톡 채팅 목록은 AXPress/Enter 로 열리지 않는다.
 
-    Quartz 로 클릭 이벤트를 합성한다(pyobjc-framework-Quartz 필요).
+    Quartz(pyobjc)로 클릭 이벤트를 합성한다.
+
+    ★ Quartz 는 **선택적 의존성**이다. Python 3.9 처럼 미리 빌드된 휠이 없는 환경에서는
+    설치에 컴파일러가 필요해 실패하는데(실기에서 발생), 그렇다고 발송 전체를 막을 이유는 없다.
+    이 함수는 '검색해서 방을 새로 여는' 경로에서만 쓰이므로, 대상 채팅방 창이 이미 열려
+    있으면 Quartz 없이도 발송된다. 없으면 명확한 예외를 던져 호출부가 안내하도록 한다.
     """
-    import Quartz
+    try:
+        import Quartz
+    except Exception as exc:  # noqa: BLE001
+        raise QuartzUnavailable(
+            "pyobjc-framework-Quartz 가 설치되지 않아 채팅방을 자동으로 열 수 없습니다. "
+            "카카오톡에서 대상 채팅방 창을 미리 열어두면 발송됩니다. "
+            "(자동 열기까지 쓰려면 Python 3.10+ 에서 설치하거나 xcode-select --install)"
+        ) from exc
 
     for click_state in (1, 2):
         for kind in (Quartz.kCGEventLeftMouseDown, Quartz.kCGEventLeftMouseUp):
@@ -168,17 +199,29 @@ class KakaoMacSender(Sender):
         self._activate()
         main = 'first window whose name is "카카오톡"'
         try:
-            # 1) 검색 필드 포커스 + 기존 내용 지우고 방 이름 입력(실제 키 이벤트)
+            # 0) 메인 창을 반드시 앞으로. 다른 채팅창이 앞에 있으면 이후 키 입력이
+            #    그 채팅창으로 들어간다(실기 확인). 실패하면 아예 입력하지 않는다.
+            if not self._focus_window("카카오톡"):
+                raise RuntimeError(
+                    "카카오톡 메인 창을 앞으로 가져오지 못했습니다. "
+                    "열려 있는 채팅창을 닫고 다시 시도하세요."
+                )
+
+            # 1) 검색 필드 비우고 포커스
             _osa(
                 f'tell application "System Events" to tell process "{APP}"\n'
                 f'  set sf to first UI element of ({main}) whose role is "AXTextField"\n'
+                f'  set value of sf to ""\n'
                 f'  set focused of sf to true\n'
                 f'end tell'
             )
             time.sleep(0.3)
-            self._keystroke("a", cmd=True)
-            time.sleep(0.2)
-            _type_text(room_name)
+
+            # 2) 방 이름 입력 — ★ 반드시 클립보드 붙여넣기.
+            #    AppleScript keystroke 는 한글을 그대로 보내지 못해 'ㅁㅁㅁ'/'aaa' 로 깨진다
+            #    (실기 확인). 붙여넣기는 실제 키 이벤트라 카톡이 검색을 인식한다.
+            _set_clipboard(room_name)
+            self._keystroke("v", cmd=True)
             time.sleep(self.t_query)
 
             # 2) 첫 결과 행 더블클릭
@@ -195,7 +238,7 @@ class KakaoMacSender(Sender):
             x, y, w, h = [int(v) for v in raw.split("|")]
             _double_click(x + w // 2, y + h // 2)
             time.sleep(self.t_open_room)
-        except AccessibilityError:
+        except (AccessibilityError, QuartzUnavailable):
             raise
         except Exception:
             log.exception("_open_room_via_search 실패 room=%r", room_name)
@@ -280,7 +323,11 @@ class KakaoMacSender(Sender):
         try:
             # 1) 이미 열린 창이 있으면 그걸 쓰고, 없으면 검색으로 연다.
             if not self._focus_window(room_name):
-                self._open_room_via_search(room_name)
+                try:
+                    self._open_room_via_search(room_name)
+                except QuartzUnavailable as exc:
+                    # 창이 안 열려 있고 자동 열기도 불가 → 사용자가 창만 열어두면 된다.
+                    return SendResult(ok=False, error=f"room_not_open: {exc}")
                 if not self._focus_window(room_name):
                     return SendResult(ok=False, error=f"room_not_found: {room_name!r}")
 
