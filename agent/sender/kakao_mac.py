@@ -28,6 +28,10 @@ log = logging.getLogger("agent.kakao_mac")
 
 APP = "KakaoTalk"
 
+# 검색 결과가 이보다 많으면 "필터가 안 먹었다"고 보고 방을 열지 않는다.
+# (전체 대화목록이 그대로 남은 상태에서 첫 행을 누르면 엉뚱한 방이 열린다)
+MAX_SEARCH_ROWS = 20
+
 
 def is_supported() -> bool:
     import platform
@@ -58,7 +62,8 @@ def _osa(script: str, timeout: int = 20) -> str:
 def _set_clipboard(text: str) -> None:
     """pbcopy 로 클립보드 설정.
 
-    참고: 카톡 Mac 입력창은 Cmd+V 를 받지 않아 본문 입력에는 쓰지 않는다(값 직접 설정 사용).
+    참고: 카톡 Mac 은 검색창·입력창 모두 Cmd+V 가 무시될 때가 있어
+    본문/검색어 입력에는 쓰지 않는다(AX value 직접 설정 사용).
     """
     subprocess.run(["pbcopy"], input=text.encode("utf-8"), check=True)
 
@@ -68,7 +73,7 @@ def _type_text(text: str) -> None:
 
     ⚠ AppleScript 의 keystroke 는 **한글을 보내지 못한다**. 한글을 넘기면
     'ㅁㅁㅁ' 또는 'aaa' 처럼 깨진 문자가 입력된다(실기 확인).
-    한글이 섞일 수 있는 값(방 이름 등)은 반드시 _set_clipboard + Cmd+V 를 쓸 것.
+    한글이 섞일 수 있는 값(방 이름 등)은 AX value 직접 설정을 쓸 것.
     """
     if not text.isascii():
         raise ValueError("keystroke 는 한글을 보낼 수 없습니다 — 클립보드 붙여넣기를 쓰세요.")
@@ -191,9 +196,9 @@ class KakaoMacSender(Sender):
     def _open_room_via_search(self, room_name: str) -> None:
         """메인창 검색으로 기존 방 열기 (방은 이미 존재한다는 전제).
 
-        실기 확인으로 굳어진 절차(다른 방법은 동작하지 않음):
-          - 검색 필드는 AXTextField. value 를 직접 넣으면 카톡이 검색을 인식하지 않아
-            **실제 키 입력**(Cmd+A → 타이핑)이 필요하다.
+        실기 확인으로 굳어진 절차:
+          - 검색어는 **AX value 직접 설정**이 유일하게 안정적이다.
+            (keystroke 는 한글을 못 보내고, Cmd+V 는 이 필드에서 자주 무시된다)
           - 결과 행은 Enter/AXPress 로 열리지 않고 **실제 더블클릭**이 필요하다.
         """
         self._activate()
@@ -207,24 +212,46 @@ class KakaoMacSender(Sender):
                     "열려 있는 채팅창을 닫고 다시 시도하세요."
                 )
 
-            # 1) 검색 필드 비우고 포커스
+            # 1) 검색어 입력 — ★ AX value 직접 설정.
+            #    다른 방법은 전부 실패한다(실기 확인):
+            #      - keystroke: 한글을 못 보내 'ㅁㅁㅁ'/'aaa' 로 깨짐
+            #      - Cmd+V(클립보드): 이 필드에서 동작하지 않을 때가 있음
+            #    value 설정은 한글도 정확히 들어가고 카톡의 검색 필터도 반응한다.
+            field = f'first UI element of ({main}) whose role is "AXTextField"'
             _osa(
                 f'tell application "System Events" to tell process "{APP}"\n'
-                f'  set sf to first UI element of ({main}) whose role is "AXTextField"\n'
-                f'  set value of sf to ""\n'
+                f'  set sf to {field}\n'
                 f'  set focused of sf to true\n'
+                f'  set value of sf to "{_esc(room_name)}"\n'
                 f'end tell'
             )
-            time.sleep(0.3)
-
-            # 2) 방 이름 입력 — ★ 반드시 클립보드 붙여넣기.
-            #    AppleScript keystroke 는 한글을 그대로 보내지 못해 'ㅁㅁㅁ'/'aaa' 로 깨진다
-            #    (실기 확인). 붙여넣기는 실제 키 이벤트라 카톡이 검색을 인식한다.
-            _set_clipboard(room_name)
-            self._keystroke("v", cmd=True)
             time.sleep(self.t_query)
 
-            # 2) 첫 결과 행 더블클릭
+            typed = _osa(
+                f'tell application "System Events" to tell process "{APP}" '
+                f'to return value of ({field})'
+            )
+            if typed != room_name:
+                raise RuntimeError(
+                    f"검색어가 제대로 입력되지 않았습니다(입력됨={typed!r}, 기대={room_name!r})"
+                )
+
+            # 2) ★ 결과가 실제로 걸러졌는지 확인한 뒤에만 클릭한다.
+            #    검색이 안 먹은 상태에서 첫 행을 더블클릭하면 **전체 대화목록의 맨 위 방**이
+            #    열린다(실기에서 엉뚱한 방이 열림). 오발송 방지는 창 제목 검증이 막아주지만,
+            #    애초에 남의 대화창을 여는 것 자체를 피해야 한다.
+            rows = _osa(
+                f'tell application "System Events" to tell process "{APP}" '
+                f'to return count of rows of (first table of first scroll area of ({main}))'
+            )
+            if not rows.isdigit() or int(rows) == 0:
+                raise RuntimeError(f"검색 결과가 없습니다: {room_name!r}")
+            if int(rows) > MAX_SEARCH_ROWS:
+                raise RuntimeError(
+                    f"검색이 걸러지지 않았습니다(결과 {rows}건). 방을 열지 않고 중단합니다."
+                )
+
+            # 3) 첫 결과 행 더블클릭
             raw = _osa(
                 f'tell application "System Events" to tell process "{APP}"\n'
                 f'  set c to UI element 1 of (first row of first table of '
