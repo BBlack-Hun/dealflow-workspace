@@ -1,0 +1,47 @@
+# dealflow 발송 에이전트 설정 (ROADMAP 공통 원칙 2: 발송 수치는 코드 상수 금지)
+# Windows 운영 시 이 파일의 token 을 웹 화면에서 발급받은 값으로 교체하세요.
+
+server_url: "http://127.0.0.1:8000"   # 같은 PC에서 웹앱 구동 시
+token: "agt_demo_token_sprint1"        # 데모 토큰 (운영 시 재발급)
+sender: "auto"                          # auto → Windows=kakao_windows, 그 외=mock
+                                        # telegram = 테스트 수신(본인에게만 발송)
+
+poll_interval_sec: 5
+heartbeat_interval_sec: 20
+agent_version: "0.1.0"
+
+# 사람 유사 발송 패턴 (계정 보호, TECH_SPEC §5.5) — 실제 카톡 발송용 기본값
+delay_min_sec: 3
+delay_max_sec: 7
+job_cap: 60          # 1회차 발송 상한
+
+# selectors 외부화 (KakaoDesktopSender 전용)
+selectors_file: "agent/selectors.yaml"
+
+# KakaoMacSender (sender: kakao_mac) — macOS 카카오톡. 호스트에서 직접 실행할 것.
+# 채팅방은 이미 존재한다는 전제로 "열기 → 붙여넣기 → 전송"만 한다.
+kakao_mac:
+  search_hotkey: "f"        # Cmd+F (버전에 따라 다르면 여기서 교체)
+  after_activate: 1.0
+  after_search_hotkey: 0.8
+  after_query_paste: 1.2
+  after_open_room: 1.5
+  after_paste: 0.6
+  after_send: 0.8
+  close_after_send: true
+
+# TelegramSender (sender: telegram) — 카톡 붙이기 전 문구 실물 확인용.
+# 토큰은 설정파일에 박지 말고 환경변수로 넣는 것을 권장:
+#   DEALFLOW_TELEGRAM_TOKEN / DEALFLOW_TELEGRAM_CHAT_ID
+telegram:
+  token: ""
+  chat_id: ""
+  delay_min_sec: 0.5
+  delay_max_sec: 1.5
+  prefix_room: true    # "[테스트 발송 → 방이름]" 머리말 표시
+
+# MockSender 시나리오 (개발/도커)
+mock:
+  delay_min_sec: 0.5
+  delay_max_sec: 1.5
+  fail_rate: 0.15    # 가끔 실패로 재시도 플로우 확인

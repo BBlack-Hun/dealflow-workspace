@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}발송 진행 · dealflow{% endblock %}
+{% block content %}
+<header class="page-head">
+  <h1>발송 진행</h1>
+  <p class="muted">잡 #{{ job_id }} · 2초마다 자동 갱신</p>
+</header>
+
+{% if not job_exists %}
+<div class="placeholder-card"><p>해당 발송 잡을 찾을 수 없습니다. <a href="/deals">딜소개 보내기로 돌아가기</a></p></div>
+{% else %}
+<div class="counters" id="counters">
+  <div class="counter"><span class="c-num" id="c-pending">0</span><span class="c-label">대기</span></div>
+  <div class="counter sending"><span class="c-num" id="c-sending">0</span><span class="c-label">발송중</span></div>
+  <div class="counter ok"><span class="c-num" id="c-sent">0</span><span class="c-label">성공</span></div>
+  <div class="counter fail"><span class="c-num" id="c-failed">0</span><span class="c-label">실패</span></div>
+</div>
+
+<div class="progress-actions">
+  <span id="job-status-badge" class="status-badge">-</span>
+  <button type="button" id="cancel-btn" class="danger-btn">중단</button>
+  <button type="button" id="retry-btn" class="secondary-btn" hidden>실패 재시도</button>
+  <a href="/deals" class="linkbtn">새 발송</a>
+</div>
+
+<table class="log-table">
+  <thead>
+    <tr><th>담당자</th><th>카톡방</th><th>상태</th><th>재시도</th><th>사유 / 시각</th></tr>
+  </thead>
+  <tbody id="log-body"></tbody>
+</table>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+{% if job_exists %}
+<script>window.DEALFLOW_JOB_ID = {{ job_id }};</script>
+<script src="/static/js/progress.js"></script>
+{% endif %}
+{% endblock %}

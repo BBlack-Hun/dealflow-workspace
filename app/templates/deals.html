@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}딜소개 보내기 · dealflow{% endblock %}
+{% block content %}
+<header class="page-head">
+  <h1>딜소개 보내기</h1>
+  <p class="muted">기업 1~10개 선택 → 대상 담당자 체크 → 담당자별 미리보기 → 발송 목록 생성</p>
+</header>
+
+<div class="deal-grid">
+  <!-- 1) 회차 + 기업 선택 -->
+  <section class="panel">
+    <h2 class="panel-title">① 회차 · 기업 선택 <span class="hint">최대 10개</span></h2>
+    <label class="field">
+      <span>회차명</span>
+      <input type="text" id="batch-title" value="딜소개 회차" />
+    </label>
+    <div class="card-list" id="company-list">
+      {% for c in companies %}
+      <label class="pick-card">
+        <input type="checkbox" class="company-cb" value="{{ c.id }}" data-name="{{ c.name }}">
+        <div class="pick-body">
+          <div class="pick-name">
+            {% if c.is_top_deal %}<span class="star">★</span>{% endif %}{{ c.name }}
+            <span class="tag">{{ c.series or '-' }}</span>
+          </div>
+          <div class="pick-sub muted">[{{ c.sector_major or '-' }}] {{ c.one_liner or '' }}</div>
+        </div>
+      </label>
+      {% else %}
+      <p class="muted">딜소개 가능한 기업이 없습니다 (요약문 작성완료 기업 필요).</p>
+      {% endfor %}
+    </div>
+    <p class="hint" id="company-count">선택: 0 / 3</p>
+  </section>
+
+  <!-- 2) 대상 담당자 -->
+  <section class="panel">
+    <h2 class="panel-title">② 대상 담당자
+      <button type="button" class="linkbtn" id="select-all-contacts">전체선택</button>
+    </h2>
+    <div class="card-list" id="contact-list">
+      {% for c in contacts %}
+      <label class="pick-card">
+        <input type="checkbox" class="contact-cb" value="{{ c.id }}" data-name="{{ c.name }}">
+        <div class="pick-body">
+          <div class="pick-name">{{ c.name }} <span class="muted">{{ c.title or '' }}</span></div>
+          <div class="pick-sub muted">{{ c.firm or '' }}</div>
+          <div class="pick-room">
+            {% if c.kakao_room_name %}
+              <span class="room-badge {{ 'ok' if c.room_verified in ['verified','unverified'] else 'warn' }}">💬 {{ c.kakao_room_name }}</span>
+            {% else %}
+              <span class="room-badge warn">⚠ 카톡방 미등록</span>
+            {% endif %}
+          </div>
+        </div>
+      </label>
+      {% else %}
+      <p class="muted">카톡 연결된 담당자가 없습니다.</p>
+      {% endfor %}
+    </div>
+    <p class="hint" id="contact-count">선택: 0명</p>
+  </section>
+
+  <!-- 3) 미리보기 + 발송 -->
+  <section class="panel">
+    <h2 class="panel-title">③ 미리보기 · 발송
+      <button type="button" class="linkbtn" id="refresh-preview">미리보기 갱신</button>
+    </h2>
+    <div id="preview-tabs" class="preview-tabs"></div>
+    <div id="preview-area" class="preview-area">
+      <p class="muted">기업과 담당자를 선택한 뒤 [미리보기 갱신]을 누르세요.</p>
+    </div>
+    <div id="send-warnings" class="warn-box" hidden></div>
+    <button type="button" id="send-btn" class="primary-btn" disabled>발송 목록 생성 → 발송</button>
+    <p class="hint muted">발송 목록을 만들면 큐에 등록되고, 연결된 발송 에이전트가 자동으로 처리합니다.</p>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="/static/js/deals.js"></script>
+{% endblock %}

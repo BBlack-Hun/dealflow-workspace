@@ -1,0 +1,9 @@
+# Windows 발송 에이전트 전용 의존성 (KakaoDesktopSender).
+# 이 파일은 Windows PC에서만 설치합니다. 웹/도커 이미지는 requirements.txt만 사용하므로
+# pywinauto/pywin32가 리눅스 빌드를 깨뜨리지 않습니다 (TECH_SPEC §9).
+requests==2.32.3
+pyyaml==6.0.2
+pywinauto==0.6.9
+pywin32==308
+pyperclip==1.9.0
+pyautogui==0.9.54

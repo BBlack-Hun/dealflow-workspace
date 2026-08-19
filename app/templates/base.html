@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=1280">
+  <title>{% block title %}dealflow{% endblock %}</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>📨</text></svg>">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand">dealflow</div>
+      <div class="brand-sub">딜소싱 워크스페이스</div>
+      <nav class="menu">
+        {% for m in menu %}
+        <a class="menu-item {% if m.key == active %}active{% endif %}" href="{{ m.href }}">
+          <span>{{ m.label }}</span>
+          {% if m.sprint != 1 %}<span class="menu-badge">S{{ m.sprint }}</span>{% endif %}
+        </a>
+        {% endfor %}
+      </nav>
+      <div class="sidebar-foot">
+        <div id="agent-badge" class="agent-badge {% if agent.online %}on{% else %}off{% endif %}">
+          <span class="dot"></span>
+          <span id="agent-badge-label">{{ agent.label }}</span>
+        </div>
+      </div>
+    </aside>
+    <main class="content">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+  <script src="/static/js/agent_badge.js"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

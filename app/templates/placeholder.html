@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} · dealflow{% endblock %}
+{% block content %}
+<header class="page-head">
+  <h1>{{ title }}</h1>
+</header>
+<div class="placeholder-card">
+  <p class="ph-emoji">🚧</p>
+  <p><strong>{{ title }}</strong> 화면은 <strong>Sprint {{ sprint }}</strong>에서 구현됩니다.</p>
+  <p class="muted">현재 Sprint 1 범위는 <a href="/deals">딜소개 보내기</a> 최소 동작(문구 조합 → 발송 목록 생성 → 에이전트 자동 발송 → 진행 화면)입니다.</p>
+</div>
+{% endblock %}

@@ -1,0 +1,24 @@
+# 카카오톡 데스크톱 UI 셀렉터·단축키·타이밍 외부화 (TECH_SPEC §1.5, §5.2)
+# 카톡 업데이트로 UI가 바뀌면 코드가 아닌 이 파일만 수정합니다.
+# ⚠ 아래 값들은 Windows 실기 검증(ROADMAP 1.10) 전 초기 추정치입니다.
+
+backend: "uia"                       # pywinauto 백엔드 (uia | win32)
+main_window_title_re: "카카오톡.*"    # 메인 창 제목 정규식
+
+search_hotkey: ["ctrl", "f"]          # 친구/채팅 검색 열기
+
+# 각 단계 대기 시간(초) — 느린 PC에서는 늘리세요
+timings:
+  window_wait: 5.0          # 메인 창 존재/준비 대기
+  after_search_hotkey: 0.4  # Ctrl+F 후
+  after_query_paste: 0.8    # 방 이름 붙여넣기 후 검색 결과 대기
+  after_open_room: 0.8      # Enter로 방 연 후
+  chat_wait: 2.0            # 채팅창 핸들 대기
+  before_message_paste: 0.2
+  after_message_paste: 0.5  # 붙여넣기 안정 대기
+  after_send: 0.4           # Enter 전송 후
+
+# TODO(win, 1.10): 검색 결과 리스트 컨트롤 경로, 채팅창 제목 라벨 경로를
+# 실기에서 파악해 아래에 추가하고 kakao_windows.py의 정확 일치 검증에 연결.
+# search_result_list: { control_type: "List", ... }
+# chat_title_label: { control_type: "Text", ... }

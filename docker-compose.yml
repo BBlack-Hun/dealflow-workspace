@@ -1,0 +1,50 @@
+# dealflow Sprint 1 prototype — web app + mock sending agent.
+# `docker compose up -d --build`  → open http://localhost:8889
+#
+# The mock agent runs INSIDE compose so a send list created in the browser is
+# processed automatically end-to-end (success/failure shown on the progress screen).
+# The real KakaoDesktopSender is Windows-native and is NOT containerized.
+
+services:
+  web:
+    build: .
+    image: dealflow:sprint1
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      RUN_MIGRATIONS: "1"                       # apply migrations + seed on start
+      DEALFLOW_AGENT_TOKEN: "agt_demo_token_sprint1"
+      DATABASE_URL: "sqlite:////app/data/dealflow.db"
+    ports:
+      - "8889:8000"                             # host 8889 -> container 8000
+    volumes:
+      - dealflow_data:/app/data                 # persist SQLite across restarts
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+    restart: unless-stopped
+
+  agent-mock:
+    build: .
+    image: dealflow:sprint1
+    command: ["python", "-m", "agent.main", "--config", "agent/config.yaml"]
+    environment:
+      RUN_MIGRATIONS: "0"                       # agent never touches the DB
+      DEALFLOW_SERVER_URL: "http://web:8000"
+      DEALFLOW_AGENT_TOKEN: "agt_demo_token_sprint1"
+      # mock = 가짜 발송(기본) · telegram = 본인 텔레그램으로 실제 수신 테스트
+      DEALFLOW_SENDER: "${DEALFLOW_SENDER:-mock}"
+      DEALFLOW_MOCK_FAIL_RATE: "0.15"           # occasional failures to show retry flow
+      DEALFLOW_POLL_INTERVAL: "3"
+      # 테스트 수신용(.env 에서 주입, 비어 있으면 telegram 센더는 쓰지 않음)
+      DEALFLOW_TELEGRAM_TOKEN: "${DEALFLOW_TELEGRAM_TOKEN:-}"
+      DEALFLOW_TELEGRAM_CHAT_ID: "${DEALFLOW_TELEGRAM_CHAT_ID:-}"
+    depends_on:
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  dealflow_data:

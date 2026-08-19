@@ -1,0 +1,12 @@
+.git
+.venv
+.venv-agent
+__pycache__
+*.pyc
+data/
+agent_logs/
+*.db
+*.db-wal
+*.db-shm
+.pytest_cache
+docs/
