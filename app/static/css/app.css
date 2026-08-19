@@ -121,3 +121,20 @@ a:hover { text-decoration: underline; }
 
 .placeholder-card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 40px; text-align: center; margin-top: 24px; }
 .ph-emoji { font-size: 40px; margin: 0 0 8px; }
+
+/* ── 에이전트 설치 화면 (/setup) ───────────────────────────── */
+.dl-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.steps { margin: 6px 0 0 18px; padding: 0; line-height: 1.9; }
+.steps li { margin-bottom: 4px; }
+.kv { width: 100%; border-collapse: collapse; }
+.kv th { text-align: left; width: 160px; padding: 8px 10px; color: var(--muted);
+         font-weight: 600; vertical-align: top; }
+.kv td { padding: 8px 10px; }
+code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e5e7eb);
+       border-radius: 4px; padding: 1px 6px; font-size: 12.5px;
+       font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+code.token { word-break: break-all; }
+pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e5e7eb);
+           border-radius: 6px; padding: 10px 12px; overflow-x: auto; font-size: 12.5px;
+           line-height: 1.7; margin: 6px 0 0; }
+.warn-panel { border-left: 3px solid var(--warn, #d97706); }
