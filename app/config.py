@@ -29,6 +29,10 @@ AGENT_ONLINE_WINDOW_SEC = int(os.environ.get("DEALFLOW_AGENT_ONLINE_WINDOW_SEC",
 # Message length warning threshold (FEATURE_SPEC §5: 카톡 장문 붙여넣기 안정성).
 MESSAGE_WARN_CHARS = 3000
 
+# 신규 계정의 초기 비밀번호. 전원 동일하게 발급하고, 첫 로그인 시 변경을 강제한다
+# (must_change_password=1). 운영에서는 반드시 .env 로 바꿔서 쓸 것.
+INITIAL_PASSWORD = os.environ.get("DEALFLOW_INITIAL_PASSWORD", "dealflow123")
+
 # ── 테스트 모드 ───────────────────────────────────────────────────────────────
 # 값이 있으면 **모든 발송이 이 카톡방 하나로만** 나간다(실제 담당자 방으로 가지 않음).
 # 실투자사 150명에게 실수로 발송되는 사고를 막기 위한 안전장치.

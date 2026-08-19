@@ -20,32 +20,30 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-# 개발용 사용자 전환 쿠키. ★ 인증이 아니다.
-DEV_USER_COOKIE = "dealflow_dev_user"
+class NotAuthenticated(HTTPException):
+    """로그인 필요. 미들웨어/핸들러가 로그인 화면으로 보낸다."""
+
+    def __init__(self) -> None:
+        super().__init__(status_code=401, detail="로그인이 필요합니다")
 
 
 def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
-    """현재 사용자 — **개발용 임시 전환**(쿠키), 없으면 기본 사용자로 폴백.
+    """현재 로그인 사용자 (휴대폰번호 + 비밀번호 세션).
 
-    ★ 이것은 인증이 아니다. 쿠키만 바꾸면 누구나 다른 사용자가 되므로 내부 테스트
-    전용이다. 정식 로그인(휴대폰번호 + 비밀번호)은 다음 스프린트에 붙는다.
-
-    지금 이게 필요한 이유: Mac·Windows 두 기기로 동시에 테스트할 때 모두가 같은
-    사용자로 잡히면 어느 기기가 잡을 가져갈지 예측할 수 없다. 기기마다 다른 사용자를
-    고르면 ``SendJob.user_id == AgentDevice.user_id`` 격리로 자연히 갈린다.
-
-    정식 로그인 도입 시 **이 함수 한 곳만** 세션 조회로 바꾸면 된다(쿠키 → 세션).
+    쿠키에는 **세션 토큰만** 담기고 소유자는 서버가 DB 에서 판단한다.
+    (이전의 개발용 전환은 쿠키에 user_id 를 그대로 담아 누구나 바꿀 수 있었다.)
     """
-    user = None
-    raw = request.cookies.get(DEV_USER_COOKIE)
-    if raw and raw.isdigit():
-        user = db.get(User, int(raw))
-        if user is not None and not user.is_active:
-            user = None
+    from .services import auth as auth_svc
+
+    user = auth_svc.user_for_token(db, request.cookies.get(auth_svc.SESSION_COOKIE))
     if user is None:
-        user = db.get(User, config.CURRENT_USER_ID)
-    if user is None:
-        raise HTTPException(status_code=500, detail="Seed data missing — run seed_demo.py")
+        raise NotAuthenticated()
+    return user
+
+
+def require_admin(user: User = Depends(get_current_user)) -> User:
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="관리자만 접근할 수 있습니다")
     return user
 
 

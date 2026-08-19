@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..deps import DEV_USER_COOKIE, get_current_user, templates
+from ..deps import get_current_user, templates
 from ..models import IrCompany, SendJob, User, VcContact
 from ..ui import MENU, base_ctx as _base_ctx
 from .contacts import contact_rows
@@ -20,22 +20,6 @@ __all__ = ["router", "MENU"]
 @router.get("/", include_in_schema=False)
 def index():
     return RedirectResponse(url="/deals")
-
-
-@router.get("/dev/switch-user", include_in_schema=False)
-def switch_user(user_id: int, next: str = "/deals", db: Session = Depends(get_db)):
-    """개발용 사용자 전환 — 쿠키에 user_id 를 심고 원래 화면으로 돌아간다.
-
-    ★ 인증이 아니다(정식 로그인은 다음 스프린트: 휴대폰번호 + 비밀번호).
-    내부 테스트에서 '지금 누구로 보고 있는지'를 바꾸기 위한 스위치일 뿐이다.
-    """
-    user = db.get(User, user_id)
-    target = next if next.startswith("/") else "/deals"  # 외부 주소로 튕기지 않게
-    response = RedirectResponse(url=target, status_code=303)
-    if user is not None:
-        response.set_cookie(DEV_USER_COOKIE, str(user.id), max_age=60 * 60 * 24 * 30,
-                            httponly=True, samesite="lax")
-    return response
 
 
 @router.get("/deals", response_class=HTMLResponse)

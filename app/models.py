@@ -36,6 +36,23 @@ class User(TimestampMixin, Base):
     role: Mapped[str] = mapped_column(String, default="user")  # user | admin
     weekly_goal_sends: Mapped[int] = mapped_column(Integer, default=30)
     is_active: Mapped[int] = mapped_column(Integer, default=1)
+    # 로그인 ID 는 phone(숫자만). 비밀번호는 해시만 저장한다.
+    password_hash: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # 관리자가 계정을 만들거나 초기화하면 첫 로그인 때 변경을 요구한다.
+    must_change_password: Mapped[int] = mapped_column(Integer, default=0)
+    last_login_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+
+class Session(TimestampMixin, Base):
+    """로그인 세션. 쿠키에는 토큰만 담고 서버가 소유자를 판단한다."""
+
+    __tablename__ = "sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    token: Mapped[str] = mapped_column(String, unique=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    expires_at: Mapped[str] = mapped_column(String)
+    user_agent: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
 
 class MessageTemplate(TimestampMixin, Base):

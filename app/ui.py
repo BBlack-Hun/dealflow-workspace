@@ -27,20 +27,12 @@ MENU = [
 ]
 
 
-def switchable_users(db: Session) -> list:
-    """전환 가능한 사용자 목록(개발용). 표시는 이름 + 휴대폰번호(숫자만)."""
-    return db.execute(
-        select(User).where(User.is_active == 1).order_by(User.id)
-    ).scalars().all()
-
-
 def base_ctx(request: Request, db: Session, user: User, active: str) -> dict:
     return {
         "request": request,
         "menu": MENU,
         "active": active,
         "user": user,
-        "users": switchable_users(db),
         "agent": agent_status(db, user.id),
         "test_room": config.TEST_ROOM,
         "current_path": request.url.path,

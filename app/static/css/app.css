@@ -251,3 +251,25 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
                border-radius: 8px; padding: 10px 14px; margin-bottom: 14px;
                font-size: 13px; line-height: 1.6; }
 .test-banner code { background: #ffedd5; border-color: #fdba74; }
+
+/* ── 로그인 / 내 계정 ─────────────────────────────────────── */
+.login-body { display: flex; align-items: center; justify-content: center;
+              min-height: 100vh; background: var(--bg, #f6f7f9); }
+.login-card { width: 340px; background: #fff; border: 1px solid var(--line, #e5e7eb);
+              border-radius: 12px; padding: 28px 26px; }
+.login-card .brand { font-size: 20px; font-weight: 700; }
+.login-card .brand-sub { color: var(--muted, #6b7280); font-size: 12.5px; margin-bottom: 18px; }
+.login-card label { display: block; font-size: 12.5px; color: var(--muted, #6b7280);
+                    margin: 12px 0 4px; }
+.login-card input { width: 100%; padding: 9px 10px; border: 1px solid var(--line, #e5e7eb);
+                    border-radius: 6px; font-size: 14px; }
+.login-btn { width: 100%; margin-top: 18px; }
+.login-error { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b;
+               border-radius: 6px; padding: 8px 10px; font-size: 13px; margin-bottom: 4px; }
+.login-hint { margin-top: 14px; }
+.me { padding: 10px 12px; border-top: 1px solid var(--line, #e5e7eb); font-size: 12.5px; }
+.me-name { font-weight: 600; }
+.me-phone { color: var(--muted, #6b7280); font-family: ui-monospace, Menlo, monospace;
+            font-size: 11.5px; margin-top: 1px; }
+.me-links { margin-top: 6px; display: flex; gap: 10px; }
+.me-links a { color: var(--muted, #6b7280); font-size: 11.5px; }

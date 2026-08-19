@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>로그인 · dealflow</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>📨</text></svg>">
+</head>
+<body class="login-body">
+  <main class="login-card">
+    <div class="brand">dealflow</div>
+    <div class="brand-sub">딜소싱 워크스페이스</div>
+
+    {% if error %}
+    <p class="login-error">휴대폰번호 또는 비밀번호가 올바르지 않습니다.</p>
+    {% endif %}
+
+    <form method="post" action="/login">
+      <input type="hidden" name="next" value="{{ next }}">
+      <label for="phone">휴대폰번호</label>
+      <input id="phone" name="phone" type="tel" inputmode="numeric"
+             placeholder="01012345678" autocomplete="username" required autofocus>
+
+      <label for="password">비밀번호</label>
+      <input id="password" name="password" type="password"
+             autocomplete="current-password" required>
+
+      <button class="btn primary login-btn" type="submit">로그인</button>
+    </form>
+
+    <p class="hint login-hint">
+      하이픈(-) 없이 숫자만 입력해도 되고, 넣어도 됩니다.<br>
+      <b>처음 로그인</b>이라면 관리자가 안내한 초기 비밀번호를 쓰세요 —
+      로그인하면 바로 변경 화면으로 이동합니다.<br>
+      비밀번호를 잊었다면 관리자에게 초기화를 요청하세요.
+    </p>
+  </main>
+</body>
+</html>
