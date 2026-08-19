@@ -459,13 +459,24 @@ class KakaoMacSender(Sender):
 
         try:
             # 1) 이미 열린 창이 있으면 그걸 쓰고, 없으면 검색으로 연다.
+            #    방이 막 열리는 순간 포커스가 잡히지 않아 실패하는 일이 있었다
+            #    (실기: 1회차 room_not_found → 2회차 성공). 일시적 타이밍 문제이므로
+            #    한 번 더 시도한다. 재시도해도 안 되면 그대로 실패로 남긴다.
             if not self._focus_window(room_name):
-                try:
-                    self._open_room_via_search(room_name)
-                except QuartzUnavailable as exc:
-                    # 창이 안 열려 있고 자동 열기도 불가 → 사용자가 창만 열어두면 된다.
-                    return SendResult(ok=False, error=f"room_not_open: {exc}")
-                if not self._focus_window(room_name):
+                opened = False
+                for attempt in (1, 2):
+                    try:
+                        self._open_room_via_search(room_name)
+                    except QuartzUnavailable as exc:
+                        # 창이 안 열려 있고 자동 열기도 불가 → 사용자가 창만 열어두면 된다.
+                        return SendResult(ok=False, error=f"room_not_open: {exc}")
+                    except Exception as exc:  # noqa: BLE001
+                        log.warning("방 열기 %d회차 실패: %s", attempt, exc)
+                    if self._focus_window(room_name):
+                        opened = True
+                        break
+                    time.sleep(0.6)
+                if not opened:
                     return SendResult(ok=False, error=f"room_not_found: {room_name!r}")
 
             # 2) ★ 오발송 방지: 최전면 창 제목이 room_name 과 정확히 일치하는지 재확인

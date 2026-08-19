@@ -350,6 +350,50 @@ def is_invited(value: str) -> bool:
     return ("완료" in v) or ("완" == v) or v in ("o", "y", "yes", "ok", "v", "√", "○", "●")
 
 
+
+# ── 금액 파싱 ────────────────────────────────────────────────────────────────
+
+_MONEY_RE = re.compile(r"(\d[\d,]*(?:\.\d+)?)\s*(억|천만|백만|만)?")
+
+
+def parse_money_to_million(text: Optional[str]) -> Optional[int]:
+    """'11억', '2.5억', '1억 원', '2억원~5억' → **백만원 단위 정수**.
+
+    시트의 금액 칸은 자유 서술이라 표기가 제각각이다. DB 는 백만원 단위로 저장하므로
+    (기존 필드 규약) 여기서 맞춰준다.
+
+    범위('2억원~5억')는 **작은 쪽**을 취한다 — 유치 희망 금액을 크게 잡아
+    실제보다 부풀려 소개하는 것보다 보수적인 편이 안전하다.
+    숫자를 못 찾으면 None 을 돌려 '값 없음'으로 남긴다(0 으로 채우지 않는다).
+    """
+    t = norm(text)
+    if not t:
+        return None
+    # 미정/협의 등은 값으로 보지 않는다.
+    if any(k in t for k in ("미정", "협의", "비공개", "추후", "없음", "해당없음")):
+        return None
+
+    values = []
+    for m in _MONEY_RE.finditer(t.replace(" ", "")):
+        num, unit = m.group(1), m.group(2)
+        try:
+            v = float(num.replace(",", ""))
+        except ValueError:
+            continue
+        if unit == "억":
+            values.append(v * 100)          # 1억 = 100백만
+        elif unit == "천만":
+            values.append(v * 10)
+        elif unit == "백만":
+            values.append(v)
+        elif unit == "만":
+            values.append(v / 100)
+        # 단위가 없으면 무시한다 — '2020년' 같은 연도를 금액으로 오인하지 않기 위함.
+    if not values:
+        return None
+    return int(round(min(values)))
+
+
 # ── 시트 A ──────────────────────────────────────────────────────────────────
 
 @dataclass
@@ -875,6 +919,85 @@ def apply_sheet_b(db: Session, parsed: SheetBParse, dry_run: bool = False) -> Im
             "담당자 미매칭(계정 없음, owner 비움): " + ", ".join(sorted(unmatched_owners))
         )
     report.notes.append("요약문(summary)은 임포트하지 않는다 — 딜 기업 DB 화면에서 작성/자동조합")
+
+    if dry_run:
+        db.rollback()
+    else:
+        db.commit()
+    return report
+
+
+# ── 기업 재무 시트(스타트업DB) ───────────────────────────────────────────────
+
+def apply_company_financials(db, rows, *, dry_run: bool = False) -> ImportReport:
+    """'스타트업DB(기업정보)' 탭 → 기존 ir_companies 에 재무 정보를 채운다.
+
+    IR 기업현황 탭에는 한줄 소개·분야만 있고 매출·투자·밸류가 없다.
+    그런데 딜소개 문구는 그 숫자들로 만들어지므로, 이 탭을 합쳐야 발송이 가능해진다.
+
+    기업명으로 매칭하며, **이미 값이 있는 칸은 덮어쓰지 않는다**
+    (사람이 손봐둔 값을 시트가 밀어내지 않도록).
+    """
+    report = ImportReport()
+    header_idx = detect_header_row(rows, ["기업명"])
+    if header_idx is None:
+        raise ValueError("헤더 행을 찾지 못했습니다 ('기업명' 필요)")
+    header = rows[header_idx]
+
+    cols = {
+        "name": find_column(header, ["기업명"]),
+        "revenue": first_column(header, ["최근", "매출"], ["매출액"]),
+        "raise_target": find_column(header, ["투자유치희망"]),
+        "funding_total": find_column(header, ["누적투자"]),
+        "pre_value": find_column(header, ["pre", "value"]),
+        "competitiveness": first_column(header, ["특이사항"], ["장점"]),
+        "sector": find_column(header, ["사업분야"]),
+    }
+    if cols["name"] is None:
+        raise ValueError("'기업명' 컬럼을 찾지 못했습니다")
+
+    # 이름 → 기업 (정규화해서 '(주)' 유무 차이를 흡수)
+    index = {}
+    for c in db.execute(select(IrCompany)).scalars().all():
+        index.setdefault(normalize_company_name(c.name), c)
+
+    for row in rows[header_idx + 1:]:
+        raw_name = _cell(row, cols["name"])
+        if not raw_name:
+            continue
+        company = index.get(normalize_company_name(raw_name))
+        if company is None:
+            # 재무 시트에만 있고 기업 DB 에는 없는 회사 — 새로 만들지 않고 남긴다
+            # (IR 기업현황 탭이 기준 명단이므로 여기서 임의로 늘리지 않는다).
+            report.skipped.append(SkippedRow(row_no=0, reason="기업 DB 에 없음",
+                                             preview=raw_name[:40]))
+            continue
+
+        changed = False
+        for field, col in (("revenue_recent", "revenue"),
+                           ("raise_target", "raise_target"),
+                           ("funding_total", "funding_total"),
+                           ("pre_value", "pre_value")):
+            if getattr(company, field) not in (None, 0):
+                continue   # 사람이 넣어둔 값 보존
+            value = parse_money_to_million(_raw_cell(row, cols[col]))
+            if value:
+                setattr(company, field, value)
+                changed = True
+
+        if not company.competitiveness:
+            note = _raw_cell(row, cols["competitiveness"]).strip()
+            if note:
+                company.competitiveness = note[:300]
+                changed = True
+        if not company.one_liner:
+            desc = _raw_cell(row, cols["sector"]).strip()
+            if desc:
+                company.one_liner = desc[:300]
+                changed = True
+
+        if changed:
+            report.updated += 1
 
     if dry_run:
         db.rollback()

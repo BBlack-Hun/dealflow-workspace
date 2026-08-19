@@ -46,6 +46,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--sheet-a-url", help="투자사 명단 시트 탭 URL (CSV 자동 다운로드)")
     p.add_argument("--sheet-b", help="기업 명단 시트(IR 기업현황 / 스타트업) CSV 경로")
     p.add_argument("--sheet-b-url", help="기업 명단 시트 탭 URL (CSV 자동 다운로드)")
+    p.add_argument("--financials-url", help="기업 재무 시트(스타트업DB) 탭 URL")
     p.add_argument("--user-id", type=int,
                    help="담당자 칸이 비었거나 계정이 없을 때 쓸 폴백 user_id (시트 A 임포트 시 필수)")
     p.add_argument("--label", help="이 시트의 이름표 (기본: 파일명). vc_contacts.source_sheet 에 기록")
@@ -98,7 +99,7 @@ def main(argv=None) -> int:
         args.sheet_b = fetch_sheet(args.sheet_b_url)
         print(f"[다운로드] 시트 B → {args.sheet_b}")
 
-    if not args.sheet_a and not args.sheet_b:
+    if not args.sheet_a and not args.sheet_b and not getattr(args, 'financials_url', None):
         print("--sheet-a 또는 --sheet-b 중 하나는 필요합니다", file=sys.stderr)
         return 2
     if args.sheet_a and args.user_id is None:
@@ -132,6 +133,13 @@ def main(argv=None) -> int:
                   f"헤더 {(parsed_b.header_row or 0) + 1}행 인식 · 기업 {len(parsed_b.companies)}개")
             report_b = si.apply_sheet_b(db, parsed_b, dry_run=args.dry_run)
             print(report_b.as_text("기업 명단 → 딜 기업 DB"))
+
+        if getattr(args, "financials_url", None):
+            path = fetch_sheet(args.financials_url)
+            print(f"[다운로드] 재무 시트 → {path}")
+            rows = si.read_csv(path, encoding=args.encoding)
+            rep = si.apply_company_financials(db, rows, dry_run=args.dry_run)
+            print(rep.as_text("기업 재무 → 딜 기업 DB"))
 
         if args.dry_run:
             print("\n※ --dry-run: DB에 아무것도 쓰지 않았습니다.")
