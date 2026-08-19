@@ -14,9 +14,17 @@
       <span>회차명</span>
       <input type="text" id="batch-title" value="딜소개 회차" />
     </label>
+    <div class="picker-search">
+      <input type="search" id="company-search" placeholder="기업명 · 분야 · 소개 검색 ({{ companies|length }}개)"
+             autocomplete="off" aria-label="기업 검색">
+      <label class="only-picked">
+        <input type="checkbox" id="only-picked"> 선택한 것만
+      </label>
+    </div>
     <div class="card-list" id="company-list">
       {% for c in companies %}
-      <label class="pick-card">
+      <label class="pick-card"
+             data-search="{{ (c.name ~ ' ' ~ (c.sector_major or '') ~ ' ' ~ (c.sector_minor or '') ~ ' ' ~ (c.one_liner or '') ~ ' ' ~ (c.series or ''))|lower }}">
         <input type="checkbox" class="company-cb" value="{{ c.id }}" data-name="{{ c.name }}">
         <div class="pick-body">
           <div class="pick-name">
@@ -31,6 +39,7 @@
       {% endfor %}
     </div>
     <p class="hint" id="company-count">선택: 0 / 3</p>
+    <p class="hint" id="company-filter-note" hidden></p>
   </section>
 
   <!-- 2) 대상 담당자 -->
