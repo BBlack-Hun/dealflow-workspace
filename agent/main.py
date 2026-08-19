@@ -47,6 +47,7 @@ DEFAULT_CONFIG = {
     "job_cap": 60,             # 1잡 상한 (계정 보호)
     # 방 연결 확인은 메시지를 보내지 않아 검색만 반복한다. 그래도 사람 속도를 흉내낸다
     # (연속 검색도 자동화로 읽힐 수 있음). 발송 지연과 별개 값으로 둔다.
+    "room_marker": "",   # 딜소개 방을 가려내는 표식(예: "우리브이씨 Asset")
     "verify_delay_min_sec": 1,
     "verify_delay_max_sec": 2,
     "mock": {"delay_min_sec": 0.5, "delay_max_sec": 1.5, "fail_rate": 0.15},
@@ -64,6 +65,7 @@ def load_config(path: str) -> dict:
     cfg["server_url"] = os.environ.get("DEALFLOW_SERVER_URL", cfg["server_url"])
     cfg["token"] = os.environ.get("DEALFLOW_AGENT_TOKEN", cfg["token"])
     cfg["sender"] = os.environ.get("DEALFLOW_SENDER", cfg["sender"])
+    cfg["room_marker"] = os.environ.get("DEALFLOW_ROOM_MARKER", cfg.get("room_marker", ""))
     if os.environ.get("DEALFLOW_POLL_INTERVAL"):
         cfg["poll_interval_sec"] = float(os.environ["DEALFLOW_POLL_INTERVAL"])
     if os.environ.get("DEALFLOW_MOCK_FAIL_RATE"):
@@ -135,11 +137,12 @@ class AgentClient:
         return r.json()
 
     def report_item(self, item_id: int, status: str, error=None, screenshot_b64=None,
-                    verify_result=None):
+                    verify_result=None, found_room=None, candidates=None):
         return self.session.post(
             f"{self.base}/api/agent/items/{item_id}/result",
             json={"status": status, "error": error, "screenshot_b64": screenshot_b64,
-                  "verify_result": verify_result},
+                  "verify_result": verify_result,
+                  "found_room": found_room, "candidates": candidates},
             timeout=15,
         )
 
@@ -220,8 +223,17 @@ def process_verify_job(client: AgentClient, sender, job: dict, cfg: dict):
     any_fail = False
     for i, item in enumerate(items, start=1):
         room = item["room_name"]
+        query = (item.get("query") or "").strip() or room
+        marker = str(cfg.get("room_marker", "") or "")
         try:
-            verdict = sender.verify_room(room)
+            # 방 이름은 생성으로 맞출 수 없다 → 이름+직함으로 **검색해 실제 제목을 찾는다**.
+            found = []
+            if hasattr(sender, "discover_rooms"):
+                found = sender.discover_rooms(query, marker=marker)
+            if found:
+                verdict = "verified" if len(found) == 1 else "ambiguous"
+            else:
+                verdict = sender.verify_room(room)
         except Exception as exc:  # noqa: BLE001 - 한 건 실패로 전체를 멈추지 않는다
             log.exception("verify 실패 room=%r", room)
             verdict = "not_found"
@@ -231,8 +243,11 @@ def process_verify_job(client: AgentClient, sender, job: dict, cfg: dict):
         else:
             ok = verdict == "verified"
             any_fail = any_fail or not ok
-            client.report_item(item["id"], "sent" if ok else "failed", verify_result=verdict)
-            log.info("  [%d/%d] %s room=%r", i, len(items), verdict, room)
+            client.report_item(item["id"], "sent" if ok else "failed",
+                               verify_result=verdict,
+                               found_room=found[0] if len(found) == 1 else None,
+                               candidates=found or None)
+            log.info("  [%d/%d] %s query=%r found=%r", i, len(items), verdict, query, found)
         if i < len(items):
             time.sleep(random.uniform(float(cfg.get("verify_delay_min_sec", 1)),
                                       float(cfg.get("verify_delay_max_sec", 2))))
