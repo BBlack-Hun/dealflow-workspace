@@ -11,6 +11,8 @@ services:
     image: dealflow:sprint1
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
     environment:
+      # 값이 있으면 모든 발송이 이 카톡방 하나로만 나간다(실투자사 오발송 방지).
+      DEALFLOW_TEST_ROOM: "${DEALFLOW_TEST_ROOM:-}"
       RUN_MIGRATIONS: "1"                       # apply migrations + seed on start
       DEALFLOW_AGENT_TOKEN: "agt_demo_token_sprint1"
       DATABASE_URL: "sqlite:////app/data/dealflow.db"

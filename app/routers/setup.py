@@ -18,6 +18,7 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .. import config
 from ..db import get_db
 from ..deps import agent_status, get_current_user, templates
 from ..models import AgentDevice, User
@@ -128,6 +129,7 @@ def setup_page(
             "active": "setup",
             "user": user,
             "agent": agent_status(db),
+            "test_room": config.TEST_ROOM,
             "server_url": _server_url(request),
             "token": _ensure_token(db, user),
         },

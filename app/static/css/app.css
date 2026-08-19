@@ -138,3 +138,9 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
            border-radius: 6px; padding: 10px 12px; overflow-x: auto; font-size: 12.5px;
            line-height: 1.7; margin: 6px 0 0; }
 .warn-panel { border-left: 3px solid var(--warn, #d97706); }
+
+/* ── 테스트 모드 배너 ─────────────────────────────────────── */
+.test-banner { background: #fff7ed; border: 1px solid #fdba74; color: #9a3412;
+               border-radius: 8px; padding: 10px 14px; margin-bottom: 14px;
+               font-size: 13px; line-height: 1.6; }
+.test-banner code { background: #ffedd5; border-color: #fdba74; }
