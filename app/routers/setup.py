@@ -107,6 +107,23 @@ mock:
 """
 
 
+def _build_info(os_kind: str) -> str:
+    """zip 에 동봉하는 빌드 정보.
+
+    서버 이미지가 낡으면 옛 코드가 담긴 zip 이 배포되는데(실기 발생),
+    받은 쪽에서는 그걸 알 방법이 없다. 코드 지문을 남겨 대조 가능하게 한다.
+    """
+    import hashlib
+
+    parts = [f"os: {os_kind}"]
+    for src, _dest in AGENT_FILES:
+        f = ROOT / src
+        if f.exists():
+            digest = hashlib.sha256(f.read_bytes()).hexdigest()[:12]
+            parts.append(f"{src}  {digest}")
+    return "dealflow agent build\n" + "\n".join(parts) + "\n"
+
+
 def _server_url(request: Request) -> str:
     """사용자가 실제로 접속한 주소. 에이전트가 그대로 되돌아오면 된다."""
     return str(request.base_url).rstrip("/")
@@ -170,6 +187,7 @@ def download_agent(
             zf.writestr(dest, data)
         zf.writestr("agent/config.yaml", config_yaml)
         zf.writestr("agent_logs/.keep", "")
+        zf.writestr("BUILD_INFO.txt", _build_info(os_kind))
 
     buf.seek(0)
     name = f"dealflow-agent-{os_kind}.zip"

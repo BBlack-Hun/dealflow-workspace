@@ -102,6 +102,12 @@ DEALFLOW_AGENT_TOKEN=agt_demo_token_sprint1 \
 .venv-agent/bin/python -m agent.main --config agent/config.yaml
 ```
 
+
+> ⚠️ **에이전트 코드를 고쳤으면 반드시 `docker compose up -d --build`** 로 이미지를 다시 만드세요.
+> `/download/agent` 는 **컨테이너 안의 파일**을 묶어 내려주므로, 이미지가 낡으면
+> 고치기 전 코드가 담긴 zip 이 배포됩니다(실제로 겪은 문제).
+> 받은 zip 의 `BUILD_INFO.txt` 에 파일 지문이 들어 있으니 서버와 대조할 수 있습니다.
+
 ### Windows 에이전트 배포
 
 `dist/dealflow-agent-windows.zip` 를 Windows PC로 복사 →
