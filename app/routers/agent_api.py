@@ -13,6 +13,7 @@ job is never handed to two agents. Web app and agent never share the DB — HTTP
 from __future__ import annotations
 
 import base64
+import json
 from pathlib import Path
 from typing import Optional
 
@@ -190,3 +191,49 @@ def heartbeat(
                   sender=body.sender)
     db.commit()
     return {"ok": True, "server_time": now_iso()}
+
+
+class Diagnostics(BaseModel):
+    """에이전트가 올리는 진단 스냅샷.
+
+    사용자의 Windows PC는 별도 기기라 원격에서 명령을 돌릴 수 없다.
+    대신 에이전트가 스스로 상태를 수집해 서버로 보내면, 서버 쪽에서
+    원인을 확인할 수 있다(카톡 창 제목 불일치·포커스 실패 진단용).
+    """
+    kind: Optional[str] = None            # startup | send_failed | manual
+    agent_hostname: Optional[str] = None  # 에이전트가 도는 PC 이름
+    platform: Optional[str] = None
+    sender: Optional[str] = None
+    foreground_window: Optional[str] = None
+    window_titles: Optional[list] = None  # 열려 있는 창 제목 전체
+    target_room: Optional[str] = None     # 보내려던 방
+    error: Optional[str] = None
+    log_tail: Optional[str] = None        # 최근 로그 몇 줄
+
+
+@router.post("/diagnostics")
+def diagnostics(
+    body: Diagnostics,
+    db: Session = Depends(get_db),
+    device: AgentDevice = Depends(get_agent_device),
+):
+    """진단 스냅샷을 파일로 남긴다 (data/agent_reports.log).
+
+    DB 스키마를 늘리지 않고도 서버에서 바로 열어볼 수 있게 로그 파일로 적재한다.
+    """
+    from .. import config as _config
+
+    line = {
+        "at": now_iso(),
+        "user_id": device.user_id,
+        "hostname": device.hostname,
+        **body.model_dump(exclude_none=True),
+    }
+    try:
+        path = Path(_config.DATA_DIR) / "agent_reports.log"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(line, ensure_ascii=False) + "\n")
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True}

@@ -128,6 +128,16 @@ class AgentClient:
             timeout=15,
         )
 
+    def report_diagnostics(self, payload: dict):
+        """진단 스냅샷을 서버로 올린다(실패해도 발송에는 영향 없음)."""
+        payload = {**payload, "agent_hostname": self.hostname}
+        try:
+            return self.session.post(f"{self.base}/api/agent/diagnostics",
+                                     json=payload, timeout=15)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("진단 업로드 실패: %s", exc)
+            return None
+
     def report_job(self, job_id: int, status: str):
         return self.session.post(f"{self.base}/api/agent/jobs/{job_id}/status",
                                  json={"status": status}, timeout=15)
@@ -154,6 +164,10 @@ def process_job(client: AgentClient, sender, job: dict, cfg: dict):
             client.report_item(item["id"], "failed", error=result.error,
                                screenshot_b64=result.screenshot_b64)
             log.warning("  [%d/%d] FAILED room=%r: %s", i, len(items), item["room_name"], result.error)
+            # 실패 원인을 서버에서 볼 수 있게 창 상태를 함께 올린다.
+            client.report_diagnostics(
+                collect_diagnostics(sender, "send_failed",
+                                    target_room=item["room_name"], error=result.error))
         # human-like inter-send delay
         if i < len(items):
             time.sleep(random.uniform(float(cfg["delay_min_sec"]), float(cfg["delay_max_sec"])))
@@ -161,6 +175,43 @@ def process_job(client: AgentClient, sender, job: dict, cfg: dict):
     client.report_job(job_id, "done_with_errors" if any_fail else "done")
     log.info("job %s complete (errors=%s)", job_id, any_fail)
 
+
+
+
+def collect_diagnostics(sender, kind: str, target_room=None, error=None) -> dict:
+    """현재 창 상태 + 최근 로그를 모아 서버로 보낼 형태로 만든다.
+
+    Windows PC 는 원격 접속이 안 되므로, 에이전트가 스스로 상태를 보고해야
+    서버 쪽에서 room_mismatch / focus_failed 원인을 판단할 수 있다.
+    """
+    payload = {"kind": kind, "platform": platform.system(),
+               "sender": getattr(sender, "name", "unknown")}
+    if target_room:
+        payload["target_room"] = target_room
+    if error:
+        payload["error"] = error
+
+    try:
+        from agent.diagnose import list_titles
+        payload["window_titles"] = list_titles()
+    except Exception as exc:  # noqa: BLE001
+        payload["window_titles"] = [f"(수집 실패: {exc})"]
+
+    try:
+        fg = getattr(sender, "_foreground_title", None)
+        if callable(fg):
+            payload["foreground_window"] = fg()
+    except Exception:  # noqa: BLE001
+        pass
+
+    try:
+        log_path = Path(__file__).resolve().parent.parent / "agent_logs" / "agent.log"
+        if log_path.exists():
+            lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+            payload["log_tail"] = "\n".join(lines[-40:])
+    except Exception:  # noqa: BLE001
+        pass
+    return payload
 
 
 def _setup_logging() -> None:
@@ -204,6 +255,8 @@ def main(argv=None):
     sender = build_sender(cfg)
     client = AgentClient(cfg)
     client.sender_name = getattr(sender, "name", "unknown")
+    # 기동 시 1회 환경 스냅샷 업로드 — 서버에서 카톡 창 상태를 확인할 수 있게.
+    client.report_diagnostics(collect_diagnostics(sender, "startup"))
 
     last_heartbeat = 0.0
     while True:
