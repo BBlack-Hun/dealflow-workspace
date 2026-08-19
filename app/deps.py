@@ -58,8 +58,25 @@ def agent_status(db: Session) -> dict:
             online = delta <= config.AGENT_ONLINE_WINDOW_SEC
         except ValueError:
             online = False
+    # 어떤 발송기가 붙었는지까지 보여준다.
+    # mock 이 붙은 채로 실제 발송을 누르면 그 잡을 가로채 '보낸 것처럼' 처리되므로,
+    # 단순히 "연결됨"만 띄우면 실발송이 안 되는 이유를 알 수 없다.
+    sender = getattr(device, "sender", None) if device else None
+    host = (device.hostname or "").strip() if device else ""
+    is_mock = sender == "mock"
+
+    if not online:
+        label = "발송 에이전트 오프라인"
+    elif is_mock:
+        label = f"데모(mock) 에이전트 — 실제 발송 안 됨{f' · {host}' if host else ''}"
+    else:
+        label = f"발송 에이전트 연결됨{f' · {host}' if host else ''}"
+
     return {
         "online": online,
         "last_poll_at": last_poll,
-        "label": "발송 에이전트 연결됨" if online else "발송 에이전트 오프라인",
+        "sender": sender,
+        "hostname": host,
+        "is_mock": is_mock,
+        "label": label,
     }

@@ -32,12 +32,14 @@ AGENT_LOG_DIR = config.BASE_DIR / "agent_logs"
 
 
 def _touch_device(db: Session, device: AgentDevice, hostname: Optional[str] = None,
-                  version: Optional[str] = None) -> None:
+                  version: Optional[str] = None, sender: Optional[str] = None) -> None:
     device.last_poll_at = now_iso()
     if hostname:
         device.hostname = hostname
     if version:
         device.agent_version = version
+    if sender:
+        device.sender = sender
 
 
 @router.get("/poll")
@@ -175,6 +177,7 @@ def job_status_update(
 class Heartbeat(BaseModel):
     hostname: Optional[str] = None
     agent_version: Optional[str] = None
+    sender: Optional[str] = None
 
 
 @router.post("/heartbeat")
@@ -183,6 +186,7 @@ def heartbeat(
     db: Session = Depends(get_db),
     device: AgentDevice = Depends(get_agent_device),
 ):
-    _touch_device(db, device, hostname=body.hostname, version=body.agent_version)
+    _touch_device(db, device, hostname=body.hostname, version=body.agent_version,
+                  sender=body.sender)
     db.commit()
     return {"ok": True, "server_time": now_iso()}

@@ -26,7 +26,10 @@ services:
       start_period: 5s
     restart: unless-stopped
 
+  # 데모용 가짜 발송기. 실제 카톡 발송을 테스트할 때 같은 토큰으로 잡을 가로채므로
+  # 기본 기동에서 제외한다. 필요할 때만:  docker compose --profile demo up -d
   agent-mock:
+    profiles: ["demo"]
     build: .
     image: dealflow:sprint1
     command: ["python", "-m", "agent.main", "--config", "agent/config.yaml"]

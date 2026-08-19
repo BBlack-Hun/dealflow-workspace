@@ -105,10 +105,13 @@ class AgentClient:
         self.session.headers.update({"Authorization": f"Bearer {cfg['token']}"})
         self.version = cfg.get("agent_version", "0.1.0")
         self.hostname = socket.gethostname()
+        # 어떤 발송기인지 서버에 알린다 — 배지에서 mock/실발송을 구분하기 위함.
+        self.sender_name = "unknown"
 
     def heartbeat(self):
         return self.session.post(f"{self.base}/api/agent/heartbeat",
-                                 json={"hostname": self.hostname, "agent_version": self.version},
+                                 json={"hostname": self.hostname, "agent_version": self.version,
+                                       "sender": self.sender_name},
                                  timeout=10)
 
     def poll(self):
@@ -170,6 +173,7 @@ def main(argv=None):
     log.info("agent starting; server=%s sender=%s", cfg["server_url"], cfg["sender"])
     sender = build_sender(cfg)
     client = AgentClient(cfg)
+    client.sender_name = getattr(sender, "name", "unknown")
 
     last_heartbeat = 0.0
     while True:

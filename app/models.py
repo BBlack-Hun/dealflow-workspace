@@ -192,3 +192,6 @@ class AgentDevice(TimestampMixin, Base):
     hostname: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     last_poll_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     agent_version: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # 어떤 발송기가 붙었는지(mock/kakao_windows/kakao_mac/telegram).
+    # mock 이 붙은 채로 실발송을 시도하면 잡을 가로채므로 화면에 드러내야 한다.
+    sender: Mapped[Optional[str]] = mapped_column(String, nullable=True)
