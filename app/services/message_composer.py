@@ -99,23 +99,29 @@ def auto_company_summary(company: CompanyView) -> str:
     if company.one_liner:
         segments.append(company.one_liner.strip())
 
+    # ★ 시트의 '한줄 소개'는 이미 재무까지 담은 완성 문구인 경우가 많다
+    #   (예: "… | 매출 30.9억 | 누적투자금액 5.6억 | 투자유치 협의중 | …").
+    #   같은 항목을 또 붙이면 '매출 2.2억 … 매출 10억' 처럼 **중복되고 숫자가 어긋난다**.
+    #   그래서 항목마다 '한줄 소개에 이미 있는지' 보고 없을 때만 덧붙인다.
+    said = (company.one_liner or "")
+
     revenue = format_eok(company.revenue_recent)
-    if revenue is not None:
+    if revenue is not None and "매출" not in said:
         segments.append(f"매출 {revenue}억")
 
     funding = format_eok(company.funding_total)
-    if funding is not None:
+    if funding is not None and "누적투자" not in said:
         segments.append(f"누적투자금액 {funding}억")
 
     raise_target = format_eok(company.raise_target)
-    if raise_target is not None:
+    if raise_target is not None and "투자유치" not in said:
         segments.append(f"{raise_target}억 투자유치중")
 
     pre_value = format_eok(company.pre_value)
-    if pre_value is not None:
+    if pre_value is not None and not any(k in said.lower() for k in ("pre value", "밸류")):
         segments.append(f"Pre Value 약 {pre_value}억원")
 
-    if company.competitiveness:
+    if company.competitiveness and company.competitiveness.strip() not in said:
         segments.append(company.competitiveness.strip())
 
     return " | ".join(segments)

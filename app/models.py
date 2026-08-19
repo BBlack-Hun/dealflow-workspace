@@ -179,13 +179,26 @@ class IrCompany(TimestampMixin, Base):
 
     @property
     def introducible(self) -> bool:
-        """summary_status=done AND required fields present."""
-        return (
-            self.summary_status == "done"
-            and bool(self.name)
-            and bool(self.sector_major)
-            and bool(self.series)
+        """딜소개 문구를 만들 수 있는가 (= 발송 대상에 띄울 수 있는가).
+
+        조건은 **실제 문구에 들어가는 것**만 본다. 문구 형식은
+        `[분야] | 한줄소개 | 매출 … | 누적투자 … | Pre Value …` 이므로
+        시리즈(기업구분)는 문구에 쓰이지 않는다 — 예전엔 이걸 필수로 걸어두어
+        실데이터 297개 중 소개 가능이 0개가 됐다.
+
+        - summary_status 는 사람의 판단 스위치로 남긴다(insufficient=보류).
+        - 소개할 내용(분야 또는 한줄소개)과 숫자 하나 이상은 있어야 한다.
+          숫자가 하나도 없으면 '이름만 나열'이 되어 소개가 되지 않는다.
+        """
+        if not self.name or self.summary_status == "insufficient":
+            return False
+        has_text = bool(self.sector_major or self.one_liner)
+        has_number = any(
+            v not in (None, 0)
+            for v in (self.revenue_recent, self.funding_total,
+                      self.raise_target, self.pre_value)
         )
+        return has_text and has_number
 
 
 class DealBatch(TimestampMixin, Base):
