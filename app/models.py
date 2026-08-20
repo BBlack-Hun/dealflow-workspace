@@ -292,3 +292,41 @@ class AgentDevice(TimestampMixin, Base):
     # 어떤 발송기가 붙었는지(mock/kakao_windows/kakao_mac/telegram).
     # mock 이 붙은 채로 실발송을 시도하면 잡을 가로채므로 화면에 드러내야 한다.
     sender: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+
+class ConsultingColumn(TimestampMixin, Base):
+    """투자컨설턴트 현황표의 '월별 리마인드' 열.
+
+    원본 시트에는 `8월 마지막주 리마인드 톡 or TEL` 같은 열이 달마다 하나씩 늘어난다.
+    이걸 테이블 컬럼으로 두면 매달 마이그레이션을 해야 하므로 **행으로** 둔다.
+    열 이름을 그대로 보관해 화면이 시트와 같아 보이게 한다.
+    """
+
+    __tablename__ = "consulting_columns"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    label: Mapped[str] = mapped_column(String)          # 시트의 열 이름 그대로
+    position: Mapped[int] = mapped_column(Integer, default=0)   # 왼→오 순서
+
+
+class ConsultingCompany(TimestampMixin, Base):
+    """투자컨설턴트 현황표 한 줄 = 기업 하나.
+
+    시트가 원본이라 값은 대부분 자유 문장이다(미팅일이 `9/16 PM2 (화상미팅)` 처럼
+    적혀 있다). 형식을 강제하면 원본을 옮길 수 없으므로 문자열로 받는다.
+    월별 리마인드 내용은 열이 늘어나므로 JSON 으로 담는다(키 = 열 id).
+    """
+
+    __tablename__ = "consulting_companies"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    position: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)   # 시트의 NO
+    region: Mapped[Optional[str]] = mapped_column(String, nullable=True)      # 지역
+    meeting_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # 미팅일
+    company_name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # 기업명/계약일/무료유료/수수료
+    management: Mapped[Optional[str]] = mapped_column(Text, nullable=True)    # 기업 관리
+    ceo_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)    # 대표자
+    phone: Mapped[Optional[str]] = mapped_column(String, nullable=True)       # 연락처
+    email: Mapped[Optional[str]] = mapped_column(String, nullable=True)       # 이메일
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)         # {"열id": "내용"}
+

@@ -86,13 +86,44 @@ def _template_body_by_id(db: Session, user: User, template_id: Optional[int]) ->
     return t.body
 
 
-# 보내는 방식. 화면의 두 탭과 1:1로 맞춘다.
-MODE_DEAL = "deal"      # 인사말 + 안내문 + 기업 목록
-MODE_ASK = "ask"        # 인사말 + 문구 한 줄 (기업 목록 없음)
+# 보내는 방식. 화면의 탭과 1:1로 맞춘다.
+MODE_DEAL = "deal"          # 인사말 + 안내문 + 기업 목록
+MODE_ASK = "ask"            # 선호 분야 묻기
+MODE_REMIND = "remind"      # 리마인드
+MODE_MEETING = "meeting"    # 미팅 요청
+MODE_IR = "ir"              # IR 자료 전달
 
-# 문구만 보낼 때 쓰는 기본값. 딜소개를 보냈는데 답이 없을 때, 목록을 또 밀어 넣기보다
-# 무엇을 보고 싶은지 되묻는 편이 답이 온다.
-ASK_FALLBACK = "선호하는 기업분야 말씀해주시면 맞추어 딜 공유해드리겠습니다."
+# 딜소개 말고는 전부 **기업 목록 없이 문구만** 나간다.
+# 이미 목록을 받은 사람에게 같은 목록을 다시 밀어 넣는 것은 후속이 아니라 재발송이다.
+#
+#   방식 → (문구 종류, 템플릿이 없을 때 쓸 문구, 단계)
+FOLLOW_UP_MODES = {
+    MODE_ASK: ("ask_preference",
+               "선호하는 기업분야 말씀해주시면 맞추어 딜 공유해드리겠습니다.",
+               mc.STAGE_REMIND),
+    MODE_REMIND: ("closing_remind",
+                  "지난번 공유드린 기업들 검토 중 궁금하신 점 있으시면 말씀 부탁드립니다.",
+                  mc.STAGE_REMIND),
+    MODE_MEETING: ("closing_meeting",
+                   "다음주 또는 다다음주 20~30분 정도 간단히 미팅 가능하실지요?",
+                   mc.STAGE_MEETING),
+    # IR 자료 전달은 기업을 고르지만 **목록을 다시 나열하지 않는다**.
+    # 이미 목록을 본 사람이 "그 중 몇 번을 달라"고 답한 상황이라,
+    # 번호와 이름만 짚어 주면 된다.
+    MODE_IR: ("ir_delivery",
+              "{담당자명} {직함} 안녕하세요.\n{기업목록} IR deck 먼저 전달드리겠습니다.",
+              mc.STAGE_REMIND),
+}
+MODE_TITLES = {
+    MODE_ASK: "선호 분야 묻기",
+    MODE_REMIND: "리마인드",
+    MODE_MEETING: "미팅 요청",
+    MODE_IR: "IR 자료 전달",
+}
+
+# IR 자료 전달은 기업을 고른다(무엇을 보내는지 알아야 한다).
+# 나머지 후속 문구는 기업과 무관하다.
+MODES_WITH_COMPANIES = {MODE_DEAL, MODE_IR}
 
 
 def _compose_for_contact(
@@ -102,10 +133,12 @@ def _compose_for_contact(
     mode: str = MODE_DEAL,
     include_opening: Optional[bool] = None,
 ) -> mc.ComposeResult:
-    # 인사말 기본값은 방식마다 다르다. 문구만 보낼 때는 이미 대화가 오간 방이라
-    # 인사를 다시 붙이지 않는 편이 자연스럽다. 화면에서 켜고 끌 수 있다.
+    # 인사말 기본값은 방식마다 다르다. 후속 문구는 이미 대화가 오간 방에 한 줄
+    # 덧붙이는 것이라 인사를 다시 붙이지 않는 편이 자연스럽다. 화면에서 켜고 끌 수 있다.
     if include_opening is None:
-        include_opening = mode != MODE_ASK
+        # IR 자료 전달 문구는 "○○ 이사님 안녕하세요" 로 시작한다 —
+        # 인사말을 또 붙이면 인사가 두 번 나간다.
+        include_opening = mode not in FOLLOW_UP_MODES
 
     has_hist = _has_history(db, contact.id)
     opening_kind = mc.pick_opening_kind(has_hist)
@@ -114,8 +147,10 @@ def _compose_for_contact(
         db, user.id, opening_kind,
         "안녕하세요, {담당자명} {직함}\n우리브이씨 ASSET입니다.",
     )
-    if mode == MODE_ASK:
-        closing_body = _template_body(db, user.id, "ask_preference", ASK_FALLBACK)
+    follow_up = FOLLOW_UP_MODES.get(mode)
+    if follow_up:
+        kind, fallback, _stage = follow_up
+        closing_body = _template_body(db, user.id, kind, fallback)
     else:
         closing_body = _template_body(
             db, user.id, "closing_day1",
@@ -129,11 +164,52 @@ def _compose_for_contact(
         opening_body,
         closing_body,
         _to_contact_view(contact),
-        [] if mode == MODE_ASK else [_to_company_view(c) for c in companies],
+        [] if follow_up else [_to_company_view(c) for c in companies],
         # STAGE_DAY1 이 아니면 기업 목록을 붙이지 않는다(composer 규칙).
-        stage=mc.STAGE_REMIND if mode == MODE_ASK else mc.STAGE_DAY1,
+        stage=follow_up[2] if follow_up else mc.STAGE_DAY1,
         include_opening=include_opening,
+        company_list=(build_company_list(db, contact, companies)
+                      if mode == MODE_IR else None),
     )
+
+
+def deal_positions(db: Session, contact_id: int) -> dict:
+    """이 담당자가 **마지막으로 받은 회차**에서 각 기업이 몇 번이었는지.
+
+    투자사는 "5) 친환경 패키지 …" 처럼 번호로 기억하고 답한다. 자료를 보낼 때
+    같은 번호로 짚어 줘야 어느 기업인지 서로 맞는다. 번호를 새로 매기면
+    받는 쪽에서는 다른 기업 이야기로 읽힌다.
+    """
+    batch_id = db.execute(
+        select(SendJob.batch_id)
+        .join(SendItem, SendItem.job_id == SendJob.id)
+        .where(SendItem.contact_id == contact_id, SendItem.status == "sent",
+               SendJob.batch_id.isnot(None))
+        .order_by(SendItem.id.desc()).limit(1)
+    ).scalar()
+    if batch_id is None:
+        return {}
+    return {
+        row.company_id: row.position
+        for row in db.execute(
+            select(DealBatchCompany).where(DealBatchCompany.batch_id == batch_id)
+        ).scalars().all()
+    }
+
+
+def build_company_list(db: Session, contact: VcContact,
+                       companies: List[IrCompany]) -> str:
+    """'1번 기업 샘플애그' · 여럿이면 '1번 기업 샘플애그, 3번 기업 …'.
+
+    지난 회차에 없던 기업은 번호를 붙이지 않는다 — 없는 번호를 지어내면
+    받는 쪽이 자기 목록에서 찾다가 못 찾는다.
+    """
+    positions = deal_positions(db, contact.id)
+    parts = []
+    for company in companies:
+        no = positions.get(company.id)
+        parts.append(f"{no}번 기업 {company.name}" if no else company.name)
+    return ", ".join(parts)
 
 
 def _apply_test_room(contact: VcContact, text: str) -> tuple:
@@ -172,7 +248,7 @@ class PreviewRequest(BaseModel):
     # 발송 화면에서 고른 문구. 없으면 기존대로 활성 템플릿을 쓴다.
     opening_template_id: Optional[int] = None
     closing_template_id: Optional[int] = None
-    # "deal" = 기업 목록까지 · "ask" = 문구만
+    # "deal" = 기업 목록까지 · 그 밖에는 문구만 (ask / remind / meeting)
     mode: str = MODE_DEAL
     # 인사말을 붙일지. None 이면 방식별 기본값(딜소개 O · 문구만 X)을 쓴다.
     include_opening: Optional[bool] = None
@@ -226,12 +302,12 @@ def preview(
     user: User = Depends(get_current_user),
 ):
     """Per-contact composed message previews (FEATURE_SPEC §5 ⑤)."""
-    if req.mode != MODE_ASK and not (1 <= len(req.company_ids) <= MAX_COMPANIES_PER_SEND):
+    if req.mode in MODES_WITH_COMPANIES and not (1 <= len(req.company_ids) <= MAX_COMPANIES_PER_SEND):
         raise HTTPException(
             status_code=400,
             detail=f"기업은 1~{MAX_COMPANIES_PER_SEND}개 선택하세요",
         )
-    companies = [] if req.mode == MODE_ASK else _load_companies(db, req.company_ids)
+    companies = _load_companies(db, req.company_ids) if req.mode in MODES_WITH_COMPANIES else []
     previews = []
     for contact_id in req.contact_ids:
         contact = db.get(VcContact, contact_id)
@@ -247,9 +323,19 @@ def preview(
         thin = [c.name for c in companies if not c.introducible]  # 문구만 모드면 companies 가 비어 있다
         thin_warnings = (
             [f"내용이 부족한 기업이 포함됐습니다: {', '.join(thin)} — "
-             f"딜 기업 DB에서 한줄소개·숫자를 채우면 문구가 좋아집니다"]
-            if thin else []
+             f"스타트업 관리에서 한줄소개·숫자를 채우면 문구가 좋아집니다"]
+            if thin and req.mode != MODE_IR else []
         )
+        # IR 자료 전달인데 보낼 자료가 없으면 문구만 나가고 자료는 못 보낸다.
+        # 발송 목록을 만들기 **전에** 알려야 한다.
+        if req.mode == MODE_IR:
+            no_file = [c.name for c in companies
+                       if not (c.ir_drive_url or "").strip()]
+            if no_file:
+                thin_warnings.append(
+                    f"IR 자료 링크가 없는 기업: {', '.join(no_file)} — "
+                    f"스타트업 관리에서 구글드라이브 링크를 넣어주세요"
+                )
         previews.append({
             "contact_id": contact.id,
             "name": contact.name,
@@ -263,6 +349,9 @@ def preview(
             "too_long": result.too_long,
             "warnings": result.warnings + fit.warnings + thin_warnings,
             "has_history": _has_history(db, contact.id),
+            # IR 자료 전달일 때 무엇을 먼저 보내야 하는지 화면에 띄운다.
+            "attachments": ([{"name": c.name, "url": c.ir_drive_url or ""}
+                             for c in companies] if req.mode == MODE_IR else []),
             "fit": {
                 "fit_count": fit.fit_count,
                 "mismatch_count": fit.mismatch_count,
@@ -287,7 +376,7 @@ def create_send_list(
     FEATURE_SPEC §5 ⑥: 발송 목록 생성 → send_job(queued). The mock/real agent
     then claims it via the queue API.
     """
-    if req.mode != MODE_ASK and not (1 <= len(req.company_ids) <= MAX_COMPANIES_PER_SEND):
+    if req.mode in MODES_WITH_COMPANIES and not (1 <= len(req.company_ids) <= MAX_COMPANIES_PER_SEND):
         raise HTTPException(
             status_code=400,
             detail=f"기업은 1~{MAX_COMPANIES_PER_SEND}개 선택하세요",
@@ -295,7 +384,7 @@ def create_send_list(
     if not req.contact_ids:
         raise HTTPException(status_code=400, detail="대상 담당자를 1명 이상 선택하세요")
 
-    companies = [] if req.mode == MODE_ASK else _load_companies(db, req.company_ids)
+    companies = _load_companies(db, req.company_ids) if req.mode in MODES_WITH_COMPANIES else []
 
     # Resolve + validate target contacts (must be owned, must have a room name).
     contacts: List[VcContact] = []
@@ -313,7 +402,7 @@ def create_send_list(
     # Batch + companies
     batch = DealBatch(
         user_id=user.id,
-        title=req.title or ("선호 분야 묻기" if req.mode == MODE_ASK else "딜소개 회차"),
+        title=req.title or MODE_TITLES.get(req.mode, "딜소개 회차"),
         sent_date=now_iso()[:10],
         cycle_type="adhoc",
     )
@@ -345,7 +434,8 @@ def create_send_list(
         db.add(SendItem(
             job_id=job.id,
             contact_id=contact.id,
-            stage=mc.STAGE_REMIND if req.mode == MODE_ASK else mc.STAGE_DAY1,
+            stage=(FOLLOW_UP_MODES[req.mode][2] if req.mode in FOLLOW_UP_MODES
+                   else mc.STAGE_DAY1),
             room_name=room_name,
             message=message,
             status="pending",

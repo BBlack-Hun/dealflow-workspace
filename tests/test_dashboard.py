@@ -268,3 +268,18 @@ def test_mail_channel_is_off_until_configured(logged):
     assert 'value="email"' in body
     assert "disabled" in body
     assert "메일 발송은 아직 켜지지 않았습니다" in body
+
+
+def test_companies_table_shows_ir_link_state(logged, db):
+    """자료 링크 유무가 곧 'IR 요청이 오면 바로 보낼 수 있는가' 다."""
+    from app.models import IrCompany
+
+    db.add_all([
+        IrCompany(name="자료있음", one_liner="소개", revenue_recent=10,
+                  ir_drive_url="https://drive.google.com/file/d/x/view"),
+        IrCompany(name="자료없음", one_liner="소개", revenue_recent=10),
+    ])
+    db.commit()
+    body = logged.get("/companies").text
+    assert 'data-f-ir="● 있음"' in body
+    assert 'data-f-ir="⚠ 없음"' in body

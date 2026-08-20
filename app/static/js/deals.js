@@ -11,7 +11,16 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   var ssContacts = document.getElementById("ss-contacts");
   var ssNote = document.getElementById("ss-note");
   var companyPanel = document.querySelector("#company-list").closest(".panel");
-  var mode = "deal";   // deal = 기업 목록까지 · ask = 문구만
+  var mode = "deal";
+  // 딜소개 말고는 전부 기업 목록 없이 문구만 나간다.
+  // 이미 목록을 받은 사람에게 같은 목록을 다시 밀어 넣는 것은 후속이 아니라 재발송이다.
+  var FOLLOW_UP = { ask: "선호 분야 묻기", remind: "리마인드", meeting: "미팅 요청",
+                    ir: "IR 자료 전달" };
+  // IR 자료 전달은 기업을 고른다(무엇을 보내는지 알아야 한다).
+  // 나머지 후속 문구는 기업과 무관하다.
+  var NEEDS_COMPANIES = { deal: true, ir: true };
+  function isFollowUp() { return !!FOLLOW_UP[mode]; }
+  function needsCompanies() { return !!NEEDS_COMPANIES[mode]; }
   var previewTabs = document.getElementById("preview-tabs");
   var previewArea = document.getElementById("preview-area");
   var warnBox = document.getElementById("send-warnings");
@@ -83,9 +92,10 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     });
     fill("tpl-opening", (byKind["opening_first"] || []).concat(byKind["opening_re"] || []));
     // 문구만 보낼 때는 안내문이 아니라 '선호 분야 묻기' 문구를 고른다.
-    fill("tpl-closing", mode === "ask"
-      ? (byKind["ask_preference"] || [])
-      : (byKind["closing_day1"] || []));
+    var kindByMode = { ask: "ask_preference", remind: "closing_remind",
+                       meeting: "closing_meeting", deal: "closing_day1",
+                       ir: "ir_delivery" };
+    fill("tpl-closing", byKind[kindByMode[mode]] || []);
   }
 
   function fill(selectId, list) {
@@ -128,7 +138,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   function updateCounts() {
     var nc = selectedCompanyIds().length;
     var nt = selectedContactIds().length;
-    var askMode = mode === "ask";
+    var askMode = !needsCompanies();
 
     companyPill.innerHTML = "<b>" + nc + "</b> / " + MAX_COMPANIES;
     companyPill.classList.toggle("on", nc > 0);
@@ -140,8 +150,10 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     document.querySelector(".ss-arrow").hidden = askMode;
     ssContacts.textContent = nt;
     ssNote.textContent = askMode
-      ? "기업 목록 없이 문구만 나갑니다"
-      : (nc > MAX_COMPANIES ? "기업은 최대 " + MAX_COMPANIES + "개까지" : "");
+      ? FOLLOW_UP[mode] + " — 기업 목록 없이 문구만 나갑니다"
+      : (mode === "ir" ? "자료를 먼저 보내고 문구를 뒤에 보냅니다"
+                       : (nc > MAX_COMPANIES ? "기업은 최대 " + MAX_COMPANIES + "개까지" : ""));
+    if (mode === "ir") renderIrLinks();
 
     // 고른 사람 이름을 보여준다 — 숫자만으로는 누구를 넣었는지 알 수 없다.
     var names = contactCbs().filter(function (c) { return c.checked; })
@@ -167,17 +179,48 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     applyCompanyFilter();   // 선택 항목은 검색 중에도 계속 보이게
   }
 
+  // 고른 기업의 IR 자료 링크를 띄운다 — 무엇을 보내야 하는지 그 자리에서 보여야 한다.
+  function renderIrLinks() {
+    var box = document.getElementById("ir-attach");
+    if (!box) return;
+    box.hidden = mode !== "ir";
+    if (mode !== "ir") return;
+    var list = document.getElementById("ir-links");
+    list.innerHTML = "";
+    companyCbs().filter(function (c) { return c.checked; }).forEach(function (c) {
+      var li = document.createElement("li");
+      var name = c.getAttribute("data-name");
+      var url = c.getAttribute("data-ir-url");
+      if (url) {
+        li.innerHTML = escapeHtml(name) + " — " +
+          '<a href="' + escapeHtml(url) + '" target="_blank" rel="noopener">자료 열기</a>';
+      } else {
+        li.innerHTML = escapeHtml(name) +
+          ' <span class="warn-text">— 자료 링크가 없습니다</span>';
+      }
+      list.appendChild(li);
+    });
+    if (!list.children.length) {
+      list.innerHTML = '<li class="muted">보낼 기업을 고르세요.</li>';
+    }
+  }
+
   // ── 보내는 방식 전환 ───────────────────────────────────────
   function setMode(next) {
     mode = next;
-    var askMode = mode === "ask";
+    var askMode = !needsCompanies();
     document.querySelectorAll(".mode-tab").forEach(function (b) {
       b.classList.toggle("active", b.getAttribute("data-mode") === mode);
     });
     companyPanel.classList.toggle("dimmed", askMode);
-    document.getElementById("mode-help").textContent = askMode
-      ? "반응이 없는 담당자에게 기업 목록 없이 문구만 보냅니다 (기업 선택 불필요)"
-      : "기업 1~10개 선택 → 대상 담당자 체크 → 담당자별 미리보기 → 발송";
+    document.getElementById("mode-help").textContent =
+      mode === "ir"
+        ? "요청받은 기업을 고르면, 자료를 먼저 보내고 안내 문구를 뒤에 보냅니다"
+        : (askMode ? FOLLOW_UP[mode] + " — 기업 목록 없이 문구만 보냅니다 (기업 선택 불필요)"
+                   : "기업 1~10개 선택 → 대상 담당자 체크 → 담당자별 미리보기 → 발송");
+    var companyHint = document.getElementById("company-hint");
+    if (companyHint) companyHint.hidden = mode === "ir";
+    renderIrLinks();
     var closingWrap = document.getElementById("tpl-closing-wrap");
     if (closingWrap) closingWrap.querySelector("span").textContent = askMode ? "문구" : "안내문";
     // 문구만 보낼 때는 이미 대화가 오간 방이라 인사를 다시 붙이지 않는다.
@@ -253,9 +296,9 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   function refreshPreview() {
     var cids = selectedCompanyIds();
     var tids = selectedContactIds();
-    if ((mode !== "ask" && cids.length < 1) || tids.length < 1) {
+    if ((needsCompanies() && cids.length < 1) || tids.length < 1) {
       previewArea.innerHTML = '<p class="muted">' +
-        (mode === "ask" ? "담당자를 선택한 뒤" : "기업과 담당자를 선택한 뒤") +
+        (needsCompanies() ? "기업과 담당자를 선택한 뒤" : "담당자를 선택한 뒤") +
         " [미리보기 갱신]을 누르세요.</p>";
       previewTabs.innerHTML = "";
       return;
@@ -295,9 +338,10 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     var title = (document.getElementById("batch-title").value || "딜소개 회차").trim();
     var edits = editedOverrides();
     var editNote = edits.length ? "\n직접 수정한 문구 " + edits.length + "건이 그대로 발송됩니다." : "";
-    var what = mode === "ask"
-      ? "선호 분야를 묻는 문구(기업 목록 없음)"
-      : cids.length + "개 기업 딜소개";
+    var what = mode === "ir"
+      ? cids.length + "개 기업 IR 자료 전달"
+      : (isFollowUp() ? FOLLOW_UP[mode] + " 문구 (기업 목록 없음)"
+                      : cids.length + "개 기업 딜소개");
     if (!confirm(what + "\n대상 " + tids.length + "명에게 발송합니다." + editNote +
                  "\n방 이름을 최종 확인하셨나요?")) return;
     sendBtn.disabled = true;

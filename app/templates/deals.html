@@ -27,10 +27,19 @@
 
 <div class="mode-tabs" id="mode-tabs">
   <button type="button" class="mode-tab active" data-mode="deal">
-    기업 소개 보내기<span>인사말 + 안내문 + 기업 목록</span>
+    기업 소개<span>인사말 + 안내문 + 기업 목록</span>
   </button>
-  <button type="button" class="mode-tab" data-mode="ask">
-    선호 분야 묻기<span>기업 목록 없이 문구만</span>
+  <button type="button" class="mode-tab" data-mode="remind" data-followup="1">
+    리마인드<span>검토 중인지 확인</span>
+  </button>
+  <button type="button" class="mode-tab" data-mode="meeting" data-followup="1">
+    미팅 요청<span>20~30분 미팅 제안</span>
+  </button>
+  <button type="button" class="mode-tab" data-mode="ask" data-followup="1">
+    선호 분야 묻기<span>무엇을 보고 싶은지 되묻기</span>
+  </button>
+  <button type="button" class="mode-tab" data-mode="ir">
+    IR 자료 전달<span>요청받은 기업 자료 보내기</span>
   </button>
 </div>
 
@@ -46,7 +55,7 @@
       <span>회차명</span>
       <input type="text" id="batch-title" value="딜소개 회차" />
     </label>
-    <p class="hint">
+    <p class="hint" id="company-hint">
       <b>내용 부족</b>으로 표시된 기업은 소개 문구에 넣을 내용이 모자랍니다.
       골라도 보낼 수는 있지만, 문구가 빈약해집니다.
     </p>
@@ -62,7 +71,8 @@
       <label class="pick-card {% if not c.introducible %}thin{% endif %}"
              data-search="{{ (c.name ~ ' ' ~ (c.sector_major or '') ~ ' ' ~ (c.sector_minor or '') ~ ' ' ~ (c.one_liner or '') ~ ' ' ~ (c.series or ''))|lower }}">
         <input type="checkbox" class="company-cb" value="{{ c.id }}" data-name="{{ c.name }}"
-               data-thin="{{ 0 if c.introducible else 1 }}">
+               data-thin="{{ 0 if c.introducible else 1 }}"
+               data-ir-url="{{ c.ir_drive_url or '' }}">
         <div class="pick-body">
           <div class="pick-name">
             {% if c.is_top_deal %}<span class="star">★</span>{% endif %}{{ c.name }}
@@ -126,6 +136,10 @@
     <h2 class="panel-title">③ 미리보기 · 발송
       <button type="button" class="linkbtn" id="refresh-preview">미리보기 갱신</button>
     </h2>
+    <div class="ir-attach" id="ir-attach" hidden>
+      <b>자료를 먼저 보내고, 이 문구를 뒤에 보냅니다.</b>
+      <ul id="ir-links"></ul>
+    </div>
     <div class="send-summary" id="send-summary">
       <span class="ss-item" id="ss-companies"><b>0</b>개 기업</span>
       <span class="ss-arrow">→</span>

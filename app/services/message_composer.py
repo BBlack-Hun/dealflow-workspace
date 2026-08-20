@@ -136,11 +136,15 @@ def company_summary(company: CompanyView) -> str:
 
 def render_template(text: str, contact: ContactView, company_name: Optional[str] = None,
                     ir_drive_url: Optional[str] = None,
-                    company_count: Optional[int] = None) -> str:
+                    company_count: Optional[int] = None,
+                    company_list: Optional[str] = None) -> str:
     """Substitute template variables for a given contact.
 
-    Supported: {담당자명} {직함} {투자사} {기업명} {ir_drive_url} {개수}
+    Supported: {담당자명} {직함} {투자사} {기업명} {ir_drive_url} {개수} {기업목록}
     Unknown {…} tokens are left untouched (so authors can spot typos).
+
+    `{기업목록}` 은 IR 자료 전달에서 "1번 기업 샘플애그" 처럼 **지난 회차에서의 번호**로
+    채운다. 투자사는 그 번호로 기억하고 있어서, 번호가 없으면 어느 기업인지 못 찾는다.
     """
     mapping = {
         "{담당자명}": contact.name or "",
@@ -151,6 +155,7 @@ def render_template(text: str, contact: ContactView, company_name: Optional[str]
         "{ir_drive_url}": ir_drive_url or "",
         # 안내문 "핵심 딜 {개수}개사 …" 용 — 선택된 기업 수를 자동 반영.
         "{개수}": str(company_count) if company_count is not None else "",
+        "{기업목록}": company_list or "",
     }
     out = text
     for key, value in mapping.items():
@@ -199,6 +204,7 @@ def compose_message(
     companies: Optional[List[CompanyView]] = None,
     stage: int = STAGE_DAY1,
     include_opening: bool = True,
+    company_list: Optional[str] = None,
 ) -> ComposeResult:
     """Assemble the final Kakao message text for one contact.
 
@@ -212,10 +218,12 @@ def compose_message(
     companies = companies or []
     count = len(companies) if stage == STAGE_DAY1 else 0
 
-    opening = render_template(opening_body, contact, company_count=count).strip()
+    opening = render_template(opening_body, contact, company_count=count,
+                              company_list=company_list).strip()
     # 실제 운영 문구에서 안내문("핵심 딜 N개사 …/관심 가시는 기업 있으시면 IR Deck …")은
     # 기업 목록 '위'에 온다. closing_body는 그 안내문을 담는다.
-    intro = render_template(closing_body, contact, company_count=count).strip()
+    intro = render_template(closing_body, contact, company_count=count,
+                            company_list=company_list).strip()
 
     parts: List[str] = [opening, "", intro] if include_opening else [intro]
 

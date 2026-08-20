@@ -1,0 +1,241 @@
+"""투자컨설턴트 현황.
+
+이 표에는 대표자 연락처·이메일이 들어 있다. 팀 전체에 열어 둘 표가 아니라
+**누가 볼 수 있는가**가 첫 번째 경계다.
+
+원본이 구글시트라 값이 대부분 자유 문장이고(미팅일이 `9/16 PM2 (화상미팅)`),
+월별 리마인드 열은 달마다 하나씩 늘어난다. 형식을 강제하거나 열을 테이블 컬럼으로
+두면 원본을 옮길 수 없다 — 그 두 가지를 여기서 지킨다.
+"""
+from __future__ import annotations
+
+import io
+
+import pytest
+
+from .conftest import DEMO_PASSWORD
+
+openpyxl = pytest.importorskip("openpyxl")
+
+# 실제 시트와 같은 모양의 **가상** 데이터.
+HEADER = ["NO", "지역", "미팅일(화상, 회의실)",
+          "기업명 / 계약일 / 무료유료 / 계약금, 성과수수료 %",
+          "기업 관리 [ 드랍 이유 상세하게 기입 / 관리중 / 백업팀으로 전환 ]",
+          "8월 마지막주 리마인드 톡 or TEL",
+          "7월 마지막주 리마인드 톡 or TEL",
+          "대표자", "연락처", "이메일"]
+SHEET_ROWS = [
+    ["", "", "", "", "", "", "", "", "", ""],      # 시트 위쪽 빈 줄
+    ["", "", "", "드랍", "", "", "", "", "", ""],  # 제목 비슷한 줄
+    HEADER,
+    ["3", "서울", "9/16 PM2 (화상미팅)", "샘플애그", "관리 중. 투자유치 시작 전",
+     "카톡 완료 08.13", "", "홍길동", "010-0000-0001", "hong@example.com"],
+    ["4", "대구", "2026.01.13", "샘플메디", "드랍 : 연락 두절",
+     "", "7월 카톡 완료", "김서연", "010-0000-0002", "kim@example.com"],
+    ["5", "", "", "", "", "", "", "", "", ""],     # 번호만 있는 빈 줄
+]
+
+
+def _xlsx(rows, title="중요 스타트업") -> bytes:
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = title
+    for row in rows:
+        ws.append(row)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+@pytest.fixture()
+def allowed(client, db, users):
+    """이 화면을 보도록 허용된 계정."""
+    users["u1"].can_view_consulting = 1
+    db.commit()
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    return client
+
+
+@pytest.fixture()
+def outsider(client, users):
+    client.post("/login", data={"phone": "01000000002", "password": DEMO_PASSWORD})
+    return client
+
+
+def _import(client, rows=None, **form):
+    return client.post(
+        "/consulting/import",
+        files={"file": ("현황.xlsx", _xlsx(rows or SHEET_ROWS),
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        data=form, follow_redirects=False,
+    )
+
+
+# --- 누가 볼 수 있는가 ------------------------------------------------------
+
+def test_page_is_closed_by_default(outsider):
+    """허용되지 않은 계정은 볼 수 없다 — 대표자 연락처가 들어 있는 표다."""
+    assert outsider.get("/consulting").status_code == 403
+
+
+def test_allowed_user_can_open(allowed):
+    assert allowed.get("/consulting").status_code == 200
+
+
+def test_admin_can_open_without_the_flag(client, db, users):
+    users["u2"].role = "admin"
+    db.commit()
+    client.post("/login", data={"phone": "01000000002", "password": DEMO_PASSWORD})
+    assert client.get("/consulting").status_code == 200
+
+
+def test_menu_hides_the_tab_from_others(outsider):
+    assert "투자컨설턴트 현황" not in outsider.get("/deals").text
+
+
+def test_menu_shows_the_tab_to_allowed_user(allowed):
+    assert "투자컨설턴트 현황" in allowed.get("/deals").text
+
+
+def test_api_is_closed_too(allowed, db):
+    """화면만 막고 API 를 열어 두면 막은 것이 아니다.
+
+    (fixture 의 client 는 하나뿐이라 계정을 바꿔 다시 로그인한다 —
+     두 fixture 를 함께 받으면 나중 로그인이 앞 세션을 덮어써 검사가 무의미해진다)
+    """
+    from app.models import ConsultingCompany
+
+    _import(allowed)
+    db.expire_all()
+    row_id = db.query(ConsultingCompany).first().id
+
+    allowed.post("/login", data={"phone": "01000000002", "password": DEMO_PASSWORD})
+    assert allowed.get(f"/api/consulting/{row_id}").status_code == 403
+    assert allowed.patch(f"/api/consulting/{row_id}", json={"region": "몰래"}).status_code == 403
+    assert allowed.get("/api/export/consulting.xlsx").status_code == 403
+
+
+# --- 시트 읽기 --------------------------------------------------------------
+
+def test_header_is_found_by_content_not_position(allowed, db):
+    """머리행 위에 빈 줄·제목이 있어도 찾아낸다(사람이 줄을 넣다 뺐다 한다)."""
+    from app.models import ConsultingColumn, ConsultingCompany
+
+    _import(allowed)
+    db.expire_all()
+    names = {c.company_name for c in db.query(ConsultingCompany).all()}
+    assert names == {"샘플애그", "샘플메디"}
+    # 고정 열이 아닌 나머지는 월별 리마인드 열로 이름 그대로 들어온다
+    labels = {c.label for c in db.query(ConsultingColumn).all()}
+    assert labels == {"8월 마지막주 리마인드 톡 or TEL", "7월 마지막주 리마인드 톡 or TEL"}
+
+
+def test_rows_without_a_company_name_are_skipped(allowed, db):
+    """번호만 있고 기업명이 없는 줄은 빈 칸이다 — 유령 행을 만들지 않는다."""
+    from app.models import ConsultingCompany
+
+    _import(allowed)
+    db.expire_all()
+    assert db.query(ConsultingCompany).count() == 2
+
+
+def test_free_text_values_survive(allowed, db):
+    """미팅일이 '9/16 PM2 (화상미팅)' 이어도 그대로 들어와야 한다."""
+    from app.models import ConsultingCompany
+
+    _import(allowed)
+    db.expire_all()
+    row = db.query(ConsultingCompany).filter_by(company_name="샘플애그").first()
+    assert row.meeting_at == "9/16 PM2 (화상미팅)"
+    assert row.region == "서울"
+    assert row.email == "hong@example.com"
+
+
+def test_reimport_updates_instead_of_duplicating(allowed, db):
+    from app.models import ConsultingCompany
+
+    _import(allowed)
+    _import(allowed)
+    db.expire_all()
+    assert db.query(ConsultingCompany).count() == 2
+
+
+# --- 고치기 -----------------------------------------------------------------
+
+def test_cell_edit_saves(allowed, db):
+    from app.models import ConsultingCompany
+
+    _import(allowed)
+    db.expire_all()
+    row = db.query(ConsultingCompany).first()
+    r = allowed.patch(f"/api/consulting/{row.id}", json={"management": "관리 중 · 재통화"})
+    assert r.status_code == 200
+    db.expire_all()
+    assert db.get(ConsultingCompany, row.id).management == "관리 중 · 재통화"
+
+
+def test_note_edit_keeps_other_months(allowed, db):
+    """한 달을 고쳤다고 다른 달 기록이 사라지면 안 된다."""
+    import json
+
+    from app.models import ConsultingColumn, ConsultingCompany
+
+    _import(allowed)
+    db.expire_all()
+    row = db.query(ConsultingCompany).filter_by(company_name="샘플메디").first()
+    july = db.query(ConsultingColumn).filter_by(
+        label="7월 마지막주 리마인드 톡 or TEL").first()
+    august = db.query(ConsultingColumn).filter_by(
+        label="8월 마지막주 리마인드 톡 or TEL").first()
+
+    allowed.patch(f"/api/consulting/{row.id}",
+                  json={"notes": {str(august.id): "8월 통화 완료"}})
+    db.expire_all()
+    notes = json.loads(db.get(ConsultingCompany, row.id).notes)
+    assert notes[str(august.id)] == "8월 통화 완료"
+    assert notes[str(july.id)] == "7월 카톡 완료"      # 원래 있던 달은 그대로
+
+
+def test_new_month_column_goes_first(allowed, db):
+    """새 달은 맨 앞에 온다 — 지금 챙겨야 할 달이 먼저 보여야 한다."""
+    from app.models import ConsultingColumn
+
+    _import(allowed)
+    allowed.post("/consulting/columns", data={"label": "9월 마지막주 리마인드"},
+                 follow_redirects=False)
+    db.expire_all()
+    cols = db.query(ConsultingColumn).order_by(ConsultingColumn.position).all()
+    assert cols[0].label == "9월 마지막주 리마인드"
+
+
+def test_deleting_a_column_removes_its_notes(allowed, db):
+    import json
+
+    from app.models import ConsultingColumn, ConsultingCompany
+
+    _import(allowed)
+    db.expire_all()
+    august = db.query(ConsultingColumn).filter_by(
+        label="8월 마지막주 리마인드 톡 or TEL").first()
+    august_id = august.id
+
+    allowed.post(f"/consulting/columns/{august_id}/delete", follow_redirects=False)
+    db.expire_all()
+    for company in db.query(ConsultingCompany).all():
+        assert str(august_id) not in json.loads(company.notes or "{}")
+
+
+def test_new_row_gets_the_next_number(allowed, db):
+    """새 줄의 NO 를 사람이 매번 세지 않아도 된다."""
+    from app.models import ConsultingCompany
+
+    _import(allowed)
+    r = allowed.post("/api/consulting", json={"company_name": "샘플페이"})
+    assert r.status_code == 200
+    db.expire_all()
+    added = db.query(ConsultingCompany).filter_by(company_name="샘플페이").first()
+    assert added.position == 5          # 시트의 마지막 번호가 4였다
+
+
+def test_row_without_a_name_is_rejected(allowed):
+    assert allowed.post("/api/consulting", json={"company_name": "  "}).status_code == 400
