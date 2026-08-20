@@ -128,10 +128,20 @@
     <ul class="import-stats">
       <li><span>메일 서버</span><b>{{ mail.host }}:{{ mail.port }}</b></li>
       <li><span>보내는 주소</span><b>{{ mail.from_address }}</b></li>
+      <li><span>계정</span><b>{{ mail.user or '-' }}</b></li>
       <li><span>비밀번호</span><b>{{ '저장됨' if mail.has_password else '없음' }}</b></li>
-      <li><span>보안 연결</span><b>{{ 'TLS' if mail.use_tls else '없음' }}</b></li>
+      <li><span>보안 연결</span><b>{{ mail.security }}</b></li>
     </ul>
     <p class="hint ok">✅ 발송 화면에서 이메일 채널을 고를 수 있습니다.</p>
+    <form method="post" action="/team/mail-test" class="rule-form">
+      <label class="field inline-field"><span>시험 발송 받을 주소</span>
+        <input type="email" name="to" value="{{ mail.from_address }}" size="28"></label>
+      <button class="secondary-btn" type="submit">한 통 보내 보기</button>
+    </form>
+    <p class="hint">
+      비밀번호가 틀렸는지 포트를 잘못 잡았는지는 <b>실제로 보내 봐야</b> 압니다.
+      회차 당일에 알게 되면 늦습니다.
+    </p>
     {% else %}
     <p class="hint warn">
       아직 켜지지 않았습니다. 필요한 값: <b>{{ mail.missing|join(', ') }}</b>

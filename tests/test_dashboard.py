@@ -476,3 +476,70 @@ def test_dashboard_matches_the_contacts_screen(logged, db, users):
     assert kpi["sendable"] == 1
     labels = [b["label"] for b in user_dashboard(db, users["u1"])["blockers"]]
     assert any("방을 찾지 못한" in x for x in labels)
+
+
+# --- 메일 설정 --------------------------------------------------------------
+#
+# 포트 465 는 처음부터 SSL 이고 587 은 접속 후 STARTTLS 다. 방식이 달라서
+# 465 인데 STARTTLS 로 붙으면 손도 못 대고 끊긴다.
+
+@pytest.mark.parametrize("port, ssl_flag, want_ssl, want_tls", [
+    ("465", "", True, False),      # 포트만 보고도 알 수 있다
+    ("587", "", False, True),
+    ("465", "1", True, False),
+    ("2525", "1", True, False),    # 적어 두면 포트와 무관하게 그쪽을 쓴다
+])
+def test_security_mode_follows_the_port(monkeypatch, port, ssl_flag,
+                                        want_ssl, want_tls):
+    from app.services import mailer
+
+    monkeypatch.setenv("DEALFLOW_SMTP_PORT", port)
+    monkeypatch.setenv("DEALFLOW_SMTP_SSL", ssl_flag)
+    monkeypatch.setenv("DEALFLOW_SMTP_TLS", "1")
+    s = mailer.load_settings()
+    assert s.use_ssl is want_ssl
+    # SSL 로 붙으면 STARTTLS 는 쓰지 않는다 — 같이 켜면 서버가 거부한다
+    assert s.use_tls is want_tls
+
+
+def test_missing_password_means_not_configured(monkeypatch):
+    """계정이 있는데 비밀번호가 없으면 로그인에서 막힌다.
+
+    그 상태로 화면에서 이메일을 고를 수 있게 하면,
+    고를 수 있는데 나가지 않는 상태가 된다.
+    """
+    from app.services import mailer
+
+    monkeypatch.setenv("DEALFLOW_SMTP_HOST", "smtp.example.com")
+    monkeypatch.setenv("DEALFLOW_SMTP_USER", "deal@example.com")
+    monkeypatch.setenv("DEALFLOW_SMTP_FROM", "deal@example.com")
+    monkeypatch.setenv("DEALFLOW_SMTP_PASSWORD", "")
+    assert mailer.load_settings().configured is False
+    assert "비밀번호" in mailer.status()["missing"]
+
+    monkeypatch.setenv("DEALFLOW_SMTP_PASSWORD", "secret")
+    assert mailer.load_settings().configured is True
+
+
+def test_test_send_reports_why_it_failed(monkeypatch):
+    """무엇을 고쳐야 하는지 알아야 한다 — 실패를 삼키지 않는다."""
+    import smtplib
+
+    from app.services import mailer
+
+    monkeypatch.setenv("DEALFLOW_SMTP_HOST", "smtp.example.com")
+    monkeypatch.setenv("DEALFLOW_SMTP_USER", "deal@example.com")
+    monkeypatch.setenv("DEALFLOW_SMTP_FROM", "deal@example.com")
+    monkeypatch.setenv("DEALFLOW_SMTP_PASSWORD", "wrong")
+
+    def boom(*_a, **_kw):
+        raise smtplib.SMTPAuthenticationError(535, b"bad password")
+
+    monkeypatch.setattr(mailer, "send_mail", boom)
+    result = mailer.send_test("me@example.com")
+    assert result["ok"] is False
+    assert "비밀번호" in result["detail"]
+
+
+def test_mail_test_is_admin_only(logged):
+    assert logged.post("/team/mail-test", data={"to": "me@example.com"}).status_code == 403

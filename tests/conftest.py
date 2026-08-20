@@ -18,6 +18,10 @@ os.environ["DEALFLOW_TEST_ROOM"] = ""  # 테스트 모드 OFF (발송 대상 치
 # 실행 환경에 따라 결과가 달라지고, 공개 저장소에 실제 상호가 기대값으로 박힌다.
 os.environ["DEALFLOW_ROOM_SUFFIX"] = "Deal 공유 우리브이씨 Asset"
 os.environ["DEALFLOW_SEED_DEMO"] = "0"
+# 메일 설정도 꺼 둔다. 켜져 있는 환경에서 돌리면 '메일 채널이 꺼져 있다'는
+# 검사가 그 환경 때문에 실패한다(방 이름 접미사에서 이미 겪었다).
+for _name in ("HOST", "PORT", "USER", "PASSWORD", "FROM", "TLS", "SSL"):
+    os.environ[f"DEALFLOW_SMTP_{_name}"] = ""
 
 import pytest  # noqa: E402
 

@@ -78,6 +78,24 @@ def team_page(request: Request, db: Session = Depends(get_db),
     return templates.TemplateResponse("team.html", ctx)
 
 
+@router.post("/team/mail-test", include_in_schema=False)
+def test_mail(to: str = Form(""), db: Session = Depends(get_db),
+              user: User = Depends(get_current_user)):
+    """설정이 맞는지 한 통 보내 본다.
+
+    비밀번호가 틀렸는지 포트를 잘못 잡았는지는 실제로 보내 봐야 안다.
+    회차 당일에 알게 되면 늦다.
+    """
+    _admin_only(user)
+    from urllib.parse import quote
+
+    from ..services import mailer
+
+    target = (to or "").strip() or mailer.load_settings().from_address
+    result = mailer.send_test(target)
+    return RedirectResponse(f"/team?msg={quote(result['detail'])}", status_code=303)
+
+
 @router.post("/team/members", include_in_schema=False)
 def create_member(
     name: str = Form(...),
