@@ -93,8 +93,7 @@ def test_ask_mode_message_has_no_company_list(client, db, seed):
         "company_ids": [], "contact_ids": [seed["contact_id"]], "mode": "ask",
     })
     text = r.json()["previews"][0]["message"]
-    assert "1)" not in text
-    assert "샘플애그" not in text
+    assert "1)" not in text            # 번호 매긴 목록이 곧 '기업이 붙었다'는 신호다
     assert "선호하는 기업분야" in text
 
 
@@ -106,7 +105,7 @@ def test_ask_mode_ignores_companies_even_if_sent(client, db, seed):
         "mode": "ask",
     })
     assert r.status_code == 200, r.text
-    assert "샘플애그" not in _sent_message(db, r.json()["job_id"])
+    assert "1)" not in _sent_message(db, r.json()["job_id"])
 
 
 def test_deal_mode_still_requires_companies(client, seed):
@@ -115,3 +114,42 @@ def test_deal_mode_still_requires_companies(client, seed):
         "company_ids": [], "contact_ids": [seed["contact_id"]],
     })
     assert r.status_code == 400
+
+
+# --- 인사말 유무 ------------------------------------------------------------
+
+def test_ask_mode_has_no_greeting_by_default(client, seed):
+    """문구만 보낼 때는 이미 대화가 오간 방이라 인사를 다시 붙이지 않는다."""
+    r = client.post("/api/deals/preview", json={
+        "company_ids": [], "contact_ids": [seed["contact_id"]], "mode": "ask",
+    })
+    text = r.json()["previews"][0]["message"]
+    assert "안녕하세요" not in text
+    assert text.startswith("선호하는 기업분야")
+
+
+def test_greeting_can_be_turned_back_on(client, seed):
+    r = client.post("/api/deals/preview", json={
+        "company_ids": [], "contact_ids": [seed["contact_id"]],
+        "mode": "ask", "include_opening": True,
+    })
+    assert "안녕하세요" in r.json()["previews"][0]["message"]
+
+
+def test_deal_mode_keeps_greeting_by_default(client, seed):
+    r = client.post("/api/deals/preview", json={
+        "company_ids": [seed["company_id"]], "contact_ids": [seed["contact_id"]],
+    })
+    assert "안녕하세요" in r.json()["previews"][0]["message"]
+
+
+def test_greeting_can_be_turned_off_for_deals(client, db, seed):
+    """딜소개에서도 인사말을 뺄 수 있고, 뺀 문구가 그대로 발송된다."""
+    r = client.post("/api/deals/send", json={
+        "company_ids": [seed["company_id"]], "contact_ids": [seed["contact_id"]],
+        "include_opening": False,
+    })
+    assert r.status_code == 200, r.text
+    text = _sent_message(db, r.json()["job_id"])
+    assert "안녕하세요" not in text
+    assert "1)" in text                # 기업 목록은 그대로 있어야 한다

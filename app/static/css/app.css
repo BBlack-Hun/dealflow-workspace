@@ -498,3 +498,6 @@ a.secondary-btn { display: inline-flex; align-items: center; text-decoration: no
 .ss-item b { font-size: 20px; font-weight: 700; color: var(--ink); margin-right: 2px; }
 .ss-arrow { color: var(--muted); }
 .ss-note { font-size: 12px; margin-left: auto; }
+
+.opening-toggle { flex-direction: row !important; align-items: center; gap: 6px !important;
+  color: var(--ink) !important; font-size: 13px !important; padding-bottom: 6px; }

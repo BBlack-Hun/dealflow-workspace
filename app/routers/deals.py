@@ -100,7 +100,13 @@ def _compose_for_contact(
     opening_template_id: Optional[int] = None,
     closing_template_id: Optional[int] = None,
     mode: str = MODE_DEAL,
+    include_opening: Optional[bool] = None,
 ) -> mc.ComposeResult:
+    # 인사말 기본값은 방식마다 다르다. 문구만 보낼 때는 이미 대화가 오간 방이라
+    # 인사를 다시 붙이지 않는 편이 자연스럽다. 화면에서 켜고 끌 수 있다.
+    if include_opening is None:
+        include_opening = mode != MODE_ASK
+
     has_hist = _has_history(db, contact.id)
     opening_kind = mc.pick_opening_kind(has_hist)
     # 폴백도 실제 운영 스크립트 형식과 동일하게 유지(템플릿 미시드 상황 대비).
@@ -126,6 +132,7 @@ def _compose_for_contact(
         [] if mode == MODE_ASK else [_to_company_view(c) for c in companies],
         # STAGE_DAY1 이 아니면 기업 목록을 붙이지 않는다(composer 규칙).
         stage=mc.STAGE_REMIND if mode == MODE_ASK else mc.STAGE_DAY1,
+        include_opening=include_opening,
     )
 
 
@@ -167,6 +174,8 @@ class PreviewRequest(BaseModel):
     closing_template_id: Optional[int] = None
     # "deal" = 기업 목록까지 · "ask" = 문구만
     mode: str = MODE_DEAL
+    # 인사말을 붙일지. None 이면 방식별 기본값(딜소개 O · 문구만 X)을 쓴다.
+    include_opening: Optional[bool] = None
 
 
 class MessageOverride(BaseModel):
@@ -180,6 +189,7 @@ class SendRequest(BaseModel):
     contact_ids: List[int]
     title: Optional[str] = None
     mode: str = MODE_DEAL
+    include_opening: Optional[bool] = None
     opening_template_id: Optional[int] = None
     closing_template_id: Optional[int] = None
     # 담당자별 수정본. 없는 담당자는 서버가 다시 조합한다.
@@ -229,7 +239,8 @@ def preview(
             continue
         result = _compose_for_contact(db, user, contact, companies,
                                       req.opening_template_id, req.closing_template_id,
-                                      mode=req.mode)
+                                      mode=req.mode,
+                                      include_opening=req.include_opening)
         room_ok = bool(contact.kakao_room_name) and contact.room_verified in ("verified", "unverified")
         # 투자분야/단계/라운드 규모 적합도 — 성향과 어긋나는 딜은 발송 전 경고(DRAFT_REFERENCE).
         fit = matcher.evaluate_contact(contact, companies)
@@ -328,7 +339,8 @@ def create_send_list(
             text = _compose_for_contact(db, user, contact, companies,
                                         req.opening_template_id,
                                         req.closing_template_id,
-                                        mode=req.mode).text
+                                        mode=req.mode,
+                                        include_opening=req.include_opening).text
         room_name, message = _apply_test_room(contact, text)
         db.add(SendItem(
             job_id=job.id,

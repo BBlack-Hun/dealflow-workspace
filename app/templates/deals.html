@@ -116,7 +116,11 @@
       <span class="ss-note muted" id="ss-note"></span>
     </div>
     <div class="tpl-picker">
-      <label>
+      <label class="opening-toggle">
+        <input type="checkbox" id="include-opening" checked>
+        <span>인사말 포함</span>
+      </label>
+      <label id="tpl-opening-wrap">
         <span>인사말</span>
         <select id="tpl-opening"><option value="">기본 (첫 연락/재연락 자동)</option></select>
       </label>

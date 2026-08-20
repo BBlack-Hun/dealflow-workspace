@@ -107,11 +107,20 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   function selectedTemplateIds() {
     var o = document.getElementById("tpl-opening");
     var c = document.getElementById("tpl-closing");
+    var greet = document.getElementById("include-opening");
     return {
       opening_template_id: o && o.value ? parseInt(o.value, 10) : null,
       closing_template_id: c && c.value ? parseInt(c.value, 10) : null,
-      mode: mode
+      mode: mode,
+      include_opening: greet ? greet.checked : true
     };
+  }
+
+  // 인사말을 끄면 인사말 문구를 고르는 칸은 의미가 없다.
+  function syncOpeningToggle() {
+    var greet = document.getElementById("include-opening");
+    var wrap = document.getElementById("tpl-opening-wrap");
+    if (wrap) wrap.hidden = !greet.checked;
   }
 
   // 몇 개/몇 명 골랐는지는 발송 직전에 가장 궁금한 값이라
@@ -171,6 +180,10 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       : "기업 1~10개 선택 → 대상 담당자 체크 → 담당자별 미리보기 → 발송";
     var closingWrap = document.getElementById("tpl-closing-wrap");
     if (closingWrap) closingWrap.querySelector("span").textContent = askMode ? "문구" : "안내문";
+    // 문구만 보낼 때는 이미 대화가 오간 방이라 인사를 다시 붙이지 않는다.
+    // 기본값만 바꿔 두고, 켜고 끄는 것은 사람이 정한다.
+    var greet = document.getElementById("include-opening");
+    if (greet) { greet.checked = !askMode; syncOpeningToggle(); }
     lastPreviews = [];
     previewTabs.innerHTML = "";
     previewArea.innerHTML = '<p class="muted">[미리보기 갱신]을 누르세요.</p>';
@@ -323,6 +336,13 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   document.querySelectorAll(".mode-tab").forEach(function (b) {
     b.addEventListener("click", function () { setMode(b.getAttribute("data-mode")); });
   });
+
+  var greetBox = document.getElementById("include-opening");
+  if (greetBox) greetBox.addEventListener("change", function () {
+    syncOpeningToggle();
+    refreshPreview();
+  });
+  syncOpeningToggle();
 
   var noreactBtn = document.getElementById("select-noreact");
   if (noreactBtn) noreactBtn.addEventListener("click", function () {
