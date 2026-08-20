@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+
+{% block content %}
+<header class="page-head">
+  <h1>{{ page_title }}</h1>
+  <p class="muted">
+    딜소개를 보낸 뒤 <b>언제 무엇을 보낼지</b>가 여기 잡혀 있습니다.
+    답이 온 담당자는 <b>[답 옴]</b> 을 눌러 멈춰 주세요 — 그래야 리마인드가 더 나가지 않습니다.
+  </p>
+</header>
+
+<div class="kpi-row slim">
+  <div class="kpi-card static"><span class="kpi-label">오늘 보낼 것</span>
+    <span class="kpi-value {% if counts.due %}warn{% endif %}">{{ counts.due }}</span></div>
+  <div class="kpi-card static"><span class="kpi-label">지난 날짜</span>
+    <span class="kpi-value {% if counts.overdue %}bad{% endif %}">{{ counts.overdue }}</span></div>
+  <div class="kpi-card static"><span class="kpi-label">예약됨</span><span class="kpi-value">{{ counts.upcoming }}</span></div>
+  <div class="kpi-card static"><span class="kpi-label">끝난 건</span><span class="kpi-value">{{ counts.closed }}</span></div>
+</div>
+
+{% if msg %}<p class="flash">{{ msg }}</p>{% endif %}
+
+<!-- 오늘 보낼 것부터. 단계가 같은 건은 한 번에 같은 문구로 나간다. -->
+<section class="panel">
+  <h2 class="panel-title">오늘 보낼 후속</h2>
+  {% if due_groups %}
+  {% for g in due_groups %}
+  <div class="due-group">
+    <div class="due-head">
+      <b>{{ g.label }}</b>
+      <span class="count-pill on"><b>{{ g.rows|length }}</b>명</span>
+      <a class="primary-btn inline" href="/deals?mode={{ g.mode }}&contacts={{ g.rows|map(attribute='contact_id')|join(',') }}">
+        {{ g.label }} 보내기
+      </a>
+    </div>
+    <ul class="due-list">
+      {% for r in g.rows %}
+      <li class="{% if r.overdue %}overdue{% endif %}">
+        <span class="due-when">
+          {% if r.overdue %}{{ -r.days_left }}일 지남{% elif r.due_today %}오늘{% else %}{{ r.due }}{% endif %}
+        </span>
+        <span class="due-who"><b>{{ r.name }}</b> {{ r.title }} <span class="muted">{{ r.firm }}</span></span>
+        <span class="due-from muted">{{ r.batch_title }} · {{ r.day1 }} 발송</span>
+        <span class="due-acts">
+          <form method="post" action="/followups/{{ r.id }}/responded">
+            <button class="linkbtn" type="submit">답 옴</button>
+          </form>
+          <form method="post" action="/followups/{{ r.id }}/stop">
+            <button class="linkbtn danger" type="submit">중단</button>
+          </form>
+        </span>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endfor %}
+  {% else %}
+  <p class="all-clear">✅ 오늘 보낼 후속이 없습니다.</p>
+  {% endif %}
+</section>
+
+<div class="dash-grid">
+  <section class="panel">
+    <h2 class="panel-title">예약된 후속 <span class="hint">{{ upcoming|length }}건</span></h2>
+    {% if upcoming %}
+    <table class="grid-table compact">
+      <thead><tr><th>예정일</th><th>담당자</th><th>다음 단계</th><th>남음</th><th></th></tr></thead>
+      <tbody>
+        {% for r in upcoming %}
+        <tr>
+          <td class="muted">{{ r.due }}</td>
+          <td><b>{{ r.name }}</b> <span class="muted">{{ r.firm }}</span></td>
+          <td>{{ r.next_label }}</td>
+          <td class="num">{{ r.days_left }}일</td>
+          <td>
+            <form method="post" action="/followups/{{ r.id }}/responded">
+              <button class="linkbtn" type="submit">답 옴</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted">예약된 후속이 없습니다.</p>
+    {% endif %}
+  </section>
+
+  <section class="panel">
+    <h2 class="panel-title">발송 주기</h2>
+    <ul class="import-stats">
+      {% for rule in rules %}
+      <li><span>{{ rule.label }}</span><b>{{ rule.desc }}</b></li>
+      {% endfor %}
+    </ul>
+    <p class="hint">다음 딜소개 회차: <b>{{ next_send.strftime('%m월 %d일') }}</b></p>
+
+    {% if user.role == 'admin' %}
+    <details class="tpl-new">
+      <summary>주기 바꾸기 (관리자)</summary>
+      {% for rule in rules %}
+      <form method="post" action="/followups/rules/{{ rule.key }}" class="rule-form">
+        <span class="rule-label">{{ rule.label }}</span>
+        {% if rule.kind == 'monthly_weekday' %}
+        <label class="field inline-field"><span>요일</span>
+          <select name="weekday">
+            {% for i, wd in [(0,'월'),(1,'화'),(2,'수'),(3,'목'),(4,'금')] %}
+            <option value="{{ i }}" {% if rule.weekday == i %}selected{% endif %}>{{ wd }}요일</option>
+            {% endfor %}
+          </select></label>
+        <label class="field inline-field"><span>몇 번째 주</span>
+          <input type="text" name="nth_weeks" value="{{ rule.nth_weeks }}" placeholder="1,3"></label>
+        {% else %}
+        <label class="field inline-field"><span>최소 일수</span>
+          <input type="number" name="offset_min_days" value="{{ rule.offset_min_days }}" min="0"></label>
+        <label class="field inline-field"><span>최대 일수</span>
+          <input type="number" name="offset_max_days" value="{{ rule.offset_max_days }}" min="0"></label>
+        {% endif %}
+        <button class="secondary-btn" type="submit">저장</button>
+      </form>
+      {% endfor %}
+      <p class="hint">
+        이미 예약된 건의 날짜는 바뀌지 않습니다. 다음 발송부터 새 주기가 적용됩니다.
+      </p>
+    </details>
+    {% endif %}
+  </section>
+
+  <section class="panel wide">
+    <h2 class="panel-title">끝난 후속 <span class="hint">{{ closed|length }}건</span>
+      <form method="post" action="/followups/backfill" class="inline-form"
+            onsubmit="return confirm('지난 발송 이력을 훑어 후속을 잡습니다. 계속할까요?')">
+        <button class="linkbtn" type="submit">지난 발송에서 후속 잡기</button>
+      </form>
+    </h2>
+    {% if closed %}
+    <table class="grid-table compact">
+      <thead><tr><th>담당자</th><th>마지막 단계</th><th>상태</th><th>사유</th><th></th></tr></thead>
+      <tbody>
+        {% for r in closed %}
+        <tr>
+          <td><b>{{ r.name }}</b> <span class="muted">{{ r.firm }}</span></td>
+          <td>{{ r.stage_label }}</td>
+          <td><span class="status-badge">{{ r.status_label }}</span></td>
+          <td class="muted">{{ r.reason }}</td>
+          <td>
+            {% if r.status in ['stopped', 'responded'] %}
+            <form method="post" action="/followups/{{ r.id }}/resume">
+              <button class="linkbtn" type="submit">다시 켜기</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted">
+      아직 끝난 후속이 없습니다.
+      이 기능을 켜기 전에 보낸 회차가 있다면 <b>[지난 발송에서 후속 잡기]</b> 를 눌러 주세요.
+    </p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

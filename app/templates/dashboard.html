@@ -37,6 +37,29 @@
   {% endfor %}
 </div>
 
+{% if followups.due %}
+<!-- 오늘 보낼 후속 — 회차보다 먼저 챙겨야 할 때가 많다. -->
+<section class="panel followup-strip">
+  <h2 class="panel-title">오늘 보낼 후속
+    <span class="count-pill on"><b>{{ followups.due }}</b>명</span>
+    {% if followups.overdue %}<span class="tag bad">{{ followups.overdue }}건 지남</span>{% endif %}
+    <a class="linkbtn" href="/followups">후속 관리</a>
+  </h2>
+  <ul class="due-list">
+    {% for r in followups.rows %}
+    <li class="{% if r.overdue %}overdue{% endif %}">
+      <span class="due-when">{% if r.overdue %}{{ -r.days_left }}일 지남{% else %}오늘{% endif %}</span>
+      <span class="due-who"><b>{{ r.name }}</b> {{ r.title }} <span class="muted">{{ r.firm }}</span></span>
+      <span class="due-from muted">{{ r.next_label }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% if followups.due > followups.rows|length %}
+  <p class="hint"><a href="/followups">나머지 {{ followups.due - followups.rows|length }}명 보기</a></p>
+  {% endif %}
+</section>
+{% endif %}
+
 <div class="dash-grid">
   <!-- 막힌 것 먼저. 발송일에 못 나가는 이유는 대부분 여기 있다. -->
   <section class="panel">

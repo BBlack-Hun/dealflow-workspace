@@ -137,8 +137,21 @@ def _get_or_create(db, model, defaults=None, **filters):
 
 
 def bootstrap(db) -> dict:
-    """어떤 환경에서도 필요한 최소한 — 팀 기본 문구 + 관리자 계정."""
-    made = {"templates": 0, "users": 0}
+    """어떤 환경에서도 필요한 최소한 — 팀 기본 문구 + 관리자 계정 + 발송 주기."""
+    made = {"templates": 0, "users": 0, "rules": 0}
+
+    # 발송 주기는 코드가 아니라 DB 가 정한다 — 운영하며 바뀐다
+    # (실제로 '매주'에서 '월 2회'로 한 번 바뀌었다).
+    from app.models import ScheduleRule  # noqa: PLC0415
+    from app.services.cadence import DEFAULT_RULES  # noqa: PLC0415
+
+    for key, spec in DEFAULT_RULES.items():
+        exists = db.execute(
+            select(ScheduleRule).where(ScheduleRule.key == key)
+        ).scalar_one_or_none()
+        if exists is None:
+            db.add(ScheduleRule(key=key, effective_from="2026-09-01", **spec))
+            made["rules"] += 1
 
     for kind, body in TEAM_TEMPLATES:
         exists = db.execute(

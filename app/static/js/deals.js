@@ -72,6 +72,48 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   }
 
 
+  // ── 담당자 검색 ───────────────────────────────────────────
+  // 116명 중에서 몇 명을 골라야 한다. 기업 검색과 같은 규칙을 쓴다:
+  // **선택한 담당자는 검색어와 무관하게 항상 보인다** — 검색어를 바꾸다
+  // 이미 고른 사람이 사라지면 몇 명 골랐는지 알 수 없다.
+  function applyContactFilter() {
+    var box = document.getElementById("contact-search");
+    var onlyPicked = document.getElementById("only-picked-contacts");
+    var note = document.getElementById("contact-filter-note");
+    if (!box) return;
+
+    var q = (box.value || "").trim().toLowerCase();
+    var pickedOnly = onlyPicked && onlyPicked.checked;
+    var shown = 0, total = 0;
+
+    document.querySelectorAll("#contact-list .pick-card").forEach(function (card) {
+      var cb = card.querySelector(".contact-cb");
+      var picked = cb && cb.checked;
+      var hit = !q || (card.getAttribute("data-search") || "").indexOf(q) !== -1;
+      total += 1;
+      var visible = picked || (hit && !pickedOnly);
+      card.hidden = !visible;
+      if (visible) shown += 1;
+    });
+
+    if (note) {
+      if (q || pickedOnly) {
+        note.hidden = false;
+        note.textContent = shown + " / " + total + "명 표시 중" +
+          (q ? " (검색: " + box.value.trim() + ")" : "");
+      } else {
+        note.hidden = true;
+      }
+    }
+  }
+
+  ["contact-search", "only-picked-contacts"].forEach(function (id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener("input", applyContactFilter);
+    el.addEventListener("change", applyContactFilter);
+  });
+
   // ── 문구(템플릿) 선택 ─────────────────────────────────────
   // 상황마다 인사말·안내문이 달라진다(첫 연락/재연락, 연말 인사 …).
   // /templates 에서 만들어 둔 문구를 회차마다 골라 쓴다. 고르지 않으면 기본 동작.
@@ -177,6 +219,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       ? nt < 1
       : !(nc >= 1 && nc <= MAX_COMPANIES && nt >= 1);
     applyCompanyFilter();   // 선택 항목은 검색 중에도 계속 보이게
+    applyContactFilter();
   }
 
   // 고른 기업의 IR 자료 링크를 띄운다 — 무엇을 보내야 하는지 그 자리에서 보여야 한다.
@@ -399,6 +442,23 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     if (!allOn) targets.forEach(function (c) { c.checked = true; });
     updateCounts();
   });
+
+  // 후속 관리에서 "리마인드 보내기" 로 넘어오면 방식과 대상을 그대로 받는다.
+  // 화면을 열자마자 보낼 준비가 되어 있어야 챙기던 일이 줄어든다.
+  (function applyIncoming() {
+    var params = new URLSearchParams(window.location.search);
+    var wanted = params.get("mode");
+    var ids = (params.get("contacts") || "").split(",")
+      .map(function (v) { return v.trim(); }).filter(Boolean);
+    if (ids.length) {
+      var want = {};
+      ids.forEach(function (id) { want[id] = true; });
+      contactCbs().forEach(function (c) { if (want[c.value]) c.checked = true; });
+    }
+    if (wanted && document.querySelector('.mode-tab[data-mode="' + wanted + '"]')) {
+      setMode(wanted);
+    }
+  })();
 
   updateCounts();
   loadTemplates();

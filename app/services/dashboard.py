@@ -20,7 +20,7 @@ from typing import Dict, List, Optional
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from . import mailer
+from . import cadence, mailer
 from ..models import (
     AgentDevice,
     ContactActivity,
@@ -35,34 +35,8 @@ from ..models import (
 # 반응을 '최근'으로 볼 기간. 내 투자사 화면과 같은 기준을 쓴다.
 REACTION_WINDOW_DAYS = 60
 
-# 정규 발송일: 매월 첫째·셋째 수요일 (0=월 … 2=수)
-SEND_WEEKDAY = 2
-SEND_NTH = (1, 3)
-
-
-# --- 발송 주기 --------------------------------------------------------------
-
-def nth_weekday(year: int, month: int, weekday: int, nth: int) -> date:
-    """그 달의 n번째 특정 요일."""
-    first = date(year, month, 1)
-    offset = (weekday - first.weekday()) % 7
-    return first + timedelta(days=offset + 7 * (nth - 1))
-
-
-def upcoming_send_dates(today: Optional[date] = None, count: int = 3) -> List[date]:
-    """다음 정규 발송일들. 오늘이 발송일이면 오늘도 포함한다."""
-    today = today or date.today()
-    out: List[date] = []
-    year, month = today.year, today.month
-    while len(out) < count:
-        for nth in SEND_NTH:
-            d = nth_weekday(year, month, SEND_WEEKDAY, nth)
-            if d >= today:
-                out.append(d)
-        month += 1
-        if month > 12:
-            year, month = year + 1, 1
-    return sorted(out)[:count]
+# 발송 주기는 `schedule_rules` 가 정한다 — cadence.upcoming_send_dates 를 직접 쓴다.
+# 예전엔 여기에 "매월 첫째·셋째 수요일" 이 박혀 있었는데, 주기는 운영하며 바뀐다.
 
 
 # --- 공통 집계 --------------------------------------------------------------
@@ -178,7 +152,13 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None) -> dic
             "href": "/setup", "level": "bad",
         })
 
-    upcoming = upcoming_send_dates(today)
+    # 오늘 보낼 후속 — 딜소개 회차보다 먼저 챙겨야 할 때가 많다.
+    cadence.sweep_reactions(db, user.id)
+    due_rows = cadence.sequence_rows(db, user.id, today)
+    due_today = [r for r in due_rows if r["status"] == "active" and r["due"]
+                 and r["due"] <= today.isoformat()]
+
+    upcoming = cadence.upcoming_send_dates(db, today)
     next_send = upcoming[0]
 
     return {
@@ -203,6 +183,11 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None) -> dic
             if rooms.get(s, 0)
         ],
         "blockers": blockers,
+        "followups": {
+            "due": len(due_today),
+            "overdue": sum(1 for r in due_today if r["overdue"]),
+            "rows": due_today[:5],
+        },
         "reactions": {
             "ir": acts.get("ir_request", 0),
             "meeting": acts.get("meeting", 0),
@@ -320,8 +305,8 @@ def admin_dashboard(db: Session, today: Optional[date] = None) -> dict:
              "sub": "건 성공", "href": "/team"},
         ],
         "members": rows,
-        "next_send": upcoming_send_dates(today)[0],
-        "upcoming": upcoming_send_dates(today),
+        "next_send": cadence.upcoming_send_dates(db, today)[0],
+        "upcoming": cadence.upcoming_send_dates(db, today),
         "companies": {
             "total": len(companies),
             "introducible": len(introducible),

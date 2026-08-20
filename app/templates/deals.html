@@ -105,10 +105,19 @@
       <button type="button" class="linkbtn" id="select-all-contacts">전체선택</button>
       <button type="button" class="linkbtn" id="select-noreact">반응 없는 담당자만</button>
     </h2>
+    <div class="picker-search">
+      <input type="search" id="contact-search" placeholder="이름 · 투자사 · 카톡방 검색 ({{ contacts|length }}명)"
+             autocomplete="off" aria-label="담당자 검색">
+      <label class="only-picked">
+        <input type="checkbox" id="only-picked-contacts"> 선택한 것만
+      </label>
+    </div>
+    <p class="hint" id="contact-filter-note" hidden></p>
     <p class="hint" id="contact-summary" hidden></p>
     <div class="card-list" id="contact-list">
       {% for c in contacts %}
-      <label class="pick-card">
+      <label class="pick-card"
+             data-search="{{ (c.name ~ ' ' ~ (c.title or '') ~ ' ' ~ (c.firm or '') ~ ' ' ~ (c.kakao_room_name or ''))|lower }}">
         <input type="checkbox" class="contact-cb" value="{{ c.id }}" data-name="{{ c.name }}"
                data-noreact="{{ 1 if c.id in no_reaction_ids else 0 }}">
         <div class="pick-body">
