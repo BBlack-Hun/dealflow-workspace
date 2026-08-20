@@ -387,3 +387,92 @@ def test_clearing_the_room_leaves_the_send_list(logged, db, users):
     db.expire_all()
     assert db.get(VcContact, contact.id).connect_stage != "connected"
     assert "홍길동" not in logged.get("/deals").text
+
+
+# --- '카톡 발송 가능' 이 두 화면에서 같아야 한다 -----------------------------
+#
+# 투자사 DB 는 117명, 대시보드는 123명으로 어긋난 적이 있다. 원인은 대시보드가
+# 모르는 방 상태를 전부 '미확인'으로 떨어뜨려, **방이 없다고 확인된 사람**까지
+# 발송 가능으로 센 것이었다.
+
+def _mine(db, users, **kw):
+    from app.models import VcContact
+
+    base = dict(user_id=users["u1"].id, firm="가나벤처스", source_sheet="내 명단")
+    base.update(kw)
+    row = VcContact(**base)
+    db.add(row)
+    return row
+
+
+def test_room_not_found_is_not_sendable(db, users):
+    """방이 없다고 확인된 사람에게는 나가지 않는다 — 세지도 않는다."""
+    from app.models import SheetOwner
+    from app.services.dashboard import user_dashboard
+
+    db.add(SheetOwner(label="내 명단", user_id=users["u1"].id))
+    _mine(db, users, name="확인됨", channel_kakao=1, kakao_room_name="방1",
+          room_verified="verified")
+    _mine(db, users, name="미확인", channel_kakao=1, kakao_room_name="방2",
+          room_verified="unverified")
+    _mine(db, users, name="방없음", channel_kakao=1, kakao_room_name="방3",
+          room_verified="not_found")
+    _mine(db, users, name="복수매칭", channel_kakao=1, kakao_room_name="방4",
+          room_verified="ambiguous")
+    db.commit()
+
+    kpi = {k["key"]: k["value"] for k in user_dashboard(db, users["u1"])["kpis"]}
+    assert kpi["sendable"] == 2          # 확인됨 + 미확인만
+
+
+def test_unknown_room_state_is_treated_as_not_sendable(db, users):
+    """모르는 상태를 낙관적으로 보면 못 가는 곳에 갈 수 있다고 세게 된다."""
+    from app.services.dashboard import _room_state
+    from app.models import VcContact
+
+    row = VcContact(user_id=users["u1"].id, name="이상", firm="가나벤처스",
+                    channel_kakao=1, kakao_room_name="방", room_verified="뭔가새로운값")
+    assert _room_state(row) == "failed"
+
+
+def test_non_kakao_channel_is_not_counted(db, users):
+    """메일로 받는 곳은 방 이름이 있어도 카톡 발송 대상이 아니다."""
+    from app.models import SheetOwner
+    from app.services.dashboard import user_dashboard
+
+    db.add(SheetOwner(label="내 명단", user_id=users["u1"].id))
+    _mine(db, users, name="카톡", channel_kakao=1, kakao_room_name="방1",
+          room_verified="verified")
+    _mine(db, users, name="메일", channel_kakao=0, channel_email=1,
+          kakao_room_name="방2", room_verified="verified")
+    _mine(db, users, name="채널없음", channel_kakao=0, channel_email=0,
+          kakao_room_name="방3", room_verified="verified")
+    db.commit()
+
+    kpi = {k["key"]: k["value"] for k in user_dashboard(db, users["u1"])["kpis"]}
+    assert kpi["sendable"] == 1
+
+
+def test_dashboard_matches_the_contacts_screen(logged, db, users):
+    """두 화면의 '카톡 연결' 수가 같아야 한다."""
+    from app.models import SheetOwner
+    from app.routers.contacts import contact_rows
+    from app.services.dashboard import user_dashboard
+
+    db.add(SheetOwner(label="내 명단", user_id=users["u1"].id))
+    _mine(db, users, name="A", channel_kakao=1, kakao_room_name="방1",
+          room_verified="verified")
+    _mine(db, users, name="B", channel_kakao=1, kakao_room_name="방2",
+          room_verified="not_found")
+    _mine(db, users, name="C", channel_kakao=0, channel_email=1,
+          kakao_room_name="방3", room_verified="verified")
+    db.commit()
+
+    on_screen = sum(1 for r in contact_rows(db, users["u1"]) if r["channel_kakao"])
+    kpi = {k["key"]: k["value"] for k in user_dashboard(db, users["u1"])["kpis"]}
+    # 방 없음(B)은 화면의 '카톡 연결'에는 잡히지만 발송 가능은 아니다 —
+    # 그 차이는 '먼저 손봐야 할 것'에 뜬다.
+    assert on_screen == 2
+    assert kpi["sendable"] == 1
+    labels = [b["label"] for b in user_dashboard(db, users["u1"])["blockers"]]
+    assert any("방을 찾지 못한" in x for x in labels)
