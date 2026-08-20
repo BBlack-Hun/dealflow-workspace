@@ -20,7 +20,7 @@ from typing import Dict, List, Optional
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from . import cadence, mailer, sheet_owner
+from . import cadence, mailer, pipeline, sheet_owner
 from ..models import (
     AgentDevice,
     ContactActivity,
@@ -112,7 +112,7 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None) -> dic
     # 담당은 **명단(시트) 단위**로 정해진다 — "내 이름으로 된 탭만 내 담당".
     # 이렇게 하지 않으면 시트를 올린 사람에게 팀 전체가 붙는다.
     contacts = sheet_owner.my_contacts(db, user)
-    pipeline = [c for c in contacts if c.connect_stage != "connected"]
+    waiting = [c for c in contacts if c.connect_stage != "connected"]
     ids = [c.id for c in contacts]
 
     rooms = Counter(_room_state(c) for c in contacts)
@@ -203,7 +203,8 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None) -> dic
         ],
         "blockers": blockers,
         # 연결 작업은 발송과 다른 일이라 따로 보여준다.
-        "pipeline": _pipeline_view(pipeline),
+        "pipeline": _pipeline_view(waiting),
+        "pipeline_items": pipeline.today_items(db, user, today),
         "followups": {
             "due": len(due_today),
             "overdue": sum(1 for r in due_today if r["overdue"]),

@@ -413,7 +413,11 @@ def create_send_list(
 
     # Job (queued) + items (pending, snapshotted message + room name)
     job = SendJob(
-        user_id=user.id, kind="deal_intro", batch_id=batch.id,
+        user_id=user.id,
+        # IR 자료 전달은 딜소개와 다른 일이다. 종류를 남겨야 후속을 멈추고
+        # 요청을 '전달함'으로 닫을 수 있다.
+        kind="ir_delivery" if req.mode == MODE_IR else "deal_intro",
+        batch_id=batch.id,
         status="queued", total=len(contacts), sent=0, failed=0,
     )
     db.add(job)

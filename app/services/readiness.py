@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from .. import config
 from ..models import AgentDevice, IrCompany, MessageTemplate, SendItem, SendJob, User
-from . import cadence, sheet_owner
+from . import cadence, pipeline, sheet_owner
 from .dashboard import _SENDABLE_ROOM, _room_state
 
 OK = "ok"
@@ -142,6 +142,21 @@ def _rehearsal_check(db: Session, user: User, today: date) -> dict:
                   "테스트 모드를 켜고 한 건 보내 보세요", "/deals")
 
 
+def _open_requests_check(db: Session, user: User) -> dict:
+    """새 회차를 보내기 전에 지난 회차 요청부터 답해야 한다."""
+    items = pipeline.today_items(db, user)
+    overdue = items["overdue_requests"]
+    if overdue:
+        names = ", ".join(f"{r['name']}({r['company_name']})" for r in overdue[:3])
+        return _check(WARN, "답 못 한 IR 요청",
+                      f"{len(overdue)}건이 사흘 넘게 밀려 있습니다 — {names}",
+                      "새 회차를 보내기 전에 먼저 답하세요", "/ir")
+    if items["open_requests"]:
+        return _check(WARN, "보낼 자료",
+                      f"{len(items['open_requests'])}건이 남아 있습니다", "", "/ir")
+    return _check(OK, "IR 요청", "밀린 요청이 없습니다", "", "/ir")
+
+
 def report(db: Session, user: User, today: Optional[date] = None,
            rehearsal: Optional[bool] = None) -> dict:
     """회차 준비 상태. `rehearsal` 을 주지 않으면 테스트 방 설정으로 판단한다."""
@@ -156,6 +171,7 @@ def report(db: Session, user: User, today: Optional[date] = None,
         _companies_check(db),
         _templates_check(db, user),
         _rehearsal_check(db, user, today),
+        _open_requests_check(db, user),
     ]
 
     upcoming = cadence.upcoming_send_dates(db, today)

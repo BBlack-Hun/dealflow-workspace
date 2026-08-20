@@ -629,3 +629,12 @@ td.cell.save-failed { background: #fdecec; }
 .bulk-paste { width: 100%; padding: 10px 12px; border: 1px solid var(--line);
   border-radius: 8px; font: inherit; font-size: 12px; line-height: 1.6;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace; resize: vertical; }
+
+/* IR·미팅 관리 */
+.overdue-row { background: #fffafa; }
+.row-acts { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.row-acts select { padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; font-size: 12px; }
+.member-form textarea { width: 100%; padding: 6px 8px; border: 1px solid var(--line);
+  border-radius: 8px; font: inherit; font-size: 13px; resize: vertical; }
+.ir-strip { border-left: 4px solid var(--amber); }
+.send-groups { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }

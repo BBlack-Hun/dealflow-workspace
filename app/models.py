@@ -422,3 +422,57 @@ class SheetOwner(TimestampMixin, Base):
     user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     assignee_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # 시트의 담당자 원문
 
+
+class IrRequest(TimestampMixin, Base):
+    """투자사가 "이 기업 IR 자료 주세요" 한 건.
+
+    딜소개를 보내면 여기서 답이 온다. 요청을 받고 자료를 보내기까지가 이 화면의 일이다.
+    받은 것을 놓치면 그 회차에서 가장 뜨거운 반응을 흘려보내는 셈이라,
+    **열린 요청**이 먼저 보여야 한다.
+
+    기업은 우리 DB 에 없을 수도 있다(투자사가 다른 이름으로 부르거나, 아직
+    등록 안 된 기업). 그래서 `company_id` 는 비워 둘 수 있고 이름은 늘 남긴다.
+    """
+
+    __tablename__ = "ir_requests"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    contact_id: Mapped[int] = mapped_column(ForeignKey("vc_contacts.id"))
+    company_id: Mapped[Optional[int]] = mapped_column(ForeignKey("ir_companies.id"),
+                                                      nullable=True)
+    company_name: Mapped[str] = mapped_column(String)      # 요청받은 그대로
+    requested_at: Mapped[str] = mapped_column(String)      # YYYY-MM-DD
+    # open(요청받음) | delivered(자료 전달함) | dropped(보내지 않기로 함)
+    status: Mapped[str] = mapped_column(String, default="open")
+    delivered_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
+class Meeting(TimestampMixin, Base):
+    """투자사 미팅 한 건.
+
+    미팅이 잡히면 그날까지 챙겨야 하고, 끝나면 **열흘 뒤 결과를 물어야** 한다.
+    그 열흘을 사람이 기억하는 대신 여기 적어 둔다.
+    """
+
+    __tablename__ = "meetings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    contact_id: Mapped[int] = mapped_column(ForeignKey("vc_contacts.id"))
+    company_id: Mapped[Optional[int]] = mapped_column(ForeignKey("ir_companies.id"),
+                                                      nullable=True)
+    company_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    scheduled_at: Mapped[str] = mapped_column(String)      # YYYY-MM-DD
+    kind: Mapped[str] = mapped_column(String, default="first")   # first | second | etc
+    # scheduled(예정) | done(완료) | canceled(취소)
+    status: Mapped[str] = mapped_column(String, default="scheduled")
+    done_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # 미팅 결과 — reviewing(검토 중) | investing(투자 검토) | hold(보류) | pass(거절)
+    outcome: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # 미팅 뒤 결과를 물어볼 날. 완료 처리하면 자동으로 잡힌다.
+    followup_due: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    followup_done: Mapped[int] = mapped_column(Integer, default=0)
+    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+

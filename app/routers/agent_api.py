@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 
 from .. import config
 from ..db import get_db
-from ..services import cadence
+from ..services import cadence, pipeline
 from ..deps import get_agent_device, now_iso
 from ..models import AgentDevice, SendItem, SendJob
 
@@ -165,6 +165,10 @@ def item_result(
         # 후속은 **성공한 뒤에만** 잡는다. 발송 목록을 만든 시점에 잡으면
         # 실패한 건까지 예약되어, 받은 적 없는 사람에게 "지난번 공유드린" 이 나간다.
         cadence.start_or_advance(db, item, job)
+        if job is not None and job.kind == "ir_delivery":
+            # 보내고 나서 다시 화면으로 돌아와 '전달함'을 누르게 하면
+            # 바쁠 때 그 한 번을 빼먹는다.
+            pipeline.close_requests_for(db, job, item.contact_id)
     else:
         item.status = "failed"
         item.error = body.error or "unknown error"

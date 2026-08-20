@@ -446,21 +446,42 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     updateCounts();
   });
 
-  // 후속 관리에서 "리마인드 보내기" 로 넘어오면 방식과 대상을 그대로 받는다.
+  // 후속 관리·IR 관리에서 넘어오면 방식·대상·기업을 그대로 받는다.
   // 화면을 열자마자 보낼 준비가 되어 있어야 챙기던 일이 줄어든다.
+  // 특히 IR 자료 전달은 "누구에게 어떤 기업 자료를" 이 이미 정해져 있다 —
+  // 여기서 다시 고르게 하면 엉뚱한 기업을 보낼 여지가 생긴다.
   (function applyIncoming() {
     var params = new URLSearchParams(window.location.search);
     var wanted = params.get("mode");
-    var ids = (params.get("contacts") || "").split(",")
-      .map(function (v) { return v.trim(); }).filter(Boolean);
-    if (ids.length) {
+
+    function check(boxes, raw) {
+      var ids = (raw || "").split(",").map(function (v) { return v.trim(); })
+        .filter(Boolean);
+      if (!ids.length) return 0;
       var want = {};
       ids.forEach(function (id) { want[id] = true; });
-      contactCbs().forEach(function (c) { if (want[c.value]) c.checked = true; });
+      var hit = 0;
+      boxes.forEach(function (c) {
+        if (want[c.value]) { c.checked = true; hit += 1; }
+      });
+      return hit;
     }
+
+    check(contactCbs(), params.get("contacts"));
+    var picked = check(companyCbs(), params.get("companies"));
+
     if (wanted && document.querySelector('.mode-tab[data-mode="' + wanted + '"]')) {
       setMode(wanted);
     }
+    // 받은 기업이 목록에 없으면(소개 불가로 빠졌거나 지워졌으면) 알려 준다.
+    var asked = (params.get("companies") || "").split(",").filter(Boolean).length;
+    if (asked && picked < asked) {
+      warnBox.hidden = false;
+      warnBox.textContent =
+        "요청받은 기업 " + (asked - picked) + "개를 목록에서 찾지 못했습니다 — " +
+        "스타트업 관리에서 등록 상태를 확인하세요.";
+    }
+    if (picked) applyCompanyFilter();
   })();
 
   updateCounts();

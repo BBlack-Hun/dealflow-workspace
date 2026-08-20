@@ -29,7 +29,7 @@ MENU = [
     {"key": "ready", "label": "회차 준비 점검", "href": "/readiness", "ready": True},
     {"key": "followup", "label": "후속 관리", "href": "/followups", "ready": True},
     {"key": "templates", "label": "딜 제안 문구", "href": "/templates", "ready": True},
-    {"key": "req", "label": "투자사 미팅 관리", "href": "/ir", "ready": False},
+    {"key": "req", "label": "IR·미팅 관리", "href": "/ir", "ready": True},
     {"key": "check", "label": "오늘 할 일", "href": "/todo", "ready": False},
     {"key": "consult", "label": "투자컨설턴트 현황", "href": "/consulting", "ready": True,
      "needs": "can_view_consulting"},
