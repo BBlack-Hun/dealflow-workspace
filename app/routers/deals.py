@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import exists, select
 from sqlalchemy.orm import Session
@@ -21,7 +21,7 @@ from ..models import (
     User,
     VcContact,
 )
-from ..services import matcher
+from ..services import mail_sender, mailer, matcher
 from ..services import message_composer as mc
 from ..services.message_composer import MAX_COMPANIES_PER_SEND
 
@@ -265,6 +265,9 @@ class SendRequest(BaseModel):
     contact_ids: List[int]
     title: Optional[str] = None
     mode: str = MODE_DEAL
+    # kakao = 각자 PC의 발송 프로그램 · email = 서버가 SMTP 로 직접
+    channel: str = "kakao"
+    subject: Optional[str] = None
     include_opening: Optional[bool] = None
     opening_template_id: Optional[int] = None
     closing_template_id: Optional[int] = None
@@ -368,6 +371,7 @@ def preview(
 @router.post("/send")
 def create_send_list(
     req: SendRequest,
+    background: BackgroundTasks,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -384,6 +388,12 @@ def create_send_list(
     if not req.contact_ids:
         raise HTTPException(status_code=400, detail="대상 담당자를 1명 이상 선택하세요")
 
+    by_email = req.channel == "email"
+    if by_email and not mailer.is_configured():
+        raise HTTPException(
+            status_code=400,
+            detail="메일 서버 설정이 없습니다 — 팀 현황에서 설정을 확인하세요")
+
     companies = _load_companies(db, req.company_ids) if req.mode in MODES_WITH_COMPANIES else []
 
     # Resolve + validate target contacts (must be owned, must have a room name).
@@ -392,7 +402,15 @@ def create_send_list(
         contact = db.get(VcContact, contact_id)
         if contact is None or contact.user_id != user.id:
             raise HTTPException(status_code=404, detail=f"담당자 {contact_id} 없음")
-        if not contact.kakao_room_name:
+        if by_email:
+            # 주소가 없으면 보낼 방법이 없다. 목록을 만들기 **전에** 막는다 —
+            # 만들고 나서 실패로 남기면 보냈다고 착각하기 쉽다.
+            problem = mail_sender.address_problem(contact)
+            if problem:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"'{contact.name}' {problem} — 발송 대상에서 제외하세요")
+        elif not contact.kakao_room_name:
             raise HTTPException(
                 status_code=400,
                 detail=f"'{contact.name}' 카톡방 이름 미등록 — 발송 대상에서 제외하세요",
@@ -434,16 +452,36 @@ def create_send_list(
                                         req.closing_template_id,
                                         mode=req.mode,
                                         include_opening=req.include_opening).text
-        room_name, message = _apply_test_room(contact, text)
+        if by_email:
+            # 메일은 테스트 방 치환이 없다 — 주소가 곧 대상이고, 테스트 모드는
+            # 카톡방을 하나로 모으는 장치다. 대신 제목에 표시를 남긴다.
+            target = (contact.email or "").strip()
+            message = text
+            subject = (req.subject or "").strip() or (req.title or "딜 소개")
+            if config.TEST_ROOM:
+                subject = f"[테스트] {subject}"
+        else:
+            target, message = _apply_test_room(contact, text)
+            subject = None
+
         db.add(SendItem(
             job_id=job.id,
             contact_id=contact.id,
             stage=(FOLLOW_UP_MODES[req.mode][2] if req.mode in FOLLOW_UP_MODES
                    else mc.STAGE_DAY1),
-            room_name=room_name,
+            channel="email" if by_email else "kakao",
+            room_name=target,
+            subject=subject,
             message=message,
             status="pending",
         ))
 
     db.commit()
-    return {"job_id": job.id, "batch_id": batch.id, "total": len(contacts), "status": job.status}
+
+    if by_email:
+        # 요청 안에서 다 보내면 110명일 때 몇 분이 걸려 요청이 끊긴다.
+        # 목록만 만들고 뒤에서 한 건씩 보낸다 — 진행 화면이 카톡과 똑같이 폴링한다.
+        background.add_task(mail_sender.send_job, job.id)
+
+    return {"job_id": job.id, "batch_id": batch.id, "total": len(contacts),
+            "status": job.status, "channel": req.channel}
