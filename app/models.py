@@ -330,3 +330,58 @@ class ConsultingCompany(TimestampMixin, Base):
     email: Mapped[Optional[str]] = mapped_column(String, nullable=True)       # 이메일
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)         # {"열id": "내용"}
 
+
+class ScheduleRule(TimestampMixin, Base):
+    """발송 주기 규칙 — 코드가 아니라 DB 가 정한다.
+
+    "매월 첫째·셋째 수요일", "딜소개 6~7일 뒤 리마인드" 같은 값은 운영하며 바뀐다
+    (실제로 '매주'에서 '월 2회'로 한 번 바뀌었다). 코드에 박아 두면 바뀔 때마다
+    배포해야 하고, 언제부터 바뀐 규칙인지도 남지 않는다.
+
+    두 종류를 한 테이블에 담는다.
+    - `monthly_weekday` : 회차일. weekday + nth_weeks 를 쓴다 (수요일 · 1,3번째)
+    - `offset_days`     : 후속. offset_min_days ~ offset_max_days 뒤 (6~7일 뒤)
+    """
+
+    __tablename__ = "schedule_rules"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    key: Mapped[str] = mapped_column(String, unique=True)   # deal_cycle | remind | meeting
+    label: Mapped[str] = mapped_column(String)
+    kind: Mapped[str] = mapped_column(String)               # monthly_weekday | offset_days
+    weekday: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)      # 0=월 … 2=수
+    nth_weeks: Mapped[Optional[str]] = mapped_column(String, nullable=True)     # "1,3"
+    offset_min_days: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    offset_max_days: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # 주말에 걸리면 다음 영업일로 민다. 토요일에 딜소개를 보내지는 않는다.
+    skip_weekend: Mapped[int] = mapped_column(Integer, default=1)
+    effective_from: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    is_active: Mapped[int] = mapped_column(Integer, default=1)
+
+
+class SendSequence(TimestampMixin, Base):
+    """담당자 한 명의 후속 흐름 — 딜소개 → 리마인드 → 미팅 요청.
+
+    딜소개가 **성공한 뒤에만** 시작한다. 발송 목록을 만든 시점에 시작하면
+    실패한 건까지 후속이 예약되어, 받은 적 없는 사람에게 "지난번 공유드린" 이 나간다.
+
+    답이 오면 멈춘다(`responded`). IR 요청이나 미팅이 잡혔는데도 리마인드가
+    계속 나가는 것이 이 기능에서 가장 나쁜 실패다.
+    """
+
+    __tablename__ = "send_sequences"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    contact_id: Mapped[int] = mapped_column(ForeignKey("vc_contacts.id"))
+    batch_id: Mapped[Optional[int]] = mapped_column(ForeignKey("deal_batches.id"), nullable=True)
+    # 지금까지 보낸 마지막 단계 (1 딜소개 · 2 리마인드 · 3 미팅요청)
+    stage: Mapped[int] = mapped_column(Integer, default=1)
+    # active(예약됨) | responded(답 옴) | stopped(사람이 중단) | done(끝까지 보냄)
+    status: Mapped[str] = mapped_column(String, default="active")
+    day1_sent_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    last_sent_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    next_stage: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)   # 2 | 3
+    next_due_date: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # YYYY-MM-DD
+    stopped_reason: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+

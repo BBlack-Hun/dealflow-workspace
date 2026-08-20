@@ -558,3 +558,20 @@ td.cell.save-failed { background: #fdecec; }
 .ir-attach ul { margin: 6px 0 0; padding-left: 18px; }
 .ir-attach li { margin: 2px 0; }
 .warn-text { color: var(--amber); }
+
+/* ── 후속 관리 ──────────────────────────────────────────────── */
+.due-group { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
+.due-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.due-head .primary-btn { margin-left: auto; }
+.due-list { list-style: none; margin: 0; padding: 0; }
+.due-list li { display: grid; grid-template-columns: 84px 1fr 200px auto; gap: 10px;
+  align-items: center; padding: 6px 0; border-top: 1px solid var(--line); font-size: 13px; }
+.due-list li:first-child { border-top: 0; }
+.due-when { font-size: 12px; color: var(--muted); }
+.due-list li.overdue .due-when { color: var(--red); font-weight: 600; }
+.due-from { font-size: 12px; }
+.due-acts { display: flex; gap: 8px; }
+.followup-strip { border-left: 4px solid var(--brand); }
+.rule-form { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin: 8px 0; }
+.rule-label { font-size: 13px; font-weight: 600; min-width: 88px; padding-bottom: 6px; }
+.inline-form { display: inline; }

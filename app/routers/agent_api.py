@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 
 from .. import config
 from ..db import get_db
+from ..services import cadence
 from ..deps import get_agent_device, now_iso
 from ..models import AgentDevice, SendItem, SendJob
 
@@ -161,6 +162,9 @@ def item_result(
         item.status = "sent"
         item.sent_at = now_iso()
         item.error = None
+        # 후속은 **성공한 뒤에만** 잡는다. 발송 목록을 만든 시점에 잡으면
+        # 실패한 건까지 예약되어, 받은 적 없는 사람에게 "지난번 공유드린" 이 나간다.
+        cadence.start_or_advance(db, item, job)
     else:
         item.status = "failed"
         item.error = body.error or "unknown error"

@@ -45,15 +45,16 @@ def admin_client(client, db, users):
     (date(2026, 12, 20), [date(2027, 1, 6), date(2027, 1, 20), date(2027, 2, 3)]),
 ])
 def test_upcoming_send_dates(today, expected):
-    from app.services.dashboard import upcoming_send_dates
+    from app.services.cadence import upcoming_send_dates
 
-    assert upcoming_send_dates(today) == expected
+    # db=None → 기본 규칙(매월 1·3번째 수요일)으로 계산
+    assert upcoming_send_dates(None, today) == expected
 
 
 def test_send_dates_are_always_wednesday():
-    from app.services.dashboard import upcoming_send_dates
+    from app.services.cadence import upcoming_send_dates
 
-    for d in upcoming_send_dates(date(2026, 8, 20), count=12):
+    for d in upcoming_send_dates(None, date(2026, 8, 20), count=12):
         assert d.weekday() == 2, f"{d} 는 수요일이 아니다"
 
 
