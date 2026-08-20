@@ -106,7 +106,9 @@ def poll(
     db.commit()
 
     job = db.get(SendJob, candidate)
-    pending_items = [i for i in job.items if i.status == "pending"]
+    # 메일 건은 서버가 보낸다. 발송 프로그램이 집어가면 방을 찾다가 실패한다.
+    pending_items = [i for i in job.items
+                     if i.status == "pending" and i.channel != "email"]
     return {
         "job_id": job.id,
         "kind": job.kind,

@@ -159,6 +159,23 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     }
   }
 
+  function currentChannel() {
+    var picked = document.querySelector('input[name="channel"]:checked');
+    return picked ? picked.value : "kakao";
+  }
+
+  // 메일과 카톡은 나가는 길이 다르다 — 고른 채널에 맞춰 화면도 바뀐다.
+  function syncChannel() {
+    var email = currentChannel() === "email";
+    var box = document.getElementById("mail-fields");
+    if (box) box.hidden = !email;
+    updateCounts();
+  }
+
+  document.querySelectorAll('input[name="channel"]').forEach(function (radio) {
+    radio.addEventListener("change", syncChannel);
+  });
+
   function selectedTemplateIds() {
     var o = document.getElementById("tpl-opening");
     var c = document.getElementById("tpl-closing");
@@ -384,18 +401,25 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     var title = (document.getElementById("batch-title").value || "딜소개 회차").trim();
     var edits = editedOverrides();
     var editNote = edits.length ? "\n직접 수정한 문구 " + edits.length + "건이 그대로 발송됩니다." : "";
+    var via = currentChannel() === "email" ? "이메일로 " : "";
     var what = mode === "ir"
       ? cids.length + "개 기업 IR 자료 전달"
       : (isFollowUp() ? FOLLOW_UP[mode] + " 문구 (기업 목록 없음)"
                       : cids.length + "개 기업 딜소개");
-    if (!confirm(what + "\n대상 " + tids.length + "명에게 발송합니다." + editNote +
-                 "\n방 이름을 최종 확인하셨나요?")) return;
+    var lastCheck = currentChannel() === "email"
+      ? "\n받는 주소를 최종 확인하셨나요?"
+      : "\n방 이름을 최종 확인하셨나요?";
+    if (!confirm(what + "\n" + via + "대상 " + tids.length + "명에게 발송합니다."
+                 + editNote + lastCheck)) return;
     sendBtn.disabled = true;
     fetch("/api/deals/send", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(Object.assign({ company_ids: cids, contact_ids: tids, title: title,
-                                          overrides: editedOverrides() }, selectedTemplateIds()))
+      body: JSON.stringify(Object.assign(
+        { company_ids: cids, contact_ids: tids, title: title,
+          overrides: editedOverrides(), channel: currentChannel(),
+          subject: (document.getElementById("mail-subject") || {}).value || null },
+        selectedTemplateIds()))
     })
       .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
       .then(function (res) {
@@ -484,6 +508,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     if (picked) applyCompanyFilter();
   })();
 
+  syncChannel();
   updateCounts();
   loadTemplates();
 })();

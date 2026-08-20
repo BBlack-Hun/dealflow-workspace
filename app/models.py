@@ -276,7 +276,11 @@ class SendItem(TimestampMixin, Base):
     # FK to send_sequences arrives in Sprint 3 — kept nullable, no constraint yet.
     sequence_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     stage: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # 1 day1 | 2 remind | 3 meeting
-    room_name: Mapped[str] = mapped_column(String)  # snapshot at send time
+    # 어디로 나가는가. kakao = 각자 PC의 발송 프로그램, email = 서버가 SMTP 로 직접.
+    # 나가는 길이 달라서, 이 값이 없으면 메일 건을 카톡 프로그램이 집어간다.
+    channel: Mapped[str] = mapped_column(String, default="kakao")
+    room_name: Mapped[str] = mapped_column(String)  # 카톡방 제목 · 메일이면 받는 주소
+    subject: Mapped[Optional[str]] = mapped_column(String, nullable=True)   # 메일 제목
     message: Mapped[str] = mapped_column(Text)      # rendered final text snapshot (immutable)
     # pending | sending | sent | failed | canceled
     status: Mapped[str] = mapped_column(String, default="pending")

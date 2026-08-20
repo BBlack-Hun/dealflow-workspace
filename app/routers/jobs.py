@@ -1,12 +1,13 @@
 """Send-job progress JSON + controls (ROADMAP task 1.9, FEATURE_SPEC §5 ⑦~⑧)."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..deps import agent_status, get_current_user
 from ..models import SendItem, SendJob, User
+from ..services import mail_sender
 
 router = APIRouter(prefix="/api", tags=["jobs"])
 
@@ -70,8 +71,14 @@ def cancel_job(job_id: int, db: Session = Depends(get_db), user: User = Depends(
 
 
 @router.post("/jobs/{job_id}/retry")
-def retry_failed(job_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """실패 [재시도] — reset failed items to pending and requeue the job."""
+def retry_failed(job_id: int, background: BackgroundTasks,
+                 db: Session = Depends(get_db),
+                 user: User = Depends(get_current_user)):
+    """실패 [재시도] — 실패 건을 다시 대기로 돌린다.
+
+    카톡 건은 발송 프로그램이 다시 집어가고, 메일 건은 **서버가 다시 보낸다**.
+    채널마다 나가는 길이 달라서 한쪽만 되돌리면 나머지가 영원히 대기로 남는다.
+    """
     job = _job_or_404(db, job_id, user)
     failed_items = [i for i in job.items if i.status == "failed"]
     if not failed_items:
@@ -82,6 +89,9 @@ def retry_failed(job_id: int, db: Session = Depends(get_db), user: User = Depend
     job.status = "queued"
     job.finished_at = None
     db.commit()
+
+    if any(i.channel == "email" for i in failed_items):
+        background.add_task(mail_sender.send_job, job.id)
     return {"status": job.status, "requeued": len(failed_items)}
 
 

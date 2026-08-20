@@ -650,3 +650,8 @@ td.cell.save-failed { background: #fdecec; }
 .todo-mark { font-size: 12px; }
 .todo-body { display: flex; flex-direction: column; gap: 1px; font-size: 13px; flex: 1; }
 .todo-body .muted { font-size: 12px; }
+
+.mail-fields { border: 1px solid #cfe0ff; background: #f5f8ff; border-radius: 10px;
+  padding: 10px 14px; margin-bottom: 10px; }
+.mail-fields input { width: 100%; padding: 7px 10px; border: 1px solid var(--line);
+  border-radius: 8px; font: inherit; }
