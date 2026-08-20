@@ -24,7 +24,7 @@ from ..deps import get_current_user, templates
 from ..models import AgentDevice, User
 from ..services import auth as auth_svc
 from ..services import dashboard as dash
-from ..services import readiness, today
+from ..services import readiness, report, today
 from ..ui import base_ctx
 
 router = APIRouter(tags=["dashboard"])
@@ -76,6 +76,34 @@ def team_page(request: Request, db: Session = Depends(get_db),
     ctx.update(dash.admin_dashboard(db))
     ctx["msg"] = msg
     return templates.TemplateResponse("team.html", ctx)
+
+
+@router.get("/report", response_class=HTMLResponse, include_in_schema=False)
+def report_page(request: Request, db: Session = Depends(get_db),
+                user: User = Depends(get_current_user),
+                month: str = "", scope: str = ""):
+    """주간·월간 업무 보고. 시트에 손으로 옮겨 적던 표를 기록에서 뽑는다."""
+    from datetime import date as _date
+
+    today = _date.today()
+    year, mon = today.year, today.month
+    if month:
+        try:
+            year, mon = (int(x) for x in month.split("-")[:2])
+        except (ValueError, TypeError):
+            pass
+    # 관리자는 팀 전체를 볼 수 있다. 기본은 본인 것.
+    team_wide = user.role == "admin" and scope == "team"
+    ctx = base_ctx(request, db, user, active="report")
+    ctx.update(report.monthly(db, year, mon, None if team_wide else user, today))
+    ctx.update({
+        "months": [(y, m, f"{y}-{m:02d}") for y, m in report.recent_months(today)],
+        "selected": f"{year}-{mon:02d}",
+        "team_wide": team_wide,
+        "can_team": user.role == "admin",
+        "scope": scope,
+    })
+    return templates.TemplateResponse("report.html", ctx)
 
 
 @router.post("/team/mail-test", include_in_schema=False)

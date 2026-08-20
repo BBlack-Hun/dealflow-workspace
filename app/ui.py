@@ -34,6 +34,7 @@ MENU = [
     
     {"key": "consult", "label": "투자컨설턴트 현황", "href": "/consulting", "ready": True,
      "needs": "can_view_consulting"},
+    {"key": "report", "label": "업무 보고", "href": "/report", "ready": True},
     {"key": "admin", "label": "팀 현황", "href": "/team", "ready": True, "admin_only": True},
     {"key": "setup", "label": "발송 프로그램 설치", "href": "/setup", "ready": True},
 ]
