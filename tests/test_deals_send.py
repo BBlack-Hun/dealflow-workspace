@@ -153,3 +153,149 @@ def test_greeting_can_be_turned_off_for_deals(client, db, seed):
     text = _sent_message(db, r.json()["job_id"])
     assert "안녕하세요" not in text
     assert "1)" in text                # 기업 목록은 그대로 있어야 한다
+
+
+# --- 리마인드 · 미팅 요청 ---------------------------------------------------
+#
+# 딜소개 말고는 전부 기업 목록 없이 문구만 나간다. 이미 목록을 받은 사람에게
+# 같은 목록을 다시 밀어 넣는 것은 후속이 아니라 재발송이다.
+
+@pytest.mark.parametrize("mode, expect", [
+    ("remind", "지난번 공유드린"),
+    ("meeting", "미팅 가능하실지요"),
+    ("ask", "선호하는 기업분야"),
+])
+def test_follow_up_modes_send_only_text(client, seed, mode, expect):
+    r = client.post("/api/deals/preview", json={
+        "company_ids": [], "contact_ids": [seed["contact_id"]], "mode": mode,
+    })
+    assert r.status_code == 200, r.text
+    text = r.json()["previews"][0]["message"]
+    assert expect in text
+    assert "1)" not in text            # 기업 목록이 붙으면 안 된다
+    assert "안녕하세요" not in text     # 후속 문구에는 인사를 다시 붙이지 않는다
+
+
+@pytest.mark.parametrize("mode, title", [
+    ("remind", "리마인드"), ("meeting", "미팅 요청"), ("ask", "선호 분야 묻기"),
+])
+def test_follow_up_batch_titles(client, db, seed, mode, title):
+    """회차 이름이 무엇을 보낸 회차인지 알려줘야 한다."""
+    from app.models import DealBatch
+
+    r = client.post("/api/deals/send", json={
+        "company_ids": [], "contact_ids": [seed["contact_id"]], "mode": mode,
+    })
+    assert r.status_code == 200, r.text
+    db.expire_all()
+    assert db.query(DealBatch).order_by(DealBatch.id.desc()).first().title == title
+
+
+# --- IR 자료 전달 -----------------------------------------------------------
+#
+# 투자사는 "5) 친환경 패키지 …" 처럼 **번호로 기억하고** 답한다. 자료를 보낼 때
+# 같은 번호로 짚어 줘야 서로 맞는다. 번호를 새로 매기면 받는 쪽에서는
+# 자기 목록에서 찾다가 못 찾는다.
+
+def _mark_sent(db, contact_id, companies, user_id):
+    """이 담당자에게 회차를 하나 보낸 것으로 만든다."""
+    from datetime import datetime, timezone
+
+    from app.models import DealBatch, DealBatchCompany, SendItem, SendJob
+
+    now = datetime.now(timezone.utc).isoformat()
+    batch = DealBatch(user_id=user_id, title="지난 회차", sent_date=now[:10])
+    db.add(batch)
+    db.flush()
+    for pos, company_id in enumerate(companies, start=1):
+        db.add(DealBatchCompany(batch_id=batch.id, company_id=company_id, position=pos))
+    job = SendJob(user_id=user_id, kind="deal_intro", batch_id=batch.id,
+                  status="done", total=1, sent=1)
+    db.add(job)
+    db.flush()
+    db.add(SendItem(job_id=job.id, contact_id=contact_id, room_name="방",
+                    message="지난 회차", status="sent", sent_at=now))
+    db.commit()
+    return batch
+
+
+def test_ir_message_uses_the_number_from_the_last_batch(client, db, seed, users):
+    from app.models import IrCompany
+
+    other = IrCompany(name="샘플메디", one_liner="뇌영상 분석", revenue_recent=42)
+    db.add(other)
+    db.commit()
+    # 지난 회차: 1) 샘플메디  2) 샘플애그
+    _mark_sent(db, seed["contact_id"], [other.id, seed["company_id"]], users["u1"].id)
+
+    r = client.post("/api/deals/preview", json={
+        "company_ids": [seed["company_id"]],
+        "contact_ids": [seed["contact_id"]], "mode": "ir",
+    })
+    assert r.status_code == 200, r.text
+    text = r.json()["previews"][0]["message"]
+    assert "2번 기업 샘플애그" in text          # 새로 1번을 매기면 안 된다
+    assert "IR deck 먼저 전달드리겠습니다" in text
+
+
+def test_ir_message_omits_the_number_when_never_sent(client, db, seed):
+    """지난 회차에 없던 기업은 번호를 지어내지 않는다."""
+    r = client.post("/api/deals/preview", json={
+        "company_ids": [seed["company_id"]],
+        "contact_ids": [seed["contact_id"]], "mode": "ir",
+    })
+    text = r.json()["previews"][0]["message"]
+    assert "샘플애그 IR deck" in text
+    assert "번 기업" not in text
+
+
+def test_ir_message_greets_once(client, seed):
+    """문구 자체가 '안녕하세요' 로 시작한다 — 인사말을 또 붙이면 두 번 인사한다."""
+    r = client.post("/api/deals/preview", json={
+        "company_ids": [seed["company_id"]],
+        "contact_ids": [seed["contact_id"]], "mode": "ir",
+    })
+    assert r.json()["previews"][0]["message"].count("안녕하세요") == 1
+
+
+def test_ir_message_has_no_company_list(client, seed):
+    """이미 목록을 본 사람이 '그 중 몇 번을 달라'고 답한 상황이다."""
+    r = client.post("/api/deals/preview", json={
+        "company_ids": [seed["company_id"]],
+        "contact_ids": [seed["contact_id"]], "mode": "ir",
+    })
+    assert "1)" not in r.json()["previews"][0]["message"]
+
+
+def test_ir_requires_a_company(client, seed):
+    """무엇을 보내는지 골라야 한다."""
+    r = client.post("/api/deals/send", json={
+        "company_ids": [], "contact_ids": [seed["contact_id"]], "mode": "ir",
+    })
+    assert r.status_code == 400
+
+
+def test_ir_warns_when_the_file_link_is_missing(client, db, seed):
+    """보낼 자료가 없으면 문구만 나가고 자료는 못 보낸다 — 목록을 만들기 전에 알린다."""
+    r = client.post("/api/deals/preview", json={
+        "company_ids": [seed["company_id"]],
+        "contact_ids": [seed["contact_id"]], "mode": "ir",
+    })
+    warnings = r.json()["previews"][0]["warnings"]
+    assert any("IR 자료 링크가 없는 기업" in w for w in warnings)
+
+
+def test_ir_has_no_warning_once_the_link_is_set(client, db, seed):
+    from app.models import IrCompany
+
+    company = db.get(IrCompany, seed["company_id"])
+    company.ir_drive_url = "https://drive.google.com/file/d/sample/view"
+    db.commit()
+
+    r = client.post("/api/deals/preview", json={
+        "company_ids": [seed["company_id"]],
+        "contact_ids": [seed["contact_id"]], "mode": "ir",
+    })
+    preview = r.json()["previews"][0]
+    assert not any("IR 자료 링크가 없는" in w for w in preview["warnings"])
+    assert preview["attachments"][0]["url"].startswith("https://drive.google.com/")

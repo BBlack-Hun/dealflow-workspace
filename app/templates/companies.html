@@ -14,6 +14,8 @@
   <div class="kpi-card static"><span class="kpi-label">소개 가능</span><span class="kpi-value ok">{{ counts.introducible }}</span></div>
   <div class="kpi-card static"><span class="kpi-label">내용 부족</span><span class="kpi-value {% if counts.blocked %}warn{% endif %}">{{ counts.blocked }}</span></div>
   <div class="kpi-card static"><span class="kpi-label">추천 딜</span><span class="kpi-value">{{ counts.top }}</span></div>
+  <div class="kpi-card static"><span class="kpi-label">IR 자료 있음</span>
+    <span class="kpi-value {% if counts.with_ir < counts.total %}warn{% endif %}">{{ counts.with_ir }}</span></div>
 </div>
 
 {% if msg %}<p class="flash">{{ msg }}</p>{% endif %}
@@ -24,6 +26,7 @@
     <button type="button" class="chip" data-preset="ready=%E2%9A%A0%20%EB%82%B4%EC%9A%A9%20%EB%B6%80%EC%A1%B1">내용 부족</button>
     <button type="button" class="chip" data-preset="ready=%E2%97%8F%20%EC%86%8C%EA%B0%9C%20%EA%B0%80%EB%8A%A5">소개 가능</button>
     <button type="button" class="chip" data-preset="top=%E2%98%85%20%EC%B6%94%EC%B2%9C">추천 딜</button>
+    <button type="button" class="chip" data-preset="ir=%E2%9A%A0%20%EC%97%86%EC%9D%8C">IR 자료 없음</button>
   </div>
   <div class="toolbar-right">
     <input type="search" id="co-search" placeholder="기업명 · 분야 · 소개 검색"
@@ -49,6 +52,7 @@
         <th class="num">누적투자</th>
         <th class="num">희망투자</th>
         <th data-filters="ready:소개 가능|summary:작성 상태|contract:계약">소개 가능<div class="th-filters"></div></th>
+        <th style="width:88px" data-filters="ir:IR 자료">IR 자료<div class="th-filters"></div></th>
         <th style="width:60px"></th>
       </tr>
     </thead>
@@ -60,7 +64,8 @@
           data-f-series="{{ r.series }}"
           data-f-ready="{{ '● 소개 가능' if r.introducible else '⚠ 내용 부족' }}"
           data-f-summary="{{ r.summary_label }}"
-          data-f-contract="{{ r.contract_label }}">
+          data-f-contract="{{ r.contract_label }}"
+          data-f-ir="{{ '● 있음' if r.has_ir else '⚠ 없음' }}">
         <td class="rowno muted"></td>
         <td class="co-name">
           {% if r.is_top_deal %}<span class="star">★</span>{% endif %}<b>{{ r.name }}</b>
@@ -79,16 +84,27 @@
             <span class="room-badge warn" title="{{ r.blocked_reason }}">⚠ {{ r.blocked_reason }}</span>
           {% endif %}
         </td>
+        <td>
+          {% if r.has_ir %}
+            <a class="room-badge ok" href="{{ r.ir_drive_url }}" target="_blank" rel="noopener">📎 열기</a>
+          {% else %}
+            <span class="room-badge warn" title="IR 요청이 와도 바로 보낼 자료가 없습니다">⚠ 없음</span>
+          {% endif %}
+        </td>
         <td><button type="button" class="linkbtn js-co-edit">수정</button></td>
       </tr>
       {% else %}
-      <tr><td colspan="10" class="muted">등록된 기업이 없습니다. [기업 추가]로 시작하세요.</td></tr>
+      <tr><td colspan="11" class="muted">등록된 기업이 없습니다. [기업 추가]로 시작하세요.</td></tr>
       {% endfor %}
     </tbody>
   </table>
   <p class="muted" data-filter-empty hidden>조건에 맞는 기업이 없습니다.</p>
 </div>
-<p class="hint">금액 단위는 <b>백만원</b>입니다.</p>
+<p class="hint">
+  금액 단위는 <b>백만원</b>입니다.
+  <b>IR 자료</b>는 구글드라이브 공유 링크를 넣어 두면, 자료 요청이 왔을 때
+  <a href="/deals">딜 제안 관리 → IR 자료 전달</a>에서 바로 꺼내 쓸 수 있습니다.
+</p>
 
 <!-- 상세/편집 -->
 <div class="panel-backdrop" id="co-backdrop" hidden></div>
@@ -123,8 +139,9 @@
     <label class="field wide"><span>경쟁력</span><textarea id="f-competitiveness" rows="2"></textarea></label>
     <label class="field wide"><span>투자 현황</span>
       <input type="text" id="f-funding_status" placeholder="예: Series A 진행 중"></label>
-    <label class="field wide"><span>IR 자료 링크</span>
-      <input type="url" id="f-ir_drive_url" placeholder="구글드라이브 공유 링크"></label>
+    <label class="field wide"><span>IR 자료 링크 (구글드라이브)</span>
+      <input type="url" id="f-ir_drive_url"
+             placeholder="https://drive.google.com/... — 자료 요청이 오면 여기서 꺼내 씁니다"></label>
   </div>
 
   <h3 class="form-section">상태</h3>
