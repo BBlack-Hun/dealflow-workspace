@@ -29,18 +29,40 @@ MENU = [
     {"key": "templates", "label": "딜 제안 문구", "href": "/templates", "ready": True},
     {"key": "req", "label": "투자사 미팅 관리", "href": "/ir", "ready": False},
     {"key": "check", "label": "오늘 할 일", "href": "/todo", "ready": False},
+    {"key": "consult", "label": "투자현황", "href": "/consulting", "ready": True,
+     "needs": "can_view_consulting"},
     {"key": "admin", "label": "팀 현황", "href": "/team", "ready": True, "admin_only": True},
     {"key": "setup", "label": "발송 프로그램 설치", "href": "/setup", "ready": True},
 ]
 
 
+def can_see(user: User, item: dict) -> bool:
+    """이 사람에게 이 메뉴를 보여도 되는가.
+
+    관리자는 전부 본다. `needs` 가 붙은 메뉴는 그 계정 속성이 켜진 사람만 본다
+    (볼 사람 이름을 코드에 박으면 담당이 바뀔 때마다 배포해야 한다).
+    """
+    if user.role == "admin":
+        return True
+    if item.get("admin_only"):
+        return False
+    need = item.get("needs")
+    return not need or bool(getattr(user, need, 0))
+
+
 def visible_menu(user: User) -> list:
-    """관리자 전용 메뉴는 관리자에게만 보인다."""
-    return [m for m in MENU if not m.get("admin_only") or user.role == "admin"]
+    return [m for m in MENU if can_see(user, m)]
+
+
+def menu_label(active: str) -> str:
+    """지금 보고 있는 화면의 이름. 좌측 메뉴와 화면 제목이 어긋나지 않게 한 곳에서 가져온다."""
+    item = next((m for m in MENU if m["key"] == active), None)
+    return item["label"] if item else "dealflow"
 
 
 def base_ctx(request: Request, db: Session, user: User, active: str) -> dict:
     return {
+        "page_title": menu_label(active),
         "request": request,
         "menu": visible_menu(user),
         "active": active,

@@ -501,3 +501,24 @@ a.secondary-btn { display: inline-flex; align-items: center; text-decoration: no
 
 .opening-toggle { flex-direction: row !important; align-items: center; gap: 6px !important;
   color: var(--ink) !important; font-size: 13px !important; padding-bottom: 6px; }
+
+/* ── 상세 패널 보강 (스타트업 관리) ─────────────────────────── */
+.detail-panel.wide { width: 520px; }
+.panel-backdrop { position: fixed; inset: 0; background: rgba(16,21,29,.28); z-index: 39; }
+.form-section { font-size: 12px; font-weight: 700; color: var(--muted); margin: 16px 0 8px;
+  padding-bottom: 4px; border-bottom: 1px solid var(--line); }
+.form-section:first-child { margin-top: 0; }
+.form-section .hint { font-weight: 400; }
+.detail-foot { display: flex; gap: 8px; align-items: center; padding: 12px 16px;
+  border-top: 1px solid var(--line); background: #fafbfc; }
+.detail-foot .secondary-btn { margin-left: auto; }
+.form-grid input[type=number] { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ── 보내는 방법(채널) ──────────────────────────────────────── */
+.channel-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 10px 14px; margin-bottom: 12px; border: 1px solid var(--line);
+  border-radius: 10px; background: var(--panel); }
+.channel-label { font-size: 12px; color: var(--muted); font-weight: 600; }
+.channel-opt { display: flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer; }
+.channel-opt.off { color: var(--muted); cursor: not-allowed; }
+.channel-row .hint { margin-left: auto; }

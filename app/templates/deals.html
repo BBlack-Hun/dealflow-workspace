@@ -1,13 +1,30 @@
 {% extends "base.html" %}
-{% block title %}딜소개 보내기 · dealflow{% endblock %}
 {% block content %}
 <header class="page-head">
-  <h1>딜 제안 관리</h1>
+  <h1>{{ page_title }}</h1>
   <p class="muted" id="mode-help">기업 1~10개 선택 → 대상 담당자 체크 → 담당자별 미리보기 → 발송</p>
 </header>
 
 <!-- 보내는 방식. 딜소개를 보냈는데 답이 없는 담당자에게는 목록을 또 밀어 넣기보다
      무엇을 보고 싶은지 되묻는 편이 답이 온다. -->
+<!-- 보내는 길. 카톡은 각자 PC의 발송 프로그램이, 메일은 서버가 바로 보낸다. -->
+<div class="channel-row">
+  <span class="channel-label">보내는 방법</span>
+  <label class="channel-opt">
+    <input type="radio" name="channel" value="kakao" checked> 카카오톡
+  </label>
+  <label class="channel-opt {% if not mail.configured %}off{% endif %}">
+    <input type="radio" name="channel" value="email" {% if not mail.configured %}disabled{% endif %}> 이메일
+  </label>
+  {% if not mail.configured %}
+  <span class="hint">
+    메일 발송은 아직 켜지지 않았습니다 — 메일 서버 정보({{ mail.missing|join(', ') }})가 필요합니다.
+  </span>
+  {% else %}
+  <span class="hint">보내는 주소: <code>{{ mail.from_address }}</code></span>
+  {% endif %}
+</div>
+
 <div class="mode-tabs" id="mode-tabs">
   <button type="button" class="mode-tab active" data-mode="deal">
     기업 소개 보내기<span>인사말 + 안내문 + 기업 목록</span>

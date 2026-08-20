@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-{% block title %}내 투자사 · dealflow{% endblock %}
 {% block content %}
 {#
   7컬럼 고정 레이아웃 (FEATURE_SPEC §3, 피드백 #3 "엑셀시트 PC 한 화면에").
@@ -7,7 +6,7 @@
   1280px 에서 가로 스크롤이 생기지 않는다. 상세는 행 클릭 → 우측 패널.
 #}
 <header class="page-head">
-  <h1>내 투자사</h1>
+  <h1>{{ page_title }}</h1>
   <p class="muted">
     담당자 <b data-filter-count>{{ rows|length }} / {{ rows|length }}명</b>
     · 행을 클릭하면 오른쪽에 상세·활동 이력이 열립니다

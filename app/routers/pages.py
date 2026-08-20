@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import get_current_user, templates
 from ..models import IrCompany, SendJob, User, VcContact
+from ..services import mailer
 from ..ui import MENU, base_ctx as _base_ctx
 from .companies import blocked_reason as company_blocked_reason
 from .contacts import contact_rows
@@ -55,6 +56,9 @@ def deals_page(
         "companies": companies,
         "contacts": contacts,
         "no_reaction_ids": no_reaction_ids,
+        # 메일 채널은 설정이 있어야 고를 수 있다.
+        # 고를 수 있는데 나가지 않는 것이 제일 나쁘다.
+        "mail": mailer.status(),
         "blocked_reasons": {c.id: company_blocked_reason(c)
                             for c in companies if not c.introducible},
     })
