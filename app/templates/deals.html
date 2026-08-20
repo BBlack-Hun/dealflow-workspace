@@ -65,10 +65,17 @@
       <label class="only-picked">
         <input type="checkbox" id="only-picked"> 선택한 것만
       </label>
+      {% if recent_count %}
+      <label class="only-picked" title="같은 기업을 또 보내면 지난번을 기억 못 한다고 읽힙니다">
+        <input type="checkbox" id="hide-recent"> 최근 {{ recent_days }}일 내 소개한 {{ recent_count }}개 숨기기
+      </label>
+      {% endif %}
     </div>
     <div class="card-list" id="company-list">
       {% for c in companies %}
-      <label class="pick-card {% if not c.introducible %}thin{% endif %}"
+      {% set h = history.get(c.id, {}) %}
+      <label class="pick-card {% if not c.introducible %}thin{% endif %} {% if h.recent %}recent-sent{% endif %}"
+             data-recent="{{ 1 if h.recent else 0 }}"
              data-search="{{ (c.name ~ ' ' ~ (c.sector_major or '') ~ ' ' ~ (c.sector_minor or '') ~ ' ' ~ (c.one_liner or '') ~ ' ' ~ (c.series or ''))|lower }}">
         <input type="checkbox" class="company-cb" value="{{ c.id }}" data-name="{{ c.name }}"
                data-thin="{{ 0 if c.introducible else 1 }}"
@@ -79,6 +86,11 @@
             <span class="tag">{{ c.series or '-' }}</span>
             {% if not c.introducible %}
             <span class="tag warn" title="{{ blocked_reasons.get(c.id, '') }}">내용 부족</span>
+            {% endif %}
+            {% if h.recent %}
+            <span class="tag sent" title="{{ h.last_sent }} 에 소개함">{{ h.days_ago }}일 전 소개</span>
+            {% elif h.last_sent %}
+            <span class="tag soft" title="{{ h.last_sent }} 에 소개함">{{ h.days_ago }}일 전</span>
             {% endif %}
           </div>
           <div class="pick-sub muted">[{{ c.sector_major or '-' }}] {{ c.one_liner or '' }}</div>

@@ -111,6 +111,67 @@ def companies_page(request: Request, db: Session = Depends(get_db),
     return templates.TemplateResponse("companies.html", ctx)
 
 
+@router.post("/companies/ir-links", include_in_schema=False)
+def bulk_ir_links(pasted: str = Form(""), db: Session = Depends(get_db),
+                  user: User = Depends(get_current_user)):
+    """IR 자료 링크를 한 번에 붙여넣는다.
+
+    297개를 하나씩 여닫으며 넣을 수는 없다. 시트에서 **기업명과 링크 두 열을
+    복사해 붙이면** 그대로 들어가게 한다(탭 또는 쉼표로 나뉜다).
+
+    이름이 안 맞는 줄은 **조용히 버리지 않고** 몇 건인지 알려 준다 —
+    넣은 줄 알았는데 안 들어간 것이 제일 나쁘다.
+    """
+    from urllib.parse import quote
+
+    matched, missed, blank = _apply_ir_links(db, pasted)
+    db.commit()
+
+    parts = [f"{matched}건 반영"]
+    if missed:
+        shown = ", ".join(missed[:5])
+        more = f" 외 {len(missed) - 5}건" if len(missed) > 5 else ""
+        parts.append(f"못 찾은 기업 {len(missed)}건: {shown}{more}")
+    if blank:
+        parts.append(f"링크가 없는 줄 {blank}건")
+    return RedirectResponse(f"/companies?msg={quote(' · '.join(parts))}",
+                            status_code=303)
+
+
+def _apply_ir_links(db: Session, pasted: str) -> tuple:
+    """붙여넣은 텍스트 → (반영 수, 못 찾은 기업명, 링크 없는 줄 수)."""
+    from ..services.sheet_import import normalize_company_name
+
+    by_key = {}
+    for company in db.execute(select(IrCompany)).scalars().all():
+        key = normalize_company_name(company.name or "").replace(" ", "").lower()
+        if key:
+            by_key.setdefault(key, company)
+
+    matched, missed, blank = 0, [], 0
+    for line in (pasted or "").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        # 탭이 먼저다 — 시트에서 복사하면 탭으로 나뉘고, 기업명에 쉼표가 있을 수 있다.
+        parts = line.split("\t") if "\t" in line else line.rsplit(",", 1)
+        if len(parts) < 2:
+            blank += 1
+            continue
+        name, url = parts[0].strip(), parts[-1].strip()
+        if not url or not url.lower().startswith("http"):
+            blank += 1
+            continue
+        key = normalize_company_name(name).replace(" ", "").lower()
+        company = by_key.get(key)
+        if company is None:
+            missed.append(name[:20])
+            continue
+        company.ir_drive_url = url
+        matched += 1
+    return matched, missed, blank
+
+
 # --- 편집 -------------------------------------------------------------------
 
 class CompanyIn(BaseModel):
