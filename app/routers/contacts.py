@@ -10,6 +10,7 @@ RBAC: 모든 조회·수정은 ``VcContact.user_id == 현재 사용자`` 로 좁
 from __future__ import annotations
 
 from datetime import date, timedelta
+from collections import Counter
 from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -66,12 +67,50 @@ def _recency_bucket(last: Optional[str], today: date) -> str:
     return "30일 초과"
 
 
-def contact_rows(db: Session, user: User) -> List[dict]:
-    """표 한 행 = 담당자 1명 + 집계값. (FEATURE_SPEC §3 7컬럼)"""
-    contacts = db.execute(
-        select(VcContact).where(VcContact.user_id == user.id)
-        .order_by(VcContact.group_name, VcContact.name)
-    ).scalars().all()
+# 시트에서 직접 넣지 않고 화면에서 추가한 담당자
+MANUAL_SHEET = "직접 추가"
+
+
+def _sheet_labels(value: Optional[str]) -> List[str]:
+    """이 담당자가 어느 명단에서 왔는가.
+
+    한 사람이 여러 명단에 겹쳐 있다(실제로 126명이 딜소개현황과 신규 명단에
+    함께 들어 있다). 그래서 하나가 아니라 목록이다.
+    """
+    labels = [x.strip() for x in (value or "").split(",") if x.strip()]
+    return labels or [MANUAL_SHEET]
+
+
+def sheet_tabs(rows: List[dict]) -> List[dict]:
+    """명단별 탭. **원본 시트와 같은 이름**을 쓴다.
+
+    333명을 한 표에 쏟으면 시트를 쓰던 사람이 자기 명단을 못 찾는다.
+    시트가 나뉘어 있던 데는 이유가 있으므로 그 구분을 그대로 살린다.
+    """
+    total = Counter()
+    connected = Counter()
+    for row in rows:
+        for label in row["sheets"]:
+            total[label] += 1
+            if row["connect_stage"] == "connected":
+                connected[label] += 1
+    # 연결된 사람이 많은 명단이 먼저 — 실제로 쓰는 순서다.
+    order = sorted(total, key=lambda k: (-connected[k], -total[k], k))
+    return [{"key": k, "label": k, "count": total[k], "connected": connected[k]}
+            for k in order]
+
+
+def contact_rows(db: Session, user: User, team_wide: bool = False) -> List[dict]:
+    """표 한 행 = 담당자 1명 + 집계값. (FEATURE_SPEC §3 7컬럼)
+
+    `team_wide` 는 관리자 전용이다. 관리자는 직접 보내지 않지만 **누가 어떤
+    투자사를 맡고 있는지** 알아야 팀이 굴러간다. 발송 대상 고르기는 여전히
+    본인 담당분만이다 — 남의 담당에 실수로 나가면 안 된다.
+    """
+    stmt = select(VcContact).order_by(VcContact.group_name, VcContact.name)
+    if not (team_wide and user.role == "admin"):
+        stmt = stmt.where(VcContact.user_id == user.id)
+    contacts = db.execute(stmt).scalars().all()
     if not contacts:
         return []
     ids = [c.id for c in contacts]
@@ -96,6 +135,12 @@ def contact_rows(db: Session, user: User) -> List[dict]:
 
     today = date.today()
     cutoff = (today - timedelta(days=REACTION_WINDOW_DAYS)).isoformat()
+
+    owners = {
+        u.id: u.name for u in db.execute(
+            select(User).where(User.id.in_({c.user_id for c in contacts}))
+        ).scalars().all()
+    }
 
     rows = []
     for c in contacts:
@@ -125,6 +170,12 @@ def contact_rows(db: Session, user: User) -> List[dict]:
 
         rows.append({
             "id": c.id,
+            "owner": owners.get(c.user_id, ""),
+            "is_mine": c.user_id == user.id,
+            "connect_stage": c.connect_stage,
+            "sheets": _sheet_labels(c.source_sheet),
+            "connect_label": sheet_import.CONNECT_LABELS.get(c.connect_stage, c.connect_stage),
+            "department": c.department or "",
             "name": c.name,
             "title": c.title or "",
             "firm": c.firm or "",
