@@ -26,6 +26,7 @@ MENU = [
     {"key": "deal", "label": "딜 제안 관리", "href": "/deals", "ready": True},
     {"key": "su", "label": "스타트업 관리", "href": "/companies", "ready": True},
     {"key": "vc", "label": "투자사 DB", "href": "/contacts", "ready": True},
+    {"key": "ready", "label": "회차 준비 점검", "href": "/readiness", "ready": True},
     {"key": "followup", "label": "후속 관리", "href": "/followups", "ready": True},
     {"key": "templates", "label": "딜 제안 문구", "href": "/templates", "ready": True},
     {"key": "req", "label": "투자사 미팅 관리", "href": "/ir", "ready": False},

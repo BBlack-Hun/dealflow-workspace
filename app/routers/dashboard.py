@@ -24,6 +24,7 @@ from ..deps import get_current_user, templates
 from ..models import AgentDevice, User
 from ..services import auth as auth_svc
 from ..services import dashboard as dash
+from ..services import readiness
 from ..ui import base_ctx
 
 router = APIRouter(tags=["dashboard"])
@@ -35,6 +36,21 @@ def dashboard_page(request: Request, db: Session = Depends(get_db),
     ctx = base_ctx(request, db, user, active="home")
     ctx.update(dash.user_dashboard(db, user))
     return templates.TemplateResponse("dashboard.html", ctx)
+
+
+@router.get("/readiness", response_class=HTMLResponse, include_in_schema=False)
+def readiness_page(request: Request, db: Session = Depends(get_db),
+                   user: User = Depends(get_current_user), mode: str = ""):
+    """회차 준비 점검. `?mode=live` 로 실발송 기준으로도 볼 수 있다."""
+    rehearsal = None
+    if mode == "live":
+        rehearsal = False
+    elif mode == "rehearsal":
+        rehearsal = True
+    ctx = base_ctx(request, db, user, active="ready")
+    ctx.update(readiness.report(db, user, rehearsal=rehearsal))
+    ctx["mode"] = mode
+    return templates.TemplateResponse("readiness.html", ctx)
 
 
 def _admin_only(user: User) -> None:
