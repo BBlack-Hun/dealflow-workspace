@@ -60,6 +60,28 @@
 </section>
 {% endif %}
 
+{% if pipeline.total %}
+<!-- 연결 작업은 발송과 다른 일이다 — 전화·초대해서 카톡방까지 들어오게 하는 단계. -->
+<section class="panel pipeline-strip">
+  <h2 class="panel-title">연결 진행 중인 명단
+    <span class="count-pill"><b>{{ pipeline.total }}</b>명</span>
+    <a class="linkbtn" href="/contacts">투자사 DB</a>
+  </h2>
+  <div class="react-row">
+    <div class="react"><b>{{ pipeline.in_progress }}</b><span>진행 중</span></div>
+    <div class="react"><b>{{ pipeline.not_started }}</b><span>미착수</span></div>
+    <div class="react"><b>{{ pipeline.declined }}</b><span>참여 안 함</span></div>
+  </div>
+  {% if pipeline.owners %}
+  <p class="hint">
+    연결 담당:
+    {% for o in pipeline.owners %}<b>{{ o.name }}</b> {{ o.count }}명{% if not loop.last %} · {% endif %}{% endfor %}
+    — 연결이 끝나야 딜소개 대상이 됩니다.
+  </p>
+  {% endif %}
+</section>
+{% endif %}
+
 <div class="dash-grid">
   <!-- 막힌 것 먼저. 발송일에 못 나가는 이유는 대부분 여기 있다. -->
   <section class="panel">

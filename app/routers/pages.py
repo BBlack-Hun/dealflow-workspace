@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import get_current_user, templates
 from ..models import IrCompany, SendJob, User, VcContact
-from ..services import mailer, sheet_import
+from ..services import mailer, sheet_import, sheet_owner
 from ..ui import MENU, base_ctx as _base_ctx
 from .companies import blocked_reason as company_blocked_reason
 from .contacts import contact_rows, sheet_tabs
@@ -86,7 +86,12 @@ def contacts_page(
     # 발송 대상 고르기는 여전히 본인 담당분만이다(/deals 참고).
     team_wide = user.role == "admin"
     all_rows = contact_rows(db, user, team_wide=team_wide)
-    tabs = sheet_tabs(all_rows)
+    # 담당은 명단(시트) 단위다 — "내 이름으로 된 탭만 내 담당 투자사".
+    contacts = db.execute(
+        select(VcContact) if team_wide
+        else select(VcContact).where(VcContact.user_id == user.id)
+    ).scalars().all()
+    tabs = sheet_owner.sheet_rows(db, contacts)
 
     # 고른 명단이 없거나 사라졌으면 전체를 보여준다(빈 화면보다 낫다).
     selected = sheet if any(t["key"] == sheet for t in tabs) else ""
@@ -99,6 +104,9 @@ def contacts_page(
         "team_wide": team_wide,
         "tabs": tabs,
         "selected_sheet": selected,
+        "members": ([{"id": u.id, "name": u.name} for u in
+                     db.execute(select(User).order_by(User.id)).scalars().all()]
+                    if team_wide else []),
         "total_count": len(all_rows),
         "connect_counts": [
             {"key": key, "label": label, "count": stages.get(key, 0)}

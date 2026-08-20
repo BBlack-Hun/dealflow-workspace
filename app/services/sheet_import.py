@@ -33,6 +33,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..models import ContactActivity, IrCompany, User, VcContact
+from . import firm_type, sheet_owner
 from .room_name import DEFAULT_SUFFIX, build_room_name, normalize_space, split_name_title
 
 # 활동 종류 (DATA_MODEL §2.6)
@@ -362,6 +363,22 @@ _DECLINE_MARKS = ("참여안하심", "참여 안하심", "참여안함", "참여
 # 연락은 시작했지만 아직 방에 못 들어온 상태
 _PROGRESS_MARKS = ("신규연결", "신규 연결", "부재중", "재연락", "카톡 공유",
                    "통화", "전화", "카톡 발송", "초대", "회의중", "진행")
+
+
+# 담당자 칸에는 사람 이름이 아닌 것도 들어온다 — 'X'(해당 없음), '중복',
+# 'X, IRDAY, IRSUMMIT'(태그). 이런 값을 담당자로 저장하면 누구 담당인지가 더 흐려진다.
+_NOT_A_NAME = {"x", "o", "-", "중복", "없음", "미정", "해당없음"}
+
+
+def looks_like_person(value: Optional[str]) -> bool:
+    """담당자 칸의 값이 사람 이름으로 보이는가."""
+    text = normalize_space(value or "")
+    if len(text) < 2 or len(text) > 12:
+        return False
+    if text.lower() in _NOT_A_NAME:
+        return False
+    # 쉼표·숫자가 섞이면 이름이 아니라 태그다
+    return not any(ch.isdigit() or ch == "," for ch in text)
 
 
 def connect_stage(kakao_joined: str, memo: str, has_room: bool = False,
@@ -827,6 +844,17 @@ def apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
     """
     report = ImportReport(skipped=list(parsed.skipped),
                           notes=list(getattr(parsed, 'notes', [])))
+    # 명단(시트)을 등록한다. 담당은 **처음 정해진 것을 유지**한다 —
+    # 시트를 한 번 올린 것만으로 남의 명단 담당이 넘어오면 안 된다.
+    if source_label:
+        written = next((pc.owner_name for pc in parsed.contacts
+                        if looks_like_person(pc.owner_name)), None)
+        owner = sheet_owner.ensure(db, source_label, user_id=None,
+                                   assignee_name=written)
+        if owner.user_id is None and not written:
+            # 담당자 칸이 없는 시트는 올린 사람 것으로 본다(딜소개현황이 그렇다).
+            owner.user_id = user_id
+        db.flush()
     months = sorted({c.month for c in parsed.activity_columns if c.month})
     report.notes.append(
         f"활동 컬럼 {len(parsed.activity_columns)}개 인식"
@@ -887,6 +915,15 @@ def apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
             _fill_if_empty(contact, "sectors", ",".join(pc.sectors))
         if source_label:
             contact.source_sheet = _append_label(contact.source_sheet, source_label)
+        # 시트의 담당자 이름은 계정이 없어도 보관한다. 버리면 누구 담당인지가
+        # 사라져 임포트한 사람에게 전부 붙어 버린다(실제로 207명이 그렇게 됐다).
+        if looks_like_person(pc.owner_name):
+            contact.assignee_name = normalize_space(pc.owner_name)
+        # 투자사 유형은 이름에 대개 드러나 있다. 비어 있을 때만 추론해 채운다.
+        if not contact.firm_type:
+            code, _why = firm_type.infer(pc.firm, pc.department, pc.title)
+            if code != "unknown":
+                contact.firm_type = code
         # '메일로 발송' 처럼 메일 채널로 관리하는 담당자는 카톡 대상이 아니다.
         # 방 확인에서 '실패'로 뜨면 고쳐야 할 건과 섞여 보이므로 채널로 구분한다.
         if "메일" in (pc.invited_status or ""):

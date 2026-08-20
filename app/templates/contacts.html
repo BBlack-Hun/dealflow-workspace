@@ -27,11 +27,36 @@
   </a>
   {% for t in tabs %}
   <a class="sheet-tab {% if selected_sheet == t.key %}active{% endif %}"
-     href="/contacts?sheet={{ t.key|urlencode }}" title="연결 완료 {{ t.connected }}명">
+     href="/contacts?sheet={{ t.key|urlencode }}"
+     title="연결 완료 {{ t.connected }}명 · 담당 {{ t.owner or t.written_by or '미지정' }}">
     {{ t.label }} <span>{{ t.count }}</span>
   </a>
   {% endfor %}
 </nav>
+
+{% if selected_sheet %}
+{% for t in tabs %}{% if t.key == selected_sheet %}
+<p class="hint sheet-owner-line">
+  <b>{{ t.label }}</b> · 담당
+  {% if t.owner %}<b>{{ t.owner }}</b>
+  {% elif t.written_by %}<b>{{ t.written_by }}</b> <span class="tag warn">계정 없음</span>
+  {% else %}<span class="muted">미지정</span>{% endif %}
+  · 연결 완료 {{ t.connected }} / {{ t.count }}명
+  {% if team_wide %}
+  <form method="post" action="/api/contacts/sheets/assign" class="inline-form">
+    <input type="hidden" name="label" value="{{ t.label }}">
+    <select name="user_id">
+      <option value="">담당 없음</option>
+      {% for m in members %}
+      <option value="{{ m.id }}" {% if t.owner_id == m.id %}selected{% endif %}>{{ m.name }}</option>
+      {% endfor %}
+    </select>
+    <button class="linkbtn" type="submit">담당 바꾸기</button>
+  </form>
+  {% endif %}
+</p>
+{% endif %}{% endfor %}
+{% endif %}
 
 <div class="kpi-row slim">
   {% for c in connect_counts %}

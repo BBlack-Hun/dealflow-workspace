@@ -68,16 +68,59 @@ def test_dashboard_is_the_home_page(logged):
 
 
 def test_dashboard_lists_what_blocks_sending(logged, db, users):
-    """방이 없는 담당자는 '먼저 손봐야 할 것'에 뜬다."""
+    """연결은 끝났는데 방 이름이 없는 담당자는 '먼저 손봐야 할 것'에 뜬다."""
     from app.models import VcContact
     from app.services.dashboard import user_dashboard
 
     db.add(VcContact(user_id=users["u1"].id, name="홍길동", firm="가나벤처스",
-                     channel_kakao=1))
+                     channel_kakao=1, connect_stage="connected"))
     db.commit()
     data = user_dashboard(db, users["u1"])
     labels = [b["label"] for b in data["blockers"]]
     assert any("카톡방이 등록되지 않은" in x for x in labels)
+
+
+def test_dashboard_counts_only_my_sheets(logged, db, users):
+    """담당은 **명단(시트) 단위**다 — "내 이름으로 된 탭만 내 담당 투자사".
+
+    시트를 올린 사람에게 팀 전체 명단이 붙어, 한 사람의 대시보드에
+    333명이 '내 담당'으로 잡힌 적이 있다(본인 담당은 126명).
+    """
+    from app.models import SheetOwner, VcContact
+    from app.services.dashboard import user_dashboard
+
+    db.add_all([
+        SheetOwner(label="내 명단", user_id=users["u1"].id),
+        SheetOwner(label="남의 명단", user_id=None, assignee_name="다른팀원"),
+        VcContact(user_id=users["u1"].id, name="내사람", firm="가나벤처스",
+                  source_sheet="내 명단", kakao_room_name="내사람 방",
+                  connect_stage="connected"),
+        VcContact(user_id=users["u1"].id, name="남사람", firm="마바벤처스",
+                  source_sheet="남의 명단", connect_stage="in_progress"),
+        VcContact(user_id=users["u1"].id, name="남사람2", firm="사아파트너스",
+                  source_sheet="남의 명단", connect_stage="not_started"),
+    ])
+    db.commit()
+
+    kpi = {k["key"]: k["value"] for k in user_dashboard(db, users["u1"])["kpis"]}
+    assert kpi["contacts"] == 1           # 남의 명단은 내 담당이 아니다
+
+
+def test_contact_in_my_sheet_stays_mine(db, users):
+    """한 사람이 여러 명단에 겹쳐 있으면 **내 명단에 있으면 내 담당**이다."""
+    from app.models import SheetOwner, VcContact
+    from app.services.dashboard import user_dashboard
+
+    db.add_all([
+        SheetOwner(label="내 명단", user_id=users["u1"].id),
+        SheetOwner(label="연결 명단", user_id=None, assignee_name="다른팀원"),
+        VcContact(user_id=users["u1"].id, name="겹친사람", firm="가나벤처스",
+                  source_sheet="내 명단,연결 명단",
+                  kakao_room_name="겹친사람 방", connect_stage="connected"),
+    ])
+    db.commit()
+    kpi = {k["key"]: k["value"] for k in user_dashboard(db, users["u1"])["kpis"]}
+    assert kpi["contacts"] == 1
 
 
 def test_dashboard_counts_only_successful_sends(logged, db, users):

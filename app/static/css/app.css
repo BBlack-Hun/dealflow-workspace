@@ -592,3 +592,9 @@ td.cell.save-failed { background: #fdecec; }
 .sheet-tab.active { color: var(--brand); background: var(--panel);
   border-color: var(--line); border-bottom-color: var(--panel); }
 .sheet-tab.active span { background: #e6efff; color: var(--brand); }
+.pipeline-strip { border-left: 4px solid var(--gray); }
+
+.sheet-owner-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  background: #fafbfc; border: 1px solid var(--line); border-radius: 8px;
+  padding: 7px 12px; margin-bottom: 10px; }
+.sheet-owner-line select { padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; }

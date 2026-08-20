@@ -20,7 +20,7 @@ from typing import Dict, List, Optional
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from . import cadence, mailer
+from . import cadence, mailer, sheet_owner
 from ..models import (
     AgentDevice,
     ContactActivity,
@@ -92,9 +92,10 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None) -> dic
     today = today or date.today()
     cutoff = (today - timedelta(days=REACTION_WINDOW_DAYS)).isoformat()
 
-    contacts = db.execute(
-        select(VcContact).where(VcContact.user_id == user.id)
-    ).scalars().all()
+    # 담당은 **명단(시트) 단위**로 정해진다 — "내 이름으로 된 탭만 내 담당".
+    # 이렇게 하지 않으면 시트를 올린 사람에게 팀 전체가 붙는다.
+    contacts = sheet_owner.my_contacts(db, user)
+    pipeline = [c for c in contacts if c.connect_stage != "connected"]
     ids = [c.id for c in contacts]
 
     rooms = Counter(_room_state(c) for c in contacts)
@@ -164,9 +165,9 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None) -> dic
     return {
         "kpis": [
             {"key": "contacts", "label": "내 투자사", "value": len(contacts),
-             "sub": "명", "href": "/contacts"},
+             "sub": "내 명단 기준", "href": "/contacts"},
             {"key": "sendable", "label": "카톡 발송 가능", "value": sendable,
-             "sub": f"전체 {len(contacts)}명 중", "href": "/contacts"},
+             "sub": f"{len(contacts)}명 중", "href": "/contacts"},
             {"key": "companies", "label": "소개 가능 기업", "value": len(introducible),
              "sub": f"등록 {len(companies)}개 중", "href": "/deals"},
             {"key": "sent", "label": "이번 달 발송", "value": sent_this_month,
@@ -183,6 +184,8 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None) -> dic
             if rooms.get(s, 0)
         ],
         "blockers": blockers,
+        # 연결 작업은 발송과 다른 일이라 따로 보여준다.
+        "pipeline": _pipeline_view(pipeline),
         "followups": {
             "due": len(due_today),
             "overdue": sum(1 for r in due_today if r["overdue"]),
@@ -197,6 +200,19 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None) -> dic
         "stages": _distribution([s for c in contacts for s in _split_csv(c.stages)]),
         "sectors": _distribution([s for c in contacts for s in _split_csv(c.sectors)]),
         "recent_batches": recent_batches(db, user_id=user.id),
+    }
+
+
+def _pipeline_view(rows: List[VcContact]) -> dict:
+    """아직 연결되지 않은 명단. 누가 맡고 있는지까지 보여준다."""
+    stages = Counter(c.connect_stage for c in rows)
+    owners = Counter((c.assignee_name or "미지정").strip() for c in rows)
+    return {
+        "total": len(rows),
+        "in_progress": stages.get("in_progress", 0),
+        "not_started": stages.get("not_started", 0),
+        "declined": stages.get("declined", 0),
+        "owners": [{"name": name, "count": n} for name, n in owners.most_common(4)],
     }
 
 

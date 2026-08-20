@@ -274,3 +274,53 @@ def test_manually_added_contacts_get_their_own_tab(logged, db):
     body = logged.get("/contacts").text
     assert "직접 추가" in body
     assert "직접넣은사람" in logged.get("/contacts?sheet=직접 추가").text
+
+
+# --- 명단 담당 --------------------------------------------------------------
+#
+# 담당은 사람이 아니라 **명단(시트) 단위**로 정해진다.
+# "내 이름으로 된 탭만 내 담당 투자사" — 시트를 나눠 쓰던 방식 그대로다.
+
+def test_import_does_not_steal_an_existing_sheet(logged, db, users):
+    """남의 명단을 한 번 올린 것만으로 담당이 넘어오면 안 된다."""
+    from app.models import SheetOwner
+    from app.services import sheet_owner
+
+    db.add(SheetOwner(label="남의 명단", user_id=users["u2"].id))
+    db.commit()
+
+    logged.post(
+        "/api/import/contacts",
+        files={"file": ("남의 명단.xlsx", _xlsx([ROSTER_HEADER, _row(1, "홍길동", kakao="O")]),
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        data={"dry_run": "false", "sheet": ""},
+    )
+    db.expire_all()
+    assert sheet_owner.owner_map(db)["남의 명단"] == users["u2"].id
+
+
+def test_only_admin_can_reassign_a_sheet(logged, db, users):
+    from app.models import SheetOwner
+
+    db.add(SheetOwner(label="명단A", user_id=None))
+    db.commit()
+    r = logged.post("/api/contacts/sheets/assign",
+                    data={"label": "명단A", "user_id": str(users["u1"].id)})
+    assert r.status_code == 403
+
+
+def test_admin_reassigns_a_sheet(client, db, users):
+    from app.models import SheetOwner
+    from app.services import sheet_owner
+
+    db.add(SheetOwner(label="명단A", user_id=None))
+    users["u2"].role = "admin"
+    db.commit()
+
+    client.post("/login", data={"phone": "01000000002", "password": DEMO_PASSWORD})
+    r = client.post("/api/contacts/sheets/assign",
+                    data={"label": "명단A", "user_id": str(users["u1"].id)},
+                    follow_redirects=False)
+    assert r.status_code == 303
+    db.expire_all()
+    assert sheet_owner.owner_map(db)["명단A"] == users["u1"].id
