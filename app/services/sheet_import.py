@@ -342,6 +342,49 @@ def split_sector_tags(text: str) -> List[str]:
     return tags[:5] if len(tags) <= 5 else []
 
 
+# 연결 단계. 카톡방까지 연결됐는가 — 발송 대상이 되기 전 단계다.
+STAGE_CONNECTED = "connected"
+STAGE_IN_PROGRESS = "in_progress"
+STAGE_DECLINED = "declined"
+STAGE_NOT_STARTED = "not_started"
+
+CONNECT_LABELS = {
+    STAGE_CONNECTED: "연결 완료",
+    STAGE_IN_PROGRESS: "진행 중",
+    STAGE_DECLINED: "참여 안 함",
+    STAGE_NOT_STARTED: "미착수",
+}
+
+# 메모에 이런 말이 있으면 더 진행하지 않는다 — 계속 연락하면 민폐가 된다.
+_DECLINE_MARKS = ("참여안하심", "참여 안하심", "참여안함", "참여 안 함",
+                  "관련업무 안함", "관련 업무 안함", "거절", "관심없", "관심 없",
+                  "퇴사", "연결 원하지")
+# 연락은 시작했지만 아직 방에 못 들어온 상태
+_PROGRESS_MARKS = ("신규연결", "신규 연결", "부재중", "재연락", "카톡 공유",
+                   "통화", "전화", "카톡 발송", "초대", "회의중", "진행")
+
+
+def connect_stage(kakao_joined: str, memo: str, has_room: bool = False,
+                  invited: str = "") -> str:
+    """연결이 어디까지 갔는지 한 단어로.
+
+    시트에는 이 값이 따로 없고 여러 칸에 흩어져 있다. 명단 시트는 '카톡방
+    참여여부(O/X)', 딜소개현황 시트는 '초대 완료여부(완료)' 를 쓴다. 둘 다 본다.
+    거절 표시가 있으면 참여 안 함, 연락한 흔적이 있으면 진행 중,
+    아무 것도 없으면 미착수로 본다.
+    """
+    joined = normalize_space(kakao_joined or "")
+    text = normalize_space(memo or "")
+    if has_room or is_invited(joined) or is_invited(invited):
+        return STAGE_CONNECTED
+    haystack = f"{joined} {text}"
+    if any(mark in haystack for mark in _DECLINE_MARKS):
+        return STAGE_DECLINED
+    if any(mark in haystack for mark in _PROGRESS_MARKS):
+        return STAGE_IN_PROGRESS
+    return STAGE_NOT_STARTED
+
+
 def is_invited(value: str) -> bool:
     """'초대완료여부' 칸이 완료를 뜻하는가 (표기가 시트마다 제각각)."""
     v = norm(value).lower()
@@ -414,6 +457,9 @@ class ParsedContact:
     phone: Optional[str] = None             # 연락처(휴대폰)
     office_phone: Optional[str] = None      # 유선전화
     address: Optional[str] = None
+    department: Optional[str] = None
+    email: Optional[str] = None
+    connect_stage: Optional[str] = None
     activities: List[ParsedActivity] = field(default_factory=list)
 
 
@@ -430,6 +476,7 @@ class SheetAParse:
     skipped: List[SkippedRow] = field(default_factory=list)
     activity_columns: List[ActivityColumn] = field(default_factory=list)
     header_row: Optional[int] = None
+    notes: List[str] = field(default_factory=list)   # 사람이 확인해야 할 판단
 
 
 def parse_sheet_a(rows: Sequence[Sequence[str]], year: int) -> SheetAParse:
@@ -441,19 +488,38 @@ def parse_sheet_a(rows: Sequence[Sequence[str]], year: int) -> SheetAParse:
     한 파서가 두 형태를 모두 읽는다. 없는 컬럼은 그냥 비어 있는 값이 된다.
     """
     out = SheetAParse()
+    # 명단 시트마다 머리글이 조금씩 다르다. 딜소개현황은 '이름 + 투자사명',
+    # 신규 명단(150/98/30)은 'NO + 회사' 다. 둘 다 받아들인다.
     header_idx = detect_header_row(rows, ["이름", "투자사"])
     if header_idx is None:
-        raise ValueError("헤더 행을 찾지 못했습니다 ('이름'과 '투자사명'이 있는 행 필요)")
+        header_idx = detect_header_row(rows, ["NO", "회사"])
+    if header_idx is None:
+        raise ValueError(
+            "헤더 행을 찾지 못했습니다 — '이름'+'투자사명' 또는 'NO'+'회사' 가 있는 행이 필요합니다"
+        )
     out.header_row = header_idx
     header = rows[header_idx]
 
     col_name = first_column(header, ["이름"], ["성함"])
+    col_no = find_column(header, ["NO"])
+    if col_name is None and col_no is not None and col_no + 1 < len(header) \
+            and not norm(header[col_no + 1]):
+        # 명단 시트 하나는 이름 칸의 **머리글이 비어 있다**(B1이 빈칸).
+        # 번호 바로 오른쪽이고 머리글이 없을 때만 이름으로 본다 — 짐작이 아니라
+        # 확인 가능한 조건이며, 리포트에 남겨 사람이 확인할 수 있게 한다.
+        col_name = col_no + 1
+        out.notes.append(
+            f"머리글이 비어 있는 {col_name + 1}번째 열을 '이름' 으로 보았습니다"
+        )
     # '딜소싱 참여 투자사'도 '투자사'를 포함한다 → 투자사'명'을 먼저 찾고, 없을 때만 넓게 본다.
     col_firm = find_column(header, ["투자사명"])
     if col_firm is None:
         col_firm = find_column(header, ["투자사"], exclude=["딜소싱", "참여"])
+    if col_firm is None:
+        # 명단 시트(150 / 98 / 30명)는 투자사를 '회사' 로 적는다.
+        col_firm = find_column(header, ["회사"])
     if col_name is None or col_firm is None:
-        raise ValueError("'이름' 또는 '투자사명' 컬럼을 찾지 못했습니다")
+        raise ValueError("'이름' 또는 '투자사명'(또는 '회사') 컬럼을 찾지 못했습니다")
 
     cols = {
         "name": col_name,
@@ -470,6 +536,8 @@ def parse_sheet_a(rows: Sequence[Sequence[str]], year: int) -> SheetAParse:
         "office_phone": find_column(header, ["유선"]),
         "position": first_column(header, ["직책"], ["직함"]),
         "address": find_column(header, ["주소"]),
+        "department": find_column(header, ["부서"]),
+        "email": first_column(header, ["전자", "메일"], ["이메일"]),
     }
     # 활동 컬럼은 기본 정보 컬럼을 빼고 헤더 문맥으로 찾는다(담당자 컬럼이 오른쪽에 있어도 안전).
     out.activity_columns = detect_activity_columns(
@@ -522,6 +590,15 @@ def parse_sheet_a(rows: Sequence[Sequence[str]], year: int) -> SheetAParse:
             phone=_cell(row, cols["phone"]) or None,
             office_phone=_cell(row, cols["office_phone"]) or None,
             address=_cell(row, cols["address"]) or None,
+            department=_cell(row, cols["department"]) or None,
+            email=_cell(row, cols["email"]) or None,
+        )
+        # 연결이 어디까지 갔는지는 시트에 한 칸으로 있지 않다 —
+        # 카톡방 참여여부(O/X)와 메모 문장에서 읽어낸다.
+        contact.connect_stage = connect_stage(
+            contact.kakao_joined or "",
+            contact.memo or "",
+            invited=contact.invited_status or "",
         )
         for acol in out.activity_columns:
             cell_text = _raw_cell(row, acol.col)
@@ -748,7 +825,8 @@ def apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
     매칭 키가 (이름, 투자사)뿐인 이유: 같은 사람이 여러 명단 시트에 나뉘어 있고 시트마다
     담당자 표기가 비거나 다르다. 소유자를 키에 넣으면 시트 수만큼 중복 인물이 생긴다.
     """
-    report = ImportReport(skipped=list(parsed.skipped))
+    report = ImportReport(skipped=list(parsed.skipped),
+                          notes=list(getattr(parsed, 'notes', [])))
     months = sorted({c.month for c in parsed.activity_columns if c.month})
     report.notes.append(
         f"활동 컬럼 {len(parsed.activity_columns)}개 인식"
@@ -800,6 +878,11 @@ def apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
         _fill_if_empty(contact, "phone", pc.phone)
         _fill_if_empty(contact, "office_phone", pc.office_phone)
         _fill_if_empty(contact, "address", pc.address)
+        _fill_if_empty(contact, "department", pc.department)
+        _fill_if_empty(contact, "email", pc.email)
+        if pc.email:
+            # 메일 주소가 있으면 메일 채널로도 보낼 수 있다.
+            contact.channel_email = 1
         if pc.sectors:
             _fill_if_empty(contact, "sectors", ",".join(pc.sectors))
         if source_label:
@@ -812,10 +895,22 @@ def apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
             # 초대/참여 완료 = 카톡방이 이미 있다 → 발송 대상 후보. 반대로 내리지는 않는다
             # (시트가 비어 있어도 서비스에서 연결해 둔 경우가 있으므로).
             contact.channel_kakao = 1
-        if not contact.kakao_room_name:
-            # 방 이름은 이름·직함·투자사에서 자동 생성한다(128명 수기 입력 회피).
-            # 이미 값이 있으면 손대지 않는다 — 사용자가 실제 방 제목에 맞춰 고친 값일 수 있고,
-            # 방 제목이 틀리면 발송이 통째로 skip 된다.
+        # 연결 단계. **뒤로 내리지는 않는다** — 이미 방이 붙어 발송까지 한 담당자를
+        # 오래된 명단 시트 하나 때문에 '미착수'로 되돌리면 발송 대상에서 빠진다.
+        new_stage = pc.connect_stage or connect_stage(
+            pc.kakao_joined or "", pc.memo or "",
+            has_room=bool(contact.kakao_room_name),
+            invited=pc.invited_status or "")
+        if contact.kakao_room_name:
+            contact.connect_stage = STAGE_CONNECTED
+        elif contact.connect_stage != STAGE_CONNECTED:
+            contact.connect_stage = new_stage
+
+        # 방 이름은 **연결이 끝난 사람에게만** 지어 준다. 아직 방이 없는 사람에게
+        # 이름을 지어 주면 발송 대상처럼 보이고, 실제로는 보낼 방이 없다.
+        # 이미 값이 있으면 손대지 않는다 — 사용자가 실제 방 제목에 맞춰 고친 값일 수 있고,
+        # 방 제목이 틀리면 발송이 통째로 skip 된다.
+        if contact.connect_stage == STAGE_CONNECTED and not contact.kakao_room_name:
             contact.kakao_room_name = build_room_name(pc.name, contact.title, pc.firm,
                                                       suffix=room_suffix)
         db.flush()
@@ -869,7 +964,8 @@ def _append_label(current: Optional[str], label: str) -> str:
 
 def apply_sheet_b(db: Session, parsed: SheetBParse, dry_run: bool = False) -> ImportReport:
     """기업 upsert (기업명 기준). 담당자는 users.name 이 일치할 때만 연결한다."""
-    report = ImportReport(skipped=list(parsed.skipped))
+    report = ImportReport(skipped=list(parsed.skipped),
+                          notes=list(getattr(parsed, 'notes', [])))
     owners: Dict[str, Optional[int]] = {}
     unmatched_owners = set()
 

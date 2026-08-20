@@ -129,7 +129,7 @@ def _xlsx(filename: str, sheet_title: str, headers, rows) -> Response:
 
 
 CONTACT_HEADERS = [
-    "그룹", "이름", "직함", "투자사", "채널", "카톡방", "방 확인",
+    "담당 팀원", "연결 단계", "그룹", "이름", "직함", "투자사", "부서", "채널", "카톡방", "방 확인",
     "초대", "라운드 규모", "선호 단계", "선호 분야",
     "마지막 딜소개", "회차 메모", "IR 요청(최근)", "미팅(최근)",
     "IR 요청(누적)", "미팅(누적)", "상태", "메모",
@@ -149,13 +149,15 @@ def export_contacts(db: Session = Depends(get_db),
         return "/".join(marks)
 
     rows = [
-        [r["group_name"], r["name"], r["title"], r["firm"], channel(r),
+        [r["owner"], r["connect_label"], r["group_name"], r["name"], r["title"],
+         r["firm"], r["department"], channel(r),
          r["room_name"], r["room_label"], r["invited_status"], r["round_size"],
          ", ".join(r["stages"]), ", ".join(r["sectors"]),
          r["last_deal"] or "", r["last_deal_note"],
          r["ir_recent"], r["meet_recent"], r["ir_total"], r["meet_total"],
          r["status_label"], r["memo"]]
-        for r in contact_rows(db, user)
+        # 관리자는 팀 전체를 내려받는다 — 화면과 같은 범위여야 헷갈리지 않는다.
+        for r in contact_rows(db, user, team_wide=(user.role == "admin"))
     ]
     today = date.today().isoformat()
     return _xlsx(f"내 투자사_{today}.xlsx", "내 투자사", CONTACT_HEADERS, rows)

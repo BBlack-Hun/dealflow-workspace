@@ -105,6 +105,10 @@ class VcContact(TimestampMixin, Base):
     stages: Mapped[Optional[str]] = mapped_column(String, nullable=True)   # CSV: Seed,SeriesA
     sectors: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # CSV: AI,헬스케어
     status: Mapped[str] = mapped_column(String, default="active")  # active | no_response | paused
+    department: Mapped[Optional[str]] = mapped_column(String, nullable=True)   # 부서
+    # 카톡방까지 연결됐는가. 발송 대상이 되기 전 단계를 여기서 관리한다.
+    # connected(연결 완료) | in_progress(진행 중) | declined(참여 안 함) | not_started(미착수)
+    connect_stage: Mapped[str] = mapped_column(String, default="not_started")
     memo: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
 

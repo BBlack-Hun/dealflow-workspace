@@ -575,3 +575,6 @@ td.cell.save-failed { background: #fdecec; }
 .rule-form { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin: 8px 0; }
 .rule-label { font-size: 13px; font-weight: 600; min-width: 88px; padding-bottom: 6px; }
 .inline-form { display: inline; }
+
+.team-banner { background: #fff8e6; border: 1px solid #f0e0c0; border-radius: 8px;
+  padding: 8px 12px; margin-bottom: 10px; }

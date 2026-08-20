@@ -13,6 +13,20 @@
   </p>
 </header>
 
+{% if team_wide %}
+<p class="hint team-banner">
+  👑 <b>관리자 화면</b> — 팀 전체의 투자사가 보입니다.
+  발송 대상은 <a href="/deals">딜 제안 관리</a>에서 <b>본인 담당분만</b> 고를 수 있습니다.
+</p>
+{% endif %}
+
+<div class="kpi-row slim">
+  {% for c in connect_counts %}
+  <div class="kpi-card static"><span class="kpi-label">{{ c.label }}</span>
+    <span class="kpi-value {% if c.key == 'connected' %}ok{% elif c.key == 'not_started' %}warn{% endif %}">{{ c.count }}</span></div>
+  {% endfor %}
+</div>
+
 <div class="toolbar">
   <div class="quick-chips">
     <button type="button" class="chip" data-preset="">전체</button>
@@ -68,7 +82,10 @@
     </colgroup>
     <thead>
       <tr>
-        <th data-filters="group:그룹">담당자 / 투자사<div class="th-filters"></div></th>
+        {% if team_wide %}
+        <th style="width:80px" data-filters="owner:담당 팀원">담당 팀원<div class="th-filters"></div></th>
+        {% endif %}
+        <th data-filters="group:그룹|connect:연결 단계">담당자 / 투자사<div class="th-filters"></div></th>
         <th data-filters="channel:채널|room:방 연결">채널<div class="th-filters"></div></th>
         <th data-filters="stage:단계|sector:섹터">투자 성격<div class="th-filters"></div></th>
         <th data-filters="recency:최근 딜소개">최근 딜소개<div class="th-filters"></div></th>
@@ -81,6 +98,8 @@
       {% for r in rows %}
       <tr class="data-row" data-id="{{ r.id }}"
           data-f-group="{{ r.group_name }}"
+          data-f-owner="{{ r.owner }}"
+          data-f-connect="{{ r.connect_label }}"
           data-f-channel="{{ r.channel_tags|join('|') }}"
           data-f-room="{{ r.room_label }}"
           data-f-stage="{{ r.stages|join('|') }}"
@@ -88,9 +107,16 @@
           data-f-recency="{{ r.recency }}"
           data-f-reaction="{{ r.reaction_tags|join('|') }}"
           data-f-status="{{ r.status_label }}">
+        {% if team_wide %}
+        <td class="{% if not r.is_mine %}muted{% endif %}">{{ r.owner }}</td>
+        {% endif %}
         <td>
-          <div class="cell-main">{{ r.name }} <span class="muted">{{ r.title }}</span></div>
-          <div class="cell-sub muted">{{ r.firm }}{% if r.group_name %} · {{ r.group_name }}{% endif %}</div>
+          <div class="cell-main">{{ r.name }} <span class="muted">{{ r.title }}</span>
+            {% if r.connect_stage != 'connected' %}
+            <span class="tag {{ 'bad' if r.connect_stage == 'declined' else 'warn' }}">{{ r.connect_label }}</span>
+            {% endif %}
+          </div>
+          <div class="cell-sub muted">{{ r.firm }}{% if r.department %} · {{ r.department }}{% endif %}{% if r.group_name %} · {{ r.group_name }}{% endif %}</div>
         </td>
         <td>
           <div class="chan">

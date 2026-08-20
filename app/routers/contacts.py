@@ -66,12 +66,17 @@ def _recency_bucket(last: Optional[str], today: date) -> str:
     return "30일 초과"
 
 
-def contact_rows(db: Session, user: User) -> List[dict]:
-    """표 한 행 = 담당자 1명 + 집계값. (FEATURE_SPEC §3 7컬럼)"""
-    contacts = db.execute(
-        select(VcContact).where(VcContact.user_id == user.id)
-        .order_by(VcContact.group_name, VcContact.name)
-    ).scalars().all()
+def contact_rows(db: Session, user: User, team_wide: bool = False) -> List[dict]:
+    """표 한 행 = 담당자 1명 + 집계값. (FEATURE_SPEC §3 7컬럼)
+
+    `team_wide` 는 관리자 전용이다. 관리자는 직접 보내지 않지만 **누가 어떤
+    투자사를 맡고 있는지** 알아야 팀이 굴러간다. 발송 대상 고르기는 여전히
+    본인 담당분만이다 — 남의 담당에 실수로 나가면 안 된다.
+    """
+    stmt = select(VcContact).order_by(VcContact.group_name, VcContact.name)
+    if not (team_wide and user.role == "admin"):
+        stmt = stmt.where(VcContact.user_id == user.id)
+    contacts = db.execute(stmt).scalars().all()
     if not contacts:
         return []
     ids = [c.id for c in contacts]
@@ -96,6 +101,12 @@ def contact_rows(db: Session, user: User) -> List[dict]:
 
     today = date.today()
     cutoff = (today - timedelta(days=REACTION_WINDOW_DAYS)).isoformat()
+
+    owners = {
+        u.id: u.name for u in db.execute(
+            select(User).where(User.id.in_({c.user_id for c in contacts}))
+        ).scalars().all()
+    }
 
     rows = []
     for c in contacts:
@@ -125,6 +136,11 @@ def contact_rows(db: Session, user: User) -> List[dict]:
 
         rows.append({
             "id": c.id,
+            "owner": owners.get(c.user_id, ""),
+            "is_mine": c.user_id == user.id,
+            "connect_stage": c.connect_stage,
+            "connect_label": sheet_import.CONNECT_LABELS.get(c.connect_stage, c.connect_stage),
+            "department": c.department or "",
             "name": c.name,
             "title": c.title or "",
             "firm": c.firm or "",
