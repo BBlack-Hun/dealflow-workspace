@@ -109,6 +109,11 @@ class VcContact(TimestampMixin, Base):
     # 카톡방까지 연결됐는가. 발송 대상이 되기 전 단계를 여기서 관리한다.
     # connected(연결 완료) | in_progress(진행 중) | declined(참여 안 함) | not_started(미착수)
     connect_stage: Mapped[str] = mapped_column(String, default="not_started")
+    # 시트의 '담당자' 원문. 그 이름의 계정이 아직 없어도 **버리지 않는다** —
+    # 버리면 누구 담당인지가 사라져 임포트한 사람에게 전부 붙어 버린다.
+    assignee_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # 어떤 돈인가 (vc | ac | angel | cvc | pe | securities | bank | public | other)
+    firm_type: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     memo: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
 
@@ -388,4 +393,26 @@ class SendSequence(TimestampMixin, Base):
     next_stage: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)   # 2 | 3
     next_due_date: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # YYYY-MM-DD
     stopped_reason: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+
+class SheetOwner(TimestampMixin, Base):
+    """명단(시트) 하나 = 담당 팀원 한 명.
+
+    담당은 사람이 아니라 **명단 단위**로 정해진다. "○○○ 딜소개현황" 은 그 사람의
+    명단이고, 신규 연결 명단은 다른 팀원의 명단이다. 한 사람이 두 명단에 겹쳐
+    있어도 담당은 명단이 정한다.
+
+    이걸 두지 않으면 시트를 올린 사람에게 팀 전체가 붙는다 — 실제로 한 사람의
+    대시보드에 333명이 '내 담당'으로 잡혔다.
+
+    `user_id` 가 비어 있으면 아직 그 팀원의 계정이 없다는 뜻이다. 그 명단은
+    누구의 대시보드에도 잡히지 않고, 계정을 만들어 연결하면 그때 넘어간다.
+    """
+
+    __tablename__ = "sheet_owners"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    label: Mapped[str] = mapped_column(String, unique=True)     # source_sheet 값
+    user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    assignee_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # 시트의 담당자 원문
 

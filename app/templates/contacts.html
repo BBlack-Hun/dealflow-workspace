@@ -27,11 +27,53 @@
   </a>
   {% for t in tabs %}
   <a class="sheet-tab {% if selected_sheet == t.key %}active{% endif %}"
-     href="/contacts?sheet={{ t.key|urlencode }}" title="연결 완료 {{ t.connected }}명">
-    {{ t.label }} <span>{{ t.count }}</span>
+     href="/contacts?sheet={{ t.key|urlencode }}"
+     title="{{ t.kind_label }} · 연결 완료 {{ t.connected }}명{% if t.owner %} · 담당 {{ t.owner }}{% endif %}">
+    {% if t.kind == 'pool' %}<span class="pool-dot" title="투자사 풀">◇</span>{% endif %}{{ t.label }} <span>{{ t.count }}</span>
   </a>
   {% endfor %}
 </nav>
+
+{% if selected_sheet %}
+{% for t in tabs %}{% if t.key == selected_sheet %}
+<p class="hint sheet-owner-line">
+  <b>{{ t.label }}</b>
+  {% if t.kind == 'pool' %}
+    <span class="tag">투자사 풀</span>
+    <span class="muted">확보해 둔 명단입니다. 여기서 골라 내 명단으로 할당하세요.</span>
+  {% else %}
+    <span class="tag">담당 명단</span> <b>{{ t.owner }}</b>
+  {% endif %}
+  · 연결 완료 {{ t.connected }} / {{ t.count }}명
+  {% if t.written_by %}<span class="muted">· 연결 작업 {{ t.written_by }}</span>{% endif %}
+  {% if team_wide %}
+  <form method="post" action="/api/contacts/sheets/assign" class="inline-form">
+    <input type="hidden" name="label" value="{{ t.label }}">
+    <select name="user_id">
+      <option value="">담당 없음</option>
+      {% for m in members %}
+      <option value="{{ m.id }}" {% if t.owner_id == m.id %}selected{% endif %}>{{ m.name }}</option>
+      {% endfor %}
+    </select>
+    <button class="linkbtn" type="submit">담당 지정</button>
+  </form>
+  {% endif %}
+</p>
+
+{% if t.kind == 'pool' and my_sheets %}
+<!-- 풀 → 내 명단 할당. 풀에서 빼지 않고 내 명단에 더한다. -->
+<div class="assign-bar" id="assign-bar">
+  <label class="only-picked"><input type="checkbox" id="pick-all-pool"> 전체 선택</label>
+  <span class="muted" id="pick-count">0명 선택</span>
+  <select id="assign-target">
+    {% for m in my_sheets %}<option value="{{ m.label }}">{{ m.label }}</option>{% endfor %}
+  </select>
+  <button type="button" class="primary-btn inline" id="assign-btn" disabled>내 명단으로 할당</button>
+  <span class="hint">풀에서 빠지지 않고 내 명단에 더해집니다.</span>
+</div>
+{% endif %}
+{% endif %}{% endfor %}
+{% endif %}
 
 <div class="kpi-row slim">
   {% for c in connect_counts %}
@@ -95,6 +137,7 @@
     </colgroup>
     <thead>
       <tr>
+        {% if pool_view %}<th style="width:32px"></th>{% endif %}
         {% if team_wide %}
         <th style="width:80px" data-filters="owner:담당 팀원">담당 팀원<div class="th-filters"></div></th>
         {% endif %}
@@ -109,7 +152,7 @@
     </thead>
     <tbody>
       {% for r in rows %}
-      <tr class="data-row" data-id="{{ r.id }}"
+      <tr class="data-row" data-id="{{ r.id }}" data-name="{{ r.name }}"
           data-f-group="{{ r.group_name }}"
           data-f-owner="{{ r.owner }}"
           data-f-connect="{{ r.connect_label }}"
@@ -120,6 +163,10 @@
           data-f-recency="{{ r.recency }}"
           data-f-reaction="{{ r.reaction_tags|join('|') }}"
           data-f-status="{{ r.status_label }}">
+        {% if pool_view %}
+        <td><input type="checkbox" class="pool-cb" value="{{ r.id }}"
+                   {% if selected_sheet in r.sheets and r.is_mine %}{% endif %}></td>
+        {% endif %}
         {% if team_wide %}
         <td class="{% if not r.is_mine %}muted{% endif %}">{{ r.owner }}</td>
         {% endif %}
@@ -241,6 +288,7 @@
 </aside>
 {% endblock %}
 {% block scripts %}
+<script src="/static/js/pool_assign.js"></script>
 <script src="/static/js/filters.js"></script>
 <script src="/static/js/contacts.js"></script>
 <script src="/static/js/contact_import.js"></script>

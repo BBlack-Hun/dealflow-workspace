@@ -40,7 +40,7 @@ INITIAL_PASSWORD = os.environ.get("DEALFLOW_INITIAL_PASSWORD", "dealflow123")
 # ── 테스트 모드 ───────────────────────────────────────────────────────────────
 # 값이 있으면 **모든 발송이 이 카톡방 하나로만** 나간다(실제 담당자 방으로 가지 않음).
 # 실투자사 150명에게 실수로 발송되는 사고를 막기 위한 안전장치.
-# 예: DEALFLOW_TEST_ROOM="김정훈"  (나와의 채팅)
+# 예: DEALFLOW_TEST_ROOM="본인 이름"  (카카오톡 '나와의 채팅' 방 제목)
 # 비워두면 평소대로 각 담당자의 방으로 발송된다.
 TEST_ROOM = os.environ.get("DEALFLOW_TEST_ROOM", "").strip()
 

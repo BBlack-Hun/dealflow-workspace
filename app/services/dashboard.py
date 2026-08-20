@@ -20,7 +20,7 @@ from typing import Dict, List, Optional
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from . import cadence, mailer
+from . import cadence, mailer, sheet_owner
 from ..models import (
     AgentDevice,
     ContactActivity,
@@ -41,21 +41,38 @@ REACTION_WINDOW_DAYS = 60
 
 # --- 공통 집계 --------------------------------------------------------------
 
+# 방 확인 결과를 **명시적으로** 나눈다. 예전에는 모르는 값을 전부 '미확인'으로
+# 떨어뜨렸는데, 그래서 '방 없음(not_found)' 으로 확인된 사람까지 발송 가능으로
+# 세어졌다(투자사 DB 117명 · 대시보드 123명으로 어긋난 원인).
+_SENDABLE_ROOM = {"verified", "unverified"}
+_ROOM_ALIAS = {
+    "verified": "verified",
+    "unverified": "unverified",
+    "failed": "failed",
+    "not_found": "failed",       # 방이 없다고 확인된 것 — 보낼 수 없다
+    "ambiguous": "failed",       # 어느 방인지 모른다 — 보내면 안 된다
+}
+
+
 def _room_state(c: VcContact) -> str:
     """발송 준비 관점에서 본 방 상태."""
-    if not c.channel_kakao and c.channel_email:
-        return "email"          # 메일로 받는 곳 — 카톡 대상이 아니다
-    if not c.kakao_room_name:
+    if not c.channel_kakao:
+        # 카톡 채널이 아니면 방 이름이 있어도 카톡 발송 대상이 아니다.
+        return "email" if c.channel_email else "no_channel"
+    if not (c.kakao_room_name or "").strip():
         return "missing"
-    return c.room_verified if c.room_verified in ("verified", "failed") else "unverified"
+    # 처음 보는 값은 '확인 안 됨'이 아니라 **보낼 수 없음**으로 본다.
+    # 모르는 상태를 낙관적으로 해석하면 못 가는 곳에 갈 수 있다고 세게 된다.
+    return _ROOM_ALIAS.get(c.room_verified or "", "failed")
 
 
 ROOM_LABELS = {
     "verified": ("확인됨", "ok"),
     "unverified": ("미확인", "warn"),
-    "failed": ("연결 실패", "bad"),
+    "failed": ("방 없음 · 실패", "bad"),
     "missing": ("방 미등록", "bad"),
     "email": ("메일 채널", "muted"),
+    "no_channel": ("채널 미지정", "muted"),
 }
 
 
@@ -92,13 +109,14 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None) -> dic
     today = today or date.today()
     cutoff = (today - timedelta(days=REACTION_WINDOW_DAYS)).isoformat()
 
-    contacts = db.execute(
-        select(VcContact).where(VcContact.user_id == user.id)
-    ).scalars().all()
+    # 담당은 **명단(시트) 단위**로 정해진다 — "내 이름으로 된 탭만 내 담당".
+    # 이렇게 하지 않으면 시트를 올린 사람에게 팀 전체가 붙는다.
+    contacts = sheet_owner.my_contacts(db, user)
+    pipeline = [c for c in contacts if c.connect_stage != "connected"]
     ids = [c.id for c in contacts]
 
     rooms = Counter(_room_state(c) for c in contacts)
-    sendable = rooms["verified"] + rooms["unverified"]
+    sendable = sum(rooms[state] for state in _SENDABLE_ROOM)
 
     companies = db.execute(select(IrCompany)).scalars().all()
     introducible = [c for c in companies if c.introducible]
@@ -124,8 +142,8 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None) -> dic
         })
     if rooms["failed"]:
         blockers.append({
-            "count": rooms["failed"], "label": "방 연결에 실패한 담당자",
-            "hint": "실제 카톡방 제목과 글자가 다릅니다",
+            "count": rooms["failed"], "label": "방을 찾지 못한 담당자",
+            "hint": "실제 카톡방이 없거나 제목이 다릅니다 — 이 사람에게는 나가지 않습니다",
             "href": "/contacts", "level": "bad",
         })
     if rooms["unverified"]:
@@ -164,9 +182,9 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None) -> dic
     return {
         "kpis": [
             {"key": "contacts", "label": "내 투자사", "value": len(contacts),
-             "sub": "명", "href": "/contacts"},
+             "sub": "내 명단 기준", "href": "/contacts"},
             {"key": "sendable", "label": "카톡 발송 가능", "value": sendable,
-             "sub": f"전체 {len(contacts)}명 중", "href": "/contacts"},
+             "sub": f"{len(contacts)}명 중", "href": "/contacts"},
             {"key": "companies", "label": "소개 가능 기업", "value": len(introducible),
              "sub": f"등록 {len(companies)}개 중", "href": "/deals"},
             {"key": "sent", "label": "이번 달 발송", "value": sent_this_month,
@@ -179,10 +197,13 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None) -> dic
             {"state": s, "label": ROOM_LABELS[s][0], "level": ROOM_LABELS[s][1],
              "count": rooms.get(s, 0),
              "percent": round(rooms.get(s, 0) * 100 / (len(contacts) or 1))}
-            for s in ("verified", "unverified", "failed", "missing", "email")
+            for s in ("verified", "unverified", "failed", "missing",
+                      "email", "no_channel")
             if rooms.get(s, 0)
         ],
         "blockers": blockers,
+        # 연결 작업은 발송과 다른 일이라 따로 보여준다.
+        "pipeline": _pipeline_view(pipeline),
         "followups": {
             "due": len(due_today),
             "overdue": sum(1 for r in due_today if r["overdue"]),
@@ -197,6 +218,19 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None) -> dic
         "stages": _distribution([s for c in contacts for s in _split_csv(c.stages)]),
         "sectors": _distribution([s for c in contacts for s in _split_csv(c.sectors)]),
         "recent_batches": recent_batches(db, user_id=user.id),
+    }
+
+
+def _pipeline_view(rows: List[VcContact]) -> dict:
+    """아직 연결되지 않은 명단. 누가 맡고 있는지까지 보여준다."""
+    stages = Counter(c.connect_stage for c in rows)
+    owners = Counter((c.assignee_name or "미지정").strip() for c in rows)
+    return {
+        "total": len(rows),
+        "in_progress": stages.get("in_progress", 0),
+        "not_started": stages.get("not_started", 0),
+        "declined": stages.get("declined", 0),
+        "owners": [{"name": name, "count": n} for name, n in owners.most_common(4)],
     }
 
 
@@ -266,7 +300,7 @@ def admin_dashboard(db: Session, today: Optional[date] = None) -> dict:
     for u in users:
         mine = by_user.get(u.id, [])
         states = Counter(_room_state(c) for c in mine)
-        ready = states["verified"] + states["unverified"]
+        ready = sum(states[state] for state in _SENDABLE_ROOM)
         acts = _recent_activity_counts(db, [c.id for c in mine], cutoff)
         device = devices.get(u.id)
         rows.append({

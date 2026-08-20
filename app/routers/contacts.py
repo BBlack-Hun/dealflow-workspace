@@ -13,7 +13,9 @@ from datetime import date, timedelta
 from collections import Counter
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from urllib.parse import quote
+
+from fastapi import APIRouter, Depends, Form, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -21,7 +23,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import get_current_user
 from ..models import ContactActivity, IrCompany, SendItem, SendJob, User, VcContact
-from ..services import sheet_import
+from ..services import firm_type, sheet_import, sheet_owner
 from ..services.room_name import DEFAULT_SUFFIX, build_room_name
 
 router = APIRouter(prefix="/api/contacts", tags=["contacts"])
@@ -174,6 +176,9 @@ def contact_rows(db: Session, user: User, team_wide: bool = False) -> List[dict]
             "is_mine": c.user_id == user.id,
             "connect_stage": c.connect_stage,
             "sheets": _sheet_labels(c.source_sheet),
+            "assignee": (c.assignee_name or "").strip(),
+            "firm_type": c.firm_type or "unknown",
+            "firm_type_label": firm_type.label(c.firm_type),
             "connect_label": sheet_import.CONNECT_LABELS.get(c.connect_stage, c.connect_stage),
             "department": c.department or "",
             "name": c.name,
@@ -327,6 +332,49 @@ def verify_rooms(
 
 
 # ── CRUD ────────────────────────────────────────────────────────────────────
+
+class AssignIn(BaseModel):
+    contact_ids: List[int]
+    label: str
+
+
+@router.post("/assign")
+def assign_to_my_sheet(body: AssignIn, db: Session = Depends(get_db),
+                       user: User = Depends(get_current_user)):
+    """풀에서 고른 담당자를 내 명단으로 할당한다.
+
+    풀에서 빼지 않는다 — 풀은 확보해 둔 전체 명단이고 거기서 뽑아 쓰는 것이다.
+    내 명단이 아닌 곳으로는 할당할 수 없다(남의 명단을 불릴 수 없다).
+    """
+    label = body.label.strip()
+    if label not in sheet_owner.my_labels(db, user):
+        raise HTTPException(status_code=403, detail="내 명단으로만 할당할 수 있습니다")
+    rows = db.execute(
+        select(VcContact).where(VcContact.id.in_(body.contact_ids or []))
+    ).scalars().all()
+    moved = sheet_owner.add_to_sheet(db, rows, label, user.id)
+    db.commit()
+    return {"moved": moved, "label": label}
+
+
+@router.post("/sheets/assign", include_in_schema=False)
+def assign_sheet(
+    label: str = Form(...),
+    user_id: str = Form(""),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """명단의 담당 팀원을 정한다. 팀 전체 배분이 바뀌므로 관리자만."""
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="명단 담당은 관리자만 바꿀 수 있습니다")
+    target = int(user_id) if user_id.strip().isdigit() else None
+    if target is not None and db.get(User, target) is None:
+        raise HTTPException(status_code=404, detail="계정을 찾을 수 없습니다")
+    sheet_owner.assign(db, label.strip(), target)
+    db.commit()
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(f"/contacts?sheet={quote(label.strip())}", status_code=303)
+
 
 @router.get("")
 def list_contacts(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
@@ -484,3 +532,12 @@ def _assign(contact: VcContact, body: ContactIn) -> None:
         contact.channel_kakao = 1 if body.channel_kakao else 0
     if body.channel_email is not None:
         contact.channel_email = 1 if body.channel_email else 0
+
+    # 방 이름과 연결 단계가 어긋나면 안 된다. 방 이름을 지웠는데 '연결 완료'로
+    # 남으면 발송 대상 목록에는 뜨는데 보낼 방이 없다.
+    if body.kakao_room_name is not None:
+        if (contact.kakao_room_name or "").strip():
+            contact.connect_stage = sheet_import.STAGE_CONNECTED
+        elif contact.connect_stage == sheet_import.STAGE_CONNECTED:
+            # 연결됐던 사람이니 미착수로 되돌리지는 않는다.
+            contact.connect_stage = sheet_import.STAGE_IN_PROGRESS

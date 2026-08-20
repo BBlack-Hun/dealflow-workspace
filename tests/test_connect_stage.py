@@ -274,3 +274,126 @@ def test_manually_added_contacts_get_their_own_tab(logged, db):
     body = logged.get("/contacts").text
     assert "직접 추가" in body
     assert "직접넣은사람" in logged.get("/contacts?sheet=직접 추가").text
+
+
+# --- 명단 담당 --------------------------------------------------------------
+#
+# 담당은 사람이 아니라 **명단(시트) 단위**로 정해진다.
+# "내 이름으로 된 탭만 내 담당 투자사" — 시트를 나눠 쓰던 방식 그대로다.
+
+def test_import_does_not_steal_an_existing_sheet(logged, db, users):
+    """남의 명단을 한 번 올린 것만으로 담당이 넘어오면 안 된다."""
+    from app.models import SheetOwner
+    from app.services import sheet_owner
+
+    db.add(SheetOwner(label="남의 명단", user_id=users["u2"].id))
+    db.commit()
+
+    logged.post(
+        "/api/import/contacts",
+        files={"file": ("남의 명단.xlsx", _xlsx([ROSTER_HEADER, _row(1, "홍길동", kakao="O")]),
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        data={"dry_run": "false", "sheet": ""},
+    )
+    db.expire_all()
+    assert sheet_owner.owner_map(db)["남의 명단"] == users["u2"].id
+
+
+def test_only_admin_can_reassign_a_sheet(logged, db, users):
+    from app.models import SheetOwner
+
+    db.add(SheetOwner(label="명단A", user_id=None))
+    db.commit()
+    r = logged.post("/api/contacts/sheets/assign",
+                    data={"label": "명단A", "user_id": str(users["u1"].id)})
+    assert r.status_code == 403
+
+
+def test_admin_reassigns_a_sheet(client, db, users):
+    from app.models import SheetOwner
+    from app.services import sheet_owner
+
+    db.add(SheetOwner(label="명단A", user_id=None))
+    users["u2"].role = "admin"
+    db.commit()
+
+    client.post("/login", data={"phone": "01000000002", "password": DEMO_PASSWORD})
+    r = client.post("/api/contacts/sheets/assign",
+                    data={"label": "명단A", "user_id": str(users["u1"].id)},
+                    follow_redirects=False)
+    assert r.status_code == 303
+    db.expire_all()
+    assert sheet_owner.owner_map(db)["명단A"] == users["u1"].id
+
+
+# --- 투자사 풀 → 내 명단 할당 ------------------------------------------------
+#
+# 풀은 확보해 둔 전체 명단이고, 거기서 골라 자기 명단을 만든다.
+# 풀에서 빼지 않는다 — 뽑아 쓰는 것이지 옮기는 것이 아니다.
+
+def _pool_setup(db, users):
+    from app.models import SheetOwner, VcContact
+
+    db.add_all([
+        SheetOwner(label="내 명단", user_id=users["u1"].id),
+        SheetOwner(label="투자사 풀", user_id=None, assignee_name="연결담당"),
+        VcContact(user_id=users["u1"].id, name="풀사람", firm="가나벤처스",
+                  source_sheet="투자사 풀", connect_stage="connected",
+                  kakao_room_name="풀사람 방"),
+    ])
+    db.commit()
+    return db.query(VcContact).filter_by(name="풀사람").first().id
+
+
+def test_pool_is_not_counted_as_mine(logged, db, users):
+    from app.services.dashboard import user_dashboard
+
+    _pool_setup(db, users)
+    kpi = {k["key"]: k["value"] for k in user_dashboard(db, users["u1"])["kpis"]}
+    assert kpi["contacts"] == 0        # 풀에만 있으면 아직 내 담당이 아니다
+
+
+def test_assigning_from_pool_keeps_them_in_the_pool(logged, db, users):
+    """풀에서 빠지지 않고 내 명단에 더해진다."""
+    from app.models import VcContact
+    from app.services import sheet_owner
+    from app.services.dashboard import user_dashboard
+
+    cid = _pool_setup(db, users)
+    r = logged.post("/api/contacts/assign",
+                    json={"contact_ids": [cid], "label": "내 명단"})
+    assert r.status_code == 200, r.text
+    assert r.json()["moved"] == 1
+
+    db.expire_all()
+    labels = sheet_owner.labels_of(db.get(VcContact, cid).source_sheet)
+    assert "투자사 풀" in labels and "내 명단" in labels
+
+    kpi = {k["key"]: k["value"] for k in user_dashboard(db, users["u1"])["kpis"]}
+    assert kpi["contacts"] == 1
+
+
+def test_cannot_assign_into_someone_elses_sheet(logged, db, users):
+    """남의 명단을 불릴 수는 없다."""
+    from app.models import SheetOwner
+
+    cid = _pool_setup(db, users)
+    db.add(SheetOwner(label="남의 명단", user_id=users["u2"].id))
+    db.commit()
+    r = logged.post("/api/contacts/assign",
+                    json={"contact_ids": [cid], "label": "남의 명단"})
+    assert r.status_code == 403
+
+
+def test_assigning_twice_does_not_duplicate(logged, db, users):
+    from app.models import VcContact
+    from app.services import sheet_owner
+
+    cid = _pool_setup(db, users)
+    logged.post("/api/contacts/assign", json={"contact_ids": [cid], "label": "내 명단"})
+    second = logged.post("/api/contacts/assign",
+                         json={"contact_ids": [cid], "label": "내 명단"})
+    assert second.json()["moved"] == 0
+    db.expire_all()
+    labels = sheet_owner.labels_of(db.get(VcContact, cid).source_sheet)
+    assert labels.count("내 명단") == 1
