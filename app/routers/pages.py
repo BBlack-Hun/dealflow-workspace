@@ -107,6 +107,10 @@ def contacts_page(
         "members": ([{"id": u.id, "name": u.name} for u in
                      db.execute(select(User).order_by(User.id)).scalars().all()]
                     if team_wide else []),
+        # 풀에서 고른 사람을 어느 명단으로 할당할지 — 내 명단만 고를 수 있다.
+        "my_sheets": [t for t in tabs if t["owner_id"] == user.id],
+        # 풀 탭에서는 골라서 내 명단으로 할당할 수 있다.
+        "pool_view": any(t["key"] == selected and t["kind"] == "pool" for t in tabs),
         "total_count": len(all_rows),
         "connect_counts": [
             {"key": key, "label": label, "count": stages.get(key, 0)}

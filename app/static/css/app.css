@@ -598,3 +598,11 @@ td.cell.save-failed { background: #fdecec; }
   background: #fafbfc; border: 1px solid var(--line); border-radius: 8px;
   padding: 7px 12px; margin-bottom: 10px; }
 .sheet-owner-line select { padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; }
+
+/* 투자사 풀 → 내 명단 할당 */
+.assign-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: #eef3ff; border: 1px solid #cfe0ff; border-radius: 8px;
+  padding: 8px 12px; margin-bottom: 10px; font-size: 13px; }
+.assign-bar select { padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; }
+.assign-bar .hint { margin-left: auto; }
+.pool-dot { color: var(--gray); margin-right: 2px; }

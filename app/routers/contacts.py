@@ -333,6 +333,30 @@ def verify_rooms(
 
 # ── CRUD ────────────────────────────────────────────────────────────────────
 
+class AssignIn(BaseModel):
+    contact_ids: List[int]
+    label: str
+
+
+@router.post("/assign")
+def assign_to_my_sheet(body: AssignIn, db: Session = Depends(get_db),
+                       user: User = Depends(get_current_user)):
+    """풀에서 고른 담당자를 내 명단으로 할당한다.
+
+    풀에서 빼지 않는다 — 풀은 확보해 둔 전체 명단이고 거기서 뽑아 쓰는 것이다.
+    내 명단이 아닌 곳으로는 할당할 수 없다(남의 명단을 불릴 수 없다).
+    """
+    label = body.label.strip()
+    if label not in sheet_owner.my_labels(db, user):
+        raise HTTPException(status_code=403, detail="내 명단으로만 할당할 수 있습니다")
+    rows = db.execute(
+        select(VcContact).where(VcContact.id.in_(body.contact_ids or []))
+    ).scalars().all()
+    moved = sheet_owner.add_to_sheet(db, rows, label, user.id)
+    db.commit()
+    return {"moved": moved, "label": label}
+
+
 @router.post("/sheets/assign", include_in_schema=False)
 def assign_sheet(
     label: str = Form(...),
