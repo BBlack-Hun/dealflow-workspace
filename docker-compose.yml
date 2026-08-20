@@ -24,6 +24,7 @@ services:
       DEALFLOW_SMTP_PASSWORD: "${DEALFLOW_SMTP_PASSWORD:-}"
       DEALFLOW_SMTP_FROM: "${DEALFLOW_SMTP_FROM:-}"
       DEALFLOW_SMTP_TLS: "${DEALFLOW_SMTP_TLS:-1}"
+      DEALFLOW_SMTP_SSL: "${DEALFLOW_SMTP_SSL:-}"
       RUN_MIGRATIONS: "1"                       # apply migrations + bootstrap on start
       DEALFLOW_AGENT_TOKEN: "agt_demo_token_sprint1"
       DATABASE_URL: "sqlite:////app/data/dealflow.db"

@@ -15,7 +15,11 @@
     DEALFLOW_SMTP_USER=deal@example.com
     DEALFLOW_SMTP_PASSWORD=...
     DEALFLOW_SMTP_FROM=딜소싱팀 <deal@example.com>
-    DEALFLOW_SMTP_TLS=1
+    DEALFLOW_SMTP_TLS=1        # 587: 접속 후 STARTTLS 로 암호화
+    DEALFLOW_SMTP_SSL=1        # 465: 처음부터 SSL 로 접속 (호스팅 메일이 대개 이쪽)
+
+포트 465 는 **처음부터 SSL** 이라 STARTTLS 와 방식이 다르다. 465 인데 STARTTLS 로
+붙으면 손도 못 대고 끊긴다. 그래서 포트가 465 면 SSL 을 기본으로 본다.
 """
 from __future__ import annotations
 
@@ -31,6 +35,10 @@ class MailerNotConfigured(RuntimeError):
     """메일 서버 정보가 없어 보낼 수 없다."""
 
 
+# 처음부터 SSL 로 접속하는 표준 포트. STARTTLS(587) 와 방식이 다르다.
+SSL_PORT = 465
+
+
 @dataclass
 class MailSettings:
     host: str = ""
@@ -38,12 +46,20 @@ class MailSettings:
     user: str = ""
     password: str = ""
     sender: str = ""
-    use_tls: bool = True
+    use_tls: bool = True       # 접속 후 STARTTLS
+    use_ssl: bool = False      # 처음부터 SSL
 
     @property
     def configured(self) -> bool:
-        # 보내는 주소는 서버 주소만큼 중요하다. 없으면 받는 쪽에서 스팸으로 걸린다.
-        return bool(self.host and (self.sender or self.user))
+        """정말 보낼 수 있는 상태인가.
+
+        보내는 주소는 서버 주소만큼 중요하다 — 없으면 받는 쪽에서 스팸으로 걸린다.
+        계정이 있는데 비밀번호가 없으면 로그인에서 막힌다. 그런 상태로 화면에서
+        이메일을 고를 수 있게 하면, 고를 수 있는데 나가지 않는 상태가 된다.
+        """
+        if not (self.host and (self.sender or self.user)):
+            return False
+        return bool(self.password) if self.user else True
 
     @property
     def from_address(self) -> str:
@@ -57,13 +73,20 @@ def load_settings() -> MailSettings:
         except ValueError:
             return default
 
+    port = _int("DEALFLOW_SMTP_PORT", 587)
+    raw_ssl = os.environ.get("DEALFLOW_SMTP_SSL", "").strip()
+    # 465 는 처음부터 SSL 이다. 적어 두지 않았어도 포트로 알 수 있으므로
+    # 기본값을 그렇게 잡는다 — 잘못 잡으면 손도 못 대고 끊긴다.
+    use_ssl = (raw_ssl == "1") if raw_ssl else (port == SSL_PORT)
     return MailSettings(
         host=os.environ.get("DEALFLOW_SMTP_HOST", "").strip(),
-        port=_int("DEALFLOW_SMTP_PORT", 587),
+        port=port,
         user=os.environ.get("DEALFLOW_SMTP_USER", "").strip(),
         password=os.environ.get("DEALFLOW_SMTP_PASSWORD", ""),
         sender=os.environ.get("DEALFLOW_SMTP_FROM", "").strip(),
-        use_tls=os.environ.get("DEALFLOW_SMTP_TLS", "1") != "0",
+        # SSL 로 붙으면 STARTTLS 는 쓰지 않는다(같이 켜면 서버가 거부한다).
+        use_tls=(not use_ssl) and os.environ.get("DEALFLOW_SMTP_TLS", "1") != "0",
+        use_ssl=use_ssl,
     )
 
 
@@ -88,6 +111,9 @@ def status() -> dict:
         "from_address": s.from_address,
         "has_password": bool(s.password),
         "use_tls": s.use_tls,
+        "use_ssl": s.use_ssl,
+        "security": "SSL" if s.use_ssl else ("STARTTLS" if s.use_tls else "없음"),
+        "user": s.user,
         "missing": missing,
     }
 
@@ -109,12 +135,45 @@ def send_mail(to: str, subject: str, body: str,
     msg["Subject"] = subject
     msg.set_content(body)
 
-    with smtplib.SMTP(s.host, s.port, timeout=20) as smtp:
-        if s.use_tls:
-            smtp.starttls()
+    with _connect(s) as smtp:
         if s.user:
             smtp.login(s.user, s.password)
         smtp.send_message(msg)
+
+
+def _connect(s: MailSettings):
+    """SSL(465) 과 STARTTLS(587) 는 붙는 방식이 다르다."""
+    if s.use_ssl:
+        return smtplib.SMTP_SSL(s.host, s.port, timeout=20)
+    smtp = smtplib.SMTP(s.host, s.port, timeout=20)
+    if s.use_tls:
+        smtp.starttls()
+    return smtp
+
+
+def send_test(to: str) -> dict:
+    """설정이 맞는지 한 통 보내 본다.
+
+    비밀번호가 틀렸는지, 포트를 잘못 잡았는지는 **실제로 보내 봐야** 안다.
+    실패 사유를 그대로 돌려준다 — 화면에서 무엇을 고쳐야 하는지 알아야 한다.
+    """
+    from datetime import datetime, timezone
+
+    stamp = datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M")
+    try:
+        send_mail(to,
+                  "[dealflow] 메일 발송 설정 확인",
+                  f"메일 발송 설정이 정상입니다.\n보낸 시각: {stamp}\n\n"
+                  "이 메일이 보이면 카톡으로 받지 않는 투자사에게 메일로 보낼 수 있습니다.")
+    except MailerNotConfigured as exc:
+        return {"ok": False, "detail": str(exc)}
+    except smtplib.SMTPAuthenticationError:
+        return {"ok": False,
+                "detail": "로그인에 실패했습니다 — 계정 또는 비밀번호를 확인하세요."}
+    except (smtplib.SMTPException, OSError) as exc:
+        return {"ok": False,
+                "detail": f"메일 서버에 연결하지 못했습니다: {exc}"}
+    return {"ok": True, "detail": f"{to} 로 보냈습니다. 받은 편지함을 확인하세요."}
 
 
 def _format_sender(value: str) -> str:
