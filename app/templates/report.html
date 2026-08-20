@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+
+{% block content %}
+<header class="page-head">
+  <h1>{{ page_title }}</h1>
+  <p class="muted">
+    미팅을 기록하면 이 표가 저절로 나옵니다. 시트에 다시 옮겨 적지 않아도 됩니다.
+    <b>미팅 후 결과 문의</b>를 했는지 함께 셉니다 — 그걸 놓치면 계약이 흐지부지됩니다.
+  </p>
+</header>
+
+<div class="toolbar">
+  <div class="quick-chips">
+    {% for y, m, key in months %}
+    <a class="chip {% if selected == key %}active{% endif %}"
+       href="/report?month={{ key }}{% if scope %}&scope={{ scope }}{% endif %}">{{ y }}년 {{ m }}월</a>
+    {% endfor %}
+  </div>
+  {% if can_team %}
+  <div class="toolbar-right">
+    <a class="chip {% if not team_wide %}active{% endif %}" href="/report?month={{ selected }}">내 것</a>
+    <a class="chip {% if team_wide %}active{% endif %}" href="/report?month={{ selected }}&scope=team">팀 전체</a>
+  </div>
+  {% endif %}
+</div>
+
+<div class="kpi-row slim">
+  <div class="kpi-card static"><span class="kpi-label">미팅</span><span class="kpi-value">{{ total }}</span></div>
+  <div class="kpi-card static"><span class="kpi-label">완료</span><span class="kpi-value ok">{{ done }}</span></div>
+  <div class="kpi-card static"><span class="kpi-label">결과 문의 완료</span><span class="kpi-value">{{ followup_done }}</span></div>
+  <div class="kpi-card static"><span class="kpi-label">결과 문의 밀림</span>
+    <span class="kpi-value {% if followup_late %}bad{% endif %}">{{ followup_late }}</span></div>
+</div>
+
+<section class="panel">
+  <h2 class="panel-title">{{ month }}월 미팅 총 {{ total }}개사</h2>
+  {% if weeks %}
+  {% for w in weeks %}
+  <div class="due-group">
+    <div class="due-head">
+      <b>{{ w.label }}</b>
+      <span class="count-pill {% if w.done %}on{% endif %}"><b>{{ w.done }}</b>개사 완료</span>
+    </div>
+    <table class="grid-table compact">
+      <thead><tr><th>날짜</th><th>담당자 / 투자사</th><th>구분</th>{% if team_wide %}<th>팀원</th>{% endif %}<th>결과</th><th>결과 문의</th></tr></thead>
+      <tbody>
+        {% for m in w['items'] %}
+        <tr class="{% if m.followup_late %}overdue-row{% endif %}">
+          <td class="muted">{{ m.date }}</td>
+          <td><b>{{ m.name }}</b> <span class="muted">{{ m.firm }}</span>
+            {% if m.company %}<span class="tag">{{ m.company }}</span>{% endif %}</td>
+          <td>{{ m.kind }}</td>
+          {% if team_wide %}<td class="muted">{{ m.owner }}</td>{% endif %}
+          <td>{{ m.outcome or '-' }}</td>
+          <td class="{% if m.followup_late %}bad{% endif %}">
+            {% if m.status != 'done' %}<span class="muted">미완료</span>
+            {% elif m.followup_done %}완료
+            {% elif m.followup_late %}{{ m.followup_due }} 지남
+            {% else %}{{ m.followup_due }} 예정{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endfor %}
+  {% else %}
+  <p class="muted">이 달에는 기록된 미팅이 없습니다. <a href="/ir">IR·미팅 관리</a>에서 등록하세요.</p>
+  {% endif %}
+</section>
+
+<div class="dash-grid">
+  <section class="panel">
+    <h2 class="panel-title">미팅 결과</h2>
+    {% if outcomes %}
+    <ul class="import-stats">
+      {% for label, n in outcomes %}<li><span>{{ label }}</span><b>{{ n }}</b></li>{% endfor %}
+    </ul>
+    {% else %}<p class="muted">완료된 미팅이 없습니다.</p>{% endif %}
+    {% if canceled %}<p class="hint">취소 {{ canceled }}건</p>{% endif %}
+  </section>
+
+  <section class="panel">
+    <h2 class="panel-title">IR 자료 요청 <span class="hint">{{ month }}월</span></h2>
+    <ul class="import-stats">
+      <li><span>요청받음</span><b>{{ ir_requested }}</b></li>
+      <li><span>전달함</span><b class="ok">{{ ir_delivered }}</b></li>
+      <li><span>아직 안 보냄</span><b class="{% if ir_open %}warn{% endif %}">{{ ir_open }}</b></li>
+    </ul>
+    {% if ir_open %}
+    <p class="hint warn">아직 안 보낸 요청이 있습니다 — <a href="/ir">IR·미팅 관리</a></p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}
