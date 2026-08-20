@@ -522,3 +522,7 @@ a.secondary-btn { display: inline-flex; align-items: center; text-decoration: no
 .channel-opt { display: flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer; }
 .channel-opt.off { color: var(--muted); cursor: not-allowed; }
 .channel-row .hint { margin-left: auto; }
+
+/* 체크박스 칸은 위에 라벨이 없어서 격자 칸 맨 위로 떠오른다 —
+   옆 칸의 입력창과 눈높이가 어긋난다. 칸 아래쪽에 붙여 줄을 맞춘다. */
+.form-grid .check-row { align-self: end; align-items: center; min-height: 34px; }
