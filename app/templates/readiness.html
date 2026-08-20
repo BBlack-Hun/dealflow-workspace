@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+
+{% block content %}
+<header class="page-head">
+  <h1>{{ page_title }}</h1>
+  <p class="muted">
+    발송일 전에 막힌 곳을 한 번에 봅니다. 당일에 "왜 안 나가지?"를 찾는 것은 늦습니다.
+  </p>
+</header>
+
+<section class="hero-card {% if not ready %}blocked{% endif %}">
+  <div class="hero-main">
+    <span class="hero-label">다음 딜 제안</span>
+    <span class="hero-date">{{ next_send.strftime('%m월 %d일') }}</span>
+    <span class="hero-weekday">{{ ['월','화','수','목','금','토','일'][next_send.weekday()] }}요일</span>
+  </div>
+  <div class="hero-count">
+    {% if days_left == 0 %}<b class="today">오늘입니다</b>
+    {% else %}<b>{{ days_left }}</b><span>일 남음</span>{% endif %}
+  </div>
+  <div class="hero-next">
+    {% if ready %}
+      <span class="ready-mark">✅ 보낼 수 있는 상태입니다</span>
+    {% else %}
+      <span class="ready-mark bad">⛔ 막힌 것 {{ blocked|length }}건</span>
+    {% endif %}
+  </div>
+  <a class="primary-btn" href="/deals">딜 제안 관리</a>
+</section>
+
+<section class="panel">
+  <h2 class="panel-title">
+    {% if rehearsal %}리허설 점검{% else %}실발송 점검{% endif %}
+    <span class="hint">
+      {% if rehearsal %}
+        테스트 방으로만 나가는 상태입니다 — 실제 담당자에게는 가지 않습니다
+      {% else %}
+        실제 담당자 방으로 나갑니다
+      {% endif %}
+    </span>
+  </h2>
+  <ul class="check-list">
+    {% for c in checks %}
+    <li class="check {{ c.level }}">
+      <span class="check-mark">
+        {% if c.level == 'ok' %}✅{% elif c.level == 'warn' %}⚠{% else %}⛔{% endif %}
+      </span>
+      <span class="check-body">
+        <b>{{ c.title }}</b>
+        <span>{{ c.detail }}</span>
+        {% if c.action %}<span class="muted">→ {{ c.action }}</span>{% endif %}
+      </span>
+      {% if c.href %}<a class="linkbtn" href="{{ c.href }}">가기</a>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+
+<section class="panel">
+  <h2 class="panel-title">발송일 순서</h2>
+  <ol class="steps">
+    <li><b>전날</b> — 이 화면에서 막힌 것이 없는지 확인합니다</li>
+    <li><b>전날</b> — 테스트 모드를 켜고 <a href="/deals">딜 제안 관리</a>에서 한 건 보내 봅니다
+      <span class="hint">(문구·방 이름·첨부가 의도대로 나가는지)</span></li>
+    <li><b>당일</b> — 테스트 모드를 <b>끄고</b> 발송 프로그램을 켭니다</li>
+    <li><b>당일</b> — 기업을 고르고 대상 담당자를 확인한 뒤 발송합니다</li>
+    <li><b>발송 후</b> — <a href="/jobs">진행 화면</a>에서 실패 건을 재시도합니다</li>
+    <li><b>이후</b> — <a href="/followups">후속 관리</a>에 리마인드가 자동으로 잡힙니다</li>
+  </ol>
+  <p class="hint">
+    테스트 모드는 <code>.env</code> 의 <code>DEALFLOW_TEST_ROOM</code> 으로 켜고 끕니다.
+    값이 있으면 <b>모든 발송이 그 방 하나로만</b> 갑니다.
+  </p>
+</section>
+{% endblock %}

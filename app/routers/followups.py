@@ -76,6 +76,20 @@ def followups_page(request: Request, db: Session = Depends(get_db),
     return templates.TemplateResponse("followups.html", ctx)
 
 
+def _clean_dates(value: str) -> Optional[str]:
+    """입력한 날짜를 정리한다. 형식이 틀린 값은 버린다 — 회차일이 엉키면 안 된다."""
+    out = []
+    for part in (value or "").replace("\n", ",").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            out.append(date.fromisoformat(part).isoformat())
+        except ValueError:
+            continue
+    return ",".join(sorted(set(out))) or None
+
+
 def _rule_views(db: Session) -> List[dict]:
     out = []
     for key in ("deal_cycle", "remind", "meeting"):
@@ -88,7 +102,12 @@ def _rule_views(db: Session) -> List[dict]:
         else:
             lo, hi = rule.get("offset_min_days"), rule.get("offset_max_days")
             desc = f"딜소개 {lo}~{hi}일 뒤" if lo is not None else "-"
+        extra = rule.get("extra_dates") or ""
+        if extra:
+            desc += f" (추가: {extra.replace(',', ', ')})"
         out.append({"key": key, "label": rule.get("label", key), "desc": desc,
+                    "extra_dates": rule.get("extra_dates") or "",
+                    "skip_dates": rule.get("skip_dates") or "",
                     "weekday": rule.get("weekday"),
                     "nth_weeks": rule.get("nth_weeks"),
                     "offset_min_days": rule.get("offset_min_days"),
@@ -143,6 +162,8 @@ def update_rule(
     key: str,
     weekday: Optional[int] = Form(None),
     nth_weeks: str = Form(""),
+    extra_dates: str = Form(""),
+    skip_dates: str = Form(""),
     offset_min_days: Optional[int] = Form(None),
     offset_max_days: Optional[int] = Form(None),
     db: Session = Depends(get_db),
@@ -165,6 +186,8 @@ def update_rule(
             row.weekday = weekday
         if nth_weeks.strip():
             row.nth_weeks = nth_weeks.strip()
+        row.extra_dates = _clean_dates(extra_dates)
+        row.skip_dates = _clean_dates(skip_dates)
     else:
         if offset_min_days is not None and offset_min_days >= 0:
             row.offset_min_days = offset_min_days

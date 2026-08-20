@@ -366,6 +366,12 @@ class ScheduleRule(TimestampMixin, Base):
     skip_weekend: Mapped[int] = mapped_column(Integer, default=1)
     effective_from: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     is_active: Mapped[int] = mapped_column(Integer, default=1)
+    # 규칙에서 벗어난 일회성 회차일(YYYY-MM-DD, 쉼표로 여러 개).
+    # 실제로 "다음 회차는 8/26" 처럼 규칙 밖 날짜가 정해져 내려온다.
+    # 규칙을 고치면 그 달 이후가 전부 따라 바뀌므로, 한 번짜리는 여기 둔다.
+    extra_dates: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # 반대로 규칙상 잡히지만 건너뛰는 날.
+    skip_dates: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
 
 class SendSequence(TimestampMixin, Base):

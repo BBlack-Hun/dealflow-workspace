@@ -606,3 +606,17 @@ td.cell.save-failed { background: #fdecec; }
 .assign-bar select { padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; }
 .assign-bar .hint { margin-left: auto; }
 .pool-dot { color: var(--gray); margin-right: 2px; }
+
+/* ── 회차 준비 점검 ─────────────────────────────────────────── */
+.hero-card.blocked { background: linear-gradient(135deg, #c0392b 0%, #96281b 100%); }
+.ready-mark { background: rgba(255,255,255,.2); border-radius: 999px; padding: 4px 12px; font-size: 13px; }
+.check-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.check { display: flex; align-items: center; gap: 12px; border: 1px solid var(--line);
+  border-left-width: 4px; border-radius: 10px; padding: 10px 12px; }
+.check.ok { border-left-color: var(--green); }
+.check.warn { border-left-color: var(--amber); }
+.check.block { border-left-color: var(--red); background: #fffafa; }
+.check-mark { font-size: 16px; }
+.check-body { display: flex; flex-direction: column; gap: 1px; font-size: 13px; flex: 1; }
+.check-body .muted { font-size: 12px; }
+.check a { margin-left: auto; }

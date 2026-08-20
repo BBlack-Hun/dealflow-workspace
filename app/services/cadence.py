@@ -60,7 +60,8 @@ STATUS_LABELS = {
 # 규칙이 지워져도 화면이 죽지는 않아야 한다.
 DEFAULT_RULES = {
     "deal_cycle": dict(label="딜소개 회차", kind="monthly_weekday",
-                       weekday=2, nth_weeks="1,3", skip_weekend=1),
+                       weekday=2, nth_weeks="1,3", skip_weekend=1,
+                       extra_dates=None, skip_dates=None),
     "remind": dict(label="리마인드", kind="offset_days",
                    offset_min_days=6, offset_max_days=7, skip_weekend=1),
     "meeting": dict(label="미팅 요청", kind="offset_days",
@@ -82,7 +83,22 @@ def get_rule(db: Session, key: str) -> dict:
         nth_weeks=row.nth_weeks, offset_min_days=row.offset_min_days,
         offset_max_days=row.offset_max_days, skip_weekend=row.skip_weekend,
         effective_from=row.effective_from,
+        extra_dates=row.extra_dates, skip_dates=row.skip_dates,
     )
+
+
+def _date_list(value: Optional[str]) -> List[date]:
+    """'2026-08-26,2026-09-09' → [date, date]. 이상한 값은 조용히 버린다."""
+    out = []
+    for part in (value or "").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            out.append(date.fromisoformat(part))
+        except ValueError:
+            continue
+    return out
 
 
 def _nth_list(value: Optional[str]) -> List[int]:
@@ -123,7 +139,12 @@ def upcoming_send_dates(db: Optional[Session] = None,
     nths = _nth_list(rule.get("nth_weeks"))
     skip = bool(rule.get("skip_weekend", 1))
 
-    out: List[date] = []
+    # 규칙에서 벗어난 일회성 회차일. "다음 회차는 8/26" 처럼 규칙 밖 날짜가
+    # 내려오는데, 규칙을 고치면 그 달 이후가 전부 따라 바뀐다.
+    skip_days = set(_date_list(rule.get("skip_dates")))
+    out: List[date] = [d for d in _date_list(rule.get("extra_dates"))
+                       if d >= today and d not in skip_days]
+
     year, month = today.year, today.month
     # 규칙이 이상해도 무한 루프에 빠지지 않게 살펴볼 달 수를 제한한다.
     for _ in range(36):
@@ -131,7 +152,7 @@ def upcoming_send_dates(db: Optional[Session] = None,
             break
         for nth in nths:
             day = next_business_day(nth_weekday(year, month, weekday, nth), skip)
-            if day >= today and day not in out:
+            if day >= today and day not in out and day not in skip_days:
                 out.append(day)
         month += 1
         if month > 12:
