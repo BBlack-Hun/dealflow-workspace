@@ -45,8 +45,10 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     var note = document.getElementById("company-filter-note");
     if (!box) return;
 
+    var hideRecent = document.getElementById("hide-recent");
     var q = (box.value || "").trim().toLowerCase();
     var pickedOnly = onlyPicked && onlyPicked.checked;
+    var skipRecent = hideRecent && hideRecent.checked;
     var shown = 0, total = 0;
 
     document.querySelectorAll("#company-list .pick-card").forEach(function (card) {
@@ -54,9 +56,10 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       var picked = cb && cb.checked;
       var hay = card.getAttribute("data-search") || "";
       var hit = !q || hay.indexOf(q) !== -1;
+      var recent = card.getAttribute("data-recent") === "1";
       total += 1;
       // 선택한 항목은 언제나 보인다.
-      var visible = picked || (hit && !pickedOnly);
+      var visible = picked || (hit && !pickedOnly && !(skipRecent && recent));
       card.hidden = !visible;
       if (visible) shown += 1;
     });
@@ -278,7 +281,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     updateCounts();
   }
 
-  ["company-search", "only-picked"].forEach(function (id) {
+  ["company-search", "only-picked", "hide-recent"].forEach(function (id) {
     var el = document.getElementById(id);
     if (el) el.addEventListener("input", applyCompanyFilter);
     if (el) el.addEventListener("change", applyCompanyFilter);

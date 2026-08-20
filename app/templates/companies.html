@@ -32,9 +32,29 @@
     <input type="search" id="co-search" placeholder="기업명 · 분야 · 소개 검색"
            value="{{ q }}" autocomplete="off">
     <a class="secondary-btn" href="/api/export/companies.xlsx" download>엑셀 내려받기</a>
+    <button type="button" class="secondary-btn" id="ir-bulk-btn">IR 링크 일괄 입력</button>
     <button type="button" class="primary-btn inline" id="co-add">기업 추가</button>
   </div>
 </div>
+
+<!-- 297개를 하나씩 여닫으며 넣을 수는 없다. 시트에서 두 열을 복사해 붙인다. -->
+<section class="panel" id="ir-bulk" hidden>
+  <h2 class="panel-title">IR 자료 링크 일괄 입력
+    <button type="button" class="linkbtn" id="ir-bulk-close">닫기 ✕</button>
+  </h2>
+  <p class="hint">
+    시트에서 <b>기업명</b>과 <b>링크</b> 두 열을 복사해 그대로 붙여넣으세요.
+    한 줄에 하나씩, 탭 또는 쉼표로 나뉩니다. <b>(주)</b>·띄어쓰기 차이는 알아서 맞춥니다.
+  </p>
+  <form method="post" action="/companies/ir-links">
+    <textarea name="pasted" rows="8" class="bulk-paste"
+      placeholder="샘플애그&#9;https://drive.google.com/file/d/xxx/view&#10;샘플메디&#9;https://drive.google.com/file/d/yyy/view"></textarea>
+    <div class="detail-actions">
+      <button class="primary-btn inline" type="submit">반영</button>
+      <span class="hint">이름이 안 맞는 줄은 건너뛰고, 몇 건인지 알려드립니다.</span>
+    </div>
+  </form>
+</section>
 
 <div class="chip-row" data-filter-chips></div>
 <p class="hint" id="co-note" hidden></p>
@@ -169,6 +189,16 @@
 {% endblock %}
 
 {% block scripts %}
+<script>
+  document.getElementById("ir-bulk-btn").addEventListener("click", function () {
+    var box = document.getElementById("ir-bulk");
+    box.hidden = !box.hidden;
+    if (!box.hidden) box.querySelector("textarea").focus();
+  });
+  document.getElementById("ir-bulk-close").addEventListener("click", function () {
+    document.getElementById("ir-bulk").hidden = true;
+  });
+</script>
 <script src="/static/js/filters.js"></script>
 <script src="/static/js/companies.js"></script>
 {% endblock %}

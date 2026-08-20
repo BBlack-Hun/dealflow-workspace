@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import get_current_user, templates
 from ..models import IrCompany, SendJob, User, VcContact
-from ..services import mailer, sheet_import, sheet_owner
+from ..services import deal_history, mailer, sheet_import, sheet_owner
 from ..ui import MENU, base_ctx as _base_ctx
 from .companies import blocked_reason as company_blocked_reason
 from .contacts import contact_rows, sheet_tabs
@@ -57,8 +57,13 @@ def deals_page(
         if row["last_deal"] and not (row["ir_total"] or row["meet_total"])
     }
     ctx = _base_ctx(request, db, user, "deal")
+    # 매 회차 같은 기업을 또 보내면 받는 쪽에서는 지난번을 기억 못 한다고 읽는다.
+    history = deal_history.annotate(companies, deal_history.last_sent_map(db))
     ctx.update({
         "companies": companies,
+        "history": history,
+        "recent_count": sum(1 for h in history.values() if h["recent"]),
+        "recent_days": deal_history.RECENT_DAYS,
         "contacts": contacts,
         "no_reaction_ids": no_reaction_ids,
         # 메일 채널은 설정이 있어야 고를 수 있다.

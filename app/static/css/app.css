@@ -620,3 +620,12 @@ td.cell.save-failed { background: #fdecec; }
 .check-body { display: flex; flex-direction: column; gap: 1px; font-size: 13px; flex: 1; }
 .check-body .muted { font-size: 12px; }
 .check a { margin-left: auto; }
+
+/* 최근에 소개한 기업 — 또 보내면 지난번을 기억 못 한다고 읽힌다 */
+.pick-card.recent-sent { background: #f7f7fa; }
+.tag.sent { background: #eee5ff; color: #6b46c1; }
+.tag.soft { background: var(--line); color: var(--muted); }
+
+.bulk-paste { width: 100%; padding: 10px 12px; border: 1px solid var(--line);
+  border-radius: 8px; font: inherit; font-size: 12px; line-height: 1.6;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; resize: vertical; }
