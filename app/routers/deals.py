@@ -136,8 +136,9 @@ def _load_companies(db: Session, company_ids: List[int]) -> List[IrCompany]:
         c = db.get(IrCompany, cid)
         if c is None:
             raise HTTPException(status_code=404, detail=f"기업 {cid} 없음")
-        if not c.introducible:
-            raise HTTPException(status_code=400, detail=f"'{c.name}'은(는) 요약문 미작성 — 발송 불가")
+        # 내용이 부족해도 막지 않는다. 화면에서 '내용 부족'으로 표시해 두고
+        # 사람이 알고 고른 것이라면 그 판단을 존중한다(막으면 이유도 모른 채 못 보낸다).
+        # 대신 미리보기 경고에 남긴다.
         companies.append(c)
     return companies
 
@@ -214,6 +215,12 @@ def preview(
         room_ok = bool(contact.kakao_room_name) and contact.room_verified in ("verified", "unverified")
         # 투자분야/단계/라운드 규모 적합도 — 성향과 어긋나는 딜은 발송 전 경고(DRAFT_REFERENCE).
         fit = matcher.evaluate_contact(contact, companies)
+        thin = [c.name for c in companies if not c.introducible]
+        thin_warnings = (
+            [f"내용이 부족한 기업이 포함됐습니다: {', '.join(thin)} — "
+             f"딜 기업 DB에서 한줄소개·숫자를 채우면 문구가 좋아집니다"]
+            if thin else []
+        )
         previews.append({
             "contact_id": contact.id,
             "name": contact.name,
@@ -225,7 +232,7 @@ def preview(
             "message": result.text,
             "char_count": result.char_count,
             "too_long": result.too_long,
-            "warnings": result.warnings + fit.warnings,
+            "warnings": result.warnings + fit.warnings + thin_warnings,
             "has_history": _has_history(db, contact.id),
             "fit": {
                 "fit_count": fit.fit_count,

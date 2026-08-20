@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% block title %}팀 현황 · dealflow{% endblock %}
+
+{% block content %}
+<header class="page-head">
+  <h1>팀 현황</h1>
+  <p class="muted">팀원별 담당 규모와 발송 준비 상태입니다. 관리자만 볼 수 있습니다.</p>
+</header>
+
+<div class="kpi-row">
+  {% for k in kpis %}
+  <a class="kpi-card" href="{{ k.href }}">
+    <span class="kpi-label">{{ k.label }}</span>
+    <span class="kpi-value">{{ k.value }}</span>
+    <span class="kpi-sub">{{ k.sub }}</span>
+  </a>
+  {% endfor %}
+</div>
+
+<section class="hero-card slim">
+  <div class="hero-main">
+    <span class="hero-label">다음 딜소개</span>
+    <span class="hero-date">{{ next_send.strftime('%m월 %d일') }}</span>
+  </div>
+  <div class="hero-next">
+    <span class="muted">이후 일정</span>
+    {% for d in upcoming[1:] %}<span class="pill">{{ d.strftime('%m/%d') }}</span>{% endfor %}
+  </div>
+</section>
+
+{% if warnings %}
+<section class="panel">
+  <h2 class="panel-title">확인이 필요한 것</h2>
+  <ul class="warn-list">
+    {% for w in warnings %}
+    <li class="warn-item {{ w.level }}">
+      <b>{{ w.label }}</b>
+      <span class="warn-detail">{{ w.detail }}</span>
+      <span class="muted">{{ w.hint }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+<section class="panel">
+  <h2 class="panel-title">팀원별 현황
+    <button type="button" class="linkbtn" id="add-member-btn">팀원 추가</button>
+  </h2>
+
+  <!-- 계정 추가. 관리자가 화면에서 끝낼 수 있어야 한다. -->
+  <div class="member-form" id="member-form" hidden>
+    <form method="post" action="/team/members">
+      <label class="field inline-field"><span>이름</span>
+        <input type="text" name="name" required placeholder="예: 홍길동"></label>
+      <label class="field inline-field"><span>휴대폰번호 (로그인 ID)</span>
+        <input type="text" name="phone" required placeholder="010-1234-5678"></label>
+      <label class="field inline-field"><span>권한</span>
+        <select name="role">
+          <option value="user">팀원</option>
+          <option value="admin">관리자</option>
+        </select></label>
+      <button class="primary-btn inline" type="submit">계정 만들기</button>
+    </form>
+    <p class="hint">
+      초기 비밀번호는 팀 공통값이며, 첫 로그인 때 본인이 바꾸도록 안내됩니다.
+      계정마다 발송 프로그램 연결키가 따로 발급됩니다 — <b>한 계정을 두 PC에서 쓰면 안 됩니다.</b>
+    </p>
+  </div>
+
+  {% if msg %}<p class="flash">{{ msg }}</p>{% endif %}
+
+  <table class="grid-table">
+    <thead>
+      <tr>
+        <th>이름</th><th>로그인 ID</th><th>권한</th>
+        <th class="num">담당 투자사</th><th>발송 준비</th>
+        <th class="num">이번 달 발송</th><th class="num">IR 요청</th><th class="num">미팅</th>
+        <th>발송 프로그램</th><th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for m in members %}
+      <tr>
+        <td><b>{{ m.name }}</b>{% if m.password_pending %} <span class="tag warn">비밀번호 미변경</span>{% endif %}</td>
+        <td class="muted">{{ m.phone }}</td>
+        <td>{{ '관리자' if m.role == 'admin' else '팀원' }}</td>
+        <td class="num">{{ m.contacts }}</td>
+        <td>
+          {% if m.contacts %}
+          <span class="ready-bar" title="{{ m.ready }}/{{ m.contacts }}명 발송 가능">
+            <span style="width:{{ m.ready_percent }}%"></span>
+          </span>
+          <span class="ready-num">{{ m.ready_percent }}%</span>
+          {% if m.missing %}<span class="tag bad">{{ m.missing }}명 막힘</span>{% endif %}
+          {% else %}<span class="muted">-</span>{% endif %}
+        </td>
+        <td class="num">{{ m.sent_month }}</td>
+        <td class="num">{{ m.ir }}</td>
+        <td class="num">{{ m.meeting }}</td>
+        <td class="{{ 'ok' if m.agent_ok else 'muted' }}">{{ m.agent }}</td>
+        <td>
+          {% if m.id != user.id %}
+          <form method="post" action="/team/members/{{ m.id }}/deactivate"
+                onsubmit="return confirm('{{ m.name }} 계정을 정지할까요?\n담당 투자사와 이력은 남습니다.')">
+            <button class="linkbtn danger" type="submit">계정 정지</button>
+          </form>
+          {% else %}<span class="muted">본인</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<div class="dash-grid">
+  <section class="panel">
+    <h2 class="panel-title">딜 기업 DB <a class="linkbtn" href="/companies">전체 보기</a></h2>
+    <ul class="import-stats">
+      <li><span>등록된 기업</span><b>{{ companies.total }}</b></li>
+      <li><span>소개 가능</span><b class="ok">{{ companies.introducible }}</b></li>
+      <li><span>내용 부족</span><b class="{% if companies.blocked %}warn{% endif %}">{{ companies.blocked }}</b></li>
+      <li><span>추천 딜</span><b>{{ companies.top_deal }}</b></li>
+      <li><span>계약 완료</span><b>{{ companies.contracted }}</b></li>
+    </ul>
+  </section>
+
+  <section class="panel">
+    <h2 class="panel-title">기업 분야 분포</h2>
+    {% for s in sectors %}
+    <div class="bar-row"><span class="bar-label">{{ s.label }}</span>
+      <span class="bar"><span style="width:{{ s.percent }}%"></span></span>
+      <span class="bar-num">{{ s.count }}</span></div>
+    {% else %}<p class="muted">분야가 기록된 기업이 없습니다.</p>{% endfor %}
+  </section>
+
+  <section class="panel wide">
+    <h2 class="panel-title">최근 발송 회차 (팀 전체)</h2>
+    {% if recent_batches %}
+    <table class="grid-table compact">
+      <thead><tr><th>회차</th><th>보낸 사람</th><th>날짜</th><th>대상</th><th>성공</th><th>실패</th><th></th></tr></thead>
+      <tbody>
+        {% for b in recent_batches %}
+        <tr>
+          <td>{{ b.title }}</td>
+          <td>{{ b.owner }}</td>
+          <td class="muted">{{ b.date or '-' }}</td>
+          <td class="num">{{ b.total }}</td>
+          <td class="num ok">{{ b.sent }}</td>
+          <td class="num {% if b.failed %}bad{% endif %}">{{ b.failed }}</td>
+          <td><a class="linkbtn" href="/jobs/{{ b.job_id }}">보기</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted">아직 발송한 회차가 없습니다.</p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.getElementById("add-member-btn").addEventListener("click", function () {
+    var f = document.getElementById("member-form");
+    f.hidden = !f.hidden;
+  });
+</script>
+{% endblock %}

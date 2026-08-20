@@ -4,7 +4,7 @@
 <header class="page-head">
   <h1>{% if verify %}방 연결 확인{% else %}발송 진행{% endif %}</h1>
   <p class="muted">
-    잡 #{{ job_id }} · 2초마다 자동 갱신
+    {{ job_id }}회차 · 2초마다 자동 갱신
     {% if verify %}· <b>문구는 전송하지 않습니다</b> — 카톡방 이름만 대조합니다{% endif %}
   </p>
 </header>

@@ -16,6 +16,10 @@
       <span>회차명</span>
       <input type="text" id="batch-title" value="딜소개 회차" />
     </label>
+    <p class="hint">
+      <b>내용 부족</b>으로 표시된 기업은 소개 문구에 넣을 내용이 모자랍니다.
+      골라도 보낼 수는 있지만, 문구가 빈약해집니다.
+    </p>
     <div class="picker-search">
       <input type="search" id="company-search" placeholder="기업명 · 분야 · 소개 검색 ({{ companies|length }}개)"
              autocomplete="off" aria-label="기업 검색">
@@ -25,15 +29,25 @@
     </div>
     <div class="card-list" id="company-list">
       {% for c in companies %}
-      <label class="pick-card"
+      <label class="pick-card {% if not c.introducible %}thin{% endif %}"
              data-search="{{ (c.name ~ ' ' ~ (c.sector_major or '') ~ ' ' ~ (c.sector_minor or '') ~ ' ' ~ (c.one_liner or '') ~ ' ' ~ (c.series or ''))|lower }}">
-        <input type="checkbox" class="company-cb" value="{{ c.id }}" data-name="{{ c.name }}">
+        <input type="checkbox" class="company-cb" value="{{ c.id }}" data-name="{{ c.name }}"
+               data-thin="{{ 0 if c.introducible else 1 }}">
         <div class="pick-body">
           <div class="pick-name">
             {% if c.is_top_deal %}<span class="star">★</span>{% endif %}{{ c.name }}
             <span class="tag">{{ c.series or '-' }}</span>
+            {% if not c.introducible %}
+            <span class="tag warn" title="{{ blocked_reasons.get(c.id, '') }}">내용 부족</span>
+            {% endif %}
           </div>
           <div class="pick-sub muted">[{{ c.sector_major or '-' }}] {{ c.one_liner or '' }}</div>
+          {% if not c.introducible %}
+          <div class="pick-warn">
+            {{ blocked_reasons.get(c.id, '') }} ·
+            <a href="/companies?q={{ c.name }}">기업 정보 채우기</a>
+          </div>
+          {% endif %}
         </div>
       </label>
       {% else %}
@@ -94,7 +108,7 @@
     </div>
     <div id="send-warnings" class="warn-box" hidden></div>
     <button type="button" id="send-btn" class="primary-btn" disabled>발송 목록 생성 → 발송</button>
-    <p class="hint muted">발송 목록을 만들면 큐에 등록되고, 연결된 발송 에이전트가 자동으로 처리합니다.</p>
+    <p class="hint muted">발송 목록을 만들면 큐에 등록되고, 연결된 발송 발송 프로그램가 자동으로 처리합니다.</p>
   </section>
 </div>
 {% endblock %}

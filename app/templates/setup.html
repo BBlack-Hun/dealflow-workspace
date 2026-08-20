@@ -1,62 +1,82 @@
 {% extends "base.html" %}
-{% block title %}에이전트 설치 · dealflow{% endblock %}
+{% block title %}발송 프로그램 설치 · dealflow{% endblock %}
 
 {% block content %}
-<h1 class="page-title">발송 에이전트 설치</h1>
+<h1 class="page-title">발송 프로그램 설치</h1>
 <p class="muted">
-  카톡방은 각자 계정에 있어, 실제 전송은 <b>내 PC에서 실행되는 에이전트</b>가 담당합니다.
-  아래에서 내려받아 실행하면 이 화면과 자동으로 연결됩니다.
+  카톡방은 각자 계정에 있어서, 실제 전송은 <b>내 PC에서 도는 작은 프로그램</b>이 대신 합니다.
+  아래에서 내려받아 켜 두면 이 화면과 자동으로 연결됩니다.
 </p>
 
 <div class="panel">
   <h2 class="panel-title">① 내려받기</h2>
-  <p class="whoami">지금 내려받는 에이전트는 <b>{{ user.name }}{% if user.phone %} ({{ user.phone }}){% endif %}</b>
+  <p class="whoami">지금 내려받는 프로그램은 <b>{{ user.name }}{% if user.phone %} ({{ user.phone }}){% endif %}</b>
     계정으로 연결됩니다.</p>
   <div class="dl-row">
-    <a class="btn primary" href="/download/agent?os_kind=windows">⬇ Windows용 다운로드</a>
-    <a class="btn" href="/download/agent?os_kind=mac">⬇ macOS용 다운로드</a>
+    <a class="btn primary" href="/download/agent?os_kind=windows">⬇ Windows용 내려받기</a>
+    <a class="btn" href="/download/agent?os_kind=mac">⬇ macOS용 내려받기</a>
   </div>
   <p class="hint">
-    서버 주소와 내 토큰이 <b>이미 채워진 상태</b>로 내려받아집니다. 설정 파일을 손댈 필요 없습니다.<br>
-    <b>기기마다 다른 사용자를 선택해 각각 다운로드하세요.</b>
-    같은 사용자로 두 기기를 연결하면 발송이 어느 기기로 갈지 예측할 수 없습니다
-    (사용자 1명 = 에이전트 1대). 왼쪽 아래에서 사용자를 바꿨다면 <b>새로 받은 zip</b>을 쓰세요.
+    연결에 필요한 정보가 <b>이미 채워진 상태</b>로 내려받아집니다. 설정을 손댈 일이 없습니다.<br>
+    <b>PC마다 그 PC를 쓰는 사람의 계정으로 로그인해 받아야 합니다.</b>
+    한 계정으로 두 PC를 연결하면 발송이 어느 쪽으로 갈지 알 수 없습니다.
   </p>
 </div>
 
 <div class="panel">
-  <h2 class="panel-title">② 설치 · 실행 (Windows)</h2>
+  <h2 class="panel-title">② 설치하고 켜기 — Windows</h2>
   <ol class="steps">
-    <li>압축을 풀고 <code>setup.bat</code> 더블클릭 <span class="hint">(최초 1회, 몇 분 소요)</span></li>
-    <li>카카오톡에 로그인</li>
-    <li><code>run_agent.bat</code> 더블클릭 → 검은 창을 <b>켜둔 채로</b> 두기</li>
-    <li>이 화면 왼쪽 아래 배지가 <b>“발송 에이전트 연결됨”</b> 으로 바뀌면 준비 완료</li>
+    <li>내려받은 파일의 <b>압축을 풉니다</b></li>
+    <li><b>setup.bat</b> 을 더블클릭 <span class="hint">(처음 한 번, 몇 분 걸립니다)</span></li>
+    <li>카카오톡에 로그인합니다</li>
+    <li><b>run_agent.bat</b> 을 더블클릭 → 검은 창이 뜨면 <b>그대로 켜 둡니다</b></li>
+    <li>이 화면 왼쪽 아래가 <b>“발송 프로그램 연결됨”</b> 으로 바뀌면 준비 끝</li>
+  </ol>
+</div>
+
+<div class="panel">
+  <h2 class="panel-title">② 설치하고 켜기 — macOS</h2>
+  <ol class="steps">
+    <li>내려받은 파일의 <b>압축을 풉니다</b>
+      <span class="hint">(다운로드 폴더나 바탕화면처럼 iCloud 동기화가 없는 곳이 좋습니다)</span></li>
+    <li><b>1. 설치하기</b> 를 더블클릭 <span class="hint">(처음 한 번, 몇 분 걸립니다)</span></li>
+    <li>카카오톡에 로그인합니다</li>
+    <li><b>2. 발송 프로그램 켜기</b> 를 더블클릭 → 창이 뜨면 <b>그대로 켜 둡니다</b></li>
+    <li>이 화면 왼쪽 아래가 <b>“발송 프로그램 연결됨”</b> 으로 바뀌면 준비 끝</li>
   </ol>
   <p class="hint">
-    Python 이 없으면 <a href="https://www.python.org/downloads/" target="_blank" rel="noopener">python.org</a> 에서 설치하세요.
-    설치 화면에서 <b>“Add python.exe to PATH”</b> 를 반드시 체크해야 합니다.
+    처음 더블클릭할 때 <b>“확인되지 않은 개발자”</b> 경고가 뜨면,
+    그 파일을 <b>마우스 오른쪽 클릭 → 열기</b> 로 한 번만 실행해 주세요.<br>
+    카카오톡 창을 대신 눌러야 해서
+    <b>시스템 설정 → 개인정보 보호 및 보안 → 손쉬운 사용</b> 에서 터미널을 허용해야 합니다.
   </p>
 </div>
 
 <div class="panel">
-  <h2 class="panel-title">② 설치 · 실행 (macOS)</h2>
-  <ol class="steps">
-    <li>시스템 설정 → 개인정보 보호 및 보안 → <b>손쉬운 사용</b> 에서 터미널 허용</li>
-    <li>압축 푼 폴더에서 설치 <span class="hint">(필수/선택 패키지를 나눠 설치합니다)</span>
-      <pre class="code">bash setup.sh</pre>
-    </li>
-    <li>카카오톡 로그인 후 실행
-      <pre class="code">.venv-agent/bin/python -m agent.main --config agent/config.yaml</pre>
-    </li>
-  </ol>
-  <p class="hint">
-    <b>Python 3.10 이상 권장.</b>
-    3.9 에서는 채팅방 자동 열기용 <code>Quartz</code> 설치가 실패할 수 있습니다
-    (미리 빌드된 휠이 없어 컴파일러 필요). 이때도 <b>발송은 정상 동작</b>하며,
-    카카오톡에서 <b>보낼 채팅방 창을 미리 열어두면</b> 됩니다.<br>
-    자동 열기까지 쓰려면 Python 3.10+ 를 쓰거나 <code>xcode-select --install</code> 후 다시 설치하세요.<br>
-    압축은 iCloud Drive 같은 동기화 폴더보다 <b>로컬 경로</b>(예: <code>~/dealflow-agent</code>)에 푸는 편이 안정적입니다.
-  </p>
+  <h2 class="panel-title">잘 안 될 때</h2>
+  <details class="tpl-new">
+    <summary>왼쪽 아래가 계속 “연결 안 됨” 이에요</summary>
+    <ul class="steps">
+      <li>발송 프로그램 창이 <b>켜져 있는지</b> 확인하세요. 창을 닫으면 연결이 끊깁니다.</li>
+      <li>계정을 바꿔 로그인했다면 <b>새로 내려받아</b> 다시 설치해야 합니다.</li>
+      <li>그래도 안 되면 프로그램 창에 뜬 내용을 그대로 담당자에게 보여주세요.</li>
+    </ul>
+  </details>
+  <details class="tpl-new">
+    <summary>설치할 때 오류가 났어요 (Windows)</summary>
+    <p class="hint">
+      설치에 필요한 구성요소가 없다는 안내가 뜨면
+      <a href="https://www.python.org/downloads/" target="_blank" rel="noopener">python.org</a> 에서 내려받아 설치하고,
+      설치 화면의 <b>“Add python.exe to PATH”</b> 를 체크한 뒤 <b>setup.bat</b> 을 다시 더블클릭하세요.
+    </p>
+  </details>
+  <details class="tpl-new">
+    <summary>보낼 때 채팅방이 자동으로 안 열려요 (macOS)</summary>
+    <p class="hint">
+      일부 오래된 macOS 에서는 채팅방 자동 열기가 동작하지 않습니다.
+      이때도 <b>발송은 정상</b>이며, 카카오톡에서 <b>보낼 채팅방을 미리 열어 두면</b> 됩니다.
+    </p>
+  </details>
 </div>
 
 <div class="panel">
@@ -64,9 +84,9 @@
   <table class="kv">
     <tr><th>서버 주소</th><td><code>{{ server_url }}</code></td></tr>
     <tr><th>사용자</th><td>{{ user.name }}{% if user.phone %} <code>{{ user.phone }}</code>{% endif %}</td></tr>
-    <tr><th>내 에이전트 토큰</th><td><code class="token">{{ token }}</code></td></tr>
+    <tr><th>내 연결키</th><td><code class="token">{{ token }}</code></td></tr>
   </table>
-  <p class="hint">토큰은 <b>이 사용자</b>의 발송 잡만 받아오는 열쇠입니다. 다른 사람과 공유하지 마세요.</p>
+  <p class="hint">연결키는 <b>내 발송 건만</b> 받아오는 열쇠입니다. 다른 사람과 공유하지 마세요.</p>
 </div>
 
 <div class="panel warn-panel">

@@ -1,0 +1,170 @@
+// 딜 기업 DB — 검색·필터 + 상세 편집.
+//
+// 이 화면의 목적은 목록 구경이 아니라 "왜 이 기업이 소개 목록에 안 뜨는가"를
+// 그 자리에서 고치는 것이다. 그래서 저장하면 소개 가능 여부를 즉시 다시 그린다.
+(function () {
+  var table = document.getElementById("co-table");
+  if (!table) return;
+
+  var panel = document.getElementById("co-panel");
+  var search = document.getElementById("co-search");
+  var note = document.getElementById("co-note");
+  var status = document.getElementById("co-status");
+  var current = null;   // 편집 중인 기업 id (null = 새로 추가)
+  var filter = "";
+
+  var FIELDS = ["name", "sector_major", "sector_minor", "series", "one_liner",
+    "revenue_recent", "funding_total", "raise_target", "pre_value",
+    "competitiveness", "funding_status", "ir_drive_url",
+    "contract_status", "contract_month", "summary_status", "note"];
+
+  function rows() {
+    return Array.prototype.slice.call(table.querySelectorAll("tbody tr[data-id]"));
+  }
+
+  // ── 검색 · 컬럼 필터 ───────────────────────────────────────
+  // 컬럼 필터(엑셀의 자동 필터와 같은 방식)는 공통 컴포넌트가 맡고,
+  // 검색창은 그 위에 AND 로 얹는다. 둘이 각자 tr.hidden 을 만지면
+  // 검색과 필터가 번갈아 서로를 지운다.
+  var filters = null;
+
+  function textMatch(tr) {
+    var q = (search.value || "").trim().toLowerCase();
+    return !q || (tr.getAttribute("data-search") || "").indexOf(q) !== -1;
+  }
+
+  function apply() {
+    if (filters) { filters.apply(); return; }
+    rows().forEach(function (tr) { tr.hidden = !textMatch(tr); });
+    afterApply();
+  }
+
+  function afterApply() {
+    var total = rows().length;
+    var shown = rows().filter(function (tr) { return !tr.hidden; }).length;
+    renumber();
+    if (shown !== total) {
+      note.hidden = false;
+      note.textContent = shown + " / " + total + "개 표시 중";
+    } else {
+      note.hidden = true;
+    }
+  }
+
+  // 행 번호는 '보이는 것' 기준으로 매긴다 — 걸러낸 뒤 몇 개인지 세기 위해서다.
+  function renumber() {
+    var n = 0;
+    rows().forEach(function (tr) {
+      var cell = tr.querySelector(".rowno");
+      if (!cell) return;
+      if (tr.hidden) { cell.textContent = ""; return; }
+      n += 1;
+      cell.textContent = n;
+    });
+  }
+
+  search.addEventListener("input", apply);
+
+  if (window.DealflowFilters) {
+    filters = window.DealflowFilters.init({
+      table: "#co-table",
+      unit: "개",
+      extra: textMatch,
+      onChange: afterApply
+    });
+  }
+
+  // ── 상세 편집 ──────────────────────────────────────────────
+  function el(id) { return document.getElementById(id); }
+
+  function fill(data) {
+    FIELDS.forEach(function (f) {
+      var input = el("f-" + f);
+      if (input) input.value = data[f] === null || data[f] === undefined ? "" : data[f];
+    });
+    el("f-is_top_deal").checked = !!data.is_top_deal;
+    setStatus(data);
+  }
+
+  function setStatus(data) {
+    if (data && data.introducible) {
+      status.className = "hint ok";
+      status.textContent = "✅ 소개 가능 — 발송 화면 목록에 뜹니다.";
+    } else {
+      status.className = "hint warn";
+      status.textContent = "⚠ 소개 불가" +
+        (data && data.blocked_reason ? " — " + data.blocked_reason : "") +
+        " · 분야/한줄소개와 숫자 하나가 있어야 문구를 만들 수 있습니다.";
+    }
+  }
+
+  function open(id) {
+    current = id;
+    panel.hidden = false;
+    el("co-delete").hidden = !id;
+    if (!id) {
+      el("co-title").textContent = "기업 추가";
+      fill({ contract_status: "no", summary_status: "draft" });
+      el("f-name").focus();
+      return;
+    }
+    el("co-title").textContent = "불러오는 중…";
+    fetch("/api/companies/" + id)
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        el("co-title").textContent = d.name;
+        fill(d);
+      });
+  }
+
+  function collect() {
+    var body = {};
+    FIELDS.forEach(function (f) {
+      var input = el("f-" + f);
+      if (!input) return;
+      var v = input.value.trim();
+      if (input.type === "number") body[f] = v === "" ? null : parseInt(v, 10);
+      else body[f] = v;
+    });
+    body.is_top_deal = el("f-is_top_deal").checked;
+    return body;
+  }
+
+  el("co-add").addEventListener("click", function () { open(null); });
+  el("co-close").addEventListener("click", function () { panel.hidden = true; });
+
+  table.addEventListener("click", function (e) {
+    if (!e.target.classList.contains("js-co-edit")) return;
+    open(parseInt(e.target.closest("tr").getAttribute("data-id"), 10));
+  });
+
+  el("co-save").addEventListener("click", function () {
+    var body = collect();
+    if (!body.name) { alert("기업명을 입력하세요."); return; }
+    var url = current ? "/api/companies/" + current : "/api/companies";
+    fetch(url, {
+      method: current ? "PATCH" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+      .then(function (res) {
+        if (!res.ok) { alert(res.d.detail || "저장 실패"); return; }
+        window.location.reload();   // 표의 소개 가능 여부까지 다시 그려야 한다
+      })
+      .catch(function () { alert("저장 요청 오류"); });
+  });
+
+  el("co-delete").addEventListener("click", function () {
+    if (!current) return;
+    if (!confirm("이 기업을 삭제할까요?\n이미 보낸 회차에 들어간 기업은 삭제할 수 없습니다.")) return;
+    fetch("/api/companies/" + current, { method: "DELETE" })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+      .then(function (res) {
+        if (!res.ok) { alert(res.d.detail || "삭제 실패"); return; }
+        window.location.reload();
+      });
+  });
+
+  apply();
+})();

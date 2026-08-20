@@ -52,6 +52,9 @@ OS_FILES = {
     "mac": [
         ("requirements-agent-mac.txt", "requirements.txt"),
         ("packaging/mac/setup.sh", "setup.sh"),
+        # Finder 에서 더블클릭으로 끝나게 한다 — 쓰는 사람이 터미널 명령을 알 이유가 없다.
+        ("packaging/mac/1. 설치하기.command", "1. 설치하기.command"),
+        ("packaging/mac/2. 발송 프로그램 켜기.command", "2. 발송 프로그램 켜기.command"),
     ],
 }
 
@@ -184,7 +187,12 @@ def download_agent(
             if dest.endswith(".bat"):
                 # Windows cmd 호환을 위해 CRLF 보장
                 data = data.replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
-            zf.writestr(dest, data)
+            info = zipfile.ZipInfo(dest)
+            info.compress_type = zipfile.ZIP_DEFLATED
+            # 실행 권한이 없으면 Finder 에서 더블클릭해도 열리지 않고 편집기로 뜬다.
+            executable = dest.endswith((".command", ".sh"))
+            info.external_attr = (0o755 if executable else 0o644) << 16
+            zf.writestr(info, data)
         zf.writestr("agent/config.yaml", config_yaml)
         zf.writestr("agent_logs/.keep", "")
         zf.writestr("BUILD_INFO.txt", _build_info(os_kind))

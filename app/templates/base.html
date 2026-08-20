@@ -10,13 +10,15 @@
 <body>
   <div class="layout">
     <aside class="sidebar">
-      <div class="brand">dealflow</div>
-      <div class="brand-sub">딜소싱 워크스페이스</div>
+      <a class="brand-link" href="/">
+        <div class="brand">dealflow</div>
+        <div class="brand-sub">Investor Management Portal</div>
+      </a>
       <nav class="menu">
         {% for m in menu %}
         <a class="menu-item {% if m.key == active %}active{% endif %}" href="{{ m.href }}">
           <span>{{ m.label }}</span>
-          {% if m.badge %}<span class="menu-badge">{{ m.badge }}</span>{% endif %}
+          {% if not m.ready %}<span class="menu-badge">준비 중</span>{% endif %}
         </a>
         {% endfor %}
       </nav>
