@@ -37,6 +37,28 @@
   {% endfor %}
 </div>
 
+{% set pi = pipeline_items %}
+{% if pi.open_requests or pi.today_meetings or pi.due_followups %}
+<!-- 받은 요청을 놓치면 그 회차에서 가장 뜨거운 반응을 흘려보낸다. -->
+<section class="panel ir-strip">
+  <h2 class="panel-title">지금 답해야 할 것
+    <a class="linkbtn" href="/ir">IR·미팅 관리</a>
+  </h2>
+  <div class="react-row">
+    <div class="react {% if pi.open_requests %}ok{% endif %}">
+      <b>{{ pi.open_requests|length }}</b><span>보낼 자료</span></div>
+    <div class="react"><b>{{ pi.today_meetings|length }}</b><span>오늘 미팅</span></div>
+    <div class="react"><b>{{ pi.due_followups|length }}</b><span>결과 문의</span></div>
+  </div>
+  {% if pi.overdue_requests %}
+  <p class="hint warn">
+    ⚠ {{ pi.overdue_requests|length }}건은 요청받고 사흘 넘게 못 보냈습니다 —
+    {% for r in pi.overdue_requests[:3] %}<b>{{ r.name }}</b>({{ r.company_name }}){% if not loop.last %}, {% endif %}{% endfor %}
+  </p>
+  {% endif %}
+</section>
+{% endif %}
+
 {% if followups.due %}
 <!-- 오늘 보낼 후속 — 회차보다 먼저 챙겨야 할 때가 많다. -->
 <section class="panel followup-strip">

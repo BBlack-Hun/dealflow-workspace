@@ -1,0 +1,237 @@
+{% extends "base.html" %}
+
+{% block content %}
+<header class="page-head">
+  <h1>{{ page_title }}</h1>
+  <p class="muted">
+    딜소개를 보내면 여기로 답이 옵니다. 받은 요청을 놓치면 그 회차에서
+    <b>가장 뜨거운 반응</b>을 흘려보내게 됩니다.
+  </p>
+</header>
+
+<div class="kpi-row slim">
+  <div class="kpi-card static"><span class="kpi-label">보낼 자료</span>
+    <span class="kpi-value {% if counts.open %}warn{% endif %}">{{ counts.open }}</span></div>
+  <div class="kpi-card static"><span class="kpi-label">3일 넘게 못 보냄</span>
+    <span class="kpi-value {% if counts.overdue %}bad{% endif %}">{{ counts.overdue }}</span></div>
+  <div class="kpi-card static"><span class="kpi-label">오늘 미팅</span>
+    <span class="kpi-value">{{ counts.today }}</span></div>
+  <div class="kpi-card static"><span class="kpi-label">결과 문의할 때</span>
+    <span class="kpi-value {% if counts.followup %}warn{% endif %}">{{ counts.followup }}</span></div>
+</div>
+
+{% if msg %}<p class="flash">{{ msg }}</p>{% endif %}
+
+<!-- 열린 것부터. 아직 안 보낸 자료가 제일 급하다. -->
+<section class="panel">
+  <h2 class="panel-title">보낼 자료
+    <span class="count-pill {% if counts.open %}on{% endif %}"><b>{{ counts.open }}</b>건</span>
+    <button type="button" class="linkbtn" id="new-request-btn">요청 받았다고 적기</button>
+  </h2>
+
+  <div class="member-form" id="new-request" hidden>
+    <form method="post" action="/ir/requests">
+      <label class="field inline-field"><span>담당자</span>
+        <select name="contact_id" required>
+          {% for c in contacts %}
+          <option value="{{ c.id }}">{{ c.name }} {{ c.title or '' }} · {{ c.firm or '' }}</option>
+          {% endfor %}
+        </select></label>
+      <label class="field inline-field"><span>요청받은 기업 (여러 개면 줄바꿈)</span>
+        <textarea name="company_name" rows="2" required placeholder="샘플애그&#10;샘플메디"></textarea></label>
+      <label class="field inline-field"><span>요청받은 날</span>
+        <input type="date" name="requested_at" value="{{ today }}"></label>
+      <button class="primary-btn inline" type="submit">기록</button>
+    </form>
+    <p class="hint">
+      요청이 왔다는 것은 답이 왔다는 뜻이라, 그 담당자의 <b>리마인드는 자동으로 멈춥니다.</b>
+    </p>
+  </div>
+
+  {% if open_requests %}
+  <table class="grid-table compact">
+    <thead><tr><th>요청일</th><th>담당자</th><th>기업</th><th>자료</th><th>기다린 날</th><th></th></tr></thead>
+    <tbody>
+      {% for r in open_requests %}
+      <tr class="{% if r.overdue %}overdue-row{% endif %}">
+        <td class="muted">{{ r.requested_at }}</td>
+        <td><b>{{ r.name }}</b> {{ r.title }} <span class="muted">{{ r.firm }}</span></td>
+        <td>{{ r.company_name }}</td>
+        <td>
+          {% if r.ir_url %}
+            <a class="room-badge ok" href="{{ r.ir_url }}" target="_blank" rel="noopener">📎 열기</a>
+          {% elif r.company_id %}
+            <span class="room-badge warn" title="스타트업 관리에서 링크를 넣어주세요">⚠ 링크 없음</span>
+          {% else %}
+            <span class="muted" title="우리 DB에 없는 기업명입니다">기업 미등록</span>
+          {% endif %}
+        </td>
+        <td class="num {% if r.overdue %}bad{% endif %}">{{ r.waited }}일</td>
+        <td class="row-acts">
+          <a class="linkbtn" href="/deals?mode=ir&contacts={{ r.contact_id }}">자료 보내기</a>
+          <form method="post" action="/ir/requests/{{ r.id }}/deliver">
+            <button class="linkbtn" type="submit">전달함</button>
+          </form>
+          <form method="post" action="/ir/requests/{{ r.id }}/drop">
+            <button class="linkbtn danger" type="submit">보류</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="all-clear">✅ 보낼 자료가 없습니다.</p>
+  {% endif %}
+</section>
+
+<!-- 미팅 -->
+<section class="panel">
+  <h2 class="panel-title">미팅
+    <span class="count-pill {% if scheduled %}on{% endif %}"><b>{{ scheduled|length }}</b>건 예정</span>
+    <button type="button" class="linkbtn" id="new-meeting-btn">미팅 등록</button>
+  </h2>
+
+  <div class="member-form" id="new-meeting" hidden>
+    <form method="post" action="/ir/meetings">
+      <label class="field inline-field"><span>담당자</span>
+        <select name="contact_id" required>
+          {% for c in contacts %}
+          <option value="{{ c.id }}">{{ c.name }} {{ c.title or '' }} · {{ c.firm or '' }}</option>
+          {% endfor %}
+        </select></label>
+      <label class="field inline-field"><span>미팅 날짜</span>
+        <input type="date" name="scheduled_at" value="{{ today }}" required></label>
+      <label class="field inline-field"><span>구분</span>
+        <select name="kind">
+          {% for key, label in kinds.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+        </select></label>
+      <label class="field inline-field"><span>대상 기업 (선택)</span>
+        <input type="text" name="company_name" placeholder="샘플애그"></label>
+      <button class="primary-btn inline" type="submit">등록</button>
+    </form>
+    <p class="hint">
+      완료로 표시하면 <b>{{ followup_days }}일 뒤 결과를 물어볼 날</b>이 자동으로 잡힙니다.
+    </p>
+  </div>
+
+  {% if items.due_followups %}
+  <div class="due-group">
+    <div class="due-head"><b>결과를 물어볼 때가 됐습니다</b>
+      <span class="count-pill on"><b>{{ items.due_followups|length }}</b>건</span></div>
+    <ul class="due-list">
+      {% for m in items.due_followups %}
+      <li class="overdue">
+        <span class="due-when">{{ m.followup_due }}</span>
+        <span class="due-who"><b>{{ m.name }}</b> <span class="muted">{{ m.firm }}</span></span>
+        <span class="due-from muted">{{ m.scheduled_at }} {{ m.kind_label }} 완료</span>
+        <span class="due-acts">
+          <form method="post" action="/ir/meetings/{{ m.id }}/followup">
+            <select name="outcome">
+              <option value="">결과 미정</option>
+              {% for key, label in outcomes.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+            </select>
+            <button class="linkbtn" type="submit">문의 완료</button>
+          </form>
+        </span>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {% if scheduled %}
+  <table class="grid-table compact">
+    <thead><tr><th>날짜</th><th>담당자</th><th>구분</th><th>기업</th><th>남음</th><th></th></tr></thead>
+    <tbody>
+      {% for m in scheduled %}
+      <tr>
+        <td class="muted">{{ m.scheduled_at }}</td>
+        <td><b>{{ m.name }}</b> {{ m.title }} <span class="muted">{{ m.firm }}</span></td>
+        <td>{{ m.kind_label }}</td>
+        <td>{{ m.company_name }}</td>
+        <td class="num">{% if m.days_left is not none %}{{ m.days_left }}일{% endif %}</td>
+        <td class="row-acts">
+          <form method="post" action="/ir/meetings/{{ m.id }}/done">
+            <select name="outcome">
+              <option value="">결과 미정</option>
+              {% for key, label in outcomes.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+            </select>
+            <button class="linkbtn" type="submit">완료</button>
+          </form>
+          <form method="post" action="/ir/meetings/{{ m.id }}/cancel">
+            <button class="linkbtn danger" type="submit">취소</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">예정된 미팅이 없습니다.</p>
+  {% endif %}
+</section>
+
+<div class="dash-grid">
+  <section class="panel">
+    <h2 class="panel-title">전달한 자료 <span class="hint">{{ done_requests|length }}건</span></h2>
+    {% if done_requests %}
+    <table class="grid-table compact">
+      <thead><tr><th>요청일</th><th>담당자</th><th>기업</th><th>상태</th><th></th></tr></thead>
+      <tbody>
+        {% for r in done_requests[:20] %}
+        <tr>
+          <td class="muted">{{ r.requested_at }}</td>
+          <td>{{ r.name }} <span class="muted">{{ r.firm }}</span></td>
+          <td>{{ r.company_name }}</td>
+          <td><span class="status-badge">{{ r.status_label }}</span>
+            {% if r.delivered_at %}<span class="muted">{{ r.delivered_at }}</span>{% endif %}</td>
+          <td>
+            <form method="post" action="/ir/requests/{{ r.id }}/delete"
+                  onsubmit="return confirm('이 기록을 지울까요?')">
+              <button class="linkbtn danger" type="submit">삭제</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<p class="muted">아직 없습니다.</p>{% endif %}
+  </section>
+
+  <section class="panel">
+    <h2 class="panel-title">끝난 미팅 <span class="hint">{{ finished|length }}건</span></h2>
+    {% if finished %}
+    <table class="grid-table compact">
+      <thead><tr><th>날짜</th><th>담당자</th><th>결과</th><th>결과 문의</th></tr></thead>
+      <tbody>
+        {% for m in finished[:20] %}
+        <tr>
+          <td class="muted">{{ m.scheduled_at }}</td>
+          <td>{{ m.name }} <span class="muted">{{ m.firm }}</span></td>
+          <td>{{ m.outcome_label or '-' }}</td>
+          <td class="muted">
+            {% if m.status == 'canceled' %}취소
+            {% elif m.followup_done %}완료
+            {% else %}{{ m.followup_due }} 예정{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<p class="muted">아직 없습니다.</p>{% endif %}
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  [["new-request-btn", "new-request"], ["new-meeting-btn", "new-meeting"]]
+    .forEach(function (pair) {
+      document.getElementById(pair[0]).addEventListener("click", function () {
+        var box = document.getElementById(pair[1]);
+        box.hidden = !box.hidden;
+      });
+    });
+</script>
+{% endblock %}
