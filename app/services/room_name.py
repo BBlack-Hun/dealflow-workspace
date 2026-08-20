@@ -13,11 +13,15 @@
 """
 from __future__ import annotations
 
+import os
 import re
 from typing import Optional
 
-# 조직 고정 접미사. 회사/캠페인이 바뀌면 이 값만 교체한다(설정으로 주입 가능).
-DEFAULT_SUFFIX = "Deal 공유 우리브이씨 Asset"
+# 조직 고정 접미사.
+# 카톡방 이름 끝에 늘 붙는 문구. 회사마다 다르므로 환경변수로 뺀다.
+# 저장소 기본값은 가상 이름이다(공개 저장소에 실제 상호를 두지 않는다).
+# 실제 값은 .env 의 DEALFLOW_ROOM_SUFFIX 로 준다.
+DEFAULT_SUFFIX = os.environ.get("DEALFLOW_ROOM_SUFFIX", "Deal 공유 우리브이씨 Asset")
 
 
 def normalize_space(text: str) -> str:

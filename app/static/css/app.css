@@ -318,3 +318,25 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
 .tpl-new input[type=text] { width: 100%; padding: 6px 8px; margin: 8px 0; border: 1px solid var(--line); border-radius: 8px; }
 .kv th { text-align: left; padding: 4px 12px 4px 0; font-weight: 600; white-space: nowrap; }
 .kv td { padding: 4px 0; }
+
+
+/* ── 투자사 현황 업로드 ─────────────────────────────────────── */
+.import-panel { margin-bottom: 16px; }
+.import-controls { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin: 10px 0; }
+.inline-field { flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.inline-field input, .inline-field select { padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; }
+.inline-field input[type=number] { width: 90px; }
+.import-result { margin-top: 8px; }
+.import-summary { border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: #fafbfc; }
+.import-stats { list-style: none; margin: 8px 0 0; padding: 0; display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 4px 16px; }
+.import-stats li { display: flex; justify-content: space-between; gap: 8px; font-size: 13px;
+  border-bottom: 1px dotted var(--line); padding: 3px 0; }
+.import-stats span { color: var(--muted); }
+.import-notes { margin: 8px 0 0; padding-left: 18px; font-size: 12px; color: var(--muted); }
+.import-skipped { margin-top: 8px; font-size: 12px; }
+.import-skipped summary { cursor: pointer; color: var(--brand); }
+.mini-table { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 12px; }
+.mini-table th, .mini-table td { border: 1px solid var(--line); padding: 4px 6px; text-align: left; }
+.err { color: #c0392b; }
+a.secondary-btn { display: inline-flex; align-items: center; text-decoration: none; }

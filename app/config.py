@@ -20,6 +20,10 @@ DATABASE_URL = os.environ.get("DATABASE_URL", f"sqlite:///{DEFAULT_DB_PATH}")
 # Sprint 1: single hardcoded user session (auth is Sprint 4).
 CURRENT_USER_ID = int(os.environ.get("DEALFLOW_CURRENT_USER_ID", "1"))
 
+# 데모 데이터(가상 담당자·기업·사용자)를 넣을지. 기본은 끈다 — 실데이터가 들어간 뒤
+# 컨테이너를 다시 띄웠다가 화면에 샘플 기업이 섞여 보인 적이 있다.
+SEED_DEMO = os.getenv("DEALFLOW_SEED_DEMO", "0") == "1"
+
 # Demo agent token seeded into agent_devices and shared with the mock agent container.
 DEMO_AGENT_TOKEN = os.environ.get("DEALFLOW_AGENT_TOKEN", "agt_demo_token_sprint1")
 

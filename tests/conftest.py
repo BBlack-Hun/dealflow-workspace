@@ -14,6 +14,10 @@ _TMP = Path(tempfile.mkdtemp(prefix="dealflow-test-"))
 os.environ["DEALFLOW_DATA_DIR"] = str(_TMP)
 os.environ["DATABASE_URL"] = f"sqlite:///{_TMP / 'test.db'}"
 os.environ["DEALFLOW_TEST_ROOM"] = ""  # 테스트 모드 OFF (발송 대상 치환이 끼어들지 않게)
+# 방 이름 접미사는 조직마다 다르고 .env 로 실제 값을 준다. 테스트가 그 값을 읽으면
+# 실행 환경에 따라 결과가 달라지고, 공개 저장소에 실제 상호가 기대값으로 박힌다.
+os.environ["DEALFLOW_ROOM_SUFFIX"] = "Deal 공유 우리브이씨 Asset"
+os.environ["DEALFLOW_SEED_DEMO"] = "0"
 
 import pytest  # noqa: E402
 

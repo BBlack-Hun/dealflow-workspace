@@ -14,7 +14,7 @@
 |---|---|---|---|
 | 1.1 | 프로젝트 골격: FastAPI 앱 팩토리, SQLAlchemy(SQLite WAL)+Alembic, Jinja2, Pretendard 로컬 번들, 공통 레이아웃(사이드바 메뉴 6개·에이전트 상태 배지) | `app/` 골격, `static/fonts/` | TECH_SPEC §2.2~2.3, FEATURE_SPEC §0 |
 | 1.2 | 최소 모델: users(임시 단일 사용자 하드코딩 세션), vc_contacts, ir_companies, message_templates, deal_batches(+companies), send_jobs, send_items, agent_devices | `models.py`, Alembic 초기 마이그레이션 | DATA_MODEL §2 |
-| 1.3 | 시드 스크립트: 팀 기본 템플릿(오프닝 2종+클로징 3종) + 데모 담당자 3명·기업 3개 | `scripts/seed_demo.py` | DATA_MODEL §2.3 |
+| 1.3 | 부트스트랩: 팀 기본 템플릿(오프닝 2종+클로징 3종) + 관리자 계정 (데모 데이터는 `DEALFLOW_SEED_DEMO=1` 일 때만) | `scripts/bootstrap.py` | DATA_MODEL §2.3 |
 | 1.4 | 문구 조합 서비스: 오프닝(첫연락/재연락 자동 선택)+기업 요약 자동 생성(`[분야] \| 한줄소개 \| 매출 N억 \| …` 빈 값 세그먼트 생략)+클로징, `{담당자명}` 등 치환, 3,000자 경고 | `services/message_composer.py` + 단위 테스트 | FEATURE_SPEC §5 조합 규칙 |
 | 1.5 | 딜소개 보내기 화면(최소판): 기업 3개 선택 → 대상 담당자 체크 → 담당자별 미리보기 → [발송 목록 생성] → send_job(queued) 생성(문안 스냅샷) | `routers/deals.py`, 템플릿 | FEATURE_SPEC §5 ①~⑥ |
 | 1.6 | 에이전트 큐 API: poll(원자적 클레임)/item result/job status/heartbeat, Bearer 토큰 | `routers/agent_api.py` | TECH_SPEC §4 |
