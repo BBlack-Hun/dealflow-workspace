@@ -110,6 +110,34 @@ docker exec dealflow-public-web-1 python scripts/import_sheets.py \
 
 ---
 
+## 회차 리허설
+
+회차 당일에 처음 해 보면 늦다. 전날 한 번 끝까지 걸어 본다.
+
+```bash
+docker exec dealflow-public-web-1 python scripts/rehearsal.py --check      # 지금 상태
+docker exec dealflow-public-web-1 python scripts/rehearsal.py --setup      # 리허설 대상 만들기
+docker exec dealflow-public-web-1 python scripts/rehearsal.py --teardown   # 흔적 지우기
+```
+
+`--setup` 은 리허설용 담당자 1명과 기업 2개를 만든다. 담당자의 카톡방은
+`DEALFLOW_TEST_ROOM`(대개 '나와의 채팅')이라 **발송 프로그램이 실제로 움직여도
+나에게만** 온다. `DEALFLOW_TEST_ROOM` 이 비어 있으면 아예 실행되지 않는다.
+
+걸어 볼 순서:
+
+1. `회차 준비 점검` 에서 막힌 것이 없는지
+2. `딜 제안 관리` 에서 리허설 기업·담당자를 골라 발송
+3. `발송 진행` 에서 성공 확인 — **카톡에 실제로 도착하는지**
+4. `후속 관리` 에 리마인드가 잡혔는지
+5. `IR·미팅 관리` 에서 요청 기록 → **[자료 보내기]** → 요청이 닫히는지
+6. 미팅 등록 → 완료 → 결과 문의 날짜가 잡히는지
+
+같은 흐름을 코드로도 검사한다: `tests/test_end_to_end.py`.
+화면은 따로 테스트하지만 **이어지는 지점**에서 깨진 적이 여러 번 있어서다.
+
+---
+
 ## 방 연결 확인
 
 카톡방 제목이 실제와 한 글자라도 다르면 그 담당자에게는 **발송이 되지 않는다**(오발송은 없다).

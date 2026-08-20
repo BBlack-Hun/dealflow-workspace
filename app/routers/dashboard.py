@@ -24,7 +24,7 @@ from ..deps import get_current_user, templates
 from ..models import AgentDevice, User
 from ..services import auth as auth_svc
 from ..services import dashboard as dash
-from ..services import readiness
+from ..services import readiness, today
 from ..ui import base_ctx
 
 router = APIRouter(tags=["dashboard"])
@@ -36,6 +36,15 @@ def dashboard_page(request: Request, db: Session = Depends(get_db),
     ctx = base_ctx(request, db, user, active="home")
     ctx.update(dash.user_dashboard(db, user))
     return templates.TemplateResponse("dashboard.html", ctx)
+
+
+@router.get("/todo", response_class=HTMLResponse, include_in_schema=False)
+def todo_page(request: Request, db: Session = Depends(get_db),
+              user: User = Depends(get_current_user)):
+    """오늘 할 일. 흩어져 있던 것을 한 화면에 모은다."""
+    ctx = base_ctx(request, db, user, active="check")
+    ctx.update(today.build(db, user))
+    return templates.TemplateResponse("todo.html", ctx)
 
 
 @router.get("/readiness", response_class=HTMLResponse, include_in_schema=False)
