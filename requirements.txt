@@ -12,3 +12,5 @@ pyyaml==6.0.2
 pytest==8.3.4
 httpx==0.28.1
 python-multipart==0.0.20
+# 투자사 현황 업로드 / 표 엑셀 내려받기 (순수 파이썬 — 컴파일러 불필요)
+openpyxl==3.1.5

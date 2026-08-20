@@ -125,7 +125,7 @@ dealflow/
 │  ├─ selectors.yaml         # 카톡 UI 셀렉터·단축키·타이밍 외부화
 │  └─ config.yaml            # 서버 URL, 토큰, 지연 범위, 상한
 ├─ data/  agent_logs/        # IR 파일 저장소 없음(드라이브 링크만 DB 보관)
-├─ scripts/ run_server.bat  run_agent.bat  seed_demo.py  import_sheets.py  create_admin.py
+├─ scripts/ run_server.bat  run_agent.bat  bootstrap.py  purge_demo.py  add_user.py  import_sheets.py
 └─ docs/
 ```
 
@@ -275,7 +275,7 @@ loop:
 cd dealflow
 python3.12 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt          # fastapi uvicorn jinja2 sqlalchemy apscheduler ...
-python scripts/seed_demo.py              # 데모 데이터 (또는 실데이터: )
+python scripts/bootstrap.py             # 팀 기본 문구 + 관리자 (데모는 DEALFLOW_SEED_DEMO=1)
 python scripts/import_sheets.py --sheet-a a.csv --sheet-b b.csv --user 1  # 구글시트 CSV 임포트
 uvicorn app.main:app --reload            # http://127.0.0.1:8000
 # 별도 터미널: MockSender 에이전트

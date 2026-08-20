@@ -25,10 +25,39 @@
     <label class="density-toggle">
       <input type="checkbox" id="density-toggle"> 촘촘히 보기
     </label>
+    <a class="secondary-btn" href="/api/export/contacts.xlsx" download>엑셀 내려받기</a>
+    <button type="button" class="secondary-btn" id="import-btn">현황 업로드</button>
     <button type="button" class="secondary-btn" id="verify-btn">방 연결 확인</button>
     <button type="button" class="primary-btn inline" id="add-btn">담당자 추가</button>
   </div>
 </div>
+
+<!-- 투자사 관리 현황 업로드 — 미리보기로 확인한 뒤에만 반영한다.
+     담당자 명단은 곧 발송 대상이라, 잘못 덮으면 그대로 오발송이 된다. -->
+<section class="panel import-panel" id="import-panel" hidden>
+  <h2 class="panel-title">투자사 관리 현황 업로드
+    <button type="button" class="linkbtn" id="import-close">닫기 ✕</button>
+  </h2>
+  <p class="hint">
+    구글 시트에서 내려받은 <code>.xlsx</code> 또는 <code>.csv</code> 를 올리세요.
+    <b>이름</b>·<b>투자사명</b> 컬럼이 있는 시트를 읽습니다.
+    먼저 <b>미리보기</b>로 무엇이 생기고 바뀌는지 확인한 뒤 반영합니다.
+  </p>
+  <div class="import-controls">
+    <input type="file" id="import-file" accept=".xlsx,.xlsm,.csv">
+    <label class="field inline-field">
+      <span>시트</span>
+      <select id="import-sheet"><option value="">첫 번째 시트</option></select>
+    </label>
+    <label class="field inline-field">
+      <span>기준 연도</span>
+      <input type="number" id="import-year" min="2020" max="2100" placeholder="올해">
+    </label>
+    <button type="button" class="secondary-btn" id="import-preview">미리보기</button>
+    <button type="button" class="primary-btn inline" id="import-apply" disabled>반영하기</button>
+  </div>
+  <div id="import-result" class="import-result"></div>
+</section>
 
 <div class="chip-row" data-filter-chips></div>
 
@@ -174,4 +203,5 @@
 {% block scripts %}
 <script src="/static/js/filters.js"></script>
 <script src="/static/js/contacts.js"></script>
+<script src="/static/js/contact_import.js"></script>
 {% endblock %}

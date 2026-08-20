@@ -23,6 +23,7 @@
   <span id="job-status-badge" class="status-badge">-</span>
   <button type="button" id="cancel-btn" class="danger-btn">중단</button>
   <button type="button" id="retry-btn" class="secondary-btn" hidden>{% if verify %}불일치 재확인{% else %}실패 재시도{% endif %}</button>
+  <a class="secondary-btn" href="/api/export/jobs/{{ job_id }}.xlsx" download>엑셀 내려받기</a>
   {% if verify %}
   <a href="/contacts" class="linkbtn">내 투자사로</a>
   {% else %}
