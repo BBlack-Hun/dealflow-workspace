@@ -18,11 +18,11 @@ def _safe_next(value: str) -> str:
     """오픈 리다이렉트 방지 — 내부 경로만 허용한다."""
     if value and value.startswith("/") and not value.startswith("//"):
         return value
-    return "/deals"
+    return "/"          # 기본 도착지는 대시보드
 
 
 @router.get("/login", response_class=HTMLResponse, include_in_schema=False)
-def login_page(request: Request, next: str = "/deals", error: str = ""):
+def login_page(request: Request, next: str = "/", error: str = ""):
     return templates.TemplateResponse(
         "login.html",
         {"request": request, "next": _safe_next(next), "error": error},
@@ -34,7 +34,7 @@ def login(
     request: Request,
     phone: str = Form(...),
     password: str = Form(...),
-    next: str = Form("/deals"),
+    next: str = Form("/"),
     db: Session = Depends(get_db),
 ):
     target = _safe_next(next)

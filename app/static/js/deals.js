@@ -4,8 +4,14 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
 (function () {
   var companyCbs = function () { return Array.prototype.slice.call(document.querySelectorAll(".company-cb")); };
   var contactCbs = function () { return Array.prototype.slice.call(document.querySelectorAll(".contact-cb")); };
-  var companyCount = document.getElementById("company-count");
-  var contactCount = document.getElementById("contact-count");
+  var companyPill = document.getElementById("company-pill");
+  var contactPill = document.getElementById("contact-pill");
+  var contactSummary = document.getElementById("contact-summary");
+  var ssCompanies = document.getElementById("ss-companies");
+  var ssContacts = document.getElementById("ss-contacts");
+  var ssNote = document.getElementById("ss-note");
+  var companyPanel = document.querySelector("#company-list").closest(".panel");
+  var mode = "deal";   // deal = 기업 목록까지 · ask = 문구만
   var previewTabs = document.getElementById("preview-tabs");
   var previewArea = document.getElementById("preview-area");
   var warnBox = document.getElementById("send-warnings");
@@ -60,27 +66,42 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   // ── 문구(템플릿) 선택 ─────────────────────────────────────
   // 상황마다 인사말·안내문이 달라진다(첫 연락/재연락, 연말 인사 …).
   // /templates 에서 만들어 둔 문구를 회차마다 골라 쓴다. 고르지 않으면 기본 동작.
-  function loadTemplates() {
+  var templateCache = null;
+
+  function loadTemplates(force) {
+    if (templateCache && !force) { renderTemplates(); return; }
     fetch("/api/templates").then(function (r) { return r.json(); }).then(function (d) {
-      var byKind = {};
-      (d.templates || []).forEach(function (t) {
-        (byKind[t.kind] = byKind[t.kind] || []).push(t);
-      });
-      fill("tpl-opening", (byKind["opening_first"] || []).concat(byKind["opening_re"] || []));
-      fill("tpl-closing", byKind["closing_day1"] || []);
+      templateCache = d.templates || [];
+      renderTemplates();
     }).catch(function () { /* 문구 목록 실패해도 기본 문구로 발송 가능 */ });
+  }
+
+  function renderTemplates() {
+    var byKind = {};
+    (templateCache || []).forEach(function (t) {
+      (byKind[t.kind] = byKind[t.kind] || []).push(t);
+    });
+    fill("tpl-opening", (byKind["opening_first"] || []).concat(byKind["opening_re"] || []));
+    // 문구만 보낼 때는 안내문이 아니라 '선호 분야 묻기' 문구를 고른다.
+    fill("tpl-closing", mode === "ask"
+      ? (byKind["ask_preference"] || [])
+      : (byKind["closing_day1"] || []));
   }
 
   function fill(selectId, list) {
     var sel = document.getElementById(selectId);
     if (!sel) return;
+    sel.innerHTML = '<option value="">기본</option>';
     list.forEach(function (t) {
       var o = document.createElement("option");
       o.value = t.id;
       o.textContent = t.name + " — " + t.body.replace(/\n/g, " ").slice(0, 30);
       sel.appendChild(o);
     });
-    sel.addEventListener("change", refreshPreview);
+    if (!sel.dataset.bound) {
+      sel.addEventListener("change", refreshPreview);
+      sel.dataset.bound = "1";
+    }
   }
 
   function selectedTemplateIds() {
@@ -88,23 +109,74 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     var c = document.getElementById("tpl-closing");
     return {
       opening_template_id: o && o.value ? parseInt(o.value, 10) : null,
-      closing_template_id: c && c.value ? parseInt(c.value, 10) : null
+      closing_template_id: c && c.value ? parseInt(c.value, 10) : null,
+      mode: mode
     };
   }
 
+  // 몇 개/몇 명 골랐는지는 발송 직전에 가장 궁금한 값이라
+  // 패널 제목 옆(알약)과 발송 요약 두 곳에 크게 띄운다.
   function updateCounts() {
     var nc = selectedCompanyIds().length;
     var nt = selectedContactIds().length;
-    companyCount.textContent = "선택: " + nc + " / " + MAX_COMPANIES;
-    contactCount.textContent = "선택: " + nt + "명";
-    // Enforce max company cap
+    var askMode = mode === "ask";
+
+    companyPill.innerHTML = "<b>" + nc + "</b> / " + MAX_COMPANIES;
+    companyPill.classList.toggle("on", nc > 0);
+    contactPill.innerHTML = "<b>" + nt + "</b>명";
+    contactPill.classList.toggle("on", nt > 0);
+
+    ssCompanies.innerHTML = "<b>" + nc + "</b>개 기업";
+    ssCompanies.hidden = askMode;                 // 문구만 보낼 때는 기업 수가 의미 없다
+    document.querySelector(".ss-arrow").hidden = askMode;
+    ssContacts.textContent = nt;
+    ssNote.textContent = askMode
+      ? "기업 목록 없이 문구만 나갑니다"
+      : (nc > MAX_COMPANIES ? "기업은 최대 " + MAX_COMPANIES + "개까지" : "");
+
+    // 고른 사람 이름을 보여준다 — 숫자만으로는 누구를 넣었는지 알 수 없다.
+    var names = contactCbs().filter(function (c) { return c.checked; })
+      .map(function (c) { return c.getAttribute("data-name"); });
+    if (names.length) {
+      contactSummary.hidden = false;
+      contactSummary.textContent = names.length <= 6
+        ? names.join(", ")
+        : names.slice(0, 6).join(", ") + " 외 " + (names.length - 6) + "명";
+    } else {
+      contactSummary.hidden = true;
+    }
+
+    // 상한을 넘기면 더 못 고르게 막는다
     if (nc >= MAX_COMPANIES) {
       companyCbs().forEach(function (c) { if (!c.checked) c.disabled = true; });
     } else {
       companyCbs().forEach(function (c) { c.disabled = false; });
     }
-    sendBtn.disabled = !(nc >= 1 && nc <= MAX_COMPANIES && nt >= 1);
+    sendBtn.disabled = askMode
+      ? nt < 1
+      : !(nc >= 1 && nc <= MAX_COMPANIES && nt >= 1);
     applyCompanyFilter();   // 선택 항목은 검색 중에도 계속 보이게
+  }
+
+  // ── 보내는 방식 전환 ───────────────────────────────────────
+  function setMode(next) {
+    mode = next;
+    var askMode = mode === "ask";
+    document.querySelectorAll(".mode-tab").forEach(function (b) {
+      b.classList.toggle("active", b.getAttribute("data-mode") === mode);
+    });
+    companyPanel.classList.toggle("dimmed", askMode);
+    document.getElementById("mode-help").textContent = askMode
+      ? "반응이 없는 담당자에게 기업 목록 없이 문구만 보냅니다 (기업 선택 불필요)"
+      : "기업 1~10개 선택 → 대상 담당자 체크 → 담당자별 미리보기 → 발송";
+    var closingWrap = document.getElementById("tpl-closing-wrap");
+    if (closingWrap) closingWrap.querySelector("span").textContent = askMode ? "문구" : "안내문";
+    lastPreviews = [];
+    previewTabs.innerHTML = "";
+    previewArea.innerHTML = '<p class="muted">[미리보기 갱신]을 누르세요.</p>';
+    warnBox.hidden = true;
+    loadTemplates(true);
+    updateCounts();
   }
 
   ["company-search", "only-picked"].forEach(function (id) {
@@ -168,8 +240,10 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   function refreshPreview() {
     var cids = selectedCompanyIds();
     var tids = selectedContactIds();
-    if (cids.length < 1 || tids.length < 1) {
-      previewArea.innerHTML = '<p class="muted">기업과 담당자를 선택한 뒤 [미리보기 갱신]을 누르세요.</p>';
+    if ((mode !== "ask" && cids.length < 1) || tids.length < 1) {
+      previewArea.innerHTML = '<p class="muted">' +
+        (mode === "ask" ? "담당자를 선택한 뒤" : "기업과 담당자를 선택한 뒤") +
+        " [미리보기 갱신]을 누르세요.</p>";
       previewTabs.innerHTML = "";
       return;
     }
@@ -208,7 +282,10 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     var title = (document.getElementById("batch-title").value || "딜소개 회차").trim();
     var edits = editedOverrides();
     var editNote = edits.length ? "\n직접 수정한 문구 " + edits.length + "건이 그대로 발송됩니다." : "";
-    if (!confirm("대상 " + tids.length + "명에게 발송 목록을 생성합니다." + editNote +
+    var what = mode === "ask"
+      ? "선호 분야를 묻는 문구(기업 목록 없음)"
+      : cids.length + "개 기업 딜소개";
+    if (!confirm(what + "\n대상 " + tids.length + "명에게 발송합니다." + editNote +
                  "\n방 이름을 최종 확인하셨나요?")) return;
     sendBtn.disabled = true;
     fetch("/api/deals/send", {
@@ -243,6 +320,22 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     boxes.forEach(function (c) { c.checked = !allOn; });
     updateCounts();
   });
+  document.querySelectorAll(".mode-tab").forEach(function (b) {
+    b.addEventListener("click", function () { setMode(b.getAttribute("data-mode")); });
+  });
+
+  var noreactBtn = document.getElementById("select-noreact");
+  if (noreactBtn) noreactBtn.addEventListener("click", function () {
+    var targets = contactCbs().filter(function (c) {
+      return c.getAttribute("data-noreact") === "1";
+    });
+    if (!targets.length) { alert("반응이 없는 담당자가 없습니다."); return; }
+    var allOn = targets.every(function (c) { return c.checked; });
+    contactCbs().forEach(function (c) { c.checked = false; });
+    if (!allOn) targets.forEach(function (c) { c.checked = true; });
+    updateCounts();
+  });
+
   updateCounts();
   loadTemplates();
 })();

@@ -29,6 +29,7 @@ KINDS = [
     ("closing_day1", "안내문 — 딜소개", "기업 목록 위에 오는 안내 문구"),
     ("closing_remind", "안내문 — 리마인드", "발송 후 6~7일 뒤 후속"),
     ("closing_meeting", "안내문 — 미팅 요청", "발송 후 11~14일 뒤 후속"),
+    ("ask_preference", "문구만 — 선호 분야 묻기", "반응이 없는 담당자에게 기업 목록 없이 이 문구만"),
 ]
 KIND_LABELS = {k: label for k, label, _ in KINDS}
 

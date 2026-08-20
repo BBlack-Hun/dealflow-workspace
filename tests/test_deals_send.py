@@ -71,3 +71,47 @@ def test_send_ignores_override_for_untargeted_contact(client, db, seed):
     })
     assert r.status_code == 200, r.text
     assert "대상 아님" not in _sent_message(db, r.json()["job_id"])
+
+
+# --- 문구만 보내기 (선호 분야 묻기) ----------------------------------------
+#
+# 딜소개를 보냈는데 답이 없을 때, 목록을 또 밀어 넣기보다 무엇을 보고 싶은지
+# 되묻는 편이 답이 온다. 이때 **기업 목록이 붙으면 안 된다** — 그러면 그냥
+# 딜소개를 한 번 더 보내는 것이 되어 버린다.
+
+def test_ask_mode_needs_no_companies(client, seed):
+    r = client.post("/api/deals/preview", json={
+        "company_ids": [], "contact_ids": [seed["contact_id"]], "mode": "ask",
+    })
+    assert r.status_code == 200, r.text
+    assert len(r.json()["previews"]) == 1
+
+
+def test_ask_mode_message_has_no_company_list(client, db, seed):
+    """번호 매긴 기업 목록이 붙으면 안 된다."""
+    r = client.post("/api/deals/preview", json={
+        "company_ids": [], "contact_ids": [seed["contact_id"]], "mode": "ask",
+    })
+    text = r.json()["previews"][0]["message"]
+    assert "1)" not in text
+    assert "샘플애그" not in text
+    assert "선호하는 기업분야" in text
+
+
+def test_ask_mode_ignores_companies_even_if_sent(client, db, seed):
+    """실수로 기업을 함께 보내도 문구만 나간다(화면 상태와 어긋나도 안전하게)."""
+    r = client.post("/api/deals/send", json={
+        "company_ids": [seed["company_id"]],
+        "contact_ids": [seed["contact_id"]],
+        "mode": "ask",
+    })
+    assert r.status_code == 200, r.text
+    assert "샘플애그" not in _sent_message(db, r.json()["job_id"])
+
+
+def test_deal_mode_still_requires_companies(client, seed):
+    """기본 모드에서는 기업 없이 보낼 수 없다."""
+    r = client.post("/api/deals/send", json={
+        "company_ids": [], "contact_ids": [seed["contact_id"]],
+    })
+    assert r.status_code == 400
