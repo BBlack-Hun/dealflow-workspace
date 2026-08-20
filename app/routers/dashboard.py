@@ -88,6 +88,24 @@ def create_member(
         status_code=303)
 
 
+@router.post("/team/members/{member_id}/consulting", include_in_schema=False)
+def toggle_consulting(
+    member_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """투자현황 화면을 볼 수 있게 하거나 막는다(관리자는 항상 볼 수 있다)."""
+    _admin_only(user)
+    member = db.get(User, member_id)
+    if member is None:
+        raise HTTPException(status_code=404, detail="계정을 찾을 수 없습니다")
+    member.can_view_consulting = 0 if member.can_view_consulting else 1
+    db.commit()
+    state = "볼 수 있게" if member.can_view_consulting else "볼 수 없게"
+    return RedirectResponse(f"/team?msg={member.name}+님을+투자현황을+{state}+했습니다",
+                            status_code=303)
+
+
 @router.post("/team/members/{member_id}/deactivate", include_in_schema=False)
 def deactivate_member(
     member_id: int,

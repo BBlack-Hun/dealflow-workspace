@@ -166,7 +166,7 @@ def test_deactivate_keeps_the_record(admin_client, db, users):
 def test_companies_page_opens(logged):
     r = logged.get("/companies")
     assert r.status_code == 200
-    assert "딜 기업 DB" in r.text
+    assert "스타트업 관리" in r.text
 
 
 def testblocked_reason_is_plain_korean(logged, db):
@@ -242,3 +242,29 @@ def test_pages_have_no_developer_jargon(logged, path):
     body = logged.get(path).text
     for word in DEV_WORDS:
         assert word not in body, f"{path} 에 '{word}' 가 보입니다"
+
+
+# --- 좌측 메뉴 이름과 화면 제목 ---------------------------------------------
+
+@pytest.mark.parametrize("path, key", [
+    ("/deals", "deal"), ("/contacts", "vc"), ("/companies", "su"),
+    ("/templates", "templates"), ("/setup", "setup"),
+])
+def test_page_title_matches_menu_label(logged, path, key):
+    """메뉴 이름만 바꾸고 화면 제목을 두면 둘이 어긋난다 — 한 곳에서 가져온다."""
+    from app.ui import menu_label
+
+    body = logged.get(path).text
+    assert f"<h1>{menu_label(key)}</h1>" in body or \
+        f'<h1 class="page-title">{menu_label(key)}</h1>' in body
+
+
+def test_mail_channel_is_off_until_configured(logged):
+    """메일 서버 정보가 없으면 아예 고를 수 없어야 한다.
+
+    고를 수 있는데 나가지 않는 것이 제일 나쁘다.
+    """
+    body = logged.get("/deals").text
+    assert 'value="email"' in body
+    assert "disabled" in body
+    assert "메일 발송은 아직 켜지지 않았습니다" in body

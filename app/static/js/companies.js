@@ -98,9 +98,15 @@
     }
   }
 
+  function close() {
+    panel.hidden = true;
+    document.getElementById("co-backdrop").hidden = true;
+  }
+
   function open(id) {
     current = id;
     panel.hidden = false;
+    document.getElementById("co-backdrop").hidden = false;
     el("co-delete").hidden = !id;
     if (!id) {
       el("co-title").textContent = "기업 추가";
@@ -131,7 +137,12 @@
   }
 
   el("co-add").addEventListener("click", function () { open(null); });
-  el("co-close").addEventListener("click", function () { panel.hidden = true; });
+  el("co-close").addEventListener("click", close);
+  el("co-cancel").addEventListener("click", close);
+  el("co-backdrop").addEventListener("click", close);
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && !panel.hidden) close();
+  });
 
   table.addEventListener("click", function (e) {
     if (!e.target.classList.contains("js-co-edit")) return;

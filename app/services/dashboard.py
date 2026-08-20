@@ -20,6 +20,7 @@ from typing import Dict, List, Optional
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from . import mailer
 from ..models import (
     AgentDevice,
     ContactActivity,
@@ -298,6 +299,7 @@ def admin_dashboard(db: Session, today: Optional[date] = None) -> dict:
             "agent": _agent_label(device),
             "agent_ok": bool(device and device.last_poll_at),
             "password_pending": bool(u.must_change_password),
+            "consulting": bool(u.can_view_consulting) or u.role == "admin",
             "last_login": (u.last_login_at or "")[:10],
         })
 
@@ -328,6 +330,7 @@ def admin_dashboard(db: Session, today: Optional[date] = None) -> dict:
             "contracted": len([c for c in companies if c.contract_status == "yes"]),
         },
         "sectors": _distribution([c.sector_major for c in companies if c.sector_major], top=8),
+        "mail": mailer.status(),
         "warnings": _admin_warnings(rows, unassigned),
         "recent_batches": recent_batches(db, limit=8),
     }

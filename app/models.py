@@ -41,6 +41,10 @@ class User(TimestampMixin, Base):
     # 관리자가 계정을 만들거나 초기화하면 첫 로그인 때 변경을 요구한다.
     must_change_password: Mapped[int] = mapped_column(Integer, default=0)
     last_login_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # 일부 화면은 팀 전체가 아니라 정해진 사람만 본다(투자현황 등).
+    # 사람 이름을 코드에 박으면 사람이 바뀔 때마다 배포해야 하므로 계정 속성으로 둔다.
+    # 관리자는 이 값과 무관하게 볼 수 있다.
+    can_view_consulting: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class Session(TimestampMixin, Base):

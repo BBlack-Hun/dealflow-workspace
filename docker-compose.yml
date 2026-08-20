@@ -17,6 +17,13 @@ services:
       DEALFLOW_ROOM_SUFFIX: "${DEALFLOW_ROOM_SUFFIX:-Deal 공유 우리브이씨 Asset}"
       # 데모 데이터(가상 담당자·기업)를 넣을지. 실운영에서는 0 으로 둔다.
       DEALFLOW_SEED_DEMO: "${DEALFLOW_SEED_DEMO:-0}"
+      # 메일 발송 설정. 비어 있으면 발송 화면에서 이메일 채널을 고를 수 없다.
+      DEALFLOW_SMTP_HOST: "${DEALFLOW_SMTP_HOST:-}"
+      DEALFLOW_SMTP_PORT: "${DEALFLOW_SMTP_PORT:-587}"
+      DEALFLOW_SMTP_USER: "${DEALFLOW_SMTP_USER:-}"
+      DEALFLOW_SMTP_PASSWORD: "${DEALFLOW_SMTP_PASSWORD:-}"
+      DEALFLOW_SMTP_FROM: "${DEALFLOW_SMTP_FROM:-}"
+      DEALFLOW_SMTP_TLS: "${DEALFLOW_SMTP_TLS:-1}"
       RUN_MIGRATIONS: "1"                       # apply migrations + bootstrap on start
       DEALFLOW_AGENT_TOKEN: "agt_demo_token_sprint1"
       DATABASE_URL: "sqlite:////app/data/dealflow.db"
