@@ -92,11 +92,11 @@ def agent_status(db: Session, user_id: Optional[int] = None) -> dict:
     is_mock = sender == "mock"
 
     if not online:
-        label = "발송 에이전트 오프라인"
+        label = "발송 프로그램 연결 안 됨"
     elif is_mock:
-        label = f"데모(mock) 에이전트 — 실제 발송 안 됨{f' · {host}' if host else ''}"
+        label = f"연습 모드 — 실제로 보내지 않음{f' · {host}' if host else ''}"
     else:
-        label = f"발송 에이전트 연결됨{f' · {host}' if host else ''}"
+        label = f"발송 프로그램 연결됨{f' · {host}' if host else ''}"
 
     return {
         "online": online,

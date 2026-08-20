@@ -128,12 +128,16 @@
     function apply() {
       var shown = 0;
       rows.forEach(function (tr, i) {
-        var ok = matchRow(rowData[i], state);
+        // 컬럼 필터 + (있으면) 화면이 준 추가 조건. 검색창처럼 컬럼으로 표현할 수
+        // 없는 조건을 여기서 AND 로 묶는다 — 둘이 서로 tr.hidden 을 덮어쓰면
+        // 검색과 필터가 번갈아 서로를 지운다.
+        var ok = matchRow(rowData[i], state) &&
+          (typeof options.extra !== "function" || options.extra(tr, i));
         tr.hidden = !ok;
         if (ok) shown += 1;
       });
       if (emptyBox) emptyBox.hidden = shown !== 0;
-      if (countBox) countBox.textContent = shown + " / " + rows.length + "명";
+      if (countBox) countBox.textContent = shown + " / " + rows.length + (options.unit || "명");
       renderChips();
       renderButtons();
       syncUrl();

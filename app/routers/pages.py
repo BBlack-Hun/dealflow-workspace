@@ -10,6 +10,7 @@ from ..db import get_db
 from ..deps import get_current_user, templates
 from ..models import IrCompany, SendJob, User, VcContact
 from ..ui import MENU, base_ctx as _base_ctx
+from .companies import blocked_reason as companyblocked_reason
 from .contacts import contact_rows
 
 router = APIRouter(tags=["pages"])
@@ -17,9 +18,15 @@ router = APIRouter(tags=["pages"])
 __all__ = ["router", "MENU"]
 
 
-@router.get("/", include_in_schema=False)
-def index():
-    return RedirectResponse(url="/deals")
+@router.get("/", response_class=HTMLResponse, include_in_schema=False)
+def index(request: Request, db: Session = Depends(get_db),
+          user: User = Depends(get_current_user)):
+    """메인 = 대시보드. 좌측 위 'dealflow' 를 누르면 여기로 온다."""
+    from ..services import dashboard as dash
+
+    ctx = _base_ctx(request, db, user, "home")
+    ctx.update(dash.user_dashboard(db, user))
+    return templates.TemplateResponse("dashboard.html", ctx)
 
 
 @router.get("/deals", response_class=HTMLResponse)
@@ -29,14 +36,21 @@ def deals_page(
     user: User = Depends(get_current_user),
 ):
     companies = db.execute(select(IrCompany).order_by(IrCompany.id)).scalars().all()
-    introducible = [c for c in companies if c.introducible]
+    # 소개 가능한 기업을 앞에 세우되, 내용이 부족한 기업도 **감추지 않는다**.
+    # 감추면 "왜 내가 넣은 기업이 없지?" 가 되고 어디를 고쳐야 하는지도 알 수 없다.
+    companies = sorted(companies, key=lambda c: (not c.introducible, c.name or ""))
     contacts = db.execute(
         select(VcContact)
         .where(VcContact.user_id == user.id, VcContact.channel_kakao == 1)
         .order_by(VcContact.id)
     ).scalars().all()
     ctx = _base_ctx(request, db, user, "deal")
-    ctx.update({"companies": introducible, "contacts": contacts})
+    ctx.update({
+        "companies": companies,
+        "contacts": contacts,
+        "blocked_reasons": {c.id: companyblocked_reason(c)
+                            for c in companies if not c.introducible},
+    })
     return templates.TemplateResponse("deals.html", ctx)
 
 
@@ -76,12 +90,12 @@ def placeholder_page(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Sprint 1 stub for not-yet-built menu screens."""
+    """아직 만들지 않은 메뉴의 안내 화면."""
     item = next((m for m in MENU if m["href"] == f"/{placeholder}"), None)
     if item is None:
         # Let unknown paths 404 naturally via a minimal response.
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Not Found")
     ctx = _base_ctx(request, db, user, item["key"])
-    ctx.update({"title": item["label"], "sprint": item["sprint"]})
+    ctx.update({"title": item["label"]})
     return templates.TemplateResponse("placeholder.html", ctx)

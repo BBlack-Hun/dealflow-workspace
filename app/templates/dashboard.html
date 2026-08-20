@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block title %}대시보드 · dealflow{% endblock %}
+
+{% block content %}
+<header class="page-head">
+  <h1>안녕하세요, {{ user.name }}님</h1>
+  <p class="muted">다음 딜소개까지 준비 상황입니다.</p>
+</header>
+
+<!-- 다음 발송일: 매월 첫째·셋째 수요일. 남은 날이 곧 마감이라 가장 위에 둔다. -->
+<section class="hero-card">
+  <div class="hero-main">
+    <span class="hero-label">다음 딜소개</span>
+    <span class="hero-date">{{ next_send.strftime('%m월 %d일') }}</span>
+    <span class="hero-weekday">{{ ['월','화','수','목','금','토','일'][next_send.weekday()] }}요일</span>
+  </div>
+  <div class="hero-count">
+    {% if days_left == 0 %}
+      <b class="today">오늘입니다</b>
+    {% else %}
+      <b>{{ days_left }}</b><span>일 남음</span>
+    {% endif %}
+  </div>
+  <div class="hero-next">
+    <span class="muted">이후 일정</span>
+    {% for d in upcoming[1:] %}<span class="pill">{{ d.strftime('%m/%d') }}</span>{% endfor %}
+  </div>
+  <a class="primary-btn" href="/deals">딜소개 보내기</a>
+</section>
+
+<div class="kpi-row">
+  {% for k in kpis %}
+  <a class="kpi-card" href="{{ k.href }}">
+    <span class="kpi-label">{{ k.label }}</span>
+    <span class="kpi-value">{{ k.value }}</span>
+    <span class="kpi-sub">{{ k.sub }}</span>
+  </a>
+  {% endfor %}
+</div>
+
+<div class="dash-grid">
+  <!-- 막힌 것 먼저. 발송일에 못 나가는 이유는 대부분 여기 있다. -->
+  <section class="panel">
+    <h2 class="panel-title">먼저 손봐야 할 것</h2>
+    {% if blockers %}
+    <ul class="blocker-list">
+      {% for b in blockers %}
+      <li class="blocker {{ b.level }}">
+        <a href="{{ b.href }}">
+          <span class="blocker-count">{{ b.count }}</span>
+          <span class="blocker-body">
+            <b>{{ b.label }}</b>
+            <span class="muted">{{ b.hint }}</span>
+          </span>
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="all-clear">✅ 막힌 곳이 없습니다. 바로 보낼 수 있습니다.</p>
+    {% endif %}
+  </section>
+
+  <section class="panel">
+    <h2 class="panel-title">카톡방 연결 상태
+      <a class="linkbtn" href="/contacts">내 투자사</a>
+    </h2>
+    {% if rooms %}
+    <div class="stack-bar">
+      {% for r in rooms %}
+      <span class="seg {{ r.level }}" style="width:{{ r.percent }}%" title="{{ r.label }} {{ r.count }}명"></span>
+      {% endfor %}
+    </div>
+    <ul class="legend">
+      {% for r in rooms %}
+      <li><span class="dot {{ r.level }}"></span>{{ r.label }} <b>{{ r.count }}</b></li>
+      {% endfor %}
+    </ul>
+    <p class="hint">방 제목이 실제와 한 글자라도 다르면 그 담당자에게는 발송되지 않습니다(잘못 나가지는 않습니다).</p>
+    {% else %}
+    <p class="muted">담당자가 없습니다. 현황 시트를 업로드해 주세요.</p>
+    {% endif %}
+  </section>
+
+  <section class="panel">
+    <h2 class="panel-title">최근 {{ reactions.window }}일 반응</h2>
+    <div class="react-row">
+      <div class="react"><b>{{ reactions.deal }}</b><span>딜소개</span></div>
+      <div class="react ok"><b>{{ reactions.ir }}</b><span>IR 요청</span></div>
+      <div class="react ok"><b>{{ reactions.meeting }}</b><span>미팅</span></div>
+    </div>
+    <p class="hint">IR 요청·미팅이 나온 담당자가 다음 회차의 우선 대상입니다.</p>
+  </section>
+
+  <section class="panel">
+    <h2 class="panel-title">내 투자사 선호</h2>
+    {% if stages or sectors %}
+    <div class="mini-charts">
+      <div>
+        <h3 class="mini-title">투자 단계</h3>
+        {% for s in stages %}
+        <div class="bar-row"><span class="bar-label">{{ s.label }}</span>
+          <span class="bar"><span style="width:{{ s.percent }}%"></span></span>
+          <span class="bar-num">{{ s.count }}</span></div>
+        {% else %}<p class="muted">기록된 선호 단계가 없습니다.</p>{% endfor %}
+      </div>
+      <div>
+        <h3 class="mini-title">투자 분야</h3>
+        {% for s in sectors %}
+        <div class="bar-row"><span class="bar-label">{{ s.label }}</span>
+          <span class="bar"><span style="width:{{ s.percent }}%"></span></span>
+          <span class="bar-num">{{ s.count }}</span></div>
+        {% else %}<p class="muted">기록된 선호 분야가 없습니다.</p>{% endfor %}
+      </div>
+    </div>
+    {% else %}
+    <p class="muted">선호 정보가 없습니다.</p>
+    {% endif %}
+  </section>
+
+  <section class="panel wide">
+    <h2 class="panel-title">최근 발송 회차</h2>
+    {% if recent_batches %}
+    <table class="grid-table compact">
+      <thead><tr><th>회차</th><th>날짜</th><th>대상</th><th>성공</th><th>실패</th><th>상태</th><th></th></tr></thead>
+      <tbody>
+        {% for b in recent_batches %}
+        <tr>
+          <td>{{ b.title }}</td>
+          <td class="muted">{{ b.date or '-' }}</td>
+          <td>{{ b.total }}</td>
+          <td class="num ok">{{ b.sent }}</td>
+          <td class="num {% if b.failed %}bad{% endif %}">{{ b.failed }}</td>
+          <td><span class="status-badge">{{ b.status }}</span></td>
+          <td><a class="linkbtn" href="/jobs/{{ b.job_id }}">보기</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted">아직 발송한 회차가 없습니다. <a href="/deals">첫 딜소개 보내기</a></p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}
