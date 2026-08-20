@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+
+{% block content %}
+<header class="page-head">
+  <h1>{{ page_title }}</h1>
+  <p class="muted">
+    아침에 이 화면만 열면 됩니다. 급한 것부터 — 답을 기다리는 사람, 오늘 약속,
+    오늘 보낼 것, 회차 준비 순입니다.
+  </p>
+</header>
+
+<section class="hero-card {% if not ready %}blocked{% endif %} slim">
+  <div class="hero-main">
+    <span class="hero-label">다음 딜 제안</span>
+    <span class="hero-date">{{ next_send.strftime('%m월 %d일') }}</span>
+  </div>
+  <div class="hero-count">
+    {% if days_left == 0 %}<b class="today">오늘입니다</b>
+    {% else %}<b>{{ days_left }}</b><span>일 남음</span>{% endif %}
+  </div>
+  <div class="hero-next">
+    {% if urgent %}
+      <span class="ready-mark bad">지금 할 일 {{ urgent|length }}건</span>
+    {% else %}
+      <span class="ready-mark">급한 일 없음</span>
+    {% endif %}
+  </div>
+  <a class="primary-btn" href="/readiness">준비 점검</a>
+</section>
+
+<section class="panel">
+  <h2 class="panel-title">할 일 <span class="count-pill {% if items %}on{% endif %}"><b>{{ items|length }}</b>건</span></h2>
+  {% if nothing_to_do %}
+  <p class="all-clear">✅ 오늘 손댈 것이 없습니다. 다음 회차까지 여유가 있습니다.</p>
+  {% else %}
+  <ul class="todo-list">
+    {% for t in items %}
+    <li class="todo {{ t.level }}">
+      <a href="{{ t.href }}">
+        <span class="todo-mark">
+          {% if t.level == 'urgent' %}🔴{% elif t.level == 'soon' %}🟡{% else %}⚪{% endif %}
+        </span>
+        <span class="todo-body">
+          <b>{{ t.title }}</b>
+          <span class="muted">{{ t.detail }}</span>
+        </span>
+        {% if t.count %}<span class="count-pill on"><b>{{ t.count }}</b></span>{% endif %}
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h2 class="panel-title">화면 안내</h2>
+  <ul class="steps">
+    <li><a href="/deals">딜 제안 관리</a> — 기업 소개 · 리마인드 · 미팅 요청 · 선호 분야 묻기 · IR 자료 전달</li>
+    <li><a href="/followups">후속 관리</a> — 딜소개 뒤 리마인드·미팅요청이 언제 나가는지</li>
+    <li><a href="/ir">IR·미팅 관리</a> — 받은 자료 요청, 미팅 일정과 결과 문의</li>
+    <li><a href="/contacts">투자사 DB</a> — 명단·연결 단계·카톡방</li>
+    <li><a href="/companies">스타트업 관리</a> — 소개할 기업과 IR 자료 링크</li>
+    <li><a href="/readiness">회차 준비 점검</a> — 발송 전에 막힌 곳 확인</li>
+  </ul>
+</section>
+{% endblock %}

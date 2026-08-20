@@ -31,6 +31,12 @@ KINDS = [
     ("closing_meeting", "안내문 — 미팅 요청", "발송 후 11~14일 뒤 후속"),
     ("ask_preference", "문구만 — 선호 분야 묻기", "반응이 없는 담당자에게 기업 목록 없이 이 문구만"),
     ("ir_delivery", "IR 자료 전달", "자료를 먼저 보낸 뒤 뒤따라 보내는 문구"),
+    ("connect_call", "연결 — 전화 응대", "카톡방 연결 전 첫 통화"),
+    ("connect_sms", "연결 — 부재중 문자", "전화를 못 받으셨을 때 보내는 문자"),
+    ("connect_reinvite", "연결 — 방 나가신 분", "카톡방을 나간 담당자에게 다시 연락할 때"),
+    ("startup_sms", "기업 리마인드 — 문자", "관리 중인 스타트업에 매월 보내는 문자"),
+    ("startup_call", "기업 리마인드 — 전화", "문자 뒤 통화할 때"),
+    ("mail_subject", "홍보메일 제목", "메일 발송에 쓸 제목 후보"),
 ]
 KIND_LABELS = {k: label for k, label, _ in KINDS}
 
