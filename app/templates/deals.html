@@ -2,14 +2,27 @@
 {% block title %}딜소개 보내기 · dealflow{% endblock %}
 {% block content %}
 <header class="page-head">
-  <h1>딜소개 보내기</h1>
-  <p class="muted">기업 1~10개 선택 → 대상 담당자 체크 → 담당자별 미리보기 → 발송 목록 생성</p>
+  <h1>딜 제안 관리</h1>
+  <p class="muted" id="mode-help">기업 1~10개 선택 → 대상 담당자 체크 → 담당자별 미리보기 → 발송</p>
 </header>
+
+<!-- 보내는 방식. 딜소개를 보냈는데 답이 없는 담당자에게는 목록을 또 밀어 넣기보다
+     무엇을 보고 싶은지 되묻는 편이 답이 온다. -->
+<div class="mode-tabs" id="mode-tabs">
+  <button type="button" class="mode-tab active" data-mode="deal">
+    기업 소개 보내기<span>인사말 + 안내문 + 기업 목록</span>
+  </button>
+  <button type="button" class="mode-tab" data-mode="ask">
+    선호 분야 묻기<span>기업 목록 없이 문구만</span>
+  </button>
+</div>
 
 <div class="deal-grid">
   <!-- 1) 회차 + 기업 선택 -->
   <section class="panel">
-    <h2 class="panel-title">① 회차 · 기업 선택 <span class="hint">최대 10개</span>
+    <h2 class="panel-title">
+      ① 회차 · 기업 선택
+      <span class="count-pill" id="company-pill"><b>0</b> / 10</span>
       <a class="linkbtn" href="/api/export/companies.xlsx" download>엑셀 내려받기</a>
     </h2>
     <label class="field">
@@ -54,21 +67,27 @@
       <p class="muted">딜소개 가능한 기업이 없습니다 (요약문 작성완료 기업 필요).</p>
       {% endfor %}
     </div>
-    <p class="hint" id="company-count">선택: 0 / 3</p>
     <p class="hint" id="company-filter-note" hidden></p>
   </section>
 
   <!-- 2) 대상 담당자 -->
   <section class="panel">
-    <h2 class="panel-title">② 대상 담당자
+    <h2 class="panel-title">
+      ② 대상 담당자
+      <span class="count-pill" id="contact-pill"><b>0</b>명</span>
       <button type="button" class="linkbtn" id="select-all-contacts">전체선택</button>
+      <button type="button" class="linkbtn" id="select-noreact">반응 없는 담당자만</button>
     </h2>
+    <p class="hint" id="contact-summary" hidden></p>
     <div class="card-list" id="contact-list">
       {% for c in contacts %}
       <label class="pick-card">
-        <input type="checkbox" class="contact-cb" value="{{ c.id }}" data-name="{{ c.name }}">
+        <input type="checkbox" class="contact-cb" value="{{ c.id }}" data-name="{{ c.name }}"
+               data-noreact="{{ 1 if c.id in no_reaction_ids else 0 }}">
         <div class="pick-body">
-          <div class="pick-name">{{ c.name }} <span class="muted">{{ c.title or '' }}</span></div>
+          <div class="pick-name">{{ c.name }} <span class="muted">{{ c.title or '' }}</span>
+            {% if c.id in no_reaction_ids %}<span class="tag warn">반응 없음</span>{% endif %}
+          </div>
           <div class="pick-sub muted">{{ c.firm or '' }}</div>
           <div class="pick-room">
             {% if c.kakao_room_name %}
@@ -83,7 +102,6 @@
       <p class="muted">카톡 연결된 담당자가 없습니다.</p>
       {% endfor %}
     </div>
-    <p class="hint" id="contact-count">선택: 0명</p>
   </section>
 
   <!-- 3) 미리보기 + 발송 -->
@@ -91,12 +109,22 @@
     <h2 class="panel-title">③ 미리보기 · 발송
       <button type="button" class="linkbtn" id="refresh-preview">미리보기 갱신</button>
     </h2>
+    <div class="send-summary" id="send-summary">
+      <span class="ss-item" id="ss-companies"><b>0</b>개 기업</span>
+      <span class="ss-arrow">→</span>
+      <span class="ss-item"><b id="ss-contacts">0</b>명에게</span>
+      <span class="ss-note muted" id="ss-note"></span>
+    </div>
     <div class="tpl-picker">
-      <label>
+      <label class="opening-toggle">
+        <input type="checkbox" id="include-opening" checked>
+        <span>인사말 포함</span>
+      </label>
+      <label id="tpl-opening-wrap">
         <span>인사말</span>
         <select id="tpl-opening"><option value="">기본 (첫 연락/재연락 자동)</option></select>
       </label>
-      <label>
+      <label id="tpl-closing-wrap">
         <span>안내문</span>
         <select id="tpl-closing"><option value="">기본</option></select>
       </label>

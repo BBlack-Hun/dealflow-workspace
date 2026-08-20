@@ -86,11 +86,27 @@ def _template_body_by_id(db: Session, user: User, template_id: Optional[int]) ->
     return t.body
 
 
+# 보내는 방식. 화면의 두 탭과 1:1로 맞춘다.
+MODE_DEAL = "deal"      # 인사말 + 안내문 + 기업 목록
+MODE_ASK = "ask"        # 인사말 + 문구 한 줄 (기업 목록 없음)
+
+# 문구만 보낼 때 쓰는 기본값. 딜소개를 보냈는데 답이 없을 때, 목록을 또 밀어 넣기보다
+# 무엇을 보고 싶은지 되묻는 편이 답이 온다.
+ASK_FALLBACK = "선호하는 기업분야 말씀해주시면 맞추어 딜 공유해드리겠습니다."
+
+
 def _compose_for_contact(
     db: Session, user: User, contact: VcContact, companies: List[IrCompany],
     opening_template_id: Optional[int] = None,
     closing_template_id: Optional[int] = None,
+    mode: str = MODE_DEAL,
+    include_opening: Optional[bool] = None,
 ) -> mc.ComposeResult:
+    # 인사말 기본값은 방식마다 다르다. 문구만 보낼 때는 이미 대화가 오간 방이라
+    # 인사를 다시 붙이지 않는 편이 자연스럽다. 화면에서 켜고 끌 수 있다.
+    if include_opening is None:
+        include_opening = mode != MODE_ASK
+
     has_hist = _has_history(db, contact.id)
     opening_kind = mc.pick_opening_kind(has_hist)
     # 폴백도 실제 운영 스크립트 형식과 동일하게 유지(템플릿 미시드 상황 대비).
@@ -98,10 +114,13 @@ def _compose_for_contact(
         db, user.id, opening_kind,
         "안녕하세요, {담당자명} {직함}\n우리브이씨 ASSET입니다.",
     )
-    closing_body = _template_body(
-        db, user.id, "closing_day1",
-        "핵심 딜 {개수}개사 간단히 공유드립니다.\n관심 가시는 기업 있으시면 IR Deck 공유드리겠습니다.",
-    )
+    if mode == MODE_ASK:
+        closing_body = _template_body(db, user.id, "ask_preference", ASK_FALLBACK)
+    else:
+        closing_body = _template_body(
+            db, user.id, "closing_day1",
+            "핵심 딜 {개수}개사 간단히 공유드립니다.\n관심 가시는 기업 있으시면 IR Deck 공유드리겠습니다.",
+        )
     # 화면에서 고른 문구가 있으면 그것을 우선한다.
     opening_body = _template_body_by_id(db, user, opening_template_id) or opening_body
     closing_body = _template_body_by_id(db, user, closing_template_id) or closing_body
@@ -110,8 +129,10 @@ def _compose_for_contact(
         opening_body,
         closing_body,
         _to_contact_view(contact),
-        [_to_company_view(c) for c in companies],
-        stage=mc.STAGE_DAY1,
+        [] if mode == MODE_ASK else [_to_company_view(c) for c in companies],
+        # STAGE_DAY1 이 아니면 기업 목록을 붙이지 않는다(composer 규칙).
+        stage=mc.STAGE_REMIND if mode == MODE_ASK else mc.STAGE_DAY1,
+        include_opening=include_opening,
     )
 
 
@@ -146,11 +167,15 @@ def _load_companies(db: Session, company_ids: List[int]) -> List[IrCompany]:
 # --- schemas ---------------------------------------------------------------
 
 class PreviewRequest(BaseModel):
-    company_ids: List[int]
+    company_ids: List[int] = []
     contact_ids: List[int]
     # 발송 화면에서 고른 문구. 없으면 기존대로 활성 템플릿을 쓴다.
     opening_template_id: Optional[int] = None
     closing_template_id: Optional[int] = None
+    # "deal" = 기업 목록까지 · "ask" = 문구만
+    mode: str = MODE_DEAL
+    # 인사말을 붙일지. None 이면 방식별 기본값(딜소개 O · 문구만 X)을 쓴다.
+    include_opening: Optional[bool] = None
 
 
 class MessageOverride(BaseModel):
@@ -160,9 +185,11 @@ class MessageOverride(BaseModel):
 
 
 class SendRequest(BaseModel):
-    company_ids: List[int]
+    company_ids: List[int] = []
     contact_ids: List[int]
     title: Optional[str] = None
+    mode: str = MODE_DEAL
+    include_opening: Optional[bool] = None
     opening_template_id: Optional[int] = None
     closing_template_id: Optional[int] = None
     # 담당자별 수정본. 없는 담당자는 서버가 다시 조합한다.
@@ -199,23 +226,25 @@ def preview(
     user: User = Depends(get_current_user),
 ):
     """Per-contact composed message previews (FEATURE_SPEC §5 ⑤)."""
-    if not (1 <= len(req.company_ids) <= MAX_COMPANIES_PER_SEND):
+    if req.mode != MODE_ASK and not (1 <= len(req.company_ids) <= MAX_COMPANIES_PER_SEND):
         raise HTTPException(
             status_code=400,
             detail=f"기업은 1~{MAX_COMPANIES_PER_SEND}개 선택하세요",
         )
-    companies = _load_companies(db, req.company_ids)
+    companies = [] if req.mode == MODE_ASK else _load_companies(db, req.company_ids)
     previews = []
     for contact_id in req.contact_ids:
         contact = db.get(VcContact, contact_id)
         if contact is None or contact.user_id != user.id:
             continue
         result = _compose_for_contact(db, user, contact, companies,
-                                      req.opening_template_id, req.closing_template_id)
+                                      req.opening_template_id, req.closing_template_id,
+                                      mode=req.mode,
+                                      include_opening=req.include_opening)
         room_ok = bool(contact.kakao_room_name) and contact.room_verified in ("verified", "unverified")
         # 투자분야/단계/라운드 규모 적합도 — 성향과 어긋나는 딜은 발송 전 경고(DRAFT_REFERENCE).
         fit = matcher.evaluate_contact(contact, companies)
-        thin = [c.name for c in companies if not c.introducible]
+        thin = [c.name for c in companies if not c.introducible]  # 문구만 모드면 companies 가 비어 있다
         thin_warnings = (
             [f"내용이 부족한 기업이 포함됐습니다: {', '.join(thin)} — "
              f"딜 기업 DB에서 한줄소개·숫자를 채우면 문구가 좋아집니다"]
@@ -258,7 +287,7 @@ def create_send_list(
     FEATURE_SPEC §5 ⑥: 발송 목록 생성 → send_job(queued). The mock/real agent
     then claims it via the queue API.
     """
-    if not (1 <= len(req.company_ids) <= MAX_COMPANIES_PER_SEND):
+    if req.mode != MODE_ASK and not (1 <= len(req.company_ids) <= MAX_COMPANIES_PER_SEND):
         raise HTTPException(
             status_code=400,
             detail=f"기업은 1~{MAX_COMPANIES_PER_SEND}개 선택하세요",
@@ -266,7 +295,7 @@ def create_send_list(
     if not req.contact_ids:
         raise HTTPException(status_code=400, detail="대상 담당자를 1명 이상 선택하세요")
 
-    companies = _load_companies(db, req.company_ids)
+    companies = [] if req.mode == MODE_ASK else _load_companies(db, req.company_ids)
 
     # Resolve + validate target contacts (must be owned, must have a room name).
     contacts: List[VcContact] = []
@@ -284,7 +313,7 @@ def create_send_list(
     # Batch + companies
     batch = DealBatch(
         user_id=user.id,
-        title=req.title or "딜소개 회차",
+        title=req.title or ("선호 분야 묻기" if req.mode == MODE_ASK else "딜소개 회차"),
         sent_date=now_iso()[:10],
         cycle_type="adhoc",
     )
@@ -309,12 +338,14 @@ def create_send_list(
         else:
             text = _compose_for_contact(db, user, contact, companies,
                                         req.opening_template_id,
-                                        req.closing_template_id).text
+                                        req.closing_template_id,
+                                        mode=req.mode,
+                                        include_opening=req.include_opening).text
         room_name, message = _apply_test_room(contact, text)
         db.add(SendItem(
             job_id=job.id,
             contact_id=contact.id,
-            stage=mc.STAGE_DAY1,
+            stage=mc.STAGE_REMIND if req.mode == MODE_ASK else mc.STAGE_DAY1,
             room_name=room_name,
             message=message,
             status="pending",

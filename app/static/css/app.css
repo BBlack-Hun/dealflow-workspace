@@ -472,3 +472,32 @@ a.secondary-btn { display: inline-flex; align-items: center; text-decoration: no
 .pick-card.thin { background: #fffdf7; border-color: #f0e0c0; }
 .pick-warn { font-size: 11px; color: var(--amber); margin-top: 2px; }
 .pick-warn a { color: var(--amber); }
+
+/* ── 딜 제안: 보내는 방식 탭 ─────────────────────────────────── */
+.mode-tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+.mode-tab { display: flex; flex-direction: column; gap: 2px; align-items: flex-start;
+  padding: 10px 16px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--panel); cursor: pointer; font-size: 14px; font-weight: 600; color: var(--ink); }
+.mode-tab span { font-size: 11px; font-weight: 400; color: var(--muted); }
+.mode-tab:hover { border-color: var(--brand); }
+.mode-tab.active { border-color: var(--brand); background: #eef3ff; color: var(--brand); }
+.mode-tab.active span { color: var(--brand); opacity: .8; }
+.panel.dimmed { opacity: .45; }
+.panel.dimmed .card-list { pointer-events: none; }
+
+/* 몇 개 / 몇 명 골랐는지 — 발송 직전 가장 궁금한 값이라 크게 띄운다 */
+.count-pill { display: inline-flex; align-items: baseline; gap: 2px; margin-left: 8px;
+  padding: 2px 10px; border-radius: 999px; background: var(--line); color: var(--muted);
+  font-size: 12px; font-weight: 500; }
+.count-pill b { font-size: 15px; font-weight: 700; }
+.count-pill.on { background: #e6efff; color: var(--brand); }
+.send-summary { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  padding: 10px 14px; margin-bottom: 10px; border: 1px solid var(--line);
+  border-radius: 10px; background: #fafbfc; }
+.ss-item { font-size: 13px; color: var(--muted); }
+.ss-item b { font-size: 20px; font-weight: 700; color: var(--ink); margin-right: 2px; }
+.ss-arrow { color: var(--muted); }
+.ss-note { font-size: 12px; margin-left: auto; }
+
+.opening-toggle { flex-direction: row !important; align-items: center; gap: 6px !important;
+  color: var(--ink) !important; font-size: 13px !important; padding-bottom: 6px; }

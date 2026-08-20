@@ -10,7 +10,7 @@ from ..db import get_db
 from ..deps import get_current_user, templates
 from ..models import IrCompany, SendJob, User, VcContact
 from ..ui import MENU, base_ctx as _base_ctx
-from .companies import blocked_reason as companyblocked_reason
+from .companies import blocked_reason as company_blocked_reason
 from .contacts import contact_rows
 
 router = APIRouter(tags=["pages"])
@@ -44,11 +44,18 @@ def deals_page(
         .where(VcContact.user_id == user.id, VcContact.channel_kakao == 1)
         .order_by(VcContact.id)
     ).scalars().all()
+    # 딜소개를 보냈는데 IR 요청·미팅으로 이어지지 않은 담당자.
+    # 이들에게는 목록을 또 밀어 넣기보다 무엇을 보고 싶은지 되묻는 편이 답이 온다.
+    no_reaction_ids = {
+        row["id"] for row in contact_rows(db, user)
+        if row["last_deal"] and not (row["ir_total"] or row["meet_total"])
+    }
     ctx = _base_ctx(request, db, user, "deal")
     ctx.update({
         "companies": companies,
         "contacts": contacts,
-        "blocked_reasons": {c.id: companyblocked_reason(c)
+        "no_reaction_ids": no_reaction_ids,
+        "blocked_reasons": {c.id: company_blocked_reason(c)
                             for c in companies if not c.introducible},
     })
     return templates.TemplateResponse("deals.html", ctx)

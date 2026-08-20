@@ -198,10 +198,15 @@ def compose_message(
     contact: ContactView,
     companies: Optional[List[CompanyView]] = None,
     stage: int = STAGE_DAY1,
+    include_opening: bool = True,
 ) -> ComposeResult:
     """Assemble the final Kakao message text for one contact.
 
     Day1 includes numbered company summaries; remind/meeting stages omit them.
+
+    ``include_opening=False`` 는 인사말을 빼고 본문만 보낸다. 이미 대화가 오간
+    방에 한 줄만 덧붙일 때는 매번 "안녕하세요, ○○○ 님" 을 다시 붙이는 편이
+    오히려 어색하다(선호 분야를 되묻는 문구가 그렇다).
     """
     warnings: List[str] = []
     companies = companies or []
@@ -212,7 +217,7 @@ def compose_message(
     # 기업 목록 '위'에 온다. closing_body는 그 안내문을 담는다.
     intro = render_template(closing_body, contact, company_count=count).strip()
 
-    parts: List[str] = [opening, "", intro]
+    parts: List[str] = [opening, "", intro] if include_opening else [intro]
 
     if stage == STAGE_DAY1:
         if not companies:

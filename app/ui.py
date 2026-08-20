@@ -22,13 +22,13 @@ from .models import User
 #
 # `admin_only` 인 메뉴는 관리자에게만 보인다(들어가도 403 이지만, 보이지 않는 편이 낫다).
 MENU = [
-    {"key": "home", "label": "대시보드", "href": "/", "ready": True},
-    {"key": "deal", "label": "딜소개 보내기", "href": "/deals", "ready": True},
-    {"key": "vc", "label": "내 투자사", "href": "/contacts", "ready": True},
-    {"key": "su", "label": "딜 기업 DB", "href": "/companies", "ready": True},
-    {"key": "templates", "label": "문구 관리", "href": "/templates", "ready": True},
+    {"key": "home", "label": "대시보드 요약", "href": "/", "ready": True},
+    {"key": "deal", "label": "딜 제안 관리", "href": "/deals", "ready": True},
+    {"key": "su", "label": "스타트업 관리", "href": "/companies", "ready": True},
+    {"key": "vc", "label": "투자사 DB", "href": "/contacts", "ready": True},
+    {"key": "templates", "label": "딜 제안 문구", "href": "/templates", "ready": True},
+    {"key": "req", "label": "투자사 미팅 관리", "href": "/ir", "ready": False},
     {"key": "check", "label": "오늘 할 일", "href": "/todo", "ready": False},
-    {"key": "req", "label": "IR·미팅 관리", "href": "/ir", "ready": False},
     {"key": "admin", "label": "팀 현황", "href": "/team", "ready": True, "admin_only": True},
     {"key": "setup", "label": "발송 프로그램 설치", "href": "/setup", "ready": True},
 ]
