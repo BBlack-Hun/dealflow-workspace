@@ -327,3 +327,63 @@ def test_companies_table_shows_ir_link_state(logged, db):
     body = logged.get("/companies").text
     assert 'data-f-ir="● 있음"' in body
     assert 'data-f-ir="⚠ 없음"' in body
+
+
+# --- 화면이 최신인가 --------------------------------------------------------
+
+@pytest.mark.parametrize("path", ["/", "/contacts", "/deals", "/companies"])
+def test_pages_are_not_cached(logged, path):
+    """투자사 DB 에서 고치고 대시보드로 돌아오면 예전 숫자가 보이던 문제.
+
+    서버는 매번 새로 계산하는데 브라우저가 캐시(뒤로가기 포함)를 내줬다.
+    로그인이 필요한 화면이 캐시에 남으면 로그아웃 뒤 뒤로가기로도 보인다.
+    """
+    assert "no-store" in logged.get(path).headers.get("cache-control", "")
+
+
+def test_static_files_stay_cacheable(logged):
+    """글꼴·CSS 까지 매번 받으면 화면이 느려진다."""
+    r = logged.get("/static/css/app.css")
+    assert "no-store" not in r.headers.get("cache-control", "")
+
+
+def test_edit_shows_up_on_the_dashboard_at_once(logged, db, users):
+    """방 이름을 지우면 '카톡 발송 가능'이 바로 줄어야 한다."""
+    from app.models import SheetOwner, VcContact
+    from app.services.dashboard import user_dashboard
+
+    db.add_all([
+        SheetOwner(label="내 명단", user_id=users["u1"].id),
+        VcContact(user_id=users["u1"].id, name="홍길동", firm="가나벤처스",
+                  source_sheet="내 명단", channel_kakao=1,
+                  kakao_room_name="홍길동 방", room_verified="verified",
+                  connect_stage="connected"),
+    ])
+    db.commit()
+    contact = db.query(VcContact).filter_by(name="홍길동").first()
+    before = {k["key"]: k["value"] for k in user_dashboard(db, users["u1"])["kpis"]}
+    assert before["sendable"] == 1
+
+    logged.patch(f"/api/contacts/{contact.id}",
+                 json={"name": "홍길동", "kakao_room_name": ""})
+    db.expire_all()
+    after = {k["key"]: k["value"] for k in user_dashboard(db, users["u1"])["kpis"]}
+    assert after["sendable"] == 0
+
+
+def test_clearing_the_room_leaves_the_send_list(logged, db, users):
+    """방 이름을 지웠는데 '연결 완료'로 남으면 보낼 방 없이 발송 대상에 뜬다."""
+    from app.models import VcContact
+
+    db.add(VcContact(user_id=users["u1"].id, name="홍길동", firm="가나벤처스",
+                     channel_kakao=1, kakao_room_name="홍길동 방",
+                     connect_stage="connected"))
+    db.commit()
+    contact = db.query(VcContact).filter_by(name="홍길동").first()
+    assert "홍길동" in logged.get("/deals").text
+
+    logged.patch(f"/api/contacts/{contact.id}",
+                 json={"name": "홍길동", "kakao_room_name": ""})
+    db.expire_all()
+    assert db.get(VcContact, contact.id).connect_stage != "connected"
+    assert "홍길동" not in logged.get("/deals").text

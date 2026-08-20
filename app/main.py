@@ -39,6 +39,22 @@ def create_app() -> FastAPI:
     app.include_router(setup_router.router)
     app.include_router(pages.router)
 
+    @app.middleware("http")
+    async def _no_store(request: Request, call_next):
+        """화면과 API 응답을 브라우저가 캐시하지 못하게 한다.
+
+        투자사 DB 에서 값을 고치고 대시보드로 돌아오면 예전 숫자가 보였다.
+        서버는 매번 새로 계산하는데 브라우저가 캐시(뒤로가기 포함)를 내준 것이다.
+        로그인이 필요한 화면이 캐시에 남는 것도 좋지 않다 — 로그아웃한 뒤
+        뒤로가기로 다시 보일 수 있다.
+
+        `/static/` 은 그대로 캐시한다. 글꼴·CSS 까지 매번 받으면 화면이 느려진다.
+        """
+        response = await call_next(request)
+        if not request.url.path.startswith("/static/"):
+            response.headers["Cache-Control"] = "no-store, must-revalidate"
+        return response
+
     @app.exception_handler(NotAuthenticated)
     def _needs_login(request: Request, exc: NotAuthenticated):
         """화면 요청은 로그인 페이지로, API 요청은 401 그대로."""

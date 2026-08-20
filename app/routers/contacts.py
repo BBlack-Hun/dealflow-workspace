@@ -532,3 +532,12 @@ def _assign(contact: VcContact, body: ContactIn) -> None:
         contact.channel_kakao = 1 if body.channel_kakao else 0
     if body.channel_email is not None:
         contact.channel_email = 1 if body.channel_email else 0
+
+    # 방 이름과 연결 단계가 어긋나면 안 된다. 방 이름을 지웠는데 '연결 완료'로
+    # 남으면 발송 대상 목록에는 뜨는데 보낼 방이 없다.
+    if body.kakao_room_name is not None:
+        if (contact.kakao_room_name or "").strip():
+            contact.connect_stage = sheet_import.STAGE_CONNECTED
+        elif contact.connect_stage == sheet_import.STAGE_CONNECTED:
+            # 연결됐던 사람이니 미착수로 되돌리지는 않는다.
+            contact.connect_stage = sheet_import.STAGE_IN_PROGRESS
