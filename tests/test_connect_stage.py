@@ -209,3 +209,68 @@ def test_admin_cannot_send_to_someone_elses_contact(client, db, users):
         "company_ids": [company.id], "contact_ids": [other.id],
     })
     assert r.status_code == 404
+
+
+# --- 명단(시트) 탭 ----------------------------------------------------------
+#
+# 시트가 나뉘어 있던 데는 이유가 있다. 한 표에 다 쏟으면 시트를 쓰던 사람이
+# 자기 명단을 못 찾는다 — 원본 시트와 같은 이름으로 탭을 나눈다.
+
+def test_tabs_use_the_original_sheet_names(logged, db):
+    _import(logged, [_row(1, "가나사람", kakao="O")], sheet="")
+    logged.post(
+        "/api/import/contacts",
+        files={"file": ("150명.xlsx", _xlsx([ROSTER_HEADER, _row(2, "신규사람", firm="마바벤처스")]),
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        data={"dry_run": "false"},
+    )
+    body = logged.get("/contacts").text
+    assert "명단.xlsx" in body or "150명.xlsx" in body
+
+
+def test_tab_filters_to_that_sheet(logged, db):
+    from app.models import VcContact
+
+    _import(logged, [_row(1, "가나사람", kakao="O")])
+    db.expire_all()
+    # 두 번째 명단에만 있는 사람
+    row = VcContact(user_id=1, name="딴명단사람", firm="마바벤처스",
+                    source_sheet="다른명단", connect_stage="not_started")
+    db.add(row)
+    db.commit()
+
+    everything = logged.get("/contacts").text
+    assert "가나사람" in everything and "딴명단사람" in everything
+
+    only = logged.get("/contacts?sheet=다른명단").text
+    assert "딴명단사람" in only
+    assert "가나사람" not in only
+
+
+def test_unknown_tab_falls_back_to_everything(logged, db):
+    """탭이 사라져도 빈 화면이 뜨지 않는다."""
+    _import(logged, [_row(1, "가나사람", kakao="O")])
+    assert "가나사람" in logged.get("/contacts?sheet=없는명단").text
+
+
+def test_contact_in_two_sheets_shows_in_both(logged, db):
+    """한 사람이 여러 명단에 겹쳐 있다 — 한쪽에서만 보이면 안 된다."""
+    from app.models import VcContact
+
+    db.add(VcContact(user_id=1, name="겹친사람", firm="가나벤처스",
+                     source_sheet="명단A,명단B", connect_stage="connected"))
+    db.commit()
+    assert "겹친사람" in logged.get("/contacts?sheet=명단A").text
+    assert "겹친사람" in logged.get("/contacts?sheet=명단B").text
+
+
+def test_manually_added_contacts_get_their_own_tab(logged, db):
+    """시트에서 오지 않은 담당자도 어딘가에는 있어야 한다."""
+    from app.models import VcContact
+
+    db.add(VcContact(user_id=1, name="직접넣은사람", firm="가나벤처스",
+                     connect_stage="not_started"))
+    db.commit()
+    body = logged.get("/contacts").text
+    assert "직접 추가" in body
+    assert "직접넣은사람" in logged.get("/contacts?sheet=직접 추가").text

@@ -20,6 +20,19 @@
 </p>
 {% endif %}
 
+<!-- 명단(시트)별 탭. 원본 시트와 같은 이름을 써서 쓰던 사람이 헷갈리지 않게 한다. -->
+<nav class="sheet-tabs">
+  <a class="sheet-tab {% if not selected_sheet %}active{% endif %}" href="/contacts">
+    전체 <span>{{ total_count }}</span>
+  </a>
+  {% for t in tabs %}
+  <a class="sheet-tab {% if selected_sheet == t.key %}active{% endif %}"
+     href="/contacts?sheet={{ t.key|urlencode }}" title="연결 완료 {{ t.connected }}명">
+    {{ t.label }} <span>{{ t.count }}</span>
+  </a>
+  {% endfor %}
+</nav>
+
 <div class="kpi-row slim">
   {% for c in connect_counts %}
   <div class="kpi-card static"><span class="kpi-label">{{ c.label }}</span>

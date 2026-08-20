@@ -14,7 +14,7 @@ from ..models import IrCompany, SendJob, User, VcContact
 from ..services import mailer, sheet_import
 from ..ui import MENU, base_ctx as _base_ctx
 from .companies import blocked_reason as company_blocked_reason
-from .contacts import contact_rows
+from .contacts import contact_rows, sheet_tabs
 
 router = APIRouter(tags=["pages"])
 
@@ -75,17 +75,31 @@ def contacts_page(
     request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
+    sheet: str = "",
 ):
-    """내 투자사 (FEATURE_SPEC §3). 표는 SSR, 필터는 브라우저에서 즉시 반응."""
+    """내 투자사 (FEATURE_SPEC §3). 표는 SSR, 필터는 브라우저에서 즉시 반응.
+
+    명단(시트)별로 탭을 나눈다. 333명을 한 표에 쏟으면 시트를 쓰던 사람이
+    자기 명단을 못 찾는다 — 시트가 나뉘어 있던 구분을 그대로 살린다.
+    """
     # 관리자는 팀 전체를 본다 — 누가 어떤 투자사를 맡고 있는지 알아야 한다.
     # 발송 대상 고르기는 여전히 본인 담당분만이다(/deals 참고).
     team_wide = user.role == "admin"
-    rows = contact_rows(db, user, team_wide=team_wide)
+    all_rows = contact_rows(db, user, team_wide=team_wide)
+    tabs = sheet_tabs(all_rows)
+
+    # 고른 명단이 없거나 사라졌으면 전체를 보여준다(빈 화면보다 낫다).
+    selected = sheet if any(t["key"] == sheet for t in tabs) else ""
+    rows = [r for r in all_rows if selected in r["sheets"]] if selected else all_rows
+
     stages = Counter(r["connect_stage"] for r in rows)
     ctx = _base_ctx(request, db, user, "vc")
     ctx.update({
         "rows": rows,
         "team_wide": team_wide,
+        "tabs": tabs,
+        "selected_sheet": selected,
+        "total_count": len(all_rows),
         "connect_counts": [
             {"key": key, "label": label, "count": stages.get(key, 0)}
             for key, label in sheet_import.CONNECT_LABELS.items()
