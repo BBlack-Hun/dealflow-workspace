@@ -219,3 +219,106 @@ def test_page_opens(logged, seed):
     r = logged.get("/ir")
     assert r.status_code == 200
     assert "보낼 자료" in r.text
+
+
+# --- 딜 제안 관리와 이어지기 -------------------------------------------------
+#
+# 보내고 나서 다시 화면으로 돌아와 '전달함'을 누르게 하면, 바쁠 때 그 한 번을
+# 빼먹는다. 그러면 이미 보낸 요청이 계속 '보낼 자료'에 남는다.
+
+def _report_sent(client, db, job_id):
+    """에이전트가 발송 성공을 보고한 것처럼."""
+    from app.models import AgentDevice, SendItem
+
+    token = db.query(AgentDevice).filter_by(user_id=1).first().token
+    item = db.query(SendItem).filter_by(job_id=job_id).first()
+    return client.post(f"/api/agent/items/{item.id}/result",
+                       headers={"Authorization": f"Bearer {token}"},
+                       json={"status": "sent"})
+
+
+def test_ir_send_closes_the_request(logged, db, seed):
+    """자료를 보내면 그 요청이 자동으로 닫힌다."""
+    from app.models import IrCompany, IrRequest
+
+    logged.post("/ir/requests", follow_redirects=False, data={
+        "contact_id": seed["contact_id"], "company_name": "샘플애그"})
+    db.expire_all()
+    company = db.query(IrCompany).filter_by(name="샘플애그").first()
+
+    r = logged.post("/api/deals/send", json={
+        "company_ids": [company.id], "contact_ids": [seed["contact_id"]],
+        "mode": "ir"})
+    assert r.status_code == 200, r.text
+    _report_sent(logged, db, r.json()["job_id"])
+
+    db.expire_all()
+    assert db.query(IrRequest).first().status == "delivered"
+
+
+def test_ir_send_uses_its_own_job_kind(logged, db, seed):
+    """IR 자료 전달은 딜소개와 다른 일이다 — 종류가 남아야 후속도 멈춘다."""
+    from app.models import IrCompany, SendJob
+
+    company = db.query(IrCompany).filter_by(name="샘플애그").first()
+    r = logged.post("/api/deals/send", json={
+        "company_ids": [company.id], "contact_ids": [seed["contact_id"]],
+        "mode": "ir"})
+    db.expire_all()
+    assert db.get(SendJob, r.json()["job_id"]).kind == "ir_delivery"
+
+
+def test_only_the_sent_companies_are_closed(logged, db, seed):
+    """같은 담당자의 다른 기업 요청까지 닫으면 안 보낸 것을 보냈다고 적는 셈이다."""
+    from app.models import IrCompany, IrRequest
+
+    db.add(IrCompany(name="샘플메디", one_liner="뇌영상", revenue_recent=5))
+    db.commit()
+    logged.post("/ir/requests", follow_redirects=False, data={
+        "contact_id": seed["contact_id"], "company_name": "샘플애그\n샘플메디"})
+    db.expire_all()
+
+    agri = db.query(IrCompany).filter_by(name="샘플애그").first()
+    r = logged.post("/api/deals/send", json={
+        "company_ids": [agri.id], "contact_ids": [seed["contact_id"]], "mode": "ir"})
+    _report_sent(logged, db, r.json()["job_id"])
+
+    db.expire_all()
+    rows = {x.company_name: x.status for x in db.query(IrRequest).all()}
+    assert rows["샘플애그"] == "delivered"
+    assert rows["샘플메디"] == "open"
+
+
+def test_deal_send_does_not_close_requests(logged, db, seed):
+    """딜소개(목록 발송)는 자료를 보낸 것이 아니다."""
+    from app.models import IrCompany, IrRequest
+
+    logged.post("/ir/requests", follow_redirects=False, data={
+        "contact_id": seed["contact_id"], "company_name": "샘플애그"})
+    db.expire_all()
+    company = db.query(IrCompany).filter_by(name="샘플애그").first()
+
+    r = logged.post("/api/deals/send", json={
+        "company_ids": [company.id], "contact_ids": [seed["contact_id"]]})
+    _report_sent(logged, db, r.json()["job_id"])
+
+    db.expire_all()
+    assert db.query(IrRequest).first().status == "open"
+
+
+def test_ir_screen_groups_by_contact(logged, db, seed):
+    """한 담당자가 여러 기업을 요청하면 한 번에 보낼 수 있어야 한다."""
+    from app.models import IrCompany
+
+    db.add(IrCompany(name="샘플메디", one_liner="뇌영상", revenue_recent=5))
+    db.commit()
+    logged.post("/ir/requests", follow_redirects=False, data={
+        "contact_id": seed["contact_id"], "company_name": "샘플애그\n샘플메디"})
+
+    body = logged.get("/ir").text
+    assert "<b>2</b>개 기업" in body
+    # 담당자와 기업이 함께 넘어가야 딜 제안 관리에서 다시 고르지 않는다
+    import re
+    link = re.search(r'/deals\?mode=ir&contacts=(\d+)&companies=([\d,]+)', body)
+    assert link is not None, "자료 보내기 링크에 기업이 실려 있지 않다"
+    assert len(link.group(2).split(",")) == 2

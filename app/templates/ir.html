@@ -48,6 +48,42 @@
     </p>
   </div>
 
+  {% if request_groups %}
+  <!-- 한 담당자가 여러 기업을 한꺼번에 요청하는 일이 잦다.
+       한 번에 보내야 대화가 자연스럽고, 화면을 여러 번 오갈 일도 없다. -->
+  <div class="send-groups">
+    {% for g in request_groups %}
+    <div class="due-group">
+      <div class="due-head">
+        <b>{{ g.name }}</b> {{ g.title }} <span class="muted">{{ g.firm }}</span>
+        <span class="count-pill on"><b>{{ g.rows|length }}</b>개 기업</span>
+        {% if g.company_ids %}
+        <a class="primary-btn inline"
+           href="/deals?mode=ir&contacts={{ g.contact_id }}&companies={{ g.company_ids|join(',') }}">
+          자료 보내기
+        </a>
+        {% endif %}
+      </div>
+      <p class="hint">
+        {% for r in g.rows %}<span class="tag {% if r.overdue %}bad{% endif %}">{{ r.company_name }}</span>{% endfor %}
+      </p>
+      {% if g.missing %}
+      <p class="hint warn">
+        ⚠ 우리 DB 에 없는 기업: {{ g.missing|join(', ') }} —
+        <a href="/companies">스타트업 관리</a>에서 등록해야 함께 보낼 수 있습니다.
+      </p>
+      {% endif %}
+      {% if g.no_link %}
+      <p class="hint warn">
+        ⚠ IR 자료 링크가 없는 기업: {{ g.no_link|join(', ') }} —
+        <a href="/companies">스타트업 관리</a>에서 링크를 넣어주세요.
+      </p>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
   {% if open_requests %}
   <table class="grid-table compact">
     <thead><tr><th>요청일</th><th>담당자</th><th>기업</th><th>자료</th><th>기다린 날</th><th></th></tr></thead>
@@ -68,7 +104,6 @@
         </td>
         <td class="num {% if r.overdue %}bad{% endif %}">{{ r.waited }}일</td>
         <td class="row-acts">
-          <a class="linkbtn" href="/deals?mode=ir&contacts={{ r.contact_id }}">자료 보내기</a>
           <form method="post" action="/ir/requests/{{ r.id }}/deliver">
             <button class="linkbtn" type="submit">전달함</button>
           </form>
@@ -83,6 +118,11 @@
   {% else %}
   <p class="all-clear">✅ 보낼 자료가 없습니다.</p>
   {% endif %}
+  <p class="hint">
+    <b>[자료 보내기]</b> 를 누르면 담당자와 요청받은 기업이 <b>이미 선택된 채로</b>
+    딜 제안 관리가 열립니다. 발송에 성공하면 이 목록에서 <b>자동으로 빠집니다</b> —
+    돌아와서 '전달함'을 누를 필요가 없습니다.
+  </p>
 </section>
 
 <!-- 미팅 -->

@@ -60,6 +60,9 @@ def ir_page(request: Request, db: Session = Depends(get_db),
         "requests": requests,
         "meetings": meetings,
         "open_requests": [r for r in requests if r["status"] == "open"],
+        # 한 담당자가 여러 기업을 요청하는 일이 잦다 — 한 번에 보내야 자연스럽다.
+        "request_groups": pipeline.group_by_contact(
+            [r for r in requests if r["status"] == "open"]),
         "done_requests": [r for r in requests if r["status"] != "open"],
         "scheduled": [m for m in meetings if m["status"] == "scheduled"],
         "finished": [m for m in meetings if m["status"] != "scheduled"],

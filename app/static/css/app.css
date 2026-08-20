@@ -637,3 +637,4 @@ td.cell.save-failed { background: #fdecec; }
 .member-form textarea { width: 100%; padding: 6px 8px; border: 1px solid var(--line);
   border-radius: 8px; font: inherit; font-size: 13px; resize: vertical; }
 .ir-strip { border-left: 4px solid var(--amber); }
+.send-groups { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }

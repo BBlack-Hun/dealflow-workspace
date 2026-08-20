@@ -175,6 +175,26 @@ def _as_date(value: Optional[str]) -> Optional[date]:
         return None
 
 
+def group_by_contact(requests: List[dict]) -> List[dict]:
+    """담당자별로 묶는다. 한 사람이 여러 기업을 한꺼번에 요청하는 일이 잦아,
+    한 번에 보내야 대화가 자연스럽다."""
+    grouped: Dict[int, dict] = {}
+    for row in requests:
+        item = grouped.setdefault(row["contact_id"], {
+            "contact_id": row["contact_id"], "name": row["name"],
+            "title": row["title"], "firm": row["firm"],
+            "rows": [], "company_ids": [], "missing": [], "no_link": [],
+        })
+        item["rows"].append(row)
+        if row["company_id"]:
+            item["company_ids"].append(row["company_id"])
+            if not row["ir_url"]:
+                item["no_link"].append(row["company_name"])
+        else:
+            item["missing"].append(row["company_name"])
+    return sorted(grouped.values(), key=lambda g: -len(g["rows"]))
+
+
 def today_items(db: Session, user: User, today: Optional[date] = None) -> dict:
     """지금 손대야 할 것만. 대시보드와 '오늘 할 일'이 같은 값을 쓴다."""
     today = today or date.today()
@@ -200,6 +220,45 @@ def deliver(db: Session, request: IrRequest, when: Optional[date] = None) -> IrR
     request.delivered_at = (when or date.today()).isoformat()
     db.flush()
     return request
+
+
+def close_requests_for(db: Session, job, contact_id: int,
+                       when: Optional[date] = None) -> int:
+    """IR 자료를 보냈으면 그 요청을 '전달함'으로 닫는다.
+
+    보내고 나서 다시 화면으로 돌아와 버튼을 누르게 하면, 바쁠 때 그 한 번을
+    빼먹는다. 그러면 이미 보낸 요청이 계속 '보낼 자료'에 남는다.
+
+    회차에 담긴 기업과 이름이 맞는 열린 요청만 닫는다 — 같은 담당자의
+    다른 기업 요청까지 함께 닫으면 안 보낸 것을 보냈다고 적는 셈이다.
+    """
+    from ..models import DealBatchCompany
+
+    if job.batch_id is None:
+        return 0
+    sent_ids = {
+        row.company_id for row in db.execute(
+            select(DealBatchCompany).where(DealBatchCompany.batch_id == job.batch_id)
+        ).scalars().all()
+    }
+    if not sent_ids:
+        return 0
+    sent_keys = {
+        _key(c.name) for c in db.execute(
+            select(IrCompany).where(IrCompany.id.in_(sent_ids))
+        ).scalars().all()
+    }
+
+    closed = 0
+    for row in db.execute(
+        select(IrRequest).where(IrRequest.contact_id == contact_id,
+                                IrRequest.status == "open")
+    ).scalars().all():
+        matched = row.company_id in sent_ids or _key(row.company_name) in sent_keys
+        if matched:
+            deliver(db, row, when)
+            closed += 1
+    return closed
 
 
 def complete_meeting(db: Session, meeting: Meeting, outcome: str = "",
