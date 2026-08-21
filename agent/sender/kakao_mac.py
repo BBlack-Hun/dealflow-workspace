@@ -28,9 +28,13 @@ log = logging.getLogger("agent.kakao_mac")
 
 APP = "KakaoTalk"
 
-# 검색 결과가 이보다 많으면 "필터가 안 먹었다"고 보고 방을 열지 않는다.
-# (전체 대화목록이 그대로 남은 상태에서 첫 행을 누르면 엉뚱한 방이 열린다)
-MAX_SEARCH_ROWS = 20
+# 검색 결과에서 살펴볼 행 수 상한.
+#
+# 예전에는 이보다 많으면 "필터가 안 먹었다"고 보고 아예 중단했다. 첫 행을 누르는
+# 방식이었기 때문이다. 지금은 **제목이 정확히 일치하는 행**을 찾아 누르므로
+# 결과가 많아도 위험하지 않다 — 오히려 이름이 흔하면(참여자 이름으로도 걸린다)
+# 20건은 너무 적어서 정작 찾는 방이 잘려 나갔다.
+MAX_SEARCH_ROWS = 60
 
 
 def is_supported() -> bool:
@@ -279,15 +283,31 @@ class KakaoMacSender(Sender):
             )
             if not rows.isdigit() or int(rows) == 0:
                 raise RuntimeError(f"검색 결과가 없습니다: {room_name!r}")
+            # 결과가 아주 많으면 검색이 안 먹은 것이다(전체 대화목록). 그래도
+            # 제목이 정확히 같은 행만 누르므로, 살펴볼 범위만 제한하면 된다.
             if int(rows) > MAX_SEARCH_ROWS:
+                log.info("검색 결과 %s건 — 앞 %d건만 살펴봅니다 room=%r",
+                         rows, MAX_SEARCH_ROWS, room_name)
+
+            # 3) **제목이 정확히 일치하는 행**을 찾아 더블클릭.
+            #
+            #    첫 행을 그냥 누르면 안 된다. 카톡 검색은 방 제목뿐 아니라
+            #    **참여자 이름으로도** 걸린다. 이름이 흔하면 그 사람이 낀 단체방이
+            #    잔뜩 나오고 첫 행은 대개 그중 하나다(실기: '홍길동' 검색 시
+            #    본인 방을 못 찾음). 창 제목 검증이 오발송은 막아 주지만,
+            #    남의 대화창을 여는 것 자체를 피해야 한다.
+            titles = self._result_titles(main)
+            index = _exact_row(titles, room_name)
+            if index is None:
+                near = ", ".join(titles[:5]) or "(제목을 읽지 못함)"
                 raise RuntimeError(
-                    f"검색이 걸러지지 않았습니다(결과 {rows}건). 방을 열지 않고 중단합니다."
+                    f"제목이 정확히 같은 방을 찾지 못했습니다: {room_name!r} · "
+                    f"검색 결과 {len(titles)}건 [{near}]"
                 )
 
-            # 3) 첫 결과 행 더블클릭
             raw = _osa(
                 f'tell application "System Events" to tell process "{APP}"\n'
-                f'  set c to UI element 1 of (first row of first table of '
+                f'  set c to UI element 1 of (row {index} of first table of '
                 f'first scroll area of ({main}))\n'
                 f'  set p to position of c\n'
                 f'  set s to size of c\n'
@@ -311,6 +331,28 @@ class KakaoMacSender(Sender):
             raise
         except Exception:
             log.exception("_open_room_via_search 실패 room=%r", room_name)
+
+    def _result_titles(self, main: str) -> List[str]:
+        """검색 결과 각 행의 **방 제목**. 행 순서를 그대로 유지한다.
+
+        제목을 못 읽은 행도 빈 줄로 남긴다 — 자리를 건너뛰면 행 번호가 밀려
+        엉뚱한 방을 누르게 된다.
+        """
+        raw = _osa(
+            f'tell application "System Events" to tell process "{APP}"\n'
+            f'  set t to first table of first scroll area of ({main})\n'
+            f'  set acc to ""\n'
+            f'  repeat with rw in rows of t\n'
+            f'    set one to ""\n'
+            f'    try\n'
+            f'      set one to value of (first static text of (UI element 1 of rw))\n'
+            f'    end try\n'
+            f'    set acc to acc & one & "\\n"\n'
+            f'  end repeat\n'
+            f'  return acc\n'
+            f'end tell'
+        )
+        return [line.strip() for line in raw.split("\n")][:MAX_SEARCH_ROWS]
 
     def _input_ref(self, room_name: str) -> str:
         return (
@@ -424,6 +466,8 @@ class KakaoMacSender(Sender):
         )
         titles = [t.strip() for t in raw.split("\n") if t.strip()]
         # 이전 검색 결과가 섞이지 않도록 이름이 포함된 것만 인정한다.
+        # (카톡은 참여자 이름으로도 검색되므로, 제목에 이름이 없는 단체방이
+        #  섞여 들어온다 — 그건 우리가 찾는 방이 아니다)
         titles = [t for t in titles if needle and needle in t]
         if marker:
             titles = [t for t in titles if marker in t]
@@ -535,6 +579,25 @@ class KakaoMacSender(Sender):
         except Exception as exc:
             log.exception("send_text 실패")
             return SendResult(ok=False, error=f"kakao_mac: {exc}")
+
+
+def _norm(text: str) -> str:
+    """제목 비교용. 연속 공백만 줄인다 — 그 밖의 보정은 하지 않는다.
+
+    한 글자만 달라도 다른 방이므로, 임의로 맞춰 주면 엉뚱한 방을 열게 된다.
+    """
+    return " ".join((text or "").split())
+
+
+def _exact_row(titles: List[str], room_name: str) -> Optional[int]:
+    """제목이 정확히 같은 행 번호(1부터). 없으면 None.
+
+    같은 제목이 여러 개면 **고르지 않는다** — 어느 쪽인지 알 수 없는데
+    아무거나 열면 남의 대화창일 수 있다.
+    """
+    want = _norm(room_name)
+    hits = [i for i, title in enumerate(titles, start=1) if _norm(title) == want]
+    return hits[0] if len(hits) == 1 else None
 
 
 def _esc(text: str) -> str:
