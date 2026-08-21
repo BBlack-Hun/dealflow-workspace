@@ -6,7 +6,7 @@
 
 사용:
     python -m agent.diagnose                 # 현재 열린 카톡 창 목록
-    python -m agent.diagnose "김정훈"         # 그 방을 열어보고 결과 보고
+    python -m agent.diagnose "홍길동"         # 그 방을 열어보고 결과 보고
 
 이 도구는 **메시지를 보내지 않는다.** 창을 열어 제목만 읽는다.
 """
