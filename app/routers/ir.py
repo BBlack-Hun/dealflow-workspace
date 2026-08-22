@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import get_current_user, templates
 from ..models import IrRequest, Meeting, User, VcContact
-from ..services import cadence, pipeline, sheet_owner
+from ..services import cadence, flow, pipeline, sheet_owner
 from ..ui import base_ctx
 
 router = APIRouter(tags=["ir"])
@@ -55,8 +55,10 @@ def ir_page(request: Request, db: Session = Depends(get_db),
     meetings = pipeline.meeting_rows(db, user)
     items = pipeline.today_items(db, user, today)
 
-    ctx = base_ctx(request, db, user, active="req")
+    ctx = base_ctx(request, db, user, active="flow")
     ctx.update({
+        "flow_tab": "ir",
+        "flow_counts": flow.counts(db, user, today),
         "requests": requests,
         "meetings": meetings,
         "open_requests": [r for r in requests if r["status"] == "open"],

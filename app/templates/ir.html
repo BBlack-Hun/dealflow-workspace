@@ -9,6 +9,8 @@
   </p>
 </header>
 
+{% include "_flow_tabs.html" %}
+
 <div class="kpi-row slim">
   <div class="kpi-card static"><span class="kpi-label">보낼 자료</span>
     <span class="kpi-value {% if counts.open %}warn{% endif %}">{{ counts.open }}</span></div>
@@ -133,7 +135,7 @@
 </section>
 
 <!-- 미팅 -->
-<section class="panel">
+<section class="panel" id="meetings">
   <h2 class="panel-title">미팅
     <span class="count-pill {% if scheduled %}on{% endif %}"><b>{{ scheduled|length }}</b>건 예정</span>
     <button type="button" class="linkbtn" id="new-meeting-btn">미팅 등록</button>

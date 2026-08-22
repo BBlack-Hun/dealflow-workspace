@@ -9,6 +9,8 @@
   </p>
 </header>
 
+{% include "_flow_tabs.html" %}
+
 <div class="kpi-row slim">
   <div class="kpi-card static"><span class="kpi-label">오늘 보낼 것</span>
     <span class="kpi-value {% if counts.due %}warn{% endif %}">{{ counts.due }}</span></div>

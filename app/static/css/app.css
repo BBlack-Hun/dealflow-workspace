@@ -715,3 +715,7 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
 .stage-pill.warn  { background:#fff5e0; border-color:#f0d18a; color:#8a5200; }
 .stage-pill.good  { background:#e8f6ec; border-color:#a8d8b8; color:#1f7a3d; }
 .stage-pill.done  { background:#e8f0fc; border-color:#a9c4ec; color:#1a5fb4; }
+
+/* 딜 진행 관리 탭 — 급한 건수는 눈에 띄게. */
+.flow-tabs { margin-bottom: 12px; }
+.flow-tabs .sheet-tab span.warn { background:#f6c344; color:#4a3400; }
