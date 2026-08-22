@@ -51,6 +51,11 @@ REQUIRED_FIELDS = [
 
 
 
+def _short(value: Optional[str]) -> str:
+    """괄호 앞까지. 표 한 칸에 설명까지 넣으면 정작 이름이 안 보인다."""
+    return (value or "").split(" (")[0].strip()
+
+
 def missing_fields(c: IrCompany) -> List[str]:
     """비어 있는 칸의 **화면 이름** 목록. 무엇을 채워야 하는지 바로 알 수 있게."""
     out = []
@@ -89,6 +94,10 @@ def company_rows(db: Session) -> List[dict]:
             "sector_major": c.sector_major or "",
             "sector_minor": c.sector_minor or "",
             "series": c.series or "",
+            # 실제 값은 "Pre A, Bridge (누적투자금 5억미만, 년매출액 10억이상)" 처럼 길다.
+            # 괄호 안은 297행에 똑같이 반복되는 **설명**이라 표에서는 앞부분만 보인다
+            # (전체는 툴팁과 편집창에서 본다).
+            "series_short": _short(c.series),
             "one_liner": c.one_liner or "",
             "revenue_recent": c.revenue_recent,
             "funding_total": c.funding_total,

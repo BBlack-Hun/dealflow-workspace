@@ -212,3 +212,18 @@
       data.introducible ? "● 소개 가능" : "⚠ 내용 부족");
   });
 })();
+
+// 단계는 표에 이름만 보인다 — 괄호 안 설명은 297행에 똑같이 반복되는 참고문이라
+// 칸을 통째로 잡아먹는다. 저장한 뒤에도 짧은 이름으로 되돌려 그린다.
+(function () {
+  var table = document.getElementById("co-table");
+  if (!table) return;
+
+  table.addEventListener("inline-saved", function (e) {
+    var cell = e.detail.cell;
+    if (!cell.hasAttribute("data-value")) return;
+    var full = cell.getAttribute("data-value") || "";
+    cell.textContent = full.split(" (")[0].trim();
+    cell.title = full;
+  });
+})();

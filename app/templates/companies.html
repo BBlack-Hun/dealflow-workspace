@@ -85,9 +85,9 @@
           숫자 칸을 좁혀 그쪽에 몰아 준다.
         #}
         <th style="width:34px">#</th>
-        <th style="width:13%" data-filters="top:추천">기업명<div class="th-filters"></div></th>
+        <th style="width:12%" data-filters="top:추천">기업명<div class="th-filters"></div></th>
         <th style="width:9%" data-filters="sector:분야">분야<div class="th-filters"></div></th>
-        <th style="width:64px" data-filters="series:단계">단계<div class="th-filters"></div></th>
+        <th style="width:9%" data-filters="series:단계">단계<div class="th-filters"></div></th>
         <th>소개 문구<span class="th-note">두 줄까지 보입니다 · 눌러서 수정</span></th>
         <th class="num" style="width:66px">매출</th>
         <th class="num" style="width:66px">누적투자</th>
@@ -102,7 +102,7 @@
       <tr data-id="{{ r.id }}" data-search="{{ r.search }}"
           data-f-top="{{ '★ 추천' if r.is_top_deal else '일반' }}"
           data-f-sector="{{ r.sector_major }}"
-          data-f-series="{{ r.series }}"
+          data-f-series="{{ r.series_short }}"
           data-f-ready="{{ '● 소개 가능' if r.introducible else '⚠ 내용 부족' }}"
           data-f-summary="{{ r.summary_label }}"
           data-f-contract="{{ r.contract_label }}"
@@ -112,10 +112,19 @@
           {% if r.is_top_deal %}<span class="star">★</span>{% endif %}<b class="cell" data-field="name">{{ r.name }}</b>
           {% if r.contract_status == 'yes' %}<span class="tag">계약</span>{% endif %}
         </td>
-        <td><span class="cell" data-field="sector_major">{{ r.sector_major }}</span>{% if r.sector_minor %} <span class="muted">· {{ r.sector_minor }}</span>{% endif %}</td>
-        <td class="cell" data-field="series">{{ r.series }}</td>
-        <td class="cell clamp2" data-field="one_liner" data-type="long"
-            title="{{ r.one_liner }}">{{ r.one_liner }}</td>
+        <td title="{{ r.sector_major }}">
+          <div class="cell clamp2" data-field="sector_major" data-type="pick">{{ r.sector_major }}</div>
+          {% if r.sector_minor %}<div class="cell-sub muted">{{ r.sector_minor }}</div>{% endif %}
+        </td>
+        <td title="{{ r.series }}">
+          {# 표에는 이름만, 전체 값은 data-value 로 들고 있는다 — 골라 저장할 때
+             괄호 안 설명까지 그대로 지켜져야 한다. #}
+          <div class="cell clamp2" data-field="series" data-type="pick"
+               data-value="{{ r.series }}">{{ r.series_short }}</div>
+        </td>
+        <td title="{{ r.one_liner }}">
+          <div class="cell clamp2" data-field="one_liner" data-type="long">{{ r.one_liner }}</div>
+        </td>
         <td class="cell num" data-field="revenue_recent" data-type="number">{{ '{:,}'.format(r.revenue_recent) if r.revenue_recent else '' }}</td>
         <td class="cell num" data-field="funding_total" data-type="number">{{ '{:,}'.format(r.funding_total) if r.funding_total else '' }}</td>
         <td class="cell num" data-field="raise_target" data-type="number">{{ '{:,}'.format(r.raise_target) if r.raise_target else '' }}</td>

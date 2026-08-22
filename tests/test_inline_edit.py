@@ -141,3 +141,53 @@ def test_long_text_gets_the_floating_editor(logged_in, company, contact):
     assert "getBoundingClientRect" in js
     css = (pathlib.Path("app/static/css/app.css")).read_text(encoding="utf-8")
     assert ".cell-pop { position: fixed;" in css
+
+
+# --- 좁은 칸을 읽고 고칠 수 있게 --------------------------------------------
+
+def test_clamp_never_sits_on_a_td(logged_in, company):
+    """`display:-webkit-box` 를 td 에 직접 걸면 그 칸이 테이블 레이아웃에서 빠져
+    행이 통째로 어긋난다. 실제로 깨졌다 — 반드시 안쪽 div 에 건다."""
+    import re
+
+    html = logged_in.get("/companies").text
+    assert not re.search(r'<td[^>]*class="[^"]*clamp2', html), "td 에 clamp 이 걸렸다"
+    assert '<div class="cell clamp2"' in html
+
+    rows = re.findall(r'<tr data-id="\d+".*?</tr>', html, re.S)
+    heads = len(re.findall(r"<th[ >]", html.split("</thead>")[0]))
+    for row in rows:
+        assert len(re.findall(r"<td[ >]", row)) == heads, "머리와 셀 개수가 어긋난다"
+
+
+def test_series_shows_the_name_but_keeps_the_whole_value(logged_in, db):
+    """단계 값은 40자가 넘는다 — 괄호 안은 297행에 똑같이 반복되는 설명이다.
+    표에는 이름만 보이되, 저장된 값은 그대로 지켜져야 한다."""
+    from app.models import IrCompany
+    from app.routers.companies import _short
+
+    full = "Pre A, Bridge (누적투자금 5억미만, 년매출액 10억이상)"
+    db.add(IrCompany(name="샘플메디", series=full))
+    db.commit()
+    assert _short(full) == "Pre A, Bridge"
+    assert _short(None) == ""
+    assert _short("Series A") == "Series A"          # 괄호가 없으면 그대로
+
+    html = logged_in.get("/companies").text
+    assert f'data-value="{full}"' in html            # 전체 값은 들고 있다
+    assert ">Pre A, Bridge<" in html                 # 보이는 건 이름만
+    assert 'data-f-series="Pre A, Bridge"' in html   # 필터 목록도 이름으로
+
+
+def test_sector_and_series_use_the_pick_editor(logged_in, company):
+    """값이 몇 개로 정해져 있는 칸이다. 새로 타이핑하면 '헬스케어' 와
+    '헬스 케어' 가 갈라져 필터가 같은 뜻을 두 줄로 센다."""
+    html = logged_in.get("/companies").text
+    assert 'data-field="sector_major" data-type="pick"' in html
+    assert 'data-field="series" data-type="pick"' in html
+
+    js = pathlib.Path("app/static/js/inline_edit.js").read_text(encoding="utf-8")
+    assert "startPick" in js
+    # 목록은 표에 실제로 있는 값에서 모은다 — 서버 목록은 실제와 어긋난다
+    assert "knownValues" in js
+    assert "data-value" in js, "보이는 글자와 저장 값이 다른 칸을 다뤄야 한다"

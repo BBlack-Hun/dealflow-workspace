@@ -10,12 +10,18 @@
 //       <td class="cell multi" data-field="memo">…</td>          여러 줄
 //       <td class="cell" data-field="due_date" data-type="date">2026-08-26</td>
 //       <td class="cell num" data-field="revenue_recent" data-type="number">1,200</td>
-//       <td class="cell ellipsis" data-field="one_liner" data-type="long">긴 문장…</td>
+//       <td><div class="cell clamp2" data-field="one_liner" data-type="long">긴 문장…</div></td>
+//       <td class="cell" data-field="sector_major" data-type="pick">애그테크</td>
 //
-// `data-type="long"` 은 **칸 위에 떠서** 고친다. 좁은 칸(한줄소개는 320px 말줄임)
-// 안에서 한 줄짜리 입력으로 문장을 쓰면 앞뒤가 안 보인다 — 어디를 고치는지 모른 채
-// 타이핑하게 된다. 뜬 창은 칸보다 넓고 줄바꿈되며, 표의 가로 스크롤에 잘리지 않게
-// 화면 좌표로 띄운다.
+// `long` 과 `pick` 은 **칸 위에 떠서** 고친다. 좁은 칸 안에서 한 줄짜리 입력으로
+// 고치면 앞뒤가 안 보인다 — 어디를 고치는지 모른 채 타이핑하게 된다. 뜬 창은
+// 칸보다 넓고, 표의 가로 스크롤에 잘리지 않게 화면 좌표로 띄운다.
+//
+//   long — 여러 줄. 내용에 따라 높이가 자란다 (소개 문구 · 메모)
+//   pick — 한 줄 + **이미 쓰고 있는 값 목록**. 분야·단계처럼 값이 몇 개로
+//          정해져 있는 칸은 새로 타이핑하면 표기가 갈라진다("헬스케어" vs
+//          "헬스 케어"). 목록은 같은 컬럼의 다른 행에서 그때그때 모은다 —
+//          서버에 목록을 따로 두면 실제 값과 어긋난다.
 //
 // `.cell` 은 td 가 아니어도 된다. 한 칸에 여러 줄이 들어 있는 표(투자사 DB 처럼
 // 메모 밑에 버튼이 붙어 있는 곳)에서는 고칠 줄에만 붙인다 — td 째로 바꾸면
@@ -42,12 +48,15 @@
       if (editing) return;
       editing = cell;
 
-      var before = cell.textContent.trim();
+      // 보이는 글자와 저장된 값이 다를 수 있다(단계는 표에 이름만 보인다).
+      var before = cell.hasAttribute("data-value")
+        ? cell.getAttribute("data-value") : cell.textContent.trim();
       var type = cell.getAttribute("data-type") || "";
       if (type === "number") before = before.replace(/,/g, "");
       if (before === "-") before = "";        // 빈 칸을 '-' 로 그려 둔 표가 있다
 
       if (type === "long") { startLong(cell, before, type); return; }
+      if (type === "pick") { startPick(cell, before, type); return; }
 
       var multi = cell.classList.contains("multi");
       var input = document.createElement(multi ? "textarea" : "input");
@@ -84,37 +93,35 @@
       }
     }
 
-    // 칸 위에 떠서 고친다 — 좁은 칸에 긴 문장을 넣을 때.
-    function startLong(cell, before, type) {
+    // ── 칸 위에 뜨는 편집창 ────────────────────────────────────────────
+    //
+    // 좁은 칸에 그대로 입력을 넣으면 고치는 내용이 안 보인다. long/pick 이
+    // 이 창을 함께 쓴다 — 뜨고, 자리를 잡고, 벗어나면 저장하는 부분이 같다.
+    function popover(cell, before, type, build) {
       var pop = document.createElement("div");
       pop.className = "cell-pop";
-
-      var area = document.createElement("textarea");
-      area.className = "cell-pop-input";
-      area.value = before;
-
-      var hint = document.createElement("div");
-      hint.className = "cell-pop-hint";
-      hint.textContent = "⌘/Ctrl+Enter 저장 · Esc 취소";
-
-      pop.appendChild(area);
-      pop.appendChild(hint);
       document.body.appendChild(pop);
-      place();
-      grow();
-
-      area.focus();
-      area.setSelectionRange(area.value.length, area.value.length);
 
       var canceled = false;
-      area.addEventListener("input", grow);
-      area.addEventListener("blur", finish);
-      area.addEventListener("keydown", function (e) {
-        if (e.key === "Escape") { canceled = true; area.blur(); }
-        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-          e.preventDefault();
-          area.blur();
-        }
+      var done = false;
+
+      var api = {
+        pop: pop,
+        cancel: function () { canceled = true; },
+        // 목록에서 골랐을 때처럼 곧바로 끝내는 길
+        commit: function (value) { finish(value); },
+        place: place
+      };
+      var input = build(api);
+
+      place();
+      input.focus();
+      if (input.setSelectionRange) {
+        input.setSelectionRange(input.value.length, input.value.length);
+      }
+      input.addEventListener("blur", function () { finish(); });
+      input.addEventListener("keydown", function (e) {
+        if (e.key === "Escape") { canceled = true; input.blur(); }
       });
       global.addEventListener("scroll", place, true);
       global.addEventListener("resize", place);
@@ -134,23 +141,108 @@
         }
       }
 
-      function grow() {
-        area.style.height = "auto";
-        area.style.height = Math.min(220, Math.max(56, area.scrollHeight)) + "px";
-        place();
-      }
-
-      function finish() {
-        if (editing !== cell) return;
-        editing = null;
+      function finish(picked) {
+        if (done) return;
+        done = true;
+        if (editing === cell) editing = null;
         global.removeEventListener("scroll", place, true);
         global.removeEventListener("resize", place);
-        var after = canceled ? before : area.value.trim();
+
+        var after = canceled ? before
+          : (picked !== undefined ? picked : input.value).trim();
         if (pop.parentNode) pop.parentNode.removeChild(pop);
         cell.textContent = after;
         cell.title = after;
+        if (cell.hasAttribute("data-value")) cell.setAttribute("data-value", after);
         if (after !== before) save(cell, after, before, type);
       }
+    }
+
+    function startLong(cell, before, type) {
+      popover(cell, before, type, function (api) {
+        var area = document.createElement("textarea");
+        area.className = "cell-pop-input";
+        area.value = before;
+        api.pop.appendChild(area);
+        api.pop.appendChild(hintLine("⌘/Ctrl+Enter 저장 · Esc 취소"));
+
+        area.addEventListener("input", grow);
+        area.addEventListener("keydown", function (e) {
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault();
+            area.blur();
+          }
+        });
+        grow();
+        return area;
+
+        function grow() {
+          area.style.height = "auto";
+          area.style.height = Math.min(220, Math.max(56, area.scrollHeight)) + "px";
+          api.place();
+        }
+      });
+    }
+
+    // 값이 몇 개로 정해져 있는 칸(분야·단계). 새로 타이핑하면 표기가 갈라져서
+    // 필터가 같은 뜻을 두 줄로 센다 — 쓰고 있는 값을 먼저 보여 준다.
+    function startPick(cell, before, type) {
+      popover(cell, before, type, function (api) {
+        var input = document.createElement("input");
+        input.type = "text";
+        input.className = "cell-pop-input one-line";
+        input.value = before;
+        api.pop.appendChild(input);
+
+        var used = knownValues(cell.getAttribute("data-field"));
+        if (used.length) {
+          var box = document.createElement("div");
+          box.className = "cell-pop-choices";
+          used.forEach(function (value) {
+            var chip = document.createElement("button");
+            chip.type = "button";
+            chip.className = "cell-pop-choice" + (value === before ? " on" : "");
+            chip.textContent = value;
+            // mousedown 이라야 input 의 blur 보다 먼저 잡힌다.
+            chip.addEventListener("mousedown", function (e) {
+              e.preventDefault();
+              api.commit(value);
+            });
+            box.appendChild(chip);
+          });
+          api.pop.appendChild(box);
+        }
+        api.pop.appendChild(hintLine(
+          used.length ? "골라 누르거나 새로 적습니다 · Enter 저장 · Esc 취소"
+                      : "Enter 저장 · Esc 취소"));
+
+        input.addEventListener("keydown", function (e) {
+          if (e.key === "Enter") { e.preventDefault(); input.blur(); }
+        });
+        return input;
+      });
+    }
+
+    // 같은 컬럼의 다른 행이 실제로 쓰고 있는 값. 서버에 목록을 따로 두면
+    // 실제 값과 어긋난다 — 표에 있는 것이 곧 목록이다.
+    function knownValues(field) {
+      var seen = {};
+      var out = [];
+      table.querySelectorAll('[data-field="' + field + '"]').forEach(function (el) {
+        var value = el.hasAttribute("data-value")
+          ? el.getAttribute("data-value") : el.textContent.trim();
+        if (!value || value === "-" || seen[value]) return;
+        seen[value] = true;
+        out.push(value);
+      });
+      return out.sort(function (a, b) { return a.localeCompare(b, "ko"); });
+    }
+
+    function hintLine(text) {
+      var hint = document.createElement("div");
+      hint.className = "cell-pop-hint";
+      hint.textContent = text;
+      return hint;
     }
 
     function save(cell, value, before, type) {

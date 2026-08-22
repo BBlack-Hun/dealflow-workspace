@@ -743,8 +743,22 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
 .cell-pop-hint { font-size: 11px; color: var(--muted); text-align: right; }
 
 /* 소개 문구 — 실제로 중앙값 83자다. 한 줄 말줄임이면 20자만 보여서 못 읽는다.
-   두 줄까지 보여 주고(약 2배), 전체는 눌러서 뜨는 편집창과 툴팁으로 본다. */
+   두 줄까지 보여 주고(약 2배), 전체는 눌러서 뜨는 편집창과 툴팁으로 본다.
+
+   **반드시 td 안쪽 div 에 건다.** `display:-webkit-box` 를 td 에 직접 걸면
+   그 칸이 테이블 레이아웃에서 빠져 행이 통째로 어긋난다 — 실제로 깨졌다. */
 .clamp2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
           overflow: hidden; white-space: normal; line-height: 1.45;
           font-size: 12.5px; }
 .th-note { display: block; font-weight: 400; font-size: 10.5px; opacity: .75; }
+
+/* 값이 정해져 있는 칸(분야·단계) — 쓰고 있는 값에서 고른다.
+   새로 타이핑하면 "헬스케어" 와 "헬스 케어" 가 갈라져 필터가 둘로 센다. */
+.cell-pop-input.one-line { min-height: 0; height: 32px; resize: none; }
+.cell-pop-choices { display: flex; flex-wrap: wrap; gap: 4px;
+                    max-height: 132px; overflow-y: auto; padding: 2px 0; }
+.cell-pop-choice { font: inherit; font-size: 12px; padding: 2px 9px;
+                   border: 1px solid var(--line); border-radius: 999px;
+                   background: var(--bg-soft); cursor: pointer; white-space: nowrap; }
+.cell-pop-choice:hover { border-color: var(--accent); background: var(--bg); }
+.cell-pop-choice.on { border-color: var(--accent); font-weight: 700; }
