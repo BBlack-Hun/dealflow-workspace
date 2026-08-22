@@ -130,29 +130,59 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     }).catch(function () { /* 문구 목록 실패해도 기본 문구로 발송 가능 */ });
   }
 
+  // 같은 이름('팀 기본')이 둘 이상 뜨면 어느 것을 고르는지 알 수 없다.
+  // 종류를 함께 보여준다.
+  var KIND_NOTE = {
+    opening_first: "첫 연락", opening_re: "재연락",
+    closing_day1: "딜소개", closing_remind: "리마인드",
+    closing_meeting: "미팅 요청", ask_preference: "선호 분야",
+    ir_delivery: "IR 자료 전달"
+  };
+  // 고르지 않았을 때 쓰는 문구의 이름. '기본' 만으로는 무엇의 기본인지 모른다.
+  var CLOSING_DEFAULT = {
+    deal: "기본 안내문", remind: "기본 안내문", meeting: "기본 안내문",
+    ask: "기본 문구", ir: "기본 문구"
+  };
+
   function renderTemplates() {
     var byKind = {};
     (templateCache || []).forEach(function (t) {
       (byKind[t.kind] = byKind[t.kind] || []).push(t);
     });
-    fill("tpl-opening", (byKind["opening_first"] || []).concat(byKind["opening_re"] || []));
-    // 문구만 보낼 때는 안내문이 아니라 '선호 분야 묻기' 문구를 고른다.
+    // 팀 기본은 첫 연락·재연락 두 개지만 시스템이 알아서 고른다.
+    // 목록에 둘 다 올리면 같은 이름이 두 번 뜨고, 골라도 자동 선택이 막힌다.
+    var openings = (byKind["opening_first"] || []).concat(byKind["opening_re"] || [])
+      .filter(function (t) { return t.mine; });
+    fill("tpl-opening", openings, "기본 인삿말 (첫 연락 / 재연락 자동)");
+    // 문구만 보낼 때는 안내문이 아니라 그 방식의 문구를 고른다.
     var kindByMode = { ask: "ask_preference", remind: "closing_remind",
                        meeting: "closing_meeting", deal: "closing_day1",
                        ir: "ir_delivery" };
-    fill("tpl-closing", byKind[kindByMode[mode]] || []);
+    fill("tpl-closing", byKind[kindByMode[mode]] || [],
+         CLOSING_DEFAULT[mode] || "기본 안내문");
   }
 
-  function fill(selectId, list) {
+  function fill(selectId, list, defaultLabel) {
     var sel = document.getElementById(selectId);
     if (!sel) return;
-    sel.innerHTML = '<option value="">기본</option>';
+    var keep = sel.value;
+    sel.innerHTML = "";
+    var base = document.createElement("option");
+    base.value = "";
+    base.textContent = defaultLabel;
+    sel.appendChild(base);
+
     list.forEach(function (t) {
       var o = document.createElement("option");
       o.value = t.id;
-      o.textContent = t.name + " — " + t.body.replace(/\n/g, " ").slice(0, 30);
+      var note = KIND_NOTE[t.kind];
+      o.textContent = t.name + (note ? " · " + note : "") +
+        " — " + t.body.replace(/\n/g, " ").slice(0, 26);
       sel.appendChild(o);
     });
+    // 방식을 바꿔도 고르던 문구가 그 목록에 있으면 유지한다.
+    if (keep && sel.querySelector('option[value="' + keep + '"]')) sel.value = keep;
+
     if (!sel.dataset.bound) {
       sel.addEventListener("change", refreshPreview);
       sel.dataset.bound = "1";

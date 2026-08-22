@@ -166,7 +166,15 @@ def test_no_sendable_target_is_blocked(db, users, monkeypatch):
     assert any(c["title"] == "발송 대상" for c in result["blocked"])
 
 
-def test_page_opens(logged, ready_state):
-    r = logged.get("/readiness")
-    assert r.status_code == 200
-    assert "다음 딜 제안" in r.text
+def test_readiness_moved_into_the_weekly_page(logged, ready_state):
+    """회차 준비 점검은 주간 업무 화면으로 합쳤다 — 아침에 두 군데를 열지 않게.
+
+    여러 곳에서 /readiness 를 부르고 있어 길만 돌려 둔다.
+    """
+    moved = logged.get("/readiness", follow_redirects=False)
+    assert moved.status_code == 307
+    assert moved.headers["location"].startswith("/todo")
+
+    page = logged.get("/todo")
+    assert page.status_code == 200
+    assert "회차 준비 점검" in page.text

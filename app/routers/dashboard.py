@@ -12,8 +12,11 @@
 from __future__ import annotations
 
 import secrets
+from datetime import timedelta
+from typing import Optional
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from pydantic import BaseModel
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -21,10 +24,10 @@ from sqlalchemy.orm import Session
 from .. import config
 from ..db import get_db
 from ..deps import get_current_user, templates
-from ..models import AgentDevice, User
+from ..models import AgentDevice, User, WeeklyRoutine, WeeklyTask
 from ..services import auth as auth_svc
 from ..services import dashboard as dash
-from ..services import readiness, report, today
+from ..services import readiness, report, today, weekly
 from ..ui import base_ctx
 
 router = APIRouter(tags=["dashboard"])
@@ -40,14 +43,164 @@ def dashboard_page(request: Request, db: Session = Depends(get_db),
 
 @router.get("/todo", response_class=HTMLResponse, include_in_schema=False)
 def todo_page(request: Request, db: Session = Depends(get_db),
-              user: User = Depends(get_current_user)):
-    """오늘 할 일. 흩어져 있던 것을 한 화면에 모은다."""
+              user: User = Depends(get_current_user), week: str = ""):
+    """주간 업무 — 손으로 적는 체크리스트 + 시스템이 아는 일 + 회차 준비 점검.
+
+    셋을 한 화면에 둔다. 예전엔 '오늘 할 일'과 '회차 준비 점검'이 따로 있었는데,
+    아침에 두 군데를 열어야 했다.
+    """
+    from datetime import date as _date
+
+    today_ = _date.today()
+    start = weekly.week_start(_as_week(week) or today_)
+
+    weekly.ensure_routines(db, user)
+    weekly.fill_week(db, user, start)
+
+    rows = weekly.task_rows(db, user, start, today_)
     ctx = base_ctx(request, db, user, active="check")
-    ctx.update(today.build(db, user))
+    ctx.update(today.build(db, user))          # 시스템이 아는 일 (읽기 전용)
+    ctx.update(readiness.report(db, user))     # 회차 준비 점검 (합침)
+    ctx.update({
+        "tasks": rows,
+        "summary": weekly.summary(rows),
+        "week_start": start,
+        "week_label": weekly.week_label(start),
+        "prev_week": (start - timedelta(days=7)).isoformat(),
+        "next_week": (start + timedelta(days=7)).isoformat(),
+        "this_week": weekly.week_start(today_).isoformat(),
+        "is_this_week": start == weekly.week_start(today_),
+        "carry": weekly.carry_over_candidates(db, user, start),
+        "statuses": weekly.STATUS_LABELS,
+        "weekday_names": weekly.WEEKDAYS,
+        "routines": db.execute(
+            select(WeeklyRoutine).where(WeeklyRoutine.user_id == user.id)
+            .order_by(WeeklyRoutine.id)).scalars().all(),
+        "weekday_label": weekly.weekday_label,
+        "today_iso": today_.isoformat(),
+    })
     return templates.TemplateResponse("todo.html", ctx)
 
 
-@router.get("/readiness", response_class=HTMLResponse, include_in_schema=False)
+def _as_week(value: str):
+    from datetime import date as _date
+
+    try:
+        return _date.fromisoformat(value)
+    except (ValueError, TypeError):
+        return None
+
+
+# --- 주간 업무 고치기 --------------------------------------------------------
+
+def _owned_task(db: Session, task_id: int, user: User) -> WeeklyTask:
+    row = db.get(WeeklyTask, task_id)
+    if row is None or row.user_id != user.id:
+        raise HTTPException(status_code=404, detail="업무를 찾을 수 없습니다")
+    return row
+
+
+@router.post("/todo/tasks", include_in_schema=False)
+def add_task(category: str = Form(""), title: str = Form(...),
+             due_date: str = Form(""), week: str = Form(""),
+             db: Session = Depends(get_db),
+             user: User = Depends(get_current_user)):
+    from datetime import date as _date
+
+    start = weekly.week_start(_as_week(week) or _date.today())
+    if not title.strip():
+        return RedirectResponse(f"/todo?week={start}", status_code=303)
+    last = db.execute(
+        select(WeeklyTask.position).where(WeeklyTask.user_id == user.id,
+                                          WeeklyTask.week_start == start.isoformat())
+        .order_by(WeeklyTask.position.desc()).limit(1)
+    ).scalar() or 0
+    db.add(WeeklyTask(user_id=user.id, week_start=start.isoformat(),
+                      category=category.strip() or None, title=title.strip(),
+                      due_date=(due_date.strip() or None), position=last + 1))
+    db.commit()
+    return RedirectResponse(f"/todo?week={start}", status_code=303)
+
+
+class TaskPatch(BaseModel):
+    category: Optional[str] = None
+    title: Optional[str] = None
+    due_date: Optional[str] = None
+    status: Optional[str] = None
+    note: Optional[str] = None
+
+
+@router.patch("/api/todo/tasks/{task_id}")
+def patch_task(task_id: int, body: TaskPatch, db: Session = Depends(get_db),
+               user: User = Depends(get_current_user)):
+    """칸을 눌러 바로 고친다. 손으로 적던 표라 고치는 일이 잦다."""
+    task = _owned_task(db, task_id, user)
+    data = body.model_dump(exclude_unset=True)
+    if "status" in data and data["status"] not in weekly.STATUS_LABELS:
+        raise HTTPException(status_code=400, detail="알 수 없는 상태입니다")
+    if "title" in data and not (data["title"] or "").strip():
+        raise HTTPException(status_code=400, detail="내용을 비울 수 없습니다")
+    for field, value in data.items():
+        setattr(task, field, (value or "").strip() or None
+                if isinstance(value, str) and field != "status" else value)
+    db.commit()
+    return {"id": task.id, "status": task.status}
+
+
+@router.post("/todo/tasks/{task_id}/delete", include_in_schema=False)
+def delete_task(task_id: int, week: str = Form(""),
+                db: Session = Depends(get_db),
+                user: User = Depends(get_current_user)):
+    db.delete(_owned_task(db, task_id, user))
+    db.commit()
+    return RedirectResponse(f"/todo?week={week}" if week else "/todo", status_code=303)
+
+
+@router.post("/todo/carry-over", include_in_schema=False)
+def carry_over(week: str = Form(""), db: Session = Depends(get_db),
+               user: User = Depends(get_current_user)):
+    """지난 주 미완료를 이번 주로. 그냥 두면 지난 주 화면에 묻혀 잊힌다."""
+    from datetime import date as _date
+
+    start = weekly.week_start(_as_week(week) or _date.today())
+    moved = weekly.carry_over(db, user, start)
+    return RedirectResponse(f"/todo?week={start}&moved={moved}", status_code=303)
+
+
+@router.post("/todo/routines", include_in_schema=False)
+def add_routine(category: str = Form(""), title: str = Form(...),
+                weekdays: str = Form(""), db: Session = Depends(get_db),
+                user: User = Depends(get_current_user)):
+    if title.strip():
+        db.add(WeeklyRoutine(user_id=user.id, category=category.strip() or "기타",
+                             title=title.strip(),
+                             weekdays=",".join(str(d) for d in
+                                               weekly.parse_weekdays(weekdays))))
+        db.commit()
+    return RedirectResponse("/todo", status_code=303)
+
+
+@router.post("/todo/routines/{routine_id}/delete", include_in_schema=False)
+def delete_routine(routine_id: int, db: Session = Depends(get_db),
+                   user: User = Depends(get_current_user)):
+    row = db.get(WeeklyRoutine, routine_id)
+    if row is None or row.user_id != user.id:
+        raise HTTPException(status_code=404, detail="반복 업무를 찾을 수 없습니다")
+    db.delete(row)
+    db.commit()
+    return RedirectResponse("/todo", status_code=303)
+
+
+@router.get("/readiness", include_in_schema=False)
+def readiness_redirect(mode: str = ""):
+    """회차 준비 점검은 주간 업무 화면으로 합쳤다.
+
+    여러 곳에서 이 주소를 부르고 있어서 길만 돌려 둔다.
+    """
+    return RedirectResponse("/todo#readiness", status_code=307)
+
+
+@router.get("/readiness/detail", response_class=HTMLResponse, include_in_schema=False)
 def readiness_page(request: Request, db: Session = Depends(get_db),
                    user: User = Depends(get_current_user), mode: str = ""):
     """회차 준비 점검. `?mode=live` 로 실발송 기준으로도 볼 수 있다."""

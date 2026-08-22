@@ -74,10 +74,13 @@ def company_rows(db: Session) -> List[dict]:
                                            ConsultingCompany.id)
     ).scalars().all()
     out = []
-    for c in companies:
+    for order, c in enumerate(companies, start=1):
         notes = _notes(c)
         out.append({
             "id": c.id,
+            # 화면의 NO 는 **보이는 순서대로 1부터**다. 시트에서 옮겨 온 번호는
+            # 중간이 비거나 3부터 시작해서, 몇 번째 줄인지 세는 데 쓸 수 없다.
+            "no": order,
             "position": c.position,
             "region": c.region or "",
             "meeting_at": c.meeting_at or "",
@@ -298,7 +301,7 @@ def export_consulting(db: Session = Depends(get_db),
     headers = (CONSULTING_EXPORT_HEADERS + [c.label for c in cols]
                + [label for label, _ in TAIL_COLUMNS])
     rows = [
-        [r["position"], r["region"], r["meeting_at"], r["company_name"], r["management"]]
+        [r["no"], r["region"], r["meeting_at"], r["company_name"], r["management"]]
         + [r["notes"].get(str(c.id), "") for c in cols]
         + [r["ceo_name"], r["phone"], r["email"]]
         for r in company_rows(db)

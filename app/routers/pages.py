@@ -98,8 +98,16 @@ def contacts_page(
     ).scalars().all()
     tabs = sheet_owner.sheet_rows(db, contacts)
 
-    # 고른 명단이 없거나 사라졌으면 전체를 보여준다(빈 화면보다 낫다).
-    selected = sheet if any(t["key"] == sheet for t in tabs) else ""
+    # 아무 것도 고르지 않았으면 **내가 담당인 명단**을 먼저 연다.
+    # 전체(333명)를 먼저 보여주면 매번 자기 명단을 다시 골라야 한다.
+    # `sheet=all` 은 일부러 전체를 본다는 뜻이다.
+    if sheet == "all":
+        selected = ""
+    elif any(t["key"] == sheet for t in tabs):
+        selected = sheet
+    else:
+        mine_first = next((t["key"] for t in tabs if t["owner_id"] == user.id), "")
+        selected = mine_first
     rows = [r for r in all_rows if selected in r["sheets"]] if selected else all_rows
 
     stages = Counter(r["connect_stage"] for r in rows)

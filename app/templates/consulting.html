@@ -89,7 +89,7 @@
           data-managed="{{ 1 if '관리' in r.management else 0 }}"
           data-dropped="{{ 1 if '드랍' in r.management else 0 }}"
           data-contacted="{{ 1 if r.notes.values()|select|list else 0 }}">
-        <td class="num muted">{{ r.position or '' }}</td>
+        <td class="num muted">{{ r.no }}</td>
         <td class="cell" data-field="region">{{ r.region }}</td>
         <td class="cell" data-field="meeting_at">{{ r.meeting_at }}</td>
         <td class="cell strong" data-field="company_name">{{ r.company_name }}</td>

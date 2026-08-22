@@ -4,35 +4,99 @@
 <header class="page-head">
   <h1>{{ page_title }}</h1>
   <p class="muted">
-    아침에 이 화면만 열면 됩니다. 급한 것부터 — 답을 기다리는 사람, 오늘 약속,
-    오늘 보낼 것, 회차 준비 순입니다.
+    이번 주에 할 일을 직접 적고 상태를 바꿉니다. 시스템이 아는 일(후속·IR 요청)과
+    회차 준비 상태는 아래에 함께 보여줍니다.
   </p>
 </header>
 
-<section class="hero-card {% if not ready %}blocked{% endif %} slim">
-  <div class="hero-main">
-    <span class="hero-label">다음 딜 제안</span>
-    <span class="hero-date">{{ next_send.strftime('%m월 %d일') }}</span>
+<div class="toolbar">
+  <div class="quick-chips">
+    <a class="chip" href="/todo?week={{ prev_week }}">← 지난 주</a>
+    <span class="chip active">{{ week_label }}</span>
+    <a class="chip" href="/todo?week={{ next_week }}">다음 주 →</a>
+    {% if not is_this_week %}<a class="chip" href="/todo">이번 주로</a>{% endif %}
   </div>
-  <div class="hero-count">
-    {% if days_left == 0 %}<b class="today">오늘입니다</b>
-    {% else %}<b>{{ days_left }}</b><span>일 남음</span>{% endif %}
+  <div class="toolbar-right">
+    <span class="count-pill {% if summary.done %}on{% endif %}">
+      <b>{{ summary.done }}</b> / {{ summary.total }} 완료</span>
+    {% if summary.overdue %}<span class="tag bad">{{ summary.overdue }}건 지남</span>{% endif %}
   </div>
-  <div class="hero-next">
-    {% if urgent %}
-      <span class="ready-mark bad">지금 할 일 {{ urgent|length }}건</span>
-    {% else %}
-      <span class="ready-mark">급한 일 없음</span>
-    {% endif %}
+</div>
+
+{% if carry %}
+<p class="hint sheet-owner-line">
+  지난 주에 못 끝낸 일이 <b>{{ carry|length }}건</b> 있습니다 —
+  {% for c in carry[:3] %}{{ c.title[:20] }}{% if not loop.last %}, {% endif %}{% endfor %}
+  <form method="post" action="/todo/carry-over" class="inline-form">
+    <input type="hidden" name="week" value="{{ week_start }}">
+    <button class="linkbtn" type="submit">이번 주로 가져오기</button>
+  </form>
+</p>
+{% endif %}
+
+<!-- 손으로 적는 체크리스트. 시트에 적던 것을 그대로 옮긴다. -->
+<section class="panel">
+  <h2 class="panel-title">주간 업무
+    <span class="hint">칸을 눌러 바로 고칩니다</span>
+  </h2>
+
+  <div class="table-wrap">
+    <table class="grid-table" id="task-table" data-inline-url="/api/todo/tasks">
+      <thead>
+        <tr>
+          <th style="width:110px">항목</th>
+          <th>세부업무</th>
+          <th style="width:120px">일시</th>
+          <th style="width:110px">상태</th>
+          <th style="width:56px"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in tasks %}
+        <tr data-id="{{ t.id }}" class="{% if t.status == 'done' %}task-done{% elif t.overdue %}overdue-row{% endif %}">
+          <td class="cell" data-field="category">{{ t.category }}</td>
+          <td class="cell multi" data-field="title">{{ t.title }}</td>
+          <td class="cell" data-field="due_date" data-type="date">{{ t.due_date }}</td>
+          <td>
+            <select class="task-status" data-id="{{ t.id }}">
+              {% for key, label in statuses.items() %}
+              <option value="{{ key }}" {% if t.status == key %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </td>
+          <td>
+            <form method="post" action="/todo/tasks/{{ t.id }}/delete"
+                  onsubmit="return confirm('이 업무를 지울까요?')">
+              <input type="hidden" name="week" value="{{ week_start }}">
+              <button class="linkbtn danger" type="submit">삭제</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="muted">이번 주 업무가 없습니다. 아래에서 추가하세요.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
-  <a class="primary-btn" href="/readiness">준비 점검</a>
+
+  <form method="post" action="/todo/tasks" class="rule-form">
+    <input type="hidden" name="week" value="{{ week_start }}">
+    <label class="field inline-field"><span>항목</span>
+      <input type="text" name="category" placeholder="예: 메일" size="10"></label>
+    <label class="field inline-field" style="flex:1"><span>세부업무</span>
+      <input type="text" name="title" required placeholder="예: 홍보 메일 발송 - 60개"></label>
+    <label class="field inline-field"><span>일시</span>
+      <input type="date" name="due_date" value="{{ today_iso }}"></label>
+    <button class="secondary-btn" type="submit">추가</button>
+  </form>
 </section>
 
+<!-- 시스템이 아는 일. 여기서 고치지 않는다 — 같은 것을 두 곳에 적으면 어긋난다. -->
+{% if items %}
 <section class="panel">
-  <h2 class="panel-title">할 일 <span class="count-pill {% if items %}on{% endif %}"><b>{{ items|length }}</b>건</span></h2>
-  {% if nothing_to_do %}
-  <p class="all-clear">✅ 오늘 손댈 것이 없습니다. 다음 회차까지 여유가 있습니다.</p>
-  {% else %}
+  <h2 class="panel-title">시스템이 챙기는 일
+    <span class="hint">기록에서 자동으로 나옵니다</span>
+  </h2>
   <ul class="todo-list">
     {% for t in items %}
     <li class="todo {{ t.level }}">
@@ -40,27 +104,87 @@
         <span class="todo-mark">
           {% if t.level == 'urgent' %}🔴{% elif t.level == 'soon' %}🟡{% else %}⚪{% endif %}
         </span>
-        <span class="todo-body">
-          <b>{{ t.title }}</b>
-          <span class="muted">{{ t.detail }}</span>
-        </span>
+        <span class="todo-body"><b>{{ t.title }}</b><span class="muted">{{ t.detail }}</span></span>
         {% if t.count %}<span class="count-pill on"><b>{{ t.count }}</b></span>{% endif %}
       </a>
     </li>
     {% endfor %}
   </ul>
-  {% endif %}
+</section>
+{% endif %}
+
+<!-- 회차 준비 점검 — 예전엔 따로 있는 화면이었다. 아침에 두 군데를 열게 된다. -->
+<section class="panel" id="readiness">
+  <h2 class="panel-title">회차 준비 점검
+    <span class="count-pill {% if not ready %}on{% endif %}">
+      {{ next_send.strftime('%m월 %d일') }} · {% if days_left == 0 %}오늘{% else %}{{ days_left }}일 남음{% endif %}
+    </span>
+    {% if ready %}<span class="tag">보낼 수 있음</span>
+    {% else %}<span class="tag bad">막힘 {{ blocked|length }}건</span>{% endif %}
+  </h2>
+  <ul class="check-list">
+    {% for c in checks %}
+    <li class="check {{ c.level }}">
+      <span class="check-mark">
+        {% if c.level == 'ok' %}✅{% elif c.level == 'warn' %}⚠{% else %}⛔{% endif %}
+      </span>
+      <span class="check-body">
+        <b>{{ c.title }}</b><span>{{ c.detail }}</span>
+        {% if c.action %}<span class="muted">→ {{ c.action }}</span>{% endif %}
+      </span>
+      {% if c.href %}<a class="linkbtn" href="{{ c.href }}">가기</a>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  <p class="hint">
+    발송일 순서: 전날 점검 → 전날 테스트 방으로 한 건 → <b>당일 테스트 모드 끄기</b>
+    → 발송 → 실패 재시도 → 후속 자동 예약
+  </p>
 </section>
 
+<!-- 반복 업무 규칙 -->
 <section class="panel">
-  <h2 class="panel-title">화면 안내</h2>
-  <ul class="steps">
-    <li><a href="/deals">딜 제안 관리</a> — 기업 소개 · 리마인드 · 미팅 요청 · 선호 분야 묻기 · IR 자료 전달</li>
-    <li><a href="/followups">후속 관리</a> — 딜소개 뒤 리마인드·미팅요청이 언제 나가는지</li>
-    <li><a href="/ir">IR·미팅 관리</a> — 받은 자료 요청, 미팅 일정과 결과 문의</li>
-    <li><a href="/contacts">투자사 DB</a> — 명단·연결 단계·카톡방</li>
-    <li><a href="/companies">스타트업 관리</a> — 소개할 기업과 IR 자료 링크</li>
-    <li><a href="/readiness">회차 준비 점검</a> — 발송 전에 막힌 곳 확인</li>
-  </ul>
+  <h2 class="panel-title">반복 업무
+    <span class="hint">요일이 오면 그 주 목록에 저절로 생깁니다</span>
+  </h2>
+  {% if routines %}
+  <table class="grid-table compact">
+    <thead><tr><th style="width:110px">항목</th><th>세부업무</th><th style="width:140px">요일</th><th style="width:56px"></th></tr></thead>
+    <tbody>
+      {% for r in routines %}
+      <tr>
+        <td>{{ r.category }}</td>
+        <td>{{ r.title }}</td>
+        <td class="muted">{{ weekday_label(r.weekdays) }}</td>
+        <td>
+          <form method="post" action="/todo/routines/{{ r.id }}/delete"
+                onsubmit="return confirm('이 반복 업무를 지울까요?\n이미 만들어진 이번 주 항목은 남습니다.')">
+            <button class="linkbtn danger" type="submit">삭제</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="muted">반복 업무가 없습니다.</p>{% endif %}
+
+  <form method="post" action="/todo/routines" class="rule-form">
+    <label class="field inline-field"><span>항목</span>
+      <input type="text" name="category" placeholder="예: 메일" size="10"></label>
+    <label class="field inline-field" style="flex:1"><span>세부업무</span>
+      <input type="text" name="title" required placeholder="예: 홍보 메일 발송"></label>
+    <label class="field inline-field"><span>요일</span>
+      <span class="weekday-pick">
+        {% for i, wd in [(0,'월'),(1,'화'),(2,'수'),(3,'목'),(4,'금')] %}
+        <label><input type="checkbox" name="weekdays" value="{{ i }}"> {{ wd }}</label>
+        {% endfor %}
+      </span></label>
+    <button class="secondary-btn" type="submit">추가</button>
+  </form>
 </section>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/inline_edit.js"></script>
+<script src="/static/js/weekly_tasks.js"></script>
 {% endblock %}

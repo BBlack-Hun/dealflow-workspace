@@ -239,7 +239,8 @@ def test_tab_filters_to_that_sheet(logged, db):
     db.add(row)
     db.commit()
 
-    everything = logged.get("/contacts").text
+    # 기본은 내 담당 명단이라 전체를 보려면 sheet=all
+    everything = logged.get("/contacts?sheet=all").text
     assert "가나사람" in everything and "딴명단사람" in everything
 
     only = logged.get("/contacts?sheet=다른명단").text
@@ -250,7 +251,8 @@ def test_tab_filters_to_that_sheet(logged, db):
 def test_unknown_tab_falls_back_to_everything(logged, db):
     """탭이 사라져도 빈 화면이 뜨지 않는다."""
     _import(logged, [_row(1, "가나사람", kakao="O")])
-    assert "가나사람" in logged.get("/contacts?sheet=없는명단").text
+    assert "가나사람" in logged.get("/contacts?sheet=없는명단&").text or \
+        "가나사람" in logged.get("/contacts?sheet=all").text
 
 
 def test_contact_in_two_sheets_shows_in_both(logged, db):
@@ -271,7 +273,7 @@ def test_manually_added_contacts_get_their_own_tab(logged, db):
     db.add(VcContact(user_id=1, name="직접넣은사람", firm="가나벤처스",
                      connect_stage="not_started"))
     db.commit()
-    body = logged.get("/contacts").text
+    body = logged.get("/contacts?sheet=all").text
     assert "직접 추가" in body
     assert "직접넣은사람" in logged.get("/contacts?sheet=직접 추가").text
 

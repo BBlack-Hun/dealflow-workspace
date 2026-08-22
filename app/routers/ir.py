@@ -85,6 +85,18 @@ def ir_page(request: Request, db: Session = Depends(get_db),
     return templates.TemplateResponse("ir.html", ctx)
 
 
+@router.get("/api/ir/last-batch/{contact_id}")
+def last_batch(contact_id: int, db: Session = Depends(get_db),
+               user: User = Depends(get_current_user)):
+    """그 담당자에게 마지막으로 보낸 회차의 **번호와 기업**.
+
+    투자사는 "4번, 6번 주세요" 라고 답한다. 번호를 눌러 기록할 수 있어야
+    지난 카톡을 뒤지지 않는다.
+    """
+    _owned_contact(db, contact_id, user)
+    return pipeline.last_batch_items(db, contact_id)
+
+
 # --- IR 요청 ----------------------------------------------------------------
 
 @router.post("/ir/requests", include_in_schema=False)

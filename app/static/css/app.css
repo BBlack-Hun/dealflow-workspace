@@ -659,3 +659,29 @@ td.cell.save-failed { background: #fdecec; }
 /* 반응 타일은 눌러서 그 목록으로 간다 */
 a.react { text-decoration: none; color: inherit; transition: border-color .12s; }
 a.react:hover { border-color: var(--brand); background: #fafbfc; }
+
+/* ── 주간 업무 ──────────────────────────────────────────────── */
+.task-done td.cell { color: var(--muted); text-decoration: line-through; }
+.task-status { padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; font-size: 12px; }
+.weekday-pick { display: flex; gap: 8px; font-size: 13px; color: var(--ink); padding: 6px 0; }
+.weekday-pick label { display: flex; align-items: center; gap: 3px; }
+
+/* 다음 딜소개 — 날짜와 요일을 한 덩어리로 크게 */
+.hero-date em { font-style: normal; font-size: 16px; font-weight: 600;
+  margin-left: 6px; opacity: .9; }
+.hero-rule { font-size: 11px; color: rgba(255,255,255,.85); text-decoration: underline;
+  text-underline-offset: 2px; }
+.hero-rule:hover { color: #fff; }
+
+/* 지난 회차 번호로 고르기 */
+.num-pick { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 0; }
+.num-chip { padding: 5px 10px; border: 1px solid var(--line); border-radius: 999px;
+  background: var(--panel); font-size: 12px; cursor: pointer; }
+.num-chip:hover { border-color: var(--brand); }
+.num-chip.picked { background: #e6efff; border-color: var(--brand); color: var(--brand);
+  font-weight: 600; }
+.num-chip.no-link { border-style: dashed; }
+.field.inline-field.wide { flex-basis: 100%; }
+
+.pick-tags { display: flex; flex-wrap: wrap; gap: 3px; margin: 3px 0; }
+.pick-tags .tag { font-size: 10.5px; }

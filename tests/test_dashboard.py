@@ -77,7 +77,7 @@ def test_dashboard_lists_what_blocks_sending(logged, db, users):
     db.commit()
     data = user_dashboard(db, users["u1"])
     labels = [b["label"] for b in data["blockers"]]
-    assert any("카톡방이 등록되지 않은" in x for x in labels)
+    assert any("카톡방이 없는" in x for x in labels)
 
 
 def test_dashboard_counts_only_my_sheets(logged, db, users):
@@ -213,8 +213,20 @@ def test_companies_page_opens(logged):
     assert "스타트업 관리" in r.text
 
 
-def testblocked_reason_is_plain_korean(logged, db):
-    """소개가 안 되는 이유를 사람 말로 알려준다."""
+def _full_company(**kw):
+    """소개 문구에 들어가는 칸이 하나도 안 빈 기업."""
+    from app.models import IrCompany
+
+    base = dict(name="샘플애그", sector_major="애그테크", revenue_recent=1200,
+                funding_total=560, raise_target=5000, pre_value=21000,
+                competitiveness="상급 유통사 12곳 계약",
+                ir_drive_url="https://drive.google.com/file/d/x/view")
+    base.update(kw)
+    return IrCompany(**base)
+
+
+def test_blocked_reason_names_the_missing_fields(logged, db):
+    """무엇을 채워야 하는지 이름으로 알려준다."""
     from app.models import IrCompany
     from app.routers.companies import blocked_reason
 
@@ -222,26 +234,44 @@ def testblocked_reason_is_plain_korean(logged, db):
     db.add(only_name)
     db.commit()
     reason = blocked_reason(only_name)
-    assert "분야" in reason and "숫자" in reason
+    assert "사업분야" in reason and "없음" in reason
 
-    held = IrCompany(name="보류기업", one_liner="설명", revenue_recent=10,
-                     summary_status="insufficient")
+    held = _full_company(name="보류기업", summary_status="insufficient")
     db.add(held)
     db.commit()
     assert blocked_reason(held) == "보류로 표시됨"
 
 
+def test_all_required_fields_must_be_filled(logged, db):
+    """한 칸만 비어도 소개 가능이 아니다 — 문구가 반쯤 빈 채로 나간다."""
+    from app.routers.companies import is_ready, missing_fields
+
+    full = _full_company()
+    db.add(full)
+    db.commit()
+    assert is_ready(full) is True
+
+    full.ir_drive_url = None
+    db.commit()
+    assert is_ready(full) is False
+    assert missing_fields(full) == ["IR 자료"]
+
+
 def test_editing_makes_a_company_introducible(logged, db):
     from app.models import IrCompany
+    from app.routers.companies import is_ready
 
     company = IrCompany(name="채울기업", summary_status="draft")
     db.add(company)
     db.commit()
-    assert not company.introducible
+    assert not is_ready(company)
 
-    r = logged.patch(f"/api/companies/{company.id}",
-                     json={"name": "채울기업", "one_liner": "B2B 정산 자동화",
-                           "revenue_recent": 500})
+    r = logged.patch(f"/api/companies/{company.id}", json={
+        "name": "채울기업", "sector_major": "핀테크", "revenue_recent": 500,
+        "funding_total": 100, "raise_target": 1000, "pre_value": 5000,
+        "competitiveness": "가맹점 300곳",
+        "ir_drive_url": "https://drive.google.com/file/d/y/view",
+    })
     assert r.status_code == 200
     assert r.json()["introducible"] is True
 
@@ -475,7 +505,7 @@ def test_dashboard_matches_the_contacts_screen(logged, db, users):
     assert on_screen == 2
     assert kpi["sendable"] == 1
     labels = [b["label"] for b in user_dashboard(db, users["u1"])["blockers"]]
-    assert any("방을 찾지 못한" in x for x in labels)
+    assert any("카톡방을 못 찾은" in x for x in labels)
 
 
 # --- 메일 설정 --------------------------------------------------------------

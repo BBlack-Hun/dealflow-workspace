@@ -86,8 +86,10 @@
     {% endif %}
   </section>
 
-  <section class="panel">
-    <h2 class="panel-title">발송 주기</h2>
+  <section class="panel" id="rules">
+    <h2 class="panel-title">발송 주기
+      <span class="hint">기본은 매월 첫째·셋째 수요일 — 관리자가 바꿉니다</span>
+    </h2>
     <ul class="import-stats">
       {% for rule in rules %}
       <li><span>{{ rule.label }}</span><b>{{ rule.desc }}</b></li>
