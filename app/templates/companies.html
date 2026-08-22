@@ -76,7 +76,7 @@
 <p class="hint" id="co-note" hidden></p>
 
 <div class="table-wrap">
-  <table class="grid-table" id="co-table">
+  <table class="grid-table" data-inline-url="/api/companies" id="co-table">
     <thead>
       <tr>
         <th style="width:38px">#</th>
@@ -104,16 +104,16 @@
           data-f-ir="{{ '● 있음' if r.has_ir else '⚠ 없음' }}">
         <td class="rowno muted"></td>
         <td class="co-name">
-          {% if r.is_top_deal %}<span class="star">★</span>{% endif %}<b>{{ r.name }}</b>
+          {% if r.is_top_deal %}<span class="star">★</span>{% endif %}<b class="cell" data-field="name">{{ r.name }}</b>
           {% if r.contract_status == 'yes' %}<span class="tag">계약</span>{% endif %}
         </td>
-        <td>{{ r.sector_major }}{% if r.sector_minor %} <span class="muted">· {{ r.sector_minor }}</span>{% endif %}</td>
-        <td>{{ r.series }}</td>
-        <td class="ellipsis" title="{{ r.one_liner }}">{{ r.one_liner }}</td>
-        <td class="num">{{ '{:,}'.format(r.revenue_recent) if r.revenue_recent else '' }}</td>
-        <td class="num">{{ '{:,}'.format(r.funding_total) if r.funding_total else '' }}</td>
-        <td class="num">{{ '{:,}'.format(r.raise_target) if r.raise_target else '' }}</td>
-        <td>
+        <td><span class="cell" data-field="sector_major">{{ r.sector_major }}</span>{% if r.sector_minor %} <span class="muted">· {{ r.sector_minor }}</span>{% endif %}</td>
+        <td class="cell" data-field="series">{{ r.series }}</td>
+        <td class="cell ellipsis" data-field="one_liner" title="{{ r.one_liner }}">{{ r.one_liner }}</td>
+        <td class="cell num" data-field="revenue_recent" data-type="number">{{ '{:,}'.format(r.revenue_recent) if r.revenue_recent else '' }}</td>
+        <td class="cell num" data-field="funding_total" data-type="number">{{ '{:,}'.format(r.funding_total) if r.funding_total else '' }}</td>
+        <td class="cell num" data-field="raise_target" data-type="number">{{ '{:,}'.format(r.raise_target) if r.raise_target else '' }}</td>
+        <td class="ready-cell">
           {% if r.introducible %}
             <span class="room-badge ok">● 가능</span>
           {% else %}
@@ -215,6 +215,7 @@
     document.getElementById("ir-bulk").hidden = true;
   });
 </script>
+<script src="/static/js/inline_edit.js"></script>
 <script src="/static/js/filters.js"></script>
 <script src="/static/js/companies.js"></script>
 {% endblock %}

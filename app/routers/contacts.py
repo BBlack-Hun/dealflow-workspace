@@ -274,7 +274,9 @@ def _owned(db: Session, contact_id: int, user: User) -> VcContact:
 # ── 스키마 ──────────────────────────────────────────────────────────────────
 
 class ContactIn(BaseModel):
-    name: str
+    # 표에서 칸 하나만 눌러 고치는 일이 잦다(메모·카톡방 이름). 그때 이름까지
+    # 같이 보내라고 하면 칸 하나 고치는 데 이름이 필요해진다 — 만들 때만 필수다.
+    name: Optional[str] = None
     title: Optional[str] = None
     firm: Optional[str] = None
     group_name: Optional[str] = None

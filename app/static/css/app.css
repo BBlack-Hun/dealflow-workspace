@@ -719,3 +719,11 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
 /* 딜 진행 관리 탭 — 급한 건수는 눈에 띄게. */
 .flow-tabs { margin-bottom: 12px; }
 .flow-tabs .sheet-tab span.warn { background:#f6c344; color:#4a3400; }
+
+/* 눌러서 바로 고치는 칸 — 고칠 수 있다는 것이 보여야 누른다. */
+.cell[data-field] { cursor: text; border-radius: 3px; }
+.cell[data-field]:hover { background: var(--bg-soft); outline: 1px dashed var(--line); }
+.cell.saving { opacity: .55; }
+.cell.saved { background: #e8f6ec; }
+.cell.save-failed { background: #fdecec; }
+.room-edit { font-size: 11px; }

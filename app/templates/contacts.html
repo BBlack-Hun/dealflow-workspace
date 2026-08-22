@@ -142,7 +142,7 @@
 <div class="chip-row" data-filter-chips></div>
 
 <div class="table-wrap">
-  <table class="grid-table" id="contacts-table">
+  <table class="grid-table" id="contacts-table" data-inline-url="/api/contacts">
     <colgroup>
       <col style="width:16%"><col style="width:8%"><col style="width:16%">
       <col style="width:12%"><col style="width:12%"><col style="width:10%"><col style="width:26%">
@@ -198,6 +198,8 @@
           </div>
           <div class="cell-sub"><span class="room-dot {{ r.room_class }}"
             title="{{ r.room_name or '카톡방 이름 미등록' }}">{{ r.room_label }}</span></div>
+          <div class="cell-sub muted cell room-edit" data-field="kakao_room_name"
+               title="눌러서 카톡방 이름을 고칩니다">{{ r.room_name or '방 이름 없음' }}</div>
         </td>
         <td>
           <div class="cell-main">
@@ -219,7 +221,8 @@
         </td>
         <td><span class="pill {{ r.status }}">{{ r.status_label }}</span></td>
         <td>
-          <div class="cell-main memo" title="{{ r.memo }}">{{ r.memo or '-' }}</div>
+          <div class="cell-main memo cell multi" data-field="memo"
+               title="눌러서 바로 고칩니다">{{ r.memo or '-' }}</div>
           <div class="cell-sub row-actions">
             <a href="/deals" class="linkbtn">딜소개</a>
             <button type="button" class="linkbtn js-detail">상세</button>
@@ -301,6 +304,7 @@
 </aside>
 {% endblock %}
 {% block scripts %}
+<script src="/static/js/inline_edit.js"></script>
 <script src="/static/js/pool_assign.js"></script>
 <script src="/static/js/filters.js"></script>
 <script src="/static/js/contacts.js"></script>

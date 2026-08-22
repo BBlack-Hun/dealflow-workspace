@@ -179,3 +179,36 @@
 
   apply();
 })();
+
+// ── 표에서 눌러 바로 고치기 뒤처리 ────────────────────────────────────
+//
+// 매출 하나를 채우면 '소개 가능'이 ⚠ 에서 ● 로 바뀔 수 있다. 새로고침해야
+// 바뀌면, 297개를 채우는 동안 뭐가 아직 모자란지 알 수 없다.
+// PATCH 응답이 introducible · blocked_reason 을 돌려주므로 그 자리에서 고쳐 그린다.
+(function () {
+  var table = document.getElementById("co-table");
+  if (!table) return;
+
+  table.addEventListener("inline-saved", function (e) {
+    var data = e.detail.data || {};
+    if (!("introducible" in data)) return;
+    var cell = e.detail.row.querySelector(".ready-cell");
+    if (!cell) return;
+
+    var badge = document.createElement("span");
+    if (data.introducible) {
+      badge.className = "room-badge ok";
+      badge.textContent = "● 가능";
+    } else {
+      badge.className = "room-badge warn";
+      badge.textContent = "⚠ " + (data.blocked_reason || "내용 부족");
+      badge.title = data.blocked_reason || "";
+    }
+    cell.textContent = "";
+    cell.appendChild(badge);
+
+    // 필터가 이 값으로 거르고 있다 — 행의 값도 같이 맞춰 둔다.
+    e.detail.row.setAttribute("data-f-ready",
+      data.introducible ? "● 소개 가능" : "⚠ 내용 부족");
+  });
+})();
