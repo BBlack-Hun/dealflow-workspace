@@ -447,3 +447,19 @@ def has_reaction_since(db: Session, contact_id: int, since: Optional[str]) -> bo
             ContactActivity.happened_at >= cutoff,
         ).limit(1)
     ).first())
+
+def batch_title(day: Optional[date] = None) -> str:
+    """회차명 — `8월 4주차`.
+
+    손으로 적으면 "8월회차" · "8월 셋째주" · "0826" 이 섞여 남는다. 나중에
+    "몇 월 몇 주차에 뭘 보냈지" 를 찾을 때 이력이 갈라져 못 찾는다.
+    보내는 날에서 그대로 만든다 — 고쳐 쓸 수는 있다.
+
+    주차는 **1~7일이 1주차**다(`sheet_import.week_of_month`). 시트 머리글의
+    "첫째주 수요일 / 셋째주" 표기가 그 규칙이고, 활동 이력도 그렇게 보여준다.
+    한 화면에서 같은 날이 3주차와 4주차로 갈리면 안 된다.
+    """
+    from . import sheet_import
+
+    day = day or date.today()
+    return f"{day.month}월 {sheet_import.week_of_month(day.isoformat())}주차"

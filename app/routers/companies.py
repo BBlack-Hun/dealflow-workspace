@@ -51,6 +51,11 @@ REQUIRED_FIELDS = [
 
 
 
+def _short(value: Optional[str]) -> str:
+    """괄호 앞까지. 표 한 칸에 설명까지 넣으면 정작 이름이 안 보인다."""
+    return (value or "").split(" (")[0].strip()
+
+
 def missing_fields(c: IrCompany) -> List[str]:
     """비어 있는 칸의 **화면 이름** 목록. 무엇을 채워야 하는지 바로 알 수 있게."""
     out = []
@@ -89,6 +94,10 @@ def company_rows(db: Session) -> List[dict]:
             "sector_major": c.sector_major or "",
             "sector_minor": c.sector_minor or "",
             "series": c.series or "",
+            # 실제 값은 "Pre A, Bridge (누적투자금 5억미만, 년매출액 10억이상)" 처럼 길다.
+            # 괄호 안은 297행에 똑같이 반복되는 **설명**이라 표에서는 앞부분만 보인다
+            # (전체는 툴팁과 편집창에서 본다).
+            "series_short": _short(c.series),
             "one_liner": c.one_liner or "",
             "revenue_recent": c.revenue_recent,
             "funding_total": c.funding_total,
@@ -204,7 +213,9 @@ def _apply_ir_links(db: Session, pasted: str) -> tuple:
 # --- 편집 -------------------------------------------------------------------
 
 class CompanyIn(BaseModel):
-    name: str
+    # PATCH 로 한 칸만 고치는 일이 잦다(표에서 눌러 바로 수정). 그때 기업명까지
+    # 같이 보내라고 하면 칸 하나 고치는 데 이름이 필요해진다 — 만들 때만 필수다.
+    name: Optional[str] = None
     sector_major: Optional[str] = None
     sector_minor: Optional[str] = None
     series: Optional[str] = None
@@ -231,8 +242,11 @@ def _assign(company: IrCompany, body: CompanyIn) -> None:
         elif field == "name":
             if value and value.strip():
                 company.name = value.strip()
+        elif isinstance(value, str):
+            setattr(company, field, value.strip() or None)
         else:
-            setattr(company, field, (value.strip() if isinstance(value, str) else value) or None)
+            # 0 을 None 으로 바꾸면 안 된다 — '매출 0' 과 '아직 안 적음'은 다르다.
+            setattr(company, field, value)
 
 
 @router.get("/api/companies")
@@ -253,7 +267,7 @@ def get_company(company_id: int, db: Session = Depends(get_db),
 @router.post("/api/companies")
 def create_company(body: CompanyIn, db: Session = Depends(get_db),
                    user: User = Depends(get_current_user)):
-    if not body.name.strip():
+    if not (body.name or "").strip():
         raise HTTPException(status_code=400, detail="기업명을 입력하세요")
     company = IrCompany(name=body.name.strip(), owner_user_id=user.id,
                         summary_status=body.summary_status or "draft")

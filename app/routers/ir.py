@@ -10,6 +10,7 @@ IR 요청이 왔는데 "지난번 공유드린 기업들 검토 중…"이 또 �
 from __future__ import annotations
 
 from datetime import date
+from urllib.parse import quote
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -20,7 +21,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import get_current_user, templates
 from ..models import IrRequest, Meeting, User, VcContact
-from ..services import cadence, pipeline, sheet_owner
+from ..services import cadence, flow, pipeline, sheet_owner
 from ..ui import base_ctx
 
 router = APIRouter(tags=["ir"])
@@ -49,14 +50,20 @@ def _owned_meeting(db: Session, meeting_id: int, user: User) -> Meeting:
 
 @router.get("/ir", response_class=HTMLResponse, include_in_schema=False)
 def ir_page(request: Request, db: Session = Depends(get_db),
-            user: User = Depends(get_current_user), msg: str = ""):
+            user: User = Depends(get_current_user), msg: str = "",
+            contact: int = 0):
     today = date.today()
     requests = pipeline.request_rows(db, user)
     meetings = pipeline.meeting_rows(db, user)
     items = pipeline.today_items(db, user, today)
 
-    ctx = base_ctx(request, db, user, active="req")
+    ctx = base_ctx(request, db, user, active="flow")
     ctx.update({
+        # 후속 화면에서 이름을 눌러 넘어왔다 — 폼을 열고 그 사람을 골라 둔다.
+        # 화면을 옮겨 담당자를 다시 고르는 사이에 "누구였더라" 가 된다.
+        "preselect_contact": contact or 0,
+        "flow_tab": "ir",
+        "flow_counts": flow.counts(db, user, today),
         "requests": requests,
         "meetings": meetings,
         "open_requests": [r for r in requests if r["status"] == "open"],
@@ -108,26 +115,33 @@ def create_request(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """자료 요청을 받았다고 적는다. 여러 기업이면 줄바꿈으로 한 번에."""
+    """자료 요청을 받았다고 적는다. **번호로 적어도 된다** — "2, 4" 처럼."""
     contact = _owned_contact(db, contact_id, user)
     when = (requested_at or "").strip() or date.today().isoformat()
 
-    names = [n.strip() for n in company_name.replace(",", "\n").splitlines()
-             if n.strip()]
-    if not names:
-        return RedirectResponse("/ir?msg=기업명을 입력하세요", status_code=303)
+    rows, unknown = pipeline.resolve_request_names(db, contact.id, company_name)
+    if not rows and not unknown:
+        return RedirectResponse("/ir?msg=기업명이나 번호를 입력하세요", status_code=303)
+    if not rows:
+        return RedirectResponse(
+            f"/ir?msg={quote('지난 회차에 없는 번호입니다: ' + ', '.join(unknown) + '번')}",
+            status_code=303)
 
-    for name in names:
-        company = pipeline.match_company(db, name)
+    for row in rows:
         db.add(IrRequest(user_id=user.id, contact_id=contact.id,
-                         company_id=company.id if company else None,
-                         company_name=name, requested_at=when,
+                         company_id=row["company_id"],
+                         company_name=row["name"], requested_at=when,
                          note=note.strip() or None))
 
     # 요청이 왔다는 것은 답이 왔다는 뜻이다 — 리마인드를 더 보내면 안 된다.
     cadence.stop_on_reaction(db, contact.id, "IR 자료를 요청했습니다")
     db.commit()
-    return RedirectResponse(f"/ir?msg={len(names)}건 기록했습니다", status_code=303)
+
+    msg = f"{len(rows)}건 기록했습니다"
+    if unknown:
+        # 조용히 버리면 요청 하나가 통째로 사라진 줄 모른다.
+        msg += f" (지난 회차에 없는 번호는 건너뜀: {', '.join(unknown)}번)"
+    return RedirectResponse(f"/ir?msg={quote(msg)}", status_code=303)
 
 
 @router.post("/ir/requests/{request_id}/deliver", include_in_schema=False)

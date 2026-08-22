@@ -322,3 +322,39 @@ def test_ir_screen_groups_by_contact(logged, db, seed):
     link = re.search(r'/deals\?mode=ir&contacts=(\d+)&companies=([\d,]+)', body)
     assert link is not None, "자료 보내기 링크에 기업이 실려 있지 않다"
     assert len(link.group(2).split(",")) == 2
+
+
+# --- 딜 진행 관리 (후속 + IR·미팅 통합) -------------------------------------
+#
+# 둘 다 '보낸 뒤에 챙기는 일'인데 메뉴가 갈라져 있어서 매일 두 군데를 열어야 했다.
+
+def test_menu_has_one_entry_not_two(client, db, users):
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    body = client.get("/").text
+    assert "딜 진행 관리" in body
+    assert "후속 관리" not in body
+    assert "IR·미팅 관리" not in body
+
+
+def test_both_pages_share_the_tab_bar(client, db, users):
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    for path in ("/followups", "/ir"):
+        body = client.get(path).text
+        assert "flow-tabs" in body, path
+        for tab in ("후속 문구", "IR 자료 요청", "미팅"):
+            assert tab in body, f"{path} 에 {tab} 탭이 없다"
+
+
+def test_tab_counts_come_from_one_place(client, db, users):
+    """두 화면이 각자 세면 반드시 어긋난다 — 실제로 6명 어긋난 적이 있다."""
+    from datetime import date
+
+    from app.services import flow
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    expected = flow.counts(db, users["u1"], date.today())
+
+    for path in ("/followups", "/ir"):
+        assert client.get(path).status_code == 200, path
+    assert set(expected) == {"due", "upcoming", "ir_open", "ir_overdue",
+                             "meeting_todo", "meeting_open"}

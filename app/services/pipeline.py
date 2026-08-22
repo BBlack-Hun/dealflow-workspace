@@ -213,6 +213,53 @@ def last_batch_items(db: Session, contact_id: int) -> dict:
     }
 
 
+def resolve_request_names(db: Session, contact_id: int,
+                          raw: str) -> tuple:
+    """적어 넣은 것을 기업으로 푼다. **번호도 이름처럼 받는다.**
+
+    투자사는 "2, 4 주세요" 라고 답한다. 지금까지는 그 번호를 기업명으로 읽어서
+    `2` 라는 이름의 요청이 그대로 만들어졌다 — 어느 기업인지 아무도 모르는
+    기록이 남고, 자료 전달 문구도 만들 수 없었다.
+
+    번호는 **그 담당자에게 마지막으로 보낸 회차**의 자리 번호로 읽는다.
+    이름과 섞여 있어도 된다("2, 샘플애그, 4").
+
+    돌려주는 것: (풀린 목록, 못 찾은 번호 목록)
+    """
+    tokens = [t.strip() for t in raw.replace(",", "\n").splitlines() if t.strip()]
+    if not tokens:
+        return [], []
+
+    numbered = {}
+    if any(t.isdigit() for t in tokens):
+        batch = last_batch_items(db, contact_id)
+        numbered = {str(item["position"]): item for item in batch["items"]}
+
+    resolved, unknown = [], []
+    for token in tokens:
+        if token.isdigit():
+            item = numbered.get(token)
+            if item is None:
+                # 없는 번호를 조용히 이름으로 남기면 '3' 이라는 기업이 생긴다.
+                unknown.append(token)
+                continue
+            resolved.append({"name": item["name"], "company_id": item["company_id"]})
+            continue
+        company = match_company(db, token)
+        resolved.append({"name": token,
+                         "company_id": company.id if company else None})
+
+    # 같은 기업을 번호와 이름으로 둘 다 적었을 수 있다.
+    seen, unique = set(), []
+    for row in resolved:
+        key = row["company_id"] or row["name"]
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(row)
+    return unique, unknown
+
+
 def group_by_contact(requests: List[dict]) -> List[dict]:
     """담당자별로 묶는다. 한 사람이 여러 기업을 한꺼번에 요청하는 일이 잦아,
     한 번에 보내야 대화가 자연스럽다."""

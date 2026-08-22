@@ -39,9 +39,15 @@ def _as_date(value: Optional[str]) -> Optional[date]:
 
 
 def week_of_month(day: date) -> int:
-    """그 달의 몇 번째 주인가 (1부터). 1일이 낀 주가 첫주다."""
-    first_weekday = date(day.year, day.month, 1).weekday()
-    return (day.day + first_weekday - 1) // 7 + 1
+    """그 달의 몇 번째 주인가 (1부터). **1~7일이 첫주.**
+
+    예전에는 '1일이 낀 주가 첫주'로 셌는데, 활동 이력·회차명은 1~7일을 첫주로
+    센다(`sheet_import.week_of_month`, 시트 머리글의 "첫째주 수요일" 표기).
+    규칙이 둘이면 같은 날이 화면마다 3주차·4주차로 갈린다 — 실제로 갈렸다.
+    """
+    from .sheet_import import week_of_month as by_day
+
+    return by_day(day.isoformat()) or 1
 
 
 def month_range(year: int, month: int) -> tuple:

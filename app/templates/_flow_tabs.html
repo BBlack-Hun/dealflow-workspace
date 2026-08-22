@@ -1,0 +1,26 @@
+{#
+  딜 진행 관리의 탭.
+
+  후속 문구와 IR·미팅은 원래 다른 메뉴였는데, 둘 다 **딜소개를 보낸 뒤에 챙기는 일**
+  이라 매일 두 군데를 오갔다. 메뉴는 하나로 두고 안에서 탭으로 나눈다 — 화면 코드는
+  그대로 나뉘어 있고(각각 크다), 쓰는 사람에게만 한 곳으로 보인다.
+
+  탭에 건수를 함께 띄운다. 숫자가 없으면 어느 쪽에 일이 밀렸는지 들어가 봐야 안다.
+#}
+<nav class="sheet-tabs flow-tabs">
+  <a class="sheet-tab {% if flow_tab == 'followup' %}active{% endif %}" href="/followups">
+    후속 문구
+    {% if flow_counts.due %}<span class="warn">{{ flow_counts.due }}</span>
+    {% else %}<span>{{ flow_counts.upcoming }}</span>{% endif %}
+  </a>
+  <a class="sheet-tab {% if flow_tab == 'ir' %}active{% endif %}" href="/ir">
+    IR 자료 요청
+    {% if flow_counts.ir_open %}<span class="warn">{{ flow_counts.ir_open }}</span>
+    {% else %}<span>0</span>{% endif %}
+  </a>
+  <a class="sheet-tab {% if flow_tab == 'meeting' %}active{% endif %}" href="/ir#meetings">
+    미팅
+    {% if flow_counts.meeting_todo %}<span class="warn">{{ flow_counts.meeting_todo }}</span>
+    {% else %}<span>{{ flow_counts.meeting_open }}</span>{% endif %}
+  </a>
+</nav>
