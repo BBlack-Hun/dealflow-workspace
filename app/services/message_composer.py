@@ -68,6 +68,9 @@ class ComposeResult:
     char_count: int
     too_long: bool
     warnings: List[str] = field(default_factory=list)
+    # 여러 통으로 나눠 보낼 때의 순서. 한 통이면 비어 있다.
+    # `text` 는 언제나 이것을 합친 전문이라, parts 를 모르는 쪽은 한 통으로 보낸다.
+    parts: List[str] = field(default_factory=list)
 
 
 def format_eok(value_baekman: Optional[int]) -> Optional[str]:
@@ -210,6 +213,7 @@ def compose_message(
     include_opening: bool = True,
     company_list: Optional[str] = None,
     file_links: Optional[str] = None,
+    link_blocks: Optional[List[str]] = None,
 ) -> ComposeResult:
     """Assemble the final Kakao message text for one contact.
 
@@ -242,14 +246,28 @@ def compose_message(
             parts.append("")  # blank line separator
             parts.append(f"{idx}) {summary}")
 
-    # 자료를 보내는데 링크가 문구 어디에도 없으면 **문구만** 나간다. 템플릿에
-    # {자료링크} 를 안 넣어 뒀어도 자료는 반드시 따라가야 한다 —
-    # "IR deck 전달드리겠습니다" 만 받은 투자사는 다시 물어봐야 한다.
-    if file_links and file_links not in "\n".join(parts):
-        parts.append("")
-        parts.append(file_links)
+    body = "\n".join(parts).strip()
 
-    text = "\n".join(parts).strip() + "\n"
+    # ── 자료 전달은 여러 통으로 나간다 ────────────────────────────────
+    #
+    # 카톡에서 링크는 **각자 미리보기 카드**로 떠야 하고, 그게 먼저 와야 한다.
+    # 설명을 먼저 보내면 "전달드리겠습니다" 만 떠 있고 자료가 안 보이는 시간이
+    # 생긴다. 그래서 링크를 한 통씩 순서대로 던지고 마지막에 설명을 붙인다.
+    #
+    #   ① 1번 (주)샘플애그 + 링크
+    #   ② 3번 (주)샘플메디 + 링크
+    #   ③ 홍길동 팀장님 안녕하세요. 1번 기업 …, 3번 기업 … 전달드리겠습니다.
+    bubbles: List[str] = []
+    if link_blocks:
+        bubbles = [b.strip() for b in link_blocks if b.strip()]
+        # 템플릿이 {자료링크} 로 링크를 이미 품고 있으면 본문에서 걷어낸다 —
+        # 그대로 두면 같은 링크가 두 번 나간다.
+        if file_links and file_links in body:
+            body = body.replace(file_links, "").strip()
+        if body:
+            bubbles.append(body)
+
+    text = ("\n\n".join(bubbles) if bubbles else body).strip() + "\n"
     char_count = len(text)
     too_long = char_count > MESSAGE_WARN_CHARS
     if too_long:
@@ -258,4 +276,5 @@ def compose_message(
             "(카톡 장문 붙여넣기 안정성 주의)."
         )
 
-    return ComposeResult(text=text, char_count=char_count, too_long=too_long, warnings=warnings)
+    return ComposeResult(text=text, char_count=char_count, too_long=too_long,
+                         warnings=warnings, parts=bubbles)

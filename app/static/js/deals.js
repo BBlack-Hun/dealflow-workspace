@@ -337,6 +337,22 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   // 미리보기는 **그대로 고쳐서 보낼 수 있다**.
   // 자동 조합이 늘 완벽할 수는 없어서, 담당자별로 한 줄 덧붙이거나 표현을 바꾸는 일이 잦다.
   // 고친 내용은 lastPreviews[i].message 에 남고 발송 시 그 문장이 그대로 나간다.
+  // 자료 전달은 한 통이 아니라 여러 통으로 나간다 — 링크를 먼저 한 통씩 던지고
+  // 설명이 마지막이다. 그게 보이지 않으면 무엇이 어떤 순서로 나가는지 확인할 수 없다.
+  // 여기서 고치면 **한 통으로** 나간다(어디서 끊을지는 고친 사람만 안다).
+  function splitNotice(p) {
+    var parts = p.parts || [];
+    if (parts.length < 2) return "";
+    var heads = parts.map(function (t, i) {
+      return '<li><b>' + (i + 1) + '통</b> ' +
+        escapeHtml(t.split("\n")[0].slice(0, 40)) + '</li>';
+    }).join("");
+    return '<div class="split-notice">' +
+      '<b>' + parts.length + '통으로 나갑니다</b> — 링크가 먼저, 설명이 마지막' +
+      '<ol>' + heads + '</ol>' +
+      '<span class="muted">여기서 고치면 한 통으로 나갑니다</span></div>';
+  }
+
   function renderPreview(idx) {
     var p = lastPreviews[idx];
     if (!p) { previewArea.innerHTML = '<p class="muted">미리보기 없음</p>'; return; }
@@ -348,6 +364,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       '<div class="bubble-meta">' + escapeHtml(p.name) + " " + escapeHtml(p.title || "") +
       " · " + escapeHtml(roomLine) + (p.has_history ? " · 재연락" : " · 첫연락") +
       ' <span class="edited-flag" id="edited-flag" hidden>· 수정함</span></div>' +
+      splitNotice(p) +
       '<textarea class="bubble-edit" id="bubble-edit" spellcheck="false"></textarea>' +
       '<div class="charcount" id="charcount"></div>';
 

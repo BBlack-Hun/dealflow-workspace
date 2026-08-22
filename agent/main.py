@@ -45,6 +45,8 @@ DEFAULT_CONFIG = {
     "delay_min_sec": 3,        # human-like inter-send delay (TECH_SPEC §5.5)
     "delay_max_sec": 7,
     "job_cap": 60,             # 1잡 상한 (계정 보호)
+    "part_gap_sec": 1.2,       # 한 건이 여러 통일 때 통 사이 간격
+                               # (연달아 쏟으면 카톡이 순서를 뒤집는다)
     # 방 연결 확인은 메시지를 보내지 않아 검색만 반복한다. 그래도 사람 속도를 흉내낸다
     # (연속 검색도 자동화로 읽힐 수 있음). 발송 지연과 별개 값으로 둔다.
     "room_marker": "",   # 딜소개 방을 가려내는 표식(예: "우리브이씨 Asset")
@@ -189,7 +191,7 @@ def process_job(client: AgentClient, sender, job: dict, cfg: dict):
     log.info("processing job %s (%d items)", job_id, len(items))
     any_fail = False
     for i, item in enumerate(items, start=1):
-        result = sender.send_text(item["room_name"], item["message"])
+        result = send_item(sender, item, cfg)
         if result.ok:
             client.report_item(item["id"], "sent")
             log.info("  [%d/%d] SENT room=%r", i, len(items), item["room_name"])

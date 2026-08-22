@@ -105,3 +105,95 @@ def test_composer_appends_only_when_missing():
         "{담당자명} {직함} 안녕하세요.", "{자료링크}", contact,
         stage=mc.STAGE_REMIND, file_links=f"1번 샘플애그\n{LINK}")
     assert out.text.count(LINK) == 1
+
+
+# --- 나가는 순서 -------------------------------------------------------------
+#
+# 링크가 먼저 한 통씩, 설명이 마지막. 카톡에서 링크는 각자 미리보기 카드로
+# 떠야 하고 그게 먼저 와야 한다 — 설명이 먼저 가면 "전달드리겠습니다" 만
+# 떠 있고 자료가 안 보이는 시간이 생긴다.
+
+def test_links_go_first_then_the_message(stage):
+    preview = _preview(stage, [stage["agri"].id])
+    parts = preview["parts"]
+
+    assert len(parts) == 2, parts
+    assert parts[0].startswith("1번 샘플애그") and LINK in parts[0]
+    assert "안녕하세요" in parts[1]
+    assert LINK not in parts[1], "링크가 두 번 나가면 안 된다"
+
+
+def test_several_links_keep_their_order(stage):
+    parts = _preview(stage, [stage["agri"].id, stage["medi"].id])["parts"]
+
+    assert len(parts) == 3
+    assert parts[0].startswith("1번 샘플애그")
+    assert parts[1].startswith("2번 샘플메디")
+    assert "안녕하세요" in parts[2]
+
+
+def test_the_whole_text_is_the_parts_joined(stage):
+    """`parts` 를 모르는 예전 발송 프로그램도 순서가 맞는 한 통을 보낸다."""
+    preview = _preview(stage, [stage["agri"].id, stage["medi"].id])
+    assert preview["message"].strip() == "\n\n".join(preview["parts"]).strip()
+
+
+def test_deal_intro_is_still_one_message(stage):
+    r = stage["client"].post("/api/deals/preview", json={
+        "contact_ids": [stage["contact"].id], "company_ids": [stage["agri"].id]})
+    assert r.json()["previews"][0]["parts"] == []
+
+
+def test_the_send_stores_the_order(stage, db):
+    """보낼 때 순서가 저장돼야 발송 프로그램이 그대로 보낸다."""
+    import json
+
+    from app.models import SendItem
+
+    r = stage["client"].post("/api/deals/send", json={
+        "mode": "ir", "contact_ids": [stage["contact"].id],
+        "company_ids": [stage["agri"].id, stage["medi"].id]})
+    assert r.status_code == 200, r.text
+
+    item = db.query(SendItem).filter_by(job_id=r.json()["job_id"]).one()
+    parts = json.loads(item.parts_json)
+    assert len(parts) == 3 and LINK in parts[0] and "안녕하세요" in parts[2]
+    # 사람이 세는 것은 '몇 통' 이 아니라 '몇 명' 이다
+    assert db.query(SendItem).filter_by(job_id=r.json()["job_id"]).count() == 1
+
+
+def test_an_edited_message_goes_as_one(stage, db):
+    """어디서 끊을지는 고친 사람만 안다."""
+    from app.models import SendItem
+
+    r = stage["client"].post("/api/deals/send", json={
+        "mode": "ir", "contact_ids": [stage["contact"].id],
+        "company_ids": [stage["agri"].id],
+        "overrides": [{"contact_id": stage["contact"].id,
+                       "message": "제가 직접 쓴 문구입니다"}]})
+    item = db.query(SendItem).filter_by(job_id=r.json()["job_id"]).one()
+    assert item.parts_json is None
+    assert item.message == "제가 직접 쓴 문구입니다"
+
+
+def test_the_agent_is_given_the_order(stage, db):
+    import json
+
+    from app.models import AgentDevice, SendItem
+
+    r = stage["client"].post("/api/deals/send", json={
+        "mode": "ir", "contact_ids": [stage["contact"].id],
+        "company_ids": [stage["agri"].id]})
+    device = db.query(AgentDevice).filter_by(
+        user_id=stage["contact"].user_id).first()
+
+    payload = stage["client"].get(
+        "/api/agent/poll",
+        headers={"Authorization": f"Bearer {device.token}"}).json()
+    item = payload["items"][0]
+    assert item["parts"][0].startswith("1번 샘플애그")
+    assert len(item["parts"]) == 2
+    # 합친 전문도 함께 준다 — 이 칸을 모르는 예전 프로그램을 위해
+    assert item["message"].strip() == "\n\n".join(item["parts"]).strip()
+    assert json.loads(db.query(SendItem).filter_by(
+        job_id=r.json()["job_id"]).one().parts_json) == item["parts"]

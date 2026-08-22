@@ -282,6 +282,14 @@ class SendItem(TimestampMixin, Base):
     room_name: Mapped[str] = mapped_column(String)  # 카톡방 제목 · 메일이면 받는 주소
     subject: Mapped[Optional[str]] = mapped_column(String, nullable=True)   # 메일 제목
     message: Mapped[str] = mapped_column(Text)      # rendered final text snapshot (immutable)
+    # **여러 통으로 나눠 보낼 때**의 순서(JSON 배열). IR 자료 전달이 그렇다 —
+    # 링크를 먼저 한 통씩 던지고 마지막에 설명을 붙인다. 카톡에서는 링크가
+    # 각자 미리보기 카드로 떠야 하고, 설명이 그 아래 와야 읽힌다.
+    #
+    # 비어 있으면 `message` 를 한 통으로 보낸다(지금까지의 동작).
+    # `message` 는 항상 **합친 전문**이라, 이 칸을 모르는 예전 발송 프로그램도
+    # 순서가 맞는 한 통을 보낸다.
+    parts_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     # pending | sending | sent | failed | canceled
     status: Mapped[str] = mapped_column(String, default="pending")
     error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

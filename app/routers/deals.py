@@ -1,6 +1,8 @@
 """딜소개 보내기 — preview + send-list creation (ROADMAP task 1.5, FEATURE_SPEC §5 ①~⑥)."""
 from __future__ import annotations
 
+import json
+
 from typing import List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
@@ -172,6 +174,9 @@ def _compose_for_contact(
                       if mode == MODE_IR else None),
         file_links=(build_file_links(db, contact, companies)
                     if mode == MODE_IR else None),
+        # 링크를 먼저 한 통씩, 설명은 마지막에 — 카톡에서 읽히는 순서다.
+        link_blocks=(build_link_blocks(db, contact, companies)
+                     if mode == MODE_IR else None),
     )
 
 
@@ -228,6 +233,15 @@ def build_file_links(db: Session, contact: VcContact,
     링크가 없는 기업은 **빼지 않고** 그렇다고 적는다 — 조용히 빠지면 보낸 쪽도
     받은 쪽도 몇 개를 주고받았는지 어긋난다.
     """
+    return "\n\n".join(build_link_blocks(db, contact, companies))
+
+
+def build_link_blocks(db: Session, contact: VcContact,
+                      companies: List[IrCompany]) -> List[str]:
+    """기업 하나당 한 통. **순서대로** 나간다.
+
+    카톡에서 링크는 각자 미리보기 카드로 떠야 하므로 한 통에 몰아넣지 않는다.
+    """
     positions = deal_positions(db, contact.id)
     blocks = []
     for company in companies:
@@ -235,7 +249,7 @@ def build_file_links(db: Session, contact: VcContact,
         head = f"{no}번 {company.name}" if no else company.name
         url = (company.ir_drive_url or "").strip()
         blocks.append(f"{head}\n{url}" if url else f"{head}\n(자료 준비 중)")
-    return "\n\n".join(blocks)
+    return blocks
 
 
 def _apply_test_room(contact: VcContact, text: str) -> tuple:
@@ -251,6 +265,18 @@ def _apply_test_room(contact: VcContact, text: str) -> tuple:
     firm = f" / {contact.firm}" if contact.firm else ""
     banner = f"[테스트 발송 → {who}{firm}]\n원래 방: {contact.kakao_room_name}\n\n"
     return config.TEST_ROOM, banner + text
+
+
+def _apply_test_room_to_parts(contact: VcContact, parts: List[str]) -> List[str]:
+    """테스트 머리말은 첫 통에만 붙인다.
+
+    통마다 붙이면 테스트 방이 "[테스트 발송 → …]" 로 도배돼 정작 무엇이
+    나가는지 안 보인다.
+    """
+    if not parts or not config.TEST_ROOM:
+        return parts
+    _room, first = _apply_test_room(contact, parts[0])
+    return [first] + parts[1:]
 
 
 def _load_companies(db: Session, company_ids: List[int]) -> List[IrCompany]:
@@ -374,6 +400,9 @@ def preview(
             "room_verified": contact.room_verified,
             "room_warning": None if contact.kakao_room_name else "카톡방 이름 미등록",
             "message": result.text,
+            # 몇 통으로 나가는지 화면에서 보여야 한다 — 링크가 먼저 한 통씩
+            # 나가고 설명이 마지막이라는 게 보이지 않으면 확인할 수가 없다.
+            "parts": list(result.parts),
             "char_count": result.char_count,
             "too_long": result.too_long,
             "warnings": result.warnings + fit.warnings + thin_warnings,
@@ -471,13 +500,16 @@ def create_send_list(
 
     for contact in contacts:
         if contact.id in overrides:
-            text = overrides[contact.id]      # 사람이 고친 문구가 최우선
+            # 사람이 고친 문구가 최우선. 고친 것은 통째로 한 통이다 —
+            # 어디서 끊을지는 고친 사람만 안다.
+            text, parts = overrides[contact.id], []
         else:
-            text = _compose_for_contact(db, user, contact, companies,
-                                        req.opening_template_id,
-                                        req.closing_template_id,
-                                        mode=req.mode,
-                                        include_opening=req.include_opening).text
+            composed = _compose_for_contact(db, user, contact, companies,
+                                            req.opening_template_id,
+                                            req.closing_template_id,
+                                            mode=req.mode,
+                                            include_opening=req.include_opening)
+            text, parts = composed.text, list(composed.parts)
         if by_email:
             # 메일은 테스트 방 치환이 없다 — 주소가 곧 대상이고, 테스트 모드는
             # 카톡방을 하나로 모으는 장치다. 대신 제목에 표시를 남긴다.
@@ -488,6 +520,8 @@ def create_send_list(
                 subject = f"[테스트] {subject}"
         else:
             target, message = _apply_test_room(contact, text)
+            # 머리말은 **첫 통에만**. 통마다 붙으면 테스트 방이 배너로 도배된다.
+            parts = _apply_test_room_to_parts(contact, parts)
             subject = None
 
         db.add(SendItem(
@@ -499,6 +533,9 @@ def create_send_list(
             room_name=target,
             subject=subject,
             message=message,
+            # 메일은 한 통이다 — 나눠 보낼 곳이 없다.
+            parts_json=(json.dumps(parts, ensure_ascii=False)
+                        if parts and not by_email else None),
             status="pending",
         ))
 
