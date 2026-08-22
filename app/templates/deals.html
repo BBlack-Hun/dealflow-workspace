@@ -118,7 +118,8 @@
       <button type="button" class="linkbtn" id="select-noreact">반응 없는 담당자만</button>
     </h2>
     <div class="picker-search">
-      <input type="search" id="contact-search" placeholder="이름 · 투자사 · 카톡방 검색 ({{ contacts|length }}명)"
+      <input type="search" id="contact-search"
+             placeholder="이름 · 투자사 · 단계(Series A) · 분야 · 라운드 규모 검색 ({{ contacts|length }}명)"
              autocomplete="off" aria-label="담당자 검색">
       <label class="only-picked">
         <input type="checkbox" id="only-picked-contacts"> 선택한 것만
@@ -129,14 +130,21 @@
     <div class="card-list" id="contact-list">
       {% for c in contacts %}
       <label class="pick-card"
-             data-search="{{ (c.name ~ ' ' ~ (c.title or '') ~ ' ' ~ (c.firm or '') ~ ' ' ~ (c.kakao_room_name or ''))|lower }}">
+             data-search="{{ (c.name ~ ' ' ~ (c.title or '') ~ ' ' ~ (c.firm or '') ~ ' ' ~ (c.department or '') ~ ' ' ~ (c.kakao_room_name or '') ~ ' ' ~ (c.stages or '') ~ ' ' ~ (c.sectors or '') ~ ' ' ~ (c.round_size or ''))|lower }}">
         <input type="checkbox" class="contact-cb" value="{{ c.id }}" data-name="{{ c.name }}"
                data-noreact="{{ 1 if c.id in no_reaction_ids else 0 }}">
         <div class="pick-body">
           <div class="pick-name">{{ c.name }} <span class="muted">{{ c.title or '' }}</span>
             {% if c.id in no_reaction_ids %}<span class="tag warn">반응 없음</span>{% endif %}
           </div>
-          <div class="pick-sub muted">{{ c.firm or '' }}</div>
+          <div class="pick-sub muted">{{ c.firm or '' }}{% if c.department %} · {{ c.department }}{% endif %}</div>
+          {% if c.stages or c.sectors or c.round_size %}
+          <div class="pick-tags">
+            {% for st in (c.stages or '').split(',') if st.strip() %}<span class="tag">{{ st.strip() }}</span>{% endfor %}
+            {% for sc in (c.sectors or '').split(',')[:2] if sc.strip() %}<span class="tag soft">{{ sc.strip() }}</span>{% endfor %}
+            {% if c.round_size %}<span class="tag soft" title="{{ c.round_size }}">{{ c.round_size[:20] }}</span>{% endif %}
+          </div>
+          {% endif %}
           <div class="pick-room">
             {% if c.kakao_room_name %}
               <span class="room-badge {{ 'ok' if c.room_verified in ['verified','unverified'] else 'warn' }}">💬 {{ c.kakao_room_name }}</span>
@@ -184,11 +192,11 @@
       </label>
       <label id="tpl-opening-wrap">
         <span>인사말</span>
-        <select id="tpl-opening"><option value="">기본 (첫 연락/재연락 자동)</option></select>
+        <select id="tpl-opening"><option value="">기본 인삿말 (첫 연락 / 재연락 자동)</option></select>
       </label>
       <label id="tpl-closing-wrap">
         <span>안내문</span>
-        <select id="tpl-closing"><option value="">기본</option></select>
+        <select id="tpl-closing"><option value="">기본 안내문</option></select>
       </label>
       <a class="linkbtn" href="/templates">문구 관리</a>
     </div>

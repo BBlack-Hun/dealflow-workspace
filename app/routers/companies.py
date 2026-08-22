@@ -4,10 +4,14 @@
 목록 구경이 아니라 **"왜 이 기업은 소개 목록에 안 뜨는가"를 그 자리에서 고치는 것**이다.
 그래서 표에 `소개 가능` 열을 두고, 안 되는 이유를 함께 보여준다.
 
-소개 가능 조건(IrCompany.introducible)은 문구에 실제로 들어가는 것만 본다.
-- 소개할 내용(분야 또는 한줄소개)이 있고
-- 숫자(매출·누적투자·희망투자·Pre Value)가 하나라도 있고
-- 사람이 '보류'로 내리지 않았을 것
+**소개 가능** = 딜 소개 문구에 들어가는 칸이 **하나도 빠지지 않은** 상태다.
+
+    회사명 | 사업분야 | 년매출 | 누적투자금액 | 투자유치 진행금액
+    | Pre Value | 특이사항(기업 특장점) | IR 자료
+
+하나라도 비면 '내용 부족'이다. 예전에는 '분야나 한줄소개 + 숫자 하나'만 있으면
+가능으로 봤는데, 그러면 문구가 반쯤 빈 채로 나간다. 무엇이 비었는지도
+화면에서 바로 보여준다.
 """
 from __future__ import annotations
 
@@ -33,22 +37,47 @@ SUMMARY_LABELS = {
 }
 CONTRACT_LABELS = {"yes": "완료", "pending": "진행 중", "no": "없음"}
 
+# 소개 문구에 들어가는 칸. (모델 속성, 화면 이름)
+REQUIRED_FIELDS = [
+    ("name", "회사명"),
+    ("sector_major", "사업분야"),
+    ("revenue_recent", "년매출"),
+    ("funding_total", "누적투자금액"),
+    ("raise_target", "투자유치 진행금액"),
+    ("pre_value", "Pre Value"),
+    ("competitiveness", "특이사항"),
+    ("ir_drive_url", "IR 자료"),
+]
+
+
+
+def missing_fields(c: IrCompany) -> List[str]:
+    """비어 있는 칸의 **화면 이름** 목록. 무엇을 채워야 하는지 바로 알 수 있게."""
+    out = []
+    for attr, label in REQUIRED_FIELDS:
+        value = getattr(c, attr, None)
+        if value is None or (isinstance(value, str) and not value.strip()):
+            out.append(label)
+    return out
+
+
+def is_ready(c: IrCompany) -> bool:
+    """딜 소개 문구를 온전히 만들 수 있는가."""
+    if c.summary_status == "insufficient":
+        return False
+    return not missing_fields(c)
+
 
 def blocked_reason(c: IrCompany) -> str:
-    """소개 목록에 안 뜨는 이유를 사람 말로 돌려준다(뜨면 빈 문자열)."""
-    if c.introducible:
+    """소개 목록에 안 뜨는 이유(뜨면 빈 문자열)."""
+    if is_ready(c):
         return ""
     if c.summary_status == "insufficient":
         return "보류로 표시됨"
-    has_text = bool((c.sector_major or "").strip() or (c.one_liner or "").strip())
-    has_number = any(v for v in (c.revenue_recent, c.funding_total,
-                                 c.raise_target, c.pre_value))
-    missing = []
-    if not has_text:
-        missing.append("분야 또는 한줄소개")
-    if not has_number:
-        missing.append("숫자(매출·투자금 중 하나)")
-    return " · ".join(missing) + " 없음" if missing else "내용 부족"
+    missing = missing_fields(c)
+    head = ", ".join(missing[:3])
+    more = f" 외 {len(missing) - 3}개" if len(missing) > 3 else ""
+    return f"{head}{more} 없음"
 
 
 def company_rows(db: Session) -> List[dict]:
@@ -76,7 +105,7 @@ def company_rows(db: Session) -> List[dict]:
             "is_top_deal": bool(c.is_top_deal),
             "summary_status": c.summary_status or "draft",
             "summary_label": SUMMARY_LABELS.get(c.summary_status or "draft", "작성 중"),
-            "introducible": c.introducible,
+            "introducible": is_ready(c),
             "blocked_reason": blocked_reason(c),
             "note": c.note or "",
             # 검색용 — 화면에서 즉시 필터링한다
@@ -102,9 +131,9 @@ def companies_page(request: Request, db: Session = Depends(get_db),
             "total": len(rows),
             "introducible": sum(1 for r in rows if r["introducible"]),
             "blocked": sum(1 for r in rows if not r["introducible"]),
-            "top": sum(1 for r in rows if r["is_top_deal"]),
             "with_ir": sum(1 for r in rows if r["has_ir"]),
         },
+        "required_fields": [label for _a, label in REQUIRED_FIELDS],
         "summary_labels": SUMMARY_LABELS,
         "contract_labels": CONTRACT_LABELS,
     })
@@ -243,7 +272,7 @@ def update_company(company_id: int, body: CompanyIn,
         raise HTTPException(status_code=404, detail="기업을 찾을 수 없습니다")
     _assign(company, body)
     db.commit()
-    return {"id": company.id, "introducible": company.introducible,
+    return {"id": company.id, "introducible": is_ready(company),
             "blocked_reason": blocked_reason(company)}
 
 

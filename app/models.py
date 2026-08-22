@@ -480,3 +480,46 @@ class Meeting(TimestampMixin, Base):
     followup_done: Mapped[int] = mapped_column(Integer, default=0)
     note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
+
+class WeeklyRoutine(TimestampMixin, Base):
+    """매주 되풀이하는 업무. 요일이 오면 그 주 목록에 저절로 생긴다.
+
+    시트에는 목록 아래에 규칙이 글로 적혀 있었다("* 이메일 발송 — 매주 화요일,
+    목요일"). 사람이 그걸 읽고 매주 손으로 옮겨 적다 보니 빠지는 주가 생겼다.
+    """
+
+    __tablename__ = "weekly_routines"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    category: Mapped[str] = mapped_column(String)          # 항목
+    title: Mapped[str] = mapped_column(Text)               # 세부업무
+    weekdays: Mapped[str] = mapped_column(String, default="")   # "0,2" = 월,수
+    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    is_active: Mapped[int] = mapped_column(Integer, default=1)
+
+
+class WeeklyTask(TimestampMixin, Base):
+    """주간 업무 한 줄 — 항목 · 세부업무 · 일시 · 상태.
+
+    시트의 체크리스트를 그대로 옮긴다. 손으로 적던 것이라 **고칠 수 있어야** 한다.
+    시스템이 아는 일(후속 발송·IR 요청 등)은 여기 넣지 않고 화면에서 따로 보여준다 —
+    같은 것을 두 곳에 적으면 어긋난다.
+    """
+
+    __tablename__ = "weekly_tasks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    week_start: Mapped[str] = mapped_column(String)        # 그 주 월요일 (YYYY-MM-DD)
+    category: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    title: Mapped[str] = mapped_column(Text)
+    due_date: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # todo(예정) | doing(진행중) | done(완료)
+    status: Mapped[str] = mapped_column(String, default="todo")
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # 반복 업무에서 생긴 줄이면 그 규칙. 같은 주에 두 번 만들지 않으려고 쓴다.
+    routine_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("weekly_routines.id"), nullable=True)
+

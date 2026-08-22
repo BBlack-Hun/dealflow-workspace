@@ -37,13 +37,20 @@
           <option value="{{ c.id }}">{{ c.name }} {{ c.title or '' }} · {{ c.firm or '' }}</option>
           {% endfor %}
         </select></label>
-      <label class="field inline-field"><span>요청받은 기업 (여러 개면 줄바꿈)</span>
-        <textarea name="company_name" rows="2" required placeholder="샘플애그&#10;샘플메디"></textarea></label>
+      <div class="field inline-field wide" id="last-batch" hidden>
+        <span>지난 회차에서 고르기 <em id="last-batch-title" class="muted"></em></span>
+        <div class="num-pick" id="num-pick"></div>
+      </div>
+      <label class="field inline-field" style="flex:1"><span>요청받은 기업 (여러 개면 줄바꿈)</span>
+        <textarea name="company_name" id="request-companies" rows="2" required
+                  placeholder="번호를 누르거나 직접 적으세요"></textarea></label>
       <label class="field inline-field"><span>요청받은 날</span>
         <input type="date" name="requested_at" value="{{ today }}"></label>
       <button class="primary-btn inline" type="submit">기록</button>
     </form>
     <p class="hint">
+      투자사는 <b>"4번, 6번 주세요"</b> 라고 답합니다. 담당자를 고르면 그 사람에게
+      마지막으로 보낸 회차의 번호가 뜨니, 눌러서 기록하세요.<br>
       요청이 왔다는 것은 답이 왔다는 뜻이라, 그 담당자의 <b>리마인드는 자동으로 멈춥니다.</b>
     </p>
   </div>
@@ -265,6 +272,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="/static/js/ir_numbers.js"></script>
 <script>
   [["new-request-btn", "new-request"], ["new-meeting-btn", "new-meeting"]]
     .forEach(function (pair) {

@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from urllib.parse import quote
 from datetime import date, datetime, timedelta, timezone
 from typing import Dict, List, Optional
 
@@ -197,28 +198,30 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None) -> dic
     blockers = []
     if rooms["missing"]:
         blockers.append({
-            "count": rooms["missing"], "label": "카톡방이 등록되지 않은 담당자",
-            "hint": "이름·직함·투자사로 방을 찾아 연결하세요",
-            "href": "/contacts", "level": "bad",
+            "count": rooms["missing"], "label": "카톡방이 없는 투자사",
+            "hint": "이 투자사에게는 아무 것도 나가지 않습니다 — 방을 찾아 연결하세요",
+            # 눌렀을 때 그 투자사만 보여야 한다. 전체 목록을 열어 주면
+            # 어느 줄이 문제인지 다시 찾아야 한다.
+            "href": "/contacts?room=" + quote("⚠ 미등록"), "level": "bad",
         })
     if rooms["failed"]:
         blockers.append({
-            "count": rooms["failed"], "label": "방을 찾지 못한 담당자",
-            "hint": "실제 카톡방이 없거나 제목이 다릅니다 — 이 사람에게는 나가지 않습니다",
-            "href": "/contacts", "level": "bad",
+            "count": rooms["failed"], "label": "카톡방을 못 찾은 투자사",
+            "hint": "실제 방이 없거나 제목이 다릅니다 — 이 투자사에게는 나가지 않습니다",
+            "href": "/contacts?room=" + quote("⚠ 방 없음"), "level": "bad",
         })
     if rooms["unverified"]:
         blockers.append({
-            "count": rooms["unverified"], "label": "방 이름을 확인하지 않은 담당자",
-            "hint": "[방 연결 확인]을 돌리면 실제 방 제목으로 맞춥니다",
-            "href": "/contacts", "level": "warn",
+            "count": rooms["unverified"], "label": "카톡방 확인이 안 된 투자사",
+            "hint": "제목이 실제와 다르면 그때 가서 빠집니다 — [방 연결 확인]을 돌리세요",
+            "href": "/contacts?room=" + quote("○ 미확인"), "level": "warn",
         })
     not_introducible = len(companies) - len(introducible)
     if not_introducible:
         blockers.append({
-            "count": not_introducible, "label": "소개 문구를 만들 수 없는 기업",
-            "hint": "한줄소개 또는 숫자(매출·투자금)가 비어 있습니다",
-            "href": "/companies", "level": "warn",
+            "count": not_introducible, "label": "발송 목록에 안 뜨는 기업",
+            "hint": "한줄소개 또는 숫자(매출·투자금)가 비어 소개 문구를 만들 수 없습니다",
+            "href": "/companies?ready=" + quote("⚠ 내용 부족"), "level": "warn",
         })
 
     device = db.execute(
@@ -226,8 +229,8 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None) -> dic
     ).scalars().first()
     if device is None or not device.last_poll_at:
         blockers.append({
-            "count": 1, "label": "발송 프로그램이 아직 연결되지 않음",
-            "hint": "내 PC에 설치하고 켜 두어야 카톡으로 나갑니다",
+            "count": 1, "label": "발송 프로그램이 꺼져 있음",
+            "hint": "내 PC에 설치하고 켜 두어야 카톡으로 나갑니다 — 지금은 한 건도 안 나갑니다",
             "href": "/setup", "level": "bad",
         })
 

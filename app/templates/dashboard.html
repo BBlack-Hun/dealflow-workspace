@@ -10,8 +10,10 @@
 <section class="hero-card">
   <div class="hero-main">
     <span class="hero-label">다음 딜소개</span>
-    <span class="hero-date">{{ next_send.strftime('%m월 %d일') }}</span>
-    <span class="hero-weekday">{{ ['월','화','수','목','금','토','일'][next_send.weekday()] }}요일</span>
+    <span class="hero-date">
+      {{ next_send.strftime('%m월 %d일') }}<em>{{ ['월','화','수','목','금','토','일'][next_send.weekday()] }}</em>
+    </span>
+    <a class="hero-rule" href="/followups#rules">일정 바꾸기</a>
   </div>
   <div class="hero-count">
     {% if days_left == 0 %}
@@ -107,7 +109,10 @@
 <div class="dash-grid">
   <!-- 막힌 것 먼저. 발송일에 못 나가는 이유는 대부분 여기 있다. -->
   <section class="panel">
-    <h2 class="panel-title">먼저 손봐야 할 것</h2>
+    <h2 class="panel-title">이대로면 못 보내는 곳
+      {% if blockers %}<span class="count-pill on"><b>{{ blockers|length }}</b>건</span>{% endif %}
+      <span class="hint">고치지 않으면 그만큼 빠집니다</span>
+    </h2>
     {% if blockers %}
     <ul class="blocker-list">
       {% for b in blockers %}
@@ -123,7 +128,7 @@
       {% endfor %}
     </ul>
     {% else %}
-    <p class="all-clear">✅ 막힌 곳이 없습니다. 바로 보낼 수 있습니다.</p>
+    <p class="all-clear">✅ 막힌 곳이 없습니다. 고른 투자사 모두에게 나갑니다.</p>
     {% endif %}
   </section>
 

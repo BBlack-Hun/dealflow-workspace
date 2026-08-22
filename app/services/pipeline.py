@@ -175,6 +175,44 @@ def _as_date(value: Optional[str]) -> Optional[date]:
         return None
 
 
+def last_batch_items(db: Session, contact_id: int) -> dict:
+    """이 담당자가 **마지막으로 받은 회차**의 번호와 기업.
+
+    투자사는 "4번, 6번 주세요" 라고 답한다. 그 번호가 어느 기업인지 사람이
+    지난 카톡을 뒤져 맞추고 있었다. 회차에 번호가 그대로 남아 있으므로
+    여기서 꺼내 보여준다.
+    """
+    from ..models import DealBatch, DealBatchCompany, SendItem, SendJob
+
+    row = db.execute(
+        select(SendJob.batch_id, DealBatch.title, DealBatch.sent_date)
+        .join(SendItem, SendItem.job_id == SendJob.id)
+        .join(DealBatch, DealBatch.id == SendJob.batch_id)
+        .where(SendItem.contact_id == contact_id, SendItem.status == "sent",
+               SendJob.kind == "deal_intro", SendJob.batch_id.isnot(None))
+        .order_by(SendItem.id.desc()).limit(1)
+    ).first()
+    if row is None:
+        return {"batch_id": None, "title": "", "sent_date": "", "items": []}
+
+    batch_id, title, sent_date = row
+    links = db.execute(
+        select(DealBatchCompany, IrCompany)
+        .join(IrCompany, IrCompany.id == DealBatchCompany.company_id)
+        .where(DealBatchCompany.batch_id == batch_id)
+        .order_by(DealBatchCompany.position)
+    ).all()
+    return {
+        "batch_id": batch_id,
+        "title": title or "지난 회차",
+        "sent_date": sent_date or "",
+        "items": [{"position": link.position, "company_id": company.id,
+                   "name": company.name,
+                   "has_link": bool((company.ir_drive_url or "").strip())}
+                  for link, company in links],
+    }
+
+
 def group_by_contact(requests: List[dict]) -> List[dict]:
     """담당자별로 묶는다. 한 사람이 여러 기업을 한꺼번에 요청하는 일이 잦아,
     한 번에 보내야 대화가 자연스럽다."""

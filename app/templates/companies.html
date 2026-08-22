@@ -10,13 +10,29 @@
 </header>
 
 <div class="kpi-row slim">
-  <div class="kpi-card static"><span class="kpi-label">등록된 기업</span><span class="kpi-value">{{ counts.total }}</span></div>
-  <div class="kpi-card static"><span class="kpi-label">소개 가능</span><span class="kpi-value ok">{{ counts.introducible }}</span></div>
-  <div class="kpi-card static"><span class="kpi-label">내용 부족</span><span class="kpi-value {% if counts.blocked %}warn{% endif %}">{{ counts.blocked }}</span></div>
-  <div class="kpi-card static"><span class="kpi-label">추천 딜</span><span class="kpi-value">{{ counts.top }}</span></div>
-  <div class="kpi-card static"><span class="kpi-label">IR 자료 있음</span>
-    <span class="kpi-value {% if counts.with_ir < counts.total %}warn{% endif %}">{{ counts.with_ir }}</span></div>
+  <a class="kpi-card" href="/companies">
+    <span class="kpi-label">등록된 기업</span>
+    <span class="kpi-value">{{ counts.total }}</span>
+    <span class="kpi-sub">전체 보기</span></a>
+  <a class="kpi-card" href="/companies?ready=%E2%97%8F%20%EC%86%8C%EA%B0%9C%20%EA%B0%80%EB%8A%A5">
+    <span class="kpi-label">소개 가능</span>
+    <span class="kpi-value ok">{{ counts.introducible }}</span>
+    <span class="kpi-sub">아래 칸이 하나도 안 빔</span></a>
+  <a class="kpi-card" href="/companies?ready=%E2%9A%A0%20%EB%82%B4%EC%9A%A9%20%EB%B6%80%EC%A1%B1">
+    <span class="kpi-label">내용 부족</span>
+    <span class="kpi-value {% if counts.blocked %}warn{% endif %}">{{ counts.blocked }}</span>
+    <span class="kpi-sub">한 칸이라도 비었음</span></a>
+  <a class="kpi-card" href="/companies?ir=%E2%9A%A0%20%EC%97%86%EC%9D%8C">
+    <span class="kpi-label">IR 자료 없음</span>
+    <span class="kpi-value {% if counts.total - counts.with_ir %}bad{% endif %}">{{ counts.total - counts.with_ir }}</span>
+    <span class="kpi-sub">요청 와도 못 보냄</span></a>
 </div>
+
+<p class="hint">
+  <b>소개 가능</b>은 딜 소개 문구에 들어가는 칸이 하나도 빠지지 않은 기업입니다 —
+  {% for f in required_fields %}<span class="tag">{{ f }}</span>{% endfor %}
+  하나라도 비면 <b>내용 부족</b>입니다.
+</p>
 
 {% if msg %}<p class="flash">{{ msg }}</p>{% endif %}
 
@@ -25,7 +41,6 @@
     <button type="button" class="chip" data-preset="">전체</button>
     <button type="button" class="chip" data-preset="ready=%E2%9A%A0%20%EB%82%B4%EC%9A%A9%20%EB%B6%80%EC%A1%B1">내용 부족</button>
     <button type="button" class="chip" data-preset="ready=%E2%97%8F%20%EC%86%8C%EA%B0%9C%20%EA%B0%80%EB%8A%A5">소개 가능</button>
-    <button type="button" class="chip" data-preset="top=%E2%98%85%20%EC%B6%94%EC%B2%9C">추천 딜</button>
     <button type="button" class="chip" data-preset="ir=%E2%9A%A0%20%EC%97%86%EC%9D%8C">IR 자료 없음</button>
   </div>
   <div class="toolbar-right">

@@ -22,12 +22,11 @@ from .models import User
 #
 # `admin_only` 인 메뉴는 관리자에게만 보인다(들어가도 403 이지만, 보이지 않는 편이 낫다).
 MENU = [
-    {"key": "check", "label": "오늘 할 일", "href": "/todo", "ready": True},
+    {"key": "check", "label": "주간 업무", "href": "/todo", "ready": True},
     {"key": "home", "label": "대시보드 요약", "href": "/", "ready": True},
     {"key": "deal", "label": "딜 제안 관리", "href": "/deals", "ready": True},
     {"key": "su", "label": "스타트업 관리", "href": "/companies", "ready": True},
     {"key": "vc", "label": "투자사 DB", "href": "/contacts", "ready": True},
-    {"key": "ready", "label": "회차 준비 점검", "href": "/readiness", "ready": True},
     {"key": "followup", "label": "후속 관리", "href": "/followups", "ready": True},
     {"key": "templates", "label": "딜 제안 문구", "href": "/templates", "ready": True},
     {"key": "req", "label": "IR·미팅 관리", "href": "/ir", "ready": True},
@@ -36,7 +35,6 @@ MENU = [
      "needs": "can_view_consulting"},
     {"key": "report", "label": "업무 보고", "href": "/report", "ready": True},
     {"key": "admin", "label": "팀 현황", "href": "/team", "ready": True, "admin_only": True},
-    {"key": "setup", "label": "발송 프로그램 설치", "href": "/setup", "ready": True},
 ]
 
 
@@ -61,7 +59,7 @@ def visible_menu(user: User) -> list:
 def menu_label(active: str) -> str:
     """지금 보고 있는 화면의 이름. 좌측 메뉴와 화면 제목이 어긋나지 않게 한 곳에서 가져온다."""
     item = next((m for m in MENU if m["key"] == active), None)
-    return item["label"] if item else "dealflow"
+    return item["label"] if item else "CONTACTVC ASSET"
 
 
 def base_ctx(request: Request, db: Session, user: User, active: str) -> dict:

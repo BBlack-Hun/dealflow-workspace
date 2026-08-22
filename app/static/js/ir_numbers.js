@@ -1,0 +1,58 @@
+// IR 요청 기록 — 지난 회차의 **번호**로 고른다.
+//
+// 투자사는 "4번, 6번 주세요" 라고 답한다. 그 번호가 어느 기업인지 사람이
+// 지난 카톡을 뒤져 맞추고 있었다. 담당자를 고르면 그 사람에게 마지막으로 보낸
+// 회차의 번호를 그대로 보여주고, 눌러서 기록하게 한다.
+(function () {
+  var form = document.getElementById("new-request");
+  if (!form) return;
+
+  var select = form.querySelector('select[name="contact_id"]');
+  var box = document.getElementById("last-batch");
+  var title = document.getElementById("last-batch-title");
+  var pick = document.getElementById("num-pick");
+  var textarea = document.getElementById("request-companies");
+  if (!select || !box || !pick || !textarea) return;
+
+  function load() {
+    var id = select.value;
+    box.hidden = true;
+    pick.innerHTML = "";
+    if (!id) return;
+
+    fetch("/api/ir/last-batch/" + id)
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        if (!d || !d.items || !d.items.length) return;
+        box.hidden = false;
+        title.textContent = d.title + (d.sent_date ? " · " + d.sent_date : "");
+        d.items.forEach(function (item) {
+          var b = document.createElement("button");
+          b.type = "button";
+          b.className = "num-chip" + (item.has_link ? "" : " no-link");
+          b.textContent = item.position + ") " + item.name;
+          b.title = item.has_link ? item.name : item.name + " — IR 자료 링크 없음";
+          b.addEventListener("click", function () { toggle(b, item.name); });
+          pick.appendChild(b);
+        });
+      })
+      .catch(function () { /* 지난 회차가 없어도 직접 적으면 된다 */ });
+  }
+
+  function toggle(button, name) {
+    var lines = textarea.value.split("\n").map(function (v) { return v.trim(); })
+      .filter(Boolean);
+    var at = lines.indexOf(name);
+    if (at >= 0) {
+      lines.splice(at, 1);
+      button.classList.remove("picked");
+    } else {
+      lines.push(name);
+      button.classList.add("picked");
+    }
+    textarea.value = lines.join("\n");
+  }
+
+  select.addEventListener("change", load);
+  load();
+})();
