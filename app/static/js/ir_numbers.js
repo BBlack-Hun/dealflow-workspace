@@ -14,8 +14,14 @@
   var textarea = document.getElementById("request-companies");
   if (!select || !box || !pick || !textarea) return;
 
+  // 응답이 오는 사이에 또 부르면 두 응답이 **모두** 그려져 번호가 두 줄로 나온다
+  // (담당자를 빠르게 바꾸거나, 화면이 열리면서 한 번 더 부를 때). 마지막으로
+  // 부른 것만 그린다.
+  var turn = 0;
+
   function load() {
     var id = select.value;
+    var mine = ++turn;
     box.hidden = true;
     pick.innerHTML = "";
     if (!id) return;
@@ -23,7 +29,9 @@
     fetch("/api/ir/last-batch/" + id)
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (d) {
+        if (mine !== turn) return;          // 그 사이 다른 담당자를 골랐다
         if (!d || !d.items || !d.items.length) return;
+        pick.innerHTML = "";
         box.hidden = false;
         title.textContent = d.title + (d.sent_date ? " · " + d.sent_date : "");
         d.items.forEach(function (item) {

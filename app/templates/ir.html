@@ -31,12 +31,12 @@
     <button type="button" class="linkbtn" id="new-request-btn">요청 받았다고 적기</button>
   </h2>
 
-  <div class="member-form" id="new-request" hidden>
+  <div class="member-form" id="new-request" {% if not preselect_contact %}hidden{% endif %}>
     <form method="post" action="/ir/requests">
       <label class="field inline-field"><span>담당자</span>
         <select name="contact_id" required>
           {% for c in contacts %}
-          <option value="{{ c.id }}">{{ c.name }} {{ c.title or '' }} · {{ c.firm or '' }}</option>
+          <option value="{{ c.id }}" {% if c.id == preselect_contact %}selected{% endif %}>{{ c.name }} {{ c.title or '' }} · {{ c.firm or '' }}</option>
           {% endfor %}
         </select></label>
       <div class="field inline-field wide" id="last-batch" hidden>
@@ -45,14 +45,15 @@
       </div>
       <label class="field inline-field" style="flex:1"><span>요청받은 기업 (여러 개면 줄바꿈)</span>
         <textarea name="company_name" id="request-companies" rows="2" required
-                  placeholder="번호를 누르거나 직접 적으세요"></textarea></label>
+                  placeholder="2, 4  —  번호로 적어도 됩니다"></textarea></label>
       <label class="field inline-field"><span>요청받은 날</span>
         <input type="date" name="requested_at" value="{{ today }}"></label>
       <button class="primary-btn inline" type="submit">기록</button>
     </form>
     <p class="hint">
       투자사는 <b>"4번, 6번 주세요"</b> 라고 답합니다. 담당자를 고르면 그 사람에게
-      마지막으로 보낸 회차의 번호가 뜨니, 눌러서 기록하세요.<br>
+      마지막으로 보낸 회차의 번호가 뜨니 눌러서 기록하세요 —
+      <b>번호를 직접 적어도 됩니다</b>(<code>2, 4</code>). 지난 회차의 번호로 읽습니다.<br>
       요청이 왔다는 것은 답이 왔다는 뜻이라, 그 담당자의 <b>리마인드는 자동으로 멈춥니다.</b>
     </p>
   </div>
@@ -95,7 +96,7 @@
 
   {% if open_requests %}
   <table class="grid-table compact">
-    <thead><tr><th>요청일</th><th>담당자</th><th>기업</th><th>자료</th><th>기다린 날</th><th></th></tr></thead>
+    <thead><tr><th style="width:96px">요청일</th><th>담당자</th><th>기업</th><th style="width:104px">자료</th><th style="width:78px">기다린 날</th><th style="width:104px"></th></tr></thead>
     <tbody>
       {% for r in open_requests %}
       <tr class="{% if r.overdue %}overdue-row{% endif %}">
@@ -146,7 +147,7 @@
       <label class="field inline-field"><span>담당자</span>
         <select name="contact_id" required>
           {% for c in contacts %}
-          <option value="{{ c.id }}">{{ c.name }} {{ c.title or '' }} · {{ c.firm or '' }}</option>
+          <option value="{{ c.id }}" {% if c.id == preselect_contact %}selected{% endif %}>{{ c.name }} {{ c.title or '' }} · {{ c.firm or '' }}</option>
           {% endfor %}
         </select></label>
       <label class="field inline-field"><span>미팅 날짜</span>
@@ -275,6 +276,15 @@
 
 {% block scripts %}
 <script src="/static/js/ir_numbers.js"></script>
+<script>
+  // 후속 화면에서 이름을 눌러 넘어왔으면 폼이 이미 열려 있다 — 눈에 들어오게만
+  // 옮겨 준다. 번호 목록은 ir_numbers.js 가 처음에 한 번 부르므로 여기서 또
+  // 부르면 두 응답이 겹쳐 번호가 두 줄로 나온다.
+  (function () {
+    var box = document.getElementById("new-request");
+    if (box && !box.hidden) box.scrollIntoView({ block: "center" });
+  })();
+</script>
 <script>
   [["new-request-btn", "new-request"], ["new-meeting-btn", "new-meeting"]]
     .forEach(function (pair) {

@@ -436,6 +436,9 @@ def get_contact(
     ).all()
 
     known = _known_company_names(db)
+    # 발송 이력에도 **그 회차에 보낸 기업**을 붙인다. 없으면 카톡방 이름만 남아
+    # 담당자 이름이 기업 자리에 찍힌다 — 시트에서 옮겨 온 줄과 모양이 달라진다.
+    batch_names = _batch_company_names(db, {j.batch_id for _i, j in sends if j.batch_id})
     return {
         "contact": {
             "id": contact.id,
@@ -458,9 +461,7 @@ def get_contact(
         },
         # 임포트된 월별 기록 + 서비스가 자동으로 쌓는 발송 이력을 한 줄기로 보여준다.
         "timeline": [_activity_view(a, known) for a in acts] + [
-            {"date": (item.sent_at or item.created_at or "")[:10], "month": None,
-             "kind": job.kind, "content": _send_summary(item, job), "source": "system",
-             "companies": [], "company_count": None, "weekday": None, "week": None}
+            _send_view(item, job, batch_names.get(job.batch_id, []), known)
             for item, job in sends
         ],
     }
@@ -497,11 +498,59 @@ def _known_company_names(db: Session) -> Dict[str, str]:
     return {sheet_import.normalize_company_name(n): n for n in rows if n}
 
 
+def _batch_company_names(db: Session, batch_ids: set) -> Dict[int, List[str]]:
+    """회차별 기업 이름을 **번호 순서대로**. 한 번에 모아 온다."""
+    from ..models import DealBatchCompany
+
+    ids = [b for b in batch_ids if b]
+    if not ids:
+        return {}
+    rows = db.execute(
+        select(DealBatchCompany.batch_id, IrCompany.name)
+        .join(IrCompany, IrCompany.id == DealBatchCompany.company_id)
+        .where(DealBatchCompany.batch_id.in_(ids))
+        .order_by(DealBatchCompany.batch_id, DealBatchCompany.position)
+    ).all()
+    out: Dict[int, List[str]] = {}
+    for batch_id, name in rows:
+        out.setdefault(batch_id, []).append(name)
+    return out
+
+
+def _send_view(item: SendItem, job: SendJob, names: List[str],
+               known: Dict[str, str]) -> dict:
+    """발송 1건 → 화면용. **시트에서 옮겨 온 줄과 같은 모양**이어야 한다.
+
+    예전에는 `딜소개 발송 성공 · {카톡방 이름}` 이라 기업 자리에 담당자 이름이
+    찍혔다. 이력을 훑는 목적은 '언제 어떤 기업을 보냈나' 인데 그게 안 보였다.
+    """
+    date = (item.sent_at or item.created_at or "")[:10]
+    return {
+        "date": date,
+        "month": None,
+        "kind": job.kind,
+        "content": _send_summary(item, job),
+        "source": "system",
+        "companies": [
+            {"name": name,
+             "known": sheet_import.normalize_company_name(name) in known}
+            for name in names
+        ],
+        "company_count": len(names) or None,
+        "weekday": sheet_import.weekday_of(date) if date else None,
+        "week": sheet_import.week_of_month(date) if date else None,
+    }
+
+
 def _send_summary(item: SendItem, job: SendJob) -> str:
-    label = {"deal_intro": "딜소개 발송", "ir_delivery": "IR 전달"}.get(job.kind, job.kind)
-    state = {"sent": "성공", "failed": "실패", "pending": "대기",
+    """실패했을 때만 뜻이 있는 줄. 성공한 건은 기업 목록이 본문이다."""
+    label = {"deal_intro": "딜소개", "ir_delivery": "IR 전달"}.get(job.kind, job.kind)
+    if item.status == "sent":
+        return label
+    state = {"failed": "실패", "pending": "대기",
              "canceled": "취소"}.get(item.status, item.status)
-    return f"{label} {state} · {item.room_name}"
+    detail = f" — {item.error}" if item.status == "failed" and item.error else ""
+    return f"{label} {state}{detail}"
 
 
 @router.patch("/{contact_id}")
