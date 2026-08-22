@@ -111,7 +111,7 @@ FOLLOW_UP_MODES = {
     # 이미 목록을 본 사람이 "그 중 몇 번을 달라"고 답한 상황이라,
     # 번호와 이름만 짚어 주면 된다.
     MODE_IR: ("ir_delivery",
-              "{담당자명} {직함} 안녕하세요.\n{기업목록} IR deck 먼저 전달드리겠습니다.",
+              "{담당자명} {직함} 안녕하세요.\n{기업목록} IR deck 먼저 전달드리겠습니다.\n\n{자료링크}",
               mc.STAGE_REMIND),
 }
 MODE_TITLES = {
@@ -170,6 +170,8 @@ def _compose_for_contact(
         include_opening=include_opening,
         company_list=(build_company_list(db, contact, companies)
                       if mode == MODE_IR else None),
+        file_links=(build_file_links(db, contact, companies)
+                    if mode == MODE_IR else None),
     )
 
 
@@ -210,6 +212,30 @@ def build_company_list(db: Session, contact: VcContact,
         no = positions.get(company.id)
         parts.append(f"{no}번 기업 {company.name}" if no else company.name)
     return ", ".join(parts)
+
+
+def build_file_links(db: Session, contact: VcContact,
+                     companies: List[IrCompany]) -> str:
+    """자료 전달 문구에 붙는 **링크 묶음**.
+
+        1번 (주)샘플애그
+        https://drive.google.com/file/d/…
+
+    이게 없으면 "IR deck 전달드리겠습니다" 만 나가고 정작 자료는 안 간다 —
+    실제로 그렇게 나갔다. 받은 쪽은 다시 물어봐야 한다.
+
+    번호는 지난 회차의 번호를 그대로 쓴다(`build_company_list` 와 같은 규칙).
+    링크가 없는 기업은 **빼지 않고** 그렇다고 적는다 — 조용히 빠지면 보낸 쪽도
+    받은 쪽도 몇 개를 주고받았는지 어긋난다.
+    """
+    positions = deal_positions(db, contact.id)
+    blocks = []
+    for company in companies:
+        no = positions.get(company.id)
+        head = f"{no}번 {company.name}" if no else company.name
+        url = (company.ir_drive_url or "").strip()
+        blocks.append(f"{head}\n{url}" if url else f"{head}\n(자료 준비 중)")
+    return "\n\n".join(blocks)
 
 
 def _apply_test_room(contact: VcContact, text: str) -> tuple:

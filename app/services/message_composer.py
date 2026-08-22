@@ -137,10 +137,11 @@ def company_summary(company: CompanyView) -> str:
 def render_template(text: str, contact: ContactView, company_name: Optional[str] = None,
                     ir_drive_url: Optional[str] = None,
                     company_count: Optional[int] = None,
-                    company_list: Optional[str] = None) -> str:
+                    company_list: Optional[str] = None,
+                    file_links: Optional[str] = None) -> str:
     """Substitute template variables for a given contact.
 
-    Supported: {담당자명} {직함} {투자사} {기업명} {ir_drive_url} {개수} {기업목록}
+    Supported: {담당자명} {직함} {투자사} {기업명} {ir_drive_url} {개수} {기업목록} {자료링크}
     Unknown {…} tokens are left untouched (so authors can spot typos).
 
     `{기업목록}` 은 IR 자료 전달에서 "1번 기업 샘플애그" 처럼 **지난 회차에서의 번호**로
@@ -156,6 +157,9 @@ def render_template(text: str, contact: ContactView, company_name: Optional[str]
         # 안내문 "핵심 딜 {개수}개사 …" 용 — 선택된 기업 수를 자동 반영.
         "{개수}": str(company_count) if company_count is not None else "",
         "{기업목록}": company_list or "",
+        # 자료 전달의 **본체**. 이게 빠지면 "전달드리겠습니다" 만 나가고
+        # 정작 자료는 안 간다 — 실제로 그렇게 나갔다.
+        "{자료링크}": file_links or "",
     }
     out = text
     for key, value in mapping.items():
@@ -205,6 +209,7 @@ def compose_message(
     stage: int = STAGE_DAY1,
     include_opening: bool = True,
     company_list: Optional[str] = None,
+    file_links: Optional[str] = None,
 ) -> ComposeResult:
     """Assemble the final Kakao message text for one contact.
 
@@ -219,11 +224,13 @@ def compose_message(
     count = len(companies) if stage == STAGE_DAY1 else 0
 
     opening = render_template(opening_body, contact, company_count=count,
-                              company_list=company_list).strip()
+                              company_list=company_list,
+                              file_links=file_links).strip()
     # 실제 운영 문구에서 안내문("핵심 딜 N개사 …/관심 가시는 기업 있으시면 IR Deck …")은
     # 기업 목록 '위'에 온다. closing_body는 그 안내문을 담는다.
     intro = render_template(closing_body, contact, company_count=count,
-                            company_list=company_list).strip()
+                            company_list=company_list,
+                            file_links=file_links).strip()
 
     parts: List[str] = [opening, "", intro] if include_opening else [intro]
 
@@ -234,6 +241,13 @@ def compose_message(
             summary = company_summary(company)
             parts.append("")  # blank line separator
             parts.append(f"{idx}) {summary}")
+
+    # 자료를 보내는데 링크가 문구 어디에도 없으면 **문구만** 나간다. 템플릿에
+    # {자료링크} 를 안 넣어 뒀어도 자료는 반드시 따라가야 한다 —
+    # "IR deck 전달드리겠습니다" 만 받은 투자사는 다시 물어봐야 한다.
+    if file_links and file_links not in "\n".join(parts):
+        parts.append("")
+        parts.append(file_links)
 
     text = "\n".join(parts).strip() + "\n"
     char_count = len(text)
