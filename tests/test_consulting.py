@@ -239,3 +239,45 @@ def test_new_row_gets_the_next_number(allowed, db):
 
 def test_row_without_a_name_is_rejected(allowed):
     assert allowed.post("/api/consulting", json={"company_name": "  "}).status_code == 400
+
+
+# --- 권한 부여 · 회수 -------------------------------------------------------
+#
+# 대표자 연락처가 들어 있는 표라, 누가 볼 수 있는지를 관리자가 쥐고 있어야 한다.
+
+def test_admin_grants_and_revokes(client, db, users):
+    from app.models import User
+
+    users["u2"].role = "admin"
+    db.commit()
+    client.post("/login", data={"phone": "01000000002", "password": DEMO_PASSWORD})
+
+    client.post(f"/team/members/{users['u1'].id}/consulting", follow_redirects=False)
+    db.expire_all()
+    assert db.get(User, users["u1"].id).can_view_consulting == 1
+
+    client.post(f"/team/members/{users['u1'].id}/consulting", follow_redirects=False)
+    db.expire_all()
+    assert db.get(User, users["u1"].id).can_view_consulting == 0
+
+
+def test_revoking_closes_the_page_at_once(client, db, users):
+    """회수하면 그 자리에서 막혀야 한다 — 다음 로그인까지 기다리면 안 된다."""
+    users["u1"].can_view_consulting = 1
+    users["u2"].role = "admin"
+    db.commit()
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    assert client.get("/consulting").status_code == 200
+
+    client.post("/login", data={"phone": "01000000002", "password": DEMO_PASSWORD})
+    client.post(f"/team/members/{users['u1'].id}/consulting", follow_redirects=False)
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    assert client.get("/consulting").status_code == 403
+
+
+def test_only_admin_can_change_it(client, db, users):
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    r = client.post(f"/team/members/{users['u2'].id}/consulting")
+    assert r.status_code == 403
