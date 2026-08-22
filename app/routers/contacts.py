@@ -204,7 +204,8 @@ def contact_rows(db: Session, user: User, team_wide: bool = False) -> List[dict]
             "meet_recent": meet_recent,
             "ir_total": ir_total,
             "meet_total": meet_total,
-            "reaction_tags": _reaction_tags(ir_recent, meet_recent),
+            # 대시보드의 "반응"과 같은 기준(전체 기간)이어야 눌러 왔을 때 수가 맞는다.
+            "reaction_tags": _reaction_tags(ir_total, meet_total),
             "status": c.status,
             "status_label": STATUS_LABELS.get(c.status, c.status),
             "memo": c.memo or "",
@@ -232,11 +233,17 @@ def _round_label(act: ContactActivity) -> str:
     return head or act.content
 
 
-def _reaction_tags(ir_recent: int, meet_recent: int) -> List[str]:
+def _reaction_tags(ir_count: int, meet_count: int) -> List[str]:
+    """반응이 있었는가. **기간을 자르지 않는다**.
+
+    예전엔 최근 N일만 봤는데, N+1일째가 되면 태그가 조용히 사라졌다.
+    화면만 보고는 왜 없어졌는지 알 수 없고, 대시보드에서 눌러 온 목록과도
+    수가 어긋난다. 반응은 한 번 오면 없어지는 것이 아니다.
+    """
     tags = []
-    if ir_recent:
+    if ir_count:
         tags.append("IR 있음")
-    if meet_recent:
+    if meet_count:
         tags.append("미팅 있음")
     return tags or ["반응 없음"]
 

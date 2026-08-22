@@ -655,3 +655,7 @@ td.cell.save-failed { background: #fdecec; }
   padding: 10px 14px; margin-bottom: 10px; }
 .mail-fields input { width: 100%; padding: 7px 10px; border: 1px solid var(--line);
   border-radius: 8px; font: inherit; }
+
+/* 반응 타일은 눌러서 그 목록으로 간다 */
+a.react { text-decoration: none; color: inherit; transition: border-color .12s; }
+a.react:hover { border-color: var(--brand); background: #fafbfc; }

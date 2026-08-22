@@ -23,6 +23,8 @@ from sqlalchemy.orm import Session
 from . import cadence, mailer, pipeline, sheet_owner
 from ..models import (
     AgentDevice,
+    IrRequest,
+    Meeting,
     ContactActivity,
     DealBatch,
     IrCompany,
@@ -78,7 +80,7 @@ ROOM_LABELS = {
 
 def _recent_activity_counts(db: Session, contact_ids: List[int],
                             cutoff: str) -> Dict[str, int]:
-    """최근 N일 안의 활동을 종류별로 센다."""
+    """최근 N일 안의 활동을 종류별로 센다(투자사 목록의 '반응' 태그용)."""
     if not contact_ids:
         return {}
     rows = db.execute(
@@ -88,6 +90,65 @@ def _recent_activity_counts(db: Session, contact_ids: List[int],
         .group_by(ContactActivity.kind)
     ).all()
     return {kind: n for kind, n in rows}
+
+
+def _reaction_summary(db: Session, contact_ids: List[int]) -> dict:
+    """반응 요약 — **기간을 자르지 않는다**.
+
+    예전엔 '최근 60일'이었는데, 61일째가 되면 숫자가 갑자기 줄어드는 것을
+    화면만 보고는 알 수 없었다. 반응은 한 번 오면 없어지는 것이 아니므로
+    전체 기간으로 센다.
+
+    세는 단위도 나눈다. IR 요청·미팅은 **투자사(담당자) 몇 곳**이 반응했는지가
+    궁금하고(같은 곳이 세 번 요청해도 한 곳이다), 요청받은 **기업 수**는
+    따로 봐야 한다.
+    """
+    if not contact_ids:
+        return {"ir_contacts": 0, "meeting_contacts": 0, "requested_companies": 0}
+
+    rows = db.execute(
+        select(ContactActivity.kind, ContactActivity.contact_id,
+               ContactActivity.company_names)
+        .where(ContactActivity.contact_id.in_(contact_ids),
+               ContactActivity.kind.in_(("ir_request", "meeting")))
+    ).all()
+
+    ir_contacts, meeting_contacts, companies = set(), set(), set()
+    for kind, contact_id, names in rows:
+        if kind == "ir_request":
+            ir_contacts.add(contact_id)
+            for name in _company_names(names):
+                companies.add(name)
+        else:
+            meeting_contacts.add(contact_id)
+
+    # 이 시스템으로 받은 요청도 함께 센다(시트 이력만 보면 최근 것이 빠진다).
+    for contact_id, company_name in db.execute(
+        select(IrRequest.contact_id, IrRequest.company_name)
+        .where(IrRequest.contact_id.in_(contact_ids))
+    ).all():
+        ir_contacts.add(contact_id)
+        if company_name:
+            companies.add(company_name.strip())
+    for (contact_id,) in db.execute(
+        select(Meeting.contact_id).where(Meeting.contact_id.in_(contact_ids))
+    ).all():
+        meeting_contacts.add(contact_id)
+
+    return {
+        "ir_contacts": len(ir_contacts),
+        "meeting_contacts": len(meeting_contacts),
+        "requested_companies": len(companies),
+    }
+
+
+def _company_names(raw: Optional[str]) -> List[str]:
+    import json
+
+    try:
+        return [str(n).strip() for n in json.loads(raw or "[]") if str(n).strip()]
+    except (TypeError, ValueError):
+        return []
 
 
 def _split_csv(value: Optional[str]) -> List[str]:
@@ -181,14 +242,19 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None) -> dic
 
     return {
         "kpis": [
-            {"key": "contacts", "label": "내 투자사", "value": len(contacts),
-             "sub": "내 명단 기준", "href": "/contacts"},
-            {"key": "sendable", "label": "카톡 발송 가능", "value": sendable,
-             "sub": f"{len(contacts)}명 중", "href": "/contacts"},
-            {"key": "companies", "label": "소개 가능 기업", "value": len(introducible),
-             "sub": f"등록 {len(companies)}개 중", "href": "/deals"},
-            {"key": "sent", "label": "이번 달 발송", "value": sent_this_month,
-             "sub": "건 성공", "href": "/deals"},
+            # 이름만 보고 무엇을 세는지 알 수 있어야 한다.
+            # '카톡 발송 가능'·'소개 가능 기업'은 무엇이 가능하다는 건지 모호했다.
+            {"key": "contacts", "label": "내 담당 투자사", "value": len(contacts),
+             "sub": "내 명단에 있는 사람", "href": "/contacts"},
+            {"key": "sendable", "label": "카톡방 연결된 투자사", "value": sendable,
+             "sub": f"지금 바로 보낼 수 있음 · 전체 {len(contacts)}명 중",
+             "href": "/contacts"},
+            {"key": "companies", "label": "소개 문구 준비된 기업",
+             "value": len(introducible),
+             "sub": f"발송 목록에 뜸 · 등록 {len(companies)}개 중",
+             "href": "/companies"},
+            {"key": "sent", "label": "이번 달 보낸 건수", "value": sent_this_month,
+             "sub": "카톡·메일 도착 성공", "href": "/deals"},
         ],
         "next_send": next_send,
         "days_left": (next_send - today).days,
@@ -210,12 +276,7 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None) -> dic
             "overdue": sum(1 for r in due_today if r["overdue"]),
             "rows": due_today[:5],
         },
-        "reactions": {
-            "ir": acts.get("ir_request", 0),
-            "meeting": acts.get("meeting", 0),
-            "deal": acts.get("deal_intro", 0),
-            "window": REACTION_WINDOW_DAYS,
-        },
+        "reactions": _reaction_summary(db, ids),
         "stages": _distribution([s for c in contacts for s in _split_csv(c.stages)]),
         "sectors": _distribution([s for c in contacts for s in _split_csv(c.sectors)]),
         "recent_batches": recent_batches(db, user_id=user.id),

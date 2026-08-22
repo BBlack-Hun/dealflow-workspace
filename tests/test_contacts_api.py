@@ -74,7 +74,8 @@ def test_recent_deal_and_reaction_are_aggregated_not_stored(logged_in, db, conta
                         content="샘플애그, 샘플메디", happened_at=today.isoformat(), source="import"),
         ContactActivity(contact_id=hong.id, kind="ir_request", content="샘플애그 IR 요청",
                         happened_at=(today - timedelta(days=10)).isoformat(), source="import"),
-        # 90일 밖 미팅은 '반응(90일)' 에 들어가지 않는다
+        # 오래된 미팅. '최근'에는 안 잡히지만 **반응 태그에는 남는다** —
+        # 반응은 한 번 오면 없어지는 것이 아니다.
         ContactActivity(contact_id=hong.id, kind="meeting", content="미팅 요청",
                         happened_at=(today - timedelta(days=200)).isoformat(), source="import"),
     ])
@@ -89,7 +90,9 @@ def test_recent_deal_and_reaction_are_aggregated_not_stored(logged_in, db, conta
     assert hong_row["recency"] == "7일 내"
     assert hong_row["ir_recent"] == 1 and hong_row["meet_recent"] == 0
     assert hong_row["meet_total"] == 1          # 누적에는 남는다
-    assert hong_row["reaction_tags"] == ["IR 있음"]
+    # 반응 태그는 **기간을 자르지 않는다**. 예전엔 최근 N일만 봐서 N+1일째에
+    # 태그가 조용히 사라졌고, 대시보드에서 눌러 온 목록과 수가 어긋났다.
+    assert hong_row["reaction_tags"] == ["IR 있음", "미팅 있음"]
     assert rows["박준호"]["reaction_tags"] == ["반응 없음"]
     assert rows["박준호"]["last_deal_label"] == "-"
 
