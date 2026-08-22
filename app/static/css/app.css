@@ -727,3 +727,24 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
 .cell.saved { background: #e8f6ec; }
 .cell.save-failed { background: #fdecec; }
 .room-edit { font-size: 11px; }
+
+/* ── 칸 위에 떠서 고치는 편집창 ────────────────────────────────────────
+   한줄소개는 320px 말줄임 칸이다. 그 안에서 한 줄짜리 입력으로 문장을 쓰면
+   앞뒤가 안 보여서 어디를 고치는지 모른 채 타이핑하게 된다. */
+.cell-pop { position: fixed; z-index: 60; display: flex; flex-direction: column;
+            gap: 2px; padding: 6px; border: 1px solid var(--accent);
+            border-radius: 6px; background: var(--bg);
+            box-shadow: 0 6px 20px rgba(0,0,0,.18); }
+.cell-pop-input { width: 100%; min-height: 56px; resize: vertical;
+                  font: inherit; line-height: 1.45; padding: 6px 8px;
+                  border: 1px solid var(--line); border-radius: 4px;
+                  background: var(--bg); color: inherit; }
+.cell-pop-input:focus { outline: none; border-color: var(--accent); }
+.cell-pop-hint { font-size: 11px; color: var(--muted); text-align: right; }
+
+/* 소개 문구 — 실제로 중앙값 83자다. 한 줄 말줄임이면 20자만 보여서 못 읽는다.
+   두 줄까지 보여 주고(약 2배), 전체는 눌러서 뜨는 편집창과 툴팁으로 본다. */
+.clamp2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+          overflow: hidden; white-space: normal; line-height: 1.45;
+          font-size: 12.5px; }
+.th-note { display: block; font-weight: 400; font-size: 10.5px; opacity: .75; }

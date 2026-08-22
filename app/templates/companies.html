@@ -79,14 +79,19 @@
   <table class="grid-table" data-inline-url="/api/companies" id="co-table">
     <thead>
       <tr>
-        <th style="width:38px">#</th>
-        <th data-filters="top:추천">기업명<div class="th-filters"></div></th>
-        <th data-filters="sector:분야">분야<div class="th-filters"></div></th>
-        <th data-filters="series:단계">단계<div class="th-filters"></div></th>
-        <th>한줄소개</th>
-        <th class="num">매출</th>
-        <th class="num">누적투자</th>
-        <th class="num">희망투자</th>
+        {#
+          폭을 손으로 나눈다(table-layout:fixed). 한줄소개는 실제로 중앙값 83자라
+          '한 줄'이 아니다 — 320px 말줄임이면 90%가 잘려서 못 읽는 칸이었다.
+          숫자 칸을 좁혀 그쪽에 몰아 준다.
+        #}
+        <th style="width:34px">#</th>
+        <th style="width:13%" data-filters="top:추천">기업명<div class="th-filters"></div></th>
+        <th style="width:9%" data-filters="sector:분야">분야<div class="th-filters"></div></th>
+        <th style="width:64px" data-filters="series:단계">단계<div class="th-filters"></div></th>
+        <th>소개 문구<span class="th-note">두 줄까지 보입니다 · 눌러서 수정</span></th>
+        <th class="num" style="width:66px">매출</th>
+        <th class="num" style="width:66px">누적투자</th>
+        <th class="num" style="width:66px">희망투자</th>
         <th data-filters="ready:소개 가능|summary:작성 상태|contract:계약">소개 가능<div class="th-filters"></div></th>
         <th style="width:88px" data-filters="ir:IR 자료">IR 자료<div class="th-filters"></div></th>
         <th style="width:60px"></th>
@@ -109,7 +114,8 @@
         </td>
         <td><span class="cell" data-field="sector_major">{{ r.sector_major }}</span>{% if r.sector_minor %} <span class="muted">· {{ r.sector_minor }}</span>{% endif %}</td>
         <td class="cell" data-field="series">{{ r.series }}</td>
-        <td class="cell ellipsis" data-field="one_liner" title="{{ r.one_liner }}">{{ r.one_liner }}</td>
+        <td class="cell clamp2" data-field="one_liner" data-type="long"
+            title="{{ r.one_liner }}">{{ r.one_liner }}</td>
         <td class="cell num" data-field="revenue_recent" data-type="number">{{ '{:,}'.format(r.revenue_recent) if r.revenue_recent else '' }}</td>
         <td class="cell num" data-field="funding_total" data-type="number">{{ '{:,}'.format(r.funding_total) if r.funding_total else '' }}</td>
         <td class="cell num" data-field="raise_target" data-type="number">{{ '{:,}'.format(r.raise_target) if r.raise_target else '' }}</td>

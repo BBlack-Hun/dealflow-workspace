@@ -10,6 +10,12 @@
 //       <td class="cell multi" data-field="memo">…</td>          여러 줄
 //       <td class="cell" data-field="due_date" data-type="date">2026-08-26</td>
 //       <td class="cell num" data-field="revenue_recent" data-type="number">1,200</td>
+//       <td class="cell ellipsis" data-field="one_liner" data-type="long">긴 문장…</td>
+//
+// `data-type="long"` 은 **칸 위에 떠서** 고친다. 좁은 칸(한줄소개는 320px 말줄임)
+// 안에서 한 줄짜리 입력으로 문장을 쓰면 앞뒤가 안 보인다 — 어디를 고치는지 모른 채
+// 타이핑하게 된다. 뜬 창은 칸보다 넓고 줄바꿈되며, 표의 가로 스크롤에 잘리지 않게
+// 화면 좌표로 띄운다.
 //
 // `.cell` 은 td 가 아니어도 된다. 한 칸에 여러 줄이 들어 있는 표(투자사 DB 처럼
 // 메모 밑에 버튼이 붙어 있는 곳)에서는 고칠 줄에만 붙인다 — td 째로 바꾸면
@@ -39,6 +45,10 @@
       var before = cell.textContent.trim();
       var type = cell.getAttribute("data-type") || "";
       if (type === "number") before = before.replace(/,/g, "");
+      if (before === "-") before = "";        // 빈 칸을 '-' 로 그려 둔 표가 있다
+
+      if (type === "long") { startLong(cell, before, type); return; }
+
       var multi = cell.classList.contains("multi");
       var input = document.createElement(multi ? "textarea" : "input");
       input.className = "cell-input";
@@ -70,6 +80,75 @@
         editing = null;
         var after = input.value.trim();
         cell.textContent = type === "number" ? withCommas(after) : after;
+        if (after !== before) save(cell, after, before, type);
+      }
+    }
+
+    // 칸 위에 떠서 고친다 — 좁은 칸에 긴 문장을 넣을 때.
+    function startLong(cell, before, type) {
+      var pop = document.createElement("div");
+      pop.className = "cell-pop";
+
+      var area = document.createElement("textarea");
+      area.className = "cell-pop-input";
+      area.value = before;
+
+      var hint = document.createElement("div");
+      hint.className = "cell-pop-hint";
+      hint.textContent = "⌘/Ctrl+Enter 저장 · Esc 취소";
+
+      pop.appendChild(area);
+      pop.appendChild(hint);
+      document.body.appendChild(pop);
+      place();
+      grow();
+
+      area.focus();
+      area.setSelectionRange(area.value.length, area.value.length);
+
+      var canceled = false;
+      area.addEventListener("input", grow);
+      area.addEventListener("blur", finish);
+      area.addEventListener("keydown", function (e) {
+        if (e.key === "Escape") { canceled = true; area.blur(); }
+        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+          e.preventDefault();
+          area.blur();
+        }
+      });
+      global.addEventListener("scroll", place, true);
+      global.addEventListener("resize", place);
+
+      function place() {
+        var box = cell.getBoundingClientRect();
+        pop.style.left = Math.max(8, Math.min(box.left, global.innerWidth - 468)) + "px";
+        pop.style.width = Math.max(box.width, 440) + "px";
+        // 아래로 자랄 자리가 없으면 위로 띄운다 — 표 맨 아랫줄에서 창이 잘리면
+        // 고치는 중에 화면 밖으로 나간다.
+        pop.style.top = "";
+        pop.style.bottom = "";
+        if (box.top + pop.offsetHeight + 12 > global.innerHeight) {
+          pop.style.bottom = (global.innerHeight - box.bottom) + "px";
+        } else {
+          pop.style.top = box.top + "px";
+        }
+      }
+
+      function grow() {
+        area.style.height = "auto";
+        area.style.height = Math.min(220, Math.max(56, area.scrollHeight)) + "px";
+        place();
+      }
+
+      function finish() {
+        if (editing !== cell) return;
+        editing = null;
+        global.removeEventListener("scroll", place, true);
+        global.removeEventListener("resize", place);
+        var after = canceled ? before : area.value.trim();
+        if (pop.parentNode) pop.parentNode.removeChild(pop);
+        cell.textContent = after;
+        cell.title = after;
         if (after !== before) save(cell, after, before, type);
       }
     }

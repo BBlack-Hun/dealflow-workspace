@@ -6,6 +6,8 @@
 """
 from __future__ import annotations
 
+import pathlib
+
 import pytest
 
 from .conftest import DEMO_PASSWORD
@@ -122,3 +124,20 @@ def test_tables_are_wired(logged_in, company, contact):
     assert 'data-inline-url="/api/contacts"' in contacts
     assert 'data-field="memo"' in contacts
     assert "inline_edit.js" in contacts
+
+
+def test_long_text_gets_the_floating_editor(logged_in, company, contact):
+    """한줄소개는 320px 말줄임 칸이다. 그 안에서 한 줄 입력으로 문장을 쓰면
+    앞뒤가 안 보여서 어디를 고치는지 모른 채 타이핑하게 된다."""
+    companies = logged_in.get("/companies").text
+    assert 'data-field="one_liner" data-type="long"' in companies
+
+    contacts = logged_in.get("/contacts").text
+    assert 'data-field="memo" data-type="long"' in contacts
+
+    js = (pathlib.Path("app/static/js/inline_edit.js")).read_text(encoding="utf-8")
+    assert "startLong" in js
+    # 표의 가로 스크롤에 잘리면 안 된다 — 화면 좌표로 띄운다
+    assert "getBoundingClientRect" in js
+    css = (pathlib.Path("app/static/css/app.css")).read_text(encoding="utf-8")
+    assert ".cell-pop { position: fixed;" in css
