@@ -162,7 +162,7 @@ def send_test(to: str) -> dict:
     stamp = datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M")
     try:
         send_mail(to,
-                  "[dealflow] 메일 발송 설정 확인",
+                  "[CONTACTVC ASSET] 메일 발송 설정 확인",
                   f"메일 발송 설정이 정상입니다.\n보낸 시각: {stamp}\n\n"
                   "이 메일이 보이면 카톡으로 받지 않는 투자사에게 메일로 보낼 수 있습니다.")
     except MailerNotConfigured as exc:

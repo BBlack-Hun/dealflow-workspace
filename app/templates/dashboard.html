@@ -149,13 +149,19 @@
   </section>
 
   <section class="panel">
-    <h2 class="panel-title">최근 {{ reactions.window }}일 반응</h2>
+    <h2 class="panel-title">반응 <span class="hint">전체 기간 누적</span></h2>
     <div class="react-row">
-      <div class="react"><b>{{ reactions.deal }}</b><span>딜소개</span></div>
-      <div class="react ok"><b>{{ reactions.ir }}</b><span>IR 요청</span></div>
-      <div class="react ok"><b>{{ reactions.meeting }}</b><span>미팅</span></div>
+      <a class="react ok" href="/contacts?reaction=IR+%EC%9E%88%EC%9D%8C">
+        <b>{{ reactions.ir_contacts }}</b><span>IR 요청 투자사</span></a>
+      <a class="react ok" href="/contacts?reaction=%EB%AF%B8%ED%8C%85+%EC%9E%88%EC%9D%8C">
+        <b>{{ reactions.meeting_contacts }}</b><span>IR 미팅 요청 투자사</span></a>
+      <a class="react" href="/ir">
+        <b>{{ reactions.requested_companies }}</b><span>IR 요청받은 기업</span></a>
     </div>
-    <p class="hint">IR 요청·미팅이 나온 담당자가 다음 회차의 우선 대상입니다.</p>
+    <p class="hint">
+      숫자를 누르면 그 목록으로 갑니다.
+      IR 요청·미팅이 나온 투자사가 다음 회차의 우선 대상입니다.
+    </p>
   </section>
 
   <section class="panel">

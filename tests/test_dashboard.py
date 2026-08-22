@@ -543,3 +543,70 @@ def test_test_send_reports_why_it_failed(monkeypatch):
 
 def test_mail_test_is_admin_only(logged):
     assert logged.post("/team/mail-test", data={"to": "me@example.com"}).status_code == 403
+
+
+# --- 반응: 기간을 자르지 않는다 ---------------------------------------------
+
+def test_reaction_counts_all_time(db, users):
+    """예전엔 최근 60일만 봤다. 61일째가 되면 숫자가 갑자기 줄어드는 것을
+    화면만 보고는 알 수 없었다."""
+    from datetime import timedelta
+
+    from app.models import ContactActivity, SheetOwner, VcContact
+    from app.services.dashboard import user_dashboard
+
+    db.add(SheetOwner(label="내 명단", user_id=users["u1"].id))
+    _mine(db, users, name="오래된반응", channel_kakao=1, kakao_room_name="방1",
+          room_verified="verified")
+    db.commit()
+    contact = db.query(VcContact).filter_by(name="오래된반응").first()
+    db.add(ContactActivity(contact_id=contact.id, kind="ir_request",
+                           content="IR 요청",
+                           happened_at=(date.today() - timedelta(days=200)).isoformat()))
+    db.commit()
+
+    data = user_dashboard(db, users["u1"])
+    assert data["reactions"]["ir_contacts"] == 1
+
+
+def test_reaction_counts_contacts_not_events(db, users):
+    """같은 곳이 세 번 요청해도 **한 곳**이다."""
+    from app.models import ContactActivity, SheetOwner, VcContact
+    from app.services.dashboard import user_dashboard
+
+    db.add(SheetOwner(label="내 명단", user_id=users["u1"].id))
+    _mine(db, users, name="세번요청", channel_kakao=1, kakao_room_name="방1",
+          room_verified="verified")
+    db.commit()
+    contact = db.query(VcContact).filter_by(name="세번요청").first()
+    for i in range(3):
+        db.add(ContactActivity(contact_id=contact.id, kind="ir_request",
+                               content=f"요청 {i}",
+                               happened_at=date.today().isoformat()))
+    db.commit()
+
+    assert user_dashboard(db, users["u1"])["reactions"]["ir_contacts"] == 1
+
+
+def test_requested_companies_are_counted_separately(db, users):
+    """투자사 수와 요청받은 기업 수는 다른 값이다."""
+    import json
+
+    from app.models import ContactActivity, SheetOwner, VcContact
+    from app.services.dashboard import user_dashboard
+
+    db.add(SheetOwner(label="내 명단", user_id=users["u1"].id))
+    _mine(db, users, name="한곳", channel_kakao=1, kakao_room_name="방1",
+          room_verified="verified")
+    db.commit()
+    contact = db.query(VcContact).filter_by(name="한곳").first()
+    db.add(ContactActivity(
+        contact_id=contact.id, kind="ir_request", content="세 곳 요청",
+        happened_at=date.today().isoformat(),
+        company_names=json.dumps(["샘플애그", "샘플메디", "샘플페이"],
+                                 ensure_ascii=False)))
+    db.commit()
+
+    data = user_dashboard(db, users["u1"])["reactions"]
+    assert data["ir_contacts"] == 1
+    assert data["requested_companies"] == 3
