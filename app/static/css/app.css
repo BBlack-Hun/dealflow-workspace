@@ -685,3 +685,33 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
 
 .pick-tags { display: flex; flex-wrap: wrap; gap: 3px; margin: 3px 0; }
 .pick-tags .tag { font-size: 10.5px; }
+
+/* ── 진행 단계 깔때기 ──────────────────────────────────────
+   딜소개 → IR → 미팅 으로 이어지는 사다리. 어디서 끊기는지가 한눈에 보여야
+   한다. 0 인 칸도 지우지 않는다 — 0 이 답인 칸이 제일 중요하다. */
+.funnel { display:flex; align-items:stretch; gap:2px; flex-wrap:wrap;
+          margin:10px 0 6px; }
+.funnel-step { display:flex; flex-direction:column; align-items:center; gap:1px;
+               min-width:76px; padding:6px 8px; border:1px solid var(--line);
+               border-radius:6px; background:var(--bg-soft); cursor:pointer;
+               font:inherit; line-height:1.2; }
+.funnel-step b { font-size:15px; font-variant-numeric:tabular-nums; }
+.funnel-step span { font-size:11px; color:var(--muted); white-space:nowrap; }
+.funnel-step:hover { border-color:var(--accent); }
+.funnel-step.zero { opacity:.45; }
+.funnel-step.all { justify-content:center; min-width:64px; font-size:12px;
+                   color:var(--muted); }
+.funnel-arrow { align-self:center; color:var(--line); font-size:15px; }
+.funnel-step.soft b { color:var(--muted); }
+.funnel-step.warn b { color:#b26a00; }
+.funnel-step.good b { color:#1f7a3d; }
+.funnel-step.done b { color:#1a5fb4; }
+
+/* 표 안의 단계 뱃지 — 깔때기와 같은 색을 쓴다. */
+.stage-pill { display:inline-block; padding:1px 7px; border-radius:10px;
+              font-size:11.5px; border:1px solid var(--line); white-space:nowrap; }
+.stage-pill.muted { color:var(--muted); }
+.stage-pill.soft  { background:var(--bg-soft); }
+.stage-pill.warn  { background:#fff5e0; border-color:#f0d18a; color:#8a5200; }
+.stage-pill.good  { background:#e8f6ec; border-color:#a8d8b8; color:#1f7a3d; }
+.stage-pill.done  { background:#e8f0fc; border-color:#a9c4ec; color:#1a5fb4; }

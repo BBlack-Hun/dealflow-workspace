@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import get_current_user, templates
 from ..models import IrCompany, SendJob, User, VcContact
-from ..services import deal_history, mailer, sheet_import, sheet_owner
+from ..services import deal_history, deal_stage, mailer, sheet_import, sheet_owner
 from ..ui import MENU, base_ctx as _base_ctx
 from .companies import blocked_reason as company_blocked_reason
 from .contacts import contact_rows, sheet_tabs
@@ -111,6 +111,10 @@ def contacts_page(
     rows = [r for r in all_rows if selected in r["sheets"]] if selected else all_rows
 
     stages = Counter(r["connect_stage"] for r in rows)
+    # 깔때기는 **지금 탭에 보이는 사람들** 기준이다. 탭이 곧 명단이라,
+    # 전체 기준으로 세면 내 명단을 보고 있는데 숫자만 남의 것이 섞인다.
+    stage_funnel = deal_stage.funnel(
+        {r["id"]: r["deal_stage"] for r in rows})
     ctx = _base_ctx(request, db, user, "vc")
     ctx.update({
         "rows": rows,
@@ -125,6 +129,7 @@ def contacts_page(
         # 풀 탭에서는 골라서 내 명단으로 할당할 수 있다.
         "pool_view": any(t["key"] == selected and t["kind"] == "pool" for t in tabs),
         "total_count": len(all_rows),
+        "funnel": stage_funnel,
         "connect_counts": [
             {"key": key, "label": label, "count": stages.get(key, 0)}
             for key, label in sheet_import.CONNECT_LABELS.items()

@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import get_current_user
 from ..models import ContactActivity, IrCompany, SendItem, SendJob, User, VcContact
-from ..services import firm_type, sheet_import, sheet_owner
+from ..services import deal_stage, firm_type, sheet_import, sheet_owner
 from ..services.room_name import DEFAULT_SUFFIX, build_room_name
 
 router = APIRouter(prefix="/api/contacts", tags=["contacts"])
@@ -144,6 +144,9 @@ def contact_rows(db: Session, user: User, team_wide: bool = False) -> List[dict]
         ).scalars().all()
     }
 
+    # 진행 단계는 행마다 묻지 않고 한 번에 구한다 — 300명이면 질의가 1,200번 나간다.
+    stages_by_contact = deal_stage.of_many(db, [c.id for c in contacts])
+
     rows = []
     for c in contacts:
         acts = acts_map.get(c.id, [])
@@ -206,6 +209,9 @@ def contact_rows(db: Session, user: User, team_wide: bool = False) -> List[dict]
             "meet_total": meet_total,
             # 대시보드의 "반응"과 같은 기준(전체 기간)이어야 눌러 왔을 때 수가 맞는다.
             "reaction_tags": _reaction_tags(ir_total, meet_total),
+            "deal_stage": stages_by_contact.get(c.id, deal_stage.NONE),
+            "deal_stage_label": deal_stage.label(stages_by_contact.get(c.id, deal_stage.NONE)),
+            "deal_stage_cls": deal_stage.CLASSES[stages_by_contact.get(c.id, deal_stage.NONE)],
             "status": c.status,
             "status_label": STATUS_LABELS.get(c.status, c.status),
             "memo": c.memo or "",
