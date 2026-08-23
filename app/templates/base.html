@@ -46,6 +46,11 @@
       </div>
       {% endif %}
       {% block content %}{% endblock %}
+      {# 화면만 보고는 어느 버전이 돌고 있는지 알 수 없다. 무엇이 이상하다는
+         말을 들었을 때 먼저 물어봐야 하는 것이 이 숫자다. #}
+      <footer class="app-foot muted">
+        CONTACTVC ASSET · v{{ app_version }}
+      </footer>
     </main>
   </div>
   <script src="/static/js/agent_badge.js"></script>

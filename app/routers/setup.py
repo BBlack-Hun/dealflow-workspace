@@ -31,6 +31,7 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 AGENT_FILES = [
     ("agent/__init__.py", "agent/__init__.py"),
     ("agent/main.py", "agent/main.py"),
+    ("agent/version.py", "agent/version.py"),
     ("agent/diagnose.py", "agent/diagnose.py"),
     ("agent/selectors.yaml", "agent/selectors.yaml"),
     ("agent/sender/__init__.py", "agent/sender/__init__.py"),

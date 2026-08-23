@@ -10,7 +10,7 @@ from fastapi import Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import config
+from . import config, version
 from .deps import agent_status
 from .models import User
 
@@ -73,4 +73,5 @@ def base_ctx(request: Request, db: Session, user: User, active: str) -> dict:
         "agent": agent_status(db, user.id),
         "test_room": config.TEST_ROOM,
         "current_path": request.url.path,
+        "app_version": version.VERSION,
     }

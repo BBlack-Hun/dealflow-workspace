@@ -780,3 +780,7 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
                 background: var(--bg-soft); }
 .split-notice ol { margin: 5px 0 4px 18px; padding: 0; }
 .split-notice li { margin: 1px 0; }
+
+/* 지금 돌고 있는 버전. 무엇이 이상하다는 말을 들었을 때 먼저 묻는 숫자다. */
+.app-foot { margin: 28px 0 8px; padding-top: 10px; font-size: 11.5px;
+            border-top: 1px solid var(--line); text-align: right; }
