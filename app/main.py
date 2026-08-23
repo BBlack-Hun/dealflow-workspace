@@ -49,11 +49,20 @@ def create_app() -> FastAPI:
         로그인이 필요한 화면이 캐시에 남는 것도 좋지 않다 — 로그아웃한 뒤
         뒤로가기로 다시 보일 수 있다.
 
-        `/static/` 은 그대로 캐시한다. 글꼴·CSS 까지 매번 받으면 화면이 느려진다.
+        `/static/` 은 **오래** 캐시한다. 주소에 파일 내용 지문이 붙어 있어서
+        (`?v=3f2a91c4`, app/assets.py) 내용이 바뀌면 주소가 달라진다 —
+        낡은 파일을 계속 쓰는 일이 없다. 지문 없이 직접 부른 주소만 조심하면
+        되므로, 그때는 짧게 잡는다.
         """
         response = await call_next(request)
         if not request.url.path.startswith("/static/"):
             response.headers["Cache-Control"] = "no-store, must-revalidate"
+        elif request.url.query.startswith("v="):
+            # 지문이 붙었다 — 내용이 바뀌면 주소가 바뀌므로 오래 둬도 안전하다.
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        else:
+            # 지문 없이 부른 주소. 고친 것이 안 보이는 쪽이 느린 것보다 나쁘다.
+            response.headers["Cache-Control"] = "no-cache"
         return response
 
     @app.exception_handler(NotAuthenticated)

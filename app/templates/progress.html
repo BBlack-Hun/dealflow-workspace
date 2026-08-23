@@ -53,6 +53,6 @@
   window.DEALFLOW_JOB_ID = {{ job_id }};
   window.DEALFLOW_JOB_VERIFY = {{ 'true' if verify else 'false' }};
 </script>
-<script src="/static/js/progress.js"></script>
+<script src="{{ asset('js/progress.js') }}"></script>
 {% endif %}
 {% endblock %}

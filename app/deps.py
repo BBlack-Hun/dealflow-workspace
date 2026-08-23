@@ -9,11 +9,15 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import config
+from . import assets, config
 from .db import get_db
 from .models import AgentDevice, User
 
 templates = Jinja2Templates(directory=str(config.TEMPLATES_DIR))
+# 정적 파일 주소에 지문을 붙인다 — 고쳐도 브라우저가 옛 것을 쓰는 일을 막는다.
+# 전역으로 두어야 base.html 을 포함한 모든 화면에서 쓸 수 있다(컨텍스트에
+# 넣으면 화면 하나에서 빠뜨리는 순간 그 화면만 캐시에 물린다).
+templates.env.globals["asset"] = assets.asset
 
 
 def now_iso() -> str:
