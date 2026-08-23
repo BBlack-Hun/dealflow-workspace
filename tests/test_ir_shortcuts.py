@@ -132,7 +132,7 @@ def test_batch_title_is_filled_in(sent_batch):
     body = sent_batch["client"].get("/deals").text
     m = re.search(r'id="batch-title" value="([^"]*)"', body)
     assert m, "회차명 칸이 없다"
-    assert re.fullmatch(r"\d{2}/\d{2} \(\d주차\)", m.group(1)), m.group(1)
+    assert re.fullmatch(r"\d{2}/\d{2} \(\d+월 \d주차\)", m.group(1)), m.group(1)
 
 
 def test_every_screen_counts_weeks_the_same_way():
@@ -143,7 +143,8 @@ def test_every_screen_counts_weeks_the_same_way():
         day = date.fromisoformat(iso)
         week = sheet_import.week_of_month(iso)
         assert report.week_of_month(day) == week, iso
-        assert cadence.batch_title(day) == f"{day.month:02d}/{day.day:02d} ({week}주차)", iso
+        assert cadence.batch_title(day) == \
+            f"{day.month:02d}/{day.day:02d} ({day.month}월 {week}주차)", iso
 
 
 # --- 발송 이력에 기업명 --------------------------------------------------------
