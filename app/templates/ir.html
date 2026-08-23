@@ -275,7 +275,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="/static/js/ir_numbers.js"></script>
+<script src="{{ asset('js/ir_numbers.js') }}"></script>
 <script>
   // 후속 화면에서 이름을 눌러 넘어왔으면 폼이 이미 열려 있다 — 눈에 들어오게만
   // 옮겨 준다. 번호 목록은 ir_numbers.js 가 처음에 한 번 부르므로 여기서 또

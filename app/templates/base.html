@@ -4,14 +4,18 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=1280">
   <title>{% block title %}{{ page_title }} · CONTACTVC ASSET{% endblock %}</title>
-  <link rel="stylesheet" href="/static/css/app.css">
+  <link rel="stylesheet" href="{{ asset('css/app.css') }}">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>📨</text></svg>">
 </head>
 <body>
   <div class="layout">
     <aside class="sidebar">
       <a class="brand-link" href="/">
-        <div class="brand">CONTACTVC ASSET</div>
+        <div class="brand">CONTACTVC ASSET
+          {# 무엇이 이상하다는 말을 들었을 때 먼저 묻는 숫자다. 화면 맨 아래에
+             두면 스크롤해야 보여서, 정작 물어볼 때 아무도 못 찾는다. #}
+          <span class="brand-ver">v{{ app_version }}</span>
+        </div>
         <div class="brand-sub">Investor Management Portal</div>
       </a>
       <nav class="menu">
@@ -48,7 +52,7 @@
       {% block content %}{% endblock %}
     </main>
   </div>
-  <script src="/static/js/agent_badge.js"></script>
+  <script src="{{ asset('js/agent_badge.js') }}"></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

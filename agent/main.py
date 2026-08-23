@@ -27,6 +27,8 @@ from pathlib import Path
 import requests
 import yaml
 
+from .version import VERSION
+
 log = logging.getLogger("agent")
 
 # 이 에이전트가 처리할 수 있는 잡 종류. 서버 poll 에 그대로 알린다.
@@ -41,7 +43,9 @@ DEFAULT_CONFIG = {
     "sender": "auto",          # auto | mock | kakao_windows
     "poll_interval_sec": 5,
     "heartbeat_interval_sec": 20,
-    "agent_version": "0.1.0",
+    # 버전은 config 가 아니라 코드에서 온다 — config 는 사용자가 고칠 수
+    # 있고, 그러면 서버가 낡은 프로그램을 못 짚는다.
+    "agent_version": VERSION,
     "delay_min_sec": 3,        # human-like inter-send delay (TECH_SPEC §5.5)
     "delay_max_sec": 7,
     "job_cap": 60,             # 1잡 상한 (계정 보호)
@@ -117,7 +121,7 @@ class AgentClient:
         self.base = cfg["server_url"].rstrip("/")
         self.session = requests.Session()
         self.session.headers.update({"Authorization": f"Bearer {cfg['token']}"})
-        self.version = cfg.get("agent_version", "0.1.0")
+        self.version = VERSION
         self.hostname = socket.gethostname()
         # 어떤 발송기인지 서버에 알린다 — 배지에서 mock/실발송을 구분하기 위함.
         self.sender_name = "unknown"

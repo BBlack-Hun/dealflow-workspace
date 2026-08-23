@@ -22,6 +22,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from . import cadence, mailer, pipeline, sheet_owner
+from .. import version
 from ..models import (
     AgentDevice,
     IrRequest,
@@ -382,6 +383,9 @@ def admin_dashboard(db: Session, today: Optional[date] = None) -> dict:
             "meeting": acts.get("meeting", 0),
             "agent": _agent_label(device),
             "agent_ok": bool(device and device.last_poll_at),
+            "agent_version": (device.agent_version if device else "") or "",
+            "agent_old": bool(device and device.last_poll_at
+                              and version.agent_is_old(device.agent_version)),
             "password_pending": bool(u.must_change_password),
             "consulting": bool(u.can_view_consulting) or u.role == "admin",
             "last_login": (u.last_login_at or "")[:10],
@@ -425,6 +429,10 @@ def _agent_label(device: Optional[AgentDevice]) -> str:
         return "미발급"
     if not device.last_poll_at:
         return "미연결"
+    if version.agent_is_old(device.agent_version):
+        # 낡은 채로 돌면 조용히 다르게 동작한다 — 링크가 한 통으로 나가는 것처럼.
+        # 연결됐다는 표시만 보고 넘어가지 않게 여기서 드러낸다.
+        return f"갱신 필요 (v{device.agent_version or '?'})"
     try:
         ts = datetime.fromisoformat(device.last_poll_at)
         mins = (datetime.now(timezone.utc) - ts).total_seconds() / 60
@@ -440,6 +448,13 @@ def _agent_label(device: Optional[AgentDevice]) -> str:
 def _admin_warnings(rows: List[dict], unassigned: int) -> List[dict]:
     """팀 단위로 손봐야 할 것. 사람 이름을 세워 누가 막혔는지 바로 보이게 한다."""
     out = []
+    old = [f'{r["name"]}(v{r["agent_version"] or "?"})'
+           for r in rows if r.get("agent_old")]
+    if old:
+        out.append({"level": "warn", "label": "발송 프로그램이 낡았습니다",
+                    "detail": ", ".join(old),
+                    "hint": f"v{version.MIN_AGENT_VERSION} 부터 IR 링크가 여러 통으로 "
+                            f"나갑니다 — 그 PC에서 다시 받아 주세요"})
     no_agent = [r["name"] for r in rows if not r["agent_ok"]]
     if no_agent:
         out.append({"level": "bad", "label": "발송 프로그램 미연결",

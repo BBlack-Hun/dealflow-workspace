@@ -191,3 +191,165 @@ def test_sector_and_series_use_the_pick_editor(logged_in, company):
     # 목록은 표에 실제로 있는 값에서 모은다 — 서버 목록은 실제와 어긋난다
     assert "knownValues" in js
     assert "data-value" in js, "보이는 글자와 저장 값이 다른 칸을 다뤄야 한다"
+
+
+# --- 갇히지 않는가 -----------------------------------------------------------
+
+def test_the_editor_can_never_trap_the_table():
+    """숫자 칸을 누르면 표 전체가 먹통이 된 적이 있다.
+
+    `<input type="number">` 에서 `setSelectionRange()` 는 예외를 던진다
+    (InvalidStateError — number 는 selection 을 지원하지 않는다). 그 줄이
+    blur·Escape 를 붙이기 **전에** 있어서, 던지는 순간 빠져나갈 길이 하나도
+    안 붙고 `editing` 이 그 칸에 물린 채 남았다. 결과는 입력 상자에서
+    탈출 불가 + 다른 칸 클릭 무시.
+
+    브라우저 없이 클릭을 재현할 수는 없으므로, **구조**를 못 박는다.
+    """
+    js = pathlib.Path("app/static/js/inline_edit.js").read_text(encoding="utf-8")
+
+    # ① 빠져나갈 길을 먼저 붙인다
+    blur_at = js.index('input.addEventListener("blur", finish)')
+    focus_at = js.index("input.focus()")
+    assert blur_at < focus_at, "focus/커서 이동보다 blur 핸들러가 먼저여야 한다"
+
+    # ② 커서 이동은 되는 타입에서만 — 막는 목록이 아니라 되는 목록으로
+    assert "var SELECTABLE = {" in js
+    assert "putCaretAtEnd" in js
+    assert "if (!multi && !SELECTABLE[input.type]) return;" in js
+
+    # ③ 그래도 터지면 editing 을 놓아 준다
+    assert "editing = null;" in js.split("} catch (err) {")[1][:200], \
+        "여는 도중 예외가 나면 editing 을 풀어야 한다"
+
+
+def test_number_cells_do_not_ask_for_a_caret(logged_in, company):
+    """숫자 칸은 커서 위치를 건드리지 않는다 — 거기서 터졌다."""
+    js = pathlib.Path("app/static/js/inline_edit.js").read_text(encoding="utf-8")
+    selectable = js.split("var SELECTABLE = {")[1].split("};")[0]
+    for kind in ("number", "date"):
+        assert f"{kind}:" not in selectable, f"{kind} 는 selection 을 지원하지 않는다"
+
+
+# --- 채워야 하는 값은 표에서 보여야 한다 ---------------------------------------
+
+def test_required_fields_are_visible_in_the_table(logged_in, company):
+    """`소개 가능` 조건인데 [수정] 을 눌러야만 보이는 칸이 있으면,
+    채워졌는지 알 수 없어 결국 297개를 하나씩 열어 봐야 한다.
+
+    Pre Value 가 그랬다. 조건을 새로 추가할 때도 같은 일이 나므로 여기서 잡는다.
+    """
+    from app.routers.companies import REQUIRED_FIELDS
+
+    html = logged_in.get("/companies").text
+
+    # 표에 컬럼으로 나와 있는 것
+    shown = {m for m in
+             __import__("re").findall(r'data-field="([a-z_]+)"', html)}
+    # 컬럼이 아니어도 되는 것 — 이유가 분명한 경우만 여기 적는다
+    excused = {
+        # 링크는 값 대신 [열기]/[없음] 배지로 보여 준다 (주소를 늘어놓을 자리가 없다)
+        "ir_drive_url",
+        # 문장이 길어 한 칸에 안 들어간다. 없으면 '소개 가능' 칸이 이름을 대 준다
+        "competitiveness",
+    }
+
+    missing = [name for name, _label in REQUIRED_FIELDS
+               if name not in shown and name not in excused]
+    assert not missing, (
+        "소개 가능 조건인데 표에서 안 보이는 칸: " + ", ".join(missing) +
+        "\n컬럼으로 넣거나, 넣지 않는 이유를 excused 에 적으세요.")
+
+
+def test_the_money_columns_can_all_be_typed_into(logged_in, company):
+    html = logged_in.get("/companies").text
+    for field in ("revenue_recent", "funding_total", "raise_target", "pre_value"):
+        assert f'data-field="{field}" data-type="number"' in html, field
+
+
+# --- 금액 단위 ---------------------------------------------------------------
+#
+# DB 는 백만원으로 쌓여 있다. 표에 그대로 두면 `1,000` 이 10억이라 아무도
+# 못 읽고, 딜소개 문구는 이미 억으로 나가서 표와 문구가 서로 다른 숫자를 보였다.
+
+def test_money_columns_show_eok(logged_in, db):
+    from app.models import IrCompany
+
+    db.add(IrCompany(name="샘플로지", revenue_recent=1830,   # 18.3억
+                     funding_total=1000,                     # 10억
+                     pre_value=15000))                       # 150억
+    db.commit()
+
+    html = logged_in.get("/companies").text
+    assert ">18.3<" in html
+    assert ">10<" in html
+    assert ">150<" in html
+    assert "1,830" not in html, "백만원이 그대로 보인다"
+    # 숫자만 있으면 천만 원인지 천억인지 알 수 없다
+    assert html.count('class="th-unit">억<') == 4
+
+
+def test_editing_in_eok_stores_baekman():
+    """사람이 `18.3` 이라고 적으면 1830 으로 저장돼야 한다."""
+    js = pathlib.Path("app/static/js/inline_edit.js").read_text(encoding="utf-8")
+    assert 'unit === "eok" ? Math.round(n * 100) : n' in js, \
+        "억 → 백만원 되돌림이 없다"
+    assert 'data-unit' in js
+
+
+def test_the_money_cells_are_marked_as_eok(logged_in, company):
+    html = logged_in.get("/companies").text
+    for field in ("revenue_recent", "funding_total", "raise_target", "pre_value"):
+        assert f'data-field="{field}" data-type="number" data-unit="eok"' in html, field
+
+
+def test_the_version_is_at_the_top(logged_in):
+    """맨 아래에 두면 스크롤해야 보여서, 정작 물어볼 때 아무도 못 찾는다."""
+    from app import version
+
+    html = logged_in.get("/companies").text
+    assert "app-foot" not in html
+    brand = html.index('class="brand"')
+    menu = html.index('class="menu"')
+    ver = html.index(f"v{version.VERSION}")
+    assert brand < ver < menu, "버전이 상단 브랜드 옆에 있어야 한다"
+
+
+def test_the_edit_modal_is_in_eok_too(logged_in, company):
+    """표는 억인데 수정 창만 백만원이면 같은 값이 100배 차이로 보인다."""
+    html = logged_in.get("/companies").text
+    assert "단위: 억" in html
+    assert "백만원" not in html
+    # 18.3 같은 값을 넣을 수 있어야 한다
+    for field in ("revenue_recent", "funding_total", "raise_target", "pre_value"):
+        assert f'step="0.1" id="f-{field}"' in html, field
+
+    js = pathlib.Path("app/static/js/companies.js").read_text(encoding="utf-8")
+    assert "EOK_FIELDS" in js
+    assert "Math.round(n * 100)" in js, "억 → 백만원 되돌림이 없다"
+
+
+def test_the_excel_matches_the_screen(logged_in, db):
+    """표와 엑셀을 나란히 놓고 보는 사람에게 100배 차이가 나면 안 된다."""
+    import io
+
+    import openpyxl
+
+    from app.models import IrCompany
+
+    db.add(IrCompany(name="샘플로지", revenue_recent=1830, pre_value=15000))
+    db.commit()
+
+    book = openpyxl.load_workbook(
+        io.BytesIO(logged_in.get("/api/export/companies.xlsx").content))
+    sheet = book.active
+    head = [c.value for c in sheet[1]]
+    assert "최근매출(억)" in head and "Pre Value(억)" in head
+
+    col = {name: i for i, name in enumerate(head)}
+    row = next(r for r in sheet.iter_rows(min_row=2, values_only=True)
+               if r[0] == "샘플로지")
+    assert row[col["최근매출(억)"]] == 18.3
+    assert row[col["Pre Value(억)"]] == 150
+    # 엑셀에서 계산할 수 있게 문자열이 아니라 숫자여야 한다
+    assert isinstance(row[col["최근매출(억)"]], (int, float))

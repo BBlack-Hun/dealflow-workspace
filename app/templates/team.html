@@ -97,7 +97,9 @@
         <td class="num">{{ m.sent_month }}</td>
         <td class="num">{{ m.ir }}</td>
         <td class="num">{{ m.meeting }}</td>
-        <td class="{{ 'ok' if m.agent_ok else 'muted' }}">{{ m.agent }}</td>
+        <td class="{% if m.agent_old %}warn{% elif m.agent_ok %}ok{% else %}muted{% endif %}"
+            title="{% if m.agent_version %}v{{ m.agent_version }}{% else %}버전 미상{% endif %}">
+          {{ m.agent }}</td>
         <td>
           {% if m.role == 'admin' %}
             <span class="muted">관리자</span>

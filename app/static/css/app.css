@@ -780,3 +780,11 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
                 background: var(--bg-soft); }
 .split-notice ol { margin: 5px 0 4px 18px; padding: 0; }
 .split-notice li { margin: 1px 0; }
+
+/* 지금 돌고 있는 버전. 무엇이 이상하다는 말을 들었을 때 먼저 묻는 숫자다.
+   맨 아래에 두면 스크롤해야 보여서, 정작 물어볼 때 아무도 못 찾는다. */
+.brand-ver { font-size: 10.5px; font-weight: 400; opacity: .6;
+             margin-left: 5px; vertical-align: middle; letter-spacing: 0; }
+
+/* 금액 칸의 단위. 숫자만 있으면 `1,000` 이 천만 원인지 천억인지 알 수 없다. */
+.th-unit { font-weight: 400; opacity: .7; margin-left: 3px; font-size: 10.5px; }
