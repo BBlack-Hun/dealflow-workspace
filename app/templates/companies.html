@@ -89,12 +89,12 @@
         <th style="width:9%" data-filters="sector:분야">분야<div class="th-filters"></div></th>
         <th style="width:9%" data-filters="series:단계">단계<div class="th-filters"></div></th>
         <th>소개 문구<span class="th-note">두 줄까지 보입니다 · 눌러서 수정</span></th>
-        <th class="num" style="width:66px">매출</th>
-        <th class="num" style="width:66px">누적투자</th>
-        <th class="num" style="width:66px">희망투자</th>
+        <th class="num" style="width:66px">매출<span class="th-unit">억</span></th>
+        <th class="num" style="width:66px">누적투자<span class="th-unit">억</span></th>
+        <th class="num" style="width:66px">희망투자<span class="th-unit">억</span></th>
         {# 소개 가능 조건 8개 중 하나인데 [수정] 을 눌러야만 보였다.
            보이지 않는 값은 채워졌는지 알 수 없어 결국 하나씩 열어 봐야 한다. #}
-        <th class="num" style="width:70px">Pre Value</th>
+        <th class="num" style="width:70px">Pre Value<span class="th-unit">억</span></th>
         <th data-filters="ready:소개 가능|summary:작성 상태|contract:계약">소개 가능<div class="th-filters"></div></th>
         <th style="width:88px" data-filters="ir:IR 자료">IR 자료<div class="th-filters"></div></th>
         <th style="width:60px"></th>
@@ -128,10 +128,10 @@
         <td title="{{ r.one_liner }}">
           <div class="cell clamp2" data-field="one_liner" data-type="long">{{ r.one_liner }}</div>
         </td>
-        <td class="cell num" data-field="revenue_recent" data-type="number">{{ '{:,}'.format(r.revenue_recent) if r.revenue_recent else '' }}</td>
-        <td class="cell num" data-field="funding_total" data-type="number">{{ '{:,}'.format(r.funding_total) if r.funding_total else '' }}</td>
-        <td class="cell num" data-field="raise_target" data-type="number">{{ '{:,}'.format(r.raise_target) if r.raise_target else '' }}</td>
-        <td class="cell num" data-field="pre_value" data-type="number">{{ '{:,}'.format(r.pre_value) if r.pre_value else '' }}</td>
+        <td class="cell num" data-field="revenue_recent" data-type="number" data-unit="eok">{{ eok(r.revenue_recent) }}</td>
+        <td class="cell num" data-field="funding_total" data-type="number" data-unit="eok">{{ eok(r.funding_total) }}</td>
+        <td class="cell num" data-field="raise_target" data-type="number" data-unit="eok">{{ eok(r.raise_target) }}</td>
+        <td class="cell num" data-field="pre_value" data-type="number" data-unit="eok">{{ eok(r.pre_value) }}</td>
         <td class="ready-cell">
           {% if r.introducible %}
             <span class="room-badge ok">● 가능</span>

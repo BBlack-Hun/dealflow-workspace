@@ -10,6 +10,7 @@
 //       <td class="cell multi" data-field="memo">…</td>          여러 줄
 //       <td class="cell" data-field="due_date" data-type="date">2026-08-26</td>
 //       <td class="cell num" data-field="revenue_recent" data-type="number">1,200</td>
+//       <td class="cell num" data-field="pre_value" data-type="number" data-unit="eok">150</td>
 //       <td><div class="cell clamp2" data-field="one_liner" data-type="long">긴 문장…</div></td>
 //       <td class="cell" data-field="sector_major" data-type="pick">애그테크</td>
 //
@@ -60,6 +61,9 @@
       var before = cell.hasAttribute("data-value")
         ? cell.getAttribute("data-value") : cell.textContent.trim();
       var type = cell.getAttribute("data-type") || "";
+      // 억 단위로 보여 주는 칸은 **보이는 그대로** 고친다. 저장할 때만
+      // 백만원으로 되돌린다(DB 는 백만원으로 쌓여 있다).
+      var unit = cell.getAttribute("data-unit") || "";
       if (type === "number") before = before.replace(/,/g, "");
       if (before === "-") before = "";        // 빈 칸을 '-' 로 그려 둔 표가 있다
 
@@ -103,7 +107,7 @@
         editing = null;
         var after = input.value.trim();
         cell.textContent = type === "number" ? withCommas(after) : after;
-        if (after !== before) save(cell, after, before, type);
+        if (after !== before) save(cell, after, before, type, unit);
       }
     }
 
@@ -263,14 +267,14 @@
       return hint;
     }
 
-    function save(cell, value, before, type) {
+    function save(cell, value, before, type, unit) {
       var row = cell.closest("tr");
       var id = row && row.getAttribute("data-id");
       if (!id) return;
       var body = {};
       // 숫자 칸은 빈 값이면 null 로 보낸다 — 0 과 '아직 안 적음'은 다르다.
       body[cell.getAttribute("data-field")] =
-        type === "number" ? (value === "" ? null : Number(value)) : value;
+        type === "number" ? toStored(value, unit) : value;
 
       cell.classList.add("saving");
       fetch(url + "/" + id, {
@@ -309,6 +313,15 @@
     if (!input.setSelectionRange) return;
     if (!multi && !SELECTABLE[input.type]) return;
     input.setSelectionRange(input.value.length, input.value.length);
+  }
+
+  // 화면은 억, 저장은 백만원. 1억 = 100백만원.
+  // 사람이 "18.3억" 이라고 적으면 1830 으로 넣는다 — 소수점 오차가 나지 않게 반올림.
+  function toStored(value, unit) {
+    if (value === "") return null;
+    var n = Number(value);
+    if (isNaN(n)) return null;
+    return unit === "eok" ? Math.round(n * 100) : n;
   }
 
   function withCommas(value) {

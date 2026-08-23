@@ -11,7 +11,11 @@
   <div class="layout">
     <aside class="sidebar">
       <a class="brand-link" href="/">
-        <div class="brand">CONTACTVC ASSET</div>
+        <div class="brand">CONTACTVC ASSET
+          {# 무엇이 이상하다는 말을 들었을 때 먼저 묻는 숫자다. 화면 맨 아래에
+             두면 스크롤해야 보여서, 정작 물어볼 때 아무도 못 찾는다. #}
+          <span class="brand-ver">v{{ app_version }}</span>
+        </div>
         <div class="brand-sub">Investor Management Portal</div>
       </a>
       <nav class="menu">
@@ -46,11 +50,6 @@
       </div>
       {% endif %}
       {% block content %}{% endblock %}
-      {# 화면만 보고는 어느 버전이 돌고 있는지 알 수 없다. 무엇이 이상하다는
-         말을 들었을 때 먼저 물어봐야 하는 것이 이 숫자다. #}
-      <footer class="app-foot muted">
-        CONTACTVC ASSET · v{{ app_version }}
-      </footer>
     </main>
   </div>
   <script src="{{ asset('js/agent_badge.js') }}"></script>

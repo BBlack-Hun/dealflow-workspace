@@ -51,6 +51,17 @@ REQUIRED_FIELDS = [
 
 
 
+def eok(value: Optional[int]) -> str:
+    """저장값(백만원)을 억으로. `1830` → `18.3`.
+
+    표에 백만원을 그대로 두면 `1,000` 이 10억이라 아무도 못 읽는다. 딜소개
+    문구는 이미 억으로 나가고 있어서 표와 문구가 서로 다른 숫자를 보여줬다.
+    """
+    from ..services.message_composer import format_eok
+
+    return format_eok(value) or ""
+
+
 def _short(value: Optional[str]) -> str:
     """괄호 앞까지. 표 한 칸에 설명까지 넣으면 정작 이름이 안 보인다."""
     return (value or "").split(" (")[0].strip()

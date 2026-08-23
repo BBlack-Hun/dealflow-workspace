@@ -265,3 +265,51 @@ def test_the_money_columns_can_all_be_typed_into(logged_in, company):
     html = logged_in.get("/companies").text
     for field in ("revenue_recent", "funding_total", "raise_target", "pre_value"):
         assert f'data-field="{field}" data-type="number"' in html, field
+
+
+# --- 금액 단위 ---------------------------------------------------------------
+#
+# DB 는 백만원으로 쌓여 있다. 표에 그대로 두면 `1,000` 이 10억이라 아무도
+# 못 읽고, 딜소개 문구는 이미 억으로 나가서 표와 문구가 서로 다른 숫자를 보였다.
+
+def test_money_columns_show_eok(logged_in, db):
+    from app.models import IrCompany
+
+    db.add(IrCompany(name="샘플로지", revenue_recent=1830,   # 18.3억
+                     funding_total=1000,                     # 10억
+                     pre_value=15000))                       # 150억
+    db.commit()
+
+    html = logged_in.get("/companies").text
+    assert ">18.3<" in html
+    assert ">10<" in html
+    assert ">150<" in html
+    assert "1,830" not in html, "백만원이 그대로 보인다"
+    # 숫자만 있으면 천만 원인지 천억인지 알 수 없다
+    assert html.count('class="th-unit">억<') == 4
+
+
+def test_editing_in_eok_stores_baekman():
+    """사람이 `18.3` 이라고 적으면 1830 으로 저장돼야 한다."""
+    js = pathlib.Path("app/static/js/inline_edit.js").read_text(encoding="utf-8")
+    assert 'unit === "eok" ? Math.round(n * 100) : n' in js, \
+        "억 → 백만원 되돌림이 없다"
+    assert 'data-unit' in js
+
+
+def test_the_money_cells_are_marked_as_eok(logged_in, company):
+    html = logged_in.get("/companies").text
+    for field in ("revenue_recent", "funding_total", "raise_target", "pre_value"):
+        assert f'data-field="{field}" data-type="number" data-unit="eok"' in html, field
+
+
+def test_the_version_is_at_the_top(logged_in):
+    """맨 아래에 두면 스크롤해야 보여서, 정작 물어볼 때 아무도 못 찾는다."""
+    from app import version
+
+    html = logged_in.get("/companies").text
+    assert "app-foot" not in html
+    brand = html.index('class="brand"')
+    menu = html.index('class="menu"')
+    ver = html.index(f"v{version.VERSION}")
+    assert brand < ver < menu, "버전이 상단 브랜드 옆에 있어야 한다"
