@@ -449,11 +449,15 @@ def has_reaction_since(db: Session, contact_id: int, since: Optional[str]) -> bo
     ).first())
 
 def batch_title(day: Optional[date] = None) -> str:
-    """회차명 — `8월 4주차`.
+    """회차명 — `08/26 (4주차)`.
 
     손으로 적으면 "8월회차" · "8월 셋째주" · "0826" 이 섞여 남는다. 나중에
-    "몇 월 몇 주차에 뭘 보냈지" 를 찾을 때 이력이 갈라져 못 찾는다.
+    "몇 월 며칠에 뭘 보냈지" 를 찾을 때 이력이 갈라져 못 찾는다.
     보내는 날에서 그대로 만든다 — 고쳐 쓸 수는 있다.
+
+    **날짜가 앞에 온다.** 주차만 있으면 "3주차"가 몇 월인지, 며칠이었는지
+    다시 세어 봐야 한다. 목록에서 회차를 짚는 기준은 결국 날짜다.
+    자리를 맞추려고 0 을 채운다(`08/26`) — 목록에서 세로로 줄이 맞는다.
 
     주차는 **1~7일이 1주차**다(`sheet_import.week_of_month`). 시트 머리글의
     "첫째주 수요일 / 셋째주" 표기가 그 규칙이고, 활동 이력도 그렇게 보여준다.
@@ -462,4 +466,5 @@ def batch_title(day: Optional[date] = None) -> str:
     from . import sheet_import
 
     day = day or date.today()
-    return f"{day.month}월 {sheet_import.week_of_month(day.isoformat())}주차"
+    week = sheet_import.week_of_month(day.isoformat())
+    return f"{day.month:02d}/{day.day:02d} ({week}주차)"
