@@ -229,3 +229,39 @@ def test_number_cells_do_not_ask_for_a_caret(logged_in, company):
     selectable = js.split("var SELECTABLE = {")[1].split("};")[0]
     for kind in ("number", "date"):
         assert f"{kind}:" not in selectable, f"{kind} 는 selection 을 지원하지 않는다"
+
+
+# --- 채워야 하는 값은 표에서 보여야 한다 ---------------------------------------
+
+def test_required_fields_are_visible_in_the_table(logged_in, company):
+    """`소개 가능` 조건인데 [수정] 을 눌러야만 보이는 칸이 있으면,
+    채워졌는지 알 수 없어 결국 297개를 하나씩 열어 봐야 한다.
+
+    Pre Value 가 그랬다. 조건을 새로 추가할 때도 같은 일이 나므로 여기서 잡는다.
+    """
+    from app.routers.companies import REQUIRED_FIELDS
+
+    html = logged_in.get("/companies").text
+
+    # 표에 컬럼으로 나와 있는 것
+    shown = {m for m in
+             __import__("re").findall(r'data-field="([a-z_]+)"', html)}
+    # 컬럼이 아니어도 되는 것 — 이유가 분명한 경우만 여기 적는다
+    excused = {
+        # 링크는 값 대신 [열기]/[없음] 배지로 보여 준다 (주소를 늘어놓을 자리가 없다)
+        "ir_drive_url",
+        # 문장이 길어 한 칸에 안 들어간다. 없으면 '소개 가능' 칸이 이름을 대 준다
+        "competitiveness",
+    }
+
+    missing = [name for name, _label in REQUIRED_FIELDS
+               if name not in shown and name not in excused]
+    assert not missing, (
+        "소개 가능 조건인데 표에서 안 보이는 칸: " + ", ".join(missing) +
+        "\n컬럼으로 넣거나, 넣지 않는 이유를 excused 에 적으세요.")
+
+
+def test_the_money_columns_can_all_be_typed_into(logged_in, company):
+    html = logged_in.get("/companies").text
+    for field in ("revenue_recent", "funding_total", "raise_target", "pre_value"):
+        assert f'data-field="{field}" data-type="number"' in html, field

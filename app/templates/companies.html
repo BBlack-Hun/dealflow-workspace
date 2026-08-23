@@ -92,6 +92,9 @@
         <th class="num" style="width:66px">매출</th>
         <th class="num" style="width:66px">누적투자</th>
         <th class="num" style="width:66px">희망투자</th>
+        {# 소개 가능 조건 8개 중 하나인데 [수정] 을 눌러야만 보였다.
+           보이지 않는 값은 채워졌는지 알 수 없어 결국 하나씩 열어 봐야 한다. #}
+        <th class="num" style="width:70px">Pre Value</th>
         <th data-filters="ready:소개 가능|summary:작성 상태|contract:계약">소개 가능<div class="th-filters"></div></th>
         <th style="width:88px" data-filters="ir:IR 자료">IR 자료<div class="th-filters"></div></th>
         <th style="width:60px"></th>
@@ -128,6 +131,7 @@
         <td class="cell num" data-field="revenue_recent" data-type="number">{{ '{:,}'.format(r.revenue_recent) if r.revenue_recent else '' }}</td>
         <td class="cell num" data-field="funding_total" data-type="number">{{ '{:,}'.format(r.funding_total) if r.funding_total else '' }}</td>
         <td class="cell num" data-field="raise_target" data-type="number">{{ '{:,}'.format(r.raise_target) if r.raise_target else '' }}</td>
+        <td class="cell num" data-field="pre_value" data-type="number">{{ '{:,}'.format(r.pre_value) if r.pre_value else '' }}</td>
         <td class="ready-cell">
           {% if r.introducible %}
             <span class="room-badge ok">● 가능</span>
@@ -145,7 +149,7 @@
         <td><button type="button" class="linkbtn js-co-edit">수정</button></td>
       </tr>
       {% else %}
-      <tr><td colspan="11" class="muted">등록된 기업이 없습니다. [기업 추가]로 시작하세요.</td></tr>
+      <tr><td colspan="12" class="muted">등록된 기업이 없습니다. [기업 추가]로 시작하세요.</td></tr>
       {% endfor %}
     </tbody>
   </table>
