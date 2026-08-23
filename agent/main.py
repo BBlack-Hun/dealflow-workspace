@@ -45,6 +45,8 @@ DEFAULT_CONFIG = {
     "delay_min_sec": 3,        # human-like inter-send delay (TECH_SPEC §5.5)
     "delay_max_sec": 7,
     "job_cap": 60,             # 1잡 상한 (계정 보호)
+    "part_gap_sec": 1.2,       # 한 건이 여러 통일 때 통 사이 간격
+                               # (연달아 쏟으면 카톡이 순서를 뒤집는다)
     # 방 연결 확인은 메시지를 보내지 않아 검색만 반복한다. 그래도 사람 속도를 흉내낸다
     # (연속 검색도 자동화로 읽힐 수 있음). 발송 지연과 별개 값으로 둔다.
     "room_marker": "",   # 딜소개 방을 가려내는 표식(예: "우리브이씨 Asset")
@@ -161,6 +163,34 @@ class AgentClient:
                                  json={"status": status}, timeout=15)
 
 
+def send_item(sender, item: dict, cfg: dict):
+    """한 건을 보낸다. **여러 통으로 나뉘어 있으면 순서대로.**
+
+    IR 자료 전달이 그렇다 — 링크를 한 통씩 먼저 던지고 마지막에 설명을 붙인다.
+    카톡에서 링크는 각자 미리보기 카드로 떠야 하고, 그게 먼저 와야 한다.
+
+    `parts` 가 없으면 `message` 한 통 (지금까지의 동작).
+
+    한 통이라도 실패하면 그 건 전체를 실패로 본다. 링크만 가고 설명이 안 가면
+    받는 쪽은 뭘 받은 건지 모르고, 설명만 가고 링크가 안 가면 자료가 없다.
+    서버가 다시 큐에 넣을 때 **처음부터** 다시 보내야 순서가 맞는다.
+    """
+    parts = item.get("parts") or [item["message"]]
+    gap = float(cfg.get("part_gap_sec", 1.2))
+
+    result = None
+    for n, text in enumerate(parts, start=1):
+        result = sender.send_text(item["room_name"], text)
+        if not result.ok:
+            if len(parts) > 1:
+                result.error = f"{n}/{len(parts)}번째 통에서 실패 — {result.error}"
+            return result
+        if n < len(parts):
+            # 연달아 쏟으면 카톡이 순서를 뒤집거나 묶어 버린다.
+            time.sleep(gap)
+    return result
+
+
 def process_job(client: AgentClient, sender, job: dict, cfg: dict):
     """잡 종류로 갈린다 — 발송 잡만 문구를 전송한다.
 
@@ -189,7 +219,7 @@ def process_job(client: AgentClient, sender, job: dict, cfg: dict):
     log.info("processing job %s (%d items)", job_id, len(items))
     any_fail = False
     for i, item in enumerate(items, start=1):
-        result = sender.send_text(item["room_name"], item["message"])
+        result = send_item(sender, item, cfg)
         if result.ok:
             client.report_item(item["id"], "sent")
             log.info("  [%d/%d] SENT room=%r", i, len(items), item["room_name"])

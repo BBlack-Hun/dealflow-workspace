@@ -68,6 +68,9 @@ class ComposeResult:
     char_count: int
     too_long: bool
     warnings: List[str] = field(default_factory=list)
+    # 여러 통으로 나눠 보낼 때의 순서. 한 통이면 비어 있다.
+    # `text` 는 언제나 이것을 합친 전문이라, parts 를 모르는 쪽은 한 통으로 보낸다.
+    parts: List[str] = field(default_factory=list)
 
 
 def format_eok(value_baekman: Optional[int]) -> Optional[str]:
@@ -137,10 +140,11 @@ def company_summary(company: CompanyView) -> str:
 def render_template(text: str, contact: ContactView, company_name: Optional[str] = None,
                     ir_drive_url: Optional[str] = None,
                     company_count: Optional[int] = None,
-                    company_list: Optional[str] = None) -> str:
+                    company_list: Optional[str] = None,
+                    file_links: Optional[str] = None) -> str:
     """Substitute template variables for a given contact.
 
-    Supported: {담당자명} {직함} {투자사} {기업명} {ir_drive_url} {개수} {기업목록}
+    Supported: {담당자명} {직함} {투자사} {기업명} {ir_drive_url} {개수} {기업목록} {자료링크}
     Unknown {…} tokens are left untouched (so authors can spot typos).
 
     `{기업목록}` 은 IR 자료 전달에서 "1번 기업 샘플애그" 처럼 **지난 회차에서의 번호**로
@@ -156,6 +160,9 @@ def render_template(text: str, contact: ContactView, company_name: Optional[str]
         # 안내문 "핵심 딜 {개수}개사 …" 용 — 선택된 기업 수를 자동 반영.
         "{개수}": str(company_count) if company_count is not None else "",
         "{기업목록}": company_list or "",
+        # 자료 전달의 **본체**. 이게 빠지면 "전달드리겠습니다" 만 나가고
+        # 정작 자료는 안 간다 — 실제로 그렇게 나갔다.
+        "{자료링크}": file_links or "",
     }
     out = text
     for key, value in mapping.items():
@@ -205,6 +212,8 @@ def compose_message(
     stage: int = STAGE_DAY1,
     include_opening: bool = True,
     company_list: Optional[str] = None,
+    file_links: Optional[str] = None,
+    link_blocks: Optional[List[str]] = None,
 ) -> ComposeResult:
     """Assemble the final Kakao message text for one contact.
 
@@ -219,11 +228,13 @@ def compose_message(
     count = len(companies) if stage == STAGE_DAY1 else 0
 
     opening = render_template(opening_body, contact, company_count=count,
-                              company_list=company_list).strip()
+                              company_list=company_list,
+                              file_links=file_links).strip()
     # 실제 운영 문구에서 안내문("핵심 딜 N개사 …/관심 가시는 기업 있으시면 IR Deck …")은
     # 기업 목록 '위'에 온다. closing_body는 그 안내문을 담는다.
     intro = render_template(closing_body, contact, company_count=count,
-                            company_list=company_list).strip()
+                            company_list=company_list,
+                            file_links=file_links).strip()
 
     parts: List[str] = [opening, "", intro] if include_opening else [intro]
 
@@ -235,7 +246,28 @@ def compose_message(
             parts.append("")  # blank line separator
             parts.append(f"{idx}) {summary}")
 
-    text = "\n".join(parts).strip() + "\n"
+    body = "\n".join(parts).strip()
+
+    # ── 자료 전달은 여러 통으로 나간다 ────────────────────────────────
+    #
+    # 카톡에서 링크는 **각자 미리보기 카드**로 떠야 하고, 그게 먼저 와야 한다.
+    # 설명을 먼저 보내면 "전달드리겠습니다" 만 떠 있고 자료가 안 보이는 시간이
+    # 생긴다. 그래서 링크를 한 통씩 순서대로 던지고 마지막에 설명을 붙인다.
+    #
+    #   ① 1번 (주)샘플애그 + 링크
+    #   ② 3번 (주)샘플메디 + 링크
+    #   ③ 홍길동 팀장님 안녕하세요. 1번 기업 …, 3번 기업 … 전달드리겠습니다.
+    bubbles: List[str] = []
+    if link_blocks:
+        bubbles = [b.strip() for b in link_blocks if b.strip()]
+        # 템플릿이 {자료링크} 로 링크를 이미 품고 있으면 본문에서 걷어낸다 —
+        # 그대로 두면 같은 링크가 두 번 나간다.
+        if file_links and file_links in body:
+            body = body.replace(file_links, "").strip()
+        if body:
+            bubbles.append(body)
+
+    text = ("\n\n".join(bubbles) if bubbles else body).strip() + "\n"
     char_count = len(text)
     too_long = char_count > MESSAGE_WARN_CHARS
     if too_long:
@@ -244,4 +276,5 @@ def compose_message(
             "(카톡 장문 붙여넣기 안정성 주의)."
         )
 
-    return ComposeResult(text=text, char_count=char_count, too_long=too_long, warnings=warnings)
+    return ComposeResult(text=text, char_count=char_count, too_long=too_long,
+                         warnings=warnings, parts=bubbles)

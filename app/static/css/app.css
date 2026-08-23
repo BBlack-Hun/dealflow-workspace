@@ -633,6 +633,12 @@ td.cell.save-failed { background: #fdecec; }
 /* IR·미팅 관리 */
 .overdue-row { background: #fffafa; }
 .row-acts { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+/* **td 에는 display:flex 를 걸면 안 된다.** 그 칸이 테이블 레이아웃에서 빠져
+   행이 통째로 어긋난다 — 소개 문구 칸에서 겪은 것과 같은 원인이다.
+   표 안에서는 버튼을 인라인으로 늘어놓는다. */
+td.row-acts, th.row-acts { display: table-cell; white-space: nowrap; }
+td.row-acts form { display: inline-block; }
+td.row-acts form + form { margin-left: 8px; }
 .row-acts select { padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; font-size: 12px; }
 .member-form textarea { width: 100%; padding: 6px 8px; border: 1px solid var(--line);
   border-radius: 8px; font: inherit; font-size: 13px; resize: vertical; }
@@ -685,3 +691,92 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
 
 .pick-tags { display: flex; flex-wrap: wrap; gap: 3px; margin: 3px 0; }
 .pick-tags .tag { font-size: 10.5px; }
+
+/* ── 진행 단계 깔때기 ──────────────────────────────────────
+   딜소개 → IR → 미팅 으로 이어지는 사다리. 어디서 끊기는지가 한눈에 보여야
+   한다. 0 인 칸도 지우지 않는다 — 0 이 답인 칸이 제일 중요하다. */
+.funnel { display:flex; align-items:stretch; gap:2px; flex-wrap:wrap;
+          margin:10px 0 6px; }
+.funnel-step { display:flex; flex-direction:column; align-items:center; gap:1px;
+               min-width:76px; padding:6px 8px; border:1px solid var(--line);
+               border-radius:6px; background:var(--bg-soft); cursor:pointer;
+               font:inherit; line-height:1.2; }
+.funnel-step b { font-size:15px; font-variant-numeric:tabular-nums; }
+.funnel-step span { font-size:11px; color:var(--muted); white-space:nowrap; }
+.funnel-step:hover { border-color:var(--accent); }
+.funnel-step.zero { opacity:.45; }
+.funnel-step.all { justify-content:center; min-width:64px; font-size:12px;
+                   color:var(--muted); }
+.funnel-arrow { align-self:center; color:var(--line); font-size:15px; }
+.funnel-step.soft b { color:var(--muted); }
+.funnel-step.warn b { color:#b26a00; }
+.funnel-step.good b { color:#1f7a3d; }
+.funnel-step.done b { color:#1a5fb4; }
+
+/* 표 안의 단계 뱃지 — 깔때기와 같은 색을 쓴다. */
+.stage-pill { display:inline-block; padding:1px 7px; border-radius:10px;
+              font-size:11.5px; border:1px solid var(--line); white-space:nowrap; }
+.stage-pill.muted { color:var(--muted); }
+.stage-pill.soft  { background:var(--bg-soft); }
+.stage-pill.warn  { background:#fff5e0; border-color:#f0d18a; color:#8a5200; }
+.stage-pill.good  { background:#e8f6ec; border-color:#a8d8b8; color:#1f7a3d; }
+.stage-pill.done  { background:#e8f0fc; border-color:#a9c4ec; color:#1a5fb4; }
+
+/* 딜 진행 관리 탭 — 급한 건수는 눈에 띄게. */
+.flow-tabs { margin-bottom: 12px; }
+.flow-tabs .sheet-tab span.warn { background:#f6c344; color:#4a3400; }
+
+/* 눌러서 바로 고치는 칸 — 고칠 수 있다는 것이 보여야 누른다. */
+.cell[data-field] { cursor: text; border-radius: 3px; }
+.cell[data-field]:hover { background: var(--bg-soft); outline: 1px dashed var(--line); }
+.cell.saving { opacity: .55; }
+.cell.saved { background: #e8f6ec; }
+.cell.save-failed { background: #fdecec; }
+.room-edit { font-size: 11px; }
+
+/* ── 칸 위에 떠서 고치는 편집창 ────────────────────────────────────────
+   한줄소개는 320px 말줄임 칸이다. 그 안에서 한 줄짜리 입력으로 문장을 쓰면
+   앞뒤가 안 보여서 어디를 고치는지 모른 채 타이핑하게 된다. */
+.cell-pop { position: fixed; z-index: 60; display: flex; flex-direction: column;
+            gap: 2px; padding: 6px; border: 1px solid var(--accent);
+            border-radius: 6px; background: var(--bg);
+            box-shadow: 0 6px 20px rgba(0,0,0,.18); }
+.cell-pop-input { width: 100%; min-height: 56px; resize: vertical;
+                  font: inherit; line-height: 1.45; padding: 6px 8px;
+                  border: 1px solid var(--line); border-radius: 4px;
+                  background: var(--bg); color: inherit; }
+.cell-pop-input:focus { outline: none; border-color: var(--accent); }
+.cell-pop-hint { font-size: 11px; color: var(--muted); text-align: right; }
+
+/* 소개 문구 — 실제로 중앙값 83자다. 한 줄 말줄임이면 20자만 보여서 못 읽는다.
+   두 줄까지 보여 주고(약 2배), 전체는 눌러서 뜨는 편집창과 툴팁으로 본다.
+
+   **반드시 td 안쪽 div 에 건다.** `display:-webkit-box` 를 td 에 직접 걸면
+   그 칸이 테이블 레이아웃에서 빠져 행이 통째로 어긋난다 — 실제로 깨졌다. */
+.clamp2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+          overflow: hidden; white-space: normal; line-height: 1.45;
+          font-size: 12.5px; }
+.th-note { display: block; font-weight: 400; font-size: 10.5px; opacity: .75; }
+
+/* 값이 정해져 있는 칸(분야·단계) — 쓰고 있는 값에서 고른다.
+   새로 타이핑하면 "헬스케어" 와 "헬스 케어" 가 갈라져 필터가 둘로 센다. */
+.cell-pop-input.one-line { min-height: 0; height: 32px; resize: none; }
+.cell-pop-choices { display: flex; flex-wrap: wrap; gap: 4px;
+                    max-height: 132px; overflow-y: auto; padding: 2px 0; }
+.cell-pop-choice { font: inherit; font-size: 12px; padding: 2px 9px;
+                   border: 1px solid var(--line); border-radius: 999px;
+                   background: var(--bg-soft); cursor: pointer; white-space: nowrap; }
+.cell-pop-choice:hover { border-color: var(--accent); background: var(--bg); }
+.cell-pop-choice.on { border-color: var(--accent); font-weight: 700; }
+
+/* 후속 화면에서 이름을 눌러 IR 요청 기록으로 — 누를 수 있다는 게 보여야 한다. */
+.req-link { color: inherit; text-decoration: none; border-bottom: 1px dotted var(--line); }
+.req-link:hover { border-bottom-color: var(--accent); }
+.req-link:hover b { color: var(--accent); }
+
+/* 자료 전달은 여러 통으로 나간다 — 순서가 보여야 확인할 수 있다. */
+.split-notice { margin: 6px 0 8px; padding: 8px 10px; font-size: 12px;
+                border: 1px solid var(--line); border-radius: 6px;
+                background: var(--bg-soft); }
+.split-notice ol { margin: 5px 0 4px 18px; padding: 0; }
+.split-notice li { margin: 1px 0; }

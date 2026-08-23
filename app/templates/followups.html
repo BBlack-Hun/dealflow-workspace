@@ -9,6 +9,8 @@
   </p>
 </header>
 
+{% include "_flow_tabs.html" %}
+
 <div class="kpi-row slim">
   <div class="kpi-card static"><span class="kpi-label">오늘 보낼 것</span>
     <span class="kpi-value {% if counts.due %}warn{% endif %}">{{ counts.due }}</span></div>
@@ -39,7 +41,12 @@
         <span class="due-when">
           {% if r.overdue %}{{ -r.days_left }}일 지남{% elif r.due_today %}오늘{% else %}{{ r.due }}{% endif %}
         </span>
-        <span class="due-who"><b>{{ r.name }}</b> {{ r.title }} <span class="muted">{{ r.firm }}</span></span>
+        <span class="due-who">
+          <a class="req-link" href="/ir?contact={{ r.contact_id }}"
+             title="이 투자사의 IR 자료 요청 기록하기">
+            <b>{{ r.name }}</b> {{ r.title }} <span class="muted">{{ r.firm }}</span>
+          </a>
+        </span>
         <span class="due-from muted">{{ r.batch_title }} · {{ r.day1 }} 발송</span>
         <span class="due-acts">
           <form method="post" action="/followups/{{ r.id }}/responded">
@@ -69,7 +76,14 @@
         {% for r in upcoming %}
         <tr>
           <td class="muted">{{ r.due }}</td>
-          <td><b>{{ r.name }}</b> <span class="muted">{{ r.firm }}</span></td>
+          <td>
+            {# 답이 오면 여기서 곧바로 기록한다 — 화면을 옮겨 담당자를 다시
+               고르는 사이에 "누구였더라" 가 된다. #}
+            <a class="req-link" href="/ir?contact={{ r.contact_id }}"
+               title="이 투자사의 IR 자료 요청 기록하기">
+              <b>{{ r.name }}</b> <span class="muted">{{ r.firm }}</span>
+            </a>
+          </td>
           <td>{{ r.next_label }}</td>
           <td class="num">{{ r.days_left }}일</td>
           <td>
@@ -149,7 +163,14 @@
       <tbody>
         {% for r in closed %}
         <tr>
-          <td><b>{{ r.name }}</b> <span class="muted">{{ r.firm }}</span></td>
+          <td>
+            {# 답이 오면 여기서 곧바로 기록한다 — 화면을 옮겨 담당자를 다시
+               고르는 사이에 "누구였더라" 가 된다. #}
+            <a class="req-link" href="/ir?contact={{ r.contact_id }}"
+               title="이 투자사의 IR 자료 요청 기록하기">
+              <b>{{ r.name }}</b> <span class="muted">{{ r.firm }}</span>
+            </a>
+          </td>
           <td>{{ r.stage_label }}</td>
           <td><span class="status-badge">{{ r.status_label }}</span></td>
           <td class="muted">{{ r.reason }}</td>

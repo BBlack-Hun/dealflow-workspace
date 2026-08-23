@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import get_current_user, templates
 from ..models import ScheduleRule, SendSequence, User
-from ..services import cadence
+from ..services import cadence, flow
 from ..ui import base_ctx
 
 router = APIRouter(tags=["followups"])
@@ -53,7 +53,7 @@ def followups_page(request: Request, db: Session = Depends(get_db),
     for row in due:
         by_stage.setdefault(row["next_stage"], []).append(row)
 
-    ctx = base_ctx(request, db, user, active="followup")
+    ctx = base_ctx(request, db, user, active="flow")
     ctx.update({
         "due": due,
         "due_groups": [
@@ -69,6 +69,8 @@ def followups_page(request: Request, db: Session = Depends(get_db),
             "upcoming": len(upcoming),
             "closed": len(closed),
         },
+        "flow_tab": "followup",
+        "flow_counts": flow.counts(db, user, today),
         "rules": _rule_views(db),
         "next_send": cadence.upcoming_send_dates(db, today)[0],
         "msg": msg,

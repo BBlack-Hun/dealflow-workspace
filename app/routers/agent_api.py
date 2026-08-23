@@ -107,13 +107,19 @@ def poll(
 
     job = db.get(SendJob, candidate)
     # 메일 건은 서버가 보낸다. 발송 프로그램이 집어가면 방을 찾다가 실패한다.
-    pending_items = [i for i in job.items
-                     if i.status == "pending" and i.channel != "email"]
+    # **만든 순서대로** 준다. IR 자료 전달은 링크가 순서대로 나가야 하고,
+    # 관계에서 그냥 꺼내면 순서가 보장되지 않는다.
+    pending_items = sorted(
+        (i for i in job.items if i.status == "pending" and i.channel != "email"),
+        key=lambda i: i.id)
     return {
         "job_id": job.id,
         "kind": job.kind,
         "items": [
             {"id": i.id, "room_name": i.room_name, "message": i.message, "stage": i.stage,
+             # 여러 통으로 나눠 보낼 때의 순서. 이 칸을 모르는 예전 발송
+             # 프로그램은 message(합친 전문)를 한 통으로 보낸다 — 순서는 같다.
+             **({"parts": json.loads(i.parts_json)} if i.parts_json else {}),
              # 방 확인 잡에만 검색어(이름+직함)를 함께 준다. message 는 빈 채로 두어
              # 구버전 에이전트가 이 잡을 발송으로 오해해도 보낼 내용이 없게 한다.
              **({"query": f"{i.contact.name} {i.contact.title or ''}".strip(),

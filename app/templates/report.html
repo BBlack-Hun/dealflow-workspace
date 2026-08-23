@@ -65,7 +65,7 @@
   </div>
   {% endfor %}
   {% else %}
-  <p class="muted">이 달에는 기록된 미팅이 없습니다. <a href="/ir">IR·미팅 관리</a>에서 등록하세요.</p>
+  <p class="muted">이 달에는 기록된 미팅이 없습니다. <a href="/ir">딜 진행 관리</a>에서 등록하세요.</p>
   {% endif %}
 </section>
 
@@ -88,7 +88,7 @@
       <li><span>아직 안 보냄</span><b class="{% if ir_open %}warn{% endif %}">{{ ir_open }}</b></li>
     </ul>
     {% if ir_open %}
-    <p class="hint warn">아직 안 보낸 요청이 있습니다 — <a href="/ir">IR·미팅 관리</a></p>
+    <p class="hint warn">아직 안 보낸 요청이 있습니다 — <a href="/ir">딜 진행 관리</a></p>
     {% endif %}
   </section>
 </div>

@@ -127,10 +127,22 @@
   <div id="import-result" class="import-result"></div>
 </section>
 
+{# 어디서 끊기는지가 한눈에 보여야 한다. 누르면 그 단계만 남는다. #}
+<div class="funnel" title="딜소개 → IR → 미팅 으로 이어지는 단계. 가장 멀리 간 곳을 셉니다.">
+  {% for f in funnel %}
+  <button type="button" class="funnel-step {{ f.cls }}{% if not f.count %} zero{% endif %}"
+          data-preset="dealstage={{ f.label|urlencode }}">
+    <b>{{ f.count }}</b><span>{{ f.label }}</span>
+  </button>
+  {% if not loop.last %}<i class="funnel-arrow">›</i>{% endif %}
+  {% endfor %}
+  <button type="button" class="funnel-step all" data-preset="">전체 보기</button>
+</div>
+
 <div class="chip-row" data-filter-chips></div>
 
 <div class="table-wrap">
-  <table class="grid-table" id="contacts-table">
+  <table class="grid-table" id="contacts-table" data-inline-url="/api/contacts">
     <colgroup>
       <col style="width:16%"><col style="width:8%"><col style="width:16%">
       <col style="width:12%"><col style="width:12%"><col style="width:10%"><col style="width:26%">
@@ -145,7 +157,7 @@
         <th data-filters="channel:채널|room:방 연결">채널<div class="th-filters"></div></th>
         <th data-filters="stage:단계|sector:섹터">투자 성격<div class="th-filters"></div></th>
         <th data-filters="recency:최근 딜소개">최근 딜소개<div class="th-filters"></div></th>
-        <th data-filters="reaction:반응">반응<div class="th-filters"></div></th>
+        <th data-filters="dealstage:진행 단계|reaction:반응">진행 단계<div class="th-filters"></div></th>
         <th data-filters="status:상태">상태<div class="th-filters"></div></th>
         <th>메모 / 액션</th>
       </tr>
@@ -162,6 +174,7 @@
           data-f-sector="{{ r.sectors|join('|') }}"
           data-f-recency="{{ r.recency }}"
           data-f-reaction="{{ r.reaction_tags|join('|') }}"
+          data-f-dealstage="{{ r.deal_stage_label }}"
           data-f-status="{{ r.status_label }}">
         {% if pool_view %}
         <td><input type="checkbox" class="pool-cb" value="{{ r.id }}"
@@ -185,6 +198,8 @@
           </div>
           <div class="cell-sub"><span class="room-dot {{ r.room_class }}"
             title="{{ r.room_name or '카톡방 이름 미등록' }}">{{ r.room_label }}</span></div>
+          <div class="cell-sub muted cell room-edit" data-field="kakao_room_name"
+               title="눌러서 카톡방 이름을 고칩니다">{{ r.room_name or '방 이름 없음' }}</div>
         </td>
         <td>
           <div class="cell-main">
@@ -201,12 +216,13 @@
           <div class="cell-sub muted" title="{{ r.last_deal_full }}">{{ r.last_deal_note or r.recency }}</div>
         </td>
         <td>
-          <div class="cell-main tabular">IR {{ r.ir_recent }} · 미팅 {{ r.meet_recent }}</div>
-          <div class="cell-sub muted">누적 {{ r.ir_total + r.meet_total }}건</div>
+          <div class="cell-main"><span class="stage-pill {{ r.deal_stage_cls }}">{{ r.deal_stage_label }}</span></div>
+          <div class="cell-sub muted">{% if r.ir_total or r.meet_total %}IR {{ r.ir_total }} · 미팅 {{ r.meet_total }}{% else %}반응 없음{% endif %}</div>
         </td>
         <td><span class="pill {{ r.status }}">{{ r.status_label }}</span></td>
         <td>
-          <div class="cell-main memo" title="{{ r.memo }}">{{ r.memo or '-' }}</div>
+          <div class="cell-main memo cell" data-field="memo" data-type="long"
+               title="눌러서 바로 고칩니다">{{ r.memo or '-' }}</div>
           <div class="cell-sub row-actions">
             <a href="/deals" class="linkbtn">딜소개</a>
             <button type="button" class="linkbtn js-detail">상세</button>
@@ -288,6 +304,7 @@
 </aside>
 {% endblock %}
 {% block scripts %}
+<script src="/static/js/inline_edit.js"></script>
 <script src="/static/js/pool_assign.js"></script>
 <script src="/static/js/filters.js"></script>
 <script src="/static/js/contacts.js"></script>

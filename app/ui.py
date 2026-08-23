@@ -27,10 +27,11 @@ MENU = [
     {"key": "deal", "label": "딜 제안 관리", "href": "/deals", "ready": True},
     {"key": "su", "label": "스타트업 관리", "href": "/companies", "ready": True},
     {"key": "vc", "label": "투자사 DB", "href": "/contacts", "ready": True},
-    {"key": "followup", "label": "후속 관리", "href": "/followups", "ready": True},
+    # 후속 문구와 IR·미팅은 둘 다 **보낸 뒤에 챙기는 일**이라 한 메뉴로 묶었다.
+    # 안에서 탭으로 나뉘어 있다(_flow_tabs.html) — 매일 두 군데를 열지 않게.
+    {"key": "flow", "label": "딜 진행 관리", "href": "/followups", "ready": True},
     {"key": "templates", "label": "딜 제안 문구", "href": "/templates", "ready": True},
-    {"key": "req", "label": "IR·미팅 관리", "href": "/ir", "ready": True},
-    
+
     {"key": "consult", "label": "투자컨설턴트 현황", "href": "/consulting", "ready": True,
      "needs": "can_view_consulting"},
     {"key": "report", "label": "업무 보고", "href": "/report", "ready": True},
