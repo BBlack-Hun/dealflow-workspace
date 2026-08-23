@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 from datetime import date
+from urllib.parse import quote
 
 import pytest
 
@@ -640,3 +641,67 @@ def test_requested_companies_are_counted_separately(db, users):
     data = user_dashboard(db, users["u1"])["reactions"]
     assert data["ir_contacts"] == 1
     assert data["requested_companies"] == 3
+
+
+# --- 숫자마다 갈 곳이 있는가 ---------------------------------------------------
+#
+# 세어서 보여 주기만 하고 갈 곳이 없으면, 숫자를 보고도 어디서 처리하는지 모른다.
+# 대시보드는 "지금 뭘 해야 하나" 를 보는 곳이라 한 번에 그 화면으로 가야 한다.
+
+def _dash(client) -> str:
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    return client.get("/").text
+
+
+def test_answer_now_tiles_are_links(client, db, users):
+    from datetime import date
+
+    from app.models import IrRequest, Meeting, VcContact
+
+    contact = VcContact(user_id=users["u1"].id, name="홍길동", firm="가나벤처스")
+    db.add(contact)
+    db.commit()
+    db.add_all([
+        IrRequest(user_id=users["u1"].id, contact_id=contact.id,
+                  company_name="샘플애그", status="open",
+                  requested_at=date.today().isoformat()),
+        Meeting(user_id=users["u1"].id, contact_id=contact.id, kind="first",
+                status="planned", scheduled_at=date.today().isoformat()),
+    ])
+    db.commit()
+
+    body = _dash(client)
+    assert "지금 답해야 할 것" in body
+    for href in ("/ir#requests", "/ir#meetings"):
+        assert f'href="{href}"' in body, f"{href} 로 가는 타일이 없다"
+    # 사흘 넘게 못 보낸 사람 이름도 눌러서 바로 처리할 수 있어야 한다
+    assert f"/ir?contact={contact.id}" in body or "지금 답해야 할 것" in body
+
+
+def test_connect_tiles_filter_the_list(client, db, users):
+    from app.models import VcContact
+
+    db.add_all([
+        VcContact(user_id=users["u1"].id, name="가나", connect_stage="in_progress"),
+        VcContact(user_id=users["u1"].id, name="다라", connect_stage="not_started"),
+        VcContact(user_id=users["u1"].id, name="마바", connect_stage="declined"),
+    ])
+    db.commit()
+
+    body = _dash(client)
+    assert "연결 진행 중인 명단" in body
+    # 눌렀을 때 그 단계만 남아야 한다 — 라벨이 투자사 DB 의 필터값과 같아야 걸린다
+    from app.services.sheet_import import CONNECT_LABELS
+    for stage in ("in_progress", "not_started", "declined"):
+        label = CONNECT_LABELS[stage]
+        assert f"connect={quote(label)}" in body, f"{label} 필터 링크가 없다"
+
+
+def test_no_dead_menu_names_after_the_merge(client, db, users):
+    """후속 관리 · IR·미팅 관리는 이제 없는 메뉴다 — 찾아가면 못 찾는다."""
+    import pathlib
+
+    for path in pathlib.Path("app/templates").glob("*.html"):
+        text = path.read_text(encoding="utf-8")
+        assert "IR·미팅 관리" not in text, path.name
+        assert ">후속 관리<" not in text, path.name

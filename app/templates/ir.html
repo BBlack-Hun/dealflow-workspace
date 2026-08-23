@@ -25,7 +25,7 @@
 {% if msg %}<p class="flash">{{ msg }}</p>{% endif %}
 
 <!-- 열린 것부터. 아직 안 보낸 자료가 제일 급하다. -->
-<section class="panel">
+<section class="panel" id="requests">
   <h2 class="panel-title">보낼 자료
     <span class="count-pill {% if counts.open %}on{% endif %}"><b>{{ counts.open }}</b>건</span>
     <button type="button" class="linkbtn" id="new-request-btn">요청 받았다고 적기</button>

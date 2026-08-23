@@ -44,18 +44,21 @@
 <!-- 받은 요청을 놓치면 그 회차에서 가장 뜨거운 반응을 흘려보낸다. -->
 <section class="panel ir-strip">
   <h2 class="panel-title">지금 답해야 할 것
-    <a class="linkbtn" href="/ir">IR·미팅 관리</a>
+    <a class="linkbtn" href="/ir">딜 진행 관리</a>
   </h2>
+  {# 세는 것만 보여주고 갈 곳이 없으면, 숫자를 보고도 어디서 처리하는지 모른다. #}
   <div class="react-row">
-    <div class="react {% if pi.open_requests %}ok{% endif %}">
-      <b>{{ pi.open_requests|length }}</b><span>보낼 자료</span></div>
-    <div class="react"><b>{{ pi.today_meetings|length }}</b><span>오늘 미팅</span></div>
-    <div class="react"><b>{{ pi.due_followups|length }}</b><span>결과 문의</span></div>
+    <a class="react {% if pi.open_requests %}ok{% endif %}" href="/ir#requests">
+      <b>{{ pi.open_requests|length }}</b><span>보낼 자료</span></a>
+    <a class="react {% if pi.today_meetings %}ok{% endif %}" href="/ir#meetings">
+      <b>{{ pi.today_meetings|length }}</b><span>오늘 미팅</span></a>
+    <a class="react {% if pi.due_followups %}ok{% endif %}" href="/ir#meetings">
+      <b>{{ pi.due_followups|length }}</b><span>결과 문의</span></a>
   </div>
   {% if pi.overdue_requests %}
   <p class="hint warn">
     ⚠ {{ pi.overdue_requests|length }}건은 요청받고 사흘 넘게 못 보냈습니다 —
-    {% for r in pi.overdue_requests[:3] %}<b>{{ r.name }}</b>({{ r.company_name }}){% if not loop.last %}, {% endif %}{% endfor %}
+    {% for r in pi.overdue_requests[:3] %}<a href="/ir?contact={{ r.contact_id }}"><b>{{ r.name }}</b>({{ r.company_name }})</a>{% if not loop.last %}, {% endif %}{% endfor %}
   </p>
   {% endif %}
 </section>
@@ -67,13 +70,18 @@
   <h2 class="panel-title">오늘 보낼 후속
     <span class="count-pill on"><b>{{ followups.due }}</b>명</span>
     {% if followups.overdue %}<span class="tag bad">{{ followups.overdue }}건 지남</span>{% endif %}
-    <a class="linkbtn" href="/followups">후속 관리</a>
+    <a class="linkbtn" href="/followups">딜 진행 관리</a>
   </h2>
   <ul class="due-list">
     {% for r in followups.rows %}
     <li class="{% if r.overdue %}overdue{% endif %}">
       <span class="due-when">{% if r.overdue %}{{ -r.days_left }}일 지남{% else %}오늘{% endif %}</span>
-      <span class="due-who"><b>{{ r.name }}</b> {{ r.title }} <span class="muted">{{ r.firm }}</span></span>
+      <span class="due-who">
+        <a class="req-link" href="/ir?contact={{ r.contact_id }}"
+           title="이 투자사의 IR 자료 요청 기록하기">
+          <b>{{ r.name }}</b> {{ r.title }} <span class="muted">{{ r.firm }}</span>
+        </a>
+      </span>
       <span class="due-from muted">{{ r.next_label }}</span>
     </li>
     {% endfor %}
@@ -92,9 +100,13 @@
     <a class="linkbtn" href="/contacts">투자사 DB</a>
   </h2>
   <div class="react-row">
-    <div class="react"><b>{{ pipeline.in_progress }}</b><span>진행 중</span></div>
-    <div class="react"><b>{{ pipeline.not_started }}</b><span>미착수</span></div>
-    <div class="react"><b>{{ pipeline.declined }}</b><span>참여 안 함</span></div>
+    <a class="react {% if pipeline.in_progress %}ok{% endif %}"
+       href="/contacts?sheet=all&connect={{ '진행 중'|urlencode }}">
+      <b>{{ pipeline.in_progress }}</b><span>진행 중</span></a>
+    <a class="react" href="/contacts?sheet=all&connect={{ '미착수'|urlencode }}">
+      <b>{{ pipeline.not_started }}</b><span>미착수</span></a>
+    <a class="react" href="/contacts?sheet=all&connect={{ '참여 안 함'|urlencode }}">
+      <b>{{ pipeline.declined }}</b><span>참여 안 함</span></a>
   </div>
   {% if pipeline.owners %}
   <p class="hint">
