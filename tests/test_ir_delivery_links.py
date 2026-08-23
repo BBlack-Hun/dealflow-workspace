@@ -9,6 +9,8 @@
 """
 from __future__ import annotations
 
+import pathlib
+
 import pytest
 
 from app.services import message_composer as mc
@@ -197,3 +199,37 @@ def test_the_agent_is_given_the_order(stage, db):
     assert item["message"].strip() == "\n\n".join(item["parts"]).strip()
     assert json.loads(db.query(SendItem).filter_by(
         job_id=r.json()["job_id"]).one().parts_json) == item["parts"]
+
+
+# --- 인사말 --------------------------------------------------------------------
+
+def test_no_greeting_by_default(stage):
+    """자료 전달은 **자료를 달라고 한 답장에 이어** 보내는 것이다.
+
+    "안녕하세요" 로 다시 시작하면 처음 연락하는 것처럼 읽히고, 자료 전달 문구가
+    이미 `{담당자명} {직함} 안녕하세요.` 로 시작하므로 **인사가 두 번** 나간다.
+    """
+    body = _preview(stage, [stage["agri"].id])["message"]
+    assert body.count("안녕하세요") == 1, body
+
+
+def test_the_screen_starts_with_the_box_unchecked(stage):
+    """서버 기본값이 맞아도, 화면 체크박스가 켜져 있으면 그 값을 덮어쓴다 —
+    실제로 그래서 인사가 두 번 나갔다."""
+    js = pathlib.Path("app/static/js/deals.js").read_text(encoding="utf-8")
+    assert 'greet.checked = !askMode && mode !== "ir"' in js
+
+
+def test_it_can_still_be_turned_on(stage):
+    """켜고 끄는 것은 사람이 정한다 — 기본값만 바꾼 것이다."""
+    r = stage["client"].post("/api/deals/preview", json={
+        "mode": "ir", "contact_ids": [stage["contact"].id],
+        "company_ids": [stage["agri"].id], "include_opening": True})
+    assert r.json()["previews"][0]["message"].count("안녕하세요") == 2
+
+
+def test_deal_intro_still_greets(stage):
+    """딜소개는 처음 여는 말이 필요하다."""
+    r = stage["client"].post("/api/deals/preview", json={
+        "contact_ids": [stage["contact"].id], "company_ids": [stage["agri"].id]})
+    assert "안녕하세요" in r.json()["previews"][0]["message"]
