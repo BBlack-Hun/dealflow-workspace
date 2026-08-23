@@ -191,3 +191,41 @@ def test_sector_and_series_use_the_pick_editor(logged_in, company):
     # 목록은 표에 실제로 있는 값에서 모은다 — 서버 목록은 실제와 어긋난다
     assert "knownValues" in js
     assert "data-value" in js, "보이는 글자와 저장 값이 다른 칸을 다뤄야 한다"
+
+
+# --- 갇히지 않는가 -----------------------------------------------------------
+
+def test_the_editor_can_never_trap_the_table():
+    """숫자 칸을 누르면 표 전체가 먹통이 된 적이 있다.
+
+    `<input type="number">` 에서 `setSelectionRange()` 는 예외를 던진다
+    (InvalidStateError — number 는 selection 을 지원하지 않는다). 그 줄이
+    blur·Escape 를 붙이기 **전에** 있어서, 던지는 순간 빠져나갈 길이 하나도
+    안 붙고 `editing` 이 그 칸에 물린 채 남았다. 결과는 입력 상자에서
+    탈출 불가 + 다른 칸 클릭 무시.
+
+    브라우저 없이 클릭을 재현할 수는 없으므로, **구조**를 못 박는다.
+    """
+    js = pathlib.Path("app/static/js/inline_edit.js").read_text(encoding="utf-8")
+
+    # ① 빠져나갈 길을 먼저 붙인다
+    blur_at = js.index('input.addEventListener("blur", finish)')
+    focus_at = js.index("input.focus()")
+    assert blur_at < focus_at, "focus/커서 이동보다 blur 핸들러가 먼저여야 한다"
+
+    # ② 커서 이동은 되는 타입에서만 — 막는 목록이 아니라 되는 목록으로
+    assert "var SELECTABLE = {" in js
+    assert "putCaretAtEnd" in js
+    assert "if (!multi && !SELECTABLE[input.type]) return;" in js
+
+    # ③ 그래도 터지면 editing 을 놓아 준다
+    assert "editing = null;" in js.split("} catch (err) {")[1][:200], \
+        "여는 도중 예외가 나면 editing 을 풀어야 한다"
+
+
+def test_number_cells_do_not_ask_for_a_caret(logged_in, company):
+    """숫자 칸은 커서 위치를 건드리지 않는다 — 거기서 터졌다."""
+    js = pathlib.Path("app/static/js/inline_edit.js").read_text(encoding="utf-8")
+    selectable = js.split("var SELECTABLE = {")[1].split("};")[0]
+    for kind in ("number", "date"):
+        assert f"{kind}:" not in selectable, f"{kind} 는 selection 을 지원하지 않는다"

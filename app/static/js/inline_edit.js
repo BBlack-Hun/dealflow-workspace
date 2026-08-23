@@ -41,7 +41,15 @@
     table.addEventListener("click", function (e) {
       var cell = e.target.closest(".cell[data-field]");
       if (!cell || cell === editing || !table.contains(cell)) return;
-      start(cell);
+      try {
+        start(cell);
+      } catch (err) {
+        // 여는 도중에 뭐라도 터지면 `editing` 을 놓아 준다. 물린 채로 두면
+        // 그 칸에서 빠져나올 수도, 다른 칸을 누를 수도 없어 **표 전체가
+        // 먹통**이 된다 — 브라우저 API 하나 때문에 실제로 그랬다.
+        editing = null;
+        throw err;
+      }
     });
 
     function start(cell) {
@@ -69,11 +77,10 @@
 
       cell.textContent = "";
       cell.appendChild(input);
-      input.focus();
-      if (input.setSelectionRange && !multi && type !== "date") {
-        input.setSelectionRange(input.value.length, input.value.length);
-      }
 
+      // **빠져나갈 길을 먼저 만든다.** 아래에서 뭐라도 던지면 blur·Escape 가
+      // 안 붙고, editing 이 이 칸에 물린 채 남아 표 전체가 먹통이 된다 —
+      // 실제로 그랬다(아래 setSelectionRange 참고).
       input.addEventListener("blur", finish);
       input.addEventListener("keydown", function (e) {
         if (e.key === "Escape") { input.value = before; input.blur(); }
@@ -83,6 +90,13 @@
           input.blur();
         }
       });
+
+      try {
+        input.focus();
+        putCaretAtEnd(input, multi, type);
+      } catch (err) {
+        // 여기서 실패해도 고치는 것 자체는 되어야 한다. 커서 위치는 곁가지다.
+      }
 
       function finish() {
         if (editing !== cell) return;
@@ -114,15 +128,19 @@
       };
       var input = build(api);
 
-      place();
-      input.focus();
-      if (input.setSelectionRange) {
-        input.setSelectionRange(input.value.length, input.value.length);
-      }
+      // 여기서도 빠져나갈 길이 먼저다 — 아래에서 던지면 창이 닫히지 않는다.
       input.addEventListener("blur", function () { finish(); });
       input.addEventListener("keydown", function (e) {
         if (e.key === "Escape") { canceled = true; input.blur(); }
       });
+
+      place();
+      try {
+        input.focus();
+        putCaretAtEnd(input, input.tagName === "TEXTAREA", "");
+      } catch (err) {
+        /* 커서 위치는 곁가지다 */
+      }
       global.addEventListener("scroll", place, true);
       global.addEventListener("resize", place);
 
@@ -278,6 +296,19 @@
           alert("저장하지 못했습니다." + (err.message ? "\n" + err.message : ""));
         });
     }
+  }
+
+  // 커서를 끝에 둔다. **아무 input 에서나 되는 게 아니다** — number·date·email
+  // 등은 selectionStart 를 지원하지 않아 setSelectionRange 가 예외를 던진다.
+  // 되는 것만 골라 부른다(막는 목록이 아니라 되는 목록으로 둬야 새 타입이
+  // 늘어도 안 터진다).
+  var SELECTABLE = { "": true, text: true, search: true, url: true, tel: true,
+                     password: true };
+
+  function putCaretAtEnd(input, multi, type) {
+    if (!input.setSelectionRange) return;
+    if (!multi && !SELECTABLE[input.type]) return;
+    input.setSelectionRange(input.value.length, input.value.length);
   }
 
   function withCommas(value) {
