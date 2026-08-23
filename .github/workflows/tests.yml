@@ -1,0 +1,47 @@
+# PR 마다 테스트를 돌린다.
+#
+# 여기까지는 사람이 로컬에서 돌릴 때만 돌았다. 안 돌리고 올리면 깨진 채로
+# 머지된다 — 실제로 발송 프로그램에서 함수 하나가 빠진 채 배포돼 사용자 PC 에서
+# `NameError` 로 터진 적이 있다. 그런 건 서버 로그에도 안 남는다.
+#
+# 도커 없이 바로 돌린다. 앱이 SQLite 하나만 쓰고 순수 파이썬 의존성만 있어서
+# 컨테이너를 띄울 이유가 없다 — 그만큼 빨리 끝나고, 결과가 빨리 보여야 본다.
+name: tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# 같은 PR 에 연달아 푸시하면 앞의 실행은 접는다. 마지막 것만 보면 된다.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          # 운영과 같은 버전 (Dockerfile: python:3.12-slim)
+          python-version: "3.12"
+          cache: pip
+
+      - name: 의존성 설치
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 테스트
+        # 테스트가 저장소 뿌리 기준으로 파일을 읽는다(CSS·템플릿을 훑는 검사).
+        run: python -m pytest -q
+        env:
+          # 주변 .env 를 읽어 결과가 달라지지 않게 못 박는다.
+          # (예전에 테스트 방 이름과 SMTP 설정이 새어 들어와 결과가 갈렸다)
+          DEALFLOW_TEST_ROOM: ""
+          DEALFLOW_SMTP_HOST: ""
