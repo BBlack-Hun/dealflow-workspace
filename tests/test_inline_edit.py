@@ -313,3 +313,43 @@ def test_the_version_is_at_the_top(logged_in):
     menu = html.index('class="menu"')
     ver = html.index(f"v{version.VERSION}")
     assert brand < ver < menu, "버전이 상단 브랜드 옆에 있어야 한다"
+
+
+def test_the_edit_modal_is_in_eok_too(logged_in, company):
+    """표는 억인데 수정 창만 백만원이면 같은 값이 100배 차이로 보인다."""
+    html = logged_in.get("/companies").text
+    assert "단위: 억" in html
+    assert "백만원" not in html
+    # 18.3 같은 값을 넣을 수 있어야 한다
+    for field in ("revenue_recent", "funding_total", "raise_target", "pre_value"):
+        assert f'step="0.1" id="f-{field}"' in html, field
+
+    js = pathlib.Path("app/static/js/companies.js").read_text(encoding="utf-8")
+    assert "EOK_FIELDS" in js
+    assert "Math.round(n * 100)" in js, "억 → 백만원 되돌림이 없다"
+
+
+def test_the_excel_matches_the_screen(logged_in, db):
+    """표와 엑셀을 나란히 놓고 보는 사람에게 100배 차이가 나면 안 된다."""
+    import io
+
+    import openpyxl
+
+    from app.models import IrCompany
+
+    db.add(IrCompany(name="샘플로지", revenue_recent=1830, pre_value=15000))
+    db.commit()
+
+    book = openpyxl.load_workbook(
+        io.BytesIO(logged_in.get("/api/export/companies.xlsx").content))
+    sheet = book.active
+    head = [c.value for c in sheet[1]]
+    assert "최근매출(억)" in head and "Pre Value(억)" in head
+
+    col = {name: i for i, name in enumerate(head)}
+    row = next(r for r in sheet.iter_rows(min_row=2, values_only=True)
+               if r[0] == "샘플로지")
+    assert row[col["최근매출(억)"]] == 18.3
+    assert row[col["Pre Value(억)"]] == 150
+    # 엑셀에서 계산할 수 있게 문자열이 아니라 숫자여야 한다
+    assert isinstance(row[col["최근매출(억)"]], (int, float))

@@ -156,7 +156,7 @@
   <p class="muted" data-filter-empty hidden>조건에 맞는 기업이 없습니다.</p>
 </div>
 <p class="hint">
-  금액 단위는 <b>백만원</b>입니다.
+  금액 단위는 <b>억</b>입니다 — <code>18.3</code> 처럼 소수점도 됩니다.
   <b>IR 자료</b>는 구글드라이브 공유 링크를 넣어 두면, 자료 요청이 왔을 때
   <a href="/deals">딜 제안 관리 → IR 자료 전달</a>에서 바로 꺼내 쓸 수 있습니다.
 </p>
@@ -181,12 +181,12 @@
       <textarea id="f-one_liner" rows="2" placeholder="딜소개 문구에 그대로 들어갑니다"></textarea></label>
   </div>
 
-  <h3 class="form-section">숫자 <span class="hint">단위: 백만원</span></h3>
+  <h3 class="form-section">숫자 <span class="hint">단위: 억 (예 18.3)</span></h3>
   <div class="form-grid">
-    <label class="field"><span>최근 매출</span><input type="number" id="f-revenue_recent" placeholder="0"></label>
-    <label class="field"><span>누적 투자</span><input type="number" id="f-funding_total" placeholder="0"></label>
-    <label class="field"><span>희망 투자</span><input type="number" id="f-raise_target" placeholder="0"></label>
-    <label class="field"><span>Pre Value</span><input type="number" id="f-pre_value" placeholder="0"></label>
+    <label class="field"><span>최근 매출</span><input type="number" step="0.1" id="f-revenue_recent" placeholder="0"></label>
+    <label class="field"><span>누적 투자</span><input type="number" step="0.1" id="f-funding_total" placeholder="0"></label>
+    <label class="field"><span>희망 투자</span><input type="number" step="0.1" id="f-raise_target" placeholder="0"></label>
+    <label class="field"><span>Pre Value</span><input type="number" step="0.1" id="f-pre_value" placeholder="0"></label>
   </div>
 
   <h3 class="form-section">소개 내용</h3>

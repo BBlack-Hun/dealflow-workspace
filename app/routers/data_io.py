@@ -163,9 +163,16 @@ def export_contacts(db: Session = Depends(get_db),
     return _xlsx(f"내 투자사_{today}.xlsx", "내 투자사", CONTACT_HEADERS, rows)
 
 
+def _eok(value):
+    """저장값(백만원) → 억. 엑셀에서 계산할 수 있게 **숫자로** 둔다."""
+    return None if value is None else round(value / 100, 1)
+
+
 COMPANY_HEADERS = [
     "기업명", "분야(대)", "분야(소)", "기업구분", "한줄소개", "소개가능",
-    "최근매출(백만)", "누적투자(백만)", "희망투자(백만)", "Pre Value(백만)",
+    # 화면과 같은 단위로 내보낸다. 표는 억인데 엑셀만 백만이면, 두 개를 나란히
+    # 놓고 보는 사람에게는 같은 값이 100배 차이로 보인다.
+    "최근매출(억)", "누적투자(억)", "희망투자(억)", "Pre Value(억)",
     "경쟁력", "계약", "계약월", "탑딜", "투자현황", "요약상태", "IR 링크",
 ]
 
@@ -178,7 +185,8 @@ def export_companies(db: Session = Depends(get_db),
     rows = [
         [c.name, c.sector_major or "", c.sector_minor or "", c.series or "",
          c.one_liner or "", "O" if c.introducible else "",
-         c.revenue_recent, c.funding_total, c.raise_target, c.pre_value,
+         _eok(c.revenue_recent), _eok(c.funding_total),
+         _eok(c.raise_target), _eok(c.pre_value),
          c.competitiveness or "", c.contract_status or "", c.contract_month or "",
          "★" if c.is_top_deal else "", c.funding_status or "",
          c.summary_status or "", c.ir_drive_url or ""]
