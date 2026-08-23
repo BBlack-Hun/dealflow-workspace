@@ -163,6 +163,34 @@ class AgentClient:
                                  json={"status": status}, timeout=15)
 
 
+def send_item(sender, item: dict, cfg: dict):
+    """한 건을 보낸다. **여러 통으로 나뉘어 있으면 순서대로.**
+
+    IR 자료 전달이 그렇다 — 링크를 한 통씩 먼저 던지고 마지막에 설명을 붙인다.
+    카톡에서 링크는 각자 미리보기 카드로 떠야 하고, 그게 먼저 와야 한다.
+
+    `parts` 가 없으면 `message` 한 통 (지금까지의 동작).
+
+    한 통이라도 실패하면 그 건 전체를 실패로 본다. 링크만 가고 설명이 안 가면
+    받는 쪽은 뭘 받은 건지 모르고, 설명만 가고 링크가 안 가면 자료가 없다.
+    서버가 다시 큐에 넣을 때 **처음부터** 다시 보내야 순서가 맞는다.
+    """
+    parts = item.get("parts") or [item["message"]]
+    gap = float(cfg.get("part_gap_sec", 1.2))
+
+    result = None
+    for n, text in enumerate(parts, start=1):
+        result = sender.send_text(item["room_name"], text)
+        if not result.ok:
+            if len(parts) > 1:
+                result.error = f"{n}/{len(parts)}번째 통에서 실패 — {result.error}"
+            return result
+        if n < len(parts):
+            # 연달아 쏟으면 카톡이 순서를 뒤집거나 묶어 버린다.
+            time.sleep(gap)
+    return result
+
+
 def process_job(client: AgentClient, sender, job: dict, cfg: dict):
     """잡 종류로 갈린다 — 발송 잡만 문구를 전송한다.
 
