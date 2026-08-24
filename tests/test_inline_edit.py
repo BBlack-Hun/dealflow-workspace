@@ -122,7 +122,8 @@ def test_tables_are_wired(logged_in, company, contact):
 
     contacts = logged_in.get("/contacts").text
     assert 'data-inline-url="/api/contacts"' in contacts
-    assert 'data-field="memo"' in contacts
+    # 메모는 담당자 시트에 없는 칸이라 표에서 뺐다 — [수정] 에서 본다.
+    assert 'data-field="sectors"' in contacts
     assert "inline_edit.js" in contacts
 
 
@@ -133,7 +134,7 @@ def test_long_text_gets_the_floating_editor(logged_in, company, contact):
     assert 'data-field="one_liner" data-type="long"' in companies
 
     contacts = logged_in.get("/contacts").text
-    assert 'data-field="memo" data-type="long"' in contacts
+    assert 'data-field="sectors" data-type="long"' in contacts
 
     js = (pathlib.Path("app/static/js/inline_edit.js")).read_text(encoding="utf-8")
     assert "startLong" in js

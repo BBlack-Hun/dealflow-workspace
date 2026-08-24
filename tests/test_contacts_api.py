@@ -62,8 +62,7 @@ def test_rows_carry_filter_attributes(logged_in, contacts):
     assert 'data-f-room="○ 미확인"' in html
     assert 'data-f-room="⚠ 미등록"' in html   # 방 이름이 없는 담당자
     # 필터 대상 컬럼 헤더에 드롭다운이 붙는다
-    assert 'data-filters="sector:선호 투자분야"' in html
-    assert 'data-filters="stage:라운드 사이즈"' in html
+    assert 'data-filters="sector:투자분야|stage:라운드사이즈"' in html
 
 
 def test_recent_deal_and_reaction_are_aggregated_not_stored(logged_in, db, contacts):

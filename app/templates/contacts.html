@@ -129,7 +129,7 @@
 
 <div class="chip-row" data-filter-chips></div>
 
-<div class="table-wrap wide">
+<div class="table-wrap">
   <table class="grid-table" id="contacts-table" data-inline-url="/api/contacts">
     <colgroup>
       <col style="width:16%"><col style="width:8%"><col style="width:16%">
@@ -145,21 +145,22 @@
     <thead>
       <tr>
         {% if pool_view %}<th style="width:32px"></th>{% endif %}
-        {# 시트 순서 그대로. 메모·선호 분야·라운드 사이즈가 연락처보다 앞이다 —
-           매일 보는 건 그쪽이고, 연락처는 필요할 때만 본다. #}
-        <th style="width:28px" title="누르면 활동 이력이 열립니다">NO</th>
-        <th style="width:104px">이름</th>
-        <th style="width:72px" data-filters="owner:담당자">담당자<div class="th-filters"></div></th>
-        <th style="width:92px" data-filters="room:카톡방 참여여부">카톡방 참여여부<div class="th-filters"></div></th>
-        <th style="width:240px">메모</th>
-        <th style="width:150px" data-filters="sector:선호 투자분야">선호 투자분야<div class="th-filters"></div></th>
-        <th style="width:130px" data-filters="stage:라운드 사이즈">라운드 사이즈<div class="th-filters"></div></th>
-        <th style="width:112px">휴대폰</th>
-        <th style="width:140px" data-filters="group:회사">회사<div class="th-filters"></div></th>
-        <th style="width:88px">부서</th>
-        <th style="width:76px">직함</th>
-        <th style="width:160px">전자 메일 주소</th>
-        <th style="width:96px" data-filters="dealstage:진행 단계">진행 단계<div class="th-filters"></div></th>
+        {#
+          담당자 시트(`전체 딜소개현황`)는 다섯 칸뿐이다:
+              그룹 · 이름 · 투자사명 · 초대완료여부 · 투자분야/라운드사이즈
+          휴대폰·회사·부서·근무지 주소는 **다른 시트**에 있는 것이라 여기서는
+          안 본다. 필요하면 [수정] 에서 본다.
+
+          월별 딜소개 3열 세트는 NO 를 눌러 활동 이력으로 본다 — 달마다
+          오른쪽으로 늘어나는 칸이라 표에 넣으면 끝이 없다.
+        #}
+        <th style="width:30px" title="누르면 활동 이력이 열립니다">NO</th>
+        <th style="width:96px" data-filters="group:그룹">그룹<div class="th-filters"></div></th>
+        <th style="width:130px">이름</th>
+        <th style="width:190px" data-filters="owner:담당자">투자사명<div class="th-filters"></div></th>
+        <th style="width:104px" data-filters="room:초대완료여부">초대완료여부<div class="th-filters"></div></th>
+        <th data-filters="sector:투자분야|stage:라운드사이즈">투자분야 / 라운드사이즈<div class="th-filters"></div></th>
+        <th style="width:104px" data-filters="dealstage:진행 단계">진행 단계<div class="th-filters"></div></th>
         <th style="width:48px"></th>
       </tr>
     </thead>
@@ -179,33 +180,22 @@
         {# 월별 딜소개 이력은 옆으로 끝없이 늘어나는 칸이라 표에 넣지 않는다.
            NO 를 누르면 그 담당자의 활동 이력이 열린다. #}
         <td class="rowno muted js-detail" title="활동 이력 보기"></td>
+        <td class="cell" data-field="group_name" data-type="pick">{{ r.group_name }}</td>
         <td>
           <b class="cell" data-field="name">{{ r.name }}</b>
-          {% if r.connect_stage != 'connected' %}
-          <span class="tag {{ 'bad' if r.connect_stage == 'declined' else 'warn' }}">{{ r.connect_label }}</span>
-          {% endif %}
+          <span class="muted cell" data-field="title" data-type="pick">{{ r.title }}</span>
         </td>
-        <td class="cell" data-field="assignee_name" data-type="pick">{{ r.assignee }}</td>
+        <td class="cell ellipsis" data-field="firm" title="{{ r.firm }}">{{ r.firm }}</td>
         <td>
           <span class="room-dot {{ r.room_class }}"
                 title="{{ r.room_name or '카톡방 이름 미등록' }}">{{ r.room_label }}</span>
           <div class="cell-sub muted cell room-edit" data-field="kakao_room_name"
                title="눌러서 카톡방 이름을 고칩니다">{{ r.room_name or '방 이름 없음' }}</div>
         </td>
-        <td title="{{ r.memo }}">
-          <div class="cell clamp2" data-field="memo" data-type="long">{{ r.memo }}</div>
-        </td>
-        <td title="{{ r.sectors|join(', ') }}">
+        <td title="{{ r.sectors|join(', ') }}{% if r.round_size %} / {{ r.round_size }}{% endif %}">
           <div class="cell clamp2" data-field="sectors" data-type="long">{{ r.sectors|join(', ') }}</div>
+          <div class="cell-sub muted cell" data-field="round_size" data-type="long">{{ r.round_size }}</div>
         </td>
-        <td title="{{ r.round_size }}">
-          <div class="cell clamp2" data-field="round_size" data-type="long">{{ r.round_size }}</div>
-        </td>
-        <td class="cell" data-field="phone">{{ r.phone }}</td>
-        <td class="cell ellipsis" data-field="firm" title="{{ r.firm }}">{{ r.firm }}</td>
-        <td class="cell ellipsis" data-field="department" title="{{ r.department }}">{{ r.department }}</td>
-        <td class="cell" data-field="title" data-type="pick">{{ r.title }}</td>
-        <td class="cell ellipsis" data-field="email" title="{{ r.email }}">{{ r.email }}</td>
         <td><span class="stage-pill {{ r.deal_stage_cls }}">{{ r.deal_stage_label }}</span></td>
         <td><button type="button" class="linkbtn js-detail">수정</button></td>
       </tr>
