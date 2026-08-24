@@ -25,9 +25,18 @@
   {% endif %}
 </div>
 
+{#
+  실제 흐름 순서대로 세운다:
+      딜 소개 → (요청 오면) IR 자료 전달 → (반응 없으면) 리마인드
+             → 미팅 요청 → 미팅 후기 → 선호 분야 묻기
+  탭 순서가 곧 일하는 순서여야 다음에 뭘 눌러야 할지 헤매지 않는다.
+#}
 <div class="mode-tabs" id="mode-tabs">
   <button type="button" class="mode-tab active" data-mode="deal">
-    기업 소개<span>인사말 + 안내문 + 기업 목록</span>
+    딜 소개<span>인사말 + 안내문 + 기업 목록</span>
+  </button>
+  <button type="button" class="mode-tab" data-mode="ir">
+    IR 자료 전달<span>요청받은 기업 자료 보내기</span>
   </button>
   <button type="button" class="mode-tab" data-mode="remind" data-followup="1">
     리마인드<span>검토 중인지 확인</span>
@@ -35,11 +44,11 @@
   <button type="button" class="mode-tab" data-mode="meeting" data-followup="1">
     미팅 요청<span>20~30분 미팅 제안</span>
   </button>
+  <button type="button" class="mode-tab" data-mode="review" data-followup="1">
+    미팅 후기<span>미팅 뒤 결과 묻기</span>
+  </button>
   <button type="button" class="mode-tab" data-mode="ask" data-followup="1">
     선호 분야 묻기<span>무엇을 보고 싶은지 되묻기</span>
-  </button>
-  <button type="button" class="mode-tab" data-mode="ir">
-    IR 자료 전달<span>요청받은 기업 자료 보내기</span>
   </button>
 </div>
 
