@@ -236,7 +236,13 @@
           <td>{{ r.company_name }}</td>
           <td><span class="status-badge">{{ r.status_label }}</span>
             {% if r.delivered_at %}<span class="muted">{{ r.delivered_at }}</span>{% endif %}</td>
-          <td>
+          <td class="row-acts">
+            {# 미팅은 **자료를 보낸 그 건**에서 이어진다. 담당자·기업을 처음부터
+               다시 고르게 하면 이미 아는 정보를 사람이 또 타이핑하는 셈이다. #}
+            <button type="button" class="linkbtn js-book-meeting"
+                    data-contact="{{ r.contact_id }}"
+                    data-company="{{ r.company_name }}"
+                    data-name="{{ r.name }}">미팅 잡기</button>
             <form method="post" action="/ir/requests/{{ r.id }}/delete"
                   onsubmit="return confirm('이 기록을 지울까요?')">
               <button class="linkbtn danger" type="submit">삭제</button>

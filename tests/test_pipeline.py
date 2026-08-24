@@ -400,3 +400,28 @@ def test_review_count_excludes_already_asked(db, users):
 
     counts = flow.counts(db, users["u1"], date.today())
     assert counts["review_open"] == 1, "이미 물어본 곳이 섞였다"
+
+
+def test_delivered_materials_offer_to_book_a_meeting(client, db, users):
+    """미팅은 **자료를 보낸 그 건**에서 이어진다. 담당자·기업을 처음부터 다시
+    고르게 하면 이미 아는 정보를 또 타이핑하게 되고, 그러다 다른 담당자를
+    골라 엉뚱한 곳에 미팅이 잡힌다."""
+    from datetime import date
+
+    from app.models import IrRequest, VcContact
+
+    contact = VcContact(user_id=users["u1"].id, name="홍길동", title="심사역",
+                        firm="가나벤처스")
+    db.add(contact)
+    db.commit()
+    db.add(IrRequest(user_id=users["u1"].id, contact_id=contact.id,
+                     company_name="샘플애그", status="delivered",
+                     requested_at=date.today().isoformat()))
+    db.commit()
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    body = client.get("/ir").text
+
+    assert "js-book-meeting" in body, "전달한 자료에서 미팅을 잡을 방법이 없다"
+    assert f'data-contact="{contact.id}"' in body
+    assert 'data-company="샘플애그"' in body

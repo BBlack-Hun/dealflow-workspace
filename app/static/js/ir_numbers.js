@@ -64,3 +64,31 @@
   select.addEventListener("change", load);
   load();
 })();
+
+// 전달한 자료에서 바로 미팅 잡기.
+//
+// 미팅은 **자료를 보낸 그 건**에서 이어진다 — 담당자·기업을 처음부터 다시
+// 고르게 하면 이미 아는 정보를 사람이 또 타이핑하는 셈이고, 그러다 다른
+// 담당자를 골라 엉뚱한 곳에 미팅이 잡힌다.
+(function () {
+  var box = document.getElementById("new-meeting");
+  if (!box) return;
+
+  document.addEventListener("click", function (e) {
+    var btn = e.target.closest(".js-book-meeting");
+    if (!btn) return;
+
+    var contact = btn.getAttribute("data-contact");
+    var company = btn.getAttribute("data-company") || "";
+
+    var select = box.querySelector('select[name="contact_id"]');
+    if (select) select.value = contact;
+    var companyInput = box.querySelector('input[name="company_name"]');
+    if (companyInput) companyInput.value = company;
+
+    box.hidden = false;
+    box.scrollIntoView({ block: "center" });
+    var when = box.querySelector('input[name="scheduled_at"]');
+    if (when) when.focus();
+  });
+})();
