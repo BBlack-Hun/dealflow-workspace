@@ -94,6 +94,64 @@ def _recent_activity_counts(db: Session, contact_ids: List[int],
     return {kind: n for kind, n in rows}
 
 
+def top_requesters(db: Session, contact_ids: List[int], limit: int = 10) -> List[dict]:
+    """**IR 자료를 많이 달라고 한 투자사** 순.
+
+    선호 단계·분야 분포는 '우리 명단이 어떤 성격인가' 는 알려 주지만 다음
+    회차에 누구를 먼저 챙길지는 말해 주지 않았다. 자료를 달라고 한 횟수가
+    관심의 크기이므로, 그 순서가 곧 우선순위다.
+
+    시트에서 옮겨 온 기록(`ContactActivity`)과 이 도구에서 쌓인 기록
+    (`IrRequest`)을 **함께** 센다 — 한쪽만 보면 옮겨 오기 전 이력이 통째로
+    빠진다.
+    """
+    if not contact_ids:
+        return []
+
+    counts: Dict[int, int] = {}
+    companies: Dict[int, set] = {}
+
+    for contact_id, names in db.execute(
+        select(ContactActivity.contact_id, ContactActivity.company_names)
+        .where(ContactActivity.contact_id.in_(contact_ids),
+               ContactActivity.kind == "ir_request")
+    ).all():
+        got = _company_names(names)
+        counts[contact_id] = counts.get(contact_id, 0) + max(len(got), 1)
+        companies.setdefault(contact_id, set()).update(got)
+
+    for contact_id, company_name in db.execute(
+        select(IrRequest.contact_id, IrRequest.company_name)
+        .where(IrRequest.contact_id.in_(contact_ids))
+    ).all():
+        counts[contact_id] = counts.get(contact_id, 0) + 1
+        if company_name:
+            companies.setdefault(contact_id, set()).add(company_name.strip())
+
+    if not counts:
+        return []
+
+    rows = db.execute(
+        select(VcContact).where(VcContact.id.in_(list(counts)))
+    ).scalars().all()
+    by_id = {c.id: c for c in rows}
+
+    out = []
+    for contact_id, count in sorted(counts.items(), key=lambda kv: -kv[1])[:limit]:
+        contact = by_id.get(contact_id)
+        if contact is None:
+            continue
+        out.append({
+            "id": contact_id,
+            "name": contact.name,
+            "title": contact.title or "",
+            "firm": contact.firm or "",
+            "count": count,
+            "companies": sorted(companies.get(contact_id, set()))[:4],
+        })
+    return out
+
+
 def _reaction_summary(db: Session, contact_ids: List[int]) -> dict:
     """반응 요약 — **기간을 자르지 않는다**.
 
@@ -179,7 +237,9 @@ def _distribution(values: List[str], top: int = 6) -> List[dict]:
 
 # --- 사용자 대시보드 --------------------------------------------------------
 
-def user_dashboard(db: Session, user: User, today: Optional[date] = None) -> dict:
+def user_dashboard(db: Session, user: User, today: Optional[date] = None,
+                   top_n: int = 10) -> dict:
+    """`top_n` — '내 투자사 선호'에 몇 명까지 세울지. 화면에서 고른다(10~20)."""
     today = today or date.today()
     cutoff = (today - timedelta(days=REACTION_WINDOW_DAYS)).isoformat()
 
@@ -292,6 +352,8 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None) -> dic
         "reactions": _reaction_summary(db, ids),
         "stages": _distribution([s for c in contacts for s in _split_csv(c.stages)]),
         "sectors": _distribution([s for c in contacts for s in _split_csv(c.sectors)]),
+        # 다음 회차에 누구를 먼저 챙길지 — 자료를 달라고 한 횟수가 관심의 크기다.
+        "top_requesters": top_requesters(db, ids, limit=top_n),
         "recent_batches": recent_batches(db, user_id=user.id),
     }
 

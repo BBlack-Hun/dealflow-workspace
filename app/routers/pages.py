@@ -25,12 +25,15 @@ __all__ = ["router", "MENU"]
 
 @router.get("/", response_class=HTMLResponse, include_in_schema=False)
 def index(request: Request, db: Session = Depends(get_db),
-          user: User = Depends(get_current_user)):
-    """메인 = 대시보드. 좌측 위 'dealflow' 를 누르면 여기로 온다."""
+          user: User = Depends(get_current_user), top: int = 10):
+    """메인 = 대시보드. 좌측 위 브랜드를 누르면 여기로 온다."""
     from ..services import dashboard as dash
 
+    # '내 투자사 선호'를 몇 명까지 볼지 — 10~20 사이에서 사용자가 고른다.
+    top_n = min(max(top, 5), 20)
     ctx = _base_ctx(request, db, user, "home")
-    ctx.update(dash.user_dashboard(db, user))
+    ctx.update(dash.user_dashboard(db, user, top_n=top_n))
+    ctx["top_n"] = top_n
     return templates.TemplateResponse("dashboard.html", ctx)
 
 

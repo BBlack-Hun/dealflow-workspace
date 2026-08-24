@@ -870,3 +870,62 @@ def test_picking_a_member_shows_only_their_report(client, db, users):
 def test_non_admin_gets_no_picker(client, db, users):
     client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
     assert 'id="member-pick"' not in client.get("/report").text
+
+
+# --- 내 투자사 선호 = IR 요청 많이 한 순 ---------------------------------------
+
+def test_top_requesters_are_ranked_by_request_count(client, db, users):
+    """선호 단계·분야 분포는 '명단이 어떤 성격인가' 는 알려 줬지만, 다음 회차에
+    **누구를 먼저 챙길지**는 말해 주지 않았다. 자료를 달라고 한 횟수가
+    곧 관심의 크기다."""
+    from datetime import date
+
+    from app.models import IrRequest, VcContact
+    from app.services.dashboard import top_requesters
+
+    many = VcContact(user_id=users["u1"].id, name="많이요청", firm="가나벤처스")
+    few = VcContact(user_id=users["u1"].id, name="조금요청", firm="다라인베스트")
+    none = VcContact(user_id=users["u1"].id, name="요청없음", firm="마바캐피탈")
+    db.add_all([many, few, none])
+    db.commit()
+
+    today = date.today().isoformat()
+    for i in range(3):
+        db.add(IrRequest(user_id=users["u1"].id, contact_id=many.id,
+                         company_name=f"샘플{i}", status="open", requested_at=today))
+    db.add(IrRequest(user_id=users["u1"].id, contact_id=few.id,
+                     company_name="샘플애그", status="open", requested_at=today))
+    db.commit()
+
+    rows = top_requesters(db, [many.id, few.id, none.id])
+    assert [r["name"] for r in rows] == ["많이요청", "조금요청"]
+    assert rows[0]["count"] == 3
+    # 요청이 없는 곳은 아예 안 나온다 — 우선순위 목록이지 명단이 아니다
+    assert "요청없음" not in [r["name"] for r in rows]
+
+
+def test_imported_history_counts_too(db, users):
+    """옮겨 오기 전 이력이 빠지면 오래 거래한 곳이 순위에서 사라진다."""
+    from app.models import ContactActivity, VcContact
+    from app.services.dashboard import top_requesters
+
+    contact = VcContact(user_id=users["u1"].id, name="홍길동", firm="가나벤처스")
+    db.add(contact)
+    db.commit()
+    db.add(ContactActivity(contact_id=contact.id, kind="ir_request",
+                           happened_at="2026-06-10", content="샘플애그, 샘플메디"))
+    db.commit()
+
+    rows = top_requesters(db, [contact.id])
+    assert rows and rows[0]["count"] >= 1
+
+
+def test_the_count_is_user_selectable(client, db, users):
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    for n in (10, 15, 20):
+        body = client.get(f"/?top={n}").text
+        assert f'href="/?top={n}"' in body, f"{n}명 고르는 링크가 없다"
+
+    # 터무니없는 값은 범위 안으로 접는다
+    assert client.get("/?top=999").status_code == 200
+    assert client.get("/?top=1").status_code == 200

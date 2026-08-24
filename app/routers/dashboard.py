@@ -35,9 +35,12 @@ router = APIRouter(tags=["dashboard"])
 
 @router.get("/dashboard", response_class=HTMLResponse, include_in_schema=False)
 def dashboard_page(request: Request, db: Session = Depends(get_db),
-                   user: User = Depends(get_current_user)):
+                   user: User = Depends(get_current_user), top: int = 10):
+    # '내 투자사 선호'를 몇 명까지 볼지 — 10~20 사이에서 사용자가 고른다.
+    top_n = min(max(top, 5), 20)
     ctx = base_ctx(request, db, user, active="home")
-    ctx.update(dash.user_dashboard(db, user))
+    ctx.update(dash.user_dashboard(db, user, top_n=top_n))
+    ctx["top_n"] = top_n
     return templates.TemplateResponse("dashboard.html", ctx)
 
 
