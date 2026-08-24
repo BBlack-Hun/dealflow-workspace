@@ -32,6 +32,7 @@ from sqlalchemy import select  # noqa: E402
 
 from app.db import SessionLocal  # noqa: E402
 from app.models import IrCompany  # noqa: E402
+from app.routers.companies import top_deal_kind  # noqa: E402
 
 # 계약여부는 시트에 적힌 말 → 저장하는 값
 CONTRACT_FROM_SHEET = {
@@ -131,6 +132,10 @@ def load(ws, columns, by_name, args, create=False):
             if field == "contract_status":
                 value = CONTRACT_FROM_SHEET.get(value, value)
             if field == "top_deal_kind":
+                # `TOP, 핵심` 과 `핵심, TOP` 은 같은 뜻이다 — 한 모양으로 모은다.
+                value = top_deal_kind(value) or ""
+                if not value:
+                    continue
                 # 골라 넣으면 '추천 딜' 도 함께 켜진다
                 company.is_top_deal = 1
             if getattr(company, field) and not args.overwrite:

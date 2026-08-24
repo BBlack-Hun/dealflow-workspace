@@ -78,6 +78,20 @@ def eok(value: Optional[int]) -> str:
     return format_eok(value) or ""
 
 
+# 핵심/TOP Deal 은 시트에 `핵심` · `TOP` · `핵심, TOP` · `TOP, 핵심` 으로
+# 적혀 있다. 뒤 둘은 같은 뜻인데 글자가 달라서 필터가 두 줄로 센다.
+TOP_ORDER = ["핵심", "TOP"]
+
+
+def top_deal_kind(value: Optional[str]) -> Optional[str]:
+    """`TOP, 핵심` → `핵심, TOP`. 적힌 순서와 상관없이 한 가지 모양으로."""
+    text = (value or "").strip()
+    if not text:
+        return None
+    found = [k for k in TOP_ORDER if k.lower() in text.lower()]
+    return ", ".join(found) if found else text
+
+
 def _short(value: Optional[str]) -> str:
     """괄호 앞까지. 표 한 칸에 설명까지 넣으면 정작 이름이 안 보인다."""
     return (value or "").split(" (")[0].strip()
@@ -303,7 +317,7 @@ def _assign(company: IrCompany, body: CompanyIn) -> None:
         if field == "top_deal_kind":
             # 골라 넣으면 '추천 딜' 도 함께 켜진다 — 두 곳을 따로 켜게 하면
             # 한쪽만 켜 둔 채 잊는다.
-            company.top_deal_kind = (value or "").strip() or None
+            company.top_deal_kind = top_deal_kind(value)
             company.is_top_deal = 1 if company.top_deal_kind else 0
         elif field == "is_top_deal":
             company.is_top_deal = 1 if value else 0

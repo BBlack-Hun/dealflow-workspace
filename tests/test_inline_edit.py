@@ -490,3 +490,28 @@ def test_contract_has_the_five_states(logged_in, company):
 
     html = logged_in.get("/companies").text
     assert "유료계약완료" in html and "딜소개 불가" in html
+
+
+def test_top_deal_order_does_not_split_the_filter():
+    """`핵심, TOP` 과 `TOP, 핵심` 은 같은 뜻인데 글자가 달라 필터가 두 줄로 셌다."""
+    from app.routers.companies import top_deal_kind
+
+    assert top_deal_kind("TOP, 핵심") == "핵심, TOP"
+    assert top_deal_kind("핵심, TOP") == "핵심, TOP"
+    assert top_deal_kind("핵심") == "핵심"
+    assert top_deal_kind("TOP") == "TOP"
+    assert top_deal_kind("") is None and top_deal_kind(None) is None
+    # 모르는 말은 지우지 않는다 — 사람이 적은 것을 임의로 버리면 안 된다
+    assert top_deal_kind("특별관리") == "특별관리"
+
+
+def test_saving_either_order_lands_on_one(logged_in, db):
+    from app.models import IrCompany
+
+    row = IrCompany(name="샘플로지")
+    db.add(row)
+    db.commit()
+
+    logged_in.patch(f"/api/companies/{row.id}", json={"top_deal_kind": "TOP, 핵심"})
+    db.refresh(row)
+    assert row.top_deal_kind == "핵심, TOP"
