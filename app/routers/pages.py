@@ -152,12 +152,14 @@ def job_page(
     user: User = Depends(get_current_user),
 ):
     job = db.get(SendJob, job_id)
-    mine = job is not None and job.user_id == user.id
-    # 방 연결 확인 잡도 같은 진행 화면을 쓰되, 문구는 '발송'이 아니어야 한다
-    # (확인 잡은 아무것도 보내지 않는다 — 사용자가 오해하면 안 되는 지점).
-    verify = mine and job.kind == "verify_room"
+    # 관리자는 팀 현황에서 넘어와 **누구에게 보냈는지** 조회한다 — 본인 것이
+    # 아니어도 읽기는 되어야 한다. 재시도·취소 같은 조작은 API 쪽에서
+    # 여전히 본인 것만 허용한다(jobs.py 의 _job_or_404).
+    can_view = job is not None and (job.user_id == user.id or user.role == "admin")
+    verify = can_view and job.kind == "verify_room"
     ctx = _base_ctx(request, db, user, "vc" if verify else "deal")
-    ctx.update({"job_id": job_id, "job_exists": mine, "verify": verify})
+    ctx.update({"job_id": job_id, "job_exists": can_view, "verify": verify,
+                "readonly": can_view and job.user_id != user.id})
     return templates.TemplateResponse("progress.html", ctx)
 
 

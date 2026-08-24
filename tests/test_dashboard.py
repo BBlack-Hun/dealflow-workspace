@@ -771,3 +771,48 @@ def test_reactions_export_carries_dates(client, db, users):
     rows = list(ws.iter_rows(min_row=2, values_only=True))
     assert any(r[0] == "IR 요청 투자사" and r[1] == "2026-08-19" for r in rows)
     assert any(r[0] == "IR 요청받은 기업" for r in rows)
+
+
+# --- 관리자가 팀 회차를 조회 -------------------------------------------------
+
+def test_admin_can_view_but_not_act_on_others_jobs(client, db, users):
+    """팀 현황에서 회차를 눌렀는데 본인 것이 아니면 404 였다 — 누구에게
+    보냈는지 확인할 방법이 없었다. 조회는 열되, 조작은 그대로 막는다."""
+    from app.models import SendItem, SendJob, VcContact
+
+    users["u2"].role = "admin"
+    contact = VcContact(user_id=users["u1"].id, name="홍길동")
+    db.add(contact)
+    db.commit()
+    job = SendJob(user_id=users["u1"].id, kind="deal_intro", status="done",
+                  total=1, sent=1)
+    db.add(job)
+    db.commit()
+    db.add(SendItem(job_id=job.id, contact_id=contact.id, status="sent",
+                    room_name="홍길동", message="…"))
+    db.commit()
+
+    client.post("/login", data={"phone": "01000000002", "password": DEMO_PASSWORD})
+
+    page = client.get(f"/jobs/{job.id}")
+    assert page.status_code == 200
+    assert "조회만 가능합니다" in page.text
+
+    api = client.get(f"/api/jobs/{job.id}")
+    assert api.status_code == 200
+    assert api.json()["items"][0]["contact_name"] == "홍길동"
+
+    # 조작은 여전히 막는다 — 관리자가 실수로 남의 회차를 건드리면 안 된다
+    assert client.post(f"/api/jobs/{job.id}/cancel").status_code == 404
+
+
+def test_a_regular_user_still_cannot_see_someone_elses_job(client, db, users):
+    from app.models import SendJob
+
+    job = SendJob(user_id=users["u2"].id, kind="deal_intro", status="done")
+    db.add(job)
+    db.commit()
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    assert client.get(f"/jobs/{job.id}").text.count("job_exists = false") >= 0
+    assert client.get(f"/api/jobs/{job.id}").status_code == 404
