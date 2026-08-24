@@ -135,11 +135,21 @@ def meeting_rows(db: Session, user: User) -> List[dict]:
     contacts = _contact_map(db, [r.contact_id for r in rows])
     today = date.today()
 
+    # 담당자별 **가장 나중 미팅 날짜**. 2차 미팅을 이미 잡았다면 1차에
+    # "그 뒤 어떻게 되셨나요" 를 물을 이유가 없다 — 이미 이어졌다.
+    latest: Dict[int, str] = {}
+    for row in rows:
+        when_iso = row.scheduled_at or ""
+        if when_iso > latest.get(row.contact_id, ""):
+            latest[row.contact_id] = when_iso
+
     out = []
     for row in rows:
         contact = contacts.get(row.contact_id)
         when = _as_date(row.scheduled_at)
         due = _as_date(row.followup_due)
+        # 뒤에 잡힌 미팅이 있으면 이 건은 결과 문의 관점에서 끝난 것이다.
+        superseded = (row.scheduled_at or "") < latest.get(row.contact_id, "")
         out.append({
             "id": row.id,
             "contact_id": row.contact_id,
@@ -157,9 +167,18 @@ def meeting_rows(db: Session, user: User) -> List[dict]:
             "outcome_label": OUTCOMES.get(row.outcome or "", ""),
             "followup_due": row.followup_due or "",
             "followup_done": bool(row.followup_done),
+            # 결과를 물어볼 필요가 남았는가.
+            #   거절로 끝났다        → 물어볼 것이 없다
+            #   다음 미팅을 잡았다    → 이미 이어졌다
+            "needs_followup": (row.status == "done" and not row.followup_done
+                               and (row.outcome or "") not in NO_FOLLOWUP_OUTCOMES
+                               and not superseded),
+            "superseded": superseded,
             # 결과를 물어볼 날이 지났는데 아직 안 물어봤다
             "followup_due_now": bool(
                 row.status == "done" and not row.followup_done
+                and (row.outcome or "") not in NO_FOLLOWUP_OUTCOMES
+                and not superseded
                 and due is not None and due <= today),
             "note": row.note or "",
         })
@@ -346,15 +365,34 @@ def close_requests_for(db: Session, job, contact_id: int,
     return closed
 
 
+# 결과를 물어볼 필요가 없는 결말. **거절당한 곳에 "그 뒤 어떻게 되셨나요" 를
+# 묻는 것은 실례다.** 이미 답을 받았으므로 물어볼 것이 남아 있지 않다.
+# 보류는 뺀다 — 다시 살아날 수 있어 물어볼 값어치가 있다.
+NO_FOLLOWUP_OUTCOMES = {"pass"}
+
+
+def needs_followup(meeting: Meeting) -> bool:
+    """이 미팅에 결과를 물어봐야 하는가."""
+    return (meeting.status == "done"
+            and not meeting.followup_done
+            and (meeting.outcome or "") not in NO_FOLLOWUP_OUTCOMES)
+
+
 def complete_meeting(db: Session, meeting: Meeting, outcome: str = "",
                      when: Optional[date] = None) -> Meeting:
-    """미팅 완료. **열흘 뒤 결과를 물을 날을 함께 잡는다.**"""
+    """미팅 완료. 결말에 따라 **열흘 뒤 결과를 물을 날**을 함께 잡는다.
+
+    거절로 끝났으면 잡지 않는다 — 물어볼 것이 남아 있지 않다.
+    """
     done_on = when or date.today()
     meeting.status = "done"
     meeting.done_at = done_on.isoformat()
     if outcome in OUTCOMES:
         meeting.outcome = outcome
-    meeting.followup_due = followup_date(done_on).isoformat()
+    if (meeting.outcome or "") in NO_FOLLOWUP_OUTCOMES:
+        meeting.followup_due = None
+    else:
+        meeting.followup_due = followup_date(done_on).isoformat()
     meeting.followup_done = 0
     db.flush()
     return meeting

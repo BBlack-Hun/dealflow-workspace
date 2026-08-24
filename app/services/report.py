@@ -24,7 +24,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..models import IrRequest, Meeting, User, VcContact
-from .pipeline import MEETING_KINDS, OUTCOMES, REQUEST_STATUS
+from .pipeline import (MEETING_FOLLOWUP_DAYS, MEETING_KINDS,
+                       NO_FOLLOWUP_OUTCOMES, OUTCOMES, REQUEST_STATUS)
 
 WEEK_NAMES = ["첫주", "둘째주", "셋째주", "넷째주", "다섯째주", "여섯째주"]
 
@@ -84,6 +85,21 @@ def monthly(db: Session, year: int, month: int,
     }
     owners = {u.id: u.name for u in db.execute(select(User)).scalars().all()}
 
+    # 결과를 물어볼 필요가 남은 건만 센다. 규칙은 딜 진행 관리와 같아야 한다 —
+    # 한쪽에서는 "물어봐야 함", 다른 쪽에서는 "끝남" 이면 어느 쪽을 믿을지 모른다.
+    #   거절로 끝났다     → 물어볼 것이 없다
+    #   다음 미팅을 잡았다 → 이미 이어졌다
+    latest: Dict[int, str] = {}
+    for m in meetings:
+        when_iso = m.scheduled_at or ""
+        if when_iso > latest.get(m.contact_id, ""):
+            latest[m.contact_id] = when_iso
+
+    def open_followup(m) -> bool:
+        return (not m.followup_done
+                and (m.outcome or "") not in NO_FOLLOWUP_OUTCOMES
+                and (m.scheduled_at or "") >= latest.get(m.contact_id, ""))
+
     weeks: Dict[int, List[dict]] = {}
     for meeting in meetings:
         when = _as_date(meeting.scheduled_at)
@@ -103,12 +119,15 @@ def monthly(db: Session, year: int, month: int,
             "followup_due": meeting.followup_due or "",
             "followup_done": bool(meeting.followup_done),
             # 열흘이 지났는데 아직 안 물어봤다 — 이 보고가 잡아내야 할 것.
+            # 거절로 끝났거나 다음 미팅을 잡은 건은 뺀다.
             "followup_late": bool(
-                meeting.status == "done" and not meeting.followup_done
+                meeting.status == "done" and open_followup(meeting)
                 and due is not None and due <= today),
+            "needs_followup": meeting.status == "done" and open_followup(meeting),
         })
 
     done = [m for m in meetings if m.status == "done"]
+
     rows = [
         {"week": w, "label": f"{month}월 {WEEK_NAMES[w - 1] if w <= len(WEEK_NAMES) else f'{w}주'}",
          "items": sorted(items, key=lambda x: x["date"]),
@@ -128,10 +147,18 @@ def monthly(db: Session, year: int, month: int,
         # **한눈에** 봐야 한다. 다섯 가지를 날짜와 함께 그대로 늘어놓는다.
         "buckets": _buckets(meetings, requests, contacts, owners, today),
         "weeks": rows,
+        # 화면 안내문이 "미팅 뒤 N일쯤" 이라고 말할 때 쓰는 값 — 코드와
+        # 화면이 다른 숫자를 말하면 안 된다.
+        "followup_days": MEETING_FOLLOWUP_DAYS,
         "total": len(meetings),
         "done": len(done),
         "canceled": sum(1 for m in meetings if m.status == "canceled"),
         "followup_done": sum(1 for m in done if m.followup_done),
+        # **아직 안 물어본 것 전부.** 예전엔 '날짜가 지난 것'만 셌는데, 물어볼
+        # 날이 아직 안 온 건은 어느 칸에도 안 잡혀서 미팅 2건이 대기 중인데도
+        # 화면에는 0 / 0 으로 떠 아무것도 없는 것처럼 보였다.
+        "followup_open": sum(1 for m in done if open_followup(m)),
+        # 그중 날짜가 지난 것 — 이건 급한 것이라 따로 센다.
         "followup_late": sum(
             1 for w in rows for x in w["items"] if x["followup_late"]),
         "outcomes": sorted(outcome_counts.items(), key=lambda t: -t[1]),
@@ -161,6 +188,7 @@ def _buckets(meetings, requests, contacts, owners, today) -> List[dict]:
               REQUEST_STATUS.get(r.status, r.status), r.user_id) for r in requests]
     asked = [m for m in meetings if m.status != "done"]
     done = [m for m in meetings if m.status == "done"]
+
     # 끝난 미팅 중 **아직 결과를 안 물어본 곳**만. 이미 물어본 곳까지 세면
     # 전화할 곳이 몇 군데인지 알 수 없다.
     call = [m for m in done if not m.followup_done]

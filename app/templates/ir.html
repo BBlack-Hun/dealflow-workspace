@@ -457,6 +457,8 @@
           <td class="muted">
             {% if m.status == 'canceled' %}취소
             {% elif m.followup_done %}완료
+            {# 거절로 끝났거나 다음 미팅을 잡았으면 물어볼 것이 없다. #}
+            {% elif not m.needs_followup %}문의 불필요
             {% else %}{{ m.followup_due }} 예정{% endif %}
           </td>
           <td>
