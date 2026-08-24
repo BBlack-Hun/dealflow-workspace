@@ -167,6 +167,7 @@
     <tbody>
       {% for r in rows %}
       <tr data-id="{{ r.id }}" data-search="{{ r.search }}"
+          class="{% if r.blocked %}blocked-row{% endif %}"
           data-f-top="{{ r.top_deal_kind or '일반' }}"
           data-f-sector="{{ r.sector_major }}"
           data-f-minor="{{ r.sector_minor }}"

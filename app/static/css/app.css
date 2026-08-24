@@ -934,3 +934,11 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
 @media (max-width: 400px) {
   .login-card { width: auto; max-width: 100%; margin: 0 12px; padding: 22px 18px; }
 }
+
+/* 딜소개 불가 — 더 이상 소개하면 안 되는 기업.
+   발송 화면 목록에서는 아예 빠지지만, 여기서는 남겨 두고 눈에 띄게 한다.
+   지운 게 아니라 '보내면 안 되는 곳' 이라는 걸 알아야 하기 때문이다. */
+.blocked-row { background: #fdf3f3; }
+.blocked-row:hover { background: #fbe9e9; }
+.blocked-row .co-name b { color: var(--red); text-decoration: line-through;
+                          text-decoration-color: rgba(200,60,60,.45); }

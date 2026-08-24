@@ -532,3 +532,48 @@ def test_no_filter_points_at_a_column_that_is_gone(logged_in, company):
         key = preset.split("=")[0]
         assert f'data-filters="{key}:' in body or f"|{key}:" in body, \
             f"'{key}' 필터가 표에 없다"
+
+
+# --- 딜소개 불가 ---------------------------------------------------------------
+
+def test_blocked_companies_never_reach_the_send_screen(logged_in, db):
+    """`딜소개 불가` 는 "내용이 부족함" 과 다르다 — 그건 채우면 되지만
+    이건 **보내면 안 되는 곳**이라, 목록에 있는 것만으로 실수로 고른다."""
+    from app.models import IrCompany
+
+    ok = IrCompany(name="보내도되는곳", sector_major="AI", contract_status="paid")
+    blocked = IrCompany(name="보내면안되는곳", sector_major="AI",
+                        contract_status="blocked")
+    db.add_all([ok, blocked])
+    db.commit()
+
+    deals = logged_in.get("/deals").text
+    assert "보내도되는곳" in deals
+    assert "보내면안되는곳" not in deals, "불가 기업이 발송 화면에 떴다"
+
+
+def test_blocked_companies_stay_visible_in_the_list(logged_in, db):
+    """목록에서까지 지우면 '왜 없지' 가 된다 — 남기되 눈에 띄게 한다."""
+    from app.models import IrCompany
+
+    db.add(IrCompany(name="보내면안되는곳", sector_major="AI",
+                     contract_status="blocked"))
+    db.commit()
+
+    html = logged_in.get("/companies").text
+    assert "보내면안되는곳" in html
+    assert "blocked-row" in html
+    assert "딜소개 불가" in html
+
+
+def test_old_contract_values_are_not_treated_as_blocked(logged_in, db):
+    """예전 값(yes/pending/no)이 실수로 막히면 멀쩡한 기업이 사라진다."""
+    from app.models import IrCompany
+    from app.routers.companies import BLOCKED_CONTRACT, contract_key
+
+    for old in ("yes", "pending", "no", "", None):
+        assert contract_key(old) != BLOCKED_CONTRACT
+
+    db.add(IrCompany(name="예전값기업", sector_major="AI", contract_status="yes"))
+    db.commit()
+    assert "예전값기업" in logged_in.get("/deals").text

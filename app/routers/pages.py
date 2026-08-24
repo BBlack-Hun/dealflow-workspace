@@ -7,7 +7,7 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
@@ -16,6 +16,7 @@ from ..models import IrCompany, RefSheet, SendJob, User, VcContact
 from ..services import (cadence, deal_history, deal_stage, mailer,
                         sheet_import, sheet_owner)
 from ..ui import MENU, base_ctx as _base_ctx
+from .companies import BLOCKED_CONTRACT
 from .companies import blocked_reason as company_blocked_reason
 from .contacts import contact_rows, sheet_tabs
 
@@ -44,7 +45,14 @@ def deals_page(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    companies = db.execute(select(IrCompany).order_by(IrCompany.id)).scalars().all()
+    # **딜소개 불가로 표시한 기업은 아예 안 보여준다.**
+    # 내용이 부족한 기업과는 다르다 — 그건 채우면 되지만, 이건 "보내면 안 되는
+    # 곳" 이라 목록에 있는 것만으로 실수로 고를 수 있다.
+    companies = db.execute(
+        select(IrCompany)
+        .where(func.coalesce(IrCompany.contract_status, "") != BLOCKED_CONTRACT)
+        .order_by(IrCompany.id)
+    ).scalars().all()
     # 소개 가능한 기업을 앞에 세우되, 내용이 부족한 기업도 **감추지 않는다**.
     # 감추면 "왜 내가 넣은 기업이 없지?" 가 되고 어디를 고쳐야 하는지도 알 수 없다.
     companies = sorted(companies, key=lambda c: (not c.introducible, c.name or ""))

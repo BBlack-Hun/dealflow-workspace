@@ -48,6 +48,10 @@ CONTRACT_LABELS = {
 # 예전 값 → 지금 값. 이미 쌓인 데이터를 화면에서 그대로 읽을 수 있어야 한다.
 CONTRACT_ALIAS = {"yes": "paid", "pending": "review", "no": "none", "": "none"}
 
+# 더 이상 소개하면 안 되는 기업. 발송 화면 목록에서 아예 빠진다 —
+# 목록에 있는 것만으로 실수로 고를 수 있다.
+BLOCKED_CONTRACT = "blocked"
+
 
 def contract_key(value) -> str:
     key = (value or "none").strip()
@@ -167,6 +171,9 @@ def company_rows(db: Session) -> List[dict]:
             "contract_status": c.contract_status or "no",
             "contract_label": CONTRACT_LABELS.get(
                 contract_key(c.contract_status), "미계약"),
+            # 더 이상 소개하면 안 되는 기업 — 표에서 눈에 띄어야 실수로
+            # 고르지 않는다(발송 화면 목록에서는 아예 빠진다).
+            "blocked": contract_key(c.contract_status) == BLOCKED_CONTRACT,
             "contract_month": c.contract_month or "",
             "is_top_deal": bool(c.is_top_deal),
             "summary_status": c.summary_status or "draft",
