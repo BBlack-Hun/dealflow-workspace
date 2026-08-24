@@ -219,3 +219,26 @@
     filters = window.DealflowFilters.init({ table: "#contacts-table" });
   }
 })();
+
+// NO 는 **보이는 것** 기준으로 1부터. 걸러낸 뒤 몇 명인지 그 자리에서 세기 위해서다
+// (시트에서 옮겨 온 번호는 중간이 비어 있어 셀 수가 없다).
+(function () {
+  var table = document.getElementById("contacts-table");
+  if (!table) return;
+
+  function renumber() {
+    var n = 0;
+    table.querySelectorAll("tbody tr.data-row").forEach(function (tr) {
+      var cell = tr.querySelector(".rowno");
+      if (!cell) return;
+      if (tr.hidden) { cell.textContent = ""; return; }
+      cell.textContent = ++n;
+    });
+  }
+
+  renumber();
+  // 필터가 행을 숨기면 번호를 다시 매긴다.
+  new MutationObserver(renumber).observe(table.querySelector("tbody"), {
+    attributes: true, attributeFilter: ["hidden"], subtree: true
+  });
+})();

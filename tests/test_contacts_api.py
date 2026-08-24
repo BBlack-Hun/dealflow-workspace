@@ -56,13 +56,14 @@ def test_rows_carry_filter_attributes(logged_in, contacts):
     html = logged_in.get("/contacts").text
     assert 'data-f-stage="Seed|SeriesA"' in html
     assert 'data-f-sector="AI|SaaS"' in html
-    assert 'data-f-channel="카톡|메일"' in html
-    assert 'data-f-status="활발"' in html
+    # 채널·상태는 시트에 없는 칸이라 컬럼과 함께 뺐다.
+    assert 'data-f-dealstage=' in html      # 그 자리에 진행 단계가 있다
     assert 'data-f-room="● 확인됨"' in html
     assert 'data-f-room="○ 미확인"' in html
     assert 'data-f-room="⚠ 미등록"' in html   # 방 이름이 없는 담당자
     # 필터 대상 컬럼 헤더에 드롭다운이 붙는다
-    assert 'data-filters="stage:단계|sector:섹터"' in html
+    assert 'data-filters="sector:선호 투자분야"' in html
+    assert 'data-filters="stage:라운드 사이즈"' in html
 
 
 def test_recent_deal_and_reaction_are_aggregated_not_stored(logged_in, db, contacts):

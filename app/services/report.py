@@ -67,10 +67,19 @@ def monthly(db: Session, year: int, month: int,
         stmt = stmt.where(Meeting.user_id == user.id)
     meetings = db.execute(stmt.order_by(Meeting.scheduled_at)).scalars().all()
 
+    # IR 요청도 같은 달로 함께 읽는다. 미팅만으로는 그 달의 반응이 안 보인다.
+    ir_stmt = select(IrRequest).where(IrRequest.requested_at >= start.isoformat(),
+                                      IrRequest.requested_at <= end.isoformat())
+    if user is not None:
+        ir_stmt = ir_stmt.where(IrRequest.user_id == user.id)
+    requests = db.execute(ir_stmt).scalars().all()
+
+    # 담당자는 **미팅과 요청 양쪽**에서 모은다. 미팅 것만 불러오면 요청 줄의
+    # 이름이 `-` 로 비어, 보고를 그대로 옮겨 적을 수가 없다.
+    need = {m.contact_id for m in meetings} | {r.contact_id for r in requests}
     contacts = {
         c.id: c for c in db.execute(
-            select(VcContact).where(
-                VcContact.id.in_([m.contact_id for m in meetings] or [0]))
+            select(VcContact).where(VcContact.id.in_(need or {0}))
         ).scalars().all()
     }
     owners = {u.id: u.name for u in db.execute(select(User)).scalars().all()}
@@ -106,13 +115,6 @@ def monthly(db: Session, year: int, month: int,
          "done": sum(1 for x in items if x["status"] == "done")}
         for w, items in sorted(weeks.items())
     ]
-
-    # IR 요청도 같은 달로 함께 센다 — 미팅만으로는 그 달의 반응이 안 보인다.
-    ir_stmt = select(IrRequest).where(IrRequest.requested_at >= start.isoformat(),
-                                      IrRequest.requested_at <= end.isoformat())
-    if user is not None:
-        ir_stmt = ir_stmt.where(IrRequest.user_id == user.id)
-    requests = db.execute(ir_stmt).scalars().all()
 
     outcome_counts = {}
     for meeting in done:

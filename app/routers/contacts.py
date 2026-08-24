@@ -184,6 +184,8 @@ def contact_rows(db: Session, user: User, team_wide: bool = False) -> List[dict]
             "firm_type_label": firm_type.label(c.firm_type),
             "connect_label": sheet_import.CONNECT_LABELS.get(c.connect_stage, c.connect_stage),
             "department": c.department or "",
+            "phone": c.phone or "",
+            "email": c.email or "",
             "name": c.name,
             "title": c.title or "",
             "firm": c.firm or "",
