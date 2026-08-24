@@ -222,7 +222,9 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None) -> dic
         blockers.append({
             "count": not_introducible, "label": "발송 목록에 안 뜨는 기업",
             "hint": "한줄소개 또는 숫자(매출·투자금)가 비어 소개 문구를 만들 수 없습니다",
-            "href": "/companies?ready=" + quote("⚠ 내용 부족"), "level": "warn",
+            # 표에서 '소개 가능' 컬럼을 뺐으므로 그 필터로 보내면 갈 곳이 없다.
+            # 채워야 하는 값이 있는 스타트업DB 탭으로 보낸다.
+            "href": "/companies?tab=db", "level": "warn",
         })
 
     device = db.execute(
@@ -256,7 +258,7 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None) -> dic
             {"key": "companies", "label": "소개 문구 준비된 기업",
              "value": len(introducible),
              "sub": f"발송 목록에 뜸 · 등록 {len(companies)}개 중",
-             "href": "/companies"},
+             "href": "/companies?tab=db"},
             {"key": "sent", "label": "이번 달 보낸 건수", "value": sent_this_month,
              "sub": "카톡·메일 도착 성공", "href": "/deals"},
         ],

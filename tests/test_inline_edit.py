@@ -515,3 +515,19 @@ def test_saving_either_order_lands_on_one(logged_in, db):
     logged_in.patch(f"/api/companies/{row.id}", json={"top_deal_kind": "TOP, 핵심"})
     db.refresh(row)
     assert row.top_deal_kind == "핵심, TOP"
+
+
+def test_no_filter_points_at_a_column_that_is_gone(logged_in, company):
+    """`소개 가능` 컬럼을 뺐다. 그 값으로 보내는 링크·칩은 아무것도 못 거른다."""
+    import re
+
+    for path in ("/companies", "/companies?tab=db", "/"):
+        body = logged_in.get(path).text
+        assert "ready=" not in body, f"{path}: 없어진 컬럼으로 거르려 한다"
+
+    # 칩이 거는 값은 실제로 표에 있는 값이어야 한다
+    body = logged_in.get("/companies").text
+    for preset in re.findall(r'data-preset="([^"]+)"', body):
+        key = preset.split("=")[0]
+        assert f'data-filters="{key}:' in body or f"|{key}:" in body, \
+            f"'{key}' 필터가 표에 없다"
