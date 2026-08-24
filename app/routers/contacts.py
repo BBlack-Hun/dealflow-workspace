@@ -667,3 +667,32 @@ def _assign(contact: VcContact, body: ContactIn) -> None:
         elif contact.connect_stage == sheet_import.STAGE_CONNECTED:
             # 연결됐던 사람이니 미착수로 되돌리지는 않는다.
             contact.connect_stage = sheet_import.STAGE_IN_PROGRESS
+
+
+# --- 참고 시트 --------------------------------------------------------------
+#
+# 이 라우터는 `/api/contacts` 밑이라 화면 폼이 쓰기엔 주소가 어색하다.
+# 참고 시트는 따로 붙인다.
+
+ref_router = APIRouter(tags=["ref-sheets"])
+
+
+@ref_router.post("/ref-sheets/{sheet_id}/delete", include_in_schema=False)
+def delete_ref_sheet(sheet_id: int, db: Session = Depends(get_db),
+                     user: User = Depends(get_current_user)):
+    """참고 탭 지우기.
+
+    다 옮겨 놓고 쓰면서 추리는 것이 순서라, 안 쓰는 탭이 남아 있으면 자리만
+    차지한다. **지우지 않고 감춘다** — 원본 시트를 다시 받아 오지 않아도
+    되돌릴 수 있어야 한다.
+    """
+    from fastapi.responses import RedirectResponse
+
+    from ..models import RefSheet
+
+    row = db.get(RefSheet, sheet_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="참고 시트를 찾을 수 없습니다")
+    row.is_active = 0
+    db.commit()
+    return RedirectResponse("/contacts", status_code=303)

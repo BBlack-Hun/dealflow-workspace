@@ -1,6 +1,7 @@
 """Server-rendered HTML pages (Jinja2 SSR)."""
 from __future__ import annotations
 
+import json
 from collections import Counter
 from datetime import date
 
@@ -11,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..deps import get_current_user, templates
-from ..models import IrCompany, SendJob, User, VcContact
+from ..models import IrCompany, RefSheet, SendJob, User, VcContact
 from ..services import (cadence, deal_history, deal_stage, mailer,
                         sheet_import, sheet_owner)
 from ..ui import MENU, base_ctx as _base_ctx
@@ -90,6 +91,7 @@ def contacts_page(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
     sheet: str = "",
+    ref: str = "",
 ):
     """내 투자사 (FEATURE_SPEC §3). 표는 SSR, 필터는 브라우저에서 즉시 반응.
 
@@ -119,6 +121,14 @@ def contacts_page(
         selected = mine_first
     rows = [r for r in all_rows if selected in r["sheets"]] if selected else all_rows
 
+    # 참고 시트 — 스크립트·가이드처럼 매번 구글 시트를 열어 보던 자료.
+    # 지울 수 있게 두었으므로 살아 있는 것만 가져온다.
+    ref_sheets = db.execute(
+        select(RefSheet).where(RefSheet.is_active == 1)
+        .order_by(RefSheet.position, RefSheet.id)
+    ).scalars().all()
+    picked_ref = next((s for s in ref_sheets if str(s.id) == ref), None)
+
     stages = Counter(r["connect_stage"] for r in rows)
     # 깔때기는 **지금 탭에 보이는 사람들** 기준이다. 탭이 곧 명단이라,
     # 전체 기준으로 세면 내 명단을 보고 있는데 숫자만 남의 것이 섞인다.
@@ -139,6 +149,9 @@ def contacts_page(
         "pool_view": any(t["key"] == selected and t["kind"] == "pool" for t in tabs),
         "total_count": len(all_rows),
         "funnel": stage_funnel,
+        "ref_sheets": ref_sheets,
+        "ref": picked_ref,
+        "ref_content": json.loads(picked_ref.content_json) if picked_ref else None,
         "connect_counts": [
             {"key": key, "label": label, "count": stages.get(key, 0)}
             for key, label in sheet_import.CONNECT_LABELS.items()

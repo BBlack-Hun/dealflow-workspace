@@ -856,3 +856,18 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
 .jump-arrow { color: var(--line); }
 /* 이동 바에서 눌러 내려온 구역이 화면 위에 딱 붙지 않게 */
 #requests, #remind, #meetings, #reviews { scroll-margin-top: 14px; }
+
+/* 참고 시트 탭 — 명단 탭과 성격이 달라 구분선 뒤에 둔다. */
+.tab-divider { color: var(--line); padding: 0 4px; align-self: center; }
+.ref-tab { font-weight: 400; }
+.ref-panel { margin: 10px 0 14px; }
+.ref-acts { display: flex; gap: 10px; align-items: center; }
+/* 줄글은 원문 그대로 — 표로 잘못 나누면 내용이 칸에 잘려 사라진다. */
+.ref-text { margin: 0; padding: 10px 12px; background: var(--bg-soft);
+            border: 1px solid var(--line); border-radius: 8px;
+            font: inherit; font-size: 12.5px; line-height: 1.6;
+            white-space: pre-wrap; word-break: break-word;
+            max-height: 520px; overflow-y: auto; }
+/* 참고 표는 칸마다 글 길이가 들쭉날쭉하다 — 줄바꿈을 허용한다. */
+.ref-cell { white-space: pre-wrap; vertical-align: top; font-size: 12px;
+            line-height: 1.5; }
