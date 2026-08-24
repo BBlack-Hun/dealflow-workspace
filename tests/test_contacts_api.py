@@ -316,3 +316,52 @@ def test_send_job_flow_is_untouched(logged_in, db, contacts):
     # 발송 결과가 담당자 방 확인 상태를 건드리지 않는다
     db.refresh(hong)
     assert hong.room_verified == "verified"
+
+
+# --- 활동 이력에 IR 요청·미팅이 들어간다 ----------------------------------------
+
+def test_timeline_includes_meetings_and_requests(logged_in, db, contacts):
+    """미팅을 잡고 완료 처리까지 해도 활동 이력에는 아무것도 안 남았다 —
+    화면에서 한 일이 기록에 없는 것처럼 보였다."""
+    from datetime import date
+
+    from app.models import IrRequest, Meeting, VcContact
+
+    hong = db.execute(select(VcContact).where(VcContact.name == "홍길동")).scalar_one()
+    today = date.today().isoformat()
+    db.add_all([
+        IrRequest(user_id=hong.user_id, contact_id=hong.id, company_name="샘플애그",
+                  status="delivered", requested_at=today),
+        Meeting(user_id=hong.user_id, contact_id=hong.id, kind="first",
+                status="done", outcome="reviewing", scheduled_at=today),
+    ])
+    db.commit()
+
+    timeline = logged_in.get(f"/api/contacts/{hong.id}").json()["timeline"]
+    kinds = [t["kind"] for t in timeline]
+    assert "meeting" in kinds, "미팅이 활동 이력에 없다"
+    assert "ir_request" in kinds, "IR 요청이 활동 이력에 없다"
+
+    meeting = next(t for t in timeline if t["kind"] == "meeting")
+    assert "1차 미팅" in meeting["content"]
+    assert "검토 중" in meeting["content"]
+
+
+def test_timeline_is_newest_first(logged_in, db, contacts):
+    """출처별로 뭉쳐 두면 8월 미팅이 6월 기록 아래에 묻힌다."""
+    from datetime import date
+
+    from app.models import ContactActivity, Meeting, VcContact
+
+    hong = db.execute(select(VcContact).where(VcContact.name == "홍길동")).scalar_one()
+    db.add_all([
+        ContactActivity(contact_id=hong.id, kind="deal_intro",
+                        happened_at="2026-06-10", content="옛날 회차"),
+        Meeting(user_id=hong.user_id, contact_id=hong.id, kind="first",
+                status="planned", scheduled_at=date.today().isoformat()),
+    ])
+    db.commit()
+
+    dates = [t["date"] for t in
+             logged_in.get(f"/api/contacts/{hong.id}").json()["timeline"] if t["date"]]
+    assert dates == sorted(dates, reverse=True), dates

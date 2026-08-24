@@ -461,12 +461,72 @@ def get_contact(
             "status": contact.status,
             "memo": contact.memo or "",
         },
-        # 임포트된 월별 기록 + 서비스가 자동으로 쌓는 발송 이력을 한 줄기로 보여준다.
-        "timeline": [_activity_view(a, known) for a in acts] + [
-            _send_view(item, job, batch_names.get(job.batch_id, []), known)
-            for item, job in sends
-        ],
+        # 한 줄기로 모은다: 시트에서 옮겨 온 월별 기록 + 발송 이력 +
+        # **이 도구에서 만든 IR 요청·미팅**.
+        #
+        # 마지막 것이 빠져 있었다 — 미팅을 잡고 완료 처리까지 해도 그 담당자의
+        # 활동 이력에는 아무것도 안 남아, 화면에서 한 일이 기록에 없는 것처럼
+        # 보였다.
+        # **최신순으로 섞어 준다.** 출처별로 뭉쳐 두면 8월 미팅이 6월 기록
+        # 아래에 묻혀서, 무슨 일이 언제 있었는지 읽을 수가 없다.
+        "timeline": sorted(
+            [_activity_view(a, known) for a in acts]
+            + [_send_view(item, job, batch_names.get(job.batch_id, []), known)
+               for item, job in sends]
+            + _pipeline_views(db, contact.id),
+            key=lambda row: row.get("date") or "",
+            reverse=True,
+        ),
     }
+
+
+def _pipeline_views(db: Session, contact_id: int) -> List[dict]:
+    """이 도구에서 만든 IR 요청·미팅을 활동 이력 줄로.
+
+    시트에서 옮겨 온 줄과 **같은 모양**이어야 한 줄기로 읽힌다.
+    """
+    from ..models import IrRequest, Meeting
+    from ..services.pipeline import MEETING_KINDS, OUTCOMES, REQUEST_STATUS
+
+    out: List[dict] = []
+
+    for row in db.execute(
+        select(IrRequest).where(IrRequest.contact_id == contact_id)
+    ).scalars().all():
+        date_ = (row.requested_at or "")[:10]
+        out.append({
+            "date": date_, "month": None, "kind": "ir_request",
+            "content": f"IR 자료 요청 · {REQUEST_STATUS.get(row.status, row.status)}",
+            "source": "system",
+            "companies": [{"name": row.company_name or "", "known": bool(row.company_id)}]
+                         if row.company_name else [],
+            "company_count": 1 if row.company_name else None,
+            "weekday": sheet_import.weekday_of(date_) if date_ else None,
+            "week": sheet_import.week_of_month(date_) if date_ else None,
+        })
+
+    for row in db.execute(
+        select(Meeting).where(Meeting.contact_id == contact_id)
+    ).scalars().all():
+        date_ = (row.scheduled_at or "")[:10]
+        label = MEETING_KINDS.get(row.kind, row.kind)
+        if row.status == "done":
+            label += f" 완료 · {OUTCOMES.get(row.outcome or '', '결과 미정')}"
+        elif row.status == "canceled":
+            label += " 취소"
+        else:
+            label += " 예정"
+        out.append({
+            "date": date_, "month": None, "kind": "meeting",
+            "content": label, "source": "system",
+            "companies": [{"name": row.company_name, "known": False}]
+                         if row.company_name else [],
+            "company_count": None,
+            "weekday": sheet_import.weekday_of(date_) if date_ else None,
+            "week": sheet_import.week_of_month(date_) if date_ else None,
+        })
+
+    return out
 
 
 def _activity_view(act: ContactActivity, known: Dict[str, str]) -> dict:
