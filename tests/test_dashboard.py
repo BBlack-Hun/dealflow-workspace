@@ -708,9 +708,13 @@ def test_no_dead_menu_names_after_the_merge(client, db, users):
 
 # --- 반응 다섯 가지 -------------------------------------------------------------
 
-def test_five_reaction_tiles(client, db, users):
-    """끝난 미팅은 다음 할 일이 다르다 — 열흘 뒤 결과를 물어봐야 하고,
-    그걸 놓치면 계약을 통째로 잊는다. 요청과 완료를 나눠 센다."""
+def test_five_reactions_are_counted_not_shown_on_the_dashboard(client, db, users):
+    """반응 다섯 가지는 **업무 보고**에서 본다 — 날짜별로 훑어야 하는 자료라
+    거기가 맞는 자리다. 대시보드에는 타일이 없어야 한다.
+
+    끝난 미팅은 다음 할 일이 다르다 — 열흘 뒤 결과를 물어봐야 하고, 그걸
+    놓치면 계약을 통째로 잊는다. 요청과 완료를 나눠 센다(집계 자체는 유지).
+    """
     from datetime import date
 
     from app.models import IrRequest, Meeting, VcContact
@@ -735,7 +739,13 @@ def test_five_reaction_tiles(client, db, users):
     body = _dash(client)
     for label in ("IR 요청 투자사", "IR 미팅 요청 투자사", "IR 요청받은 기업",
                   "IR 미팅완료 투자사", "IR 미팅완료 리마인드 TEL 투자사"):
-        assert label in body, f"'{label}' 타일이 없다"
+        assert label not in body, f"'{label}' 타일이 대시보드에 남아 있다"
+
+    # 집계 로직 자체는 그대로 살아 있다 — 업무 보고·엑셀 내려받기가 쓴다
+    from app.services.dashboard import _reaction_summary
+    summary = _reaction_summary(db, [c1.id, c2.id])
+    assert summary["meeting_done"] == 2
+    assert summary["meeting_call"] == 1
 
     from app.services.dashboard import _reaction_summary
     summary = _reaction_summary(db, [c1.id, c2.id])

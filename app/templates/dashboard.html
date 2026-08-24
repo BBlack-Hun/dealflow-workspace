@@ -141,31 +141,8 @@
     {% endif %}
   </section>
 
-  <section class="panel">
-    <h2 class="panel-title">반응 <span class="hint">전체 기간 누적</span>
-      {# 숫자를 보고 나면 "그게 누구였지" 가 이어진다. 날짜까지 붙은 목록을
-         한 장으로 내려받을 수 있어야 다섯 화면을 돌지 않는다. #}
-      <a class="linkbtn" href="/api/export/reactions.xlsx" download>엑셀 내려받기</a>
-    </h2>
-    <div class="react-row">
-      <a class="react ok" href="/contacts?reaction=IR+%EC%9E%88%EC%9D%8C">
-        <b>{{ reactions.ir_contacts }}</b><span>IR 요청 투자사</span></a>
-      <a class="react ok" href="/contacts?reaction=%EB%AF%B8%ED%8C%85+%EC%9E%88%EC%9D%8C">
-        <b>{{ reactions.meeting_contacts }}</b><span>IR 미팅 요청 투자사</span></a>
-      {# 끝난 미팅은 다음 할 일이 다르다 — 열흘 뒤 결과를 물어봐야 하고,
-         그걸 놓치면 계약을 통째로 잊는다. #}
-      <a class="react ok" href="/contacts?dealstage={{ '미팅 완료'|urlencode }}">
-        <b>{{ reactions.meeting_done }}</b><span>IR 미팅완료 투자사</span></a>
-      <a class="react {% if reactions.meeting_call %}warn{% endif %}" href="/ir#meetings">
-        <b>{{ reactions.meeting_call }}</b><span>IR 미팅완료 리마인드 TEL 투자사</span></a>
-      <a class="react" href="/ir">
-        <b>{{ reactions.requested_companies }}</b><span>IR 요청받은 기업</span></a>
-    </div>
-    <p class="hint">
-      숫자를 누르면 그 목록으로 갑니다.
-      IR 요청·미팅이 나온 투자사가 다음 회차의 우선 대상입니다.
-    </p>
-  </section>
+  {# 반응 다섯 가지는 업무 보고로 옮겼다(날짜별로 훑어야 하는 자료라 거기가
+     맞는 자리다) — 대시보드에서는 뺀다. #}
 
   <section class="panel">
     <h2 class="panel-title">내 투자사 선호</h2>
