@@ -2,7 +2,10 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=1280">
+  {# 폰에서도 열린다 — 보기 전용이다. 발송은 PC 의 발송 프로그램이 하므로
+     여기서는 하지 않는다. `width=1280` 이던 때는 폰에서 축소된 PC 화면이
+     떠서 글자를 읽으려면 매번 확대해야 했다. #}
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}{{ page_title }} · CONTACTVC ASSET{% endblock %}</title>
   <link rel="stylesheet" href="{{ asset('css/app.css') }}">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>📨</text></svg>">

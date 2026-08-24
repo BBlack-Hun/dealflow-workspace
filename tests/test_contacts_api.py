@@ -382,3 +382,52 @@ def test_timeline_is_newest_first(logged_in, db, contacts):
     dates = [t["date"] for t in
              logged_in.get(f"/api/contacts/{hong.id}").json()["timeline"] if t["date"]]
     assert dates == sorted(dates, reverse=True), dates
+
+
+# --- 시트 값이 화면 어디에서든 보여야 한다 --------------------------------------
+
+def test_email_never_lands_in_the_address_field(db, users):
+    """`전자 메일 주소` 에도 '주소' 가 들어 있다 — 빼지 않으면 이메일이
+    주소 칸에 들어간다. 실제로 259건이 그랬다."""
+    from app.services.sheet_import import find_column
+
+    header = ["이름", "휴대폰", "전자 메일 주소", "근무처 전화", "근무지 주소 번지"]
+    addr = find_column(header, ["주소"], exclude=["메일", "이메일", "전자"])
+    assert header[addr] == "근무지 주소 번지"
+
+
+def test_detail_panel_carries_every_sheet_field(logged_in, db, contacts):
+    """표에 다 넣으면 20칸이 되어 정작 매일 보는 칸이 눌린다 — 가끔 찾는
+    값은 상세에서 본다. **볼 곳이 아예 없으면 안 된다.**"""
+    from app.models import VcContact
+
+    hong = db.execute(select(VcContact).where(VcContact.name == "홍길동")).scalar_one()
+    hong.address = "서울시 강남구 테헤란로 1"
+    hong.office_phone = "02-1234-5678"
+    hong.office_fax = "02-1234-5679"
+    hong.card_registered_at = "2026-01-15"
+    hong.interest_level = "높음"
+    db.commit()
+
+    got = logged_in.get(f"/api/contacts/{hong.id}").json()["contact"]
+    for field in ("address", "office_phone", "office_fax",
+                  "card_registered_at", "interest_level", "assignee_name"):
+        assert field in got, f"상세에 {field} 가 없다"
+    assert got["address"] == "서울시 강남구 테헤란로 1"
+
+    # 화면에도 입력 칸이 있어야 고칠 수 있다
+    html = logged_in.get("/contacts").text
+    for field in ("address", "office_phone", "office_fax",
+                  "card_registered_at", "interest_level"):
+        assert f'id="f-{field}"' in html, f"화면에 {field} 칸이 없다"
+
+
+def test_those_fields_can_be_edited(logged_in, db, contacts):
+    from app.models import VcContact
+
+    hong = db.execute(select(VcContact).where(VcContact.name == "홍길동")).scalar_one()
+    r = logged_in.patch(f"/api/contacts/{hong.id}",
+                        json={"address": "부산시 해운대구 센텀로 9"})
+    assert r.status_code == 200
+    db.refresh(hong)
+    assert hong.address == "부산시 해운대구 센텀로 9"

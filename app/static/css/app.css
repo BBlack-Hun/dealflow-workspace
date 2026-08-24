@@ -871,3 +871,38 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
 /* 참고 표는 칸마다 글 길이가 들쭉날쭉하다 — 줄바꿈을 허용한다. */
 .ref-cell { white-space: pre-wrap; vertical-align: top; font-size: 12px;
             line-height: 1.5; }
+
+/* ── 폰·태블릿에서 보기 ────────────────────────────────────────────────
+   **보기 전용**이다. 발송은 PC 의 발송 프로그램이 하므로 폰에서 하지 않는다.
+   밖에서 "지금 뭐가 밀렸나" 를 확인하는 용도라, 읽는 것만 편하면 된다.
+
+   1080px 아래 — 좌측 메뉴를 위로 눕힌다(가로로 다 못 넣는다).
+   720px 아래  — 카드·표를 한 줄로 세우고, 넓은 표는 가로로 민다. */
+@media (max-width: 1080px) {
+  .layout { flex-direction: column; }
+  .sidebar { width: auto; flex: none; height: auto; position: static; }
+  .brand { padding: 12px 14px 0; font-size: 17px; }
+  .brand-sub { padding: 0 14px 8px; }
+  /* 메뉴를 가로로 눕혀 넘치면 밀어서 본다 — 접는 버튼을 만들면 눌러야 보인다 */
+  .menu { flex-direction: row; overflow-x: auto; gap: 4px; padding: 0 10px 8px; }
+  .menu-item { white-space: nowrap; padding: 7px 11px; }
+  .sidebar-foot { display: flex; align-items: center; gap: 12px;
+                  padding: 0 14px 10px; flex-wrap: wrap; }
+  .content { padding: 14px 14px 40px; }
+}
+
+@media (max-width: 720px) {
+  .kpi-row, .react-row, .dash-grid, .mini-charts { grid-template-columns: 1fr;
+                                                   flex-direction: column; }
+  .kpi-card, .react { width: auto; }
+  .toolbar { flex-direction: column; align-items: stretch; gap: 8px; }
+  .toolbar-right { flex-wrap: wrap; }
+  .page-head h1 { font-size: 19px; }
+  /* 표는 좁히면 못 읽는다 — 폭을 지키고 가로로 민다. */
+  .table-wrap { overflow-x: auto; }
+  .grid-table { min-width: 760px; }
+  .sheet-tabs, .jump-bar, .funnel { overflow-x: auto; flex-wrap: nowrap; }
+  .funnel-step { flex: 0 0 auto; }
+  /* 폰에서 뜨는 편집창은 화면을 벗어나면 안 된다 */
+  .cell-pop { width: calc(100vw - 24px) !important; left: 12px !important; }
+}

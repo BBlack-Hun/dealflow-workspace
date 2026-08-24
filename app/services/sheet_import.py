@@ -550,9 +550,12 @@ def parse_sheet_a(rows: Sequence[Sequence[str]], year: int) -> SheetAParse:
         "round": find_column(header, ["라운드"]),
         "memo": find_column(header, ["메모"]),
         "phone": first_column(header, ["휴대"], ["연락처"]),
-        "office_phone": find_column(header, ["유선"]),
+        # 시트는 `근무처 전화` 라고 쓴다. `유선` 만 찾으면 아무것도 못 잡는다.
+        "office_phone": first_column(header, ["유선"], ["근무처", "전화"]),
         "position": first_column(header, ["직책"], ["직함"]),
-        "address": find_column(header, ["주소"]),
+        # `전자 메일 주소` 에도 '주소' 가 들어 있다 — 빼지 않으면 이메일이
+        # 주소 칸에 들어간다(실제로 그랬다).
+        "address": find_column(header, ["주소"], exclude=["메일", "이메일", "전자"]),
         "department": find_column(header, ["부서"]),
         "email": first_column(header, ["전자", "메일"], ["이메일"]),
     }

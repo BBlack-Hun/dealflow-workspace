@@ -48,7 +48,7 @@ COLUMNS = [
     # 아래는 시트에 있는데 그동안 통째로 버려지던 값들.
     ("근무처 전화", "office_phone"),
     ("근무처 팩스", "office_fax"),
-    ("근무지 주소", "address"),
+    ("근무지 주소", "address"),   # 시트는 `근무지 주소 번지`
     ("명함 등록일", "card_registered_at"),
     ("관심도", "interest_level"),
 ]

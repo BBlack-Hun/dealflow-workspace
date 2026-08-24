@@ -3,7 +3,11 @@
   "use strict";
 
   var FIELDS = ["name", "title", "firm", "group_name", "kakao_room_name", "invited_status",
-    "status", "stages", "sectors", "round_size", "email", "phone", "memo"];
+    "status", "stages", "sectors", "round_size", "email", "phone", "memo",
+    // 시트에 있는데 표에는 안 넣은 값들 — 표에 다 넣으면 20칸이 되어
+    // 정작 매일 보는 칸이 눌린다. 가끔 찾는 값은 상세에서 본다.
+    "assignee_name", "department", "office_phone", "office_fax",
+    "address", "card_registered_at", "interest_level"];
   var CHECKS = ["channel_kakao", "channel_email"];
   var KIND_KO = {
     deal_intro: "딜소개", ir_request: "IR 요청", meeting: "미팅",
