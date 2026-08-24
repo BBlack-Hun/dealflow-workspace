@@ -1,10 +1,10 @@
 """무엇이 팀 공용이고 무엇이 내 것인가.
 
-    스타트업 관리(딜 기업 DB) = **팀 전체가 함께 관리**한다.
+    IR 기업현황(딜 기업 DB) = **팀 전체가 함께 관리**한다.
       한 기업을 여러 사람이 서로 다른 투자사에게 소개하므로, 사람마다 따로
       두면 같은 기업이 여러 벌 생기고 내용이 갈라진다.
 
-    나머지(투자사 DB · 후속 · IR/미팅 · 주간 업무 · 업무 보고) = **내 것**.
+    나머지(투자사 관리 현황 · 후속 · IR/미팅 · 주간 업무 · 업무 보고) = **내 것**.
       남의 담당 투자사에 실수로 보내면 안 된다.
 
 이 경계는 화면을 하나 더 만들 때마다 흐려진다. 테스트로 못 박아 둔다.
@@ -23,7 +23,7 @@ def _login(client, phone):
     return client
 
 
-# --- 팀 공용: 스타트업 관리 --------------------------------------------------
+# --- 팀 공용: IR 기업현황 --------------------------------------------------
 
 def test_company_added_by_one_user_is_visible_to_everyone(client, db, users):
     """한 사람이 등록한 기업을 팀 전체가 본다."""
@@ -60,7 +60,7 @@ def test_company_list_is_the_same_for_everyone(db, users):
     assert len(company_rows(db)) == 2
 
 
-# --- 내 것: 투자사 DB · 후속 · IR/미팅 · 주간 업무 ---------------------------
+# --- 내 것: 투자사 관리 현황 · 후속 · IR/미팅 · 주간 업무 ---------------------------
 
 def test_contacts_are_personal(client, db, users):
     from app.models import SheetOwner, VcContact

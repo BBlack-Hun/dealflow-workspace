@@ -180,7 +180,7 @@ COMPANY_HEADERS = [
 @router.get("/api/export/companies.xlsx")
 def export_companies(db: Session = Depends(get_db),
                      user: User = Depends(get_current_user)):
-    """딜 기업 DB → 엑셀. 소개 가능 여부를 함께 내보내 어디를 채워야 할지 보이게 한다."""
+    """IR 기업현황 → 엑셀. 소개 가능 여부를 함께 내보내 어디를 채워야 할지 보이게 한다."""
     companies = db.execute(select(IrCompany).order_by(IrCompany.name)).scalars().all()
     rows = [
         [c.name, c.sector_major or "", c.sector_minor or "", c.series or "",
@@ -193,7 +193,7 @@ def export_companies(db: Session = Depends(get_db),
         for c in companies
     ]
     today = date.today().isoformat()
-    return _xlsx(f"딜 기업 DB_{today}.xlsx", "딜 기업 DB", COMPANY_HEADERS, rows)
+    return _xlsx(f"IR 기업현황_{today}.xlsx", "IR 기업현황", COMPANY_HEADERS, rows)
 
 
 JOB_HEADERS = ["담당자", "직함", "투자사", "카톡방", "상태", "발송시각", "실패사유", "문구"]

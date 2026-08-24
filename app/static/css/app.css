@@ -502,7 +502,7 @@ a.secondary-btn { display: inline-flex; align-items: center; text-decoration: no
 .opening-toggle { flex-direction: row !important; align-items: center; gap: 6px !important;
   color: var(--ink) !important; font-size: 13px !important; padding-bottom: 6px; }
 
-/* ── 상세 패널 보강 (스타트업 관리) ─────────────────────────── */
+/* ── 상세 패널 보강 (IR 기업현황) ─────────────────────────── */
 .detail-panel.wide { width: 520px; }
 .panel-backdrop { position: fixed; inset: 0; background: rgba(16,21,29,.28); z-index: 39; }
 .form-section { font-size: 12px; font-weight: 700; color: var(--muted); margin: 16px 0 8px;

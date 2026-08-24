@@ -47,7 +47,7 @@ REACTION_WINDOW_DAYS = 60
 
 # 방 확인 결과를 **명시적으로** 나눈다. 예전에는 모르는 값을 전부 '미확인'으로
 # 떨어뜨렸는데, 그래서 '방 없음(not_found)' 으로 확인된 사람까지 발송 가능으로
-# 세어졌다(투자사 DB 117명 · 대시보드 123명으로 어긋난 원인).
+# 세어졌다(투자사 관리 현황 117명 · 대시보드 123명으로 어긋난 원인).
 _SENDABLE_ROOM = {"verified", "unverified"}
 _ROOM_ALIAS = {
     "verified": "verified",

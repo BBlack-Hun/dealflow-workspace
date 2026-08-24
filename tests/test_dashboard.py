@@ -211,7 +211,7 @@ def test_deactivate_keeps_the_record(admin_client, db, users):
 def test_companies_page_opens(logged):
     r = logged.get("/companies")
     assert r.status_code == 200
-    assert "스타트업 관리" in r.text
+    assert "IR 기업현황" in r.text
 
 
 def _full_company(**kw):
@@ -364,7 +364,7 @@ def test_companies_table_shows_ir_link_state(logged, db):
 
 @pytest.mark.parametrize("path", ["/", "/contacts", "/deals", "/companies"])
 def test_pages_are_not_cached(logged, path):
-    """투자사 DB 에서 고치고 대시보드로 돌아오면 예전 숫자가 보이던 문제.
+    """투자사 관리 현황 에서 고치고 대시보드로 돌아오면 예전 숫자가 보이던 문제.
 
     서버는 매번 새로 계산하는데 브라우저가 캐시(뒤로가기 포함)를 내줬다.
     로그인이 필요한 화면이 캐시에 남으면 로그아웃 뒤 뒤로가기로도 보인다.
@@ -422,7 +422,7 @@ def test_clearing_the_room_leaves_the_send_list(logged, db, users):
 
 # --- '카톡 발송 가능' 이 두 화면에서 같아야 한다 -----------------------------
 #
-# 투자사 DB 는 117명, 대시보드는 123명으로 어긋난 적이 있다. 원인은 대시보드가
+# 투자사 관리 현황 는 117명, 대시보드는 123명으로 어긋난 적이 있다. 원인은 대시보드가
 # 모르는 방 상태를 전부 '미확인'으로 떨어뜨려, **방이 없다고 확인된 사람**까지
 # 발송 가능으로 센 것이었다.
 
@@ -690,7 +690,7 @@ def test_connect_tiles_filter_the_list(client, db, users):
 
     body = _dash(client)
     assert "연결 진행 중인 명단" in body
-    # 눌렀을 때 그 단계만 남아야 한다 — 라벨이 투자사 DB 의 필터값과 같아야 걸린다
+    # 눌렀을 때 그 단계만 남아야 한다 — 라벨이 투자사 관리 현황 의 필터값과 같아야 걸린다
     from app.services.sheet_import import CONNECT_LABELS
     for stage in ("in_progress", "not_started", "declined"):
         label = CONNECT_LABELS[stage]

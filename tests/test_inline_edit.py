@@ -1,6 +1,6 @@
 """표에서 눌러 바로 고치기 — 한 칸만 보내도 저장되는가.
 
-투자컨설턴트 현황에서만 쓰던 조작을 투자사 DB · 스타트업 관리로 넓혔다.
+투자컨설턴트 현황에서만 쓰던 조작을 투자사 관리 현황 · IR 기업현황로 넓혔다.
 칸 하나를 고칠 때 **다른 값까지 같이 보내야 한다면** 쓸 수 없는 기능이다.
 실제로 처음엔 `name` 이 필수라 매출 한 칸을 고치는 데 422 가 났다.
 """
@@ -41,7 +41,7 @@ def contact(db, users):
     return row
 
 
-# --- 스타트업 관리 -----------------------------------------------------------
+# --- IR 기업현황 -----------------------------------------------------------
 
 def test_one_field_is_enough(logged_in, db, company):
     r = logged_in.patch(f"/api/companies/{company.id}",
@@ -83,7 +83,7 @@ def test_creating_still_needs_a_name(logged_in):
     assert logged_in.post("/api/companies", json={"sector_major": "AI"}).status_code == 400
 
 
-# --- 투자사 DB ---------------------------------------------------------------
+# --- 투자사 관리 현황 ---------------------------------------------------------------
 
 def test_memo_only(logged_in, db, contact):
     r = logged_in.patch(f"/api/contacts/{contact.id}", json={"memo": "고친 메모"})
