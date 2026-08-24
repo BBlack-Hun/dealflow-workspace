@@ -115,7 +115,7 @@ def test_cannot_touch_someone_elses(client, db, users, contact):
 # --- 화면에 붙어 있는가 ------------------------------------------------------
 
 def test_tables_are_wired(logged_in, company, contact):
-    companies = logged_in.get("/companies").text
+    companies = logged_in.get("/companies?tab=db").text
     assert 'data-inline-url="/api/companies"' in companies
     assert 'data-field="revenue_recent" data-type="number"' in companies
     assert "inline_edit.js" in companies
@@ -241,7 +241,9 @@ def test_required_fields_are_visible_in_the_table(logged_in, company):
     """
     from app.routers.companies import REQUIRED_FIELDS
 
-    html = logged_in.get("/companies").text
+    # 두 탭을 합쳐서 본다 — 사람은 탭을 오가며 채운다.
+    html = (logged_in.get("/companies").text
+            + logged_in.get("/companies?tab=db").text)
 
     # 표에 컬럼으로 나와 있는 것
     shown = {m for m in
@@ -262,7 +264,7 @@ def test_required_fields_are_visible_in_the_table(logged_in, company):
 
 
 def test_the_money_columns_can_all_be_typed_into(logged_in, company):
-    html = logged_in.get("/companies").text
+    html = logged_in.get("/companies?tab=db").text
     for field in ("revenue_recent", "funding_total", "raise_target", "pre_value"):
         assert f'data-field="{field}" data-type="number"' in html, field
 
@@ -280,13 +282,14 @@ def test_money_columns_show_eok(logged_in, db):
                      pre_value=15000))                       # 150억
     db.commit()
 
-    html = logged_in.get("/companies").text
+    html = logged_in.get("/companies?tab=db").text
     assert ">18.3<" in html
     assert ">10<" in html
     assert ">150<" in html
     assert "1,830" not in html, "백만원이 그대로 보인다"
     # 숫자만 있으면 천만 원인지 천억인지 알 수 없다
-    assert html.count('class="th-unit">억<') == 4
+    # 스타트업DB 탭의 금액 칸 — 연도별 매출은 적은 그대로(글자)라 단위를 안 붙인다
+    assert html.count('class="th-unit">억<') == 0
 
 
 def test_editing_in_eok_stores_baekman():
@@ -298,7 +301,7 @@ def test_editing_in_eok_stores_baekman():
 
 
 def test_the_money_cells_are_marked_as_eok(logged_in, company):
-    html = logged_in.get("/companies").text
+    html = logged_in.get("/companies?tab=db").text
     for field in ("revenue_recent", "funding_total", "raise_target", "pre_value"):
         assert f'data-field="{field}" data-type="number" data-unit="eok"' in html, field
 
@@ -353,3 +356,69 @@ def test_the_excel_matches_the_screen(logged_in, db):
     assert row[col["Pre Value(억)"]] == 150
     # 엑셀에서 계산할 수 있게 문자열이 아니라 숫자여야 한다
     assert isinstance(row[col["최근매출(억)"]], (int, float))
+
+
+# --- 시트의 하단 탭 -----------------------------------------------------------
+
+def test_two_tabs_match_the_sheet(logged_in, company):
+    """시트를 쓰던 사람이 같은 자리에서 같은 것을 찾을 수 있어야 한다."""
+    status = logged_in.get("/companies").text
+    for col in ("사업분야 대분류", "소분류", "기업구분", "한줄 소개",
+                "담당자", "계약여부", "계약 월", "비고"):
+        assert col in status, f"IR 기업현황 탭에 '{col}' 이 없다"
+
+    db_tab = logged_in.get("/companies?tab=db").text
+    for col in ("대표자", "연락처", "이메일", "22년 매출", "25년 매출",
+                "누적투자금액", "투자유치희망금액", "Pre Value",
+                "특이사항", "설립년도", "기보·신보·중진공"):
+        assert col in db_tab, f"스타트업DB 탭에 '{col}' 이 없다"
+
+
+def test_ir_column_stays_at_the_end_of_both(logged_in, company):
+    """IR 자료는 요청이 왔을 때 바로 꺼내 쓰는 칸이다 — 어느 탭에서도 맨 끝."""
+    import re
+
+    for path in ("/companies", "/companies?tab=db"):
+        head = logged_in.get(path).text.split("</thead>")[0]
+        cols = [re.sub(r"<[^>]+>", "", m).strip()
+                for m in re.findall(r"<th[^>]*>(.*?)</th>", head, re.S)]
+        assert cols[-1] == "", f"{path}: 마지막은 수정 버튼 칸이어야 한다"
+        assert "IR 자료" in cols[-2], f"{path}: IR 자료가 맨 끝이 아니다 — {cols[-2]!r}"
+
+
+def test_both_tabs_are_the_same_records(logged_in, db):
+    """두 탭은 같은 기업의 두 가지 보기다. 한쪽에 넣으면 다른 쪽이 따라온다 —
+    맞춰 주는 코드가 따로 있으면 반드시 어긋난다."""
+    from app.models import IrCompany
+
+    row = IrCompany(name="샘플로지", sector_major="물류")
+    db.add(row)
+    db.commit()
+
+    logged_in.patch(f"/api/companies/{row.id}",
+                    json={"contact_name": "홍길동", "sector_major": "물류테크"})
+
+    # 스타트업DB 에서 넣은 대표자·사업분야가
+    assert "홍길동" in logged_in.get("/companies?tab=db").text
+    # IR 기업현황에도 그대로 보인다
+    assert "물류테크" in logged_in.get("/companies").text
+
+
+def test_yearly_revenue_is_kept_as_typed(logged_in, db):
+    """원본에 `8.2억`·`1,224백만원`·`150억 ~ 200억` 이 섞여 있다.
+    숫자로 바꾸면 100배가 틀어진 채 딜소개 문구에 실려 나간다."""
+    from app.models import IrCompany
+
+    row = IrCompany(name="샘플메디")
+    db.add(row)
+    db.commit()
+
+    logged_in.patch(f"/api/companies/{row.id}", json={
+        "revenue_2023": "1,224백만원", "revenue_2024": "8.2억",
+        "revenue_2025": "150억 ~ 200억"})
+    db.refresh(row)
+    assert row.revenue_2023 == "1,224백만원"
+    assert row.revenue_2025 == "150억 ~ 200억"
+
+    html = logged_in.get("/companies?tab=db").text
+    assert "1,224백만원" in html and "150억 ~ 200억" in html

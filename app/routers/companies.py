@@ -114,6 +114,19 @@ def company_rows(db: Session) -> List[dict]:
             "funding_total": c.funding_total,
             "raise_target": c.raise_target,
             "pre_value": c.pre_value,
+            # 스타트업DB 탭 — 시트를 그대로 옮겨 담은 칸들.
+            # 금액은 적은 그대로(글자)다: 원본에 `8.2억`·`1,224백만원`·
+            # `150억 ~ 200억` 이 섞여 있어 숫자로 바꾸면 100배가 틀어진다.
+            "ceo": c.contact_name or "",
+            "phone": c.contact_phone or "",
+            "email": c.contact_email or "",
+            "revenue_2022": c.revenue_2022 or "",
+            "revenue_2023": c.revenue_2023 or "",
+            "revenue_2024": c.revenue_2024 or "",
+            "revenue_2025": c.revenue_2025 or "",
+            "founded_year": c.founded_year or "",
+            "guarantee": c.guarantee or "",
+            "assignee": c.assignee_name or "",
             "competitiveness": c.competitiveness or "",
             "funding_status": c.funding_status or "",
             "ir_drive_url": c.ir_drive_url or "",
@@ -140,11 +153,15 @@ def company_rows(db: Session) -> List[dict]:
 
 @router.get("/companies", response_class=HTMLResponse, include_in_schema=False)
 def companies_page(request: Request, db: Session = Depends(get_db),
-                   user: User = Depends(get_current_user), msg: str = "", q: str = ""):
+                   user: User = Depends(get_current_user), msg: str = "", q: str = "",
+                   tab: str = ""):
     rows = company_rows(db)
     ctx = base_ctx(request, db, user, active="su")
     ctx.update({
         "rows": rows,
+        # 시트의 하단 탭 두 개. 같은 레코드를 다르게 보는 것뿐이라, 한쪽에서
+        # 고치면 다른 쪽이 저절로 따라온다 — 맞춰 주는 코드가 없어야 안 어긋난다.
+        "co_tab": "db" if tab == "db" else "status",
         "msg": msg,
         "q": q,          # 발송 화면에서 '기업 정보 채우기' 로 넘어온 경우 그 기업을 바로 띄운다
         "counts": {
@@ -236,6 +253,16 @@ class CompanyIn(BaseModel):
     raise_target: Optional[int] = None
     pre_value: Optional[int] = None
     competitiveness: Optional[str] = None
+    contact_name: Optional[str] = None
+    contact_phone: Optional[str] = None
+    contact_email: Optional[str] = None
+    revenue_2022: Optional[str] = None
+    revenue_2023: Optional[str] = None
+    revenue_2024: Optional[str] = None
+    revenue_2025: Optional[str] = None
+    founded_year: Optional[str] = None
+    guarantee: Optional[str] = None
+    assignee_name: Optional[str] = None
     funding_status: Optional[str] = None
     ir_drive_url: Optional[str] = None
     contract_status: Optional[str] = None
