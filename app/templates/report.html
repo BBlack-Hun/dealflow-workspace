@@ -16,10 +16,21 @@
        href="/report?month={{ key }}{% if scope %}&scope={{ scope }}{% endif %}">{{ y }}년 {{ m }}월</a>
     {% endfor %}
   </div>
-  {% if can_team %}
+  {% if members %}
+  {# 전체만 보면 누가 얼마나 했는지는 보이지만, 그 사람과 이야기할 자료는
+     안 나온다 — 팀원 한 사람 것만 따로 볼 수 있어야 한다. #}
   <div class="toolbar-right">
-    <a class="chip {% if not team_wide %}active{% endif %}" href="/report?month={{ selected }}">내 것</a>
-    <a class="chip {% if team_wide %}active{% endif %}" href="/report?month={{ selected }}&scope=team">팀 전체</a>
+    <a class="chip {% if not team_wide and not viewing %}active{% endif %}"
+       href="/report?month={{ selected }}">내 것</a>
+    <a class="chip {% if team_wide %}active{% endif %}"
+       href="/report?month={{ selected }}&scope=team">팀 전체</a>
+    <select id="member-pick" class="chip-select"
+            onchange="location = '/report?month={{ selected }}&member=' + this.value">
+      <option value="">팀원 선택…</option>
+      {% for m in members %}
+      <option value="{{ m.id }}" {% if viewing and viewing.id == m.id %}selected{% endif %}>{{ m.name }}</option>
+      {% endfor %}
+    </select>
   </div>
   {% endif %}
 </div>

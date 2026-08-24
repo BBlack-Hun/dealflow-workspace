@@ -809,3 +809,8 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
    표에 넣지 않고 여기서 본다. */
 .rowno.js-detail { cursor: pointer; }
 .rowno.js-detail:hover { color: var(--accent); text-decoration: underline; }
+
+/* 업무 보고 — 팀원 골라 보기 */
+.chip-select { font: inherit; font-size: 12px; padding: 3px 8px;
+               border: 1px solid var(--line); border-radius: 999px;
+               background: var(--bg); }
