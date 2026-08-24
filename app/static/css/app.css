@@ -818,3 +818,9 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
 .chip-select { font: inherit; font-size: 12px; padding: 3px 8px;
                border: 1px solid var(--line); border-radius: 999px;
                background: var(--bg); }
+
+/* 반복 업무 — 요일 옆 오전/오후 토글 */
+.tod-pick { font-size: 10.5px; padding: 1px 6px; border: 1px solid var(--line);
+            border-radius: 999px; background: var(--bg); color: var(--muted);
+            margin-right: 3px; }
+.tod-pick.on { background: var(--brand); border-color: var(--brand); color: #fff; }

@@ -527,6 +527,9 @@ class WeeklyRoutine(TimestampMixin, Base):
     category: Mapped[str] = mapped_column(String)          # 항목
     title: Mapped[str] = mapped_column(Text)               # 세부업무
     weekdays: Mapped[str] = mapped_column(String, default="")   # "0,2" = 월,수
+    # 언제 하는 일인지 — 시트에 "화요일 오전" 처럼 시간대까지 적혀 있었다.
+    # 비어 있으면 하루 중 아무 때나(예: 이메일 정리).
+    time_of_day: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # am | pm
     note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     is_active: Mapped[int] = mapped_column(Integer, default=1)
 

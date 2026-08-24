@@ -169,15 +169,41 @@ def carry_over(week: str = Form(""), db: Session = Depends(get_db),
 
 @router.post("/todo/routines", include_in_schema=False)
 def add_routine(category: str = Form(""), title: str = Form(...),
-                weekdays: str = Form(""), db: Session = Depends(get_db),
+                weekdays: str = Form(""), time_of_day: str = Form(""),
+                db: Session = Depends(get_db),
                 user: User = Depends(get_current_user)):
     if title.strip():
         db.add(WeeklyRoutine(user_id=user.id, category=category.strip() or "기타",
                              title=title.strip(),
                              weekdays=",".join(str(d) for d in
-                                               weekly.parse_weekdays(weekdays))))
+                                               weekly.parse_weekdays(weekdays)),
+                             time_of_day=time_of_day if time_of_day in ("am", "pm") else None))
         db.commit()
     return RedirectResponse("/todo", status_code=303)
+
+
+class RoutineIn(BaseModel):
+    category: Optional[str] = None
+    title: Optional[str] = None
+    time_of_day: Optional[str] = None
+
+
+@router.patch("/api/todo/routines/{routine_id}")
+def update_routine(routine_id: int, body: RoutineIn,
+                   db: Session = Depends(get_db),
+                   user: User = Depends(get_current_user)):
+    """표에서 눌러 바로 고친다 — 항목·세부업무·오전/오후."""
+    row = db.get(WeeklyRoutine, routine_id)
+    if row is None or row.user_id != user.id:
+        raise HTTPException(status_code=404, detail="반복 업무를 찾을 수 없습니다")
+    if body.category is not None:
+        row.category = body.category.strip() or "기타"
+    if body.title is not None and body.title.strip():
+        row.title = body.title.strip()
+    if body.time_of_day is not None:
+        row.time_of_day = body.time_of_day if body.time_of_day in ("am", "pm") else None
+    db.commit()
+    return {"ok": True}
 
 
 @router.post("/todo/routines/{routine_id}/delete", include_in_schema=False)
