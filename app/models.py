@@ -339,6 +339,31 @@ class AgentDevice(TimestampMixin, Base):
     sender: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
 
+class RefSheet(TimestampMixin, Base):
+    """참고 시트 — 원본 스프레드시트의 '자료' 탭들.
+
+    투자사 명단 말고도 시트에는 스크립트·가이드·성격 정리 같은 탭이 여럿
+    있었다. 매번 구글 시트를 따로 열어 보던 자료라 화면 안으로 들여온다.
+
+    모양이 제각각이다:
+      table — `투자사 성격정리` 처럼 진짜 표 (머리글 + 행)
+      text  — `딜소개 스크립트` 처럼 줄글
+
+    **지울 수 있어야 한다.** 다 옮겨 놓고 쓰면서 추리는 것이 순서라,
+    안 쓰는 탭이 남아 있으면 자리만 차지한다.
+    """
+
+    __tablename__ = "ref_sheets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    title: Mapped[str] = mapped_column(String)
+    kind: Mapped[str] = mapped_column(String, default="text")   # table | text
+    # table 이면 {"columns": [...], "rows": [[...]]}, text 면 {"body": "..."}
+    content_json: Mapped[str] = mapped_column(Text, default="{}")
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[int] = mapped_column(Integer, default=1)
+
+
 class ConsultingColumn(TimestampMixin, Base):
     """투자컨설턴트 현황표의 '월별 리마인드' 열.
 

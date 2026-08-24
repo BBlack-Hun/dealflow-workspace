@@ -336,14 +336,22 @@ def test_menu_has_one_entry_not_two(client, db, users):
     assert "IR·미팅 관리" not in body
 
 
-def test_both_pages_share_the_tab_bar(client, db, users):
+def test_everything_lives_on_one_page(client, db, users):
+    """넷 다 한 페이지의 구역이다. 예전에는 탭처럼 생겼는데 둘만 페이지를
+    바꾸고 둘은 스크롤이라, 누를 때마다 무슨 일이 일어날지 알 수 없었다."""
     client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
-    for path in ("/followups", "/ir"):
-        body = client.get(path).text
-        assert "flow-tabs" in body, path
-        # 탭은 **실제 흐름 순서**다: IR 자료 요청 → 리마인드 → 미팅 → 미팅 후기
-        for tab in ("IR 자료 요청", "리마인드", "미팅", "미팅 후기"):
-            assert tab in body, f"{path} 에 {tab} 탭이 없다"
+
+    body = client.get("/ir").text
+    assert "jump-bar" in body
+    for section in ('id="requests"', 'id="remind"', 'id="meetings"', 'id="reviews"'):
+        assert section in body, f"{section} 구역이 없다"
+    for label in ("IR 자료 요청", "리마인드", "미팅", "미팅 후기"):
+        assert label in body, f"{label} 이동 링크가 없다"
+
+    # 옛 주소는 살려 둔다 — 즐겨찾기와 화면 안 링크가 여럿 걸려 있다
+    moved = client.get("/followups", follow_redirects=False)
+    assert moved.status_code in (302, 307)
+    assert moved.headers["location"] == "/ir#remind"
 
 
 def test_tab_counts_come_from_one_place(client, db, users):
@@ -362,8 +370,8 @@ def test_tab_counts_come_from_one_place(client, db, users):
                              "review_due", "review_open"}
 
 
-def test_flow_tabs_are_in_working_order(client, db, users):
-    """탭 순서가 곧 일하는 순서여야 다음에 뭘 눌러야 할지 헤매지 않는다.
+def test_the_jump_bar_follows_the_working_order(client, db, users):
+    """순서가 곧 일하는 순서여야 다음에 뭘 눌러야 할지 헤매지 않는다.
 
         딜 소개 → IR 자료 요청 → (반응 없음) 리마인드
                → (반응 있음) 미팅 → 미팅 후기
@@ -372,10 +380,9 @@ def test_flow_tabs_are_in_working_order(client, db, users):
 
     client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
     body = client.get("/ir").text
-    block = body[body.index("flow-tabs"):]
-    labels = [t.strip() for _href, t in
-              re.findall(r'href="([^"]+)">\s*([^<\n]+)', block[:1400])]
-    assert labels[:4] == ["IR 자료 요청", "리마인드", "미팅", "미팅 후기"], labels
+    block = body[body.index("jump-bar"):]
+    hrefs = re.findall(r'href="(#\w+)"', block[:1400])
+    assert hrefs[:4] == ["#requests", "#remind", "#meetings", "#reviews"], hrefs
 
 
 def test_review_count_excludes_already_asked(db, users):
