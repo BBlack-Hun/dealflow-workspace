@@ -1,6 +1,7 @@
 """Server-rendered HTML pages (Jinja2 SSR)."""
 from __future__ import annotations
 
+import json
 from collections import Counter
 from datetime import date
 
@@ -11,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..deps import get_current_user, templates
-from ..models import IrCompany, SendJob, User, VcContact
+from ..models import IrCompany, RefSheet, SendJob, User, VcContact
 from ..services import (cadence, deal_history, deal_stage, mailer,
                         sheet_import, sheet_owner)
 from ..ui import MENU, base_ctx as _base_ctx
@@ -25,12 +26,15 @@ __all__ = ["router", "MENU"]
 
 @router.get("/", response_class=HTMLResponse, include_in_schema=False)
 def index(request: Request, db: Session = Depends(get_db),
-          user: User = Depends(get_current_user)):
-    """메인 = 대시보드. 좌측 위 'dealflow' 를 누르면 여기로 온다."""
+          user: User = Depends(get_current_user), top: int = 10):
+    """메인 = 대시보드. 좌측 위 브랜드를 누르면 여기로 온다."""
     from ..services import dashboard as dash
 
+    # '내 투자사 선호'를 몇 명까지 볼지 — 10~20 사이에서 사용자가 고른다.
+    top_n = min(max(top, 5), 20)
     ctx = _base_ctx(request, db, user, "home")
-    ctx.update(dash.user_dashboard(db, user))
+    ctx.update(dash.user_dashboard(db, user, top_n=top_n))
+    ctx["top_n"] = top_n
     return templates.TemplateResponse("dashboard.html", ctx)
 
 
@@ -87,6 +91,7 @@ def contacts_page(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
     sheet: str = "",
+    ref: str = "",
 ):
     """내 투자사 (FEATURE_SPEC §3). 표는 SSR, 필터는 브라우저에서 즉시 반응.
 
@@ -116,6 +121,14 @@ def contacts_page(
         selected = mine_first
     rows = [r for r in all_rows if selected in r["sheets"]] if selected else all_rows
 
+    # 참고 시트 — 스크립트·가이드처럼 매번 구글 시트를 열어 보던 자료.
+    # 지울 수 있게 두었으므로 살아 있는 것만 가져온다.
+    ref_sheets = db.execute(
+        select(RefSheet).where(RefSheet.is_active == 1)
+        .order_by(RefSheet.position, RefSheet.id)
+    ).scalars().all()
+    picked_ref = next((s for s in ref_sheets if str(s.id) == ref), None)
+
     stages = Counter(r["connect_stage"] for r in rows)
     # 깔때기는 **지금 탭에 보이는 사람들** 기준이다. 탭이 곧 명단이라,
     # 전체 기준으로 세면 내 명단을 보고 있는데 숫자만 남의 것이 섞인다.
@@ -136,6 +149,9 @@ def contacts_page(
         "pool_view": any(t["key"] == selected and t["kind"] == "pool" for t in tabs),
         "total_count": len(all_rows),
         "funnel": stage_funnel,
+        "ref_sheets": ref_sheets,
+        "ref": picked_ref,
+        "ref_content": json.loads(picked_ref.content_json) if picked_ref else None,
         "connect_counts": [
             {"key": key, "label": label, "count": stages.get(key, 0)}
             for key, label in sheet_import.CONNECT_LABELS.items()
@@ -152,12 +168,14 @@ def job_page(
     user: User = Depends(get_current_user),
 ):
     job = db.get(SendJob, job_id)
-    mine = job is not None and job.user_id == user.id
-    # 방 연결 확인 잡도 같은 진행 화면을 쓰되, 문구는 '발송'이 아니어야 한다
-    # (확인 잡은 아무것도 보내지 않는다 — 사용자가 오해하면 안 되는 지점).
-    verify = mine and job.kind == "verify_room"
+    # 관리자는 팀 현황에서 넘어와 **누구에게 보냈는지** 조회한다 — 본인 것이
+    # 아니어도 읽기는 되어야 한다. 재시도·취소 같은 조작은 API 쪽에서
+    # 여전히 본인 것만 허용한다(jobs.py 의 _job_or_404).
+    can_view = job is not None and (job.user_id == user.id or user.role == "admin")
+    verify = can_view and job.kind == "verify_room"
     ctx = _base_ctx(request, db, user, "vc" if verify else "deal")
-    ctx.update({"job_id": job_id, "job_exists": mine, "verify": verify})
+    ctx.update({"job_id": job_id, "job_exists": can_view, "verify": verify,
+                "readonly": can_view and job.user_id != user.id})
     return templates.TemplateResponse("progress.html", ctx)
 
 

@@ -90,6 +90,12 @@ class VcContact(TimestampMixin, Base):
     # 명단 시트들에만 있는 칸들. 표기가 자유로워(O/X/△/문장) 원문을 그대로 둔다.
     interest_level: Mapped[Optional[str]] = mapped_column(String, nullable=True)   # 관심도(월말 기준)
     kakao_joined: Mapped[Optional[str]] = mapped_column(String, nullable=True)     # 카톡방 참여여부
+    # 시트에 있는데 앱에 칸이 없어 통째로 버려지던 값들.
+    # "명함 받은 날" 은 언제부터 아는 사이인지를 말해 준다 — 오래 알던 분께
+    # 처음 연락하는 문구를 보내면 어색하다.
+    office_fax: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    card_registered_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
     office_phone: Mapped[Optional[str]] = mapped_column(String, nullable=True)     # 유선전화
     address: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     # 어느 명단 시트에서 온 정보인지(여러 시트에 나뉜 같은 사람을 병합하므로 추적이 필요).
@@ -339,6 +345,31 @@ class AgentDevice(TimestampMixin, Base):
     sender: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
 
+class RefSheet(TimestampMixin, Base):
+    """참고 시트 — 원본 스프레드시트의 '자료' 탭들.
+
+    투자사 명단 말고도 시트에는 스크립트·가이드·성격 정리 같은 탭이 여럿
+    있었다. 매번 구글 시트를 따로 열어 보던 자료라 화면 안으로 들여온다.
+
+    모양이 제각각이다:
+      table — `투자사 성격정리` 처럼 진짜 표 (머리글 + 행)
+      text  — `딜소개 스크립트` 처럼 줄글
+
+    **지울 수 있어야 한다.** 다 옮겨 놓고 쓰면서 추리는 것이 순서라,
+    안 쓰는 탭이 남아 있으면 자리만 차지한다.
+    """
+
+    __tablename__ = "ref_sheets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    title: Mapped[str] = mapped_column(String)
+    kind: Mapped[str] = mapped_column(String, default="text")   # table | text
+    # table 이면 {"columns": [...], "rows": [[...]]}, text 면 {"body": "..."}
+    content_json: Mapped[str] = mapped_column(Text, default="{}")
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[int] = mapped_column(Integer, default=1)
+
+
 class ConsultingColumn(TimestampMixin, Base):
     """투자컨설턴트 현황표의 '월별 리마인드' 열.
 
@@ -527,6 +558,9 @@ class WeeklyRoutine(TimestampMixin, Base):
     category: Mapped[str] = mapped_column(String)          # 항목
     title: Mapped[str] = mapped_column(Text)               # 세부업무
     weekdays: Mapped[str] = mapped_column(String, default="")   # "0,2" = 월,수
+    # 언제 하는 일인지 — 시트에 "화요일 오전" 처럼 시간대까지 적혀 있었다.
+    # 비어 있으면 하루 중 아무 때나(예: 이메일 정리).
+    time_of_day: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # am | pm
     note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     is_active: Mapped[int] = mapped_column(Integer, default=1)
 

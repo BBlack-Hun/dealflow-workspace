@@ -47,10 +47,11 @@ a:hover { text-decoration: underline; }
 }
 .brand { font-size: 20px; font-weight: 800; padding: 18px 18px 2px; }
 .brand-sub { font-size: 11px; color: #8b95a3; padding: 0 18px 14px; }
-.menu { display: flex; flex-direction: column; gap: 2px; padding: 6px 10px; flex: 1; }
+.menu { display: flex; flex-direction: column; gap: 1px; padding: 6px 8px; flex: 1; }
 .menu-item {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 10px 12px; border-radius: 8px; color: #c7cdd6; font-weight: 600;
+  padding: 8px 10px; border-radius: 8px; color: #c7cdd6; font-weight: 600;
+  font-size: 13px;
 }
 .menu-item:hover { background: #1b2330; text-decoration: none; color: #fff; }
 .menu-item.active { background: var(--brand); color: #fff; }
@@ -76,7 +77,7 @@ a:hover { text-decoration: underline; }
 /* Panels / deal grid */
 .deal-grid { display: grid; grid-template-columns: 1fr 1fr 1.1fr; gap: 16px; margin-top: 18px; align-items: start; }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
-.panel-title { font-size: 14px; margin: 0 0 12px; display: flex; align-items: center; justify-content: space-between; }
+.panel-title { font-size: 14px; margin: 0 0 9px; display: flex; align-items: center; justify-content: space-between; }
 .panel-title .hint { font-weight: 400; }
 .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; font-size: 12px; color: var(--muted); }
 .field input, input[type=text] { padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; color: var(--ink); }
@@ -159,7 +160,7 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
 /* ── 내 투자사: 한 페이지 표 (FEATURE_SPEC §3, 피드백 #3) ─────────────────
    table-layout:fixed + colgroup % 폭 + 셀 말줄임 → 1280px 에서 가로 스크롤 0.
    광폭 모니터에서는 % 가 그대로 늘어나 여백이 낭비되지 않는다. */
-.toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 16px 0 10px; }
+.toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 12px 0 8px; }
 .toolbar-right { display: flex; align-items: center; gap: 8px; }
 .quick-chips { display: flex; gap: 6px; flex-wrap: wrap; }
 .chip { font-size: 12px; padding: 5px 12px; border-radius: 999px; border: 1px solid var(--line);
@@ -182,12 +183,15 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
 .table-wrap.wide .grid-table { min-width: 2030px; }
 .grid-table { width: 100%; table-layout: fixed; border-collapse: collapse;
               background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
-.grid-table th { text-align: left; padding: 8px 10px; font-size: 12px; color: var(--muted);
+/* 표 밀도. 8px/10px 이던 것을 6px/9px 로 — 글자 수 대비 자리가 남는 칸이
+   많았다(초대완료여부·진행 단계 같은 짧은 배지 칸). 줄 사이가 붙지 않을
+   만큼만 줄인다. */
+.grid-table th { text-align: left; padding: 6px 9px; font-size: 12px; color: var(--muted);
                  background: #f7f8fa; border-bottom: 1px solid var(--line); position: relative; }
-.grid-table td { padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top;
+.grid-table td { padding: 6px 9px; border-bottom: 1px solid var(--line); vertical-align: top;
                  overflow: hidden; }
 .grid-table tbody tr:hover { background: #f8faff; cursor: pointer; }
-.grid-table.dense td { padding: 4px 10px; }
+.grid-table.dense td { padding: 3px 9px; }
 .grid-table.dense .cell-sub { display: none; }
 .cell-main, .cell-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cell-main { font-weight: 600; }
@@ -804,3 +808,129 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
 .bucket { margin: 14px 0 18px; }
 .bucket-head { font-size: 13px; margin: 0 0 6px; display: flex; align-items: center; gap: 8px; }
 .bucket-empty { font-size: 12px; margin: 0 0 4px; }
+
+/* NO 를 누르면 활동 이력이 열린다 — 월별 딜소개는 옆으로 끝없이 늘어나는 칸이라
+   표에 넣지 않고 여기서 본다. */
+.rowno.js-detail { cursor: pointer; }
+.rowno.js-detail:hover { color: var(--accent); text-decoration: underline; }
+
+/* 업무 보고 — 팀원 골라 보기 */
+.chip-select { font: inherit; font-size: 12px; padding: 3px 8px;
+               border: 1px solid var(--line); border-radius: 999px;
+               background: var(--bg); }
+
+/* 반복 업무 — 요일 옆 오전/오후 토글 */
+.tod-pick { font-size: 10.5px; padding: 1px 6px; border: 1px solid var(--line);
+            border-radius: 999px; background: var(--bg); color: var(--muted);
+            margin-right: 3px; }
+.tod-pick.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+
+/* 내 투자사 선호 — IR 자료를 많이 요청한 순 */
+.top-pick { display: flex; gap: 3px; }
+.req-rank { list-style: none; margin: 0; padding: 0; }
+.req-rank li { border-bottom: 1px solid var(--line); padding: 5px 0; }
+.req-rank li:last-child { border-bottom: 0; }
+.req-rank a { display: flex; align-items: center; gap: 9px; color: inherit;
+              text-decoration: none; }
+.req-rank a:hover .req-who b { color: var(--accent); }
+.req-no { width: 18px; text-align: right; font-size: 11px; color: var(--muted);
+          font-variant-numeric: tabular-nums; }
+.req-who { flex: 1; min-width: 0; font-size: 13px; }
+.req-who .cell-sub { font-size: 11px; }
+.req-count { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.req-count b { font-size: 14px; color: var(--brand); }
+.req-companies { margin: 2px 0 0 27px; display: flex; flex-wrap: wrap; gap: 3px; }
+
+/* 딜 진행 관리 — 구역 이동 바.
+   탭이 아니다. 넷 다 같은 페이지의 구역이라 눌러도 페이지가 바뀌지 않는다. */
+.jump-bar { display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+            margin: 10px 0 12px; padding: 6px 8px;
+            border: 1px solid var(--line); border-radius: 8px;
+            background: var(--bg-soft); font-size: 13px; }
+.jump-bar a { display: flex; align-items: center; gap: 5px; padding: 4px 9px;
+              border-radius: 6px; color: inherit; text-decoration: none; }
+.jump-bar a:hover { background: var(--bg); }
+.jump-bar a span { font-size: 11px; padding: 0 6px; border-radius: 999px;
+                   background: var(--line); color: var(--muted); }
+.jump-bar a span.warn { background: #f6c344; color: #4a3400; font-weight: 700; }
+.jump-arrow { color: var(--line); }
+/* 이동 바에서 눌러 내려온 구역이 화면 위에 딱 붙지 않게 */
+#requests, #remind, #meetings, #reviews { scroll-margin-top: 14px; }
+
+/* 참고 시트 탭 — 명단 탭과 성격이 달라 구분선 뒤에 둔다. */
+.tab-divider { color: var(--line); padding: 0 4px; align-self: center; }
+.ref-tab { font-weight: 400; }
+.ref-panel { margin: 10px 0 14px; }
+.ref-acts { display: flex; gap: 10px; align-items: center; }
+/* 줄글은 원문 그대로 — 표로 잘못 나누면 내용이 칸에 잘려 사라진다. */
+.ref-text { margin: 0; padding: 10px 12px; background: var(--bg-soft);
+            border: 1px solid var(--line); border-radius: 8px;
+            font: inherit; font-size: 12.5px; line-height: 1.6;
+            white-space: pre-wrap; word-break: break-word;
+            max-height: 520px; overflow-y: auto; }
+/* 참고 표는 칸마다 글 길이가 들쭉날쭉하다 — 줄바꿈을 허용한다. */
+.ref-cell { white-space: pre-wrap; vertical-align: top; font-size: 12px;
+            line-height: 1.5; }
+
+/* ── 폰·태블릿에서 보기 ────────────────────────────────────────────────
+   **보기 전용**이다. 발송은 PC 의 발송 프로그램이 하므로 폰에서 하지 않는다.
+   밖에서 "지금 뭐가 밀렸나" 를 확인하는 용도라, 읽는 것만 편하면 된다.
+
+   1080px 아래 — 좌측 메뉴를 위로 눕힌다(가로로 다 못 넣는다).
+   720px 아래  — 카드·표를 한 줄로 세우고, 넓은 표는 가로로 민다. */
+@media (max-width: 1080px) {
+  .layout { flex-direction: column; }
+  .sidebar { width: auto; flex: none; height: auto; position: static; }
+  .brand { padding: 12px 14px 0; font-size: 17px; }
+  .brand-sub { padding: 0 14px 8px; }
+  /* 메뉴를 가로로 눕혀 넘치면 밀어서 본다 — 접는 버튼을 만들면 눌러야 보인다 */
+  .menu { flex-direction: row; overflow-x: auto; gap: 4px; padding: 0 10px 8px; }
+  .menu-item { white-space: nowrap; padding: 7px 11px; }
+  .sidebar-foot { display: flex; align-items: center; gap: 12px;
+                  padding: 0 14px 10px; flex-wrap: wrap; }
+  .content { padding: 14px 14px 40px; }
+}
+
+@media (max-width: 720px) {
+  /* 여러 칸으로 나뉘던 것을 한 줄로 세운다 */
+  .kpi-row, .react-row, .dash-grid, .mini-charts,
+  .deal-grid, .form-grid, .import-stats {
+    grid-template-columns: 1fr; flex-direction: column;
+  }
+  .kpi-card, .react { width: auto; }
+  .toolbar { flex-direction: column; align-items: stretch; gap: 8px; }
+  .toolbar-right { flex-wrap: wrap; }
+  .page-head h1 { font-size: 19px; }
+
+  /* 표는 좁히면 못 읽는다 — 폭을 지키고 가로로 민다. */
+  .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .grid-table { min-width: 760px; }
+  /* 스타트업DB 처럼 아주 넓은 표도 같은 규칙 — 폰이라고 더 좁히지 않는다 */
+  .table-wrap.wide .grid-table { min-width: 2030px; }
+
+  /* 가로로 늘어선 줄은 밀어서 본다. 접으면 눌러야 보인다. */
+  .sheet-tabs, .jump-bar, .funnel, .mode-tabs, .quick-chips, .chip-row,
+  .detail-tabs, .weekday-pick {
+    overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch;
+  }
+  .funnel-step, .sheet-tab, .mode-tab, .chip { flex: 0 0 auto; }
+
+  /* 우측 상세 패널은 폰에서 화면을 다 쓴다 — 420px 은 화면보다 넓다. */
+  .detail-panel, .detail-panel.wide { width: 100vw; }
+
+  /* 시간·이름·내용이 칸으로 나뉘던 줄은 세로로 */
+  .tl-item { grid-template-columns: 1fr; gap: 2px; }
+  .bar-row { grid-template-columns: 72px 1fr 30px; }
+
+  /* 폰에서 뜨는 편집창은 화면을 벗어나면 안 된다 */
+  .cell-pop { width: calc(100vw - 24px) !important; left: 12px !important; }
+
+  /* 줄바꿈이 안 되던 것들 — 긴 기업명·주소가 화면을 밀어낸다 */
+  .due-list li, .due-head, .req-rank a { flex-wrap: wrap; }
+  .memo, .ellipsis { max-width: 100%; }
+}
+
+/* 로그인 화면. 카드 폭 340px 이 좁은 폰(360px)에서 여백을 다 먹는다. */
+@media (max-width: 400px) {
+  .login-card { width: auto; max-width: 100%; margin: 0 12px; padding: 22px 18px; }
+}

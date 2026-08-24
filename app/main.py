@@ -26,6 +26,7 @@ def create_app() -> FastAPI:
     # API routers first (explicit prefixes), then HTML pages (which include a catch-all stub).
     app.include_router(deals.router)
     app.include_router(contacts.router)
+    app.include_router(contacts.ref_router)
     app.include_router(jobs.router)
     app.include_router(agent_api.router)
     app.include_router(data_io.router)

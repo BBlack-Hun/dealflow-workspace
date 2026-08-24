@@ -33,16 +33,32 @@ def contacts(db, users):
 
 # ── 표(SSR) ────────────────────────────────────────────────────────────────
 
-def test_contacts_page_renders_seven_columns_without_scroll_hacks(logged_in, contacts):
-    r = logged_in.get("/contacts")
-    assert r.status_code == 200
-    html = r.text
-    # 7컬럼 폭 합계 100% (FEATURE_SPEC §3) — 가로 스크롤 0 의 근거
-    widths = ["16%", "8%", "16%", "12%", "12%", "10%", "26%"]
-    for w in widths:
-        assert f"width:{w}" in html
-    assert sum(int(w.rstrip("%")) for w in widths) == 100
-    assert "table-layout" not in html  # 폭 제어는 CSS(.grid-table)에 있고 인라인 해킹이 없다
+def test_contacts_columns_fit_without_horizontal_scroll(logged_in, contacts):
+    """폭을 **실제 글자 길이**로 잡았다 — 짧은 값이 든 칸에 넓은 자리를 주면
+    표가 헐렁해 보이고, 정작 긴 칸(라운드사이즈 38자)은 잘린다.
+
+    한 칸은 폭 없이 남는 자리를 먹어야 1280px 에 딱 맞는다.
+    """
+    import re
+
+    html = logged_in.get("/contacts").text
+    head = html.split("</thead>")[0]
+    head = head[head.index('id="contacts-table"'):]
+
+    fixed, flexible = 0, 0
+    for attrs, label in re.findall(r"<th(\s[^>]*)?>(.*?)</th>", head, re.S):
+        if not re.sub(r"<[^>]+>", "", label).strip():
+            continue
+        px = re.search(r"width:\s*(\d+)px", attrs or "")
+        if px:
+            fixed += int(px.group(1))
+        else:
+            flexible += 1
+
+    assert flexible == 1, f"폭 없는 칸이 {flexible}개 — 서로 자리를 뺏는다"
+    assert fixed < 1100, f"고정 폭 합 {fixed}px — 남는 자리가 없어 짜부라진다"
+    # 폭 제어는 th 에서 한다. 옛 colgroup 이 남아 있으면 그쪽이 이겨 버린다.
+    assert "<colgroup" not in html
 
 
 def test_page_shows_only_my_contacts(logged_in, contacts):
@@ -56,13 +72,14 @@ def test_rows_carry_filter_attributes(logged_in, contacts):
     html = logged_in.get("/contacts").text
     assert 'data-f-stage="Seed|SeriesA"' in html
     assert 'data-f-sector="AI|SaaS"' in html
-    assert 'data-f-channel="카톡|메일"' in html
-    assert 'data-f-status="활발"' in html
+    # 채널·상태는 시트에 없는 칸이라 컬럼과 함께 뺐다.
+    assert 'data-f-dealstage=' in html      # 그 자리에 진행 단계가 있다
     assert 'data-f-room="● 확인됨"' in html
     assert 'data-f-room="○ 미확인"' in html
     assert 'data-f-room="⚠ 미등록"' in html   # 방 이름이 없는 담당자
     # 필터 대상 컬럼 헤더에 드롭다운이 붙는다
-    assert 'data-filters="stage:단계|sector:섹터"' in html
+    assert 'data-filters="sector:선호 투자분야"' in html
+    assert 'data-filters="stage:라운드사이즈"' in html
 
 
 def test_recent_deal_and_reaction_are_aggregated_not_stored(logged_in, db, contacts):
@@ -316,3 +333,101 @@ def test_send_job_flow_is_untouched(logged_in, db, contacts):
     # 발송 결과가 담당자 방 확인 상태를 건드리지 않는다
     db.refresh(hong)
     assert hong.room_verified == "verified"
+
+
+# --- 활동 이력에 IR 요청·미팅이 들어간다 ----------------------------------------
+
+def test_timeline_includes_meetings_and_requests(logged_in, db, contacts):
+    """미팅을 잡고 완료 처리까지 해도 활동 이력에는 아무것도 안 남았다 —
+    화면에서 한 일이 기록에 없는 것처럼 보였다."""
+    from datetime import date
+
+    from app.models import IrRequest, Meeting, VcContact
+
+    hong = db.execute(select(VcContact).where(VcContact.name == "홍길동")).scalar_one()
+    today = date.today().isoformat()
+    db.add_all([
+        IrRequest(user_id=hong.user_id, contact_id=hong.id, company_name="샘플애그",
+                  status="delivered", requested_at=today),
+        Meeting(user_id=hong.user_id, contact_id=hong.id, kind="first",
+                status="done", outcome="reviewing", scheduled_at=today),
+    ])
+    db.commit()
+
+    timeline = logged_in.get(f"/api/contacts/{hong.id}").json()["timeline"]
+    kinds = [t["kind"] for t in timeline]
+    assert "meeting" in kinds, "미팅이 활동 이력에 없다"
+    assert "ir_request" in kinds, "IR 요청이 활동 이력에 없다"
+
+    meeting = next(t for t in timeline if t["kind"] == "meeting")
+    assert "1차 미팅" in meeting["content"]
+    assert "검토 중" in meeting["content"]
+
+
+def test_timeline_is_newest_first(logged_in, db, contacts):
+    """출처별로 뭉쳐 두면 8월 미팅이 6월 기록 아래에 묻힌다."""
+    from datetime import date
+
+    from app.models import ContactActivity, Meeting, VcContact
+
+    hong = db.execute(select(VcContact).where(VcContact.name == "홍길동")).scalar_one()
+    db.add_all([
+        ContactActivity(contact_id=hong.id, kind="deal_intro",
+                        happened_at="2026-06-10", content="옛날 회차"),
+        Meeting(user_id=hong.user_id, contact_id=hong.id, kind="first",
+                status="planned", scheduled_at=date.today().isoformat()),
+    ])
+    db.commit()
+
+    dates = [t["date"] for t in
+             logged_in.get(f"/api/contacts/{hong.id}").json()["timeline"] if t["date"]]
+    assert dates == sorted(dates, reverse=True), dates
+
+
+# --- 시트 값이 화면 어디에서든 보여야 한다 --------------------------------------
+
+def test_email_never_lands_in_the_address_field(db, users):
+    """`전자 메일 주소` 에도 '주소' 가 들어 있다 — 빼지 않으면 이메일이
+    주소 칸에 들어간다. 실제로 259건이 그랬다."""
+    from app.services.sheet_import import find_column
+
+    header = ["이름", "휴대폰", "전자 메일 주소", "근무처 전화", "근무지 주소 번지"]
+    addr = find_column(header, ["주소"], exclude=["메일", "이메일", "전자"])
+    assert header[addr] == "근무지 주소 번지"
+
+
+def test_detail_panel_carries_every_sheet_field(logged_in, db, contacts):
+    """표에 다 넣으면 20칸이 되어 정작 매일 보는 칸이 눌린다 — 가끔 찾는
+    값은 상세에서 본다. **볼 곳이 아예 없으면 안 된다.**"""
+    from app.models import VcContact
+
+    hong = db.execute(select(VcContact).where(VcContact.name == "홍길동")).scalar_one()
+    hong.address = "서울시 강남구 테헤란로 1"
+    hong.office_phone = "02-1234-5678"
+    hong.office_fax = "02-1234-5679"
+    hong.card_registered_at = "2026-01-15"
+    hong.interest_level = "높음"
+    db.commit()
+
+    got = logged_in.get(f"/api/contacts/{hong.id}").json()["contact"]
+    for field in ("address", "office_phone", "office_fax",
+                  "card_registered_at", "interest_level", "assignee_name"):
+        assert field in got, f"상세에 {field} 가 없다"
+    assert got["address"] == "서울시 강남구 테헤란로 1"
+
+    # 화면에도 입력 칸이 있어야 고칠 수 있다
+    html = logged_in.get("/contacts").text
+    for field in ("address", "office_phone", "office_fax",
+                  "card_registered_at", "interest_level"):
+        assert f'id="f-{field}"' in html, f"화면에 {field} 칸이 없다"
+
+
+def test_those_fields_can_be_edited(logged_in, db, contacts):
+    from app.models import VcContact
+
+    hong = db.execute(select(VcContact).where(VcContact.name == "홍길동")).scalar_one()
+    r = logged_in.patch(f"/api/contacts/{hong.id}",
+                        json={"address": "부산시 해운대구 센텀로 9"})
+    assert r.status_code == 200
+    db.refresh(hong)
+    assert hong.address == "부산시 해운대구 센텀로 9"

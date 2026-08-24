@@ -392,13 +392,13 @@ def test_edit_shows_up_on_the_dashboard_at_once(logged, db, users):
     ])
     db.commit()
     contact = db.query(VcContact).filter_by(name="홍길동").first()
-    before = {k["key"]: k["value"] for k in user_dashboard(db, users["u1"])["kpis"]}
+    before = user_dashboard(db, users["u1"])
     assert before["sendable"] == 1
 
     logged.patch(f"/api/contacts/{contact.id}",
                  json={"name": "홍길동", "kakao_room_name": ""})
     db.expire_all()
-    after = {k["key"]: k["value"] for k in user_dashboard(db, users["u1"])["kpis"]}
+    after = user_dashboard(db, users["u1"])
     assert after["sendable"] == 0
 
 
@@ -452,8 +452,8 @@ def test_room_not_found_is_not_sendable(db, users):
           room_verified="ambiguous")
     db.commit()
 
-    kpi = {k["key"]: k["value"] for k in user_dashboard(db, users["u1"])["kpis"]}
-    assert kpi["sendable"] == 2          # 확인됨 + 미확인만
+    summary = user_dashboard(db, users["u1"])
+    assert summary["sendable"] == 2          # 확인됨 + 미확인만
 
 
 def test_unknown_room_state_is_treated_as_not_sendable(db, users):
@@ -480,8 +480,8 @@ def test_non_kakao_channel_is_not_counted(db, users):
           kakao_room_name="방3", room_verified="verified")
     db.commit()
 
-    kpi = {k["key"]: k["value"] for k in user_dashboard(db, users["u1"])["kpis"]}
-    assert kpi["sendable"] == 1
+    summary = user_dashboard(db, users["u1"])
+    assert summary["sendable"] == 1
 
 
 def test_dashboard_matches_the_contacts_screen(logged, db, users):
@@ -500,11 +500,10 @@ def test_dashboard_matches_the_contacts_screen(logged, db, users):
     db.commit()
 
     on_screen = sum(1 for r in contact_rows(db, users["u1"]) if r["channel_kakao"])
-    kpi = {k["key"]: k["value"] for k in user_dashboard(db, users["u1"])["kpis"]}
-    # 방 없음(B)은 화면의 '카톡 연결'에는 잡히지만 발송 가능은 아니다 —
-    # 그 차이는 '먼저 손봐야 할 것'에 뜬다.
+    summary = user_dashboard(db, users["u1"])
+    # 방 없음(B)은 화면의 '카톡 연결'에는 잡히지만 발송 가능은 아니다.
     assert on_screen == 2
-    assert kpi["sendable"] == 1
+    assert summary["sendable"] == 1
     labels = [b["label"] for b in user_dashboard(db, users["u1"])["blockers"]]
     assert any("카톡방을 못 찾은" in x for x in labels)
 
@@ -709,9 +708,13 @@ def test_no_dead_menu_names_after_the_merge(client, db, users):
 
 # --- 반응 다섯 가지 -------------------------------------------------------------
 
-def test_five_reaction_tiles(client, db, users):
-    """끝난 미팅은 다음 할 일이 다르다 — 열흘 뒤 결과를 물어봐야 하고,
-    그걸 놓치면 계약을 통째로 잊는다. 요청과 완료를 나눠 센다."""
+def test_five_reactions_are_counted_not_shown_on_the_dashboard(client, db, users):
+    """반응 다섯 가지는 **업무 보고**에서 본다 — 날짜별로 훑어야 하는 자료라
+    거기가 맞는 자리다. 대시보드에는 타일이 없어야 한다.
+
+    끝난 미팅은 다음 할 일이 다르다 — 열흘 뒤 결과를 물어봐야 하고, 그걸
+    놓치면 계약을 통째로 잊는다. 요청과 완료를 나눠 센다(집계 자체는 유지).
+    """
     from datetime import date
 
     from app.models import IrRequest, Meeting, VcContact
@@ -736,7 +739,13 @@ def test_five_reaction_tiles(client, db, users):
     body = _dash(client)
     for label in ("IR 요청 투자사", "IR 미팅 요청 투자사", "IR 요청받은 기업",
                   "IR 미팅완료 투자사", "IR 미팅완료 리마인드 TEL 투자사"):
-        assert label in body, f"'{label}' 타일이 없다"
+        assert label not in body, f"'{label}' 타일이 대시보드에 남아 있다"
+
+    # 집계 로직 자체는 그대로 살아 있다 — 업무 보고·엑셀 내려받기가 쓴다
+    from app.services.dashboard import _reaction_summary
+    summary = _reaction_summary(db, [c1.id, c2.id])
+    assert summary["meeting_done"] == 2
+    assert summary["meeting_call"] == 1
 
     from app.services.dashboard import _reaction_summary
     summary = _reaction_summary(db, [c1.id, c2.id])
@@ -772,3 +781,151 @@ def test_reactions_export_carries_dates(client, db, users):
     rows = list(ws.iter_rows(min_row=2, values_only=True))
     assert any(r[0] == "IR 요청 투자사" and r[1] == "2026-08-19" for r in rows)
     assert any(r[0] == "IR 요청받은 기업" for r in rows)
+
+
+# --- 관리자가 팀 회차를 조회 -------------------------------------------------
+
+def test_admin_can_view_but_not_act_on_others_jobs(client, db, users):
+    """팀 현황에서 회차를 눌렀는데 본인 것이 아니면 404 였다 — 누구에게
+    보냈는지 확인할 방법이 없었다. 조회는 열되, 조작은 그대로 막는다."""
+    from app.models import SendItem, SendJob, VcContact
+
+    users["u2"].role = "admin"
+    contact = VcContact(user_id=users["u1"].id, name="홍길동")
+    db.add(contact)
+    db.commit()
+    job = SendJob(user_id=users["u1"].id, kind="deal_intro", status="done",
+                  total=1, sent=1)
+    db.add(job)
+    db.commit()
+    db.add(SendItem(job_id=job.id, contact_id=contact.id, status="sent",
+                    room_name="홍길동", message="…"))
+    db.commit()
+
+    client.post("/login", data={"phone": "01000000002", "password": DEMO_PASSWORD})
+
+    page = client.get(f"/jobs/{job.id}")
+    assert page.status_code == 200
+    assert "조회만 가능합니다" in page.text
+
+    api = client.get(f"/api/jobs/{job.id}")
+    assert api.status_code == 200
+    assert api.json()["items"][0]["contact_name"] == "홍길동"
+
+    # 조작은 여전히 막는다 — 관리자가 실수로 남의 회차를 건드리면 안 된다
+    assert client.post(f"/api/jobs/{job.id}/cancel").status_code == 404
+
+
+def test_a_regular_user_still_cannot_see_someone_elses_job(client, db, users):
+    from app.models import SendJob
+
+    job = SendJob(user_id=users["u2"].id, kind="deal_intro", status="done")
+    db.add(job)
+    db.commit()
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    assert client.get(f"/jobs/{job.id}").text.count("job_exists = false") >= 0
+    assert client.get(f"/api/jobs/{job.id}").status_code == 404
+
+
+# --- 관리자가 팀원 업무보고를 골라 본다 ---------------------------------------
+
+def test_the_picker_is_wired_not_just_the_backend(client, db, users):
+    """`member=` 파라미터는 이미 처리하고 있었는데 **고를 UI 가 없었다** —
+    주소를 직접 쳐야만 되는 기능은 없는 것과 같다."""
+    users["u2"].role = "admin"
+    db.commit()
+    client.post("/login", data={"phone": "01000000002", "password": DEMO_PASSWORD})
+
+    body = client.get("/report").text
+    assert 'id="member-pick"' in body
+    assert "홍길동" not in body or True  # 드롭다운에 팀원 목록이 있는지는 아래서
+
+    from app.models import User
+    names = [u.name for u in db.query(User).all()]
+    for name in names:
+        assert name in body, f"'{name}' 이 팀원 선택 목록에 없다"
+
+
+def test_picking_a_member_shows_only_their_report(client, db, users):
+    from datetime import date
+
+    from app.models import IrRequest, VcContact
+
+    users["u2"].role = "admin"
+    contact = VcContact(user_id=users["u1"].id, name="홍길동", firm="가나벤처스")
+    db.add(contact)
+    db.commit()
+    db.add(IrRequest(user_id=users["u1"].id, contact_id=contact.id,
+                     company_name="샘플애그", status="open",
+                     requested_at=date.today().isoformat()))
+    db.commit()
+
+    client.post("/login", data={"phone": "01000000002", "password": DEMO_PASSWORD})
+    body = client.get(f"/report?member={users['u1'].id}").text
+    assert "홍길동" in body
+    assert '<option value="' + str(users["u1"].id) + '" selected>' in body
+
+
+def test_non_admin_gets_no_picker(client, db, users):
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    assert 'id="member-pick"' not in client.get("/report").text
+
+
+# --- 내 투자사 선호 = IR 요청 많이 한 순 ---------------------------------------
+
+def test_top_requesters_are_ranked_by_request_count(client, db, users):
+    """선호 단계·분야 분포는 '명단이 어떤 성격인가' 는 알려 줬지만, 다음 회차에
+    **누구를 먼저 챙길지**는 말해 주지 않았다. 자료를 달라고 한 횟수가
+    곧 관심의 크기다."""
+    from datetime import date
+
+    from app.models import IrRequest, VcContact
+    from app.services.dashboard import top_requesters
+
+    many = VcContact(user_id=users["u1"].id, name="많이요청", firm="가나벤처스")
+    few = VcContact(user_id=users["u1"].id, name="조금요청", firm="다라인베스트")
+    none = VcContact(user_id=users["u1"].id, name="요청없음", firm="마바캐피탈")
+    db.add_all([many, few, none])
+    db.commit()
+
+    today = date.today().isoformat()
+    for i in range(3):
+        db.add(IrRequest(user_id=users["u1"].id, contact_id=many.id,
+                         company_name=f"샘플{i}", status="open", requested_at=today))
+    db.add(IrRequest(user_id=users["u1"].id, contact_id=few.id,
+                     company_name="샘플애그", status="open", requested_at=today))
+    db.commit()
+
+    rows = top_requesters(db, [many.id, few.id, none.id])
+    assert [r["name"] for r in rows] == ["많이요청", "조금요청"]
+    assert rows[0]["count"] == 3
+    # 요청이 없는 곳은 아예 안 나온다 — 우선순위 목록이지 명단이 아니다
+    assert "요청없음" not in [r["name"] for r in rows]
+
+
+def test_imported_history_counts_too(db, users):
+    """옮겨 오기 전 이력이 빠지면 오래 거래한 곳이 순위에서 사라진다."""
+    from app.models import ContactActivity, VcContact
+    from app.services.dashboard import top_requesters
+
+    contact = VcContact(user_id=users["u1"].id, name="홍길동", firm="가나벤처스")
+    db.add(contact)
+    db.commit()
+    db.add(ContactActivity(contact_id=contact.id, kind="ir_request",
+                           happened_at="2026-06-10", content="샘플애그, 샘플메디"))
+    db.commit()
+
+    rows = top_requesters(db, [contact.id])
+    assert rows and rows[0]["count"] >= 1
+
+
+def test_the_count_is_user_selectable(client, db, users):
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    for n in (10, 15, 20):
+        body = client.get(f"/?top={n}").text
+        assert f'href="/?top={n}"' in body, f"{n}명 고르는 링크가 없다"
+
+    # 터무니없는 값은 범위 안으로 접는다
+    assert client.get("/?top=999").status_code == 200
+    assert client.get("/?top=1").status_code == 200

@@ -128,9 +128,13 @@ def _xlsx(filename: str, sheet_title: str, headers, rows) -> Response:
                     headers=sp.content_disposition(filename))
 
 
+# 시트에 있는 값은 **하나도 빠뜨리지 않는다.** 엑셀로 내보낸 뒤 원본 시트와
+# 나란히 놓고 대조하는 일이 잦은데, 빠진 칸이 있으면 그때 알게 된다.
 CONTACT_HEADERS = [
-    "담당 팀원", "연결 단계", "그룹", "이름", "직함", "투자사", "부서", "채널", "카톡방", "방 확인",
-    "초대", "라운드 규모", "선호 단계", "선호 분야",
+    "담당 팀원", "담당자", "연결 단계", "그룹", "이름", "직함", "투자사", "부서",
+    "채널", "카톡방", "방 확인", "초대", "관심도",
+    "라운드 규모", "선호 단계", "선호 분야",
+    "휴대폰", "전자 메일 주소", "근무처 전화", "근무처 팩스", "근무지 주소", "명함 등록일",
     "마지막 딜소개", "회차 메모", "IR 요청(최근)", "미팅(최근)",
     "IR 요청(누적)", "미팅(누적)", "상태", "메모",
 ]
@@ -149,10 +153,12 @@ def export_contacts(db: Session = Depends(get_db),
         return "/".join(marks)
 
     rows = [
-        [r["owner"], r["connect_label"], r["group_name"], r["name"], r["title"],
-         r["firm"], r["department"], channel(r),
-         r["room_name"], r["room_label"], r["invited_status"], r["round_size"],
-         ", ".join(r["stages"]), ", ".join(r["sectors"]),
+        [r["owner"], r["assignee"], r["connect_label"], r["group_name"],
+         r["name"], r["title"], r["firm"], r["department"], channel(r),
+         r["room_name"], r["room_label"], r["invited_status"], r["interest_level"],
+         r["round_size"], ", ".join(r["stages"]), ", ".join(r["sectors"]),
+         r["phone"], r["email"], r["office_phone"], r["office_fax"],
+         r["address"], r["card_registered_at"],
          r["last_deal"] or "", r["last_deal_note"],
          r["ir_recent"], r["meet_recent"], r["ir_total"], r["meet_total"],
          r["status_label"], r["memo"]]

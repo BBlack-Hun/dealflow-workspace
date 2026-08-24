@@ -336,13 +336,22 @@ def test_menu_has_one_entry_not_two(client, db, users):
     assert "IR·미팅 관리" not in body
 
 
-def test_both_pages_share_the_tab_bar(client, db, users):
+def test_everything_lives_on_one_page(client, db, users):
+    """넷 다 한 페이지의 구역이다. 예전에는 탭처럼 생겼는데 둘만 페이지를
+    바꾸고 둘은 스크롤이라, 누를 때마다 무슨 일이 일어날지 알 수 없었다."""
     client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
-    for path in ("/followups", "/ir"):
-        body = client.get(path).text
-        assert "flow-tabs" in body, path
-        for tab in ("후속 문구", "IR 자료 요청", "미팅"):
-            assert tab in body, f"{path} 에 {tab} 탭이 없다"
+
+    body = client.get("/ir").text
+    assert "jump-bar" in body
+    for section in ('id="requests"', 'id="remind"', 'id="meetings"', 'id="reviews"'):
+        assert section in body, f"{section} 구역이 없다"
+    for label in ("IR 자료 요청", "리마인드", "미팅", "미팅 후기"):
+        assert label in body, f"{label} 이동 링크가 없다"
+
+    # 옛 주소는 살려 둔다 — 즐겨찾기와 화면 안 링크가 여럿 걸려 있다
+    moved = client.get("/followups", follow_redirects=False)
+    assert moved.status_code in (302, 307)
+    assert moved.headers["location"] == "/ir#remind"
 
 
 def test_tab_counts_come_from_one_place(client, db, users):
@@ -357,4 +366,111 @@ def test_tab_counts_come_from_one_place(client, db, users):
     for path in ("/followups", "/ir"):
         assert client.get(path).status_code == 200, path
     assert set(expected) == {"due", "upcoming", "ir_open", "ir_overdue",
-                             "meeting_todo", "meeting_open"}
+                             "meeting_todo", "meeting_open",
+                             "review_due", "review_open"}
+
+
+def test_the_jump_bar_follows_the_working_order(client, db, users):
+    """순서가 곧 일하는 순서여야 다음에 뭘 눌러야 할지 헤매지 않는다.
+
+        딜 소개 → IR 자료 요청 → (반응 없음) 리마인드
+               → (반응 있음) 미팅 → 미팅 후기
+    """
+    import re
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    body = client.get("/ir").text
+    block = body[body.index("jump-bar"):]
+    hrefs = re.findall(r'href="(#\w+)"', block[:1400])
+    assert hrefs[:4] == ["#requests", "#remind", "#meetings", "#reviews"], hrefs
+
+
+def test_review_count_excludes_already_asked(db, users):
+    """이미 결과를 물어본 곳까지 세면 전화할 곳이 몇 군데인지 알 수 없다."""
+    from datetime import date
+
+    from app.models import Meeting, VcContact
+    from app.services import flow
+
+    c1 = VcContact(user_id=users["u1"].id, name="물어봄", firm="가나벤처스")
+    c2 = VcContact(user_id=users["u1"].id, name="아직", firm="다라인베스트")
+    db.add_all([c1, c2])
+    db.commit()
+    today = date.today().isoformat()
+    db.add_all([
+        Meeting(user_id=users["u1"].id, contact_id=c1.id, kind="first",
+                status="done", followup_done=1, scheduled_at=today),
+        Meeting(user_id=users["u1"].id, contact_id=c2.id, kind="first",
+                status="done", scheduled_at=today),
+    ])
+    db.commit()
+
+    counts = flow.counts(db, users["u1"], date.today())
+    assert counts["review_open"] == 1, "이미 물어본 곳이 섞였다"
+
+
+def test_delivered_materials_offer_to_book_a_meeting(client, db, users):
+    """미팅은 **자료를 보낸 그 건**에서 이어진다. 담당자·기업을 처음부터 다시
+    고르게 하면 이미 아는 정보를 또 타이핑하게 되고, 그러다 다른 담당자를
+    골라 엉뚱한 곳에 미팅이 잡힌다."""
+    from datetime import date
+
+    from app.models import IrRequest, VcContact
+
+    contact = VcContact(user_id=users["u1"].id, name="홍길동", title="심사역",
+                        firm="가나벤처스")
+    db.add(contact)
+    db.commit()
+    db.add(IrRequest(user_id=users["u1"].id, contact_id=contact.id,
+                     company_name="샘플애그", status="delivered",
+                     requested_at=date.today().isoformat()))
+    db.commit()
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    body = client.get("/ir").text
+
+    assert "js-book-meeting" in body, "전달한 자료에서 미팅을 잡을 방법이 없다"
+    assert f'data-contact="{contact.id}"' in body
+    assert 'data-company="샘플애그"' in body
+
+
+def test_a_reviewing_meeting_can_loop_back_to_a_second_one(client, db, users):
+    """흐름은 일직선이 아니다 — 검토 중이면 2차 미팅으로 돌아간다.
+    여기서 바로 잡지 못하면 위로 올라가 담당자를 다시 골라야 하고,
+    그러다 엉뚱한 곳에 미팅이 잡힌다."""
+    from datetime import date
+
+    from app.models import Meeting, VcContact
+
+    contact = VcContact(user_id=users["u1"].id, name="홍길동", firm="가나벤처스")
+    db.add(contact)
+    db.commit()
+    db.add(Meeting(user_id=users["u1"].id, contact_id=contact.id, kind="first",
+                   status="done", outcome="reviewing", company_name="샘플애그",
+                   scheduled_at=date.today().isoformat()))
+    db.commit()
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    body = client.get("/ir").text
+    assert "2차 미팅 잡기" in body
+    assert 'data-kind="second"' in body
+
+
+def test_a_rejected_meeting_does_not_suggest_another(client, db, users):
+    """이미 거절·보류로 끝난 건에 다음 미팅을 권하면 안 된다."""
+    from datetime import date
+
+    from app.models import Meeting, VcContact
+
+    contact = VcContact(user_id=users["u1"].id, name="거절함", firm="다라인베스트")
+    db.add(contact)
+    db.commit()
+    db.add(Meeting(user_id=users["u1"].id, contact_id=contact.id, kind="first",
+                   status="done", outcome="pass",
+                   scheduled_at=date.today().isoformat()))
+    db.commit()
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    body = client.get("/ir").text
+    row = body[body.index("거절함"):body.index("거절함") + 600]
+    assert "미팅 잡기" not in row

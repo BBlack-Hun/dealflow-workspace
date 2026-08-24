@@ -33,10 +33,13 @@ def _owned(db: Session, sequence_id: int, user: User) -> SendSequence:
     return seq
 
 
-@router.get("/followups", response_class=HTMLResponse, include_in_schema=False)
-def followups_page(request: Request, db: Session = Depends(get_db),
-                   user: User = Depends(get_current_user), msg: str = ""):
-    today = date.today()
+def remind_context(db: Session, user: User, today: date) -> dict:
+    """리마인드 구역이 쓰는 값. 딜 진행 관리 한 페이지가 통째로 가져다 쓴다.
+
+    원래 `/followups` 라는 딴 페이지였는데, 한 담당자를 두고 "자료 보냈나 →
+    답 없으면 리마인드 → 미팅 잡기" 를 오가는 흐름이라 페이지가 갈리면
+    그 흐름이 끊긴다.
+    """
     # 답이 왔는데도 리마인드가 나가는 것이 이 기능의 가장 나쁜 실패다.
     # 화면을 열 때마다 반응 기록을 훑어 멈춘다.
     cadence.sweep_reactions(db, user.id)
@@ -53,8 +56,7 @@ def followups_page(request: Request, db: Session = Depends(get_db),
     for row in due:
         by_stage.setdefault(row["next_stage"], []).append(row)
 
-    ctx = base_ctx(request, db, user, active="flow")
-    ctx.update({
+    return {
         "due": due,
         "due_groups": [
             {"stage": stage, "label": cadence.STAGE_LABELS.get(stage, ""),
@@ -63,19 +65,25 @@ def followups_page(request: Request, db: Session = Depends(get_db),
         ],
         "upcoming": upcoming,
         "closed": closed,
-        "counts": {
+        "remind_counts": {
             "due": len(due),
             "overdue": sum(1 for r in due if r["overdue"]),
             "upcoming": len(upcoming),
             "closed": len(closed),
         },
-        "flow_tab": "followup",
-        "flow_counts": flow.counts(db, user, today),
         "rules": _rule_views(db),
         "next_send": cadence.upcoming_send_dates(db, today)[0],
-        "msg": msg,
-    })
-    return templates.TemplateResponse("followups.html", ctx)
+    }
+
+
+@router.get("/followups", response_class=HTMLResponse, include_in_schema=False)
+def followups_page(request: Request, db: Session = Depends(get_db),
+                   user: User = Depends(get_current_user), msg: str = ""):
+    """옛 주소 — 딜 진행 관리 한 페이지의 리마인드 구역으로 보낸다.
+
+    즐겨찾기와 화면 안 링크가 여럿 걸려 있어 살려 둔다.
+    """
+    return RedirectResponse("/ir#remind", status_code=307)
 
 
 def _clean_dates(value: str) -> Optional[str]:

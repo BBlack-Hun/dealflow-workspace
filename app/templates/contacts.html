@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% block content %}
 {#
-  7컬럼 고정 레이아웃 (FEATURE_SPEC §3, 피드백 #3 "엑셀시트 PC 한 화면에").
-  폭 합계 100% + table-layout:fixed + 셀 말줄임 → 어떤 데이터가 들어와도
-  1280px 에서 가로 스크롤이 생기지 않는다. 상세는 행 클릭 → 우측 패널.
+  담당자 시트(`전체 딜소개현황`)를 그대로 옮긴 표.
+  `table-layout: fixed` + 셀 말줄임이라 1280px 에서 가로 스크롤이 없다.
+  폭은 실제 글자 길이로 잡았다 — 표 머리(<thead>) 주석 참고.
 #}
 <header class="page-head">
   <h1>{{ page_title }}</h1>
@@ -32,7 +32,54 @@
     {% if t.kind == 'pool' %}<span class="pool-dot" title="투자사 풀">◇</span>{% endif %}{{ t.label }} <span>{{ t.count }}</span>
   </a>
   {% endfor %}
+
+  {#
+    참고 시트 — 스크립트·가이드처럼 매번 구글 시트를 따로 열어 보던 자료.
+    명단 탭과 성격이 달라 구분선 뒤에 둔다(누르면 명단 대신 그 자료가 열린다).
+    쓰면서 추려 가라고 각 탭에 지우기를 붙였다.
+  #}
+  {% if ref_sheets %}
+  <span class="tab-divider" title="여기부터는 참고 자료입니다">|</span>
+  {% for s in ref_sheets %}
+  <a class="sheet-tab ref-tab {% if ref and ref.id == s.id %}active{% endif %}"
+     href="/contacts?sheet={{ selected_sheet|urlencode }}&ref={{ s.id }}"
+     title="참고 자료">📄 {{ s.title }}</a>
+  {% endfor %}
+  {% endif %}
 </nav>
+
+{% if ref %}
+{# 참고 자료를 펼친 상태. 명단 표는 아래에 그대로 남는다. #}
+<section class="panel ref-panel">
+  <h2 class="panel-title">{{ ref.title }}
+    <span class="hint">참고 자료</span>
+    <span class="ref-acts">
+      <a class="linkbtn" href="/contacts?sheet={{ selected_sheet|urlencode }}">닫기</a>
+      <form method="post" action="/ref-sheets/{{ ref.id }}/delete"
+            onsubmit="return confirm('{{ ref.title }} 탭을 지울까요?\n원본 시트를 다시 가져오면 되살릴 수 있습니다.')">
+        <button class="linkbtn danger" type="submit">이 탭 지우기</button>
+      </form>
+    </span>
+  </h2>
+  {% if ref.kind == 'table' %}
+  <div class="table-wrap">
+    <table class="grid-table compact">
+      <thead><tr>
+        {% for c in ref_content.columns %}<th>{{ c }}</th>{% endfor %}
+      </tr></thead>
+      <tbody>
+        {% for row in ref_content.rows %}
+        <tr>{% for cell in row %}<td class="ref-cell">{{ cell }}</td>{% endfor %}</tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  {# 줄글은 원문 그대로 — 표로 잘못 나누면 내용이 칸에 잘려 사라진다. #}
+  <pre class="ref-text">{{ ref_content.body }}</pre>
+  {% endif %}
+</section>
+{% endif %}
 
 {% if selected_sheet %}
 {% for t in tabs %}{% if t.key == selected_sheet %}
@@ -75,20 +122,8 @@
 {% endif %}{% endfor %}
 {% endif %}
 
-<div class="kpi-row slim">
-  {% for c in connect_counts %}
-  <div class="kpi-card static"><span class="kpi-label">{{ c.label }}</span>
-    <span class="kpi-value {% if c.key == 'connected' %}ok{% elif c.key == 'not_started' %}warn{% endif %}">{{ c.count }}</span></div>
-  {% endfor %}
-</div>
 
 <div class="toolbar">
-  <div class="quick-chips">
-    <button type="button" class="chip" data-preset="">전체</button>
-    <button type="button" class="chip" data-preset="channel=%EC%B9%B4%ED%86%A1">카톡 연결</button>
-    <button type="button" class="chip" data-preset="room=%E2%97%8B%20%EB%AF%B8%ED%99%95%EC%9D%B8">방 미확인</button>
-    <button type="button" class="chip" data-preset="reaction=%EB%B0%98%EC%9D%91%20%EC%97%86%EC%9D%8C">반응 없음</button>
-  </div>
   <div class="toolbar-right">
     <label class="density-toggle">
       <input type="checkbox" id="density-toggle"> 촘촘히 보기
@@ -143,23 +178,36 @@
 
 <div class="table-wrap">
   <table class="grid-table" id="contacts-table" data-inline-url="/api/contacts">
-    <colgroup>
-      <col style="width:16%"><col style="width:8%"><col style="width:16%">
-      <col style="width:12%"><col style="width:12%"><col style="width:10%"><col style="width:26%">
-    </colgroup>
     <thead>
       <tr>
         {% if pool_view %}<th style="width:32px"></th>{% endif %}
-        {% if team_wide %}
-        <th style="width:80px" data-filters="owner:담당 팀원">담당 팀원<div class="th-filters"></div></th>
-        {% endif %}
-        <th data-filters="group:그룹|connect:연결 단계">담당자 / 투자사<div class="th-filters"></div></th>
-        <th data-filters="channel:채널|room:방 연결">채널<div class="th-filters"></div></th>
-        <th data-filters="stage:단계|sector:섹터">투자 성격<div class="th-filters"></div></th>
-        <th data-filters="recency:최근 딜소개">최근 딜소개<div class="th-filters"></div></th>
-        <th data-filters="dealstage:진행 단계|reaction:반응">진행 단계<div class="th-filters"></div></th>
-        <th data-filters="status:상태">상태<div class="th-filters"></div></th>
-        <th>메모 / 액션</th>
+        {#
+          담당자 시트(`전체 딜소개현황`)는 다섯 칸뿐이다:
+              그룹 · 이름 · 투자사명 · 초대완료여부 · 투자분야/라운드사이즈
+          휴대폰·회사·부서·근무지 주소는 **다른 시트**에 있는 것이라 여기서는
+          안 본다. 필요하면 [수정] 에서 본다.
+
+          월별 딜소개 3열 세트는 NO 를 눌러 활동 이력으로 본다 — 달마다
+          오른쪽으로 늘어나는 칸이라 표에 넣으면 끝이 없다.
+        #}
+        {#
+          폭은 **실제 글자 길이**로 잡았다(90%가 들어가는 선).
+              그룹 8자 · 이름+직함 12자 · 담당자 3자 · 투자사명 30자
+              선호분야 17자 · 라운드사이즈 38자
+          짧은 값이 든 칸에 넓은 자리를 주면 표가 헐렁해 보이고, 정작 긴 칸은
+          잘린다. 담당자(3자)에 72px 을 주고 라운드사이즈(38자)를 130px 로
+          눌러 두었던 것이 그랬다.
+        #}
+        <th style="width:30px" title="누르면 활동 이력이 열립니다">NO</th>
+        <th style="width:76px" data-filters="group:그룹">그룹<div class="th-filters"></div></th>
+        <th style="width:118px">이름</th>
+        <th style="width:60px" data-filters="assignee:담당자">담당자<div class="th-filters"></div></th>
+        <th style="width:200px" data-filters="owner:투자사명">투자사명<div class="th-filters"></div></th>
+        <th style="width:82px" data-filters="room:초대완료여부">초대<div class="th-filters"></div></th>
+        <th style="width:150px" data-filters="sector:선호 투자분야">선호 투자분야<div class="th-filters"></div></th>
+        <th data-filters="stage:라운드사이즈">라운드 사이즈<div class="th-filters"></div></th>
+        <th style="width:88px" data-filters="dealstage:진행 단계">진행 단계<div class="th-filters"></div></th>
+        <th style="width:44px"></th>
       </tr>
     </thead>
     <tbody>
@@ -167,67 +215,39 @@
       <tr class="data-row" data-id="{{ r.id }}" data-name="{{ r.name }}"
           data-f-group="{{ r.group_name }}"
           data-f-owner="{{ r.owner }}"
+          data-f-assignee="{{ r.assignee }}"
           data-f-connect="{{ r.connect_label }}"
-          data-f-channel="{{ r.channel_tags|join('|') }}"
           data-f-room="{{ r.room_label }}"
           data-f-stage="{{ r.stages|join('|') }}"
           data-f-sector="{{ r.sectors|join('|') }}"
-          data-f-recency="{{ r.recency }}"
-          data-f-reaction="{{ r.reaction_tags|join('|') }}"
-          data-f-dealstage="{{ r.deal_stage_label }}"
-          data-f-status="{{ r.status_label }}">
+          data-f-dealstage="{{ r.deal_stage_label }}">
         {% if pool_view %}
-        <td><input type="checkbox" class="pool-cb" value="{{ r.id }}"
-                   {% if selected_sheet in r.sheets and r.is_mine %}{% endif %}></td>
+        <td><input type="checkbox" class="pool-cb" value="{{ r.id }}"></td>
         {% endif %}
-        {% if team_wide %}
-        <td class="{% if not r.is_mine %}muted{% endif %}">{{ r.owner }}</td>
-        {% endif %}
+        {# 월별 딜소개 이력은 옆으로 끝없이 늘어나는 칸이라 표에 넣지 않는다.
+           NO 를 누르면 그 담당자의 활동 이력이 열린다. #}
+        <td class="rowno muted js-detail" title="활동 이력 보기"></td>
+        <td class="cell" data-field="group_name" data-type="pick">{{ r.group_name }}</td>
         <td>
-          <div class="cell-main">{{ r.name }} <span class="muted">{{ r.title }}</span>
-            {% if r.connect_stage != 'connected' %}
-            <span class="tag {{ 'bad' if r.connect_stage == 'declined' else 'warn' }}">{{ r.connect_label }}</span>
-            {% endif %}
-          </div>
-          <div class="cell-sub muted">{{ r.firm }}{% if r.department %} · {{ r.department }}{% endif %}{% if r.group_name %} · {{ r.group_name }}{% endif %}</div>
+          <b class="cell" data-field="name">{{ r.name }}</b>
+          <span class="muted cell" data-field="title" data-type="pick">{{ r.title }}</span>
         </td>
+        <td class="cell" data-field="assignee_name" data-type="pick">{{ r.assignee }}</td>
+        <td class="cell ellipsis" data-field="firm" title="{{ r.firm }}">{{ r.firm }}</td>
         <td>
-          <div class="chan">
-            {% if r.channel_kakao %}<span title="카톡 연결">💬</span>{% endif %}
-            {% if r.channel_email %}<span title="메일 연결">✉</span>{% endif %}
-          </div>
-          <div class="cell-sub"><span class="room-dot {{ r.room_class }}"
-            title="{{ r.room_name or '카톡방 이름 미등록' }}">{{ r.room_label }}</span></div>
+          <span class="room-dot {{ r.room_class }}"
+                title="{{ r.room_name or '카톡방 이름 미등록' }}">{{ r.room_label }}</span>
           <div class="cell-sub muted cell room-edit" data-field="kakao_room_name"
                title="눌러서 카톡방 이름을 고칩니다">{{ r.room_name or '방 이름 없음' }}</div>
         </td>
-        <td>
-          <div class="cell-main">
-            {% for s in r.stages[:3] %}<span class="tag">{{ s }}</span>{% endfor %}
-            {% if not r.stages %}<span class="muted">-</span>{% endif %}
-          </div>
-          <div class="cell-sub">
-            {% for s in r.sectors[:3] %}<span class="tag soft">{{ s }}</span>{% endfor %}
-            {% if r.sectors|length > 3 %}<span class="muted">+{{ r.sectors|length - 3 }}</span>{% endif %}
-          </div>
+        <td title="{{ r.sectors|join(', ') }}">
+          <div class="cell clamp2" data-field="sectors" data-type="long">{{ r.sectors|join(', ') }}</div>
         </td>
-        <td>
-          <div class="cell-main tabular">{{ r.last_deal_label }}</div>
-          <div class="cell-sub muted" title="{{ r.last_deal_full }}">{{ r.last_deal_note or r.recency }}</div>
+        <td title="{{ r.round_size }}">
+          <div class="cell clamp2" data-field="round_size" data-type="long">{{ r.round_size }}</div>
         </td>
-        <td>
-          <div class="cell-main"><span class="stage-pill {{ r.deal_stage_cls }}">{{ r.deal_stage_label }}</span></div>
-          <div class="cell-sub muted">{% if r.ir_total or r.meet_total %}IR {{ r.ir_total }} · 미팅 {{ r.meet_total }}{% else %}반응 없음{% endif %}</div>
-        </td>
-        <td><span class="pill {{ r.status }}">{{ r.status_label }}</span></td>
-        <td>
-          <div class="cell-main memo cell" data-field="memo" data-type="long"
-               title="눌러서 바로 고칩니다">{{ r.memo or '-' }}</div>
-          <div class="cell-sub row-actions">
-            <a href="/deals" class="linkbtn">딜소개</a>
-            <button type="button" class="linkbtn js-detail">상세</button>
-          </div>
-        </td>
+        <td><span class="stage-pill {{ r.deal_stage_cls }}">{{ r.deal_stage_label }}</span></td>
+        <td><button type="button" class="linkbtn js-detail">수정</button></td>
       </tr>
       {% endfor %}
     </tbody>
@@ -279,7 +299,18 @@
       <label class="field"><span>섹터 태그 (쉼표)</span><input type="text" id="f-sectors" placeholder="AI,헬스케어"></label>
       <label class="field wide"><span>투자분야 / 라운드 사이즈</span><input type="text" id="f-round_size"></label>
       <label class="field"><span>이메일</span><input type="text" id="f-email"></label>
-      <label class="field"><span>연락처</span><input type="text" id="f-phone"></label>
+      <label class="field"><span>휴대폰</span><input type="text" id="f-phone"></label>
+      {#
+        시트에 있는데 표에는 안 넣은 값들. 표에 다 넣으면 20칸이 되어 정작
+        매일 보는 칸이 눌린다 — 가끔 찾는 값은 여기서 본다.
+      #}
+      <label class="field"><span>담당자</span><input type="text" id="f-assignee_name"></label>
+      <label class="field"><span>부서</span><input type="text" id="f-department"></label>
+      <label class="field"><span>근무처 전화</span><input type="text" id="f-office_phone"></label>
+      <label class="field"><span>근무처 팩스</span><input type="text" id="f-office_fax"></label>
+      <label class="field wide"><span>근무지 주소</span><input type="text" id="f-address"></label>
+      <label class="field"><span>명함 등록일</span><input type="text" id="f-card_registered_at"></label>
+      <label class="field"><span>관심도</span><input type="text" id="f-interest_level"></label>
       <label class="field checks">
         <span>채널</span>
         <span class="check-row">

@@ -36,8 +36,9 @@
     }).join("");
 
     var terminal = (d.status === "done" || d.status === "done_with_errors" || d.status === "canceled");
+    // 관리자가 읽기 전용으로 보고 있으면 버튼 자체가 없다 — 재시도 표시할 곳도 없다.
     var retryBtn = document.getElementById("retry-btn");
-    retryBtn.hidden = !(terminal && d.counts.failed > 0);
+    if (retryBtn) retryBtn.hidden = !(terminal && d.counts.failed > 0);
 
     if (terminal) { if (timer) { clearInterval(timer); timer = null; } }
   }
@@ -49,14 +50,16 @@
       .catch(function () {});
   }
 
-  document.getElementById("cancel-btn").addEventListener("click", function () {
+  var cancelBtn = document.getElementById("cancel-btn");
+  if (cancelBtn) cancelBtn.addEventListener("click", function () {
     var q = window.DEALFLOW_JOB_VERIFY
       ? "확인을 중단하시겠습니까? 남은 건은 미확인으로 남습니다."
       : "발송을 중단하시겠습니까? 아직 발송되지 않은 건은 취소됩니다.";
     if (!confirm(q)) return;
     fetch("/api/jobs/" + jobId + "/cancel", { method: "POST" }).then(poll);
   });
-  document.getElementById("retry-btn").addEventListener("click", function () {
+  var retryClickBtn = document.getElementById("retry-btn");
+  if (retryClickBtn) retryClickBtn.addEventListener("click", function () {
     fetch("/api/jobs/" + jobId + "/retry", { method: "POST" })
       .then(function (r) { return r.json(); })
       .then(function () { if (!timer) timer = setInterval(poll, 2000); poll(); });

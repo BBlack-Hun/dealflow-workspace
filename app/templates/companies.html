@@ -19,15 +19,6 @@
 {% if msg %}<p class="flash">{{ msg }}</p>{% endif %}
 
 <div class="toolbar">
-  <div class="quick-chips">
-    <button type="button" class="chip" data-preset="">전체</button>
-    {# `소개 가능` 컬럼을 뺐으므로 그 필터는 아무것도 못 거른다.
-       시트에 실제로 있는 값으로 바꾼다. #}
-    <button type="button" class="chip" data-preset="top=%ED%95%B5%EC%8B%AC">핵심</button>
-    <button type="button" class="chip" data-preset="top=TOP">TOP</button>
-    <button type="button" class="chip" data-preset="contract=%EB%94%9C%EC%86%8C%EA%B0%9C%20%EB%B6%88%EA%B0%80">딜소개 불가</button>
-    <button type="button" class="chip" data-preset="ir=%E2%9A%A0%20%EC%97%86%EC%9D%8C">IR 자료 없음</button>
-  </div>
   <div class="toolbar-right">
     <input type="search" id="co-search" placeholder="기업명 · 분야 · 소개 검색"
            value="{{ q }}" autocomplete="off">
@@ -165,8 +156,8 @@
         <th style="width:9%" data-filters="series:기업구분">기업구분<div class="th-filters"></div></th>
         <th>한줄 소개<span class="th-note">두 줄까지 보입니다 · 눌러서 수정</span></th>
         <th style="width:74px" data-filters="assignee:담당자">담당자<div class="th-filters"></div></th>
-        <th style="width:70px" data-filters="contract:계약여부">계약여부<div class="th-filters"></div></th>
-        <th style="width:96px">날짜 기입<span class="th-note">계약기업 · 홍보메일 삭제</span></th>
+        <th style="width:64px" data-filters="contract:계약여부">계약여부<div class="th-filters"></div></th>
+        <th style="width:78px">날짜 기입<span class="th-note">계약기업 · 홍보메일 삭제</span></th>
         <th style="width:86px" data-filters="top:핵심/TOP Deal">핵심/TOP Deal<div class="th-filters"></div></th>
         {# IR 자료는 맨 끝에 그대로 둔다 — 요청이 왔을 때 바로 꺼내 쓰는 칸이다. #}
         <th style="width:82px" data-filters="ir:IR 자료">IR 자료<div class="th-filters"></div></th>

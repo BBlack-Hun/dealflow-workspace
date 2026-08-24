@@ -3,7 +3,11 @@
   "use strict";
 
   var FIELDS = ["name", "title", "firm", "group_name", "kakao_room_name", "invited_status",
-    "status", "stages", "sectors", "round_size", "email", "phone", "memo"];
+    "status", "stages", "sectors", "round_size", "email", "phone", "memo",
+    // 시트에 있는데 표에는 안 넣은 값들 — 표에 다 넣으면 20칸이 되어
+    // 정작 매일 보는 칸이 눌린다. 가끔 찾는 값은 상세에서 본다.
+    "assignee_name", "department", "office_phone", "office_fax",
+    "address", "card_registered_at", "interest_level"];
   var CHECKS = ["channel_kakao", "channel_email"];
   var KIND_KO = {
     deal_intro: "딜소개", ir_request: "IR 요청", meeting: "미팅",
@@ -218,4 +222,27 @@
   if (window.DealflowFilters && table) {
     filters = window.DealflowFilters.init({ table: "#contacts-table" });
   }
+})();
+
+// NO 는 **보이는 것** 기준으로 1부터. 걸러낸 뒤 몇 명인지 그 자리에서 세기 위해서다
+// (시트에서 옮겨 온 번호는 중간이 비어 있어 셀 수가 없다).
+(function () {
+  var table = document.getElementById("contacts-table");
+  if (!table) return;
+
+  function renumber() {
+    var n = 0;
+    table.querySelectorAll("tbody tr.data-row").forEach(function (tr) {
+      var cell = tr.querySelector(".rowno");
+      if (!cell) return;
+      if (tr.hidden) { cell.textContent = ""; return; }
+      cell.textContent = ++n;
+    });
+  }
+
+  renumber();
+  // 필터가 행을 숨기면 번호를 다시 매긴다.
+  new MutationObserver(renumber).observe(table.querySelector("tbody"), {
+    attributes: true, attributeFilter: ["hidden"], subtree: true
+  });
 })();

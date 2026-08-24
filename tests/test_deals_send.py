@@ -299,3 +299,49 @@ def test_ir_has_no_warning_once_the_link_is_set(client, db, seed):
     preview = r.json()["previews"][0]
     assert not any("IR 자료 링크가 없는" in w for w in preview["warnings"])
     assert preview["attachments"][0]["url"].startswith("https://drive.google.com/")
+
+
+# --- 탭 순서 = 일하는 순서 -----------------------------------------------------
+
+def test_mode_tabs_follow_the_actual_flow(client, db, seed):
+    """탭 순서가 곧 일하는 순서여야 다음에 뭘 눌러야 할지 헤매지 않는다.
+
+        딜 소개 → (요청 오면) IR 자료 전달 → (반응 없으면) 리마인드
+               → 미팅 요청 → 미팅 후기 → 선호 분야 묻기
+    """
+    import re
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    body = client.get("/deals").text
+    block = body[body.index('id="mode-tabs"'):]
+    order = re.findall(r'data-mode="(\w+)"', block[:2000])
+    assert order == ["deal", "ir", "remind", "meeting", "review", "ask"], order
+
+    # '기업 소개' 는 '딜 소개' 로 바뀌었다 — 다른 화면 용어와 맞춘다
+    assert "딜 소개<span>" in body
+    assert "기업 소개<span>" not in body
+
+
+def test_meeting_review_is_a_text_only_mode(client, db, seed):
+    """미팅 뒤 열흘쯤 지나 결과를 묻는다. 원본 시트에도 "결과확인전화가 없으면
+    계약을 잊어버리는 경우가 발생할 수 있습니다" 라고 적혀 있었다."""
+    from app.routers.deals import FOLLOW_UP_MODES, MODES_WITH_COMPANIES, MODE_REVIEW
+
+    assert MODE_REVIEW in FOLLOW_UP_MODES
+    # 기업 목록 없이 문구만 나간다
+    assert MODE_REVIEW not in MODES_WITH_COMPANIES
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    r = client.post("/api/deals/preview", json={
+        "mode": "review", "contact_ids": [seed["contact_id"]], "company_ids": []})
+    assert r.status_code == 200, r.text
+    assert "미팅" in r.json()["previews"][0]["message"]
+
+
+def test_review_template_kind_is_editable(client, db, seed):
+    """문구를 고칠 수 없으면 기본 문장만 계속 나간다."""
+    from app.routers.templates_crud import KIND_LABELS
+
+    assert "meeting_review" in KIND_LABELS
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    assert "미팅 후기" in client.get("/templates").text
