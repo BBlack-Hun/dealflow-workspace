@@ -892,17 +892,45 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
 }
 
 @media (max-width: 720px) {
-  .kpi-row, .react-row, .dash-grid, .mini-charts { grid-template-columns: 1fr;
-                                                   flex-direction: column; }
+  /* 여러 칸으로 나뉘던 것을 한 줄로 세운다 */
+  .kpi-row, .react-row, .dash-grid, .mini-charts,
+  .deal-grid, .form-grid, .import-stats {
+    grid-template-columns: 1fr; flex-direction: column;
+  }
   .kpi-card, .react { width: auto; }
   .toolbar { flex-direction: column; align-items: stretch; gap: 8px; }
   .toolbar-right { flex-wrap: wrap; }
   .page-head h1 { font-size: 19px; }
+
   /* 표는 좁히면 못 읽는다 — 폭을 지키고 가로로 민다. */
-  .table-wrap { overflow-x: auto; }
+  .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .grid-table { min-width: 760px; }
-  .sheet-tabs, .jump-bar, .funnel { overflow-x: auto; flex-wrap: nowrap; }
-  .funnel-step { flex: 0 0 auto; }
+  /* 스타트업DB 처럼 아주 넓은 표도 같은 규칙 — 폰이라고 더 좁히지 않는다 */
+  .table-wrap.wide .grid-table { min-width: 2030px; }
+
+  /* 가로로 늘어선 줄은 밀어서 본다. 접으면 눌러야 보인다. */
+  .sheet-tabs, .jump-bar, .funnel, .mode-tabs, .quick-chips, .chip-row,
+  .detail-tabs, .weekday-pick {
+    overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch;
+  }
+  .funnel-step, .sheet-tab, .mode-tab, .chip { flex: 0 0 auto; }
+
+  /* 우측 상세 패널은 폰에서 화면을 다 쓴다 — 420px 은 화면보다 넓다. */
+  .detail-panel, .detail-panel.wide { width: 100vw; }
+
+  /* 시간·이름·내용이 칸으로 나뉘던 줄은 세로로 */
+  .tl-item { grid-template-columns: 1fr; gap: 2px; }
+  .bar-row { grid-template-columns: 72px 1fr 30px; }
+
   /* 폰에서 뜨는 편집창은 화면을 벗어나면 안 된다 */
   .cell-pop { width: calc(100vw - 24px) !important; left: 12px !important; }
+
+  /* 줄바꿈이 안 되던 것들 — 긴 기업명·주소가 화면을 밀어낸다 */
+  .due-list li, .due-head, .req-rank a { flex-wrap: wrap; }
+  .memo, .ellipsis { max-width: 100%; }
+}
+
+/* 로그인 화면. 카드 폭 340px 이 좁은 폰(360px)에서 여백을 다 먹는다. */
+@media (max-width: 400px) {
+  .login-card { width: auto; max-width: 100%; margin: 0 12px; padding: 22px 18px; }
 }
