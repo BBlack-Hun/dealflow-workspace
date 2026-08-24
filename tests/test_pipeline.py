@@ -341,7 +341,8 @@ def test_both_pages_share_the_tab_bar(client, db, users):
     for path in ("/followups", "/ir"):
         body = client.get(path).text
         assert "flow-tabs" in body, path
-        for tab in ("후속 문구", "IR 자료 요청", "미팅"):
+        # 탭은 **실제 흐름 순서**다: IR 자료 요청 → 리마인드 → 미팅 → 미팅 후기
+        for tab in ("IR 자료 요청", "리마인드", "미팅", "미팅 후기"):
             assert tab in body, f"{path} 에 {tab} 탭이 없다"
 
 
@@ -357,4 +358,45 @@ def test_tab_counts_come_from_one_place(client, db, users):
     for path in ("/followups", "/ir"):
         assert client.get(path).status_code == 200, path
     assert set(expected) == {"due", "upcoming", "ir_open", "ir_overdue",
-                             "meeting_todo", "meeting_open"}
+                             "meeting_todo", "meeting_open",
+                             "review_due", "review_open"}
+
+
+def test_flow_tabs_are_in_working_order(client, db, users):
+    """탭 순서가 곧 일하는 순서여야 다음에 뭘 눌러야 할지 헤매지 않는다.
+
+        딜 소개 → IR 자료 요청 → (반응 없음) 리마인드
+               → (반응 있음) 미팅 → 미팅 후기
+    """
+    import re
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    body = client.get("/ir").text
+    block = body[body.index("flow-tabs"):]
+    labels = [t.strip() for _href, t in
+              re.findall(r'href="([^"]+)">\s*([^<\n]+)', block[:1400])]
+    assert labels[:4] == ["IR 자료 요청", "리마인드", "미팅", "미팅 후기"], labels
+
+
+def test_review_count_excludes_already_asked(db, users):
+    """이미 결과를 물어본 곳까지 세면 전화할 곳이 몇 군데인지 알 수 없다."""
+    from datetime import date
+
+    from app.models import Meeting, VcContact
+    from app.services import flow
+
+    c1 = VcContact(user_id=users["u1"].id, name="물어봄", firm="가나벤처스")
+    c2 = VcContact(user_id=users["u1"].id, name="아직", firm="다라인베스트")
+    db.add_all([c1, c2])
+    db.commit()
+    today = date.today().isoformat()
+    db.add_all([
+        Meeting(user_id=users["u1"].id, contact_id=c1.id, kind="first",
+                status="done", followup_done=1, scheduled_at=today),
+        Meeting(user_id=users["u1"].id, contact_id=c2.id, kind="first",
+                status="done", scheduled_at=today),
+    ])
+    db.commit()
+
+    counts = flow.counts(db, users["u1"], date.today())
+    assert counts["review_open"] == 1, "이미 물어본 곳이 섞였다"

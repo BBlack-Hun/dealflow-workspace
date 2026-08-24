@@ -249,8 +249,11 @@
     {% else %}<p class="muted">아직 없습니다.</p>{% endif %}
   </section>
 
-  <section class="panel">
-    <h2 class="panel-title">끝난 미팅 <span class="hint">{{ finished|length }}건</span></h2>
+  {# 미팅 후기 — 끝난 미팅에 결과를 물었는지 보는 자리. 탭이 여기로 온다. #}
+  <section class="panel" id="reviews">
+    <h2 class="panel-title">미팅 후기
+      <span class="hint">끝난 미팅 {{ finished|length }}건 · 열흘쯤 뒤 결과를 묻습니다</span>
+    </h2>
     {% if finished %}
     <table class="grid-table compact">
       <thead><tr><th>날짜</th><th>담당자</th><th>결과</th><th>결과 문의</th></tr></thead>

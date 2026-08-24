@@ -34,7 +34,11 @@ def counts(db: Session, user: User, today: Optional[date] = None) -> dict:
         "upcoming": len(active) - len(due),
         "ir_open": len(items["open_requests"]),
         "ir_overdue": len(items["overdue_requests"]),
-        # 오늘 약속 + 결과 문의할 때 — 오늘 손이 가는 미팅
-        "meeting_todo": len(items["today_meetings"]) + len(items["due_followups"]),
+        # 오늘 약속 — 미팅 탭에서 손이 가는 것
+        "meeting_todo": len(items["today_meetings"]),
         "meeting_open": sum(1 for m in meetings if m["status"] == "scheduled"),
+        # 미팅 후기 — 끝났는데 아직 결과를 안 물어본 곳. 놓치면 계약을 잊는다.
+        "review_due": len(items["due_followups"]),
+        "review_open": sum(1 for m in meetings
+                           if m["status"] != "scheduled" and not m.get("followup_done")),
     }
