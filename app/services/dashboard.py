@@ -310,8 +310,13 @@ def _pipeline_view(rows: List[VcContact]) -> dict:
 
 
 def recent_batches(db: Session, user_id: Optional[int] = None, limit: int = 5) -> List[dict]:
-    """최근 발송 회차. 관리자 화면에서는 user_id 없이 팀 전체를 본다."""
-    stmt = select(SendJob).where(SendJob.kind == "deal_intro")
+    """최근 발송 회차. 관리자 화면에서는 user_id 없이 팀 전체를 본다.
+
+    **딜소개만 세면 안 된다.** IR 자료 전달·리마인드도 나간 것이고, 관리자가
+    보려는 것은 "무엇이 나갔나" 다 — 종류로 걸러 놓으면 보낸 사람은 보냈는데
+    관리자 화면에는 없는 상태가 된다(방 확인은 발송이 아니라 제외).
+    """
+    stmt = select(SendJob).where(SendJob.kind != "verify_room")
     if user_id is not None:
         stmt = stmt.where(SendJob.user_id == user_id)
     jobs = db.execute(stmt.order_by(SendJob.id.desc()).limit(limit)).scalars().all()
@@ -329,6 +334,7 @@ def recent_batches(db: Session, user_id: Optional[int] = None, limit: int = 5) -
             select(User).where(User.id.in_([j.user_id for j in jobs]))
         ).scalars().all()
     }
+    kind_labels = {"deal_intro": "딜소개", "ir_delivery": "IR 자료 전달"}
     out = []
     for job in jobs:
         batch = batches.get(job.batch_id)
@@ -336,6 +342,7 @@ def recent_batches(db: Session, user_id: Optional[int] = None, limit: int = 5) -
         out.append({
             "job_id": job.id,
             "title": batch.title if batch else "딜소개 회차",
+            "kind": kind_labels.get(job.kind, job.kind),
             "date": (batch.sent_date if batch else None) or (job.started_at or "")[:10],
             "owner": owner.name if owner else "",
             "status": job.status,
