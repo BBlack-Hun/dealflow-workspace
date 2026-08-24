@@ -799,3 +799,8 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
 .js-top { font-size: 12px; color: var(--muted); }
 .js-top.on { color: #c9971a; font-weight: 700; }
 .top-on { color: #c9971a; font-weight: 700; }
+
+/* 업무 보고의 다섯 목록 — 한 페이지에서 죽 훑는다. */
+.bucket { margin: 14px 0 18px; }
+.bucket-head { font-size: 13px; margin: 0 0 6px; display: flex; align-items: center; gap: 8px; }
+.bucket-empty { font-size: 12px; margin: 0 0 4px; }

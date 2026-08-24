@@ -24,7 +24,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..models import IrRequest, Meeting, User, VcContact
-from .pipeline import MEETING_KINDS, OUTCOMES
+from .pipeline import MEETING_KINDS, OUTCOMES, REQUEST_STATUS
 
 WEEK_NAMES = ["첫주", "둘째주", "셋째주", "넷째주", "다섯째주", "여섯째주"]
 
@@ -122,6 +122,9 @@ def monthly(db: Session, year: int, month: int,
     return {
         "year": year,
         "month": month,
+        # 한 달에 두 번(첫째·셋째 수요일) 도는 일이라, 그 달에 무엇이 오갔는지를
+        # **한눈에** 봐야 한다. 다섯 가지를 날짜와 함께 그대로 늘어놓는다.
+        "buckets": _buckets(meetings, requests, contacts, owners, today),
         "weeks": rows,
         "total": len(meetings),
         "done": len(done),
@@ -136,8 +139,54 @@ def monthly(db: Session, year: int, month: int,
     }
 
 
-def recent_months(today: Optional[date] = None, count: int = 6) -> List[tuple]:
-    """최근 달들 (연, 월). 화면의 달 고르기에 쓴다."""
+def _buckets(meetings, requests, contacts, owners, today) -> List[dict]:
+    """대시보드의 반응 다섯 가지를 **그 달치로, 날짜와 함께**.
+
+    숫자만 보면 "그게 누구였지" 가 이어진다. 보고에서는 이름과 날짜가
+    나란히 있어야 그대로 옮겨 적을 수 있다.
+    """
+    def who(contact_id):
+        c = contacts.get(contact_id)
+        if c is None:
+            return {"name": "-", "title": "", "firm": ""}
+        return {"name": c.name, "title": c.title or "", "firm": c.firm or ""}
+
+    def row(when, contact_id, company, note, user_id):
+        return {"date": when or "", **who(contact_id), "company": company or "",
+                "note": note or "", "owner": owners.get(user_id, "")}
+
+    ir = [row(r.requested_at, r.contact_id, r.company_name,
+              REQUEST_STATUS.get(r.status, r.status), r.user_id) for r in requests]
+    asked = [m for m in meetings if m.status != "done"]
+    done = [m for m in meetings if m.status == "done"]
+    # 끝난 미팅 중 **아직 결과를 안 물어본 곳**만. 이미 물어본 곳까지 세면
+    # 전화할 곳이 몇 군데인지 알 수 없다.
+    call = [m for m in done if not m.followup_done]
+
+    return [
+        {"key": "ir", "label": "IR 요청 투자사", "rows": ir},
+        {"key": "meet_ask", "label": "IR 미팅 요청 투자사",
+         "rows": [row(m.scheduled_at, m.contact_id, m.company_name,
+                      MEETING_KINDS.get(m.kind, m.kind), m.user_id) for m in asked]},
+        {"key": "companies", "label": "IR 요청받은 기업",
+         "rows": sorted(ir, key=lambda r: r["company"])},
+        {"key": "meet_done", "label": "IR 미팅완료 투자사",
+         "rows": [row(m.scheduled_at, m.contact_id, m.company_name,
+                      OUTCOMES.get(m.outcome or "", "결과 미정"), m.user_id)
+                  for m in done]},
+        {"key": "call", "label": "IR 미팅완료 리마인드 TEL 투자사",
+         "rows": [row(m.followup_due or m.scheduled_at, m.contact_id, m.company_name,
+                      "지남" if (m.followup_due or "") <= today.isoformat() else "예정",
+                      m.user_id) for m in call]},
+    ]
+
+
+def recent_months(today: Optional[date] = None, count: int = 24) -> List[tuple]:
+    """최근 달들 (연, 월). 화면의 달 고르기에 쓴다.
+
+    2년치를 낸다 — 작년 이맘때와 견주는 일이 잦은데 6개월만 두면 화면에서
+    갈 수가 없다(주소로는 어느 달이든 열린다).
+    """
     today = today or date.today()
     out = []
     year, month = today.year, today.month

@@ -234,7 +234,7 @@ def team_page(request: Request, db: Session = Depends(get_db),
 @router.get("/report", response_class=HTMLResponse, include_in_schema=False)
 def report_page(request: Request, db: Session = Depends(get_db),
                 user: User = Depends(get_current_user),
-                month: str = "", scope: str = ""):
+                month: str = "", scope: str = "", member: int = 0):
     """주간·월간 업무 보고. 시트에 손으로 옮겨 적던 표를 기록에서 뽑는다."""
     from datetime import date as _date
 
@@ -247,8 +247,21 @@ def report_page(request: Request, db: Session = Depends(get_db),
             pass
     # 관리자는 팀 전체를 볼 수 있다. 기본은 본인 것.
     team_wide = user.role == "admin" and scope == "team"
+    # 관리자는 팀원 한 사람 것만 따로 볼 수도 있어야 한다 — 전체만 보면
+    # 누가 얼마나 했는지는 보이지만 그 사람과 이야기할 자료가 안 나온다.
+    target = user
+    if user.role == "admin" and member:
+        picked = db.get(User, member)
+        if picked is not None:
+            target, team_wide = picked, False
     ctx = base_ctx(request, db, user, active="report")
-    ctx.update(report.monthly(db, year, mon, None if team_wide else user, today))
+    ctx.update(report.monthly(db, year, mon, None if team_wide else target, today))
+    ctx.update({
+        "viewing": None if team_wide else target,
+        "members": ([{"id": u.id, "name": u.name} for u in
+                     db.execute(select(User).order_by(User.id)).scalars().all()]
+                    if user.role == "admin" else []),
+    })
     ctx.update({
         "months": [(y, m, f"{y}-{m:02d}") for y, m in report.recent_months(today)],
         "selected": f"{year}-{mon:02d}",
