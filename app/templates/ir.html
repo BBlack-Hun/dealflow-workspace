@@ -262,17 +262,39 @@
     </h2>
     {% if finished %}
     <table class="grid-table compact">
-      <thead><tr><th>날짜</th><th>담당자</th><th>결과</th><th>결과 문의</th></tr></thead>
+      <thead><tr>
+        <th style="width:96px">날짜</th><th>담당자</th>
+        <th style="width:80px">구분</th><th style="width:84px">결과</th>
+        <th style="width:110px">결과 문의</th><th style="width:96px"></th>
+      </tr></thead>
       <tbody>
         {% for m in finished[:20] %}
         <tr>
           <td class="muted">{{ m.scheduled_at }}</td>
           <td>{{ m.name }} <span class="muted">{{ m.firm }}</span></td>
+          <td class="muted">{{ m.kind_label }}</td>
           <td>{{ m.outcome_label or '-' }}</td>
           <td class="muted">
             {% if m.status == 'canceled' %}취소
             {% elif m.followup_done %}완료
             {% else %}{{ m.followup_due }} 예정{% endif %}
+          </td>
+          <td>
+            {#
+              흐름은 일직선이 아니다 — 검토 중이면 2차 미팅으로 돌아간다.
+              여기서 바로 잡지 못하면 위로 올라가 담당자를 다시 골라야 하고,
+              그러다 엉뚱한 곳에 미팅이 잡힌다.
+              이미 거절·보류로 끝난 건에는 권하지 않는다.
+            #}
+            {% if m.status != 'canceled' and m.outcome not in ('pass', 'hold') %}
+            <button type="button" class="linkbtn js-book-meeting"
+                    data-contact="{{ m.contact_id }}"
+                    data-company="{{ m.company_name or '' }}"
+                    data-kind="{{ 'etc' if m.kind == 'second' else 'second' }}"
+                    data-name="{{ m.name }}">
+              {% if m.kind == 'second' %}후속 미팅{% else %}2차 미팅{% endif %} 잡기
+            </button>
+            {% endif %}
           </td>
         </tr>
         {% endfor %}

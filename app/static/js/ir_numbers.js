@@ -80,11 +80,16 @@
 
     var contact = btn.getAttribute("data-contact");
     var company = btn.getAttribute("data-company") || "";
+    // 미팅 후기에서 넘어오면 다음 차수를 미리 골라 준다(1차 → 2차).
+    // 흐름은 일직선이 아니다 — 검토 중이면 다시 미팅으로 돌아간다.
+    var kind = btn.getAttribute("data-kind") || "";
 
     var select = box.querySelector('select[name="contact_id"]');
     if (select) select.value = contact;
     var companyInput = box.querySelector('input[name="company_name"]');
     if (companyInput) companyInput.value = company;
+    var kindSelect = box.querySelector('select[name="kind"]');
+    if (kindSelect && kind) kindSelect.value = kind;
 
     box.hidden = false;
     box.scrollIntoView({ block: "center" });

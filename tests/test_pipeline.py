@@ -425,3 +425,45 @@ def test_delivered_materials_offer_to_book_a_meeting(client, db, users):
     assert "js-book-meeting" in body, "전달한 자료에서 미팅을 잡을 방법이 없다"
     assert f'data-contact="{contact.id}"' in body
     assert 'data-company="샘플애그"' in body
+
+
+def test_a_reviewing_meeting_can_loop_back_to_a_second_one(client, db, users):
+    """흐름은 일직선이 아니다 — 검토 중이면 2차 미팅으로 돌아간다.
+    여기서 바로 잡지 못하면 위로 올라가 담당자를 다시 골라야 하고,
+    그러다 엉뚱한 곳에 미팅이 잡힌다."""
+    from datetime import date
+
+    from app.models import Meeting, VcContact
+
+    contact = VcContact(user_id=users["u1"].id, name="홍길동", firm="가나벤처스")
+    db.add(contact)
+    db.commit()
+    db.add(Meeting(user_id=users["u1"].id, contact_id=contact.id, kind="first",
+                   status="done", outcome="reviewing", company_name="샘플애그",
+                   scheduled_at=date.today().isoformat()))
+    db.commit()
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    body = client.get("/ir").text
+    assert "2차 미팅 잡기" in body
+    assert 'data-kind="second"' in body
+
+
+def test_a_rejected_meeting_does_not_suggest_another(client, db, users):
+    """이미 거절·보류로 끝난 건에 다음 미팅을 권하면 안 된다."""
+    from datetime import date
+
+    from app.models import Meeting, VcContact
+
+    contact = VcContact(user_id=users["u1"].id, name="거절함", firm="다라인베스트")
+    db.add(contact)
+    db.commit()
+    db.add(Meeting(user_id=users["u1"].id, contact_id=contact.id, kind="first",
+                   status="done", outcome="pass",
+                   scheduled_at=date.today().isoformat()))
+    db.commit()
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    body = client.get("/ir").text
+    row = body[body.index("거절함"):body.index("거절함") + 600]
+    assert "미팅 잡기" not in row
