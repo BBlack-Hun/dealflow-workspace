@@ -184,6 +184,30 @@ class IrCompany(TimestampMixin, Base):
     contact_phone: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     contact_email: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     # Amounts in 백만원 (millions of KRW); displayed in 억 (÷100).
+    # 연도별 매출. 시트가 22~25년을 따로 들고 있다 — 한 해만 남기면 성장 추세가
+    # 사라진다("작년 대비" 가 딜소개에서 자주 쓰인다).
+    #
+    # **글자로 담는다.** 원본에 `8.2억` · `1,224백만원` · `150억 ~ 200억` 이
+    # 한 칸에 섞여 있어서, 숫자로 바꾸려면 단위를 판별해야 한다. 잘못 읽으면
+    # 100배가 틀어진 채 딜소개 문구에 실려 나간다 — 적은 그대로가 안전하다.
+    revenue_2022: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    revenue_2023: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    revenue_2024: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    revenue_2025: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    founded_year: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # 스타트업DB 시트의 `사업분야` — **카테고리가 아니라 사업 설명**이다.
+    # (카테고리는 sector_major/minor 로 따로 있다.)
+    # 한줄 소개의 **첫 토막**이 이 값이다:
+    #   {사업 설명} | 매출 N억 | 누적투자금액 N억 | … | {특이사항}
+    business_desc: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # `핵심` · `TOP` · `핵심, TOP`. 켜짐/꺼짐 하나로는 어느 쪽인지 알 수 없다.
+    # `is_top_deal` 은 그대로 둔다 — 발송 화면의 '추천 딜' 이 그 값을 쓴다.
+    top_deal_kind: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # 기보·신보·중진공 — 보증/정책자금 이력. 투자사가 자주 묻는다.
+    guarantee: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # 이 기업을 맡은 팀원. 투자사 쪽 `assignee_name` 과 같은 성격이다.
+    assignee_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
     revenue_recent: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     funding_total: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     raise_target: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)

@@ -316,10 +316,12 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     renderIrLinks();
     var closingWrap = document.getElementById("tpl-closing-wrap");
     if (closingWrap) closingWrap.querySelector("span").textContent = askMode ? "문구" : "안내문";
-    // 문구만 보낼 때는 이미 대화가 오간 방이라 인사를 다시 붙이지 않는다.
+    // 이미 대화가 오간 방에는 인사를 다시 붙이지 않는다. 문구만 보낼 때가
+    // 그렇고, **자료 전달도 그렇다** — 자료를 달라고 한 답장에 이어 보내는
+    // 것이라 "안녕하세요" 로 다시 시작하면 처음 연락하는 것처럼 읽힌다.
     // 기본값만 바꿔 두고, 켜고 끄는 것은 사람이 정한다.
     var greet = document.getElementById("include-opening");
-    if (greet) { greet.checked = !askMode; syncOpeningToggle(); }
+    if (greet) { greet.checked = !askMode && mode !== "ir"; syncOpeningToggle(); }
     lastPreviews = [];
     previewTabs.innerHTML = "";
     previewArea.innerHTML = '<p class="muted">[미리보기 갱신]을 누르세요.</p>';
@@ -550,7 +552,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       warnBox.hidden = false;
       warnBox.textContent =
         "요청받은 기업 " + (asked - picked) + "개를 목록에서 찾지 못했습니다 — " +
-        "스타트업 관리에서 등록 상태를 확인하세요.";
+        "IR 기업현황에서 등록 상태를 확인하세요.";
     }
     if (picked) applyCompanyFilter();
   })();

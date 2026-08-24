@@ -47,7 +47,7 @@ REACTION_WINDOW_DAYS = 60
 
 # 방 확인 결과를 **명시적으로** 나눈다. 예전에는 모르는 값을 전부 '미확인'으로
 # 떨어뜨렸는데, 그래서 '방 없음(not_found)' 으로 확인된 사람까지 발송 가능으로
-# 세어졌다(투자사 DB 117명 · 대시보드 123명으로 어긋난 원인).
+# 세어졌다(투자사 관리 현황 117명 · 대시보드 123명으로 어긋난 원인).
 _SENDABLE_ROOM = {"verified", "unverified"}
 _ROOM_ALIAS = {
     "verified": "verified",
@@ -106,7 +106,8 @@ def _reaction_summary(db: Session, contact_ids: List[int]) -> dict:
     따로 봐야 한다.
     """
     if not contact_ids:
-        return {"ir_contacts": 0, "meeting_contacts": 0, "requested_companies": 0}
+        return {"ir_contacts": 0, "meeting_contacts": 0, "requested_companies": 0,
+                "meeting_done": 0, "meeting_call": 0}
 
     rows = db.execute(
         select(ContactActivity.kind, ContactActivity.contact_id,
@@ -132,12 +133,22 @@ def _reaction_summary(db: Session, contact_ids: List[int]) -> dict:
         ir_contacts.add(contact_id)
         if company_name:
             companies.add(company_name.strip())
-    for (contact_id,) in db.execute(
-        select(Meeting.contact_id).where(Meeting.contact_id.in_(contact_ids))
-    ).all():
-        meeting_contacts.add(contact_id)
+    # 미팅은 '요청' 과 '완료' 를 나눠 센다. 끝난 미팅은 다음 할 일이 다르다 —
+    # 열흘 뒤 결과를 물어봐야 하고, 그걸 놓치면 계약을 통째로 잊는다.
+    done_contacts, call_contacts = set(), set()
+    for meeting in db.execute(
+        select(Meeting).where(Meeting.contact_id.in_(contact_ids))
+    ).scalars().all():
+        meeting_contacts.add(meeting.contact_id)
+        if meeting.status == "done":
+            done_contacts.add(meeting.contact_id)
+            # 결과 문의를 아직 안 한 곳 — 전화할 대상이다.
+            if not meeting.followup_done:
+                call_contacts.add(meeting.contact_id)
 
     return {
+        "meeting_done": len(done_contacts),
+        "meeting_call": len(call_contacts),
         "ir_contacts": len(ir_contacts),
         "meeting_contacts": len(meeting_contacts),
         "requested_companies": len(companies),
@@ -222,7 +233,9 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None) -> dic
         blockers.append({
             "count": not_introducible, "label": "발송 목록에 안 뜨는 기업",
             "hint": "한줄소개 또는 숫자(매출·투자금)가 비어 소개 문구를 만들 수 없습니다",
-            "href": "/companies?ready=" + quote("⚠ 내용 부족"), "level": "warn",
+            # 표에서 '소개 가능' 컬럼을 뺐으므로 그 필터로 보내면 갈 곳이 없다.
+            # 채워야 하는 값이 있는 스타트업DB 탭으로 보낸다.
+            "href": "/companies?tab=db", "level": "warn",
         })
 
     device = db.execute(
@@ -256,7 +269,7 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None) -> dic
             {"key": "companies", "label": "소개 문구 준비된 기업",
              "value": len(introducible),
              "sub": f"발송 목록에 뜸 · 등록 {len(companies)}개 중",
-             "href": "/companies"},
+             "href": "/companies?tab=db"},
             {"key": "sent", "label": "이번 달 보낸 건수", "value": sent_this_month,
              "sub": "카톡·메일 도착 성공", "href": "/deals"},
         ],

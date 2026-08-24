@@ -92,4 +92,46 @@
     {% endif %}
   </section>
 </div>
+
+{# 한 달에 두 번 도는 일이라, 그 달에 무엇이 오갔는지를 **한눈에** 봐야 한다.
+   숫자만 보면 "그게 누구였지" 가 이어지므로 이름과 날짜를 나란히 둔다. #}
+<section class="panel">
+  <h2 class="panel-title">이 달의 반응
+    <span class="hint">{{ year }}년 {{ month }}월</span>
+    <a class="linkbtn" href="/api/export/reactions.xlsx" download>엑셀 내려받기</a>
+  </h2>
+  {% for b in buckets %}
+  <div class="bucket">
+    <h3 class="bucket-head">{{ b.label }}
+      <span class="count-pill {% if b.rows %}on{% endif %}"><b>{{ b.rows|length }}</b>건</span>
+    </h3>
+    {% if b.rows %}
+    <table class="grid-table compact">
+      <thead><tr>
+        <th style="width:96px">날짜</th>
+        <th style="width:22%">담당자</th>
+        <th style="width:22%">투자사</th>
+        <th>기업</th>
+        <th style="width:96px">상태</th>
+        {% if not viewing %}<th style="width:80px">담당 팀원</th>{% endif %}
+      </tr></thead>
+      <tbody>
+        {% for r in b.rows %}
+        <tr>
+          <td class="muted tabular">{{ r.date }}</td>
+          <td><b>{{ r.name }}</b> <span class="muted">{{ r.title }}</span></td>
+          <td class="ellipsis" title="{{ r.firm }}">{{ r.firm }}</td>
+          <td class="ellipsis" title="{{ r.company }}">{{ r.company }}</td>
+          <td class="muted">{{ r.note }}</td>
+          {% if not viewing %}<td class="muted">{{ r.owner }}</td>{% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted bucket-empty">없습니다.</p>
+    {% endif %}
+  </div>
+  {% endfor %}
+</section>
 {% endblock %}

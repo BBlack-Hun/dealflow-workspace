@@ -211,7 +211,7 @@ def test_deactivate_keeps_the_record(admin_client, db, users):
 def test_companies_page_opens(logged):
     r = logged.get("/companies")
     assert r.status_code == 200
-    assert "스타트업 관리" in r.text
+    assert "IR 기업현황" in r.text
 
 
 def _full_company(**kw):
@@ -364,7 +364,7 @@ def test_companies_table_shows_ir_link_state(logged, db):
 
 @pytest.mark.parametrize("path", ["/", "/contacts", "/deals", "/companies"])
 def test_pages_are_not_cached(logged, path):
-    """투자사 DB 에서 고치고 대시보드로 돌아오면 예전 숫자가 보이던 문제.
+    """투자사 관리 현황 에서 고치고 대시보드로 돌아오면 예전 숫자가 보이던 문제.
 
     서버는 매번 새로 계산하는데 브라우저가 캐시(뒤로가기 포함)를 내줬다.
     로그인이 필요한 화면이 캐시에 남으면 로그아웃 뒤 뒤로가기로도 보인다.
@@ -422,7 +422,7 @@ def test_clearing_the_room_leaves_the_send_list(logged, db, users):
 
 # --- '카톡 발송 가능' 이 두 화면에서 같아야 한다 -----------------------------
 #
-# 투자사 DB 는 117명, 대시보드는 123명으로 어긋난 적이 있다. 원인은 대시보드가
+# 투자사 관리 현황 는 117명, 대시보드는 123명으로 어긋난 적이 있다. 원인은 대시보드가
 # 모르는 방 상태를 전부 '미확인'으로 떨어뜨려, **방이 없다고 확인된 사람**까지
 # 발송 가능으로 센 것이었다.
 
@@ -690,7 +690,7 @@ def test_connect_tiles_filter_the_list(client, db, users):
 
     body = _dash(client)
     assert "연결 진행 중인 명단" in body
-    # 눌렀을 때 그 단계만 남아야 한다 — 라벨이 투자사 DB 의 필터값과 같아야 걸린다
+    # 눌렀을 때 그 단계만 남아야 한다 — 라벨이 투자사 관리 현황 의 필터값과 같아야 걸린다
     from app.services.sheet_import import CONNECT_LABELS
     for stage in ("in_progress", "not_started", "declined"):
         label = CONNECT_LABELS[stage]
@@ -705,3 +705,70 @@ def test_no_dead_menu_names_after_the_merge(client, db, users):
         text = path.read_text(encoding="utf-8")
         assert "IR·미팅 관리" not in text, path.name
         assert ">후속 관리<" not in text, path.name
+
+
+# --- 반응 다섯 가지 -------------------------------------------------------------
+
+def test_five_reaction_tiles(client, db, users):
+    """끝난 미팅은 다음 할 일이 다르다 — 열흘 뒤 결과를 물어봐야 하고,
+    그걸 놓치면 계약을 통째로 잊는다. 요청과 완료를 나눠 센다."""
+    from datetime import date
+
+    from app.models import IrRequest, Meeting, VcContact
+
+    c1 = VcContact(user_id=users["u1"].id, name="홍길동", firm="가나벤처스")
+    c2 = VcContact(user_id=users["u1"].id, name="김철수", firm="다라인베스트")
+    db.add_all([c1, c2])
+    db.commit()
+    db.add_all([
+        IrRequest(user_id=users["u1"].id, contact_id=c1.id, company_name="샘플애그",
+                  status="open", requested_at=date.today().isoformat()),
+        # 끝났고 결과 문의도 마친 미팅 — '완료' 에는 들되 '전화' 에는 안 든다
+        Meeting(user_id=users["u1"].id, contact_id=c1.id, kind="first",
+                status="done", followup_done=1,
+                scheduled_at=date.today().isoformat()),
+        # 끝났는데 아직 안 물어본 미팅 — 전화할 대상
+        Meeting(user_id=users["u1"].id, contact_id=c2.id, kind="first",
+                status="done", scheduled_at=date.today().isoformat()),
+    ])
+    db.commit()
+
+    body = _dash(client)
+    for label in ("IR 요청 투자사", "IR 미팅 요청 투자사", "IR 요청받은 기업",
+                  "IR 미팅완료 투자사", "IR 미팅완료 리마인드 TEL 투자사"):
+        assert label in body, f"'{label}' 타일이 없다"
+
+    from app.services.dashboard import _reaction_summary
+    summary = _reaction_summary(db, [c1.id, c2.id])
+    assert summary["meeting_done"] == 2
+    assert summary["meeting_call"] == 1, "결과 문의를 마친 곳까지 세면 안 된다"
+
+
+def test_reactions_export_carries_dates(client, db, users):
+    """숫자를 보고 나면 "그게 누구였지" 가 이어진다 — 날짜가 있어야 한다."""
+    import io
+    from datetime import date
+
+    import openpyxl
+
+    from app.models import IrRequest, VcContact
+
+    contact = VcContact(user_id=users["u1"].id, name="홍길동", title="심사역",
+                        firm="가나벤처스")
+    db.add(contact)
+    db.commit()
+    db.add(IrRequest(user_id=users["u1"].id, contact_id=contact.id,
+                     company_name="샘플애그", status="open",
+                     requested_at="2026-08-19"))
+    db.commit()
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    r = client.get("/api/export/reactions.xlsx")
+    assert r.status_code == 200
+
+    ws = openpyxl.load_workbook(io.BytesIO(r.content)).active
+    assert [c.value for c in ws[1]] == ["구분", "날짜", "담당자", "직함",
+                                        "투자사", "기업", "상태"]
+    rows = list(ws.iter_rows(min_row=2, values_only=True))
+    assert any(r[0] == "IR 요청 투자사" and r[1] == "2026-08-19" for r in rows)
+    assert any(r[0] == "IR 요청받은 기업" for r in rows)
