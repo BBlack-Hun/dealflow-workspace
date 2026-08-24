@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% block content %}
 {#
-  7컬럼 고정 레이아웃 (FEATURE_SPEC §3, 피드백 #3 "엑셀시트 PC 한 화면에").
-  폭 합계 100% + table-layout:fixed + 셀 말줄임 → 어떤 데이터가 들어와도
-  1280px 에서 가로 스크롤이 생기지 않는다. 상세는 행 클릭 → 우측 패널.
+  담당자 시트(`전체 딜소개현황`)를 그대로 옮긴 표.
+  `table-layout: fixed` + 셀 말줄임이라 1280px 에서 가로 스크롤이 없다.
+  폭은 실제 글자 길이로 잡았다 — 표 머리(<thead>) 주석 참고.
 #}
 <header class="page-head">
   <h1>{{ page_title }}</h1>
@@ -178,17 +178,6 @@
 
 <div class="table-wrap">
   <table class="grid-table" id="contacts-table" data-inline-url="/api/contacts">
-    <colgroup>
-      <col style="width:16%"><col style="width:8%"><col style="width:16%">
-      <col style="width:12%"><col style="width:12%"><col style="width:10%"><col style="width:26%">
-    </colgroup>
-    {#
-      시트(`150(71명연결)`) 컬럼을 그대로 옮긴다 — 쓰던 사람이 같은 자리에서
-      같은 것을 찾을 수 있어야 한다. 칸이 많아 가로로 민다(짜부라뜨리지 않는다).
-
-      시트에서 비어 있던 칸(`관심도`·`TIPS 기준` 0건)은 넣지 않았다.
-      아무도 안 쓰는 칸은 자리만 차지한다.
-    #}
     <thead>
       <tr>
         {% if pool_view %}<th style="width:32px"></th>{% endif %}
@@ -201,14 +190,24 @@
           월별 딜소개 3열 세트는 NO 를 눌러 활동 이력으로 본다 — 달마다
           오른쪽으로 늘어나는 칸이라 표에 넣으면 끝이 없다.
         #}
+        {#
+          폭은 **실제 글자 길이**로 잡았다(90%가 들어가는 선).
+              그룹 8자 · 이름+직함 12자 · 담당자 3자 · 투자사명 30자
+              선호분야 17자 · 라운드사이즈 38자
+          짧은 값이 든 칸에 넓은 자리를 주면 표가 헐렁해 보이고, 정작 긴 칸은
+          잘린다. 담당자(3자)에 72px 을 주고 라운드사이즈(38자)를 130px 로
+          눌러 두었던 것이 그랬다.
+        #}
         <th style="width:30px" title="누르면 활동 이력이 열립니다">NO</th>
-        <th style="width:80px" data-filters="group:그룹">그룹<div class="th-filters"></div></th>
-        <th style="width:130px">이름</th>
-        <th style="width:190px" data-filters="owner:담당자">투자사명<div class="th-filters"></div></th>
-        <th style="width:88px" data-filters="room:초대완료여부">초대완료여부<div class="th-filters"></div></th>
-        <th data-filters="sector:투자분야|stage:라운드사이즈">투자분야 / 라운드사이즈<div class="th-filters"></div></th>
-        <th style="width:92px" data-filters="dealstage:진행 단계">진행 단계<div class="th-filters"></div></th>
-        <th style="width:48px"></th>
+        <th style="width:76px" data-filters="group:그룹">그룹<div class="th-filters"></div></th>
+        <th style="width:118px">이름</th>
+        <th style="width:60px" data-filters="assignee:담당자">담당자<div class="th-filters"></div></th>
+        <th style="width:200px" data-filters="owner:투자사명">투자사명<div class="th-filters"></div></th>
+        <th style="width:82px" data-filters="room:초대완료여부">초대<div class="th-filters"></div></th>
+        <th style="width:150px" data-filters="sector:선호 투자분야">선호 투자분야<div class="th-filters"></div></th>
+        <th data-filters="stage:라운드사이즈">라운드 사이즈<div class="th-filters"></div></th>
+        <th style="width:88px" data-filters="dealstage:진행 단계">진행 단계<div class="th-filters"></div></th>
+        <th style="width:44px"></th>
       </tr>
     </thead>
     <tbody>
@@ -216,6 +215,7 @@
       <tr class="data-row" data-id="{{ r.id }}" data-name="{{ r.name }}"
           data-f-group="{{ r.group_name }}"
           data-f-owner="{{ r.owner }}"
+          data-f-assignee="{{ r.assignee }}"
           data-f-connect="{{ r.connect_label }}"
           data-f-room="{{ r.room_label }}"
           data-f-stage="{{ r.stages|join('|') }}"
@@ -232,6 +232,7 @@
           <b class="cell" data-field="name">{{ r.name }}</b>
           <span class="muted cell" data-field="title" data-type="pick">{{ r.title }}</span>
         </td>
+        <td class="cell" data-field="assignee_name" data-type="pick">{{ r.assignee }}</td>
         <td class="cell ellipsis" data-field="firm" title="{{ r.firm }}">{{ r.firm }}</td>
         <td>
           <span class="room-dot {{ r.room_class }}"
@@ -239,9 +240,11 @@
           <div class="cell-sub muted cell room-edit" data-field="kakao_room_name"
                title="눌러서 카톡방 이름을 고칩니다">{{ r.room_name or '방 이름 없음' }}</div>
         </td>
-        <td title="{{ r.sectors|join(', ') }}{% if r.round_size %} / {{ r.round_size }}{% endif %}">
+        <td title="{{ r.sectors|join(', ') }}">
           <div class="cell clamp2" data-field="sectors" data-type="long">{{ r.sectors|join(', ') }}</div>
-          <div class="cell-sub muted cell" data-field="round_size" data-type="long">{{ r.round_size }}</div>
+        </td>
+        <td title="{{ r.round_size }}">
+          <div class="cell clamp2" data-field="round_size" data-type="long">{{ r.round_size }}</div>
         </td>
         <td><span class="stage-pill {{ r.deal_stage_cls }}">{{ r.deal_stage_label }}</span></td>
         <td><button type="button" class="linkbtn js-detail">수정</button></td>

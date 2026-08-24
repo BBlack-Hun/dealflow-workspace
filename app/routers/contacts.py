@@ -200,6 +200,12 @@ def contact_rows(db: Session, user: User, team_wide: bool = False) -> List[dict]
             "stages": _split_csv(c.stages),
             "sectors": _split_csv(c.sectors),
             "round_size": c.round_size or "",
+            # 시트에 있는데 그동안 화면·엑셀 어디에도 안 나오던 값들.
+            "office_phone": c.office_phone or "",
+            "office_fax": c.office_fax or "",
+            "address": c.address or "",
+            "card_registered_at": c.card_registered_at or "",
+            "interest_level": c.interest_level or "",
             "last_deal": last_deal,
             "last_deal_label": _date_label(last_deal, last_round),
             "last_deal_note": last_deal_note or "",
@@ -293,6 +299,14 @@ class ContactIn(BaseModel):
     round_size: Optional[str] = None
     status: Optional[str] = None
     memo: Optional[str] = None
+    # 시트에 있던 값들 — 화면에서도 보고 고칠 수 있어야 한다.
+    assignee_name: Optional[str] = None
+    department: Optional[str] = None
+    office_phone: Optional[str] = None
+    office_fax: Optional[str] = None
+    address: Optional[str] = None
+    card_registered_at: Optional[str] = None
+    interest_level: Optional[str] = None
 
 
 class VerifyRequest(BaseModel):
@@ -458,6 +472,13 @@ def get_contact(
             "stages": contact.stages or "",
             "sectors": contact.sectors or "",
             "round_size": contact.round_size or "",
+            # 시트에 있는데 그동안 화면 어디에도 안 보이던 값들.
+            "office_phone": contact.office_phone or "",
+            "office_fax": contact.office_fax or "",
+            "address": contact.address or "",
+            "card_registered_at": contact.card_registered_at or "",
+            "interest_level": contact.interest_level or "",
+            "assignee_name": contact.assignee_name or "",
             "status": contact.status,
             "memo": contact.memo or "",
         },
@@ -650,7 +671,10 @@ def delete_contact(
 def _assign(contact: VcContact, body: ContactIn) -> None:
     """None 은 '변경 없음'. 빈 문자열은 '지움'으로 취급한다(부분 수정 PATCH 의미)."""
     for field in ("title", "firm", "group_name", "kakao_room_name", "invited_status",
-                  "email", "phone", "stages", "sectors", "round_size", "memo", "status"):
+                  "email", "phone", "stages", "sectors", "round_size", "memo", "status",
+                  # 시트에 있던 값들 — 화면에서도 고칠 수 있어야 한다.
+                  "assignee_name", "department", "office_phone", "office_fax",
+                  "address", "card_registered_at", "interest_level"):
         value = getattr(body, field)
         if value is not None:
             setattr(contact, field, value.strip() if isinstance(value, str) else value)

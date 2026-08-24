@@ -90,6 +90,12 @@ class VcContact(TimestampMixin, Base):
     # 명단 시트들에만 있는 칸들. 표기가 자유로워(O/X/△/문장) 원문을 그대로 둔다.
     interest_level: Mapped[Optional[str]] = mapped_column(String, nullable=True)   # 관심도(월말 기준)
     kakao_joined: Mapped[Optional[str]] = mapped_column(String, nullable=True)     # 카톡방 참여여부
+    # 시트에 있는데 앱에 칸이 없어 통째로 버려지던 값들.
+    # "명함 받은 날" 은 언제부터 아는 사이인지를 말해 준다 — 오래 알던 분께
+    # 처음 연락하는 문구를 보내면 어색하다.
+    office_fax: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    card_registered_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
     office_phone: Mapped[Optional[str]] = mapped_column(String, nullable=True)     # 유선전화
     address: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     # 어느 명단 시트에서 온 정보인지(여러 시트에 나뉜 같은 사람을 병합하므로 추적이 필요).

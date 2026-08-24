@@ -141,8 +141,12 @@ def test_export_contacts_is_xlsx(logged, db):
 
     ws = openpyxl.load_workbook(io.BytesIO(r.content)).active
     rows = list(ws.iter_rows(values_only=True))
-    # 관리자는 팀 전체를 보므로 담당 팀원·연결 단계가 앞에 온다
-    assert rows[0][:6] == ("담당 팀원", "연결 단계", "그룹", "이름", "직함", "투자사")
+    # 관리자는 팀 전체를 보므로 담당 팀원이 앞에 온다
+    assert rows[0][:5] == ("담당 팀원", "담당자", "연결 단계", "그룹", "이름")
+    # 시트에 있는 값은 하나도 빠뜨리지 않는다 — 원본과 나란히 놓고 대조한다
+    for col in ("근무처 전화", "근무처 팩스", "근무지 주소", "명함 등록일",
+                "관심도", "휴대폰", "전자 메일 주소"):
+        assert col in rows[0], f"엑셀에 '{col}' 칸이 없다"
     assert len(rows) == 3                 # 머리행 + 2명
     assert ws.freeze_panes == "A2"        # 스크롤해도 머리행이 보인다
 

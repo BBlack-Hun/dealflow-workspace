@@ -33,16 +33,32 @@ def contacts(db, users):
 
 # ── 표(SSR) ────────────────────────────────────────────────────────────────
 
-def test_contacts_page_renders_seven_columns_without_scroll_hacks(logged_in, contacts):
-    r = logged_in.get("/contacts")
-    assert r.status_code == 200
-    html = r.text
-    # 7컬럼 폭 합계 100% (FEATURE_SPEC §3) — 가로 스크롤 0 의 근거
-    widths = ["16%", "8%", "16%", "12%", "12%", "10%", "26%"]
-    for w in widths:
-        assert f"width:{w}" in html
-    assert sum(int(w.rstrip("%")) for w in widths) == 100
-    assert "table-layout" not in html  # 폭 제어는 CSS(.grid-table)에 있고 인라인 해킹이 없다
+def test_contacts_columns_fit_without_horizontal_scroll(logged_in, contacts):
+    """폭을 **실제 글자 길이**로 잡았다 — 짧은 값이 든 칸에 넓은 자리를 주면
+    표가 헐렁해 보이고, 정작 긴 칸(라운드사이즈 38자)은 잘린다.
+
+    한 칸은 폭 없이 남는 자리를 먹어야 1280px 에 딱 맞는다.
+    """
+    import re
+
+    html = logged_in.get("/contacts").text
+    head = html.split("</thead>")[0]
+    head = head[head.index('id="contacts-table"'):]
+
+    fixed, flexible = 0, 0
+    for attrs, label in re.findall(r"<th(\s[^>]*)?>(.*?)</th>", head, re.S):
+        if not re.sub(r"<[^>]+>", "", label).strip():
+            continue
+        px = re.search(r"width:\s*(\d+)px", attrs or "")
+        if px:
+            fixed += int(px.group(1))
+        else:
+            flexible += 1
+
+    assert flexible == 1, f"폭 없는 칸이 {flexible}개 — 서로 자리를 뺏는다"
+    assert fixed < 1100, f"고정 폭 합 {fixed}px — 남는 자리가 없어 짜부라진다"
+    # 폭 제어는 th 에서 한다. 옛 colgroup 이 남아 있으면 그쪽이 이겨 버린다.
+    assert "<colgroup" not in html
 
 
 def test_page_shows_only_my_contacts(logged_in, contacts):
@@ -62,7 +78,8 @@ def test_rows_carry_filter_attributes(logged_in, contacts):
     assert 'data-f-room="○ 미확인"' in html
     assert 'data-f-room="⚠ 미등록"' in html   # 방 이름이 없는 담당자
     # 필터 대상 컬럼 헤더에 드롭다운이 붙는다
-    assert 'data-filters="sector:투자분야|stage:라운드사이즈"' in html
+    assert 'data-filters="sector:선호 투자분야"' in html
+    assert 'data-filters="stage:라운드사이즈"' in html
 
 
 def test_recent_deal_and_reaction_are_aggregated_not_stored(logged_in, db, contacts):
