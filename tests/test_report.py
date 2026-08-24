@@ -229,3 +229,59 @@ def test_completing_a_rejected_meeting_schedules_nothing(db, users):
     pipeline.complete_meeting(db, meeting, outcome="reviewing", when=date(2026, 6, 10))
     db.commit()
     assert meeting.followup_due is not None
+
+
+def test_asking_early_can_be_recorded(client, db, users):
+    """물어보고 나면 그 자리에서 적을 수 있어야 한다.
+
+    예전엔 **날짜가 지난 건**에만 [문의 완료] 가 떠서, 미리 물어봤으면
+    적을 곳이 없었다 — 기록을 못 하니 계속 "안 물어봄" 으로 남는다.
+    """
+    from app.models import Meeting
+    from app.services import report
+
+    _meeting(db, users, date(2026, 6, 10), who="미리물어봄",
+             followup_due=date(2026, 12, 31), followup_done=0)
+    meeting = db.query(Meeting).filter_by(followup_done=0).first()
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    # 날짜가 한참 남았어도 버튼이 있다
+    assert "물어봤음" in client.get("/ir").text
+
+    r = client.post(f"/ir/meetings/{meeting.id}/followup",
+                    data={"outcome": "investing"}, follow_redirects=False)
+    assert r.status_code == 303
+    db.expire_all()
+
+    data = report.monthly(db, 2026, 6, users["u1"], today=date(2026, 7, 1))
+    assert data["followup_done"] == 1
+    assert data["followup_open"] == 0
+    # 결과도 함께 갱신된다
+    assert db.get(Meeting, meeting.id).outcome == "investing"
+
+
+def test_call_list_says_when_to_call(db, users):
+    """`예정` 만으로는 오늘 걸 곳인지 알 수 없다."""
+    from app.services import report
+
+    _meeting(db, users, date(2026, 6, 1), who="지난사람",
+             followup_due=date(2026, 6, 11), followup_done=0)
+    _meeting(db, users, date(2026, 6, 12), who="오늘사람",
+             followup_due=date(2026, 7, 1), followup_done=0)
+
+    data = report.monthly(db, 2026, 6, users["u1"], today=date(2026, 7, 1))
+    call = next(b for b in data["buckets"] if b["key"] == "call")
+    notes = {r["name"]: r["note"] for r in call["rows"]}
+    assert "지금 거세요" in notes["지난사람"]
+    assert notes["오늘사람"] == "오늘"
+
+
+def test_the_call_list_skips_what_needs_no_call(db, users):
+    from app.services import report
+
+    _meeting(db, users, date(2026, 6, 10), who="거절함", outcome="pass",
+             followup_due=date(2026, 6, 20), followup_done=0)
+
+    data = report.monthly(db, 2026, 6, users["u1"], today=date(2026, 7, 1))
+    call = next(b for b in data["buckets"] if b["key"] == "call")
+    assert call["rows"] == []

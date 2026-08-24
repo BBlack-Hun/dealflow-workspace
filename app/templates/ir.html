@@ -456,10 +456,26 @@
           <td>{{ m.outcome_label or '-' }}</td>
           <td class="muted">
             {% if m.status == 'canceled' %}취소
-            {% elif m.followup_done %}완료
+            {% elif m.followup_done %}<span class="ok">완료</span>
             {# 거절로 끝났거나 다음 미팅을 잡았으면 물어볼 것이 없다. #}
             {% elif not m.needs_followup %}문의 불필요
+            {% elif m.followup_due_now %}<span class="bad">{{ m.followup_due }} 지남</span>
             {% else %}{{ m.followup_due }} 예정{% endif %}
+            {#
+              물어보고 나면 여기서 바로 기록한다. 예전엔 **날짜가 지난 건**에만
+              버튼이 떠서, 미리 물어봤으면 적을 곳이 없었다.
+            #}
+            {% if m.needs_followup %}
+            <form method="post" action="/ir/meetings/{{ m.id }}/followup" class="inline-form">
+              <select name="outcome">
+                <option value="">결과 그대로</option>
+                {% for key, label in outcomes.items() %}
+                <option value="{{ key }}" {% if m.outcome == key %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+              <button class="linkbtn" type="submit">물어봤음</button>
+            </form>
+            {% endif %}
           </td>
           <td>
             {#
