@@ -184,6 +184,8 @@ def contact_rows(db: Session, user: User, team_wide: bool = False) -> List[dict]
             "firm_type_label": firm_type.label(c.firm_type),
             "connect_label": sheet_import.CONNECT_LABELS.get(c.connect_stage, c.connect_stage),
             "department": c.department or "",
+            "phone": c.phone or "",
+            "email": c.email or "",
             "name": c.name,
             "title": c.title or "",
             "firm": c.firm or "",
@@ -198,6 +200,12 @@ def contact_rows(db: Session, user: User, team_wide: bool = False) -> List[dict]
             "stages": _split_csv(c.stages),
             "sectors": _split_csv(c.sectors),
             "round_size": c.round_size or "",
+            # 시트에 있는데 그동안 화면·엑셀 어디에도 안 나오던 값들.
+            "office_phone": c.office_phone or "",
+            "office_fax": c.office_fax or "",
+            "address": c.address or "",
+            "card_registered_at": c.card_registered_at or "",
+            "interest_level": c.interest_level or "",
             "last_deal": last_deal,
             "last_deal_label": _date_label(last_deal, last_round),
             "last_deal_note": last_deal_note or "",
@@ -291,6 +299,14 @@ class ContactIn(BaseModel):
     round_size: Optional[str] = None
     status: Optional[str] = None
     memo: Optional[str] = None
+    # 시트에 있던 값들 — 화면에서도 보고 고칠 수 있어야 한다.
+    assignee_name: Optional[str] = None
+    department: Optional[str] = None
+    office_phone: Optional[str] = None
+    office_fax: Optional[str] = None
+    address: Optional[str] = None
+    card_registered_at: Optional[str] = None
+    interest_level: Optional[str] = None
 
 
 class VerifyRequest(BaseModel):
@@ -456,15 +472,82 @@ def get_contact(
             "stages": contact.stages or "",
             "sectors": contact.sectors or "",
             "round_size": contact.round_size or "",
+            # 시트에 있는데 그동안 화면 어디에도 안 보이던 값들.
+            "office_phone": contact.office_phone or "",
+            "office_fax": contact.office_fax or "",
+            "address": contact.address or "",
+            "card_registered_at": contact.card_registered_at or "",
+            "interest_level": contact.interest_level or "",
+            "assignee_name": contact.assignee_name or "",
             "status": contact.status,
             "memo": contact.memo or "",
         },
-        # 임포트된 월별 기록 + 서비스가 자동으로 쌓는 발송 이력을 한 줄기로 보여준다.
-        "timeline": [_activity_view(a, known) for a in acts] + [
-            _send_view(item, job, batch_names.get(job.batch_id, []), known)
-            for item, job in sends
-        ],
+        # 한 줄기로 모은다: 시트에서 옮겨 온 월별 기록 + 발송 이력 +
+        # **이 도구에서 만든 IR 요청·미팅**.
+        #
+        # 마지막 것이 빠져 있었다 — 미팅을 잡고 완료 처리까지 해도 그 담당자의
+        # 활동 이력에는 아무것도 안 남아, 화면에서 한 일이 기록에 없는 것처럼
+        # 보였다.
+        # **최신순으로 섞어 준다.** 출처별로 뭉쳐 두면 8월 미팅이 6월 기록
+        # 아래에 묻혀서, 무슨 일이 언제 있었는지 읽을 수가 없다.
+        "timeline": sorted(
+            [_activity_view(a, known) for a in acts]
+            + [_send_view(item, job, batch_names.get(job.batch_id, []), known)
+               for item, job in sends]
+            + _pipeline_views(db, contact.id),
+            key=lambda row: row.get("date") or "",
+            reverse=True,
+        ),
     }
+
+
+def _pipeline_views(db: Session, contact_id: int) -> List[dict]:
+    """이 도구에서 만든 IR 요청·미팅을 활동 이력 줄로.
+
+    시트에서 옮겨 온 줄과 **같은 모양**이어야 한 줄기로 읽힌다.
+    """
+    from ..models import IrRequest, Meeting
+    from ..services.pipeline import MEETING_KINDS, OUTCOMES, REQUEST_STATUS
+
+    out: List[dict] = []
+
+    for row in db.execute(
+        select(IrRequest).where(IrRequest.contact_id == contact_id)
+    ).scalars().all():
+        date_ = (row.requested_at or "")[:10]
+        out.append({
+            "date": date_, "month": None, "kind": "ir_request",
+            "content": f"IR 자료 요청 · {REQUEST_STATUS.get(row.status, row.status)}",
+            "source": "system",
+            "companies": [{"name": row.company_name or "", "known": bool(row.company_id)}]
+                         if row.company_name else [],
+            "company_count": 1 if row.company_name else None,
+            "weekday": sheet_import.weekday_of(date_) if date_ else None,
+            "week": sheet_import.week_of_month(date_) if date_ else None,
+        })
+
+    for row in db.execute(
+        select(Meeting).where(Meeting.contact_id == contact_id)
+    ).scalars().all():
+        date_ = (row.scheduled_at or "")[:10]
+        label = MEETING_KINDS.get(row.kind, row.kind)
+        if row.status == "done":
+            label += f" 완료 · {OUTCOMES.get(row.outcome or '', '결과 미정')}"
+        elif row.status == "canceled":
+            label += " 취소"
+        else:
+            label += " 예정"
+        out.append({
+            "date": date_, "month": None, "kind": "meeting",
+            "content": label, "source": "system",
+            "companies": [{"name": row.company_name, "known": False}]
+                         if row.company_name else [],
+            "company_count": None,
+            "weekday": sheet_import.weekday_of(date_) if date_ else None,
+            "week": sheet_import.week_of_month(date_) if date_ else None,
+        })
+
+    return out
 
 
 def _activity_view(act: ContactActivity, known: Dict[str, str]) -> dict:
@@ -588,7 +671,10 @@ def delete_contact(
 def _assign(contact: VcContact, body: ContactIn) -> None:
     """None 은 '변경 없음'. 빈 문자열은 '지움'으로 취급한다(부분 수정 PATCH 의미)."""
     for field in ("title", "firm", "group_name", "kakao_room_name", "invited_status",
-                  "email", "phone", "stages", "sectors", "round_size", "memo", "status"):
+                  "email", "phone", "stages", "sectors", "round_size", "memo", "status",
+                  # 시트에 있던 값들 — 화면에서도 고칠 수 있어야 한다.
+                  "assignee_name", "department", "office_phone", "office_fax",
+                  "address", "card_registered_at", "interest_level"):
         value = getattr(body, field)
         if value is not None:
             setattr(contact, field, value.strip() if isinstance(value, str) else value)
@@ -605,3 +691,32 @@ def _assign(contact: VcContact, body: ContactIn) -> None:
         elif contact.connect_stage == sheet_import.STAGE_CONNECTED:
             # 연결됐던 사람이니 미착수로 되돌리지는 않는다.
             contact.connect_stage = sheet_import.STAGE_IN_PROGRESS
+
+
+# --- 참고 시트 --------------------------------------------------------------
+#
+# 이 라우터는 `/api/contacts` 밑이라 화면 폼이 쓰기엔 주소가 어색하다.
+# 참고 시트는 따로 붙인다.
+
+ref_router = APIRouter(tags=["ref-sheets"])
+
+
+@ref_router.post("/ref-sheets/{sheet_id}/delete", include_in_schema=False)
+def delete_ref_sheet(sheet_id: int, db: Session = Depends(get_db),
+                     user: User = Depends(get_current_user)):
+    """참고 탭 지우기.
+
+    다 옮겨 놓고 쓰면서 추리는 것이 순서라, 안 쓰는 탭이 남아 있으면 자리만
+    차지한다. **지우지 않고 감춘다** — 원본 시트를 다시 받아 오지 않아도
+    되돌릴 수 있어야 한다.
+    """
+    from fastapi.responses import RedirectResponse
+
+    from ..models import RefSheet
+
+    row = db.get(RefSheet, sheet_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="참고 시트를 찾을 수 없습니다")
+    row.is_active = 0
+    db.commit()
+    return RedirectResponse("/contacts", status_code=303)

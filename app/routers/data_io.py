@@ -128,9 +128,13 @@ def _xlsx(filename: str, sheet_title: str, headers, rows) -> Response:
                     headers=sp.content_disposition(filename))
 
 
+# 시트에 있는 값은 **하나도 빠뜨리지 않는다.** 엑셀로 내보낸 뒤 원본 시트와
+# 나란히 놓고 대조하는 일이 잦은데, 빠진 칸이 있으면 그때 알게 된다.
 CONTACT_HEADERS = [
-    "담당 팀원", "연결 단계", "그룹", "이름", "직함", "투자사", "부서", "채널", "카톡방", "방 확인",
-    "초대", "라운드 규모", "선호 단계", "선호 분야",
+    "담당 팀원", "담당자", "연결 단계", "그룹", "이름", "직함", "투자사", "부서",
+    "채널", "카톡방", "방 확인", "초대", "관심도",
+    "라운드 규모", "선호 단계", "선호 분야",
+    "휴대폰", "전자 메일 주소", "근무처 전화", "근무처 팩스", "근무지 주소", "명함 등록일",
     "마지막 딜소개", "회차 메모", "IR 요청(최근)", "미팅(최근)",
     "IR 요청(누적)", "미팅(누적)", "상태", "메모",
 ]
@@ -149,10 +153,12 @@ def export_contacts(db: Session = Depends(get_db),
         return "/".join(marks)
 
     rows = [
-        [r["owner"], r["connect_label"], r["group_name"], r["name"], r["title"],
-         r["firm"], r["department"], channel(r),
-         r["room_name"], r["room_label"], r["invited_status"], r["round_size"],
-         ", ".join(r["stages"]), ", ".join(r["sectors"]),
+        [r["owner"], r["assignee"], r["connect_label"], r["group_name"],
+         r["name"], r["title"], r["firm"], r["department"], channel(r),
+         r["room_name"], r["room_label"], r["invited_status"], r["interest_level"],
+         r["round_size"], ", ".join(r["stages"]), ", ".join(r["sectors"]),
+         r["phone"], r["email"], r["office_phone"], r["office_fax"],
+         r["address"], r["card_registered_at"],
          r["last_deal"] or "", r["last_deal_note"],
          r["ir_recent"], r["meet_recent"], r["ir_total"], r["meet_total"],
          r["status_label"], r["memo"]]
@@ -180,7 +186,7 @@ COMPANY_HEADERS = [
 @router.get("/api/export/companies.xlsx")
 def export_companies(db: Session = Depends(get_db),
                      user: User = Depends(get_current_user)):
-    """딜 기업 DB → 엑셀. 소개 가능 여부를 함께 내보내 어디를 채워야 할지 보이게 한다."""
+    """IR 기업현황 → 엑셀. 소개 가능 여부를 함께 내보내 어디를 채워야 할지 보이게 한다."""
     companies = db.execute(select(IrCompany).order_by(IrCompany.name)).scalars().all()
     rows = [
         [c.name, c.sector_major or "", c.sector_minor or "", c.series or "",
@@ -193,7 +199,57 @@ def export_companies(db: Session = Depends(get_db),
         for c in companies
     ]
     today = date.today().isoformat()
-    return _xlsx(f"딜 기업 DB_{today}.xlsx", "딜 기업 DB", COMPANY_HEADERS, rows)
+    return _xlsx(f"IR 기업현황_{today}.xlsx", "IR 기업현황", COMPANY_HEADERS, rows)
+
+
+from ..services.pipeline import REQUEST_STATUS  # noqa: E402
+
+REACTION_HEADERS = ["구분", "날짜", "담당자", "직함", "투자사", "기업", "상태"]
+
+
+@router.get("/api/export/reactions.xlsx")
+def export_reactions(db: Session = Depends(get_db),
+                     user: User = Depends(get_current_user)):
+    """대시보드의 반응 다섯 가지를 **날짜와 함께** 한 장으로.
+
+    화면은 숫자만 보여준다. 숫자를 보고 나면 "그게 누구였지" 가 이어지는데,
+    그때마다 다섯 화면을 돌아다녀야 했다.
+    """
+    from ..models import IrRequest, Meeting, VcContact
+    from ..services.pipeline import MEETING_KINDS, OUTCOMES
+
+    contacts = {
+        c.id: c for c in db.execute(
+            select(VcContact).where(VcContact.user_id == user.id)).scalars().all()
+    }
+
+    def who(contact_id):
+        c = contacts.get(contact_id)
+        return [c.name, c.title or "", c.firm or ""] if c else ["-", "", ""]
+
+    rows = []
+    for r in db.execute(select(IrRequest).where(
+            IrRequest.user_id == user.id).order_by(IrRequest.requested_at)).scalars():
+        rows.append(["IR 요청 투자사", r.requested_at or "", *who(r.contact_id),
+                     r.company_name or "", REQUEST_STATUS.get(r.status, r.status)])
+        rows.append(["IR 요청받은 기업", r.requested_at or "", *who(r.contact_id),
+                     r.company_name or "", REQUEST_STATUS.get(r.status, r.status)])
+
+    for m in db.execute(select(Meeting).where(
+            Meeting.user_id == user.id).order_by(Meeting.scheduled_at)).scalars():
+        label = ("IR 미팅완료 투자사" if m.status == "done"
+                 else "IR 미팅 요청 투자사")
+        rows.append([label, m.scheduled_at or "", *who(m.contact_id),
+                     m.company_name or "", MEETING_KINDS.get(m.kind, m.kind)])
+        # 끝난 미팅 중 아직 결과를 안 물어본 곳 — 전화할 대상이다.
+        if m.status == "done" and not m.followup_done:
+            rows.append(["IR 미팅완료 리마인드 TEL 투자사",
+                         m.followup_due or m.scheduled_at or "", *who(m.contact_id),
+                         m.company_name or "",
+                         OUTCOMES.get(m.outcome or "", "결과 미정")])
+
+    today = date.today().isoformat()
+    return _xlsx(f"반응 현황_{today}.xlsx", "반응 현황", REACTION_HEADERS, rows)
 
 
 JOB_HEADERS = ["담당자", "직함", "투자사", "카톡방", "상태", "발송시각", "실패사유", "문구"]

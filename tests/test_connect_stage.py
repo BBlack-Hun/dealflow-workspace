@@ -189,7 +189,7 @@ def test_admin_sees_the_whole_team(client, db, users):
     client.post("/login", data={"phone": "01000000002", "password": DEMO_PASSWORD})
     admin = client.get("/contacts").text
     assert "내담당" in admin and "남담당" in admin
-    assert "담당 팀원" in admin
+    assert "담당자" in admin
 
 
 def test_admin_cannot_send_to_someone_elses_contact(client, db, users):

@@ -148,14 +148,27 @@
     <span class="hint">요일이 오면 그 주 목록에 저절로 생깁니다</span>
   </h2>
   {% if routines %}
-  <table class="grid-table compact">
-    <thead><tr><th style="width:110px">항목</th><th>세부업무</th><th style="width:140px">요일</th><th style="width:56px"></th></tr></thead>
+  <table class="grid-table compact" data-inline-url="/api/todo/routines" id="routine-table">
+    <thead><tr>
+      <th style="width:100px">항목</th><th>세부업무</th>
+      <th style="width:170px">요일 · 시간대</th><th style="width:56px"></th>
+    </tr></thead>
     <tbody>
       {% for r in routines %}
-      <tr>
-        <td>{{ r.category }}</td>
-        <td>{{ r.title }}</td>
-        <td class="muted">{{ weekday_label(r.weekdays) }}</td>
+      <tr data-id="{{ r.id }}">
+        <td class="cell" data-field="category">{{ r.category }}</td>
+        <td class="cell" data-field="title">{{ r.title }}</td>
+        <td class="muted">
+          {{ weekday_label(r.weekdays) }}
+          <div class="cell-sub">
+            {# 요일 옆 오전/오후 — 시트에는 "화요일 오전" 처럼 시간대까지
+               적혀 있었다. 눌러서 바로 고른다. #}
+            <button type="button" class="tod-pick {{ 'on' if r.time_of_day == 'am' else '' }}"
+                    data-routine="{{ r.id }}" data-value="am">오전</button>
+            <button type="button" class="tod-pick {{ 'on' if r.time_of_day == 'pm' else '' }}"
+                    data-routine="{{ r.id }}" data-value="pm">오후</button>
+          </div>
+        </td>
         <td>
           <form method="post" action="/todo/routines/{{ r.id }}/delete"
                 onsubmit="return confirm('이 반복 업무를 지울까요?\n이미 만들어진 이번 주 항목은 남습니다.')">
@@ -179,6 +192,12 @@
         <label><input type="checkbox" name="weekdays" value="{{ i }}"> {{ wd }}</label>
         {% endfor %}
       </span></label>
+    <label class="field inline-field"><span>시간대</span>
+      <select name="time_of_day">
+        <option value="">상관없음</option>
+        <option value="am">오전</option>
+        <option value="pm">오후</option>
+      </select></label>
     <button class="secondary-btn" type="submit">추가</button>
   </form>
 </section>

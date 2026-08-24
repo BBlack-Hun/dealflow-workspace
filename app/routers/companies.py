@@ -35,7 +35,23 @@ SUMMARY_LABELS = {
     "draft": "작성 중",
     "insufficient": "보류",
 }
-CONTRACT_LABELS = {"yes": "완료", "pending": "진행 중", "no": "없음"}
+# 계약 상태. **운영에서 쓰는 다섯 가지** 그대로 둔다 —
+# 완료/진행중/없음 셋으로 뭉치면 '무료'와 '유료'가 같은 칸에 들어가고,
+# '딜소개불가'(더 이상 소개하면 안 되는 기업)가 '없음'에 섞여 사고가 난다.
+CONTRACT_LABELS = {
+    "none": "미계약",
+    "free": "무료계약완료",
+    "paid": "유료계약완료",
+    "review": "계약검토중",
+    "blocked": "딜소개 불가",
+}
+# 예전 값 → 지금 값. 이미 쌓인 데이터를 화면에서 그대로 읽을 수 있어야 한다.
+CONTRACT_ALIAS = {"yes": "paid", "pending": "review", "no": "none", "": "none"}
+
+
+def contract_key(value) -> str:
+    key = (value or "none").strip()
+    return CONTRACT_ALIAS.get(key, key)
 
 # 소개 문구에 들어가는 칸. (모델 속성, 화면 이름)
 REQUIRED_FIELDS = [
@@ -60,6 +76,20 @@ def eok(value: Optional[int]) -> str:
     from ..services.message_composer import format_eok
 
     return format_eok(value) or ""
+
+
+# 핵심/TOP Deal 은 시트에 `핵심` · `TOP` · `핵심, TOP` · `TOP, 핵심` 으로
+# 적혀 있다. 뒤 둘은 같은 뜻인데 글자가 달라서 필터가 두 줄로 센다.
+TOP_ORDER = ["핵심", "TOP"]
+
+
+def top_deal_kind(value: Optional[str]) -> Optional[str]:
+    """`TOP, 핵심` → `핵심, TOP`. 적힌 순서와 상관없이 한 가지 모양으로."""
+    text = (value or "").strip()
+    if not text:
+        return None
+    found = [k for k in TOP_ORDER if k.lower() in text.lower()]
+    return ", ".join(found) if found else text
 
 
 def _short(value: Optional[str]) -> str:
@@ -114,13 +144,29 @@ def company_rows(db: Session) -> List[dict]:
             "funding_total": c.funding_total,
             "raise_target": c.raise_target,
             "pre_value": c.pre_value,
+            # 스타트업DB 탭 — 시트를 그대로 옮겨 담은 칸들.
+            # 금액은 적은 그대로(글자)다: 원본에 `8.2억`·`1,224백만원`·
+            # `150억 ~ 200억` 이 섞여 있어 숫자로 바꾸면 100배가 틀어진다.
+            "ceo": c.contact_name or "",
+            "phone": c.contact_phone or "",
+            "email": c.contact_email or "",
+            "revenue_2022": c.revenue_2022 or "",
+            "revenue_2023": c.revenue_2023 or "",
+            "revenue_2024": c.revenue_2024 or "",
+            "revenue_2025": c.revenue_2025 or "",
+            "founded_year": c.founded_year or "",
+            "guarantee": c.guarantee or "",
+            "business_desc": c.business_desc or "",
+            "top_deal_kind": c.top_deal_kind or "",
+            "assignee": c.assignee_name or "",
             "competitiveness": c.competitiveness or "",
             "funding_status": c.funding_status or "",
             "ir_drive_url": c.ir_drive_url or "",
             # 자료 링크 유무가 곧 'IR 요청이 오면 바로 보낼 수 있는가' 다.
             "has_ir": bool((c.ir_drive_url or "").strip()),
             "contract_status": c.contract_status or "no",
-            "contract_label": CONTRACT_LABELS.get(c.contract_status or "no", "-"),
+            "contract_label": CONTRACT_LABELS.get(
+                contract_key(c.contract_status), "미계약"),
             "contract_month": c.contract_month or "",
             "is_top_deal": bool(c.is_top_deal),
             "summary_status": c.summary_status or "draft",
@@ -140,11 +186,15 @@ def company_rows(db: Session) -> List[dict]:
 
 @router.get("/companies", response_class=HTMLResponse, include_in_schema=False)
 def companies_page(request: Request, db: Session = Depends(get_db),
-                   user: User = Depends(get_current_user), msg: str = "", q: str = ""):
+                   user: User = Depends(get_current_user), msg: str = "", q: str = "",
+                   tab: str = ""):
     rows = company_rows(db)
     ctx = base_ctx(request, db, user, active="su")
     ctx.update({
         "rows": rows,
+        # 시트의 하단 탭 두 개. 같은 레코드를 다르게 보는 것뿐이라, 한쪽에서
+        # 고치면 다른 쪽이 저절로 따라온다 — 맞춰 주는 코드가 없어야 안 어긋난다.
+        "co_tab": "db" if tab == "db" else "status",
         "msg": msg,
         "q": q,          # 발송 화면에서 '기업 정보 채우기' 로 넘어온 경우 그 기업을 바로 띄운다
         "counts": {
@@ -152,6 +202,10 @@ def companies_page(request: Request, db: Session = Depends(get_db),
             "introducible": sum(1 for r in rows if r["introducible"]),
             "blocked": sum(1 for r in rows if not r["introducible"]),
             "with_ir": sum(1 for r in rows if r["has_ir"]),
+            # 스타트업DB 탭에 볼 것이 있는 기업 — 대표자·연락처 같은 기초자료가
+            # 하나라도 들어온 곳. 전체와 나란히 놓으면 얼마나 채웠는지 보인다.
+            "with_info": sum(1 for r in rows
+                             if r["ceo"] or r["phone"] or r["business_desc"]),
         },
         "required_fields": [label for _a, label in REQUIRED_FIELDS],
         "summary_labels": SUMMARY_LABELS,
@@ -236,6 +290,18 @@ class CompanyIn(BaseModel):
     raise_target: Optional[int] = None
     pre_value: Optional[int] = None
     competitiveness: Optional[str] = None
+    contact_name: Optional[str] = None
+    contact_phone: Optional[str] = None
+    contact_email: Optional[str] = None
+    revenue_2022: Optional[str] = None
+    revenue_2023: Optional[str] = None
+    revenue_2024: Optional[str] = None
+    revenue_2025: Optional[str] = None
+    founded_year: Optional[str] = None
+    guarantee: Optional[str] = None
+    business_desc: Optional[str] = None
+    top_deal_kind: Optional[str] = None
+    assignee_name: Optional[str] = None
     funding_status: Optional[str] = None
     ir_drive_url: Optional[str] = None
     contract_status: Optional[str] = None
@@ -248,7 +314,12 @@ class CompanyIn(BaseModel):
 def _assign(company: IrCompany, body: CompanyIn) -> None:
     data = body.model_dump(exclude_unset=True)
     for field, value in data.items():
-        if field == "is_top_deal":
+        if field == "top_deal_kind":
+            # 골라 넣으면 '추천 딜' 도 함께 켜진다 — 두 곳을 따로 켜게 하면
+            # 한쪽만 켜 둔 채 잊는다.
+            company.top_deal_kind = top_deal_kind(value)
+            company.is_top_deal = 1 if company.top_deal_kind else 0
+        elif field == "is_top_deal":
             company.is_top_deal = 1 if value else 0
         elif field == "name":
             if value and value.strip():

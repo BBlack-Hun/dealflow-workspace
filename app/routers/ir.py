@@ -22,6 +22,7 @@ from ..db import get_db
 from ..deps import get_current_user, templates
 from ..models import IrRequest, Meeting, User, VcContact
 from ..services import cadence, flow, pipeline, sheet_owner
+from . import followups
 from ..ui import base_ctx
 
 router = APIRouter(tags=["ir"])
@@ -58,6 +59,9 @@ def ir_page(request: Request, db: Session = Depends(get_db),
     items = pipeline.today_items(db, user, today)
 
     ctx = base_ctx(request, db, user, active="flow")
+    # 리마인드 구역도 이 한 페이지 안에 있다 — 딴 페이지로 갈리면
+    # "자료 보냈나 → 답 없으면 리마인드 → 미팅 잡기" 흐름이 끊긴다.
+    ctx.update(followups.remind_context(db, user, today))
     ctx.update({
         # 후속 화면에서 이름을 눌러 넘어왔다 — 폼을 열고 그 사람을 골라 둔다.
         # 화면을 옮겨 담당자를 다시 고르는 사이에 "누구였더라" 가 된다.

@@ -26,12 +26,18 @@ def logged(client, users):
 
 
 def _meeting(db, users, when, *, status="done", outcome="reviewing",
-             followup_due=None, followup_done=0, user_key="u1"):
+             followup_due=None, followup_done=0, user_key="u1", who="홍길동"):
+    """`who` 로 담당자를 나눈다.
+
+    한 담당자에게 미팅이 두 건이면 **뒤엣것이 앞엣것을 대신한다** — 2차 미팅을
+    잡았으면 1차에 결과를 물을 이유가 없다. 그 규칙과 무관한 것을 재려면
+    담당자를 나눠야 한다.
+    """
     from app.models import Meeting, VcContact
 
-    contact = db.query(VcContact).filter_by(name="홍길동").first()
+    contact = db.query(VcContact).filter_by(name=who).first()
     if contact is None:
-        contact = VcContact(user_id=users["u1"].id, name="홍길동", firm="가나벤처스")
+        contact = VcContact(user_id=users["u1"].id, name=who, firm="가나벤처스")
         db.add(contact)
         db.flush()
     row = Meeting(user_id=users[user_key].id, contact_id=contact.id,
@@ -81,9 +87,9 @@ def test_late_followup_is_counted(db, users):
     """열흘이 지났는데 결과를 안 물어본 건 — 이 보고가 잡아내야 할 것."""
     from app.services import report
 
-    _meeting(db, users, date(2026, 6, 10),
+    _meeting(db, users, date(2026, 6, 10), who="안물어본사람",
              followup_due=date(2026, 6, 20), followup_done=0)
-    _meeting(db, users, date(2026, 6, 16),
+    _meeting(db, users, date(2026, 6, 16), who="물어본사람",
              followup_due=date(2026, 6, 26), followup_done=1)
 
     data = report.monthly(db, 2026, 6, users["u1"], today=date(2026, 7, 1))
@@ -159,3 +165,67 @@ def test_team_scope_is_admin_only(logged, db, users):
     body = logged.get("/report?month=2026-06&scope=team").text
     # 관리자가 아니면 scope=team 을 줘도 본인 것만 보인다
     assert "미팅 총 0개사" in body
+
+
+# --- 결과를 물어볼 필요가 없는 경우 --------------------------------------------
+
+def test_a_rejected_meeting_needs_no_followup(db, users):
+    """거절당한 곳에 "그 뒤 어떻게 되셨나요" 를 묻는 것은 실례다 —
+    이미 답을 받았으므로 물어볼 것이 남아 있지 않다."""
+    from app.services import report
+
+    _meeting(db, users, date(2026, 6, 10), who="거절함", outcome="pass",
+             followup_due=date(2026, 6, 20), followup_done=0)
+
+    data = report.monthly(db, 2026, 6, users["u1"], today=date(2026, 7, 1))
+    assert data["followup_open"] == 0
+    assert data["followup_late"] == 0
+
+
+def test_a_held_meeting_still_needs_one(db, users):
+    """보류는 다시 살아날 수 있어 물어볼 값어치가 있다."""
+    from app.services import report
+
+    _meeting(db, users, date(2026, 6, 10), who="보류함", outcome="hold",
+             followup_due=date(2026, 6, 20), followup_done=0)
+
+    assert report.monthly(db, 2026, 6, users["u1"],
+                          today=date(2026, 7, 1))["followup_open"] == 1
+
+
+def test_booking_the_next_meeting_closes_the_previous_one(db, users):
+    """2차 미팅을 잡았다는 것은 이미 이어졌다는 뜻이다 — 1차에 결과를
+    물을 이유가 없다."""
+    from app.services import report
+
+    _meeting(db, users, date(2026, 6, 10), who="이어진사람",
+             followup_due=date(2026, 6, 20), followup_done=0)
+    _meeting(db, users, date(2026, 6, 24), who="이어진사람",
+             followup_due=date(2026, 7, 4), followup_done=0)
+
+    data = report.monthly(db, 2026, 6, users["u1"], today=date(2026, 7, 1))
+    # 뒤엣것 하나만 남는다
+    assert data["followup_open"] == 1
+
+
+def test_completing_a_rejected_meeting_schedules_nothing(db, users):
+    """거절로 끝났으면 물어볼 날 자체를 잡지 않는다."""
+    from app.models import Meeting, VcContact
+    from app.services import pipeline
+
+    contact = VcContact(user_id=users["u1"].id, name="홍길동", firm="가나벤처스")
+    db.add(contact)
+    db.commit()
+    meeting = Meeting(user_id=users["u1"].id, contact_id=contact.id,
+                      kind="first", status="planned",
+                      scheduled_at=date(2026, 6, 10).isoformat())
+    db.add(meeting)
+    db.commit()
+
+    pipeline.complete_meeting(db, meeting, outcome="pass", when=date(2026, 6, 10))
+    db.commit()
+    assert meeting.followup_due is None
+
+    pipeline.complete_meeting(db, meeting, outcome="reviewing", when=date(2026, 6, 10))
+    db.commit()
+    assert meeting.followup_due is not None

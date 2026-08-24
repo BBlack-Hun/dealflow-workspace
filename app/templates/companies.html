@@ -10,25 +10,6 @@
   </p>
 </header>
 
-<div class="kpi-row slim">
-  <a class="kpi-card" href="/companies">
-    <span class="kpi-label">등록된 기업</span>
-    <span class="kpi-value">{{ counts.total }}</span>
-    <span class="kpi-sub">전체 보기</span></a>
-  <a class="kpi-card" href="/companies?ready=%E2%97%8F%20%EC%86%8C%EA%B0%9C%20%EA%B0%80%EB%8A%A5">
-    <span class="kpi-label">소개 가능</span>
-    <span class="kpi-value ok">{{ counts.introducible }}</span>
-    <span class="kpi-sub">아래 칸이 하나도 안 빔</span></a>
-  <a class="kpi-card" href="/companies?ready=%E2%9A%A0%20%EB%82%B4%EC%9A%A9%20%EB%B6%80%EC%A1%B1">
-    <span class="kpi-label">내용 부족</span>
-    <span class="kpi-value {% if counts.blocked %}warn{% endif %}">{{ counts.blocked }}</span>
-    <span class="kpi-sub">한 칸이라도 비었음</span></a>
-  <a class="kpi-card" href="/companies?ir=%E2%9A%A0%20%EC%97%86%EC%9D%8C">
-    <span class="kpi-label">IR 자료 없음</span>
-    <span class="kpi-value {% if counts.total - counts.with_ir %}bad{% endif %}">{{ counts.total - counts.with_ir }}</span>
-    <span class="kpi-sub">요청 와도 못 보냄</span></a>
-</div>
-
 <p class="hint">
   <b>소개 가능</b>은 딜 소개 문구에 들어가는 칸이 하나도 빠지지 않은 기업입니다 —
   {% for f in required_fields %}<span class="tag">{{ f }}</span>{% endfor %}
@@ -38,12 +19,6 @@
 {% if msg %}<p class="flash">{{ msg }}</p>{% endif %}
 
 <div class="toolbar">
-  <div class="quick-chips">
-    <button type="button" class="chip" data-preset="">전체</button>
-    <button type="button" class="chip" data-preset="ready=%E2%9A%A0%20%EB%82%B4%EC%9A%A9%20%EB%B6%80%EC%A1%B1">내용 부족</button>
-    <button type="button" class="chip" data-preset="ready=%E2%97%8F%20%EC%86%8C%EA%B0%9C%20%EA%B0%80%EB%8A%A5">소개 가능</button>
-    <button type="button" class="chip" data-preset="ir=%E2%9A%A0%20%EC%97%86%EC%9D%8C">IR 자료 없음</button>
-  </div>
   <div class="toolbar-right">
     <input type="search" id="co-search" placeholder="기업명 · 분야 · 소개 검색"
            value="{{ q }}" autocomplete="off">
@@ -75,70 +50,153 @@
 <div class="chip-row" data-filter-chips></div>
 <p class="hint" id="co-note" hidden></p>
 
-<div class="table-wrap">
+{#
+  시트의 하단 탭을 그대로 옮긴다 — 컬럼 이름·순서·필터까지.
+  쓰던 사람이 같은 자리에서 같은 것을 찾을 수 있어야 한다.
+
+  두 탭은 **같은 기업 레코드의 두 가지 보기**다. 그래서 스타트업DB 에 값을
+  넣으면 IR 기업현황의 같은 항목이 저절로 따라온다 — 맞춰 주는 코드가 따로
+  없다. 두 벌로 두면 반드시 어긋난다.
+#}
+<nav class="sheet-tabs co-tabs">
+  {# 건수는 화면을 열 때마다 센다 — 시트처럼 탭 이름에 박아 두면(`스타트업(16)`
+     인데 실제 70행) 금세 거짓말이 된다. #}
+  <a class="sheet-tab {% if co_tab != 'db' %}active{% endif %}" href="/companies">
+    IR 기업현황 <span title="등록된 기업">{{ counts.total }}</span>
+  </a>
+  <a class="sheet-tab {% if co_tab == 'db' %}active{% endif %}" href="/companies?tab=db">
+    스타트업DB <span title="기업정보가 채워진 기업">{{ counts.with_info }}</span>
+  </a>
+</nav>
+
+<div class="chip-row" data-filter-chips></div>
+<p class="hint" id="co-note" hidden></p>
+
+<div class="table-wrap {% if co_tab == 'db' %}wide{% endif %}">
+{% if co_tab == 'db' %}
+  {# ── 스타트업DB(기업정보) ── 시트 컬럼 그대로 #}
   <table class="grid-table" data-inline-url="/api/companies" id="co-table">
     <thead>
       <tr>
-        {#
-          폭을 손으로 나눈다(table-layout:fixed). 한줄소개는 실제로 중앙값 83자라
-          '한 줄'이 아니다 — 320px 말줄임이면 90%가 잘려서 못 읽는 칸이었다.
-          숫자 칸을 좁혀 그쪽에 몰아 준다.
-        #}
-        <th style="width:34px">#</th>
-        <th style="width:12%" data-filters="top:추천">기업명<div class="th-filters"></div></th>
-        <th style="width:9%" data-filters="sector:분야">분야<div class="th-filters"></div></th>
-        <th style="width:9%" data-filters="series:단계">단계<div class="th-filters"></div></th>
-        <th>소개 문구<span class="th-note">두 줄까지 보입니다 · 눌러서 수정</span></th>
-        <th class="num" style="width:66px">매출<span class="th-unit">억</span></th>
-        <th class="num" style="width:66px">누적투자<span class="th-unit">억</span></th>
-        <th class="num" style="width:66px">희망투자<span class="th-unit">억</span></th>
-        {# 소개 가능 조건 8개 중 하나인데 [수정] 을 눌러야만 보였다.
-           보이지 않는 값은 채워졌는지 알 수 없어 결국 하나씩 열어 봐야 한다. #}
-        <th class="num" style="width:70px">Pre Value<span class="th-unit">억</span></th>
-        <th data-filters="ready:소개 가능|summary:작성 상태|contract:계약">소개 가능<div class="th-filters"></div></th>
-        <th style="width:88px" data-filters="ir:IR 자료">IR 자료<div class="th-filters"></div></th>
-        <th style="width:60px"></th>
+        <th style="width:36px">#</th>
+        <th style="width:160px" data-filters="assignee:담당자">기업명<div class="th-filters"></div></th>
+        <th style="width:70px">대표자</th>
+        <th style="width:104px">연락처</th>
+        <th style="width:170px">이메일</th>
+        {# 카테고리가 아니라 **사업 설명**이다. 한줄 소개의 첫 토막이 된다. #}
+        <th style="width:300px">사업분야<span class="th-note">사업 설명 · 한줄 소개의 앞부분</span></th>
+        <th class="num" style="width:74px">22년 매출</th>
+        <th class="num" style="width:74px">23년 매출</th>
+        <th class="num" style="width:74px">24년 매출</th>
+        <th class="num" style="width:74px">25년 매출</th>
+        <th class="num" style="width:78px">누적투자금액</th>
+        <th class="num" style="width:84px">투자유치희망금액</th>
+        <th class="num" style="width:76px">Pre Value</th>
+        <th style="width:260px">특이사항</th>
+        <th class="num" style="width:74px">최근 매출액</th>
+        <th style="width:62px">설립년도</th>
+        <th style="width:88px">기보·신보·중진공</th>
+        {# IR 자료는 어느 탭에서 보든 맨 끝에 그대로 둔다. #}
+        <th style="width:82px" data-filters="ir:IR 자료">IR 자료<div class="th-filters"></div></th>
+        <th style="width:52px"></th>
       </tr>
     </thead>
     <tbody>
       {% for r in rows %}
       <tr data-id="{{ r.id }}" data-search="{{ r.search }}"
-          data-f-top="{{ '★ 추천' if r.is_top_deal else '일반' }}"
+          data-f-assignee="{{ r.assignee }}"
           data-f-sector="{{ r.sector_major }}"
+          data-f-ir="{{ '● 있음' if r.has_ir else '⚠ 없음' }}">
+        <td class="rowno muted"></td>
+        <td class="co-name"><b class="cell" data-field="name">{{ r.name }}</b></td>
+        <td class="cell" data-field="contact_name">{{ r.ceo }}</td>
+        <td class="cell" data-field="contact_phone">{{ r.phone }}</td>
+        <td class="cell ellipsis" data-field="contact_email" title="{{ r.email }}">{{ r.email }}</td>
+        <td title="{{ r.business_desc }}">
+          <div class="cell clamp2" data-field="business_desc" data-type="long">{{ r.business_desc }}</div>
+        </td>
+        {# 금액은 **적은 그대로** 글자다 — 원본에 억·백만원·범위가 섞여 있어
+           숫자로 바꾸면 100배가 틀어진 채 딜소개 문구에 실려 나간다. #}
+        <td class="cell num" data-field="revenue_2022">{{ r.revenue_2022 }}</td>
+        <td class="cell num" data-field="revenue_2023">{{ r.revenue_2023 }}</td>
+        <td class="cell num" data-field="revenue_2024">{{ r.revenue_2024 }}</td>
+        <td class="cell num" data-field="revenue_2025">{{ r.revenue_2025 }}</td>
+        <td class="cell num" data-field="funding_total" data-type="number" data-unit="eok">{{ eok(r.funding_total) }}</td>
+        <td class="cell num" data-field="raise_target" data-type="number" data-unit="eok">{{ eok(r.raise_target) }}</td>
+        <td class="cell num" data-field="pre_value" data-type="number" data-unit="eok">{{ eok(r.pre_value) }}</td>
+        <td title="{{ r.competitiveness }}">
+          <div class="cell clamp2" data-field="competitiveness" data-type="long">{{ r.competitiveness }}</div>
+        </td>
+        <td class="cell num" data-field="revenue_recent" data-type="number" data-unit="eok">{{ eok(r.revenue_recent) }}</td>
+        <td class="cell" data-field="founded_year">{{ r.founded_year }}</td>
+        <td class="cell" data-field="guarantee">{{ r.guarantee }}</td>
+        <td>
+          {% if r.has_ir %}
+            <a class="room-badge ok" href="{{ r.ir_drive_url }}" target="_blank" rel="noopener">📎 열기</a>
+          {% else %}
+            <span class="room-badge warn" title="IR 요청이 와도 바로 보낼 자료가 없습니다">⚠ 없음</span>
+          {% endif %}
+        </td>
+        <td><button type="button" class="linkbtn js-co-edit">수정</button></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="19" class="muted">등록된 기업이 없습니다. [기업 추가]로 시작하세요.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  {# ── IR 기업현황(진행관리) ── 시트 컬럼 그대로 #}
+  <table class="grid-table" data-inline-url="/api/companies" id="co-table">
+    <thead>
+      <tr>
+        <th style="width:36px">#</th>
+        <th style="width:13%" data-filters="top:핵심/TOP Deal">기업명<div class="th-filters"></div></th>
+        <th style="width:10%" data-filters="sector:사업분야 대분류">사업분야 대분류<div class="th-filters"></div></th>
+        <th style="width:9%" data-filters="minor:소분류">소분류<div class="th-filters"></div></th>
+        <th style="width:9%" data-filters="series:기업구분">기업구분<div class="th-filters"></div></th>
+        <th>한줄 소개<span class="th-note">두 줄까지 보입니다 · 눌러서 수정</span></th>
+        <th style="width:74px" data-filters="assignee:담당자">담당자<div class="th-filters"></div></th>
+        <th style="width:64px" data-filters="contract:계약여부">계약여부<div class="th-filters"></div></th>
+        <th style="width:78px">날짜 기입<span class="th-note">계약기업 · 홍보메일 삭제</span></th>
+        <th style="width:86px" data-filters="top:핵심/TOP Deal">핵심/TOP Deal<div class="th-filters"></div></th>
+        {# IR 자료는 맨 끝에 그대로 둔다 — 요청이 왔을 때 바로 꺼내 쓰는 칸이다. #}
+        <th style="width:82px" data-filters="ir:IR 자료">IR 자료<div class="th-filters"></div></th>
+        <th style="width:52px"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr data-id="{{ r.id }}" data-search="{{ r.search }}"
+          data-f-top="{{ r.top_deal_kind or '일반' }}"
+          data-f-sector="{{ r.sector_major }}"
+          data-f-minor="{{ r.sector_minor }}"
           data-f-series="{{ r.series_short }}"
-          data-f-ready="{{ '● 소개 가능' if r.introducible else '⚠ 내용 부족' }}"
-          data-f-summary="{{ r.summary_label }}"
+          data-f-assignee="{{ r.assignee }}"
           data-f-contract="{{ r.contract_label }}"
           data-f-ir="{{ '● 있음' if r.has_ir else '⚠ 없음' }}">
         <td class="rowno muted"></td>
         <td class="co-name">
-          {% if r.is_top_deal %}<span class="star">★</span>{% endif %}<b class="cell" data-field="name">{{ r.name }}</b>
-          {% if r.contract_status == 'yes' %}<span class="tag">계약</span>{% endif %}
+          <b class="cell" data-field="name">{{ r.name }}</b>
         </td>
         <td title="{{ r.sector_major }}">
           <div class="cell clamp2" data-field="sector_major" data-type="pick">{{ r.sector_major }}</div>
-          {% if r.sector_minor %}<div class="cell-sub muted">{{ r.sector_minor }}</div>{% endif %}
+        </td>
+        <td title="{{ r.sector_minor }}">
+          <div class="cell clamp2" data-field="sector_minor" data-type="pick">{{ r.sector_minor }}</div>
         </td>
         <td title="{{ r.series }}">
-          {# 표에는 이름만, 전체 값은 data-value 로 들고 있는다 — 골라 저장할 때
-             괄호 안 설명까지 그대로 지켜져야 한다. #}
           <div class="cell clamp2" data-field="series" data-type="pick"
                data-value="{{ r.series }}">{{ r.series_short }}</div>
         </td>
         <td title="{{ r.one_liner }}">
           <div class="cell clamp2" data-field="one_liner" data-type="long">{{ r.one_liner }}</div>
         </td>
-        <td class="cell num" data-field="revenue_recent" data-type="number" data-unit="eok">{{ eok(r.revenue_recent) }}</td>
-        <td class="cell num" data-field="funding_total" data-type="number" data-unit="eok">{{ eok(r.funding_total) }}</td>
-        <td class="cell num" data-field="raise_target" data-type="number" data-unit="eok">{{ eok(r.raise_target) }}</td>
-        <td class="cell num" data-field="pre_value" data-type="number" data-unit="eok">{{ eok(r.pre_value) }}</td>
-        <td class="ready-cell">
-          {% if r.introducible %}
-            <span class="room-badge ok">● 가능</span>
-          {% else %}
-            <span class="room-badge warn" title="{{ r.blocked_reason }}">⚠ {{ r.blocked_reason }}</span>
-          {% endif %}
-        </td>
+        <td class="cell" data-field="assignee_name" data-type="pick">{{ r.assignee }}</td>
+        <td class="cell" data-field="contract_status" data-type="pick">{{ r.contract_label }}</td>
+        <td class="cell" data-field="contract_month">{{ r.contract_month }}</td>
+        {# `핵심` · `TOP` · 둘 다. 눌러서 목록에서 고른다. #}
+        <td class="cell {% if r.top_deal_kind %}top-on{% endif %}"
+            data-field="top_deal_kind" data-type="pick">{{ r.top_deal_kind }}</td>
         <td>
           {% if r.has_ir %}
             <a class="room-badge ok" href="{{ r.ir_drive_url }}" target="_blank" rel="noopener">📎 열기</a>
@@ -153,7 +211,7 @@
       {% endfor %}
     </tbody>
   </table>
-  <p class="muted" data-filter-empty hidden>조건에 맞는 기업이 없습니다.</p>
+{% endif %}
 </div>
 <p class="hint">
   금액 단위는 <b>억</b>입니다 — <code>18.3</code> 처럼 소수점도 됩니다.
@@ -207,7 +265,11 @@
       </select></label>
     <label class="field"><span>계약</span>
       <select id="f-contract_status">
-        {% for key, label in contract_labels.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+        <option value="none">미계약</option>
+        <option value="free">무료계약완료</option>
+        <option value="paid">유료계약완료</option>
+        <option value="review">계약검토중</option>
+        <option value="blocked">딜소개 불가</option>
       </select></label>
     <label class="field"><span>계약 월</span><input type="text" id="f-contract_month" placeholder="2026-09"></label>
     <label class="field check-row"><input type="checkbox" id="f-is_top_deal"> <span>추천 딜 (★)</span></label>

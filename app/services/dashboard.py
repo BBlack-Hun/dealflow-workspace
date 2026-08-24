@@ -47,7 +47,7 @@ REACTION_WINDOW_DAYS = 60
 
 # 방 확인 결과를 **명시적으로** 나눈다. 예전에는 모르는 값을 전부 '미확인'으로
 # 떨어뜨렸는데, 그래서 '방 없음(not_found)' 으로 확인된 사람까지 발송 가능으로
-# 세어졌다(투자사 DB 117명 · 대시보드 123명으로 어긋난 원인).
+# 세어졌다(투자사 관리 현황 117명 · 대시보드 123명으로 어긋난 원인).
 _SENDABLE_ROOM = {"verified", "unverified"}
 _ROOM_ALIAS = {
     "verified": "verified",
@@ -94,6 +94,64 @@ def _recent_activity_counts(db: Session, contact_ids: List[int],
     return {kind: n for kind, n in rows}
 
 
+def top_requesters(db: Session, contact_ids: List[int], limit: int = 10) -> List[dict]:
+    """**IR 자료를 많이 달라고 한 투자사** 순.
+
+    선호 단계·분야 분포는 '우리 명단이 어떤 성격인가' 는 알려 주지만 다음
+    회차에 누구를 먼저 챙길지는 말해 주지 않았다. 자료를 달라고 한 횟수가
+    관심의 크기이므로, 그 순서가 곧 우선순위다.
+
+    시트에서 옮겨 온 기록(`ContactActivity`)과 이 도구에서 쌓인 기록
+    (`IrRequest`)을 **함께** 센다 — 한쪽만 보면 옮겨 오기 전 이력이 통째로
+    빠진다.
+    """
+    if not contact_ids:
+        return []
+
+    counts: Dict[int, int] = {}
+    companies: Dict[int, set] = {}
+
+    for contact_id, names in db.execute(
+        select(ContactActivity.contact_id, ContactActivity.company_names)
+        .where(ContactActivity.contact_id.in_(contact_ids),
+               ContactActivity.kind == "ir_request")
+    ).all():
+        got = _company_names(names)
+        counts[contact_id] = counts.get(contact_id, 0) + max(len(got), 1)
+        companies.setdefault(contact_id, set()).update(got)
+
+    for contact_id, company_name in db.execute(
+        select(IrRequest.contact_id, IrRequest.company_name)
+        .where(IrRequest.contact_id.in_(contact_ids))
+    ).all():
+        counts[contact_id] = counts.get(contact_id, 0) + 1
+        if company_name:
+            companies.setdefault(contact_id, set()).add(company_name.strip())
+
+    if not counts:
+        return []
+
+    rows = db.execute(
+        select(VcContact).where(VcContact.id.in_(list(counts)))
+    ).scalars().all()
+    by_id = {c.id: c for c in rows}
+
+    out = []
+    for contact_id, count in sorted(counts.items(), key=lambda kv: -kv[1])[:limit]:
+        contact = by_id.get(contact_id)
+        if contact is None:
+            continue
+        out.append({
+            "id": contact_id,
+            "name": contact.name,
+            "title": contact.title or "",
+            "firm": contact.firm or "",
+            "count": count,
+            "companies": sorted(companies.get(contact_id, set()))[:4],
+        })
+    return out
+
+
 def _reaction_summary(db: Session, contact_ids: List[int]) -> dict:
     """반응 요약 — **기간을 자르지 않는다**.
 
@@ -106,7 +164,8 @@ def _reaction_summary(db: Session, contact_ids: List[int]) -> dict:
     따로 봐야 한다.
     """
     if not contact_ids:
-        return {"ir_contacts": 0, "meeting_contacts": 0, "requested_companies": 0}
+        return {"ir_contacts": 0, "meeting_contacts": 0, "requested_companies": 0,
+                "meeting_done": 0, "meeting_call": 0}
 
     rows = db.execute(
         select(ContactActivity.kind, ContactActivity.contact_id,
@@ -132,12 +191,22 @@ def _reaction_summary(db: Session, contact_ids: List[int]) -> dict:
         ir_contacts.add(contact_id)
         if company_name:
             companies.add(company_name.strip())
-    for (contact_id,) in db.execute(
-        select(Meeting.contact_id).where(Meeting.contact_id.in_(contact_ids))
-    ).all():
-        meeting_contacts.add(contact_id)
+    # 미팅은 '요청' 과 '완료' 를 나눠 센다. 끝난 미팅은 다음 할 일이 다르다 —
+    # 열흘 뒤 결과를 물어봐야 하고, 그걸 놓치면 계약을 통째로 잊는다.
+    done_contacts, call_contacts = set(), set()
+    for meeting in db.execute(
+        select(Meeting).where(Meeting.contact_id.in_(contact_ids))
+    ).scalars().all():
+        meeting_contacts.add(meeting.contact_id)
+        if meeting.status == "done":
+            done_contacts.add(meeting.contact_id)
+            # 결과 문의를 아직 안 한 곳 — 전화할 대상이다.
+            if not meeting.followup_done:
+                call_contacts.add(meeting.contact_id)
 
     return {
+        "meeting_done": len(done_contacts),
+        "meeting_call": len(call_contacts),
         "ir_contacts": len(ir_contacts),
         "meeting_contacts": len(meeting_contacts),
         "requested_companies": len(companies),
@@ -168,7 +237,9 @@ def _distribution(values: List[str], top: int = 6) -> List[dict]:
 
 # --- 사용자 대시보드 --------------------------------------------------------
 
-def user_dashboard(db: Session, user: User, today: Optional[date] = None) -> dict:
+def user_dashboard(db: Session, user: User, today: Optional[date] = None,
+                   top_n: int = 10) -> dict:
+    """`top_n` — '내 투자사 선호'에 몇 명까지 세울지. 화면에서 고른다(10~20)."""
     today = today or date.today()
     cutoff = (today - timedelta(days=REACTION_WINDOW_DAYS)).isoformat()
 
@@ -222,7 +293,9 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None) -> dic
         blockers.append({
             "count": not_introducible, "label": "발송 목록에 안 뜨는 기업",
             "hint": "한줄소개 또는 숫자(매출·투자금)가 비어 소개 문구를 만들 수 없습니다",
-            "href": "/companies?ready=" + quote("⚠ 내용 부족"), "level": "warn",
+            # 표에서 '소개 가능' 컬럼을 뺐으므로 그 필터로 보내면 갈 곳이 없다.
+            # 채워야 하는 값이 있는 스타트업DB 탭으로 보낸다.
+            "href": "/companies?tab=db", "level": "warn",
         })
 
     device = db.execute(
@@ -250,13 +323,6 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None) -> dic
             # '카톡 발송 가능'·'소개 가능 기업'은 무엇이 가능하다는 건지 모호했다.
             {"key": "contacts", "label": "내 담당 투자사", "value": len(contacts),
              "sub": "내 명단에 있는 사람", "href": "/contacts"},
-            {"key": "sendable", "label": "카톡방 연결된 투자사", "value": sendable,
-             "sub": f"지금 바로 보낼 수 있음 · 전체 {len(contacts)}명 중",
-             "href": "/contacts"},
-            {"key": "companies", "label": "소개 문구 준비된 기업",
-             "value": len(introducible),
-             "sub": f"발송 목록에 뜸 · 등록 {len(companies)}개 중",
-             "href": "/companies"},
             {"key": "sent", "label": "이번 달 보낸 건수", "value": sent_this_month,
              "sub": "카톡·메일 도착 성공", "href": "/deals"},
         ],
@@ -280,9 +346,14 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None) -> dic
             "overdue": sum(1 for r in due_today if r["overdue"]),
             "rows": due_today[:5],
         },
+        # 화면에는 안 띄우지만 값은 남긴다 — 발송 대상 판정이 이 기준을 쓰고,
+        # 대시보드와 투자사 목록의 수가 어긋난 적이 있어 테스트가 지키고 있다.
+        "sendable": sendable,
         "reactions": _reaction_summary(db, ids),
         "stages": _distribution([s for c in contacts for s in _split_csv(c.stages)]),
         "sectors": _distribution([s for c in contacts for s in _split_csv(c.sectors)]),
+        # 다음 회차에 누구를 먼저 챙길지 — 자료를 달라고 한 횟수가 관심의 크기다.
+        "top_requesters": top_requesters(db, ids, limit=top_n),
         "recent_batches": recent_batches(db, user_id=user.id),
     }
 
@@ -301,8 +372,13 @@ def _pipeline_view(rows: List[VcContact]) -> dict:
 
 
 def recent_batches(db: Session, user_id: Optional[int] = None, limit: int = 5) -> List[dict]:
-    """최근 발송 회차. 관리자 화면에서는 user_id 없이 팀 전체를 본다."""
-    stmt = select(SendJob).where(SendJob.kind == "deal_intro")
+    """최근 발송 회차. 관리자 화면에서는 user_id 없이 팀 전체를 본다.
+
+    **딜소개만 세면 안 된다.** IR 자료 전달·리마인드도 나간 것이고, 관리자가
+    보려는 것은 "무엇이 나갔나" 다 — 종류로 걸러 놓으면 보낸 사람은 보냈는데
+    관리자 화면에는 없는 상태가 된다(방 확인은 발송이 아니라 제외).
+    """
+    stmt = select(SendJob).where(SendJob.kind != "verify_room")
     if user_id is not None:
         stmt = stmt.where(SendJob.user_id == user_id)
     jobs = db.execute(stmt.order_by(SendJob.id.desc()).limit(limit)).scalars().all()
@@ -320,6 +396,7 @@ def recent_batches(db: Session, user_id: Optional[int] = None, limit: int = 5) -
             select(User).where(User.id.in_([j.user_id for j in jobs]))
         ).scalars().all()
     }
+    kind_labels = {"deal_intro": "딜소개", "ir_delivery": "IR 자료 전달"}
     out = []
     for job in jobs:
         batch = batches.get(job.batch_id)
@@ -327,6 +404,7 @@ def recent_batches(db: Session, user_id: Optional[int] = None, limit: int = 5) -
         out.append({
             "job_id": job.id,
             "title": batch.title if batch else "딜소개 회차",
+            "kind": kind_labels.get(job.kind, job.kind),
             "date": (batch.sent_date if batch else None) or (job.started_at or "")[:10],
             "owner": owner.name if owner else "",
             "status": job.status,

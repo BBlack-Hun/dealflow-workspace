@@ -1,6 +1,6 @@
 """표에서 눌러 바로 고치기 — 한 칸만 보내도 저장되는가.
 
-투자컨설턴트 현황에서만 쓰던 조작을 투자사 DB · 스타트업 관리로 넓혔다.
+투자컨설턴트 현황에서만 쓰던 조작을 투자사 관리 현황 · IR 기업현황로 넓혔다.
 칸 하나를 고칠 때 **다른 값까지 같이 보내야 한다면** 쓸 수 없는 기능이다.
 실제로 처음엔 `name` 이 필수라 매출 한 칸을 고치는 데 422 가 났다.
 """
@@ -41,7 +41,7 @@ def contact(db, users):
     return row
 
 
-# --- 스타트업 관리 -----------------------------------------------------------
+# --- IR 기업현황 -----------------------------------------------------------
 
 def test_one_field_is_enough(logged_in, db, company):
     r = logged_in.patch(f"/api/companies/{company.id}",
@@ -83,7 +83,7 @@ def test_creating_still_needs_a_name(logged_in):
     assert logged_in.post("/api/companies", json={"sector_major": "AI"}).status_code == 400
 
 
-# --- 투자사 DB ---------------------------------------------------------------
+# --- 투자사 관리 현황 ---------------------------------------------------------------
 
 def test_memo_only(logged_in, db, contact):
     r = logged_in.patch(f"/api/contacts/{contact.id}", json={"memo": "고친 메모"})
@@ -115,14 +115,15 @@ def test_cannot_touch_someone_elses(client, db, users, contact):
 # --- 화면에 붙어 있는가 ------------------------------------------------------
 
 def test_tables_are_wired(logged_in, company, contact):
-    companies = logged_in.get("/companies").text
+    companies = logged_in.get("/companies?tab=db").text
     assert 'data-inline-url="/api/companies"' in companies
     assert 'data-field="revenue_recent" data-type="number"' in companies
     assert "inline_edit.js" in companies
 
     contacts = logged_in.get("/contacts").text
     assert 'data-inline-url="/api/contacts"' in contacts
-    assert 'data-field="memo"' in contacts
+    # 메모는 담당자 시트에 없는 칸이라 표에서 뺐다 — [수정] 에서 본다.
+    assert 'data-field="sectors"' in contacts
     assert "inline_edit.js" in contacts
 
 
@@ -133,7 +134,7 @@ def test_long_text_gets_the_floating_editor(logged_in, company, contact):
     assert 'data-field="one_liner" data-type="long"' in companies
 
     contacts = logged_in.get("/contacts").text
-    assert 'data-field="memo" data-type="long"' in contacts
+    assert 'data-field="sectors" data-type="long"' in contacts
 
     js = (pathlib.Path("app/static/js/inline_edit.js")).read_text(encoding="utf-8")
     assert "startLong" in js
@@ -241,7 +242,9 @@ def test_required_fields_are_visible_in_the_table(logged_in, company):
     """
     from app.routers.companies import REQUIRED_FIELDS
 
-    html = logged_in.get("/companies").text
+    # 두 탭을 합쳐서 본다 — 사람은 탭을 오가며 채운다.
+    html = (logged_in.get("/companies").text
+            + logged_in.get("/companies?tab=db").text)
 
     # 표에 컬럼으로 나와 있는 것
     shown = {m for m in
@@ -262,7 +265,7 @@ def test_required_fields_are_visible_in_the_table(logged_in, company):
 
 
 def test_the_money_columns_can_all_be_typed_into(logged_in, company):
-    html = logged_in.get("/companies").text
+    html = logged_in.get("/companies?tab=db").text
     for field in ("revenue_recent", "funding_total", "raise_target", "pre_value"):
         assert f'data-field="{field}" data-type="number"' in html, field
 
@@ -280,13 +283,14 @@ def test_money_columns_show_eok(logged_in, db):
                      pre_value=15000))                       # 150억
     db.commit()
 
-    html = logged_in.get("/companies").text
+    html = logged_in.get("/companies?tab=db").text
     assert ">18.3<" in html
     assert ">10<" in html
     assert ">150<" in html
     assert "1,830" not in html, "백만원이 그대로 보인다"
     # 숫자만 있으면 천만 원인지 천억인지 알 수 없다
-    assert html.count('class="th-unit">억<') == 4
+    # 스타트업DB 탭의 금액 칸 — 연도별 매출은 적은 그대로(글자)라 단위를 안 붙인다
+    assert html.count('class="th-unit">억<') == 0
 
 
 def test_editing_in_eok_stores_baekman():
@@ -298,7 +302,7 @@ def test_editing_in_eok_stores_baekman():
 
 
 def test_the_money_cells_are_marked_as_eok(logged_in, company):
-    html = logged_in.get("/companies").text
+    html = logged_in.get("/companies?tab=db").text
     for field in ("revenue_recent", "funding_total", "raise_target", "pre_value"):
         assert f'data-field="{field}" data-type="number" data-unit="eok"' in html, field
 
@@ -353,3 +357,178 @@ def test_the_excel_matches_the_screen(logged_in, db):
     assert row[col["Pre Value(억)"]] == 150
     # 엑셀에서 계산할 수 있게 문자열이 아니라 숫자여야 한다
     assert isinstance(row[col["최근매출(억)"]], (int, float))
+
+
+# --- 시트의 하단 탭 -----------------------------------------------------------
+
+def test_two_tabs_match_the_sheet(logged_in, company):
+    """시트를 쓰던 사람이 같은 자리에서 같은 것을 찾을 수 있어야 한다."""
+    status = logged_in.get("/companies").text
+    for col in ("사업분야 대분류", "소분류", "기업구분", "한줄 소개",
+                "담당자", "계약여부", "핵심/TOP Deal"):
+        assert col in status, f"IR 기업현황 탭에 '{col}' 이 없다"
+
+    db_tab = logged_in.get("/companies?tab=db").text
+    for col in ("대표자", "연락처", "이메일", "22년 매출", "25년 매출",
+                "누적투자금액", "투자유치희망금액", "Pre Value",
+                "특이사항", "설립년도", "기보·신보·중진공"):
+        assert col in db_tab, f"스타트업DB 탭에 '{col}' 이 없다"
+
+
+def test_ir_column_stays_at_the_end_of_both(logged_in, company):
+    """IR 자료는 요청이 왔을 때 바로 꺼내 쓰는 칸이다 — 어느 탭에서도 맨 끝."""
+    import re
+
+    for path in ("/companies", "/companies?tab=db"):
+        head = logged_in.get(path).text.split("</thead>")[0]
+        cols = [re.sub(r"<[^>]+>", "", m).strip()
+                for m in re.findall(r"<th(?:\s[^>]*)?>(.*?)</th>", head, re.S)]
+        assert cols[-1] == "", f"{path}: 마지막은 수정 버튼 칸이어야 한다"
+        assert "IR 자료" in cols[-2], f"{path}: IR 자료가 맨 끝이 아니다 — {cols[-2]!r}"
+
+
+def test_both_tabs_are_the_same_records(logged_in, db):
+    """두 탭은 같은 기업의 두 가지 보기다. 한쪽에 넣으면 다른 쪽이 따라온다 —
+    맞춰 주는 코드가 따로 있으면 반드시 어긋난다."""
+    from app.models import IrCompany
+
+    row = IrCompany(name="샘플로지", sector_major="물류")
+    db.add(row)
+    db.commit()
+
+    logged_in.patch(f"/api/companies/{row.id}",
+                    json={"contact_name": "홍길동", "sector_major": "물류테크"})
+
+    # 스타트업DB 에서 넣은 대표자·사업분야가
+    assert "홍길동" in logged_in.get("/companies?tab=db").text
+    # IR 기업현황에도 그대로 보인다
+    assert "물류테크" in logged_in.get("/companies").text
+
+
+def test_yearly_revenue_is_kept_as_typed(logged_in, db):
+    """원본에 `8.2억`·`1,224백만원`·`150억 ~ 200억` 이 섞여 있다.
+    숫자로 바꾸면 100배가 틀어진 채 딜소개 문구에 실려 나간다."""
+    from app.models import IrCompany
+
+    row = IrCompany(name="샘플메디")
+    db.add(row)
+    db.commit()
+
+    logged_in.patch(f"/api/companies/{row.id}", json={
+        "revenue_2023": "1,224백만원", "revenue_2024": "8.2억",
+        "revenue_2025": "150억 ~ 200억"})
+    db.refresh(row)
+    assert row.revenue_2023 == "1,224백만원"
+    assert row.revenue_2025 == "150억 ~ 200억"
+
+    html = logged_in.get("/companies?tab=db").text
+    assert "1,224백만원" in html and "150억 ~ 200억" in html
+
+
+def test_at_most_one_column_flexes(logged_in, company):
+    """`table-layout: fixed` 에서 폭을 안 준 칸이 둘 이상이면 남는 자리를 나눠
+    갖다가 **둘 다 짜부라진다.** 실제로 스타트업DB 의 사업분야 칸이 사라졌다.
+
+    남는 자리를 먹는 칸은 표마다 하나여야 한다.
+    """
+    import re
+
+    for path in ("/companies", "/companies?tab=db"):
+        head = logged_in.get(path).text.split("</thead>")[0]
+        flexible = []
+        for attrs, label in re.findall(r"<th(\s[^>]*)?>(.*?)</th>", head, re.S):
+            name = re.sub(r"<[^>]+>", "", label).strip()
+            if not name:
+                continue        # 수정 버튼 칸
+            if not re.search(r"width:\s*\d+(px|%)", attrs or ""):
+                flexible.append(name)
+        assert len(flexible) <= 1, \
+            f"{path}: 폭 없는 칸이 여럿 — {flexible} (서로 자리를 뺏다 사라진다)"
+
+
+def test_the_wide_table_scrolls_instead_of_squeezing(logged_in, company):
+    html = logged_in.get("/companies?tab=db").text
+    assert "table-wrap wide" in html
+    css = pathlib.Path("app/static/css/app.css").read_text(encoding="utf-8")
+    assert ".table-wrap.wide { overflow-x: auto; }" in css
+    assert "min-width: 2030px" in css
+
+
+def test_top_deal_is_a_choice_not_a_switch(logged_in, db):
+    """시트에 `핵심`(13) · `TOP`(11) · 둘 다(2) 가 들어 있다.
+    켜짐/꺼짐 하나로는 어느 쪽인지 알 수 없다."""
+    from app.models import IrCompany
+
+    row = IrCompany(name="샘플로지")
+    db.add(row)
+    db.commit()
+
+    logged_in.patch(f"/api/companies/{row.id}", json={"top_deal_kind": "TOP"})
+    db.refresh(row)
+    assert row.top_deal_kind == "TOP"
+    # 골라 넣으면 '추천 딜' 도 함께 켜진다 — 따로 켜게 하면 한쪽만 켜 둔 채 잊는다
+    assert row.is_top_deal == 1
+
+    logged_in.patch(f"/api/companies/{row.id}", json={"top_deal_kind": ""})
+    db.refresh(row)
+    assert row.top_deal_kind is None and row.is_top_deal == 0
+
+    html = logged_in.get("/companies").text
+    assert 'data-field="top_deal_kind" data-type="pick"' in html
+
+
+def test_contract_has_the_five_states(logged_in, company):
+    """완료/진행중/없음 셋으로 뭉치면 '무료'와 '유료'가 같은 칸에 들어가고,
+    '딜소개 불가'(더 이상 소개하면 안 되는 기업)가 '없음'에 섞여 사고가 난다."""
+    from app.routers.companies import CONTRACT_LABELS, contract_key
+
+    assert set(CONTRACT_LABELS.values()) == {
+        "미계약", "무료계약완료", "유료계약완료", "계약검토중", "딜소개 불가"}
+    # 예전 값도 그대로 읽힌다
+    assert contract_key("yes") == "paid"
+    assert contract_key("no") == "none"
+    assert contract_key(None) == "none"
+
+    html = logged_in.get("/companies").text
+    assert "유료계약완료" in html and "딜소개 불가" in html
+
+
+def test_top_deal_order_does_not_split_the_filter():
+    """`핵심, TOP` 과 `TOP, 핵심` 은 같은 뜻인데 글자가 달라 필터가 두 줄로 셌다."""
+    from app.routers.companies import top_deal_kind
+
+    assert top_deal_kind("TOP, 핵심") == "핵심, TOP"
+    assert top_deal_kind("핵심, TOP") == "핵심, TOP"
+    assert top_deal_kind("핵심") == "핵심"
+    assert top_deal_kind("TOP") == "TOP"
+    assert top_deal_kind("") is None and top_deal_kind(None) is None
+    # 모르는 말은 지우지 않는다 — 사람이 적은 것을 임의로 버리면 안 된다
+    assert top_deal_kind("특별관리") == "특별관리"
+
+
+def test_saving_either_order_lands_on_one(logged_in, db):
+    from app.models import IrCompany
+
+    row = IrCompany(name="샘플로지")
+    db.add(row)
+    db.commit()
+
+    logged_in.patch(f"/api/companies/{row.id}", json={"top_deal_kind": "TOP, 핵심"})
+    db.refresh(row)
+    assert row.top_deal_kind == "핵심, TOP"
+
+
+def test_no_filter_points_at_a_column_that_is_gone(logged_in, company):
+    """`소개 가능` 컬럼을 뺐다. 그 값으로 보내는 링크·칩은 아무것도 못 거른다."""
+    import re
+
+    for path in ("/companies", "/companies?tab=db", "/"):
+        body = logged_in.get(path).text
+        assert "ready=" not in body, f"{path}: 없어진 컬럼으로 거르려 한다"
+
+    # 칩이 거는 값은 실제로 표에 있는 값이어야 한다
+    body = logged_in.get("/companies").text
+    for preset in re.findall(r'data-preset="([^"]+)"', body):
+        key = preset.split("=")[0]
+        assert f'data-filters="{key}:' in body or f"|{key}:" in body, \
+            f"'{key}' 필터가 표에 없다"

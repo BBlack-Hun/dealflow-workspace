@@ -19,6 +19,15 @@ def _job_or_404(db: Session, job_id: int, user: User) -> SendJob:
     return job
 
 
+def _viewable_job_or_404(db: Session, job_id: int, user: User) -> SendJob:
+    """조회는 관리자에게도 열어 둔다. 재시도·취소 같은 **조작**은
+    `_job_or_404` 를 그대로 쓴다 — 관리자가 실수로 남의 회차를 건드리면 안 된다."""
+    job = db.get(SendJob, job_id)
+    if job is None or (job.user_id != user.id and user.role != "admin"):
+        raise HTTPException(status_code=404, detail="발송 잡 없음")
+    return job
+
+
 def _counts(job: SendJob) -> dict:
     pending = sum(1 for i in job.items if i.status == "pending")
     sending = sum(1 for i in job.items if i.status == "sending")
@@ -32,7 +41,7 @@ def _counts(job: SendJob) -> dict:
 @router.get("/jobs/{job_id}")
 def job_status(job_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Polled by the progress screen every 2s."""
-    job = _job_or_404(db, job_id, user)
+    job = _viewable_job_or_404(db, job_id, user)
     return {
         "id": job.id,
         "status": job.status,

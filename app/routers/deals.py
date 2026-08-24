@@ -94,6 +94,7 @@ MODE_ASK = "ask"            # 선호 분야 묻기
 MODE_REMIND = "remind"      # 리마인드
 MODE_MEETING = "meeting"    # 미팅 요청
 MODE_IR = "ir"              # IR 자료 전달
+MODE_REVIEW = "review"      # 미팅 후기 — 미팅 열흘 뒤 결과 문의
 
 # 딜소개 말고는 전부 **기업 목록 없이 문구만** 나간다.
 # 이미 목록을 받은 사람에게 같은 목록을 다시 밀어 넣는 것은 후속이 아니라 재발송이다.
@@ -115,12 +116,18 @@ FOLLOW_UP_MODES = {
     MODE_IR: ("ir_delivery",
               "{담당자명} {직함} 안녕하세요.\n{기업목록} IR deck 먼저 전달드리겠습니다.\n\n{자료링크}",
               mc.STAGE_REMIND),
+    # 미팅 뒤 열흘쯤 지나 결과를 묻는다. 원본 시트에도 "결과확인전화가 없으면
+    # 계약을 잊어버리는 경우가 발생할 수 있습니다" 라고 적혀 있었다.
+    MODE_REVIEW: ("meeting_review",
+                  "지난번 미팅은 어떻게 보셨는지요? 검토 진행 상황이 궁금합니다.",
+                  mc.STAGE_MEETING),
 }
 MODE_TITLES = {
     MODE_ASK: "선호 분야 묻기",
     MODE_REMIND: "리마인드",
     MODE_MEETING: "미팅 요청",
     MODE_IR: "IR 자료 전달",
+    MODE_REVIEW: "미팅 후기",
 }
 
 # IR 자료 전달은 기업을 고른다(무엇을 보내는지 알아야 한다).
@@ -378,7 +385,7 @@ def preview(
         thin = [c.name for c in companies if not c.introducible]  # 문구만 모드면 companies 가 비어 있다
         thin_warnings = (
             [f"내용이 부족한 기업이 포함됐습니다: {', '.join(thin)} — "
-             f"스타트업 관리에서 한줄소개·숫자를 채우면 문구가 좋아집니다"]
+             f"IR 기업현황에서 한줄소개·숫자를 채우면 문구가 좋아집니다"]
             if thin and req.mode != MODE_IR else []
         )
         # IR 자료 전달인데 보낼 자료가 없으면 문구만 나가고 자료는 못 보낸다.
@@ -389,7 +396,7 @@ def preview(
             if no_file:
                 thin_warnings.append(
                     f"IR 자료 링크가 없는 기업: {', '.join(no_file)} — "
-                    f"스타트업 관리에서 구글드라이브 링크를 넣어주세요"
+                    f"IR 기업현황에서 구글드라이브 링크를 넣어주세요"
                 )
         previews.append({
             "contact_id": contact.id,

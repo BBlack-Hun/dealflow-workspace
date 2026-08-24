@@ -90,6 +90,12 @@ class VcContact(TimestampMixin, Base):
     # 명단 시트들에만 있는 칸들. 표기가 자유로워(O/X/△/문장) 원문을 그대로 둔다.
     interest_level: Mapped[Optional[str]] = mapped_column(String, nullable=True)   # 관심도(월말 기준)
     kakao_joined: Mapped[Optional[str]] = mapped_column(String, nullable=True)     # 카톡방 참여여부
+    # 시트에 있는데 앱에 칸이 없어 통째로 버려지던 값들.
+    # "명함 받은 날" 은 언제부터 아는 사이인지를 말해 준다 — 오래 알던 분께
+    # 처음 연락하는 문구를 보내면 어색하다.
+    office_fax: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    card_registered_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
     office_phone: Mapped[Optional[str]] = mapped_column(String, nullable=True)     # 유선전화
     address: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     # 어느 명단 시트에서 온 정보인지(여러 시트에 나뉜 같은 사람을 병합하므로 추적이 필요).
@@ -184,6 +190,30 @@ class IrCompany(TimestampMixin, Base):
     contact_phone: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     contact_email: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     # Amounts in 백만원 (millions of KRW); displayed in 억 (÷100).
+    # 연도별 매출. 시트가 22~25년을 따로 들고 있다 — 한 해만 남기면 성장 추세가
+    # 사라진다("작년 대비" 가 딜소개에서 자주 쓰인다).
+    #
+    # **글자로 담는다.** 원본에 `8.2억` · `1,224백만원` · `150억 ~ 200억` 이
+    # 한 칸에 섞여 있어서, 숫자로 바꾸려면 단위를 판별해야 한다. 잘못 읽으면
+    # 100배가 틀어진 채 딜소개 문구에 실려 나간다 — 적은 그대로가 안전하다.
+    revenue_2022: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    revenue_2023: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    revenue_2024: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    revenue_2025: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    founded_year: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # 스타트업DB 시트의 `사업분야` — **카테고리가 아니라 사업 설명**이다.
+    # (카테고리는 sector_major/minor 로 따로 있다.)
+    # 한줄 소개의 **첫 토막**이 이 값이다:
+    #   {사업 설명} | 매출 N억 | 누적투자금액 N억 | … | {특이사항}
+    business_desc: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # `핵심` · `TOP` · `핵심, TOP`. 켜짐/꺼짐 하나로는 어느 쪽인지 알 수 없다.
+    # `is_top_deal` 은 그대로 둔다 — 발송 화면의 '추천 딜' 이 그 값을 쓴다.
+    top_deal_kind: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # 기보·신보·중진공 — 보증/정책자금 이력. 투자사가 자주 묻는다.
+    guarantee: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # 이 기업을 맡은 팀원. 투자사 쪽 `assignee_name` 과 같은 성격이다.
+    assignee_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
     revenue_recent: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     funding_total: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     raise_target: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
@@ -313,6 +343,31 @@ class AgentDevice(TimestampMixin, Base):
     # 어떤 발송기가 붙었는지(mock/kakao_windows/kakao_mac/telegram).
     # mock 이 붙은 채로 실발송을 시도하면 잡을 가로채므로 화면에 드러내야 한다.
     sender: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+
+class RefSheet(TimestampMixin, Base):
+    """참고 시트 — 원본 스프레드시트의 '자료' 탭들.
+
+    투자사 명단 말고도 시트에는 스크립트·가이드·성격 정리 같은 탭이 여럿
+    있었다. 매번 구글 시트를 따로 열어 보던 자료라 화면 안으로 들여온다.
+
+    모양이 제각각이다:
+      table — `투자사 성격정리` 처럼 진짜 표 (머리글 + 행)
+      text  — `딜소개 스크립트` 처럼 줄글
+
+    **지울 수 있어야 한다.** 다 옮겨 놓고 쓰면서 추리는 것이 순서라,
+    안 쓰는 탭이 남아 있으면 자리만 차지한다.
+    """
+
+    __tablename__ = "ref_sheets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    title: Mapped[str] = mapped_column(String)
+    kind: Mapped[str] = mapped_column(String, default="text")   # table | text
+    # table 이면 {"columns": [...], "rows": [[...]]}, text 면 {"body": "..."}
+    content_json: Mapped[str] = mapped_column(Text, default="{}")
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[int] = mapped_column(Integer, default=1)
 
 
 class ConsultingColumn(TimestampMixin, Base):
@@ -503,6 +558,9 @@ class WeeklyRoutine(TimestampMixin, Base):
     category: Mapped[str] = mapped_column(String)          # 항목
     title: Mapped[str] = mapped_column(Text)               # 세부업무
     weekdays: Mapped[str] = mapped_column(String, default="")   # "0,2" = 월,수
+    # 언제 하는 일인지 — 시트에 "화요일 오전" 처럼 시간대까지 적혀 있었다.
+    # 비어 있으면 하루 중 아무 때나(예: 이메일 정리).
+    time_of_day: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # am | pm
     note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     is_active: Mapped[int] = mapped_column(Integer, default=1)
 

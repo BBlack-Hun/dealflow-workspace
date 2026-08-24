@@ -15,7 +15,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   // 딜소개 말고는 전부 기업 목록 없이 문구만 나간다.
   // 이미 목록을 받은 사람에게 같은 목록을 다시 밀어 넣는 것은 후속이 아니라 재발송이다.
   var FOLLOW_UP = { ask: "선호 분야 묻기", remind: "리마인드", meeting: "미팅 요청",
-                    ir: "IR 자료 전달" };
+                    review: "미팅 후기", ir: "IR 자료 전달" };
   // IR 자료 전달은 기업을 고른다(무엇을 보내는지 알아야 한다).
   // 나머지 후속 문구는 기업과 무관하다.
   var NEEDS_COMPANIES = { deal: true, ir: true };
@@ -136,12 +136,12 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     opening_first: "첫 연락", opening_re: "재연락",
     closing_day1: "딜소개", closing_remind: "리마인드",
     closing_meeting: "미팅 요청", ask_preference: "선호 분야",
-    ir_delivery: "IR 자료 전달"
+    meeting_review: "미팅 후기", ir_delivery: "IR 자료 전달"
   };
   // 고르지 않았을 때 쓰는 문구의 이름. '기본' 만으로는 무엇의 기본인지 모른다.
   var CLOSING_DEFAULT = {
     deal: "기본 안내문", remind: "기본 안내문", meeting: "기본 안내문",
-    ask: "기본 문구", ir: "기본 문구"
+    review: "기본 문구", ask: "기본 문구", ir: "기본 문구"
   };
 
   function renderTemplates() {
@@ -156,8 +156,8 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     fill("tpl-opening", openings, "기본 인삿말 (첫 연락 / 재연락 자동)");
     // 문구만 보낼 때는 안내문이 아니라 그 방식의 문구를 고른다.
     var kindByMode = { ask: "ask_preference", remind: "closing_remind",
-                       meeting: "closing_meeting", deal: "closing_day1",
-                       ir: "ir_delivery" };
+                       meeting: "closing_meeting", review: "meeting_review",
+                       deal: "closing_day1", ir: "ir_delivery" };
     fill("tpl-closing", byKind[kindByMode[mode]] || [],
          CLOSING_DEFAULT[mode] || "기본 안내문");
   }
@@ -552,7 +552,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       warnBox.hidden = false;
       warnBox.textContent =
         "요청받은 기업 " + (asked - picked) + "개를 목록에서 찾지 못했습니다 — " +
-        "스타트업 관리에서 등록 상태를 확인하세요.";
+        "IR 기업현황에서 등록 상태를 확인하세요.";
     }
     if (picked) applyCompanyFilter();
   })();

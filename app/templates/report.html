@@ -16,21 +16,57 @@
        href="/report?month={{ key }}{% if scope %}&scope={{ scope }}{% endif %}">{{ y }}년 {{ m }}월</a>
     {% endfor %}
   </div>
-  {% if can_team %}
+  {% if members %}
+  {# 전체만 보면 누가 얼마나 했는지는 보이지만, 그 사람과 이야기할 자료는
+     안 나온다 — 팀원 한 사람 것만 따로 볼 수 있어야 한다. #}
   <div class="toolbar-right">
-    <a class="chip {% if not team_wide %}active{% endif %}" href="/report?month={{ selected }}">내 것</a>
-    <a class="chip {% if team_wide %}active{% endif %}" href="/report?month={{ selected }}&scope=team">팀 전체</a>
+    <a class="chip {% if not team_wide and not viewing %}active{% endif %}"
+       href="/report?month={{ selected }}">내 것</a>
+    <a class="chip {% if team_wide %}active{% endif %}"
+       href="/report?month={{ selected }}&scope=team">팀 전체</a>
+    <select id="member-pick" class="chip-select"
+            onchange="location = '/report?month={{ selected }}&member=' + this.value">
+      <option value="">팀원 선택…</option>
+      {% for m in members %}
+      <option value="{{ m.id }}" {% if viewing and viewing.id == m.id %}selected{% endif %}>{{ m.name }}</option>
+      {% endfor %}
+    </select>
   </div>
   {% endif %}
 </div>
 
+{#
+  숫자만 있으면 무엇을 센 건지 알 수 없다. 네 칸이 각각
+  "잡힌 것 / 끝난 것 / 물어본 것 / 아직 안 물어본 것" 인데
+  `미팅`·`완료` 만으로는 그게 안 드러난다.
+#}
 <div class="kpi-row slim">
-  <div class="kpi-card static"><span class="kpi-label">미팅</span><span class="kpi-value">{{ total }}</span></div>
-  <div class="kpi-card static"><span class="kpi-label">완료</span><span class="kpi-value ok">{{ done }}</span></div>
-  <div class="kpi-card static"><span class="kpi-label">결과 문의 완료</span><span class="kpi-value">{{ followup_done }}</span></div>
-  <div class="kpi-card static"><span class="kpi-label">결과 문의 밀림</span>
-    <span class="kpi-value {% if followup_late %}bad{% endif %}">{{ followup_late }}</span></div>
+  <div class="kpi-card static">
+    <span class="kpi-label">잡은 미팅</span>
+    <span class="kpi-value">{{ total }}</span>
+    <span class="kpi-sub">{{ month }}월에 잡힌 전체</span></div>
+  <div class="kpi-card static">
+    <span class="kpi-label">진행한 미팅</span>
+    <span class="kpi-value ok">{{ done }}</span>
+    <span class="kpi-sub">실제로 만난 건 · 취소 제외</span></div>
+  <div class="kpi-card static">
+    <span class="kpi-label">결과 물어봄</span>
+    <span class="kpi-value">{{ followup_done }}</span>
+    <span class="kpi-sub">미팅 뒤 {{ followup_days }}일쯤 확인 완료</span></div>
+  <div class="kpi-card static">
+    <span class="kpi-label">아직 안 물어봄</span>
+    <span class="kpi-value {% if followup_late %}bad{% elif followup_open %}warn{% endif %}">{{ followup_open }}</span>
+    <span class="kpi-sub">
+      {% if followup_late %}그중 <b>{{ followup_late }}건</b>은 날짜가 지났습니다
+      {% elif followup_open %}아직 물어볼 날 전입니다
+      {% else %}다 물어봤습니다{% endif %}
+    </span></div>
 </div>
+<p class="hint">
+  <b>결과를 묻는 것</b>이 이 보고의 목적입니다 — 원본 시트에도
+  "결과확인전화가 없으면 계약을 잊어버리는 경우가 발생할 수 있습니다" 라고
+  적혀 있었습니다.
+</p>
 
 <section class="panel">
   <h2 class="panel-title">{{ month }}월 미팅 총 {{ total }}개사</h2>
@@ -55,6 +91,8 @@
           <td class="{% if m.followup_late %}bad{% endif %}">
             {% if m.status != 'done' %}<span class="muted">미완료</span>
             {% elif m.followup_done %}완료
+            {# 거절로 끝났거나 다음 미팅을 잡았으면 물어볼 것이 없다. #}
+            {% elif not m.needs_followup %}<span class="muted">문의 불필요</span>
             {% elif m.followup_late %}{{ m.followup_due }} 지남
             {% else %}{{ m.followup_due }} 예정{% endif %}
           </td>
@@ -92,4 +130,46 @@
     {% endif %}
   </section>
 </div>
+
+{# 한 달에 두 번 도는 일이라, 그 달에 무엇이 오갔는지를 **한눈에** 봐야 한다.
+   숫자만 보면 "그게 누구였지" 가 이어지므로 이름과 날짜를 나란히 둔다. #}
+<section class="panel">
+  <h2 class="panel-title">이 달의 반응
+    <span class="hint">{{ year }}년 {{ month }}월</span>
+    <a class="linkbtn" href="/api/export/reactions.xlsx" download>엑셀 내려받기</a>
+  </h2>
+  {% for b in buckets %}
+  <div class="bucket">
+    <h3 class="bucket-head">{{ b.label }}
+      <span class="count-pill {% if b.rows %}on{% endif %}"><b>{{ b.rows|length }}</b>건</span>
+    </h3>
+    {% if b.rows %}
+    <table class="grid-table compact">
+      <thead><tr>
+        <th style="width:96px">날짜</th>
+        <th style="width:22%">담당자</th>
+        <th style="width:22%">투자사</th>
+        <th>기업</th>
+        <th style="width:96px">상태</th>
+        {% if not viewing %}<th style="width:80px">담당 팀원</th>{% endif %}
+      </tr></thead>
+      <tbody>
+        {% for r in b.rows %}
+        <tr>
+          <td class="muted tabular">{{ r.date }}</td>
+          <td><b>{{ r.name }}</b> <span class="muted">{{ r.title }}</span></td>
+          <td class="ellipsis" title="{{ r.firm }}">{{ r.firm }}</td>
+          <td class="ellipsis" title="{{ r.company }}">{{ r.company }}</td>
+          <td class="muted">{{ r.note }}</td>
+          {% if not viewing %}<td class="muted">{{ r.owner }}</td>{% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted bucket-empty">없습니다.</p>
+    {% endif %}
+  </div>
+  {% endfor %}
+</section>
 {% endblock %}

@@ -4,7 +4,7 @@
 생기는 일인데 화면이 갈라져 있어서 매일 두 군데를 열어 봐야 했다. 메뉴를 하나로
 합치면서, 탭에 붙일 건수도 한 군데서 세게 한다.
 
-두 화면이 각자 세면 반드시 어긋난다 — 실제로 대시보드와 투자사 DB 가 6명 어긋난
+두 화면이 각자 세면 반드시 어긋난다 — 실제로 대시보드와 투자사 관리 현황 가 6명 어긋난
 적이 있다. 그래서 여기서도 새로 세지 않고 **이미 있는 서비스가 낸 값**을 옮겨 담는다.
 """
 from __future__ import annotations
@@ -34,7 +34,11 @@ def counts(db: Session, user: User, today: Optional[date] = None) -> dict:
         "upcoming": len(active) - len(due),
         "ir_open": len(items["open_requests"]),
         "ir_overdue": len(items["overdue_requests"]),
-        # 오늘 약속 + 결과 문의할 때 — 오늘 손이 가는 미팅
-        "meeting_todo": len(items["today_meetings"]) + len(items["due_followups"]),
+        # 오늘 약속 — 미팅 탭에서 손이 가는 것
+        "meeting_todo": len(items["today_meetings"]),
         "meeting_open": sum(1 for m in meetings if m["status"] == "scheduled"),
+        # 미팅 후기 — 끝났는데 아직 결과를 안 물어본 곳. 놓치면 계약을 잊는다.
+        "review_due": len(items["due_followups"]),
+        "review_open": sum(1 for m in meetings
+                           if m["status"] != "scheduled" and not m.get("followup_done")),
     }

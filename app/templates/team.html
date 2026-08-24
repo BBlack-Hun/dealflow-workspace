@@ -157,7 +157,7 @@
   </section>
 
   <section class="panel">
-    <h2 class="panel-title">딜 기업 DB <a class="linkbtn" href="/companies">전체 보기</a></h2>
+    <h2 class="panel-title">IR 기업현황 <a class="linkbtn" href="/companies">전체 보기</a></h2>
     <ul class="import-stats">
       <li><span>등록된 기업</span><b>{{ companies.total }}</b></li>
       <li><span>소개 가능</span><b class="ok">{{ companies.introducible }}</b></li>
@@ -180,11 +180,12 @@
     <h2 class="panel-title">최근 발송 회차 (팀 전체)</h2>
     {% if recent_batches %}
     <table class="grid-table compact">
-      <thead><tr><th>회차</th><th>보낸 사람</th><th>날짜</th><th>대상</th><th>성공</th><th>실패</th><th></th></tr></thead>
+      <thead><tr><th>회차</th><th style="width:96px">종류</th><th>보낸 사람</th><th>날짜</th><th>대상</th><th>성공</th><th>실패</th><th></th></tr></thead>
       <tbody>
         {% for b in recent_batches %}
         <tr>
           <td>{{ b.title }}</td>
+          <td class="muted">{{ b.kind }}</td>
           <td>{{ b.owner }}</td>
           <td class="muted">{{ b.date or '-' }}</td>
           <td class="num">{{ b.total }}</td>
