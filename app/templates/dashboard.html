@@ -119,30 +119,6 @@
 {% endif %}
 
 <div class="dash-grid">
-  <!-- 막힌 것 먼저. 발송일에 못 나가는 이유는 대부분 여기 있다. -->
-  <section class="panel">
-    <h2 class="panel-title">이대로면 못 보내는 곳
-      {% if blockers %}<span class="count-pill on"><b>{{ blockers|length }}</b>건</span>{% endif %}
-      <span class="hint">고치지 않으면 그만큼 빠집니다</span>
-    </h2>
-    {% if blockers %}
-    <ul class="blocker-list">
-      {% for b in blockers %}
-      <li class="blocker {{ b.level }}">
-        <a href="{{ b.href }}">
-          <span class="blocker-count">{{ b.count }}</span>
-          <span class="blocker-body">
-            <b>{{ b.label }}</b>
-            <span class="muted">{{ b.hint }}</span>
-          </span>
-        </a>
-      </li>
-      {% endfor %}
-    </ul>
-    {% else %}
-    <p class="all-clear">✅ 막힌 곳이 없습니다. 고른 투자사 모두에게 나갑니다.</p>
-    {% endif %}
-  </section>
 
   <section class="panel">
     <h2 class="panel-title">카톡방 연결 상태

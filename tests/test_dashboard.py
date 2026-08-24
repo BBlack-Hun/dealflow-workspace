@@ -392,13 +392,13 @@ def test_edit_shows_up_on_the_dashboard_at_once(logged, db, users):
     ])
     db.commit()
     contact = db.query(VcContact).filter_by(name="홍길동").first()
-    before = {k["key"]: k["value"] for k in user_dashboard(db, users["u1"])["kpis"]}
+    before = user_dashboard(db, users["u1"])
     assert before["sendable"] == 1
 
     logged.patch(f"/api/contacts/{contact.id}",
                  json={"name": "홍길동", "kakao_room_name": ""})
     db.expire_all()
-    after = {k["key"]: k["value"] for k in user_dashboard(db, users["u1"])["kpis"]}
+    after = user_dashboard(db, users["u1"])
     assert after["sendable"] == 0
 
 
@@ -452,8 +452,8 @@ def test_room_not_found_is_not_sendable(db, users):
           room_verified="ambiguous")
     db.commit()
 
-    kpi = {k["key"]: k["value"] for k in user_dashboard(db, users["u1"])["kpis"]}
-    assert kpi["sendable"] == 2          # 확인됨 + 미확인만
+    summary = user_dashboard(db, users["u1"])
+    assert summary["sendable"] == 2          # 확인됨 + 미확인만
 
 
 def test_unknown_room_state_is_treated_as_not_sendable(db, users):
@@ -480,8 +480,8 @@ def test_non_kakao_channel_is_not_counted(db, users):
           kakao_room_name="방3", room_verified="verified")
     db.commit()
 
-    kpi = {k["key"]: k["value"] for k in user_dashboard(db, users["u1"])["kpis"]}
-    assert kpi["sendable"] == 1
+    summary = user_dashboard(db, users["u1"])
+    assert summary["sendable"] == 1
 
 
 def test_dashboard_matches_the_contacts_screen(logged, db, users):
@@ -500,11 +500,10 @@ def test_dashboard_matches_the_contacts_screen(logged, db, users):
     db.commit()
 
     on_screen = sum(1 for r in contact_rows(db, users["u1"]) if r["channel_kakao"])
-    kpi = {k["key"]: k["value"] for k in user_dashboard(db, users["u1"])["kpis"]}
-    # 방 없음(B)은 화면의 '카톡 연결'에는 잡히지만 발송 가능은 아니다 —
-    # 그 차이는 '먼저 손봐야 할 것'에 뜬다.
+    summary = user_dashboard(db, users["u1"])
+    # 방 없음(B)은 화면의 '카톡 연결'에는 잡히지만 발송 가능은 아니다.
     assert on_screen == 2
-    assert kpi["sendable"] == 1
+    assert summary["sendable"] == 1
     labels = [b["label"] for b in user_dashboard(db, users["u1"])["blockers"]]
     assert any("카톡방을 못 찾은" in x for x in labels)
 

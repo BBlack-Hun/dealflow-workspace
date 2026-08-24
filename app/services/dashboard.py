@@ -263,13 +263,6 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None) -> dic
             # '카톡 발송 가능'·'소개 가능 기업'은 무엇이 가능하다는 건지 모호했다.
             {"key": "contacts", "label": "내 담당 투자사", "value": len(contacts),
              "sub": "내 명단에 있는 사람", "href": "/contacts"},
-            {"key": "sendable", "label": "카톡방 연결된 투자사", "value": sendable,
-             "sub": f"지금 바로 보낼 수 있음 · 전체 {len(contacts)}명 중",
-             "href": "/contacts"},
-            {"key": "companies", "label": "소개 문구 준비된 기업",
-             "value": len(introducible),
-             "sub": f"발송 목록에 뜸 · 등록 {len(companies)}개 중",
-             "href": "/companies?tab=db"},
             {"key": "sent", "label": "이번 달 보낸 건수", "value": sent_this_month,
              "sub": "카톡·메일 도착 성공", "href": "/deals"},
         ],
@@ -293,6 +286,9 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None) -> dic
             "overdue": sum(1 for r in due_today if r["overdue"]),
             "rows": due_today[:5],
         },
+        # 화면에는 안 띄우지만 값은 남긴다 — 발송 대상 판정이 이 기준을 쓰고,
+        # 대시보드와 투자사 목록의 수가 어긋난 적이 있어 테스트가 지키고 있다.
+        "sendable": sendable,
         "reactions": _reaction_summary(db, ids),
         "stages": _distribution([s for c in contacts for s in _split_csv(c.stages)]),
         "sectors": _distribution([s for c in contacts for s in _split_csv(c.sectors)]),
