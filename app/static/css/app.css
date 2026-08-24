@@ -47,10 +47,11 @@ a:hover { text-decoration: underline; }
 }
 .brand { font-size: 20px; font-weight: 800; padding: 18px 18px 2px; }
 .brand-sub { font-size: 11px; color: #8b95a3; padding: 0 18px 14px; }
-.menu { display: flex; flex-direction: column; gap: 2px; padding: 6px 10px; flex: 1; }
+.menu { display: flex; flex-direction: column; gap: 1px; padding: 6px 8px; flex: 1; }
 .menu-item {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 10px 12px; border-radius: 8px; color: #c7cdd6; font-weight: 600;
+  padding: 8px 10px; border-radius: 8px; color: #c7cdd6; font-weight: 600;
+  font-size: 13px;
 }
 .menu-item:hover { background: #1b2330; text-decoration: none; color: #fff; }
 .menu-item.active { background: var(--brand); color: #fff; }
@@ -76,7 +77,7 @@ a:hover { text-decoration: underline; }
 /* Panels / deal grid */
 .deal-grid { display: grid; grid-template-columns: 1fr 1fr 1.1fr; gap: 16px; margin-top: 18px; align-items: start; }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
-.panel-title { font-size: 14px; margin: 0 0 12px; display: flex; align-items: center; justify-content: space-between; }
+.panel-title { font-size: 14px; margin: 0 0 9px; display: flex; align-items: center; justify-content: space-between; }
 .panel-title .hint { font-weight: 400; }
 .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; font-size: 12px; color: var(--muted); }
 .field input, input[type=text] { padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; color: var(--ink); }
@@ -159,7 +160,7 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
 /* ── 내 투자사: 한 페이지 표 (FEATURE_SPEC §3, 피드백 #3) ─────────────────
    table-layout:fixed + colgroup % 폭 + 셀 말줄임 → 1280px 에서 가로 스크롤 0.
    광폭 모니터에서는 % 가 그대로 늘어나 여백이 낭비되지 않는다. */
-.toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 16px 0 10px; }
+.toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 12px 0 8px; }
 .toolbar-right { display: flex; align-items: center; gap: 8px; }
 .quick-chips { display: flex; gap: 6px; flex-wrap: wrap; }
 .chip { font-size: 12px; padding: 5px 12px; border-radius: 999px; border: 1px solid var(--line);
@@ -182,12 +183,15 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
 .table-wrap.wide .grid-table { min-width: 2030px; }
 .grid-table { width: 100%; table-layout: fixed; border-collapse: collapse;
               background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
-.grid-table th { text-align: left; padding: 8px 10px; font-size: 12px; color: var(--muted);
+/* 표 밀도. 8px/10px 이던 것을 6px/9px 로 — 글자 수 대비 자리가 남는 칸이
+   많았다(초대완료여부·진행 단계 같은 짧은 배지 칸). 줄 사이가 붙지 않을
+   만큼만 줄인다. */
+.grid-table th { text-align: left; padding: 6px 9px; font-size: 12px; color: var(--muted);
                  background: #f7f8fa; border-bottom: 1px solid var(--line); position: relative; }
-.grid-table td { padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top;
+.grid-table td { padding: 6px 9px; border-bottom: 1px solid var(--line); vertical-align: top;
                  overflow: hidden; }
 .grid-table tbody tr:hover { background: #f8faff; cursor: pointer; }
-.grid-table.dense td { padding: 4px 10px; }
+.grid-table.dense td { padding: 3px 9px; }
 .grid-table.dense .cell-sub { display: none; }
 .cell-main, .cell-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cell-main { font-weight: 600; }
