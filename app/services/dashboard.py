@@ -106,7 +106,8 @@ def _reaction_summary(db: Session, contact_ids: List[int]) -> dict:
     따로 봐야 한다.
     """
     if not contact_ids:
-        return {"ir_contacts": 0, "meeting_contacts": 0, "requested_companies": 0}
+        return {"ir_contacts": 0, "meeting_contacts": 0, "requested_companies": 0,
+                "meeting_done": 0, "meeting_call": 0}
 
     rows = db.execute(
         select(ContactActivity.kind, ContactActivity.contact_id,
@@ -132,12 +133,22 @@ def _reaction_summary(db: Session, contact_ids: List[int]) -> dict:
         ir_contacts.add(contact_id)
         if company_name:
             companies.add(company_name.strip())
-    for (contact_id,) in db.execute(
-        select(Meeting.contact_id).where(Meeting.contact_id.in_(contact_ids))
-    ).all():
-        meeting_contacts.add(contact_id)
+    # 미팅은 '요청' 과 '완료' 를 나눠 센다. 끝난 미팅은 다음 할 일이 다르다 —
+    # 열흘 뒤 결과를 물어봐야 하고, 그걸 놓치면 계약을 통째로 잊는다.
+    done_contacts, call_contacts = set(), set()
+    for meeting in db.execute(
+        select(Meeting).where(Meeting.contact_id.in_(contact_ids))
+    ).scalars().all():
+        meeting_contacts.add(meeting.contact_id)
+        if meeting.status == "done":
+            done_contacts.add(meeting.contact_id)
+            # 결과 문의를 아직 안 한 곳 — 전화할 대상이다.
+            if not meeting.followup_done:
+                call_contacts.add(meeting.contact_id)
 
     return {
+        "meeting_done": len(done_contacts),
+        "meeting_call": len(call_contacts),
         "ir_contacts": len(ir_contacts),
         "meeting_contacts": len(meeting_contacts),
         "requested_companies": len(companies),
