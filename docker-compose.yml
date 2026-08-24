@@ -11,6 +11,10 @@ services:
     image: dealflow:sprint1
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
     environment:
+      # **시간대는 반드시 한국이다.** 기본값(UTC)이면 자정~오전 9시 사이에
+      # 서버가 어제라고 생각한다 — 8/25 아침에 "다음 발송까지 2일" 이라고
+      # 떠서 하루 어긋났다. 회차일·후속 예약일이 전부 이 날짜로 계산된다.
+      TZ: "${TZ:-Asia/Seoul}"
       # 값이 있으면 모든 발송이 이 카톡방 하나로만 나간다(실투자사 오발송 방지).
       DEALFLOW_TEST_ROOM: "${DEALFLOW_TEST_ROOM:-}"
       # 카톡방 이름 끝에 붙는 고정 문구. 저장소 기본값은 가상 이름이라 .env 로 실제 값을 준다.
@@ -48,6 +52,7 @@ services:
     image: dealflow:sprint1
     command: ["python", "-m", "agent.main", "--config", "agent/config.yaml"]
     environment:
+      TZ: "${TZ:-Asia/Seoul}"                   # 발송 로그 시각도 한국 시간으로
       RUN_MIGRATIONS: "0"                       # agent never touches the DB
       DEALFLOW_SERVER_URL: "http://web:8000"
       DEALFLOW_AGENT_TOKEN: "agt_demo_token_sprint1"

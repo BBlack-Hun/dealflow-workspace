@@ -145,7 +145,8 @@ def monthly(db: Session, year: int, month: int,
         "month": month,
         # 한 달에 두 번(첫째·셋째 수요일) 도는 일이라, 그 달에 무엇이 오갔는지를
         # **한눈에** 봐야 한다. 다섯 가지를 날짜와 함께 그대로 늘어놓는다.
-        "buckets": _buckets(meetings, requests, contacts, owners, today),
+        "buckets": _buckets(meetings, requests, contacts, owners, today,
+                            open_followup),
         "weeks": rows,
         # 화면 안내문이 "미팅 뒤 N일쯤" 이라고 말할 때 쓰는 값 — 코드와
         # 화면이 다른 숫자를 말하면 안 된다.
@@ -168,7 +169,19 @@ def monthly(db: Session, year: int, month: int,
     }
 
 
-def _buckets(meetings, requests, contacts, owners, today) -> List[dict]:
+def _call_state(due: Optional[str], today: date) -> str:
+    """언제 전화할 때인가. `예정` 만으로는 오늘 걸 곳인지 알 수 없다."""
+    if not due:
+        return "날짜 미정"
+    iso = today.isoformat()
+    if due < iso:
+        return "지남 — 지금 거세요"
+    if due == iso:
+        return "오늘"
+    return f"{due} 예정"
+
+
+def _buckets(meetings, requests, contacts, owners, today, open_followup) -> List[dict]:
     """대시보드의 반응 다섯 가지를 **그 달치로, 날짜와 함께**.
 
     숫자만 보면 "그게 누구였지" 가 이어진다. 보고에서는 이름과 날짜가
@@ -191,7 +204,8 @@ def _buckets(meetings, requests, contacts, owners, today) -> List[dict]:
 
     # 끝난 미팅 중 **아직 결과를 안 물어본 곳**만. 이미 물어본 곳까지 세면
     # 전화할 곳이 몇 군데인지 알 수 없다.
-    call = [m for m in done if not m.followup_done]
+    # 거절로 끝났거나 다음 미팅을 잡은 건도 뺀다 — 물어볼 것이 없다.
+    call = [m for m in done if open_followup(m)]
 
     return [
         {"key": "ir", "label": "IR 요청 투자사", "rows": ir},
@@ -204,10 +218,12 @@ def _buckets(meetings, requests, contacts, owners, today) -> List[dict]:
          "rows": [row(m.scheduled_at, m.contact_id, m.company_name,
                       OUTCOMES.get(m.outcome or "", "결과 미정"), m.user_id)
                   for m in done]},
+        # 여기 뜨는 건 **전화할 곳**이다. 상태는 언제 걸어야 하는지를 말해야
+        # 쓸모가 있다 — `예정` 만으로는 오늘 걸 곳인지 알 수 없다.
         {"key": "call", "label": "IR 미팅완료 리마인드 TEL 투자사",
          "rows": [row(m.followup_due or m.scheduled_at, m.contact_id, m.company_name,
-                      "지남" if (m.followup_due or "") <= today.isoformat() else "예정",
-                      m.user_id) for m in call]},
+                      _call_state(m.followup_due, today), m.user_id)
+                  for m in call]},
     ]
 
 
