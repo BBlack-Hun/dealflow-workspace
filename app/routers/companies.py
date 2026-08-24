@@ -35,7 +35,23 @@ SUMMARY_LABELS = {
     "draft": "작성 중",
     "insufficient": "보류",
 }
-CONTRACT_LABELS = {"yes": "완료", "pending": "진행 중", "no": "없음"}
+# 계약 상태. **운영에서 쓰는 다섯 가지** 그대로 둔다 —
+# 완료/진행중/없음 셋으로 뭉치면 '무료'와 '유료'가 같은 칸에 들어가고,
+# '딜소개불가'(더 이상 소개하면 안 되는 기업)가 '없음'에 섞여 사고가 난다.
+CONTRACT_LABELS = {
+    "none": "미계약",
+    "free": "무료계약완료",
+    "paid": "유료계약완료",
+    "review": "계약검토중",
+    "blocked": "딜소개 불가",
+}
+# 예전 값 → 지금 값. 이미 쌓인 데이터를 화면에서 그대로 읽을 수 있어야 한다.
+CONTRACT_ALIAS = {"yes": "paid", "pending": "review", "no": "none", "": "none"}
+
+
+def contract_key(value) -> str:
+    key = (value or "none").strip()
+    return CONTRACT_ALIAS.get(key, key)
 
 # 소개 문구에 들어가는 칸. (모델 속성, 화면 이름)
 REQUIRED_FIELDS = [
@@ -126,6 +142,8 @@ def company_rows(db: Session) -> List[dict]:
             "revenue_2025": c.revenue_2025 or "",
             "founded_year": c.founded_year or "",
             "guarantee": c.guarantee or "",
+            "business_desc": c.business_desc or "",
+            "top_deal_kind": c.top_deal_kind or "",
             "assignee": c.assignee_name or "",
             "competitiveness": c.competitiveness or "",
             "funding_status": c.funding_status or "",
@@ -133,7 +151,8 @@ def company_rows(db: Session) -> List[dict]:
             # 자료 링크 유무가 곧 'IR 요청이 오면 바로 보낼 수 있는가' 다.
             "has_ir": bool((c.ir_drive_url or "").strip()),
             "contract_status": c.contract_status or "no",
-            "contract_label": CONTRACT_LABELS.get(c.contract_status or "no", "-"),
+            "contract_label": CONTRACT_LABELS.get(
+                contract_key(c.contract_status), "미계약"),
             "contract_month": c.contract_month or "",
             "is_top_deal": bool(c.is_top_deal),
             "summary_status": c.summary_status or "draft",
@@ -169,6 +188,10 @@ def companies_page(request: Request, db: Session = Depends(get_db),
             "introducible": sum(1 for r in rows if r["introducible"]),
             "blocked": sum(1 for r in rows if not r["introducible"]),
             "with_ir": sum(1 for r in rows if r["has_ir"]),
+            # 스타트업DB 탭에 볼 것이 있는 기업 — 대표자·연락처 같은 기초자료가
+            # 하나라도 들어온 곳. 전체와 나란히 놓으면 얼마나 채웠는지 보인다.
+            "with_info": sum(1 for r in rows
+                             if r["ceo"] or r["phone"] or r["business_desc"]),
         },
         "required_fields": [label for _a, label in REQUIRED_FIELDS],
         "summary_labels": SUMMARY_LABELS,
@@ -262,6 +285,8 @@ class CompanyIn(BaseModel):
     revenue_2025: Optional[str] = None
     founded_year: Optional[str] = None
     guarantee: Optional[str] = None
+    business_desc: Optional[str] = None
+    top_deal_kind: Optional[str] = None
     assignee_name: Optional[str] = None
     funding_status: Optional[str] = None
     ir_drive_url: Optional[str] = None
@@ -275,7 +300,12 @@ class CompanyIn(BaseModel):
 def _assign(company: IrCompany, body: CompanyIn) -> None:
     data = body.model_dump(exclude_unset=True)
     for field, value in data.items():
-        if field == "is_top_deal":
+        if field == "top_deal_kind":
+            # 골라 넣으면 '추천 딜' 도 함께 켜진다 — 두 곳을 따로 켜게 하면
+            # 한쪽만 켜 둔 채 잊는다.
+            company.top_deal_kind = (value or "").strip() or None
+            company.is_top_deal = 1 if company.top_deal_kind else 0
+        elif field == "is_top_deal":
             company.is_top_deal = 1 if value else 0
         elif field == "name":
             if value and value.strip():

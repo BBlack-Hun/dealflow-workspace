@@ -247,3 +247,25 @@
     cell.title = full;
   });
 })();
+
+// 핵심/TOP Deal — 시트에서는 이 칸에 ★ 를 찍는다. 눌러서 켜고 끈다.
+(function () {
+  var table = document.getElementById("co-table");
+  if (!table) return;
+  table.addEventListener("click", function (e) {
+    var btn = e.target.closest(".js-top");
+    if (!btn) return;
+    var row = btn.closest("tr");
+    var on = !btn.classList.contains("on");
+    fetch("/api/companies/" + row.getAttribute("data-id"), {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ is_top_deal: on })
+    }).then(function (r) {
+      if (!r.ok) throw new Error();
+      btn.classList.toggle("on", on);
+      btn.textContent = on ? "★ 핵심" : "☆";
+      row.setAttribute("data-f-top", on ? "★ 핵심" : "일반");
+    }).catch(function () { alert("저장하지 못했습니다."); });
+  });
+})();

@@ -364,7 +364,7 @@ def test_two_tabs_match_the_sheet(logged_in, company):
     """시트를 쓰던 사람이 같은 자리에서 같은 것을 찾을 수 있어야 한다."""
     status = logged_in.get("/companies").text
     for col in ("사업분야 대분류", "소분류", "기업구분", "한줄 소개",
-                "담당자", "계약여부", "계약 월", "비고"):
+                "담당자", "계약여부", "핵심/TOP Deal"):
         assert col in status, f"IR 기업현황 탭에 '{col}' 이 없다"
 
     db_tab = logged_in.get("/companies?tab=db").text
@@ -381,7 +381,7 @@ def test_ir_column_stays_at_the_end_of_both(logged_in, company):
     for path in ("/companies", "/companies?tab=db"):
         head = logged_in.get(path).text.split("</thead>")[0]
         cols = [re.sub(r"<[^>]+>", "", m).strip()
-                for m in re.findall(r"<th[^>]*>(.*?)</th>", head, re.S)]
+                for m in re.findall(r"<th(?:\s[^>]*)?>(.*?)</th>", head, re.S)]
         assert cols[-1] == "", f"{path}: 마지막은 수정 버튼 칸이어야 한다"
         assert "IR 자료" in cols[-2], f"{path}: IR 자료가 맨 끝이 아니다 — {cols[-2]!r}"
 
@@ -422,3 +422,71 @@ def test_yearly_revenue_is_kept_as_typed(logged_in, db):
 
     html = logged_in.get("/companies?tab=db").text
     assert "1,224백만원" in html and "150억 ~ 200억" in html
+
+
+def test_at_most_one_column_flexes(logged_in, company):
+    """`table-layout: fixed` 에서 폭을 안 준 칸이 둘 이상이면 남는 자리를 나눠
+    갖다가 **둘 다 짜부라진다.** 실제로 스타트업DB 의 사업분야 칸이 사라졌다.
+
+    남는 자리를 먹는 칸은 표마다 하나여야 한다.
+    """
+    import re
+
+    for path in ("/companies", "/companies?tab=db"):
+        head = logged_in.get(path).text.split("</thead>")[0]
+        flexible = []
+        for attrs, label in re.findall(r"<th(\s[^>]*)?>(.*?)</th>", head, re.S):
+            name = re.sub(r"<[^>]+>", "", label).strip()
+            if not name:
+                continue        # 수정 버튼 칸
+            if not re.search(r"width:\s*\d+(px|%)", attrs or ""):
+                flexible.append(name)
+        assert len(flexible) <= 1, \
+            f"{path}: 폭 없는 칸이 여럿 — {flexible} (서로 자리를 뺏다 사라진다)"
+
+
+def test_the_wide_table_scrolls_instead_of_squeezing(logged_in, company):
+    html = logged_in.get("/companies?tab=db").text
+    assert "table-wrap wide" in html
+    css = pathlib.Path("app/static/css/app.css").read_text(encoding="utf-8")
+    assert ".table-wrap.wide { overflow-x: auto; }" in css
+    assert "min-width: 2030px" in css
+
+
+def test_top_deal_is_a_choice_not_a_switch(logged_in, db):
+    """시트에 `핵심`(13) · `TOP`(11) · 둘 다(2) 가 들어 있다.
+    켜짐/꺼짐 하나로는 어느 쪽인지 알 수 없다."""
+    from app.models import IrCompany
+
+    row = IrCompany(name="샘플로지")
+    db.add(row)
+    db.commit()
+
+    logged_in.patch(f"/api/companies/{row.id}", json={"top_deal_kind": "TOP"})
+    db.refresh(row)
+    assert row.top_deal_kind == "TOP"
+    # 골라 넣으면 '추천 딜' 도 함께 켜진다 — 따로 켜게 하면 한쪽만 켜 둔 채 잊는다
+    assert row.is_top_deal == 1
+
+    logged_in.patch(f"/api/companies/{row.id}", json={"top_deal_kind": ""})
+    db.refresh(row)
+    assert row.top_deal_kind is None and row.is_top_deal == 0
+
+    html = logged_in.get("/companies").text
+    assert 'data-field="top_deal_kind" data-type="pick"' in html
+
+
+def test_contract_has_the_five_states(logged_in, company):
+    """완료/진행중/없음 셋으로 뭉치면 '무료'와 '유료'가 같은 칸에 들어가고,
+    '딜소개 불가'(더 이상 소개하면 안 되는 기업)가 '없음'에 섞여 사고가 난다."""
+    from app.routers.companies import CONTRACT_LABELS, contract_key
+
+    assert set(CONTRACT_LABELS.values()) == {
+        "미계약", "무료계약완료", "유료계약완료", "계약검토중", "딜소개 불가"}
+    # 예전 값도 그대로 읽힌다
+    assert contract_key("yes") == "paid"
+    assert contract_key("no") == "none"
+    assert contract_key(None) == "none"
+
+    html = logged_in.get("/companies").text
+    assert "유료계약완료" in html and "딜소개 불가" in html

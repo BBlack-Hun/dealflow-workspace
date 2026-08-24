@@ -195,6 +195,14 @@ class IrCompany(TimestampMixin, Base):
     revenue_2024: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     revenue_2025: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     founded_year: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # 스타트업DB 시트의 `사업분야` — **카테고리가 아니라 사업 설명**이다.
+    # (카테고리는 sector_major/minor 로 따로 있다.)
+    # 한줄 소개의 **첫 토막**이 이 값이다:
+    #   {사업 설명} | 매출 N억 | 누적투자금액 N억 | … | {특이사항}
+    business_desc: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # `핵심` · `TOP` · `핵심, TOP`. 켜짐/꺼짐 하나로는 어느 쪽인지 알 수 없다.
+    # `is_top_deal` 은 그대로 둔다 — 발송 화면의 '추천 딜' 이 그 값을 쓴다.
+    top_deal_kind: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     # 기보·신보·중진공 — 보증/정책자금 이력. 투자사가 자주 묻는다.
     guarantee: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     # 이 기업을 맡은 팀원. 투자사 쪽 `assignee_name` 과 같은 성격이다.
