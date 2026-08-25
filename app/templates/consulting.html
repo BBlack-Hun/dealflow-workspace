@@ -59,6 +59,27 @@
 
 <p class="hint" id="cs-note" hidden></p>
 
+{#
+  달마다 한 칸씩 늘어나는 표라 최근 몇 달만 펴 둔다. 한 해 뒤에는 열두 칸이
+  되어 가로로 밀어야 읽힌다.
+
+  **접었다는 것을 반드시 알려 준다** — 그냥 안 보이면 지워진 줄 안다.
+  몇 달이 접혔는지, 어느 달인지 적고 눌러서 펼 수 있게 한다.
+#}
+{% if hidden_columns %}
+<p class="hint months-folded">
+  📁 이전 <b>{{ hidden_columns|length }}개월</b>은 접어 두었습니다
+  <span class="muted">({{ hidden_columns|map(attribute='label')|join(', ')|truncate(60) }})</span>
+  — 지워진 것이 아닙니다.
+  <a class="linkbtn" href="/consulting?months=all">모두 펴기</a>
+</p>
+{% elif show_all_months %}
+<p class="hint months-folded">
+  📂 모든 달을 펴 두었습니다.
+  <a class="linkbtn" href="/consulting">최근 {{ 3 }}개월만 보기</a>
+</p>
+{% endif %}
+
 <div class="table-wrap wide-scroll">
   <table class="grid-table sheet-table" id="cs-table">
     <thead>

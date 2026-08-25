@@ -28,8 +28,14 @@ __all__ = ["router", "MENU"]
 @router.get("/", response_class=HTMLResponse, include_in_schema=False)
 def index(request: Request, db: Session = Depends(get_db),
           user: User = Depends(get_current_user), top: int = 10):
-    """메인 = 대시보드. 좌측 위 브랜드를 누르면 여기로 온다."""
+    """메인 = 대시보드. 좌측 위 브랜드를 누르면 여기로 온다.
+
+    투자컨설턴트는 대시보드를 볼 이유가 없다 — 자기 화면으로 보낸다.
+    """
     from ..services import dashboard as dash
+
+    if user.role == "consultant":
+        return RedirectResponse("/consulting", status_code=303)
 
     # '내 투자사 선호'를 몇 명까지 볼지 — 10·20·30 중에서 고른다.
     top_n = min(max(top, 5), 30)

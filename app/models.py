@@ -33,7 +33,12 @@ class User(TimestampMixin, Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     phone: Mapped[Optional[str]] = mapped_column(String, unique=True, nullable=True)
     name: Mapped[str] = mapped_column(String)
-    role: Mapped[str] = mapped_column(String, default="user")  # user | admin
+    # user       — 딜소개를 하는 사람 (기본)
+    # admin      — 팀 전체를 본다
+    # consultant — **투자컨설턴트 현황만** 본다. 딜소개를 하지 않는 사람이라
+    #              발송·투자사 명단을 보여줄 이유가 없다(볼 수 있으면 실수로
+    #              건드린다). 계정 자체가 그 화면 전용이다.
+    role: Mapped[str] = mapped_column(String, default="user")
     weekly_goal_sends: Mapped[int] = mapped_column(Integer, default=30)
     is_active: Mapped[int] = mapped_column(Integer, default=1)
     # 로그인 ID 는 phone(숫자만). 비밀번호는 해시만 저장한다.

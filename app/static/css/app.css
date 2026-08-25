@@ -981,3 +981,8 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
 /* 스크롤이 생겼을 때 잘린 게 아니라 더 있다는 걸 알려 준다 */
 .req-rank { scrollbar-width: thin; }
 .req-rank::after { content: ""; display: block; height: 2px; }
+
+/* 접어 둔 달 안내 — 지워진 것이 아니라는 걸 알려야 한다. */
+.months-folded { background: var(--bg-soft); border: 1px solid var(--line);
+                 border-radius: 8px; padding: 7px 10px; margin: 8px 0;
+                 display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }

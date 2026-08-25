@@ -32,6 +32,12 @@ from ..ui import base_ctx
 
 router = APIRouter(tags=["dashboard"])
 
+# 만들 수 있는 권한.
+#   user       — 딜소개를 하는 사람
+#   consultant — 투자컨설턴트 현황만 본다 (딜소개를 하지 않는다)
+#   admin      — 팀 전체를 본다
+ROLES = {"user", "consultant", "admin"}
+
 
 @router.get("/dashboard", response_class=HTMLResponse, include_in_schema=False)
 def dashboard_page(request: Request, db: Session = Depends(get_db),
@@ -374,6 +380,11 @@ def create_member(
         role = "user"
     if db.execute(select(User).where(User.phone == normalized)).scalars().first():
         return RedirectResponse("/team?msg=이미+등록된+번호입니다", status_code=303)
+
+    # 폼에서 온 값을 그대로 넣으면 오타 하나로 아무 메뉴도 못 보는 계정이
+    # 생긴다(권한 판정이 전부 이 값으로 갈린다).
+    if role not in ROLES:
+        role = "user"
 
     member = User(name=name.strip() or normalized, phone=normalized, role=role,
                   password_hash=auth_svc.hash_password(config.INITIAL_PASSWORD),
