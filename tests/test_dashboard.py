@@ -708,12 +708,12 @@ def test_no_dead_menu_names_after_the_merge(client, db, users):
 
 # --- 반응 다섯 가지 -------------------------------------------------------------
 
-def test_five_reactions_are_counted_not_shown_on_the_dashboard(client, db, users):
-    """반응 다섯 가지는 **업무 보고**에서 본다 — 날짜별로 훑어야 하는 자료라
-    거기가 맞는 자리다. 대시보드에는 타일이 없어야 한다.
+def test_the_dashboard_shows_the_five_reactions(client, db, users):
+    """아침에 대시보드만 열어도 "반응이 있긴 한가" 는 알아야 한다.
+    날짜별로 훑는 것은 업무 보고에서 하고, 여기서는 **숫자만** 본다.
 
     끝난 미팅은 다음 할 일이 다르다 — 열흘 뒤 결과를 물어봐야 하고, 그걸
-    놓치면 계약을 통째로 잊는다. 요청과 완료를 나눠 센다(집계 자체는 유지).
+    놓치면 계약을 통째로 잊는다. 요청과 완료를 나눠 센다.
     """
     from datetime import date
 
@@ -738,10 +738,13 @@ def test_five_reactions_are_counted_not_shown_on_the_dashboard(client, db, users
 
     body = _dash(client)
     for label in ("IR 요청 투자사", "IR 미팅 요청 투자사", "IR 요청받은 기업",
-                  "IR 미팅완료 투자사", "IR 미팅완료 리마인드 TEL 투자사"):
-        assert label not in body, f"'{label}' 타일이 대시보드에 남아 있다"
+                  "IR 미팅완료 투자사", "미팅완료 리마인드 TEL"):
+        assert label in body, f"'{label}' 타일이 없다"
+    # 숫자를 누르면 그 목록으로 가야 한다 — 세기만 하면 다음 할 일을 모른다
+    assert "/ir#reviews" in body
+    # 날짜별로 훑는 자리도 가리킨다
+    assert "/report" in body
 
-    # 집계 로직 자체는 그대로 살아 있다 — 업무 보고·엑셀 내려받기가 쓴다
     from app.services.dashboard import _reaction_summary
     summary = _reaction_summary(db, [c1.id, c2.id])
     assert summary["meeting_done"] == 2

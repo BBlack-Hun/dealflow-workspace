@@ -141,8 +141,38 @@
     {% endif %}
   </section>
 
-  {# 반응 다섯 가지는 업무 보고로 옮겼다(날짜별로 훑어야 하는 자료라 거기가
-     맞는 자리다) — 대시보드에서는 뺀다. #}
+  {#
+    반응 — 지금까지 무엇이 돌아왔는가. 날짜별로 훑는 것은 업무 보고에서
+    하고, 여기서는 **숫자만** 본다. 아침에 대시보드만 열어도 "반응이 있긴
+    한가" 는 알아야 해서 되살렸다.
+    숫자를 누르면 그 목록으로 간다.
+  #}
+  <section class="panel">
+    <h2 class="panel-title">반응 <span class="hint">전체 기간 누적</span>
+      <a class="linkbtn" href="/report">업무 보고에서 날짜별로 보기</a>
+    </h2>
+    <div class="react-row">
+      <a class="react {% if reactions.ir_contacts %}ok{% endif %}"
+         href="/contacts?dealstage={{ 'IR 자료 요청'|urlencode }}">
+        <b>{{ reactions.ir_contacts }}</b><span>IR 요청 투자사</span></a>
+      <a class="react {% if reactions.meeting_contacts %}ok{% endif %}"
+         href="/contacts?dealstage={{ '1차 미팅'|urlencode }}">
+        <b>{{ reactions.meeting_contacts }}</b><span>IR 미팅 요청 투자사</span></a>
+      <a class="react" href="/ir#requests">
+        <b>{{ reactions.requested_companies }}</b><span>IR 요청받은 기업</span></a>
+      {# 끝난 미팅은 다음 할 일이 다르다 — 열흘 뒤 결과를 물어봐야 하고,
+         그걸 놓치면 계약을 통째로 잊는다. #}
+      <a class="react {% if reactions.meeting_done %}ok{% endif %}"
+         href="/contacts?dealstage={{ '미팅 완료'|urlencode }}">
+        <b>{{ reactions.meeting_done }}</b><span>IR 미팅완료 투자사</span></a>
+      <a class="react {% if reactions.meeting_call %}warn{% endif %}" href="/ir#reviews">
+        <b>{{ reactions.meeting_call }}</b><span>미팅완료 리마인드 TEL</span></a>
+    </div>
+    <p class="hint">
+      숫자를 누르면 그 목록으로 갑니다.
+      IR 요청·미팅이 나온 투자사가 다음 회차의 우선 대상입니다.
+    </p>
+  </section>
 
   <section class="panel">
     {#

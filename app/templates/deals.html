@@ -198,7 +198,16 @@
       <span class="ss-item"><b id="ss-contacts">0</b>명에게</span>
       <span class="ss-note muted" id="ss-note"></span>
     </div>
-    <div class="tpl-picker">
+    {#
+      문구 고르는 줄 전체를 감춘다 — 인사말 체크·문구 선택·문구 관리 링크.
+      기본 문구로 나가는 것이 정상이고, 여기서 고른 것은 이 회차에만 적용돼
+      다음에 또 골라야 한다. 문구를 바꾸려면 좌측 [딜 제안 문구] 에서
+      기본값을 고치는 것이 맞다.
+
+      **지우지 않고 감춘다** — 되살릴 수 있어야 하고, 뒤쪽 코드가 이 칸들의
+      값을 읽는다(인사말 포함 여부는 checked 상태 그대로 서버로 간다).
+    #}
+    <div class="tpl-picker" hidden>
       <label class="opening-toggle">
         <input type="checkbox" id="include-opening" checked>
         <span>인사말 포함</span>
