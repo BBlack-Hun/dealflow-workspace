@@ -407,15 +407,21 @@
     <h2 class="panel-title">전달한 자료 <span class="hint">{{ done_requests|length }}건</span></h2>
     {% if done_requests %}
     <table class="grid-table compact">
-      <thead><tr><th>요청일</th><th>담당자</th><th>기업</th><th>상태</th><th></th></tr></thead>
+      {# 칸 너비를 안 주면 '상태' 가 제일 좁게 눌려서 배지가 중간에 끊긴다. #}
+      <thead><tr>
+        <th style="width:96px">요청일</th><th>담당자</th><th>기업</th>
+        <th style="width:104px">상태</th><th style="width:120px"></th>
+      </tr></thead>
       <tbody>
         {% for r in done_requests[:20] %}
         <tr>
           <td class="muted">{{ r.requested_at }}</td>
           <td>{{ r.name }} <span class="muted">{{ r.firm }}</span></td>
           <td>{{ r.company_name }}</td>
-          <td><span class="status-badge">{{ r.status_label }}</span>
-            {% if r.delivered_at %}<span class="muted">{{ r.delivered_at }}</span>{% endif %}</td>
+          {# 배지 옆에 날짜를 나란히 두면 좁은 칸에서 둘이 엉켜 끊긴다.
+             배지는 한 덩어리로 두고 날짜는 아랫줄로 내린다. #}
+          <td class="status-cell"><span class="status-badge">{{ r.status_label }}</span>
+            {% if r.delivered_at %}<span class="status-when muted">{{ r.delivered_at }}</span>{% endif %}</td>
           <td class="row-acts">
             {# 미팅은 **자료를 보낸 그 건**에서 이어진다. 담당자·기업을 처음부터
                다시 고르게 하면 이미 아는 정보를 사람이 또 타이핑하는 셈이다. #}

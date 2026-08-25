@@ -126,7 +126,14 @@ a:hover { text-decoration: underline; }
 .counter.ok .c-num { color: var(--green); }
 .counter.fail .c-num { color: var(--red); }
 .progress-actions { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
-.status-badge { font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 999px; background: #eef2ff; color: var(--brand); }
+/* 배지는 한 덩어리다 — inline 인 채로 두면 좁은 칸에서 글자 사이가 끊겨
+   알약 모양이 두 줄로 잘린다. */
+.status-badge { display: inline-block; white-space: nowrap;
+  font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 999px; background: #eef2ff; color: var(--brand); }
+/* 상태 + 언제. 나란히 두면 둘이 엉키므로 날짜를 아랫줄로 내린다.
+   (td 에는 flex 를 걸지 않는다 — 표 레이아웃이 깨진다) */
+.status-cell .status-when { display: block; font-size: 11.5px; margin-top: 3px;
+  white-space: nowrap; }
 
 .log-table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
 .log-table th, .log-table td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); font-size: 13px; }
@@ -591,8 +598,26 @@ td.cell.save-failed { background: #fdecec; }
 .due-from { font-size: 12px; }
 .due-acts { display: flex; gap: 8px; }
 .followup-strip { border-left: 4px solid var(--brand); }
-.rule-form { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin: 8px 0; }
-.rule-label { font-size: 13px; font-weight: 600; min-width: 88px; padding-bottom: 6px; }
+/* ── 한 줄 입력 폼(주간 업무·반복 업무·규칙 추가) ──────────────────────
+   라벨이 붙은 칸과 안 붙은 버튼을 같은 줄에 세우는 자리다.
+
+   아래를 맞추는 것(flex-end)만으로는 어긋난다 — `.field` 가 아래 여백 12px 을
+   달고 오고, 버튼(위아래 8px)과 입력칸(6px)의 높이가 애초에 다르기 때문이다.
+   그래서 **칸 높이를 하나로 정하고** 거기에 버튼까지 맞춘다. */
+.rule-form { --ctl-h: 34px;
+  display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin: 8px 0; }
+.rule-form .field { margin-bottom: 0; }
+/* 체크박스는 제 크기가 있어야 한다 — 요일 고르는 칸이 여기 들어 있다. */
+.rule-form input:not([type=checkbox]):not([type=radio]),
+.rule-form select,
+.rule-form .weekday-pick,
+.rule-form .secondary-btn {
+  height: var(--ctl-h); box-sizing: border-box; }
+.rule-form .secondary-btn { padding: 0 16px; }
+.rule-form .weekday-pick { padding: 0; align-items: center; }
+/* 규칙 이름은 칸이 아니라 줄 제목이다 — 칸 높이에 맞춰 가운데에 둔다. */
+.rule-form .rule-label { font-size: 13px; font-weight: 600; min-width: 88px;
+  height: var(--ctl-h); display: flex; align-items: center; }
 .inline-form { display: inline; }
 
 .team-banner { background: #fff8e6; border: 1px solid #f0e0c0; border-radius: 8px;
