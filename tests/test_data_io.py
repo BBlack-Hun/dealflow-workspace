@@ -163,3 +163,76 @@ def test_export_job_of_another_user_is_404(logged, db, users):
 
 def test_export_requires_login(client):
     assert client.get("/api/export/contacts.xlsx").status_code == 401
+
+# --- 업로드용 샘플 양식 -----------------------------------------------------
+
+def _sample(client):
+    r = client.get("/api/sample/contacts.xlsx")
+    assert r.status_code == 200
+    return r.content
+
+
+def test_the_sample_can_actually_be_uploaded(client, users):
+    """샘플이 업로드에서 막히면 샘플 구실을 못 한다.
+
+    내보내기 파일에는 되올리기 방지 표식이 붙어 있다. 샘플을 내보내기와 같은
+    함수로 만들면 그 표식이 따라붙어, 받아서 그대로 올린 사람이 막힌다.
+    """
+    from app.services import spreadsheet as sp
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    data = _sample(client)
+    assert not sp.is_export_file("샘플.xlsx", data)
+
+    # 표식만 보는 것으로는 부족하다 — 실제 업로드까지 통과해야 양식이다.
+    r = client.post(
+        "/api/import/contacts",
+        files={"file": ("투자사 관리 현황_업로드양식.xlsx", data,
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        data={"dry_run": "true", "year": "2026"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["created"] == 3, body
+    assert not body["skipped"], body["skipped"]
+
+
+def test_the_sample_parses_into_contacts(client, users):
+    """머리글 이름이 파서와 어긋나면 값이 통째로 버려진다."""
+    from app.services import sheet_import
+    from app.services import spreadsheet as sp
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    rows = sp.read_rows("샘플.xlsx", _sample(client))
+    parsed = sheet_import.parse_sheet_a(rows, 2026)
+
+    names = [c.name for c in parsed.contacts]
+    assert names == ["홍길동", "김서연", "박지훈"]
+
+    first = parsed.contacts[0]
+    assert first.firm == "가나벤처스"
+    assert first.title == "심사역"
+    assert first.phone == "010-0000-0001"
+    assert first.email == "hong@example.com"
+    assert parsed.skipped == []
+
+
+def test_the_sample_shows_how_monthly_activity_is_written(client, users):
+    """달마다 3열(딜소개·IR·미팅)이 늘어나는 구조가 샘플에 보여야 한다.
+
+    이걸 모르고 채우면 회차 기록이 통째로 비어서 올라온다.
+    """
+    from app.services import sheet_import
+    from app.services import spreadsheet as sp
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    rows = sp.read_rows("샘플.xlsx", _sample(client))
+    parsed = sheet_import.parse_sheet_a(rows, 2026)
+
+    kinds = {c.kind for c in parsed.activity_columns}
+    assert kinds == {sheet_import.KIND_DEAL_INTRO,
+                     sheet_import.KIND_IR_REQUEST,
+                     sheet_import.KIND_MEETING}
+    # 1행의 월 라벨을 3열이 이어받는다
+    assert {c.month for c in parsed.activity_columns} == {"2026-08"}
+
