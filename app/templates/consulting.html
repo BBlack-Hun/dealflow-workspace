@@ -57,6 +57,17 @@
   </p>
 </section>
 
+{#
+  원본 시트가 나뉘어 있고 관리하는 사람이 다르다 — 한 표에 쏟으면 자기
+  명단을 못 찾는다. 시트 구분을 그대로 살린다.
+#}
+<nav class="sheet-tabs">
+  {% for t in sheet_tabs %}
+  <a class="sheet-tab {% if selected_sheet == t.key %}active{% endif %}"
+     href="/consulting?sheet={{ t.key|urlencode }}">{{ t.label }} <span>{{ t.count }}</span></a>
+  {% endfor %}
+</nav>
+
 <p class="hint" id="cs-note" hidden></p>
 
 {#
@@ -71,12 +82,12 @@
   📁 이전 <b>{{ hidden_columns|length }}개월</b>은 접어 두었습니다
   <span class="muted">({{ hidden_columns|map(attribute='label')|join(', ')|truncate(60) }})</span>
   — 지워진 것이 아닙니다.
-  <a class="linkbtn" href="/consulting?months=all">모두 펴기</a>
+  <a class="linkbtn" href="/consulting?sheet={{ selected_sheet|urlencode }}&months=all">모두 펴기</a>
 </p>
 {% elif show_all_months %}
 <p class="hint months-folded">
   📂 모든 달을 펴 두었습니다.
-  <a class="linkbtn" href="/consulting">최근 {{ 3 }}개월만 보기</a>
+  <a class="linkbtn" href="/consulting?sheet={{ selected_sheet|urlencode }}">최근 3개월만 보기</a>
 </p>
 {% endif %}
 

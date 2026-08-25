@@ -418,6 +418,9 @@ class ConsultingColumn(TimestampMixin, Base):
     __tablename__ = "consulting_columns"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # 월 컬럼도 시트마다 다르다 — `중요 스타트업` 은 6·7·8월, `경영본부 전달
+    # 기업` 은 6·7월처럼. 섞으면 없는 달의 빈 칸이 생긴다.
+    sheet: Mapped[str] = mapped_column(String, default="중요 스타트업")
     label: Mapped[str] = mapped_column(String)          # 시트의 열 이름 그대로
     position: Mapped[int] = mapped_column(Integer, default=0)   # 왼→오 순서
 
@@ -433,6 +436,9 @@ class ConsultingCompany(TimestampMixin, Base):
     __tablename__ = "consulting_companies"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # 어느 시트에서 왔는가. 원본이 `중요 스타트업`·`경영본부 전달 기업` 처럼
+    # 나뉘어 있고 관리하는 사람이 다르다 — 한 표에 쏟으면 자기 명단을 못 찾는다.
+    sheet: Mapped[str] = mapped_column(String, default="중요 스타트업")
     position: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)   # 시트의 NO
     region: Mapped[Optional[str]] = mapped_column(String, nullable=True)      # 지역
     meeting_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # 미팅일

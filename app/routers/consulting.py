@@ -21,7 +21,7 @@ from typing import Dict, List, Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
@@ -63,10 +63,28 @@ def require_access(user: User) -> None:
 VISIBLE_MONTHS = 3
 
 
-def _columns(db: Session) -> List[ConsultingColumn]:
-    return db.execute(
-        select(ConsultingColumn).order_by(ConsultingColumn.position, ConsultingColumn.id)
-    ).scalars().all()
+# 원본 시트 이름. 관리하는 사람이 달라 한 표에 쏟으면 자기 명단을 못 찾는다.
+SHEETS = ["중요 스타트업", "경영본부 전달 기업"]
+DEFAULT_SHEET = SHEETS[0]
+
+
+def sheet_tabs(db: Session) -> List[dict]:
+    """시트별 인원. 탭에 건수를 띄운다."""
+    rows = dict(db.execute(
+        select(ConsultingCompany.sheet, func.count())
+        .group_by(ConsultingCompany.sheet)
+    ).all())
+    # 시트에 자료가 아직 없어도 탭은 보여야 한다 — 없는 줄 알고 또 만든다.
+    names = SHEETS + [s for s in rows if s not in SHEETS]
+    return [{"key": n, "label": n, "count": rows.get(n, 0)} for n in names]
+
+
+def _columns(db: Session, sheet: str = "") -> List[ConsultingColumn]:
+    stmt = select(ConsultingColumn).order_by(ConsultingColumn.position,
+                                             ConsultingColumn.id)
+    if sheet:
+        stmt = stmt.where(ConsultingColumn.sheet == sheet)
+    return db.execute(stmt).scalars().all()
 
 
 def _split_columns(columns: List[ConsultingColumn], show_all: bool = False) -> tuple:
@@ -87,12 +105,13 @@ def _notes(company: ConsultingCompany) -> Dict[str, str]:
         return {}
 
 
-def company_rows(db: Session) -> List[dict]:
-    cols = _columns(db)
-    companies = db.execute(
-        select(ConsultingCompany).order_by(ConsultingCompany.position,
-                                           ConsultingCompany.id)
-    ).scalars().all()
+def company_rows(db: Session, sheet: str = "") -> List[dict]:
+    cols = _columns(db, sheet)
+    stmt = select(ConsultingCompany).order_by(ConsultingCompany.position,
+                                              ConsultingCompany.id)
+    if sheet:
+        stmt = stmt.where(ConsultingCompany.sheet == sheet)
+    companies = db.execute(stmt).scalars().all()
     out = []
     for order, c in enumerate(companies, start=1):
         notes = _notes(c)
@@ -122,15 +141,20 @@ def company_rows(db: Session) -> List[dict]:
 @router.get("/consulting", response_class=HTMLResponse, include_in_schema=False)
 def consulting_page(request: Request, db: Session = Depends(get_db),
                     user: User = Depends(get_current_user), msg: str = "",
-                    months: str = ""):
+                    months: str = "", sheet: str = ""):
     require_access(user)
-    rows = company_rows(db)
+    tabs = sheet_tabs(db)
+    selected = sheet if any(t["key"] == sheet for t in tabs) else DEFAULT_SHEET
+    rows = company_rows(db, selected)
     # 달마다 한 칸씩 늘어나는 표라, 최근 몇 달만 펴 둔다.
     # `months=all` 은 일부러 다 본다는 뜻이다.
-    shown, hidden = _split_columns(_columns(db), show_all=(months == "all"))
+    shown, hidden = _split_columns(_columns(db, selected),
+                                   show_all=(months == "all"))
     ctx = base_ctx(request, db, user, active="consult")
     ctx.update({
         "rows": rows,
+        "sheet_tabs": tabs,
+        "selected_sheet": selected,
         "columns": shown,
         # **접었다는 것을 사람이 알아야 한다** — 그냥 안 보이면 지워진 줄 안다.
         "hidden_columns": hidden,
