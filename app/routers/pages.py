@@ -31,8 +31,8 @@ def index(request: Request, db: Session = Depends(get_db),
     """메인 = 대시보드. 좌측 위 브랜드를 누르면 여기로 온다."""
     from ..services import dashboard as dash
 
-    # '내 투자사 선호'를 몇 명까지 볼지 — 10~20 사이에서 사용자가 고른다.
-    top_n = min(max(top, 5), 20)
+    # '내 투자사 선호'를 몇 명까지 볼지 — 10·20·30 중에서 고른다.
+    top_n = min(max(top, 5), 30)
     ctx = _base_ctx(request, db, user, "home")
     ctx.update(dash.user_dashboard(db, user, top_n=top_n))
     ctx["top_n"] = top_n
@@ -100,6 +100,7 @@ def contacts_page(
     user: User = Depends(get_current_user),
     sheet: str = "",
     ref: str = "",
+    contact: int = 0,
 ):
     """내 투자사 (FEATURE_SPEC §3). 표는 SSR, 필터는 브라우저에서 즉시 반응.
 
@@ -157,6 +158,9 @@ def contacts_page(
         "pool_view": any(t["key"] == selected and t["kind"] == "pool" for t in tabs),
         "total_count": len(all_rows),
         "funnel": stage_funnel,
+        # 대시보드의 '내 투자사 선호'에서 눌러 오면 그 사람 상세를 바로 연다 —
+        # 무엇을 좋아하는지(선호 분야·라운드) 보려고 누른 것이다.
+        "open_contact": contact or 0,
         "ref_sheets": ref_sheets,
         "ref": picked_ref,
         "ref_content": json.loads(picked_ref.content_json) if picked_ref else None,

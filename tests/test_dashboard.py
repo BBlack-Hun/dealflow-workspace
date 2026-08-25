@@ -921,11 +921,43 @@ def test_imported_history_counts_too(db, users):
 
 
 def test_the_count_is_user_selectable(client, db, users):
+    """새로고침 없이 바꾼다 — 대시보드 전체를 다시 그리면 스크롤이 맨 위로
+    튀고, 이 목록 하나 보려고 나머지를 다 기다린다."""
     client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
-    for n in (10, 15, 20):
-        body = client.get(f"/?top={n}").text
-        assert f'href="/?top={n}"' in body, f"{n}명 고르는 링크가 없다"
+    body = client.get("/").text
+    for n in (10, 20, 30):
+        assert f'data-n="{n}"' in body, f"{n}명 고르는 단추가 없다"
+
+    # 목록만 따로 주는 길이 있어야 화면을 다시 안 그린다
+    r = client.get("/api/dashboard/top-requesters?top=20")
+    assert r.status_code == 200
+    assert "rows" in r.json()
 
     # 터무니없는 값은 범위 안으로 접는다
     assert client.get("/?top=999").status_code == 200
-    assert client.get("/?top=1").status_code == 200
+    assert client.get("/api/dashboard/top-requesters?top=999").status_code == 200
+
+
+def test_clicking_a_requester_opens_their_detail(client, db, users):
+    """무엇을 좋아하는지(선호 분야·라운드) 보려고 누르는 자리다.
+    목록만 띄우면 333명 중에서 다시 찾아야 한다."""
+    from datetime import date
+
+    from app.models import IrRequest, SheetOwner, VcContact
+
+    db.add(SheetOwner(label="내 명단", user_id=users["u1"].id))
+    contact = VcContact(user_id=users["u1"].id, name="홍길동", firm="가나벤처스",
+                        source_sheet="내 명단")
+    db.add(contact)
+    db.commit()
+    db.add(IrRequest(user_id=users["u1"].id, contact_id=contact.id,
+                     company_name="샘플애그", status="open",
+                     requested_at=date.today().isoformat()))
+    db.commit()
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    assert f'/contacts?contact={contact.id}' in client.get("/").text
+
+    # 그 주소로 가면 상세가 열린 채로 뜬다
+    page = client.get(f"/contacts?contact={contact.id}").text
+    assert f"window.DEALFLOW_OPEN_CONTACT = {contact.id}" in page

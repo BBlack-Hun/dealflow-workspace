@@ -36,12 +36,26 @@ router = APIRouter(tags=["dashboard"])
 @router.get("/dashboard", response_class=HTMLResponse, include_in_schema=False)
 def dashboard_page(request: Request, db: Session = Depends(get_db),
                    user: User = Depends(get_current_user), top: int = 10):
-    # '내 투자사 선호'를 몇 명까지 볼지 — 10~20 사이에서 사용자가 고른다.
-    top_n = min(max(top, 5), 20)
+    # '내 투자사 선호'를 몇 명까지 볼지 — 10·20·30 중에서 고른다.
+    top_n = min(max(top, 5), 30)
     ctx = base_ctx(request, db, user, active="home")
     ctx.update(dash.user_dashboard(db, user, top_n=top_n))
     ctx["top_n"] = top_n
     return templates.TemplateResponse("dashboard.html", ctx)
+
+
+@router.get("/api/dashboard/top-requesters")
+def top_requesters_api(db: Session = Depends(get_db),
+                       user: User = Depends(get_current_user), top: int = 10):
+    """'내 투자사 선호' 목록만. 개수를 바꿀 때 대시보드 전체를 다시 그리면
+    스크롤이 맨 위로 튀고, 이 목록 하나 보려고 나머지를 다 기다린다."""
+    from ..services import sheet_owner
+    from ..services.dashboard import top_requesters
+
+    top_n = min(max(top, 5), 30)
+    # 담당은 명단(시트) 단위다 — 화면과 같은 범위여야 수가 맞는다.
+    ids = [c.id for c in sheet_owner.my_contacts(db, user)]
+    return {"rows": top_requesters(db, ids, limit=top_n)}
 
 
 @router.get("/todo", response_class=HTMLResponse, include_in_schema=False)
