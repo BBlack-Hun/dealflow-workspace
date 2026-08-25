@@ -701,6 +701,34 @@ def _assign(contact: VcContact, body: ContactIn) -> None:
 ref_router = APIRouter(tags=["ref-sheets"])
 
 
+@ref_router.post("/ref-sheets/{sheet_id}/rename", include_in_schema=False)
+def rename_ref_sheet(sheet_id: int, title: str = Form(""), sheet: str = Form(""),
+                     db: Session = Depends(get_db),
+                     user: User = Depends(get_current_user)):
+    """참고 탭 이름 바꾸기.
+
+    이름이 원본 시트의 탭 이름 그대로라 길고(`40개사 스타트업 매월 1회
+    리마인드 카톡 가이드`) 무엇을 여는 탭인지 한눈에 안 들어온다. 자료는
+    그대로 두고 부르는 이름만 바꾼다.
+    """
+    from fastapi.responses import RedirectResponse
+
+    from ..models import RefSheet
+
+    row = db.get(RefSheet, sheet_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="참고 시트를 찾을 수 없습니다")
+    # 이름 없는 탭은 누를 자리가 없어진다 — 비우려 하면 그냥 두던 이름을 쓴다.
+    name = (title or "").strip()
+    if name:
+        row.title = name[:80]
+        db.commit()
+    back = f"/contacts?ref={sheet_id}"
+    if sheet:
+        back += f"&sheet={quote(sheet)}"
+    return RedirectResponse(back, status_code=303)
+
+
 @ref_router.post("/ref-sheets/{sheet_id}/delete", include_in_schema=False)
 def delete_ref_sheet(sheet_id: int, db: Session = Depends(get_db),
                      user: User = Depends(get_current_user)):

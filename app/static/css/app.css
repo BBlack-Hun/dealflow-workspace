@@ -178,6 +178,14 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
 .chip.active { background: #e6efff; border-color: var(--brand); color: var(--brand); }
 .chip b { font-variant-numeric: tabular-nums; }
 
+/* 참고 탭 이름 바꾸기 — 제목 자리에서 바로 고친다.
+   따로 화면을 열게 하면 이름 하나 바꾸려고 두 번 이동한다. */
+.ref-rename { display: inline-flex; align-items: center; gap: 6px; }
+.ref-rename input { font: inherit; font-size: 15px; font-weight: 700;
+  padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px;
+  min-width: 260px; max-width: 100%; color: var(--ink); }
+.ref-rename input:focus { border-color: var(--brand); outline: none; }
+
 /* 딜 소싱 필터(갈래 · 담당) — 검색창에 이름을 치는 대신 누른다.
    줄마다 무엇을 거르는지 앞에 적는다. 칩만 두 줄 있으면 아래 줄이 무엇인지
    모른다. */

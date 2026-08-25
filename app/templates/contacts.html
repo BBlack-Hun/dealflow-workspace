@@ -51,7 +51,17 @@
 {% if ref %}
 {# 참고 자료를 펼친 상태. 명단 표는 아래에 그대로 남는다. #}
 <section class="panel ref-panel">
-  <h2 class="panel-title">{{ ref.title }}
+  <h2 class="panel-title">
+    {#
+      이름이 원본 시트 탭 이름 그대로라 길다(`40개사 스타트업 매월 1회
+      리마인드 카톡 가이드`). 자료는 그대로 두고 부르는 이름만 바꾼다.
+    #}
+    <form method="post" action="/ref-sheets/{{ ref.id }}/rename" class="ref-rename">
+      <input type="text" name="title" value="{{ ref.title }}" maxlength="80"
+             aria-label="탭 이름" title="탭 이름을 고치고 [이름 저장]을 누르세요">
+      <input type="hidden" name="sheet" value="{{ selected_sheet }}">
+      <button class="linkbtn" type="submit">이름 저장</button>
+    </form>
     <span class="hint">참고 자료</span>
     <span class="ref-acts">
       <a class="linkbtn" href="/contacts?sheet={{ selected_sheet|urlencode }}">닫기</a>
