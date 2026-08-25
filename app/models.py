@@ -350,6 +350,38 @@ class AgentDevice(TimestampMixin, Base):
     sender: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
 
+class SourcingContact(TimestampMixin, Base):
+    """딜 소싱에 참여하는 심사역·투자사.
+
+    투자사 관리 현황(딜소개를 **보내는** 명단)과는 성격이 다르다. 여기는
+    "우리 딜을 같이 볼 사람" 이라 시리즈 A 이상·개인 참여·M&A·후속투자처럼
+    **찾는 것**으로 나뉜다. 같은 사람이 여러 갈래에 들어갈 수 있다.
+
+    `bucket` 이 그 갈래(원본 시트의 탭 이름)다.
+    """
+
+    __tablename__ = "sourcing_contacts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    bucket: Mapped[str] = mapped_column(String)          # 시트 탭 이름
+    position: Mapped[int] = mapped_column(Integer, default=0)
+
+    name: Mapped[str] = mapped_column(String)
+    title: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    firm: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    phone: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    email: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    assignee_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    requested_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    share_method: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    sectors: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    round_size: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    tips: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    memo: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    kakao_reply: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    call_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
 class RefSheet(TimestampMixin, Base):
     """참고 시트 — 원본 스프레드시트의 '자료' 탭들.
 
