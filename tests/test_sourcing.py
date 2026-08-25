@@ -77,6 +77,56 @@ def test_the_name_cannot_be_emptied(seeded, db):
     assert row.name == "김철수"
 
 
+def test_every_column_has_a_cell(seeded):
+    """머리글은 `columns` 를 돌지만 칸은 손으로 적혀 있다.
+
+    컬럼을 늘리면서 칸을 안 만들면 머리글만 생기고 표가 한 칸씩 밀린다 —
+    카톡방 이름 칸이 실제로 그렇게 빠졌었다.
+    """
+    import re
+
+    from app.routers.sourcing import COLUMNS
+
+    body = seeded.get("/sourcing").text
+    head = body[body.index("<thead>"):body.index("</thead>")]
+    first_row = body[body.index("<tbody>"):body.index("</tbody>")]
+    first_row = first_row[:first_row.index("</tr>")]
+
+    # 머리글 = # + 컬럼 수  (`<thead>` 자체가 걸리지 않게 경계를 본다)
+    assert len(re.findall(r"<th[\s>]", head)) == len(COLUMNS) + 1
+    assert len(re.findall(r"<td[\s>]", first_row)) == len(COLUMNS) + 1
+
+    # 모든 컬럼이 눌러서 고칠 수 있어야 한다
+    fields = set(re.findall(r'data-field="(\w+)"', first_row))
+    assert fields == {f for f, _label, _w in COLUMNS}, fields
+
+
+def test_the_room_name_is_editable(seeded, db):
+    """여기서 방 이름을 못 넣으면 딜 소싱 제안을 아예 보낼 수 없다."""
+    from app.models import SourcingContact
+
+    row = db.query(SourcingContact).filter_by(name="김철수").first()
+    r = seeded.patch(f"/api/sourcing/{row.id}",
+                     json={"kakao_room_name": "김철수_소싱방"})
+    assert r.status_code == 200
+    db.refresh(row)
+    assert row.kakao_room_name == "김철수_소싱방"
+
+
+def test_changing_the_room_name_clears_the_check(seeded, db):
+    """예전 확인은 다른 방 이야기다."""
+    from app.models import SourcingContact
+
+    row = db.query(SourcingContact).filter_by(name="김철수").first()
+    row.kakao_room_name = "예전방"
+    row.room_verified = "verified"
+    db.commit()
+
+    seeded.patch(f"/api/sourcing/{row.id}", json={"kakao_room_name": "새로운방"})
+    db.refresh(row)
+    assert row.room_verified == "unverified"
+
+
 # --- 보내기 ----------------------------------------------------------------
 
 def test_the_send_tab_is_open(seeded):

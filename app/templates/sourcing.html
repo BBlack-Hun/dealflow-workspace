@@ -15,8 +15,9 @@
 </header>
 
 <p class="hint">
-  🚧 지금은 <b>보고 고치는 것</b>까지입니다 — 여기서 딜을 보내는 기능은 다음에
-  붙입니다. 보내는 길을 먼저 만들면 명단이 맞는지 확인하기 전에 나가 버립니다.
+  보내는 것은 <a href="/deals">딜 제안 관리</a>의 <b>[딜 소싱 제안]</b> 탭에서 합니다.
+  <b>카톡방 이름</b>이 비어 있으면 그 사람은 발송 대상으로 고를 수 없습니다 —
+  보낼 방이 없기 때문입니다.
 </p>
 
 <nav class="sheet-tabs">
@@ -76,6 +77,9 @@
         <td title="{{ r.memo or '' }}">
           <div class="cell clamp2" data-field="memo" data-type="long">{{ r.memo or '' }}</div>
         </td>
+        {# 여기가 비면 딜 제안 관리에서 이 사람을 고를 수 없다 — 보낼 방이 없다. #}
+        <td class="cell" data-field="kakao_room_name"
+            title="{{ r.kakao_room_name or '카톡방 제목을 그대로 적어주세요' }}">{{ r.kakao_room_name or '' }}</td>
       </tr>
       {% endfor %}
     </tbody>
