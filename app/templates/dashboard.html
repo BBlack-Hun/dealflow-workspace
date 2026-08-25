@@ -120,34 +120,13 @@
 
 <div class="dash-grid">
 
-  <section class="panel">
-    <h2 class="panel-title">카톡방 연결 상태
-      <a class="linkbtn" href="/contacts">내 투자사</a>
-    </h2>
-    {% if rooms %}
-    <div class="stack-bar">
-      {% for r in rooms %}
-      <span class="seg {{ r.level }}" style="width:{{ r.percent }}%" title="{{ r.label }} {{ r.count }}명"></span>
-      {% endfor %}
-    </div>
-    <ul class="legend">
-      {% for r in rooms %}
-      <li><span class="dot {{ r.level }}"></span>{{ r.label }} <b>{{ r.count }}</b></li>
-      {% endfor %}
-    </ul>
-    <p class="hint">방 제목이 실제와 한 글자라도 다르면 그 담당자에게는 발송되지 않습니다(잘못 나가지는 않습니다).</p>
-    {% else %}
-    <p class="muted">담당자가 없습니다. 현황 시트를 업로드해 주세요.</p>
-    {% endif %}
-  </section>
-
   {#
     반응 — 지금까지 무엇이 돌아왔는가. 날짜별로 훑는 것은 업무 보고에서
     하고, 여기서는 **숫자만** 본다. 아침에 대시보드만 열어도 "반응이 있긴
     한가" 는 알아야 해서 되살렸다.
     숫자를 누르면 그 목록으로 간다.
   #}
-  <section class="panel">
+  <section class="panel wide">
     <h2 class="panel-title">반응 <span class="hint">전체 기간 누적</span>
       <a class="linkbtn" href="/report">업무 보고에서 날짜별로 보기</a>
     </h2>
@@ -172,6 +151,27 @@
       숫자를 누르면 그 목록으로 갑니다.
       IR 요청·미팅이 나온 투자사가 다음 회차의 우선 대상입니다.
     </p>
+  </section>
+
+  <section class="panel">
+    <h2 class="panel-title">카톡방 연결 상태
+      <a class="linkbtn" href="/contacts">내 투자사</a>
+    </h2>
+    {% if rooms %}
+    <div class="stack-bar">
+      {% for r in rooms %}
+      <span class="seg {{ r.level }}" style="width:{{ r.percent }}%" title="{{ r.label }} {{ r.count }}명"></span>
+      {% endfor %}
+    </div>
+    <ul class="legend">
+      {% for r in rooms %}
+      <li><span class="dot {{ r.level }}"></span>{{ r.label }} <b>{{ r.count }}</b></li>
+      {% endfor %}
+    </ul>
+    <p class="hint">방 제목이 실제와 한 글자라도 다르면 그 담당자에게는 발송되지 않습니다(잘못 나가지는 않습니다).</p>
+    {% else %}
+    <p class="muted">담당자가 없습니다. 현황 시트를 업로드해 주세요.</p>
+    {% endif %}
   </section>
 
   <section class="panel">

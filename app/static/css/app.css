@@ -430,8 +430,17 @@ a.secondary-btn { display: inline-flex; align-items: center; text-decoration: no
 .react-row { display: flex; gap: 10px; }
 .react { flex: 1; text-align: center; border: 1px solid var(--line); border-radius: 10px; padding: 12px 8px; }
 .react b { display: block; font-size: 24px; font-weight: 700; line-height: 1.2; }
-.react span { font-size: 12px; color: var(--muted); }
+.react span { font-size: 12px; color: var(--muted); line-height: 1.35;
+              display: block; }
 .react.ok b { color: var(--green); }
+/* 전화할 곳은 색이 달라야 한다 — 다른 넷은 '지나간 일', 이건 '할 일'이다. */
+.react.warn b { color: #b26a00; }
+.react.warn { border-color: #f0d18a; background: #fffdf6; }
+/* 다섯 칸을 나란히. 라벨 길이가 제각각이라(4자~12자) 글자가 짧은 칸만
+   커 보이지 않게 폭을 같게 잡는다. */
+.react-row { display: flex; gap: 10px; align-items: stretch; }
+.react { display: flex; flex-direction: column; justify-content: center;
+         gap: 3px; min-width: 0; }
 
 /* 미니 막대 차트 (라이브러리 없이) */
 .mini-charts { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
@@ -964,3 +973,11 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
 .grid-table tfoot th { background: #f7f8fa; border-top: 2px solid var(--line);
                        font-size: 12px; padding: 6px 9px; }
 .grid-table tfoot th.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* 내 투자사 선호 — 숫자가 눈에 먼저 들어와야 순위가 읽힌다. */
+.req-rank li { padding: 6px 2px; }
+.req-rank a { gap: 10px; }
+.req-count b { font-size: 15px; }
+/* 스크롤이 생겼을 때 잘린 게 아니라 더 있다는 걸 알려 준다 */
+.req-rank { scrollbar-width: thin; }
+.req-rank::after { content: ""; display: block; height: 2px; }
