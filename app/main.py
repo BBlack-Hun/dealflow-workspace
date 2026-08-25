@@ -11,7 +11,7 @@ from .routers import auth as auth_router
 from .routers import templates_crud
 from .routers import setup as setup_router
 from .routers import (agent_api, companies, consulting, contacts, dashboard,
-                      data_io, deals, followups, ir, jobs, pages)
+                      data_io, deals, followups, ir, jobs, pages, sourcing)
 
 
 def create_app() -> FastAPI:
@@ -35,6 +35,7 @@ def create_app() -> FastAPI:
     app.include_router(consulting.router)
     app.include_router(followups.router)
     app.include_router(ir.router)
+    app.include_router(sourcing.router)
     # /setup, /download 는 pages 의 캐치올(/{placeholder}) 보다 먼저 등록해야 가려지지 않는다.
     app.include_router(auth_router.router)
     app.include_router(templates_crud.router)

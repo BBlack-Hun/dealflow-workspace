@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block content %}
+{#
+  딜 소싱 — 우리 딜을 같이 볼 사람 명단.
+  투자사 관리 현황(딜소개를 **보내는** 명단)과는 성격이 다르다. 여기는
+  무엇을 찾는지(시리즈 A 이상 · 개인 참여 · M&A · 후속투자)로 나뉜다.
+#}
+<header class="page-head">
+  <h1>{{ page_title }}</h1>
+  <p class="muted">
+    우리 딜을 <b>같이 볼 사람</b> 명단입니다. 무엇을 찾는지에 따라 갈래가 나뉘고,
+    같은 사람이 여러 갈래에 들어갈 수 있습니다.
+    <b data-filter-count>{{ rows|length }} / {{ rows|length }}명</b>
+  </p>
+</header>
+
+<p class="hint">
+  🚧 지금은 <b>보고 고치는 것</b>까지입니다 — 여기서 딜을 보내는 기능은 다음에
+  붙입니다. 보내는 길을 먼저 만들면 명단이 맞는지 확인하기 전에 나가 버립니다.
+</p>
+
+<nav class="sheet-tabs">
+  {% for t in tabs %}
+  <a class="sheet-tab {% if selected == t.key %}active{% endif %}"
+     href="/sourcing?tab={{ t.key|urlencode }}">{{ t.label }} <span>{{ t.count }}</span></a>
+  {% endfor %}
+  <a class="sheet-tab {% if not selected %}active{% endif %}"
+     href="/sourcing?tab=all">전체 <span>{{ total }}</span></a>
+</nav>
+
+<div class="toolbar">
+  <div class="toolbar-right">
+    <input type="search" id="sourcing-search" placeholder="이름 · 회사 · 메모 검색"
+           autocomplete="off">
+  </div>
+</div>
+
+<div class="chip-row" data-filter-chips></div>
+
+{% if rows %}
+<div class="table-wrap wide">
+  <table class="grid-table" id="sourcing-table" data-inline-url="/api/sourcing">
+    <thead>
+      <tr>
+        <th style="width:34px">#</th>
+        {% for field, label, width in columns %}
+        <th {% if width %}style="width:{{ width }}"{% endif %}
+            {% if field in ('assignee_name', 'sectors', 'round_size') %}
+            data-filters="{{ field }}:{{ label }}"{% endif %}>
+          {{ label }}{% if field in ('assignee_name', 'sectors', 'round_size') %}<div class="th-filters"></div>{% endif %}
+        </th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr data-id="{{ r.id }}"
+          data-search="{{ (r.name ~ ' ' ~ (r.firm or '') ~ ' ' ~ (r.memo or '') ~ ' ' ~ (r.title or ''))|lower }}"
+          data-f-assignee_name="{{ r.assignee_name or '' }}"
+          data-f-sectors="{{ r.sectors or '' }}"
+          data-f-round_size="{{ r.round_size or '' }}">
+        <td class="rowno muted"></td>
+        <td class="cell" data-field="requested_at">{{ r.requested_at or '' }}</td>
+        <td><b class="cell" data-field="name">{{ r.name }}</b></td>
+        <td class="cell" data-field="assignee_name" data-type="pick">{{ r.assignee_name or '' }}</td>
+        <td class="cell" data-field="phone">{{ r.phone or '' }}</td>
+        <td class="cell" data-field="title" data-type="pick">{{ r.title or '' }}</td>
+        <td class="cell ellipsis" data-field="email" title="{{ r.email or '' }}">{{ r.email or '' }}</td>
+        <td class="cell ellipsis" data-field="firm" title="{{ r.firm or '' }}">{{ r.firm or '' }}</td>
+        <td title="{{ r.sectors or '' }}">
+          <div class="cell clamp2" data-field="sectors" data-type="long">{{ r.sectors or '' }}</div>
+        </td>
+        <td title="{{ r.round_size or '' }}">
+          <div class="cell clamp2" data-field="round_size" data-type="long">{{ r.round_size or '' }}</div>
+        </td>
+        <td title="{{ r.memo or '' }}">
+          <div class="cell clamp2" data-field="memo" data-type="long">{{ r.memo or '' }}</div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="muted" data-filter-empty hidden>조건에 맞는 사람이 없습니다.</p>
+{% else %}
+<p class="muted">
+  아직 명단이 없습니다 — <code>scripts/import_sourcing.py</code> 로 시트를 가져오세요.
+</p>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ asset('js/inline_edit.js') }}"></script>
+<script src="{{ asset('js/filters.js') }}"></script>
+<script>
+  (function () {
+    var table = document.getElementById("sourcing-table");
+    if (!table) return;
+
+    // 검색은 컬럼 필터와 **AND** 로 묶는다 — 둘이 서로 tr.hidden 을 덮어쓰면
+    // 검색과 필터가 번갈아 서로를 지운다.
+    var box = document.getElementById("sourcing-search");
+    var api = window.DealflowFilters.init({
+      table: "#sourcing-table",
+      extra: function (tr) {
+        var q = ((box && box.value) || "").trim().toLowerCase();
+        return !q || (tr.getAttribute("data-search") || "").indexOf(q) !== -1;
+      },
+      onChange: renumber
+    });
+    if (box) box.addEventListener("input", function () { api && api.apply(); });
+
+    // NO 는 **보이는 것** 기준으로 1부터 — 걸러낸 뒤 몇 명인지 세기 위해서다.
+    function renumber() {
+      var n = 0;
+      table.querySelectorAll("tbody tr").forEach(function (tr) {
+        var cell = tr.querySelector(".rowno");
+        if (!cell) return;
+        cell.textContent = tr.hidden ? "" : ++n;
+      });
+    }
+    renumber();
+  })();
+</script>
+{% endblock %}

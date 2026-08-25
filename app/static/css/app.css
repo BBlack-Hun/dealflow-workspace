@@ -994,3 +994,40 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
 .filter-only .filter-btn { font-size: 12px; font-weight: 600; color: var(--muted);
                            padding: 3px 6px; margin: 0; }
 .filter-only .filter-btn.on { color: var(--brand); }
+
+/* ── 주간 업무 — 네 패널을 한 규칙으로 ──────────────────────────────
+   `시스템이 챙기는 일`·`회차 준비 점검`이 같은 모양의 목록인데 상자 크기와
+   글자 크기가 조금씩 달라 눈이 걸렸다. 아침에 위에서 아래로 훑는 화면이라
+   줄 높이가 일정해야 읽힌다. */
+.todo-page .panel { padding: 14px 16px; }
+.todo-page .panel + .panel { margin-top: 12px; }
+
+/* 목록 줄 — 두 패널이 같은 상자를 쓴다 */
+.todo-page .todo-list,
+.todo-page .check-list { gap: 5px; }
+.todo-page .todo a,
+.todo-page .check {
+  gap: 10px; padding: 9px 12px; border-radius: 8px; border-left-width: 3px;
+  min-height: 42px; align-items: center;
+}
+.todo-page .todo-mark,
+.todo-page .check-mark { font-size: 13px; width: 16px; text-align: center; flex: 0 0 16px; }
+.todo-page .todo-body,
+.todo-page .check-body { font-size: 13px; gap: 2px; line-height: 1.4; }
+.todo-page .todo-body .muted,
+.todo-page .check-body .muted { font-size: 12px; }
+
+/* 표 두 개(주간 업무·반복 업무)도 같은 밀도로 */
+.todo-page .grid-table th,
+.todo-page .grid-table td { padding: 7px 10px; }
+.todo-page .grid-table td { font-size: 13px; }
+
+/* 제목 줄 — 이름과 설명 사이가 붙어 있었다 */
+.todo-page .panel-title { gap: 10px; margin-bottom: 10px; }
+.todo-page .panel-title .hint { margin-left: 2px; }
+/* 아래쪽 안내문이 목록에 바짝 붙어 있었다 */
+.todo-page .panel > .hint:last-child { margin-top: 10px; }
+
+/* 아직 붙이지 않은 방식 — 있다는 것은 보이되 눌리지는 않는다. */
+.mode-tab.soon { opacity: .5; cursor: not-allowed; }
+.mode-tab.soon:hover { background: none; border-color: var(--line); }

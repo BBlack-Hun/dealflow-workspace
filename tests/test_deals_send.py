@@ -321,7 +321,10 @@ def test_mode_tabs_follow_the_actual_flow(client, db, seed):
     body = client.get("/deals").text
     block = body[body.index('id="mode-tabs"'):]
     order = re.findall(r'data-mode="(\w+)"', block[:2000])
-    assert order == ["deal", "ir", "remind", "meeting", "review", "ask"], order
+    # `sourcing` 은 아직 붙이지 않은 자리다 — 있다는 것만 보이고 눌리지 않는다
+    assert order == ["deal", "ir", "remind", "meeting", "review", "ask",
+                     "sourcing"], order
+    assert 'data-mode="sourcing" disabled' in body
 
     # '기업 소개' 는 '딜 소개' 로 바뀌었다 — 다른 화면 용어와 맞춘다
     assert "딜 소개<span>" in body
