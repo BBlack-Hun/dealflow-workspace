@@ -113,8 +113,9 @@ FOLLOW_UP_MODES = {
     # IR 자료 전달은 기업을 고르지만 **목록을 다시 나열하지 않는다**.
     # 이미 목록을 본 사람이 "그 중 몇 번을 달라"고 답한 상황이라,
     # 번호와 이름만 짚어 주면 된다.
+    # 인사는 인사말이 맡는다 — 여기에 또 넣으면 인사가 두 번 나간다.
     MODE_IR: ("ir_delivery",
-              "{담당자명} {직함} 안녕하세요.\n{기업목록} IR deck 먼저 전달드리겠습니다.\n\n{자료링크}",
+              "{기업목록} IR deck 먼저 전달드리겠습니다.\n\n{자료링크}",
               mc.STAGE_REMIND),
     # 미팅 뒤 열흘쯤 지나 결과를 묻는다. 원본 시트에도 "결과확인전화가 없으면
     # 계약을 잊어버리는 경우가 발생할 수 있습니다" 라고 적혀 있었다.
@@ -145,9 +146,11 @@ def _compose_for_contact(
     # 인사말 기본값은 방식마다 다르다. 후속 문구는 이미 대화가 오간 방에 한 줄
     # 덧붙이는 것이라 인사를 다시 붙이지 않는 편이 자연스럽다. 화면에서 켜고 끌 수 있다.
     if include_opening is None:
-        # IR 자료 전달 문구는 "○○ 이사님 안녕하세요" 로 시작한다 —
-        # 인사말을 또 붙이면 인사가 두 번 나간다.
-        include_opening = mode not in FOLLOW_UP_MODES
+        # 인사말은 **기본으로 붙인다.** 빼는 것은 선호 분야를 되물을 때뿐이다 —
+        # 그건 이미 대화가 오간 방에 한 줄만 덧붙이는 것이라 다시 인사하면
+        # 어색하다. 화면 기본값과 같아야 한다(deals.js) — 다르면 미리보기와
+        # 실제로 나가는 것이 달라진다.
+        include_opening = mode != MODE_ASK
 
     has_hist = _has_history(db, contact.id)
     opening_kind = mc.pick_opening_kind(has_hist)

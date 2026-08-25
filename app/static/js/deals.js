@@ -227,6 +227,23 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
 
   // 몇 개/몇 명 골랐는지는 발송 직전에 가장 궁금한 값이라
   // 패널 제목 옆(알약)과 발송 요약 두 곳에 크게 띄운다.
+  // 고르는 대로 미리보기가 따라온다. 갱신 버튼을 누르게 두면 안 누른 채로
+  // 발송을 눌러, 화면에 보이는 것과 실제로 나가는 것이 달라진다.
+  //
+  // 다만 체크할 때마다 서버를 부르면 7개 고르는 동안 7번 나간다 — 손이
+  // 멈춘 뒤 한 번만 부른다.
+  var previewTimer = null;
+  function schedulePreview() {
+    var state = document.getElementById("preview-state");
+    if (state) state.textContent = "고르는 중…";
+    if (previewTimer) clearTimeout(previewTimer);
+    previewTimer = setTimeout(function () {
+      previewTimer = null;
+      if (state) state.textContent = "고르는 대로 바로 나옵니다";
+      refreshPreview();
+    }, 400);
+  }
+
   function updateCounts() {
     var nc = selectedCompanyIds().length;
     var nt = selectedContactIds().length;
@@ -241,6 +258,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     ssCompanies.hidden = askMode;                 // 문구만 보낼 때는 기업 수가 의미 없다
     document.querySelector(".ss-arrow").hidden = askMode;
     ssContacts.textContent = nt;
+    schedulePreview();
     ssNote.textContent = askMode
       ? FOLLOW_UP[mode] + " — 기업 목록 없이 문구만 나갑니다"
       : (mode === "ir" ? "자료를 먼저 보내고 문구를 뒤에 보냅니다"
@@ -316,18 +334,19 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     renderIrLinks();
     var closingWrap = document.getElementById("tpl-closing-wrap");
     if (closingWrap) closingWrap.querySelector("span").textContent = askMode ? "문구" : "안내문";
-    // 이미 대화가 오간 방에는 인사를 다시 붙이지 않는다. 문구만 보낼 때가
-    // 그렇고, **자료 전달도 그렇다** — 자료를 달라고 한 답장에 이어 보내는
-    // 것이라 "안녕하세요" 로 다시 시작하면 처음 연락하는 것처럼 읽힌다.
-    // 기본값만 바꿔 두고, 켜고 끄는 것은 사람이 정한다.
+    // 인사말은 **기본으로 붙인다.** 빼는 것은 선호 분야를 되물을 때뿐이다 —
+    // 그건 이미 대화가 오간 방에 한 줄만 덧붙이는 것이라 다시 인사하면 어색하다.
+    // (자료 전달 문구는 그 자체가 "○○ 님 안녕하세요" 로 시작하므로 서버가
+    //  중복을 걸러낸다 — deals.py 의 FOLLOW_UP_MODES 참고.)
+    // 켜고 끄는 것은 그대로 사람이 정한다.
     var greet = document.getElementById("include-opening");
-    if (greet) { greet.checked = !askMode && mode !== "ir"; syncOpeningToggle(); }
+    if (greet) { greet.checked = (mode !== "ask"); syncOpeningToggle(); }
     lastPreviews = [];
     previewTabs.innerHTML = "";
-    previewArea.innerHTML = '<p class="muted">[미리보기 갱신]을 누르세요.</p>';
+    previewArea.innerHTML = '<p class="muted">불러오는 중…</p>';
     warnBox.hidden = true;
     loadTemplates(true);
-    updateCounts();
+    updateCounts();   // 여기서 미리보기가 따라온다
   }
 
   ["company-search", "only-picked", "hide-recent"].forEach(function (id) {
@@ -410,8 +429,8 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     var tids = selectedContactIds();
     if ((needsCompanies() && cids.length < 1) || tids.length < 1) {
       previewArea.innerHTML = '<p class="muted">' +
-        (needsCompanies() ? "기업과 담당자를 선택한 뒤" : "담당자를 선택한 뒤") +
-        " [미리보기 갱신]을 누르세요.</p>";
+        (needsCompanies() ? "기업과 담당자를 고르면" : "담당자를 고르면") +
+        " 여기에 문구가 나옵니다.</p>";
       previewTabs.innerHTML = "";
       return;
     }
@@ -491,10 +510,17 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   document.getElementById("send-btn").addEventListener("click", send);
   var selAll = document.getElementById("select-all-contacts");
   if (selAll) selAll.addEventListener("click", function () {
-    var boxes = contactCbs();
+    // **보이는 사람만** 고른다. 검색으로 좁혀 놓고 전체선택을 눌렀는데
+    // 숨은 사람까지 다 켜지면, 고른 줄 모르는 곳으로 발송이 나간다.
+    var boxes = contactCbs().filter(function (c) {
+      var card = c.closest(".pick-card");
+      return !card || !card.hidden;
+    });
+    if (!boxes.length) return;
     var allOn = boxes.every(function (c) { return c.checked; });
     boxes.forEach(function (c) { c.checked = !allOn; });
     updateCounts();
+    applyContactFilter();   // 켠 사람은 검색어와 무관하게 계속 보인다
   });
   document.querySelectorAll(".mode-tab").forEach(function (b) {
     b.addEventListener("click", function () { setMode(b.getAttribute("data-mode")); });

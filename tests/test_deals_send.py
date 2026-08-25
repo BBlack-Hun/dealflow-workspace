@@ -173,7 +173,13 @@ def test_follow_up_modes_send_only_text(client, seed, mode, expect):
     text = r.json()["previews"][0]["message"]
     assert expect in text
     assert "1)" not in text            # 기업 목록이 붙으면 안 된다
-    assert "안녕하세요" not in text     # 후속 문구에는 인사를 다시 붙이지 않는다
+    # 인사말은 **기본으로 붙는다.** 빼는 것은 선호 분야를 되물을 때뿐이다 —
+    # 그건 이미 대화가 오간 방에 한 줄만 덧붙이는 것이라 다시 인사하면 어색하다.
+    # 리마인드·미팅 요청은 며칠 지나 다시 거는 말이라 인사가 자연스럽다.
+    if mode == "ask":
+        assert "안녕하세요" not in text
+    else:
+        assert "안녕하세요" in text
 
 
 @pytest.mark.parametrize("mode, title", [

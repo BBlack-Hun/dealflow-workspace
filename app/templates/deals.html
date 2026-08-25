@@ -173,7 +173,10 @@
   <!-- 3) 미리보기 + 발송 -->
   <section class="panel">
     <h2 class="panel-title">③ 미리보기 · 발송
-      <button type="button" class="linkbtn" id="refresh-preview">미리보기 갱신</button>
+      <span class="hint" id="preview-state">고르는 대로 바로 나옵니다</span>
+      {# 갱신 버튼은 없앴다 — 고르고 나서 한 번 더 눌러야 보이면, 안 누른 채로
+         발송을 누르는 일이 생긴다. 화면은 항상 지금 고른 것을 보여야 한다. #}
+      <button type="button" class="linkbtn" id="refresh-preview" hidden>미리보기 갱신</button>
     </h2>
     <div class="ir-attach" id="ir-attach" hidden>
       <b>자료를 먼저 보내고, 이 문구를 뒤에 보냅니다.</b>
@@ -200,11 +203,17 @@
         <input type="checkbox" id="include-opening" checked>
         <span>인사말 포함</span>
       </label>
-      <label id="tpl-opening-wrap">
+      {#
+        문구 고르기는 감춘다 — 기본 문구로 나가는 것이 정상이고, 여기서
+        고른 것은 이 회차에만 적용돼 다음에 또 골라야 한다.
+        문구를 바꾸려면 [문구 관리] 에서 기본값을 고치는 것이 맞다.
+        (뒤쪽 코드가 값을 읽으므로 지우지 않고 감춘다.)
+      #}
+      <label id="tpl-opening-wrap" hidden>
         <span>인사말</span>
         <select id="tpl-opening"><option value="">기본 인삿말 (첫 연락 / 재연락 자동)</option></select>
       </label>
-      <label id="tpl-closing-wrap">
+      <label id="tpl-closing-wrap" hidden>
         <span>안내문</span>
         <select id="tpl-closing"><option value="">기본 안내문</option></select>
       </label>
@@ -212,7 +221,7 @@
     </div>
     <div id="preview-tabs" class="preview-tabs"></div>
     <div id="preview-area" class="preview-area">
-      <p class="muted">기업과 담당자를 선택한 뒤 [미리보기 갱신]을 누르세요.</p>
+      <p class="muted">기업과 담당자를 고르면 여기에 문구가 나옵니다.</p>
     </div>
     <div id="send-warnings" class="warn-box" hidden></div>
     <button type="button" id="send-btn" class="primary-btn" disabled>발송 목록 생성 → 발송</button>
