@@ -957,3 +957,10 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
 .todo-page .hint b { color: var(--ink); }
 /* 회차 준비 점검의 '→ 무엇을 하세요' 줄 */
 .todo-page .check-action, .todo-page .todo-list .muted { color: var(--ink); opacity: .8; }
+
+/* 업무 보고 — 월간·연간 고르기 */
+.report-picker { display: flex; align-items: center; gap: 8px; }
+.seg-toggle { display: flex; gap: 2px; }
+.grid-table tfoot th { background: #f7f8fa; border-top: 2px solid var(--line);
+                       font-size: 12px; padding: 6px 9px; }
+.grid-table tfoot th.num { text-align: right; font-variant-numeric: tabular-nums; }

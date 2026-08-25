@@ -277,17 +277,26 @@ def team_page(request: Request, db: Session = Depends(get_db),
 @router.get("/report", response_class=HTMLResponse, include_in_schema=False)
 def report_page(request: Request, db: Session = Depends(get_db),
                 user: User = Depends(get_current_user),
-                month: str = "", scope: str = "", member: int = 0):
+                month: str = "", scope: str = "", member: int = 0,
+                span: str = "month", year: str = ""):
     """주간·월간 업무 보고. 시트에 손으로 옮겨 적던 표를 기록에서 뽑는다."""
     from datetime import date as _date
 
     today = _date.today()
-    year, mon = today.year, today.month
+    year_, mon = today.year, today.month
     if month:
         try:
-            year, mon = (int(x) for x in month.split("-")[:2])
+            year_, mon = (int(x) for x in month.split("-")[:2])
         except (ValueError, TypeError):
             pass
+    # 연간 보기는 해만 고른다 — "올해 몇 건이나 했나" 를 보려고 열두 달을
+    # 하나씩 눌러 보고 있었다.
+    if year:
+        try:
+            year_ = int(year)
+        except (ValueError, TypeError):
+            pass
+    yearly_view = span == "year"
     # 관리자는 팀 전체를 볼 수 있다. 기본은 본인 것.
     team_wide = user.role == "admin" and scope == "team"
     # 관리자는 팀원 한 사람 것만 따로 볼 수도 있어야 한다 — 전체만 보면
@@ -298,7 +307,11 @@ def report_page(request: Request, db: Session = Depends(get_db),
         if picked is not None:
             target, team_wide = picked, False
     ctx = base_ctx(request, db, user, active="report")
-    ctx.update(report.monthly(db, year, mon, None if team_wide else target, today))
+    who = None if team_wide else target
+    if yearly_view:
+        ctx.update(report.yearly(db, year_, who, today))
+    else:
+        ctx.update(report.monthly(db, year_, mon, who, today))
     ctx.update({
         "viewing": None if team_wide else target,
         "members": ([{"id": u.id, "name": u.name} for u in
@@ -306,8 +319,15 @@ def report_page(request: Request, db: Session = Depends(get_db),
                     if user.role == "admin" else []),
     })
     ctx.update({
-        "months": [(y, m, f"{y}-{m:02d}") for y, m in report.recent_months(today)],
-        "selected": f"{year}-{mon:02d}",
+        # 달·해를 드롭다운으로 고른다. 단추로 늘어놓으면 두 해치가 스무 개가
+        # 넘어 줄바꿈되고, 정작 찾는 달이 어디 있는지 안 보인다.
+        "month_options": [(y, m, f"{y}-{m:02d}")
+                          for y, m in report.recent_months(today, count=36)],
+        "year_options": report.selectable_years(today),
+        "selected": f"{year_}-{mon:02d}",
+        "selected_year": year_,
+        "yearly_view": yearly_view,
+        "span": span,
         "team_wide": team_wide,
         "can_team": user.role == "admin",
         "scope": scope,

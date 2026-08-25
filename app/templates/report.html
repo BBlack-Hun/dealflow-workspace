@@ -9,12 +9,33 @@
   </p>
 </header>
 
+{#
+  달·해를 드롭다운으로 고른다. 단추로 늘어놓으면 두 해치가 스무 개가 넘어
+  줄바꿈되고, 정작 찾는 달이 어디 있는지 안 보인다.
+#}
 <div class="toolbar">
-  <div class="quick-chips">
-    {% for y, m, key in months %}
-    <a class="chip {% if selected == key %}active{% endif %}"
-       href="/report?month={{ key }}{% if scope %}&scope={{ scope }}{% endif %}">{{ y }}년 {{ m }}월</a>
-    {% endfor %}
+  <div class="quick-chips report-picker">
+    <span class="seg-toggle">
+      <a class="chip {% if not yearly_view %}active{% endif %}"
+         href="/report?month={{ selected }}{% if scope %}&scope={{ scope }}{% endif %}{% if viewing and members %}&member={{ viewing.id }}{% endif %}">월간</a>
+      <a class="chip {% if yearly_view %}active{% endif %}"
+         href="/report?span=year&year={{ selected_year }}{% if scope %}&scope={{ scope }}{% endif %}{% if viewing and members %}&member={{ viewing.id }}{% endif %}">연간</a>
+    </span>
+    {% if yearly_view %}
+    <select class="chip-select" onchange="location = this.value">
+      {% for y in year_options %}
+      <option value="/report?span=year&year={{ y }}{% if scope %}&scope={{ scope }}{% endif %}{% if viewing and members %}&member={{ viewing.id }}{% endif %}"
+              {% if selected_year == y %}selected{% endif %}>{{ y }}년</option>
+      {% endfor %}
+    </select>
+    {% else %}
+    <select class="chip-select" onchange="location = this.value">
+      {% for y, m, key in month_options %}
+      <option value="/report?month={{ key }}{% if scope %}&scope={{ scope }}{% endif %}{% if viewing and members %}&member={{ viewing.id }}{% endif %}"
+              {% if selected == key %}selected{% endif %}>{{ y }}년 {{ m }}월</option>
+      {% endfor %}
+    </select>
+    {% endif %}
   </div>
   {% if members %}
   {# 전체만 보면 누가 얼마나 했는지는 보이지만, 그 사람과 이야기할 자료는
@@ -35,6 +56,85 @@
   {% endif %}
 </div>
 
+{% if yearly_view %}
+{#
+  한 해를 달마다 한 줄로. "올해 몇 건이나 했나" 를 보려고 열두 달을 하나씩
+  눌러 보고 있었다. 각 달의 요약을 그대로 쓰므로 월간 보고와 숫자가 어긋나지
+  않는다 — 두 곳에서 따로 세면 반드시 갈라진다.
+#}
+<div class="kpi-row slim">
+  <div class="kpi-card static">
+    <span class="kpi-label">잡은 미팅</span>
+    <span class="kpi-value">{{ totals.total }}</span>
+    <span class="kpi-sub">{{ year }}년 전체</span></div>
+  <div class="kpi-card static">
+    <span class="kpi-label">진행한 미팅</span>
+    <span class="kpi-value ok">{{ totals.done }}</span>
+    <span class="kpi-sub">실제로 만난 건</span></div>
+  <div class="kpi-card static">
+    <span class="kpi-label">결과 물어봄</span>
+    <span class="kpi-value">{{ totals.followup_done }}</span>
+    <span class="kpi-sub">미팅 뒤 확인 완료</span></div>
+  <div class="kpi-card static">
+    <span class="kpi-label">IR 자료 요청</span>
+    <span class="kpi-value">{{ totals.ir_requested }}</span>
+    <span class="kpi-sub">전달 {{ totals.ir_delivered }}건</span></div>
+</div>
+
+<section class="panel">
+  <h2 class="panel-title">{{ year }}년 · 달별
+    <span class="hint">달을 누르면 그 달 보고로 갑니다</span>
+  </h2>
+  <div class="table-wrap">
+    <table class="grid-table compact">
+      <thead><tr>
+        <th style="width:72px">달</th>
+        <th class="num" style="width:88px">잡은 미팅</th>
+        <th class="num" style="width:88px">진행</th>
+        <th class="num" style="width:96px">결과 물어봄</th>
+        <th class="num" style="width:104px">아직 안 물어봄</th>
+        <th class="num" style="width:96px">IR 요청</th>
+        <th class="num" style="width:88px">전달함</th>
+        <th class="num" style="width:96px">안 보낸 요청</th>
+      </tr></thead>
+      <tbody>
+        {% for m in months %}
+        <tr class="{% if not (m.total or m.ir_requested) %}muted{% endif %}">
+          <td><a href="/report?month={{ year }}-{{ '%02d'|format(m.month) }}{% if scope %}&scope={{ scope }}{% endif %}">{{ m.label }}</a></td>
+          <td class="num">{{ m.total or '' }}</td>
+          <td class="num">{{ m.done or '' }}</td>
+          <td class="num">{{ m.followup_done or '' }}</td>
+          <td class="num {% if m.followup_late %}bad{% endif %}">{{ m.followup_open or '' }}</td>
+          <td class="num">{{ m.ir_requested or '' }}</td>
+          <td class="num">{{ m.ir_delivered or '' }}</td>
+          <td class="num {% if m.ir_open %}warn{% endif %}">{{ m.ir_open or '' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot><tr>
+        <th>합계</th>
+        <th class="num">{{ totals.total }}</th>
+        <th class="num">{{ totals.done }}</th>
+        <th class="num">{{ totals.followup_done }}</th>
+        <th class="num">{{ totals.followup_open }}</th>
+        <th class="num">{{ totals.ir_requested }}</th>
+        <th class="num">{{ totals.ir_delivered }}</th>
+        <th class="num">{{ totals.ir_open }}</th>
+      </tr></tfoot>
+    </table>
+  </div>
+</section>
+
+{% if outcomes %}
+<section class="panel">
+  <h2 class="panel-title">{{ year }}년 미팅 결과</h2>
+  <ul class="import-stats">
+    {% for label, n in outcomes %}<li><span>{{ label }}</span><b>{{ n }}</b></li>{% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{% else %}
 {#
   숫자만 있으면 무엇을 센 건지 알 수 없다. 네 칸이 각각
   "잡힌 것 / 끝난 것 / 물어본 것 / 아직 안 물어본 것" 인데
@@ -172,4 +272,5 @@
   </div>
   {% endfor %}
 </section>
+{% endif %}
 {% endblock %}
