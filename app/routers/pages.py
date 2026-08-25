@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..deps import get_current_user, templates
-from ..models import IrCompany, RefSheet, SendJob, User, VcContact
+from ..models import IrCompany, RefSheet, SendJob, SourcingContact, User, VcContact
 from ..services import (cadence, deal_history, deal_stage, mailer,
                         sheet_import, sheet_owner)
 from ..ui import MENU, base_ctx as _base_ctx
@@ -76,6 +76,12 @@ def deals_page(
         row["id"] for row in contact_rows(db, user)
         if row["last_deal"] and not (row["ir_total"] or row["meet_total"])
     }
+    # 딜 소싱 제안의 대상. 투자사 명단과 다른 표이고 **팀 공용**이다 —
+    # 우리 딜을 같이 볼 사람이라 담당을 나눌 것이 아니다.
+    # 방 이름이 없으면 보낼 길이 없으므로 그것부터 보이게 정렬한다.
+    sourcing_contacts = db.execute(
+        select(SourcingContact).order_by(SourcingContact.position, SourcingContact.id)
+    ).scalars().all()
     ctx = _base_ctx(request, db, user, "deal")
     # 매 회차 같은 기업을 또 보내면 받는 쪽에서는 지난번을 기억 못 한다고 읽는다.
     history = deal_history.annotate(companies, deal_history.last_sent_map(db))
@@ -89,6 +95,7 @@ def deals_page(
         "recent_count": sum(1 for h in history.values() if h["recent"]),
         "recent_days": deal_history.RECENT_DAYS,
         "contacts": contacts,
+        "sourcing_contacts": sourcing_contacts,
         "no_reaction_ids": no_reaction_ids,
         # 메일 채널은 설정이 있어야 고를 수 있다.
         # 고를 수 있는데 나가지 않는 것이 제일 나쁘다.

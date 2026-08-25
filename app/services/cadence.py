@@ -212,6 +212,10 @@ def start_or_advance(db: Session, item: SendItem, job: SendJob,
     """
     if item.status != "sent":
         return None
+    # 딜 소싱 제안은 후속 3단(리마인드 → 미팅 요청)을 타지 않는다.
+    # 딜을 봐 달라는 초대라 "검토 중이신가요" 를 이어 보낼 것이 없다.
+    if item.contact_id is None:
+        return None
 
     seq = db.execute(
         select(SendSequence).where(SendSequence.contact_id == item.contact_id)
@@ -424,7 +428,7 @@ def backfill_from_history(db: Session, user_id: int,
     made = 0
     seen: Dict[int, tuple] = {}
     for item, job in rows:
-        if item.contact_id in have:
+        if item.contact_id is None or item.contact_id in have:
             continue
         seen[item.contact_id] = (item, job)      # 담당자별 마지막 성공 건
     for item, job in seen.values():

@@ -4,8 +4,8 @@
 시리즈 A 이상·개인 참여·M&A·후속투자처럼 **찾는 것**으로 나뉘고, 같은
 사람이 여러 갈래에 들어갈 수 있다.
 
-지금은 **보고 고치는 것**까지만 한다. 여기서 딜을 보내는 것은 다음 작업이다 —
-보내는 길을 먼저 만들면 명단이 맞는지 확인하기 전에 나가 버린다.
+여기서는 **보고 고친다.** 실제로 보내는 것은 딜 제안 관리의 [딜 소싱 제안]
+탭이고, 그 대상이 이 표다 — 그래서 카톡방 이름 칸이 여기 있다.
 """
 from __future__ import annotations
 
@@ -36,6 +36,9 @@ COLUMNS = [
     ("sectors", "투자분야", "120px"),
     ("round_size", "라운드 사이즈", "130px"),
     ("memo", "메모", ""),
+    # 여기서 딜 소싱 제안을 보낸다 — 방 이름이 없으면 보낼 길이 없다.
+    # 발송 화면(딜 제안 관리)에서 고를 수 있으려면 이 칸이 먼저 차야 한다.
+    ("kakao_room_name", "카톡방 이름", "170px"),
 ]
 
 
@@ -90,6 +93,7 @@ class SourcingIn(BaseModel):
     memo: Optional[str] = None
     kakao_reply: Optional[str] = None
     call_note: Optional[str] = None
+    kakao_room_name: Optional[str] = None
 
 
 @router.patch("/api/sourcing/{row_id}")
@@ -105,6 +109,9 @@ def update_row(row_id: int, body: SourcingIn, db: Session = Depends(get_db),
         # 이름은 비울 수 없다 — 누구인지 모르는 줄이 남는다.
         if field == "name" and not value.strip():
             continue
+        if field == "kakao_room_name" and value.strip() != (row.kakao_room_name or ""):
+            # 이름이 바뀌었으면 예전 확인 결과는 다른 방 이야기다.
+            row.room_verified = "unverified"
         setattr(row, field, value.strip() or None)
     db.commit()
     return {"ok": True}

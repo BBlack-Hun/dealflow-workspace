@@ -307,7 +307,13 @@ class SendItem(TimestampMixin, Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     job_id: Mapped[int] = mapped_column(ForeignKey("send_jobs.id"))
-    contact_id: Mapped[int] = mapped_column(ForeignKey("vc_contacts.id"))
+    # 받는 사람은 둘 중 **하나**다. 투자사 담당자(딜소개·IR·후속)이거나,
+    # 딜 소싱 명단(우리 딜을 같이 볼 사람)이거나. 소싱은 다른 표에 있어서
+    # 가리키는 칸이 따로 있고, 그래서 이 칸이 빌 수 있다.
+    contact_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("vc_contacts.id"), nullable=True)
+    sourcing_contact_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("sourcing_contacts.id"), nullable=True)
     # FK to send_sequences arrives in Sprint 3 — kept nullable, no constraint yet.
     sequence_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     stage: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # 1 day1 | 2 remind | 3 meeting
@@ -333,7 +339,15 @@ class SendItem(TimestampMixin, Base):
     sent_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
     job: Mapped["SendJob"] = relationship(back_populates="items")
-    contact: Mapped["VcContact"] = relationship()
+    contact: Mapped[Optional["VcContact"]] = relationship()
+    sourcing_contact: Mapped[Optional["SourcingContact"]] = relationship()
+
+    @property
+    def recipient_name(self) -> Optional[str]:
+        """누구에게 갔는가. 화면·기록에서 이 값만 쓴다 —
+        받는 사람이 두 표에 나뉘어 있는 것을 부르는 쪽이 알 필요는 없다."""
+        who = self.contact or self.sourcing_contact
+        return who.name if who else None
 
 
 class AgentDevice(TimestampMixin, Base):
@@ -380,6 +394,12 @@ class SourcingContact(TimestampMixin, Base):
     memo: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     kakao_reply: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     call_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # 소싱 명단은 투자사 관리 현황과 거의 겹치지 않는다 — 39명 중 7명뿐이다.
+    # 기존 담당자를 찾아 붙이는 방식으로는 나머지 32명에게 못 보내므로
+    # 여기도 자기 카톡방을 가진다.
+    kakao_room_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    room_verified: Mapped[str] = mapped_column(String, default="unverified")
 
 
 class RefSheet(TimestampMixin, Base):

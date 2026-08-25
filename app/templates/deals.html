@@ -52,12 +52,12 @@
   </button>
   {#
     딜 소싱 제안 — 우리 딜을 **같이 볼 사람**에게 보내는 자리.
-    명단은 좌측 [딜 소싱] 에 있다. 아직 보내는 길은 붙이지 않았다 —
-    명단이 맞는지 확인하기 전에 나가면 안 된다.
+    대상이 투자사 명단이 아니라 좌측 [딜 소싱] 명단이라, 이 탭을 누르면
+    아래 담당자 목록이 통째로 바뀐다.
   #}
-  <button type="button" class="mode-tab soon" data-mode="sourcing" disabled
-          title="명단은 좌측 [딜 소싱] 에서 볼 수 있습니다">
-    딜 소싱 제안<span>준비 중 · 명단은 [딜 소싱]</span>
+  <button type="button" class="mode-tab" data-mode="sourcing" data-followup="1"
+          data-recipients="sourcing">
+    딜 소싱 제안<span>검토 제외 딜을 나눠 달라는 초대</span>
   </button>
 </div>
 
@@ -131,7 +131,8 @@
   <!-- 2) 대상 담당자 -->
   <section class="panel">
     <h2 class="panel-title">
-      ② 대상 담당자
+      {# 소싱 제안일 때는 대상이 투자사 담당자가 아니다 — 제목도 바뀐다. #}
+      <span id="contact-head">② 대상 담당자</span>
       <span class="count-pill" id="contact-pill"><b>0</b>명</span>
       <button type="button" class="linkbtn" id="select-all-contacts">전체선택</button>
       <button type="button" class="linkbtn" id="select-noreact">반응 없는 담당자만</button>
@@ -175,6 +176,35 @@
       </label>
       {% else %}
       <p class="muted">카톡 연결된 담당자가 없습니다.</p>
+      {% endfor %}
+    </div>
+
+    {#
+      딜 소싱 제안의 대상. 투자사 명단과 **다른 표**라 목록을 따로 둔다.
+      한 표에 섞으면 딜소개를 보내면서 소싱 명단을 같이 고르게 되는데,
+      그 둘은 받는 문구가 전혀 다르다.
+    #}
+    <div class="card-list" id="sourcing-list" hidden>
+      {% for c in sourcing_contacts %}
+      <label class="pick-card"
+             data-search="{{ (c.name ~ ' ' ~ (c.title or '') ~ ' ' ~ (c.firm or '') ~ ' ' ~ (c.bucket or '') ~ ' ' ~ (c.sectors or '') ~ ' ' ~ (c.kakao_room_name or ''))|lower }}">
+        <input type="checkbox" class="contact-cb" value="{{ c.id }}" data-name="{{ c.name }}">
+        <div class="pick-body">
+          <div class="pick-name">{{ c.name }} <span class="muted">{{ c.title or '' }}</span></div>
+          <div class="pick-sub muted">{{ c.firm or '' }}</div>
+          {# 갈래가 곧 문구다 — 무엇이 나갈지 고르는 자리에서 보여야 한다. #}
+          <div class="pick-tags"><span class="tag">{{ c.bucket }}</span></div>
+          <div class="pick-room">
+            {% if c.kakao_room_name %}
+              <span class="room-badge {{ 'ok' if c.room_verified in ['verified','unverified'] else 'warn' }}">💬 {{ c.kakao_room_name }}</span>
+            {% else %}
+              <span class="room-badge warn">⚠ 카톡방 미등록 — [딜 소싱]에서 방 이름을 넣어주세요</span>
+            {% endif %}
+          </div>
+        </div>
+      </label>
+      {% else %}
+      <p class="muted">딜 소싱 명단이 비어 있습니다 — 좌측 [딜 소싱]에서 먼저 채워주세요.</p>
       {% endfor %}
     </div>
   </section>

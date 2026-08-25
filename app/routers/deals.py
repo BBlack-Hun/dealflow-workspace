@@ -20,11 +20,13 @@ from ..models import (
     MessageTemplate,
     SendItem,
     SendJob,
+    SourcingContact,
     User,
     VcContact,
 )
 from ..services import mail_sender, mailer, matcher
 from ..services import message_composer as mc
+from ..services import sourcing_msg
 from ..services.message_composer import MAX_COMPANIES_PER_SEND
 
 router = APIRouter(prefix="/api/deals", tags=["deals"])
@@ -47,7 +49,8 @@ def _to_company_view(c: IrCompany) -> mc.CompanyView:
     )
 
 
-def _to_contact_view(c: VcContact) -> mc.ContactView:
+def _to_contact_view(c) -> mc.ContactView:
+    """VcContact 든 SourcingContact 든 문구가 필요로 하는 것은 셋뿐이다."""
     return mc.ContactView(name=c.name, title=c.title, firm=c.firm)
 
 
@@ -95,6 +98,9 @@ MODE_REMIND = "remind"      # 리마인드
 MODE_MEETING = "meeting"    # 미팅 요청
 MODE_IR = "ir"              # IR 자료 전달
 MODE_REVIEW = "review"      # 미팅 후기 — 미팅 열흘 뒤 결과 문의
+# 딜 소싱 제안 — 받는 사람이 다른 명단(딜 소싱)에 있고, 부탁하는 것도 다르다.
+# 우리 딜을 보여 주는 게 아니라 **당신이 뺀 딜을 달라**고 청한다.
+MODE_SOURCING = "sourcing"
 
 # 딜소개 말고는 전부 **기업 목록 없이 문구만** 나간다.
 # 이미 목록을 받은 사람에게 같은 목록을 다시 밀어 넣는 것은 후속이 아니라 재발송이다.
@@ -122,6 +128,9 @@ FOLLOW_UP_MODES = {
     MODE_REVIEW: ("meeting_review",
                   "지난번 미팅은 어떻게 보셨는지요? 검토 진행 상황이 궁금합니다.",
                   mc.STAGE_MEETING),
+    # 문구는 갈래마다 다르다(호칭·개수·범위). 여기 폴백은 쓰이지 않는다 —
+    # `sourcing_msg.body_for()` 가 갈래를 보고 고른다.
+    MODE_SOURCING: (sourcing_msg.KIND, "", mc.STAGE_REMIND),
 }
 MODE_TITLES = {
     MODE_ASK: "선호 분야 묻기",
@@ -129,6 +138,7 @@ MODE_TITLES = {
     MODE_MEETING: "미팅 요청",
     MODE_IR: "IR 자료 전달",
     MODE_REVIEW: "미팅 후기",
+    MODE_SOURCING: "딜 소싱 제안",
 }
 
 # IR 자료 전달은 기업을 고른다(무엇을 보내는지 알아야 한다).
@@ -152,7 +162,8 @@ def _compose_for_contact(
         # 실제로 나가는 것이 달라진다.
         include_opening = mode != MODE_ASK
 
-    has_hist = _has_history(db, contact.id)
+    # 소싱 명단에는 딜소개 이력이 없다(다른 표다) — 늘 '처음 인사' 다.
+    has_hist = False if mode == MODE_SOURCING else _has_history(db, contact.id)
     opening_kind = mc.pick_opening_kind(has_hist)
     # 폴백도 실제 운영 스크립트 형식과 동일하게 유지(템플릿 미시드 상황 대비).
     opening_body = _template_body(
@@ -160,7 +171,11 @@ def _compose_for_contact(
         "안녕하세요, {담당자명} {직함}\n우리브이씨 ASSET입니다.",
     )
     follow_up = FOLLOW_UP_MODES.get(mode)
-    if follow_up:
+    if mode == MODE_SOURCING:
+        # 갈래(bucket)가 문구를 정한다 — '대표님/5개사' 를 개인 참여 심사역께
+        # 보내면 문구 자체가 어긋난다.
+        closing_body = sourcing_msg.body_for(db, user, getattr(contact, "bucket", ""))
+    elif follow_up:
         kind, fallback, _stage = follow_up
         closing_body = _template_body(db, user.id, kind, fallback)
     else:
@@ -172,10 +187,15 @@ def _compose_for_contact(
     opening_body = _template_body_by_id(db, user, opening_template_id) or opening_body
     closing_body = _template_body_by_id(db, user, closing_template_id) or closing_body
 
+    who = _to_contact_view(contact)
+    if mode == MODE_SOURCING and not (who.title or "").strip():
+        # 직함이 빈 줄이 있다. 그대로 두면 '안녕하세요, 홍길동' 으로 나간다.
+        who.title = sourcing_msg.honorific(getattr(contact, "bucket", ""))
+
     return mc.compose_message(
         opening_body,
         closing_body,
-        _to_contact_view(contact),
+        who,
         [] if follow_up else [_to_company_view(c) for c in companies],
         # STAGE_DAY1 이 아니면 기업 목록을 붙이지 않는다(composer 규칙).
         stage=follow_up[2] if follow_up else mc.STAGE_DAY1,
@@ -262,7 +282,7 @@ def build_link_blocks(db: Session, contact: VcContact,
     return blocks
 
 
-def _apply_test_room(contact: VcContact, text: str) -> tuple:
+def _apply_test_room(contact, text: str) -> tuple:
     """테스트 모드면 발송 대상 방을 테스트 방 하나로 바꾼다.
 
     config.TEST_ROOM 이 설정돼 있으면 실제 담당자 방으로 나가지 않고 전부
@@ -277,7 +297,7 @@ def _apply_test_room(contact: VcContact, text: str) -> tuple:
     return config.TEST_ROOM, banner + text
 
 
-def _apply_test_room_to_parts(contact: VcContact, parts: List[str]) -> List[str]:
+def _apply_test_room_to_parts(contact, parts: List[str]) -> List[str]:
     """테스트 머리말은 첫 통에만 붙인다.
 
     통마다 붙이면 테스트 방이 "[테스트 발송 → …]" 로 도배돼 정작 무엇이
@@ -300,6 +320,25 @@ def _load_companies(db: Session, company_ids: List[int]) -> List[IrCompany]:
         # 대신 미리보기 경고에 남긴다.
         companies.append(c)
     return companies
+
+
+def _load_recipients(db: Session, user: User, mode: str, ids: List[int]) -> List:
+    """이 방식이 보내는 대상. 화면에서 고른 순서를 지킨다.
+
+    딜 소싱만 다른 표(`sourcing_contacts`)에서 온다. 소싱 명단은 스타트업
+    관리처럼 **팀 공용**이라 담당자로 거르지 않는다 — 명단 자체가 하나다.
+    """
+    if mode == MODE_SOURCING:
+        rows = db.execute(
+            select(SourcingContact).where(SourcingContact.id.in_(ids))
+        ).scalars().all()
+    else:
+        rows = db.execute(
+            select(VcContact).where(VcContact.id.in_(ids),
+                                    VcContact.user_id == user.id)
+        ).scalars().all()
+    by_id = {r.id: r for r in rows}
+    return [by_id[i] for i in ids if i in by_id]
 
 
 # --- schemas ---------------------------------------------------------------
@@ -374,16 +413,16 @@ def preview(
         )
     companies = _load_companies(db, req.company_ids) if req.mode in MODES_WITH_COMPANIES else []
     previews = []
-    for contact_id in req.contact_ids:
-        contact = db.get(VcContact, contact_id)
-        if contact is None or contact.user_id != user.id:
-            continue
+    sourcing = req.mode == MODE_SOURCING
+    for contact in _load_recipients(db, user, req.mode, req.contact_ids):
         result = _compose_for_contact(db, user, contact, companies,
                                       req.opening_template_id, req.closing_template_id,
                                       mode=req.mode,
                                       include_opening=req.include_opening)
         room_ok = bool(contact.kakao_room_name) and contact.room_verified in ("verified", "unverified")
         # 투자분야/단계/라운드 규모 적합도 — 성향과 어긋나는 딜은 발송 전 경고(DRAFT_REFERENCE).
+        # 소싱 제안은 기업을 붙이지 않아 companies 가 비고, 그러면 견줄 것이
+        # 없어 빈 결과가 나온다.
         fit = matcher.evaluate_contact(contact, companies)
         thin = [c.name for c in companies if not c.introducible]  # 문구만 모드면 companies 가 비어 있다
         thin_warnings = (
@@ -416,7 +455,9 @@ def preview(
             "char_count": result.char_count,
             "too_long": result.too_long,
             "warnings": result.warnings + fit.warnings + thin_warnings,
-            "has_history": _has_history(db, contact.id),
+            # 소싱 대상은 다른 표에 있다 — 같은 번호의 투자사 담당자 이력을
+            # 제 것으로 읽으면 안 된다.
+            "has_history": False if sourcing else _has_history(db, contact.id),
             # IR 자료 전달일 때 무엇을 먼저 보내야 하는지 화면에 띄운다.
             "attachments": ([{"name": c.name, "url": c.ir_drive_url or ""}
                              for c in companies] if req.mode == MODE_IR else []),
@@ -462,11 +503,13 @@ def create_send_list(
     companies = _load_companies(db, req.company_ids) if req.mode in MODES_WITH_COMPANIES else []
 
     # Resolve + validate target contacts (must be owned, must have a room name).
-    contacts: List[VcContact] = []
-    for contact_id in req.contact_ids:
-        contact = db.get(VcContact, contact_id)
-        if contact is None or contact.user_id != user.id:
-            raise HTTPException(status_code=404, detail=f"담당자 {contact_id} 없음")
+    sourcing = req.mode == MODE_SOURCING
+    contacts = _load_recipients(db, user, req.mode, req.contact_ids)
+    missing = set(req.contact_ids) - {c.id for c in contacts}
+    if missing:
+        raise HTTPException(status_code=404,
+                            detail=f"담당자 {sorted(missing)[0]} 없음")
+    for contact in contacts:
         if by_email:
             # 주소가 없으면 보낼 방법이 없다. 목록을 만들기 **전에** 막는다 —
             # 만들고 나서 실패로 남기면 보냈다고 착각하기 쉽다.
@@ -480,7 +523,6 @@ def create_send_list(
                 status_code=400,
                 detail=f"'{contact.name}' 카톡방 이름 미등록 — 발송 대상에서 제외하세요",
             )
-        contacts.append(contact)
 
     # Batch + companies
     batch = DealBatch(
@@ -499,7 +541,8 @@ def create_send_list(
         user_id=user.id,
         # IR 자료 전달은 딜소개와 다른 일이다. 종류를 남겨야 후속을 멈추고
         # 요청을 '전달함'으로 닫을 수 있다.
-        kind="ir_delivery" if req.mode == MODE_IR else "deal_intro",
+        kind=("ir_delivery" if req.mode == MODE_IR
+              else "sourcing_intro" if sourcing else "deal_intro"),
         batch_id=batch.id,
         status="queued", total=len(contacts), sent=0, failed=0,
     )
@@ -536,7 +579,9 @@ def create_send_list(
 
         db.add(SendItem(
             job_id=job.id,
-            contact_id=contact.id,
+            # 소싱 대상은 다른 표에 있다 — 둘 중 하나만 채운다.
+            contact_id=None if sourcing else contact.id,
+            sourcing_contact_id=contact.id if sourcing else None,
             stage=(FOLLOW_UP_MODES[req.mode][2] if req.mode in FOLLOW_UP_MODES
                    else mc.STAGE_DAY1),
             channel="email" if by_email else "kakao",

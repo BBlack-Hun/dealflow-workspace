@@ -3,7 +3,16 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
 // 딜소개 보내기 — selection, preview, send-list creation (FEATURE_SPEC §5).
 (function () {
   var companyCbs = function () { return Array.prototype.slice.call(document.querySelectorAll(".company-cb")); };
-  var contactCbs = function () { return Array.prototype.slice.call(document.querySelectorAll(".contact-cb")); };
+  // 대상 목록이 두 개다(투자사 담당자 / 딜 소싱 명단). **지금 보이는 쪽만**
+  // 센다 — 숨은 목록에 체크가 남아 있는데 그것까지 보내면, 화면에 없는
+  // 사람에게 나간다.
+  var activeList = function () {
+    return document.getElementById(mode === "sourcing" ? "sourcing-list" : "contact-list");
+  };
+  var contactCbs = function () {
+    var box = activeList();
+    return box ? Array.prototype.slice.call(box.querySelectorAll(".contact-cb")) : [];
+  };
   var companyPill = document.getElementById("company-pill");
   var contactPill = document.getElementById("contact-pill");
   var contactSummary = document.getElementById("contact-summary");
@@ -15,7 +24,8 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   // 딜소개 말고는 전부 기업 목록 없이 문구만 나간다.
   // 이미 목록을 받은 사람에게 같은 목록을 다시 밀어 넣는 것은 후속이 아니라 재발송이다.
   var FOLLOW_UP = { ask: "선호 분야 묻기", remind: "리마인드", meeting: "미팅 요청",
-                    review: "미팅 후기", ir: "IR 자료 전달" };
+                    review: "미팅 후기", ir: "IR 자료 전달",
+                    sourcing: "딜 소싱 제안" };
   // IR 자료 전달은 기업을 고른다(무엇을 보내는지 알아야 한다).
   // 나머지 후속 문구는 기업과 무관하다.
   var NEEDS_COMPANIES = { deal: true, ir: true };
@@ -89,7 +99,8 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     var pickedOnly = onlyPicked && onlyPicked.checked;
     var shown = 0, total = 0;
 
-    document.querySelectorAll("#contact-list .pick-card").forEach(function (card) {
+    var box = activeList();
+    (box ? box.querySelectorAll(".pick-card") : []).forEach(function (card) {
       var cb = card.querySelector(".contact-cb");
       var picked = cb && cb.checked;
       var hit = !q || (card.getAttribute("data-search") || "").indexOf(q) !== -1;
@@ -141,7 +152,8 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   // 고르지 않았을 때 쓰는 문구의 이름. '기본' 만으로는 무엇의 기본인지 모른다.
   var CLOSING_DEFAULT = {
     deal: "기본 안내문", remind: "기본 안내문", meeting: "기본 안내문",
-    review: "기본 문구", ask: "기본 문구", ir: "기본 문구"
+    review: "기본 문구", ask: "기본 문구", ir: "기본 문구",
+    sourcing: "갈래별 기본 문구"
   };
 
   function renderTemplates() {
@@ -157,7 +169,8 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     // 문구만 보낼 때는 안내문이 아니라 그 방식의 문구를 고른다.
     var kindByMode = { ask: "ask_preference", remind: "closing_remind",
                        meeting: "closing_meeting", review: "meeting_review",
-                       deal: "closing_day1", ir: "ir_delivery" };
+                       deal: "closing_day1", ir: "ir_delivery",
+                       sourcing: "sourcing_intro" };
     fill("tpl-closing", byKind[kindByMode[mode]] || [],
          CLOSING_DEFAULT[mode] || "기본 안내문");
   }
@@ -324,11 +337,24 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       b.classList.toggle("active", b.getAttribute("data-mode") === mode);
     });
     companyPanel.classList.toggle("dimmed", askMode);
+    // 대상 목록 자체를 바꾼다 — 소싱은 받는 사람이 다른 명단에 있다.
+    var sourcingMode = mode === "sourcing";
+    var contactBox = document.getElementById("contact-list");
+    var sourcingBox = document.getElementById("sourcing-list");
+    if (contactBox) contactBox.hidden = sourcingMode;
+    if (sourcingBox) sourcingBox.hidden = !sourcingMode;
+    var contactHead = document.getElementById("contact-head");
+    if (contactHead) contactHead.textContent = sourcingMode ? "② 딜 소싱 대상" : "② 대상 담당자";
+    var noReactBtn = document.getElementById("select-noreact");
+    // 소싱 명단에는 '반응' 이라는 개념이 없다 — 아직 보낸 적이 없다.
+    if (noReactBtn) noReactBtn.hidden = sourcingMode;
     document.getElementById("mode-help").textContent =
       mode === "ir"
         ? "요청받은 기업을 고르면, 자료를 먼저 보내고 안내 문구를 뒤에 보냅니다"
-        : (askMode ? FOLLOW_UP[mode] + " — 기업 목록 없이 문구만 보냅니다 (기업 선택 불필요)"
-                   : "기업 1~10개 선택 → 대상 담당자 체크 → 담당자별 미리보기 → 발송");
+        : (sourcingMode
+            ? "딜 소싱 명단에서 대상을 고르면, 갈래(시리즈 A 이상 · 투자사 대표 · 개인 참여 …)에 맞는 문구가 나갑니다"
+            : (askMode ? FOLLOW_UP[mode] + " — 기업 목록 없이 문구만 보냅니다 (기업 선택 불필요)"
+                       : "기업 1~10개 선택 → 대상 담당자 체크 → 담당자별 미리보기 → 발송"));
     var companyHint = document.getElementById("company-hint");
     if (companyHint) companyHint.hidden = mode === "ir";
     renderIrLinks();
