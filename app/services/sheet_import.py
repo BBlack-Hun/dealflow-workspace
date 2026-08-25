@@ -165,6 +165,8 @@ def detect_activity_columns(rows: Sequence[Sequence[str]], header_idx: int,
     skip = set(skip_cols)
     out: List[ActivityColumn] = []
     current_month: Optional[str] = None
+    current_year = year
+    prev_no: Optional[int] = None
     for col in range(width):
         if col in skip:
             continue
@@ -173,7 +175,20 @@ def detect_activity_columns(rows: Sequence[Sequence[str]], header_idx: int,
             continue
         m = _MONTH_RE.search(context)
         if m:
-            current_month = f"{year:04d}-{int(m.group(1)):02d}"
+            month_no = int(m.group(1))
+            # 해가 바뀌는 자리를 넘긴다. 같은 해로 두면 1년 전(또는 뒤) 기록이
+            # 되어 그 달의 회차가 통째로 엉뚱한 자리에 쌓인다.
+            #
+            # 방향은 시트마다 다르다 — 명단 시트는 **최신 달이 왼쪽**이라
+            # 8→7→6월로 줄고, 새로 만든 표는 늘기도 한다. 둘 다 본다.
+            # 오타로 한 해가 통째로 밀리지 않게 **연말↔연초 경계에서만** 옮긴다.
+            if prev_no is not None:
+                if prev_no >= 10 and month_no <= 3:
+                    current_year += 1      # 12월 → 1월 (오른쪽이 나중)
+                elif prev_no <= 3 and month_no >= 10:
+                    current_year -= 1      # 1월 → 12월 (오른쪽이 이전)
+            prev_no = month_no
+            current_month = f"{current_year:04d}-{month_no:02d}"
         kind = detect_kind(context)
         if kind is None:
             continue

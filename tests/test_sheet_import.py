@@ -63,6 +63,42 @@ def test_month_columns_are_scanned_repeatedly():
     ]
 
 
+def test_the_year_moves_when_the_months_cross_january():
+    """12월 옆 1월을 같은 해로 두면 그 달 회차가 1년 전 자리에 쌓인다.
+
+    방향은 시트마다 다르다 — 명단 시트는 최신 달이 왼쪽이라 달이 줄고,
+    새로 만든 표는 늘기도 한다.
+    """
+    def scan(labels):
+        rows = [[""] * 3, ["NO", "이름", "투자사명"]]
+        for label in labels:
+            rows[0] += [label, "", ""]
+            rows[1] += ["1차 딜소개", "IR 요청", "미팅"]
+        cols = si.detect_activity_columns(rows, header_idx=1, year=YEAR,
+                                          skip_cols=range(0, 3))
+        # 3열 세트라 달마다 같은 값이 세 번 — 순서를 지켜 중복만 접는다
+        seen = []
+        for c in cols:
+            if not seen or seen[-1] != c.month:
+                seen.append(c.month)
+        return seen
+
+    # 오른쪽이 나중 (11월 → 12월 → 1월 → 2월)
+    assert scan(["11월", "12월", "1월", "2월"]) == [
+        "2026-11", "2026-12", "2027-01", "2027-02"]
+
+    # 오른쪽이 이전 (2월 → 1월 → 12월 → 11월) — 실제 명단 시트의 방향
+    assert scan(["2월", "1월", "12월", "11월"]) == [
+        "2026-02", "2026-01", "2025-12", "2025-11"]
+
+
+def test_a_month_that_merely_goes_backwards_does_not_move_the_year():
+    """8→7→6월은 해가 바뀐 것이 아니다 — 경계에서만 옮긴다."""
+    rows = _rows_a()
+    cols = si.detect_activity_columns(rows, header_idx=1, year=YEAR, skip_cols=range(0, 7))
+    assert {c.month[:4] for c in cols} == {"2026"}
+
+
 def test_activity_columns_extend_when_a_new_month_is_added():
     """9월 세트가 오른쪽에 추가돼도 코드 수정 없이 잡힌다 (시트가 계속 늘어나는 구조)."""
     rows = [list(r) for r in _rows_a()]
