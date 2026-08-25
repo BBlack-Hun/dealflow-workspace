@@ -259,10 +259,25 @@
       openPanel = panel;
     }
 
+    // 한 칸에 필터가 하나뿐이면 **그 단추가 컬럼 이름 자리를 대신한다.**
+    // 예전에는 `계약여부` 라는 글자 밑에 `계약여부 ▾` 단추가 또 있어서
+    // 같은 말이 두 번 나왔다 — 칸은 좁은데 자리만 두 배로 먹었다.
+    // 필터가 둘인 칸(투자분야 / 라운드사이즈)은 이름을 남긴다.
+    defs.forEach(function (def) {
+      def.solo = defs.filter(function (d) { return d.th === def.th; }).length === 1;
+    });
+
     defs.forEach(function (def) {
       var btn = document.createElement("button");
       btn.type = "button";
       btn.className = "filter-btn";
+      if (def.solo) {
+        def.th.classList.add("filter-only");
+        // 이름 글자만 지운다 — `.th-filters` 와 `.th-note` 는 남겨야 한다.
+        Array.prototype.slice.call(def.th.childNodes).forEach(function (n) {
+          if (n.nodeType === 3) n.textContent = "";
+        });
+      }
       btn.textContent = def.label + " ▾";
       btn.onclick = function (e) {
         e.stopPropagation();

@@ -952,8 +952,9 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
    지운 게 아니라 '보내면 안 되는 곳' 이라는 걸 알아야 하기 때문이다. */
 .blocked-row { background: #fdf3f3; }
 .blocked-row:hover { background: #fbe9e9; }
-.blocked-row .co-name b { color: var(--red); text-decoration: line-through;
-                          text-decoration-color: rgba(200,60,60,.45); }
+/* 취소선은 긋지 않는다 — 지운 기업처럼 읽히는데, 실제로는 지금도 관리하는
+   곳이고 계약여부만 '딜소개 불가' 일 뿐이다. 붉은 바탕으로 충분하다. */
+.blocked-row .co-name b { color: var(--red); }
 
 /* ── 주간 업무 · 설명 글씨 ────────────────────────────────────────────
    아침에 이 화면만 보고 하루를 시작하는데, 정작 "무엇을 하라" 는 설명이
@@ -986,3 +987,10 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
 .months-folded { background: var(--bg-soft); border: 1px solid var(--line);
                  border-radius: 8px; padding: 7px 10px; margin: 8px 0;
                  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* 필터가 하나뿐인 칸 — 단추가 컬럼 이름 자리를 대신한다.
+   이름을 두 번 쓰면 좁은 칸에서 자리만 두 배로 먹는다. */
+.grid-table th.filter-only { padding-top: 4px; padding-bottom: 4px; }
+.filter-only .filter-btn { font-size: 12px; font-weight: 600; color: var(--muted);
+                           padding: 3px 6px; margin: 0; }
+.filter-only .filter-btn.on { color: var(--brand); }
