@@ -39,12 +39,21 @@ MENU = [
 ]
 
 
+# 투자컨설턴트가 볼 수 있는 메뉴. 딜소개를 하지 않는 사람이라 발송·투자사
+# 명단을 보여줄 이유가 없다 — 볼 수 있으면 실수로 건드린다.
+CONSULTANT_MENUS = {"consult"}
+
+
 def can_see(user: User, item: dict) -> bool:
     """이 사람에게 이 메뉴를 보여도 되는가.
 
     관리자는 전부 본다. `needs` 가 붙은 메뉴는 그 계정 속성이 켜진 사람만 본다
     (볼 사람 이름을 코드에 박으면 담당이 바뀔 때마다 배포해야 한다).
+
+    투자컨설턴트는 **자기 화면 하나만** 본다.
     """
+    if user.role == "consultant":
+        return item["key"] in CONSULTANT_MENUS
     if user.role == "admin":
         return True
     if item.get("admin_only"):

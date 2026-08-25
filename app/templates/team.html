@@ -56,7 +56,8 @@
         <input type="text" name="phone" required placeholder="010-1234-5678"></label>
       <label class="field inline-field"><span>권한</span>
         <select name="role">
-          <option value="user">팀원</option>
+          <option value="user">팀원 — 딜소개</option>
+          <option value="consultant">투자컨설턴트 — 그 화면만</option>
           <option value="admin">관리자</option>
         </select></label>
       <button class="primary-btn inline" type="submit">계정 만들기</button>
@@ -83,7 +84,9 @@
       <tr>
         <td><b>{{ m.name }}</b>{% if m.password_pending %} <span class="tag warn">비밀번호 미변경</span>{% endif %}</td>
         <td class="muted">{{ m.phone }}</td>
-        <td>{{ '관리자' if m.role == 'admin' else '팀원' }}</td>
+        <td>{% if m.role == 'admin' %}관리자
+            {% elif m.role == 'consultant' %}투자컨설턴트
+            {% else %}팀원{% endif %}</td>
         <td class="num">{{ m.contacts }}</td>
         <td>
           {% if m.contacts %}

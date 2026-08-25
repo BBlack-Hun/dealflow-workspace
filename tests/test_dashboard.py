@@ -708,12 +708,12 @@ def test_no_dead_menu_names_after_the_merge(client, db, users):
 
 # --- 반응 다섯 가지 -------------------------------------------------------------
 
-def test_five_reactions_are_counted_not_shown_on_the_dashboard(client, db, users):
-    """반응 다섯 가지는 **업무 보고**에서 본다 — 날짜별로 훑어야 하는 자료라
-    거기가 맞는 자리다. 대시보드에는 타일이 없어야 한다.
+def test_the_dashboard_shows_the_five_reactions(client, db, users):
+    """아침에 대시보드만 열어도 "반응이 있긴 한가" 는 알아야 한다.
+    날짜별로 훑는 것은 업무 보고에서 하고, 여기서는 **숫자만** 본다.
 
     끝난 미팅은 다음 할 일이 다르다 — 열흘 뒤 결과를 물어봐야 하고, 그걸
-    놓치면 계약을 통째로 잊는다. 요청과 완료를 나눠 센다(집계 자체는 유지).
+    놓치면 계약을 통째로 잊는다. 요청과 완료를 나눠 센다.
     """
     from datetime import date
 
@@ -738,10 +738,13 @@ def test_five_reactions_are_counted_not_shown_on_the_dashboard(client, db, users
 
     body = _dash(client)
     for label in ("IR 요청 투자사", "IR 미팅 요청 투자사", "IR 요청받은 기업",
-                  "IR 미팅완료 투자사", "IR 미팅완료 리마인드 TEL 투자사"):
-        assert label not in body, f"'{label}' 타일이 대시보드에 남아 있다"
+                  "IR 미팅완료 투자사", "미팅완료 리마인드 TEL"):
+        assert label in body, f"'{label}' 타일이 없다"
+    # 숫자를 누르면 그 목록으로 가야 한다 — 세기만 하면 다음 할 일을 모른다
+    assert "/ir#reviews" in body
+    # 날짜별로 훑는 자리도 가리킨다
+    assert "/report" in body
 
-    # 집계 로직 자체는 그대로 살아 있다 — 업무 보고·엑셀 내려받기가 쓴다
     from app.services.dashboard import _reaction_summary
     summary = _reaction_summary(db, [c1.id, c2.id])
     assert summary["meeting_done"] == 2
@@ -921,11 +924,43 @@ def test_imported_history_counts_too(db, users):
 
 
 def test_the_count_is_user_selectable(client, db, users):
+    """새로고침 없이 바꾼다 — 대시보드 전체를 다시 그리면 스크롤이 맨 위로
+    튀고, 이 목록 하나 보려고 나머지를 다 기다린다."""
     client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
-    for n in (10, 15, 20):
-        body = client.get(f"/?top={n}").text
-        assert f'href="/?top={n}"' in body, f"{n}명 고르는 링크가 없다"
+    body = client.get("/").text
+    for n in (10, 20, 30):
+        assert f'data-n="{n}"' in body, f"{n}명 고르는 단추가 없다"
+
+    # 목록만 따로 주는 길이 있어야 화면을 다시 안 그린다
+    r = client.get("/api/dashboard/top-requesters?top=20")
+    assert r.status_code == 200
+    assert "rows" in r.json()
 
     # 터무니없는 값은 범위 안으로 접는다
     assert client.get("/?top=999").status_code == 200
-    assert client.get("/?top=1").status_code == 200
+    assert client.get("/api/dashboard/top-requesters?top=999").status_code == 200
+
+
+def test_clicking_a_requester_opens_their_detail(client, db, users):
+    """무엇을 좋아하는지(선호 분야·라운드) 보려고 누르는 자리다.
+    목록만 띄우면 333명 중에서 다시 찾아야 한다."""
+    from datetime import date
+
+    from app.models import IrRequest, SheetOwner, VcContact
+
+    db.add(SheetOwner(label="내 명단", user_id=users["u1"].id))
+    contact = VcContact(user_id=users["u1"].id, name="홍길동", firm="가나벤처스",
+                        source_sheet="내 명단")
+    db.add(contact)
+    db.commit()
+    db.add(IrRequest(user_id=users["u1"].id, contact_id=contact.id,
+                     company_name="샘플애그", status="open",
+                     requested_at=date.today().isoformat()))
+    db.commit()
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    assert f'/contacts?contact={contact.id}' in client.get("/").text
+
+    # 그 주소로 가면 상세가 열린 채로 뜬다
+    page = client.get(f"/contacts?contact={contact.id}").text
+    assert f"window.DEALFLOW_OPEN_CONTACT = {contact.id}" in page

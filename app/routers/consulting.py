@@ -48,16 +48,36 @@ TAIL_COLUMNS = [
 
 
 def require_access(user: User) -> None:
-    """관리자이거나, 이 화면을 보도록 허용된 계정이어야 한다."""
-    if user.role == "admin" or user.can_view_consulting:
+    """관리자이거나, 이 화면을 보도록 허용된 계정이어야 한다.
+
+    투자컨설턴트 계정은 이 화면이 전부다 — 따로 켜 줄 필요가 없다.
+    """
+    if user.role in ("admin", "consultant") or user.can_view_consulting:
         return
     raise HTTPException(status_code=403, detail="이 화면을 볼 권한이 없습니다")
+
+
+# 표에 한 번에 보여줄 월 수. 달마다 한 칸씩 늘어나는 표라, 그냥 두면 한 해
+# 뒤에는 열두 칸이 되어 가로로 밀어야 읽힌다. 실제로 챙기는 것은 최근 몇
+# 달뿐이다.
+VISIBLE_MONTHS = 3
 
 
 def _columns(db: Session) -> List[ConsultingColumn]:
     return db.execute(
         select(ConsultingColumn).order_by(ConsultingColumn.position, ConsultingColumn.id)
     ).scalars().all()
+
+
+def _split_columns(columns: List[ConsultingColumn], show_all: bool = False) -> tuple:
+    """(보여줄 월, 접어 둔 월).
+
+    **접었다는 것을 사람이 알아야 한다** — 그냥 안 보이면 지워진 줄 안다.
+    화면에 몇 달이 접혀 있는지 적고, 눌러서 펼 수 있게 한다.
+    """
+    if show_all or len(columns) <= VISIBLE_MONTHS:
+        return columns, []
+    return columns[:VISIBLE_MONTHS], columns[VISIBLE_MONTHS:]
 
 
 def _notes(company: ConsultingCompany) -> Dict[str, str]:
@@ -101,13 +121,20 @@ def company_rows(db: Session) -> List[dict]:
 
 @router.get("/consulting", response_class=HTMLResponse, include_in_schema=False)
 def consulting_page(request: Request, db: Session = Depends(get_db),
-                    user: User = Depends(get_current_user), msg: str = ""):
+                    user: User = Depends(get_current_user), msg: str = "",
+                    months: str = ""):
     require_access(user)
     rows = company_rows(db)
+    # 달마다 한 칸씩 늘어나는 표라, 최근 몇 달만 펴 둔다.
+    # `months=all` 은 일부러 다 본다는 뜻이다.
+    shown, hidden = _split_columns(_columns(db), show_all=(months == "all"))
     ctx = base_ctx(request, db, user, active="consult")
     ctx.update({
         "rows": rows,
-        "columns": _columns(db),
+        "columns": shown,
+        # **접었다는 것을 사람이 알아야 한다** — 그냥 안 보이면 지워진 줄 안다.
+        "hidden_columns": hidden,
+        "show_all_months": months == "all",
         "fixed_columns": FIXED_COLUMNS,
         "tail_columns": TAIL_COLUMNS,
         "msg": msg,

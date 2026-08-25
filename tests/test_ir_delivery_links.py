@@ -36,9 +36,9 @@ def stage(client, db, users):
     batch = DealBatch(user_id=users["u1"].id, title="8월 3주차",
                       sent_date="2026-08-19")
     db.add_all([contact, agri, medi, batch,
+                # 인사는 인사말이 맡는다 — 여기에 또 넣으면 두 번 나간다
                 MessageTemplate(user_id=None, kind="ir_delivery", is_active=1,
-                                body="{담당자명} {직함} 안녕하세요.\n"
-                                     "{기업목록} IR deck 먼저 전달드리겠습니다.\n\n"
+                                body="{기업목록} IR deck 먼저 전달드리겠습니다.\n\n"
                                      "{자료링크}")])
     db.commit()
 
@@ -203,29 +203,26 @@ def test_the_agent_is_given_the_order(stage, db):
 
 # --- 인사말 --------------------------------------------------------------------
 
-def test_no_greeting_by_default(stage):
-    """자료 전달은 **자료를 달라고 한 답장에 이어** 보내는 것이다.
-
-    "안녕하세요" 로 다시 시작하면 처음 연락하는 것처럼 읽히고, 자료 전달 문구가
-    이미 `{담당자명} {직함} 안녕하세요.` 로 시작하므로 **인사가 두 번** 나간다.
-    """
+def test_the_greeting_appears_exactly_once(stage):
+    """인사말은 모든 방식에서 기본으로 붙는다. 자료 전달 문구가 자체적으로
+    인사로 시작하면 **두 번** 나가므로, 그 문구는 본문만 담는다."""
     body = _preview(stage, [stage["agri"].id])["message"]
     assert body.count("안녕하세요") == 1, body
 
 
-def test_the_screen_starts_with_the_box_unchecked(stage):
-    """서버 기본값이 맞아도, 화면 체크박스가 켜져 있으면 그 값을 덮어쓴다 —
-    실제로 그래서 인사가 두 번 나갔다."""
+def test_the_greeting_is_on_by_default_except_when_asking(stage):
+    """빼는 것은 선호 분야를 되물을 때뿐이다 — 그건 이미 대화가 오간 방에
+    한 줄만 덧붙이는 것이라 다시 인사하면 어색하다."""
     js = pathlib.Path("app/static/js/deals.js").read_text(encoding="utf-8")
-    assert 'greet.checked = !askMode && mode !== "ir"' in js
+    assert 'greet.checked = (mode !== "ask")' in js
 
 
-def test_it_can_still_be_turned_on(stage):
-    """켜고 끄는 것은 사람이 정한다 — 기본값만 바꾼 것이다."""
+def test_it_can_still_be_turned_off(stage):
+    """켜고 끄는 것은 사람이 정한다 — 기본값만 정해 둔 것이다."""
     r = stage["client"].post("/api/deals/preview", json={
         "mode": "ir", "contact_ids": [stage["contact"].id],
-        "company_ids": [stage["agri"].id], "include_opening": True})
-    assert r.json()["previews"][0]["message"].count("안녕하세요") == 2
+        "company_ids": [stage["agri"].id], "include_opening": False})
+    assert "안녕하세요" not in r.json()["previews"][0]["message"]
 
 
 def test_deal_intro_still_greets(stage):

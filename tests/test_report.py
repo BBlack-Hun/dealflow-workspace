@@ -285,3 +285,52 @@ def test_the_call_list_skips_what_needs_no_call(db, users):
     data = report.monthly(db, 2026, 6, users["u1"], today=date(2026, 7, 1))
     call = next(b for b in data["buckets"] if b["key"] == "call")
     assert call["rows"] == []
+
+
+# --- 연간 요약 -----------------------------------------------------------------
+
+def test_yearly_sums_the_months(db, users):
+    """"올해 몇 건이나 했나" 를 보려고 열두 달을 하나씩 눌러 보고 있었다.
+
+    각 달의 요약을 그대로 쓴다 — 두 곳에서 따로 세면 반드시 갈라진다.
+    """
+    from app.services import report
+
+    _meeting(db, users, date(2026, 3, 10), who="삼월사람")
+    _meeting(db, users, date(2026, 8, 12), who="팔월사람")
+
+    got = report.yearly(db, 2026, users["u1"], today=date(2026, 12, 31))
+    assert len(got["months"]) == 12, "빈 달도 자리를 지켜야 흐름이 보인다"
+    assert got["totals"]["total"] == 2
+
+    # 달별 값이 월간 보고와 같아야 한다
+    for m in got["months"]:
+        one = report.monthly(db, 2026, m["month"], users["u1"],
+                             today=date(2026, 12, 31))
+        assert m["total"] == one["total"], f"{m['label']} 이 월간과 다르다"
+
+
+def test_yearly_page_opens_and_links_back_to_months(client, db, users):
+    _meeting(db, users, date(2026, 8, 12), who="팔월사람")
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    body = client.get("/report?span=year&year=2026").text
+    assert "2026년 · 달별" in body
+    # 달을 누르면 그 달 보고로 간다
+    assert "/report?month=2026-08" in body
+
+
+def test_the_picker_is_a_dropdown_not_buttons(client, db, users):
+    """단추로 늘어놓으면 두 해치가 스무 개가 넘어 줄바꿈되고, 정작 찾는
+    달이 어디 있는지 안 보인다."""
+    import re
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    body = client.get("/report").text
+
+    picker = body[body.index("report-picker"):body.index("kpi-row")]
+    assert "<select" in picker
+    # 달 단추가 줄줄이 늘어서 있으면 안 된다
+    assert len(re.findall(r'class="chip[^"]*"[^>]*>\d+년 \d+월', picker)) == 0
+    # 월간·연간은 남긴다 — 두 개뿐이라 눈에 보이는 편이 낫다
+    assert ">월간<" in picker and ">연간<" in picker

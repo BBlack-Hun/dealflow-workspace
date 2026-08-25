@@ -32,16 +32,36 @@ from ..ui import base_ctx
 
 router = APIRouter(tags=["dashboard"])
 
+# 만들 수 있는 권한.
+#   user       — 딜소개를 하는 사람
+#   consultant — 투자컨설턴트 현황만 본다 (딜소개를 하지 않는다)
+#   admin      — 팀 전체를 본다
+ROLES = {"user", "consultant", "admin"}
+
 
 @router.get("/dashboard", response_class=HTMLResponse, include_in_schema=False)
 def dashboard_page(request: Request, db: Session = Depends(get_db),
                    user: User = Depends(get_current_user), top: int = 10):
-    # '내 투자사 선호'를 몇 명까지 볼지 — 10~20 사이에서 사용자가 고른다.
-    top_n = min(max(top, 5), 20)
+    # '내 투자사 선호'를 몇 명까지 볼지 — 10·20·30 중에서 고른다.
+    top_n = min(max(top, 5), 30)
     ctx = base_ctx(request, db, user, active="home")
     ctx.update(dash.user_dashboard(db, user, top_n=top_n))
     ctx["top_n"] = top_n
     return templates.TemplateResponse("dashboard.html", ctx)
+
+
+@router.get("/api/dashboard/top-requesters")
+def top_requesters_api(db: Session = Depends(get_db),
+                       user: User = Depends(get_current_user), top: int = 10):
+    """'내 투자사 선호' 목록만. 개수를 바꿀 때 대시보드 전체를 다시 그리면
+    스크롤이 맨 위로 튀고, 이 목록 하나 보려고 나머지를 다 기다린다."""
+    from ..services import sheet_owner
+    from ..services.dashboard import top_requesters
+
+    top_n = min(max(top, 5), 30)
+    # 담당은 명단(시트) 단위다 — 화면과 같은 범위여야 수가 맞는다.
+    ids = [c.id for c in sheet_owner.my_contacts(db, user)]
+    return {"rows": top_requesters(db, ids, limit=top_n)}
 
 
 @router.get("/todo", response_class=HTMLResponse, include_in_schema=False)
@@ -263,17 +283,26 @@ def team_page(request: Request, db: Session = Depends(get_db),
 @router.get("/report", response_class=HTMLResponse, include_in_schema=False)
 def report_page(request: Request, db: Session = Depends(get_db),
                 user: User = Depends(get_current_user),
-                month: str = "", scope: str = "", member: int = 0):
+                month: str = "", scope: str = "", member: int = 0,
+                span: str = "month", year: str = ""):
     """주간·월간 업무 보고. 시트에 손으로 옮겨 적던 표를 기록에서 뽑는다."""
     from datetime import date as _date
 
     today = _date.today()
-    year, mon = today.year, today.month
+    year_, mon = today.year, today.month
     if month:
         try:
-            year, mon = (int(x) for x in month.split("-")[:2])
+            year_, mon = (int(x) for x in month.split("-")[:2])
         except (ValueError, TypeError):
             pass
+    # 연간 보기는 해만 고른다 — "올해 몇 건이나 했나" 를 보려고 열두 달을
+    # 하나씩 눌러 보고 있었다.
+    if year:
+        try:
+            year_ = int(year)
+        except (ValueError, TypeError):
+            pass
+    yearly_view = span == "year"
     # 관리자는 팀 전체를 볼 수 있다. 기본은 본인 것.
     team_wide = user.role == "admin" and scope == "team"
     # 관리자는 팀원 한 사람 것만 따로 볼 수도 있어야 한다 — 전체만 보면
@@ -284,7 +313,11 @@ def report_page(request: Request, db: Session = Depends(get_db),
         if picked is not None:
             target, team_wide = picked, False
     ctx = base_ctx(request, db, user, active="report")
-    ctx.update(report.monthly(db, year, mon, None if team_wide else target, today))
+    who = None if team_wide else target
+    if yearly_view:
+        ctx.update(report.yearly(db, year_, who, today))
+    else:
+        ctx.update(report.monthly(db, year_, mon, who, today))
     ctx.update({
         "viewing": None if team_wide else target,
         "members": ([{"id": u.id, "name": u.name} for u in
@@ -292,8 +325,15 @@ def report_page(request: Request, db: Session = Depends(get_db),
                     if user.role == "admin" else []),
     })
     ctx.update({
-        "months": [(y, m, f"{y}-{m:02d}") for y, m in report.recent_months(today)],
-        "selected": f"{year}-{mon:02d}",
+        # 달·해를 드롭다운으로 고른다. 단추로 늘어놓으면 두 해치가 스무 개가
+        # 넘어 줄바꿈되고, 정작 찾는 달이 어디 있는지 안 보인다.
+        "month_options": [(y, m, f"{y}-{m:02d}")
+                          for y, m in report.recent_months(today, count=36)],
+        "year_options": report.selectable_years(today),
+        "selected": f"{year_}-{mon:02d}",
+        "selected_year": year_,
+        "yearly_view": yearly_view,
+        "span": span,
         "team_wide": team_wide,
         "can_team": user.role == "admin",
         "scope": scope,
@@ -340,6 +380,11 @@ def create_member(
         role = "user"
     if db.execute(select(User).where(User.phone == normalized)).scalars().first():
         return RedirectResponse("/team?msg=이미+등록된+번호입니다", status_code=303)
+
+    # 폼에서 온 값을 그대로 넣으면 오타 하나로 아무 메뉴도 못 보는 계정이
+    # 생긴다(권한 판정이 전부 이 값으로 갈린다).
+    if role not in ROLES:
+        role = "user"
 
     member = User(name=name.strip() or normalized, phone=normalized, role=role,
                   password_hash=auth_svc.hash_password(config.INITIAL_PASSWORD),

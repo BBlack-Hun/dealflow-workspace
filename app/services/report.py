@@ -242,3 +242,43 @@ def recent_months(today: Optional[date] = None, count: int = 24) -> List[tuple]:
         if month == 0:
             year, month = year - 1, 12
     return out
+
+
+def yearly(db: Session, year: int, user: Optional[User] = None,
+           today: Optional[date] = None) -> dict:
+    """한 해치 보고 — 달마다 한 줄.
+
+    "올해 몇 건이나 했나" 를 보려고 열두 달을 하나씩 눌러 보고 있었다.
+    각 달의 요약을 그대로 쓰므로 숫자가 월간 보고와 어긋나지 않는다.
+    """
+    today = today or date.today()
+    months, totals = [], {"total": 0, "done": 0, "followup_done": 0,
+                          "followup_open": 0, "followup_late": 0,
+                          "ir_requested": 0, "ir_delivered": 0, "ir_open": 0}
+    for mon in range(1, 13):
+        got = monthly(db, year, mon, user, today)
+        months.append({
+            "month": mon,
+            "label": f"{mon}월",
+            **{k: got[k] for k in totals},
+        })
+        for k in totals:
+            totals[k] += got[k]
+
+    outcome_counts: Dict[str, int] = {}
+    for mon in range(1, 13):
+        for label, n in monthly(db, year, mon, user, today)["outcomes"]:
+            outcome_counts[label] = outcome_counts.get(label, 0) + n
+
+    return {
+        "year": year,
+        "months": months,
+        "totals": totals,
+        "outcomes": sorted(outcome_counts.items(), key=lambda t: -t[1]),
+    }
+
+
+def selectable_years(today: Optional[date] = None, back: int = 3) -> List[int]:
+    """고를 수 있는 해. 앞으로도 한 해 열어 둔다 — 12월에 내년 일정을 잡는다."""
+    today = today or date.today()
+    return list(range(today.year - back, today.year + 2))

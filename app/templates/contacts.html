@@ -203,7 +203,6 @@
         <th style="width:118px">이름</th>
         <th style="width:60px" data-filters="assignee:담당자">담당자<div class="th-filters"></div></th>
         <th style="width:200px" data-filters="owner:투자사명">투자사명<div class="th-filters"></div></th>
-        <th style="width:82px" data-filters="room:초대완료여부">초대<div class="th-filters"></div></th>
         <th style="width:150px" data-filters="sector:선호 투자분야">선호 투자분야<div class="th-filters"></div></th>
         <th data-filters="stage:라운드사이즈">라운드 사이즈<div class="th-filters"></div></th>
         <th style="width:88px" data-filters="dealstage:진행 단계">진행 단계<div class="th-filters"></div></th>
@@ -217,6 +216,8 @@
           data-f-owner="{{ r.owner }}"
           data-f-assignee="{{ r.assignee }}"
           data-f-connect="{{ r.connect_label }}"
+          {# 초대 컬럼은 감췄지만 거르는 기능은 살려 둔다 —
+             방 연결 확인 뒤 "미등록만 보기" 를 쓴다. #}
           data-f-room="{{ r.room_label }}"
           data-f-stage="{{ r.stages|join('|') }}"
           data-f-sector="{{ r.sectors|join('|') }}"
@@ -234,12 +235,6 @@
         </td>
         <td class="cell" data-field="assignee_name" data-type="pick">{{ r.assignee }}</td>
         <td class="cell ellipsis" data-field="firm" title="{{ r.firm }}">{{ r.firm }}</td>
-        <td>
-          <span class="room-dot {{ r.room_class }}"
-                title="{{ r.room_name or '카톡방 이름 미등록' }}">{{ r.room_label }}</span>
-          <div class="cell-sub muted cell room-edit" data-field="kakao_room_name"
-               title="눌러서 카톡방 이름을 고칩니다">{{ r.room_name or '방 이름 없음' }}</div>
-        </td>
         <td title="{{ r.sectors|join(', ') }}">
           <div class="cell clamp2" data-field="sectors" data-type="long">{{ r.sectors|join(', ') }}</div>
         </td>
@@ -335,6 +330,7 @@
 </aside>
 {% endblock %}
 {% block scripts %}
+<script>window.DEALFLOW_OPEN_CONTACT = {{ open_contact or 0 }};</script>
 <script src="{{ asset('js/inline_edit.js') }}"></script>
 <script src="{{ asset('js/pool_assign.js') }}"></script>
 <script src="{{ asset('js/filters.js') }}"></script>

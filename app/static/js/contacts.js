@@ -246,3 +246,12 @@
     attributes: true, attributeFilter: ["hidden"], subtree: true
   });
 })();
+
+// 대시보드의 '내 투자사 선호'에서 눌러 오면 그 사람 상세를 바로 연다.
+// 목록만 띄우면 333명 중에서 다시 찾아야 한다 — 무엇을 좋아하는지 보려고
+// 누른 것이므로 선호 분야·라운드 사이즈가 바로 보여야 한다.
+(function () {
+  var id = window.DEALFLOW_OPEN_CONTACT;
+  if (!id) return;
+  loadContact(id);
+})();

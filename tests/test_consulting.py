@@ -281,3 +281,81 @@ def test_only_admin_can_change_it(client, db, users):
     client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
     r = client.post(f"/team/members/{users['u2'].id}/consulting")
     assert r.status_code == 403
+
+
+# --- 투자컨설턴트 전용 계정 -----------------------------------------------------
+
+def test_consultant_sees_only_their_screen(client, db, users):
+    """딜소개를 하지 않는 사람이라 발송·투자사 명단을 보여줄 이유가 없다 —
+    볼 수 있으면 실수로 건드린다."""
+    from app.ui import visible_menu
+
+    users["u1"].role = "consultant"
+    db.commit()
+
+    keys = [m["key"] for m in visible_menu(users["u1"])]
+    assert keys == ["consult"], keys
+
+
+def test_consultant_can_open_the_page_without_the_extra_flag(client, db, users):
+    """계정 자체가 그 화면 전용이다 — 따로 켜 줄 필요가 없다."""
+    users["u1"].role = "consultant"
+    users["u1"].can_view_consulting = 0
+    db.commit()
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    assert client.get("/consulting").status_code == 200
+
+
+def test_consultant_lands_on_their_screen(client, db, users):
+    """대시보드를 볼 이유가 없다."""
+    users["u1"].role = "consultant"
+    db.commit()
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    r = client.get("/", follow_redirects=False)
+    assert r.status_code == 303
+    assert r.headers["location"] == "/consulting"
+
+
+# --- 월 컬럼 접기 ---------------------------------------------------------------
+
+def test_only_recent_months_are_shown(client, db, users):
+    """달마다 한 칸씩 늘어나는 표라, 한 해 뒤에는 열두 칸이 되어 가로로
+    밀어야 읽힌다. 실제로 챙기는 것은 최근 몇 달뿐이다."""
+    from app.models import ConsultingColumn
+    from app.routers.consulting import VISIBLE_MONTHS, _split_columns
+
+    cols = [ConsultingColumn(label=f"{m}월 리마인드", position=i)
+            for i, m in enumerate(range(12, 0, -1))]
+    shown, hidden = _split_columns(cols)
+    assert len(shown) == VISIBLE_MONTHS
+    assert len(hidden) == 12 - VISIBLE_MONTHS
+    # 최근 것이 남는다
+    assert shown[0].label == "12월 리마인드"
+
+    # 일부러 다 보겠다고 하면 접지 않는다
+    all_shown, none_hidden = _split_columns(cols, show_all=True)
+    assert len(all_shown) == 12 and none_hidden == []
+
+
+def test_the_user_is_told_that_months_are_folded(client, db, users):
+    """그냥 안 보이면 지워진 줄 안다."""
+    from app.models import ConsultingColumn
+
+    for i, m in enumerate(range(12, 0, -1)):
+        db.add(ConsultingColumn(label=f"{m}월 리마인드", position=i))
+    db.commit()
+
+    users["u1"].can_view_consulting = 1
+    db.commit()
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+
+    body = client.get("/consulting").text
+    assert "접어 두었습니다" in body
+    assert "지워진 것이 아닙니다" in body
+    assert "/consulting?months=all" in body
+
+    # 펴면 다 보인다
+    opened = client.get("/consulting?months=all").text
+    assert "1월 리마인드" in opened
