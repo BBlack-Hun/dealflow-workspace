@@ -145,7 +145,21 @@
         <input type="checkbox" id="only-picked-contacts"> 선택한 것만
       </label>
     </div>
+    {#
+      갈래 필터. 갈래가 곧 문구라, 이름을 검색창에 쳐서 찾게 하면 갈래가
+      몇 개인지도 모른 채 골라야 한다.
+    #}
+    <div class="bucket-filter" id="bucket-filter" hidden>
+      <button type="button" class="chip active" data-bucket="">
+        전체 <b>{{ sourcing_contacts|length }}</b></button>
+      {% for b in sourcing_buckets %}
+      <button type="button" class="chip" data-bucket="{{ b.name }}">
+        {{ b.name }} <b>{{ b.count }}</b></button>
+      {% endfor %}
+    </div>
     <p class="hint" id="contact-filter-note" hidden></p>
+    {# 갈래를 섞어 고르면 사람마다 다른 문구가 나간다 — 알고 골라야 한다. #}
+    <p class="hint warn" id="bucket-mix-note" hidden></p>
     <p class="hint" id="contact-summary" hidden></p>
     <div class="card-list" id="contact-list">
       {% for c in contacts %}
@@ -186,7 +200,7 @@
     #}
     <div class="card-list" id="sourcing-list" hidden>
       {% for c in sourcing_contacts %}
-      <label class="pick-card"
+      <label class="pick-card" data-bucket="{{ c.bucket }}"
              data-search="{{ (c.name ~ ' ' ~ (c.title or '') ~ ' ' ~ (c.firm or '') ~ ' ' ~ (c.bucket or '') ~ ' ' ~ (c.sectors or '') ~ ' ' ~ (c.kakao_room_name or ''))|lower }}">
         <input type="checkbox" class="contact-cb" value="{{ c.id }}" data-name="{{ c.name }}">
         <div class="pick-body">

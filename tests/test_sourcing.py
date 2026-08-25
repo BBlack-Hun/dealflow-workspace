@@ -98,6 +98,27 @@ def test_the_sourcing_list_is_its_own_picker(seeded):
     assert "시리즈 A 이상" in picker
 
 
+def test_buckets_are_a_filter_not_a_search_term(seeded):
+    """갈래 이름을 검색창에 쳐서 찾게 하면 갈래가 몇 개인지도 모른 채 골라야 한다."""
+    body = seeded.get("/deals").text
+    bar = body[body.index('id="bucket-filter"'):]
+    bar = bar[:bar.index("</div>")]
+
+    assert 'data-bucket=""' in bar and "전체" in bar
+    assert 'data-bucket="시리즈 A 이상"' in bar
+    assert 'data-bucket="M&amp;A 찾는 투자사"' in bar
+    # 어디에 사람이 있는지 알아야 어느 갈래부터 볼지 정한다
+    assert "<b>2</b>" in bar
+
+
+def test_each_card_carries_its_bucket(seeded):
+    """카드에 갈래가 없으면 눌러서 거를 수가 없다."""
+    body = seeded.get("/deals").text
+    picker = body[body.index('id="sourcing-list"'):]
+    assert 'data-bucket="시리즈 A 이상"' in picker
+    assert 'data-bucket="M&amp;A 찾는 투자사"' in picker
+
+
 def test_preview_uses_the_bucket_script(seeded, db):
     """갈래마다 호칭·개수가 다르다. 틀리면 문구 자체가 결례가 된다."""
     from app.models import SourcingContact

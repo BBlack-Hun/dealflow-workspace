@@ -82,6 +82,19 @@ def deals_page(
     sourcing_contacts = db.execute(
         select(SourcingContact).order_by(SourcingContact.position, SourcingContact.id)
     ).scalars().all()
+    # 갈래는 곧 문구다. 이름을 검색창에 쳐서 찾게 하면 갈래가 몇 개인지도
+    # 모른 채 골라야 하므로, 누를 수 있는 필터로 내놓는다. 순서는 명단과
+    # 같게 — 좌측 [딜 소싱] 탭에서 보던 순서 그대로여야 헷갈리지 않는다.
+    sourcing_buckets = []
+    for c in sourcing_contacts:
+        if not sourcing_buckets or sourcing_buckets[-1]["name"] != c.bucket:
+            match = next((b for b in sourcing_buckets if b["name"] == c.bucket), None)
+            if match is None:
+                sourcing_buckets.append({"name": c.bucket, "count": 0})
+                match = sourcing_buckets[-1]
+        else:
+            match = sourcing_buckets[-1]
+        match["count"] += 1
     ctx = _base_ctx(request, db, user, "deal")
     # 매 회차 같은 기업을 또 보내면 받는 쪽에서는 지난번을 기억 못 한다고 읽는다.
     history = deal_history.annotate(companies, deal_history.last_sent_map(db))
@@ -96,6 +109,7 @@ def deals_page(
         "recent_days": deal_history.RECENT_DAYS,
         "contacts": contacts,
         "sourcing_contacts": sourcing_contacts,
+        "sourcing_buckets": sourcing_buckets,
         "no_reaction_ids": no_reaction_ids,
         # 메일 채널은 설정이 있어야 고를 수 있다.
         # 고를 수 있는데 나가지 않는 것이 제일 나쁘다.

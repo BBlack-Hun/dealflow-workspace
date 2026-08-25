@@ -173,6 +173,13 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
 .chip { font-size: 12px; padding: 5px 12px; border-radius: 999px; border: 1px solid var(--line);
         background: #fff; cursor: pointer; font-weight: 600; color: var(--muted); }
 .chip:hover { border-color: var(--brand); color: var(--brand); }
+/* 고른 칩이 안 고른 칩과 똑같이 생기면 무엇을 보고 있는지 알 수 없다.
+   (딜 소싱 갈래 필터 · 주간 업무 주차 · 대시보드 10/20/30 이 함께 쓴다) */
+.chip.active { background: #e6efff; border-color: var(--brand); color: var(--brand); }
+.chip b { font-variant-numeric: tabular-nums; }
+
+/* 딜 소싱 갈래 필터 — 갈래가 곧 문구라, 검색창에 이름을 치는 대신 누른다 */
+.bucket-filter { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 6px; }
 .density-toggle { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 4px; }
 .primary-btn.inline { width: auto; margin: 0; padding: 8px 14px; font-size: 13px; }
 

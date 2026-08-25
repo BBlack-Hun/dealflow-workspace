@@ -99,25 +99,64 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     var pickedOnly = onlyPicked && onlyPicked.checked;
     var shown = 0, total = 0;
 
-    var box = activeList();
-    (box ? box.querySelectorAll(".pick-card") : []).forEach(function (card) {
+    var list = activeList();
+    (list ? list.querySelectorAll(".pick-card") : []).forEach(function (card) {
       var cb = card.querySelector(".contact-cb");
       var picked = cb && cb.checked;
       var hit = !q || (card.getAttribute("data-search") || "").indexOf(q) !== -1;
+      // 갈래 필터는 소싱 목록에만 있다. 고른 사람은 갈래를 바꿔도 계속 보인다 —
+      // 사라지면 몇 명 골랐는지 알 수 없다(검색과 같은 규칙).
+      var inBucket = !bucketFilter || card.getAttribute("data-bucket") === bucketFilter;
       total += 1;
-      var visible = picked || (hit && !pickedOnly);
+      var visible = picked || (hit && inBucket && !pickedOnly);
       card.hidden = !visible;
       if (visible) shown += 1;
     });
 
     if (note) {
-      if (q || pickedOnly) {
+      if (q || pickedOnly || bucketFilter) {
         note.hidden = false;
         note.textContent = shown + " / " + total + "명 표시 중" +
-          (q ? " (검색: " + box.value.trim() + ")" : "");
+          (q ? " (검색: " + box.value.trim() + ")" : "") +
+          (bucketFilter ? " (갈래: " + bucketFilter + ")" : "");
       } else {
         note.hidden = true;
       }
+    }
+  }
+
+  // ── 갈래 필터 ─────────────────────────────────────────────
+  // 갈래가 곧 문구다. 이름을 검색창에 쳐서 찾게 하면 갈래가 몇 개인지도
+  // 모른 채 골라야 한다.
+  var bucketFilter = "";
+  var bucketBar = document.getElementById("bucket-filter");
+  if (bucketBar) bucketBar.addEventListener("click", function (e) {
+    var chip = e.target.closest(".chip");
+    if (!chip) return;
+    bucketFilter = chip.getAttribute("data-bucket") || "";
+    bucketBar.querySelectorAll(".chip").forEach(function (c) {
+      c.classList.toggle("active", c === chip);
+    });
+    applyContactFilter();
+  });
+
+  function syncBucketMixNote() {
+    var note = document.getElementById("bucket-mix-note");
+    if (!note) return;
+    if (mode !== "sourcing") { note.hidden = true; return; }
+    var picked = {};
+    contactCbs().forEach(function (c) {
+      if (!c.checked) return;
+      var card = c.closest(".pick-card");
+      if (card) picked[card.getAttribute("data-bucket") || ""] = true;
+    });
+    var names = Object.keys(picked);
+    // 갈래를 섞어도 사람마다 제 갈래의 문구가 나간다 — 사고는 아니지만
+    // 모르고 섞으면 미리보기에서 다른 문구를 보고 놀란다.
+    note.hidden = names.length < 2;
+    if (!note.hidden) {
+      note.textContent = "갈래 " + names.length + "개가 섞여 있습니다 — " +
+        "갈래마다 다른 문구가 나갑니다 (" + names.join(" · ") + ")";
     }
   }
 
@@ -278,6 +317,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
                        : (nc > MAX_COMPANIES ? "기업은 최대 " + MAX_COMPANIES + "개까지" : ""));
     if (mode === "ir") renderIrLinks();
 
+    syncBucketMixNote();
     // 고른 사람 이름을 보여준다 — 숫자만으로는 누구를 넣었는지 알 수 없다.
     var names = contactCbs().filter(function (c) { return c.checked; })
       .map(function (c) { return c.getAttribute("data-name"); });
@@ -348,6 +388,15 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     var noReactBtn = document.getElementById("select-noreact");
     // 소싱 명단에는 '반응' 이라는 개념이 없다 — 아직 보낸 적이 없다.
     if (noReactBtn) noReactBtn.hidden = sourcingMode;
+    if (bucketBar) {
+      bucketBar.hidden = !sourcingMode;
+      // 갈래 필터를 켜 둔 채 다른 탭으로 갔다 오면, 왜 사람이 적은지 모른다.
+      bucketFilter = "";
+      bucketBar.querySelectorAll(".chip").forEach(function (c, i) {
+        c.classList.toggle("active", i === 0);
+      });
+    }
+    applyContactFilter();
     document.getElementById("mode-help").textContent =
       mode === "ir"
         ? "요청받은 기업을 고르면, 자료를 먼저 보내고 안내 문구를 뒤에 보냅니다"
