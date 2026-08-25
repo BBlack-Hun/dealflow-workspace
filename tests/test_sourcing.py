@@ -98,17 +98,37 @@ def test_the_sourcing_list_is_its_own_picker(seeded):
     assert "시리즈 A 이상" in picker
 
 
+def _filter_bar(body: str, bar_id: str) -> str:
+    chunk = body[body.index('id="%s"' % bar_id):]
+    return chunk[:chunk.index("</div>")]
+
+
 def test_buckets_are_a_filter_not_a_search_term(seeded):
     """갈래 이름을 검색창에 쳐서 찾게 하면 갈래가 몇 개인지도 모른 채 골라야 한다."""
-    body = seeded.get("/deals").text
-    bar = body[body.index('id="bucket-filter"'):]
-    bar = bar[:bar.index("</div>")]
+    bar = _filter_bar(seeded.get("/deals").text, "bucket-filter")
 
-    assert 'data-bucket=""' in bar and "전체" in bar
-    assert 'data-bucket="시리즈 A 이상"' in bar
-    assert 'data-bucket="M&amp;A 찾는 투자사"' in bar
+    assert 'data-value=""' in bar and "전체" in bar
+    assert 'data-value="시리즈 A 이상"' in bar
+    assert 'data-value="M&amp;A 찾는 투자사"' in bar
     # 어디에 사람이 있는지 알아야 어느 갈래부터 볼지 정한다
     assert "<b>2</b>" in bar
+
+
+def test_assignee_is_a_filter_too(seeded, db):
+    """39명을 통째로 훑는 것과 내 담당만 보는 것은 다른 일이다."""
+    from app.models import SourcingContact
+
+    for name, who in (("홍길동", "이영희"), ("김철수", "최민수")):
+        db.query(SourcingContact).filter_by(name=name).update({"assignee_name": who})
+    db.commit()
+
+    body = seeded.get("/deals").text
+    bar = _filter_bar(body, "assignee-filter")
+    assert 'data-value="이영희"' in bar
+    assert 'data-value="최민수"' in bar
+    # 카드에 담당이 없으면 눌러서 거를 수가 없다
+    picker = body[body.index('id="sourcing-list"'):]
+    assert 'data-assignee="이영희"' in picker
 
 
 def test_each_card_carries_its_bucket(seeded):
@@ -117,6 +137,15 @@ def test_each_card_carries_its_bucket(seeded):
     picker = body[body.index('id="sourcing-list"'):]
     assert 'data-bucket="시리즈 A 이상"' in picker
     assert 'data-bucket="M&amp;A 찾는 투자사"' in picker
+
+
+def test_the_sheets_summary_tail_is_not_a_name(seeded):
+    """`이영희 (총 4명)` 을 그대로 두면 같은 사람이 둘로 갈린다."""
+    from scripts.import_sourcing import assignee
+
+    assert assignee("이영희 (총 4명)") == "이영희"
+    assert assignee("최민수 (총 7명)") == "최민수"
+    assert assignee("정하늘") == "정하늘"
 
 
 def test_preview_uses_the_bucket_script(seeded, db):

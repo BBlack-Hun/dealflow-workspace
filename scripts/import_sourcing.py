@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -48,6 +49,15 @@ def text(value) -> str:
     out = str(value).replace("\r", "").strip()
     # 구글 시트가 좁은 칸을 `#####` 로 내보낸다 — 값이 아니라 화면 표시다.
     return "" if out and set(out) == {"#"} else out
+
+
+# 시트의 담당자 칸에는 이름 뒤에 요약이 붙어 있다 — `홍길동 (총 4명)`.
+# 그대로 두면 같은 사람이 둘로 갈려서, 담당으로 거를 때 한쪽이 사라진다.
+SUMMARY_TAIL = re.compile(r"\s*\(\s*총\s*\d+\s*명?\s*\)\s*$")
+
+
+def assignee(value: str) -> str:
+    return SUMMARY_TAIL.sub("", value).strip()
 
 
 def header_row(ws) -> int:
@@ -97,6 +107,8 @@ def main() -> None:
                 if field == "name":
                     continue
                 value = text(ws.cell(r, col).value)
+                if field == "assignee_name":
+                    value = assignee(value)
                 if value:
                     setattr(row, field, value)
             db.add(row)

@@ -95,6 +95,15 @@ def deals_page(
         else:
             match = sourcing_buckets[-1]
         match["count"] += 1
+    # 담당(우리 쪽 심사역)도 거를 수 있어야 한다 — 39명을 통째로 훑는 것과
+    # 내 담당 14명만 보는 것은 다른 일이다. 많은 순으로 둔다.
+    counted: dict = {}
+    for c in sourcing_contacts:
+        who = (c.assignee_name or "").strip()
+        if who:
+            counted[who] = counted.get(who, 0) + 1
+    sourcing_assignees = [{"name": k, "count": v} for k, v in
+                          sorted(counted.items(), key=lambda kv: (-kv[1], kv[0]))]
     ctx = _base_ctx(request, db, user, "deal")
     # 매 회차 같은 기업을 또 보내면 받는 쪽에서는 지난번을 기억 못 한다고 읽는다.
     history = deal_history.annotate(companies, deal_history.last_sent_map(db))
@@ -110,6 +119,7 @@ def deals_page(
         "contacts": contacts,
         "sourcing_contacts": sourcing_contacts,
         "sourcing_buckets": sourcing_buckets,
+        "sourcing_assignees": sourcing_assignees,
         "no_reaction_ids": no_reaction_ids,
         # 메일 채널은 설정이 있어야 고를 수 있다.
         # 고를 수 있는데 나가지 않는 것이 제일 나쁘다.

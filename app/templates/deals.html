@@ -149,13 +149,26 @@
       갈래 필터. 갈래가 곧 문구라, 이름을 검색창에 쳐서 찾게 하면 갈래가
       몇 개인지도 모른 채 골라야 한다.
     #}
-    <div class="bucket-filter" id="bucket-filter" hidden>
-      <button type="button" class="chip active" data-bucket="">
-        전체 <b>{{ sourcing_contacts|length }}</b></button>
-      {% for b in sourcing_buckets %}
-      <button type="button" class="chip" data-bucket="{{ b.name }}">
-        {{ b.name }} <b>{{ b.count }}</b></button>
-      {% endfor %}
+    <div class="pick-filters" id="sourcing-filters" hidden>
+      <div class="filter-line" id="bucket-filter">
+        <span class="filter-label">갈래</span>
+        <button type="button" class="chip active" data-value="">
+          전체 <b>{{ sourcing_contacts|length }}</b></button>
+        {% for b in sourcing_buckets %}
+        <button type="button" class="chip" data-value="{{ b.name }}">
+          {{ b.name }} <b>{{ b.count }}</b></button>
+        {% endfor %}
+      </div>
+      {# 우리 쪽 담당 심사역. 39명을 통째로 훑는 것과 내 담당만 보는 것은
+         다른 일이다. #}
+      <div class="filter-line" id="assignee-filter">
+        <span class="filter-label">담당</span>
+        <button type="button" class="chip active" data-value="">전체</button>
+        {% for a in sourcing_assignees %}
+        <button type="button" class="chip" data-value="{{ a.name }}">
+          {{ a.name }} <b>{{ a.count }}</b></button>
+        {% endfor %}
+      </div>
     </div>
     <p class="hint" id="contact-filter-note" hidden></p>
     {# 갈래를 섞어 고르면 사람마다 다른 문구가 나간다 — 알고 골라야 한다. #}
@@ -201,6 +214,7 @@
     <div class="card-list" id="sourcing-list" hidden>
       {% for c in sourcing_contacts %}
       <label class="pick-card" data-bucket="{{ c.bucket }}"
+             data-assignee="{{ c.assignee_name or '' }}"
              data-search="{{ (c.name ~ ' ' ~ (c.title or '') ~ ' ' ~ (c.firm or '') ~ ' ' ~ (c.bucket or '') ~ ' ' ~ (c.sectors or '') ~ ' ' ~ (c.kakao_room_name or ''))|lower }}">
         <input type="checkbox" class="contact-cb" value="{{ c.id }}" data-name="{{ c.name }}">
         <div class="pick-body">

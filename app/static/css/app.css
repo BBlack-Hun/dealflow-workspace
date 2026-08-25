@@ -178,8 +178,14 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
 .chip.active { background: #e6efff; border-color: var(--brand); color: var(--brand); }
 .chip b { font-variant-numeric: tabular-nums; }
 
-/* 딜 소싱 갈래 필터 — 갈래가 곧 문구라, 검색창에 이름을 치는 대신 누른다 */
-.bucket-filter { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 6px; }
+/* 딜 소싱 필터(갈래 · 담당) — 검색창에 이름을 치는 대신 누른다.
+   줄마다 무엇을 거르는지 앞에 적는다. 칩만 두 줄 있으면 아래 줄이 무엇인지
+   모른다. */
+.pick-filters { margin: 8px 0 6px; }
+.filter-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  margin-bottom: 6px; }
+.filter-label { font-size: 11px; font-weight: 700; color: var(--muted);
+  min-width: 30px; }
 .density-toggle { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 4px; }
 .primary-btn.inline { width: auto; margin: 0; padding: 8px 14px; font-size: 13px; }
 

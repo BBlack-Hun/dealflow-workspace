@@ -107,38 +107,61 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       // 갈래 필터는 소싱 목록에만 있다. 고른 사람은 갈래를 바꿔도 계속 보인다 —
       // 사라지면 몇 명 골랐는지 알 수 없다(검색과 같은 규칙).
       var inBucket = !bucketFilter || card.getAttribute("data-bucket") === bucketFilter;
+      var inAssignee = !assigneeFilter ||
+        card.getAttribute("data-assignee") === assigneeFilter;
       total += 1;
-      var visible = picked || (hit && inBucket && !pickedOnly);
+      var visible = picked || (hit && inBucket && inAssignee && !pickedOnly);
       card.hidden = !visible;
       if (visible) shown += 1;
     });
 
     if (note) {
-      if (q || pickedOnly || bucketFilter) {
+      if (q || pickedOnly || bucketFilter || assigneeFilter) {
         note.hidden = false;
         note.textContent = shown + " / " + total + "명 표시 중" +
           (q ? " (검색: " + box.value.trim() + ")" : "") +
-          (bucketFilter ? " (갈래: " + bucketFilter + ")" : "");
+          (bucketFilter ? " (갈래: " + bucketFilter + ")" : "") +
+          (assigneeFilter ? " (담당: " + assigneeFilter + ")" : "");
       } else {
         note.hidden = true;
       }
     }
   }
 
-  // ── 갈래 필터 ─────────────────────────────────────────────
-  // 갈래가 곧 문구다. 이름을 검색창에 쳐서 찾게 하면 갈래가 몇 개인지도
-  // 모른 채 골라야 한다.
+  // ── 소싱 필터(갈래 · 담당) ────────────────────────────────
+  // 갈래는 곧 문구이고, 담당은 누구를 챙길 차례인가다. 둘 다 이름을 검색창에
+  // 쳐서 찾게 하면 무엇이 몇 개인지도 모른 채 골라야 한다.
   var bucketFilter = "";
-  var bucketBar = document.getElementById("bucket-filter");
-  if (bucketBar) bucketBar.addEventListener("click", function (e) {
-    var chip = e.target.closest(".chip");
-    if (!chip) return;
-    bucketFilter = chip.getAttribute("data-bucket") || "";
-    bucketBar.querySelectorAll(".chip").forEach(function (c) {
-      c.classList.toggle("active", c === chip);
+  var assigneeFilter = "";
+  var filterBox = document.getElementById("sourcing-filters");
+
+  function bindFilter(id, set) {
+    var bar = document.getElementById(id);
+    if (!bar) return null;
+    bar.addEventListener("click", function (e) {
+      var chip = e.target.closest(".chip");
+      if (!chip) return;
+      set(chip.getAttribute("data-value") || "");
+      bar.querySelectorAll(".chip").forEach(function (c) {
+        c.classList.toggle("active", c === chip);
+      });
+      applyContactFilter();
     });
-    applyContactFilter();
-  });
+    return bar;
+  }
+  var bucketBar = bindFilter("bucket-filter", function (v) { bucketFilter = v; });
+  var assigneeBar = bindFilter("assignee-filter", function (v) { assigneeFilter = v; });
+
+  function resetSourcingFilters() {
+    bucketFilter = "";
+    assigneeFilter = "";
+    [bucketBar, assigneeBar].forEach(function (bar) {
+      if (!bar) return;
+      bar.querySelectorAll(".chip").forEach(function (c, i) {
+        c.classList.toggle("active", i === 0);
+      });
+    });
+  }
 
   function syncBucketMixNote() {
     var note = document.getElementById("bucket-mix-note");
@@ -388,13 +411,10 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     var noReactBtn = document.getElementById("select-noreact");
     // 소싱 명단에는 '반응' 이라는 개념이 없다 — 아직 보낸 적이 없다.
     if (noReactBtn) noReactBtn.hidden = sourcingMode;
-    if (bucketBar) {
-      bucketBar.hidden = !sourcingMode;
-      // 갈래 필터를 켜 둔 채 다른 탭으로 갔다 오면, 왜 사람이 적은지 모른다.
-      bucketFilter = "";
-      bucketBar.querySelectorAll(".chip").forEach(function (c, i) {
-        c.classList.toggle("active", i === 0);
-      });
+    if (filterBox) {
+      filterBox.hidden = !sourcingMode;
+      // 필터를 켜 둔 채 다른 탭으로 갔다 오면, 왜 사람이 적은지 모른다.
+      resetSourcingFilters();
     }
     applyContactFilter();
     document.getElementById("mode-help").textContent =
