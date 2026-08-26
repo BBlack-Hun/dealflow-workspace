@@ -16,7 +16,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import config
-from ..models import AgentDevice, IrCompany, MessageTemplate, SendItem, SendJob, User
+from ..models import (SEND_KINDS, AgentDevice, IrCompany, MessageTemplate,
+                      SendItem, SendJob, User)
 from . import cadence, pipeline, sheet_owner
 from .dashboard import _SENDABLE_ROOM, _room_state
 
@@ -134,6 +135,7 @@ def _rehearsal_check(db: Session, user: User, today: date) -> dict:
         select(func.count()).select_from(SendItem)
         .join(SendJob, SendJob.id == SendItem.job_id)
         .where(SendJob.user_id == user.id, SendItem.status == "sent",
+               SendJob.kind.in_(SEND_KINDS),
                func.coalesce(SendItem.sent_at, "") >= cutoff)
     ).scalar() or 0
     if recent:

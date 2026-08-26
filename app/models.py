@@ -309,6 +309,17 @@ class SendJob(TimestampMixin, Base):
     )
 
 
+#: **실제로 문구가 나간** 잡 종류.
+#:
+#: `verify_room`(방 연결 확인)은 방 제목만 대조하고 아무것도 보내지 않는데,
+#: 끝난 건이 `status="sent"` 로 남아서 발송 건수에 함께 세어졌다(방 확인만
+#: 눌렀는데 이번 주 보낸 건수가 116건으로 찍혔다).
+#:
+#: 세는 곳이 여럿이라 각자 걸러 두면 한 곳이 빠진다 — 실제로 네 곳이 빠져
+#: 있었다. 여기 한 곳만 보게 한다.
+SEND_KINDS = ("deal_intro", "ir_delivery", "sourcing_intro")
+
+
 class SendItem(TimestampMixin, Base):
     __tablename__ = "send_items"
 

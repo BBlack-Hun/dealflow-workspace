@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from . import cadence, mailer, pipeline, sheet_owner
 from .. import version
 from ..models import (
+    SEND_KINDS,
     AgentDevice,
     IrRequest,
     Meeting,
@@ -291,6 +292,8 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None,
         select(SendItem.contact_id)
         .join(SendJob, SendJob.id == SendItem.job_id)
         .where(SendJob.user_id == user.id, SendItem.status == "sent",
+               # 방 연결 확인은 아무것도 보내지 않는다 — 발송으로 세면 안 된다.
+               SendJob.kind.in_(SEND_KINDS),
                func.coalesce(SendItem.sent_at, "") >= week_start.isoformat())
     ).scalars().all()
     sent_this_week = len(sent_rows)
@@ -472,7 +475,7 @@ def admin_dashboard(db: Session, today: Optional[date] = None) -> dict:
     sent_rows = db.execute(
         select(SendJob.user_id, func.count())
         .select_from(SendItem).join(SendJob, SendJob.id == SendItem.job_id)
-        .where(SendItem.status == "sent",
+        .where(SendItem.status == "sent", SendJob.kind.in_(SEND_KINDS),
                func.coalesce(SendItem.sent_at, "").startswith(month_prefix))
         .group_by(SendJob.user_id)
     ).all()

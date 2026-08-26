@@ -975,10 +975,10 @@ def test_clicking_a_requester_opens_their_detail(client, db, users):
 # 한 달 단위로 세면 월초에는 늘 0 에 가깝고 월말에만 커진다 — 이번 주에 얼마나
 # 나갔는지는 알 수 없다. 회차가 격주라 **주간**이 실제 일하는 단위다.
 
-def _sent(db, users, contact_id, when):
+def _sent(db, users, contact_id, when, kind="deal_intro"):
     from app.models import SendItem, SendJob
 
-    job = SendJob(user_id=users["u1"].id, kind="deal_intro", status="done",
+    job = SendJob(user_id=users["u1"].id, kind=kind, status="done",
                   total=1, sent=1, failed=0)
     db.add(job)
     db.flush()
@@ -1031,4 +1031,48 @@ def test_the_count_links_to_the_people_it_counted(client, db, users):
     kpi = next(k for k in dash.user_dashboard(db, users["u1"], top_n=10)["kpis"]
                if k["key"] == "sent")
     assert kpi["href"] == f"/deals?contacts={target}"
+
+def test_room_checks_are_not_sends(client, db, users):
+    """방 연결 확인은 방 제목만 대조하고 **아무것도 보내지 않는다.**
+
+    끝난 건이 `status="sent"` 로 남는 탓에 발송 건수에 함께 세어졌다 —
+    방 확인만 눌렀는데 이번 주 보낸 건수가 116건으로 찍혔다.
+    """
+    from datetime import date, timedelta
+
+    from app.services import dashboard as dash
+
+    today = date.today()
+    monday = today - timedelta(days=today.weekday())
+    ids = _two_contacts(db, users)
+    when = monday.isoformat() + "T09:00:00+09:00"
+
+    _sent(db, users, ids[0], when, kind="verify_room")
+    kpi = next(k for k in dash.user_dashboard(db, users["u1"], top_n=10)["kpis"]
+               if k["key"] == "sent")
+    assert kpi["value"] == 0, "방 확인이 발송으로 세어졌다"
+
+    # 진짜 발송은 세어진다
+    _sent(db, users, ids[1], when, kind="deal_intro")
+    kpi = next(k for k in dash.user_dashboard(db, users["u1"], top_n=10)["kpis"]
+               if k["key"] == "sent")
+    assert kpi["value"] == 1
+
+
+def test_every_send_kind_counts(client, db, users):
+    """IR 자료 전달·딜 소싱 제안도 보낸 것이다 — 딜소개만 세면 빠진다."""
+    from datetime import date, timedelta
+
+    from app.services import dashboard as dash
+
+    today = date.today()
+    monday = today - timedelta(days=today.weekday())
+    ids = _two_contacts(db, users)
+    when = monday.isoformat() + "T09:00:00+09:00"
+
+    _sent(db, users, ids[0], when, kind="ir_delivery")
+    _sent(db, users, ids[1], when, kind="sourcing_intro")
+    kpi = next(k for k in dash.user_dashboard(db, users["u1"], top_n=10)["kpis"]
+               if k["key"] == "sent")
+    assert kpi["value"] == 2
 

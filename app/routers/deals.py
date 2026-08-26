@@ -14,6 +14,7 @@ from .. import config
 from ..db import get_db
 from ..deps import get_current_user, now_iso
 from ..models import (
+    SEND_KINDS,
     DealBatch,
     DealBatchCompany,
     IrCompany,
@@ -75,7 +76,9 @@ def _template_body(db: Session, user_id: int, kind: str, fallback: str) -> str:
 
 def _has_history(db: Session, contact_id: int) -> bool:
     return db.query(
-        exists().where(SendItem.contact_id == contact_id, SendItem.status == "sent")
+        exists().where(SendItem.contact_id == contact_id, SendItem.status == "sent",
+                       SendItem.job_id.in_(
+                           select(SendJob.id).where(SendJob.kind.in_(SEND_KINDS))))
     ).scalar()
 
 
@@ -221,6 +224,7 @@ def deal_positions(db: Session, contact_id: int) -> dict:
         select(SendJob.batch_id)
         .join(SendItem, SendItem.job_id == SendJob.id)
         .where(SendItem.contact_id == contact_id, SendItem.status == "sent",
+               SendJob.kind.in_(SEND_KINDS),
                SendJob.batch_id.isnot(None))
         .order_by(SendItem.id.desc()).limit(1)
     ).scalar()
