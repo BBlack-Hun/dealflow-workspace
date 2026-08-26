@@ -1,0 +1,59 @@
+# 운영 배포 (OCI Ampere A1 · Ubuntu · Docker Compose)
+#
+# 개발용 docker-compose.yml 과 다른 점:
+#   - 포트를 밖으로 열지 않는다. Caddy 만 80/443 을 잡고 안쪽으로 넘긴다.
+#     8889 를 열어 두면 도메인을 우회해 http 로 그냥 들어올 수 있다.
+#   - DB 를 **블록 볼륨**에 둔다. named volume 은 인스턴스를 지우면 같이 간다.
+#   - 가짜 발송기(agent-mock)가 없다. 실제 발송은 각자 PC 의 에이전트가 한다.
+#   - DEALFLOW_ENV=production — 기본 토큰·비밀번호면 뜨지 않는다.
+#
+#   docker compose -f deploy/docker-compose.prod.yml up -d --build
+
+services:
+  web:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: dealflow:prod
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    env_file: [.env]
+    environment:
+      TZ: "${TZ:-Asia/Seoul}"
+      # 기본 토큰·비밀번호를 쓰면 여기서 멈춘다(app/config.py assert_ready).
+      DEALFLOW_ENV: "production"
+      RUN_MIGRATIONS: "1"
+      DATABASE_URL: "sqlite:////app/data/dealflow.db"
+    volumes:
+      # 왼쪽은 **블록 볼륨 마운트 지점**이다. 부트 볼륨에 두면 인스턴스를
+      # 다시 만들 때 명단이 통째로 사라진다.
+      - /mnt/dealflow/data:/app/data
+    expose: ["8000"]            # 호스트에 열지 않는다 — Caddy 만 본다
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    env_file: [.env]
+    environment:
+      TZ: "${TZ:-Asia/Seoul}"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # 인증서. 지우면 Let's Encrypt 발급 한도에 걸릴 수 있다.
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

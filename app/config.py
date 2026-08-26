@@ -24,8 +24,16 @@ CURRENT_USER_ID = int(os.environ.get("DEALFLOW_CURRENT_USER_ID", "1"))
 # 컨테이너를 다시 띄웠다가 화면에 샘플 기업이 섞여 보인 적이 있다.
 SEED_DEMO = os.getenv("DEALFLOW_SEED_DEMO", "0") == "1"
 
+# ── 어디서 도는가 ─────────────────────────────────────────────────────────────
+# 로컬(기본)이면 편하게 쓰라고 기본값을 준다. 인터넷에 올릴 때는 그 기본값이
+# 그대로 구멍이 된다 — **저장소가 공개**라 기본 토큰·비밀번호를 누구나 안다.
+# `DEALFLOW_ENV=production` 이면 기본값을 쓰는 것을 막는다(아래 assert_ready).
+ENV = os.environ.get("DEALFLOW_ENV", "local").strip().lower()
+IS_PRODUCTION = ENV == "production"
+
 # Demo agent token seeded into agent_devices and shared with the mock agent container.
-DEMO_AGENT_TOKEN = os.environ.get("DEALFLOW_AGENT_TOKEN", "agt_demo_token_sprint1")
+DEFAULT_AGENT_TOKEN = "agt_demo_token_sprint1"
+DEMO_AGENT_TOKEN = os.environ.get("DEALFLOW_AGENT_TOKEN", DEFAULT_AGENT_TOKEN)
 
 # An agent is considered "connected" if it polled/heartbeat within this many seconds.
 AGENT_ONLINE_WINDOW_SEC = int(os.environ.get("DEALFLOW_AGENT_ONLINE_WINDOW_SEC", "30"))
@@ -35,7 +43,52 @@ MESSAGE_WARN_CHARS = 3000
 
 # 신규 계정의 초기 비밀번호. 전원 동일하게 발급하고, 첫 로그인 시 변경을 강제한다
 # (must_change_password=1). 운영에서는 반드시 .env 로 바꿔서 쓸 것.
-INITIAL_PASSWORD = os.environ.get("DEALFLOW_INITIAL_PASSWORD", "dealflow123")
+DEFAULT_INITIAL_PASSWORD = "dealflow123"
+INITIAL_PASSWORD = os.environ.get("DEALFLOW_INITIAL_PASSWORD", DEFAULT_INITIAL_PASSWORD)
+
+
+def production_problems() -> list:
+    """인터넷에 올리기 전에 반드시 바꿔야 하는 것들.
+
+    주석으로 "운영에서는 바꿔 쓸 것" 이라고 적어 두었지만, 적어 둔 것은
+    지켜지지 않는다. 여기서 **뜨지 않게** 막는다.
+
+    - 초기 비밀번호: 계정을 새로 만들면 이 값으로 발급된다. 저장소가 공개라
+      **이미 아무나 아는 값**이고, 첫 로그인 전까지 그 계정으로 들어올 수 있다.
+    - 데모 데이터: 실데이터 위에 가상 기업·담당자가 섞인다.
+    - 에이전트 토큰: 평소에는 계정별 난수라 이 기본값이 쓰이지 않는다. 다만
+      데모 시드가 켜지면 이 값으로 기기가 등록되고, 그러면 발송 대기열을
+      가져갈 수 있는 열쇠가 된다. 둘이 겹치는 사고를 막는 이중 잠금이다.
+    """
+    problems = []
+    if DEMO_AGENT_TOKEN == DEFAULT_AGENT_TOKEN:
+        problems.append(
+            "DEALFLOW_AGENT_TOKEN 이 저장소 기본값입니다 — 데모 시드가 켜지면 "
+            "이 공개된 값으로 기기가 등록됩니다. "
+            "`openssl rand -hex 24` 로 만들어 .env 에 넣으세요")
+    if INITIAL_PASSWORD == DEFAULT_INITIAL_PASSWORD:
+        problems.append(
+            "DEALFLOW_INITIAL_PASSWORD 가 저장소 기본값입니다 — "
+            "새 계정이 공개된 비밀번호로 발급됩니다")
+    if SEED_DEMO:
+        problems.append(
+            "DEALFLOW_SEED_DEMO=1 입니다 — 실데이터에 가상 기업·담당자가 섞입니다")
+    return problems
+
+
+def assert_ready() -> None:
+    """운영이면 문제가 있는 채로 뜨지 않는다.
+
+    조용히 뜨고 나면 아무도 확인하지 않는다. 시작을 막고 무엇을 고쳐야 하는지
+    그 자리에서 알려 주는 편이 낫다.
+    """
+    if not IS_PRODUCTION:
+        return
+    problems = production_problems()
+    if problems:
+        raise RuntimeError(
+            "운영 설정이 덜 됐습니다 (DEALFLOW_ENV=production):\n  - "
+            + "\n  - ".join(problems))
 
 # ── 테스트 모드 ───────────────────────────────────────────────────────────────
 # 값이 있으면 **모든 발송이 이 카톡방 하나로만** 나간다(실제 담당자 방으로 가지 않음).
