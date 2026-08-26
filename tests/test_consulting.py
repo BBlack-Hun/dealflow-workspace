@@ -453,3 +453,49 @@ def test_an_upload_belongs_to_whoever_uploaded_it(client, db, users):
     owners = {c.user_id for c in db.query(ConsultingCompany).all()}
     assert owners == {users["u1"].id}
 
+def test_the_contract_sheet_is_a_tab_too(client, db, users):
+    """머리글 있는 표가 아니라고 건너뛰면 화면에서 아예 볼 수 없다."""
+    from app.models import ConsultingCompany
+    from app.routers.consulting import SHEETS
+
+    assert "월간 계약 업무현황표" in SHEETS
+
+    users["u1"].can_view_consulting = 1
+    db.add(ConsultingCompany(user_id=users["u1"].id, sheet="월간 계약 업무현황표",
+                             position=1, region="6월", management="무료",
+                             company_name="샘플기업/ 무료/ 3.5%/ 미정"))
+    db.commit()
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    body = client.get("/consulting?sheet=%EC%9B%94%EA%B0%84%20%EA%B3%84%EC%95%BD%20%EC%97%85%EB%AC%B4%ED%98%84%ED%99%A9%ED%91%9C").text
+    assert "샘플기업/ 무료/ 3.5%/ 미정" in body
+
+
+def test_the_contract_sheet_reads_month_and_kind_from_the_line(tmp_path):
+    """왼쪽 라벨은 병합 때문에 줄과 어긋나 있다 — 줄 안에 적힌 것을 믿는다."""
+    import sys
+
+    sys.path.insert(0, "scripts")
+    from import_consulting import parse_contract_sheet
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    for row in [
+        ["", ""],
+        ["6월  (무료계약 2개사 / 유료계약 3개사)", ""],
+        ["무료 계약", "기업명 / 계약금액 / 성공보수율 / 계약일"],
+        ["유료 계약", "샘플가/ 무료/ 3.5%/ 미정"],      # 라벨은 '유료' 인데 줄은 '무료'
+        ["", "샘플나/무료/4%/미정"],
+        ["", ""],
+        ["7월 ( 무료계약 3개사 )", ""],
+        ["무료계약", "기업명 / 계약금액 / 성공보수율 / 계약일"],
+        ["", "샘플다/ 유료 90만/ 3프로 / 미정"],
+    ]:
+        ws.append(row)
+
+    got = parse_contract_sheet(ws)
+    assert [(g["month"], g["kind"]) for g in got] == [
+        ("6월", "무료"), ("6월", "무료"), ("7월", "유료")]
+    # 머리글 줄은 값이 아니다
+    assert all("기업명 /" not in g["line"] for g in got)
+

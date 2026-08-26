@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -55,6 +56,44 @@ def text(value) -> str:
     return "" if out.startswith("=") else out
 
 
+# `월간 계약 업무현황표` 는 다른 두 시트와 모양이 다르다. 머리글이 있는 표가
+# 아니라 **월 묶음 + 슬래시 한 줄**이다:
+#
+#     6월  (무료계약 2개사 / 유료계약 3개사)
+#     기업명 / 계약금액 / 성공보수율 / 계약일
+#     제이제이엔에스/ 무료/ 3.5%/ 미정
+#
+# 이 모양 때문에 처음엔 건너뛰었는데, 그러면 화면에서 이 표를 아예 볼 수 없다.
+# `company_name` 이 원래 `기업명/계약일/무료유료/계약금` 을 한 칸에 담는 칸이라
+# 슬래시 줄을 그대로 넣고, 월과 무료·유료만 따로 뽑아 옆에 세운다.
+CONTRACT_SHEET = "월간 계약 업무현황표"
+_MONTH_LINE = re.compile(r"^\s*(\d{1,2})\s*월")
+_HEADER_LINE = re.compile(r"기업명\s*/")
+
+
+def parse_contract_sheet(ws) -> list:
+    """월 묶음 자유 서식 → 줄 목록."""
+    out, month = [], ""
+    for r in range(1, ws.max_row + 1):
+        label = text(ws.cell(r, 1).value)
+        body = text(ws.cell(r, 2).value)
+
+        m = _MONTH_LINE.match(label) or _MONTH_LINE.match(body)
+        if m and "/" not in (label + body).replace(m.group(0), "", 1)[:3]:
+            month = f"{int(m.group(1))}월"
+            continue
+        if not body or _HEADER_LINE.search(body):
+            continue          # 머리글 줄은 값이 아니다
+        if "/" not in body:
+            continue          # 계약 줄이 아니다
+
+        # 무료·유료는 줄 안에 적혀 있다. 왼쪽 라벨은 병합 때문에 줄과
+        # 어긋나 있어(3행이 '무료 계약', 4행이 '유료 계약') 믿을 수 없다.
+        kind = "유료" if "유료" in body else ("무료" if "무료" in body else "")
+        out.append({"month": month, "kind": kind, "line": body})
+    return out
+
+
 def header_row(ws) -> int:
     """머리글 행. 시트마다 4~5행이다(위에 제목·요약이 붙어 있다)."""
     for r in range(1, 8):
@@ -68,6 +107,8 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="투자컨설턴트 현황 가져오기")
     ap.add_argument("path")
     ap.add_argument("--apply", action="store_true", help="실제로 저장")
+    ap.add_argument("--owner", type=int, default=0,
+                    help="이 표의 주인(users.id). 투자컨설턴트 현황은 사람별이다")
     args = ap.parse_args()
 
     wb = openpyxl.load_workbook(args.path)
@@ -77,6 +118,23 @@ def main() -> None:
     for sheet_name in wb.sheetnames:
         ws = wb[sheet_name]
         sheet = sheet_name.strip()
+        # 계약 현황표는 머리글 있는 표가 아니라 월 묶음 자유 서식이다.
+        if CONTRACT_SHEET in sheet:
+            lines = parse_contract_sheet(ws)
+            db.execute(delete(ConsultingCompany)
+                       .where(ConsultingCompany.sheet == sheet))
+            db.execute(delete(ConsultingColumn)
+                       .where(ConsultingColumn.sheet == sheet))
+            for pos, item in enumerate(lines, start=1):
+                db.add(ConsultingCompany(
+                    sheet=sheet, position=pos, user_id=args.owner or None,
+                    region=item["month"],            # 어느 달의 계약인가
+                    management=item["kind"],         # 무료 / 유료
+                    company_name=item["line"]))      # 기업명/계약금액/보수율/계약일
+            total += len(lines)
+            print(f"  {sheet:22} {len(lines):3}건 (월 묶음)")
+            continue
+
         hr = header_row(ws)
         head = [(c, text(ws.cell(hr, c).value)) for c in range(1, ws.max_column + 1)]
         if not any("기업" in h for _c, h in head):
@@ -96,7 +154,8 @@ def main() -> None:
 
         cols = []
         for pos, (c, label) in enumerate(month_cols):
-            col = ConsultingColumn(sheet=sheet, label=label, position=pos)
+            col = ConsultingColumn(sheet=sheet, label=label, position=pos,
+                                   user_id=args.owner or None)
             db.add(col)
             cols.append((c, col))
         db.flush()
@@ -106,7 +165,8 @@ def main() -> None:
             name = text(ws.cell(r, where["company_name"]).value) if "company_name" in where else ""
             if not name:
                 continue
-            row = ConsultingCompany(sheet=sheet, position=n + 1, company_name=name)
+            row = ConsultingCompany(sheet=sheet, position=n + 1, company_name=name,
+                                    user_id=args.owner or None)
             for field, c in where.items():
                 if field == "company_name":
                     continue
