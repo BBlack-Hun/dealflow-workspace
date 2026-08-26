@@ -164,8 +164,12 @@
       {% endfor %}
     </div>
     <ul class="legend">
+      {# 세는 것만 보여주고 갈 곳이 없으면, 그 6명이 누구인지 알 수 없다. #}
       {% for r in rooms %}
-      <li><span class="dot {{ r.level }}"></span>{{ r.label }} <b>{{ r.count }}</b></li>
+      <li>
+        {% if r.href %}<a href="{{ r.href }}"><span class="dot {{ r.level }}"></span>{{ r.label }} <b>{{ r.count }}</b></a>
+        {% else %}<span class="dot {{ r.level }}"></span>{{ r.label }} <b>{{ r.count }}</b>{% endif %}
+      </li>
       {% endfor %}
     </ul>
     <p class="hint">방 제목이 실제와 한 글자라도 다르면 그 담당자에게는 발송되지 않습니다(잘못 나가지는 않습니다).</p>
@@ -182,10 +186,14 @@
     #}
     <h2 class="panel-title">내 투자사 선호
       <span class="hint">IR 자료를 많이 요청한 순</span>
+      {# 몇 명이 걸렸는지 보여야 한다 — 50명으로 놓고 12명만 나오면
+         "왜 적지" 가 아니라 "요청한 사람이 12명" 이라는 뜻이다. #}
+      <span class="count-pill {% if top_requesters %}on{% endif %}"
+            id="req-rank-count"><b>{{ top_requesters|length }}</b>명</span>
       <span class="top-pick">
         {# 새로고침 없이 바꾼다 — 대시보드 전체를 다시 그리면 스크롤이
            맨 위로 튀고, 이 목록 하나 보려고 나머지를 다 기다린다. #}
-        {% for n in [10, 20, 30] %}
+        {% for n in top_choices %}
         <button type="button" class="chip js-top-n {% if top_n == n %}active{% endif %}"
                 data-n="{{ n }}">{{ n }}명</button>
         {% endfor %}

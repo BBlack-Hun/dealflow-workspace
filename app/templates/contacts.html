@@ -223,6 +223,7 @@
         <th style="width:150px" data-filters="sector:선호 투자분야">선호 투자분야<div class="th-filters"></div></th>
         <th data-filters="stage:라운드사이즈">라운드 사이즈<div class="th-filters"></div></th>
         <th style="width:88px" data-filters="dealstage:진행 단계">진행 단계<div class="th-filters"></div></th>
+        <th style="width:74px" data-filters="channel:채널">채널<div class="th-filters"></div></th>
         <th style="width:44px"></th>
       </tr>
     </thead>
@@ -233,6 +234,7 @@
           data-f-owner="{{ r.owner }}"
           data-f-assignee="{{ r.assignee }}"
           data-f-connect="{{ r.connect_label }}"
+          data-f-channel="{{ r.channel_label }}"
           {# 초대 컬럼은 감췄지만 거르는 기능은 살려 둔다 —
              방 연결 확인 뒤 "미등록만 보기" 를 쓴다. #}
           data-f-room="{{ r.room_label }}"
@@ -259,6 +261,8 @@
           <div class="cell clamp2" data-field="round_size" data-type="long">{{ r.round_size }}</div>
         </td>
         <td><span class="stage-pill {{ r.deal_stage_cls }}">{{ r.deal_stage_label }}</span></td>
+        {# 대시보드의 '메일 채널' · '채널 미지정' 에서 눌러 오면 이 칸으로 걸러진다. #}
+        <td class="muted">{{ r.channel_label }}</td>
         <td><button type="button" class="linkbtn js-detail">수정</button></td>
       </tr>
       {% endfor %}

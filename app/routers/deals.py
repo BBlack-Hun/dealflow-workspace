@@ -322,6 +322,36 @@ def _load_companies(db: Session, company_ids: List[int]) -> List[IrCompany]:
     return companies
 
 
+class _SampleRecipient:
+    """담당자를 고르기 전에 보여 줄 **가상의 받는 사람**.
+
+    문구를 확인하려고 아무나 한 명 체크했다가 그대로 발송을 누르는 일이
+    있었다. 고르지 않아도 기본 문구가 보이면 그럴 이유가 없다.
+
+    이름을 `○○○` 로 두는 것은 일부러다 — 진짜 이름이 보이면 그 사람에게
+    나갈 문구로 읽힌다.
+    """
+
+    id = 0
+    name = "○○○"
+    title = "심사역"
+    firm = "○○벤처스"
+    kakao_room_name = ""
+    room_verified = "unverified"
+
+    def __init__(self, bucket: str = ""):
+        self.bucket = bucket
+
+
+def _sample_bucket(db: Session) -> str:
+    """소싱 기본 문구는 갈래마다 다르다 — 첫 갈래를 보여 준다."""
+    row = db.execute(
+        select(SourcingContact).order_by(SourcingContact.position,
+                                         SourcingContact.id)
+    ).scalars().first()
+    return row.bucket if row else ""
+
+
 def _load_recipients(db: Session, user: User, mode: str, ids: List[int]) -> List:
     """이 방식이 보내는 대상. 화면에서 고른 순서를 지킨다.
 
@@ -406,7 +436,11 @@ def preview(
     user: User = Depends(get_current_user),
 ):
     """Per-contact composed message previews (FEATURE_SPEC §5 ⑤)."""
-    if req.mode in MODES_WITH_COMPANIES and not (1 <= len(req.company_ids) <= MAX_COMPANIES_PER_SEND):
+    # 아무도 안 골랐으면 **기본 문구**를 보여 준다. 문구를 확인하려고
+    # 아무나 한 명 체크했다가 그대로 발송을 누르는 일이 있었다.
+    sample = not req.contact_ids
+    if (not sample and req.mode in MODES_WITH_COMPANIES
+            and not (1 <= len(req.company_ids) <= MAX_COMPANIES_PER_SEND)):
         raise HTTPException(
             status_code=400,
             detail=f"기업은 1~{MAX_COMPANIES_PER_SEND}개 선택하세요",
@@ -414,12 +448,16 @@ def preview(
     companies = _load_companies(db, req.company_ids) if req.mode in MODES_WITH_COMPANIES else []
     previews = []
     sourcing = req.mode == MODE_SOURCING
-    for contact in _load_recipients(db, user, req.mode, req.contact_ids):
+    recipients = ([_SampleRecipient(_sample_bucket(db) if sourcing else "")]
+                  if sample else _load_recipients(db, user, req.mode, req.contact_ids))
+    for contact in recipients:
         result = _compose_for_contact(db, user, contact, companies,
                                       req.opening_template_id, req.closing_template_id,
                                       mode=req.mode,
                                       include_opening=req.include_opening)
         room_ok = bool(contact.kakao_room_name) and contact.room_verified in ("verified", "unverified")
+        if sample:
+            room_ok = True          # 가상의 사람에게 방을 물을 것이 없다
         # 투자분야/단계/라운드 규모 적합도 — 성향과 어긋나는 딜은 발송 전 경고(DRAFT_REFERENCE).
         # 소싱 제안은 기업을 붙이지 않아 companies 가 비고, 그러면 견줄 것이
         # 없어 빈 결과가 나온다.
@@ -447,7 +485,8 @@ def preview(
             "firm": contact.firm,
             "room_name": contact.kakao_room_name,
             "room_verified": contact.room_verified,
-            "room_warning": None if contact.kakao_room_name else "카톡방 이름 미등록",
+            "room_warning": (None if (sample or contact.kakao_room_name)
+                             else "카톡방 이름 미등록"),
             "message": result.text,
             # 몇 통으로 나가는지 화면에서 보여야 한다 — 링크가 먼저 한 통씩
             # 나가고 설명이 마지막이라는 게 보이지 않으면 확인할 수가 없다.
@@ -457,7 +496,9 @@ def preview(
             "warnings": result.warnings + fit.warnings + thin_warnings,
             # 소싱 대상은 다른 표에 있다 — 같은 번호의 투자사 담당자 이력을
             # 제 것으로 읽으면 안 된다.
-            "has_history": False if sourcing else _has_history(db, contact.id),
+            "has_history": False if (sourcing or sample) else _has_history(db, contact.id),
+            # 이 문구는 아직 아무에게도 가지 않는다.
+            "sample": sample,
             # IR 자료 전달일 때 무엇을 먼저 보내야 하는지 화면에 띄운다.
             "attachments": ([{"name": c.name, "url": c.ir_drive_url or ""}
                              for c in companies] if req.mode == MODE_IR else []),

@@ -27,7 +27,7 @@ __all__ = ["router", "MENU"]
 
 @router.get("/", response_class=HTMLResponse, include_in_schema=False)
 def index(request: Request, db: Session = Depends(get_db),
-          user: User = Depends(get_current_user), top: int = 10):
+          user: User = Depends(get_current_user), top: int = 0):
     """메인 = 대시보드. 좌측 위 브랜드를 누르면 여기로 온다.
 
     투자컨설턴트는 대시보드를 볼 이유가 없다 — 자기 화면으로 보낸다.
@@ -37,11 +37,13 @@ def index(request: Request, db: Session = Depends(get_db),
     if user.role == "consultant":
         return RedirectResponse("/consulting", status_code=303)
 
-    # '내 투자사 선호'를 몇 명까지 볼지 — 10·20·30 중에서 고른다.
-    top_n = min(max(top, 5), 30)
+    # 몇 명까지 볼지. 기본값·선택지는 서비스가 갖는다 — 여기와 /dashboard 가
+    # 각자 숫자를 박아 두면 한쪽만 고쳐진다(실제로 그랬다).
+    top_n = dash.clamp_top(top or dash.TOP_DEFAULT)
     ctx = _base_ctx(request, db, user, "home")
     ctx.update(dash.user_dashboard(db, user, top_n=top_n))
     ctx["top_n"] = top_n
+    ctx["top_choices"] = dash.TOP_CHOICES
     return templates.TemplateResponse("dashboard.html", ctx)
 
 

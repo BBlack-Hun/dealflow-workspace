@@ -928,8 +928,13 @@ def test_the_count_is_user_selectable(client, db, users):
     튀고, 이 목록 하나 보려고 나머지를 다 기다린다."""
     client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
     body = client.get("/").text
-    for n in (10, 20, 30):
+    from app.services.dashboard import TOP_CHOICES, TOP_DEFAULT
+
+    for n in TOP_CHOICES:
         assert f'data-n="{n}"' in body, f"{n}명 고르는 단추가 없다"
+    # 기본은 넉넉히 — 10명만 보면 그 아래에 누가 있는지 몰라 매번 늘려야 했다
+    assert TOP_DEFAULT == 50
+    assert f'data-n="{TOP_DEFAULT}" class' in body or 'active' in body
 
     # 목록만 따로 주는 길이 있어야 화면을 다시 안 그린다
     r = client.get("/api/dashboard/top-requesters?top=20")

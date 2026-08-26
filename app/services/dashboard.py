@@ -70,6 +70,30 @@ def _room_state(c: VcContact) -> str:
     return _ROOM_ALIAS.get(c.room_verified or "", "failed")
 
 
+# 세는 것만 보여주고 갈 곳이 없으면, 그 6명이 누구인지 알 수 없다.
+# 채널로 갈리는 둘은 투자사 목록의 채널 필터로 보낸다.
+_ROOM_HREF = {
+    "email": "/contacts?sheet=all&channel=" + quote("메일"),
+    "no_channel": "/contacts?sheet=all&channel=" + quote("미지정"),
+}
+
+
+def _room_href(state: str) -> Optional[str]:
+    return _ROOM_HREF.get(state)
+
+
+# '내 투자사 선호' 를 몇 명까지 볼지. 50명이 기본이다 — 10명만 보면 그 아래에
+# 누가 있는지 몰라서 매번 눌러 늘려야 했다.
+# **화면(`/`)과 대시보드(`/dashboard`) 두 곳이 같은 값을 써야 한다** —
+# 예전에는 각자 10 을 박아 두어 한쪽만 고쳐졌다.
+TOP_CHOICES = [10, 30, 50, 100]
+TOP_DEFAULT = 50
+
+
+def clamp_top(top: int) -> int:
+    return min(max(top, 5), max(TOP_CHOICES))
+
+
 ROOM_LABELS = {
     "verified": ("확인됨", "ok"),
     "unverified": ("미확인", "warn"),
@@ -332,7 +356,8 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None,
         "rooms": [
             {"state": s, "label": ROOM_LABELS[s][0], "level": ROOM_LABELS[s][1],
              "count": rooms.get(s, 0),
-             "percent": round(rooms.get(s, 0) * 100 / (len(contacts) or 1))}
+             "percent": round(rooms.get(s, 0) * 100 / (len(contacts) or 1)),
+             "href": _room_href(s)}
             for s in ("verified", "unverified", "failed", "missing",
                       "email", "no_channel")
             if rooms.get(s, 0)

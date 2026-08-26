@@ -438,6 +438,9 @@ class ConsultingColumn(TimestampMixin, Base):
     __tablename__ = "consulting_columns"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # 열도 사람마다 다르다 — 각자 올린 시트의 달이 다르기 때문이다.
+    user_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id"), nullable=True)
     # 월 컬럼도 시트마다 다르다 — `중요 스타트업` 은 6·7·8월, `경영본부 전달
     # 기업` 은 6·7월처럼. 섞으면 없는 달의 빈 칸이 생긴다.
     sheet: Mapped[str] = mapped_column(String, default="중요 스타트업")
@@ -456,6 +459,10 @@ class ConsultingCompany(TimestampMixin, Base):
     __tablename__ = "consulting_companies"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # 누구의 표인가. 컨설턴트가 여럿이면 각자 올린 시트가 서로를 덮는다
+    # (월별 리마인드 열이 사람마다 다르다). 관리자만 전부 본다.
+    user_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id"), nullable=True)
     # 어느 시트에서 왔는가. 원본이 `중요 스타트업`·`경영본부 전달 기업` 처럼
     # 나뉘어 있고 관리하는 사람이 다르다 — 한 표에 쏟으면 자기 명단을 못 찾는다.
     sheet: Mapped[str] = mapped_column(String, default="중요 스타트업")

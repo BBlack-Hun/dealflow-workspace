@@ -417,7 +417,9 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       resetSourcingFilters();
     }
     applyContactFilter();
-    document.getElementById("mode-help").textContent =
+    // 설명 줄은 화면에서 뺐다. 없어도 터지지 않아야 한다.
+    var help = document.getElementById("mode-help");
+    if (help) help.textContent =
       mode === "ir"
         ? "요청받은 기업을 고르면, 자료를 먼저 보내고 안내 문구를 뒤에 보냅니다"
         : (sourcingMode
@@ -476,10 +478,17 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       t.classList.toggle("active", i === idx);
     });
     var roomLine = p.room_name ? ("💬 " + p.room_name) : ("⚠ " + (p.room_warning || "방 미등록"));
+    // 기본 문구는 아직 아무에게도 가지 않는다 — 진짜 사람에게 갈 문구로
+    // 읽히면 확인만 하려다 그대로 보내게 된다.
+    var meta = p.sample
+      ? '<div class="bubble-meta sample">기본 문구 — 아직 대상을 고르지 않았습니다. ' +
+        '담당자를 고르면 그 사람 이름으로 바뀝니다.' +
+        ' <span class="edited-flag" id="edited-flag" hidden>· 수정함</span></div>'
+      : '<div class="bubble-meta">' + escapeHtml(p.name) + " " + escapeHtml(p.title || "") +
+        " · " + escapeHtml(roomLine) + (p.has_history ? " · 재연락" : " · 첫연락") +
+        ' <span class="edited-flag" id="edited-flag" hidden>· 수정함</span></div>';
     previewArea.innerHTML =
-      '<div class="bubble-meta">' + escapeHtml(p.name) + " " + escapeHtml(p.title || "") +
-      " · " + escapeHtml(roomLine) + (p.has_history ? " · 재연락" : " · 첫연락") +
-      ' <span class="edited-flag" id="edited-flag" hidden>· 수정함</span></div>' +
+      meta +
       splitNotice(p) +
       '<textarea class="bubble-edit" id="bubble-edit" spellcheck="false"></textarea>' +
       '<div class="charcount" id="charcount"></div>';
@@ -522,13 +531,10 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   function refreshPreview() {
     var cids = selectedCompanyIds();
     var tids = selectedContactIds();
-    if ((needsCompanies() && cids.length < 1) || tids.length < 1) {
-      previewArea.innerHTML = '<p class="muted">' +
-        (needsCompanies() ? "기업과 담당자를 고르면" : "담당자를 고르면") +
-        " 여기에 문구가 나옵니다.</p>";
-      previewTabs.innerHTML = "";
-      return;
-    }
+    // 아무도 안 골랐어도 **기본 문구**를 부른다. 문구를 확인하려고 아무나
+    // 한 명 체크했다가 그대로 발송을 누르는 일이 있었다.
+    // (딜 소개는 기업까지 골라야 목록이 채워지지만, 인사말·안내문 모양은
+    //  기업 없이도 보인다)
     fetch("/api/deals/preview", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -543,7 +549,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
         lastPreviews.forEach(function (p, i) {
           var b = document.createElement("button");
           b.className = "preview-tab";
-          b.textContent = p.name;
+          b.textContent = p.sample ? "기본 문구" : p.name;
           b.onclick = function () { renderPreview(i); };
           previewTabs.appendChild(b);
         });

@@ -61,6 +61,21 @@
   원본 시트가 나뉘어 있고 관리하는 사람이 다르다 — 한 표에 쏟으면 자기
   명단을 못 찾는다. 시트 구분을 그대로 살린다.
 #}
+{% if is_admin and owner_tabs %}
+{# 관리자만 사람을 골라 본다 — 누가 무엇을 맡고 있는지 알아야 한다.
+   컨설턴트 본인에게는 자기 표만 나오므로 이 줄이 없다. #}
+<div class="filter-line">
+  <span class="filter-label">담당</span>
+  <a class="chip {% if not selected_owner %}active{% endif %}"
+     href="/consulting?sheet={{ selected_sheet|urlencode }}">전체</a>
+  {% for o in owner_tabs %}
+  <a class="chip {% if selected_owner == o.id %}active{% endif %}"
+     href="/consulting?sheet={{ selected_sheet|urlencode }}&owner={{ o.id }}">
+    {{ o.name }} <b>{{ o.count }}</b></a>
+  {% endfor %}
+</div>
+{% endif %}
+
 <nav class="sheet-tabs">
   {% for t in sheet_tabs %}
   <a class="sheet-tab {% if selected_sheet == t.key %}active{% endif %}"

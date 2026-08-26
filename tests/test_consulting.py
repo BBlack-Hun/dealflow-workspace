@@ -343,8 +343,10 @@ def test_the_user_is_told_that_months_are_folded(client, db, users):
     """그냥 안 보이면 지워진 줄 안다."""
     from app.models import ConsultingColumn
 
+    # 표에는 주인이 있다 — 남의 열이 내 표에 섞이면 안 된다
     for i, m in enumerate(range(12, 0, -1)):
-        db.add(ConsultingColumn(label=f"{m}월 리마인드", position=i))
+        db.add(ConsultingColumn(label=f"{m}월 리마인드", position=i,
+                                user_id=users["u1"].id))
     db.commit()
 
     users["u1"].can_view_consulting = 1
@@ -362,3 +364,92 @@ def test_the_user_is_told_that_months_are_folded(client, db, users):
     # 펴면 다 보인다
     opened = client.get("/consulting?months=all").text
     assert "1월 리마인드" in opened
+
+# --- 사람별로 나뉘는가 ------------------------------------------------------
+
+def _own(db, user_id, name="샘플기업", sheet="중요 스타트업"):
+    from app.models import ConsultingCompany
+
+    row = ConsultingCompany(user_id=user_id, company_name=name, sheet=sheet)
+    db.add(row)
+    db.commit()
+    return row
+
+
+def test_i_only_see_my_own_table(client, db, users):
+    """컨설턴트가 여럿이면 남의 담당 기업까지 보인다."""
+    users["u1"].can_view_consulting = 1
+    users["u2"].can_view_consulting = 1
+    db.commit()
+    _own(db, users["u1"].id, "내기업")
+    _own(db, users["u2"].id, "남의기업")
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    body = client.get("/consulting").text
+    assert "내기업" in body
+    assert "남의기업" not in body
+
+
+def test_admin_sees_everyone(client, db, users):
+    """관리자는 누가 무엇을 맡고 있는지 알아야 한다."""
+    users["u2"].role = "admin"
+    db.commit()
+    _own(db, users["u1"].id, "내기업")
+    _own(db, users["u2"].id, "남의기업")
+
+    client.post("/login", data={"phone": "01000000002", "password": DEMO_PASSWORD})
+    body = client.get("/consulting").text
+    assert "내기업" in body and "남의기업" in body
+    assert "담당" in body          # 사람별로 갈라 보는 줄
+
+
+def test_admin_can_narrow_to_one_person(client, db, users):
+    users["u2"].role = "admin"
+    db.commit()
+    _own(db, users["u1"].id, "내기업")
+    _own(db, users["u2"].id, "남의기업")
+
+    client.post("/login", data={"phone": "01000000002", "password": DEMO_PASSWORD})
+    body = client.get(f"/consulting?owner={users['u1'].id}").text
+    assert "내기업" in body
+    assert "남의기업" not in body
+
+
+def test_a_row_cannot_be_opened_by_id_from_another_table(client, db, users):
+    """화면만 막고 API 를 열어 두면 막은 것이 아니다."""
+    users["u1"].can_view_consulting = 1
+    db.commit()
+    theirs = _own(db, users["u2"].id, "남의기업")
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    assert client.get(f"/api/consulting/{theirs.id}").status_code == 404
+
+
+def test_a_reupload_does_not_wipe_someone_elses_table(client, db, users):
+    """예전에는 전체를 지워서, 한 사람이 다시 올리면 남의 표까지 사라졌다."""
+    from app.models import ConsultingCompany
+
+    users["u1"].can_view_consulting = 1
+    db.commit()
+    _own(db, users["u2"].id, "남의기업")
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    _import(client, replace="1")
+    db.expire_all()
+
+    kept = db.query(ConsultingCompany).filter_by(user_id=users["u2"].id).count()
+    assert kept == 1, "남의 표가 지워졌다"
+
+
+def test_an_upload_belongs_to_whoever_uploaded_it(client, db, users):
+    from app.models import ConsultingCompany
+
+    users["u1"].can_view_consulting = 1
+    db.commit()
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    _import(client)
+    db.expire_all()
+
+    owners = {c.user_id for c in db.query(ConsultingCompany).all()}
+    assert owners == {users["u1"].id}
+
