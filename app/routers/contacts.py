@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import get_current_user
 from ..models import ContactActivity, IrCompany, SendItem, SendJob, User, VcContact
-from ..services import deal_stage, firm_type, sheet_import, sheet_owner
+from ..services import deal_stage, firm_type, room_name, sheet_import, sheet_owner
 from ..services.room_name import DEFAULT_SUFFIX, build_room_name
 
 router = APIRouter(prefix="/api/contacts", tags=["contacts"])
@@ -192,6 +192,10 @@ def contact_rows(db: Session, user: User, team_wide: bool = False) -> List[dict]
             "group_name": c.group_name or "",
             "channel_kakao": c.channel_kakao,
             "channel_email": c.channel_email,
+            # 대시보드의 '메일 채널 3' · '채널 미지정 6' 에서 눌러 오는 자리다.
+            # 세는 것만 보여주고 갈 곳이 없으면, 그 6명이 누구인지 알 수 없다.
+            "channel_label": ("카톡" if c.channel_kakao else
+                              "메일" if c.channel_email else "미지정"),
             "room_name": c.kakao_room_name or "",
             "room_verified": room_state,
             "room_class": room_class,
@@ -206,6 +210,10 @@ def contact_rows(db: Session, user: User, team_wide: bool = False) -> List[dict]
             "address": c.address or "",
             "card_registered_at": c.card_registered_at or "",
             "interest_level": c.interest_level or "",
+            # 시트에만 있고 앱에는 칸이 없어 버려지던 둘.
+            "sourcing_note": c.sourcing_note or "",
+            "tips_note": c.tips_note or "",
+            "kakao_joined": c.kakao_joined or "",
             "last_deal": last_deal,
             "last_deal_label": _date_label(last_deal, last_round),
             "last_deal_note": last_deal_note or "",
@@ -307,6 +315,9 @@ class ContactIn(BaseModel):
     address: Optional[str] = None
     card_registered_at: Optional[str] = None
     interest_level: Optional[str] = None
+    kakao_joined: Optional[str] = None
+    sourcing_note: Optional[str] = None
+    tips_note: Optional[str] = None
 
 
 class VerifyRequest(BaseModel):
@@ -341,8 +352,31 @@ def verify_rooms(
 
     targets = [c for c in contacts if _is_kakao(c)]
     skipped = [c.name for c in contacts if not _is_kakao(c)]
+
+    # 동명이인인데 방 이름에 회사가 없으면 **확인할 수가 없다.** 카톡 검색은
+    # 참여자 이름으로도 걸려서 같은 이름의 다른 사람 방이 함께 나온다.
+    # 확인을 시켜 봐야 어느 쪽이 맞는지 알 수 없으므로, 보내기 전에 여기서
+    # 막고 방 이름을 고치게 한다 — 나가고 나서 알면 이미 남의 방이다.
+    #
+    # 대상 몇 명만 고른 경우에도 **전체 명단**을 기준으로 견준다. 겹치는
+    # 상대가 이번 대상에 없다고 이름이 구별되는 것은 아니다.
+    everyone = db.execute(
+        select(VcContact).where(VcContact.user_id == user.id)
+    ).scalars().all()
+    unclear = {c.id for c in room_name.ambiguous_contacts(everyone)}
+    conflicts = [c.name for c in targets if c.id in unclear]
+    for contact in targets:
+        if contact.id in unclear:
+            contact.room_verified = "ambiguous"
+    targets = [c for c in targets if c.id not in unclear]
+
     if not targets:
-        raise HTTPException(status_code=400, detail="확인할 카톡방 이름이 등록된 담당자가 없습니다")
+        detail = "확인할 카톡방 이름이 등록된 담당자가 없습니다"
+        if conflicts:
+            detail = (f"동명이인이라 방 이름만으로 구별되지 않습니다: "
+                      f"{', '.join(conflicts[:5])} — 방 이름에 투자사명을 넣어주세요")
+        db.commit()
+        raise HTTPException(status_code=400, detail=detail)
 
     job = SendJob(user_id=user.id, kind="verify_room", status="queued",
                   total=len(targets), sent=0, failed=0)
@@ -359,7 +393,9 @@ def verify_rooms(
             status="pending",
         ))
     db.commit()
-    return {"job_id": job.id, "total": len(targets), "skipped": skipped}
+    return {"job_id": job.id, "total": len(targets), "skipped": skipped,
+            # 세는 것만 보여주면 왜 빠졌는지 모른다.
+            "conflicts": conflicts}
 
 
 # ── CRUD ────────────────────────────────────────────────────────────────────
@@ -478,7 +514,13 @@ def get_contact(
             "address": contact.address or "",
             "card_registered_at": contact.card_registered_at or "",
             "interest_level": contact.interest_level or "",
+            # 저장은 되는데 **다시 열면 비어 있었다** — 여기서 안 돌려주면
+            # 창이 채울 값이 없어, 고쳐 놓고도 안 들어간 줄 안다.
+            "kakao_joined": contact.kakao_joined or "",
+            "sourcing_note": contact.sourcing_note or "",
+            "tips_note": contact.tips_note or "",
             "assignee_name": contact.assignee_name or "",
+            "department": contact.department or "",
             "status": contact.status,
             "memo": contact.memo or "",
         },
@@ -674,7 +716,10 @@ def _assign(contact: VcContact, body: ContactIn) -> None:
                   "email", "phone", "stages", "sectors", "round_size", "memo", "status",
                   # 시트에 있던 값들 — 화면에서도 고칠 수 있어야 한다.
                   "assignee_name", "department", "office_phone", "office_fax",
-                  "address", "card_registered_at", "interest_level"):
+                  "address", "card_registered_at", "interest_level",
+                  # 스키마(ContactIn)에만 있고 여기 빠져 있어서, 화면에서 고쳐도
+                  # 조용히 안 들어갔다 — 요청은 200 으로 끝나는데 값은 그대로다.
+                  "kakao_joined", "sourcing_note", "tips_note"):
         value = getattr(body, field)
         if value is not None:
             setattr(contact, field, value.strip() if isinstance(value, str) else value)
@@ -699,6 +744,129 @@ def _assign(contact: VcContact, body: ContactIn) -> None:
 # 참고 시트는 따로 붙인다.
 
 ref_router = APIRouter(tags=["ref-sheets"])
+
+
+@router.post("/sheets/rename", include_in_schema=False)
+def rename_list_sheet(old: str = Form(""), new: str = Form(""),
+                      db: Session = Depends(get_db),
+                      user: User = Depends(get_current_user)):
+    """명단(시트) 탭 이름 바꾸기.
+
+    참고 탭은 이름을 바꿀 수 있는데 명단 탭은 못 바꿨다. 원본 시트에서 이름을
+    다듬으면 앱만 옛 이름으로 남는다.
+
+    `source_sheet` 는 쉼표로 이어 붙인 목록이라(한 사람이 여러 명단에 겹친다)
+    통째로 바꾸지 않고 **조각 단위**로 바꾼다 — 통째로 바꾸면 겹친 사람의
+    다른 명단까지 이름이 뭉개진다.
+    """
+    from fastapi.responses import RedirectResponse
+
+    from ..models import SheetOwner
+
+    before, after = (old or "").strip(), (new or "").strip()
+    # 이름 없는 탭은 누를 자리가 없어진다.
+    if not before or not after or before == after:
+        return RedirectResponse(f"/contacts?sheet={quote(before)}", status_code=303)
+
+    for c in db.execute(select(VcContact)).scalars():
+        parts = [p.strip() for p in (c.source_sheet or "").split(",") if p.strip()]
+        if before in parts:
+            c.source_sheet = ",".join(after if p == before else p for p in parts)
+    for row in db.execute(
+        select(SheetOwner).where(SheetOwner.label == before)
+    ).scalars():
+        row.label = after
+    db.commit()
+    return RedirectResponse(f"/contacts?sheet={quote(after)}", status_code=303)
+
+
+class RefCellIn(BaseModel):
+    """표 참고 자료의 칸 하나."""
+    row: int
+    col: int
+    value: str = ""
+
+
+@ref_router.patch("/api/ref-sheets/{sheet_id}/cell", include_in_schema=False)
+def edit_ref_cell(sheet_id: int, body: RefCellIn, db: Session = Depends(get_db),
+                  user: User = Depends(get_current_user)):
+    """표 참고 자료의 칸 고치기.
+
+    보기만 되던 자료다. 스크립트·성격 정리는 쓰면서 다듬는 것이라, 고치려고
+    구글 시트를 따로 열어야 하면 화면 안으로 들여온 뜻이 없다.
+    """
+    import json
+
+    from ..models import RefSheet
+
+    row = db.get(RefSheet, sheet_id)
+    if row is None or row.kind != "table":
+        raise HTTPException(status_code=404, detail="표 참고 자료가 아닙니다")
+    data = json.loads(row.content_json or "{}")
+    rows = data.get("rows") or []
+    if not (0 <= body.row < len(rows)) or not (0 <= body.col < len(rows[body.row])):
+        raise HTTPException(status_code=400, detail="없는 칸입니다")
+    rows[body.row][body.col] = body.value.strip()
+    data["rows"] = rows
+    row.content_json = json.dumps(data, ensure_ascii=False)
+    db.commit()
+    return {"ok": True}
+
+
+@ref_router.post("/ref-sheets/{sheet_id}/body", include_in_schema=False)
+def edit_ref_body(sheet_id: int, body: str = Form(""), sheet: str = Form(""),
+                  db: Session = Depends(get_db),
+                  user: User = Depends(get_current_user)):
+    """줄글 참고 자료 고치기.
+
+    줄글은 칸으로 나뉘어 있지 않아 통째로 고친다 — 표로 쪼개면 내용이 칸에
+    잘려 사라진다.
+    """
+    import json
+
+    from fastapi.responses import RedirectResponse
+
+    from ..models import RefSheet
+
+    row = db.get(RefSheet, sheet_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="참고 시트를 찾을 수 없습니다")
+    data = json.loads(row.content_json or "{}")
+    data["body"] = body.replace("\r\n", "\n")
+    row.content_json = json.dumps(data, ensure_ascii=False)
+    db.commit()
+    back = f"/contacts?ref={sheet_id}"
+    if sheet:
+        back += f"&sheet={quote(sheet)}"
+    return RedirectResponse(back, status_code=303)
+
+
+@ref_router.post("/ref-sheets/{sheet_id}/rename", include_in_schema=False)
+def rename_ref_sheet(sheet_id: int, title: str = Form(""), sheet: str = Form(""),
+                     db: Session = Depends(get_db),
+                     user: User = Depends(get_current_user)):
+    """참고 탭 이름 바꾸기.
+
+    이름이 원본 시트의 탭 이름 그대로라 길고(`40개사 스타트업 매월 1회
+    리마인드 카톡 가이드`) 무엇을 여는 탭인지 한눈에 안 들어온다. 자료는
+    그대로 두고 부르는 이름만 바꾼다.
+    """
+    from fastapi.responses import RedirectResponse
+
+    from ..models import RefSheet
+
+    row = db.get(RefSheet, sheet_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="참고 시트를 찾을 수 없습니다")
+    # 이름 없는 탭은 누를 자리가 없어진다 — 비우려 하면 그냥 두던 이름을 쓴다.
+    name = (title or "").strip()
+    if name:
+        row.title = name[:80]
+        db.commit()
+    back = f"/contacts?ref={sheet_id}"
+    if sheet:
+        back += f"&sheet={quote(sheet)}"
+    return RedirectResponse(back, status_code=303)
 
 
 @ref_router.post("/ref-sheets/{sheet_id}/delete", include_in_schema=False)

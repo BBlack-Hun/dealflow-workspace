@@ -1,7 +1,7 @@
 """Shared dependencies: current user, agent auth, templates, helpers."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional
 
 from fastapi import Depends, Header, HTTPException, Request
@@ -9,7 +9,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import assets, config
+from . import assets, clock, config
 from .db import get_db
 from .models import AgentDevice, User
 
@@ -30,8 +30,9 @@ templates.env.globals["asset"] = assets.asset
 templates.env.globals["eok"] = _eok
 
 
-def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+# 저장용 시각은 `app/clock.py` 하나에서만 만든다 — 왜 지역시간인지는 그쪽에.
+# 여기 두는 것은 라우터들이 예전부터 `deps.now_iso` 로 불러 왔기 때문이다.
+now_iso = clock.now_iso
 
 
 class NotAuthenticated(HTTPException):
@@ -94,7 +95,9 @@ def agent_status(db: Session, user_id: Optional[int] = None) -> dict:
         last_poll = device.last_poll_at
         try:
             ts = datetime.fromisoformat(device.last_poll_at)
-            delta = (datetime.now(timezone.utc) - ts).total_seconds()
+            # 경과시간은 **순간**끼리 뺀다 — 저장값에 오프셋이 붙어 있으므로
+            # 그 값이 UTC 표기든 한국시간 표기든 결과는 같다(옛 값과 섞여도).
+            delta = (clock.now() - ts).total_seconds()
             online = delta <= config.AGENT_ONLINE_WINDOW_SEC
         except ValueError:
             online = False

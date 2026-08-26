@@ -33,6 +33,13 @@
         .then(function (d) {
           if (!d) throw new Error();
           list.innerHTML = d.rows.map(rowHtml).join("");
+          // 몇 명이 걸렸는지도 같이 고친다 — 개수만 바꾸고 숫자를 그대로 두면
+          // 50명으로 놓았는데 12명이 나온 이유를 알 수 없다.
+          var pill = document.getElementById("req-rank-count");
+          if (pill) {
+            pill.innerHTML = "<b>" + d.rows.length + "</b>명";
+            pill.classList.toggle("on", d.rows.length > 0);
+          }
           document.querySelectorAll(".js-top-n").forEach(function (b) {
             b.classList.toggle("active", b === btn);
           });

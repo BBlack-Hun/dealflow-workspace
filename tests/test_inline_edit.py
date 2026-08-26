@@ -371,7 +371,7 @@ def test_two_tabs_match_the_sheet(logged_in, company):
     db_tab = logged_in.get("/companies?tab=db").text
     for col in ("대표자", "연락처", "이메일", "22년 매출", "25년 매출",
                 "누적투자금액", "투자유치희망금액", "Pre Value",
-                "특이사항", "설립년도", "기보·신보·중진공"):
+                "특이사항 (장점)", "설립년도", "기보, 신보, 중진공"):
         assert col in db_tab, f"스타트업DB 탭에 '{col}' 이 없다"
 
 
@@ -450,8 +450,16 @@ def test_the_wide_table_scrolls_instead_of_squeezing(logged_in, company):
     html = logged_in.get("/companies?tab=db").text
     assert "table-wrap wide" in html
     css = pathlib.Path("app/static/css/app.css").read_text(encoding="utf-8")
-    assert ".table-wrap.wide { overflow-x: auto; }" in css
+    import re
+
+    # 가로만이 아니라 **세로도** 자른다 — 표가 페이지만큼 길어지면 가로
+    # 스크롤바가 문서 맨 아래로 밀려서, 밀려면 끝까지 내려갔다 와야 한다.
+    rule = re.search(r"\.table-wrap\.wide\s*\{([^}]*)\}", css)
+    assert rule and re.search(r"overflow:\s*auto", rule.group(1))
+    assert "max-height" in rule.group(1)
     assert "min-width: 2030px" in css
+    # 세로로 밀 때 컬럼 이름이 사라지면 어느 칸인지 알 수 없다
+    assert re.search(r"\.table-wrap\.wide thead th\s*\{[^}]*position:\s*sticky", css)
 
 
 def test_top_deal_is_a_choice_not_a_switch(logged_in, db):

@@ -928,8 +928,13 @@ def test_the_count_is_user_selectable(client, db, users):
     튀고, 이 목록 하나 보려고 나머지를 다 기다린다."""
     client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
     body = client.get("/").text
-    for n in (10, 20, 30):
+    from app.services.dashboard import TOP_CHOICES, TOP_DEFAULT
+
+    for n in TOP_CHOICES:
         assert f'data-n="{n}"' in body, f"{n}명 고르는 단추가 없다"
+    # 기본은 넉넉히 — 10명만 보면 그 아래에 누가 있는지 몰라 매번 늘려야 했다
+    assert TOP_DEFAULT == 50
+    assert f'data-n="{TOP_DEFAULT}" class' in body or 'active' in body
 
     # 목록만 따로 주는 길이 있어야 화면을 다시 안 그린다
     r = client.get("/api/dashboard/top-requesters?top=20")
@@ -961,6 +966,164 @@ def test_clicking_a_requester_opens_their_detail(client, db, users):
     client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
     assert f'/contacts?contact={contact.id}' in client.get("/").text
 
-    # 그 주소로 가면 상세가 열린 채로 뜬다
+    # 그 주소로 가면 번호가 화면에 실려 온다.
+    # 여기까지가 서버가 하는 몫이다 — **실제로 패널이 열리는지**는 브라우저 쪽 일이라
+    # 이 검사로는 못 본다(번호만 실려 오고 상세는 안 열린 채로 오래 지나갔다).
+    # 그 뒷부분은 tests/js/contacts_open_test.js 가 contacts.js 를 돌려서 본다.
     page = client.get(f"/contacts?contact={contact.id}").text
     assert f"window.DEALFLOW_OPEN_CONTACT = {contact.id}" in page
+
+# --- 이번 주 보낸 건수 --------------------------------------------------------
+#
+# 한 달 단위로 세면 월초에는 늘 0 에 가깝고 월말에만 커진다 — 이번 주에 얼마나
+# 나갔는지는 알 수 없다. 회차가 격주라 **주간**이 실제 일하는 단위다.
+
+def _sent(db, users, contact_id, when, kind="deal_intro"):
+    from app.models import SendItem, SendJob
+
+    job = SendJob(user_id=users["u1"].id, kind=kind, status="done",
+                  total=1, sent=1, failed=0)
+    db.add(job)
+    db.flush()
+    db.add(SendItem(job_id=job.id, contact_id=contact_id, room_name="방",
+                    message="문구", status="sent", sent_at=when))
+    db.commit()
+
+
+def _two_contacts(db, users):
+    from app.models import VcContact
+
+    rows = [VcContact(user_id=users["u1"].id, name=f"담당{i}", firm="가나벤처스",
+                      connect_stage="connected", kakao_room_name=f"방{i}")
+            for i in (1, 2)]
+    db.add_all(rows)
+    db.commit()
+    return [r.id for r in rows]
+
+
+def test_the_count_is_this_week_not_this_month(client, db, users):
+    from datetime import date, timedelta
+
+    from app.services import dashboard as dash
+
+    today = date.today()
+    monday = today - timedelta(days=today.weekday())
+    ids = _two_contacts(db, users)
+
+    _sent(db, users, ids[0], monday.isoformat() + "T09:00:00+09:00")
+    # 지난주 건은 세지 않는다
+    _sent(db, users, ids[1], (monday - timedelta(days=3)).isoformat() + "T09:00:00+09:00")
+
+    kpi = next(k for k in dash.user_dashboard(db, users["u1"], top_n=10)["kpis"]
+               if k["key"] == "sent")
+    assert kpi["label"] == "이번 주 보낸 건수"
+    assert kpi["value"] == 1
+
+
+def test_the_count_links_to_the_people_it_counted(client, db, users):
+    """숫자만 보고 누구에게 갔는지 모르면 다음에 누구를 챙길지 정할 수 없다."""
+    from datetime import date, timedelta
+
+    from app.services import dashboard as dash
+
+    today = date.today()
+    monday = today - timedelta(days=today.weekday())
+    target = _two_contacts(db, users)[0]
+    _sent(db, users, target, monday.isoformat() + "T09:00:00+09:00")
+
+    kpi = next(k for k in dash.user_dashboard(db, users["u1"], top_n=10)["kpis"]
+               if k["key"] == "sent")
+    assert kpi["href"] == f"/deals?contacts={target}"
+
+def test_room_checks_are_not_sends(client, db, users):
+    """방 연결 확인은 방 제목만 대조하고 **아무것도 보내지 않는다.**
+
+    끝난 건이 `status="sent"` 로 남는 탓에 발송 건수에 함께 세어졌다 —
+    방 확인만 눌렀는데 이번 주 보낸 건수가 116건으로 찍혔다.
+    """
+    from datetime import date, timedelta
+
+    from app.services import dashboard as dash
+
+    today = date.today()
+    monday = today - timedelta(days=today.weekday())
+    ids = _two_contacts(db, users)
+    when = monday.isoformat() + "T09:00:00+09:00"
+
+    _sent(db, users, ids[0], when, kind="verify_room")
+    kpi = next(k for k in dash.user_dashboard(db, users["u1"], top_n=10)["kpis"]
+               if k["key"] == "sent")
+    assert kpi["value"] == 0, "방 확인이 발송으로 세어졌다"
+
+    # 진짜 발송은 세어진다
+    _sent(db, users, ids[1], when, kind="deal_intro")
+    kpi = next(k for k in dash.user_dashboard(db, users["u1"], top_n=10)["kpis"]
+               if k["key"] == "sent")
+    assert kpi["value"] == 1
+
+
+def test_every_send_kind_counts(client, db, users):
+    """IR 자료 전달·딜 소싱 제안도 보낸 것이다 — 딜소개만 세면 빠진다."""
+    from datetime import date, timedelta
+
+    from app.services import dashboard as dash
+
+    today = date.today()
+    monday = today - timedelta(days=today.weekday())
+    ids = _two_contacts(db, users)
+    when = monday.isoformat() + "T09:00:00+09:00"
+
+    _sent(db, users, ids[0], when, kind="ir_delivery")
+    _sent(db, users, ids[1], when, kind="sourcing_intro")
+    kpi = next(k for k in dash.user_dashboard(db, users["u1"], top_n=10)["kpis"]
+               if k["key"] == "sent")
+    assert kpi["value"] == 2
+
+# --- 카톡방 연결 상태에서 바로 보내기 ----------------------------------------
+#
+# 세는 것만 보여주고 갈 곳이 없으면, 그 116명이 누구인지 알 수 없다.
+# 보낼 수 있는 방은 **딜 제안 관리로 체크된 채로** 보낸다 — 거기서 다음 회차를
+# 만드는 것이 다음 동작이라, 목록만 열어 주면 같은 사람을 손으로 다시 고른다.
+
+def _room(db, users, name, room, verified):
+    from app.models import VcContact
+
+    row = VcContact(user_id=users["u1"].id, name=name, firm="가나벤처스",
+                    connect_stage="connected", channel_kakao=1,
+                    kakao_room_name=room, room_verified=verified)
+    db.add(row)
+    db.commit()
+    return row
+
+
+def test_connected_rooms_link_to_the_send_screen(client, db, users):
+    from app.services import dashboard as dash
+
+    ok = _room(db, users, "홍길동", "홍길동 이사님 가나벤처스", "verified")
+    rooms = dash.user_dashboard(db, users["u1"], top_n=10)["rooms"]
+    row = next(r for r in rooms if r["state"] == "verified")
+    assert row["href"] == f"/deals?contacts={ok.id}"
+
+
+def test_unsendable_rooms_go_to_the_contact_list_instead(client, db, users):
+    """방이 없는 사람은 고쳐야 할 것이지 보낼 것이 아니다."""
+    from app.services import dashboard as dash
+
+    _room(db, users, "김서연", "", "unverified")     # 방 미등록
+    rooms = dash.user_dashboard(db, users["u1"], top_n=10)["rooms"]
+    row = next((r for r in rooms if r["state"] == "missing"), None)
+    assert row is not None
+    assert row["href"] is None or row["href"].startswith("/contacts")
+
+
+def test_the_link_only_carries_that_state(client, db, users):
+    """확인된 사람 링크에 방 없는 사람이 섞이면 보낼 수 없는 곳에 체크가 붙는다."""
+    from app.services import dashboard as dash
+
+    ok = _room(db, users, "홍길동", "홍길동 이사님 가나벤처스", "verified")
+    bad = _room(db, users, "박준호", "", "unverified")
+    rooms = dash.user_dashboard(db, users["u1"], top_n=10)["rooms"]
+    href = next(r for r in rooms if r["state"] == "verified")["href"]
+    assert str(ok.id) in href
+    assert str(bad.id) not in href.split("contacts=")[1].split(",")
+

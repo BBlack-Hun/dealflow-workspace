@@ -10,12 +10,6 @@
   </p>
 </header>
 
-<p class="hint">
-  <b>소개 가능</b>은 딜 소개 문구에 들어가는 칸이 하나도 빠지지 않은 기업입니다 —
-  {% for f in required_fields %}<span class="tag">{{ f }}</span>{% endfor %}
-  하나라도 비면 <b>내용 부족</b>입니다.
-</p>
-
 {% if msg %}<p class="flash">{{ msg }}</p>{% endif %}
 
 <div class="toolbar">
@@ -72,30 +66,37 @@
 <div class="chip-row" data-filter-chips></div>
 <p class="hint" id="co-note" hidden></p>
 
-<div class="table-wrap {% if co_tab == 'db' %}wide{% endif %}">
+{# 두 탭 다 화면보다 넓다(진행관리 12칸 · 스타트업DB 19칸). 높이를 잘라
+   가로 스크롤바가 표 바로 아래 붙게 한다 — 안 그러면 문서 맨 아래로 밀린다. #}
+<div class="table-wrap wide">
 {% if co_tab == 'db' %}
   {# ── 스타트업DB(기업정보) ── 시트 컬럼 그대로 #}
   <table class="grid-table" data-inline-url="/api/companies" id="co-table">
     <thead>
       <tr>
-        <th style="width:36px">#</th>
+        <th class="num" style="width:36px">#</th>
+        {# 시트의 맨 앞 칸이다. 이게 없어서 그 뒤가 한 칸씩 밀려 보였다. #}
+        <th style="width:96px" title="홍보메일 답장 받은 날">수신일</th>
         <th style="width:160px">기업명</th>
         <th style="width:70px">대표자</th>
         <th style="width:104px">연락처</th>
         <th style="width:170px">이메일</th>
         {# 카테고리가 아니라 **사업 설명**이다. 한줄 소개의 첫 토막이 된다. #}
-        <th style="width:300px">사업분야<span class="th-note">사업 설명 · 한줄 소개의 앞부분</span></th>
+        {# 안내를 머리글 아래 줄로 두면 이름이 두 줄로 보인다. 이름은 한 줄이어야
+           하니 안내는 `title` 로 옮긴다 — 지우면 이 칸이 카테고리가 아니라
+           사업 설명이라는 것을 알 길이 없다. #}
+        <th style="width:300px" title="사업 설명 · 한줄 소개의 앞부분">사업분야</th>
         <th class="num" style="width:74px">22년 매출</th>
         <th class="num" style="width:74px">23년 매출</th>
         <th class="num" style="width:74px">24년 매출</th>
         <th class="num" style="width:74px">25년 매출</th>
-        <th class="num" style="width:78px">누적투자금액</th>
-        <th class="num" style="width:84px">투자유치희망금액</th>
+        <th class="num" style="width:96px">누적투자금액</th>
+        <th class="num" style="width:120px">투자유치희망금액</th>
         <th class="num" style="width:76px">Pre Value</th>
-        <th style="width:260px">특이사항</th>
-        <th class="num" style="width:74px">최근 매출액</th>
-        <th style="width:62px">설립년도</th>
-        <th style="width:88px">기보·신보·중진공</th>
+        <th style="width:260px">특이사항 (장점)</th>
+        <th class="num" style="width:90px">최근 매출액</th>
+        <th style="width:72px">설립년도</th>
+        <th style="width:130px">기보, 신보, 중진공</th>
         {# IR 자료는 어느 탭에서 보든 맨 끝에 그대로 둔다. #}
         <th style="width:82px" data-filters="ir:IR 자료">IR 자료<div class="th-filters"></div></th>
         <th style="width:52px"></th>
@@ -103,11 +104,12 @@
     </thead>
     <tbody>
       {% for r in rows %}
+      {# 이 탭이 세운 필터는 `IR 자료` 하나다. 담당자·대분류는 옆 탭(IR 기업현황)의
+         칸이라 여기서는 걸 곳이 없다 — 싣기만 하면 아무도 안 보는 죽은 속성이 된다. #}
       <tr data-id="{{ r.id }}" data-search="{{ r.search }}"
-          data-f-assignee="{{ r.assignee }}"
-          data-f-sector="{{ r.sector_major }}"
           data-f-ir="{{ '● 있음' if r.has_ir else '⚠ 없음' }}">
         <td class="rowno muted"></td>
+        <td class="cell" data-field="received_at" data-type="date">{{ r.received_at }}</td>
         <td class="co-name"><b class="cell" data-field="name">{{ r.name }}</b></td>
         <td class="cell" data-field="contact_name">{{ r.ceo }}</td>
         <td class="cell" data-field="contact_phone">{{ r.phone }}</td>
@@ -129,7 +131,9 @@
         </td>
         <td class="cell num" data-field="revenue_recent" data-type="number" data-unit="eok">{{ eok(r.revenue_recent) }}</td>
         <td class="cell" data-field="founded_year">{{ r.founded_year }}</td>
-        <td class="cell" data-field="guarantee">{{ r.guarantee }}</td>
+        <td title="{{ r.guarantee }}">
+          <div class="cell clamp2" data-field="guarantee" data-type="long">{{ r.guarantee }}</div>
+        </td>
         <td>
           {% if r.has_ir %}
             <a class="room-badge ok" href="{{ r.ir_drive_url }}" target="_blank" rel="noopener">📎 열기</a>
@@ -147,18 +151,37 @@
 {% else %}
   {# ── IR 기업현황(진행관리) ── 시트 컬럼 그대로 #}
   <table class="grid-table" data-inline-url="/api/companies" id="co-table">
+    {# `<thead` 로 `>` 가 빠져 있었다. 브라우저가 알아서 고쳐 주어(`<tr>` 을
+       속성으로 삼키고 행을 다시 만든다) 화면은 멀쩡해 보였지만, 머리글을
+       `<thead>` 로 찾는 검사들(tests/test_ui_layout.py)이 **이 표만 통째로
+       건너뛰고 있었다** — 정렬·줄바꿈·칸 수가 한 번도 검사되지 않은 표였다. #}
+    {# 폭 단위가 `%` 와 `px` 로 섞여 있다. `%` 는 표 폭(=`.table-wrap.wide .grid-table`
+       의 min-width 2,030px)에 대한 비율이라, 13% = 264px 처럼 **px 로 환산해서만**
+       잴 수 있다 — px 만 재던 점검이 이 칸들을 통째로 건너뛰어 "0건" 이라고 했다.
+       헤드리스 크롬으로 다시 재 보니 `%` 칸(기업명 264 · 대분류 203 · 소분류 183 ·
+       기업구분 183px)은 모두 한 줄에 넉넉해서 그대로 둔다. 두 줄이던 것은 아래
+       `계약여부`·`핵심/TOP Deal` 두 칸이고, 둘 다 px 칸이었다.
+
+       늘린 40px 은 폭을 안 준 `한줄 소개` 칸이 내어 준다(692→652px). 그래서 표
+       전체 폭은 2,030px 그대로라 app.css 의 min-width 는 손대지 않는다. #}
     <thead>
       <tr>
-        <th style="width:36px">#</th>
+        <th class="num" style="width:36px">#</th>
         <th style="width:13%">기업명</th>
         <th style="width:10%" data-filters="sector:사업분야 대분류">사업분야 대분류<div class="th-filters"></div></th>
         <th style="width:9%" data-filters="minor:소분류">소분류<div class="th-filters"></div></th>
         <th style="width:9%" data-filters="series:기업구분">기업구분<div class="th-filters"></div></th>
-        <th>한줄 소개<span class="th-note">두 줄까지 보입니다 · 눌러서 수정</span></th>
+        <th title="두 줄까지 보입니다 · 눌러서 수정">한줄 소개</th>
         <th style="width:74px" data-filters="assignee:담당자">담당자<div class="th-filters"></div></th>
-        <th style="width:64px" data-filters="contract:계약여부">계약여부<div class="th-filters"></div></th>
-        <th style="width:78px">날짜 기입<span class="th-note">계약기업 · 홍보메일 삭제</span></th>
-        <th style="width:86px" data-filters="top:핵심/TOP Deal">핵심/TOP Deal<div class="th-filters"></div></th>
+        {# 폭은 **이름이 아니라 단추**에 맞춘다. 필터가 하나뿐인 칸은 filters.js 가
+           이름 글자를 지우고 `계약여부 ▾` 단추를 그 자리에 세우는데, 단추는 ` ▾` 와
+           자기 padding·테두리(14px)만큼 이름보다 넓다. 이름(66px)만 보고 72px 를
+           준 탓에 실제 화면에서는 `계약여부` / `▾` 두 줄로 접혀 있었다.
+           헤드리스 크롬으로 재니 85px 이 필요했다 — 여유를 조금 두어 92px. #}
+        <th style="width:92px" data-filters="contract:계약여부">계약여부<div class="th-filters"></div></th>
+        <th style="width:88px" title="계약기업 · 거부메일 홍보메일 삭제">날짜 기입</th>
+        {# 같은 이유로 두 줄이던 칸. `핵심/TOP Deal ▾` 는 119px 이 필요했다(102px 이었다). #}
+        <th style="width:122px" data-filters="top:핵심/TOP Deal">핵심/TOP Deal<div class="th-filters"></div></th>
         {# IR 자료는 맨 끝에 그대로 둔다 — 요청이 왔을 때 바로 꺼내 쓰는 칸이다. #}
         <th style="width:82px" data-filters="ir:IR 자료">IR 자료<div class="th-filters"></div></th>
         <th style="width:52px"></th>
@@ -179,11 +202,16 @@
         <td class="co-name">
           <b class="cell" data-field="name">{{ r.name }}</b>
         </td>
+        {# `data-filter-key` — 고친 값이 그 칸의 필터 목록에도 나오게 한다.
+           칸 이름(DB 컬럼)과 필터 키가 다르면 이것이 없는 한 저장해도 행 값이
+           그대로라, 값은 바뀌었는데 필터는 옛 목록을 보여 준다. #}
         <td title="{{ r.sector_major }}">
-          <div class="cell clamp2" data-field="sector_major" data-type="pick">{{ r.sector_major }}</div>
+          <div class="cell clamp2" data-field="sector_major" data-type="pick"
+               data-filter-key="sector">{{ r.sector_major }}</div>
         </td>
         <td title="{{ r.sector_minor }}">
-          <div class="cell clamp2" data-field="sector_minor" data-type="pick">{{ r.sector_minor }}</div>
+          <div class="cell clamp2" data-field="sector_minor" data-type="pick"
+               data-filter-key="minor">{{ r.sector_minor }}</div>
         </td>
         <td title="{{ r.series }}">
           <div class="cell clamp2" data-field="series" data-type="pick"
@@ -192,12 +220,17 @@
         <td title="{{ r.one_liner }}">
           <div class="cell clamp2" data-field="one_liner" data-type="long">{{ r.one_liner }}</div>
         </td>
-        <td class="cell" data-field="assignee_name" data-type="pick">{{ r.assignee }}</td>
-        <td class="cell" data-field="contract_status" data-type="pick">{{ r.contract_label }}</td>
+        <td class="cell" data-field="assignee_name" data-type="pick"
+            data-filter-key="assignee">{{ r.assignee }}</td>
+        <td class="cell" data-field="contract_status" data-type="pick"
+            data-filter-key="contract">{{ r.contract_label }}</td>
         <td class="cell" data-field="contract_month">{{ r.contract_month }}</td>
-        {# `핵심` · `TOP` · 둘 다. 눌러서 목록에서 고른다. #}
+        {# `핵심` · `TOP` · 둘 다. 눌러서 목록에서 고른다.
+           비우면 행에는 `일반` 이 실린다 — 빈 값으로 두면 같은 뜻이 목록에
+           `일반` 과 `(비어 있음)` 두 벌로 갈린다(companies.js 가 맞춰 준다). #}
         <td class="cell {% if r.top_deal_kind %}top-on{% endif %}"
-            data-field="top_deal_kind" data-type="pick">{{ r.top_deal_kind }}</td>
+            data-field="top_deal_kind" data-type="pick"
+            data-filter-key="top">{{ r.top_deal_kind }}</td>
         <td>
           {% if r.has_ir %}
             <a class="room-badge ok" href="{{ r.ir_drive_url }}" target="_blank" rel="noopener">📎 열기</a>
@@ -230,27 +263,41 @@
   <div class="detail-body">
   <p class="hint" id="co-status"></p>
 
+  {#
+    ── 칸 이름은 **표 머리글과 한 글자도 다르지 않게** ──
+
+    이 패널 하나가 두 탭(IR 기업현황 · 스타트업DB)을 함께 고친다. 그런데 이름을
+    저마다 줄여 부르고 있어서, 표에서 `사업분야 대분류` 를 보고 [수정]을 열면
+    `분야 (대)` 가 나왔다 — 같은 칸인지 아닌지가 이름으로는 판별이 안 됐다.
+
+    맞출 때는 **표 쪽이 정답**이다. 표 이름은 원본 시트에서 그대로 온 것이라
+    여기에 맞춰 표를 바꾸면 시트와 대조가 안 된다.
+    (tests/test_ui_layout.py 가 이 짝을 지킨다)
+
+    표에 칸이 없는 값(투자 현황·소개 상태·IR 링크·메모)은 맞출 상대가 없어
+    그대로 둔다.
+  #}
   <h3 class="form-section">기본</h3>
   <div class="form-grid">
     <label class="field"><span>기업명</span><input type="text" id="f-name"></label>
-    <label class="field"><span>분야 (대)</span><input type="text" id="f-sector_major" placeholder="예: 헬스케어"></label>
-    <label class="field"><span>분야 (소)</span><input type="text" id="f-sector_minor" placeholder="예: 의료AI"></label>
-    <label class="field"><span>단계</span><input type="text" id="f-series" placeholder="예: Seed / SeriesA"></label>
-    <label class="field wide"><span>한줄소개</span>
+    <label class="field"><span>사업분야 대분류</span><input type="text" id="f-sector_major" placeholder="예: 헬스케어"></label>
+    <label class="field"><span>소분류</span><input type="text" id="f-sector_minor" placeholder="예: 의료AI"></label>
+    <label class="field"><span>기업구분</span><input type="text" id="f-series" placeholder="예: Seed / SeriesA"></label>
+    <label class="field wide"><span>한줄 소개</span>
       <textarea id="f-one_liner" rows="2" placeholder="딜소개 문구에 그대로 들어갑니다"></textarea></label>
   </div>
 
   <h3 class="form-section">숫자 <span class="hint">단위: 억 (예 18.3)</span></h3>
   <div class="form-grid">
-    <label class="field"><span>최근 매출</span><input type="number" step="0.1" id="f-revenue_recent" placeholder="0"></label>
-    <label class="field"><span>누적 투자</span><input type="number" step="0.1" id="f-funding_total" placeholder="0"></label>
-    <label class="field"><span>희망 투자</span><input type="number" step="0.1" id="f-raise_target" placeholder="0"></label>
+    <label class="field"><span>최근 매출액</span><input type="number" step="0.1" id="f-revenue_recent" placeholder="0"></label>
+    <label class="field"><span>누적투자금액</span><input type="number" step="0.1" id="f-funding_total" placeholder="0"></label>
+    <label class="field"><span>투자유치희망금액</span><input type="number" step="0.1" id="f-raise_target" placeholder="0"></label>
     <label class="field"><span>Pre Value</span><input type="number" step="0.1" id="f-pre_value" placeholder="0"></label>
   </div>
 
   <h3 class="form-section">소개 내용</h3>
   <div class="form-grid">
-    <label class="field wide"><span>경쟁력</span><textarea id="f-competitiveness" rows="2"></textarea></label>
+    <label class="field wide"><span>특이사항 (장점)</span><textarea id="f-competitiveness" rows="2"></textarea></label>
     <label class="field wide"><span>투자 현황</span>
       <input type="text" id="f-funding_status" placeholder="예: Series A 진행 중"></label>
     <label class="field wide"><span>IR 자료 링크 (구글드라이브)</span>
@@ -264,7 +311,7 @@
       <select id="f-summary_status">
         {% for key, label in summary_labels.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
       </select></label>
-    <label class="field"><span>계약</span>
+    <label class="field"><span>계약여부</span>
       <select id="f-contract_status">
         <option value="none">미계약</option>
         <option value="free">무료계약완료</option>
@@ -272,7 +319,10 @@
         <option value="review">계약검토중</option>
         <option value="blocked">딜소개 불가</option>
       </select></label>
-    <label class="field"><span>계약 월</span><input type="text" id="f-contract_month" placeholder="2026-09"></label>
+    {# 표 머리글이 `날짜 기입` 이라 이름은 그대로 따르고, 무슨 날짜인지는 표와
+       똑같이 `title` 로 붙여 둔다 — 이름을 풀어 쓰면 다시 표와 달라진다. #}
+    <label class="field" title="계약기업 · 거부메일 홍보메일 삭제">
+      <span>날짜 기입</span><input type="text" id="f-contract_month" placeholder="2026-09"></label>
     <label class="field check-row"><input type="checkbox" id="f-is_top_deal"> <span>추천 딜 (★)</span></label>
     <label class="field wide"><span>메모</span><textarea id="f-note" rows="2"></textarea></label>
   </div>

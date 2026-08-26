@@ -243,8 +243,31 @@
     var cell = e.detail.cell;
     if (!cell.hasAttribute("data-value")) return;
     var full = cell.getAttribute("data-value") || "";
-    cell.textContent = full.split(" (")[0].trim();
+    var short = full.split(" (")[0].trim();
+    cell.textContent = short;
     cell.title = full;
+    // 필터도 **짧은 이름**으로 거른다(다른 296행이 그렇게 실려 있다).
+    // 고른 그대로 적어 두면 같은 단계가 목록에 두 벌로 갈려서,
+    // 짧은 쪽을 골랐을 때 방금 고친 그 기업만 사라진다.
+    var row = e.detail.row;
+    if (row && row.hasAttribute("data-f-series")) {
+      row.setAttribute("data-f-series", short);
+    }
+  });
+})();
+
+// 핵심/TOP Deal 을 비우면 행에는 `일반` 이 실린다 — 표를 처음 그릴 때와 같은
+// 규칙이다. 빈 값 그대로 두면 같은 뜻이 필터 목록에 `일반` 과 `(비어 있음)`
+// 두 벌로 갈린다.
+(function () {
+  var table = document.getElementById("co-table");
+  if (!table) return;
+  table.addEventListener("inline-saved", function (e) {
+    var row = e.detail.row;
+    if (!row || !row.hasAttribute("data-f-top")) return;
+    if (!(row.getAttribute("data-f-top") || "").trim()) {
+      row.setAttribute("data-f-top", "일반");
+    }
   });
 })();
 

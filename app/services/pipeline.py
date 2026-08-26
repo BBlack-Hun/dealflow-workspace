@@ -167,6 +167,11 @@ def meeting_rows(db: Session, user: User) -> List[dict]:
             "outcome_label": OUTCOMES.get(row.outcome or "", ""),
             "followup_due": row.followup_due or "",
             "followup_done": bool(row.followup_done),
+            # 무슨 얘기가 오갔는지. 결과 한 칸(진행/보류/거절)만으로는
+            # **왜** 그런지가 남지 않는다.
+            "note": row.note or "",
+            "followup_note": row.followup_note or "",
+            "followup_at": row.followup_at or "",
             # 결과를 물어볼 필요가 남았는가.
             #   거절로 끝났다        → 물어볼 것이 없다
             #   다음 미팅을 잡았다    → 이미 이어졌다

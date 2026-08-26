@@ -3,7 +3,16 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
 // 딜소개 보내기 — selection, preview, send-list creation (FEATURE_SPEC §5).
 (function () {
   var companyCbs = function () { return Array.prototype.slice.call(document.querySelectorAll(".company-cb")); };
-  var contactCbs = function () { return Array.prototype.slice.call(document.querySelectorAll(".contact-cb")); };
+  // 대상 목록이 두 개다(투자사 담당자 / 딜 소싱 명단). **지금 보이는 쪽만**
+  // 센다 — 숨은 목록에 체크가 남아 있는데 그것까지 보내면, 화면에 없는
+  // 사람에게 나간다.
+  var activeList = function () {
+    return document.getElementById(mode === "sourcing" ? "sourcing-list" : "contact-list");
+  };
+  var contactCbs = function () {
+    var box = activeList();
+    return box ? Array.prototype.slice.call(box.querySelectorAll(".contact-cb")) : [];
+  };
   var companyPill = document.getElementById("company-pill");
   var contactPill = document.getElementById("contact-pill");
   var contactSummary = document.getElementById("contact-summary");
@@ -15,7 +24,8 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   // 딜소개 말고는 전부 기업 목록 없이 문구만 나간다.
   // 이미 목록을 받은 사람에게 같은 목록을 다시 밀어 넣는 것은 후속이 아니라 재발송이다.
   var FOLLOW_UP = { ask: "선호 분야 묻기", remind: "리마인드", meeting: "미팅 요청",
-                    review: "미팅 후기", ir: "IR 자료 전달" };
+                    review: "미팅 후기", ir: "IR 자료 전달",
+                    sourcing: "딜 소싱 제안" };
   // IR 자료 전달은 기업을 고른다(무엇을 보내는지 알아야 한다).
   // 나머지 후속 문구는 기업과 무관하다.
   var NEEDS_COMPANIES = { deal: true, ir: true };
@@ -89,24 +99,87 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     var pickedOnly = onlyPicked && onlyPicked.checked;
     var shown = 0, total = 0;
 
-    document.querySelectorAll("#contact-list .pick-card").forEach(function (card) {
+    var list = activeList();
+    (list ? list.querySelectorAll(".pick-card") : []).forEach(function (card) {
       var cb = card.querySelector(".contact-cb");
       var picked = cb && cb.checked;
       var hit = !q || (card.getAttribute("data-search") || "").indexOf(q) !== -1;
+      // 갈래 필터는 소싱 목록에만 있다. 고른 사람은 갈래를 바꿔도 계속 보인다 —
+      // 사라지면 몇 명 골랐는지 알 수 없다(검색과 같은 규칙).
+      var inBucket = !bucketFilter || card.getAttribute("data-bucket") === bucketFilter;
+      var inAssignee = !assigneeFilter ||
+        card.getAttribute("data-assignee") === assigneeFilter;
       total += 1;
-      var visible = picked || (hit && !pickedOnly);
+      var visible = picked || (hit && inBucket && inAssignee && !pickedOnly);
       card.hidden = !visible;
       if (visible) shown += 1;
     });
 
     if (note) {
-      if (q || pickedOnly) {
+      if (q || pickedOnly || bucketFilter || assigneeFilter) {
         note.hidden = false;
         note.textContent = shown + " / " + total + "명 표시 중" +
-          (q ? " (검색: " + box.value.trim() + ")" : "");
+          (q ? " (검색: " + box.value.trim() + ")" : "") +
+          (bucketFilter ? " (갈래: " + bucketFilter + ")" : "") +
+          (assigneeFilter ? " (담당: " + assigneeFilter + ")" : "");
       } else {
         note.hidden = true;
       }
+    }
+  }
+
+  // ── 소싱 필터(갈래 · 담당) ────────────────────────────────
+  // 갈래는 곧 문구이고, 담당은 누구를 챙길 차례인가다. 둘 다 이름을 검색창에
+  // 쳐서 찾게 하면 무엇이 몇 개인지도 모른 채 골라야 한다.
+  var bucketFilter = "";
+  var assigneeFilter = "";
+  var filterBox = document.getElementById("sourcing-filters");
+
+  function bindFilter(id, set) {
+    var bar = document.getElementById(id);
+    if (!bar) return null;
+    bar.addEventListener("click", function (e) {
+      var chip = e.target.closest(".chip");
+      if (!chip) return;
+      set(chip.getAttribute("data-value") || "");
+      bar.querySelectorAll(".chip").forEach(function (c) {
+        c.classList.toggle("active", c === chip);
+      });
+      applyContactFilter();
+    });
+    return bar;
+  }
+  var bucketBar = bindFilter("bucket-filter", function (v) { bucketFilter = v; });
+  var assigneeBar = bindFilter("assignee-filter", function (v) { assigneeFilter = v; });
+
+  function resetSourcingFilters() {
+    bucketFilter = "";
+    assigneeFilter = "";
+    [bucketBar, assigneeBar].forEach(function (bar) {
+      if (!bar) return;
+      bar.querySelectorAll(".chip").forEach(function (c, i) {
+        c.classList.toggle("active", i === 0);
+      });
+    });
+  }
+
+  function syncBucketMixNote() {
+    var note = document.getElementById("bucket-mix-note");
+    if (!note) return;
+    if (mode !== "sourcing") { note.hidden = true; return; }
+    var picked = {};
+    contactCbs().forEach(function (c) {
+      if (!c.checked) return;
+      var card = c.closest(".pick-card");
+      if (card) picked[card.getAttribute("data-bucket") || ""] = true;
+    });
+    var names = Object.keys(picked);
+    // 갈래를 섞어도 사람마다 제 갈래의 문구가 나간다 — 사고는 아니지만
+    // 모르고 섞으면 미리보기에서 다른 문구를 보고 놀란다.
+    note.hidden = names.length < 2;
+    if (!note.hidden) {
+      note.textContent = "갈래 " + names.length + "개가 섞여 있습니다 — " +
+        "갈래마다 다른 문구가 나갑니다 (" + names.join(" · ") + ")";
     }
   }
 
@@ -141,7 +214,8 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   // 고르지 않았을 때 쓰는 문구의 이름. '기본' 만으로는 무엇의 기본인지 모른다.
   var CLOSING_DEFAULT = {
     deal: "기본 안내문", remind: "기본 안내문", meeting: "기본 안내문",
-    review: "기본 문구", ask: "기본 문구", ir: "기본 문구"
+    review: "기본 문구", ask: "기본 문구", ir: "기본 문구",
+    sourcing: "갈래별 기본 문구"
   };
 
   function renderTemplates() {
@@ -157,7 +231,8 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     // 문구만 보낼 때는 안내문이 아니라 그 방식의 문구를 고른다.
     var kindByMode = { ask: "ask_preference", remind: "closing_remind",
                        meeting: "closing_meeting", review: "meeting_review",
-                       deal: "closing_day1", ir: "ir_delivery" };
+                       deal: "closing_day1", ir: "ir_delivery",
+                       sourcing: "sourcing_intro" };
     fill("tpl-closing", byKind[kindByMode[mode]] || [],
          CLOSING_DEFAULT[mode] || "기본 안내문");
   }
@@ -265,6 +340,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
                        : (nc > MAX_COMPANIES ? "기업은 최대 " + MAX_COMPANIES + "개까지" : ""));
     if (mode === "ir") renderIrLinks();
 
+    syncBucketMixNote();
     // 고른 사람 이름을 보여준다 — 숫자만으로는 누구를 넣었는지 알 수 없다.
     var names = contactCbs().filter(function (c) { return c.checked; })
       .map(function (c) { return c.getAttribute("data-name"); });
@@ -324,11 +400,32 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       b.classList.toggle("active", b.getAttribute("data-mode") === mode);
     });
     companyPanel.classList.toggle("dimmed", askMode);
-    document.getElementById("mode-help").textContent =
+    // 대상 목록 자체를 바꾼다 — 소싱은 받는 사람이 다른 명단에 있다.
+    var sourcingMode = mode === "sourcing";
+    var contactBox = document.getElementById("contact-list");
+    var sourcingBox = document.getElementById("sourcing-list");
+    if (contactBox) contactBox.hidden = sourcingMode;
+    if (sourcingBox) sourcingBox.hidden = !sourcingMode;
+    var contactHead = document.getElementById("contact-head");
+    if (contactHead) contactHead.textContent = sourcingMode ? "② 딜 소싱 대상" : "② 대상 담당자";
+    var noReactBtn = document.getElementById("select-noreact");
+    // 소싱 명단에는 '반응' 이라는 개념이 없다 — 아직 보낸 적이 없다.
+    if (noReactBtn) noReactBtn.hidden = sourcingMode;
+    if (filterBox) {
+      filterBox.hidden = !sourcingMode;
+      // 필터를 켜 둔 채 다른 탭으로 갔다 오면, 왜 사람이 적은지 모른다.
+      resetSourcingFilters();
+    }
+    applyContactFilter();
+    // 설명 줄은 화면에서 뺐다. 없어도 터지지 않아야 한다.
+    var help = document.getElementById("mode-help");
+    if (help) help.textContent =
       mode === "ir"
         ? "요청받은 기업을 고르면, 자료를 먼저 보내고 안내 문구를 뒤에 보냅니다"
-        : (askMode ? FOLLOW_UP[mode] + " — 기업 목록 없이 문구만 보냅니다 (기업 선택 불필요)"
-                   : "기업 1~10개 선택 → 대상 담당자 체크 → 담당자별 미리보기 → 발송");
+        : (sourcingMode
+            ? "딜 소싱 명단에서 대상을 고르면, 갈래(시리즈 A 이상 · 투자사 대표 · 개인 참여 …)에 맞는 문구가 나갑니다"
+            : (askMode ? FOLLOW_UP[mode] + " — 기업 목록 없이 문구만 보냅니다 (기업 선택 불필요)"
+                       : "기업 1~10개 선택 → 대상 담당자 체크 → 담당자별 미리보기 → 발송"));
     var companyHint = document.getElementById("company-hint");
     if (companyHint) companyHint.hidden = mode === "ir";
     renderIrLinks();
@@ -342,6 +439,9 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     var greet = document.getElementById("include-opening");
     if (greet) { greet.checked = (mode !== "ask"); syncOpeningToggle(); }
     lastPreviews = [];
+    // 방식을 바꾸면 고친 것도 버린다 — 딜소개용으로 고친 문구가 IR 자료
+    // 전달에 얹히면 엉뚱한 말이 나간다.
+    savedEdits = {};
     previewTabs.innerHTML = "";
     previewArea.innerHTML = '<p class="muted">불러오는 중…</p>';
     warnBox.hidden = true;
@@ -380,14 +480,25 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     Array.prototype.slice.call(previewTabs.children).forEach(function (t, i) {
       t.classList.toggle("active", i === idx);
     });
-    var roomLine = p.room_name ? ("💬 " + p.room_name) : ("⚠ " + (p.room_warning || "방 미등록"));
+    var roomLine = p.room_name
+      ? ("💬 " + p.room_name + (p.room_from ? " (" + p.room_from + ")" : ""))
+      : ("⚠ " + (p.room_warning || "방 미등록"));
+    // 기본 문구는 아직 아무에게도 가지 않는다 — 진짜 사람에게 갈 문구로
+    // 읽히면 확인만 하려다 그대로 보내게 된다.
+    var meta = p.sample
+      ? '<div class="bubble-meta sample">기본 문구 — 아직 대상을 고르지 않았습니다. ' +
+        '담당자를 고르면 그 사람 이름으로 바뀝니다.' +
+        ' <span class="edited-flag" id="edited-flag" hidden>· 수정함</span></div>'
+      : '<div class="bubble-meta">' + escapeHtml(p.name) + " " + escapeHtml(p.title || "") +
+        " · " + escapeHtml(roomLine) + (p.has_history ? " · 재연락" : " · 첫연락") +
+        ' <span class="edited-flag" id="edited-flag" hidden>· 수정함</span></div>';
     previewArea.innerHTML =
-      '<div class="bubble-meta">' + escapeHtml(p.name) + " " + escapeHtml(p.title || "") +
-      " · " + escapeHtml(roomLine) + (p.has_history ? " · 재연락" : " · 첫연락") +
-      ' <span class="edited-flag" id="edited-flag" hidden>· 수정함</span></div>' +
+      meta +
       splitNotice(p) +
       '<textarea class="bubble-edit" id="bubble-edit" spellcheck="false"></textarea>' +
-      '<div class="charcount" id="charcount"></div>';
+      '<div class="charcount" id="charcount"></div>' +
+      '<button type="button" class="linkbtn" id="revert-edit"' +
+      (p.edited ? '' : ' hidden') + '>고친 것 되돌리기</button>';
 
     var ta = document.getElementById("bubble-edit");
     ta.value = p.message;               // innerHTML 이 아니라 value 로 넣어야 안전하다
@@ -397,10 +508,31 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
 
     ta.addEventListener("input", function () {
       p.message = ta.value;
+      // 고치는 즉시 남겨 둔다. 저장 단추가 따로 없으니, 여기서 안 남기면
+      // 담당자를 하나 더 체크하는 순간 사라진다.
+      if (ta.value.trim() && ta.value !== p.original) {
+        savedEdits[p.contact_id] = ta.value;
+      } else {
+        delete savedEdits[p.contact_id];
+      }
       p.edited = ta.value !== p.original;
       flag.hidden = !p.edited;
       updateCharCount(ta.value);
       markTabEdited(idx, p.edited);
+      if (revert) revert.hidden = !p.edited;
+    });
+
+    // 되돌릴 수 없으면 고치기가 부담스럽다 — 손댄 뒤 원래 문구를 다시 못 본다.
+    var revert = document.getElementById("revert-edit");
+    if (revert) revert.addEventListener("click", function () {
+      delete savedEdits[p.contact_id];
+      p.message = p.original;
+      p.edited = false;
+      ta.value = p.original;
+      flag.hidden = true;
+      revert.hidden = true;
+      updateCharCount(ta.value);
+      markTabEdited(idx, false);
     });
   }
 
@@ -418,6 +550,11 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   }
 
   // 고친 문구만 서버로 보낸다. 안 고친 담당자는 서버가 다시 조합한다.
+  // 고친 문구를 담당자별로 들고 있는다 — 미리보기를 다시 그려도 남아야 한다.
+  var savedEdits = {};
+  // 미리보기 요청 번호. 늦게 온 옛 응답이 새 것을 덮지 않게 한다.
+  var previewSeq = 0;
+
   function editedOverrides() {
     return lastPreviews
       .filter(function (p) { return p.edited && (p.message || "").trim(); })
@@ -427,13 +564,14 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   function refreshPreview() {
     var cids = selectedCompanyIds();
     var tids = selectedContactIds();
-    if ((needsCompanies() && cids.length < 1) || tids.length < 1) {
-      previewArea.innerHTML = '<p class="muted">' +
-        (needsCompanies() ? "기업과 담당자를 고르면" : "담당자를 고르면") +
-        " 여기에 문구가 나옵니다.</p>";
-      previewTabs.innerHTML = "";
-      return;
-    }
+    // 아무도 안 골랐어도 **기본 문구**를 부른다. 문구를 확인하려고 아무나
+    // 한 명 체크했다가 그대로 발송을 누르는 일이 있었다.
+    // (딜 소개는 기업까지 골라야 목록이 채워지지만, 인사말·안내문 모양은
+    //  기업 없이도 보인다)
+    // 요청마다 번호를 붙인다. 39명을 고른 요청은 느리고 전부 해제한 요청은
+    // 빠른데, 순서를 안 지키면 **늦게 도착한 옛 응답이 새 것을 덮는다** —
+    // 전체선택을 두 번 눌러 다 껐는데 미리보기에 투자사가 그대로 남았다.
+    var seq = ++previewSeq;
     fetch("/api/deals/preview", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -441,14 +579,27 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     })
       .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
       .then(function (res) {
+        if (seq !== previewSeq) return;      // 그 사이 새 요청이 나갔다
         if (!res.ok) { previewArea.innerHTML = '<p class="muted">' + escapeHtml(res.d.detail || "미리보기 실패") + "</p>"; return; }
         lastPreviews = res.d.previews || [];
-        lastPreviews.forEach(function (p) { p.original = p.message; p.edited = false; });
+        // 고친 문구를 되살린다. 담당자를 하나 더 체크하면 미리보기가 새로
+        // 그려지는데, 그때마다 앞서 고쳐 둔 것이 **말없이 사라졌다** —
+        // 열 명을 고치고 한 명 더 넣으면 열 명분이 날아간다.
+        lastPreviews.forEach(function (p) {
+          p.original = p.message;
+          var kept = savedEdits[p.contact_id];
+          if (kept !== undefined && kept !== p.message) {
+            p.message = kept;
+            p.edited = true;
+          } else {
+            p.edited = false;
+          }
+        });
         previewTabs.innerHTML = "";
         lastPreviews.forEach(function (p, i) {
           var b = document.createElement("button");
           b.className = "preview-tab";
-          b.textContent = p.name;
+          b.textContent = p.sample ? "기본 문구" : p.name;
           b.onclick = function () { renderPreview(i); };
           previewTabs.appendChild(b);
         });
@@ -460,7 +611,10 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
         if (warns.length) { warnBox.hidden = false; warnBox.innerHTML = warns.map(escapeHtml).join("<br>"); }
         else { warnBox.hidden = true; }
       })
-      .catch(function () { previewArea.innerHTML = '<p class="muted">미리보기 요청 오류</p>'; });
+      .catch(function () {
+        if (seq !== previewSeq) return;
+        previewArea.innerHTML = '<p class="muted">미리보기 요청 오류</p>';
+      });
   }
 
   function send() {

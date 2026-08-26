@@ -1,0 +1,65 @@
+{#
+  참고 자료 패널 — 투자사 관리 현황과 투자컨설턴트 현황이 같이 쓴다.
+  두 곳에 복사해 두면 한쪽만 고쳐진다(실제로 이름 바꾸기가 한쪽에만 있었다).
+
+  `back` = 닫기·저장 뒤에 돌아갈 화면 주소.
+#}
+{% if ref %}
+{# 참고 자료를 펼친 상태. 명단 표는 아래에 그대로 남는다. #}
+<section class="panel ref-panel">
+  <h2 class="panel-title">
+    {#
+      이름이 원본 시트 탭 이름 그대로라 길다(`40개사 스타트업 매월 1회
+      리마인드 카톡 가이드`). 자료는 그대로 두고 부르는 이름만 바꾼다.
+    #}
+    <form method="post" action="/ref-sheets/{{ ref.id }}/rename" class="ref-rename">
+      <input type="text" name="title" value="{{ ref.title }}" maxlength="80"
+             aria-label="탭 이름" title="탭 이름을 고치고 [이름 저장]을 누르세요">
+      <input type="hidden" name="sheet" value="{{ selected_sheet }}">
+      <button class="linkbtn" type="submit">이름 저장</button>
+    </form>
+    <span class="hint">참고 자료</span>
+    <span class="ref-acts">
+      <a class="linkbtn" href="{{ ref_back }}?sheet={{ selected_sheet|urlencode }}">닫기</a>
+      <form method="post" action="/ref-sheets/{{ ref.id }}/delete"
+            onsubmit="return confirm('{{ ref.title }} 탭을 지울까요?\n원본 시트를 다시 가져오면 되살릴 수 있습니다.')">
+        <button class="linkbtn danger" type="submit">이 탭 지우기</button>
+      </form>
+    </span>
+  </h2>
+  {% if ref.kind == 'table' %}
+  {# 보기만 되던 자료다. 쓰면서 다듬는 것이라, 고치려고 구글 시트를 따로
+     열어야 하면 화면 안으로 들여온 뜻이 없다. #}
+  <p class="hint">칸을 눌러 바로 고칩니다.</p>
+  <div class="table-wrap wide">
+    <table class="grid-table compact" id="ref-table" data-ref-id="{{ ref.id }}">
+      <thead><tr>
+        {% for c in ref_content.columns %}<th>{{ c }}</th>{% endfor %}
+      </tr></thead>
+      <tbody>
+        {% for row in ref_content.rows %}
+        {% set r_idx = loop.index0 %}
+        <tr>{% for cell in row %}
+          {# 줄 번호는 **바깥 반복**에서 온다. 안쪽 것을 쓰면 모든 칸이
+             같은 줄을 가리켜 엉뚱한 자리에 저장된다. #}
+          <td class="ref-cell" data-row="{{ r_idx }}" data-col="{{ loop.index0 }}">{{ cell }}</td>
+        {% endfor %}</tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  {# 줄글은 칸으로 나뉘어 있지 않아 통째로 고친다 — 표로 쪼개면 내용이 칸에
+     잘려 사라진다. #}
+  <form method="post" action="/ref-sheets/{{ ref.id }}/body" class="ref-body-form">
+    <textarea name="body" class="ref-text-edit" rows="18"
+              spellcheck="false">{{ ref_content.body }}</textarea>
+    <input type="hidden" name="sheet" value="{{ selected_sheet }}">
+    <div class="ref-body-acts">
+      <button class="secondary-btn" type="submit">저장</button>
+      <span class="hint">줄바꿈·띄어쓰기 그대로 저장됩니다.</span>
+    </div>
+  </form>
+  {% endif %}
+</section>
+{% endif %}

@@ -96,7 +96,7 @@
 
   {% if open_requests %}
   <table class="grid-table compact">
-    <thead><tr><th style="width:96px">요청일</th><th>담당자</th><th>기업</th><th style="width:104px">자료</th><th style="width:78px">기다린 날</th><th style="width:104px"></th></tr></thead>
+    <thead><tr><th style="width:96px">요청일</th><th>담당자</th><th>기업</th><th style="width:104px">자료</th><th class="num" style="width:78px">기다린 날</th><th style="width:104px"></th></tr></thead>
     <tbody>
       {% for r in open_requests %}
       <tr class="{% if r.overdue %}overdue-row{% endif %}">
@@ -191,7 +191,7 @@
     <h2 class="panel-title">예약된 후속 <span class="hint">{{ upcoming|length }}건</span></h2>
     {% if upcoming %}
     <table class="grid-table compact">
-      <thead><tr><th>예정일</th><th>담당자</th><th>다음 단계</th><th>남음</th><th></th></tr></thead>
+      <thead><tr><th>예정일</th><th>담당자</th><th>다음 단계</th><th class="num">남음</th><th></th></tr></thead>
       <tbody>
         {% for r in upcoming %}
         <tr>
@@ -372,7 +372,7 @@
 
   {% if scheduled %}
   <table class="grid-table compact">
-    <thead><tr><th>날짜</th><th>담당자</th><th>구분</th><th>기업</th><th>남음</th><th></th></tr></thead>
+    <thead><tr><th>날짜</th><th>담당자</th><th>구분</th><th>기업</th><th class="num">남음</th><th></th></tr></thead>
     <tbody>
       {% for m in scheduled %}
       <tr>
@@ -407,15 +407,21 @@
     <h2 class="panel-title">전달한 자료 <span class="hint">{{ done_requests|length }}건</span></h2>
     {% if done_requests %}
     <table class="grid-table compact">
-      <thead><tr><th>요청일</th><th>담당자</th><th>기업</th><th>상태</th><th></th></tr></thead>
+      {# 칸 너비를 안 주면 '상태' 가 제일 좁게 눌려서 배지가 중간에 끊긴다. #}
+      <thead><tr>
+        <th style="width:96px">요청일</th><th>담당자</th><th>기업</th>
+        <th style="width:104px">상태</th><th style="width:120px"></th>
+      </tr></thead>
       <tbody>
         {% for r in done_requests[:20] %}
         <tr>
           <td class="muted">{{ r.requested_at }}</td>
           <td>{{ r.name }} <span class="muted">{{ r.firm }}</span></td>
           <td>{{ r.company_name }}</td>
-          <td><span class="status-badge">{{ r.status_label }}</span>
-            {% if r.delivered_at %}<span class="muted">{{ r.delivered_at }}</span>{% endif %}</td>
+          {# 배지 옆에 날짜를 나란히 두면 좁은 칸에서 둘이 엉켜 끊긴다.
+             배지는 한 덩어리로 두고 날짜는 아랫줄로 내린다. #}
+          <td class="status-cell"><span class="status-badge">{{ r.status_label }}</span>
+            {% if r.delivered_at %}<span class="status-when muted">{{ r.delivered_at }}</span>{% endif %}</td>
           <td class="row-acts">
             {# 미팅은 **자료를 보낸 그 건**에서 이어진다. 담당자·기업을 처음부터
                다시 고르게 하면 이미 아는 정보를 사람이 또 타이핑하는 셈이다. #}
@@ -441,11 +447,15 @@
       <span class="hint">끝난 미팅 {{ finished|length }}건 · 열흘쯤 뒤 결과를 묻습니다</span>
     </h2>
     {% if finished %}
-    <table class="grid-table compact">
+    {# 결과가 한 칸(진행/보류/거절)뿐이면 **왜** 그런지가 남지 않는다 —
+       다음 회차에 이 투자사를 어떻게 대할지는 거기서 나온다. #}
+    <div class="table-wrap wide">
+    <table class="grid-table compact" id="review-table" data-inline-url="/api/meetings">
       <thead><tr>
-        <th style="width:96px">날짜</th><th>담당자</th>
-        <th style="width:80px">구분</th><th style="width:84px">결과</th>
-        <th style="width:110px">결과 문의</th><th style="width:96px"></th>
+        <th style="width:88px">날짜</th><th style="width:150px">담당자</th>
+        <th style="width:60px">구분</th><th style="width:72px">결과</th>
+        <th style="width:250px">미팅 후기</th>
+        <th style="width:300px">결과 문의</th><th style="width:96px"></th>
       </tr></thead>
       <tbody>
         {% for m in finished[:20] %}
@@ -454,6 +464,12 @@
           <td>{{ m.name }} <span class="muted">{{ m.firm }}</span></td>
           <td class="muted">{{ m.kind_label }}</td>
           <td>{{ m.outcome_label or '-' }}</td>
+          {# 미팅 자리에서 들은 것. 열흘 뒤 통화와 다른 시점의 이야기라 칸을
+             나눠 둔다 — 한 칸에 섞으면 언제 들은 말인지 알 수 없다. #}
+          <td title="{{ m.note or '' }}">
+            <div class="cell clamp2" data-field="note" data-type="long"
+                 data-placeholder="눌러서 후기 적기">{{ m.note or '' }}</div>
+          </td>
           <td class="muted">
             {% if m.status == 'canceled' %}취소
             {% elif m.followup_done %}<span class="ok">완료</span>
@@ -465,16 +481,27 @@
               물어보고 나면 여기서 바로 기록한다. 예전엔 **날짜가 지난 건**에만
               버튼이 떠서, 미리 물어봤으면 적을 곳이 없었다.
             #}
-            {% if m.needs_followup %}
-            <form method="post" action="/ir/meetings/{{ m.id }}/followup" class="inline-form">
+            {# 이미 물어본 것도 다시 열 수 있어야 한다 — 두 번째 통화에서
+               말이 바뀌는 일이 흔한데, '완료' 로 닫혀 있으면 적을 곳이 없다. #}
+            {% if m.needs_followup or m.followup_done %}
+            <form method="post" action="/ir/meetings/{{ m.id }}/followup" class="followup-form">
               <select name="outcome">
                 <option value="">결과 그대로</option>
                 {% for key, label in outcomes.items() %}
                 <option value="{{ key }}" {% if m.outcome == key %}selected{% endif %}>{{ label }}</option>
                 {% endfor %}
               </select>
-              <button class="linkbtn" type="submit">물어봤음</button>
+              <input type="text" name="note" placeholder="들은 내용"
+                     maxlength="500" autocomplete="off">
+              <button class="linkbtn" type="submit">
+                {% if m.followup_done %}다시 기록{% else %}물어봤음{% endif %}
+              </button>
             </form>
+            {% endif %}
+            {% if m.followup_note %}
+            {# 들은 말이 안 보이면 물어본 기록만 남고 내용은 사라진다. #}
+            <div class="cell clamp2 followup-log" data-field="followup_note"
+                 data-type="long" title="{{ m.followup_note }}">{{ m.followup_note }}</div>
             {% endif %}
           </td>
           <td>
@@ -498,12 +525,14 @@
         {% endfor %}
       </tbody>
     </table>
+    </div>
     {% else %}<p class="muted">아직 없습니다.</p>{% endif %}
   </section>
 </div>
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ asset('js/inline_edit.js') }}"></script>
 <script src="{{ asset('js/ir_numbers.js') }}"></script>
 <script>
   // 후속 화면에서 이름을 눌러 넘어왔으면 폼이 이미 열려 있다 — 눈에 들어오게만

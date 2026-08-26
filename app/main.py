@@ -15,6 +15,10 @@ from .routers import (agent_api, companies, consulting, contacts, dashboard,
 
 
 def create_app() -> FastAPI:
+    # 인터넷에 올릴 때 기본 토큰·비밀번호가 그대로면 여기서 멈춘다.
+    # 저장소가 공개라 그 기본값은 이미 아무나 아는 값이다.
+    config.assert_ready()
+
     app = FastAPI(title="dealflow", version="0.1.0 (Sprint 1)")
 
     app.mount("/static", StaticFiles(directory=str(config.STATIC_DIR)), name="static")

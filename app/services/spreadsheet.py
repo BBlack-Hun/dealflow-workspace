@@ -149,6 +149,46 @@ def is_export_file(filename: str, data: bytes) -> bool:
         wb.close()
 
 
+def write_plain_xlsx(sheet_title: str, rows: Sequence[Sequence[Any]],
+                     head_row: int = 1, widths: Sequence[int] = ()) -> bytes:
+    """머리행 위치를 골라 쓰는 표. **내보내기 표식을 붙이지 않는다.**
+
+    업로드용 샘플 양식이 이걸 쓴다. `write_xlsx` 로 만들면 표식이 붙어서
+    그 파일을 그대로 올렸을 때 "내보낸 파일은 올릴 수 없습니다" 로 막힌다 —
+    샘플이 샘플 구실을 못 한다.
+
+    실제 명단 시트는 머리글이 2행이고 1행에 월 라벨이 온다. 그 모양을 그대로
+    만들 수 있어야 파서가 읽는 것과 같은 양식이 된다.
+    """
+    try:
+        import openpyxl
+        from openpyxl.styles import Alignment, Font, PatternFill
+        from openpyxl.utils import get_column_letter
+    except ImportError:  # pragma: no cover
+        raise SpreadsheetError("엑셀 쓰기 모듈(openpyxl)이 설치되지 않았습니다.")
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = _safe_sheet_title(sheet_title)
+    for row in rows:
+        ws.append(["" if v is None else v for v in row])
+
+    head_fill = PatternFill("solid", fgColor="EEF2F7")
+    for cell in ws[head_row]:
+        cell.font = Font(bold=True)
+        cell.fill = head_fill
+        cell.alignment = Alignment(vertical="center", wrap_text=True)
+    ws.freeze_panes = f"A{head_row + 1}"
+
+    for i, width in enumerate(widths, start=1):
+        ws.column_dimensions[get_column_letter(i)].width = width
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    wb.close()
+    return buf.getvalue()
+
+
 def write_xlsx(sheet_title: str, headers: Sequence[str],
                rows: Sequence[Sequence[Any]]) -> bytes:
     """표 하나를 담은 .xlsx 바이트. 머리행 고정 + 컬럼 폭 자동."""

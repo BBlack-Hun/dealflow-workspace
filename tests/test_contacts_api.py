@@ -34,11 +34,12 @@ def contacts(db, users):
 # ── 표(SSR) ────────────────────────────────────────────────────────────────
 
 def test_contacts_columns_fit_without_horizontal_scroll(logged_in, contacts):
-    """폭을 **실제 글자 길이**로 잡았다 — 짧은 값이 든 칸에 넓은 자리를 주면
-    표가 헐렁해 보이고, 정작 긴 칸(라운드사이즈 38자)은 잘린다.
+    """시트 컬럼 18개를 그대로 세우면 화면보다 넓다 — 그것 자체는 맞다.
 
-    한 칸은 폭 없이 남는 자리를 먹어야 1280px 에 딱 맞는다.
+    대신 **표 안에서만** 가로로 밀려야 한다. 페이지가 통째로 밀리면 좌측
+    메뉴까지 따라 움직여 어디를 보고 있는지 잃는다.
     """
+    import pathlib
     import re
 
     html = logged_in.get("/contacts").text
@@ -55,8 +56,18 @@ def test_contacts_columns_fit_without_horizontal_scroll(logged_in, contacts):
         else:
             flexible += 1
 
-    assert flexible == 1, f"폭 없는 칸이 {flexible}개 — 서로 자리를 뺏는다"
-    assert fixed < 1100, f"고정 폭 합 {fixed}px — 남는 자리가 없어 짜부라진다"
+    # 폭 없는 칸이 여럿이면 서로 자리를 뺏어 칸 너비가 들쭉날쭉해진다.
+    assert flexible == 0, f"폭 없는 칸이 {flexible}개 — 서로 자리를 뺏는다"
+    # 표가 제 감싸개 안에서 밀려야 한다(페이지가 통째로 밀리면 안 된다).
+    assert 'class="table-wrap wide"' in html
+    css = pathlib.Path("app/static/css/app.css").read_text(encoding="utf-8")
+    assert "#contacts-table { min-width:" in css
+    # 세로도 자른다 — 그래야 가로 스크롤바가 표 바로 아래 붙는다.
+    rule = re.search(r"\.table-wrap\.wide\s*\{([^}]*)\}", css)
+    assert rule, ".table-wrap.wide 규칙이 없습니다"
+    assert re.search(r"overflow:\s*auto", rule.group(1))
+    assert "max-height" in rule.group(1), (
+        "높이를 안 자르면 가로 스크롤바가 문서 맨 아래로 밀린다")
     # 폭 제어는 th 에서 한다. 옛 colgroup 이 남아 있으면 그쪽이 이겨 버린다.
     assert "<colgroup" not in html
 
@@ -68,18 +79,27 @@ def test_page_shows_only_my_contacts(logged_in, contacts):
 
 
 def test_rows_carry_filter_attributes(logged_in, contacts):
-    """필터 컴포넌트는 행의 data-f-* 만 읽는다 — 다중 값은 '|' 로 나뉜다."""
+    """필터 컴포넌트는 행의 data-f-* 만 읽는다 — 다중 값은 '|' 로 나뉜다.
+
+    행이 싣는 값은 **그 칸이 화면에 보여 주는 것**이어야 한다. 라운드 사이즈
+    칸의 필터가 `stages`(선호 단계)를 보고 있어서, 표에는 라운드가 52줄 적혀
+    있는데 필터를 열면 늘 빈 목록이었다 — `stages` 는 값이 0줄이다.
+    선호 단계는 표에 칸이 없어(상세 패널에서만 고친다) 필터에서 뺐고,
+    방 연결(`data-f-room`)도 걸 머리글이 없어 함께 걷어냈다.
+    짝이 어긋나는지는 tests/test_filter_columns.py 가 전 화면에서 훑는다.
+    """
     html = logged_in.get("/contacts").text
-    assert 'data-f-stage="Seed|SeriesA"' in html
     assert 'data-f-sector="AI|SaaS"' in html
+    # 라운드 사이즈 칸이 보여 주는 그 값으로 거른다
+    assert 'data-f-round=' in html
+    assert 'data-f-stage=' not in html, "표에 칸이 없는 값으로 거르려 한다"
+    assert 'data-f-room=' not in html, "걸 머리글이 없는 값을 행이 싣고 있다"
     # 채널·상태는 시트에 없는 칸이라 컬럼과 함께 뺐다.
     assert 'data-f-dealstage=' in html      # 그 자리에 진행 단계가 있다
-    assert 'data-f-room="● 확인됨"' in html
-    assert 'data-f-room="○ 미확인"' in html
-    assert 'data-f-room="⚠ 미등록"' in html   # 방 이름이 없는 담당자
     # 필터 대상 컬럼 헤더에 드롭다운이 붙는다
     assert 'data-filters="sector:선호 투자분야"' in html
-    assert 'data-filters="stage:라운드사이즈"' in html
+    # 컬럼 이름은 원본 시트를 그대로 따른다
+    assert 'data-filters="round:라운드 사이즈(투자운영금액)"' in html
 
 
 def test_recent_deal_and_reaction_are_aggregated_not_stored(logged_in, db, contacts):
@@ -431,3 +451,151 @@ def test_those_fields_can_be_edited(logged_in, db, contacts):
     assert r.status_code == 200
     db.refresh(hong)
     assert hong.address == "부산시 해운대구 센텀로 9"
+
+# --- 명단(시트) 이름 바꾸기 --------------------------------------------------
+#
+# 참고 탭은 이름을 바꿀 수 있는데 명단 탭은 못 바꿨다. 원본 시트에서 이름을
+# 다듬으면 앱만 옛 이름으로 남는다.
+
+def _named(db, users, name, sheet):
+    from app.models import VcContact
+
+    row = VcContact(user_id=users["u1"].id, name=name, firm="가나벤처스",
+                    source_sheet=sheet, connect_stage="connected")
+    db.add(row)
+    db.commit()
+    return row
+
+
+def test_a_list_sheet_can_be_renamed(logged_in, db, users):
+    row = _named(db, users, "박준호", "옛 이름")
+    r = logged_in.post("/api/contacts/sheets/rename",
+                       data={"old": "옛 이름", "new": "새 이름"},
+                       follow_redirects=False)
+    assert r.status_code == 303
+    db.refresh(row)
+    assert row.source_sheet == "새 이름"
+
+
+def test_renaming_does_not_smudge_the_other_lists(logged_in, db, users):
+    """한 사람이 여러 명단에 겹친다 — 통째로 바꾸면 다른 명단까지 뭉개진다."""
+    both = _named(db, users, "이서준", "옛 이름,다른 명단")
+    logged_in.post("/api/contacts/sheets/rename",
+                   data={"old": "옛 이름", "new": "새 이름"}, follow_redirects=False)
+    db.refresh(both)
+    assert both.source_sheet == "새 이름,다른 명단"
+
+
+def test_an_empty_new_name_is_refused(logged_in, db, users):
+    """이름 없는 탭은 누를 자리가 없어진다."""
+    row = _named(db, users, "정민아", "옛 이름")
+    logged_in.post("/api/contacts/sheets/rename",
+                   data={"old": "옛 이름", "new": "   "}, follow_redirects=False)
+    db.refresh(row)
+    assert row.source_sheet == "옛 이름"
+
+
+def test_the_owner_mapping_follows_the_rename(logged_in, db, users):
+    """담당은 명단 이름으로 붙어 있다 — 이름만 바꾸면 담당이 끊긴다."""
+    from app.models import SheetOwner
+
+    _named(db, users, "홍길동2", "옛 이름")
+    db.add(SheetOwner(label="옛 이름", user_id=users["u1"].id))
+    db.commit()
+
+    logged_in.post("/api/contacts/sheets/rename",
+                   data={"old": "옛 이름", "new": "새 이름"}, follow_redirects=False)
+    db.expire_all()
+    labels = {o.label for o in db.query(SheetOwner).all()}
+    assert "새 이름" in labels and "옛 이름" not in labels
+
+# --- 화면에서 고친 값이 실제로 저장되는가 --------------------------------------
+#
+# 스키마(`ContactIn`)에 칸을 더해 놓고 `_assign` 의 저장 목록에 안 넣으면,
+# 요청은 **200 으로 끝나는데 값은 그대로**다. 화면에서는 저장된 것처럼 보이고
+# 새로고침해야 안 들어간 것을 안다 — `tips_note` 가 실제로 그랬다.
+
+def test_every_editable_field_is_actually_saved():
+    """스키마에 있는데 저장 목록에서 빠지면 조용히 안 들어간다."""
+    import pathlib
+    import re
+
+    src = pathlib.Path("app/routers/contacts.py").read_text(encoding="utf-8")
+    schema = re.search(r"class ContactIn\(BaseModel\):(.*?)\n\nclass ", src, re.S)
+    assert schema, "ContactIn 을 찾지 못했습니다"
+    fields = set(re.findall(r"^\s{4}(\w+):", schema.group(1), re.M))
+
+    assign = re.search(r"def _assign.*?for field in \((.*?)\):", src, re.S)
+    assert assign, "_assign 의 저장 목록을 찾지 못했습니다"
+    listed = set(re.findall(r'"(\w+)"', assign.group(1)))
+
+    # 목록 밖에서 따로 다루는 칸들
+    handled = listed | {"name", "channel_kakao", "channel_email"}
+    missing = sorted(fields - handled)
+    assert not missing, f"고쳐도 저장되지 않는 칸: {missing}"
+
+
+def test_the_sheet_only_columns_can_be_edited(logged_in, db, users):
+    """시트에만 있던 칸도 화면에서 고쳐야 한다 — 안 되면 시트를 다시 올려야 한다."""
+    from app.models import VcContact
+
+    row = VcContact(user_id=users["u1"].id, name="홍길동", firm="가나벤처스")
+    db.add(row)
+    db.commit()
+
+    r = logged_in.patch(f"/api/contacts/{row.id}", json={
+        "tips_note": "O", "kakao_joined": "O", "sourcing_note": "참여 의사 있음"})
+    assert r.status_code == 200
+    db.refresh(row)
+    assert row.tips_note == "O"
+    assert row.kakao_joined == "O"
+    assert row.sourcing_note == "참여 의사 있음"
+
+def test_the_detail_panel_can_read_and_write_every_table_column():
+    """표에 있는 칸은 [수정] 창에서도 적을 수 있어야 한다.
+
+    한 칸이 화면에 뜨려면 **네 곳**이 맞아야 한다: 창의 입력칸(`id="f-…"`) ·
+    JS 의 `FIELDS` · 저장 스키마(`ContactIn`+`_assign`) · 조회 응답(`get_contact`).
+    한 곳만 빠져도 조용히 어긋난다 — `TIPS 운영사` 는 창에 칸이 없었고,
+    칸을 그린 뒤에도 조회에서 안 돌려줘 **저장은 되는데 다시 열면 비어** 있었다.
+    """
+    import pathlib
+    import re
+
+    html = pathlib.Path("app/templates/contacts.html").read_text(encoding="utf-8")
+    js = pathlib.Path("app/static/js/contacts.js").read_text(encoding="utf-8")
+    py = pathlib.Path("app/routers/contacts.py").read_text(encoding="utf-8")
+
+    row = re.search(r'id="contacts-table".*?<tbody>(.*?)</tr>', html, re.S)
+    table = set(re.findall(r'data-field="([a-z_]+)"', row.group(1)))
+
+    panel = set(re.findall(r'id="f-([a-z_]+)"', html))
+    fields = set(re.findall(r'"([a-z_]+)"',
+                            re.search(r"var FIELDS = \[(.*?)\];", js, re.S).group(1)))
+    detail = set(re.findall(r'"([a-z_]+)": contact\.', py))
+    saved = set(re.findall(r'"([a-z_]+)"',
+                           re.search(r"def _assign.*?for field in \((.*?)\):", py, re.S).group(1)))
+    saved |= {"name"}
+
+    assert not table - panel, f"창에 칸이 없다: {sorted(table - panel)}"
+    assert not table - fields, f"JS 목록에 없어 안 채워진다: {sorted(table - fields)}"
+    assert not table - detail, f"조회가 안 돌려줘 다시 열면 빈다: {sorted(table - detail)}"
+    assert not table - saved, f"저장되지 않는다: {sorted(table - saved)}"
+
+
+def test_an_empty_cell_is_still_clickable():
+    """빈 칸을 눌러도 입력창이 안 뜨고 [수정] 창이 열렸다.
+
+    `.clamp2` 는 `-webkit-box` 라 내용이 없으면 높이가 0 이 된다 — 누를 자리가
+    없어 클릭이 뒤의 행으로 흘러간다. `TIPS 운영사` 는 306행 중 303행이 빈칸이라
+    사실상 늘 그랬다.
+    """
+    import pathlib
+    import re
+
+    css = pathlib.Path("app/static/css/app.css").read_text(encoding="utf-8")
+    rule = re.search(r"\.cell\[data-field\]\s*\{([^}]*)\}", css)
+    assert rule, ".cell[data-field] 규칙이 없습니다"
+    assert re.search(r"min-height:\s*[\d.]+", rule.group(1)), (
+        "빈 칸에 높이를 주지 않으면 누를 자리가 없다")
+

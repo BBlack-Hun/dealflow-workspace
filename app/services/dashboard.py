@@ -15,15 +15,17 @@ from __future__ import annotations
 
 from collections import Counter
 from urllib.parse import quote
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from .. import clock
 from . import cadence, mailer, pipeline, sheet_owner
 from .. import version
 from ..models import (
+    SEND_KINDS,
     AgentDevice,
     IrRequest,
     Meeting,
@@ -68,6 +70,41 @@ def _room_state(c: VcContact) -> str:
     # 처음 보는 값은 '확인 안 됨'이 아니라 **보낼 수 없음**으로 본다.
     # 모르는 상태를 낙관적으로 해석하면 못 가는 곳에 갈 수 있다고 세게 된다.
     return _ROOM_ALIAS.get(c.room_verified or "", "failed")
+
+
+# 세는 것만 보여주고 갈 곳이 없으면, 그 6명이 누구인지 알 수 없다.
+# 채널로 갈리는 둘은 투자사 목록의 채널 필터로 보낸다.
+_ROOM_HREF = {
+    "email": "/contacts?sheet=all&channel=" + quote("메일"),
+    "no_channel": "/contacts?sheet=all&channel=" + quote("미지정"),
+}
+
+
+def _room_href(state: str, ids: List[int]) -> Optional[str]:
+    """이 상태의 사람들이 있는 곳.
+
+    보낼 수 있는 방(확인됨·미확인)은 **딜 제안 관리로, 체크된 채로** 보낸다 —
+    거기서 바로 다음 회차를 만드는 것이 다음 동작이라, 목록만 보여 주면 같은
+    사람을 손으로 다시 골라야 한다.
+
+    보낼 수 없는 쪽(방 없음·미등록·채널)은 고쳐야 할 것이라 투자사 목록으로
+    보낸다.
+    """
+    if state in _SENDABLE_ROOM:
+        return "/deals?contacts=" + ",".join(str(i) for i in ids) if ids else None
+    return _ROOM_HREF.get(state)
+
+
+# '내 투자사 선호' 를 몇 명까지 볼지. 50명이 기본이다 — 10명만 보면 그 아래에
+# 누가 있는지 몰라서 매번 눌러 늘려야 했다.
+# **화면(`/`)과 대시보드(`/dashboard`) 두 곳이 같은 값을 써야 한다** —
+# 예전에는 각자 10 을 박아 두어 한쪽만 고쳐졌다.
+TOP_CHOICES = [10, 30, 50, 100]
+TOP_DEFAULT = 50
+
+
+def clamp_top(top: int) -> int:
+    return min(max(top, 5), max(TOP_CHOICES))
 
 
 ROOM_LABELS = {
@@ -250,6 +287,10 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None,
     ids = [c.id for c in contacts]
 
     rooms = Counter(_room_state(c) for c in contacts)
+    # 상태별로 **누구인지**까지 들고 있어야 눌러서 갈 곳을 만들 수 있다.
+    room_ids: Dict[str, List[int]] = {}
+    for c in contacts:
+        room_ids.setdefault(_room_state(c), []).append(c.id)
     sendable = sum(rooms[state] for state in _SENDABLE_ROOM)
 
     companies = db.execute(select(IrCompany)).scalars().all()
@@ -257,14 +298,25 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None,
 
     acts = _recent_activity_counts(db, ids, cutoff)
 
-    # 이번 달 발송 = 성공한 건수. '보냈다'는 시도가 아니라 도착을 뜻해야 한다.
-    month_prefix = today.strftime("%Y-%m")
-    sent_this_month = db.execute(
-        select(func.count()).select_from(SendItem)
+    # 발송 = **성공한** 건수. '보냈다'는 시도가 아니라 도착을 뜻해야 한다.
+    #
+    # 한 달 단위로 세면 월초에는 늘 0 에 가깝고 월말에만 커진다 — 이번 주에
+    # 얼마나 나갔는지는 알 수 없다. 회차가 격주(첫째·셋째 수요일)라 **주간**이
+    # 실제 일하는 단위다.
+    week_start = today - timedelta(days=today.weekday())
+    sent_rows = db.execute(
+        select(SendItem.contact_id)
         .join(SendJob, SendJob.id == SendItem.job_id)
         .where(SendJob.user_id == user.id, SendItem.status == "sent",
-               func.coalesce(SendItem.sent_at, "").startswith(month_prefix))
-    ).scalar() or 0
+               # 방 연결 확인은 아무것도 보내지 않는다 — 발송으로 세면 안 된다.
+               SendJob.kind.in_(SEND_KINDS),
+               func.coalesce(SendItem.sent_at, "") >= week_start.isoformat())
+    ).scalars().all()
+    sent_this_week = len(sent_rows)
+    # 누르면 그 사람들이 **체크된 채로** 발송 화면이 열린다. 숫자만 보고
+    # 누구에게 갔는지 모르면 다음에 누구를 챙길지 정할 수 없다.
+    # (소싱 발송은 contact_id 가 비어 있다 — 투자사 목록에서 고를 수 없다)
+    sent_ids = sorted({c for c in sent_rows if c})
 
     # 막힌 것 — 발송 전에 손봐야 할 목록
     blockers = []
@@ -323,8 +375,12 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None,
             # '카톡 발송 가능'·'소개 가능 기업'은 무엇이 가능하다는 건지 모호했다.
             {"key": "contacts", "label": "내 담당 투자사", "value": len(contacts),
              "sub": "내 명단에 있는 사람", "href": "/contacts"},
-            {"key": "sent", "label": "이번 달 보낸 건수", "value": sent_this_month,
-             "sub": "카톡·메일 도착 성공", "href": "/deals"},
+            # 누르면 이번 주에 **실제로 도착한 사람**이 나온다 — 숫자만 보고
+            # 누구에게 갔는지 모르면 다음에 누구를 챙길지 정할 수 없다.
+            {"key": "sent", "label": "이번 주 보낸 건수", "value": sent_this_week,
+             "sub": f"{week_start.strftime('%m/%d')}부터 · 도착 성공",
+             "href": ("/deals?contacts=" + ",".join(str(i) for i in sent_ids)
+                      if sent_ids else "/deals")},
         ],
         "next_send": next_send,
         "days_left": (next_send - today).days,
@@ -332,7 +388,8 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None,
         "rooms": [
             {"state": s, "label": ROOM_LABELS[s][0], "level": ROOM_LABELS[s][1],
              "count": rooms.get(s, 0),
-             "percent": round(rooms.get(s, 0) * 100 / (len(contacts) or 1))}
+             "percent": round(rooms.get(s, 0) * 100 / (len(contacts) or 1)),
+             "href": _room_href(s, room_ids.get(s, []))}
             for s in ("verified", "unverified", "failed", "missing",
                       "email", "no_channel")
             if rooms.get(s, 0)
@@ -434,7 +491,7 @@ def admin_dashboard(db: Session, today: Optional[date] = None) -> dict:
     sent_rows = db.execute(
         select(SendJob.user_id, func.count())
         .select_from(SendItem).join(SendJob, SendJob.id == SendItem.job_id)
-        .where(SendItem.status == "sent",
+        .where(SendItem.status == "sent", SendJob.kind.in_(SEND_KINDS),
                func.coalesce(SendItem.sent_at, "").startswith(month_prefix))
         .group_by(SendJob.user_id)
     ).all()
@@ -513,7 +570,8 @@ def _agent_label(device: Optional[AgentDevice]) -> str:
         return f"갱신 필요 (v{device.agent_version or '?'})"
     try:
         ts = datetime.fromisoformat(device.last_poll_at)
-        mins = (datetime.now(timezone.utc) - ts).total_seconds() / 60
+        # 경과시간은 **순간**끼리 뺀다 — 저장값의 오프셋이 무엇이든 결과가 같다.
+        mins = (clock.now() - ts).total_seconds() / 60
     except ValueError:
         return "확인 불가"
     if mins < 2:

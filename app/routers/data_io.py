@@ -140,6 +140,60 @@ CONTACT_HEADERS = [
 ]
 
 
+# 업로드용 샘플 양식.
+#
+# 실제 명단 시트와 **같은 모양**이어야 한다: 머리글이 2행이고, 1행에는 월
+# 라벨이 온다(`8월` 이 딜소개/IR/미팅 3열 위에 걸친다). 파서가 위치가 아니라
+# 머리글 이름과 그 위아래 문맥으로 컬럼을 찾기 때문에, 이름이 다르면 값이
+# 통째로 버려진다 — 샘플이 실제로 통과하는 양식이어야 하는 이유다.
+#
+# 채워 넣은 사람은 전부 가짜다.
+SAMPLE_MONTH_ROW = [
+    "", "", "", "", "", "", "", "", "", "", "", "", "",
+    "8월", "", "",
+]
+SAMPLE_HEADER_ROW = [
+    "NO", "그룹", "이름", "직책", "투자사명", "부서", "담당자",
+    "휴대폰", "전자 메일 주소", "근무처 전화", "근무지 주소",
+    "선호 투자분야", "라운드 규모",
+    "1차 딜소개", "IR 요청", "미팅",
+]
+SAMPLE_ROWS = [
+    [1, "A그룹", "홍길동", "심사역", "가나벤처스", "투자1본부", "김담당",
+     "010-0000-0001", "hong@example.com", "02-000-0001", "서울 강남구 000",
+     "AI, 헬스케어", "10~30억",
+     "8/13(목) 샘플가, 샘플나", "8/19(수) 2번", ""],
+    [2, "A그룹", "김서연", "팀장", "다라인베스트", "", "김담당",
+     "010-0000-0002", "kim@example.com", "", "",
+     "소재부품, 로봇", "30~50억",
+     "8/13(목) 핵심 딜 8개사", "", "8/26(수) 20분"],
+    [3, "", "박지훈", "대표", "마바캐피탈", "", "이담당",
+     "010-0000-0003", "", "", "",
+     "", "", "", "", ""],
+]
+# 칸이 좁으면 머리글이 잘려서 무엇을 적는 칸인지 안 보인다.
+SAMPLE_WIDTHS = [5, 9, 10, 9, 18, 12, 9, 15, 22, 15, 22, 18, 13, 24, 18, 18]
+
+
+@router.get("/api/sample/contacts.xlsx")
+def sample_contacts(user: User = Depends(get_current_user)):
+    """투자사 관리 현황 업로드용 **빈 양식**.
+
+    내보내기(`/api/export/contacts.xlsx`)와 다른 파일이다. 내보낸 파일에는
+    되올리기 방지 표식이 붙어 있어 그대로 올리면 막힌다 — 새로 명단을 만드는
+    사람에게는 올릴 수 있는 양식이 따로 있어야 한다.
+    """
+    try:
+        content = sp.write_plain_xlsx(
+            "투자사 관리 현황",
+            [SAMPLE_MONTH_ROW, SAMPLE_HEADER_ROW, *SAMPLE_ROWS],
+            head_row=2, widths=SAMPLE_WIDTHS)
+    except sp.SpreadsheetError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    return Response(content=content, media_type=sp.XLSX_MEDIA_TYPE,
+                    headers=sp.content_disposition("투자사 관리 현황_업로드양식.xlsx"))
+
+
 @router.get("/api/export/contacts.xlsx")
 def export_contacts(db: Session = Depends(get_db),
                     user: User = Depends(get_current_user)):

@@ -15,11 +15,12 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..deps import get_current_user, templates
+from ..deps import get_current_user, now_iso, templates
 from ..models import IrRequest, Meeting, User, VcContact
 from ..services import cadence, flow, pipeline, sheet_owner
 from . import followups
@@ -219,14 +220,46 @@ def finish_meeting(meeting_id: int, outcome: str = Form(""),
 
 @router.post("/ir/meetings/{meeting_id}/followup", include_in_schema=False)
 def mark_followup(meeting_id: int, outcome: str = Form(""),
+                  note: str = Form(""),
                   db: Session = Depends(get_db),
                   user: User = Depends(get_current_user)):
+    """결과를 물어본 것을 기록한다.
+
+    무엇을 들었는지 함께 적는다 — 결과 한 칸(진행/보류/거절)만으로는 **왜**
+    그런지가 남지 않고, 다음 회차에 이 투자사를 어떻게 대할지는 거기서 나온다.
+    """
     meeting = _owned_meeting(db, meeting_id, user)
     meeting.followup_done = 1
+    meeting.followup_at = now_iso()[:10]
     if outcome in pipeline.OUTCOMES:
         meeting.outcome = outcome
+    text = (note or "").strip()
+    if text:
+        # 다시 물어본 경우 앞의 것을 지우지 않는다 — 두 번의 통화가 다른
+        # 이야기라, 덮으면 앞의 맥락이 사라진다.
+        before = (meeting.followup_note or "").strip()
+        stamp = meeting.followup_at
+        meeting.followup_note = (f"{before}\n[{stamp}] {text}".strip()
+                                 if before else f"[{stamp}] {text}")
     db.commit()
-    return RedirectResponse("/ir?msg=결과 문의를 마쳤습니다", status_code=303)
+    return RedirectResponse("/ir?msg=결과 문의를 기록했습니다#reviews", status_code=303)
+
+
+class MeetingNoteIn(BaseModel):
+    note: Optional[str] = None
+    followup_note: Optional[str] = None
+
+
+@router.patch("/api/meetings/{meeting_id}", include_in_schema=False)
+def edit_meeting_note(meeting_id: int, body: MeetingNoteIn,
+                      db: Session = Depends(get_db),
+                      user: User = Depends(get_current_user)):
+    """미팅 후기·결과 문의 메모를 표에서 바로 고친다."""
+    meeting = _owned_meeting(db, meeting_id, user)
+    for field, value in body.model_dump(exclude_unset=True).items():
+        setattr(meeting, field, (value or "").strip() or None)
+    db.commit()
+    return {"ok": True}
 
 
 @router.post("/ir/meetings/{meeting_id}/cancel", include_in_schema=False)

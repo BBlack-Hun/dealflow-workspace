@@ -25,12 +25,12 @@ PC 에서 `NameError` 로 터졌는데, 받은 쪽에서는 그게 낡은 것인
 """
 from __future__ import annotations
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 
 # 이 버전보다 낡은 발송 프로그램은 화면에서 '갱신 필요' 로 표시한다.
 # 여기에 적힌 버전부터 링크를 여러 통으로 나눠 보낼 수 있다 — 그 아래는
 # 한 통으로 보내므로 나가긴 하지만 카톡에서 미리보기 카드가 안 뜬다.
-MIN_AGENT_VERSION = "0.2.0"
+MIN_AGENT_VERSION = "0.3.0"
 
 
 def as_tuple(value: str) -> tuple:

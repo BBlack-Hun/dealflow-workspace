@@ -474,3 +474,115 @@ def test_a_rejected_meeting_does_not_suggest_another(client, db, users):
     body = client.get("/ir").text
     row = body[body.index("거절함"):body.index("거절함") + 600]
     assert "미팅 잡기" not in row
+
+# --- 미팅 후기 · 결과 문의 기록 ------------------------------------------------
+#
+# 결과가 한 칸(진행/보류/거절)뿐이면 **왜** 그런지가 남지 않는다 — 다음 회차에
+# 이 투자사를 어떻게 대할지는 거기서 나온다.
+
+def _meeting(db, users, **kw):
+    from app.models import Meeting, VcContact
+
+    c = VcContact(user_id=users["u1"].id, name="홍길동", firm="가나벤처스")
+    db.add(c)
+    db.flush()
+    m = Meeting(user_id=users["u1"].id, contact_id=c.id, scheduled_at="2026-08-01",
+                kind="first", status="done", **kw)
+    db.add(m)
+    db.commit()
+    return m
+
+
+def test_asking_the_result_records_what_was_said(client, db, users):
+    from app.routers import ir
+
+    m = _meeting(db, users)
+    ir.mark_followup(m.id, outcome="hold", note="검토 중, 다음 달 IC 예정",
+                     db=db, user=users["u1"])
+    db.refresh(m)
+    assert m.followup_done == 1
+    assert m.outcome == "hold"
+    assert m.followup_at                       # 언제 물었는지도 남는다
+    assert "검토 중" in m.followup_note
+    assert m.followup_at in m.followup_note    # 언제 들은 말인지 알 수 있게
+
+
+def test_asking_again_does_not_erase_the_first_answer(client, db, users):
+    """두 번의 통화는 다른 이야기다 — 덮으면 앞의 맥락이 사라진다."""
+    from app.routers import ir
+
+    m = _meeting(db, users)
+    ir.mark_followup(m.id, outcome="hold", note="검토 중", db=db, user=users["u1"])
+    ir.mark_followup(m.id, outcome="investing", note="IC 통과", db=db, user=users["u1"])
+    db.refresh(m)
+    assert "검토 중" in m.followup_note and "IC 통과" in m.followup_note
+    assert m.outcome == "investing"
+
+
+def test_an_empty_note_does_not_add_a_blank_line(client, db, users):
+    from app.routers import ir
+
+    m = _meeting(db, users)
+    ir.mark_followup(m.id, outcome="", note="   ", db=db, user=users["u1"])
+    db.refresh(m)
+    assert not m.followup_note
+    assert m.followup_done == 1                # 물어본 것 자체는 기록된다
+
+
+def test_the_meeting_note_is_separate_from_the_followup(client, db, users):
+    """미팅 자리에서 들은 것과 열흘 뒤 통화는 다른 시점의 이야기다."""
+    from app.routers import ir
+
+    m = _meeting(db, users)
+    ir.edit_meeting_note(m.id, ir.MeetingNoteIn(note="분위기 좋았음"),
+                         db=db, user=users["u1"])
+    ir.mark_followup(m.id, outcome="investing", note="진행하기로", db=db, user=users["u1"])
+    db.refresh(m)
+    assert m.note == "분위기 좋았음"
+    assert "진행하기로" in m.followup_note
+    assert "분위기" not in (m.followup_note or "")
+
+
+def test_the_notes_reach_the_screen(client, db, users):
+    from app.routers import ir
+    from app.services import pipeline
+
+    m = _meeting(db, users)
+    ir.edit_meeting_note(m.id, ir.MeetingNoteIn(note="매출 근거 요청받음"),
+                         db=db, user=users["u1"])
+    row = next(r for r in pipeline.meeting_rows(db, users["u1"]) if r["id"] == m.id)
+    assert row["note"] == "매출 근거 요청받음"
+
+
+def test_someone_elses_meeting_cannot_be_edited(client, db, users):
+    from fastapi import HTTPException
+    from app.routers import ir
+
+    m = _meeting(db, users)
+    try:
+        ir.edit_meeting_note(m.id, ir.MeetingNoteIn(note="몰래"),
+                             db=db, user=users["u2"])
+    except HTTPException as exc:
+        assert exc.status_code in (403, 404)
+    else:
+        raise AssertionError("남의 미팅 기록을 고칠 수 있었다")
+
+def test_the_jump_bar_counts_the_same_meetings_as_the_list(client, db, users):
+    """점프바에 1건이라 떠 있는데 눌러 가면 목록이 비어 있었다.
+
+    거절로 끝났거나 다음 미팅을 잡은 건은 물어볼 것이 없는데, 점프바만
+    그 규칙을 안 보고 세었다.
+    """
+    from app.services import flow, pipeline
+
+    # 거절로 끝난 미팅 — 물어볼 것이 없다
+    _meeting(db, users, outcome="pass")
+    # 아직 안 물어본 미팅 — 물어볼 것이 남았다
+    _meeting(db, users, outcome="reviewing")
+
+    bar = flow.counts(db, users["u1"])["review_open"]
+    listed = sum(1 for m in pipeline.meeting_rows(db, users["u1"])
+                 if m["needs_followup"])
+    assert bar == listed, f"점프바 {bar}건 · 목록 {listed}건"
+    assert listed == 1
+

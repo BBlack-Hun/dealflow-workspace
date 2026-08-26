@@ -118,6 +118,12 @@ def monthly(db: Session, year: int, month: int,
             "owner": owners.get(meeting.user_id, ""),
             "followup_due": meeting.followup_due or "",
             "followup_done": bool(meeting.followup_done),
+            # 딜 진행 관리에서 적은 후기·결과 문의 내용을 그대로 가져온다.
+            # 보고를 쓰려고 같은 말을 두 번 적게 하면 한쪽은 반드시 비어 있게
+            # 된다 — 그러면 어느 쪽이 진짜인지 알 수 없다.
+            "note": meeting.note or "",
+            "followup_note": meeting.followup_note or "",
+            "followup_at": meeting.followup_at or "",
             # 열흘이 지났는데 아직 안 물어봤다 — 이 보고가 잡아내야 할 것.
             # 거절로 끝났거나 다음 미팅을 잡은 건은 뺀다.
             "followup_late": bool(

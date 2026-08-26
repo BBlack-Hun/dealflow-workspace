@@ -214,6 +214,49 @@ class KakaoMacSender(Sender):
     def _press_enter(self) -> None:
         self._key_code(36)
 
+    def _ensure_search_open(self, main: str) -> None:
+        """검색 입력칸이 없으면 **돋보기를 눌러** 연다.
+
+        지금까지는 검색창이 이미 열려 있다고 보고 바로 입력칸을 찾았다. 사람이
+        직접 한 번 열어 둔 상태에서 만들어진 절차라 그랬는데, 카톡을 새로
+        띄우거나 Esc 로 검색을 닫으면 입력칸 자체가 없어서 그 자리에서 멎었다.
+
+        먼저 단축키(Cmd+F)를 쓰고, 그래도 안 열리면 돋보기 버튼을 눌러 본다 —
+        버전에 따라 단축키가 다르다(설정의 `search_hotkey`).
+        """
+        field = f'first UI element of ({main}) whose role is "AXTextField"'
+
+        def opened() -> bool:
+            return _osa(
+                f'tell application "System Events" to tell process "{APP}" '
+                f'to return (exists ({field}))'
+            ).strip() == "true"
+
+        if opened():
+            return
+
+        _osa(f'tell application "System Events" to keystroke "{self.search_hotkey}" '
+             f'using command down')
+        if _wait_until(lambda: True if opened() else None,
+                       timeout=self.t_search_open + 0.7):
+            return
+
+        # 단축키가 안 먹는 버전 — 돋보기 버튼을 직접 누른다.
+        _osa(
+            f'tell application "System Events" to tell process "{APP}"\n'
+            f'  set btns to (every button of ({main}) whose '
+            f'description contains "검색" or name contains "검색" '
+            f'or description contains "Search" or name contains "Search")\n'
+            f'  if (count of btns) > 0 then click item 1 of btns\n'
+            f'end tell'
+        )
+        if not _wait_until(lambda: True if opened() else None,
+                           timeout=self.t_search_open + 0.7):
+            raise RuntimeError(
+                "카카오톡 검색창을 열지 못했습니다. "
+                "메인 창에서 돋보기를 한 번 눌러 검색창을 띄운 뒤 다시 시도하세요."
+            )
+
     def _open_room_via_search(self, room_name: str) -> None:
         """메인창 검색으로 기존 방 열기 (방은 이미 존재한다는 전제).
 
@@ -232,6 +275,10 @@ class KakaoMacSender(Sender):
                     "카카오톡 메인 창을 앞으로 가져오지 못했습니다. "
                     "열려 있는 채팅창을 닫고 다시 시도하세요."
                 )
+
+            # 0.5) 검색창이 닫혀 있으면 연다. 예전에는 열려 있다고 보고 바로
+            #      입력칸을 찾아서, 카톡을 새로 띄운 뒤에는 그 자리에서 멎었다.
+            self._ensure_search_open(main)
 
             # 1) 검색어 입력 — ★ AX value 직접 설정.
             #    다른 방법은 전부 실패한다(실기 확인):

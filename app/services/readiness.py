@@ -9,14 +9,15 @@
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from typing import List, Optional
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .. import config
-from ..models import AgentDevice, IrCompany, MessageTemplate, SendItem, SendJob, User
+from .. import clock, config
+from ..models import (SEND_KINDS, AgentDevice, IrCompany, MessageTemplate,
+                      SendItem, SendJob, User)
 from . import cadence, pipeline, sheet_owner
 from .dashboard import _SENDABLE_ROOM, _room_state
 
@@ -42,7 +43,8 @@ def _agent_check(db: Session, user: User) -> dict:
         return _check(BLOCK, "발송 프로그램", "한 번도 연결된 적이 없습니다",
                       "내 PC에 설치하고 켜 두세요", "/setup")
     try:
-        mins = (datetime.now(timezone.utc)
+        # 경과시간은 **순간**끼리 뺀다 — 저장값의 오프셋이 무엇이든 결과가 같다.
+        mins = (clock.now()
                 - datetime.fromisoformat(device.last_poll_at)).total_seconds() / 60
     except ValueError:
         return _check(BLOCK, "발송 프로그램", "연결 상태를 알 수 없습니다",
@@ -134,6 +136,7 @@ def _rehearsal_check(db: Session, user: User, today: date) -> dict:
         select(func.count()).select_from(SendItem)
         .join(SendJob, SendJob.id == SendItem.job_id)
         .where(SendJob.user_id == user.id, SendItem.status == "sent",
+               SendJob.kind.in_(SEND_KINDS),
                func.coalesce(SendItem.sent_at, "") >= cutoff)
     ).scalar() or 0
     if recent:

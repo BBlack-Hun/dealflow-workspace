@@ -12,9 +12,9 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..deps import get_current_user, templates
-from ..models import IrCompany, RefSheet, SendJob, User, VcContact
+from ..models import IrCompany, RefSheet, SendJob, SourcingContact, User, VcContact
 from ..services import (cadence, deal_history, deal_stage, mailer,
-                        sheet_import, sheet_owner)
+                        sheet_import, sheet_owner, sourcing_link)
 from ..ui import MENU, base_ctx as _base_ctx
 from .companies import BLOCKED_CONTRACT
 from .companies import blocked_reason as company_blocked_reason
@@ -27,7 +27,7 @@ __all__ = ["router", "MENU"]
 
 @router.get("/", response_class=HTMLResponse, include_in_schema=False)
 def index(request: Request, db: Session = Depends(get_db),
-          user: User = Depends(get_current_user), top: int = 10):
+          user: User = Depends(get_current_user), top: int = 0):
     """메인 = 대시보드. 좌측 위 브랜드를 누르면 여기로 온다.
 
     투자컨설턴트는 대시보드를 볼 이유가 없다 — 자기 화면으로 보낸다.
@@ -37,11 +37,13 @@ def index(request: Request, db: Session = Depends(get_db),
     if user.role == "consultant":
         return RedirectResponse("/consulting", status_code=303)
 
-    # '내 투자사 선호'를 몇 명까지 볼지 — 10·20·30 중에서 고른다.
-    top_n = min(max(top, 5), 30)
+    # 몇 명까지 볼지. 기본값·선택지는 서비스가 갖는다 — 여기와 /dashboard 가
+    # 각자 숫자를 박아 두면 한쪽만 고쳐진다(실제로 그랬다).
+    top_n = dash.clamp_top(top or dash.TOP_DEFAULT)
     ctx = _base_ctx(request, db, user, "home")
     ctx.update(dash.user_dashboard(db, user, top_n=top_n))
     ctx["top_n"] = top_n
+    ctx["top_choices"] = dash.TOP_CHOICES
     return templates.TemplateResponse("dashboard.html", ctx)
 
 
@@ -76,6 +78,37 @@ def deals_page(
         row["id"] for row in contact_rows(db, user)
         if row["last_deal"] and not (row["ir_total"] or row["meet_total"])
     }
+    # 딜 소싱 제안의 대상. 투자사 명단과 다른 표이고 **팀 공용**이다 —
+    # 우리 딜을 같이 볼 사람이라 담당을 나눌 것이 아니다.
+    # 방 이름이 없으면 보낼 길이 없으므로 그것부터 보이게 정렬한다.
+    sourcing_contacts = db.execute(
+        select(SourcingContact).order_by(SourcingContact.position, SourcingContact.id)
+    ).scalars().all()
+    # 갈래는 곧 문구다. 이름을 검색창에 쳐서 찾게 하면 갈래가 몇 개인지도
+    # 모른 채 골라야 하므로, 누를 수 있는 필터로 내놓는다. 순서는 명단과
+    # 같게 — 좌측 [딜 소싱] 탭에서 보던 순서 그대로여야 헷갈리지 않는다.
+    sourcing_buckets = []
+    for c in sourcing_contacts:
+        if not sourcing_buckets or sourcing_buckets[-1]["name"] != c.bucket:
+            match = next((b for b in sourcing_buckets if b["name"] == c.bucket), None)
+            if match is None:
+                sourcing_buckets.append({"name": c.bucket, "count": 0})
+                match = sourcing_buckets[-1]
+        else:
+            match = sourcing_buckets[-1]
+        match["count"] += 1
+    # 담당(우리 쪽 심사역)도 거를 수 있어야 한다 — 39명을 통째로 훑는 것과
+    # 내 담당 14명만 보는 것은 다른 일이다. 많은 순으로 둔다.
+    counted: dict = {}
+    for c in sourcing_contacts:
+        who = (c.assignee_name or "").strip()
+        if who:
+            counted[who] = counted.get(who, 0) + 1
+    sourcing_assignees = [{"name": k, "count": v} for k, v in
+                          sorted(counted.items(), key=lambda kv: (-kv[1], kv[0]))]
+    # 투자사 관리 현황에서 연결해 둔 방이 있으면 여기서도 '연결됨' 이어야 한다 —
+    # 목록에는 '미등록' 인데 미리보기에는 방이 뜨면 어느 쪽을 믿을지 알 수 없다.
+    sourcing_linked = sourcing_link.linked_rooms(db, sourcing_contacts)
     ctx = _base_ctx(request, db, user, "deal")
     # 매 회차 같은 기업을 또 보내면 받는 쪽에서는 지난번을 기억 못 한다고 읽는다.
     history = deal_history.annotate(companies, deal_history.last_sent_map(db))
@@ -89,6 +122,10 @@ def deals_page(
         "recent_count": sum(1 for h in history.values() if h["recent"]),
         "recent_days": deal_history.RECENT_DAYS,
         "contacts": contacts,
+        "sourcing_contacts": sourcing_contacts,
+        "sourcing_buckets": sourcing_buckets,
+        "sourcing_assignees": sourcing_assignees,
+        "sourcing_linked": sourcing_linked,
         "no_reaction_ids": no_reaction_ids,
         # 메일 채널은 설정이 있어야 고를 수 있다.
         # 고를 수 있는데 나가지 않는 것이 제일 나쁘다.
@@ -139,7 +176,8 @@ def contacts_page(
     # 참고 시트 — 스크립트·가이드처럼 매번 구글 시트를 열어 보던 자료.
     # 지울 수 있게 두었으므로 살아 있는 것만 가져온다.
     ref_sheets = db.execute(
-        select(RefSheet).where(RefSheet.is_active == 1)
+        select(RefSheet).where(RefSheet.is_active == 1,
+                               RefSheet.page == "contacts")
         .order_by(RefSheet.position, RefSheet.id)
     ).scalars().all()
     picked_ref = next((s for s in ref_sheets if str(s.id) == ref), None)

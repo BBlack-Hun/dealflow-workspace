@@ -16,6 +16,7 @@ import pytest
 JS_DIR = Path(__file__).resolve().parent / "js"
 JS_TEST = JS_DIR / "filters_test.js"
 COMPANY_SEARCH_TEST = JS_DIR / "company_search_test.js"
+REFRESH_TEST = JS_DIR / "filters_refresh_test.js"
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치 — 브라우저 로직 테스트 생략")
@@ -35,3 +36,49 @@ def test_company_search_rules():
         capture_output=True, text=True, timeout=60,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치 — 브라우저 로직 테스트 생략")
+def test_필터가_주소를_고쳐도_시트_탭은_그대로여야_한다():
+    """필터 상태를 주소에 남기면서 **남의 쿼리를 통째로 버리고** 있었다.
+
+    `/sourcing?tab=M&A 찾는 투자사` 를 열면 아무것도 안 골랐는데도 주소가 곧바로
+    `/sourcing` 이 되어, 새로고침하면 다른 갈래가 열렸다. 투자컨설턴트 현황은
+    `?sheet=` 가 곧 명단이라 검색어 한 글자에 남의 시트로 넘어간다.
+    """
+    result = subprocess.run(
+        [shutil.which("node"), str(JS_DIR / "filters_url_test.js")],
+        capture_output=True, text=True, timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치 — 브라우저 로직 테스트 생략")
+def test_edited_cells_show_up_in_the_filter():
+    """칸을 고쳤는데 필터가 옛 값만 보면, 있는 줄 알고 골랐다가 아무것도 안 나온다.
+
+    필터는 표를 처음 한 번만 읽는다 — 관심도를 채워 넣었는데 필터 목록이 계속
+    비어 있었다. 저장 → 행에 적기(`data-f-*`) → 다시 읽기(`refresh`), 세 곳이
+    다 이어져야 한 바퀴가 돈다.
+    """
+    result = subprocess.run(
+        [shutil.which("node"), str(REFRESH_TEST)],
+        capture_output=True, text=True, timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_preview_edits_survive_a_refresh():
+    """미리보기에서 고친 문구가 다시 그려도 남아야 한다.
+
+    담당자를 하나 더 체크하면 미리보기가 새로 그려지는데, 그때마다 앞서 고쳐
+    둔 것이 말없이 사라졌다 — 열 명을 고치고 한 명 더 넣으면 열 명분이 날아간다.
+    """
+    node = shutil.which("node")
+    if not node:
+        import pytest
+
+        pytest.skip("node 가 없습니다 — 브라우저 자산 테스트")
+    script = Path(__file__).resolve().parent / "js" / "preview_edit_test.js"
+    out = subprocess.run([node, str(script)], capture_output=True, text=True)
+    assert out.returncode == 0, out.stderr or out.stdout
+

@@ -63,6 +63,42 @@ def test_month_columns_are_scanned_repeatedly():
     ]
 
 
+def test_the_year_moves_when_the_months_cross_january():
+    """12월 옆 1월을 같은 해로 두면 그 달 회차가 1년 전 자리에 쌓인다.
+
+    방향은 시트마다 다르다 — 명단 시트는 최신 달이 왼쪽이라 달이 줄고,
+    새로 만든 표는 늘기도 한다.
+    """
+    def scan(labels):
+        rows = [[""] * 3, ["NO", "이름", "투자사명"]]
+        for label in labels:
+            rows[0] += [label, "", ""]
+            rows[1] += ["1차 딜소개", "IR 요청", "미팅"]
+        cols = si.detect_activity_columns(rows, header_idx=1, year=YEAR,
+                                          skip_cols=range(0, 3))
+        # 3열 세트라 달마다 같은 값이 세 번 — 순서를 지켜 중복만 접는다
+        seen = []
+        for c in cols:
+            if not seen or seen[-1] != c.month:
+                seen.append(c.month)
+        return seen
+
+    # 오른쪽이 나중 (11월 → 12월 → 1월 → 2월)
+    assert scan(["11월", "12월", "1월", "2월"]) == [
+        "2026-11", "2026-12", "2027-01", "2027-02"]
+
+    # 오른쪽이 이전 (2월 → 1월 → 12월 → 11월) — 실제 명단 시트의 방향
+    assert scan(["2월", "1월", "12월", "11월"]) == [
+        "2026-02", "2026-01", "2025-12", "2025-11"]
+
+
+def test_a_month_that_merely_goes_backwards_does_not_move_the_year():
+    """8→7→6월은 해가 바뀐 것이 아니다 — 경계에서만 옮긴다."""
+    rows = _rows_a()
+    cols = si.detect_activity_columns(rows, header_idx=1, year=YEAR, skip_cols=range(0, 7))
+    assert {c.month[:4] for c in cols} == {"2026"}
+
+
 def test_activity_columns_extend_when_a_new_month_is_added():
     """9월 세트가 오른쪽에 추가돼도 코드 수정 없이 잡힌다 (시트가 계속 늘어나는 구조)."""
     rows = [list(r) for r in _rows_a()]
@@ -399,3 +435,48 @@ def test_dry_run_writes_nothing(db, users):
     si.apply_sheet_a(db, si.parse_sheet_a(_rows_a(), year=YEAR), user_id=1, dry_run=True)
     assert db.query(VcContact).count() == 0
     assert db.query(ContactActivity).count() == 0
+
+# --- 머리글이 다른 표가 아래로 이어 붙는 경우 --------------------------------
+#
+# 실제 시트(`투자사 98명`)가 그랬다. 머리글과 칸 구성이 다른 블록 61줄이
+# 아래에 붙어 있었고, 그대로 읽어 **회사 칸에 주소가, 선호분야 칸에 휴대폰이**
+# 들어간 가짜 담당자 58명이 만들어졌다.
+#
+# 칸을 짐작해서 맞추지 않는다 — 어긋난 줄은 이유를 적어 건너뛴다.
+# 맞춰 넣으려다 틀리면 어느 칸이 틀렸는지도 알 수 없다.
+
+def _shifted_sheet():
+    return [
+        ["NO", "이름", "담당자", "선호 투자분야", "휴대폰", "회사", "부서"],
+        ["1", "홍길동", "김담당", "AI", "010-0000-0001", "가나벤처스", "투자1본부"],
+        # 아래는 칸이 밀린 블록 — 이름 자리에 라벨, 회사 자리에 주소
+        ["", "담당자2", "X", "010-0000-0002", "다라인베스트", "서울시 구로구 디지털로26길 38", ""],
+        ["", "이서준", "김담당", "", "010-0000-0003",
+         "서울특별시 영등포구 국제금융로8길 32", ""],
+    ]
+
+
+def test_a_label_in_the_name_column_is_not_a_person():
+    parsed = si.parse_sheet_a(_shifted_sheet(), YEAR)
+    assert [c.name for c in parsed.contacts] == ["홍길동"]
+    reasons = {s.reason for s in parsed.skipped}
+    assert "머리글과 칸이 어긋난 줄(이름 자리에 라벨)" in reasons
+
+
+def test_an_address_in_the_firm_column_means_the_row_is_shifted():
+    """이름이 멀쩡해도 나머지가 밀려 있을 수 있다."""
+    parsed = si.parse_sheet_a(_shifted_sheet(), YEAR)
+    assert "이서준" not in [c.name for c in parsed.contacts]
+    assert "머리글과 칸이 어긋난 줄(회사 자리에 주소)" in {s.reason for s in parsed.skipped}
+
+
+def test_a_real_firm_name_is_not_mistaken_for_an_address():
+    """너무 넓게 잡으면 멀쩡한 투자사가 통째로 사라진다."""
+    for firm in ["가나벤처스", "다라인베스트먼트", "마바캐피탈",
+                 "TYCHE PARTNERS", "한국투자파트너스", "IBK기업은행"]:
+        assert not si.looks_like_address(firm), firm
+    for address in ["서울시 구로구 디지털로26길 38 지타워 10층",
+                    "대전광역시 유성구 은구비남로 7번길 37 4층",
+                    "경기도 성남시 분당구 판교로 255"]:
+        assert si.looks_like_address(address), address
+

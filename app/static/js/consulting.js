@@ -15,26 +15,48 @@
     return Array.prototype.slice.call(table.querySelectorAll("tbody tr[data-id]"));
   }
 
-  // ── 검색 · 필터 ────────────────────────────────────────────
-  function apply() {
+  // ── 검색 · 칩 · 컬럼 필터 ──────────────────────────────────
+  //
+  // 셋이 **AND** 로 묶여야 한다. 검색과 칩은 컬럼으로 표현할 수 없는 조건이라
+  // filters.js 에 `extra` 로 넘긴다 — 둘이 따로 tr.hidden 을 쥐면 번갈아 서로를
+  // 지운다(검색하면 컬럼 필터가 풀리고, 필터를 고르면 검색어가 풀린다).
+  function passes(tr) {
+    // `내용이 없습니다` 안내 행은 자료가 아니다 — 걸러서 감추면 왜 비었는지
+    // 알려 줄 문구까지 같이 사라진다.
+    if (!tr.getAttribute("data-id")) return true;
     var q = (search.value || "").trim().toLowerCase();
-    var shown = 0;
-    rows().forEach(function (tr) {
-      var hit = !q || (tr.getAttribute("data-search") || "").indexOf(q) !== -1;
-      var pass = filter === ""
-        || (filter === "managed" && tr.getAttribute("data-managed") === "1")
-        || (filter === "dropped" && tr.getAttribute("data-dropped") === "1")
-        || (filter === "nocontact" && tr.getAttribute("data-contacted") !== "1");
-      var visible = hit && pass;
-      tr.hidden = !visible;
-      if (visible) shown += 1;
-    });
-    if (q || filter) {
-      note.hidden = false;
-      note.textContent = shown + " / " + rows().length + "곳 표시 중";
-    } else {
-      note.hidden = true;
-    }
+    var hit = !q || (tr.getAttribute("data-search") || "").indexOf(q) !== -1;
+    return hit && (filter === ""
+      || (filter === "managed" && tr.getAttribute("data-managed") === "1")
+      || (filter === "dropped" && tr.getAttribute("data-dropped") === "1")
+      || (filter === "nocontact" && tr.getAttribute("data-contacted") !== "1"));
+  }
+
+  // 몇 곳이 남았는지. 걸러 놓고 건수를 안 보여 주면 다 본 것인지 알 수 없다.
+  function showNote(state) {
+    var all = rows();
+    var shown = all.filter(function (tr) { return !tr.hidden; }).length;
+    var picked = state ? Object.keys(state).length : 0;
+    var q = (search.value || "").trim();
+    note.hidden = !(q || filter || picked);
+    if (!note.hidden) note.textContent = shown + " / " + all.length + "곳 표시 중";
+  }
+
+  var columnFilters = window.DealflowFilters && window.DealflowFilters.init({
+    table: "#cs-table",
+    extra: passes,
+    onChange: showNote
+  });
+
+  // 표를 다시 거른다. **행 값을 다시 읽는 것부터** 한다 — 칸을 고치면 그 줄의
+  // `data-f-*` 가 바뀌는데, filters.js 는 처음 한 번 읽은 값으로 목록을 만들기
+  // 때문에 다시 읽지 않으면 화면에는 `관리 중` 이라고 적혀 있는데 필터에는
+  // 여전히 `드랍` 으로 남는다.
+  function apply() {
+    if (columnFilters) { columnFilters.refresh(); return; }   // refresh 안에서 적용까지 한다
+    // 공통 부품을 못 실었을 때(스크립트 순서가 틀어졌다든지)라도 검색·칩은 살아 있어야 한다.
+    rows().forEach(function (tr) { tr.hidden = !passes(tr); });
+    showNote(null);
   }
 
   search.addEventListener("input", apply);
@@ -116,6 +138,12 @@
         cell.classList.add("saved");
         setTimeout(function () { cell.classList.remove("saved"); }, 900);
         refreshRowFlags(tr);
+        // 플래그만 고치고 끝내면 **화면은 옛 조건 그대로**다. `드랍` 만 보는
+        // 중에 한 곳을 `관리 중` 으로 바꾸면 이제 드랍이 아닌데도 목록에
+        // 남아 있고, 위의 표시 건수도 안 맞는다 — 새로고침해야 사라진다.
+        // 다른 화면(투자사·기업·딜 소싱)은 저장하면 필터가 곧바로 다시
+        // 걸리므로, 여기만 다르게 두면 같은 조작이 화면마다 달리 동작한다.
+        apply();
       })
       .catch(function () {
         cell.classList.remove("saving");
@@ -125,12 +153,28 @@
       });
   }
 
-  // 관리/드랍 표시는 '기업 관리' 칸의 내용으로 정해진다 — 고치면 필터도 따라가야 한다.
+  // 머리글 필터가 보는 값. 서버의 `management_tags`(routers/consulting.py)와
+  // **같은 말을 같은 순서로** 봐야 한다 — 규칙이 어긋나면 고친 직후와 새로고침
+  // 뒤에 같은 줄이 서로 다른 값으로 걸린다.
+  function managementTags(text) {
+    var tags = [];
+    if (text.indexOf("관리") >= 0) tags.push("관리 중");
+    if (text.indexOf("드랍") >= 0) tags.push("드랍");
+    if (text.indexOf("백업팀") >= 0) tags.push("백업팀 전환");
+    if (!tags.length && text.trim()) tags.push("기타 메모");
+    return tags.join("|");
+  }
+
+  // 관리/드랍 표시와 머리글 필터 값은 '기업 관리'·'지역' 칸의 내용으로 정해진다 —
+  // 고치면 둘 다 따라가야 한다.
   function refreshRowFlags(tr) {
     var mgmt = tr.querySelector('[data-field="management"]');
     var text = mgmt ? mgmt.textContent : "";
     tr.setAttribute("data-managed", text.indexOf("관리") >= 0 ? "1" : "0");
     tr.setAttribute("data-dropped", text.indexOf("드랍") >= 0 ? "1" : "0");
+    tr.setAttribute("data-f-mgmt", managementTags(text));
+    var region = tr.querySelector('[data-field="region"]');
+    tr.setAttribute("data-f-region", region ? region.textContent.trim() : "");
     var hasNote = Array.prototype.some.call(
       tr.querySelectorAll("[data-note]"),
       function (td) { return td.textContent.trim().length > 0; });

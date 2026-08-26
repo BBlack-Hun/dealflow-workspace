@@ -321,10 +321,10 @@ def test_mode_tabs_follow_the_actual_flow(client, db, seed):
     body = client.get("/deals").text
     block = body[body.index('id="mode-tabs"'):]
     order = re.findall(r'data-mode="(\w+)"', block[:2000])
-    # `sourcing` 은 아직 붙이지 않은 자리다 — 있다는 것만 보이고 눌리지 않는다
+    # 딜 소싱 제안은 맨 끝이다 — 딜소개 흐름이 다 끝난 뒤의 다른 일이다
     assert order == ["deal", "ir", "remind", "meeting", "review", "ask",
                      "sourcing"], order
-    assert 'data-mode="sourcing" disabled' in body
+    assert "disabled" not in block[:2000]
 
     # '기업 소개' 는 '딜 소개' 로 바뀌었다 — 다른 화면 용어와 맞춘다
     assert "딜 소개<span>" in body
@@ -354,3 +354,54 @@ def test_review_template_kind_is_editable(client, db, seed):
     assert "meeting_review" in KIND_LABELS
     client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
     assert "미팅 후기" in client.get("/templates").text
+
+
+# --- 탭 ↔ 문구 매핑 -----------------------------------------------------------
+#
+# 탭마다 쓰는 문구 종류가 하나씩 정해져 있다. 이 표가 어긋나도 화면에는 아무
+# 티가 안 난다 — 문구를 아무리 고쳐도 그 탭의 발송 내용만 안 바뀐다.
+
+def test_every_tab_points_at_a_real_template_kind():
+    """없는 종류를 가리키면 그 탭의 문구를 문구 관리 화면에서 찾을 수가 없다."""
+    from app.routers.deals import MODE_TEMPLATE_KIND
+    from app.routers.templates_crud import KIND_LABELS
+
+    unknown = {mode: kind for mode, kind in MODE_TEMPLATE_KIND.items()
+               if kind not in KIND_LABELS}
+    assert not unknown, unknown
+
+
+def test_every_mode_has_a_name():
+    """이름이 없으면 회차 제목이 '딜소개 회차' 로만 남아 무엇을 보냈는지 모른다."""
+    from app.routers.deals import MODE_TEMPLATE_KIND, MODE_TITLES
+
+    missing = set(MODE_TEMPLATE_KIND) - set(MODE_TITLES)
+    assert not missing, missing
+    assert all(MODE_TITLES[mode].strip() for mode in MODE_TEMPLATE_KIND)
+
+
+def test_the_tabs_and_the_mapping_are_the_same_set(logged_in):
+    """탭은 있는데 매핑이 없으면 그 탭은 기본 문구로 떨어진다 — 고쳐도 안 바뀐다.
+
+    반대로 매핑만 있고 탭이 없으면, 고칠 수 있다고 적힌 문구를 쓸 자리가 없다.
+    """
+    import re
+
+    from app.routers.deals import MODE_TEMPLATE_KIND
+
+    body = logged_in.get("/deals").text
+    block = body[body.index('id="mode-tabs"'):]
+    block = block[:block.index("</div>")]
+
+    tabs = set(re.findall(r'data-mode="(\w+)"', block))
+    assert tabs == set(MODE_TEMPLATE_KIND), tabs ^ set(MODE_TEMPLATE_KIND)
+
+
+def test_the_template_screen_says_which_tab_uses_it(logged_in):
+    """문구가 열다섯 종류인데 어느 것을 고쳐야 그 탭이 바뀌는지 알 수 없었다."""
+    from app.routers.deals import MODE_TEMPLATE_KIND, MODE_TITLES
+
+    body = logged_in.get("/templates").text
+    for mode, kind in MODE_TEMPLATE_KIND.items():
+        assert 'id="%s"' % kind in body, kind          # 고칠 자리가 화면에 있어야 한다
+        assert MODE_TITLES[mode] in body, mode         # 어느 탭에서 쓰는지 적혀 있어야 한다

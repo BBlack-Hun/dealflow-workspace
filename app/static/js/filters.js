@@ -144,10 +144,27 @@
       if (typeof options.onChange === "function") options.onChange(state, shown);
     }
 
+    // 필터와 **무관한 쿼리는 그대로 둔다.** 읽을 때는 이미 그러고 있는데
+    // (`parseQuery` 가 모르는 키를 건드리지 않는다) 쓸 때는 pathname 만 남기고
+    // 다 버리고 있었다 — `/sourcing?tab=M&A 찾는 투자사` 를 열면 아무것도 안
+    // 골랐는데도 주소가 곧바로 `/sourcing` 이 되어, 새로고침하면 다른 갈래가
+    // 열렸다. 투자컨설턴트 현황은 `?sheet=` 가 곧 명단이라 더 나쁘다.
+    function keptQuery() {
+      var q = String((global.location && global.location.search) || "").replace(/^\?/, "");
+      return q.split("&").filter(function (pair) {
+        if (!pair) return false;
+        var i = pair.indexOf("=");
+        return keys.indexOf(decodeURIComponent(i < 0 ? pair : pair.slice(0, i))) < 0;
+      });
+    }
+
     function syncUrl() {
       if (!global.history || !global.history.replaceState) return;
-      var qs = buildQuery(state);
-      global.history.replaceState(null, "", global.location.pathname + qs);
+      var parts = keptQuery();
+      var mine = buildQuery(state).replace(/^\?/, "");
+      if (mine) parts.push(mine);
+      global.history.replaceState(null, "", global.location.pathname +
+        (parts.length ? "?" + parts.join("&") : ""));
     }
 
     function renderButtons() {
@@ -262,7 +279,8 @@
     // 한 칸에 필터가 하나뿐이면 **그 단추가 컬럼 이름 자리를 대신한다.**
     // 예전에는 `계약여부` 라는 글자 밑에 `계약여부 ▾` 단추가 또 있어서
     // 같은 말이 두 번 나왔다 — 칸은 좁은데 자리만 두 배로 먹었다.
-    // 필터가 둘인 칸(투자분야 / 라운드사이즈)은 이름을 남긴다.
+    // 필터가 둘인 칸(진행 단계 / 연결 상태)은 이름을 남긴다 — 단추만 남기면
+    // 둘 중 어느 것이 그 칸의 이름인지 알 수 없다.
     defs.forEach(function (def) {
       def.solo = defs.filter(function (d) { return d.th === def.th; }).length === 1;
     });
@@ -303,7 +321,34 @@
     });
 
     apply();
-    return { apply: apply, getState: function () { return state; } };
+
+    // 칸을 고치면 그 값도 필터에 나와야 한다 — **여기서 직접 듣는다.**
+    // 화면마다 `inline-saved` 를 이어 주게 두었더니 딜 소싱만 빠져 있었고,
+    // 빠진 화면은 값이 바뀌어도 필터 목록이 옛날 그대로였다(아무도 모른다).
+    // 표를 읽는 쪽이 스스로 다시 읽는 편이 빠뜨릴 자리가 없다.
+    //
+    // 저장 직후가 아니라 **한 박자 뒤**에 읽는다. 같은 이벤트를 듣고 행을
+    // 다듬는 화면이 있어서다(기업구분을 짧은 이름으로 되돌려 적는 등) —
+    // 그 정리보다 먼저 읽으면 같은 값이 목록에 두 벌로 생긴다.
+    table.addEventListener("inline-saved", function () {
+      if (global && global.setTimeout) global.setTimeout(refresh, 0);
+      else refresh();
+    });
+
+    // `rowData` 는 처음 한 번만 읽으므로, 고친 뒤 다시 읽어 주지 않으면
+    // **값은 있는데 필터에는 없는** 상태가 된다 — 관심도를 채워 넣어도
+    // 필터가 비어 있었다.
+    function refresh() {
+      rows.forEach(function (tr, i) {
+        keys.forEach(function (k) {
+          rowData[i][k] = splitValues(tr.getAttribute("data-f-" + k));
+        });
+      });
+      apply();
+    }
+
+    return { apply: apply, refresh: refresh,
+             getState: function () { return state; } };
   }
 
   function escapeHtml(s) {

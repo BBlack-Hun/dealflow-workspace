@@ -53,7 +53,7 @@ def job_status(job_id: int, db: Session = Depends(get_db), user: User = Depends(
             {
                 "id": i.id,
                 "contact_id": i.contact_id,
-                "contact_name": i.contact.name if i.contact else None,
+                "contact_name": i.recipient_name,
                 "room_name": i.room_name,
                 "status": i.status,
                 "error": i.error,

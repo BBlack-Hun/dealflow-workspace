@@ -216,7 +216,17 @@
         input.value = before;
         api.pop.appendChild(input);
 
-        var used = knownValues(cell.getAttribute("data-field"));
+        // 정해진 보기가 있는 칸은 그것을 먼저 세운다. 값이 하나도 없는
+        // 컬럼(관심도처럼 이제 채우기 시작하는 칸)은 다른 행에서 모을 것이
+        // 없어서, 목록 없이 빈 칸에 타이핑하게 된다 — 그러면 사람마다
+        // "높음" · "상" · "high" 로 갈린다.
+        var fixed = (cell.getAttribute("data-choices") || "")
+          .split(",").map(function (v) { return v.trim(); })
+          .filter(function (v) { return v; });
+        var used = fixed.slice();
+        knownValues(cell.getAttribute("data-field")).forEach(function (v) {
+          if (used.indexOf(v) === -1) used.push(v);
+        });
         if (used.length) {
           var box = document.createElement("div");
           box.className = "cell-pop-choices";
@@ -286,6 +296,13 @@
           cell.classList.remove("saving");
           if (!r.ok) return r.json().then(function (d) { throw new Error(d.detail || ""); });
           cell.classList.add("saved");
+          // 필터가 이 값을 볼 수 있게 행에도 적어 둔다. 안 적으면 값은
+          // 있는데 필터 목록에는 안 나온다(관심도를 채워도 필터가 비었다).
+          var fkey = cell.getAttribute("data-filter-key")
+            || cell.getAttribute("data-field");
+          if (row && row.hasAttribute("data-f-" + fkey)) {
+            row.setAttribute("data-f-" + fkey, forFilter(cell, value));
+          }
           setTimeout(function () { cell.classList.remove("saved"); }, 900);
           return r.json().catch(function () { return {}; }).then(function (data) {
             table.dispatchEvent(new CustomEvent("inline-saved",
@@ -300,6 +317,20 @@
           alert("저장하지 못했습니다." + (err.message ? "\n" + err.message : ""));
         });
     }
+  }
+
+  // 한 칸에 값이 여럿인 칸(선호 투자분야 등)은 화면과 필터의 구분자가 다르다 —
+  // 사람에게는 `AI, 헬스케어` 로 보여 주고, 필터는 `|` 로 나눠 **태그 단위**로
+  // 거른다. 보이는 그대로 행에 적으면 `AI, 헬스케어` 가 통째로 값 하나가 되어,
+  // 고친 그 사람만 목록에서 따로 떨어져 나온다(`AI` 를 골라도 안 걸린다).
+  // `data-filter-sep` 이 있는 칸만 나눈다 — 없으면 적힌 그대로가 값 하나다.
+  function forFilter(cell, value) {
+    var sep = cell.getAttribute("data-filter-sep");
+    if (!sep) return value;
+    return String(value).split(sep)
+      .map(function (s) { return s.trim(); })
+      .filter(function (s) { return s.length > 0; })
+      .join("|");
   }
 
   // 커서를 끝에 둔다. **아무 input 에서나 되는 게 아니다** — number·date·email

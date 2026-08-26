@@ -1,9 +1,12 @@
 {% extends "base.html" %}
 {% block content %}
 {#
-  담당자 시트(`전체 딜소개현황`)를 그대로 옮긴 표.
-  `table-layout: fixed` + 셀 말줄임이라 1280px 에서 가로 스크롤이 없다.
-  폭은 실제 글자 길이로 잡았다 — 표 머리(<thead>) 주석 참고.
+  투자사 명단 시트(`투자사 150/98/30`)를 그대로 옮긴 표. 컬럼 **이름과 순서**가
+  원본과 같다 — 시트와 나란히 놓고 대조하는 일이 잦아서다.
+
+  칸이 열여덟이라 화면보다 넓다. 표 안에서만 가로로 밀리게 두고(`table-wrap
+  wide`), 폭은 **머리글이 아니라 데이터 길이**로 잡았다 — 이름 길이로 잡으면
+  99% 비어 있는 칸이 넓은 자리를 먹는다.
 #}
 <header class="page-head">
   <h1>{{ page_title }}</h1>
@@ -48,52 +51,29 @@
   {% endif %}
 </nav>
 
-{% if ref %}
-{# 참고 자료를 펼친 상태. 명단 표는 아래에 그대로 남는다. #}
-<section class="panel ref-panel">
-  <h2 class="panel-title">{{ ref.title }}
-    <span class="hint">참고 자료</span>
-    <span class="ref-acts">
-      <a class="linkbtn" href="/contacts?sheet={{ selected_sheet|urlencode }}">닫기</a>
-      <form method="post" action="/ref-sheets/{{ ref.id }}/delete"
-            onsubmit="return confirm('{{ ref.title }} 탭을 지울까요?\n원본 시트를 다시 가져오면 되살릴 수 있습니다.')">
-        <button class="linkbtn danger" type="submit">이 탭 지우기</button>
-      </form>
-    </span>
-  </h2>
-  {% if ref.kind == 'table' %}
-  <div class="table-wrap">
-    <table class="grid-table compact">
-      <thead><tr>
-        {% for c in ref_content.columns %}<th>{{ c }}</th>{% endfor %}
-      </tr></thead>
-      <tbody>
-        {% for row in ref_content.rows %}
-        <tr>{% for cell in row %}<td class="ref-cell">{{ cell }}</td>{% endfor %}</tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% else %}
-  {# 줄글은 원문 그대로 — 표로 잘못 나누면 내용이 칸에 잘려 사라진다. #}
-  <pre class="ref-text">{{ ref_content.body }}</pre>
-  {% endif %}
-</section>
-{% endif %}
+{% set ref_back = "/contacts" %}
+{% include "_ref_panel.html" %}
 
 {% if selected_sheet %}
 {% for t in tabs %}{% if t.key == selected_sheet %}
+{# 참고 탭은 이름을 바꿀 수 있는데 명단 탭은 못 바꿨다. 원본 시트에서 이름을
+   다듬으면 앱만 옛 이름으로 남는다. #}
+<form method="post" action="/api/contacts/sheets/rename" class="ref-rename sheet-rename">
+  <input type="text" name="new" value="{{ t.label }}" maxlength="80"
+         aria-label="명단 이름" title="이름을 고치고 [이름 저장]을 누르세요">
+  <input type="hidden" name="old" value="{{ t.label }}">
+  <button class="linkbtn" type="submit">이름 저장</button>
+</form>
+{# 이름 칸 바로 아래에 같은 이름이 또 적혀 있었다 — 두 번 읽을 이유가 없다. #}
+{#
+  명단 안내 줄(`담당 명단 · ○○ · 연결 완료 125/125명`)은 뺐다 — 탭에 이미
+  건수가 붙어 있고, 담당은 탭 이름이 곧 말해 준다. 같은 말이 두 번 나왔다.
+
+  담당 지정은 **관리자만 쓰는 것**이라 안내 줄과 함께 사라지면 안 된다.
+  줄만 지우고 폼은 남긴다.
+#}
+{% if team_wide %}
 <p class="hint sheet-owner-line">
-  <b>{{ t.label }}</b>
-  {% if t.kind == 'pool' %}
-    <span class="tag">투자사 풀</span>
-    <span class="muted">확보해 둔 명단입니다. 여기서 골라 내 명단으로 할당하세요.</span>
-  {% else %}
-    <span class="tag">담당 명단</span> <b>{{ t.owner }}</b>
-  {% endif %}
-  · 연결 완료 {{ t.connected }} / {{ t.count }}명
-  {% if t.written_by %}<span class="muted">· 연결 작업 {{ t.written_by }}</span>{% endif %}
-  {% if team_wide %}
   <form method="post" action="/api/contacts/sheets/assign" class="inline-form">
     <input type="hidden" name="label" value="{{ t.label }}">
     <select name="user_id">
@@ -104,8 +84,8 @@
     </select>
     <button class="linkbtn" type="submit">담당 지정</button>
   </form>
-  {% endif %}
 </p>
+{% endif %}
 
 {% if t.kind == 'pool' and my_sheets %}
 <!-- 풀 → 내 명단 할당. 풀에서 빼지 않고 내 명단에 더한다. -->
@@ -125,6 +105,10 @@
 
 <div class="toolbar">
   <div class="toolbar-right">
+    {# 275명에서 한 사람을 찾는 데 컬럼 필터로는 안 된다 — 이름을 아는데
+       분야·담당으로 좁혀 들어가야 했다. #}
+    <input type="search" id="vc-search" placeholder="회사명 · 이름 검색"
+           autocomplete="off" aria-label="회사명 · 이름 검색">
     <label class="density-toggle">
       <input type="checkbox" id="density-toggle"> 촘촘히 보기
     </label>
@@ -145,6 +129,13 @@
     구글 시트에서 내려받은 <code>.xlsx</code> 또는 <code>.csv</code> 를 올리세요.
     <b>이름</b>·<b>투자사명</b> 컬럼이 있는 시트를 읽습니다.
     먼저 <b>미리보기</b>로 무엇이 생기고 바뀌는지 확인한 뒤 반영합니다.
+  </p>
+  {# 새로 명단을 만드는 사람에게는 올릴 수 있는 양식이 따로 있어야 한다 —
+     내보내기 파일에는 되올리기 방지 표식이 붙어 그대로 올리면 막힌다. #}
+  <p class="hint">
+    처음이시라면 <a href="/api/sample/contacts.xlsx" download><b>업로드용 샘플 양식</b></a>을
+    내려받아 채워 넣으세요. 머리글 이름은 그대로 두셔야 합니다 —
+    이름으로 칸을 찾기 때문에 바꾸면 그 칸의 값이 통째로 버려집니다.
   </p>
   <div class="import-controls">
     <input type="file" id="import-file" accept=".xlsx,.xlsm,.csv">
@@ -176,16 +167,20 @@
 
 <div class="chip-row" data-filter-chips></div>
 
-<div class="table-wrap">
+{# 시트 컬럼 18개를 그대로 세운다 — 화면보다 넓다.
+   **표 안에서만** 가로로 밀리게 한다. 페이지가 통째로 밀리면 좌측 메뉴까지
+   따라 움직여 어디를 보고 있는지 잃는다. #}
+<div class="table-wrap wide">
   <table class="grid-table" id="contacts-table" data-inline-url="/api/contacts">
     <thead>
       <tr>
         {% if pool_view %}<th style="width:32px"></th>{% endif %}
         {#
-          담당자 시트(`전체 딜소개현황`)는 다섯 칸뿐이다:
-              그룹 · 이름 · 투자사명 · 초대완료여부 · 투자분야/라운드사이즈
-          휴대폰·회사·부서·근무지 주소는 **다른 시트**에 있는 것이라 여기서는
-          안 본다. 필요하면 [수정] 에서 본다.
+          시트의 칸을 **이름·순서 그대로** 세운다. 앱이 만든 칸(그룹 · 진행
+          단계 · 채널)은 뒤로 뺀다 — 시트 부분이 앞에서 끊기지 않아야 눈으로
+          대조할 수 있다.
+
+          `담당자` 는 뺐다(요청). 값은 살아 있고 [수정] 에서 고친다.
 
           월별 딜소개 3열 세트는 NO 를 눌러 활동 이력으로 본다 — 달마다
           오른쪽으로 늘어나는 칸이라 표에 넣으면 끝이 없다.
@@ -198,28 +193,82 @@
           잘린다. 담당자(3자)에 72px 을 주고 라운드사이즈(38자)를 130px 로
           눌러 두었던 것이 그랬다.
         #}
-        <th style="width:30px" title="누르면 활동 이력이 열립니다">NO</th>
-        <th style="width:76px" data-filters="group:그룹">그룹<div class="th-filters"></div></th>
-        <th style="width:118px">이름</th>
-        <th style="width:60px" data-filters="assignee:담당자">담당자<div class="th-filters"></div></th>
-        <th style="width:200px" data-filters="owner:투자사명">투자사명<div class="th-filters"></div></th>
-        <th style="width:150px" data-filters="sector:선호 투자분야">선호 투자분야<div class="th-filters"></div></th>
-        <th data-filters="stage:라운드사이즈">라운드 사이즈<div class="th-filters"></div></th>
-        <th style="width:88px" data-filters="dealstage:진행 단계">진행 단계<div class="th-filters"></div></th>
+        {# ── 여기부터는 원본 시트의 컬럼이다. 이름·순서를 그대로 쓴다 ──
+           시트와 나란히 놓고 대조하는 일이 잦은데, 이름이 다르면 그때마다
+           "이게 그 칸인가" 를 한 번씩 멈춰서 확인해야 한다. #}
+        <th class="num" style="width:34px" title="누르면 활동 이력이 열립니다">NO</th>
+        <th style="width:96px">이름</th>
+        <th style="width:126px" data-filters="interest:관심도 (월말기준)">관심도 (월말기준)<div class="th-filters"></div></th>
+        {# 이 칸도 필터가 하나뿐이라 이름 대신 `카톡방 참여여부 ▾` 단추가 선다.
+           이름은 114px 에 들어가지만 단추는 ` ▾` 와 자기 padding·테두리만큼
+           넓어 119px 이 필요했다 — 헤드리스 크롬으로 재 보니 실제로 `카톡방
+           참여여부` / `▾` 두 줄이었다. 128px 로 넓혀도 이 표는 적어 둔 폭 합
+           (2,728px)이 `#contacts-table` 의 min-width(2,804px)보다 작아
+           표 전체 폭은 그대로다. #}
+        <th style="width:128px" data-filters="joined:카톡방 참여여부">카톡방 참여여부<div class="th-filters"></div></th>
+        <th style="width:276px"
+            title="메모 ( 통화내용 /  카톡내용  /  카톡답신내용)">메모 ( 통화내용 /  카톡내용  /  카톡답신내용)</th>
+        <th style="width:180px">딜소싱 참여 투자사</th>
+        <th style="width:110px" data-filters="sector:선호 투자분야">선호 투자분야<div class="th-filters"></div></th>
+        {# 필터 키는 **이 칸이 보여 주는 값**을 가리켜야 한다. 여기는 `round_size`
+           인데 키가 `stage`(선호 단계) 였다 — 값이 0개인 다른 칸을 보고 있어서
+           표에는 52줄이 보이는데 필터를 열면 늘 빈 목록이었다. #}
+        <th style="width:186px" data-filters="round:라운드 사이즈(투자운영금액)">라운드 사이즈(투자운영금액)<div class="th-filters"></div></th>
+        {# 컬럼 이름은 **원본 시트 그대로** 쓴다 — 시트와 나란히 놓고 대조한다.
+           이 표에서 가장 긴 이름(40자)이라 폭을 여기서만은 **데이터가 아니라
+           이름에 맞춘다.** 값은 306줄 중 3줄뿐이고 전부 `O` 라 데이터만 보면
+           40px 이면 되지만, 132px 에서는 머리글이 네 줄로 접혀 표 전체를
+           아래로 밀어냈다. 두 줄에 들어가는 최소 폭이 210px 근처라
+           220px 로 둔다(메모 칸과 같은 폭이라 눈에도 덜 튄다).
+           마우스를 올리지 않아도 읽히지만 잘림 대비로 title 은 남긴다. #}
+        <th style="width:220px"
+            title="TIPS 운영사 투자금 1-10억 스타트업매출액 3-20억 기업에 주로 투자">TIPS 운영사 투자금 1-10억 스타트업매출액 3-20억 기업에 주로 투자</th>
+        <th style="width:104px">휴대폰</th>
+        {# 같은 어긋남이 여기에도 있었다. 이 칸은 투자사명(`firm`)을 보여 주는데
+           키는 `owner`(그 명단을 맡은 우리 팀원)였다 — 라벨은 `회사`인데 열면
+           팀원 이름이 나왔고, 명단이 한 사람 것이면 고를 값이 하나뿐이었다.
+           담당 팀원으로 나누는 일은 이미 위의 **명단 탭**이 한다. #}
+        <th style="width:150px" data-filters="firm:회사">회사<div class="th-filters"></div></th>
+        <th style="width:130px">부서</th>
+        <th style="width:82px">직함</th>
+        <th style="width:170px">전자 메일 주소</th>
+        <th style="width:96px">근무처 전화</th>
+        <th style="width:96px">근무처 팩스</th>
+        <th style="width:190px">근무지 주소 번지</th>
+        <th style="width:92px">명함 등록일</th>
+        {# ── 여기부터는 앱이 만든 칸. 시트에는 없다 ── #}
+        <th style="width:70px" data-filters="group:그룹">그룹<div class="th-filters"></div></th>
+        {# 필터가 둘이다. `연결 상태`(미착수 → 진행 중 → 연결 완료 / 참여 안 함)는
+           카톡방까지 들어오게 하는 **앞 단계**라 표에 따로 칸을 두지 않았는데,
+           대시보드의 `연결 진행 중인 명단` 이 `/contacts?connect=진행 중` 으로
+           눌러 들어온다. 선언이 없으면 그 쿼리는 조용히 버려진다 —
+           눌러도 306명이 그대로 나오던 것이 그래서였다.
+           같은 축(얼마나 진행됐나)이라 이 칸에 함께 둔다. #}
+        <th style="width:84px" data-filters="dealstage:진행 단계|connect:연결 상태">진행 단계<div class="th-filters"></div></th>
+        <th style="width:62px" data-filters="channel:채널">채널<div class="th-filters"></div></th>
         <th style="width:44px"></th>
       </tr>
     </thead>
     <tbody>
       {% for r in rows %}
+      {#
+        행이 싣는 값은 **머리글이 선언한 키와 하나씩 짝**이어야 한다.
+          · 선언만 하고 안 실으면 → 필터를 열어도 늘 빈 목록
+          · 싣기만 하고 선언이 없으면 → 아무도 안 보는 죽은 속성
+        `data-f-assignee`(시트의 담당자) · `data-f-room`(방 연결 상태)이 그랬다.
+        담당자 컬럼은 뺐고 방 연결은 표에 칸이 없어, 둘 다 거는 곳이 없는 채로
+        306행에 실려 나가기만 했다. 값이 필요해지면 **칸부터 세우고** 그때
+        다시 싣는다(tests/test_filter_columns.py 가 이 짝을 지킨다).
+      #}
       <tr class="data-row" data-id="{{ r.id }}" data-name="{{ r.name }}"
           data-f-group="{{ r.group_name }}"
-          data-f-owner="{{ r.owner }}"
-          data-f-assignee="{{ r.assignee }}"
+          data-f-firm="{{ r.firm }}"
           data-f-connect="{{ r.connect_label }}"
-          {# 초대 컬럼은 감췄지만 거르는 기능은 살려 둔다 —
-             방 연결 확인 뒤 "미등록만 보기" 를 쓴다. #}
-          data-f-room="{{ r.room_label }}"
-          data-f-stage="{{ r.stages|join('|') }}"
+          data-f-channel="{{ r.channel_label }}"
+          data-f-interest="{{ r.interest_level }}"
+          data-f-joined="{{ r.kakao_joined }}"
+          data-search="{{ (r.name ~ ' ' ~ (r.firm or '') ~ ' ' ~ (r.title or '') ~ ' ' ~ (r.department or ''))|lower }}"
+          data-f-round="{{ r.round_size }}"
           data-f-sector="{{ r.sectors|join('|') }}"
           data-f-dealstage="{{ r.deal_stage_label }}">
         {% if pool_view %}
@@ -228,20 +277,51 @@
         {# 월별 딜소개 이력은 옆으로 끝없이 늘어나는 칸이라 표에 넣지 않는다.
            NO 를 누르면 그 담당자의 활동 이력이 열린다. #}
         <td class="rowno muted js-detail" title="활동 이력 보기"></td>
-        <td class="cell" data-field="group_name" data-type="pick">{{ r.group_name }}</td>
-        <td>
-          <b class="cell" data-field="name">{{ r.name }}</b>
-          <span class="muted cell" data-field="title" data-type="pick">{{ r.title }}</span>
+        {# 시트 컬럼 — 이름·순서를 그대로 따른다 #}
+        <td><b class="cell" data-field="name">{{ r.name }}</b></td>
+        {#
+          `data-filter-key` — 이 칸을 고쳤을 때 행의 어느 `data-f-*` 를 같이
+          고칠지. 칸 이름(DB 컬럼)과 필터 키가 다르면 이것이 없는 한 저장해도
+          행 값이 그대로라, **관심도를 채워 넣어도 필터는 계속 비어 있었다.**
+          (`data-filter-sep` 은 한 칸에 값이 여럿일 때 쓴다 — 화면은 쉼표로
+          보여 주고 필터는 `|` 로 나눠 태그 단위로 거른다.)
+        #}
+        <td class="cell" data-field="interest_level" data-type="pick"
+            data-choices="높음,중간,낮음" data-filter-key="interest">{{ r.interest_level }}</td>
+        <td class="cell" data-field="kakao_joined" data-type="pick"
+            data-choices="O,X" data-filter-key="joined">{{ r.kakao_joined }}</td>
+        <td title="{{ r.memo }}">
+          <div class="cell clamp2" data-field="memo" data-type="long">{{ r.memo }}</div>
         </td>
-        <td class="cell" data-field="assignee_name" data-type="pick">{{ r.assignee }}</td>
-        <td class="cell ellipsis" data-field="firm" title="{{ r.firm }}">{{ r.firm }}</td>
+        <td title="{{ r.sourcing_note }}">
+          <div class="cell clamp2" data-field="sourcing_note" data-type="long">{{ r.sourcing_note }}</div>
+        </td>
         <td title="{{ r.sectors|join(', ') }}">
-          <div class="cell clamp2" data-field="sectors" data-type="long">{{ r.sectors|join(', ') }}</div>
+          <div class="cell clamp2" data-field="sectors" data-type="long"
+               data-filter-key="sector" data-filter-sep=",">{{ r.sectors|join(', ') }}</div>
         </td>
         <td title="{{ r.round_size }}">
-          <div class="cell clamp2" data-field="round_size" data-type="long">{{ r.round_size }}</div>
+          <div class="cell clamp2" data-field="round_size" data-type="long"
+               data-filter-key="round">{{ r.round_size }}</div>
         </td>
+        <td title="{{ r.tips_note }}">
+          <div class="cell clamp2" data-field="tips_note" data-type="long">{{ r.tips_note }}</div>
+        </td>
+        <td class="cell" data-field="phone">{{ r.phone }}</td>
+        <td class="cell ellipsis" data-field="firm" title="{{ r.firm }}">{{ r.firm }}</td>
+        <td class="cell" data-field="department" data-type="pick">{{ r.department }}</td>
+        <td class="cell" data-field="title" data-type="pick">{{ r.title }}</td>
+        <td class="cell ellipsis" data-field="email" title="{{ r.email }}">{{ r.email }}</td>
+        <td class="cell" data-field="office_phone">{{ r.office_phone }}</td>
+        <td class="cell" data-field="office_fax">{{ r.office_fax }}</td>
+        <td class="cell ellipsis" data-field="address" title="{{ r.address }}">{{ r.address }}</td>
+        <td class="cell" data-field="card_registered_at" data-type="date">{{ r.card_registered_at }}</td>
+        {# 앱이 만든 칸 — 시트에는 없다 #}
+        <td class="cell" data-field="group_name" data-type="pick"
+            data-filter-key="group">{{ r.group_name }}</td>
         <td><span class="stage-pill {{ r.deal_stage_cls }}">{{ r.deal_stage_label }}</span></td>
+        {# 대시보드의 '메일 채널' · '채널 미지정' 에서 눌러 오면 이 칸으로 걸러진다. #}
+        <td class="muted">{{ r.channel_label }}</td>
         <td><button type="button" class="linkbtn js-detail">수정</button></td>
       </tr>
       {% endfor %}
@@ -276,9 +356,30 @@
 
   <div class="detail-body" data-panel="info">
     <div class="form-grid">
+      {#
+        ── 칸 이름은 **표 머리글과 한 글자도 다르지 않게** 쓴다 ──
+
+        표는 원본 시트의 컬럼 이름을 그대로 옮겨 놓았는데, 이 패널만 줄여 부르고
+        있었다. 같은 칸인지 알아보려면 그때마다 멈춰서 맞춰 봐야 했다:
+
+            표 `선호 투자분야`      ↔  수정 `섹터 태그 (쉼표)`
+            표 `회사`               ↔  수정 `투자사`
+            표 `전자 메일 주소`     ↔  수정 `이메일`
+
+        고칠 때는 **표 쪽이 정답**이다 — 표 이름은 시트에서 그대로 온 것이라
+        여기 맞춰 바꾸면 시트와 대조가 안 된다.
+
+        `(쉼표)` 같은 **입력 형식 안내는 이름이 아니다.** 이름 뒤에 붙여 두면
+        표와 글자가 달라져 위 문제가 그대로 돌아온다. 그래서 안내는 전부
+        `placeholder` 로 옮겼다 — 빈 칸일 때 바로 그 자리에 보이므로 안내가
+        필요한 순간에 오히려 더 잘 읽힌다.
+        (tests/test_ui_layout.py 가 이 짝을 지킨다)
+
+        표에 없는 칸(담당자·상태·카톡방 이름 등)은 맞출 상대가 없으므로 그대로 둔다.
+      #}
       <label class="field"><span>이름</span><input type="text" id="f-name"></label>
       <label class="field"><span>직함</span><input type="text" id="f-title" placeholder="대표님 / 심사역"></label>
-      <label class="field"><span>투자사</span><input type="text" id="f-firm"></label>
+      <label class="field"><span>회사</span><input type="text" id="f-firm"></label>
       <label class="field"><span>그룹</span><input type="text" id="f-group_name"></label>
       <label class="field wide"><span>카톡방 이름 <b class="warn-text">정확히 일치해야 발송됩니다</b></span>
         <input type="text" id="f-kakao_room_name"></label>
@@ -290,10 +391,14 @@
           <option value="paused">검토중단</option>
         </select>
       </label>
-      <label class="field"><span>단계 태그 (쉼표)</span><input type="text" id="f-stages" placeholder="Seed,SeriesA"></label>
-      <label class="field"><span>섹터 태그 (쉼표)</span><input type="text" id="f-sectors" placeholder="AI,헬스케어"></label>
-      <label class="field wide"><span>투자분야 / 라운드 사이즈</span><input type="text" id="f-round_size"></label>
-      <label class="field"><span>이메일</span><input type="text" id="f-email"></label>
+      {# `단계 태그` 는 표에 칸이 없다 — 맞출 상대가 없어 이름을 그대로 둔다.
+         다만 안내 자리는 아래 칸들과 통일한다. #}
+      <label class="field"><span>단계 태그</span>
+        <input type="text" id="f-stages" placeholder="Seed, SeriesA — 쉼표로 구분"></label>
+      <label class="field"><span>선호 투자분야</span>
+        <input type="text" id="f-sectors" placeholder="AI, 헬스케어 — 쉼표로 구분"></label>
+      <label class="field wide"><span>라운드 사이즈(투자운영금액)</span><input type="text" id="f-round_size"></label>
+      <label class="field"><span>전자 메일 주소</span><input type="text" id="f-email"></label>
       <label class="field"><span>휴대폰</span><input type="text" id="f-phone"></label>
       {#
         시트에 있는데 표에는 안 넣은 값들. 표에 다 넣으면 20칸이 되어 정작
@@ -303,9 +408,20 @@
       <label class="field"><span>부서</span><input type="text" id="f-department"></label>
       <label class="field"><span>근무처 전화</span><input type="text" id="f-office_phone"></label>
       <label class="field"><span>근무처 팩스</span><input type="text" id="f-office_fax"></label>
-      <label class="field wide"><span>근무지 주소</span><input type="text" id="f-address"></label>
+      <label class="field wide"><span>근무지 주소 번지</span><input type="text" id="f-address"></label>
       <label class="field"><span>명함 등록일</span><input type="text" id="f-card_registered_at"></label>
-      <label class="field"><span>관심도</span><input type="text" id="f-interest_level"></label>
+      <label class="field"><span>관심도 (월말기준)</span><input type="text" id="f-interest_level"
+             placeholder="높음 / 중간 / 낮음"></label>
+      {# 표에는 있는데 이 창에 없어서 **적을 자리가 없었다.** 표 칸을 눌러도
+         고칠 수는 있지만, 스무 칸을 가로로 밀어 찾아야 한다. 이름은 표와
+         같게 둔다 — 두 이름을 놓고 같은 칸인지 따지게 하지 않는다. #}
+      <label class="field"><span>카톡방 참여여부</span><input type="text" id="f-kakao_joined"
+             placeholder="O / X"></label>
+      <label class="field wide"><span>딜소싱 참여 투자사</span><input type="text" id="f-sourcing_note"></label>
+      <label class="field wide"
+             title="TIPS 운영사 투자금 1-10억 스타트업매출액 3-20억 기업에 주로 투자">
+        <span>TIPS 운영사 투자금 1-10억 스타트업매출액 3-20억 기업에 주로 투자</span>
+        <input type="text" id="f-tips_note" placeholder="O / 공란"></label>
       <label class="field checks">
         <span>채널</span>
         <span class="check-row">
@@ -313,7 +429,11 @@
           <label><input type="checkbox" id="f-channel_email"> 메일</label>
         </span>
       </label>
-      <label class="field wide"><span>메모</span><textarea id="f-memo" rows="3"></textarea></label>
+      {# 이름이 길지만 표 머리글을 그대로 쓴다 — 이 칸에 무엇을 적는 것인지가
+         이름 안에 들어 있어서, 줄여 `메모` 라고만 두면 아래 `투자 현황` 류의
+         다른 메모와 구별되지 않는다. #}
+      <label class="field wide"><span>메모 ( 통화내용 /  카톡내용  /  카톡답신내용)</span>
+        <textarea id="f-memo" rows="3"></textarea></label>
     </div>
     <div class="detail-actions">
       <button type="button" class="primary-btn inline" id="save-btn">저장</button>
@@ -336,4 +456,5 @@
 <script src="{{ asset('js/filters.js') }}"></script>
 <script src="{{ asset('js/contacts.js') }}"></script>
 <script src="{{ asset('js/contact_import.js') }}"></script>
+<script src="{{ asset('js/ref_edit.js') }}"></script>
 {% endblock %}

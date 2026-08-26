@@ -9,17 +9,13 @@ arrive in later sprints (send_sequences → Sprint 3), so schemas don't drift.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import ForeignKey, Integer, String, Text
+from sqlalchemy import ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from .clock import now_iso as _now_iso
 from .db import Base
-
-
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 class TimestampMixin:
@@ -79,6 +75,41 @@ class MessageTemplate(TimestampMixin, Base):
     is_active: Mapped[int] = mapped_column(Integer, default=1)
 
 
+class TemplateChoice(TimestampMixin, Base):
+    """이 사람이 이 자리에 쓰기로 **고른** 팀 문구.
+
+    한 종류(kind)에 팀 기본 문구를 여러 개 둘 수 있다. 고른 사람이 없으면
+    코드가 그중 아무거나 집게 되는데, 그러면 **같은 회차에 사람마다 다른
+    문구가 나가고** 무엇이 나갔는지 나중에 알 수도 없다. 그래서 "누가 무엇을
+    골랐는가" 를 값으로 남긴다.
+
+    고치는 것과 고르는 것은 다른 권한이다 — 팀 기본은 관리자만 고치지만
+    고르는 것은 각자 한다(관리자도 제 선택을 가진다).
+    """
+
+    __tablename__ = "template_choices"
+    # 한 자리에 두 개를 고를 수는 없다. 그 '자리'가 (사람, 종류, 갈래)다.
+    __table_args__ = (
+        UniqueConstraint("user_id", "kind", "variant", name="uq_template_choice_slot"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    kind: Mapped[str] = mapped_column(String)
+    # 같은 종류 안에서 **서로 겨루는 무리**를 가르는 칸. 보통은 빈 문자열이다
+    # — 그 종류의 문구가 전부 한 자리를 놓고 겨룬다. 딜 소싱만 갈래(문구
+    # `name`)마다 자리가 갈린다: 호칭·개수·범위가 갈래마다 달라 이름이
+    # 다르면 아예 다른 문구다.
+    #
+    # NULL 이 아니라 빈 문자열을 쓴다 — NULL 끼리는 서로 다른 값으로 쳐서
+    # 위의 유일 제약이 걸리지 않고, 한 자리에 선택이 여러 개 쌓인다.
+    variant: Mapped[str] = mapped_column(String, default="", server_default="")
+    # 고른 문구가 지워지면 선택도 함께 사라져야 한다 — 없는 문구를 가리킨 채
+    # 남으면 "골라 뒀는데 다른 것이 나간다" 가 된다.
+    template_id: Mapped[int] = mapped_column(
+        ForeignKey("message_templates.id", ondelete="CASCADE"))
+
+
 class VcContact(TimestampMixin, Base):
     __tablename__ = "vc_contacts"
 
@@ -100,6 +131,10 @@ class VcContact(TimestampMixin, Base):
     # 처음 연락하는 문구를 보내면 어색하다.
     office_fax: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     card_registered_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # 시트에만 있고 앱에는 칸이 없어 버려지던 둘. 표기가 자유 문장이라
+    # ("전화완료 / 부재중 7명") 원문을 그대로 둔다.
+    sourcing_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    tips_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     office_phone: Mapped[Optional[str]] = mapped_column(String, nullable=True)     # 유선전화
     address: Mapped[Optional[str]] = mapped_column(String, nullable=True)
@@ -206,6 +241,9 @@ class IrCompany(TimestampMixin, Base):
     revenue_2024: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     revenue_2025: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     founded_year: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # 홍보메일 답장을 **받은 날**. 시트에서는 스타트업DB 의 맨 앞 칸이다.
+    # 이 칸이 없어서 그 뒤가 통째로 한 칸씩 밀려 보였다.
+    received_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     # 스타트업DB 시트의 `사업분야` — **카테고리가 아니라 사업 설명**이다.
     # (카테고리는 sector_major/minor 로 따로 있다.)
     # 한줄 소개의 **첫 토막**이 이 값이다:
@@ -302,12 +340,29 @@ class SendJob(TimestampMixin, Base):
     )
 
 
+#: **실제로 문구가 나간** 잡 종류.
+#:
+#: `verify_room`(방 연결 확인)은 방 제목만 대조하고 아무것도 보내지 않는데,
+#: 끝난 건이 `status="sent"` 로 남아서 발송 건수에 함께 세어졌다(방 확인만
+#: 눌렀는데 이번 주 보낸 건수가 116건으로 찍혔다).
+#:
+#: 세는 곳이 여럿이라 각자 걸러 두면 한 곳이 빠진다 — 실제로 네 곳이 빠져
+#: 있었다. 여기 한 곳만 보게 한다.
+SEND_KINDS = ("deal_intro", "ir_delivery", "sourcing_intro")
+
+
 class SendItem(TimestampMixin, Base):
     __tablename__ = "send_items"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     job_id: Mapped[int] = mapped_column(ForeignKey("send_jobs.id"))
-    contact_id: Mapped[int] = mapped_column(ForeignKey("vc_contacts.id"))
+    # 받는 사람은 둘 중 **하나**다. 투자사 담당자(딜소개·IR·후속)이거나,
+    # 딜 소싱 명단(우리 딜을 같이 볼 사람)이거나. 소싱은 다른 표에 있어서
+    # 가리키는 칸이 따로 있고, 그래서 이 칸이 빌 수 있다.
+    contact_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("vc_contacts.id"), nullable=True)
+    sourcing_contact_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("sourcing_contacts.id"), nullable=True)
     # FK to send_sequences arrives in Sprint 3 — kept nullable, no constraint yet.
     sequence_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     stage: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # 1 day1 | 2 remind | 3 meeting
@@ -333,7 +388,15 @@ class SendItem(TimestampMixin, Base):
     sent_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
     job: Mapped["SendJob"] = relationship(back_populates="items")
-    contact: Mapped["VcContact"] = relationship()
+    contact: Mapped[Optional["VcContact"]] = relationship()
+    sourcing_contact: Mapped[Optional["SourcingContact"]] = relationship()
+
+    @property
+    def recipient_name(self) -> Optional[str]:
+        """누구에게 갔는가. 화면·기록에서 이 값만 쓴다 —
+        받는 사람이 두 표에 나뉘어 있는 것을 부르는 쪽이 알 필요는 없다."""
+        who = self.contact or self.sourcing_contact
+        return who.name if who else None
 
 
 class AgentDevice(TimestampMixin, Base):
@@ -381,6 +444,12 @@ class SourcingContact(TimestampMixin, Base):
     kakao_reply: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     call_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
+    # 소싱 명단은 투자사 관리 현황과 거의 겹치지 않는다 — 39명 중 7명뿐이다.
+    # 기존 담당자를 찾아 붙이는 방식으로는 나머지 32명에게 못 보내므로
+    # 여기도 자기 카톡방을 가진다.
+    kakao_room_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    room_verified: Mapped[str] = mapped_column(String, default="unverified")
+
 
 class RefSheet(TimestampMixin, Base):
     """참고 시트 — 원본 스프레드시트의 '자료' 탭들.
@@ -397,6 +466,10 @@ class RefSheet(TimestampMixin, Base):
     """
 
     __tablename__ = "ref_sheets"
+
+    # 어느 화면에 붙는가. contacts = 투자사 관리 현황 · consulting = 투자컨설턴트
+    # 현황. 스크립트·가이드는 화면마다 다른데 붙일 자리가 한 곳뿐이었다.
+    page: Mapped[str] = mapped_column(String, default="contacts")
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     title: Mapped[str] = mapped_column(String)
@@ -418,6 +491,9 @@ class ConsultingColumn(TimestampMixin, Base):
     __tablename__ = "consulting_columns"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # 열도 사람마다 다르다 — 각자 올린 시트의 달이 다르기 때문이다.
+    user_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id"), nullable=True)
     # 월 컬럼도 시트마다 다르다 — `중요 스타트업` 은 6·7·8월, `경영본부 전달
     # 기업` 은 6·7월처럼. 섞으면 없는 달의 빈 칸이 생긴다.
     sheet: Mapped[str] = mapped_column(String, default="중요 스타트업")
@@ -436,6 +512,10 @@ class ConsultingCompany(TimestampMixin, Base):
     __tablename__ = "consulting_companies"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # 누구의 표인가. 컨설턴트가 여럿이면 각자 올린 시트가 서로를 덮는다
+    # (월별 리마인드 열이 사람마다 다르다). 관리자만 전부 본다.
+    user_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id"), nullable=True)
     # 어느 시트에서 왔는가. 원본이 `중요 스타트업`·`경영본부 전달 기업` 처럼
     # 나뉘어 있고 관리하는 사람이 다르다 — 한 표에 쏟으면 자기 명단을 못 찾는다.
     sheet: Mapped[str] = mapped_column(String, default="중요 스타트업")
@@ -584,6 +664,14 @@ class Meeting(TimestampMixin, Base):
     # 미팅 뒤 결과를 물어볼 날. 완료 처리하면 자동으로 잡힌다.
     followup_due: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     followup_done: Mapped[int] = mapped_column(Integer, default=0)
+    # 결과는 `outcome` 한 칸(진행/보류/거절)뿐이라 **왜 그런지**가 남지 않는다.
+    # 다음 회차에 이 투자사를 어떻게 대할지는 거기서 나온다.
+    #
+    # 둘을 나눈다 — 미팅 자리에서 들은 것과 열흘 뒤 전화로 들은 것은 다른
+    # 시점의 이야기라, 한 칸에 섞으면 언제 들은 말인지 알 수 없다.
+    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    followup_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    followup_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
 

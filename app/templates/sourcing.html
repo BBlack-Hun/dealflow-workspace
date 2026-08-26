@@ -15,8 +15,9 @@
 </header>
 
 <p class="hint">
-  🚧 지금은 <b>보고 고치는 것</b>까지입니다 — 여기서 딜을 보내는 기능은 다음에
-  붙입니다. 보내는 길을 먼저 만들면 명단이 맞는지 확인하기 전에 나가 버립니다.
+  보내는 것은 <a href="/deals">딜 제안 관리</a>의 <b>[딜 소싱 제안]</b> 탭에서 합니다.
+  <b>카톡방 이름</b>이 비어 있으면 그 사람은 발송 대상으로 고를 수 없습니다 —
+  보낼 방이 없기 때문입니다.
 </p>
 
 <nav class="sheet-tabs">
@@ -32,6 +33,14 @@
   <div class="toolbar-right">
     <input type="search" id="sourcing-search" placeholder="이름 · 회사 · 메모 검색"
            autocomplete="off">
+    {# 전화로 한 명 승낙받고 바로 적을 곳이 없어서, 메모지에 적어 뒀다가
+       나중에 시트에 옮겨야 했다. 지금 보고 있는 갈래에 바로 넣는다. #}
+    {% if selected %}
+    <button type="button" class="primary-btn inline" id="sourcing-add"
+            data-bucket="{{ selected }}">{{ selected }}에 추가</button>
+    {% else %}
+    <span class="hint">갈래 탭을 고르면 사람을 추가할 수 있습니다</span>
+    {% endif %}
   </div>
 </div>
 
@@ -43,22 +52,28 @@
     <thead>
       <tr>
         <th style="width:34px">#</th>
-        {% for field, label, width in columns %}
+        {# 어느 칸에 필터를 세울지는 `COLUMNS` 한 곳에서만 정한다 — 머리글과 행이
+           같은 목록을 돌아야 선언(`data-filters`)과 값(`data-f-*`)이 어긋날 수
+           없다. 손으로 두 군데 적던 시절에는 한쪽만 고쳐도 아무 티가 안 났다. #}
+        {% for field, label, width, filterable in columns %}
         <th {% if width %}style="width:{{ width }}"{% endif %}
-            {% if field in ('assignee_name', 'sectors', 'round_size') %}
-            data-filters="{{ field }}:{{ label }}"{% endif %}>
-          {{ label }}{% if field in ('assignee_name', 'sectors', 'round_size') %}<div class="th-filters"></div>{% endif %}
+            {% if filterable %}data-filters="{{ field }}:{{ label }}"{% endif %}>
+          {{ label }}{% if filterable %}<div class="th-filters"></div>{% endif %}
         </th>
         {% endfor %}
       </tr>
     </thead>
     <tbody>
       {% for r in rows %}
+      {# 행이 싣는 값도 **머리글과 같은 목록**에서 나온다(위 주석 참고).
+         필터 키를 칸 이름(`data-field`)과 똑같이 두어, 눌러 고친 값이 곧바로
+         그 칸의 필터 목록에 나타난다 — 이름이 다르면 `data-filter-key` 가 필요하다.
+         구분자(`data-filter-sep`)는 어느 칸에도 주지 않는다. `투자분야` 는 들은
+         말 그대로라 `유통(직영,가맹점)` 처럼 괄호 안에 쉼표가 있어, 쉼표로 나누면
+         없는 값 두 개가 생긴다. #}
       <tr data-id="{{ r.id }}"
           data-search="{{ (r.name ~ ' ' ~ (r.firm or '') ~ ' ' ~ (r.memo or '') ~ ' ' ~ (r.title or ''))|lower }}"
-          data-f-assignee_name="{{ r.assignee_name or '' }}"
-          data-f-sectors="{{ r.sectors or '' }}"
-          data-f-round_size="{{ r.round_size or '' }}">
+          {% for field, label, width, filterable in columns if filterable %}data-f-{{ field }}="{{ r|attr(field) or '' }}" {% endfor %}>
         <td class="rowno muted"></td>
         <td class="cell" data-field="requested_at">{{ r.requested_at or '' }}</td>
         <td><b class="cell" data-field="name">{{ r.name }}</b></td>
@@ -75,6 +90,19 @@
         </td>
         <td title="{{ r.memo or '' }}">
           <div class="cell clamp2" data-field="memo" data-type="long">{{ r.memo or '' }}</div>
+        </td>
+        {# 여기가 비면 딜 제안 관리에서 이 사람을 고를 수 없다 — 보낼 방이 없다. #}
+        {# 투자사 관리 현황에서 이미 연결해 둔 방이 있으면 그것을 쓴다 —
+           손으로 옮겨 적으면 한 글자만 달라도 발송이 통째로 skip 된다. #}
+        {% set link = linked_rooms.get(r.id) %}
+        <td title="{{ r.kakao_room_name or (link and link.room) or '카톡방 제목을 그대로 적어주세요' }}">
+          <div class="cell" data-field="kakao_room_name">{{ r.kakao_room_name or '' }}</div>
+          {% if link and not r.kakao_room_name %}
+          <div class="cell-sub muted" title="{{ link.room }}">
+            🔗 {{ link.room[:22] }}{% if link.room|length > 22 %}…{% endif %}
+            <span class="tag soft">투자사 명단</span>
+          </div>
+          {% endif %}
         </td>
       </tr>
       {% endfor %}
@@ -99,6 +127,26 @@
 
     // 검색은 컬럼 필터와 **AND** 로 묶는다 — 둘이 서로 tr.hidden 을 덮어쓰면
     // 검색과 필터가 번갈아 서로를 지운다.
+    // 갈래에 사람 추가 — 지금 보고 있는 갈래로 들어간다.
+    var addBtn = document.getElementById("sourcing-add");
+    if (addBtn) addBtn.addEventListener("click", function () {
+      var name = (prompt("이름을 입력하세요 (" + addBtn.getAttribute("data-bucket") + ")") || "").trim();
+      if (!name) return;
+      addBtn.disabled = true;
+      fetch("/api/sourcing?bucket=" + encodeURIComponent(addBtn.getAttribute("data-bucket")), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name })
+      }).then(function (r) {
+        if (!r.ok) return r.json().then(function (d) { throw new Error(d.detail || "추가 실패"); });
+        // 새 줄은 맨 아래에 붙는다 — 다시 그려야 보인다.
+        location.reload();
+      }).catch(function (e) {
+        alert(e.message || "추가하지 못했습니다.");
+        addBtn.disabled = false;
+      });
+    });
+
     var box = document.getElementById("sourcing-search");
     var api = window.DealflowFilters.init({
       table: "#sourcing-table",

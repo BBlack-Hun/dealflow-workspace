@@ -71,7 +71,7 @@
     <h2 class="panel-title">예약된 후속 <span class="hint">{{ upcoming|length }}건</span></h2>
     {% if upcoming %}
     <table class="grid-table compact">
-      <thead><tr><th>예정일</th><th>담당자</th><th>다음 단계</th><th>남음</th><th></th></tr></thead>
+      <thead><tr><th>예정일</th><th>담당자</th><th>다음 단계</th><th class="num">남음</th><th></th></tr></thead>
       <tbody>
         {% for r in upcoming %}
         <tr>

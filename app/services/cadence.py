@@ -20,12 +20,13 @@
 from __future__ import annotations
 
 import random
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, timedelta
 from typing import Dict, List, Optional
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .. import clock
 from ..models import (
     ContactActivity,
     DealBatch,
@@ -185,14 +186,21 @@ def follow_up_date(db: Session, sent_on: date, stage: int,
 # --- 시퀀스 -----------------------------------------------------------------
 
 def _today() -> date:
-    return date.today()
+    return clock.today()
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return clock.now_iso()
 
 
 def _as_date(value: Optional[str]) -> Optional[date]:
+    """저장된 시각 문자열에서 **보낸 날**을 뽑는다.
+
+    앞 10자를 그냥 자를 수 있는 것은 저장이 지역시간이기 때문이다(`app/clock.py`).
+    UTC 로 적히던 때에는 한국 새벽에 보낸 건이 여기서 **어제**로 읽혔고, 그
+    어제를 기준으로 리마인드를 잡아 후속이 하루 당겨졌다 — 이 함수가 그 버그가
+    드러난 자리다.
+    """
     if not value:
         return None
     try:
@@ -211,6 +219,10 @@ def start_or_advance(db: Session, item: SendItem, job: SendJob,
     - IR 자료 전달은 답이 왔다는 뜻이므로 시퀀스를 멈춘다
     """
     if item.status != "sent":
+        return None
+    # 딜 소싱 제안은 후속 3단(리마인드 → 미팅 요청)을 타지 않는다.
+    # 딜을 봐 달라는 초대라 "검토 중이신가요" 를 이어 보낼 것이 없다.
+    if item.contact_id is None:
         return None
 
     seq = db.execute(
@@ -424,7 +436,7 @@ def backfill_from_history(db: Session, user_id: int,
     made = 0
     seen: Dict[int, tuple] = {}
     for item, job in rows:
-        if item.contact_id in have:
+        if item.contact_id is None or item.contact_id in have:
             continue
         seen[item.contact_id] = (item, job)      # 담당자별 마지막 성공 건
     for item, job in seen.values():

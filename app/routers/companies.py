@@ -152,6 +152,8 @@ def company_rows(db: Session) -> List[dict]:
             # 금액은 적은 그대로(글자)다: 원본에 `8.2억`·`1,224백만원`·
             # `150억 ~ 200억` 이 섞여 있어 숫자로 바꾸면 100배가 틀어진다.
             "ceo": c.contact_name or "",
+            # 홍보메일 답장을 받은 날. 시트의 맨 앞 칸이다.
+            "received_at": c.received_at or "",
             "phone": c.contact_phone or "",
             "email": c.contact_email or "",
             "revenue_2022": c.revenue_2022 or "",
@@ -306,6 +308,7 @@ class CompanyIn(BaseModel):
     revenue_2025: Optional[str] = None
     founded_year: Optional[str] = None
     guarantee: Optional[str] = None
+    received_at: Optional[str] = None
     business_desc: Optional[str] = None
     top_deal_kind: Optional[str] = None
     assignee_name: Optional[str] = None
