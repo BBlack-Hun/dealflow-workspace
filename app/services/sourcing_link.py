@@ -58,9 +58,11 @@ def linked_rooms(db: Session, sourcing) -> Dict[int, dict]:
 
     out: Dict[int, dict] = {}
     for s in sourcing:
-        if (s.kakao_room_name or "").strip():
+        if (getattr(s, "kakao_room_name", "") or "").strip():
             continue
-        match = by_phone.get(digits(s.phone))
+        # 기본 문구 미리보기의 **가상 대상**에는 번호가 없다. 실제 사람만
+        # 이으면 되므로 없는 것은 그냥 건너뛴다 — 없다고 터질 자리가 아니다.
+        match = by_phone.get(digits(getattr(s, "phone", None)))
         if match is None or not (match.kakao_room_name or "").strip():
             continue
         out[s.id] = {
@@ -74,7 +76,7 @@ def linked_rooms(db: Session, sourcing) -> Dict[int, dict]:
 
 def room_for(sourcing_contact, linked: Dict[int, dict]) -> str:
     """이 사람에게 실제로 보낼 방. 자기 것이 먼저, 없으면 이어진 것."""
-    own = (sourcing_contact.kakao_room_name or "").strip()
+    own = (getattr(sourcing_contact, "kakao_room_name", "") or "").strip()
     if own:
         return own
     return (linked.get(sourcing_contact.id) or {}).get("room", "")

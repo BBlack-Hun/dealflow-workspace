@@ -411,3 +411,26 @@ def test_the_preview_says_where_the_room_came_from(seeded, db, users):
     assert p["room_from"] == "투자사 명단"
     assert not p["room_warning"]
 
+def test_the_default_preview_works_without_anyone_picked(seeded, db, users):
+    """담당자를 고르기 전 기본 문구 미리보기가 터졌다.
+
+    가상의 대상에는 휴대폰이 없는데, 방 이어받기가 그 번호를 읽으려다 멎었다.
+    화면을 열자마자 나는 오류라 발송을 시작할 수조차 없었다.
+    """
+    _vc(db, users, "박세준", "010-1111-2222", "박세준 이사님 가나벤처스 Deal 공유")
+
+    r = seeded.post("/api/deals/preview", json={"contact_ids": [], "mode": "sourcing"})
+    assert r.status_code == 200, r.text
+    p = r.json()["previews"][0]
+    assert p["sample"] is True
+    assert p["name"] == "○○○"          # 진짜 사람 이름이 아니어야 한다
+    assert not p["room_warning"]        # 가상의 사람에게 방을 물을 것이 없다
+
+
+def test_every_mode_previews_without_anyone_picked(seeded, db, users):
+    """한 방식만 고쳐 두면 다른 방식에서 같은 자리가 다시 터진다."""
+    for mode in ("deal", "ir", "remind", "meeting", "review", "ask", "sourcing"):
+        r = seeded.post("/api/deals/preview", json={"contact_ids": [], "mode": mode})
+        assert r.status_code == 200, f"{mode}: {r.text}"
+        assert r.json()["previews"], mode
+

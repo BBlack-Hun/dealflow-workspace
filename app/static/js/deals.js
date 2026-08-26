@@ -562,6 +562,8 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   // 고친 문구만 서버로 보낸다. 안 고친 담당자는 서버가 다시 조합한다.
   // 고친 문구를 담당자별로 들고 있는다 — 미리보기를 다시 그려도 남아야 한다.
   var savedEdits = {};
+  // 미리보기 요청 번호. 늦게 온 옛 응답이 새 것을 덮지 않게 한다.
+  var previewSeq = 0;
 
   function editedOverrides() {
     return lastPreviews
@@ -576,6 +578,10 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     // 한 명 체크했다가 그대로 발송을 누르는 일이 있었다.
     // (딜 소개는 기업까지 골라야 목록이 채워지지만, 인사말·안내문 모양은
     //  기업 없이도 보인다)
+    // 요청마다 번호를 붙인다. 39명을 고른 요청은 느리고 전부 해제한 요청은
+    // 빠른데, 순서를 안 지키면 **늦게 도착한 옛 응답이 새 것을 덮는다** —
+    // 전체선택을 두 번 눌러 다 껐는데 미리보기에 투자사가 그대로 남았다.
+    var seq = ++previewSeq;
     fetch("/api/deals/preview", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -583,6 +589,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     })
       .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
       .then(function (res) {
+        if (seq !== previewSeq) return;      // 그 사이 새 요청이 나갔다
         if (!res.ok) { previewArea.innerHTML = '<p class="muted">' + escapeHtml(res.d.detail || "미리보기 실패") + "</p>"; return; }
         lastPreviews = res.d.previews || [];
         // 고친 문구를 되살린다. 담당자를 하나 더 체크하면 미리보기가 새로
@@ -614,7 +621,10 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
         if (warns.length) { warnBox.hidden = false; warnBox.innerHTML = warns.map(escapeHtml).join("<br>"); }
         else { warnBox.hidden = true; }
       })
-      .catch(function () { previewArea.innerHTML = '<p class="muted">미리보기 요청 오류</p>'; });
+      .catch(function () {
+        if (seq !== previewSeq) return;
+        previewArea.innerHTML = '<p class="muted">미리보기 요청 오류</p>';
+      });
   }
 
   function send() {

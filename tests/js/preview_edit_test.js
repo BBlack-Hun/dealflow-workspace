@@ -77,4 +77,40 @@ function remember(savedEdits, p, value) {
   assert.ok(/savedEdits = \{\};/.test(src), "방식을 바꿔도 수정본이 남는다");
 }
 
+// --- 늦게 온 옛 응답이 새 것을 덮지 않는가 ---------------------------------
+//
+// 39명을 고른 요청은 느리고 전부 해제한 요청은 빠르다. 순서를 안 지키면
+// 전체선택을 두 번 눌러 다 껐는데 미리보기에 투자사가 그대로 남는다.
+{
+  let previewSeq = 0;
+  let shown = null;
+
+  function request(label, previews, arriveAfter) {
+    const seq = ++previewSeq;
+    return { label, previews, arriveAfter, apply() {
+      if (seq !== previewSeq) return false;   // 그 사이 새 요청이 나갔다
+      shown = previews;
+      return true;
+    } };
+  }
+
+  const slow = request("전체선택 39명", ["투자사A", "투자사B"], 300);
+  const fast = request("전부 해제", ["기본 문구"], 10);
+
+  // 빠른 쪽이 먼저 도착
+  assert.strictEqual(fast.apply(), true);
+  // 느린 쪽이 뒤늦게 도착 — 덮으면 안 된다
+  assert.strictEqual(slow.apply(), false, "늦게 온 옛 응답이 새 것을 덮었다");
+  assert.deepStrictEqual(shown, ["기본 문구"]);
+}
+
+// --- 실제 파일에 순서 보장이 있는가 ------------------------------------------
+{
+  const src = fs.readFileSync(
+    path.join(__dirname, "..", "..", "app", "static", "js", "deals.js"), "utf8");
+  assert.ok(/var seq = \+\+previewSeq/.test(src), "요청에 번호를 붙이지 않는다");
+  assert.ok((src.match(/seq !== previewSeq/g) || []).length >= 2,
+            "응답과 오류 양쪽에서 번호를 확인해야 한다");
+}
+
 console.log("preview_edit_test: 통과");
