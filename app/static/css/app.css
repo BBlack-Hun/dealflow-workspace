@@ -178,6 +178,15 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
 .chip.active { background: #e6efff; border-color: var(--brand); color: var(--brand); }
 .chip b { font-variant-numeric: tabular-nums; }
 
+/* 참고 자료 고치기 — 보기만 되던 자료를 화면에서 다듬는다 */
+.ref-cell { cursor: text; }
+.ref-cell:hover { background: #f4f7ff; }
+.ref-text-edit { width: 100%; font: inherit; font-size: 13px; line-height: 1.6;
+  padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px;
+  color: var(--ink); resize: vertical; }
+.ref-text-edit:focus { border-color: var(--brand); outline: none; }
+.ref-body-acts { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+
 /* 기본 문구 미리보기 — 진짜 사람에게 갈 문구로 읽히면 안 된다 */
 .bubble-meta.sample { color: var(--brand); font-weight: 600;
   background: #f4f7ff; border-radius: 8px; padding: 6px 10px; }
@@ -189,6 +198,8 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
   padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px;
   min-width: 260px; max-width: 100%; color: var(--ink); }
 .ref-rename input:focus { border-color: var(--brand); outline: none; }
+/* 명단 이름은 표 위에 한 줄로 뜬다 — 제목 자리가 따로 없다. */
+.sheet-rename { margin: 10px 0 4px; }
 
 /* 딜 소싱 필터(갈래 · 담당) — 검색창에 이름을 치는 대신 누른다.
    줄마다 무엇을 거르는지 앞에 적는다. 칩만 두 줄 있으면 아래 줄이 무엇인지

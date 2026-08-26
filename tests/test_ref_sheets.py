@@ -101,3 +101,77 @@ def test_the_rename_form_is_on_the_open_panel(seeded, db):
     body = seeded.get(f"/contacts?ref={row.id}").text
     assert f'action="/ref-sheets/{row.id}/rename"' in body
     assert 'name="title"' in body
+
+# --- 고치기 -----------------------------------------------------------------
+#
+# 보기만 되던 자료다. 스크립트·성격 정리는 쓰면서 다듬는 것이라, 고치려고
+# 구글 시트를 따로 열어야 하면 화면 안으로 들여온 뜻이 없다.
+
+@pytest.fixture()
+def table_sheet(seeded, db):
+    import json
+
+    from app.models import RefSheet
+
+    row = RefSheet(position=10, kind="table", is_active=1, title="투자사 성격정리",
+                   content_json=json.dumps({
+                       "columns": ["명칭", "투자대상"],
+                       "rows": [["VC", "초기"], ["PE", "성장"]],
+                   }, ensure_ascii=False))
+    db.add(row)
+    db.commit()
+    return row
+
+
+def test_a_text_sheet_can_be_edited(seeded, db):
+    import json
+
+    row = _sheet(db, "카톡방 연결 순서")
+    r = seeded.post(f"/ref-sheets/{row.id}/body",
+                    data={"body": "전화 → 초대 → 확인 → 인사"},
+                    follow_redirects=False)
+    assert r.status_code == 303
+    db.refresh(row)
+    assert json.loads(row.content_json)["body"] == "전화 → 초대 → 확인 → 인사"
+
+
+def test_editing_text_keeps_the_tab_open(seeded, db):
+    row = _sheet(db, "카톡방 연결 순서")
+    r = seeded.post(f"/ref-sheets/{row.id}/body",
+                    data={"body": "고침", "sheet": "투자사 30명"},
+                    follow_redirects=False)
+    assert f"ref={row.id}" in r.headers["location"]
+
+
+def test_a_table_cell_can_be_edited(seeded, db, table_sheet):
+    import json
+
+    r = seeded.patch(f"/api/ref-sheets/{table_sheet.id}/cell",
+                     json={"row": 1, "col": 1, "value": "성장·후기"})
+    assert r.status_code == 200
+    db.refresh(table_sheet)
+    rows = json.loads(table_sheet.content_json)["rows"]
+    assert rows == [["VC", "초기"], ["PE", "성장·후기"]]
+
+
+def test_a_cell_outside_the_table_is_refused(seeded, db, table_sheet):
+    """없는 칸에 쓰면 자료가 조용히 늘어난다."""
+    assert seeded.patch(f"/api/ref-sheets/{table_sheet.id}/cell",
+                        json={"row": 9, "col": 0, "value": "x"}).status_code == 400
+    assert seeded.patch(f"/api/ref-sheets/{table_sheet.id}/cell",
+                        json={"row": 0, "col": 9, "value": "x"}).status_code == 400
+
+
+def test_a_text_sheet_is_not_edited_as_a_table(seeded, db):
+    row = _sheet(db, "카톡방 연결 순서")
+    assert seeded.patch(f"/api/ref-sheets/{row.id}/cell",
+                        json={"row": 0, "col": 0, "value": "x"}).status_code == 404
+
+
+def test_each_cell_knows_its_own_row(seeded, table_sheet):
+    """줄 번호를 안쪽 반복에서 가져오면 모든 칸이 같은 줄을 가리킨다."""
+    body = seeded.get(f"/contacts?ref={table_sheet.id}").text
+    panel = body[body.index('id="ref-table"'):]
+    assert 'data-row="0" data-col="0"' in panel
+    assert 'data-row="1" data-col="1"' in panel
+

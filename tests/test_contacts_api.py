@@ -438,3 +438,61 @@ def test_those_fields_can_be_edited(logged_in, db, contacts):
     assert r.status_code == 200
     db.refresh(hong)
     assert hong.address == "부산시 해운대구 센텀로 9"
+
+# --- 명단(시트) 이름 바꾸기 --------------------------------------------------
+#
+# 참고 탭은 이름을 바꿀 수 있는데 명단 탭은 못 바꿨다. 원본 시트에서 이름을
+# 다듬으면 앱만 옛 이름으로 남는다.
+
+def _named(db, users, name, sheet):
+    from app.models import VcContact
+
+    row = VcContact(user_id=users["u1"].id, name=name, firm="가나벤처스",
+                    source_sheet=sheet, connect_stage="connected")
+    db.add(row)
+    db.commit()
+    return row
+
+
+def test_a_list_sheet_can_be_renamed(logged_in, db, users):
+    row = _named(db, users, "박준호", "옛 이름")
+    r = logged_in.post("/api/contacts/sheets/rename",
+                       data={"old": "옛 이름", "new": "새 이름"},
+                       follow_redirects=False)
+    assert r.status_code == 303
+    db.refresh(row)
+    assert row.source_sheet == "새 이름"
+
+
+def test_renaming_does_not_smudge_the_other_lists(logged_in, db, users):
+    """한 사람이 여러 명단에 겹친다 — 통째로 바꾸면 다른 명단까지 뭉개진다."""
+    both = _named(db, users, "이서준", "옛 이름,다른 명단")
+    logged_in.post("/api/contacts/sheets/rename",
+                   data={"old": "옛 이름", "new": "새 이름"}, follow_redirects=False)
+    db.refresh(both)
+    assert both.source_sheet == "새 이름,다른 명단"
+
+
+def test_an_empty_new_name_is_refused(logged_in, db, users):
+    """이름 없는 탭은 누를 자리가 없어진다."""
+    row = _named(db, users, "정민아", "옛 이름")
+    logged_in.post("/api/contacts/sheets/rename",
+                   data={"old": "옛 이름", "new": "   "}, follow_redirects=False)
+    db.refresh(row)
+    assert row.source_sheet == "옛 이름"
+
+
+def test_the_owner_mapping_follows_the_rename(logged_in, db, users):
+    """담당은 명단 이름으로 붙어 있다 — 이름만 바꾸면 담당이 끊긴다."""
+    from app.models import SheetOwner
+
+    _named(db, users, "홍길동2", "옛 이름")
+    db.add(SheetOwner(label="옛 이름", user_id=users["u1"].id))
+    db.commit()
+
+    logged_in.post("/api/contacts/sheets/rename",
+                   data={"old": "옛 이름", "new": "새 이름"}, follow_redirects=False)
+    db.expire_all()
+    labels = {o.label for o in db.query(SheetOwner).all()}
+    assert "새 이름" in labels and "옛 이름" not in labels
+

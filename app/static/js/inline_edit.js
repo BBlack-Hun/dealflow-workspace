@@ -216,7 +216,17 @@
         input.value = before;
         api.pop.appendChild(input);
 
-        var used = knownValues(cell.getAttribute("data-field"));
+        // 정해진 보기가 있는 칸은 그것을 먼저 세운다. 값이 하나도 없는
+        // 컬럼(관심도처럼 이제 채우기 시작하는 칸)은 다른 행에서 모을 것이
+        // 없어서, 목록 없이 빈 칸에 타이핑하게 된다 — 그러면 사람마다
+        // "높음" · "상" · "high" 로 갈린다.
+        var fixed = (cell.getAttribute("data-choices") || "")
+          .split(",").map(function (v) { return v.trim(); })
+          .filter(function (v) { return v; });
+        var used = fixed.slice();
+        knownValues(cell.getAttribute("data-field")).forEach(function (v) {
+          if (used.indexOf(v) === -1) used.push(v);
+        });
         if (used.length) {
           var box = document.createElement("div");
           box.className = "cell-pop-choices";

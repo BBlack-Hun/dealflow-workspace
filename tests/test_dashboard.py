@@ -969,3 +969,66 @@ def test_clicking_a_requester_opens_their_detail(client, db, users):
     # 그 주소로 가면 상세가 열린 채로 뜬다
     page = client.get(f"/contacts?contact={contact.id}").text
     assert f"window.DEALFLOW_OPEN_CONTACT = {contact.id}" in page
+
+# --- 이번 주 보낸 건수 --------------------------------------------------------
+#
+# 한 달 단위로 세면 월초에는 늘 0 에 가깝고 월말에만 커진다 — 이번 주에 얼마나
+# 나갔는지는 알 수 없다. 회차가 격주라 **주간**이 실제 일하는 단위다.
+
+def _sent(db, users, contact_id, when):
+    from app.models import SendItem, SendJob
+
+    job = SendJob(user_id=users["u1"].id, kind="deal_intro", status="done",
+                  total=1, sent=1, failed=0)
+    db.add(job)
+    db.flush()
+    db.add(SendItem(job_id=job.id, contact_id=contact_id, room_name="방",
+                    message="문구", status="sent", sent_at=when))
+    db.commit()
+
+
+def _two_contacts(db, users):
+    from app.models import VcContact
+
+    rows = [VcContact(user_id=users["u1"].id, name=f"담당{i}", firm="가나벤처스",
+                      connect_stage="connected", kakao_room_name=f"방{i}")
+            for i in (1, 2)]
+    db.add_all(rows)
+    db.commit()
+    return [r.id for r in rows]
+
+
+def test_the_count_is_this_week_not_this_month(client, db, users):
+    from datetime import date, timedelta
+
+    from app.services import dashboard as dash
+
+    today = date.today()
+    monday = today - timedelta(days=today.weekday())
+    ids = _two_contacts(db, users)
+
+    _sent(db, users, ids[0], monday.isoformat() + "T09:00:00+09:00")
+    # 지난주 건은 세지 않는다
+    _sent(db, users, ids[1], (monday - timedelta(days=3)).isoformat() + "T09:00:00+09:00")
+
+    kpi = next(k for k in dash.user_dashboard(db, users["u1"], top_n=10)["kpis"]
+               if k["key"] == "sent")
+    assert kpi["label"] == "이번 주 보낸 건수"
+    assert kpi["value"] == 1
+
+
+def test_the_count_links_to_the_people_it_counted(client, db, users):
+    """숫자만 보고 누구에게 갔는지 모르면 다음에 누구를 챙길지 정할 수 없다."""
+    from datetime import date, timedelta
+
+    from app.services import dashboard as dash
+
+    today = date.today()
+    monday = today - timedelta(days=today.weekday())
+    target = _two_contacts(db, users)[0]
+    _sent(db, users, target, monday.isoformat() + "T09:00:00+09:00")
+
+    kpi = next(k for k in dash.user_dashboard(db, users["u1"], top_n=10)["kpis"]
+               if k["key"] == "sent")
+    assert kpi["href"] == f"/deals?contacts={target}"
+

@@ -712,6 +712,101 @@ def _assign(contact: VcContact, body: ContactIn) -> None:
 ref_router = APIRouter(tags=["ref-sheets"])
 
 
+@router.post("/sheets/rename", include_in_schema=False)
+def rename_list_sheet(old: str = Form(""), new: str = Form(""),
+                      db: Session = Depends(get_db),
+                      user: User = Depends(get_current_user)):
+    """명단(시트) 탭 이름 바꾸기.
+
+    참고 탭은 이름을 바꿀 수 있는데 명단 탭은 못 바꿨다. 원본 시트에서 이름을
+    다듬으면 앱만 옛 이름으로 남는다.
+
+    `source_sheet` 는 쉼표로 이어 붙인 목록이라(한 사람이 여러 명단에 겹친다)
+    통째로 바꾸지 않고 **조각 단위**로 바꾼다 — 통째로 바꾸면 겹친 사람의
+    다른 명단까지 이름이 뭉개진다.
+    """
+    from fastapi.responses import RedirectResponse
+
+    from ..models import SheetOwner
+
+    before, after = (old or "").strip(), (new or "").strip()
+    # 이름 없는 탭은 누를 자리가 없어진다.
+    if not before or not after or before == after:
+        return RedirectResponse(f"/contacts?sheet={quote(before)}", status_code=303)
+
+    for c in db.execute(select(VcContact)).scalars():
+        parts = [p.strip() for p in (c.source_sheet or "").split(",") if p.strip()]
+        if before in parts:
+            c.source_sheet = ",".join(after if p == before else p for p in parts)
+    for row in db.execute(
+        select(SheetOwner).where(SheetOwner.label == before)
+    ).scalars():
+        row.label = after
+    db.commit()
+    return RedirectResponse(f"/contacts?sheet={quote(after)}", status_code=303)
+
+
+class RefCellIn(BaseModel):
+    """표 참고 자료의 칸 하나."""
+    row: int
+    col: int
+    value: str = ""
+
+
+@ref_router.patch("/api/ref-sheets/{sheet_id}/cell", include_in_schema=False)
+def edit_ref_cell(sheet_id: int, body: RefCellIn, db: Session = Depends(get_db),
+                  user: User = Depends(get_current_user)):
+    """표 참고 자료의 칸 고치기.
+
+    보기만 되던 자료다. 스크립트·성격 정리는 쓰면서 다듬는 것이라, 고치려고
+    구글 시트를 따로 열어야 하면 화면 안으로 들여온 뜻이 없다.
+    """
+    import json
+
+    from ..models import RefSheet
+
+    row = db.get(RefSheet, sheet_id)
+    if row is None or row.kind != "table":
+        raise HTTPException(status_code=404, detail="표 참고 자료가 아닙니다")
+    data = json.loads(row.content_json or "{}")
+    rows = data.get("rows") or []
+    if not (0 <= body.row < len(rows)) or not (0 <= body.col < len(rows[body.row])):
+        raise HTTPException(status_code=400, detail="없는 칸입니다")
+    rows[body.row][body.col] = body.value.strip()
+    data["rows"] = rows
+    row.content_json = json.dumps(data, ensure_ascii=False)
+    db.commit()
+    return {"ok": True}
+
+
+@ref_router.post("/ref-sheets/{sheet_id}/body", include_in_schema=False)
+def edit_ref_body(sheet_id: int, body: str = Form(""), sheet: str = Form(""),
+                  db: Session = Depends(get_db),
+                  user: User = Depends(get_current_user)):
+    """줄글 참고 자료 고치기.
+
+    줄글은 칸으로 나뉘어 있지 않아 통째로 고친다 — 표로 쪼개면 내용이 칸에
+    잘려 사라진다.
+    """
+    import json
+
+    from fastapi.responses import RedirectResponse
+
+    from ..models import RefSheet
+
+    row = db.get(RefSheet, sheet_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="참고 시트를 찾을 수 없습니다")
+    data = json.loads(row.content_json or "{}")
+    data["body"] = body.replace("\r\n", "\n")
+    row.content_json = json.dumps(data, ensure_ascii=False)
+    db.commit()
+    back = f"/contacts?ref={sheet_id}"
+    if sheet:
+        back += f"&sheet={quote(sheet)}"
+    return RedirectResponse(back, status_code=303)
+
+
 @ref_router.post("/ref-sheets/{sheet_id}/rename", include_in_schema=False)
 def rename_ref_sheet(sheet_id: int, title: str = Form(""), sheet: str = Form(""),
                      db: Session = Depends(get_db),

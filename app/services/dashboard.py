@@ -281,14 +281,23 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None,
 
     acts = _recent_activity_counts(db, ids, cutoff)
 
-    # 이번 달 발송 = 성공한 건수. '보냈다'는 시도가 아니라 도착을 뜻해야 한다.
-    month_prefix = today.strftime("%Y-%m")
-    sent_this_month = db.execute(
-        select(func.count()).select_from(SendItem)
+    # 발송 = **성공한** 건수. '보냈다'는 시도가 아니라 도착을 뜻해야 한다.
+    #
+    # 한 달 단위로 세면 월초에는 늘 0 에 가깝고 월말에만 커진다 — 이번 주에
+    # 얼마나 나갔는지는 알 수 없다. 회차가 격주(첫째·셋째 수요일)라 **주간**이
+    # 실제 일하는 단위다.
+    week_start = today - timedelta(days=today.weekday())
+    sent_rows = db.execute(
+        select(SendItem.contact_id)
         .join(SendJob, SendJob.id == SendItem.job_id)
         .where(SendJob.user_id == user.id, SendItem.status == "sent",
-               func.coalesce(SendItem.sent_at, "").startswith(month_prefix))
-    ).scalar() or 0
+               func.coalesce(SendItem.sent_at, "") >= week_start.isoformat())
+    ).scalars().all()
+    sent_this_week = len(sent_rows)
+    # 누르면 그 사람들이 **체크된 채로** 발송 화면이 열린다. 숫자만 보고
+    # 누구에게 갔는지 모르면 다음에 누구를 챙길지 정할 수 없다.
+    # (소싱 발송은 contact_id 가 비어 있다 — 투자사 목록에서 고를 수 없다)
+    sent_ids = sorted({c for c in sent_rows if c})
 
     # 막힌 것 — 발송 전에 손봐야 할 목록
     blockers = []
@@ -347,8 +356,12 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None,
             # '카톡 발송 가능'·'소개 가능 기업'은 무엇이 가능하다는 건지 모호했다.
             {"key": "contacts", "label": "내 담당 투자사", "value": len(contacts),
              "sub": "내 명단에 있는 사람", "href": "/contacts"},
-            {"key": "sent", "label": "이번 달 보낸 건수", "value": sent_this_month,
-             "sub": "카톡·메일 도착 성공", "href": "/deals"},
+            # 누르면 이번 주에 **실제로 도착한 사람**이 나온다 — 숫자만 보고
+            # 누구에게 갔는지 모르면 다음에 누구를 챙길지 정할 수 없다.
+            {"key": "sent", "label": "이번 주 보낸 건수", "value": sent_this_week,
+             "sub": f"{week_start.strftime('%m/%d')}부터 · 도착 성공",
+             "href": ("/deals?contacts=" + ",".join(str(i) for i in sent_ids)
+                      if sent_ids else "/deals")},
         ],
         "next_send": next_send,
         "days_left": (next_send - today).days,

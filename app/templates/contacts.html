@@ -72,27 +72,52 @@
     </span>
   </h2>
   {% if ref.kind == 'table' %}
-  <div class="table-wrap">
-    <table class="grid-table compact">
+  {# 보기만 되던 자료다. 쓰면서 다듬는 것이라, 고치려고 구글 시트를 따로
+     열어야 하면 화면 안으로 들여온 뜻이 없다. #}
+  <p class="hint">칸을 눌러 바로 고칩니다.</p>
+  <div class="table-wrap wide">
+    <table class="grid-table compact" id="ref-table" data-ref-id="{{ ref.id }}">
       <thead><tr>
         {% for c in ref_content.columns %}<th>{{ c }}</th>{% endfor %}
       </tr></thead>
       <tbody>
         {% for row in ref_content.rows %}
-        <tr>{% for cell in row %}<td class="ref-cell">{{ cell }}</td>{% endfor %}</tr>
+        {% set r_idx = loop.index0 %}
+        <tr>{% for cell in row %}
+          {# 줄 번호는 **바깥 반복**에서 온다. 안쪽 것을 쓰면 모든 칸이
+             같은 줄을 가리켜 엉뚱한 자리에 저장된다. #}
+          <td class="ref-cell" data-row="{{ r_idx }}" data-col="{{ loop.index0 }}">{{ cell }}</td>
+        {% endfor %}</tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
   {% else %}
-  {# 줄글은 원문 그대로 — 표로 잘못 나누면 내용이 칸에 잘려 사라진다. #}
-  <pre class="ref-text">{{ ref_content.body }}</pre>
+  {# 줄글은 칸으로 나뉘어 있지 않아 통째로 고친다 — 표로 쪼개면 내용이 칸에
+     잘려 사라진다. #}
+  <form method="post" action="/ref-sheets/{{ ref.id }}/body" class="ref-body-form">
+    <textarea name="body" class="ref-text-edit" rows="18"
+              spellcheck="false">{{ ref_content.body }}</textarea>
+    <input type="hidden" name="sheet" value="{{ selected_sheet }}">
+    <div class="ref-body-acts">
+      <button class="secondary-btn" type="submit">저장</button>
+      <span class="hint">줄바꿈·띄어쓰기 그대로 저장됩니다.</span>
+    </div>
+  </form>
   {% endif %}
 </section>
 {% endif %}
 
 {% if selected_sheet %}
 {% for t in tabs %}{% if t.key == selected_sheet %}
+{# 참고 탭은 이름을 바꿀 수 있는데 명단 탭은 못 바꿨다. 원본 시트에서 이름을
+   다듬으면 앱만 옛 이름으로 남는다. #}
+<form method="post" action="/api/contacts/sheets/rename" class="ref-rename sheet-rename">
+  <input type="text" name="new" value="{{ t.label }}" maxlength="80"
+         aria-label="명단 이름" title="이름을 고치고 [이름 저장]을 누르세요">
+  <input type="hidden" name="old" value="{{ t.label }}">
+  <button class="linkbtn" type="submit">이름 저장</button>
+</form>
 <p class="hint sheet-owner-line">
   <b>{{ t.label }}</b>
   {% if t.kind == 'pool' %}
@@ -227,7 +252,6 @@
            "이게 그 칸인가" 를 한 번씩 멈춰서 확인해야 한다. #}
         <th class="num" style="width:30px" title="누르면 활동 이력이 열립니다">NO</th>
         <th style="width:100px">이름</th>
-        <th style="width:60px" data-filters="assignee:담당자">담당자<div class="th-filters"></div></th>
         <th style="width:96px" data-filters="interest:관심도 (월말기준)">관심도 (월말기준)<div class="th-filters"></div></th>
         <th style="width:88px" data-filters="joined:카톡방 참여여부">카톡방 참여여부<div class="th-filters"></div></th>
         <th style="width:190px">메모 ( 통화내용 /  카톡내용  /  카톡답신내용)</th>
@@ -259,6 +283,9 @@
           data-f-assignee="{{ r.assignee }}"
           data-f-connect="{{ r.connect_label }}"
           data-f-channel="{{ r.channel_label }}"
+          {# 선언만 하고 값을 안 실으면 필터 칩이 아예 안 뜬다 #}
+          data-f-interest="{{ r.interest_level }}"
+          data-f-joined="{{ r.kakao_joined }}"
           data-search="{{ (r.name ~ ' ' ~ (r.firm or '') ~ ' ' ~ (r.title or '') ~ ' ' ~ (r.department or ''))|lower }}"
           {# 초대 컬럼은 감췄지만 거르는 기능은 살려 둔다 —
              방 연결 확인 뒤 "미등록만 보기" 를 쓴다. #}
@@ -274,9 +301,10 @@
         <td class="rowno muted js-detail" title="활동 이력 보기"></td>
         {# 시트 컬럼 — 이름·순서를 그대로 따른다 #}
         <td><b class="cell" data-field="name">{{ r.name }}</b></td>
-        <td class="cell" data-field="assignee_name" data-type="pick">{{ r.assignee }}</td>
-        <td class="cell" data-field="interest_level" data-type="pick">{{ r.interest_level }}</td>
-        <td class="cell" data-field="kakao_joined" data-type="pick">{{ r.kakao_joined }}</td>
+        <td class="cell" data-field="interest_level" data-type="pick"
+            data-choices="높음,중간,낮음">{{ r.interest_level }}</td>
+        <td class="cell" data-field="kakao_joined" data-type="pick"
+            data-choices="O,X">{{ r.kakao_joined }}</td>
         <td title="{{ r.memo }}">
           <div class="cell clamp2" data-field="memo" data-type="long">{{ r.memo }}</div>
         </td>
@@ -400,4 +428,5 @@
 <script src="{{ asset('js/filters.js') }}"></script>
 <script src="{{ asset('js/contacts.js') }}"></script>
 <script src="{{ asset('js/contact_import.js') }}"></script>
+<script src="{{ asset('js/ref_edit.js') }}"></script>
 {% endblock %}
