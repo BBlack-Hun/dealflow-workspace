@@ -354,7 +354,10 @@ def test_the_user_is_told_that_months_are_folded(client, db, users):
     body = client.get("/consulting").text
     assert "접어 두었습니다" in body
     assert "지워진 것이 아닙니다" in body
-    assert "/consulting?months=all" in body
+    # 펴는 링크는 지금 보고 있는 시트를 유지한다 — 펴면서 다른 탭으로
+    # 튕기면 찾던 표를 다시 찾아야 한다.
+    assert "months=all" in body
+    assert "/consulting?sheet=" in body
 
     # 펴면 다 보인다
     opened = client.get("/consulting?months=all").text
