@@ -100,6 +100,10 @@ class VcContact(TimestampMixin, Base):
     # 처음 연락하는 문구를 보내면 어색하다.
     office_fax: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     card_registered_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # 시트에만 있고 앱에는 칸이 없어 버려지던 둘. 표기가 자유 문장이라
+    # ("전화완료 / 부재중 7명") 원문을 그대로 둔다.
+    sourcing_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    tips_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     office_phone: Mapped[Optional[str]] = mapped_column(String, nullable=True)     # 유선전화
     address: Mapped[Optional[str]] = mapped_column(String, nullable=True)

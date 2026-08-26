@@ -213,6 +213,9 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
 .table-wrap.wide { overflow-x: auto; }
 /* 컬럼 폭 합(1,922px)보다 넉넉하게. 모자라면 다시 짜부라진다. */
 .table-wrap.wide .grid-table { min-width: 2030px; }
+/* 투자사 관리 현황은 시트 컬럼 18개를 그대로 세운다 — 더 넓다.
+   폭은 th 에서 잡고, 여기서는 표가 줄어들지 않게만 막는다. */
+#contacts-table { min-width: 2520px; }
 .grid-table { width: 100%; table-layout: fixed; border-collapse: collapse;
               background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
 /* 표 밀도. 8px/10px 이던 것을 6px/9px 로 — 글자 수 대비 자리가 남는 칸이

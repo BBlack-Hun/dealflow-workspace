@@ -197,7 +197,10 @@
 
 <div class="chip-row" data-filter-chips></div>
 
-<div class="table-wrap">
+{# 시트 컬럼 18개를 그대로 세운다 — 화면보다 넓다.
+   **표 안에서만** 가로로 밀리게 한다. 페이지가 통째로 밀리면 좌측 메뉴까지
+   따라 움직여 어디를 보고 있는지 잃는다. #}
+<div class="table-wrap wide">
   <table class="grid-table" id="contacts-table" data-inline-url="/api/contacts">
     <thead>
       <tr>
@@ -219,13 +222,30 @@
           잘린다. 담당자(3자)에 72px 을 주고 라운드사이즈(38자)를 130px 로
           눌러 두었던 것이 그랬다.
         #}
+        {# ── 여기부터는 원본 시트의 컬럼이다. 이름·순서를 그대로 쓴다 ──
+           시트와 나란히 놓고 대조하는 일이 잦은데, 이름이 다르면 그때마다
+           "이게 그 칸인가" 를 한 번씩 멈춰서 확인해야 한다. #}
         <th class="num" style="width:30px" title="누르면 활동 이력이 열립니다">NO</th>
-        <th style="width:76px" data-filters="group:그룹">그룹<div class="th-filters"></div></th>
-        <th style="width:118px">이름</th>
+        <th style="width:100px">이름</th>
         <th style="width:60px" data-filters="assignee:담당자">담당자<div class="th-filters"></div></th>
-        <th style="width:200px" data-filters="owner:투자사명">투자사명<div class="th-filters"></div></th>
+        <th style="width:96px" data-filters="interest:관심도 (월말기준)">관심도 (월말기준)<div class="th-filters"></div></th>
+        <th style="width:88px" data-filters="joined:카톡방 참여여부">카톡방 참여여부<div class="th-filters"></div></th>
+        <th style="width:190px">메모 ( 통화내용 /  카톡내용  /  카톡답신내용)</th>
+        <th style="width:130px">딜소싱 참여 투자사</th>
         <th style="width:150px" data-filters="sector:선호 투자분야">선호 투자분야<div class="th-filters"></div></th>
-        <th data-filters="stage:라운드사이즈">라운드 사이즈<div class="th-filters"></div></th>
+        <th style="width:130px" data-filters="stage:라운드 사이즈(투자운영금액)">라운드 사이즈(투자운영금액)<div class="th-filters"></div></th>
+        <th style="width:130px">TIPS 운영사 투자금 1-10억 스타트업매출액 3-20억 기업에 주로 투자</th>
+        <th style="width:112px">휴대폰</th>
+        <th style="width:170px" data-filters="owner:회사">회사<div class="th-filters"></div></th>
+        <th style="width:96px">부서</th>
+        <th style="width:76px">직함</th>
+        <th style="width:170px">전자 메일 주소</th>
+        <th style="width:112px">근무처 전화</th>
+        <th style="width:112px">근무처 팩스</th>
+        <th style="width:180px">근무지 주소 번지</th>
+        <th style="width:88px">명함 등록일</th>
+        {# ── 여기부터는 앱이 만든 칸. 시트에는 없다 ── #}
+        <th style="width:76px" data-filters="group:그룹">그룹<div class="th-filters"></div></th>
         <th style="width:88px" data-filters="dealstage:진행 단계">진행 단계<div class="th-filters"></div></th>
         <th style="width:74px" data-filters="channel:채널">채널<div class="th-filters"></div></th>
         <th style="width:44px"></th>
@@ -252,19 +272,37 @@
         {# 월별 딜소개 이력은 옆으로 끝없이 늘어나는 칸이라 표에 넣지 않는다.
            NO 를 누르면 그 담당자의 활동 이력이 열린다. #}
         <td class="rowno muted js-detail" title="활동 이력 보기"></td>
-        <td class="cell" data-field="group_name" data-type="pick">{{ r.group_name }}</td>
-        <td>
-          <b class="cell" data-field="name">{{ r.name }}</b>
-          <span class="muted cell" data-field="title" data-type="pick">{{ r.title }}</span>
-        </td>
+        {# 시트 컬럼 — 이름·순서를 그대로 따른다 #}
+        <td><b class="cell" data-field="name">{{ r.name }}</b></td>
         <td class="cell" data-field="assignee_name" data-type="pick">{{ r.assignee }}</td>
-        <td class="cell ellipsis" data-field="firm" title="{{ r.firm }}">{{ r.firm }}</td>
+        <td class="cell" data-field="interest_level" data-type="pick">{{ r.interest_level }}</td>
+        <td class="cell" data-field="kakao_joined" data-type="pick">{{ r.kakao_joined }}</td>
+        <td title="{{ r.memo }}">
+          <div class="cell clamp2" data-field="memo" data-type="long">{{ r.memo }}</div>
+        </td>
+        <td title="{{ r.sourcing_note }}">
+          <div class="cell clamp2" data-field="sourcing_note" data-type="long">{{ r.sourcing_note }}</div>
+        </td>
         <td title="{{ r.sectors|join(', ') }}">
           <div class="cell clamp2" data-field="sectors" data-type="long">{{ r.sectors|join(', ') }}</div>
         </td>
         <td title="{{ r.round_size }}">
           <div class="cell clamp2" data-field="round_size" data-type="long">{{ r.round_size }}</div>
         </td>
+        <td title="{{ r.tips_note }}">
+          <div class="cell clamp2" data-field="tips_note" data-type="long">{{ r.tips_note }}</div>
+        </td>
+        <td class="cell" data-field="phone">{{ r.phone }}</td>
+        <td class="cell ellipsis" data-field="firm" title="{{ r.firm }}">{{ r.firm }}</td>
+        <td class="cell" data-field="department" data-type="pick">{{ r.department }}</td>
+        <td class="cell" data-field="title" data-type="pick">{{ r.title }}</td>
+        <td class="cell ellipsis" data-field="email" title="{{ r.email }}">{{ r.email }}</td>
+        <td class="cell" data-field="office_phone">{{ r.office_phone }}</td>
+        <td class="cell" data-field="office_fax">{{ r.office_fax }}</td>
+        <td class="cell ellipsis" data-field="address" title="{{ r.address }}">{{ r.address }}</td>
+        <td class="cell" data-field="card_registered_at" data-type="date">{{ r.card_registered_at }}</td>
+        {# 앱이 만든 칸 — 시트에는 없다 #}
+        <td class="cell" data-field="group_name" data-type="pick">{{ r.group_name }}</td>
         <td><span class="stage-pill {{ r.deal_stage_cls }}">{{ r.deal_stage_label }}</span></td>
         {# 대시보드의 '메일 채널' · '채널 미지정' 에서 눌러 오면 이 칸으로 걸러진다. #}
         <td class="muted">{{ r.channel_label }}</td>

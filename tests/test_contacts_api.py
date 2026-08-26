@@ -34,11 +34,12 @@ def contacts(db, users):
 # ── 표(SSR) ────────────────────────────────────────────────────────────────
 
 def test_contacts_columns_fit_without_horizontal_scroll(logged_in, contacts):
-    """폭을 **실제 글자 길이**로 잡았다 — 짧은 값이 든 칸에 넓은 자리를 주면
-    표가 헐렁해 보이고, 정작 긴 칸(라운드사이즈 38자)은 잘린다.
+    """시트 컬럼 18개를 그대로 세우면 화면보다 넓다 — 그것 자체는 맞다.
 
-    한 칸은 폭 없이 남는 자리를 먹어야 1280px 에 딱 맞는다.
+    대신 **표 안에서만** 가로로 밀려야 한다. 페이지가 통째로 밀리면 좌측
+    메뉴까지 따라 움직여 어디를 보고 있는지 잃는다.
     """
+    import pathlib
     import re
 
     html = logged_in.get("/contacts").text
@@ -55,8 +56,13 @@ def test_contacts_columns_fit_without_horizontal_scroll(logged_in, contacts):
         else:
             flexible += 1
 
-    assert flexible == 1, f"폭 없는 칸이 {flexible}개 — 서로 자리를 뺏는다"
-    assert fixed < 1100, f"고정 폭 합 {fixed}px — 남는 자리가 없어 짜부라진다"
+    # 폭 없는 칸이 여럿이면 서로 자리를 뺏어 칸 너비가 들쭉날쭉해진다.
+    assert flexible == 0, f"폭 없는 칸이 {flexible}개 — 서로 자리를 뺏는다"
+    # 표가 제 감싸개 안에서 밀려야 한다(페이지가 통째로 밀리면 안 된다).
+    assert 'class="table-wrap wide"' in html
+    css = pathlib.Path("app/static/css/app.css").read_text(encoding="utf-8")
+    assert "#contacts-table { min-width:" in css
+    assert re.search(r"\.table-wrap\.wide\s*\{[^}]*overflow-x:\s*auto", css)
     # 폭 제어는 th 에서 한다. 옛 colgroup 이 남아 있으면 그쪽이 이겨 버린다.
     assert "<colgroup" not in html
 
@@ -79,7 +85,8 @@ def test_rows_carry_filter_attributes(logged_in, contacts):
     assert 'data-f-room="⚠ 미등록"' in html   # 방 이름이 없는 담당자
     # 필터 대상 컬럼 헤더에 드롭다운이 붙는다
     assert 'data-filters="sector:선호 투자분야"' in html
-    assert 'data-filters="stage:라운드사이즈"' in html
+    # 컬럼 이름은 원본 시트를 그대로 따른다
+    assert 'data-filters="stage:라운드 사이즈(투자운영금액)"' in html
 
 
 def test_recent_deal_and_reaction_are_aggregated_not_stored(logged_in, db, contacts):

@@ -210,6 +210,10 @@ def contact_rows(db: Session, user: User, team_wide: bool = False) -> List[dict]
             "address": c.address or "",
             "card_registered_at": c.card_registered_at or "",
             "interest_level": c.interest_level or "",
+            # 시트에만 있고 앱에는 칸이 없어 버려지던 둘.
+            "sourcing_note": c.sourcing_note or "",
+            "tips_note": c.tips_note or "",
+            "kakao_joined": c.kakao_joined or "",
             "last_deal": last_deal,
             "last_deal_label": _date_label(last_deal, last_round),
             "last_deal_note": last_deal_note or "",
@@ -311,6 +315,9 @@ class ContactIn(BaseModel):
     address: Optional[str] = None
     card_registered_at: Optional[str] = None
     interest_level: Optional[str] = None
+    kakao_joined: Optional[str] = None
+    sourcing_note: Optional[str] = None
+    tips_note: Optional[str] = None
 
 
 class VerifyRequest(BaseModel):
