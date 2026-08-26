@@ -477,7 +477,9 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     Array.prototype.slice.call(previewTabs.children).forEach(function (t, i) {
       t.classList.toggle("active", i === idx);
     });
-    var roomLine = p.room_name ? ("💬 " + p.room_name) : ("⚠ " + (p.room_warning || "방 미등록"));
+    var roomLine = p.room_name
+      ? ("💬 " + p.room_name + (p.room_from ? " (" + p.room_from + ")" : ""))
+      : ("⚠ " + (p.room_warning || "방 미등록"));
     // 기본 문구는 아직 아무에게도 가지 않는다 — 진짜 사람에게 갈 문구로
     // 읽히면 확인만 하려다 그대로 보내게 된다.
     var meta = p.sample

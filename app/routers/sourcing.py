@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import get_current_user, templates
 from ..models import SourcingContact, User
+from ..services import sourcing_link
 from ..ui import base_ctx
 
 router = APIRouter(tags=["sourcing"])
@@ -67,12 +68,16 @@ def sourcing_page(request: Request, db: Session = Depends(get_db),
     # 나뉜 뜻이 사라진다.
     selected = tab if any(t["key"] == tab for t in tabs) else (
         tabs[0]["key"] if tabs and tab != "all" else "")
+    rows = rows_of(db, selected)
     ctx = base_ctx(request, db, user, active="sourcing")
+    # 투자사 관리 현황에서 이미 방을 연결해 둔 사람이면 다시 적을 이유가 없다.
+    linked = sourcing_link.linked_rooms(db, rows)
     ctx.update({
+        "linked_rooms": linked,
         "tabs": tabs,
         "selected": selected,
         "columns": COLUMNS,
-        "rows": rows_of(db, selected),
+        "rows": rows,
         "total": sum(t["count"] for t in tabs),
     })
     return templates.TemplateResponse("sourcing.html", ctx)

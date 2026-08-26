@@ -27,7 +27,7 @@ from ..models import (
 )
 from ..services import mail_sender, mailer, matcher
 from ..services import message_composer as mc
-from ..services import sourcing_msg
+from ..services import sourcing_link, sourcing_msg
 from ..services.message_composer import MAX_COMPANIES_PER_SEND
 
 router = APIRouter(prefix="/api/deals", tags=["deals"])
@@ -286,7 +286,13 @@ def build_link_blocks(db: Session, contact: VcContact,
     return blocks
 
 
-def _apply_test_room(contact, text: str) -> tuple:
+def _room_of(contact, linked: dict) -> str:
+    """이 사람에게 실제로 보낼 방. 자기 것이 먼저, 없으면 이어진 것."""
+    own = (getattr(contact, "kakao_room_name", "") or "").strip()
+    return own or (linked.get(getattr(contact, "id", 0)) or {}).get("room", "")
+
+
+def _apply_test_room(contact, text: str, linked: Optional[dict] = None) -> tuple:
     """테스트 모드면 발송 대상 방을 테스트 방 하나로 바꾼다.
 
     config.TEST_ROOM 이 설정돼 있으면 실제 담당자 방으로 나가지 않고 전부
@@ -294,14 +300,16 @@ def _apply_test_room(contact, text: str) -> tuple:
     누구에게 갈 문구였는지 알 수 있도록 머리말을 붙인다.
     """
     if not config.TEST_ROOM:
-        return contact.kakao_room_name, text
+        return _room_of(contact, linked or {}), text
     who = f"{contact.name} {contact.title or ''}".strip()
     firm = f" / {contact.firm}" if contact.firm else ""
-    banner = f"[테스트 발송 → {who}{firm}]\n원래 방: {contact.kakao_room_name}\n\n"
+    banner = (f"[테스트 발송 → {who}{firm}]\n"
+              f"원래 방: {_room_of(contact, linked or {})}\n\n")
     return config.TEST_ROOM, banner + text
 
 
-def _apply_test_room_to_parts(contact, parts: List[str]) -> List[str]:
+def _apply_test_room_to_parts(contact, parts: List[str],
+                              linked: Optional[dict] = None) -> List[str]:
     """테스트 머리말은 첫 통에만 붙인다.
 
     통마다 붙이면 테스트 방이 "[테스트 발송 → …]" 로 도배돼 정작 무엇이
@@ -309,7 +317,7 @@ def _apply_test_room_to_parts(contact, parts: List[str]) -> List[str]:
     """
     if not parts or not config.TEST_ROOM:
         return parts
-    _room, first = _apply_test_room(contact, parts[0])
+    _room, first = _apply_test_room(contact, parts[0], linked)
     return [first] + parts[1:]
 
 
@@ -454,12 +462,16 @@ def preview(
     sourcing = req.mode == MODE_SOURCING
     recipients = ([_SampleRecipient(_sample_bucket(db) if sourcing else "")]
                   if sample else _load_recipients(db, user, req.mode, req.contact_ids))
+    # 투자사 관리 현황에서 연결해 둔 방이 있으면 미리보기에도 그 방이 떠야 한다 —
+    # 화면에는 '방 미등록' 인데 실제로는 나가면, 어디로 갈지 모른 채 누르게 된다.
+    linked = sourcing_link.linked_rooms(db, recipients) if sourcing else {}
     for contact in recipients:
         result = _compose_for_contact(db, user, contact, companies,
                                       req.opening_template_id, req.closing_template_id,
                                       mode=req.mode,
                                       include_opening=req.include_opening)
-        room_ok = bool(contact.kakao_room_name) and contact.room_verified in ("verified", "unverified")
+        room = _room_of(contact, linked)
+        room_ok = bool(room) and contact.room_verified in ("verified", "unverified")
         if sample:
             room_ok = True          # 가상의 사람에게 방을 물을 것이 없다
         # 투자분야/단계/라운드 규모 적합도 — 성향과 어긋나는 딜은 발송 전 경고(DRAFT_REFERENCE).
@@ -487,10 +499,14 @@ def preview(
             "name": contact.name,
             "title": contact.title,
             "firm": contact.firm,
-            "room_name": contact.kakao_room_name,
+            "room_name": room,
+            # 이 방이 어디서 왔는지 — 소싱에서 직접 적은 것인지, 투자사 명단에서
+            # 이어 온 것인지.
+            "room_from": ("투자사 명단"
+                          if room and not (contact.kakao_room_name or "").strip()
+                          else ""),
             "room_verified": contact.room_verified,
-            "room_warning": (None if (sample or contact.kakao_room_name)
-                             else "카톡방 이름 미등록"),
+            "room_warning": None if (sample or room) else "카톡방 이름 미등록",
             "message": result.text,
             # 몇 통으로 나가는지 화면에서 보여야 한다 — 링크가 먼저 한 통씩
             # 나가고 설명이 마지막이라는 게 보이지 않으면 확인할 수가 없다.
@@ -550,6 +566,9 @@ def create_send_list(
     # Resolve + validate target contacts (must be owned, must have a room name).
     sourcing = req.mode == MODE_SOURCING
     contacts = _load_recipients(db, user, req.mode, req.contact_ids)
+    # 소싱 대상이 투자사 관리 현황에도 있고 거기서 방을 연결해 뒀다면 그 방을
+    # 쓴다 — 같은 사람의 같은 방이라, 다시 적게 하면 오타로 발송이 빠진다.
+    linked = sourcing_link.linked_rooms(db, contacts) if sourcing else {}
     missing = set(req.contact_ids) - {c.id for c in contacts}
     if missing:
         raise HTTPException(status_code=404,
@@ -563,7 +582,7 @@ def create_send_list(
                 raise HTTPException(
                     status_code=400,
                     detail=f"'{contact.name}' {problem} — 발송 대상에서 제외하세요")
-        elif not contact.kakao_room_name:
+        elif not _room_of(contact, linked):
             raise HTTPException(
                 status_code=400,
                 detail=f"'{contact.name}' 카톡방 이름 미등록 — 발송 대상에서 제외하세요",
@@ -617,9 +636,9 @@ def create_send_list(
             if config.TEST_ROOM:
                 subject = f"[테스트] {subject}"
         else:
-            target, message = _apply_test_room(contact, text)
+            target, message = _apply_test_room(contact, text, linked)
             # 머리말은 **첫 통에만**. 통마다 붙으면 테스트 방이 배너로 도배된다.
-            parts = _apply_test_room_to_parts(contact, parts)
+            parts = _apply_test_room_to_parts(contact, parts, linked)
             subject = None
 
         db.add(SendItem(
