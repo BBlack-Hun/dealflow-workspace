@@ -173,19 +173,48 @@ def test_no_header_wraps_past_two_lines():
     assert not problems, "머리글이 세 줄 넘게 접힙니다: " + ", ".join(problems)
 
 
-def test_header_cells_start_at_the_same_line():
-    """짧은 이름이 긴 이름 옆에서 아래로 처지면 줄이 들쭉날쭉해 보인다.
+def _rule(css: str, selector: str) -> str:
+    """`selector { … }` 의 속성 부분. 없으면 빈 문자열."""
+    m = re.search(re.escape(selector) + r"\s*\{([^}]*)\}", css)
+    return m.group(1) if m else ""
 
-    높이는 **고정하지 않는다.** 두 줄로 묶었더니 한 줄짜리 머리글이 대부분인
-    표에서 칸마다 25px 씩 비었고, 세 줄이 필요한 이름은 말없이 잘렸다.
-    줄 수는 폭으로 잡고(위 검사), 여기서는 시작점만 맞춘다.
+
+def _must_not_pin_or_clip(body: str, where: str) -> None:
+    """머리글 칸을 높이로 묶거나 잘라내지 않는지."""
+    assert not re.search(r"height:\s*\d+px", body), (
+        f"{where}: 머리글 높이를 고정하면 짧은 머리글 칸이 비고 긴 이름은 잘린다")
+    assert "overflow: hidden" not in body, f"{where}: 잘린 이름은 사람이 알 수가 없다"
+    assert "text-overflow: ellipsis" not in body, (
+        f"{where}: `…` 로 자르면 이름이 서로 구별되지 않는다"
+        "(`근무처 전…` 이 전화인지 팩스인지)")
+    assert "white-space: nowrap" not in body, (
+        f"{where}: 한 줄로 묶으면 긴 이름이 칸 밖으로 나가거나 잘린다 — "
+        "접히게 두고 폭으로 두 줄 안에 넣는다(위 검사)")
+
+
+def test_header_names_sit_in_the_middle_of_the_cell():
+    """컬럼 이름은 **가로·세로 모두 가운데**다.
+
+    이름이 두 줄 안에 들어가게 폭을 잡아 두었으므로(위 검사) 줄 수 차이가
+    한 줄뿐이고, 가운데로 모으면 이름이 칸 한복판에 서서 축이 맞는다.
+
+    높이로 묶거나 잘라내는 것은 여전히 안 된다 — 높이를 고정하면 짧은 머리글
+    칸이 비고, `…` 로 자르면 `근무처 전…` 이 전화인지 팩스인지 알 수 없다.
+
+    `.grid-table th` 만 보던 검사였다. 뒤따르는 `.grid-table thead th` 가
+    nowrap·ellipsis 로 **덮어쓰고 있었는데도** 통과했다 — 그래서 덮어쓰는
+    쪽도 같이 본다.
     """
     css = CSS.read_text(encoding="utf-8")
-    rule = re.search(r"\.grid-table th \{([^}]*)\}", css)
-    assert rule, ".grid-table th 규칙이 없습니다"
-    body = rule.group(1)
-    assert "vertical-align: top" in body, "위 기준으로 맞춰야 이름이 같은 줄에서 시작한다"
-    assert not re.search(r"height:\s*\d+px", body), (
-        "머리글 높이를 고정하면 짧은 머리글 칸이 비고 긴 이름은 잘린다")
-    assert "overflow: hidden" not in body, "잘린 이름은 사람이 알 수가 없다"
+
+    base = _rule(css, ".grid-table th")
+    assert base, ".grid-table th 규칙이 없습니다"
+    _must_not_pin_or_clip(base, ".grid-table th")
+
+    head = _rule(css, ".grid-table thead th")
+    assert head, ".grid-table thead th 규칙이 없습니다"
+    _must_not_pin_or_clip(head, ".grid-table thead th")
+    # 숫자 칸만 예외 — 자릿수를 세로로 맞춰 보느라 오른쪽이다.
+    assert "text-align: center" in head, "머리글은 가로로 가운데"
+    assert "vertical-align: middle" in head, "머리글은 세로로도 가운데"
 

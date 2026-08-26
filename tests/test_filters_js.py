@@ -16,6 +16,7 @@ import pytest
 JS_DIR = Path(__file__).resolve().parent / "js"
 JS_TEST = JS_DIR / "filters_test.js"
 COMPANY_SEARCH_TEST = JS_DIR / "company_search_test.js"
+REFRESH_TEST = JS_DIR / "filters_refresh_test.js"
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치 — 브라우저 로직 테스트 생략")
@@ -35,6 +36,21 @@ def test_company_search_rules():
         capture_output=True, text=True, timeout=60,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치 — 브라우저 로직 테스트 생략")
+def test_edited_cells_show_up_in_the_filter():
+    """칸을 고쳤는데 필터가 옛 값만 보면, 있는 줄 알고 골랐다가 아무것도 안 나온다.
+
+    필터는 표를 처음 한 번만 읽는다 — 관심도를 채워 넣었는데 필터 목록이 계속
+    비어 있었다. 저장 → 행에 적기(`data-f-*`) → 다시 읽기(`refresh`), 세 곳이
+    다 이어져야 한 바퀴가 돈다.
+    """
+    result = subprocess.run(
+        [shutil.which("node"), str(REFRESH_TEST)],
+        capture_output=True, text=True, timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
 
 def test_preview_edits_survive_a_refresh():
     """미리보기에서 고친 문구가 다시 그려도 남아야 한다.

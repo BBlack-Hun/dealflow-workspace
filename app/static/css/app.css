@@ -254,8 +254,12 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
 /* 컬럼 폭 합(1,922px)보다 넉넉하게. 모자라면 다시 짜부라진다. */
 .table-wrap.wide .grid-table { min-width: 2030px; }
 /* 투자사 관리 현황은 시트 컬럼 18개를 그대로 세운다 — 더 넓다.
-   폭은 th 에서 잡고, 여기서는 표가 줄어들지 않게만 막는다. */
-#contacts-table { min-width: 2420px; }
+   폭은 th 에서 잡고, 여기서는 표가 줄어들지 않게만 막는다.
+
+   **th 폭 합계와 맞춰 둔다(현재 2,566px).** table-layout: fixed 는 표가
+   합계보다 좁아지면 칸을 비율대로 눌러 버린다 — 그러면 머리글이 한 줄 더
+   접힌다. 2,420px 으로 모자랐던 것이 그랬다. th 폭을 고치면 여기도 같이. */
+#contacts-table { min-width: 2804px; }
 .grid-table { width: 100%; table-layout: fixed; border-collapse: collapse;
               background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
 /* 표 밀도. 8px/10px 이던 것을 6px/9px 로 — 글자 수 대비 자리가 남는 칸이
@@ -276,17 +280,25 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
                  padding: 6px 9px; font-size: 12px; color: var(--muted);
                  background: #f7f8fa; border-bottom: 1px solid var(--line); position: relative; }
 
-/* ── 표 머리글: 한 줄 · 가운데 ───────────────────────────────────
-   컬럼 이름 길이가 제각각이라(`NO` 두 글자, `라운드 사이즈(투자운영금액)`
-   열세 글자) 접히면 어떤 칸은 한 줄, 어떤 칸은 두 줄이 되어 머리글 줄이
-   들쭉날쭉해 보인다.
+/* ── 표 머리글: 다 보이게 · 가운데 · 위 기준 ─────────────────────
+   한 줄로 눌러 놓고 넘치면 `…` 로 잘랐었다. 컬럼 이름을 원본 시트에서 그대로
+   가져오는 표(투자사 관리 현황·스타트업DB)라 이름이 길고, 잘리고 나면 서로
+   구별이 되지 않았다 — `근무처 전…` 이 전화인지 팩스인지 알 수가 없다.
+   전문을 `title` 에 넣어 두어도 마우스를 올려야만 보인다.
 
-   **한 줄로 고정하고 넘치면 …로 자른다.** 잘린 이름은 `title` 로 볼 수 있고,
-   폭은 이미 데이터 길이에 맞춰 잡아 두어 대부분 잘리지 않는다.
-   가운데로 모으면 이름이 칸 한복판에 서서 축이 맞는다. */
+   그래서 **자르지 않고 접는다.** 대신 두 가지로 줄을 가지런히 맞춘다:
+
+     · 폭은 이름이 **두 줄 안에** 들어가게 th 에서 잡는다. 세 줄부터는
+       머리글이 표를 아래로 밀어내 첫 행이 화면 밖으로 나간다.
+       (두 줄 상한은 tests/test_ui_layout.py 가 지킨다)
+     · 두 줄 안에 들어오니 줄 수 차이가 한 줄뿐이다. **가로·세로 모두
+       가운데**로 모아 이름이 칸 한복판에 선다.
+
+   (`display` 는 건드리지 않는다. th/td 에 flex·-webkit-box 를 걸면 그 칸이
+    테이블 레이아웃에서 빠져 행이 어긋난다 — tests/test_ui_layout.py) */
 .grid-table thead th {
   text-align: center; vertical-align: middle;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  white-space: normal;
 }
 /* 필터 칩·설명도 머리글 아래에 붙는다 — 같이 가운데로 모아야 축이 맞는다. */
 .grid-table thead .th-filters { justify-content: center; }

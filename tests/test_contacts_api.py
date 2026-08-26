@@ -79,19 +79,27 @@ def test_page_shows_only_my_contacts(logged_in, contacts):
 
 
 def test_rows_carry_filter_attributes(logged_in, contacts):
-    """필터 컴포넌트는 행의 data-f-* 만 읽는다 — 다중 값은 '|' 로 나뉜다."""
+    """필터 컴포넌트는 행의 data-f-* 만 읽는다 — 다중 값은 '|' 로 나뉜다.
+
+    행이 싣는 값은 **그 칸이 화면에 보여 주는 것**이어야 한다. 라운드 사이즈
+    칸의 필터가 `stages`(선호 단계)를 보고 있어서, 표에는 라운드가 52줄 적혀
+    있는데 필터를 열면 늘 빈 목록이었다 — `stages` 는 값이 0줄이다.
+    선호 단계는 표에 칸이 없어(상세 패널에서만 고친다) 필터에서 뺐고,
+    방 연결(`data-f-room`)도 걸 머리글이 없어 함께 걷어냈다.
+    짝이 어긋나는지는 tests/test_filter_columns.py 가 전 화면에서 훑는다.
+    """
     html = logged_in.get("/contacts").text
-    assert 'data-f-stage="Seed|SeriesA"' in html
     assert 'data-f-sector="AI|SaaS"' in html
+    # 라운드 사이즈 칸이 보여 주는 그 값으로 거른다
+    assert 'data-f-round=' in html
+    assert 'data-f-stage=' not in html, "표에 칸이 없는 값으로 거르려 한다"
+    assert 'data-f-room=' not in html, "걸 머리글이 없는 값을 행이 싣고 있다"
     # 채널·상태는 시트에 없는 칸이라 컬럼과 함께 뺐다.
     assert 'data-f-dealstage=' in html      # 그 자리에 진행 단계가 있다
-    assert 'data-f-room="● 확인됨"' in html
-    assert 'data-f-room="○ 미확인"' in html
-    assert 'data-f-room="⚠ 미등록"' in html   # 방 이름이 없는 담당자
     # 필터 대상 컬럼 헤더에 드롭다운이 붙는다
     assert 'data-filters="sector:선호 투자분야"' in html
     # 컬럼 이름은 원본 시트를 그대로 따른다
-    assert 'data-filters="stage:라운드 사이즈(투자운영금액)"' in html
+    assert 'data-filters="round:라운드 사이즈(투자운영금액)"' in html
 
 
 def test_recent_deal_and_reaction_are_aggregated_not_stored(logged_in, db, contacts):

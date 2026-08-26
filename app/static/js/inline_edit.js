@@ -301,7 +301,7 @@
           var fkey = cell.getAttribute("data-filter-key")
             || cell.getAttribute("data-field");
           if (row && row.hasAttribute("data-f-" + fkey)) {
-            row.setAttribute("data-f-" + fkey, value);
+            row.setAttribute("data-f-" + fkey, forFilter(cell, value));
           }
           setTimeout(function () { cell.classList.remove("saved"); }, 900);
           return r.json().catch(function () { return {}; }).then(function (data) {
@@ -317,6 +317,20 @@
           alert("저장하지 못했습니다." + (err.message ? "\n" + err.message : ""));
         });
     }
+  }
+
+  // 한 칸에 값이 여럿인 칸(선호 투자분야 등)은 화면과 필터의 구분자가 다르다 —
+  // 사람에게는 `AI, 헬스케어` 로 보여 주고, 필터는 `|` 로 나눠 **태그 단위**로
+  // 거른다. 보이는 그대로 행에 적으면 `AI, 헬스케어` 가 통째로 값 하나가 되어,
+  // 고친 그 사람만 목록에서 따로 떨어져 나온다(`AI` 를 골라도 안 걸린다).
+  // `data-filter-sep` 이 있는 칸만 나눈다 — 없으면 적힌 그대로가 값 하나다.
+  function forFilter(cell, value) {
+    var sep = cell.getAttribute("data-filter-sep");
+    if (!sep) return value;
+    return String(value).split(sep)
+      .map(function (s) { return s.trim(); })
+      .filter(function (s) { return s.length > 0; })
+      .join("|");
   }
 
   // 커서를 끝에 둔다. **아무 input 에서나 되는 게 아니다** — number·date·email

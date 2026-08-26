@@ -127,6 +127,123 @@ def test_changing_the_room_name_clears_the_check(seeded, db):
     assert row.room_verified == "unverified"
 
 
+# --- 갈래에 사람 넣기 --------------------------------------------------------
+#
+# 지금까지는 시트를 다시 올려야만 명단이 늘었다 — 전화로 한 명 승낙받고 바로
+# 적을 곳이 없어서, 메모지에 적어 뒀다가 나중에 시트에 옮겼다.
+
+def test_a_person_can_be_added_to_a_bucket(seeded, db):
+    """전화로 승낙받은 사람을 그 자리에서 적을 수 있어야 한다 — 메모지를 거치면 샌다."""
+    from app.models import SourcingContact
+
+    r = seeded.post("/api/sourcing", params={"bucket": "시리즈 A 이상"},
+                    json={"name": "김서연", "title": "심사역", "firm": "가나벤처스",
+                          "phone": "010-0000-0001"})
+    assert r.status_code == 200, r.text
+    assert r.json()["bucket"] == "시리즈 A 이상"
+
+    row = db.get(SourcingContact, r.json()["id"])
+    assert row.name == "김서연"
+    assert row.bucket == "시리즈 A 이상"
+    # 통화하면서 들은 것을 같이 적는다 — 이름만 받으면 나머지를 또 물어야 한다
+    assert (row.title, row.firm, row.phone) == ("심사역", "가나벤처스", "010-0000-0001")
+    # 갈래에 사람이 늘었다
+    assert db.query(SourcingContact).filter_by(bucket="시리즈 A 이상").count() == 3
+
+
+def test_a_row_without_a_bucket_is_refused(seeded, db):
+    """갈래가 곧 문구다 — 갈래 없는 줄은 어떤 문구로 보낼지 정할 수 없다."""
+    from app.models import SourcingContact
+
+    before = db.query(SourcingContact).count()
+
+    r = seeded.post("/api/sourcing", json={"name": "김서연"})
+    assert r.status_code == 400
+    assert "갈래" in r.json()["detail"]
+
+    # 공백만 적은 것도 갈래가 아니다
+    r = seeded.post("/api/sourcing", params={"bucket": "   "}, json={"name": "김서연"})
+    assert r.status_code == 400
+
+    db.expire_all()
+    assert db.query(SourcingContact).count() == before
+
+
+def test_a_row_without_a_name_is_refused(seeded, db):
+    """누구인지 모르는 줄이 명단에 남으면 보낼 사람을 고를 수가 없다."""
+    from app.models import SourcingContact
+
+    before = db.query(SourcingContact).count()
+    for body in ({}, {"name": ""}, {"name": "   "}):
+        r = seeded.post("/api/sourcing", params={"bucket": "시리즈 A 이상"}, json=body)
+        assert r.status_code == 400, body
+        assert "이름" in r.json()["detail"]
+
+    db.expire_all()
+    assert db.query(SourcingContact).count() == before
+
+
+def test_a_new_row_goes_to_the_bottom_of_its_bucket(seeded, db):
+    """맨 아래여야 방금 넣은 사람을 그 자리에서 찾는다.
+
+    시트의 번호를 사람이 매번 세지 않아도 되게 기존 최대값 다음 번호를 준다 —
+    위로 끼어들면 시트에서 옮겨 온 순서가 뒤집힌다.
+    """
+    from app.models import SourcingContact
+
+    # 시리즈 A 이상 = 0, 1 이 이미 있다
+    first = seeded.post("/api/sourcing", params={"bucket": "시리즈 A 이상"},
+                        json={"name": "김서연"}).json()
+    assert db.get(SourcingContact, first["id"]).position == 2
+
+    second = seeded.post("/api/sourcing", params={"bucket": "시리즈 A 이상"},
+                         json={"name": "박도윤"}).json()
+    assert db.get(SourcingContact, second["id"]).position == 3
+
+
+def test_the_bottom_is_counted_inside_the_bucket(seeded, db):
+    """번호를 표 전체에서 세면, 1000번대로 시작하는 갈래 하나 때문에 다른
+    갈래의 새 줄까지 1001번이 되어 그 갈래 맨 아래가 아니게 된다."""
+    from app.models import SourcingContact
+
+    # M&A 갈래는 1000 부터다
+    other = seeded.post("/api/sourcing", params={"bucket": "M&A 찾는 투자사"},
+                        json={"name": "박도윤"}).json()
+    assert db.get(SourcingContact, other["id"]).position == 1001
+
+    mine = seeded.post("/api/sourcing", params={"bucket": "시리즈 A 이상"},
+                       json={"name": "김서연"}).json()
+    assert db.get(SourcingContact, mine["id"]).position == 2
+
+
+def test_adding_to_one_bucket_does_not_renumber_another(seeded, db):
+    """갈래마다 번호가 따로다 — 한 갈래에 넣었다고 다른 갈래가 밀리면
+    시트에서 옮겨 온 순서가 통째로 어긋난다."""
+    from app.models import SourcingContact
+
+    before = {(r.bucket, r.name): r.position for r in db.query(SourcingContact).all()}
+
+    r = seeded.post("/api/sourcing", params={"bucket": "시리즈 A 이상"},
+                    json={"name": "김서연"})
+    assert r.status_code == 200, r.text
+
+    db.expire_all()
+    after = {(r.bucket, r.name): r.position for r in db.query(SourcingContact).all()}
+    for who, position in before.items():
+        assert after[who] == position, who
+
+
+def test_the_added_person_shows_up_in_that_bucket(seeded):
+    """넣었는데 화면에 안 보이면 넣었는지도 모른 채 또 넣는다."""
+    seeded.post("/api/sourcing", params={"bucket": "시리즈 A 이상"},
+                json={"name": "김서연", "firm": "가나벤처스"})
+
+    body = seeded.get("/sourcing", params={"tab": "시리즈 A 이상"}).text
+    assert "김서연" in body
+    # 탭의 건수도 함께 늘어야 어디에 사람이 있는지 알 수 있다
+    assert "시리즈 A 이상 <span>3</span>" in body
+
+
 # --- 보내기 ----------------------------------------------------------------
 
 def test_the_send_tab_is_open(seeded):

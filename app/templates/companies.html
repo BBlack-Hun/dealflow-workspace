@@ -87,12 +87,12 @@
         <th class="num" style="width:74px">23년 매출</th>
         <th class="num" style="width:74px">24년 매출</th>
         <th class="num" style="width:74px">25년 매출</th>
-        <th class="num" style="width:78px">누적투자금액</th>
-        <th class="num" style="width:84px">투자유치희망금액</th>
+        <th class="num" style="width:96px">누적투자금액</th>
+        <th class="num" style="width:120px">투자유치희망금액</th>
         <th class="num" style="width:76px">Pre Value</th>
         <th style="width:260px">특이사항 (장점)</th>
-        <th class="num" style="width:74px">최근 매출액</th>
-        <th style="width:62px">설립년도</th>
+        <th class="num" style="width:90px">최근 매출액</th>
+        <th style="width:72px">설립년도</th>
         <th style="width:130px">기보, 신보, 중진공</th>
         {# IR 자료는 어느 탭에서 보든 맨 끝에 그대로 둔다. #}
         <th style="width:82px" data-filters="ir:IR 자료">IR 자료<div class="th-filters"></div></th>
@@ -101,9 +101,9 @@
     </thead>
     <tbody>
       {% for r in rows %}
+      {# 이 탭이 세운 필터는 `IR 자료` 하나다. 담당자·대분류는 옆 탭(IR 기업현황)의
+         칸이라 여기서는 걸 곳이 없다 — 싣기만 하면 아무도 안 보는 죽은 속성이 된다. #}
       <tr data-id="{{ r.id }}" data-search="{{ r.search }}"
-          data-f-assignee="{{ r.assignee }}"
-          data-f-sector="{{ r.sector_major }}"
           data-f-ir="{{ '● 있음' if r.has_ir else '⚠ 없음' }}">
         <td class="rowno muted"></td>
         <td class="cell" data-field="received_at" data-type="date">{{ r.received_at }}</td>
@@ -148,7 +148,7 @@
 {% else %}
   {# ── IR 기업현황(진행관리) ── 시트 컬럼 그대로 #}
   <table class="grid-table" data-inline-url="/api/companies" id="co-table">
-    <thead>
+    <thead
       <tr>
         <th class="num" style="width:36px">#</th>
         <th style="width:13%">기업명</th>
@@ -157,14 +157,14 @@
         <th style="width:9%" data-filters="series:기업구분">기업구분<div class="th-filters"></div></th>
         <th>한줄 소개<span class="th-note">두 줄까지 보입니다 · 눌러서 수정</span></th>
         <th style="width:74px" data-filters="assignee:담당자">담당자<div class="th-filters"></div></th>
-        <th style="width:64px" data-filters="contract:계약여부">계약여부<div class="th-filters"></div></th>
+        <th style="width:72px" data-filters="contract:계약여부">계약여부<div class="th-filters"></div></th>
         <th style="width:88px" title="계약기업 · 거부메일 홍보메일 삭제">날짜 기입</th>
-        <th style="width:86px" data-filters="top:핵심/TOP Deal">핵심/TOP Deal<div class="th-filters"></div></th>
+        <th style="width:102px" data-filters="top:핵심/TOP Deal">핵심/TOP Deal<div class="th-filters"></div></th>
         {# IR 자료는 맨 끝에 그대로 둔다 — 요청이 왔을 때 바로 꺼내 쓰는 칸이다. #}
         <th style="width:82px" data-filters="ir:IR 자료">IR 자료<div class="th-filters"></div></th>
         <th style="width:52px"></th>
       </tr>
-    </thead>
+     </thead>
     <tbody>
       {% for r in rows %}
       <tr data-id="{{ r.id }}" data-search="{{ r.search }}"
@@ -180,11 +180,16 @@
         <td class="co-name">
           <b class="cell" data-field="name">{{ r.name }}</b>
         </td>
+        {# `data-filter-key` — 고친 값이 그 칸의 필터 목록에도 나오게 한다.
+           칸 이름(DB 컬럼)과 필터 키가 다르면 이것이 없는 한 저장해도 행 값이
+           그대로라, 값은 바뀌었는데 필터는 옛 목록을 보여 준다. #}
         <td title="{{ r.sector_major }}">
-          <div class="cell clamp2" data-field="sector_major" data-type="pick">{{ r.sector_major }}</div>
+          <div class="cell clamp2" data-field="sector_major" data-type="pick"
+               data-filter-key="sector">{{ r.sector_major }}</div>
         </td>
         <td title="{{ r.sector_minor }}">
-          <div class="cell clamp2" data-field="sector_minor" data-type="pick">{{ r.sector_minor }}</div>
+          <div class="cell clamp2" data-field="sector_minor" data-type="pick"
+               data-filter-key="minor">{{ r.sector_minor }}</div>
         </td>
         <td title="{{ r.series }}">
           <div class="cell clamp2" data-field="series" data-type="pick"
@@ -193,12 +198,17 @@
         <td title="{{ r.one_liner }}">
           <div class="cell clamp2" data-field="one_liner" data-type="long">{{ r.one_liner }}</div>
         </td>
-        <td class="cell" data-field="assignee_name" data-type="pick">{{ r.assignee }}</td>
-        <td class="cell" data-field="contract_status" data-type="pick">{{ r.contract_label }}</td>
+        <td class="cell" data-field="assignee_name" data-type="pick"
+            data-filter-key="assignee">{{ r.assignee }}</td>
+        <td class="cell" data-field="contract_status" data-type="pick"
+            data-filter-key="contract">{{ r.contract_label }}</td>
         <td class="cell" data-field="contract_month">{{ r.contract_month }}</td>
-        {# `핵심` · `TOP` · 둘 다. 눌러서 목록에서 고른다. #}
+        {# `핵심` · `TOP` · 둘 다. 눌러서 목록에서 고른다.
+           비우면 행에는 `일반` 이 실린다 — 빈 값으로 두면 같은 뜻이 목록에
+           `일반` 과 `(비어 있음)` 두 벌로 갈린다(companies.js 가 맞춰 준다). #}
         <td class="cell {% if r.top_deal_kind %}top-on{% endif %}"
-            data-field="top_deal_kind" data-type="pick">{{ r.top_deal_kind }}</td>
+            data-field="top_deal_kind" data-type="pick"
+            data-filter-key="top">{{ r.top_deal_kind }}</td>
         <td>
           {% if r.has_ir %}
             <a class="room-badge ok" href="{{ r.ir_drive_url }}" target="_blank" rel="noopener">📎 열기</a>

@@ -199,22 +199,31 @@
            "이게 그 칸인가" 를 한 번씩 멈춰서 확인해야 한다. #}
         <th class="num" style="width:34px" title="누르면 활동 이력이 열립니다">NO</th>
         <th style="width:96px">이름</th>
-        <th style="width:78px" data-filters="interest:관심도 (월말기준)">관심도 (월말기준)<div class="th-filters"></div></th>
-        <th style="width:76px" data-filters="joined:카톡방 참여여부">카톡방 참여여부<div class="th-filters"></div></th>
-        <th style="width:220px"
+        <th style="width:126px" data-filters="interest:관심도 (월말기준)">관심도 (월말기준)<div class="th-filters"></div></th>
+        <th style="width:114px" data-filters="joined:카톡방 참여여부">카톡방 참여여부<div class="th-filters"></div></th>
+        <th style="width:276px"
             title="메모 ( 통화내용 /  카톡내용  /  카톡답신내용)">메모 ( 통화내용 /  카톡내용  /  카톡답신내용)</th>
         <th style="width:180px">딜소싱 참여 투자사</th>
         <th style="width:110px" data-filters="sector:선호 투자분야">선호 투자분야<div class="th-filters"></div></th>
-        <th style="width:150px" data-filters="stage:라운드 사이즈(투자운영금액)">라운드 사이즈(투자운영금액)<div class="th-filters"></div></th>
-        {# 원본 시트의 이름이 길다. 두 줄에 들어가게 넓히고, 잘리는 경우를
-           대비해 전문을 title 로 남긴다. #}
-        {# 컬럼 이름은 **원본 시트 그대로** 쓴다. 머리글이 한 줄로 잘리고
-           전문은 title 에 있으므로, 이름이 길다고 줄일 이유가 없다.
-           (값은 262줄 중 3줄뿐이라 폭은 넉넉히 잡지 않는다) #}
-        <th style="width:132px"
+        {# 필터 키는 **이 칸이 보여 주는 값**을 가리켜야 한다. 여기는 `round_size`
+           인데 키가 `stage`(선호 단계) 였다 — 값이 0개인 다른 칸을 보고 있어서
+           표에는 52줄이 보이는데 필터를 열면 늘 빈 목록이었다. #}
+        <th style="width:186px" data-filters="round:라운드 사이즈(투자운영금액)">라운드 사이즈(투자운영금액)<div class="th-filters"></div></th>
+        {# 컬럼 이름은 **원본 시트 그대로** 쓴다 — 시트와 나란히 놓고 대조한다.
+           이 표에서 가장 긴 이름(40자)이라 폭을 여기서만은 **데이터가 아니라
+           이름에 맞춘다.** 값은 306줄 중 3줄뿐이고 전부 `O` 라 데이터만 보면
+           40px 이면 되지만, 132px 에서는 머리글이 네 줄로 접혀 표 전체를
+           아래로 밀어냈다. 두 줄에 들어가는 최소 폭이 210px 근처라
+           220px 로 둔다(메모 칸과 같은 폭이라 눈에도 덜 튄다).
+           마우스를 올리지 않아도 읽히지만 잘림 대비로 title 은 남긴다. #}
+        <th style="width:220px"
             title="TIPS 운영사 투자금 1-10억 스타트업매출액 3-20억 기업에 주로 투자">TIPS 운영사 투자금 1-10억 스타트업매출액 3-20억 기업에 주로 투자</th>
         <th style="width:104px">휴대폰</th>
-        <th style="width:150px" data-filters="owner:회사">회사<div class="th-filters"></div></th>
+        {# 같은 어긋남이 여기에도 있었다. 이 칸은 투자사명(`firm`)을 보여 주는데
+           키는 `owner`(그 명단을 맡은 우리 팀원)였다 — 라벨은 `회사`인데 열면
+           팀원 이름이 나왔고, 명단이 한 사람 것이면 고를 값이 하나뿐이었다.
+           담당 팀원으로 나누는 일은 이미 위의 **명단 탭**이 한다. #}
+        <th style="width:150px" data-filters="firm:회사">회사<div class="th-filters"></div></th>
         <th style="width:130px">부서</th>
         <th style="width:82px">직함</th>
         <th style="width:170px">전자 메일 주소</th>
@@ -224,27 +233,37 @@
         <th style="width:92px">명함 등록일</th>
         {# ── 여기부터는 앱이 만든 칸. 시트에는 없다 ── #}
         <th style="width:70px" data-filters="group:그룹">그룹<div class="th-filters"></div></th>
-        <th style="width:84px" data-filters="dealstage:진행 단계">진행 단계<div class="th-filters"></div></th>
+        {# 필터가 둘이다. `연결 상태`(미착수 → 진행 중 → 연결 완료 / 참여 안 함)는
+           카톡방까지 들어오게 하는 **앞 단계**라 표에 따로 칸을 두지 않았는데,
+           대시보드의 `연결 진행 중인 명단` 이 `/contacts?connect=진행 중` 으로
+           눌러 들어온다. 선언이 없으면 그 쿼리는 조용히 버려진다 —
+           눌러도 306명이 그대로 나오던 것이 그래서였다.
+           같은 축(얼마나 진행됐나)이라 이 칸에 함께 둔다. #}
+        <th style="width:84px" data-filters="dealstage:진행 단계|connect:연결 상태">진행 단계<div class="th-filters"></div></th>
         <th style="width:62px" data-filters="channel:채널">채널<div class="th-filters"></div></th>
         <th style="width:44px"></th>
       </tr>
     </thead>
     <tbody>
       {% for r in rows %}
+      {#
+        행이 싣는 값은 **머리글이 선언한 키와 하나씩 짝**이어야 한다.
+          · 선언만 하고 안 실으면 → 필터를 열어도 늘 빈 목록
+          · 싣기만 하고 선언이 없으면 → 아무도 안 보는 죽은 속성
+        `data-f-assignee`(시트의 담당자) · `data-f-room`(방 연결 상태)이 그랬다.
+        담당자 컬럼은 뺐고 방 연결은 표에 칸이 없어, 둘 다 거는 곳이 없는 채로
+        306행에 실려 나가기만 했다. 값이 필요해지면 **칸부터 세우고** 그때
+        다시 싣는다(tests/test_filter_columns.py 가 이 짝을 지킨다).
+      #}
       <tr class="data-row" data-id="{{ r.id }}" data-name="{{ r.name }}"
           data-f-group="{{ r.group_name }}"
-          data-f-owner="{{ r.owner }}"
-          data-f-assignee="{{ r.assignee }}"
+          data-f-firm="{{ r.firm }}"
           data-f-connect="{{ r.connect_label }}"
           data-f-channel="{{ r.channel_label }}"
-          {# 선언만 하고 값을 안 실으면 필터 칩이 아예 안 뜬다 #}
           data-f-interest="{{ r.interest_level }}"
           data-f-joined="{{ r.kakao_joined }}"
           data-search="{{ (r.name ~ ' ' ~ (r.firm or '') ~ ' ' ~ (r.title or '') ~ ' ' ~ (r.department or ''))|lower }}"
-          {# 초대 컬럼은 감췄지만 거르는 기능은 살려 둔다 —
-             방 연결 확인 뒤 "미등록만 보기" 를 쓴다. #}
-          data-f-room="{{ r.room_label }}"
-          data-f-stage="{{ r.stages|join('|') }}"
+          data-f-round="{{ r.round_size }}"
           data-f-sector="{{ r.sectors|join('|') }}"
           data-f-dealstage="{{ r.deal_stage_label }}">
         {% if pool_view %}
@@ -255,10 +274,17 @@
         <td class="rowno muted js-detail" title="활동 이력 보기"></td>
         {# 시트 컬럼 — 이름·순서를 그대로 따른다 #}
         <td><b class="cell" data-field="name">{{ r.name }}</b></td>
+        {#
+          `data-filter-key` — 이 칸을 고쳤을 때 행의 어느 `data-f-*` 를 같이
+          고칠지. 칸 이름(DB 컬럼)과 필터 키가 다르면 이것이 없는 한 저장해도
+          행 값이 그대로라, **관심도를 채워 넣어도 필터는 계속 비어 있었다.**
+          (`data-filter-sep` 은 한 칸에 값이 여럿일 때 쓴다 — 화면은 쉼표로
+          보여 주고 필터는 `|` 로 나눠 태그 단위로 거른다.)
+        #}
         <td class="cell" data-field="interest_level" data-type="pick"
-            data-choices="높음,중간,낮음">{{ r.interest_level }}</td>
+            data-choices="높음,중간,낮음" data-filter-key="interest">{{ r.interest_level }}</td>
         <td class="cell" data-field="kakao_joined" data-type="pick"
-            data-choices="O,X">{{ r.kakao_joined }}</td>
+            data-choices="O,X" data-filter-key="joined">{{ r.kakao_joined }}</td>
         <td title="{{ r.memo }}">
           <div class="cell clamp2" data-field="memo" data-type="long">{{ r.memo }}</div>
         </td>
@@ -266,10 +292,12 @@
           <div class="cell clamp2" data-field="sourcing_note" data-type="long">{{ r.sourcing_note }}</div>
         </td>
         <td title="{{ r.sectors|join(', ') }}">
-          <div class="cell clamp2" data-field="sectors" data-type="long">{{ r.sectors|join(', ') }}</div>
+          <div class="cell clamp2" data-field="sectors" data-type="long"
+               data-filter-key="sector" data-filter-sep=",">{{ r.sectors|join(', ') }}</div>
         </td>
         <td title="{{ r.round_size }}">
-          <div class="cell clamp2" data-field="round_size" data-type="long">{{ r.round_size }}</div>
+          <div class="cell clamp2" data-field="round_size" data-type="long"
+               data-filter-key="round">{{ r.round_size }}</div>
         </td>
         <td title="{{ r.tips_note }}">
           <div class="cell clamp2" data-field="tips_note" data-type="long">{{ r.tips_note }}</div>
@@ -284,7 +312,8 @@
         <td class="cell ellipsis" data-field="address" title="{{ r.address }}">{{ r.address }}</td>
         <td class="cell" data-field="card_registered_at" data-type="date">{{ r.card_registered_at }}</td>
         {# 앱이 만든 칸 — 시트에는 없다 #}
-        <td class="cell" data-field="group_name" data-type="pick">{{ r.group_name }}</td>
+        <td class="cell" data-field="group_name" data-type="pick"
+            data-filter-key="group">{{ r.group_name }}</td>
         <td><span class="stage-pill {{ r.deal_stage_cls }}">{{ r.deal_stage_label }}</span></td>
         {# 대시보드의 '메일 채널' · '채널 미지정' 에서 눌러 오면 이 칸으로 걸러진다. #}
         <td class="muted">{{ r.channel_label }}</td>

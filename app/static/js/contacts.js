@@ -237,10 +237,26 @@
       if (filters && filters.refresh) filters.refresh();
     });
   }
+
+  // 대시보드의 '내 투자사 선호'에서 눌러 오면 그 사람 상세를 바로 연다.
+  // 목록만 띄우면 333명 중에서 다시 찾아야 한다 — 무엇을 좋아하는지 보려고
+  // 누른 것이므로 선호 분야·라운드 사이즈가 바로 보여야 한다.
+  //
+  // 이 블록이 **상세 패널과 같은 IIFE 안**에 있어야 하는 이유:
+  // loadContact 은 panel·current·msg 처럼 이 안에서만 사는 상태를 닫아 쥐고 있다.
+  // 예전에는 이 몇 줄만 파일 끝의 다른 IIFE 로 떨어져 있었고, 그쪽에서는
+  // loadContact 이라는 이름 자체가 없어 ReferenceError 로 죽었다 — 화면에는
+  // 아무 일도 안 일어난 것처럼 보여서(오류는 콘솔에만) 오래 눈에 안 띄었다.
+  // window 로 내보내 부르는 방법도 있지만, 부르는 곳이 여기 한 군데뿐인 함수를
+  // 페이지 전역에 올려 두면 다음 사람은 어디서 불러도 되는 함수로 읽는다.
+  if (window.DEALFLOW_OPEN_CONTACT) loadContact(window.DEALFLOW_OPEN_CONTACT);
 })();
 
 // NO 는 **보이는 것** 기준으로 1부터. 걸러낸 뒤 몇 명인지 그 자리에서 세기 위해서다
 // (시트에서 옮겨 온 번호는 중간이 비어 있어 셀 수가 없다).
+//
+// 이 블록만 따로 떼어 둔 것은 위 상세 패널의 무엇도 쓰지 않기 때문이다 — 표만 있으면 돈다.
+// 반대로 위 코드의 함수가 필요한 것을 여기에 적으면 이름이 안 닿아 ReferenceError 로 죽는다.
 (function () {
   var table = document.getElementById("contacts-table");
   if (!table) return;
@@ -260,13 +276,4 @@
   new MutationObserver(renumber).observe(table.querySelector("tbody"), {
     attributes: true, attributeFilter: ["hidden"], subtree: true
   });
-})();
-
-// 대시보드의 '내 투자사 선호'에서 눌러 오면 그 사람 상세를 바로 연다.
-// 목록만 띄우면 333명 중에서 다시 찾아야 한다 — 무엇을 좋아하는지 보려고
-// 누른 것이므로 선호 분야·라운드 사이즈가 바로 보여야 한다.
-(function () {
-  var id = window.DEALFLOW_OPEN_CONTACT;
-  if (!id) return;
-  loadContact(id);
 })();

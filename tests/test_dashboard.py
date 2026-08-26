@@ -966,7 +966,10 @@ def test_clicking_a_requester_opens_their_detail(client, db, users):
     client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
     assert f'/contacts?contact={contact.id}' in client.get("/").text
 
-    # 그 주소로 가면 상세가 열린 채로 뜬다
+    # 그 주소로 가면 번호가 화면에 실려 온다.
+    # 여기까지가 서버가 하는 몫이다 — **실제로 패널이 열리는지**는 브라우저 쪽 일이라
+    # 이 검사로는 못 본다(번호만 실려 오고 상세는 안 열린 채로 오래 지나갔다).
+    # 그 뒷부분은 tests/js/contacts_open_test.js 가 contacts.js 를 돌려서 본다.
     page = client.get(f"/contacts?contact={contact.id}").text
     assert f"window.DEALFLOW_OPEN_CONTACT = {contact.id}" in page
 
