@@ -14,12 +14,12 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .. import clock
 from ..db import SessionLocal
 from ..models import SendItem, SendJob
 from . import mailer
@@ -31,7 +31,8 @@ GAP_SEC = 1.0
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    # 저장용 시각은 `app/clock.py` 하나에서만 만든다 — 왜 지역시간인지는 그쪽에.
+    return clock.now_iso()
 
 
 def send_job(job_id: int, gap_sec: float = GAP_SEC) -> dict:

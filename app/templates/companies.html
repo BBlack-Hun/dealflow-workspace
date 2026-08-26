@@ -155,6 +155,15 @@
        속성으로 삼키고 행을 다시 만든다) 화면은 멀쩡해 보였지만, 머리글을
        `<thead>` 로 찾는 검사들(tests/test_ui_layout.py)이 **이 표만 통째로
        건너뛰고 있었다** — 정렬·줄바꿈·칸 수가 한 번도 검사되지 않은 표였다. #}
+    {# 폭 단위가 `%` 와 `px` 로 섞여 있다. `%` 는 표 폭(=`.table-wrap.wide .grid-table`
+       의 min-width 2,030px)에 대한 비율이라, 13% = 264px 처럼 **px 로 환산해서만**
+       잴 수 있다 — px 만 재던 점검이 이 칸들을 통째로 건너뛰어 "0건" 이라고 했다.
+       헤드리스 크롬으로 다시 재 보니 `%` 칸(기업명 264 · 대분류 203 · 소분류 183 ·
+       기업구분 183px)은 모두 한 줄에 넉넉해서 그대로 둔다. 두 줄이던 것은 아래
+       `계약여부`·`핵심/TOP Deal` 두 칸이고, 둘 다 px 칸이었다.
+
+       늘린 40px 은 폭을 안 준 `한줄 소개` 칸이 내어 준다(692→652px). 그래서 표
+       전체 폭은 2,030px 그대로라 app.css 의 min-width 는 손대지 않는다. #}
     <thead>
       <tr>
         <th class="num" style="width:36px">#</th>
@@ -164,9 +173,15 @@
         <th style="width:9%" data-filters="series:기업구분">기업구분<div class="th-filters"></div></th>
         <th title="두 줄까지 보입니다 · 눌러서 수정">한줄 소개</th>
         <th style="width:74px" data-filters="assignee:담당자">담당자<div class="th-filters"></div></th>
-        <th style="width:72px" data-filters="contract:계약여부">계약여부<div class="th-filters"></div></th>
+        {# 폭은 **이름이 아니라 단추**에 맞춘다. 필터가 하나뿐인 칸은 filters.js 가
+           이름 글자를 지우고 `계약여부 ▾` 단추를 그 자리에 세우는데, 단추는 ` ▾` 와
+           자기 padding·테두리(14px)만큼 이름보다 넓다. 이름(66px)만 보고 72px 를
+           준 탓에 실제 화면에서는 `계약여부` / `▾` 두 줄로 접혀 있었다.
+           헤드리스 크롬으로 재니 85px 이 필요했다 — 여유를 조금 두어 92px. #}
+        <th style="width:92px" data-filters="contract:계약여부">계약여부<div class="th-filters"></div></th>
         <th style="width:88px" title="계약기업 · 거부메일 홍보메일 삭제">날짜 기입</th>
-        <th style="width:102px" data-filters="top:핵심/TOP Deal">핵심/TOP Deal<div class="th-filters"></div></th>
+        {# 같은 이유로 두 줄이던 칸. `핵심/TOP Deal ▾` 는 119px 이 필요했다(102px 이었다). #}
+        <th style="width:122px" data-filters="top:핵심/TOP Deal">핵심/TOP Deal<div class="th-filters"></div></th>
         {# IR 자료는 맨 끝에 그대로 둔다 — 요청이 왔을 때 바로 꺼내 쓰는 칸이다. #}
         <th style="width:82px" data-filters="ir:IR 자료">IR 자료<div class="th-filters"></div></th>
         <th style="width:52px"></th>

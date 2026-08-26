@@ -52,22 +52,28 @@
     <thead>
       <tr>
         <th style="width:34px">#</th>
-        {% for field, label, width in columns %}
+        {# 어느 칸에 필터를 세울지는 `COLUMNS` 한 곳에서만 정한다 — 머리글과 행이
+           같은 목록을 돌아야 선언(`data-filters`)과 값(`data-f-*`)이 어긋날 수
+           없다. 손으로 두 군데 적던 시절에는 한쪽만 고쳐도 아무 티가 안 났다. #}
+        {% for field, label, width, filterable in columns %}
         <th {% if width %}style="width:{{ width }}"{% endif %}
-            {% if field in ('assignee_name', 'sectors', 'round_size') %}
-            data-filters="{{ field }}:{{ label }}"{% endif %}>
-          {{ label }}{% if field in ('assignee_name', 'sectors', 'round_size') %}<div class="th-filters"></div>{% endif %}
+            {% if filterable %}data-filters="{{ field }}:{{ label }}"{% endif %}>
+          {{ label }}{% if filterable %}<div class="th-filters"></div>{% endif %}
         </th>
         {% endfor %}
       </tr>
     </thead>
     <tbody>
       {% for r in rows %}
+      {# 행이 싣는 값도 **머리글과 같은 목록**에서 나온다(위 주석 참고).
+         필터 키를 칸 이름(`data-field`)과 똑같이 두어, 눌러 고친 값이 곧바로
+         그 칸의 필터 목록에 나타난다 — 이름이 다르면 `data-filter-key` 가 필요하다.
+         구분자(`data-filter-sep`)는 어느 칸에도 주지 않는다. `투자분야` 는 들은
+         말 그대로라 `유통(직영,가맹점)` 처럼 괄호 안에 쉼표가 있어, 쉼표로 나누면
+         없는 값 두 개가 생긴다. #}
       <tr data-id="{{ r.id }}"
           data-search="{{ (r.name ~ ' ' ~ (r.firm or '') ~ ' ' ~ (r.memo or '') ~ ' ' ~ (r.title or ''))|lower }}"
-          data-f-assignee_name="{{ r.assignee_name or '' }}"
-          data-f-sectors="{{ r.sectors or '' }}"
-          data-f-round_size="{{ r.round_size or '' }}">
+          {% for field, label, width, filterable in columns if filterable %}data-f-{{ field }}="{{ r|attr(field) or '' }}" {% endfor %}>
         <td class="rowno muted"></td>
         <td class="cell" data-field="requested_at">{{ r.requested_at or '' }}</td>
         <td><b class="cell" data-field="name">{{ r.name }}</b></td>

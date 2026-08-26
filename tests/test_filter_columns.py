@@ -161,11 +161,15 @@ def screens(client, db, users):
     """
     from datetime import date, timedelta
 
-    from app.models import (IrCompany, Meeting, SourcingContact, VcContact,
-                            WeeklyRoutine, WeeklyTask)
+    from app.models import (ConsultingColumn, ConsultingCompany, IrCompany,
+                            Meeting, SourcingContact, VcContact, WeeklyRoutine,
+                            WeeklyTask)
     from app.services import weekly
 
     u1 = users["u1"]
+    # 투자컨설턴트 현황은 정해진 사람만 본다 — 안 켜 두면 403 이 돌아오고,
+    # 표가 없는 화면을 훑게 되어 **검사가 조용히 0건**이 된다.
+    u1.can_view_consulting = 1
     contact = VcContact(
         user_id=u1.id, name="홍길동", title="심사역", firm="가나벤처스",
         group_name="1군", round_size="10~30억", sectors="AI,헬스케어",
@@ -189,6 +193,19 @@ def screens(client, db, users):
                         round_size="10~30억"),
     ])
     db.flush()
+    # 투자컨설턴트 현황 — `기업 관리` 는 한 줄에 두 마디가 같이 오는 일이
+    # 잦아(`백업팀으로 전환 … 드랍`) 필터 값도 여러 개가 된다. 그런 줄을
+    # 하나 넣어 둬야 구분자 검사가 실제로 볼 것이 생긴다.
+    db.add_all([
+        ConsultingColumn(user_id=u1.id, sheet="중요 스타트업", position=0,
+                         label="8월 마지막주 리마인드 톡 or TEL"),
+        ConsultingCompany(user_id=u1.id, sheet="중요 스타트업", position=1,
+                          region="서울", meeting_at="9/16 PM2 (화상미팅)",
+                          company_name="샘플애그", management="관리 중"),
+        ConsultingCompany(user_id=u1.id, sheet="중요 스타트업", position=2,
+                          region="", meeting_at="", company_name="샘플메디",
+                          management="백업팀으로 전환 · 투자유치 논의 중. 드랍"),
+    ])
     week = weekly.week_start(date.today())
     db.add_all([
         # 미팅 후기 표는 **끝난 미팅**이 있어야 그려진다.
@@ -208,6 +225,9 @@ def screens(client, db, users):
         "IR 기업현황": client.get("/companies").text,
         "스타트업DB": client.get("/companies?tab=db").text,
         "딜 소싱": client.get("/sourcing").text,
+        # 이 화면만 공통 편집기(`data-inline-url`)를 안 써서 아래 7번 스윕에는
+        # 안 들어온다. 그래도 머리글 필터는 같은 부품이라 1~5 번은 똑같이 받는다.
+        "투자컨설턴트 현황": client.get("/consulting").text,
         "딜 진행 관리(미팅 후기)": client.get("/ir").text,
         "주간 업무": client.get("/todo").text,
     }
@@ -414,6 +434,30 @@ def test_눌러_고치는_표는_하나도_빠짐없이_이_스윕을_지난다(
         f"`screens` 픽스처에 넣어 주세요(그려질 행이 있어야 합니다): {missing}")
 
 
+def test_필터를_선언한_화면도_하나도_빠짐없이_이_스윕을_지난다(screens):
+    """머리글에 `data-filters` 를 적어 둔 템플릿은 `screens` 에 그려져 있어야 한다.
+
+    바로 위 검사는 `data-inline-url` 로 훑는다 — 공통 편집기를 안 쓰는 화면
+    (투자컨설턴트 현황)은 거기 안 걸린다. 그 화면을 픽스처에서 빼도 1~5 번은
+    **통과하는 모습 그대로 0건**이 되어, 빠졌다는 사실을 아무도 못 본다.
+
+    템플릿이 선언한 키가 그려진 화면에도 있는지로 본다. (다른 화면이 우연히
+    같은 키를 쓰면 놓칠 수 있지만, 화면마다 자기만의 키가 하나씩은 있다)
+    """
+    declared = set()
+    for path in sorted(TEMPLATES.glob("*.html")):
+        for spec in re.findall(r'data-filters="([^"]*)"', path.read_text(encoding="utf-8")):
+            if "{{" in spec or "{%" in spec:
+                continue        # 반복문으로 만드는 머리글 — 그려 봐야 알 수 있다
+            declared |= {k for k, _label in _declared(spec)}
+    rendered = {k for _page, t in _each_table(screens)
+                for keys in t["cols"] for k, _label in keys}
+    missing = sorted(declared - rendered)
+    assert not missing, (
+        "머리글 필터를 세운 화면이 있는데 이 스윕이 못 보고 있습니다 — 그 화면을 "
+        f"`screens` 픽스처에 넣어 주세요(그려질 행과 볼 권한이 있어야 합니다): {missing}")
+
+
 def test_필터를_세운_표는_고친_값을_다시_읽도록_열어_두어야_한다(screens):
     """`DealflowFilters.init` 을 안 부르면 필터도, 다시 읽기도 없다.
 
@@ -423,10 +467,14 @@ def test_필터를_세운_표는_고친_값을_다시_읽도록_열어_두어야
 
     필터가 없는 표(주간 업무 · 미팅 후기)는 거를 것이 없으니 해당 없다 —
     나중에 그 표에 필터를 하나 달면 그때 여기서 걸린다.
+
+    **눌러 고치는 표만 보면 안 된다.** 투자컨설턴트 현황은 공통 편집기를 안 써서
+    `data-inline-url` 이 없는데, 머리글 필터는 똑같이 세운다 — 필터를 선언한
+    표 전부를 봐야 그런 화면이 조용히 빠지지 않는다.
     """
     opened = _initialized_selectors()
     closed = []
-    for page, table in _each_inline_table(screens):
+    for page, table in _each_table(screens):
         if not any(table["cols"]):
             continue                      # 필터를 안 세운 표 — 해당 없음
         if table["id"] and "#" + table["id"] in opened:
@@ -488,22 +536,67 @@ def test_칸이_쓰는_구분자와_서버가_행에_적는_구분자가_같아�
 # ── 8. 스윕이 볼 수 없는 화면 하나 ─────────────────────────────────────────
 
 def test_투자컨설턴트_현황은_저장한_뒤_필터를_다시_건다():
-    """이 화면만 `data-inline-url` 을 안 써서 위 스윕에 안 들어온다.
+    """이 화면만 `data-inline-url` 을 안 써서 7번 스윕에 안 들어온다.
 
     투자컨설턴트 현황은 공통 편집(`inline_edit.js`)이 생기기 전부터 자기 방식으로
-    칸을 고쳐 왔고, 필터도 값 목록이 아니라 칩 네 개(관리 중 · 드랍 · 연락 기록
-    없음)다. 그래서 `data-inline-url` 도 `data-filters` 도 없다 — 스윕이 볼 자리가
-    아예 없다.
+    칸을 고쳐 왔다. 그래서 저장 뒤에 행의 `data-f-*` 를 고쳐 적는 일을 공통
+    코드가 대신해 주지 않는다 — `refreshRowFlags` 가 직접 해야 한다.
 
-    그런데 고리는 똑같이 필요하다. `기업 관리` 칸을 고치면 관리/드랍 표시가
-    따라 바뀌는데, 거기서 멈추면 **화면은 옛 조건 그대로** 걸러진 채다.
-    `드랍` 만 보다가 한 곳을 `관리 중` 으로 바꿔도 그 줄이 목록에 남아 있었다.
+    고리는 똑같이 필요하다. `기업 관리` 칸을 고치면 관리/드랍 표시와 머리글
+    필터 값이 따라 바뀌어야 하고, 거기서 멈추면 **화면은 옛 조건 그대로**
+    걸러진 채다 — `드랍` 만 보다가 한 곳을 `관리 중` 으로 바꿔도 그 줄이 목록에
+    남아 있었다.
 
     함수가 화면 상태를 닫아 쥔 IIFE 안에 있어 밖에서 부를 수가 없다 —
-    저장 뒤에 다시 거는 그 한 줄이 파일에 있는지로 본다.
+    저장 뒤에 이어지는 그 두 가지가 파일에 있는지로 본다.
     """
     src = (JS_DIR / "consulting.js").read_text(encoding="utf-8")
     at = src.index("refreshRowFlags(tr);")
     assert re.search(r"^\s*apply\(\);", src[at:at + 400], re.M), (
         "저장 뒤 플래그만 고치고 다시 거르지 않습니다 — 고친 줄이 조건에서 "
         "벗어나도 목록에 그대로 남고, 표시 건수도 안 맞습니다.")
+
+    # `refreshRowFlags` 가 행의 필터 값까지 고쳐 적는가. 칩(관리 중 · 드랍)만
+    # 고치고 `data-f-*` 를 두고 가면, 화면에는 `관리 중` 이라고 적혀 있는데
+    # 머리글 필터에서는 여전히 `드랍` 에 들어 있다.
+    body = src[src.index("function refreshRowFlags"):]
+    body = body[:body.index("\n  }")]
+    for key in ("mgmt", "region"):
+        assert f'setAttribute("data-f-{key}"' in body, (
+            f"저장 뒤 data-f-{key} 를 다시 적지 않습니다 — 다시 읽어도 옛 값뿐입니다.")
+
+    # 다시 걸 때는 **행을 다시 읽어야** 한다. filters.js 는 처음 한 번 읽은
+    # 값으로 목록을 만들어서, apply 만 부르면 옛 목록 그대로다.
+    assert re.search(r"columnFilters\.refresh\(\)", src), (
+        "고친 값을 다시 읽지 않고 적용만 합니다 — 필터 목록이 처음 그대로입니다.")
+
+
+def test_투자컨설턴트_현황의_기업_관리_필터는_시트가_정한_마디로_추린다():
+    """자유 문장을 그대로 목록에 올리면 고를 것이 없다.
+
+    이 칸은 원본 시트가 머리글부터 `[ 드랍 이유 상세하게 기입 / 관리중 /
+    백업팀으로 전환 ]` 이라, 실제로 여든 자짜리 문장이 들어온다. 32줄에 열여섯
+    가지가 나와 필터로 쓸 수가 없다 — 그래서 시트가 정해 둔 마디만 뽑는다.
+
+    브라우저(`consulting.js` 의 `managementTags`)와 **같은 규칙**이어야 한다.
+    다르면 고친 직후와 새로고침 뒤에 같은 줄이 서로 다른 값으로 걸린다.
+    """
+    from app.routers.consulting import management_tags
+
+    assert management_tags("관리 중") == "관리 중"
+    assert management_tags("드랍 : 연락이 닿지 않음") == "드랍"
+    # 한 줄에 두 마디가 같이 오는 일이 잦다 — 하나만 남기면 나머지로는 못 찾는다.
+    assert management_tags("백업팀으로 전환 · 논의 중. 드랍") == "드랍|백업팀 전환"
+    # 적혀 있는데 셋 중 어느 것도 아닌 줄. 빈칸과 묶으면 "아직 안 적었다" 와
+    # "적었는데 분류가 안 된다" 가 구별되지 않는다.
+    assert management_tags("내년부터 투자 라운드 돌 예정") == "기타 메모"
+    assert management_tags("") == ""
+    assert management_tags("   ") == ""
+
+    # 화면 위 칩(관리 중 · 드랍)과 같은 말을 본다 — 다르면 칩으로 6곳,
+    # 필터로 5곳이 나오고 어느 쪽이 맞는지 알 수가 없다.
+    src = (JS_DIR / "consulting.js").read_text(encoding="utf-8")
+    body = src[src.index("function managementTags"):]
+    body = body[:body.index("\n  }")]
+    for word in ("관리", "드랍", "백업팀", "기타 메모"):
+        assert word in body, f"브라우저 쪽 규칙에 `{word}` 가 없습니다 — 서버와 어긋납니다."

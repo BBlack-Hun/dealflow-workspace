@@ -882,7 +882,11 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
 .flow-tabs .sheet-tab span.warn { background:#f6c344; color:#4a3400; }
 
 /* 눌러서 바로 고치는 칸 — 고칠 수 있다는 것이 보여야 누른다. */
-.cell[data-field] { cursor: text; border-radius: 3px; }
+/* 빈 칸도 누를 수 있어야 한다.
+   `.clamp2` 는 `-webkit-box` 라 내용이 없으면 **높이가 0** 이 된다 — 누를
+   자리가 없어 클릭이 뒤의 행으로 흘러가고, 입력창 대신 [수정] 창이 열린다.
+   `TIPS 운영사`(306행 중 303행이 빈칸) 처럼 대부분 비어 있는 칸이 그랬다. */
+.cell[data-field] { cursor: text; border-radius: 3px; min-height: 1.35em; }
 .cell[data-field]:hover { background: var(--bg-soft); outline: 1px dashed var(--line); }
 .cell.saving { opacity: .55; }
 .cell.saved { background: #e8f6ec; }

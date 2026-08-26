@@ -551,3 +551,51 @@ def test_the_sheet_only_columns_can_be_edited(logged_in, db, users):
     assert row.kakao_joined == "O"
     assert row.sourcing_note == "참여 의사 있음"
 
+def test_the_detail_panel_can_read_and_write_every_table_column():
+    """표에 있는 칸은 [수정] 창에서도 적을 수 있어야 한다.
+
+    한 칸이 화면에 뜨려면 **네 곳**이 맞아야 한다: 창의 입력칸(`id="f-…"`) ·
+    JS 의 `FIELDS` · 저장 스키마(`ContactIn`+`_assign`) · 조회 응답(`get_contact`).
+    한 곳만 빠져도 조용히 어긋난다 — `TIPS 운영사` 는 창에 칸이 없었고,
+    칸을 그린 뒤에도 조회에서 안 돌려줘 **저장은 되는데 다시 열면 비어** 있었다.
+    """
+    import pathlib
+    import re
+
+    html = pathlib.Path("app/templates/contacts.html").read_text(encoding="utf-8")
+    js = pathlib.Path("app/static/js/contacts.js").read_text(encoding="utf-8")
+    py = pathlib.Path("app/routers/contacts.py").read_text(encoding="utf-8")
+
+    row = re.search(r'id="contacts-table".*?<tbody>(.*?)</tr>', html, re.S)
+    table = set(re.findall(r'data-field="([a-z_]+)"', row.group(1)))
+
+    panel = set(re.findall(r'id="f-([a-z_]+)"', html))
+    fields = set(re.findall(r'"([a-z_]+)"',
+                            re.search(r"var FIELDS = \[(.*?)\];", js, re.S).group(1)))
+    detail = set(re.findall(r'"([a-z_]+)": contact\.', py))
+    saved = set(re.findall(r'"([a-z_]+)"',
+                           re.search(r"def _assign.*?for field in \((.*?)\):", py, re.S).group(1)))
+    saved |= {"name"}
+
+    assert not table - panel, f"창에 칸이 없다: {sorted(table - panel)}"
+    assert not table - fields, f"JS 목록에 없어 안 채워진다: {sorted(table - fields)}"
+    assert not table - detail, f"조회가 안 돌려줘 다시 열면 빈다: {sorted(table - detail)}"
+    assert not table - saved, f"저장되지 않는다: {sorted(table - saved)}"
+
+
+def test_an_empty_cell_is_still_clickable():
+    """빈 칸을 눌러도 입력창이 안 뜨고 [수정] 창이 열렸다.
+
+    `.clamp2` 는 `-webkit-box` 라 내용이 없으면 높이가 0 이 된다 — 누를 자리가
+    없어 클릭이 뒤의 행으로 흘러간다. `TIPS 운영사` 는 306행 중 303행이 빈칸이라
+    사실상 늘 그랬다.
+    """
+    import pathlib
+    import re
+
+    css = pathlib.Path("app/static/css/app.css").read_text(encoding="utf-8")
+    rule = re.search(r"\.cell\[data-field\]\s*\{([^}]*)\}", css)
+    assert rule, ".cell[data-field] 규칙이 없습니다"
+    assert re.search(r"min-height:\s*[\d.]+", rule.group(1)), (
+        "빈 칸에 높이를 주지 않으면 누를 자리가 없다")
+

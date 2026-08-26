@@ -157,9 +157,9 @@ def send_test(to: str) -> dict:
     비밀번호가 틀렸는지, 포트를 잘못 잡았는지는 **실제로 보내 봐야** 안다.
     실패 사유를 그대로 돌려준다 — 화면에서 무엇을 고쳐야 하는지 알아야 한다.
     """
-    from datetime import datetime, timezone
+    from .. import clock
 
-    stamp = datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M")
+    stamp = clock.now().strftime("%Y-%m-%d %H:%M")
     try:
         send_mail(to,
                   "[CONTACTVC ASSET] 메일 발송 설정 확인",

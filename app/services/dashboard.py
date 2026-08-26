@@ -15,12 +15,13 @@ from __future__ import annotations
 
 from collections import Counter
 from urllib.parse import quote
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from .. import clock
 from . import cadence, mailer, pipeline, sheet_owner
 from .. import version
 from ..models import (
@@ -569,7 +570,8 @@ def _agent_label(device: Optional[AgentDevice]) -> str:
         return f"갱신 필요 (v{device.agent_version or '?'})"
     try:
         ts = datetime.fromisoformat(device.last_poll_at)
-        mins = (datetime.now(timezone.utc) - ts).total_seconds() / 60
+        # 경과시간은 **순간**끼리 뺀다 — 저장값의 오프셋이 무엇이든 결과가 같다.
+        mins = (clock.now() - ts).total_seconds() / 60
     except ValueError:
         return "확인 불가"
     if mins < 2:

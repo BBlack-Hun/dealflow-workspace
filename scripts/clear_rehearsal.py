@@ -64,6 +64,10 @@ def main() -> int:
     print(f"\n발송 건 {total_items}건 · 회차 {len(jobs)}건")
 
     # 후속 예약도 리허설에서 생긴다 — 남겨 두면 있지도 않은 발송의 후속이 뜬다.
+    #
+    # 잡이 가리키는 회차만 보고 지웠더니, 발송 뒤에 **잡과 무관하게** 그 회차를
+    # 가리키게 된 예약이 남아 회차 삭제가 FK 로 막혔다. 회차를 가리키는 것은
+    # 전부 함께 지운다.
     batch_ids = [j.batch_id for j in jobs if j.batch_id]
     seqs = db.execute(
         select(SendSequence).where(SendSequence.batch_id.in_(batch_ids))
@@ -83,6 +87,11 @@ def main() -> int:
     # 회차(배치)는 잡을 지운 뒤에 — 잡이 먼저 사라져야 참조가 남지 않는다.
     for bid in set(batch_ids):
         db.query(DealBatchCompany).filter_by(batch_id=bid).delete()
+        # 이 회차를 가리키는 예약이 더 있으면 회차를 못 지운다(FK).
+        # 위에서 이미 지웠지만, 다른 경로로 생긴 것이 있으면 여기서 끊는다.
+        db.query(SendSequence).filter_by(batch_id=bid).update({"batch_id": None})
+        db.query(SendJob).filter_by(batch_id=bid).update({"batch_id": None})
+        db.flush()
         batch = db.get(DealBatch, bid)
         if batch is not None:
             db.delete(batch)

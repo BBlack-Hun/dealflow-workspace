@@ -107,6 +107,9 @@
 {% set ref_back = "/consulting" %}
 {% include "_ref_panel.html" %}
 
+{# 고른 조건을 되짚어 볼 자리. 없으면 filters.js 가 칩을 그릴 곳이 없어,
+   무엇으로 걸러진 목록인지 화면 어디에도 안 남는다. #}
+<div class="chip-row" data-filter-chips></div>
 <p class="hint" id="cs-note" hidden></p>
 
 {#
@@ -135,10 +138,25 @@
     <thead>
       <tr>
         <th class="num" style="width:44px">NO</th>
-        <th style="width:80px">지역</th>
+        {#
+          머리글 필터는 **고를 만한 값이 몇 가지로 모이는 칸**에만 세운다
+          (실데이터 55행 · 기본 탭 32행 기준):
+
+            지역        6종      → 건다
+            기업 관리   3+1종    → 건다. 단 적힌 문장 그대로가 아니라 시트가 정해
+                                   둔 마디로 추린 값이다(routers/consulting.py 의
+                                   `management_tags`). 원문은 32줄에 16가지,
+                                   최대 여든 자라 목록에 올릴 수가 없다.
+            미팅일      22종     → 안 건다. `9/16 PM2 (화상미팅)` 처럼 자유 문장이라
+                                   줄마다 다르다 — 고를 것이 없다.
+            기업명 32 · 대표자 17 · 연락처 · 이메일 → 줄마다 다르다. 안 건다.
+            월별 리마인드 열      → 통화 내용 자체다. 값이 아니라 기록이라 안 건다.
+                                   (연락했는가/안 했는가는 위 칩이 이미 본다)
+        #}
+        <th style="width:80px" data-filters="region:지역">지역<div class="th-filters"></div></th>
         <th style="width:120px">미팅일</th>
         <th style="width:150px">기업명</th>
-        <th style="width:220px">기업 관리</th>
+        <th style="width:220px" data-filters="mgmt:기업 관리">기업 관리<div class="th-filters"></div></th>
         {% for col in columns %}
         <th style="width:200px" class="month-col">
           <span title="{{ col.label }}">{{ col.label }}</span>
@@ -159,12 +177,20 @@
       <tr data-id="{{ r.id }}" data-search="{{ r.search }}"
           data-managed="{{ 1 if '관리' in r.management else 0 }}"
           data-dropped="{{ 1 if '드랍' in r.management else 0 }}"
-          data-contacted="{{ 1 if r.notes.values()|select|list else 0 }}">
+          data-contacted="{{ 1 if r.notes.values()|select|list else 0 }}"
+          data-f-region="{{ r.region }}"
+          data-f-mgmt="{{ r.mgmt }}">
         <td class="num muted">{{ r.no }}</td>
         <td class="cell" data-field="region">{{ r.region }}</td>
         <td class="cell" data-field="meeting_at">{{ r.meeting_at }}</td>
         <td class="cell strong" data-field="company_name">{{ r.company_name }}</td>
-        <td class="cell multi" data-field="management">{{ r.management }}</td>
+        {# 칸 이름은 `management`(DB 컬럼) 인데 필터 키는 `mgmt`(추린 값) 다.
+           `data-filter-key` 로 짝을 밝혀 두지 않으면, 이 칸을 고쳐도 필터는
+           옛 목록 그대로다 — 화면에는 `관리 중` 이라고 적혀 있는데 필터에서는
+           `드랍` 에 남아 있는, 눈으로는 못 찾는 부류가 된다.
+           (실제로 값을 다시 적는 것은 consulting.js 의 refreshRowFlags 다.
+            이 표는 공통 편집기 inline_edit.js 를 쓰지 않는다.) #}
+        <td class="cell multi" data-field="management" data-filter-key="mgmt">{{ r.management }}</td>
         {% for col in columns %}
         <td class="cell multi" data-note="{{ col.id }}">{{ r.notes.get(col.id|string, '') }}</td>
         {% endfor %}
@@ -194,5 +220,7 @@
 {% endblock %}
 
 {% block scripts %}
+{# 머리글 필터는 공통 부품이다. consulting.js 가 init 을 부르므로 **먼저** 온다. #}
+<script src="{{ asset('js/filters.js') }}"></script>
 <script src="{{ asset('js/consulting.js') }}"></script>
 {% endblock %}

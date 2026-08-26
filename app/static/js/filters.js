@@ -144,10 +144,27 @@
       if (typeof options.onChange === "function") options.onChange(state, shown);
     }
 
+    // 필터와 **무관한 쿼리는 그대로 둔다.** 읽을 때는 이미 그러고 있는데
+    // (`parseQuery` 가 모르는 키를 건드리지 않는다) 쓸 때는 pathname 만 남기고
+    // 다 버리고 있었다 — `/sourcing?tab=M&A 찾는 투자사` 를 열면 아무것도 안
+    // 골랐는데도 주소가 곧바로 `/sourcing` 이 되어, 새로고침하면 다른 갈래가
+    // 열렸다. 투자컨설턴트 현황은 `?sheet=` 가 곧 명단이라 더 나쁘다.
+    function keptQuery() {
+      var q = String((global.location && global.location.search) || "").replace(/^\?/, "");
+      return q.split("&").filter(function (pair) {
+        if (!pair) return false;
+        var i = pair.indexOf("=");
+        return keys.indexOf(decodeURIComponent(i < 0 ? pair : pair.slice(0, i))) < 0;
+      });
+    }
+
     function syncUrl() {
       if (!global.history || !global.history.replaceState) return;
-      var qs = buildQuery(state);
-      global.history.replaceState(null, "", global.location.pathname + qs);
+      var parts = keptQuery();
+      var mine = buildQuery(state).replace(/^\?/, "");
+      if (mine) parts.push(mine);
+      global.history.replaceState(null, "", global.location.pathname +
+        (parts.length ? "?" + parts.join("&") : ""));
     }
 
     function renderButtons() {

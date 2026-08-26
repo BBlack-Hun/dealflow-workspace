@@ -514,7 +514,13 @@ def get_contact(
             "address": contact.address or "",
             "card_registered_at": contact.card_registered_at or "",
             "interest_level": contact.interest_level or "",
+            # 저장은 되는데 **다시 열면 비어 있었다** — 여기서 안 돌려주면
+            # 창이 채울 값이 없어, 고쳐 놓고도 안 들어간 줄 안다.
+            "kakao_joined": contact.kakao_joined or "",
+            "sourcing_note": contact.sourcing_note or "",
+            "tips_note": contact.tips_note or "",
             "assignee_name": contact.assignee_name or "",
+            "department": contact.department or "",
             "status": contact.status,
             "memo": contact.memo or "",
         },

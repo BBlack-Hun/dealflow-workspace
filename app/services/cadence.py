@@ -20,12 +20,13 @@
 from __future__ import annotations
 
 import random
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, timedelta
 from typing import Dict, List, Optional
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .. import clock
 from ..models import (
     ContactActivity,
     DealBatch,
@@ -185,14 +186,21 @@ def follow_up_date(db: Session, sent_on: date, stage: int,
 # --- 시퀀스 -----------------------------------------------------------------
 
 def _today() -> date:
-    return date.today()
+    return clock.today()
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return clock.now_iso()
 
 
 def _as_date(value: Optional[str]) -> Optional[date]:
+    """저장된 시각 문자열에서 **보낸 날**을 뽑는다.
+
+    앞 10자를 그냥 자를 수 있는 것은 저장이 지역시간이기 때문이다(`app/clock.py`).
+    UTC 로 적히던 때에는 한국 새벽에 보낸 건이 여기서 **어제**로 읽혔고, 그
+    어제를 기준으로 리마인드를 잡아 후속이 하루 당겨졌다 — 이 함수가 그 버그가
+    드러난 자리다.
+    """
     if not value:
         return None
     try:

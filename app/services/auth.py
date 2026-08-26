@@ -14,12 +14,13 @@ import hashlib
 import hmac
 import re
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
+from .. import clock
 from ..models import Session as SessionRow
 from ..models import User
 
@@ -98,7 +99,13 @@ def authenticate(db: OrmSession, phone: str, password: str) -> Optional[User]:
 # --- 세션 -------------------------------------------------------------------
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    """지금(오프셋 붙은 값).
+
+    만료 판정은 `fromisoformat(expires_at) <= _now()` 로 **순간**끼리 견준다.
+    양쪽 다 오프셋이 있으므로 저장값이 UTC 표기든 한국시간 표기든 결과가 같다
+    — 옛 값이 섞여 있어도 세션이 일찍 끊기거나 늘어나지 않는다.
+    """
+    return clock.now()
 
 
 def create_session(db: OrmSession, user: User, user_agent: str = "") -> str:
@@ -106,10 +113,11 @@ def create_session(db: OrmSession, user: User, user_agent: str = "") -> str:
     row = SessionRow(
         token=token,
         user_id=user.id,
-        expires_at=(_now() + timedelta(days=SESSION_DAYS)).isoformat(),
+        # 초까지만 적는다 — 다른 시각 칸과 길이를 맞춘다(문자열로 견주는 자리가 있다).
+        expires_at=(_now() + timedelta(days=SESSION_DAYS)).isoformat(timespec="seconds"),
         user_agent=(user_agent or "")[:200],
     )
-    user.last_login_at = _now().isoformat()
+    user.last_login_at = clock.now_iso()
     db.add(row)
     db.commit()
     return token

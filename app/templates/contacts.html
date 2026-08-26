@@ -199,7 +199,13 @@
         <th class="num" style="width:34px" title="누르면 활동 이력이 열립니다">NO</th>
         <th style="width:96px">이름</th>
         <th style="width:126px" data-filters="interest:관심도 (월말기준)">관심도 (월말기준)<div class="th-filters"></div></th>
-        <th style="width:114px" data-filters="joined:카톡방 참여여부">카톡방 참여여부<div class="th-filters"></div></th>
+        {# 이 칸도 필터가 하나뿐이라 이름 대신 `카톡방 참여여부 ▾` 단추가 선다.
+           이름은 114px 에 들어가지만 단추는 ` ▾` 와 자기 padding·테두리만큼
+           넓어 119px 이 필요했다 — 헤드리스 크롬으로 재 보니 실제로 `카톡방
+           참여여부` / `▾` 두 줄이었다. 128px 로 넓혀도 이 표는 적어 둔 폭 합
+           (2,728px)이 `#contacts-table` 의 min-width(2,804px)보다 작아
+           표 전체 폭은 그대로다. #}
+        <th style="width:128px" data-filters="joined:카톡방 참여여부">카톡방 참여여부<div class="th-filters"></div></th>
         <th style="width:276px"
             title="메모 ( 통화내용 /  카톡내용  /  카톡답신내용)">메모 ( 통화내용 /  카톡내용  /  카톡답신내용)</th>
         <th style="width:180px">딜소싱 참여 투자사</th>
@@ -404,7 +410,18 @@
       <label class="field"><span>근무처 팩스</span><input type="text" id="f-office_fax"></label>
       <label class="field wide"><span>근무지 주소 번지</span><input type="text" id="f-address"></label>
       <label class="field"><span>명함 등록일</span><input type="text" id="f-card_registered_at"></label>
-      <label class="field"><span>관심도 (월말기준)</span><input type="text" id="f-interest_level"></label>
+      <label class="field"><span>관심도 (월말기준)</span><input type="text" id="f-interest_level"
+             placeholder="높음 / 중간 / 낮음"></label>
+      {# 표에는 있는데 이 창에 없어서 **적을 자리가 없었다.** 표 칸을 눌러도
+         고칠 수는 있지만, 스무 칸을 가로로 밀어 찾아야 한다. 이름은 표와
+         같게 둔다 — 두 이름을 놓고 같은 칸인지 따지게 하지 않는다. #}
+      <label class="field"><span>카톡방 참여여부</span><input type="text" id="f-kakao_joined"
+             placeholder="O / X"></label>
+      <label class="field wide"><span>딜소싱 참여 투자사</span><input type="text" id="f-sourcing_note"></label>
+      <label class="field wide"
+             title="TIPS 운영사 투자금 1-10억 스타트업매출액 3-20억 기업에 주로 투자">
+        <span>TIPS 운영사 투자금 1-10억 스타트업매출액 3-20억 기업에 주로 투자</span>
+        <input type="text" id="f-tips_note" placeholder="O / 공란"></label>
       <label class="field checks">
         <span>채널</span>
         <span class="check-row">

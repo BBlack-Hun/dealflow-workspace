@@ -9,17 +9,13 @@ arrive in later sprints (send_sequences → Sprint 3), so schemas don't drift.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from .clock import now_iso as _now_iso
 from .db import Base
-
-
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 class TimestampMixin:

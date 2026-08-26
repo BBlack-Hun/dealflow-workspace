@@ -230,6 +230,51 @@ def test_header_names_sit_in_the_middle_of_the_cell():
 # 값이 306줄 중 3줄뿐인 칸에 그만한 자리를 내주면 매일 보는 칸이 눌린다.
 _TWO_LINE_OK = "TIPS 운영사 투자금 1-10억 스타트업매출액 3-20억 기업에 주로 투자"
 
+# 필터가 하나뿐인 칸은 **이름 글자가 지워지고** `계약여부 ▾` 단추가 그 자리에
+# 선다(filters.js 의 `solo`). 단추는 이름보다 넓다 — ` ▾`(약 6px) 와 자기
+# padding·테두리(6+6+1+1 = 14px)가 더 붙는다.
+#
+# 이름만 재던 검사라 그 20px 을 못 보고 있었다. IR 기업현황의 `계약여부`(72px)와
+# `핵심/TOP Deal`(102px) 은 이름으로는 66px·96px 이라 통과했지만, 화면에서는
+# `계약여부` / `▾` 로 접혀 있었다 — 헤드리스 크롬으로 재서야 드러났다.
+_FILTER_BTN_PX = 20
+
+# 12px 굵은 글씨(머리글)에서 글자 한 개가 차지하는 폭. 헤드리스 크롬으로 서른
+# 남짓한 머리글을 실측해 맞춘 값이라, 어림값과 실제가 2px 안쪽에서 맞는다.
+#
+# `한 칸 6px`(한글은 두 칸이므로 12px)으로 뭉뚱그리던 어림값은 한글을 1.5px 씩,
+# 공백·괄호를 2.4px 씩 부풀렸다. 이름이 짧을 때는 티가 안 났는데, 필터 단추까지
+# 재기 시작하니 `관심도 (월말기준) ▾`(실제 127px)를 140px 이라 보고 멀쩡한 칸을
+# 두 줄이라고 짚었다.
+_PX_CJK = 10.5      # 한글·한자 — 12px 폰트라도 글자 상자는 이만큼이다
+_PX_PUNCT = 3.6     # 공백·쉼표·괄호·슬래시
+_PX_OTHER = 6.6     # 영문·숫자·기호(`▾`)
+
+
+def _text_px(text: str) -> float:
+    """이 글자가 머리글에서 차지하는 폭(px)."""
+    total = 0.0
+    for ch in text:
+        if unicodedata.east_asian_width(ch) in "WF":
+            total += _PX_CJK
+        elif ch.isspace() or unicodedata.category(ch).startswith("P"):
+            total += _PX_PUNCT
+        else:
+            total += _PX_OTHER
+    return total
+
+
+def _solo_filter_label(attrs: str) -> str:
+    """필터가 **하나뿐인** 칸의 라벨. 아니면 빈 문자열.
+
+    둘인 칸(진행 단계 / 연결 상태)은 이름을 남기고 단추를 아래에 붙이므로
+    이름 폭 그대로 재면 된다.
+    """
+    m = re.search(r'data-filters="([^"]*)"', attrs)
+    if not m or "{{" in m.group(1) or "|" in m.group(1) or ":" not in m.group(1):
+        return ""
+    return m.group(1).split(":", 1)[1].strip()
+
 
 def _markup(text: str) -> str:
     """Jinja 주석(`{# … #}`)을 뺀 실제 마크업.
@@ -277,6 +322,38 @@ def _table_px(css: str, wrap_class: str, table_attrs: str):
     return None
 
 
+def _column_px(head: str, table_px):
+    """머리글 칸이 화면에서 **실제로** 몇 px 로 서는지. 못 재는 칸은 None.
+
+    `table-layout: fixed` 는 적어 둔 폭을 그대로 쓰지 않는다.
+
+      · `%` 는 표 폭에 대한 비율이다 — 표 폭을 알아야 px 로 환산된다.
+      · 폭을 안 준 칸이 하나라도 있으면 **남는 자리를 그 칸들이 다 먹는다.**
+        (IR 기업현황의 `한줄 소개` 가 그렇다)
+      · 폭을 안 준 칸이 없으면 남는 자리를 **비율대로 나눠 갖는다.**
+        투자사 관리 현황이 그렇다 — 적어 둔 합(2,714px)보다 표가 넓어서
+        (`#contacts-table` min-width 2,804px) 칸마다 3% 씩 넓게 선다.
+        적어 둔 값만 보면 멀쩡한 칸을 두 줄이라고 잘못 짚는다.
+    """
+    cells = re.findall(r"<th\b([^>]*)>(.*?)</th>", head, re.S)
+    raw = []
+    for attrs, _cell in cells:
+        px = re.search(r"width:\s*(\d+)px", attrs)
+        pct = re.search(r"width:\s*(\d+)%", attrs)
+        if px:
+            raw.append(float(px.group(1)))
+        elif pct and table_px:
+            raw.append(int(pct.group(1)) * table_px / 100)
+        else:
+            raw.append(None)
+
+    total = sum(w for w in raw if w is not None)
+    # 폭을 안 준 칸이 있으면 그 칸이 남는 자리를 가져간다 — 나머지는 적어 둔 그대로.
+    if table_px and None not in raw and 0 < total < table_px:
+        raw = [w * table_px / total for w in raw]
+    return cells, raw
+
+
 def test_컬럼_이름이_두_줄로_접히면_머리글_줄이_들쭉날쭉해진다():
     """한 줄짜리 이름 옆에서 두 줄짜리만 위로 떠 있으면 줄이 어긋나 보인다.
 
@@ -286,29 +363,33 @@ def test_컬럼_이름이_두_줄로_접히면_머리글_줄이_들쭉날쭉해�
 
     `%` 로 준 폭도 같이 잰다 — px 만 보던 검사라 IR 기업현황처럼 이름 칸이
     전부 `%` 인 표는 한 번도 검사되지 않았다.
+
+    **재는 것은 이름이 아니라 화면에 실제로 서는 글자다.** 필터가 하나뿐인 칸은
+    이름이 지워지고 `계약여부 ▾` 단추가 그 자리를 대신한다 — 이름만 재면 그
+    칸들이 통째로 통과한다(`_FILTER_BTN_PX` 참고).
     """
     css = CSS.read_text(encoding="utf-8")
     problems = []
     for path in sorted(TEMPLATES.glob("*.html")):
         for wrap, tattrs, head in _theads(path.read_text(encoding="utf-8")):
             table_px = _table_px(css, wrap, tattrs)
-            for attrs, cell in re.findall(r"<th\b([^>]*)>(.*?)</th>", head, re.S):
+            cells, widths = _column_px(head, table_px)
+            for (attrs, cell), have in zip(cells, widths):
                 name = _name_only(cell)
                 # 반복문으로 만드는 머리글은 값이 실행 때 정해진다 — 셀 수 없다
                 if not name or "{{" in name or "{%" in name or name == _TWO_LINE_OK:
                     continue
-                px = re.search(r"width:\s*(\d+)px", attrs)
-                pct = re.search(r"width:\s*(\d+)%", attrs)
-                if px:
-                    have = int(px.group(1))
-                elif pct and table_px:
-                    have = int(pct.group(1)) * table_px // 100
-                else:
+                if have is None:
                     # 폭을 안 준 칸은 남는 자리를 나눠 갖는다 — 정적으로는 못 잰다
                     continue
-                need = _display_width(name) * 6 + 18      # 12px 글자 기준
+                label = _solo_filter_label(attrs)
+                # 필터가 하나뿐인 칸은 이름 대신 `라벨 ▾` 단추가 선다.
+                shown = label + " ▾" if label else name
+                # 18px = th 좌우 padding, 14px = 단추 padding·테두리
+                need = round(_text_px(shown) + 18 + (14 if label else 0))
                 if need > have:
-                    problems.append(f"{path.name}: {name} ({have}px → {need}px 필요)")
+                    problems.append(
+                        f"{path.name}: {shown} ({have:.0f}px → {need}px 필요)")
     assert not problems, (
         "머리글 이름이 두 줄로 접힙니다. 칸 폭을 넓히세요"
         "(넓힌 뒤에는 app.css 의 그 표 min-width 도 함께):\n  "

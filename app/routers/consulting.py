@@ -155,6 +155,37 @@ def _prev_month_columns(columns: List[ConsultingColumn]) -> List[str]:
     return [str(c.id) for c in columns if c.label == label]
 
 
+def management_tags(text: str) -> str:
+    """`기업 관리` 칸의 자유 문장에서 **거를 수 있는 말**만 뽑는다.
+
+    이 칸을 적힌 그대로 필터에 올릴 수는 없다. 원본 시트가 머리글부터
+    `기업 관리 [ 드랍 이유 상세하게 기입 / 관리중 / 백업팀으로 전환 ]` 이라
+    실제 값이 `드랍 : ir 진행 계약 완료 -> 기업 회생 신청 -> ir 진행 불가` 처럼
+    여든 자짜리 문장이다 — 32줄에 열여섯 가지가 나와 고를 것이 없고, 목록 한
+    줄에 들어가지도 않는다.
+
+    그래서 시트가 정해 둔 세 마디만 본다. 판정은 화면 위 칩(관리 중 · 드랍)이
+    이미 쓰던 것과 **같은 규칙**이다 — 다르게 두면 칩으로 6곳, 필터로 5곳이
+    나오고 어느 쪽이 맞는지 알 수가 없다.
+
+    한 줄에 두 마디가 같이 있을 수 있어(`백업팀으로 전환 … 드랍`) `|` 로 잇는다.
+    filters.js 가 그 구분자로 나눠 태그 단위로 건다.
+    """
+    body = text or ""
+    tags = []
+    if "관리" in body:
+        tags.append("관리 중")
+    if "드랍" in body:
+        tags.append("드랍")
+    if "백업팀" in body:
+        tags.append("백업팀 전환")
+    # 적혀 있기는 한데 세 마디 중 어느 것도 아닌 줄. 빈칸과 한 덩어리로 묶으면
+    # "아직 안 적었다" 와 "적었는데 분류가 안 된다" 가 구별되지 않는다.
+    if body.strip() and not tags:
+        tags.append("기타 메모")
+    return "|".join(tags)
+
+
 def _notes(company: ConsultingCompany) -> Dict[str, str]:
     try:
         return json.loads(company.notes or "{}")
@@ -184,6 +215,9 @@ def company_rows(db: Session, user: User, sheet: str = "",
             "meeting_at": c.meeting_at or "",
             "company_name": c.company_name or "",
             "management": c.management or "",
+            # 머리글 필터가 보는 값. 칸에 적힌 문장 그대로가 아니라 시트가 정해
+            # 둔 세 마디로 추린다(management_tags 참고).
+            "mgmt": management_tags(c.management or ""),
             "ceo_name": c.ceo_name or "",
             "phone": c.phone or "",
             "email": c.email or "",

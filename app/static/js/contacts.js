@@ -6,6 +6,9 @@
     "status", "stages", "sectors", "round_size", "email", "phone", "memo",
     // 시트에 있는데 표에는 안 넣은 값들 — 표에 다 넣으면 20칸이 되어
     // 정작 매일 보는 칸이 눌린다. 가끔 찾는 값은 상세에서 본다.
+    // 표에는 있는데 이 목록에 없으면 **상세 창에서 적을 수가 없다** —
+    // 칸을 그려 놔도 값이 안 채워지고 저장도 안 된다.
+    "kakao_joined", "sourcing_note", "tips_note",
     "assignee_name", "department", "office_phone", "office_fax",
     "address", "card_registered_at", "interest_level"];
   var CHECKS = ["channel_kakao", "channel_email"];

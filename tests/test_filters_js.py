@@ -38,6 +38,21 @@ def test_company_search_rules():
     assert result.returncode == 0, result.stdout + result.stderr
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치 — 브라우저 로직 테스트 생략")
+def test_필터가_주소를_고쳐도_시트_탭은_그대로여야_한다():
+    """필터 상태를 주소에 남기면서 **남의 쿼리를 통째로 버리고** 있었다.
+
+    `/sourcing?tab=M&A 찾는 투자사` 를 열면 아무것도 안 골랐는데도 주소가 곧바로
+    `/sourcing` 이 되어, 새로고침하면 다른 갈래가 열렸다. 투자컨설턴트 현황은
+    `?sheet=` 가 곧 명단이라 검색어 한 글자에 남의 시트로 넘어간다.
+    """
+    result = subprocess.run(
+        [shutil.which("node"), str(JS_DIR / "filters_url_test.js")],
+        capture_output=True, text=True, timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치 — 브라우저 로직 테스트 생략")
 def test_edited_cells_show_up_in_the_filter():
     """칸을 고쳤는데 필터가 옛 값만 보면, 있는 줄 알고 골랐다가 아무것도 안 나온다.
 

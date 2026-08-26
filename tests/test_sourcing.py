@@ -98,7 +98,7 @@ def test_every_column_has_a_cell(seeded):
 
     # 모든 컬럼이 눌러서 고칠 수 있어야 한다
     fields = set(re.findall(r'data-field="(\w+)"', first_row))
-    assert fields == {f for f, _label, _w in COLUMNS}, fields
+    assert fields == {f for f, _label, _w, _filt in COLUMNS}, fields
 
 
 def test_the_room_name_is_editable(seeded, db):
