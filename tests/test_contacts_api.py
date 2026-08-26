@@ -509,3 +509,45 @@ def test_the_owner_mapping_follows_the_rename(logged_in, db, users):
     labels = {o.label for o in db.query(SheetOwner).all()}
     assert "새 이름" in labels and "옛 이름" not in labels
 
+# --- 화면에서 고친 값이 실제로 저장되는가 --------------------------------------
+#
+# 스키마(`ContactIn`)에 칸을 더해 놓고 `_assign` 의 저장 목록에 안 넣으면,
+# 요청은 **200 으로 끝나는데 값은 그대로**다. 화면에서는 저장된 것처럼 보이고
+# 새로고침해야 안 들어간 것을 안다 — `tips_note` 가 실제로 그랬다.
+
+def test_every_editable_field_is_actually_saved():
+    """스키마에 있는데 저장 목록에서 빠지면 조용히 안 들어간다."""
+    import pathlib
+    import re
+
+    src = pathlib.Path("app/routers/contacts.py").read_text(encoding="utf-8")
+    schema = re.search(r"class ContactIn\(BaseModel\):(.*?)\n\nclass ", src, re.S)
+    assert schema, "ContactIn 을 찾지 못했습니다"
+    fields = set(re.findall(r"^\s{4}(\w+):", schema.group(1), re.M))
+
+    assign = re.search(r"def _assign.*?for field in \((.*?)\):", src, re.S)
+    assert assign, "_assign 의 저장 목록을 찾지 못했습니다"
+    listed = set(re.findall(r'"(\w+)"', assign.group(1)))
+
+    # 목록 밖에서 따로 다루는 칸들
+    handled = listed | {"name", "channel_kakao", "channel_email"}
+    missing = sorted(fields - handled)
+    assert not missing, f"고쳐도 저장되지 않는 칸: {missing}"
+
+
+def test_the_sheet_only_columns_can_be_edited(logged_in, db, users):
+    """시트에만 있던 칸도 화면에서 고쳐야 한다 — 안 되면 시트를 다시 올려야 한다."""
+    from app.models import VcContact
+
+    row = VcContact(user_id=users["u1"].id, name="홍길동", firm="가나벤처스")
+    db.add(row)
+    db.commit()
+
+    r = logged_in.patch(f"/api/contacts/{row.id}", json={
+        "tips_note": "O", "kakao_joined": "O", "sourcing_note": "참여 의사 있음"})
+    assert r.status_code == 200
+    db.refresh(row)
+    assert row.tips_note == "O"
+    assert row.kakao_joined == "O"
+    assert row.sourcing_note == "참여 의사 있음"
+

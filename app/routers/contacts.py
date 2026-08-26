@@ -710,7 +710,10 @@ def _assign(contact: VcContact, body: ContactIn) -> None:
                   "email", "phone", "stages", "sectors", "round_size", "memo", "status",
                   # 시트에 있던 값들 — 화면에서도 고칠 수 있어야 한다.
                   "assignee_name", "department", "office_phone", "office_fax",
-                  "address", "card_registered_at", "interest_level"):
+                  "address", "card_registered_at", "interest_level",
+                  # 스키마(ContactIn)에만 있고 여기 빠져 있어서, 화면에서 고쳐도
+                  # 조용히 안 들어갔다 — 요청은 200 으로 끝나는데 값은 그대로다.
+                  "kakao_joined", "sourcing_note", "tips_note"):
         value = getattr(body, field)
         if value is not None:
             setattr(contact, field, value.strip() if isinstance(value, str) else value)
