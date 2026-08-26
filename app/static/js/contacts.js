@@ -220,7 +220,17 @@
   }
 
   if (window.DealflowFilters && table) {
-    filters = window.DealflowFilters.init({ table: "#contacts-table" });
+    // 검색은 컬럼 필터와 **AND** 로 묶는다 — 둘이 서로 tr.hidden 을 덮어쓰면
+    // 검색과 필터가 번갈아 서로를 지운다(딜 소싱 표와 같은 규칙).
+    var box = document.getElementById("vc-search");
+    filters = window.DealflowFilters.init({
+      table: "#contacts-table",
+      extra: function (tr) {
+        var q = ((box && box.value) || "").trim().toLowerCase();
+        return !q || (tr.getAttribute("data-search") || "").indexOf(q) !== -1;
+      }
+    });
+    if (box) box.addEventListener("input", function () { filters && filters.apply(); });
   }
 })();
 

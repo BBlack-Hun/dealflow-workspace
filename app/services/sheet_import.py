@@ -594,8 +594,18 @@ def parse_sheet_a(rows: Sequence[Sequence[str]], year: int) -> SheetAParse:
         if _looks_like_junk(name_cell):
             out.skipped.append(SkippedRow(row_no, "비정형 행(이름 아님)", preview))
             continue
+        if is_placeholder_name(name_cell):
+            out.skipped.append(
+                SkippedRow(row_no, "머리글과 칸이 어긋난 줄(이름 자리에 라벨)", preview))
+            continue
         if not firm:
             out.skipped.append(SkippedRow(row_no, "투자사명 없음", preview))
+            continue
+        if looks_like_address(firm):
+            # 회사 칸에 주소가 들어왔다 = 그 줄은 통째로 밀려 있다.
+            # 넣으면 나머지 칸도 전부 엉뚱한 자리에 들어간다.
+            out.skipped.append(
+                SkippedRow(row_no, "머리글과 칸이 어긋난 줄(회사 자리에 주소)", preview))
             continue
 
         name, title = split_name_title(name_cell)
@@ -647,12 +657,42 @@ def parse_sheet_a(rows: Sequence[Sequence[str]], year: int) -> SheetAParse:
     return out
 
 
+# 사람 이름 자리에 들어온 **자리표시 라벨**. 시트에 머리글이 다른 표가
+# 아래로 이어 붙는 일이 있는데(`투자사 98명` 시트가 그렇다), 그 블록은 이름
+# 칸에 `담당자2` 같은 라벨이 들어 있고 나머지 칸도 통째로 어긋난다.
+# 그대로 넣으면 회사 칸에 주소가, 선호분야 칸에 휴대폰이 들어간
+# **가짜 담당자**가 생긴다(실제로 58명이 그렇게 들어갔다).
+_PLACEHOLDER_NAME = re.compile(r"^(담당자|이름|성명|연락처|번호|no)\s*\d*$",
+                               re.IGNORECASE)
+
+
 def _looks_like_junk(text: str) -> bool:
     """헤더에 섞인 임시 로그인 문자열·URL 등 비정형 행 (DATA_MODEL §6)."""
     t = norm(text)
     if len(t) > 30:
         return True
     return any(mark in t for mark in ("@", "://", "http", "비밀번호", "password", "로그인"))
+
+
+def is_placeholder_name(text: str) -> bool:
+    """이름 자리에 들어온 자리표시 라벨(`담당자2`).
+
+    비정형 행(임시 로그인 문자열 등)과 원인이 다르다 — 이쪽은 **다른 표가
+    아래로 이어 붙은 것**이라, 그 줄은 나머지 칸도 통째로 어긋나 있다.
+    이유를 갈라 적어야 사용자가 시트에서 무엇을 고쳐야 하는지 안다.
+    """
+    return bool(_PLACEHOLDER_NAME.match(norm(text)))
+
+
+# 주소는 회사 이름이 아니다. 칸이 어긋난 줄을 잡아내는 두 번째 그물 —
+# 이름 칸이 멀쩡해도 나머지가 밀려 있을 수 있다.
+_ADDRESS_RE = re.compile(
+    r"(특별시|광역시|[가-힣]+도)\s|[가-힣]+시\s+[가-힣]+[구군]|"
+    r"[가-힣]+[로길]\s*\d|\d+층")
+
+
+def looks_like_address(text: str) -> bool:
+    return bool(_ADDRESS_RE.search(norm(text)))
 
 
 # ── 시트 B ──────────────────────────────────────────────────────────────────

@@ -13,7 +13,15 @@
   <div class="kpi-card static"><span class="kpi-label">전체</span><span class="kpi-value">{{ counts.total }}</span></div>
   <div class="kpi-card static"><span class="kpi-label">관리 중</span><span class="kpi-value ok">{{ counts.managed }}</span></div>
   <div class="kpi-card static"><span class="kpi-label">드랍</span><span class="kpi-value warn">{{ counts.dropped }}</span></div>
-  <div class="kpi-card static"><span class="kpi-label">연락 기록 있음</span><span class="kpi-value">{{ counts.contacted }}</span></div>
+  {# 이번 달은 아직 진행 중이라 세어 봐야 "아직 안 했다" 만 나온다 —
+     챙길 것은 지난달에 놓친 쪽이다. #}
+  <div class="kpi-card static">
+    <span class="kpi-label">이전달 연락 기록 있음</span>
+    <span class="kpi-value">{{ counts.contacted }}</span>
+    {% if counts.prev_month_label %}
+    <span class="kpi-sub">{{ counts.prev_month_label[:14] }}</span>
+    {% else %}<span class="kpi-sub">지난달 열이 없습니다</span>{% endif %}
+  </div>
 </div>
 
 {% if msg %}<p class="flash">{{ msg }}</p>{% endif %}

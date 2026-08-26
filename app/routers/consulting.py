@@ -16,6 +16,8 @@
 from __future__ import annotations
 
 import json
+import re
+from datetime import date
 from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
@@ -133,6 +135,26 @@ def _split_columns(columns: List[ConsultingColumn], show_all: bool = False) -> t
     return columns[:VISIBLE_MONTHS], columns[VISIBLE_MONTHS:]
 
 
+def _prev_month_label(columns: List[ConsultingColumn]) -> str:
+    """지금 기준 **지난달**에 해당하는 열의 이름.
+
+    열 이름이 `8월 마지막주 리마인드 톡 or TEL` 처럼 자유 문장이라 달을 숫자로
+    읽어 찾는다. 없으면 빈 문자열 — 화면이 그냥 '연락 기록' 으로 돈다.
+    """
+    today = date.today()
+    month = today.month - 1 or 12
+    for col in columns:
+        m = re.search(r"(\d{1,2})\s*월", col.label or "")
+        if m and int(m.group(1)) == month:
+            return col.label
+    return ""
+
+
+def _prev_month_columns(columns: List[ConsultingColumn]) -> List[str]:
+    label = _prev_month_label(columns)
+    return [str(c.id) for c in columns if c.label == label]
+
+
 def _notes(company: ConsultingCompany) -> Dict[str, str]:
     try:
         return json.loads(company.notes or "{}")
@@ -143,6 +165,7 @@ def _notes(company: ConsultingCompany) -> Dict[str, str]:
 def company_rows(db: Session, user: User, sheet: str = "",
                  owner: int = 0) -> List[dict]:
     cols = _columns(db, user, sheet, owner)
+    prev_keys = _prev_month_columns(cols)
     stmt = select(ConsultingCompany).order_by(ConsultingCompany.position,
                                               ConsultingCompany.id)
     if sheet:
@@ -165,6 +188,9 @@ def company_rows(db: Session, user: User, sheet: str = "",
             "phone": c.phone or "",
             "email": c.email or "",
             "notes": {str(col.id): notes.get(str(col.id), "") for col in cols},
+            # 지난달에 연락했는가. 이번 달은 아직 진행 중이라 세어 봐야
+            # "아직 안 했다" 만 나온다.
+            "contacted_prev": any(notes.get(k, "").strip() for k in prev_keys),
             "updated_at": (c.updated_at or "")[:10],
             "search": " ".join(filter(None, [
                 c.company_name, c.region, c.management, c.ceo_name,
@@ -185,6 +211,7 @@ def consulting_page(request: Request, db: Session = Depends(get_db),
     tabs = sheet_tabs(db, user, owner)
     selected = sheet if any(t["key"] == sheet for t in tabs) else DEFAULT_SHEET
     rows = company_rows(db, user, selected, owner)
+    prev_label = _prev_month_label(_columns(db, user, selected, owner))
     # 달마다 한 칸씩 늘어나는 표라, 최근 몇 달만 펴 둔다.
     # `months=all` 은 일부러 다 본다는 뜻이다.
     shown, hidden = _split_columns(_columns(db, user, selected, owner),
@@ -208,7 +235,10 @@ def consulting_page(request: Request, db: Session = Depends(get_db),
             "total": len(rows),
             "managed": sum(1 for r in rows if "관리" in r["management"]),
             "dropped": sum(1 for r in rows if "드랍" in r["management"]),
-            "contacted": sum(1 for r in rows if any(r["notes"].values())),
+            # '연락했다' 는 **지난달** 기준이다. 이번 달은 아직 진행 중이라
+            # 세어 봐야 "아직 안 했다" 만 나온다 — 챙길 것은 지난달에 놓친 쪽이다.
+            "contacted": sum(1 for r in rows if r["contacted_prev"]),
+            "prev_month_label": prev_label,
         },
     })
     return templates.TemplateResponse("consulting.html", ctx)

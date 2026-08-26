@@ -10,12 +10,6 @@
   </p>
 </header>
 
-<p class="hint">
-  <b>소개 가능</b>은 딜 소개 문구에 들어가는 칸이 하나도 빠지지 않은 기업입니다 —
-  {% for f in required_fields %}<span class="tag">{{ f }}</span>{% endfor %}
-  하나라도 비면 <b>내용 부족</b>입니다.
-</p>
-
 {% if msg %}<p class="flash">{{ msg }}</p>{% endif %}
 
 <div class="toolbar">

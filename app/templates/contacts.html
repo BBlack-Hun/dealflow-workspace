@@ -135,6 +135,10 @@
 
 <div class="toolbar">
   <div class="toolbar-right">
+    {# 275명에서 한 사람을 찾는 데 컬럼 필터로는 안 된다 — 이름을 아는데
+       분야·담당으로 좁혀 들어가야 했다. #}
+    <input type="search" id="vc-search" placeholder="회사명 · 이름 검색"
+           autocomplete="off" aria-label="회사명 · 이름 검색">
     <label class="density-toggle">
       <input type="checkbox" id="density-toggle"> 촘촘히 보기
     </label>
@@ -235,6 +239,7 @@
           data-f-assignee="{{ r.assignee }}"
           data-f-connect="{{ r.connect_label }}"
           data-f-channel="{{ r.channel_label }}"
+          data-search="{{ (r.name ~ ' ' ~ (r.firm or '') ~ ' ' ~ (r.title or '') ~ ' ' ~ (r.department or ''))|lower }}"
           {# 초대 컬럼은 감췄지만 거르는 기능은 살려 둔다 —
              방 연결 확인 뒤 "미등록만 보기" 를 쓴다. #}
           data-f-room="{{ r.room_label }}"
