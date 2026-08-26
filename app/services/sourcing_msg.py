@@ -19,12 +19,13 @@ from __future__ import annotations
 
 from typing import Optional
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..models import MessageTemplate, User
+from ..models import User
+from . import template_pick
 
 #: 이 종류의 템플릿은 갈래(`name`)마다 하나씩 있다.
+#: 갈래가 곧 자리라는 사실은 `template_pick.NAME_IS_A_BUCKET` 에 적혀 있다.
 KIND = "sourcing_intro"
 
 # 갈래 이름에 들어 있는 말로 성격을 읽는다. 시트 탭 이름이 조금씩 바뀌어도
@@ -93,24 +94,20 @@ def default_body(bucket: str) -> str:
 
 
 def body_for(db: Session, user: User, bucket: str) -> str:
-    """이 갈래에 쓸 문구. 개인 문구 > 팀 문구 > 뼈대 순.
+    """이 갈래에 쓸 문구. **갈래 문구 > 갈래 없는 문구 > 뼈대** 순.
 
-    갈래별 문구가 없으면 갈래 없는 기본 문구를 찾고, 그것도 없으면 뼈대를
-    만든다 — 문구가 없다고 발송 화면이 비면 왜 안 되는지 알 수 없다.
+    갈래를 먼저 보는 이유는 이 파일의 첫머리 그대로다 — 호칭·개수·범위가
+    갈래마다 다르고, 어긋나면 문구 자체가 결례가 된다. 갈래 문구가 없으면
+    갈래 없는 기본 문구를 찾고, 그것도 없으면 뼈대를 만든다: 문구가 없다고
+    발송 화면이 비면 왜 안 되는지 알 수 없다.
+
+    갈래 **안에서** 무엇을 쓸지(고른 것 > 내 것 > 팀 것)는 `template_pick` 이
+    정한다. 딜소개와 여기가 각자 규칙을 들고 있으면 언젠가 어긋나고, 그러면
+    같은 사람이 화면마다 다른 문구를 받는다.
     """
-    def pick(user_id: Optional[int], name: Optional[str]):
-        stmt = (select(MessageTemplate)
-                .where(MessageTemplate.kind == KIND,
-                       MessageTemplate.is_active == 1))
-        stmt = (stmt.where(MessageTemplate.user_id == user_id) if user_id is not None
-                else stmt.where(MessageTemplate.user_id.is_(None)))
-        stmt = (stmt.where(MessageTemplate.name == name) if name is not None
-                else stmt.where(MessageTemplate.name.is_(None)))
-        return db.execute(stmt).scalars().first()
-
-    for owner in (user.id, None):
-        for name in (bucket, None):
-            found = pick(owner, name)
-            if found:
-                return found.body
+    slots = [bucket, ""] if (bucket or "").strip() else [""]
+    for variant in slots:
+        found = template_pick.pick(db, user.id, KIND, variant)
+        if found:
+            return found.body
     return default_body(bucket)

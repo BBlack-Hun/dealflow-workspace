@@ -27,7 +27,7 @@ from ..models import (
 )
 from ..services import mail_sender, mailer, matcher
 from ..services import message_composer as mc
-from ..services import sourcing_link, sourcing_msg
+from ..services import sourcing_link, sourcing_msg, template_pick
 from ..services.message_composer import MAX_COMPANIES_PER_SEND
 
 router = APIRouter(prefix="/api/deals", tags=["deals"])
@@ -56,22 +56,17 @@ def _to_contact_view(c) -> mc.ContactView:
 
 
 def _template_body(db: Session, user_id: int, kind: str, fallback: str) -> str:
-    """User-owned active template of `kind` if present, else team default, else fallback."""
-    own = db.execute(
-        select(MessageTemplate)
-        .where(MessageTemplate.user_id == user_id,
-               MessageTemplate.kind == kind,
-               MessageTemplate.is_active == 1)
-    ).scalars().first()
-    if own:
-        return own.body
-    team = db.execute(
-        select(MessageTemplate)
-        .where(MessageTemplate.user_id.is_(None),
-               MessageTemplate.kind == kind,
-               MessageTemplate.is_active == 1)
-    ).scalars().first()
-    return team.body if team else fallback
+    """이 사람이 이 종류에 쓸 문구. 없으면 코드에 적힌 폴백.
+
+    고르는 규칙은 `template_pick.pick()` 한 곳에 있다 — 딜소개와 딜 소싱이
+    서로 다른 규칙으로 고르면 같은 사람이 화면마다 다른 문구를 받는다.
+
+    폴백은 팀 기본이 여럿인데 아직 아무것도 고르지 않았을 때도 쓰인다.
+    코드에 적힌 한 문장이라 누구에게나 같다 — 문구가 비어 나가는 것보다는
+    같은 문장이 나가는 편이 낫고, 그동안 문구 화면에는 "골라 주세요" 가 뜬다.
+    """
+    t = template_pick.pick(db, user_id, kind)
+    return t.body if t else fallback
 
 
 def _has_history(db: Session, contact_id: int) -> bool:
@@ -163,6 +158,20 @@ MODE_TITLES[MODE_DEAL] = "딜 소개"
 MODES_WITH_COMPANIES = {MODE_DEAL, MODE_IR}
 
 
+def opening_is_included(mode: str) -> bool:
+    """이 방식이 인사말을 붙이는가.
+
+    인사말은 **기본으로 붙인다.** 빼는 것은 선호 분야를 되물을 때뿐이다 —
+    그건 이미 대화가 오간 방에 한 줄만 덧붙이는 것이라 다시 인사하면
+    어색하다. 화면 기본값과 같아야 한다(deals.js) — 다르면 미리보기와
+    실제로 나가는 것이 달라진다.
+
+    문구 화면도 이 판단을 그대로 쓴다. 두 곳에서 따로 정하면 "합쳐 보여 준
+    문구"와 "실제로 나가는 문구"가 인사말 한 덩어리만큼 어긋난다.
+    """
+    return mode != MODE_ASK
+
+
 def _compose_for_contact(
     db: Session, user: User, contact: VcContact, companies: List[IrCompany],
     opening_template_id: Optional[int] = None,
@@ -173,11 +182,7 @@ def _compose_for_contact(
     # 인사말 기본값은 방식마다 다르다. 후속 문구는 이미 대화가 오간 방에 한 줄
     # 덧붙이는 것이라 인사를 다시 붙이지 않는 편이 자연스럽다. 화면에서 켜고 끌 수 있다.
     if include_opening is None:
-        # 인사말은 **기본으로 붙인다.** 빼는 것은 선호 분야를 되물을 때뿐이다 —
-        # 그건 이미 대화가 오간 방에 한 줄만 덧붙이는 것이라 다시 인사하면
-        # 어색하다. 화면 기본값과 같아야 한다(deals.js) — 다르면 미리보기와
-        # 실제로 나가는 것이 달라진다.
-        include_opening = mode != MODE_ASK
+        include_opening = opening_is_included(mode)
 
     # 소싱 명단에는 딜소개 이력이 없다(다른 표다) — 늘 '처음 인사' 다.
     has_hist = False if mode == MODE_SOURCING else _has_history(db, contact.id)
@@ -376,6 +381,21 @@ def _sample_bucket(db: Session) -> str:
                                          SourcingContact.id)
     ).scalars().first()
     return row.bucket if row else ""
+
+
+def sample_message(db: Session, user: User, mode: str, bucket: str = "") -> str:
+    """받는 사람을 고르기 전, 이 방식으로 나갈 문구 전문(인사말 + 본문).
+
+    문구 화면이 조각(인사말 / 안내문)만 보여 줘서 **정작 무엇이 나가는지**
+    알 수 없었다. 합치는 규칙을 화면 쪽에 다시 적으면 두 벌이 되고, 두 벌은
+    반드시 어긋난다 — 그래서 발송 화면의 기본 미리보기가 지나는 길을
+    그대로 지난다.
+
+    인사말은 **첫 연락 기준**이다. 가상의 받는 사람에게는 발송 이력이 없어
+    `pick_opening_kind` 가 늘 '첫 연락'을 고른다. 화면에도 그렇게 적는다.
+    """
+    who = _SampleRecipient(bucket if mode == MODE_SOURCING else "")
+    return _compose_for_contact(db, user, who, [], mode=mode).text
 
 
 def _load_recipients(db: Session, user: User, mode: str, ids: List[int]) -> List:

@@ -12,7 +12,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import ForeignKey, Integer, String, Text
+from sqlalchemy import ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -77,6 +77,41 @@ class MessageTemplate(TimestampMixin, Base):
     name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     body: Mapped[str] = mapped_column(Text)
     is_active: Mapped[int] = mapped_column(Integer, default=1)
+
+
+class TemplateChoice(TimestampMixin, Base):
+    """이 사람이 이 자리에 쓰기로 **고른** 팀 문구.
+
+    한 종류(kind)에 팀 기본 문구를 여러 개 둘 수 있다. 고른 사람이 없으면
+    코드가 그중 아무거나 집게 되는데, 그러면 **같은 회차에 사람마다 다른
+    문구가 나가고** 무엇이 나갔는지 나중에 알 수도 없다. 그래서 "누가 무엇을
+    골랐는가" 를 값으로 남긴다.
+
+    고치는 것과 고르는 것은 다른 권한이다 — 팀 기본은 관리자만 고치지만
+    고르는 것은 각자 한다(관리자도 제 선택을 가진다).
+    """
+
+    __tablename__ = "template_choices"
+    # 한 자리에 두 개를 고를 수는 없다. 그 '자리'가 (사람, 종류, 갈래)다.
+    __table_args__ = (
+        UniqueConstraint("user_id", "kind", "variant", name="uq_template_choice_slot"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    kind: Mapped[str] = mapped_column(String)
+    # 같은 종류 안에서 **서로 겨루는 무리**를 가르는 칸. 보통은 빈 문자열이다
+    # — 그 종류의 문구가 전부 한 자리를 놓고 겨룬다. 딜 소싱만 갈래(문구
+    # `name`)마다 자리가 갈린다: 호칭·개수·범위가 갈래마다 달라 이름이
+    # 다르면 아예 다른 문구다.
+    #
+    # NULL 이 아니라 빈 문자열을 쓴다 — NULL 끼리는 서로 다른 값으로 쳐서
+    # 위의 유일 제약이 걸리지 않고, 한 자리에 선택이 여러 개 쌓인다.
+    variant: Mapped[str] = mapped_column(String, default="", server_default="")
+    # 고른 문구가 지워지면 선택도 함께 사라져야 한다 — 없는 문구를 가리킨 채
+    # 남으면 "골라 뒀는데 다른 것이 나간다" 가 된다.
+    template_id: Mapped[int] = mapped_column(
+        ForeignKey("message_templates.id", ondelete="CASCADE"))
 
 
 class VcContact(TimestampMixin, Base):
