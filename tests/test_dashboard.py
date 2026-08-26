@@ -1076,3 +1076,51 @@ def test_every_send_kind_counts(client, db, users):
                if k["key"] == "sent")
     assert kpi["value"] == 2
 
+# --- 카톡방 연결 상태에서 바로 보내기 ----------------------------------------
+#
+# 세는 것만 보여주고 갈 곳이 없으면, 그 116명이 누구인지 알 수 없다.
+# 보낼 수 있는 방은 **딜 제안 관리로 체크된 채로** 보낸다 — 거기서 다음 회차를
+# 만드는 것이 다음 동작이라, 목록만 열어 주면 같은 사람을 손으로 다시 고른다.
+
+def _room(db, users, name, room, verified):
+    from app.models import VcContact
+
+    row = VcContact(user_id=users["u1"].id, name=name, firm="가나벤처스",
+                    connect_stage="connected", channel_kakao=1,
+                    kakao_room_name=room, room_verified=verified)
+    db.add(row)
+    db.commit()
+    return row
+
+
+def test_connected_rooms_link_to_the_send_screen(client, db, users):
+    from app.services import dashboard as dash
+
+    ok = _room(db, users, "홍길동", "홍길동 이사님 가나벤처스", "verified")
+    rooms = dash.user_dashboard(db, users["u1"], top_n=10)["rooms"]
+    row = next(r for r in rooms if r["state"] == "verified")
+    assert row["href"] == f"/deals?contacts={ok.id}"
+
+
+def test_unsendable_rooms_go_to_the_contact_list_instead(client, db, users):
+    """방이 없는 사람은 고쳐야 할 것이지 보낼 것이 아니다."""
+    from app.services import dashboard as dash
+
+    _room(db, users, "김서연", "", "unverified")     # 방 미등록
+    rooms = dash.user_dashboard(db, users["u1"], top_n=10)["rooms"]
+    row = next((r for r in rooms if r["state"] == "missing"), None)
+    assert row is not None
+    assert row["href"] is None or row["href"].startswith("/contacts")
+
+
+def test_the_link_only_carries_that_state(client, db, users):
+    """확인된 사람 링크에 방 없는 사람이 섞이면 보낼 수 없는 곳에 체크가 붙는다."""
+    from app.services import dashboard as dash
+
+    ok = _room(db, users, "홍길동", "홍길동 이사님 가나벤처스", "verified")
+    bad = _room(db, users, "박준호", "", "unverified")
+    rooms = dash.user_dashboard(db, users["u1"], top_n=10)["rooms"]
+    href = next(r for r in rooms if r["state"] == "verified")["href"]
+    assert str(ok.id) in href
+    assert str(bad.id) not in href.split("contacts=")[1].split(",")
+

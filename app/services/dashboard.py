@@ -79,7 +79,18 @@ _ROOM_HREF = {
 }
 
 
-def _room_href(state: str) -> Optional[str]:
+def _room_href(state: str, ids: List[int]) -> Optional[str]:
+    """이 상태의 사람들이 있는 곳.
+
+    보낼 수 있는 방(확인됨·미확인)은 **딜 제안 관리로, 체크된 채로** 보낸다 —
+    거기서 바로 다음 회차를 만드는 것이 다음 동작이라, 목록만 보여 주면 같은
+    사람을 손으로 다시 골라야 한다.
+
+    보낼 수 없는 쪽(방 없음·미등록·채널)은 고쳐야 할 것이라 투자사 목록으로
+    보낸다.
+    """
+    if state in _SENDABLE_ROOM:
+        return "/deals?contacts=" + ",".join(str(i) for i in ids) if ids else None
     return _ROOM_HREF.get(state)
 
 
@@ -275,6 +286,10 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None,
     ids = [c.id for c in contacts]
 
     rooms = Counter(_room_state(c) for c in contacts)
+    # 상태별로 **누구인지**까지 들고 있어야 눌러서 갈 곳을 만들 수 있다.
+    room_ids: Dict[str, List[int]] = {}
+    for c in contacts:
+        room_ids.setdefault(_room_state(c), []).append(c.id)
     sendable = sum(rooms[state] for state in _SENDABLE_ROOM)
 
     companies = db.execute(select(IrCompany)).scalars().all()
@@ -373,7 +388,7 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None,
             {"state": s, "label": ROOM_LABELS[s][0], "level": ROOM_LABELS[s][1],
              "count": rooms.get(s, 0),
              "percent": round(rooms.get(s, 0) * 100 / (len(contacts) or 1)),
-             "href": _room_href(s)}
+             "href": _room_href(s, room_ids.get(s, []))}
             for s in ("verified", "unverified", "failed", "missing",
                       "email", "no_channel")
             if rooms.get(s, 0)
