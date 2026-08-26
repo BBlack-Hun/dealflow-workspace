@@ -187,6 +187,13 @@ sudo chmod +x /etc/cron.daily/dealflow-backup
 
 ---
 
+## 도메인
+
+`dealflow-imp.duckdns.org` (DuckDNS · 서버 132.145.95.21)
+
+IP 가 바뀌어도 이름은 그대로라, 각자 PC 의 에이전트를 다시 손보지 않아도 된다.
+DuckDNS 페이지에서 IP 만 갱신하면 된다.
+
 ## 확인 목록
 
 - [ ] `deploy/.env` 를 채웠다 (안 채우면 뜨지 않는다)
