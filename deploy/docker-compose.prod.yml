@@ -24,9 +24,13 @@ services:
       RUN_MIGRATIONS: "1"
       DATABASE_URL: "sqlite:////app/data/dealflow.db"
     volumes:
-      # 왼쪽은 **블록 볼륨 마운트 지점**이다. 부트 볼륨에 두면 인스턴스를
-      # 다시 만들 때 명단이 통째로 사라진다.
-      - /mnt/dealflow/data:/app/data
+      # 배포 계정의 홈에 둔다. `DEALFLOW_DATA_DIR` 로 옮길 수 있게 두어,
+      # 나중에 블록 볼륨을 붙이면 그 경로만 바꾸면 된다.
+      #
+      # 지금 서버에는 블록 볼륨이 없다(부트 볼륨 50GB 중 32GB 여유).
+      # **부트 볼륨이라 인스턴스를 다시 만들면 사라진다** — 그래서 매일
+      # 백업을 뜬다(deploy/README.md 8장). 명단이 커지면 블록 볼륨으로 옮긴다.
+      - ${DEALFLOW_DATA_DIR:-/home/dealflow/data}:/app/data
     expose: ["8000"]            # 호스트에 열지 않는다 — Caddy 만 본다
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)"]
