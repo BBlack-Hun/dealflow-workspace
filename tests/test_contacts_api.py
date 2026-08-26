@@ -62,7 +62,12 @@ def test_contacts_columns_fit_without_horizontal_scroll(logged_in, contacts):
     assert 'class="table-wrap wide"' in html
     css = pathlib.Path("app/static/css/app.css").read_text(encoding="utf-8")
     assert "#contacts-table { min-width:" in css
-    assert re.search(r"\.table-wrap\.wide\s*\{[^}]*overflow-x:\s*auto", css)
+    # 세로도 자른다 — 그래야 가로 스크롤바가 표 바로 아래 붙는다.
+    rule = re.search(r"\.table-wrap\.wide\s*\{([^}]*)\}", css)
+    assert rule, ".table-wrap.wide 규칙이 없습니다"
+    assert re.search(r"overflow:\s*auto", rule.group(1))
+    assert "max-height" in rule.group(1), (
+        "높이를 안 자르면 가로 스크롤바가 문서 맨 아래로 밀린다")
     # 폭 제어는 th 에서 한다. 옛 colgroup 이 남아 있으면 그쪽이 이겨 버린다.
     assert "<colgroup" not in html
 

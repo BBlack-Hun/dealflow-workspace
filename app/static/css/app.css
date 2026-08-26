@@ -178,6 +178,25 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
 .chip.active { background: #e6efff; border-color: var(--brand); color: var(--brand); }
 .chip b { font-variant-numeric: tabular-nums; }
 
+/* 미팅 후기 · 결과 문의 기록.
+   결과 한 칸(진행/보류/거절)만으로는 왜 그런지가 남지 않는다 — 다음 회차에
+   이 투자사를 어떻게 대할지는 거기서 나온다. */
+.followup-form { display: flex; flex-wrap: wrap; align-items: center; gap: 4px;
+  margin-top: 4px; }
+.followup-form select, .followup-form input {
+  font: inherit; font-size: 12px; padding: 3px 6px;
+  border: 1px solid var(--line); border-radius: 6px; }
+.followup-form input { flex: 1; min-width: 110px; }
+/* 미팅 후기 표는 다른 표보다 낮다 — 화면 절반을 먹을 이유가 없다. */
+#review-table { min-width: 1010px; }
+.panel #review-table { }
+.table-wrap.wide:has(#review-table) { max-height: 460px; min-height: 0; }
+.followup-log { margin-top: 4px; font-size: 11.5px; color: var(--ink);
+  background: #f7f8fa; border-radius: 6px; padding: 4px 6px; }
+/* 빈 칸은 눌러야 할 자리인지 알 수 없다 */
+.cell[data-placeholder]:empty::before {
+  content: attr(data-placeholder); color: var(--muted); font-size: 11.5px; }
+
 /* 참고 자료 고치기 — 보기만 되던 자료를 화면에서 다듬는다 */
 .ref-cell { cursor: text; }
 .ref-cell:hover { background: #f4f7ff; }
@@ -221,7 +240,17 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
 /* 칸이 많은 표(스타트업DB 19칸)는 가로로 민다. width:100% + table-layout:fixed
    에서는 폭 합이 화면을 넘으면 **폭을 안 준 칸부터 0 으로 짜부라진다** —
    실제로 사업분야 칸이 사라졌다. 짜부라뜨리느니 미는 편이 낫다. */
-.table-wrap.wide { overflow-x: auto; }
+/* 넓은 표는 **화면 높이에 맞춰 자른다.**
+   그냥 두면 표가 페이지만큼 길어져서 가로 스크롤바가 문서 맨 아래로 밀린다 —
+   가로로 밀려면 끝까지 내려갔다가 다시 올라와야 했다. 높이를 잘라 두면
+   스크롤바가 표 바로 아래에 붙어 한 화면에서 같이 보인다.
+
+   `--head` 는 위쪽 고정 영역(머리말·툴바) 몫. 화면이 작을수록 표에 남는
+   자리가 줄지만, 최소 높이는 지켜 준다. */
+.table-wrap.wide { --head: 320px;
+  overflow: auto; max-height: calc(100vh - var(--head)); min-height: 320px; }
+/* 세로로 밀 때 컬럼 이름이 사라지면 어느 칸을 보고 있는지 알 수 없다. */
+.table-wrap.wide thead th { position: sticky; top: 0; z-index: 2; }
 /* 컬럼 폭 합(1,922px)보다 넉넉하게. 모자라면 다시 짜부라진다. */
 .table-wrap.wide .grid-table { min-width: 2030px; }
 /* 투자사 관리 현황은 시트 컬럼 18개를 그대로 세운다 — 더 넓다.
@@ -996,6 +1025,9 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
   .grid-table { min-width: 760px; }
   /* 스타트업DB 처럼 아주 넓은 표도 같은 규칙 — 폰이라고 더 좁히지 않는다 */
   .table-wrap.wide .grid-table { min-width: 2030px; }
+  /* 폰은 위쪽 고정 영역이 얕다. 데스크톱 값(320px)을 그대로 쓰면 표에 남는
+     자리가 거의 없어진다. */
+  .table-wrap.wide { --head: 210px; }
 
   /* 가로로 늘어선 줄은 밀어서 본다. 접으면 눌러야 보인다. */
   .sheet-tabs, .jump-bar, .funnel, .mode-tabs, .quick-chips, .chip-row,

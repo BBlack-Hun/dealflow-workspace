@@ -447,11 +447,15 @@
       <span class="hint">끝난 미팅 {{ finished|length }}건 · 열흘쯤 뒤 결과를 묻습니다</span>
     </h2>
     {% if finished %}
-    <table class="grid-table compact">
+    {# 결과가 한 칸(진행/보류/거절)뿐이면 **왜** 그런지가 남지 않는다 —
+       다음 회차에 이 투자사를 어떻게 대할지는 거기서 나온다. #}
+    <div class="table-wrap wide">
+    <table class="grid-table compact" id="review-table" data-inline-url="/api/meetings">
       <thead><tr>
-        <th style="width:96px">날짜</th><th>담당자</th>
-        <th style="width:80px">구분</th><th style="width:84px">결과</th>
-        <th style="width:110px">결과 문의</th><th style="width:96px"></th>
+        <th style="width:88px">날짜</th><th style="width:150px">담당자</th>
+        <th style="width:60px">구분</th><th style="width:72px">결과</th>
+        <th style="width:250px">미팅 후기</th>
+        <th style="width:300px">결과 문의</th><th style="width:96px"></th>
       </tr></thead>
       <tbody>
         {% for m in finished[:20] %}
@@ -460,6 +464,12 @@
           <td>{{ m.name }} <span class="muted">{{ m.firm }}</span></td>
           <td class="muted">{{ m.kind_label }}</td>
           <td>{{ m.outcome_label or '-' }}</td>
+          {# 미팅 자리에서 들은 것. 열흘 뒤 통화와 다른 시점의 이야기라 칸을
+             나눠 둔다 — 한 칸에 섞으면 언제 들은 말인지 알 수 없다. #}
+          <td title="{{ m.note or '' }}">
+            <div class="cell clamp2" data-field="note" data-type="long"
+                 data-placeholder="눌러서 후기 적기">{{ m.note or '' }}</div>
+          </td>
           <td class="muted">
             {% if m.status == 'canceled' %}취소
             {% elif m.followup_done %}<span class="ok">완료</span>
@@ -471,16 +481,27 @@
               물어보고 나면 여기서 바로 기록한다. 예전엔 **날짜가 지난 건**에만
               버튼이 떠서, 미리 물어봤으면 적을 곳이 없었다.
             #}
-            {% if m.needs_followup %}
-            <form method="post" action="/ir/meetings/{{ m.id }}/followup" class="inline-form">
+            {# 이미 물어본 것도 다시 열 수 있어야 한다 — 두 번째 통화에서
+               말이 바뀌는 일이 흔한데, '완료' 로 닫혀 있으면 적을 곳이 없다. #}
+            {% if m.needs_followup or m.followup_done %}
+            <form method="post" action="/ir/meetings/{{ m.id }}/followup" class="followup-form">
               <select name="outcome">
                 <option value="">결과 그대로</option>
                 {% for key, label in outcomes.items() %}
                 <option value="{{ key }}" {% if m.outcome == key %}selected{% endif %}>{{ label }}</option>
                 {% endfor %}
               </select>
-              <button class="linkbtn" type="submit">물어봤음</button>
+              <input type="text" name="note" placeholder="들은 내용"
+                     maxlength="500" autocomplete="off">
+              <button class="linkbtn" type="submit">
+                {% if m.followup_done %}다시 기록{% else %}물어봤음{% endif %}
+              </button>
             </form>
+            {% endif %}
+            {% if m.followup_note %}
+            {# 들은 말이 안 보이면 물어본 기록만 남고 내용은 사라진다. #}
+            <div class="cell clamp2 followup-log" data-field="followup_note"
+                 data-type="long" title="{{ m.followup_note }}">{{ m.followup_note }}</div>
             {% endif %}
           </td>
           <td>
@@ -504,12 +525,14 @@
         {% endfor %}
       </tbody>
     </table>
+    </div>
     {% else %}<p class="muted">아직 없습니다.</p>{% endif %}
   </section>
 </div>
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ asset('js/inline_edit.js') }}"></script>
 <script src="{{ asset('js/ir_numbers.js') }}"></script>
 <script>
   // 후속 화면에서 이름을 눌러 넘어왔으면 폼이 이미 열려 있다 — 눈에 들어오게만

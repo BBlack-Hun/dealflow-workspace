@@ -633,6 +633,14 @@ class Meeting(TimestampMixin, Base):
     # 미팅 뒤 결과를 물어볼 날. 완료 처리하면 자동으로 잡힌다.
     followup_due: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     followup_done: Mapped[int] = mapped_column(Integer, default=0)
+    # 결과는 `outcome` 한 칸(진행/보류/거절)뿐이라 **왜 그런지**가 남지 않는다.
+    # 다음 회차에 이 투자사를 어떻게 대할지는 거기서 나온다.
+    #
+    # 둘을 나눈다 — 미팅 자리에서 들은 것과 열흘 뒤 전화로 들은 것은 다른
+    # 시점의 이야기라, 한 칸에 섞으면 언제 들은 말인지 알 수 없다.
+    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    followup_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    followup_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
 
