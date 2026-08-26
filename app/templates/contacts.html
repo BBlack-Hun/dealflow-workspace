@@ -350,9 +350,30 @@
 
   <div class="detail-body" data-panel="info">
     <div class="form-grid">
+      {#
+        ── 칸 이름은 **표 머리글과 한 글자도 다르지 않게** 쓴다 ──
+
+        표는 원본 시트의 컬럼 이름을 그대로 옮겨 놓았는데, 이 패널만 줄여 부르고
+        있었다. 같은 칸인지 알아보려면 그때마다 멈춰서 맞춰 봐야 했다:
+
+            표 `선호 투자분야`      ↔  수정 `섹터 태그 (쉼표)`
+            표 `회사`               ↔  수정 `투자사`
+            표 `전자 메일 주소`     ↔  수정 `이메일`
+
+        고칠 때는 **표 쪽이 정답**이다 — 표 이름은 시트에서 그대로 온 것이라
+        여기 맞춰 바꾸면 시트와 대조가 안 된다.
+
+        `(쉼표)` 같은 **입력 형식 안내는 이름이 아니다.** 이름 뒤에 붙여 두면
+        표와 글자가 달라져 위 문제가 그대로 돌아온다. 그래서 안내는 전부
+        `placeholder` 로 옮겼다 — 빈 칸일 때 바로 그 자리에 보이므로 안내가
+        필요한 순간에 오히려 더 잘 읽힌다.
+        (tests/test_ui_layout.py 가 이 짝을 지킨다)
+
+        표에 없는 칸(담당자·상태·카톡방 이름 등)은 맞출 상대가 없으므로 그대로 둔다.
+      #}
       <label class="field"><span>이름</span><input type="text" id="f-name"></label>
       <label class="field"><span>직함</span><input type="text" id="f-title" placeholder="대표님 / 심사역"></label>
-      <label class="field"><span>투자사</span><input type="text" id="f-firm"></label>
+      <label class="field"><span>회사</span><input type="text" id="f-firm"></label>
       <label class="field"><span>그룹</span><input type="text" id="f-group_name"></label>
       <label class="field wide"><span>카톡방 이름 <b class="warn-text">정확히 일치해야 발송됩니다</b></span>
         <input type="text" id="f-kakao_room_name"></label>
@@ -364,10 +385,14 @@
           <option value="paused">검토중단</option>
         </select>
       </label>
-      <label class="field"><span>단계 태그 (쉼표)</span><input type="text" id="f-stages" placeholder="Seed,SeriesA"></label>
-      <label class="field"><span>섹터 태그 (쉼표)</span><input type="text" id="f-sectors" placeholder="AI,헬스케어"></label>
-      <label class="field wide"><span>투자분야 / 라운드 사이즈</span><input type="text" id="f-round_size"></label>
-      <label class="field"><span>이메일</span><input type="text" id="f-email"></label>
+      {# `단계 태그` 는 표에 칸이 없다 — 맞출 상대가 없어 이름을 그대로 둔다.
+         다만 안내 자리는 아래 칸들과 통일한다. #}
+      <label class="field"><span>단계 태그</span>
+        <input type="text" id="f-stages" placeholder="Seed, SeriesA — 쉼표로 구분"></label>
+      <label class="field"><span>선호 투자분야</span>
+        <input type="text" id="f-sectors" placeholder="AI, 헬스케어 — 쉼표로 구분"></label>
+      <label class="field wide"><span>라운드 사이즈(투자운영금액)</span><input type="text" id="f-round_size"></label>
+      <label class="field"><span>전자 메일 주소</span><input type="text" id="f-email"></label>
       <label class="field"><span>휴대폰</span><input type="text" id="f-phone"></label>
       {#
         시트에 있는데 표에는 안 넣은 값들. 표에 다 넣으면 20칸이 되어 정작
@@ -377,9 +402,9 @@
       <label class="field"><span>부서</span><input type="text" id="f-department"></label>
       <label class="field"><span>근무처 전화</span><input type="text" id="f-office_phone"></label>
       <label class="field"><span>근무처 팩스</span><input type="text" id="f-office_fax"></label>
-      <label class="field wide"><span>근무지 주소</span><input type="text" id="f-address"></label>
+      <label class="field wide"><span>근무지 주소 번지</span><input type="text" id="f-address"></label>
       <label class="field"><span>명함 등록일</span><input type="text" id="f-card_registered_at"></label>
-      <label class="field"><span>관심도</span><input type="text" id="f-interest_level"></label>
+      <label class="field"><span>관심도 (월말기준)</span><input type="text" id="f-interest_level"></label>
       <label class="field checks">
         <span>채널</span>
         <span class="check-row">
@@ -387,7 +412,11 @@
           <label><input type="checkbox" id="f-channel_email"> 메일</label>
         </span>
       </label>
-      <label class="field wide"><span>메모</span><textarea id="f-memo" rows="3"></textarea></label>
+      {# 이름이 길지만 표 머리글을 그대로 쓴다 — 이 칸에 무엇을 적는 것인지가
+         이름 안에 들어 있어서, 줄여 `메모` 라고만 두면 아래 `투자 현황` 류의
+         다른 메모와 구별되지 않는다. #}
+      <label class="field wide"><span>메모 ( 통화내용 /  카톡내용  /  카톡답신내용)</span>
+        <textarea id="f-memo" rows="3"></textarea></label>
     </div>
     <div class="detail-actions">
       <button type="button" class="primary-btn inline" id="save-btn">저장</button>

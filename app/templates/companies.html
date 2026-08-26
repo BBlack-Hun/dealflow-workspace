@@ -82,7 +82,10 @@
         <th style="width:104px">연락처</th>
         <th style="width:170px">이메일</th>
         {# 카테고리가 아니라 **사업 설명**이다. 한줄 소개의 첫 토막이 된다. #}
-        <th style="width:300px">사업분야<span class="th-note">사업 설명 · 한줄 소개의 앞부분</span></th>
+        {# 안내를 머리글 아래 줄로 두면 이름이 두 줄로 보인다. 이름은 한 줄이어야
+           하니 안내는 `title` 로 옮긴다 — 지우면 이 칸이 카테고리가 아니라
+           사업 설명이라는 것을 알 길이 없다. #}
+        <th style="width:300px" title="사업 설명 · 한줄 소개의 앞부분">사업분야</th>
         <th class="num" style="width:74px">22년 매출</th>
         <th class="num" style="width:74px">23년 매출</th>
         <th class="num" style="width:74px">24년 매출</th>
@@ -148,14 +151,18 @@
 {% else %}
   {# ── IR 기업현황(진행관리) ── 시트 컬럼 그대로 #}
   <table class="grid-table" data-inline-url="/api/companies" id="co-table">
-    <thead
+    {# `<thead` 로 `>` 가 빠져 있었다. 브라우저가 알아서 고쳐 주어(`<tr>` 을
+       속성으로 삼키고 행을 다시 만든다) 화면은 멀쩡해 보였지만, 머리글을
+       `<thead>` 로 찾는 검사들(tests/test_ui_layout.py)이 **이 표만 통째로
+       건너뛰고 있었다** — 정렬·줄바꿈·칸 수가 한 번도 검사되지 않은 표였다. #}
+    <thead>
       <tr>
         <th class="num" style="width:36px">#</th>
         <th style="width:13%">기업명</th>
         <th style="width:10%" data-filters="sector:사업분야 대분류">사업분야 대분류<div class="th-filters"></div></th>
         <th style="width:9%" data-filters="minor:소분류">소분류<div class="th-filters"></div></th>
         <th style="width:9%" data-filters="series:기업구분">기업구분<div class="th-filters"></div></th>
-        <th>한줄 소개<span class="th-note">두 줄까지 보입니다 · 눌러서 수정</span></th>
+        <th title="두 줄까지 보입니다 · 눌러서 수정">한줄 소개</th>
         <th style="width:74px" data-filters="assignee:담당자">담당자<div class="th-filters"></div></th>
         <th style="width:72px" data-filters="contract:계약여부">계약여부<div class="th-filters"></div></th>
         <th style="width:88px" title="계약기업 · 거부메일 홍보메일 삭제">날짜 기입</th>
@@ -164,7 +171,7 @@
         <th style="width:82px" data-filters="ir:IR 자료">IR 자료<div class="th-filters"></div></th>
         <th style="width:52px"></th>
       </tr>
-     </thead>
+    </thead>
     <tbody>
       {% for r in rows %}
       <tr data-id="{{ r.id }}" data-search="{{ r.search }}"
@@ -241,27 +248,41 @@
   <div class="detail-body">
   <p class="hint" id="co-status"></p>
 
+  {#
+    ── 칸 이름은 **표 머리글과 한 글자도 다르지 않게** ──
+
+    이 패널 하나가 두 탭(IR 기업현황 · 스타트업DB)을 함께 고친다. 그런데 이름을
+    저마다 줄여 부르고 있어서, 표에서 `사업분야 대분류` 를 보고 [수정]을 열면
+    `분야 (대)` 가 나왔다 — 같은 칸인지 아닌지가 이름으로는 판별이 안 됐다.
+
+    맞출 때는 **표 쪽이 정답**이다. 표 이름은 원본 시트에서 그대로 온 것이라
+    여기에 맞춰 표를 바꾸면 시트와 대조가 안 된다.
+    (tests/test_ui_layout.py 가 이 짝을 지킨다)
+
+    표에 칸이 없는 값(투자 현황·소개 상태·IR 링크·메모)은 맞출 상대가 없어
+    그대로 둔다.
+  #}
   <h3 class="form-section">기본</h3>
   <div class="form-grid">
     <label class="field"><span>기업명</span><input type="text" id="f-name"></label>
-    <label class="field"><span>분야 (대)</span><input type="text" id="f-sector_major" placeholder="예: 헬스케어"></label>
-    <label class="field"><span>분야 (소)</span><input type="text" id="f-sector_minor" placeholder="예: 의료AI"></label>
-    <label class="field"><span>단계</span><input type="text" id="f-series" placeholder="예: Seed / SeriesA"></label>
-    <label class="field wide"><span>한줄소개</span>
+    <label class="field"><span>사업분야 대분류</span><input type="text" id="f-sector_major" placeholder="예: 헬스케어"></label>
+    <label class="field"><span>소분류</span><input type="text" id="f-sector_minor" placeholder="예: 의료AI"></label>
+    <label class="field"><span>기업구분</span><input type="text" id="f-series" placeholder="예: Seed / SeriesA"></label>
+    <label class="field wide"><span>한줄 소개</span>
       <textarea id="f-one_liner" rows="2" placeholder="딜소개 문구에 그대로 들어갑니다"></textarea></label>
   </div>
 
   <h3 class="form-section">숫자 <span class="hint">단위: 억 (예 18.3)</span></h3>
   <div class="form-grid">
-    <label class="field"><span>최근 매출</span><input type="number" step="0.1" id="f-revenue_recent" placeholder="0"></label>
-    <label class="field"><span>누적 투자</span><input type="number" step="0.1" id="f-funding_total" placeholder="0"></label>
-    <label class="field"><span>희망 투자</span><input type="number" step="0.1" id="f-raise_target" placeholder="0"></label>
+    <label class="field"><span>최근 매출액</span><input type="number" step="0.1" id="f-revenue_recent" placeholder="0"></label>
+    <label class="field"><span>누적투자금액</span><input type="number" step="0.1" id="f-funding_total" placeholder="0"></label>
+    <label class="field"><span>투자유치희망금액</span><input type="number" step="0.1" id="f-raise_target" placeholder="0"></label>
     <label class="field"><span>Pre Value</span><input type="number" step="0.1" id="f-pre_value" placeholder="0"></label>
   </div>
 
   <h3 class="form-section">소개 내용</h3>
   <div class="form-grid">
-    <label class="field wide"><span>경쟁력</span><textarea id="f-competitiveness" rows="2"></textarea></label>
+    <label class="field wide"><span>특이사항 (장점)</span><textarea id="f-competitiveness" rows="2"></textarea></label>
     <label class="field wide"><span>투자 현황</span>
       <input type="text" id="f-funding_status" placeholder="예: Series A 진행 중"></label>
     <label class="field wide"><span>IR 자료 링크 (구글드라이브)</span>
@@ -275,7 +296,7 @@
       <select id="f-summary_status">
         {% for key, label in summary_labels.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
       </select></label>
-    <label class="field"><span>계약</span>
+    <label class="field"><span>계약여부</span>
       <select id="f-contract_status">
         <option value="none">미계약</option>
         <option value="free">무료계약완료</option>
@@ -283,7 +304,10 @@
         <option value="review">계약검토중</option>
         <option value="blocked">딜소개 불가</option>
       </select></label>
-    <label class="field"><span>계약 월</span><input type="text" id="f-contract_month" placeholder="2026-09"></label>
+    {# 표 머리글이 `날짜 기입` 이라 이름은 그대로 따르고, 무슨 날짜인지는 표와
+       똑같이 `title` 로 붙여 둔다 — 이름을 풀어 쓰면 다시 표와 달라진다. #}
+    <label class="field" title="계약기업 · 거부메일 홍보메일 삭제">
+      <span>날짜 기입</span><input type="text" id="f-contract_month" placeholder="2026-09"></label>
     <label class="field check-row"><input type="checkbox" id="f-is_top_deal"> <span>추천 딜 (★)</span></label>
     <label class="field wide"><span>메모</span><textarea id="f-note" rows="2"></textarea></label>
   </div>
