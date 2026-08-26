@@ -91,7 +91,7 @@
         <th style="width:260px">특이사항 (장점)</th>
         <th class="num" style="width:74px">최근 매출액</th>
         <th style="width:62px">설립년도</th>
-        <th style="width:88px">기보, 신보, 중진공</th>
+        <th style="width:130px">기보, 신보, 중진공</th>
         {# IR 자료는 어느 탭에서 보든 맨 끝에 그대로 둔다. #}
         <th style="width:82px" data-filters="ir:IR 자료">IR 자료<div class="th-filters"></div></th>
         <th style="width:52px"></th>
@@ -126,7 +126,9 @@
         </td>
         <td class="cell num" data-field="revenue_recent" data-type="number" data-unit="eok">{{ eok(r.revenue_recent) }}</td>
         <td class="cell" data-field="founded_year">{{ r.founded_year }}</td>
-        <td class="cell" data-field="guarantee">{{ r.guarantee }}</td>
+        <td title="{{ r.guarantee }}">
+          <div class="cell clamp2" data-field="guarantee" data-type="long">{{ r.guarantee }}</div>
+        </td>
         <td>
           {% if r.has_ir %}
             <a class="room-badge ok" href="{{ r.ir_drive_url }}" target="_blank" rel="noopener">📎 열기</a>

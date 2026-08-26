@@ -173,12 +173,19 @@ def test_no_header_wraps_past_two_lines():
     assert not problems, "머리글이 세 줄 넘게 접힙니다: " + ", ".join(problems)
 
 
-def test_header_cells_share_one_height():
-    """한 줄짜리 이름이 두 줄짜리 옆에서 아래로 처지면 안 된다."""
+def test_header_cells_start_at_the_same_line():
+    """짧은 이름이 긴 이름 옆에서 아래로 처지면 줄이 들쭉날쭉해 보인다.
+
+    높이는 **고정하지 않는다.** 두 줄로 묶었더니 한 줄짜리 머리글이 대부분인
+    표에서 칸마다 25px 씩 비었고, 세 줄이 필요한 이름은 말없이 잘렸다.
+    줄 수는 폭으로 잡고(위 검사), 여기서는 시작점만 맞춘다.
+    """
     css = CSS.read_text(encoding="utf-8")
     rule = re.search(r"\.grid-table th \{([^}]*)\}", css)
     assert rule, ".grid-table th 규칙이 없습니다"
     body = rule.group(1)
     assert "vertical-align: top" in body, "위 기준으로 맞춰야 이름이 같은 줄에서 시작한다"
-    assert re.search(r"height:\s*\d+px", body), "높이를 정해야 머리글 줄이 고르다"
+    assert not re.search(r"height:\s*\d+px", body), (
+        "머리글 높이를 고정하면 짧은 머리글 칸이 비고 긴 이름은 잘린다")
+    assert "overflow: hidden" not in body, "잘린 이름은 사람이 알 수가 없다"
 

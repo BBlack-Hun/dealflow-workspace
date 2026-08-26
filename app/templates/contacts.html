@@ -193,32 +193,34 @@
         {# ── 여기부터는 원본 시트의 컬럼이다. 이름·순서를 그대로 쓴다 ──
            시트와 나란히 놓고 대조하는 일이 잦은데, 이름이 다르면 그때마다
            "이게 그 칸인가" 를 한 번씩 멈춰서 확인해야 한다. #}
-        <th class="num" style="width:30px" title="누르면 활동 이력이 열립니다">NO</th>
-        <th style="width:100px">이름</th>
-        <th style="width:96px" data-filters="interest:관심도 (월말기준)">관심도 (월말기준)<div class="th-filters"></div></th>
-        <th style="width:88px" data-filters="joined:카톡방 참여여부">카톡방 참여여부<div class="th-filters"></div></th>
-        <th style="width:190px"
+        <th class="num" style="width:34px" title="누르면 활동 이력이 열립니다">NO</th>
+        <th style="width:96px">이름</th>
+        <th style="width:78px" data-filters="interest:관심도 (월말기준)">관심도 (월말기준)<div class="th-filters"></div></th>
+        <th style="width:76px" data-filters="joined:카톡방 참여여부">카톡방 참여여부<div class="th-filters"></div></th>
+        <th style="width:220px"
             title="메모 ( 통화내용 /  카톡내용  /  카톡답신내용)">메모 ( 통화내용 /  카톡내용  /  카톡답신내용)</th>
-        <th style="width:130px">딜소싱 참여 투자사</th>
-        <th style="width:150px" data-filters="sector:선호 투자분야">선호 투자분야<div class="th-filters"></div></th>
-        <th style="width:130px" data-filters="stage:라운드 사이즈(투자운영금액)">라운드 사이즈(투자운영금액)<div class="th-filters"></div></th>
+        <th style="width:180px">딜소싱 참여 투자사</th>
+        <th style="width:110px" data-filters="sector:선호 투자분야">선호 투자분야<div class="th-filters"></div></th>
+        <th style="width:150px" data-filters="stage:라운드 사이즈(투자운영금액)">라운드 사이즈(투자운영금액)<div class="th-filters"></div></th>
         {# 원본 시트의 이름이 길다. 두 줄에 들어가게 넓히고, 잘리는 경우를
            대비해 전문을 title 로 남긴다. #}
-        <th style="width:240px"
-            title="TIPS 운영사 투자금 1-10억 스타트업매출액 3-20억 기업에 주로 투자">TIPS 운영사 투자금 1-10억 스타트업매출액 3-20억 기업에 주로 투자</th>
-        <th style="width:112px">휴대폰</th>
-        <th style="width:170px" data-filters="owner:회사">회사<div class="th-filters"></div></th>
-        <th style="width:96px">부서</th>
-        <th style="width:76px">직함</th>
+        {# 값이 347줄 중 3줄뿐인데 이름이 마흔 글자다. 이름 길이로 폭을 잡으면
+           99% 비어 있는 칸이 표의 9% 를 먹는다 — 앞머리만 보이고 전문은 title. #}
+        <th style="width:84px"
+            title="TIPS 운영사 투자금 1-10억 스타트업매출액 3-20억 기업에 주로 투자">TIPS 운영사</th>
+        <th style="width:104px">휴대폰</th>
+        <th style="width:150px" data-filters="owner:회사">회사<div class="th-filters"></div></th>
+        <th style="width:130px">부서</th>
+        <th style="width:82px">직함</th>
         <th style="width:170px">전자 메일 주소</th>
-        <th style="width:112px">근무처 전화</th>
-        <th style="width:112px">근무처 팩스</th>
-        <th style="width:180px">근무지 주소 번지</th>
-        <th style="width:88px">명함 등록일</th>
+        <th style="width:96px">근무처 전화</th>
+        <th style="width:96px">근무처 팩스</th>
+        <th style="width:190px">근무지 주소 번지</th>
+        <th style="width:92px">명함 등록일</th>
         {# ── 여기부터는 앱이 만든 칸. 시트에는 없다 ── #}
-        <th style="width:76px" data-filters="group:그룹">그룹<div class="th-filters"></div></th>
-        <th style="width:88px" data-filters="dealstage:진행 단계">진행 단계<div class="th-filters"></div></th>
-        <th style="width:74px" data-filters="channel:채널">채널<div class="th-filters"></div></th>
+        <th style="width:70px" data-filters="group:그룹">그룹<div class="th-filters"></div></th>
+        <th style="width:84px" data-filters="dealstage:진행 단계">진행 단계<div class="th-filters"></div></th>
+        <th style="width:62px" data-filters="channel:채널">채널<div class="th-filters"></div></th>
         <th style="width:44px"></th>
       </tr>
     </thead>
