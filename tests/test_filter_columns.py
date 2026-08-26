@@ -16,6 +16,14 @@
   2. 싣기만 하고 선언이 없다      → 아무도 안 보는 죽은 속성
   3. 선언이 옆 칸의 값을 가리킨다 → 라벨과 다른 것으로 걸러진다 (이번 버그)
   4. 칸이 자기 필터 키를 모른다   → 고쳐 저장해도 필터는 옛 목록 그대로
+
+그리고 **칸을 고쳤을 때 그 값이 필터에 나오는가** — 저장 → 행에 적기 →
+다시 읽기 → 목록에 등장. 이쪽은 화면 이름을 손으로 적어 두지 않고,
+`data-inline-url` 이 붙은 표를 훑어 건다(아래 7). 화면이 하나 늘 때마다
+목록에 넣어야 한다면, 넣는 것을 잊는 순간 새 화면만 아무 검사도 없이
+지나가기 때문이다 — 필터가 조용히 거짓말하는 부류라 아무도 눈치채지 못한다.
+  5. 필터를 세우고 열지 않았다    → 단추도 없고 다시 읽지도 않는다
+  6. 여러 값 칸이 구분자를 모른다 → 고친 줄만 값 하나로 뭉쳐 떨어져 나간다
 """
 from __future__ import annotations
 
@@ -55,7 +63,12 @@ class _TableReader(HTMLParser):
         a = dict(attrs)
         if tag == "table":
             self._table = {"name": a.get("id") or a.get("class") or "이름 없는 표",
-                           "cols": [], "row": set(), "cells": []}
+                           # 표의 id 는 화면이 `DealflowFilters.init` 에 넘기는
+                           # 선택자다 — 필터를 실제로 열어 두었는지 대조한다.
+                           "id": a.get("id", ""),
+                           "url": a.get("data-inline-url", ""),
+                           "cols": [], "row": set(), "values": {},
+                           "cells": [], "seps": {}}
             self.tables.append(self._table)
             self._section = ""
             self._head_done = self._in_row = self._row_done = False
@@ -70,20 +83,31 @@ class _TableReader(HTMLParser):
             if self._section == "thead":
                 if self._table["cols"]:
                     self._head_done = True      # 머리글이 두 줄이면 첫 줄만 본다
-            elif self._section == "tbody" and not self._row_done:
-                keys = {k[len("data-f-"):] for k in a if k.startswith("data-f-")}
-                if keys:                        # 값이 없는 안내 행은 건너뛴다
-                    self._table["row"] = keys
-                    self._table["cells"] = []
-                    self._in_row = True
+            elif self._section == "tbody":
+                # **값까지** 들고 있어야 한다. 한 칸에 값이 여럿인지(`AI|헬스케어`)는
+                # 키 이름이 아니라 서버가 적어 놓은 값에서만 드러난다.
+                #
+                # 값은 **모든 행**에서 모은다. 짝(칸↔키)은 한 행만 봐도 다
+                # 드러나지만, 여러 값이 든 줄은 표의 몇 번째에 있을지 모른다 —
+                # 첫 줄만 보면 그 줄이 마침 비어 있을 때 검사가 조용히 0건이 된다.
+                values = {k[len("data-f-"):]: v for k, v in a.items()
+                          if k.startswith("data-f-")}
+                if values:                      # 값이 없는 안내 행은 건너뛴다
+                    self._table["row"] |= set(values)
+                    for key, value in values.items():
+                        self._table["values"].setdefault(key, []).append(value)
+                    if not self._row_done:
+                        self._table["cells"] = []
+                        self._in_row = True
         elif self._in_row:
             if tag == "td":
                 self._table["cells"].append(None)
             # 고칠 수 있는 칸은 td 자신일 수도, 그 안의 div 일 수도 있다.
             if "data-field" in a and self._table["cells"] \
                     and self._table["cells"][-1] is None:
-                self._table["cells"][-1] = (a.get("data-filter-key")
-                                            or a["data-field"])
+                key = a.get("data-filter-key") or a["data-field"]
+                self._table["cells"][-1] = key
+                self._table["seps"][key] = a.get("data-filter-sep")
 
     def handle_endtag(self, tag: str) -> None:
         if tag == "tr" and self._in_row:
@@ -114,29 +138,68 @@ def _filter_tables(html: str) -> list[dict]:
             if any(t["cols"]) or t["row"]]
 
 
+def _inline_tables(html: str) -> list[dict]:
+    """칸을 눌러 고칠 수 있는 표 전부 — 필터가 아직 없어도 본다.
+
+    필터가 붙은 표만 훑으면, 나중에 어느 화면에 필터를 하나 다는 순간 그
+    화면은 아무 검사도 없이 들어온다. **고칠 수 있는 표를 먼저 다 세워 두고**
+    그중 필터가 있는 것만 골라 보는 편이, 새 화면이 저절로 걸린다.
+    """
+    reader = _TableReader()
+    reader.feed(html)
+    return [t for t in reader.tables if t["url"]]
+
+
 @pytest.fixture()
 def screens(client, db, users):
-    """필터가 붙은 네 화면을 **실제로 그려서** 돌려준다.
+    """`data-inline-url` 이 붙은 표가 있는 화면을 **실제로 그려서** 돌려준다.
+
+    필터가 없는 화면(주간 업무 · 미팅 후기)도 함께 그린다 — 지금은 걸 것이
+    없어도, 필터가 하나 붙는 순간 아래 스윕이 그 화면을 같이 훑게 된다.
 
     이름·번호는 모두 가상이다 — 저장소가 공개다.
     """
-    from app.models import IrCompany, SourcingContact, VcContact
+    from datetime import date, timedelta
+
+    from app.models import (IrCompany, Meeting, SourcingContact, VcContact,
+                            WeeklyRoutine, WeeklyTask)
+    from app.services import weekly
 
     u1 = users["u1"]
+    contact = VcContact(
+        user_id=u1.id, name="홍길동", title="심사역", firm="가나벤처스",
+        group_name="1군", round_size="10~30억", sectors="AI,헬스케어",
+        interest_level="높음", kakao_joined="O", channel_kakao=1,
+        connect_stage="in_progress", source_sheet="투자사 30",
+        department="투자1본부", phone="01000000009")
     db.add_all([
-        VcContact(user_id=u1.id, name="홍길동", title="심사역", firm="가나벤처스",
-                  group_name="1군", round_size="10~30억", sectors="AI,헬스케어",
-                  interest_level="높음", kakao_joined="O", channel_kakao=1,
-                  connect_stage="in_progress", source_sheet="투자사 30",
-                  department="투자1본부", phone="01000000009"),
+        contact,
         VcContact(user_id=u1.id, name="김철수", title="팀장", firm="다라인베스트",
                   connect_stage="not_started", source_sheet="투자사 30"),
         IrCompany(name="샘플애그", sector_major="애그테크", sector_minor="스마트팜",
                   series="Seed", contract_status="free", is_top_deal=1,
                   one_liner="스마트팜 관제", ir_drive_url="https://example.com/ir"),
+        # 딜 소싱의 선호 분야는 태그가 아니라 **들은 말 그대로**다. 쉼표가
+        # 괄호 안에 섞여 있어서 쉼표로 나누면 없는 값 두 개가 생긴다 —
+        # 그래서 이 칸에는 구분자를 주지 않는다. 아래 검사가 그 규칙을
+        # 헷갈려 걸지 않는지도 이 값으로 함께 본다.
         SourcingContact(bucket="시리즈 A 이상", position=0, name="박영희",
                         title="심사역", firm="마바캐피탈", assignee_name="강민준",
-                        sectors="AI", round_size="10~30억"),
+                        sectors="소비재 유통(직영,가맹점) 인수 검토",
+                        round_size="10~30억"),
+    ])
+    db.flush()
+    week = weekly.week_start(date.today())
+    db.add_all([
+        # 미팅 후기 표는 **끝난 미팅**이 있어야 그려진다.
+        Meeting(user_id=u1.id, contact_id=contact.id, company_name="샘플애그",
+                scheduled_at=(date.today() - timedelta(days=7)).isoformat(),
+                kind="first", status="done", outcome="review",
+                note="1차 미팅 메모"),
+        WeeklyTask(user_id=u1.id, week_start=week.isoformat(), category="메일",
+                   title="홍보 메일 발송", due_date=date.today().isoformat()),
+        WeeklyRoutine(user_id=u1.id, category="메일", title="주간 리마인드",
+                      weekdays="0,2"),
     ])
     db.commit()
     client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
@@ -145,12 +208,20 @@ def screens(client, db, users):
         "IR 기업현황": client.get("/companies").text,
         "스타트업DB": client.get("/companies?tab=db").text,
         "딜 소싱": client.get("/sourcing").text,
+        "딜 진행 관리(미팅 후기)": client.get("/ir").text,
+        "주간 업무": client.get("/todo").text,
     }
 
 
 def _each_table(screens: dict):
     for page, html in screens.items():
         for table in _filter_tables(html):
+            yield page, table
+
+
+def _each_inline_table(screens: dict):
+    for page, html in screens.items():
+        for table in _inline_tables(html):
             yield page, table
 
 
@@ -303,3 +374,136 @@ def test_저장에서_필터_목록까지_한_바퀴가_이어져_있다():
     out = subprocess.run([shutil.which("node"), str(script)],
                          capture_output=True, text=True, timeout=60)
     assert out.returncode == 0, out.stdout + out.stderr
+
+
+# ── 7. 눌러 고치는 표를 **전부** 훑는다 ─────────────────────────────────────
+#
+# 위 1~5 는 화면 이름을 손으로 적어 둔 목록을 본다. 화면이 하나 늘면 그 목록에
+# 넣는 것을 잊는 순간 새 화면만 아무 검사도 없이 지나간다 — 필터가 조용히
+# 거짓말하는 부류라서, 빠졌다는 사실 자체를 아무도 눈치채지 못한다.
+# 그래서 `data-inline-url` 이 붙은 표를 훑어 조건을 건다.
+
+# `DealflowFilters.init({ table: "#어떤표" })` — 표를 실제로 필터에 열어 두었나.
+# 객체 안쪽에는 함수(=중괄호)가 들어 있어 `[^}]*` 로는 못 넘어간다.
+_INIT_CALL = re.compile(r'DealflowFilters\.init\(\s*\{[\s\S]{0,400}?table:\s*"([^"]+)"')
+
+
+def _initialized_selectors() -> set:
+    """화면 코드가 필터를 열어 준 표의 선택자. 템플릿 안 스크립트도 함께 본다."""
+    found = set()
+    for path in sorted(TEMPLATES.glob("*.html")) + sorted(JS_DIR.glob("*.js")):
+        found |= set(_INIT_CALL.findall(path.read_text(encoding="utf-8")))
+    return found
+
+
+def test_눌러_고치는_표는_하나도_빠짐없이_이_스윕을_지난다(screens):
+    """새 화면이 생기면 `screens` 에 넣으라고 여기서 걸린다.
+
+    아래 검사들은 **그려 놓은 화면**만 볼 수 있다. 화면을 하나 더 만들고
+    픽스처에 넣지 않으면 검사가 조용히 0건이 되는데, 통과하는 모습은 똑같다.
+    템플릿에 적힌 `data-inline-url` 과 실제로 그려진 것을 대조해 그 틈을 막는다.
+    """
+    declared = set()
+    for path in sorted(TEMPLATES.glob("*.html")):
+        declared |= set(re.findall(r'data-inline-url="([^"]+)"',
+                                   path.read_text(encoding="utf-8")))
+    rendered = {t["url"] for _page, t in _each_inline_table(screens)}
+    missing = sorted(declared - rendered)
+    assert not missing, (
+        "눌러 고치는 표가 있는데 이 스윕이 못 보고 있습니다 — 그 화면을 "
+        f"`screens` 픽스처에 넣어 주세요(그려질 행이 있어야 합니다): {missing}")
+
+
+def test_필터를_세운_표는_고친_값을_다시_읽도록_열어_두어야_한다(screens):
+    """`DealflowFilters.init` 을 안 부르면 필터도, 다시 읽기도 없다.
+
+    `filters.js` 는 init 안에서 `inline-saved` 를 듣고 행을 다시 읽는다. 그
+    한 줄이 없으면 머리글에 `data-filters` 를 아무리 적어 두어도 단추조차 안
+    생기고, 값을 고쳐도 목록은 영영 처음 그대로다.
+
+    필터가 없는 표(주간 업무 · 미팅 후기)는 거를 것이 없으니 해당 없다 —
+    나중에 그 표에 필터를 하나 달면 그때 여기서 걸린다.
+    """
+    opened = _initialized_selectors()
+    closed = []
+    for page, table in _each_inline_table(screens):
+        if not any(table["cols"]):
+            continue                      # 필터를 안 세운 표 — 해당 없음
+        if table["id"] and "#" + table["id"] in opened:
+            continue
+        closed.append(f"{page} · <table id={table['id'] or '(없음)'}>")
+    assert not closed, (
+        "필터를 선언해 두고 DealflowFilters.init 을 부르지 않았습니다 — 단추도 "
+        "안 생기고, 칸을 고쳐도 필터는 처음 읽은 값 그대로입니다. 표에 id 를 "
+        "주고 그 선택자로 여세요.\n  " + "\n  ".join(closed))
+
+
+def test_한_칸에_값이_여럿인_칸은_필터_구분자를_알려_줘야_한다(screens):
+    """`AI, 헬스케어` 처럼 여러 값을 담는 칸은 `data-filter-sep` 이 있어야 한다.
+
+    서버는 그런 칸을 `data-f-…="AI|헬스케어"` 로 **태그 단위**로 실어 보낸다.
+    칸이 구분자를 모르면 저장할 때 보이는 그대로 `AI, 헬스케어` 를 통째로 적어
+    값 하나가 된다 — 고친 그 사람만 목록에서 따로 떨어져 나오고, `AI` 를 골라도
+    안 걸린다. 화면에는 멀쩡히 `AI, 헬스케어` 라고 적혀 있으니 눈으로는 못 찾는다.
+    """
+    flat = []
+    for page, table in _each_inline_table(screens):
+        for key in table["cells"]:
+            if key is None or table["seps"].get(key):
+                continue
+            many = next((v for v in table["values"].get(key, []) if "|" in v), None)
+            if many is None:
+                continue                  # 값이 하나인 칸 — 나눌 것이 없다
+            flat.append(f"{page} · data-f-{key} 는 여러 값(`{many}`)인데 "
+                        f"그 칸에 data-filter-sep 이 없다")
+    assert not flat, (
+        "여러 값을 담는 칸이 구분자를 모릅니다 — 고쳐 저장하면 그 줄만 값 "
+        "하나로 뭉쳐 필터에서 떨어져 나갑니다.\n  " + "\n  ".join(flat))
+
+
+def test_칸이_쓰는_구분자와_서버가_행에_적는_구분자가_같아야_한다(screens):
+    """칸이 `,` 로 나눈다면 서버도 `,` 를 남겨 두면 안 된다.
+
+    `inline_edit.js` 는 `data-filter-sep` 으로 나눈 뒤 `|` 로 이어 적는다.
+    서버가 같은 칸을 `AI, 헬스케어` 로(=구분자를 그대로 둔 채) 실어 보내면,
+    고치기 전에는 `AI, 헬스케어` 한 줄, 고친 뒤에는 `AI` · `헬스케어` 두 줄이
+    되어 **같은 뜻이 목록에 두 벌**로 갈린다. 한쪽을 고르면 다른 쪽이 사라진다.
+    """
+    crossed = []
+    for page, table in _each_inline_table(screens):
+        for key, sep in table["seps"].items():
+            if not sep:
+                continue
+            left = next((v for v in table["values"].get(key, []) if sep in v), None)
+            if left is not None:
+                crossed.append(
+                    f"{page} · 칸은 `{sep}` 로 나누는데 서버가 적은 "
+                    f"data-f-{key} 에 그 글자가 남아 있다: `{left}`")
+    assert not crossed, (
+        "칸과 서버가 다른 방식으로 값을 나눕니다 — 고친 줄과 안 고친 줄이 "
+        "필터 목록에서 갈라집니다. 템플릿에서 `|` 로 이어 적으세요.\n  "
+        + "\n  ".join(crossed))
+
+
+# ── 8. 스윕이 볼 수 없는 화면 하나 ─────────────────────────────────────────
+
+def test_투자컨설턴트_현황은_저장한_뒤_필터를_다시_건다():
+    """이 화면만 `data-inline-url` 을 안 써서 위 스윕에 안 들어온다.
+
+    투자컨설턴트 현황은 공통 편집(`inline_edit.js`)이 생기기 전부터 자기 방식으로
+    칸을 고쳐 왔고, 필터도 값 목록이 아니라 칩 네 개(관리 중 · 드랍 · 연락 기록
+    없음)다. 그래서 `data-inline-url` 도 `data-filters` 도 없다 — 스윕이 볼 자리가
+    아예 없다.
+
+    그런데 고리는 똑같이 필요하다. `기업 관리` 칸을 고치면 관리/드랍 표시가
+    따라 바뀌는데, 거기서 멈추면 **화면은 옛 조건 그대로** 걸러진 채다.
+    `드랍` 만 보다가 한 곳을 `관리 중` 으로 바꿔도 그 줄이 목록에 남아 있었다.
+
+    함수가 화면 상태를 닫아 쥔 IIFE 안에 있어 밖에서 부를 수가 없다 —
+    저장 뒤에 다시 거는 그 한 줄이 파일에 있는지로 본다.
+    """
+    src = (JS_DIR / "consulting.js").read_text(encoding="utf-8")
+    at = src.index("refreshRowFlags(tr);")
+    assert re.search(r"^\s*apply\(\);", src[at:at + 400], re.M), (
+        "저장 뒤 플래그만 고치고 다시 거르지 않습니다 — 고친 줄이 조건에서 "
+        "벗어나도 목록에 그대로 남고, 표시 건수도 안 맞습니다.")

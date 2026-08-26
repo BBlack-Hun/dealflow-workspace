@@ -116,6 +116,12 @@
         cell.classList.add("saved");
         setTimeout(function () { cell.classList.remove("saved"); }, 900);
         refreshRowFlags(tr);
+        // 플래그만 고치고 끝내면 **화면은 옛 조건 그대로**다. `드랍` 만 보는
+        // 중에 한 곳을 `관리 중` 으로 바꾸면 이제 드랍이 아닌데도 목록에
+        // 남아 있고, 위의 표시 건수도 안 맞는다 — 새로고침해야 사라진다.
+        // 다른 화면(투자사·기업·딜 소싱)은 저장하면 필터가 곧바로 다시
+        // 걸리므로, 여기만 다르게 두면 같은 조작이 화면마다 달리 동작한다.
+        apply();
       })
       .catch(function () {
         cell.classList.remove("saving");
