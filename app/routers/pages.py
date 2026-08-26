@@ -14,7 +14,7 @@ from ..db import get_db
 from ..deps import get_current_user, templates
 from ..models import IrCompany, RefSheet, SendJob, SourcingContact, User, VcContact
 from ..services import (cadence, deal_history, deal_stage, mailer,
-                        sheet_import, sheet_owner)
+                        sheet_import, sheet_owner, sourcing_link)
 from ..ui import MENU, base_ctx as _base_ctx
 from .companies import BLOCKED_CONTRACT
 from .companies import blocked_reason as company_blocked_reason
@@ -106,6 +106,9 @@ def deals_page(
             counted[who] = counted.get(who, 0) + 1
     sourcing_assignees = [{"name": k, "count": v} for k, v in
                           sorted(counted.items(), key=lambda kv: (-kv[1], kv[0]))]
+    # 투자사 관리 현황에서 연결해 둔 방이 있으면 여기서도 '연결됨' 이어야 한다 —
+    # 목록에는 '미등록' 인데 미리보기에는 방이 뜨면 어느 쪽을 믿을지 알 수 없다.
+    sourcing_linked = sourcing_link.linked_rooms(db, sourcing_contacts)
     ctx = _base_ctx(request, db, user, "deal")
     # 매 회차 같은 기업을 또 보내면 받는 쪽에서는 지난번을 기억 못 한다고 읽는다.
     history = deal_history.annotate(companies, deal_history.last_sent_map(db))
@@ -122,6 +125,7 @@ def deals_page(
         "sourcing_contacts": sourcing_contacts,
         "sourcing_buckets": sourcing_buckets,
         "sourcing_assignees": sourcing_assignees,
+        "sourcing_linked": sourcing_linked,
         "no_reaction_ids": no_reaction_ids,
         # 메일 채널은 설정이 있어야 고를 수 있다.
         # 고를 수 있는데 나가지 않는 것이 제일 나쁘다.

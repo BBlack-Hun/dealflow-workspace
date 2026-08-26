@@ -35,3 +35,19 @@ def test_company_search_rules():
         capture_output=True, text=True, timeout=60,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+def test_preview_edits_survive_a_refresh():
+    """미리보기에서 고친 문구가 다시 그려도 남아야 한다.
+
+    담당자를 하나 더 체크하면 미리보기가 새로 그려지는데, 그때마다 앞서 고쳐
+    둔 것이 말없이 사라졌다 — 열 명을 고치고 한 명 더 넣으면 열 명분이 날아간다.
+    """
+    node = shutil.which("node")
+    if not node:
+        import pytest
+
+        pytest.skip("node 가 없습니다 — 브라우저 자산 테스트")
+    script = Path(__file__).resolve().parent / "js" / "preview_edit_test.js"
+    out = subprocess.run([node, str(script)], capture_output=True, text=True)
+    assert out.returncode == 0, out.stderr or out.stdout
+

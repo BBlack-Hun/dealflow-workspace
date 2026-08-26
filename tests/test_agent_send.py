@@ -104,3 +104,53 @@ def test_empty_parts_falls_back_to_the_message(agent_main):
 def test_the_gap_between_bubbles_is_configurable(agent_main):
     """연달아 쏟으면 카톡이 순서를 뒤집거나 묶어 버린다."""
     assert agent_main.DEFAULT_CONFIG["part_gap_sec"] > 0
+
+# --- 서버와 에이전트가 같은 잡 종류를 보는가 ----------------------------------
+#
+# 딜 소싱 제안을 서버에만 넣고 에이전트의 목록을 안 고쳐서, 잡이 큐에 그대로
+# 멈춰 있었다. 에이전트는 폴링할 때 자기 목록을 `?kinds=` 로 보내고, 서버는
+# 그 안에 든 것만 준다 — 한쪽만 고치면 조용히 안 나간다.
+
+def test_agent_and_server_agree_on_send_kinds():
+    from agent.main import SEND_KINDS as AGENT_KINDS
+    from app.models import SEND_KINDS as SERVER_KINDS
+
+    assert tuple(AGENT_KINDS) == tuple(SERVER_KINDS), (
+        "서버가 만드는 잡을 에이전트가 집어가지 못합니다 — "
+        f"서버 {SERVER_KINDS} · 에이전트 {AGENT_KINDS}"
+    )
+
+
+def test_the_agent_asks_for_every_kind_it_can_do():
+    """폴링할 때 보내는 목록이 실제 처리 목록보다 좁으면 그만큼 못 받는다."""
+    from agent.main import SEND_KINDS, SUPPORTED_KINDS, VERIFY_KIND
+
+    assert set(SEND_KINDS) <= set(SUPPORTED_KINDS)
+    assert VERIFY_KIND in SUPPORTED_KINDS
+
+
+def test_a_sourcing_job_is_handed_to_the_agent(client, db, users):
+    """큐에 넣어 두고 못 집어가면 발송이 조용히 멈춘다."""
+    from agent.main import SUPPORTED_KINDS
+    from app.models import AgentDevice, SendItem, SendJob
+
+    # 사용자당 기기는 하나다 — 있으면 그 토큰을 쓴다.
+    dev = db.query(AgentDevice).filter_by(user_id=users["u1"].id).first()
+    if dev is None:
+        dev = AgentDevice(user_id=users["u1"].id, token="agt_test_sourcing",
+                          hostname="t", agent_version="0.3.0")
+        db.add(dev)
+    job = SendJob(user_id=users["u1"].id, kind="sourcing_intro", status="queued",
+                  total=1, sent=0, failed=0)
+    db.add(job)
+    db.flush()
+    db.add(SendItem(job_id=job.id, sourcing_contact_id=None, room_name="테스트방",
+                    message="문구", status="pending"))
+    db.commit()
+
+    r = client.get("/api/agent/poll",
+                   params={"kinds": ",".join(SUPPORTED_KINDS)},
+                   headers={"Authorization": f"Bearer {dev.token}"})
+    assert r.status_code == 200, "소싱 잡을 집어가지 못했습니다"
+    assert r.json()["kind"] == "sourcing_intro"
+

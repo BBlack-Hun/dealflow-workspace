@@ -33,7 +33,12 @@ log = logging.getLogger("agent")
 
 # 이 에이전트가 처리할 수 있는 잡 종류. 서버 poll 에 그대로 알린다.
 # deal_intro/ir_delivery = 문구 전송, verify_room = 방 이름 대조(전송 없음).
-SEND_KINDS = ("deal_intro", "ir_delivery")
+# 서버가 만드는 발송 잡 종류. **여기 없으면 집어가지 않는다** —
+# 딜 소싱 제안을 서버에만 넣고 이 줄을 안 고쳐서, 잡이 큐에 그대로 멈춰
+# 있었다(에이전트는 폴링할 때 이 목록을 `?kinds=` 로 보낸다).
+#
+# 서버의 `app/models.py: SEND_KINDS` 와 같아야 한다.
+SEND_KINDS = ("deal_intro", "ir_delivery", "sourcing_intro")
 VERIFY_KIND = "verify_room"
 SUPPORTED_KINDS = SEND_KINDS + (VERIFY_KIND,)
 

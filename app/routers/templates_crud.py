@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from typing import List, Optional
 
+from urllib.parse import quote
+
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import or_, select
@@ -32,6 +34,9 @@ KINDS = [
     ("meeting_review", "문구만 — 미팅 후기", "미팅 뒤 열흘쯤 지나 결과를 물을 때"),
     ("ask_preference", "문구만 — 선호 분야 묻기", "반응이 없는 담당자에게 기업 목록 없이 이 문구만"),
     ("ir_delivery", "IR 자료 전달", "자료를 먼저 보낸 뒤 뒤따라 보내는 문구"),
+    # 갈래마다 하나씩이다 — 호칭·전달 개수·찾는 범위가 다르다.
+    # 문구 이름에 갈래를 적어 두면 그 갈래에 쓰인다(`sourcing_msg.body_for`).
+    ("sourcing_intro", "딜 소싱 제안", "갈래(시리즈 A 이상 · 투자사 대표 · 개인 참여 …)마다 하나씩"),
     ("connect_call", "연결 — 전화 응대", "카톡방 연결 전 첫 통화"),
     ("connect_sms", "연결 — 부재중 문자", "전화를 못 받으셨을 때 보내는 문자"),
     ("connect_reinvite", "연결 — 방 나가신 분", "카톡방을 나간 담당자에게 다시 연락할 때"),
@@ -83,6 +88,39 @@ def templates_page(request: Request, db: Session = Depends(get_db),
     ctx = base_ctx(request, db, user, active="templates")
     ctx.update({"grouped": grouped, "kinds": KINDS, "variables": VARIABLES, "msg": msg})
     return jinja.TemplateResponse("templates.html", ctx)
+
+
+@router.post("/templates/{template_id}/copy", include_in_schema=False)
+def copy_template(template_id: int, db: Session = Depends(get_db),
+                  user: User = Depends(get_current_user)):
+    """팀 기본 문구를 **내 것으로 복사**한다.
+
+    팀 기본은 여럿이 함께 쓰는 것이라 아무나 고치면 남의 발송까지 바뀐다.
+    그렇다고 못 고치게만 두면, 문구를 바꾸려는 사람은 빈 칸에 처음부터 다시
+    타이핑해야 한다 — 기본 문구가 길수록 그러다 만다.
+
+    복사본은 내 것이고, 발송할 때 **내 것이 먼저** 쓰인다
+    (`_template_body` · `sourcing_msg.body_for`).
+    """
+    src = db.get(MessageTemplate, template_id)
+    if src is None:
+        raise HTTPException(status_code=404, detail="문구를 찾을 수 없습니다")
+
+    # 같은 종류·같은 이름의 내 문구가 이미 있으면 새로 만들지 않는다 —
+    # 누를 때마다 복사본이 쌓이면 어느 것이 나가는지 알 수 없다.
+    stmt = select(MessageTemplate).where(
+        MessageTemplate.user_id == user.id, MessageTemplate.kind == src.kind)
+    stmt = (stmt.where(MessageTemplate.name.is_(None)) if src.name is None
+            else stmt.where(MessageTemplate.name == src.name))
+    if db.execute(stmt).scalars().first() is None:
+        db.add(MessageTemplate(user_id=user.id, kind=src.kind, name=src.name,
+                               body=src.body, is_active=1))
+        db.commit()
+        msg = "내 문구로 복사했습니다 — 이제 고칠 수 있습니다"
+    else:
+        msg = "이미 내 문구가 있습니다"
+    return RedirectResponse(f"/templates?msg={quote(msg)}#{src.kind}",
+                            status_code=303)
 
 
 @router.post("/templates/new", include_in_schema=False)

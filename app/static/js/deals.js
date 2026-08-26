@@ -429,6 +429,16 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     var companyHint = document.getElementById("company-hint");
     if (companyHint) companyHint.hidden = mode === "ir";
     renderIrLinks();
+    // '기본 문구 고치기' 는 **지금 방식의 문구**로 데려가야 한다.
+    // 그냥 목록 맨 위로 보내면 어느 것을 고쳐야 하는지 다시 찾아야 한다.
+    var editLink = document.getElementById("edit-template");
+    if (editLink) {
+      var kindByMode = { ask: "ask_preference", remind: "closing_remind",
+                         meeting: "closing_meeting", review: "meeting_review",
+                         deal: "closing_day1", ir: "ir_delivery",
+                         sourcing: "sourcing_intro" };
+      editLink.href = "/templates#" + (kindByMode[mode] || "closing_day1");
+    }
     var closingWrap = document.getElementById("tpl-closing-wrap");
     if (closingWrap) closingWrap.querySelector("span").textContent = askMode ? "문구" : "안내문";
     // 인사말은 **기본으로 붙인다.** 빼는 것은 선호 분야를 되물을 때뿐이다 —
@@ -439,6 +449,9 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     var greet = document.getElementById("include-opening");
     if (greet) { greet.checked = (mode !== "ask"); syncOpeningToggle(); }
     lastPreviews = [];
+    // 방식을 바꾸면 고친 것도 버린다 — 딜소개용으로 고친 문구가 IR 자료
+    // 전달에 얹히면 엉뚱한 말이 나간다.
+    savedEdits = {};
     previewTabs.innerHTML = "";
     previewArea.innerHTML = '<p class="muted">불러오는 중…</p>';
     warnBox.hidden = true;
@@ -493,7 +506,9 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       meta +
       splitNotice(p) +
       '<textarea class="bubble-edit" id="bubble-edit" spellcheck="false"></textarea>' +
-      '<div class="charcount" id="charcount"></div>';
+      '<div class="charcount" id="charcount"></div>' +
+      '<button type="button" class="linkbtn" id="revert-edit"' +
+      (p.edited ? '' : ' hidden') + '>고친 것 되돌리기</button>';
 
     var ta = document.getElementById("bubble-edit");
     ta.value = p.message;               // innerHTML 이 아니라 value 로 넣어야 안전하다
@@ -503,10 +518,31 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
 
     ta.addEventListener("input", function () {
       p.message = ta.value;
+      // 고치는 즉시 남겨 둔다. 저장 단추가 따로 없으니, 여기서 안 남기면
+      // 담당자를 하나 더 체크하는 순간 사라진다.
+      if (ta.value.trim() && ta.value !== p.original) {
+        savedEdits[p.contact_id] = ta.value;
+      } else {
+        delete savedEdits[p.contact_id];
+      }
       p.edited = ta.value !== p.original;
       flag.hidden = !p.edited;
       updateCharCount(ta.value);
       markTabEdited(idx, p.edited);
+      if (revert) revert.hidden = !p.edited;
+    });
+
+    // 되돌릴 수 없으면 고치기가 부담스럽다 — 손댄 뒤 원래 문구를 다시 못 본다.
+    var revert = document.getElementById("revert-edit");
+    if (revert) revert.addEventListener("click", function () {
+      delete savedEdits[p.contact_id];
+      p.message = p.original;
+      p.edited = false;
+      ta.value = p.original;
+      flag.hidden = true;
+      revert.hidden = true;
+      updateCharCount(ta.value);
+      markTabEdited(idx, false);
     });
   }
 
@@ -524,6 +560,9 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   }
 
   // 고친 문구만 서버로 보낸다. 안 고친 담당자는 서버가 다시 조합한다.
+  // 고친 문구를 담당자별로 들고 있는다 — 미리보기를 다시 그려도 남아야 한다.
+  var savedEdits = {};
+
   function editedOverrides() {
     return lastPreviews
       .filter(function (p) { return p.edited && (p.message || "").trim(); })
@@ -546,7 +585,19 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       .then(function (res) {
         if (!res.ok) { previewArea.innerHTML = '<p class="muted">' + escapeHtml(res.d.detail || "미리보기 실패") + "</p>"; return; }
         lastPreviews = res.d.previews || [];
-        lastPreviews.forEach(function (p) { p.original = p.message; p.edited = false; });
+        // 고친 문구를 되살린다. 담당자를 하나 더 체크하면 미리보기가 새로
+        // 그려지는데, 그때마다 앞서 고쳐 둔 것이 **말없이 사라졌다** —
+        // 열 명을 고치고 한 명 더 넣으면 열 명분이 날아간다.
+        lastPreviews.forEach(function (p) {
+          p.original = p.message;
+          var kept = savedEdits[p.contact_id];
+          if (kept !== undefined && kept !== p.message) {
+            p.message = kept;
+            p.edited = true;
+          } else {
+            p.edited = false;
+          }
+        });
         previewTabs.innerHTML = "";
         lastPreviews.forEach(function (p, i) {
           var b = document.createElement("button");

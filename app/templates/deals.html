@@ -213,8 +213,10 @@
     #}
     <div class="card-list" id="sourcing-list" hidden>
       {% for c in sourcing_contacts %}
+      {% set link = sourcing_linked.get(c.id) %}
       <label class="pick-card" data-bucket="{{ c.bucket }}"
              data-assignee="{{ c.assignee_name or '' }}"
+             data-room="{{ c.kakao_room_name or (link and link.room) or '' }}"
              data-search="{{ (c.name ~ ' ' ~ (c.title or '') ~ ' ' ~ (c.firm or '') ~ ' ' ~ (c.bucket or '') ~ ' ' ~ (c.sectors or '') ~ ' ' ~ (c.kakao_room_name or ''))|lower }}">
         <input type="checkbox" class="contact-cb" value="{{ c.id }}" data-name="{{ c.name }}">
         <div class="pick-body">
@@ -222,9 +224,16 @@
           <div class="pick-sub muted">{{ c.firm or '' }}</div>
           {# 갈래가 곧 문구다 — 무엇이 나갈지 고르는 자리에서 보여야 한다. #}
           <div class="pick-tags"><span class="tag">{{ c.bucket }}</span></div>
+          {# 투자사 관리 현황에서 연결해 둔 방이 있으면 그것도 '연결됨' 이다.
+             목록에는 '미등록' 인데 미리보기에는 방이 뜨면 어느 쪽을 믿을지
+             알 수 없다. #}
+          {% set link = sourcing_linked.get(c.id) %}
           <div class="pick-room">
             {% if c.kakao_room_name %}
               <span class="room-badge {{ 'ok' if c.room_verified in ['verified','unverified'] else 'warn' }}">💬 {{ c.kakao_room_name }}</span>
+            {% elif link %}
+              <span class="room-badge ok" title="{{ link.room }}">💬 {{ link.room }}</span>
+              <span class="tag soft">투자사 명단</span>
             {% else %}
               <span class="room-badge warn">⚠ 카톡방 미등록 — [딜 소싱]에서 방 이름을 넣어주세요</span>
             {% endif %}
@@ -241,6 +250,10 @@
   <section class="panel">
     <h2 class="panel-title">③ 미리보기 · 발송
       <span class="hint" id="preview-state">고르는 대로 바로 나옵니다</span>
+      {# 여기 보이는 것이 기본 문구다. 마음에 안 들면 고칠 길이 있어야 한다 —
+         지금 방식(딜 소개 / IR 자료 전달 / 딜 소싱 …)의 문구로 바로 간다. #}
+      <a class="linkbtn" id="edit-template" href="/templates"
+         title="지금 보이는 기본 문구를 고칩니다">기본 문구 고치기</a>
       {# 갱신 버튼은 없앴다 — 고르고 나서 한 번 더 눌러야 보이면, 안 누른 채로
          발송을 누르는 일이 생긴다. 화면은 항상 지금 고른 것을 보여야 한다. #}
       <button type="button" class="linkbtn" id="refresh-preview" hidden>미리보기 갱신</button>
