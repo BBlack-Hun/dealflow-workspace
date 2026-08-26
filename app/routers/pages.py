@@ -172,7 +172,8 @@ def contacts_page(
     # 참고 시트 — 스크립트·가이드처럼 매번 구글 시트를 열어 보던 자료.
     # 지울 수 있게 두었으므로 살아 있는 것만 가져온다.
     ref_sheets = db.execute(
-        select(RefSheet).where(RefSheet.is_active == 1)
+        select(RefSheet).where(RefSheet.is_active == 1,
+                               RefSheet.page == "contacts")
         .order_by(RefSheet.position, RefSheet.id)
     ).scalars().all()
     picked_ref = next((s for s in ref_sheets if str(s.id) == ref), None)

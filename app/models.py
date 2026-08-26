@@ -425,6 +425,10 @@ class RefSheet(TimestampMixin, Base):
 
     __tablename__ = "ref_sheets"
 
+    # 어느 화면에 붙는가. contacts = 투자사 관리 현황 · consulting = 투자컨설턴트
+    # 현황. 스크립트·가이드는 화면마다 다른데 붙일 자리가 한 곳뿐이었다.
+    page: Mapped[str] = mapped_column(String, default="contacts")
+
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     title: Mapped[str] = mapped_column(String)
     kind: Mapped[str] = mapped_column(String, default="text")   # table | text

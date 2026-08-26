@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import pathlib
 import re
+import unicodedata
 
 CSS = pathlib.Path("app/static/css/app.css")
 TEMPLATES = pathlib.Path("app/templates")
@@ -140,4 +141,44 @@ def test_a_numeric_column_header_matches_its_cells():
                 if _right(th) != _right(td):
                     problems.append(f"{path.name} 열{i}")
     assert not problems, "머리글과 칸의 정렬이 다릅니다: " + ", ".join(problems)
+
+# --- 머리글 줄바꿈 ----------------------------------------------------------
+#
+# 컬럼 이름이 원본 시트를 그대로 따르다 보니 길이가 제각각이다(`NO` 한 글자,
+# `TIPS 운영사 투자금 1-10억 …` 마흔 글자). 좁은 칸에 긴 이름을 넣으면 네 줄로
+# 늘어나고, 그 옆 한 줄짜리 이름이 위에 떠 있어 머리글 줄이 들쭉날쭉해진다.
+
+def _display_width(text: str) -> int:
+    """한글은 두 칸, 영문은 한 칸으로 센 표시 폭."""
+    return sum(2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in text)
+
+
+def test_no_header_wraps_past_two_lines():
+    """두 줄까지가 한계다. 세 줄부터는 머리글이 표를 밀어낸다."""
+    problems = []
+    for path in sorted(TEMPLATES.glob("*.html")):
+        for head in re.findall(r"<thead>(.*?)</thead>", path.read_text(encoding="utf-8"), re.S):
+            for attrs, label in re.findall(r"<th\b([^>]*)>(.*?)</th>", head, re.S):
+                text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", label)).strip()
+                # 반복문으로 만드는 머리글은 값이 실행 때 정해진다 — 셀 수 없다
+                if not text or "{{" in text or "{%" in text:
+                    continue
+                px = re.search(r"width:\s*(\d+)px", attrs)
+                if not px:
+                    continue
+                need = _display_width(text) * 6 + 18      # 12px 글자 기준
+                lines = max(1, -(-need // int(px.group(1))))
+                if lines >= 3:
+                    problems.append(f"{path.name}: {text[:30]} ({lines}줄)")
+    assert not problems, "머리글이 세 줄 넘게 접힙니다: " + ", ".join(problems)
+
+
+def test_header_cells_share_one_height():
+    """한 줄짜리 이름이 두 줄짜리 옆에서 아래로 처지면 안 된다."""
+    css = CSS.read_text(encoding="utf-8")
+    rule = re.search(r"\.grid-table th \{([^}]*)\}", css)
+    assert rule, ".grid-table th 규칙이 없습니다"
+    body = rule.group(1)
+    assert "vertical-align: top" in body, "위 기준으로 맞춰야 이름이 같은 줄에서 시작한다"
+    assert re.search(r"height:\s*\d+px", body), "높이를 정해야 머리글 줄이 고르다"
 

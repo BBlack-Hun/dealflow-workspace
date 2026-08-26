@@ -89,7 +89,23 @@
   <a class="sheet-tab {% if selected_sheet == t.key %}active{% endif %}"
      href="/consulting?sheet={{ t.key|urlencode }}">{{ t.label }} <span>{{ t.count }}</span></a>
   {% endfor %}
+
+  {#
+    스크립트·가이드. 명단 탭과 성격이 달라 구분선 뒤에 둔다 —
+    누르면 표 대신 그 자료가 열린다. 이름도 내용도 고칠 수 있다.
+  #}
+  {% if ref_sheets %}
+  <span class="tab-divider" title="여기부터는 참고 자료입니다">|</span>
+  {% for s in ref_sheets %}
+  <a class="sheet-tab ref-tab {% if ref and ref.id == s.id %}active{% endif %}"
+     href="/consulting?sheet={{ selected_sheet|urlencode }}&ref={{ s.id }}"
+     title="참고 자료">📄 {{ s.title }}</a>
+  {% endfor %}
+  {% endif %}
 </nav>
+
+{% set ref_back = "/consulting" %}
+{% include "_ref_panel.html" %}
 
 <p class="hint" id="cs-note" hidden></p>
 

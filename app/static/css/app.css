@@ -226,18 +226,26 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
 .table-wrap.wide .grid-table { min-width: 2030px; }
 /* 투자사 관리 현황은 시트 컬럼 18개를 그대로 세운다 — 더 넓다.
    폭은 th 에서 잡고, 여기서는 표가 줄어들지 않게만 막는다. */
-#contacts-table { min-width: 2520px; }
+#contacts-table { min-width: 2630px; }
 .grid-table { width: 100%; table-layout: fixed; border-collapse: collapse;
               background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
 /* 표 밀도. 8px/10px 이던 것을 6px/9px 로 — 글자 수 대비 자리가 남는 칸이
    많았다(초대완료여부·진행 단계 같은 짧은 배지 칸). 줄 사이가 붙지 않을
    만큼만 줄인다. */
-/* 머리글은 **위**를 기준으로 맞춘다. 설명(.th-note)이나 필터 칩이 붙어 두 줄이
-   되는 칸이 섞여 있는데, 가운데 정렬이면 한 줄짜리 이름이 아래로 내려가
-   머리글 줄이 들쭉날쭉해 보인다. */
+/* 머리글은 **위**를 기준으로, **같은 높이**로 맞춘다.
+   컬럼 이름이 원본 시트를 그대로 따르다 보니 길이가 제각각이라(`NO` 한 줄,
+   `라운드 사이즈(투자운영금액)` 두 줄) 그냥 두면 한 줄짜리가 아래로 처지고
+   줄이 들쭉날쭉해진다. 두 줄 높이로 고정하고 위에서부터 채운다.
+
+   세 줄이 넘어가는 이름은 잘린다 — 대신 `title` 로 전문을 남긴다.
+   (`display` 는 건드리지 않는다. th/td 에 flex·-webkit-box 를 걸면 표
+    레이아웃이 깨진다 — tests/test_ui_layout.py) */
 .grid-table th { text-align: left; vertical-align: top;
+                 height: 42px; overflow: hidden; line-height: 1.35;
                  padding: 6px 9px; font-size: 12px; color: var(--muted);
                  background: #f7f8fa; border-bottom: 1px solid var(--line); position: relative; }
+/* 필터 칩이 붙는 머리글은 칩 자리만큼 더 필요하다. */
+.grid-table th:has(.th-filters) { height: auto; min-height: 42px; }
 .grid-table td { padding: 6px 9px; border-bottom: 1px solid var(--line); vertical-align: top;
                  overflow: hidden; }
 .grid-table tbody tr:hover { background: #f8faff; cursor: pointer; }

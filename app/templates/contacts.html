@@ -48,65 +48,8 @@
   {% endif %}
 </nav>
 
-{% if ref %}
-{# 참고 자료를 펼친 상태. 명단 표는 아래에 그대로 남는다. #}
-<section class="panel ref-panel">
-  <h2 class="panel-title">
-    {#
-      이름이 원본 시트 탭 이름 그대로라 길다(`40개사 스타트업 매월 1회
-      리마인드 카톡 가이드`). 자료는 그대로 두고 부르는 이름만 바꾼다.
-    #}
-    <form method="post" action="/ref-sheets/{{ ref.id }}/rename" class="ref-rename">
-      <input type="text" name="title" value="{{ ref.title }}" maxlength="80"
-             aria-label="탭 이름" title="탭 이름을 고치고 [이름 저장]을 누르세요">
-      <input type="hidden" name="sheet" value="{{ selected_sheet }}">
-      <button class="linkbtn" type="submit">이름 저장</button>
-    </form>
-    <span class="hint">참고 자료</span>
-    <span class="ref-acts">
-      <a class="linkbtn" href="/contacts?sheet={{ selected_sheet|urlencode }}">닫기</a>
-      <form method="post" action="/ref-sheets/{{ ref.id }}/delete"
-            onsubmit="return confirm('{{ ref.title }} 탭을 지울까요?\n원본 시트를 다시 가져오면 되살릴 수 있습니다.')">
-        <button class="linkbtn danger" type="submit">이 탭 지우기</button>
-      </form>
-    </span>
-  </h2>
-  {% if ref.kind == 'table' %}
-  {# 보기만 되던 자료다. 쓰면서 다듬는 것이라, 고치려고 구글 시트를 따로
-     열어야 하면 화면 안으로 들여온 뜻이 없다. #}
-  <p class="hint">칸을 눌러 바로 고칩니다.</p>
-  <div class="table-wrap wide">
-    <table class="grid-table compact" id="ref-table" data-ref-id="{{ ref.id }}">
-      <thead><tr>
-        {% for c in ref_content.columns %}<th>{{ c }}</th>{% endfor %}
-      </tr></thead>
-      <tbody>
-        {% for row in ref_content.rows %}
-        {% set r_idx = loop.index0 %}
-        <tr>{% for cell in row %}
-          {# 줄 번호는 **바깥 반복**에서 온다. 안쪽 것을 쓰면 모든 칸이
-             같은 줄을 가리켜 엉뚱한 자리에 저장된다. #}
-          <td class="ref-cell" data-row="{{ r_idx }}" data-col="{{ loop.index0 }}">{{ cell }}</td>
-        {% endfor %}</tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% else %}
-  {# 줄글은 칸으로 나뉘어 있지 않아 통째로 고친다 — 표로 쪼개면 내용이 칸에
-     잘려 사라진다. #}
-  <form method="post" action="/ref-sheets/{{ ref.id }}/body" class="ref-body-form">
-    <textarea name="body" class="ref-text-edit" rows="18"
-              spellcheck="false">{{ ref_content.body }}</textarea>
-    <input type="hidden" name="sheet" value="{{ selected_sheet }}">
-    <div class="ref-body-acts">
-      <button class="secondary-btn" type="submit">저장</button>
-      <span class="hint">줄바꿈·띄어쓰기 그대로 저장됩니다.</span>
-    </div>
-  </form>
-  {% endif %}
-</section>
-{% endif %}
+{% set ref_back = "/contacts" %}
+{% include "_ref_panel.html" %}
 
 {% if selected_sheet %}
 {% for t in tabs %}{% if t.key == selected_sheet %}
@@ -254,11 +197,15 @@
         <th style="width:100px">이름</th>
         <th style="width:96px" data-filters="interest:관심도 (월말기준)">관심도 (월말기준)<div class="th-filters"></div></th>
         <th style="width:88px" data-filters="joined:카톡방 참여여부">카톡방 참여여부<div class="th-filters"></div></th>
-        <th style="width:190px">메모 ( 통화내용 /  카톡내용  /  카톡답신내용)</th>
+        <th style="width:190px"
+            title="메모 ( 통화내용 /  카톡내용  /  카톡답신내용)">메모 ( 통화내용 /  카톡내용  /  카톡답신내용)</th>
         <th style="width:130px">딜소싱 참여 투자사</th>
         <th style="width:150px" data-filters="sector:선호 투자분야">선호 투자분야<div class="th-filters"></div></th>
         <th style="width:130px" data-filters="stage:라운드 사이즈(투자운영금액)">라운드 사이즈(투자운영금액)<div class="th-filters"></div></th>
-        <th style="width:130px">TIPS 운영사 투자금 1-10억 스타트업매출액 3-20억 기업에 주로 투자</th>
+        {# 원본 시트의 이름이 길다. 두 줄에 들어가게 넓히고, 잘리는 경우를
+           대비해 전문을 title 로 남긴다. #}
+        <th style="width:240px"
+            title="TIPS 운영사 투자금 1-10억 스타트업매출액 3-20억 기업에 주로 투자">TIPS 운영사 투자금 1-10억 스타트업매출액 3-20억 기업에 주로 투자</th>
         <th style="width:112px">휴대폰</th>
         <th style="width:170px" data-filters="owner:회사">회사<div class="th-filters"></div></th>
         <th style="width:96px">부서</th>

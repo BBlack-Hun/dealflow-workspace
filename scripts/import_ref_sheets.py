@@ -98,6 +98,8 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="참고 시트 가져오기")
     ap.add_argument("path")
     ap.add_argument("--apply", action="store_true", help="실제로 저장")
+    ap.add_argument("--page", default="contacts",
+                    help="붙일 화면: contacts | consulting")
     args = ap.parse_args()
 
     wb = openpyxl.load_workbook(args.path)
@@ -127,12 +129,13 @@ def main() -> None:
 
         row = existing.get(title)
         if row is None:
-            db.add(RefSheet(title=title, kind=kind, position=pos,
+            db.add(RefSheet(title=title, kind=kind, position=pos, page=args.page,
                             content_json=json.dumps(content, ensure_ascii=False)))
             made += 1
             print(f"  새로 만듦: {title:36} {shape}")
         else:
             row.kind = kind
+            row.page = args.page
             row.position = pos
             row.content_json = json.dumps(content, ensure_ascii=False)
             updated += 1

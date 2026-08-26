@@ -175,3 +175,65 @@ def test_each_cell_knows_its_own_row(seeded, table_sheet):
     assert 'data-row="0" data-col="0"' in panel
     assert 'data-row="1" data-col="1"' in panel
 
+# --- 어느 화면에 붙는가 ------------------------------------------------------
+#
+# 참고 탭은 투자사 관리 현황에만 붙었다. 투자컨설턴트 현황에도 스크립트가
+# 있는데(미팅 진행 프로세스 · 견적서 발송 톡 …) 붙일 자리가 없었다.
+
+def _consult_sheet(db, title="IRDAY 진행 스크립트"):
+    import json
+
+    from app.models import RefSheet
+
+    row = RefSheet(position=1, kind="text", is_active=1, page="consulting",
+                   title=title,
+                   content_json=json.dumps({"body": "1) 인사 2) 소개"},
+                                           ensure_ascii=False))
+    db.add(row)
+    db.commit()
+    return row
+
+
+def test_consulting_scripts_show_on_the_consulting_page(seeded, db, users):
+    users["u1"].can_view_consulting = 1
+    db.commit()
+    row = _consult_sheet(db)
+    body = seeded.get("/consulting").text
+    assert "IRDAY 진행 스크립트" in body
+    assert f"ref={row.id}" in body
+
+
+def test_the_two_pages_do_not_mix(seeded, db, users):
+    """투자사 스크립트가 투자컨설턴트 탭에 섞이면 어느 화면 것인지 모른다."""
+    users["u1"].can_view_consulting = 1
+    db.commit()
+    _consult_sheet(db)
+
+    consulting = seeded.get("/consulting").text
+    assert "카톡방 연결 순서" not in consulting      # 투자사 쪽 자료
+
+    contacts = seeded.get("/contacts").text
+    assert "IRDAY 진행 스크립트" not in contacts     # 컨설턴트 쪽 자료
+
+
+def test_a_consulting_script_can_be_renamed_and_edited(seeded, db, users):
+    import json
+
+    users["u1"].can_view_consulting = 1
+    db.commit()
+    row = _consult_sheet(db)
+
+    seeded.post(f"/ref-sheets/{row.id}/rename", data={"title": "IR DAY 스크립트"},
+                follow_redirects=False)
+    seeded.post(f"/ref-sheets/{row.id}/body", data={"body": "1) 인사 2) 소개 3) 마무리"},
+                follow_redirects=False)
+    db.refresh(row)
+    assert row.title == "IR DAY 스크립트"
+    assert json.loads(row.content_json)["body"].endswith("마무리")
+
+
+def test_existing_sheets_stayed_on_the_contacts_page(seeded, db):
+    """옮기면서 기존 자료가 사라지면 안 된다."""
+    row = _sheet(db, "카톡방 연결 순서")
+    assert row.page == "contacts"
+

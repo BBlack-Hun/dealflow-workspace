@@ -203,7 +203,8 @@ def company_rows(db: Session, user: User, sheet: str = "",
 @router.get("/consulting", response_class=HTMLResponse, include_in_schema=False)
 def consulting_page(request: Request, db: Session = Depends(get_db),
                     user: User = Depends(get_current_user), msg: str = "",
-                    months: str = "", sheet: str = "", owner: int = 0):
+                    months: str = "", sheet: str = "", owner: int = 0,
+                    ref: str = ""):
     require_access(user)
     # 관리자만 사람을 골라 볼 수 있다. 그 외에는 무엇을 넣든 자기 것만 나온다.
     if user.role != "admin":
@@ -217,7 +218,21 @@ def consulting_page(request: Request, db: Session = Depends(get_db),
     shown, hidden = _split_columns(_columns(db, user, selected, owner),
                                    show_all=(months == "all"))
     ctx = base_ctx(request, db, user, active="consult")
+    # 스크립트·가이드는 이 화면에도 있다(미팅 진행 프로세스 · 견적서 발송 톡 …).
+    # 투자사 관리 현황과 같은 구조를 쓰되 화면만 나눈다.
+    from ..models import RefSheet  # noqa: PLC0415
+
+    ref_sheets = db.execute(
+        select(RefSheet).where(RefSheet.is_active == 1,
+                               RefSheet.page == "consulting")
+        .order_by(RefSheet.position, RefSheet.id)
+    ).scalars().all()
+    ref_row = next((r for r in ref_sheets if str(r.id) == str(ref)), None)
+
     ctx.update({
+        "ref_sheets": ref_sheets,
+        "ref": ref_row,
+        "ref_content": json.loads(ref_row.content_json or "{}") if ref_row else {},
         "rows": rows,
         "sheet_tabs": tabs,
         "selected_sheet": selected,
