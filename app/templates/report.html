@@ -178,7 +178,12 @@
       <span class="count-pill {% if w.done %}on{% endif %}"><b>{{ w.done }}</b>개사 완료</span>
     </div>
     <table class="grid-table compact">
-      <thead><tr><th>날짜</th><th>담당자 / 투자사</th><th>구분</th>{% if team_wide %}<th>팀원</th>{% endif %}<th>결과</th><th>결과 문의</th></tr></thead>
+      <thead><tr><th style="width:88px">날짜</th><th style="width:170px">담당자 / 투자사</th>
+        <th style="width:62px">구분</th>{% if team_wide %}<th style="width:70px">팀원</th>{% endif %}
+        <th style="width:72px">결과</th><th style="width:130px">결과 문의</th>
+        {# 딜 진행 관리에서 적은 것을 그대로 가져온다 — 보고를 쓰려고 같은 말을
+           두 번 적게 하면 한쪽은 반드시 비어 있게 된다. #}
+        <th>후기 · 들은 내용</th></tr></thead>
       <tbody>
         {% for m in w['items'] %}
         <tr class="{% if m.followup_late %}overdue-row{% endif %}">
@@ -195,6 +200,16 @@
             {% elif not m.needs_followup %}<span class="muted">문의 불필요</span>
             {% elif m.followup_late %}{{ m.followup_due }} 지남
             {% else %}{{ m.followup_due }} 예정{% endif %}
+          </td>
+          <td title="{{ m.note }}{% if m.followup_note %} / {{ m.followup_note }}{% endif %}">
+            {% if m.note %}<div class="cell-sub">{{ m.note }}</div>{% endif %}
+            {% if m.followup_note %}
+            <div class="cell-sub muted">💬 {{ m.followup_note }}</div>
+            {% endif %}
+            {% if not m.note and not m.followup_note %}
+            {# 빈 칸이면 어디서 적는지 알려 준다 — 여기서 적는 칸이 아니다. #}
+            <a class="linkbtn" href="/ir#reviews">적기</a>
+            {% endif %}
           </td>
         </tr>
         {% endfor %}

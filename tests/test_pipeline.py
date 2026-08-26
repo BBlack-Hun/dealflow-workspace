@@ -567,3 +567,22 @@ def test_someone_elses_meeting_cannot_be_edited(client, db, users):
     else:
         raise AssertionError("남의 미팅 기록을 고칠 수 있었다")
 
+def test_the_jump_bar_counts_the_same_meetings_as_the_list(client, db, users):
+    """점프바에 1건이라 떠 있는데 눌러 가면 목록이 비어 있었다.
+
+    거절로 끝났거나 다음 미팅을 잡은 건은 물어볼 것이 없는데, 점프바만
+    그 규칙을 안 보고 세었다.
+    """
+    from app.services import flow, pipeline
+
+    # 거절로 끝난 미팅 — 물어볼 것이 없다
+    _meeting(db, users, outcome="pass")
+    # 아직 안 물어본 미팅 — 물어볼 것이 남았다
+    _meeting(db, users, outcome="reviewing")
+
+    bar = flow.counts(db, users["u1"])["review_open"]
+    listed = sum(1 for m in pipeline.meeting_rows(db, users["u1"])
+                 if m["needs_followup"])
+    assert bar == listed, f"점프바 {bar}건 · 목록 {listed}건"
+    assert listed == 1
+

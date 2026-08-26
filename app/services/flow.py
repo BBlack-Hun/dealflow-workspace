@@ -38,7 +38,10 @@ def counts(db: Session, user: User, today: Optional[date] = None) -> dict:
         "meeting_todo": len(items["today_meetings"]),
         "meeting_open": sum(1 for m in meetings if m["status"] == "scheduled"),
         # 미팅 후기 — 끝났는데 아직 결과를 안 물어본 곳. 놓치면 계약을 잊는다.
+        #
+        # **규칙은 딜 진행 관리와 같아야 한다.** 여기서만 따로 세었더니
+        # 점프바에는 1건이라 떠 있는데 눌러 가면 목록이 비어 있었다 —
+        # 거절로 끝났거나 다음 미팅을 잡은 건은 물어볼 것이 없기 때문이다.
         "review_due": len(items["due_followups"]),
-        "review_open": sum(1 for m in meetings
-                           if m["status"] != "scheduled" and not m.get("followup_done")),
+        "review_open": sum(1 for m in meetings if m.get("needs_followup")),
     }
