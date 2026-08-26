@@ -38,6 +38,25 @@ FIELDS = [
 ]
 
 
+def _has_row_no(value) -> bool:
+    """시트의 `NO` 칸에 번호가 있는가.
+
+    표 아래에 운영 가이드가 줄글로 붙어 있어서, 기업명 칸에 그 문장이 들어오면
+    담당자가 되어 버린다(실제로 38줄이 그렇게 들어갔다).
+
+    글자 길이나 문장부호로 가르려 했더니 양쪽으로 틀렸다 — 멀쩡한 담당자
+    `허승욱 Senior Analyst님(메일)` 을 길다고 지우고, 정작 `안녕하세요 대표님`
+    은 짧아서 통과시켰다.
+
+    **번호가 붙은 줄만 표의 줄이다.** 짐작이 아니라 시트가 직접 말해 주는
+    사실이라 양쪽 다 틀리지 않는다(번호 있는 32줄 / 없는 38줄로 정확히 갈린다).
+    """
+    try:
+        return float(str(value).strip()) > 0
+    except (TypeError, ValueError):
+        return False
+
+
 def text(value) -> str:
     if value is None:
         return ""
@@ -72,11 +91,15 @@ def main() -> int:
         select(VcContact).where(VcContact.source_sheet == SHEET)
     ).scalars().all()
 
-    made = []
+    made, skipped = [], []
     for r in rows[1:]:
         firm = text(r[where["firm"]]) if "firm" in where else ""
         name = text(r[where["name"]]) if "name" in where else ""
         if not firm and not name:
+            continue
+        # 번호가 없는 줄은 표의 줄이 아니다 — 표 아래에 붙은 운영 가이드다.
+        if not _has_row_no(r[0] if r else None):
+            skipped.append(firm or name)
             continue
         item = {f: text(r[c]) for f, c in where.items() if c < len(r)}
         # 사람 이름이 비면 기업명으로 세운다 — 누구인지 모르는 줄을 만들지 않는다.
@@ -84,6 +107,11 @@ def main() -> int:
         made.append(item)
 
     print(f"시트 {len(made)}줄 · 앱에 이미 있는 같은 시트 줄 {len(existing)}개")
+    if skipped:
+        # 조용히 버리면 몇 줄이 왜 빠졌는지 알 수 없다.
+        print(f"  건너뜀 {len(skipped)}줄 (표 아래 줄글):")
+        for v in skipped[:3]:
+            print(f"     {v[:44]}…")
     for item in made[:5]:
         print(f"   {item.get('name','')} / {item.get('firm','')} / {item.get('phone','')}")
     if not args.apply:

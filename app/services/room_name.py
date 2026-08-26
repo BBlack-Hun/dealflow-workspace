@@ -57,6 +57,48 @@ def build_room_name(
     return normalize_space(" ".join(parts))
 
 
+def _key(text: Optional[str]) -> str:
+    """공백·괄호 차이를 무시하고 견주기 위한 형태.
+
+    같은 회사를 `TKG VENTURES` 와 `TKG VENTURES CO., LTD.` 처럼 다르게 적는다.
+    띄어쓰기만 다른 경우(`한국투자캐피탈` / `한국투자 캐피탈`)도 흔하다.
+    """
+    return re.sub(r"[\s(),.·\-]", "", (text or "")).lower()
+
+
+def tells_people_apart(room: Optional[str], firm: Optional[str]) -> bool:
+    """이 방 이름만 보고 **어느 회사 사람인지** 알 수 있는가.
+
+    동명이인이 있을 때 방 이름에 회사가 없으면 누구의 방인지 알 수 없다.
+    실제로 `김형준 이사님 Deal 공유 …` 처럼 회사가 빠진 방이 있었고, 같은
+    이름의 다른 사람이 둘 더 있었다. 그대로 보내면 남의 방으로 갈 수 있다.
+    """
+    if not (room or "").strip():
+        return False
+    if not (firm or "").strip():
+        return False          # 회사를 모르면 견줄 것이 없다
+    return _key(firm) in _key(room)
+
+
+def ambiguous_contacts(contacts) -> list:
+    """이름이 겹치는데 방 이름으로 구별되지 않는 담당자.
+
+    발송 전에 걸러야 한다 — 나가고 나서 알면 이미 남의 방이다.
+    """
+    by_name: dict = {}
+    for c in contacts:
+        by_name.setdefault(normalize_space(c.name), []).append(c)
+
+    out = []
+    for name, group in by_name.items():
+        if len(group) < 2:
+            continue
+        for c in group:
+            if not tells_people_apart(c.kakao_room_name, c.firm):
+                out.append(c)
+    return out
+
+
 def split_name_title(raw: Optional[str]) -> tuple:
     """시트의 `이름` 셀('이서준 이사님')을 (이름, 직함)으로 분리.
 

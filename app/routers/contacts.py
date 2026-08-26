@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import get_current_user
 from ..models import ContactActivity, IrCompany, SendItem, SendJob, User, VcContact
-from ..services import deal_stage, firm_type, sheet_import, sheet_owner
+from ..services import deal_stage, firm_type, room_name, sheet_import, sheet_owner
 from ..services.room_name import DEFAULT_SUFFIX, build_room_name
 
 router = APIRouter(prefix="/api/contacts", tags=["contacts"])
@@ -352,8 +352,31 @@ def verify_rooms(
 
     targets = [c for c in contacts if _is_kakao(c)]
     skipped = [c.name for c in contacts if not _is_kakao(c)]
+
+    # 동명이인인데 방 이름에 회사가 없으면 **확인할 수가 없다.** 카톡 검색은
+    # 참여자 이름으로도 걸려서 같은 이름의 다른 사람 방이 함께 나온다.
+    # 확인을 시켜 봐야 어느 쪽이 맞는지 알 수 없으므로, 보내기 전에 여기서
+    # 막고 방 이름을 고치게 한다 — 나가고 나서 알면 이미 남의 방이다.
+    #
+    # 대상 몇 명만 고른 경우에도 **전체 명단**을 기준으로 견준다. 겹치는
+    # 상대가 이번 대상에 없다고 이름이 구별되는 것은 아니다.
+    everyone = db.execute(
+        select(VcContact).where(VcContact.user_id == user.id)
+    ).scalars().all()
+    unclear = {c.id for c in room_name.ambiguous_contacts(everyone)}
+    conflicts = [c.name for c in targets if c.id in unclear]
+    for contact in targets:
+        if contact.id in unclear:
+            contact.room_verified = "ambiguous"
+    targets = [c for c in targets if c.id not in unclear]
+
     if not targets:
-        raise HTTPException(status_code=400, detail="확인할 카톡방 이름이 등록된 담당자가 없습니다")
+        detail = "확인할 카톡방 이름이 등록된 담당자가 없습니다"
+        if conflicts:
+            detail = (f"동명이인이라 방 이름만으로 구별되지 않습니다: "
+                      f"{', '.join(conflicts[:5])} — 방 이름에 투자사명을 넣어주세요")
+        db.commit()
+        raise HTTPException(status_code=400, detail=detail)
 
     job = SendJob(user_id=user.id, kind="verify_room", status="queued",
                   total=len(targets), sent=0, failed=0)
@@ -370,7 +393,9 @@ def verify_rooms(
             status="pending",
         ))
     db.commit()
-    return {"job_id": job.id, "total": len(targets), "skipped": skipped}
+    return {"job_id": job.id, "total": len(targets), "skipped": skipped,
+            # 세는 것만 보여주면 왜 빠졌는지 모른다.
+            "conflicts": conflicts}
 
 
 # ── CRUD ────────────────────────────────────────────────────────────────────
