@@ -429,16 +429,6 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     var companyHint = document.getElementById("company-hint");
     if (companyHint) companyHint.hidden = mode === "ir";
     renderIrLinks();
-    // '기본 문구 고치기' 는 **지금 방식의 문구**로 데려가야 한다.
-    // 그냥 목록 맨 위로 보내면 어느 것을 고쳐야 하는지 다시 찾아야 한다.
-    var editLink = document.getElementById("edit-template");
-    if (editLink) {
-      var kindByMode = { ask: "ask_preference", remind: "closing_remind",
-                         meeting: "closing_meeting", review: "meeting_review",
-                         deal: "closing_day1", ir: "ir_delivery",
-                         sourcing: "sourcing_intro" };
-      editLink.href = "/templates#" + (kindByMode[mode] || "closing_day1");
-    }
     var closingWrap = document.getElementById("tpl-closing-wrap");
     if (closingWrap) closingWrap.querySelector("span").textContent = askMode ? "문구" : "안내문";
     // 인사말은 **기본으로 붙인다.** 빼는 것은 선호 분야를 되물을 때뿐이다 —

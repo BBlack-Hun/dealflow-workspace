@@ -275,6 +275,24 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
 .grid-table th { text-align: left; vertical-align: top; line-height: 1.35;
                  padding: 6px 9px; font-size: 12px; color: var(--muted);
                  background: #f7f8fa; border-bottom: 1px solid var(--line); position: relative; }
+
+/* ── 표 머리글: 한 줄 · 가운데 ───────────────────────────────────
+   컬럼 이름 길이가 제각각이라(`NO` 두 글자, `라운드 사이즈(투자운영금액)`
+   열세 글자) 접히면 어떤 칸은 한 줄, 어떤 칸은 두 줄이 되어 머리글 줄이
+   들쭉날쭉해 보인다.
+
+   **한 줄로 고정하고 넘치면 …로 자른다.** 잘린 이름은 `title` 로 볼 수 있고,
+   폭은 이미 데이터 길이에 맞춰 잡아 두어 대부분 잘리지 않는다.
+   가운데로 모으면 이름이 칸 한복판에 서서 축이 맞는다. */
+.grid-table thead th {
+  text-align: center; vertical-align: middle;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* 필터 칩·설명도 머리글 아래에 붙는다 — 같이 가운데로 모아야 축이 맞는다. */
+.grid-table thead .th-filters { justify-content: center; }
+.grid-table thead .th-note { text-align: center; }
+/* 숫자 칸만은 오른쪽을 지킨다 — 자릿수를 세로로 맞춰 보는 칸이다. */
+.grid-table thead th.num { text-align: right; }
 .grid-table td { padding: 6px 9px; border-bottom: 1px solid var(--line); vertical-align: top;
                  overflow: hidden; }
 .grid-table tbody tr:hover { background: #f8faff; cursor: pointer; }

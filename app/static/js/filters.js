@@ -303,7 +303,20 @@
     });
 
     apply();
-    return { apply: apply, getState: function () { return state; } };
+    // 칸을 고치면 그 값도 필터에 나와야 한다. `rowData` 는 처음 한 번만
+    // 읽으므로, 고친 뒤 다시 읽어 주지 않으면 **값은 있는데 필터에는 없는**
+    // 상태가 된다 — 관심도를 채워 넣어도 필터가 비어 있었다.
+    function refresh() {
+      rows.forEach(function (tr, i) {
+        keys.forEach(function (k) {
+          rowData[i][k] = splitValues(tr.getAttribute("data-f-" + k));
+        });
+      });
+      apply();
+    }
+
+    return { apply: apply, refresh: refresh,
+             getState: function () { return state; } };
   }
 
   function escapeHtml(s) {

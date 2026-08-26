@@ -33,6 +33,14 @@
   <div class="toolbar-right">
     <input type="search" id="sourcing-search" placeholder="이름 · 회사 · 메모 검색"
            autocomplete="off">
+    {# 전화로 한 명 승낙받고 바로 적을 곳이 없어서, 메모지에 적어 뒀다가
+       나중에 시트에 옮겨야 했다. 지금 보고 있는 갈래에 바로 넣는다. #}
+    {% if selected %}
+    <button type="button" class="primary-btn inline" id="sourcing-add"
+            data-bucket="{{ selected }}">{{ selected }}에 추가</button>
+    {% else %}
+    <span class="hint">갈래 탭을 고르면 사람을 추가할 수 있습니다</span>
+    {% endif %}
   </div>
 </div>
 
@@ -113,6 +121,26 @@
 
     // 검색은 컬럼 필터와 **AND** 로 묶는다 — 둘이 서로 tr.hidden 을 덮어쓰면
     // 검색과 필터가 번갈아 서로를 지운다.
+    // 갈래에 사람 추가 — 지금 보고 있는 갈래로 들어간다.
+    var addBtn = document.getElementById("sourcing-add");
+    if (addBtn) addBtn.addEventListener("click", function () {
+      var name = (prompt("이름을 입력하세요 (" + addBtn.getAttribute("data-bucket") + ")") || "").trim();
+      if (!name) return;
+      addBtn.disabled = true;
+      fetch("/api/sourcing?bucket=" + encodeURIComponent(addBtn.getAttribute("data-bucket")), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name })
+      }).then(function (r) {
+        if (!r.ok) return r.json().then(function (d) { throw new Error(d.detail || "추가 실패"); });
+        // 새 줄은 맨 아래에 붙는다 — 다시 그려야 보인다.
+        location.reload();
+      }).catch(function (e) {
+        alert(e.message || "추가하지 못했습니다.");
+        addBtn.disabled = false;
+      });
+    });
+
     var box = document.getElementById("sourcing-search");
     var api = window.DealflowFilters.init({
       table: "#sourcing-table",

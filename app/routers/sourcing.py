@@ -101,6 +101,39 @@ class SourcingIn(BaseModel):
     kakao_room_name: Optional[str] = None
 
 
+@router.post("/api/sourcing")
+def add_row(body: SourcingIn, bucket: str = "",
+            db: Session = Depends(get_db),
+            user: User = Depends(get_current_user)):
+    """갈래에 사람을 새로 넣는다.
+
+    지금까지는 시트를 다시 올려야만 늘릴 수 있었다 — 전화로 한 명 승낙받고
+    바로 적을 곳이 없어서, 메모지에 적어 뒀다가 나중에 시트에 옮겼다.
+
+    **갈래는 반드시 있어야 한다.** 갈래가 곧 문구라, 갈래 없는 줄은 어떤
+    문구로 보낼지 정할 수 없다.
+    """
+    name = (body.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="이름을 입력하세요")
+    target = (bucket or "").strip()
+    if not target:
+        raise HTTPException(status_code=400, detail="갈래를 고르세요")
+
+    # 새 줄은 그 갈래의 맨 아래로. 시트의 번호를 사람이 매번 세지 않아도 되게.
+    last = db.execute(
+        select(func.max(SourcingContact.position))
+        .where(SourcingContact.bucket == target)
+    ).scalar() or 0
+    row = SourcingContact(bucket=target, position=last + 1, name=name)
+    for field, value in body.model_dump(exclude_unset=True).items():
+        if field != "name" and value:
+            setattr(row, field, value.strip() or None)
+    db.add(row)
+    db.commit()
+    return {"id": row.id, "bucket": target}
+
+
 @router.patch("/api/sourcing/{row_id}")
 def update_row(row_id: int, body: SourcingIn, db: Session = Depends(get_db),
                user: User = Depends(get_current_user)):

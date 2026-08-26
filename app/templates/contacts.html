@@ -61,8 +61,8 @@
   <input type="hidden" name="old" value="{{ t.label }}">
   <button class="linkbtn" type="submit">이름 저장</button>
 </form>
+{# 이름 칸 바로 아래에 같은 이름이 또 적혀 있었다 — 두 번 읽을 이유가 없다. #}
 <p class="hint sheet-owner-line">
-  <b>{{ t.label }}</b>
   {% if t.kind == 'pool' %}
     <span class="tag">투자사 풀</span>
     <span class="muted">확보해 둔 명단입니다. 여기서 골라 내 명단으로 할당하세요.</span>

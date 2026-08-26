@@ -135,6 +135,19 @@ FOLLOW_UP_MODES = {
     # `sourcing_msg.body_for()` 가 갈래를 보고 고른다.
     MODE_SOURCING: (sourcing_msg.KIND, "", mc.STAGE_REMIND),
 }
+#: 발송 화면의 **탭 → 문구 종류**. 한 곳에서 정해 두고 문구 관리 화면이
+#: 이것을 읽어 "어느 탭에서 쓰는 문구인지" 를 적는다 — 안 그러면 문구가
+#: 열다섯 종류인데 어느 것을 고쳐야 그 탭이 바뀌는지 알 수 없다.
+MODE_TEMPLATE_KIND = {
+    MODE_DEAL: "closing_day1",
+    MODE_IR: "ir_delivery",
+    MODE_REMIND: "closing_remind",
+    MODE_MEETING: "closing_meeting",
+    MODE_REVIEW: "meeting_review",
+    MODE_ASK: "ask_preference",
+    MODE_SOURCING: sourcing_msg.KIND,
+}
+
 MODE_TITLES = {
     MODE_ASK: "선호 분야 묻기",
     MODE_REMIND: "리마인드",
@@ -143,6 +156,7 @@ MODE_TITLES = {
     MODE_REVIEW: "미팅 후기",
     MODE_SOURCING: "딜 소싱 제안",
 }
+MODE_TITLES[MODE_DEAL] = "딜 소개"
 
 # IR 자료 전달은 기업을 고른다(무엇을 보내는지 알아야 한다).
 # 나머지 후속 문구는 기업과 무관하다.

@@ -296,6 +296,13 @@
           cell.classList.remove("saving");
           if (!r.ok) return r.json().then(function (d) { throw new Error(d.detail || ""); });
           cell.classList.add("saved");
+          // 필터가 이 값을 볼 수 있게 행에도 적어 둔다. 안 적으면 값은
+          // 있는데 필터 목록에는 안 나온다(관심도를 채워도 필터가 비었다).
+          var fkey = cell.getAttribute("data-filter-key")
+            || cell.getAttribute("data-field");
+          if (row && row.hasAttribute("data-f-" + fkey)) {
+            row.setAttribute("data-f-" + fkey, value);
+          }
           setTimeout(function () { cell.classList.remove("saved"); }, 900);
           return r.json().catch(function () { return {}; }).then(function (data) {
             table.dispatchEvent(new CustomEvent("inline-saved",

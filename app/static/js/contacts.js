@@ -231,6 +231,11 @@
       }
     });
     if (box) box.addEventListener("input", function () { filters && filters.apply(); });
+    // 칸을 고치면 그 값도 필터에 나와야 한다 — 값은 있는데 필터에는 없는
+    // 상태가 되면, 있는 줄 알고 골랐다가 아무것도 안 나온다.
+    table.addEventListener("inline-saved", function () {
+      if (filters && filters.refresh) filters.refresh();
+    });
   }
 })();
 
