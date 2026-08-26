@@ -206,6 +206,9 @@ class IrCompany(TimestampMixin, Base):
     revenue_2024: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     revenue_2025: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     founded_year: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # 홍보메일 답장을 **받은 날**. 시트에서는 스타트업DB 의 맨 앞 칸이다.
+    # 이 칸이 없어서 그 뒤가 통째로 한 칸씩 밀려 보였다.
+    received_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     # 스타트업DB 시트의 `사업분야` — **카테고리가 아니라 사업 설명**이다.
     # (카테고리는 sector_major/minor 로 따로 있다.)
     # 한줄 소개의 **첫 토막**이 이 값이다:

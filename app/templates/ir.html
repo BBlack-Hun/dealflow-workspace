@@ -96,7 +96,7 @@
 
   {% if open_requests %}
   <table class="grid-table compact">
-    <thead><tr><th style="width:96px">요청일</th><th>담당자</th><th>기업</th><th style="width:104px">자료</th><th style="width:78px">기다린 날</th><th style="width:104px"></th></tr></thead>
+    <thead><tr><th style="width:96px">요청일</th><th>담당자</th><th>기업</th><th style="width:104px">자료</th><th class="num" style="width:78px">기다린 날</th><th style="width:104px"></th></tr></thead>
     <tbody>
       {% for r in open_requests %}
       <tr class="{% if r.overdue %}overdue-row{% endif %}">
@@ -191,7 +191,7 @@
     <h2 class="panel-title">예약된 후속 <span class="hint">{{ upcoming|length }}건</span></h2>
     {% if upcoming %}
     <table class="grid-table compact">
-      <thead><tr><th>예정일</th><th>담당자</th><th>다음 단계</th><th>남음</th><th></th></tr></thead>
+      <thead><tr><th>예정일</th><th>담당자</th><th>다음 단계</th><th class="num">남음</th><th></th></tr></thead>
       <tbody>
         {% for r in upcoming %}
         <tr>
@@ -372,7 +372,7 @@
 
   {% if scheduled %}
   <table class="grid-table compact">
-    <thead><tr><th>날짜</th><th>담당자</th><th>구분</th><th>기업</th><th>남음</th><th></th></tr></thead>
+    <thead><tr><th>날짜</th><th>담당자</th><th>구분</th><th>기업</th><th class="num">남음</th><th></th></tr></thead>
     <tbody>
       {% for m in scheduled %}
       <tr>

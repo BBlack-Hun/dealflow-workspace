@@ -371,7 +371,7 @@ def test_two_tabs_match_the_sheet(logged_in, company):
     db_tab = logged_in.get("/companies?tab=db").text
     for col in ("대표자", "연락처", "이메일", "22년 매출", "25년 매출",
                 "누적투자금액", "투자유치희망금액", "Pre Value",
-                "특이사항", "설립년도", "기보·신보·중진공"):
+                "특이사항 (장점)", "설립년도", "기보, 신보, 중진공"):
         assert col in db_tab, f"스타트업DB 탭에 '{col}' 이 없다"
 
 

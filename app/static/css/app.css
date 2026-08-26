@@ -218,7 +218,11 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
 /* 표 밀도. 8px/10px 이던 것을 6px/9px 로 — 글자 수 대비 자리가 남는 칸이
    많았다(초대완료여부·진행 단계 같은 짧은 배지 칸). 줄 사이가 붙지 않을
    만큼만 줄인다. */
-.grid-table th { text-align: left; padding: 6px 9px; font-size: 12px; color: var(--muted);
+/* 머리글은 **위**를 기준으로 맞춘다. 설명(.th-note)이나 필터 칩이 붙어 두 줄이
+   되는 칸이 섞여 있는데, 가운데 정렬이면 한 줄짜리 이름이 아래로 내려가
+   머리글 줄이 들쭉날쭉해 보인다. */
+.grid-table th { text-align: left; vertical-align: top;
+                 padding: 6px 9px; font-size: 12px; color: var(--muted);
                  background: #f7f8fa; border-bottom: 1px solid var(--line); position: relative; }
 .grid-table td { padding: 6px 9px; border-bottom: 1px solid var(--line); vertical-align: top;
                  overflow: hidden; }
@@ -1024,7 +1028,20 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
 .seg-toggle { display: flex; gap: 2px; }
 .grid-table tfoot th { background: #f7f8fa; border-top: 2px solid var(--line);
                        font-size: 12px; padding: 6px 9px; }
-.grid-table tfoot th.num { text-align: right; font-variant-numeric: tabular-nums; }
+/* ── 숫자 칸 정렬 ─────────────────────────────────────────────
+   자릿수가 다른 값이 왼쪽에 붙어 있으면 크기를 눈으로 비교할 수 없다.
+   6 과 117 이 같은 자리에서 시작해 버린다.
+
+   **머리글도 같이 민다.** 칸은 오른쪽인데 머리글만 왼쪽이면 어느 머리글이
+   어느 칸인지 눈이 매번 다시 맞춰야 한다 — 그동안 `td.num` 규칙이 아예
+   없어서(있는 줄 알았다) 숫자가 전부 왼쪽에 붙어 있었다.
+
+   `tabular-nums` 는 숫자 폭을 고르게 해 세로로 자릿수가 맞게 한다. */
+.grid-table th.num, .grid-table td.num,
+.mini-table th.num, .mini-table td.num,
+.grid-table tfoot th.num {
+  text-align: right; font-variant-numeric: tabular-nums;
+}
 
 /* 내 투자사 선호 — 숫자가 눈에 먼저 들어와야 순위가 읽힌다. */
 .req-rank li { padding: 6px 2px; }

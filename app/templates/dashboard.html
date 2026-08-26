@@ -228,13 +228,13 @@
     <h2 class="panel-title">최근 발송 회차</h2>
     {% if recent_batches %}
     <table class="grid-table compact">
-      <thead><tr><th>회차</th><th>날짜</th><th>대상</th><th>성공</th><th>실패</th><th>상태</th><th></th></tr></thead>
+      <thead><tr><th>회차</th><th>날짜</th><th class="num">대상</th><th class="num">성공</th><th class="num">실패</th><th>상태</th><th></th></tr></thead>
       <tbody>
         {% for b in recent_batches %}
         <tr>
           <td>{{ b.title }}</td>
           <td class="muted">{{ b.date or '-' }}</td>
-          <td>{{ b.total }}</td>
+          <td class="num">{{ b.total }}</td>
           <td class="num ok">{{ b.sent }}</td>
           <td class="num {% if b.failed %}bad{% endif %}">{{ b.failed }}</td>
           <td><span class="status-badge">{{ b.status }}</span></td>

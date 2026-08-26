@@ -72,7 +72,9 @@
   <table class="grid-table" data-inline-url="/api/companies" id="co-table">
     <thead>
       <tr>
-        <th style="width:36px">#</th>
+        <th class="num" style="width:36px">#</th>
+        {# 시트의 맨 앞 칸이다. 이게 없어서 그 뒤가 한 칸씩 밀려 보였다. #}
+        <th style="width:88px">수신일<span class="th-note">홍보메일 답장 받은 날</span></th>
         <th style="width:160px">기업명</th>
         <th style="width:70px">대표자</th>
         <th style="width:104px">연락처</th>
@@ -86,10 +88,10 @@
         <th class="num" style="width:78px">누적투자금액</th>
         <th class="num" style="width:84px">투자유치희망금액</th>
         <th class="num" style="width:76px">Pre Value</th>
-        <th style="width:260px">특이사항</th>
+        <th style="width:260px">특이사항 (장점)</th>
         <th class="num" style="width:74px">최근 매출액</th>
         <th style="width:62px">설립년도</th>
-        <th style="width:88px">기보·신보·중진공</th>
+        <th style="width:88px">기보, 신보, 중진공</th>
         {# IR 자료는 어느 탭에서 보든 맨 끝에 그대로 둔다. #}
         <th style="width:82px" data-filters="ir:IR 자료">IR 자료<div class="th-filters"></div></th>
         <th style="width:52px"></th>
@@ -102,6 +104,7 @@
           data-f-sector="{{ r.sector_major }}"
           data-f-ir="{{ '● 있음' if r.has_ir else '⚠ 없음' }}">
         <td class="rowno muted"></td>
+        <td class="cell" data-field="received_at" data-type="date">{{ r.received_at }}</td>
         <td class="co-name"><b class="cell" data-field="name">{{ r.name }}</b></td>
         <td class="cell" data-field="contact_name">{{ r.ceo }}</td>
         <td class="cell" data-field="contact_phone">{{ r.phone }}</td>
@@ -143,7 +146,7 @@
   <table class="grid-table" data-inline-url="/api/companies" id="co-table">
     <thead>
       <tr>
-        <th style="width:36px">#</th>
+        <th class="num" style="width:36px">#</th>
         <th style="width:13%">기업명</th>
         <th style="width:10%" data-filters="sector:사업분야 대분류">사업분야 대분류<div class="th-filters"></div></th>
         <th style="width:9%" data-filters="minor:소분류">소분류<div class="th-filters"></div></th>
