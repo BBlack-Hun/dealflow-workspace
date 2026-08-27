@@ -4,8 +4,9 @@
 <header class="page-head">
   <h1>{{ page_title }}</h1>
   <p class="muted">
-    미팅을 기록하면 이 표가 저절로 나옵니다. 시트에 다시 옮겨 적지 않아도 됩니다.
-    <b>미팅 후 결과 문의</b>를 했는지 함께 셉니다 — 그걸 놓치면 계약이 흐지부지됩니다.
+    발송하고 미팅을 기록하면 이 표가 저절로 나옵니다. 시트나 카톡에 다시 옮겨
+    적지 않아도 됩니다. <b>미팅 후 결과 문의</b>를 했는지 함께 셉니다 —
+    그걸 놓치면 계약이 흐지부지됩니다.
   </p>
 </header>
 
@@ -63,6 +64,13 @@
   않는다 — 두 곳에서 따로 세면 반드시 갈라진다.
 #}
 <div class="kpi-row slim">
+  {# 발송이 맨 앞 — 한 해도 회차로 시작해서 반응·미팅으로 이어진다. #}
+  <div class="kpi-card static">
+    <span class="kpi-label">보낸 건수</span>
+    <span class="kpi-value {% if totals.send_left %}warn{% endif %}">{{ totals.send_sent }}</span>
+    <span class="kpi-sub">
+      회차 {{ totals.send_rounds }}개{% if totals.send_left %} · <b>{{ totals.send_left }}건</b> 안 나감{% endif %}
+    </span></div>
   <div class="kpi-card static">
     <span class="kpi-label">잡은 미팅</span>
     <span class="kpi-value">{{ totals.total }}</span>
@@ -89,6 +97,11 @@
     <table class="grid-table compact">
       <thead><tr>
         <th style="width:72px">달</th>
+        {# 발송이 먼저다 — 회차가 돌고 나서 반응·미팅이 생긴다.
+           '안 나감' 을 같이 두지 않으면 중단된 회차가 보낸 건수에 묻힌다. #}
+        <th class="num" style="width:80px">발송 회차</th>
+        <th class="num" style="width:88px">보낸 건수</th>
+        <th class="num" style="width:80px">안 나감</th>
         <th class="num" style="width:88px">잡은 미팅</th>
         <th class="num" style="width:88px">진행</th>
         <th class="num" style="width:96px">결과 물어봄</th>
@@ -99,8 +112,11 @@
       </tr></thead>
       <tbody>
         {% for m in months %}
-        <tr class="{% if not (m.total or m.ir_requested) %}muted{% endif %}">
+        <tr class="{% if not (m.total or m.ir_requested or m.send_rounds) %}muted{% endif %}">
           <td><a href="/report?month={{ year }}-{{ '%02d'|format(m.month) }}{% if scope %}&scope={{ scope }}{% endif %}">{{ m.label }}</a></td>
+          <td class="num">{{ m.send_rounds or '' }}</td>
+          <td class="num">{{ m.send_sent or '' }}</td>
+          <td class="num">{% if m.send_left %}<span class="tag bad">{{ m.send_left }}</span>{% endif %}</td>
           <td class="num">{{ m.total or '' }}</td>
           <td class="num">{{ m.done or '' }}</td>
           <td class="num">{{ m.followup_done or '' }}</td>
@@ -113,6 +129,9 @@
       </tbody>
       <tfoot><tr>
         <th>합계</th>
+        <th class="num">{{ totals.send_rounds }}</th>
+        <th class="num">{{ totals.send_sent }}</th>
+        <th class="num">{{ totals.send_left }}</th>
         <th class="num">{{ totals.total }}</th>
         <th class="num">{{ totals.done }}</th>
         <th class="num">{{ totals.followup_done }}</th>
@@ -136,11 +155,21 @@
 
 {% else %}
 {#
-  숫자만 있으면 무엇을 센 건지 알 수 없다. 네 칸이 각각
-  "잡힌 것 / 끝난 것 / 물어본 것 / 아직 안 물어본 것" 인데
-  `미팅`·`완료` 만으로는 그게 안 드러난다.
+  숫자만 있으면 무엇을 센 건지 알 수 없다. 칸마다
+  "나간 것 / 잡힌 것 / 끝난 것 / 물어본 것 / 아직 안 물어본 것" 인데
+  `발송`·`미팅`·`완료` 만으로는 그게 안 드러난다.
+
+  발송이 맨 앞이다 — 한 달은 회차로 시작해서 반응·미팅으로 이어지고,
+  카톡으로 쓰던 보고도 발송부터 적었다.
 #}
 <div class="kpi-row slim">
+  <div class="kpi-card static">
+    <span class="kpi-label">보낸 건수</span>
+    <span class="kpi-value {% if sends.left %}warn{% endif %}">{{ sends.sent }}</span>
+    <span class="kpi-sub">
+      {% if sends.left %}회차 {{ sends.rounds }}개 · <b>{{ sends.left }}건</b> 안 나감
+      {% else %}회차 {{ sends.rounds }}개 · 도착 성공{% endif %}
+    </span></div>
   <div class="kpi-card static">
     <span class="kpi-label">잡은 미팅</span>
     <span class="kpi-value">{{ total }}</span>
@@ -167,6 +196,84 @@
   "결과확인전화가 없으면 계약을 잊어버리는 경우가 발생할 수 있습니다" 라고
   적혀 있었습니다.
 </p>
+
+{#
+  발송 — 카톡으로 손으로 써서 보내던 보고가 이 표다.
+
+      딜소개 업무(핵심 딜 7개사)
+      - 총 126명
+      116개[8/27(목) 116개 완료]
+
+      딜 소싱 2건(8/27(목)) 완료
+
+  **회차를 합치지 않는다.** 8/27 에 회차가 둘이었고 하나는 18건에서 멈췄는데,
+  한 줄로 합치면 그 사실이 묻혀 `116개 완료` 가 된다 — 위 보고가 실제로 그랬다.
+  회차마다 한 줄이라 같은 날 두 줄이 나란히 서고, 멈춘 쪽이 그대로 보인다.
+#}
+<section class="panel">
+  <h2 class="panel-title">{{ month }}월 발송
+    <span class="hint">딜 소개 · 딜 소싱</span>
+  </h2>
+  {% if sends.rounds %}
+  {% if sends.left %}
+  <p class="hint warn">
+    대상이었는데 <b>{{ sends.left }}건</b>이 안 나갔습니다(회차 {{ sends.short }}개) —
+    아래 <b>완료</b>는 실제로 도착한 건만 셉니다. 대상 수를 완료로 적지 마세요.
+  </p>
+  {% endif %}
+  {% for g in sends.groups %}
+  <div class="bucket">
+    <h3 class="bucket-head">{{ g.label }}
+      <span class="count-pill {% if g.sent %}on{% endif %}"><b>{{ g.sent }}</b>건 완료</span>
+      {% if g.rounds %}
+      <span class="hint">회차 {{ g.rounds }}개 · 대상 {{ g.contacts }}명{% if g.companies %} · 핵심 딜 {{ g.companies }}개사{% endif %}</span>
+      {% endif %}
+    </h3>
+    {% if g.rows %}
+    <div class="table-wrap">
+    <table class="grid-table compact">
+      <thead><tr>
+        <th style="width:104px">날짜</th>
+        <th>회차명</th>
+        {# 소싱 회차는 기업을 붙이지 않는다 — 늘 0 인 칸을 세워 두면 읽는 눈만 잡는다. #}
+        {% if g.companies %}<th class="num" style="width:74px">핵심 딜</th>{% endif %}
+        <th class="num" style="width:64px">대상</th>
+        <th class="num" style="width:64px">완료</th>
+        <th class="num" style="width:78px">안 나감</th>
+        <th style="width:124px">상태</th>
+        {% if team_wide %}<th style="width:70px">팀원</th>{% endif %}
+        <th style="width:52px"></th>
+      </tr></thead>
+      <tbody>
+        {% for r in g['rows'] %}
+        <tr>
+          <td class="tabular">{{ r.day or '-' }}</td>
+          <td class="ellipsis" title="{{ r.title }}"><b>{{ r.title }}</b></td>
+          {% if g.companies %}
+          <td class="num" title="{{ r.company_names|join(', ') }}">{{ r.companies or '-' }}</td>
+          {% endif %}
+          <td class="num">{{ r.target }}</td>
+          <td class="num">{{ r.sent }}</td>
+          {# 안 나간 건이 곧 '완료로 적으면 안 되는 건' 이다.
+             왜 안 나갔는지(중단·실패·대기)는 짚어 보면 나온다. #}
+          <td class="num" title="{{ r.left_label }}">{% if r.left %}<span class="tag bad">{{ r.left }}</span>{% else %}-{% endif %}</td>
+          <td><span class="status-badge {{ r.level }}">{{ r.status_label }}</span></td>
+          {% if team_wide %}<td class="muted">{{ r.owner }}</td>{% endif %}
+          <td><a class="linkbtn" href="/jobs/{{ r.job_id }}">보기</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}
+    <p class="muted bucket-empty">이 달에는 없습니다.</p>
+    {% endif %}
+  </div>
+  {% endfor %}
+  {% else %}
+  <p class="muted">이 달에는 나간 회차가 없습니다. <a href="/deals">딜 제안 관리</a>에서 보냅니다.</p>
+  {% endif %}
+</section>
 
 <section class="panel">
   <h2 class="panel-title">{{ month }}월 미팅 총 {{ total }}개사</h2>

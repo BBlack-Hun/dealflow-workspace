@@ -130,6 +130,11 @@ a:hover { text-decoration: underline; }
    알약 모양이 두 줄로 잘린다. */
 .status-badge { display: inline-block; white-space: nowrap;
   font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 999px; background: #eef2ff; color: var(--brand); }
+/* 끝까지 안 나간 회차는 파란 배지 사이에서 **다르게 보여야** 한다. 업무 보고에서
+   이걸 놓치면 대상 수를 완료로 적게 된다 — 116명에게 보내려다 18건에서 멈춘
+   회차를 `116개 완료` 로 적어 보낸 적이 있다. 색은 .tag.bad/.warn 과 맞춘다. */
+.status-badge.bad { background: #fdecec; color: var(--red); }
+.status-badge.warn { background: #fff4e5; color: var(--amber); }
 /* 상태 + 언제. 나란히 두면 둘이 엉키므로 날짜를 아랫줄로 내린다.
    (td 에는 flex 를 걸지 않는다 — 표 레이아웃이 깨진다) */
 .status-cell .status-when { display: block; font-size: 11.5px; margin-top: 3px;
