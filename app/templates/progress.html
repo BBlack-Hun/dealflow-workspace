@@ -27,6 +27,9 @@
   {% if not readonly %}
   <button type="button" id="cancel-btn" class="danger-btn">중단</button>
   <button type="button" id="retry-btn" class="secondary-btn" hidden>{% if verify %}불일치 재확인{% else %}실패 재시도{% endif %}</button>
+  {# [중단] 으로 남은 취소 건을 다시 보낸다. 취소된 건이 없으면 progress.js 가 감춘다 —
+     버튼 문구에 인원수가 들어가므로 실제 글자는 폴링 때마다 JS 가 채운다. #}
+  <button type="button" id="resend-canceled-btn" class="secondary-btn" hidden>{% if verify %}취소분 재확인{% else %}취소분 재발송{% endif %}</button>
   {% endif %}
   <a class="secondary-btn" href="/api/export/jobs/{{ job_id }}.xlsx" download>엑셀 내려받기</a>
   {% if verify %}
