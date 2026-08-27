@@ -17,6 +17,30 @@
 
   var EMPTY = "(비어 있음)";
 
+  // ── 머리글 단추 글자 ───────────────────────────────────────────────────
+  // 꼬리표(`(1)` 과 `▾`) 앞은 **줄바꿈 없는 공백(U+00A0)** 이다.
+  //
+  // 컬럼 이름은 접혀도 된다 — 원본 시트 이름을 그대로 쓰는 표라
+  // `TIPS 운영사 투자금 1-10억 …` 처럼 두 줄이 필요한 이름이 실제로 있다.
+  // 그래서 머리글에 `white-space: nowrap` 을 거는 방법은 못 쓴다 — 걸면 그런
+  // 이름이 한 줄로 쭉 늘어나 컬럼이 벌어진다(예전에 그렇게 해서 되돌렸다).
+  //
+  // 접히면 안 되는 것은 **꼬리표뿐**이다. 보통 공백이면 거기가 줄바꿈 자리가
+  // 되어 `담당자` / `(1) ▾` 로 갈라졌고, 폭이 조금만 모자라면 이름과 `▾` 가
+  // 갈라졌다. 줄바꿈 없는 공백으로 바꾸면 꼬리표는 앞 낱말에 붙어 다니고,
+  // 이름 안의 진짜 띄어쓰기는 그대로 남아 긴 이름은 여전히 접힌다.
+  //
+  // 낱말 **안에서** 끊기는 것은 CSS 가 막는다(`.filter-btn { word-break: keep-all }`)
+  // — 한글은 기본값이 글자 사이에서도 끊겨서 `담당자` 가 `담당` / `자` 가 된다.
+  //
+  // 눈에 안 보이는 글자라 **이스케이프로** 적는다. 그냥 붙여 넣으면 나중에
+  // 보통 공백으로 되돌아가도 아무도 알아채지 못한다.
+  var NBSP = "\u00a0";
+
+  function buttonLabel(label, active) {
+    return label + (active ? NBSP + "(" + active + ")" : "") + NBSP + "▾";
+  }
+
   function splitValues(raw) {
     if (raw === undefined || raw === null) return [EMPTY];
     var parts = String(raw).split("|").map(function (s) { return s.trim(); })
@@ -172,7 +196,7 @@
         if (!def.btn) return;
         var active = (state[def.key] || []).length;
         def.btn.classList.toggle("on", !!active);
-        def.btn.textContent = def.label + (active ? " (" + active + ")" : "") + " ▾";
+        def.btn.textContent = buttonLabel(def.label, active);
       });
     }
 
@@ -324,7 +348,7 @@
           if (n.nodeType === 3) n.textContent = "";
         });
       }
-      btn.textContent = def.label + " ▾";
+      btn.textContent = buttonLabel(def.label, 0);
       btn.onclick = function (e) {
         e.stopPropagation();
         var wasOpen = openPanel && openPanel.parentNode === def.th &&

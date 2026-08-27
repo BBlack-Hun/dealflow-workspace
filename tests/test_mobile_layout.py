@@ -338,14 +338,19 @@ def test_table_rows_keep_their_density():
 def test_the_desktop_header_shape_is_untouched():
     """머리글 정렬은 여러 번 고쳐 확정한 자리다.
 
-    가운데·가운데 정렬에 줄바꿈 허용 — `TIPS…` 처럼 긴 이름만 두 줄이 되고
-    그 미만은 한 줄이다. 폰 작업이 이걸 건드리면 안 된다.
+    **가로는 왼쪽, 세로는 가운데**에 줄바꿈 허용 — `TIPS…` 처럼 긴 이름만 두
+    줄이 되고 그 미만은 한 줄이다. 폰 작업이 이걸 건드리면 안 된다.
+
+    한동안 가로도 가운데였는데, 칸이 스무 개 넘는 표에서 이름마다 시작 위치가
+    달라 어느 머리글이 어느 칸인지 매번 다시 맞춰야 했다. 아래 칸의 글자가
+    왼쪽에서 시작하니 머리글도 같은 자리에서 시작한다(숫자 칸만 오른쪽 —
+    `.grid-table thead th.num`).
     """
     css = _css()
     rule = re.search(r"\.grid-table thead th\s*\{([^}]*)\}", css)
     assert rule, ".grid-table thead th 규칙이 없어졌다"
     body = rule.group(1)
-    for prop, value in (("text-align", "center"),
+    for prop, value in (("text-align", "left"),
                         ("vertical-align", "middle"),
                         ("white-space", "normal")):
         assert re.search(rf"{prop}:\s*{value}", body), \

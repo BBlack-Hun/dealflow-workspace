@@ -187,13 +187,22 @@
   }
 
   // ── 추가 · 삭제 ────────────────────────────────────────────
-  document.getElementById("cs-add").addEventListener("click", function () {
-    var name = prompt("기업명을 입력하세요");
+  var addBtn = document.getElementById("cs-add");
+  addBtn.addEventListener("click", function () {
+    // 어느 탭에 들어가는지 물어볼 때 미리 알려 준다 — 딜 소싱의 `[○○에 추가]`와 같다.
+    var sheet = (addBtn.getAttribute("data-sheet") || "").trim();
+    var name = prompt("기업명을 입력하세요" + (sheet ? " (" + sheet + ")" : ""));
     if (!name || !name.trim()) return;
+    // **지금 보고 있는 탭을 함께 보낸다.** 안 보내면 서버가 첫 탭에 넣어서,
+    // 다른 탭에서 누른 사람에게는 추가가 안 된 것처럼 보였다(줄은 만들어졌지만
+    // 보고 있는 탭에 없다). 서버는 `sheet` 가 없으면 예전처럼 첫 탭에 넣으므로,
+    // 빈 값이면 아예 싣지 않아 옛 동작을 그대로 둔다.
+    var body = { company_name: name.trim() };
+    if (sheet) body.sheet = sheet;
     fetch("/api/consulting", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ company_name: name.trim() })
+      body: JSON.stringify(body)
     })
       .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
       .then(function (res) {

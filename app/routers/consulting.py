@@ -296,6 +296,10 @@ def consulting_page(request: Request, db: Session = Depends(get_db),
 # --- 편집 -------------------------------------------------------------------
 
 class CompanyIn(BaseModel):
+    # 어느 탭의 줄인가. 이게 없어서 [기업 추가] 가 늘 첫 탭으로 들어갔다 —
+    # 다른 탭에서 누른 사람 눈에는 **추가가 안 된 것처럼** 보인다(줄은 만들어
+    # 졌는데 보고 있지 않은 탭에 있다).
+    sheet: Optional[str] = None
     position: Optional[int] = None
     region: Optional[str] = None
     meeting_at: Optional[str] = None
@@ -339,10 +343,26 @@ def create_company(body: CompanyIn, db: Session = Depends(get_db),
     require_access(user)
     if not (body.company_name or "").strip():
         raise HTTPException(status_code=400, detail="기업명을 입력하세요")
+
+    # 화면이 보내 준 탭에 넣는다. 안 보내면 예전처럼 첫 탭이다.
+    #
+    # 아무 값이나 받으면 오타 하나로 **없던 탭이 생긴다** — `sheet_tabs` 가
+    # 줄에 있는 시트 이름을 그대로 탭으로 올리기 때문이다. 이미 쓰고 있는
+    # 이름만 받는다(사람이 시트를 올려 만든 탭도 포함해야 하므로 SHEETS 만으로는
+    # 부족하다).
+    known = {t["key"] for t in sheet_tabs(db, user)}
+    sheet = (body.sheet or "").strip()
+    if sheet and sheet not in known:
+        raise HTTPException(status_code=400, detail="없는 탭입니다")
+    body.sheet = sheet or DEFAULT_SHEET
+
     if body.position is None:
-        # 새 줄은 맨 아래로. 시트의 NO 를 사람이 매번 세지 않아도 되게.
+        # 새 줄은 그 탭의 맨 아래로. 시트의 NO 를 사람이 매번 세지 않아도 되게.
+        # **탭 안에서** 센다 — 전체에서 세면 다른 탭의 큰 번호를 물려받아,
+        # 방금 넣은 줄이 자기 탭에서는 늘 맨 아래로 밀린다.
         last = db.execute(scope(
             select(ConsultingCompany.position)
+            .where(ConsultingCompany.sheet == body.sheet)
             .order_by(ConsultingCompany.position.desc()).limit(1),
             ConsultingCompany, user)
         ).scalar()

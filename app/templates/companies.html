@@ -74,7 +74,7 @@
   <table class="grid-table" data-inline-url="/api/companies" id="co-table">
     <thead>
       <tr>
-        <th class="num" style="width:36px">#</th>
+        <th class="num" style="width:36px">NO</th>
         {# 시트의 맨 앞 칸이다. 이게 없어서 그 뒤가 한 칸씩 밀려 보였다. #}
         <th style="width:96px" title="홍보메일 답장 받은 날">수신일</th>
         <th style="width:160px">기업명</th>
@@ -98,7 +98,11 @@
         <th style="width:72px">설립년도</th>
         <th style="width:130px">기보, 신보, 중진공</th>
         {# IR 자료는 어느 탭에서 보든 맨 끝에 그대로 둔다. #}
-        <th style="width:82px" data-filters="ir:IR 자료">IR 자료<div class="th-filters"></div></th>
+        {# 폭은 이름(`IR 자료`)이 아니라 **필터를 고른 뒤의 단추**(`IR 자료 (1) ▾`)에
+           맞춘다 — 고르고 나면 `(1)` 이 붙어 13px 이 더 든다. 82px 에서는 화면에서
+           `IR` / `자료 (1) ▾` 두 줄이었다. 두 자리 수(`(12)`)까지 들어가게 여유를
+           두어 102px(단추 77px + th 좌우 여백 18px + 한 자리 여유 7px). #}
+        <th style="width:102px" data-filters="ir:IR 자료">IR 자료<div class="th-filters"></div></th>
         <th style="width:52px"></th>
       </tr>
     </thead>
@@ -160,30 +164,40 @@
        잴 수 있다 — px 만 재던 점검이 이 칸들을 통째로 건너뛰어 "0건" 이라고 했다.
        헤드리스 크롬으로 다시 재 보니 `%` 칸(기업명 264 · 대분류 203 · 소분류 183 ·
        기업구분 183px)은 모두 한 줄에 넉넉해서 그대로 둔다. 두 줄이던 것은 아래
-       `계약여부`·`핵심/TOP Deal` 두 칸이고, 둘 다 px 칸이었다.
+       `담당자`·`계약여부`·`핵심/TOP Deal`·`IR 자료` 네 칸이고, 전부 px 칸이었다.
 
-       늘린 40px 은 폭을 안 준 `한줄 소개` 칸이 내어 준다(692→652px). 그래서 표
+       늘린 84px 은 폭을 안 준 `한줄 소개` 칸이 내어 준다(652→568px). 그래서 표
        전체 폭은 2,030px 그대로라 app.css 의 min-width 는 손대지 않는다. #}
     <thead>
       <tr>
-        <th class="num" style="width:36px">#</th>
+        <th class="num" style="width:36px">NO</th>
         <th style="width:13%">기업명</th>
         <th style="width:10%" data-filters="sector:사업분야 대분류">사업분야 대분류<div class="th-filters"></div></th>
         <th style="width:9%" data-filters="minor:소분류">소분류<div class="th-filters"></div></th>
         <th style="width:9%" data-filters="series:기업구분">기업구분<div class="th-filters"></div></th>
-        <th title="두 줄까지 보입니다 · 눌러서 수정">한줄 소개</th>
-        <th style="width:74px" data-filters="assignee:담당자">담당자<div class="th-filters"></div></th>
+        {# 시트의 칸 이름(`한줄 소개`)과 다르다 — 가져오기는 시트 쪽 이름을 그대로
+           찾으므로(scripts/import_company_sheets.py) 여기만 바꾼다. #}
+        <th title="두 줄까지 보입니다 · 눌러서 수정">기업 한줄 소개</th>
+        <th style="width:100px" data-filters="assignee:담당자">담당자<div class="th-filters"></div></th>
         {# 폭은 **이름이 아니라 단추**에 맞춘다. 필터가 하나뿐인 칸은 filters.js 가
            이름 글자를 지우고 `계약여부 ▾` 단추를 그 자리에 세우는데, 단추는 ` ▾` 와
            자기 padding·테두리(14px)만큼 이름보다 넓다. 이름(66px)만 보고 72px 를
            준 탓에 실제 화면에서는 `계약여부` / `▾` 두 줄로 접혀 있었다.
-           헤드리스 크롬으로 재니 85px 이 필요했다 — 여유를 조금 두어 92px. #}
-        <th style="width:92px" data-filters="contract:계약여부">계약여부<div class="th-filters"></div></th>
+
+           **골라 놓은 상태까지 재야 한다.** 값을 고르면 `계약여부 (1) ▾` 가 되어
+           24px 이 더 드는데, 그건 안 재고 92px 로 두었더니 필터를 걸자마자 다시
+           두 줄이 됐다(위 세 칸도 같은 이유로 함께 넓혔다). 이제는
+           `단추 폭 + th 좌우 여백 18px + 두 자리 수 여유 7px` 로 잡는다. #}
+        <th style="width:110px" data-filters="contract:계약여부">계약여부<div class="th-filters"></div></th>
         <th style="width:88px" title="계약기업 · 거부메일 홍보메일 삭제">날짜 기입</th>
-        {# 같은 이유로 두 줄이던 칸. `핵심/TOP Deal ▾` 는 119px 이 필요했다(102px 이었다). #}
-        <th style="width:122px" data-filters="top:핵심/TOP Deal">핵심/TOP Deal<div class="th-filters"></div></th>
+        {# 같은 이유로 두 줄이던 칸. `핵심/TOP Deal (1) ▾` 는 118px 이 필요하다. #}
+        <th style="width:144px" data-filters="top:핵심/TOP Deal">핵심/TOP Deal<div class="th-filters"></div></th>
         {# IR 자료는 맨 끝에 그대로 둔다 — 요청이 왔을 때 바로 꺼내 쓰는 칸이다. #}
-        <th style="width:82px" data-filters="ir:IR 자료">IR 자료<div class="th-filters"></div></th>
+        {# 폭은 이름(`IR 자료`)이 아니라 **필터를 고른 뒤의 단추**(`IR 자료 (1) ▾`)에
+           맞춘다 — 고르고 나면 `(1)` 이 붙어 13px 이 더 든다. 82px 에서는 화면에서
+           `IR` / `자료 (1) ▾` 두 줄이었다. 두 자리 수(`(12)`)까지 들어가게 여유를
+           두어 102px(단추 77px + th 좌우 여백 18px + 한 자리 여유 7px). #}
+        <th style="width:102px" data-filters="ir:IR 자료">IR 자료<div class="th-filters"></div></th>
         <th style="width:52px"></th>
       </tr>
     </thead>
@@ -283,7 +297,7 @@
     <label class="field"><span>사업분야 대분류</span><input type="text" id="f-sector_major" placeholder="예: 헬스케어"></label>
     <label class="field"><span>소분류</span><input type="text" id="f-sector_minor" placeholder="예: 의료AI"></label>
     <label class="field"><span>기업구분</span><input type="text" id="f-series" placeholder="예: Seed / SeriesA"></label>
-    <label class="field wide"><span>한줄 소개</span>
+    <label class="field wide"><span>기업 한줄 소개</span>
       <textarea id="f-one_liner" rows="2" placeholder="딜소개 문구에 그대로 들어갑니다"></textarea></label>
   </div>
 

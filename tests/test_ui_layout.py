@@ -17,6 +17,7 @@ import unicodedata
 
 CSS = pathlib.Path("app/static/css/app.css")
 TEMPLATES = pathlib.Path("app/templates")
+FILTERS_JS = pathlib.Path("app/static/js/filters.js")
 
 # 칸을 테이블에서 빼내는 값들
 BREAKING = ("flex", "grid", "block", "inline-block", "inline-flex", "-webkit-box")
@@ -192,11 +193,16 @@ def _must_not_pin_or_clip(body: str, where: str) -> None:
         "접히게 두고 폭으로 두 줄 안에 넣는다(위 검사)")
 
 
-def test_header_names_sit_in_the_middle_of_the_cell():
-    """컬럼 이름은 **가로·세로 모두 가운데**다.
+def test_머리글은_왼쪽에서_시작하고_세로로만_가운데다():
+    """컬럼 이름은 **가로는 왼쪽, 세로는 가운데**다.
 
-    이름이 두 줄 안에 들어가게 폭을 잡아 두었으므로(위 검사) 줄 수 차이가
-    한 줄뿐이고, 가운데로 모으면 이름이 칸 한복판에 서서 축이 맞는다.
+    아래 칸(`td`)의 글자가 왼쪽에서 시작하므로 머리글도 같은 자리에서 시작해야
+    눈이 세로로 한 줄을 따라 내려갈 수 있다. 가로로도 가운데에 모아 두었더니
+    이름마다 시작 위치가 달라, 칸이 스무 개 넘는 표(투자사 관리 현황)에서
+    어느 머리글이 어느 칸인지 매번 다시 맞춰야 했다.
+
+    숫자 칸(`.num`)만은 오른쪽을 지킨다 — 자릿수를 세로로 맞춰 보는 칸이다.
+    데이터 칸의 정렬은 여기서 보지 않는다. 바뀐 것은 머리글뿐이다.
 
     높이로 묶거나 잘라내는 것은 여전히 안 된다 — 높이를 고정하면 짧은 머리글
     칸이 비고, `…` 로 자르면 `근무처 전…` 이 전화인지 팩스인지 알 수 없다.
@@ -214,9 +220,14 @@ def test_header_names_sit_in_the_middle_of_the_cell():
     head = _rule(css, ".grid-table thead th")
     assert head, ".grid-table thead th 규칙이 없습니다"
     _must_not_pin_or_clip(head, ".grid-table thead th")
+    assert "text-align: left" in head, "머리글은 가로로 왼쪽"
+    assert "vertical-align: middle" in head, "머리글은 세로로 가운데"
     # 숫자 칸만 예외 — 자릿수를 세로로 맞춰 보느라 오른쪽이다.
-    assert "text-align: center" in head, "머리글은 가로로 가운데"
-    assert "vertical-align: middle" in head, "머리글은 세로로도 가운데"
+    assert "text-align: right" in _rule(css, ".grid-table thead th.num"), \
+        "숫자 칸 머리글은 오른쪽을 지킨다"
+    # 머리글 아래에 붙는 필터 단추·설명도 이름과 같은 자리에서 시작해야 한다.
+    assert "flex-start" in _rule(css, ".grid-table thead .th-filters"), \
+        "필터 단추가 이름과 다른 자리에서 시작하면 축이 어긋난다"
 
 
 # --- 머리글 한 줄 -----------------------------------------------------------
@@ -264,16 +275,31 @@ def _text_px(text: str) -> float:
     return total
 
 
-def _solo_filter_label(attrs: str) -> str:
-    """필터가 **하나뿐인** 칸의 라벨. 아니면 빈 문자열.
+def _filter_labels(attrs: str) -> list:
+    """이 칸에 세워지는 필터 단추의 라벨들. 없으면 빈 목록.
 
-    둘인 칸(진행 단계 / 연결 상태)은 이름을 남기고 단추를 아래에 붙이므로
-    이름 폭 그대로 재면 된다.
+    필터가 **하나뿐인** 칸은 이름 글자가 지워지고 단추가 그 자리를 대신한다.
+    둘인 칸(진행 단계 / 연결 상태)은 이름을 남기고 단추를 아래에 붙이는데,
+    `.th-filters` 가 `flex-wrap: wrap` 이라 단추끼리는 줄을 나눠 선다 —
+    그러니 칸이 감당해야 하는 것은 **가장 넓은 단추 하나**다.
     """
     m = re.search(r'data-filters="([^"]*)"', attrs)
-    if not m or "{{" in m.group(1) or "|" in m.group(1) or ":" not in m.group(1):
-        return ""
-    return m.group(1).split(":", 1)[1].strip()
+    if not m or "{{" in m.group(1):
+        return []
+    out = []
+    for spec in m.group(1).split("|"):
+        if ":" in spec:
+            out.append(spec.split(":", 1)[1].strip())
+    return out
+
+
+# 값을 고르면 라벨 뒤에 `(고른 개수)` 가 붙는다. **그 상태까지 재야 한다** —
+# 안 재고 이름 길이로만 폭을 잡아 두었더니, 화면에서는 멀쩡하다가 필터를 거는
+# 순간 열두 칸이 두 줄로 접혔다(`담당자` → `담당자` / `(1) ▾`).
+#
+# 꼬리표 앞은 줄바꿈 없는 공백이다(filters.js). 폭은 보통 공백과 같으므로
+# 여기서는 그냥 공백으로 세면 된다 — 재는 것은 글자 폭이지 줄바꿈이 아니다.
+_FILTER_SUFFIX = " (1) ▾"
 
 
 def _markup(text: str) -> str:
@@ -367,6 +393,10 @@ def test_컬럼_이름이_두_줄로_접히면_머리글_줄이_들쭉날쭉해�
     **재는 것은 이름이 아니라 화면에 실제로 서는 글자다.** 필터가 하나뿐인 칸은
     이름이 지워지고 `계약여부 ▾` 단추가 그 자리를 대신한다 — 이름만 재면 그
     칸들이 통째로 통과한다(`_FILTER_BTN_PX` 참고).
+
+    그리고 **값을 고른 뒤까지 잰다.** 고르면 `계약여부 (1) ▾` 가 되어 24px 이
+    더 드는데 그건 안 재고 있었다 — 화면에서는 멀쩡하다가 필터를 거는 순간
+    열두 칸이 두 줄로 접혔다(`_FILTER_SUFFIX`).
     """
     css = CSS.read_text(encoding="utf-8")
     problems = []
@@ -376,20 +406,22 @@ def test_컬럼_이름이_두_줄로_접히면_머리글_줄이_들쭉날쭉해�
             cells, widths = _column_px(head, table_px)
             for (attrs, cell), have in zip(cells, widths):
                 name = _name_only(cell)
-                # 반복문으로 만드는 머리글은 값이 실행 때 정해진다 — 셀 수 없다
-                if not name or "{{" in name or "{%" in name or name == _TWO_LINE_OK:
-                    continue
+                labels = _filter_labels(attrs)
                 if have is None:
                     # 폭을 안 준 칸은 남는 자리를 나눠 갖는다 — 정적으로는 못 잰다
                     continue
-                label = _solo_filter_label(attrs)
-                # 필터가 하나뿐인 칸은 이름 대신 `라벨 ▾` 단추가 선다.
-                shown = label + " ▾" if label else name
+                # 화면에 실제로 서는 것들. 필터가 하나뿐이면 이름은 지워진다.
+                shown = []
+                if name and "{{" not in name and "{%" not in name \
+                        and name != _TWO_LINE_OK and len(labels) != 1:
+                    shown.append((name, 0))
                 # 18px = th 좌우 padding, 14px = 단추 padding·테두리
-                need = round(_text_px(shown) + 18 + (14 if label else 0))
-                if need > have:
-                    problems.append(
-                        f"{path.name}: {shown} ({have:.0f}px → {need}px 필요)")
+                shown += [(label + _FILTER_SUFFIX, 14) for label in labels]
+                for text, extra in shown:
+                    need = round(_text_px(text) + 18 + extra)
+                    if need > have:
+                        problems.append(
+                            f"{path.name}: {text} ({have:.0f}px → {need}px 필요)")
     assert not problems, (
         "머리글 이름이 두 줄로 접힙니다. 칸 폭을 넓히세요"
         "(넓힌 뒤에는 app.css 의 그 표 min-width 도 함께):\n  "
@@ -509,3 +541,163 @@ def test_표에는_선호_투자분야인데_수정_창에는_섹터_태그면_�
         "(표 이름은 원본 시트 그대로라 바꾸면 시트와 대조가 안 됩니다):\n  "
         + "\n  ".join(problems))
 
+
+
+# --- 번호 칸 머리글 ----------------------------------------------------------
+#
+# 번호 칸의 머리글이 화면마다 `#` 였다. 기호 하나로는 무슨 칸인지 알 수 없고,
+# 원본 시트가 `NO` 라 나란히 놓고 대조할 때도 눈이 한 번 걸린다.
+#
+# 화면 이름을 여기 적어 두지 않는다. **템플릿 폴더를 훑으므로 표가 새로 생기면
+# 저절로 걸린다.**
+
+def _templates_with_a_hash_header() -> dict:
+    """`<th>#</th>` 가 남아 있는 템플릿 → 그런 칸의 개수."""
+    found = {}
+    for path in sorted(TEMPLATES.glob("*.html")):
+        text = _markup(path.read_text(encoding="utf-8"))
+        hits = 0
+        for head in re.findall(r"<thead\b[^>]*>(.*?)</thead>", text, re.S):
+            for cell in re.findall(r"<th\b[^>]*>(.*?)</th>", head, re.S):
+                if _name_only(cell) == "#":
+                    hits += 1
+        if hits:
+            found[path.name] = hits
+    return found
+
+
+def test_번호_칸_머리글은_기호가_아니라_NO_다():
+    offenders = sorted(_templates_with_a_hash_header())
+    assert not offenders, (
+        "번호 칸 머리글이 `#` 로 남아 있습니다 — `NO` 로 바꾸세요"
+        "(원본 시트가 `NO` 라 나란히 놓고 대조할 때 눈이 걸립니다): "
+        + ", ".join(offenders))
+
+
+# --- 머리글 필터 단추가 두 줄로 접히는 문제 ------------------------------------
+#
+# `담당자` 를 고르면 머리글이 `담당자 (1) ▾` 가 되는데 `담당자` / `(1) ▾` 로
+# 갈라졌고, 폭이 조금만 모자라면 이름과 `▾` 가 갈라졌다.
+#
+# 폭은 위 검사가 지킨다. 여기서는 **갈라지지 않게 붙여 둔 방식**이 그대로인지를
+# 본다 — 둘 중 하나만 되돌아가도 화면에서는 다시 두 줄이 된다.
+
+def test_필터_단추의_꼬리표는_앞_낱말에서_떨어지지_않는다():
+    """`(1)` 과 `▾` 앞은 **줄바꿈 없는 공백**이어야 한다.
+
+    보통 공백이면 거기가 줄바꿈 자리가 된다. 그렇다고 머리글에 `nowrap` 을
+    걸 수는 없다 — 원본 시트 이름을 그대로 쓰는 표라 `TIPS 운영사 …` 처럼 두
+    줄이 필요한 이름이 있고, 한 줄로 묶으면 그 이름이 칸 밖으로 늘어난다
+    (예전에 그렇게 했다가 되돌린 자리다).
+    """
+    js = FILTERS_JS.read_text(encoding="utf-8")
+    assert "\\u00a0" in js, (
+        "필터 단추의 꼬리표를 줄바꿈 없는 공백(U+00A0)으로 붙이지 않습니다 — "
+        "`담당자` / `(1) ▾` 로 갈라집니다")
+    # 붙이는 자리는 한 곳(`buttonLabel`)이어야 한다. 두 군데서 따로 만들면
+    # 한쪽만 고쳐도 아무 티가 안 난다 — 실제로 그랬다.
+    assert len(re.findall(r'\+\s*"\s+▾"', js)) == 0, (
+        "보통 공백으로 `▾` 를 붙이는 자리가 남아 있습니다")
+    assert len(re.findall(r"btn\.textContent\s*=|\.btn\.textContent\s*=", js)) == \
+        len(re.findall(r"textContent = buttonLabel\(", js)), \
+        "단추 글자를 만드는 자리가 `buttonLabel` 밖에도 있습니다"
+
+
+def test_머리글_단추는_낱말_안에서_끊기지_않는다():
+    """한글은 기본값이 글자와 글자 사이에서도 끊긴다 — `담당자` → `담당` / `자`.
+
+    `keep-all` 이면 띄어쓰기에서만 끊긴다. `nowrap` 은 **안 된다** — 이 단추가
+    컬럼 이름 자리를 대신하는 칸이 있어서, 한 줄로 묶으면 긴 이름이 칸 밖으로
+    쭉 늘어난다.
+    """
+    css = CSS.read_text(encoding="utf-8")
+    btn = _rule(css, ".filter-btn")
+    assert "word-break: keep-all" in btn, ".filter-btn 이 낱말 안에서 끊깁니다"
+    assert "nowrap" not in btn, (
+        ".filter-btn 에 nowrap 을 걸면 긴 컬럼 이름이 칸 밖으로 늘어납니다")
+    # 이름 쪽은 여전히 접혀야 한다 — `TIPS 운영사 …` 가 두 줄로 서는 자리다.
+    assert "white-space: normal" in _rule(css, ".grid-table thead th"), \
+        "머리글 이름까지 한 줄로 묶으면 긴 이름이 칸을 벌린다"
+
+
+# --- 화면 위 단추 줄(툴바) ----------------------------------------------------
+#
+# 같은 `.secondary-btn` 인데 `<a>` 는 39px, `<button>` 은 34px 이었다(버튼은
+# 글꼴을 물려받지 않는다). 거기에 `.primary-btn.inline` 31px · 검색칸 30px ·
+# `촘촘히 보기` 19px 이 섞여 한 줄 안에서 20px 이 들쭉날쭉했다.
+#
+# 크기는 **한 곳에서만** 정한다. 화면마다 흩어 두면 탭이 하나 늘 때 또 어긋난다.
+
+_TOOLBAR_CONTROLS = ("input", "select", "button", "a", "label", "textarea")
+
+
+def _toolbar_blocks(text: str):
+    """`<div class="toolbar">` 한 덩어리씩(여는/닫는 div 를 센다)."""
+    text = _strip_html_comments(_markup(text))
+    for m in re.finditer(r'<div class="toolbar"[^>]*>', text):
+        depth, end = 1, len(text)
+        for tag in re.finditer(r"<(/?)div\b", text[m.end():]):
+            depth += -1 if tag.group(1) else 1
+            if depth == 0:
+                end = m.end() + tag.start()
+                break
+        yield text[m.end():end]
+
+
+def _strip_html_comments(text: str) -> str:
+    return re.sub(r"<!--.*?-->", "", text, flags=re.S)
+
+
+def test_툴바_안의_크기는_한_값에서_나온다():
+    """높이를 값 하나(`--ctl-h`)로 정하고 조작 요소를 전부 거기에 맞춘다."""
+    css = CSS.read_text(encoding="utf-8")
+    toolbar = _rule(css, ".toolbar")
+    assert "--ctl-h" in toolbar, ".toolbar 가 칸 높이를 값으로 정하지 않습니다"
+    sized = [body for selector, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css)
+             if ".toolbar" in selector and "height: var(--ctl-h)" in body]
+    assert sized, "툴바 안 요소가 그 값을 쓰지 않습니다"
+
+
+def test_툴바에_새로_놓는_요소도_같은_크기를_받는다():
+    """템플릿을 훑어, 툴바에 실제로 들어 있는 태그가 모두 규칙에 걸리는지 본다.
+
+    화면 이름을 적어 두지 않는다 — 툴바에 `<textarea>` 를 하나 놓는 순간
+    여기서 걸려야 한다. 예전에 `#cs-search` 가 id 목록에서 빠져 혼자만 브라우저
+    기본 입력칸(22px)으로 서 있던 것이 정확히 이 부류였다.
+    """
+    css = CSS.read_text(encoding="utf-8")
+    covered = " ".join(selector for selector, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css)
+                       if ".toolbar" in selector and "height: var(--ctl-h)" in body)
+    missing = set()
+    for path in sorted(TEMPLATES.glob("*.html")):
+        for block in _toolbar_blocks(path.read_text(encoding="utf-8")):
+            for tag in set(re.findall(r"<([a-z]+)\b", block)):
+                if tag in _TOOLBAR_CONTROLS and f".toolbar {tag}" not in covered:
+                    missing.add(f"{path.name}: <{tag}>")
+    assert not missing, (
+        "툴바에 있는데 높이 규칙이 안 걸리는 요소가 있습니다 — 그 줄만 크기가 "
+        "따로 놉니다: " + ", ".join(sorted(missing)))
+
+
+def test_툴바_검색칸을_id_로_하나씩_적지_않는다():
+    """id 를 더 적어야 하는 규칙은 반드시 빠뜨린다.
+
+    `#co-search, #vc-search, #sourcing-search` 로 적어 두었더니 화면이 하나
+    늘 때 `#cs-search` 만 빠져서, 투자컨설턴트 현황의 검색칸만 22px 짜리
+    브라우저 기본 입력칸으로 서 있었다.
+    """
+    # 주석은 지우고 본다 — 규칙 바로 위에 "예전에 `#cs-search` 가 빠져 있었다" 고
+    # 적어 둔 설명이 있어서, 안 지우면 설명하려고 쓴 글자에 검사가 걸린다.
+    css = re.sub(r"/\*.*?\*/", "", CSS.read_text(encoding="utf-8"), flags=re.S)
+    ids = set()
+    for path in sorted(TEMPLATES.glob("*.html")):
+        for block in _toolbar_blocks(path.read_text(encoding="utf-8")):
+            for m in re.finditer(r'<input[^>]*type="search"[^>]*>', block):
+                found = re.search(r'id="([^"]+)"', m.group(0))
+                if found:
+                    ids.add(found.group(1))
+    assert ids, "툴바에서 검색칸을 하나도 못 찾았습니다"
+    named = sorted(i for i in ids if f"#{i}" in css)
+    assert not named, (
+        "툴바 검색칸을 id 로 꾸미고 있습니다 — 화면이 늘면 반드시 하나 빠집니다. "
+        "`.toolbar input[type=\"search\"]` 처럼 자리로 거세요: " + ", ".join(named))

@@ -51,7 +51,7 @@
   <table class="grid-table" id="sourcing-table" data-inline-url="/api/sourcing">
     <thead>
       <tr>
-        <th style="width:34px">#</th>
+        <th class="num" style="width:34px">NO</th>
         {# 어느 칸에 필터를 세울지는 `COLUMNS` 한 곳에서만 정한다 — 머리글과 행이
            같은 목록을 돌아야 선언(`data-filters`)과 값(`data-f-*`)이 어긋날 수
            없다. 손으로 두 군데 적던 시절에는 한쪽만 고쳐도 아무 티가 안 났다. #}
@@ -76,7 +76,23 @@
           {% for field, label, width, filterable in columns if filterable %}data-f-{{ field }}="{{ r|attr(field) or '' }}" {% endfor %}>
         <td class="rowno muted"></td>
         <td class="cell" data-field="requested_at">{{ r.requested_at or '' }}</td>
-        <td><b class="cell" data-field="name">{{ r.name }}</b></td>
+        {# 넣는 길만 있고 빼는 길이 없었다. 지우는 단추는 **이름 바로 밑**에
+           둔다 — 누구를 지우는지가 손가락 위에 있어야 한 줄 밀려 누르는 일이
+           없다. 이 화면에는 투자사 관리 현황·IR 기업현황 같은 수정 패널이
+           없어서(고치는 것은 칸을 눌러 그 자리에서 한다) 단추를 놓을 패널이
+           없다. 그래서 같은 성격의 화면인 투자컨설턴트 현황을 따른다 —
+           거기도 인라인 편집만 있고 삭제는 줄 안에 `linkbtn danger` 로 있다.
+           표에 칸을 하나 더 세우지는 않는다: 머리글·칸 수가 `COLUMNS` 와
+           1:1 이어야 표가 밀리지 않는다(tests/test_sourcing.py 가 지킨다).
+           `.cell` 은 `<b>` 에만 붙어 있으므로 이 줄을 더해도 눌러 고치기는
+           그대로다 — inline_edit.js 는 `.cell[data-field]` 안쪽만 본다. #}
+        <td>
+          <b class="cell" data-field="name">{{ r.name }}</b>
+          <div class="cell-sub row-actions">
+            <button type="button" class="linkbtn danger js-sourcing-del"
+                    title="이 사람을 이 갈래의 명단에서 뺍니다">삭제</button>
+          </div>
+        </td>
         <td class="cell" data-field="assignee_name" data-type="pick">{{ r.assignee_name or '' }}</td>
         <td class="cell" data-field="phone">{{ r.phone or '' }}</td>
         <td class="cell" data-field="title" data-type="pick">{{ r.title or '' }}</td>
@@ -145,6 +161,32 @@
         alert(e.message || "추가하지 못했습니다.");
         addBtn.disabled = false;
       });
+    });
+
+    // 명단에서 빼기 — 되돌릴 수 없는 일이라 **누구를 지우는지** 이름을
+    // 확인창에 넣는다. 투자사 관리 현황·IR 기업현황과 같은 순서다:
+    // 확인 → DELETE → 다시 그리기.
+    table.addEventListener("click", function (e) {
+      var btn = e.target;
+      if (!btn.classList || !btn.classList.contains("js-sourcing-del")) return;
+      var tr = btn.closest("tr");
+      var cell = tr.querySelector('[data-field="name"]');
+      var name = ((cell && cell.textContent) || "").trim();
+      if (!confirm("'" + name + "' 님을 딜 소싱 명단에서 삭제할까요? 되돌릴 수 없습니다.\n" +
+        "(같은 사람이 다른 갈래에도 있으면 그 줄은 그대로 남습니다)")) return;
+      btn.disabled = true;
+      fetch("/api/sourcing/" + tr.getAttribute("data-id"), { method: "DELETE" })
+        .then(function (r) {
+          if (!r.ok) return r.json().then(function (d) { throw new Error(d.detail || "삭제 실패"); });
+          // 갈래별 인원 수(탭)와 전체 수는 서버가 그린다 — 줄만 지우면 숫자가
+          // 어긋난다. 필터도 처음 세어 둔 행 목록을 들고 있어(filters.js)
+          // `N / M명` 의 M 이 옛 수로 남는다. 그래서 다시 그린다.
+          location.reload();
+        })
+        .catch(function (err) {
+          alert(err.message || "삭제하지 못했습니다.");
+          btn.disabled = false;
+        });
     });
 
     var box = document.getElementById("sourcing-search");
