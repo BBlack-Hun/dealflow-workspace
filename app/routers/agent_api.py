@@ -3,6 +3,7 @@
 All endpoints require `Authorization: Bearer <agent_token>`.
 
     GET  /api/agent/poll               -> one running job (atomically claimed) or 204
+    GET  /api/agent/jobs/{id}/state    -> 발송 **직전** 확인 (아직 보내도 되는가)
     POST /api/agent/items/{id}/result  -> {status: sent|failed, error?, screenshot_b64?}
     POST /api/agent/jobs/{id}/status   -> {status, counters}
     POST /api/agent/heartbeat          -> refresh last_poll_at (connection badge)
@@ -226,6 +227,65 @@ def _save_screenshot(item_id: int, b64: str) -> Optional[str]:
         return str(path.relative_to(config.BASE_DIR))
     except Exception:  # noqa: BLE001 - screenshot is best-effort
         return None
+
+
+# 이 상태가 되면 에이전트는 **남은 건을 보내지 않는다**.
+#
+# canceled 는 물론이고, 이미 끝난 것으로 표시된 잡을 계속 보내면 같은 사람에게
+# 두 번 나간다. paused 도 화면에는 '멈춤' 으로 보이므로 계속 보내면 화면과
+# 실제가 어긋난다 — 화면에 안 보이는 발송이 제일 위험하다.
+STOP_STATUSES = ("canceled", "done", "done_with_errors", "paused")
+
+
+@router.get("/jobs/{job_id}/state")
+def job_state(
+    job_id: int,
+    db: Session = Depends(get_db),
+    device: AgentDevice = Depends(get_agent_device),
+):
+    """발송 **직전**에 에이전트가 물어보는 가벼운 경로.
+
+    ## 왜 필요했나
+
+    화면의 [중단]은 서버 DB 만 바꿨다(잡을 canceled 로, 대기 건을 canceled 로).
+    그런데 에이전트는 폴링할 때 items 를 통째로 받아 메모리에 들고 끝까지
+    돌았다 — 중간에 다시 묻지 않으니 [중단]을 눌러도 카톡은 계속 나갔다.
+    `item_result` 가 취소된 건의 결과를 거부하긴 하지만 그때는 이미 나간
+    뒤다. 기록만 안 남을 뿐 상대는 받았다. 즉 [중단]이 '발송을 멈추는'
+    버튼이 아니라 '기록을 멈추는' 버튼이었다.
+
+    건 사이에 이미 3~7초를 쉬므로(사람 흉내) 여기서 한 번 더 묻는 비용은
+    무시할 만하다.
+
+    `POST /jobs/{id}/status` 는 에이전트가 **알리는** 것, 이 `GET
+    /jobs/{id}/state` 는 **묻는** 것이다. 이름이 비슷하니 헷갈리지 말 것.
+
+    돌려주는 값::
+
+        {"ok": true, "job_id": 12, "status": "running",
+         "canceled": false, "canceled_items": []}
+
+    - ``canceled`` — 이 잡의 발송을 멈춰야 하는가. 에이전트는 **이 값 하나만**
+      보면 된다. 판정 기준(``STOP_STATUSES``)이 늘어도 에이전트를 다시
+      배포하지 않아도 된다.
+    - ``canceled_items`` — 잡은 살아 있는데 **이 건들만** 취소된 경우.
+      건 단위로 취소·되돌리는 화면이 생겨도 에이전트를 고치지 않게 함께 준다.
+
+    없는 잡·남의 잡은 ``canceled: true`` 로 답한다. 모르면 보내지 않는 쪽이
+    안전하다 — 잘못 물어본 에이전트가 계속 보내는 것보다 멈추는 게 낫다.
+    """
+    _touch_device(db, device)
+    job = db.get(SendJob, job_id)
+    if job is None or job.user_id != device.user_id:
+        db.commit()
+        return {"ok": False, "detail": "job not found", "job_id": job_id,
+                "status": "unknown", "canceled": True, "canceled_items": []}
+
+    canceled_items = [i.id for i in job.items if i.status == "canceled"]
+    db.commit()
+    return {"ok": True, "job_id": job.id, "status": job.status,
+            "canceled": job.status in STOP_STATUSES,
+            "canceled_items": canceled_items}
 
 
 class JobStatusUpdate(BaseModel):
