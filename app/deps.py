@@ -5,12 +5,13 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import Depends, Header, HTTPException, Request
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from . import assets, clock, config
-from .db import get_db
+from .db import SessionLocal, get_db
 from .models import AgentDevice, User
 
 def _eok(value) -> str:
@@ -60,6 +61,104 @@ def require_admin(user: User = Depends(get_current_user)) -> User:
     if user.role != "admin":
         raise HTTPException(status_code=403, detail="관리자만 접근할 수 있습니다")
     return user
+
+
+# --- 투자컨설턴트가 닿을 수 있는 곳 -----------------------------------------
+#
+# **허용 목록이다.** 막을 곳을 적는 방식이었다면 라우터가 하나 늘 때마다 여기
+# 적는 것을 잊고, 잊은 것은 열린 채로 나간다 — 실제로 그랬다. 좌측 메뉴만
+# 걸러 두고 라우터를 안 막아서, 주소를 직접 치면 딜·투자사·엑셀 내보내기까지
+# 전부 열려 있었다. 이제 새 화면의 기본값은 **막힘**이다.
+#
+# 여기 적힌 것 말고는 화면이든 API 든 전부 끊긴다. 판정은 `app/main.py` 의
+# 미들웨어 한 곳에서만 한다 — 라우터마다 흩뿌리면 다시 빠진다.
+CONSULTANT_PATHS = (
+    # 자기 화면과 그 화면이 부르는 것들(인라인 수정 PATCH · 월 열 추가/삭제 ·
+    # 시트 올리기 · 엑셀 내려받기). 화면만 열어 두면 고칠 수가 없다.
+    "/consulting",
+    "/api/consulting",
+    "/api/export/consulting.xlsx",
+    # 참고 자료 패널. 투자사 관리 현황과 주소를 같이 쓴다 — 그래서 어느 화면의
+    # 자료인지는 라우터가 따로 본다(routers/contacts.py 의 `_editable_ref`).
+    "/ref-sheets",
+    "/api/ref-sheets",
+    # 로그인·로그아웃·비밀번호 변경. 막으면 들어올 수도, 나갈 수도 없다.
+    "/login",
+    "/logout",
+    "/account/password",
+    # 사이드바 배지(base.html)가 5초마다 부른다. 끊으면 자기 화면을 보는
+    # 내내 403 이 쌓인다. 돌려주는 것은 **본인 기기**의 연결 상태뿐이다.
+    "/api/agent-status",
+    # 살아 있는지 확인하는 주소 · 정적 파일 · 파비콘.
+    "/health",
+    "/static",
+    "/favicon.ico",
+)
+
+
+# 막혔을 때 돌아가는 화면과, 스크립트에 돌려줄 사유.
+CONSULTANT_HOME = "/consulting"
+CONSULTANT_BLOCKED = "투자컨설턴트는 투자컨설턴트 현황만 볼 수 있습니다"
+
+
+def consultant_may_open(path: str) -> bool:
+    """이 경로가 투자컨설턴트 허용 목록에 있는가.
+
+    접두사는 **경로 조각 단위**로 견준다. 단순 `startswith` 로 두면 나중에
+    `/consulting-report` 같은 이름을 붙였을 때 조용히 같이 열린다.
+    """
+    return any(path == item or path.startswith(item + "/")
+               for item in CONSULTANT_PATHS)
+
+
+def is_consultant(request: Request) -> bool:
+    """이 요청을 보낸 사람이 투자컨설턴트인가.
+
+    미들웨어는 라우팅 전에 돌아서 `Depends` 를 쓸 수 없다 — 세션을 직접 연다.
+    허용 목록에 없는 경로일 때만 부르므로, 자기 화면을 쓰는 동안에는 이
+    조회가 일어나지 않는다.
+    """
+    from .services import auth as auth_svc
+
+    db = SessionLocal()
+    try:
+        user = auth_svc.user_for_token(db, request.cookies.get(auth_svc.SESSION_COOKIE))
+        return user is not None and user.role == "consultant"
+    finally:
+        db.close()
+
+
+def can_open(user: User, path: str) -> bool:
+    """이 사람이 이 경로를 열어도 되는가 — 컨설턴트 여부만 본다.
+
+    화면 접근은 미들웨어가 막지만, **여러 화면이 같이 쓰는 주소**는 그것만으로는
+    부족하다(참고 자료 `/ref-sheets/…`). 번호만 바꿔 남의 화면 자료를 건드리는
+    길을 라우터가 이 함수로 막는다 — 역할 판정은 여기 한 곳에 둔다.
+    """
+    return user.role != "consultant" or consultant_may_open(path)
+
+
+def consultant_block_response(request: Request) -> Response:
+    """막을 때 무엇을 돌려줄지.
+
+    브라우저 주소창에 403 만 뜨면 쓰는 사람은 고장인 줄 안다 — 화면 요청은
+    자기 화면으로 보낸다. 반면 화면 속 스크립트에 리다이렉트를 주면 저장이
+    성공한 것처럼 보이므로, 그쪽에는 403 을 그대로 준다.
+    """
+    if _wants_json(request):
+        return JSONResponse({"detail": CONSULTANT_BLOCKED}, status_code=403)
+    return RedirectResponse(CONSULTANT_HOME, status_code=303)
+
+
+def _wants_json(request: Request) -> bool:
+    if request.url.path.startswith("/api/"):
+        return True
+    # 주소창이 만들 수 있는 것은 GET · POST 뿐이다. PATCH·DELETE·PUT 은
+    # 화면 스크립트(fetch)에서만 오므로 사람이 볼 응답이 아니다.
+    if request.method in ("PATCH", "PUT", "DELETE"):
+        return True
+    accept = request.headers.get("accept", "")
+    return "application/json" in accept and "text/html" not in accept
 
 
 def get_agent_device(

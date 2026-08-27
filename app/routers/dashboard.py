@@ -39,6 +39,19 @@ router = APIRouter(tags=["dashboard"])
 ROLES = {"user", "consultant", "admin"}
 
 
+def valid_role(raw: str) -> Optional[str]:
+    """폼에서 온 권한 값 — 아는 값이면 그대로, 아니면 None.
+
+    **판정은 여기 하나뿐이어야 한다.** 예전에는 계정 생성이 `ROLES` 를 보기
+    전에 `("user", "admin")` 을 한 번 더 적어 두었다. 그래서 팀 현황에서
+    [투자컨설턴트] 를 골라도 조용히 팀원 계정이 만들어졌고, 만들어 준 사람은
+    "컨설턴트인데 메뉴가 다 보인다"는 말을 듣고서야 알았다. 목록이 둘이면
+    하나는 반드시 낡는다.
+    """
+    role = (raw or "").strip()
+    return role if role in ROLES else None
+
+
 @router.get("/dashboard", response_class=HTMLResponse, include_in_schema=False)
 def dashboard_page(request: Request, db: Session = Depends(get_db),
                    user: User = Depends(get_current_user), top: int = dash.TOP_DEFAULT):
@@ -377,15 +390,12 @@ def create_member(
     normalized = auth_svc.normalize_phone(phone)
     if len(normalized) < 10:
         return RedirectResponse("/team?msg=휴대폰번호를+다시+확인해+주세요", status_code=303)
-    if role not in ("user", "admin"):
-        role = "user"
     if db.execute(select(User).where(User.phone == normalized)).scalars().first():
         return RedirectResponse("/team?msg=이미+등록된+번호입니다", status_code=303)
 
-    # 폼에서 온 값을 그대로 넣으면 오타 하나로 아무 메뉴도 못 보는 계정이
-    # 생긴다(권한 판정이 전부 이 값으로 갈린다).
-    if role not in ROLES:
-        role = "user"
+    # 모르는 값이면 가장 좁은 권한으로 떨어뜨린다 — 오타 하나로 관리자가
+    # 생기는 것보다 낫다(권한 판정이 전부 이 값으로 갈린다).
+    role = valid_role(role) or "user"
 
     member = User(name=name.strip() or normalized, phone=normalized, role=role,
                   password_hash=auth_svc.hash_password(config.INITIAL_PASSWORD),
@@ -398,6 +408,40 @@ def create_member(
     return RedirectResponse(
         f"/team?msg={member.name}+계정을+만들었습니다.+초기+비밀번호는+팀+공통값입니다",
         status_code=303)
+
+
+@router.post("/team/members/{member_id}/role", include_in_schema=False)
+def change_member_role(
+    member_id: int,
+    role: str = Form(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """이미 만들어진 계정의 권한 바꾸기.
+
+    계정을 만든 뒤에는 권한을 고칠 길이 없었다. 그래서 잘못 만들어진 계정
+    (컨설턴트로 골랐는데 팀원으로 저장되던 버그)을 고치려면 계정을 정지하고
+    새로 만드는 수밖에 없었는데, 그러면 담당 투자사와 발송 이력이 끊긴다.
+
+    바뀐 권한은 다음 요청부터 바로 먹는다 — 권한은 요청마다 DB 에서 읽는다.
+    """
+    _admin_only(user)
+    # 본인 권한은 못 바꾼다. 관리자가 스스로를 내리면 팀 현황에 다시 들어올
+    # 길이 없어져, 되돌리려면 DB 를 직접 고쳐야 한다.
+    if member_id == user.id:
+        return RedirectResponse("/team?msg=본인+권한은+바꿀+수+없습니다", status_code=303)
+    member = db.get(User, member_id)
+    if member is None:
+        raise HTTPException(status_code=404, detail="계정을 찾을 수 없습니다")
+    # 권한을 바꾸러 온 요청이 모르는 값 때문에 조용히 팀원으로 떨어지면
+    # 안 된다 — 계정 생성과 달리 여기서는 되돌려 보내고 알린다.
+    picked = valid_role(role)
+    if picked is None:
+        return RedirectResponse("/team?msg=알+수+없는+권한입니다", status_code=303)
+    member.role = picked
+    db.commit()
+    return RedirectResponse(f"/team?msg={member.name}+님의+권한을+바꿨습니다",
+                            status_code=303)
 
 
 @router.post("/team/members/{member_id}/consulting", include_in_schema=False)
