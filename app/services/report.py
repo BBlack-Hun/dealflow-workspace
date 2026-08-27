@@ -13,21 +13,60 @@
 **결과 문의(미팅 후 열흘)를 했는지**를 함께 센다. 원본 시트에도
 "결과확인전화가 없으면 계약을 잊어버리는 경우가 발생할 수 있습니다" 라고
 적혀 있었다. 그게 이 보고의 목적이다.
+
+**발송(딜 소개·딜 소싱)도 같이 뽑는다.** 회차가 끝나면 카톡으로 이런 보고를
+손으로 써서 보내고 있었다.
+
+    딜소개 업무(핵심 딜 7개사)
+    - 총 126명
+    116개[8/27(목) 116개 완료]
+
+    딜 소싱 2건(8/27(목)) 완료
+
+미팅과 같은 이유로 이것도 여기서 나와야 한다 — 손으로 세어 옮겨 적으면
+틀린다. 실제로 위 보고의 `116개 완료` 는 그 회차가 18건에서 중단된 것을
+모르고 대상 수를 그대로 옮겨 적은 것이었다.
 """
 from __future__ import annotations
 
 from calendar import monthrange
+from collections import Counter
 from datetime import date
 from typing import Dict, List, Optional
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..models import IrRequest, Meeting, User, VcContact
+from ..models import (DealBatch, DealBatchCompany, IrCompany, IrRequest,
+                      Meeting, SendItem, SendJob, User, VcContact)
 from .pipeline import (MEETING_FOLLOWUP_DAYS, MEETING_KINDS,
                        NO_FOLLOWUP_OUTCOMES, OUTCOMES, REQUEST_STATUS)
+from .weekly import WEEKDAYS
 
 WEEK_NAMES = ["첫주", "둘째주", "셋째주", "넷째주", "다섯째주", "여섯째주"]
+
+#: 보고에 싣는 발송 종류. 사용자가 카톡 보고에서도 둘을 나눠 적었다 —
+#: 딜 소개는 투자사 명단에, 딜 소싱은 "우리 딜을 같이 볼 사람" 에게 가는
+#: 다른 일이라 한 줄에 섞으면 무엇을 몇 건 했는지가 사라진다.
+#:
+#: IR 자료 전달(`ir_delivery`)은 여기 넣지 않는다. 아래 'IR 자료 요청' 칸이
+#: 요청받은 것과 전달한 것을 이미 세고 있어, 여기 또 실으면 같은 일이 두 번
+#: 세어진다. 방 연결 확인(`verify_room`)은 아무것도 보내지 않으므로 애초에
+#: 발송이 아니다(`models.SEND_KINDS` 의 이유와 같다).
+SEND_GROUPS = (("deal_intro", "딜 소개"), ("sourcing_intro", "딜 소싱"))
+
+#: 회차 상태를 읽는 말로. 발송 진행 화면(`static/js/progress.js` 의
+#: `JOB_STATUS_KO`)과 **같은 말을 써야 한다** — 같은 회차가 화면마다 다른
+#: 말로 불리면 어느 쪽을 믿을지 알 수 없다.
+SEND_STATUS = {
+    "draft": "작성 중",
+    "queued": "대기 중",
+    "running": "보내는 중",
+    "paused": "멈춤",
+    "done": "완료",
+    "done_with_errors": "완료(실패 있음)",
+    "canceled": "중단됨",
+}
 
 
 def _as_date(value: Optional[str]) -> Optional[date]:
@@ -37,6 +76,19 @@ def _as_date(value: Optional[str]) -> Optional[date]:
         return date.fromisoformat(value[:10])
     except ValueError:
         return None
+
+
+def day_label(value: Optional[str]) -> str:
+    """`2026-08-27` → `8/27(목)`.
+
+    사용자가 카톡 보고에 쓰던 표기 그대로다. **요일이 붙어야** 한다 —
+    회차는 요일로 기억되는 일이라("목요일 회차"), 날짜만 있으면 그 줄이
+    어느 회차였는지 다시 달력을 봐야 한다.
+    """
+    day = _as_date(value)
+    if day is None:
+        return ""
+    return f"{day.month}/{day.day}({WEEKDAYS[day.weekday()]})"
 
 
 def week_of_month(day: date) -> int:
@@ -146,6 +198,9 @@ def monthly(db: Session, year: int, month: int,
         label = OUTCOMES.get(meeting.outcome or "", "결과 미정")
         outcome_counts[label] = outcome_counts.get(label, 0) + 1
 
+    # 발송도 같은 규칙으로 — 관리자가 팀 전체를 볼 때는 `user` 가 없다.
+    sends = _sends(db, start, end, user, owners)
+
     return {
         "year": year,
         "month": month,
@@ -153,6 +208,13 @@ def monthly(db: Session, year: int, month: int,
         # **한눈에** 봐야 한다. 다섯 가지를 날짜와 함께 그대로 늘어놓는다.
         "buckets": _buckets(meetings, requests, contacts, owners, today,
                             open_followup),
+        # 그 달에 나간 회차. 카톡으로 손으로 쓰던 보고가 이것이다.
+        "sends": sends,
+        # 연간 보고가 달마다 더해 쓰는 값. **월간과 같은 곳에서 나와야** 두
+        # 화면의 숫자가 어긋나지 않는다(미팅 쪽이 이미 그렇게 되어 있다).
+        "send_rounds": sends["rounds"],
+        "send_sent": sends["sent"],
+        "send_left": sends["left"],
         "weeks": rows,
         # 화면 안내문이 "미팅 뒤 N일쯤" 이라고 말할 때 쓰는 값 — 코드와
         # 화면이 다른 숫자를 말하면 안 된다.
@@ -172,6 +234,154 @@ def monthly(db: Session, year: int, month: int,
         "ir_requested": len(requests),
         "ir_delivered": sum(1 for r in requests if r.status == "delivered"),
         "ir_open": sum(1 for r in requests if r.status == "open"),
+    }
+
+
+def _job_date(job: SendJob, batch: Optional[DealBatch]) -> str:
+    """이 회차가 **언제 것인가**.
+
+    회차일(`DealBatch.sent_date`)을 쓰고, 없으면 시작 시각의 날짜를 쓴다 —
+    대시보드의 '최근 발송 회차'(`dashboard.recent_batches`)와 같은 기준이다.
+    두 화면이 같은 회차를 다른 날로 부르면 안 된다.
+
+    건마다 나간 시각(`SendItem.sent_at`)으로 달을 가르지 않는다. 밤에 시작해
+    자정을 넘긴 회차가 두 달에 쪼개지는데, 사람이 부르는 회차는 **하루**다.
+    """
+    return (batch.sent_date if batch is not None else None) or (job.started_at or "")[:10]
+
+
+def _sends(db: Session, start: date, end: date, user: Optional[User],
+           owners: Dict[int, str]) -> dict:
+    """그 달에 나간 딜 소개·딜 소싱 회차.
+
+    카톡으로 손으로 쓰던 보고가 이 표다.
+
+        딜소개 업무(핵심 딜 7개사)
+        - 총 126명
+        116개[8/27(목) 116개 완료]
+
+    **완료는 실제로 나간 건만 센다.** 위 보고는 대상 116명을 그대로
+    `116개 완료` 로 적었는데 그 회차는 18건에서 중단됐다 — 손으로 옮겨 적으면
+    이런 거짓 보고가 나온다. `status="sent"` 인 건만 세고, 대상이었는데 안 나간
+    건은 `left` 로 따로 드러낸다.
+
+    회차 수·건수는 `SendJob.total`/`sent` 같은 세어 둔 칸을 믿지 않고 발송 건을
+    직접 센다. 세어 둔 칸은 중단·재시도를 거치며 실제와 어긋날 수 있고, 보고는
+    그 어긋남이 드러나야 할 자리다.
+    """
+    kinds = [kind for kind, _ in SEND_GROUPS]
+    stmt = (select(SendJob, DealBatch)
+            .outerjoin(DealBatch, DealBatch.id == SendJob.batch_id)
+            .where(SendJob.kind.in_(kinds)))
+    if user is not None:
+        stmt = stmt.where(SendJob.user_id == user.id)
+
+    lo, hi = start.isoformat(), end.isoformat()
+    jobs = [(job, batch) for job, batch in db.execute(stmt).all()
+            if lo <= _job_date(job, batch) <= hi]
+
+    job_ids = [job.id for job, _ in jobs]
+    counts: Dict[int, Counter] = {}
+    people: Dict[int, set] = {}
+    for item_id, job_id, status, contact_id, sourcing_id in db.execute(
+        select(SendItem.id, SendItem.job_id, SendItem.status,
+               SendItem.contact_id, SendItem.sourcing_contact_id)
+        .where(SendItem.job_id.in_(job_ids or [0]))
+    ).all():
+        counts.setdefault(job_id, Counter())[status or ""] += 1
+        # 받는 사람은 투자사 담당자이거나 소싱 명단이거나 — 서로 다른 표라
+        # 어느 쪽인지까지 키에 담아야 번호가 겹치는 두 사람이 한 명이 되지 않는다.
+        who = (("c", contact_id) if contact_id
+               else ("s", sourcing_id) if sourcing_id else ("i", item_id))
+        people.setdefault(job_id, set()).add(who)
+
+    # 그 회차에 무엇을 소개했나 — 사용자가 `핵심 딜 7개사` 라고 적던 값.
+    batch_ids = [b.id for _, b in jobs if b is not None]
+    named: Dict[int, List[str]] = {}
+    for batch_id, name in db.execute(
+        select(DealBatchCompany.batch_id, IrCompany.name)
+        .join(IrCompany, IrCompany.id == DealBatchCompany.company_id)
+        .where(DealBatchCompany.batch_id.in_(batch_ids or [0]))
+        .order_by(DealBatchCompany.position)
+    ).all():
+        named.setdefault(batch_id, []).append(name)
+
+    groups = []
+    for kind, label in SEND_GROUPS:
+        # **회차마다 한 줄.** 같은 날 회차가 둘이어도 합치지 않는다 — 8/27 에
+        # 두 회차가 있었고 하나는 18건에서 멈췄는데, 합치면 그 사실이 묻혀
+        # `116개 완료` 가 된다. 손으로 쓰던 보고가 실제로 그렇게 틀렸다.
+        picked = sorted((t for t in jobs if t[0].kind == kind),
+                        key=lambda t: (_job_date(*t), t[0].id))
+        rows, targeted, companies = [], set(), set()
+        for job, batch in picked:
+            got = counts.get(job.id, Counter())
+            target = sum(got.values())
+            sent = got.get("sent", 0)
+            left = target - sent
+            waiting = got.get("pending", 0) + got.get("sending", 0)
+            names = named.get(batch.id, []) if batch is not None else []
+            when = _job_date(job, batch)
+            targeted |= people.get(job.id, set())
+            companies.update(names)
+            rows.append({
+                "job_id": job.id,
+                "title": (batch.title if batch is not None else "") or "회차명 없음",
+                "date": when,
+                "day": day_label(when),
+                "companies": len(names),
+                "company_names": names,
+                # 대상 = 발송 목록에 오른 사람. 완료 = 실제로 도착한 건.
+                "target": target,
+                "sent": sent,
+                "failed": got.get("failed", 0),
+                "canceled": got.get("canceled", 0),
+                "waiting": waiting,
+                # 대상이었는데 안 나간 건 — 이 숫자가 0 이어야 `대상 = 완료` 다.
+                "left": left,
+                # 왜 안 나갔는가. 숫자만 있으면 다시 돌려야 할 것인지
+                # (중단·대기) 못 보내는 곳인지(실패) 알 수 없다.
+                "left_label": " · ".join(
+                    f"{name} {n}건" for name, n in
+                    (("중단", got.get("canceled", 0)),
+                     ("실패", got.get("failed", 0)),
+                     ("아직 안 보냄", waiting)) if n),
+                "status": job.status,
+                "status_label": SEND_STATUS.get(job.status, job.status),
+                "owner": owners.get(job.user_id, ""),
+                # 중단은 빨강, 나머지 미완은 노랑. 완료로 잘못 읽히는 것이
+                # 이 보고에서 가장 비싼 실수라 눈에 띄어야 한다.
+                "level": "bad" if job.status == "canceled" else ("warn" if left else ""),
+            })
+        groups.append({
+            "key": kind,
+            "label": label,
+            "rows": rows,
+            "rounds": len(rows),
+            # 그 달에 **대상이 된 사람** 수. 사용자가 `총 126명` 이라고 적던 칸.
+            #
+            # 겹치면 한 명이다 — 같은 날 두 회차의 대상이 겹치므로 회차별
+            # 대상을 더하면 같은 사람을 두 번 센다(97 + 116 = 213 이 아니라 116명).
+            #
+            # 지금 명단의 크기(발송 가능한 담당자 수)를 쓰지 않는다. 그건 오늘을
+            # 세는 값이라 8월 보고를 12월에 열면 숫자가 달라진다 — 보고는 그 달에
+            # 한 일의 기록이어야 하고, 명단이 지금 몇 명인지는 투자사 관리 현황이
+            # 답할 질문이다.
+            "contacts": len(targeted),
+            "companies": len(companies),
+            "target": sum(r["target"] for r in rows),
+            "sent": sum(r["sent"] for r in rows),
+            "left": sum(r["left"] for r in rows),
+        })
+
+    return {
+        "groups": groups,
+        "rounds": sum(g["rounds"] for g in groups),
+        "sent": sum(g["sent"] for g in groups),
+        "left": sum(g["left"] for g in groups),
+        # 대상만큼 안 나간 회차가 몇 개인가. 0 이 아니면 대상 수를 완료로
+        # 적으면 안 된다는 뜻이라, 화면이 그걸 먼저 말해야 한다.
+        "short": sum(1 for g in groups for r in g["rows"] if r["left"]),
     }
 
 
@@ -256,11 +466,15 @@ def yearly(db: Session, year: int, user: Optional[User] = None,
 
     "올해 몇 건이나 했나" 를 보려고 열두 달을 하나씩 눌러 보고 있었다.
     각 달의 요약을 그대로 쓰므로 숫자가 월간 보고와 어긋나지 않는다.
+
+    **발송도 함께 센다.** 월간에만 두면 연말에 열두 달을 열어 손으로 더하게
+    되는데, 그게 바로 이 보고가 없애려는 일이다.
     """
     today = today or date.today()
     months, totals = [], {"total": 0, "done": 0, "followup_done": 0,
                           "followup_open": 0, "followup_late": 0,
-                          "ir_requested": 0, "ir_delivered": 0, "ir_open": 0}
+                          "ir_requested": 0, "ir_delivered": 0, "ir_open": 0,
+                          "send_rounds": 0, "send_sent": 0, "send_left": 0}
     for mon in range(1, 13):
         got = monthly(db, year, mon, user, today)
         months.append({
