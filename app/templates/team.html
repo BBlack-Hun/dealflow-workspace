@@ -70,6 +70,7 @@
 
   {% if msg %}<p class="flash">{{ msg }}</p>{% endif %}
 
+  <div class="table-wrap">
   <table class="grid-table">
     <thead>
       <tr>
@@ -138,6 +139,7 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
 </section>
 
 <div class="dash-grid">
@@ -196,6 +198,7 @@
   <section class="panel wide">
     <h2 class="panel-title">최근 발송 회차 (팀 전체)</h2>
     {% if recent_batches %}
+    <div class="table-wrap">
     <table class="grid-table compact">
       <thead><tr><th>회차</th><th style="width:96px">종류</th><th>보낸 사람</th><th>날짜</th><th class="num">대상</th><th class="num">성공</th><th class="num">실패</th><th></th></tr></thead>
       <tbody>
@@ -213,6 +216,7 @@
         {% endfor %}
       </tbody>
     </table>
+    </div>
     {% else %}
     <p class="muted">아직 발송한 회차가 없습니다.</p>
     {% endif %}

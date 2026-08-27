@@ -177,6 +177,7 @@
       <b>{{ w.label }}</b>
       <span class="count-pill {% if w.done %}on{% endif %}"><b>{{ w.done }}</b>개사 완료</span>
     </div>
+    <div class="table-wrap">
     <table class="grid-table compact">
       <thead><tr><th style="width:88px">날짜</th><th style="width:170px">담당자 / 투자사</th>
         <th style="width:62px">구분</th>{% if team_wide %}<th style="width:70px">팀원</th>{% endif %}
@@ -215,6 +216,7 @@
         {% endfor %}
       </tbody>
     </table>
+    </div>
   </div>
   {% endfor %}
   {% else %}
@@ -259,6 +261,7 @@
       <span class="count-pill {% if b.rows %}on{% endif %}"><b>{{ b.rows|length }}</b>건</span>
     </h3>
     {% if b.rows %}
+    <div class="table-wrap">
     <table class="grid-table compact">
       <thead><tr>
         <th style="width:96px">날짜</th>
@@ -281,6 +284,7 @@
         {% endfor %}
       </tbody>
     </table>
+    </div>
     {% else %}
     <p class="muted bucket-empty">없습니다.</p>
     {% endif %}
