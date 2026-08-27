@@ -227,6 +227,7 @@
   <section class="panel wide">
     <h2 class="panel-title">최근 발송 회차</h2>
     {% if recent_batches %}
+    <div class="table-wrap">
     <table class="grid-table compact">
       <thead><tr><th>회차</th><th>날짜</th><th class="num">대상</th><th class="num">성공</th><th class="num">실패</th><th>상태</th><th></th></tr></thead>
       <tbody>
@@ -243,6 +244,7 @@
         {% endfor %}
       </tbody>
     </table>
+    </div>
     {% else %}
     <p class="muted">아직 발송한 회차가 없습니다. <a href="/deals">첫 딜소개 보내기</a></p>
     {% endif %}

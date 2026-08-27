@@ -273,7 +273,35 @@
       panel.appendChild(list);
       panel.setAttribute("data-key", def.key);   // 같은 버튼을 다시 누르면 닫히도록
       def.th.appendChild(panel);
+      clampIntoView(panel);
       openPanel = panel;
+    }
+
+    // 필터 창은 누른 칸에 붙어서 뜬다. 표는 화면보다 넓어 가로로 밀리므로,
+    // **오른쪽 칸일수록 창이 보이는 자리 밖으로 나간다** — 폰(390px)에서는
+    // 목록의 오른쪽 절반이 잘려 무엇을 고르는지 안 보였다.
+    // 칸에 붙여 두되, 삐져나온 만큼만 안쪽으로 끌어당긴다.
+    function clampIntoView(panel) {
+      var edge = 8;
+      // 표가 가로로 밀리는 상자 안이면 그 상자가 보이는 범위다. 아니면 화면.
+      var box = panel.parentNode;
+      while (box && box !== document.body) {
+        var ox = getComputedStyle(box).overflowX;
+        if (ox === "auto" || ox === "scroll") break;
+        box = box.parentNode;
+      }
+      var view = (box && box !== document.body)
+        ? box.getBoundingClientRect()
+        : { left: 0, right: document.documentElement.clientWidth };
+
+      function shift(by) {
+        panel.style.left = ((parseFloat(getComputedStyle(panel).left) || 0) + by) + "px";
+      }
+      var over = panel.getBoundingClientRect().right - (view.right - edge);
+      if (over > 0) shift(-over);
+      // 너무 당겨서 이번엔 왼쪽으로 나가면 안 된다(창이 보이는 자리보다 넓을 때).
+      var under = (view.left + edge) - panel.getBoundingClientRect().left;
+      if (under > 0) shift(under);
     }
 
     // 한 칸에 필터가 하나뿐이면 **그 단추가 컬럼 이름 자리를 대신한다.**
