@@ -589,8 +589,11 @@ def _admin_warnings(rows: List[dict], unassigned: int) -> List[dict]:
     if old:
         out.append({"level": "warn", "label": "발송 프로그램이 낡았습니다",
                     "detail": ", ".join(old),
-                    "hint": f"v{version.MIN_AGENT_VERSION} 부터 IR 링크가 여러 통으로 "
-                            f"나갑니다 — 그 PC에서 다시 받아 주세요"})
+                    # 이 문구는 올릴 때마다 같이 고친다. 예전 이유(IR 링크가
+                    # 여러 통으로 나간다)가 그대로 남아 있어, 낡은 에이전트가
+                    # 왜 위험한지 잘못 알리고 있었다.
+                    "hint": f"v{version.MIN_AGENT_VERSION} 부터 [중단]을 누르면 "
+                            f"발송이 실제로 멈춥니다 — 그 PC에서 다시 받아 주세요"})
     no_agent = [r["name"] for r in rows if not r["agent_ok"]]
     if no_agent:
         out.append({"level": "bad", "label": "발송 프로그램 미연결",

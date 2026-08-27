@@ -22,6 +22,7 @@ import random
 import socket
 import sys
 import time
+from collections import namedtuple
 from pathlib import Path
 
 import requests
@@ -61,6 +62,11 @@ DEFAULT_CONFIG = {
     "room_marker": "",   # 딜소개 방을 가려내는 표식(예: "우리브이씨 Asset")
     "verify_delay_min_sec": 1,
     "verify_delay_max_sec": 2,
+    # 한 건을 보내기 **직전** 서버에 "아직 보내도 되는가" 를 묻는다.
+    # 못 물어보면 보내지 않고 멈추는데, 서버 재배포 같은 몇 초짜리 끊김에
+    # 회차가 통째로 죽으면 못 쓴다 — 그래서 몇 번 다시 묻고 나서 멈춘다.
+    "cancel_check_retries": 3,
+    "cancel_check_backoff_sec": 1.0,
     "mock": {"delay_min_sec": 0.5, "delay_max_sec": 1.5, "fail_rate": 0.15},
     "selectors_file": "agent/selectors.yaml",
 }
@@ -147,6 +153,17 @@ class AgentClient:
         r.raise_for_status()
         return r.json()
 
+    def job_state(self, job_id: int):
+        """이 잡을 계속 보내도 되는지 서버에 **묻는다**.
+
+        `report_job` 은 우리가 알리는 것이고 이쪽은 묻는 것이다.
+        발송 직전마다 부르므로 timeout 을 짧게 둔다 — 여기서 오래 매달리면
+        건 사이 간격이 들쭉날쭉해져 사람 흉내가 깨진다.
+        """
+        r = self.session.get(f"{self.base}/api/agent/jobs/{job_id}/state", timeout=10)
+        r.raise_for_status()
+        return r.json()
+
     def report_item(self, item_id: int, status: str, error=None, screenshot_b64=None,
                     verify_result=None, found_room=None, candidates=None):
         return self.session.post(
@@ -200,6 +217,74 @@ def send_item(sender, item: dict, cfg: dict):
     return result
 
 
+# 발송 직전 확인 결과. `go` 가 False 면 **이 건도 남은 건도 보내지 않는다**.
+#   reason: "" 계속 | "canceled" 잡이 멈췄음 | "unreachable" 서버에 못 물어봄
+#   detail: 로그에 남길 사유 (서버가 준 상태값이나 예외 문구)
+#   canceled_items: 잡은 살아 있지만 이 건들만 취소됨 → 그것만 건너뛴다
+Gate = namedtuple("Gate", "go reason detail canceled_items")
+
+
+def check_before_send(client: AgentClient, job_id: int, cfg: dict) -> Gate:
+    """한 건을 **보내기 전에** 서버에 물어본다 — 아직 보내도 되는가.
+
+    ## 왜 필요했나
+
+    화면의 [중단]은 서버 DB 만 바꿨다. 그런데 우리는 폴링할 때 items 를 통째로
+    받아 메모리에 들고 끝까지 돌았고, 중간에 다시 묻지 않았다. 그래서 [중단]을
+    눌러도 카톡은 계속 나갔다 — 서버가 결과 보고만 거부해 기록에 안 남았을 뿐,
+    받는 쪽은 그대로 받았다. 사람은 [중단]을 '발송이 멈춘다' 로 읽는다.
+
+    건 사이에 이미 delay_min_sec~delay_max_sec(기본 3~7초)을 쉬므로, 여기서
+    한 번 더 묻는 비용은 무시할 만하다.
+
+    ## 못 물어보면 보내지 않는다
+
+    서버에 닿지 않는 상태에서 계속 보내면 지금 고치려는 문제가 그대로다
+    ([중단]을 눌러도 안 멈춘다). 그렇다고 한 번 실패에 멈추면 서버 재배포나
+    잠깐의 와이파이 끊김에도 회차가 통째로 죽어 쓸 수 없다.
+
+    그래서 **몇 번 다시 묻고(기본 3회, 1초씩 쉬며) 그래도 안 되면 멈춘다.**
+    3회·1초는 재배포로 서버가 잠깐 내려간 정도는 넘기고, 진짜 끊긴 경우에는
+    몇 초 안에 판단이 끝나는 선이다. 헛되이 오래 매달리면 그 사이 사용자는
+    [중단]을 누른 채 카톡이 계속 나가는지 아닌지 모르는 상태로 기다리게 된다.
+    """
+    tries = max(1, int(cfg.get("cancel_check_retries", 3)))
+    backoff = float(cfg.get("cancel_check_backoff_sec", 1.0))
+
+    last_error = None
+    for attempt in range(1, tries + 1):
+        try:
+            state = client.job_state(job_id)
+        except Exception as exc:  # noqa: BLE001 - 통신·JSON 어느 쪽이 터져도 판단은 같다
+            last_error = exc
+            log.warning("발송 전 확인 실패 (%d/%d) job=%s: %s", attempt, tries, job_id, exc)
+            if attempt < tries:
+                time.sleep(backoff)
+            continue
+        if state.get("canceled"):
+            return Gate(False, "canceled", str(state.get("status") or "canceled"), set())
+        return Gate(True, "", "", set(state.get("canceled_items") or []))
+
+    return Gate(False, "unreachable", f"서버에 물어보지 못했습니다 ({last_error})", set())
+
+
+def report_stopped(client: AgentClient, job_id: int, gate: Gate, remaining: int) -> None:
+    """확인에 걸려 멈춘 잡을 서버에 알린다.
+
+    - 취소 — 서버는 이미 canceled 다. 알려도 canceled 로 남는다
+      (`app/routers/agent_api.py: job_status_update` 가 그렇게 지킨다).
+    - 서버에 못 닿음 — 이 보고도 실패할 가능성이 높다. 그래도 잠깐 끊겼다
+      붙은 경우에는 화면이 '멈춤' 으로 바뀌어 사람이 알아챌 수 있다.
+      여기서 예외가 새면 다음 폴링까지 죽으므로 삼킨다.
+    """
+    log.warning("job %s 중단(%s) — 남은 %d건은 보내지 않습니다. %s",
+                job_id, gate.reason, remaining, gate.detail)
+    try:
+        client.report_job(job_id, "canceled" if gate.reason == "canceled" else "paused")
+    except Exception as exc:  # noqa: BLE001
+        log.warning("중단 보고 실패 (job %s): %s", job_id, exc)
+
+
 def process_job(client: AgentClient, sender, job: dict, cfg: dict):
     """잡 종류로 갈린다 — 발송 잡만 문구를 전송한다.
 
@@ -227,8 +312,25 @@ def process_job(client: AgentClient, sender, job: dict, cfg: dict):
 
     log.info("processing job %s (%d items)", job_id, len(items))
     any_fail = False
+    attempted = False   # 첫 건 앞에는 쉬지 않는다
     for i, item in enumerate(items, start=1):
+        # human-like inter-send delay. 확인을 이 **뒤에** 두는 것이 핵심이다 —
+        # 쉬는 동안 사용자가 [중단]을 누를 수 있어서, 쉬기 전에 물어보면
+        # 최대 delay_max_sec 만큼 낡은 답으로 보내게 된다.
+        if attempted:
+            time.sleep(random.uniform(float(cfg["delay_min_sec"]), float(cfg["delay_max_sec"])))
+
+        gate = check_before_send(client, job_id, cfg)
+        if not gate.go:
+            report_stopped(client, job_id, gate, remaining=len(items) - i + 1)
+            return
+        if item["id"] in gate.canceled_items:
+            # 잡은 살아 있는데 이 건만 취소된 경우. 남은 건은 그대로 보낸다.
+            log.info("  [%d/%d] SKIP 취소된 건 room=%r", i, len(items), item["room_name"])
+            continue
+
         result = send_item(sender, item, cfg)
+        attempted = True
         if result.ok:
             client.report_item(item["id"], "sent")
             log.info("  [%d/%d] SENT room=%r", i, len(items), item["room_name"])
@@ -241,9 +343,6 @@ def process_job(client: AgentClient, sender, job: dict, cfg: dict):
             client.report_diagnostics(
                 collect_diagnostics(sender, "send_failed",
                                     target_room=item["room_name"], error=result.error))
-        # human-like inter-send delay
-        if i < len(items):
-            time.sleep(random.uniform(float(cfg["delay_min_sec"]), float(cfg["delay_max_sec"])))
 
     client.report_job(job_id, "done_with_errors" if any_fail else "done")
     log.info("job %s complete (errors=%s)", job_id, any_fail)
@@ -254,13 +353,30 @@ def process_verify_job(client: AgentClient, sender, job: dict, cfg: dict):
 
     방 제목이 실제와 다르면 발송이 통째로 skip 되므로, 실운영 전에 담당자 전원을
     한 번에 대조해야 한다. 여기서는 sender.send_text 를 절대 호출하지 않는다.
+
+    전송이 없어도 [중단]은 들어야 한다 — 수백 명을 검색하느라 몇 분씩 돌고,
+    그동안 카톡 창을 붙잡고 있어서 사용자가 다른 일을 못 한다.
     """
     job_id = job["job_id"]
     items = job.get("items", [])
     log.info("processing verify job %s (%d rooms)", job_id, len(items))
 
     any_fail = False
+    checked = False   # 첫 건 앞에는 쉬지 않는다
     for i, item in enumerate(items, start=1):
+        if checked:
+            time.sleep(random.uniform(float(cfg.get("verify_delay_min_sec", 1)),
+                                      float(cfg.get("verify_delay_max_sec", 2))))
+
+        gate = check_before_send(client, job_id, cfg)
+        if not gate.go:
+            report_stopped(client, job_id, gate, remaining=len(items) - i + 1)
+            return
+        if item["id"] in gate.canceled_items:
+            log.info("  [%d/%d] SKIP 취소된 건 room=%r", i, len(items), item["room_name"])
+            continue
+        checked = True
+
         room = item["room_name"]
         query = (item.get("query") or "").strip() or room
         marker = str(cfg.get("room_marker", "") or "")
@@ -299,9 +415,6 @@ def process_verify_job(client: AgentClient, sender, job: dict, cfg: dict):
                                found_room=found[0] if len(found) == 1 else None,
                                candidates=found or None)
             log.info("  [%d/%d] %s query=%r found=%r", i, len(items), verdict, query, found)
-        if i < len(items):
-            time.sleep(random.uniform(float(cfg.get("verify_delay_min_sec", 1)),
-                                      float(cfg.get("verify_delay_max_sec", 2))))
 
     client.report_job(job_id, "done_with_errors" if any_fail else "done")
     log.info("verify job %s complete (mismatch=%s)", job_id, any_fail)
