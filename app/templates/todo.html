@@ -149,6 +149,7 @@
     <span class="hint">요일이 오면 그 주 목록에 저절로 생깁니다</span>
   </h2>
   {% if routines %}
+  <div class="table-wrap">
   <table class="grid-table compact" data-inline-url="/api/todo/routines" id="routine-table">
     <thead><tr>
       <th style="width:100px">항목</th><th>세부업무</th>
@@ -180,6 +181,7 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
   {% else %}<p class="muted">반복 업무가 없습니다.</p>{% endif %}
 
   <form method="post" action="/todo/routines" class="rule-form">
