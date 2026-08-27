@@ -192,28 +192,41 @@
           짧은 값이 든 칸에 넓은 자리를 주면 표가 헐렁해 보이고, 정작 긴 칸은
           잘린다. 담당자(3자)에 72px 을 주고 라운드사이즈(38자)를 130px 로
           눌러 두었던 것이 그랬다.
+
+          **필터가 붙은 칸만은 글자 길이가 아니라 단추에 맞춘다.** 필터가 하나뿐인
+          칸은 이름 대신 `채널 ▾` 단추가 그 자리에 서고(filters.js), 값을 고르면
+          `채널 (1) ▾` 로 24px 이 더 늘어난다. 그 늘어나는 몫을 안 재고 이름
+          길이로만 잡아 둔 탓에, 필터를 거는 순간 일곱 칸이 두 줄로 접혔다
+          (`관심도 (월말기준)`·`카톡방 참여여부`·`선호 투자분야`·`라운드
+          사이즈(투자운영금액)`·`그룹`·`진행 단계`·`채널`).
+
+          그래서 이 칸들의 폭은 **`단추 폭 + th 좌우 여백 18px + 두 자리 수
+          여유 7px`** 이다. 두 자리까지 두는 이유는 필터 창에 `모두 선택` 이
+          있어서다 — 값이 열 개 넘는 칸은 `(12)` 가 흔하다.
+          폭 합이 2,908px 이 되었으므로 app.css 의 `#contacts-table` min-width
+          도 같이 올렸다(안 올리면 표가 합보다 좁아 칸이 비율대로 눌린다).
         #}
         {# ── 여기부터는 원본 시트의 컬럼이다. 이름·순서를 그대로 쓴다 ──
            시트와 나란히 놓고 대조하는 일이 잦은데, 이름이 다르면 그때마다
            "이게 그 칸인가" 를 한 번씩 멈춰서 확인해야 한다. #}
         <th class="num" style="width:34px" title="누르면 활동 이력이 열립니다">NO</th>
         <th style="width:96px">이름</th>
-        <th style="width:126px" data-filters="interest:관심도 (월말기준)">관심도 (월말기준)<div class="th-filters"></div></th>
+        <th style="width:152px" data-filters="interest:관심도 (월말기준)">관심도 (월말기준)<div class="th-filters"></div></th>
         {# 이 칸도 필터가 하나뿐이라 이름 대신 `카톡방 참여여부 ▾` 단추가 선다.
            이름은 114px 에 들어가지만 단추는 ` ▾` 와 자기 padding·테두리만큼
            넓어 119px 이 필요했다 — 헤드리스 크롬으로 재 보니 실제로 `카톡방
            참여여부` / `▾` 두 줄이었다. 128px 로 넓혀도 이 표는 적어 둔 폭 합
            (2,728px)이 `#contacts-table` 의 min-width(2,804px)보다 작아
            표 전체 폭은 그대로다. #}
-        <th style="width:128px" data-filters="joined:카톡방 참여여부">카톡방 참여여부<div class="th-filters"></div></th>
+        <th style="width:144px" data-filters="joined:카톡방 참여여부">카톡방 참여여부<div class="th-filters"></div></th>
         <th style="width:276px"
             title="메모 ( 통화내용 /  카톡내용  /  카톡답신내용)">메모 ( 통화내용 /  카톡내용  /  카톡답신내용)</th>
         <th style="width:180px">딜소싱 참여 투자사</th>
-        <th style="width:110px" data-filters="sector:선호 투자분야">선호 투자분야<div class="th-filters"></div></th>
+        <th style="width:134px" data-filters="sector:선호 투자분야">선호 투자분야<div class="th-filters"></div></th>
         {# 필터 키는 **이 칸이 보여 주는 값**을 가리켜야 한다. 여기는 `round_size`
            인데 키가 `stage`(선호 단계) 였다 — 값이 0개인 다른 칸을 보고 있어서
            표에는 52줄이 보이는데 필터를 열면 늘 빈 목록이었다. #}
-        <th style="width:186px" data-filters="round:라운드 사이즈(투자운영금액)">라운드 사이즈(투자운영금액)<div class="th-filters"></div></th>
+        <th style="width:204px" data-filters="round:라운드 사이즈(투자운영금액)">라운드 사이즈(투자운영금액)<div class="th-filters"></div></th>
         {# 컬럼 이름은 **원본 시트 그대로** 쓴다 — 시트와 나란히 놓고 대조한다.
            이 표에서 가장 긴 이름(40자)이라 폭을 여기서만은 **데이터가 아니라
            이름에 맞춘다.** 값은 306줄 중 3줄뿐이고 전부 `O` 라 데이터만 보면
@@ -237,15 +250,15 @@
         <th style="width:190px">근무지 주소 번지</th>
         <th style="width:92px">명함 등록일</th>
         {# ── 여기부터는 앱이 만든 칸. 시트에는 없다 ── #}
-        <th style="width:70px" data-filters="group:그룹">그룹<div class="th-filters"></div></th>
+        <th style="width:88px" data-filters="group:그룹">그룹<div class="th-filters"></div></th>
         {# 필터가 둘이다. `연결 상태`(미착수 → 진행 중 → 연결 완료 / 참여 안 함)는
            카톡방까지 들어오게 하는 **앞 단계**라 표에 따로 칸을 두지 않았는데,
            대시보드의 `연결 진행 중인 명단` 이 `/contacts?connect=진행 중` 으로
            눌러 들어온다. 선언이 없으면 그 쿼리는 조용히 버려진다 —
            눌러도 306명이 그대로 나오던 것이 그래서였다.
            같은 축(얼마나 진행됐나)이라 이 칸에 함께 둔다. #}
-        <th style="width:84px" data-filters="dealstage:진행 단계|connect:연결 상태">진행 단계<div class="th-filters"></div></th>
-        <th style="width:62px" data-filters="channel:채널">채널<div class="th-filters"></div></th>
+        <th style="width:106px" data-filters="dealstage:진행 단계|connect:연결 상태">진행 단계<div class="th-filters"></div></th>
+        <th style="width:88px" data-filters="channel:채널">채널<div class="th-filters"></div></th>
         <th style="width:44px"></th>
       </tr>
     </thead>

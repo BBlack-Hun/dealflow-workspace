@@ -37,7 +37,12 @@
     <input type="search" id="cs-search" placeholder="기업 · 대표자 · 내용 검색" autocomplete="off">
     <a class="secondary-btn" href="/api/export/consulting.xlsx" download>엑셀 내려받기</a>
     <button type="button" class="secondary-btn" id="cs-import-btn">시트 올리기</button>
-    <button type="button" class="primary-btn inline" id="cs-add">기업 추가</button>
+    {# 지금 보고 있는 탭을 단추에 실어 둔다 — 딜 소싱의 `[○○에 추가]`(sourcing.html
+       의 `data-bucket`)와 같은 방식이다. 이게 없어서 어느 탭에서 눌러도 첫 탭
+       (`중요 스타트업`)으로 들어갔고, 누른 사람 눈에는 **추가가 안 된 것처럼**
+       보였다 — 줄은 만들어졌는데 보고 있는 탭에 없다. #}
+    <button type="button" class="primary-btn inline" id="cs-add"
+            data-sheet="{{ selected_sheet }}">기업 추가</button>
   </div>
 </div>
 
@@ -153,7 +158,10 @@
             월별 리마인드 열      → 통화 내용 자체다. 값이 아니라 기록이라 안 건다.
                                    (연락했는가/안 했는가는 위 칩이 이미 본다)
         #}
-        <th style="width:80px" data-filters="region:지역">지역<div class="th-filters"></div></th>
+        {# 폭은 이름(`지역`)이 아니라 값을 고른 뒤의 단추(`지역 (1) ▾`)에 맞춘다 —
+           고르면 `(1)` 이 붙어 24px 이 더 든다. 80px 에서는 두 줄로 접혔다.
+           `단추 폭 63px + th 좌우 여백 18px + 두 자리 수 여유 7px`. #}
+        <th style="width:88px" data-filters="region:지역">지역<div class="th-filters"></div></th>
         <th style="width:120px">미팅일</th>
         <th style="width:150px">기업명</th>
         <th style="width:220px" data-filters="mgmt:기업 관리">기업 관리<div class="th-filters"></div></th>

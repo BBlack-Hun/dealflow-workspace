@@ -241,6 +241,76 @@ def test_row_without_a_name_is_rejected(allowed):
     assert allowed.post("/api/consulting", json={"company_name": "  "}).status_code == 400
 
 
+# --- [기업 추가] 는 **지금 보고 있는 탭**에 넣는다 ----------------------------
+#
+# 탭이 셋인데(`중요 스타트업` · `경영본부 전달 기업` · `월간 계약 업무현황표`)
+# 어느 탭에서 눌러도 첫 탭으로 들어갔다. 줄은 만들어졌지만 보고 있는 탭에는
+# 없으니, 누른 사람 눈에는 **추가가 안 된 것처럼** 보인다.
+
+
+def _tab_names(client) -> list:
+    from app.routers.consulting import SHEETS
+    return list(SHEETS)
+
+
+def test_기업_추가는_지금_보고_있는_탭에_들어간다(allowed, db):
+    from app.models import ConsultingCompany
+
+    for i, sheet in enumerate(_tab_names(allowed)):
+        name = f"샘플기업{i}"
+        r = allowed.post("/api/consulting",
+                         json={"company_name": name, "sheet": sheet})
+        assert r.status_code == 200, r.text
+        db.expire_all()
+        added = db.query(ConsultingCompany).filter_by(company_name=name).one()
+        assert added.sheet == sheet, f"{sheet} 탭에서 눌렀는데 {added.sheet} 로 들어갔다"
+
+
+def test_없는_탭_이름은_받지_않는다(allowed):
+    """오타 하나로 **없던 탭이 생기면** 그 줄은 아무도 다시 못 찾는다."""
+    r = allowed.post("/api/consulting",
+                     json={"company_name": "샘플기업X", "sheet": "중요 스타트웁"})
+    assert r.status_code == 400
+
+
+def test_탭을_안_보내면_예전처럼_첫_탭이다(allowed, db):
+    """옛 동작을 그대로 둔다 — 탭을 못 고른 화면에서도 추가는 되어야 한다."""
+    from app.routers.consulting import DEFAULT_SHEET
+    from app.models import ConsultingCompany
+
+    assert allowed.post("/api/consulting",
+                        json={"company_name": "샘플기업Z"}).status_code == 200
+    db.expire_all()
+    assert db.query(ConsultingCompany).filter_by(
+        company_name="샘플기업Z").one().sheet == DEFAULT_SHEET
+
+
+def test_추가한_줄이_그_탭_화면에_보인다(allowed):
+    """DB 에만 들어가고 화면에 안 보이면 고친 것이 아니다."""
+    sheet = _tab_names(allowed)[1]
+    assert allowed.post("/api/consulting",
+                        json={"company_name": "샘플기업W", "sheet": sheet}).status_code == 200
+    assert "샘플기업W" in allowed.get(f"/consulting?sheet={sheet}").text
+    assert "샘플기업W" not in allowed.get(f"/consulting?sheet={_tab_names(allowed)[0]}").text
+
+
+def test_추가_단추가_지금_탭을_싣고_있다():
+    """서버만 고치면 반쪽이다 — 화면이 탭을 안 실어 보내면 그대로다.
+
+    값을 넘기는 방식은 딜 소싱의 `[○○에 추가]`(`data-bucket`)를 그대로 따른다.
+    화면마다 다른 방식을 쓰면 다음 사람이 어느 쪽을 봐야 할지 모른다.
+    """
+    import pathlib as _p
+
+    html = _p.Path("app/templates/consulting.html").read_text(encoding="utf-8")
+    assert 'id="cs-add"' in html
+    assert 'data-sheet="{{ selected_sheet }}"' in html, \
+        "[기업 추가] 단추가 지금 보고 있는 탭을 안 싣고 있습니다"
+    js = _p.Path("app/static/js/consulting.js").read_text(encoding="utf-8")
+    assert 'getAttribute("data-sheet")' in js, "단추에 실어 둔 탭을 안 읽습니다"
+    assert "body.sheet" in js, "탭을 서버로 안 보냅니다"
+
+
 # --- 권한 부여 · 회수 -------------------------------------------------------
 #
 # 대표자 연락처가 들어 있는 표라, 누가 볼 수 있는지를 관리자가 쥐고 있어야 한다.

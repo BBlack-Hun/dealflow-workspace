@@ -167,8 +167,41 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
 /* ── 내 투자사: 한 페이지 표 (FEATURE_SPEC §3, 피드백 #3) ─────────────────
    table-layout:fixed + colgroup % 폭 + 셀 말줄임 → 1280px 에서 가로 스크롤 0.
    광폭 모니터에서는 % 가 그대로 늘어나 여백이 낭비되지 않는다. */
-.toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 12px 0 8px; }
+/* ── 화면 위 단추 줄(툴바) — 크기는 **여기 한 곳에서만** 정한다 ────────────
+   같은 `.secondary-btn` 인데 `<a>` 는 39px, `<button>` 은 34px 이었다.
+   버튼은 글꼴을 물려받지 않아 제 기본값(13.33px)으로 서고 `<a>` 는 inline 이라
+   본문 줄높이(14px × 1.5)로 서기 때문이다 — **클래스가 같아도 높이가 다르다.**
+   여기에 `.primary-btn.inline`(31px) · 검색칸(30px) · `촘촘히 보기`(19px) ·
+   칩(26px)이 섞여 한 줄 안에서 20px 이 들쭉날쭉했다. 화면마다 조합이 달라
+   IR 기업현황과 투자사 관리 현황을 나란히 놓으면 줄이 서로 어긋나 보였다.
+
+   그래서 **높이를 값 하나(`--ctl-h`)로 정하고** 툴바 안의 조작 요소를 전부
+   거기에 맞춘다. 화면·탭마다 규칙을 흩어 두면 탭이 하나 늘 때 또 어긋난다.
+   (`.rule-form` 이 같은 방식으로 34px 을 쓴다 — 값을 맞춰 두었다) */
+.toolbar { --ctl-h: 34px;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 12px 0 8px; }
 .toolbar-right { display: flex; align-items: center; gap: 8px; }
+/* 줄 안의 묶음도 같은 간격으로 — 왼쪽 칩 묶음만 6px 이라 눈에 걸렸다. */
+.toolbar .quick-chips { gap: 8px; }
+
+/* 높이를 맞추는 것은 **조작 요소만**이다. 옆에 붙는 글자 배지(`3 / 10 완료`,
+   `2건 지남`, 안내문)는 누르는 것이 아니라 읽는 것이라 제 크기로 둔다 —
+   34px 짜리 배지는 단추처럼 보인다. 줄 안 세로 가운데는 이미 맞아 있다. */
+.toolbar a, .toolbar button, .toolbar label {
+  height: var(--ctl-h); box-sizing: border-box;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 13px; line-height: 1.2; }
+/* 칩은 `<a>` 로도 `<button>` 으로도 `<span>` 으로도 쓴다 — 주간 업무의 이번 주
+   칸(`{{ week_label }}`)만 span 이라 혼자 12px 로 남았다. 글자 크기는 태그와
+   상관없이 같아야 한다. */
+.toolbar .chip { font-size: 13px; }
+/* 입력칸은 `display` 를 건드리지 않는다 — 속을 브라우저가 직접 그리는 자리라
+   flex 로 바꾸면 커서·placeholder 위치가 브라우저마다 달라진다. */
+.toolbar input:not([type=checkbox]):not([type=radio]), .toolbar select {
+  height: var(--ctl-h); box-sizing: border-box; font-size: 13px; }
+/* 모서리도 한 값으로 — 같은 줄에서 `담당자 추가`(10px)와 `엑셀 내려받기`(8px)가
+   섞여 있었다. 알약(칩·`.chip-select`)만은 제 모양을 지킨다. */
+.toolbar .primary-btn, .toolbar .secondary-btn, .toolbar .danger-btn { border-radius: 8px; }
 .quick-chips { display: flex; gap: 6px; flex-wrap: wrap; }
 .chip { font-size: 12px; padding: 5px 12px; border-radius: 999px; border: 1px solid var(--line);
         background: #fff; cursor: pointer; font-weight: 600; color: var(--muted); }
@@ -265,10 +298,13 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
 /* 투자사 관리 현황은 시트 컬럼 18개를 그대로 세운다 — 더 넓다.
    폭은 th 에서 잡고, 여기서는 표가 줄어들지 않게만 막는다.
 
-   **th 폭 합계와 맞춰 둔다(현재 2,566px).** table-layout: fixed 는 표가
+   **th 폭 합계와 맞춰 둔다(현재 2,908px).** table-layout: fixed 는 표가
    합계보다 좁아지면 칸을 비율대로 눌러 버린다 — 그러면 머리글이 한 줄 더
-   접힌다. 2,420px 으로 모자랐던 것이 그랬다. th 폭을 고치면 여기도 같이. */
-#contacts-table { min-width: 2804px; }
+   접힌다. 2,420px 으로 모자랐던 것이 그랬다. th 폭을 고치면 여기도 같이.
+   (2,804 → 2,910 : 필터를 고르면 `채널 (1) ▾` 처럼 `(1)` 이 붙어 단추가
+    24px 씩 넓어지는데 그 몫을 안 잡아 두어 일곱 칸이 두 줄로 접혔다 —
+    contacts.html 머리글 주석 참고) */
+#contacts-table { min-width: 2910px; }
 .grid-table { width: 100%; table-layout: fixed; border-collapse: collapse;
               background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
 /* 표 밀도. 8px/10px 이던 것을 6px/9px 로 — 글자 수 대비 자리가 남는 칸이
@@ -289,7 +325,7 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
                  padding: 6px 9px; font-size: 12px; color: var(--muted);
                  background: #f7f8fa; border-bottom: 1px solid var(--line); position: relative; }
 
-/* ── 표 머리글: 다 보이게 · 가운데 · 위 기준 ─────────────────────
+/* ── 표 머리글: 다 보이게 · 왼쪽 · 세로 가운데 ─────────────────────
    한 줄로 눌러 놓고 넘치면 `…` 로 잘랐었다. 컬럼 이름을 원본 시트에서 그대로
    가져오는 표(투자사 관리 현황·스타트업DB)라 이름이 길고, 잘리고 나면 서로
    구별이 되지 않았다 — `근무처 전…` 이 전화인지 팩스인지 알 수가 없다.
@@ -297,21 +333,23 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
 
    그래서 **자르지 않고 접는다.** 대신 두 가지로 줄을 가지런히 맞춘다:
 
-     · 폭은 이름이 **두 줄 안에** 들어가게 th 에서 잡는다. 세 줄부터는
+     · 폭은 이름이 **한 줄에** 들어가게 th 에서 잡는다. 접히기 시작하면
        머리글이 표를 아래로 밀어내 첫 행이 화면 밖으로 나간다.
-       (두 줄 상한은 tests/test_ui_layout.py 가 지킨다)
-     · 두 줄 안에 들어오니 줄 수 차이가 한 줄뿐이다. **가로·세로 모두
-       가운데**로 모아 이름이 칸 한복판에 선다.
+       (`TIPS 운영사 …` 하나만 두 줄 예외 — tests/test_ui_layout.py 가 지킨다)
+     · **가로는 왼쪽, 세로는 가운데.** 아래 칸의 글자가 왼쪽에서 시작하므로
+       머리글도 같은 자리에서 시작해야 눈이 세로로 한 줄을 따라 내려갈 수
+       있다. 가운데로 모아 두었더니 이름마다 시작 위치가 달라, 칸이 스무 개
+       넘는 표에서 어느 머리글이 어느 칸인지 매번 다시 맞춰야 했다.
 
    (`display` 는 건드리지 않는다. th/td 에 flex·-webkit-box 를 걸면 그 칸이
     테이블 레이아웃에서 빠져 행이 어긋난다 — tests/test_ui_layout.py) */
 .grid-table thead th {
-  text-align: center; vertical-align: middle;
+  text-align: left; vertical-align: middle;
   white-space: normal;
 }
-/* 필터 칩·설명도 머리글 아래에 붙는다 — 같이 가운데로 모아야 축이 맞는다. */
-.grid-table thead .th-filters { justify-content: center; }
-.grid-table thead .th-note { text-align: center; }
+/* 필터 단추·설명도 머리글 아래에 붙는다 — 이름과 같은 자리에서 시작해야 축이 맞는다. */
+.grid-table thead .th-filters { justify-content: flex-start; }
+.grid-table thead .th-note { text-align: left; }
 /* 숫자 칸만은 오른쪽을 지킨다 — 자릿수를 세로로 맞춰 보는 칸이다. */
 .grid-table thead th.num { text-align: right; }
 .grid-table td { padding: 6px 9px; border-bottom: 1px solid var(--line); vertical-align: top;
@@ -339,8 +377,18 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
 
 /* 필터 드롭다운 (FEATURE_SPEC §8) */
 .th-filters { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+/* 머리글 단추는 **낱말 안에서 끊지 않는다.**
+   한글은 기본값(`word-break: normal`)이 글자와 글자 사이에서도 끊는다 —
+   `담당자` 가 `담당` / `자` 로 갈라진다. `keep-all` 이면 띄어쓰기에서만 끊긴다.
+
+   `nowrap` 이 **아니다.** 이 단추가 컬럼 이름 자리를 대신하는 칸이 있어서,
+   한 줄로 묶어 버리면 긴 이름이 칸 밖으로 쭉 늘어난다 — 예전에 그렇게 했다가
+   되돌린 자리다. 대신 꼬리표(`(1)` 과 `▾`) 앞을 줄바꿈 없는 공백으로 붙여
+   두었다(filters.js) — 그래서 `담당자 (1) ▾` 는 통째로 한 덩어리로 서고,
+   `TIPS 운영사 …` 같은 긴 이름은 띄어쓰기에서 여전히 접힌다. */
 .filter-btn { font-size: 11px; padding: 2px 6px; border-radius: 6px; border: 1px solid var(--line);
-              background: #fff; color: var(--muted); cursor: pointer; font-weight: 600; }
+              background: #fff; color: var(--muted); cursor: pointer; font-weight: 600;
+              word-break: keep-all; }
 .filter-btn.on { border-color: var(--brand); color: var(--brand); background: #eef2ff; }
 .filter-panel { position: absolute; z-index: 30; top: 100%; left: 6px; min-width: 200px; max-width: 280px;
                 background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 8px;
@@ -606,7 +654,11 @@ a.secondary-btn { display: inline-flex; align-items: center; text-decoration: no
 .tag.warn { background: #fff4e5; color: var(--amber); }
 .tag.bad { background: #fdecec; color: var(--red); }
 .linkbtn.danger { color: var(--red); }
-#co-search, #vc-search, #sourcing-search {
+/* 화면 위 검색칸. **id 를 하나씩 적지 않는다** — 투자컨설턴트 현황(`#cs-search`)이
+   그 목록에서 빠져 있어 혼자만 브라우저 기본 입력칸(22px · 모서리 0 · 테두리
+   회색)으로 서 있었다. 화면이 하나 늘 때마다 id 를 더 적어야 하는 규칙은
+   반드시 빠뜨린다. 툴바 안의 검색칸이면 무엇이든 같은 모양이 되게 한다. */
+.toolbar input[type="search"] {
   padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; min-width: 220px; }
 
 /* 한 줄로 세울 때 `1fr` 이 아니라 **`minmax(0, 1fr)`** 이다.
@@ -1170,8 +1222,9 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
   .only-picked, .check-row label, .filter-option, .channel-opt,
   .weekday-pick label { min-height: 32px; align-items: center; }
   /* 한 줄 입력 폼은 칸 높이를 변수 하나로 맞춰 둔다 — 그 값도 같이 올린다.
-     안 그러면 줄 제목만 34px 로 남아 입력칸과 눈높이가 어긋난다. */
-  .rule-form { --ctl-h: 44px; }
+     안 그러면 줄 제목만 34px 로 남아 입력칸과 눈높이가 어긋난다.
+     툴바도 같은 방식이다 — 값 하나만 올리면 그 줄 전체가 따라 커진다. */
+  .rule-form, .toolbar { --ctl-h: 44px; }
 }
 
 /* 로그인 화면. 카드 폭 340px 이 좁은 폰(360px)에서 여백을 다 먹는다. */

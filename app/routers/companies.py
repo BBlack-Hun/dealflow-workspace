@@ -26,6 +26,9 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import get_current_user, templates
 from ..models import IrCompany, User
+from ..services.one_liner import (
+    AUTO, SOURCE_FIELDS, apply_one_liner, compose_one_liner, origin, sync_one_liner,
+)
 from ..ui import base_ctx
 
 router = APIRouter(tags=["companies"])
@@ -132,6 +135,8 @@ def blocked_reason(c: IrCompany) -> str:
 
 def company_rows(db: Session) -> List[dict]:
     companies = db.execute(select(IrCompany).order_by(IrCompany.name)).scalars().all()
+    # 344행 × 두 번 조립하지 않도록 한 번만 만들어 둔다.
+    made = {c.id: compose_one_liner(c) for c in companies}
     return [
         {
             "id": c.id,
@@ -144,6 +149,13 @@ def company_rows(db: Session) -> List[dict]:
             # (전체는 툴팁과 편집창에서 본다).
             "series_short": _short(c.series),
             "one_liner": c.one_liner or "",
+            # 스타트업DB 칸들을 이어 붙이면 나올 한 줄. **바로 미리보기**다 —
+            # 표를 보는 사람이 "지금 값 vs 자동으로 만들면 이렇게 된다"를 나란히
+            # 볼 수 있어야, 덮을지 손으로 쓴 것을 지킬지 고를 수 있다.
+            "one_liner_suggestion": made[c.id],
+            # 지금 소개가 자동 조합과 **글자까지 같은가**. 같으면 사람이 손댄 적이
+            # 없다는 뜻이라 스타트업DB 를 고칠 때 그냥 갱신해도 잃을 것이 없다.
+            "one_liner_auto": origin(c.one_liner, made[c.id]) == AUTO,
             "revenue_recent": c.revenue_recent,
             "funding_total": c.funding_total,
             "raise_target": c.raise_target,
@@ -356,6 +368,27 @@ def get_company(company_id: int, db: Session = Depends(get_db),
     return row
 
 
+# 조합에 쓰이는 칸 이름. 이 중 하나라도 고쳤을 때만 한줄 소개를 다시 맞춘다 —
+# 계약여부처럼 상관없는 칸을 고쳤는데 소개가 바뀌면 사람이 이유를 알 수 없다.
+ONE_LINER_SOURCES = {attr for attr, _label in SOURCE_FIELDS}
+
+
+def _one_liner_result(company: IrCompany, synced: dict) -> dict:
+    """PATCH/POST 응답에 실을 한줄 소개 상태.
+
+    **덮지 않았을 때도 만들어 둔 값을 함께 돌려준다.** 조용히 넘어가면 사람은
+    스타트업DB 를 채웠는데 왜 소개가 그대로인지 알 수 없다 — 화면이 이 값으로
+    "이렇게 바꿀까요?" 를 물을 수 있어야 한다.
+    """
+    return {
+        "one_liner": company.one_liner or "",
+        "one_liner_suggestion": synced["suggestion"],
+        "one_liner_applied": synced["applied"],
+        # 손으로 쓴 소개가 있어서 자동 조합을 **안 덮고 지켰다**는 표시.
+        "one_liner_kept_manual": synced["kept"] and bool(synced["suggestion"]),
+    }
+
+
 @router.post("/api/companies")
 def create_company(body: CompanyIn, db: Session = Depends(get_db),
                    user: User = Depends(get_current_user)):
@@ -364,9 +397,13 @@ def create_company(body: CompanyIn, db: Session = Depends(get_db),
     company = IrCompany(name=body.name.strip(), owner_user_id=user.id,
                         summary_status=body.summary_status or "draft")
     _assign(company, body)
+    # 새로 만드는 기업은 소개가 비어 있다 — 스타트업DB 칸을 함께 적어 넣었다면
+    # 그 자리에서 한 줄을 만들어 둔다(지울 손글씨가 없으니 잃을 것도 없다).
+    synced = sync_one_liner(company, previous_auto=None,
+                            manual_edit=bool((body.one_liner or "").strip()))
     db.add(company)
     db.commit()
-    return {"id": company.id}
+    return {"id": company.id, **_one_liner_result(company, synced)}
 
 
 @router.patch("/api/companies/{company_id}")
@@ -376,10 +413,64 @@ def update_company(company_id: int, body: CompanyIn,
     company = db.get(IrCompany, company_id)
     if company is None:
         raise HTTPException(status_code=404, detail="기업을 찾을 수 없습니다")
+
+    sent = body.model_dump(exclude_unset=True)
+    # 고치기 **전** 칸들로 만든 한 줄. 지금 저장된 소개가 이것과 같으면 그건
+    # 이 코드가 만든 값이라 갱신해도 잃을 것이 없다(one_liner.sync_one_liner 참고).
+    previous_auto = compose_one_liner(company)
+    # 소개 칸에 **글자를 적어 보낸** 경우만 손편집이다. 비워서 보낸 것은
+    # "자동 조합을 다시 넣어 달라"는 뜻으로 받는다 — 비운 칸을 다시 비워 두면
+    # 되돌릴 방법이 없다.
+    manual_edit = "one_liner" in sent and bool((sent.get("one_liner") or "").strip())
+
     _assign(company, body)
+
+    touched = bool(ONE_LINER_SOURCES & set(sent)) or "one_liner" in sent
+    synced = (sync_one_liner(company, previous_auto, manual_edit=manual_edit) if touched
+              else {"applied": False, "suggestion": compose_one_liner(company),
+                    "kept": False, "origin": ""})
     db.commit()
     return {"id": company.id, "introducible": is_ready(company),
-            "blocked_reason": blocked_reason(company)}
+            "blocked_reason": blocked_reason(company),
+            **_one_liner_result(company, synced)}
+
+
+@router.get("/api/companies/{company_id}/one-liner")
+def preview_one_liner(company_id: int, db: Session = Depends(get_db),
+                      user: User = Depends(get_current_user)):
+    """스타트업DB 칸들로 만들면 어떤 한 줄이 되는지 **미리** 본다(저장하지 않는다)."""
+    company = db.get(IrCompany, company_id)
+    if company is None:
+        raise HTTPException(status_code=404, detail="기업을 찾을 수 없습니다")
+    suggestion = compose_one_liner(company)
+    return {
+        "id": company.id,
+        "current": company.one_liner or "",
+        "suggestion": suggestion,
+        # auto  = 지금 소개가 자동 조합 그대로다
+        # manual= 사람이 쓴 소개다(덮으려면 아래 POST 로 명시해야 한다)
+        # empty = 아직 비어 있다
+        "origin": origin(company.one_liner, suggestion),
+        "differs": (company.one_liner or "").strip() != suggestion,
+    }
+
+
+@router.post("/api/companies/{company_id}/one-liner")
+def use_auto_one_liner(company_id: int, db: Session = Depends(get_db),
+                       user: User = Depends(get_current_user)):
+    """사람이 "자동 조합을 쓰겠다"고 고른 경우 — 손으로 쓴 소개까지 덮는다.
+
+    자동 갱신은 손글씨를 절대 안 덮기 때문에, **덮는 길은 여기 하나뿐**이다.
+    누르는 사람이 무엇을 지우는지 알고 누르도록 이전 값을 함께 돌려준다.
+    """
+    company = db.get(IrCompany, company_id)
+    if company is None:
+        raise HTTPException(status_code=404, detail="기업을 찾을 수 없습니다")
+    before = company.one_liner or ""
+    suggestion = apply_one_liner(company)
+    db.commit()
+    return {"id": company.id, "one_liner": company.one_liner or "",
+            "previous": before, "applied": bool(suggestion)}
 
 
 @router.delete("/api/companies/{company_id}")

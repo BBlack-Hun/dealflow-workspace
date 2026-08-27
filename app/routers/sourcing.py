@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..deps import get_current_user, templates
-from ..models import SourcingContact, User
+from ..models import SendItem, SourcingContact, User
 from ..services import sourcing_link
 from ..ui import base_ctx
 
@@ -44,15 +44,15 @@ router = APIRouter(tags=["sourcing"])
 # 글자를 지우고 `담당자 ▾` 단추를 그 자리에 세우는데, 단추는 ` ▾` 와 자기
 # padding·테두리만큼 이름보다 넓다 — 담당자(72px)가 그래서 두 줄로 접혀 있었다.
 COLUMNS = [
-    ("requested_at", "참여 요청일", "120px", True),
+    ("requested_at", "참여 요청일", "124px", True),
     ("name", "이름", "96px", False),
-    ("assignee_name", "담당자", "80px", True),
+    ("assignee_name", "담당자", "100px", True),
     ("phone", "휴대폰", "116px", False),
-    ("title", "직함", "84px", True),
+    ("title", "직함", "88px", True),
     ("email", "이메일 주소", "170px", False),
     ("firm", "회사", "150px", False),
     ("sectors", "투자분야", "120px", True),
-    ("round_size", "라운드 사이즈", "130px", True),
+    ("round_size", "라운드 사이즈", "134px", True),
     ("memo", "메모", "", False),
     # 여기서 딜 소싱 제안을 보낸다 — 방 이름이 없으면 보낼 길이 없다.
     # 발송 화면(딜 제안 관리)에서 고를 수 있으려면 이 칸이 먼저 차야 한다.
@@ -170,3 +170,61 @@ def update_row(row_id: int, body: SourcingIn, db: Session = Depends(get_db),
         setattr(row, field, value.strip() or None)
     db.commit()
     return {"ok": True}
+
+
+@router.delete("/api/sourcing/{row_id}")
+def delete_row(row_id: int, db: Session = Depends(get_db),
+               user: User = Depends(get_current_user)):
+    """명단에서 한 줄을 뺀다.
+
+    넣는 길만 있고 빼는 길이 없었다 — 전화로 급히 적다가 이름을 잘못 넣거나
+    같은 사람을 두 번 넣어도 시트를 통째로 다시 올리는 것 말고는 방법이
+    없었다(`scripts/import_sourcing.py` 는 갈래를 통째로 갈아엎는다).
+
+    **지우는 것은 그 갈래의 그 줄 하나다.** 같은 사람이 여러 갈래에 들어가
+    있으면 각각이 다른 줄이라(`SourcingContact` 주석 참고) 나머지는 남는다.
+    이름으로 싸잡아 지우면 "시리즈 A 에서만 빼려고 눌렀는데 M&A 에서도
+    사라지는" 일이 된다.
+
+    **주인 검사는 하지 않는다 — 이 표에는 주인이 없다.**
+    `sourcing_contacts` 에는 `user_id` 칸이 아예 없다. 소싱 명단은 IR 기업현황
+    과 같은 **팀 공용**이라(발송도 담당자로 거르지 않는다 —
+    `routers/deals.py` 의 `_load_recipients`), 여기서 볼 수 있는 경계는
+    **로그인했는가** 하나뿐이고 그것은 위의 추가·수정과 똑같다.
+    투자컨설턴트는 이 주소에 닿기 전에 끊긴다 — 역할 판정은 `app/main.py`
+    미들웨어 한 곳에서만 한다(`deps.CONSULTANT_PATHS` 에 소싱이 없다).
+    """
+    row = db.get(SourcingContact, row_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="찾을 수 없습니다")
+
+    # 딸린 것: 이 사람에게 보낸 발송 이력(`send_items.sourcing_contact_id`).
+    #
+    # **보낸 이력이 있으면 지우지 않는다.** 발송 건은 이 줄을 번호로 가리키고,
+    # 화면과 기록에 뜨는 받는 사람 이름은 그 번호를 따라가 읽는다
+    # (`models.py` 의 `SendItem.recipient_name`). 그래서 그냥 지우면:
+    #   · 운영 DB — 이 칸에는 외래키가 서 있지 않다(alembic 0029 가 그냥
+    #     Integer 로 붙였다). 막히지 않고 **조용히 넘어가고**, 발송 건은 없는
+    #     번호를 가리킨 채 남아 "누구에게 보냈나" 가 빈칸이 된다.
+    #   · 테스트 DB — 모델대로 외래키가 서 있어 같은 코드가 IntegrityError 로
+    #     터진다. 한쪽은 넘어가고 한쪽은 500 인, 두 곳의 결과가 갈리는 상태다.
+    # 이력까지 같이 지우는 길도 있지만, 발송 이력은 "누구에게 언제 보냈나" 의
+    # 근거라 명단 한 줄보다 무겁다. 그래서 **막는다** — 계정 삭제가
+    # `AgentDevice` 때문에 막혔던 것과 같은 자리이고, IR 기업현황도 같은
+    # 이유로 같은 답을 냈다(`routers/companies.py` 의 `delete_company`).
+    # 잘못 넣은 줄은 아직 아무에게도 안 보낸 줄이라 이 문에 걸리지 않는다.
+    sent = db.execute(
+        select(func.count()).select_from(SendItem)
+        .where(SendItem.sourcing_contact_id == row_id)
+    ).scalar_one()
+    if sent:
+        raise HTTPException(
+            status_code=400,
+            detail=f"이미 {sent}건을 보낸 사람이라 삭제할 수 없습니다 — "
+                   "발송 이력이 이 줄을 가리킵니다. 더 보내지 않으려면 "
+                   "카톡방 이름을 비워주세요(방이 없으면 발송이 거부됩니다).",
+        )
+
+    db.delete(row)
+    db.commit()
+    return {"deleted": row_id}

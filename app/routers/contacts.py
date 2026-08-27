@@ -192,7 +192,7 @@ def contact_rows(db: Session, user: User, team_wide: bool = False) -> List[dict]
             "group_name": c.group_name or "",
             "channel_kakao": c.channel_kakao,
             "channel_email": c.channel_email,
-            # 대시보드의 '메일 채널 3' · '채널 미지정 6' 에서 눌러 오는 자리다.
+            # 대시보드의 '메일 채널 3' · '채널 불가 투자사 6' 에서 눌러 오는 자리다.
             # 세는 것만 보여주고 갈 곳이 없으면, 그 6명이 누구인지 알 수 없다.
             "channel_label": ("카톡" if c.channel_kakao else
                               "메일" if c.channel_email else "미지정"),
