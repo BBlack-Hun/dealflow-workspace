@@ -67,16 +67,38 @@ def _touch_device(db: Session, device: AgentDevice, hostname: Optional[str] = No
         device.sender = sender
 
 
+def _agent_items(job: SendJob) -> list:
+    """발송 프로그램이 **집어갈 수 있는** 대기 건. 만든 순서대로.
+
+    내주는 기준(`poll`)과 "다 끝났는가" 판정 기준(`job_status_update`)이 **반드시
+    같아야 한다.** 두 곳에 따로 적으면 한쪽만 어긋나서, 안 나간 사람을 두고
+    회차가 완료로 끝나거나(지금 고치는 버그) 반대로 영영 안 끝난다.
+
+    - 메일 건은 서버가 SMTP 로 직접 보낸다(`services/mail_sender.py`). 발송
+      프로그램이 집어가면 메일 주소를 방 제목으로 알고 카톡방을 찾다가 실패한다.
+      완료 판정에서도 빼야 한다 — 여기서 세면 카톡을 다 보내고도 메일 건이
+      대기로 남아 잡을 계속 큐로 되돌리게 된다.
+    - IR 자료 전달은 링크가 순서대로 나가야 하는데 관계에서 그냥 꺼내면 순서가
+      보장되지 않아 id 로 정렬한다. **매번 같은 순서**여야 여러 번에 나눠 보낼 때
+      회분이 앞으로 나아간다(같은 60건을 다시 집어가면 안 된다).
+    """
+    return sorted((i for i in job.items
+                   if i.status == "pending" and i.channel != "email"),
+                  key=lambda i: i.id)
+
+
 @router.get("/poll")
 def poll(
     response: Response,
     kinds: Optional[str] = None,
+    cap: Optional[int] = None,
     db: Session = Depends(get_db),
     device: AgentDevice = Depends(get_agent_device),
 ):
     """Atomically claim the oldest queued job for this agent's user and return it.
 
     `kinds` (CSV) = 이 에이전트가 처리할 수 있는 잡 종류. 생략하면 발송 잡만 준다.
+    `cap` = 이 에이전트가 한 번에 처리할 건수 상한(계정 보호). 아래 참고.
     """
     _touch_device(db, device)
 
@@ -107,12 +129,26 @@ def poll(
     db.commit()
 
     job = db.get(SendJob, candidate)
-    # 메일 건은 서버가 보낸다. 발송 프로그램이 집어가면 방을 찾다가 실패한다.
-    # **만든 순서대로** 준다. IR 자료 전달은 링크가 순서대로 나가야 하고,
-    # 관계에서 그냥 꺼내면 순서가 보장되지 않는다.
-    pending_items = sorted(
-        (i for i in job.items if i.status == "pending" and i.channel != "email"),
-        key=lambda i: i.id)
+    pending_items = _agent_items(job)
+
+    # ★ 한 번에 내주는 건수의 상한은 **에이전트가 정한다** (`?cap=`).
+    #
+    # 상한 자체는 계정 보호용이라 필요하다. 문제는 그 숫자가 에이전트에만 있고
+    # 서버는 몰랐다는 것이다 — 서버가 97건을 통째로 내주면 에이전트는 앞 60건만
+    # 처리하고 **나머지 37건을 버린 채** 잡을 완료로 끝냈다(회차 13에서 실제로
+    # 발생). 서버가 60건만 내주면 애초에 버릴 것이 없다.
+    #
+    # 그렇다고 서버가 자기 상한값을 따로 들고 있으면 두 숫자가 또 어긋난다.
+    # 값은 `agent/main.py: DEFAULT_CONFIG["job_cap"]`(사용자는 config.yaml 로
+    # 조절) **한 곳**에만 두고, 서버는 에이전트가 말한 값을 지킬 뿐이다.
+    #
+    # 상한을 말하지 않는 구버전 에이전트에게는 지금까지처럼 전부 내준다. 그쪽은
+    # 여전히 앞 60건만 처리하지만, 남은 건은 `job_status_update` 가 다시 큐로
+    # 돌려 다음 폴링에 이어 보낸다 — 그래서 **에이전트를 갱신하지 않아도** 사람이
+    # 빠지지 않는다.
+    if cap and cap > 0:
+        pending_items = pending_items[:cap]
+
     return {
         "job_id": job.id,
         "kind": job.kind,
@@ -289,9 +325,84 @@ def job_state(
 
 
 class JobStatusUpdate(BaseModel):
-    status: str  # running | done | done_with_errors | paused
+    # running            — 아직 돌고 있다
+    # done / done_with_errors / queued
+    #                    — 이번 회분은 손을 뗐다. **끝났는지는 서버가 다시 판정한다**
+    #                      (아래 `_settle`). queued 는 "상한에 걸려 남은 게 있다" 는
+    #                      새 에이전트의 보고다.
+    # paused             — 물어보지 못해 스스로 멈췄다. 사람이 봐야 한다
+    status: str
     sent: Optional[int] = None
     failed: Optional[int] = None
+
+
+# 에이전트가 "이 회분은 손을 뗐다" 고 알리는 값들. 여기 걸리면 `_settle` 이
+# 잡의 실제 상태를 다시 정한다 — 에이전트의 말을 그대로 믿지 않는다.
+BATCH_END_STATUSES = ("done", "done_with_errors", "queued")
+
+
+def _made_progress(job: SendJob) -> bool:
+    """이번에 잡을 물고 나서 **한 건이라도 손댔는가**.
+
+    큐로 되돌리는 것을 무한히 반복하지 않기 위한 판정이다. 아무것도 처리하지
+    못하는 상태(발송기가 죽어 결과를 못 올린다든지, 에이전트가 제 쪽에서 건들을
+    통째로 걸러 버린다든지)에서 계속 되돌리면, 폴링할 때마다 같은 잡을 물고 같은
+    자리에서 끝나 영원히 돈다.
+
+    ## 어떻게 판정하나
+
+    잡을 물 때 `started_at` 을 새로 찍는다(위 poll 의 원자적 선점). 그러니
+    **대기에서 벗어난 건 중에 그 시각 이후에 바뀐 것**이 하나라도 있으면 이번
+    회분이 일을 한 것이다. 결과가 올라오면 그 건의 `updated_at` 이 갱신된다
+    (`models.TimestampMixin.onupdate`).
+
+    새 칸을 만들지 않고 이미 있는 두 시각으로 판정한다 — 이 판정 하나 때문에
+    스키마를 늘리면 운영 DB 이관이 따라붙는다.
+
+    시각 문자열은 `app/clock.py` 한 곳에서만 적으므로 형식이 같고, 그대로 견줘도
+    된다. 다만 초 단위까지만 적어서 **같은 초 안에** 벌어진 일은 '진행 있음' 으로
+    읽힌다(`>=`). 그 쪽으로 틀리는 편이 안전하다 — 실제로 보낸 회분을 진행 없음으로
+    보면 남은 사람이 또 대기로 묶인다. 그래도 다음 폴링은 다른 초에 일어나므로
+    되돌림이 무한히 이어지지는 않는다(막아야 할 것은 반복이지 한 번의 여유가 아니다).
+    """
+    started = job.started_at or ""
+    return any((i.updated_at or "") >= started
+               for i in job.items if i.status != "pending")
+
+
+def _settle(job: SendJob) -> str:
+    """회분 보고를 받고 **잡이 실제로 끝났는지** 서버가 판정한다.
+
+    ## 왜 서버가 판정하나
+
+    에이전트는 상한(job_cap)에 걸려 앞 60건만 처리하고도 잡 **전체**를 `done` 으로
+    보고했다. 서버가 그 말을 그대로 받아 적어서, 97명 중 60명만 나간 회차가 화면에
+    '완료' 로 끝났다 — 대기 37명이 남아 있는데도. 화면이 끝났다고 하니 안 나간 것을
+    사람이 알아챌 방법이 없었다.
+
+    각자 PC 의 발송 프로그램은 한동안 구버전이 섞여 돈다. 그러니 **서버에서**
+    막아야 에이전트를 갱신하지 않은 사람에게도 이 버그가 사라진다.
+
+    ## 판정
+
+    - 대기 건이 남았고 이번 회분이 일을 했다 → `queued`. 다음 폴링에서 **남은
+      건만** 이어 나간다(poll 이 대기 건만 내주므로 받은 사람에게 또 가지 않는다).
+    - 대기 건이 남았는데 이번 회분이 아무것도 못 했다 → `paused`. 되돌려 봐야
+      같은 자리에서 끝나니 멈추고 사람이 보게 한다. `paused` 는 poll 이 집어가지
+      않아(`WHERE status='queued'`) 반복이 여기서 끊긴다.
+    - 남은 게 없다 → 이제 진짜 끝. `done`/`done_with_errors` 는 에이전트의 말이
+      아니라 **건들을 보고** 정한다. 여러 회분에 나눠 보내면 마지막 회분만
+      성공해도 에이전트는 `done` 이라고 하는데, 그러면 앞 회분의 실패가 화면에서
+      사라진다([실패 재시도] 버튼이 안 뜬다).
+
+    남은 건을 이어 보내는 판단은 **결과 보고(`item_result`)가 유일한 근거**다.
+    보낸 뒤 결과 보고가 통째로 유실되면 그 사람에게 다시 나갈 수 있다. 그래도
+    안 보내고 완료로 끝내는 쪽보다 낫다 — 안 나간 것은 아무도 모르지만, 두 번
+    나간 것은 상대가 알려 준다.
+    """
+    if _agent_items(job):
+        return "queued" if _made_progress(job) else "paused"
+    return "done_with_errors" if any(i.status == "failed" for i in job.items) else "done"
 
 
 @router.post("/jobs/{job_id}/status")
@@ -312,14 +423,21 @@ def job_status_update(
         db.commit()
         return {"ok": True, "detail": "job canceled"}
 
-    if body.status in ("done", "done_with_errors", "running", "paused"):
-        job.status = body.status
-        if body.status in ("done", "done_with_errors"):
-            job.finished_at = now_iso()
+    settled = None
+    if body.status in BATCH_END_STATUSES:
+        settled = _settle(job)
+    elif body.status in ("running", "paused"):
+        settled = body.status
+
+    if settled:
+        job.status = settled
+        # 다시 큐로 돌린 잡에 끝난 시각이 남아 있으면 화면에서 끝난 것으로 읽힌다.
+        job.finished_at = now_iso() if settled in ("done", "done_with_errors") else None
     job.sent = sum(1 for i in job.items if i.status == "sent")
     job.failed = sum(1 for i in job.items if i.status == "failed")
     db.commit()
-    return {"ok": True, "status": job.status}
+    # `pending` 은 왜 안 끝났는지 에이전트 로그에서 바로 보이라고 함께 준다.
+    return {"ok": True, "status": job.status, "pending": len(_agent_items(job))}
 
 
 class Heartbeat(BaseModel):

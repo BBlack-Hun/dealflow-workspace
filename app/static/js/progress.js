@@ -9,6 +9,14 @@
     ? { pending: "대기", sending: "확인중", sent: "확인됨", failed: "불일치", canceled: "취소" }
     : { pending: "대기", sending: "발송중", sent: "성공", failed: "실패", canceled: "취소" };
   var RESEND_LABEL = window.DEALFLOW_JOB_VERIFY ? "취소분 재확인" : "취소분 재발송";
+  var RESUME_LABEL = window.DEALFLOW_JOB_VERIFY ? "남은 건 이어 확인" : "이어 보내기";
+  // 상태 배지에 `queued`·`paused` 같은 영어가 그대로 떴다. 회차가 왜 안 끝났는지
+  // 읽는 사람이 알아야 하는 자리라 한글로 바꾼다.
+  var JOB_STATUS_KO = {
+    draft: "작성 중", queued: "대기 중", running: "보내는 중",
+    paused: "멈춤", done: "완료", done_with_errors: "완료(실패 있음)",
+    canceled: "중단됨",
+  };
 
   function esc(s) {
     return String(s == null ? "" : s).replace(/[&<>"']/g, function (m) {
@@ -23,7 +31,7 @@
     document.getElementById("c-failed").textContent = d.counts.failed;
 
     var badge = document.getElementById("job-status-badge");
-    badge.textContent = d.status;
+    badge.textContent = JOB_STATUS_KO[d.status] || d.status;
 
     var body = document.getElementById("log-body");
     body.innerHTML = d.items.map(function (i) {
@@ -51,6 +59,20 @@
       // 확인창에서 다시 세지 않고 화면에 보인 숫자를 그대로 쓴다 — 버튼에 적힌 수와
       // 확인창의 수가 다르면 어느 쪽을 믿어야 할지 알 수 없다.
       resendBtn.dataset.count = canceled;
+    }
+
+    // 이어 보내기 — 끝난 회차에 손도 안 댄 대기 건이 남아 있을 때.
+    //
+    // **발송 중에는 절대 보이면 안 된다.** 지금 나가고 있는 건을 되살리면
+    // 같은 사람에게 두 번 간다. 그래서 terminal 이 아니라 '멈춘 상태' 로 따로
+    // 본다 — `paused`(진행이 없어 서버가 세운 회차)도 여기 든다.
+    var stopped = terminal || d.status === "paused";
+    var resumeBtn = document.getElementById("resume-btn");
+    if (resumeBtn) {
+      var pending = d.counts.pending || 0;
+      resumeBtn.hidden = !(stopped && pending > 0);
+      resumeBtn.textContent = RESUME_LABEL + " (" + pending + "명)";
+      resumeBtn.dataset.count = pending;
     }
 
     if (terminal) { if (timer) { clearInterval(timer); timer = null; } }
@@ -94,6 +116,19 @@
       : n + "명에게 다시 보냅니다.\n이미 발송된 사람에게는 다시 보내지 않습니다. 계속할까요?";
     if (!confirm(q)) return;
     fetch("/api/jobs/" + jobId + "/resend-canceled", { method: "POST" })
+      .then(function (r) { return r.json(); })
+      .then(function () { if (!timer) timer = setInterval(poll, 2000); poll(); });
+  });
+  var resumeClickBtn = document.getElementById("resume-btn");
+  if (resumeClickBtn) resumeClickBtn.addEventListener("click", function () {
+    var n = Number(resumeClickBtn.dataset.count || 0);
+    // 아직 아무에게도 안 간 사람들이라 '다시' 가 아니라 '마저' 다. 그래도 묻는다 —
+    // 발송은 되돌릴 수 없고, 몇 명에게 나가는지는 누르기 전에 알아야 한다.
+    var q = window.DEALFLOW_JOB_VERIFY
+      ? "남은 " + n + "명을 마저 확인합니다. 계속할까요?"
+      : "아직 못 보낸 " + n + "명에게 마저 보냅니다.\n이미 발송된 사람에게는 가지 않습니다. 계속할까요?";
+    if (!confirm(q)) return;
+    fetch("/api/jobs/" + jobId + "/resume", { method: "POST" })
       .then(function (r) { return r.json(); })
       .then(function () { if (!timer) timer = setInterval(poll, 2000); poll(); });
   });

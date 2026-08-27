@@ -161,6 +161,52 @@ def resend_canceled(job_id: int, background: BackgroundTasks,
     return _requeue(db, job, canceled_items, background)
 
 
+@router.post("/jobs/{job_id}/resume")
+def resume_pending(job_id: int, background: BackgroundTasks,
+                   db: Session = Depends(get_db),
+                   user: User = Depends(get_current_user)):
+    """이어 보내기 — **아직 안 나간 대기 건**을 다시 큐에 올린다.
+
+    ## 왜 필요한가
+
+    97명짜리 회차에서 60명에게만 나갔는데 회차가 `done` 으로 끝났다. 나머지
+    37명은 `pending` 인 채로 남았다(발송 프로그램이 1잡 상한에 걸려 앞 60건만
+    처리하고 잡 전체를 완료로 보고했다 — `routers/agent_api.py: _settle` 참고).
+
+    그런데 손쓸 방법이 하나도 없었다. [실패 재시도]는 `failed` 만, [취소분
+    재발송]은 `canceled` 만 고른다. **대기 건은 어느 쪽에도 안 걸린다.** 남은
+    37명에게 보내려면 발송 목록을 처음부터 다시 만들어야 하고, 그러면 이미 받은
+    60명을 손으로 골라내야 한다 — 한 명만 실수해도 같은 사람에게 두 번 나간다.
+
+    앞으로는 서버가 대기 건을 두고 완료 보고를 받지 않으므로 이렇게 끝난 회차가
+    새로 생기지는 않는다. 그래도 이 길은 계속 필요하다.
+
+    - 진행이 없어 `paused` 로 멈춘 회차에 대기 건이 남는다(무한 반복을 막느라
+      일부러 멈춘 것이다). 사람이 원인을 고친 뒤 이어 보낼 곳이 여기다.
+    - 발송 프로그램이 도중에 죽으면 잡이 `running` 인 채로 대기 건이 남는다.
+    - 메일 건은 서버가 보내는데(`services/mail_sender.py`), 그 사이 서버가
+      내려가면 대기로 남는다. 카톡 쪽 완료 판정은 메일 건을 세지 않는다 —
+      세면 잡이 영영 안 끝난다.
+
+    ## 이미 나간 사람은 절대 건드리지 않는다
+
+    `status == "pending"` **인 것만** 고른다. `!= "sent"` 처럼 반대로 쓰면 나중에
+    상태가 하나 늘었을 때 그것까지 조용히 딸려 들어온다(취소분 재발송과 같은
+    이유다). 발송은 되돌릴 수 없으므로 넓게 고르는 쪽이 아니라 좁게 고르는 쪽이
+    맞다. 실패 건도 여기서 함께 되살리지 않는다 — 사유를 못 본 실패 건이 딸려
+    나가면 그것도 예상 밖의 발송이다.
+
+    되살리는 절차 자체는 [실패 재시도]·[취소분 재발송]과 **같은 곳**(`_requeue`)을
+    쓴다. 카톡과 메일은 나가는 길이 달라서, 절차를 두 벌로 두면 한쪽만 고쳐져
+    카톡은 되살아나는데 메일은 안 나간다.
+    """
+    job = _job_or_404(db, job_id, user)
+    pending_items = [i for i in job.items if i.status == "pending"]
+    if not pending_items:
+        raise HTTPException(status_code=400, detail="이어 보낼 대기 건이 없습니다")
+    return _requeue(db, job, pending_items, background)
+
+
 @router.get("/agent-status")
 def get_agent_status(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Sidebar connection badge (FEATURE_SPEC §0.2) — 지금 선택된 사용자의 기기 기준."""
