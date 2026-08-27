@@ -54,7 +54,9 @@ DEFAULT_CONFIG = {
     "agent_version": VERSION,
     "delay_min_sec": 3,        # human-like inter-send delay (TECH_SPEC §5.5)
     "delay_max_sec": 7,
-    "job_cap": 60,             # 1잡 상한 (계정 보호)
+    # 1잡 상한 (계정 보호). **이 숫자가 사는 유일한 자리** — 서버는 폴링할 때
+    # 받은 값을 지킬 뿐 자기 상한을 따로 들고 있지 않다(`job_cap()` 참고).
+    "job_cap": 60,
     "part_gap_sec": 1.2,       # 한 건이 여러 통일 때 통 사이 간격
                                # (연달아 쏟으면 카톡이 순서를 뒤집는다)
     # 방 연결 확인은 메시지를 보내지 않아 검색만 반복한다. 그래도 사람 속도를 흉내낸다
@@ -127,6 +129,17 @@ def build_sender(cfg: dict):
     )
 
 
+def job_cap(cfg: dict) -> int:
+    """한 번에 처리할 건수 상한 (계정 보호).
+
+    **이 값이 사는 곳은 여기 하나뿐이다.** 서버는 자기 상한을 따로 들고 있지 않고
+    폴링할 때 받은 값을 지킨다(`?cap=`). 두 곳에 숫자를 박아 두면 어긋나고,
+    어긋난 만큼이 조용히 버려진다 — 서버가 97건을 내주고 에이전트가 60건에서
+    자르는 바람에 37명에게 안 나간 채 회차가 완료로 끝난 적이 있다.
+    """
+    return int(cfg.get("job_cap") or DEFAULT_CONFIG["job_cap"])
+
+
 class AgentClient:
     def __init__(self, cfg: dict):
         self.base = cfg["server_url"].rstrip("/")
@@ -136,6 +149,7 @@ class AgentClient:
         self.hostname = socket.gethostname()
         # 어떤 발송기인지 서버에 알린다 — 배지에서 mock/실발송을 구분하기 위함.
         self.sender_name = "unknown"
+        self.job_cap = job_cap(cfg)
 
     def heartbeat(self):
         return self.session.post(f"{self.base}/api/agent/heartbeat",
@@ -146,8 +160,13 @@ class AgentClient:
     def poll(self):
         # 처리할 수 있는 잡 종류를 함께 알린다. 서버는 모르는 종류를 주지 않는다
         # (구버전 에이전트가 확인 잡을 발송으로 오해하는 사고를 구조적으로 막는다).
+        #
+        # 상한(`cap`)도 함께 알려 **서버가 그만큼만 내주게** 한다. 전에는 서버가
+        # 97건을 통째로 내주고 우리가 앞 60건만 처리했는데, 나머지 37건이 그냥
+        # 버려졌다. 서버가 60건만 주면 애초에 버릴 것이 없다.
         r = self.session.get(f"{self.base}/api/agent/poll",
-                             params={"kinds": ",".join(SUPPORTED_KINDS)}, timeout=15)
+                             params={"kinds": ",".join(SUPPORTED_KINDS),
+                                     "cap": self.job_cap}, timeout=15)
         if r.status_code == 204:
             return None
         r.raise_for_status()
@@ -304,8 +323,12 @@ def process_job(client: AgentClient, sender, job: dict, cfg: dict):
 
     job_id = job["job_id"]
     items = job.get("items", [])
-    cap = int(cfg.get("job_cap", 60))
-    if len(items) > cap:
+    # 상한을 넘는 만큼은 이번에 처리하지 않는다(계정 보호). 서버가 상한을 지켜
+    # 내주면(폴링할 때 `cap` 으로 알린다) 여기서 잘릴 일이 없다 — 낡은 서버에
+    # 붙었을 때를 위한 안전망으로 남긴다.
+    cap = job_cap(cfg)
+    left_over = max(0, len(items) - cap)
+    if left_over:
         log.warning("job %s has %d items > cap %d; processing first %d only",
                     job_id, len(items), cap, cap)
         items = items[:cap]
@@ -343,6 +366,16 @@ def process_job(client: AgentClient, sender, job: dict, cfg: dict):
             client.report_diagnostics(
                 collect_diagnostics(sender, "send_failed",
                                     target_room=item["room_name"], error=result.error))
+
+    if left_over:
+        # 상한에 걸려 손도 안 댄 건이 남았다 → **끝났다고 하면 안 된다.**
+        # 여기서 done 을 보내면 화면은 '완료' 가 되고, 안 나간 사람은 아무도
+        # 모른다(97명 중 60명만 나간 회차가 그렇게 끝났다). 다시 큐로 돌려
+        # 달라고 알린다 — 다음 폴링에서 남은 건만 이어 보낸다.
+        log.warning("job %s: 상한(%d) 때문에 %d건이 남았습니다 — 완료로 보고하지 "
+                    "않고 다음 폴링에서 이어 보냅니다", job_id, cap, left_over)
+        client.report_job(job_id, "queued")
+        return
 
     client.report_job(job_id, "done_with_errors" if any_fail else "done")
     log.info("job %s complete (errors=%s)", job_id, any_fail)
