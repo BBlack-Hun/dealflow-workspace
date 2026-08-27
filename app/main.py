@@ -5,7 +5,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import config
+from . import config, deps
 from .deps import NotAuthenticated
 from .routers import auth as auth_router
 from .routers import templates_crud
@@ -45,6 +45,21 @@ def create_app() -> FastAPI:
     app.include_router(templates_crud.router)
     app.include_router(setup_router.router)
     app.include_router(pages.router)
+
+    # `_no_store` 보다 **먼저** 등록한다. 나중에 등록한 미들웨어가 바깥이라,
+    # 순서를 바꾸면 여기서 바로 돌려주는 리다이렉트에 캐시 금지 헤더가 안 붙는다.
+    @app.middleware("http")
+    async def _consultant_guard(request: Request, call_next):
+        """투자컨설턴트는 자기 화면 하나만 쓴다 — 나머지는 여기서 끊는다.
+
+        라우터마다 검사를 흩뿌리면 새 라우터가 생길 때 빠진다(좌측 메뉴만
+        걸러 두고 라우터를 안 막아서, 주소를 직접 치면 다 열려 있었다).
+        미들웨어는 **나중에 붙는 라우트·마운트까지 자동으로** 지나므로
+        판정이 한 곳에 남는다. 무엇을 열어 두는지는 `deps.CONSULTANT_PATHS`.
+        """
+        if not deps.consultant_may_open(request.url.path) and deps.is_consultant(request):
+            return deps.consultant_block_response(request)
+        return await call_next(request)
 
     @app.middleware("http")
     async def _no_store(request: Request, call_next):

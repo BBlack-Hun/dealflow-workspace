@@ -84,9 +84,23 @@
       <tr>
         <td><b>{{ m.name }}</b>{% if m.password_pending %} <span class="tag warn">비밀번호 미변경</span>{% endif %}</td>
         <td class="muted">{{ m.phone }}</td>
-        <td>{% if m.role == 'admin' %}관리자
-            {% elif m.role == 'consultant' %}투자컨설턴트
-            {% else %}팀원{% endif %}</td>
+        {# 읽기만 되던 칸이다. 계정을 만든 뒤 권한을 고칠 길이 없어서, 잘못
+           만들어진 계정은 정지하고 새로 만드는 수밖에 없었다(담당 투자사와
+           발송 이력이 끊긴다). 본인 것은 바꾸지 못하게 막는다 — 관리자가
+           스스로를 내리면 이 화면에 다시 들어올 수 없다. #}
+        <td>
+          {% if m.id == user.id %}
+            <span class="muted">본인 · 관리자</span>
+          {% else %}
+          <form method="post" action="/team/members/{{ m.id }}/role">
+            <select name="role" onchange="this.form.submit()" aria-label="{{ m.name }} 권한">
+              <option value="user"       {% if m.role == 'user' %}selected{% endif %}>팀원</option>
+              <option value="consultant" {% if m.role == 'consultant' %}selected{% endif %}>투자컨설턴트</option>
+              <option value="admin"      {% if m.role == 'admin' %}selected{% endif %}>관리자</option>
+            </select>
+          </form>
+          {% endif %}
+        </td>
         <td class="num">{{ m.contacts }}</td>
         <td>
           {% if m.contacts %}

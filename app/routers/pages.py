@@ -6,7 +6,7 @@ from collections import Counter
 from datetime import date
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -30,12 +30,11 @@ def index(request: Request, db: Session = Depends(get_db),
           user: User = Depends(get_current_user), top: int = 0):
     """메인 = 대시보드. 좌측 위 브랜드를 누르면 여기로 온다.
 
-    투자컨설턴트는 대시보드를 볼 이유가 없다 — 자기 화면으로 보낸다.
+    투자컨설턴트를 자기 화면으로 돌려보내던 줄은 여기 없다 — 이 화면 하나만
+    막아 봐야 나머지 주소가 다 열려 있었다. 지금은 app/main.py 의 미들웨어가
+    허용 목록에 없는 경로를 통째로 끊는다.
     """
     from ..services import dashboard as dash
-
-    if user.role == "consultant":
-        return RedirectResponse("/consulting", status_code=303)
 
     # 몇 명까지 볼지. 기본값·선택지는 서비스가 갖는다 — 여기와 /dashboard 가
     # 각자 숫자를 박아 두면 한쪽만 고쳐진다(실제로 그랬다).

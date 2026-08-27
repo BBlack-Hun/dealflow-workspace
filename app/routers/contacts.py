@@ -21,7 +21,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..deps import get_current_user
+from ..deps import can_open, get_current_user
 from ..models import ContactActivity, IrCompany, SendItem, SendJob, User, VcContact
 from ..services import deal_stage, firm_type, room_name, sheet_import, sheet_owner
 from ..services.room_name import DEFAULT_SUFFIX, build_room_name
@@ -787,6 +787,38 @@ class RefCellIn(BaseModel):
     value: str = ""
 
 
+def _editable_ref(db: Session, sheet_id: int, user: User):
+    """고칠 수 있는 참고 자료만 돌려준다.
+
+    이 주소들은 **여러 화면이 같이 쓴다** — 투자사 관리 현황과 투자컨설턴트
+    현황이 같은 `/ref-sheets/…` 를 부른다. 화면 접근만 막아 두면 번호만 바꿔
+    남의 화면 자료를 지우거나 이름을 바꿀 수 있다.
+
+    `page` 값이 곧 그 자료가 붙은 화면 주소라(`contacts` · `consulting`)
+    화면 판정을 그대로 쓴다 — 역할별 규칙을 여기 또 적으면 둘이 어긋난다.
+    """
+    from ..models import RefSheet
+
+    row = db.get(RefSheet, sheet_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="참고 시트를 찾을 수 없습니다")
+    if not can_open(user, f"/{row.page or 'contacts'}"):
+        raise HTTPException(status_code=403, detail="이 자료를 고칠 권한이 없습니다")
+    return row
+
+
+def _ref_back(row, sheet: str = "") -> str:
+    """고치고 나서 돌아갈 화면.
+
+    자료가 붙은 화면으로 돌아가야 한다 — `/contacts` 로 못 박아 두면
+    투자컨설턴트 현황에서 스크립트를 고쳤을 때 남의 화면으로 튄다.
+    """
+    back = f"/{row.page or 'contacts'}?ref={row.id}"
+    if sheet:
+        back += f"&sheet={quote(sheet)}"
+    return back
+
+
 @ref_router.patch("/api/ref-sheets/{sheet_id}/cell", include_in_schema=False)
 def edit_ref_cell(sheet_id: int, body: RefCellIn, db: Session = Depends(get_db),
                   user: User = Depends(get_current_user)):
@@ -797,10 +829,8 @@ def edit_ref_cell(sheet_id: int, body: RefCellIn, db: Session = Depends(get_db),
     """
     import json
 
-    from ..models import RefSheet
-
-    row = db.get(RefSheet, sheet_id)
-    if row is None or row.kind != "table":
+    row = _editable_ref(db, sheet_id, user)
+    if row.kind != "table":
         raise HTTPException(status_code=404, detail="표 참고 자료가 아닙니다")
     data = json.loads(row.content_json or "{}")
     rows = data.get("rows") or []
@@ -826,19 +856,12 @@ def edit_ref_body(sheet_id: int, body: str = Form(""), sheet: str = Form(""),
 
     from fastapi.responses import RedirectResponse
 
-    from ..models import RefSheet
-
-    row = db.get(RefSheet, sheet_id)
-    if row is None:
-        raise HTTPException(status_code=404, detail="참고 시트를 찾을 수 없습니다")
+    row = _editable_ref(db, sheet_id, user)
     data = json.loads(row.content_json or "{}")
     data["body"] = body.replace("\r\n", "\n")
     row.content_json = json.dumps(data, ensure_ascii=False)
     db.commit()
-    back = f"/contacts?ref={sheet_id}"
-    if sheet:
-        back += f"&sheet={quote(sheet)}"
-    return RedirectResponse(back, status_code=303)
+    return RedirectResponse(_ref_back(row, sheet), status_code=303)
 
 
 @ref_router.post("/ref-sheets/{sheet_id}/rename", include_in_schema=False)
@@ -853,20 +876,13 @@ def rename_ref_sheet(sheet_id: int, title: str = Form(""), sheet: str = Form("")
     """
     from fastapi.responses import RedirectResponse
 
-    from ..models import RefSheet
-
-    row = db.get(RefSheet, sheet_id)
-    if row is None:
-        raise HTTPException(status_code=404, detail="참고 시트를 찾을 수 없습니다")
+    row = _editable_ref(db, sheet_id, user)
     # 이름 없는 탭은 누를 자리가 없어진다 — 비우려 하면 그냥 두던 이름을 쓴다.
     name = (title or "").strip()
     if name:
         row.title = name[:80]
         db.commit()
-    back = f"/contacts?ref={sheet_id}"
-    if sheet:
-        back += f"&sheet={quote(sheet)}"
-    return RedirectResponse(back, status_code=303)
+    return RedirectResponse(_ref_back(row, sheet), status_code=303)
 
 
 @ref_router.post("/ref-sheets/{sheet_id}/delete", include_in_schema=False)
@@ -880,11 +896,8 @@ def delete_ref_sheet(sheet_id: int, db: Session = Depends(get_db),
     """
     from fastapi.responses import RedirectResponse
 
-    from ..models import RefSheet
-
-    row = db.get(RefSheet, sheet_id)
-    if row is None:
-        raise HTTPException(status_code=404, detail="참고 시트를 찾을 수 없습니다")
+    row = _editable_ref(db, sheet_id, user)
     row.is_active = 0
     db.commit()
-    return RedirectResponse("/contacts", status_code=303)
+    # 지운 탭은 다시 열 수 없으니 `?ref=` 없이 그 화면만 연다.
+    return RedirectResponse(f"/{row.page or 'contacts'}", status_code=303)
