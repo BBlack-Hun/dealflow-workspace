@@ -98,6 +98,17 @@ def has_row_no(value) -> bool:
         return False
 
 
+def is_no_header(value) -> bool:
+    """이 머리글이 `NO` 칸인가.
+
+    시트마다 적는 법이 다르다 — `NO` · `no` · `No.` 가 다 돌아다닌다. 글자
+    그대로 맞추면 대소문자나 마침표 하나 때문에 번호 칸을 못 알아보고, 그러면
+    그 칸이 **달마다 늘어나는 칸**으로 잘못 세워져 표 맨 앞에 `1, 2, 3 …` 이
+    적힌 열이 하나 더 생긴다.
+    """
+    return flat(value).upper().strip(". ") == "NO"
+
+
 def find_header(rows) -> int:
     """머리행은 위치가 아니라 **내용**으로 찾는다.
 
@@ -106,13 +117,23 @@ def find_header(rows) -> int:
     """
     for i, row in enumerate(rows[:30]):
         cells = [flat(c) for c in row]
-        if "NO" in cells and any("기업명" in c for c in cells):
+        if any(is_no_header(c) for c in cells) and any("기업명" in c for c in cells):
             return i
     return -1
 
 
-def parse(rows) -> dict:
-    """시트 → {월별 칸 이름들, 줄들}."""
+def parse(rows, is_row=None, aliases=None) -> dict:
+    """시트 → {월별 칸 이름들, 줄들}.
+
+    `is_row` — **어떤 줄을 표의 줄로 볼까.** 기본은 번호가 붙은 줄이다
+    (`has_row_no`). 시트마다 번호를 쓰는 법이 달라 부르는 쪽이 정할 수 있게
+    열어 둔다 — `0` 을 '이관' 표시로 쓰는 시트가 있는데 그 줄도 표의 줄이다.
+
+    `aliases` — `{시트 머리글: 칸 이름}`. 같은 뜻의 칸을 시트마다 다르게 적는다
+    (한쪽은 `메모 ( 통화내용 …)`, 다른 쪽은 그냥 `내용`). 시트별 이름을 코드에
+    박으면 시트가 하나 늘 때마다 또 박아야 하므로 **부르는 쪽이 준다.**
+    """
+    is_row = is_row or has_row_no
     at = find_header(rows)
     if at < 0:
         return {"columns": [], "items": [], "skipped": []}
@@ -123,8 +144,19 @@ def parse(rows) -> dict:
 
     where = {f: find(t) for t, f in FIELDS}
     notes_at = {k: find(t) for t, k in NOTES}
+    # 부르는 쪽이 준 짝은 **완전히 일치**할 때만 건다. 포함으로 찾으면 `내용`
+    # 처럼 짧은 말이 다른 머리글에 걸려 엉뚱한 칸을 가져간다.
+    field_keys = {f for _t, f in FIELDS}
+    for label, key in (aliases or {}).items():
+        found = next((i for i, h in enumerate(header) if h == flat(label)), None)
+        if found is None:
+            continue
+        (where if key in field_keys else notes_at)[key] = found
+
+    no_at = next((i for i, h in enumerate(header) if is_no_header(h)), None)
     used = {i for i in list(where.values()) + list(notes_at.values()) if i is not None}
-    used.add(find("NO"))
+    if no_at is not None:
+        used.add(no_at)
     # 남는 머리글이 곧 **달마다 늘어나는 칸**이다. 목록을 손으로 적어 두면
     # 8월 시트를 올렸을 때 그 세 칸이 조용히 버려진다.
     months = [(i, header[i]) for i in range(len(header))
@@ -136,10 +168,12 @@ def parse(rows) -> dict:
         firm = norm(cells[where["firm"]]) if where.get("firm") is not None else ""
         if not firm:
             continue
-        if not has_row_no(cells[0] if cells else None):
+        if not is_row(cells[no_at if no_at is not None else 0] if cells else None):
             skipped.append(firm)      # 표 아래에 붙은 운영 가이드 줄
             continue
-        item = {"fields": {}, "notes": {}}
+        item = {"fields": {}, "notes": {},
+                # 어느 줄인지 사람이 시트에서 찾을 수 있게 번호를 들고 다닌다.
+                "no": norm(cells[no_at]) if no_at is not None else ""}
         for field, i in where.items():
             if i is not None and norm(cells[i]):
                 item["fields"][field] = norm(cells[i])

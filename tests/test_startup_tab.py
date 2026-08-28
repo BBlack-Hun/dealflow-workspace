@@ -511,7 +511,8 @@ def test_명단_이름이_코드에_박혀_있지_않다():
     # 도구라, 이름이 인자가 아니라 본문에 있는 것이 오히려 읽기 쉽다.
     targets = (list((ROOT / "app").rglob("*.py"))
                + list((ROOT / "app" / "static" / "js").glob("*.js"))
-               + [ROOT / "scripts" / "import_startup_sheet.py"])
+               + [ROOT / "scripts" / "import_startup_sheet.py",
+                  ROOT / "scripts" / "import_new_list.py"])
     for path in targets:
         if "__pycache__" in str(path):
             continue
