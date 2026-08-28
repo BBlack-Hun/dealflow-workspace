@@ -3,7 +3,8 @@
 원본 시트를 여러 사람이 같이 고치다 보니 어디까지 반영됐는지 알기 어려웠다.
 여기로 옮겨 **한 곳에서 고치고, 누가 언제 고쳤는지 남게** 한다.
 
-정해진 사람만 보는 화면이다(관리자 + `can_view_consulting` 이 켜진 계정).
+정해진 사람만 보는 화면이다 — 누가 볼 수 있는지는 `deps.may_view_consulting`
+한 곳에서 정한다(관리자 · 투자컨설턴트 · 관리자가 켜 준 팀원).
 대표자 연락처·이메일이 들어 있어서 팀 전체에 열어 둘 표가 아니다.
 
 시트의 값은 대부분 자유 문장이다 — 미팅일이 `9/16 PM2 (화상미팅)` 처럼 적혀 있다.
@@ -27,7 +28,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..deps import get_current_user, templates
+from ..deps import get_current_user, may_view_consulting, templates
 from ..models import ConsultingColumn, ConsultingCompany, User
 from ..services import spreadsheet as sp
 from ..ui import base_ctx
@@ -52,9 +53,11 @@ TAIL_COLUMNS = [
 def require_access(user: User) -> None:
     """관리자이거나, 이 화면을 보도록 허용된 계정이어야 한다.
 
-    투자컨설턴트 계정은 이 화면이 전부다 — 따로 켜 줄 필요가 없다.
+    **누가 볼 수 있는지는 `deps.may_view_consulting` 한 곳에서 정한다.** 여기에
+    조건을 한 번 더 적어 두었더니 팀 현황 표가 보는 조건과 갈렸고, 컨설턴트
+    줄에 `막힘` 이라고 뜨는데 실제로는 열려 있었다 — 표가 거짓말을 한 것이다.
     """
-    if user.role in ("admin", "consultant") or user.can_view_consulting:
+    if may_view_consulting(user):
         return
     raise HTTPException(status_code=403, detail="이 화면을 볼 권한이 없습니다")
 
