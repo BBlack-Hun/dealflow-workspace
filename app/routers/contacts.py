@@ -10,7 +10,6 @@ RBAC: 모든 조회·수정은 ``VcContact.user_id == 현재 사용자`` 로 좁
 from __future__ import annotations
 
 from datetime import date, timedelta
-from collections import Counter
 from typing import Dict, List, Optional
 
 from urllib.parse import quote
@@ -22,8 +21,10 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..deps import can_open, get_current_user
-from ..models import ContactActivity, IrCompany, SendItem, SendJob, User, VcContact
-from ..services import deal_stage, firm_type, room_name, sheet_import, sheet_owner
+from ..models import (ContactActivity, ContactColumn, IrCompany, SendItem,
+                      SendJob, User, VcContact)
+from ..services import (contact_columns, deal_stage, firm_type, room_name,
+                        sheet_import, sheet_owner)
 from ..services.room_name import DEFAULT_SUFFIX, build_room_name
 
 router = APIRouter(prefix="/api/contacts", tags=["contacts"])
@@ -83,36 +84,32 @@ def _sheet_labels(value: Optional[str]) -> List[str]:
     return labels or [MANUAL_SHEET]
 
 
-def sheet_tabs(rows: List[dict]) -> List[dict]:
-    """명단별 탭. **원본 시트와 같은 이름**을 쓴다.
-
-    333명을 한 표에 쏟으면 시트를 쓰던 사람이 자기 명단을 못 찾는다.
-    시트가 나뉘어 있던 데는 이유가 있으므로 그 구분을 그대로 살린다.
-    """
-    total = Counter()
-    connected = Counter()
-    for row in rows:
-        for label in row["sheets"]:
-            total[label] += 1
-            if row["connect_stage"] == "connected":
-                connected[label] += 1
-    # 연결된 사람이 많은 명단이 먼저 — 실제로 쓰는 순서다.
-    order = sorted(total, key=lambda k: (-connected[k], -total[k], k))
-    return [{"key": k, "label": k, "count": total[k], "connected": connected[k]}
-            for k in order]
+# 명단별 탭은 `sheet_owner.sheet_rows()` 하나가 만든다.
+#
+# 여기에도 같은 것을 세는 `sheet_tabs()` 가 있었다. 아무도 부르지 않는데(화면은
+# `sheet_rows` 를 쓴다) 남아 있어서, 명단에 조건이 하나 붙을 때마다 "여기도
+# 고쳐야 하나" 를 매번 따져야 했다. 같은 것을 두 벌로 세는 코드가 곧 투자사
+# 관리 현황 117명 · 대시보드 123명 같은 사고를 부른다 — 지운다.
 
 
-def contact_rows(db: Session, user: User, team_wide: bool = False) -> List[dict]:
+def contact_rows(db: Session, user: User, team_wide: bool = False,
+                 include_hidden: bool = False) -> List[dict]:
     """표 한 행 = 담당자 1명 + 집계값. (FEATURE_SPEC §3 7컬럼)
 
     `team_wide` 는 관리자 전용이다. 관리자는 직접 보내지 않지만 **누가 어떤
     투자사를 맡고 있는지** 알아야 팀이 굴러간다. 발송 대상 고르기는 여전히
     본인 담당분만이다 — 남의 담당에 실수로 나가면 안 된다.
+
+    `include_hidden` 은 **투자사 관리 현황 화면 하나만** 쓴다. 감춘 명단도 그
+    탭에서는 그대로 보여야 하기 때문이다(감추기는 지우기가 아니다). 그 외에는
+    기본값 그대로 두어야 한다 — 여기서 새는 순간 세는 곳마다 수가 갈린다.
     """
     stmt = select(VcContact).order_by(VcContact.group_name, VcContact.name)
     if not (team_wide and user.role == "admin"):
         stmt = stmt.where(VcContact.user_id == user.id)
     contacts = db.execute(stmt).scalars().all()
+    if not include_hidden:
+        contacts = sheet_owner.investors(db, contacts)
     if not contacts:
         return []
     ids = [c.id for c in contacts]
@@ -214,6 +211,11 @@ def contact_rows(db: Session, user: User, team_wide: bool = False) -> List[dict]
             "sourcing_note": c.sourcing_note or "",
             "tips_note": c.tips_note or "",
             "kakao_joined": c.kakao_joined or "",
+            # 이 명단에만 있는 칸들(스타트업 명단의 `사업분야 대분류` 등)과
+            # 달마다 늘어나는 칸의 값. 화면은 배치가 정해 준 키로 꺼내 쓴다.
+            "notes": contact_columns.load_notes(c.notes),
+            # 이 줄만 감췄는가. 표에서 빼고, 발송 대상에서도 뺀다.
+            "is_hidden": bool(c.is_hidden),
             "last_deal": last_deal,
             "last_deal_label": _date_label(last_deal, last_round),
             "last_deal_note": last_deal_note or "",
@@ -318,6 +320,16 @@ class ContactIn(BaseModel):
     kakao_joined: Optional[str] = None
     sourcing_note: Optional[str] = None
     tips_note: Optional[str] = None
+    # 이 명단에만 있는 칸 + 달마다 늘어나는 칸. {"칸키": "내용"}
+    #
+    # 칸 하나마다 스키마·저장 목록·되읽기 응답·화면 네 곳에 이름을 적어 두던
+    # 방식을 여기서 끊는다. 그렇게 두면 네 곳 중 하나만 빠져도 증상이 조용하다 —
+    # PATCH 는 200 을 주는데 아무것도 안 들어가거나, 저장은 되는데 다시 열면
+    # 빈칸이다(실제로 `kakao_joined` 가 그랬다). 묶음으로 받으면 칸이 늘어도
+    # 네 곳을 다시 맞출 일이 없다.
+    notes: Optional[Dict[str, str]] = None
+    # 이 줄만 표에서 감출까(1) 다시 보일까(0).
+    is_hidden: Optional[int] = None
 
 
 class VerifyRequest(BaseModel):
@@ -342,7 +354,10 @@ def verify_rooms(
     query = select(VcContact).where(VcContact.user_id == user.id)
     if req.contact_ids:
         query = query.where(VcContact.id.in_(req.contact_ids))
-    contacts = db.execute(query.order_by(VcContact.id)).scalars().all()
+    # 투자사로 세지 않는 명단·감춘 줄은 방을 확인할 이유가 없다. 확인해 두면
+    # `연결 완료` 가 붙고, 그 순간 딜소개 발송 대상 목록에 함께 뜬다.
+    contacts = sheet_owner.investors(
+        db, db.execute(query.order_by(VcContact.id)).scalars().all())
 
     # 메일 채널로만 관리하는 담당자는 카톡방이 없는 게 정상이라 확인 대상이 아니다.
     def _is_kakao(c) -> bool:
@@ -419,6 +434,18 @@ def assign_to_my_sheet(body: AssignIn, db: Session = Depends(get_db),
     rows = db.execute(
         select(VcContact).where(VcContact.id.in_(body.contact_ids or []))
     ).scalars().all()
+    # 투자사로 세지 않기로 한 명단에서는 꺼내 오지 않는다. 여기서 내 명단에
+    # 더하는 순간 그 사람들이 투자사 수에 다시 들어오고 발송 대상에도 뜬다 —
+    # 방금 빼 둔 것을 되돌리는 길이 열려 있는 셈이다. 화면에서 이미 단추를
+    # 감췄지만, 화면만 감추면 id 를 직접 보내는 길이 남는다.
+    #
+    # 진짜로 옮겨야 하면 먼저 그 명단의 [숨김 해제] 를 누른다.
+    blocked = len(rows) - len(sheet_owner.investors(db, rows))
+    rows = sheet_owner.investors(db, rows)
+    if blocked and not rows:
+        raise HTTPException(
+            status_code=400,
+            detail="투자사로 세지 않는 명단입니다 — 먼저 숨김을 해제하세요")
     moved = sheet_owner.add_to_sheet(db, rows, label, user.id)
     db.commit()
     return {"moved": moved, "label": label}
@@ -441,6 +468,123 @@ def assign_sheet(
     db.commit()
     from fastapi.responses import RedirectResponse
     return RedirectResponse(f"/contacts?sheet={quote(label.strip())}", status_code=303)
+
+
+@router.post("/sheets/hide", include_in_schema=False)
+def toggle_sheet_hidden(
+    label: str = Form(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """명단 하나를 투자사 집계·발송 대상에서 빼거나 되돌린다.
+
+    **지우는 것이 아니다.** 그 명단 탭에서는 그대로 보이고, 투자사로만 세지
+    않는다 — 스타트업 리마인드 명단처럼 같은 표에 얹혀 있을 뿐 투자사가 아닌
+    줄이 투자사 수를 부풀리고 발송 대상 목록에까지 뜨던 것을 막는다.
+
+    **관리자만.** 명단을 감추면 그 명단을 담당하는 다른 팀원의 대시보드 숫자와
+    발송 대상 목록까지 함께 바뀐다. 팀 전체에 영향이 가는 조작은 팀 현황의
+    권한 토글과 같은 자리에 둔다.
+
+    되돌리는 길은 화면에 남아 있다 — 탭은 감춰도 그대로 서 있고 같은 단추가
+    `숨김 해제` 로 바뀐다. 감춰 놓고 켜는 단추까지 감추면 DB 를 직접 고쳐야 한다.
+    """
+    from fastapi.responses import RedirectResponse
+
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="명단 숨김은 관리자만 바꿀 수 있습니다")
+    name = (label or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="명단을 찾을 수 없습니다")
+    row = sheet_owner.ensure(db, name)
+    row.is_hidden = 0 if row.is_hidden else 1
+    db.commit()
+    return RedirectResponse(f"/contacts?sheet={quote(name)}", status_code=303)
+
+
+# ── 달마다 늘어나는 칸 ──────────────────────────────────────────────────────
+#
+# `7월 리마인드 문자 (7/28)` 은 한 달 뒤면 `8월 …` 이 옆에 붙는다. 시트를 다시
+# 올리지 않고도 화면에서 칸을 세울 수 있어야 한다 — 투자컨설턴트 현황의
+# 열 추가·이름 바꾸기·삭제와 **같은 방식·같은 어휘**다.
+
+def _sheet_or_400(db: Session, label: str) -> str:
+    """이미 쓰고 있는 명단 이름만 받는다.
+
+    아무 값이나 받으면 오타 하나로 **없던 탭이 생긴다** — 탭은 줄에 적힌 시트
+    이름을 그대로 올리기 때문이다.
+    """
+    from ..models import SheetOwner
+
+    name = (label or "").strip()
+    known = {row.label for row in db.execute(select(SheetOwner)).scalars().all()}
+    known |= {lbl for c in db.execute(select(VcContact.source_sheet)).scalars()
+              for lbl in sheet_owner.labels_of(c)}
+    if name not in known:
+        raise HTTPException(status_code=400, detail="없는 명단입니다")
+    return name
+
+
+@router.post("/columns", include_in_schema=False)
+def add_column(label: str = Form(...), sheet: str = Form(...),
+               db: Session = Depends(get_db),
+               user: User = Depends(get_current_user)):
+    """달이 바뀌면 칸을 하나 늘린다. 새 칸이 **맨 앞**에 오도록 한다.
+
+    시트에서도 최근 달이 왼쪽이다 — 지금 챙겨야 할 달이 먼저 보여야 한다.
+    """
+    from fastapi.responses import RedirectResponse
+
+    name = _sheet_or_400(db, sheet)
+    text = (label or "").strip()
+    if not text:
+        return RedirectResponse(f"/contacts?sheet={quote(name)}&msg=칸+이름을+입력하세요",
+                                status_code=303)
+    for col in contact_columns.month_columns(db, name):
+        col.position += 1
+    db.add(ContactColumn(sheet=name, label=text[:80], position=0))
+    db.commit()
+    return RedirectResponse(
+        f"/contacts?sheet={quote(name)}&msg={quote(text)}+칸을+추가했습니다",
+        status_code=303)
+
+
+@router.post("/columns/{column_id}/rename", include_in_schema=False)
+def rename_column(column_id: int, label: str = Form(...),
+                  db: Session = Depends(get_db),
+                  user: User = Depends(get_current_user)):
+    col = db.get(ContactColumn, column_id)
+    if col is None:
+        raise HTTPException(status_code=404, detail="칸을 찾을 수 없습니다")
+    from fastapi.responses import RedirectResponse
+
+    if (label or "").strip():
+        col.label = label.strip()[:80]
+        db.commit()
+    return RedirectResponse(f"/contacts?sheet={quote(col.sheet)}", status_code=303)
+
+
+@router.post("/columns/{column_id}/delete", include_in_schema=False)
+def delete_column(column_id: int, db: Session = Depends(get_db),
+                  user: User = Depends(get_current_user)):
+    """칸을 지우면 **그 달의 기록도 함께 사라진다** — 화면에서 한 번 더 묻는다.
+
+    남은 값을 그냥 두면 어느 칸의 것인지 모르는 값이 JSON 에 쌓인다.
+    """
+    from fastapi.responses import RedirectResponse
+
+    col = db.get(ContactColumn, column_id)
+    if col is None:
+        raise HTTPException(status_code=404, detail="칸을 찾을 수 없습니다")
+    sheet, key = col.sheet, contact_columns.note_key(col.id)
+    for contact in db.execute(select(VcContact)).scalars().all():
+        values = contact_columns.load_notes(contact.notes)
+        if key in values:
+            values.pop(key)
+            contact.notes = contact_columns.dump_notes(values)
+    db.delete(col)
+    db.commit()
+    return RedirectResponse(f"/contacts?sheet={quote(sheet)}", status_code=303)
 
 
 @router.get("")
@@ -523,6 +667,10 @@ def get_contact(
             "department": contact.department or "",
             "status": contact.status,
             "memo": contact.memo or "",
+            # 이 명단에만 있는 칸들. **여기서 안 돌려주면 창이 채울 값이 없어**
+            # 고쳐 놓고도 안 들어간 줄 안다(저장은 됐는데 다시 열면 빈칸).
+            "notes": contact_columns.load_notes(contact.notes),
+            "is_hidden": 1 if contact.is_hidden else 0,
         },
         # 한 줄기로 모은다: 시트에서 옮겨 온 월별 기록 + 발송 이력 +
         # **이 도구에서 만든 IR 요청·미팅**.
@@ -727,6 +875,15 @@ def _assign(contact: VcContact, body: ContactIn) -> None:
         contact.channel_kakao = 1 if body.channel_kakao else 0
     if body.channel_email is not None:
         contact.channel_email = 1 if body.channel_email else 0
+    if body.is_hidden is not None:
+        contact.is_hidden = 1 if body.is_hidden else 0
+    if body.notes is not None:
+        # **통째로 덮지 않고 합친다.** 표에서 칸 하나를 고치면 그 칸 하나만
+        # 올라온다 — 덮어 버리면 나머지 달의 기록이 그때 사라진다.
+        # (`ConsultingCompany` 도 같은 이유로 합친다)
+        merged = contact_columns.load_notes(contact.notes)
+        merged.update({k: (v or "").strip() for k, v in body.notes.items()})
+        contact.notes = contact_columns.dump_notes(merged)
 
     # 방 이름과 연결 단계가 어긋나면 안 된다. 방 이름을 지웠는데 '연결 완료'로
     # 남으면 발송 대상 목록에는 뜨는데 보낼 방이 없다.

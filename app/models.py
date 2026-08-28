@@ -161,6 +161,26 @@ class VcContact(TimestampMixin, Base):
     # 어떤 돈인가 (vc | ac | angel | cvc | pe | securities | bank | public | other)
     firm_type: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     memo: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # 이 명단에만 있는 칸들. {"칸키": "내용"} — 키는 `ContactColumn.id` 이거나
+    # 배치(app/services/contact_columns.py)가 정한 고정 키다.
+    #
+    # 명단마다 시트 모양이 다르다. 스타트업 명단에는 `사업분야 대분류`·`계약여부`
+    # 처럼 투자사 명함에는 없는 칸이 있고, `7월 리마인드 문자` 는 **달마다 하나씩
+    # 늘어난다**. 이걸 전부 테이블 컬럼으로 두면 명단이 하나 들어올 때마다,
+    # 달이 바뀔 때마다 마이그레이션을 해야 한다 — 그러면서 306행 전체가 그
+    # 명단에서만 쓰는 빈 칸을 지고 다닌다.
+    #
+    # ConsultingCompany.notes 와 같은 방식이다(같은 문제를 이미 그렇게 풀었다).
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # 이 줄만 표에서 감출까. **지우는 것이 아니다.**
+    #
+    # 원본 구글 시트가 17~32번 줄을 숨긴 채로 돌아다녔다. 그래서 시트 이름은
+    # `…(16)` 인데 실제 줄은 서른둘이었고, 열여섯 줄만 보고 "없는 기업" 이라고
+    # 판단한 일이 실제로 있었다. 시트가 하던 일이니 앱에도 있어야 하지만,
+    # **되돌릴 길이 화면에 보여야 한다** — 그 함정을 그대로 옮기면 안 된다.
+    #
+    # 감춘 줄은 발송 대상에서도 빠진다. 안 보이는 사람에게 문구가 나가면 안 된다.
+    is_hidden: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class ContactActivity(TimestampMixin, Base):
@@ -611,6 +631,45 @@ class SheetOwner(TimestampMixin, Base):
     label: Mapped[str] = mapped_column(String, unique=True)     # source_sheet 값
     user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     assignee_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # 시트의 담당자 원문
+    # 이 명단을 어떤 표로 보여 줄까. `app/services/contact_columns.py` 의 배치 키.
+    #
+    # **명단 이름을 코드가 알아야 할 이유를 없앤다.** 성격이 다른 명단이 들어올
+    # 때마다 `if 이름 == "…"` 를 어딘가에 심으면, 다음 명단에서 또 심어야 하고
+    # 심는 것을 잊은 화면만 조용히 옛 칸을 보여 준다.
+    layout: Mapped[str] = mapped_column(String, default="investor")
+    # 투자사로 세지 않는 명단인가.
+    #
+    # 명단이라고 다 투자사는 아니다 — 스타트업 리마인드 명단처럼 **같은 표에
+    # 얹혀 있을 뿐 투자사가 아닌** 줄이 섞이면 투자사 수가 부풀고, 딜소개
+    # 발송 대상 목록에도 함께 뜬다. 지우는 것이 아니라 **투자사로 안 세는**
+    # 것이라, 그 명단 탭에서는 그대로 보인다.
+    is_hidden: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class ContactColumn(TimestampMixin, Base):
+    """명단(시트)마다 **달마다 하나씩 늘어나는** 열.
+
+    스타트업 리마인드 명단의 `7월 리마인드 문자 (7/28)` · `7월 리마인드 TEL` ·
+    `7월 카톡 연결` 이 그렇다. 8월이 되면 같은 모양의 열 세 개가 오른쪽에 더
+    붙는다. 테이블 컬럼으로 두면 **달마다 마이그레이션**을 해야 하므로 행으로
+    둔다 — 투자컨설턴트 현황이 `ConsultingColumn` 으로 이미 같은 문제를 그렇게
+    풀었고, 같은 모양에 다른 장치를 하나 더 만들면 배울 것도 고칠 곳도 두 벌이
+    된다.
+
+    `ConsultingColumn` 과 딱 한 군데가 다르다. 저쪽은 **사람마다**(각자 올린
+    시트의 달이 다르다) 열을 갖는데, 이쪽은 **명단마다** 갖는다 — 여기서 열을
+    정하는 것은 올린 사람이 아니라 원본 시트이고, 명단은 담당이 바뀌어도
+    같은 명단이기 때문이다.
+
+    값은 담당자 행의 `VcContact.notes` 에 `{"열id": "내용"}` 으로 담는다.
+    """
+
+    __tablename__ = "contact_columns"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    sheet: Mapped[str] = mapped_column(String)          # SheetOwner.label
+    label: Mapped[str] = mapped_column(String)          # 시트의 열 이름 그대로
+    position: Mapped[int] = mapped_column(Integer, default=0)   # 왼→오 순서
 
 
 class IrRequest(TimestampMixin, Base):

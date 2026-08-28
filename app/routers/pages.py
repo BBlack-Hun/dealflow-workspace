@@ -13,12 +13,12 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import get_current_user, templates
 from ..models import IrCompany, RefSheet, SendJob, SourcingContact, User, VcContact
-from ..services import (cadence, deal_history, deal_stage, mailer,
-                        sheet_import, sheet_owner, sourcing_link)
+from ..services import (cadence, contact_columns, deal_history, deal_stage,
+                        mailer, sheet_import, sheet_owner, sourcing_link)
 from ..ui import MENU, base_ctx as _base_ctx
 from .companies import BLOCKED_CONTRACT
 from .companies import blocked_reason as company_blocked_reason
-from .contacts import contact_rows, sheet_tabs
+from .contacts import contact_rows
 
 router = APIRouter(tags=["pages"])
 
@@ -65,12 +65,15 @@ def deals_page(
     companies = sorted(companies, key=lambda c: (not c.introducible, c.name or ""))
     # 발송 대상은 **연결이 끝난 담당자**다. 연결 전 명단(전화·초대 진행 중)이
     # 여기 섞이면 보낼 방도 없는 사람에게 체크를 하게 된다.
-    contacts = db.execute(
+    # 투자사로 세지 않는 명단(스타트업 리마인드 등)과 감춘 줄은 여기 오면 안 된다.
+    # 투자사에게 보낼 문구가 스타트업에게 나가고, 화면에서 안 보이는 사람이
+    # 체크박스로는 골라진다.
+    contacts = sheet_owner.investors(db, db.execute(
         select(VcContact)
         .where(VcContact.user_id == user.id,
                VcContact.connect_stage == "connected")
         .order_by(VcContact.id)
-    ).scalars().all()
+    ).scalars().all())
     # 딜소개를 보냈는데 IR 요청·미팅으로 이어지지 않은 담당자.
     # 이들에게는 목록을 또 밀어 넣기보다 무엇을 보고 싶은지 되묻는 편이 답이 온다.
     no_reaction_ids = {
@@ -143,16 +146,25 @@ def contacts_page(
     sheet: str = "",
     ref: str = "",
     contact: int = 0,
+    months: str = "",
+    hidden: int = 0,
+    msg: str = "",
 ):
     """내 투자사 (FEATURE_SPEC §3). 표는 SSR, 필터는 브라우저에서 즉시 반응.
 
     명단(시트)별로 탭을 나눈다. 333명을 한 표에 쏟으면 시트를 쓰던 사람이
     자기 명단을 못 찾는다 — 시트가 나뉘어 있던 구분을 그대로 살린다.
+
+    **명단마다 표가 다르다.** 어느 명단이 어떤 칸을 쓰는지는 화면이 아니라
+    그 명단의 설정(`SheetOwner.layout`)이 정한다 — 탭 이름을 화면에 심으면
+    성격이 다른 명단이 하나 더 들어올 때마다 또 심어야 한다.
     """
     # 관리자는 팀 전체를 본다 — 누가 어떤 투자사를 맡고 있는지 알아야 한다.
     # 발송 대상 고르기는 여전히 본인 담당분만이다(/deals 참고).
     team_wide = user.role == "admin"
-    all_rows = contact_rows(db, user, team_wide=team_wide)
+    # 이 화면 하나만 감춘 것까지 받아 온다 — 감추기는 지우기가 아니라서
+    # 그 명단 탭에서는 그대로 보여야 하고, 되돌릴 자리도 여기에 있어야 한다.
+    all_rows = contact_rows(db, user, team_wide=team_wide, include_hidden=True)
     # 담당은 명단(시트) 단위다 — "내 이름으로 된 탭만 내 담당 투자사".
     contacts = db.execute(
         select(VcContact) if team_wide
@@ -163,14 +175,42 @@ def contacts_page(
     # 아무 것도 고르지 않았으면 **내가 담당인 명단**을 먼저 연다.
     # 전체(333명)를 먼저 보여주면 매번 자기 명단을 다시 골라야 한다.
     # `sheet=all` 은 일부러 전체를 본다는 뜻이다.
+    #
+    # 투자사로 세지 않기로 한 명단은 **기본으로 열지 않는다.** 이 화면은
+    # 투자사 관리 현황이라, 열자마자 투자사가 아닌 명단이 떠 있으면 그것이
+    # 내 담당 투자사인 줄 읽는다. 눌러서 들어가는 길은 그대로 있다.
     if sheet == "all":
         selected = ""
     elif any(t["key"] == sheet for t in tabs):
         selected = sheet
     else:
-        mine_first = next((t["key"] for t in tabs if t["owner_id"] == user.id), "")
-        selected = mine_first
-    rows = [r for r in all_rows if selected in r["sheets"]] if selected else all_rows
+        mine = [t for t in tabs if t["owner_id"] == user.id]
+        # 감추지 않은 내 명단이 먼저. 내 명단이 전부 감춘 것뿐이면 그거라도
+        # 연다 — 담당이 있는데 빈 화면이 뜨면 무엇을 봐야 할지 알 수 없다.
+        selected = next((t["key"] for t in mine if not t["is_hidden"]),
+                        next((t["key"] for t in mine), ""))
+    if selected:
+        rows = [r for r in all_rows if selected in r["sheets"]]
+    else:
+        # `전체` 는 **투자사 전체**다. 투자사로 세지 않기로 한 명단을 여기 섞으면
+        # 위의 인원 수가 그만큼 부풀어, 대시보드와 다른 수가 나온다.
+        hidden_sheets = sheet_owner.hidden_labels(db)
+        rows = [r for r in all_rows
+                if not r["is_hidden"]
+                and any(s not in hidden_sheets for s in r["sheets"])]
+
+    # 감춘 줄은 기본으로 빼고, **몇 줄을 감췄는지는 적는다.** 그냥 안 보이면
+    # 원본 시트에서 그랬듯 "없는 기업" 으로 읽힌다(`?hidden=1` 이 되돌리는 길).
+    hidden_rows = [r for r in rows if r["is_hidden"]]
+    if not hidden:
+        rows = [r for r in rows if not r["is_hidden"]]
+
+    # 이 명단이 쓰는 표 배치. 정해 두지 않은 명단은 지금까지의 투자사 명함 표다.
+    layout = contact_columns.layout_of(
+        sheet_owner.layout_of(db, selected) if selected else contact_columns.DEFAULT)
+    all_months = contact_columns.month_columns(db, selected) if layout.monthly else []
+    shown_months, folded_months = contact_columns.split_months(
+        all_months, show_all=(months == "all"))
 
     # 참고 시트 — 스크립트·가이드처럼 매번 구글 시트를 열어 보던 자료.
     # 지울 수 있게 두었으므로 살아 있는 것만 가져온다.
@@ -199,7 +239,24 @@ def contacts_page(
         "my_sheets": [t for t in tabs if t["owner_id"] == user.id],
         # 풀 탭에서는 골라서 내 명단으로 할당할 수 있다.
         "pool_view": any(t["key"] == selected and t["kind"] == "pool" for t in tabs),
-        "total_count": len(all_rows),
+        # `전체` 탭에 적히는 수. **투자사로 세는 사람만** — 여기가 부풀면
+        # 대시보드와 다른 수가 나온다(예전에 117명 · 123명으로 갈렸다).
+        "total_count": sum(
+            1 for r in all_rows
+            if not r["is_hidden"]
+            and any(s not in sheet_owner.hidden_labels(db) for s in r["sheets"])),
+        # ── 명단이 정한 표 배치 ──
+        "layout": layout,
+        "table_columns": contact_columns.table_columns(layout, shown_months),
+        "panel_columns": contact_columns.panel_columns(layout, all_months),
+        "month_columns": shown_months,
+        # **접었다는 것을 사람이 알아야 한다** — 그냥 안 보이면 지워진 줄 안다.
+        "folded_months": folded_months,
+        "show_all_months": months == "all",
+        # 감춘 줄 — 몇 줄인지와, 되돌리러 갈 자리.
+        "hidden_count": len(hidden_rows),
+        "show_hidden": bool(hidden),
+        "msg": msg,
         "funnel": stage_funnel,
         # 대시보드의 '내 투자사 선호'에서 눌러 오면 그 사람 상세를 바로 연다 —
         # 무엇을 좋아하는지(선호 분야·라운드) 보려고 누른 것이다.

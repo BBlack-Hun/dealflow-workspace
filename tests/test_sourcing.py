@@ -478,8 +478,8 @@ def test_names_are_never_used_to_link(seeded, db, users):
     """같은 이름이 여럿 있다 — 이름으로 이으면 남의 방으로 나간다."""
     from app.services import sourcing_link
 
-    _vc(db, users, "김형준", "010-3333-4444", "김형준 이사님 가나벤처스 Deal 공유")
-    who = _sc(db, "김형준", "")          # 번호가 없다
+    _vc(db, users, "홍길동", "010-3333-4444", "홍길동 이사님 가나벤처스 Deal 공유")
+    who = _sc(db, "홍길동", "")          # 번호가 없다
     assert sourcing_link.linked_rooms(db, [who]) == {}
 
 

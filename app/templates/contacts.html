@@ -29,10 +29,12 @@
     전체 <span>{{ total_count }}</span>
   </a>
   {% for t in tabs %}
-  <a class="sheet-tab {% if selected_sheet == t.key %}active{% endif %}"
+  {# 투자사로 세지 않는 명단은 **탭을 감추지 않는다.** 감춰 놓고 켜는 자리까지
+     감추면 되돌리려고 DB 를 직접 고쳐야 한다. 대신 표시를 달아 둔다. #}
+  <a class="sheet-tab {% if selected_sheet == t.key %}active{% endif %}{% if t.is_hidden %} muted-tab{% endif %}"
      href="/contacts?sheet={{ t.key|urlencode }}"
-     title="{{ t.kind_label }} · 연결 완료 {{ t.connected }}명{% if t.owner %} · 담당 {{ t.owner }}{% endif %}">
-    {% if t.kind == 'pool' %}<span class="pool-dot" title="투자사 풀">◇</span>{% endif %}{{ t.label }} <span>{{ t.count }}</span>
+     title="{{ t.kind_label }} · 연결 완료 {{ t.connected }}명{% if t.owner %} · 담당 {{ t.owner }}{% endif %}{% if t.is_hidden %} · 투자사로 세지 않는 명단{% endif %}{% if t.hidden_rows %} · 감춘 줄 {{ t.hidden_rows }}개{% endif %}">
+    {% if t.kind == 'pool' %}<span class="pool-dot" title="투자사 풀">◇</span>{% endif %}{% if t.is_hidden %}<span class="pool-dot" title="투자사로 세지 않는 명단">🚫</span>{% endif %}{{ t.label }} <span>{{ t.count }}</span>
   </a>
   {% endfor %}
 
@@ -84,11 +86,41 @@
     </select>
     <button class="linkbtn" type="submit">담당 지정</button>
   </form>
+  {#
+    명단 숨김 — 이 명단을 **투자사로 세지 않는다.** 지우는 것이 아니라서
+    이 탭에서는 그대로 보인다. 팀 현황의 권한 토글과 같은 방식이다
+    (누를 때마다 뒤집히고, 지금 상태가 단추 글자에 적혀 있다).
+
+    관리자만 쓴다 — 감추면 그 명단을 담당하는 다른 팀원의 대시보드 숫자와
+    발송 대상 목록까지 함께 바뀐다.
+  #}
+  <form method="post" action="/api/contacts/sheets/hide" class="inline-form"
+        onsubmit="return confirm('{% if t.is_hidden %}이 명단을 다시 투자사로 셀까요?{% else %}이 명단을 투자사 집계·발송 대상에서 뺄까요?\n줄은 지워지지 않고 이 탭에서는 그대로 보입니다.{% endif %}')">
+    <input type="hidden" name="label" value="{{ t.label }}">
+    <button class="linkbtn" type="submit"
+            title="투자사 수를 세는 곳과 딜소개 발송 대상에서 뺍니다. 이 탭에서는 그대로 보입니다.">
+      {{ '숨김 해제' if t.is_hidden else '투자사로 세지 않기' }}</button>
+  </form>
 </p>
 {% endif %}
 
-{% if t.kind == 'pool' and my_sheets %}
-<!-- 풀 → 내 명단 할당. 풀에서 빼지 않고 내 명단에 더한다. -->
+{% if t.is_hidden %}
+<p class="hint">
+  🚫 <b>투자사로 세지 않는 명단</b>입니다 — 대시보드·팀 현황의 투자사 수와
+  딜소개 발송 대상에서 빠집니다. 줄은 그대로 있습니다.
+</p>
+{% endif %}
+
+{#
+  풀 → 내 명단 할당. 풀에서 빼지 않고 내 명단에 더한다.
+
+  **투자사로 세지 않는 명단에서는 내주지 않는다.** 담당이 없는 명단은 모두
+  '풀' 로 잡히는데, 투자사가 아닌 명단까지 풀로 두면 여기서 골라 내 명단에
+  더하는 순간 그 사람들이 투자사 수에 다시 들어오고 발송 대상에도 뜬다 —
+  방금 빼 둔 것을 단추 한 번으로 되돌리는 길이 화면에 열려 있는 셈이다.
+  진짜로 옮겨야 하면 먼저 [숨김 해제] 를 눌러 투자사 명단으로 되돌린다.
+#}
+{% if t.kind == 'pool' and my_sheets and not t.is_hidden %}
 <div class="assign-bar" id="assign-bar">
   <label class="only-picked"><input type="checkbox" id="pick-all-pool"> 전체 선택</label>
   <span class="muted" id="pick-count">0명 선택</span>
@@ -102,6 +134,64 @@
 {% endif %}{% endfor %}
 {% endif %}
 
+
+{% if msg %}<p class="hint">{{ msg }}</p>{% endif %}
+
+{#
+  달마다 늘어나는 칸. `7월 리마인드 문자 (7/28)` 옆에 8월 세 칸이 붙는다 —
+  시트를 다시 올리지 않고도 여기서 세울 수 있어야 한다.
+  투자컨설턴트 현황의 [열 추가] 와 같은 방식·같은 어휘다.
+#}
+{% if layout.monthly and selected_sheet %}
+<div class="toolbar month-cols">
+  <form method="post" action="/api/contacts/columns" class="inline-form">
+    <input type="hidden" name="sheet" value="{{ selected_sheet }}">
+    <input type="text" name="label" maxlength="80" required
+           placeholder="8월 리마인드 문자 (8/28)" aria-label="새 칸 이름"
+           title="원본 시트의 칸 이름을 그대로 적으세요">
+    <button class="linkbtn" type="submit">칸 추가</button>
+  </form>
+  {% for c in month_columns %}
+  <span class="month-col-edit">
+    <form method="post" action="/api/contacts/columns/{{ c.id }}/rename" class="inline-form">
+      <input type="text" name="label" value="{{ c.label }}" maxlength="80"
+             aria-label="칸 이름">
+      <button class="linkbtn" type="submit">이름 저장</button>
+    </form>
+    {# 칸을 지우면 **그 달의 기록도 함께 사라진다** — 한 번 더 묻는다. #}
+    <form method="post" action="/api/contacts/columns/{{ c.id }}/delete"
+          onsubmit="return confirm('{{ c.label }} 칸을 지울까요?\n이 칸에 적힌 내용도 함께 사라집니다.')">
+      <button class="linkbtn danger" type="submit">칸 삭제</button>
+    </form>
+  </span>
+  {% endfor %}
+  {# **접었다는 것을 사람이 알아야 한다** — 그냥 안 보이면 지워진 줄 안다. #}
+  {% if folded_months %}
+  <a class="linkbtn" href="/contacts?sheet={{ selected_sheet|urlencode }}&months=all">
+    지난 칸 {{ folded_months|length }}개 펴기</a>
+  {% elif show_all_months %}
+  <a class="linkbtn" href="/contacts?sheet={{ selected_sheet|urlencode }}">최근 칸만 보기</a>
+  {% endif %}
+</div>
+{% endif %}
+
+{#
+  감춘 줄. 원본 구글 시트가 17~32번 줄을 숨긴 채로 돌아다녀서, 열여섯 줄만 보고
+  "없는 기업" 이라고 판단한 일이 있었다. 같은 함정을 만들지 않으려면
+  **몇 줄을 감췄는지와 되돌리는 길이 늘 보여야 한다.**
+#}
+{% if hidden_count or show_hidden %}
+<p class="hint hidden-rows-line">
+  🙈 감춘 줄 <b>{{ hidden_count }}개</b>
+  {% if show_hidden %}
+  — 지금 함께 보고 있습니다.
+  <a class="linkbtn" href="/contacts?sheet={{ selected_sheet|urlencode }}">다시 감추기</a>
+  {% else %}
+  — 표와 발송 대상에서 빠져 있습니다.
+  <a class="linkbtn" href="/contacts?sheet={{ selected_sheet|urlencode }}&hidden=1">함께 보기</a>
+  {% endif %}
+</p>
+{% endif %}
 
 <div class="toolbar">
   <div class="toolbar-right">
@@ -167,6 +257,20 @@
 
 <div class="chip-row" data-filter-chips></div>
 
+{#
+  ── 명단마다 표가 다르다 ──────────────────────────────────────────────────
+
+  어느 명단이 어떤 칸을 쓰는지는 **화면이 정하지 않는다.** 그 명단의 설정
+  (`SheetOwner.layout`)이 정하고, 칸 목록은 `app/services/contact_columns.py`
+  한 곳에 있다. 여기에 `{% raw %}{% if 이 탭이면 %}{% endraw %}` 을 심으면 성격이 다른 명단이
+  하나 더 들어올 때마다 화면·임포트·수정창·엑셀에 같은 조건을 또 심어야 한다.
+
+  아래 투자사 명함 표만 칸을 여기 그대로 적어 둔다. 이 저장소의 화면 검사
+  (`tests/test_ui_layout.py`)가 템플릿 글자를 **정적으로** 읽어 머리글 폭·정렬·
+  수정창 라벨 짝을 보는데, 반복문으로 세운 머리글은 값이 실행 때 정해져서 그
+  검사들이 조용히 건너뛴다. 스무 칸짜리 표에서 그 검사를 잃는 대가가 크다.
+#}
+{% if layout.key == 'investor' %}
 {# 시트 컬럼 18개를 그대로 세운다 — 화면보다 넓다.
    **표 안에서만** 가로로 밀리게 한다. 페이지가 통째로 밀리면 좌측 메뉴까지
    따라 움직여 어디를 보고 있는지 잃는다. #}
@@ -355,6 +459,94 @@
     <p>조건에 맞는 담당자가 없습니다.</p>
   </div>
 </div>
+{% else %}
+{#
+  ── 명단이 정한 칸으로 세우는 표 ──────────────────────────────────────────
+
+  머리글과 데이터 칸이 **같은 목록 하나**(`table_columns`)를 돈다. 따로 적어
+  두면 하나를 지웠을 때 그 뒤가 통째로 한 칸씩 밀린다 — 달마다 칸이 늘어나는
+  표라 특히 그렇다.
+
+  표 id 는 투자사 명함 표와 같다. 한 번에 하나만 그려지고, 화면 코드(필터 열기 ·
+  줄 번호 매기기 · 상세 패널)가 이미 그 이름을 보고 있어서다 — 이름을 나누면
+  같은 일을 하는 코드가 두 벌이 된다.
+#}
+<div class="table-wrap wide">
+  {# 표 폭은 **적어 둔 칸 폭의 합**이다. app.css 에 숫자를 또 적어 두면 칸이
+     늘어날 때(달마다 세 칸씩) 그 숫자만 옛날 값으로 남아, 머리글이 두 줄로
+     접힌다 — 여기서 더해 쓰면 어긋날 자리가 없다. #}
+  <table class="grid-table startup-table" id="contacts-table"
+         data-inline-url="/api/contacts"
+         style="min-width:{{ table_columns|sum(attribute='width') + 44 }}px">
+    <thead>
+      <tr>
+        {% for c in table_columns %}
+        {% if c.source == 'row_no' %}
+        <th class="num" style="width:{{ c.width }}px"
+            title="누르면 활동 이력이 열립니다">{{ c.label }}</th>
+        {% else %}
+        {# 값이 몇 개로 정해진 칸(`O`/`X`)만 필터를 세운다. 자유 문장 칸
+           (메모)은 서른두 줄에 서른두 가지가 나와 고를 것이 없다. #}
+        <th style="width:{{ c.width }}px" title="{{ c.label }}"
+            {% if c.choices %}data-filters="{{ c.key }}:{{ c.label }}"{% endif %}
+        >{{ c.label }}{% if c.choices %}<div class="th-filters"></div>{% endif %}</th>
+        {% endif %}
+        {% endfor %}
+        <th style="width:44px"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr class="data-row{% if r.is_hidden %} row-hidden{% endif %}" data-id="{{ r.id }}"
+          data-name="{{ r.name }}"
+          data-search="{{ (r.name ~ ' ' ~ (r.firm or '') ~ ' ' ~ (r.email or ''))|lower }}"
+          {% for c in table_columns if c.choices %}
+          data-f-{{ c.key }}="{{ r.notes.get(c.key, '') if c.source == 'note' else r[c.key] }}"
+          {% endfor %}>
+        {% for c in table_columns %}
+        {% if c.source == 'row_no' %}
+        <td class="rowno num muted js-detail" title="활동 이력 보기"></td>
+        {% elif c.source == 'note' %}
+        {#
+          `data-note` = 이 값은 담당자 칸이 아니라 **그 명단에만 있는 칸**이다.
+          inline_edit.js 가 이 표시를 보고 `{notes: {…}}` 로 보낸다 — 칸이 하나
+          늘 때마다 스키마·저장·되읽기에 이름을 또 적지 않아도 되게.
+        #}
+        <td {% if c.kind == 'long' %}title="{{ r.notes.get(c.key, '') }}"{% endif %}>
+          <div class="cell{% if c.kind == 'long' %} clamp2{% endif %}"
+               data-field="{{ c.key }}" data-note data-type="{{ c.kind }}"
+               {% if c.choices %}data-choices="{{ c.choices }}"{% endif %}
+          >{{ r.notes.get(c.key, '') }}</div>
+        </td>
+        {% elif c.kind == 'long' %}
+        {# 원본 메모가 길다(233자). 표에서는 두 줄까지, 전문은 수정창에서. #}
+        <td title="{{ r[c.key] }}">
+          <div class="cell clamp2" data-field="{{ c.key }}" data-type="long"
+          >{{ r[c.key] }}</div>
+        </td>
+        {% else %}
+        <td class="cell ellipsis" data-field="{{ c.key }}" data-type="{{ c.kind }}"
+            title="{{ r[c.key] }}">{{ r[c.key] }}</td>
+        {% endif %}
+        {% endfor %}
+        <td><button type="button" class="linkbtn js-detail">수정</button></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% if not rows %}
+  <div class="placeholder-card">
+    <p class="ph-emoji">📇</p>
+    <p>이 명단에 보이는 줄이 없습니다.</p>
+    <p class="muted">감춘 줄이 있으면 위의 <b>[함께 보기]</b> 로 확인하세요.</p>
+  </div>
+  {% endif %}
+  <div class="placeholder-card" data-filter-empty hidden>
+    <p>조건에 맞는 줄이 없습니다.</p>
+  </div>
+</div>
+{% endif %}
 
 {# 우측 슬라이드 상세 패널 — 표에는 요약만, 세부·수정은 여기서 #}
 <aside class="detail-panel" id="detail-panel" hidden>
@@ -368,6 +560,37 @@
   </div>
 
   <div class="detail-body" data-panel="info">
+    {#
+      ── 명단이 정한 칸으로 세우는 수정창 ────────────────────────────────────
+
+      표에 세우지 않은 칸(`사업분야 대분류`·`한줄 소개`·`계약여부` …)이 여기
+      나온다. **표에서 뺀 칸이 여기에도 없으면 적을 자리가 아예 없다** — 값은
+      들어가 있는데 화면 어디에서도 볼 수 없는 칸이 그렇게 생긴다.
+
+      이름은 표 머리글과 **같은 목록 하나**에서 나온다. 두 곳에 따로 적어 두면
+      표는 `기업명`, 수정창은 `회사` 가 되어 같은 칸인지 알아볼 수 없게 된다.
+    #}
+    {% if layout.key != 'investor' %}
+    <div class="form-grid">
+      {% for c in panel_columns %}
+      <label class="field{% if c.kind == 'long' %} wide{% endif %}">
+        <span>{{ c.label }}</span>
+        {% if c.kind == 'long' %}
+        <textarea rows="3"
+                  {% if c.source == 'note' %}id="f-note-{{ c.key }}" data-note="{{ c.key }}"
+                  {% else %}id="f-{{ c.key }}"{% endif %}
+                  {% if c.hint %}placeholder="{{ c.hint }}"{% endif %}></textarea>
+        {% else %}
+        <input type="text"
+               {% if c.source == 'note' %}id="f-note-{{ c.key }}" data-note="{{ c.key }}"
+               {% else %}id="f-{{ c.key }}"{% endif %}
+               {% if c.hint %}placeholder="{{ c.hint }}"
+               {% elif c.choices %}placeholder="{{ c.choices|replace(',', ' / ') }}"{% endif %}>
+        {% endif %}
+      </label>
+      {% endfor %}
+    </div>
+    {% else %}
     <div class="form-grid">
       {#
         ── 칸 이름은 **표 머리글과 한 글자도 다르지 않게** 쓴다 ──
@@ -448,8 +671,21 @@
       <label class="field wide"><span>메모 ( 통화내용 /  카톡내용  /  카톡답신내용)</span>
         <textarea id="f-memo" rows="3"></textarea></label>
     </div>
+    {% endif %}
     <div class="detail-actions">
       <button type="button" class="primary-btn inline" id="save-btn">저장</button>
+      {#
+        줄 하나만 감추기. **지우는 것이 아니다** — 표에서 안 보이게 하고 발송
+        대상에서 뺀다. 원본 구글 시트가 17~32번 줄을 숨긴 채로 돌아다녀서
+        열여섯 줄만 보고 "없는 기업" 이라고 판단한 일이 있었다. 같은 조작을
+        앱에도 두되, 되돌리는 자리(표 위의 [함께 보기])를 늘 함께 둔다.
+
+        명단 단위 숨김(탭 옆의 [투자사로 세지 않기])과 어휘를 맞춘다 —
+        둘 다 "감춘다" 이고, 둘 다 지우지 않는다.
+      #}
+      <button type="button" class="secondary-btn" id="hide-btn"
+              title="표에서 안 보이게 합니다. 줄은 지워지지 않고, 위의 [함께 보기]로 되돌립니다.">
+        이 줄 감추기</button>
       <button type="button" class="secondary-btn" id="verify-one-btn">이 방만 확인</button>
       <button type="button" class="danger-btn" id="delete-btn">삭제</button>
     </div>

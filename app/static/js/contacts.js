@@ -49,15 +49,40 @@
     });
   }
 
+  // 그 명단에만 있는 칸들. **이름을 여기 적어 두지 않는다** — 서버가 그린
+  // 칸에 붙은 `data-note` 를 그대로 읽는다. 손으로 적어 두면 칸이 하나 늘 때
+  // 여기 넣는 것을 잊는 순간, 창은 멀쩡히 그려지는데 값이 안 채워지고 저장도
+  // 안 된다(예전에 `kakao_joined` 가 그랬다).
+  function noteInputs() {
+    return Array.prototype.slice.call(panel.querySelectorAll("[data-note]"));
+  }
+
   function fillForm(c) {
     FIELDS.forEach(function (f) { if (el("f-" + f)) el("f-" + f).value = c[f] || ""; });
-    CHECKS.forEach(function (f) { el("f-" + f).checked = !!c[f]; });
+    // 명단이 정한 칸만 그려지므로 없는 칸이 있다 — 없으면 건너뛴다.
+    // 여기서 그냥 두면 스타트업 명단을 열자마자 창이 통째로 안 채워진다.
+    CHECKS.forEach(function (f) { if (el("f-" + f)) el("f-" + f).checked = !!c[f]; });
+    var notes = c.notes || {};
+    noteInputs().forEach(function (input) {
+      input.value = notes[input.getAttribute("data-note")] || "";
+    });
+    // 지금 감춰져 있는 줄인가. 단추 글자가 곧 되돌리는 길이다.
+    var hide = el("hide-btn");
+    if (hide) {
+      hide.dataset.hidden = c.is_hidden ? "1" : "0";
+      hide.textContent = c.is_hidden ? "이 줄 다시 보이기" : "이 줄 감추기";
+    }
   }
 
   function readForm() {
     var body = {};
     FIELDS.forEach(function (f) { if (el("f-" + f)) body[f] = el("f-" + f).value.trim(); });
-    CHECKS.forEach(function (f) { body[f] = el("f-" + f).checked ? 1 : 0; });
+    CHECKS.forEach(function (f) { if (el("f-" + f)) body[f] = el("f-" + f).checked ? 1 : 0; });
+    var notes = {};
+    noteInputs().forEach(function (input) {
+      notes[input.getAttribute("data-note")] = input.value.trim();
+    });
+    if (noteInputs().length) body.notes = notes;
     return body;
   }
 
@@ -199,6 +224,25 @@
   el("detail-close").addEventListener("click", function () { panel.hidden = true; });
   el("save-btn").addEventListener("click", save);
   el("delete-btn").addEventListener("click", remove);
+  // 줄 감추기 — **지우기가 아니다.** 표에서 안 보이게 하고 발송 대상에서 뺀다.
+  // 같은 단추가 감춘 줄에서는 [다시 보이기] 가 된다(fillForm 참고).
+  var hideBtn = el("hide-btn");
+  if (hideBtn) {
+    hideBtn.addEventListener("click", function () {
+      if (!current) { setMsg("먼저 줄을 고르세요", true); return; }
+      var next = hideBtn.dataset.hidden === "1" ? 0 : 1;
+      fetch("/api/contacts/" + current, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_hidden: next })
+      })
+        .then(function (r) {
+          if (!r.ok) throw new Error();
+          window.location.reload();
+        })
+        .catch(function () { setMsg("감추지 못했습니다", true); });
+    });
+  }
   el("verify-one-btn").addEventListener("click", function () {
     if (current) verify([current], "선택한 담당자");
   });
@@ -208,7 +252,7 @@
   el("add-btn").addEventListener("click", function () {
     current = null;
     fillForm({ status: "active", channel_kakao: 1 });
-    el("f-channel_kakao").checked = true;
+    if (el("f-channel_kakao")) el("f-channel_kakao").checked = true;
     openPanel("담당자 추가");
     setMsg("투자사명을 넣으면 카톡방 이름이 자동 생성됩니다(비워둘 경우).");
   });

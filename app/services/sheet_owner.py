@@ -51,6 +51,50 @@ def owner_map(db: Session) -> Dict[str, Optional[int]]:
     }
 
 
+# ── 투자사로 세지 않는 명단 ─────────────────────────────────────────────────
+#
+# 명단이라고 다 투자사는 아니다. 스타트업 리마인드 명단처럼 **같은 표에 얹혀
+# 있을 뿐 투자사가 아닌** 줄이 섞이면, 투자사 수가 부풀고(전체 306명에 32명이
+# 함께 세어졌다) 딜소개 발송 대상 목록에도 같이 뜬다.
+#
+# **이름으로 거르지 않는다.** `if 이름 == "…"` 를 심으면 다음 명단에서 또
+# 심어야 하고, 심는 것을 잊은 화면만 조용히 틀린 수를 보여 준다. 화면에서
+# 사람이 켜고 끄는 값(`SheetOwner.is_hidden`)만 본다.
+#
+# 세는 곳이 열대여섯 군데다. 그래서 판정을 여기 한 번만 적고 모두가 부른다 —
+# 예전에 투자사 관리 현황이 117명, 대시보드가 123명이던 사고가 판정을 두 벌로
+# 적어 둔 탓이었다.
+
+def hidden_labels(db: Session) -> Set[str]:
+    """투자사로 세지 않기로 한 명단 이름들."""
+    return {
+        row.label
+        for row in db.execute(select(SheetOwner)).scalars().all()
+        if row.is_hidden
+    }
+
+
+def is_investor(contact: VcContact, hidden: Set[str]) -> bool:
+    """이 사람을 투자사로 세는가.
+
+    **감춘 명단에만 있을 때** 빠진다. 한 사람이 여러 명단에 겹쳐 있으면(실제로
+    126명이 그렇다) 살아 있는 명단 쪽이 이긴다 — 감춘 명단에 이름이 한 번
+    올랐다고 진짜 투자사가 사라지면 안 된다.
+
+    줄 단위로 감춘 사람(`VcContact.is_hidden`)도 빠진다. 표에서 안 보이는
+    사람이 수에는 들어가 있으면, 세어 보고 목록에서 찾을 수가 없다.
+    """
+    if contact.is_hidden:
+        return False
+    return any(label not in hidden for label in labels_of(contact.source_sheet))
+
+
+def investors(db: Session, contacts: List[VcContact]) -> List[VcContact]:
+    """투자사로 세는 사람만 남긴다. **세거나 보내는 곳은 모두 이것을 지난다.**"""
+    hidden = hidden_labels(db)
+    return [c for c in contacts if is_investor(c, hidden)]
+
+
 def my_labels(db: Session, user: User) -> Set[str]:
     """내가 할당받은 명단들. 직접 추가한 담당자는 언제나 내 것이다."""
     mapping = owner_map(db)
@@ -67,12 +111,15 @@ def my_contacts(db: Session, user: User) -> List[VcContact]:
     """내 명단에 있는 담당자만. 대시보드·후속의 '내 담당' 기준이다.
 
     풀에만 있는 사람은 아직 내 담당이 아니다 — 할당해야 내 것이 된다.
+    투자사로 세지 않기로 한 명단(`is_investor`)은 여기서 빠진다 — 이 함수를
+    지나는 화면이 열 곳이 넘어서, 각자 걸러 두면 한 곳만 다른 수가 나온다.
     """
     mine = my_labels(db, user)
+    hidden = hidden_labels(db)
     rows = db.execute(
         select(VcContact).where(VcContact.user_id == user.id)
     ).scalars().all()
-    return [c for c in rows if is_mine(c, mine)]
+    return [c for c in rows if is_mine(c, mine) and is_investor(c, hidden)]
 
 
 def ensure(db: Session, label: str, user_id: Optional[int] = None,
@@ -102,38 +149,58 @@ def assign(db: Session, label: str, user_id: Optional[int]) -> SheetOwner:
     return row
 
 
+def settings_map(db: Session) -> Dict[str, SheetOwner]:
+    """{명단 이름: 그 명단의 설정 줄}. 배치·숨김을 한 번에 읽으려고."""
+    return {row.label: row
+            for row in db.execute(select(SheetOwner)).scalars().all()}
+
+
+def layout_of(db: Session, label: str) -> str:
+    """이 명단을 어떤 표로 보여 줄까. 정해 두지 않았으면 투자사 명함이다."""
+    row = settings_map(db).get(label)
+    return (row.layout if row and row.layout else "investor")
+
+
 def sheet_rows(db: Session, contacts: List[VcContact]) -> List[dict]:
     """명단 목록 + 담당 + 인원. 화면의 탭과 관리 표에 함께 쓴다."""
-    mapping = owner_map(db)
+    settings = settings_map(db)
     names = {
         u.id: u.name for u in db.execute(select(User)).scalars().all()
     }
-    written = {
-        row.label: (row.assignee_name or "")
-        for row in db.execute(select(SheetOwner)).scalars().all()
-    }
     total: Dict[str, int] = {}
     connected: Dict[str, int] = {}
+    # 줄 단위로 감춘 사람은 탭 건수에서도 빠져야 한다 — 탭에 32라고 적혀
+    # 있는데 표에는 열여섯 줄이면 어느 쪽이 맞는지 알 수 없다.
+    shown: Dict[str, int] = {}
     for c in contacts:
         for label in labels_of(c.source_sheet):
             total[label] = total.get(label, 0) + 1
+            if not c.is_hidden:
+                shown[label] = shown.get(label, 0) + 1
             if c.connect_stage == "connected":
                 connected[label] = connected.get(label, 0) + 1
 
     out = []
     for label in sorted(total, key=lambda k: (-connected.get(k, 0), -total[k], k)):
-        uid = mapping.get(label)
+        row = settings.get(label)
+        uid = row.user_id if row else None
         out.append({
             "key": label,
             "label": label,
-            "count": total[label],
+            "count": shown.get(label, 0),
+            # 감춘 줄이 몇인지 탭에서 드러나야 한다. 안 드러나면 시트에서
+            # 그랬듯 "없는 기업" 으로 읽힌다.
+            "hidden_rows": total[label] - shown.get(label, 0),
             "connected": connected.get(label, 0),
             "owner_id": uid,
             "owner": names.get(uid, "") if uid else "",
             "kind": kind_of(uid),
             "kind_label": KIND_LABELS[kind_of(uid)],
             # 시트의 '담당자' 칸에 적힌 이름. 연결 작업을 한 사람이지 소유자가 아니다.
-            "written_by": written.get(label, ""),
+            "written_by": (row.assignee_name or "") if row else "",
+            # 이 명단이 쓰는 표 배치와, 투자사로 세는지 여부.
+            "layout": (row.layout if row and row.layout else "investor"),
+            "is_hidden": bool(row.is_hidden) if row else False,
         })
     return out
 
