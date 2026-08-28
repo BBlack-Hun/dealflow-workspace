@@ -132,10 +132,16 @@
         defs.push({ key: spec.slice(0, idx).trim(), label: spec.slice(idx + 1).trim(), th: th });
       });
     });
-    if (!defs.length) return null;
+    // 고를 칸이 하나도 없어도 **멈추지 않는다.** 검색창이 이 모듈에 얹혀
+    // 있어서(`options.extra`), 여기서 끝내면 필터가 없는 표에서는 검색까지
+    // 같이 죽는다 — 딜공유현황·심사역 리스트가 그랬다. 걸 조건이 없을 뿐
+    // 줄을 보이고 감추는 일은 그대로 해야 한다.
+    if (!defs.length && typeof options.extra !== "function") return null;
 
     var keys = defs.map(function (d) { return d.key; });
-    var rows = Array.prototype.slice.call(table.querySelectorAll("tbody tr[data-f-" + keys[0] + "], tbody tr.data-row"));
+    var rows = Array.prototype.slice.call(table.querySelectorAll(
+      keys.length ? "tbody tr[data-f-" + keys[0] + "], tbody tr.data-row"
+                  : "tbody tr.data-row"));
     if (!rows.length) rows = Array.prototype.slice.call(table.querySelectorAll("tbody tr"));
     var rowData = rows.map(function (tr) {
       var values = {};
