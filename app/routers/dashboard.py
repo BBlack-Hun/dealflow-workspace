@@ -285,12 +285,28 @@ def _admin_only(user: User) -> None:
 
 @router.get("/team", response_class=HTMLResponse, include_in_schema=False)
 def team_page(request: Request, db: Session = Depends(get_db),
-              user: User = Depends(get_current_user), msg: str = ""):
-    """팀 현황. 남의 담당분이 다 보이므로 관리자만 들어온다."""
+              user: User = Depends(get_current_user), msg: str = "", pw: str = "",
+              edit: int = 0):
+    """팀 현황. 남의 담당분이 다 보이므로 관리자만 들어온다.
+
+    `pw=1` 은 **'초기 비밀번호를 이 화면에 적어 달라'는 표시**일 뿐이고 값이
+    아니다. 값은 서버가 설정에서 읽어 그린다 — 비밀번호를 `msg` 에 실어
+    보내면 브라우저 기록과 서버 접근 로그(요청 줄에 질의문자열이 그대로
+    남는다)에 남는다. 늘 띄워 두지 않는 것은 어깨너머로 보일 자리를 줄이려는
+    것이다(초기화 직후 한 번만 보이면 전달하기에 충분하다).
+
+    `edit=<계정번호>` 는 그 줄 아래에 이름·로그인 ID 수정칸을 펴 달라는 표시다.
+    **여는 것도 서버가 한다** — 자바스크립트로 감췄다 폈다 하면 스크립트가 한
+    번 어긋나는 날 관리자에게 그 칸으로 가는 길이 아예 없어진다(상세 패널이
+    통째로 안 열린 적이 있다). 이 화면은 SSR 이므로 주소로 여는 편이 같은
+    결과를 훨씬 적은 수단으로 낸다. 닫기는 `/team` 으로 돌아오는 링크다.
+    """
     _admin_only(user)
     ctx = base_ctx(request, db, user, active="admin")
     ctx.update(dash.admin_dashboard(db))
     ctx["msg"] = msg
+    ctx["initial_password"] = config.INITIAL_PASSWORD if pw == "1" else ""
+    ctx["edit_id"] = edit
     return templates.TemplateResponse("team.html", ctx)
 
 
@@ -410,6 +426,110 @@ def create_member(
         status_code=303)
 
 
+@router.post("/team/members/{member_id}/profile", include_in_schema=False)
+def edit_member_profile(
+    member_id: int,
+    name: str = Form(...),
+    phone: str = Form(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """이름·로그인 ID 고치기 — **계정을 사람에게서 사람에게로 넘긴다.**
+
+    퇴사자가 생기면 계정을 지우거나 새로 만드는 대신 **입사자 이름과 휴대폰
+    번호로 갈아 끼워 그대로 물려준다.** 담당 투자사(`VcContact.user_id`)와
+    발송 이력(`SendJob.user_id`)이 계정에 붙어 있어서, 새로 만들면 그 이력이
+    통째로 끊긴다 — 계정 정지(`/deactivate`)가 지우지 않고 남기는 것과 같은
+    이유다. 오타로 만들어진 이름을 고치는 데도 같은 길을 쓴다.
+
+    **본인 것은 못 바꾼다.** 형제 라우터들(권한·초기화·정지)이 본인을 막는
+    이유와 같고, 여기는 한 가지가 더 있다: 번호를 바꾸면 아래에서 세션을
+    끊으므로 관리자가 제 번호를 잘못 적으면 그 자리에서 로그아웃되고 **옛
+    번호로도 새 번호로도 못 들어온다**(오타 난 번호는 본인이 받을 수 없는
+    번호다). 되돌리려면 DB 를 직접 고쳐야 하는데, 그게 이 화면이 없애려던
+    상황이다. 관리자를 여럿 두는 이유가 곧 이것이라 다른 관리자가 바꿔 준다.
+    """
+    _admin_only(user)
+    if member_id == user.id:
+        return RedirectResponse("/team?msg=본인+계정은+다른+관리자가+바꿉니다",
+                                status_code=303)
+    member = db.get(User, member_id)
+    if member is None:
+        raise HTTPException(status_code=404, detail="계정을 찾을 수 없습니다")
+
+    # 로그인 ID 는 휴대폰번호다. 저장·비교 양쪽이 같은 규칙으로 정규화돼야
+    # 하이픈 유무로 로그인이 실패하지 않는다(`normalize_phone` 주석 참고).
+    # 계정 생성과 **같은 기준**으로 거른다 — 두 곳이 갈리면 하나는 곧 낡는다.
+    normalized = auth_svc.normalize_phone(phone)
+    if len(normalized) < 10:
+        return RedirectResponse(
+            f"/team?edit={member_id}&msg=휴대폰번호를+다시+확인해+주세요",
+            status_code=303)
+    # 이미 쓰는 번호면 막는다. 두 계정이 같은 번호를 가지면 그 번호로 온
+    # 로그인이 **어느 계정으로 갈지 알 수 없다**(`authenticate` 는 먼저 찾은
+    # 하나를 집는다). 자기 자신은 뺀다 — 이름만 고치려고 번호를 그대로 두고
+    # 저장하는 것이 정상 동작이다.
+    taken = db.execute(
+        select(User).where(User.phone == normalized, User.id != member_id)
+    ).scalars().first()
+    if taken is not None:
+        return RedirectResponse(
+            f"/team?edit={member_id}&msg=이미+등록된+번호입니다",
+            status_code=303)
+
+    phone_changed = member.phone != normalized
+    # 이름이 비면 번호를 이름으로 쓴다 — 계정 생성과 같은 규칙이다.
+    # (입력칸이 required 라 보통은 안 오지만, 이름 없는 줄이 표에 서면 그
+    #  줄이 누구인지 화면에서 알 길이 없다.)
+    member.name = name.strip() or normalized
+    member.phone = normalized
+
+    note = "+이름을+바꿨습니다"
+    if phone_changed:
+        # **발송 프로그램 연결키(토큰)를 새로 발급한다.**
+        #
+        # 그대로 두면 퇴사자 PC 에 남은 키가 계속 유효하다. 그 PC 의 에이전트는
+        # 새 담당자가 만든 발송 잡을 가로채 **퇴사자 카톡으로 실제 투자사에게**
+        # 보낸다 — 이 저장소가 가장 크게 치는 사고다(오발송 막으려고
+        # `DEALFLOW_TEST_ROOM` 까지 둔다). '한 계정 = 한 PC' 도 계정 생성이
+        # 이미 못 박아 둔 원칙이다.
+        #
+        # 새 키를 받는 길이 화면에 있으므로 되돌릴 수 없는 처리가 아니다 —
+        # 새 담당자가 로그인해 [발송 프로그램 설치]에서 다시 내려받으면
+        # 설정 파일에 새 키가 자동으로 박힌다(routers/setup.py).
+        #
+        # 이름만 고칠 때는 건드리지 않는다. 오타를 고치는 일에 남의 발송
+        # 프로그램을 끊을 이유가 없다.
+        device = db.execute(
+            select(AgentDevice).where(AgentDevice.user_id == member.id)
+        ).scalars().first()
+        if device is not None:
+            device.token = f"agt_{secrets.token_hex(16)}"
+            # 붙어 있던 PC 의 흔적도 지운다. 남겨 두면 팀 현황의 발송 프로그램
+            # 칸이 이제 못 붙는 기기를 '연결됨 · 퇴사자PC' 로 계속 보여 준다.
+            device.last_poll_at = None
+            device.hostname = ""
+            device.agent_version = ""
+            device.sender = None
+        note = ("+로그인+ID+를+바꿨습니다.+열린+세션을+끊고+발송+프로그램+"
+                "연결키를+새로+발급했습니다+—+새+담당자가+[발송+프로그램+설치]"
+                "에서+다시+받아야+발송됩니다")
+    db.commit()
+    if phone_changed:
+        # **그 계정의 열린 세션을 끊는다.** 세션은 번호가 아니라 쿠키의 토큰으로
+        # 사는 것이라, 남겨 두면 퇴사자 PC 가 로그인 화면을 다시 거치지 않고 새
+        # 담당자의 화면을 계속 쓴다. 이름만 고칠 때는 끊지 않는다 — 오타를
+        # 고치는 일에 그 사람을 로그아웃시킬 이유가 없다.
+        # (`/reset-password`·`/deactivate` 가 같은 이유로, 같은 자리에서 끊는다.)
+        auth_svc.destroy_all_sessions(db, member.id)
+    # 이름을 감싸서 넣는다 — 이름에 `&` 가 섞이면 질의문자열이 그 자리에서
+    # 갈려 안내가 잘린다(`/reset-password` 도 같은 이유로 감싼다).
+    from urllib.parse import quote
+
+    return RedirectResponse(f"/team?msg={quote(member.name)}+님의{note}",
+                            status_code=303)
+
+
 @router.post("/team/members/{member_id}/role", include_in_schema=False)
 def change_member_role(
     member_id: int,
@@ -460,6 +580,70 @@ def toggle_consulting(
     state = "볼 수 있게" if member.can_view_consulting else "볼 수 없게"
     return RedirectResponse(f"/team?msg={member.name}+님을+투자현황을+{state}+했습니다",
                             status_code=303)
+
+
+@router.post("/team/members/{member_id}/reset-password", include_in_schema=False)
+def reset_member_password(
+    member_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """비밀번호 초기화 — 잠긴 팀원을 화면에서 되살린다.
+
+    비밀번호를 잊으면 화면에는 되돌릴 길이 하나도 없었다. 실제로 관리자가
+    로그인을 못 해 서버에 들어가 DB 를 직접 고쳐야 했다. 팀이 늘고 입퇴사가
+    생기는 중이라 그 일은 반복된다.
+
+    **어떤 값으로 되돌리는가 — 팀 공통 초기값(`config.INITIAL_PASSWORD`).**
+    계정을 만들 때 넣는 값과 같은 값이다. 계정마다 난수를 만드는 쪽이 값이
+    겹치지 않아 좋아 보이지만, 난수는 만든 순간 **관리자에게 보여 줄 길**이
+    필요하다. 이 화면의 안내는 `?msg=...` 로 나르므로 그 자리에 넣으면
+    비밀번호가 브라우저 기록과 서버 접근 로그에 남는다. 공통값은 관리자가
+    이미 아는 값이라 응답에 실어 나를 것이 없다. '초기 비밀번호' 라는 개념이
+    계정 생성과 여기 둘로 갈리지도 않는다 — 값이 두 군데면 하나는 반드시
+    낡는다(`valid_role` 이 같은 이유로 판정을 한 곳에 모아 두었다).
+
+    여러 사람이 같은 값을 갖게 되는 약점은 **계정 생성이 이미 지고 있던 것과
+    같은** 것이지 여기서 새로 생기지 않는다. 아래 `must_change_password=1`
+    과 팀 현황의 '비밀번호 미변경' 표시로 그 창을 좁힌다. 공개된 저장소
+    기본값 그대로 운영에 뜨는 것은 `config.assert_ready()` 가 이미 막는다.
+
+    **관리자끼리는 서로 초기화할 수 있다.** 관리자를 여럿 두는 이유가 곧
+    "한 사람이 잠겨도 팀이 멈추지 않게" 이기 때문이다. 서로를 막으면 관리자가
+    잠겼을 때 다시 ssh 로 돌아가는데, 그게 이 기능이 없애려던 상황이다.
+    권한 변경·계정 정지도 이미 다른 관리자에게 열려 있다(본인만 막는다).
+    """
+    _admin_only(user)
+    # 본인 것은 이 길로 못 바꾼다 — 관리자 자신은 `/account/password` 에서
+    # 현재 비밀번호를 대고 바꾼다. 여기서 허용하면 잠깐 자리를 비운 관리자
+    # 화면 앞에 앉은 사람이 현재 비밀번호를 모르고도 갈아 끼울 수 있다.
+    if member_id == user.id:
+        return RedirectResponse("/team?msg=본인+비밀번호는+계정+메뉴에서+바꿉니다",
+                                status_code=303)
+    member = db.get(User, member_id)
+    if member is None:
+        raise HTTPException(status_code=404, detail="계정을 찾을 수 없습니다")
+    member.password_hash = auth_svc.hash_password(config.INITIAL_PASSWORD)
+    # 첫 로그인 때 반드시 새 비밀번호를 정하게 한다 — 관리자가 아는 값으로
+    # 계속 쓰면 "본인만 아는 비밀번호" 라는 전제가 깨진다.
+    member.must_change_password = 1
+    db.commit()
+    # 열려 있던 세션은 끊는다. 변경 요구는 **로그인할 때만** 걸리므로
+    # (routers/auth.py) 세션을 남겨 두면 그 기기는 로그인 화면을 다시 거치지
+    # 않고, 바꾸지 않은 채 계속 쓴다. 비밀번호 변경(`/account/password`)과
+    # 퇴사 처리도 같은 이유로 세션을 끊는다.
+    auth_svc.destroy_all_sessions(db, member.id)
+    # 주소에는 비밀번호를 싣지 않는다 — `pw=1` 은 '초기 비밀번호를 적어
+    # 달라'는 표시일 뿐이고, 값은 팀 현황이 설정에서 읽어 그린다.
+    #
+    # 이름은 감싸서 넣는다. 여기만 안내 뒤에 표시(`&pw=1`)가 하나 더 붙으므로,
+    # 이름에 `&` 가 섞이면 질의문자열이 그 자리에서 갈려 표시가 떨어져 나가거나
+    # 반대로 이름만으로 표시가 켜진다(`/team/mail-test` 도 같은 이유로 감싼다).
+    from urllib.parse import quote
+
+    return RedirectResponse(
+        f"/team?msg={quote(member.name)}+님의+비밀번호를+초기화했습니다&pw=1",
+        status_code=303)
 
 
 @router.post("/team/members/{member_id}/deactivate", include_in_schema=False)
