@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from . import config, version
-from .deps import agent_status, consultant_may_open
+from .deps import agent_status, consultant_may_open, may_view_consulting
 from .models import User
 
 # 좌측 메뉴. 쓰는 순서대로 둔다.
@@ -36,17 +36,25 @@ MENU = [
     {"key": "templates", "label": "딜 제안 문구", "href": "/templates", "ready": True},
 
     {"key": "consult", "label": "투자컨설턴트 현황", "href": "/consulting", "ready": True,
-     "needs": "can_view_consulting"},
+     "needs": "consulting"},
     {"key": "report", "label": "업무 보고", "href": "/report", "ready": True},
     {"key": "admin", "label": "팀 현황", "href": "/team", "ready": True, "admin_only": True},
 ]
 
 
+# `needs` 가 붙은 메뉴는 **그 화면을 막는 판정을 그대로 읽는다.** 예전에는
+# 계정 속성 이름(`can_view_consulting`)을 적어 두었는데, 라우터는 역할까지 보고
+# 메뉴는 칸만 봐서 두 조건이 갈릴 자리였다 — 팀 현황 표가 실제로 그렇게 갈려
+# 컨설턴트 줄에 `막힘` 이라고 떴다. 메뉴도 라우터도 같은 함수를 읽게 둔다.
+NEEDS = {"consulting": may_view_consulting}
+
+
 def can_see(user: User, item: dict) -> bool:
     """이 사람에게 이 메뉴를 보여도 되는가.
 
-    관리자는 전부 본다. `needs` 가 붙은 메뉴는 그 계정 속성이 켜진 사람만 본다
-    (볼 사람 이름을 코드에 박으면 담당이 바뀔 때마다 배포해야 한다).
+    관리자는 전부 본다. `needs` 가 붙은 메뉴는 그 화면의 접근 판정(`NEEDS`)이
+    통과한 사람만 본다 — 볼 사람 이름을 코드에 박으면 담당이 바뀔 때마다
+    배포해야 한다.
 
     투자컨설턴트는 **자기 화면 하나만** 본다. 그 판정은 라우터를 막는 것과
     같은 목록(`deps.CONSULTANT_PATHS`)으로 한다 — 메뉴용 목록을 따로 두었더니
@@ -60,11 +68,23 @@ def can_see(user: User, item: dict) -> bool:
     if item.get("admin_only"):
         return False
     need = item.get("needs")
-    return not need or bool(getattr(user, need, 0))
+    return not need or NEEDS[need](user)
 
 
 def visible_menu(user: User) -> list:
     return [m for m in MENU if can_see(user, m)]
+
+
+def screen_label(path: str) -> str:
+    """이 주소가 좌측 메뉴의 어느 화면인가 — 없으면 빈 문자열.
+
+    권한이 없어 막힌 화면이 "팀 현황 화면은 …" 이라고 제 이름을 대려면 필요하다
+    (`deps._admin_only_page`). 이름을 그 화면에 적어 두지 않고 메뉴에서
+    가져오는 것은, 메뉴 이름을 고쳤을 때 안내창만 옛 이름으로 남지 않게
+    하려는 것이다.
+    """
+    item = next((m for m in MENU if m["href"] == path), None)
+    return item["label"] if item else ""
 
 
 def menu_label(active: str) -> str:

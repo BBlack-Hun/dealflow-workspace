@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 
 from .. import clock
 from . import cadence, mailer, pipeline, sheet_owner
-from .. import version
+from .. import deps, version
 from ..models import (
     SEND_KINDS,
     AgentDevice,
@@ -529,7 +529,15 @@ def admin_dashboard(db: Session, today: Optional[date] = None) -> dict:
             "agent_old": bool(device and device.last_poll_at
                               and version.agent_is_old(device.agent_version)),
             "password_pending": bool(u.must_change_password),
-            "consulting": bool(u.can_view_consulting) or u.role == "admin",
+            # 화면은 판정하지 않고 읽기만 한다. 예전에는 여기서 조건을 따로
+            # 적어(`can_view_consulting or admin`) 라우터가 보는 조건과 갈렸고,
+            # 컨설턴트 줄이 `막힘` 으로 떴는데 실제로는 열려 있었다.
+            "consulting": deps.may_view_consulting(u),
+            # 역할로 이미 열린 계정에서는 켜고 끄는 단추를 보이지 않는다.
+            "consulting_fixed": deps.consulting_by_role(u),
+            # 딜소개를 보내지 않는 계정(투자컨설턴트)은 담당 투자사·발송 칸이
+            # **원래 비어 있다.** 0 으로 그리면 설정이 덜 된 사람처럼 읽힌다.
+            "sends_deals": deps.sends_deals(u),
             "last_login": (u.last_login_at or "")[:10],
         })
 
@@ -589,10 +597,17 @@ def _agent_label(device: Optional[AgentDevice]) -> str:
 
 
 def _admin_warnings(rows: List[dict], unassigned: int) -> List[dict]:
-    """팀 단위로 손봐야 할 것. 사람 이름을 세워 누가 막혔는지 바로 보이게 한다."""
+    """팀 단위로 손봐야 할 것. 사람 이름을 세워 누가 막혔는지 바로 보이게 한다.
+
+    **딜소개를 보내는 계정만 센다.** 투자컨설턴트는 담당 투자사도 발송 프로그램도
+    원래 없어서, 같이 세면 `발송 프로그램 미연결` 에 늘 이름이 올라간다 — 고칠
+    것이 없는데 뜨는 경고가 섞이면 진짜 경고까지 무시하게 된다. 비밀번호처럼
+    계정이면 누구나 해당되는 것은 그대로 전부 본다.
+    """
     out = []
+    senders = [r for r in rows if r.get("sends_deals", True)]
     old = [f'{r["name"]}(v{r["agent_version"] or "?"})'
-           for r in rows if r.get("agent_old")]
+           for r in senders if r.get("agent_old")]
     if old:
         out.append({"level": "warn", "label": "발송 프로그램이 낡았습니다",
                     "detail": ", ".join(old),
@@ -601,7 +616,7 @@ def _admin_warnings(rows: List[dict], unassigned: int) -> List[dict]:
                     # 왜 위험한지 잘못 알리고 있었다.
                     "hint": f"v{version.MIN_AGENT_VERSION} 부터 [중단]을 누르면 "
                             f"발송이 실제로 멈춥니다 — 그 PC에서 다시 받아 주세요"})
-    no_agent = [r["name"] for r in rows if not r["agent_ok"]]
+    no_agent = [r["name"] for r in senders if not r["agent_ok"]]
     if no_agent:
         out.append({"level": "bad", "label": "발송 프로그램 미연결",
                     "detail": ", ".join(no_agent),
@@ -611,12 +626,12 @@ def _admin_warnings(rows: List[dict], unassigned: int) -> List[dict]:
         out.append({"level": "warn", "label": "초기 비밀번호를 아직 안 바꾼 계정",
                     "detail": ", ".join(pending),
                     "hint": "첫 로그인 시 변경 화면으로 유도됩니다"})
-    blocked = [f"{r['name']}({r['missing']}명)" for r in rows if r["missing"]]
+    blocked = [f"{r['name']}({r['missing']}명)" for r in senders if r["missing"]]
     if blocked:
         out.append({"level": "warn", "label": "카톡방이 없거나 연결 실패한 담당자",
                     "detail": ", ".join(blocked),
                     "hint": "그 담당자에게는 발송이 나가지 않습니다"})
-    empty = [r["name"] for r in rows if r["contacts"] == 0 and r["role"] != "admin"]
+    empty = [r["name"] for r in senders if r["contacts"] == 0 and r["role"] != "admin"]
     if empty:
         out.append({"level": "muted", "label": "담당 투자사가 없는 계정",
                     "detail": ", ".join(empty),
