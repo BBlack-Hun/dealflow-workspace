@@ -23,7 +23,8 @@ from sqlalchemy.orm import Session
 
 from .. import config
 from ..db import get_db
-from ..deps import get_current_user, templates
+from ..deps import (admin_only, consulting_by_role, get_current_user,
+                    templates)
 from ..models import AgentDevice, User, WeeklyRoutine, WeeklyTask
 from ..services import auth as auth_svc
 from ..services import dashboard as dash
@@ -278,11 +279,6 @@ def readiness_page(request: Request, db: Session = Depends(get_db),
     return templates.TemplateResponse("readiness.html", ctx)
 
 
-def _admin_only(user: User) -> None:
-    if user.role != "admin":
-        raise HTTPException(status_code=403, detail="관리자만 사용할 수 있습니다")
-
-
 @router.get("/team", response_class=HTMLResponse, include_in_schema=False)
 def team_page(request: Request, db: Session = Depends(get_db),
               user: User = Depends(get_current_user), msg: str = "", pw: str = "",
@@ -301,7 +297,7 @@ def team_page(request: Request, db: Session = Depends(get_db),
     통째로 안 열린 적이 있다). 이 화면은 SSR 이므로 주소로 여는 편이 같은
     결과를 훨씬 적은 수단으로 낸다. 닫기는 `/team` 으로 돌아오는 링크다.
     """
-    _admin_only(user)
+    admin_only(user)
     ctx = base_ctx(request, db, user, active="admin")
     ctx.update(dash.admin_dashboard(db))
     ctx["msg"] = msg
@@ -379,7 +375,7 @@ def test_mail(to: str = Form(""), db: Session = Depends(get_db),
     비밀번호가 틀렸는지 포트를 잘못 잡았는지는 실제로 보내 봐야 안다.
     회차 당일에 알게 되면 늦다.
     """
-    _admin_only(user)
+    admin_only(user)
     from urllib.parse import quote
 
     from ..services import mailer
@@ -402,7 +398,7 @@ def create_member(
     발송 프로그램 연결키(토큰)를 함께 발급한다. **한 계정 = 한 PC** 가 원칙이라
     같은 키를 두 대에 넣으면 발송이 어느 쪽으로 갈지 알 수 없다.
     """
-    _admin_only(user)
+    admin_only(user)
     normalized = auth_svc.normalize_phone(phone)
     if len(normalized) < 10:
         return RedirectResponse("/team?msg=휴대폰번호를+다시+확인해+주세요", status_code=303)
@@ -449,7 +445,7 @@ def edit_member_profile(
     번호다). 되돌리려면 DB 를 직접 고쳐야 하는데, 그게 이 화면이 없애려던
     상황이다. 관리자를 여럿 두는 이유가 곧 이것이라 다른 관리자가 바꿔 준다.
     """
-    _admin_only(user)
+    admin_only(user)
     if member_id == user.id:
         return RedirectResponse("/team?msg=본인+계정은+다른+관리자가+바꿉니다",
                                 status_code=303)
@@ -545,7 +541,7 @@ def change_member_role(
 
     바뀐 권한은 다음 요청부터 바로 먹는다 — 권한은 요청마다 DB 에서 읽는다.
     """
-    _admin_only(user)
+    admin_only(user)
     # 본인 권한은 못 바꾼다. 관리자가 스스로를 내리면 팀 현황에 다시 들어올
     # 길이 없어져, 되돌리려면 DB 를 직접 고쳐야 한다.
     if member_id == user.id:
@@ -570,11 +566,21 @@ def toggle_consulting(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """투자현황 화면을 볼 수 있게 하거나 막는다(관리자는 항상 볼 수 있다)."""
-    _admin_only(user)
+    """투자현황 화면을 볼 수 있게 하거나 막는다.
+
+    **역할만으로 이미 열린 계정(관리자·투자컨설턴트)은 여기서 못 끈다.** 그냥
+    뒤집으면 "볼 수 없게 했습니다" 라고 알리면서 실제로는 계속 보인다 — 화면이
+    거짓말을 하는 그 어긋남이 이 칸의 버그였다. 표에도 그 줄에는 단추 대신
+    상태만 적는다(판정은 `deps.consulting_by_role` 한 곳).
+    """
+    admin_only(user)
     member = db.get(User, member_id)
     if member is None:
         raise HTTPException(status_code=404, detail="계정을 찾을 수 없습니다")
+    if consulting_by_role(member):
+        return RedirectResponse(
+            f"/team?msg={member.name}+님은+권한상+투자현황을+항상+볼+수+있습니다",
+            status_code=303)
     member.can_view_consulting = 0 if member.can_view_consulting else 1
     db.commit()
     state = "볼 수 있게" if member.can_view_consulting else "볼 수 없게"
@@ -613,7 +619,7 @@ def reset_member_password(
     잠겼을 때 다시 ssh 로 돌아가는데, 그게 이 기능이 없애려던 상황이다.
     권한 변경·계정 정지도 이미 다른 관리자에게 열려 있다(본인만 막는다).
     """
-    _admin_only(user)
+    admin_only(user)
     # 본인 것은 이 길로 못 바꾼다 — 관리자 자신은 `/account/password` 에서
     # 현재 비밀번호를 대고 바꾼다. 여기서 허용하면 잠깐 자리를 비운 관리자
     # 화면 앞에 앉은 사람이 현재 비밀번호를 모르고도 갈아 끼울 수 있다.
@@ -657,7 +663,7 @@ def deactivate_member(
     지워 버리면 그 사람이 담당하던 투자사와 발송 이력이 주인을 잃는다.
     로그인만 막고 기록은 남긴다. 열려 있던 세션도 함께 끊는다.
     """
-    _admin_only(user)
+    admin_only(user)
     if member_id == user.id:
         return RedirectResponse("/team?msg=본인+계정은+정지할+수+없습니다", status_code=303)
     member = db.get(User, member_id)

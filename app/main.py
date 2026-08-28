@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import config, deps
-from .deps import NotAuthenticated
+from .deps import NotAdmin, NotAuthenticated
 from .routers import auth as auth_router
 from .routers import templates_crud
 from .routers import setup as setup_router
@@ -85,6 +85,17 @@ def create_app() -> FastAPI:
             # 지문 없이 부른 주소. 고친 것이 안 보이는 쪽이 느린 것보다 나쁘다.
             response.headers["Cache-Control"] = "no-cache"
         return response
+
+    @app.exception_handler(NotAdmin)
+    def _not_admin(request: Request, exc: NotAdmin):
+        """관리자 전용 — 화면 요청은 안내창이 있는 화면으로, 조작은 403 그대로.
+
+        라우터가 아니라 여기서 답하는 이유는 컨설턴트 차단을 미들웨어 한 곳에
+        둔 것과 같다: 관리자 화면이 하나 더 생겨도 `deps.admin_only` 만 부르면
+        이 처리가 저절로 따라온다. 무엇을 돌려줄지는 `deps.admin_block_response`
+        한 곳에 있다(컨설턴트 차단과 같은 자리, 같은 판단).
+        """
+        return deps.admin_block_response(request)
 
     @app.exception_handler(NotAuthenticated)
     def _needs_login(request: Request, exc: NotAuthenticated):

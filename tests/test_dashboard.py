@@ -149,7 +149,15 @@ def test_dashboard_counts_only_successful_sends(logged, db, users):
 # --- 팀 현황 ----------------------------------------------------------------
 
 def test_team_page_is_admin_only(logged):
-    assert logged.get("/team").status_code == 403
+    """팀원에게는 남의 담당분이 보이지 않는다.
+
+    화면 요청이라 403 대신 안내창이 있는 빈 화면이 온다 — 주소창에 날것의
+    JSON 이 뜨면 쓰는 사람은 고장인 줄 안다(안내창 자체는
+    `tests/test_admin_guard.py`). 여기서는 **내용이 새지 않는가**만 본다.
+    """
+    r = logged.get("/team")
+    assert r.status_code == 200
+    assert "팀원별 현황" not in r.text
 
 
 def test_team_page_opens_for_admin(admin_client):

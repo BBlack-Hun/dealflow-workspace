@@ -57,9 +57,36 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     return user
 
 
-def require_admin(user: User = Depends(get_current_user)) -> User:
+# --- 관리자 전용 ------------------------------------------------------------
+#
+# **판정은 여기 하나뿐이다.** 라우터마다 `role != "admin"` 을 적어 두면, 화면
+# 요청인지 스크립트가 부른 것인지 가르는 규칙도 그만큼 늘어난다 — 팀 현황이
+# 그래서 주소창에 날것의 JSON(`{"detail": "관리자만 …"}`)을 뿌렸다.
+# 라우터는 `admin_only(user)` 만 부르고, 무엇을 돌려줄지는 `admin_block_response`
+# 한 곳에서 정한다. 관리자 화면이 하나 더 생겨도 그 처리가 저절로 따라온다.
+ADMIN_ONLY = "관리자만 사용할 수 있습니다"
+
+
+class NotAdmin(HTTPException):
+    """관리자 전용. 핸들러(app/main.py)가 화면과 조작을 갈라 답한다."""
+
+    def __init__(self) -> None:
+        super().__init__(status_code=403, detail=ADMIN_ONLY)
+
+
+def admin_only(user: User) -> None:
+    """관리자가 아니면 끊는다."""
     if user.role != "admin":
-        raise HTTPException(status_code=403, detail="관리자만 접근할 수 있습니다")
+        raise NotAdmin()
+
+
+def require_admin(user: User = Depends(get_current_user)) -> User:
+    """`Depends` 로 거는 같은 판정 — 검사는 위 함수를 그대로 쓴다.
+
+    두 곳이 각자 `role != "admin"` 과 각자의 사유 문구를 들고 있으면 하나는
+    반드시 낡는다(`valid_role` 이 같은 이유로 판정을 한 곳에 모아 두었다).
+    """
+    admin_only(user)
     return user
 
 
@@ -138,6 +165,50 @@ def can_open(user: User, path: str) -> bool:
     return user.role != "consultant" or consultant_may_open(path)
 
 
+def may_view_consulting(user: User) -> bool:
+    """투자컨설턴트 현황 화면을 볼 수 있는가.
+
+    **판정은 여기 하나뿐이다.** 라우터는 역할까지 보고(`admin`·`consultant` 는
+    통과) 팀 현황 표는 `can_view_consulting` 칸만 봐서, 컨설턴트 줄에 `막힘`
+    이라고 떠 있는데 실제로는 열려 있었다 — 화면이 거짓말을 한 것이다.
+    같은 부류의 사고를 이 저장소는 이미 여러 번 겪었다(메뉴 목록과 라우터
+    목록이 갈려 컨설턴트에게 다 열려 있던 일, 투자사 수가 화면마다 달랐던 일).
+    화면은 판정하지 않고 이 함수를 읽는다.
+
+    - 관리자는 팀 전체를 본다.
+    - 투자컨설턴트에게는 이 화면이 전부다 — 따로 켜 줄 필요가 없다.
+    - 팀원은 관리자가 켜 준 계정만(`can_view_consulting`).
+    """
+    return consulting_by_role(user) or bool(user.can_view_consulting)
+
+
+def consulting_by_role(user: User) -> bool:
+    """`can_view_consulting` 칸과 상관없이 **역할만으로** 열려 있는가.
+
+    켜고 끄는 단추를 보일지 정하는 자리다. 역할로 이미 열린 계정에서 그 단추는
+    눌러도 아무 일이 없다 — 관리자는 껐다고 생각하는데 계속 보이는, 화면이
+    거짓말을 하는 상태가 된다.
+
+    역할 목록을 여기 한 번만 적는다. 화면·라우터가 각자 `("admin",
+    "consultant")` 를 적어 두면 역할이 하나 늘 때 한쪽만 고쳐진다.
+    """
+    return user.role in ("admin", "consultant")
+
+
+def sends_deals(user: User) -> bool:
+    """이 계정이 딜소개를 보내는가.
+
+    투자컨설턴트는 담당 투자사도 발송도 **원래 없다.** 팀 현황이 그것을 `0` 과
+    `미연결` 로 그리면 아직 설정이 덜 된 사람처럼 읽힌다 — 특히 `미연결` 은 이
+    앱에서 **고쳐야 할 것**을 뜻하는 표시라(대시보드 경고에도 같은 말을 쓴다)
+    고칠 것이 없는데 경고가 뜨면 진짜 경고까지 무시하게 된다.
+
+    무엇을 비울지 화면마다 정하지 않는다 — 여기서 한 번 판정하고 팀 현황 표와
+    경고 목록이 그것을 읽는다.
+    """
+    return user.role != "consultant"
+
+
 def consultant_block_response(request: Request) -> Response:
     """막을 때 무엇을 돌려줄지.
 
@@ -150,6 +221,23 @@ def consultant_block_response(request: Request) -> Response:
     return RedirectResponse(CONSULTANT_HOME, status_code=303)
 
 
+def admin_block_response(request: Request) -> Response:
+    """관리자 전용에 권한 없이 닿았을 때 무엇을 돌려줄지.
+
+    **위 컨설턴트 차단과 같은 판단이다** — 화면 요청은 화면으로 답하고,
+    스크립트가 부르는 것에만 403 을 준다. 주소창에 날것의 JSON 이 뜨면 쓰는
+    사람에게는 그냥 고장으로 보인다.
+
+    다른 점은 **조작(폼 전송)** 이다. 컨설턴트는 애초에 그 화면에 볼일이 없어
+    자기 화면으로 되돌려 보내는 것이 맞지만, 관리자 조작은 되돌려 보내면
+    저장된 것처럼 보인다 — 권한 없이 누른 [계정 만들기]는 403 으로 실패를
+    알려야 한다. 그래서 화면으로 답하는 것은 **주소창이 여는 GET** 뿐이다.
+    """
+    if request.method != "GET" or _wants_json(request):
+        return JSONResponse({"detail": ADMIN_ONLY}, status_code=403)
+    return _admin_only_page(request)
+
+
 def _wants_json(request: Request) -> bool:
     if request.url.path.startswith("/api/"):
         return True
@@ -159,6 +247,36 @@ def _wants_json(request: Request) -> bool:
         return True
     accept = request.headers.get("accept", "")
     return "application/json" in accept and "text/html" not in accept
+
+
+def _admin_only_page(request: Request) -> Response:
+    """앱 껍데기(사이드바)를 갖춘 빈 화면 + 대시보드로 가는 안내창.
+
+    미들웨어·예외 핸들러는 라우팅 밖이라 `Depends` 를 쓸 수 없다 — 세션을
+    직접 연다(`is_consultant` 와 같은 방식).
+
+    **안내창은 서버가 그린 그대로 뜬다.** 스크립트 하나가 어긋난 날 상세
+    패널이 통째로 안 열린 적이 있어서, 나가는 길을 알려 주는 창이 스크립트에
+    기대면 같은 일이 난다(팀 현황의 수정칸을 주소로 여는 것과 같은 이유).
+    """
+    from .services import auth as auth_svc
+    from .ui import base_ctx, screen_label  # ui 가 이 모듈을 부르므로 함수 안에서
+
+    db = SessionLocal()
+    try:
+        user = auth_svc.user_for_token(db, request.cookies.get(auth_svc.SESSION_COOKIE))
+        if user is None:
+            # 판정과 응답 사이에 세션이 끊긴 경우 — 권한 안내보다 로그인이 먼저다.
+            return RedirectResponse(f"/login?next={request.url.path}", status_code=303)
+        # 무엇을 열려 했는지 이름을 대 준다. 좌측 메뉴와 같은 목록에서 가져오므로
+        # 관리자 화면이 늘어도 이 화면이 따로 낡지 않는다.
+        label = screen_label(request.url.path)
+        ctx = base_ctx(request, db, user, active="")
+        ctx["page_title"] = label or "관리자 전용"
+        ctx["blocked_label"] = label
+        return templates.TemplateResponse("admin_only.html", ctx)
+    finally:
+        db.close()
 
 
 def get_agent_device(
