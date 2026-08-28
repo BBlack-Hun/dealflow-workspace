@@ -69,7 +69,7 @@
     // 지금 감춰져 있는 줄인가. 단추 글자가 곧 되돌리는 길이다.
     var hide = el("hide-btn");
     if (hide) {
-      hide.dataset.hidden = c.is_hidden ? "1" : "0";
+      hide.setAttribute("data-hidden", c.is_hidden ? "1" : "0");
       hide.textContent = c.is_hidden ? "이 줄 다시 보이기" : "이 줄 감추기";
     }
   }
@@ -230,7 +230,7 @@
   if (hideBtn) {
     hideBtn.addEventListener("click", function () {
       if (!current) { setMsg("먼저 줄을 고르세요", true); return; }
-      var next = hideBtn.dataset.hidden === "1" ? 0 : 1;
+      var next = hideBtn.getAttribute("data-hidden") === "1" ? 0 : 1;
       fetch("/api/contacts/" + current, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
