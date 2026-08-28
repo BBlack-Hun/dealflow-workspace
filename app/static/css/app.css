@@ -849,6 +849,32 @@ td.cell.save-failed { background: #fdecec; }
 .assign-bar .hint { margin-left: auto; }
 .pool-dot { color: var(--gray); margin-right: 2px; }
 
+/* 투자사로 세지 않는 명단 — 탭은 **감추지 않는다.** 감춰 놓고 켜는 자리까지
+   감추면 되돌리려고 DB 를 직접 고쳐야 한다. 눈에만 덜 띄게 둔다. */
+.sheet-tab.muted-tab { opacity: .62; }
+.sheet-tab.muted-tab.active { opacity: 1; }
+
+/* 달마다 늘어나는 칸을 세우고 이름을 고치는 줄. */
+.month-cols { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.month-cols input[type="text"] { padding: 4px 8px; border: 1px solid var(--line);
+  border-radius: 6px; font-size: 12px; width: 190px; }
+/* 이름을 `month-col` 로 두면 안 된다 — 투자컨설턴트 현황이 그 이름을
+   `<td class="month-col">` 로 이미 쓰고 있어서, 칸의 display 가 바뀌면 그 표의
+   행이 통째로 어긋난다(tests/test_ui_layout.py 가 그 짝을 지킨다). */
+.month-col-edit { display: inline-flex; align-items: center; gap: 4px;
+  background: #fafbfc; border: 1px solid var(--line); border-radius: 8px;
+  padding: 3px 8px; }
+
+/* 감춘 줄. `?hidden=1` 로 함께 볼 때만 그려지므로, 지운 줄이 아니라 감춘
+   줄이라는 것이 한눈에 보여야 한다. */
+.hidden-rows-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.grid-table tbody tr.row-hidden { opacity: .55; background: repeating-linear-gradient(
+  45deg, transparent, transparent 6px, #f4f6f9 6px, #f4f6f9 12px); }
+
+/* 명단이 정한 칸으로 세우는 표. 폭은 칸 폭의 합이라 표 자신이 들고 있다
+   (달마다 칸이 늘어나므로 여기 숫자를 적어 두면 곧 옛날 값이 된다). */
+.startup-table td .cell.clamp2 { min-height: 1.35em; }
+
 /* ── 회차 준비 점검 ─────────────────────────────────────────── */
 .hero-card.blocked { background: linear-gradient(135deg, #c0392b 0%, #96281b 100%); }
 .ready-mark { background: rgba(255,255,255,.2); border-radius: 999px; padding: 4px 12px; font-size: 13px; }

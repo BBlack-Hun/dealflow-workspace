@@ -529,8 +529,11 @@ def test_every_editable_field_is_actually_saved():
     assert assign, "_assign 의 저장 목록을 찾지 못했습니다"
     listed = set(re.findall(r'"(\w+)"', assign.group(1)))
 
-    # 목록 밖에서 따로 다루는 칸들
-    handled = listed | {"name", "channel_kakao", "channel_email"}
+    # 목록 밖에서 따로 다루는 칸들. **손으로 적어 두지 않는다** — 그렇게 두면
+    # 따로 다루는 칸이 하나 늘 때마다 여기도 고쳐야 하고, 고치는 김에 정작
+    # 빠뜨린 칸까지 같이 적어 넣게 된다. 라우터가 `body.칸` 으로 실제로 읽는
+    # 것을 세면, "스키마에만 있고 아무도 안 읽는 칸" 이라는 진짜 버그만 남는다.
+    handled = listed | set(re.findall(r"body\.(\w+)", src))
     missing = sorted(fields - handled)
     assert not missing, f"고쳐도 저장되지 않는 칸: {missing}"
 

@@ -35,13 +35,12 @@ from sqlalchemy import select  # noqa: E402
 from app.db import SessionLocal  # noqa: E402
 from app.models import RefSheet  # noqa: E402
 
-# 투자사 명단 탭 — 본문이 이미 다룬다. 이름에 이런 꼴이 들어가면 건너뛴다.
+# 명단 탭 — 본문이 이미 다룬다. 이름에 이런 꼴이 들어가면 건너뛴다.
 #
-# `스타트업(16)` 은 예외다. 이름 모양은 명단 같지만 **투자사 명단이 아니라
-# 스타트업 표**다(기업명·사업분야·매출·IR deck 유무). 담당자 모델에 넣을 수
-# 없어서 그동안 통째로 빠져 있었는데, 표 그대로 참고 탭에 두면 볼 수는 있다.
+# 예외로 둘 탭은 **부르는 사람이 `--keep` 으로 정한다.** 예전에는 탭 이름
+# 하나를 여기 박아 두었는데, 그런 예외는 늘 하나로 끝나지 않는다 — 다음 탭에서
+# 또 박아야 하고, 박는 것을 잊으면 그 탭만 조용히 사라진다.
 SKIP = re.compile(r"\d+\s*\(|\d+명|전체 딜소개현황")
-KEEP = ("스타트업(16)",)
 
 
 def text(value) -> str:
@@ -100,17 +99,20 @@ def main() -> None:
     ap.add_argument("--apply", action="store_true", help="실제로 저장")
     ap.add_argument("--page", default="contacts",
                     help="붙일 화면: contacts | consulting")
+    ap.add_argument("--keep", default="",
+                    help="명단처럼 보여도 가져올 탭 이름들(쉼표로 구분)")
     args = ap.parse_args()
 
     wb = openpyxl.load_workbook(args.path)
     db = SessionLocal()
     existing = {s.title: s for s in db.execute(select(RefSheet)).scalars().all()}
 
+    keep = [k.strip() for k in args.keep.split(",") if k.strip()]
     made = updated = 0
     for pos, name in enumerate(wb.sheetnames):
         title = name.strip()
-        if SKIP.search(title) and not any(k in title for k in KEEP):
-            print(f"  건너뜀 (투자사 명단): {title}")
+        if SKIP.search(title) and not any(k in title for k in keep):
+            print(f"  건너뜀 (명단 탭): {title}")
             continue
 
         grid = read_grid(wb[name])

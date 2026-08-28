@@ -282,9 +282,17 @@
       var id = row && row.getAttribute("data-id");
       if (!id) return;
       var body = {};
-      // 숫자 칸은 빈 값이면 null 로 보낸다 — 0 과 '아직 안 적음'은 다르다.
-      body[cell.getAttribute("data-field")] =
-        type === "number" ? toStored(value, unit) : value;
+      var field = cell.getAttribute("data-field");
+      if (cell.hasAttribute("data-note")) {
+        // 그 명단에만 있는 칸(달마다 늘어나는 칸 포함)은 `notes` 묶음으로 간다.
+        // 칸이 하나 늘 때마다 서버 스키마에 이름을 또 적지 않아도 되게 —
+        // 그렇게 적어 두면 네 곳 중 하나만 빠져도 조용히 저장이 안 된다.
+        body.notes = {};
+        body.notes[field] = value;
+      } else {
+        // 숫자 칸은 빈 값이면 null 로 보낸다 — 0 과 '아직 안 적음'은 다르다.
+        body[field] = type === "number" ? toStored(value, unit) : value;
+      }
 
       cell.classList.add("saving");
       fetch(url + "/" + id, {

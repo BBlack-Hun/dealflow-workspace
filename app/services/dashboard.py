@@ -480,7 +480,12 @@ def admin_dashboard(db: Session, today: Optional[date] = None) -> dict:
     month_prefix = today.strftime("%Y-%m")
 
     users = db.execute(select(User).order_by(User.id)).scalars().all()
-    contacts = db.execute(select(VcContact)).scalars().all()
+    # 팀 현황의 `전체 투자사` · 팀원별 담당 수 · 발송 가능 비율이 전부 여기서
+    # 나온다. 투자사로 세지 않는 명단(스타트업 리마인드 등)과 감춘 줄을 여기서
+    # 빼지 않으면, 사용자 대시보드는 걸러 세고 팀 현황만 안 걸러 세어 **화면마다
+    # 수가 달라진다** — 예전에 117명 · 123명으로 갈렸던 그 부류다.
+    contacts = sheet_owner.investors(
+        db, db.execute(select(VcContact)).scalars().all())
     by_user: Dict[int, List[VcContact]] = {}
     for c in contacts:
         by_user.setdefault(c.user_id, []).append(c)

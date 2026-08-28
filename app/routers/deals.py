@@ -27,7 +27,7 @@ from ..models import (
 )
 from ..services import mail_sender, mailer, matcher
 from ..services import message_composer as mc
-from ..services import sourcing_link, sourcing_msg, template_pick
+from ..services import sheet_owner, sourcing_link, sourcing_msg, template_pick
 from ..services.message_composer import MAX_COMPANIES_PER_SEND
 
 router = APIRouter(prefix="/api/deals", tags=["deals"])
@@ -409,10 +409,13 @@ def _load_recipients(db: Session, user: User, mode: str, ids: List[int]) -> List
             select(SourcingContact).where(SourcingContact.id.in_(ids))
         ).scalars().all()
     else:
-        rows = db.execute(
+        # 목록에 안 뜨는 사람은 **보내지도 않는다.** 화면에서 걸러 두었어도
+        # 여기서 한 번 더 본다 — 오래된 탭에 남아 있던 체크박스나 손으로 만든
+        # 요청으로도 id 는 들어올 수 있고, 그때는 되돌릴 수가 없다.
+        rows = sheet_owner.investors(db, db.execute(
             select(VcContact).where(VcContact.id.in_(ids),
                                     VcContact.user_id == user.id)
-        ).scalars().all()
+        ).scalars().all())
     by_id = {r.id: r for r in rows}
     return [by_id[i] for i in ids if i in by_id]
 

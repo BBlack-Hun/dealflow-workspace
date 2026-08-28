@@ -67,7 +67,7 @@ def test_a_room_name_with_the_firm_tells_people_apart():
 
 
 def test_a_room_name_without_the_firm_does_not():
-    """실제로 `김형준 이사님 Deal 공유 …` 가 이랬다 — 같은 이름이 둘 더 있었다."""
+    """실제로 `○○○ 이사님 Deal 공유 …` 가 이랬다 — 같은 이름이 둘 더 있었다."""
     assert not rn.tells_people_apart("홍길동 이사님 Deal 공유", "가나벤처스")
 
 

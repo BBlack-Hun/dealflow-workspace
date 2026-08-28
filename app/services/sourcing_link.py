@@ -4,7 +4,7 @@
 사람이면, 딜 소싱에서 방 이름을 **다시 적을 이유가 없다** — 손으로 옮겨
 적으면 한 글자만 달라도 발송이 통째로 skip 된다.
 
-**휴대폰 번호로만 잇는다.** 이름은 안 된다 — 같은 이름이 여럿 있고(김형준이
+**휴대폰 번호로만 잇는다.** 이름은 안 된다 — 같은 이름이 여럿 있고(한 이름이
 셋이었다), 잘못 이으면 남의 방으로 나간다. 번호는 사람마다 하나뿐이라
 틀릴 여지가 없다.
 """
@@ -16,6 +16,7 @@ from typing import Dict, List, Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from . import sheet_owner
 from ..models import VcContact
 
 #: 휴대폰으로 인정할 최소 자릿수. `010-1234-5678` → 11자리.
@@ -53,7 +54,10 @@ def linked_rooms(db: Session, sourcing) -> Dict[int, dict]:
 
     자기 방을 이미 적어 둔 줄은 건드리지 않는다 — 사람이 적은 것이 우선이다.
     """
-    contacts = db.execute(select(VcContact)).scalars().all()
+    # 투자사로 세지 않는 명단은 잇지 않는다 — 스타트업 대표의 번호가 소싱
+    # 명단의 심사역과 우연히 맞으면 그 방으로 딜 소싱 제안이 나간다.
+    contacts = sheet_owner.investors(
+        db, db.execute(select(VcContact)).scalars().all())
     by_phone = _by_phone(contacts)
 
     out: Dict[int, dict] = {}
