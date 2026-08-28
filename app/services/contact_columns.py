@@ -64,6 +64,8 @@ from ..models import ContactColumn
 # 배치 이름. `SheetOwner.layout` 에 이 값이 들어간다.
 INVESTOR = "investor"
 STARTUP = "startup"
+# 투자사인데 **달마다 칸이 늘어나는** 명단. 아래 INVESTOR_MONTHLY_LAYOUT 참고.
+INVESTOR_MONTHLY = "investor_monthly"
 DEFAULT = INVESTOR
 
 
@@ -95,6 +97,18 @@ class Layout:
     extra: List[Column] = field(default_factory=list)
     # 달마다 늘어나는 칸을 쓰는 배치인가
     monthly: bool = False
+    # 달마다 늘어나는 칸을 **어떻게 고치고 보여 주나.** 배치마다 그 칸에 들어가는
+    # 값의 성격이 다르다 — 스타트업 리마인드는 `O`/`X` 한 글자라 골라 넣게 하고
+    # 필터를 걸지만, 투자사 딜공유는 한 칸이 회차별 기업 목록(가장 긴 줄이 400자
+    # 넘는다)이라 고르는 칸으로 두면 **고치는 순간 그 달 기록이 `O` 한 글자로
+    # 덮인다.** 값이 130가지라 필터로도 고를 것이 없다.
+    #
+    # 칸마다가 아니라 **배치마다** 정하는 이유: `ContactColumn` 에 종류를 두면
+    # 마이그레이션이 필요하고, 같은 명단 안에서 칸마다 성격이 갈릴 일은 없다
+    # (한 시트의 월별 칸은 다 같은 모양이다).
+    month_kind: str = "pick"
+    month_choices: str = "O,X"
+    month_width: int = 186
 
 
 # ── 투자사 명함 (지금까지의 표) ──────────────────────────────────────────────
@@ -167,9 +181,71 @@ STARTUP_LAYOUT = Layout(
     ],
 )
 
+# ── 투자사 딜공유 ────────────────────────────────────────────────────────────
+#
+# 세 번째 모양이다. **투자사인데 달마다 칸이 늘어난다.**
+#
+# 위의 `투자사 명함` 은 명함 한 장(부서·직함·팩스·명함 등록일)이고, 월별 기록은
+# 표에 두지 않았다 — 그 명단들은 시트에서 이미 활동 이력으로 옮겨 두었다.
+# 그런데 담당자마다 쓰는 `딜공유현황` · `심사역 리스트` 시트는 **한 사람당 한
+# 줄에 달마다 세 칸**(딜소개 · IR 요청 · 미팅)이 붙고, 칸 안에는 그 달에 무엇을
+# 보내고 무슨 답을 들었는지가 회차별로 적혀 있다. 그 칸을 표에서 빼면 명단을
+# 열었을 때 이름과 투자사명만 남는다 — 시트를 대신할 수가 없다.
+#
+# 스타트업 배치를 돌려 쓰지 않는 이유: 저쪽 머리글은 `기업명`·`성함` 이라
+# **기업이 주인공**이고 여기는 사람이 주인공이다(`이름`·`투자사명`). 이름이
+# 다르면 시트와 나란히 놓고 대조할 수가 없다. 그리고 저쪽은 투자사로 세지 않는
+# 명단이고 이쪽은 **진짜 투자사**다.
+INVESTOR_MONTHLY_LAYOUT = Layout(
+    key=INVESTOR_MONTHLY,
+    label="투자사 딜공유",
+    monthly=True,
+    # 한 칸에 회차별 기업 목록이 줄바꿈으로 쌓인다 — 고르는 칸이 아니라 글 칸이다.
+    month_kind="long",
+    month_choices="",
+    month_width=240,
+    head=[
+        Column("NO", "no", 34, source="row_no"),
+        # 사람이 주인공이다. 시트도 `이름` 이 먼저고 `투자사명` 이 뒤다.
+        Column("이름", "name", 96),
+        Column("투자사명", "firm", 180),
+        # 시트 머리글이 세 가지를 한 칸에 적어 둔다. **쪼개지 않는다** —
+        # 자유 서술이라 쪼개면 근거 없는 값이 된다(`sheet_import.split_sector_tags`
+        # 가 같은 이유로 확신할 때만 쪼갠다).
+        Column("그룹/투자분야/라운드사이즈", "group_name", 156),
+        # 번호는 **발송의 열쇠가 아니다** — 발송은 카톡방 이름으로 나간다.
+        # 여기 두는 이유는 같은 사람인지 대조할 때 눈으로 확인하는 칸이라서다.
+        Column("휴대폰", "phone", 116),
+    ],
+    tail=[
+        Column("기타", "etc", 110, source="note"),
+        # 시트에서 가장 긴 칸이다(한 사람의 대화가 통째로 쌓인다). 표에서는 두
+        # 줄까지만 보이고 전문은 수정창에서 본다.
+        Column("대화내역 메모", "memo", 250, kind="long"),
+    ],
+    extra=[
+        # 명함 칸들. 표에 세우면 스무 칸이 넘어 정작 매달 보는 월별 칸이 눌린다.
+        # 값은 그대로 들어가고 수정창에서 보고 고친다.
+        Column("전자 메일 주소", "email", 0, in_table=False),
+        Column("부서", "department", 0, in_table=False),
+        Column("직함", "title", 0, in_table=False),
+        Column("관심도 (월말기준)", "interest_level", 0, in_table=False),
+        Column("카톡방 참여여부", "kakao_joined", 0, in_table=False),
+        Column("딜소싱 참여 투자사", "sourcing_note", 0, in_table=False),
+        Column("선호 투자분야", "sectors", 0, in_table=False),
+        Column("TIPS 운영사", "tips_note", 0, in_table=False),
+        Column("라운드 사이즈", "round_size", 0, in_table=False),
+        Column("근무처 전화", "office_phone", 0, in_table=False),
+        Column("근무처 팩스", "office_fax", 0, in_table=False),
+        Column("근무지 주소 번지", "address", 0, in_table=False),
+        Column("명함 등록일", "card_registered_at", 0, in_table=False),
+    ],
+)
+
 LAYOUTS: Dict[str, Layout] = {
     INVESTOR_LAYOUT.key: INVESTOR_LAYOUT,
     STARTUP_LAYOUT.key: STARTUP_LAYOUT,
+    INVESTOR_MONTHLY_LAYOUT.key: INVESTOR_MONTHLY_LAYOUT,
 }
 
 
@@ -218,14 +294,20 @@ def note_key(column_id: int) -> str:
     return f"c{column_id}"
 
 
-def as_column(row: ContactColumn) -> Column:
+def as_column(row: ContactColumn, layout: Optional[Layout] = None) -> Column:
     """월별 칸도 고정 칸과 **같은 모양**으로 내놓는다.
 
     화면이 "이건 월별 칸이니 다르게 그려야지" 를 하지 않아도 되게. 갈래를
     화면이 알면, 갈래가 하나 늘 때마다 화면도 같이 고쳐야 한다.
+
+    고치는 방식과 폭은 **배치가 정한다**(`Layout.month_kind`). 배치를 안 주면
+    지금까지의 스타트업 리마인드 값(`O`/`X` 고르기)이다 — 부르는 곳을 다 고치지
+    않아도 옛 동작이 그대로 나오게.
     """
-    return Column(label=row.label, key=note_key(row.id), width=186,
-                  source="note", kind="pick", choices="O,X")
+    layout = layout or STARTUP_LAYOUT
+    return Column(label=row.label, key=note_key(row.id), width=layout.month_width,
+                  source="note", kind=layout.month_kind,
+                  choices=layout.month_choices)
 
 
 def table_columns(layout: Layout, months: List[ContactColumn]) -> List[Column]:
@@ -235,7 +317,7 @@ def table_columns(layout: Layout, months: List[ContactColumn]) -> List[Column]:
     한 칸씩 밀린다(`tests/test_ui_layout.py` 가 오래 지켜 온 규칙이다).
     """
     return ([c for c in layout.head if c.in_table]
-            + [as_column(m) for m in months]
+            + [as_column(m, layout) for m in months]
             + [c for c in layout.tail if c.in_table])
 
 
@@ -246,7 +328,7 @@ def panel_columns(layout: Layout, months: List[ContactColumn]) -> List[Column]:
     있는데 화면 어디에서도 볼 수 없는 칸이 그렇게 생긴다.
     """
     return ([c for c in layout.head if c.source != "row_no"]
-            + [as_column(m) for m in months]
+            + [as_column(m, layout) for m in months]
             + list(layout.tail) + list(layout.extra))
 
 
