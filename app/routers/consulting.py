@@ -79,6 +79,33 @@ def scope(stmt, model, user: User, owner: int = 0):
     return stmt
 
 
+def owned(db: Session, model, row_id: int, user: User, what: str):
+    """고칠 수 있는 줄 하나. 아니면 **없는 것으로** 답한다.
+
+    **고치는 쪽이 보는 쪽과 같은 판정을 읽는다** — 위 `scope()` 를 그대로
+    태운다. 여기가 정확히 그것이 갈려서 났던 자리다: 보는 쪽은 `scope()` 로
+    자기 것만 남기는데 고치는 쪽에는 검사가 아예 없어서, `can_view_consulting`
+    이 켜진 팀원이 **번호만 바꾸면 화면에 안 뜨는 남의 줄**을 고치거나 지울 수
+    있었다. 안 보이는 것을 고치는 것이라 고친 사람도, 당한 사람도 모른다.
+
+    판정을 여기 새로 적지 않는 이유는 이 저장소가 반복해 당한 유형이라서다
+    (투자사 수가 화면마다 달랐던 일, 좌측 메뉴와 라우터 목록이 갈려 컨설턴트에게
+    다 열려 있던 일, 팀 현황의 `투자현황` 칸이 거짓말한 일). 두 곳에 적으면
+    한쪽은 반드시 낡는다 — 관리자가 전부 고칠 수 있는 것도, 컨설턴트가 자기
+    것을 고치는 것도 전부 `scope()` 가 정한 그대로다.
+
+    없는 번호와 남의 번호를 **같은 404** 로 답한다. 403 으로 갈라 주면 번호를
+    훑어 남의 표가 몇 번까지 있는지 알 수 있다(routers/contacts.py 의 `_owned`
+    가 같은 이유로 그렇게 한다).
+    """
+    row = db.execute(
+        scope(select(model).where(model.id == row_id), model, user)
+    ).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"{what}을 찾을 수 없습니다")
+    return row
+
+
 def owner_tabs(db: Session, user: User) -> List[dict]:
     """관리자가 사람별로 갈라 보는 자리. 그 외에는 볼 것이 없다."""
     if user.role != "admin":
@@ -382,9 +409,7 @@ def update_company(company_id: int, body: CompanyIn,
                    db: Session = Depends(get_db),
                    user: User = Depends(get_current_user)):
     require_access(user)
-    company = db.get(ConsultingCompany, company_id)
-    if company is None:
-        raise HTTPException(status_code=404, detail="기업을 찾을 수 없습니다")
+    company = owned(db, ConsultingCompany, company_id, user, "기업")
     _assign(company, body)
     db.commit()
     return {"id": company.id}
@@ -394,9 +419,7 @@ def update_company(company_id: int, body: CompanyIn,
 def delete_company(company_id: int, db: Session = Depends(get_db),
                    user: User = Depends(get_current_user)):
     require_access(user)
-    company = db.get(ConsultingCompany, company_id)
-    if company is None:
-        raise HTTPException(status_code=404, detail="기업을 찾을 수 없습니다")
+    company = owned(db, ConsultingCompany, company_id, user, "기업")
     db.delete(company)
     db.commit()
     return {"deleted": company_id}
@@ -427,9 +450,8 @@ def rename_column(column_id: int, label: str = Form(...),
                   db: Session = Depends(get_db),
                   user: User = Depends(get_current_user)):
     require_access(user)
-    col = db.get(ConsultingColumn, column_id)
-    if col is None:
-        raise HTTPException(status_code=404, detail="열을 찾을 수 없습니다")
+    # 열도 사람마다 다르다 — 남의 달 이름을 바꾸면 그 사람 표의 머리글이 바뀐다.
+    col = owned(db, ConsultingColumn, column_id, user, "열")
     if label.strip():
         col.label = label.strip()
         db.commit()
@@ -441,11 +463,14 @@ def delete_column(column_id: int, db: Session = Depends(get_db),
                   user: User = Depends(get_current_user)):
     """열을 지우면 그 달의 기록도 함께 사라진다 — 화면에서 한 번 더 묻는다."""
     require_access(user)
-    col = db.get(ConsultingColumn, column_id)
-    if col is None:
-        raise HTTPException(status_code=404, detail="열을 찾을 수 없습니다")
+    col = owned(db, ConsultingColumn, column_id, user, "열")
     key = str(col.id)
-    for company in db.execute(select(ConsultingCompany)).scalars().all():
+    # 기록을 지우는 범위도 **보는 범위와 같다.** 전체를 훑으면 자기 열을 지우는
+    # 것뿐인데 손은 남의 줄까지 닿는다 — 열 번호가 겹치는 날 남의 기록이
+    # 조용히 사라진다.
+    for company in db.execute(
+        scope(select(ConsultingCompany), ConsultingCompany, user)
+    ).scalars().all():
         notes = _notes(company)
         if key in notes:
             notes.pop(key)
