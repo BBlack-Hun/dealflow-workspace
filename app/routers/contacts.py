@@ -4,8 +4,10 @@
 수기로 관리하면 실제 발송 이력과 어긋나는 순간 신뢰를 잃기 때문이다. 126행 화면에서
 N+1 쿼리가 나지 않도록 담당자 전체를 한 번에 모아 파이썬에서 묶는다.
 
-RBAC: 모든 조회·수정은 ``VcContact.user_id == 현재 사용자`` 로 좁힌다. 정식 로그인은
-다음 스프린트(휴대폰번호 + 비밀번호)라 현재 사용자는 얇은 의존성 하나로 결정된다.
+RBAC: 조회·수정 모두 **자기 담당분**이다(``VcContact.user_id == 현재 사용자``).
+관리자만 팀 전체를 보고 고친다 — 그 판정은 ``deps.may_manage_team_contacts`` 한
+곳에 있고, 표(`contact_rows`)와 한 줄 고치기(`_owned`)가 같은 것을 읽는다.
+두 쪽이 각자 판정하던 동안은 관리자 화면에 뜬 줄을 눌러도 404 가 났다.
 """
 from __future__ import annotations
 
@@ -20,7 +22,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..deps import can_open, get_current_user
+from ..deps import can_open, get_current_user, may_manage_team_contacts
 from ..models import (ContactActivity, ContactColumn, IrCompany, SendItem,
                       SendJob, User, VcContact)
 from ..services import (contact_columns, deal_stage, firm_type, room_name,
@@ -97,15 +99,17 @@ def contact_rows(db: Session, user: User, team_wide: bool = False,
     """표 한 행 = 담당자 1명 + 집계값. (FEATURE_SPEC §3 7컬럼)
 
     `team_wide` 는 관리자 전용이다. 관리자는 직접 보내지 않지만 **누가 어떤
-    투자사를 맡고 있는지** 알아야 팀이 굴러간다. 발송 대상 고르기는 여전히
-    본인 담당분만이다 — 남의 담당에 실수로 나가면 안 된다.
+    투자사를 맡고 있는지** 알아야 팀이 굴러간다. 여기 뜨는 줄은 그대로 고칠 수도
+    있다 — 누가 열리는지는 `_owned` 와 **같은 판정**(`may_manage_team_contacts`)
+    을 읽는다. 발송 대상 고르기는 여전히 본인 담당분만이다 — 남의 담당에 실수로
+    나가면 안 된다.
 
     `include_hidden` 은 **투자사 관리 현황 화면 하나만** 쓴다. 감춘 명단도 그
     탭에서는 그대로 보여야 하기 때문이다(감추기는 지우기가 아니다). 그 외에는
     기본값 그대로 두어야 한다 — 여기서 새는 순간 세는 곳마다 수가 갈린다.
     """
     stmt = select(VcContact).order_by(VcContact.group_name, VcContact.name)
-    if not (team_wide and user.role == "admin"):
+    if not (team_wide and may_manage_team_contacts(user)):
         stmt = stmt.where(VcContact.user_id == user.id)
     contacts = db.execute(stmt).scalars().all()
     if not include_hidden:
@@ -282,8 +286,17 @@ def _channel_tags(c: VcContact) -> List[str]:
 
 
 def _owned(db: Session, contact_id: int, user: User) -> VcContact:
+    """이 사람이 손대도 되는 담당자 줄만 돌려준다.
+
+    **표에 보이는 줄과 같은 판정이다** — 둘 다 `may_manage_team_contacts` 를
+    읽는다(`contact_rows` 의 `team_wide`). 여기서만 따로 `user_id != user.id`
+    를 보고 있었던 탓에, 관리자 화면에 팀 전체가 떠 있는데 그 줄을 눌러 고치면
+    404 가 났다 — 보이는데 못 고치는 상태였다. 관리자에게 왜 여는지는
+    `deps.may_manage_team_contacts` 에.
+    """
     contact = db.get(VcContact, contact_id)
-    if contact is None or contact.user_id != user.id:
+    if contact is None or not (contact.user_id == user.id
+                               or may_manage_team_contacts(user)):
         # 남의 담당자는 '없는 것'으로 답한다(존재 여부도 흘리지 않는다).
         raise HTTPException(status_code=404, detail="담당자를 찾을 수 없습니다")
     return contact
