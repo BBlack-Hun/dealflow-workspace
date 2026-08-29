@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..deps import get_current_user, templates
+from ..deps import get_current_user, may_manage_team_contacts, templates
 from ..models import IrCompany, RefSheet, SendJob, SourcingContact, User, VcContact
 from ..services import (cadence, contact_columns, deal_history, deal_stage,
                         mailer, sheet_import, sheet_owner, sourcing_link)
@@ -160,8 +160,11 @@ def contacts_page(
     성격이 다른 명단이 하나 더 들어올 때마다 또 심어야 한다.
     """
     # 관리자는 팀 전체를 본다 — 누가 어떤 투자사를 맡고 있는지 알아야 한다.
+    # 여기 뜬 줄은 그대로 고칠 수도 있어야 한다. **그래서 판정을 여기 적지 않고**
+    # 라우터(`_owned`)와 같은 함수를 읽는다 — 화면이 `role == "admin"` 을 따로
+    # 들고 있던 동안, 뜬 줄을 눌러 고치면 404 가 났다.
     # 발송 대상 고르기는 여전히 본인 담당분만이다(/deals 참고).
-    team_wide = user.role == "admin"
+    team_wide = may_manage_team_contacts(user)
     # 이 화면 하나만 감춘 것까지 받아 온다 — 감추기는 지우기가 아니라서
     # 그 명단 탭에서는 그대로 보여야 하고, 되돌릴 자리도 여기에 있어야 한다.
     all_rows = contact_rows(db, user, team_wide=team_wide, include_hidden=True)

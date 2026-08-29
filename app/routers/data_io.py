@@ -27,7 +27,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..deps import get_current_user
+from ..deps import get_current_user, may_manage_team_contacts
 from ..models import IrCompany, SendItem, SendJob, User, VcContact
 from ..services import sheet_import, spreadsheet as sp
 from .contacts import contact_rows
@@ -217,7 +217,9 @@ def export_contacts(db: Session = Depends(get_db),
          r["ir_recent"], r["meet_recent"], r["ir_total"], r["meet_total"],
          r["status_label"], r["memo"]]
         # 관리자는 팀 전체를 내려받는다 — 화면과 같은 범위여야 헷갈리지 않는다.
-        for r in contact_rows(db, user, team_wide=(user.role == "admin"))
+        # **그래서 판정도 화면과 같은 것을 읽는다**(`may_manage_team_contacts`).
+        # 여기 `role == "admin"` 을 따로 적어 두면 범위가 갈릴 자리가 하나 더 는다.
+        for r in contact_rows(db, user, team_wide=may_manage_team_contacts(user))
     ]
     today = date.today().isoformat()
     return _xlsx(f"내 투자사_{today}.xlsx", "내 투자사", CONTACT_HEADERS, rows)
