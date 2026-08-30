@@ -37,6 +37,20 @@
       {% endfor %}
     </select>
     {% endif %}
+    {#
+      이 화면을 **카톡 업무보고 대신** 쓴다. 그러려면 화면에서 읽은 것을 다시
+      옮겨 적지 않고 파일 하나로 넘길 수 있어야 한다 — 여기 링크가 지금 보고
+      있는 달·범위를 그대로 엑셀로 준다(주소의 `month`·`scope`·`member` 를
+      그대로 넘기므로 화면과 같은 숫자가 나온다).
+
+      연간 보기에는 안 단다. 연간은 달마다 한 줄인 요약이라 회차·미팅 상세가
+      없는데, 같은 단추가 달마다 다른 것을 주면 무엇을 받은 것인지 알 수 없다.
+    #}
+    {% if not yearly_view %}
+    <a class="secondary-btn"
+       href="/api/export/report.xlsx?month={{ selected }}{% if scope %}&scope={{ scope }}{% endif %}{% if viewing and members %}&member={{ viewing.id }}{% endif %}"
+       download>엑셀 리포트</a>
+    {% endif %}
   </div>
   {% if members %}
   {# 전체만 보면 누가 얼마나 했는지는 보이지만, 그 사람과 이야기할 자료는
@@ -226,7 +240,10 @@
     <h3 class="bucket-head">{{ g.label }}
       <span class="count-pill {% if g.sent %}on{% endif %}"><b>{{ g.sent }}</b>건 완료</span>
       {% if g.rounds %}
-      <span class="hint">회차 {{ g.rounds }}개 · 대상 {{ g.contacts }}명{% if g.companies %} · 핵심 딜 {{ g.companies }}개사{% endif %}</span>
+      {# `핵심 딜` 이라고 부르던 칸이다. 그 말은 IR 기업현황의 `핵심/TOP Deal`
+         (기업 하나에 붙는 등급, `top_deal_kind`)에도 쓰여서, 같은 말이 두 가지를
+         가리키고 있었다 — 여기 숫자는 **그 회차에 소개한 기업 수**다. #}
+      <span class="hint">회차 {{ g.rounds }}개 · 대상 {{ g.contacts }}명{% if g.companies %} · 딜 소개 {{ g.companies }}개사{% endif %}</span>
       {% endif %}
     </h3>
     {% if g.rows %}
@@ -236,7 +253,7 @@
         <th style="width:104px">날짜</th>
         <th>회차명</th>
         {# 소싱 회차는 기업을 붙이지 않는다 — 늘 0 인 칸을 세워 두면 읽는 눈만 잡는다. #}
-        {% if g.companies %}<th class="num" style="width:74px">핵심 딜</th>{% endif %}
+        {% if g.companies %}<th class="num" style="width:74px">딜 소개</th>{% endif %}
         <th class="num" style="width:64px">대상</th>
         <th class="num" style="width:64px">완료</th>
         <th class="num" style="width:78px">안 나감</th>
@@ -360,7 +377,11 @@
 <section class="panel">
   <h2 class="panel-title">이 달의 반응
     <span class="hint">{{ year }}년 {{ month }}월</span>
-    <a class="linkbtn" href="/api/export/reactions.xlsx" download>엑셀 내려받기</a>
+    {# 이 링크는 **이 달치가 아니라 전체 기간**을 준다(`/api/export/reactions.xlsx`
+       는 달을 받지 않는다). 위 `엑셀 리포트` 와 나란히 `엑셀 내려받기` 라고만
+       적혀 있으면 같은 것을 두 번 준 것으로 읽혀, 8월 보고인 줄 알고 전체
+       기간을 열게 된다 — 무엇을 주는지 이름에 적는다. #}
+    <a class="linkbtn" href="/api/export/reactions.xlsx" download>전체 기간 엑셀</a>
   </h2>
   {% for b in buckets %}
   <div class="bucket">

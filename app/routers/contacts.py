@@ -108,12 +108,11 @@ def contact_rows(db: Session, user: User, team_wide: bool = False,
     탭에서는 그대로 보여야 하기 때문이다(감추기는 지우기가 아니다). 그 외에는
     기본값 그대로 두어야 한다 — 여기서 새는 순간 세는 곳마다 수가 갈린다.
     """
-    stmt = select(VcContact).order_by(VcContact.group_name, VcContact.name)
-    if not (team_wide and may_manage_team_contacts(user)):
-        stmt = stmt.where(VcContact.user_id == user.id)
-    contacts = db.execute(stmt).scalars().all()
-    if not include_hidden:
-        contacts = sheet_owner.investors(db, contacts)
+    # 누구를 세는지는 **여기서 정하지 않는다.** 딜 제안 관리가 같은 것을 두고
+    # 자기 질의를 따로 들고 있어서 두 화면의 수가 갈렸다 — 이제 둘 다
+    # `sheet_owner.managed()` 를 지난다(그쪽은 `can_send_to` 한 겹만 더 얹는다).
+    contacts = sheet_owner.managed(db, user, team_wide=team_wide,
+                                   include_hidden=include_hidden)
     if not contacts:
         return []
     ids = [c.id for c in contacts]

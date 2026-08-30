@@ -97,7 +97,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
 
     var q = (box.value || "").trim().toLowerCase();
     var pickedOnly = onlyPicked && onlyPicked.checked;
-    var shown = 0, total = 0;
+    var shown = 0, total = 0, outside = 0;
 
     var list = activeList();
     (list ? list.querySelectorAll(".pick-card") : []).forEach(function (card) {
@@ -109,19 +109,32 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       var inBucket = !bucketFilter || card.getAttribute("data-bucket") === bucketFilter;
       var inAssignee = !assigneeFilter ||
         card.getAttribute("data-assignee") === assigneeFilter;
+      var inGroup = matchesGroup(card);
       total += 1;
-      var visible = picked || (hit && inBucket && inAssignee && !pickedOnly);
+      // **조건에 맞는가(match)와 화면에 보이는가(visible)는 다르다.**
+      // 고른 사람은 조건에서 벗어나도 계속 보인다(몇 명 골랐는지 알아야 한다).
+      // 그래서 `보이는 것 = 조건에 맞는 것` 이라고 읽으면, 그룹으로 추려 놓고
+      // [전체선택]을 눌렀을 때 **아까 고른 다른 그룹 사람까지 함께 켜진다** —
+      // 실제 투자사에게 문구가 나가는 자리라 그 차이를 여기서 갈라 적어 둔다.
+      var matched = hit && inBucket && inAssignee && inGroup;
+      var visible = picked || (matched && !pickedOnly);
+      card.setAttribute("data-match", matched ? "1" : "0");
       card.hidden = !visible;
       if (visible) shown += 1;
+      if (picked && !matched) outside += 1;
     });
 
     if (note) {
-      if (q || pickedOnly || bucketFilter || assigneeFilter) {
+      if (q || pickedOnly || bucketFilter || assigneeFilter || groupFilter) {
         note.hidden = false;
         note.textContent = shown + " / " + total + "명 표시 중" +
           (q ? " (검색: " + box.value.trim() + ")" : "") +
+          (groupFilter ? " (그룹: " + groupFilter + ")" : "") +
           (bucketFilter ? " (갈래: " + bucketFilter + ")" : "") +
-          (assigneeFilter ? " (담당: " + assigneeFilter + ")" : "");
+          (assigneeFilter ? " (담당: " + assigneeFilter + ")" : "") +
+          // 조건 밖인데 이미 고른 사람은 그대로 발송에 들어간다 — 숫자만
+          // 줄어든 줄 알고 보내면 안 되므로 몇 명인지 말해 준다.
+          (outside ? " · 조건 밖에서 고른 " + outside + "명이 함께 있습니다" : "");
       } else {
         note.hidden = true;
       }
@@ -134,6 +147,28 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   var bucketFilter = "";
   var assigneeFilter = "";
   var filterBox = document.getElementById("sourcing-filters");
+
+  // ── 그룹 필터(투자사 담당자) ──────────────────────────────
+  // 투자사 관리 현황의 `그룹` 칸(`data-f-group`)이 거르는 그 값이다. 표 필터
+  // (`filters.js`)는 `th[data-filters]` 와 `tbody tr` 을 걸어 다녀서 카드 묶음인
+  // 이 목록에는 붙지 않는다 — 그래서 바로 위 갈래·담당과 **같은 칩 방식**을 쓴다.
+  //
+  // `(비어 있음)` 이라는 말은 서버가 실어 보낸다(`data-empty`). 여기 한글을
+  // 박아 두면 표 쪽 말이 바뀌는 날 한쪽만 고쳐져, 같은 조건인데 두 화면이
+  // 서로 다른 사람을 고르게 된다.
+  var groupFilter = "";
+  var groupBox = document.getElementById("contact-filters");
+  var groupBar = document.getElementById("group-filter");
+  var EMPTY_GROUP = (groupBar && groupBar.getAttribute("data-empty")) || "";
+
+  function matchesGroup(card) {
+    if (!groupFilter) return true;
+    // 소싱 명단에는 그룹이라는 것이 없다 — 그쪽 카드까지 걸러 버리면
+    // 목록이 통째로 빈다.
+    if (mode === "sourcing") return true;
+    var value = (card.getAttribute("data-group") || "").trim();
+    return groupFilter === EMPTY_GROUP ? value === "" : value === groupFilter;
+  }
 
   function bindFilter(id, set) {
     var bar = document.getElementById(id);
@@ -151,6 +186,15 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   }
   var bucketBar = bindFilter("bucket-filter", function (v) { bucketFilter = v; });
   var assigneeBar = bindFilter("assignee-filter", function (v) { assigneeFilter = v; });
+  bindFilter("group-filter", function (v) { groupFilter = v; });
+
+  function resetGroupFilter() {
+    groupFilter = "";
+    if (!groupBar) return;
+    groupBar.querySelectorAll(".chip").forEach(function (c, i) {
+      c.classList.toggle("active", i === 0);
+    });
+  }
 
   function resetSourcingFilters() {
     bucketFilter = "";
@@ -416,6 +460,13 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       // 필터를 켜 둔 채 다른 탭으로 갔다 오면, 왜 사람이 적은지 모른다.
       resetSourcingFilters();
     }
+    // 그룹은 투자사 담당자 목록에만 있다. **필터 줄을 감출 때는 조건도 함께
+    // 푼다** — 켜져 있는데 보이지 않는 필터가 제일 나쁘다(왜 사람이 적은지
+    // 알 길이 없고, [전체선택]이 무엇에 걸리는지도 알 수 없다).
+    if (groupBox) {
+      groupBox.hidden = sourcingMode;
+      if (sourcingMode) resetGroupFilter();
+    }
     applyContactFilter();
     // 설명 줄은 화면에서 뺐다. 없어도 터지지 않아야 한다.
     var help = document.getElementById("mode-help");
@@ -662,14 +713,23 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   });
   document.getElementById("refresh-preview").addEventListener("click", refreshPreview);
   document.getElementById("send-btn").addEventListener("click", send);
+  // **지금 조건에 맞는 사람**만. `card.hidden` 만 보면 안 된다 — 이미 고른
+  // 사람은 조건에서 벗어나도 계속 보이게 두기 때문에(몇 명 골랐는지 알아야
+  // 한다), `안 숨겨졌다 = 조건에 맞다` 로 읽으면 그룹으로 추려 놓고 누른
+  // [전체선택]에 **다른 그룹 사람까지 딸려 온다.** 실제 투자사에게 문구가
+  // 나가는 자리다.
+  function filteredBoxes() {
+    return contactCbs().filter(function (c) {
+      var card = c.closest(".pick-card");
+      if (!card) return true;
+      // 아직 한 번도 안 걸렀으면(속성 없음) 전부 조건에 맞는 것이다.
+      return card.getAttribute("data-match") !== "0" && !card.hidden;
+    });
+  }
+
   var selAll = document.getElementById("select-all-contacts");
   if (selAll) selAll.addEventListener("click", function () {
-    // **보이는 사람만** 고른다. 검색으로 좁혀 놓고 전체선택을 눌렀는데
-    // 숨은 사람까지 다 켜지면, 고른 줄 모르는 곳으로 발송이 나간다.
-    var boxes = contactCbs().filter(function (c) {
-      var card = c.closest(".pick-card");
-      return !card || !card.hidden;
-    });
+    var boxes = filteredBoxes();
     if (!boxes.length) return;
     var allOn = boxes.every(function (c) { return c.checked; });
     boxes.forEach(function (c) { c.checked = !allOn; });
@@ -689,7 +749,10 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
 
   var noreactBtn = document.getElementById("select-noreact");
   if (noreactBtn) noreactBtn.addEventListener("click", function () {
-    var targets = contactCbs().filter(function (c) {
+    // [전체선택]과 같은 규칙이다 — 그룹으로 추려 놓았으면 그 안에서만 고른다.
+    // 여기만 전체 목록을 훑으면, 추려 놓은 줄 알고 눌렀는데 다른 그룹으로
+    // 문구가 나간다.
+    var targets = filteredBoxes().filter(function (c) {
       return c.getAttribute("data-noreact") === "1";
     });
     if (!targets.length) { alert("반응이 없는 담당자가 없습니다."); return; }
@@ -697,6 +760,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     contactCbs().forEach(function (c) { c.checked = false; });
     if (!allOn) targets.forEach(function (c) { c.checked = true; });
     updateCounts();
+    applyContactFilter();   // 켠 사람은 조건과 무관하게 계속 보인다
   });
 
   // 후속 관리·IR 관리에서 넘어오면 방식·대상·기업을 그대로 받는다.

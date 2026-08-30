@@ -11,7 +11,7 @@
 """
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, time, timedelta
 from typing import Dict, List, Optional
 
 from sqlalchemy import select
@@ -63,8 +63,37 @@ def match_company(db: Session, name: str) -> Optional[IrCompany]:
 
 
 def followup_date(done_on: date) -> date:
-    """미팅 결과를 물어볼 날. 주말이면 다음 영업일로 민다."""
+    """미팅 결과를 물어볼 날. 주말이면 다음 영업일로 민다.
+
+    **날짜 단위 일이다.** 미팅이 몇 시였는지와 무관하게 며칠 뒤에 묻는다 —
+    시각이 끼어들면 오후 미팅만 하루 밀리는 식으로 갈린다.
+    """
     return cadence.next_business_day(done_on + timedelta(days=MEETING_FOLLOWUP_DAYS))
+
+
+def clean_time(value: Optional[str]) -> Optional[str]:
+    """적어 넣은 시각을 `HH:MM` 으로 정리한다. 못 읽으면 **버린다**.
+
+    시각은 **비어 있어도 된다.** 날짜만 아는 단계가 실제로 있고("다음 주쯤"),
+    필수로 만들면 그 단계를 기록할 수 없다. 그리고 못 읽은 값을 `00:00` 같은
+    것으로 채우면 **자정 미팅**이 생긴다 — 지어낸 값은 화면에서 진짜처럼
+    읽히므로, 모르면 비어 있는 것이 정확하다.
+
+    `<input type="time">` 은 `HH:MM` 또는 `HH:MM:SS` 를 보낸다. 초는 버린다 —
+    쓰는 곳이 없는데 칸마다 길이가 다르면 문자열로 견주는 자리만 어려워진다.
+    """
+    text = (value or "").strip()
+    if not text:
+        return None
+    try:
+        return time.fromisoformat(text).strftime("%H:%M")
+    except ValueError:
+        return None
+
+
+def when_label(scheduled_at: Optional[str], scheduled_time: Optional[str]) -> str:
+    """화면에 적는 `날짜 시각`. 시각을 모르면 날짜만 — 빈칸이 정확하다."""
+    return f"{scheduled_at or ''} {scheduled_time or ''}".strip()
 
 
 # --- 조회 -------------------------------------------------------------------
@@ -130,7 +159,10 @@ def request_rows(db: Session, user: User) -> List[dict]:
 def meeting_rows(db: Session, user: User) -> List[dict]:
     rows = db.execute(
         select(Meeting).where(Meeting.user_id == user.id)
-        .order_by(Meeting.status != "scheduled", Meeting.scheduled_at.desc())
+        # 같은 날 두 건이 잡히면 순서가 정해져 있어야 한다 — 날짜만으로
+        # 정렬하면 새로고침할 때마다 위아래가 바뀔 수 있다.
+        .order_by(Meeting.status != "scheduled", Meeting.scheduled_at.desc(),
+                  Meeting.scheduled_time.desc())
     ).scalars().all()
     contacts = _contact_map(db, [r.contact_id for r in rows])
     today = date.today()
@@ -158,6 +190,10 @@ def meeting_rows(db: Session, user: User) -> List[dict]:
             "firm": (contact.firm or "") if contact else "",
             "company_name": row.company_name or "",
             "scheduled_at": row.scheduled_at,
+            # 몇 시 미팅인지. 안 적어 둔 건은 빈 문자열이다 — 화면이 날짜만
+            # 보여주면 된다(없는 시각을 지어내면 그 시간에 간다).
+            "scheduled_time": row.scheduled_time or "",
+            "when_label": when_label(row.scheduled_at, row.scheduled_time),
             "days_left": (when - today).days if when else None,
             "kind": row.kind,
             "kind_label": MEETING_KINDS.get(row.kind, row.kind),

@@ -1,0 +1,98 @@
+{#
+  예약된 후속 — **두 화면이 같은 파일을 쓴다.**
+
+  딜 진행 관리(`ir.html`)와 옛 후속 관리(`followups.html`)에 똑같은 패널이
+  한 벌씩 들어 있었다. 한쪽에만 검색칸을 달면 다른 쪽에서는 여전히 이름을
+  못 찾는다 — 이 저장소가 반복해 당한 부류다(좌측 메뉴 목록과 라우터 목록이
+  갈려 컨설턴트에게 다 열려 있던 일, 투자사 수가 화면마다 달랐던 일).
+  한 파일을 둘이 include 하면 다음에 칸이 하나 늘어도 같이 움직인다.
+
+  검색은 **이 앱이 이미 쓰는 방식** 그대로다 — 줄에 `data-search` 를 싣고
+  `filters.js` 의 `extra` 로 건다(투자사 관리 현황·IR 기업현황·딜 소싱과 같다).
+  고를 칸(`data-filters`)이 없어도 검색만 걸린다.
+#}
+<section class="panel">
+  <h2 class="panel-title">예약된 후속 <span class="hint">{{ upcoming|length }}건</span></h2>
+  {% if upcoming %}
+  {#
+    검색칸은 **툴바 안**에 둔다 — 툴바 요소는 높이를 `--ctl-h` 한 값에서 받고
+    검색칸 모양은 `.toolbar input[type="search"]` 가 자리로 잡는다. 밖에 두면
+    이 줄만 브라우저 기본 입력칸(22px)으로 따로 논다(예전에 실제로 그랬다).
+  #}
+  <div class="toolbar">
+    <div class="toolbar-right">
+      <input type="search" id="upcoming-search"
+             placeholder="이름 · 회사 · 다음 단계 검색"
+             autocomplete="off" aria-label="예약된 후속 검색">
+      <span class="hint" id="upcoming-count"></span>
+    </div>
+  </div>
+  <div class="table-wrap">
+  <table class="grid-table compact" id="upcoming-table">
+    <thead><tr><th>예정일</th><th>담당자</th><th>다음 단계</th><th class="num">남음</th><th></th></tr></thead>
+    <tbody>
+      {% for r in upcoming %}
+      {#
+        `data-search` 에는 **이 줄이 화면에 보여 주는 것만** 넣는다 — 이름 ·
+        회사 · 다음 단계. 안 보이는 값으로도 걸리게 해 두면, 쳐서 남은 줄을
+        보며 "왜 이게 걸렸지" 가 된다(표 필터가 선언·값·칸을 짝으로 묶는 것과
+        같은 이유다).
+
+        회차명(`batch_title`)은 넣지 않았다. 이 줄에 안 적혀 있고, 후속은
+        **회차 전체**에 걸린 것이라 어느 기업 건인지도 여기서는 정해지지
+        않는다 — 기업명으로 치면 아무것도 안 걸리거나 엉뚱한 줄이 남는다.
+      #}
+      <tr class="data-row"
+          data-search="{{ (r.name ~ ' ' ~ (r.firm or '') ~ ' ' ~ (r.next_label or ''))|lower }}">
+        <td class="muted">{{ r.due }}</td>
+        <td>
+          {# 답이 오면 여기서 곧바로 기록한다 — 화면을 옮겨 담당자를 다시
+             고르는 사이에 "누구였더라" 가 된다. #}
+          <a class="req-link" href="/ir?contact={{ r.contact_id }}"
+             title="이 투자사의 IR 자료 요청 기록하기">
+            <b>{{ r.name }}</b> <span class="muted">{{ r.firm }}</span>
+          </a>
+        </td>
+        <td>{{ r.next_label }}</td>
+        <td class="num">{{ r.days_left }}일</td>
+        <td>
+          <form method="post" action="/followups/{{ r.id }}/responded">
+            <button class="linkbtn" type="submit">답 옴</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p class="muted" id="upcoming-empty" hidden>친 글자에 맞는 후속이 없습니다.</p>
+  {#
+    스크립트를 여기 함께 둔다 — 화면 쪽 `{% block scripts %}` 에 나눠 적으면
+    한쪽만 고쳐지는 그 문제로 되돌아간다. 표는 이 위에 이미 그려져 있고,
+    `filters.js` 도 여기서 먼저 불러오므로 순서가 맞는다.
+  #}
+  <script src="{{ asset('js/filters.js') }}"></script>
+  <script>
+    (function () {
+      var box = document.getElementById("upcoming-search");
+      // 컬럼 필터는 없고 검색만 있다. `extra` 만 줘도 걸린다 — 고를 칸이
+      // 없다고 검색까지 죽던 것은 이미 고쳐져 있다(filters.js 주석 참고).
+      var api = window.DealflowFilters && window.DealflowFilters.init({
+        table: "#upcoming-table",
+        count: "#upcoming-count",
+        empty: "#upcoming-empty",
+        unit: "건",
+        extra: function (tr) {
+          var q = ((box && box.value) || "").trim().toLowerCase();
+          return !q || (tr.getAttribute("data-search") || "").indexOf(q) !== -1;
+        }
+      });
+      // **줄을 감추는 일은 한 곳에서만 한다.** 검색이 따로 `tr.hidden` 을
+      // 만지면 다른 조건과 번갈아 서로를 지운다 — 이 저장소가 겪은 일이다.
+      if (box) box.addEventListener("input", function () { api && api.apply(); });
+    })();
+  </script>
+  {% else %}
+  <p class="muted">예약된 후속이 없습니다.</p>
+  {% endif %}
+</section>

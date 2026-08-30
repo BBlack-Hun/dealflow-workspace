@@ -514,9 +514,12 @@ class ConsultingColumn(TimestampMixin, Base):
     # 열도 사람마다 다르다 — 각자 올린 시트의 달이 다르기 때문이다.
     user_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("users.id"), nullable=True)
-    # 월 컬럼도 시트마다 다르다 — `중요 스타트업` 은 6·7·8월, `경영본부 전달
+    # 월 컬럼도 시트마다 다르다 — `스타트업` 은 6·7·8월, `경영본부 전달
     # 기업` 은 6·7월처럼. 섞으면 없는 달의 빈 칸이 생긴다.
-    sheet: Mapped[str] = mapped_column(String, default="중요 스타트업")
+    #
+    # 기본값이 `중요 스타트업` 이었다. 이름만 고치면 이미 들어간 줄이 옛 이름의
+    # 유령 탭으로 갈라지므로 **자료도 함께 옮긴다**(0039 마이그레이션).
+    sheet: Mapped[str] = mapped_column(String, default="스타트업")
     label: Mapped[str] = mapped_column(String)          # 시트의 열 이름 그대로
     position: Mapped[int] = mapped_column(Integer, default=0)   # 왼→오 순서
 
@@ -536,9 +539,9 @@ class ConsultingCompany(TimestampMixin, Base):
     # (월별 리마인드 열이 사람마다 다르다). 관리자만 전부 본다.
     user_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("users.id"), nullable=True)
-    # 어느 시트에서 왔는가. 원본이 `중요 스타트업`·`경영본부 전달 기업` 처럼
+    # 어느 시트에서 왔는가. 원본이 `스타트업`·`경영본부 전달 기업` 처럼
     # 나뉘어 있고 관리하는 사람이 다르다 — 한 표에 쏟으면 자기 명단을 못 찾는다.
-    sheet: Mapped[str] = mapped_column(String, default="중요 스타트업")
+    sheet: Mapped[str] = mapped_column(String, default="스타트업")
     position: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)   # 시트의 NO
     region: Mapped[Optional[str]] = mapped_column(String, nullable=True)      # 지역
     meeting_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # 미팅일
@@ -548,6 +551,23 @@ class ConsultingCompany(TimestampMixin, Base):
     phone: Mapped[Optional[str]] = mapped_column(String, nullable=True)       # 연락처
     email: Mapped[Optional[str]] = mapped_column(String, nullable=True)       # 이메일
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)         # {"열id": "내용"}
+
+    # `월간 계약 업무현황표` 탭에만 값이 있는 칸들. 그 시트는 머리글 있는 표가
+    # 아니라 **한 칸에 슬래시로 이어 붙인 줄**이었다:
+    #
+    #     기업명 / 계약금액 / 성공보수율 / 계약일
+    #
+    # 한 칸에 뭉쳐 있으면 계약금으로 거를 수도, 보수율만 고칠 수도 없다.
+    # 시트가 스스로 적어 둔 머리글 순서대로 나눠 담는다(0040 마이그레이션).
+    #
+    # 다른 탭에서는 비어 있다 — 탭마다 표가 다르다는 것은 화면이 정하고
+    # (`routers/consulting.py` 의 `SHEET_LAYOUTS`) 칸은 그냥 비워 둔다.
+    # 시트마다 테이블을 나누면 같은 성격의 줄이 두 곳에 흩어진다.
+    success_fee: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # 성공보수율
+    contract_fee: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # 계약금
+    # 나누기 **전의 한 줄**. 지우지 않는다 — 나눈 결과가 틀렸을 때 여기서 다시
+    # 나눌 수 있어야 하고, 원본 시트와 글자 그대로 대조할 수 있어야 한다.
+    source_line: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
 
 class ScheduleRule(TimestampMixin, Base):
@@ -672,6 +692,45 @@ class ContactColumn(TimestampMixin, Base):
     position: Mapped[int] = mapped_column(Integer, default=0)   # 왼→오 순서
 
 
+class MonthlyColumnRun(TimestampMixin, Base):
+    """월별 칸을 **그 달에 한 번 만들었다**는 표시.
+
+    `ConsultingColumn` · `ContactColumn` 은 달마다 한 칸씩 늘어나는데, 지금까지는
+    사람이 [칸 추가] 를 눌러야 했다. 월 초에 저절로 생기게 하려면 두 가지를
+    막아야 하는데 **칸 자체로는 둘 다 막을 수 없다.**
+
+      1. 같은 달 칸이 두 번 생기는 것. 화면 두 개를 동시에 열면 양쪽이 "없네"
+         라고 보고 각각 만든다 — 그러면 그 달 기록이 두 칸으로 갈린다.
+      2. **사람이 일부러 지운 칸을 되살리는 것.** 칸만 보고 판단하면 지운 다음
+         요청에서 "없으니 만들자" 가 그대로 다시 돈다. 지운 사람 눈에는 지워지지
+         않는 칸이다.
+
+    그래서 칸이 아니라 **만들었다는 사실**을 남긴다. 지워도 이 줄은 남으므로
+    되살아나지 않고, `(target, scope, month)` 에 유일 색인이 걸려 있어 동시에
+    들어온 요청 중 하나만 성공한다(나머지는 IntegrityError 로 조용히 물러난다).
+
+    예약 실행 장치(크론·워커)를 새로 들이지 않는다. 이 앱은 이미 주간 업무를
+    같은 방식으로 채운다 — 화면을 열 때 그 주 것이 없으면 만든다
+    (`services/weekly.py` 의 `fill_week`).
+    """
+
+    __tablename__ = "monthly_column_runs"
+    __table_args__ = (
+        UniqueConstraint("target", "scope", "month",
+                         name="uq_monthly_column_runs_target_scope_month"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # 어느 표인가. consulting = 투자컨설턴트 · contact = 투자사 관리 현황
+    target: Mapped[str] = mapped_column(String)
+    # 그 표 안에서 칸이 갈리는 단위. 투자컨설턴트는 **사람마다·탭마다**라
+    # `"3:스타트업"`, 투자사 관리 현황은 **명단마다**라 명단 이름 그대로다.
+    scope: Mapped[str] = mapped_column(String)
+    month: Mapped[str] = mapped_column(String)          # "2026-08"
+    # 무엇을 만들었는지. 되짚어 볼 때 칸이 이미 지워졌을 수 있어 이름을 남긴다.
+    labels: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
 class IrRequest(TimestampMixin, Base):
     """투자사가 "이 기업 IR 자료 주세요" 한 건.
 
@@ -714,6 +773,18 @@ class Meeting(TimestampMixin, Base):
                                                       nullable=True)
     company_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     scheduled_at: Mapped[str] = mapped_column(String)      # YYYY-MM-DD
+    # 몇 시 미팅인지. **날짜와 같은 칸에 붙이지 않는다** — 이 값을 날짜 문자열로
+    # 견주는 곳이 여럿이고(업무 보고의 월간 집계가 `scheduled_at <= 월말` 로
+    # 자른다, 오늘 미팅은 `== 오늘`), 뒤에 `T14:00` 이 붙는 순간 그 달 마지막
+    # 날의 미팅이 통째로 빠지고 오늘 미팅이 하나도 안 잡힌다.
+    #
+    # 비어 있을 수 있다. 날짜만 아는 단계가 실제로 있고(“다음 주 화요일쯤”),
+    # 필수로 만들면 그 단계를 기록할 수 없다. 이미 들어 있는 미팅도 시각을
+    # 모르므로 **비운 채로 둔다 — 지어내지 않는다.**
+    #
+    # 벽시계 시각(`HH:MM`)이다. `clock.py` 가 다루는 '적힌 순간'(오프셋이 붙는
+    # 값)과는 다르다 — 사람이 약속한 시각이라 서버가 언제 적었는지와 무관하다.
+    scheduled_time: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # HH:MM
     kind: Mapped[str] = mapped_column(String, default="first")   # first | second | etc
     # scheduled(예정) | done(완료) | canceled(취소)
     status: Mapped[str] = mapped_column(String, default="scheduled")

@@ -35,7 +35,11 @@ MENU = [
     {"key": "flow", "label": "딜 진행 관리", "href": "/followups", "ready": True},
     {"key": "templates", "label": "딜 제안 문구", "href": "/templates", "ready": True},
 
-    {"key": "consult", "label": "투자컨설턴트 현황", "href": "/consulting", "ready": True,
+    # 이름이 `투자컨설턴트 현황` 이었다. `현황` 은 옆의 `투자사 관리 현황`·
+    # `IR 기업현황` 과 겹쳐 세 메뉴가 한 덩어리로 읽혔다 — 담당자를 가리키는
+    # 이 메뉴만 사람 이름으로 남긴다. 화면 제목(`page_title`)도 여기서 나오므로
+    # 이 한 줄이 좌측 메뉴와 제목을 같이 바꾼다(`menu_label`).
+    {"key": "consult", "label": "투자컨설턴트", "href": "/consulting", "ready": True,
      "needs": "consulting"},
     {"key": "report", "label": "업무 보고", "href": "/report", "ready": True},
     {"key": "admin", "label": "팀 현황", "href": "/team", "ready": True, "admin_only": True},

@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import io
+import json
 
 import pytest
 
@@ -36,7 +37,7 @@ SHEET_ROWS = [
 ]
 
 
-def _xlsx(rows, title="중요 스타트업") -> bytes:
+def _xlsx(rows, title="스타트업") -> bytes:
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = title
@@ -90,11 +91,17 @@ def test_admin_can_open_without_the_flag(client, db, users):
 
 
 def test_menu_hides_the_tab_from_others(outsider):
-    assert "투자컨설턴트 현황" not in outsider.get("/deals").text
+    from app.ui import menu_label
+
+    assert menu_label("consult") not in outsider.get("/deals").text
 
 
 def test_menu_shows_the_tab_to_allowed_user(allowed):
-    assert "투자컨설턴트 현황" in allowed.get("/deals").text
+    # 메뉴 이름은 `app/ui.py` 의 `MENU` 한 곳에서 나온다 — 여기 글자를 박아 두면
+    # 이름을 고칠 때 검사만 옛 이름으로 남는다.
+    from app.ui import menu_label
+
+    assert menu_label("consult") in allowed.get("/deals").text
 
 
 def test_api_is_closed_too(allowed, db):
@@ -243,7 +250,7 @@ def test_row_without_a_name_is_rejected(allowed):
 
 # --- [기업 추가] 는 **지금 보고 있는 탭**에 넣는다 ----------------------------
 #
-# 탭이 셋인데(`중요 스타트업` · `경영본부 전달 기업` · `월간 계약 업무현황표`)
+# 탭이 셋인데(`스타트업` · `경영본부 전달 기업` · `월간 계약 업무현황표`)
 # 어느 탭에서 눌러도 첫 탭으로 들어갔다. 줄은 만들어졌지만 보고 있는 탭에는
 # 없으니, 누른 사람 눈에는 **추가가 안 된 것처럼** 보인다.
 
@@ -269,7 +276,7 @@ def test_기업_추가는_지금_보고_있는_탭에_들어간다(allowed, db):
 def test_없는_탭_이름은_받지_않는다(allowed):
     """오타 하나로 **없던 탭이 생기면** 그 줄은 아무도 다시 못 찾는다."""
     r = allowed.post("/api/consulting",
-                     json={"company_name": "샘플기업X", "sheet": "중요 스타트웁"})
+                     json={"company_name": "샘플기업X", "sheet": "스타트웁"})
     assert r.status_code == 400
 
 
@@ -437,10 +444,14 @@ def test_the_user_is_told_that_months_are_folded(client, db, users):
 
 # --- 사람별로 나뉘는가 ------------------------------------------------------
 
-def _own(db, user_id, name="샘플기업", sheet="중요 스타트업"):
+def _own(db, user_id, name="샘플기업", sheet=None):
     from app.models import ConsultingCompany
+    from app.routers.consulting import DEFAULT_SHEET
 
-    row = ConsultingCompany(user_id=user_id, company_name=name, sheet=sheet)
+    # 첫 탭 이름을 여기 박아 두면 이름을 고칠 때 이 줄만 옛 탭에 남아,
+    # 화면에는 안 보이는데 검사만 "있다" 고 우긴다.
+    row = ConsultingCompany(user_id=user_id, company_name=name,
+                            sheet=sheet or DEFAULT_SHEET)
     db.add(row)
     db.commit()
     return row
@@ -569,3 +580,127 @@ def test_the_contract_sheet_reads_month_and_kind_from_the_line(tmp_path):
     # 머리글 줄은 값이 아니다
     assert all("기업명 /" not in g["line"] for g in got)
 
+
+
+# --- KPI 와 칩 ---------------------------------------------------------------
+#
+# 화면 위 숫자와 칩은 **할 일을 고르는 자리**다. 다 한 수를 보여 주면 봐도 할
+# 일이 안 나오고, 칩이 안 걸리면 34줄을 눈으로 훑게 된다.
+
+
+def _consulting_ctx(db, users, columns, rows_notes):
+    """열과 줄을 깔고 화면을 연다. (본문, 열 id 목록)"""
+    from app.models import ConsultingColumn, ConsultingCompany
+    from app.routers.consulting import DEFAULT_SHEET
+
+    cols = []
+    for pos, label in enumerate(columns):
+        col = ConsultingColumn(user_id=users["u1"].id, sheet=DEFAULT_SHEET,
+                               label=label, position=pos)
+        db.add(col)
+        cols.append(col)
+    db.flush()
+    for i, notes in enumerate(rows_notes):
+        db.add(ConsultingCompany(
+            user_id=users["u1"].id, sheet=DEFAULT_SHEET, position=i + 1,
+            company_name=f"샘플기업{i}",
+            notes=json.dumps({str(cols[k].id): v for k, v in notes.items()},
+                             ensure_ascii=False)))
+    db.commit()
+    return cols
+
+
+def test_KPI_는_지난달_빈칸을_센다(allowed, db, users):
+    """다 한 수는 봐도 할 일이 안 나온다 — **아직 안 한 곳**을 센다.
+
+    기준은 지난달이다. 진행 중인 달을 세면 월 초에는 전부 미완료라 늘 전체
+    건수가 뜬다(그 열은 이제 월 초에 저절로 생긴다).
+    """
+    from app.routers.consulting import _prev_month
+
+    prev = _prev_month()
+    this = prev % 12 + 1
+    # 세 줄 중 하나만 지난달 기록이 있다 → 미완료 2
+    _consulting_ctx(db, users,
+                    [f"{this}월 마지막주 리마인드 톡 or TEL",
+                     f"{prev}월 마지막주 리마인드 톡 or TEL"],
+                    [{1: "카톡 완료"}, {0: "이번달만 했다"}, {}])
+
+    body = allowed.get("/consulting").text
+    assert f"{prev}월 마지막주 리마인드톡 미완료 기업" in body
+    assert "이전달 연락 기록 있음" not in body, "옛 이름이 남아 있습니다"
+    # 값은 KPI 카드 안에서 읽는다 — 다른 숫자와 섞이지 않게.
+    card = body.split(f"{prev}월 마지막주 리마인드톡 미완료 기업")[1]
+    assert ">2<" in card.split("</div>")[0]
+
+
+def test_지난달_열이_없으면_전부_미완료로_세지_않는다(allowed, db, users):
+    """빈칸을 그냥 세면 "열이 없다" 가 "전부 미완료" 로 둔갑한다."""
+    from app.routers.consulting import _prev_month
+
+    this = _prev_month() % 12 + 1
+    _consulting_ctx(db, users, [f"{this}월 리마인드"], [{}, {}, {}])
+    body = allowed.get("/consulting").text
+    assert "지난달 열이 없습니다" in body
+    card = body.split("미완료 기업")[1]
+    assert ">0<" in card.split("</div>")[0]
+
+
+def test_연락_기록_없음_칩이_보는_값(allowed, db, users):
+    """칩은 줄의 `data-contacted` 를 본다 — 기록이 하나도 없는 줄만 걸려야 한다."""
+    import re
+
+    from app.routers.consulting import _prev_month
+
+    prev = _prev_month()
+    this = prev % 12 + 1
+    _consulting_ctx(db, users, [f"{this}월 리마인드", f"{prev}월 리마인드"],
+                    [{0: "8월 통화"}, {1: "7월 통화"}, {}])
+    body = allowed.get("/consulting").text
+    flags = re.findall(r'data-contacted="(\d)"', body)
+    assert flags == ["1", "1", "0"], flags
+    assert 'data-cs-filter="nocontact"' in body and ">연락 기록 없음<" in body
+
+
+def test_접어_둔_달의_기록도_기록이다(allowed, db, users):
+    """칸을 고치면 consulting.js 가 `data-contacted` 를 다시 적는데, 그때 JS 가
+    볼 수 있는 것은 **펴 둔 달의 칸뿐**이다. 접힌 달에만 기록이 있는 줄이
+    고치는 순간 `기록 없음` 으로 뒤집혔다(실데이터 34줄 중 12줄이 그 상태였다).
+    """
+    import pathlib as _p
+    import re
+
+    from app.routers.consulting import VISIBLE_MONTHS
+
+    labels = [f"{m}월 리마인드" for m in range(12, 12 - VISIBLE_MONTHS - 1, -1)]
+    cols = _consulting_ctx(db, users, labels, [{len(labels) - 1: "접힌 달 기록"}])
+    body = allowed.get("/consulting").text
+
+    # 마지막 열은 접혀 있다
+    assert "접어 두었습니다" in body
+    assert f'data-note="{cols[-1].id}"' not in body
+    assert re.search(r'data-contacted="1"', body)
+    assert 'data-contacted-folded="1"' in body, \
+        "접힌 달의 기록을 화면이 안 싣고 있습니다"
+
+    js = _p.Path("app/static/js/consulting.js").read_text(encoding="utf-8")
+    assert 'data-contacted-folded' in js, \
+        "화면이 실어 준 사실을 JS 가 안 읽습니다 — 고치는 순간 뒤집힙니다"
+
+
+@pytest.mark.skipif(__import__("shutil").which("node") is None,
+                    reason="node 미설치 — 브라우저 로직 테스트 생략")
+def test_화면_코드를_그대로_돌려_본다():
+    """규칙을 파이썬으로 옮겨 적으면 두 벌이 되어 어긋나도 모른다.
+
+    `tests/js/consulting_contacted_test.js` 가 consulting.js 를 **실제로 돌려**
+    칸을 눌러 고치는 데까지 흉내 낸다. 로컬에서는 `node` 로도 돈다.
+    """
+    import pathlib as _p
+    import shutil
+    import subprocess
+
+    js = _p.Path(__file__).resolve().parent / "js" / "consulting_contacted_test.js"
+    r = subprocess.run([shutil.which("node"), str(js)],
+                       capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0, r.stdout + r.stderr

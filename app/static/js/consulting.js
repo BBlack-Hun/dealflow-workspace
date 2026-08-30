@@ -153,10 +153,16 @@
       });
   }
 
+  // 계약 탭인가. `계약여부` 칸은 값이 `무료`/`유료` 라 추리지 않고 그대로 건다.
+  var contractSheet = table.getAttribute("data-contract-sheet") === "1";
+
   // 머리글 필터가 보는 값. 서버의 `management_tags`(routers/consulting.py)와
   // **같은 말을 같은 순서로** 봐야 한다 — 규칙이 어긋나면 고친 직후와 새로고침
   // 뒤에 같은 줄이 서로 다른 값으로 걸린다.
   function managementTags(text) {
+    // 계약 탭의 `계약여부` 는 이미 추려진 값이다. 아래 규칙을 태우면 `무료`·
+    // `유료` 가 전부 `기타 메모` 로 묶여 고를 것이 없어진다.
+    if (contractSheet) return text.trim();
     var tags = [];
     if (text.indexOf("관리") >= 0) tags.push("관리 중");
     if (text.indexOf("드랍") >= 0) tags.push("드랍");
@@ -175,9 +181,14 @@
     tr.setAttribute("data-f-mgmt", managementTags(text));
     var region = tr.querySelector('[data-field="region"]');
     tr.setAttribute("data-f-region", region ? region.textContent.trim() : "");
-    var hasNote = Array.prototype.some.call(
-      tr.querySelectorAll("[data-note]"),
-      function (td) { return td.textContent.trim().length > 0; });
+    // **접어 둔 달의 기록도 기록이다.** 여기서 볼 수 있는 것은 펴 둔 달의 칸뿐이라,
+    // 이 줄이 없으면 접힌 달에만 기록이 있는 줄이 칸을 고치는 순간 `연락 기록 없음`
+    // 으로 뒤집힌다 — 화면에 안 보이는 사실이라 고친 사람은 이유를 알 수 없다.
+    // 접힌 달의 사실은 서버가 `data-contacted-folded` 로 실어 준다.
+    var hasNote = tr.getAttribute("data-contacted-folded") === "1"
+      || Array.prototype.some.call(
+        tr.querySelectorAll("[data-note]"),
+        function (td) { return td.textContent.trim().length > 0; });
     tr.setAttribute("data-contacted", hasNote ? "1" : "0");
     var parts = [];
     Array.prototype.forEach.call(tr.querySelectorAll("td.cell"), function (td) {

@@ -376,7 +376,11 @@ def test_the_page_shows_the_round_as_the_report_reads(logged, db, users):
         assert title in body, f"{title} 회차가 화면에 없습니다"
     assert "8/27(목)" in body, "날짜에 요일이 붙어야 한다"
     assert "중단됨" in body, "중단된 회차가 '완료' 로 보이면 안 된다"
-    assert "핵심 딜 7개사" in body
+    # 화면이 `핵심 딜` 이라고 부르던 칸이다. 그 말은 IR 기업현황의
+    # `핵심/TOP Deal`(기업 하나에 붙는 등급)에도 쓰여 같은 말이 두 가지를
+    # 가리키고 있었다 — 여기 숫자는 그 회차에 소개한 기업 수다.
+    assert "딜 소개 7개사" in body
+    assert "핵심 딜" not in body, "옛 이름이 남아 있으면 두 말이 섞인다"
     # 안 나간 건을 화면이 **먼저** 말한다
     assert "<b>98건</b>이 안 나갔습니다(회차 1개)" in body
     # 두 회차의 대상·완료가 각각 서 있다

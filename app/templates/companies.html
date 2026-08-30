@@ -189,7 +189,12 @@
            두 줄이 됐다(위 세 칸도 같은 이유로 함께 넓혔다). 이제는
            `단추 폭 + th 좌우 여백 18px + 두 자리 수 여유 7px` 로 잡는다. #}
         <th style="width:110px" data-filters="contract:계약여부">계약여부<div class="th-filters"></div></th>
-        <th style="width:88px" title="계약기업 · 거부메일 홍보메일 삭제">날짜 기입</th>
+        {# 이 칸에 날짜를 적는 **경우**를 적어 둔 안내다(칸 자체는 자유 글자다).
+           `홍보메일 삭제` 를 뺀다 — 그 정리는 끝났고, 앞으로 이 칸에 새로 적을
+           일이 아니다. **이미 적힌 것은 지우지 않는다**: 지난 정리 기록이라
+           지우면 무엇을 언제 처리했는지 되짚을 길이 없다(이 저장소는 이력을
+           함부로 지우지 않는다). 안내만 바뀌고 값은 그대로다. #}
+        <th style="width:88px" title="계약기업 · 거부메일">날짜 기입</th>
         {# 같은 이유로 두 줄이던 칸. `핵심/TOP Deal (1) ▾` 는 118px 이 필요하다. #}
         <th style="width:144px" data-filters="top:핵심/TOP Deal">핵심/TOP Deal<div class="th-filters"></div></th>
         {# IR 자료는 맨 끝에 그대로 둔다 — 요청이 왔을 때 바로 꺼내 쓰는 칸이다. #}
@@ -236,8 +241,17 @@
         </td>
         <td class="cell" data-field="assignee_name" data-type="pick"
             data-filter-key="assignee">{{ r.assignee }}</td>
+        {# 칸에는 **말**이 보이고, 저장되는 것은 값(`blocked`)이다. 라우터가
+           그 짝을 맞춘다(`CONTRACT_FROM_LABEL`) — 여기서 값을 보여 주면
+           고르는 사람이 `blocked` 라는 글자를 읽게 된다.
+
+           `data-choices` 로 다섯 가지를 **늘** 세운다. 없으면 편집창은 지금
+           표에 실려 있는 값만 모아 보여 주므로(inline_edit.js 의
+           `knownValues`), `딜소개 불가` 인 기업이 하나도 없는 순간 그 말을
+           고를 길이 사라진다 — 똑같이 받아 적어야 했다. #}
         <td class="cell" data-field="contract_status" data-type="pick"
-            data-filter-key="contract">{{ r.contract_label }}</td>
+            data-filter-key="contract"
+            data-choices="{{ contract_labels.values()|join(', ') }}">{{ r.contract_label }}</td>
         <td class="cell" data-field="contract_month">{{ r.contract_month }}</td>
         {# `핵심` · `TOP` · 둘 다. 눌러서 목록에서 고른다.
            비우면 행에는 `일반` 이 실린다 — 빈 값으로 두면 같은 뜻이 목록에
@@ -334,8 +348,9 @@
         <option value="blocked">딜소개 불가</option>
       </select></label>
     {# 표 머리글이 `날짜 기입` 이라 이름은 그대로 따르고, 무슨 날짜인지는 표와
-       똑같이 `title` 로 붙여 둔다 — 이름을 풀어 쓰면 다시 표와 달라진다. #}
-    <label class="field" title="계약기업 · 거부메일 홍보메일 삭제">
+       똑같이 `title` 로 붙여 둔다 — 이름을 풀어 쓰면 다시 표와 달라진다.
+       (표 머리글과 **한 글자도 다르지 않아야** 한다 — 위 주석 참고) #}
+    <label class="field" title="계약기업 · 거부메일">
       <span>날짜 기입</span><input type="text" id="f-contract_month" placeholder="2026-09"></label>
     <label class="field check-row"><input type="checkbox" id="f-is_top_deal"> <span>추천 딜 (★)</span></label>
     <label class="field wide"><span>메모</span><textarea id="f-note" rows="2"></textarea></label>
@@ -344,7 +359,13 @@
 
   <div class="detail-foot">
     <button type="button" class="primary-btn inline" id="co-save">저장</button>
+    {# 관리자만. 판정은 라우터가 막는 것과 **같은 함수**를 지난다
+       (`routers/companies.py` 의 `can_delete_company` → `deps.admin_only`) —
+       화면이 따로 `role == "admin"` 을 들고 있으면 반드시 갈린다.
+       팀원에게는 아예 **없다**: 눌러도 안 되는 단추가 보이면 고장으로 읽힌다. #}
+    {% if can_delete %}
     <button type="button" class="danger-btn" id="co-delete">삭제</button>
+    {% endif %}
     <button type="button" class="secondary-btn" id="co-cancel">취소</button>
   </div>
 </aside>
