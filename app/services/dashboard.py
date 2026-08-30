@@ -73,14 +73,33 @@ def _room_state(c: VcContact) -> str:
 
 
 # 세는 것만 보여주고 갈 곳이 없으면, 그 6명이 누구인지 알 수 없다.
-# 채널로 갈리는 둘은 투자사 목록의 채널 필터로 보낸다.
-_ROOM_HREF = {
-    "email": "/contacts?sheet=all&channel=" + quote("메일"),
-    "no_channel": "/contacts?sheet=all&channel=" + quote("미지정"),
-}
 
 
-def _room_href(state: str, ids: List[int]) -> Optional[str]:
+def room_href(state: str, sheet: str = "all", stage: str = "") -> str:
+    """이 방 상태의 사람만 남는 투자사 관리 현황 주소.
+
+    **필터 값은 `ROOM_LABELS` 에서 꺼낸다.** 예전에는 여기에 `⚠ 미등록` 처럼
+    말을 손으로 적어 두었는데, 그 말은 투자사 관리 현황이 쓰는 말도 아니었고
+    `room` 이라는 키를 그 표가 **선언한 적조차 없었다** — `filters.js` 는
+    선언되지 않은 키를 통째로 버리므로, 눌러도 274명이 그대로 떴다. 링크는
+    살아 있고 화면도 열리니 아무도 눈치채지 못한다.
+
+    지금은 표가 `카톡방` 칸을 세우고 `room:카톡방` 을 선언하며, 줄이 같은
+    `ROOM_LABELS` 값을 `data-f-room` 으로 싣는다. 셋이 한 곳에서 나온다.
+
+    `stage` 를 주면 연결 단계까지 함께 건다. 연결 진행 중인 명단 패널이
+    **"연결은 끝났는데 방이 없는 사람"** 을 세기 때문이다 — 연결 전 사람도
+    대개 방이 없어서, 그 조건을 안 걸면 패널이 말한 수보다 화면 줄이 많아진다.
+    """
+    from .sheet_import import CONNECT_LABELS   # 순환 임포트라 함수 안에서
+
+    href = f"/contacts?sheet={quote(sheet)}&room=" + quote(ROOM_LABELS[state][0])
+    if stage:
+        href += "&connect=" + quote(CONNECT_LABELS[stage])
+    return href
+
+
+def _room_href(state: str, ids: List[int], sheet: str = "all") -> Optional[str]:
     """이 상태의 사람들이 있는 곳.
 
     보낼 수 있는 방(확인됨·미확인)은 **딜 제안 관리로, 체크된 채로** 보낸다 —
@@ -92,7 +111,7 @@ def _room_href(state: str, ids: List[int]) -> Optional[str]:
     """
     if state in _SENDABLE_ROOM:
         return "/deals?contacts=" + ",".join(str(i) for i in ids) if ids else None
-    return _ROOM_HREF.get(state)
+    return room_href(state, sheet)
 
 
 # '내 투자사 선호' 를 몇 명까지 볼지. 50명이 기본이다 — 10명만 보면 그 아래에
@@ -287,23 +306,26 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None,
     contacts = sheet_owner.my_contacts(db, user)
     ids = [c.id for c in contacts]
 
-    # 연결 작업(전화 → 초대 → 카톡방)은 **명단을 배정받기 전** 풀에서 일어난다.
-    # 그래서 이 패널만은 `my_contacts`(배정된 명단)가 아니라 내가 들고 있는 줄
-    # 전체(`managed`)를 센다. 배정 명단만 세면 이 패널은 사실상 늘 비어 있다 —
-    # 로컬 실데이터에서도 배정 명단 125명은 전부 '연결 완료'이고, 연결 중인
-    # 132명은 풀 명단에 있어 패널이 아예 뜨지 않았다.
+    # 발송 준비를 말하는 숫자는 전부 **딜 소개를 보내기로 한 명단**에서 나온다.
     #
-    # 모집단을 `managed` 로 맞추는 두 번째 이유는 **눌러 갈 곳과 같아야 하기**
-    # 때문이다. 이 패널은 투자사 관리 현황의 `전체` 탭으로 보내는데, 그 탭이
-    # 세는 모집단이 바로 `managed` 다(`sheet_owner.managed` 주석 참고).
-    # 세는 곳과 가는 곳이 다르면 "44명" 을 눌렀는데 0줄이 나온다.
-    waiting = [c for c in sheet_owner.managed(db, user)
-               if not sheet_owner.can_send_to(c)]
+    # 한때 이 패널의 모집단을 내가 들고 있는 줄 전체(`managed` 274명)로 넓혀
+    # 두었다. 배정 명단 125명이 전부 연결 완료라 패널이 안 뜨는 것을 보고 넓힌
+    # 것인데, **그게 틀렸다** — 숫자를 만들려고 모집단을 넓히면 딜 소개 명단에
+    # 올린 적도 없는 풀 사람의 연결 상태가 내 할 일로 뜬다. 기준은 딜 제안
+    # 관리와 **같은 명단**이어야 한다(`sheet_owner.deal_list_contacts`).
+    #
+    # 0 이 정답이면 0 으로 둔다. 대신 화면이 **다 끝났다고 말하고**, 그 명단에서
+    # 아직 못 받는 사람(방이 없는 쪽)을 이어서 보여 준다 — `_pipeline_view`.
+    sending = sheet_owner.deal_list_contacts(db, user)
+    waiting = [c for c in sending if not sheet_owner.can_send_to(c)]
+    # 눌러 갈 곳도 같은 명단이어야 한다. 세는 곳과 가는 곳이 다르면 "9명" 을
+    # 눌렀는데 다른 수가 나온다.
+    sheet_scope = _deal_sheet_scope(db, sending)
 
-    rooms = Counter(_room_state(c) for c in contacts)
+    rooms = Counter(_room_state(c) for c in sending)
     # 상태별로 **누구인지**까지 들고 있어야 눌러서 갈 곳을 만들 수 있다.
     room_ids: Dict[str, List[int]] = {}
-    for c in contacts:
+    for c in sending:
         room_ids.setdefault(_room_state(c), []).append(c.id)
     sendable = sum(rooms[state] for state in _SENDABLE_ROOM)
 
@@ -333,6 +355,10 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None,
     sent_ids = sorted({c for c in sent_rows if c})
 
     # 막힌 것 — 발송 전에 손봐야 할 목록
+    #
+    # 갈 곳은 `room_href` 하나가 만든다. 예전에는 여기에 `⚠ 미등록` 같은 말을
+    # 손으로 적어 두었는데 표가 아는 값이 아니어서, 눌러도 아무것도 안 걸러진
+    # 채 화면만 열렸다.
     blockers = []
     if rooms["missing"]:
         blockers.append({
@@ -340,19 +366,19 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None,
             "hint": "이 투자사에게는 아무 것도 나가지 않습니다 — 방을 찾아 연결하세요",
             # 눌렀을 때 그 투자사만 보여야 한다. 전체 목록을 열어 주면
             # 어느 줄이 문제인지 다시 찾아야 한다.
-            "href": "/contacts?room=" + quote("⚠ 미등록"), "level": "bad",
+            "href": room_href("missing", sheet_scope), "level": "bad",
         })
     if rooms["failed"]:
         blockers.append({
             "count": rooms["failed"], "label": "카톡방을 못 찾은 투자사",
             "hint": "실제 방이 없거나 제목이 다릅니다 — 이 투자사에게는 나가지 않습니다",
-            "href": "/contacts?room=" + quote("⚠ 방 없음"), "level": "bad",
+            "href": room_href("failed", sheet_scope), "level": "bad",
         })
     if rooms["unverified"]:
         blockers.append({
             "count": rooms["unverified"], "label": "카톡방 확인이 안 된 투자사",
             "hint": "제목이 실제와 다르면 그때 가서 빠집니다 — [방 연결 확인]을 돌리세요",
-            "href": "/contacts?room=" + quote("○ 미확인"), "level": "warn",
+            "href": room_href("unverified", sheet_scope), "level": "warn",
         })
     not_introducible = len(companies) - len(introducible)
     if not_introducible:
@@ -402,15 +428,15 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None,
         "rooms": [
             {"state": s, "label": ROOM_LABELS[s][0], "level": ROOM_LABELS[s][1],
              "count": rooms.get(s, 0),
-             "percent": round(rooms.get(s, 0) * 100 / (len(contacts) or 1)),
-             "href": _room_href(s, room_ids.get(s, []))}
+             "percent": round(rooms.get(s, 0) * 100 / (len(sending) or 1)),
+             "href": _room_href(s, room_ids.get(s, []), sheet_scope)}
             for s in ("verified", "unverified", "failed", "missing",
                       "email", "no_channel")
             if rooms.get(s, 0)
         ],
         "blockers": blockers,
         # 연결 작업은 발송과 다른 일이라 따로 보여준다.
-        "pipeline": _pipeline_view(waiting),
+        "pipeline": _pipeline_view(sending, waiting, sheet_scope),
         "pipeline_items": pipeline.today_items(db, user, today),
         "followups": {
             "due": len(due_today),
@@ -434,23 +460,30 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None,
 # 나머지는 눌러서 본다(그래서 `more` 와 링크를 함께 내놓는다).
 PIPELINE_NAMES = 5
 
-# 눌러 갈 곳은 **투자사 관리 현황의 `전체` 탭**이다.
+# 눌러 갈 곳은 **이 패널이 세는 딜 소개 명단 탭**이다.
 #
-# `sheet=all` 이 빠지면 그 화면은 '내가 배정받은 명단' 탭을 먼저 연다 — 연결
-# 중인 사람은 대부분 아직 배정 전 풀에 있어서, 패널이 44명이라고 한 뒤 0줄짜리
-# 화면이 열린다. 여기서 세는 모집단(`sheet_owner.managed`)과 같은 탭이어야 한다.
+# 세는 곳과 가는 곳이 같아야 한다. 예전에 패널은 '내 배정 명단' 을 세고 링크는
+# `전체` 탭으로 보내서, 패널 0명 → 화면 44줄이 났다. 그다음에는 반대로 모집단을
+# `전체` 로 넓혀 수를 맞췄는데, 그건 **딜 소개 명단에 없는 사람을 내 할 일로
+# 세우는** 일이라 사용자가 바로잡았다.
 #
-# **관리자는 여기서 한 겹 어긋난다.** 대시보드는 자기 것만 보는 화면이라 이
-# 패널도 본인 담당만 세는데, 투자사 관리 현황은 관리자에게 팀 전체를 보여
-# 준다(`deps.may_manage_team_contacts`). 그래서 관리자가 이 타일을 누르면
-# 남의 담당까지 함께 뜬다. 지금 그 표에는 담당자로 거를 필터 키가 없고(담당은
-# **명단 탭**이 나눈다), 그 표는 다른 작업자가 들고 있어 여기서 세울 수 없다.
-# 대신 **이름은 패널에 그대로 세워 두었다** — 관리자도 누가 자기 것인지는
-# 화면을 떠나지 않고 읽는다. 팀원(대부분의 사용자)에게는 수가 정확히 맞는다.
-_CONNECT_LIST = "/contacts?sheet=all"
+# 그래서 모집단은 딜 소개 명단이고, 링크도 그 명단 탭으로 간다.
+# 명단이 둘 이상이면 한 탭에 담기지 않으므로 `전체` 탭으로 보낸다 — 그때는
+# 수가 한 겹 넓어지지만, 없는 탭으로 보내 0줄을 띄우는 것보다 낫다.
+_ALL_SHEETS = "all"
 
 
-def _connect_href(stage: str) -> str:
+def _deal_sheet_scope(db: Session, rows: List[VcContact]) -> str:
+    """이 사람들을 한 화면에 담는 명단 탭 이름. 여럿이면 `전체` 탭."""
+    names = sheet_owner.deal_list_names(db, rows)
+    return names[0] if len(names) == 1 else _ALL_SHEETS
+
+
+def _sheet_href(sheet: str) -> str:
+    return f"/contacts?sheet={quote(sheet)}"
+
+
+def _connect_href(stage: str, sheet: str = _ALL_SHEETS) -> str:
     """이 단계의 사람들만 남는 목록 주소.
 
     **필터 키(`connect`)와 값(연결 상태 라벨)을 손으로 적지 않는다.** 값은
@@ -461,11 +494,25 @@ def _connect_href(stage: str) -> str:
     """
     from .sheet_import import CONNECT_LABELS   # 순환 임포트 방지: 함수 안에서
 
-    return f"{_CONNECT_LIST}&connect={quote(CONNECT_LABELS[stage])}"
+    return f"{_sheet_href(sheet)}&connect={quote(CONNECT_LABELS[stage])}"
 
 
-def _pipeline_view(rows: List[VcContact]) -> dict:
-    """아직 연결되지 않은 명단. **누구인지**까지 보여준다.
+def _people(rows: List[VcContact], sheet: str) -> List[dict]:
+    """패널에 이름으로 세울 사람들(앞에서 `PIPELINE_NAMES` 명).
+
+    이름을 누르면 그 사람 상세가 열린다(`?contact=` 는 화면이 직접 읽는 값이라
+    필터와 부딪히지 않는다).
+    """
+    return [{"id": c.id, "name": c.name, "firm": c.firm or "",
+             "href": f"{_sheet_href(sheet)}&contact={c.id}"}
+            for c in rows[:PIPELINE_NAMES]]
+
+
+def _pipeline_view(rows: List[VcContact], waiting: List[VcContact],
+                   sheet: str = _ALL_SHEETS) -> dict:
+    """딜 소개 명단의 **연결 현황**. 누구인지까지 보여준다.
+
+    `rows` 는 그 명단 전체이고 `waiting` 은 그중 아직 연결이 안 끝난 사람이다.
 
     세는 것만 보여주고 갈 곳이 없으면, 그 44명이 누구인지 알 수 없다. 그래서
     ① 진행 중인 사람 이름을 앞에서 몇 명 세우고, ② 나머지는 목록으로 보내고,
@@ -475,45 +522,78 @@ def _pipeline_view(rows: List[VcContact]) -> dict:
     다음 동작이 붙어 있고, 미착수 80명까지 이름으로 늘어놓으면 대시보드가
     명단 화면이 된다(그건 투자사 관리 현황이 할 일이다).
 
-    순서는 목록 화면과 **같다**(그룹 → 이름, `sheet_owner.managed`). 패널의
-    첫 다섯 명이 눌러 간 화면의 첫 다섯 줄이어야 같은 명단으로 읽힌다.
-    """
-    from .sheet_import import (STAGE_DECLINED, STAGE_IN_PROGRESS,
-                               STAGE_NOT_STARTED, CONNECT_LABELS)
+    ── 전원 연결이 끝났을 때 ────────────────────────────────────────────────
+    실데이터의 딜 소개 명단 125명은 **전부 연결 완료**다. 그래서 연결 단계만
+    보면 세 칸이 다 0이고, 예전 화면은 그때 패널을 통째로 감췄다 — 사용자가
+    보려던 것("누가 아직 못 받는지")이 바로 그때 사라진다.
 
-    counted = Counter(c.connect_stage for c in rows)
-    owners = Counter((c.assignee_name or "미지정").strip() for c in rows)
-    working = [c for c in rows if c.connect_stage == STAGE_IN_PROGRESS]
+    **0 이면 0 이라고 말한다.** 숫자를 만들려고 모집단을 넓히지 않는다. 대신
+    그다음 문을 보여 준다 — 딜 소개는 카톡방으로 나가는데 그 125명 중 9명은
+    아직 방이 없다(채널 없음 6 · 메일 2 · 실패 1). 지금 실제로 손이 필요한
+    것은 그쪽이다.
+
+    갈래는 **`_room_state` 가 이미 정해 둔 것을 그대로 쓴다.** 여기에 다시
+    적으면 대시보드의 방 요약과 이 패널이 서로 다른 갈래를 세게 된다.
+    """
+    from .sheet_import import (STAGE_CONNECTED, STAGE_DECLINED,
+                               STAGE_IN_PROGRESS, STAGE_NOT_STARTED,
+                               CONNECT_LABELS)
+
+    counted = Counter(c.connect_stage for c in waiting)
+    owners = Counter((c.assignee_name or "미지정").strip() for c in waiting)
+    working = [c for c in waiting if c.connect_stage == STAGE_IN_PROGRESS]
 
     # 화면은 단계 이름·라벨·주소·강조를 짝지어 두지 않는다 — 그렇게 두면 벌이
     # 둘이 되어 하나는 반드시 낡는다(라벨만 고치고 링크는 옛 값으로 남는 식).
     stages = [
         {"key": key, "label": CONNECT_LABELS[key], "count": counted.get(key, 0),
-         "href": _connect_href(key),
+         "href": _connect_href(key, sheet),
          # 지금 사람이 붙어 움직이는 것은 '진행 중' 하나뿐이라 거기만 눈에 띈다.
          "level": "ok" if key == STAGE_IN_PROGRESS else ""}
         for key in (STAGE_IN_PROGRESS, STAGE_NOT_STARTED, STAGE_DECLINED)
     ]
+
+    # 연결은 끝났는데 **방이 없어 못 받는 사람.** 갈래별로 누구인지까지.
+    #
+    # 갈 곳에도 `연결 완료` 를 함께 건다. 연결 전 사람도 대개 방이 없어서,
+    # 그 조건을 빼면 패널이 말한 수보다 화면 줄이 많아진다 — 이 패널이 오래
+    # 당해 온 부류가 바로 "세는 곳과 가는 곳의 모집단이 다른" 것이다.
+    stuck = [c for c in rows
+             if sheet_owner.can_send_to(c) and _room_state(c) not in _SENDABLE_ROOM]
+    by_room = Counter(_room_state(c) for c in stuck)
+    rooms = [
+        {"state": s, "label": ROOM_LABELS[s][0], "level": ROOM_LABELS[s][1],
+         "count": by_room[s], "href": room_href(s, sheet, STAGE_CONNECTED),
+         "people": _people([c for c in stuck if _room_state(c) == s], sheet),
+         "more": max(by_room[s] - PIPELINE_NAMES, 0)}
+        for s in ("missing", "failed", "unverified", "email", "no_channel")
+        if by_room.get(s)
+    ]
+
     return {
-        "total": len(rows),
+        # 이 패널이 말하는 모집단 = 딜 소개 명단. 화면이 "명단 125명" 이라고
+        # 적을 수 있어야 기준이 또 어긋났을 때 쓰는 사람이 먼저 알아챈다.
+        "listed": len(rows),
+        # 어느 명단 기준인지 화면이 적을 수 있게. 명단이 둘 이상이면 `all` 이라
+        # 이름 대신 빈 값으로 두고, 화면은 그냥 `딜소개 명단` 이라고만 적는다.
+        "sheet": "" if sheet == _ALL_SHEETS else sheet,
+        "total": len(waiting),
         "in_progress": counted.get(STAGE_IN_PROGRESS, 0),
         "not_started": counted.get(STAGE_NOT_STARTED, 0),
         "declined": counted.get(STAGE_DECLINED, 0),
         "stages": stages,
-        "people": [
-            {"id": c.id, "name": c.name, "firm": c.firm or "",
-             # 이름을 누르면 그 사람 상세가 열린다(`?contact=` 는 화면이 직접
-             # 읽는 값이라 필터와 부딪히지 않는다).
-             "href": f"{_CONNECT_LIST}&contact={c.id}"}
-            for c in working[:PIPELINE_NAMES]
-        ],
+        "people": _people(working, sheet),
         # 화면이 `총 - 보여준 수` 를 다시 계산하지 않게 여기서 준다.
         "more": max(len(working) - PIPELINE_NAMES, 0),
-        "in_progress_href": _connect_href(STAGE_IN_PROGRESS),
+        "in_progress_href": _connect_href(STAGE_IN_PROGRESS, sheet),
         # 진행 중이 하나도 없을 때 화면이 가리키는 다음 자리. 라벨을 화면에
         # 다시 적지 않도록 단계 하나를 통째로 넘긴다.
         "next_stage": next(s for s in stages if s["key"] == STAGE_NOT_STARTED),
-        "list_href": _CONNECT_LIST,
+        "list_href": _sheet_href(sheet),
+        # 연결은 끝났지만 아직 못 받는 사람 — 갈래 · 이름 · 갈 곳.
+        "rooms": rooms,
+        "stuck": len(stuck),
+        "ready": len(rows) - len(waiting) - len(stuck),
         "owners": [{"name": name, "count": n} for name, n in owners.most_common(4)],
     }
 

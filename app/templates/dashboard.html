@@ -92,13 +92,33 @@
 </section>
 {% endif %}
 
-{% if pipeline.total %}
+{#
+  ── 딜 소개 명단의 연결 현황 ──────────────────────────────────────────────
+
+  **모집단은 딜 제안 관리와 같은 명단**이다(`sheet_owner.deal_list_contacts`).
+  한때 연결 중인 사람이 안 잡힌다고 모집단을 '내가 들고 있는 줄 전체' 로
+  넓혀 두었는데, 그러면 딜 소개 명단에 올린 적도 없는 풀 사람이 내 할 일로
+  뜬다 — 숫자를 만들려고 모집단을 넓히지 않는다.
+
+  **명단에 사람이 있으면 패널을 띄운다**(`pipeline.listed`). 예전에는 연결
+  대기 인원이 0이면 통째로 감췄는데, 실데이터의 딜 소개 명단은 125명 전원이
+  연결 완료라 **사용자가 보려던 화면이 바로 그때 사라졌다.** 0 이면 0 이라고
+  말하고, 그다음 문(아직 방이 없어 못 받는 사람)을 이어서 보여 준다.
+#}
+{% if pipeline.listed %}
 <!-- 연결 작업은 발송과 다른 일이다 — 전화·초대해서 카톡방까지 들어오게 하는 단계. -->
 <section class="panel pipeline-strip">
   <h2 class="panel-title">연결 진행 중인 명단
-    <span class="count-pill"><b>{{ pipeline.total }}</b>명</span>
-    <a class="linkbtn" href="{{ pipeline.list_href }}">투자사 관리 현황</a>
+    {# 꼬리표는 **이 명단의 인원**이다. 연결 대기 인원을 적어 두었더니 전원
+       연결 완료일 때 `0명` 이라고 써 놓고 그 아래에 아홉 명을 세우는, 서로
+       어긋나 보이는 화면이 됐다. 갈래별 수는 바로 아래 줄이 말한다. #}
+    <span class="count-pill" title="딜 소개를 보내기로 한 명단의 인원"><b>{{ pipeline.listed }}</b>명</span>
+    <a class="linkbtn" href="{{ pipeline.list_href }}">{{ pipeline.sheet or '투자사 관리 현황' }}</a>
   </h2>
+  {# 어느 명단을 세고 있는지 한 줄로 적는다 — 기준이 또 어긋나면 여기서 먼저 보인다. #}
+  <p class="hint">딜소개 명단 기준 · 보낼 준비 완료 <b>{{ pipeline.ready }}</b>명{% if pipeline.total %} ·
+    연결 남음 {{ pipeline.total }}명{% endif %}{% if pipeline.stuck %} ·
+    방이 없어 못 보냄 {{ pipeline.stuck }}명{% endif %}</p>
   {#
     단계 이름·라벨·주소를 화면에 적지 않는다. 예전에는 여기에 `진행 중` 같은
     값을 손으로 적어 두어, 라벨이 바뀌면 링크만 옛 값으로 남았다 —
@@ -126,11 +146,28 @@
   {# 진행 중이 0이면 이름 자리가 통째로 비어 '고장' 처럼 읽힌다. 다음 동작을 적는다. #}
   <p class="hint">지금 통화·초대 중인 사람은 없습니다 —
     <a href="{{ pipeline.next_stage.href }}">{{ pipeline.next_stage.label }} {{ pipeline.next_stage.count }}명</a>에서 다음 대상을 고르세요.</p>
-  {% else %}
+  {% elif pipeline.total %}
   {# 진행 중도 미착수도 0이면 남은 것은 '참여 안 함' 뿐이다 — 할 일이 없다는
      뜻이지 화면이 비어 버린 것이 아니라고 적어 준다. #}
   <p class="hint">지금 손댈 연결이 없습니다 — 남은 사람은 더 진행하지 않기로 한 명단입니다.</p>
+  {% else %}
+  {# 전원 연결 완료. **그렇다고 말한다** — 0 세 칸만 놓고 침묵하면 고장으로 읽힌다. #}
+  <p class="hint">이 명단은 <b>전원 연결이 끝났습니다</b>{% if pipeline.stuck %} —
+    다만 아래 {{ pipeline.stuck }}명은 카톡방이 없어 아직 못 받습니다{% else %} — 모두 보낼 수 있습니다{% endif %}.</p>
   {% endif %}
+  {#
+    연결은 끝났는데 **방이 없어 못 받는 사람.** 딜 소개는 카톡방으로 나가므로
+    연결 단계가 끝났다고 보낼 수 있는 것이 아니다 — 실데이터에서 125명 중
+    9명이 여기 걸려 있다. 갈래는 `dashboard._room_state` 가 정한 것 그대로다.
+  #}
+  {% for r in pipeline.rooms %}
+  <p class="hint name-line">
+    <a class="name-lead {{ r.level }}" href="{{ r.href }}">{{ r.label }} {{ r.count }}명</a>
+    {% for p in r.people %}<a class="req-link" href="{{ p.href }}"
+       title="이 투자사 상세 열기"><b>{{ p.name }}</b> <span class="muted">{{ p.firm }}</span></a>{% if not loop.last %}<span class="sep">·</span>{% endif %}{% endfor %}
+    {% if r.more %}<a class="linkbtn" href="{{ r.href }}">나머지 {{ r.more }}명 보기</a>{% endif %}
+  </p>
+  {% endfor %}
   {% if pipeline.owners %}
   <p class="hint">
     연결 담당:

@@ -599,3 +599,35 @@ def test_투자사로_세는지는_한_곳에서만_판정한다():
             continue
         assert "sheet_owner.investors" in body, (
             f"{module.__name__} 이 담당자를 직접 긁어 가면서 판정을 안 지납니다")
+
+
+def test_딜소개를_보내는_명단인지도_한_곳에서만_판정한다():
+    """**발송 대상의 모집단**도 같은 규칙이다.
+
+    딜 제안 관리와 대시보드가 각자 모집단을 고르던 동안, 한쪽은 풀까지 세고
+    한쪽은 안 세어서 같은 사람을 두고 다른 수가 나왔다. 그리고 판정을 명단
+    **이름**으로 하면 이름에 붙은 인원(`…(125명)`)이 바뀌는 날 조용히 깨진다.
+    """
+    import inspect
+
+    from app.services import sheet_owner
+
+    src = inspect.getsource(sheet_owner)
+    for fn in ("def is_deal_list", "def off_deal_labels", "def on_deal_list",
+               "def deal_list_contacts"):
+        assert fn in src, f"{fn} 가 sheet_owner 에 없습니다"
+
+    # 발송 대상을 세는 곳은 모두 그 판정을 지난다 — 자기 질의를 따로 들지 않는다.
+    #
+    # **`연결 완료` 인지 견주는 것만** 본다. 어느 단계인지 나누는 비교
+    # (`== STAGE_IN_PROGRESS`)는 그 단계별로 세라고 있는 것이라 괜찮다.
+    # 여기서 막으려는 것은 "보낼 수 있는가" 를 두 번째로 적어 두는 일이다.
+    from app.routers import pages
+    from app.services import dashboard, readiness
+
+    for module in (pages, dashboard, readiness):
+        body = inspect.getsource(module)
+        for said in ('== STAGE_CONNECTED', '== "connected"', "== 'connected'"):
+            assert said not in body, (
+                f"{module.__name__} 이 연결 완료를 직접 견줍니다({said}) — "
+                "`sheet_owner.can_send_to` 를 지나야 합니다")

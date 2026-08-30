@@ -182,7 +182,10 @@
         #}
         {% if is_contract_sheet %}
         <th style="width:80px" data-filters="region:월">월<div class="th-filters"></div></th>
-        <th style="width:96px">계약일</th>
+        {# 시트 머리글은 `계약일` 이지만 값은 `미정`·`8` 이라 **달**이다
+           (`routers/consulting.py` 의 `CONTRACT_COLUMNS` 참고). 이름을 값에
+           맞춘다 — `계약일` 이라고 적혀 있으면 다음 사람이 날짜를 적는다. #}
+        <th style="width:96px">계약월</th>
         <th style="width:170px">기업명</th>
         {# `계약여부 (1) ▾` 가 한 줄에 들어가야 한다 — 이름 42px + 꼬리표 28px
            + th 여백 18px + 단추 여백 14px = 102px. #}

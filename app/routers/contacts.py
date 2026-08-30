@@ -110,7 +110,14 @@ def contact_rows(db: Session, user: User, team_wide: bool = False,
     """
     # 누구를 세는지는 **여기서 정하지 않는다.** 딜 제안 관리가 같은 것을 두고
     # 자기 질의를 따로 들고 있어서 두 화면의 수가 갈렸다 — 이제 둘 다
-    # `sheet_owner.managed()` 를 지난다(그쪽은 `can_send_to` 한 겹만 더 얹는다).
+    # `sheet_owner.managed()` 를 지난다(그쪽은 명단·연결 두 문을 더 얹는다).
+    #
+    # 방 상태 갈래도 마찬가지다. 대시보드가 `_room_state` 로 세고 그 갈래로
+    # 링크를 거는데 표가 다른 갈래를 실으면, 눌러 온 화면의 줄 수가 안 맞는다.
+    # (services → routers 는 없는 방향이라 순환이 아니다)
+    from ..services import dashboard
+    from ..services.dashboard import _room_state as dashboard_room_state
+
     contacts = sheet_owner.managed(db, user, team_wide=team_wide,
                                    include_hidden=include_hidden)
     if not contacts:
@@ -172,6 +179,14 @@ def contact_rows(db: Session, user: User, team_wide: bool = False,
         room_class, room_label = ROOM_BADGES.get(room_state, ROOM_BADGES["unverified"])
         if not c.kakao_room_name:
             room_class, room_label = "warn", "⚠ 미등록"
+        # 표에 세우고 거르는 값은 **발송 준비 관점의 갈래**다
+        # (`dashboard._room_state`). 위의 `room_label` 과 갈래가 다르다 —
+        # 저쪽은 방 이름을 찾았는지만 보고, 이쪽은 채널이 카톡인지까지 본다
+        # (메일 채널·채널 불가 투자사는 방이 없어도 '미등록' 이 아니다).
+        # 대시보드가 그 갈래로 세고 그 갈래로 링크를 걸므로, 표도 같은 갈래를
+        # 실어야 눌러 왔을 때 수가 맞는다. **말을 여기 다시 적지 않는다.**
+        send_state = dashboard_room_state(c)
+        send_label, send_class = dashboard.ROOM_LABELS[send_state]
 
         rows.append({
             "id": c.id,
@@ -200,6 +215,10 @@ def contact_rows(db: Session, user: User, team_wide: bool = False,
             "room_verified": room_state,
             "room_class": room_class,
             "room_label": room_label,
+            # 대시보드의 `방 미등록 6` · `채널 불가 투자사 6` 에서 눌러 오는 자리.
+            "send_state": send_state,
+            "send_label": send_label,
+            "send_class": send_class,
             "invited_status": c.invited_status or "",
             "stages": _split_csv(c.stages),
             "sectors": _split_csv(c.sectors),
@@ -510,6 +529,48 @@ def toggle_sheet_hidden(
         raise HTTPException(status_code=400, detail="명단을 찾을 수 없습니다")
     row = sheet_owner.ensure(db, name)
     row.is_hidden = 0 if row.is_hidden else 1
+    db.commit()
+    return RedirectResponse(f"/contacts?sheet={quote(name)}", status_code=303)
+
+
+@router.post("/sheets/deal-list", include_in_schema=False)
+def toggle_sheet_deal_list(
+    label: str = Form(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """이 명단으로 **딜 소개를 보낼지** 켜고 끈다.
+
+    발송 대상의 모집단이 이 값으로 정해진다(`sheet_owner.is_deal_list`).
+    **명단 이름을 코드에 적지 않으려고** 값으로 둔 것이다 — 지금 이름은
+    `전체 딜소개현황(125명)` 처럼 괄호 안 인원이 붙어 있어서, 이름으로 맞추면
+    사람이 한 명 늘 때 조용히 깨진다.
+
+    **관리자만.** 켜고 끄는 순간 그 명단을 맡은 팀원의 발송 대상이 통째로
+    바뀐다 — 실제 카톡방으로 나가는 일이라 되돌릴 수 없다. 명단 숨김과 같은
+    자리·같은 권한에 둔다.
+
+    감춘 명단은 켤 수 없다. 투자사로 세지 않기로 한 명단에 딜 소개를 보내면
+    투자사에게 보낼 문구가 스타트업에게 나간다 — 두 값이 서로 어긋나면 어느
+    쪽을 믿을지 알 수 없으므로 여기서 막는다.
+    """
+    from fastapi.responses import RedirectResponse
+
+    if user.role != "admin":
+        raise HTTPException(status_code=403,
+                            detail="딜소개 명단 표시는 관리자만 바꿀 수 있습니다")
+    name = (label or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="명단을 찾을 수 없습니다")
+    row = sheet_owner.ensure(db, name)
+    if row.is_hidden:
+        raise HTTPException(
+            status_code=400,
+            detail="투자사로 세지 않는 명단에는 딜 소개를 보낼 수 없습니다")
+    # **지금 화면에 보이는 값의 반대**로 적는다. 지금 값이 기본값(할당 여부)에서
+    # 온 것이어도 사람이 누른 순간 그 뜻이 정해지므로 0/1 을 명시해 둔다 —
+    # `None` 으로 되돌리면 나중에 담당이 바뀔 때 표시가 저절로 뒤집힌다.
+    row.is_deal_list = 0 if sheet_owner.is_deal_list(row) else 1
     db.commit()
     return RedirectResponse(f"/contacts?sheet={quote(name)}", status_code=303)
 

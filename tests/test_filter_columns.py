@@ -27,6 +27,7 @@
 """
 from __future__ import annotations
 
+import html as html_mod
 import inspect
 import re
 import shutil
@@ -231,6 +232,13 @@ def screens(client, db, users):
         "투자컨설턴트 현황": client.get("/consulting").text,
         "딜 진행 관리(미팅 후기)": client.get("/ir").text,
         "주간 업무": client.get("/todo").text,
+        # 표가 없는 화면이지만 **투자사 관리 현황으로 링크를 가장 많이 거는
+        # 화면**이다(막힌 것 · 방 상태 · 연결 진행 중인 명단). 그 링크는
+        # 템플릿이 아니라 파이썬(`services/dashboard.py`)이 만들어서, 파일
+        # 글자만 훑던 5번 검사가 통째로 놓치고 있었다 — 실제로 `room=` 링크가
+        # 아무 데도 선언되지 않은 채 오래 살아 있었다.
+        "대시보드": client.get("/").text,
+        "딜 제안 관리": client.get("/deals").text,
     }
 
 
@@ -341,9 +349,15 @@ def test_칸이_자기_필터_키를_모르면_고쳐도_필터는_옛_목록_�
 # ── 5. 다른 화면에서 걸어 오는 링크 ────────────────────────────────────────
 
 def _query_keys(text: str, path: str) -> set:
-    """`href="/contacts?sheet=all&connect=…"` 에서 쿼리 **이름**만 추린다."""
+    """`href="/contacts?sheet=all&connect=…"` 에서 쿼리 **이름**만 추린다.
+
+    **엔티티를 먼저 푼다.** 그려진 화면에서는 `&` 가 `&amp;` 로 나오는데, 안
+    풀면 `amp;connect` 라는 이름이 되어 `isidentifier()` 에서 조용히 버려진다 —
+    검사가 링크를 하나도 못 보는 채로 통과한다.
+    """
     keys = set()
-    for query in re.findall(re.escape(path) + r"\?([^\"'\s>]*)", text):
+    for query in re.findall(re.escape(path) + r"\?([^\"'\s>]*)",
+                            html_mod.unescape(text)):
         for pair in query.split("&"):
             name = pair.split("=")[0].strip()
             if name and name.isidentifier():
@@ -368,6 +382,12 @@ def test_다른_화면이_거는_필터_링크는_그_표가_아는_키여야_�
     linked = set()
     for path in sorted(TEMPLATES.glob("*.html")) + sorted(JS_DIR.glob("*.js")):
         linked |= _query_keys(path.read_text(encoding="utf-8"), "/contacts")
+    # **그려진 화면도 훑는다.** 파일 글자만 보면 파이썬이 f-string 으로 이어
+    # 붙인 링크를 못 본다(`services/dashboard.py` 의 방 상태·연결 단계 타일).
+    # 그래서 `room=` 이 어디에도 선언되지 않은 채 오래 살아 있었다 — 눌러도
+    # 아무것도 안 걸러지는데 화면은 멀쩡히 열려서 아무도 눈치채지 못한다.
+    for page, html in screens.items():
+        linked |= _query_keys(html, "/contacts")
     # 빠른 필터 칩(프리셋)도 같은 쿼리 문법을 쓴다.
     for preset in re.findall(r'data-preset="([^"]*)"',
                              screens["투자사 관리 현황"]):

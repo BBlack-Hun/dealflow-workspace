@@ -78,7 +78,10 @@ def _test_room_check(rehearsal: bool) -> dict:
 
 
 def _targets_check(db: Session, user: User) -> List[dict]:
-    contacts = sheet_owner.my_contacts(db, user)
+    # **딜 제안 관리와 같은 모집단**이다. 여기가 "발송 대상" 을 말하는 자리라,
+    # 발송 화면이 세는 사람과 다르면 회차 직전 점검이 다른 수를 말하게 된다
+    # (`sheet_owner.deal_list_contacts` 한 곳에서 나온다).
+    contacts = sheet_owner.deal_list_contacts(db, user)
     states = [_room_state(c) for c in contacts]
     sendable = sum(1 for s in states if s in _SENDABLE_ROOM)
     failed = sum(1 for s in states if s == "failed")
@@ -91,7 +94,7 @@ def _targets_check(db: Session, user: User) -> List[dict]:
                           "카톡방을 연결하세요", "/contacts"))
     else:
         out.append(_check(OK, "발송 대상",
-                          f"{sendable}명 · 내 명단 {len(contacts)}명 중", "", "/contacts"))
+                          f"{sendable}명 · 딜소개 명단 {len(contacts)}명 중", "", "/contacts"))
     if failed or missing:
         out.append(_check(WARN, "방을 못 찾은 담당자",
                           f"{failed + missing}명에게는 나가지 않습니다",

@@ -189,12 +189,20 @@
            두 줄이 됐다(위 세 칸도 같은 이유로 함께 넓혔다). 이제는
            `단추 폭 + th 좌우 여백 18px + 두 자리 수 여유 7px` 로 잡는다. #}
         <th style="width:110px" data-filters="contract:계약여부">계약여부<div class="th-filters"></div></th>
-        {# 이 칸에 날짜를 적는 **경우**를 적어 둔 안내다(칸 자체는 자유 글자다).
-           `홍보메일 삭제` 를 뺀다 — 그 정리는 끝났고, 앞으로 이 칸에 새로 적을
-           일이 아니다. **이미 적힌 것은 지우지 않는다**: 지난 정리 기록이라
-           지우면 무엇을 언제 처리했는지 되짚을 길이 없다(이 저장소는 이력을
-           함부로 지우지 않는다). 안내만 바뀌고 값은 그대로다. #}
-        <th style="width:88px" title="계약기업 · 거부메일">날짜 기입</th>
+        {# 이름을 **칸에 든 값**에 맞춘다. `날짜 기입` 은 무엇을 적는 칸인지
+           말해 주지 않는데, 실제 값 43줄 중 42줄이 홍보 메일을 지웠다는 기록이다
+           (`삭제 완료` 28 · `7월 삭제필요 -> 삭제 완료` 8 · `민진 8/13 삭제` 5 …).
+           날짜만 든 줄은 하나도 없다 — 이름이 값보다 좁고 또 틀렸다.
+
+           **안내에서 뺐던 `홍보메일` 을 되살린다.** 지난번에 뺀 것은 "앞으로
+           새로 적을 일이 아니다" 라고 읽어서였는데, 이 칸이 하는 일 자체가
+           그 정리 기록이다 — 이름에서 지워 두면 무슨 칸인지 알 길이 없다.
+           값은 손대지 않는다: 지난 정리 기록이라 지우면 무엇을 언제 처리했는지
+           되짚을 길이 없다(이 저장소는 이력을 함부로 지우지 않는다).
+
+           머리글과 수정창의 안내는 **한 글자도 다르지 않아야** 한다. #}
+        <th style="width:110px"
+            title="계약기업 · 거부메일 주소를 홍보 메일 목록에서 지웠는지">홍보메일삭제</th>
         {# 같은 이유로 두 줄이던 칸. `핵심/TOP Deal (1) ▾` 는 118px 이 필요하다. #}
         <th style="width:144px" data-filters="top:핵심/TOP Deal">핵심/TOP Deal<div class="th-filters"></div></th>
         {# IR 자료는 맨 끝에 그대로 둔다 — 요청이 왔을 때 바로 꺼내 쓰는 칸이다. #}
@@ -347,11 +355,13 @@
         <option value="review">계약검토중</option>
         <option value="blocked">딜소개 불가</option>
       </select></label>
-    {# 표 머리글이 `날짜 기입` 이라 이름은 그대로 따르고, 무슨 날짜인지는 표와
-       똑같이 `title` 로 붙여 둔다 — 이름을 풀어 쓰면 다시 표와 달라진다.
-       (표 머리글과 **한 글자도 다르지 않아야** 한다 — 위 주석 참고) #}
-    <label class="field" title="계약기업 · 거부메일">
-      <span>날짜 기입</span><input type="text" id="f-contract_month" placeholder="2026-09"></label>
+    {# 표 머리글이 `홍보메일삭제` 라 이름은 그대로 따르고, 무엇을 적는 칸인지는
+       표와 똑같이 `title` 로 붙여 둔다 — 이름을 풀어 쓰면 다시 표와 달라진다.
+       (표 머리글과 **한 글자도 다르지 않아야** 한다 — 위 주석 참고)
+       placeholder 는 실제로 적혀 있는 모양이다(`2026-09` 같은 날짜는 이 칸에
+       한 줄도 없다 — 없는 모양을 예로 들면 그 모양으로 적게 된다). #}
+    <label class="field" title="계약기업 · 거부메일 주소를 홍보 메일 목록에서 지웠는지">
+      <span>홍보메일삭제</span><input type="text" id="f-contract_month" placeholder="삭제 완료"></label>
     <label class="field check-row"><input type="checkbox" id="f-is_top_deal"> <span>추천 딜 (★)</span></label>
     <label class="field wide"><span>메모</span><textarea id="f-note" rows="2"></textarea></label>
   </div>

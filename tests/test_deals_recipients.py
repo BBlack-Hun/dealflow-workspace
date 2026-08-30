@@ -43,6 +43,7 @@ TEMPLATES = ROOT / "app" / "templates"
 
 MY_SHEET = "가 명단"
 HIDDEN_SHEET = "세지 않는 명단"
+POOL_SHEET = "확보해 둔 풀"
 
 
 @pytest.fixture()
@@ -52,6 +53,9 @@ def mixed(db, users):
     db.add_all([
         SheetOwner(label=MY_SHEET, user_id=users["u1"].id),
         SheetOwner(label=HIDDEN_SHEET, user_id=users["u1"].id, is_hidden=1),
+        # 담당 없는 **투자사 풀**. 여기 사람은 연결이 끝나 있어도 딜 소개
+        # 명단에 올린 적이 없다 — 실데이터에서 이런 17명이 발송 목록에 떴다.
+        SheetOwner(label=POOL_SHEET, user_id=None),
     ])
 
     def contact(name, stage, group="", sheet=MY_SHEET, hidden=0, owner="u1"):
@@ -71,6 +75,11 @@ def mixed(db, users):
         contact("아담당", "connected", "1군", hidden=1),          # 감춘 줄
         contact("자담당", "connected", "2군", sheet=HIDDEN_SHEET),  # 감춘 명단에만
         contact("차담당", "connected", "1군", owner="u2"),          # 남의 담당
+        # ★ 내가 들고 있고 연결도 끝났지만 **딜 소개 명단이 아닌** 사람.
+        contact("카담당", "connected", "1군", sheet=POOL_SHEET),
+        contact("타담당", "connected", "2군", sheet=POOL_SHEET),
+        # 풀에도 있고 내 명단에도 있는 사람 — **명단 쪽이 이긴다.**
+        contact("파담당", "connected", "1군", sheet=f"{POOL_SHEET},{MY_SHEET}"),
     ]
     db.add_all(rows)
     db.commit()
@@ -98,23 +107,165 @@ def test_딜_제안_관리의_대상은_투자사_관리_현황이_세는_사람
         f"{sorted(on_deals - on_contacts)}")
 
 
-def test_두_화면의_차이는_연결_상태_하나뿐이다(db, users, mixed):
+def test_두_화면의_차이는_명단과_연결_두_가지뿐이다(db, users, mixed):
     """다른 것이 섞이면 **왜 수가 다른지** 화면이 하는 말이 거짓이 된다.
 
-    화면은 "맡은 N명 중 연결이 끝난 M명" 이라고 적는다. 그 말이 맞으려면
-    두 목록의 차이가 정확히 `can_send_to` 여야 한다.
+    화면은 "딜소개 명단 N명 중 연결이 끝난 M명 · 명단 밖 K명" 이라고 적는다.
+    그 말이 맞으려면 두 목록의 차이가 정확히 **명단**과 **연결** 둘이어야 한다.
     """
     from app.models import VcContact
     from app.routers.contacts import contact_rows
     from app.services import sheet_owner
 
     u1 = users["u1"]
+    off = sheet_owner.off_deal_labels(db)
     on_deals = {c.id for c in sheet_owner.recipients(db, u1)}
     sendable_on_contacts = {
         r["id"] for r in contact_rows(db, u1)
-        if sheet_owner.can_send_to(db.get(VcContact, r["id"]))
+        if sheet_owner.on_deal_list(db.get(VcContact, r["id"]), off)
+        and sheet_owner.can_send_to(db.get(VcContact, r["id"]))
     }
     assert on_deals == sendable_on_contacts
+
+
+# ── 1-2) ★ 발송 대상의 기준은 `딜소개 명단` 이다 ────────────────────────────
+#
+# 여기가 이번에 바로잡은 자리다. 예전 기준은 "내가 들고 있는 줄 중 연결이
+# 끝난 사람" 이었고, 그래서 **딜 소개 명단에 올린 적 없는 풀 사람**이 목록에
+# 떴다(실데이터 142명 중 17명). 발송은 되돌릴 수 없다.
+
+def test_명단_밖_사람은_연결이_끝나_있어도_안_뜬다(logged_in, db, users, mixed):
+    """풀에 있는 사람은 딜 소개를 보내기로 한 적이 없다."""
+    from app.services import sheet_owner
+
+    names = {c.name for c in sheet_owner.recipients(db, users["u1"])}
+    assert "카담당" not in names and "타담당" not in names, (
+        "딜소개 명단 밖(투자사 풀) 사람이 발송 대상에 올랐다")
+    # 화면에도 없어야 한다 — 목록에 있으면 체크가 걸리고 그대로 나간다.
+    html = logged_in.get("/deals").text
+    for gone in ("카담당", "타담당"):
+        assert f'data-name="{gone}"' not in html, f"{gone} 이 발송 목록에 떠 있다"
+
+
+def test_풀에도_있는_사람은_명단_쪽이_이긴다(db, users, mixed):
+    """한 사람이 풀과 딜소개 명단에 겹쳐 있다(실제로 113명이 그렇다).
+
+    풀에 이름이 있다는 이유로 명단에 올린 사람이 빠지면, 원래 받아야 할
+    사람이 회차에서 통째로 빠진다.
+    """
+    from app.services import sheet_owner
+
+    names = {c.name for c in sheet_owner.recipients(db, users["u1"])}
+    assert "파담당" in names
+
+
+def test_명단_판정은_이름이_아니라_표시로_한다(db, users, mixed):
+    """**명단 이름을 코드에 적지 않는다.**
+
+    지금 이름은 `전체 딜소개현황(125명)` 처럼 괄호 안 인원이 붙어 있고 그 수는
+    사람이 늘 때마다 바뀐다 — 이름으로 맞추면 조용히 깨진다. 여기서는 이름을
+    그대로 둔 채 **표시만 뒤집어** 판정이 따라오는지 본다.
+    """
+    from app.models import SheetOwner
+    from app.services import sheet_owner
+    from sqlalchemy import select
+
+    u1 = users["u1"]
+    before = {c.name for c in sheet_owner.recipients(db, u1)}
+    assert "가담당" in before and "카담당" not in before
+
+    rows = {r.label: r for r in db.execute(select(SheetOwner)).scalars().all()}
+    rows[MY_SHEET].is_deal_list = 0      # 이름은 그대로, 표시만 끈다
+    rows[POOL_SHEET].is_deal_list = 1
+    db.commit()
+
+    after = {c.name for c in sheet_owner.recipients(db, u1)}
+    assert "가담당" not in after, "표시를 껐는데 여전히 발송 대상이다"
+    assert "카담당" in after, "표시를 켰는데 발송 대상이 되지 않았다"
+
+
+def test_관리자가_화면에서_켜고_끌_수_있다(logged_in, client, db, users, mixed):
+    """표시는 **화면에서 사람이 정한다** — 코드나 DB 를 손대야 하면 값으로 둔
+    보람이 없다. 그리고 **관리자만** 바꾼다: 켜고 끄는 순간 그 명단을 맡은
+    팀원의 발송 대상이 통째로 바뀌고, 그건 실제 카톡방으로 나가는 일이다.
+    """
+    from app.models import SheetOwner
+    from app.services import sheet_owner
+    from sqlalchemy import select
+
+    def names():
+        return {c.name for c in sheet_owner.recipients(db, users["u1"])}
+
+    # 팀원은 못 바꾼다.
+    assert logged_in.post("/api/contacts/sheets/deal-list",
+                          data={"label": POOL_SHEET},
+                          follow_redirects=False).status_code == 403
+    users["u1"].role = "admin"
+    db.commit()
+
+    assert "카담당" not in names()
+    logged_in.post("/api/contacts/sheets/deal-list", data={"label": POOL_SHEET},
+                   follow_redirects=False)
+    db.expire_all()
+    assert "카담당" in names(), "켰는데 발송 대상에 안 들어왔다"
+    logged_in.post("/api/contacts/sheets/deal-list", data={"label": POOL_SHEET},
+                   follow_redirects=False)
+    db.expire_all()
+    assert "카담당" not in names(), "껐는데 발송 대상에 남아 있다"
+
+    # 감춘 명단은 켤 수 없다 — 투자사에게 보낼 문구가 스타트업에게 나간다.
+    resp = logged_in.post("/api/contacts/sheets/deal-list",
+                          data={"label": HIDDEN_SHEET}, follow_redirects=False)
+    assert resp.status_code == 400
+    db.expire_all()
+    row = db.execute(select(SheetOwner)
+                     .where(SheetOwner.label == HIDDEN_SHEET)).scalars().one()
+    assert not sheet_owner.is_deal_list(row)
+
+
+def test_화면에_지금_상태와_되돌릴_단추가_함께_있다(logged_in, db, users, mixed):
+    """감춰 놓고 켜는 자리까지 감추면 DB 를 직접 고쳐야 한다(명단 숨김과 같은 규칙)."""
+    users["u1"].role = "admin"
+    db.commit()
+
+    html = logged_in.get("/contacts?sheet=" + MY_SHEET).text
+    assert "딜소개를 보내는 명단" in html, "지금 상태를 화면이 말하지 않는다"
+    assert "딜소개 명단에서 빼기" in html, "되돌릴 단추가 없다"
+
+    pool = logged_in.get("/contacts?sheet=" + POOL_SHEET).text
+    assert "딜소개 발송 대상이 아닙니다" in pool
+    assert "딜소개 명단으로 표시" in pool, "켜는 단추가 없다"
+
+
+def test_명단에_있어도_방이_없으면_못_보낸다(db, users, mixed):
+    """기준이 `연결됨` 에서 `이 명단` 으로 바뀐 것이지, 연결 조건이 사라진 것이
+    아니다. 명단에 있어도 카톡방이 없으면 보낼 길이 없다."""
+    from app.services import sheet_owner
+
+    names = {c.name for c in sheet_owner.recipients(db, users["u1"])}
+    # 같은 명단인데 연결 단계가 아직인 사람들 — 명단 안이지만 대상은 아니다.
+    for waiting in ("마담당", "바담당", "사담당"):
+        assert waiting not in names, f"{waiting} 은 연결 전인데 발송 대상이다"
+    assert {"가담당", "나담당"} <= names
+
+
+def test_명단_기본값은_담당_지정을_따른다(db, users):
+    """표시를 안 해 둔 명단이 **조용히 빠지면** 회차가 통째로 잘못 나간다.
+
+    그래서 `is_deal_list` 가 비어 있으면 할당 여부를 따른다 — 이 앱이 원래
+    쓰던 정의 그대로다("내 명단 = 할당받아 내가 딜소개를 보내는 사람들").
+    """
+    from app.models import SheetOwner
+    from app.services import sheet_owner
+
+    assigned = SheetOwner(label="새로 받은 명단", user_id=users["u1"].id)
+    pool = SheetOwner(label="새 풀", user_id=None)
+    hidden = SheetOwner(label="안 세는 명단", user_id=users["u1"].id, is_hidden=1)
+    assert sheet_owner.is_deal_list(assigned) is True
+    assert sheet_owner.is_deal_list(pool) is False
+    assert sheet_owner.is_deal_list(hidden) is False
+    # 설정 줄이 아예 없는 이름(손으로 넣은 담당자)은 뺄 근거가 없다.
+    assert sheet_owner.is_deal_list(None) is True
 
 
 def test_화면에_찍히는_수가_서로_어긋나지_않는다(logged_in, db, users, mixed):
@@ -129,18 +280,31 @@ def test_화면에_찍히는_수가_서로_어긋나지_않는다(logged_in, db,
     cards = len(re.findall(r'class="pick-card"[^>]*data-group=', deals))
     assert cards == len(sheet_owner.recipients(db, users["u1"]))
 
-    # 딜 제안 관리가 적은 "맡고 있는 투자사 N명 중 … M명"
-    said = re.search(r"맡고 있는 투자사 <b>(\d+)</b>명 중\s*"
-                     r"카톡방 연결이 끝난 <b>(\d+)</b>명", deals)
-    assert said, "두 수가 왜 다른지 화면이 말하지 않는다"
-    managed_said, sendable_said = int(said.group(1)), int(said.group(2))
+    # 딜 제안 관리가 적은 "딜소개 명단 … N명 중 … M명"
+    said = re.search(r"딜소개 명단.*?<b>(\d+)</b>명 중\s*"
+                     r"카톡방 연결이 끝난 <b>(\d+)</b>명", deals, re.S)
+    assert said, "무엇을 기준으로 세는지 화면이 말하지 않는다"
+    listed_said, sendable_said = int(said.group(1)), int(said.group(2))
     assert sendable_said == cards
+    counts = sheet_owner.recipient_counts(db, users["u1"])
+    assert listed_said == counts["managed"]
 
-    # 투자사 관리 현황의 `전체` 탭에 적힌 수와 같아야 한다.
+    # 어느 명단 기준인지 **이름으로** 적어야 기준이 또 어긋났을 때 먼저 보인다.
+    assert MY_SHEET in deals
+
+    # **명단 밖 인원을 화면이 말한다.** 줄어든 몫이 안 적히면, 명단을 새로 받아
+    # 표시하는 것을 잊었을 때 그 사람들이 조용히 빠진다.
+    off = re.search(r"맡고 있는 (\d+)명 중\s*<b>(\d+)</b>명은 <b>딜소개 명단 밖</b>",
+                    deals, re.S)
+    assert off, "명단 밖 인원을 화면이 말하지 않는다"
+    held_said, off_said = int(off.group(1)), int(off.group(2))
+    assert held_said - off_said == listed_said
+
+    # 투자사 관리 현황의 `전체` 탭에 적힌 수와 같아야 한다(맡고 있는 사람 전체).
     total = re.search(r'href="/contacts\?sheet=all"[^>]*>\s*전체 <span>(\d+)</span>',
                       contacts)
     assert total, "투자사 관리 현황의 전체 수를 못 찾았다"
-    assert int(total.group(1)) == managed_said == len(contact_rows(db, users["u1"]))
+    assert int(total.group(1)) == held_said == len(contact_rows(db, users["u1"]))
 
 
 def test_관리자는_팀_전체를_보지만_보내는_것은_본인_담당분뿐이고_화면이_그렇게_말한다(

@@ -138,20 +138,38 @@
       <button type="button" class="linkbtn" id="select-noreact">반응 없는 담당자만</button>
     </h2>
     {#
-      **두 화면의 수가 왜 다른지 여기서 말한다.** 투자사 관리 현황은 `내가 맡은
-      사람`이고 이 목록은 `지금 보낼 수 있는 사람`이라 원래 다르다 — 그런데
-      화면이 그 사정을 말하지 않으면 어느 쪽이 고장인지 알 수가 없다.
-      숫자는 전부 `sheet_owner.recipient_counts` 한 곳에서 온다.
+      **기준이 무엇인지, 왜 수가 다른지 여기서 말한다.**
+
+      문이 둘이다(`services/sheet_owner.py` 의 `recipients` 참고).
+        ① 딜소개를 보내기로 한 **명단**에 있는가 — 모집단
+        ② 카톡방 연결이 끝났는가 — 명단에 있어도 방이 없으면 못 보낸다
+
+      **명단 밖 인원을 반드시 함께 적는다.** 기준이 바뀌며 대상이 줄었는데
+      (실데이터 142 → 125), 줄어든 몫이 화면에 안 적히면 명단을 새로 받아
+      표시하는 것을 잊었을 때 그 사람들이 조용히 빠진다 — 회차가 통째로
+      잘못 나가는 길이다. 숫자는 전부 `sheet_owner.recipient_counts` 한 곳에서 온다.
     #}
     <p class="hint" id="recipient-note">
       {% if recipient_counts.managed %}
-      맡고 있는 투자사 <b>{{ recipient_counts.managed }}</b>명 중
+      딜소개 명단{% if recipient_counts.lists %}
+      (<b>{% for name in recipient_counts.lists %}{{ name }}{% if not loop.last %} · {% endif %}{% endfor %}</b>){% endif %}
+      <b>{{ recipient_counts.managed }}</b>명 중
       카톡방 연결이 끝난 <b>{{ recipient_counts.sendable }}</b>명에게 보낼 수 있습니다
       {%- if recipient_counts.blocked %} ·
       나머지 {{ recipient_counts.blocked }}명은
       {% for b in recipient_counts.blocked_by_stage %}{{ b.label }} {{ b.count }}명{% if not loop.last %} · {% endif %}{% endfor %}
       입니다{% endif %} —
       <a href="/contacts">투자사 관리 현황</a> 에서 연결을 이어 주세요.
+      {% if recipient_counts.off_list %}
+      <br>맡고 있는 {{ recipient_counts.held }}명 중
+      <b>{{ recipient_counts.off_list }}</b>명은 <b>딜소개 명단 밖</b>이라 여기 뜨지 않습니다 —
+      보내야 할 사람이면 <a href="/contacts">투자사 관리 현황</a> 에서 그 명단을
+      <b>딜소개 명단으로 표시</b>하세요.
+      {% endif %}
+      {% elif recipient_counts.held %}
+      맡고 있는 {{ recipient_counts.held }}명이 모두 <b>딜소개 명단 밖</b>입니다 —
+      <a href="/contacts">투자사 관리 현황</a> 에서 보낼 명단을
+      <b>딜소개 명단으로 표시</b>해야 대상이 생깁니다.
       {% else %}
       맡고 있는 투자사가 없습니다 —
       <a href="/contacts">투자사 관리 현황</a> 에서 명단을 할당받아야 보낼 수 있습니다.
