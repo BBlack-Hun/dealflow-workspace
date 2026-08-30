@@ -361,15 +361,33 @@ def split_sector_tags(text: str) -> List[str]:
 # 연결 단계. 카톡방까지 연결됐는가 — 발송 대상이 되기 전 단계다.
 STAGE_CONNECTED = "connected"
 STAGE_IN_PROGRESS = "in_progress"
+# 방에 들어왔다가 **나간** 사람. `참여 안 함` 과 뜻이 다르다 — 참여 안 함은
+# 애초에 안 들어온 것이고, 이쪽은 들어왔다가 나간 것이다. 다시 부를 수 있는지가
+# 갈리므로 한 단계로 뭉치면 안 된다.
+#
+# 이 단계가 없던 동안, 나가신 분의 방 이름을 지우면 코드가 말없이 `진행 중` 으로
+# 되돌려서 대시보드에 `지금 연결 중` 으로 계속 떴다 — 아무도 연결하고 있지 않은데.
+STAGE_LEFT_ROOM = "left_room"
 STAGE_DECLINED = "declined"
 STAGE_NOT_STARTED = "not_started"
 
 CONNECT_LABELS = {
     STAGE_CONNECTED: "연결 완료",
     STAGE_IN_PROGRESS: "진행 중",
+    STAGE_LEFT_ROOM: "방 나감",
     STAGE_DECLINED: "참여 안 함",
     STAGE_NOT_STARTED: "미착수",
 }
+
+# **더 챙길 것이 남았는가** — 대시보드와 화면이 같은 갈래를 읽게 한 곳에 둔다.
+# 예전에는 `(진행 중, 미착수, 참여 안 함)` 처럼 단계 이름을 세는 곳마다 손으로
+# 적어 두어, 단계가 하나 늘면 한쪽만 고쳐졌다.
+#
+#   OPEN — 아직 사람이 손을 대야 하는 단계. 대시보드가 띄우는 것은 이쪽뿐이다.
+#   DONE — 더 진행하지 않기로 끝난 단계. 할 일이 없으니 대시보드에서는 빠지고,
+#          투자사 관리 현황에는 그대로 남는다(빠지는 것과 없어지는 것은 다르다).
+CONNECT_OPEN = (STAGE_IN_PROGRESS, STAGE_NOT_STARTED)
+CONNECT_DONE = (STAGE_DECLINED, STAGE_LEFT_ROOM)
 
 # 메모에 이런 말이 있으면 더 진행하지 않는다 — 계속 연락하면 민폐가 된다.
 _DECLINE_MARKS = ("참여안하심", "참여 안하심", "참여안함", "참여 안 함",
@@ -378,6 +396,11 @@ _DECLINE_MARKS = ("참여안하심", "참여 안하심", "참여안함", "참여
 # 연락은 시작했지만 아직 방에 못 들어온 상태
 _PROGRESS_MARKS = ("신규연결", "신규 연결", "부재중", "재연락", "카톡 공유",
                    "통화", "전화", "카톡 발송", "초대", "회의중", "진행")
+# 방에 들어왔다가 나간 표식. **`방` 과 `나가` 가 함께 있을 때만** 본다 —
+# `나가심` 만으로는 다른 문장(출장 나가심 …)까지 걸린다.
+# 다른 표식보다 **먼저** 본다: 나간 메모에는 그 전의 `통화`·`초대` 기록이 함께
+# 남아 있어서, 진행 중 표식을 먼저 보면 나간 분이 계속 `진행 중` 으로 잡힌다.
+_LEFT_MARKS = ("방 나가", "방나가", "방 나감", "방나감", "방을 나가", "방에서 나가")
 
 
 # 담당자 칸에는 사람 이름이 아닌 것도 들어온다 — 'X'(해당 없음), '중복',
@@ -404,12 +427,18 @@ def connect_stage(kakao_joined: str, memo: str, has_room: bool = False,
     참여여부(O/X)', 딜소개현황 시트는 '초대 완료여부(완료)' 를 쓴다. 둘 다 본다.
     거절 표시가 있으면 참여 안 함, 연락한 흔적이 있으면 진행 중,
     아무 것도 없으면 미착수로 본다.
+
+    **방 나감을 가장 먼저 본다.** 나간 메모에는 그 전의 `통화`·`초대`·`O` 가
+    그대로 남아 있어서, 참여 표시를 먼저 읽으면 나가신 분이 계속 `연결 완료`
+    나 `진행 중` 으로 잡힌다 — 나간 것이 가장 나중에 일어난 일이다.
     """
     joined = normalize_space(kakao_joined or "")
     text = normalize_space(memo or "")
+    haystack = f"{joined} {text}"
+    if any(mark in haystack for mark in _LEFT_MARKS):
+        return STAGE_LEFT_ROOM
     if has_room or is_invited(joined) or is_invited(invited):
         return STAGE_CONNECTED
-    haystack = f"{joined} {text}"
     if any(mark in haystack for mark in _DECLINE_MARKS):
         return STAGE_DECLINED
     if any(mark in haystack for mark in _PROGRESS_MARKS):
@@ -998,7 +1027,10 @@ def apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
             invited=pc.invited_status or "")
         if contact.kakao_room_name:
             contact.connect_stage = STAGE_CONNECTED
-        elif contact.connect_stage != STAGE_CONNECTED:
+        elif contact.connect_stage not in (STAGE_CONNECTED, STAGE_LEFT_ROOM):
+            # `방 나감` 도 뒤로 안 내린다. 시트에는 이 값을 적을 칸이 없어서
+            # (사람이 화면에서 고른 값이다) 다시 읽으면 늘 `진행 중` 으로
+            # 되돌아간다 — 고쳐 놓은 것이 임포트 한 번에 조용히 사라진다.
             contact.connect_stage = new_stage
 
         # 방 이름은 **연결이 끝난 사람에게만** 지어 준다. 아직 방이 없는 사람에게

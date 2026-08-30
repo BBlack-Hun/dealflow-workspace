@@ -351,6 +351,13 @@ class ContactIn(BaseModel):
     kakao_joined: Optional[str] = None
     sourcing_note: Optional[str] = None
     tips_note: Optional[str] = None
+    # 연결 단계(미착수 → 진행 중 → 연결 완료 / 참여 안 함 / 방 나감).
+    #
+    # 그동안 이 값은 **어디서도 못 고쳤다** — 임포트와 '방 이름 지우기' 만
+    # 바꿨다. 그래서 카톡방을 나가신 분을 `방 나감` 으로 표시할 길이 없었다.
+    # 값은 `sheet_import.CONNECT_LABELS` 의 **키**다(라벨이 아니다) — 라벨은
+    # 화면 글자라 바뀌면 저장이 조용히 어긋난다.
+    connect_stage: Optional[str] = None
     # 이 명단에만 있는 칸 + 달마다 늘어나는 칸. {"칸키": "내용"}
     #
     # 칸 하나마다 스키마·저장 목록·되읽기 응답·화면 네 곳에 이름을 적어 두던
@@ -738,6 +745,9 @@ def get_contact(
             "tips_note": contact.tips_note or "",
             "assignee_name": contact.assignee_name or "",
             "department": contact.department or "",
+            # 스키마·저장 목록·화면까지 다 맞춰 놓고 **여기만 빠뜨리면** 저장은
+            # 되는데 다시 열었을 때 빈칸이다 — 고쳐 놓고도 안 들어간 줄 안다.
+            "connect_stage": contact.connect_stage,
             "status": contact.status,
             "memo": contact.memo or "",
             # 이 명단에만 있는 칸들. **여기서 안 돌려주면 창이 채울 값이 없어**
@@ -910,12 +920,18 @@ def update_contact(
     before_room = contact.kakao_room_name
     if (body.name or "").strip():
         contact.name = body.name.strip()
-    _assign(contact, body)
+    note = _assign(contact, body)
     if contact.kakao_room_name != before_room:
         # 방 이름이 바뀌면 이전 확인 결과는 더 이상 근거가 아니다.
         contact.room_verified = "unverified"
     db.commit()
-    return {"ok": True, "room_verified": contact.room_verified}
+    # `connect_note` 는 **서버가 저 혼자 바꾼 것**을 화면이 사람에게 전할 자리다.
+    # 없으면 응답에 넣지 않는다 — 늘 있는 값이면 화면이 읽지 않게 된다.
+    out = {"ok": True, "room_verified": contact.room_verified,
+           "connect_stage": contact.connect_stage}
+    if note:
+        out["connect_note"] = note
+    return out
 
 
 @router.delete("/{contact_id}")
@@ -931,8 +947,13 @@ def delete_contact(
     return {"ok": True}
 
 
-def _assign(contact: VcContact, body: ContactIn) -> None:
-    """None 은 '변경 없음'. 빈 문자열은 '지움'으로 취급한다(부분 수정 PATCH 의미)."""
+def _assign(contact: VcContact, body: ContactIn) -> str:
+    """None 은 '변경 없음'. 빈 문자열은 '지움'으로 취급한다(부분 수정 PATCH 의미).
+
+    돌려주는 것은 **화면이 사람에게 보여 줄 한 줄**이다(없으면 빈 문자열).
+    서버가 값을 저 혼자 바꿨으면 그렇게 됐다고 말해야 한다 — 아래 참고.
+    """
+    note = ""
     for field in ("title", "firm", "group_name", "kakao_room_name", "invited_status",
                   "email", "phone", "stages", "sectors", "round_size", "memo", "status",
                   # 시트에 있던 값들 — 화면에서도 고칠 수 있어야 한다.
@@ -958,14 +979,48 @@ def _assign(contact: VcContact, body: ContactIn) -> None:
         merged.update({k: (v or "").strip() for k, v in body.notes.items()})
         contact.notes = contact_columns.dump_notes(merged)
 
+    # ── 연결 단계 ──────────────────────────────────────────────────────────
+    #
+    # **사람이 고른 값이 언제나 이긴다.** 수정 창에서 고른 단계는 그대로 들어간다.
+    # 빈 문자열은 '안 골랐다' 는 뜻이다(담당자 추가 창은 값 없이 열린다) —
+    # 여기서만은 빈 값을 '지움' 으로 읽지 않는다. 지울 수 있는 값이 아니다.
+    if (body.connect_stage or "").strip():
+        stage = body.connect_stage.strip()
+        if stage not in sheet_import.CONNECT_LABELS:
+            # 모르는 값을 조용히 버리면 화면은 저장된 줄 알고 닫힌다 —
+            # 이 저장소가 반복해 당한 부류라 여기서 소리를 낸다.
+            raise HTTPException(
+                status_code=400,
+                detail=f"모르는 연결 상태입니다: {stage}")
+        contact.connect_stage = stage
+
     # 방 이름과 연결 단계가 어긋나면 안 된다. 방 이름을 지웠는데 '연결 완료'로
     # 남으면 발송 대상 목록에는 뜨는데 보낼 방이 없다.
-    if body.kakao_room_name is not None:
+    #
+    # **다만 말없이 바꾸지 않는다.** 예전에는 방 이름을 지우기만 하면 코드가
+    # 알아서 `진행 중` 으로 되돌렸다. 그래서 카톡방을 나가신 분의 방 이름을
+    # 지웠더니 대시보드에 `지금 연결 중 1명` 으로 계속 떴다 — 아무도 연결하고
+    # 있지 않은데 화면은 그렇게 말했고, 왜 그렇게 됐는지 어디에도 안 나왔다.
+    #
+    # 그래서 규칙을 둘로 나눈다.
+    #   ① 사람이 단계를 함께 골랐으면 **손대지 않는다.** 수정 창은 늘 고른
+    #      값을 함께 보내므로, 화면에서 지우는 길은 언제나 이쪽이다.
+    #   ② 단계 없이 방 이름만 지운 요청(스크립트·다른 화면)은 예전처럼
+    #      `진행 중` 으로 두되 **그렇게 했다고 응답이 말한다.** 어느 쪽으로
+    #      갈지(방 나감인지 다시 연결 중인지)는 코드가 알 수 없어서,
+    #      돌이키기 쉬운 쪽(아직 할 일이 남은 쪽)에 둔다.
+    if body.kakao_room_name is not None and not (body.connect_stage or "").strip():
         if (contact.kakao_room_name or "").strip():
             contact.connect_stage = sheet_import.STAGE_CONNECTED
         elif contact.connect_stage == sheet_import.STAGE_CONNECTED:
             # 연결됐던 사람이니 미착수로 되돌리지는 않는다.
             contact.connect_stage = sheet_import.STAGE_IN_PROGRESS
+            note = ("카톡방 이름을 지워 연결 상태를 "
+                    f"'{sheet_import.CONNECT_LABELS[sheet_import.STAGE_IN_PROGRESS]}'"
+                    " 으로 바꿨습니다. 방을 나가신 분이면 "
+                    f"'{sheet_import.CONNECT_LABELS[sheet_import.STAGE_LEFT_ROOM]}'"
+                    " 으로 고쳐 주세요.")
+    return note
 
 
 # --- 참고 시트 --------------------------------------------------------------

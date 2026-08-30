@@ -51,6 +51,20 @@ NAME_LINK = re.compile(r'<a class="req-link" href="([^"]+)"[^>]*>\s*<b>([^<]+)</
 #: 서버가 직접 읽는 값. 필터가 아니라 화면을 고르는 값이라 줄을 거르지 않는다.
 SERVED = {"sheet", "ref", "contact", "months", "hidden", "msg"}
 
+#: 값이 비어 있는 줄을 세우는 말. `filters.js` 의 `EMPTY` 와 같은 글자여야 한다 —
+#: 대시보드의 `연결 담당: 미지정` 이 이 값으로 걸린다.
+EMPTY = "(비어 있음)"
+
+
+def _cell_values(raw: str) -> list[str]:
+    """한 칸의 값들. **비어 있으면 `(비어 있음)` 한 개다**(`filters.js` 규칙).
+
+    이걸 빼놓으면 `assignee=(비어 있음)` 같은 링크가 여기서만 0줄로 보인다 —
+    브라우저에서는 멀쩡히 걸리는데 검사만 거짓말한다.
+    """
+    parts = [x.strip() for x in (raw or "").split("|") if x.strip()]
+    return parts or [EMPTY]
+
 
 def _panel(html: str) -> str:
     found = PANEL.search(html)
@@ -90,8 +104,8 @@ def _rows_left(html: str, query: str) -> list[str]:
     left = []
     for row in ROW.findall(html):
         values = dict(re.findall(r'data-f-([a-z]+)="([^"]*)"', row))
-        if all(any(v in [x.strip() for x in values.get(key, "").split("|")]
-                   for v in vals) for key, vals in wanted.items()):
+        if all(any(v in _cell_values(values.get(key, "")) for v in vals)
+               for key, vals in wanted.items()):
             left.append(re.search(r'data-name="([^"]*)"', row).group(1))
     return left
 
@@ -199,9 +213,13 @@ def test_명단을_통째로_쏟지_않고_나머지는_눌러서_본다(logged,
 
 def test_패널이_말한_수와_눌러_간_화면의_줄_수가_같다(logged, waiting):
     """**양쪽을 세어 대조한다.** 기대값을 손으로 적으면 모집단이 어긋나도 통과한다."""
+    from app.services.sheet_import import CONNECT_OPEN
+
     panel = _panel(logged.get("/").text)
     tiles = _tiles(panel)
-    assert len(tiles) == 3, "진행 중 · 미착수 · 참여 안 함 세 칸이어야 한다"
+    # 칸 수를 손으로 적지 않는다 — **아직 손이 필요한 단계**만 칸이 된다.
+    # 끝난 단계(참여 안 함 · 방 나감)는 아래 별도 검사가 본다.
+    assert len(tiles) == len(CONNECT_OPEN), [t["label"] for t in tiles]
 
     panel_names = {n for _, n in NAME_LINK.findall(panel)}
     for tile in tiles:
@@ -467,3 +485,162 @@ def test_투자사로_세지_않는_명단은_빠진다(logged, db, users):
 
     assert user_dashboard(db, users["u1"])["pipeline"]["total"] == 0
     assert _panel(logged.get("/").text) == ""
+
+
+# ── 6. 패널이 낸 **모든** 링크를 훑어 따라간다 ─────────────────────────────
+#
+# 위 검사들은 볼 링크를 손으로 적어 둔다(타일 · 방 상태 줄). 링크가 하나
+# 늘어나면 그 링크만 아무 검사도 없이 지나간다 — 눌러도 아무것도 안 걸러지는
+# 부류라, 빠졌다는 사실 자체를 아무도 눈치채지 못한다. 이 저장소가 두 번 당한
+# 자리다(`connect=` · `room=` 이 어디에도 선언되지 않은 채 오래 살아 있었다).
+#
+# 그래서 **패널이 실제로 내놓은 `<a href="/contacts?…">` 를 전부 긁어** 하나씩
+# 따라가고, 링크 글자가 말한 수와 간 화면의 줄 수를 대조한다.
+
+PANEL_LINK = re.compile(r'<a\b[^>]*href="(/contacts\?[^"]+)"[^>]*>(.*?)</a>', re.S)
+
+
+def _panel_links(panel: str) -> list[tuple[str, str]]:
+    """(주소, 링크에 적힌 글자) — 주소는 엔티티를 풀어서."""
+    out = []
+    for href, inner in PANEL_LINK.findall(panel):
+        text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", inner)).strip()
+        out.append((html_mod.unescape(href), text))
+    return out
+
+
+def test_패널이_낸_모든_링크가_실제로_거른다(logged, waiting):
+    """**손으로 나열하지 않는다.** 패널이 낸 링크를 훑어 각각 따라가 대조한다.
+
+    링크가 하나 늘어도 저절로 걸린다. 지키는 것은 셋이다.
+
+      ① 필터 키를 투자사 관리 현황이 **선언**했는가 — `filters.js` 는 선언
+         안 된 키를 통째로 버린다. 버려도 화면은 멀쩡히 열려서 아무도 모른다.
+      ② 그 주소가 실제로 **열리는가**.
+      ③ 링크 글자가 수를 말하면 **간 화면의 줄 수와 같은가**.
+    """
+    panel = _panel(logged.get("/").text)
+    links = _panel_links(panel)
+    # 링크가 통째로 사라지면 이 검사가 조용히 0건이 된다 — 그쪽이 더 나쁘다.
+    assert len(links) >= 8, f"패널의 링크가 너무 적다: {links}"
+
+    declared = _declared_filter_keys()
+    counted = 0
+    for href, text in links:
+        query = href.partition("?")[2]
+        keys = {pair.split("=")[0] for pair in query.split("&") if pair}
+        unknown = keys - declared - SERVED
+        assert not unknown, (
+            f"[{text}] 이 모르는 키({sorted(unknown)})로 걸려 있다 — 눌러도 "
+            f"아무것도 안 걸러진다. 아는 키: {sorted(declared)}")
+
+        page = logged.get(href)
+        assert page.status_code == 200, f"[{text}] 링크가 열리지 않는다"
+
+        # 사람 상세를 여는 링크는 목록을 거르는 링크가 아니다.
+        if "contact=" in query:
+            assert "window.DEALFLOW_OPEN_CONTACT = " in page.text
+            continue
+        # `나머지 2명 보기` 가 말하는 수는 **안 보여 준 수**지 간 화면의 줄
+        # 수가 아니다(7명 중 5명을 세우고 남은 2명).
+        if "나머지" in text:
+            continue
+        # 거르는 키가 하나도 없는 링크(`?sheet=…` 만)는 좁히겠다고 말한 적이
+        # 없다 — 명단으로 건너가는 길이다. 게다가 명단 이름에 수가 들어 있는
+        # 일이 흔해서(`전체 딜소개현황(125명)`) 그 수를 줄 수로 읽으면 안 된다.
+        if not (keys - SERVED):
+            continue
+        said = re.search(r"(\d+)", text)
+        if not said:
+            continue
+        left = _rows_left(page.text, query)
+        assert len(left) == int(said.group(1)), (
+            f"[{text}] 는 {said.group(1)}명이라 했는데 {href} 에는 "
+            f"{len(left)}줄이 남는다")
+        counted += 1
+    assert counted >= 6, f"수를 대조한 링크가 너무 적다({counted}) — {links}"
+
+
+def test_숫자를_말하는_링크는_저마다_다른_곳으로_간다(logged, waiting):
+    """같은 곳으로 두 번 가는 링크는 군더더기다.
+
+    요약 줄의 숫자에 링크를 걸 때 판단한 규칙이다 — 아래 갈래 줄이 이미
+    가는 곳에 합계까지 걸면, 같은 사람에게 가는 길이 하나 더 생길 뿐이다.
+    """
+    links = _panel_links(_panel(logged.get("/").text))
+    targets = [href for href, text in links
+               if "contact=" not in href and re.search(r"\d", text)
+               and "나머지" not in text]
+    assert len(targets) == len(set(targets)), (
+        f"같은 주소로 두 번 갑니다: {sorted(targets)}")
+
+
+# ── 7. 끝난 상태는 대시보드에서 빠지고, 투자사 관리 현황에는 남는다 ────────
+
+
+@pytest.fixture()
+def finished(db, users):
+    """딜소개 명단 안에 **끝난 줄**이 섞여 있는 상태.
+
+    카톡방을 나가신 분이 실제로 있다 — 방 이름을 지우면 코드가 말없이
+    `진행 중` 으로 되돌려서 대시보드에 `지금 연결 중` 으로 계속 떴다.
+    """
+    from app.models import SheetOwner, VcContact
+
+    db.add(SheetOwner(label=DEAL_SHEET, user_id=users["u1"].id))
+    db.add_all([
+        VcContact(user_id=users["u1"].id, name="가나0", firm="가나벤처스",
+                  source_sheet=DEAL_SHEET, connect_stage="in_progress"),
+        VcContact(user_id=users["u1"].id, name="나감이", firm="다라인베스트",
+                  source_sheet=DEAL_SHEET, connect_stage="left_room"),
+        VcContact(user_id=users["u1"].id, name="안함이", firm="마바파트너스",
+                  source_sheet=DEAL_SHEET, connect_stage="declined"),
+    ])
+    db.commit()
+    return db
+
+
+def test_끝난_상태는_대시보드_칸에서_빠진다(logged, finished):
+    """대시보드는 **할 일이 남은 것**을 띄우는 자리다."""
+    from app.services.sheet_import import CONNECT_DONE, CONNECT_LABELS
+
+    tiles = {t["label"] for t in _tiles(_panel(logged.get("/").text))}
+    for key in CONNECT_DONE:
+        assert CONNECT_LABELS[key] not in tiles, (
+            f"{CONNECT_LABELS[key]} 이 아직 할 일 칸에 서 있다: {tiles}")
+
+
+def test_뺐다고_수까지_지우지_않는다(logged, finished):
+    """몇 명인지조차 안 보이면 **없어진 줄 알고** 다시 세러 들어간다."""
+    from app.services.sheet_import import CONNECT_LABELS, STAGE_LEFT_ROOM
+
+    panel = _panel(logged.get("/").text)
+    assert f"{CONNECT_LABELS[STAGE_LEFT_ROOM]} 1명" in panel, panel
+    assert "더 진행하지 않기로 한 명단" in panel
+
+
+def test_끝난_줄은_투자사_관리_현황에는_그대로_남는다(logged, finished):
+    """대시보드에서 뺀 것이지 명단에서 지운 것이 아니다."""
+    from app.services.sheet_import import CONNECT_LABELS, STAGE_LEFT_ROOM
+
+    body = logged.get("/contacts?sheet=all").text
+    assert "나감이" in body and "안함이" in body
+    # 눌러서 그 명단만 볼 수도 있어야 한다 — 행이 그 값을 싣고 있는가.
+    assert f'data-f-connect="{CONNECT_LABELS[STAGE_LEFT_ROOM]}"' in body
+
+
+def test_방을_나가신_분은_지금_연결_중에_안_뜬다(logged, finished):
+    """이 건의 뿌리 — 나가신 분이 `지금 연결 중` 으로 잡히면 안 된다."""
+    panel = _panel(logged.get("/").text)
+    names = {n for _, n in NAME_LINK.findall(panel)}
+    assert "나감이" not in names, "방을 나가신 분이 아직 연결 중으로 뜬다"
+    assert "가나0" in names
+
+
+def test_연결_남음은_끝난_줄을_안_센다(logged, finished, db, users):
+    """`연결 남음` 에 참여 안 함·방 나감이 섞이면 할 일이 아닌 것을 할 일로 센다."""
+    from app.services.dashboard import user_dashboard
+
+    pipeline = user_dashboard(db, users["u1"])["pipeline"]
+    assert pipeline["open"] == 1          # 진행 중 1명뿐
+    assert pipeline["total"] == 3         # 못 보내는 사람은 셋 (셈은 그대로)

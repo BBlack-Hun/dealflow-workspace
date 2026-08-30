@@ -75,6 +75,24 @@ def _room_state(c: VcContact) -> str:
 # 세는 것만 보여주고 갈 곳이 없으면, 그 6명이 누구인지 알 수 없다.
 
 
+# 값이 비어 있는 줄을 **거르는 값**. `filters.js` 가 값 없는 칸을 이 말로
+# 세우므로(`EMPTY`), 링크도 같은 말로 걸어야 눌렀을 때 그 줄만 남는다.
+# 여기에 다른 말을 적으면 눌러도 아무것도 안 걸러진 채 화면이 열린다 —
+# 이 저장소가 두 번 당한 부류다(`connect=` · `room=`).
+FILTER_EMPTY = "(비어 있음)"
+
+
+def _values(key: str, values) -> str:
+    """`키=값1,값2` — 한 칸 안에서는 **OR** 다(`filters.js` 규칙).
+
+    값마다 따로 인코딩하고 나서 쉼표로 잇는다. 쉼표는 `filters.js` 가 값을
+    나누는 글자라, 값 안에 쉼표가 들어 있으면(담당자 이름에 실제로 들어온다)
+    거기서 갈라져 없는 값 둘이 된다 — `quote` 가 쉼표를 `%2C` 로 바꿔 주므로
+    **먼저 인코딩하고 나중에 잇는** 순서를 지켜야 한다.
+    """
+    return f"{key}=" + ",".join(quote(v) for v in values)
+
+
 def room_href(state: str, sheet: str = "all", stage: str = "") -> str:
     """이 방 상태의 사람만 남는 투자사 관리 현황 주소.
 
@@ -91,11 +109,21 @@ def room_href(state: str, sheet: str = "all", stage: str = "") -> str:
     **"연결은 끝났는데 방이 없는 사람"** 을 세기 때문이다 — 연결 전 사람도
     대개 방이 없어서, 그 조건을 안 걸면 패널이 말한 수보다 화면 줄이 많아진다.
     """
+    return rooms_href([state], sheet, stage)
+
+
+def rooms_href(states, sheet: str = "all", stage: str = "") -> str:
+    """방 상태 **여럿**이 남는 주소. 한 칸 안에서는 OR 다.
+
+    요약 줄의 `보낼 준비 완료 116명` 처럼 갈래를 묶어 세는 자리가 링크를 걸
+    때 쓴다 — 갈래를 손으로 이어 붙이면 세는 곳과 가는 곳이 갈린다.
+    """
     from .sheet_import import CONNECT_LABELS   # 순환 임포트라 함수 안에서
 
-    href = f"/contacts?sheet={quote(sheet)}&room=" + quote(ROOM_LABELS[state][0])
+    href = (f"/contacts?sheet={quote(sheet)}&"
+            + _values("room", [ROOM_LABELS[s][0] for s in states]))
     if stage:
-        href += "&connect=" + quote(CONNECT_LABELS[stage])
+        href += "&" + _values("connect", [CONNECT_LABELS[stage]])
     return href
 
 
@@ -492,9 +520,25 @@ def _connect_href(stage: str, sheet: str = _ALL_SHEETS) -> str:
     행의 `data-f-connect`). 셋 중 하나만 어긋나도 **눌러도 아무것도 안 걸러진
     채** 화면이 열려서, 아무도 눈치채지 못한다 — 이 저장소가 한 번 당한 자리다.
     """
+    return _connect_any_href([stage], sheet)
+
+
+def _connect_any_href(stages, sheet: str = _ALL_SHEETS, assignee=None) -> str:
+    """단계 **여럿**(과 연결 담당)으로 거른 목록 주소.
+
+    한 칸 안에서는 OR, 칸끼리는 AND 다(`filters.js`). 그래서
+    `connect=진행 중,미착수 & assignee=…` 은 "그 담당의 아직 남은 사람" 이다.
+
+    `assignee` 는 연결 담당이다. 안 정해진 사람은 빈 값이라 필터에서
+    `(비어 있음)` 으로 서므로, 대시보드의 `미지정` 도 그 말로 건다.
+    """
     from .sheet_import import CONNECT_LABELS   # 순환 임포트 방지: 함수 안에서
 
-    return f"{_sheet_href(sheet)}&connect={quote(CONNECT_LABELS[stage])}"
+    href = (f"{_sheet_href(sheet)}&"
+            + _values("connect", [CONNECT_LABELS[s] for s in stages]))
+    if assignee is not None:
+        href += "&" + _values("assignee", [assignee or FILTER_EMPTY])
+    return href
 
 
 def _people(rows: List[VcContact], sheet: str) -> List[dict]:
@@ -535,12 +579,17 @@ def _pipeline_view(rows: List[VcContact], waiting: List[VcContact],
     갈래는 **`_room_state` 가 이미 정해 둔 것을 그대로 쓴다.** 여기에 다시
     적으면 대시보드의 방 요약과 이 패널이 서로 다른 갈래를 세게 된다.
     """
-    from .sheet_import import (STAGE_CONNECTED, STAGE_DECLINED,
+    from .sheet_import import (CONNECT_DONE, CONNECT_OPEN, STAGE_CONNECTED,
                                STAGE_IN_PROGRESS, STAGE_NOT_STARTED,
                                CONNECT_LABELS)
 
     counted = Counter(c.connect_stage for c in waiting)
-    owners = Counter((c.assignee_name or "미지정").strip() for c in waiting)
+    # **아직 손이 필요한 사람만** 이 패널의 일이다(`CONNECT_OPEN`).
+    # `참여 안 함`·`방 나감` 은 더 진행하지 않기로 끝난 줄이라 챙길 것이 없다 —
+    # 대시보드는 **할 일이 남은 것**을 띄우는 자리다. 방을 나가신 분이 계속
+    # `지금 연결 중` 으로 떠 있던 것이 이 패널이 오래 당해 온 자리다.
+    still_open = [c for c in waiting if c.connect_stage in CONNECT_OPEN]
+    owners = Counter((c.assignee_name or "").strip() for c in still_open)
     working = [c for c in waiting if c.connect_stage == STAGE_IN_PROGRESS]
 
     # 화면은 단계 이름·라벨·주소·강조를 짝지어 두지 않는다 — 그렇게 두면 벌이
@@ -550,7 +599,15 @@ def _pipeline_view(rows: List[VcContact], waiting: List[VcContact],
          "href": _connect_href(key, sheet),
          # 지금 사람이 붙어 움직이는 것은 '진행 중' 하나뿐이라 거기만 눈에 띈다.
          "level": "ok" if key == STAGE_IN_PROGRESS else ""}
-        for key in (STAGE_IN_PROGRESS, STAGE_NOT_STARTED, STAGE_DECLINED)
+        for key in CONNECT_OPEN
+    ]
+    # 끝난 단계는 칸에서 빼되 **몇 명인지는 남긴다.** 수까지 사라지면 없어진
+    # 줄 알고 다시 세러 들어간다 — 뺀 것과 없어진 것은 다르다. 0명인 갈래는
+    # 적지 않는다(할 일이 아닌 것을 0으로 나열하면 칸만 늘어난다).
+    done = [
+        {"key": key, "label": CONNECT_LABELS[key], "count": counted.get(key, 0),
+         "href": _connect_href(key, sheet)}
+        for key in CONNECT_DONE if counted.get(key, 0)
     ]
 
     # 연결은 끝났는데 **방이 없어 못 받는 사람.** 갈래별로 누구인지까지.
@@ -577,15 +634,28 @@ def _pipeline_view(rows: List[VcContact], waiting: List[VcContact],
         # 어느 명단 기준인지 화면이 적을 수 있게. 명단이 둘 이상이면 `all` 이라
         # 이름 대신 빈 값으로 두고, 화면은 그냥 `딜소개 명단` 이라고만 적는다.
         "sheet": "" if sheet == _ALL_SHEETS else sheet,
+        # 아직 못 보내는 사람 **전부**(끝난 줄까지). 화면이 아니라
+        # `명단 = 준비 + 못 보냄 + 남음` 이라는 셈이 여기에 걸려 있다.
         "total": len(waiting),
+        # 그중 **아직 손이 필요한** 사람. 화면의 `연결 남음` 은 이쪽이다 —
+        # 참여 안 함·방 나감을 여기 섞으면 할 일이 아닌 것을 할 일로 센다.
+        "open": len(still_open),
         "in_progress": counted.get(STAGE_IN_PROGRESS, 0),
         "not_started": counted.get(STAGE_NOT_STARTED, 0),
-        "declined": counted.get(STAGE_DECLINED, 0),
         "stages": stages,
+        # 더 진행하지 않기로 끝난 줄 — 칸에서는 뺐지만 수와 갈 곳은 남긴다.
+        "done": done,
         "people": _people(working, sheet),
         # 화면이 `총 - 보여준 수` 를 다시 계산하지 않게 여기서 준다.
         "more": max(len(working) - PIPELINE_NAMES, 0),
         "in_progress_href": _connect_href(STAGE_IN_PROGRESS, sheet),
+        # 요약 줄의 `연결 남음` 이 가는 곳 — 아직 손이 필요한 사람 전부.
+        # 칸 두 개(진행 중·미착수)가 각각 절반씩 가리키는 자리라, 합쳐 놓은
+        # 이 주소는 **다른 어느 링크도 가지 않는 곳**이다.
+        "open_href": _connect_any_href(CONNECT_OPEN, sheet),
+        # 요약 줄의 `보낼 준비 완료` — 연결이 끝났고 방까지 있는 사람.
+        # 이쪽도 패널의 다른 링크가 가지 않는 곳이다.
+        "ready_href": rooms_href(sorted(_SENDABLE_ROOM), sheet, STAGE_CONNECTED),
         # 진행 중이 하나도 없을 때 화면이 가리키는 다음 자리. 라벨을 화면에
         # 다시 적지 않도록 단계 하나를 통째로 넘긴다.
         "next_stage": next(s for s in stages if s["key"] == STAGE_NOT_STARTED),
@@ -594,7 +664,13 @@ def _pipeline_view(rows: List[VcContact], waiting: List[VcContact],
         "rooms": rooms,
         "stuck": len(stuck),
         "ready": len(rows) - len(waiting) - len(stuck),
-        "owners": [{"name": name, "count": n} for name, n in owners.most_common(4)],
+        # 연결 담당별로 **아직 남은** 사람. 갈 곳은 `그 담당 × 아직 남은 단계`
+        # 라 화면의 수와 눌러 간 줄 수가 맞는다. 담당이 안 정해진 사람은
+        # 값이 비어 있어서 `(비어 있음)` 으로 걸러진다 — 화면에는 `미지정`
+        # 이라고 적지만 **거는 값은 필터가 쓰는 말**이어야 한다.
+        "owners": [{"name": name or "미지정", "count": n,
+                    "href": _connect_any_href(CONNECT_OPEN, sheet, assignee=name)}
+                   for name, n in owners.most_common(4)],
     }
 
 

@@ -280,7 +280,10 @@ def contacts_page(
         "ref_sheets": ref_sheets,
         "ref": picked_ref,
         "ref_content": json.loads(picked_ref.content_json) if picked_ref else None,
-        "connect_counts": [
+        # [수정] 창의 `연결 상태` 보기. **말을 화면에 적지 않는다** — 임포트가
+        # 정한 라벨을 그대로 넘긴다. 화면에 다시 적으면 필터 값·대시보드 타일과
+        # 갈려서, 골라 저장해도 어느 쪽에도 안 걸린다.
+        "connect_stages": [
             {"key": key, "label": label, "count": stages.get(key, 0)}
             for key, label in sheet_import.CONNECT_LABELS.items()
         ],
