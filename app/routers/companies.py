@@ -24,7 +24,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..deps import get_current_user, templates
+from ..deps import NotAdmin, admin_only, get_current_user, templates
 from ..models import IrCompany, User
 from ..services.one_liner import (
     AUTO, SOURCE_FIELDS, apply_one_liner, compose_one_liner, origin, sync_one_liner,
@@ -51,14 +51,51 @@ CONTRACT_LABELS = {
 # 예전 값 → 지금 값. 이미 쌓인 데이터를 화면에서 그대로 읽을 수 있어야 한다.
 CONTRACT_ALIAS = {"yes": "paid", "pending": "review", "no": "none", "": "none"}
 
+# 화면에 보이는 말 → 저장하는 값.
+#
+# 표에서 `계약여부` 칸을 눌러 고치면 inline_edit.js 는 **칸에 보이는 글자**를
+# 그대로 보낸다(`딜소개 불가`). 스키마에 칸이 있으니 PATCH 는 200 을 주는데,
+# 들어간 글자는 어느 상태에도 안 맞아 되읽을 때 `미계약` 으로 돌아오고
+# `blocked` 도 안 걸렸다 — **고쳐지지도, 막히지도 않는** 상태다.
+# 그래서 받는 쪽이 말과 값을 같은 것으로 본다. 시트 가져오기가 이미 그렇게
+# 하고 있다(scripts/import_company_sheets.py 의 CONTRACT_FROM_SHEET).
+#
+# 띄어쓰기는 지우고 견준다 — 사람은 `딜소개 불가` 와 `딜소개불가` 를 같은
+# 말로 쓴다. 한 글자 차이로 안 걸리는 것이 바로 지금 난 사고다.
+CONTRACT_FROM_LABEL = {label.replace(" ", ""): key
+                       for key, label in CONTRACT_LABELS.items()}
+
 # 더 이상 소개하면 안 되는 기업. 발송 화면 목록에서 아예 빠진다 —
 # 목록에 있는 것만으로 실수로 고를 수 있다.
 BLOCKED_CONTRACT = "blocked"
 
 
 def contract_key(value) -> str:
+    """무엇으로 적혀 오든 **저장하는 값 하나**로.
+
+    받는 것은 세 가지다: 지금 값(`blocked`) · 예전 값(`yes`) · 화면에 보이는
+    말(`딜소개 불가`). 모르는 말은 지어내지 않고 그대로 돌려준다 — 부르는
+    쪽이 `CONTRACT_LABELS` 에 있는지 보고 막는다.
+    """
     key = (value or "none").strip()
+    key = CONTRACT_FROM_LABEL.get(key.replace(" ", ""), key)
     return CONTRACT_ALIAS.get(key, key)
+
+
+def can_delete_company(user: User) -> bool:
+    """이 사람에게 [삭제] 를 보여도 되는가 — **판정은 `deps.admin_only` 하나**다.
+
+    화면과 라우터가 각자 `role == "admin"` 을 들고 있으면 반드시 한쪽이 낡는다.
+    이 저장소가 반복해 당한 유형이다(팀 전체가 뜨는데 눌러 고치면 404 나던
+    담당자 줄, `막힘` 이라 떠 있는데 실제로는 열려 있던 컨설턴트 줄). 같은
+    함수를 부르므로 **단추가 보이는 사람은 반드시 지울 수 있고, 안 보이는
+    사람은 주소를 직접 쳐도 막힌다.**
+    """
+    try:
+        admin_only(user)
+    except NotAdmin:
+        return False
+    return True
 
 # 소개 문구에 들어가는 칸. (모델 속성, 화면 이름)
 REQUIRED_FIELDS = [
@@ -182,7 +219,13 @@ def company_rows(db: Session) -> List[dict]:
             "ir_drive_url": c.ir_drive_url or "",
             # 자료 링크 유무가 곧 'IR 요청이 오면 바로 보낼 수 있는가' 다.
             "has_ir": bool((c.ir_drive_url or "").strip()),
-            "contract_status": c.contract_status or "no",
+            # **저장된 글자 그대로가 아니라 맞춰서** 돌려준다. 예전 값(`no`·`yes`)이
+            # 그대로 나가면 수정 패널의 <select> 에 같은 option 이 없어 고른 것이
+            # 없는 상태가 되고, 그대로 [저장]하면 빈 값이 날아가 NOT NULL 인
+            # 이 칸에서 **저장 전체가 500** 이 났다 — 344개 중 244개가 그랬다.
+            # 사람에게는 "IR 링크를 고쳤더니 저장 오류" 로 보였다(패널은 모든
+            # 칸을 한 번에 보내므로, 터진 칸이 아니라 마지막에 만진 칸을 의심하게 된다).
+            "contract_status": contract_key(c.contract_status),
             "contract_label": CONTRACT_LABELS.get(
                 contract_key(c.contract_status), "미계약"),
             # 더 이상 소개하면 안 되는 기업 — 표에서 눈에 띄어야 실수로
@@ -228,6 +271,9 @@ def companies_page(request: Request, db: Session = Depends(get_db),
             "with_info": sum(1 for r in rows
                              if r["ceo"] or r["phone"] or r["business_desc"]),
         },
+        # [삭제]를 보일지. 라우터가 막는 것과 **같은 판정**을 읽는다 —
+        # 보이는데 못 누르거나, 안 보이는데 주소로는 되는 상태를 만들지 않는다.
+        "can_delete": can_delete_company(user),
         "required_fields": [label for _a, label in REQUIRED_FIELDS],
         "summary_labels": SUMMARY_LABELS,
         "contract_labels": CONTRACT_LABELS,
@@ -343,6 +389,22 @@ def _assign(company: IrCompany, body: CompanyIn) -> None:
             company.is_top_deal = 1 if company.top_deal_kind else 0
         elif field == "is_top_deal":
             company.is_top_deal = 1 if value else 0
+        elif field == "contract_status":
+            # 표에서 누르면 **보이는 글자**(`딜소개 불가`)가, 수정 패널에서는
+            # 값(`blocked`)이 온다. 저장은 반드시 값이어야 한다 — 발송 화면이
+            # 컬럼을 그대로 견주기 때문이다(routers/pages.py 의 `/deals`).
+            #
+            # 모르는 말은 조용히 넣지 않고 막는다. 넣어 두면 되읽을 때 `미계약`
+            # 으로 보여 **고친 적 없는 것처럼** 되고, `딜소개 불가` 로 바꿔 둔
+            # 줄 알았던 기업이 발송 목록에 그대로 남는다.
+            key = contract_key(value)
+            if key not in CONTRACT_LABELS:
+                raise HTTPException(
+                    status_code=400,
+                    detail="모르는 계약여부입니다: "
+                           f"{value!r} — {' · '.join(CONTRACT_LABELS.values())} "
+                           "중에서 고르세요")
+            company.contract_status = key
         elif field == "name":
             if value and value.strip():
                 company.name = value.strip()
@@ -389,6 +451,20 @@ def _one_liner_result(company: IrCompany, synced: dict) -> dict:
     }
 
 
+def _contract_result(company: IrCompany) -> dict:
+    """PATCH/POST 응답에 실을 계약여부.
+
+    **되읽기까지 맞아야 화면이 안 어긋난다.** 표는 값(`blocked`)이 아니라
+    말(`딜소개 불가`)을 보여 주는데, 응답이 값만 주면 화면은 방금 누른 글자를
+    그대로 남겨 두는 수밖에 없다 — 새로고침하면 다른 글자가 나온다.
+    `blocked` 도 같이 준다: 그 줄에 표시를 입히는 것은 화면의 몫이다.
+    """
+    key = contract_key(company.contract_status)
+    return {"contract_status": key,
+            "contract_label": CONTRACT_LABELS.get(key, "미계약"),
+            "blocked": key == BLOCKED_CONTRACT}
+
+
 @router.post("/api/companies")
 def create_company(body: CompanyIn, db: Session = Depends(get_db),
                    user: User = Depends(get_current_user)):
@@ -432,6 +508,7 @@ def update_company(company_id: int, body: CompanyIn,
     db.commit()
     return {"id": company.id, "introducible": is_ready(company),
             "blocked_reason": blocked_reason(company),
+            **_contract_result(company),
             **_one_liner_result(company, synced)}
 
 
@@ -476,9 +553,18 @@ def use_auto_one_liner(company_id: int, db: Session = Depends(get_db),
 @router.delete("/api/companies/{company_id}")
 def delete_company(company_id: int, db: Session = Depends(get_db),
                    user: User = Depends(get_current_user)):
-    """기업 삭제. 이미 보낸 회차에 들어간 기업은 지우지 않는다(이력이 깨진다)."""
+    """기업 삭제 — **관리자만**. 이미 보낸 회차에 들어간 기업은 지우지 않는다.
+
+    판정은 `deps.admin_only` 하나를 그대로 쓴다(`can_delete_company` 가 화면
+    쪽에서 같은 함수를 읽는다). 여기 `role != "admin"` 을 새로 적으면 단추를
+    보일지 정하는 쪽과 갈린다.
+
+    **권한을 먼저 본다.** 없는 번호에 404 를 먼저 주면, 권한 없는 사람이 번호만
+    바꿔 가며 어느 기업이 있는지 알아낼 수 있다.
+    """
     from ..models import DealBatchCompany
 
+    admin_only(user)
     company = db.get(IrCompany, company_id)
     if company is None:
         raise HTTPException(status_code=404, detail="기업을 찾을 수 없습니다")
@@ -486,10 +572,18 @@ def delete_company(company_id: int, db: Session = Depends(get_db),
         select(DealBatchCompany).where(DealBatchCompany.company_id == company_id)
     ).scalars().first()
     if used:
+        # **이력이 붙은 기업은 관리자여도 지우지 않는다.** 회차는 "그날 누구에게
+        # 무엇을 보냈는가" 의 기록이고, 기업을 지우면 그 회차가 무엇을 보낸
+        # 회차였는지 알 수 없게 된다 — 업무 보고가 그 줄을 읽는다.
+        #
+        # 안내가 가리키던 '보류'는 **틀린 길이었다.** 보류(내용 부족)는 발송
+        # 화면에서 뒤로 밀릴 뿐 그대로 뜬다(routers/pages.py 가 일부러 감추지
+        # 않는다). 목록에서 실제로 빠지는 것은 `딜소개 불가` 하나뿐이다.
         raise HTTPException(
             status_code=400,
-            detail="이미 발송한 회차에 포함된 기업이라 삭제할 수 없습니다. "
-                   "대신 '보류'로 표시하면 소개 목록에서 빠집니다.",
+            detail=f"'{company.name}' 은 이미 발송한 회차에 들어 있어 삭제할 수 "
+                   "없습니다 — 지우면 그 회차에 무엇을 보냈는지가 사라집니다. "
+                   "계약여부를 '딜소개 불가' 로 두면 발송 목록에서 빠집니다.",
         )
     db.delete(company)
     db.commit()

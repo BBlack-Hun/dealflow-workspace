@@ -137,6 +137,32 @@
       <button type="button" class="linkbtn" id="select-all-contacts">전체선택</button>
       <button type="button" class="linkbtn" id="select-noreact">반응 없는 담당자만</button>
     </h2>
+    {#
+      **두 화면의 수가 왜 다른지 여기서 말한다.** 투자사 관리 현황은 `내가 맡은
+      사람`이고 이 목록은 `지금 보낼 수 있는 사람`이라 원래 다르다 — 그런데
+      화면이 그 사정을 말하지 않으면 어느 쪽이 고장인지 알 수가 없다.
+      숫자는 전부 `sheet_owner.recipient_counts` 한 곳에서 온다.
+    #}
+    <p class="hint" id="recipient-note">
+      {% if recipient_counts.managed %}
+      맡고 있는 투자사 <b>{{ recipient_counts.managed }}</b>명 중
+      카톡방 연결이 끝난 <b>{{ recipient_counts.sendable }}</b>명에게 보낼 수 있습니다
+      {%- if recipient_counts.blocked %} ·
+      나머지 {{ recipient_counts.blocked }}명은
+      {% for b in recipient_counts.blocked_by_stage %}{{ b.label }} {{ b.count }}명{% if not loop.last %} · {% endif %}{% endfor %}
+      입니다{% endif %} —
+      <a href="/contacts">투자사 관리 현황</a> 에서 연결을 이어 주세요.
+      {% else %}
+      맡고 있는 투자사가 없습니다 —
+      <a href="/contacts">투자사 관리 현황</a> 에서 명단을 할당받아야 보낼 수 있습니다.
+      {% endif %}
+      {% if recipient_counts.team_wide %}
+      {# 관리자는 투자사 관리 현황에서 팀 전체를 보지만, 발송은 본인 담당분뿐이다 —
+         남의 방으로 문구가 실제로 나가는 일이라 열지 않는다(deps.may_manage_team_contacts). #}
+      <br>투자사 관리 현황에는 팀 전체 {{ recipient_counts.team_total }}명이 뜨지만,
+      <b>발송 대상은 본인 담당분뿐입니다</b> — 남의 담당에게 실수로 나가면 안 됩니다.
+      {% endif %}
+    </p>
     <div class="picker-search">
       <input type="search" id="contact-search"
              placeholder="이름 · 투자사 · 단계(Series A) · 분야 · 라운드 규모 검색 ({{ contacts|length }}명)"
@@ -145,6 +171,34 @@
         <input type="checkbox" id="only-picked-contacts"> 선택한 것만
       </label>
     </div>
+    {#
+      그룹 필터 — 투자사 관리 현황의 `그룹` 칸(`data-f-group`)이 거르는 그 값이다.
+      값은 서버가 `sheet_owner.group_rows` 로 세어 주므로 두 화면이 같은 사람을
+      고른다.
+
+      **표 필터(`filters.js`)를 그대로 붙일 수는 없다** — 그쪽은 `th[data-filters]`
+      와 `tbody tr` 을 걸어 다니는데 이 목록은 표가 아니라 카드 묶음이다. 그래서
+      **같은 화면이 이미 쓰고 있는 칩 방식**(아래 딜 소싱의 갈래·담당)을 그대로
+      쓰고, `(비어 있음)` 이라는 말만 `filters.js` 의 `EMPTY` 와 맞춘다 —
+      두 화면에서 같은 조건으로 고른 사람이 달라지면 안 된다.
+
+      비어 있음 값을 서버가 실어 보낸다(`data-empty`). 스크립트에 한글을 박아
+      두면 한쪽만 고쳐지는 날이 온다.
+    #}
+    {% if contact_groups %}
+    <div class="pick-filters" id="contact-filters">
+      <div class="filter-line" id="group-filter" data-empty="{{ empty_group }}">
+        <span class="filter-label">그룹</span>
+        <button type="button" class="chip active" data-value="">
+          전체 <b>{{ contacts|length }}</b></button>
+        {% for g in contact_groups %}
+        <button type="button" class="chip"
+                data-value="{{ g.label if not g.name else g.name }}">
+          {{ g.label }} <b>{{ g.count }}</b></button>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
     {#
       갈래 필터. 갈래가 곧 문구라, 이름을 검색창에 쳐서 찾게 하면 갈래가
       몇 개인지도 모른 채 골라야 한다.
@@ -176,8 +230,14 @@
     <p class="hint" id="contact-summary" hidden></p>
     <div class="card-list" id="contact-list">
       {% for c in contacts %}
-      <label class="pick-card"
-             data-search="{{ (c.name ~ ' ' ~ (c.title or '') ~ ' ' ~ (c.firm or '') ~ ' ' ~ (c.department or '') ~ ' ' ~ (c.kakao_room_name or '') ~ ' ' ~ (c.stages or '') ~ ' ' ~ (c.sectors or '') ~ ' ' ~ (c.round_size or ''))|lower }}">
+      {#
+        `data-group` 은 **거르는 값**이고, 아래 `pick-tags` 의 그룹 딱지는 그
+        값을 **보여 주는 자리**다. 둘이 짝이어야 한다 — 칸이 없는데 필터만
+        걸면 무엇으로 걸러졌는지 화면에서 확인할 수가 없다
+        (표 쪽에서 같은 짝을 `tests/test_filter_columns.py` 가 지킨다).
+      #}
+      <label class="pick-card" data-group="{{ c.group_name or '' }}"
+             data-search="{{ (c.name ~ ' ' ~ (c.title or '') ~ ' ' ~ (c.firm or '') ~ ' ' ~ (c.department or '') ~ ' ' ~ (c.kakao_room_name or '') ~ ' ' ~ (c.group_name or '') ~ ' ' ~ (c.stages or '') ~ ' ' ~ (c.sectors or '') ~ ' ' ~ (c.round_size or ''))|lower }}">
         <input type="checkbox" class="contact-cb" value="{{ c.id }}" data-name="{{ c.name }}"
                data-noreact="{{ 1 if c.id in no_reaction_ids else 0 }}">
         <div class="pick-body">
@@ -185,8 +245,10 @@
             {% if c.id in no_reaction_ids %}<span class="tag warn">반응 없음</span>{% endif %}
           </div>
           <div class="pick-sub muted">{{ c.firm or '' }}{% if c.department %} · {{ c.department }}{% endif %}</div>
-          {% if c.stages or c.sectors or c.round_size %}
+          {% if c.group_name or c.stages or c.sectors or c.round_size %}
           <div class="pick-tags">
+            {# 무엇으로 걸러졌는지 줄에서 보여야 한다 — 그룹이 없는 사람은 딱지도 없다(빈칸이 정확하다). #}
+            {% if c.group_name %}<span class="tag soft">그룹 {{ c.group_name }}</span>{% endif %}
             {% for st in (c.stages or '').split(',') if st.strip() %}<span class="tag">{{ st.strip() }}</span>{% endfor %}
             {% for sc in (c.sectors or '').split(',')[:2] if sc.strip() %}<span class="tag soft">{{ sc.strip() }}</span>{% endfor %}
             {% if c.round_size %}<span class="tag soft" title="{{ c.round_size }}">{{ c.round_size[:20] }}</span>{% endif %}

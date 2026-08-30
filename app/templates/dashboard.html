@@ -97,17 +97,40 @@
 <section class="panel pipeline-strip">
   <h2 class="panel-title">연결 진행 중인 명단
     <span class="count-pill"><b>{{ pipeline.total }}</b>명</span>
-    <a class="linkbtn" href="/contacts">투자사 관리 현황</a>
+    <a class="linkbtn" href="{{ pipeline.list_href }}">투자사 관리 현황</a>
   </h2>
+  {#
+    단계 이름·라벨·주소를 화면에 적지 않는다. 예전에는 여기에 `진행 중` 같은
+    값을 손으로 적어 두어, 라벨이 바뀌면 링크만 옛 값으로 남았다 —
+    눌러도 아무것도 안 걸러진 채 화면이 열려서 아무도 눈치채지 못한다.
+  #}
   <div class="react-row">
-    <a class="react {% if pipeline.in_progress %}ok{% endif %}"
-       href="/contacts?sheet=all&connect={{ '진행 중'|urlencode }}">
-      <b>{{ pipeline.in_progress }}</b><span>진행 중</span></a>
-    <a class="react" href="/contacts?sheet=all&connect={{ '미착수'|urlencode }}">
-      <b>{{ pipeline.not_started }}</b><span>미착수</span></a>
-    <a class="react" href="/contacts?sheet=all&connect={{ '참여 안 함'|urlencode }}">
-      <b>{{ pipeline.declined }}</b><span>참여 안 함</span></a>
+    {% for s in pipeline.stages %}
+    <a class="react {% if s.count %}{{ s.level }}{% endif %}" href="{{ s.href }}">
+      <b>{{ s.count }}</b><span>{{ s.label }}</span></a>
+    {% endfor %}
   </div>
+  {#
+    세는 것만 보여주고 갈 곳이 없으면, 그 44명이 누구인지 알 수 없다.
+    이름을 앞에서 다섯 명 세우고(‘오늘 보낼 후속’과 같은 수) 나머지는 눌러서
+    본다 — 대시보드에 명단을 통째로 쏟으면 다른 것이 안 보인다.
+  #}
+  {% if pipeline.people %}
+  <p class="hint name-line">
+    <span class="name-lead">지금 연결 중</span>
+    {% for p in pipeline.people %}<a class="req-link" href="{{ p.href }}"
+       title="이 투자사 상세 열기"><b>{{ p.name }}</b> <span class="muted">{{ p.firm }}</span></a>{% if not loop.last %}<span class="sep">·</span>{% endif %}{% endfor %}
+    {% if pipeline.more %}<a class="linkbtn" href="{{ pipeline.in_progress_href }}">나머지 {{ pipeline.more }}명 보기</a>{% endif %}
+  </p>
+  {% elif pipeline.next_stage.count %}
+  {# 진행 중이 0이면 이름 자리가 통째로 비어 '고장' 처럼 읽힌다. 다음 동작을 적는다. #}
+  <p class="hint">지금 통화·초대 중인 사람은 없습니다 —
+    <a href="{{ pipeline.next_stage.href }}">{{ pipeline.next_stage.label }} {{ pipeline.next_stage.count }}명</a>에서 다음 대상을 고르세요.</p>
+  {% else %}
+  {# 진행 중도 미착수도 0이면 남은 것은 '참여 안 함' 뿐이다 — 할 일이 없다는
+     뜻이지 화면이 비어 버린 것이 아니라고 적어 준다. #}
+  <p class="hint">지금 손댈 연결이 없습니다 — 남은 사람은 더 진행하지 않기로 한 명단입니다.</p>
+  {% endif %}
   {% if pipeline.owners %}
   <p class="hint">
     연결 담당:

@@ -1,8 +1,7 @@
 """투자컨설턴트 현황 시트 가져오기.
 
-원본이 `중요 스타트업` · `경영본부 전달 기업` 으로 나뉘어 있고 관리하는
-사람이 다르다. 시트별로 통째로 갈아 끼운다 — 맞춰 넣으면 시트에서 지운
-줄이 앱에 남는다.
+원본이 `스타트업` · `경영본부 전달 기업` 으로 나뉘어 있고 관리하는 사람이
+다르다. 시트별로 통째로 갈아 끼운다 — 맞춰 넣으면 시트에서 지운 줄이 앱에 남는다.
 
 컬럼 순서가 시트마다 다르다(`경영본부 전달 기업` 은 기업명이 뒤에 있다).
 자리가 아니라 **이름으로** 찾는다.
@@ -28,6 +27,7 @@ from sqlalchemy import delete  # noqa: E402
 
 from app.db import SessionLocal  # noqa: E402
 from app.models import ConsultingColumn, ConsultingCompany  # noqa: E402
+from app.routers.consulting import split_contract_line  # noqa: E402
 
 # 시트 컬럼(포함으로 찾는다) → 모델 칸
 FIELDS = [
@@ -41,6 +41,14 @@ FIELDS = [
 ]
 # 월 컬럼은 이 낱말이 들어간 칸으로 알아본다.
 MONTH_MARK = "리마인드"
+
+# 원본 파일의 시트 이름 → 앱의 탭 이름.
+#
+# 첫 탭 이름을 `중요 스타트업` 에서 `스타트업` 으로 바꿨는데(0039 마이그레이션),
+# 사람이 들고 있는 xlsx 는 여전히 옛 이름이다. 그대로 넣으면 **옛 이름의 유령
+# 탭이 다시 생기고** 그때부터 같은 명단이 두 탭으로 갈린다. 파일을 고치라고
+# 하는 것보다 여기서 받아 주는 편이 안전하다.
+SHEET_ALIAS = {"중요 스타트업": "스타트업"}
 
 
 def text(value) -> str:
@@ -61,11 +69,15 @@ def text(value) -> str:
 #
 #     6월  (무료계약 2개사 / 유료계약 3개사)
 #     기업명 / 계약금액 / 성공보수율 / 계약일
-#     제이제이엔에스/ 무료/ 3.5%/ 미정
+#     ○○○/ 무료/ 3.5%/ 미정
 #
 # 이 모양 때문에 처음엔 건너뛰었는데, 그러면 화면에서 이 표를 아예 볼 수 없다.
-# `company_name` 이 원래 `기업명/계약일/무료유료/계약금` 을 한 칸에 담는 칸이라
-# 슬래시 줄을 그대로 넣고, 월과 무료·유료만 따로 뽑아 옆에 세운다.
+#
+# 처음에는 슬래시 줄을 `company_name` 에 통째로 넣었다. 한 칸에 뭉쳐 있으면
+# 계약금으로 거를 수도, 보수율만 고칠 수도 없어서 **시트가 적어 둔 머리글
+# 순서대로 칸에 나눠 담는다**(`기업명 / 계약금액 / 성공보수율 / 계약일`).
+# 나누는 규칙은 앱과 같은 것을 쓴다 — 여기 따로 적으면 다시 올릴 때마다 화면과
+# 다른 모양이 들어간다. 나누기 전 줄은 `source_line` 에 그대로 남는다.
 CONTRACT_SHEET = "월간 계약 업무현황표"
 _MONTH_LINE = re.compile(r"^\s*(\d{1,2})\s*월")
 _HEADER_LINE = re.compile(r"기업명\s*/")
@@ -118,6 +130,7 @@ def main() -> None:
     for sheet_name in wb.sheetnames:
         ws = wb[sheet_name]
         sheet = sheet_name.strip()
+        sheet = SHEET_ALIAS.get(sheet, sheet)
         # 계약 현황표는 머리글 있는 표가 아니라 월 묶음 자유 서식이다.
         if CONTRACT_SHEET in sheet:
             lines = parse_contract_sheet(ws)
@@ -126,11 +139,17 @@ def main() -> None:
             db.execute(delete(ConsultingColumn)
                        .where(ConsultingColumn.sheet == sheet))
             for pos, item in enumerate(lines, start=1):
+                parts = split_contract_line(item["line"])
                 db.add(ConsultingCompany(
                     sheet=sheet, position=pos, user_id=args.owner or None,
                     region=item["month"],            # 어느 달의 계약인가
-                    management=item["kind"],         # 무료 / 유료
-                    company_name=item["line"]))      # 기업명/계약금액/보수율/계약일
+                    management=item["kind"],         # 계약여부 — 무료 / 유료
+                    # 나누기 전 한 줄. 나눈 결과가 틀렸을 때 여기서 다시 나눈다.
+                    source_line=item["line"],
+                    company_name=parts.get("company_name") or item["line"],
+                    contract_fee=parts.get("contract_fee"),
+                    success_fee=parts.get("success_fee"),
+                    meeting_at=parts.get("meeting_at")))   # 계약일
             total += len(lines)
             print(f"  {sheet:22} {len(lines):3}건 (월 묶음)")
             continue

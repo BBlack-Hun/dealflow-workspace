@@ -67,40 +67,9 @@
 </section>
 
 <div class="dash-grid">
-  <section class="panel">
-    <h2 class="panel-title">예약된 후속 <span class="hint">{{ upcoming|length }}건</span></h2>
-    {% if upcoming %}
-    <div class="table-wrap">
-    <table class="grid-table compact">
-      <thead><tr><th>예정일</th><th>담당자</th><th>다음 단계</th><th class="num">남음</th><th></th></tr></thead>
-      <tbody>
-        {% for r in upcoming %}
-        <tr>
-          <td class="muted">{{ r.due }}</td>
-          <td>
-            {# 답이 오면 여기서 곧바로 기록한다 — 화면을 옮겨 담당자를 다시
-               고르는 사이에 "누구였더라" 가 된다. #}
-            <a class="req-link" href="/ir?contact={{ r.contact_id }}"
-               title="이 투자사의 IR 자료 요청 기록하기">
-              <b>{{ r.name }}</b> <span class="muted">{{ r.firm }}</span>
-            </a>
-          </td>
-          <td>{{ r.next_label }}</td>
-          <td class="num">{{ r.days_left }}일</td>
-          <td>
-            <form method="post" action="/followups/{{ r.id }}/responded">
-              <button class="linkbtn" type="submit">답 옴</button>
-            </form>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    </div>
-    {% else %}
-    <p class="muted">예약된 후속이 없습니다.</p>
-    {% endif %}
-  </section>
+  {# 예약된 후속 — 딜 진행 관리와 옛 후속 관리가 **같은 파일**을 쓴다.
+     각자 한 벌씩 들고 있으면 한쪽에만 검색칸이 달린다. #}
+  {% include "_upcoming_followups.html" %}
 
   <section class="panel" id="rules">
     <h2 class="panel-title">발송 주기

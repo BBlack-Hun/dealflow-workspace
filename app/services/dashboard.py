@@ -285,8 +285,20 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None,
     # 담당은 **명단(시트) 단위**로 정해진다 — "내 이름으로 된 탭만 내 담당".
     # 이렇게 하지 않으면 시트를 올린 사람에게 팀 전체가 붙는다.
     contacts = sheet_owner.my_contacts(db, user)
-    waiting = [c for c in contacts if c.connect_stage != "connected"]
     ids = [c.id for c in contacts]
+
+    # 연결 작업(전화 → 초대 → 카톡방)은 **명단을 배정받기 전** 풀에서 일어난다.
+    # 그래서 이 패널만은 `my_contacts`(배정된 명단)가 아니라 내가 들고 있는 줄
+    # 전체(`managed`)를 센다. 배정 명단만 세면 이 패널은 사실상 늘 비어 있다 —
+    # 로컬 실데이터에서도 배정 명단 125명은 전부 '연결 완료'이고, 연결 중인
+    # 132명은 풀 명단에 있어 패널이 아예 뜨지 않았다.
+    #
+    # 모집단을 `managed` 로 맞추는 두 번째 이유는 **눌러 갈 곳과 같아야 하기**
+    # 때문이다. 이 패널은 투자사 관리 현황의 `전체` 탭으로 보내는데, 그 탭이
+    # 세는 모집단이 바로 `managed` 다(`sheet_owner.managed` 주석 참고).
+    # 세는 곳과 가는 곳이 다르면 "44명" 을 눌렀는데 0줄이 나온다.
+    waiting = [c for c in sheet_owner.managed(db, user)
+               if not sheet_owner.can_send_to(c)]
 
     rooms = Counter(_room_state(c) for c in contacts)
     # 상태별로 **누구인지**까지 들고 있어야 눌러서 갈 곳을 만들 수 있다.
@@ -417,15 +429,91 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None,
     }
 
 
+# 패널에 이름을 몇 명까지 세울지. '오늘 보낼 후속'(5명)과 같은 수다 —
+# 대시보드는 한눈에 보는 화면이라 명단을 통째로 쏟으면 나머지가 안 보인다.
+# 나머지는 눌러서 본다(그래서 `more` 와 링크를 함께 내놓는다).
+PIPELINE_NAMES = 5
+
+# 눌러 갈 곳은 **투자사 관리 현황의 `전체` 탭**이다.
+#
+# `sheet=all` 이 빠지면 그 화면은 '내가 배정받은 명단' 탭을 먼저 연다 — 연결
+# 중인 사람은 대부분 아직 배정 전 풀에 있어서, 패널이 44명이라고 한 뒤 0줄짜리
+# 화면이 열린다. 여기서 세는 모집단(`sheet_owner.managed`)과 같은 탭이어야 한다.
+#
+# **관리자는 여기서 한 겹 어긋난다.** 대시보드는 자기 것만 보는 화면이라 이
+# 패널도 본인 담당만 세는데, 투자사 관리 현황은 관리자에게 팀 전체를 보여
+# 준다(`deps.may_manage_team_contacts`). 그래서 관리자가 이 타일을 누르면
+# 남의 담당까지 함께 뜬다. 지금 그 표에는 담당자로 거를 필터 키가 없고(담당은
+# **명단 탭**이 나눈다), 그 표는 다른 작업자가 들고 있어 여기서 세울 수 없다.
+# 대신 **이름은 패널에 그대로 세워 두었다** — 관리자도 누가 자기 것인지는
+# 화면을 떠나지 않고 읽는다. 팀원(대부분의 사용자)에게는 수가 정확히 맞는다.
+_CONNECT_LIST = "/contacts?sheet=all"
+
+
+def _connect_href(stage: str) -> str:
+    """이 단계의 사람들만 남는 목록 주소.
+
+    **필터 키(`connect`)와 값(연결 상태 라벨)을 손으로 적지 않는다.** 값은
+    임포트가 정한 라벨(`CONNECT_LABELS`)을 그대로 쓰고, 키는 투자사 관리 현황이
+    머리글에 선언한 것과 같아야 한다(`contacts.html` 의 `connect:연결 상태`,
+    행의 `data-f-connect`). 셋 중 하나만 어긋나도 **눌러도 아무것도 안 걸러진
+    채** 화면이 열려서, 아무도 눈치채지 못한다 — 이 저장소가 한 번 당한 자리다.
+    """
+    from .sheet_import import CONNECT_LABELS   # 순환 임포트 방지: 함수 안에서
+
+    return f"{_CONNECT_LIST}&connect={quote(CONNECT_LABELS[stage])}"
+
+
 def _pipeline_view(rows: List[VcContact]) -> dict:
-    """아직 연결되지 않은 명단. 누가 맡고 있는지까지 보여준다."""
-    stages = Counter(c.connect_stage for c in rows)
+    """아직 연결되지 않은 명단. **누구인지**까지 보여준다.
+
+    세는 것만 보여주고 갈 곳이 없으면, 그 44명이 누구인지 알 수 없다. 그래서
+    ① 진행 중인 사람 이름을 앞에서 몇 명 세우고, ② 나머지는 목록으로 보내고,
+    ③ 이름 하나하나가 그 사람의 상세로 간다.
+
+    이름을 세우는 것은 **진행 중**뿐이다. 지금 전화·초대가 걸려 있는 사람이라
+    다음 동작이 붙어 있고, 미착수 80명까지 이름으로 늘어놓으면 대시보드가
+    명단 화면이 된다(그건 투자사 관리 현황이 할 일이다).
+
+    순서는 목록 화면과 **같다**(그룹 → 이름, `sheet_owner.managed`). 패널의
+    첫 다섯 명이 눌러 간 화면의 첫 다섯 줄이어야 같은 명단으로 읽힌다.
+    """
+    from .sheet_import import (STAGE_DECLINED, STAGE_IN_PROGRESS,
+                               STAGE_NOT_STARTED, CONNECT_LABELS)
+
+    counted = Counter(c.connect_stage for c in rows)
     owners = Counter((c.assignee_name or "미지정").strip() for c in rows)
+    working = [c for c in rows if c.connect_stage == STAGE_IN_PROGRESS]
+
+    # 화면은 단계 이름·라벨·주소·강조를 짝지어 두지 않는다 — 그렇게 두면 벌이
+    # 둘이 되어 하나는 반드시 낡는다(라벨만 고치고 링크는 옛 값으로 남는 식).
+    stages = [
+        {"key": key, "label": CONNECT_LABELS[key], "count": counted.get(key, 0),
+         "href": _connect_href(key),
+         # 지금 사람이 붙어 움직이는 것은 '진행 중' 하나뿐이라 거기만 눈에 띈다.
+         "level": "ok" if key == STAGE_IN_PROGRESS else ""}
+        for key in (STAGE_IN_PROGRESS, STAGE_NOT_STARTED, STAGE_DECLINED)
+    ]
     return {
         "total": len(rows),
-        "in_progress": stages.get("in_progress", 0),
-        "not_started": stages.get("not_started", 0),
-        "declined": stages.get("declined", 0),
+        "in_progress": counted.get(STAGE_IN_PROGRESS, 0),
+        "not_started": counted.get(STAGE_NOT_STARTED, 0),
+        "declined": counted.get(STAGE_DECLINED, 0),
+        "stages": stages,
+        "people": [
+            {"id": c.id, "name": c.name, "firm": c.firm or "",
+             # 이름을 누르면 그 사람 상세가 열린다(`?contact=` 는 화면이 직접
+             # 읽는 값이라 필터와 부딪히지 않는다).
+             "href": f"{_CONNECT_LIST}&contact={c.id}"}
+            for c in working[:PIPELINE_NAMES]
+        ],
+        # 화면이 `총 - 보여준 수` 를 다시 계산하지 않게 여기서 준다.
+        "more": max(len(working) - PIPELINE_NAMES, 0),
+        "in_progress_href": _connect_href(STAGE_IN_PROGRESS),
+        # 진행 중이 하나도 없을 때 화면이 가리키는 다음 자리. 라벨을 화면에
+        # 다시 적지 않도록 단계 하나를 통째로 넘긴다.
+        "next_stage": next(s for s in stages if s["key"] == STAGE_NOT_STARTED),
+        "list_href": _CONNECT_LIST,
         "owners": [{"name": name, "count": n} for name, n in owners.most_common(4)],
     }
 

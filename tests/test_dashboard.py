@@ -285,8 +285,13 @@ def test_editing_makes_a_company_introducible(logged, db):
     assert r.json()["introducible"] is True
 
 
-def test_company_used_in_a_batch_cannot_be_deleted(logged, db, users):
-    """이미 보낸 회차에 들어간 기업은 지우지 않는다(이력이 깨진다)."""
+def test_company_used_in_a_batch_cannot_be_deleted(admin_client, db, users):
+    """이미 보낸 회차에 들어간 기업은 **관리자여도** 지우지 않는다(이력이 깨진다).
+
+    삭제 자체가 관리자 전용이 되어 팀원으로는 403 이다 — 누가 막히는지는
+    tests/test_company_status_and_delete.py 가 따로 본다. 여기서 보는 것은
+    "권한이 있어도 이력이 붙은 기업은 안 지워진다" 쪽이다.
+    """
     from app.models import DealBatch, DealBatchCompany, IrCompany
 
     company = IrCompany(name="발송된기업", one_liner="소개", revenue_recent=100)
@@ -296,19 +301,24 @@ def test_company_used_in_a_batch_cannot_be_deleted(logged, db, users):
     db.add(DealBatchCompany(batch_id=batch.id, company_id=company.id, position=1))
     db.commit()
 
-    r = logged.delete(f"/api/companies/{company.id}")
+    r = admin_client.delete(f"/api/companies/{company.id}")
     assert r.status_code == 400
-    assert "보류" in r.json()["detail"]      # 대신 무엇을 하면 되는지 알려준다
+    # 대신 무엇을 하면 되는지 알려준다. 예전에는 '보류' 를 가리켰는데 그것으로는
+    # 발송 화면에서 뒤로 밀릴 뿐 그대로 뜬다 — 목록에서 실제로 빠지는 것은
+    # `딜소개 불가` 하나뿐이다.
+    assert "딜소개 불가" in r.json()["detail"]
+    assert "발송된기업" in r.json()["detail"]   # 무엇을 못 지웠는지 이름을 댄다
 
 
-def test_unused_company_can_be_deleted(logged, db):
+def test_unused_company_can_be_deleted(admin_client, db):
+    """이력이 없는 기업은 관리자가 지울 수 있다(팀원은 403 — 위 검사 참고)."""
     from app.models import IrCompany
 
     company = IrCompany(name="지울기업")
     db.add(company)
     db.commit()
     company_id = company.id          # 지운 뒤 company.id 를 읽으면 세션이 행을 다시 찾는다
-    assert logged.delete(f"/api/companies/{company_id}").status_code == 200
+    assert admin_client.delete(f"/api/companies/{company_id}").status_code == 200
     db.expire_all()
     assert db.get(IrCompany, company_id) is None
 

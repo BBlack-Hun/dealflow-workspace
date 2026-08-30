@@ -11,6 +11,10 @@
   var note = document.getElementById("co-note");
   var status = document.getElementById("co-status");
   var current = null;   // 편집 중인 기업 id (null = 새로 추가)
+  // 무엇을 지우는지 확인창에 **이름**이 나와야 한다. 되돌릴 수 없는 일이라
+  // "이 기업" 만으로는 어느 줄에서 열었는지 확신할 수 없다
+  // (투자컨설턴트 현황이 같은 이유로 이름을 대고 묻는다).
+  var currentName = "";
   var filter = "";
 
   var FIELDS = ["name", "sector_major", "sector_minor", "series", "one_liner",
@@ -126,10 +130,15 @@
     current = id;
     panel.hidden = false;
     document.getElementById("co-backdrop").hidden = false;
-    el("co-delete").hidden = !id;
+    // 관리자가 아니면 단추 자체가 없다(companies.html 이 안 그린다).
+    if (el("co-delete")) el("co-delete").hidden = !id;
     if (!id) {
       el("co-title").textContent = "기업 추가";
-      fill({ contract_status: "no", summary_status: "draft" });
+      currentName = "";
+      // `no` 는 **화면에 없는 값**이다(option 은 none/free/paid/review/blocked).
+      // 없는 값을 넣으면 select 가 고른 것 없는 상태가 되고, 그대로 [저장]하면
+      // 빈 값이 날아가 NOT NULL 인 칸에서 저장 전체가 500 이 났다.
+      fill({ contract_status: "none", summary_status: "draft" });
       el("f-name").focus();
       return;
     }
@@ -138,6 +147,7 @@
       .then(function (r) { return r.json(); })
       .then(function (d) {
         el("co-title").textContent = d.name;
+        currentName = d.name || "";
         fill(d);
       });
   }
@@ -186,9 +196,15 @@
       .catch(function () { alert("저장 요청 오류"); });
   });
 
-  el("co-delete").addEventListener("click", function () {
+  // 관리자가 아니면 단추가 아예 없다 — 있을 때만 건다.
+  if (el("co-delete")) el("co-delete").addEventListener("click", function () {
     if (!current) return;
-    if (!confirm("이 기업을 삭제할까요?\n이미 보낸 회차에 들어간 기업은 삭제할 수 없습니다.")) return;
+    // **무엇을 지우는지 이름을 대고 묻는다.** 되돌릴 수 없다.
+    // 되돌릴 길(딜소개 불가)을 같이 알려 준다 — 지우는 것 말고도 발송
+    // 목록에서 빼는 방법이 있다는 것을 여기서 처음 아는 사람이 많다.
+    if (!confirm("'" + (currentName || "이 기업") + "' 을 삭제할까요? 되돌릴 수 없습니다.\n" +
+      "(딜소개를 보낸 적이 있으면 이력이 깨지므로 삭제되지 않습니다 — " +
+      "계약여부를 '딜소개 불가' 로 두면 발송 목록에서 빠집니다)")) return;
     fetch("/api/companies/" + current, { method: "DELETE" })
       .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
       .then(function (res) {
@@ -230,6 +246,35 @@
     // 필터가 이 값으로 거르고 있다 — 행의 값도 같이 맞춰 둔다.
     e.detail.row.setAttribute("data-f-ready",
       data.introducible ? "● 소개 가능" : "⚠ 내용 부족");
+  });
+})();
+
+// 계약여부 — 표에는 **말**이 보이고 저장되는 것은 값이다. 저장 뒤에는
+// **응답이 준 말**로 되그린다. 누른 글자를 그대로 두면, 라우터가 맞춰 넣은
+// 값(`딜소개불가` → `blocked`)과 화면 글자가 갈려 새로고침 때 다른 말이 나온다.
+//
+// `딜소개 불가` 로 바꾸면 그 줄에 표시가 붙어야 한다. 이 표시가 곧 "발송
+// 화면에서 빠졌다" 는 뜻이라, 새로고침해야 보이면 바꾼 것이 걸렸는지 알 수 없다.
+(function () {
+  var table = document.getElementById("co-table");
+  if (!table) return;
+
+  table.addEventListener("inline-saved", function (e) {
+    var data = e.detail.data || {};
+    if (!("contract_label" in data)) return;
+    var cell = e.detail.cell;
+    if (cell.getAttribute("data-field") !== "contract_status") return;
+
+    cell.textContent = data.contract_label;
+    cell.title = data.contract_label;
+    var row = e.detail.row;
+    if (!row) return;
+    // 필터도 **맞춘 말**로 거른다. 누른 그대로 두면 같은 뜻이 목록에 두 벌로
+    // 갈려(`딜소개불가` · `딜소개 불가`), 한쪽을 골랐을 때 그 기업만 사라진다.
+    if (row.hasAttribute("data-f-contract")) {
+      row.setAttribute("data-f-contract", data.contract_label);
+    }
+    row.classList.toggle("blocked-row", !!data.blocked);
   });
 })();
 

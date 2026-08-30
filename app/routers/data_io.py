@@ -15,9 +15,14 @@
 **내려받기**
 화면에서 보는 표를 그대로 엑셀로 준다. 필터·정렬은 엑셀에서 하도록 머리행을 고정하고
 자동 필터를 걸어 둔다.
+
+**업무 보고 리포트**(`/api/export/report.xlsx`)만 모양이 다르다. 그건 표 하나가
+아니라 화면 한 장을 옮긴 것이고, 카톡으로 쓰던 업무보고를 대신하는 문서라
+제목·섹션·인쇄 설정이 붙는다. 자세한 이유는 파일 끝 그 자리에 적어 두었다.
 """
 from __future__ import annotations
 
+import io
 from datetime import date
 from typing import List, Optional
 
@@ -29,7 +34,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import get_current_user, may_manage_team_contacts
 from ..models import IrCompany, SendItem, SendJob, User, VcContact
-from ..services import sheet_import, spreadsheet as sp
+from ..services import report as report_svc, sheet_import, spreadsheet as sp
 from .contacts import contact_rows
 
 # 경로를 /api/import, /api/export 로 따로 둔다.
@@ -337,3 +342,381 @@ def export_job(job_id: int, db: Session = Depends(get_db),
             item.error or "", item.message or "",
         ])
     return _xlsx(f"발송결과_{job.id}.xlsx", f"발송 {job.id}", JOB_HEADERS, rows)
+
+
+# --- 업무 보고 → 리포트 엑셀 -------------------------------------------------
+#
+# 업무 보고 화면(`/report`)을 **카톡 업무보고 대신** 쓴다. 그러려면 화면에서 읽은
+# 것을 손으로 옮겨 적지 않고 파일 하나로 넘길 수 있어야 한다. 그래서 이 파일은
+# 화면을 위에서 아래로 그대로 옮긴다 — 요약 · 발송 · 미팅 · 반응.
+#
+# **시트를 셋으로 나눈 이유.** 엑셀은 칸 폭이 시트 단위다. 발송(회차명 한 줄)과
+# 미팅(후기 한 문단)과 반응(투자사·기업)을 한 장에 쌓으면 어느 표도 제 폭을 갖지
+# 못해 셋 다 읽기 어려워진다. 화면 순서대로 시트를 세우면 파일을 열었을 때 첫
+# 장이 화면 맨 위(요약·발송)이고, 표마다 제 폭을 갖는다.
+#
+# **꾸미기는 읽는 품을 줄이는 선까지만.** 제목 · 섹션 띠 · 머리글 서식 · 칸 폭 ·
+# 안 나간 건 빨강 · 인쇄 설정까지다. 숫자를 읽는 문서라 그 이상은 방해가 된다.
+# 색은 세 가지뿐이고 뜻이 화면과 같다 — 중단은 빨강, 나머지 미완은 노랑.
+
+_R_HEAD_FILL = "EEF2F7"    # 표 머리글. 다른 내려받기(spreadsheet.write_xlsx)와 같은 색
+_R_BAND_FILL = "DCE6F1"    # 섹션 띠 (화면의 panel-title)
+_R_GROUP_FILL = "F5F7FA"   # 그룹 머리 (화면의 bucket-head)
+_R_BAD_FILL = "FDECEC"     # 중단된 회차 줄
+_R_BAD = "B42318"          # 중단 · 날짜 지남
+_R_WARN = "B54708"         # 안 나간 건이 남음
+_R_MUTED = "667085"
+_R_LINE = "D8DEE9"
+
+
+def _report_width(text: str) -> int:
+    """엑셀 칸 폭 단위로 잰 글자 너비. 한글은 두 배다.
+
+    (`spreadsheet._display_width` 와 같은 셈이다. 그쪽은 그 모듈 안에서만
+    쓰라고 밑줄을 달아 둔 함수라 여기서는 끌어다 쓰지 않는다.)
+    """
+    return sum(2 if ord(ch) > 0x2000 else 1 for ch in str(text))
+
+
+class _ReportSheet:
+    """보고 시트를 위에서 아래로 쌓는 붓.
+
+    행 번호를 손으로 세지 않게 한다 — 섹션을 하나 끼워 넣을 때마다 아래 모든
+    좌표를 고쳐야 하면, 고치다 빠뜨린 자리가 그대로 어긋난 표가 된다.
+    """
+
+    def __init__(self, ws, widths, cols):
+        from openpyxl.utils import get_column_letter
+        from openpyxl.worksheet.properties import PageSetupProperties
+
+        self.ws = ws
+        self.cols = cols                 # 이 시트의 표가 쓰는 칸 수
+        self.at = 1
+        self._letter = get_column_letter
+        for i, width in enumerate(widths, start=1):
+            ws.column_dimensions[get_column_letter(i)].width = width
+        # 눈금선을 끈다. 표에는 테두리를 직접 그리므로, 눈금선까지 있으면 어디까지가
+        # 표인지 안 보인다 — 인쇄해서 보는 문서다.
+        ws.sheet_view.showGridLines = False
+        ws.sheet_properties.pageSetUpPr = PageSetupProperties(fitToPage=True)
+        ws.page_setup.orientation = "landscape"
+        ws.page_setup.fitToWidth = 1
+        ws.page_setup.fitToHeight = 0     # 세로는 몇 장이 되든 그대로
+        ws.page_margins.left = ws.page_margins.right = 0.4
+        ws.page_margins.top = ws.page_margins.bottom = 0.5
+
+    # ── 낱개 ──────────────────────────────────────────────────────────────
+    def _merge(self, row):
+        if self.cols > 1:
+            self.ws.merge_cells(f"A{row}:{self._letter(self.cols)}{row}")
+
+    def blank(self, height=6):
+        self.ws.row_dimensions[self.at].height = height
+        self.at += 1
+
+    def title(self, text, sub=""):
+        from openpyxl.styles import Alignment, Font
+
+        cell = self.ws.cell(row=self.at, column=1, value=text)
+        cell.font = Font(bold=True, size=15)
+        cell.alignment = Alignment(vertical="center")
+        self._merge(self.at)
+        self.ws.row_dimensions[self.at].height = 24
+        self.at += 1
+        if sub:
+            cell = self.ws.cell(row=self.at, column=1, value=sub)
+            cell.font = Font(size=10, color=_R_MUTED)
+            self._merge(self.at)
+            self.at += 1
+
+    def band(self, text):
+        """섹션 띠 — 화면의 panel-title 자리."""
+        from openpyxl.styles import Alignment, Font, PatternFill
+
+        cell = self.ws.cell(row=self.at, column=1, value=text)
+        cell.font = Font(bold=True, size=12)
+        cell.fill = PatternFill("solid", fgColor=_R_BAND_FILL)
+        cell.alignment = Alignment(vertical="center")
+        self._merge(self.at)
+        self.ws.row_dimensions[self.at].height = 20
+        self.at += 1
+
+    def group(self, text):
+        """그룹 머리 — 화면의 bucket-head(딜 소개 / 8월 넷째주 / IR 요청 투자사)."""
+        from openpyxl.styles import Alignment, Font, PatternFill
+
+        cell = self.ws.cell(row=self.at, column=1, value=text)
+        cell.font = Font(bold=True, size=11)
+        cell.fill = PatternFill("solid", fgColor=_R_GROUP_FILL)
+        cell.alignment = Alignment(vertical="center")
+        self._merge(self.at)
+        self.at += 1
+
+    def note(self, text, level=""):
+        """한 줄 안내. **칸을 합치지 않는다.**
+
+        합치면 엑셀이 줄 높이를 자동으로 늘려 주지 않아서, 폭보다 긴 글이
+        접힌 채 첫 줄만 보인다. 안 나간 건을 알리는 줄이 그렇게 잘리면 이
+        문서가 하려던 말이 통째로 사라진다. 안 합치면 오른쪽 빈 칸으로
+        넘쳐 흘러 한 줄로 다 보인다.
+        """
+        from openpyxl.styles import Font
+
+        color = {"bad": _R_BAD, "warn": _R_WARN}.get(level, _R_MUTED)
+        cell = self.ws.cell(row=self.at, column=1, value=text)
+        cell.font = Font(size=10, color=color, bold=level == "bad")
+        self.at += 1
+
+    def head(self, headers):
+        from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+
+        line = Side(style="thin", color=_R_LINE)
+        lines = 1
+        for i, text in enumerate(headers, start=1):
+            cell = self.ws.cell(row=self.at, column=i, value=text)
+            cell.font = Font(bold=True, size=10)
+            cell.fill = PatternFill("solid", fgColor=_R_HEAD_FILL)
+            # 칸 폭보다 긴 이름은 접는다. 잘리면 무엇을 세는 칸인지 안 보인다.
+            cell.alignment = Alignment(horizontal="center", vertical="center",
+                                       wrap_text=True)
+            cell.border = Border(top=line, bottom=line, left=line, right=line)
+            width = self.ws.column_dimensions[self._letter(i)].width or 8
+            lines = max(lines, -(-_report_width(text) // max(int(width) - 1, 1)))
+        # 줄 높이를 **접힌 줄 수에 맞춰** 잡는다. 22 로 고정해 두었더니 요약의
+        # `진행한 미팅` 이 두 줄로 접히면서 아랫줄이 잘렸다 — 무엇을 센 숫자인지
+        # 모르는 표가 된다. 높이를 아예 안 잡는 방법도 있지만, 그러면 여는
+        # 프로그램마다 다르게 그려진다.
+        self.ws.row_dimensions[self.at].height = 8 + 13.5 * lines
+        self.at += 1
+
+    def row(self, values, level="", nums=(), wraps=()):
+        """표 한 줄. `nums` 는 오른쪽 정렬할 칸(0부터), `wraps` 는 접을 칸."""
+        from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+
+        line = Side(style="thin", color=_R_LINE)
+        fill = PatternFill("solid", fgColor=_R_BAD_FILL) if level == "bad" else None
+        color = {"bad": _R_BAD, "warn": _R_WARN}.get(level)
+        for i, value in enumerate(values, start=1):
+            cell = self.ws.cell(row=self.at, column=i,
+                                value="" if value is None else value)
+            cell.font = Font(size=10, color=color) if color else Font(size=10)
+            if fill is not None:
+                cell.fill = fill
+            cell.alignment = Alignment(
+                horizontal="center" if (i - 1) in nums else "left",
+                vertical="top" if (i - 1) in wraps else "center",
+                wrap_text=(i - 1) in wraps)
+            cell.border = Border(bottom=line, left=line, right=line)
+        self.at += 1
+
+    def stats(self, pairs):
+        """`라벨 · 값` 목록 — 화면의 import-stats(미팅 결과 · IR 자료 요청)."""
+        from openpyxl.styles import Alignment, Font
+
+        for label, value in pairs:
+            self.ws.cell(row=self.at, column=1, value=label).font = Font(size=10)
+            cell = self.ws.cell(row=self.at, column=2, value=value)
+            cell.font = Font(size=10, bold=True)
+            cell.alignment = Alignment(horizontal="left")
+            self.at += 1
+
+
+def _kpi(sheet, data):
+    """화면 맨 위 KPI 줄을 그대로. 가로 한 줄이라 칸 폭에 매이지 않는다."""
+    sends = data["sends"]
+    labels = ["보낸 건수", "발송 회차", "안 나감", "잡은 미팅", "진행한 미팅",
+              "결과 물어봄", "아직 안 물어봄", "IR 요청", "IR 전달"]
+    values = [sends["sent"], sends["rounds"], sends["left"], data["total"],
+              data["done"], data["followup_done"], data["followup_open"],
+              data["ir_requested"], data["ir_delivered"]]
+    sheet.head(labels)
+    sheet.row(values, nums=set(range(len(values))))
+
+
+def _sends_sheet(sheet, data, team_wide):
+    """발송 — 화면 맨 위 패널. 카톡으로 손으로 쓰던 보고가 이 표다."""
+    sends = data["sends"]
+    sheet.band(f"{data['month']}월 발송  ·  딜 소개 · 딜 소싱")
+    if sends["left"]:
+        # 화면이 먼저 말하는 것과 같은 말. 이 줄이 없으면 대상 수를 완료로
+        # 옮겨 적는 일이 그대로 다시 일어난다.
+        sheet.note(f"대상이었는데 {sends['left']}건이 안 나갔습니다"
+                   f"(회차 {sends['short']}개) — 아래 '완료'는 실제로 도착한 건만"
+                   f" 셉니다. 대상 수를 완료로 적지 마세요.", level="bad")
+    if not sends["rounds"]:
+        sheet.note("이 달에는 나간 회차가 없습니다.")
+        return
+
+    # 딜 소개 칸은 **두 그룹 모두에 세운다.** 화면은 소싱에서 이 칸을 빼는데
+    # (늘 0 인 칸이 눈을 잡으므로), 엑셀은 칸 폭이 시트 단위라 그룹마다 칸이
+    # 어긋나면 두 표가 서로 다른 자리에 서 버린다.
+    headers = ["날짜", "회차명", "딜 소개", "대상", "완료", "안 나감",
+               "안 나간 사유", "상태"] + (["팀원"] if team_wide else [])
+    nums = {2, 3, 4, 5}
+    for group in sends["groups"]:
+        sheet.blank()
+        head = (f"{group['label']}   {group['sent']}건 완료"
+                f"   ·   회차 {group['rounds']}개 · 대상 {group['contacts']}명")
+        if group["companies"]:
+            head += f" · 딜 소개 {group['companies']}개사"
+        sheet.group(head)
+        if not group["rows"]:
+            sheet.note("이 달에는 없습니다.")
+            continue
+        sheet.head(headers)
+        for r in group["rows"]:
+            sheet.row(
+                [r["day"] or "-", r["title"], r["companies"], r["target"],
+                 r["sent"], r["left"], r["left_label"], r["status_label"]]
+                + ([r["owner"]] if team_wide else []),
+                level=r["level"], nums=nums, wraps={6})
+        # 합계는 **건을 더한 값**이다. 위 그룹 머리의 '대상 N명' 과 다를 수 있는데,
+        # 그쪽은 겹치는 사람을 한 명으로 센 값이라 그렇다(회차 둘의 대상이 겹친다).
+        #
+        # 딜 소개(개사) 칸은 **비워 둔다.** 회차마다 같은 딜을 다시 돌리므로
+        # 더하면 같은 기업을 여러 번 센다 — 8개사 회차를 다시 돌린 달이 16개사가
+        # 된다. 그 달에 소개한 기업 수는 위 그룹 머리가 겹치지 않게 세어 말한다.
+        sheet.row(["합계", "", "", group["target"], group["sent"], group["left"],
+                   "", ""] + ([""] if team_wide else []),
+                  level="warn" if group["left"] else "", nums=nums)
+
+
+def _meetings_sheet(sheet, data, team_wide):
+    """미팅 — 주차별. 화면의 '{달}월 미팅 총 N개사' 패널."""
+    sheet.title(f"{data['year']}년 {data['month']}월 미팅  총 {data['total']}개사",
+                f"결과 문의는 미팅 뒤 {data['followup_days']}일쯤 겁니다 — "
+                f"그걸 놓치면 계약이 흐지부지됩니다.")
+    headers = (["날짜", "담당자", "투자사", "기업", "구분"]
+               + (["팀원"] if team_wide else [])
+               + ["결과", "결과 문의", "후기 · 들은 내용"])
+    last = len(headers) - 1
+    if not data["weeks"]:
+        sheet.blank()
+        sheet.note("이 달에는 기록된 미팅이 없습니다.")
+    for week in data["weeks"]:
+        sheet.blank()
+        sheet.group(f"{week['label']}   {week['done']}개사 완료")
+        sheet.head(headers)
+        for m in week["items"]:
+            # 화면의 '결과 문의' 칸과 **같은 말**이어야 한다. 여기서 따로 지어내면
+            # 같은 건이 화면과 파일에서 다르게 불린다.
+            if m["status"] != "done":
+                ask = "미완료"
+            elif m["followup_done"]:
+                ask = "완료"
+            elif not m["needs_followup"]:
+                ask = "문의 불필요"
+            elif m["followup_late"]:
+                ask = f"{m['followup_due']} 지남"
+            else:
+                ask = f"{m['followup_due']} 예정"
+            told = [t for t in (m["note"], (f"문의: {m['followup_note']}"
+                                            if m["followup_note"] else "")) if t]
+            sheet.row(
+                [m["date"], m["name"], m["firm"], m["company"], m["kind"]]
+                + ([m["owner"]] if team_wide else [])
+                + [m["outcome"] or "-", ask, "\n".join(told)],
+                level="bad" if m["followup_late"] else "", wraps={last})
+
+    sheet.blank()
+    sheet.band("미팅 결과")
+    sheet.stats(data["outcomes"] or [("완료된 미팅이 없습니다.", "")])
+    if data["canceled"]:
+        sheet.note(f"취소 {data['canceled']}건")
+    sheet.blank()
+    sheet.band(f"IR 자료 요청  ·  {data['month']}월")
+    sheet.stats([("요청받음", data["ir_requested"]),
+                 ("전달함", data["ir_delivered"]),
+                 ("아직 안 보냄", data["ir_open"])])
+
+
+def _buckets_sheet(sheet, data, team_wide):
+    """이 달의 반응 다섯 갈래 — 이름과 날짜를 나란히 둔다."""
+    sheet.title(f"{data['year']}년 {data['month']}월 · 이 달의 반응",
+                "숫자만 보면 '그게 누구였지' 가 이어집니다 — 이름과 날짜를 함께 둡니다.")
+    headers = (["날짜", "담당자", "직함", "투자사", "기업", "상태"]
+               + (["담당 팀원"] if team_wide else []))
+    for bucket in data["buckets"]:
+        sheet.blank()
+        sheet.group(f"{bucket['label']}   {len(bucket['rows'])}건")
+        if not bucket["rows"]:
+            sheet.note("없습니다.")
+            continue
+        sheet.head(headers)
+        for r in bucket["rows"]:
+            sheet.row([r["date"], r["name"], r["title"], r["firm"],
+                       r["company"], r["note"]]
+                      + ([r["owner"]] if team_wide else []))
+
+
+def report_workbook(data: dict, *, team_wide: bool, who: str,
+                    today: date) -> bytes:
+    """업무 보고 한 달치 → 리포트 엑셀 바이트.
+
+    `data` 는 화면이 쓰는 것과 **같은 dict**(`report.monthly`)다. 여기서 다시
+    세지 않는다 — 두 곳에서 세면 화면과 파일의 숫자가 갈리고, 그러면 어느 쪽을
+    믿을지 알 수 없다.
+    """
+    try:
+        import openpyxl
+    except ImportError:  # pragma: no cover - 배포 이미지에는 항상 있다
+        raise HTTPException(status_code=500,
+                            detail="엑셀 쓰기 모듈(openpyxl)이 설치되지 않았습니다.")
+
+    year, month = data["year"], data["month"]
+    tag = f"{year}-{month:02d}"
+    wb = openpyxl.Workbook()
+    # 되올리기 방지 표식 — 다른 내려받기와 같다. 보고 파일을 '투자사 관리 현황'
+    # 업로드 칸에 잘못 넣으면 활동 이력이 뻥튀기된다.
+    wb.properties.keywords = sp.EXPORT_MARK
+
+    ws = wb.active
+    ws.title = f"{tag} 발송"
+    sends = _ReportSheet(ws, [12, 34, 10, 9, 9, 10, 30, 15, 10],
+                         9 if team_wide else 8)
+    sends.title(f"{year}년 {month}월 업무 보고",
+                f"{who} · {today.isoformat()} 뽑음 · "
+                f"'완료'는 실제로 도착한 건만 셉니다(중단된 회차는 완료가 아닙니다).")
+    sends.blank()
+    sends.band("요약")
+    _kpi(sends, data)
+    sends.blank()
+    _sends_sheet(sends, data, team_wide)
+
+    _meetings_sheet(
+        _ReportSheet(wb.create_sheet(f"{tag} 미팅"),
+                     [12, 14, 24, 20, 10, 10, 12, 18, 46],
+                     9 if team_wide else 8),
+        data, team_wide)
+    _buckets_sheet(
+        _ReportSheet(wb.create_sheet(f"{tag} 반응"),
+                     [12, 14, 12, 26, 26, 16, 10],
+                     7 if team_wide else 6),
+        data, team_wide)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    wb.close()
+    return buf.getvalue()
+
+
+@router.get("/api/export/report.xlsx")
+def export_report(month: str = "", scope: str = "", member: int = 0,
+                  db: Session = Depends(get_db),
+                  user: User = Depends(get_current_user)):
+    """업무 보고 화면 그대로 → 엑셀 리포트.
+
+    주소의 `month`·`scope`·`member` 는 화면과 같은 것을 읽는다
+    (`report.parse_month`·`report.scope_for`). 같은 주소에서 화면과 파일이 다른
+    달·다른 범위를 내면 안 된다.
+    """
+    today = date.today()
+    year, mon = report_svc.parse_month(month, today)
+    who, team_wide, viewing = report_svc.scope_for(db, user, scope, member)
+    data = report_svc.monthly(db, year, mon, who, today)
+    content = report_workbook(
+        data, team_wide=team_wide,
+        who=("팀 전체" if team_wide else f"{viewing.name} 담당"), today=today)
+    return Response(content=content, media_type=sp.XLSX_MEDIA_TYPE,
+                    headers=sp.content_disposition(
+                        f"업무보고_{year}-{mon:02d}.xlsx"))

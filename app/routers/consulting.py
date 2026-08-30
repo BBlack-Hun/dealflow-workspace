@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import date
 from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
@@ -27,9 +26,11 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from .. import clock
 from ..db import get_db
 from ..deps import get_current_user, may_view_consulting, templates
 from ..models import ConsultingColumn, ConsultingCompany, User
+from ..services import monthly_columns
 from ..services import spreadsheet as sp
 from ..ui import base_ctx
 
@@ -48,6 +49,32 @@ TAIL_COLUMNS = [
     ("연락처", "phone"),
     ("이메일", "email"),
 ]
+
+# `월간 계약 업무현황표` 는 다른 두 탭과 **표 자체가 다르다.**
+#
+# 저 시트는 머리글 있는 표가 아니라 월 묶음 아래 슬래시 한 줄이었다
+# (`scripts/import_consulting.py` 의 `parse_contract_sheet`). 그래서 다른 탭의
+# 칸을 빌려 담았는데, 빌린 이름이 뜻과 어긋나 있었다 — `지역` 칸에 `6월` 이,
+# `기업 관리` 칸에 `무료`/`유료` 가 들어 있고, 기업명·계약금·보수율·계약일
+# 네 가지가 `기업명` 한 칸에 뭉쳐 있었다.
+#
+# 칸 이름을 시트가 부르는 대로 돌려놓고, 뭉쳐 있던 줄을 칸으로 나눈다.
+# **머리글만 다르고 담기는 모델은 하나다** — 시트마다 테이블을 나누면 같은
+# 성격의 줄이 두 곳에 흩어져 권한·필터·엑셀을 두 벌로 만들어야 한다.
+CONTRACT_COLUMNS = [
+    ("NO", "position"),
+    ("월", "region"),            # 시트의 월 묶음 제목(`6월`)이 들어 있던 칸
+    ("계약일", "meeting_at"),
+    ("기업명", "company_name"),
+    ("계약여부", "management"),   # 무료 / 유료
+    ("성공보수율", "success_fee"),
+    ("계약금", "contract_fee"),
+]
+# 대표자·연락처·이메일은 이 탭에서 **화면에만** 안 세운다. 계약 줄에는 원래
+# 값이 없는 칸이라 자리만 먹는데, 값을 지우는 것은 다른 문제다 — 이 저장소는
+# 이력을 함부로 지우지 않는다. 나중에 이 탭에도 담당자를 적게 되면 칸만
+# 되살리면 그만이고, 지웠으면 되살릴 것이 없다.
+CONTRACT_TAIL: List[tuple] = []
 
 
 def require_access(user: User) -> None:
@@ -130,8 +157,74 @@ VISIBLE_MONTHS = 3
 
 
 # 원본 시트 이름. 관리하는 사람이 달라 한 표에 쏟으면 자기 명단을 못 찾는다.
-SHEETS = ["중요 스타트업", "경영본부 전달 기업", "월간 계약 업무현황표"]
+#
+# 첫 탭은 `중요 스타트업` 이었다. `중요` 는 나머지 탭이 안 중요하다는 뜻으로
+# 읽히는데 실제로는 그런 갈래가 아니다 — 시트 세 장의 성격 차이일 뿐이다.
+# **이름만 바꾸면 이미 들어간 줄이 옛 이름의 유령 탭으로 갈라지므로**
+# 자료도 함께 옮겼다(`alembic/versions/0039_consulting_startup_tab.py`).
+SHEETS = ["스타트업", "경영본부 전달 기업", "월간 계약 업무현황표"]
 DEFAULT_SHEET = SHEETS[0]
+CONTRACT_SHEET = SHEETS[2]
+
+# 탭 → (앞 칸들, 뒤 칸들). 적어 두지 않은 탭은 지금까지의 표 그대로다.
+SHEET_LAYOUTS = {CONTRACT_SHEET: (CONTRACT_COLUMNS, CONTRACT_TAIL)}
+
+
+def layout_of(sheet: str) -> tuple:
+    """이 탭이 쓰는 칸 묶음. 모르는 탭은 지금까지의 표다.
+
+    사람이 시트를 올려 만든 탭도 있어서, 이름을 모른다고 표를 비워 버리면
+    그 탭이 통째로 안 보인다.
+    """
+    return SHEET_LAYOUTS.get(sheet, (FIXED_COLUMNS, TAIL_COLUMNS))
+
+
+# `월간 계약 업무현황표` 의 한 줄은 슬래시로 이어 붙어 있다. **시트가 스스로
+# 그 순서를 머리글로 적어 두었다** — `기업명 / 계약금액 / 성공보수율 / 계약일`.
+# 그 순서를 그대로 따른다(추측이 아니라 시트에 적힌 것이다).
+CONTRACT_PARTS = ["company_name", "contract_fee", "success_fee", "meeting_at"]
+
+
+def split_contract_line(line: str) -> Dict[str, str]:
+    """`기업명/ 유료 90만/ 3프로/ 미정` → 칸마다 하나씩. 나눌 것이 없으면 빈 dict.
+
+    **조각 수가 줄마다 다르다.** 실제 자료에도 셋짜리와 넷짜리가 섞여 있다.
+
+      모자라면  뒤 칸을 비워 둔다. 시트에서 빠지는 것은 늘 뒤쪽이고
+                (`○○○/ 무료/ 4%` 는 계약일이 아직 없다는 뜻이다),
+                앞에서 채우면 보수율 칸에 계약일이 들어간다.
+      넘치면    남는 조각을 **마지막 칸에 그대로 이어 둔다.** 버리면 시트에
+                있던 값이 앱에서 사라진다 — 사람이 보고 옮길 수 있게 남긴다.
+
+    값은 **적힌 그대로** 담는다. `3%` 인지 `3프로` 인지, `유료 90만` 인지는
+    계약서에 적힌 말이라 앱이 고쳐 쓸 것이 아니다. `계약금액` 칸에 `무료` 가
+    적혀 있는 것도 시트가 그렇게 쓴 것이라 그대로 둔다.
+    """
+    parts = [p.strip() for p in (line or "").split("/")]
+    if len(parts) < 2:
+        return {}
+    out = dict(zip(CONTRACT_PARTS, parts))
+    if len(parts) > len(CONTRACT_PARTS):
+        out[CONTRACT_PARTS[-1]] = " / ".join(parts[len(CONTRACT_PARTS) - 1:])
+    return out
+
+
+def _visible_column_scopes(db: Session, user: User,
+                           owner: int = 0) -> List[tuple]:
+    """이 요청에서 월 열을 세워도 되는 (사람, 탭) 묶음.
+
+    **보는 범위를 그대로 쓴다**(`scope()`). 관리자가 열면 자기가 볼 수 있는
+    표 전부를, 컨설턴트가 열면 자기 표만 챙긴다 — 여기에 따로 조건을 적으면
+    보는 범위와 갈려서, 안 보이는 남의 표에 열이 생기는 자리가 된다.
+
+    **이미 열이 있는 묶음만** 돌려준다. 열이 하나도 없는 표는 이름 지을 본이
+    없어 어차피 만들지 못한다(`services/monthly_columns.py` 참고).
+    """
+    rows = db.execute(scope(
+        select(ConsultingColumn.user_id, ConsultingColumn.sheet)
+        .group_by(ConsultingColumn.user_id, ConsultingColumn.sheet),
+        ConsultingColumn, user, owner)).all()
+    return [(uid, name) for uid, name in rows if uid and name]
 
 
 def sheet_tabs(db: Session, user: User, owner: int = 0) -> List[dict]:
@@ -155,14 +248,45 @@ def _columns(db: Session, user: User, sheet: str = "",
 
 
 def _split_columns(columns: List[ConsultingColumn], show_all: bool = False) -> tuple:
-    """(보여줄 월, 접어 둔 월).
+    """(보여줄 월, 접어 둔 월). **달 단위로** 자른다.
 
     **접었다는 것을 사람이 알아야 한다** — 그냥 안 보이면 지워진 줄 안다.
     화면에 몇 달이 접혀 있는지 적고, 눌러서 펼 수 있게 한다.
+
+    지금까지는 앞에서 세 **칸**을 잘랐다. 이 표는 한 달에 한 칸이라 결과가
+    같았지만, 한 달에 두 칸을 세우는 순간 달 중간이 잘려 **한 달의 기록 일부만
+    보이는** 표가 된다. 투자사 관리 현황이 이미 그 모양이라(한 달에 세 칸)
+    자르는 기준을 같은 것으로 맞춘다(`services/contact_columns.split_months`).
+
+    여기만 석 달을 편다. 위 KPI 가 **지난달** 빈칸을 세므로 그 달이 표에
+    보여야 하고, 한 달에 한 칸이라 석 달이어도 세 칸이다.
+
+    사람이 펴 둔 상태(`?months=all`)는 요청에 실려 있고 DB 에 없다 — 달이
+    바뀌어 열이 저절로 생겨도 편 것을 다시 접을 수가 없다.
     """
-    if show_all or len(columns) <= VISIBLE_MONTHS:
-        return columns, []
-    return columns[:VISIBLE_MONTHS], columns[VISIBLE_MONTHS:]
+    if show_all:
+        return list(columns), []
+    seen: List[str] = []
+    for i, col in enumerate(columns):
+        month = monthly_columns.month_of(col.label)
+        # 이름에서 달을 못 읽는 열은 혼자 한 묶음이다 — 옆 달에 붙이면 그 열
+        # 때문에 남의 달이 통째로 접히거나 펴진다.
+        key = f"{month}월" if month is not None else f"#{i}"
+        if key in seen:
+            continue
+        if len(seen) == VISIBLE_MONTHS:
+            return list(columns[:i]), list(columns[i:])
+        seen.append(key)
+    return list(columns), []
+
+
+def _prev_month() -> int:
+    """지난달 숫자. 1월이면 12월이다.
+
+    시각은 `app/clock.py` 로만 읽는다. 표준 라이브러리의 현재시각 함수를 여기서
+    바로 부르면 시간대가 또 갈린다(`tests/test_timezone.py` 가 막는다).
+    """
+    return clock.today().month - 1 or 12
 
 
 def _prev_month_label(columns: List[ConsultingColumn]) -> str:
@@ -171,8 +295,7 @@ def _prev_month_label(columns: List[ConsultingColumn]) -> str:
     열 이름이 `8월 마지막주 리마인드 톡 or TEL` 처럼 자유 문장이라 달을 숫자로
     읽어 찾는다. 없으면 빈 문자열 — 화면이 그냥 '연락 기록' 으로 돈다.
     """
-    today = date.today()
-    month = today.month - 1 or 12
+    month = _prev_month()
     for col in columns:
         m = re.search(r"(\d{1,2})\s*월", col.label or "")
         if m and int(m.group(1)) == month:
@@ -185,8 +308,13 @@ def _prev_month_columns(columns: List[ConsultingColumn]) -> List[str]:
     return [str(c.id) for c in columns if c.label == label]
 
 
-def management_tags(text: str) -> str:
+def management_tags(text: str, contract: bool = False) -> str:
     """`기업 관리` 칸의 자유 문장에서 **거를 수 있는 말**만 뽑는다.
+
+    `월간 계약 업무현황표` 탭은 예외다. 그 탭에서 이 칸은 `기업 관리` 가 아니라
+    `계약여부` 이고, 값이 `무료`/`유료` 두 가지뿐인 **이미 추려진 값**이다.
+    아래 규칙을 그대로 태우면 셋 중 어느 마디도 아니라 전부 `기타 메모` 로
+    묶여, 필터에 고를 것이 하나도 남지 않는다. 적힌 그대로 쓴다.
 
     이 칸을 적힌 그대로 필터에 올릴 수는 없다. 원본 시트가 머리글부터
     `기업 관리 [ 드랍 이유 상세하게 기입 / 관리중 / 백업팀으로 전환 ]` 이라
@@ -202,6 +330,8 @@ def management_tags(text: str) -> str:
     filters.js 가 그 구분자로 나눠 태그 단위로 건다.
     """
     body = text or ""
+    if contract:
+        return body.strip()
     tags = []
     if "관리" in body:
         tags.append("관리 중")
@@ -246,11 +376,21 @@ def company_rows(db: Session, user: User, sheet: str = "",
             "company_name": c.company_name or "",
             "management": c.management or "",
             # 머리글 필터가 보는 값. 칸에 적힌 문장 그대로가 아니라 시트가 정해
-            # 둔 세 마디로 추린다(management_tags 참고).
-            "mgmt": management_tags(c.management or ""),
+            # 둔 세 마디로 추린다(management_tags 참고). 계약 탭만 예외다.
+            #
+            # 탭 이름은 **줄에 적힌 것**으로 본다. `company_rows` 는 탭을 안 주고
+            # 부르는 곳이 있어서(엑셀 · 한 줄 조회), 인자로 판단하면 그쪽에서만
+            # 값이 달라진다.
+            "mgmt": management_tags(c.management or "",
+                                    contract=(c.sheet == CONTRACT_SHEET)),
             "ceo_name": c.ceo_name or "",
             "phone": c.phone or "",
             "email": c.email or "",
+            # `월간 계약 업무현황표` 탭에만 값이 있다. 다른 탭에서는 빈 문자열이라
+            # 화면이 탭마다 다른 dict 를 받지 않는다 — 없는 칸을 꺼내다 터지는
+            # 자리를 만들지 않으려는 것이다.
+            "success_fee": c.success_fee or "",
+            "contract_fee": c.contract_fee or "",
             "notes": {str(col.id): notes.get(str(col.id), "") for col in cols},
             # 지난달에 연락했는가. 이번 달은 아직 진행 중이라 세어 봐야
             # "아직 안 했다" 만 나온다.
@@ -258,7 +398,8 @@ def company_rows(db: Session, user: User, sheet: str = "",
             "updated_at": (c.updated_at or "")[:10],
             "search": " ".join(filter(None, [
                 c.company_name, c.region, c.management, c.ceo_name,
-                c.email, c.meeting_at, *notes.values(),
+                c.email, c.meeting_at, c.success_fee, c.contract_fee,
+                *notes.values(),
             ])).lower(),
         })
     return out
@@ -275,12 +416,33 @@ def consulting_page(request: Request, db: Session = Depends(get_db),
         owner = 0
     tabs = sheet_tabs(db, user, owner)
     selected = sheet if any(t["key"] == sheet for t in tabs) else DEFAULT_SHEET
+    # **달이 바뀌었으면 이번 달 열을 세운다.** 예약 실행 장치가 없는 앱이라
+    # 달이 바뀐 것을 알아채는 자리는 화면을 여는 순간뿐이다(주간 업무가 같은
+    # 방식이다 — `services/weekly.py` 의 `fill_week`). 두 번 만들지 않는 것과
+    # 사람이 지운 열을 되살리지 않는 것은 `services/monthly_columns.py` 가 본다.
+    #
+    # **보이는 표마다** 세운다. 열은 사람마다·탭마다인데, 지금 고른 탭 하나만
+    # 챙기면 아무도 안 연 탭은 그 달 기록이 지난달 열에 섞여 들어간다.
+    for uid, name in _visible_column_scopes(db, user, owner):
+        monthly_columns.ensure_consulting(db, uid, name)
+
     rows = company_rows(db, user, selected, owner)
     prev_label = _prev_month_label(_columns(db, user, selected, owner))
     # 달마다 한 칸씩 늘어나는 표라, 최근 몇 달만 펴 둔다.
     # `months=all` 은 일부러 다 본다는 뜻이다.
     shown, hidden = _split_columns(_columns(db, user, selected, owner),
                                    show_all=(months == "all"))
+    fixed, tail = layout_of(selected)
+
+    # **접힌 달에 기록이 있는가.** `연락 기록 없음` 칩은 줄의 `data-contacted` 를
+    # 보는데, 칸을 고치면 consulting.js 가 그 값을 다시 적는다 — 그때 JS 가 볼 수
+    # 있는 것은 **펴 둔 달의 칸뿐**이라, 접힌 달에만 기록이 있는 줄이 고치는 순간
+    # `기록 없음` 으로 뒤집힌다(실제로 이 표 34줄 중 12줄이 그 상태였다).
+    # 화면에 없는 사실을 JS 가 알 수 없으므로 여기서 실어 보낸다.
+    folded_keys = [str(c.id) for c in hidden]
+    for row in rows:
+        row["contacted_folded"] = any(row["notes"].get(k, "").strip()
+                                      for k in folded_keys)
     ctx = base_ctx(request, db, user, active="consult")
     # 스크립트·가이드는 이 화면에도 있다(미팅 진행 프로세스 · 견적서 발송 톡 …).
     # 투자사 관리 현황과 같은 구조를 쓰되 화면만 나눈다.
@@ -307,17 +469,30 @@ def consulting_page(request: Request, db: Session = Depends(get_db),
         "owner_tabs": owner_tabs(db, user),
         "selected_owner": owner,
         "is_admin": user.role == "admin",
-        "fixed_columns": FIXED_COLUMNS,
-        "tail_columns": TAIL_COLUMNS,
+        # 탭마다 표가 다르다. 화면이 `{% if 이 탭이면 %}` 을 하나 더 심지 않게
+        # **어느 탭인지**만 넘긴다(칸 목록은 아래 두 줄이 정한다).
+        "is_contract_sheet": selected == CONTRACT_SHEET,
+        "fixed_columns": fixed,
+        "tail_columns": tail,
         "msg": msg,
         "counts": {
             "total": len(rows),
             "managed": sum(1 for r in rows if "관리" in r["management"]),
             "dropped": sum(1 for r in rows if "드랍" in r["management"]),
-            # '연락했다' 는 **지난달** 기준이다. 이번 달은 아직 진행 중이라
-            # 세어 봐야 "아직 안 했다" 만 나온다 — 챙길 것은 지난달에 놓친 쪽이다.
-            "contacted": sum(1 for r in rows if r["contacted_prev"]),
+            # **아직 안 한 곳**을 센다. 다 한 수를 보여 주던 칸이었는데, 그 수는
+            # 봐도 할 일이 안 나온다 — 챙겨야 하는 것은 빈칸 쪽이다.
+            #
+            # 기준 달은 **지난달**이다. 진행 중인 달을 세면 월 초에는 전부
+            # 미완료라 늘 전체 건수가 뜬다(그 칸은 이제 자동으로 생기므로 1일부터
+            # 비어 있다). 놓친 것이 드러나는 것은 이미 지나간 달이다.
+            #
+            # 지난달 열이 아예 없으면 0 이다. 빈칸을 세면 "열이 없다" 가
+            # "전부 미완료" 로 둔갑해 전체 건수가 그대로 뜬다.
+            "pending": (sum(1 for r in rows if not r["contacted_prev"])
+                        if prev_label else 0),
             "prev_month_label": prev_label,
+            # `0월 마지막주 리마인드톡 미완료 기업` — 그 달 숫자를 넣는다.
+            "pending_label": (f"{_prev_month()}월 마지막주 리마인드톡 미완료 기업"),
         },
     })
     return templates.TemplateResponse("consulting.html", ctx)
@@ -338,6 +513,10 @@ class CompanyIn(BaseModel):
     ceo_name: Optional[str] = None
     phone: Optional[str] = None
     email: Optional[str] = None
+    # `월간 계약 업무현황표` 탭의 칸. **여기 안 적으면 화면에서 고쳐도 조용히
+    # 안 저장된다** — pydantic 이 모르는 칸을 그냥 버리기 때문에 오류도 안 난다.
+    success_fee: Optional[str] = None
+    contract_fee: Optional[str] = None
     # {"열id": "내용"} — 월별 리마인드
     notes: Optional[Dict[str, str]] = None
 
@@ -513,6 +692,10 @@ def import_sheet(file: UploadFile = File(...), sheet: str = Form(""),
 
 
 CONSULTING_EXPORT_HEADERS = [label for label, _ in FIXED_COLUMNS]
+# 계약 탭에만 값이 있는 칸. 엑셀은 탭을 가리지 않고 한 장으로 내려받으므로
+# **머리글 한 벌**에 뒤로 붙인다 — 탭마다 다른 장을 만들면 내려받은 파일에서
+# 어느 장이 무엇인지 다시 맞춰야 한다. 다른 탭 줄에서는 빈 칸이다.
+CONTRACT_EXPORT_HEADERS = ["성공보수율", "계약금"]
 
 
 @router.get("/api/export/consulting.xlsx")
@@ -521,11 +704,12 @@ def export_consulting(db: Session = Depends(get_db),
     require_access(user)
     cols = _columns(db, user)
     headers = (CONSULTING_EXPORT_HEADERS + [c.label for c in cols]
-               + [label for label, _ in TAIL_COLUMNS])
+               + [label for label, _ in TAIL_COLUMNS] + CONTRACT_EXPORT_HEADERS)
     rows = [
         [r["no"], r["region"], r["meeting_at"], r["company_name"], r["management"]]
         + [r["notes"].get(str(c.id), "") for c in cols]
         + [r["ceo_name"], r["phone"], r["email"]]
+        + [r["success_fee"], r["contract_fee"]]
         for r in company_rows(db, user)
     ]
     try:

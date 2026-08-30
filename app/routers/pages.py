@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..deps import get_current_user, may_manage_team_contacts, templates
-from ..models import IrCompany, RefSheet, SendJob, SourcingContact, User, VcContact
+from ..models import IrCompany, RefSheet, SendJob, SourcingContact, User
 from ..services import (cadence, contact_columns, deal_history, deal_stage,
                         mailer, sheet_import, sheet_owner, sourcing_link)
 from ..ui import MENU, base_ctx as _base_ctx
@@ -68,12 +68,17 @@ def deals_page(
     # 투자사로 세지 않는 명단(스타트업 리마인드 등)과 감춘 줄은 여기 오면 안 된다.
     # 투자사에게 보낼 문구가 스타트업에게 나가고, 화면에서 안 보이는 사람이
     # 체크박스로는 골라진다.
-    contacts = sheet_owner.investors(db, db.execute(
-        select(VcContact)
-        .where(VcContact.user_id == user.id,
-               VcContact.connect_stage == "connected")
-        .order_by(VcContact.id)
-    ).scalars().all())
+    #
+    # **그 판정을 여기 적지 않는다.** 투자사 관리 현황과 이 화면이 각자 질의를
+    # 들고 있어서 같은 사람을 두고 두 수가 나왔다 — 지금은 둘 다
+    # `sheet_owner.managed()` 를 지난다(딜 제안 관리는 거기에 `can_send_to`
+    # 한 겹만 더 얹는다). 조건이 하나 붙어도 두 화면이 같이 움직인다.
+    contacts = sheet_owner.recipients(db, user)
+    # 두 화면의 수는 **원래 다르다** — 여기는 `보낼 수 있는 사람`, 투자사 관리
+    # 현황은 `내가 맡은 사람`이다. 다른 것 자체보다 **왜 다른지 화면이 말하지
+    # 않는 것**이 문제였으므로, `총 N명 중 M명` 과 막힌 사유를 함께 내놓는다.
+    recipient_counts = sheet_owner.recipient_counts(
+        db, user, team_wide=may_manage_team_contacts(user))
     # 딜소개를 보냈는데 IR 요청·미팅으로 이어지지 않은 담당자.
     # 이들에게는 목록을 또 밀어 넣기보다 무엇을 보고 싶은지 되묻는 편이 답이 온다.
     no_reaction_ids = {
@@ -124,6 +129,11 @@ def deals_page(
         "recent_count": sum(1 for h in history.values() if h["recent"]),
         "recent_days": deal_history.RECENT_DAYS,
         "contacts": contacts,
+        "recipient_counts": recipient_counts,
+        # 그룹으로 묶어 둔 사람만 추리는 필터. 투자사 관리 현황의 `그룹` 칸이
+        # 거르는 그 값이라, 양쪽에서 고른 사람이 같아야 한다.
+        "contact_groups": sheet_owner.group_rows(contacts),
+        "empty_group": sheet_owner.EMPTY_GROUP,
         "sourcing_contacts": sourcing_contacts,
         "sourcing_buckets": sourcing_buckets,
         "sourcing_assignees": sourcing_assignees,
@@ -169,10 +179,11 @@ def contacts_page(
     # 그 명단 탭에서는 그대로 보여야 하고, 되돌릴 자리도 여기에 있어야 한다.
     all_rows = contact_rows(db, user, team_wide=team_wide, include_hidden=True)
     # 담당은 명단(시트) 단위다 — "내 이름으로 된 탭만 내 담당 투자사".
-    contacts = db.execute(
-        select(VcContact) if team_wide
-        else select(VcContact).where(VcContact.user_id == user.id)
-    ).scalars().all()
+    # 탭은 **감춘 것까지** 세어야 한다(감추기는 지우기가 아니라, 그 명단 탭에서는
+    # 그대로 보여야 한다). 누구를 가져올지는 여기서 정하지 않는다 — 위의
+    # `all_rows` 와 딜 제안 관리가 지나는 그 판정을 그대로 지난다.
+    contacts = sheet_owner.managed(db, user, team_wide=team_wide,
+                                   include_hidden=True)
     tabs = sheet_owner.sheet_rows(db, contacts)
 
     # 아무 것도 고르지 않았으면 **내가 담당인 명단**을 먼저 연다.
@@ -244,10 +255,9 @@ def contacts_page(
         "pool_view": any(t["key"] == selected and t["kind"] == "pool" for t in tabs),
         # `전체` 탭에 적히는 수. **투자사로 세는 사람만** — 여기가 부풀면
         # 대시보드와 다른 수가 나온다(예전에 117명 · 123명으로 갈렸다).
-        "total_count": sum(
-            1 for r in all_rows
-            if not r["is_hidden"]
-            and any(s not in sheet_owner.hidden_labels(db) for s in r["sheets"])),
+        # `전체` 탭에 적히는 수도 **딜 제안 관리와 같은 판정**을 지난다 —
+        # 여기서 조건을 손으로 다시 적어 두면 두 화면이 또 갈린다.
+        "total_count": len(sheet_owner.managed(db, user, team_wide=team_wide)),
         # ── 명단이 정한 표 배치 ──
         "layout": layout,
         "table_columns": contact_columns.table_columns(layout, shown_months),

@@ -180,6 +180,10 @@ def delete_request(request_id: int, db: Session = Depends(get_db),
 def create_meeting(
     contact_id: int = Form(...),
     scheduled_at: str = Form(...),
+    # 시각은 **선택**이다. 날짜만 아는 단계가 실제로 있고("다음 주 화요일쯤"),
+    # 필수로 만들면 그 단계를 기록할 수 없다. 못 읽은 값은 `clean_time` 이
+    # 버린다 — 자정 미팅을 지어내는 것보다 빈칸이 정확하다.
+    scheduled_time: str = Form(""),
     kind: str = Form("first"),
     company_name: str = Form(""),
     note: str = Form(""),
@@ -197,6 +201,7 @@ def create_meeting(
                    company_id=company.id if company else None,
                    company_name=company_name.strip() or None,
                    scheduled_at=when.isoformat(),
+                   scheduled_time=pipeline.clean_time(scheduled_time),
                    kind=kind if kind in pipeline.MEETING_KINDS else "first",
                    note=note.strip() or None))
     # 미팅이 잡혔으면 답이 온 것이다.

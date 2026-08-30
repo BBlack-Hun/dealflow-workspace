@@ -60,6 +60,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..models import ContactColumn
+from . import monthly_columns
 
 # 배치 이름. `SheetOwner.layout` 에 이 값이 들어간다.
 INVESTOR = "investor"
@@ -146,6 +147,21 @@ STARTUP_LAYOUT = Layout(
         # 새로 타이핑하면 `o`·`△` 로 갈려 세는 것이 달라진다.
         Column("IR 자료 회신 여부", "ir_reply", 150, source="note",
                kind="pick", choices="O,X"),
+        # 계약까지 갔는가. **표에 세운다** — 수정창에만 있어서 명단을 훑을 때
+        # 어느 기업이 계약됐는지 한눈에 안 보였다(칸을 하나씩 열어 봐야 했다).
+        #
+        # 보기는 IR 기업현황의 계약 상태와 **같은 말**이다
+        # (`routers/companies.py` 의 `CONTRACT_LABELS`). 같은 것을 두 화면에서
+        # 다른 말로 부르면 어느 쪽이 맞는지 알 수 없다.
+        #
+        # 딱 하나, `딜소개 불가` 는 여기 두지 않는다. 그것은 계약 상태가 아니라
+        # **발송 금지 표시**이고, 발송 목록을 만드는 것은 IR 기업현황이다
+        # (`companies.BLOCKED_CONTRACT` 가 거기서 기업을 빼낸다). 여기에 두면
+        # 골라 놓고 막힌 줄 아는데 실제로는 아무것도 안 막는 칸이 된다.
+        #
+        # 폭은 값을 고른 뒤의 단추(`계약여부 (1) ▾` = 102px)에 맞춘다.
+        Column("계약여부", "contract", 110, source="note", kind="pick",
+               choices="유료계약완료,무료계약완료,계약검토중,미계약"),
         # 원본 메모가 길다(가장 긴 줄이 233자). 표에서는 두 줄까지만 보이고
         # (`.clamp2`) 전문은 수정창에서 본다 — 그대로 펼치면 줄 높이가 무너져
         # 서른두 줄을 훑을 수가 없다.
@@ -173,8 +189,6 @@ STARTUP_LAYOUT = Layout(
         # 시트와 나란히 놓고 대조하는 칸이라 이름이 다르면 그때마다 멈춘다.
         Column("IR dack 유무", "ir_deck", 0, source="note",
                kind="pick", choices="O,X", in_table=False),
-        Column("계약여부", "contract", 0, source="note",
-               kind="pick", in_table=False),
         # 금액·비율은 **적힌 그대로** 둔다. `2.5%` 인지 `2.5` 인지, `900,000` 인지
         # `90만` 인지는 계약서에 적힌 말이라 앱이 고쳐 쓸 것이 아니다.
         Column("성공보수율 %", "success_fee", 0, source="note", in_table=False),
@@ -257,16 +271,40 @@ def layout_of(key: Optional[str]) -> Layout:
     return LAYOUTS.get((key or "").strip(), INVESTOR_LAYOUT)
 
 
-# 표에 한 번에 펴 둘 월별 칸 수. 한 달에 세 칸씩(문자·TEL·카톡 연결) 늘어나므로
-# **두 달치**다. 이번 달만 펴 두면 "지난달에 뭐라고 했더라" 를 볼 수가 없고,
-# 그냥 두면 한 해 뒤에 서른여섯 칸이 되어 가로로 밀어야 읽힌다.
-VISIBLE_COLUMNS = 6
+# 표에 한 번에 펴 둘 **달** 수. 칸 수가 아니라 달로 센다.
+#
+# 칸 수로 자르면 **달 중간이 잘린다.** 한 달에 몇 칸이 붙는지가 명단마다 다르고
+# (스타트업 리마인드는 문자·TEL·카톡 연결 셋, 딜공유는 딜소개·IR 요청·미팅 셋,
+# 시트에 따라 한 칸뿐인 달도 있다), 자동 생성이 붙인 칸까지 더해지면 더 어긋난다.
+# 그러면 `8월 리마인드 문자` 는 보이는데 `8월 카톡 연결` 은 접혀 있는, 한 달의
+# 기록 일부만 보이는 표가 된다.
+#
+# **이번 달만 편다.** 매달 칸이 세 개씩 붙는 표라 두 달치면 여섯 칸이고, 그만큼
+# 가로로 밀어야 이름·연락처가 보인다. 지난달은 접되 **접었다는 것을 화면에 적고
+# 펴는 길을 남긴다**(`split_months` 참고) — 그냥 안 보이면 지워진 줄 안다.
+#
+# 사람이 펴 둔 상태(`?months=all`)는 **요청에 실려 있고 DB 에 없다.** 그래서 달이
+# 바뀌어 칸이 저절로 생겨도 편 것을 다시 접을 수가 없다 — 접는 것은 이 함수뿐이고,
+# 이 함수는 `show_all` 이 오면 아무것도 안 접는다.
+VISIBLE_MONTHS = 1
 
 
 def month_columns(db: Session, sheet: str) -> List[ContactColumn]:
-    """이 명단의 월별 칸. 시트와 같은 순서(최근 달이 왼쪽)."""
+    """이 명단의 월별 칸. 시트와 같은 순서(최근 달이 왼쪽).
+
+    **읽기 전에 이번 달 칸이 있는지 본다.** 예약 실행 장치가 없는 앱이라,
+    달이 바뀐 것을 알아채는 자리는 요청이 들어오는 순간뿐이다 — 주간 업무가
+    같은 방식으로 그 주 목록을 채운다(`services/weekly.py` 의 `fill_week`).
+
+    칸을 읽는 곳이 여럿인데(화면 · [칸 추가] · 수정창) 그 자리마다 "이번 달
+    있나" 를 적으면 한 곳은 반드시 빠진다. **칸이 나오는 문 하나**에 둔다.
+
+    같은 달 칸을 두 번 만들지 않는 것과, 사람이 지운 칸을 되살리지 않는 것은
+    `services/monthly_columns.py` 가 `MonthlyColumnRun` 으로 지킨다.
+    """
     if not sheet:
         return []
+    monthly_columns.ensure_contact(db, sheet)
     return db.execute(
         select(ContactColumn)
         .where(ContactColumn.sheet == sheet)
@@ -275,14 +313,26 @@ def month_columns(db: Session, sheet: str) -> List[ContactColumn]:
 
 
 def split_months(columns: List[ContactColumn], show_all: bool = False) -> tuple:
-    """(펴 둘 칸, 접어 둔 칸).
+    """(펴 둘 칸, 접어 둔 칸). **달 단위로** 자른다.
 
     **접었다는 것을 사람이 알아야 한다** — 그냥 안 보이면 지워진 줄 안다.
     화면에 몇 칸이 접혀 있는지 적고 눌러서 펼 수 있게 한다.
+
+    이름에서 달을 못 읽는 칸은 **혼자 한 묶음**으로 본다. 옆 달에 붙이면 그
+    칸 때문에 남의 달이 통째로 접히거나 펴진다 — 어느 쪽이든 이유를 알 수 없다.
     """
-    if show_all or len(columns) <= VISIBLE_COLUMNS:
-        return columns, []
-    return columns[:VISIBLE_COLUMNS], columns[VISIBLE_COLUMNS:]
+    if show_all:
+        return list(columns), []
+    seen: List[str] = []
+    for i, col in enumerate(columns):
+        month = monthly_columns.month_of(col.label)
+        key = f"{month}월" if month is not None else f"#{i}"
+        if key in seen:
+            continue
+        if len(seen) == VISIBLE_MONTHS:
+            return list(columns[:i]), list(columns[i:])
+        seen.append(key)
+    return list(columns), []
 
 
 def note_key(column_id: int) -> str:

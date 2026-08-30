@@ -443,6 +443,42 @@ def _buckets(meetings, requests, contacts, owners, today, open_followup) -> List
     ]
 
 
+def parse_month(month: str, today: Optional[date] = None) -> tuple:
+    """`2026-08` → (2026, 8). 못 읽으면 이 달.
+
+    화면(`/report`)과 **엑셀 내려받기가 같은 주소를 읽어야** 한다. 두 곳에서
+    따로 해석하면 `?month=2026-8` 같은 값에서 갈리고, 그러면 화면과 엑셀이
+    다른 달을 보여 준다 — 보고에서 가장 비싼 실수다.
+    """
+    today = today or date.today()
+    year, mon = today.year, today.month
+    if month:
+        try:
+            year, mon = (int(x) for x in month.split("-")[:2])
+        except (ValueError, TypeError):
+            pass
+    return year, mon
+
+
+def scope_for(db: Session, user: User, scope: str = "", member: int = 0) -> tuple:
+    """이 보고를 **누구 것으로** 볼 것인가 → `(who, team_wide, viewing)`.
+
+    `who` 는 `monthly()`/`yearly()` 에 넘길 값이다(팀 전체면 None).
+    `viewing` 은 "누구 것을 보고 있나" 를 화면·파일이름에 적을 때 쓴다.
+
+    규칙은 하나뿐이어야 한다 — 관리자만 팀 전체·팀원 지정을 볼 수 있고,
+    팀원을 고르면 그 사람 것 하나만 본다. 화면과 엑셀이 각자 판정하면 범위가
+    갈려서, 같은 주소인데 화면은 내 것 · 엑셀은 팀 전체가 나오는 일이 생긴다.
+    """
+    team_wide = user.role == "admin" and scope == "team"
+    target = user
+    if user.role == "admin" and member:
+        picked = db.get(User, member)
+        if picked is not None:
+            target, team_wide = picked, False
+    return (None if team_wide else target), team_wide, (None if team_wide else target)
+
+
 def recent_months(today: Optional[date] = None, count: int = 24) -> List[tuple]:
     """최근 달들 (연, 월). 화면의 달 고르기에 쓴다.
 

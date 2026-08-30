@@ -38,8 +38,21 @@ OTHER = "샘플 투자사 20"
 
 # 시트 머리글 그대로. 달마다 세 칸씩 늘어나는 부분은 따로 둔다.
 HEAD = ["NO", "기업명", "성함", "연락처", "이메일"]
-MONTHS = ["7월 리마인드 문자 (7/28)", "7월 리마인드 TEL", "7월 카톡 연결"]
-TAIL = ["IR 자료 회신 여부", "메모 ( 통화내용 /  카톡내용  /  카톡답신내용)"]
+
+# **이번 달**로 만든다. 월별 칸은 이제 화면을 열 때 저절로 생기므로
+# (`app/services/monthly_columns.py`), 지난달 이름으로 밑자리를 깔면 검사가
+# 도는 달마다 화면이 달라진다 — 8월에는 8월 칸이 붙고 9월에는 9월 칸이 붙는다.
+# 이번 달 칸이 이미 있으면 자동 생성은 아무것도 하지 않는다.
+def _month(offset: int = 0) -> int:
+    from app import clock
+
+    return (clock.today().month - 1 + offset) % 12 + 1
+
+
+MONTHS = [f"{_month()}월 리마인드 문자", f"{_month()}월 리마인드 TEL",
+          f"{_month()}월 카톡 연결"]
+TAIL = ["IR 자료 회신 여부", "계약여부",
+        "메모 ( 통화내용 /  카톡내용  /  카톡답신내용)"]
 
 
 def _same(text: str) -> str:
@@ -168,23 +181,27 @@ def test_머리글_수와_데이터_칸_수가_같다(sheets):
 
 
 def test_칸을_하나_늘려도_머리글과_데이터_칸이_함께_늘어난다(sheets, db):
-    """`7월 …` 옆에 `8월 …` 이 붙는다. 한 달에 세 칸씩이다.
+    """달이 바뀌면 칸이 옆에 붙는다. 한 달에 세 칸씩이다.
 
     고정 목록으로 짜 두면 매달 코드를 고치고 배포해야 한다. 화면에서 칸을
     세울 수 있어야 하고, 세운 칸이 **머리글과 데이터 양쪽에** 서야 한다.
+
+    **같은 달** 이름으로 세운다. 접는 기준이 달이라, 다른 달 이름으로 세우면
+    세우자마자 접혀서 머리글에 안 선다 — 이 검사가 보려는 것은 접기가 아니다.
     """
+    label = f"{_month()}월 리마인드 카톡"
     before = len(_thead(sheets.get(_url(LIST)).text))
     sheets.post("/api/contacts/columns",
-                data={"sheet": LIST, "label": "8월 리마인드 문자 (8/28)"},
+                data={"sheet": LIST, "label": label},
                 follow_redirects=False)
 
     html = sheets.get(_url(LIST)).text
     heads = _thead(html)
     assert len(heads) == before + 1
-    assert "8월 리마인드 문자 (8/28)" in heads
+    assert label in heads
     # 새 칸은 **맨 앞**이다 — 시트에서도 최근 달이 왼쪽이고, 지금 챙겨야 할
     # 달이 먼저 보여야 한다.
-    assert heads.index("8월 리마인드 문자 (8/28)") < heads.index(MONTHS[0])
+    assert heads.index(label) < heads.index(MONTHS[0])
     for row in _rows(html):
         assert len(re.findall(r"<td\b", row)) == len(heads)
 
@@ -194,21 +211,36 @@ def test_칸이_많아지면_접고_접었다는_것을_적는다(sheets, db):
 
     한 해가 지나면 서른여섯 칸이 되어 가로로 밀어야 읽힌다. 접되, 몇 칸이
     접혔는지 적고 펼 수 있게 한다(투자컨설턴트 현황과 같은 방식).
+
+    **자르는 기준은 달이다.** 칸 수로 자르면 한 달에 붙는 칸 수가 명단마다
+    달라 달 중간이 잘린다 — `8월 리마인드 문자` 는 보이는데 `8월 카톡 연결` 은
+    접혀 있는 표가 된다.
     """
     from app.services import contact_columns as cc
 
-    for n in range(cc.VISIBLE_COLUMNS + 2):
-        sheets.post("/api/contacts/columns",
-                    data={"sheet": LIST, "label": f"{n}월 리마인드 문자"},
-                    follow_redirects=False)
+    from app.models import ContactColumn
+
+    # 밑자리에 이번 달 세 칸(자리 0~2)이 있다. 지난 두 달을 **그 오른쪽에** 둔다 —
+    # 시트도 최근 달이 왼쪽이다. (화면의 [칸 추가] 는 늘 맨 앞에 세우므로
+    # 지난달을 그것으로 만들면 순서가 뒤집힌다.)
+    pos = 3
+    for back in (1, 2):
+        for what in ("리마인드 문자", "리마인드 TEL", "카톡 연결"):
+            db.add(ContactColumn(sheet=LIST, label=f"{_month(-back)}월 {what}",
+                                 position=pos))
+            pos += 1
+    db.commit()
     html = sheets.get(_url(LIST)).text
     months = [h for h in _thead(html) if "리마인드" in h or "카톡 연결" in h]
-    assert len(months) == cc.VISIBLE_COLUMNS, "펴 둔 칸 수가 정해진 것과 다릅니다"
+    # 이번 달 세 칸만 편다 — 한 달의 칸은 **다 같이** 서거나 다 같이 접힌다.
+    assert len(months) == 3, f"펴 둔 칸이 이번 달 세 칸이 아닙니다: {months}"
+    assert all(f"{_month()}월" in h for h in months), months
+    assert cc.VISIBLE_MONTHS == 1
     assert "펴기" in html, "접어 놓고 그 사실을 화면에 적지 않았습니다"
 
     everything = _thead(sheets.get(_url(LIST, months="all")).text)
-    assert len([h for h in everything if "리마인드" in h or "카톡 연결" in h]) > \
-        cc.VISIBLE_COLUMNS
+    assert len([h for h in everything
+                if "리마인드" in h or "카톡 연결" in h]) == 9
 
 
 def test_머리글은_필터_단추까지_한_줄에_들어간다(sheets):

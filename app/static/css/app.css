@@ -844,6 +844,18 @@ td.cell.save-failed { background: #fdecec; }
 .sheet-tab.active span { background: #e6efff; color: var(--brand); }
 .pipeline-strip { border-left: 4px solid var(--gray); }
 
+/* 연결 진행 중인 명단의 이름 줄 — 누구인지 여기서 바로 읽는다.
+   한 줄에 다섯 명 + `나머지 N명 보기` 라 폭이 좁으면 반드시 접힌다.
+   접힐 때 이름과 회사가 갈라지지 않게 사람 단위(`a`)로 묶어 흐르게 둔다. */
+.name-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+.name-line .name-lead { font-weight: 600; color: var(--ink); }
+/* 한 사람은 한 덩어리다 — 줄이 모자라면 **다음 줄로 통째로** 넘어가고,
+   화면보다 긴 이름일 때만 그 안에서 접힌다(`max-width`). 이렇게 두지 않으면
+   자리가 남는데도 이름과 회사가 서로 다른 줄로 갈린다. */
+.name-line .req-link { flex: 0 0 auto; max-width: 100%; }
+.name-line .sep { color: var(--gray); }
+.name-line .linkbtn { margin-left: 2px; }
+
 .sheet-owner-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   background: #fafbfc; border: 1px solid var(--line); border-radius: 8px;
   padding: 7px 12px; margin-bottom: 10px; }

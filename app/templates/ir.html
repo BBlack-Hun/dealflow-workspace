@@ -189,40 +189,9 @@
 </section>
 
 <div class="dash-grid">
-  <section class="panel">
-    <h2 class="panel-title">예약된 후속 <span class="hint">{{ upcoming|length }}건</span></h2>
-    {% if upcoming %}
-    <div class="table-wrap">
-    <table class="grid-table compact">
-      <thead><tr><th>예정일</th><th>담당자</th><th>다음 단계</th><th class="num">남음</th><th></th></tr></thead>
-      <tbody>
-        {% for r in upcoming %}
-        <tr>
-          <td class="muted">{{ r.due }}</td>
-          <td>
-            {# 답이 오면 여기서 곧바로 기록한다 — 화면을 옮겨 담당자를 다시
-               고르는 사이에 "누구였더라" 가 된다. #}
-            <a class="req-link" href="/ir?contact={{ r.contact_id }}"
-               title="이 투자사의 IR 자료 요청 기록하기">
-              <b>{{ r.name }}</b> <span class="muted">{{ r.firm }}</span>
-            </a>
-          </td>
-          <td>{{ r.next_label }}</td>
-          <td class="num">{{ r.days_left }}일</td>
-          <td>
-            <form method="post" action="/followups/{{ r.id }}/responded">
-              <button class="linkbtn" type="submit">답 옴</button>
-            </form>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    </div>
-    {% else %}
-    <p class="muted">예약된 후속이 없습니다.</p>
-    {% endif %}
-  </section>
+  {# 예약된 후속 — 딜 진행 관리와 옛 후속 관리가 **같은 파일**을 쓴다.
+     각자 한 벌씩 들고 있으면 한쪽에만 검색칸이 달린다. #}
+  {% include "_upcoming_followups.html" %}
 
   <section class="panel" id="rules">
     <h2 class="panel-title">발송 주기
@@ -338,6 +307,13 @@
         </select></label>
       <label class="field inline-field"><span>미팅 날짜</span>
         <input type="date" name="scheduled_at" value="{{ today }}" required></label>
+      {#
+        시간은 **비워도 된다.** "다음 주 화요일쯤" 처럼 날짜만 아는 단계가
+        실제로 있고, 필수로 만들면 그 단계를 기록할 수 없다. 날짜와 같은
+        방식(브라우저 기본 입력칸)으로 받는다 — 이 화면의 다른 칸과 어울린다.
+      #}
+      <label class="field inline-field"><span>시간 (선택)</span>
+        <input type="time" name="scheduled_time"></label>
       <label class="field inline-field"><span>구분</span>
         <select name="kind">
           {% for key, label in kinds.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
@@ -360,7 +336,10 @@
       <li class="overdue">
         <span class="due-when">{{ m.followup_due }}</span>
         <span class="due-who"><b>{{ m.name }}</b> <span class="muted">{{ m.firm }}</span></span>
-        <span class="due-from muted">{{ m.scheduled_at }} {{ m.kind_label }} 완료</span>
+        {# 여기서 바로 결과를 적는다 — 무엇에 대한 미팅이었는지 모르면
+           "그 뒤 어떻게 되셨나요" 를 무엇을 두고 묻는지 알 수 없다.
+           적어 두지 않은 미팅은 기업명을 붙이지 않는다(지어내지 않는다). #}
+        <span class="due-from muted">{{ m.when_label }} {{ m.kind_label }}{% if m.company_name %} · {{ m.company_name }}{% endif %} 완료</span>
         <span class="due-acts">
           <form method="post" action="/ir/meetings/{{ m.id }}/followup">
             <select name="outcome">
@@ -379,11 +358,14 @@
   {% if scheduled %}
   <div class="table-wrap">
   <table class="grid-table compact">
-    <thead><tr><th>날짜</th><th>담당자</th><th>구분</th><th>기업</th><th class="num">남음</th><th></th></tr></thead>
+    <thead><tr><th style="width:132px">날짜 · 시간</th><th>담당자</th><th>구분</th><th>기업</th><th class="num">남음</th><th></th></tr></thead>
     <tbody>
       {% for m in scheduled %}
       <tr>
-        <td class="muted">{{ m.scheduled_at }}</td>
+        {# 시간을 안 적어 둔 미팅은 날짜만 나온다 — 없는 시각을 지어내면
+           그 시간에 맞춰 나갈 준비를 하게 된다. #}
+        <td class="muted">{{ m.scheduled_at }}
+          {% if m.scheduled_time %}<b>{{ m.scheduled_time }}</b>{% endif %}</td>
         <td><b>{{ m.name }}</b> {{ m.title }} <span class="muted">{{ m.firm }}</span></td>
         <td>{{ m.kind_label }}</td>
         <td>{{ m.company_name }}</td>
@@ -461,18 +443,32 @@
        다음 회차에 이 투자사를 어떻게 대할지는 거기서 나온다. #}
     <div class="table-wrap wide">
     <table class="grid-table compact" id="review-table" data-inline-url="/api/meetings">
+      {# `기업` 은 위 [미팅] 표와 **같은 자리**(날짜·담당자·구분 다음)에 둔다 —
+         같은 미팅을 두 표에서 보는데 칸 순서가 다르면 눈이 매번 다시 찾는다. #}
       <thead><tr>
-        <th style="width:88px">날짜</th><th style="width:150px">담당자</th>
-        <th style="width:60px">구분</th><th style="width:72px">결과</th>
+        <th style="width:118px">날짜 · 시간</th><th style="width:150px">담당자</th>
+        <th style="width:60px">구분</th><th style="width:120px">기업</th>
+        <th style="width:72px">결과</th>
         <th style="width:250px">미팅 후기</th>
         <th style="width:300px">결과 문의</th><th style="width:96px"></th>
       </tr></thead>
       <tbody>
         {% for m in finished[:20] %}
         <tr>
-          <td class="muted">{{ m.scheduled_at }}</td>
+          <td class="muted">{{ m.scheduled_at }}
+            {% if m.scheduled_time %}<b>{{ m.scheduled_time }}</b>{% endif %}</td>
           <td>{{ m.name }} <span class="muted">{{ m.firm }}</span></td>
           <td class="muted">{{ m.kind_label }}</td>
+          {#
+            어느 기업 미팅이었는지. 값은 미팅에 적어 둔 기업 이름(`Meeting.company_name`)
+            그대로다 — 등록할 때 적었거나, [전달한 자료]에서 [미팅 잡기]로 넘어오며
+            그 IR 요청의 기업명이 실려 온 값이다.
+
+            **비어 있으면 비운다.** 담당자가 맡은 기업이나 지난 회차에서 골라
+            채우면 그럴듯하지만 그건 지어낸 값이고, 후기를 읽는 사람은 그것을
+            "이 미팅은 그 기업 건" 으로 읽는다. 모르면 빈칸이 정확하다.
+          #}
+          <td class="ellipsis" title="{{ m.company_name }}">{{ m.company_name }}</td>
           <td>{{ m.outcome_label or '-' }}</td>
           {# 미팅 자리에서 들은 것. 열흘 뒤 통화와 다른 시점의 이야기라 칸을
              나눠 둔다 — 한 칸에 섞으면 언제 들은 말인지 알 수 없다. #}
