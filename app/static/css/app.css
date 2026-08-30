@@ -96,6 +96,12 @@ a:hover { text-decoration: underline; }
 .room-badge { font-size: 11px; border-radius: 6px; padding: 2px 6px; }
 .room-badge.ok { background: #eafaf0; color: var(--green); }
 .room-badge.warn { background: #fdeeee; color: var(--red); }
+/* 방 상태 갈래는 `dashboard.ROOM_LABELS` 가 정한다(ok · warn · bad · muted).
+   여기에는 색만 짝지어 둔다 — 갈래 이름을 CSS 에서 새로 지으면 화면과 집계가
+   다른 말을 쓰게 된다. `muted` 는 카톡 채널이 아닌 사람이라(메일 · 채널 불가)
+   고칠 것이 없다 — 빨간 칸으로 두면 매번 손대야 할 것처럼 읽힌다. */
+.room-badge.bad { background: #fdeeee; color: var(--red); }
+.room-badge.muted { background: #f1f3f5; color: var(--muted); }
 
 /* Preview */
 .preview-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
@@ -309,7 +315,7 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
    (2,804 → 2,910 : 필터를 고르면 `채널 (1) ▾` 처럼 `(1)` 이 붙어 단추가
     24px 씩 넓어지는데 그 몫을 안 잡아 두어 일곱 칸이 두 줄로 접혔다 —
     contacts.html 머리글 주석 참고) */
-#contacts-table { min-width: 2910px; }
+#contacts-table { min-width: 3010px; }
 /* 팀 현황도 같은 방식이다 — 폭은 th 에서 잡고 여기서는 표가 줄지 않게만 막는다.
    `table-layout: fixed` 는 폭을 안 준 칸을 **똑같이** 나눠 주는데, 이 표는 칸마다
    필요한 자리가 전혀 다르다. 마지막 동작 칸(단추 셋)이 1,920px 에서도 148px 밖에

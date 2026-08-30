@@ -84,8 +84,12 @@ def test_rows_carry_filter_attributes(logged_in, contacts):
     행이 싣는 값은 **그 칸이 화면에 보여 주는 것**이어야 한다. 라운드 사이즈
     칸의 필터가 `stages`(선호 단계)를 보고 있어서, 표에는 라운드가 52줄 적혀
     있는데 필터를 열면 늘 빈 목록이었다 — `stages` 는 값이 0줄이다.
-    선호 단계는 표에 칸이 없어(상세 패널에서만 고친다) 필터에서 뺐고,
-    방 연결(`data-f-room`)도 걸 머리글이 없어 함께 걷어냈다.
+    선호 단계는 표에 칸이 없어(상세 패널에서만 고친다) 필터에서 뺐다.
+
+    방 연결(`data-f-room`)도 한동안 걷어내 두었는데, 대시보드가 `방 미등록
+    6명` 을 눌러 `/contacts?room=…` 으로 들어오면서 **칸부터 세우고** 다시
+    실었다. 값·말은 `dashboard.ROOM_LABELS` 한 곳에서 온다 — 세는 곳과 거는
+    곳이 갈래를 따로 적으면 눌러 온 화면의 줄 수가 패널의 수와 어긋난다.
     짝이 어긋나는지는 tests/test_filter_columns.py 가 전 화면에서 훑는다.
     """
     html = logged_in.get("/contacts").text
@@ -93,7 +97,9 @@ def test_rows_carry_filter_attributes(logged_in, contacts):
     # 라운드 사이즈 칸이 보여 주는 그 값으로 거른다
     assert 'data-f-round=' in html
     assert 'data-f-stage=' not in html, "표에 칸이 없는 값으로 거르려 한다"
-    assert 'data-f-room=' not in html, "걸 머리글이 없는 값을 행이 싣고 있다"
+    # 방 상태는 칸(`카톡방`)과 머리글 선언이 함께 서 있다.
+    assert 'data-filters="room:카톡방"' in html
+    assert 'data-f-room=' in html, "칸을 세워 두고 행이 값을 안 싣는다"
     # 채널·상태는 시트에 없는 칸이라 컬럼과 함께 뺐다.
     assert 'data-f-dealstage=' in html      # 그 자리에 진행 단계가 있다
     # 필터 대상 컬럼 헤더에 드롭다운이 붙는다

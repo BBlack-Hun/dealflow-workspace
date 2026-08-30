@@ -664,6 +664,26 @@ class SheetOwner(TimestampMixin, Base):
     # 발송 대상 목록에도 함께 뜬다. 지우는 것이 아니라 **투자사로 안 세는**
     # 것이라, 그 명단 탭에서는 그대로 보인다.
     is_hidden: Mapped[int] = mapped_column(Integer, default=0)
+    # 이 명단으로 **딜 소개를 보내는가**.
+    #
+    # 발송 대상의 모집단이 여기서 정해진다. 예전에는 "내가 들고 있는 줄 중
+    # 카톡방 연결이 끝난 사람" 이 기준이었는데, 그러면 **딜 소개 명단에 올린
+    # 적 없는 풀 사람**까지 목록에 떴다(실데이터에서 17명이 그랬다).
+    #
+    # **명단 이름을 코드에 적지 않는다.** 지금 이름은 `전체 딜소개현황(125명)`
+    # 처럼 괄호 안 인원이 붙어 있고 그 수는 늘어난다 — 이름으로 맞추면 사람이
+    # 한 명 늘 때 조용히 깨진다. `layout`·`is_hidden` 과 같은 방식으로
+    # **명단에 붙은 값**으로 정한다.
+    #
+    # 세 가지 상태다(`None` 이 기본).
+    #   None  아직 사람이 정하지 않았다 → **할당 여부를 따른다.** 이 모듈의
+    #         정의가 이미 그렇다: "내 명단 = 풀에서 할당받아 **내가 딜소개를
+    #         보내는** 사람들"(`services/sheet_owner.py` 첫 줄). 새 명단이
+    #         들어와도 조용히 발송 대상에서 빠지지 않는다.
+    #   1     사람이 켰다 — 풀이어도 딜 소개를 보낸다
+    #   0     사람이 껐다 — 할당받은 명단이어도 딜 소개는 안 보낸다
+    is_deal_list: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True, default=None)
 
 
 class ContactColumn(TimestampMixin, Base):

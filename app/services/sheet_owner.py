@@ -12,6 +12,10 @@
 
 한 사람이 풀과 내 명단에 함께 있으면(실제로 113명이 그렇다) **내 명단 쪽이
 이긴다**. 그 사람에게 딜소개를 보내는 것은 내 명단 쪽 일이기 때문이다.
+
+**딜 소개를 어느 명단으로 보내는지도 명단이 정한다**(`SheetOwner.is_deal_list`).
+발송 대상을 "연결이 끝난 사람" 으로 잡아 두었더니, 딜 소개 명단에 올린 적이
+없는 풀 사람까지 목록에 떴다 — 아래 `is_deal_list` 와 `recipients` 참고.
 """
 from __future__ import annotations
 
@@ -129,13 +133,74 @@ def my_contacts(db: Session, user: User) -> List[VcContact]:
 # 두어서, 같은 사람을 두고 두 화면이 서로 다른 수를 냈다 — 이 저장소가 반복해
 # 당한 부류다(투자사 117명·123명, 좌측 메뉴 목록과 라우터 목록, 컨설턴트 줄에
 # `막힘` 오표시, 관리자가 보는데 못 고치던 줄). 두 화면이 아래 함수를 읽으면
-# 조건이 하나 붙어도 같이 움직인다.
+# 조건이 하나 붙어도 같이 움직인다. 대시보드의 `연결 진행 중인 명단`
+# (`services/dashboard.py`)도 같은 판정을 읽는다.
+#
+# **문은 둘이고 뜻이 다르다.**
+#
+#     ① 이 명단인가   `on_deal_list` — 딜 소개를 **보내기로 한 명단**인가.
+#                     모집단을 정한다. 명단 밖 사람은 아예 목록에 안 뜬다.
+#     ② 지금 보낼 수 있나  `can_send_to` — 카톡방 연결이 끝났는가.
+#                     명단 안이어도 방이 없으면 못 보낸다.
+#
+# 예전에는 ② 하나만 문이었다. 그래서 딜 소개 명단에 올린 적도 없는 **투자사
+# 풀** 사람이 연결만 됐다는 이유로 발송 목록에 떴다(실데이터 142명 중 17명).
+# 발송은 되돌릴 수 없는 일이라, 모집단을 넓게 잡아 두고 상태로 거르는 것보다
+# **어느 명단으로 보내기로 했는지**를 먼저 묻는 편이 맞다.
 #
 # 두 화면의 수는 **원래 다르다.** 투자사 관리 현황은 `내가 맡은 사람`이고 딜
-# 제안 관리는 `지금 보낼 수 있는 사람`이라, 카톡방 연결이 아직인 사람만큼
-# 딜 제안 관리가 적다. 그 차이를 감추지 않고 `recipient_counts` 로 내놓아
-# 화면이 "총 N명 중 M명" 이라고 적게 한다 — 수가 다른 것보다 **왜 다른지
-# 화면이 말하지 않는 것**이 문제였다.
+# 제안 관리는 `이 명단에서 지금 보낼 수 있는 사람`이다. 그 차이를 감추지 않고
+# `recipient_counts` 로 내놓아 화면이 "명단 N명 중 M명 · 명단 밖 K명" 이라고
+# 적게 한다 — 수가 다른 것보다 **왜 다른지 화면이 말하지 않는 것**이 문제였다.
+
+
+def is_deal_list(row: Optional[SheetOwner]) -> bool:
+    """이 명단으로 딜 소개를 보내는가. **명단 이름을 보지 않는다.**
+
+    `SheetOwner.is_deal_list` 가 비어 있으면(= 아직 사람이 정하지 않았으면)
+    **할당 여부를 따른다.** 이 모듈 첫 줄의 정의가 이미 그렇다 — "내 명단은
+    풀에서 할당받아 **내가 딜소개를 보내는** 사람들". 지어낸 기본값이 아니라
+    이 앱이 원래 쓰던 뜻이다.
+
+    기본값을 이렇게 두는 이유는 **조용히 빠지는 쪽이 더 위험**해서다. 명단이
+    하나 늘었는데 표시하는 것을 잊으면, 원래 받아야 할 사람이 통째로 회차에서
+    빠진다 — 화면은 멀쩡하고 아무도 눈치채지 못한다.
+
+    감춘 명단(투자사로 안 세는 명단)은 언제나 아니다. 스타트업 리마인드 명단이
+    발송 대상에 섞이면 투자사에게 보낼 문구가 스타트업에게 나간다.
+    """
+    if row is None:
+        # 설정 줄이 아예 없는 이름이다(`직접 추가`, 임포트를 거치지 않은 줄).
+        # 손으로 넣은 사람은 보내려고 넣은 사람이라 **뺄 근거가 없다** —
+        # 풀이라고 확인된 명단만 뺀다.
+        return True
+    if row.is_hidden:
+        return False
+    if row.is_deal_list is None:
+        return bool(row.user_id)
+    return bool(row.is_deal_list)
+
+
+def off_deal_labels(db: Session) -> Set[str]:
+    """딜 소개를 **안 보내는** 명단 이름들(풀 · 사람이 끈 명단 · 감춘 명단).
+
+    보내는 쪽이 아니라 **안 보내는 쪽을 모은다.** `is_investor` 가 감춘 명단을
+    다루는 방식과 같은 이유다 — 설정 줄이 아예 없는 이름(`직접 추가`, 손으로
+    넣은 줄)이 저절로 대상에 남는다. 보내는 쪽을 모으면 그런 이름이 목록에
+    없어서 조용히 빠진다.
+    """
+    return {label for label, row in settings_map(db).items()
+            if not is_deal_list(row)}
+
+
+def on_deal_list(contact: VcContact, off: Set[str]) -> bool:
+    """이 사람이 딜 소개 명단에 올라 있는가.
+
+    한 사람이 풀과 딜 소개 명단에 겹쳐 있으면(실제로 113명이 그렇다) **명단
+    쪽이 이긴다** — 풀에도 이름이 있다는 이유로 명단에 올린 사람이 빠지면
+    안 된다. 줄 단위로 감춘 사람은 `is_investor` 가 이미 뺀다.
+    """
+    return any(label not in off for label in labels_of(contact.source_sheet))
 
 
 def managed(db: Session, user: User, *, team_wide: bool = False,
@@ -174,17 +239,55 @@ def can_send_to(contact: VcContact) -> bool:
     return contact.connect_stage == STAGE_CONNECTED
 
 
+def deal_list_contacts(db: Session, user: User) -> List[VcContact]:
+    """**딜 소개를 보내기로 한 명단**에 올라 있는 내 담당자 — 발송의 모집단.
+
+    딜 제안 관리의 목록도, 대시보드의 `연결 진행 중인 명단` 도 여기서 시작한다.
+    두 화면이 각자 모집단을 고르던 동안 한쪽은 풀까지 세고 한쪽은 안 세어서,
+    같은 사람을 두고 다른 수가 나왔다.
+
+    여기까지는 **연결 상태를 보지 않는다.** 아직 연결 중인 사람도 이 명단
+    사람이고, 대시보드는 바로 그 사람들을 보여 줘야 한다.
+    """
+    off = off_deal_labels(db)
+    return [c for c in managed(db, user) if on_deal_list(c, off)]
+
+
 def recipients(db: Session, user: User) -> List[VcContact]:
-    """딜 제안 관리의 **대상 담당자**. 발송 화면이 목록으로 그리는 그 사람들이다."""
-    return [c for c in managed(db, user) if can_send_to(c)]
+    """딜 제안 관리의 **대상 담당자**. 발송 화면이 목록으로 그리는 그 사람들이다.
+
+    문 둘을 차례로 지난다 — **이 명단인가**(모집단) 그리고 **지금 보낼 수
+    있는가**(카톡방 연결). 명단에 있어도 방이 없으면 여전히 못 보낸다.
+    """
+    return [c for c in deal_list_contacts(db, user) if can_send_to(c)]
+
+
+def deal_list_names(db: Session, contacts: List[VcContact]) -> List[str]:
+    """이 사람들이 실제로 올라 있는 딜 소개 명단 이름들.
+
+    화면이 "어느 명단 기준인지" 를 이름으로 적을 수 있어야, 기준이 또 어긋났을
+    때 쓰는 사람이 먼저 알아챈다. **인원이 많은 명단부터** 둔다.
+    """
+    off = off_deal_labels(db)
+    counted: Dict[str, int] = {}
+    for c in contacts:
+        for label in labels_of(c.source_sheet):
+            if label not in off:
+                counted[label] = counted.get(label, 0) + 1
+    return [k for k, _ in sorted(counted.items(), key=lambda kv: (-kv[1], kv[0]))]
 
 
 def recipient_counts(db: Session, user: User, *,
                      team_wide: bool = False) -> dict:
-    """총 N명 중 보낼 수 있는 M명 — 화면이 그 차이를 드러내는 데 쓴다.
+    """명단 N명 중 보낼 수 있는 M명 — 화면이 그 차이를 드러내는 데 쓴다.
 
     수만 다르고 이유가 안 적혀 있으면 쓰는 사람은 어느 쪽이 고장인지 알 수
     없다. 남은 사람이 **어느 단계에서 막혀 있는지**까지 함께 돌려준다.
+
+    **명단 밖 인원(`off_list`)을 반드시 함께 내놓는다.** 이 변경으로 발송
+    대상이 줄었는데(실데이터 142 → 125), 줄어든 것이 화면에 안 적히면 명단을
+    새로 하나 받아 표시하는 것을 잊었을 때 그 사람들이 **조용히** 빠진다 —
+    회차가 통째로 잘못 나가는 길이다. 명단 밖 수가 늘면 눈에 띈다.
 
     `team_wide` 는 관리자가 투자사 관리 현황에서 보는 팀 전체 수다. 발송은
     관리자여도 본인 담당분뿐이라(남의 방으로 문구가 실제로 나간다) 두 수가
@@ -192,7 +295,9 @@ def recipient_counts(db: Session, user: User, *,
     """
     from .sheet_import import CONNECT_LABELS
 
-    mine = managed(db, user)
+    held = managed(db, user)
+    off = off_deal_labels(db)
+    mine = [c for c in held if on_deal_list(c, off)]
     sendable = [c for c in mine if can_send_to(c)]
     blocked: dict = {}
     for c in mine:
@@ -202,13 +307,18 @@ def recipient_counts(db: Session, user: User, *,
         blocked[label] = blocked.get(label, 0) + 1
     return {
         "managed": len(mine),
+        # 맡고는 있지만 딜 소개 명단에는 없는 사람(대부분 아직 풀에 있는 사람).
+        "held": len(held),
+        "off_list": len(held) - len(mine),
+        "lists": deal_list_names(db, mine),
         "sendable": len(sendable),
         "blocked": len(mine) - len(sendable),
         # 많은 단계부터 — "미착수 80명" 이 먼저 보여야 어디를 손대야 하는지 안다.
         "blocked_by_stage": [{"label": k, "count": v} for k, v in
                              sorted(blocked.items(), key=lambda kv: (-kv[1], kv[0]))],
         # 투자사 관리 현황이 보여 주는 수. 관리자만 본인 담당분과 다르다.
-        "team_total": len(managed(db, user, team_wide=True)) if team_wide else len(mine),
+        "team_total": (len(managed(db, user, team_wide=True)) if team_wide
+                       else len(held)),
         "team_wide": bool(team_wide),
     }
 
@@ -330,6 +440,11 @@ def sheet_rows(db: Session, contacts: List[VcContact]) -> List[dict]:
             # 이 명단이 쓰는 표 배치와, 투자사로 세는지 여부.
             "layout": (row.layout if row and row.layout else "investor"),
             "is_hidden": bool(row.is_hidden) if row else False,
+            # 이 명단으로 딜 소개를 보내는가 — 발송 대상의 모집단.
+            "is_deal_list": is_deal_list(row),
+            # 사람이 정한 값인가, 할당 여부에서 따라온 기본값인가. 화면이
+            # "정해 두지 않았습니다" 를 구분해 말할 수 있어야 한다.
+            "deal_list_set": bool(row is not None and row.is_deal_list is not None),
         })
     return out
 

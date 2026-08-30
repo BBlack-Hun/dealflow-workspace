@@ -33,8 +33,12 @@
      감추면 되돌리려고 DB 를 직접 고쳐야 한다. 대신 표시를 달아 둔다. #}
   <a class="sheet-tab {% if selected_sheet == t.key %}active{% endif %}{% if t.is_hidden %} muted-tab{% endif %}"
      href="/contacts?sheet={{ t.key|urlencode }}"
-     title="{{ t.kind_label }} · 연결 완료 {{ t.connected }}명{% if t.owner %} · 담당 {{ t.owner }}{% endif %}{% if t.is_hidden %} · 투자사로 세지 않는 명단{% endif %}{% if t.hidden_rows %} · 감춘 줄 {{ t.hidden_rows }}개{% endif %}">
-    {% if t.kind == 'pool' %}<span class="pool-dot" title="투자사 풀">◇</span>{% endif %}{% if t.is_hidden %}<span class="pool-dot" title="투자사로 세지 않는 명단">🚫</span>{% endif %}{{ t.label }} <span>{{ t.count }}</span>
+     title="{{ t.kind_label }} · 연결 완료 {{ t.connected }}명{% if t.owner %} · 담당 {{ t.owner }}{% endif %}{% if t.is_deal_list %} · 딜소개를 보내는 명단{% endif %}{% if t.is_hidden %} · 투자사로 세지 않는 명단{% endif %}{% if t.hidden_rows %} · 감춘 줄 {{ t.hidden_rows }}개{% endif %}">
+    {% if t.kind == 'pool' %}<span class="pool-dot" title="투자사 풀">◇</span>{% endif %}{% if t.is_hidden %}<span class="pool-dot" title="투자사로 세지 않는 명단">🚫</span>{% endif %}{#
+      딜 소개를 보내는 명단인지 **탭에서 바로 보여야 한다.** 발송 대상의
+      모집단이 이 표시로 정해지는데, 어느 탭이 그 명단인지 화면에 없으면
+      "왜 이 사람이 발송 목록에 없지" 를 설정 화면까지 들어가 봐야 안다.
+    #}{% if t.is_deal_list %}<span class="pool-dot" title="딜소개를 보내는 명단">✉</span>{% endif %}{{ t.label }} <span>{{ t.count }}</span>
   </a>
   {% endfor %}
 
@@ -101,6 +105,37 @@
             title="투자사 수를 세는 곳과 딜소개 발송 대상에서 뺍니다. 이 탭에서는 그대로 보입니다.">
       {{ '숨김 해제' if t.is_hidden else '투자사로 세지 않기' }}</button>
   </form>
+  {#
+    딜소개 명단 표시 — **발송 대상의 모집단**이 이 값으로 정해진다.
+    명단 이름을 코드에 적지 않으려고 값으로 둔 것이다(이름에 붙은 인원이
+    바뀐다). 감춘 명단에서는 켤 수 없으므로 단추도 세우지 않는다.
+  #}
+  {% if not t.is_hidden %}
+  <form method="post" action="/api/contacts/sheets/deal-list" class="inline-form"
+        onsubmit="return confirm('{% if t.is_deal_list %}이 명단에는 딜 소개를 보내지 않게 할까요?\n딜 제안 관리의 대상 담당자에서 이 명단 사람들이 빠집니다.{% else %}이 명단으로 딜 소개를 보낼까요?\n딜 제안 관리의 대상 담당자에 이 명단 사람들이 올라옵니다.{% endif %}')">
+    <input type="hidden" name="label" value="{{ t.label }}">
+    <button class="linkbtn" type="submit"
+            title="딜 제안 관리의 대상 담당자를 이 명단 기준으로 정합니다.{% if not t.deal_list_set %} 지금은 담당 지정 여부를 따르고 있습니다.{% endif %}">
+      {{ '딜소개 명단에서 빼기' if t.is_deal_list else '딜소개 명단으로 표시' }}</button>
+  </form>
+  {% endif %}
+</p>
+{% endif %}
+
+{#
+  이 명단이 발송 대상인지 **탭을 연 사람에게 한 줄로 말해 준다.** 관리자만
+  단추를 볼 수 있어서, 팀원에게는 이 줄이 유일한 설명이다.
+#}
+{% if t.is_deal_list and not t.is_hidden %}
+<p class="hint">
+  ✉ <b>딜소개를 보내는 명단</b>입니다 — 딜 제안 관리의 대상 담당자가 이 명단에서
+  나옵니다{% if not t.deal_list_set %} (담당이 지정돼 있어 자동으로 그렇게 잡혔습니다){% endif %}.
+  명단에 있어도 카톡방 연결이 끝나야 실제로 보낼 수 있습니다.
+</p>
+{% elif not t.is_hidden %}
+<p class="hint">
+  이 명단은 <b>딜소개 발송 대상이 아닙니다</b> — 여기 있는 사람은 연결이 끝나
+  있어도 딜 제안 관리에 뜨지 않습니다.
 </p>
 {% endif %}
 
@@ -363,6 +398,21 @@
            같은 축(얼마나 진행됐나)이라 이 칸에 함께 둔다. #}
         <th style="width:106px" data-filters="dealstage:진행 단계|connect:연결 상태">진행 단계<div class="th-filters"></div></th>
         <th style="width:88px" data-filters="channel:채널">채널<div class="th-filters"></div></th>
+        {# 카톡방 상태 — **칸을 세우고 나서** 필터를 건다.
+           대시보드가 `방 미등록 6명` 을 눌러 `/contacts?room=…` 으로 들어오는데,
+           그 키를 이 표가 선언한 적이 없어서 `filters.js` 가 통째로 버렸다.
+           눌러도 274명이 그대로 뜨고, 링크는 살아 있으니 아무도 눈치채지 못한다.
+
+           연결 상태 옆 칸에 함께 두지 않고 **자기 칸을 세운 이유**: 한 머리글에
+           필터를 하나 더 얹으면 `진행 단계 ▾ 연결 상태 ▾ 카톡방 ▾` 세 단추가
+           106px 안에 서야 해서 머리글이 두 줄로 접힌다(이 저장소의 확정 규칙).
+           그리고 값이 보이는 칸이 없으면 무엇으로 걸러졌는지 확인할 수가 없다.
+
+           값·말은 `dashboard.ROOM_LABELS` 에서 온다 — 세는 곳과 거는 곳이 같은
+           갈래를 써야 눌러 온 화면의 줄 수가 패널의 수와 맞는다.
+           폭은 가장 긴 값(`채널 불가 투자사`)이 아니라 **필터 단추**
+           (`카톡방 (1) ▾`)에 맞춘다. 값은 `ellipsis` 로 줄인다. #}
+        <th style="width:100px" data-filters="room:카톡방">카톡방<div class="th-filters"></div></th>
         <th style="width:44px"></th>
       </tr>
     </thead>
@@ -382,6 +432,7 @@
           data-f-firm="{{ r.firm }}"
           data-f-connect="{{ r.connect_label }}"
           data-f-channel="{{ r.channel_label }}"
+          data-f-room="{{ r.send_label }}"
           data-f-interest="{{ r.interest_level }}"
           data-f-joined="{{ r.kakao_joined }}"
           data-search="{{ (r.name ~ ' ' ~ (r.firm or '') ~ ' ' ~ (r.title or '') ~ ' ' ~ (r.department or ''))|lower }}"
@@ -439,6 +490,11 @@
         <td><span class="stage-pill {{ r.deal_stage_cls }}">{{ r.deal_stage_label }}</span></td>
         {# 대시보드의 '메일 채널' · '채널 미지정' 에서 눌러 오면 이 칸으로 걸러진다. #}
         <td class="muted">{{ r.channel_label }}</td>
+        {# 대시보드의 방 상태 타일에서 눌러 오면 이 칸으로 걸러진다.
+           고칠 수 있는 칸이 아니다 — 방 상태는 [방 연결 확인]이 정하는 결과라
+           손으로 적을 값이 아니다(방 이름은 [수정] 창에서 고친다). #}
+        <td class="ellipsis" title="{{ r.send_label }}">
+          <span class="room-badge {{ r.send_class }}">{{ r.send_label }}</span></td>
         <td><button type="button" class="linkbtn js-detail">수정</button></td>
       </tr>
       {% endfor %}

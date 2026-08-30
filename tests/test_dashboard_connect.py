@@ -1,18 +1,24 @@
-"""대시보드 · 연결 진행 중인 명단 — **누구인지 보이는가**.
+"""대시보드 · 연결 진행 중인 명단 — **어느 명단을 세고, 누구인지 보이는가**.
 
-이 패널은 오래 숫자만 보여 주었다. `진행 중 44` 는 알겠는데 그 44명이 누구인지
-알 수 없었고, 눌러 간 화면에는 다른 수가 떴다. 여기서 지키려는 것은 넷이다.
+모집단은 **딜 제안 관리와 같은 명단**이다(`sheet_owner.deal_list_contacts`).
+한때 이 패널이 안 뜬다고 모집단을 '내가 들고 있는 줄 전체' 로 넓혀 두었는데,
+그러면 딜 소개 명단에 올린 적도 없는 풀 사람의 연결 상태가 내 할 일로 뜬다 —
+**숫자를 만들려고 모집단을 넓히지 않는다.** 여기서 지키려는 것은 다섯이다.
 
-1. **이름이 나온다.** 앞에서 몇 명은 대시보드에서 바로 읽히고, 이름을 누르면
+1. **기준이 딜소개 명단이다.** 그 명단 밖 사람은 연결 중이어도 안 센다.
+2. **이름이 나온다.** 앞에서 몇 명은 대시보드에서 바로 읽히고, 이름을 누르면
    그 사람 상세로 간다.
-2. **패널이 말한 수 == 눌러 간 화면의 줄 수.** 기대값을 손으로 적지 않고 양쪽을
+3. **패널이 말한 수 == 눌러 간 화면의 줄 수.** 기대값을 손으로 적지 않고 양쪽을
    세어 대조한다 — 손으로 적으면 모집단이 어긋나도 테스트만 통과한다.
    (예전 사고: 패널은 '내 배정 명단' 을 세고 링크는 `sheet=all` 로 보냈다.
     패널 0명 → 화면 44줄. 반대로 `connect` 필터를 아무도 선언하지 않아
-    `?connect=` 가 통째로 버려지던 시절엔 눌러도 306명이 그대로 나왔다.)
-3. **아무도 없을 때 안 깨진다.** 진행 중이 0인데 이름 자리만 비어 있으면
-   고장으로 읽힌다 — 다음 동작을 적는다.
-4. **팀원은 자기 것만 본다.** 대시보드는 자기 화면이다.
+    `?connect=` 가 통째로 버려지던 시절엔 눌러도 306명이 그대로 나왔다.
+    `room=` 필터가 같은 상태로 오래 살아 있었다.)
+4. **전원 연결 완료여도 패널이 사라지지 않는다.** 실데이터의 딜소개 명단
+   125명은 전부 연결 완료다 — 그때 패널을 감추면 사용자가 보려던 화면이
+   바로 그 순간 사라진다. 0 이면 0 이라고 말하고, 아직 방이 없어 **못 받는
+   사람**을 갈래별로 이어서 보여 준다.
+5. **팀원은 자기 것만 본다.** 대시보드는 자기 화면이다.
 
 실명·회사명을 쓰지 않는다(공개 저장소). 가상 이름만 쓴다.
 """
@@ -100,40 +106,45 @@ def _declared_filter_keys() -> set[str]:
     return keys
 
 
+DEAL_SHEET = "내 딜소개 명단"
+POOL_SHEET = "확보해 둔 풀"
+
+
 @pytest.fixture()
 def waiting(db, users):
-    """연결이 아직 안 끝난 명단.
+    """딜소개 명단 안에서 연결이 아직 안 끝난 사람들.
 
-    **풀 명단에 둔다.** 연결 작업은 명단을 배정받기 전에 하는 일이라 실제
-    데이터도 그렇다(로컬 실데이터에서 배정 명단 125명은 전부 연결 완료였고,
-    연결 중인 132명은 전부 풀에 있었다). 배정 명단만 세던 동안 이 패널은
-    사람이 있는데도 화면에 아예 뜨지 않았다.
+    **딜소개 명단에 둔다.** 이 패널이 세는 것은 "딜 소개를 보내기로 한 명단의
+    연결 현황" 이다 — 풀에 있는 사람의 연결은 아직 내 회차의 일이 아니다.
+    풀 명단도 함께 두어, 그쪽 사람이 섞이지 않는지 같이 본다.
     """
     from app.models import SheetOwner, VcContact
 
-    # 배정 명단도 하나 둔다. 투자사 관리 현황은 아무 것도 안 고르면 **배정
-    # 명단 탭**을 먼저 여는데, 연결 중인 사람은 거기 없다 — 링크에서
-    # `sheet=all` 이 빠지면 패널은 7명이라 하고 화면은 0줄이 된다.
     db.add_all([
-        SheetOwner(label="내 명단", user_id=users["u1"].id),
-        SheetOwner(label="연결 명단", user_id=None, assignee_name="연결담당"),
+        SheetOwner(label=DEAL_SHEET, user_id=users["u1"].id),
+        SheetOwner(label=POOL_SHEET, user_id=None, assignee_name="연결담당"),
     ])
     db.add_all([
         VcContact(user_id=users["u1"].id, name=f"가나{i}", firm="가나벤처스",
-                  source_sheet="연결 명단", connect_stage="in_progress",
+                  source_sheet=DEAL_SHEET, connect_stage="in_progress",
                   assignee_name="연결담당")
         for i in range(7)
     ] + [
         VcContact(user_id=users["u1"].id, name=f"다라{i}", firm="다라인베스트",
-                  source_sheet="연결 명단", connect_stage="not_started")
+                  source_sheet=DEAL_SHEET, connect_stage="not_started")
         for i in range(3)
     ] + [
         VcContact(user_id=users["u1"].id, name="마바", firm="마바파트너스",
-                  source_sheet="연결 명단", connect_stage="declined"),
-        # 연결이 끝난 사람은 이 패널이 세지 않는다 — 딜소개 대상이다.
+                  source_sheet=DEAL_SHEET, connect_stage="declined"),
+        # 연결이 끝나고 방까지 있는 사람 — 이 패널의 '연결 남음' 에는 안 든다.
         VcContact(user_id=users["u1"].id, name="사아", firm="사아캐피탈",
-                  source_sheet="내 명단", connect_stage="connected",
+                  source_sheet=DEAL_SHEET, connect_stage="connected",
+                  channel_kakao=1, room_verified="verified",
                   kakao_room_name="사아 방"),
+        # **딜소개 명단 밖**에서 연결 중인 사람. 이 패널이 세면 안 된다.
+        VcContact(user_id=users["u1"].id, name="풀사람", firm="자차인베스트",
+                  source_sheet=POOL_SHEET, connect_stage="in_progress",
+                  assignee_name="연결담당"),
     ])
     db.commit()
     return db
@@ -243,19 +254,95 @@ def test_라벨은_임포트가_정한_말을_그대로_쓴다(logged, waiting):
             tile["href"]).replace(" ", "%20")
 
 
-# ── 3. 아무도 없을 때 ──────────────────────────────────────────────────────
+# ── 3. 전원 연결이 끝났을 때 (= 실데이터의 지금 상태) ──────────────────────
+#
+# 딜소개 명단 125명이 전부 연결 완료다. 예전 화면은 그때 패널을 통째로
+# 감췄는데, **사용자가 보려던 것이 바로 그 상태**였다("누가 아직 못 받는지").
 
-def test_연결할_사람이_없으면_패널을_아예_띄우지_않는다(logged, db, users):
-    """전원 연결 완료면 이 패널이 할 말이 없다 — 0 세 칸을 띄우지 않는다."""
-    from app.models import VcContact
+ROOM_TILE = re.compile(
+    r'<a class="name-lead [^"]*" href="([^"]+)">([^<]+?) (\d+)명</a>')
 
-    db.add(VcContact(user_id=users["u1"].id, name="사아", firm="사아캐피탈",
-                     kakao_room_name="사아 방", connect_stage="connected"))
+
+@pytest.fixture()
+def all_connected(db, users):
+    """전원 연결 완료 · 방 상태만 갈리는 딜소개 명단.
+
+    실데이터와 같은 모양이다(확인됨 116 · 채널 없음 6 · 메일 2 · 실패 1).
+    """
+    from app.models import SheetOwner, VcContact
+
+    db.add(SheetOwner(label=DEAL_SHEET, user_id=users["u1"].id))
+
+    def one(name, **kw):
+        return VcContact(user_id=users["u1"].id, name=name, firm="가나벤처스",
+                         source_sheet=DEAL_SHEET, connect_stage="connected", **kw)
+
+    db.add_all(
+        [one(f"준비{i}", channel_kakao=1, room_verified="verified",
+             kakao_room_name=f"준비{i} 방") for i in range(4)]
+        + [one(f"방없음{i}", channel_kakao=1) for i in range(3)]
+        + [one("메일만", channel_email=1)]
+    )
+    db.commit()
+    return db
+
+
+def test_전원_연결이_끝나도_패널이_사라지지_않는다(logged, all_connected):
+    """0 이면 0 이라고 말한다 — 침묵하면 고장으로 읽힌다."""
+    body = logged.get("/").text
+    panel = _panel(body)
+    assert panel, "전원 연결 완료라고 패널이 통째로 사라졌다"
+    assert "전원 연결이 끝났습니다" in panel
+    # 세 칸은 그대로 0 이다. **숫자를 만들려고 모집단을 넓히지 않는다.**
+    assert all(t["count"] == 0 for t in _tiles(panel)), _tiles(panel)
+
+
+def test_아직_못_받는_사람을_갈래별로_이름까지_보여_준다(logged, all_connected):
+    """딜 소개는 카톡방으로 나간다 — 연결이 끝났다고 보낼 수 있는 것이 아니다."""
+    panel = _panel(logged.get("/").text)
+    tiles = {label: (html_mod.unescape(href), int(n))
+             for href, label, n in ROOM_TILE.findall(panel)}
+    assert tiles, "방이 없어 못 받는 사람을 화면이 말하지 않는다"
+
+    from app.services.dashboard import ROOM_LABELS
+
+    assert tiles[ROOM_LABELS["missing"][0]][1] == 3
+    assert tiles[ROOM_LABELS["email"][0]][1] == 1
+    # 준비된 사람은 여기 뜨면 안 된다 — 손댈 것이 없는 사람이다.
+    assert "준비0" not in panel
+    assert "방없음0" in panel, "누구인지 이름으로 보여야 한다"
+
+
+def test_방_상태_타일도_말한_수와_눌러_간_화면의_줄_수가_같다(logged, all_connected):
+    """`room=` 은 오래 **어디에도 선언되지 않은 키**였다 — 눌러도 274명이
+    그대로 떴다. 여기서 양쪽을 세어 대조한다."""
+    panel = _panel(logged.get("/").text)
+    for raw_href, label, count in ROOM_TILE.findall(panel):
+        href = html_mod.unescape(raw_href)
+        page = logged.get(href)
+        assert page.status_code == 200, f"{label} 링크가 열리지 않는다"
+        left = _rows_left(page.text, href.partition("?")[2])
+        assert len(left) == int(count), (
+            f"[{label}] 패널은 {count}명이라 했는데 {href} 에는 {len(left)}줄이 남는다")
+
+
+def test_모두_준비되면_손댈_것이_없다고_말한다(logged, db, users):
+    """방까지 다 있으면 갈래 줄도 없다 — 빈 자리 대신 그렇다고 적는다."""
+    from app.models import SheetOwner, VcContact
+
+    db.add(SheetOwner(label=DEAL_SHEET, user_id=users["u1"].id))
+    db.add_all([
+        VcContact(user_id=users["u1"].id, name=f"준비{i}", firm="가나벤처스",
+                  source_sheet=DEAL_SHEET, connect_stage="connected",
+                  channel_kakao=1, room_verified="verified",
+                  kakao_room_name=f"준비{i} 방")
+        for i in range(3)
+    ])
     db.commit()
 
-    body = logged.get("/").text
-    assert body.count("연결 진행 중인 명단") == 0
-    assert _tiles(_panel(body)) == []
+    panel = _panel(logged.get("/").text)
+    assert "전원 연결이 끝났습니다" in panel and "모두 보낼 수 있습니다" in panel
+    assert not ROOM_TILE.findall(panel)
 
 
 def test_담당자가_아예_없어도_대시보드가_열린다(logged):
@@ -332,28 +419,38 @@ def test_관리자도_자기_담당만_센다(client, db, users):
 
 # ── 5. 모집단 (이 패널이 세는 사람) ────────────────────────────────────────
 
-def test_배정_전_풀_명단도_센다(logged, db, users):
-    """연결 작업은 **배정받기 전** 풀에서 한다.
+def test_딜소개_명단_밖은_연결_중이어도_세지_않는다(logged, db, users, waiting):
+    """★ 이번에 바로잡은 자리.
 
-    배정된 명단만 세면 이 패널은 사실상 늘 비어 있다 — 로컬 실데이터에서도
-    배정 명단 125명은 전부 '연결 완료' 였고, 연결 중인 132명은 풀에 있었다.
+    한때 이 패널이 안 뜬다고 모집단을 '내가 들고 있는 줄 전체' 로 넓혀 두었다.
+    그러면 **딜 소개 명단에 올린 적도 없는 풀 사람**의 연결 상태가 내 할 일로
+    뜬다 — 숫자를 만들려고 모집단을 넓히지 않는다.
     """
-    from app.models import SheetOwner, VcContact
     from app.services.dashboard import user_dashboard
-
-    db.add_all([
-        SheetOwner(label="내 명단", user_id=users["u1"].id),
-        SheetOwner(label="풀 명단", user_id=None),
-        VcContact(user_id=users["u1"].id, name="가나0", firm="가나벤처스",
-                  source_sheet="풀 명단", connect_stage="in_progress"),
-    ])
-    db.commit()
+    from app.services import sheet_owner
 
     data = user_dashboard(db, users["u1"])
-    assert data["pipeline"]["in_progress"] == 1
-    # 배정 명단만 세는 '내 담당 투자사' 는 그대로 0이다 — 두 수는 원래 다르다.
-    assert {k["key"]: k["value"] for k in data["kpis"]}["contacts"] == 0
-    assert "가나0" in _panel(logged.get("/").text)
+    # 딜소개 명단 안에서 연결 중인 사람은 7명. 풀의 `풀사람` 은 여기 없다.
+    assert data["pipeline"]["in_progress"] == 7
+    assert data["pipeline"]["listed"] == len(
+        sheet_owner.deal_list_contacts(db, users["u1"]))
+    assert "풀사람" not in _panel(logged.get("/").text), (
+        "딜소개 명단 밖 사람이 패널에 떠 있다")
+
+
+def test_패널이_세는_모집단은_발송_대상과_같은_명단이다(db, users, waiting):
+    """두 화면이 각자 모집단을 고르면 또 갈린다 — 판정은 `sheet_owner` 한 곳이다."""
+    from app.services import sheet_owner
+    from app.services.dashboard import user_dashboard
+
+    listed = sheet_owner.deal_list_contacts(db, users["u1"])
+    counts = sheet_owner.recipient_counts(db, users["u1"])
+    pipeline = user_dashboard(db, users["u1"])["pipeline"]
+
+    assert pipeline["listed"] == len(listed) == counts["managed"]
+    # 연결이 남은 사람 + 보낼 수 있는 사람 + 방이 없어 못 보내는 사람 = 명단 전체
+    assert pipeline["total"] + pipeline["ready"] + pipeline["stuck"] == len(listed)
+    assert pipeline["ready"] + pipeline["stuck"] == counts["sendable"]
 
 
 def test_투자사로_세지_않는_명단은_빠진다(logged, db, users):

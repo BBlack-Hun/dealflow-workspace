@@ -422,13 +422,17 @@ def test_the_way_out_that_the_message_points_at_actually_works(portal, db, compa
     assert _still_there(db, company.id), "빼기만 해야 하는데 사라졌다"
 
 
-# ── ⑧ `날짜 기입` — 안내에서 `홍보메일` 을 뺀다 ─────────────────────────────
+# ── ⑧ `홍보메일삭제` — 이름을 칸에 든 값에 맞춘다 ───────────────────────────
 
-def test_the_date_column_no_longer_advertises_the_promo_mail_cleanup(logged_in, db):
-    """그 정리는 끝났고 앞으로 이 칸에 새로 적을 일이 아니다.
+def test_the_promo_mail_column_is_named_after_what_it_holds(logged_in, db):
+    """`날짜 기입` 은 무엇을 적는 칸인지 말해 주지 않았다.
+
+    실제 값 43줄 중 42줄이 홍보 메일을 지웠다는 기록이고(`삭제 완료` 28 ·
+    `7월 삭제필요 -> 삭제 완료` 8 · `민진 8/13 삭제` 5 …) 날짜만 든 줄은
+    하나도 없다 — 이름이 값보다 좁고 또 틀렸다.
 
     **이미 적힌 것은 지우지 않는다** — 지난 정리 기록이라 지우면 무엇을 언제
-    처리했는지 되짚을 길이 없다. 안내만 바뀌고 값은 그대로다.
+    처리했는지 되짚을 길이 없다. 이름만 바뀌고 값은 그대로다.
     """
     from app.models import IrCompany
 
@@ -437,10 +441,13 @@ def test_the_date_column_no_longer_advertises_the_promo_mail_cleanup(logged_in, 
     db.commit()
 
     html = logged_in.get("/companies").text
-    assert "홍보메일 삭제" not in html
-    assert 'title="계약기업 · 거부메일">날짜 기입' in html
+    assert "날짜 기입" not in html, "옛 이름이 남아 있다"
+    assert ">홍보메일삭제<" in html
     # 표 머리글과 수정 패널의 안내가 **같아야** 한다(한쪽만 고치면 다시 갈린다)
-    assert html.count('title="계약기업 · 거부메일"') == 2
+    hint = 'title="계약기업 · 거부메일 주소를 홍보 메일 목록에서 지웠는지"'
+    assert html.count(hint) == 2
+    # 없는 모양을 예로 들면 그 모양으로 적게 된다 — 이 칸에 날짜는 한 줄도 없다.
+    assert 'id="f-contract_month" placeholder="삭제 완료"' in html
     # 적혀 있던 것은 그대로 보인다
     assert "삭제 완료" in html
     assert logged_in.get(f"/api/companies/{row.id}").json()["contract_month"] == "삭제 완료"
