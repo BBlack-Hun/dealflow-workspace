@@ -112,21 +112,31 @@ def _visible_rows(client) -> set:
     본다. 한 탭만 보고 '안 보인다'고 하면 다른 탭에 떠 있는 줄을 못 고친다고
     적어 두는 셈이다.
     """
-    from app.routers.consulting import SHEETS
-
     found = set()
-    for sheet in SHEETS:
+    for sheet in _sheet_names(client):
         body = client.get(f"/consulting?months=all&sheet={sheet}").text
         found |= {int(m) for m in re.findall(r'<tr data-id="(\d+)"', body)}
     return found
 
 
+def _sheet_names(client) -> list:
+    """화면이 내놓는 탭 이름들.
+
+    목록을 여기 적어 두지 않는다 — 이름은 화면에서 고치는 값이라, 적어 두면
+    이름을 바꿨을 때 검사만 옛 탭을 훑고 새 탭에 뜬 줄을 못 본 채 통과한다.
+    """
+    from urllib.parse import unquote
+
+    listing = client.get("/consulting").text
+    names = [unquote(m) for m in
+             re.findall(r'href="/consulting\?sheet=([^"&]+)"', listing)]
+    return list(dict.fromkeys(names))
+
+
 def _visible_columns(client) -> set:
     """화면에 떠 있는 월 열 번호(머리글의 [✕] 단추가 그 번호를 싣고 있다)."""
-    from app.routers.consulting import SHEETS
-
     found = set()
-    for sheet in SHEETS:
+    for sheet in _sheet_names(client):
         body = client.get(f"/consulting?months=all&sheet={sheet}").text
         found |= {int(m) for m in
                   re.findall(r'/consulting/columns/(\d+)/delete', body)}

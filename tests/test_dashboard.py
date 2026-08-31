@@ -219,7 +219,7 @@ def test_deactivate_keeps_the_record(admin_client, db, users):
 def test_companies_page_opens(logged):
     r = logged.get("/companies")
     assert r.status_code == 200
-    assert "IR 기업현황" in r.text
+    assert "IR 기업 현황" in r.text
 
 
 def _full_company(**kw):

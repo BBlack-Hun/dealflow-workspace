@@ -500,6 +500,46 @@ class RefSheet(TimestampMixin, Base):
     is_active: Mapped[int] = mapped_column(Integer, default=1)
 
 
+class ConsultingSheet(TimestampMixin, Base):
+    """투자컨설턴트 현황의 **탭 하나**.
+
+    탭 셋(`스타트업` · `경영본부 전달 기업` · `월간 계약 업무현황표`)은 코드에
+    박힌 목록이었다. 그래서 이름을 고치려면 배포를 해야 했고, 실제로 한 번
+    고쳤을 때(`중요 스타트업` → `스타트업`) 이미 들어간 줄이 옛 이름의 유령
+    탭으로 갈라져 마이그레이션으로 옮겨야 했다(0039).
+
+    **이름을 값으로 뺀다.** `SheetOwner.layout`·`is_hidden`·`is_deal_list` 와
+    같은 방식이다 — 화면에서 고치는 것은 값이고, 코드는 그 값을 읽기만 한다.
+
+    ## `kind` 가 열쇠고 `label` 이 이름이다
+
+    두 칸으로 나누는 이유가 이 표의 핵심이다. `월간 계약 업무현황표` 는 다른
+    두 탭과 **표 자체가 다른데**(`routers/consulting.py` 의 `CONTRACT_COLUMNS`),
+    지금까지 그 짝을 **이름으로** 맞추고 있었다. 이름을 고칠 수 있게 하는
+    순간 그 방식은 깨진다 — 탭 이름을 한 글자 바꾸면 계약 표가 조용히 일반
+    표로 돌아가고, `계약월`·`성공보수율` 칸이 화면에서 사라진다.
+
+    그래서 **바뀌지 않는 열쇠**(`kind`)를 따로 두고 표 모양은 그것으로 고른다.
+    `label` 은 화면 글자일 뿐이라 얼마든지 바뀌어도 된다.
+
+    ## 탭은 사람마다가 아니라 팀 공용이다
+
+    셋은 팀이 함께 쓰는 업무 단계라(스타트업 → 경영본부 전달 → 계약) 새
+    컨설턴트도 **같은 탭 셋**을 그대로 받아야 한다. 사람마다 이름을 따로 두면
+    관리자가 팀 전체를 볼 때 같은 탭이 여러 이름으로 갈라져 보인다.
+    """
+
+    __tablename__ = "consulting_sheets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # **바뀌지 않는 열쇠.** 표 모양을 고르는 것이 이 값이다(위 참고).
+    # 화면에 보이지 않으므로 사람이 신경 쓸 것이 없다.
+    kind: Mapped[str] = mapped_column(String, unique=True)
+    # 화면에 보이는 탭 이름. 사람이 고친다.
+    label: Mapped[str] = mapped_column(String)
+    position: Mapped[int] = mapped_column(Integer, default=0)   # 탭 순서
+
+
 class ConsultingColumn(TimestampMixin, Base):
     """투자컨설턴트 현황표의 '월별 리마인드' 열.
 
@@ -519,6 +559,12 @@ class ConsultingColumn(TimestampMixin, Base):
     #
     # 기본값이 `중요 스타트업` 이었다. 이름만 고치면 이미 들어간 줄이 옛 이름의
     # 유령 탭으로 갈라지므로 **자료도 함께 옮긴다**(0039 마이그레이션).
+    #
+    # **이 기본값에 기대지 않는다.** 탭 이름은 이제 화면에서 고치는 값이라
+    # (`ConsultingSheet.label`) 여기 적힌 글자는 고친 순간 낡는다. 줄을 만드는
+    # 자리는 지금 쓰는 이름을 넣는다(`consulting_sheets.default_label`).
+    # 남겨 두는 것은 그것마저 못 주고 들어온 줄이 빈 탭에 떨어지지 않게 하는
+    # 마지막 그물이다.
     sheet: Mapped[str] = mapped_column(String, default="스타트업")
     label: Mapped[str] = mapped_column(String)          # 시트의 열 이름 그대로
     position: Mapped[int] = mapped_column(Integer, default=0)   # 왼→오 순서

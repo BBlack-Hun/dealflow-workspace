@@ -14,6 +14,8 @@
 """
 from __future__ import annotations
 
+from datetime import date
+
 import pytest
 
 LIST = "샘플 딜공유 명단(2)"
@@ -38,7 +40,7 @@ def sheet(db, users):
     for pos, label in enumerate(MONTHS):
         db.add(ContactColumn(sheet=LIST, label=label, position=pos))
     db.flush()
-    cols = {c.label: c for c in cc.month_columns(db, LIST)}
+    cols = {c.label: c for c in cc.month_columns(db, LIST, today=date(2026, 8, 15))}
     for i in range(1, 3):
         db.add(VcContact(user_id=users["u1"].id, source_sheet=LIST,
                          name=f"김샘플{i}", firm=f"샘플투자{i}",

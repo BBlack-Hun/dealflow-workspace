@@ -34,7 +34,8 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import get_current_user, may_manage_team_contacts
 from ..models import IrCompany, SendItem, SendJob, User, VcContact
-from ..services import report as report_svc, sheet_import, spreadsheet as sp
+from ..services import (report as report_svc, sheet_import, sheet_owner,
+                        spreadsheet as sp)
 from .contacts import contact_rows
 
 # 경로를 /api/import, /api/export 로 따로 둔다.
@@ -199,10 +200,66 @@ def sample_contacts(user: User = Depends(get_current_user)):
                     headers=sp.content_disposition("투자사 관리 현황_업로드양식.xlsx"))
 
 
+def _export_sheet(db: Session, user: User, label: str) -> Response:
+    """명단 하나를 **그 명단이 화면에서 쓰는 칸 그대로** 내보낸다.
+
+    명단마다 표가 다르다(`SheetOwner.layout`). 아래 투자사 표 하나로만 내보내면
+    스타트업 리마인드 명단을 받았을 때 `부서`·`근무처 팩스` 같은 빈 칸이 스무
+    개 오고, 정작 매달 채우는 칸(`8월 리마인드 문자`·`계약여부`)은 **한 칸도
+    안 나온다.** 화면에서 보던 것과 다른 파일이 오면 열어 보고 나서야 안다.
+
+    칸 목록은 화면과 **같은 함수**에서 가져온다(`panel_columns`) — 여기에 이름을
+    다시 적으면 칸이 하나 늘 때 엑셀에서만 조용히 빠진다. 표에서 뺀 칸까지
+    담는 이유는, 엑셀은 가로로 미는 부담이 없어 시트와 대조하는 자리이기
+    때문이다(투자사 표도 화면에 없는 칸까지 내보낸다).
+
+    달마다 늘어나는 칸은 **접지 않고 전부** 넣는다 — 화면에서 접는 것은 가로로
+    밀리기 때문이고, 파일에는 그 이유가 없다. 지난달 기록이 빠진 파일을 시트와
+    대조하면 지워진 것으로 읽힌다.
+    """
+    from ..services import contact_columns as cc
+
+    layout = cc.layout_of(sheet_owner.layout_of(db, label))
+    columns = [c for c in cc.panel_columns(layout, cc.month_columns(db, label))
+               if c.source in ("field", "note")]
+    # **화면과 같은 줄**이다. 감춘 줄은 화면에서 빠져 있으므로 여기서도 뺀다 —
+    # 세어 보고 목록에서 찾을 수 없는 줄이 파일에만 있으면 수가 어긋난다.
+    rows = [r for r in contact_rows(db, user,
+                                    team_wide=may_manage_team_contacts(user),
+                                    include_hidden=True)
+            if label in r["sheets"] and not r["is_hidden"]]
+    body = [
+        [r["owner"]] + [(r["notes"].get(c.key, "") if c.source == "note"
+                         else r.get(c.key, "")) for c in columns]
+        for r in rows
+    ]
+    today = date.today().isoformat()
+    return _xlsx(f"{label}_{today}.xlsx", layout.label,
+                 ["담당 팀원"] + [c.label for c in columns], body)
+
+
 @router.get("/api/export/contacts.xlsx")
-def export_contacts(db: Session = Depends(get_db),
+def export_contacts(sheet: str = "", db: Session = Depends(get_db),
                     user: User = Depends(get_current_user)):
-    """내 투자사 표 → 엑셀. 화면과 같은 순서·같은 값."""
+    """표 → 엑셀. 화면과 같은 순서·같은 값.
+
+    `sheet` 를 주면 **그 명단이 화면에서 쓰는 칸으로** 나간다(위 `_export_sheet`).
+    안 주면 지금까지처럼 투자사 표 한 장이다 — 투자사 관리 현황의 `전체` 에서
+    누르는 그 파일이라 모양이 바뀌면 안 된다.
+
+    **없는 명단 이름은 받지 않는다.** 아무 글자나 받으면 빈 파일이 내려가는데,
+    받는 쪽은 그 명단에 줄이 없는 것으로 읽는다.
+    """
+    if (sheet or "").strip():
+        name = (sheet or "").strip()
+        known = {t["key"] for t in sheet_owner.sheet_rows(
+            db, sheet_owner.managed(db, user,
+                                    team_wide=may_manage_team_contacts(user),
+                                    include_hidden=True))}
+        if name not in known:
+            raise HTTPException(status_code=404, detail="없는 명단입니다")
+        return _export_sheet(db, user, name)
+
     def channel(r):
         marks = []
         if r["channel_kakao"]:
@@ -260,6 +317,11 @@ def export_companies(db: Session = Depends(get_db),
         for c in companies
     ]
     today = date.today().isoformat()
+    # 파일 이름과 시트 이름은 **원본 구글 시트의 탭 이름 그대로**다. 좌측 메뉴는
+    # `IR 기업 현황` 으로 띄어 쓰지만 여기는 따라가지 않는다 — 내려받은 파일을
+    # 그 시트와 나란히 놓고 대조하는 자리라, 이름이 갈리면 어느 탭에 맞춰 볼지
+    # 매번 따져야 한다(가져오기도 시트 쪽 이름을 그대로 찾는다:
+    # `scripts/import_company_sheets.py` 의 `find_sheet`).
     return _xlsx(f"IR 기업현황_{today}.xlsx", "IR 기업현황", COMPANY_HEADERS, rows)
 
 

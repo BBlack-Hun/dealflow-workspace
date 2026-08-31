@@ -6,6 +6,13 @@
 바꾸는 자리를 따로 둔다. 워크북을 읽는 일과 화면을 어떻게 그릴지 정하는 일은
 서로 다른 일이고, 섞어 두면 배치를 바꾸려고 시트를 다시 올리게 된다.
 
+## 배치는 **어느 화면에 서는지도** 정한다
+
+`Layout.page` 가 그 값이다. 스타트업 배치인 명단은 좌측 [스타트업 리마인드] 에,
+투자사 배치인 명단은 [투자사 관리 현황] 에 선다. 그래서 여기서 배치를 바꾸면
+**그 명단이 화면을 옮긴다** — 값을 하나 더 두지 않으려고 그렇게 했다(값이 둘이면
+하나를 빠뜨린 명단이 어디에도 안 뜬다). 바꾸기 전에 어느 화면으로 가는지 적는다.
+
 ## 달마다 늘어나는 칸이 **어떻게 되는지 먼저 보여 준다**
 
 배치를 바꾸면 그 칸이 표에서 사라지는 수가 있다(투자사 명함 표가 그렇다).
@@ -100,6 +107,11 @@ def main() -> int:
                    if name in sheet_owner.labels_of(c.source_sheet))
         mark = "그대로" if now == args.layout else f"{now} → {args.layout}"
         print(f"  {name}  ({rows}줄)  {mark}")
+        # **화면이 바뀌는 것을 먼저 말한다.** 배치를 맞추려고 돌렸는데 명단이
+        # 통째로 다른 메뉴로 옮겨 가면, 찾을 자리를 모른 채 사라진 것으로 읽는다.
+        was, now_page = cc.page_of(now), layout.page
+        moves = "" if was == now_page else f"  ⚠ /{was} → /{now_page} 로 옮겨 갑니다"
+        print(f"      화면 /{now_page}{moves}")
         print(f"      {month_report(db, name, layout)}")
         if now != args.layout:
             changed.append(name)

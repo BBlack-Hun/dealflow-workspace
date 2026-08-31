@@ -26,6 +26,8 @@ import csv
 import re
 from pathlib import Path
 
+from datetime import date
+
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -122,7 +124,7 @@ def month_values(db, contact, label: str) -> dict:
 
     values = cc.load_notes(contact.notes)
     return {col.label: values.get(cc.note_key(col.id), "")
-            for col in cc.month_columns(db, label)}
+            for col in cc.month_columns(db, label, today=date(2026, 8, 15))}
 
 
 @pytest.fixture()
@@ -187,10 +189,10 @@ def test_다시_넣어도_칸이_두_벌이_되지_않는다(monkeypatch, db, ow
 
     run_book(monkeypatch, sample, LIST, owners["a"], "--apply")
     db.expire_all()
-    before = [c.label for c in cc.month_columns(db, LIST)]
+    before = [c.label for c in cc.month_columns(db, LIST, today=date(2026, 8, 15))]
     run_book(monkeypatch, sample, LIST, owners["a"], "--apply")
     db.expire_all()
-    assert [c.label for c in cc.month_columns(db, LIST)] == before
+    assert [c.label for c in cc.month_columns(db, LIST, today=date(2026, 8, 15))] == before
 
 
 # ── 2. 번호가 없어도 들어간다 ───────────────────────────────────────────────
@@ -307,7 +309,7 @@ def test_머리글_윗줄의_달_묶음이_칸_이름에_들어간다(monkeypatc
 
     run_book(monkeypatch, sample, LIST, owners["a"], "--apply")
     db.expire_all()
-    labels = [c.label for c in cc.month_columns(db, LIST)]
+    labels = [c.label for c in cc.month_columns(db, LIST, today=date(2026, 8, 15))]
 
     assert labels == ["8월 딜소개 8/5 8/12", "8월 IR 요청", "8월 미팅확정 미팅완료",
                       "7월 딜소개", "7월 IR 요청", "7월 미팅확정/미팅완료"], labels
@@ -356,7 +358,7 @@ def test_수식_문자열이_칸_이름으로_새어_나오지_않는다(monkeyp
     run(monkeypatch, str(path), LIST, owners["a"], "--mode", "create", "--apply")
     db.expire_all()
 
-    labels = [c.label for c in cc.month_columns(db, LIST)]
+    labels = [c.label for c in cc.month_columns(db, LIST, today=date(2026, 8, 15))]
     assert labels == ["8월 딜소개 8/5 8/12", "8월 IR 요청", "8월 미팅확정"], labels
     for label in labels:
         for mark in ("=", "COUNTIF", "SUMPRODUCT", '"', "&"):
@@ -673,13 +675,13 @@ def test_채우기는_칸을_만들지_않고_못_세운_칸을_알린다(
     wb.save(side)
     wb.close()
 
-    before = [c.label for c in cc.month_columns(db, LIST)]
+    before = [c.label for c in cc.month_columns(db, LIST, today=date(2026, 8, 15))]
     run(monkeypatch, str(side), LIST, owners["a"], "--mode", "fill",
         "--tab", "곁다리탭", "--apply")
     out = capsys.readouterr().out
     db.expire_all()
 
-    assert [c.label for c in cc.month_columns(db, LIST)] == before, (
+    assert [c.label for c in cc.month_columns(db, LIST, today=date(2026, 8, 15))] == before, (
         "채우기가 달 칸을 새로 세웠습니다")
     assert "이 명단에 없는 칸" in out and "사유" in out, (
         "못 세운 칸을 조용히 버렸습니다 — 무엇이 빠졌는지 알 수 없습니다")

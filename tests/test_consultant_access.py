@@ -24,6 +24,9 @@ from .conftest import DEMO_PASSWORD
 EXPECTED_OPEN = {
     # 자기 화면과 그 화면이 부르는 것들. 화면만 열면 칸을 고칠 수가 없다.
     ("GET", "/consulting"),
+    # 탭 이름 바꾸기. 자기 화면의 탭이라 고칠 수 있어야 한다 — 바뀌는 것은
+    # 화면 글자뿐이고, 표 모양은 바뀌지 않는 열쇠가 정한다.
+    ("POST", "/consulting/sheets/rename"),
     ("POST", "/consulting/columns"),
     ("POST", "/consulting/columns/{column_id}/rename"),
     ("POST", "/consulting/columns/{column_id}/delete"),

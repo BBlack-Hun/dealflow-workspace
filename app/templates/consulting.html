@@ -58,7 +58,10 @@
     <input type="file" name="file" accept=".xlsx,.xlsm,.csv" required>
     <label class="field inline-field">
       <span>시트 이름 (비우면 첫 시트)</span>
-      <input type="text" name="sheet" placeholder="예: 스타트업">
+      {# 예시는 **지금 서 있는 첫 탭 이름**이다. 글자를 여기 적어 두면 탭 이름을
+         고친 뒤 이 자리만 옛 이름을 권하게 된다. #}
+      <input type="text" name="sheet"
+             placeholder="예: {{ sheet_tabs[0].label if sheet_tabs else '' }}">
     </label>
     <label class="field inline-field check-row">
       <input type="checkbox" name="replace" value="true">
@@ -110,6 +113,26 @@
   {% endfor %}
   {% endif %}
 </nav>
+
+{#
+  탭 이름 바꾸기. 참고 탭은 이름을 고칠 수 있는데 명단 탭은 못 고쳤다 —
+  원본 시트에서 이름을 다듬으면 앱만 옛 이름으로 남는다. 투자사 관리 현황의
+  [이름 저장] 과 **같은 자리·같은 어휘**다.
+
+  `kind` 를 실어 보낸다. 이름으로 찾으면 방금 고친 이름과 어긋날 수 있고,
+  표 모양도 그 열쇠로 고르기 때문이다(계약 탭이 이름을 바꿔도 계약 표다).
+
+  사람이 시트를 올려 만든 탭(`kind` 없음)은 고칠 열쇠가 없어 폼을 세우지
+  않는다 — 그 탭은 줄에 적힌 이름이 곧 탭이라 여기서 바꿀 자리가 아니다.
+#}
+{% for t in sheet_tabs if t.key == selected_sheet and t.kind %}
+<form method="post" action="/consulting/sheets/rename" class="ref-rename sheet-rename">
+  <input type="text" name="label" value="{{ t.label }}" maxlength="80"
+         aria-label="탭 이름" title="이름을 고치고 [이름 저장]을 누르세요">
+  <input type="hidden" name="kind" value="{{ t.kind }}">
+  <button class="linkbtn" type="submit">이름 저장</button>
+</form>
+{% endfor %}
 
 {% set ref_back = "/consulting" %}
 {% include "_ref_panel.html" %}

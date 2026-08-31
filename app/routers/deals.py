@@ -518,7 +518,7 @@ def preview(
         thin = [c.name for c in companies if not c.introducible]  # 문구만 모드면 companies 가 비어 있다
         thin_warnings = (
             [f"내용이 부족한 기업이 포함됐습니다: {', '.join(thin)} — "
-             f"IR 기업현황에서 한줄소개·숫자를 채우면 문구가 좋아집니다"]
+             f"IR 기업 현황에서 한줄소개·숫자를 채우면 문구가 좋아집니다"]
             if thin and req.mode != MODE_IR else []
         )
         # IR 자료 전달인데 보낼 자료가 없으면 문구만 나가고 자료는 못 보낸다.
@@ -529,7 +529,7 @@ def preview(
             if no_file:
                 thin_warnings.append(
                     f"IR 자료 링크가 없는 기업: {', '.join(no_file)} — "
-                    f"IR 기업현황에서 구글드라이브 링크를 넣어주세요"
+                    f"IR 기업 현황에서 구글드라이브 링크를 넣어주세요"
                 )
         previews.append({
             "contact_id": contact.id,

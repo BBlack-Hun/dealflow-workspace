@@ -796,7 +796,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       warnBox.hidden = false;
       warnBox.textContent =
         "요청받은 기업 " + (asked - picked) + "개를 목록에서 찾지 못했습니다 — " +
-        "IR 기업현황에서 등록 상태를 확인하세요.";
+        "IR 기업 현황에서 등록 상태를 확인하세요.";
     }
     if (picked) applyCompanyFilter();
   })();

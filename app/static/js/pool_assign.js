@@ -58,7 +58,11 @@
       .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
       .then(function (res) {
         if (!res.ok) { alert(res.d.detail || "할당 실패"); button.disabled = false; return; }
-        window.location.href = "/contacts?sheet=" + encodeURIComponent(label);
+        // **보던 화면으로 돌아간다.** 명단마다 사는 화면이 다르므로
+        // (투자사 관리 현황 · 스타트업) 주소를 못 박으면 남의
+        // 화면으로 튄다 — 거기엔 그 탭이 없어 빈 표가 뜬다.
+        window.location.href = window.location.pathname +
+          "?sheet=" + encodeURIComponent(label);
       })
       .catch(function () { alert("할당 요청 오류"); button.disabled = false; });
   });

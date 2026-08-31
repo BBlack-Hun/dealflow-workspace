@@ -51,28 +51,29 @@ def test_메뉴_이름은_투자컨설턴트다():
     assert screen_label("/consulting") == "투자컨설턴트"
 
 
-def test_첫_탭은_스타트업이다():
-    from app.routers.consulting import DEFAULT_SHEET, SHEETS
+def test_첫_탭은_스타트업이다(db):
+    from app.services.consulting_sheets import default_label, labels
 
-    assert SHEETS[0] == "스타트업"
-    assert DEFAULT_SHEET == "스타트업"
-    assert "중요 스타트업" not in SHEETS
+    names = labels(db)
+    assert names[0] == "스타트업"
+    assert default_label(db) == "스타트업"
+    assert "중요 스타트업" not in names
 
 
 def test_새_줄의_기본_탭도_같이_바뀌었다(db, users):
     """모델 기본값이 옛 이름으로 남으면, 화면을 안 거친 줄만 유령 탭에 쌓인다."""
     from app.models import ConsultingColumn, ConsultingCompany
-    from app.routers.consulting import DEFAULT_SHEET
+    from app.services.consulting_sheets import default_label
 
     row = _row(db, users["u1"].id, company_name="샘플기업")
     col = ConsultingColumn(user_id=users["u1"].id, label="8월 리마인드")
     db.add(col)
     db.commit()
-    assert row.sheet == DEFAULT_SHEET
-    assert col.sheet == DEFAULT_SHEET
+    assert row.sheet == default_label(db)
+    assert col.sheet == default_label(db)
 
 
-def test_옛_이름의_시트를_다시_올려도_유령_탭이_안_생긴다():
+def test_옛_이름의_시트를_다시_올려도_유령_탭이_안_생긴다(db):
     """사람이 들고 있는 xlsx 는 여전히 옛 이름이다. 그대로 받으면 같은 명단이
     두 탭으로 갈린다 — 가져오기가 이름을 옮겨 준다."""
     import sys
@@ -80,9 +81,9 @@ def test_옛_이름의_시트를_다시_올려도_유령_탭이_안_생긴다():
     sys.path.insert(0, "scripts")
     from import_consulting import SHEET_ALIAS
 
-    from app.routers.consulting import DEFAULT_SHEET
+    from app.services.consulting_sheets import default_label
 
-    assert SHEET_ALIAS["중요 스타트업"] == DEFAULT_SHEET
+    assert SHEET_ALIAS["중요 스타트업"] == default_label(db)
 
 
 def test_옛_이름으로_넣으려_하면_거절한다(allowed):
