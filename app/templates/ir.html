@@ -80,13 +80,13 @@
       {% if g.missing %}
       <p class="hint warn">
         ⚠ 우리 DB 에 없는 기업: {{ g.missing|join(', ') }} —
-        <a href="/companies">IR 기업현황</a>에서 등록해야 함께 보낼 수 있습니다.
+        <a href="/companies">IR 기업 현황</a>에서 등록해야 함께 보낼 수 있습니다.
       </p>
       {% endif %}
       {% if g.no_link %}
       <p class="hint warn">
         ⚠ IR 자료 링크가 없는 기업: {{ g.no_link|join(', ') }} —
-        <a href="/companies">IR 기업현황</a>에서 링크를 넣어주세요.
+        <a href="/companies">IR 기업 현황</a>에서 링크를 넣어주세요.
       </p>
       {% endif %}
     </div>
@@ -108,7 +108,7 @@
           {% if r.ir_url %}
             <a class="room-badge ok" href="{{ r.ir_url }}" target="_blank" rel="noopener">📎 열기</a>
           {% elif r.company_id %}
-            <span class="room-badge warn" title="IR 기업현황에서 링크를 넣어주세요">⚠ 링크 없음</span>
+            <span class="room-badge warn" title="IR 기업 현황에서 링크를 넣어주세요">⚠ 링크 없음</span>
           {% else %}
             <span class="muted" title="우리 DB에 없는 기업명입니다">기업 미등록</span>
           {% endif %}

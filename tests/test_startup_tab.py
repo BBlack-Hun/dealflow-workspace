@@ -37,7 +37,9 @@ LIST = "샘플 스타트업(9)"
 OTHER = "샘플 투자사 20"
 
 # 시트 머리글 그대로. 달마다 세 칸씩 늘어나는 부분은 따로 둔다.
-HEAD = ["NO", "기업명", "성함", "연락처", "이메일"]
+# `계약여부` 는 **이메일 바로 뒤**다. 월별 칸 뒤에 두면 달이 쌓일수록 표
+# 끝으로 밀려, 명단을 훑을 때 가로로 밀어야 닿는 자리가 된다.
+HEAD = ["NO", "기업명", "성함", "연락처", "이메일", "계약여부"]
 
 # **이번 달**로 만든다. 월별 칸은 이제 화면을 열 때 저절로 생기므로
 # (`app/services/monthly_columns.py`), 지난달 이름으로 밑자리를 깔면 검사가
@@ -51,7 +53,7 @@ def _month(offset: int = 0) -> int:
 
 MONTHS = [f"{_month()}월 리마인드 문자", f"{_month()}월 리마인드 TEL",
           f"{_month()}월 카톡 연결"]
-TAIL = ["IR 자료 회신 여부", "계약여부",
+TAIL = ["IR 자료 회신 여부",
         "메모 ( 통화내용 /  카톡내용  /  카톡답신내용)"]
 
 
@@ -90,11 +92,30 @@ def _flat(cell_html: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", frag)).strip()
 
 
+def _layout_of(sheet: str) -> str:
+    """이 명단이 쓰는 배치. 밑자리와 주소가 **같은 값**을 읽게 한다."""
+    from app.services import contact_columns as cc
+
+    return {LIST: cc.STARTUP, OTHER: cc.INVESTOR}[sheet]
+
+
+def _home(sheet: str) -> str:
+    """이 명단이 **사는 화면**.
+
+    주소를 여기 적어 두지 않는다. 명단이 어느 화면에 서는지는 그 명단의
+    배치가 정하는데(`Layout.page`), 검사만 옛 화면을 계속 보면 **새 화면이
+    비어 있어도 통과한다** — 옮기다 만 상태를 그대로 넘긴다.
+    """
+    from app.services import contact_columns as cc
+
+    return f"/{cc.page_of(_layout_of(sheet))}"
+
+
 def _url(sheet: str, **q) -> str:
     from urllib.parse import quote
 
     extra = "".join(f"&{k}={v}" for k, v in q.items())
-    return f"/contacts?sheet={quote(sheet)}{extra}"
+    return f"{_home(sheet)}?sheet={quote(sheet)}{extra}"
 
 
 # ── 밑자리 ──────────────────────────────────────────────────────────────────
@@ -107,8 +128,8 @@ def sheets(client, db, users):
 
     u1 = users["u1"]
     db.add_all([
-        SheetOwner(label=LIST, user_id=u1.id, layout=cc.STARTUP, is_hidden=1),
-        SheetOwner(label=OTHER, user_id=u1.id, layout=cc.INVESTOR, is_hidden=0),
+        SheetOwner(label=LIST, user_id=u1.id, layout=_layout_of(LIST), is_hidden=1),
+        SheetOwner(label=OTHER, user_id=u1.id, layout=_layout_of(OTHER), is_hidden=0),
     ])
     for pos, label in enumerate(MONTHS):
         db.add(ContactColumn(sheet=LIST, label=label, position=pos))
@@ -372,8 +393,14 @@ def test_감춘_명단_사람은_어느_화면의_투자사_수에도_안_들어
                     .filter(VcContact.source_sheet == LIST).all()}
     assert hidden_names
 
+    # **자기 화면은 뺀다.** 이 명단이 사는 화면에서는 보여야 한다(감추기는
+    # 지우기가 아니다). 어느 화면인지 여기 적지 않는다 — 명단의 배치가 정하는
+    # 값을 그대로 읽으므로, 명단이 화면을 옮겨도 이 검사가 따라간다.
+    home = _home(LIST)
     leaked = []
     for path, html in _screens(sheets).items():
+        if path == home:
+            continue
         for name in hidden_names:
             if name in html:
                 leaked.append(f"{path} 에 `{name}` 이 보입니다")
@@ -381,10 +408,21 @@ def test_감춘_명단_사람은_어느_화면의_투자사_수에도_안_들어
                         "— 그 화면의 수가 그만큼 부풀어 있습니다:\n  "
                         + "\n  ".join(leaked))
 
-    # 그 명단 탭에서는 그대로 보인다.
-    own = sheets.get(_url(LIST)).text
-    for name in hidden_names:
-        assert name in own, "감춘 명단이 자기 탭에서도 사라졌습니다 — 지우기가 아닙니다"
+    # 자기 화면에서는 그대로 보인다 — 탭을 안 고르고 들어와도 보여야 한다.
+    # (거기서도 안 보이면 옮기는 것이 아니라 잃어버린 것이다.)
+    for url in (home, _url(LIST)):
+        own = sheets.get(url).text
+        for name in hidden_names:
+            assert name in own, (
+                f"{url} 에서 감춘 명단이 사라졌습니다 — 지우기가 아닙니다")
+
+    # 그 화면이 **남의 명단까지 끌어오지는 않는다.** 투자사 줄이 섞이면 거기서
+    # 고친 값이 어느 명단 것인지 알 수 없다.
+    others = {c.name for c in db.query(VcContact)
+              .filter(VcContact.source_sheet == OTHER).all()}
+    home_html = sheets.get(home).text
+    for name in others:
+        assert name not in home_html, f"{home} 에 투자사 명단 `{name}` 이 섞였습니다"
 
 
 def test_감춘_명단_사람은_발송_대상에_안_나온다(sheets, db):

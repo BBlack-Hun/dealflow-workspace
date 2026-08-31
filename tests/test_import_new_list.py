@@ -22,6 +22,8 @@ import csv
 import re
 from pathlib import Path
 
+from datetime import date
+
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -411,13 +413,13 @@ def test_남는_머리글은_달마다_늘어나는_칸으로_선다(
     run(monkeypatch, path, LIST, owners["a"], "create", "--apply")
     db.expire_all()
 
-    labels = [c.label for c in cc.month_columns(db, LIST)]
+    labels = [c.label for c in cc.month_columns(db, LIST, today=date(2026, 8, 15))]
     assert labels == ["8월 문자", "8월 TEL"], labels
 
     # 다시 올려도 칸이 두 벌이 되지 않는다.
     run(monkeypatch, path, LIST, owners["a"], "create", "--apply")
     db.expire_all()
-    assert [c.label for c in cc.month_columns(db, LIST)] == labels
+    assert [c.label for c in cc.month_columns(db, LIST, today=date(2026, 8, 15))] == labels
 
 
 # ── 시트를 읽는 규칙은 두 임포터가 나눠 쓴다 ────────────────────────────────

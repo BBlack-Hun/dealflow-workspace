@@ -26,6 +26,8 @@ import csv
 import re
 from pathlib import Path
 
+from datetime import date
+
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -81,7 +83,12 @@ def book(tmp_path: Path, cards, deals, name="book.xlsx") -> str:
 
 
 def run(monkeypatch, path, sheet, owner, *extra) -> int:
-    """스크립트를 부르는 방식 그대로 부른다 — 인자까지가 이 도구의 규약이다."""
+    """스크립트를 부르는 방식 그대로 부른다 — 인자까지가 이 도구의 규약이다.
+
+    `--mode` 를 여기서 넣지 않는다. **부르는 사람이 고르는 값**이고(기본값을
+    두면 위험한 쪽이 조용히 기본이 된다), 검사마다 어느 모드를 보는지가 곧
+    그 검사의 내용이다.
+    """
     import scripts.import_investor_list as tool
 
     argv = ["import_investor_list.py", path, "--sheet", sheet, "--owner", owner,
@@ -91,8 +98,14 @@ def run(monkeypatch, path, sheet, owner, *extra) -> int:
 
 
 def run_book(monkeypatch, path, sheet, owner, *extra) -> int:
-    """두 탭을 **한 명단으로** 합쳐 넣는다. 먼저 적은 탭이 이긴다."""
-    return run(monkeypatch, path, sheet, owner,
+    """두 탭을 **한 명단으로** 합쳐 넣는다(만들기). 먼저 적은 탭이 이긴다."""
+    return run(monkeypatch, path, sheet, owner, "--mode", "create",
+               "--tab", "명함탭", "--tab", "딜공유탭", *extra)
+
+
+def fill_book(monkeypatch, path, sheet, owner, *extra) -> int:
+    """같은 두 탭을 **채우기**로 넣는다 — 줄도 칸도 만들지 않는다."""
+    return run(monkeypatch, path, sheet, owner, "--mode", "fill",
                "--tab", "명함탭", "--tab", "딜공유탭", *extra)
 
 
@@ -111,7 +124,7 @@ def month_values(db, contact, label: str) -> dict:
 
     values = cc.load_notes(contact.notes)
     return {col.label: values.get(cc.note_key(col.id), "")
-            for col in cc.month_columns(db, label)}
+            for col in cc.month_columns(db, label, today=date(2026, 8, 15))}
 
 
 @pytest.fixture()
@@ -176,10 +189,10 @@ def test_다시_넣어도_칸이_두_벌이_되지_않는다(monkeypatch, db, ow
 
     run_book(monkeypatch, sample, LIST, owners["a"], "--apply")
     db.expire_all()
-    before = [c.label for c in cc.month_columns(db, LIST)]
+    before = [c.label for c in cc.month_columns(db, LIST, today=date(2026, 8, 15))]
     run_book(monkeypatch, sample, LIST, owners["a"], "--apply")
     db.expire_all()
-    assert [c.label for c in cc.month_columns(db, LIST)] == before
+    assert [c.label for c in cc.month_columns(db, LIST, today=date(2026, 8, 15))] == before
 
 
 # ── 2. 번호가 없어도 들어간다 ───────────────────────────────────────────────
@@ -296,7 +309,7 @@ def test_머리글_윗줄의_달_묶음이_칸_이름에_들어간다(monkeypatc
 
     run_book(monkeypatch, sample, LIST, owners["a"], "--apply")
     db.expire_all()
-    labels = [c.label for c in cc.month_columns(db, LIST)]
+    labels = [c.label for c in cc.month_columns(db, LIST, today=date(2026, 8, 15))]
 
     assert labels == ["8월 딜소개 8/5 8/12", "8월 IR 요청", "8월 미팅확정 미팅완료",
                       "7월 딜소개", "7월 IR 요청", "7월 미팅확정/미팅완료"], labels
@@ -342,10 +355,10 @@ def test_수식_문자열이_칸_이름으로_새어_나오지_않는다(monkeyp
             '="미팅확정("&SUMPRODUCT((LEN(F3:F99)))&")"',
         ])
         writer.writerow(["김샘플", "샘플투자", "", "8/5 샘플가", "", ""])
-    run(monkeypatch, str(path), LIST, owners["a"], "--apply")
+    run(monkeypatch, str(path), LIST, owners["a"], "--mode", "create", "--apply")
     db.expire_all()
 
-    labels = [c.label for c in cc.month_columns(db, LIST)]
+    labels = [c.label for c in cc.month_columns(db, LIST, today=date(2026, 8, 15))]
     assert labels == ["8월 딜소개 8/5 8/12", "8월 IR 요청", "8월 미팅확정"], labels
     for label in labels:
         for mark in ("=", "COUNTIF", "SUMPRODUCT", '"', "&"):
@@ -431,7 +444,8 @@ def test_이름이_같아도_남의_명단_줄에_붙지_않는다(
     db.commit()
 
     path = book(tmp_path, cards=[], deals=[deal_row("김샘플", "샘플투자")])
-    run(monkeypatch, path, LIST, owners["b"], "--tab", "딜공유탭", "--apply")
+    run(monkeypatch, path, LIST, owners["b"], "--mode", "create",
+        "--tab", "딜공유탭", "--apply")
     db.expire_all()
 
     made = rows_in(db, LIST)
@@ -524,7 +538,8 @@ def test_투자사명이_비어도_사람을_잃지_않는다(monkeypatch, db, o
     path = book(tmp_path, cards=[],
                 deals=[deal_row("한샘플", "", "8/5 샘플가"),
                        deal_row("정샘플", "샘플벤처스")])
-    run(monkeypatch, path, LIST, owners["a"], "--tab", "딜공유탭", "--apply")
+    run(monkeypatch, path, LIST, owners["a"], "--mode", "create",
+        "--tab", "딜공유탭", "--apply")
 
     assert {c.name for c in rows_in(db, LIST)} == {"한샘플", "정샘플"}
     assert "투자사명이 빈 줄" in capsys.readouterr().out
@@ -564,3 +579,223 @@ def test_칸이_한_칸씩_밀린_줄을_넣기_전에_알린다(monkeypatch, db
     assert "밀린 것으로 보이는 줄" in out, "조용히 두 줄이 됩니다"
     assert "이샘플" in out
     assert rows_in(db, LIST) == [], "미리보기인데 들어갔습니다"
+
+
+# ── 채우기 (`--mode fill`) ──────────────────────────────────────────────────
+#
+# 명단은 이미 서 있고, 나중에 다른 탭에서 **명함을 찾아 얹는** 일이다. 만들기와
+# 섞으면 두 가지가 조용히 어긋난다 — 못 찾은 사람이 새 줄로 서서 같은 사람이 두
+# 줄이 되고, 앱에서 고쳐 둔 값이 시트 한 장에 덮인다.
+
+@pytest.fixture()
+def standing(monkeypatch, db, owners, tmp_path):
+    """딜공유 탭만으로 **먼저 세워 둔** 명단. 명함이 통째로 비어 있다.
+
+    원본이 그랬다 — 딜공유 탭에는 번호 칸이 아예 없어서, 그 탭만 넣으면 이름·
+    투자사명·달마다의 기록만 있는 줄이 선다.
+    """
+    path = book(tmp_path,
+                cards=[card_row("김샘플", "010-7000-0001", "샘플투자"),
+                       card_row("이샘플", "010-7000-0002", "샘플파트너스")],
+                deals=[deal_row("김샘플", "샘플투자", "8/5 샘플가/샘플나"),
+                       deal_row("이샘플", "샘플파트너스", "8/12 샘플다")],
+                name="standing.xlsx")
+    run(monkeypatch, path, LIST, owners["a"], "--mode", "create",
+        "--tab", "딜공유탭", "--apply")
+    db.expire_all()
+    return path
+
+
+def test_채우기는_줄을_만들지_않는다(monkeypatch, db, owners, standing, tmp_path, capsys):
+    """**만들면 같은 사람이 두 줄이 되고, 그 순간 딜 소개가 두 번 나간다.**
+
+    시트에 이 명단에 없는 사람이 섞여 있는 것은 흔한 일이다(명함 탭이 더 넓다).
+    """
+    wider = book(tmp_path,
+                 cards=[card_row("김샘플", "010-7000-0001", "샘플투자"),
+                        card_row("최샘플", "010-7000-0009", "샘플캐피탈")],
+                 deals=[], name="wider.xlsx")
+    before = {c.id for c in rows_in(db, LIST)}
+
+    assert run(monkeypatch, wider, LIST, owners["a"], "--mode", "fill",
+               "--tab", "명함탭", "--apply") == 0
+    assert {c.id for c in rows_in(db, LIST)} == before, "채우기가 줄을 만들었습니다"
+    assert "채우기 모드에서는 만들지 않는다" in capsys.readouterr().out
+
+
+def test_채우기는_빈_칸에만_얹고_두_번_돌리면_0칸이다(
+        monkeypatch, db, owners, standing, capsys):
+    """앱에서 고쳐 둔 값을 시트 한 장이 덮으면 안 된다. 그리고 빈 칸만 채우면
+    **두 번 돌았는지가 결과로 보인다.**"""
+    kept = [c for c in rows_in(db, LIST) if c.name == "김샘플"][0]
+    kept.title = "손으로 고친 직함"
+    db.commit()
+
+    fill_book(monkeypatch, standing, LIST, owners["a"], "--apply")
+    first = capsys.readouterr().out
+    db.expire_all()
+    filled = [c for c in rows_in(db, LIST) if c.name == "김샘플"][0]
+    assert filled.phone == "010-7000-0001", "번호가 안 채워졌습니다"
+    assert filled.email == "김샘플@example.com"
+    assert filled.title == "손으로 고친 직함", "앱에서 고친 값을 시트가 덮었습니다"
+    assert re.search(r"채운 칸 \d+개", first)
+
+    fill_book(monkeypatch, standing, LIST, owners["a"], "--apply")
+    assert "채운 칸 0개" in capsys.readouterr().out, "두 번째 판이 또 얹었습니다"
+
+
+def test_채우기를_두_번_돌려도_줄이_늘지_않는다(monkeypatch, db, owners, standing):
+    """만들기와 같은 약속이다 — 이 파일에서 가장 중요한 성질."""
+    fill_book(monkeypatch, standing, LIST, owners["a"], "--apply")
+    once = {c.id for c in rows_in(db, LIST)}
+    fill_book(monkeypatch, standing, LIST, owners["a"], "--apply")
+    assert {c.id for c in rows_in(db, LIST)} == once
+
+
+def test_채우기는_칸을_만들지_않고_못_세운_칸을_알린다(
+        monkeypatch, db, owners, standing, tmp_path, capsys):
+    """명함을 찾으러 곁다리 탭을 붙이면 그 탭의 **살림 칸**(`사유`·`전화 여부`)이
+    남는 머리글로 읽혀 달 칸으로 선다 — 그 명단에 `9월 딜소개` 옆에 `사유` 가
+    나란히 서는 표가 된다.
+
+    줄을 안 만드는 모드가 칸은 만드는 것도 앞뒤가 안 맞는다. 버리지는 않는다 —
+    무엇을 못 세웠는지 보여야 사람이 시트를 고치거나 화면에서 칸을 세운다.
+    """
+    import openpyxl
+
+    from app.services import contact_columns as cc
+
+    side = tmp_path / "side.xlsx"
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "곁다리탭"
+    # 이 명단에 없는 머리글들 — 사람이 시트에서 일을 챙기려고 둔 칸이다.
+    ws.append(["이름", "투자사명", "휴대폰", "사유", "전화 여부"])
+    ws.append(["김샘플", "샘플투자", "010-7000-0001", "딜 소싱 제안", "미진행"])
+    wb.save(side)
+    wb.close()
+
+    before = [c.label for c in cc.month_columns(db, LIST, today=date(2026, 8, 15))]
+    run(monkeypatch, str(side), LIST, owners["a"], "--mode", "fill",
+        "--tab", "곁다리탭", "--apply")
+    out = capsys.readouterr().out
+    db.expire_all()
+
+    assert [c.label for c in cc.month_columns(db, LIST, today=date(2026, 8, 15))] == before, (
+        "채우기가 달 칸을 새로 세웠습니다")
+    assert "이 명단에 없는 칸" in out and "사유" in out, (
+        "못 세운 칸을 조용히 버렸습니다 — 무엇이 빠졌는지 알 수 없습니다")
+    # 그러면서 **명함은 채운다.** 못 세운 칸 하나 때문에 그 줄을 통째로
+    # 버리면, 곁다리 탭을 붙인 이유가 사라진다.
+    assert [c for c in rows_in(db, LIST)
+            if c.name == "김샘플"][0].phone == "010-7000-0001"
+
+
+def test_채우기는_회사명이_다르면_잇지_않는다(
+        monkeypatch, db, owners, standing, tmp_path, capsys):
+    """이름이 같아도 투자사명이 다르면 **다른 사람일 수 있다.**
+
+    번호가 없는 줄을 잇는 열쇠는 이름+투자사명 하나뿐이라, 이름만으로 이으면
+    남의 명함이 남의 줄에 얹힌다.
+    """
+    other_firm = book(tmp_path,
+                      cards=[card_row("김샘플", "010-7000-0044", "다른투자")],
+                      deals=[], name="otherfirm.xlsx")
+    run(monkeypatch, other_firm, LIST, owners["a"], "--mode", "fill",
+        "--tab", "명함탭", "--apply")
+    db.expire_all()
+
+    who = [c for c in rows_in(db, LIST) if c.name == "김샘플"][0]
+    assert not (who.phone or ""), "회사명이 다른데 번호를 얹었습니다"
+    assert "이 명단에 그 줄이 없다" in capsys.readouterr().out
+
+
+def test_채우기는_못_찾은_값을_빈칸으로_둔다(monkeypatch, db, owners, standing, capsys):
+    """**지어내지 않는다.** 시트에 없는 칸은 비어 있는 것이 맞는 상태다."""
+    fill_book(monkeypatch, standing, LIST, owners["a"], "--apply")
+    db.expire_all()
+
+    who = [c for c in rows_in(db, LIST) if c.name == "김샘플"][0]
+    # 명함 탭에 없는 칸들 — 채운 뒤에도 비어 있어야 한다.
+    for field in ("office_phone", "office_fax", "address", "card_registered_at"):
+        assert not (getattr(who, field) or ""), f"`{field}` 에 없는 값이 들어갔습니다"
+
+
+def test_채우기는_앱의_다른_명단에_있는_사람을_건드리지_않는다(
+        monkeypatch, db, users, owners, standing, tmp_path, capsys):
+    """그 번호가 앱의 다른 줄에 이미 있으면, 얹는 순간 **같은 번호가 두 줄**이 된다.
+
+    누가 맡을지는 사람이 정하는 일이라(배정표) 여기서 옮기지 않고 알린다.
+    """
+    from app.models import SheetOwner, VcContact
+
+    db.add(SheetOwner(label=OTHER, user_id=users["u2"].id))
+    db.add(VcContact(user_id=users["u2"].id, source_sheet=OTHER, name="김샘플",
+                     firm="샘플투자", phone="010-7000-0001"))
+    db.commit()
+
+    fill_book(monkeypatch, standing, LIST, owners["a"], "--apply")
+    db.expire_all()
+
+    assert OTHER in (db.query(VcContact)
+                     .filter(VcContact.phone == "010-7000-0001").one().source_sheet)
+    assert not ([c for c in rows_in(db, LIST) if c.name == "김샘플"][0].phone or "")
+    assert "앱의 다른 명단에 있다" in capsys.readouterr().out
+
+
+def test_채우기_미리보기가_채울_칸_수와_빈칸으로_둘_줄_수를_적는다(
+        monkeypatch, db, owners, standing, capsys):
+    """**`--apply` 없이는 한 칸도 안 들어간다.** 그리고 무엇이 채워지고 무엇이
+    빈칸으로 남는지가 미리 보여야, 넣기 전에 시트를 고칠 수 있다."""
+    fill_book(monkeypatch, standing, LIST, owners["a"])
+    out = capsys.readouterr().out
+    db.expire_all()
+
+    assert re.search(r"채울 칸 \d+개", out)
+    assert re.search(r"시트에서 못 찾아 그대로 두는 줄 \d+개", out)
+    assert "--apply" in out
+    assert not ([c for c in rows_in(db, LIST) if c.name == "김샘플"][0].phone or ""), \
+        "미리보기인데 들어갔습니다"
+
+
+def test_채우기는_명단의_표_배치를_되돌리지_않는다(monkeypatch, db, owners, standing):
+    """**명함을 채우려고 부른 명령이 표 모양을 바꾸면 안 된다.**
+
+    투자사 명함 표로 맞춰 둔 명단이 임포트 한 번에 딜공유 표로 돌아가면, 맞춰
+    놓은 것이 조용히 풀린다.
+    """
+    from app.models import SheetOwner
+    from app.services import contact_columns as cc
+
+    db.query(SheetOwner).filter(SheetOwner.label == LIST).one().layout = cc.INVESTOR
+    db.commit()
+
+    fill_book(monkeypatch, standing, LIST, owners["a"], "--apply")
+    db.expire_all()
+    assert db.query(SheetOwner).filter(SheetOwner.label == LIST).one().layout \
+        == cc.INVESTOR
+
+
+def test_만들기를_다시_돌려도_표_배치를_되돌리지_않는다(monkeypatch, db, owners, sample):
+    """숨김과 같은 이유다 — 화면에서 사람이 정한 값을 임포트 한 번이 되돌리면 안 된다."""
+    from app.models import SheetOwner
+    from app.services import contact_columns as cc
+
+    run_book(monkeypatch, sample, LIST, owners["a"], "--apply")
+    db.expire_all()
+    db.query(SheetOwner).filter(SheetOwner.label == LIST).one().layout = cc.INVESTOR
+    db.commit()
+
+    run_book(monkeypatch, sample, LIST, owners["a"], "--apply")
+    db.expire_all()
+    assert db.query(SheetOwner).filter(SheetOwner.label == LIST).one().layout \
+        == cc.INVESTOR
+
+
+def test_모드를_안_적으면_멈춘다(monkeypatch, db, owners, sample):
+    """**기본값을 두지 않는다.** 위험한 쪽(만들기)이 기본이면 채울 자리에
+    새 줄이 서고, 안전한 쪽이 기본이면 "왜 아무것도 안 들어갔지" 를 매번 겪는다.
+    """
+    with pytest.raises(SystemExit):
+        run(monkeypatch, sample, LIST, owners["a"], "--tab", "명함탭", "--apply")
+    assert rows_in(db, LIST) == []

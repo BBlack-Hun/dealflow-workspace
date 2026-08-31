@@ -165,7 +165,7 @@ def screens(client, db, users):
     from app.models import (ConsultingColumn, ConsultingCompany, IrCompany,
                             Meeting, SourcingContact, VcContact, WeeklyRoutine,
                             WeeklyTask)
-    from app.routers.consulting import DEFAULT_SHEET
+    from app.services.consulting_sheets import default_label
     from app.services import weekly
 
     u1 = users["u1"]
@@ -199,12 +199,12 @@ def screens(client, db, users):
     # 잦아(`백업팀으로 전환 … 드랍`) 필터 값도 여러 개가 된다. 그런 줄을
     # 하나 넣어 둬야 구분자 검사가 실제로 볼 것이 생긴다.
     db.add_all([
-        ConsultingColumn(user_id=u1.id, sheet=DEFAULT_SHEET, position=0,
+        ConsultingColumn(user_id=u1.id, sheet=default_label(db), position=0,
                          label="8월 마지막주 리마인드 톡 or TEL"),
-        ConsultingCompany(user_id=u1.id, sheet=DEFAULT_SHEET, position=1,
+        ConsultingCompany(user_id=u1.id, sheet=default_label(db), position=1,
                           region="서울", meeting_at="9/16 PM2 (화상미팅)",
                           company_name="샘플애그", management="관리 중"),
-        ConsultingCompany(user_id=u1.id, sheet=DEFAULT_SHEET, position=2,
+        ConsultingCompany(user_id=u1.id, sheet=default_label(db), position=2,
                           region="", meeting_at="", company_name="샘플메디",
                           management="백업팀으로 전환 · 투자유치 논의 중. 드랍"),
     ])

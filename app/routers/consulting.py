@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import re
 from typing import Dict, List, Optional
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -30,6 +31,7 @@ from .. import clock
 from ..db import get_db
 from ..deps import get_current_user, may_view_consulting, templates
 from ..models import ConsultingColumn, ConsultingCompany, User
+from ..services import consulting_sheets as cs
 from ..services import monthly_columns
 from ..services import spreadsheet as sp
 from ..ui import base_ctx
@@ -164,27 +166,35 @@ def owner_tabs(db: Session, user: User) -> List[dict]:
 VISIBLE_MONTHS = 3
 
 
-# 원본 시트 이름. 관리하는 사람이 달라 한 표에 쏟으면 자기 명단을 못 찾는다.
+# 탭 이름은 **여기 없다.** 화면에서 고치는 값이라 `ConsultingSheet` 행에 있고,
+# 무엇이 세워지는지는 `services/consulting_sheets.py` 한 곳이 정한다.
 #
 # 첫 탭은 `중요 스타트업` 이었다. `중요` 는 나머지 탭이 안 중요하다는 뜻으로
 # 읽히는데 실제로는 그런 갈래가 아니다 — 시트 세 장의 성격 차이일 뿐이다.
-# **이름만 바꾸면 이미 들어간 줄이 옛 이름의 유령 탭으로 갈라지므로**
-# 자료도 함께 옮겼다(`alembic/versions/0039_consulting_startup_tab.py`).
-SHEETS = ["스타트업", "경영본부 전달 기업", "월간 계약 업무현황표"]
-DEFAULT_SHEET = SHEETS[0]
-CONTRACT_SHEET = SHEETS[2]
+# 그때는 **이름만 바꾸니 이미 들어간 줄이 옛 이름의 유령 탭으로 갈라져서**
+# 자료를 옮기는 마이그레이션을 따로 써야 했다(0039). 이제 이름을 바꾸면
+# 그 줄들이 같이 따라간다(`consulting_sheets.rename`).
 
-# 탭 → (앞 칸들, 뒤 칸들). 적어 두지 않은 탭은 지금까지의 표 그대로다.
-SHEET_LAYOUTS = {CONTRACT_SHEET: (CONTRACT_COLUMNS, CONTRACT_TAIL)}
+# 탭의 **열쇠** → (앞 칸들, 뒤 칸들). 적어 두지 않은 탭은 지금까지의 표다.
+#
+# **이름이 아니라 열쇠로 짝짓는다.** 이름으로 맞춰 두면 탭 이름을 한 글자
+# 고치는 순간 계약 표가 조용히 일반 표로 돌아가, `계약월`·`성공보수율` 칸이
+# 화면에서 사라진다 — 이름을 고칠 수 있게 만들면서 생기는 함정이다.
+SHEET_LAYOUTS = {cs.CONTRACT: (CONTRACT_COLUMNS, CONTRACT_TAIL)}
 
 
-def layout_of(sheet: str) -> tuple:
+def layout_of(db: Session, sheet: str) -> tuple:
     """이 탭이 쓰는 칸 묶음. 모르는 탭은 지금까지의 표다.
 
     사람이 시트를 올려 만든 탭도 있어서, 이름을 모른다고 표를 비워 버리면
     그 탭이 통째로 안 보인다.
     """
-    return SHEET_LAYOUTS.get(sheet, (FIXED_COLUMNS, TAIL_COLUMNS))
+    return SHEET_LAYOUTS.get(cs.kind_of(db, sheet), (FIXED_COLUMNS, TAIL_COLUMNS))
+
+
+def is_contract(db: Session, sheet: str) -> bool:
+    """이 탭이 계약 표인가. **이름으로 견주지 않는다**(위 참고)."""
+    return cs.kind_of(db, sheet) == cs.CONTRACT
 
 
 # `월간 계약 업무현황표` 의 한 줄은 슬래시로 이어 붙어 있다. **시트가 스스로
@@ -236,14 +246,27 @@ def _visible_column_scopes(db: Session, user: User,
 
 
 def sheet_tabs(db: Session, user: User, owner: int = 0) -> List[dict]:
-    """시트별 인원. 탭에 건수를 띄운다."""
+    """시트별 인원. 탭에 건수를 띄운다.
+
+    **줄이 하나도 없어도 탭 셋은 선다.** 새로 온 투자컨설턴트에게 빈 화면이
+    뜨면 없는 줄 알고 자기 시트를 또 만든다 — 탭은 팀이 함께 쓰는 업무 단계라
+    사람마다 갈릴 것이 아니다(`services/consulting_sheets.py`).
+
+    이름은 **화면에서 고친 값**이다. 여기에 목록을 적어 두면 고친 이름이 이
+    화면에만 안 반영된다.
+    """
     rows = dict(db.execute(scope(
         select(ConsultingCompany.sheet, func.count())
         .group_by(ConsultingCompany.sheet), ConsultingCompany, user, owner)
     ).all())
-    # 시트에 자료가 아직 없어도 탭은 보여야 한다 — 없는 줄 알고 또 만든다.
-    names = SHEETS + [s for s in rows if s not in SHEETS]
-    return [{"key": n, "label": n, "count": rows.get(n, 0)} for n in names]
+    out = [{"key": s.label, "label": s.label, "kind": s.kind,
+            "count": rows.get(s.label, 0)} for s in cs.ensure(db)]
+    # 사람이 시트를 올려 만든 탭도 그대로 세운다 — 목록에 없다고 빼면 그 줄들이
+    # 화면 어디에도 안 뜬다.
+    known = {t["key"] for t in out}
+    out += [{"key": n, "label": n, "kind": "", "count": rows[n]}
+            for n in rows if n not in known]
+    return out
 
 
 def _columns(db: Session, user: User, sheet: str = "",
@@ -390,7 +413,7 @@ def company_rows(db: Session, user: User, sheet: str = "",
             # 부르는 곳이 있어서(엑셀 · 한 줄 조회), 인자로 판단하면 그쪽에서만
             # 값이 달라진다.
             "mgmt": management_tags(c.management or "",
-                                    contract=(c.sheet == CONTRACT_SHEET)),
+                                    contract=is_contract(db, c.sheet)),
             "ceo_name": c.ceo_name or "",
             "phone": c.phone or "",
             "email": c.email or "",
@@ -423,7 +446,8 @@ def consulting_page(request: Request, db: Session = Depends(get_db),
     if user.role != "admin":
         owner = 0
     tabs = sheet_tabs(db, user, owner)
-    selected = sheet if any(t["key"] == sheet for t in tabs) else DEFAULT_SHEET
+    selected = (sheet if any(t["key"] == sheet for t in tabs)
+                else cs.default_label(db))
     # **달이 바뀌었으면 이번 달 열을 세운다.** 예약 실행 장치가 없는 앱이라
     # 달이 바뀐 것을 알아채는 자리는 화면을 여는 순간뿐이다(주간 업무가 같은
     # 방식이다 — `services/weekly.py` 의 `fill_week`). 두 번 만들지 않는 것과
@@ -440,7 +464,7 @@ def consulting_page(request: Request, db: Session = Depends(get_db),
     # `months=all` 은 일부러 다 본다는 뜻이다.
     shown, hidden = _split_columns(_columns(db, user, selected, owner),
                                    show_all=(months == "all"))
-    fixed, tail = layout_of(selected)
+    fixed, tail = layout_of(db, selected)
 
     # **접힌 달에 기록이 있는가.** `연락 기록 없음` 칩은 줄의 `data-contacted` 를
     # 보는데, 칸을 고치면 consulting.js 가 그 값을 다시 적는다 — 그때 JS 가 볼 수
@@ -454,19 +478,12 @@ def consulting_page(request: Request, db: Session = Depends(get_db),
     ctx = base_ctx(request, db, user, active="consult")
     # 스크립트·가이드는 이 화면에도 있다(미팅 진행 프로세스 · 견적서 발송 톡 …).
     # 투자사 관리 현황과 같은 구조를 쓰되 화면만 나눈다.
-    from ..models import RefSheet  # noqa: PLC0415
-
-    ref_sheets = db.execute(
-        select(RefSheet).where(RefSheet.is_active == 1,
-                               RefSheet.page == "consulting")
-        .order_by(RefSheet.position, RefSheet.id)
-    ).scalars().all()
-    ref_row = next((r for r in ref_sheets if str(r.id) == str(ref)), None)
+    # 질의는 `services/ref_panel.py` 한 곳에 있다 — 화면마다 적어 두면
+    # `is_active`(지운 탭 감추기)나 탭 순서 같은 조건이 화면마다 갈린다.
+    from ..services import ref_panel  # noqa: PLC0415
 
     ctx.update({
-        "ref_sheets": ref_sheets,
-        "ref": ref_row,
-        "ref_content": json.loads(ref_row.content_json or "{}") if ref_row else {},
+        **ref_panel.panel_ctx(db, "consulting", ref),
         "rows": rows,
         "sheet_tabs": tabs,
         "selected_sheet": selected,
@@ -479,7 +496,7 @@ def consulting_page(request: Request, db: Session = Depends(get_db),
         "is_admin": user.role == "admin",
         # 탭마다 표가 다르다. 화면이 `{% if 이 탭이면 %}` 을 하나 더 심지 않게
         # **어느 탭인지**만 넘긴다(칸 목록은 아래 두 줄이 정한다).
-        "is_contract_sheet": selected == CONTRACT_SHEET,
+        "is_contract_sheet": is_contract(db, selected),
         "fixed_columns": fixed,
         "tail_columns": tail,
         "msg": msg,
@@ -564,14 +581,13 @@ def create_company(body: CompanyIn, db: Session = Depends(get_db),
     # 화면이 보내 준 탭에 넣는다. 안 보내면 예전처럼 첫 탭이다.
     #
     # 아무 값이나 받으면 오타 하나로 **없던 탭이 생긴다** — `sheet_tabs` 가
-    # 줄에 있는 시트 이름을 그대로 탭으로 올리기 때문이다. 이미 쓰고 있는
-    # 이름만 받는다(사람이 시트를 올려 만든 탭도 포함해야 하므로 SHEETS 만으로는
-    # 부족하다).
+    # 줄에 있는 시트 이름을 그대로 탭으로 올리기 때문이다. 지금 **화면에 서
+    # 있는 탭 이름**만 받는다(사람이 시트를 올려 만든 탭도 거기 들어 있다).
     known = {t["key"] for t in sheet_tabs(db, user)}
     sheet = (body.sheet or "").strip()
     if sheet and sheet not in known:
         raise HTTPException(status_code=400, detail="없는 탭입니다")
-    body.sheet = sheet or DEFAULT_SHEET
+    body.sheet = sheet or cs.default_label(db)
 
     if body.position is None:
         # 새 줄은 그 탭의 맨 아래로. 시트의 NO 를 사람이 매번 세지 않아도 되게.
@@ -614,6 +630,36 @@ def delete_company(company_id: int, db: Session = Depends(get_db),
 
 # --- 월별 열 ----------------------------------------------------------------
 
+@router.post("/consulting/sheets/rename", include_in_schema=False)
+def rename_sheet(kind: str = Form(""), label: str = Form(""),
+                 db: Session = Depends(get_db),
+                 user: User = Depends(get_current_user)):
+    """탭 이름 바꾸기 — 투자사 관리 현황의 [이름 저장] 과 같은 방식·같은 어휘다.
+
+    **줄이 같이 따라간다.** `ConsultingCompany.sheet` 와 `ConsultingColumn.sheet`
+    가 이름을 그대로 담고 있어서, 이름만 바꾸면 그 줄들이 어느 탭에도 안 뜬다 —
+    옛 이름의 유령 탭으로 갈라진다(0039 가 고쳐야 했던 그 사고). 옮기는 것은
+    `services/consulting_sheets.rename` 한 곳이 한다.
+
+    **바꾸는 것은 화면 글자뿐이다.** 표 모양은 바뀌지 않는 열쇠(`kind`)로
+    고르므로(`SHEET_LAYOUTS`), `월간 계약 업무현황표` 를 다른 이름으로 불러도
+    계약 표 그대로다.
+
+    이 화면을 볼 수 있는 사람이면 바꿀 수 있다 — 투자사 관리 현황의 명단 이름
+    바꾸기와 같은 권한이다. 수나 발송 대상이 바뀌는 조작이 아니라서(그런 것은
+    관리자만 한다) 여기서 더 조이지 않는다.
+    """
+    require_access(user)
+    sheet = cs.rename(db, (kind or "").strip(), label)
+    if sheet is None:
+        db.rollback()
+        return RedirectResponse(
+            "/consulting?msg=이미+쓰고+있는+탭+이름입니다", status_code=303)
+    db.commit()
+    return RedirectResponse(
+        f"/consulting?sheet={quote(sheet.label)}", status_code=303)
+
+
 @router.post("/consulting/columns", include_in_schema=False)
 def add_column(label: str = Form(...), db: Session = Depends(get_db),
                user: User = Depends(get_current_user)):
@@ -627,7 +673,11 @@ def add_column(label: str = Form(...), db: Session = Depends(get_db),
         return RedirectResponse("/consulting?msg=열+이름을+입력하세요", status_code=303)
     for col in _columns(db, user):
         col.position += 1
-    db.add(ConsultingColumn(label=label, position=0, user_id=user.id))
+    # **어느 탭의 열인지 여기서 정해 준다.** 안 주면 모델 기본값(`스타트업`)으로
+    # 떨어지는데, 탭 이름을 고친 뒤에는 그 이름을 쓰는 탭이 없어서 새 열이
+    # 유령 탭에 쌓인다 — 세운 사람 화면에는 아무것도 안 늘어난다.
+    db.add(ConsultingColumn(label=label, position=0, user_id=user.id,
+                            sheet=cs.default_label(db)))
     db.commit()
     return RedirectResponse(f"/consulting?msg={label}+열을+추가했습니다", status_code=303)
 

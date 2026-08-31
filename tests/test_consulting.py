@@ -255,15 +255,18 @@ def test_row_without_a_name_is_rejected(allowed):
 # 없으니, 누른 사람 눈에는 **추가가 안 된 것처럼** 보인다.
 
 
-def _tab_names(client) -> list:
-    from app.routers.consulting import SHEETS
-    return list(SHEETS)
+def _tab_names(db) -> list:
+    """지금 서 있는 탭 이름들. **목록을 여기 적어 두지 않는다** — 이름은 화면에서
+    고치는 값이라(`ConsultingSheet.label`) 적어 두면 검사만 옛 이름을 본다."""
+    from app.services.consulting_sheets import labels
+
+    return labels(db)
 
 
 def test_기업_추가는_지금_보고_있는_탭에_들어간다(allowed, db):
     from app.models import ConsultingCompany
 
-    for i, sheet in enumerate(_tab_names(allowed)):
+    for i, sheet in enumerate(_tab_names(db)):
         name = f"샘플기업{i}"
         r = allowed.post("/api/consulting",
                          json={"company_name": name, "sheet": sheet})
@@ -282,23 +285,23 @@ def test_없는_탭_이름은_받지_않는다(allowed):
 
 def test_탭을_안_보내면_예전처럼_첫_탭이다(allowed, db):
     """옛 동작을 그대로 둔다 — 탭을 못 고른 화면에서도 추가는 되어야 한다."""
-    from app.routers.consulting import DEFAULT_SHEET
+    from app.services.consulting_sheets import default_label
     from app.models import ConsultingCompany
 
     assert allowed.post("/api/consulting",
                         json={"company_name": "샘플기업Z"}).status_code == 200
     db.expire_all()
     assert db.query(ConsultingCompany).filter_by(
-        company_name="샘플기업Z").one().sheet == DEFAULT_SHEET
+        company_name="샘플기업Z").one().sheet == default_label(db)
 
 
-def test_추가한_줄이_그_탭_화면에_보인다(allowed):
+def test_추가한_줄이_그_탭_화면에_보인다(allowed, db):
     """DB 에만 들어가고 화면에 안 보이면 고친 것이 아니다."""
-    sheet = _tab_names(allowed)[1]
+    names = _tab_names(db)
     assert allowed.post("/api/consulting",
-                        json={"company_name": "샘플기업W", "sheet": sheet}).status_code == 200
-    assert "샘플기업W" in allowed.get(f"/consulting?sheet={sheet}").text
-    assert "샘플기업W" not in allowed.get(f"/consulting?sheet={_tab_names(allowed)[0]}").text
+                        json={"company_name": "샘플기업W", "sheet": names[1]}).status_code == 200
+    assert "샘플기업W" in allowed.get(f"/consulting?sheet={names[1]}").text
+    assert "샘플기업W" not in allowed.get(f"/consulting?sheet={names[0]}").text
 
 
 def test_추가_단추가_지금_탭을_싣고_있다():
@@ -446,12 +449,12 @@ def test_the_user_is_told_that_months_are_folded(client, db, users):
 
 def _own(db, user_id, name="샘플기업", sheet=None):
     from app.models import ConsultingCompany
-    from app.routers.consulting import DEFAULT_SHEET
+    from app.services.consulting_sheets import default_label
 
     # 첫 탭 이름을 여기 박아 두면 이름을 고칠 때 이 줄만 옛 탭에 남아,
     # 화면에는 안 보이는데 검사만 "있다" 고 우긴다.
     row = ConsultingCompany(user_id=user_id, company_name=name,
-                            sheet=sheet or DEFAULT_SHEET)
+                            sheet=sheet or default_label(db))
     db.add(row)
     db.commit()
     return row
@@ -537,9 +540,11 @@ def test_an_upload_belongs_to_whoever_uploaded_it(client, db, users):
 def test_the_contract_sheet_is_a_tab_too(client, db, users):
     """머리글 있는 표가 아니라고 건너뛰면 화면에서 아예 볼 수 없다."""
     from app.models import ConsultingCompany
-    from app.routers.consulting import SHEETS
+    from app.routers.consulting import is_contract
 
-    assert "월간 계약 업무현황표" in SHEETS
+    assert "월간 계약 업무현황표" in _tab_names(db)
+    # 이름이 아니라 **열쇠**로 계약 표를 고른다 — 이름을 고쳐도 표가 안 바뀐다.
+    assert is_contract(db, "월간 계약 업무현황표")
 
     users["u1"].can_view_consulting = 1
     db.add(ConsultingCompany(user_id=users["u1"].id, sheet="월간 계약 업무현황표",
@@ -591,18 +596,18 @@ def test_the_contract_sheet_reads_month_and_kind_from_the_line(tmp_path):
 def _consulting_ctx(db, users, columns, rows_notes):
     """열과 줄을 깔고 화면을 연다. (본문, 열 id 목록)"""
     from app.models import ConsultingColumn, ConsultingCompany
-    from app.routers.consulting import DEFAULT_SHEET
+    from app.services.consulting_sheets import default_label
 
     cols = []
     for pos, label in enumerate(columns):
-        col = ConsultingColumn(user_id=users["u1"].id, sheet=DEFAULT_SHEET,
+        col = ConsultingColumn(user_id=users["u1"].id, sheet=default_label(db),
                                label=label, position=pos)
         db.add(col)
         cols.append(col)
     db.flush()
     for i, notes in enumerate(rows_notes):
         db.add(ConsultingCompany(
-            user_id=users["u1"].id, sheet=DEFAULT_SHEET, position=i + 1,
+            user_id=users["u1"].id, sheet=default_label(db), position=i + 1,
             company_name=f"샘플기업{i}",
             notes=json.dumps({str(cols[k].id): v for k, v in notes.items()},
                              ensure_ascii=False)))

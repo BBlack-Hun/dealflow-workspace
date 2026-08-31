@@ -34,6 +34,18 @@
     });
   }
   function el(id) { return document.getElementById(id); }
+  // **없는 단추에 손을 대도 나머지가 죽지 않게 한다.**
+  //
+  // 이 파일은 화면 둘이 같이 쓴다(투자사 관리 현황 · 스타트업). 뒤쪽
+  // 화면에는 투자사 전용 단추가 없는데(방 연결 확인 · 담당자 추가 · 현황 업로드),
+  // `el("verify-btn").addEventListener(...)` 처럼 바로 붙이면 그 줄에서 예외가
+  // 나면서 **그 아래가 통째로 안 걸린다** — 필터도 검색도 안 붙는데 표는 멀쩡히
+  // 그려져서, 화면만 보고는 무엇이 고장인지 알 수가 없다(실제로 그랬다).
+  function on(id, event, fn) {
+    var node = el(id);
+    if (node) node.addEventListener(event, fn);
+    return node;
+  }
   function setMsg(text, isError) {
     msg.textContent = text || "";
     msg.className = "hint" + (isError ? " error" : "");
@@ -231,9 +243,9 @@
     });
   }
 
-  el("detail-close").addEventListener("click", function () { panel.hidden = true; });
-  el("save-btn").addEventListener("click", save);
-  el("delete-btn").addEventListener("click", remove);
+  on("detail-close", "click", function () { panel.hidden = true; });
+  on("save-btn", "click", save);
+  on("delete-btn", "click", remove);
   // 줄 감추기 — **지우기가 아니다.** 표에서 안 보이게 하고 발송 대상에서 뺀다.
   // 같은 단추가 감춘 줄에서는 [다시 보이기] 가 된다(fillForm 참고).
   var hideBtn = el("hide-btn");
@@ -253,13 +265,13 @@
         .catch(function () { setMsg("감추지 못했습니다", true); });
     });
   }
-  el("verify-one-btn").addEventListener("click", function () {
+  on("verify-one-btn", "click", function () {
     if (current) verify([current], "선택한 담당자");
   });
-  el("verify-btn").addEventListener("click", function () {
+  on("verify-btn", "click", function () {
     verify(visibleIds(), "현재 목록의");
   });
-  el("add-btn").addEventListener("click", function () {
+  on("add-btn", "click", function () {
     current = null;
     // 연결 상태는 **비워 두지 않는다.** `<select>` 를 빈 값으로 두면 아무
     // 보기도 안 골라진 채로 서서, 새로 넣는 사람마다 값이 제각각이 된다.

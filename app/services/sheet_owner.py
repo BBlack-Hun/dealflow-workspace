@@ -400,8 +400,47 @@ def layout_of(db: Session, label: str) -> str:
     return (row.layout if row and row.layout else "investor")
 
 
-def sheet_rows(db: Session, contacts: List[VcContact]) -> List[dict]:
-    """명단 목록 + 담당 + 인원. 화면의 탭과 관리 표에 함께 쓴다."""
+# ── 명단이 사는 화면 ────────────────────────────────────────────────────────
+#
+# 명단마다 **뜨는 화면이 다르다.** 스타트업 리마인드 명단은 좌측 [스타트업] 에
+# 서고, 투자사 명단은 [투자사 관리 현황] 에 선다.
+#
+# **이름으로 가르지 않는다.** `layout`·`is_hidden`·`is_deal_list` 와 같은
+# 방식이다 — 판정은 명단에 붙은 값(`SheetOwner.layout`)에서 나오고, 그 값이
+# 어느 화면을 뜻하는지는 `contact_columns.page_of` 한 곳이 정한다.
+#
+# 화면이 둘이 된 지금 이것이 갈리면 **명단이 두 곳에 다 뜨거나 어디에도 안
+# 뜬다.** 앞쪽은 어느 값이 최신인지 알 수 없고, 뒤쪽은 고칠 자리가 사라진다.
+
+
+def page_of(db: Session, label: str) -> str:
+    """이 명단이 사는 화면(주소 조각). 탭도 되돌아갈 자리도 이것으로 정한다."""
+    from . import contact_columns
+
+    return contact_columns.page_of(layout_of(db, label))
+
+
+def page_href(db: Session, label: str) -> str:
+    """조작하고 나서 **돌아갈 화면 주소**.
+
+    참고 자료가 이미 같은 방식이다(`routers/contacts.py` 의 `_ref_back`).
+    `/contacts` 로 못 박아 두면 스타트업 화면에서 칸을 하나 고쳤을 때 남의
+    화면으로 튀고, 거기에는 그 탭이 없어서 **방금 고친 것이 사라진 것처럼**
+    보인다.
+    """
+    return f"/{page_of(db, label)}"
+
+
+def sheet_rows(db: Session, contacts: List[VcContact],
+               page: Optional[str] = None) -> List[dict]:
+    """명단 목록 + 담당 + 인원. 화면의 탭과 관리 표에 함께 쓴다.
+
+    `page` 를 주면 **그 화면에 사는 명단만** 남긴다(위 `page_of` 참고).
+    거르는 자리를 화면마다 두지 않고 여기 하나에 둔다 — 두 화면이 각자 걸러
+    두면 한쪽만 고쳐지는 날 같은 명단이 양쪽에 다 뜬다.
+    """
+    from . import contact_columns
+
     settings = settings_map(db)
     names = {
         u.id: u.name for u in db.execute(select(User)).scalars().all()
@@ -423,6 +462,9 @@ def sheet_rows(db: Session, contacts: List[VcContact]) -> List[dict]:
     for label in sorted(total, key=lambda k: (-connected.get(k, 0), -total[k], k)):
         row = settings.get(label)
         uid = row.user_id if row else None
+        layout = (row.layout if row and row.layout else "investor")
+        if page is not None and contact_columns.page_of(layout) != page:
+            continue
         out.append({
             "key": label,
             "label": label,
@@ -438,7 +480,10 @@ def sheet_rows(db: Session, contacts: List[VcContact]) -> List[dict]:
             # 시트의 '담당자' 칸에 적힌 이름. 연결 작업을 한 사람이지 소유자가 아니다.
             "written_by": (row.assignee_name or "") if row else "",
             # 이 명단이 쓰는 표 배치와, 투자사로 세는지 여부.
-            "layout": (row.layout if row and row.layout else "investor"),
+            "layout": layout,
+            # 이 명단이 사는 화면. 위에서 거른 것과 **같은 값**이어야 한다 —
+            # 따로 읽으면 거른 기준과 화면에 적힌 기준이 갈린다.
+            "page": contact_columns.page_of(layout),
             "is_hidden": bool(row.is_hidden) if row else False,
             # 이 명단으로 딜 소개를 보내는가 — 발송 대상의 모집단.
             "is_deal_list": is_deal_list(row),

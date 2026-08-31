@@ -453,6 +453,18 @@ def verify_rooms(
 
 # ── CRUD ────────────────────────────────────────────────────────────────────
 
+def _back(db: Session, label: str) -> str:
+    """이 명단을 만진 뒤 **돌아갈 화면 주소**.
+
+    명단마다 사는 화면이 다르다(투자사 관리 현황 · 스타트업). 주소를
+    `/contacts` 로 못 박아 두면 스타트업 화면에서 칸 이름을 고친 순간 남의
+    화면으로 튀는데, 거기에는 그 탭이 없어서 **방금 고친 것이 사라진 것처럼**
+    보인다. 어느 화면인지는 명단에 붙은 배치가 정한다(`sheet_owner.page_href`)
+    — 참고 자료가 이미 같은 방식이다(아래 `_ref_back`).
+    """
+    return sheet_owner.page_href(db, (label or "").strip())
+
+
 class AssignIn(BaseModel):
     contact_ids: List[int]
     label: str
@@ -505,7 +517,7 @@ def assign_sheet(
     sheet_owner.assign(db, label.strip(), target)
     db.commit()
     from fastapi.responses import RedirectResponse
-    return RedirectResponse(f"/contacts?sheet={quote(label.strip())}", status_code=303)
+    return RedirectResponse(f"{_back(db, label.strip())}?sheet={quote(label.strip())}", status_code=303)
 
 
 @router.post("/sheets/hide", include_in_schema=False)
@@ -537,7 +549,7 @@ def toggle_sheet_hidden(
     row = sheet_owner.ensure(db, name)
     row.is_hidden = 0 if row.is_hidden else 1
     db.commit()
-    return RedirectResponse(f"/contacts?sheet={quote(name)}", status_code=303)
+    return RedirectResponse(f"{_back(db, name)}?sheet={quote(name)}", status_code=303)
 
 
 @router.post("/sheets/deal-list", include_in_schema=False)
@@ -579,7 +591,7 @@ def toggle_sheet_deal_list(
     # `None` 으로 되돌리면 나중에 담당이 바뀔 때 표시가 저절로 뒤집힌다.
     row.is_deal_list = 0 if sheet_owner.is_deal_list(row) else 1
     db.commit()
-    return RedirectResponse(f"/contacts?sheet={quote(name)}", status_code=303)
+    return RedirectResponse(f"{_back(db, name)}?sheet={quote(name)}", status_code=303)
 
 
 # ── 달마다 늘어나는 칸 ──────────────────────────────────────────────────────
@@ -618,14 +630,14 @@ def add_column(label: str = Form(...), sheet: str = Form(...),
     name = _sheet_or_400(db, sheet)
     text = (label or "").strip()
     if not text:
-        return RedirectResponse(f"/contacts?sheet={quote(name)}&msg=칸+이름을+입력하세요",
+        return RedirectResponse(f"{_back(db, name)}?sheet={quote(name)}&msg=칸+이름을+입력하세요",
                                 status_code=303)
     for col in contact_columns.month_columns(db, name):
         col.position += 1
     db.add(ContactColumn(sheet=name, label=text[:80], position=0))
     db.commit()
     return RedirectResponse(
-        f"/contacts?sheet={quote(name)}&msg={quote(text)}+칸을+추가했습니다",
+        f"{_back(db, name)}?sheet={quote(name)}&msg={quote(text)}+칸을+추가했습니다",
         status_code=303)
 
 
@@ -641,7 +653,7 @@ def rename_column(column_id: int, label: str = Form(...),
     if (label or "").strip():
         col.label = label.strip()[:80]
         db.commit()
-    return RedirectResponse(f"/contacts?sheet={quote(col.sheet)}", status_code=303)
+    return RedirectResponse(f"{_back(db, col.sheet)}?sheet={quote(col.sheet)}", status_code=303)
 
 
 @router.post("/columns/{column_id}/delete", include_in_schema=False)
@@ -664,7 +676,7 @@ def delete_column(column_id: int, db: Session = Depends(get_db),
             contact.notes = contact_columns.dump_notes(values)
     db.delete(col)
     db.commit()
-    return RedirectResponse(f"/contacts?sheet={quote(sheet)}", status_code=303)
+    return RedirectResponse(f"{_back(db, sheet)}?sheet={quote(sheet)}", status_code=303)
 
 
 @router.get("")
@@ -1051,7 +1063,7 @@ def rename_list_sheet(old: str = Form(""), new: str = Form(""),
     before, after = (old or "").strip(), (new or "").strip()
     # 이름 없는 탭은 누를 자리가 없어진다.
     if not before or not after or before == after:
-        return RedirectResponse(f"/contacts?sheet={quote(before)}", status_code=303)
+        return RedirectResponse(f"{_back(db, before)}?sheet={quote(before)}", status_code=303)
 
     for c in db.execute(select(VcContact)).scalars():
         parts = [p.strip() for p in (c.source_sheet or "").split(",") if p.strip()]
@@ -1062,7 +1074,7 @@ def rename_list_sheet(old: str = Form(""), new: str = Form(""),
     ).scalars():
         row.label = after
     db.commit()
-    return RedirectResponse(f"/contacts?sheet={quote(after)}", status_code=303)
+    return RedirectResponse(f"{_back(db, after)}?sheet={quote(after)}", status_code=303)
 
 
 class RefCellIn(BaseModel):

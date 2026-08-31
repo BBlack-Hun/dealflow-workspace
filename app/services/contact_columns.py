@@ -53,6 +53,7 @@
 from __future__ import annotations
 
 import json
+from datetime import date
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
@@ -61,6 +62,10 @@ from sqlalchemy.orm import Session
 
 from ..models import ContactColumn
 from . import monthly_columns
+
+# 배치를 쓰는 명단이 뜨는 화면(= 주소 조각). `Layout.page` 참고.
+PAGE_CONTACTS = "contacts"
+PAGE_STARTUP = "startup"
 
 # 배치 이름. `SheetOwner.layout` 에 이 값이 들어간다.
 INVESTOR = "investor"
@@ -86,10 +91,27 @@ class Column:
 
 @dataclass(frozen=True)
 class Layout:
-    """한 명단이 쓰는 칸 묶음."""
+    """한 명단이 쓰는 칸 묶음 — 그리고 그 명단이 **어느 화면에 사는가**."""
 
     key: str
     label: str
+    # 이 배치를 쓰는 명단이 뜨는 화면. 주소 조각과 같다(`contacts` · `startup`),
+    # `RefSheet.page` 와 같은 값이고 같은 뜻이다.
+    #
+    # **왜 배치가 화면을 정하나.** 명단이 어느 화면에 사는지는 새 칸(`SheetOwner.
+    # page`)으로도 둘 수 있었다. 두지 않은 이유는 그러면 명단마다 값이 **둘**이
+    # 되기 때문이다 — 새 명단을 넣는 사람이 배치만 맞추고 화면을 빠뜨리면,
+    # 스타트업 칸을 쓰는 명단이 투자사 관리 현황에 서거나 그 반대가 된다.
+    # 화면은 멀쩡하고 아무도 눈치채지 못하는 부류다(이 저장소가 반복해 당했다).
+    #
+    # 배치는 이미 **그 명단이 어떤 명단인지**를 가리킨다. `startup` 배치의 이름은
+    # `스타트업 리마인드` 이고 머리글이 `기업명`·`성함` 이며 투자사로 세지 않는다
+    # — 아래 `INVESTOR_MONTHLY_LAYOUT` 주석이 저 배치를 돌려 쓰지 않은 이유로
+    # 바로 그것을 든다. 그래서 값을 하나 더 두지 않고 배치에 붙인다.
+    #
+    # 사람이 화면에서 켜고 끄는 값(`SheetOwner.is_hidden`)으로 가르지 않는 이유도
+    # 같다 — 그 단추 한 번에 명단이 화면을 옮겨 다니면 어디서 고쳐야 할지 모른다.
+    page: str = "contacts"
     # 월별 칸 **앞**에 서는 고정 칸들
     head: List[Column] = field(default_factory=list)
     # 월별 칸 **뒤**에 서는 고정 칸들
@@ -122,7 +144,24 @@ class Layout:
 #
 # 대신 여기서는 **어느 명단이 이 배치인가**만 정한다. 그것이 탭마다 하드코딩을
 # 부르던 부분이다.
-INVESTOR_LAYOUT = Layout(key=INVESTOR, label="투자사 명함")
+#
+# `monthly=False` 는 **표에 안 세운다**는 뜻이지 "그런 칸이 없다"는 뜻이 아니다.
+# 이 배치를 쓰면서도 달마다의 기록을 가진 명단이 있다(딜공유 명단을 이 표로
+# 맞춘 것들). 그 칸들은 표에 못 선다 — 표가 여기 그대로 적혀 있어 반복문이
+# 들어갈 자리가 없고, 넣는다 해도 스물다섯 칸짜리 표가 스물다섯+열다섯 칸이
+# 되어 **맞추라고 한 그 모양이 아니게 된다.** 대신 **수정창에 전부 편다**
+# (`contacts.html` 의 그 자리 주석 참고) — 값은 그대로 남고, 칸 이름도 시트
+# 그대로 서고, 저장·되읽기는 이미 `data-note` 로 일반화돼 있다.
+#
+# 칸이 있는지는 **명단이 정한다**(그 명단에 `ContactColumn` 줄이 있느냐).
+# 배치가 정하지 않는다 — 같은 배치를 쓰는 명단 중 어떤 것은 달 칸이 있고
+# 어떤 것은 없다(`routers/pages.py` 의 `all_months` 주석 참고).
+INVESTOR_LAYOUT = Layout(
+    key=INVESTOR, label="투자사 명함",
+    # 한 칸에 회차별 기업 목록이 줄바꿈으로 쌓인다 — 고르는 칸이 아니라 글 칸이다.
+    # (`INVESTOR_MONTHLY_LAYOUT` 과 같은 값이어야 한다. 배치를 바꿨다고 같은
+    # 값이 `O`/`X` 고르기로 서면, 한 번 고치는 순간 그 달 기록이 한 글자로 덮인다.)
+    month_kind="long", month_choices="", month_width=240)
 
 
 # ── 스타트업 리마인드 ────────────────────────────────────────────────────────
@@ -132,6 +171,9 @@ INVESTOR_LAYOUT = Layout(key=INVESTOR, label="투자사 명함")
 STARTUP_LAYOUT = Layout(
     key=STARTUP,
     label="스타트업 리마인드",
+    # 이 배치를 쓰는 명단은 좌측 [스타트업] 화면에 선다 — 투자사
+    # 관리 현황이 아니다. 두 곳에 다 뜨면 어느 쪽이 최신인지 알 수 없다.
+    page=PAGE_STARTUP,
     monthly=True,
     head=[
         Column("NO", "no", 34, source="row_no"),
@@ -141,27 +183,33 @@ STARTUP_LAYOUT = Layout(
         Column("성함", "name", 84),
         Column("연락처", "phone", 116),
         Column("이메일", "email", 180),
+        # 계약까지 갔는가. **표에 세우고, 이메일 바로 뒤에 둔다.**
+        #
+        # 달마다 칸이 세 개씩 붙는 표라 월별 칸 뒤(`tail`)에 두면 표 맨 끝에
+        # 선다 — 달이 쌓일수록 가로로 밀어야 닿는 자리로 물러난다. 이 칸은
+        # 명단을 훑을 때 **기업을 보는 순간 같이 읽는 값**이라(계약된 곳인지에
+        # 따라 그 달에 보낼 말이 다르다) 사람 정보 바로 뒤가 제자리다.
+        #
+        # 보기는 IR 기업 현황의 계약 상태와 **같은 말**이다
+        # (`routers/companies.py` 의 `CONTRACT_LABELS`). 같은 것을 두 화면에서
+        # 다른 말로 부르면 어느 쪽이 맞는지 알 수 없다.
+        #
+        # 딱 하나, `딜소개 불가` 는 여기 두지 않는다. 그것은 계약 상태가 아니라
+        # **발송 금지 표시**이고, 발송 목록을 만드는 것은 IR 기업 현황이다
+        # (`companies.BLOCKED_CONTRACT` 가 거기서 기업을 빼낸다). 여기에 두면
+        # 골라 놓고 막힌 줄 아는데 실제로는 아무것도 안 막는 칸이 된다.
+        #
+        # 폭은 값을 고른 뒤의 단추(`계약여부 (1) ▾` = 102px)에 맞춘다.
+        # 줄이면 머리글의 필터 꼬리표가 두 줄로 접힌다
+        # (`tests/test_startup_tab.py` 의 `머리글은_필터_단추까지_한_줄에_들어간다`).
+        Column("계약여부", "contract", 110, source="note", kind="pick",
+               choices="유료계약완료,무료계약완료,계약검토중,미계약"),
     ],
     tail=[
         # 회신은 왔는가. 값이 `O`/`X` 둘뿐이라 골라 넣게 한다 —
         # 새로 타이핑하면 `o`·`△` 로 갈려 세는 것이 달라진다.
         Column("IR 자료 회신 여부", "ir_reply", 150, source="note",
                kind="pick", choices="O,X"),
-        # 계약까지 갔는가. **표에 세운다** — 수정창에만 있어서 명단을 훑을 때
-        # 어느 기업이 계약됐는지 한눈에 안 보였다(칸을 하나씩 열어 봐야 했다).
-        #
-        # 보기는 IR 기업현황의 계약 상태와 **같은 말**이다
-        # (`routers/companies.py` 의 `CONTRACT_LABELS`). 같은 것을 두 화면에서
-        # 다른 말로 부르면 어느 쪽이 맞는지 알 수 없다.
-        #
-        # 딱 하나, `딜소개 불가` 는 여기 두지 않는다. 그것은 계약 상태가 아니라
-        # **발송 금지 표시**이고, 발송 목록을 만드는 것은 IR 기업현황이다
-        # (`companies.BLOCKED_CONTRACT` 가 거기서 기업을 빼낸다). 여기에 두면
-        # 골라 놓고 막힌 줄 아는데 실제로는 아무것도 안 막는 칸이 된다.
-        #
-        # 폭은 값을 고른 뒤의 단추(`계약여부 (1) ▾` = 102px)에 맞춘다.
-        Column("계약여부", "contract", 110, source="note", kind="pick",
-               choices="유료계약완료,무료계약완료,계약검토중,미계약"),
         # 원본 메모가 길다(가장 긴 줄이 233자). 표에서는 두 줄까지만 보이고
         # (`.clamp2`) 전문은 수정창에서 본다 — 그대로 펼치면 줄 높이가 무너져
         # 서른두 줄을 훑을 수가 없다.
@@ -271,6 +319,17 @@ def layout_of(key: Optional[str]) -> Layout:
     return LAYOUTS.get((key or "").strip(), INVESTOR_LAYOUT)
 
 
+def page_of(layout_key: Optional[str]) -> str:
+    """이 배치를 쓰는 명단이 **어느 화면에 서는가**(주소 조각).
+
+    두 화면(투자사 관리 현황 · 스타트업)이 각자 "내 명단은 이런
+    것" 이라고 적어 두면 한쪽만 고쳐지는 날 명단이 **두 곳에 다 뜨거나 어디에도
+    안 뜬다.** 어느 쪽이든 어느 값이 최신인지 알 수 없게 된다 — 그래서 판정을
+    여기 한 번만 적고 두 화면이 같이 읽는다.
+    """
+    return layout_of(layout_key).page
+
+
 # 표에 한 번에 펴 둘 **달** 수. 칸 수가 아니라 달로 센다.
 #
 # 칸 수로 자르면 **달 중간이 잘린다.** 한 달에 몇 칸이 붙는지가 명단마다 다르고
@@ -289,7 +348,9 @@ def layout_of(key: Optional[str]) -> Layout:
 VISIBLE_MONTHS = 1
 
 
-def month_columns(db: Session, sheet: str) -> List[ContactColumn]:
+def month_columns(db: Session, sheet: str,
+                  today: Optional[date] = None,
+                  create: bool = True) -> List[ContactColumn]:
     """이 명단의 월별 칸. 시트와 같은 순서(최근 달이 왼쪽).
 
     **읽기 전에 이번 달 칸이 있는지 본다.** 예약 실행 장치가 없는 앱이라,
@@ -304,7 +365,15 @@ def month_columns(db: Session, sheet: str) -> List[ContactColumn]:
     """
     if not sheet:
         return []
-    monthly_columns.ensure_contact(db, sheet)
+    # `today` 는 검사에서 날짜를 못 박으려고 받는다. 안 주면 오늘이다.
+    # 안 받으면 달이 바뀌는 날 검사가 통째로 깨진다 — 실제로 9월 1일에 그랬다.
+    #
+    # `create=False` 는 **읽기만** 한다. 시트를 가져오는 쪽이 그렇다 — 거기서
+    # 칸을 세우는 것은 시트에 적힌 머리글이지 오늘 날짜가 아니다. 읽는 김에
+    # 이번 달 칸까지 만들면, 8월 시트를 9월에 올렸을 때 시트에 없는 9월 칸이
+    # 딸려 생기고 가져오기 결과가 돌린 날짜에 따라 달라진다.
+    if create:
+        monthly_columns.ensure_contact(db, sheet, today=today)
     return db.execute(
         select(ContactColumn)
         .where(ContactColumn.sheet == sheet)
@@ -365,9 +434,12 @@ def table_columns(layout: Layout, months: List[ContactColumn]) -> List[Column]:
 
     머리글은 머리글대로, 칸은 칸대로 적어 두면 하나를 지웠을 때 그 뒤가 통째로
     한 칸씩 밀린다(`tests/test_ui_layout.py` 가 오래 지켜 온 규칙이다).
+
+    **월별 칸은 배치가 부를 때만 선다**(`layout.monthly`). 명단에 달 칸이 있어도
+    표에 안 세우는 배치가 있다 — 투자사 명함 표가 그렇다(위 주석 참고).
     """
     return ([c for c in layout.head if c.in_table]
-            + [as_column(m, layout) for m in months]
+            + ([as_column(m, layout) for m in months] if layout.monthly else [])
             + [c for c in layout.tail if c.in_table])
 
 
@@ -376,6 +448,11 @@ def panel_columns(layout: Layout, months: List[ContactColumn]) -> List[Column]:
 
     표에서 뺀 칸이 수정창에도 없으면 **적을 자리가 아예 없다.** 값은 들어가
     있는데 화면 어디에서도 볼 수 없는 칸이 그렇게 생긴다.
+
+    월별 칸은 `table_columns` 와 달리 **배치를 안 가리고 전부 넣는다.** 표에
+    안 세우는 배치에서는 여기가 그 값을 볼 수 있는 유일한 자리다 — 여기서도
+    빼면 달마다의 기록이 화면에서 통째로 사라진다(지워지는 것은 아니지만,
+    안 보이면 사람은 지워진 줄 안다).
     """
     return ([c for c in layout.head if c.source != "row_no"]
             + [as_column(m, layout) for m in months]

@@ -1,8 +1,8 @@
 """Server-rendered HTML pages (Jinja2 SSR)."""
 from __future__ import annotations
 
-import json
 from collections import Counter
+from dataclasses import dataclass
 from datetime import date
 
 from fastapi import APIRouter, Depends, Request
@@ -12,9 +12,10 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..deps import get_current_user, may_manage_team_contacts, templates
-from ..models import IrCompany, RefSheet, SendJob, SourcingContact, User
+from ..models import IrCompany, SendJob, SourcingContact, User
 from ..services import (cadence, contact_columns, deal_history, deal_stage,
-                        mailer, sheet_import, sheet_owner, sourcing_link)
+                        mailer, ref_panel, sheet_import, sheet_owner,
+                        sourcing_link)
 from ..ui import MENU, base_ctx as _base_ctx
 from .companies import BLOCKED_CONTRACT
 from .companies import blocked_reason as company_blocked_reason
@@ -151,11 +152,55 @@ def deals_page(
     return templates.TemplateResponse("deals.html", ctx)
 
 
-@router.get("/contacts", response_class=HTMLResponse)
-def contacts_page(
+# ── 명단을 보여 주는 화면 ───────────────────────────────────────────────────
+#
+# 화면이 **둘**이다: 투자사 관리 현황과 스타트업. 둘 다 명단별 탭 ·
+# 명단이 정한 표 · 달마다 늘어나는 칸 · 감춘 줄 · 인라인 수정 · 필터 · 수정창을
+# 그대로 쓴다.
+#
+# **그래서 그리는 코드도 화면(`contacts.html`)도 하나다.** 새 화면에 표를 다시
+# 짜면 딸려 오는 것들이 한 벌씩 더 생기고, 그중 하나만 고쳐지는 날 "화면은
+# 뜨는데 고칠 수가 없다" 가 된다 — 이 저장소가 반복해 당한 부류다(투자사
+# 117명·123명, 좌측 메뉴 목록과 라우터 목록, 참고 자료 질의가 화면마다 갈린 일).
+#
+# 화면끼리 **정말로 다른 것만** 아래 값으로 둔다. 값이 아니라 조건문으로 두면
+# 화면이 하나 더 늘 때 또 심어야 한다.
+
+
+@dataclass(frozen=True)
+class ListPage:
+    """명단 화면 하나. 두 화면의 **차이가 여기 전부** 적혀 있다."""
+
+    key: str            # 좌측 메뉴 key — 제목이 여기서 나온다(`ui.menu_label`)
+    page: str           # 주소 조각. `RefSheet.page` · `Layout.page` 와 같은 값
+    # 이 화면이 **투자사를 다루는가.** 딜소개 발송·방 연결·명함 업로드는 투자사
+    # 이야기라 스타트업 화면에 서면 안 된다 — 거기 있는 사람은 딜을 받는 쪽이
+    # 아니라 우리가 챙기는 쪽이다. 눌러도 아무 일이 없는 단추가 더 나쁘다.
+    investors: bool
+    row_label: str      # 세는 것의 이름. 투자사 화면은 사람, 스타트업은 기업이다
+    # 아무 명단도 안 골랐을 때의 표. 명단이 하나도 없는 화면에서만 쓰인다 —
+    # 없으면 스타트업 화면이 투자사 명함 표를 그린다.
+    default_layout: str
+
+    @property
+    def href(self) -> str:
+        return f"/{self.page}"
+
+
+CONTACTS_PAGE = ListPage(key="vc", page=contact_columns.PAGE_CONTACTS,
+                         investors=True, row_label="담당자",
+                         default_layout=contact_columns.DEFAULT)
+STARTUP_PAGE = ListPage(key="startup", page=contact_columns.PAGE_STARTUP,
+                        investors=False, row_label="기업",
+                        default_layout=contact_columns.STARTUP)
+
+
+def list_page(
     request: Request,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    db: Session,
+    user: User,
+    page: ListPage,
+    *,
     sheet: str = "",
     ref: str = "",
     contact: int = 0,
@@ -163,7 +208,7 @@ def contacts_page(
     hidden: int = 0,
     msg: str = "",
 ):
-    """내 투자사 (FEATURE_SPEC §3). 표는 SSR, 필터는 브라우저에서 즉시 반응.
+    """명단 화면을 그린다 — 투자사 관리 현황과 스타트업 화면이 같이 쓴다.
 
     명단(시트)별로 탭을 나눈다. 333명을 한 표에 쏟으면 시트를 쓰던 사람이
     자기 명단을 못 찾는다 — 시트가 나뉘어 있던 구분을 그대로 살린다.
@@ -171,6 +216,9 @@ def contacts_page(
     **명단마다 표가 다르다.** 어느 명단이 어떤 칸을 쓰는지는 화면이 아니라
     그 명단의 설정(`SheetOwner.layout`)이 정한다 — 탭 이름을 화면에 심으면
     성격이 다른 명단이 하나 더 들어올 때마다 또 심어야 한다.
+
+    **어느 명단이 이 화면에 서는지도 같은 값이 정한다**(`Layout.page`). 그래서
+    명단을 옮기는 데 이름을 적을 자리가 없다 — 배치를 바꾸면 화면이 따라온다.
     """
     # 관리자는 팀 전체를 본다 — 누가 어떤 투자사를 맡고 있는지 알아야 한다.
     # 여기 뜬 줄은 그대로 고칠 수도 있어야 한다. **그래서 판정을 여기 적지 않고**
@@ -187,16 +235,23 @@ def contacts_page(
     # `all_rows` 와 딜 제안 관리가 지나는 그 판정을 그대로 지난다.
     contacts = sheet_owner.managed(db, user, team_wide=team_wide,
                                    include_hidden=True)
-    tabs = sheet_owner.sheet_rows(db, contacts)
+    # **이 화면에 사는 명단만** 탭으로 세운다. 무엇이 여기 사는지는 그 명단의
+    # 배치가 정한다(`SheetOwner.layout` → `Layout.page`) — 거르는 조건은
+    # `sheet_owner.sheet_rows` 한 곳에 있어서 두 화면이 같이 움직인다.
+    tabs = sheet_owner.sheet_rows(db, contacts, page=page.page)
 
     # 아무 것도 고르지 않았으면 **내가 담당인 명단**을 먼저 연다.
     # 전체(333명)를 먼저 보여주면 매번 자기 명단을 다시 골라야 한다.
     # `sheet=all` 은 일부러 전체를 본다는 뜻이다.
     #
-    # 투자사로 세지 않기로 한 명단은 **기본으로 열지 않는다.** 이 화면은
-    # 투자사 관리 현황이라, 열자마자 투자사가 아닌 명단이 떠 있으면 그것이
-    # 내 담당 투자사인 줄 읽는다. 눌러서 들어가는 길은 그대로 있다.
-    if sheet == "all":
+    # 투자사로 세지 않기로 한 명단은 **기본으로 열지 않는다.** 투자사 관리
+    # 현황을 열자마자 투자사가 아닌 명단이 떠 있으면 그것이 내 담당 투자사인
+    # 줄 읽는다. 눌러서 들어가는 길은 그대로 있다.
+    #
+    # **투자사를 다루지 않는 화면에는 `전체` 가 없다.** 거기 `전체` 는 투자사
+    # 전체를 뜻하는데(아래 `total_count`), 그 화면의 명단은 투자사로 세지 않아
+    # 언제나 0명이 뜬다 — 명단이 사라진 것처럼 보인다. 대신 늘 탭 하나를 연다.
+    if sheet == "all" and page.investors:
         selected = ""
     elif any(t["key"] == sheet for t in tabs):
         selected = sheet
@@ -206,15 +261,25 @@ def contacts_page(
         # 연다 — 담당이 있는데 빈 화면이 뜨면 무엇을 봐야 할지 알 수 없다.
         selected = next((t["key"] for t in mine if not t["is_hidden"]),
                         next((t["key"] for t in mine), ""))
+        # 투자사 화면에서는 담당이 없으면 `전체` 로 떨어진다(지금까지 그랬다).
+        # 그쪽에는 없는 화면은 **아무 탭이라도** 연다 — 명단이 버젓이 있는데
+        # 빈 표가 뜨면 옮겨 오다 만 것으로 읽힌다.
+        if not selected and not page.investors and tabs:
+            selected = tabs[0]["key"]
     if selected:
         rows = [r for r in all_rows if selected in r["sheets"]]
-    else:
+    elif page.investors:
         # `전체` 는 **투자사 전체**다. 투자사로 세지 않기로 한 명단을 여기 섞으면
         # 위의 인원 수가 그만큼 부풀어, 대시보드와 다른 수가 나온다.
         hidden_sheets = sheet_owner.hidden_labels(db)
         rows = [r for r in all_rows
                 if not r["is_hidden"]
                 and any(s not in hidden_sheets for s in r["sheets"])]
+    else:
+        # 이 화면에 명단이 하나도 없다. 남의 화면 줄을 끌어오지 않는다 —
+        # 여기 뜬 줄은 여기서 고칠 수 있어야 하는데, 탭이 없으면 어느 명단의
+        # 줄인지도 화면에 안 적힌다.
+        rows = []
 
     # 감춘 줄은 기본으로 빼고, **몇 줄을 감췄는지는 적는다.** 그냥 안 보이면
     # 원본 시트에서 그랬듯 "없는 기업" 으로 읽힌다(`?hidden=1` 이 되돌리는 길).
@@ -223,28 +288,36 @@ def contacts_page(
         rows = [r for r in rows if not r["is_hidden"]]
 
     # 이 명단이 쓰는 표 배치. 정해 두지 않은 명단은 지금까지의 투자사 명함 표다.
+    # 아무 명단도 안 골랐으면 **이 화면의 기본 표**다 — 그냥 `DEFAULT` 로 두면
+    # 명단이 하나도 없는 스타트업 화면이 투자사 명함 표를 그린다.
     layout = contact_columns.layout_of(
-        sheet_owner.layout_of(db, selected) if selected else contact_columns.DEFAULT)
-    all_months = contact_columns.month_columns(db, selected) if layout.monthly else []
+        sheet_owner.layout_of(db, selected) if selected else page.default_layout)
+    # 달마다 늘어나는 칸이 있는지는 **명단이 정한다** — 그 명단에 `ContactColumn`
+    # 줄이 있느냐다. 배치로 가르면 안 된다: 표에 그 칸을 안 세우는 배치(투자사
+    # 명함)를 쓰면서 달마다의 기록은 가진 명단이 있고, 배치로 걸러 버리면 그
+    # 기록이 **화면 어디에도 안 뜬다**(지워지지 않았는데 사라진 것처럼 보인다).
+    # 칸이 없는 명단에서는 이 호출이 빈 목록이라 값이 드는 데가 없다
+    # (`monthly_columns.plan` 이 본뜰 칸이 없으면 아무것도 안 만든다).
+    all_months = contact_columns.month_columns(db, selected) if selected else []
     shown_months, folded_months = contact_columns.split_months(
         all_months, show_all=(months == "all"))
 
     # 참고 시트 — 스크립트·가이드처럼 매번 구글 시트를 열어 보던 자료.
-    # 지울 수 있게 두었으므로 살아 있는 것만 가져온다.
-    ref_sheets = db.execute(
-        select(RefSheet).where(RefSheet.is_active == 1,
-                               RefSheet.page == "contacts")
-        .order_by(RefSheet.position, RefSheet.id)
-    ).scalars().all()
-    picked_ref = next((s for s in ref_sheets if str(s.id) == ref), None)
+    # 지울 수 있게 두었으므로 살아 있는 것만 가져온다. 질의는
+    # `services/ref_panel.py` 한 곳에 있다(투자컨설턴트·스타트업 화면이
+    # 같은 패널을 쓴다) — 화면마다 적어 두면 조건 하나가 조용히 갈린다.
+    ref_ctx = ref_panel.panel_ctx(db, page.page, ref)
 
     stages = Counter(r["connect_stage"] for r in rows)
     # 깔때기는 **지금 탭에 보이는 사람들** 기준이다. 탭이 곧 명단이라,
     # 전체 기준으로 세면 내 명단을 보고 있는데 숫자만 남의 것이 섞인다.
     stage_funnel = deal_stage.funnel(
         {r["id"]: r["deal_stage"] for r in rows})
-    ctx = _base_ctx(request, db, user, "vc")
+    ctx = _base_ctx(request, db, user, page.key)
     ctx.update({
+        # 화면끼리 다른 것 전부. 화면(`contacts.html`)이 이 값 하나만 읽으면
+        # 조건을 화면에 흩뿌리지 않아도 된다.
+        "page": page,
         "rows": rows,
         "team_wide": team_wide,
         "tabs": tabs,
@@ -277,9 +350,7 @@ def contacts_page(
         # 대시보드의 '내 투자사 선호'에서 눌러 오면 그 사람 상세를 바로 연다 —
         # 무엇을 좋아하는지(선호 분야·라운드) 보려고 누른 것이다.
         "open_contact": contact or 0,
-        "ref_sheets": ref_sheets,
-        "ref": picked_ref,
-        "ref_content": json.loads(picked_ref.content_json) if picked_ref else None,
+        **ref_ctx,
         # [수정] 창의 `연결 상태` 보기. **말을 화면에 적지 않는다** — 임포트가
         # 정한 라벨을 그대로 넘긴다. 화면에 다시 적으면 필터 값·대시보드 타일과
         # 갈려서, 골라 저장해도 어느 쪽에도 안 걸린다.
@@ -289,6 +360,23 @@ def contacts_page(
         ],
     })
     return templates.TemplateResponse("contacts.html", ctx)
+
+
+@router.get("/contacts", response_class=HTMLResponse)
+def contacts_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    sheet: str = "",
+    ref: str = "",
+    contact: int = 0,
+    months: str = "",
+    hidden: int = 0,
+    msg: str = "",
+):
+    """내 투자사 (FEATURE_SPEC §3). 표는 SSR, 필터는 브라우저에서 즉시 반응."""
+    return list_page(request, db, user, CONTACTS_PAGE, sheet=sheet, ref=ref,
+                     contact=contact, months=months, hidden=hidden, msg=msg)
 
 
 @router.get("/jobs/{job_id}", response_class=HTMLResponse)

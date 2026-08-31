@@ -266,7 +266,7 @@ def main() -> int:
     owner.is_hidden = 1
 
     # 월별 칸 먼저 — 줄의 값이 칸 id 를 키로 쓴다.
-    columns = {c.label: c for c in cc.month_columns(db, args.sheet)}
+    columns = {c.label: c for c in cc.month_columns(db, args.sheet, create=False)}
     for pos, label in enumerate(parsed["columns"]):
         if label not in columns:
             col = ContactColumn(sheet=args.sheet, label=label, position=pos)
