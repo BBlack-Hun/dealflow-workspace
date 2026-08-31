@@ -51,12 +51,50 @@
     대조하는 것이라, 번호가 없어도 명단과 이력은 온전하다.
 
 남는 위험은 하나다 — 나중에 번호를 채웠을 때 그 사람이 앱의 다른 명단에도
-있으면 두 줄이 된다. 지금은 막을 방법이 없으므로 넣을 때 **몇 명이 그런
-상태인지 세어서 알린다.**
+있으면 두 줄이 된다. 채우기 모드가 그 자리를 막는다(아래).
+
+## 만들기와 채우기는 **부르는 사람이 고른다** (`--mode`)
+
+`import_new_list.py` 와 같은 어휘·같은 이유다. 이 작업의 가장 큰 위험은 채울
+자리에 실수로 새로 만들어 **같은 사람이 두 줄이 되는 것**이고, 두 줄이 되면
+딜 소개가 두 번 나간다. 위험한 쪽이 기본값이 되어서는 안 되고, 안전한 쪽이
+기본값이면 "왜 아무것도 안 들어갔지" 를 매번 겪는다. **둘 다 적게 한다.**
+
+    create  없는 사람은 만든다. 이미 있는 번호는 만들지 않고 주인만 바꾼다.
+    fill    이 명단에 **이미 있는 줄만** 채운다. 없는 사람은 만들지 않고 알린다.
+
+채우기는 만들기의 조용한 판이 아니다. 세 가지를 더 막는다.
+
+  · **빈 칸에만 얹는다.** 만들기는 시트 값으로 덮어쓴다 — 그것이 맞다, 명단이
+    그 시트에서 나온 것이니까. 채우기는 이미 서 있는 명단에 **나중에** 명함을
+    얹는 일이라, 덮으면 사람이 앱에서 고쳐 둔 값이 시트 한 장에 지워진다.
+    그리고 빈 칸만 채우면 **몇 번을 돌려도 두 번째부터는 0칸**이라, 두 번
+    돌았는지 아닌지를 결과로 알 수 있다.
+  · **칸도 만들지 않는다.** 명함을 찾으러 곁다리 탭을 붙이면 그 탭의 살림 칸
+    (`사유`·`전화 여부`)이 남는 머리글로 읽혀 **달 칸으로 선다.** 줄을 안
+    만드는 모드가 칸은 만드는 것이 앞뒤가 안 맞기도 하다. 못 세운 칸은 적어서
+    알린다.
+  · **명단 설정을 건드리지 않는다.** 배치·숨김은 화면과 `set_sheet_layout.py`
+    가 정하는 값이다. 명함을 채우려고 부른 명령이 표 모양을 되돌리면 안 된다.
+
+## 채우기가 사람을 찾는 순서
+
+    ① 번호가 있고 **앱이 아는 번호**면 그 줄. 이 명단이면 채우고, 다른 명단이면
+       건드리지 않고 알린다(옮기는 것은 만들기 모드의 일이다).
+    ② 그 밖에는 **이 명단 안에서** 이름+투자사명.
+
+②가 번호 있는 줄에도 필요하다. 채우려는 값이 바로 그 **번호**이기 때문이다 —
+번호가 없어 명단에 들어온 줄을 번호로 찾을 수는 없다. 범위가 이 명단 하나라
+틀려도 남의 명단에는 닿지 않고, 투자사명이 다르면 아예 안 걸린다.
+
+그리고 이 순서가 위에 적은 "남는 위험" 을 막는다. 채우려는 번호가 앱의 다른
+줄에 이미 있으면 ①에서 걸려 그 줄은 건너뛴다 — **같은 번호가 두 줄이 되는
+자리가 없다.**
 
     python scripts/import_investor_list.py 파일.xlsx \
-        --tab "탭1" --tab "탭2" --sheet "명단 이름" --owner 01000000000
-    python scripts/import_investor_list.py 파일.xlsx … --apply
+        --tab "탭1" --tab "탭2" --sheet "명단 이름" --owner 01000000000 --mode create
+    python scripts/import_investor_list.py 파일.xlsx … --mode create --apply
+    python scripts/import_investor_list.py 파일.xlsx … --mode fill --apply
 """
 from __future__ import annotations
 
@@ -312,7 +350,7 @@ def parse_tab(rows) -> dict:
     at = find_header(rows)
     if at < 0:
         return {"columns": [], "items": [], "skipped": [], "nameless": [],
-                "shifted": []}
+                "shifted": [], "labels": {}}
     header = [clean_label(c) for c in rows[at]]
     where = _columns_of(header)
     fixed = set(where.values())
@@ -366,7 +404,11 @@ def parse_tab(rows) -> dict:
         items.append(item)
     return {"columns": [label for _i, label in months],
             "items": items, "skipped": skipped, "nameless": nameless,
-            "shifted": shifted}
+            "shifted": shifted,
+            # 앱의 칸 → **시트가 그 칸을 부르는 이름.** 채우기 미리보기가 어느 칸을
+            # 몇 개 채우는지 적을 때 쓴다. 이름을 스크립트에 따로 적어 두면 시트와
+            # 글자가 갈려, 결과를 시트와 나란히 놓고 대조할 수가 없다.
+            "labels": {key: header[i] for key, i in where.items()}}
 
 
 def merge_key(item) -> tuple:
@@ -410,8 +452,12 @@ def merge(parsed_tabs) -> dict:
             for group in ("fields", "notes", "months"):
                 for k, v in item[group].items():
                     found[group].setdefault(k, v)
+    labels = {}
+    for parsed in parsed_tabs:
+        for key, label in parsed.get("labels", {}).items():
+            labels.setdefault(key, label)      # 먼저 적은 탭의 말이 이긴다
     return {"columns": columns, "items": [by_key[k] for k in order],
-            "clashed": clashed}
+            "clashed": clashed, "labels": labels}
 
 
 def apply_values(contact, item, columns) -> None:
@@ -463,12 +509,86 @@ def apply_values(contact, item, columns) -> None:
             contact.firm_type = code
 
 
+def existing_columns(db, sheet: str) -> dict:
+    """이 명단에 **이미 서 있는** 달 칸. `{이름: 줄}`.
+
+    `cc.month_columns` 를 부르지 않는다. 저쪽은 읽는 김에 **이번 달 칸을
+    만들어 넣는다**(달이 바뀐 것을 알아채는 자리가 요청뿐이라 그렇게 두었다).
+    미리보기가 그것을 부르면 `--apply` 없이 부른 명령이 칸을 만들고 저장까지
+    한다 — 미리보기가 미리보기가 아니게 된다.
+    """
+    return {c.label: c for c in db.execute(
+        select(ContactColumn).where(ContactColumn.sheet == sheet)
+        .order_by(ContactColumn.position, ContactColumn.id)).scalars()}
+
+
+def fill_plan(contact, item, columns) -> tuple:
+    """채우기가 이 줄에 **무엇을 얹을지** 미리 정한다.
+
+    `(얹을 것, 못 세운 달 칸 이름들)`. 얹을 것은 `[(칸, 값)]` 이고 칸 이름은
+    앱의 칸 이름(`phone`) 또는 `note:키` 다.
+
+    ## 빈 칸에만 얹는다
+
+    만들기(`apply_values`)는 시트 값으로 덮는다 — 명단이 그 시트에서 나온 것이니
+    그것이 맞다. 채우기는 **이미 서 있는 명단에 나중에 명함을 얹는** 일이라,
+    덮으면 사람이 앱에서 고쳐 둔 값이 시트 한 장에 지워진다. 그리고 빈 칸만
+    채우면 두 번째부터는 채울 것이 0칸이라, **두 번 돌았는지가 결과로 보인다.**
+
+    ## 없는 달 칸은 만들지 않고 적어서 돌려준다
+
+    명함을 찾으러 곁다리 탭을 붙이면 그 탭의 살림 칸(`사유`·`전화 여부`)이 남는
+    머리글로 읽혀 달 칸이 되려 한다. 줄을 안 만드는 모드가 칸은 만드는 것도
+    앞뒤가 안 맞는다. 버리지는 않는다 — 무엇을 못 세웠는지 보여야 사람이
+    시트를 고치거나 화면에서 칸을 세운다.
+    """
+    todo, unknown = [], []
+    for field, value in item["fields"].items():
+        if not getattr(contact, field, ""):
+            todo.append((field, value))
+    values = cc.load_notes(contact.notes)
+    for key, value in item["notes"].items():
+        if not values.get(key):
+            todo.append((f"note:{key}", value))
+    for label, text in item["months"].items():
+        column = columns.get(label)
+        if column is None:
+            unknown.append(label)
+            continue
+        if not values.get(cc.note_key(column.id)):
+            todo.append((f"note:{cc.note_key(column.id)}", text))
+    return todo, unknown
+
+
+def fill_values(contact, todo) -> None:
+    """`fill_plan` 이 정한 것을 그대로 얹는다.
+
+    정하는 것과 얹는 것을 나눈 이유는 하나다 — **미리보기와 실제 저장이 같은
+    판단을 지나야** 미리보기가 미리보기 구실을 한다. 세어 본 칸 수와 실제로
+    들어간 칸 수가 다르면 어느 쪽도 믿을 수 없다.
+    """
+    values = cc.load_notes(contact.notes)
+    for key, value in todo:
+        if key.startswith("note:"):
+            values[key[5:]] = value
+        else:
+            setattr(contact, key, value)
+    contact.notes = cc.dump_notes(values)
+
+
 def main() -> int:
-    ap = argparse.ArgumentParser(description="투자사 딜공유 명단 만들기")
+    ap = argparse.ArgumentParser(description="투자사 딜공유 명단 만들기 / 채우기")
     ap.add_argument("path")
     ap.add_argument("--sheet", required=True, help="앱의 명단(탭) 이름")
+    # 채우기에서는 담당을 바꾸지 않지만 **그래도 받는다.** 이 값이 맞아야
+    # 계정이 있는 DB 를 보고 있다는 것이 확인되고(없으면 멈춘다), 만들기와
+    # 채우기의 부르는 법이 갈리지 않는다 — 갈리면 급할 때 둘을 헷갈린다.
     ap.add_argument("--owner", required=True,
-                    help="담당 팀원 계정의 휴대폰번호(없으면 멈춘다)")
+                    help="담당 팀원 계정의 휴대폰번호(없으면 멈춘다). "
+                         "채우기에서는 담당을 바꾸지 않고 확인만 한다")
+    # 기본값을 두지 않는다 — 위 설명 참고. `import_new_list.py` 와 같은 말이다.
+    ap.add_argument("--mode", required=True, choices=["create", "fill"],
+                    help="create=없는 줄을 만든다 · fill=있는 줄의 빈 칸만 채운다")
     ap.add_argument("--tab", action="append", default=[],
                     help="엑셀 파일 안의 탭 이름. 여러 번 적으면 **한 명단으로 합친다** "
                          "(먼저 적은 탭의 값이 이긴다)")
@@ -511,9 +631,17 @@ def main() -> int:
         mine_by_name.setdefault(
             merge_key({"fields": {"name": c.name or "", "firm": c.firm or ""}}), c)
 
+    # 채우기는 **있는 칸에만** 얹는다. 미리보기 단계에서 읽으므로 여기서도
+    # 이번 달 칸을 만들어 넣는 `cc.month_columns` 는 부르지 않는다.
+    # (만들기는 아래 저장 단계에서 없는 칸을 세우므로 여기서 읽을 것이 없다.)
+    columns = existing_columns(db, args.sheet) if args.mode == "fill" else {}
+
     fills, moves, creates = [], [], []
     skips, seen = {}, set()
     no_phone = 0
+    # 채우기: 줄마다 얹을 것 · 칸마다 몇 번 얹는지 · 못 세운 달 칸.
+    plans, per_column, unseen_columns = {}, {}, {}
+    taken_rows = {}
 
     def skip(reason, note):
         skips.setdefault(reason, []).append(note)
@@ -537,15 +665,42 @@ def main() -> int:
                 skip("다른 명단으로 배정됨", f"{where} → `{ruled}`")
                 continue
             found = known.get(key)
+            if found is None and args.mode == "fill":
+                # **채우려는 값이 바로 그 번호다.** 번호가 없어 명단에 들어온 줄을
+                # 번호로 찾을 수는 없으니, 이 명단 안에서 이름+투자사명으로 한 번
+                # 더 찾는다. 앱이 모르는 번호라 여기서 이어도 같은 번호가 두 줄이
+                # 되는 자리가 없다(아는 번호였으면 위에서 이미 걸렸다).
+                found = mine_by_name.get(merge_key(item))
         else:
             # 번호가 없다. 앱 전체와는 대조할 수 없고, **이 명단 안에서만** 찾는다.
             no_phone += 1
             found = mine_by_name.get(merge_key(item))
 
         if found is not None and found.id in mine_ids:
+            if found.id in taken_rows:
+                # 시트의 두 줄이 앱의 한 줄을 가리킨다. 조용히 둘 다 얹으면 나중
+                # 것이 앞 것을 덮은 것인지 아닌지조차 알 수 없다.
+                skip("시트의 두 줄이 앱의 같은 줄을 가리킨다",
+                     f"{where}  ←→ {taken_rows[found.id]}")
+                continue
+            taken_rows[found.id] = where
+            if args.mode == "fill":
+                todo, unknown = fill_plan(found, item, columns)
+                plans[found.id] = (found, todo, where)
+                for field, _value in todo:
+                    per_column[field] = per_column.get(field, 0) + 1
+                for label in unknown:
+                    unseen_columns[label] = unseen_columns.get(label, 0) + 1
             fills.append((found, item, where))
         elif found is not None:
+            if args.mode == "fill":
+                # 그 사람은 앱에 있지만 **다른 명단**이다. 여기서 옮기면 남의
+                # 명단에서 사람이 빠진다 — 옮기는 것은 만들기 모드의 일이다.
+                skip("앱의 다른 명단에 있다 (옮기려면 --mode create)", where)
+                continue
             moves.append((found, item, where))
+        elif args.mode == "fill":
+            skip("이 명단에 그 줄이 없다 — 채우기 모드에서는 만들지 않는다", where)
         else:
             creates.append((item, where))
 
@@ -559,10 +714,14 @@ def main() -> int:
         if found is None:
             skip("배정표에 있는데 시트에도 앱에도 없다", key[:3] + "…" + key[-4:])
         elif found.id not in mine_ids:
-            orphans.append(found)
+            if args.mode == "fill":
+                skip("배정표가 이 명단으로 정했다 (옮기려면 --mode create)",
+                     f"{found.firm or ''} {found.name}")
+            else:
+                orphans.append(found)
 
     total = len(fills) + len(moves) + len(creates) + len(orphans)
-    print(f"명단 `{args.sheet}` · 담당 {owner.name} · 탭 "
+    print(f"명단 `{args.sheet}` · 담당 {owner.name} · 모드 {args.mode} · 탭 "
           f"{', '.join(str(t) for t in tabs)}")
     for tab, one in zip(tabs, parsed_tabs):
         print(f"    탭 `{tab}` 에서 읽은 줄 {len(one['items'])}개 "
@@ -570,14 +729,42 @@ def main() -> int:
     print(f"  합쳐서 {len(parsed['items'])}명 "
           f"(번호가 없는 사람 {no_phone}명 — 이 명단 안에서 이름+투자사명으로 찾는다)")
     print(f"  이 명단에 들어갈 줄 {total}개")
-    print(f"    새로 만들 줄             {len(creates)}")
-    print(f"    주인만 바꿀 줄           {len(moves)}"
-          f"  (앱에 이미 있는 번호 — 이력이 그 줄에 붙어 있다)")
-    print(f"    주인만 바꿀 줄(배정표)    {len(orphans)}")
-    print(f"    이미 이 명단이라 채울 줄  {len(fills)}")
-    print(f"  달마다 늘어나는 칸 {len(parsed['columns'])}개:")
-    for label in parsed["columns"]:
-        print(f"      {label}")
+    if args.mode == "create":
+        # 채우기에서는 셋 다 늘 0이라 적지 않는다 — 0만 늘어놓으면 정작 봐야 할
+        # 칸 수가 묻힌다. 달 칸 목록도 같은 이유로 만들기에서만 편다(채우기는
+        # 아래에서 **채운 칸**과 **못 세운 칸**만 적는다).
+        print(f"    새로 만들 줄             {len(creates)}")
+        print(f"    주인만 바꿀 줄           {len(moves)}"
+              f"  (앱에 이미 있는 번호 — 이력이 그 줄에 붙어 있다)")
+        print(f"    주인만 바꿀 줄(배정표)    {len(orphans)}")
+        print(f"    이미 이 명단이라 채울 줄  {len(fills)}")
+        print(f"  달마다 늘어나는 칸 {len(parsed['columns'])}개:")
+        for label in parsed["columns"]:
+            print(f"      {label}")
+    else:
+        # **몇 칸을 채우고 몇 줄이 빈칸으로 남는지.** 채우기의 결과는 줄 수가
+        # 아니라 칸 수다 — 줄은 이미 다 서 있고, 달라지는 것은 그 안이다.
+        cells = sum(len(todo) for _c, todo, _w in plans.values())
+        touched = sum(1 for _c, todo, _w in plans.values() if todo)
+        # 칸 이름은 **시트가 부르는 말** 그대로다. 스크립트에 따로 적어 두면
+        # 시트와 글자가 갈려 결과를 나란히 놓고 대조할 수가 없다.
+        # 달 칸은 시트 머리글이 곧 그 칸의 이름이라 명단 쪽에서 되찾는다.
+        names = dict(parsed["labels"])
+        names.update({f"note:{cc.note_key(col.id)}": label
+                      for label, col in columns.items()})
+        print(f"\n  채울 칸 {cells}개 · 그중 줄 {touched}개"
+              f"  (빈 칸에만 얹습니다 — 두 번 돌리면 0칸입니다)")
+        for field, count in sorted(per_column.items(), key=lambda kv: -kv[1]):
+            print(f"      {names.get(field, field):<30} {count}")
+        # 이 명단에 서 있는데 시트가 닿지 않은 줄. **빈칸으로 남는다.**
+        blank = len(mine) - len(plans)
+        print(f"  시트에서 못 찾아 그대로 두는 줄 {blank}개 "
+              f"(이 명단 {len(mine)}줄 중) — **빈칸으로 둡니다. 지어내지 않습니다.**")
+        if unseen_columns:
+            print(f"  시트에는 있는데 이 명단에 없는 칸 {len(unseen_columns)}개 "
+                  f"— **세우지 않습니다**(채우기는 칸을 만들지 않습니다):")
+            for label, count in sorted(unseen_columns.items(), key=lambda kv: -kv[1]):
+                print(f"      {label}  ({count}줄)")
     for who, _item, where in moves:
         print(f"    옮김: {where}  ←→ 앱 `{who.firm or ''} {who.name}`")
     for who in orphans:
@@ -597,10 +784,13 @@ def main() -> int:
             for note in one["shifted"]:
                 print(f"       {note}")
         if one["nameless"]:
-            # 넣기는 넣는다. 다만 같은 줄인지 가리는 열쇠가 이름 하나뿐이라,
-            # 다시 넣을 때 동명이인이 있으면 한 줄로 뭉칠 수 있다.
+            # 만들기는 넣는다(빼면 그 사람이 사라진다). 채우기는 잇는 열쇠가
+            # 이름+투자사명인데 그 절반이 비어 있는 줄이라, **이름만 같은 남의
+            # 줄에 얹힐 수 있다** — 그래서 말이 달라야 한다.
+            what = ("**넣습니다.** 이름만으로 찾게 되니" if args.mode == "create"
+                    else "이름만 남아 **엉뚱한 줄에 얹힐 수 있습니다.**")
             print(f"\n  탭 `{tab}` 에 투자사명이 빈 줄 {len(one['nameless'])}개 "
-                  f"— **넣습니다.** 이름만으로 찾게 되니 시트에서 채워 두면 좋습니다:")
+                  f"— {what} 시트에서 채워 두면 좋습니다:")
             print(f"       {', '.join(one['nameless'])}")
         if one["skipped"]:
             print(f"\n  탭 `{tab}` 에서 못 읽은 줄 {len(one['skipped'])}개")
@@ -614,7 +804,10 @@ def main() -> int:
             print(f"    ── {reason} ({len(rows)}줄)")
             for note in rows:
                 print(f"       {note}")
-    if no_phone:
+    if no_phone and args.mode == "create":
+        # 채우기에서는 알릴 것이 아니다 — 줄을 만들지 않으므로 "번호 없이
+        # 들어가는" 사람이 없고, 남는 위험(같은 번호가 두 줄)은 채우기가
+        # 순서로 막는다(맨 위 설명 참고).
         print(f"\n  ⚠ 번호 없이 들어가는 사람 {no_phone}명. 명단과 이력은 보이고, "
               f"딜 소개도 **카톡방 이름을 채우면** 나갑니다(번호가 아니라 방으로 "
               f"나갑니다).\n     남는 위험: 나중에 번호를 채웠을 때 그 사람이 앱의 "
@@ -625,12 +818,30 @@ def main() -> int:
         db.close()
         return 0
 
+    if args.mode == "fill":
+        # **명단 설정도 칸도 건드리지 않는다.** 배치·숨김은 화면과
+        # `set_sheet_layout.py` 가 정하는 값이라, 명함을 채우려고 부른 명령이
+        # 표 모양을 되돌리면 안 된다(투자사 명함 표로 맞춰 둔 명단이 이 한 줄에
+        # 딜공유 표로 돌아가던 자리다).
+        cells = 0
+        for contact, todo, _where in plans.values():
+            if not todo:
+                # 얹을 것이 없으면 줄을 건드리지 않는다. `dump_notes` 가 빈 값을
+                # 털어 내므로, 그냥 지나가도 줄이 바뀐 것으로 기록된다.
+                continue
+            fill_values(contact, todo)
+            cells += len(todo)
+        db.commit()
+        print(f"\n채운 줄 {sum(1 for _c, t, _w in plans.values() if t)} "
+              f"· 채운 칸 {cells}개 · 새로 만든 줄 0 · 새로 세운 칸 0")
+        db.close()
+        return 0
+
     settings = db.execute(
         select(SheetOwner).where(SheetOwner.label == args.sheet)
     ).scalars().first()
     is_new_sheet = settings is None
     settings = sheet_owner.ensure(db, args.sheet, user_id=owner.id)
-    settings.layout = cc.INVESTOR_MONTHLY
     if settings.user_id is None:
         # `ensure` 는 이미 있는 명단의 담당을 덮지 않는다(시트를 다시 올린 것만으로
         # 남의 담당이 넘어가면 안 된다). 비어 있는 자리는 채워도 뺏는 것이 아니다.
@@ -638,9 +849,12 @@ def main() -> int:
     if is_new_sheet:
         # **이 사람들은 진짜 투자사다.** 딜 소개를 받을 사람들이라 투자사 수와
         # 발송 대상에 들어가야 맞다(스타트업 명단이 빠지는 것과 반대다).
-        # 다시 돌릴 때는 건드리지 않는다 — 화면에서 사람이 정한 값을 임포트
-        # 한 번이 되돌리면 안 된다.
         settings.is_hidden = 0
+        # 배치도 여기서만 정한다. **다시 돌릴 때는 건드리지 않는다** — 숨김과
+        # 같은 이유다. 화면에서(또는 `set_sheet_layout.py` 로) 사람이 다른 표로
+        # 맞춰 둔 명단이, 같은 워크북을 한 번 더 올렸다는 이유로 옛 표로
+        # 되돌아가면 안 된다.
+        settings.layout = cc.INVESTOR_MONTHLY
 
     # 월별 칸이 먼저다 — 줄의 값이 칸 id 를 키로 쓴다.
     columns = {c.label: c for c in cc.month_columns(db, args.sheet)}

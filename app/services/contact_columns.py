@@ -122,7 +122,24 @@ class Layout:
 #
 # 대신 여기서는 **어느 명단이 이 배치인가**만 정한다. 그것이 탭마다 하드코딩을
 # 부르던 부분이다.
-INVESTOR_LAYOUT = Layout(key=INVESTOR, label="투자사 명함")
+#
+# `monthly=False` 는 **표에 안 세운다**는 뜻이지 "그런 칸이 없다"는 뜻이 아니다.
+# 이 배치를 쓰면서도 달마다의 기록을 가진 명단이 있다(딜공유 명단을 이 표로
+# 맞춘 것들). 그 칸들은 표에 못 선다 — 표가 여기 그대로 적혀 있어 반복문이
+# 들어갈 자리가 없고, 넣는다 해도 스물다섯 칸짜리 표가 스물다섯+열다섯 칸이
+# 되어 **맞추라고 한 그 모양이 아니게 된다.** 대신 **수정창에 전부 편다**
+# (`contacts.html` 의 그 자리 주석 참고) — 값은 그대로 남고, 칸 이름도 시트
+# 그대로 서고, 저장·되읽기는 이미 `data-note` 로 일반화돼 있다.
+#
+# 칸이 있는지는 **명단이 정한다**(그 명단에 `ContactColumn` 줄이 있느냐).
+# 배치가 정하지 않는다 — 같은 배치를 쓰는 명단 중 어떤 것은 달 칸이 있고
+# 어떤 것은 없다(`routers/pages.py` 의 `all_months` 주석 참고).
+INVESTOR_LAYOUT = Layout(
+    key=INVESTOR, label="투자사 명함",
+    # 한 칸에 회차별 기업 목록이 줄바꿈으로 쌓인다 — 고르는 칸이 아니라 글 칸이다.
+    # (`INVESTOR_MONTHLY_LAYOUT` 과 같은 값이어야 한다. 배치를 바꿨다고 같은
+    # 값이 `O`/`X` 고르기로 서면, 한 번 고치는 순간 그 달 기록이 한 글자로 덮인다.)
+    month_kind="long", month_choices="", month_width=240)
 
 
 # ── 스타트업 리마인드 ────────────────────────────────────────────────────────
@@ -365,9 +382,12 @@ def table_columns(layout: Layout, months: List[ContactColumn]) -> List[Column]:
 
     머리글은 머리글대로, 칸은 칸대로 적어 두면 하나를 지웠을 때 그 뒤가 통째로
     한 칸씩 밀린다(`tests/test_ui_layout.py` 가 오래 지켜 온 규칙이다).
+
+    **월별 칸은 배치가 부를 때만 선다**(`layout.monthly`). 명단에 달 칸이 있어도
+    표에 안 세우는 배치가 있다 — 투자사 명함 표가 그렇다(위 주석 참고).
     """
     return ([c for c in layout.head if c.in_table]
-            + [as_column(m, layout) for m in months]
+            + ([as_column(m, layout) for m in months] if layout.monthly else [])
             + [c for c in layout.tail if c.in_table])
 
 
@@ -376,6 +396,11 @@ def panel_columns(layout: Layout, months: List[ContactColumn]) -> List[Column]:
 
     표에서 뺀 칸이 수정창에도 없으면 **적을 자리가 아예 없다.** 값은 들어가
     있는데 화면 어디에서도 볼 수 없는 칸이 그렇게 생긴다.
+
+    월별 칸은 `table_columns` 와 달리 **배치를 안 가리고 전부 넣는다.** 표에
+    안 세우는 배치에서는 여기가 그 값을 볼 수 있는 유일한 자리다 — 여기서도
+    빼면 달마다의 기록이 화면에서 통째로 사라진다(지워지는 것은 아니지만,
+    안 보이면 사람은 지워진 줄 안다).
     """
     return ([c for c in layout.head if c.source != "row_no"]
             + [as_column(m, layout) for m in months]

@@ -1,7 +1,6 @@
 """Server-rendered HTML pages (Jinja2 SSR)."""
 from __future__ import annotations
 
-import json
 from collections import Counter
 from datetime import date
 
@@ -12,9 +11,10 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..deps import get_current_user, may_manage_team_contacts, templates
-from ..models import IrCompany, RefSheet, SendJob, SourcingContact, User
+from ..models import IrCompany, SendJob, SourcingContact, User
 from ..services import (cadence, contact_columns, deal_history, deal_stage,
-                        mailer, sheet_import, sheet_owner, sourcing_link)
+                        mailer, ref_panel, sheet_import, sheet_owner,
+                        sourcing_link)
 from ..ui import MENU, base_ctx as _base_ctx
 from .companies import BLOCKED_CONTRACT
 from .companies import blocked_reason as company_blocked_reason
@@ -225,18 +225,21 @@ def contacts_page(
     # 이 명단이 쓰는 표 배치. 정해 두지 않은 명단은 지금까지의 투자사 명함 표다.
     layout = contact_columns.layout_of(
         sheet_owner.layout_of(db, selected) if selected else contact_columns.DEFAULT)
-    all_months = contact_columns.month_columns(db, selected) if layout.monthly else []
+    # 달마다 늘어나는 칸이 있는지는 **명단이 정한다** — 그 명단에 `ContactColumn`
+    # 줄이 있느냐다. 배치로 가르면 안 된다: 표에 그 칸을 안 세우는 배치(투자사
+    # 명함)를 쓰면서 달마다의 기록은 가진 명단이 있고, 배치로 걸러 버리면 그
+    # 기록이 **화면 어디에도 안 뜬다**(지워지지 않았는데 사라진 것처럼 보인다).
+    # 칸이 없는 명단에서는 이 호출이 빈 목록이라 값이 드는 데가 없다
+    # (`monthly_columns.plan` 이 본뜰 칸이 없으면 아무것도 안 만든다).
+    all_months = contact_columns.month_columns(db, selected) if selected else []
     shown_months, folded_months = contact_columns.split_months(
         all_months, show_all=(months == "all"))
 
     # 참고 시트 — 스크립트·가이드처럼 매번 구글 시트를 열어 보던 자료.
-    # 지울 수 있게 두었으므로 살아 있는 것만 가져온다.
-    ref_sheets = db.execute(
-        select(RefSheet).where(RefSheet.is_active == 1,
-                               RefSheet.page == "contacts")
-        .order_by(RefSheet.position, RefSheet.id)
-    ).scalars().all()
-    picked_ref = next((s for s in ref_sheets if str(s.id) == ref), None)
+    # 지울 수 있게 두었으므로 살아 있는 것만 가져온다. 질의는
+    # `services/ref_panel.py` 한 곳에 있다(투자컨설턴트·스타트업 리마인드 화면이
+    # 같은 패널을 쓴다) — 화면마다 적어 두면 조건 하나가 조용히 갈린다.
+    ref_ctx = ref_panel.panel_ctx(db, "contacts", ref)
 
     stages = Counter(r["connect_stage"] for r in rows)
     # 깔때기는 **지금 탭에 보이는 사람들** 기준이다. 탭이 곧 명단이라,
@@ -277,9 +280,7 @@ def contacts_page(
         # 대시보드의 '내 투자사 선호'에서 눌러 오면 그 사람 상세를 바로 연다 —
         # 무엇을 좋아하는지(선호 분야·라운드) 보려고 누른 것이다.
         "open_contact": contact or 0,
-        "ref_sheets": ref_sheets,
-        "ref": picked_ref,
-        "ref_content": json.loads(picked_ref.content_json) if picked_ref else None,
+        **ref_ctx,
         # [수정] 창의 `연결 상태` 보기. **말을 화면에 적지 않는다** — 임포트가
         # 정한 라벨을 그대로 넘긴다. 화면에 다시 적으면 필터 값·대시보드 타일과
         # 갈려서, 골라 저장해도 어느 쪽에도 안 걸린다.

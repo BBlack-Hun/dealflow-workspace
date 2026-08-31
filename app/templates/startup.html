@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block content %}
+{#
+  스타트업 쪽 안내문·스크립트만 모은 화면. 투자사 관리 현황에서는 명단 탭
+  뒤에 참고 탭이 붙지만 여기는 명단이 없으므로 참고 탭이 곧 화면이다.
+#}
+<header class="page-head">
+  <h1>{{ page_title }}</h1>
+  <p class="muted">
+    우리가 챙기는 스타트업에게 <b>매월 한 번</b> 보내는 안내문과 스크립트입니다
+    · 탭을 누르면 그 자료가 열리고, 열린 자료는 바로 고칠 수 있습니다
+  </p>
+</header>
+
+{% if ref_sheets %}
+<nav class="sheet-tabs">
+  {% for s in ref_sheets %}
+  <a class="sheet-tab ref-tab {% if ref and ref.id == s.id %}active{% endif %}"
+     href="/startup?ref={{ s.id }}"
+     title="참고 자료">📄 {{ s.title }}</a>
+  {% endfor %}
+</nav>
+
+{% set ref_back = "/startup" %}
+{% include "_ref_panel.html" %}
+
+{% if not ref %}
+{# 탭만 있고 아래가 비면 고장으로 읽힌다 — 무엇을 눌러야 하는지 적어 둔다. #}
+<p class="hint">위의 탭을 눌러 자료를 여세요.</p>
+{% endif %}
+
+{% else %}
+{#
+  자료를 전부 감췄거나 아직 옮기지 않은 상태. 빈 화면을 주면 고장으로 읽히므로
+  **어디서 되살리는지**까지 적는다 — 지운 탭은 감춘 것이라 되살릴 수 있다.
+#}
+<div class="placeholder-card">
+  <p class="ph-emoji">📄</p>
+  <p><strong>아직 이 화면에 올려 둔 자료가 없습니다.</strong></p>
+  <p class="muted">
+    자료는 탭마다 감출 수 있습니다. 감춘 자료는 지워진 것이 아니라
+    다시 켤 수 있습니다.
+  </p>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{# 표로 된 자료는 칸을 눌러 바로 고친다. 지금 여기 있는 것은 줄글뿐이지만,
+   표 자료를 이 화면으로 옮기는 날 이 줄이 없으면 그 화면만 고칠 수 없다. #}
+<script src="{{ asset('js/ref_edit.js') }}"></script>
+{% endblock %}

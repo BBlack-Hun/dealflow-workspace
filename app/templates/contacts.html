@@ -176,8 +176,17 @@
   달마다 늘어나는 칸. `7월 리마인드 문자 (7/28)` 옆에 8월 세 칸이 붙는다 —
   시트를 다시 올리지 않고도 여기서 세울 수 있어야 한다.
   투자컨설턴트 현황의 [열 추가] 와 같은 방식·같은 어휘다.
+
+  **칸이 있는 명단이면 배치를 안 가리고 나온다.** 표에 그 칸을 안 세우는
+  배치(투자사 명함)로 맞춘 명단도 달마다의 기록을 그대로 가지고 있는데,
+  `layout.monthly` 로만 가르면 그 명단에서는 이름을 고치거나 지울 자리가
+  사라진다 — 값은 수정창에 뜨는데 칸 자체는 손댈 수 없는 상태가 된다.
+
+  `layout.monthly` 를 함께 보는 이유는 **첫 칸**이다. 칸이 하나도 없는 명단은
+  `month_columns` 가 비어서, 이 조건이 없으면 [칸 추가] 마저 사라져 첫 칸을
+  세울 길이 없다(달마다 칸이 서는 배치에서는 늘 세울 수 있어야 한다).
 #}
-{% if layout.monthly and selected_sheet %}
+{% if selected_sheet and (layout.monthly or month_columns or folded_months) %}
 <div class="toolbar month-cols">
   <form method="post" action="/api/contacts/columns" class="inline-form">
     <input type="hidden" name="sheet" value="{{ selected_sheet }}">
@@ -771,6 +780,29 @@
          다른 메모와 구별되지 않는다. #}
       <label class="field wide"><span>메모 ( 통화내용 /  카톡내용  /  카톡답신내용)</span>
         <textarea id="f-memo" rows="3"></textarea></label>
+      {#
+        ── 달마다 늘어나는 칸 (`8월 딜소개` · `7월 IR 요청` …) ──────────────
+
+        이 표에는 그 칸이 안 선다. 시트 컬럼 열여덟 개에 열다섯 칸을 더 붙이면
+        **맞추라고 한 그 모양이 아니게 되고**, 표가 여기 그대로 적혀 있어
+        반복문이 들어갈 자리도 없다(위 표 주석 참고).
+
+        그래서 여기가 그 값을 보는 **유일한 자리**다. 빼면 달마다의 딜공유
+        기록이 화면에서 통째로 사라진다 — 지워진 것이 아닌데 사람은 지워진 줄
+        안다. 그것이 이 명단들의 핵심 내용이다.
+
+        **접지 않고 전부 편다.** 표에서는 가로로 밀려서 이번 달만 펴 두지만
+        (`split_months`), 여기는 세로로 쌓이는 자리라 접을 이유가 없다.
+
+        이름은 **배치가 준 목록 하나**에서 나온다(`panel_columns`) — 시트의 칸
+        이름 그대로다. 저장·되읽기는 `data-note` 를 보고 알아서 실린다
+        (`contacts.js` 의 `noteInputs`), 그래서 칸이 늘어도 여기 말고는
+        고칠 곳이 없다.
+      #}
+      {% for c in panel_columns if c.source == 'note' %}
+      <label class="field wide"><span>{{ c.label }}</span>
+        <textarea rows="3" id="f-note-{{ c.key }}" data-note="{{ c.key }}"></textarea></label>
+      {% endfor %}
     </div>
     {% endif %}
     <div class="detail-actions">

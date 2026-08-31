@@ -454,19 +454,12 @@ def consulting_page(request: Request, db: Session = Depends(get_db),
     ctx = base_ctx(request, db, user, active="consult")
     # 스크립트·가이드는 이 화면에도 있다(미팅 진행 프로세스 · 견적서 발송 톡 …).
     # 투자사 관리 현황과 같은 구조를 쓰되 화면만 나눈다.
-    from ..models import RefSheet  # noqa: PLC0415
-
-    ref_sheets = db.execute(
-        select(RefSheet).where(RefSheet.is_active == 1,
-                               RefSheet.page == "consulting")
-        .order_by(RefSheet.position, RefSheet.id)
-    ).scalars().all()
-    ref_row = next((r for r in ref_sheets if str(r.id) == str(ref)), None)
+    # 질의는 `services/ref_panel.py` 한 곳에 있다 — 화면마다 적어 두면
+    # `is_active`(지운 탭 감추기)나 탭 순서 같은 조건이 화면마다 갈린다.
+    from ..services import ref_panel  # noqa: PLC0415
 
     ctx.update({
-        "ref_sheets": ref_sheets,
-        "ref": ref_row,
-        "ref_content": json.loads(ref_row.content_json or "{}") if ref_row else {},
+        **ref_panel.panel_ctx(db, "consulting", ref),
         "rows": rows,
         "sheet_tabs": tabs,
         "selected_sheet": selected,
