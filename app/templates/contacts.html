@@ -319,7 +319,9 @@
           단계 · 채널)은 뒤로 뺀다 — 시트 부분이 앞에서 끊기지 않아야 눈으로
           대조할 수 있다.
 
-          `담당자` 는 뺐다(요청). 값은 살아 있고 [수정] 에서 고친다.
+          `담당자` 는 한동안 뺐다가(요청) **다시 세웠다** — 대시보드의
+          `연결 담당` 이 이 칸으로 눌러 들어오는데, 선언한 머리글이 없으면
+          `filters.js` 가 그 쿼리를 통째로 버린다(아래 그 칸 주석 참고).
 
           월별 딜소개 3열 세트는 NO 를 눌러 활동 이력으로 본다 — 달마다
           오른쪽으로 늘어나는 칸이라 표에 넣으면 끝이 없다.
@@ -350,6 +352,20 @@
            "이게 그 칸인가" 를 한 번씩 멈춰서 확인해야 한다. #}
         <th class="num" style="width:34px" title="누르면 활동 이력이 열립니다">NO</th>
         <th style="width:96px">이름</th>
+        {# `담당자` 는 한동안 뺐던 칸이다(요청). **다시 세운 이유**는 걸 곳이
+           필요해서다 — 대시보드의 `연결 담당: 미지정 1명` 이 이 칸으로 눌러
+           들어온다. `filters.js` 는 **선언되지 않은 키를 통째로 버리므로**
+           칸 없이 링크만 걸면 눌러도 306명이 그대로 뜬다. 링크는 살아 있고
+           화면도 열려서 아무도 눈치채지 못하는, 이 저장소가 두 번 당한 부류다.
+           그리고 값이 보이는 칸이 없으면 **무엇으로 걸러졌는지 확인할 수가 없다.**
+
+           `미지정`(연결 담당이 안 정해진 사람)은 빈 값이라 필터에서
+           `(비어 있음)` 으로 선다 — 대시보드가 거는 값도 그것이다
+           (`services/dashboard.py` 의 `FILTER_EMPTY`).
+
+           폭은 글자(3자)가 아니라 **필터 단추**(`담당자 (1) ▾`)에 맞춘다 —
+           필터가 하나뿐인 칸은 이름이 지워지고 단추가 그 자리를 대신한다. #}
+        <th style="width:92px" data-filters="assignee:담당자">담당자<div class="th-filters"></div></th>
         <th style="width:152px" data-filters="interest:관심도 (월말기준)">관심도 (월말기준)<div class="th-filters"></div></th>
         {# 이 칸도 필터가 하나뿐이라 이름 대신 `카톡방 참여여부 ▾` 단추가 선다.
            이름은 114px 에 들어가지만 단추는 ` ▾` 와 자기 padding·테두리만큼
@@ -422,12 +438,14 @@
         행이 싣는 값은 **머리글이 선언한 키와 하나씩 짝**이어야 한다.
           · 선언만 하고 안 실으면 → 필터를 열어도 늘 빈 목록
           · 싣기만 하고 선언이 없으면 → 아무도 안 보는 죽은 속성
-        `data-f-assignee`(시트의 담당자) · `data-f-room`(방 연결 상태)이 그랬다.
-        담당자 컬럼은 뺐고 방 연결은 표에 칸이 없어, 둘 다 거는 곳이 없는 채로
-        306행에 실려 나가기만 했다. 값이 필요해지면 **칸부터 세우고** 그때
-        다시 싣는다(tests/test_filter_columns.py 가 이 짝을 지킨다).
+        `data-f-assignee`(시트의 담당자) · `data-f-room`(방 연결 상태)이 한때
+        그랬다. 담당자 컬럼은 빠져 있었고 방 연결은 표에 칸이 없어, 둘 다 거는
+        곳이 없는 채로 306행에 실려 나가기만 했다. **지금은 둘 다 칸을 세우고
+        머리글에 선언해 두었다** — 값이 필요해지면 늘 그 순서다(칸 먼저,
+        그다음 선언, 그다음 싣기. tests/test_filter_columns.py 가 이 짝을 지킨다).
       #}
       <tr class="data-row" data-id="{{ r.id }}" data-name="{{ r.name }}"
+          data-f-assignee="{{ r.assignee }}"
           data-f-group="{{ r.group_name }}"
           data-f-firm="{{ r.firm }}"
           data-f-connect="{{ r.connect_label }}"
@@ -447,6 +465,11 @@
         <td class="rowno muted js-detail" title="활동 이력 보기"></td>
         {# 시트 컬럼 — 이름·순서를 그대로 따른다 #}
         <td><b class="cell" data-field="name">{{ r.name }}</b></td>
+        {# 칸 이름(`assignee_name`)과 필터 키(`assignee`)가 다르다 —
+           `data-filter-key` 가 없으면 여기서 고쳐도 행 값이 그대로라
+           **채워 넣어도 필터는 계속 비어 있다.** #}
+        <td class="cell" data-field="assignee_name" data-type="pick"
+            data-filter-key="assignee">{{ r.assignee }}</td>
         {#
           `data-filter-key` — 이 칸을 고쳤을 때 행의 어느 `data-f-*` 를 같이
           고칠지. 칸 이름(DB 컬럼)과 필터 키가 다르면 이것이 없는 한 저장해도
@@ -676,6 +699,25 @@
       <label class="field wide"><span>카톡방 이름 <b class="warn-text">정확히 일치해야 발송됩니다</b></span>
         <input type="text" id="f-kakao_room_name"></label>
       <label class="field"><span>초대완료여부</span><input type="text" id="f-invited_status" placeholder="완료"></label>
+      {#
+        연결 상태 — **그동안 화면 어디에서도 못 고치던 값**이다. 임포트와
+        '방 이름 지우기' 만 이 값을 바꿨다. 그래서 카톡방을 나가신 분을
+        `방 나감` 으로 표시할 길이 아예 없었고, 방 이름을 지우면 코드가 말없이
+        `진행 중` 으로 되돌려 대시보드에 `지금 연결 중` 으로 계속 떴다.
+
+        보기는 **서버가 준 목록 그대로**다(`sheet_import.CONNECT_LABELS`).
+        여기에 말을 다시 적으면 임포트·필터·대시보드가 쓰는 말과 갈려서,
+        고른 값이 어느 쪽에도 안 걸린다 — 저장은 되는데 아무 데도 안 나온다.
+        고르는 값은 **키**이고 보이는 것은 라벨이다. 라벨은 화면 글자라
+        바뀌면 저장이 조용히 어긋난다.
+      #}
+      <label class="field"><span>연결 상태</span>
+        <select id="f-connect_stage">
+          {% for s in connect_stages %}
+          <option value="{{ s.key }}">{{ s.label }}</option>
+          {% endfor %}
+        </select>
+      </label>
       <label class="field"><span>상태</span>
         <select id="f-status">
           <option value="active">활발</option>
@@ -692,11 +734,14 @@
       <label class="field wide"><span>라운드 사이즈(투자운영금액)</span><input type="text" id="f-round_size"></label>
       <label class="field"><span>전자 메일 주소</span><input type="text" id="f-email"></label>
       <label class="field"><span>휴대폰</span><input type="text" id="f-phone"></label>
-      {#
-        시트에 있는데 표에는 안 넣은 값들. 표에 다 넣으면 20칸이 되어 정작
-        매일 보는 칸이 눌린다 — 가끔 찾는 값은 여기서 본다.
-      #}
+      {# 담당자는 표에도 칸이 있다(대시보드의 `연결 담당` 이 그 칸으로 눌러
+         들어온다). 이름을 **표 머리글과 한 글자도 다르지 않게** 둔다 —
+         tests/test_ui_layout.py 가 이 짝을 지킨다. #}
       <label class="field"><span>담당자</span><input type="text" id="f-assignee_name"></label>
+      {#
+        아래는 시트에 있는데 표에는 안 넣은 값들. 표에 다 넣으면 20칸이 되어
+        정작 매일 보는 칸이 눌린다 — 가끔 찾는 값은 여기서 본다.
+      #}
       <label class="field"><span>부서</span><input type="text" id="f-department"></label>
       <label class="field"><span>근무처 전화</span><input type="text" id="f-office_phone"></label>
       <label class="field"><span>근무처 팩스</span><input type="text" id="f-office_fax"></label>

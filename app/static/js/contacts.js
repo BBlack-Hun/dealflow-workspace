@@ -10,7 +10,12 @@
     // 칸을 그려 놔도 값이 안 채워지고 저장도 안 된다.
     "kakao_joined", "sourcing_note", "tips_note",
     "assignee_name", "department", "office_phone", "office_fax",
-    "address", "card_registered_at", "interest_level"];
+    "address", "card_registered_at", "interest_level",
+    // 연결 상태. `<select>` 라 값 읽기·쓰기는 다른 칸과 같다.
+    // 이 목록에서 빠지면 창은 멀쩡히 그려지는데 값이 안 채워지고 저장도
+    // 안 된다 — 스키마·저장 목록·되읽기 응답·화면 넷 중 하나만 빠져도
+    // 증상이 똑같이 조용하다(예전에 `kakao_joined` 가 그랬다).
+    "connect_stage"];
   var CHECKS = ["channel_kakao", "channel_email"];
   var KIND_KO = {
     deal_intro: "딜소개", ir_request: "IR 요청", meeting: "미팅",
@@ -168,6 +173,11 @@
       .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
       .then(function (res) {
         if (!res.ok) { setMsg(res.d.detail || "저장 실패", true); return; }
+        // 서버가 저 혼자 바꾼 것이 있으면 **말해 준다.** 방 이름을 지우면
+        // 연결 상태가 따라 바뀌는데, 그동안 아무 말이 없어서 대시보드에
+        // `지금 연결 중` 으로 계속 뜨는 이유를 아무도 알 수 없었다.
+        // 새로고침이 뒤따르므로 화면에 적어 두면 그대로 지나간다 — 멈춰 세운다.
+        if (res.d.connect_note) alert(res.d.connect_note);
         // 표의 집계값(최근 딜소개·반응)은 서버에서 만든다 → 새로고침이 가장 정확하다.
         window.location.reload();
       })
@@ -251,7 +261,9 @@
   });
   el("add-btn").addEventListener("click", function () {
     current = null;
-    fillForm({ status: "active", channel_kakao: 1 });
+    // 연결 상태는 **비워 두지 않는다.** `<select>` 를 빈 값으로 두면 아무
+    // 보기도 안 골라진 채로 서서, 새로 넣는 사람마다 값이 제각각이 된다.
+    fillForm({ status: "active", channel_kakao: 1, connect_stage: "not_started" });
     if (el("f-channel_kakao")) el("f-channel_kakao").checked = true;
     openPanel("담당자 추가");
     setMsg("투자사명을 넣으면 카톡방 이름이 자동 생성됩니다(비워둘 경우).");

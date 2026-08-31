@@ -399,3 +399,127 @@ def test_assigning_twice_does_not_duplicate(logged, db, users):
     db.expire_all()
     labels = sheet_owner.labels_of(db.get(VcContact, cid).source_sheet)
     assert labels.count("내 명단") == 1
+
+
+# --- 방 나감 ----------------------------------------------------------------
+#
+# 카톡방에 들어왔다가 **나간** 사람. `참여 안 함` 과 뜻이 다르다 — 참여 안 함은
+# 애초에 안 들어온 것이고, 방 나감은 들어왔다가 나간 것이다. 다시 부를 수
+# 있는지가 갈리므로 한 단계로 뭉치면 안 된다.
+#
+# 이 단계가 없던 동안: 나가신 분의 방 이름을 지우면 코드가 말없이 `진행 중` 으로
+# 되돌려서, 대시보드에 `지금 연결 중 1명` 으로 계속 떴다.
+
+
+def _one(db, users, **kw):
+    from app.models import VcContact
+
+    row = VcContact(user_id=users["u1"].id, name="홍길동", firm="가나벤처스", **kw)
+    db.add(row)
+    db.commit()
+    return row.id
+
+
+def test_방_나감은_참여_안_함과_다른_단계다():
+    from app.services import sheet_import as si
+
+    assert si.STAGE_LEFT_ROOM != si.STAGE_DECLINED
+    assert si.CONNECT_LABELS[si.STAGE_LEFT_ROOM] not in (
+        si.CONNECT_LABELS[si.STAGE_DECLINED],)
+    # 둘 다 **더 진행하지 않는** 쪽이라 대시보드에서는 함께 빠진다.
+    assert si.STAGE_LEFT_ROOM in si.CONNECT_DONE
+    assert si.STAGE_DECLINED in si.CONNECT_DONE
+    assert si.STAGE_LEFT_ROOM not in si.CONNECT_OPEN
+
+
+def test_화면에서_고른_방_나감이_저장되고_다시_읽힌다(logged, db, users):
+    """스키마·저장 목록·되읽기 응답·화면 — 넷 중 하나만 빠져도 증상이 조용하다.
+
+    저장은 200 인데 값이 안 들어가거나, 들어갔는데 다시 열면 빈칸이다.
+    """
+    from app.models import VcContact
+    from app.services.sheet_import import STAGE_LEFT_ROOM
+
+    cid = _one(db, users, connect_stage="connected", kakao_room_name="홍길동 방")
+    r = logged.patch(f"/api/contacts/{cid}", json={"connect_stage": STAGE_LEFT_ROOM})
+    assert r.status_code == 200, r.text
+
+    db.expire_all()
+    assert db.get(VcContact, cid).connect_stage == STAGE_LEFT_ROOM
+    # 다시 열었을 때 창이 채울 값이 있는가.
+    assert logged.get(f"/api/contacts/{cid}").json()["contact"]["connect_stage"] \
+        == STAGE_LEFT_ROOM
+
+
+def test_수정_창에_고를_자리가_있다(logged, db, users):
+    """값을 받을 줄만 알고 화면에 고를 자리가 없으면 아무도 못 쓴다."""
+    from app.services.sheet_import import CONNECT_LABELS, STAGE_LEFT_ROOM
+
+    _one(db, users, connect_stage="connected")
+    body = logged.get("/contacts?sheet=all").text
+    assert 'id="f-connect_stage"' in body, "[수정] 창에 연결 상태 칸이 없다"
+    assert f'value="{STAGE_LEFT_ROOM}"' in body
+    assert CONNECT_LABELS[STAGE_LEFT_ROOM] in body
+
+
+def test_모르는_단계는_조용히_버리지_않는다(logged, db, users):
+    """조용히 버리면 화면은 저장된 줄 알고 닫힌다."""
+    from app.models import VcContact
+
+    cid = _one(db, users, connect_stage="connected")
+    r = logged.patch(f"/api/contacts/{cid}", json={"connect_stage": "없는단계"})
+    assert r.status_code == 400
+    db.expire_all()
+    assert db.get(VcContact, cid).connect_stage == "connected"
+
+
+def test_방_이름을_지워도_말없이_진행_중이_되지_않는다(logged, db, users):
+    """그게 이 건의 뿌리다 — 왜 그렇게 됐는지 화면 어디에도 안 나왔다."""
+    from app.models import VcContact
+    from app.services.sheet_import import CONNECT_LABELS, STAGE_LEFT_ROOM
+
+    # ① 사람이 단계를 함께 고르면 그 값이 이긴다.
+    cid = _one(db, users, connect_stage="connected", kakao_room_name="홍길동 방")
+    r = logged.patch(f"/api/contacts/{cid}",
+                     json={"kakao_room_name": "", "connect_stage": STAGE_LEFT_ROOM})
+    assert r.status_code == 200, r.text
+    assert "connect_note" not in r.json()      # 사람이 정했으니 알릴 것이 없다
+    db.expire_all()
+    assert db.get(VcContact, cid).connect_stage == STAGE_LEFT_ROOM
+
+    # ② 단계 없이 방 이름만 지우면 예전처럼 옮기되 **그렇게 했다고 말한다.**
+    cid2 = _one(db, users, connect_stage="connected", kakao_room_name="다른 방")
+    r2 = logged.patch(f"/api/contacts/{cid2}", json={"kakao_room_name": ""})
+    assert r2.status_code == 200, r2.text
+    note = r2.json().get("connect_note", "")
+    assert note, "말없이 바꿨다 — 화면이 사람에게 전할 말이 없다"
+    assert CONNECT_LABELS[STAGE_LEFT_ROOM] in note, note
+
+
+def test_임포트가_사람이_고른_방_나감을_덮어쓰지_않는다(logged, db, users):
+    """시트에는 이 값을 적을 칸이 없다 — 다시 읽으면 늘 되돌아간다."""
+    from app.models import VcContact
+    from app.services.sheet_import import STAGE_LEFT_ROOM
+
+    _import(logged, [_row(1, "홍길동", kakao="O")])
+    db.expire_all()
+    row = db.query(VcContact).filter_by(name="홍길동").first()
+    logged.patch(f"/api/contacts/{row.id}",
+                 json={"kakao_room_name": "", "connect_stage": STAGE_LEFT_ROOM})
+
+    # 같은 시트를 다시 올린다 — 메모에는 통화 기록이 남아 있다.
+    _import(logged, [_row(1, "홍길동", kakao="X", memo="신규연결 진행")])
+    db.expire_all()
+    assert db.query(VcContact).filter_by(name="홍길동").first().connect_stage \
+        == STAGE_LEFT_ROOM
+
+
+def test_메모에_방을_나갔다고_적혀_있으면_읽어낸다():
+    """나간 메모에는 그 전의 통화·초대 기록이 함께 남아 있다 —
+    참여 표시를 먼저 읽으면 나가신 분이 계속 진행 중으로 잡힌다."""
+    from app.services.sheet_import import connect_stage
+
+    assert connect_stage("O", "8/20 : 카톡방 나가심") == "left_room"
+    assert connect_stage("X", "통화 후 초대 → 카톡방 나가심") == "left_room"
+    # `나가심` 만으로는 걸지 않는다 — 다른 문장까지 끌려온다.
+    assert connect_stage("X", "출장 나가심") != "left_room"

@@ -315,7 +315,9 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
    (2,804 → 2,910 : 필터를 고르면 `채널 (1) ▾` 처럼 `(1)` 이 붙어 단추가
     24px 씩 넓어지는데 그 몫을 안 잡아 두어 일곱 칸이 두 줄로 접혔다 —
     contacts.html 머리글 주석 참고) */
-#contacts-table { min-width: 3010px; }
+/* (3,010 → 3,102 : `담당자` 칸을 다시 세웠다 — 대시보드의 `연결 담당` 이
+    이 칸으로 눌러 들어오는데 걸 곳이 없었다. contacts.html 참고) */
+#contacts-table { min-width: 3102px; }
 /* 팀 현황도 같은 방식이다 — 폭은 th 에서 잡고 여기서는 표가 줄지 않게만 막는다.
    `table-layout: fixed` 는 폭을 안 준 칸을 **똑같이** 나눠 주는데, 이 표는 칸마다
    필요한 자리가 전혀 다르다. 마지막 동작 칸(단추 셋)이 1,920px 에서도 148px 밖에
