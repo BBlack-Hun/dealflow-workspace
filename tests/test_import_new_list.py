@@ -225,8 +225,10 @@ def test_번호가_없어도_기업명으로_들어간다(
     assert got == {"샘플기업1", "번호없는샘플", "짧은번호샘플"}, (
         f"번호 없는 줄이 빠졌습니다: {got}")
     assert "번호 없이 들어간 줄 2개" in out, out
-    # **조용히 넣지 않는다.** 근거와 남는 위험이 화면에 적혀야 한다.
-    assert "기업명" in out and "앱의 다른 명단" in out, out
+    # **조용히 넣지 않는다.** 근거와 남는 위험 셋이 다 화면에 적혀야 한다.
+    assert "기업명" in out, out
+    for risk in ("앱의 다른 명단", "기업명이 바뀌어", "시트에** 번호를 채워"):
+        assert risk in out, f"남는 위험을 안 적었습니다: {risk}\n{out}"
 
 
 def test_번호_없이_들어간_줄도_두_번_넣으면_두_줄이_되지_않는다(
@@ -262,6 +264,36 @@ def test_번호_없이_들어간_줄도_두_번_넣으면_두_줄이_되지_않�
     capsys.readouterr()
     out = _preview(monkeypatch, second, LIST, owners["a"], capsys)
     assert re.search(r"새로 만들 줄\s+0\b", out), out
+
+
+def test_번호는_앱에서_넣으면_다음_판이_번호로_잇는다(
+        tmp_path, db, owners, monkeypatch, capsys):
+    """번호 없이 들어간 줄에 **번호를 채우는 길**이 화면에 적힌 그대로여야 한다.
+
+    이 대조는 기업명이 열쇠라, 시트에 번호를 채워 다시 넣으면 번호로는 그 줄을
+    못 찾아 또 만든다. 막으려면 번호가 **있는** 줄도 기업명으로 한 번 더 찾아야
+    하는데 그러면 지금 잘 도는 길의 동작이 바뀐다 — 그래서 코드로 막지 않고
+    **길을 적는다.** 여기서 검사하는 것은 그 길이 실제로 통하는가다.
+    """
+    nophone = sheet_file(tmp_path, [row("1", "번호없는샘플", "김샘플", "x")])
+    run(monkeypatch, nophone, LIST, owners["a"], "create", "--apply")
+    out = capsys.readouterr().out
+    assert "앱에서 그 줄을 열어" in out, f"번호를 채우는 길을 안 적었습니다:\n{out}"
+
+    # 화면이 적은 대로 **앱에서** 번호를 넣는다.
+    kept = rows_in(db, LIST)[0]
+    kept.phone = "010-7000-0001"
+    db.commit()
+
+    # 다음 판에는 시트에도 번호가 적혀 있다. 그 줄로 이어져야 한다.
+    phoned = sheet_file(tmp_path, [row("1", "번호없는샘플", "김샘플",
+                                       "010-7000-0001")], "next.csv")
+    run(monkeypatch, phoned, LIST, owners["a"], "create", "--apply")
+    db.expire_all()
+
+    got = rows_in(db, LIST)
+    assert len(got) == 1, f"번호를 넣었는데 두 줄이 됐습니다: {len(got)}"
+    assert got[0].id == kept.id, "줄이 새로 만들어졌습니다"
 
 
 def test_시트_안에_같은_기업명이_둘이면_번호_없는_줄은_안_들어간다(
