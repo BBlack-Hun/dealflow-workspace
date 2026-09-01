@@ -207,11 +207,14 @@
       (<b>{% for name in recipient_counts.lists %}{{ name }}{% if not loop.last %} · {% endif %}{% endfor %}</b>){% endif %}
       <b>{{ recipient_counts.managed }}</b>명 중
       카톡방 연결이 끝난 <b>{{ recipient_counts.sendable }}</b>명에게 보낼 수 있습니다
+      {#- 이을 연결이 없는데 `연결을 이어 주세요` 라고 하면, 어딘가 덜 된 줄 알고
+          투자사 관리 현황을 뒤지게 된다. 남은 사람이 있을 때만 시킨다. #}
       {%- if recipient_counts.blocked %} ·
       나머지 {{ recipient_counts.blocked }}명은
       {% for b in recipient_counts.blocked_by_stage %}{{ b.label }} {{ b.count }}명{% if not loop.last %} · {% endif %}{% endfor %}
-      입니다{% endif %} —
+      입니다 —
       <a href="/contacts">투자사 관리 현황</a> 에서 연결을 이어 주세요.
+      {%- else %}. 이 명단은 <b>전원 연결이 끝났습니다</b>.{% endif %}
       {% if recipient_counts.off_list %}
       <br>맡고 있는 {{ recipient_counts.held }}명 중
       <b>{{ recipient_counts.off_list }}</b>명은 <b>딜소개 명단 밖</b>이라 여기 뜨지 않습니다 —
@@ -337,6 +340,69 @@
       <p class="muted">카톡 연결된 담당자가 없습니다.</p>
       {% endfor %}
     </div>
+
+    {#
+      ── 명단에 있는데 목록에 없는 사람 ──────────────────────────────────────
+
+      **왜 목록 밖에 두는가.** 위 `#contact-list` 는 고르는 자리다. 연결이 안
+      끝난 사람을 거기 섞으면 체크가 걸리고 그대로 발송이 나간다 — 되돌릴 수
+      없는 일이라 `recipients` 가 애초에 그들을 뺀 것이다. 그래서 **입력칸을
+      아예 두지 않고**, `[전체선택]`이 훑는 상자(`#contact-list`) **밖에**
+      세운다. 두 겹으로 막는 이유는 나중에 이 줄에 체크박스를 하나 붙이는 것만
+      으로 사고가 나면 안 되기 때문이다.
+
+      **왜 그래도 보여 주는가.** 목록에 없으니 누가 빠졌는지 화면에서 알 길이
+      없었다. 위 요약은 "미착수 19명" 이라고 수만 적고, 그 19명이 누구인지는
+      아무데도 안 나온다 — 손을 쓸 수가 없다.
+
+      **접어 둔다.** 펼쳐 두면 고르는 목록 아래에 못 고르는 사람이 길게 붙어,
+      어느 쪽이 발송 대상인지 흐려진다. 접힌 줄에 단계별 수가 적혀 있어 열지
+      않아도 무슨 일인지는 보인다.
+
+      단계와 갈래(할 일 · 끝난 줄)는 `sheet_owner.blocked_stages` 가 정한 것을
+      그대로 쓴다 — 화면에 다시 적으면 단계가 하나 늘 때 한쪽만 낡는다.
+    #}
+    {% if recipient_counts.blocked %}
+    <details class="miss-box" id="blocked-contacts">
+      <summary>
+        <b>{{ recipient_counts.blocked }}명</b>은 연결이 안 끝나 이 목록에 없습니다 —
+        {% for b in recipient_counts.blocked_by_stage %}{{ b.label }} {{ b.count }}명{% if not loop.last %} · {% endif %}{% endfor %}
+        <span class="muted">(누구인지 보기)</span>
+      </summary>
+      {% for b in recipient_counts.blocked_by_stage %}
+      <div class="miss-stage">
+        <p class="miss-head">
+          {# 끝난 갈래는 기다려도 대상이 되지 않는다 — 할 일과 섞어 적으면
+             연결을 이으면 될 사람으로 읽힌다. #}
+          <span class="tag {{ 'soft' if b.done else 'warn' }}">{{ b.label }}</span>
+          <b>{{ b.count }}</b>명{% if b.done %}
+          <span class="muted">— 더 진행하지 않기로 한 단계라, 기다려도 대상이 되지 않습니다</span>{% else %}
+          <span class="muted">— 연결을 이으면 대상이 됩니다</span>{% endif %}
+          <a class="linkbtn" href="{{ b.href }}">이 단계만 보기</a>
+        </p>
+        <p class="miss-people name-line">
+          {% for p in b.people %}<a class="req-link" href="{{ p.href }}"
+             title="이 투자사 상세 열기"><b>{{ p.name }}</b>
+            <span class="muted">{{ p.firm }}</span>{% if p.room %}
+            {# 방이 있는데도 빠진 사람이 여기 선다. `방 확인` 과 `연결 단계` 는
+               따로 관리되는 값이라, 방을 다시 확인해도 이 수는 안 움직인다 —
+               그 사정이 줄에서 보여야 물음이 화면에서 풀린다. #}
+            <span class="room-badge muted">💬 방 있음</span>{% endif %}</a>{% if not loop.last %}<span class="sep">·</span>{% endif %}{% endfor %}
+        </p>
+      </div>
+      {% endfor %}
+      {# 단계 이름을 여기 적지 않는다 — 임포트가 정한 말을 서버가 실어 준다
+         (`recipient_counts.sendable_label`). 손으로 적어 두면 그 말이 바뀌는 날
+         투자사 관리 현황의 고르는 칸과 여기 안내가 서로 다른 말을 하게 되고,
+         쓰는 사람은 없는 단계를 찾아 헤맨다. #}
+      <p class="hint">
+        연결 단계는 <a href="/contacts">투자사 관리 현황</a> 에서 바꿉니다.
+        <b>카톡방 확인과는 다른 값</b>이라, 방을 확인해도 단계가
+        <b>{{ recipient_counts.sendable_label }}</b> 가 되기 전에는 발송 대상이
+        되지 않습니다.
+      </p>
+    </details>
+    {% endif %}
 
     {#
       딜 소싱 제안의 대상. 투자사 명단과 **다른 표**라 목록을 따로 둔다.

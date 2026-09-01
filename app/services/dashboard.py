@@ -348,7 +348,7 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None,
     waiting = [c for c in sending if not sheet_owner.can_send_to(c)]
     # 눌러 갈 곳도 같은 명단이어야 한다. 세는 곳과 가는 곳이 다르면 "9명" 을
     # 눌렀는데 다른 수가 나온다.
-    sheet_scope = _deal_sheet_scope(db, sending)
+    sheet_scope = deal_sheet_scope(db, sending)
 
     rooms = Counter(_room_state(c) for c in sending)
     # 상태별로 **누구인지**까지 들고 있어야 눌러서 갈 곳을 만들 수 있다.
@@ -501,7 +501,7 @@ PIPELINE_NAMES = 5
 _ALL_SHEETS = "all"
 
 
-def _deal_sheet_scope(db: Session, rows: List[VcContact]) -> str:
+def deal_sheet_scope(db: Session, rows: List[VcContact]) -> str:
     """이 사람들을 한 화면에 담는 명단 탭 이름. 여럿이면 `전체` 탭."""
     names = sheet_owner.deal_list_names(db, rows)
     return names[0] if len(names) == 1 else _ALL_SHEETS
@@ -511,7 +511,7 @@ def _sheet_href(sheet: str) -> str:
     return f"/contacts?sheet={quote(sheet)}"
 
 
-def _connect_href(stage: str, sheet: str = _ALL_SHEETS) -> str:
+def connect_href(stage: str, sheet: str = _ALL_SHEETS) -> str:
     """이 단계의 사람들만 남는 목록 주소.
 
     **필터 키(`connect`)와 값(연결 상태 라벨)을 손으로 적지 않는다.** 값은
@@ -519,6 +519,10 @@ def _connect_href(stage: str, sheet: str = _ALL_SHEETS) -> str:
     머리글에 선언한 것과 같아야 한다(`contacts.html` 의 `connect:연결 상태`,
     행의 `data-f-connect`). 셋 중 하나만 어긋나도 **눌러도 아무것도 안 걸러진
     채** 화면이 열려서, 아무도 눈치채지 못한다 — 이 저장소가 한 번 당한 자리다.
+
+    바로 그 이유로 **모듈 밖에서도 부른다**(`room_href` 와 같은 자리다).
+    딜 제안 관리도 "미착수 19명" 옆에 갈 곳을 걸어야 하는데, 거기서 주소를
+    다시 조립하면 벌이 둘이 되어 한쪽이 낡는다 — `sheet_owner.blocked_stages`.
     """
     return _connect_any_href([stage], sheet)
 
@@ -596,7 +600,7 @@ def _pipeline_view(rows: List[VcContact], waiting: List[VcContact],
     # 둘이 되어 하나는 반드시 낡는다(라벨만 고치고 링크는 옛 값으로 남는 식).
     stages = [
         {"key": key, "label": CONNECT_LABELS[key], "count": counted.get(key, 0),
-         "href": _connect_href(key, sheet),
+         "href": connect_href(key, sheet),
          # 지금 사람이 붙어 움직이는 것은 '진행 중' 하나뿐이라 거기만 눈에 띈다.
          "level": "ok" if key == STAGE_IN_PROGRESS else ""}
         for key in CONNECT_OPEN
@@ -606,7 +610,7 @@ def _pipeline_view(rows: List[VcContact], waiting: List[VcContact],
     # 적지 않는다(할 일이 아닌 것을 0으로 나열하면 칸만 늘어난다).
     done = [
         {"key": key, "label": CONNECT_LABELS[key], "count": counted.get(key, 0),
-         "href": _connect_href(key, sheet)}
+         "href": connect_href(key, sheet)}
         for key in CONNECT_DONE if counted.get(key, 0)
     ]
 
@@ -648,7 +652,7 @@ def _pipeline_view(rows: List[VcContact], waiting: List[VcContact],
         "people": _people(working, sheet),
         # 화면이 `총 - 보여준 수` 를 다시 계산하지 않게 여기서 준다.
         "more": max(len(working) - PIPELINE_NAMES, 0),
-        "in_progress_href": _connect_href(STAGE_IN_PROGRESS, sheet),
+        "in_progress_href": connect_href(STAGE_IN_PROGRESS, sheet),
         # 요약 줄의 `연결 남음` 이 가는 곳 — 아직 손이 필요한 사람 전부.
         # 칸 두 개(진행 중·미착수)가 각각 절반씩 가리키는 자리라, 합쳐 놓은
         # 이 주소는 **다른 어느 링크도 가지 않는 곳**이다.

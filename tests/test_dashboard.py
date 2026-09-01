@@ -429,13 +429,19 @@ def test_clearing_the_room_leaves_the_send_list(logged, db, users):
                      connect_stage="connected"))
     db.commit()
     contact = db.query(VcContact).filter_by(name="홍길동").first()
-    assert "홍길동" in logged.get("/deals").text
+    # 고를 수 있는가로 본다 — 연결이 끊긴 사람도 화면에는 남기 때문이다(아래).
+    assert 'data-name="홍길동"' in logged.get("/deals").text
 
     logged.patch(f"/api/contacts/{contact.id}",
                  json={"name": "홍길동", "kakao_room_name": ""})
     db.expire_all()
     assert db.get(VcContact, contact.id).connect_stage != "connected"
-    assert "홍길동" not in logged.get("/deals").text
+    body = logged.get("/deals").text
+    assert 'data-name="홍길동"' not in body, (
+        "방이 없어졌는데 아직 고를 수 있다 — 보낼 방 없이 발송이 나간다")
+    # **목록에서 빠진 것과 화면에서 사라지는 것은 다르다.** 사라지면 왜 빠졌는지
+    # 알 길이 없어 손을 쓸 수가 없다 — 딜 제안 관리의 `빠진 사람` 칸에 남는다.
+    assert "홍길동" in body, "목록에서 빼면서 화면에서도 지워 버렸다"
 
 
 # --- '카톡 발송 가능' 이 두 화면에서 같아야 한다 -----------------------------
