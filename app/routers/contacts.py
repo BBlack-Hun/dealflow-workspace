@@ -1052,27 +1052,28 @@ def rename_list_sheet(old: str = Form(""), new: str = Form(""),
     참고 탭은 이름을 바꿀 수 있는데 명단 탭은 못 바꿨다. 원본 시트에서 이름을
     다듬으면 앱만 옛 이름으로 남는다.
 
-    `source_sheet` 는 쉼표로 이어 붙인 목록이라(한 사람이 여러 명단에 겹친다)
-    통째로 바꾸지 않고 **조각 단위**로 바꾼다 — 통째로 바꾸면 겹친 사람의
-    다른 명단까지 이름이 뭉개진다.
+    **옮기는 일은 `sheet_owner.rename` 한 곳이 한다.** 이름은 설정 줄뿐 아니라
+    사람·달 칸·달 표시에도 문자열로 박혀 있어서, 여기서 따로 적으면 스크립트로
+    바꾼 명단과 화면으로 바꾼 명단이 서로 다르게 갈라진다(거기 설명 참고).
     """
     from fastapi.responses import RedirectResponse
 
-    from ..models import SheetOwner
-
-    before, after = (old or "").strip(), (new or "").strip()
+    # 자르는 규칙은 **저장하는 쪽**이 가진 것을 그대로 쓴다. 여기서 안 자르면
+    # 긴 이름을 넣었을 때 저장된 이름과 되돌아갈 주소가 갈려 없는 탭이 열린다.
+    before, after = (old or "").strip(), sheet_owner.normalize_label(new)
     # 이름 없는 탭은 누를 자리가 없어진다.
     if not before or not after or before == after:
         return RedirectResponse(f"{_back(db, before)}?sheet={quote(before)}", status_code=303)
 
-    for c in db.execute(select(VcContact)).scalars():
-        parts = [p.strip() for p in (c.source_sheet or "").split(",") if p.strip()]
-        if before in parts:
-            c.source_sheet = ",".join(after if p == before else p for p in parts)
-    for row in db.execute(
-        select(SheetOwner).where(SheetOwner.label == before)
-    ).scalars():
-        row.label = after
+    try:
+        sheet_owner.rename(db, before, after)
+    except sheet_owner.RenameError as exc:
+        # **왜 안 됐는지 화면이 말해야 한다.** 조용히 옛 이름으로 돌아가면
+        # 누르는 사람은 저장이 된 줄 알고 창을 닫는다.
+        db.rollback()
+        return RedirectResponse(
+            f"{_back(db, before)}?sheet={quote(before)}&msg={quote(str(exc))}",
+            status_code=303)
     db.commit()
     return RedirectResponse(f"{_back(db, after)}?sheet={quote(after)}", status_code=303)
 

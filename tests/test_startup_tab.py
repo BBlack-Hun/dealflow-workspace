@@ -576,13 +576,16 @@ def test_명단_이름이_코드에_박혀_있지_않다():
     banned = ["스타트업(16)", "투자사 150", "투자사 98명", "투자사 30명",
               "전체 딜소개현황"]
     hits = []
-    # **돌아가는 앱**(app/)과 이 명단을 넣는 스크립트만 본다. 한 번 쓰고 마는
-    # 이관 스크립트(`rename_sheets.py` 등)는 그때 그 시트를 가리켜 부르는
-    # 도구라, 이름이 인자가 아니라 본문에 있는 것이 오히려 읽기 쉽다.
+    # **돌아가는 앱**(app/)과 명단을 다루는 스크립트를 본다. 이름 고치기
+    # (`rename_sheets.py`)도 여기 든다 — 예전에는 옛 이름 → 새 이름 표를 그
+    # 파일 안에 적어 두고 돌렸지만, 그 표는 한 번 돌리면 지난 일인데 파일에는
+    # 남아서 다음 사람이 지우는 것을 잊으면 한 번 더 돈다. 지금은 부르는
+    # 사람이 인자로 준다.
     targets = (list((ROOT / "app").rglob("*.py"))
                + list((ROOT / "app" / "static" / "js").glob("*.js"))
                + [ROOT / "scripts" / "import_startup_sheet.py",
-                  ROOT / "scripts" / "import_new_list.py"])
+                  ROOT / "scripts" / "import_new_list.py",
+                  ROOT / "scripts" / "rename_sheets.py"])
     for path in targets:
         if "__pycache__" in str(path):
             continue

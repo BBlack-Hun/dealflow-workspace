@@ -11,7 +11,9 @@
   2. 머리글이 **엑셀 수식**이다. `="딜소개 8/5 ("&COUNTIF(…)&")"` 처럼 세어 본
      수가 이름에 섞여 있다. 그대로 칸 이름으로 쓰면 수식이 화면에 나오고,
      세어 본 수는 시트를 열 때마다 달라져서 **같은 칸이 달마다 새 칸으로 선다.**
-  3. `NO` 칸이 없다. 사람이 주인공인 명단이라 `이름` + `투자사명` 이 표를 연다.
+  3. 표를 여는 것이 `NO` 가 아니다. 사람이 주인공인 명단이라 `이름` + `투자사명`
+     이 표를 연다 — `NO` 칸이 아예 없는 시트가 있고, 있는 시트에서도 그 칸은
+     줄을 세는 자리라 기록이 아니다(`STRUCTURAL`).
 
 ## 왜 따로 두나
 
@@ -44,7 +46,8 @@
 가릴 수가 없어서다. 여기 사정은 다르다.
 
   · **명단 자체가 새로 생긴다.** 이 명단 안에는 겹칠 상대가 아직 없다.
-  · 시트에 번호가 **아예 없다.** 워크북 전 탭을 뒤져도 없다. 안 넣으면 그 사람들이
+  · 시트가 번호를 안 적어 둔다. 딜공유 탭에는 번호 칸이 아예 없고, 번호 칸이 있는
+    워크북에서도 그 칸이 빈 줄이 있다(105명 중 12명). 안 넣으면 그 사람들이
     통째로 사라지고, 명단도 이력도 화면에 안 뜬다.
   · **번호는 발송의 열쇠가 아니다.** 딜 소개는 이미 만들어진 카톡방으로 나간다
     (`dashboard._room_state` 는 채널·방 이름만 본다). 번호의 쓸모는 사람을
@@ -203,6 +206,18 @@ def _drop_counts(text: str) -> str:
 # 쓴다 — 여기서 새 이름을 지으면 값은 들어가는데 화면이 그 칸을 못 찾는다.
 NOTES = [("기타", "etc")]
 
+# 표를 여는 **일련번호 칸**. 담을 값은 없지만 **자리는 잡아 둔다.**
+#
+# 안 잡으면 남는 머리글로 읽혀 `NO` 라는 달 칸이 서고, 그 칸이 고정 칸이 아니라
+# 달 묶음 이어받기가 거기서 끊기지도 않는다 — 머리글 윗줄에 걸어 둔 표 제목이
+# 칸 이름에 통째로 딸려 들어온다(`① 핵심 10명 … 딜소개 NO`). 사람이 달마다
+# 적어 넣는 기록이 아니라 시트가 줄을 세는 데 쓰는 칸이다.
+#
+# 이름 앞에 `drop:` 을 붙여 담는다. 자리를 잡는 것과 값을 담는 것은 다른 일이라
+# 구분이 필요하다 — 앱의 칸처럼 담으면 `VcContact` 에 없는 칸에 값을 얹으려 든다.
+DROP = "drop:"
+STRUCTURAL = [("NO", "no")]
+
 
 def _firm_column(header):
     """투자사명이 어느 열인가.
@@ -272,6 +287,14 @@ def _columns_of(header):
                       if h == label and i not in taken), None)
         if found is not None:
             at[f"note:{key}"] = found
+            taken.add(found)
+    # 일련번호도 **완전히 일치**할 때만 건다. 두 글자뿐이라 포함으로 찾으면
+    # 영문이 섞인 머리글에 걸린다(`NO 응답` · `SNO`).
+    for label, key in STRUCTURAL:
+        found = next((i for i, h in enumerate(header)
+                      if h.strip().upper() == label and i not in taken), None)
+        if found is not None:
+            at[f"{DROP}{key}"] = found
             taken.add(found)
     return at
 
@@ -350,7 +373,7 @@ def parse_tab(rows) -> dict:
     at = find_header(rows)
     if at < 0:
         return {"columns": [], "items": [], "skipped": [], "nameless": [],
-                "shifted": [], "labels": {}}
+                "shifted": [], "collapsed": {}, "labels": {}}
     header = [clean_label(c) for c in rows[at]]
     where = _columns_of(header)
     fixed = set(where.values())
@@ -365,6 +388,20 @@ def parse_tab(rows) -> dict:
     months = [(i, " ".join(x for x in (groups[i], header[i]) if x))
               for i in range(len(header))
               if i not in fixed and header[i]]
+
+    # **같은 이름의 칸이 두 번 이상 나오면 뭉개진다.** 아래에서 줄의 값을 칸
+    # 이름으로 담으므로(`item["months"]` 가 dict 다) 오른쪽 것이 왼쪽 것을
+    # 덮는다 — 넉 달치 `IR 요청` 이 한 달치만 남는다.
+    #
+    # 달 묶음이 걸려 있으면 이름이 갈려 여기 걸릴 일이 없다. 걸리는 것은 원본
+    # 시트가 달 묶음을 **첫 칸 머리글에만** 적어 둔 경우다(`8월 1차 딜 소개` 뒤에
+    # 달 없는 `IR 요청` 이 따라온다). 그때 어느 달인지는 짐작할 수밖에 없어서
+    # **짓지 않고 알린다** — 이름을 지어 붙이면 원본과 글자가 달라져 나란히
+    # 놓고 대조할 수가 없고, 짐작이 틀리면 남의 달에 기록이 들어간다.
+    collapsed = {}
+    for _i, label in months:
+        collapsed[label] = collapsed.get(label, 0) + 1
+    collapsed = {label: n for label, n in collapsed.items() if n > 1}
 
     items, skipped, nameless, shifted = [], [], [], []
     for row in rows[at + 1:]:
@@ -393,7 +430,8 @@ def parse_tab(rows) -> dict:
         item = {"fields": {}, "notes": {}, "months": {}}
         for key, i in where.items():
             value = norm(cells[i])
-            if not value:
+            # 자리만 잡아 둔 칸(일련번호)은 담지 않는다 — 담을 자리가 없다.
+            if not value or key.startswith(DROP):
                 continue
             if key.startswith("note:"):
                 item["notes"][key[5:]] = value
@@ -405,10 +443,13 @@ def parse_tab(rows) -> dict:
     return {"columns": [label for _i, label in months],
             "items": items, "skipped": skipped, "nameless": nameless,
             "shifted": shifted,
+            # 뭉개진 달 칸 `{칸 이름: 몇 번}`. 위 설명 참고.
+            "collapsed": collapsed,
             # 앱의 칸 → **시트가 그 칸을 부르는 이름.** 채우기 미리보기가 어느 칸을
             # 몇 개 채우는지 적을 때 쓴다. 이름을 스크립트에 따로 적어 두면 시트와
             # 글자가 갈려, 결과를 시트와 나란히 놓고 대조할 수가 없다.
-            "labels": {key: header[i] for key, i in where.items()}}
+            "labels": {key: header[i] for key, i in where.items()
+                       if not key.startswith(DROP)}}
 
 
 def merge_key(item) -> tuple:
@@ -775,6 +816,16 @@ def main() -> int:
         for note in parsed["clashed"]:
             print(f"       {note}")
     for tab, one in zip(tabs, parsed_tabs):
+        if one.get("collapsed"):
+            # **넣기 전에 시트를 고쳐야 하는 자리다.** 이대로 넣으면 그 이름의
+            # 칸 하나에 마지막 달 값만 남는다 — 화면에는 칸이 멀쩡히 서 있어서
+            # 다른 달 기록이 없어진 것을 아무도 눈치채지 못한다.
+            print(f"\n  ⚠ 탭 `{tab}` 에 **이름이 같은 달 칸** "
+                  f"{len(one['collapsed'])}종 — 한 칸으로 뭉개져 **맨 오른쪽 것만 "
+                  f"남습니다.** 시트 머리글에 달을 적어 두면 갈립니다:")
+            for label, times in sorted(one["collapsed"].items(),
+                                       key=lambda kv: -kv[1]):
+                print(f"       {label}  ({times}번)")
         if one["shifted"]:
             # 넣기 전에 **시트를 고쳐야 하는** 줄이다. 그냥 넣으면 같은 사람이
             # 두 줄로 갈린다 — 미리보기가 있는 이유가 이것이다.

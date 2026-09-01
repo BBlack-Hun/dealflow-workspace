@@ -297,6 +297,34 @@ def test_먼저_적은_탭의_값이_이긴다(monkeypatch, db, owners, tmp_path
     assert rows_in(db, LIST)[0].firm == "샘플투자"
 
 
+def test_합치기는_회사명이_다르면_잇지_않는다(monkeypatch, db, owners, tmp_path):
+    """탭 두 장을 잇는 열쇠는 **이름 + 투자사명**이다(딜공유 탭에 번호가 없다).
+
+    이름만으로 이으면 동명이인이 한 줄로 뭉쳐 **남의 카톡방으로 딜 소개가
+    나간다** — 한 이름이 셋인 적이 있다. 회사가 다르면 다른 사람으로 둔다.
+    """
+    path = book(tmp_path,
+                cards=[card_row("김샘플", "010-7000-0001", "샘플투자")],
+                deals=[deal_row("김샘플", "다른투자", "8/5 샘플가")])
+    run_book(monkeypatch, path, LIST, owners["a"], "--apply")
+
+    got = sorted(rows_in(db, LIST), key=lambda c: c.firm or "")
+    assert len(got) == 2, "회사가 다른 동명이인이 한 줄로 뭉쳤습니다"
+    assert [c.firm for c in got] == ["다른투자", "샘플투자"]
+    # 번호는 명함 탭 쪽 사람에게만 붙는다 — 이력만 있는 쪽으로 새면 안 된다.
+    assert [c.phone for c in got] == [None, "010-7000-0001"]
+
+
+def test_합치기가_없던_줄을_만들어_내지_않는다(monkeypatch, db, owners, sample):
+    """겹치는 사람은 **한 줄**이다. 탭 수만큼 늘면 딜 소개가 두 번 나간다."""
+    run_book(monkeypatch, sample, LIST, owners["a"], "--apply")
+    got = rows_in(db, LIST)
+
+    # 명함 2줄 + 딜공유 2줄인데 한 사람이 겹친다 → 3명이다.
+    assert len(got) == 3
+    assert sorted(c.name for c in got) == ["김샘플", "박샘플", "이샘플"]
+
+
 # ── 5. 머리글 두 줄 ─────────────────────────────────────────────────────────
 
 def test_머리글_윗줄의_달_묶음이_칸_이름에_들어간다(monkeypatch, db, owners, sample):
@@ -333,6 +361,65 @@ def test_달_묶음은_고정_칸에서_끊긴다():
     assert "대화내역 메모" not in " ".join(got["columns"]), (
         "표 끝의 칸이 마지막 달 것으로 읽혔습니다")
     assert got["items"][0]["fields"]["memo"] == "통화함"
+
+
+def test_일련번호_칸은_달_칸이_되지_않는다():
+    """`NO` 는 시트가 줄을 세는 칸이지 사람이 달마다 적는 기록이 아니다.
+
+    자리를 안 잡아 두면 남는 머리글로 읽혀 두 가지가 한꺼번에 터진다.
+      ① `NO` 라는 달 칸이 선다.
+      ② 고정 칸이 아니라 **달 묶음 이어받기가 거기서 안 끊긴다** — 머리글
+         윗줄에 걸어 둔 표 제목이 칸 이름에 통째로 딸려 들어온다.
+    """
+    from scripts.import_investor_list import parse_tab
+
+    rows = [["① 핵심 명단", "", "", "8월", "", ""],
+            ["NO", "이름", "투자사명", "딜소개", "IR 요청", "미팅"],
+            ["1", "김샘플", "샘플투자", "8/5 샘플가", "", ""]]
+    got = parse_tab(rows)
+
+    assert got["columns"] == ["8월 딜소개", "8월 IR 요청", "8월 미팅"], got["columns"]
+    assert not any("NO" in c for c in got["columns"]), "일련번호가 달 칸이 됐습니다"
+    assert not any("핵심 명단" in c for c in got["columns"]), (
+        "표 제목이 칸 이름에 딸려 들어왔습니다")
+    # 자리만 잡는 칸이라 **담기지는 않는다** — 앱에 그 칸이 없다.
+    assert "no" not in got["items"][0]["fields"]
+
+
+def test_이름이_같은_달_칸을_넣기_전에_알린다():
+    """같은 이름의 칸이 두 번 나오면 **한 칸으로 뭉개진다.**
+
+    줄의 값을 칸 이름으로 담으므로 오른쪽 것이 왼쪽 것을 덮는다 — 넉 달치
+    `IR 요청` 이 한 달치만 남는다. 원본 시트가 달을 **첫 칸 머리글에만** 적어
+    둔 경우가 그렇다. 어느 달인지는 짐작할 수밖에 없어서 이름을 지어 붙이지
+    않고 **몇 번 겹쳤는지 알린다.**
+    """
+    from scripts.import_investor_list import parse_tab
+
+    rows = [["이름", "투자사명", "8월 딜소개", "IR 요청", "7월 딜소개", "IR 요청"],
+            ["김샘플", "샘플투자", "8/5 샘플가", "8/6 샘플나", "7/1 샘플다", "7/2 샘플라"]]
+    got = parse_tab(rows)
+
+    assert got["collapsed"] == {"IR 요청": 2}, got["collapsed"]
+    # 뭉개진 결과까지 못박아 둔다 — 알리기만 하고 실제로는 다른 값이 남으면
+    # 미리보기를 보고 판단한 사람이 틀린 판단을 하게 된다.
+    assert got["items"][0]["months"]["IR 요청"] == "7/2 샘플라"
+
+
+def test_뭉개지는_달_칸을_미리보기가_적는다(monkeypatch, db, owners, tmp_path, capsys):
+    """미리보기에 안 적히면 **화면에는 칸이 멀쩡히 서 있어서** 다른 달 기록이
+    없어진 것을 아무도 눈치채지 못한다."""
+    path = tmp_path / "collapsed.csv"
+    with path.open("w", encoding="utf-8", newline="") as fp:
+        writer = csv.writer(fp)
+        writer.writerow(["이름", "투자사명", "8월 딜소개", "IR 요청", "7월 딜소개",
+                         "IR 요청"])
+        writer.writerow(["김샘플", "샘플투자", "8/5 샘플가", "8/6 샘플나",
+                         "7/1 샘플다", "7/2 샘플라"])
+    run(monkeypatch, str(path), LIST, owners["a"], "--mode", "create")
+
+    out = capsys.readouterr().out
+    assert "이름이 같은 달 칸" in out and "IR 요청" in out, out
 
 
 # ── 6. 수식 문자열이 칸 이름으로 새어 나오지 않는다 ─────────────────────────
@@ -492,6 +579,29 @@ def test_새_명단은_투자사로_세고_딜공유_배치로_선다(
     assert settings.is_hidden == 0
     assert len(sheet_owner.investors(db, rows_in(db, LIST))) == 3, (
         "투자사로 세지 않으면 딜소개 발송 대상에서 빠집니다")
+
+
+def test_새_명단은_딜소개_명단_판정에_걸린다(monkeypatch, db, users, owners, sample):
+    """**표시를 따로 안 켜도 걸려야 한다.**
+
+    `is_deal_list` 는 사람이 정해 두지 않았으면 할당 여부를 따른다 — 임포트가
+    담당을 붙여 주므로 새 명단은 그대로 딜 소개 명단이 된다. 여기가 어긋나면
+    명단은 화면에 뜨는데 그 사람들이 **회차에서 통째로 빠진다**(화면은 멀쩡하고
+    아무도 눈치채지 못한다).
+
+    이름을 보고 정하지 않는다는 것도 함께 못박는다 — 이름은 사람이 바꾼다.
+    """
+    from app.models import SheetOwner
+    from app.services import sheet_owner
+
+    run_book(monkeypatch, sample, LIST, owners["a"], "--apply")
+    db.expire_all()
+
+    settings = db.query(SheetOwner).filter(SheetOwner.label == LIST).one()
+    assert settings.is_deal_list is None, "사람이 정하지도 않은 값을 적어 뒀습니다"
+    assert sheet_owner.is_deal_list(settings) is True
+    assert LIST not in sheet_owner.off_deal_labels(db)
+    assert len(sheet_owner.deal_list_contacts(db, users["u1"])) == 3
 
 
 def test_투자사로_세지_않기로_해_둔_것을_다시_올려도_되돌아가지_않는다(
