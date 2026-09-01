@@ -422,6 +422,61 @@ def test_남는_머리글은_달마다_늘어나는_칸으로_선다(
     assert [c.label for c in cc.month_columns(db, LIST, today=date(2026, 8, 15))] == labels
 
 
+# 담당자 워크북의 머리글. 위 `HEAD` 와 두 가지가 다르다 — 원본 명단 번호가 한 칸
+# 더 있고, **우리 팀 안에서 넘긴 이력**(`담당자`)이 기업 정보 사이에 끼어 있다.
+WORKBOOK_HEAD = ["No", "원본NO", "기업명", "사업분야 대분류", "소분류", "담당자",
+                 "카톡방 연결여부", "리마인드 카톡(월1회-수or목or금)", "전화", "비고"]
+
+
+def test_원본번호와_담당_이력은_달마다_늘어나는_칸이_아니다(
+        tmp_path, db, owners, monkeypatch):
+    """남는 머리글이 전부 달 칸이 되는 규칙에 **두 칸은 걸리면 안 된다.**
+
+    걸리면 두 가지가 한꺼번에 나빠진다.
+
+      · 이 배치의 달 칸은 `O`/`X` 고르기다(`STARTUP_LAYOUT.month_kind`).
+        `7/21 김담당 -> 8/19 이담당` 이 거기 서면 **한 번 고치는 순간 넘긴
+        이력이 한 글자로 덮인다.** 되돌릴 데가 없다 — 시트에만 있던 글이다.
+      · 시트에서 이 둘이 그 달의 기록보다 **앞에** 적혀 있다. `VISIBLE_MONTHS`
+        가 1이라 맨 앞 칸만 펴지므로, 정작 카톡 연결 기록이 접히고 표에는
+        원본 번호가 선다.
+
+    그리고 `담당자` 는 **스타트업 쪽 담당자가 아니다.** `성함` 으로 보내면 기업의
+    연락 상대 자리에 우리 팀원 이름이 앉는다.
+    """
+    from app.services import contact_columns as cc
+
+    path = tmp_path / "workbook.csv"
+    with path.open("w", encoding="utf-8", newline="") as fp:
+        writer = csv.writer(fp)
+        writer.writerow(WORKBOOK_HEAD)
+        writer.writerow(["1", "150", "샘플기업1", "커머스", "D2C",
+                         "7/21 김담당 -> 8/19 이담당", "7/24 o", "",
+                         "010-7000-0001", "전화가 와서 카톡으로 안내"])
+    run(monkeypatch, str(path), LIST, owners["a"], "create",
+        "--map", "전화=phone", "--map", "비고=memo", "--apply")
+    db.expire_all()
+
+    months = cc.month_columns(db, LIST, today=date(2026, 8, 15))
+    labels = [c.label for c in months]
+    assert labels == ["카톡방 연결여부", "리마인드 카톡(월1회-수or목or금)"], (
+        f"원본NO·담당자를 달마다 늘어나는 칸으로 세웠습니다: {labels}")
+
+    kept = rows_in(db, LIST)[0]
+    notes = cc.load_notes(kept.notes)
+    assert notes.get("origin_no") == "150"
+    assert notes.get("owner_history") == "7/21 김담당 -> 8/19 이담당"
+    assert not kept.name, f"담당 이력이 성함으로 갔습니다: {kept.name!r}"
+    # 그 달의 기록은 달 칸 그대로 남는다 — 옮긴 것은 위의 두 칸뿐이다.
+    assert notes.get(cc.note_key(months[0].id)) == "7/24 o"
+    assert kept.phone == "010-7000-0001"
+    assert kept.memo == "전화가 와서 카톡으로 안내"
+
+    # 표에 서는 것은 **그 달의 기록**이어야 한다.
+    visible, _folded = cc.split_months(months)
+    assert [c.label for c in visible] == ["카톡방 연결여부"]
+
+
 # ── 시트를 읽는 규칙은 두 임포터가 나눠 쓴다 ────────────────────────────────
 
 def test_번호_칸을_어떻게_적어도_알아본다():
