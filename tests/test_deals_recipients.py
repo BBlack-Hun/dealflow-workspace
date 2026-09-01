@@ -38,8 +38,9 @@ TEMPLATES = ROOT / "app" / "templates"
 
 # ── 시험용 명단 ─────────────────────────────────────────────────────────────
 #
-# 실제로 갈리는 경우를 전부 넣는다: 연결 단계 네 가지 · 감춘 명단 · 감춘 줄 ·
-# 남의 담당 · 그룹 있는 사람과 없는 사람. 이름은 전부 가상이다(공개 저장소).
+# 실제로 갈리는 경우를 전부 넣는다: 연결 단계 **다섯 가지**(`CONNECT_LABELS` 의
+# 모든 단계) · 감춘 명단 · 감춘 줄 · 남의 담당 · 그룹 있는 사람과 없는 사람 ·
+# 풀에 있으면서 연결도 아직인 사람. 이름은 전부 가상이다(공개 저장소).
 
 MY_SHEET = "가 명단"
 HIDDEN_SHEET = "세지 않는 명단"
@@ -72,12 +73,20 @@ def mixed(db, users):
         contact("마담당", "in_progress", "1군"),   # 아직 연결 전
         contact("바담당", "not_started", "2군"),
         contact("사담당", "declined"),
+        # 방에 들어왔다가 **나간** 사람. `참여 안 함` 과 뜻이 다르다(다시 부를 수
+        # 있는지가 갈린다). 단계가 `연결 완료` 하나로 갈리는 것이 아니라는 것을
+        # 검사가 알아야, 단계가 늘 때 화면이 조용히 한 갈래를 빠뜨리지 않는다.
+        contact("하담당", "left_room"),
         contact("아담당", "connected", "1군", hidden=1),          # 감춘 줄
         contact("자담당", "connected", "2군", sheet=HIDDEN_SHEET),  # 감춘 명단에만
         contact("차담당", "connected", "1군", owner="u2"),          # 남의 담당
         # ★ 내가 들고 있고 연결도 끝났지만 **딜 소개 명단이 아닌** 사람.
         contact("카담당", "connected", "1군", sheet=POOL_SHEET),
         contact("타담당", "connected", "2군", sheet=POOL_SHEET),
+        # ★ 풀에 있으면서 **연결도 아직**인 사람. `이 단계만 보기` 링크가 딜 소개
+        # 명단으로 좁혀지지 않으면 이 사람까지 딸려 나온다 — 화면은 `미착수
+        # 1명` 이라 적고 눌러 가면 2줄이 뜬다(대시보드가 당한 그 어긋남).
+        contact("거담당", "not_started", sheet=POOL_SHEET),
         # 풀에도 있고 내 명단에도 있는 사람 — **명단 쪽이 이긴다.**
         contact("파담당", "connected", "1군", sheet=f"{POOL_SHEET},{MY_SHEET}"),
     ]
@@ -244,9 +253,189 @@ def test_명단에_있어도_방이_없으면_못_보낸다(db, users, mixed):
 
     names = {c.name for c in sheet_owner.recipients(db, users["u1"])}
     # 같은 명단인데 연결 단계가 아직인 사람들 — 명단 안이지만 대상은 아니다.
-    for waiting in ("마담당", "바담당", "사담당"):
+    for waiting in ("마담당", "바담당", "사담당", "하담당"):
         assert waiting not in names, f"{waiting} 은 연결 전인데 발송 대상이다"
     assert {"가담당", "나담당"} <= names
+
+
+# ── 1-3) ★ 빠진 사람이 **누구인지** 화면이 말한다 ───────────────────────────
+#
+# 여기가 이번에 채운 자리다. 화면은 "명단 141명 중 122명" 이라고 수는 적었지만,
+# 빠진 19명은 목록에 아예 없어서 **누구인지 알 길이 없었다.** 카톡방을 아무리
+# 확인해도 그 수는 안 움직인다 — 방 확인(`room_verified`)과 연결 단계
+# (`connect_stage`)는 따로 관리되는 값이기 때문이다. 실제로 "방은 확인됐는데
+# 왜 대상이 아니냐" 는 물음이 여기서 나왔다.
+#
+# 그렇다고 목록에 섞어 넣으면 안 된다. 고를 수 있게 되는 순간 **보낼 방도 없는
+# 사람에게 문구가 나간다.** 그래서 보이되 못 고르게 한다.
+
+def _blocked_block(html: str) -> str:
+    """화면에서 `연결이 안 끝나 빠진 사람` 칸만 잘라 낸다."""
+    start = html.find('id="blocked-contacts"')
+    assert start != -1, "빠진 사람을 보여 주는 칸이 화면에 없다"
+    end = html.find("</details>", start)
+    assert end != -1
+    return html[start:end]
+
+
+def test_빠진_사람을_이름까지_화면이_보여준다(logged_in, db, users, mixed):
+    """수만 적고 이름을 안 적으면, 누가 빠졌는지 몰라 손을 쓸 수가 없다.
+
+    **기대 숫자를 적지 않는다.** 서비스가 세는 사람과 화면이 세우는 이름을
+    맞대 본다 — 숫자를 적어 두면 판정이 갈려도 그 숫자만 고치면 지나간다.
+    """
+    from app.services import sheet_owner
+
+    html = logged_in.get("/deals").text
+    block = _blocked_block(html)
+
+    counts = sheet_owner.recipient_counts(db, users["u1"])
+    blocked = [c for c in sheet_owner.deal_list_contacts(db, users["u1"])
+               if not sheet_owner.can_send_to(c)]
+    assert blocked, "시험용 명단에 연결 전 사람이 없다 — 검사가 헛돈다"
+    assert counts["blocked"] == len(blocked)
+
+    # ① 빠진 사람이 **한 명도 빠짐없이** 이름으로 선다. 앞의 몇 명만 세우고
+    #    나머지를 접으면, 화면에 안 뜨는 사람이 또 생긴다 — 그게 고치려던 문제다.
+    for c in blocked:
+        assert c.name in block, (
+            f"{c.name} 은 명단에 있는데 발송 대상도 아니고 화면 어디에도 없다")
+        # 이름은 장식이 아니라 갈 곳이다 — 눌러서 그 사람 줄을 열 수 있어야 한다.
+        assert f"/contacts?contact={c.id}" in block, f"{c.name} 을 열 곳이 없다"
+
+    # ② 접힌 줄만 봐도 몇 명이 **어느 단계에서** 빠졌는지 보인다 — 열지 않아도
+    #    무슨 일인지는 알아야 한다.
+    summary = block[:block.find("</summary>")]
+    assert f"<b>{counts['blocked']}명</b>" in summary
+    for s in counts["blocked_by_stage"]:
+        assert f"{s['label']} {s['count']}명" in summary, (
+            f"접힌 줄이 `{s['label']}` 을 말하지 않는다 — 열어 봐야만 알 수 있다")
+
+
+def test_빠진_사람은_보이기만_하고_고를_수는_없다(logged_in, db, users, mixed):
+    """★ 여기가 제일 위험하다.
+
+    연결이 안 끝난 사람을 고를 수 있게 되면 **보낼 방도 없는 사람에게 문구가
+    나간다** — 되돌릴 수가 없다. 막는 것은 두 겹이다.
+
+      ① 화면이 그 자리에 **입력칸을 아예 안 그린다** ← 여기서 본다
+      ② deals.js 가 고르는 상자를 `#contact-list` 안으로 좁혀 둔다
+         (`tests/js/deals_select_all_test.js` 가 deals.js 를 그대로 돌려 본다)
+    """
+    from app.services import sheet_owner
+
+    html = logged_in.get("/deals").text
+    block = _blocked_block(html)
+
+    assert "<input" not in block, (
+        "빠진 사람 줄에 입력칸이 생겼다 — 체크가 걸리면 그대로 발송이 나간다")
+    assert "contact-cb" not in block, "발송 대상 체크박스가 빠진 사람 줄에 들어갔다"
+    # `data-name` 은 발송이 사람을 집어 가는 표식이다(deals.js). 이 줄에는 없어야 한다.
+    assert "data-name=" not in block
+
+    # 고르는 목록은 **정확히 발송 대상만**이다. 빠진 사람이 그 상자 안으로
+    # 새어 들어가면 위 검사가 다 통과해도 소용이 없다.
+    picker = html[html.find('id="contact-list"'):html.find('id="blocked-contacts"')]
+    for c in sheet_owner.deal_list_contacts(db, users["u1"]):
+        if not sheet_owner.can_send_to(c):
+            assert f'data-name="{c.name}"' not in picker, (
+                f"{c.name} 은 연결 전인데 고르는 목록에 들어가 있다")
+
+
+def test_단계는_다섯이고_뜻이_두_갈래다(db, users, mixed):
+    """`연결 완료` 하나만 있는 것이 아니다 — 단계가 늘어도 갈래가 안 새야 한다.
+
+    `방 나감` 은 `참여 안 함` 과 뜻이 다르고(다시 부를 수 있는지가 갈린다),
+    둘 다 **기다려도 대상이 되지 않는** 쪽이다. 그 차이를 안 적으면 방만 다시
+    확인하면 될 줄 알고 안 움직이는 수를 계속 들여다보게 된다.
+    """
+    from app.services import sheet_owner
+    from app.services.sheet_import import (CONNECT_DONE, CONNECT_LABELS,
+                                           CONNECT_OPEN, STAGE_CONNECTED)
+
+    # 단계를 세는 곳이 여기 하나뿐이어야 한다 — 화면이 따로 세면 갈린다.
+    assert set(CONNECT_LABELS) == {STAGE_CONNECTED, *CONNECT_OPEN, *CONNECT_DONE}, (
+        "단계가 늘었는데 갈래(할 일 · 끝난 줄)에 안 들어갔다")
+
+    rows = sheet_owner.deal_list_contacts(db, users["u1"])
+    stages = sheet_owner.blocked_stages(db, rows)
+
+    # `연결 완료` 는 여기 오지 않는다 — 그 사람들이 곧 발송 대상이다.
+    assert STAGE_CONNECTED not in {s["key"] for s in stages}
+    # 이름을 지어내지 않고 임포트가 정한 것을 그대로 읽는다.
+    for s in stages:
+        assert s["label"] == CONNECT_LABELS[s["key"]]
+        assert s["done"] is (s["key"] in CONNECT_DONE)
+        assert s["count"] == len(s["people"])
+    # 수와 이름이 한 곳에서 나온다 — 갈라지면 어느 쪽이 맞는지 알 수 없다.
+    assert sum(s["count"] for s in stages) == len(
+        [c for c in rows if not sheet_owner.can_send_to(c)])
+    # 할 일이 먼저다(대시보드가 `CONNECT_OPEN` → `CONNECT_DONE` 순으로 세우는
+    # 것과 같은 이유). 끝난 줄이 위에 서면 손댈 곳이 뒤로 밀린다.
+    assert [s["done"] for s in stages] == sorted(s["done"] for s in stages)
+
+
+def test_이_단계만_보기가_화면이_센_바로_그_사람에게_간다(logged_in, db, users, mixed):
+    """**세는 곳과 가는 곳의 모집단이 같아야 한다.**
+
+    이 칸이 세는 것은 딜 소개 명단이다. 링크를 `전체` 탭으로 보내면 화면은
+    `미착수 4명` 이라고 적어 놓고 눌러 가면 맡은 사람 전체의 미착수 84줄이
+    뜬다 — 대시보드가 똑같이 당했던 자리다(패널 0명 → 화면 44줄).
+
+    **수가 아니라 이름을 대조한다.** 수만 맞추면 `4명 중 4명` 이 서로 다른
+    4명이어도 지나간다.
+    """
+    from app.services import sheet_owner
+
+    from .test_dashboard_connect import _rows_left   # 거르는 규칙을 두 벌 적지 않는다
+
+    stages = sheet_owner.recipient_counts(db, users["u1"])["blocked_by_stage"]
+    assert stages, "시험용 명단에 연결 전 사람이 없다 — 검사가 헛돈다"
+    for s in stages:
+        page = logged_in.get(s["href"])
+        assert page.status_code == 200, f"[{s['label']}] 링크가 열리지 않는다"
+        left = _rows_left(page.text, s["href"].partition("?")[2])
+        assert sorted(left) == sorted(p["name"] for p in s["people"]), (
+            f"[{s['label']} {s['count']}명] 이 가리키는 곳에는 {sorted(left)} 가 "
+            f"남는다 — 화면이 센 사람과 다르다")
+
+
+def test_모르는_단계가_들어와도_사람이_사라지지_않는다(db, users, mixed):
+    """단계가 하나 느는 날, 이름 짝이 없다고 그 사람들만 조용히 빠지면 안 된다 —
+    빠진 사람을 보이게 하려고 만든 자리다."""
+    from app.models import VcContact
+    from app.services import sheet_owner
+
+    row = db.query(VcContact).filter_by(name="바담당").one()
+    row.connect_stage = "아직_없는_단계"
+    db.commit()
+
+    stages = sheet_owner.blocked_stages(
+        db,
+        sheet_owner.deal_list_contacts(db, users["u1"]))
+    hit = [s for s in stages if s["key"] == "아직_없는_단계"]
+    assert hit, "모르는 단계에 걸린 사람이 통째로 사라졌다"
+    assert [p["name"] for p in hit[0]["people"]] == ["바담당"]
+    # 끝난 줄로 치지 않는다 — 할 일로 남겨 두는 쪽이 안전하다.
+    assert hit[0]["done"] is False
+
+
+def test_화면이_단계_이름을_손으로_적지_않는다(db, users, mixed):
+    """같은 말을 두 곳에 적으면 한쪽이 반드시 낡는다.
+
+    투자사 관리 현황의 고르는 칸은 `sheet_import.CONNECT_LABELS` 를 쓴다. 화면이
+    `연결 완료` 를 손으로 적어 두면 그 말이 바뀌는 날 두 화면이 서로 다른 말을
+    하고, 쓰는 사람은 없는 단계를 찾아 헤맨다.
+    """
+    from app.services.sheet_import import CONNECT_LABELS
+
+    # 주석은 뺀다 — 왜 그렇게 했는지 적는 자리라 단계 이름이 나올 수 있다.
+    body = re.sub(r"\{#.*?#\}", "", (TEMPLATES / "deals.html").read_text("utf-8"),
+                  flags=re.S)
+    for label in CONNECT_LABELS.values():
+        assert label not in body, (
+            f"화면이 단계 이름 `{label}` 을 손으로 적어 두었다 — "
+            "`recipient_counts` 가 실어 주는 값을 쓰라")
 
 
 def test_명단_기본값은_담당_지정을_따른다(db, users):

@@ -278,12 +278,88 @@ def deal_list_names(db: Session, contacts: List[VcContact]) -> List[str]:
     return [k for k, _ in sorted(counted.items(), key=lambda kv: (-kv[1], kv[0]))]
 
 
+def blocked_stages(db: Session, rows: List[VcContact]) -> List[dict]:
+    """딜 소개 명단에 있는데 **아직 못 보내는** 사람 — 단계별로, 누구인지까지.
+
+    수와 이름이 **한 곳에서 나온다.** 수는 여기서 세고 이름은 화면이 따로
+    고르게 두면, 둘이 갈리는 날 어느 쪽이 맞는지 알 수가 없다.
+
+    **단계는 다섯이고 뜻이 두 갈래다**(`sheet_import.CONNECT_LABELS`).
+
+        진행 중 · 미착수      아직 손이 필요하다. 연결을 이으면 대상이 된다.
+        참여 안 함 · 방 나감  더 진행하지 않기로 끝났다. **아무리 기다려도
+                              대상이 되지 않는다.**
+
+    이 차이를 안 적으면 방만 다시 확인하면 될 줄 알고 움직이지 않는 수를 계속
+    들여다보게 된다 — 실제로 "카톡방은 확인됐는데 왜 대상이 아니냐" 는 물음이
+    여기서 나왔다. 방 확인(`room_verified`)과 연결 단계(`connect_stage`)는
+    **따로 관리되는 값**이라, 방을 아무리 확인해도 이 수는 안 움직인다.
+
+    `연결 완료` 는 여기 오지 않는다 — 그 사람들이 곧 발송 대상이다.
+    """
+    # 대시보드 → sheet_owner 방향이라 함수 안에서 가져온다. 주소를 여기서 다시
+    # 조립하지 않는 이유는 `connect_href` 의 설명 그대로다.
+    from .dashboard import connect_href, deal_sheet_scope
+    from .sheet_import import CONNECT_DONE, CONNECT_LABELS
+
+    # **세는 곳과 가는 곳의 모집단이 같아야 한다.** 여기서 세는 것은 딜 소개
+    # 명단(125명)인데 링크를 `전체` 탭으로 보내면, 화면은 `미착수 4명` 이라고
+    # 적어 놓고 눌러 가면 맡은 사람 전체의 미착수 84줄이 뜬다 — 대시보드가
+    # 똑같이 당했던 자리다(패널 0명 → 화면 44줄).
+    sheet = deal_sheet_scope(db, rows)
+
+    grouped: Dict[str, List[VcContact]] = {}
+    for c in rows:
+        if can_send_to(c):
+            continue
+        grouped.setdefault(c.connect_stage or "", []).append(c)
+
+    out = []
+    for key, people in grouped.items():
+        out.append({
+            "key": key,
+            # 화면에 쓸 한글 이름을 여기서 지어내지 않는다 — 임포트가 정한 것을
+            # 그대로 읽는다. 모르는 값이 들어와도 **감추지 않는다**: 단계가 하나
+            # 늘었는데 여기 이름이 없으면 그 사람들만 조용히 사라지는데, 빠진
+            # 사람을 보이게 하려고 만든 자리에서 그러면 안 된다.
+            "label": CONNECT_LABELS.get(key, key or "-"),
+            "count": len(people),
+            # 모르는 값은 끝난 갈래로 치지 않는다 — 할 일로 남겨 두는 쪽이 안전하다.
+            "done": key in CONNECT_DONE,
+            # 이름은 **전부** 준다. 앞의 몇 명만 세우고 나머지를 접으면 화면에
+            # 안 뜨는 사람이 또 생긴다 — 그게 바로 고치려던 문제다. 화면에서는
+            # 접어 두므로 자리를 차지하지도 않는다.
+            #
+            # 방 이름을 함께 싣는다. `방은 있는데 미착수` 가 눈에 보여야
+            # "방을 확인했는데 왜 빠지냐" 는 물음이 화면에서 풀린다.
+            "people": [{"id": c.id, "name": c.name, "firm": c.firm or "",
+                        "room": c.kakao_room_name or "",
+                        "href": f"/contacts?contact={c.id}"} for c in people],
+            # 한 단계를 통째로 볼 곳. 필터 키와 값은 대시보드가 이미 쓰는 것을
+            # 그대로 부른다 — 여기 손으로 적으면 라벨이 바뀔 때 한쪽만 낡는다.
+            # 모르는 단계는 걸 값이 없다(라벨이 없으면 필터가 통째로 버린다) —
+            # 0줄짜리 링크를 거느니 목록으로만 보낸다.
+            "href": (connect_href(key, sheet) if key in CONNECT_LABELS
+                     else "/contacts"),
+        })
+    # 끝난 갈래를 **뒤로** 둔다(대시보드가 `CONNECT_OPEN` → `CONNECT_DONE` 순으로
+    # 세우는 것과 같은 이유 — 할 일이 먼저다). 그 안에서는 많은 순이다:
+    # "미착수 80명" 이 먼저 보여야 어디를 손대야 하는지 안다.
+    return sorted(out, key=lambda s: (s["done"], -s["count"], s["label"]))
+
+
 def recipient_counts(db: Session, user: User, *,
                      team_wide: bool = False) -> dict:
     """명단 N명 중 보낼 수 있는 M명 — 화면이 그 차이를 드러내는 데 쓴다.
 
     수만 다르고 이유가 안 적혀 있으면 쓰는 사람은 어느 쪽이 고장인지 알 수
-    없다. 남은 사람이 **어느 단계에서 막혀 있는지**까지 함께 돌려준다.
+    없다. 남은 사람이 **어느 단계에서 막혀 있는지**, 그리고 **그게 누구인지**
+    까지 함께 돌려준다(`blocked_by_stage`) — 이름을 못 보면 수만 알고 손은 못
+    쓴다. 목록에 없는 사람은 화면에서 존재조차 확인할 길이 없기 때문이다.
+
+    **단계 이름은 전부 여기를 지난다**(`sendable_label` · `blocked_by_stage` 의
+    `label`). 화면이 `연결 완료` 같은 말을 손으로 적어 두면 임포트가 그 말을
+    바꾸는 날 한쪽만 낡는다.
 
     **명단 밖 인원(`off_list`)을 반드시 함께 내놓는다.** 이 변경으로 발송
     대상이 줄었는데(실데이터 142 → 125), 줄어든 것이 화면에 안 적히면 명단을
@@ -294,18 +370,12 @@ def recipient_counts(db: Session, user: User, *,
     관리자여도 본인 담당분뿐이라(남의 방으로 문구가 실제로 나간다) 두 수가
     갈리는데, 그 사정도 화면이 말할 수 있어야 한다.
     """
-    from .sheet_import import CONNECT_LABELS
+    from .sheet_import import CONNECT_LABELS, STAGE_CONNECTED
 
     held = managed(db, user)
     off = off_deal_labels(db)
     mine = [c for c in held if on_deal_list(c, off)]
     sendable = [c for c in mine if can_send_to(c)]
-    blocked: dict = {}
-    for c in mine:
-        if can_send_to(c):
-            continue
-        label = CONNECT_LABELS.get(c.connect_stage, c.connect_stage)
-        blocked[label] = blocked.get(label, 0) + 1
     return {
         "managed": len(mine),
         # 맡고는 있지만 딜 소개 명단에는 없는 사람(대부분 아직 풀에 있는 사람).
@@ -313,10 +383,15 @@ def recipient_counts(db: Session, user: User, *,
         "off_list": len(held) - len(mine),
         "lists": deal_list_names(db, mine),
         "sendable": len(sendable),
+        # 어느 단계가 되어야 보낼 수 있는지 화면이 **이름으로** 적을 수 있게.
+        # 화면이 `연결 완료` 라고 손으로 적어 두면, 임포트가 그 말을 바꾸는 날
+        # 투자사 관리 현황의 고르는 칸과 딜 제안 관리의 안내가 서로 다른 말을
+        # 하게 된다 — 쓰는 사람은 없는 단계를 찾아 헤맨다.
+        "sendable_label": CONNECT_LABELS[STAGE_CONNECTED],
         "blocked": len(mine) - len(sendable),
-        # 많은 단계부터 — "미착수 80명" 이 먼저 보여야 어디를 손대야 하는지 안다.
-        "blocked_by_stage": [{"label": k, "count": v} for k, v in
-                             sorted(blocked.items(), key=lambda kv: (-kv[1], kv[0]))],
+        # 단계별 수 **와 이름**. 화면이 "미착수 19명" 이라고만 적고 누구인지는
+        # 안 적으면, 빠진 사람이 누구인지 알 길이 없어 손을 쓸 수가 없다.
+        "blocked_by_stage": blocked_stages(db, mine),
         # 투자사 관리 현황이 보여 주는 수. 관리자만 본인 담당분과 다르다.
         "team_total": (len(managed(db, user, team_wide=True)) if team_wide
                        else len(held)),

@@ -450,6 +450,12 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     var sourcingBox = document.getElementById("sourcing-list");
     if (contactBox) contactBox.hidden = sourcingMode;
     if (sourcingBox) sourcingBox.hidden = !sourcingMode;
+    // `연결이 안 끝나 목록에 없는 사람`은 **투자사 담당자 목록의 사정**이다.
+    // 소싱은 아예 다른 표(SourcingContact)라 연결 단계라는 것이 없는데, 그
+    // 목록 위에 "19명이 연결이 안 끝나 빠졌다" 가 그대로 남아 있으면 지금
+    // 보이는 명단에서 19명이 빠진 것으로 읽힌다.
+    var missBox = document.getElementById("blocked-contacts");
+    if (missBox) missBox.hidden = sourcingMode;
     var contactHead = document.getElementById("contact-head");
     if (contactHead) contactHead.textContent = sourcingMode ? "② 딜 소싱 대상" : "② 대상 담당자";
     var noReactBtn = document.getElementById("select-noreact");
