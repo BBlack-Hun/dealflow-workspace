@@ -397,7 +397,10 @@ VISIBLE_MONTHS = 1
 def month_columns(db: Session, sheet: str,
                   today: Optional[date] = None,
                   create: bool = True) -> List[ContactColumn]:
-    """이 명단의 월별 칸. 시트와 같은 순서(최근 달이 왼쪽).
+    """이 명단의 월별 칸. **시트에 서 있던 순서 그대로**다.
+
+    그 순서가 달 순서라는 보장은 없다 — 올라온 시트에 오름차순도 내림차순도
+    있었다(`services/monthly_columns.py` 의 "어느 칸을 본으로 삼는가").
 
     **읽기 전에 이번 달 칸이 있는지 본다.** 예약 실행 장치가 없는 앱이라,
     달이 바뀐 것을 알아채는 자리는 요청이 들어오는 순간뿐이다 — 주간 업무가
