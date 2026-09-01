@@ -627,3 +627,18 @@ def test_투자컨설턴트_현황의_기업_관리_필터는_시트가_정한_�
     body = body[:body.index("\n  }")]
     for word in ("관리", "드랍", "백업팀", "기타 메모"):
         assert word in body, f"브라우저 쪽 규칙에 `{word}` 가 없습니다 — 서버와 어긋납니다."
+
+    # `그 외` 와 `연락 기록 없음` 은 태그를 **되짚어** 정한다. 어느 쪽이든
+    # 칸의 문장을 다시 읽으면 그것이 곧 두 번째 규칙이고, 고친 직후와 새로고침
+    # 뒤에 같은 줄이 서로 다른 칩에 걸린다.
+    assert status.is_other("내년부터 투자 라운드 돌 예정")
+    assert not status.is_other("관리 중") and not status.is_other("")
+    assert status.no_contact("", []) and not status.no_contact("판단 보류", [])
+
+    # 브라우저도 같은 두 값에서 되짚는지 — `data-f-mgmt` 와 `data-contacted`.
+    chips = src[src.index("function passes"):]
+    chips = chips[:chips.index("\n  }")]
+    assert 'filter === "other"' in chips and "tagsOf(tr).length > 0" in chips, \
+        "브라우저에 `그 외` 칩 규칙이 없습니다 — 값이 적힌 줄이 어디에도 안 걸립니다."
+    assert "tagsOf(tr).length === 0" in chips, \
+        "`연락 기록 없음` 이 `기업 관리` 칸을 안 봅니다 — 관리 중인 줄이 거기 뜹니다."

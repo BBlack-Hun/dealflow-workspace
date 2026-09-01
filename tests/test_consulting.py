@@ -615,15 +615,27 @@ def _consulting_ctx(db, users, columns, rows_notes):
     return cols
 
 
-def _mgmt_ctx(db, users, managements):
-    """`기업 관리` 칸만 다른 줄들을 깐다. (실제 시트와 같은 모양의 **가상** 값)"""
-    from app.models import ConsultingCompany
+def _mgmt_ctx(db, users, managements, notes=None):
+    """`기업 관리` 칸만 다른 줄들을 깐다. (실제 시트와 같은 모양의 **가상** 값)
+
+    `notes` 를 주면 월별 리마인드 칸도 같이 깐다(줄 순서대로). `연락 기록 없음`
+    은 두 칸을 **같이** 보므로, 한쪽만 깔아서는 그 칩을 검사할 수 없다.
+    """
+    from app.models import ConsultingColumn, ConsultingCompany
     from app.services.consulting_sheets import default_label
 
+    col = None
+    if notes is not None:
+        col = ConsultingColumn(user_id=users["u1"].id, sheet=default_label(db),
+                               label="8월 리마인드", position=0)
+        db.add(col)
+        db.flush()
     for i, text in enumerate(managements):
+        note = (notes or [])[i] if notes is not None else ""
         db.add(ConsultingCompany(
             user_id=users["u1"].id, sheet=default_label(db), position=i + 1,
-            company_name=f"샘플기업{i}", management=text))
+            company_name=f"샘플기업{i}", management=text,
+            notes=json.dumps({str(col.id): note}, ensure_ascii=False) if col else None))
     db.commit()
 
 
@@ -677,6 +689,106 @@ def test_연락_기록_없음_칩이_보는_값(allowed, db, users):
     flags = re.findall(r'data-contacted="(\d)"', body)
     assert flags == ["1", "1", "0"], flags
     assert 'data-cs-filter="nocontact"' in body and ">연락 기록 없음<" in body
+
+
+def test_기업_관리에_값이_있으면_연락_기록_없음이_아니다(allowed, db, users):
+    """`연락 기록 없음` 은 **아무것도 안 적힌 줄**이다.
+
+    예전에는 월별 리마인드 칸만 봤다. 그래서 `기업 관리` 에
+    `관리 중 : 미팅 완. -> 견적서 보내기 완료.` 라고 적어 둔 줄이, 리마인드
+    칸이 비었다는 이유로 `관리 중` 과 `연락 기록 없음` 에 **동시에** 떴다.
+    화면에서는 세 칩이 나란히 붙어 한 갈래로 읽히는데 실제로는 두 갈래를 섞어
+    놓은 것이라, 관리 중인 기업이 "연락 기록 없음" 에 뜨는 것이 틀려 보인다.
+
+    두 칸을 **같이** 본다 — `기업 관리` 가 비어 있고 그리고 리마인드도 다 빔.
+    """
+    from app.services import consulting_status as status
+
+    # 적어 둔 것이 있으면 — 리마인드가 비어 있어도 — `연락 기록 없음` 이 아니다.
+    assert not status.no_contact("관리 중 : 미팅 완. -> 견적서 보내기 완료.", [])
+    assert not status.no_contact("드랍 : 연락 두절", [])
+    # 셋 중 어느 마디도 아닌 자유 서술도 마찬가지다. 적어 둔 것은 적어 둔 것이다.
+    assert not status.no_contact("제안서 검토 후 진행 안 하기로 함", [])
+    # 둘 다 비어 있을 때만 걸린다.
+    assert status.no_contact("", [])
+    assert status.no_contact("   ", ["", "  "])
+    # 리마인드에 기록이 있으면 `기업 관리` 가 비어 있어도 아니다.
+    assert not status.no_contact("", ["8월 통화 완료"])
+
+
+def test_기업_관리에_값이_있는_줄은_반드시_칩에_걸린다(allowed, db, users):
+    """자유 서술이라 값의 종류가 무한하다 — 그래도 **떨어지는 줄은 없어야** 한다.
+
+    시트 머리글이 정해 둔 마디(`관리 중`·`드랍`·`백업팀 전환`)에 안 맞는 값이
+    실제로 있다(`제안서 검토 후 진행 안 하기로 함`). 값마다 칩을
+    세우면 칩이 끝없이 늘어나므로, 두 마디에 안 걸리는 나머지를 `그 외` 하나로
+    받는다. 값별로 고르는 일은 머리글 `기업 관리 ▾` 가 이미 한다.
+    """
+    from app.services import consulting_status as status
+
+    for text in ("제안서 검토 후 진행 안 하기로 함",
+                 "내후년에 라운드 돌 예정",
+                 "판단 보류",
+                 "백업팀으로 전환"):
+        assert (status.is_managed(text) or status.is_dropped(text)
+                or status.is_other(text)), f"{text!r} 이 어느 칩에도 안 걸립니다"
+    # `그 외` 는 관리 중·드랍과 겹치지 않는다 — 겹치면 같은 줄이 두 칩에 뜬다.
+    assert not status.is_other("관리 중")
+    assert not status.is_other("백업팀으로 전환 · 논의 중임. 드랍")
+    # 안 적은 줄은 `그 외` 가 아니다. 그 줄은 `연락 기록 없음` 이 받는다.
+    assert not status.is_other("")
+    assert not status.is_other("   ")
+
+
+def test_칩_넷이_한_줄도_흘리지_않는다(allowed, db, users):
+    """칩으로 거른 줄을 다 합치면 표 전체가 되어야 한다 — 값이 적힌 줄에 한해.
+
+    실데이터에서 34줄 중 12줄이 `관리 중`·`드랍` 어디에도 안 걸렸다. 그 가운데
+    값이 적힌 3줄은 이제 `그 외` 가, 아무것도 안 적힌 줄은 `연락 기록 없음` 이
+    받는다. 나머지(리마인드만 적힌 줄)는 머리글 `기업 관리 ▾ → (비어 있음)` 이다.
+    """
+    import re
+
+    from app.services import consulting_status as status
+
+    managements = [
+        "관리 중",
+        "드랍 : 연락 두절",
+        "백업팀으로 전환 · 논의 중임. 드랍",
+        "제안서 검토 후 진행 안 하기로 함",   # 자유 서술
+        "백업팀으로 전환",                                # 마디는 맞지만 칩은 없다
+        "",                                               # 둘 다 빔
+        "",                                               # 리마인드만 있는 줄
+    ]
+    notes = ["", "", "", "", "", "", "8월 통화 완료"]
+    _mgmt_ctx(db, users, managements, notes)
+    body = allowed.get("/consulting").text
+
+    picked = {"managed": 0, "dropped": 0, "other": 0, "nocontact": 0}
+    unmatched = []
+    for text, note in zip(managements, notes):
+        hit = False
+        for key, ok in (("managed", status.is_managed(text)),
+                        ("dropped", status.is_dropped(text)),
+                        ("other", status.is_other(text)),
+                        ("nocontact", status.no_contact(text, [note]))):
+            if ok:
+                picked[key] += 1
+                hit = True
+        if not hit:
+            unmatched.append(text)
+
+    assert picked == {"managed": 1, "dropped": 2, "other": 2, "nocontact": 1}, picked
+    # 값이 적힌 줄은 하나도 안 흘린다. 안 적은 줄만 남는다(머리글이 받는다).
+    assert unmatched == [""], unmatched
+
+    # 화면에도 그 칩이 서 있어야 한다.
+    assert 'data-cs-filter="other"' in body and ">그 외<" in body
+    assert 'data-cs-filter="nocontact"' in body and ">연락 기록 없음<" in body
+    # 머리글 필터가 값별로 고르는 일은 그대로다 — 칩과 어긋나면 안 된다.
+    tags = re.findall(r'data-f-mgmt="([^"]*)"', body)
+    assert tags == ["관리 중", "드랍", "드랍|백업팀 전환", "기타 메모",
+                    "백업팀 전환", "", ""], tags
 
 
 def test_접어_둔_달의_기록도_기록이다(allowed, db, users):
@@ -814,6 +926,25 @@ def test_화면_코드를_그대로_돌려_본다():
     import subprocess
 
     js = _p.Path(__file__).resolve().parent / "js" / "consulting_contacted_test.js"
+    r = subprocess.run([shutil.which("node"), str(js)],
+                       capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
+@pytest.mark.skipif(__import__("shutil").which("node") is None,
+                    reason="node 미설치 — 브라우저 로직 테스트 생략")
+def test_칩이_잡는_줄을_그대로_돌려_본다():
+    """칩 넷이 각각 어느 줄을 잡는지 — 규칙은 브라우저에도 한 벌 있다.
+
+    `tests/js/consulting_chips_test.js` 가 consulting.js 를 실제로 돌려, `기업
+    관리` 에 값이 있는 줄이 `연락 기록 없음` 에 뜨지 않는지 · 자유 서술 줄이
+    `그 외` 에 걸리는지 · 칸을 고치면 그 자리에서 갈래가 바뀌는지를 본다.
+    """
+    import pathlib as _p
+    import shutil
+    import subprocess
+
+    js = _p.Path(__file__).resolve().parent / "js" / "consulting_chips_test.js"
     r = subprocess.run([shutil.which("node"), str(js)],
                        capture_output=True, text=True, timeout=60)
     assert r.returncode == 0, r.stdout + r.stderr
