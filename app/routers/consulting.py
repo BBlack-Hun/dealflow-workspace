@@ -665,7 +665,8 @@ def add_column(label: str = Form(...), db: Session = Depends(get_db),
                user: User = Depends(get_current_user)):
     """달이 바뀌면 열을 하나 늘린다. 새 열이 **맨 앞**에 오도록 한다.
 
-    시트에서도 최근 달이 왼쪽이다 — 지금 챙겨야 할 달이 먼저 보여야 한다.
+    지금 챙겨야 할 달이 먼저 보여야 한다. (시트가 늘 그 순서인 것은 아니다 —
+    `services/monthly_columns.py` 참고. 새로 세우는 자리를 정하는 것뿐이다.)
     """
     require_access(user)
     label = label.strip()
