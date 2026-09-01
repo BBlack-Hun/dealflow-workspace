@@ -14,7 +14,12 @@
 
 <div class="toolbar">
   <div class="toolbar-right">
-    <input type="search" id="co-search" placeholder="기업명 · 분야 · 소개 검색"
+    {# 무엇으로 찾을 수 있는지는 여기 적힌 것이 전부다 — 실제로 걸리는 칸과
+       어긋나면 사람은 안 되는 줄 알고 아예 안 쳐 본다. 번호는 어느 모양으로
+       쳐도 되고(`010-1234-5678` · `01012345678` · 뒷자리 `5678`) 분야·소개도
+       그대로 걸리지만, 다 적으면 칸 밖으로 넘친다 — 나머지는 `title` 로 둔다. #}
+    <input type="search" id="co-search" placeholder="기업명 · 대표자 · 연락처 · 이메일"
+           title="기업명 · 대표자 · 연락처(전화번호) · 이메일 · 분야 · 한줄 소개로 찾습니다. 전화번호는 하이픈이 있든 없든, 뒷자리만으로도 찾아집니다."
            value="{{ q }}" autocomplete="off">
     <a class="secondary-btn" href="/api/export/companies.xlsx" download>엑셀 내려받기</a>
     <button type="button" class="secondary-btn" id="ir-bulk-btn">IR 링크 일괄 입력</button>

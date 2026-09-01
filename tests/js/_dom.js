@@ -89,6 +89,12 @@ function makeEl(tag) {
   const attrs = {};
   const el = {
     tag: String(tag).toLowerCase(),
+    // 이 DOM 에는 **글자 노드가 없다** — 글자는 `textContent` 한 칸에 담긴다.
+    // 그래서 `childNodes` 는 자식 요소만 돌려준다(전부 nodeType 1). 글자 노드를
+    // 골라 지우는 코드(filters.js 가 머리글 이름을 지우는 자리)는 여기서
+    // 아무 일도 하지 않는데, 그 편이 낫다 — 없는 것을 있는 척하면 검사가
+    // 브라우저와 다른 것을 보증하게 된다.
+    nodeType: 1,
     children: [], parent: null, handlers: {},
     hidden: false, checked: false, disabled: false,
     value: "", textContent: "", innerHTML: "",
@@ -113,6 +119,7 @@ function makeEl(tag) {
       while (node) { if (matchesCompound(node, c)) return node; node = node.parent; }
       return null;
     },
+    get childNodes() { return el.children; },
     // 이벤트는 버블링까지 흉내 낸다 — 칩은 줄(`#group-filter`)이 대신 듣는다.
     fire(type, extra) {
       const ev = Object.assign({ target: el, stopPropagation() {}, preventDefault() {} }, extra || {});
