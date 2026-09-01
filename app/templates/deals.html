@@ -186,8 +186,28 @@
       {# 소싱 제안일 때는 대상이 투자사 담당자가 아니다 — 제목도 바뀐다. #}
       <span id="contact-head">② 대상 담당자</span>
       <span class="count-pill" id="contact-pill"><b>0</b>명</span>
-      <button type="button" class="linkbtn" id="select-all-contacts">전체선택</button>
-      <button type="button" class="linkbtn" id="select-noreact">반응 없는 담당자만</button>
+      {#
+        고르는 단추 셋을 한 묶음으로 싼다. 이 칸은 3열 그리드의 가운데라
+        280px 안팎이고, 묶지 않으면 `전체선 택` 처럼 **낱말 가운데서 줄이
+        끊긴다**(실제로 그렇게 보였다).
+
+        **[전체선택]과 [전체해제]는 훑는 범위가 다르다 — 그래서 단추가 둘이다.**
+        [전체선택]은 **지금 걸러진 사람**만 켜고 끈다(다시 누르면 그 범위만
+        꺼진다). 그 좁힘이 이 화면의 안전장치라 건드릴 수 없다 — 그룹으로
+        추려 놓고 누른 [전체선택]에 다른 그룹이 딸려 오면 그대로 남의 카톡방
+        으로 문구가 나간다(`tests/js/deals_select_all_test.js`).
+
+        그런데 바로 그 좁힘 때문에 **조건 밖에서 고른 사람에게는 손이 안 닿는다.**
+        1군에서 고르고 2군으로 옮겨 간 뒤에는 [전체선택]을 두 번 눌러도 1군이
+        그대로 남는다 — 필터를 되돌리거나 새로고침하는 수밖에 없었다. 그것이
+        여기 없던 `전체 해제` 다. 범위가 다른 일이라 이름도 단추도 따로 둔다.
+      #}
+      <span class="title-actions">
+        <button type="button" class="linkbtn" id="select-all-contacts">전체선택</button>
+        <button type="button" class="linkbtn" id="clear-all-contacts" disabled
+                title="걸러진 범위와 상관없이, 지금 고른 사람을 모두 해제합니다">전체해제</button>
+        <button type="button" class="linkbtn" id="select-noreact">반응 없는 담당자만</button>
+      </span>
     </h2>
     {#
       **기준이 무엇인지, 왜 수가 다른지 여기서 말한다.**
@@ -300,6 +320,17 @@
     <p class="hint" id="contact-filter-note" hidden></p>
     {# 갈래를 섞어 고르면 사람마다 다른 문구가 나간다 — 알고 골라야 한다. #}
     <p class="hint warn" id="bucket-mix-note" hidden></p>
+    {#
+      고른 결과 요약. 두 줄이고, **줄마다 줄이는 규칙이 다르다**(deals.js).
+
+        ① 그룹 — 고른 사람이 두 그룹 이상에 걸쳐 있으면 **그룹 이름을 하나도
+           안 빼고** 인원과 함께 적는다. 여기가 `외 N개` 로 뭉개지면 안 되는
+           자리다: 그룹은 **무엇으로 골랐는가**라서, 하나가 가려지면 그 그룹이
+           통째로 발송에 들어간 사실이 화면에서 사라진다. 위 그룹 칩 줄이
+           이미 같은 이름을 다 그리고 있으니, 이 줄이 그보다 길어질 일도 없다.
+        ② 이름 — 여섯 명까지 적고 나머지는 `외 N명` 으로 줄인다. 이름은 125개
+           중 하나이고 수는 바로 옆 알약에 적혀 있어, 줄여도 잃는 것이 없다.
+    #}
     <p class="hint" id="contact-summary" hidden></p>
     <div class="card-list" id="contact-list">
       {% for c in contacts %}
