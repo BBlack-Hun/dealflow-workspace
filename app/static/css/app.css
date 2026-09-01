@@ -552,6 +552,33 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
 .err { color: #c0392b; }
 a.secondary-btn { display: inline-flex; align-items: center; text-decoration: none; }
 
+
+/* ── LLM 에 물어보기 ────────────────────────────────────────────
+   매주 한 번 쓰는 자리라 기본은 접혀 있다(펴 두면 매일 쓰는 ①②③ 이 밀린다). */
+.llm-panel { margin-bottom: 16px; }
+.llm-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 10px 0; }
+/* 내보내기 전에 **눈으로 훑는** 자리다. 이름이 섞여 나가는 것이 이 기능의
+   제일 큰 위험이라, 길어도 접지 않고 스스로 스크롤되게 둔다. */
+.llm-out {
+  max-height: 320px; overflow: auto; margin: 0 0 12px;
+  padding: 12px; background: #fafbfc; border: 1px solid var(--line);
+  border-radius: 10px; font-size: 12px; line-height: 1.5; white-space: pre-wrap;
+  word-break: break-all;
+}
+.llm-panel textarea {
+  width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 8px;
+  font-size: 13px; line-height: 1.5; resize: vertical;
+}
+.llm-found { display: flex; flex-direction: column; gap: 4px; }
+.llm-found-row { display: flex; gap: 8px; align-items: baseline; font-size: 13px; }
+/* 못 찾은 번호도 **지우지 않고 흐리게 남긴다** — 조용히 빠지면 다섯을 넣고
+   셋만 뜬 것을 눈치채지 못한다. */
+.llm-found-row.missing { color: var(--muted); }
+.llm-ref {
+  font-variant-numeric: tabular-nums; font-weight: 600; color: var(--muted);
+  min-width: 56px;
+}
+
 /* ══ 대시보드 ═══════════════════════════════════════════════════════════ */
 
 .brand-link { display: block; text-decoration: none; color: inherit; }

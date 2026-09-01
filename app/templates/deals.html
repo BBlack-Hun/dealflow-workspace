@@ -61,6 +61,58 @@
   </button>
 </div>
 
+{#
+  누구에게 어떤 딜을 소개할지 — **앱은 자료만 꺼내고 맞추는 일은 LLM 이 한다.**
+
+  그동안은 앱 밖 스크립트가 `딥테크`·`AI`·`초기` 같은 낱말을 사전에 적어 두고
+  몇 번 나오는지 세어 점수를 매겼다. 사전에 없는 말은 안 잡혀 `콘텐츠`·
+  `에듀테크` 를 손으로 계속 더해야 했고, "규모가 좀 더 큰 곳 위주로" 같은
+  문장은 아예 못 읽는다. 그래서 여기서는 **점수도 추천도 정렬도 하지 않는다.**
+
+  기본은 접어 둔다. 매주 한 번 쓰는 일이라, 펴 둔 채로 두면 매일 쓰는 ①②③
+  가 그만큼 아래로 밀린다.
+#}
+<section class="panel llm-panel">
+  <h2 class="panel-title">
+    LLM 에 물어보기
+    <span class="hint">앱은 자료만 꺼냅니다 — 맞추는 일은 LLM 이 합니다</span>
+    <button type="button" class="linkbtn" id="llm-toggle" aria-expanded="false"
+            aria-controls="llm-body">펼치기</button>
+  </h2>
+  <div id="llm-body" hidden>
+    <p class="hint">
+      투자사는 <b>이름 없이 번호</b>로 나갑니다(<code>V-31</code>) — 이 자료는
+      앱 밖으로 나가기 때문입니다. IR 기업은 소개하려고 모은 자료라 이름을 넣습니다.
+      받은 답을 아래에 그대로 붙여 넣으면 번호가 누구인지 다시 찾아 줍니다.
+    </p>
+    {#
+      **단추와 API 가 같은 주소다.** [자료 내려받기] 는 링크일 뿐이고
+      [화면에서 보기] 도 같은 곳을 부른다 — 화면용 경로를 따로 두면 한쪽이 낡는다.
+    #}
+    <div class="llm-actions">
+      <a class="secondary-btn" id="llm-download" href="/api/llm-brief.json"
+         download="딜소개-자료.json">자료 내려받기</a>
+      <button type="button" class="secondary-btn" id="llm-show">화면에서 보기</button>
+      <button type="button" class="secondary-btn" id="llm-copy" hidden>복사</button>
+      <span class="hint" id="llm-state"></span>
+    </div>
+    {# 내보내기 전에 사람이 눈으로 훑을 수 있어야 한다 — 이름이 섞여 나가는 것이
+       이 기능의 제일 큰 위험이라, 확인이 한 번의 클릭 안에 있어야 한다. #}
+    <pre class="llm-out" id="llm-out" hidden></pre>
+
+    <label class="field">
+      <span>LLM 이 답한 내용을 그대로 붙여 넣으세요</span>
+      <textarea id="llm-answer" rows="3"
+                placeholder="예) V-31 님께는 C-7, C-12 를 소개하시면 좋겠습니다"></textarea>
+    </label>
+    <div class="llm-actions">
+      <button type="button" class="secondary-btn" id="llm-resolve">번호 → 이름 찾기</button>
+      <span class="hint" id="llm-found-state"></span>
+    </div>
+    <div class="llm-found" id="llm-found"></div>
+  </div>
+</section>
+
 <div class="deal-grid">
   <!-- 1) 회차 + 기업 선택 -->
   <section class="panel">
@@ -396,4 +448,5 @@
 {% endblock %}
 {% block scripts %}
 <script src="{{ asset('js/deals.js') }}"></script>
+<script src="{{ asset('js/llm_brief.js') }}"></script>
 {% endblock %}
