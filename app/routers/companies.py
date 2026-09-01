@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import NotAdmin, admin_only, get_current_user, templates
 from ..models import IrCompany, User
+from ..services import auth as auth_svc
 from ..services.one_liner import (
     AUTO, SOURCE_FIELDS, apply_one_liner, compose_one_liner, origin, sync_one_liner,
 )
@@ -170,6 +171,35 @@ def blocked_reason(c: IrCompany) -> str:
     return f"{head}{more} 없음"
 
 
+def search_text(c: IrCompany) -> str:
+    """줄에 실어 둘 검색용 글자 한 덩이. 화면(companies.js)은 이것만 본다.
+
+    기업명·분야만 담고 있었다. 그런데 표에는 대표자·연락처·이메일이 버젓이
+    보이므로, 눈앞의 값을 그대로 쳐도 아무 줄이 안 걸렸다 — 사람에게는
+    "검색이 고장났다" 로 보인다. 보이는 칸으로는 찾아져야 한다.
+
+    전화번호는 **적은 그대로와 숫자만 남긴 꼴을 함께** 싣는다. 원본에
+    `010-1234-5678` · `01012345678` · `010 1234 5678` 이 섞여 있어서, 한 모양만
+    실어 두면 다른 모양으로 친 사람에게는 없는 줄이 된다. 숫자만 남긴 꼴이
+    있으면 뒷자리(`5678`)로도 닿는다 — 실제로 번호는 이렇게 찾는다.
+
+    친 글자 쪽을 숫자만 남기는 일은 companies.js 가 맡는다. 양쪽이 다 있어야
+    `010 1234 5678` 로 쳐서 `010-1234-5678` 인 줄에 닿는다.
+
+    숫자만 남긴 꼴이 원본과 같으면(이미 숫자뿐인 번호) 넣지 않는다 — 같은
+    글자가 두 번 실려도 걸리는 것은 똑같고, 줄만 길어진다.
+    """
+    phone = (c.contact_phone or "").strip()
+    digits = auth_svc.normalize_phone(phone)
+    parts = [
+        c.name, c.contact_name, c.contact_email, phone,
+        digits if digits != phone else "",
+        c.sector_major, c.sector_minor, c.series,
+        c.one_liner, c.funding_status, c.competitiveness,
+    ]
+    return " ".join(filter(None, parts)).lower()
+
+
 def company_rows(db: Session) -> List[dict]:
     companies = db.execute(select(IrCompany).order_by(IrCompany.name)).scalars().all()
     # 344행 × 두 번 조립하지 않도록 한 번만 만들어 둔다.
@@ -238,11 +268,8 @@ def company_rows(db: Session) -> List[dict]:
             "introducible": is_ready(c),
             "blocked_reason": blocked_reason(c),
             "note": c.note or "",
-            # 검색용 — 화면에서 즉시 필터링한다
-            "search": " ".join(filter(None, [
-                c.name, c.sector_major, c.sector_minor, c.series,
-                c.one_liner, c.funding_status, c.competitiveness,
-            ])).lower(),
+            # 검색용 — 화면에서 즉시 필터링한다. 무엇이 들어가는지는 `search_text`.
+            "search": search_text(c),
         }
         for c in companies
     ]
