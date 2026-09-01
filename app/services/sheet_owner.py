@@ -24,7 +24,8 @@ from typing import Dict, List, Optional, Set
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..models import SheetOwner, User, VcContact
+from ..models import ContactColumn, MonthlyColumnRun, SheetOwner, User, VcContact
+from .monthly_columns import CONTACT
 
 # 시트에서 오지 않은 담당자
 MANUAL_SHEET = "직접 추가"
@@ -384,6 +385,115 @@ def assign(db: Session, label: str, user_id: Optional[int]) -> SheetOwner:
     """명단을 팀원에게 할당한다(관리자). None 이면 다시 풀로 돌린다."""
     row = ensure(db, label)
     row.user_id = user_id
+    db.flush()
+    return row
+
+
+# ── 명단 이름 바꾸기 ────────────────────────────────────────────────────────
+#
+# **이름이 곧 열쇠다.** 명단은 `SheetOwner` 줄 하나로 사는 것이 아니라, 이름을
+# **문자열로 담고 있는 네 곳**으로 산다.
+#
+#     SheetOwner.label          이 명단의 설정(담당 · 배치 · 숨김 · 딜소개 표시)
+#     VcContact.source_sheet    그 명단에 올라 있는 사람들 (쉼표로 이어 붙는다)
+#     ContactColumn.sheet       그 명단의 달마다 늘어나는 칸
+#     MonthlyColumnRun.scope    그 달 칸을 이미 만들었다는 표시
+#
+# 그래서 설정 줄만 고치면 **나머지 셋이 옛 이름에 남는다.** 사람은 어느 탭에도
+# 안 뜨고(옛 이름의 유령 탭으로 갈린다), 달 칸은 통째로 사라진 것처럼 보이고,
+# 사람이 일부러 지운 달 칸이 다음 요청에서 되살아난다. 투자컨설턴트 현황이
+# 정확히 이 사고를 겪었고 마이그레이션으로 고쳐야 했다
+# (`0039_consulting_startup_tab` · `services/consulting_sheets.rename`).
+#
+# 옮기는 자리를 **여기 하나**로 둔다. 화면(`/api/contacts/sheets/rename`)과
+# 스크립트(`scripts/rename_sheets.py`)가 같은 것을 부른다 — 두 벌로 적으면
+# 한쪽만 고쳐지는 날 그쪽으로 바꾼 명단만 조용히 갈라진다.
+
+
+#: 명단 이름의 최대 길이. 화면 입력칸(`contacts.html` 의 `maxlength`)과 같은
+#: 값이다. 자르는 자리를 여기 하나로 두는 이유: 저장할 때만 자르면 화면이 보낸
+#: 이름과 저장된 이름이 달라져, 바꾸고 나서 **되돌아갈 탭 주소가 어긋난다** —
+#: 방금 바꾼 탭 대신 없는 탭이 열린다.
+MAX_LABEL = 80
+
+
+def normalize_label(label: str) -> str:
+    """명단 이름을 저장하는 모양 그대로. 부르는 쪽이 모두 이것을 지난다."""
+    return (label or "").strip()[:MAX_LABEL]
+
+
+class RenameError(ValueError):
+    """이름을 바꿀 수 없는 이유. **사람에게 그대로 보여 줄 수 있는 문장**이다.
+
+    화면은 이 문장을 그대로 띄우고 스크립트는 그대로 찍는다. 사유를 부르는
+    쪽마다 따로 적으면 같은 거절이 화면과 명령에서 다른 말로 나온다.
+    """
+
+
+def label_in_use(db: Session, label: str, *, ignore: str = "") -> bool:
+    """이 이름을 이미 쓰고 있는 명단이 있는가.
+
+    **설정 줄만 보지 않는다.** 임포트를 거치지 않은 이름은 `SheetOwner` 줄 없이
+    `source_sheet` 에만 있을 수 있고(`직접 추가`, 손으로 넣은 줄), 달 칸만 남은
+    이름도 있다. 그런 이름으로 바꾸면 남의 줄과 **한 탭에 섞인다** — 섞이고 나면
+    어느 줄이 원래 어느 명단 것이었는지 되돌릴 근거가 사라진다.
+    """
+    if not label or label == ignore:
+        return False
+    if db.execute(select(SheetOwner).where(SheetOwner.label == label)) \
+            .scalars().first() is not None:
+        return True
+    if db.execute(select(ContactColumn).where(ContactColumn.sheet == label)) \
+            .scalars().first() is not None:
+        return True
+    return any(label in labels_of(c.source_sheet)
+               for c in db.execute(select(VcContact)).scalars())
+
+
+def rename(db: Session, before: str, after: str) -> Optional[SheetOwner]:
+    """명단 이름을 바꾸고 **그 이름을 담고 있던 것들을 같이 옮긴다.**
+
+    바꿀 수 없으면 `RenameError` 를 낸다(위 설명 참고). 옮길 것이 없는 부름
+    (빈 이름 · 같은 이름)은 조용히 지금 설정 줄을 돌려준다 — 화면의 [이름 저장]
+    은 고치지 않고도 눌리는 단추라서, 안 바뀐 것을 실패로 알릴 일이 아니다.
+
+    쉼표는 받지 않는다. `source_sheet` 가 **쉼표로 이어 붙인 목록**이라
+    (한 사람이 여러 명단에 겹친다) 이름에 쉼표가 들어가면 그 명단이 두 개로
+    쪼개져 읽힌다 — 줄은 그대로인데 탭만 둘로 갈라진다.
+    """
+    before, after = (before or "").strip(), normalize_label(after)
+    if not before or not after or before == after:
+        return db.execute(
+            select(SheetOwner).where(SheetOwner.label == before)
+        ).scalars().first()
+    if "," in after:
+        raise RenameError("명단 이름에는 쉼표를 쓸 수 없습니다")
+    if label_in_use(db, after, ignore=before):
+        raise RenameError(f"이미 쓰고 있는 이름입니다: {after}")
+
+    # `source_sheet` 는 **조각 단위**로 바꾼다. 통째로 바꾸면 겹친 사람의 다른
+    # 명단 이름까지 뭉개진다.
+    for contact in db.execute(select(VcContact)).scalars():
+        parts = labels_of(contact.source_sheet)
+        if before in parts:
+            contact.source_sheet = ",".join(
+                after if p == before else p for p in parts)
+    for column in db.execute(
+        select(ContactColumn).where(ContactColumn.sheet == before)
+    ).scalars():
+        column.sheet = after
+    # 달 표시는 **투자사 관리 현황 몫만** 옮긴다. 같은 표에 투자컨설턴트 몫도
+    # 들어 있고 그쪽은 이름 짓는 규칙이 다르다(`사람id:탭이름`).
+    for run in db.execute(
+        select(MonthlyColumnRun).where(MonthlyColumnRun.target == CONTACT,
+                                       MonthlyColumnRun.scope == before)
+    ).scalars():
+        run.scope = after
+    row = db.execute(
+        select(SheetOwner).where(SheetOwner.label == before)
+    ).scalars().first()
+    if row is not None:
+        row.label = after
     db.flush()
     return row
 

@@ -515,6 +515,70 @@ def test_the_owner_mapping_follows_the_rename(logged_in, db, users):
     labels = {o.label for o in db.query(SheetOwner).all()}
     assert "새 이름" in labels and "옛 이름" not in labels
 
+
+def test_달_칸과_달_표시도_이름을_따라온다(logged_in, db, users):
+    """이름은 설정 줄에만 있는 것이 아니다.
+
+    `ContactColumn.sheet` 와 `MonthlyColumnRun.scope` 도 이름을 **문자열로**
+    담고 있다. 안 따라가면 그 명단의 달 칸이 통째로 사라진 것처럼 보이고
+    (값은 남았는데 칸이 없어 화면이 못 그린다), 사람이 일부러 지운 이번 달
+    칸이 다음 요청에서 되살아난다.
+    """
+    from app.models import ContactColumn, MonthlyColumnRun, SheetOwner
+
+    _named(db, users, "한지우", "옛 이름")
+    db.add(SheetOwner(label="옛 이름", user_id=users["u1"].id))
+    db.add(ContactColumn(sheet="옛 이름", label="8월 딜소개", position=0))
+    db.add(MonthlyColumnRun(target="contact", scope="옛 이름", month="2026-08",
+                            labels="[]"))
+    db.commit()
+
+    logged_in.post("/api/contacts/sheets/rename",
+                   data={"old": "옛 이름", "new": "새 이름"}, follow_redirects=False)
+    db.expire_all()
+    assert [c.sheet for c in db.query(ContactColumn).all()] == ["새 이름"], (
+        "달 칸이 옛 이름에 남았습니다 — 그 명단 탭에서 칸이 사라집니다")
+    assert [r.scope for r in db.query(MonthlyColumnRun).all()] == ["새 이름"]
+
+
+def test_이미_쓰고_있는_이름으로는_못_바꾼다(logged_in, db, users):
+    """두 명단이 같은 이름이면 **서로를 덮는다.**
+
+    이름이 곧 열쇠라(`source_sheet` 가 이름을 담는다) 섞이고 나면 어느 줄이
+    원래 어느 명단 것이었는지 되돌릴 근거가 없다. 담당도 배치도 딜소개 표시도
+    한 벌만 남는다.
+    """
+    from app.models import SheetOwner
+
+    mine = _named(db, users, "서지안", "내 명단")
+    other = _named(db, users, "노하은", "남의 명단")
+    db.add(SheetOwner(label="내 명단", user_id=users["u1"].id))
+    db.add(SheetOwner(label="남의 명단", user_id=users["u2"].id))
+    db.commit()
+
+    r = logged_in.post("/api/contacts/sheets/rename",
+                       data={"old": "내 명단", "new": "남의 명단"},
+                       follow_redirects=False)
+    assert r.status_code == 303
+    db.expire_all()
+    assert mine.source_sheet == "내 명단", "두 명단이 한 탭으로 섞였습니다"
+    assert other.source_sheet == "남의 명단"
+    assert {o.label for o in db.query(SheetOwner).all()} == {"내 명단", "남의 명단"}
+    # **왜 안 됐는지 화면이 말해야 한다** — 조용히 돌아가면 저장된 줄 안다.
+    assert "msg=" in r.headers["location"]
+
+
+def test_쉼표가_든_이름은_받지_않는다(logged_in, db, users):
+    """`source_sheet` 는 쉼표로 이어 붙인 목록이다(한 사람이 여러 명단에 겹친다).
+
+    이름에 쉼표가 들어가면 줄은 그대로인데 탭만 둘로 갈라져 읽힌다.
+    """
+    row = _named(db, users, "임도윤", "옛 이름")
+    logged_in.post("/api/contacts/sheets/rename",
+                   data={"old": "옛 이름", "new": "앞, 뒤"}, follow_redirects=False)
+    db.refresh(row)
+    assert row.source_sheet == "옛 이름"
+
 # --- 화면에서 고친 값이 실제로 저장되는가 --------------------------------------
 #
 # 스키마(`ContactIn`)에 칸을 더해 놓고 `_assign` 의 저장 목록에 안 넣으면,
