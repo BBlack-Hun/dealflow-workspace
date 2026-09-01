@@ -200,6 +200,30 @@ def sample_contacts(user: User = Depends(get_current_user)):
                     headers=sp.content_disposition("투자사 관리 현황_업로드양식.xlsx"))
 
 
+def _contact_row(r: dict) -> list:
+    """투자사 한 줄 → 엑셀 한 줄. `CONTACT_HEADERS` 와 **같은 차례**다.
+
+    한 곳에 둔 이유는 이 줄을 쓰는 자리가 둘이기 때문이다 — `전체` 에서 받는
+    파일과, 표가 템플릿에 적혀 있는 배치(`INVESTOR_LAYOUT`)의 명단별 파일.
+    두 곳에 나눠 적으면 칸이 하나 늘 때 한쪽만 늘고, 그 파일은 **머리글과 값이
+    한 칸씩 밀린 채로** 나간다 — 열어 봐도 티가 잘 안 난다.
+    """
+    marks = []
+    if r["channel_kakao"]:
+        marks.append("카톡")
+    if r["channel_email"]:
+        marks.append("메일")
+    return [r["owner"], r["assignee"], r["connect_label"], r["group_name"],
+            r["name"], r["title"], r["firm"], r["department"], "/".join(marks),
+            r["room_name"], r["room_label"], r["invited_status"], r["interest_level"],
+            r["round_size"], ", ".join(r["stages"]), ", ".join(r["sectors"]),
+            r["phone"], r["email"], r["office_phone"], r["office_fax"],
+            r["address"], r["card_registered_at"],
+            r["last_deal"] or "", r["last_deal_note"],
+            r["ir_recent"], r["meet_recent"], r["ir_total"], r["meet_total"],
+            r["status_label"], r["memo"]]
+
+
 def _export_sheet(db: Session, user: User, label: str) -> Response:
     """명단 하나를 **그 명단이 화면에서 쓰는 칸 그대로** 내보낸다.
 
@@ -228,6 +252,27 @@ def _export_sheet(db: Session, user: User, label: str) -> Response:
                                     team_wide=may_manage_team_contacts(user),
                                     include_hidden=True)
             if label in r["sheets"] and not r["is_hidden"]]
+
+    # **표가 템플릿에 적혀 있는 배치는 `head` 가 비어 있다.**
+    #
+    # `INVESTOR_LAYOUT` 이 그렇다 — 그 표는 `contacts.html` 에 그대로 적혀 있고
+    # 여기에는 월별 칸만 남는다(그 배치 주석 참고). 그대로 내보내면 `담당 팀원`
+    # 과 달 칸만 든 파일이 나간다. **이름도 투자사명도 연락처도 없다.** 받은
+    # 사람은 누구의 무엇인지 알 수 없고, 시트와 대조할 수도 없다.
+    #
+    # 그래서 이런 배치에서는 **투자사 표 한 장(`CONTACT_HEADERS`)을 앞에 세우고**
+    # 그 명단의 달 칸을 뒤에 잇는다. `전체` 에서 받는 파일과 같은 칸이라 나란히
+    # 놓고 볼 수 있고, 달 칸은 그 명단 것만 붙으므로 시트와도 대조된다.
+    if not layout.head and not layout.tail:
+        months = [c for c in columns if c.source == "note"]
+        body = [
+            _contact_row(r) + [r["notes"].get(c.key, "") for c in months]
+            for r in rows
+        ]
+        today = date.today().isoformat()
+        return _xlsx(f"{label}_{today}.xlsx", layout.label,
+                     CONTACT_HEADERS + [c.label for c in months], body)
+
     body = [
         [r["owner"]] + [(r["notes"].get(c.key, "") if c.source == "note"
                          else r.get(c.key, "")) for c in columns]
@@ -260,24 +305,8 @@ def export_contacts(sheet: str = "", db: Session = Depends(get_db),
             raise HTTPException(status_code=404, detail="없는 명단입니다")
         return _export_sheet(db, user, name)
 
-    def channel(r):
-        marks = []
-        if r["channel_kakao"]:
-            marks.append("카톡")
-        if r["channel_email"]:
-            marks.append("메일")
-        return "/".join(marks)
-
     rows = [
-        [r["owner"], r["assignee"], r["connect_label"], r["group_name"],
-         r["name"], r["title"], r["firm"], r["department"], channel(r),
-         r["room_name"], r["room_label"], r["invited_status"], r["interest_level"],
-         r["round_size"], ", ".join(r["stages"]), ", ".join(r["sectors"]),
-         r["phone"], r["email"], r["office_phone"], r["office_fax"],
-         r["address"], r["card_registered_at"],
-         r["last_deal"] or "", r["last_deal_note"],
-         r["ir_recent"], r["meet_recent"], r["ir_total"], r["meet_total"],
-         r["status_label"], r["memo"]]
+        _contact_row(r)
         # 관리자는 팀 전체를 내려받는다 — 화면과 같은 범위여야 헷갈리지 않는다.
         # **그래서 판정도 화면과 같은 것을 읽는다**(`may_manage_team_contacts`).
         # 여기 `role == "admin"` 을 따로 적어 두면 범위가 갈릴 자리가 하나 더 는다.
