@@ -45,6 +45,22 @@
     <button type="button" class="chip active" data-cs-filter="">전체</button>
     <button type="button" class="chip" data-cs-filter="managed">관리 중</button>
     <button type="button" class="chip" data-cs-filter="dropped">드랍</button>
+    {# **값이 적힌 줄은 하나도 안 흘린다.** 이 칸은 자유 서술이라 시트가 정해 둔
+       마디에 안 맞는 값이 실제로 들어온다(`제안서 검토 후 진행 안 하기로 함`
+       처럼 뜻은 드랍인데 그렇게 안 적힌 줄). 예전에는 그런 줄이 어느 칩에도
+       안 걸려 화면에서 찾을 방법이 없었다 — 34줄 중 12줄이 `관리 중`·`드랍`
+       어디에도 안 걸렸다.
+
+       값마다 칩을 세우지는 않는다. 값의 종류가 사실상 무한하고(34줄에 열여섯
+       가지) **값별로 고르는 일은 머리글 `기업 관리 ▾` 가 이미 한다** —
+       거기에는 `기타 메모`·`백업팀 전환` 이 따로 서 있다. 이 칩은 그 둘을 묶은
+       굵은 갈래라 머리글과 겹치지도 어긋나지도 않는다. #}
+    <button type="button" class="chip" data-cs-filter="other">그 외</button>
+    {# **아무것도 안 적힌 줄.** 예전에는 월별 리마인드 칸만 봐서, `기업 관리` 에
+       `관리 중 : 미팅 완. -> 견적서 보내기 완료.` 라고 적어 둔 줄이 리마인드가
+       비었다는 이유로 `관리 중` 과 여기에 **동시에** 떴다. 칩이 나란히 붙어 한
+       갈래로 읽히는데 두 갈래를 섞어 놓은 것이라, 관리 중인 기업이 "연락 기록
+       없음" 에 뜨는 것이 틀려 보인다. 이제 두 칸을 같이 본다. #}
     <button type="button" class="chip" data-cs-filter="nocontact">연락 기록 없음</button>
   </div>
   <div class="toolbar-right">

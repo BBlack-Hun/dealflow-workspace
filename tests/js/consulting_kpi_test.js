@@ -1,6 +1,6 @@
 // 칸을 고치면 위 KPI 숫자도 따라오는가. (node tests/js/consulting_kpi_test.js)
 //
-// 이 화면은 칸을 눌러 그 자리에서 고친다. 칩(관리 중 · 드랍 · 연락 기록 없음)은
+// 이 화면은 칸을 눌러 그 자리에서 고친다. 칩(관리 중 · 드랍 · 그 외 · 연락 기록 없음)은
 // 고친 값을 따라가는데 **위 KPI 는 서버가 그려 준 숫자 그대로** 남아 있었다 —
 // `관리 중` 이 14 라고 적힌 채로 칩을 누르면 13곳이 나온다. 어느 쪽이 맞는지
 // 화면 어디에도 안 나오므로, 사용자는 새로고침을 해 봐야 안다.
@@ -69,18 +69,24 @@ function build() {
   //  1) 관리 중  · 지난달 기록 있음
   //  2) 관리 중  · 지난달 기록 없음
   //  3) 드랍     · 지난달 기록 없음
+  //  4) **아무것도 안 적힌 줄** — `연락 기록 없음` 이 잡는 유일한 모양이다.
+  //     그 칩은 `기업 관리` 가 비어 있고 그리고 리마인드도 비어 있는 줄만
+  //     받는다. 예전에는 리마인드 칸만 봐서 2·3번도 같이 걸렸는데, 그러면
+  //     `관리 중` 인 줄이 `연락 기록 없음` 에도 떠서 두 갈래가 섞여 보였다.
   const rows = [
     row(1, { management: "관리 중", tags: "관리 중", region: "서울", prevNote: "8월 통화" }),
     row(2, { management: "관리 중 : 견적서 발송", tags: "관리 중", region: "부산" }),
-    row(3, { management: "드랍 : 연락 두절", tags: "드랍", region: "대구" })
+    row(3, { management: "드랍 : 연락 두절", tags: "드랍", region: "대구" }),
+    row(4, { management: "", tags: "", region: "" })
   ];
   const table = D.el("table", { id: "cs-table", "data-contract-sheet": "0" }, [
     D.el("tbody", {}, rows)
   ]);
   const chips = [chip("", "전체"), chip("managed", "관리 중"),
-                 chip("dropped", "드랍"), chip("nocontact", "연락 기록 없음")];
-  const kpis = [kpi("total", 3), kpi("managed", 2), kpi("dropped", 1),
-                kpi("pending", 2)];
+                 chip("dropped", "드랍"), chip("other", "그 외"),
+                 chip("nocontact", "연락 기록 없음")];
+  const kpis = [kpi("total", 4), kpi("managed", 2), kpi("dropped", 1),
+                kpi("pending", 3)];
 
   const root = D.el("div", {}, kpis.concat(chips, [
     table,
@@ -157,7 +163,7 @@ function visible(dom) {
       "칩으로 거르면 1곳인데 위에는 2 라고 적혀 있습니다");
     assert.strictEqual(num(document, "dropped"), 2,
       "`드랍` 숫자가 안 따라왔습니다");
-    assert.strictEqual(num(document, "total"), 3, "전체 수가 흔들렸습니다");
+    assert.strictEqual(num(document, "total"), 4, "전체 수가 흔들렸습니다");
   }
 
   // 2) 거르는 것과 세는 것은 다르다. `드랍` 만 보는 중이어도 `관리 중` 숫자는
@@ -172,7 +178,7 @@ function visible(dom) {
       "거른 결과로 KPI 를 셌습니다 — 드랍만 보는 중이라고 `관리 중` 이 " +
       "0 이 되면 그 숫자는 아무 뜻이 없습니다");
     assert.strictEqual(num(document, "dropped"), 1);
-    assert.strictEqual(num(document, "total"), 3);
+    assert.strictEqual(num(document, "total"), 4);
   }
 
   // 3) 지난달 칸을 채우면 `미완료 기업` 도 줄어든다.
@@ -184,13 +190,15 @@ function visible(dom) {
 
     assert.strictEqual(dom.rows[1].getAttribute("data-contacted-prev"), "1",
       "지난달 칸을 채웠는데 줄의 표시가 안 바뀌었습니다");
-    assert.strictEqual(num(document, "pending"), 1,
+    assert.strictEqual(num(document, "pending"), 2,
       "지난달 칸을 채웠는데 `미완료 기업` 숫자가 그대로입니다");
   }
 
-  // 4) 칩은 **한 번에 하나**다. 세 칩이 한 갈래가 아니라서다 — 둘은 `기업 관리`
-  //    이고 하나는 리마인드 기록이다. 같은 갈래를 여러 개 고르는 일은 머리글
-  //    `기업 관리 ▾` 가 이미 한다(OR). 그래서 새로 누르면 앞의 것이 풀린다.
+  // 4) 칩은 **한 번에 하나**다. 넷이 서로 겹치지 않게 나뉘어 있어(관리 중 ·
+  //    드랍 · 그 외 · 아무것도 안 적힌 줄) 둘을 함께 고를 이유가 없다 — AND 로
+  //    묶으면 늘 0줄이고, OR 로 묶으면 아무도 안 찾는 목록이 된다. 같은 갈래
+  //    안에서 값을 여러 개 고르는 일은 머리글 `기업 관리 ▾` 가 이미 한다(OR).
+  //    그래서 새로 누르면 앞의 것이 풀린다.
   {
     const dom = build();
     run(dom);
@@ -209,11 +217,13 @@ function visible(dom) {
   {
     const dom = build();
     run(dom);
-    dom.chips[3].fire("click", { target: dom.chips[3] });   // 연락 기록 없음
+    dom.chips[4].fire("click", { target: dom.chips[4] });   // 연락 기록 없음
     assert.ok(!dom.note.hidden, "걸러 놓고 안내 문구를 안 띄웠습니다");
     assert.ok(dom.note.textContent.indexOf("연락 기록 없음") >= 0,
       "무엇으로 걸렀는지 안 적혀 있습니다: " + JSON.stringify(dom.note.textContent));
-    assert.ok(dom.note.textContent.indexOf("2 / 3") >= 0,
+    // 아무것도 안 적힌 줄은 4번 하나다. 2·3번은 `기업 관리` 에 적어 둔 것이
+    // 있으니 리마인드가 비었어도 여기 안 뜬다.
+    assert.ok(dom.note.textContent.indexOf("1 / 4") >= 0,
       "건수가 틀립니다: " + JSON.stringify(dom.note.textContent));
   }
 

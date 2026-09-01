@@ -20,7 +20,11 @@
   // 그것을 나눠 본다 — 예전에는 `data-managed`/`data-dropped` 를 따로 두어,
   // 같은 판단이 화면·서버·여기 세 곳에 적혀 있었다.
   function tagsOf(tr) {
-    return (tr.getAttribute("data-f-mgmt") || "").split("|");
+    // 빈 칸은 `"".split("|") === [""]` 이라 **태그 하나로 세어진다.** 그대로
+    // 두면 `연락 기록 없음`(태그가 하나도 없는 줄)이 아무도 안 잡는다.
+    // filters.js 의 `splitValues` 도 같은 이유로 빈 값을 떨어낸다.
+    return (tr.getAttribute("data-f-mgmt") || "").split("|")
+      .filter(function (t) { return t.length > 0; });
   }
 
   function hasTag(tr, tag) { return tagsOf(tr).indexOf(tag) >= 0; }
@@ -39,7 +43,21 @@
     return hit && (filter === ""
       || (filter === "managed" && hasTag(tr, "관리 중"))
       || (filter === "dropped" && hasTag(tr, "드랍"))
-      || (filter === "nocontact" && tr.getAttribute("data-contacted") !== "1"));
+      // `그 외` — 적혀 있는데 위 두 마디가 아닌 줄. 이 칸은 자유 서술이라 값의
+      // 종류가 무한해서 값마다 칩을 세울 수가 없다. 값별로 고르는 일은 머리글
+      // `기업 관리 ▾` 가 이미 한다(`기타 메모`·`백업팀 전환` 이 따로 서 있다).
+      // 서버는 `consulting_status.is_other` 가 같은 것을 본다.
+      || (filter === "other" && tagsOf(tr).length > 0
+          && !hasTag(tr, "관리 중") && !hasTag(tr, "드랍"))
+      // `연락 기록 없음` — **아무것도 안 적힌 줄.** 예전에는 월별 리마인드 칸만
+      // 봐서, `기업 관리` 에 적어 둔 줄이 리마인드가 비었다는 이유로 `관리 중`
+      // 과 여기에 **동시에** 떴다. 두 칸을 같이 본다
+      // (서버는 `consulting_status.no_contact`).
+      //
+      // 줄에 표시를 하나 더 두지 않고 **있는 값 둘에서 되짚는다** — 칸을 고치면
+      // 그 둘은 `refreshRowFlags` 가 다시 적으므로, 새 표시를 두면 그것만 낡는다.
+      || (filter === "nocontact" && tagsOf(tr).length === 0
+          && tr.getAttribute("data-contacted") !== "1"));
   }
 
   // 몇 곳이 남았는지. 걸러 놓고 건수를 안 보여 주면 다 본 것인지 알 수 없다.
@@ -108,11 +126,11 @@
   }
 
   search.addEventListener("input", apply);
-  // 칩은 **한 번에 하나**다. 세 칩이 한 갈래가 아니라서다 — 둘은 `기업 관리`
-  // 이고 하나는 리마인드 기록이다. OR 로 묶으면 "관리 중이거나 연락 기록이
-  // 없는 곳" 이라는 아무도 안 찾는 목록이 되고, AND 로 묶으면 관리 중 ∧ 드랍
-  // 이 거의 늘 0줄이라 눌러도 빈 화면만 나온다. 같은 갈래를 여러 개 고르는
-  // 일은 머리글 `기업 관리 ▾` 가 이미 한다(같은 컬럼 안에서는 OR).
+  // 칩은 **한 번에 하나**다. 넷이 `기업 관리` 한 갈래를 서로 안 겹치게 나눠
+  // 놓은 것이라서다 — 관리 중 · 드랍 · 그 외(적혀 있는데 둘 다 아님) · 아무것도
+  // 안 적힌 줄. AND 로 묶으면 서로 배타적이라 늘 0줄이고, OR 로 묶으면 "관리
+  // 중이거나 드랍인 곳" 이라는 아무도 안 찾는 목록이 된다. 한 갈래 **안에서**
+  // 값을 여러 개 고르는 일은 머리글 `기업 관리 ▾` 가 이미 한다(컬럼 안에서는 OR).
   document.querySelectorAll("[data-cs-filter]").forEach(function (btn) {
     btn.addEventListener("click", function () {
       document.querySelectorAll("[data-cs-filter]").forEach(function (b) {
