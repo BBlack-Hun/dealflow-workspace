@@ -877,6 +877,40 @@
       {% endif %}
       <button type="button" class="danger-btn" id="delete-btn">삭제</button>
     </div>
+    {#
+      줄 하나를 다른 담당자에게 넘기기.
+
+      **표 안이 아니라 이 창에 둔다.** 표는 이미 가로로 넘치도록 넓어(담당자·
+      관심도·카톡방·메모·딜소싱·선호분야·라운드…) 칸을 하나 더 붙이면 단추가
+      화면 밖으로 밀려 아무도 못 찾는다. 게다가 표의 줄을 누르는 것은 이미
+      "수정창 열기" 라, 줄 안에 단추를 두면 그 처리에 예외를 또 하나 파야
+      한다(`contacts.js` 의 줄 클릭 처리에 이미 둘이 있다).
+
+      이관은 **드물고 되돌리기 번거로운 줄 단위 조작**이다 — 바로 옆의
+      [이 줄 감추기]·[삭제] 와 같은 갈래라 같은 자리에 선다. 창 머리에 누구
+      줄인지 이미 적혀 있어(`detail-title`) 확인창이 사람을 헷갈릴 일도 없다.
+
+      넘길 곳이 없으면(담당이 정해진 명단이 하나도 없으면) 아예 세우지 않는다 —
+      고를 것이 없는 빈 선택칸은 고장으로 읽힌다.
+    #}
+    {% if transfer_targets %}
+    <div class="detail-actions transfer-row">
+      <label class="field" style="flex:1 1 220px">
+        <span>이관 — 다른 담당자에게 넘기기</span>
+        <select id="transfer-target">
+          <option value="">넘길 명단 고르기…</option>
+          {% for t in transfer_targets %}
+          {# 감춘 명단은 **그렇다고 적는다.** 거기로 넘기면 그 줄이 투자사 수와
+             딜 소개 발송 대상에서 빠지는데, 안 적으면 조용히 빠진다. #}
+          <option value="{{ t.label }}" data-owner="{{ t.owner }}">{{ t.owner }} · {{ t.label }}{% if t.is_hidden %} (투자사로 안 셈){% endif %}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button type="button" class="secondary-btn" id="transfer-btn"
+              title="이 줄을 고른 명단으로 옮깁니다. 지금 명단에서는 빠지고, 그 명단 담당자의 발송 대상이 됩니다.">
+        이관</button>
+    </div>
+    {% endif %}
     <p class="hint" id="detail-msg"></p>
   </div>
 

@@ -623,3 +623,87 @@ def add_to_sheet(db: Session, contacts: List[VcContact], label: str,
         moved += 1
     db.flush()
     return moved
+
+
+# ── 명단 사이로 옮기기 ──────────────────────────────────────────────────────
+#
+# 위 `add_to_sheet` 이 **더하는** 일(풀에서 뽑아 내 명단을 불린다)이라면 아래
+# `move_to` 는 **옮기는** 일이다 — 옛 담당에게서 빼고 새 담당에게 붙인다.
+#
+# 이 규칙은 원래 `scripts/import_new_list.py` 안에만 있었다. 화면에서 줄 하나를
+# 넘기는 길이 생기면서 부르는 곳이 둘이 됐고, 그때 화면에 규칙을 다시 적으면
+# **두 벌이 된다** — 이 저장소가 반복해 당한 사고다(투자사 수가 화면마다 갈린
+# 일, 좌측 메뉴 목록과 라우터 목록이 갈린 일, 보이는데 못 고치던 줄).
+# 그래서 판정을 여기 한 곳에 두고 스크립트와 화면이 **같은 함수**를 부른다.
+
+
+def move_to(db: Session, contact: VcContact, label: str, user_id: int) -> str:
+    """이미 있는 줄을 이 명단으로 **옮긴다.** 새로 만들지 않는다.
+
+    카톡방·발송 이력·담당 투자사가 이 줄에 붙어 있다. 새로 만들면 그 이력이
+    끊기고, 이력이 없는 새 줄로 다시 처음부터 연락하게 된다.
+
+    출처(`source_sheet`)에서 **담당이 정해진 남의 명단은 뺀다.** 남겨 두면 그
+    팀원의 대시보드와 발송 대상에 계속 잡혀 같은 사람에게 딜 소개가 두 번
+    나간다 — 애초에 배정을 정한 이유가 그것이다.
+
+    담당이 없는 명단(투자사 풀)은 **그대로 둔다.** 풀은 확보해 둔 전체 명단이지
+    누구의 담당도 아니라, 거기서 빼면 그 분류 자체가 사라진다
+    (`add_to_sheet` 이 풀에서 빼지 않는 것과 같은 이유다).
+
+    돌려주는 것은 `이전 명단 → 새 명단` 한 줄이다. 스크립트는 그것을 찍고
+    화면은 사람에게 보여 준다 — **무엇이 바뀌었는지 말하지 않는 이관은
+    되돌릴 수도 없다.**
+    """
+    owners = owner_map(db)
+    before = labels_of(contact.source_sheet)
+    keep = [x for x in before
+            if x != MANUAL_SHEET
+            and x != label
+            and (not owners.get(x) or owners.get(x) == user_id)]
+    contact.source_sheet = ",".join(keep + [label])
+    contact.user_id = user_id
+    return f"{', '.join(before)} → {contact.source_sheet}"
+
+
+def transfer_targets(db: Session, page: Optional[str] = None) -> List[dict]:
+    """줄 하나를 넘길 수 있는 곳 — **담당이 정해진 명단**만.
+
+    풀은 뺀다. 풀은 누구의 담당도 아니라 "저 사람에게 넘긴다" 가 성립하지
+    않는다 — 넘긴 줄의 `user_id` 를 정할 수가 없다.
+
+    **화면의 탭(`sheet_rows`)을 그대로 쓸 수 없다.** 탭은 *지금 보이는 사람들*
+    로 세어 만들기 때문에, 팀원에게는 자기 명단만 뜬다 — 정작 넘겨 줄 상대의
+    명단이 목록에 없다. 넘기는 곳은 내가 그 명단에 사람을 갖고 있는지와
+    상관없이 서 있어야 한다.
+
+    `page` 를 주면 **그 화면에 사는 명단만** 남긴다. 투자사 줄을 스타트업
+    명단으로 넘기면 줄이 다른 화면으로 사라져, 넘긴 사람은 어디로 갔는지
+    찾을 수가 없다 — 이관은 *누가 맡는지*를 바꾸는 일이지 화면을 옮기는 일이
+    아니다(화면을 옮기는 것은 명단의 배치가 정한다).
+
+    **감춘 명단은 빼지 않고 그렇다고 알린다**(`is_hidden`). 처음엔 뺐는데, 그러면
+    스타트업 화면에서 넘길 곳이 하나도 남지 않는다 — 그 화면의 명단은 **원래
+    전부 감춰져 있다**(투자사가 아니라서 투자사로 안 센다. 이 파일 위쪽
+    `is_investor` 참고). 넘길 곳이 없으면 그 화면에서는 이관 자체가 안 된다.
+    걱정한 것은 "조용히 빠지는 것" 이었지 감춘 명단 자체가 아니므로, 막는 대신
+    화면이 그 명단은 투자사로 세지 않는다고 **적는다** — 이 저장소가 수를
+    다루는 방식 그대로다(`recipient_counts` 의 `off_list`).
+    """
+    from . import contact_columns
+
+    names = {u.id: u.name for u in db.execute(select(User)).scalars().all()}
+    out = []
+    for label, row in settings_map(db).items():
+        if not row.user_id:
+            continue
+        layout = row.layout or "investor"
+        if page is not None and contact_columns.page_of(layout) != page:
+            continue
+        out.append({"label": label, "owner_id": row.user_id,
+                    "owner": names.get(row.user_id, ""),
+                    # 넘기면 투자사 수와 발송 대상에서 빠지는 명단인가.
+                    "is_hidden": bool(row.is_hidden)})
+    # 담당자 이름 → 명단 이름 순. 사람을 먼저 찾고 그 사람의 명단을 고른다.
+    out.sort(key=lambda t: (t["owner"], t["label"]))
+    return out

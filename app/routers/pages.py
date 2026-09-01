@@ -327,6 +327,10 @@ def list_page(
                     if team_wide else []),
         # 풀에서 고른 사람을 어느 명단으로 할당할지 — 내 명단만 고를 수 있다.
         "my_sheets": [t for t in tabs if t["owner_id"] == user.id],
+        # 줄 하나를 넘길 곳 — **탭을 그대로 쓰지 않는다.** 탭은 지금 보이는
+        # 사람들로 세어 만들어서 팀원에게는 자기 명단만 뜬다. 정작 넘겨 줄
+        # 상대의 명단이 목록에 없으면 이관 자체를 할 수가 없다.
+        "transfer_targets": sheet_owner.transfer_targets(db, page=page.page),
         # 풀 탭에서는 골라서 내 명단으로 할당할 수 있다.
         "pool_view": any(t["key"] == selected and t["kind"] == "pool" for t in tabs),
         # `전체` 탭에 적히는 수. **투자사로 세는 사람만** — 여기가 부풀면

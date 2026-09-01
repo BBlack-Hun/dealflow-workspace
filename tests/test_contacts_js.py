@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 OPEN_TEST = Path(__file__).resolve().parent / "js" / "contacts_open_test.js"
+TRANSFER_TEST = Path(__file__).resolve().parent / "js" / "contact_transfer_test.js"
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치 — 브라우저 로직 테스트 생략")
@@ -32,5 +33,24 @@ def test_dashboard_link_actually_opens_the_detail_panel():
     node = shutil.which("node")
     result = subprocess.run(
         [node, str(OPEN_TEST)], capture_output=True, text=True, timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치 — 브라우저 로직 테스트 생략")
+def test_transfer_confirm_names_who_goes_where():
+    """이관 확인창이 **누구를 누구에게** 넘기는지, 월별 기록이 어찌 되는지 말하는가.
+
+    이관은 되돌리기 번거로운 조작이라 사람이 마지막에 보는 것이 그 한 줄이다.
+    이름이 빠지면 엉뚱한 줄을 넘겨도 모르고, 월별 기록 이야기가 빠지면 기록이
+    날아간 줄 알고 다시 적는다(달마다 늘어나는 칸은 명단마다 따로라 옛 기록이
+    새 명단의 수정창에 안 뜬다 — 지워지는 것은 아니다).
+
+    취소를 눌렀을 때 한 건도 안 나가는지까지 본다. 확인창을 띄워 놓고 이미
+    보내 버리면 확인창은 장식일 뿐이다.
+    """
+    node = shutil.which("node")
+    result = subprocess.run(
+        [node, str(TRANSFER_TEST)], capture_output=True, text=True, timeout=60,
     )
     assert result.returncode == 0, result.stdout + result.stderr
