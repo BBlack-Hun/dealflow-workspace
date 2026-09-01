@@ -615,6 +615,18 @@ def _consulting_ctx(db, users, columns, rows_notes):
     return cols
 
 
+def _mgmt_ctx(db, users, managements):
+    """`기업 관리` 칸만 다른 줄들을 깐다. (실제 시트와 같은 모양의 **가상** 값)"""
+    from app.models import ConsultingCompany
+    from app.services.consulting_sheets import default_label
+
+    for i, text in enumerate(managements):
+        db.add(ConsultingCompany(
+            user_id=users["u1"].id, sheet=default_label(db), position=i + 1,
+            company_name=f"샘플기업{i}", management=text))
+    db.commit()
+
+
 def test_KPI_는_지난달_빈칸을_센다(allowed, db, users):
     """다 한 수는 봐도 할 일이 안 나온다 — **아직 안 한 곳**을 센다.
 
@@ -693,6 +705,102 @@ def test_접어_둔_달의_기록도_기록이다(allowed, db, users):
         "화면이 실어 준 사실을 JS 가 안 읽습니다 — 고치는 순간 뒤집힙니다"
 
 
+def test_공백만_있는_리마인드_칸은_기록이_아니다(allowed, db, users):
+    """`" "` 한 칸을 기록으로 세면 그 줄은 **아무 칸이나 고치는 순간 뒤집힌다.**
+
+    서버는 값이 비어 있지 않은지만 봤고(젠자의 `select`), 브라우저는 앞뒤 공백을
+    떼고 봤다(`trim`). 원본 시트에서 올라온 값은 다듬어지지 않으므로
+    (`/consulting/import` 는 칸을 적힌 그대로 넣는다) 공백만 있는 칸이 실제로
+    생긴다. 그런 줄은 `연락 기록 있음` 으로 그려졌다가, 칸을 한 번 고치면
+    `연락 기록 없음` 으로 넘어갔다 — 화면에 안 보이는 차이라 이유를 알 수 없다.
+    """
+    import re
+
+    from app.routers.consulting import _prev_month
+
+    prev = _prev_month()
+    this = prev % 12 + 1
+    _consulting_ctx(db, users, [f"{this}월 리마인드", f"{prev}월 리마인드"],
+                    [{0: "   "}, {0: "8월 통화"}])
+    body = allowed.get("/consulting").text
+    assert re.findall(r'data-contacted="(\d)"', body) == ["0", "1"], \
+        "공백만 있는 칸을 기록으로 셌습니다 — 브라우저는 안 그렇게 봅니다"
+
+
+def test_KPI_와_칩은_같은_줄을_센다(allowed, db, users):
+    """위 숫자와 칩으로 거른 줄 수가 다르면 어느 쪽을 믿을지 알 수 없다.
+
+    한 줄에 두 마디가 같이 오는 일이 잦다(`백업팀으로 전환 … 드랍`). 그 줄은
+    드랍이라고 적혀 있으니 `드랍` 에 잡혀야 하고, KPI 도 같이 세야 한다.
+    """
+    import re
+
+    _mgmt_ctx(db, users, [
+        "관리 중",
+        "관리중 : 견적서 보내기 완료",
+        "드랍 : ir 진행 계약 완료 -> 기업 회생 신청",
+        "백업팀으로 전환 · 논의 중임. 드랍",
+        "내년부터 투자 라운드 돌 예정",       # 적혀 있지만 셋 중 어느 것도 아니다
+        "",                                    # 아직 안 적은 줄
+    ])
+    body = allowed.get("/consulting").text
+    tags = re.findall(r'data-f-mgmt="([^"]*)"', body)
+    assert tags == ["관리 중", "관리 중", "드랍", "드랍|백업팀 전환", "기타 메모", ""]
+
+    def card(label):
+        return int(re.search(r">(\d+)<",
+                             body.split(f">{label}</span>")[1]).group(1))
+
+    assert card("관리 중") == sum(1 for t in tags if "관리 중" in t.split("|"))
+    assert card("드랍") == sum(1 for t in tags if "드랍" in t.split("|"))
+    assert card("전체") == len(tags)
+
+
+def test_KPI_숫자에_브라우저가_다시_셀_표식이_있다(allowed, db, users):
+    """칸을 고치면 칩은 따라오는데 위 숫자만 옛것으로 남아 있었다.
+
+    다시 세는 것은 브라우저다(`consulting.js` 의 `syncKpi`). 어느 숫자가 무엇을
+    세는 자리인지 표에 적혀 있지 않으면 브라우저가 고쳐 쓸 자리를 못 찾는다.
+    """
+    _mgmt_ctx(db, users, ["관리 중", "드랍 : 연락 두절"])
+    body = allowed.get("/consulting").text
+    for key in ("total", "managed", "dropped"):
+        assert f'data-kpi="{key}"' in body, \
+            f"`{key}` 숫자에 표식이 없습니다 — 고쳐도 위 숫자는 그대로입니다"
+
+
+def test_관리_드랍_판정은_한_곳에서만_한다():
+    """같은 판단을 세 곳에 적어 두면 한쪽이 낡는다.
+
+    `기업 관리` 칸이 어느 갈래인가를 (1) 라우터의 KPI, (2) 화면의 줄 표시,
+    (3) 머리글 필터용 태그가 **각자** 정하고 있었다. 규칙은 한 곳에만 둔다
+    (`services/consulting_status.py`) — `deps.may_view_consulting` ·
+    `services/sheet_owner.py` 와 같은 자리다.
+    """
+    import pathlib as _p
+    import re
+
+    from app.services import consulting_status as status
+
+    assert status.tag_value("드랍 : 연락 두절") == "드랍"
+    assert status.is_dropped("드랍 : 연락 두절") and not status.is_managed("드랍 : 연락 두절")
+
+    # 주석은 옛 모양을 **적어 두는** 자리라 여기서 세면 안 된다. 판정하는
+    # **코드**가 남아 있는지만 본다.
+    tmpl = re.sub(r"\{#.*?#\}", "",
+                  _p.Path("app/templates/consulting.html").read_text(encoding="utf-8"),
+                  flags=re.S)
+    for word in ("'관리' in", "'드랍' in"):
+        assert word not in tmpl, \
+            f"화면이 갈래를 다시 정하고 있습니다({word}) — 규칙이 두 벌입니다"
+
+    router = re.sub(r"#[^\n]*", "",
+                    _p.Path("app/routers/consulting.py").read_text(encoding="utf-8"))
+    for word in ('"관리" in', '"드랍" in'):
+        assert word not in router, \
+            f"라우터가 갈래를 다시 정하고 있습니다({word}) — 규칙이 두 벌입니다"
+
+
 @pytest.mark.skipif(__import__("shutil").which("node") is None,
                     reason="node 미설치 — 브라우저 로직 테스트 생략")
 def test_화면_코드를_그대로_돌려_본다():
@@ -706,6 +814,24 @@ def test_화면_코드를_그대로_돌려_본다():
     import subprocess
 
     js = _p.Path(__file__).resolve().parent / "js" / "consulting_contacted_test.js"
+    r = subprocess.run([shutil.which("node"), str(js)],
+                       capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
+@pytest.mark.skipif(__import__("shutil").which("node") is None,
+                    reason="node 미설치 — 브라우저 로직 테스트 생략")
+def test_고친_값을_KPI_가_따라오는지_그대로_돌려_본다():
+    """칩만 따라오고 위 숫자가 옛것이면 사용자는 어느 쪽을 믿을지 알 수 없다.
+
+    `tests/js/consulting_kpi_test.js` 가 consulting.js 를 실제로 돌려 칸을 고치고,
+    KPI 가 따라오는지 · 거른 결과가 아니라 표 전체를 세는지까지 본다.
+    """
+    import pathlib as _p
+    import shutil
+    import subprocess
+
+    js = _p.Path(__file__).resolve().parent / "js" / "consulting_kpi_test.js"
     r = subprocess.run([shutil.which("node"), str(js)],
                        capture_output=True, text=True, timeout=60)
     assert r.returncode == 0, r.stdout + r.stderr

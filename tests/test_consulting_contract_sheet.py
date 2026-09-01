@@ -257,13 +257,16 @@ def test_성공보수율과_계약금은_고쳐지고_다시_읽힌다(allowed, 
 def test_계약여부_필터는_적힌_그대로_건다(allowed, db, users):
     """`무료`/`유료` 는 이미 추려진 값이다. `기업 관리` 규칙을 태우면 둘 다
     `기타 메모` 로 묶여 고를 것이 하나도 안 남는다."""
-    from app.routers.consulting import management_tags
+    from app.services import consulting_status as status
 
-    assert management_tags("무료", contract=True) == "무료"
-    assert management_tags("유료", contract=True) == "유료"
+    assert status.tag_value("무료", contract=True) == "무료"
+    assert status.tag_value("유료", contract=True) == "유료"
+    # 계약 탭에는 `관리 중`·`드랍` 이라는 갈래 자체가 없다 — 칩도 0곳이다.
+    assert not status.is_managed("무료", contract=True)
+    assert not status.is_dropped("무료", contract=True)
     # 다른 탭은 지금까지 그대로
-    assert management_tags("관리 중") == "관리 중"
-    assert management_tags("무료") == "기타 메모"
+    assert status.tag_value("관리 중") == "관리 중"
+    assert status.tag_value("무료") == "기타 메모"
 
     _row(db, users["u1"].id, sheet=CONTRACT, position=1,
          company_name="샘플타", management="무료")
