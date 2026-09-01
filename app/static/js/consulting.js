@@ -10,10 +10,20 @@
   var search = document.getElementById("cs-search");
   var note = document.getElementById("cs-note");
   var filter = "";
+  var filterName = "";   // 지금 눌린 칩의 이름. 무엇으로 걸렀는지 글자로 남긴다.
 
   function rows() {
     return Array.prototype.slice.call(table.querySelectorAll("tbody tr[data-id]"));
   }
+
+  // 줄이 걸린 마디들. 갈래 표시는 `data-f-mgmt` **하나**이고 관리 중 · 드랍 칩도
+  // 그것을 나눠 본다 — 예전에는 `data-managed`/`data-dropped` 를 따로 두어,
+  // 같은 판단이 화면·서버·여기 세 곳에 적혀 있었다.
+  function tagsOf(tr) {
+    return (tr.getAttribute("data-f-mgmt") || "").split("|");
+  }
+
+  function hasTag(tr, tag) { return tagsOf(tr).indexOf(tag) >= 0; }
 
   // ── 검색 · 칩 · 컬럼 필터 ──────────────────────────────────
   //
@@ -27,19 +37,53 @@
     var q = (search.value || "").trim().toLowerCase();
     var hit = !q || (tr.getAttribute("data-search") || "").indexOf(q) !== -1;
     return hit && (filter === ""
-      || (filter === "managed" && tr.getAttribute("data-managed") === "1")
-      || (filter === "dropped" && tr.getAttribute("data-dropped") === "1")
+      || (filter === "managed" && hasTag(tr, "관리 중"))
+      || (filter === "dropped" && hasTag(tr, "드랍"))
       || (filter === "nocontact" && tr.getAttribute("data-contacted") !== "1"));
   }
 
   // 몇 곳이 남았는지. 걸러 놓고 건수를 안 보여 주면 다 본 것인지 알 수 없다.
+  //
+  // **무엇으로 걸렀는지도 적는다.** 건수만 두면 `연락 기록 없음`(어느 달이든
+  // 기록이 없는 곳)과 위 KPI 의 `미완료 기업`(지난달만 본다)이 서로 다른
+  // 숫자인데도 구별할 방법이 없다 — 실데이터로 7곳과 20곳이다.
   function showNote(state) {
     var all = rows();
     var shown = all.filter(function (tr) { return !tr.hidden; }).length;
     var picked = state ? Object.keys(state).length : 0;
     var q = (search.value || "").trim();
     note.hidden = !(q || filter || picked);
-    if (!note.hidden) note.textContent = shown + " / " + all.length + "곳 표시 중";
+    if (!note.hidden) {
+      note.textContent = shown + " / " + all.length + "곳 표시 중"
+        + (filterName ? " · " + filterName : "")
+        + (q ? " (검색: " + q + ")" : "");
+    }
+  }
+
+  // ── 위 KPI ────────────────────────────────────────────────
+  //
+  // KPI 는 **거른 결과가 아니라 이 탭 전체**를 센다. `드랍` 만 보는 중이라고
+  // `관리 중` 이 0 이 되면 안 된다 — 그건 필터가 아니라 표의 성질이다.
+  // (deals.js 가 `data-match` 와 `hidden` 을 갈라 둔 것과 같은 이유: "조건에
+  //  맞는가" 를 "보이는가" 로 읽으면 안 된다. 여기서는 `tr.hidden` 을 아예
+  //  안 본다.)
+  //
+  // 세는 규칙은 서버(`services/consulting_status.py`)와 같아야 한다. 그래서
+  // 줄에 적힌 값만 보고 세고, `기업 관리` 칸의 문장을 여기서 다시 읽지 않는다.
+  function syncKpi() {
+    var all = rows();
+    var n = { total: all.length, managed: 0, dropped: 0, pending: 0 };
+    all.forEach(function (tr) {
+      if (hasTag(tr, "관리 중")) n.managed += 1;
+      if (hasTag(tr, "드랍")) n.dropped += 1;
+      if (tr.getAttribute("data-contacted-prev") !== "1") n.pending += 1;
+    });
+    Object.keys(n).forEach(function (key) {
+      // 표식이 없는 숫자는 안 건드린다 — `미완료 기업` 은 지난달 칸이 표에
+      // 서 있을 때만 표식이 붙는다(접혀 있으면 다시 셀 근거가 화면에 없다).
+      var el = document.querySelector('[data-kpi="' + key + '"]');
+      if (el) el.textContent = String(n[key]);
+    });
   }
 
   var columnFilters = window.DealflowFilters && window.DealflowFilters.init({
@@ -53,6 +97,10 @@
   // 때문에 다시 읽지 않으면 화면에는 `관리 중` 이라고 적혀 있는데 필터에는
   // 여전히 `드랍` 으로 남는다.
   function apply() {
+    // 위 숫자는 걸린 조건과 무관하다 — 어느 길로 가든 먼저 센다.
+    // (`columnFilters` 가 있으면 아래에서 바로 빠져나가므로 여기 말고는
+    //  둘 다 거치는 자리가 없다.)
+    syncKpi();
     if (columnFilters) { columnFilters.refresh(); return; }   // refresh 안에서 적용까지 한다
     // 공통 부품을 못 실었을 때(스크립트 순서가 틀어졌다든지)라도 검색·칩은 살아 있어야 한다.
     rows().forEach(function (tr) { tr.hidden = !passes(tr); });
@@ -60,6 +108,11 @@
   }
 
   search.addEventListener("input", apply);
+  // 칩은 **한 번에 하나**다. 세 칩이 한 갈래가 아니라서다 — 둘은 `기업 관리`
+  // 이고 하나는 리마인드 기록이다. OR 로 묶으면 "관리 중이거나 연락 기록이
+  // 없는 곳" 이라는 아무도 안 찾는 목록이 되고, AND 로 묶으면 관리 중 ∧ 드랍
+  // 이 거의 늘 0줄이라 눌러도 빈 화면만 나온다. 같은 갈래를 여러 개 고르는
+  // 일은 머리글 `기업 관리 ▾` 가 이미 한다(같은 컬럼 안에서는 OR).
   document.querySelectorAll("[data-cs-filter]").forEach(function (btn) {
     btn.addEventListener("click", function () {
       document.querySelectorAll("[data-cs-filter]").forEach(function (b) {
@@ -67,6 +120,7 @@
       });
       btn.classList.add("active");
       filter = btn.getAttribute("data-cs-filter");
+      filterName = filter ? (btn.textContent || "").trim() : "";
       apply();
     });
   });
@@ -156,9 +210,14 @@
   // 계약 탭인가. `계약여부` 칸은 값이 `무료`/`유료` 라 추리지 않고 그대로 건다.
   var contractSheet = table.getAttribute("data-contract-sheet") === "1";
 
-  // 머리글 필터가 보는 값. 서버의 `management_tags`(routers/consulting.py)와
-  // **같은 말을 같은 순서로** 봐야 한다 — 규칙이 어긋나면 고친 직후와 새로고침
-  // 뒤에 같은 줄이 서로 다른 값으로 걸린다.
+  // `기업 관리` 칸이 어느 갈래인가. **브라우저 쪽 규칙은 이 함수 하나뿐이다** —
+  // 칩도 KPI 도 머리글 필터도 여기서 나온 태그를 나눠 볼 뿐, 칸의 문장을 다시
+  // 읽지 않는다.
+  //
+  // 서버의 `services/consulting_status.py` 와 **같은 말을 같은 순서로** 봐야
+  // 한다. 언어가 둘이라 한 벌씩은 어쩔 수 없지만, 어긋나면 고친 직후와
+  // 새로고침 뒤에 같은 줄이 서로 다른 값으로 걸린다.
+  // (같은 마디가 양쪽에 있는지는 `tests/test_filter_columns.py` 가 지킨다.)
   function managementTags(text) {
     // 계약 탭의 `계약여부` 는 이미 추려진 값이다. 아래 규칙을 태우면 `무료`·
     // `유료` 가 전부 `기타 메모` 로 묶여 고를 것이 없어진다.
@@ -171,25 +230,34 @@
     return tags.join("|");
   }
 
-  // 관리/드랍 표시와 머리글 필터 값은 '기업 관리'·'지역' 칸의 내용으로 정해진다 —
-  // 고치면 둘 다 따라가야 한다.
+  // 줄에 붙는 표시는 전부 칸의 내용에서 나온다 — 고치면 다 같이 따라가야 한다.
+  // 칩도 KPI 도 머리글 필터도 **여기서 적은 값만** 본다.
   function refreshRowFlags(tr) {
     var mgmt = tr.querySelector('[data-field="management"]');
-    var text = mgmt ? mgmt.textContent : "";
-    tr.setAttribute("data-managed", text.indexOf("관리") >= 0 ? "1" : "0");
-    tr.setAttribute("data-dropped", text.indexOf("드랍") >= 0 ? "1" : "0");
-    tr.setAttribute("data-f-mgmt", managementTags(text));
+    tr.setAttribute("data-f-mgmt", managementTags(mgmt ? mgmt.textContent : ""));
     var region = tr.querySelector('[data-field="region"]');
     tr.setAttribute("data-f-region", region ? region.textContent.trim() : "");
+    // **적힌 것이 있는가**는 앞뒤 공백을 뗀 뒤에 본다. 서버도 같은 규칙이다
+    // (`consulting_status.contacted`) — 예전에는 서버가 공백만 든 칸을 기록으로
+    // 세서, 그런 줄이 아무 칸이나 고치는 순간 `연락 기록 없음` 으로 넘어갔다.
+    function filled(td) { return td.textContent.trim().length > 0; }
     // **접어 둔 달의 기록도 기록이다.** 여기서 볼 수 있는 것은 펴 둔 달의 칸뿐이라,
     // 이 줄이 없으면 접힌 달에만 기록이 있는 줄이 칸을 고치는 순간 `연락 기록 없음`
     // 으로 뒤집힌다 — 화면에 안 보이는 사실이라 고친 사람은 이유를 알 수 없다.
     // 접힌 달의 사실은 서버가 `data-contacted-folded` 로 실어 준다.
     var hasNote = tr.getAttribute("data-contacted-folded") === "1"
-      || Array.prototype.some.call(
-        tr.querySelectorAll("[data-note]"),
-        function (td) { return td.textContent.trim().length > 0; });
+      || Array.prototype.some.call(tr.querySelectorAll("[data-note]"), filled);
     tr.setAttribute("data-contacted", hasNote ? "1" : "0");
+    // 위 KPI 의 `미완료 기업` 은 **지난달 칸만** 센다. 어느 칸이 지난달인지는
+    // 서버가 `data-prev-note` 로 찍어 준다 — 열 이름이 자유 문장이라
+    // (`8월 마지막주 리마인드 톡 or TEL`) 여기서 달을 읽게 두면 규칙이 또
+    // 한 벌 생긴다. 지난달 열이 접혀 있으면 그 표가 아예 안 붙고, 그때는
+    // KPI 에도 표식이 없어 이 값이 쓰이지 않는다.
+    var prev = tr.querySelectorAll("[data-prev-note]");
+    if (prev.length) {
+      tr.setAttribute("data-contacted-prev",
+                      Array.prototype.some.call(prev, filled) ? "1" : "0");
+    }
     var parts = [];
     Array.prototype.forEach.call(tr.querySelectorAll("td.cell"), function (td) {
       parts.push(td.textContent);

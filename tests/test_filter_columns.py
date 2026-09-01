@@ -602,17 +602,23 @@ def test_투자컨설턴트_현황의_기업_관리_필터는_시트가_정한_�
     브라우저(`consulting.js` 의 `managementTags`)와 **같은 규칙**이어야 한다.
     다르면 고친 직후와 새로고침 뒤에 같은 줄이 서로 다른 값으로 걸린다.
     """
-    from app.routers.consulting import management_tags
+    from app.services import consulting_status as status
 
-    assert management_tags("관리 중") == "관리 중"
-    assert management_tags("드랍 : 연락이 닿지 않음") == "드랍"
+    assert status.tag_value("관리 중") == "관리 중"
+    assert status.tag_value("드랍 : 연락이 닿지 않음") == "드랍"
     # 한 줄에 두 마디가 같이 오는 일이 잦다 — 하나만 남기면 나머지로는 못 찾는다.
-    assert management_tags("백업팀으로 전환 · 논의 중. 드랍") == "드랍|백업팀 전환"
+    assert status.tag_value("백업팀으로 전환 · 논의 중. 드랍") == "드랍|백업팀 전환"
     # 적혀 있는데 셋 중 어느 것도 아닌 줄. 빈칸과 묶으면 "아직 안 적었다" 와
     # "적었는데 분류가 안 된다" 가 구별되지 않는다.
-    assert management_tags("내년부터 투자 라운드 돌 예정") == "기타 메모"
-    assert management_tags("") == ""
-    assert management_tags("   ") == ""
+    assert status.tag_value("내년부터 투자 라운드 돌 예정") == "기타 메모"
+    assert status.tag_value("") == ""
+    assert status.tag_value("   ") == ""
+
+    # 칩·KPI 는 이 태그를 되짚어 본다 — 각자 `"드랍" in 문장` 을 한 번 더
+    # 적으면 그것이 곧 두 번째 규칙이고, 한쪽만 고쳐지면 위 숫자와 칩 결과가
+    # 갈린다. `백업팀으로 전환 … 드랍` 은 적힌 그대로 드랍이다.
+    assert status.is_dropped("백업팀으로 전환 · 논의 중. 드랍")
+    assert not status.is_managed("백업팀으로 전환 · 논의 중. 드랍")
 
     # 화면 위 칩(관리 중 · 드랍)과 같은 말을 본다 — 다르면 칩으로 6곳,
     # 필터로 5곳이 나오고 어느 쪽이 맞는지 알 수가 없다.

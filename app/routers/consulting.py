@@ -32,6 +32,7 @@ from ..db import get_db
 from ..deps import get_current_user, may_view_consulting, templates
 from ..models import ConsultingColumn, ConsultingCompany, User
 from ..services import consulting_sheets as cs
+from ..services import consulting_status as status
 from ..services import monthly_columns
 from ..services import spreadsheet as sp
 from ..ui import base_ctx
@@ -339,44 +340,6 @@ def _prev_month_columns(columns: List[ConsultingColumn]) -> List[str]:
     return [str(c.id) for c in columns if c.label == label]
 
 
-def management_tags(text: str, contract: bool = False) -> str:
-    """`기업 관리` 칸의 자유 문장에서 **거를 수 있는 말**만 뽑는다.
-
-    `월간 계약 업무현황표` 탭은 예외다. 그 탭에서 이 칸은 `기업 관리` 가 아니라
-    `계약여부` 이고, 값이 `무료`/`유료` 두 가지뿐인 **이미 추려진 값**이다.
-    아래 규칙을 그대로 태우면 셋 중 어느 마디도 아니라 전부 `기타 메모` 로
-    묶여, 필터에 고를 것이 하나도 남지 않는다. 적힌 그대로 쓴다.
-
-    이 칸을 적힌 그대로 필터에 올릴 수는 없다. 원본 시트가 머리글부터
-    `기업 관리 [ 드랍 이유 상세하게 기입 / 관리중 / 백업팀으로 전환 ]` 이라
-    실제 값이 `드랍 : ir 진행 계약 완료 -> 기업 회생 신청 -> ir 진행 불가` 처럼
-    여든 자짜리 문장이다 — 32줄에 열여섯 가지가 나와 고를 것이 없고, 목록 한
-    줄에 들어가지도 않는다.
-
-    그래서 시트가 정해 둔 세 마디만 본다. 판정은 화면 위 칩(관리 중 · 드랍)이
-    이미 쓰던 것과 **같은 규칙**이다 — 다르게 두면 칩으로 6곳, 필터로 5곳이
-    나오고 어느 쪽이 맞는지 알 수가 없다.
-
-    한 줄에 두 마디가 같이 있을 수 있어(`백업팀으로 전환 … 드랍`) `|` 로 잇는다.
-    filters.js 가 그 구분자로 나눠 태그 단위로 건다.
-    """
-    body = text or ""
-    if contract:
-        return body.strip()
-    tags = []
-    if "관리" in body:
-        tags.append("관리 중")
-    if "드랍" in body:
-        tags.append("드랍")
-    if "백업팀" in body:
-        tags.append("백업팀 전환")
-    # 적혀 있기는 한데 세 마디 중 어느 것도 아닌 줄. 빈칸과 한 덩어리로 묶으면
-    # "아직 안 적었다" 와 "적었는데 분류가 안 된다" 가 구별되지 않는다.
-    if body.strip() and not tags:
-        tags.append("기타 메모")
-    return "|".join(tags)
-
-
 def _notes(company: ConsultingCompany) -> Dict[str, str]:
     try:
         return json.loads(company.notes or "{}")
@@ -396,6 +359,14 @@ def company_rows(db: Session, user: User, sheet: str = "",
     out = []
     for order, c in enumerate(companies, start=1):
         notes = _notes(c)
+        management = c.management or ""
+        # 이 탭이 계약 표인가. 줄에 적힌 탭으로 본다 — `company_rows` 는 탭을
+        # 안 주고 부르는 곳이 있어서(엑셀 · 한 줄 조회), 인자로 판단하면
+        # 그쪽에서만 값이 달라진다.
+        contract = is_contract(db, c.sheet)
+        # 이 줄에 보이는 월별 리마인드 칸. 접힌 달도 들어 있다 — 화면에 안
+        # 보인다고 기록이 없는 것은 아니다.
+        seen = {str(col.id): notes.get(str(col.id), "") for col in cols}
         out.append({
             "id": c.id,
             # 화면의 NO 는 **보이는 순서대로 1부터**다. 시트에서 옮겨 온 번호는
@@ -405,15 +376,14 @@ def company_rows(db: Session, user: User, sheet: str = "",
             "region": c.region or "",
             "meeting_at": c.meeting_at or "",
             "company_name": c.company_name or "",
-            "management": c.management or "",
+            "management": management,
             # 머리글 필터가 보는 값. 칸에 적힌 문장 그대로가 아니라 시트가 정해
-            # 둔 세 마디로 추린다(management_tags 참고). 계약 탭만 예외다.
-            #
-            # 탭 이름은 **줄에 적힌 것**으로 본다. `company_rows` 는 탭을 안 주고
-            # 부르는 곳이 있어서(엑셀 · 한 줄 조회), 인자로 판단하면 그쪽에서만
-            # 값이 달라진다.
-            "mgmt": management_tags(c.management or "",
-                                    contract=is_contract(db, c.sheet)),
+            # 둔 세 마디로 추린다. 계약 탭만 예외다.
+            "mgmt": status.tag_value(management, contract=contract),
+            # **위 KPI 도 줄의 표시도 여기서 나온다.** 예전에는 라우터가 KPI 를,
+            # 화면이 `data-dropped` 를 각자 정해서 규칙이 두 벌이었다.
+            "managed": status.is_managed(management, contract=contract),
+            "dropped": status.is_dropped(management, contract=contract),
             "ceo_name": c.ceo_name or "",
             "phone": c.phone or "",
             "email": c.email or "",
@@ -422,10 +392,12 @@ def company_rows(db: Session, user: User, sheet: str = "",
             # 자리를 만들지 않으려는 것이다.
             "success_fee": c.success_fee or "",
             "contract_fee": c.contract_fee or "",
-            "notes": {str(col.id): notes.get(str(col.id), "") for col in cols},
+            "notes": seen,
+            # 어느 달이든 기록이 있는가 — `연락 기록 없음` 칩이 보는 값이다.
+            "contacted": status.contacted(seen.values()),
             # 지난달에 연락했는가. 이번 달은 아직 진행 중이라 세어 봐야
             # "아직 안 했다" 만 나온다.
-            "contacted_prev": any(notes.get(k, "").strip() for k in prev_keys),
+            "contacted_prev": status.contacted(notes.get(k, "") for k in prev_keys),
             "updated_at": (c.updated_at or "")[:10],
             "search": " ".join(filter(None, [
                 c.company_name, c.region, c.management, c.ceo_name,
@@ -473,8 +445,8 @@ def consulting_page(request: Request, db: Session = Depends(get_db),
     # 화면에 없는 사실을 JS 가 알 수 없으므로 여기서 실어 보낸다.
     folded_keys = [str(c.id) for c in hidden]
     for row in rows:
-        row["contacted_folded"] = any(row["notes"].get(k, "").strip()
-                                      for k in folded_keys)
+        row["contacted_folded"] = status.contacted(
+            row["notes"].get(k, "") for k in folded_keys)
     ctx = base_ctx(request, db, user, active="consult")
     # 스크립트·가이드는 이 화면에도 있다(미팅 진행 프로세스 · 견적서 발송 톡 …).
     # 투자사 관리 현황과 같은 구조를 쓰되 화면만 나눈다.
@@ -502,8 +474,11 @@ def consulting_page(request: Request, db: Session = Depends(get_db),
         "msg": msg,
         "counts": {
             "total": len(rows),
-            "managed": sum(1 for r in rows if "관리" in r["management"]),
-            "dropped": sum(1 for r in rows if "드랍" in r["management"]),
+            # 줄에 실어 보내는 표시와 **같은 값**을 센다. 여기서 규칙을 한 번 더
+            # 적으면(`"관리" in …`) 그것이 두 번째 규칙이 되어, 한쪽만 고쳐질 때
+            # 위에는 14 라고 적혀 있는데 칩을 누르면 13곳이 나온다.
+            "managed": sum(1 for r in rows if r["managed"]),
+            "dropped": sum(1 for r in rows if r["dropped"]),
             # **아직 안 한 곳**을 센다. 다 한 수를 보여 주던 칸이었는데, 그 수는
             # 봐도 할 일이 안 나온다 — 챙겨야 하는 것은 빈칸 쪽이다.
             #
@@ -516,6 +491,14 @@ def consulting_page(request: Request, db: Session = Depends(get_db),
             "pending": (sum(1 for r in rows if not r["contacted_prev"])
                         if prev_label else 0),
             "prev_month_label": prev_label,
+            # 지난달 열이 **표에 서 있는가.** 이 수를 칸을 고친 자리에서 다시
+            # 세는 것은 브라우저인데, 브라우저가 볼 수 있는 것은 펴 둔 달의
+            # 칸뿐이다. 접혀 있으면 다시 셀 근거가 화면에 없으므로 아예 맡기지
+            # 않는다 — 맡기면 전부 미완료로 뒤집힌다.
+            # (`_split_columns` 가 석 달을 펴는 이유가 이 KPI 다. 열 순서가
+            #  뒤죽박죽인 표에서만 지난달이 접힐 수 있다.)
+            "prev_month_shown": bool(prev_label) and any(
+                c.label == prev_label for c in shown),
             # `0월 마지막주 리마인드톡 미완료 기업` — 그 달 숫자를 넣는다.
             "pending_label": (f"{_prev_month()}월 마지막주 리마인드톡 미완료 기업"),
         },
