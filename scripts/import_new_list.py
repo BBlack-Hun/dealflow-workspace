@@ -18,18 +18,55 @@
     create  없는 번호는 만든다. 이미 있는 번호는 만들지 않고 **주인만 바꾼다.**
     fill    이 명단에 이미 있는 줄만 채운다. 없는 번호는 만들지 않고 알린다.
 
-## 맞추는 열쇠는 **휴대폰 번호뿐**이다
+## 맞추는 열쇠는 **휴대폰 번호가 먼저**다
 
 이름으로 이으면 동명이인 때문에 남의 방으로 발송이 나간다(한 이름이 셋인 적이
-있었다 — `app/services/sourcing_link.py`). 기업명도 안 된다. 같은 대표가 회사를
-바꾸면 이름이 달라지고, 시트마다 `㈜` 를 붙이고 떼는 법이 다르다. 번호는
-사람마다 하나뿐이라 틀릴 여지가 없다. 판정 자체도 베끼지 않고
-`sourcing_link` 의 것을 그대로 부른다 — 두 벌이 되면 한쪽만 고쳐진다.
+있었다 — `app/services/sourcing_link.py`). 번호는 사람마다 하나뿐이라 틀릴 여지가
+없고, **앱 전체와 대조해도** 안전하다. 판정 자체도 베끼지 않고 `sourcing_link`
+의 것을 그대로 부른다 — 두 벌이 되면 한쪽만 고쳐진다.
 
-## 번호가 없는 줄은 **넣지 않고 적어서 알린다**
+번호가 있는 줄은 여기서 끝난다. 번호가 **없는** 줄만 아래 한 가지를 더 본다.
 
-번호가 없으면 이미 있는 사람인지 알 수가 없다. 조용히 넣으면 나중에도
-중복인지 알아낼 방법이 없다 — 그때는 이미 딜 소개가 두 번 나간 뒤다.
+## 번호가 없는 줄은 **기업명으로 잇는다**
+
+막는 것은 "번호가 없는 줄" 자체가 아니라 **겹침을 못 알아보는 것**이다. 조용히
+넣으면 나중에도 중복인지 알아낼 방법이 없고, 그때는 이미 딜 소개가 두 번 나간
+뒤다. 그러니 겹침을 알아볼 다른 근거가 있으면 넣는다.
+
+근거는 이 시트가 이미 들고 있다. **이 배치의 시트는 기업이 주인공이다** —
+머리글이 `기업명`·`성함` 이고, `import_startup_sheet.py` 도 같은 시트를 기업명으로
+맞춘다. 시트가 번호를 안 적어 둔 줄이 실제로 있고(`전화` 칸에 `x`·`o` 만 적힌
+줄), 안 넣으면 그 기업이 통째로 사라진다.
+
+  · **기업이 주인공인 배치에서만** 그렇게 한다(`contact_columns.firm_leads`).
+    사람이 주인공인 명단에서 기업명으로 맞추면 같은 투자사의 다른 심사역이 한
+    사람으로 뭉개진다. 명단 **이름**이 아니라 **배치**로 가르는 이유는
+    `SheetOwner.layout` 주석 그대로다 — 이름을 코드에 적으면 다음 명단에서 또
+    적어야 하고, 안 적은 곳만 조용히 옛 동작을 한다. 인자로 받지 않는 이유도
+    같다(`import_startup_sheet.NOTES` 의 `원본NO` 주석과 같은 자리다). 팀원들의
+    스타트업 워크북은 **한 틀**에서 나와 배치가 같은데, 부르는 쪽에 맡기면 다음
+    시트에서 인자 하나를 빠뜨린 판만 여섯 줄을 조용히 버린다.
+  · 대조는 **이 명단 안까지만** 한다. 앱 전체를 기업명으로 뒤지면 투자사 명단의
+    `투자사명` 과 부딪힌다 — 한 투자사에 심사역이 여럿이라 이름 하나에 여러 줄이
+    걸린다. 범위가 이 명단 하나면 틀려도 남의 명단에는 닿지 않는다
+    (`import_investor_list.py` 가 번호 없는 줄을 이 명단 안에서 이름+투자사명으로
+    찾는 것과 **같은 범위**다).
+  · 기업명이 **하나뿐일 때만** 열쇠가 된다. 시트 안에서든 이 명단 안에서든 같은
+    이름이 둘이면 어느 줄인지 알 수 없다 — `by_phone` 이 겹친 번호를 아예 빼는
+    것과 같은 이유다.
+  · 기업명이 **빈 줄**은 여전히 안 넣는다. 대조할 것이 아무것도 없다.
+  · **조용히 넣지 않는다.** 몇 줄이 번호 없이 들어가는지, 무엇을 근거로 이었는지,
+    무엇이 남는 위험인지를 미리보기와 적용 출력에 적는다.
+
+남는 위험은 셋이고 셋 다 화면에 적는다 — ① 같은 기업이 앱의 **다른 명단**에도
+있으면 두 줄이 된다(대조가 거기까지 안 간다), ② 다음 판에서 시트의 기업명이
+바뀌어 있으면 그 줄을 못 찾아 또 만든다, ③ **시트에** 번호를 채워 다시 넣으면
+번호로는 그 줄을 못 찾아 또 만든다.
+
+③을 코드로 막지 않는 이유: 막으려면 번호가 **있는** 줄도 기업명으로 한 번 더
+찾아야 하는데, 그러면 지금 잘 도는 길의 동작이 바뀐다. 이 변경이 건드릴 자리는
+번호가 없는 줄까지다. 대신 화면에 **길을 적는다** — 번호는 앱에서 그 줄을 열어
+넣으면 되고, 그러면 다음 판부터 번호로 이어진다.
 
 ## 겹치는 사람의 배정은 **파일로 받는다** (`--rulings`)
 
@@ -57,6 +94,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import re
 import sys
 from pathlib import Path
 
@@ -67,6 +105,7 @@ from sqlalchemy import select  # noqa: E402
 from app.db import SessionLocal  # noqa: E402
 from app.models import ContactColumn, SheetOwner, User, VcContact  # noqa: E402
 from app.services import contact_columns as cc  # noqa: E402
+from app.services import sheet_import  # noqa: E402
 from app.services import sheet_owner  # noqa: E402
 from app.services import spreadsheet as sp  # noqa: E402
 from app.services.auth import normalize_phone  # noqa: E402
@@ -81,6 +120,12 @@ from scripts.import_startup_sheet import FIELDS, NOTES, norm, parse  # noqa: E40
 # 여기서 새 이름을 지으면 값은 들어가는데 화면이 그 칸을 못 찾는다.
 MAPPABLE = {f for _t, f in FIELDS} | {k for _t, k in NOTES}
 
+# 이 임포터가 명단에 세우는 배치. **두 자리가 같은 값을 봐야 한다** — 명단을
+# 세울 때(아래 `settings.layout`)와, 번호 없는 줄을 기업명으로 이어도 되는지
+# 물을 때(`cc.firm_leads`)다. 값을 두 번 적으면 배치를 바꾼 날 한쪽만 바뀌어,
+# 사람이 주인공인 명단을 기업명으로 잇게 된다.
+LAYOUT = cc.STARTUP
+
 
 def is_table_row(value) -> bool:
     """이 줄이 표의 줄인가 — **번호 칸이 숫자인 줄.**
@@ -93,8 +138,10 @@ def is_table_row(value) -> bool:
     그 줄을 통째로 버리면 "누구에게 넘겼는가" 가 사라지고, 배정표가 그 줄을
     가리켜도 임포터가 못 본다.
 
-    줄글은 이 검사에서 걸린다(숫자가 아니다). 여기서 새어 나가도 **번호 없는
-    줄은 어차피 안 들어간다** — 두 겹으로 막힌다.
+    줄글은 이 검사에서 걸린다(숫자가 아니다). 여기서 새어 나가도 **기업명 칸이
+    빈 줄은 `parse` 가 이미 뺀다** — 두 겹으로 막힌다. (예전에는 "번호 없는 줄은
+    어차피 안 들어간다" 가 두 번째 겹이었는데, 이제 번호 없는 줄도 기업명으로
+    들어간다. 줄글에는 기업명이 없으니 막는 자리는 그대로다.)
     """
     try:
         float(norm(value))
@@ -136,6 +183,44 @@ def by_phone(contacts) -> tuple:
     for c in contacts:
         key = digits(c.phone)
         if len(key) < MIN_DIGITS:
+            continue
+        if key in seen:
+            clashed.add(key)
+        seen[key] = c
+    for key in clashed:
+        seen.pop(key, None)
+    return seen, sorted(clashed)
+
+
+def firm_key(name) -> str:
+    """기업명을 **잇기용 열쇠**로. `(주)`·`㈜`·공백을 지운다.
+
+    시트마다 법인 표기를 붙였다 뗐다 하고(`(주)샘플가` · `㈜샘플가` · `샘플가`),
+    한 시트 안에서도 다음 달 판에서 달라진다. 글자 그대로 맞추면 같은 기업이
+    다음 판에서 안 걸려 **두 줄이 된다.**
+
+    법인 표기 규칙은 앱의 것을 그대로 부른다 — 여기서 다시 적으면 두 벌이 되고
+    한쪽만 고쳐진다(`import_investor_list.merge_key` 도 같은 둘을 쓴다).
+    **저장은 원문 그대로** 한다. 시트 원문을 바꿔 두면 사람이 화면에서 자기
+    기록을 알아보지 못한다.
+    """
+    return re.sub(r"\s+", "", sheet_import.normalize_company_name(name or ""))
+
+
+def by_firm(contacts) -> tuple:
+    """`({기업명 열쇠: 앱의 줄}, 겹친 이름들)`. 같은 이름이 둘이면 **아예 뺀다.**
+
+    `by_phone` 과 같은 이유다 — 어느 쪽 줄에 붙일지 알 수 없는데 하나를 골라
+    두면 반은 틀리고, 틀리면 남의 이력에 남의 값이 덮인다.
+
+    **범위는 부르는 쪽이 좁혀서 준다.** 앱 전체를 이렇게 세우면 투자사 명단의
+    `투자사명` 과 부딪힌다 — 한 투자사에 심사역이 여럿이라 이름 하나에 여러
+    줄이 걸리고, 그 줄들이 통째로 겹친 것으로 빠진다.
+    """
+    seen, clashed = {}, set()
+    for c in contacts:
+        key = firm_key(c.firm)
+        if not key:
             continue
         if key in seen:
             clashed.add(key)
@@ -233,17 +318,45 @@ def main() -> int:
 
     people = db.execute(select(VcContact)).scalars().all()
     known, clashed = by_phone(people)
-    mine = {c.id for c in people
-            if args.sheet in sheet_owner.labels_of(c.source_sheet)}
+    here = [c for c in people
+            if args.sheet in sheet_owner.labels_of(c.source_sheet)]
+    mine = {c.id for c in here}
+    # 번호 없는 줄이 기댈 곳. **이 명단 안까지만** 본다 — 앱 전체를 기업명으로
+    # 뒤지면 투자사 명단의 `투자사명` 과 부딪혀 한 투자사의 심사역 여럿이 한 줄로
+    # 뭉개진다(`import_investor_list.py` 가 이름+투자사명을 이 명단 안에서만 찾는
+    # 것과 같은 범위다). 범위가 이 명단 하나면 틀려도 남의 명단에는 닿지 않는다.
+    here_by_firm, firm_clashed = by_firm(here)
+    # 기업이 주인공인 배치에서만 기업명으로 잇는다. 명단 이름이 아니라 배치로
+    # 가른다 — 이유는 맨 위 설명과 `SheetOwner.layout` 주석에 있다.
+    match_by_firm = cc.firm_leads(LAYOUT)
 
     # 무엇을 할지 먼저 다 정하고, 저장은 맨 끝에 한 번에 한다 — 미리보기와
     # 실제 저장이 **같은 판단**을 지나야 미리보기가 미리보기 구실을 한다.
     fills, moves, creates = [], [], []
     skips = {}            # 이유 → [적어 둘 말]
     seen = set()
+    no_phone = []         # 번호 없이 들어갈 줄 — 무엇을 근거로 이었는지까지
+    no_phone_new = 0      # 그중 **새로 만드는** 줄
 
     def skip(reason, note):
         skips.setdefault(reason, []).append(note)
+
+    # 시트 안에서 같은 기업명이 몇 줄인가. **번호 없는 줄은 열쇠가 기업명뿐**이라
+    # 그 이름이 둘이면 열쇠 구실을 못 한다. 넣어 두면 다음 판에서 어느 줄이
+    # 어느 줄인지 가릴 수 없고, 그때는 이미 두 줄이다 — 그래서 넣기 전에 센다.
+    firm_rows = {}
+    for item in parsed["items"]:
+        fkey = firm_key(item["fields"].get("firm", ""))
+        if fkey:
+            firm_rows[fkey] = firm_rows.get(fkey, 0) + 1
+
+    # 시트의 **번호 있는 줄**이 집어 갈 앱의 줄. 번호 없는 줄이 그 줄을 기업명으로
+    # 다시 집으면 시트의 두 줄이 앱의 한 줄에 겹쳐 얹힌다 — 나중 것이 앞 것을
+    # 덮은 것인지조차 알 수 없다(`import_investor_list.py` 의 `taken_rows` 와 같은
+    # 자리다). 시트에서 기업명을 새로 적은 줄과 옛 이름 줄이 같이 있을 때 생긴다.
+    taken = {found.id for found in
+             (known.get(digits(i["fields"].get("phone", "")))
+              for i in parsed["items"]) if found is not None}
 
     for item in parsed["items"]:
         firm = item["fields"].get("firm", "")
@@ -251,9 +364,37 @@ def main() -> int:
         key = digits(item["fields"].get("phone", ""))
 
         if len(key) < MIN_DIGITS:
-            # 번호가 없으면 이미 있는 사람인지 알 수 없다. 조용히 넣으면
-            # 나중에도 중복인지 알아낼 방법이 없다.
-            skip("번호가 없어 겹침을 판단할 수 없다", where)
+            # 번호가 없다. **앱 전체와는 대조할 수 없다** — 대신 이 배치의 시트는
+            # 기업이 주인공이라 기업명이 열쇠 노릇을 한다(맨 위 설명 참고).
+            if not match_by_firm:
+                skip("번호가 없어 겹침을 판단할 수 없다", where)
+                continue
+            fkey = firm_key(firm)
+            if not fkey:
+                # 대조할 것이 아무것도 없다. 넣으면 다음 판에서 또 만든다.
+                skip("번호도 기업명도 없어 겹침을 판단할 수 없다", where)
+                continue
+            if firm_rows.get(fkey, 0) > 1:
+                # 시트 안에 같은 기업명이 여럿이다. 번호가 없으면 그중 어느 줄인지
+                # 가릴 길이 없어, 넣는 순간 다음 판이 못 알아본다.
+                skip("시트 안에 같은 기업명이 여럿 — 번호 없이는 못 가른다", where)
+                continue
+            if fkey in firm_clashed:
+                skip("이 명단에 같은 기업명이 두 줄 — 어느 쪽인지 알 수 없다", where)
+                continue
+            found = here_by_firm.get(fkey)
+            if found is not None and found.id in taken:
+                skip("그 줄은 시트의 다른 줄이 번호로 집었다", where)
+                continue
+            if found is not None:
+                fills.append((found, item, where))
+                no_phone.append(f"{where}  ←→ 이 명단의 `{found.firm or ''}`")
+            elif args.mode == "fill":
+                skip("앱에 없는 사람 — 채우기 모드에서는 만들지 않는다", where)
+            else:
+                creates.append((item, where))
+                no_phone.append(f"{where}  → 새로 만든다")
+                no_phone_new += 1
             continue
         if key in seen:
             # 시트 안에서 같은 줄이 두 번 적힌 것이다. 둘 다 넣으면 앱에서
@@ -321,6 +462,27 @@ def main() -> int:
         print(f"    옮김: {where}  ←→ 앱 `{who.firm or ''} {who.name}`")
     for who in orphans:
         print(f"    옮김(시트에 없음, 배정표): 앱 `{who.firm or ''} {who.name}`")
+    if no_phone:
+        # **조용히 넣지 않는다.** 번호 없이 들어가는 줄은 무엇을 근거로 이었는지가
+        # 곧 그 줄의 안전성이라, 근거를 안 적으면 나중에 두 줄이 됐을 때 왜
+        # 그렇게 됐는지 알아낼 데가 없다.
+        print(f"\n  번호 없이 들어갈 줄 {len(no_phone)}개 — 번호가 없어 **앱 전체와는 "
+              f"대조하지 못했습니다.**\n     이 명단 `{args.sheet}` 안에서 "
+              f"**기업명으로만** 이었습니다:")
+        for note in no_phone:
+            print(f"       {note}")
+    if no_phone_new:
+        # 새로 만들 때만 적는다 — 채우기는 줄을 만들지 않으므로 ①이 생길 자리가
+        # 없다(`import_investor_list.py` 가 같은 경고를 만들기에서만 내는 이유다).
+        print(f"  ⚠ 그중 {no_phone_new}개는 **새로 만듭니다.** 남는 위험 셋:\n"
+              f"     ① 같은 기업이 **앱의 다른 명단**에 이미 있으면 두 줄이 됩니다 "
+              f"— 이 대조는 거기까지 보지 않습니다.\n"
+              f"     ② 다음 판에서 시트의 기업명이 바뀌어 있으면 그 줄을 못 찾아 "
+              f"또 만듭니다.\n"
+              f"     ③ **시트에** 번호를 채워 다시 넣으면 또 만듭니다 — 번호로는 "
+              f"이 줄을 못 찾습니다.\n"
+              f"        번호는 **앱에서 그 줄을 열어** 넣으세요. 그러면 다음 "
+              f"판부터 번호로 이어집니다.")
     if skips:
         # **조용히 버리지 않는다.** 몇 줄이 왜 빠졌는지 모르면 나중에 그 줄이
         # 없다는 것조차 알 수 없다.
@@ -342,7 +504,7 @@ def main() -> int:
     ).scalars().first()
     is_new_sheet = settings is None
     settings = sheet_owner.ensure(db, args.sheet, user_id=owner.id)
-    settings.layout = cc.STARTUP
+    settings.layout = LAYOUT
     if settings.user_id is None:
         # `ensure` 는 이미 있는 명단의 담당을 덮지 않는다(시트를 다시 올린 것만으로
         # 남의 담당이 넘어가면 안 된다). 비어 있는 자리는 채워도 뺏는 것이 아니다.
@@ -381,6 +543,13 @@ def main() -> int:
     db.commit()
     print(f"\n새로 만든 줄 {len(creates)} · 옮긴 줄 {len(moves) + len(orphans)} "
           f"· 채운 줄 {len(fills)} · 칸 {len(parsed['columns'])}개")
+    if no_phone:
+        # 미리보기에서 한 번 적었어도 여기 또 적는다. 넣고 난 뒤에 남는 기록은
+        # 이 줄이라, 여기 없으면 "번호 없이 몇 줄 들어갔더라" 를 알 길이 없다.
+        print(f"  그중 번호 없이 들어간 줄 {len(no_phone)}개 "
+              f"(새로 만든 것 {no_phone_new}개) — 이 명단 안에서 기업명으로 "
+              f"이었습니다.\n  번호는 **앱에서 그 줄을 열어** 넣으세요 "
+              f"(시트에 채워 다시 넣으면 두 줄이 됩니다).")
     db.close()
     return 0
 

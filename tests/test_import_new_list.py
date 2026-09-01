@@ -10,7 +10,7 @@
 
   1. 같은 파일을 두 번 넣어도 줄이 두 배가 되지 않는다  ← 가장 중요하다
   2. 이미 있는 번호는 새로 만들지 않고 **주인만 바뀐다**(이력이 그 줄에 있다)
-  3. 번호가 없는 줄은 안 들어간다 — 겹침을 판단할 수 없어서다
+  3. 번호가 없는 줄은 **기업명으로** 잇는다 — 그래도 두 번 넣으면 안 된다
   4. 시트 안에서 같은 번호가 둘이면 하나만 들어간다
   5. 명단·담당자는 **인자**다 — 코드에 박혀 있지 않다
 
@@ -201,26 +201,258 @@ def test_담당_없는_명단_라벨은_옮겨도_그대로_둔다(
 
 
 # ── 3. 번호가 없는 줄 ───────────────────────────────────────────────────────
+#
+# 막는 것은 "번호가 없는 줄" 자체가 아니라 **겹침을 못 알아보는 것**이다. 이
+# 배치의 시트는 기업이 주인공이라(`STARTUP_LAYOUT` 의 머리글이 `기업명`·`성함`)
+# 기업명이 그 근거가 된다. 근거가 생겼으니 넣되, 근거를 잃는 자리는 그대로 막는다.
 
-def test_번호가_없는_줄은_안_들어가고_보고된다(
+def test_번호가_없어도_기업명으로_들어간다(
         tmp_path, db, owners, monkeypatch, capsys):
-    """번호가 없으면 **이미 있는 사람인지 알 수가 없다.**
+    """시트가 번호를 안 적어 둔 줄이 있다(`전화` 칸에 `x` 만 적힌 줄).
 
-    조용히 넣으면 나중에도 중복인지 알아낼 방법이 없다 — 그때는 이미 딜 소개가
-    두 번 나간 뒤다. 빼되 **왜 뺐는지 적어서** 사람이 시트에서 찾을 수 있게 한다.
+    빼 버리면 그 기업이 통째로 사라진다 — 명단에도, 화면에도 없다. 넣되
+    **무엇을 근거로 이었는지** 화면에 적어야 나중에 확인할 데가 있다.
     """
     path = sheet_file(tmp_path, [
         row("1", "샘플기업1", "김샘플", "010-7000-0001"),
-        row("2", "번호없는샘플", "이샘플", ""),
+        row("2", "번호없는샘플", "이샘플", "x"),
         row("3", "짧은번호샘플", "박샘플", "1234"),      # 내선번호 — 사람을 못 가른다
     ])
     run(monkeypatch, path, LIST, owners["a"], "create", "--apply")
     out = capsys.readouterr().out
 
     got = {c.firm for c in rows_in(db, LIST)}
-    assert got == {"샘플기업1"}, f"번호 없는 줄이 들어갔습니다: {got}"
-    for firm in ("번호없는샘플", "짧은번호샘플"):
-        assert firm in out, f"`{firm}` 을 조용히 버렸습니다 — 왜 빠졌는지 알 수 없습니다"
+    assert got == {"샘플기업1", "번호없는샘플", "짧은번호샘플"}, (
+        f"번호 없는 줄이 빠졌습니다: {got}")
+    assert "번호 없이 들어간 줄 2개" in out, out
+    # **조용히 넣지 않는다.** 근거와 남는 위험 셋이 다 화면에 적혀야 한다.
+    assert "기업명" in out, out
+    for risk in ("앱의 다른 명단", "기업명이 바뀌어", "시트에** 번호를 채워"):
+        assert risk in out, f"남는 위험을 안 적었습니다: {risk}\n{out}"
+
+
+def test_번호_없이_들어간_줄도_두_번_넣으면_두_줄이_되지_않는다(
+        tmp_path, db, owners, monkeypatch, capsys):
+    """**이 변경의 핵심 위험이다.**
+
+    번호가 없으면 다음 판에서 그 줄을 찾을 열쇠가 기업명뿐이다. 못 찾으면 또
+    만들고, 그 순간 같은 기업이 두 줄이 된다. 시트마다 `(주)` 를 붙였다 뗐다
+    하므로 **표기가 달라져도** 같은 줄로 걸려야 한다.
+    """
+    first = sheet_file(tmp_path, [
+        row("1", "샘플기업1", "김샘플", "010-7000-0001"),
+        row("2", "㈜번호없는샘플", "이샘플", "x"),
+    ])
+    assert run(monkeypatch, first, LIST, owners["a"], "create", "--apply") == 0
+    before = {c.id for c in rows_in(db, LIST)}
+    assert len(before) == 2
+
+    # 다음 달 판에서는 법인 표기를 다르게 적었다. 같은 기업이다.
+    second = sheet_file(tmp_path, [
+        row("1", "샘플기업1", "김샘플", "010-7000-0001"),
+        row("2", "(주) 번호없는샘플", "이샘플", "x"),
+    ], "next.csv")
+    assert run(monkeypatch, second, LIST, owners["a"], "create", "--apply") == 0
+    again = rows_in(db, LIST)
+
+    assert len(again) == 2, (
+        f"번호 없는 줄을 두 번 넣었더니 {len(before)}줄이 {len(again)}줄이 "
+        "됐습니다 — 같은 기업이 두 줄입니다")
+    assert {c.id for c in again} == before, "줄이 새로 만들어졌습니다"
+
+    # 세 번째 판을 미리 보면 **만들 줄이 0** 이어야 한다.
+    capsys.readouterr()
+    out = _preview(monkeypatch, second, LIST, owners["a"], capsys)
+    assert re.search(r"새로 만들 줄\s+0\b", out), out
+
+
+def test_번호는_앱에서_넣으면_다음_판이_번호로_잇는다(
+        tmp_path, db, owners, monkeypatch, capsys):
+    """번호 없이 들어간 줄에 **번호를 채우는 길**이 화면에 적힌 그대로여야 한다.
+
+    이 대조는 기업명이 열쇠라, 시트에 번호를 채워 다시 넣으면 번호로는 그 줄을
+    못 찾아 또 만든다. 막으려면 번호가 **있는** 줄도 기업명으로 한 번 더 찾아야
+    하는데 그러면 지금 잘 도는 길의 동작이 바뀐다 — 그래서 코드로 막지 않고
+    **길을 적는다.** 여기서 검사하는 것은 그 길이 실제로 통하는가다.
+    """
+    nophone = sheet_file(tmp_path, [row("1", "번호없는샘플", "김샘플", "x")])
+    run(monkeypatch, nophone, LIST, owners["a"], "create", "--apply")
+    out = capsys.readouterr().out
+    assert "앱에서 그 줄을 열어" in out, f"번호를 채우는 길을 안 적었습니다:\n{out}"
+
+    # 화면이 적은 대로 **앱에서** 번호를 넣는다.
+    kept = rows_in(db, LIST)[0]
+    kept.phone = "010-7000-0001"
+    db.commit()
+
+    # 다음 판에는 시트에도 번호가 적혀 있다. 그 줄로 이어져야 한다.
+    phoned = sheet_file(tmp_path, [row("1", "번호없는샘플", "김샘플",
+                                       "010-7000-0001")], "next.csv")
+    run(monkeypatch, phoned, LIST, owners["a"], "create", "--apply")
+    db.expire_all()
+
+    got = rows_in(db, LIST)
+    assert len(got) == 1, f"번호를 넣었는데 두 줄이 됐습니다: {len(got)}"
+    assert got[0].id == kept.id, "줄이 새로 만들어졌습니다"
+
+
+def test_시트_안에_같은_기업명이_둘이면_번호_없는_줄은_안_들어간다(
+        tmp_path, db, owners, monkeypatch, capsys):
+    """열쇠가 기업명뿐인데 그 이름이 둘이면 **어느 줄인지 가릴 길이 없다.**
+
+    넣어 두면 다음 판이 못 알아보고 또 만든다. `by_phone` 이 겹친 번호를 아예
+    빼는 것과 같은 이유다 — 하나를 골라 두면 반은 틀린다.
+    """
+    path = sheet_file(tmp_path, [
+        row("1", "겹치는샘플", "김샘플", "x"),
+        row("2", "겹치는샘플", "이샘플", "x"),
+        row("3", "샘플기업3", "박샘플", "010-7000-0003"),
+    ])
+    run(monkeypatch, path, LIST, owners["a"], "create", "--apply")
+
+    got = {c.firm for c in rows_in(db, LIST)}
+    assert got == {"샘플기업3"}, f"가릴 수 없는 줄이 들어갔습니다: {got}"
+    assert "같은 기업명이 여럿" in capsys.readouterr().out
+
+
+def test_기업명이_빈_줄은_여전히_안_들어간다(
+        tmp_path, db, owners, monkeypatch, capsys):
+    """번호도 기업명도 없으면 **대조할 것이 아무것도 없다.**
+
+    법인 표기만 적힌 칸도 마찬가지다 — 열쇠로 만들면 빈 글자가 된다.
+    """
+    path = sheet_file(tmp_path, [
+        row("1", "㈜", "김샘플", "x"),
+        row("2", "샘플기업2", "이샘플", "010-7000-0002"),
+    ])
+    run(monkeypatch, path, LIST, owners["a"], "create", "--apply")
+
+    assert {c.firm for c in rows_in(db, LIST)} == {"샘플기업2"}
+    assert "번호도 기업명도 없어" in capsys.readouterr().out
+
+
+def test_기업명_대조는_이_명단_안까지만_한다(
+        tmp_path, db, users, owners, monkeypatch):
+    """앱 전체를 기업명으로 뒤지지 않는다.
+
+    투자사 명단은 **사람이 주인공**이라 한 투자사에 심사역이 여럿이다. 앱 전체를
+    이렇게 뒤지면 그 여럿이 한 줄로 뭉개지고, 남의 명단에서 사람이 빠진다.
+    범위가 이 명단 하나면 틀려도 남의 명단에는 닿지 않는다.
+    """
+    from app.models import SheetOwner, VcContact
+
+    db.add(SheetOwner(label=OTHER, user_id=users["u1"].id))
+    db.add(VcContact(user_id=users["u1"].id, source_sheet=OTHER,
+                     name="최샘플", firm="같은이름샘플", phone="010-7000-0009",
+                     kakao_room_name="같은이름샘플 대표님 방"))
+    db.commit()
+
+    path = sheet_file(tmp_path, [row("1", "같은이름샘플", "이샘플", "x")])
+    run(monkeypatch, path, LIST, owners["b"], "create", "--apply")
+    db.expire_all()
+
+    stayed = rows_in(db, OTHER)
+    assert len(stayed) == 1, "남의 명단에서 줄을 가져왔습니다"
+    assert stayed[0].kakao_room_name == "같은이름샘플 대표님 방"
+    assert stayed[0].user_id == users["u1"].id, "남의 담당이 넘어갔습니다"
+    assert [c.firm for c in rows_in(db, LIST)] == ["같은이름샘플"]
+
+
+def test_이_명단에_같은_기업명이_두_줄이면_얹지_않는다(
+        tmp_path, db, users, owners, monkeypatch, capsys):
+    """앱 쪽에서 이미 갈라져 있으면 **어느 줄에 얹을지 알 수 없다.**
+
+    하나를 골라 두면 반은 틀리고, 틀리면 남의 이력에 남의 값이 덮인다 —
+    되돌릴 수 없는 쪽이다.
+    """
+    from app.models import SheetOwner, VcContact
+
+    db.add(SheetOwner(label=LIST, user_id=users["u1"].id))
+    db.add_all([
+        VcContact(user_id=users["u1"].id, source_sheet=LIST,
+                  name="김샘플", firm="갈라진샘플", memo="먼저 적어 둔 통화"),
+        VcContact(user_id=users["u1"].id, source_sheet=LIST,
+                  name="이샘플", firm="갈라진샘플"),
+    ])
+    db.commit()
+
+    path = sheet_file(tmp_path, [row("1", "갈라진샘플", "박샘플", "x", "새 메모")])
+    run(monkeypatch, path, LIST, owners["a"], "create", "--apply")
+    db.expire_all()
+
+    got = rows_in(db, LIST)
+    assert len(got) == 2, f"가릴 수 없는데 줄을 만들었습니다: {len(got)}"
+    assert {c.memo for c in got} == {"먼저 적어 둔 통화", None}, (
+        "어느 줄인지 모르는 채로 값을 덮었습니다")
+    assert "같은 기업명이 두 줄" in capsys.readouterr().out
+
+
+def test_번호로_집은_줄을_번호_없는_줄이_다시_집지_않는다(
+        tmp_path, db, users, owners, monkeypatch, capsys):
+    """시트의 두 줄이 앱의 **한 줄**을 가리키면 겹쳐 얹힌다.
+
+    시트에서 기업명을 새로 적은 줄과 옛 이름 줄이 같이 남아 있을 때 생긴다 —
+    번호 있는 줄은 그 줄을 번호로 집고, 옛 이름 줄은 같은 줄을 기업명으로 집는다.
+    둘 다 얹으면 나중 것이 앞 것을 덮은 것인지조차 알 수 없다.
+    """
+    from app.models import SheetOwner, VcContact
+
+    db.add(SheetOwner(label=LIST, user_id=users["u1"].id))
+    db.add(VcContact(user_id=users["u1"].id, source_sheet=LIST,
+                     name="김샘플", firm="옛이름샘플", phone="010-7000-0001"))
+    db.commit()
+
+    # 1번 줄이 그 줄을 번호로 집으면서 이름을 바꾼다. 2번 줄은 옛 이름 그대로다.
+    path = sheet_file(tmp_path, [
+        row("1", "새이름샘플", "김샘플", "010-7000-0001"),
+        row("2", "옛이름샘플", "김샘플", "x"),
+    ])
+    run(monkeypatch, path, LIST, owners["a"], "create", "--apply")
+    db.expire_all()
+
+    got = rows_in(db, LIST)
+    assert len(got) == 1, f"겹쳐 얹거나 새로 만들었습니다: {len(got)}"
+    assert got[0].firm == "새이름샘플", "번호로 집은 값이 아닙니다"
+    assert "번호로 집었다" in capsys.readouterr().out
+
+
+def test_기업명으로_잇는지는_명단_이름이_아니라_배치가_정한다():
+    """**사람이 주인공인 명단에서 기업명으로 맞추면 안 된다.**
+
+    한 투자사에 심사역이 여럿이라, 투자사명으로 맞추면 그 여럿이 한 줄로
+    뭉개진다. 그래서 임포터는 명단 이름이 아니라 **배치**에 묻는다 — 이름으로
+    가르면 다음 명단에서 또 적어야 하고, 안 적은 곳만 조용히 옛 동작을 한다
+    (`SheetOwner.layout` 주석).
+
+    판정은 머리글 순서에서 읽는다. 어느 쪽이 앞에 서느냐가 곧 누가 주인공인가다.
+    """
+    from app.services import contact_columns as cc
+
+    from scripts.import_new_list import LAYOUT
+
+    assert cc.firm_leads(cc.STARTUP), "기업명이 앞에 서는 배치인데 아니라고 합니다"
+    assert not cc.firm_leads(cc.INVESTOR_MONTHLY), (
+        "사람이 주인공인 명단을 기업명으로 잇습니다 — 심사역 여럿이 한 줄로 뭉개집니다")
+    # 머리글을 화면에 적어 둔 배치는 여기서 읽을 것이 없다. **모를 때는 안 잇는다.**
+    assert not cc.firm_leads(cc.INVESTOR)
+    assert not cc.firm_leads(None) and not cc.firm_leads("없는배치")
+
+    # 임포터가 세우는 배치가 곧 그 근거다 — 두 자리가 갈리면 안 된다.
+    assert cc.firm_leads(LAYOUT)
+
+
+def test_채우기_모드는_번호_없는_줄도_만들지_않는다(
+        tmp_path, db, owners, monkeypatch, capsys):
+    """기업명으로 **잇는** 것과 **만드는** 것은 다르다.
+
+    채우기는 이미 서 있는 명단에 값을 얹는 일이다. 없는 줄을 기업명만 보고
+    만들기 시작하면 채우기가 만들기의 조용한 판이 된다.
+    """
+    path = sheet_file(tmp_path, [row("1", "번호없는샘플", "김샘플", "x")])
+    run(monkeypatch, path, LIST, owners["a"], "fill", "--apply")
+
+    assert rows_in(db, LIST) == []
+    assert "앱에 없는 사람" in capsys.readouterr().out
 
 
 # ── 4. 시트 안에서 같은 번호가 둘 ───────────────────────────────────────────
