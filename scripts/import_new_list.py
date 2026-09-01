@@ -246,29 +246,13 @@ def apply_values(contact, item, columns) -> None:
     contact.notes = cc.dump_notes(values)
 
 
-def move_to(db, contact, label: str, user_id: int) -> str:
-    """이미 있는 줄을 이 명단으로 **옮긴다.** 새로 만들지 않는다.
-
-    카톡방·발송 이력·담당 투자사가 이 줄에 붙어 있다. 새로 만들면 그 이력이
-    끊기고, 이력이 없는 새 줄로 다시 처음부터 연락하게 된다.
-
-    출처(`source_sheet`)에서 **담당이 정해진 남의 명단은 뺀다.** 남겨 두면 그
-    팀원의 대시보드와 발송 대상에 계속 잡혀 같은 사람에게 딜 소개가 두 번
-    나간다 — 애초에 배정을 정한 이유가 그것이다.
-
-    담당이 없는 명단(투자사 풀)은 **그대로 둔다.** 풀은 확보해 둔 전체 명단이지
-    누구의 담당도 아니라, 거기서 빼면 그 분류 자체가 사라진다
-    (`sheet_owner.add_to_sheet` 이 풀에서 빼지 않는 것과 같은 이유다).
-    """
-    owners = sheet_owner.owner_map(db)
-    before = sheet_owner.labels_of(contact.source_sheet)
-    keep = [x for x in before
-            if x != sheet_owner.MANUAL_SHEET
-            and x != label
-            and (not owners.get(x) or owners.get(x) == user_id)]
-    contact.source_sheet = ",".join(keep + [label])
-    contact.user_id = user_id
-    return f"{', '.join(before)} → {contact.source_sheet}"
+# 줄을 명단 사이로 옮기는 규칙은 **여기 적지 않는다.**
+#
+# 화면에서도 줄 하나를 다른 담당자에게 넘길 수 있게 되면서 부르는 곳이 둘이
+# 됐다. 규칙을 양쪽에 적어 두면 다음에 한쪽만 고쳐지고, 고쳐지지 않은 쪽으로
+# 옮긴 사람만 조용히 옛 담당자의 발송 대상에 남는다 — 이 저장소가 반복해 당한
+# 부류라 판정을 `services/sheet_owner.py` 한 곳에 두었다.
+move_to = sheet_owner.move_to
 
 
 def main() -> int:

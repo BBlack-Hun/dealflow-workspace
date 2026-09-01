@@ -442,6 +442,12 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
 .check-row { display: flex; gap: 12px; font-size: 13px; color: var(--ink); }
 .detail-actions { display: flex; gap: 8px; margin-top: 16px; }
 
+/* 이관 줄 — 고르는 칸과 단추가 한 줄에 선다. 좁아지면 단추가 아래로 내려가되
+   `align-items: end` 로 칸의 밑선과 맞춘다(라벨 높이만큼 어긋나 보이던 것). */
+.detail-actions.transfer-row { align-items: end; flex-wrap: wrap; margin-top: 10px;
+                               padding-top: 12px; border-top: 1px solid var(--line); }
+.detail-actions.transfer-row .field { margin: 0; }
+
 .timeline { list-style: none; margin: 0; padding: 0; }
 .tl-item { display: grid; grid-template-columns: 78px 62px 1fr auto; gap: 8px; align-items: start;
            padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 12.5px; }

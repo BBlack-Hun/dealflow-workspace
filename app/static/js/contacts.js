@@ -205,6 +205,55 @@
       .catch(function () { setMsg("삭제 오류", true); });
   }
 
+  // 줄 하나를 다른 담당자에게 넘기기(이관).
+  //
+  // 확인창에 **누구를 누구에게** 넘기는지 적는다 — 딜 소싱의 삭제 확인창과
+  // 같은 방식이다(`sourcing.html`). 되돌리기 번거로운 조작에서 사람이 마지막에
+  // 보는 것이 이 한 줄이라, 여기에 이름이 없으면 엉뚱한 줄을 넘겨도 모른다.
+  //
+  // **월별 기록 이야기를 반드시 함께 적는다.** 달마다 늘어나는 칸은 명단마다
+  // 따로라(`ContactColumn.sheet`), 넘기고 나면 옛 명단에 적어 둔 월별 기록이
+  // 새 명단의 수정창에 안 보인다. 지워지는 것은 아니지만 **사람 눈에는 사라진
+  // 것과 같다** — 말해 주지 않으면 기록이 날아간 줄 알고 다시 적는다.
+  // 값을 옮기려 들지는 않는다. 칸이 서로 짝이 안 맞아 어느 칸에 넣어야 할지
+  // 정할 근거가 없다.
+  function transfer() {
+    var pick = el("transfer-target");
+    if (!current) { setMsg("먼저 줄을 고르세요", true); return; }
+    var label = pick.value;
+    if (!label) { setMsg("넘길 명단을 고르세요", true); return; }
+    var opt = pick.options[pick.selectedIndex];
+    var owner = (opt && opt.getAttribute("data-owner")) || "";
+    var who = (el("f-name") && el("f-name").value.trim()) ||
+              el("detail-title").textContent.trim();
+    if (!confirm(
+      "'" + who + "' 님을 '" + owner + "' 님의 명단 '" + label + "' 로 넘길까요?\n\n" +
+      "· 지금 명단에서 빠지고 " + owner + " 님의 담당이 됩니다 — " +
+      "이 줄은 " + owner + " 님의 대시보드와 딜 소개 발송 대상으로 옮겨 갑니다.\n" +
+      "· 월별 기록은 명단마다 칸이 따로라, 지금까지 적어 둔 월별 기록은 " +
+      "새 명단의 수정창에 보이지 않습니다. 지워지지는 않고, 도로 넘기면 다시 보입니다.")) return;
+    var btn = el("transfer-btn");
+    btn.disabled = true;
+    fetch("/api/contacts/" + current + "/transfer", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ label: label })
+    })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+      .then(function (res) {
+        if (!res.ok) { setMsg(res.d.detail || "이관 실패", true); btn.disabled = false; return; }
+        // **어디서 어디로 갔는지 멈춰 세우고 알린다.** 되돌리려면 옛 명단
+        // 이름을 알아야 하는데, 뒤이어 새로고침이 오므로 화면에 적어 두면
+        // 그대로 지나간다(저장 뒤 `connect_note` 를 알리는 것과 같은 이유다).
+        alert("'" + who + "' 님을 넘겼습니다.\n" + (res.d.moved || "") +
+              "\n\n되돌리려면 " + owner + " 님이(또는 관리자가) 같은 자리에서 도로 넘기면 됩니다.");
+        // 명단별 인원(탭)·전체 수·필터의 `N / M명` 은 모두 서버가 그린다 —
+        // 줄만 지우면 숫자가 옛것으로 남는다.
+        window.location.reload();
+      })
+      .catch(function () { setMsg("이관 요청 오류", true); btn.disabled = false; });
+  }
+
   function visibleIds() {
     return Array.prototype.slice.call(table.querySelectorAll("tbody tr.data-row"))
       .filter(function (tr) { return !tr.hidden; })
@@ -265,6 +314,7 @@
         .catch(function () { setMsg("감추지 못했습니다", true); });
     });
   }
+  on("transfer-btn", "click", transfer);
   on("verify-one-btn", "click", function () {
     if (current) verify([current], "선택한 담당자");
   });

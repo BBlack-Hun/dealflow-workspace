@@ -501,6 +501,78 @@ def assign_to_my_sheet(body: AssignIn, db: Session = Depends(get_db),
     return {"moved": moved, "label": label}
 
 
+class TransferIn(BaseModel):
+    label: str
+
+
+@router.post("/{contact_id}/transfer")
+def transfer_contact(contact_id: int, body: TransferIn,
+                     db: Session = Depends(get_db),
+                     user: User = Depends(get_current_user)):
+    """줄 **하나**를 다른 담당자의 명단으로 넘긴다.
+
+    명단을 통째로 옮기는 길(`/sheets/assign` · `scripts/import_new_list.py`)은
+    이미 있었다. 없던 것은 **한 사람만** 넘기는 길이다 — 실제로 남의 명단에
+    섞여 들어간 몇 곳을 손으로 만든 배정표(CSV)로 옮겨야 했고, 팀원 워크북에는
+    `7/21 A -> 8/19 B` 처럼 사람 사이에 넘긴 이력이 적혀 있다. 그 일이 앱 안에서
+    돼야 한다.
+
+    **옮기는 규칙은 여기 적지 않는다.** `sheet_owner.move_to` 한 곳에 있고
+    스크립트도 같은 것을 부른다 — 두 벌로 적으면 다음에 한쪽만 고쳐지고,
+    고쳐지지 않은 쪽으로 옮긴 사람만 조용히 옛 담당자의 발송 대상에 남는다.
+
+    ── 누가 넘길 수 있나 ────────────────────────────────────────────────────
+
+    **관리자, 그리고 지금 그 줄을 맡고 있는 사람.** 판정은 `_owned` 하나이고,
+    그것은 표에 보이는 줄을 고르는 판정과 같은 것을 읽는다
+    (`deps.may_manage_team_contacts`) — 보이는 줄은 넘길 수 있고, 안 보이는
+    줄은 넘길 수 없다. 여기서만 따로 역할을 보면 **보이는데 못 넘기거나 안
+    보이는데 넘어가는** 상태가 생긴다(이 저장소가 이미 겪은 404 사고다).
+
+    내 줄을 남에게 **주는** 것은 열고, 남의 줄을 내가 **가져오는** 것은 막는다.
+    앞쪽이 요청받은 그 일이고(워크북에 적힌 이력이 전부 그 방향이다), 뒤쪽은
+    남의 대시보드와 발송 대상을 본인 모르게 바꾸는 일이다. 가져와야 하면
+    관리자가 한다 — 관리자는 이미 명단 담당을 통째로 옮긴다.
+
+    투자컨설턴트는 이 주소가 허용 목록(`deps.CONSULTANT_PATHS`)에 없어 미들웨어
+    에서 끊긴다. 새 주소의 기본값이 **막힘**이라 여기 따로 적지 않는다.
+    """
+    contact = _owned(db, contact_id, user)
+    label = (body.label or "").strip()
+
+    # 넘길 수 있는 곳인가. **담당이 정해진 명단만** 받는다 — 풀로 넘기면 넘긴
+    # 줄의 담당을 정할 수가 없다. 화면이 이미 그런 곳을 안 보여 주지만, 화면만
+    # 감추면 이름을 직접 보내는 길이 남는다(`assign_to_my_sheet` 이 같은 이유로
+    # 막는다).
+    #
+    # 감춘 명단은 **막지 않는다.** 스타트업 화면의 명단은 원래 전부 감춰져 있어
+    # (투자사가 아니라서) 막으면 그 화면에서는 이관 자체가 안 된다. 대신 고르는
+    # 칸이 `(투자사로 안 셈)` 이라고 적는다 — 이유는 `sheet_owner.transfer_targets`.
+    targets = {t["label"]: t for t in sheet_owner.transfer_targets(db)}
+    target = targets.get(label)
+    if target is None:
+        raise HTTPException(
+            status_code=400,
+            detail="담당이 정해진 명단으로만 넘길 수 있습니다")
+
+    # **화면을 건너뛰지 않는다.** 투자사 줄을 스타트업 명단으로 넘기면 그 줄이
+    # 다른 화면으로 사라져, 넘긴 사람은 어디로 갔는지 찾을 수가 없다. 이관은
+    # *누가 맡는지*를 바꾸는 일이지 화면을 옮기는 일이 아니다.
+    here = {sheet_owner.page_of(db, x)
+            for x in sheet_owner.labels_of(contact.source_sheet)}
+    if sheet_owner.page_of(db, label) not in here:
+        raise HTTPException(
+            status_code=400,
+            detail="다른 화면의 명단으로는 넘길 수 없습니다")
+
+    moved = sheet_owner.move_to(db, contact, label, target["owner_id"])
+    db.commit()
+    # **무엇이 어떻게 바뀌었는지 돌려준다.** 되돌리려면 어디서 왔는지 알아야
+    # 한다 — 옛 명단 이름이 응답에 없으면 잘못 넘겼을 때 되돌릴 근거가 없다.
+    return {"ok": True, "moved": moved, "label": label,
+            "owner": target["owner"]}
+
+
 @router.post("/sheets/assign", include_in_schema=False)
 def assign_sheet(
     label: str = Form(...),
