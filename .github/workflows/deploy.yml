@@ -63,10 +63,15 @@ jobs:
 
       - name: 실제로 떴는지 밖에서 확인
         # 서버 안에서 도는 헬스체크는 Caddy·인증서·방화벽 문제를 못 잡는다.
+        #
+        # 주소는 서버 `deploy/.env` 의 `DEALFLOW_DOMAIN` 과 **같아야 한다.**
+        # 여기서 읽어 올 방법이 없어 한 벌 더 적는다 — 도메인을 바꿀 때는
+        # 두 곳을 같이 고쳐야 하고, 안 고치면 배포는 됐는데 이 단계만
+        # 빨개진다(그때 무엇이 틀렸는지 이 주석이 알려 준다).
         run: |
           for i in $(seq 1 10); do
             code=$(curl -s -o /dev/null -w '%{http_code}' -m 10 \
-                   https://dealflow-imp.duckdns.org/health || true)
+                   https://contactvc.duckdns.org/health || true)
             if [ "$code" = "200" ]; then echo "화면 정상 (200)"; exit 0; fi
             sleep 6
           done

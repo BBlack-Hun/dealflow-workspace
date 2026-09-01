@@ -189,9 +189,21 @@ sudo chmod +x /etc/cron.daily/dealflow-backup
 
 ## 도메인
 
-`dealflow-imp.duckdns.org` (DuckDNS · 서버 132.145.95.21)
+`contactvc.duckdns.org` (DuckDNS · 서버 132.145.95.21)
 
 IP 가 바뀌어도 이름은 그대로라, 각자 PC 의 에이전트를 다시 손보지 않아도 된다.
+
+**이름 자체를 바꿀 때는 세 곳이 같이 움직여야 한다.** 하나라도 빠지면 화면은
+멀쩡한데 발송만 조용히 멎는다 — 에이전트가 옛 주소를 계속 두드리기 때문이다.
+
+1. 서버 `deploy/.env` 의 `DEALFLOW_DOMAIN` → `docker compose up -d --force-recreate caddy`
+   (Caddy 가 새 이름으로 Let's Encrypt 인증서를 알아서 받는다. DNS 가 먼저
+   이 서버를 가리키고 있어야 한다 — 아니면 발급이 실패하고 옛 인증서도 없다)
+2. `.github/workflows/deploy.yml` 의 밖에서 확인하는 주소
+3. **각자 PC 의 `agent/config.yaml` 의 `server_url`** — 자동으로 안 따라온다.
+   이 파일은 PC 마다 따로 있어서 서버에서 밀어 넣을 방법이 없다.
+
+옛 이름(`dealflow-imp.duckdns.org`)은 2026-09-01 에 여기서 떼어 냈다.
 DuckDNS 페이지에서 IP 만 갱신하면 된다.
 
 ## 확인 목록
