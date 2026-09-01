@@ -32,9 +32,24 @@
   // 검색과 필터가 번갈아 서로를 지운다.
   var filters = null;
 
+  // 친 글자가 **번호 모양**인가. 숫자로 시작해서 숫자와 구분자(`-` · 공백 ·
+  // 괄호 · `+`)만 있으면 번호로 본다. 아무 글자에나 숫자만 남기면 안 된다 —
+  // `24년 매출` 같은 말이 `24` 로 줄어 엉뚱한 줄까지 걸린다.
+  var PHONEISH = /^[0-9][0-9\s().+-]*$/;
+
   function textMatch(tr) {
     var q = (search.value || "").trim().toLowerCase();
-    return !q || (tr.getAttribute("data-search") || "").indexOf(q) !== -1;
+    if (!q) return true;
+    var hay = tr.getAttribute("data-search") || "";
+    if (hay.indexOf(q) !== -1) return true;
+    // 전화번호는 사람마다 적는 모양이 다르다 — 원본에 `010-1234-5678` ·
+    // `01012345678` · `010 1234 5678` 이 다 있다. 줄에는 적은 그대로와 숫자만
+    // 남긴 꼴이 함께 실려 있으니(companies.py 의 `search_text`), 친 글자도
+    // 숫자만 남겨 한 번 더 견준다. 그래야 어느 모양으로 쳐도 같은 줄에 닿는다.
+    // 뒷자리 네 개(`5678`)만 쳐도 걸리는 것이 실제로 가장 쓸모 있다.
+    if (!PHONEISH.test(q)) return false;
+    var digits = q.replace(/[^0-9]/g, "");
+    return !!digits && hay.indexOf(digits) !== -1;
   }
 
   function apply() {
