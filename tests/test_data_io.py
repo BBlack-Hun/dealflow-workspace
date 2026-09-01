@@ -236,3 +236,39 @@ def test_the_sample_shows_how_monthly_activity_is_written(client, users):
     # 1행의 월 라벨을 3열이 이어받는다
     assert {c.month for c in parsed.activity_columns} == {"2026-08"}
 
+
+
+def test_a_sheet_export_still_names_the_people(logged, db):
+    """명단별 엑셀에 **이름·투자사명이 반드시 있어야 한다.**
+
+    `INVESTOR_LAYOUT` 은 표가 `contacts.html` 에 그대로 적혀 있어 `head` 가
+    비어 있다(그 배치 주석 참고). 명단별 내보내기가 그 `head` 를 그대로 쓰면
+    남는 것은 달 칸뿐이라, `담당 팀원` 하나와 `9월 딜소개` 같은 칸만 든 파일이
+    나간다 — **누구의 무엇인지 알 수 없는 파일이다.** 실제로 운영에서 그렇게
+    나갔다(배치를 `investor_monthly` 에서 `investor` 로 옮긴 뒤).
+
+    머리글 수와 값 수가 같은지도 함께 본다. 한 칸이라도 어긋나면 그 아래가
+    통째로 밀리는데, 열어 봐도 잘 안 보인다.
+    """
+    from app.models import SheetOwner, VcContact
+
+    _upload(logged, _sheet(SAMPLE), dry_run="false")
+    label = db.query(VcContact).first().source_sheet.split(",")[0]
+    row = db.query(SheetOwner).filter_by(label=label).first()
+    if row is None:
+        row = SheetOwner(label=label)
+        db.add(row)
+    row.layout = "investor"          # 표가 템플릿에 적혀 있는 배치
+    db.commit()
+
+    r = logged.get("/api/export/contacts.xlsx", params={"sheet": label})
+    assert r.status_code == 200, r.text
+    ws = openpyxl.load_workbook(io.BytesIO(r.content)).active
+    rows = list(ws.iter_rows(values_only=True))
+    head = rows[0]
+
+    for col in ("이름", "투자사", "휴대폰", "전자 메일 주소", "카톡방"):
+        assert col in head, f"명단별 엑셀에 '{col}' 칸이 없다: {head}"
+    assert len(rows) > 1, "줄이 하나도 없다"
+    for body in rows[1:]:
+        assert len(body) == len(head), "머리글과 값의 칸 수가 다르다 — 한 칸씩 밀린다"
