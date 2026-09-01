@@ -16,6 +16,10 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   var companyPill = document.getElementById("company-pill");
   var contactPill = document.getElementById("contact-pill");
   var contactSummary = document.getElementById("contact-summary");
+  // 아래 단추를 매는 자리보다 **위**에서 잡아 둔다 — 셈을 다시 하는
+  // `updateCounts()` 가 이 단추를 켜고 끄기 때문에, 매는 순서가 바뀌어도
+  // 첫 셈에서 조용히 빠지는 일이 없어야 한다.
+  var clearAllBtn = document.getElementById("clear-all-contacts");
   var ssCompanies = document.getElementById("ss-companies");
   var ssContacts = document.getElementById("ss-contacts");
   var ssNote = document.getElementById("ss-note");
@@ -227,6 +231,44 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     }
   }
 
+  // ── 고른 사람이 어느 그룹에 걸쳐 있는가 ───────────────────────────────────
+  //
+  // 그룹 칩은 한 번에 하나만 켜지는데, 고르기는 그 위에 쌓인다 — 1군을 고르고
+  // 2군으로 옮겨 [전체선택]을 누르면 발송 대상에 두 그룹이 함께 있다. 그런데
+  // 요약 줄은 `곽○○ … 외 119명` 이라고만 적어서, **무엇으로 골랐는지가 화면
+  // 에서 사라졌다.** 필터 칩은 지금 걸린 조건 하나만 말하지, 이미 담아 둔 것을
+  // 말해 주지 않는다.
+  //
+  // **그래서 그룹 이름은 하나도 안 줄인다.** 자를 만한 자리를 재 봤는데, 이
+  // 칸은 3열 그리드의 가운데라 280px(한글 26자)뿐이다 — 글자 수로 자르면
+  // 그룹 이름이 반토막 나서 다른 그룹으로 읽힌다. 같은 시트에서 온 소싱 갈래
+  // 이름이 이미 28자까지 간다. 줄여 적느니 **줄을 넘겨 다 적는 편**이 맞다.
+  // 길어져도 바로 위 그룹 칩 줄이 같은 이름을 이미 다 그리고 있으니, 이 줄이
+  // 화면에 없던 높이를 새로 만들지는 않는다.
+  //
+  // 한 그룹뿐이면 적지 않는다 — 섞이지 않았다는 뜻이고, 그건 위 칩이 이미
+  // 말하고 있다(바로 위 갈래 안내와 같은 규칙).
+  function groupMixHtml(picked) {
+    // 소싱 명단에는 그룹이라는 것이 없다 — 그쪽은 갈래가 같은 일을 한다.
+    if (mode === "sourcing" || !groupBar) return "";
+    // 순서는 **목록에 나온 차례** 그대로다. 서버가 정한 정렬(인원 많은 순 ·
+    // 비어 있음 마지막)을 여기 옮겨 적으면 두 벌이 되어 어긋나도 모른다.
+    var order = [], count = {};
+    picked.forEach(function (c) {
+      var card = c.closest(".pick-card");
+      if (!card) return;
+      var name = (card.getAttribute("data-group") || "").trim() || EMPTY_GROUP;
+      if (!count[name]) { count[name] = 0; order.push(name); }
+      count[name] += 1;
+    });
+    if (order.length < 2) return "";
+    return '<span class="pick-groups">그룹 ' + order.map(function (name) {
+      // 그룹 이름은 시트에서 온 말이다 — 그대로 넣지 않는다.
+      return '<span class="tag soft">' + escapeHtml(name) +
+        " " + count[name] + "명</span>";
+    }).join("") + "</span>";
+  }
+
   ["contact-search", "only-picked-contacts"].forEach(function (id) {
     var el = document.getElementById(id);
     if (!el) return;
@@ -386,16 +428,25 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
 
     syncBucketMixNote();
     // 고른 사람 이름을 보여준다 — 숫자만으로는 누구를 넣었는지 알 수 없다.
-    var names = contactCbs().filter(function (c) { return c.checked; })
-      .map(function (c) { return c.getAttribute("data-name"); });
+    var picked = contactCbs().filter(function (c) { return c.checked; });
+    var names = picked.map(function (c) { return c.getAttribute("data-name"); });
     if (names.length) {
       contactSummary.hidden = false;
-      contactSummary.textContent = names.length <= 6
-        ? names.join(", ")
-        : names.slice(0, 6).join(", ") + " 외 " + (names.length - 6) + "명";
+      contactSummary.innerHTML = groupMixHtml(picked) +
+        '<span class="pick-names">' + escapeHtml(names.length <= 6
+          ? names.join(", ")
+          : names.slice(0, 6).join(", ") + " 외 " + (names.length - 6) + "명") +
+        "</span>";
     } else {
       contactSummary.hidden = true;
+      contactSummary.innerHTML = "";
     }
+
+    // [전체해제]는 **셀 것이 있을 때만** 눌린다. 눌러도 아무 일이 없는 단추는
+    // "왜 안 되지" 를 만든다. 켜고 끄는 판단을 여기서 하는 이유는, 옆 알약이
+    // `nt` 명이라고 적는 바로 그 자리이기 때문이다 — 다른 곳에서 따로 세면
+    // `0명` 인데 해제가 눌리거나 `12명` 인데 안 눌리는 날이 온다.
+    if (clearAllBtn) clearAllBtn.disabled = nt < 1;
 
     // 상한을 넘기면 더 못 고르게 막는다
     if (nc >= MAX_COMPANIES) {
@@ -742,6 +793,27 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     updateCounts();
     applyContactFilter();   // 켠 사람은 검색어와 무관하게 계속 보인다
   });
+
+  // ── [전체해제] ────────────────────────────────────────────────────────────
+  //
+  // **[전체선택]을 다시 누르는 것과는 다른 일이다.** 그쪽은 지금 걸러진 범위만
+  // 되돌린다 — 그 좁힘이 이 화면의 안전장치라 넓힐 수 없다(그룹으로 추려 놓고
+  // 누른 조작이 다른 그룹을 건드리면 남의 카톡방으로 문구가 나간다).
+  //
+  // 그 대신 조건 밖에서 고른 사람은 손이 안 닿는 채로 발송에 남았다. 1군에서
+  // 고르고 2군으로 옮기면 [전체선택]을 두 번 눌러도 1군은 그대로다 — 필터를
+  // 되돌리거나 새로고침해야 했고, 그 사이 요약 줄은 계속 그 사람을 세고 있다.
+  // 여기서는 **거른 것과 상관없이 지금 목록의 체크를 전부 끈다.**
+  //
+  // 훑는 상자는 [전체선택]과 똑같이 `contactCbs()` 다 — 지금 보이는 목록
+  // 하나뿐이다. 연결이 안 끝나 접힌 칸(`#blocked-contacts`)은 그 상자 밖이라
+  // 켜는 쪽에도 끄는 쪽에도 애초에 안 들어온다(`tests/js/deals_select_all_test.js`).
+  if (clearAllBtn) clearAllBtn.addEventListener("click", function () {
+    contactCbs().forEach(function (c) { c.checked = false; });
+    updateCounts();          // 알약 · 요약 줄 · 이 단추가 여기서 함께 0 이 된다
+    applyContactFilter();
+  });
+
   document.querySelectorAll(".mode-tab").forEach(function (b) {
     b.addEventListener("click", function () { setMode(b.getAttribute("data-mode")); });
   });

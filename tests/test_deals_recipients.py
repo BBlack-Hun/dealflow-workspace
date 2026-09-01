@@ -9,10 +9,13 @@
    기대값을 적어 두면 판정이 갈려도 그 숫자만 고치면 지나간다.
 2. **그룹 필터가 조용히 죽는다.** 선언한 값과 줄이 싣는 값과 화면에 보이는 값이
    짝이 아니면 필터는 멀쩡해 보이면서 아무 것도 안 거른다.
-3. **[전체선택]이 안 보이는 사람까지 켠다.** ← 여기가 제일 위험하다.
-   조작 자체는 브라우저에 있으므로 `tests/js/deals_select_all_test.js` 가
-   deals.js 를 그대로 실행해 본다. 이 파일은 그 검사가 **헛돌지 않게**
+3. **[전체선택]·[전체해제]가 안 보이는 사람까지 켜고 끈다.** ← 여기가 제일
+   위험하다. 조작 자체는 브라우저에 있으므로 `tests/js/deals_select_all_test.js`
+   가 deals.js 를 그대로 실행해 본다. 이 파일은 그 검사가 **헛돌지 않게**
    화면이 같은 아이디·속성을 실제로 그리는지 지킨다.
+4. **무엇으로 골랐는지가 요약 줄에서 사라진다.** 여러 그룹에 걸쳐 고르고 나면
+   `곽○○ … 외 119명` 만 남아 어느 그룹이 발송에 들었는지 알 수 없었다 —
+   `tests/js/deals_group_summary_test.js` 가 그 줄을 본다.
 
 같은 화면(딜 진행 관리)의 것도 여기서 함께 본다 — 미팅 후기의 기업명과 시각,
 그리고 예약된 후속의 이름 검색. 앞의 둘은 **없으면 빈칸**이고, 검색은
@@ -32,6 +35,7 @@ from .conftest import DEMO_PASSWORD
 
 ROOT = Path(__file__).resolve().parent.parent
 JS_TEST = ROOT / "tests" / "js" / "deals_select_all_test.js"
+GROUP_SUMMARY_JS_TEST = ROOT / "tests" / "js" / "deals_group_summary_test.js"
 SEARCH_JS_TEST = ROOT / "tests" / "js" / "upcoming_search_test.js"
 TEMPLATES = ROOT / "app" / "templates"
 
@@ -587,7 +591,7 @@ def test_두_화면이_같은_사람에게_같은_그룹_값을_싣는다(logged
         assert on_deals.group(1) == on_contacts.group(1)
 
 
-# ── 3) ★ [전체선택]이 걸러진 사람에게만 걸린다 ──────────────────────────────
+# ── 3) ★ [전체선택]·[전체해제]가 훑는 범위 ──────────────────────────────────
 
 def test_화면이_전체선택_검사가_기대하는_모양을_실제로_그린다(logged_in, mixed):
     """브라우저 검사는 가짜 DOM 위에서 돈다 — **그 모양이 화면과 어긋나면 헛돈다.**
@@ -596,11 +600,35 @@ def test_화면이_전체선택_검사가_기대하는_모양을_실제로_그�
     실제 화면에서는 필터도 전체선택도 안 걸리는 상태가 된다. 그 짝을 여기서 건다.
     """
     html = logged_in.get("/deals").text
-    for needed in ('id="select-all-contacts"', 'id="contact-list"',
+    for needed in ('id="select-all-contacts"', 'id="clear-all-contacts"',
+                   'id="contact-list"',
                    'id="group-filter"', 'id="contact-filters"',
                    'class="contact-cb"', 'class="pick-card" data-group=',
-                   'id="contact-filter-note"', 'data-empty='):
+                   'id="contact-filter-note"', 'id="contact-summary"',
+                   'id="bucket-mix-note"', 'data-empty='):
         assert needed in html, f"화면에 {needed} 가 없다 — 브라우저 검사가 헛돈다"
+
+
+def test_전체선택_옆에_전체해제가_있다(logged_in, mixed):
+    """단추가 하나뿐이라 **푸는 길이 없었다.**
+
+    [전체선택]은 지금 걸러진 범위만 되돌린다 — 그 좁힘이 이 화면의 안전장치라
+    넓힐 수 없다(그룹으로 추려 놓고 누른 조작이 다른 그룹을 건드리면 그대로
+    남의 카톡방으로 문구가 나간다). 그래서 조건 밖에서 고른 사람에게는 손이
+    닿지 않았고, 필터를 되돌리거나 새로고침하는 수밖에 없었다.
+
+    범위가 다른 일이라 단추도 따로 세운다. 여기서는 **그 단추가 화면에 있고,
+    풀 것이 없을 때는 잠겨 있는지**만 본다 — 무엇을 푸는지는 브라우저 쪽
+    검사가 deals.js 를 그대로 돌려 본다.
+    """
+    html = logged_in.get("/deals").text
+    at = html.find('id="clear-all-contacts"')
+    assert at > 0, "[전체해제] 단추가 화면에 없다"
+    assert "disabled" in html[at:at + 220], (
+        "아무도 안 골랐는데 [전체해제]가 눌린다 — 눌러도 아무 일이 없는 단추다")
+    # 찾던 자리에 있어야 한다. [전체선택] 옆이 아니면 없는 것과 같다.
+    assert 0 < html.find('id="select-all-contacts"') < at, (
+        "[전체해제]가 [전체선택] 옆에 없다 — 없다고 한 그 자리에 세워야 한다")
 
 
 def test_전체선택은_안_보이는_사람에게_걸리면_안_된다():
@@ -619,6 +647,27 @@ def test_전체선택은_안_보이는_사람에게_걸리면_안_된다():
                     "(호스트에서 `node tests/js/deals_select_all_test.js`)")
     result = subprocess.run([node, str(JS_TEST)], capture_output=True,
                             text=True, timeout=60)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_고른_그룹_이름이_요약_줄에서_사라지면_안_된다():
+    """여러 그룹에 걸쳐 고르고 나면 **무엇으로 골랐는지가 화면에서 사라졌다.**
+
+    그룹 칩은 한 번에 하나만 켜지는데 고르기는 그 위에 쌓인다 — 1군을 고르고
+    2군으로 옮겨 [전체선택]을 누르면 발송 대상에 두 그룹이 함께 있는데, 요약
+    줄은 `곽○○ … 외 119명` 이라고만 적었다. 칩은 지금 걸린 조건 하나만 말하지
+    이미 담아 둔 것을 말해 주지 않는다.
+
+    그룹 이름은 **하나도 줄이지 않는다** — 이름은 여럿 중 하나지만 그룹은
+    `무엇으로 골랐는가` 라서, 하나가 가려지면 그 그룹이 통째로 발송에 들어간
+    사실이 안 보인다.
+    """
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node 미설치 — 브라우저 로직 테스트 생략 "
+                    "(호스트에서 `node tests/js/deals_group_summary_test.js`)")
+    result = subprocess.run([node, str(GROUP_SUMMARY_JS_TEST)],
+                            capture_output=True, text=True, timeout=60)
     assert result.returncode == 0, result.stdout + result.stderr
 
 

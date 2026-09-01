@@ -122,6 +122,9 @@ a:hover { text-decoration: underline; }
 .secondary-btn { padding: 8px 14px; border: 1px solid var(--line); background: #fff; border-radius: 8px; cursor: pointer; font-weight: 600; }
 .danger-btn { padding: 8px 14px; border: 1px solid #f3b4b4; background: #fff; color: var(--red); border-radius: 8px; cursor: pointer; font-weight: 600; }
 .linkbtn { border: 0; background: none; color: var(--brand); cursor: pointer; font-size: 12px; font-weight: 600; }
+/* 눌러도 아무 일이 없는 단추는 지우지 않고 흐린다 — 자리에서 사라지면
+   그런 기능이 있다는 것 자체를 모르게 되고, 나타났다 사라지면 줄이 튄다. */
+.linkbtn:disabled { color: var(--muted); cursor: default; opacity: .55; }
 
 /* Progress */
 .counters { display: flex; gap: 14px; margin: 18px 0; }
@@ -1045,6 +1048,24 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
 
 .pick-tags { display: flex; flex-wrap: wrap; gap: 3px; margin: 3px 0; }
 .pick-tags .tag { font-size: 10.5px; }
+
+/* 패널 제목의 고르기 단추들. 딜 제안 관리의 `② 대상 담당자` 칸은 3열 그리드의
+   가운데라 280px 안팎이라, 묶지 않으면 `전체선 택` 처럼 낱말 가운데서 줄이
+   끊긴다. 묶어서 감싸 넘기고, 낱말은 통째로 옮긴다. */
+.panel-title .title-actions { display: flex; flex-wrap: wrap; gap: 10px;
+  justify-content: flex-end; align-items: center; }
+.panel-title .title-actions .linkbtn { white-space: nowrap; }
+/* 제목도 같은 이유로 붙잡는다 — 단추 묶음이 옆에 서면서 `② 대상 담 / 당자` 로
+   끊겼다. 방식을 바꾸면 이 글자가 `② 딜 소싱 대상` 으로 바뀐다(deals.js). */
+.panel-title #contact-head { white-space: nowrap; }
+
+/* 고른 결과 요약의 그룹 줄. **이름을 줄이지 않는다** — 그룹은 무엇으로
+   골랐는가라서 하나가 가려지면 그 그룹이 통째로 발송에 들어간 것이 안 보인다.
+   좁은 칸(한글 26자)이라 그냥 넘겨서 다 적고, 한글은 낱말 단위로 끊는다. */
+.pick-groups { display: flex; flex-wrap: wrap; align-items: baseline; gap: 3px;
+  margin-bottom: 2px; word-break: keep-all; }
+.pick-groups .tag { margin-left: 0; }
+.pick-names { display: block; }
 
 /* ── 진행 단계 깔때기 ──────────────────────────────────────
    딜소개 → IR → 미팅 으로 이어지는 사다리. 어디서 끊기는지가 한눈에 보여야

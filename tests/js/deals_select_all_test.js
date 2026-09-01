@@ -1,4 +1,4 @@
-// 그룹으로 추린 뒤 [전체선택]이 **걸러진 사람에게만** 걸리는가.
+// 그룹으로 추린 뒤 [전체선택]·[전체해제]가 **누구에게 걸리는가.**
 // (node tests/js/deals_select_all_test.js)
 //
 // 이 화면에서 가장 위험한 자리다. 목록에서 안 보이는 사람까지 체크되면 그대로
@@ -11,152 +11,19 @@
 // 발송 대상에는 A 가 섞여 있다.
 //
 // 규칙을 옮겨 적어 검사하면 두 벌이 되어 어긋나도 모른다. 그래서 **deals.js 를
-// 그대로 실행**한다 — 이 파일이 쓰는 만큼만 가짜 DOM 을 세우고 vm 으로 돌린다.
+// 그대로 실행**한다 — 화면은 `_deals_dom.js` 가 세운다(여러 검사가 그 한 벌을
+// 같이 쓴다).
 "use strict";
 const assert = require("assert");
-const fs = require("fs");
-const path = require("path");
-const vm = require("vm");
 
-const SRC = path.join(__dirname, "..", "..", "app", "static", "js", "deals.js");
-const src = fs.readFileSync(SRC, "utf8");
-
-// 서버가 `sheet_owner.EMPTY_GROUP` 으로 실어 보내는 말. 표 필터(filters.js)의
-// `EMPTY` 와 같은 글자여야 한다 — 그 짝은 파이썬 쪽 검사가 지킨다.
-const EMPTY_GROUP = "(비어 있음)";
-
-const dom_ = require("./_dom.js");
-const makeEl = dom_.makeEl;
-const el = dom_.el;
-const queryAll = dom_.queryAll;
-
-// ── 화면 세우기 ─────────────────────────────────────────────────────────────
-// deals.html 의 `② 대상 담당자` 칸을 그대로 옮긴다. 이 짝(아이디·속성)이
-// 템플릿과 어긋나면 여기 검사가 헛돌므로, **실제로 그려진 화면에 같은 아이디와
-// 속성이 있는지**는 파이썬 쪽(tests/test_deals_recipients.py)이 따로 본다.
-
-function contactCard(id, name, group, noreact) {
-  const cb = el("input", {
-    id: "cb-" + id, class: "contact-cb", value: String(id),
-    "data-name": name, "data-noreact": noreact ? "1" : "0"
-  });
-  return el("label", {
-    class: "pick-card", "data-group": group || "",
-    "data-search": (name + " " + (group || "")).toLowerCase()
-  }, [cb]);
-}
-
-const PEOPLE = [
-  // id, 이름(가상), 그룹, 반응 없음
-  [1, "가담당", "1군", true],
-  [2, "나담당", "1군", false],
-  [3, "다담당", "2군", true],
-  [4, "라담당", "2군", false],
-  [5, "마담당", "", false]      // 그룹을 안 정해 둔 사람
-];
-
-// 연결이 안 끝나 **발송 목록에 없는** 사람(`sheet_owner.blocked_stages`).
-// 화면은 이 자리에 입력칸을 두지 않지만, 여기서는 **일부러 체크박스를 붙인다.**
-// 이 검사가 지키려는 것은 "화면이 체크박스를 안 그린다" 가 아니라 **"목록 밖의
-// 체크박스는 발송에 절대 안 딸려 온다"** 이기 때문이다 — deals.js 가 고르는
-// 상자를 `#contact-list` 안으로 좁혀 둔(`contactCbs`) 덕이고, 그 좁힘이 풀리면
-// 연결도 안 된 사람에게 문구가 나간다. 되돌릴 수 없는 일이라 여기서 못박는다.
-function blockedBlock() {
-  const cb = el("input", {
-    id: "cb-99", class: "contact-cb", value: "99",
-    "data-name": "못보낼담당", "data-noreact": "1"
-  });
-  return el("details", { id: "blocked-contacts", class: "miss-box" }, [
-    el("summary", {}, []),
-    el("p", { class: "miss-people name-line" }, [cb])
-  ]);
-}
-
-function buildDom() {
-  dom_.resetHandlers();
-  const root = makeEl("html");
-
-  const cards = PEOPLE.map(function (p) { return contactCard(p[0], p[1], p[2], p[3]); });
-  const contactList = el("div", { id: "contact-list", class: "card-list" }, cards);
-  const blocked = blockedBlock();
-  const sourcingList = el("div", { id: "sourcing-list", class: "card-list" }, []);
-  const companyList = el("div", { id: "company-list", class: "card-list" }, []);
-  const companyPanel = el("section", { class: "panel" }, [companyList]);
-
-  const chips = [el("button", { class: "chip active", "data-value": "" })]
-    .concat(["1군", "2군"].map(function (g) {
-      return el("button", { class: "chip", "data-value": g });
-    }))
-    .concat([el("button", { class: "chip", "data-value": EMPTY_GROUP })]);
-  const groupBar = el("div", { id: "group-filter", "data-empty": EMPTY_GROUP }, chips);
-  const groupBox = el("div", { id: "contact-filters", class: "pick-filters" }, [groupBar]);
-
-  const simple = ["company-pill", "contact-pill", "contact-summary", "ss-companies",
-                  "ss-contacts", "ss-note", "preview-tabs", "preview-area",
-                  "send-warnings", "send-btn", "refresh-preview", "contact-search",
-                  "only-picked-contacts", "company-search", "only-picked",
-                  "company-filter-note", "contact-filter-note", "bucket-mix-note",
-                  "select-all-contacts", "select-noreact", "sourcing-filters",
-                  "batch-title", "include-opening", "tpl-opening", "tpl-closing",
-                  "tpl-opening-wrap", "ir-attach", "ir-links",
-                  "mail-fields", "mail-subject", "company-hint", "mode-help"]
-    .map(function (id) { return el("div", { id: id }); });
-  // 방식을 바꾸면 이 칸의 이름표(`안내문`/`문구`)를 고쳐 쓴다 — 속 `span` 이
-  // 없으면 탭을 누르는 순간 화면 코드가 그대로 죽는다(실제 화면에는 있다).
-  simple.push(el("div", { id: "tpl-closing-wrap" }, [el("span", {})]));
-
-  const arrow = el("span", { class: "ss-arrow" });
-  const modeTabs = ["deal", "ir", "remind", "meeting", "review", "ask", "sourcing"]
-    .map(function (m, i) {
-      return el("button", { class: i === 0 ? "mode-tab active" : "mode-tab", "data-mode": m });
-    });
-  const channel = el("input", { name: "channel", value: "kakao" });
-  channel.checked = true;
-
-  [companyPanel, contactList, blocked, sourcingList, groupBox, arrow, channel]
-    .concat(simple).concat(modeTabs)
-    .forEach(function (node) { root.appendChild(node); });
-
-  return { root: root, document: dom_.makeDocument(root), cards: cards,
-           blocked: blocked, blockedCb: blocked.querySelector(".contact-cb") };
-}
-
-function run() {
-  const dom = buildDom();
-  const win = { location: { search: "", href: "" } };
-  const ctx = {
-    document: dom.document, console: console, window: win,
-    setTimeout: function () { return 0; }, clearTimeout: function () {},
-    URLSearchParams: URLSearchParams,
-    alert: function () {}, confirm: function () { return false; },
-    fetch: function () {
-      // 문구 목록·미리보기는 이 검사와 무관하다. 절대 안 풀리는 약속을 준다.
-      return { then: function () { return this; }, catch: function () { return this; } };
-    }
-  };
-  ctx.window = win;
-  Object.assign(win, { location: win.location, document: dom.document });
-  vm.runInNewContext(src, ctx, { filename: "deals.js" });
-  return dom;
-}
-
-function boxes(dom) {
-  return dom.cards.map(function (card) { return card.querySelector(".contact-cb"); });
-}
-function checkedNames(dom) {
-  return boxes(dom).filter(function (cb) { return cb.checked; })
-    .map(function (cb) { return cb.getAttribute("data-name"); }).sort();
-}
-function shownNames(dom) {
-  return dom.cards.filter(function (c) { return !c.hidden; })
-    .map(function (c) { return c.querySelector(".contact-cb").getAttribute("data-name"); }).sort();
-}
-function pickGroup(dom, value) {
-  const chip = dom.document.querySelector('#group-filter .chip[data-value="' + value + '"]');
-  assert.ok(chip, "그룹 칩을 못 찾았다: " + value);
-  chip.fire("click");
-}
-function clickSelectAll(dom) { dom.document.getElementById("select-all-contacts").fire("click"); }
+const deals_ = require("./_deals_dom.js");
+const EMPTY_GROUP = deals_.EMPTY_GROUP;
+const run = deals_.run;
+const checkedNames = deals_.checkedNames;
+const shownNames = deals_.shownNames;
+const pickGroup = deals_.pickGroup;
+const clickSelectAll = deals_.clickSelectAll;
+const clickClearAll = deals_.clickClearAll;
 
 // ── 1) 그룹 필터가 실제로 줄을 거른다 ───────────────────────────────────────
 {
@@ -272,6 +139,14 @@ function clickSelectAll(dom) { dom.document.getElementById("select-all-contacts"
   dom.document.getElementById("select-noreact").fire("click");
   assert.strictEqual(dom.blockedCb.checked, false,
     "'반응 없음' 이라는 이유로 연결 전 사람이 켜졌다");
+
+  // **[전체해제]도 같은 상자만 훑는다.** 켜는 쪽만 좁혀 두고 끄는 쪽을 넓히면,
+  // 접힌 칸의 체크는 켜지지도 꺼지지도 않는 채로 남는다 — 그 상태로 손댈 수
+  // 없는 체크가 발송으로 새어 나가는 길이 열린다.
+  dom.blockedCb.checked = true;              // 어떻게든 켜졌다고 치고
+  clickClearAll(dom);
+  assert.strictEqual(dom.blockedCb.checked, true,
+    "[전체해제]가 목록 밖(접힌 칸)까지 건드렸다 — 켜는 쪽과 끄는 쪽의 범위가 다르다");
 }
 
 // ── 8) 소싱 탭으로 가면 그 설명은 사라진다 ──────────────────────────────────
@@ -291,6 +166,87 @@ function clickSelectAll(dom) { dom.document.getElementById("select-all-contacts"
   dom.document.querySelector('.mode-tab[data-mode="deal"]').fire("click");
   assert.strictEqual(missBox.hidden, false,
     "딜 소개로 돌아왔는데 빠진 사람 설명이 안 돌아온다 — 누가 빠졌는지 다시 알 수 없다");
+}
+
+// ── 9) ★ [전체해제]는 **조건 밖에서 고른 사람까지** 푼다 ────────────────────
+//
+// 여기가 이 단추가 생긴 이유다. [전체선택]은 지금 걸러진 범위만 되돌리므로
+// (위 3번), 1군에서 고르고 2군으로 옮긴 뒤에는 두 번을 눌러도 1군이 남는다 —
+// 필터를 되돌리거나 새로고침하는 수밖에 없었다. 그게 사용자가 말한 "전체
+// 해제가 없다" 이고, 그래서 훑는 범위가 다른 단추를 따로 세웠다.
+{
+  const dom = run();
+  pickGroup(dom, "1군");
+  clickSelectAll(dom);
+  pickGroup(dom, "2군");
+  clickSelectAll(dom);
+  assert.deepStrictEqual(checkedNames(dom), ["가담당", "나담당", "다담당", "라담당"]);
+
+  // [전체선택]을 다시 눌러도 2군만 꺼진다 — 1군에는 손이 닿지 않는다.
+  clickSelectAll(dom);
+  assert.deepStrictEqual(checkedNames(dom), ["가담당", "나담당"],
+    "[전체선택]의 범위가 넓어졌다 — 그 좁힘이 이 화면의 안전장치다");
+
+  clickClearAll(dom);
+  assert.deepStrictEqual(checkedNames(dom), [],
+    "[전체해제]를 눌렀는데 조건 밖에서 고른 사람이 그대로 남았다 — " +
+    "화면은 비어 보이는데 발송에는 들어간다");
+}
+
+// ── 10) 세는 자리와 어긋나지 않는다 ─────────────────────────────────────────
+//
+// `0명` 이라고 적혀 있는데 체크가 남아 있거나, 반대로 셈만 0 이 되고 체크는
+// 그대로면 그 차이가 그대로 발송으로 간다. 알약 · 발송 요약 · 이 단추의
+// 눌림 상태는 전부 `updateCounts()` 한 곳에서 나와야 한다.
+{
+  const dom = run();
+  const pill = dom.document.getElementById("contact-pill");
+  const ss = dom.document.getElementById("ss-contacts");
+  const summary = dom.document.getElementById("contact-summary");
+  const clearBtn = dom.document.getElementById("clear-all-contacts");
+
+  assert.strictEqual(clearBtn.disabled, true,
+    "아무도 안 골랐는데 [전체해제]가 눌린다 — 눌러도 아무 일이 없다");
+
+  clickSelectAll(dom);
+  assert.strictEqual(pill.innerHTML, "<b>5</b>명");
+  assert.strictEqual(ss.textContent, 5);
+  assert.strictEqual(clearBtn.disabled, false, "고른 사람이 있는데 [전체해제]가 잠겨 있다");
+
+  clickClearAll(dom);
+  assert.deepStrictEqual(checkedNames(dom), []);
+  assert.strictEqual(pill.innerHTML, "<b>0</b>명",
+    "체크는 다 풀렸는데 알약이 아직 사람을 세고 있다");
+  assert.strictEqual(ss.textContent, 0, "발송 요약이 아직 사람을 세고 있다");
+  assert.strictEqual(summary.hidden, true,
+    "고른 사람이 없는데 요약 줄이 남아 있다 — 누가 들어가는지 잘못 읽힌다");
+  assert.strictEqual(clearBtn.disabled, true,
+    "풀 것이 없는데 [전체해제]가 계속 눌린다");
+}
+
+// ── 11) 소싱 명단에서도 그 명단만 푼다 ─────────────────────────────────────
+//
+// 대상 목록이 둘이다(투자사 담당자 / 딜 소싱). 감춰진 쪽의 체크까지 풀면,
+// 탭을 돌아왔을 때 골라 둔 것이 말없이 사라진다.
+{
+  const dom = run();
+  clickSelectAll(dom);
+  assert.strictEqual(checkedNames(dom).length, 5);
+
+  dom.document.querySelector('.mode-tab[data-mode="sourcing"]').fire("click");
+  clickSelectAll(dom);
+  assert.ok(dom.sourcingCards.every(function (c) {
+    return c.querySelector(".contact-cb").checked;
+  }), "소싱 명단에서 [전체선택]이 안 걸렸다 — 이 검사가 헛돈다");
+
+  clickClearAll(dom);
+  assert.ok(dom.sourcingCards.every(function (c) {
+    return !c.querySelector(".contact-cb").checked;
+  }), "지금 보고 있는 소싱 명단이 [전체해제]로 안 풀렸다");
+
+  dom.document.querySelector('.mode-tab[data-mode="deal"]').fire("click");
+  assert.strictEqual(checkedNames(dom).length, 5,
+    "소싱 탭에서 누른 [전체해제]가 감춰져 있던 투자사 담당자 선택을 지웠다");
 }
 
 console.log("deals_select_all_test: 통과");
