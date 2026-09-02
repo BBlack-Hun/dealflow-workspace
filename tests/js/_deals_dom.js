@@ -85,6 +85,17 @@ function sourcingCard(id, name, bucket) {
   }, [cb]);
 }
 
+// 예약 큐 한 줄. **`data-count` 가 화면이 지금 말하고 있는 수**다 — [시작] 이
+// 이 값을 서버로 함께 보내야, 서버가 다시 센 수와 다를 때 되물을 수 있다.
+// 실제 화면이 같은 속성을 그리는지는 파이썬 쪽(`tests/test_deal_queue.py`)이 본다.
+function queueRow(id, group, count) {
+  return el("div", { class: "queue-row", "data-id": String(id),
+                     "data-group": group, "data-count": String(count) }, [
+    el("button", { class: "primary-btn inline queue-start" }),
+    el("button", { class: "linkbtn danger queue-cancel" })
+  ]);
+}
+
 function buildDom(people) {
   dom_.resetHandlers();
   const root = makeEl("html");
@@ -134,7 +145,16 @@ function buildDom(people) {
   const channel = el("input", { name: "channel", value: "kakao" });
   channel.checked = true;
 
-  [companyPanel, contactList, blocked, sourcingList, groupBox, arrow, channel]
+  const queueRows = [queueRow(7, "1군", 24)];
+  const queueList = el("div", { id: "queue-list" }, queueRows);
+  const queuePanel = el("section", { id: "deal-queue", class: "panel" }, [
+    el("select", { id: "queue-group" }, []),
+    el("button", { id: "queue-add" }),
+    queueList
+  ]);
+
+  [companyPanel, contactList, blocked, sourcingList, groupBox, arrow, channel,
+   queuePanel]
     .concat(simple).concat(modeTabs)
     .forEach(function (node) { root.appendChild(node); });
 
@@ -144,26 +164,36 @@ function buildDom(people) {
     blocked.querySelectorAll(".contact-cb"));
   return { root: root, document: dom_.makeDocument(root), cards: cards,
            sourcingCards: sourcingCards,
+           queuePanel: queuePanel, queueRows: queueRows,
            blocked: blocked, blockedCbs: blockedCbs,
            blockedCb: blockedCbs[blockedCbs.length - 1] };
 }
 
 // deals.js 를 이 화면 위에서 그대로 돌린다.
-function run(people) {
+//
+// `opts` 로 `fetch`·`confirm`·`alert` 를 갈아 끼울 수 있다 — 예약 큐 검사는
+// **서버가 돌려준 말이 확인창에 그대로 뜨는지**를 봐야 해서 둘 다 필요하다.
+// 안 주면 지금까지와 똑같다(절대 안 풀리는 약속 · 확인창은 늘 아니오).
+function run(people, opts) {
   const fs = require("fs");
   const path = require("path");
   const vm = require("vm");
   const SRC = path.join(__dirname, "..", "..", "app", "static", "js", "deals.js");
   const src = fs.readFileSync(SRC, "utf8");
 
+  opts = opts || {};
   const dom = buildDom(people);
-  const win = { location: { search: "", href: "" } };
+  // `reload` 는 예약 큐가 줄을 다시 그리려고 부른다(대상 수는 서버가 센 값이라
+  // 화면이 흉내 내면 붙인 순간 낡는다). 몇 번 불렸는지 세어 둔다.
+  const win = { location: { search: "", href: "", reloads: 0,
+                            reload: function () { this.reloads += 1; } } };
   const ctx = {
     document: dom.document, console: console, window: win,
     setTimeout: function () { return 0; }, clearTimeout: function () {},
     URLSearchParams: URLSearchParams,
-    alert: function () {}, confirm: function () { return false; },
-    fetch: function () {
+    alert: opts.alert || function () {},
+    confirm: opts.confirm || function () { return false; },
+    fetch: opts.fetch || function () {
       // 문구 목록·미리보기는 이 검사들과 무관하다. 절대 안 풀리는 약속을 준다.
       return { then: function () { return this; }, catch: function () { return this; } };
     }
@@ -171,6 +201,7 @@ function run(people) {
   ctx.window = win;
   Object.assign(win, { location: win.location, document: dom.document });
   vm.runInNewContext(src, ctx, { filename: "deals.js" });
+  dom.window = win;
   return dom;
 }
 
@@ -194,7 +225,7 @@ function clickSelectAll(dom) { dom.document.getElementById("select-all-contacts"
 function clickClearAll(dom) { dom.document.getElementById("clear-all-contacts").fire("click"); }
 
 module.exports = { EMPTY_GROUP: EMPTY_GROUP, PEOPLE: PEOPLE, SOURCING: SOURCING,
-                   buildDom: buildDom,
+                   buildDom: buildDom, queueRow: queueRow,
                    run: run, boxes: boxes, checkedNames: checkedNames,
                    shownNames: shownNames, pickGroup: pickGroup,
                    clickSelectAll: clickSelectAll, clickClearAll: clickClearAll };

@@ -527,6 +527,21 @@ def group_of(contact: VcContact) -> str:
     return (contact.group_name or "").strip()
 
 
+def in_group(contacts: List[VcContact], group_name: str) -> List[VcContact]:
+    """이 그룹에 속한 사람만 남긴다. 빈 이름이면 **그룹을 안 정해 둔 사람들**.
+
+    예약 큐(`services/deal_queue.py`)가 화면에 적을 `대상 N명` 과, [시작] 을
+    누른 순간 실제로 보낼 사람을 **둘 다 여기로 고른다.** 미리보기와 실제가
+    서로 다른 규칙으로 골라지면 수가 달라진 것이 그사이 사람이 바뀐 탓인지
+    규칙이 어긋난 탓인지 알 수 없게 된다 — 그러면 확인창의 안내가 거짓이 된다.
+
+    `group_of` 를 지나므로 앞뒤 공백과 빈 값 판정이 화면 필터
+    (`app/static/js/deals.js` 의 `matchesGroup`)와 같다.
+    """
+    want = (group_name or "").strip()
+    return [c for c in contacts if group_of(c) == want]
+
+
 def group_rows(contacts: List[VcContact]) -> List[dict]:
     """{이름, 인원} 목록. 필터 단추에 인원을 함께 적으려고.
 

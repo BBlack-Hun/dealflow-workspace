@@ -524,6 +524,12 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       groupBox.hidden = sourcingMode;
       if (sourcingMode) resetGroupFilter();
     }
+    // 예약 큐는 **딜 소개 탭의 것**이다. 후속 문구(리마인드·미팅 요청 …)와
+    // 소싱은 그때그때 사람을 골라 보내는 일이라 줄 세울 것이 없고, 큐가
+    // 그대로 떠 있으면 지금 탭에서 [시작] 을 누르면 이 탭의 문구가 나가는
+    // 줄로 읽힌다 — 실제로 나가는 것은 딜 소개다.
+    var queuePanel = document.getElementById("deal-queue");
+    if (queuePanel) queuePanel.hidden = mode !== "deal";
     applyContactFilter();
     // 설명 줄은 화면에서 뺐다. 없어도 터지지 않아야 한다.
     var help = document.getElementById("mode-help");
@@ -724,6 +730,101 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
         previewArea.innerHTML = '<p class="muted">미리보기 요청 오류</p>';
       });
   }
+
+  // ── 예약 큐 ───────────────────────────────────────────────────────────────
+  //
+  // 줄 하나가 **그룹 + 기업 묶음 + 문구**다. 여기서 하는 일은 셋뿐이다:
+  // 줄 세우기 · 시작 · 취소. **보내는 길은 새로 만들지 않는다** — [시작] 은
+  // 서버에서 기존 발송 목록 생성(`/api/deals/send` 와 같은 함수)을 그대로 탄다.
+  //
+  // **대상 명단은 화면이 들고 있지 않다.** 이 줄에 담긴 것은 그룹 이름뿐이고,
+  // 서버가 누를 때 다시 센다. 화면이 명단을 들고 보내면 예약해 둔 사이에
+  // 카톡방을 나간 분께 그대로 나간다.
+  function queuePost(url, body, done) {
+    fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body || {})
+    })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+      .then(function (res) {
+        if (!res.ok) { alert(res.d.detail || "요청 실패"); done(null); return; }
+        done(res.d);
+      })
+      .catch(function () { alert("요청 오류"); done(null); });
+  }
+
+  var queueAdd = document.getElementById("queue-add");
+  if (queueAdd) queueAdd.addEventListener("click", function () {
+    var cids = selectedCompanyIds();
+    if (!cids.length) { alert("① 에서 기업을 먼저 고르세요."); return; }
+    var group = document.getElementById("queue-group");
+    var tpl = selectedTemplateIds();
+    queueAdd.disabled = true;
+    queuePost("/api/deals/queue", {
+      group_name: group ? group.value : "",
+      company_ids: cids,
+      title: (document.getElementById("batch-title").value || "").trim(),
+      opening_template_id: tpl.opening_template_id,
+      closing_template_id: tpl.closing_template_id
+    }, function (d) {
+      queueAdd.disabled = false;
+      // 줄 목록은 서버가 그린다(대상 수가 **지금 센 값**이어야 한다).
+      // 화면에서 줄을 흉내 내 붙이면 그 수는 붙인 순간 낡는다.
+      if (d) window.location.reload();
+    });
+  });
+
+  // 줄 단추는 목록이 다시 그려져도 살아 있어야 한다 — 줄마다 거는 대신
+  // 목록이 대신 듣는다.
+  var queueList = document.getElementById("queue-list");
+  if (queueList) queueList.addEventListener("click", function (e) {
+    var startBtn = e.target.closest(".queue-start");
+    var cancelBtn = e.target.closest(".queue-cancel");
+    var row = e.target.closest(".queue-row");
+    if (!row || (!startBtn && !cancelBtn)) return;
+    var id = row.getAttribute("data-id");
+    var group = row.getAttribute("data-group") || "";
+
+    if (cancelBtn) {
+      if (!confirm("[" + group + "] 예약을 취소합니다.")) return;
+      cancelBtn.disabled = true;
+      queuePost("/api/deals/queue/" + id + "/cancel", {}, function (d) {
+        cancelBtn.disabled = false;
+        if (d) window.location.reload();
+      });
+      return;
+    }
+
+    // **화면에 적혀 있던 수를 함께 보낸다.** 서버가 지금 다시 센 수와 다르면
+    // 보내지 않고 그 차이를 말로 돌려준다 — 조용히 다른 수로 나가면, 몇 명
+    // 에게 나갔는지 아무도 모르는 채로 되돌릴 수 없는 일이 끝나 있다.
+    var shown = parseInt(row.getAttribute("data-count"), 10);
+    startBtn.disabled = true;
+    function go(confirmed) {
+      queuePost("/api/deals/queue/" + id + "/start",
+                { shown: isNaN(shown) ? null : shown, confirmed: !!confirmed },
+                function (d) {
+        if (!d) { startBtn.disabled = false; return; }
+        if (d.needs_confirm) {
+          // 확인창의 말은 **서버가 만든 것을 그대로** 띄운다. 여기서 다시
+          // 지어내면 두 벌이 되고, 둘이 어긋나도 아무도 모른다 — 사람이
+          // 마지막으로 읽는 자리라 특히 그렇다.
+          if (!confirm(d.message)) { startBtn.disabled = false; return; }
+          go(true);
+          return;
+        }
+        window.location.href = "/jobs/" + d.job_id;
+      });
+    }
+    if (!confirm("[" + group + "] 예약을 시작합니다.\n" +
+                 "대상 " + (isNaN(shown) ? "?" : shown) + "명 기준입니다 — " +
+                 "누르는 순간 다시 세므로 수가 달라졌으면 한 번 더 여쭙습니다.")) {
+      startBtn.disabled = false;
+      return;
+    }
+    go(false);
+  });
 
   function send() {
     var cids = selectedCompanyIds();

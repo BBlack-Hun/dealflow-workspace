@@ -27,7 +27,8 @@ from ..models import (
 )
 from ..services import mail_sender, mailer, matcher
 from ..services import message_composer as mc
-from ..services import sheet_owner, sourcing_link, sourcing_msg, template_pick
+from ..services import (deal_queue, sheet_owner, sourcing_link, sourcing_msg,
+                        template_pick)
 from ..services.message_composer import MAX_COMPANIES_PER_SEND
 
 router = APIRouter(prefix="/api/deals", tags=["deals"])
@@ -722,3 +723,162 @@ def create_send_list(
 
     return {"job_id": job.id, "batch_id": batch.id, "total": len(contacts),
             "status": job.status, "channel": req.channel}
+
+
+# ── 예약 큐 ─────────────────────────────────────────────────────────────────
+#
+# 그룹마다 붙일 기업이 달라진다고 해서 만든 자리다. 줄 하나가 **그룹 + 기업
+# 묶음 + 문구**이고, 사람이 [시작] 을 눌러야 발송 목록이 생긴다.
+#
+# **여기서 발송 경로를 새로 만들지 않는다.** [시작] 은 위 `create_send_list`
+# 를 그대로 부른다 — 방 이름 확인·`검토중단` 막이·테스트 방 치환·문구 스냅숏
+# 이 전부 그 함수 안에 있다. 여기에 한 벌 더 적으면 그중 하나가 빠진 채로
+# 실투자사 카톡방에 나간다.
+
+class QueueAddRequest(BaseModel):
+    """예약 한 줄. **받는 사람이 없다** — 그룹 이름만 담는다.
+
+    대상을 굳혀 두면 예약해 둔 사이에 카톡방을 나갔거나 `검토중단` 이 된 분께
+    그대로 나간다. [시작] 이 그때의 명단을 다시 계산한다.
+    """
+
+    # 빈 문자열이 `(그룹 없음)` 이다 — 그룹을 안 정해 둔 분들에게 보내는 줄.
+    group_name: str = ""
+    company_ids: List[int] = []
+    title: Optional[str] = None
+    opening_template_id: Optional[int] = None
+    closing_template_id: Optional[int] = None
+
+
+class QueueStartRequest(BaseModel):
+    """[시작]. `shown` 은 **화면에 적혀 있던 수**다.
+
+    서버가 지금 세어 본 수와 다르면 그냥 보내지 않고 그 차이를 말해 준다
+    (`deal_queue.difference_note`). 조용히 다른 수로 나가면, 몇 명에게 나갔는지
+    아무도 모르는 채로 되돌릴 수 없는 일이 끝나 있다.
+    """
+
+    shown: Optional[int] = None
+    # 차이를 읽고 사람이 그래도 진행하겠다고 한 뒤의 두 번째 요청.
+    confirmed: bool = False
+
+
+def _queue_item(db: Session, item_id: int, user: User):
+    """내 예약 줄만. 남의 줄은 **없는 것으로 답한다** — 번호만 바꿔 가며
+    남이 무엇을 예약해 두었는지 알아낼 수 있으면 안 된다."""
+    from ..models import DealQueueItem
+
+    item = db.get(DealQueueItem, item_id)
+    if item is None or item.user_id != user.id:
+        raise HTTPException(status_code=404, detail="예약을 찾을 수 없습니다")
+    return item
+
+
+@router.post("/queue")
+def add_queue_item(
+    req: QueueAddRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """예약을 한 줄 세운다. **아무것도 보내지 않는다.**"""
+    from ..models import DealQueueCompany, DealQueueItem
+
+    if not (1 <= len(req.company_ids) <= MAX_COMPANIES_PER_SEND):
+        raise HTTPException(
+            status_code=400,
+            detail=f"기업은 1~{MAX_COMPANIES_PER_SEND}개 선택하세요")
+    # 없는 기업을 예약해 두면 [시작] 을 누르는 순간에야 죽는다 — 지금 막는다.
+    _load_companies(db, req.company_ids)
+
+    item = DealQueueItem(
+        user_id=user.id,
+        # 앞뒤 공백을 여기서 턴다. `group_of` 가 돌려주는 값과 글자가 달라지면
+        # 대상을 고를 때 아무도 안 걸린다.
+        group_name=(req.group_name or "").strip(),
+        title=(req.title or "").strip() or MODE_TITLES[MODE_DEAL],
+        opening_template_id=req.opening_template_id,
+        closing_template_id=req.closing_template_id,
+        status=deal_queue.STATUS_WAITING,
+    )
+    db.add(item)
+    db.flush()
+    for pos, cid in enumerate(req.company_ids, start=1):
+        db.add(DealQueueCompany(item_id=item.id, company_id=cid, position=pos))
+    db.commit()
+    # 지금 몇 명인지 함께 돌려준다 — 줄이 생기자마자 대상 수가 보여야
+    # 그룹을 잘못 고른 것을 바로 안다.
+    return {"item_id": item.id,
+            "target_count": len(deal_queue.targets(db, user, item.group_name))}
+
+
+@router.post("/queue/{item_id}/start")
+def start_queue_item(
+    item_id: int,
+    req: QueueStartRequest,
+    background: BackgroundTasks,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """예약을 발송 목록으로 만든다 — **대상은 지금 다시 센다.**
+
+    화면에 적혀 있던 수(`shown`)와 지금 수가 다르면 먼저 그 차이를 돌려준다.
+    사람이 읽고 `confirmed` 로 다시 부르면 그때 보낸다.
+    """
+    item = _queue_item(db, item_id, user)
+    if item.status != deal_queue.STATUS_WAITING:
+        # 두 번 눌러 두 번 나가는 일을 막는다. 창을 두 개 열어 두면 실제로 그렇다.
+        raise HTTPException(
+            status_code=400,
+            detail=f"이미 {deal_queue.STATUS_LABELS.get(item.status, item.status)} 인 예약입니다")
+
+    people = deal_queue.targets(db, user, item.group_name)
+    if not people:
+        raise HTTPException(
+            status_code=400,
+            detail=(f"[{deal_queue.group_label(item.group_name)}] 지금 보낼 수 있는 "
+                    "분이 없습니다 — 투자사 관리 현황에서 연결·상태를 확인하세요"))
+    if req.shown is not None and req.shown != len(people) and not req.confirmed:
+        # **조용히 다른 수로 보내지 않는다.** 200 으로 돌려주는 것은 실패가
+        # 아니기 때문이다 — 화면은 이 말을 확인창에 그대로 띄우고, 사람이
+        # 예라고 하면 `confirmed` 로 한 번 더 부른다.
+        return {"ok": False, "needs_confirm": True,
+                "shown": req.shown, "now": len(people),
+                "message": deal_queue.difference_note(
+                    req.shown, len(people), item.group_name)}
+
+    result = create_send_list(
+        SendRequest(
+            company_ids=deal_queue.company_ids(item),
+            contact_ids=[c.id for c in people],
+            title=item.title,
+            mode=MODE_DEAL,
+            channel="kakao",
+            opening_template_id=item.opening_template_id,
+            closing_template_id=item.closing_template_id,
+        ),
+        background, db, user,
+    )
+    item.status = deal_queue.STATUS_STARTED
+    item.job_id = result["job_id"]
+    item.started_at = now_iso()
+    db.commit()
+    return {"ok": True, "job_id": result["job_id"], "total": result["total"],
+            "status": item.status}
+
+
+@router.post("/queue/{item_id}/cancel")
+def cancel_queue_item(
+    item_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """예약을 접는다. **지우지 않는다** — 무엇을 세워 뒀다가 접었는지가
+    화면에 남아야, 안 나간 이유를 나중에 찾을 수 있다."""
+    item = _queue_item(db, item_id, user)
+    if item.status != deal_queue.STATUS_WAITING:
+        raise HTTPException(
+            status_code=400,
+            detail=f"이미 {deal_queue.STATUS_LABELS.get(item.status, item.status)} 인 예약입니다")
+    item.status = deal_queue.STATUS_CANCELED
+    db.commit()
+    return {"ok": True, "status": item.status}

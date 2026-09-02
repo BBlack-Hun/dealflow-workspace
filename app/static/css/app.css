@@ -1514,3 +1514,32 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
    글자처럼 인라인이라 폭·밑줄이 어긋난다 — `a.secondary-btn` 과 같은 처리. */
 a.guard-go { display: block; width: 100%; text-align: center; text-decoration: none; }
 a.guard-go:hover { background: #1e4fd0; text-decoration: none; }
+
+/* ── 예약 큐 ────────────────────────────────────────────────────────────────
+   줄 하나가 `그룹 + 기업 묶음 + 문구 + 대상 수 + [시작]`. 한 줄에서 다 읽혀야
+   눌러도 되는지 알 수 있어, 그리드로 자리를 고정한다 — 흘려 두면 그룹이 긴
+   줄에서 [시작] 이 다음 줄로 밀려 어느 줄의 단추인지 헷갈린다. */
+.queue-panel { margin-top: 18px; }
+.queue-add { display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  padding-bottom: 10px; margin-bottom: 10px; border-bottom: 1px solid var(--line); }
+.queue-add .field { flex-direction: row; align-items: center; gap: 6px; margin: 0; }
+.queue-add select { font: inherit; font-size: 13px; padding: 6px 8px;
+  border: 1px solid var(--line); border-radius: 8px; color: var(--ink); max-width: 320px; }
+.queue-list { display: flex; flex-direction: column; gap: 6px; }
+.queue-row { display: grid; grid-template-columns: minmax(90px, auto) 1fr auto auto;
+  align-items: center; gap: 12px; padding: 9px 10px; border: 1px solid var(--line);
+  border-radius: 10px; font-size: 13px; }
+/* 시작·취소한 줄은 **지우지 않고 흐리게 둔다** — 무엇을 세워 뒀다가 어떻게
+   됐는지가 남아야, 안 나간 이유를 나중에 찾을 수 있다. */
+.queue-row.done { background: var(--bg); border-color: transparent; color: var(--muted); }
+.queue-group { font-weight: 700; }
+.queue-what { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.queue-count { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.queue-actions { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+/* 안내 줄은 **줄 전체 너비**로 아래에 깔린다 — 가운데 칸에 끼우면 기업 이름을
+   밀어내서 무엇을 예약해 뒀는지가 안 보인다. */
+.queue-note { grid-column: 1 / -1; margin: 2px 0 0; }
+@media (max-width: 900px) {
+  .queue-row { grid-template-columns: 1fr; gap: 4px; }
+  .queue-what { white-space: normal; }
+}

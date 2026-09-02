@@ -113,6 +113,137 @@
   </div>
 </section>
 
+{#
+  ── 예약 큐 ────────────────────────────────────────────────────────────────
+
+  그룹마다 붙일 기업이 달라져서 만든 자리다. 줄 하나가 **그룹 + 기업 묶음 +
+  문구**이고, 사람이 [시작] 을 눌러야 발송 목록이 생긴다.
+
+  **자동으로 나가는 것은 없다.** 예약 시각이라는 칸을 두지 않았다 — 이 앱에는
+  예약을 실행할 장치가 일부러 없어서(크론도 워커도 없다), 시각을 적게 해 두면
+  화면은 약속을 하는데 지킬 사람이 없다.
+
+  **대상 수는 지금 세어 본 값이다.** 예약에는 그룹 이름만 담고 받는 사람은
+  담지 않는다 — 굳혀 두면 예약해 둔 사이에 카톡방을 나갔거나 검토중단이 된
+  분께 그대로 나간다. 그래서 여기 적힌 수는 화면을 그린 순간의 것이고,
+  누를 때 또 달라질 수 있다. 그 차이는 서버가 확인창으로 말한다
+  (`services/deal_queue.py` 의 `difference_note`).
+
+  ①②③ **위에** 둔다. 줄 세워 둔 일을 먼저 보고 누르는 자리라, 매일 쓰는
+  ①②③ 아래로 내려가면 스크롤 끝에서 [시작] 을 찾게 된다.
+#}
+<section class="panel queue-panel" id="deal-queue">
+  <h2 class="panel-title">
+    예약 큐
+    <span class="hint">
+      그룹마다 다른 기업을 미리 줄 세워 둡니다 — 실제로 나가는 것은
+      <b>[시작]</b> 을 누를 때입니다
+    </span>
+  </h2>
+
+  {% if contact_groups %}
+  {#
+    예약 추가. 기업·회차명은 아래 ① 에서 고른 것을 그대로 가져간다 —
+    같은 것을 두 번 고르게 하면 두 벌이 되고, 화면에서 본 기업과 예약에 들어간
+    기업이 다를 수 있다.
+  #}
+  <div class="queue-add">
+    <label class="field inline">
+      <span>그룹</span>
+      {#
+        고르는 **값**은 그룹 이름 그대로이고, 빈 값이 `(그룹 없음)` 이다.
+        칩 필터가 `(비어 있음)` 이라는 말을 쓰는 것과 달리 여기서는 값 자체가
+        빈 문자열이라, 두 화면이 어긋날 자리가 없다(글자는 보여 주기만 한다).
+      #}
+      <select id="queue-group">
+        {% for g in contact_groups %}
+        <option value="{{ g.name }}">
+          {{ g.name if g.name else queue_empty_label }} · {{ g.count }}명
+        </option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="button" class="secondary-btn" id="queue-add">이 기업들로 예약 추가</button>
+    <span class="hint" id="queue-add-note">
+      위 <b>① 회차 · 기업 선택</b> 에서 고른 기업과 회차명이 그대로 들어갑니다
+    </span>
+  </div>
+  {% else %}
+  <p class="hint">
+    맡고 있는 발송 대상이 없어 예약할 것이 없습니다 —
+    <a href="/contacts">투자사 관리 현황</a> 에서 명단을 먼저 확인하세요.
+  </p>
+  {% endif %}
+
+  {#
+    줄 목록. `data-count` 가 **화면이 지금 말하고 있는 수**다. [시작] 은 이 수를
+    서버로 함께 보내고, 서버가 그때 다시 센 수와 다르면 그 차이를 확인창으로
+    돌려준다 — 조용히 다른 수로 보내면 몇 명에게 나갔는지 아무도 모른다.
+  #}
+  <div class="queue-list" id="queue-list">
+    {% for q in queue_rows %}
+    <div class="queue-row {% if not q.waiting %}done{% endif %}"
+         data-id="{{ q.id }}"
+         data-group="{{ q.group_label }}"
+         data-count="{{ q.target_count if q.waiting else '' }}">
+      <span class="queue-group">{{ q.group_label }}</span>
+      <span class="queue-what">
+        기업 <b>{{ q.companies|length }}</b>곳
+        {% if q.companies %}<span class="muted">{{ q.companies|join(' · ') }}</span>{% endif %}
+        · 문구 <span class="muted">{{ q.title }}</span>
+      </span>
+      {% if q.waiting %}
+      <span class="queue-count">대상 <b>{{ q.target_count }}</b>명</span>
+      <span class="queue-actions">
+        <button type="button" class="primary-btn inline queue-start">시작</button>
+        <button type="button" class="linkbtn danger queue-cancel">취소</button>
+      </span>
+      {% else %}
+      {# 시작한 줄에는 **그날 나간 수**를 적는다. 오늘의 수를 다시 세어 적으면
+         그때의 수와 다른 수가 나란히 서서 어느 쪽이 그날 나간 수인지 알 수
+         없다. #}
+      <span class="queue-count muted">
+        {{ q.status_label }}{% if q.sent_total is not none %} · {{ q.sent_total }}명{% endif %}
+      </span>
+      <span class="queue-actions">
+        {% if q.job_id %}<a class="linkbtn" href="/jobs/{{ q.job_id }}">진행 보기</a>{% endif %}
+      </span>
+      {% endif %}
+      {#
+        그룹을 안 정해 둔 분들의 줄. **빼지 않는다** — 빼면 그분들은 이 화면을
+        통해 영영 아무것도 못 받는다. 대신 그룹을 채우면 맞춤 기업을 붙일 수
+        있다는 것을 여기서 말한다.
+      #}
+      {% if q.no_group and q.waiting %}
+      <p class="queue-note hint">
+        그룹을 안 정해 두신 분들입니다 —
+        <a href="/contacts">투자사 관리 현황</a> 의 <b>그룹</b> 칸을 채우면
+        그룹마다 다른 기업을 붙일 수 있습니다.
+      </p>
+      {% endif %}
+      {# 같은 그룹에 대기 줄이 둘 이상. 막지는 않는다 — 그룹마다 다른 기업을
+         다른 날 보내려고 만든 큐라, 막으면 이 기능의 쓰임을 막는 것이 된다.
+         대신 **같은 분들께 두 번 나간다는 것**은 말해 준다. #}
+      {% if q.waiting and q.same_group_waiting > 1 %}
+      <p class="queue-note hint warn">
+        이 그룹에 대기 중인 예약이 <b>{{ q.same_group_waiting }}건</b>입니다 —
+        전부 시작하면 같은 분들께 {{ q.same_group_waiting }}번 나갑니다.
+      </p>
+      {% endif %}
+    </div>
+    {% else %}
+    <p class="muted" id="queue-empty">줄 세워 둔 예약이 없습니다.</p>
+    {% endfor %}
+  </div>
+
+  <p class="hint">
+    <b>대상 수는 지금 기준입니다.</b> [시작] 을 누르면 그때의 명단을 다시 세기
+    때문에, 그사이 카톡방을 나갔거나
+    <b>{{ recipient_counts.paused.label }}</b> 이 된 분은 저절로 빠집니다 —
+    수가 달라졌으면 보내기 전에 확인창이 그 차이를 말해 줍니다.
+  </p>
+</section>
+
 <div class="deal-grid">
   <!-- 1) 회차 + 기업 선택 -->
   <section class="panel">
