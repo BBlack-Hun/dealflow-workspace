@@ -29,7 +29,8 @@ from sqlalchemy.orm import Session
 
 from .. import clock
 from ..db import get_db
-from ..deps import get_current_user, may_view_consulting, templates
+from ..deps import (get_current_user, may_view_all_consulting,
+                    may_view_consulting, templates)
 from ..models import ConsultingColumn, ConsultingCompany, User
 from ..services import consulting_sheets as cs
 from ..services import consulting_status as status
@@ -104,37 +105,89 @@ def require_access(user: User) -> None:
     raise HTTPException(status_code=403, detail="이 화면을 볼 권한이 없습니다")
 
 
+# 고르는 자리의 `담당 미배정`. 주인이 없는 줄(user_id NULL)을 고르는 값이다.
+#
+# **0 을 쓸 수 없다.** `owner` 는 안 고른 상태가 0(전체)이라, 미배정을 0 으로
+# 두면 그 칩을 눌러도 전체가 나오면서 `전체` 칩까지 같이 눌린 것처럼 보인다 —
+# 화면이 거짓말을 하는 자리다.
+UNASSIGNED = -1
+
+
 def scope(stmt, model, user: User, owner: int = 0):
-    """이 사람이 볼 줄만 남긴다.
+    """이 사람이 **볼** 줄만 남긴다.
 
-    관리자는 전부 본다 — 누가 무엇을 맡고 있는지 알아야 한다. 그 외에는
-    **자기 것만**이다. 컨설턴트가 여럿이면 남의 담당 기업이 보이고, 각자 올린
-    시트가 서로를 덮는다(월별 리마인드 열이 사람마다 다르다).
+    이 화면은 컨설턴트 한 사람의 개인 표이면서, 그 표들을 모아 팀이 보는
+    자리이기도 하다. 그래서 보는 범위가 둘로 갈린다 — 누가 어느 쪽인지는
+    `deps.may_view_all_consulting` 한 곳이 정한다(여기에 역할을 다시 적으면
+    메뉴·화면·라우터가 갈린다).
 
-    주인이 없는 줄(user_id NULL)은 관리자에게만 보인다 — 배정해야 할 것이
-    남아 있다는 뜻이라, 아무에게나 보이면 서로 자기 것인 줄 안다.
+    - 컨설턴트  **자기 것만.** 남의 담당 기업이 보이면 안 되고, 각자 올린
+                시트가 서로를 덮는다(월별 리마인드 열이 사람마다 다르다).
+    - 그 외     관리자와 관리자가 켜 준 팀원. 두 사람의 표를 나란히 놓고 봐야
+                하는 자리라 **전체**를 보고, `owner` 로 한 사람만 골라 본다.
+
+    **보는 범위이지 고치는 범위가 아니다.** 팀원은 전체를 보되 자기 줄만
+    고친다 — 고치는 판정은 `may_edit_row` 한 곳이다.
+
+    주인이 없는 줄(user_id NULL)은 전체를 보는 사람에게만 보인다 — 배정해야
+    할 것이 남아 있다는 뜻이라, 아무에게나 보이면 서로 자기 것인 줄 안다.
     """
-    if user.role != "admin":
+    if not may_view_all_consulting(user):
         return stmt.where(model.user_id == user.id)
+    if owner == UNASSIGNED:
+        return stmt.where(model.user_id.is_(None))
     if owner:
         return stmt.where(model.user_id == owner)
     return stmt
 
 
+def own(stmt, model, user: User):
+    """**내 표 안**으로 좁힌다 — 보는 것이 아니라 손이 닿는 범위다.
+
+    위 `scope()` 와 갈라 두는 이유가 있다. 팀원은 이제 팀 전체를 **보지만**,
+    자기 열을 지우거나 시트를 올리는 일까지 전체에 닿으면 안 된다. 실제로
+    그 자리다 — 열을 지우면서 표를 훑어 그 달 기록을 지우는데, 보는 범위로
+    훑으면 자기 열을 지우는 것뿐인데 손이 남의 줄까지 닿는다.
+
+    관리자는 여기서도 전체다. 관리자가 팀 전체를 고치는 것은 이 앱의 다른
+    화면과 같은 규칙이다(`deps.may_manage_team_contacts`).
+    """
+    if user.role == "admin":
+        return stmt
+    return stmt.where(model.user_id == user.id)
+
+
+def may_edit_row(user: User, owner_id: Optional[int]) -> bool:
+    """이 줄(또는 열)을 고칠 수 있는가 — **판정은 여기 한 곳이다.**
+
+    화면이 `읽기 전용` 이라고 그리는 줄과 서버가 404 로 막는 줄이 **같아야**
+    한다. 두 곳에 적으면 하나는 반드시 낡아서, 고칠 수 있게 그려 놓고 누르면
+    `찾을 수 없습니다` 가 뜨거나(팀 현황의 담당자 칸이 그랬다) 반대로 못 고치는
+    것처럼 그려 놓고 실제로는 고쳐진다.
+
+    관리자는 전부, 그 외에는 자기 줄만이다. 주인 없는 줄은 아무도 못 고친다 —
+    배정할 것이 남았다는 뜻이지, 먼저 본 사람이 갖는 것이 아니다.
+    """
+    if user.role == "admin":
+        return True
+    return owner_id is not None and owner_id == user.id
+
+
 def owned(db: Session, model, row_id: int, user: User, what: str):
     """고칠 수 있는 줄 하나. 아니면 **없는 것으로** 답한다.
 
-    **고치는 쪽이 보는 쪽과 같은 판정을 읽는다** — 위 `scope()` 를 그대로
-    태운다. 여기가 정확히 그것이 갈려서 났던 자리다: 보는 쪽은 `scope()` 로
-    자기 것만 남기는데 고치는 쪽에는 검사가 아예 없어서, `can_view_consulting`
-    이 켜진 팀원이 **번호만 바꾸면 화면에 안 뜨는 남의 줄**을 고치거나 지울 수
-    있었다. 안 보이는 것을 고치는 것이라 고친 사람도, 당한 사람도 모른다.
+    **화면이 쓰는 두 판정을 그대로 태운다** — 볼 수 있는가(`scope()`)와 고칠
+    수 있는가(`may_edit_row`). 여기가 정확히 그것이 갈려서 났던 자리다: 보는
+    쪽은 `scope()` 로 좁히는데 고치는 쪽에는 검사가 아예 없어서,
+    `can_view_consulting` 이 켜진 팀원이 **번호만 바꾸면 화면에 안 뜨는 남의
+    줄**을 고치거나 지울 수 있었다. 안 보이는 것을 고치는 것이라 고친 사람도,
+    당한 사람도 모른다.
 
     판정을 여기 새로 적지 않는 이유는 이 저장소가 반복해 당한 유형이라서다
     (투자사 수가 화면마다 달랐던 일, 좌측 메뉴와 라우터 목록이 갈려 컨설턴트에게
     다 열려 있던 일, 팀 현황의 `투자현황` 칸이 거짓말한 일). 두 곳에 적으면
-    한쪽은 반드시 낡는다 — 관리자가 전부 고칠 수 있는 것도, 컨설턴트가 자기
-    것을 고치는 것도 전부 `scope()` 가 정한 그대로다.
+    한쪽은 반드시 낡는다 — 표에 `읽기 전용` 으로 그려지는 줄과 여기서 404 가
+    나는 줄은 **같은 함수 하나**가 정한다.
 
     없는 번호와 남의 번호를 **같은 404** 로 답한다. 403 으로 갈라 주면 번호를
     훑어 남의 표가 몇 번까지 있는지 알 수 있다(routers/contacts.py 의 `_owned`
@@ -143,26 +196,58 @@ def owned(db: Session, model, row_id: int, user: User, what: str):
     row = db.execute(
         scope(select(model).where(model.id == row_id), model, user)
     ).scalar_one_or_none()
-    if row is None:
+    if row is None or not may_edit_row(user, row.user_id):
         raise HTTPException(status_code=404, detail=f"{what}을 찾을 수 없습니다")
     return row
 
 
-def owner_tabs(db: Session, user: User) -> List[dict]:
-    """관리자가 사람별로 갈라 보는 자리. 그 외에는 볼 것이 없다."""
-    if user.role != "admin":
+def owner_tabs(db: Session, user: User, sheet: str = "") -> List[dict]:
+    """화면 위의 **사람을 고르는 자리.** 자기 것만 보는 사람에게는 없다.
+
+    **이름은 계정 목록이 아니라 줄에서 뽑는다.** 계정으로 세우면 컨설턴트로
+    만들어만 두고 아직 기업을 안 받은 사람이 `0` 으로 서서, 고를 것이 없는
+    이름이 늘어난다. 줄이 곧 담당이므로 줄에 붙어 있는 사람만 세운다.
+
+    **담당이 컨설턴트가 아닌 줄도 그 사람 이름으로 선다.** 지금 운영의 모든
+    줄이 그 상태다(팀원 한 사람이 시트를 통째로 들고 있다). 그것을 `미배정`
+    같은 말로 묶으면 화면이 거짓말을 한다 — 그 줄에는 실제로 주인이 있고,
+    그 사람만 고칠 수 있으며, 주인 없는 줄(user_id NULL)은 "아직 배정 안 됨"
+    이라는 **다른 뜻**으로 이미 서 있다. 대신 역할을 옆에 적어 둔다
+    (`role_note`) — 이 화면이 컨설턴트별 표라, 이름만 있으면 그 사람이 세
+    번째 컨설턴트인 줄 읽힌다.
+
+    **숫자는 지금 보고 있는 탭의 건수다.** 눌렀을 때 나올 수와 같아야 한다 —
+    탭을 가리지 않고 세면 탭에는 32 라고 적혀 있는데 이름 옆에는 55 가 붙는다.
+    사람 목록 자체는 탭을 가리지 않는다. 이 탭에 줄이 없다고 이름을 빼면
+    그 사람 표로 건너갈 길이 화면에서 사라진다.
+    """
+    if not may_view_all_consulting(user):
         return []
-    rows = db.execute(
+    counts = dict(db.execute(
+        select(ConsultingCompany.user_id, func.count())
+        .where(ConsultingCompany.sheet == sheet)
+        .group_by(ConsultingCompany.user_id)
+    ).all()) if sheet else {}
+    totals = dict(db.execute(
         select(ConsultingCompany.user_id, func.count())
         .group_by(ConsultingCompany.user_id)
-    ).all()
+    ).all())
     out = []
-    for uid, n in rows:
+    for uid, total in totals.items():
         who = db.get(User, uid) if uid else None
-        out.append({"id": uid or 0,
-                    "name": who.name if who else "담당 미배정",
-                    "count": n})
-    return sorted(out, key=lambda x: (-x["count"], x["name"]))
+        out.append({
+            "id": uid or UNASSIGNED,
+            "name": who.name if who else "담당 미배정",
+            # 컨설턴트가 아닌 담당에만 붙는다. 컨설턴트 이름에 `투자컨설턴트`
+            # 라고 또 적으면 화면이 같은 말을 두 번 하는 것뿐이다.
+            "role_note": ("" if who is None or who.role == "consultant"
+                          else "팀원" if who.role != "admin" else "관리자"),
+            "count": counts.get(uid, 0),
+            "total": total,
+        })
+    # 탭을 옮겨도 **자리가 그대로**여야 한다. 이 탭의 건수로 줄을 세우면 탭마다
+    # 이름 순서가 바뀌어, 같은 자리를 눌렀는데 다른 사람이 열린다.
+    return sorted(out, key=lambda x: (-x["total"], x["name"]))
 
 
 # 표에 한 번에 보여줄 월 수. 달마다 한 칸씩 늘어나는 표라, 그냥 두면 한 해
@@ -274,13 +359,28 @@ def sheet_tabs(db: Session, user: User, owner: int = 0) -> List[dict]:
     return out
 
 
-def _columns(db: Session, user: User, sheet: str = "",
-             owner: int = 0) -> List[ConsultingColumn]:
+def _column_stmt(sheet: str = ""):
     stmt = select(ConsultingColumn).order_by(ConsultingColumn.position,
                                              ConsultingColumn.id)
-    if sheet:
-        stmt = stmt.where(ConsultingColumn.sheet == sheet)
-    return db.execute(scope(stmt, ConsultingColumn, user, owner)).scalars().all()
+    return stmt.where(ConsultingColumn.sheet == sheet) if sheet else stmt
+
+
+def _columns(db: Session, user: User, sheet: str = "",
+             owner: int = 0) -> List[ConsultingColumn]:
+    """화면에 세울 월 열 — **보는 범위**다."""
+    return db.execute(scope(_column_stmt(sheet), ConsultingColumn, user,
+                            owner)).scalars().all()
+
+
+def _my_columns(db: Session, user: User,
+                sheet: str = "") -> List[ConsultingColumn]:
+    """**내 표의** 월 열. 자리를 밀거나 시트를 올릴 때 손이 닿는 범위다.
+
+    보는 범위(`_columns`)를 쓰면 안 된다 — 팀원은 이제 팀 전체를 보므로, 열을
+    하나 세우면서 남의 열까지 한 칸씩 밀게 된다.
+    """
+    return db.execute(own(_column_stmt(sheet), ConsultingColumn,
+                          user)).scalars().all()
 
 
 def _split_columns(columns: List[ConsultingColumn], show_all: bool = False) -> tuple:
@@ -344,6 +444,33 @@ def _prev_month_columns(columns: List[ConsultingColumn]) -> List[str]:
     return [str(c.id) for c in columns if c.label == label]
 
 
+# 주인이 없는 줄을 표에서 부르는 말. 고르는 자리의 `담당 미배정` 과 같은 뜻이라
+# 한 곳에 적어 둔다 — 두 곳에 적으면 한쪽만 고쳐져 같은 줄이 화면에서 두 이름으로
+# 불린다.
+NO_OWNER = "미배정"
+
+
+def _owner_name(db: Session, owner_id: Optional[int]) -> str:
+    """줄에 붙은 담당의 이름. 주인이 없으면 `미배정`."""
+    who = db.get(User, owner_id) if owner_id else None
+    return who.name if who else NO_OWNER
+
+
+def _pick_owner(db: Session, user: User, owner: int) -> int:
+    """고른 사람이 **실제로 줄을 가진 사람**인가. 아니면 전체로 돌린다.
+
+    주소에 없는 번호가 실려 오면(옛 즐겨찾기 · 담당이 다 옮겨 간 뒤) 표는 비고
+    고르는 자리에는 아무것도 안 눌린 채로 남는다 — 왜 비었는지 화면 어디에도
+    안 나온다. 그럴 바에는 전체를 보여 주는 편이 낫다.
+    """
+    if not may_view_all_consulting(user) or not owner:
+        return 0
+    known = {uid or UNASSIGNED for (uid,) in db.execute(
+        select(ConsultingCompany.user_id)
+        .group_by(ConsultingCompany.user_id)).all()}
+    return owner if owner in known else 0
+
+
 def _notes(company: ConsultingCompany) -> Dict[str, str]:
     try:
         return json.loads(company.notes or "{}")
@@ -373,6 +500,15 @@ def company_rows(db: Session, user: User, sheet: str = "",
         seen = {str(col.id): notes.get(str(col.id), "") for col in cols}
         out.append({
             "id": c.id,
+            # **누구의 줄인가.** 여러 사람의 표를 한 화면에서 보는 자리라,
+            # 줄만 보고는 누구 것인지 알 수 없으면 고른 사람을 바꿀 때마다
+            # 위 칩을 다시 확인해야 한다.
+            "owner_id": c.user_id or 0,
+            "owner_name": _owner_name(db, c.user_id),
+            # **화면이 고칠 수 있다고 그리는 것과 서버가 허락하는 것이 같아야
+            # 한다.** 판정은 `may_edit_row` 한 곳이고 화면은 그것을 읽기만 한다
+            # (`owned()` 도 같은 함수를 태운다).
+            "editable": may_edit_row(user, c.user_id),
             # 화면의 NO 는 **보이는 순서대로 1부터**다. 시트에서 옮겨 온 번호는
             # 중간이 비거나 3부터 시작해서, 몇 번째 줄인지 세는 데 쓸 수 없다.
             "no": order,
@@ -425,9 +561,9 @@ def consulting_page(request: Request, db: Session = Depends(get_db),
                     months: str = "", sheet: str = "", owner: int = 0,
                     ref: str = ""):
     require_access(user)
-    # 관리자만 사람을 골라 볼 수 있다. 그 외에는 무엇을 넣든 자기 것만 나온다.
-    if user.role != "admin":
-        owner = 0
+    # 자기 것만 보는 사람(투자컨설턴트)에게는 고를 것이 없다 — 무엇을 넣든
+    # 자기 줄만 나온다(`scope()` 가 같은 판정을 읽는다).
+    owner = _pick_owner(db, user, owner)
     tabs = sheet_tabs(db, user, owner)
     selected = (sheet if any(t["key"] == sheet for t in tabs)
                 else cs.default_label(db))
@@ -442,6 +578,8 @@ def consulting_page(request: Request, db: Session = Depends(get_db),
         monthly_columns.ensure_consulting(db, uid, name)
 
     rows = company_rows(db, user, selected, owner)
+    can_pick = may_view_all_consulting(user)
+    people = owner_tabs(db, user, selected) if can_pick else []
     prev_label = _prev_month_label(_columns(db, user, selected, owner))
     # 달마다 한 칸씩 늘어나는 표라, 최근 몇 달만 펴 둔다.
     # `months=all` 은 일부러 다 본다는 뜻이다.
@@ -473,10 +611,21 @@ def consulting_page(request: Request, db: Session = Depends(get_db),
         "columns": shown,
         # **접었다는 것을 사람이 알아야 한다** — 그냥 안 보이면 지워진 줄 안다.
         "hidden_columns": hidden,
+        # **[✕] 를 세워도 되는 월 열.** 열도 사람마다 따로 있어서, 남의 달에
+        # 단추를 세워 두면 눌렀을 때 404 만 난다(`owned()`). 판정은 줄과 같은
+        # 함수 하나다 — 화면이 따로 정하면 한쪽이 낡는다.
+        "editable_columns": {c.id for c in shown if may_edit_row(user, c.user_id)},
         "show_all_months": months == "all",
-        "owner_tabs": owner_tabs(db, user),
+        # 화면 위의 **사람을 고르는 자리.** 숫자는 지금 탭의 건수라
+        # 눌렀을 때 나올 수와 같다.
+        "owner_tabs": people,
         "selected_owner": owner,
-        "is_admin": user.role == "admin",
+        # 고르는 자리와 `담당` 칸이 같이 서고 같이 없어진다 — 둘 다 "여러
+        # 사람의 표를 같이 본다" 는 한 가지 사실에서 나온다. 컨설턴트에게는
+        # 자기 줄만 나오므로 이름이 한 가지로 반복될 뿐이다.
+        "can_pick_owner": can_pick,
+        "selected_owner_name": next(
+            (o["name"] for o in people if o["id"] == owner), ""),
         # 탭마다 표가 다르다. 화면이 `{% if 이 탭이면 %}` 을 하나 더 심지 않게
         # **어느 탭인지**만 넘긴다(칸 목록은 아래 두 줄이 정한다).
         "is_contract_sheet": is_contract(db, selected),
@@ -588,7 +737,7 @@ def create_company(body: CompanyIn, db: Session = Depends(get_db),
         # 새 줄은 그 탭의 맨 아래로. 시트의 NO 를 사람이 매번 세지 않아도 되게.
         # **탭 안에서** 센다 — 전체에서 세면 다른 탭의 큰 번호를 물려받아,
         # 방금 넣은 줄이 자기 탭에서는 늘 맨 아래로 밀린다.
-        last = db.execute(scope(
+        last = db.execute(own(
             select(ConsultingCompany.position)
             .where(ConsultingCompany.sheet == body.sheet)
             .order_by(ConsultingCompany.position.desc()).limit(1),
@@ -667,7 +816,7 @@ def add_column(label: str = Form(...), db: Session = Depends(get_db),
     label = label.strip()
     if not label:
         return RedirectResponse("/consulting?msg=열+이름을+입력하세요", status_code=303)
-    for col in _columns(db, user):
+    for col in _my_columns(db, user):
         col.position += 1
     # **어느 탭의 열인지 여기서 정해 준다.** 안 주면 모델 기본값(`스타트업`)으로
     # 떨어지는데, 탭 이름을 고친 뒤에는 그 이름을 쓰는 탭이 없어서 새 열이
@@ -702,7 +851,7 @@ def delete_column(column_id: int, db: Session = Depends(get_db),
     # 것뿐인데 손은 남의 줄까지 닿는다 — 열 번호가 겹치는 날 남의 기록이
     # 조용히 사라진다.
     for company in db.execute(
-        scope(select(ConsultingCompany), ConsultingCompany, user)
+        own(select(ConsultingCompany), ConsultingCompany, user)
     ).scalars().all():
         notes = _notes(company)
         if key in notes:
@@ -757,10 +906,17 @@ def export_consulting(db: Session = Depends(get_db),
                       user: User = Depends(get_current_user)):
     require_access(user)
     cols = _columns(db, user)
-    headers = (CONSULTING_EXPORT_HEADERS + [c.label for c in cols]
+    # **화면과 같은 칸이 선다.** 여러 사람의 표를 한 파일로 내려받으면서 담당이
+    # 없으면 누구 줄인지 알 수 없다 — 화면에는 `담당` 칸이 서 있는데 받은
+    # 파일에만 없으면, 그 파일을 여는 사람은 55줄을 한 사람 것으로 읽는다.
+    # 자기 것만 보는 사람에게는 안 세운다(같은 이름이 줄마다 반복될 뿐이다).
+    owned_col = may_view_all_consulting(user)
+    headers = (CONSULTING_EXPORT_HEADERS + (["담당"] if owned_col else [])
+               + [c.label for c in cols]
                + [label for label, _ in TAIL_COLUMNS] + CONTRACT_EXPORT_HEADERS)
     rows = [
         [r["no"], r["region"], r["meeting_at"], r["company_name"], r["management"]]
+        + ([r["owner_name"]] if owned_col else [])
         + [r["notes"].get(str(c.id), "") for c in cols]
         + [r["ceo_name"], r["phone"], r["email"]]
         + [r["success_fee"], r["contract_fee"], r["contract_received"]]
@@ -859,7 +1015,7 @@ def apply_rows(db: Session, parsed: dict, user: User,
         db.commit()
 
     # 열 먼저 — 기업의 notes 가 열 id 를 키로 쓴다
-    existing_cols = {c.label: c for c in _columns(db, user)}
+    existing_cols = {c.label: c for c in _my_columns(db, user)}
     for pos, label in enumerate(parsed["columns"]):
         col = existing_cols.get(label)
         if col is None:
@@ -870,8 +1026,8 @@ def apply_rows(db: Session, parsed: dict, user: User,
 
     # 같은 기업명이 다른 사람 표에도 있을 수 있다 — 내 표 안에서만 맞춘다.
     by_name = {(c.company_name or "").strip(): c
-               for c in db.execute(scope(select(ConsultingCompany),
-                                         ConsultingCompany, user)).scalars().all()}
+               for c in db.execute(own(select(ConsultingCompany),
+                                       ConsultingCompany, user)).scalars().all()}
 
     created = updated = 0
     for item in parsed["companies"]:
