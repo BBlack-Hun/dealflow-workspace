@@ -326,7 +326,13 @@ COMPANY_HEADERS = [
     # 화면과 같은 단위로 내보낸다. 표는 억인데 엑셀만 백만이면, 두 개를 나란히
     # 놓고 보는 사람에게는 같은 값이 100배 차이로 보인다.
     "최근매출(억)", "누적투자(억)", "희망투자(억)", "Pre Value(억)",
-    "경쟁력", "계약", "계약월", "탑딜", "투자현황", "요약상태", "IR 링크",
+    # `계약서 수신됨` 은 **화면 이름 그대로** 적는다. 내려받은 파일을 표와
+    # 나란히 놓고 대조하는 자리라, 여기서만 줄여 부르면 어느 칸인지 매번
+    # 되짚어야 한다(옆의 `계약`·`계약월` 은 예전부터 쓰던 줄임말이라 그대로
+    # 둔다 — 이름을 바꾸면 이 파일을 받아 쓰던 수식이 어긋난다).
+    # 자리도 화면과 같이 `계약` 바로 뒤다.
+    "경쟁력", "계약", "계약서 수신됨", "계약월", "탑딜", "투자현황", "요약상태",
+    "IR 링크",
 ]
 
 
@@ -340,7 +346,10 @@ def export_companies(db: Session = Depends(get_db),
          c.one_liner or "", "O" if c.introducible else "",
          _eok(c.revenue_recent), _eok(c.funding_total),
          _eok(c.raise_target), _eok(c.pre_value),
-         c.competitiveness or "", c.contract_status or "", c.contract_month or "",
+         c.competitiveness or "", c.contract_status or "",
+         # 아직 안 정한 기업은 **빈 칸**이다 — `X` 로 채우면 엑셀에서 세는
+         # 순간 "확인했는데 안 왔다" 가 그 숫자에 들어간다.
+         c.contract_received or "", c.contract_month or "",
          "★" if c.is_top_deal else "", c.funding_status or "",
          c.summary_status or "", c.ir_drive_url or ""]
         for c in companies

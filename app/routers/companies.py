@@ -70,6 +70,36 @@ CONTRACT_FROM_LABEL = {label.replace(" ", ""): key
 # 목록에 있는 것만으로 실수로 고를 수 있다.
 BLOCKED_CONTRACT = "blocked"
 
+# 계약서를 실제로 받았는가. `계약여부`(맺기로 했는가)와 다른 사실이라 칸이 따로다.
+#
+# **여기에는 말↔값 짝이 없다.** 화면에 보이는 글자가 곧 저장되는 값이다 —
+# 위 `CONTRACT_FROM_LABEL` 이 생긴 사고(표는 `딜소개 불가` 를 보내는데 저장은
+# `blocked` 여야 했던 것)가 여기서는 **날 자리가 없게** 값을 고른 것이다.
+#
+# **빈 값이 셋째 값이다.** `O`/`X` 둘뿐이면 아직 아무도 확인하지 않은 기업을
+# 적을 방법이 없어서, 전부 `X`("확인했는데 안 왔다")로 시작하는 수밖에 없다 —
+# 그건 단언이지 사실이 아니다. 비워 두면 화면에서 빈 칸이고 필터에서는
+# `(비어 있음)` 으로 골라진다(`static/js/filters.js` 의 `EMPTY`).
+RECEIVED_CHOICES = ("O", "X")
+
+
+def received_key(value) -> Optional[str]:
+    """`계약서 수신됨` 에 저장할 값. 비었으면 `None`(아직 안 정함).
+
+    대소문자만 맞춰 준다 — 눌러 고치는 칸은 `O`/`X` 를 눌러 고르지만 직접
+    타이핑도 되는 자리라 소문자 `o` 가 들어온다. 그대로 두면 필터 목록이
+    `o` 와 `O` 두 벌로 갈려, 한쪽을 골랐을 때 방금 고친 그 기업만 사라진다
+    (이 저장소가 단계·계약여부에서 겪은 그 부류다).
+
+    모르는 글자(`△`·`확인중`)는 지어내지 않고 그대로 돌려준다 — 부르는 쪽이
+    `RECEIVED_CHOICES` 에 있는지 보고 막는다.
+    """
+    text = (value or "").strip()
+    if not text:
+        return None
+    upper = text.upper()
+    return upper if upper in RECEIVED_CHOICES else text
+
 
 def contract_key(value) -> str:
     """무엇으로 적혀 오든 **저장하는 값 하나**로.
@@ -261,6 +291,10 @@ def company_rows(db: Session) -> List[dict]:
             # 더 이상 소개하면 안 되는 기업 — 표에서 눈에 띄어야 실수로
             # 고르지 않는다(발송 화면 목록에서는 아예 빠진다).
             "blocked": contract_key(c.contract_status) == BLOCKED_CONTRACT,
+            # 아직 안 정한 기업은 **빈 글자**로 나간다. 표에서는 빈 칸이고,
+            # 필터는 그것을 `(비어 있음)` 으로 모은다 — 없는 값을 지어내
+            # `X` 로 채우면 "확인했는데 안 왔다" 는 뜻이 되어 버린다.
+            "contract_received": c.contract_received or "",
             "contract_month": c.contract_month or "",
             "is_top_deal": bool(c.is_top_deal),
             "summary_status": c.summary_status or "draft",
@@ -400,6 +434,7 @@ class CompanyIn(BaseModel):
     funding_status: Optional[str] = None
     ir_drive_url: Optional[str] = None
     contract_status: Optional[str] = None
+    contract_received: Optional[str] = None
     contract_month: Optional[str] = None
     is_top_deal: Optional[bool] = None
     summary_status: Optional[str] = None
@@ -432,6 +467,17 @@ def _assign(company: IrCompany, body: CompanyIn) -> None:
                            f"{value!r} — {' · '.join(CONTRACT_LABELS.values())} "
                            "중에서 고르세요")
             company.contract_status = key
+        elif field == "contract_received":
+            # 빈 값은 지우는 것이다 — `미정` 으로 되돌릴 길이 있어야 한다.
+            # (잘못 찍은 `O` 를 `X` 로만 고칠 수 있으면 그것도 거짓말이 된다.)
+            key = received_key(value)
+            if key is not None and key not in RECEIVED_CHOICES:
+                raise HTTPException(
+                    status_code=400,
+                    detail="모르는 계약서 수신 여부입니다: "
+                           f"{value!r} — {' · '.join(RECEIVED_CHOICES)} 중에서 "
+                           "고르거나, 아직 안 정했으면 비워 두세요")
+            company.contract_received = key
         elif field == "name":
             if value and value.strip():
                 company.name = value.strip()
@@ -479,17 +525,23 @@ def _one_liner_result(company: IrCompany, synced: dict) -> dict:
 
 
 def _contract_result(company: IrCompany) -> dict:
-    """PATCH/POST 응답에 실을 계약여부.
+    """PATCH/POST 응답에 실을 계약여부 · 계약서 수신됨.
 
     **되읽기까지 맞아야 화면이 안 어긋난다.** 표는 값(`blocked`)이 아니라
     말(`딜소개 불가`)을 보여 주는데, 응답이 값만 주면 화면은 방금 누른 글자를
     그대로 남겨 두는 수밖에 없다 — 새로고침하면 다른 글자가 나온다.
     `blocked` 도 같이 준다: 그 줄에 표시를 입히는 것은 화면의 몫이다.
+
+    `계약서 수신됨` 은 보이는 글자가 곧 값이라 짝지을 것이 없지만, 소문자
+    `o` 를 대문자로 맞춰 넣는다 — **맞춘 값**을 돌려줘야 화면이 그것으로
+    되그린다. 안 그러면 칸에는 `o`, DB 에는 `O` 가 남아 필터 목록이 두 벌로
+    갈린다(빈 값은 빈 글자로 준다 — 표의 빈 칸과 같은 모양이다).
     """
     key = contract_key(company.contract_status)
     return {"contract_status": key,
             "contract_label": CONTRACT_LABELS.get(key, "미계약"),
-            "blocked": key == BLOCKED_CONTRACT}
+            "blocked": key == BLOCKED_CONTRACT,
+            "contract_received": company.contract_received or ""}
 
 
 @router.post("/api/companies")
