@@ -636,6 +636,19 @@ class ConsultingCompany(TimestampMixin, Base):
     # 탭에서만 이 칸을 세운다(`routers/consulting.py` 의 `CONTRACT_COLUMNS`).
     contract_received: Mapped[Optional[str]] = mapped_column(
         String, nullable=True)                                                 # 계약서 수신여부
+    # 투자사에 이 기업을 어떻게 소개할지. **메모처럼 쓰는 긴 글**이라 `Text` 다
+    # (`management` · `notes` 와 같다). 줄바꿈도 적힌 그대로 남는다.
+    #
+    # 바로 옆 `기업 관리` 와 섞어 두지 않는 이유가 있다. 그 칸은 **지금 어떻게
+    # 되고 있는가**를 적는 자리이고 그 값으로 칩·KPI 를 세는데
+    # (`services/consulting_status.py` 가 `관리`·`드랍` 이라는 낱말을 찾는다),
+    # 소개 문구가 거기 들어가면 문구 안에 우연히 든 낱말 하나로 엉뚱한 갈래에
+    # 걸린다. 그래서 이 칸은 **어떤 판정에도 안 쓴다** — 담기만 한다.
+    #
+    # `관리 스타트업` 탭에만 값이 있다. 소개 문구는 아직 관리 중인 기업에 대고
+    # 쓰는 말이라 화면도 그 탭에서만 이 칸을 세운다
+    # (`routers/consulting.py` 의 `STARTUP_COLUMNS`).
+    deal_pitch: Mapped[Optional[str]] = mapped_column(Text, nullable=True)     # 딜 소개문구
     # 나누기 **전의 한 줄**. 지우지 않는다 — 나눈 결과가 틀렸을 때 여기서 다시
     # 나눌 수 있어야 하고, 원본 시트와 글자 그대로 대조할 수 있어야 한다.
     source_line: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

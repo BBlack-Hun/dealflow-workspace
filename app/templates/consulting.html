@@ -215,6 +215,13 @@
             기업명 32 · 대표자 17 · 연락처 · 이메일 → 줄마다 다르다. 안 건다.
             월별 리마인드 열      → 통화 내용 자체다. 값이 아니라 기록이라 안 건다.
                                    (연락했는가/안 했는가는 위 칩이 이미 본다)
+            딜 소개문구           → 안 건다. 메모처럼 쓰는 자유 문장이라 줄마다
+                                   다르고, 목록에 세워 봐야 32줄에 32가지가 서서
+                                   고를 것이 없다(투자사 딜공유 칸을 같은 이유로
+                                   안 거는 것과 같다 — `services/contact_columns.py`
+                                   의 "값이 130가지라 필터로도 고를 것이 없다").
+                                   **찾는 길은 툴바의 검색**이다. 문구로 찾는 것이
+                                   이 칸을 둔 이유에 가까워서, 검색 재료에는 넣었다.
         #}
         {# 폭은 이름(`지역`)이 아니라 값을 고른 뒤의 단추(`지역 (1) ▾`)에 맞춘다 —
            고르면 `(1)` 이 붙어 24px 이 더 든다. 80px 에서는 두 줄로 접혔다.
@@ -263,6 +270,24 @@
         <th style="width:120px">미팅일</th>
         <th style="width:150px">기업명</th>
         <th style="width:220px" data-filters="mgmt:기업 관리">기업 관리<div class="th-filters"></div></th>
+        {# 투자사에 이 기업을 어떻게 소개할지. **메모처럼 쓰는 긴 글**이다.
+
+           `관리 스타트업` 탭에만 세운다 — `not is_contract_sheet` 로 갈랐다간
+           `경영본부 전달 기업` 과 사람이 시트를 올려 만든 탭에도 같이 서고,
+           그 탭들에는 값이 영영 안 들어간다.
+
+           **필터를 안 세운다.** 값이 자유 문장이라 줄마다 다르고, 고를 것이
+           모이지 않는다 — 같은 표의 `미팅일`(`9/16 PM2 (화상미팅)`)을 안 거는
+           것과 같은 이유다. 대신 툴바의 검색이 이 값을 본다
+           (`routers/consulting.py` 의 `search`). 필터를 세우지 않았으므로
+           행에도 `data-f-*` 를 안 싣는다 — 실으면 아무 머리글도 안 보는 죽은
+           속성이 된다(`tests/test_filter_columns.py` 의 2번).
+
+           폭은 옆 `기업 관리`(220px)보다 조금 넓게 잡는다. 문단이 들어오는
+           칸이라 좁으면 접힌 두어 줄에 아무것도 안 남는다. #}
+        {% if is_startup_sheet %}
+        <th style="width:240px">딜 소개문구</th>
+        {% endif %}
         {% endif %}
         {% for col in columns %}
         <th style="width:200px" class="month-col">
@@ -338,6 +363,23 @@
         <td class="cell" data-field="meeting_at">{{ r.meeting_at }}</td>
         <td class="cell strong" data-field="company_name">{{ r.company_name }}</td>
         <td class="cell multi" data-field="management" data-filter-key="mgmt">{{ r.management }}</td>
+        {# `multi` — 이 표에서 **긴 글 칸이 쓰는 표시**다. 누르면 한 줄짜리
+           입력이 아니라 textarea 가 열려(consulting.js 의 `startEdit`) 엔터로
+           줄을 나눌 수 있고, 표에서는 `td.cell.multi` 가 높이로 접는다
+           (app.css). 바로 위 `기업 관리` 와 똑같은 칸이라 나란히 놓았을 때
+           조작도 같다.
+
+           다른 화면의 긴 글 칸(`data-type="long"`)과 방식이 다른 것은, 그쪽이
+           공통 편집기 `inline_edit.js` 의 것이고 **이 표는 그 편집기를 안
+           쓰기 때문**이다(위 `data-filter-key` 주석 참고). 이 표에 그 표시를
+           달면 아무 일도 일어나지 않는다.
+
+           `data-filter-key` 를 안 준다 — 필터를 안 세운 칸이라 같이 고칠
+           행 값이 없다. 고친 글은 `refreshRowFlags` 가 `td.cell` 을 이어 붙일
+           때 `data-search` 에 그대로 들어가므로 검색은 그 자리에서 따라간다. #}
+        {% if is_startup_sheet %}
+        <td class="cell multi" data-field="deal_pitch">{{ r.deal_pitch }}</td>
+        {% endif %}
         {% endif %}
         {% for col in columns %}
         {# 지난달 칸에는 표를 하나 더 단다 — 위 KPI 의 `미완료 기업` 이 이 칸만
@@ -357,10 +399,15 @@
         </td>
       </tr>
       {% else %}
-      {# 칸 수는 탭마다 다르다. 지금은 **우연히 같다** —
-         계약 탭 = NO + 7 + 월 열 + 삭제,
-         나머지  = NO + 4 + 월 열 + 대표자·연락처·이메일 + 삭제. #}
-      <tr><td colspan="{{ 9 + columns|length }}" class="muted">
+      {# 칸 수는 탭마다 다르다 —
+         계약 탭     = NO + 7 + 월 열 + 삭제                          = 9 + 월
+         경영본부 탭 = NO + 4 + 월 열 + 대표자·연락처·이메일 + 삭제    = 9 + 월
+         스타트업 탭 = 위에 `딜 소개문구` 한 칸 더                     = 10 + 월
+
+         앞의 둘이 같은 것은 **우연**이다. 스타트업 탭만 한 칸 더 세면서
+         그 우연이 깨졌으므로 더하는 자리에도 적어 둔다 — 안 그러면 빈 표
+         안내 줄만 한 칸 짧아 표 오른쪽에 빈 칸이 하나 남는다. #}
+      <tr><td colspan="{{ 9 + columns|length + (1 if is_startup_sheet else 0) }}" class="muted">
         내용이 없습니다. <b>[시트 올리기]</b> 로 원본을 가져오거나 <b>[기업 추가]</b> 로 시작하세요.
       </td></tr>
       {% endfor %}
