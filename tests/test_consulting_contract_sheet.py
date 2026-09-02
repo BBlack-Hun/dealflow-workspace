@@ -213,14 +213,22 @@ def test_계약_탭의_머리글은_시트가_부르는_이름이다(allowed, db
 
 
 def test_다른_탭의_표는_한_칸도_안_바뀐다(allowed, db, users):
-    """탭 하나를 고치다 **다른 탭의 표가 바뀌면** 안 된다."""
+    """탭 하나를 고치다 **다른 탭의 표가 바뀌면** 안 된다.
+
+    스타트업 탭에 `딜 소개문구` 가 선 것은 그 탭에 대고 따로 만든 칸이라
+    여기서 세는 자리에 들어 있다(`tests/test_consulting_deal_pitch.py`).
+    계약 탭의 칸이 새어 나온 것과는 다르다 — 아래 `계약서 수신여부` 검사가
+    그쪽을 본다.
+    """
     _row(db, users["u1"].id, company_name="샘플자", region="서울",
          ceo_name="김샘플", phone="010-0000-0000", email="a@example.com")
     body = _open(allowed, "스타트업")
     assert _heads(body) == ["NO", "담당", "지역", "미팅일", "기업명", "기업 관리",
-                            "대표자", "연락처", "이메일", ""], _heads(body)
+                            "딜 소개문구", "대표자", "연락처", "이메일",
+                            ""], _heads(body)
     assert _fields(body) == ["region", "meeting_at", "company_name",
-                             "management", "ceo_name", "phone", "email"]
+                             "management", "deal_pitch",
+                             "ceo_name", "phone", "email"]
 
 
 def test_화면에서_뺀_칸의_값은_지워지지_않는다(allowed, db, users):
@@ -377,10 +385,14 @@ def test_다른_탭은_이_칸을_아예_안_세운다(allowed, db, users):
     assert "data-f-received" not in body
     assert "contract_received" not in body
     # 다른 탭의 표는 한 칸도 안 바뀐다.
+    # 이 탭이 세우는 칸은 이것뿐이다. `딜 소개문구` 는 스타트업 탭에 대고 따로
+    # 만든 칸이라 여기 들어 있다(`tests/test_consulting_deal_pitch.py`).
     assert _heads(body) == ["NO", "담당", "지역", "미팅일", "기업명", "기업 관리",
-                            "대표자", "연락처", "이메일", ""], _heads(body)
+                            "딜 소개문구", "대표자", "연락처", "이메일",
+                            ""], _heads(body)
     assert _fields(body) == ["region", "meeting_at", "company_name",
-                             "management", "ceo_name", "phone", "email"]
+                             "management", "deal_pitch",
+                             "ceo_name", "phone", "email"]
 
 
 def test_칩과_KPI_는_이_칸을_안_본다():

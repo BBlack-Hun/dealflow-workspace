@@ -54,6 +54,19 @@ TAIL_COLUMNS = [
     ("이메일", "email"),
 ]
 
+# `관리 스타트업` 탭에만 한 칸 더 선다 — `기업 관리` **바로 오른쪽**이다.
+#
+# 투자사에 이 기업을 어떻게 소개할지 적는 자리가 표에 없어서 지금까지 옆 칸에
+# 같이 적혀 있었다. `기업 관리` 는 **지금 어떻게 되고 있는가**를 적는 칸이고
+# 그 값으로 칩·KPI 를 세는 자리라(`services/consulting_status.py`), 소개 문구가
+# 거기 섞이면 문구 안에 우연히 든 `관리` 한 낱말로 엉뚱한 갈래에 걸린다.
+#
+# 다른 두 탭(`경영본부 전달 기업` · `월간 계약 업무현황표`)에는 안 세운다.
+# 소개 문구는 아직 관리 중인 기업에 대고 쓰는 말이고, 계약 탭은 표 자체가
+# 다르다. 그래서 `FIXED_COLUMNS` 에 넣지 않고 이 탭만의 묶음을 따로 둔다 —
+# `FIXED_COLUMNS` 는 지금도 스타트업·경영본부 두 탭이 함께 쓴다.
+STARTUP_COLUMNS = FIXED_COLUMNS + [("딜 소개문구", "deal_pitch")]
+
 # `월간 계약 업무현황표` 는 다른 두 탭과 **표 자체가 다르다.**
 #
 # 저 시트는 머리글 있는 표가 아니라 월 묶음 아래 슬래시 한 줄이었다
@@ -270,7 +283,13 @@ VISIBLE_MONTHS = 3
 # **이름이 아니라 열쇠로 짝짓는다.** 이름으로 맞춰 두면 탭 이름을 한 글자
 # 고치는 순간 계약 표가 조용히 일반 표로 돌아가, `계약월`·`성공보수율` 칸이
 # 화면에서 사라진다 — 이름을 고칠 수 있게 만들면서 생기는 함정이다.
-SHEET_LAYOUTS = {cs.CONTRACT: (CONTRACT_COLUMNS, CONTRACT_TAIL)}
+SHEET_LAYOUTS = {
+    cs.CONTRACT: (CONTRACT_COLUMNS, CONTRACT_TAIL),
+    # 스타트업 탭만 `딜 소개문구` 를 한 칸 더 세운다. 여기 적어 두지 않으면
+    # `경영본부 전달 기업`(과 사람이 시트를 올려 만든 탭)까지 같은 묶음을 받아,
+    # 값이 영영 안 들어갈 칸이 그 탭들에도 선다.
+    cs.STARTUP: (STARTUP_COLUMNS, TAIL_COLUMNS),
+}
 
 
 def layout_of(db: Session, sheet: str) -> tuple:
@@ -285,6 +304,16 @@ def layout_of(db: Session, sheet: str) -> tuple:
 def is_contract(db: Session, sheet: str) -> bool:
     """이 탭이 계약 표인가. **이름으로 견주지 않는다**(위 참고)."""
     return cs.kind_of(db, sheet) == cs.CONTRACT
+
+
+def is_startup(db: Session, sheet: str) -> bool:
+    """이 탭이 `관리 스타트업` 인가. `딜 소개문구` 칸이 여기에만 선다.
+
+    `is_contract` 의 반대가 아니다 — 아닌 탭이 `경영본부 전달 기업` 과 사람이
+    시트를 올려 만든 탭까지 둘 이상이라, 화면에서 `not is_contract` 로 갈랐다간
+    그 탭들에도 칸이 같이 선다. 여기도 **이름이 아니라 열쇠로** 본다.
+    """
+    return cs.kind_of(db, sheet) == cs.STARTUP
 
 
 # `월간 계약 업무현황표` 의 한 줄은 슬래시로 이어 붙어 있다. **시트가 스스로
@@ -495,6 +524,10 @@ def company_rows(db: Session, user: User, sheet: str = "",
         # 안 주고 부르는 곳이 있어서(엑셀 · 한 줄 조회), 인자로 판단하면
         # 그쪽에서만 값이 달라진다.
         contract = is_contract(db, c.sheet)
+        # 이 줄이 `딜 소개문구` 칸을 세우는 탭에 있는가. 화면과 **같은 판정**을
+        # 쓴다(`is_startup`) — 여기에 조건을 한 번 더 적으면 화면에는 칸이
+        # 없는데 검색만 걸리는 줄이 생긴다.
+        startup = is_startup(db, c.sheet)
         # 이 줄에 보이는 월별 리마인드 칸. 접힌 달도 들어 있다 — 화면에 안
         # 보인다고 기록이 없는 것은 아니다.
         seen = {str(col.id): notes.get(str(col.id), "") for col in cols}
@@ -535,6 +568,10 @@ def company_rows(db: Session, user: User, sheet: str = "",
             # 빈 문자열이 곧 `아직 안 정함` 이다 — 머리글 필터가 그것을
             # `(비어 있음)` 으로 세워 준다(`static/js/filters.js`).
             "contract_received": c.contract_received or "",
+            # `관리 스타트업` 탭에만 값이 있다. 위 두 칸과 같은 이유로 늘
+            # 실어 둔다 — 화면이 탭마다 다른 dict 를 받으면 없는 칸을 꺼내다
+            # 터지는 자리가 생긴다. 머리글·칸을 세우는 것은 화면 쪽이다.
+            "deal_pitch": c.deal_pitch or "",
             "notes": seen,
             # 어느 달이든 기록이 있는가 — `연락 기록 없음` 칩이 보는 값이다.
             "contacted": status.contacted(seen.values()),
@@ -549,6 +586,19 @@ def company_rows(db: Session, user: User, sheet: str = "",
                 # 다시 적는다(`consulting.js` 의 `refreshRowFlags`). 여기서
                 # 빼 두면 새로고침 전후로 검색 결과가 달라진다.
                 c.contract_received,
+                # **문구로 찾는 것이 이 칸을 둔 이유에 가깝다.** 필터에는 안
+                # 세웠지만(값이 자유 문장이라 고를 것이 없다) 검색은 자유
+                # 문장을 그대로 받는 자리라 여기에 넣는다 — 툴바의
+                # `기업 · 대표자 · 내용 검색` 이 이 값을 본다.
+                #
+                # **칸이 서는 탭에서만** 넣는다. 탭을 옮긴 줄에는 값이 남아
+                # 있을 수 있는데(이 저장소는 이력을 안 지운다), 칸이 없는
+                # 탭에서까지 걸면 화면 어디에도 없는 글자로 줄이 걸려 왜
+                # 걸렸는지 알 수가 없다. 게다가 그 탭에서 아무 칸이나 고치는
+                # 순간 브라우저가 보이는 칸만 이어 붙여 이 값을 다시 적으므로
+                # (`consulting.js` 의 `refreshRowFlags`) 고치기 전후로 검색
+                # 결과가 달라진다.
+                c.deal_pitch if startup else "",
                 *notes.values(),
             ])).lower(),
         })
@@ -629,6 +679,9 @@ def consulting_page(request: Request, db: Session = Depends(get_db),
         # 탭마다 표가 다르다. 화면이 `{% if 이 탭이면 %}` 을 하나 더 심지 않게
         # **어느 탭인지**만 넘긴다(칸 목록은 아래 두 줄이 정한다).
         "is_contract_sheet": is_contract(db, selected),
+        # `딜 소개문구` 는 이 탭에만 선다. `not is_contract_sheet` 로 갈랐다간
+        # `경영본부 전달 기업` 에도 같이 서므로 **따로** 넘긴다.
+        "is_startup_sheet": is_startup(db, selected),
         "fixed_columns": fixed,
         "tail_columns": tail,
         "msg": msg,
@@ -686,6 +739,9 @@ class CompanyIn(BaseModel):
     success_fee: Optional[str] = None
     contract_fee: Optional[str] = None
     contract_received: Optional[str] = None
+    # `관리 스타트업` 탭의 칸. **긴 글이라 줄바꿈이 그대로 들어온다** —
+    # `_assign` 이 앞뒤 공백만 떼므로 가운데 줄바꿈은 살아서 저장된다.
+    deal_pitch: Optional[str] = None
     # {"열id": "내용"} — 월별 리마인드
     notes: Optional[Dict[str, str]] = None
 
@@ -899,6 +955,15 @@ CONSULTING_EXPORT_HEADERS = [label for label, _ in FIXED_COLUMNS]
 # **머리글 한 벌**에 뒤로 붙인다 — 탭마다 다른 장을 만들면 내려받은 파일에서
 # 어느 장이 무엇인지 다시 맞춰야 한다. 다른 탭 줄에서는 빈 칸이다.
 CONTRACT_EXPORT_HEADERS = ["성공보수율", "계약금", "계약서 수신여부"]
+# 스타트업 탭에만 값이 있는 칸. **엑셀에는 싣는다** — 화면에 보이는 칸이
+# 내려받은 파일에만 없으면, 없다는 사실 자체를 아무도 눈치채지 못한 채 그
+# 파일이 보고서로 돌아다닌다. 바로 옆 `기업 관리` 도 같은 성격의 긴 글인데
+# 이미 실려 있어서, 둘 중 하나만 빠지면 그게 더 이상하다.
+#
+# 자리는 **맨 뒤**다. 화면 순서대로 `기업 관리` 옆에 끼우면 그 뒤 월 열이
+# 통째로 한 칸씩 밀려, 지난번에 내려받아 둔 파일과 나란히 놓고 볼 수가 없다
+# (계약 탭 칸들도 같은 이유로 뒤에 붙어 있다).
+STARTUP_EXPORT_HEADERS = ["딜 소개문구"]
 
 
 @router.get("/api/export/consulting.xlsx")
@@ -913,13 +978,15 @@ def export_consulting(db: Session = Depends(get_db),
     owned_col = may_view_all_consulting(user)
     headers = (CONSULTING_EXPORT_HEADERS + (["담당"] if owned_col else [])
                + [c.label for c in cols]
-               + [label for label, _ in TAIL_COLUMNS] + CONTRACT_EXPORT_HEADERS)
+               + [label for label, _ in TAIL_COLUMNS] + CONTRACT_EXPORT_HEADERS
+               + STARTUP_EXPORT_HEADERS)
     rows = [
         [r["no"], r["region"], r["meeting_at"], r["company_name"], r["management"]]
         + ([r["owner_name"]] if owned_col else [])
         + [r["notes"].get(str(c.id), "") for c in cols]
         + [r["ceo_name"], r["phone"], r["email"]]
         + [r["success_fee"], r["contract_fee"], r["contract_received"]]
+        + [r["deal_pitch"]]
         for r in company_rows(db, user)
     ]
     try:
