@@ -125,7 +125,14 @@ def monthly(db: Session, year: int, month: int,
                                       IrRequest.requested_at <= end.isoformat())
     if user is not None:
         ir_stmt = ir_stmt.where(IrRequest.user_id == user.id)
-    requests = db.execute(ir_stmt).scalars().all()
+    # **차례를 정해 둔다.** 예전에는 여기에 차례가 없어 데이터베이스가 주는
+    # 순서대로 나왔고, `기업명 순`으로 다시 늘어놓은 갈래가 하나 더 있어서
+    # 기업으로 훑을 때는 그쪽을 봤다. 그 갈래를 지웠으니 이 목록이 유일한
+    # 자리다 — 미팅 갈래와 같이 날짜 순으로 세우고, 같은 날은 기업명으로
+    # 묶는다. 한 기업에 대한 요청이 그날 안에서 흩어지지 않는다.
+    requests = db.execute(
+        ir_stmt.order_by(IrRequest.requested_at, IrRequest.company_name)
+    ).scalars().all()
 
     # 담당자는 **미팅과 요청 양쪽**에서 모은다. 미팅 것만 불러오면 요청 줄의
     # 이름이 `-` 로 비어, 보고를 그대로 옮겨 적을 수가 없다.
@@ -205,7 +212,7 @@ def monthly(db: Session, year: int, month: int,
         "year": year,
         "month": month,
         # 한 달에 두 번(첫째·셋째 수요일) 도는 일이라, 그 달에 무엇이 오갔는지를
-        # **한눈에** 봐야 한다. 다섯 가지를 날짜와 함께 그대로 늘어놓는다.
+        # **한눈에** 봐야 한다. 네 갈래를 날짜와 함께 그대로 늘어놓는다.
         "buckets": _buckets(meetings, requests, contacts, owners, today,
                             open_followup),
         # 그 달에 나간 회차. 카톡으로 손으로 쓰던 보고가 이것이다.
@@ -398,10 +405,15 @@ def _call_state(due: Optional[str], today: date) -> str:
 
 
 def _buckets(meetings, requests, contacts, owners, today, open_followup) -> List[dict]:
-    """대시보드의 반응 다섯 가지를 **그 달치로, 날짜와 함께**.
+    """반응 네 갈래를 **그 달치로, 날짜와 함께**.
 
     숫자만 보면 "그게 누구였지" 가 이어진다. 보고에서는 이름과 날짜가
     나란히 있어야 그대로 옮겨 적을 수 있다.
+
+    **`IR 요청받은 기업` 갈래는 없다.** 그건 `IR 요청 투자사` 와 같은 목록을
+    기업명 순으로 다시 늘어놓은 것뿐이라, 줄 수도 내용도 같은 표가 한 화면에
+    두 번 서 있었다 — 사용자가 "내용이 겹친다" 고 말한 자리다. 한 요청에
+    투자사와 기업이 함께 적히므로(표의 `투자사`·`기업` 칸) 한 표로 족하다.
     """
     def who(contact_id):
         c = contacts.get(contact_id)
@@ -428,8 +440,6 @@ def _buckets(meetings, requests, contacts, owners, today, open_followup) -> List
         {"key": "meet_ask", "label": "IR 미팅 요청 투자사",
          "rows": [row(m.scheduled_at, m.contact_id, m.company_name,
                       MEETING_KINDS.get(m.kind, m.kind), m.user_id) for m in asked]},
-        {"key": "companies", "label": "IR 요청받은 기업",
-         "rows": sorted(ir, key=lambda r: r["company"])},
         {"key": "meet_done", "label": "IR 미팅완료 투자사",
          "rows": [row(m.scheduled_at, m.contact_id, m.company_name,
                       OUTCOMES.get(m.outcome or "", "결과 미정"), m.user_id)

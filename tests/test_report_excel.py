@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import io
+import re
 from datetime import date
 
 import pytest
@@ -123,6 +124,47 @@ def test_the_file_carries_the_whole_screen(logged, db, users):
     react = [str(c) for row in _grid(wb["2026-08 반응"]) for c in row]
     assert "IR 요청 투자사   1건" in react
     assert "IR 미팅완료 리마인드 TEL 투자사   1건" in react
+
+
+def test_the_screen_and_the_file_show_the_same_buckets(logged, db, users):
+    """**화면의 갈래 == 파일의 갈래.**
+
+    `이 달의 반응` 장은 화면이 쓰는 `buckets` 를 그대로 받아 적는다. 한쪽에서만
+    갈래를 빼면 받은 파일에 화면에는 없는 표가 서 있게 되고, 그러면 어느 쪽을
+    옮겨 적어야 할지 알 수 없다 — `IR 요청받은 기업`(= `IR 요청 투자사` 를
+    기업명 순으로 다시 늘어놓은 것) 을 지울 때 실제로 갈릴 수 있던 자리다.
+    """
+    from app.models import IrRequest, Meeting, VcContact
+
+    contact = VcContact(user_id=users["u1"].id, name="담당자하나",
+                        title="심사역", firm="가나벤처스")
+    db.add(contact)
+    db.flush()
+    db.add(Meeting(user_id=users["u1"].id, contact_id=contact.id,
+                   company_name="샘플기업", kind="first",
+                   scheduled_at="2026-08-24", status="done", outcome="review",
+                   followup_due="2026-09-03"))
+    db.add(IrRequest(user_id=users["u1"].id, contact_id=contact.id,
+                     company_name="샘플기업", requested_at="2026-08-22",
+                     status="delivered"))
+    db.commit()
+
+    # 화면 — `이 달의 반응` 칸의 갈래 이름. 위쪽 발송 패널도 같은 `bucket-head`
+    # 를 쓰므로 그 칸부터 잘라 본다.
+    panel = logged.get("/report?month=2026-08").text.split("이 달의 반응", 1)[-1]
+    on_screen = [x.strip() for x in
+                 re.findall(r'class="bucket-head">([^<]+)', panel)]
+    assert on_screen, "화면에서 갈래를 못 찾았다 — 선택자가 바뀌었나"
+
+    # 파일 — 갈래 머리는 `이름   N건` 한 줄이다(`_ReportSheet.group`).
+    grid = _grid(_book(_download(logged))["2026-08 반응"])
+    in_file = [m.group(1) for m in
+               (re.match(r"^(.+?)\s{3}\d+건$", str(row[0])) for row in grid if row)
+               if m]
+
+    assert on_screen == in_file, "화면과 파일의 갈래가 다르다"
+    assert "IR 요청받은 기업" not in on_screen, \
+        "`IR 요청 투자사` 와 줄도 내용도 같은 갈래다 — 한 표로 족하다"
 
 
 # --- 2. 중단된 회차는 완료가 아니다 ---------------------------------------------
@@ -301,7 +343,9 @@ def test_a_month_with_no_sends_still_opens(logged, db, users):
     meet = [str(c) for row in _grid(wb["2026-02 미팅"]) for c in row]
     assert any("이 달에는 기록된 미팅이 없습니다" in c for c in meet)
     react = [str(c) for row in _grid(wb["2026-02 반응"]) for c in row]
-    assert react.count("없습니다.") == 5, "다섯 갈래가 다 서 있어야 한다"
+    # 빈 달이라고 갈래가 사라지면 안 된다 — `없습니다.` 라고 서 있어야 그 달에
+    # 아무것도 없었다는 사실이 남는다. (넷인 이유는 `_buckets` 주석 참고)
+    assert react.count("없습니다.") == 4, "네 갈래가 다 서 있어야 한다"
 
 
 def test_a_broken_month_falls_back_to_today(logged, db, users):

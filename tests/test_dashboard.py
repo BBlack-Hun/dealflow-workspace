@@ -807,7 +807,12 @@ def test_reactions_export_carries_dates(client, db, users):
                                         "투자사", "기업", "상태"]
     rows = list(ws.iter_rows(min_row=2, values_only=True))
     assert any(r[0] == "IR 요청 투자사" and r[1] == "2026-08-19" for r in rows)
-    assert any(r[0] == "IR 요청받은 기업" for r in rows)
+    # **요청 하나는 한 줄이다.** 예전에는 같은 요청을 `IR 요청받은 기업` 으로 한
+    # 번 더 적어 여섯 칸이 똑같은 줄이 나란히 섰고, 엑셀에서 세면 요청 수가 두
+    # 배가 됐다. 이 파일을 내려받는 자리(업무 보고의 `이 달의 반응`)도 갈래가
+    # 넷이라, 여기 다섯 번째 갈래가 남으면 화면과 파일이 갈린다.
+    assert len(rows) == 1, f"IR 요청 1건인데 {len(rows)}줄로 나왔다"
+    assert not any(r[0] == "IR 요청받은 기업" for r in rows)
 
 
 # --- 관리자가 팀 회차를 조회 -------------------------------------------------
