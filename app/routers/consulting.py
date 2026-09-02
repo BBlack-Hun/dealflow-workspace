@@ -78,6 +78,10 @@ CONTRACT_COLUMNS = [
     ("계약월", "meeting_at"),
     ("기업명", "company_name"),
     ("계약여부", "management"),   # 무료 / 유료
+    # 계약을 맺은 것과 **계약서를 받은 것**은 다른 사실이다. 앞 칸에 섞어 두면
+    # 계약은 했는데 서류가 아직 안 온 곳을 가려낼 수가 없다.
+    # 빈칸은 `아직 안 정함` 이다(`models.ConsultingCompany.contract_received`).
+    ("계약서 수신여부", "contract_received"),   # O / X
     ("성공보수율", "success_fee"),
     ("계약금", "contract_fee"),
 ]
@@ -392,6 +396,9 @@ def company_rows(db: Session, user: User, sheet: str = "",
             # 자리를 만들지 않으려는 것이다.
             "success_fee": c.success_fee or "",
             "contract_fee": c.contract_fee or "",
+            # 빈 문자열이 곧 `아직 안 정함` 이다 — 머리글 필터가 그것을
+            # `(비어 있음)` 으로 세워 준다(`static/js/filters.js`).
+            "contract_received": c.contract_received or "",
             "notes": seen,
             # 어느 달이든 기록이 있는가 — `연락 기록 없음` 칩이 보는 값이다.
             "contacted": status.contacted(seen.values()),
@@ -402,6 +409,10 @@ def company_rows(db: Session, user: User, sheet: str = "",
             "search": " ".join(filter(None, [
                 c.company_name, c.region, c.management, c.ceo_name,
                 c.email, c.meeting_at, c.success_fee, c.contract_fee,
+                # 칸을 고치면 브라우저가 `td.cell` 을 전부 이어 붙여 이 값을
+                # 다시 적는다(`consulting.js` 의 `refreshRowFlags`). 여기서
+                # 빼 두면 새로고침 전후로 검색 결과가 달라진다.
+                c.contract_received,
                 *notes.values(),
             ])).lower(),
         })
@@ -525,6 +536,7 @@ class CompanyIn(BaseModel):
     # 안 저장된다** — pydantic 이 모르는 칸을 그냥 버리기 때문에 오류도 안 난다.
     success_fee: Optional[str] = None
     contract_fee: Optional[str] = None
+    contract_received: Optional[str] = None
     # {"열id": "내용"} — 월별 리마인드
     notes: Optional[Dict[str, str]] = None
 
@@ -737,7 +749,7 @@ CONSULTING_EXPORT_HEADERS = [label for label, _ in FIXED_COLUMNS]
 # 계약 탭에만 값이 있는 칸. 엑셀은 탭을 가리지 않고 한 장으로 내려받으므로
 # **머리글 한 벌**에 뒤로 붙인다 — 탭마다 다른 장을 만들면 내려받은 파일에서
 # 어느 장이 무엇인지 다시 맞춰야 한다. 다른 탭 줄에서는 빈 칸이다.
-CONTRACT_EXPORT_HEADERS = ["성공보수율", "계약금"]
+CONTRACT_EXPORT_HEADERS = ["성공보수율", "계약금", "계약서 수신여부"]
 
 
 @router.get("/api/export/consulting.xlsx")
@@ -751,7 +763,7 @@ def export_consulting(db: Session = Depends(get_db),
         [r["no"], r["region"], r["meeting_at"], r["company_name"], r["management"]]
         + [r["notes"].get(str(c.id), "") for c in cols]
         + [r["ceo_name"], r["phone"], r["email"]]
-        + [r["success_fee"], r["contract_fee"]]
+        + [r["success_fee"], r["contract_fee"], r["contract_received"]]
         for r in company_rows(db, user)
     ]
     try:

@@ -622,6 +622,20 @@ class ConsultingCompany(TimestampMixin, Base):
     # 시트마다 테이블을 나누면 같은 성격의 줄이 두 곳에 흩어진다.
     success_fee: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # 성공보수율
     contract_fee: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # 계약금
+    # 계약서를 받았는가 — `O` / `X`. **빈칸은 `아직 안 정함`이다.**
+    #
+    # 두 값뿐이면 미정을 적을 자리가 없다. 그렇다고 이미 들어 있는 줄을 전부
+    # `X` 로 채우면 앱이 "안 받았다"고 **단정**하는 것이 되는데, 그건 아무도
+    # 확인한 적 없는 사실이다(0047 이 backfill 을 안 하는 이유다). 세 번째
+    # 값(`미정`)을 만들지 않는 것은 사용자가 `O, X` 두 가지로 적어 달라고 했고,
+    # 빈칸이 이미 그 뜻을 갖고 있어서다 — 머리글 필터에서 `(비어 있음)` 으로
+    # 골라 볼 수 있으므로(`static/js/filters.js` 의 `EMPTY`) 미정인 줄을 찾는
+    # 길도 막히지 않는다.
+    #
+    # 다른 탭에서는 비어 있다. 계약서는 계약 줄에만 있는 개념이라 화면도 계약
+    # 탭에서만 이 칸을 세운다(`routers/consulting.py` 의 `CONTRACT_COLUMNS`).
+    contract_received: Mapped[Optional[str]] = mapped_column(
+        String, nullable=True)                                                 # 계약서 수신여부
     # 나누기 **전의 한 줄**. 지우지 않는다 — 나눈 결과가 틀렸을 때 여기서 다시
     # 나눌 수 있어야 하고, 원본 시트와 글자 그대로 대조할 수 있어야 한다.
     source_line: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

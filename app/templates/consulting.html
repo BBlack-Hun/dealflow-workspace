@@ -241,6 +241,21 @@
         {# `계약여부 (1) ▾` 가 한 줄에 들어가야 한다 — 이름 42px + 꼬리표 28px
            + th 여백 18px + 단추 여백 14px = 102px. #}
         <th style="width:110px" data-filters="mgmt:계약여부">계약여부<div class="th-filters"></div></th>
+        {# 계약을 맺은 것과 **계약서를 받은 것**은 다른 사실이다. 앞 칸에 섞어
+           두면 계약은 했는데 서류가 아직 안 온 곳을 가려낼 수가 없다.
+
+           필터를 세운다. 값이 `O`·`X` 두 가지로 정해져 있어 고를 것이 모이고,
+           무엇보다 **빈칸(아직 안 정함)을 고를 수 있어야** 한다 — filters.js 가
+           빈 값을 `(비어 있음)` 으로 세워 주므로, 채워 넣어야 할 줄을 찾는
+           길이 그것뿐이다.
+           칩(`관리 중`·`드랍`…)에는 안 세운다. 그 넷은 `기업 관리` **한 갈래**를
+           서로 겹치지 않게 나눈 것이라 한 번에 하나만 눌리는데, 계약서 수신은
+           다른 축이라 거기 끼면 둘을 같이 걸 수가 없다(머리글 필터는 칩과
+           AND 로 묶인다 — consulting.js 의 `extra`).
+
+           `계약서 수신여부 (1) ▾` 가 한 줄에 들어가야 한다 — 이름 105px
+           + th 여백 18px + 단추 여백 14px = 137px. #}
+        <th style="width:140px" data-filters="received:계약서 수신여부">계약서 수신여부<div class="th-filters"></div></th>
         <th style="width:110px">성공보수율</th>
         <th style="width:120px">계약금</th>
         {% else %}
@@ -285,6 +300,10 @@
              줄어들어야 하므로 줄에도 적어 둔다. #}
           data-contacted-prev="{{ 1 if r.contacted_prev else 0 }}"
           data-f-region="{{ r.region }}"
+          {# 계약 탭에서만 싣는다. 다른 탭에는 이 칸도 머리글도 없어서, 늘
+             실어 두면 아무도 안 보는 죽은 속성이 된다
+             (tests/test_filter_columns.py 의 2번이 그것을 막는다). #}
+          {% if is_contract_sheet %}data-f-received="{{ r.contract_received }}"{% endif %}
           data-f-mgmt="{{ r.mgmt }}">
         <td class="num muted">{{ r.no }}</td>
         {# 칸 이름은 `management`(DB 컬럼) 인데 필터 키는 `mgmt`(추린 값) 다.
@@ -301,6 +320,17 @@
         <td class="cell" data-field="meeting_at">{{ r.meeting_at }}</td>
         <td class="cell strong" data-field="company_name">{{ r.company_name }}</td>
         <td class="cell" data-field="management" data-filter-key="mgmt">{{ r.management }}</td>
+        {# `O` / `X` 를 **골라서** 넣는다. 그냥 타이핑하게 두면 같은 뜻이
+           `O`·`o`·`ㅇ`·`○` 로 갈려 필터 목록에 네 줄로 서는데, 두 가지뿐인
+           칸에서 그건 곧 필터가 못 쓰게 된다는 뜻이다. 내 투자사 화면의
+           `카톡방 참여여부` 가 같은 이유로 `data-choices="O,X"` 를 쓴다.
+           빈칸(아직 안 정함)으로 되돌리는 길도 편집창에 있다.
+
+           칸 이름(`contract_received`)과 필터 키(`received`)가 다르다 —
+           `data-filter-key` 가 없으면 여기서 고쳐도 행 값이 그대로라
+           **채워 넣어도 필터는 옛 목록 그대로**다. #}
+        <td class="cell" data-field="contract_received" data-filter-key="received"
+            data-choices="O,X">{{ r.contract_received }}</td>
         <td class="cell" data-field="success_fee">{{ r.success_fee }}</td>
         <td class="cell" data-field="contract_fee">{{ r.contract_fee }}</td>
         {% else %}
@@ -327,9 +357,10 @@
         </td>
       </tr>
       {% else %}
-      {# 칸 수는 탭마다 다르다. 계약 탭 = NO + 6 + 월 열 + 삭제,
-         나머지 = NO + 4 + 월 열 + 대표자·연락처·이메일 + 삭제. #}
-      <tr><td colspan="{{ (8 if is_contract_sheet else 9) + columns|length }}" class="muted">
+      {# 칸 수는 탭마다 다르다. 지금은 **우연히 같다** —
+         계약 탭 = NO + 7 + 월 열 + 삭제,
+         나머지  = NO + 4 + 월 열 + 대표자·연락처·이메일 + 삭제. #}
+      <tr><td colspan="{{ 9 + columns|length }}" class="muted">
         내용이 없습니다. <b>[시트 올리기]</b> 로 원본을 가져오거나 <b>[기업 추가]</b> 로 시작하세요.
       </td></tr>
       {% endfor %}

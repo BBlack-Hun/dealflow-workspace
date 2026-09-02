@@ -163,6 +163,7 @@
     if (multi) input.rows = Math.min(6, Math.max(2, before.split("\n").length + 1));
     cell.textContent = "";
     cell.appendChild(input);
+    addChoices(cell, input, before);
     input.focus();
     input.setSelectionRange(input.value.length, input.value.length);
 
@@ -184,6 +185,48 @@
       if (after === before) return;
       save(cell, after, before);
     }
+  }
+
+  // 값이 몇 가지로 정해져 있는 칸(`계약서 수신여부` 의 O/X)은 **골라 넣게** 한다.
+  //
+  // 그냥 타이핑하게 두면 같은 뜻이 `O`·`o`·`ㅇ`·`○` 로 갈린다. 값이 두 가지뿐인
+  // 칸에서 그건 곧 머리글 필터가 못 쓰게 된다는 뜻이다 — 목록에 네 줄이 서고,
+  // `O` 를 골라도 `○` 로 적은 줄은 안 걸린다.
+  //
+  // 내 투자사 화면의 `카톡방 참여여부` 도 같은 O/X 인데, 그쪽은 공통 편집기의
+  // `data-choices` 가 맡는다(inline_edit.js 의 `startPick`). 이 표만 편집기가
+  // 따로라(`startEdit`) 목록을 세우는 부분을 여기에 한 벌 더 둔다 — 값을 어떻게
+  // **판정**하는지는 여기에 없으므로(서버는 적힌 그대로 담는다) 서버와 갈릴
+  // 규칙이 늘어나는 것은 아니다. 생김새는 같은 CSS(`.cell-pop-choice`)를 쓴다.
+  function addChoices(cell, input, before) {
+    var choices = (cell.getAttribute("data-choices") || "").split(",")
+      .map(function (v) { return v.trim(); })
+      .filter(function (v) { return v.length > 0; });
+    if (!choices.length) return;
+    var box = document.createElement("div");
+    box.classList.add("cell-pop-choices");
+    // 마지막은 **비우는** 단추다. `O`/`X` 만 세워 두면 잘못 누른 것을 되돌릴
+    // 길이 없는데, 이 칸에서 빈칸은 `아직 안 정함` 이라는 뜻을 가진 값이다
+    // (전부 `X` 로 시작하지 않는 이유가 그것이다 — 0047 참고).
+    choices.concat([""]).forEach(function (value) {
+      var chip = document.createElement("button");
+      chip.type = "button";
+      chip.classList.add("cell-pop-choice");
+      // 지금 값에 표시를 남긴다 — 빈칸도 값 하나로 서야(`비움`) "아직 안 정했다"
+      // 가 화면에서 읽힌다.
+      if (value === before) chip.classList.add("on");
+      chip.textContent = value || "비움";
+      // mousedown 이라야 input 의 blur 보다 **먼저** 잡힌다. click 으로 달면
+      // 먼저 blur 가 나 편집이 끝나고, 그때 단추는 이미 사라져 아무 일도
+      // 일어나지 않는다.
+      chip.addEventListener("mousedown", function (e) {
+        e.preventDefault();
+        input.value = value;
+        input.blur();        // blur 가 finishEdit 을 부른다 — 저장은 거기 한 곳이다
+      });
+      box.appendChild(chip);
+    });
+    cell.appendChild(box);
   }
 
   function save(cell, value, before) {
@@ -255,6 +298,15 @@
     tr.setAttribute("data-f-mgmt", managementTags(mgmt ? mgmt.textContent : ""));
     var region = tr.querySelector('[data-field="region"]');
     tr.setAttribute("data-f-region", region ? region.textContent.trim() : "");
+    // `계약서 수신여부` 는 계약 탭에만 있는 칸이다. **행이 이미 그 값을 싣고
+    // 있을 때만** 다시 적는다 — 없는 속성을 여기서 새로 만들면 다른 탭에
+    // 아무도 안 보는 죽은 값이 생긴다(머리글이 선언하지 않은 값이다).
+    // 적히는 것은 칸의 글자 그대로다 — `O`/`X` 는 이미 추려진 값이라 판정할
+    // 것이 없다(그래서 `consulting_status.py` 에 규칙이 늘지 않는다).
+    var received = tr.querySelector('[data-field="contract_received"]');
+    if (received && tr.hasAttribute("data-f-received")) {
+      tr.setAttribute("data-f-received", received.textContent.trim());
+    }
     // **적힌 것이 있는가**는 앞뒤 공백을 뗀 뒤에 본다. 서버도 같은 규칙이다
     // (`consulting_status.contacted`) — 예전에는 서버가 공백만 든 칸을 기록으로
     // 세서, 그런 줄이 아무 칸이나 고치는 순간 `연락 기록 없음` 으로 넘어갔다.
