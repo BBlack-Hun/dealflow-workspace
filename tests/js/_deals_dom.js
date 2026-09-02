@@ -37,20 +37,33 @@ function contactCard(id, name, group, noreact) {
   }, [cb]);
 }
 
-// 연결이 안 끝나 **발송 목록에 없는** 사람(`sheet_owner.blocked_stages`).
+// **발송 목록에 없는** 사람. 사유는 둘이고 같은 칸에 나란히 선다 —
+// 연결이 안 끝난 사람(`sheet_owner.blocked_stages`)과 딜 소개를 멈춰 둔
+// 사람(`sheet_owner.paused_block`).
+//
 // 화면은 이 자리에 입력칸을 두지 않지만, 여기서는 **일부러 체크박스를 붙인다.**
 // 검사가 지키려는 것은 "화면이 체크박스를 안 그린다" 가 아니라 **"목록 밖의
 // 체크박스는 어떤 조작에도 안 딸려 온다"** 이기 때문이다 — deals.js 가 고르는
 // 상자를 `#contact-list` 안으로 좁혀 둔(`contactCbs`) 덕이고, 그 좁힘이 풀리면
 // 연결도 안 된 사람에게 문구가 나간다. 되돌릴 수 없는 일이라 여기서 못박는다.
+//
+// **두 사유 모두에 하나씩 붙인다.** 사유가 하나 늘 때 그 줄만 좁힘 밖에 서는
+// 일이 생기면, 멈춰 달라고 한 투자사에게 그대로 문구가 나간다.
 function blockedBlock() {
-  const cb = el("input", {
-    id: "cb-99", class: "contact-cb", value: "99",
-    "data-name": "못보낼담당", "data-noreact": "1"
-  });
+  function missCb(id, name) {
+    return el("input", {
+      id: "cb-" + id, class: "contact-cb", value: String(id),
+      "data-name": name, "data-noreact": "1"
+    });
+  }
+  const held = missCb(98, "멈춘담당");        // 검토중단 — 연결은 끝난 사람
+  const cb = missCb(99, "못보낼담당");        // 연결이 안 끝난 사람
   return el("details", { id: "blocked-contacts", class: "miss-box" }, [
     el("summary", {}, []),
-    el("p", { class: "miss-people name-line" }, [cb])
+    el("div", { class: "miss-stage" },
+       [el("p", { class: "miss-people name-line" }, [held])]),
+    el("div", { class: "miss-stage" },
+       [el("p", { class: "miss-people name-line" }, [cb])])
   ]);
 }
 
@@ -125,9 +138,14 @@ function buildDom(people) {
     .concat(simple).concat(modeTabs)
     .forEach(function (node) { root.appendChild(node); });
 
+  // `blockedCbs` 는 접힌 칸의 체크박스 **전부**다. 하나만 들고 보면 사유가
+  // 하나 늘었을 때 그 줄만 좁힘 밖에 서 있어도 검사가 통과한다.
+  const blockedCbs = Array.prototype.slice.call(
+    blocked.querySelectorAll(".contact-cb"));
   return { root: root, document: dom_.makeDocument(root), cards: cards,
            sourcingCards: sourcingCards,
-           blocked: blocked, blockedCb: blocked.querySelector(".contact-cb") };
+           blocked: blocked, blockedCbs: blockedCbs,
+           blockedCb: blockedCbs[blockedCbs.length - 1] };
 }
 
 // deals.js 를 이 화면 위에서 그대로 돌린다.

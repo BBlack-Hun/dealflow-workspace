@@ -405,3 +405,35 @@ def test_the_template_screen_says_which_tab_uses_it(logged_in):
     for mode, kind in MODE_TEMPLATE_KIND.items():
         assert 'id="%s"' % kind in body, kind          # 고칠 자리가 화면에 있어야 한다
         assert MODE_TITLES[mode] in body, mode         # 어느 탭에서 쓰는지 적혀 있어야 한다
+
+
+def test_멈춰_둔_사람은_오래된_탭에서_눌러도_안_나간다(client, db, seed):
+    """화면에서 뺀 사람이 **서버에서도** 빠져야 진짜로 빠진 것이다.
+
+    딜 제안 관리 목록에는 이미 안 뜨지만, 목록을 띄워 둔 채 다른 탭에서
+    `검토중단` 으로 바꾸고 돌아와 [보내기]를 누르면 그대로 나갔다 — 나간 뒤에는
+    되돌릴 수가 없다. 판정은 `sheet_owner` 한 곳을 지난다.
+    """
+    from app.models import VcContact
+    from app.services import sheet_owner
+
+    row = db.get(VcContact, seed["contact_id"])
+    row.status = sheet_owner.STATUS_PAUSED
+    db.commit()
+
+    r = client.post("/api/deals/send", json={
+        "company_ids": [seed["company_id"]],
+        "contact_ids": [seed["contact_id"]],
+    })
+    assert r.status_code == 400, r.text
+    # 왜 막혔는지 말한다 — 이유가 없으면 고장으로 읽고 다시 누른다.
+    assert sheet_owner.STATUS_LABELS[sheet_owner.STATUS_PAUSED] in r.json()["detail"]
+
+    # 되돌리면 다시 나간다 — 멈추기는 지우기가 아니다.
+    row.status = sheet_owner.STATUS_ACTIVE
+    db.commit()
+    again = client.post("/api/deals/send", json={
+        "company_ids": [seed["company_id"]],
+        "contact_ids": [seed["contact_id"]],
+    })
+    assert again.status_code == 200, again.text

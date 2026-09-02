@@ -63,10 +63,11 @@ def mixed(db, users):
         SheetOwner(label=POOL_SHEET, user_id=None),
     ])
 
-    def contact(name, stage, group="", sheet=MY_SHEET, hidden=0, owner="u1"):
+    def contact(name, stage, group="", sheet=MY_SHEET, hidden=0, owner="u1",
+                status="active"):
         return VcContact(user_id=users[owner].id, name=name, firm="가나벤처스",
                          group_name=group or None, source_sheet=sheet,
-                         connect_stage=stage, is_hidden=hidden,
+                         connect_stage=stage, is_hidden=hidden, status=status,
                          kakao_room_name=f"{name} 방", channel_kakao=1)
 
     rows = [
@@ -93,6 +94,20 @@ def mixed(db, users):
         contact("거담당", "not_started", sheet=POOL_SHEET),
         # 풀에도 있고 내 명단에도 있는 사람 — **명단 쪽이 이긴다.**
         contact("파담당", "connected", "1군", sheet=f"{POOL_SHEET},{MY_SHEET}"),
+        # ★ 연결도 끝났고 명단에도 있는데 **딜 소개를 멈춰 둔** 사람.
+        #   화면에서 상태를 `검토중단` 으로 바꾼 그 줄이다("일단 딜소개
+        #   대기해줘"). 운영에는 지금 한 명뿐이지만 **여러 명·여러 담당자**로
+        #   세운다 — 한 명만 두면 `첫 줄만 빼기` 같은 실수가 안 잡힌다.
+        contact("너담당", "connected", "1군", status="paused"),
+        contact("버담당", "connected", "2군", status="paused"),
+        # 멈춰 두었는데 **연결도 아직**인 사람. 사유가 겹치므로, 접힌 칸이
+        # 이 사람을 두 사유에 다 세우면 "빠진 N명" 이 실제보다 커진다.
+        contact("더담당", "not_started", "2군", status="paused"),
+        # ★ `반응없음` 은 빼지 않는다 — "보내지 말라" 가 아니라 "아직 답이
+        #   없다" 이고, 딜 제안 관리에는 그 사람들만 골라 보내는 기능이 있다.
+        contact("러담당", "connected", "2군", status="no_response"),
+        # 남의 담당에도 멈춘 사람이 있다 — 담당이 섞여도 각자 몫만 빠져야 한다.
+        contact("머담당", "connected", "1군", owner="u2", status="paused"),
     ]
     db.add_all(rows)
     db.commit()
@@ -372,8 +387,12 @@ def test_단계는_다섯이고_뜻이_두_갈래다(db, users, mixed):
         assert s["done"] is (s["key"] in CONNECT_DONE)
         assert s["count"] == len(s["people"])
     # 수와 이름이 한 곳에서 나온다 — 갈라지면 어느 쪽이 맞는지 알 수 없다.
+    #
+    # 이 칸이 세는 것은 **연결이 안 끝난 사람**이다. 연결은 끝났는데 빠지는
+    # 사람(멈춰 둔 사람)은 `paused_block` 이 따로 세운다 — 여기 섞으면 접힌
+    # 칸에 `연결 완료 1명은 연결이 안 끝나 빠졌다` 는 줄이 선다.
     assert sum(s["count"] for s in stages) == len(
-        [c for c in rows if not sheet_owner.can_send_to(c)])
+        [c for c in rows if not sheet_owner.is_connected(c)])
     # 할 일이 먼저다(대시보드가 `CONNECT_OPEN` → `CONNECT_DONE` 순으로 세우는
     # 것과 같은 이유). 끝난 줄이 위에 서면 손댈 곳이 뒤로 밀린다.
     assert [s["done"] for s in stages] == sorted(s["done"] for s in stages)
@@ -442,6 +461,173 @@ def test_화면이_단계_이름을_손으로_적지_않는다(db, users, mixed)
             "`recipient_counts` 가 실어 주는 값을 쓰라")
 
 
+# ── 1-4) ★ 멈춰 둔 사람(`검토중단`)은 발송 대상이 아니다 ────────────────────
+#
+# 사용자가 한 투자사를 두고 **"일단 딜소개 대기해줘"** 라고 했다. 투자사 줄에는
+# `상태` 칸이 있고 라벨도 이미 맞다(`검토중단`). 그런데 발송 대상 판정이 그
+# 값을 안 봐서, 화면에서 바꿔도 딜 제안 관리 목록에 그대로 뜨고 그대로 나갔다 —
+# **표시가 아무 일도 안 하는 상태**였다. 발송은 되돌릴 수 없다.
+#
+# 반대쪽도 같은 무게로 못박는다. `반응없음` 은 **빼면 안 된다.** 반응이 없다는
+# 것은 "보내지 말라" 가 아니라 "아직 답이 없다" 이고, 딜 제안 관리에는 그
+# 사람들만 골라 보내는 기능이 이미 있다([반응 없는 담당자만] · `no_reaction_ids`).
+# 나중에 누가 "active 가 아니면 뺀다" 로 넓히면 그 기능이 통째로 죽는다.
+
+def test_멈춰_둔_사람은_발송_대상에서_빠진다(logged_in, db, users, mixed):
+    """화면에서 `검토중단` 으로 바꾼 사람에게 문구가 나가면 안 된다."""
+    from app.services import sheet_owner
+
+    names = {c.name for c in sheet_owner.recipients(db, users["u1"])}
+    for held in ("너담당", "버담당"):
+        assert held not in names, (
+            f"{held} 은 `검토중단` 인데 발송 대상에 그대로 있다 — "
+            "화면에서 멈춰 두어도 그대로 나간다")
+    # 연결이 아직인 채로 멈춘 사람도 마찬가지다.
+    assert "더담당" not in names
+
+    # **화면에도 없어야 한다.** 목록에 남아 있으면 체크가 걸리고 그대로 나간다.
+    html = logged_in.get("/deals").text
+    for held in ("너담당", "버담당", "더담당"):
+        assert f'data-name="{held}"' not in html, f"{held} 이 발송 목록에 떠 있다"
+
+
+def test_반응없음은_빼지_않는다(db, users, mixed):
+    """★ `active 가 아니면 뺀다` 로 넓히면 이 검사가 빨개져야 한다.
+
+    반응이 없는 담당자는 **다시 보낼 사람**이다. 딜 제안 관리의
+    [반응 없는 담당자만] 이 바로 그 사람들을 골라 준다 — 발송 대상에서 빼면
+    그 단추가 아무도 못 고르는 단추가 된다.
+    """
+    from app.services import sheet_owner
+
+    names = {c.name for c in sheet_owner.recipients(db, users["u1"])}
+    assert "러담당" in names, (
+        "`반응없음` 이 발송 대상에서 빠졌다 — [반응 없는 담당자만] 이 죽는다")
+
+
+def test_상태_가운데_빠지는_것은_검토중단_하나뿐이다(db, users, mixed):
+    """상태가 늘어도 **어느 것이 발송을 막는지**가 흐려지면 안 된다.
+
+    값 하나하나를 걸어 보고 대상 여부가 뒤집히는지 본다. `검토중단` 말고
+    다른 값이 대상을 막는 순간 여기서 잡힌다.
+    """
+    from app.models import VcContact
+    from app.services import sheet_owner
+
+    row = db.query(VcContact).filter_by(name="가담당").one()
+    for key in sheet_owner.STATUS_LABELS:
+        row.status = key
+        assert sheet_owner.can_send_to(row) is (key != sheet_owner.STATUS_PAUSED), (
+            f"상태 `{sheet_owner.STATUS_LABELS[key]}` 하나로 발송 대상 여부가 "
+            "뒤집혔다 — 막는 것은 `검토중단` 하나여야 한다")
+    # 값이 비어 있는 옛 줄도 대상이다 — 정한 적 없는 것은 멈춘 것이 아니다.
+    row.status = ""
+    assert sheet_owner.can_send_to(row) is True
+
+
+def test_담당이_섞여도_각자_몫만_빠진다(db, users, mixed):
+    """멈춘 사람이 남의 담당에도 있다. 한 사람의 상태가 다른 담당의 수를
+    건드리면, 회차 직전에 남의 명단이 조용히 줄어든다."""
+    from app.services import sheet_owner
+
+    mine = {c.name for c in sheet_owner.recipients(db, users["u1"])}
+    yours = {c.name for c in sheet_owner.recipients(db, users["u2"])}
+    assert "머담당" not in yours, "남의 담당이어도 `검토중단` 은 대상이 아니다"
+    assert "차담당" in yours, "멈추지 않은 남의 담당까지 딸려 빠졌다"
+    assert "머담당" not in mine and "차담당" not in mine
+
+
+def test_빠진_사람은_사유마다_한_번씩만_세어진다(db, users, mixed):
+    """접힌 줄의 수는 **실제로 빠진 사람 수**여야 한다.
+
+    사유가 겹치는 사람이 있다(멈췄고 연결도 아직). 두 사유에 다 세면 "빠진
+    N명" 이 명단보다 커지고, 한쪽에서도 안 세면 그 사람이 화면에서 사라진다.
+    """
+    from app.services import sheet_owner
+
+    u1 = users["u1"]
+    rows = sheet_owner.deal_list_contacts(db, u1)
+    counts = sheet_owner.recipient_counts(db, u1)
+
+    blocked = [c for c in rows if not sheet_owner.can_send_to(c)]
+    assert counts["blocked"] == len(blocked)
+    assert counts["paused"]["count"], "시험용 명단에 멈춘 사람이 없다 — 검사가 헛돈다"
+    assert (counts["paused"]["count"]
+            + sum(s["count"] for s in counts["blocked_by_stage"])) == counts["blocked"], (
+        "사유별 수를 다 더해도 빠진 사람 수가 안 된다 — 겹쳐 세거나 빠뜨렸다")
+
+    seen = [p["id"] for p in counts["paused"]["people"]]
+    seen += [p["id"] for s in counts["blocked_by_stage"] for p in s["people"]]
+    assert len(seen) == len(set(seen)), "한 사람이 두 사유에 걸쳐 세어졌다"
+    assert set(seen) == {c.id for c in blocked}, (
+        "빠졌는데 어느 사유에도 안 선 사람이 있다 — 화면에서 존재조차 사라진다")
+
+
+def test_멈춘_사람이_이름과_이유로_화면에_선다(logged_in, db, users, mixed):
+    """빠진 사람이 화면에 안 뜨면 **왜 목록에 없는지 알 길이 없다.**
+
+    연결이 안 끝난 사람과 **같은 자리**(접힌 칸)에 같은 방식으로 세운다.
+    """
+    from app.services import sheet_owner
+
+    html = logged_in.get("/deals").text
+    block = _blocked_block(html)
+    counts = sheet_owner.recipient_counts(db, users["u1"])
+    paused = counts["paused"]
+
+    # 접힌 줄만 봐도 몇 명이 **왜** 빠졌는지 보인다 — 열지 않아도 알아야 한다.
+    summary = block[:block.find("</summary>")]
+    assert f"{paused['label']} {paused['count']}명" in summary, (
+        f"접힌 줄이 `{paused['label']}` 을 말하지 않는다: {summary}")
+
+    for p in paused["people"]:
+        assert p["name"] in block, f"{p['name']} 은 멈춰 뒀는데 화면 어디에도 없다"
+        assert f"/contacts?contact={p['id']}" in block, f"{p['name']} 을 열 곳이 없다"
+
+
+def test_화면이_상태_이름을_손으로_적지_않는다():
+    """같은 말을 두 곳에 적으면 한쪽이 반드시 낡는다(단계 이름과 같은 규칙).
+
+    상태 이름은 발송 대상 판정과 **한 곳**에 있다(`sheet_owner.STATUS_LABELS`).
+    화면이 `검토중단` 을 손으로 적어 두면, 그 말이 바뀌는 날 투자사 관리
+    현황의 고르는 칸과 딜 제안 관리의 안내가 서로 다른 말을 하게 된다.
+    """
+    from app.services import sheet_owner
+
+    for name in ("deals.html", "contacts.html"):
+        body = re.sub(r"\{#.*?#\}", "", (TEMPLATES / name).read_text("utf-8"),
+                      flags=re.S)
+        for label in sheet_owner.STATUS_LABELS.values():
+            assert label not in body, (
+                f"{name} 이 상태 이름 `{label}` 을 손으로 적어 두었다 — "
+                "서버가 실어 주는 값을 쓰라")
+
+
+def test_멈춤_판정을_두_곳에_적지_않는다():
+    """★ 이 저장소가 반복해 당한 부류다 — 같은 판단을 두 벌 적으면 한쪽이 낡는다.
+
+    발송 대상 판정은 `sheet_owner` 한 곳이다. 화면·라우터가 `status` 를 직접
+    견주기 시작하면, 조건이 하나 붙는 날 한쪽만 고쳐져 화면과 실제 발송이
+    갈린다(투자사 117명·123명 때와 같은 자리).
+    """
+    import inspect
+
+    from app.routers import contacts as contacts_router
+    from app.routers import pages
+    from app.services import dashboard, readiness
+
+    for module in (pages, dashboard, readiness, contacts_router):
+        body = inspect.getsource(module)
+        # 견주는 것만 본다(`== STAGE_CONNECTED` 를 막는 것과 같은 규칙) —
+        # 값을 넘겨 쓰는 것은 괜찮다. 한글 이름은 아예 못 적는다: 그 말이
+        # 바뀌는 날 화면마다 다른 말을 하게 된다.
+        for said in ('== "paused"', "== 'paused'", "== STATUS_PAUSED",
+                     "!= STATUS_PAUSED", "검토중단"):
+            assert said not in body, (
+                f"{module.__name__} 이 멈춤 여부를 직접 견줍니다({said}) — "
+                "`sheet_owner.is_paused` 를 지나야 합니다")
+
+
 def test_명단_기본값은_담당_지정을_따른다(db, users):
     """표시를 안 해 둔 명단이 **조용히 빠지면** 회차가 통째로 잘못 나간다.
 
@@ -474,8 +660,12 @@ def test_화면에_찍히는_수가_서로_어긋나지_않는다(logged_in, db,
     assert cards == len(sheet_owner.recipients(db, users["u1"]))
 
     # 딜 제안 관리가 적은 "딜소개 명단 … N명 중 … M명"
+    #
+    # 기준을 `카톡방 연결이 끝난` 이라고 적어 두었더니, 연결이 끝났는데도
+    # 멈춰 둬서 빠지는 사람이 생긴 뒤로 적힌 기준과 수가 어긋났다. 무엇으로
+    # 걸렀는지는 바로 뒤 사유 줄이 말한다.
     said = re.search(r"딜소개 명단.*?<b>(\d+)</b>명 중\s*"
-                     r"카톡방 연결이 끝난 <b>(\d+)</b>명", deals, re.S)
+                     r"<b>(\d+)</b>명에게 지금 보낼 수 있습니다", deals, re.S)
     assert said, "무엇을 기준으로 세는지 화면이 말하지 않는다"
     listed_said, sendable_said = int(said.group(1)), int(said.group(2))
     assert sendable_said == cards

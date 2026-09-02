@@ -509,8 +509,9 @@ def _panel_links(panel: str) -> list[tuple[str, str]]:
     return out
 
 
-def test_패널이_낸_모든_링크가_실제로_거른다(logged, waiting):
-    """**손으로 나열하지 않는다.** 패널이 낸 링크를 훑어 각각 따라가 대조한다.
+def _sweep_panel_links(logged, *, min_links: int = 8,
+                       min_counted: int = 6) -> None:
+    """패널이 낸 링크를 훑어 각각 따라가 대조한다. **손으로 나열하지 않는다.**
 
     링크가 하나 늘어도 저절로 걸린다. 지키는 것은 셋이다.
 
@@ -518,11 +519,16 @@ def test_패널이_낸_모든_링크가_실제로_거른다(logged, waiting):
          안 된 키를 통째로 버린다. 버려도 화면은 멀쩡히 열려서 아무도 모른다.
       ② 그 주소가 실제로 **열리는가**.
       ③ 링크 글자가 수를 말하면 **간 화면의 줄 수와 같은가**.
+
+    명단 모양이 다르면 걸리는 자리도 다르므로 **여러 명단으로 돌린다** —
+    한 벌만 돌리면 그 모양에서만 맞는 수가 통과한다. 명단마다 서는 링크 수가
+    다르므로 바닥값(`min_*`)은 부르는 쪽이 정한다 — 링크가 통째로 사라져 검사가
+    조용히 0건이 되는 것을 막는 자리라, 그 명단에서 실제로 서는 수여야 한다.
     """
     panel = _panel(logged.get("/").text)
     links = _panel_links(panel)
     # 링크가 통째로 사라지면 이 검사가 조용히 0건이 된다 — 그쪽이 더 나쁘다.
-    assert len(links) >= 8, f"패널의 링크가 너무 적다: {links}"
+    assert len(links) >= min_links, f"패널의 링크가 너무 적다: {links}"
 
     declared = _declared_filter_keys()
     counted = 0
@@ -558,7 +564,12 @@ def test_패널이_낸_모든_링크가_실제로_거른다(logged, waiting):
             f"[{text}] 는 {said.group(1)}명이라 했는데 {href} 에는 "
             f"{len(left)}줄이 남는다")
         counted += 1
-    assert counted >= 6, f"수를 대조한 링크가 너무 적다({counted}) — {links}"
+    assert counted >= min_counted, (
+        f"수를 대조한 링크가 너무 적다({counted}) — {links}")
+
+
+def test_패널이_낸_모든_링크가_실제로_거른다(logged, waiting):
+    _sweep_panel_links(logged)
 
 
 def test_숫자를_말하는_링크는_저마다_다른_곳으로_간다(logged, waiting):
@@ -644,3 +655,89 @@ def test_연결_남음은_끝난_줄을_안_센다(logged, finished, db, users):
     pipeline = user_dashboard(db, users["u1"])["pipeline"]
     assert pipeline["open"] == 1          # 진행 중 1명뿐
     assert pipeline["total"] == 3         # 못 보내는 사람은 셋 (셈은 그대로)
+
+
+# ── 8. 딜 소개를 멈춰 둔 사람(`검토중단`) ──────────────────────────────────
+#
+# 사용자가 한 투자사를 두고 "일단 딜소개 대기해줘" 라고 하면, 그 사람은 딜 제안
+# 관리의 대상에서 빠진다(`sheet_owner.can_send_to`). **그런데 이 패널은 연결이
+# 라는 일 자체를 세는 자리다** — 연결은 이미 끝난 사람이라 여기서는 `보낼 준비
+# 완료` 에 그대로 세어진다. 그 차이를 화면이 말하지 않으면 여기는 5명이라 해
+# 놓고 발송 화면에는 4명이 떠서, 쓰는 사람은 어느 쪽이 고장인지 알 수 없다.
+#
+# 수를 빼지 **않는** 이유는 링크에 있다. 이 패널의 수는 전부 눌러 가는 목록의
+# 줄 수와 맞아야 하는데, 투자사 관리 현황 표에는 `상태` 로 거르는 칸이 없다 —
+# 빼면 화면이 센 수와 눌러 간 줄 수가 갈린다(이 저장소가 반복해 당한 자리).
+
+@pytest.fixture()
+def on_hold(db, users):
+    """연결은 다 끝났고, 그중 둘은 **딜 소개를 멈춰 둔** 딜소개 명단.
+
+    한 명은 방까지 있어 `보낼 준비 완료` 에 섞이고, 한 명은 방이 없어
+    `방이 없어 못 보냄` 에 섞인다 — 겹치는 자리가 하나가 아니다.
+    """
+    from app.models import SheetOwner, VcContact
+
+    db.add(SheetOwner(label=DEAL_SHEET, user_id=users["u1"].id))
+
+    def one(name, **kw):
+        return VcContact(user_id=users["u1"].id, name=name, firm="가나벤처스",
+                         source_sheet=DEAL_SHEET, connect_stage="connected", **kw)
+
+    db.add_all([
+        one(f"준비{i}", channel_kakao=1, room_verified="verified",
+            kakao_room_name=f"준비{i} 방") for i in range(3)
+    ] + [
+        one("멈춘이", channel_kakao=1, room_verified="verified",
+            kakao_room_name="멈춘이 방", status="paused"),
+        one("멈춘둘", channel_kakao=1, status="paused"),
+        # 멈추지 않은 `반응없음` — 빠지면 안 된다.
+        one("답없는이", channel_kakao=1, room_verified="verified",
+            kakao_room_name="답없는이 방", status="no_response"),
+    ])
+    db.commit()
+    return db
+
+
+def test_멈춰_둔_사람을_이름까지_화면이_말한다(logged, on_hold, db, users):
+    """수만 적고 누구인지 안 적으면, 왜 발송 화면과 수가 다른지 알 수 없다."""
+    from app.services import sheet_owner
+
+    panel = _panel(logged.get("/").text)
+    assert panel, "패널이 없다 — 검사가 헛돈다"
+
+    label = sheet_owner.STATUS_LABELS[sheet_owner.STATUS_PAUSED]
+    assert f"{label} 2명" in panel, f"멈춰 둔 사람을 화면이 말하지 않는다: {panel}"
+    assert "딜소개 발송 대상은 아닙니다" in panel, "왜 다른지 화면이 말하지 않는다"
+
+    names = {n for _, n in NAME_LINK.findall(panel)}
+    assert {"멈춘이", "멈춘둘"} <= names, "멈춰 둔 사람이 누구인지 안 나온다"
+    assert "답없는이" not in names, "`반응없음` 은 멈춘 것이 아니다"
+
+
+def test_멈춰_둔_사람이_섞여도_패널의_수와_눌러_간_줄_수가_같다(logged, on_hold):
+    """★ 여기가 이 변경으로 어긋나기 쉬운 자리다.
+
+    표에 없는 조건(`상태`)으로 패널의 수만 줄이면, 화면은 `보낼 준비 완료
+    4명` 이라 적어 놓고 눌러 가면 5줄이 뜬다.
+    """
+    # 전원 연결 완료라 단계 칸이 0이고, 그만큼 수를 말하는 링크도 적다.
+    _sweep_panel_links(logged, min_links=6, min_counted=2)
+
+
+def test_발송_화면과_수가_왜_다른지_대시보드가_말한다(logged, db, users, on_hold):
+    """두 화면의 수는 **원래 다르다** — 다른 것보다 이유가 안 적힌 것이 문제였다."""
+    from app.services import dashboard, sheet_owner
+
+    pipeline = dashboard.user_dashboard(db, users["u1"])["pipeline"]
+    sendable = len(sheet_owner.recipients(db, users["u1"]))
+
+    # 연결 현황은 멈춤을 안 본다 — 연결이라는 일 자체를 세는 자리다.
+    assert pipeline["ready"] == 5, pipeline    # 준비 셋 + 답없는이 + 멈춘이
+    assert pipeline["stuck"] == 1              # 방이 없는 멈춘둘
+    assert pipeline["on_hold"] == 2            # 멈춘이 · 멈춘둘
+
+    # 발송 대상은 멈춘 둘을 뺀다. 두 화면의 차이가 정확히 `on_hold` 다 —
+    # 그래서 화면이 그 수를 이름까지 적어 주면 어긋남이 아니라 설명이 된다.
+    assert sendable == 4                       # 준비 셋 + 답없는이
+    assert pipeline["ready"] + pipeline["stuck"] - pipeline["on_hold"] == sendable

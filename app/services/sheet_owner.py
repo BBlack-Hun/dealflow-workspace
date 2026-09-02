@@ -141,8 +141,8 @@ def my_contacts(db: Session, user: User) -> List[VcContact]:
 #
 #     ① 이 명단인가   `on_deal_list` — 딜 소개를 **보내기로 한 명단**인가.
 #                     모집단을 정한다. 명단 밖 사람은 아예 목록에 안 뜬다.
-#     ② 지금 보낼 수 있나  `can_send_to` — 카톡방 연결이 끝났는가.
-#                     명단 안이어도 방이 없으면 못 보낸다.
+#     ② 지금 보낼 수 있나  `can_send_to` — 카톡방 연결이 끝났는가(`is_connected`),
+#                     그리고 멈춰 두지 않았는가(`is_paused`).
 #
 # 예전에는 ② 하나만 문이었다. 그래서 딜 소개 명단에 올린 적도 없는 **투자사
 # 풀** 사람이 연결만 됐다는 이유로 발송 목록에 떴다(실데이터 142명 중 17명).
@@ -153,6 +153,24 @@ def my_contacts(db: Session, user: User) -> List[VcContact]:
 # 제안 관리는 `이 명단에서 지금 보낼 수 있는 사람`이다. 그 차이를 감추지 않고
 # `recipient_counts` 로 내놓아 화면이 "명단 N명 중 M명 · 명단 밖 K명" 이라고
 # 적게 한다 — 수가 다른 것보다 **왜 다른지 화면이 말하지 않는 것**이 문제였다.
+
+
+# ── 투자사 줄의 `상태` ──────────────────────────────────────────────────────
+#
+# 투자사 관리 현황의 상세에서 사람이 고르는 값(`VcContact.status`)이다.
+# **값과 한글 이름을 여기 둔다** — 발송 대상 판정(`can_send_to`)이 이 값을 보기
+# 때문이다. 판정은 여기 있는데 이름은 라우터에 있으면, 이름이 바뀌는 날 화면과
+# 발송이 서로 다른 말을 하게 된다(투자사 관리 현황은 `검토중단` 이라 적어 놓고
+# 딜 제안 관리는 그 사람을 그대로 목록에 세우던 것이 바로 그 상태였다).
+STATUS_ACTIVE = "active"
+STATUS_NO_RESPONSE = "no_response"
+STATUS_PAUSED = "paused"
+
+STATUS_LABELS = {
+    STATUS_ACTIVE: "활발",
+    STATUS_NO_RESPONSE: "반응없음",
+    STATUS_PAUSED: "검토중단",
+}
 
 
 def is_deal_list(row: Optional[SheetOwner]) -> bool:
@@ -228,16 +246,52 @@ def managed(db: Session, user: User, *, team_wide: bool = False,
     return rows if include_hidden else investors(db, rows)
 
 
-def can_send_to(contact: VcContact) -> bool:
-    """지금 이 사람에게 문구를 보낼 수 있는가 — 카톡방 연결이 끝났는가.
+def is_connected(contact: VcContact) -> bool:
+    """카톡방 연결이 끝났는가 — 보낼 방이 있는가.
 
     연결 전 명단(전화·초대 진행 중)이 발송 대상에 섞이면 **보낼 방도 없는
     사람에게 체크를 하게 된다.** 단계 이름은 임포트가 정한 것을 그대로 읽는다
     — 여기에 `"connected"` 를 또 적어 두면 단계가 하나 늘 때 한쪽만 고쳐진다.
+
+    `can_send_to` 와 **따로 둔 이유**: 대시보드의 `연결 진행 중인 명단` 은
+    연결이라는 일 자체를 세는 자리라, 멈춰 둔 사람까지 `아직 연결 안 됨` 으로
+    세면 안 된다. 그 패널의 수는 눌러 가는 목록(`?connect=…`)의 줄 수와 맞아야
+    하는데, 표에 없는 조건으로 수만 줄이면 눌러 간 화면이 더 많은 줄을 낸다.
     """
     from .sheet_import import STAGE_CONNECTED   # 순환 임포트라 함수 안에서
 
     return contact.connect_stage == STAGE_CONNECTED
+
+
+def is_paused(contact: VcContact) -> bool:
+    """딜 소개를 **잠시 멈춰 둔** 사람인가(`검토중단`).
+
+    사용자가 한 투자사를 두고 "일단 딜소개 대기해줘" 라고 하는 그 자리다.
+    줄에는 이미 `상태` 칸이 있고 라벨도 맞는데, 발송 대상 판정이 그 값을 안
+    보던 동안에는 화면에서 바꿔도 목록에 그대로 뜨고 그대로 나갔다 —
+    **표시가 아무 일도 안 하는 상태**였다.
+
+    ★ **`반응없음` 은 여기 오지 않는다.** 반응이 없다는 것은 "보내지 말라" 가
+    아니라 "아직 답이 없다" 이고, 딜 제안 관리에는 그 사람들만 골라 보내는
+    기능이 이미 있다([반응 없는 담당자만] · `pages.deals_page` 의
+    `no_reaction_ids`). `active 가 아니면 뺀다` 로 넓히는 순간 그 단추가
+    아무도 못 고르는 단추가 된다.
+
+    값을 정한 적 없는 옛 줄(빈 값)은 멈춘 것이 아니다 — 조용히 빠지는 쪽이
+    언제나 더 위험하다(`is_deal_list` 의 기본값과 같은 이유).
+    """
+    return (contact.status or "") == STATUS_PAUSED
+
+
+def can_send_to(contact: VcContact) -> bool:
+    """지금 이 사람에게 문구를 보낼 수 있는가.
+
+    문이 둘이다 — **연결이 끝났는가**(`is_connected`)와 **멈춰 두지
+    않았는가**(`is_paused`). 발송 대상을 세는 곳은 전부 여기를 지난다
+    (`recipients` · `recipient_counts` · 대시보드 · 회차 준비 점검). 화면이나
+    라우터에 조건을 또 적으면 하나가 늘 때 한쪽만 고쳐진다.
+    """
+    return is_connected(contact) and not is_paused(contact)
 
 
 def deal_list_contacts(db: Session, user: User) -> List[VcContact]:
@@ -278,8 +332,63 @@ def deal_list_names(db: Session, contacts: List[VcContact]) -> List[str]:
     return [k for k, _ in sorted(counted.items(), key=lambda kv: (-kv[1], kv[0]))]
 
 
+def _named(people: List[VcContact]) -> List[dict]:
+    """화면에 이름으로 세울 사람들. **전부** 준다.
+
+    앞의 몇 명만 세우고 나머지를 접으면 화면에 안 뜨는 사람이 또 생긴다 — 그게
+    바로 고치려던 문제다. 화면에서는 접어 두므로 자리를 차지하지도 않는다.
+
+    방 이름을 함께 싣는다. `방은 있는데 미착수` 가 눈에 보여야 "방을 확인했는데
+    왜 빠지냐" 는 물음이 화면에서 풀린다. 빠진 사유가 무엇이든 줄 모양은 같아야
+    하므로(같은 자리에 같은 방식으로 선다) 한 곳에서 만든다.
+    """
+    return [{"id": c.id, "name": c.name, "firm": c.firm or "",
+             "room": c.kakao_room_name or "",
+             "href": f"/contacts?contact={c.id}"} for c in people]
+
+
+def paused_rows(rows: List[VcContact]) -> List[VcContact]:
+    """**멈춰 둔 것 하나 때문에** 빠지는 사람 — 연결은 이미 끝난 사람들.
+
+    연결이 아직인 사람은 여기 오지 않는다. 그쪽은 `blocked_stages` 가 단계별로
+    세우고, 그 칸의 `이 단계만 보기` 는 눌러 간 목록의 줄 수와 맞아야 한다 —
+    투자사 관리 현황 표에는 `상태` 로 거르는 칸이 없어서, 멈췄다는 이유로 여기
+    빼 오면 화면이 센 수와 눌러 간 줄 수가 갈린다(이 저장소가 반복해 당한
+    "세는 곳과 가는 곳의 모집단이 다른" 부류). 어차피 연결부터 이어야 대상이
+    되는 사람이라, 그 줄에서는 연결 단계가 먼저 할 말이다.
+
+    사유가 겹치는 사람을 **두 곳에서 세지 않기 위한** 나눔이기도 하다. 겹쳐
+    세면 접힌 줄의 `빠진 N명` 이 실제보다 커진다.
+    """
+    return [c for c in rows if is_connected(c) and is_paused(c)]
+
+
+def paused_label() -> str:
+    """화면에 적을 이름. 화면·다른 서비스가 `검토중단` 을 손으로 적지 않게 —
+    이름이 바뀌는 날 한쪽만 낡는 것을 막는 자리다."""
+    return STATUS_LABELS[STATUS_PAUSED]
+
+
+def paused_block(rows: List[VcContact]) -> dict:
+    """멈춰 둔 사람 — 몇 명이고 누구인지. 화면이 세울 한 덩어리.
+
+    `blocked_stages` 의 한 칸과 **같은 모양**이다. 딜 제안 관리가 두 사유를
+    같은 자리(접힌 칸)에 같은 방식으로 세우기 때문이다 — 왜 목록에 없는지는
+    사유가 무엇이든 화면에서 보여야 한다.
+
+    한글 이름을 화면에 다시 적지 않게 `label` 을 함께 싣는다.
+    """
+    people = paused_rows(rows)
+    return {
+        "key": STATUS_PAUSED,
+        "label": paused_label(),
+        "count": len(people),
+        "people": _named(people),
+    }
+
+
 def blocked_stages(db: Session, rows: List[VcContact]) -> List[dict]:
-    """딜 소개 명단에 있는데 **아직 못 보내는** 사람 — 단계별로, 누구인지까지.
+    """딜 소개 명단에 있는데 **연결이 안 끝나** 못 보내는 사람 — 단계별로.
 
     수와 이름이 **한 곳에서 나온다.** 수는 여기서 세고 이름은 화면이 따로
     고르게 두면, 둘이 갈리는 날 어느 쪽이 맞는지 알 수가 없다.
@@ -295,7 +404,9 @@ def blocked_stages(db: Session, rows: List[VcContact]) -> List[dict]:
     여기서 나왔다. 방 확인(`room_verified`)과 연결 단계(`connect_stage`)는
     **따로 관리되는 값**이라, 방을 아무리 확인해도 이 수는 안 움직인다.
 
-    `연결 완료` 는 여기 오지 않는다 — 그 사람들이 곧 발송 대상이다.
+    `연결 완료` 는 여기 오지 않는다 — 연결이 끝났는데도 빠지는 사람(멈춰 둔
+    사람)은 `paused_block` 이 따로 세운다. 여기 섞으면 접힌 칸에 `연결 완료
+    1명은 연결이 안 끝나 빠졌다` 는 앞뒤가 안 맞는 줄이 선다.
     """
     # 대시보드 → sheet_owner 방향이라 함수 안에서 가져온다. 주소를 여기서 다시
     # 조립하지 않는 이유는 `connect_href` 의 설명 그대로다.
@@ -310,7 +421,9 @@ def blocked_stages(db: Session, rows: List[VcContact]) -> List[dict]:
 
     grouped: Dict[str, List[VcContact]] = {}
     for c in rows:
-        if can_send_to(c):
+        # 연결이 끝난 사람은 여기 오지 않는다 — 보낼 수 있거나(대상),
+        # 멈춰 둔 것뿐이거나(`paused_block`) 둘 중 하나다.
+        if is_connected(c):
             continue
         grouped.setdefault(c.connect_stage or "", []).append(c)
 
@@ -326,15 +439,8 @@ def blocked_stages(db: Session, rows: List[VcContact]) -> List[dict]:
             "count": len(people),
             # 모르는 값은 끝난 갈래로 치지 않는다 — 할 일로 남겨 두는 쪽이 안전하다.
             "done": key in CONNECT_DONE,
-            # 이름은 **전부** 준다. 앞의 몇 명만 세우고 나머지를 접으면 화면에
-            # 안 뜨는 사람이 또 생긴다 — 그게 바로 고치려던 문제다. 화면에서는
-            # 접어 두므로 자리를 차지하지도 않는다.
-            #
-            # 방 이름을 함께 싣는다. `방은 있는데 미착수` 가 눈에 보여야
-            # "방을 확인했는데 왜 빠지냐" 는 물음이 화면에서 풀린다.
-            "people": [{"id": c.id, "name": c.name, "firm": c.firm or "",
-                        "room": c.kakao_room_name or "",
-                        "href": f"/contacts?contact={c.id}"} for c in people],
+            # 이름은 전부 준다 — 줄 모양은 `_named` 한 곳에서 나온다.
+            "people": _named(people),
             # 한 단계를 통째로 볼 곳. 필터 키와 값은 대시보드가 이미 쓰는 것을
             # 그대로 부른다 — 여기 손으로 적으면 라벨이 바뀔 때 한쪽만 낡는다.
             # 모르는 단계는 걸 값이 없다(라벨이 없으면 필터가 통째로 버린다) —
@@ -392,6 +498,10 @@ def recipient_counts(db: Session, user: User, *,
         # 단계별 수 **와 이름**. 화면이 "미착수 19명" 이라고만 적고 누구인지는
         # 안 적으면, 빠진 사람이 누구인지 알 길이 없어 손을 쓸 수가 없다.
         "blocked_by_stage": blocked_stages(db, mine),
+        # 연결은 끝났는데 **멈춰 둔** 사람. 위 단계별 수와 **겹치지 않는다** —
+        # 둘을 더하면 정확히 `blocked` 다. 겹쳐 세면 접힌 줄의 `빠진 N명` 이
+        # 실제보다 커지고, 어느 쪽도 안 세면 그 사람이 화면에서 사라진다.
+        "paused": paused_block(mine),
         # 투자사 관리 현황이 보여 주는 수. 관리자만 본인 담당분과 다르다.
         "team_total": (len(managed(db, user, team_wide=True)) if team_wide
                        else len(held)),

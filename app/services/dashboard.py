@@ -345,7 +345,13 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None,
     # 0 이 정답이면 0 으로 둔다. 대신 화면이 **다 끝났다고 말하고**, 그 명단에서
     # 아직 못 받는 사람(방이 없는 쪽)을 이어서 보여 준다 — `_pipeline_view`.
     sending = sheet_owner.deal_list_contacts(db, user)
-    waiting = [c for c in sending if not sheet_owner.can_send_to(c)]
+    # **연결이 안 끝난 사람**이다(`can_send_to` 가 아니라 `is_connected`).
+    # 이 패널은 연결이라는 일 자체를 세는 자리라, 딜 소개를 멈춰 둔 사람까지
+    # `아직 연결 안 됨` 으로 세면 안 된다 — 게다가 이 패널의 수는 눌러 가는
+    # 목록(`?connect=…`)의 줄 수와 맞아야 하는데, 표에 `상태` 로 거르는 칸이
+    # 없어서 여기서 빼면 화면이 센 수와 눌러 간 줄 수가 갈린다. 멈춰 둔 사람은
+    # 아래 `on_hold` 가 이름까지 따로 말한다.
+    waiting = [c for c in sending if not sheet_owner.is_connected(c)]
     # 눌러 갈 곳도 같은 명단이어야 한다. 세는 곳과 가는 곳이 다르면 "9명" 을
     # 눌렀는데 다른 수가 나온다.
     sheet_scope = deal_sheet_scope(db, sending)
@@ -620,7 +626,10 @@ def _pipeline_view(rows: List[VcContact], waiting: List[VcContact],
     # 그 조건을 빼면 패널이 말한 수보다 화면 줄이 많아진다 — 이 패널이 오래
     # 당해 온 부류가 바로 "세는 곳과 가는 곳의 모집단이 다른" 것이다.
     stuck = [c for c in rows
-             if sheet_owner.can_send_to(c) and _room_state(c) not in _SENDABLE_ROOM]
+             if sheet_owner.is_connected(c) and _room_state(c) not in _SENDABLE_ROOM]
+    # 연결은 끝났는데 딜 소개를 멈춰 둔 사람 — 아래 `on_hold` 참고. 누구인지는
+    # 발송 대상 판정과 같은 곳에서 온다.
+    on_hold = sheet_owner.paused_rows(rows)
     by_room = Counter(_room_state(c) for c in stuck)
     rooms = [
         {"state": s, "label": ROOM_LABELS[s][0], "level": ROOM_LABELS[s][1],
@@ -668,6 +677,24 @@ def _pipeline_view(rows: List[VcContact], waiting: List[VcContact],
         "rooms": rooms,
         "stuck": len(stuck),
         "ready": len(rows) - len(waiting) - len(stuck),
+        # ── 연결은 끝났는데 **딜 소개를 멈춰 둔** 사람 ──────────────────────
+        #
+        # 이 명단에 있고 연결도 끝났지만 딜 제안 관리의 대상은 아니다
+        # (`sheet_owner.can_send_to`). 그 차이를 안 적으면 대시보드가
+        # `보낼 준비 완료 5명` 이라 해 놓고 발송 화면에는 4명이 뜬다 — 수가
+        # 다른 것보다 **왜 다른지 화면이 말하지 않는 것**이 이 저장소가
+        # 반복해 당한 문제다.
+        #
+        # **위 수에서 빼지는 않는다.** 위 갈래는 전부 눌러 가는 목록이 있고
+        # 그 줄 수와 맞아야 하는데, 투자사 관리 현황 표에는 `상태` 로 거르는
+        # 칸이 없다. 빼면 화면이 센 수와 눌러 간 줄 수가 갈린다 — 그래서
+        # 겹친다는 것을 화면이 말하고, 이름으로 누구인지까지 보여 준다.
+        "on_hold": len(on_hold),
+        # 한글 이름을 여기서 지어내지 않는다 — 투자사 관리 현황의 고르는 칸과
+        # 딜 제안 관리의 안내가 쓰는 그 말을 그대로 읽는다.
+        "on_hold_label": sheet_owner.paused_label(),
+        "on_hold_people": _people(on_hold, sheet),
+        "on_hold_more": max(len(on_hold) - PIPELINE_NAMES, 0),
         # 연결 담당별로 **아직 남은** 사람. 갈 곳은 `그 담당 × 아직 남은 단계`
         # 라 화면의 수와 눌러 간 줄 수가 맞는다. 담당이 안 정해진 사람은
         # 값이 비어 있어서 `(비어 있음)` 으로 걸러진다 — 화면에는 `미지정`
