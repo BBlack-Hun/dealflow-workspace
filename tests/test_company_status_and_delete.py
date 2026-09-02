@@ -24,10 +24,15 @@
 from __future__ import annotations
 
 import re
+import shutil
+import subprocess
+from pathlib import Path
 
 import pytest
 
 from .conftest import DEMO_PASSWORD
+
+ROOT = Path(__file__).resolve().parent.parent
 
 
 @pytest.fixture()
@@ -216,7 +221,8 @@ def test_the_panel_select_can_show_every_value_the_api_returns(logged_in, db):
 PANEL_FIELDS = ["name", "sector_major", "sector_minor", "series", "one_liner",
                 "revenue_recent", "funding_total", "raise_target", "pre_value",
                 "competitiveness", "funding_status", "ir_drive_url",
-                "contract_status", "contract_month", "summary_status", "note"]
+                "contract_status", "contract_received", "contract_month",
+                "summary_status", "note"]
 
 
 def test_the_panel_sends_the_same_fields_the_script_does():
@@ -451,3 +457,167 @@ def test_the_promo_mail_column_is_named_after_what_it_holds(logged_in, db):
     # 적혀 있던 것은 그대로 보인다
     assert "삭제 완료" in html
     assert logged_in.get(f"/api/companies/{row.id}").json()["contract_month"] == "삭제 완료"
+
+
+# ── ⑨ `계약서 수신됨` — 안 정한 것과 안 받은 것은 다르다 ────────────────────
+#
+# `계약여부` 는 **맺기로 했는가**이고 이 칸은 **서류가 실제로 왔는가**다.
+# `유료계약완료` 인데 서류는 아직인 기업을 적을 자리가 없어서 생긴 칸이다.
+#
+# 값이 `O`/`X` 둘뿐이면 아직 아무도 확인 안 한 기업을 적을 방법이 없다.
+# 그래서 **빈칸이 셋째 값**이다 — 321줄을 `X` 로 시작하면 "확인했는데 안
+# 왔다" 는 거짓 단언이 그대로 숫자가 된다.
+
+def test_아직_안_정한_기업은_X_가_아니라_빈_칸이다(logged_in, db, company):
+    """새 칸은 NULL 로 들어온다. 화면·엑셀 어디에도 `X` 를 지어내지 않는다."""
+    assert company.contract_received is None, "기본값이 붙으면 안 된다"
+    assert logged_in.get(f"/api/companies/{company.id}").json()["contract_received"] == ""
+
+
+def test_눌러_고치면_그_글자가_그대로_저장된다(logged_in, db, company):
+    """표가 보내는 것은 **칸에 보이는 글자**다(`O`).
+
+    `계약여부` 는 말과 값이 달라 짝을 맞춰야 했는데, 이 칸은 보이는 것이 곧
+    값이라 그 사고가 날 자리가 없다 — 그 점을 여기서 못 박아 둔다.
+    """
+    r = logged_in.patch(f"/api/companies/{company.id}",
+                        json={"contract_received": "O"})
+    assert r.status_code == 200
+    db.expire_all()
+    db.refresh(company)
+    assert company.contract_received == "O"
+
+
+def test_소문자로_적어도_한_가지_값으로_모인다(logged_in, db, company):
+    """골라 누르는 칸이지만 타이핑도 된다. `o` 를 그대로 두면 필터 목록이
+    `o` 와 `O` 두 벌로 갈려, 한쪽을 골랐을 때 그 기업만 사라진다."""
+    r = logged_in.patch(f"/api/companies/{company.id}",
+                        json={"contract_received": " o "})
+    assert r.status_code == 200
+    db.expire_all()
+    db.refresh(company)
+    assert company.contract_received == "O"
+    # **맞춘 값을 돌려줘야** 화면이 그것으로 되그린다 — 안 그러면 칸에는 `o`,
+    # DB 에는 `O` 가 남는다(companies.js 가 이 값으로 칸과 행을 고쳐 그린다).
+    assert r.json()["contract_received"] == "O"
+
+
+def test_비우면_다시_미정으로_돌아간다(logged_in, db, company):
+    """잘못 찍은 `O` 를 `X` 로만 고칠 수 있으면 그것도 거짓말이 된다 —
+    '아직 안 정함' 으로 되돌릴 길이 있어야 한다."""
+    logged_in.patch(f"/api/companies/{company.id}", json={"contract_received": "O"})
+    r = logged_in.patch(f"/api/companies/{company.id}", json={"contract_received": ""})
+    assert r.status_code == 200
+    assert r.json()["contract_received"] == ""
+    db.expire_all()
+    db.refresh(company)
+    assert company.contract_received is None
+
+
+def test_모르는_글자는_받지_않는다(logged_in, db, company):
+    """`△`·`확인중` 을 넣어 두면 셋도 넷도 아닌 값이 목록에 늘어난다."""
+    logged_in.patch(f"/api/companies/{company.id}", json={"contract_received": "O"})
+    r = logged_in.patch(f"/api/companies/{company.id}", json={"contract_received": "△"})
+    assert r.status_code == 400
+    # 막기만 하면 다시 찍어 볼 수밖에 없다 — 무엇을 고를 수 있는지 알려 준다
+    assert "O" in r.json()["detail"] and "X" in r.json()["detail"]
+    db.expire_all()
+    db.refresh(company)
+    assert company.contract_received == "O", "막았다면서 값은 바뀌어 있다"
+
+
+def test_표는_계약여부_바로_오른쪽에_이_칸을_세운다(logged_in, company):
+    """자리가 뜻이다. `유료계약완료` 를 읽는 그 눈으로 "그런데 서류는?" 을
+    같이 보는 칸이라, 떨어뜨려 놓으면 두 칸을 번갈아 짚어야 한다."""
+    head = re.search(r"<thead>(.*?)</thead>", logged_in.get("/companies").text, re.S)
+    assert head
+    names = [re.sub(r"<[^>]+>", "", c).strip()
+             for c in re.findall(r"<th\b[^>]*>(.*?)</th>", head.group(1), re.S)]
+    assert "계약여부" in names, names
+    assert names[names.index("계약여부") + 1] == "계약서 수신됨", names
+
+
+def test_고쳐도_필터가_따라오게_세_곳이_같은_키를_본다(logged_in, company):
+    """머리글이 선언한 키 · 행이 싣는 값 · 칸이 고칠 키, 셋이 어긋나면 필터는
+    **아무 말 없이** 빈 목록이 된다(tests/test_filter_columns.py 의 부류)."""
+    html = logged_in.get("/companies").text
+    assert 'data-filters="received:계약서 수신됨"' in html
+    assert 'data-f-received=' in html
+    assert 'data-filter-key="received"' in html
+    # 늘 두 가지를 세운다 — 값이 하나도 없는 순간 고를 말이 사라지면 안 된다
+    assert 'data-choices="O,X"' in html
+
+
+def test_수정창의_빈_값은_필터가_쓰는_말과_같은_글자다(logged_in, company):
+    """같은 뜻을 두 화면이 다르게 부르면 어느 쪽이 맞는지 알 수 없다.
+
+    그리고 **빈 값이 첫 보기**여야 한다 — `O`/`X` 만 있으면 패널을 여는 것
+    만으로 하나가 골라져, [저장]하면 확인한 적 없는 기업에 `X` 가 찍힌다.
+    """
+    html = logged_in.get("/companies").text
+    panel = re.search(r'<select id="f-contract_received">(.*?)</select>', html, re.S)
+    assert panel, "수정창에 이 칸이 없다"
+    values = re.findall(r'<option value="([^"]*)">([^<]*)</option>', panel.group(1))
+    assert values[0] == ("", "(비어 있음)"), values
+    assert [v for v, _ in values] == ["", "O", "X"], values
+
+
+def test_엑셀에도_화면과_같은_이름으로_계약_바로_뒤에_실린다(logged_in, db):
+    """엑셀은 화면과 나란히 놓고 대조하는 자리다 — 이름도 자리도 같아야 한다."""
+    import io
+
+    import openpyxl
+
+    from app.models import IrCompany
+
+    db.add(IrCompany(name="샘플로지", contract_status="paid", contract_received="O"))
+    db.add(IrCompany(name="샘플메디", contract_status="paid"))       # 아직 안 정함
+    db.commit()
+
+    book = openpyxl.load_workbook(
+        io.BytesIO(logged_in.get("/api/export/companies.xlsx").content))
+    sheet = book.active
+    head = [c.value for c in sheet[1]]
+    assert head[head.index("계약") + 1] == "계약서 수신됨", head
+
+    col = head.index("계약서 수신됨")
+    rows = {r[0]: r for r in sheet.iter_rows(min_row=2, values_only=True)}
+    assert rows["샘플로지"][col] == "O"
+    # 안 정한 곳은 **빈 칸**이다 — `X` 로 채우면 엑셀에서 세는 순간 그것이
+    # "확인했는데 안 왔다" 로 셈해진다.
+    # openpyxl 은 빈 글자를 `None` 으로 읽어 온다 — 엑셀에서는 둘 다 빈 칸이다.
+    assert rows["샘플메디"][col] in (None, "")
+
+
+def test_두_탭_다_머리글_수와_값_칸_수가_맞는다(logged_in, company):
+    """한쪽 탭만 고치면 다른 탭이 **조용히** 한 칸씩 밀린다.
+
+    이 화면은 `co_tab` 으로 표를 두 벌 그린다(IR 기업 현황 · 스타트업DB).
+    템플릿 글자만 세는 검사는 `{% if %}` 때문에 정확하지 않아서, 여기서는
+    **실제로 그린 화면**을 탭마다 세어 본다.
+    """
+    for url, tab in (("/companies", "IR 기업 현황"), ("/companies?tab=db", "스타트업DB")):
+        html = logged_in.get(url).text
+        m = re.search(r"<thead>(.*?)</thead>(.*?)</tbody>", html, re.S)
+        assert m, f"{tab}: 표를 못 찾았다"
+        heads = len(re.findall(r"<th\b", m.group(1)))
+        row = re.search(r"<tr\b[^>]*data-id=.*?</tr>", m.group(2), re.S)
+        assert row, f"{tab}: 값이 든 줄이 없다"
+        cells = len(re.findall(r"<td\b", row.group(0)))
+        assert heads == cells, f"{tab}: 머리 {heads}칸 · 값 {cells}칸 — 표가 밀린다"
+
+
+@pytest.mark.skipif(shutil.which("node") is None,
+                    reason="node 미설치 — 브라우저 로직 테스트 생략")
+def test_저장_뒤_되그리기는_브라우저에_있으니_거기서_잰다():
+    """맞춘 값으로 칸과 행을 되그리는가 · 응답 하나가 옆 칸까지 덮지 않는가.
+
+    기업 PATCH 응답에는 `contract_label` 과 `contract_received` 가 **늘 함께**
+    실린다. 되그리기가 `data-field` 를 안 보면 기업명 하나를 고쳤을 뿐인데
+    계약 칸 두 개가 덮인다 — 파이썬으로는 잴 수 없는 자리다
+    (tests/test_company_search.py 와 같은 방식으로 node 에 맡긴다).
+    """
+    script = ROOT / "tests" / "js" / "company_contract_received_test.js"
+    out = subprocess.run([shutil.which("node"), str(script)],
+                         capture_output=True, text=True, timeout=60)
+    assert out.returncode == 0, out.stdout + out.stderr

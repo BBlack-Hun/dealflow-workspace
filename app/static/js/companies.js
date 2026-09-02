@@ -20,7 +20,8 @@
   var FIELDS = ["name", "sector_major", "sector_minor", "series", "one_liner",
     "revenue_recent", "funding_total", "raise_target", "pre_value",
     "competitiveness", "funding_status", "ir_drive_url",
-    "contract_status", "contract_month", "summary_status", "note"];
+    "contract_status", "contract_received", "contract_month",
+    "summary_status", "note"];
 
   function rows() {
     return Array.prototype.slice.call(table.querySelectorAll("tbody tr[data-id]"));
@@ -290,6 +291,33 @@
       row.setAttribute("data-f-contract", data.contract_label);
     }
     row.classList.toggle("blocked-row", !!data.blocked);
+  });
+})();
+
+// 계약서 수신됨 — 여기는 **보이는 글자가 곧 값**이라(`O`/`X`) 옆 칸처럼
+// 말↔값을 짝지을 것이 없다. 그래도 되그린다: 소문자 `o` 를 쳐 넣으면 서버가
+// 대문자로 맞춰 넣는데, 누른 글자를 그대로 두면 칸에는 `o` · DB 에는 `O` 가
+// 남는다. 그러면 필터 목록이 `o` 와 `O` 두 벌로 갈려, 한쪽을 골랐을 때 방금
+// 고친 그 기업만 사라진다 — 단계·계약여부가 같은 이유로 되그린다.
+//
+// 비운 경우도 응답이 빈 글자를 준다. 그것도 그대로 반영해야 필터가 그 줄을
+// `(비어 있음)` 쪽으로 옮겨 준다.
+(function () {
+  var table = document.getElementById("co-table");
+  if (!table) return;
+
+  table.addEventListener("inline-saved", function (e) {
+    var data = e.detail.data || {};
+    if (!("contract_received" in data)) return;
+    var cell = e.detail.cell;
+    if (cell.getAttribute("data-field") !== "contract_received") return;
+
+    cell.textContent = data.contract_received;
+    cell.title = data.contract_received;
+    var row = e.detail.row;
+    if (row && row.hasAttribute("data-f-received")) {
+      row.setAttribute("data-f-received", data.contract_received);
+    }
   });
 })();
 
