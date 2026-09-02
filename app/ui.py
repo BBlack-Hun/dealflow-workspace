@@ -115,6 +115,14 @@ def menu_label(active: str) -> str:
     return item["label"] if item else "CONTACTVC ASSET"
 
 
+# 비밀번호를 바꾼 직후라는 표시. 바꾸고 나면 비밀번호 화면에 머무르지 않고
+# 그 사람의 첫 화면으로 나가므로(`deps.home_for`), "바뀌었다 · 다른 기기는
+# 끊겼다" 는 알림도 **따라가야** 한다. 알림을 화면마다 심으면 역할이 늘어
+# 도착지가 하나 더 생겼을 때 그 화면만 조용히 아무 말이 없다 — 그래서
+# 도착지가 아니라 **모든 화면이 지나는 자리**(`base_ctx` · `base.html`)에 둔다.
+PASSWORD_CHANGED = "pw"
+
+
 def base_ctx(request: Request, db: Session, user: User, active: str) -> dict:
     return {
         "page_title": menu_label(active),
@@ -126,4 +134,5 @@ def base_ctx(request: Request, db: Session, user: User, active: str) -> dict:
         "test_room": config.TEST_ROOM,
         "current_path": request.url.path,
         "app_version": version.VERSION,
+        "password_changed": request.query_params.get(PASSWORD_CHANGED) == "1",
     }

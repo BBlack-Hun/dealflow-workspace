@@ -52,6 +52,13 @@
         <code>{{ test_room }}</code> 방으로만 전송됩니다.
       </div>
       {% endif %}
+      {# 비밀번호를 바꾼 직후 도착한 화면. 바꾼 사람은 이제 비밀번호 화면을
+         떠나므로, 여기서 말해 주지 않으면 다른 기기가 왜 로그아웃됐는지
+         알 길이 없다. 도착지는 역할마다 다르다(deps.home_for) — 그래서
+         도착지가 아니라 모두가 지나는 여기에 둔다. #}
+      {% if password_changed %}
+      <p class="flash">✅ 비밀번호가 변경되었습니다. 다른 기기의 로그인은 모두 해제되었습니다.</p>
+      {% endif %}
       {% block content %}{% endblock %}
     </main>
   </div>
