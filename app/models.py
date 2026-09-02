@@ -350,6 +350,88 @@ class DealBatchCompany(Base):
     company: Mapped["IrCompany"] = relationship()
 
 
+class DealQueueItem(TimestampMixin, Base):
+    """예약 큐 한 줄 — **그룹 + 기업 묶음 + 문구**. 아직 아무에게도 안 나갔다.
+
+    그룹마다 붙일 기업이 달라서 생긴 자리다. 미리 줄을 세워 두고, 사람이
+    [시작] 을 누르면 그때 `SendJob` 이 만들어진다. **자동으로 나가는 장치는
+    없다**(크론도 워커도 없다) — 예약 시각이라는 칸을 두지 않은 이유다.
+
+    ## 왜 `DealBatch` 에 `group_name` 을 더하지 않았나
+
+    `DealBatch` 는 모양만 보면 이미 `기업 묶음 + 문구` 라 칸 하나만 더하면
+    될 것 같다. 그런데 그 표를 읽는 곳을 전부 세어 보니 **회차를 세는 자리가
+    아니라 "보낸 것" 을 세는 자리**였고, 예약 줄을 그 표에 섞으면 세 곳이
+    조용히 틀린다.
+
+      · `services/deal_history.py` 의 `last_sent_map` 은 `deal_batches` 를
+        **조건 없이 통째로** 훑는다. 예약 줄이 섞이면 아직 안 보낸 기업이
+        `최근에 소개함` 으로 찍혀 발송 화면의 기업 목록에서 밀려난다.
+      · `routers/companies.py` 의 삭제 막이는 `DealBatchCompany` 가 있으면
+        **"이미 발송한 회차에 들어 있어"** 라며 막는다 — 예약해 둔 것뿐인데
+        보냈다고 말하는 거짓말이 된다.
+      · `scripts/purge_demo.py` 는 `deal_batches` 를 **조건 없이 지운다**.
+        예약이 데모 정리에 통째로 쓸려 나간다.
+
+    `deal_batches` 에는 유일 제약도 자연키도 없어서, 칸 하나로 갈라 둔 것을
+    지켜 주는 것은 **앞으로 쓰는 모든 질의가 잊지 않고 거르는 것**뿐이다.
+    이 저장소는 그것을 이미 한 번 놓쳤다 — `SEND_KINDS` 주석에 적힌 대로
+    "세는 곳이 여럿이라 각자 걸러 두면 한 곳이 빠진다(실제로 네 곳이 빠져
+    있었다)". 그래서 **표를 따로 둔다.** 예약은 기록이 아니라 계획이라,
+    회차 이력과 같은 표에 있을 이유도 없다.
+
+    ## 대상은 담지 않는다
+
+    이 줄에는 **그룹 이름만** 있다. 받는 사람 목록을 굳혀 두면 예약해 둔 사이에
+    카톡방을 나갔거나 `검토중단` 이 된 분께 그대로 나간다. [시작] 을 누를 때
+    `sheet_owner.recipients` 로 **그때의 명단**을 다시 계산한다.
+    """
+
+    __tablename__ = "deal_queue_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    #: 어느 그룹에 보낼 예약인가. **빈 문자열이 `(그룹 없음)` 이다** — NULL 이
+    #: 아니다. `sheet_owner.group_of()` 가 돌려주는 값을 그대로 담아야, 그룹이
+    #: 없다는 것을 말하는 방법이 두 가지가 되지 않는다(NULL 과 "" 가 갈리면
+    #: 한쪽으로 넣고 다른 쪽으로 찾는 날 예약이 조용히 사라진다).
+    group_name: Mapped[str] = mapped_column(String, default="")
+    title: Mapped[str] = mapped_column(String)
+    opening_template_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("message_templates.id"), nullable=True)
+    closing_template_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("message_templates.id"), nullable=True)
+    #: waiting(대기) | started(시작함) | canceled(취소).
+    #: 값과 한글 이름은 `services/deal_queue.py` 한 곳에 있다.
+    status: Mapped[str] = mapped_column(String, default="waiting")
+    #: [시작] 으로 만들어진 발송 잡. 보낸 뒤 그 줄이 **무엇이 되었는지** 화면이
+    #: 이어 준다 — 예약이 끝나고 나서 어디로 갔는지 못 찾으면, 보냈는지 안
+    #: 보냈는지를 화면에서 확인할 길이 없다. 회차(`batch_id`)는 여기 두지
+    #: 않는다: 잡이 이미 들고 있어서, 두 벌로 두면 어긋날 자리만 생긴다.
+    job_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("send_jobs.id"), nullable=True)
+    started_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+    companies: Mapped[list["DealQueueCompany"]] = relationship(
+        back_populates="item", cascade="all, delete-orphan",
+        order_by="DealQueueCompany.position")
+
+
+class DealQueueCompany(Base):
+    """예약 줄에 붙인 기업. 순서까지 그대로 회차로 넘어간다(문구의 번호다)."""
+
+    __tablename__ = "deal_queue_companies"
+
+    item_id: Mapped[int] = mapped_column(
+        ForeignKey("deal_queue_items.id"), primary_key=True)
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey("ir_companies.id"), primary_key=True)
+    position: Mapped[int] = mapped_column(Integer, default=1)  # 1~3
+
+    item: Mapped["DealQueueItem"] = relationship(back_populates="companies")
+    company: Mapped["IrCompany"] = relationship()
+
+
 class SendJob(TimestampMixin, Base):
     __tablename__ = "send_jobs"
 

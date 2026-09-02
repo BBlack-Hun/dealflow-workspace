@@ -13,9 +13,9 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import get_current_user, may_manage_team_contacts, templates
 from ..models import IrCompany, SendJob, SourcingContact, User
-from ..services import (cadence, contact_columns, deal_history, deal_stage,
-                        mailer, ref_panel, sheet_import, sheet_owner,
-                        sourcing_link)
+from ..services import (cadence, contact_columns, deal_history, deal_queue,
+                        deal_stage, mailer, ref_panel, sheet_import,
+                        sheet_owner, sourcing_link)
 from ..ui import MENU, base_ctx as _base_ctx
 from .companies import BLOCKED_CONTRACT
 from .companies import blocked_reason as company_blocked_reason
@@ -138,6 +138,14 @@ def deals_page(
         # 거르는 그 값이라, 양쪽에서 고른 사람이 같아야 한다.
         "contact_groups": sheet_owner.group_rows(contacts),
         "empty_group": sheet_owner.EMPTY_GROUP,
+        # 예약 큐 — 그룹마다 붙일 기업이 달라서 미리 줄 세워 두는 자리.
+        #
+        # **대상 수는 저장된 값이 아니라 지금 세어 본 값이다**(`deal_queue.rows`).
+        # 그리고 그 수는 화면을 그린 순간의 것이라, [시작] 을 누를 때 또 달라질
+        # 수 있다 — 그 차이는 서버가 확인창으로 말한다. 여기서 굳혀 두면 화면이
+        # 어제의 수를 오늘의 수인 척 보여 준다.
+        "queue_rows": deal_queue.rows(db, user),
+        "queue_empty_label": deal_queue.EMPTY_GROUP_LABEL,
         "sourcing_contacts": sourcing_contacts,
         "sourcing_buckets": sourcing_buckets,
         "sourcing_assignees": sourcing_assignees,

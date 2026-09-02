@@ -642,6 +642,7 @@ def delete_company(company_id: int, db: Session = Depends(get_db),
     바꿔 가며 어느 기업이 있는지 알아낼 수 있다.
     """
     from ..models import DealBatchCompany
+    from ..services import deal_queue
 
     admin_only(user)
     company = db.get(IrCompany, company_id)
@@ -664,6 +665,25 @@ def delete_company(company_id: int, db: Session = Depends(get_db),
                    "없습니다 — 지우면 그 회차에 무엇을 보냈는지가 사라집니다. "
                    "계약여부를 '딜소개 불가' 로 두면 발송 목록에서 빠집니다.",
         )
+    if company_id in deal_queue.used_company_ids(db):
+        # **예약은 기록이 아니라 계획이다.** 위와 같은 말("이미 발송한 회차에
+        # 들어 있어")을 하면 안 된다 — 아직 아무에게도 안 나갔는데 보냈다고
+        # 말하는 것이라, 사람이 회차 이력을 뒤지다가 못 찾는다.
+        #
+        # 그렇다고 그냥 지우면 예약 줄이 없는 기업을 가리킨 채 남아, [시작] 을
+        # 누르는 순간 `기업 … 없음` 으로 죽는다. 그때는 왜 죽는지 화면에서
+        # 알 길이 없다. 조용히 예약에서 빼는 것도 답이 아니다 — 세 곳으로
+        # 예약해 둔 회차가 말없이 두 곳이 되어 나간다.
+        raise HTTPException(
+            status_code=400,
+            detail=f"'{company.name}' 은 딜 제안 관리의 **예약**에 들어 있어 "
+                   "삭제할 수 없습니다 — 아직 나가지 않은 예약입니다. "
+                   "그 예약을 취소한 뒤 지우세요.",
+        )
+    # 취소한 예약이 붙들고 있던 줄은 놓아 준다. 접어 둔 계획 하나 때문에
+    # 기업이 영영 안 지워지면 안 되고(예약 줄을 지우는 단추는 없다), 그 막이는
+    # 외래키가 하는 것이라 화면에는 이유 없는 서버 오류로만 뜬다.
+    deal_queue.release_company(db, company_id)
     db.delete(company)
     db.commit()
     return {"deleted": company_id}
