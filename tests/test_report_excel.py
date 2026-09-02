@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import io
 import re
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 
@@ -106,10 +106,16 @@ def test_the_file_carries_the_whole_screen(logged, db, users):
                         title="심사역", firm="가나벤처스")
     db.add(contact)
     db.flush()
+    # 결과 문의 날짜는 **오늘에서 잡는다.** 날짜를 박아 두었더니 그날이 오는
+    # 순간(2026-09-03) `_call_state` 가 `예정` 대신 `오늘` 을 내놓아 검사가
+    # 깨졌다 — 코드는 그대로인데 달력만 넘어간 것이다. 여기서 보려는 것은
+    # "결과 문의를 언제 걸어야 하는지가 파일에 적히는가" 이지 특정 날짜가
+    # 아니다.
+    due = (date.today() + timedelta(days=7)).isoformat()
     db.add(Meeting(user_id=users["u1"].id, contact_id=contact.id,
                    company_name="샘플기업", kind="first",
                    scheduled_at="2026-08-24", status="done", outcome="review",
-                   followup_due="2026-09-03", note="긍정적"))
+                   followup_due=due, note="긍정적"))
     db.add(IrRequest(user_id=users["u1"].id, contact_id=contact.id,
                      company_name="샘플기업", requested_at="2026-08-22",
                      status="delivered"))
@@ -119,7 +125,7 @@ def test_the_file_carries_the_whole_screen(logged, db, users):
     meet = [str(c) for row in _grid(wb["2026-08 미팅"]) for c in row]
     assert "담당자하나" in meet and "가나벤처스" in meet and "샘플기업" in meet
     assert "긍정적" in meet, "딜 진행 관리에서 적은 후기를 그대로 가져온다"
-    assert "2026-09-03 예정" in meet, "결과 문의를 언제 걸어야 하는지"
+    assert f"{due} 예정" in meet, "결과 문의를 언제 걸어야 하는지"
 
     react = [str(c) for row in _grid(wb["2026-08 반응"]) for c in row]
     assert "IR 요청 투자사   1건" in react
