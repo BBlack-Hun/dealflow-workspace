@@ -34,6 +34,7 @@ import shutil
 import subprocess
 from html.parser import HTMLParser
 from pathlib import Path
+from urllib.parse import quote
 
 import pytest
 
@@ -165,7 +166,7 @@ def screens(client, db, users):
     from app.models import (ConsultingColumn, ConsultingCompany, IrCompany,
                             Meeting, SourcingContact, VcContact, WeeklyRoutine,
                             WeeklyTask)
-    from app.services.consulting_sheets import default_label
+    from app.services.consulting_sheets import CONTRACT, by_kind, default_label
     from app.services import weekly
 
     u1 = users["u1"]
@@ -208,6 +209,20 @@ def screens(client, db, users):
                           region="", meeting_at="", company_name="샘플메디",
                           management="백업팀으로 전환 · 투자유치 논의 중. 드랍"),
     ])
+    # `월간 계약 업무현황표` 탭은 **표가 다르다**(칸도 필터도). 기본 탭만 그리면
+    # 그 탭의 필터는 아래 스윕이 한 번도 안 본다 — `계약서 수신여부` 가 그
+    # 탭에만 있는 칸이다. 빈칸인 줄을 하나 같이 둔다: 이 칸에서 빈칸은
+    # `아직 안 정함` 이라는 뜻이라, 필터 목록에 `(비어 있음)` 으로 서야 한다.
+    contract_sheet = by_kind(db)[CONTRACT].label
+    db.add_all([
+        ConsultingCompany(user_id=u1.id, sheet=contract_sheet, position=1,
+                          region="6월", meeting_at="미정", company_name="샘플애그",
+                          management="유료", contract_received="O",
+                          success_fee="3.5%", contract_fee="유료 90만"),
+        ConsultingCompany(user_id=u1.id, sheet=contract_sheet, position=2,
+                          region="6월", meeting_at="미정", company_name="샘플메디",
+                          management="무료", contract_fee="무료"),
+    ])
     week = weekly.week_start(date.today())
     db.add_all([
         # 미팅 후기 표는 **끝난 미팅**이 있어야 그려진다.
@@ -230,6 +245,10 @@ def screens(client, db, users):
         # 이 화면만 공통 편집기(`data-inline-url`)를 안 써서 아래 7번 스윕에는
         # 안 들어온다. 그래도 머리글 필터는 같은 부품이라 1~5 번은 똑같이 받는다.
         "투자컨설턴트 현황": client.get("/consulting").text,
+        # 같은 화면인데 **표가 다른** 탭. 기본 탭만 그리면 여기서만 서는
+        # 필터(`계약서 수신여부`)가 통째로 검사에서 빠진다.
+        "투자컨설턴트 현황(월간 계약)":
+            client.get(f"/consulting?sheet={quote(contract_sheet)}").text,
         "딜 진행 관리(미팅 후기)": client.get("/ir").text,
         "주간 업무": client.get("/todo").text,
         # 표가 없는 화면이지만 **투자사 관리 현황으로 링크를 가장 많이 거는
