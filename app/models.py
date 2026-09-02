@@ -240,6 +240,17 @@ class IrCompany(TimestampMixin, Base):
     owner_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     ir_drive_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     contract_status: Mapped[str] = mapped_column(String, default="no")  # yes | no | pending
+    # 계약서를 **실제로 받았는가** — `O` / `X`, 아직 안 정했으면 NULL(빈 칸).
+    #
+    # 위 `contract_status` 와 다른 사실이다. `유료계약완료` 인데 서류는 아직인
+    # 기업이 있어서, 계약 상태 하나로는 적을 자리가 없었다.
+    #
+    # **NOT NULL 로 두지 않는다.** 둘 중 하나를 고르게 하면 아직 아무도 확인
+    # 안 한 기업이 `X`("확인했는데 안 왔다")로 적히고, 받은 곳을 세는 순간 그
+    # 거짓말이 그대로 숫자가 된다. 빈칸이 곧 `미정`이고, 필터에서는
+    # `(비어 있음)` 으로 골라진다(`static/js/filters.js`).
+    # 같은 모양의 칸이 이미 있다 — `VcContact.kakao_joined`(카톡방 참여여부).
+    contract_received: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     contract_month: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     is_top_deal: Mapped[int] = mapped_column(Integer, default=0)
     funding_status: Mapped[Optional[str]] = mapped_column(String, nullable=True)
