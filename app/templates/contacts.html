@@ -777,11 +777,14 @@
           {% endfor %}
         </select>
       </label>
+      {# 상태 이름도 화면에 적지 않는다(위 `연결 상태` 와 같은 규칙). 이 값은
+         **발송 대상 판정이 읽는 값**이라(`sheet_owner.can_send_to`), 말이 여기
+         따로 있으면 판정과 화면이 서로 다른 것을 가리키게 된다. #}
       <label class="field"><span>상태</span>
         <select id="f-status">
-          <option value="active">활발</option>
-          <option value="no_response">반응없음</option>
-          <option value="paused">검토중단</option>
+          {% for s in contact_statuses %}
+          <option value="{{ s.key }}">{{ s.label }}</option>
+          {% endfor %}
         </select>
       </label>
       {# `단계 태그` 는 표에 칸이 없다 — 맞출 상대가 없어 이름을 그대로 둔다.

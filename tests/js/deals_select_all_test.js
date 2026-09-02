@@ -112,41 +112,49 @@ const clickClearAll = deals_.clickClearAll;
     "조건 밖에서 고른 사람이 발송에 남아 있는데 화면이 말하지 않는다: " + note.textContent);
 }
 
-// ── 7) ★ 연결이 안 끝나 목록에 없는 사람은 **어떤 조작으로도 안 골라진다** ──
+// ── 7) ★ 목록에 없는 사람은 **어떤 조작으로도 안 골라진다** ────────────────
 //
-// 화면은 "연결이 안 끝난 19명" 을 이름까지 보여 준다 — 안 보여 주면 누가 빠졌는지
-// 알 수가 없어 손을 쓸 수 없기 때문이다. 그런데 **보이는 것과 고를 수 있는 것은
-// 달라야 한다.** 연결이 안 된 사람은 보낼 방이 없다.
+// 화면은 "아직 이 목록에 없는 19명" 을 이름까지 보여 준다 — 안 보여 주면 누가
+// 빠졌는지 알 수가 없어 손을 쓸 수 없기 때문이다. 그런데 **보이는 것과 고를 수
+// 있는 것은 달라야 한다.** 연결이 안 된 사람은 보낼 방이 없고, 멈춰 둔 사람은
+// 보내지 말라고 사람이 정해 둔 사람이다.
 //
 // 막는 방법은 두 겹이다. ① 화면이 그 자리에 입력칸을 아예 안 그린다(그건
 // `tests/test_deals_recipients.py` 가 본다) ② deals.js 가 고르는 상자를
 // `#contact-list` 안으로 좁혀 둔다. 여기서는 ②를 본다 — 위 `blockedBlock` 이
-// 일부러 체크박스를 달아 두었으므로, 좁힘이 풀리면 이 검사가 바로 빨개진다.
+// **사유마다** 일부러 체크박스를 달아 두었으므로, 좁힘이 풀리면 이 검사가 바로
+// 빨개진다.
 {
   const dom = run();
-  assert.ok(dom.blockedCb, "검사용 체크박스가 안 세워졌다 — 검사가 헛돈다");
+  assert.strictEqual(dom.blockedCbs.length, 2,
+    "접힌 칸의 검사용 체크박스가 사유마다 안 세워졌다 — 검사가 헛돈다");
+  const stillOff = function (why) {
+    dom.blockedCbs.forEach(function (cb) {
+      assert.strictEqual(cb.checked, false,
+        why + " (" + cb.getAttribute("data-name") + ")");
+    });
+  };
 
   clickSelectAll(dom);
   assert.deepStrictEqual(checkedNames(dom),
     ["가담당", "나담당", "다담당", "라담당", "마담당"],
     "[전체선택]이 목록 안 사람을 다 켜지 않았다");
-  assert.strictEqual(dom.blockedCb.checked, false,
-    "연결이 안 끝나 목록에 없는 사람이 [전체선택]에 딸려 왔다 — " +
-    "보낼 방도 없는 사람에게 문구가 나간다");
+  stillOff("목록에 없는 사람이 [전체선택]에 딸려 왔다 — 보낼 수 없는 사람에게 문구가 나간다");
 
-  // [반응 없는 담당자만] 도 마찬가지다. 그 사람은 `data-noreact="1"` 이라
+  // [반응 없는 담당자만] 도 마찬가지다. 그 사람들은 `data-noreact="1"` 이라
   // 조건만 보면 딱 걸리는데, 애초에 고를 수 있는 사람이 아니다.
   dom.document.getElementById("select-noreact").fire("click");
-  assert.strictEqual(dom.blockedCb.checked, false,
-    "'반응 없음' 이라는 이유로 연결 전 사람이 켜졌다");
+  stillOff("'반응 없음' 이라는 이유로 목록 밖 사람이 켜졌다");
 
   // **[전체해제]도 같은 상자만 훑는다.** 켜는 쪽만 좁혀 두고 끄는 쪽을 넓히면,
   // 접힌 칸의 체크는 켜지지도 꺼지지도 않는 채로 남는다 — 그 상태로 손댈 수
   // 없는 체크가 발송으로 새어 나가는 길이 열린다.
-  dom.blockedCb.checked = true;              // 어떻게든 켜졌다고 치고
+  dom.blockedCbs.forEach(function (cb) { cb.checked = true; });   // 어떻게든 켜졌다 치고
   clickClearAll(dom);
-  assert.strictEqual(dom.blockedCb.checked, true,
-    "[전체해제]가 목록 밖(접힌 칸)까지 건드렸다 — 켜는 쪽과 끄는 쪽의 범위가 다르다");
+  dom.blockedCbs.forEach(function (cb) {
+    assert.strictEqual(cb.checked, true,
+      "[전체해제]가 목록 밖(접힌 칸)까지 건드렸다 — 켜는 쪽과 끄는 쪽의 범위가 다르다");
+  });
 }
 
 // ── 8) 소싱 탭으로 가면 그 설명은 사라진다 ──────────────────────────────────

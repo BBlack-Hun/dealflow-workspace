@@ -83,7 +83,14 @@ def _targets_check(db: Session, user: User) -> List[dict]:
     # (`sheet_owner.deal_list_contacts` 한 곳에서 나온다).
     contacts = sheet_owner.deal_list_contacts(db, user)
     states = [_room_state(c) for c in contacts]
-    sendable = sum(1 for s in states if s in _SENDABLE_ROOM)
+    # **여기가 "발송 대상" 을 말하는 자리라, 발송 화면과 같은 문을 지나야 한다.**
+    # 방만 보고 세던 동안에는 딜 제안 관리가 빼는 사람(연결이 안 끝났거나 딜
+    # 소개를 멈춰 둔 사람)이 회차 직전 점검에서는 대상으로 잡혔다 — 두 화면이
+    # 다른 수를 말하면 어느 쪽을 믿을지 알 수가 없다. 아래 방 갈래는 그대로
+    # 명단 전체를 본다: 방을 고치는 일은 연결이 끝나기 전에도 해야 한다.
+    sendable = sum(1 for c in contacts
+                   if sheet_owner.can_send_to(c)
+                   and _room_state(c) in _SENDABLE_ROOM)
     failed = sum(1 for s in states if s == "failed")
     missing = sum(1 for s in states if s == "missing")
     unverified = sum(1 for s in states if s == "unverified")

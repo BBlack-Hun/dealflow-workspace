@@ -362,6 +362,14 @@ def list_page(
             {"key": key, "label": label, "count": stages.get(key, 0)}
             for key, label in sheet_import.CONNECT_LABELS.items()
         ],
+        # 같은 이유로 `상태` 도 말을 실어 준다. 이 값은 **발송 대상 판정이 읽는
+        # 값**이라(`sheet_owner.can_send_to`), 화면이 이름을 따로 적어 두면
+        # 판정과 화면이 서로 다른 것을 가리키게 된다 — 딜 제안 관리의 안내가
+        # 없는 상태를 찾아 헤매게 만드는 그 부류다.
+        "contact_statuses": [
+            {"key": key, "label": label}
+            for key, label in sheet_owner.STATUS_LABELS.items()
+        ],
     })
     return templates.TemplateResponse("contacts.html", ctx)
 

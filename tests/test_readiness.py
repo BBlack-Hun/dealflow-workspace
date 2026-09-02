@@ -178,3 +178,42 @@ def test_readiness_moved_into_the_weekly_page(logged, ready_state):
     page = logged.get("/todo")
     assert page.status_code == 200
     assert "회차 준비 점검" in page.text
+
+
+def test_멈춰_둔_사람은_회차_준비_점검에서도_발송_대상이_아니다(db, users, ready_state,
+                                                monkeypatch):
+    """**발송 대상 수를 말하는 자리가 여럿이다.**
+
+    딜 제안 관리에서 빠진 사람이 회차 직전 점검에서는 대상으로 잡히면, 보내기
+    직전에 두 화면이 다른 수를 말한다 — 쓰는 사람은 어느 쪽을 믿을지 알 수
+    없다. 판정은 `sheet_owner.can_send_to` 한 곳을 지난다.
+    """
+    from app import config
+    from app.models import VcContact
+    from app.services import readiness, sheet_owner
+
+    monkeypatch.setattr(config, "TEST_ROOM", "")
+
+    def 발송_대상():
+        checks = readiness.report(db, ready_state, rehearsal=False)["checks"]
+        return next(c for c in checks if c["title"] == "발송 대상")
+
+    # 방까지 다 있는 사람 하나를 더 둔다 — 멈춘 뒤에 수가 실제로 줄어야 한다.
+    db.add(VcContact(user_id=users["u1"].id, name="멈출이", firm="다라인베스트",
+                     source_sheet="내 명단", channel_kakao=1,
+                     kakao_room_name="멈출이 방", room_verified="verified",
+                     connect_stage="connected"))
+    db.commit()
+    assert 발송_대상()["detail"].startswith("2명"), 발송_대상()
+
+    row = db.query(VcContact).filter_by(name="멈출이").one()
+    row.status = sheet_owner.STATUS_PAUSED
+    db.commit()
+
+    said = 발송_대상()["detail"]
+    assert said.startswith("1명"), f"멈춰 뒀는데 점검이 여전히 대상으로 센다: {said}"
+    # 명단에서 사라진 것은 아니다 — 감추기가 아니라 멈추기다.
+    assert "명단 2명 중" in said, said
+    assert 발송_대상()["detail"].startswith(
+        f"{len(sheet_owner.recipients(db, ready_state))}명"), (
+        "회차 준비 점검이 딜 제안 관리와 다른 수를 말한다")

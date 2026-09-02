@@ -40,7 +40,10 @@ ROOM_BADGES = {
     "not_found": ("warn", "⚠ 방 없음"),
     "ambiguous": ("warn", "⚠ 복수 매칭"),
 }
-STATUS_LABELS = {"active": "활발", "no_response": "반응없음", "paused": "검토중단"}
+# 상태 값·이름은 **발송 대상 판정과 같은 곳**에 있다(`sheet_owner`). 판정이
+# 이 값 하나를 보고 발송에서 빼므로, 이름만 여기 따로 두면 말이 바뀌는 날
+# 화면과 발송이 서로 다른 것을 가리킨다.
+STATUS_LABELS = sheet_owner.STATUS_LABELS
 
 
 # ── 조회 모델 (SSR 표 + 상세 패널 공용) ─────────────────────────────────────

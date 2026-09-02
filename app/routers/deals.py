@@ -610,6 +610,24 @@ def create_send_list(
     if missing:
         raise HTTPException(status_code=404,
                             detail=f"담당자 {sorted(missing)[0]} 없음")
+    # 화면에서 뺀 사람은 **보내지도 않는다.** 오래된 탭에 남아 있던 체크나 손으로
+    # 만든 요청으로도 id 는 들어올 수 있고, 나간 뒤에는 되돌릴 수가 없다.
+    #
+    # 연결 단계까지 여기서 막지는 않는다 — 그쪽은 **보낼 방이 없다**는 뜻이고,
+    # 방이 없는 것은 바로 아래에서 이미 막는다. 멈춰 둔 것은 다르다: 방이
+    # 멀쩡히 있어도 **사람이 보내지 말라고 정해 둔 것**이라, 여기서 막지 않으면
+    # 화면에서 뺀 사람에게 그대로 나간다.
+    #
+    # 조용히 빼지 않고 **말하고 멈춘다.** 골라 둔 사람이 소리 없이 사라지면
+    # 몇 명에게 나갔는지 아무도 모른다(빈 문구를 막는 것과 같은 이유).
+    if not sourcing:
+        held = [c for c in contacts if sheet_owner.is_paused(c)]
+        if held:
+            raise HTTPException(
+                status_code=400,
+                detail=(f"'{held[0].name}' "
+                        f"{sheet_owner.STATUS_LABELS[sheet_owner.STATUS_PAUSED]}"
+                        " — 발송 대상에서 제외하세요"))
     for contact in contacts:
         if by_email:
             # 주소가 없으면 보낼 방법이 없다. 목록을 만들기 **전에** 막는다 —
