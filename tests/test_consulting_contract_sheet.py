@@ -201,7 +201,9 @@ def test_계약_탭의_머리글은_시트가_부르는_이름이다(allowed, db
     #
     # `계약서 수신여부` 는 `계약여부` **바로 오른쪽**이다. 계약을 맺은 것과
     # 계약서를 받은 것은 다른 사실이라 나란히 놓고 봐야 뜻이 갈린다.
-    assert heads == ["NO", "월", "계약월", "기업명", "계약여부",
+    # `담당` 은 여러 사람의 표를 같이 보는 사람에게만 선다(이 검사의 `allowed`
+    # 가 그렇다). 탭과 무관한 칸이라 계약 탭에도 같은 자리에 있다.
+    assert heads == ["NO", "담당", "월", "계약월", "기업명", "계약여부",
                      "계약서 수신여부", "성공보수율", "계약금", ""], heads
     # 머리글과 데이터 칸이 **같은 순서로** 갈라져야 한다. 어긋나면 그 뒤가
     # 통째로 한 칸씩 밀린다.
@@ -221,7 +223,7 @@ def test_다른_탭의_표는_한_칸도_안_바뀐다(allowed, db, users):
     _row(db, users["u1"].id, company_name="샘플자", region="서울",
          ceo_name="김샘플", phone="010-0000-0000", email="a@example.com")
     body = _open(allowed, "스타트업")
-    assert _heads(body) == ["NO", "지역", "미팅일", "기업명", "기업 관리",
+    assert _heads(body) == ["NO", "담당", "지역", "미팅일", "기업명", "기업 관리",
                             "딜 소개문구", "대표자", "연락처", "이메일",
                             ""], _heads(body)
     assert _fields(body) == ["region", "meeting_at", "company_name",
@@ -382,9 +384,10 @@ def test_다른_탭은_이_칸을_아예_안_세운다(allowed, db, users):
     assert "계약서 수신여부" not in body
     assert "data-f-received" not in body
     assert "contract_received" not in body
+    # 다른 탭의 표는 한 칸도 안 바뀐다.
     # 이 탭이 세우는 칸은 이것뿐이다. `딜 소개문구` 는 스타트업 탭에 대고 따로
     # 만든 칸이라 여기 들어 있다(`tests/test_consulting_deal_pitch.py`).
-    assert _heads(body) == ["NO", "지역", "미팅일", "기업명", "기업 관리",
+    assert _heads(body) == ["NO", "담당", "지역", "미팅일", "기업명", "기업 관리",
                             "딜 소개문구", "대표자", "연락처", "이메일",
                             ""], _heads(body)
     assert _fields(body) == ["region", "meeting_at", "company_name",

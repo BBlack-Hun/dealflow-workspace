@@ -149,6 +149,12 @@
   table.addEventListener("click", function (e) {
     var cell = e.target.closest("td.cell");
     if (!cell || cell === editing) return;
+    // 남의 담당 줄은 **볼 수만** 있다. 서버가 이미 404 로 막지만
+    // (`routers/consulting.py` 의 `owned`), 여기서 안 막으면 칸이 입력칸으로
+    // 바뀌고 글자까지 쳐진 뒤에 저장만 실패한다 — 쓴 것이 그대로 사라진다.
+    // 어느 줄이 그런지는 서버가 `data-readonly` 로 실어 준다. 판정을 브라우저가
+    // 다시 하면(`역할 === "consultant"` 따위) 규칙이 두 벌이 된다.
+    if (cell.closest("tr").hasAttribute("data-readonly")) return;
     startEdit(cell);
   });
 

@@ -826,6 +826,15 @@ a.secondary-btn { display: inline-flex; align-items: center; text-decoration: no
 
 /* 칸을 눌러 바로 고친다 — 원본이 시트라 그 조작에 익숙하다 */
 td.cell { cursor: text; white-space: pre-wrap; word-break: break-word; font-size: 12px; }
+/* 남의 담당 줄 — 볼 수는 있고 고칠 수는 없다. 커서와 밑줄 표시가 그대로면
+   눌러 보고 나서야 안 되는 것을 알게 된다. */
+tr[data-readonly] td.cell { cursor: default; }
+tr[data-readonly] td.cell:hover { background: transparent; box-shadow: none; }
+/* 담당 칸. 값이 아니라 그 줄이 누구 것인지를 말하는 칸이라 옅게 둔다. */
+.sheet-table td.owner-cell { font-size: 11.5px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; }
+/* 고르는 자리에서 이름 옆의 역할(`팀원`). 이름과 같은 크기면 이름의 일부로 읽힌다. */
+.chip-note { font-size: 10.5px; color: var(--muted); margin-left: 3px; }
 td.cell:hover { background: #f7f9fc; box-shadow: inset 0 0 0 1px var(--line); }
 td.cell.multi { max-height: 96px; overflow: hidden; }
 td.cell.strong { font-weight: 600; }

@@ -167,7 +167,9 @@ def test_검색에는_넣는다(allowed, db, users):
     _row(db, users["u1"].id, sheet=STARTUP, position=1, company_name="샘플라",
          deal_pitch="스마트팜 관제 SaaS")
     body = _open(allowed, STARTUP)
-    row = re.search(r'<tr data-id="\d+" data-search="([^"]*)"', body)
+    # `<tr>` 의 속성 차례에 기대지 않는다 — 사이에 `data-readonly` 같은 것이
+    # 끼면 차례로 찾는 정규식은 **검색이 멀쩡한데도** 빨개진다.
+    row = re.search(r'<tr [^>]*data-search="([^"]*)"', body)
     assert row, "줄에서 data-search 를 못 찾았습니다"
     assert "스마트팜 관제 saas" in row.group(1), row.group(1)
 
@@ -215,9 +217,12 @@ def test_다른_두_탭에는_칸도_값도_안_선다(allowed, db, users):
         body = _open(allowed, sheet)
         assert "딜 소개문구" not in body, sheet
         assert "deal_pitch" not in body, sheet
-    # 경영본부 탭의 표는 이 PR 전과 글자 그대로 같다.
+    # 경영본부 탭에는 `딜 소개문구` 가 없다. `담당` 은 이 화면이 사람별로
+    # 갈리면서 모든 탭에 서는 칸이라(`feat/consulting-owner-filter`) 여기에도
+    # 있다 — 이 검사가 지키는 것은 **`딜 소개문구` 가 스타트업 탭에만 선다**는
+    # 것이지 머리글 전체가 영영 안 바뀐다는 것이 아니다.
     assert _heads(_open(allowed, HANDOVER)) == [
-        "NO", "지역", "미팅일", "기업명", "기업 관리",
+        "NO", "담당", "지역", "미팅일", "기업명", "기업 관리",
         "대표자", "연락처", "이메일", ""]
 
 

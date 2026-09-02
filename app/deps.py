@@ -243,6 +243,28 @@ def may_view_consulting(user: User) -> bool:
     return consulting_by_role(user) or bool(user.can_view_consulting)
 
 
+def may_view_all_consulting(user: User) -> bool:
+    """투자컨설턴트 현황에서 **팀 전체**를 볼 수 있는가.
+
+    이 화면은 원래 컨설턴트 **한 사람의 개인 표**다(줄마다 담당이 붙어 있다).
+    그 개인 표들을 모아 팀이 보는 자리이기도 해서, 보는 사람이 둘로 갈린다.
+
+    - 컨설턴트  자기 줄만. 남의 담당 기업이 보이면 안 되고, 각자 올린 시트가
+                서로를 덮는다(월별 리마인드 열이 사람마다 다르다).
+    - 그 외     관리자와, 관리자가 켜 준 팀원(`can_view_consulting`). 두 사람의
+                표를 나란히 놓고 봐야 하는 자리라 **전체**를 본다.
+
+    **판정을 여기 두는 이유.** 이 저장소는 같은 판단이 두 곳에 적혀 갈리는
+    사고를 반복해 겪었다(메뉴 목록과 라우터 목록, 팀 현황의 `투자현황` 칸,
+    투자사 수). 그래서 위 `may_view_consulting` 을 **다시 적지 않고 그대로
+    태운다** — 볼 수 있는 사람이 늘거나 줄면 여기도 같이 움직인다.
+
+    **보는 범위이지 고치는 범위가 아니다.** 팀원은 전체를 보되 남의 줄은
+    고치지 못한다(`routers/consulting.py` 의 `may_edit_row`).
+    """
+    return may_view_consulting(user) and user.role != "consultant"
+
+
 def consulting_by_role(user: User) -> bool:
     """`can_view_consulting` 칸과 상관없이 **역할만으로** 열려 있는가.
 

@@ -460,18 +460,64 @@ def _own(db, user_id, name="샘플기업", sheet=None):
     return row
 
 
-def test_i_only_see_my_own_table(client, db, users):
-    """컨설턴트가 여럿이면 남의 담당 기업까지 보인다."""
+def test_a_consultant_only_sees_their_own_table(client, db, users):
+    """이 화면은 컨설턴트에게 **개인 표**다 — 남의 담당 기업이 보이면 안 된다.
+
+    각자 올린 시트가 서로를 덮는 자리이기도 하다(월별 리마인드 열이 사람마다
+    다르다). 대표자 연락처·이메일이 들어 있는 표라 더 그렇다.
+    """
+    from app.models import User
+    from app.services import auth as auth_svc
+
+    mine = User(name="컨설턴트샘플", phone="01000000091", role="consultant",
+                password_hash=auth_svc.hash_password(DEMO_PASSWORD))
+    db.add(mine)
+    db.commit()
+    _own(db, mine.id, "내기업")
+    _own(db, users["u2"].id, "남의기업")
+
+    client.post("/login", data={"phone": "01000000091", "password": DEMO_PASSWORD})
+    body = client.get("/consulting").text
+    assert "내기업" in body
+    assert "남의기업" not in body
+    # 고를 것이 하나뿐인 자리는 세우지 않는다 — 눌러도 아무 일이 없는 단추가 된다.
+    assert "담당" not in body
+
+
+def test_a_team_member_sees_the_whole_team(client, db, users):
+    """컨설턴트의 개인 표들을 **모아 보는** 자리이기도 하다.
+
+    관리자가 켜 준 팀원(`can_view_consulting`)이 그 자리를 본다 — 자기 것만
+    보이면, 담당이 컨설턴트에게 넘어간 뒤에는 빈 화면만 남는다.
+    """
     users["u1"].can_view_consulting = 1
-    users["u2"].can_view_consulting = 1
     db.commit()
     _own(db, users["u1"].id, "내기업")
     _own(db, users["u2"].id, "남의기업")
 
     client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
     body = client.get("/consulting").text
-    assert "내기업" in body
-    assert "남의기업" not in body
+    assert "내기업" in body and "남의기업" in body
+    assert "담당" in body          # 사람별로 갈라 보는 줄
+
+
+def test_a_team_member_cannot_edit_someone_elses_row(client, db, users):
+    """보는 것과 고치는 것은 다르다 — 팀 전체를 보되 손은 자기 줄에만 닿는다."""
+    from app.models import ConsultingCompany
+
+    users["u1"].can_view_consulting = 1
+    db.commit()
+    theirs = _own(db, users["u2"].id, "남의기업")
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    assert client.patch(f"/api/consulting/{theirs.id}",
+                        json={"region": "몰래"}).status_code == 404
+    db.expire_all()
+    assert db.get(ConsultingCompany, theirs.id).region is None
+    # 화면도 같은 말을 해야 한다 — 고칠 수 없는 줄에는 표시가 붙는다.
+    body = client.get("/consulting").text
+    row = [c for c in body.split("<tr ") if f'data-id="{theirs.id}"' in c]
+    assert row and "data-readonly" in row[0], "남의 줄에 읽기 전용 표시가 없다"
 
 
 def test_admin_sees_everyone(client, db, users):
@@ -500,12 +546,21 @@ def test_admin_can_narrow_to_one_person(client, db, users):
 
 
 def test_a_row_cannot_be_opened_by_id_from_another_table(client, db, users):
-    """화면만 막고 API 를 열어 두면 막은 것이 아니다."""
-    users["u1"].can_view_consulting = 1
+    """화면만 막고 API 를 열어 두면 막은 것이 아니다.
+
+    컨설턴트로 확인한다 — 남의 줄이 **화면에 안 뜨는** 사람이라야 이 구멍이
+    뜻이 있다. 팀 전체를 보는 사람에게는 화면에 이미 떠 있는 줄이다.
+    """
+    from app.models import User
+    from app.services import auth as auth_svc
+
+    who = User(name="컨설턴트샘플둘", phone="01000000092", role="consultant",
+               password_hash=auth_svc.hash_password(DEMO_PASSWORD))
+    db.add(who)
     db.commit()
     theirs = _own(db, users["u2"].id, "남의기업")
 
-    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    client.post("/login", data={"phone": "01000000092", "password": DEMO_PASSWORD})
     assert client.get(f"/api/consulting/{theirs.id}").status_code == 404
 
 
@@ -945,6 +1000,26 @@ def test_칩이_잡는_줄을_그대로_돌려_본다():
     import subprocess
 
     js = _p.Path(__file__).resolve().parent / "js" / "consulting_chips_test.js"
+    r = subprocess.run([shutil.which("node"), str(js)],
+                       capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
+@pytest.mark.skipif(__import__("shutil").which("node") is None,
+                    reason="node 미설치 — 브라우저 로직 테스트 생략")
+def test_남의_줄은_눌러도_편집이_안_열리는지_그대로_돌려_본다():
+    """서버가 404 로 막아도, 브라우저가 안 막으면 **쓴 글자가 사라진다.**
+
+    칸이 입력칸으로 바뀌고 글자까지 쳐진 뒤에 저장만 실패하기 때문이다.
+    `tests/js/consulting_readonly_test.js` 가 consulting.js 를 실제로 돌려
+    남의 줄(`data-readonly`)에서 편집이 시작되지 않는지 · 내 줄은 지금까지
+    그대로인지를 본다.
+    """
+    import pathlib as _p
+    import shutil
+    import subprocess
+
+    js = _p.Path(__file__).resolve().parent / "js" / "consulting_readonly_test.js"
     r = subprocess.run([shutil.which("node"), str(js)],
                        capture_output=True, text=True, timeout=60)
     assert r.returncode == 0, r.stdout + r.stderr

@@ -1,11 +1,18 @@
-"""투자컨설턴트 현황 — **보는 범위와 고치는 범위가 같은가.**
+"""투자컨설턴트 현황 — **화면이 말하는 것과 서버가 하는 것이 같은가.**
 
-보는 쪽은 `scope()` 로 좁혀 있었다. 관리자만 전체를 보고 그 외에는 자기 것만이다
-(컨설턴트가 여럿이면 남의 담당 기업이 보이고, 각자 올린 시트가 서로를 덮는다).
-그런데 **고치는 쪽에는 검사가 아예 없었다.** `can_view_consulting` 이 켜진 팀원이
-주소의 번호만 바꾸면 화면에 안 뜨는 남의 줄을 고치거나 지울 수 있었다.
+이 화면은 보는 범위와 고치는 범위가 **일부러 다르다.**
 
-이 방향이 더 위험하다. '보이는데 못 고치는' 것은 누른 사람이 그 자리에서 알지만,
+    투자컨설턴트   자기 줄만 본다 · 자기 줄만 고친다   (개인 표다)
+    팀원(허용됨)   팀 전체를 본다 · 자기 줄만 고친다   (모아 보는 자리다)
+    관리자         전체를 본다 · 전체를 고친다
+
+둘이 다르면 **화면이 그 사실을 말해야 한다.** 고칠 수 없는 줄에는 `data-readonly`
+가 붙고, 삭제 단추도 월 열의 [✕] 도 서지 않는다. 그것이 없으면 눌러 놓고 글자를
+친 뒤에야 저장이 안 되는 것을 알게 된다 — 쓴 것이 그대로 사라진다.
+
+예전 사고는 반대 방향이었다. 보는 쪽은 좁혀 있는데 **고치는 쪽에는 검사가 아예
+없어서**, 주소의 번호만 바꾸면 화면에 안 뜨는 남의 줄을 고치거나 지울 수 있었다.
+그쪽이 더 위험하다 — '보이는데 못 고치는' 것은 누른 사람이 그 자리에서 알지만,
 '안 보이는데 고쳐지는' 것은 고친 사람도 당한 사람도 모른다.
 
 그래서 여기서는 **화면과 조작을 따로 확인하지 않고 서로 대조한다** — 따로 보면
@@ -133,8 +140,38 @@ def _sheet_names(client) -> list:
     return list(dict.fromkeys(names))
 
 
+def _editable_rows(client) -> set:
+    """화면이 **고칠 수 있다고 그린** 줄 번호.
+
+    고칠 수 없는 줄에는 `data-readonly` 가 붙는다(그 줄에는 삭제 단추도 없다).
+    이 값과 실제로 고쳐지는 줄이 같은지가 이 파일의 뼈대다.
+    """
+    found = set()
+    for sheet in _sheet_names(client):
+        body = client.get(f"/consulting?months=all&sheet={sheet}").text
+        for tag in re.findall(r"<tr\b([^>]*)>", body):
+            rid = re.search(r'data-id="(\d+)"', tag)
+            if rid and "data-readonly" not in tag:
+                found.add(int(rid.group(1)))
+    return found
+
+
 def _visible_columns(client) -> set:
-    """화면에 떠 있는 월 열 번호(머리글의 [✕] 단추가 그 번호를 싣고 있다)."""
+    """화면에 떠 있는 월 열 번호.
+
+    **줄의 칸에서 센다**(`data-note`). 예전에는 머리글의 [✕] 단추로 셌는데,
+    이제 그 단추는 **지울 수 있는 열에만** 선다 — 그대로 두면 `보인다` 와
+    `고칠 수 있다` 를 같은 것으로 세어, 둘이 어긋나도 검사가 통과한다.
+    """
+    found = set()
+    for sheet in _sheet_names(client):
+        body = client.get(f"/consulting?months=all&sheet={sheet}").text
+        found |= {int(m) for m in re.findall(r'data-note="(\d+)"', body)}
+    return found
+
+
+def _editable_columns(client) -> set:
+    """화면이 **지울 수 있다고 그린** 월 열 번호(머리글의 [✕] 단추)."""
     found = set()
     for sheet in _sheet_names(client):
         body = client.get(f"/consulting?months=all&sheet={sheet}").text
@@ -186,44 +223,73 @@ def _can_rename_column(client, db, column_id: int) -> bool:
 
 # --- 보는 것과 고치는 것이 어긋나지 않는가 -------------------------------------
 
+# 자기 줄만 보는 사람. 나머지는 팀 전체를 본다
+# (`deps.may_view_all_consulting` 이 정하는 그 갈래다).
+ONLY_MINE = "consultant"
+# 전부 고치는 사람. 나머지는 자기 줄만 고친다(`may_edit_row`).
+EDITS_ALL = "admin"
+
+
 @pytest.mark.parametrize("who", ["member", "other", "consultant", "admin"])
-def test_what_you_can_see_is_exactly_what_you_can_edit(stage, sign_in, db, who):
-    """화면에 뜨는 줄은 전부 고쳐지고, 안 뜨는 줄은 하나도 안 고쳐진다.
+def test_the_screen_marks_exactly_the_rows_it_will_let_you_edit(stage, sign_in, db, who):
+    """화면이 고칠 수 있다고 그린 줄만 고쳐지고, 안 뜨는 줄은 하나도 안 고쳐진다.
 
     이 검사 하나가 이 파일의 뼈대다. 줄을 손으로 나열하면 다음에 줄이 하나
     늘 때 그 줄만 검사 밖으로 빠진다 — DB 에 있는 줄을 전부 훑어 화면과 견준다.
+
+    보는 범위와 고치는 범위가 **일부러 다르므로**(팀원은 전체를 보되 자기
+    것만 고친다) 견주는 상대가 `보이는 줄` 이 아니라 `화면이 고칠 수 있다고
+    그린 줄` 이다. 그냥 보이는 줄과 견주면, 남의 줄을 고치게 열어 두어야만
+    통과하는 검사가 된다.
     """
     from app.models import ConsultingCompany
 
     client = sign_in(who)
     seen = _visible_rows(client)
+    marked = _editable_rows(client)
     everything = {r.id for r in db.query(ConsultingCompany).all()}
     assert seen, f"{who}: 화면에 아무 줄도 없다 — 검사가 헛돈다"
-    # 관리자만 전부 본다. 그 외에는 안 보이는 줄이 남아 있어야 검사가 뜻이 있다 —
-    # 다 보이는 상태로 통과하면 '못 고친다'는 쪽을 한 번도 안 밟는다.
-    assert bool(everything - seen) == (who != "admin"), (
+    # 자기 것만 보는 사람에게는 안 보이는 줄이 남아 있어야 검사가 뜻이 있다 —
+    # 다 보이는 상태로 통과하면 '못 본다'는 쪽을 한 번도 안 밟는다.
+    assert bool(everything - seen) == (who == ONLY_MINE), (
         f"{who}: 보이는 줄 {sorted(seen)} / 전체 {sorted(everything)}")
+    # 관리자 말고는 **못 고치는 줄이 반드시 남는다**(주인 없는 줄이 있다).
+    assert bool(everything - marked) == (who != EDITS_ALL), (
+        f"{who}: 고칠 수 있다고 그린 줄 {sorted(marked)} / 전체 {sorted(everything)}")
 
     editable = {rid for rid in everything if _can_edit_row(client, db, rid)}
-    assert editable == seen, (
-        f"{who}: 보이는 줄 {sorted(seen)} 과 고쳐지는 줄 {sorted(editable)} 이 다르다")
+    assert editable == marked, (
+        f"{who}: 화면이 고칠 수 있다고 그린 줄 {sorted(marked)} 과 "
+        f"실제로 고쳐지는 줄 {sorted(editable)} 이 다르다")
+    assert editable <= seen, (
+        f"{who}: 화면에 안 뜨는 줄이 고쳐진다 {sorted(editable - seen)}")
 
 
 @pytest.mark.parametrize("who", ["member", "other", "consultant", "admin"])
 def test_the_same_holds_for_the_month_columns(stage, sign_in, db, who):
-    """열도 사람마다 다르다 — 남의 달 이름을 바꾸면 그 사람 표의 머리글이 바뀐다."""
+    """열도 사람마다 다르다 — 남의 달 이름을 바꾸면 그 사람 표의 머리글이 바뀐다.
+
+    열은 줄을 따라간다. 남의 줄이 보이는데 그 줄의 월 기록만 안 보이면 화면이
+    거짓말을 하는 것이다(기록은 있는데 빈 칸으로 뜬다).
+    """
     from app.models import ConsultingColumn
 
     client = sign_in(who)
     seen = _visible_columns(client)
+    marked = _editable_columns(client)
     everything = {c.id for c in db.query(ConsultingColumn).all()}
     assert seen, f"{who}: 화면에 아무 열도 없다 — 검사가 헛돈다"
-    assert bool(everything - seen) == (who != "admin"), (
+    assert bool(everything - seen) == (who == ONLY_MINE), (
         f"{who}: 보이는 열 {sorted(seen)} / 전체 {sorted(everything)}")
+    assert bool(everything - marked) == (who != EDITS_ALL), (
+        f"{who}: 지울 수 있다고 그린 열 {sorted(marked)} / 전체 {sorted(everything)}")
 
     editable = {cid for cid in everything if _can_rename_column(client, db, cid)}
-    assert editable == seen, (
-        f"{who}: 보이는 열 {sorted(seen)} 과 고쳐지는 열 {sorted(editable)} 이 다르다")
+    assert editable == marked, (
+        f"{who}: 화면이 [✕] 를 세운 열 {sorted(marked)} 과 "
+        f"실제로 고쳐지는 열 {sorted(editable)} 이 다르다")
+    assert editable <= seen, (
+        f"{who}: 화면에 안 뜨는 열이 고쳐진다 {sorted(editable - seen)}")
 
 
 # --- 남의 줄 ------------------------------------------------------------------
@@ -391,30 +457,58 @@ def test_adding_a_month_column_does_not_shuffle_someone_elses(stage, sign_in, db
 # --- 읽는 쪽도 같은 범위인가 -----------------------------------------------------
 
 def test_a_row_cannot_be_read_by_id_from_another_table(stage, sign_in):
-    """고치는 길만 막고 읽는 길을 열어 두면 대표자 연락처가 그대로 샌다."""
-    client = sign_in("member")
+    """고치는 길만 막고 읽는 길을 열어 두면 대표자 연락처가 그대로 샌다.
+
+    **컨설턴트로 확인한다.** 남의 줄이 화면에 안 뜨는 사람이라야 이 구멍에
+    뜻이 있다 — 팀 전체를 보는 사람에게는 이미 화면에 떠 있는 줄이라,
+    여기서 막으면 화면과 어긋난다(읽는 범위는 `scope()` 한 곳이 정한다).
+    """
+    client = sign_in("consultant")
     assert client.get(f"/api/consulting/{stage['rows']['other'].id}").status_code == 404
     assert client.get(f"/api/consulting/{stage['rows']['unassigned'].id}").status_code == 404
-    assert client.get(f"/api/consulting/{stage['rows']['member'].id}").status_code == 200
+    assert client.get(f"/api/consulting/{stage['rows']['consultant'].id}").status_code == 200
 
 
-def test_the_export_carries_only_what_the_screen_shows(stage, sign_in, db):
-    """엑셀은 화면을 그대로 내려받는 것이다 — 여기서 새면 화면을 막은 뜻이 없다."""
+def _export_body(client) -> str:
     import io
 
     openpyxl = pytest.importorskip("openpyxl")
 
-    client = sign_in("member")
     r = client.get("/api/export/consulting.xlsx")
     assert r.status_code == 200
     sheet = openpyxl.load_workbook(io.BytesIO(r.content)).active
-    body = "\n".join(str(c) for row in sheet.iter_rows(values_only=True) for c in row)
+    return "\n".join(str(c) for row in sheet.iter_rows(values_only=True) for c in row)
 
-    assert "샘플기업-member" in body
-    for key in ("other", "consultant", "admin", "미배정"):
+
+def test_the_export_carries_only_what_the_screen_shows(stage, sign_in, db):
+    """엑셀은 화면을 그대로 내려받는 것이다 — 여기서 새면 화면을 막은 뜻이 없다.
+
+    자기 것만 보는 사람(컨설턴트)으로 확인한다.
+    """
+    body = _export_body(sign_in("consultant"))
+
+    assert "샘플기업-consultant" in body
+    for key in ("member", "other", "admin", "미배정"):
         assert f"샘플기업-{key}" not in body, f"{key} 의 줄이 엑셀에 섞였다"
     # 열 머리글도 마찬가지다 — 남의 달 이름이 내 파일에 뜨면 그 자체가 정보다.
     assert "8월 리마인드-other" not in body
+    # 담당 칸은 안 선다 — 같은 이름이 줄마다 반복될 뿐이다.
+    assert "담당" not in body
+
+
+def test_the_export_names_the_owner_when_several_peoples_rows_are_in_it(stage, sign_in):
+    """여러 사람의 줄이 한 파일에 담기면 **누구 것인지**가 파일에 있어야 한다.
+
+    화면에는 `담당` 칸이 서 있는데 받은 파일에만 없으면, 그 파일을 여는 사람은
+    전부 한 사람 것으로 읽는다.
+    """
+    body = _export_body(sign_in("member"))
+
+    for key in ("member", "other", "consultant", "admin", "미배정"):
+        assert f"샘플기업-{key}" in body
+    assert "담당" in body
+    assert stage["people"]["other"].name in body
+    assert "미배정" in body           # 주인 없는 줄도 그렇게 불린다
 
 
 def test_the_admin_export_carries_everything(stage, sign_in):
