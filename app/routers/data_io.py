@@ -371,10 +371,16 @@ REACTION_HEADERS = ["구분", "날짜", "담당자", "직함", "투자사", "기
 @router.get("/api/export/reactions.xlsx")
 def export_reactions(db: Session = Depends(get_db),
                      user: User = Depends(get_current_user)):
-    """대시보드의 반응 다섯 가지를 **날짜와 함께** 한 장으로.
+    """반응 네 갈래를 **날짜와 함께** 한 장으로.
 
     화면은 숫자만 보여준다. 숫자를 보고 나면 "그게 누구였지" 가 이어지는데,
-    그때마다 다섯 화면을 돌아다녀야 했다.
+    그때마다 여러 화면을 돌아다녀야 했다.
+
+    **IR 요청 하나는 한 줄이다.** 예전에는 같은 요청을 `IR 요청 투자사` 와
+    `IR 요청받은 기업` 두 줄로 적어, 여섯 칸이 똑같은 줄이 나란히 섰다 —
+    엑셀에서 세는 순간 요청 수가 두 배가 된다. 이 파일은 업무 보고 화면의
+    `이 달의 반응` 칸에서 내려받는데(`templates/report.html`), 그 화면도
+    갈래가 넷이다. 받은 파일과 화면이 다르면 안 된다.
     """
     from ..models import IrRequest, Meeting, VcContact
     from ..services.pipeline import MEETING_KINDS, OUTCOMES
@@ -392,8 +398,6 @@ def export_reactions(db: Session = Depends(get_db),
     for r in db.execute(select(IrRequest).where(
             IrRequest.user_id == user.id).order_by(IrRequest.requested_at)).scalars():
         rows.append(["IR 요청 투자사", r.requested_at or "", *who(r.contact_id),
-                     r.company_name or "", REQUEST_STATUS.get(r.status, r.status)])
-        rows.append(["IR 요청받은 기업", r.requested_at or "", *who(r.contact_id),
                      r.company_name or "", REQUEST_STATUS.get(r.status, r.status)])
 
     for m in db.execute(select(Meeting).where(
@@ -731,7 +735,11 @@ def _meetings_sheet(sheet, data, team_wide):
 
 
 def _buckets_sheet(sheet, data, team_wide):
-    """이 달의 반응 다섯 갈래 — 이름과 날짜를 나란히 둔다."""
+    """이 달의 반응 네 갈래 — 이름과 날짜를 나란히 둔다.
+
+    갈래는 화면(`report.monthly` 의 `buckets`)에서 그대로 받는다. 여기서
+    따로 만들지 않으므로 화면에서 갈래가 늘거나 줄면 파일도 같이 움직인다.
+    """
     sheet.title(f"{data['year']}년 {data['month']}월 · 이 달의 반응",
                 "숫자만 보면 '그게 누구였지' 가 이어집니다 — 이름과 날짜를 함께 둡니다.")
     headers = (["날짜", "담당자", "직함", "투자사", "기업", "상태"]
