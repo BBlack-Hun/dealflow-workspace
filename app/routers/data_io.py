@@ -363,58 +363,22 @@ def export_companies(db: Session = Depends(get_db),
     return _xlsx(f"IR 기업현황_{today}.xlsx", "IR 기업현황", COMPANY_HEADERS, rows)
 
 
-from ..services.pipeline import REQUEST_STATUS  # noqa: E402
-
-REACTION_HEADERS = ["구분", "날짜", "담당자", "직함", "투자사", "기업", "상태"]
-
-
-@router.get("/api/export/reactions.xlsx")
-def export_reactions(db: Session = Depends(get_db),
-                     user: User = Depends(get_current_user)):
-    """반응 네 갈래를 **날짜와 함께** 한 장으로.
-
-    화면은 숫자만 보여준다. 숫자를 보고 나면 "그게 누구였지" 가 이어지는데,
-    그때마다 여러 화면을 돌아다녀야 했다.
-
-    **IR 요청 하나는 한 줄이다.** 예전에는 같은 요청을 `IR 요청 투자사` 와
-    `IR 요청받은 기업` 두 줄로 적어, 여섯 칸이 똑같은 줄이 나란히 섰다 —
-    엑셀에서 세는 순간 요청 수가 두 배가 된다. 이 파일은 업무 보고 화면의
-    `이 달의 반응` 칸에서 내려받는데(`templates/report.html`), 그 화면도
-    갈래가 넷이다. 받은 파일과 화면이 다르면 안 된다.
-    """
-    from ..models import IrRequest, Meeting, VcContact
-    from ..services.pipeline import MEETING_KINDS, OUTCOMES
-
-    contacts = {
-        c.id: c for c in db.execute(
-            select(VcContact).where(VcContact.user_id == user.id)).scalars().all()
-    }
-
-    def who(contact_id):
-        c = contacts.get(contact_id)
-        return [c.name, c.title or "", c.firm or ""] if c else ["-", "", ""]
-
-    rows = []
-    for r in db.execute(select(IrRequest).where(
-            IrRequest.user_id == user.id).order_by(IrRequest.requested_at)).scalars():
-        rows.append(["IR 요청 투자사", r.requested_at or "", *who(r.contact_id),
-                     r.company_name or "", REQUEST_STATUS.get(r.status, r.status)])
-
-    for m in db.execute(select(Meeting).where(
-            Meeting.user_id == user.id).order_by(Meeting.scheduled_at)).scalars():
-        label = ("IR 미팅완료 투자사" if m.status == "done"
-                 else "IR 미팅 요청 투자사")
-        rows.append([label, m.scheduled_at or "", *who(m.contact_id),
-                     m.company_name or "", MEETING_KINDS.get(m.kind, m.kind)])
-        # 끝난 미팅 중 아직 결과를 안 물어본 곳 — 전화할 대상이다.
-        if m.status == "done" and not m.followup_done:
-            rows.append(["IR 미팅완료 리마인드 TEL 투자사",
-                         m.followup_due or m.scheduled_at or "", *who(m.contact_id),
-                         m.company_name or "",
-                         OUTCOMES.get(m.outcome or "", "결과 미정")])
-
-    today = date.today().isoformat()
-    return _xlsx(f"반응 현황_{today}.xlsx", "반응 현황", REACTION_HEADERS, rows)
+# `/api/export/reactions.xlsx` 는 뺐다 — 업무 보고 `이 달의 반응` 머리에 달려
+# 있던 `전체 기간 엑셀` 단추가 그것이다. 바로 위 `엑셀 리포트` 와 나란히 붙어
+# 있어 무엇을 받는지 매번 따져야 했고, 실제로 쓰는 쪽은 리포트였다.
+#
+# **주는 것은 서로 달랐다.** 이쪽은 전체 기간을 `구분` 칸이 있는 한 장으로 줘서
+# 피벗에 좋았고, `엑셀 리포트`(아래 `/api/export/report.xlsx`)는 한 달치를
+# 갈래별 장으로 나눠 준다. 그래서 **여러 달을 한 파일로 받는 길은 이걸 지우면서
+# 같이 없어졌다** — 알고 지운 것이고, 되살릴 일이 생기면 지운 그대로가 남아 있다:
+#
+#   git log -S "reactions.xlsx" -- app/routers/data_io.py
+#   git show <그 커밋>^:app/routers/data_io.py
+#
+# 한 커밋에 함께 들어 있다: 함수 `export_reactions` · 상수 `REACTION_HEADERS` ·
+# 그 함수만 쓰던 `services.pipeline.REQUEST_STATUS` import · 화면 단추
+# (`templates/report.html`) · 검사(`tests/test_dashboard.py` 의
+# `test_reactions_export_carries_dates`).
 
 
 JOB_HEADERS = ["담당자", "직함", "투자사", "카톡방", "상태", "발송시각", "실패사유", "문구"]

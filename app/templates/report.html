@@ -377,11 +377,6 @@
 <section class="panel">
   <h2 class="panel-title">이 달의 반응
     <span class="hint">{{ year }}년 {{ month }}월</span>
-    {# 이 링크는 **이 달치가 아니라 전체 기간**을 준다(`/api/export/reactions.xlsx`
-       는 달을 받지 않는다). 위 `엑셀 리포트` 와 나란히 `엑셀 내려받기` 라고만
-       적혀 있으면 같은 것을 두 번 준 것으로 읽혀, 8월 보고인 줄 알고 전체
-       기간을 열게 된다 — 무엇을 주는지 이름에 적는다. #}
-    <a class="linkbtn" href="/api/export/reactions.xlsx" download>전체 기간 엑셀</a>
   </h2>
   {% for b in buckets %}
   <div class="bucket">
