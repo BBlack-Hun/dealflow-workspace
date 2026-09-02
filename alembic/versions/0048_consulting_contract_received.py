@@ -32,7 +32,7 @@
 (다른 칸에서 옮겨 온 것이 아니라 이 칸에서 처음 생긴 값이다) 남겨 둘 자리가
 없다 — 0040 의 `source_line` 처럼 원본이 따로 있는 경우와 다르다.
 
-Revision ID: 0047_consulting_contract_received
+Revision ID: 0048_consulting_contract_received
 Revises: 0046_promo_mail_ref
 """
 from __future__ import annotations
@@ -40,8 +40,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0047_consulting_contract_received"
-down_revision = "0046_promo_mail_ref"
+revision = "0048_consulting_contract_received"
+down_revision = "0047_contract_received"
 branch_labels = None
 depends_on = None
 

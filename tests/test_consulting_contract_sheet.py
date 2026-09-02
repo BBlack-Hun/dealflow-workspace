@@ -411,11 +411,11 @@ def test_마이그레이션은_기존_줄에_값을_지어_넣지_않는다():
     import importlib.util
 
     path = (pathlib.Path(__file__).resolve().parent.parent / "alembic" / "versions"
-            / "0047_consulting_contract_received.py")
+            / "0048_consulting_contract_received.py")
     spec = importlib.util.spec_from_file_location("m0047", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    assert mod.down_revision == "0046_promo_mail_ref"
+    assert mod.down_revision == "0047_contract_received"
     src = path.read_text(encoding="utf-8")
     # 채우는 문장이 없어야 한다 — 있으면 그건 앱이 사실을 지어낸 것이다.
     assert "UPDATE" not in src.upper().split('"""')[-1], \
