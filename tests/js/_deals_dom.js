@@ -201,6 +201,10 @@ function buildDom(people) {
     blocked.querySelectorAll(".contact-cb"));
   return { root: root, document: dom_.makeDocument(root), cards: cards,
            sourcingCards: sourcingCards, companyCards: companyCards,
+           // deals.js 가 `#company-list` 에서 거슬러 올라가 잡는 바로 그 칸
+           // (`.closest(".panel")`). 방식에 따라 여기에 표시가 붙는다 —
+           // `dimmed`(문구만 보낼 때) · `no-pick-badge`(자료 전달).
+           companyPanel: companyPanel,
            queuePanel: queuePanel, queueRows: queueRows,
            blocked: blocked, blockedCbs: blockedCbs,
            blockedCb: blockedCbs[blockedCbs.length - 1] };
@@ -337,6 +341,12 @@ function pickBucket(dom, value) {
   require("assert").ok(chip, "갈래 칩을 못 찾았다: " + value);
   chip.fire("click");
 }
+// 보내는 방식 탭을 누른다(딜 소개 · 자료 전달 · 리마인드 …).
+function pickMode(dom, mode) {
+  const tab = dom.document.querySelector('.mode-tab[data-mode="' + mode + '"]');
+  require("assert").ok(tab, "방식 탭을 못 찾았다: " + mode);
+  tab.fire("click");
+}
 function clickSelectAll(dom) { dom.document.getElementById("select-all-contacts").fire("click"); }
 function clickClearAll(dom) { dom.document.getElementById("clear-all-contacts").fire("click"); }
 
@@ -347,5 +357,5 @@ module.exports = { EMPTY_GROUP: EMPTY_GROUP, PEOPLE: PEOPLE, SOURCING: SOURCING,
                    buildDom: buildDom, queueRow: queueRow,
                    run: run, boxes: boxes, checkedNames: checkedNames,
                    shownNames: shownNames, pickGroup: pickGroup,
-                   pickBucket: pickBucket,
+                   pickBucket: pickBucket, pickMode: pickMode,
                    clickSelectAll: clickSelectAll, clickClearAll: clickClearAll };
