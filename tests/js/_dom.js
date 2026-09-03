@@ -120,6 +120,10 @@ function makeEl(tag) {
       return kid;
     },
     addEventListener(type, fn) { (el.handlers[type] = el.handlers[type] || []).push(fn); },
+    // 글자 칸을 골라 두는 자리(복사 단추의 마지막 수단). 여기서 할 일은 없지만
+    // **있어야 한다** — 없으면 화면 코드가 검사에서만 죽어, 클립보드가 없는
+    // 브라우저에서 무슨 일이 나는지 아무도 못 본다.
+    focus() {}, select() {},
     querySelector(sel) { return queryAll(el, sel)[0] || null; },
     querySelectorAll(sel) { return queryAll(el, sel); },
     closest(sel) {
@@ -134,6 +138,10 @@ function makeEl(tag) {
       const ev = Object.assign({ target: el, stopPropagation() {}, preventDefault() {} }, extra || {});
       let node = el;
       while (node) {
+        // 브라우저는 `onclick = …` 도 함께 부른다. 안 부르면 그렇게 맨 화면
+        // 코드가 검사에서만 조용히 죽은 채로 있다 — 미리보기 탭이 그렇다.
+        const direct = node["on" + type];
+        if (typeof direct === "function") direct.call(node, ev);
         (node.handlers[type] || []).forEach(function (fn) { fn(ev); });
         node = node.parent;
       }
@@ -153,9 +161,40 @@ function makeEl(tag) {
       html = String(value);
       el.children.forEach(function (kid) { kid.parent = null; });
       el.children.length = 0;
+      // 브라우저는 여기서 **새 자식을 만든다.** 아이디가 붙은 것만 만든다 —
+      // 그려 놓고 곧바로 다시 찾아 매는 자리가 그것들이기 때문이다
+      // (`getElementById` — 미리보기의 문구 칸 · 복사 단추 · 되돌리기).
+      // 안 만들면 그 코드가 검사에서만 `null` 을 받아 죽고, 그러면 그 자리를
+      // 아무도 못 본다. 나머지(`<br>` · `<b>` …)까지 흉내 내려면 진짜 파서가
+      // 필요하고, 그건 이 파일이 하려는 일이 아니다.
+      idTags(html).forEach(function (kid) { el.appendChild(kid); });
     }
   });
   return el;
+}
+
+// `innerHTML` 글자에서 **아이디가 붙은 여는 태그**만 골라 요소로 세운다.
+// 중첩은 펴서 담는다 — 찾는 쪽이 `getElementById` 라 조상 사슬을 안 본다.
+function idTags(html) {
+  const out = [];
+  const re = /<([a-zA-Z][\w-]*)([^>]*)>/g;
+  let m;
+  while ((m = re.exec(html)) !== null) {
+    const attrs = m[2] || "";
+    const id = /\bid="([^"]*)"/.exec(attrs);
+    if (!id) continue;
+    const node = makeEl(m[1]);
+    node.setAttribute("id", id[1]);
+    const cls = /\bclass="([^"]*)"/.exec(attrs);
+    if (cls) cls[1].split(/\s+/).filter(Boolean).forEach(function (c) { node.classList.add(c); });
+    // 값이 없는 속성(`hidden`)은 따옴표 안을 걷어낸 뒤에 본다 — 안 그러면
+    // `class="… hidden …"` 같은 글자에 걸린다.
+    if (/\bhidden\b/.test(attrs.replace(/"[^"]*"/g, ""))) node.hidden = true;
+    // 여는 태그 바로 뒤의 글자(`<button …>복사</button>` 의 '복사').
+    node.textContent = /^([^<]*)/.exec(html.slice(re.lastIndex))[1];
+    out.push(node);
+  }
+  return out;
 }
 
 let documentHandlers = {};

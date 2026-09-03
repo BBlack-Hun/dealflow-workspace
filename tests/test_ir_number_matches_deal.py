@@ -88,12 +88,26 @@ def _ir_numbers(text: str) -> dict:
     return out
 
 
-def _preview(client, seed, mode, company_ids) -> str:
+def _preview_one(client, seed, mode, company_ids, contact_id=None) -> dict:
+    """미리보기 한 통 전체 — 문구와 [보낼 자료] 목록이 **같은 응답**에 있다."""
     r = client.post("/api/deals/preview", json={
         "mode": mode, "company_ids": company_ids,
-        "contact_ids": [seed["contact_id"]]})
+        "contact_ids": [contact_id or seed["contact_id"]]})
     assert r.status_code == 200, r.text
-    return r.json()["previews"][0]["message"]
+    return r.json()["previews"][0]
+
+
+def _preview(client, seed, mode, company_ids) -> str:
+    return _preview_one(client, seed, mode, company_ids)["message"]
+
+
+def _screen_numbers(preview: dict) -> dict:
+    """화면의 [보낼 자료] 목록이 적는 번호 — `{기업명: 번호}`.
+
+    번호가 없으면 `None` 이다(딜 소개에 없던 기업). 화면은 이 값을 그대로
+    적는다 — `app/static/js/deals.js` 의 `renderIrLinks`.
+    """
+    return {a["name"]: a["no"] for a in preview["attachments"]}
 
 
 def _send(client, db, seed, mode, company_ids) -> None:
@@ -223,6 +237,125 @@ def test_번호를_만드는_곳은_한_곳이다(client, db, seed):
     assert {seed["ids"][name]: no for name, no in said.items()} == kept, text
 
 
+# ── 화면에 적히는 번호 ──────────────────────────────────────────────────────
+#
+# 자료는 **사람이 PC 카톡에 손으로 붙인다.** 번호 차례대로 붙여야 하는데 화면에
+# 번호가 안 적혀 있으면 어느 것이 몇 번인지 알 수가 없다 — 그래서 미리보기가
+# 문구와 **같은 응답**에 번호를 실어 준다(`attachments[].no`).
+#
+# 화면과 문구가 갈리면 이 일을 한 뜻이 없다. 아래 검사들이 그것을 못박는다.
+
+def test_보낼_자료_목록의_번호가_문구의_번호와_같다(client, seed, after_deal):
+    """★ 화면이 `1·2` 인데 문구가 "3번 기업 …" 이면 엉뚱한 자료가 붙는다."""
+    p = _preview_one(client, seed, "ir", _asked(seed))
+
+    assert _screen_numbers(p) == _ir_numbers(p["message"]), p
+
+
+def test_요청받은_차례를_뒤집어도_화면과_문구가_같이_간다(client, seed, after_deal):
+    """짚는 **차례**는 고른 차례, **번호**는 딜 소개에서 붙은 것.
+
+    번호가 오름차순이 아닐 수 있다는 뜻이라, 여기가 갈리기 제일 쉽다.
+    """
+    ids = seed["ids"]
+    p = _preview_one(client, seed, "ir", [ids["다라헬스"], ids["가나애그"]])
+
+    assert [a["name"] for a in p["attachments"]] == ["다라헬스", "가나애그"], p
+    assert [a["no"] for a in p["attachments"]] == [3, 2], p
+    assert _screen_numbers(p) == _ir_numbers(p["message"]), p
+
+
+def test_담당자마다_화면의_번호가_다르다(client, db, seed, after_deal, users):
+    """★ 같은 기업이 A 담당자에겐 2번, B 담당자에겐 1번이다.
+
+    화면이 고른 차례를 세면 두 담당자에게 같은 번호를 적는다 — 그러면 한쪽은
+    반드시 틀린다. 목록은 **지금 열어 둔 미리보기**의 번호를 적어야 한다.
+    """
+    from app.models import VcContact
+
+    other = VcContact(
+        user_id=users["u1"].id, name="나담당", title="심사역", firm="자차벤처스",
+        connect_stage="connected", status="active", channel_kakao=1,
+        source_sheet="가 명단", kakao_room_name="나담당 심사역님",
+        room_verified="verified",
+    )
+    db.add(other)
+    db.commit()
+    # 이 담당자에게는 **다른 차례**로 딜 소개가 나갔다.
+    ids = seed["ids"]
+    r = client.post("/api/deals/send", json={
+        "mode": "deal", "company_ids": [ids["가나애그"], ids["다라헬스"]],
+        "contact_ids": [other.id]})
+    assert r.status_code == 200, r.text
+    from app.models import SendItem
+    db.expire_all()
+    for item in db.query(SendItem).filter_by(job_id=r.json()["job_id"]).all():
+        item.status = "sent"
+    db.commit()
+
+    mine = _preview_one(client, seed, "ir", _asked(seed))
+    theirs = _preview_one(client, seed, "ir", _asked(seed), contact_id=other.id)
+
+    assert _screen_numbers(mine) == {"가나애그": 2, "다라헬스": 3}, mine
+    assert _screen_numbers(theirs) == {"가나애그": 1, "다라헬스": 2}, theirs
+    # 각자 제 문구와 같아야 한다 — 한 통만 맞고 다른 통이 틀리면 소용없다.
+    for p in (mine, theirs):
+        assert _screen_numbers(p) == _ir_numbers(p["message"]), p
+
+
+def test_회차에_있던_기업은_그_회차의_번호를_적는다(client, seed, after_deal):
+    """자료를 청하지 않은 기업까지 섞어 골라도 번호는 그 회차의 것이다."""
+    ids = seed["ids"]
+    p = _preview_one(client, seed, "ir", [ids["가나애그"], ids["마바로보"]])
+
+    # 마바로보는 그 회차에 1번이었다 — 고른 차례(2번째)가 아니다.
+    assert _screen_numbers(p) == {"가나애그": 2, "마바로보": 1}, p
+    assert _screen_numbers(p) == _ir_numbers(p["message"]), p
+
+
+def test_회차에_없던_기업은_번호_없이_나간다(client, db, seed, after_deal):
+    """★ 새로 들어온 기업 — 화면도 문구도 번호를 안 붙인다."""
+    from app.models import IrCompany
+
+    fresh = IrCompany(name="사아푸드", sector_major="분야", series="Seed",
+                      one_liner="사아푸드 한줄소개", summary="사아푸드 [분야] 한줄소개",
+                      summary_status="done", revenue_recent=1)
+    db.add(fresh)
+    db.commit()
+
+    p = _preview_one(client, seed, "ir",
+                     [seed["ids"]["가나애그"], fresh.id])
+
+    assert _screen_numbers(p) == {"가나애그": 2, "사아푸드": None}, p
+    # 문구에도 번호가 없다 — 이름만 적힌다.
+    assert "사아푸드" in p["message"], p
+    assert "번 기업 사아푸드" not in p["message"], p
+
+
+def test_담당자를_안_고르면_번호가_없다(client, seed, after_deal):
+    """기본 문구에는 번호가 없다 — 번호는 담당자를 알아야 나온다.
+
+    화면은 이때 '번호 없음' 이라고 적지 않는다(deals.js 가 `sample` 을 본다) —
+    있는 번호를 없다고 읽히면 안 된다.
+    """
+    r = client.post("/api/deals/preview", json={
+        "mode": "ir", "company_ids": _asked(seed), "contact_ids": []})
+    assert r.status_code == 200, r.text
+    p = r.json()["previews"][0]
+
+    assert p["sample"] is True, p
+    assert all(a["no"] is None for a in p["attachments"]), p
+
+
+def test_자료를_안_올린_기업도_번호는_적힌다(client, db, seed, after_deal):
+    """첨부할 파일이 없는 것과 번호가 없는 것은 **다른 이야기**다."""
+    p = _preview_one(client, seed, "ir", _asked(seed))
+
+    # 이 저장소의 기본 자료(seed)에는 링크가 없다 — 그래도 번호는 나온다.
+    assert all(a["url"] == "" for a in p["attachments"]), p
+    assert _screen_numbers(p) == {"가나애그": 2, "다라헬스": 3}, p
+
+
 # ── 화면 ────────────────────────────────────────────────────────────────────
 #
 # 문구를 맞춰 놓아도 **화면이 다른 번호를 띄우면** 사람은 그것을 믿는다.
@@ -256,3 +389,34 @@ def test_배지를_비우는_규칙이_css_에_있다():
     css = (Path(__file__).resolve().parents[1] / "app" / "static" / "css"
            / "app.css").read_text(encoding="utf-8")
     assert ".panel.no-pick-badge #company-list .pick-card::before" in css
+
+
+def test_번호를_적을_자리가_화면에_있다():
+    """번호를 실어 보내도 **화면이 그것을 그리지 않으면** 아무 일도 안 난다.
+
+    셋이 다 이어져야 한 바퀴가 돈다: 서버가 싣고(`attachments[].no`) → 화면이
+    적고(`renderIrLinks`) → CSS 가 배지로 보여준다.
+    """
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1] / "app"
+    js = (root / "static" / "js" / "deals.js").read_text(encoding="utf-8")
+    css = (root / "static" / "css" / "app.css").read_text(encoding="utf-8")
+    html = (root / "templates" / "deals.html").read_text(encoding="utf-8")
+
+    # 목록은 **미리보기의 자료 목록**에서 그린다 — 화면이 따로 세면 안 된다.
+    assert "p.attachments" in js, "[보낼 자료] 목록이 미리보기의 값을 안 쓴다"
+    assert 'class="ir-no"' in js, "번호를 적는 자리가 없다"
+    assert ".ir-attach .ir-no" in css, "번호 배지를 CSS 가 안 읽는다"
+    assert 'id="ir-no-note"' in html, "번호가 왜 그런지 적을 자리가 없다"
+
+    # ★ 주석이 안 닫히면 **뒤따르는 규칙이 통째로 죽는다.** 이 파일은 설명이
+    # 길어 손으로 고치다 `*/` 를 흘리기 쉽고, 그러면 배지 자리는 있는데 번호가
+    # 맨글자로 뜬다 — 실제로 이 일을 하며 한 번 그랬다. 검사만으로는 안 잡히고
+    # 화면을 열어야 보이던 것을 여기서 잡는다.
+    import re
+
+    assert css.count("/*") == css.count("*/"), "CSS 주석이 안 닫혔다"
+    bare = [ln for ln in re.sub(r"/\*.*?\*/", "", css, flags=re.S).splitlines()
+            if re.search(r"[가-힣]", ln)]
+    assert not bare, f"주석 밖에 설명 글이 남았다 — 뒤 규칙이 죽는다: {bare[:3]}"

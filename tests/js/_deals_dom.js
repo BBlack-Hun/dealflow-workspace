@@ -167,7 +167,7 @@ function buildDom(people) {
                   "company-filter-note", "contact-filter-note", "bucket-mix-note",
                   "select-all-contacts", "clear-all-contacts", "select-noreact",
                   "batch-title", "include-opening", "tpl-opening", "tpl-closing",
-                  "tpl-opening-wrap", "ir-attach", "ir-links",
+                  "tpl-opening-wrap", "ir-attach", "ir-links", "ir-no-note",
                   "mail-fields", "mail-subject", "company-hint", "mode-help"]
     .map(function (id) { return el("div", { id: id }); });
   // 방식을 바꾸면 이 칸의 이름표(`안내문`/`문구`)를 고쳐 쓴다 — 속 `span` 이
@@ -234,6 +234,9 @@ function run(people, opts) {
                             reload: function () { this.reloads += 1; } } };
   const ctx = {
     document: dom.document, console: console, window: win,
+    // 클립보드는 https·localhost 에서만 있다. 기본값은 **없는 쪽**이다 —
+    // 사내에서 http 로 여는 화면이 그렇고, 거기서 복사가 죽으면 안 된다.
+    navigator: opts.navigator || {},
     // 미리보기는 손이 멈춘 뒤에 부른다(`schedulePreview`). 기본값은 지금까지와
     // 같이 **안 부르는 것**이고, 그 부름까지 보려는 검사만 갈아 끼운다.
     setTimeout: opts.setTimeout || function () { return 0; },
@@ -347,6 +350,20 @@ function pickMode(dom, mode) {
   require("assert").ok(tab, "방식 탭을 못 찾았다: " + mode);
   tab.fire("click");
 }
+// 미리보기 탭을 누른다 — **담당자 하나가 탭 하나**다. 자료 전달의 번호는
+// 담당자마다 다르므로, 탭을 바꾸면 [보낼 자료] 목록의 번호도 따라와야 한다.
+function pickPreviewTab(dom, i) {
+  const tabs = dom.document.getElementById("preview-tabs").children;
+  require("assert").ok(tabs[i], "미리보기 탭이 없다: " + i);
+  tabs[i].fire("click");
+}
+
+// 서버가 미리보기로 돌려주는 한 통. 화면이 실제로 읽는 칸만 채운다
+// (`attachments[].no` 는 문구의 번호와 **같은 응답에서** 나온다).
+function previewReply(previews) {
+  return { ok: true, d: { previews: previews } };
+}
+
 function clickSelectAll(dom) { dom.document.getElementById("select-all-contacts").fire("click"); }
 function clickClearAll(dom) { dom.document.getElementById("clear-all-contacts").fire("click"); }
 
@@ -358,4 +375,5 @@ module.exports = { EMPTY_GROUP: EMPTY_GROUP, PEOPLE: PEOPLE, SOURCING: SOURCING,
                    run: run, boxes: boxes, checkedNames: checkedNames,
                    shownNames: shownNames, pickGroup: pickGroup,
                    pickBucket: pickBucket, pickMode: pickMode,
+                   pickPreviewTab: pickPreviewTab, previewReply: previewReply,
                    clickSelectAll: clickSelectAll, clickClearAll: clickClearAll };
