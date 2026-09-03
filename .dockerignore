@@ -5,6 +5,8 @@ __pycache__
 *.pyc
 data/
 agent_logs/
+ir_files/
+ir_materials/
 *.db
 *.db-wal
 *.db-shm

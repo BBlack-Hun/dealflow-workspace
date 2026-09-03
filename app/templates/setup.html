@@ -52,6 +52,27 @@
 </div>
 
 <div class="panel">
+  <h2 class="panel-title">③ IR 자료 폴더 정하기</h2>
+  <p class="hint">
+    자료 파일은 <b>내 PC 안에</b> 있습니다. 발송 프로그램이 어느 폴더를 볼지 알려주세요.<br>
+    <b>이 PC 에 실제로 있는 폴더</b>여야 하고, 보낼 자료를 <b>그 폴더 바로 안에</b> 넣어 둡니다.
+  </p>
+  {% if saved %}<p class="hint ok-note">저장했습니다. 발송 프로그램이 곧 받아 갑니다.</p>{% endif %}
+  <form method="post" action="/setup/ir-root" class="ir-root-form">
+    <input type="text" name="ir_root" value="{{ ir_root }}" class="input wide"
+           placeholder="예) /Users/이름/Share/자료폴더" autocomplete="off" spellcheck="false">
+    <button class="btn primary" type="submit">저장</button>
+  </form>
+  <p class="hint">
+    <b>내 계정에만 저장됩니다.</b> PC 마다 자리가 다르므로 그 PC 를 쓰는 본인이 넣어야 합니다.<br>
+    비워 두면 자료 보내기가 <b>“자료 폴더가 정해지지 않았습니다”</b> 로 실패합니다 —
+    아무 폴더나 뒤지지 않습니다.<br>
+    자료는 <b>파일 이름</b>으로 찾습니다. 이름에 <code>/</code> 나 <code>..</code> 가 들어가면
+    보내지 않습니다(그 폴더 밖 파일이 나가는 것을 막습니다).
+  </p>
+</div>
+
+<div class="panel">
   <h2 class="panel-title">잘 안 될 때</h2>
   <details class="tpl-new">
     <summary>왼쪽 아래가 계속 “연결 안 됨” 이에요</summary>
