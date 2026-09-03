@@ -325,3 +325,55 @@ def test_창의_저장은_브라우저에_있으니_거기서_잰다():
     out = subprocess.run([shutil.which("node"), str(script)],
                          capture_output=True, text=True, timeout=60)
     assert out.returncode == 0, out.stdout + out.stderr
+
+
+# --- ⑤ 번호(NO)로도 창을 연다 -------------------------------------------------
+#
+# 표는 2,030px 라 오른쪽 끝의 [수정] 단추까지 가로로 밀어야 닿는데, 줄을 짚는
+# 손은 이미 왼쪽 번호에 있다. 그래서 번호도 같은 창을 연다.
+#
+# **여는 길은 하나여야 한다.** 번호 칸에 handler 를 따로 달면 그날은 되지만,
+# 다음에 창 여는 규칙이 바뀔 때 한쪽만 고쳐지고 조용히 갈린다. 그래서 번호
+# 칸은 [수정] 단추와 같은 class 를 달아 companies.js 의 그 handler 를 탄다.
+
+def test_두_탭의_번호_칸이_수정_창을_연다():
+    """번호 칸이 **[수정] 단추와 같은 class** 를 달고 있는가.
+
+    두 탭(IR 기업 현황 · 스타트업DB)에 하나씩 있다 — 같은 창을 쓰는데 한쪽
+    탭에서만 열리면 고장으로 읽힌다.
+    """
+    text = TEMPLATE.read_text(encoding="utf-8")
+    rowno = re.findall(r'<td class="(rowno[^"]*)"', text)
+    assert len(rowno) == 2, f"번호 칸이 탭마다 하나씩 둘이 아닙니다: {rowno}"
+    for cls in rowno:
+        assert "js-co-edit" in cls.split(), \
+            f"번호 칸에 js-co-edit 이 없습니다 ★ 눌러도 창이 안 열립니다: {cls}"
+
+
+def test_번호_칸이_눌러도_되는_칸으로_보인다():
+    """커서와 hover 색이 없으면 눌러도 되는 칸인지 알 길이 없다.
+
+    번호는 그냥 글자라 단추처럼 생기지 않았다 — 표시가 CSS 뿐이다.
+    """
+    css = (ROOT / "app" / "static" / "css" / "app.css").read_text(encoding="utf-8")
+    assert re.search(r"\.rowno\.js-co-edit[^{]*\{[^}]*cursor:\s*pointer", css), \
+        "번호 칸에 손가락 커서가 없습니다"
+    assert re.search(r"\.rowno\.js-co-edit:hover[^{]*\{[^}]*color:", css), \
+        "번호 칸에 hover 색이 없습니다"
+
+
+@pytest.mark.skipif(shutil.which("node") is None,
+                    reason="node 미설치 — 브라우저 로직 테스트 생략")
+def test_번호를_누르면_그_줄의_창이_열린다():
+    """누르는 흐름은 브라우저에 있으니 **companies.js 를 그대로 돌려서** 본다.
+
+    파이썬으로는 class 가 붙어 있는지까지만 볼 수 있다. 누른 줄의 기업이
+    맞게 열리는지, [수정] 단추와 같은 창을 여는지, 그리고 눌러서 고치는
+    칸(`한줄 소개`)까지 창을 열어 버리지는 않는지는 브라우저 코드를 돌려야
+    보인다(tests/js/company_no_opens_edit_test.js).
+    로컬에서는 `node tests/js/company_no_opens_edit_test.js` 로도 돈다.
+    """
+    script = ROOT / "tests" / "js" / "company_no_opens_edit_test.js"
+    out = subprocess.run([shutil.which("node"), str(script)],
+                         capture_output=True, text=True, timeout=60)
+    assert out.returncode == 0, out.stdout + out.stderr
