@@ -128,6 +128,18 @@ _TITLE_WORDS = (
 )
 
 
-def _is_known_title(token: str) -> bool:
+def looks_like_title(token: str, extra: tuple = ()) -> bool:
+    """이 낱말이 직함인가. `extra` 로 어휘를 넓혀 쓸 수 있다.
+
+    **여기 기본 어휘는 함부로 넓히지 않는다.** 방 이름은 카톡 창 제목과 글자까지
+    같아야 발송되므로(머리말 참고), 어휘가 넓어지면 예전에 만든 방과 새로 만드는
+    방 이름이 갈려 발송이 조용히 건너뛰어진다.
+
+    인사말처럼 그 제약이 없는 곳은 `extra` 로 넓혀 쓴다(`message_composer`).
+    """
     t = token.rstrip("님")
-    return t in _TITLE_WORDS
+    return t in _TITLE_WORDS or t in extra
+
+
+def _is_known_title(token: str) -> bool:
+    return looks_like_title(token)

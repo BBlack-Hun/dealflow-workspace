@@ -152,8 +152,8 @@ def render_template(text: str, contact: ContactView, company_name: Optional[str]
     """
     mapping = {
         "{담당자명}": contact.name or "",
-        # 직함은 항상 존칭을 붙여서 치환한다(아래 honorific_title 참고).
-        "{직함}": honorific_title(contact.title),
+        # 직함은 항상 존칭을 붙여서 치환한다(아래 greeting_title 참고).
+        "{직함}": greeting_title(contact),
         "{투자사}": contact.firm or "",
         "{기업명}": company_name or "",
         "{ir_drive_url}": ir_drive_url or "",
@@ -168,6 +168,66 @@ def render_template(text: str, contact: ContactView, company_name: Optional[str]
     for key, value in mapping.items():
         out = out.replace(key, value)
     return _fix_honorific(out)
+
+
+#: 인사말에서만 직함으로 더 인정하는 낱말.
+#:
+#: 방 이름의 어휘(`room_name` 의 `_TITLE_WORDS`)를 바탕에 두고 **직급·자격만**
+#: 더한다. 방 이름 쪽 어휘를 넓히면 이미 연결해 둔 카톡방과 글자가 어긋나
+#: 발송이 조용히 건너뛰어진다 — 인사말에는 그 제약이 없다.
+_GREETING_TITLE_WORDS = ("대리", "사원", "주임", "선임", "수석", "책임",
+                         "변호사", "회계사", "변리사", "고문", "감사")
+
+
+def name_carries_title(name: Optional[str]) -> bool:
+    """이름 칸에 직함이 함께 적혀 있는가 — '최가온 대리 심사역'.
+
+    딜 소싱 명단은 사람이 시트에 손으로 적어 온 것이라, 이름 칸에 직함이 섞여
+    있는 줄이 있다. 그걸 모르고 직함을 또 붙이면 **'… 대리 심사역 심사역님'** 이
+    나간다(사용자가 실제로 받은 문구다).
+
+    **낱말이 따로 떨어져 있을 때만** 직함으로 본다. '김이사' 처럼 직함처럼
+    보이는 이름을 잘라 내면 안 되기 때문이다(`room_name.split_name_title` 과
+    같은 조심).
+    """
+    from . import room_name
+
+    tokens = room_name.normalize_space(name or "").split(" ")
+    if len(tokens) < 2:
+        return False
+    last = tokens[-1]
+    if last.endswith("님"):
+        return True
+    # '이사/변호사' 처럼 빗금으로 이어 적기도 한다 — 앞쪽 낱말로 가른다.
+    return room_name.looks_like_title(last.split("/")[0].strip(),
+                                      _GREETING_TITLE_WORDS)
+
+
+def primary_title(title: Optional[str]) -> str:
+    """여러 직함이 이어져 있으면 **앞의 하나**만 부른다.
+
+    명함에는 '팀장 / 수석심사역', '부장 / 본부장 / FRM' 처럼 겸직과 자격을 함께
+    적어 둔다. 그대로 부르면 '한지우 팀장 / 수석심사역님' 이 되어 인사말로
+    읽히지 않는다. 앞에 적힌 것이 그 사람을 부르는 직함이고, 뒤로 갈수록 겸직·
+    자격증이 온다.
+
+    **직함 칸의 값은 고치지 않는다** — 사람이 적어 둔 명함 정보다. 부를 때만
+    하나를 고른다.
+    """
+    t = (title or "").strip()
+    if "/" not in t:
+        return t
+    return t.split("/")[0].strip() or t
+
+
+def greeting_title(contact: "ContactView") -> str:
+    """인사말에 들어갈 직함. `{직함}` 이 이 값으로 바뀐다."""
+    if name_carries_title(contact.name):
+        # 이름이 이미 직함을 달고 있다. **존칭만** 붙인다 — 여기서 직함을 또
+        # 붙이면 '최가온 대리 심사역 심사역님' 이 된다. 빈 직함과 같은 길로
+        # 보내면 `_fix_honorific` 이 앞의 공백을 지워 '… 심사역님' 이 된다.
+        return "님"
+    return honorific_title(primary_title(contact.title))
 
 
 def honorific_title(title: Optional[str]) -> str:
