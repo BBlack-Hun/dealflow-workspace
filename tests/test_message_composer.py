@@ -172,3 +172,85 @@ def test_compose_flags_too_long():
 def test_compose_normal_length_not_flagged():
     result = mc.compose_message("안녕", "끝", _contact(), _companies(), stage=mc.STAGE_DAY1)
     assert result.too_long is False
+
+
+# --- 직함이 어색하게 붙는 것 ------------------------------------------------
+#
+# 두 가지가 섞여 있었다. 원인이 다르니 고치는 자리도 다르다.
+#   1) **이름 칸에 직함이 같이 적힌 줄** — 딜 소싱 명단이 그렇다. 직함을 또
+#      붙여 '… 대리 심사역 심사역님' 이 나갔다.
+#   2) **직함 칸에 여러 직함이 이어진 줄** — 명함에 겸직·자격을 함께 적어 둔다.
+#      '팀장 / 수석심사역님' 은 인사말로 읽히지 않는다.
+#
+# 어느 쪽도 **저장된 값은 고치지 않는다.** 부를 때만 다듬는다.
+# 이름은 전부 가상값이다(공개 저장소).
+
+GREETING = "안녕하세요, {담당자명} {직함}"
+
+
+def _greet(name, title=""):
+    return mc.render_template(GREETING, mc.ContactView(name=name, title=title))
+
+
+def test_name_that_already_carries_a_title_gets_only_one():
+    """사용자가 실제로 받은 문구: '… 대리 심사역 심사역님'.
+
+    딜 소싱은 직함 칸이 비면 갈래에서 '심사역' 을 끌어다 쓴다. 이름 칸에 이미
+    직함이 적혀 있으면 그게 두 번이 된다.
+    """
+    assert _greet("최가온 대리 심사역", "심사역") == "안녕하세요, 최가온 대리 심사역님"
+    assert _greet("박서준 수석심사역 팀장", "심사역") == "안녕하세요, 박서준 수석심사역 팀장님"
+    assert _greet("강민재 대리", "심사역") == "안녕하세요, 강민재 대리님"
+    assert _greet("김도윤 실장", "심사역") == "안녕하세요, 김도윤 실장님"
+    # 빗금으로 이어 적은 것도 이름 칸에 온다.
+    assert _greet("김하늘 이사/변호사", "심사역") == "안녕하세요, 김하늘 이사/변호사님"
+
+
+def test_a_name_that_merely_looks_like_a_title_is_left_alone():
+    """'김이사' 는 이름이다 — 직함으로 읽어 잘라 내면 사람 이름이 사라진다."""
+    assert _greet("김이사", "심사역") == "안녕하세요, 김이사 심사역님"
+    assert mc.name_carries_title("김이사") is False
+    assert mc.name_carries_title("정다인") is False
+    # 낱말이 떨어져 있을 때만 직함으로 본다.
+    assert mc.name_carries_title("정다인 이사") is True
+
+
+def test_several_titles_use_the_first_one():
+    """겸직·자격을 함께 적은 칸은 **앞의 하나**로 부른다."""
+    assert _greet("한지우", "팀장 / 수석심사역") == "안녕하세요, 한지우 팀장님"
+    assert _greet("오세훈", "부장 / 본부장 / FRM") == "안녕하세요, 오세훈 부장님"
+    assert _greet("이나래", "이사/공인회계사") == "안녕하세요, 이나래 이사님"
+    assert mc.primary_title("팀장 / 수석심사역") == "팀장"
+    assert mc.primary_title("책임심사역") == "책임심사역"
+    assert mc.primary_title("") == ""
+
+
+def test_the_stored_title_is_never_rewritten():
+    """다듬는 것은 **문구뿐**이다 — 사람이 적어 둔 명함 값은 그대로 둔다."""
+    who = mc.ContactView(name="한지우", title="팀장 / 수석심사역")
+    mc.render_template(GREETING, who)
+    assert who.title == "팀장 / 수석심사역"
+    assert who.name == "한지우"
+
+
+def test_ordinary_titles_are_unchanged():
+    """멀쩡하던 것은 그대로여야 한다."""
+    assert _greet("정다인", "심사역") == "안녕하세요, 정다인 심사역님"
+    assert _greet("류시원", "책임심사역") == "안녕하세요, 류시원 책임심사역님"
+    assert _greet("김선호", "대표님") == "안녕하세요, 김선호 대표님"
+    # 직함이 아예 없으면 이름에 존칭만.
+    assert _greet("정다인", "") == "안녕하세요, 정다인님"
+
+
+def test_room_names_keep_their_own_vocabulary():
+    """방 이름은 카톡 창 제목과 글자까지 같아야 한다 — 어휘를 넓히지 않았다.
+
+    인사말에서만 인정하는 '대리' 로 방 이름이 갈리면, 이미 연결해 둔 방과
+    어긋나 발송이 조용히 건너뛰어진다.
+    """
+    from app.services import room_name
+
+    assert room_name.split_name_title("강민재 대리") == ("강민재 대리", None)
+    assert room_name.looks_like_title("대리") is False
+    assert room_name.looks_like_title("대리", ("대리",)) is True
+    assert room_name.looks_like_title("이사") is True
