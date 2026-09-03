@@ -132,7 +132,7 @@
   <table class="grid-table" data-inline-url="/api/companies" id="co-table">
     <thead>
       <tr>
-        <th class="num" style="width:36px">NO</th>
+        <th class="num" style="width:36px" title="눌러서 수정">NO</th>
         {# 시트의 맨 앞 칸이다. 이게 없어서 그 뒤가 한 칸씩 밀려 보였다. #}
         <th style="width:96px" title="홍보메일 답장 받은 날">수신일</th>
         <th style="width:160px">기업명</th>
@@ -172,7 +172,12 @@
          칸이라 여기서는 걸 곳이 없다 — 싣기만 하면 아무도 안 보는 죽은 속성이 된다. #}
       <tr data-id="{{ r.id }}" data-search="{{ r.search }}"
           data-f-ir="{{ '● 있음' if r.has_ir else '⚠ 없음' }}">
-        <td class="rowno muted"></td>
+        {# 번호를 눌러도 [수정] 창이 열린다 — 표가 2,030px 라 오른쪽 끝의
+           [수정] 단추까지 가로로 밀어야 닿는데, 줄을 짚는 손은 이미 왼쪽
+           번호에 있다. **여는 길은 그대로 하나다**: 같은 `js-co-edit` 을
+           달아 companies.js 의 그 handler 를 탄다 — 여기에 두 번째 길을
+           내면 한쪽만 고쳐지고 조용히 갈린다. #}
+        <td class="rowno muted js-co-edit" title="눌러서 수정"></td>
         <td class="cell" data-field="received_at" data-type="date">{{ r.received_at }}</td>
         <td class="co-name"><b class="cell" data-field="name">{{ r.name }}</b></td>
         <td class="cell" data-field="contact_name">{{ r.contact_name }}</td>
@@ -230,7 +235,7 @@
        전체 폭은 2,030px 그대로라 app.css 의 min-width 는 손대지 않는다. #}
     <thead>
       <tr>
-        <th class="num" style="width:36px">NO</th>
+        <th class="num" style="width:36px" title="눌러서 수정">NO</th>
         <th style="width:13%">기업명</th>
         <th style="width:10%" data-filters="sector:사업분야 대분류">사업분야 대분류<div class="th-filters"></div></th>
         <th style="width:9%" data-filters="minor:소분류">소분류<div class="th-filters"></div></th>
@@ -304,7 +309,12 @@
              가져서 행에 `일반` 을 적는다). #}
           data-f-received="{{ r.contract_received }}"
           data-f-ir="{{ '● 있음' if r.has_ir else '⚠ 없음' }}">
-        <td class="rowno muted"></td>
+        {# 번호를 눌러도 [수정] 창이 열린다 — 표가 2,030px 라 오른쪽 끝의
+           [수정] 단추까지 가로로 밀어야 닿는데, 줄을 짚는 손은 이미 왼쪽
+           번호에 있다. **여는 길은 그대로 하나다**: 같은 `js-co-edit` 을
+           달아 companies.js 의 그 handler 를 탄다 — 여기에 두 번째 길을
+           내면 한쪽만 고쳐지고 조용히 갈린다. #}
+        <td class="rowno muted js-co-edit" title="눌러서 수정"></td>
         <td class="co-name">
           <b class="cell" data-field="name">{{ r.name }}</b>
         </td>
