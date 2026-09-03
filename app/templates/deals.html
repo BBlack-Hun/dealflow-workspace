@@ -1,6 +1,5 @@
 {% extends "base.html" %}
 {% block content %}
-{% if ir_attach_guide %}
 {#
   IR 관리에서 [자료 보내기] 로 넘어왔다. 자료 파일은 **앱이 보내지 않는다** —
   구글 드라이브 링크를 문구에 실어 보내던 방식을 폐기해서(0053), 사람이 PC
@@ -10,7 +9,19 @@
   **스크립트로 닫지 않는다.** `admin_only.html` 의 안내창과 같은 이유다 —
   닫는 길이 스크립트에 걸려 있으면 예외 하나에 발송 화면이 통째로 가려진다.
   닫기는 같은 주소에서 `attach` 만 뺀 평범한 링크다(고른 담당자·기업은 그대로).
+
+  **`attach=1` 만으로는 뜨지 않는다 — 방식이 IR 자료 전달일 때만이다.**
+  안내창이 가리키는 [보낼 자료] 칸은 그 방식에서만 켜진다(`deals.js` 의
+  `renderIrLinks`). `mode` 없이 `attach=1` 만 있는 주소(주소를 손보거나
+  즐겨찾기로 다시 열 때 생긴다)에서는 화면에 없는 칸을 가리키는 안내가 되어,
+  자료를 어디서 받는지 찾다가 그냥 [발송] 을 누르게 된다. 정상 경로는
+  `/ir/deliver-guide` 가 `mode=ir` 과 `attach=1` 을 늘 함께 붙인다.
+
+  주소를 `mode=ir` 로 고쳐 주는 길도 있었지만 그렇게 하지 않는다 — 사람이
+  친 주소를 뜻과 다르게 바꾸면, 딜소개를 보내려던 사람이 IR 자료 전달 화면에
+  가 있게 된다. 안내를 접는 쪽이 잃는 것이 없다.
 #}
+{% if ir_attach_guide and request.query_params.get("mode") == "ir" %}
 <div class="guard-backdrop"></div>
 <div class="guard-modal" role="dialog" aria-modal="true" aria-labelledby="attach-title">
   <p class="guard-emoji" aria-hidden="true">📎</p>
@@ -19,7 +30,10 @@
     구글 드라이브 링크를 문구에 실어 보내는 방식은 <b>더 이상 쓰지 않습니다.</b>
     PC 카카오톡에서 해당 방에 <b>자료 파일을 직접 첨부해 보내신 뒤</b>,
     이 화면에서 안내 문구를 발송하세요.
-    보내야 할 자료는 아래 <b>[보낼 자료]</b> 에서 열어 내려받을 수 있습니다.
+    {# 방향을 말하지 않는다 — [보낼 자료] 칸은 넓은 화면에서 **오른쪽**
+       미리보기 안에 있고, 좁은 화면(900px 이하)에서 칸이 세로로 쌓일 때만
+       아래다. 어느 쪽으로 적어도 한쪽 폭에서는 틀린 말이 된다. #}
+    보내야 할 자료는 <b>[보낼 자료]</b> 칸에서 열어 내려받을 수 있습니다.
   </p>
   <a class="primary-btn guard-go" href="{{ ir_attach_dismiss }}">확인</a>
 </div>
