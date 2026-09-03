@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from sqlalchemy import select  # noqa: E402
 
-from app import config  # noqa: E402
+from app import config, deps  # noqa: E402
 from app.db import SessionLocal  # noqa: E402
 from app.models import AgentDevice, User, VcContact  # noqa: E402
 from app.services import auth as auth_svc  # noqa: E402
@@ -53,10 +53,15 @@ def add_user(db, name: str, phone: str, role: str) -> User:
     if exists:
         raise SystemExit(f"이미 있는 번호입니다: {normalized} (id={exists.id}, {exists.name})")
 
+    # 투자현황은 **계정마다** 켜고 끈다(0054). 기본값은 팀 현황의 [계정 만들기]·
+    # `bootstrap.py` 와 **같은 함수**에서 가져온다 — 계정을 만드는 자리가 셋인데
+    # 하나만 제 숫자를 들고 있으면, 그 자리로 만든 관리자만 조용히 꺼진 채로
+    # 나온다. 본인 것은 못 켜므로 다른 관리자를 불러야 하는 상태가 된다.
     user = User(
         name=name,
         phone=normalized,
         role=role,
+        can_view_consulting=1 if deps.consulting_default_for(role) else 0,
         password_hash=auth_svc.hash_password(config.INITIAL_PASSWORD),
         must_change_password=1,
     )
