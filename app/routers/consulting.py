@@ -29,7 +29,7 @@ from sqlalchemy.orm import Session
 
 from .. import clock
 from ..db import get_db
-from ..deps import (get_current_user, may_view_all_consulting,
+from ..deps import (NoConsulting, get_current_user, may_view_all_consulting,
                     may_view_consulting, templates)
 from ..models import ConsultingColumn, ConsultingCompany, User
 from ..services import consulting_sheets as cs
@@ -115,7 +115,11 @@ def require_access(user: User) -> None:
     """
     if may_view_consulting(user):
         return
-    raise HTTPException(status_code=403, detail="이 화면을 볼 권한이 없습니다")
+    # 무엇을 돌려줄지는 여기서 정하지 않는다 — 주소창이 여는 GET 이면 안내창이
+    # 있는 화면, 스크립트가 부른 것이면 403. 관리자 전용(`NotAdmin`)이 이미
+    # 그렇게 갈라 두었고, 그 판단은 `deps.consulting_block_response` 한 곳에
+    # 있다. 이 화면은 API 가 열두 자리라, 자리마다 답을 적으면 하나는 낡는다.
+    raise NoConsulting()
 
 
 # 고르는 자리의 `담당 미배정`. 주인이 없는 줄(user_id NULL)을 고르는 값이다.

@@ -83,10 +83,22 @@ def test_allowed_user_can_open(allowed):
     assert allowed.get("/consulting").status_code == 200
 
 
-def test_admin_can_open_without_the_flag(client, db, users):
+def test_admin_is_blocked_too_when_it_is_switched_off(client, db, users):
+    """**역할은 더 이상 이 화면을 열지 않는다.**
+
+    예전에는 관리자가 칸(`can_view_consulting`)과 무관하게 늘 열렸다. 그래서
+    "그냥 투자현황을 보여줬다 말았다" 하려 해도 관리자만은 막을 길이 없었다.
+    이제 판정은 칸 하나뿐이고(`deps.may_view_consulting`), 역할이 하는 일은 새
+    계정의 기본값뿐이다.
+    """
     users["u2"].role = "admin"
+    users["u2"].can_view_consulting = 0
     db.commit()
     client.post("/login", data={"phone": "01000000002", "password": DEMO_PASSWORD})
+    assert client.get("/consulting").status_code == 403
+
+    users["u2"].can_view_consulting = 1
+    db.commit()
     assert client.get("/consulting").status_code == 200
 
 
@@ -371,25 +383,39 @@ def test_consultant_sees_only_their_screen(client, db, users):
     from app.ui import visible_menu
 
     users["u1"].role = "consultant"
+    users["u1"].can_view_consulting = 1     # 계정을 만들 때의 기본값
     db.commit()
 
     keys = [m["key"] for m in visible_menu(users["u1"])]
     assert keys == ["consult"], keys
 
 
-def test_consultant_can_open_the_page_without_the_extra_flag(client, db, users):
-    """계정 자체가 그 화면 전용이다 — 따로 켜 줄 필요가 없다."""
+def test_a_consultant_can_be_switched_off_and_is_told_so(client, db, users):
+    """컨설턴트도 끌 수 있다 — 다만 **볼 화면이 하나도 안 남는다.**
+
+    끄는 것 자체는 막지 않는다(관리자가 알고 끄는 일이 있다). 대신 빈 화면이나
+    날것의 오류로 떨어지지 않고, 무슨 일이 일어났는지 글로 알려 준다.
+    """
     users["u1"].role = "consultant"
     users["u1"].can_view_consulting = 0
     db.commit()
 
     client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    blocked = client.get("/consulting")
+    assert blocked.status_code == 403
+    # 주소창이 연 화면이므로 날것의 JSON 이 아니라 안내창이 뜬다.
+    assert "guard-modal" in blocked.text
+    assert "다른 화면이 없어" in blocked.text
+
+    users["u1"].can_view_consulting = 1
+    db.commit()
     assert client.get("/consulting").status_code == 200
 
 
 def test_consultant_lands_on_their_screen(client, db, users):
     """대시보드를 볼 이유가 없다."""
     users["u1"].role = "consultant"
+    users["u1"].can_view_consulting = 1     # 계정을 만들 때의 기본값
     db.commit()
 
     client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
@@ -470,6 +496,7 @@ def test_a_consultant_only_sees_their_own_table(client, db, users):
     from app.services import auth as auth_svc
 
     mine = User(name="컨설턴트샘플", phone="01000000091", role="consultant",
+                can_view_consulting=1,
                 password_hash=auth_svc.hash_password(DEMO_PASSWORD))
     db.add(mine)
     db.commit()
@@ -523,6 +550,7 @@ def test_a_team_member_cannot_edit_someone_elses_row(client, db, users):
 def test_admin_sees_everyone(client, db, users):
     """관리자는 누가 무엇을 맡고 있는지 알아야 한다."""
     users["u2"].role = "admin"
+    users["u2"].can_view_consulting = 1     # 계정을 만들 때의 기본값
     db.commit()
     _own(db, users["u1"].id, "내기업")
     _own(db, users["u2"].id, "남의기업")
@@ -535,6 +563,7 @@ def test_admin_sees_everyone(client, db, users):
 
 def test_admin_can_narrow_to_one_person(client, db, users):
     users["u2"].role = "admin"
+    users["u2"].can_view_consulting = 1     # 계정을 만들 때의 기본값
     db.commit()
     _own(db, users["u1"].id, "내기업")
     _own(db, users["u2"].id, "남의기업")
@@ -555,6 +584,7 @@ def test_a_row_cannot_be_opened_by_id_from_another_table(client, db, users):
     from app.services import auth as auth_svc
 
     who = User(name="컨설턴트샘플둘", phone="01000000092", role="consultant",
+               can_view_consulting=1,
                password_hash=auth_svc.hash_password(DEMO_PASSWORD))
     db.add(who)
     db.commit()

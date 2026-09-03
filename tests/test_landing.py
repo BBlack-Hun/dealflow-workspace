@@ -50,12 +50,17 @@ def people(db, users):
     관리자가 계정을 만들거나 비밀번호를 초기화한 직후가 이 모습이고, 사용자가
     말한 "초기 비밀번호로 로그인 했을때" 가 바로 여기다.
     """
+    from app import deps
     from app.models import User
     from app.services import auth as auth_svc
 
     pw = auth_svc.hash_password(DEMO_PASSWORD)
+    # 투자현황은 계정마다 켜고 끈다 — **만들 때의 기본값**을 앱과 같은 함수에서
+    # 가져온다. 여기에 숫자를 손으로 적어 두면 기본값이 바뀔 때 이 검사만 낡아,
+    # 새로 만든 컨설턴트가 첫 화면부터 막히는 것을 못 잡는다.
     rows = {
         role: User(id=70 + i, name=f"도착지{i}", phone=PHONE[role], role=role,
+                   can_view_consulting=1 if deps.consulting_default_for(role) else 0,
                    password_hash=pw, must_change_password=1)
         for i, role in enumerate(ROLES, start=1)
     }

@@ -44,14 +44,14 @@ def stage(db, users):
     member = users["u1"]                 # 팀원 — 관리자가 이 화면을 켜 줬다
     member.can_view_consulting = 1
     first = User(name="컨설갑", phone="01000000101", role="consultant",
-                 password_hash=pw)
+                 can_view_consulting=1, password_hash=pw)
     second = User(name="컨설을", phone="01000000102", role="consultant",
-                  password_hash=pw)
+                  can_view_consulting=1, password_hash=pw)
     # 계정만 있고 줄이 하나도 없는 컨설턴트 — 고르는 자리에 서면 안 된다.
     idle = User(name="컨설병", phone="01000000103", role="consultant",
-                password_hash=pw)
+                can_view_consulting=1, password_hash=pw)
     admin = User(name="관리갑", phone="01000000104", role="admin",
-                 password_hash=pw)
+                 can_view_consulting=1, password_hash=pw)
     db.add_all([first, second, idle, admin])
     db.commit()
 
