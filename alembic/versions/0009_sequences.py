@@ -19,6 +19,13 @@ def _tables() -> set:
     return set(sa.inspect(op.get_bind()).get_table_names())
 
 
+def _has_index(table: str, name: str) -> bool:
+    insp = sa.inspect(op.get_bind())
+    if table not in insp.get_table_names():
+        return False
+    return name in {i["name"] for i in insp.get_indexes(table)}
+
+
 def upgrade() -> None:
     have = _tables()
     if "schedule_rules" not in have:
@@ -55,11 +62,18 @@ def upgrade() -> None:
             sa.Column("created_at", sa.String(), nullable=True),
             sa.Column("updated_at", sa.String(), nullable=True),
         )
-        # 화면이 매번 타는 경로: 내 것 중 예약된 것, 그리고 담당자별 진행 중 시퀀스
-        op.create_index("ix_send_sequences_user_status", "send_sequences",
-                        ["user_id", "status"])
-        op.create_index("ix_send_sequences_contact", "send_sequences", ["contact_id"])
-        op.create_index("ix_send_sequences_due", "send_sequences", ["next_due_date"])
+
+    # **인덱스는 표를 만드는 것과 따로 본다.** 빈 DB 는 0001 의
+    # `create_all()` 이 표를 이미 만들어 둔 채로 오는데, 모델에는 이 인덱스가
+    # 선언돼 있지 않다. 표 만들기 안에 넣어 두면 그 길에서 통째로 건너뛰어,
+    # **새 서버만 인덱스 없이** 도는 DB 가 된다(0005 가 쓰는 방식).
+    #
+    # 화면이 매번 타는 경로: 내 것 중 예약된 것, 그리고 담당자별 진행 중 시퀀스
+    for name, cols in (("ix_send_sequences_user_status", ["user_id", "status"]),
+                       ("ix_send_sequences_contact", ["contact_id"]),
+                       ("ix_send_sequences_due", ["next_due_date"])):
+        if not _has_index("send_sequences", name):
+            op.create_index(name, "send_sequences", cols)
 
 
 def downgrade() -> None:

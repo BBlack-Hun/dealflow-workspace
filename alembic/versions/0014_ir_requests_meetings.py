@@ -20,6 +20,13 @@ def _tables() -> set:
     return set(sa.inspect(op.get_bind()).get_table_names())
 
 
+def _has_index(table: str, name: str) -> bool:
+    insp = sa.inspect(op.get_bind())
+    if table not in insp.get_table_names():
+        return False
+    return name in {i["name"] for i in insp.get_indexes(table)}
+
+
 def upgrade() -> None:
     have = _tables()
     if "ir_requests" not in have:
@@ -37,9 +44,6 @@ def upgrade() -> None:
             sa.Column("created_at", sa.String(), nullable=True),
             sa.Column("updated_at", sa.String(), nullable=True),
         )
-        # 화면이 매번 타는 경로: 내 것 중 열린 요청
-        op.create_index("ix_ir_requests_user_status", "ir_requests", ["user_id", "status"])
-        op.create_index("ix_ir_requests_contact", "ir_requests", ["contact_id"])
 
     if "meetings" not in have:
         op.create_table(
@@ -60,8 +64,21 @@ def upgrade() -> None:
             sa.Column("created_at", sa.String(), nullable=True),
             sa.Column("updated_at", sa.String(), nullable=True),
         )
-        op.create_index("ix_meetings_user_status", "meetings", ["user_id", "status"])
-        op.create_index("ix_meetings_due", "meetings", ["followup_due"])
+
+    # **인덱스는 표를 만드는 것과 따로 본다.** 빈 DB 는 0001 의
+    # `create_all()` 이 표를 이미 만들어 둔 채로 오는데, 모델에는 이 인덱스가
+    # 선언돼 있지 않다. 표 만들기 안에 넣어 두면 그 길에서 통째로 건너뛰어,
+    # **새 서버만 인덱스 없이** 도는 DB 가 된다(0005 가 쓰는 방식).
+    #
+    # 화면이 매번 타는 경로: 내 것 중 열린 요청 / 다가오는 미팅
+    for table, name, cols in (
+        ("ir_requests", "ix_ir_requests_user_status", ["user_id", "status"]),
+        ("ir_requests", "ix_ir_requests_contact", ["contact_id"]),
+        ("meetings", "ix_meetings_user_status", ["user_id", "status"]),
+        ("meetings", "ix_meetings_due", ["followup_due"]),
+    ):
+        if not _has_index(table, name):
+            op.create_index(name, table, cols)
 
 
 def downgrade() -> None:

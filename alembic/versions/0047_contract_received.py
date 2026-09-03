@@ -42,12 +42,19 @@ branch_labels = None
 depends_on = None
 
 
+def _has_column(table: str, column: str) -> bool:
+    return column in {c["name"] for c in sa.inspect(op.get_bind()).get_columns(table)}
+
+
 def upgrade() -> None:
-    with op.batch_alter_table("ir_companies") as b:
-        # 기본값 없음 = 이미 있는 줄은 전부 NULL(아직 안 정함).
-        b.add_column(sa.Column("contract_received", sa.String(), nullable=True))
+    # 이미 있으면 건너뛴다 — 빈 DB 는 0001 이 만들어 준 채로 온다(0018 참고).
+    if not _has_column("ir_companies", "contract_received"):
+        with op.batch_alter_table("ir_companies") as b:
+            # 기본값 없음 = 이미 있는 줄은 전부 NULL(아직 안 정함).
+            b.add_column(sa.Column("contract_received", sa.String(), nullable=True))
 
 
 def downgrade() -> None:
-    with op.batch_alter_table("ir_companies") as b:
-        b.drop_column("contract_received")
+    if _has_column("ir_companies", "contract_received"):
+        with op.batch_alter_table("ir_companies") as b:
+            b.drop_column("contract_received")

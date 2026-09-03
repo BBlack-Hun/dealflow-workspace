@@ -20,9 +20,24 @@ branch_labels = None
 depends_on = None
 
 
+def _has_column(table: str, column: str) -> bool:
+    return column in {c["name"] for c in sa.inspect(op.get_bind()).get_columns(table)}
+
+
 def upgrade() -> None:
-    op.add_column("send_items", sa.Column("parts_json", sa.Text(), nullable=True))
+    # **빈 DB 는 이 칸을 이미 가진 채로 여기 도착한다.** 0001 이
+    # `Base.metadata.create_all()` 로 *지금 모델 전체*를 만들기 때문이다(모델과
+    # 마이그레이션이 갈라지지 않게 하려고 일부러 그렇게 두었다 — 0001 의 설명
+    # 참고). 그래서 새 DB 와 운영 DB 는 여기 올 때 모양이 다르고, **두 경로
+    # 모두 head 까지 올라가야 한다.** 있으면 건너뛴다.
+    #
+    # 0002 가 정한 방식인데 0017 부터 잊혔고, 그 결과 빈 볼륨으로 컨테이너를
+    # 처음 띄우면 바로 이 줄에서 `duplicate column name: parts_json` 으로
+    # 부팅이 죽었다.
+    if not _has_column("send_items", "parts_json"):
+        op.add_column("send_items", sa.Column("parts_json", sa.Text(), nullable=True))
 
 
 def downgrade() -> None:
-    op.drop_column("send_items", "parts_json")
+    if _has_column("send_items", "parts_json"):
+        op.drop_column("send_items", "parts_json")

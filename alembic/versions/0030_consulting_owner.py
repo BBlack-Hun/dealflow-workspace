@@ -23,24 +23,41 @@ branch_labels = None
 depends_on = None
 
 
+TABLES = ("consulting_companies", "consulting_columns")
+
+
+def _has_column(table: str, column: str) -> bool:
+    return column in {c["name"] for c in sa.inspect(op.get_bind()).get_columns(table)}
+
+
 def upgrade() -> None:
-    for table in ("consulting_companies", "consulting_columns"):
-        with op.batch_alter_table(table) as b:
-            b.add_column(sa.Column("user_id", sa.Integer(), nullable=True))
+    # 이미 있으면 건너뛴다 — 빈 DB 는 0001 이 만들어 준 채로 온다(0018 참고).
+    added = []
+    for table in TABLES:
+        if not _has_column(table, "user_id"):
+            with op.batch_alter_table(table) as b:
+                b.add_column(sa.Column("user_id", sa.Integer(), nullable=True))
+            added.append(table)
 
     # 이미 있는 줄의 주인을 정한다. 이 화면을 쓰는 계정이 하나뿐이면 그 사람,
     # 여럿이거나 없으면 손대지 않는다(관리자가 화면에서 배정한다).
+    #
+    # **칸을 이번에 만든 표에만** 돈다. 다시 돌린 DB 에서 또 돌면 화면에서
+    # 옮겨 둔 담당이 통째로 한 사람에게 되돌아간다.
+    if not added:
+        return
     conn = op.get_bind()
     owners = [r[0] for r in conn.execute(sa.text(
         "SELECT id FROM users WHERE can_view_consulting = 1 AND role != 'admin'"
     ))]
     if len(owners) == 1:
-        for table in ("consulting_companies", "consulting_columns"):
+        for table in added:
             conn.execute(sa.text(f"UPDATE {table} SET user_id = :uid"),
                          {"uid": owners[0]})
 
 
 def downgrade() -> None:
-    for table in ("consulting_companies", "consulting_columns"):
-        with op.batch_alter_table(table) as b:
-            b.drop_column("user_id")
+    for table in TABLES:
+        if _has_column(table, "user_id"):
+            with op.batch_alter_table(table) as b:
+                b.drop_column("user_id")

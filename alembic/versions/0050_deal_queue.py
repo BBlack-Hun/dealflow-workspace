@@ -69,6 +69,14 @@ depends_on = None
 
 ITEMS = "deal_queue_items"
 COMPANIES = "deal_queue_companies"
+INDEX = "ix_deal_queue_items_user_id"
+
+
+def _has_index(table: str, name: str) -> bool:
+    insp = sa.inspect(op.get_bind())
+    if table not in insp.get_table_names():
+        return False
+    return name in {i["name"] for i in insp.get_indexes(table)}
 
 
 def upgrade() -> None:
@@ -106,7 +114,13 @@ def upgrade() -> None:
             sa.Column("created_at", sa.String(), nullable=True),
             sa.Column("updated_at", sa.String(), nullable=True),
         )
-        op.create_index("ix_deal_queue_items_user_id", ITEMS, ["user_id"])
+
+    # **인덱스는 표를 만드는 것과 따로 본다.** 빈 DB 는 0001 의 `create_all()` 이
+    # 표를 이미 만들어 둔 채로 오는데, 모델에는 이 인덱스가 선언돼 있지 않다.
+    # 표 만들기 안에 넣어 두면 그 길에서 통째로 건너뛰어, **새 서버만 인덱스
+    # 없이** 도는 DB 가 된다(0005 가 쓰는 방식).
+    if not _has_index(ITEMS, INDEX):
+        op.create_index(INDEX, ITEMS, ["user_id"])
 
     if COMPANIES not in have:
         op.create_table(
@@ -128,5 +142,6 @@ def downgrade() -> None:
     if COMPANIES in have:
         op.drop_table(COMPANIES)
     if ITEMS in have:
-        op.drop_index("ix_deal_queue_items_user_id", table_name=ITEMS)
+        if _has_index(ITEMS, INDEX):
+            op.drop_index(INDEX, table_name=ITEMS)
         op.drop_table(ITEMS)

@@ -21,6 +21,13 @@ def _tables() -> set:
     return set(sa.inspect(op.get_bind()).get_table_names())
 
 
+def _has_index(table: str, name: str) -> bool:
+    insp = sa.inspect(op.get_bind())
+    if table not in insp.get_table_names():
+        return False
+    return name in {i["name"] for i in insp.get_indexes(table)}
+
+
 def upgrade() -> None:
     have = _tables()
     if "weekly_routines" not in have:
@@ -53,7 +60,14 @@ def upgrade() -> None:
             sa.Column("created_at", sa.String(), nullable=True),
             sa.Column("updated_at", sa.String(), nullable=True),
         )
-        # 화면이 매번 타는 조건: 내 것 중 이번 주
+
+    # **인덱스는 표를 만드는 것과 따로 본다.** 빈 DB 는 0001 의
+    # `create_all()` 이 표를 이미 만들어 둔 채로 오는데, 모델에는 이 인덱스가
+    # 선언돼 있지 않다. 표 만들기 안에 넣어 두면 그 길에서 통째로 건너뛰어,
+    # **새 서버만 인덱스 없이** 도는 DB 가 된다(0005 가 쓰는 방식).
+    #
+    # 화면이 매번 타는 조건: 내 것 중 이번 주
+    if not _has_index("weekly_tasks", "ix_weekly_tasks_user_week"):
         op.create_index("ix_weekly_tasks_user_week", "weekly_tasks",
                         ["user_id", "week_start"])
 

@@ -24,12 +24,19 @@ depends_on = None
 DEFAULT = "중요 스타트업"
 
 
+def _has_column(table: str, column: str) -> bool:
+    return column in {c["name"] for c in sa.inspect(op.get_bind()).get_columns(table)}
+
+
 def upgrade() -> None:
+    # 이미 있으면 건너뛴다 — 빈 DB 는 0001 이 만들어 준 채로 온다(0018 참고).
     for table in ("consulting_companies", "consulting_columns"):
-        op.add_column(table, sa.Column("sheet", sa.String(), nullable=False,
-                                       server_default=DEFAULT))
+        if not _has_column(table, "sheet"):
+            op.add_column(table, sa.Column("sheet", sa.String(), nullable=False,
+                                           server_default=DEFAULT))
 
 
 def downgrade() -> None:
     for table in ("consulting_companies", "consulting_columns"):
-        op.drop_column(table, "sheet")
+        if _has_column(table, "sheet"):
+            op.drop_column(table, "sheet")
