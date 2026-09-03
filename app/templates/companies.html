@@ -141,9 +141,9 @@
         <td class="rowno muted"></td>
         <td class="cell" data-field="received_at" data-type="date">{{ r.received_at }}</td>
         <td class="co-name"><b class="cell" data-field="name">{{ r.name }}</b></td>
-        <td class="cell" data-field="contact_name">{{ r.ceo }}</td>
-        <td class="cell" data-field="contact_phone">{{ r.phone }}</td>
-        <td class="cell ellipsis" data-field="contact_email" title="{{ r.email }}">{{ r.email }}</td>
+        <td class="cell" data-field="contact_name">{{ r.contact_name }}</td>
+        <td class="cell" data-field="contact_phone">{{ r.contact_phone }}</td>
+        <td class="cell ellipsis" data-field="contact_email" title="{{ r.contact_email }}">{{ r.contact_email }}</td>
         <td title="{{ r.one_liner }}">
           <div class="cell clamp2" data-field="one_liner" data-type="long">{{ r.one_liner }}</div>
         </td>
@@ -388,8 +388,47 @@
     <label class="field"><span>사업분야 대분류</span><input type="text" id="f-sector_major" placeholder="예: 헬스케어"></label>
     <label class="field"><span>소분류</span><input type="text" id="f-sector_minor" placeholder="예: 의료AI"></label>
     <label class="field"><span>기업구분</span><input type="text" id="f-series" placeholder="예: Seed / SeriesA"></label>
+    {# 설립년도와 보증 이력은 **표에서도 서로 이웃한 두 칸**이라 창에서도 붙여
+       둔다. 둘 다 회사 자체의 배경(언제 생겼나 · 정책자금을 얼마나 받았나)이라
+       분류·소개와 같은 자리에 있는 것이 맞다.
+
+       **둘 다 글자 칸이다.** `설립년도` 는 얼핏 숫자 같지만 실데이터 262곳 중
+       `2015년` 237 · `2015-03-01 00:00:00` 21 · `회사정보 검색안됨` · `2015년
+       (법인설립예정` 이 섞여 있다. `type="number"` 로 두면 브라우저가 이 값들을
+       못 읽어 칸이 빈 채로 뜨고, 창은 **모든 칸을 한 번에 보내므로** 다른 칸
+       하나 고치려고 [저장]하는 것만으로 그 값이 지워진다.
+       `기보, 신보, 중진공` 도 마찬가지다(가장 긴 값이 72자, 줄바꿈은 없다). #}
+    <label class="field"><span>설립년도</span><input type="text" id="f-founded_year" placeholder="예: 2015년"></label>
+    <label class="field"><span>기보, 신보, 중진공</span>
+      <input type="text" id="f-guarantee" placeholder="예: 기보 3억, 신보 2억"></label>
     <label class="field wide"><span>기업 한줄 소개</span>
       <textarea id="f-one_liner" rows="2" placeholder="딜소개 문구에 그대로 들어갑니다"></textarea></label>
+    {# ── 이 소개가 자동으로 만들어진 값인가, 사람이 쓴 값인가 ─────────────
+       **읽기 전용으로 잠그지 않는다.** 344곳 중 293곳에 사람이 쓴 소개가 이미
+       있고, 스타트업DB 칸이 빈 기업은 자동 조합에 재료가 없어 잠그면 소개가
+       영영 빈 채로 남는다. 대신 **지금 어느 상태인지**를 보이게 한다.
+
+       서버는 이 판정을 이미 내려서 보내고 있었다(`one_liner_auto` ·
+       `one_liner_suggestion`) — 그런데 **화면이 한 번도 쓰지 않았다.** 그래서
+       스타트업DB 를 채워도 소개가 왜 그대로인지 알 길이 없었다.
+
+       [자동 조합으로 바꾸기] 는 **칸에 값을 넣어 줄 뿐 저장하지 않는다.**
+       (`POST /api/companies/{id}/one-liner` 라는 곧바로 덮는 API 가 따로 있지만
+       부르지 않는다 — 그 자리에서 커밋해 버리면 [취소] 를 눌러도 이미 바뀌어
+       있어서, 창의 다른 칸들과 규칙이 달라진다.) 넣고 [저장]을 누르면 보통
+       저장 길을 그대로 지나고, 그 값은 조합 결과와 글자까지 같으므로 다음에
+       열 때 다시 `자동` 으로 읽힌다 — 되돌리는 길을 새로 파지 않았다.
+
+       칸을 **비워서 저장하는** 길도 그대로 살아 있다(라우터의 `manual_edit`).
+       그건 "내가 쓴 문장을 지우고 자동에 맡기겠다" 는 뜻이고, 이 단추는
+       "바뀔 문장을 눈으로 보고 고르겠다" 는 뜻이라 하는 일이 다르다. #}
+    <div class="field wide" id="f-one_liner-note" hidden>
+      <div class="hint">
+        <span id="one-liner-state"></span>
+        <button type="button" class="linkbtn" id="one-liner-auto" hidden
+                title="스타트업DB 칸들로 만든 한 줄을 위 칸에 넣습니다. 저장은 [저장]을 눌러야 됩니다.">자동 조합으로 바꾸기</button>
+      </div>
+    </div>
     {# ── 합치기 전 값 (0051) ──────────────────────────────────────────────
        `사업분야`(스타트업DB)와 `기업 한줄 소개`(IR 기업 현황)는 이름만 다른
        같은 성격의 칸이었는데 따로 쌓였다. 한 칸으로 합치면서 **합치기 전 두
@@ -412,6 +451,57 @@
     </div>
   </div>
 
+  {# ── 기업 쪽 연락처 ────────────────────────────────────────────────────
+     표(스타트업DB)의 맨 앞 네 칸을 **붙어 있던 그대로** 옮겼다 — `수신일` ·
+     `대표자` · `연락처` · `이메일`. "언제 답장이 왔고 누구에게 연락하나" 는
+     한 생각이라, 시트를 보고 옮겨 적는 사람이 한 자리에서 다 적을 수 있어야
+     한다. `수신일` 을 아래 `상태` 로 보내는 안도 있었지만(홍보메일삭제와 짝),
+     그러면 네 칸을 적으려고 창을 두 번 오르내려야 한다.
+
+     우리 팀 담당자가 아니라 **기업 쪽** 사람이다(모델의 `contact_*`) —
+     `담당자` 칸과 헷갈리지 않게 머리에 적어 둔다. #}
+  <h3 class="form-section">기업 쪽 연락처 <span class="hint">홍보메일에 답장한 곳</span></h3>
+  <div class="form-grid">
+    {# `type="date"` 로 두지 않는다. 실데이터 281곳 중 267곳은 `2025-01-07`
+       이지만 14곳이 `날짜 미정` 이다 — 날짜 칸은 그 글자를 못 읽어 빈 칸으로
+       뜨고, 창은 모든 칸을 한 번에 보내므로 **다른 칸을 고치려고 [저장]하는
+       것만으로** 그 14곳의 수신일이 지워진다. 표 쪽은 누른 칸 하나만 보내서
+       날짜 칸이어도 이런 일이 안 나지만(inline_edit.js), 창은 다르다.
+       머리글 안내는 표의 `title` 과 **한 글자도 다르지 않게** 옮긴다. #}
+    <label class="field" title="홍보메일 답장 받은 날">
+      <span>수신일</span><input type="text" id="f-received_at" placeholder="2025-01-07"></label>
+    <label class="field"><span>대표자</span><input type="text" id="f-contact_name"></label>
+    <label class="field"><span>연락처</span>
+      <input type="tel" id="f-contact_phone" placeholder="010-0000-0000"></label>
+    <label class="field"><span>이메일</span><input type="email" id="f-contact_email"></label>
+  </div>
+
+  {# ── 연도별 매출 ───────────────────────────────────────────────────────
+     **아래 `숫자` 섹션에 넣으면 안 된다.** 거기 머리에는 `단위: 억 (예 18.3)`
+     이 붙어 있는데 이 네 칸은 억 단위 숫자가 아니라 **적힌 그대로의 글자**다
+     (모델 주석 참고). 같은 섹션에 두면 `1,224백만원` 을 억으로 고쳐 적게
+     만들고, 그 순간 100배가 틀어진 채 딜소개 문구에 실려 나간다.
+
+     네 칸을 한 덩어리로 묶는다 — 2열 격자라 22·23 / 24·25 로 두 줄에 선다.
+     연도 순서대로 읽히고, 한 해만 채우러 열어도 나머지 세 해가 곁에 보인다.
+
+     `23·24·25년` 은 한줄 소개 자동 조합의 재료다(services/one_liner.py 의
+     `REVENUE_YEARS` — 그중 **가장 최근에 적힌 한 해**가 `매출 …` 토막이 된다).
+     22년은 조합에 안 쓰이지만 표에 있는 칸이라 여기에도 둔다. #}
+  {# 예에 `1,224백만원` 을 적지 않는다. 이 화면은 **어디에서도 백만원을 안
+     보여준다** — 표는 억인데 창만 백만원이면 같은 값이 100배 차이로 읽힌다
+     (tests/test_inline_edit.py 가 이 화면에 그 글자가 없는 것을 지킨다).
+     여기 든 예는 '단위를 고르지 말고 적힌 그대로 두라' 는 뜻이라 실데이터에
+     실제로 있는 다른 모양으로 든다. #}
+  <h3 class="form-section">연도별 매출
+    <span class="hint">적힌 그대로 (예 8.2억 · 150억 ~ 200억)</span></h3>
+  <div class="form-grid">
+    <label class="field"><span>22년 매출</span><input type="text" id="f-revenue_2022"></label>
+    <label class="field"><span>23년 매출</span><input type="text" id="f-revenue_2023"></label>
+    <label class="field"><span>24년 매출</span><input type="text" id="f-revenue_2024"></label>
+    <label class="field"><span>25년 매출</span><input type="text" id="f-revenue_2025"></label>
+  </div>
+
   <h3 class="form-section">숫자 <span class="hint">단위: 억 (예 18.3)</span></h3>
   <div class="form-grid">
     <label class="field"><span>최근 매출액</span><input type="number" step="0.1" id="f-revenue_recent" placeholder="0"></label>
@@ -420,8 +510,34 @@
     <label class="field"><span>Pre Value</span><input type="number" step="0.1" id="f-pre_value" placeholder="0"></label>
   </div>
 
-  <h3 class="form-section">소개 내용</h3>
+  <h3 class="form-section">소개 내용
+    <span class="hint">한줄 소개 자동 조합의 재료입니다</span></h3>
   <div class="form-grid">
+    {# ── 사업 설명 (`business_desc`) ────────────────────────────────────
+       **이름을 `사업분야` 라고 적으면 안 된다.** 옆 탭에 `사업분야 대분류`
+       (`sector_major`)가 따로 있어서, 같은 말이 서로 다른 두 칸을 가리키게
+       된다 — 하나는 갈래(`헬스케어`)고 이 칸은 문장이다. 모델 주석이 이 칸을
+       부르는 말을 그대로 쓴다: **카테고리가 아니라 사업 설명이다.**
+       (services/one_liner.py 의 `SOURCE_FIELDS` 라벨도 같은 글자로 맞췄다 —
+       "무엇이 합쳐지는가" 를 두 곳이 다르게 부르면 안 된다.)
+
+       **표에는 이 칸이 없다.** 어제 두 탭을 합치면서 화면에서 뗐는데(0051),
+       떼고 보니 자동 조합의 **첫 토막**이 그대로 살아 있는데 고칠 자리만
+       사라진 상태였다. 조합은 `사업 설명 | 매출 … | 누적투자금액 … |
+       특이사항` 순이라, 이 칸이 비면 한 줄이 매출부터 시작한다.
+
+       그래서 **`소개 내용` 의 맨 앞**에 둔다. 이 섹션은 곧 "한 줄이 무엇으로
+       만들어지는가" 인데, 조합에서 첫 토막인 것이 여기서도 첫 칸이다.
+       (`기업 한줄 소개` 바로 옆에 두는 안은 버렸다 — 0051 이 어렵게 하나로
+       합친 그 칸 옆에 비슷한 칸을 다시 세우면 어느 쪽이 정본인지 또 흐려진다.
+       여기는 **재료**를 모아 두는 자리라 뜻이 갈리지 않는다.)
+
+       줄바꿈이 있는 값이 실제로 있다(Text 칸이다) — `<input>` 으로 두면
+       브라우저가 줄바꿈을 지우고, 창은 모든 칸을 한 번에 보내므로 [저장]
+       한 번에 그 줄이 사라진다. #}
+    <label class="field wide"><span>사업 설명</span>
+      <textarea id="f-business_desc" rows="2"
+                placeholder="자동 조합의 첫 토막 — 예: B2B 농산물 선도거래 플랫폼"></textarea></label>
     <label class="field wide"><span>특이사항 (장점)</span><textarea id="f-competitiveness" rows="2"></textarea></label>
     <label class="field wide"><span>투자 현황</span>
       <input type="text" id="f-funding_status" placeholder="예: Series A 진행 중"></label>

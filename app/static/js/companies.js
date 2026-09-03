@@ -17,7 +17,25 @@
   var currentName = "";
   var filter = "";
 
+  // 창이 읽고 보내는 칸. **템플릿의 `id="f-…"` 와 한 벌이어야 한다** —
+  // 한쪽만 고치면 칸은 화면에 보이는데 저장은 조용히 안 된다(이 저장소가
+  // 겪은 사고다). 새 칸을 창에 세울 때 여기 빠뜨리면
+  // tests/js/company_edit_fields_test.js 가 잡는다.
+  //
+  // 이름은 **모델 칸 이름 그대로**여야 한다. `fill()` 이 서버 응답에서 같은
+  // 이름으로 값을 찾고(`data[f]`), `collect()` 가 같은 이름으로 보낸다.
+  // 별명을 쓰면 창은 늘 빈 칸으로 뜨고 [저장] 한 번에 그 칸이 지워진다 —
+  // 창은 표와 달리 **모든 칸을 한 번에** 보내기 때문이다.
   var FIELDS = ["name", "sector_major", "sector_minor", "series", "one_liner",
+    // 사업 설명 — 한줄 소개 자동 조합의 **첫 토막**이다(one_liner.SOURCE_FIELDS).
+    // 두 탭을 합치면서 표에서 뗐더니(0051) 고칠 자리가 아예 없어졌던 칸이다.
+    "business_desc",
+    "founded_year", "guarantee",
+    // 기업 쪽 연락처 — 표(스타트업DB)의 맨 앞 네 칸.
+    "received_at", "contact_name", "contact_phone", "contact_email",
+    // 연도별 매출 — **글자**다(`19.8억` · `1,224백만원`). 숫자로 바꾸지 않는다.
+    // 23·24·25년은 한줄 소개 자동 조합의 재료다(services/one_liner.py).
+    "revenue_2022", "revenue_2023", "revenue_2024", "revenue_2025",
     "revenue_recent", "funding_total", "raise_target", "pre_value",
     "competitiveness", "funding_status", "ir_drive_url",
     "contract_status", "contract_received", "contract_month",
@@ -149,6 +167,60 @@
     });
   }
 
+  // 한줄 소개가 **자동으로 만들어진 값인가, 사람이 쓴 값인가.**
+  //
+  // 서버는 이 판정을 진작부터 실어 보내고 있었는데(`one_liner_auto` ·
+  // `one_liner_suggestion`) 화면이 한 번도 안 읽었다. 그래서 스타트업DB 를
+  // 채워도 소개가 왜 그대로인지 알 길이 없었고, 반대로 자동으로 바뀐 줄도
+  // 모르고 있었다.
+  //
+  // 판정은 **서버 것을 그대로 쓴다.** 여기서 `one_liner === suggestion` 을 다시
+  // 따지면 같은 판단이 두 곳에 생겨 반드시 한쪽이 낡는다
+  // (services/one_liner.py 의 `origin`).
+  var suggestion = "";                 // 지금 칸들로 만들면 나올 한 줄
+
+  function fillOneLinerNote(data) {
+    var wrap = el("f-one_liner-note");
+    var state = el("one-liner-state");
+    var btn = el("one-liner-auto");
+    if (!wrap || !state || !btn) return;
+
+    suggestion = data.one_liner_suggestion || "";
+    var current = (data.one_liner || "").trim();
+    var auto = !!data.one_liner_auto;
+
+    // 셋 중 하나다. 무엇을 눌러야 하는지까지 한 줄로 말한다 — 상태만 적어
+    // 두면 "그래서 어쩌라는 것인가" 가 남는다.
+    if (!current) {
+      state.textContent = suggestion
+        ? "아직 비어 있습니다 — 아래 재료로 자동 조합할 수 있습니다."
+        : "아직 비어 있습니다 — 사업 설명 · 연도별 매출 · 금액을 채우면 자동으로 만들어집니다.";
+    } else if (auto) {
+      state.textContent = "자동으로 만든 값입니다 — 아래 재료를 고치면 따라옵니다.";
+    } else {
+      state.textContent = "직접 쓰신 값입니다 — 재료를 고쳐도 이 문장은 그대로 둡니다.";
+    }
+
+    // 이미 조합 결과와 같은 줄에는 단추를 안 보인다 — 눌러도 아무 일이 안
+    // 일어나는 단추가 있으면 고장으로 읽힌다.
+    btn.hidden = !suggestion || suggestion === current;
+    wrap.hidden = false;
+  }
+
+  // [자동 조합으로 바꾸기] — **칸에 넣어 줄 뿐 저장하지 않는다.**
+  //
+  // 곧바로 덮는 API 가 따로 있지만(`POST /api/companies/{id}/one-liner`) 부르지
+  // 않는다. 그 자리에서 커밋해 버리면 [취소] 를 눌러도 이미 바뀌어 있어서,
+  // 창의 다른 칸들과 규칙이 달라진다. 넣고 [저장]을 누르면 보통 저장 길을 그대로
+  // 지나고, 그 값은 조합 결과와 글자까지 같으니 다음에 열 때 다시 `자동` 으로
+  // 읽힌다 — 되돌리는 길을 새로 파지 않았다.
+  if (el("one-liner-auto")) el("one-liner-auto").addEventListener("click", function () {
+    if (!suggestion) return;
+    el("f-one_liner").value = suggestion;
+    fillOneLinerNote({ one_liner: suggestion, one_liner_suggestion: suggestion,
+                       one_liner_auto: true });
+  });
+
   function fill(data) {
     FIELDS.forEach(function (f) {
       var input = el("f-" + f);
@@ -158,6 +230,7 @@
     });
     el("f-is_top_deal").checked = !!data.is_top_deal;
     fillBackup(data.desc_backup);
+    fillOneLinerNote(data);
     setStatus(data);
   }
 
