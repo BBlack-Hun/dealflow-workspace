@@ -455,7 +455,11 @@ def heartbeat(
     _touch_device(db, device, hostname=body.hostname, version=body.agent_version,
                   sender=body.sender)
     db.commit()
-    return {"ok": True, "server_time": now_iso()}
+    # IR 자료 폴더 자리를 **여기에 실어 내려보낸다.** 발송기가 이미 주기적으로
+    # 두드리는 통로라 새로 팔 것이 없고, 화면에서 값을 고치면 다음 박동에
+    # 그대로 따라간다(발송기를 다시 켤 필요가 없다).
+    return {"ok": True, "server_time": now_iso(),
+            "ir_root": device.ir_root or ""}
 
 
 class Diagnostics(BaseModel):

@@ -24,6 +24,7 @@ import sys
 import time
 from collections import namedtuple
 from pathlib import Path
+from typing import List
 
 import requests
 import yaml
@@ -101,6 +102,9 @@ def build_sender(cfg: dict):
         # macOS 카카오톡 UI 자동화 — 반드시 호스트에서 실행(도커는 GUI 제어 불가).
         from agent.sender import kakao_mac
         log.info("using KakaoMacSender (macOS 카카오톡)")
+        # IR 자료 폴더 자리는 여기서 넣지 않는다 — **서버가 내려준다**
+        # (`apply_server_settings`). config 에 적어 두면 발송기를 새로 내려받을
+        # 때 데모 값으로 되돌아간다.
         return kakao_mac.create(cfg.get("kakao_mac", {}))
 
     if choice == "telegram":
@@ -489,6 +493,66 @@ def collect_diagnostics(sender, kind: str, target_room=None, error=None) -> dict
     return payload
 
 
+def apply_server_settings(sender, payload) -> bool:
+    """서버가 박동 응답에 실어 준 설정을 발송기에 반영한다. 바뀌었으면 True.
+
+    지금은 IR 자료 폴더 자리 하나다. 값은 사람이 웹에서 넣고, 여기로 따라온다 —
+    화면에서 고치면 다음 박동에 반영되므로 발송기를 다시 켤 필요가 없다.
+    """
+    if not isinstance(payload, dict):
+        return False
+    if not hasattr(sender, "ir_root_setting"):
+        return False          # 파일을 못 보내는 발송기는 알 필요가 없다
+    value = str(payload.get("ir_root") or "")
+    if sender.ir_root_setting == value:
+        return False
+    sender.ir_root_setting = value
+    return True
+
+
+def _json(response):
+    """응답 본문을 조용히 읽는다. 못 읽어도 발송에는 지장이 없다."""
+    try:
+        return response.json()
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def preflight(sender) -> List[str]:
+    """켤 때 **미리** 짚어 주는 것들. 발송을 막지는 않는다.
+
+    ## 왜 필요했나
+
+    `quartz_available()` 은 진작 있었는데 **실행 코드 어디서도 부르지 않았다.**
+    그래서 Quartz 가 빠진 PC 도 켤 때는 멀쩡해 보이고, 발송을 눌러 실패가 난
+    뒤에야 알게 됐다. 그때는 이미 회차 당일이다. 있는 검사를 안 쓰고 있었을 뿐이라
+    켜는 자리에서 한 번 물어보게 한다.
+
+    IR 자료 폴더도 같이 알린다 — 자료를 어디에 넣어야 하는지 사람이 **눈으로**
+    봐야 한다. 없으면 여기서 만든다.
+    """
+    notes: List[str] = []
+
+    if getattr(sender, "name", "") == "kakao_mac":
+        from agent.sender.kakao_mac import quartz_available
+        if not quartz_available():
+            notes.append(
+                "⚠ Quartz(pyobjc)가 없어 **채팅방을 자동으로 열 수 없습니다.** "
+                "보낼 채팅방 창을 카카오톡에서 미리 열어두면 발송됩니다. "
+                "(자동 열기까지 쓰려면 packaging/mac/setup.sh 를 다시 돌리세요)")
+
+    if hasattr(sender, "ir_root_setting"):
+        # 보낼 때와 **같은 판단**을 쓴다 — 두 군데에 적으면 한쪽이 낡는다.
+        from agent.sender.base import IrPathError, ir_root
+        try:
+            notes.append(f"IR 자료 폴더: {ir_root(sender.ir_root_setting)} "
+                         f"— 보낼 자료를 이 폴더에 넣으세요")
+        except IrPathError as exc:
+            notes.append(f"⚠ {exc}")
+
+    return notes
+
+
 def _setup_logging() -> None:
     """콘솔 + 파일 로깅.
 
@@ -530,15 +594,33 @@ def main(argv=None):
     sender = build_sender(cfg)
     client = AgentClient(cfg)
     client.sender_name = getattr(sender, "name", "unknown")
-    # 기동 시 1회 환경 스냅샷 업로드 — 서버에서 카톡 창 상태를 확인할 수 있게.
-    client.report_diagnostics(collect_diagnostics(sender, "startup"))
 
-    last_heartbeat = 0.0
+    # 설정(IR 자료 폴더 자리)을 **먼저** 받아 온다 — 사전 점검이 그 값을 본다.
+    # 서버에 못 닿아도 켜지는 것 자체는 막지 않는다(다음 박동에 다시 받는다).
+    try:
+        apply_server_settings(sender, _json(client.heartbeat()))
+        last_heartbeat = time.time()
+    except Exception as exc:  # noqa: BLE001
+        log.warning("서버 설정을 받지 못했습니다(계속 진행): %s", exc)
+        last_heartbeat = 0.0
+
+    # ★ 켜는 자리에서 미리 짚어 준다 (Quartz 유무 · IR 자료 폴더 자리).
+    notes = preflight(sender)
+    for note in notes:
+        log.warning(note) if note.startswith("⚠") else log.info(note)
+
+    # 기동 시 1회 환경 스냅샷 업로드 — 서버에서 카톡 창 상태를 확인할 수 있게.
+    snapshot = collect_diagnostics(sender, "startup")
+    snapshot["preflight"] = notes
+    client.report_diagnostics(snapshot)
+
     while True:
         try:
             now = time.time()
             if now - last_heartbeat >= float(cfg["heartbeat_interval_sec"]):
-                client.heartbeat()
+                if apply_server_settings(sender, _json(client.heartbeat())):
+                    log.info("IR 자료 폴더가 바뀌었습니다: %r",
+                             getattr(sender, "ir_root_setting", ""))
                 last_heartbeat = now
 
             job = client.poll()

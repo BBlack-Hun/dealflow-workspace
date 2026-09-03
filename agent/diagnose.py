@@ -128,6 +128,18 @@ def main() -> None:
             print("      → 시스템 설정 > 개인정보 보호 및 보안 > 손쉬운 사용 에서 터미널을 허용하세요.")
         return
 
+    # ★ Quartz 는 '채팅방 자동 열기' 에만 쓰이지만, 없으면 창을 미리 열어두지
+    #   않은 방은 통째로 실패한다. 발송 실패로 알게 되기 전에 여기서 알린다.
+    if system == "Darwin":
+        from agent.sender.kakao_mac import quartz_available
+
+        if quartz_available():
+            print("[진단] Quartz(pyobjc) ✅ — 채팅방 자동 열기 가능\n")
+        else:
+            print("[진단] Quartz(pyobjc) ❌ — 채팅방을 자동으로 열 수 없습니다.")
+            print("      → 보낼 채팅방 창을 카카오톡에서 미리 열어두면 발송됩니다.")
+            print("      → 자동 열기까지 쓰려면 setup.sh 를 다시 돌리세요.\n")
+
     print("── 현재 열려 있는 창 제목 " + "─" * 30)
     if not titles:
         print("  (없음)")

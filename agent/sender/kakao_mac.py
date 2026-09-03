@@ -18,11 +18,12 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import subprocess
 import time
 from typing import List, Optional
 
-from .base import SendResult, Sender
+from .base import IrPathError, SendResult, Sender, ir_root, resolve_ir_file
 
 log = logging.getLogger("agent.kakao_mac")
 
@@ -35,6 +36,21 @@ APP = "KakaoTalk"
 # 결과가 많아도 위험하지 않다 — 오히려 이름이 흔하면(참여자 이름으로도 걸린다)
 # 20건은 너무 적어서 정작 찾는 방이 잘려 나갔다.
 MAX_SEARCH_ROWS = 60
+
+# ── 파일 전송 (실기로 확인된 값들) ──────────────────────────────────────────
+# 채팅창의 첨부 단추는 `help='파일전송 ⌘O'` 로 찾는다. **인덱스로 찾으면 안 된다**
+# — 창마다 단추 순서가 흔들린다.
+FILE_BUTTON_HELP = "파일전송"
+# `열기` 를 눌러도 바로 안 나간다. "파일 전송" 확인 시트가 한 번 더 뜨고,
+# 개수가 단추 이름에 박혀 있다(`1개 전송`). 그 시트가 유일한 진짜 관문이다.
+CONFIRM_TITLE = "파일 전송"
+CANCEL_BUTTON = "취소"
+SEND_BUTTON_FMT = "{n}개 전송"
+COUNT_BUTTON_RE = re.compile(r"^(\d+)\s*개\s*전송$")
+# 표준 NSOpenPanel
+OPEN_PANEL_ID = "open-panel"
+OPEN_BUTTON_ID = "OKButton"
+OPEN_BUTTON_NAME = "열기"
 
 
 def is_supported() -> bool:
@@ -156,6 +172,18 @@ class KakaoMacSender(Sender):
         self.t_send = float(cfg.get("after_send", 0.8))
         self.search_hotkey = cfg.get("search_hotkey", "f")   # Cmd+F
         self.close_after_send = bool(cfg.get("close_after_send", True))
+        # 파일 전송. 시트가 뜨기까지가 사람 손보다 느릴 수 있어 넉넉히 잡는다 —
+        # 짧게 잡으면 '안 떴다'고 보고 취소해 버린다.
+        self.file_button_help = cfg.get("file_button_help", FILE_BUTTON_HELP)
+        self.t_panel = float(cfg.get("file_panel_timeout", 6.0))
+        self.t_confirm = float(cfg.get("file_confirm_timeout", 8.0))
+        # Enter 만으로 패널이 닫히는 판이 있어, `열기` 를 누르기 전에 확인 시트가
+        # 이미 떴는지 잠깐만 본다.
+        self.t_confirm_quick = float(cfg.get("file_confirm_quick", 1.2))
+        self.t_sent = float(cfg.get("file_sent_timeout", 8.0))
+        # IR 자료 뿌리는 PC 마다 다르다 → 설정으로 받는다(agent/config.yaml 의
+        # `ir_root`, 또는 환경변수 DEALFLOW_IR_ROOT).
+        self.ir_root_setting = str(cfg.get("ir_root", "") or "")
 
     # --- 기본 조작 -----------------------------------------------------------
 
@@ -546,44 +574,63 @@ class KakaoMacSender(Sender):
             log.exception("verify_room 실패")
             return "not_found"
 
+    def _front_title(self) -> str:
+        """지금 최전면 카톡 창의 제목. 오발송 방지 검증의 근거."""
+        return _osa(
+            f'tell application "System Events" to tell process "{APP}" '
+            f'to return name of front window'
+        )
+
+    def _ensure_room_front(self, room_name: str) -> Optional[SendResult]:
+        """방을 앞으로 올리고 **최전면 창 제목이 정확히 일치하는지** 확인한다.
+
+        문제가 없으면 None, 있으면 그대로 돌려줄 실패 결과를 준다.
+
+        ★ 이 판단이 사는 자리는 여기 하나뿐이다. `send_text` 와 `send_file` 이
+        같이 쓴다 — 두 군데에 적어 놓으면 한쪽이 낡는다(이 저장소에서 되풀이된
+        사고 유형이다).
+        """
+        # 1) 이미 열린 창이 있으면 그걸 쓰고, 없으면 검색으로 연다.
+        #    방이 막 열리는 순간 포커스가 잡히지 않아 실패하는 일이 있었다
+        #    (실기: 1회차 room_not_found → 2회차 성공). 일시적 타이밍 문제이므로
+        #    한 번 더 시도한다. 재시도해도 안 되면 그대로 실패로 남긴다.
+        if not self._focus_window(room_name):
+            opened = False
+            for attempt in (1, 2):
+                try:
+                    self._open_room_via_search(room_name)
+                except QuartzUnavailable as exc:
+                    # 창이 안 열려 있고 자동 열기도 불가 → 사용자가 창만 열어두면 된다.
+                    return SendResult(ok=False, error=f"room_not_open: {exc}")
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("방 열기 %d회차 실패: %s", attempt, exc)
+                if self._focus_window(room_name):
+                    opened = True
+                    break
+                time.sleep(0.6)
+            if not opened:
+                return SendResult(ok=False, error=f"room_not_found: {room_name!r}")
+
+        # 2) ★ 오발송 방지: 최전면 창 제목이 room_name 과 정확히 일치하는지 재확인
+        front = self._front_title()
+        if front != room_name:
+            log.warning("room mismatch: front=%r expected=%r", front, room_name)
+            return SendResult(
+                ok=False,
+                error=f"room_mismatch: 열린 창 {front!r} != 대상 {room_name!r} (전송 안 함)",
+            )
+        return None
+
     def send_text(self, room_name: str, text: str) -> SendResult:
         """기존 방을 열어 텍스트 전송. 제목 불일치면 절대 보내지 않는다."""
         if not room_name or not room_name.strip():
             return SendResult(ok=False, error="room_name empty")
 
         try:
-            # 1) 이미 열린 창이 있으면 그걸 쓰고, 없으면 검색으로 연다.
-            #    방이 막 열리는 순간 포커스가 잡히지 않아 실패하는 일이 있었다
-            #    (실기: 1회차 room_not_found → 2회차 성공). 일시적 타이밍 문제이므로
-            #    한 번 더 시도한다. 재시도해도 안 되면 그대로 실패로 남긴다.
-            if not self._focus_window(room_name):
-                opened = False
-                for attempt in (1, 2):
-                    try:
-                        self._open_room_via_search(room_name)
-                    except QuartzUnavailable as exc:
-                        # 창이 안 열려 있고 자동 열기도 불가 → 사용자가 창만 열어두면 된다.
-                        return SendResult(ok=False, error=f"room_not_open: {exc}")
-                    except Exception as exc:  # noqa: BLE001
-                        log.warning("방 열기 %d회차 실패: %s", attempt, exc)
-                    if self._focus_window(room_name):
-                        opened = True
-                        break
-                    time.sleep(0.6)
-                if not opened:
-                    return SendResult(ok=False, error=f"room_not_found: {room_name!r}")
-
-            # 2) ★ 오발송 방지: 최전면 창 제목이 room_name 과 정확히 일치하는지 재확인
-            front = _osa(
-                f'tell application "System Events" to tell process "{APP}" '
-                f'to return name of front window'
-            )
-            if front != room_name:
-                log.warning("room mismatch: front=%r expected=%r", front, room_name)
-                return SendResult(
-                    ok=False,
-                    error=f"room_mismatch: 열린 창 {front!r} != 대상 {room_name!r} (전송 안 함)",
-                )
+            # 1~2) 방을 열고 창 제목을 확인한다 (send_file 과 같은 판단을 쓴다).
+            bad = self._ensure_room_front(room_name)
+            if bad is not None:
+                return bad
 
             # 3) 본문 입력
             # 실기 확인 결과: Cmd+V(클립보드 붙여넣기)는 카톡 Mac 입력창에 들어가지 않는다.
@@ -629,6 +676,568 @@ class KakaoMacSender(Sender):
         except Exception as exc:
             log.exception("send_text 실패")
             return SendResult(ok=False, error=f"kakao_mac: {exc}")
+
+    # --- 파일 전송 (IR 자료) -------------------------------------------------
+    #
+    # 실기로 확인된 길이다. 요약하면:
+    #   채팅창의 `파일전송 ⌘O` 단추 → 표준 열기 패널(NSOpenPanel) →
+    #   Cmd+Shift+G 로 경로 지정 → `열기` → **"파일 전송" 확인 시트** → `N개 전송`
+    #
+    # ★ 확인 시트가 **유일한 진짜 관문**이다. 보낸 뒤에는 파일 메시지 줄에 파일명이
+    #   AX 로 안 나와서, 사후 검증은 "대화 줄 수가 늘었다" 까지가 한계다.
+    #   그러니 나가기 **전에** 전부 맞는지 보고, 하나라도 어긋나면 취소한다.
+    #
+    # ⚠ 클립보드(Cmd+V)는 쓰지 않는다 — 카톡 Mac 은 붙여넣기를 통째로 무시한다
+    #   (글자도 파일도). 열기 패널은 시스템 창이라 별개다.
+    # ⚠ `send_text` 의 "입력창에 글자가 찼나" 검증을 여기 갖다 쓰면 안 된다.
+    #   파일은 입력창에 글자로 안 들어가서 성공해도 실패로 처리된다.
+
+    def _chat_rows(self, room_name: str) -> Optional[int]:
+        """대화 줄 수. 전송 전후를 견주어 실제로 나갔는지 보는 데 쓴다."""
+        try:
+            raw = _osa(
+                f'tell application "System Events" to tell process "{APP}"\n'
+                f'  set w to (first window whose name is "{_esc(room_name)}")\n'
+                f'  set n to -1\n'
+                f'  repeat with sa in (scroll areas of w)\n'
+                f'    try\n'
+                f'      set n to (count of rows of (first table of sa))\n'
+                f'      exit repeat\n'
+                f'    end try\n'
+                f'  end repeat\n'
+                f'  return n as text\n'
+                f'end tell'
+            )
+            value = int(raw)
+        except Exception:  # noqa: BLE001
+            return None
+        return value if value >= 0 else None
+
+    def _click_file_button(self, room_name: str) -> bool:
+        """`파일전송 ⌘O` 단추를 **help 값으로 찾아** 누른다.
+
+        ⚠ 인덱스로 찾지 않는다 — 창마다 단추 순서가 흔들린다.
+        ⚠ `entire contents` 를 쓰지 않는다 — 카톡 AX 가 먹통이 된다(창이 0개가
+          되고 카톡을 재시작해야 산다). 자식을 세 겹까지만 훑는다.
+        """
+        needle = _esc(self.file_button_help)
+        find = (
+            f'      set cands to (every button of {{ref}} whose help contains "{needle}")\n'
+            f'      if (count of cands) > 0 then\n'
+            f'        set target to item 1 of cands\n'
+            f'      end if\n'
+        )
+        raw = _osa(
+            f'tell application "System Events" to tell process "{APP}"\n'
+            f'  set w to (first window whose name is "{_esc(room_name)}")\n'
+            f'  set target to missing value\n'
+            f'  try\n'
+            + find.format(ref="w") +
+            f'  end try\n'
+            f'  if target is missing value then\n'
+            f'    repeat with e1 in (UI elements of w)\n'
+            f'      try\n'
+            + find.format(ref="e1") +
+            f'      end try\n'
+            f'      if target is not missing value then exit repeat\n'
+            f'      repeat with e2 in (UI elements of e1)\n'
+            f'        try\n'
+            + find.format(ref="e2") +
+            f'        end try\n'
+            f'        if target is not missing value then exit repeat\n'
+            f'      end repeat\n'
+            f'      if target is not missing value then exit repeat\n'
+            f'    end repeat\n'
+            f'  end if\n'
+            f'  if target is missing value then return "none"\n'
+            f'  click target\n'
+            f'  return "clicked"\n'
+            f'end tell'
+        )
+        return raw.strip() == "clicked"
+
+    def _sheet_snapshot(self, room_name: str) -> dict:
+        """방 창에 떠 있는 시트를 **한 번의 AX 호출로** 통째로 읽는다.
+
+        ⚠ 반복 변수 이름을 한두 글자로 줄이지 말 것. `st` 로 두었더니 AppleScript 가
+          예약어로 읽어 `-2741 syntax error` 로 죽었다(실기에서 잡았다).
+
+        열기 패널인지 확인 시트인지, 어떤 단추·파일명이 있는지가 한 스냅샷에
+        들어온다. 한 번에 읽어야 하는 이유: 검사 사이에 창이 바뀌면 '봤을 때는
+        맞았는데 누를 때는 달라진' 상태가 된다.
+        """
+        raw = _osa(
+            f'tell application "System Events" to tell process "{APP}"\n'
+            f'  set acc to ""\n'
+            f'  set fr to ""\n'
+            f'  try\n'
+            f'    set fr to (name of front window)\n'
+            f'  end try\n'
+            f'  set acc to acc & "FRONT\\t" & fr & "\\n"\n'
+            f'  try\n'
+            f'    set w to (first window whose name is "{_esc(room_name)}")\n'
+            f'  on error\n'
+            f'    return acc & "NOWIN\\n"\n'
+            f'  end try\n'
+            f'  if not (exists sheet 1 of w) then return acc\n'
+            f'  set sh to sheet 1 of w\n'
+            f'  set acc to acc & "PRESENT\\n"\n'
+            f'  try\n'
+            f'    set acc to acc & "IDENT\\t" & '
+            f'(value of attribute "AXIdentifier" of sh) & "\\n"\n'
+            f'  end try\n'
+            f'  repeat with btnEl in (buttons of sh)\n'
+            f'    try\n'
+            f'      set acc to acc & "BTN\\t" & (name of btnEl) & "\\n"\n'
+            f'    end try\n'
+            f'  end repeat\n'
+            f'  repeat with txtEl in (static texts of sh)\n'
+            f'    try\n'
+            f'      set acc to acc & "TXT\\t" & (value of txtEl) & "\\n"\n'
+            f'    end try\n'
+            f'  end repeat\n'
+            f'  repeat with sa in (scroll areas of sh)\n'
+            f'    try\n'
+            f'      set tb to (first table of sa)\n'
+            f'      set acc to acc & "ROWS\\t" & ((count of rows of tb) as text) & "\\n"\n'
+            f'      repeat with rowEl in (rows of tb)\n'
+            f'        repeat with cellEl in (UI elements of rowEl)\n'
+            f'          try\n'
+            f'            if (role of cellEl) is "AXStaticText" then set acc to '
+            f'acc & "TXT\\t" & (value of cellEl) & "\\n"\n'
+            f'          end try\n'
+            f'          try\n'
+            f'            repeat with subText in (static texts of cellEl)\n'
+            f'              set acc to acc & "TXT\\t" & (value of subText) & "\\n"\n'
+            f'            end repeat\n'
+            f'          end try\n'
+            f'        end repeat\n'
+            f'      end repeat\n'
+            f'      exit repeat\n'
+            f'    end try\n'
+            f'  end repeat\n'
+            f'  return acc\n'
+            f'end tell'
+        )
+        return parse_sheet_snapshot(raw)
+
+    def _goto_field_do(self, room_name: str, body: str = "") -> Optional[str]:
+        """열기 패널의 '폴더로 이동' 입력칸을 찾아 `body` 를 수행하고 값을 되읽는다.
+
+        칸을 못 찾으면 None. 되읽는 것이 핵심이다 — 넣었다고 믿고 Enter 를 치면
+        엉뚱한 폴더가 열린다.
+        """
+        raw = _osa(
+            f'tell application "System Events" to tell process "{APP}"\n'
+            f'  try\n'
+            f'    set w to (first window whose name is "{_esc(room_name)}")\n'
+            f'    set p to (sheet 1 of w)\n'
+            f'  on error\n'
+            f'    return "NOFIELD"\n'
+            f'  end try\n'
+            f'  set g to p\n'
+            f'  try\n'
+            f'    if (exists sheet 1 of p) then set g to (sheet 1 of p)\n'
+            f'  end try\n'
+            f'  set target to missing value\n'
+            f'  try\n'
+            f'    set cands to (every combo box of g)\n'
+            f'    if (count of cands) is 0 then set cands to (every text field of g)\n'
+            f'    if (count of cands) > 0 then set target to item 1 of cands\n'
+            f'  end try\n'
+            f'  if target is missing value then\n'
+            f'    repeat with e1 in (UI elements of g)\n'
+            f'      try\n'
+            f'        set cands to (every combo box of e1)\n'
+            f'        if (count of cands) is 0 then set cands to (every text field of e1)\n'
+            f'        if (count of cands) > 0 then\n'
+            f'          set target to item 1 of cands\n'
+            f'          exit repeat\n'
+            f'        end if\n'
+            f'      end try\n'
+            f'    end repeat\n'
+            f'  end if\n'
+            f'  if target is missing value then return "NOFIELD"\n'
+            f'  try\n'
+            f'    set focused of target to true\n'
+            f'  end try\n'
+            f'{body}'
+            f'  set out to ""\n'
+            f'  try\n'
+            f'    set out to (value of target) as text\n'
+            f'  end try\n'
+            f'  return "VALUE\\t" & out\n'
+            f'end tell'
+        )
+        if raw.strip() == "NOFIELD":
+            return None
+        _, _, value = raw.partition("\t")
+        return value
+
+    def _panel_goto(self, room_name: str, path: str) -> bool:
+        """열기 패널에서 `Cmd+Shift+G` 로 **경로를 명시해** 넣는다.
+
+        ★ 파일마다 매번 한다. 패널은 마지막 위치를 기억하므로 생략하면
+          엉뚱한 폴더가 잡힌다.
+
+        한글이 섞인 경로가 들어온다(기업 폴더 이름). AppleScript 의 keystroke 는
+        한글을 못 보내므로 **AX value 직접 설정**을 먼저 쓰고, 안 되면 클립보드,
+        그래도 안 되면(ASCII 경로일 때만) 타이핑 순으로 내려간다.
+        여기서 쓰는 클립보드는 **시스템 열기 패널** 쪽이라 카톡 입력창과 다르다.
+
+        어느 길로 넣었든 **되읽어 같은지 확인한 뒤에만** Enter 를 친다.
+        """
+        _osa(f'tell application "System Events" to keystroke "g" '
+             f'using {{command down, shift down}}')
+        if _wait_until(lambda: self._goto_field_do(room_name) is not None,
+                       timeout=self.t_panel) is None:
+            log.warning("'폴더로 이동' 입력칸을 찾지 못했습니다")
+            return False
+
+        # ① AX value 직접 설정 (한글 포함 어떤 경로든 들어간다)
+        got = self._goto_field_do(
+            room_name,
+            f'  try\n'
+            f'    set value of target to "{_esc(path)}"\n'
+            f'  end try\n'
+            f'  delay 0.15\n',
+        )
+        if got == path:
+            self._press_enter()
+            return True
+
+        # ② 클립보드 붙여넣기
+        try:
+            _set_clipboard(path)
+            self._goto_field_do(room_name, '  try\n    set value of target to ""\n  end try\n')
+            self._keystroke("v", cmd=True)
+            time.sleep(0.2)
+            if self._goto_field_do(room_name) == path:
+                self._press_enter()
+                return True
+        except Exception:  # noqa: BLE001
+            log.warning("클립보드로 경로 넣기 실패", exc_info=True)
+
+        # ③ 타이핑 (ASCII 경로에서만 가능)
+        if path.isascii():
+            try:
+                self._goto_field_do(room_name,
+                                    '  try\n    set value of target to ""\n  end try\n')
+                _type_text(path)
+                time.sleep(0.2)
+                if self._goto_field_do(room_name) == path:
+                    self._press_enter()
+                    return True
+            except Exception:  # noqa: BLE001
+                log.warning("타이핑으로 경로 넣기 실패", exc_info=True)
+
+        log.warning("경로를 입력칸에 넣지 못했습니다: %r (읽은 값=%r)", path, got)
+        return False
+
+    def _click_open_button(self, room_name: str) -> bool:
+        """열기 패널의 `열기`(OKButton)를 누른다."""
+        raw = _osa(
+            f'tell application "System Events" to tell process "{APP}"\n'
+            f'  try\n'
+            f'    set sh to (sheet 1 of (first window whose name is '
+            f'"{_esc(room_name)}"))\n'
+            f'  on error\n'
+            f'    return "none"\n'
+            f'  end try\n'
+            f'  set target to missing value\n'
+            f'  repeat with btnEl in (buttons of sh)\n'
+            f'    try\n'
+            f'      if (value of attribute "AXIdentifier" of btnEl) is '
+            f'"{OPEN_BUTTON_ID}" then\n'
+            f'        set target to btnEl\n'
+            f'        exit repeat\n'
+            f'      end if\n'
+            f'    end try\n'
+            f'  end repeat\n'
+            f'  if target is missing value then\n'
+            f'    try\n'
+            f'      set target to (first button of sh whose name is "{OPEN_BUTTON_NAME}")\n'
+            f'    end try\n'
+            f'  end if\n'
+            f'  if target is missing value then return "none"\n'
+            f'  click target\n'
+            f'  return "clicked"\n'
+            f'end tell'
+        )
+        return raw.strip() == "clicked"
+
+    def _click_sheet_button(self, room_name: str, name: str) -> bool:
+        """시트 안의 이름이 정확히 같은 단추를 누른다."""
+        raw = _osa(
+            f'tell application "System Events" to tell process "{APP}"\n'
+            f'  try\n'
+            f'    click (first button of (sheet 1 of (first window whose name is '
+            f'"{_esc(room_name)}")) whose name is "{_esc(name)}")\n'
+            f'  on error\n'
+            f'    return "none"\n'
+            f'  end try\n'
+            f'  return "clicked"\n'
+            f'end tell'
+        )
+        return raw.strip() == "clicked"
+
+    def _dismiss_sheet(self, room_name: str) -> None:
+        """열려 있는 시트를 **보내지 않고** 닫는다. 실패해도 넘어간다."""
+        if not self._click_sheet_button(room_name, CANCEL_BUTTON):
+            try:
+                self._key_code(53)      # Esc
+            except Exception:  # noqa: BLE001
+                pass
+        _wait_until(lambda: not self._sheet_snapshot(room_name).get("present"),
+                    timeout=2.0)
+
+    def send_file(self, room_name: str, file_names) -> SendResult:
+        """IR 자료를 첨부해 보낸다. **관문을 통과할 때만 보낸다.**
+
+        `file_names` 는 **공통 폴더 안의 파일명**이다(경로가 아니다). 실제 자리는
+        이 PC 가 설정한 뿌리로 조립한다 — 경로는 PC 마다 다른 설정이고 파일명은
+        서버가 들고 함께 쓰는 값이라, 나눠 갖는 지점이 여기다.
+        규칙에 어긋나는 이름이나 이 PC 에 없는 파일은 **카톡을 건드리기 전에**
+        거절한다 — 엉뚱한 파일이 나가는 것을 막는 선이다.
+
+        **한 번에 한 파일씩** 보낸다. 열기 패널의 경로 입력칸은 한 번에 한 경로만
+        받으므로, 여러 개를 한 시트에 몰아넣으려면 목록에서 마우스로 골라야 한다.
+        그 길은 실기로 확인하지 않았다 — 확인한 길로만 간다. 대신 관문 검사는
+        개수를 일반적으로 다루므로(`check_confirm_sheet`), 나중에 여러 개를 한
+        번에 붙이게 되어도 검사는 그대로 쓴다.
+
+        여러 개를 보내다 중간에 실패하면 **거기서 멈춘다.** 몇 개가 이미 나갔는지
+        실패 문구에 적는다 — 다시 보내면 그만큼 겹친다는 것을 사람이 알아야 한다.
+        """
+        if not room_name or not room_name.strip():
+            return SendResult(ok=False, error="room_name empty")
+
+        wanted = list(file_names or [])
+        if not wanted:
+            return SendResult(ok=False, error="no_files: 보낼 파일이 없습니다")
+
+        # ① 이름을 걸러 내고 이 PC 의 실제 경로로 조립한다.
+        #    **카톡을 건드리기 전에** 한다. 반쯤 보내 놓고 막히면 되돌릴 수 없다.
+        try:
+            resolved = [resolve_ir_file(n, self.ir_root_setting) for n in wanted]
+        except IrPathError as exc:
+            return SendResult(ok=False, error=f"ir_file_rejected: {exc}")
+
+        try:
+            # ② 방 열기 + 창 제목 정확 일치 (send_text 와 **같은 판단**)
+            bad = self._ensure_room_front(room_name)
+            if bad is not None:
+                return bad
+
+            for n, path in enumerate(resolved, start=1):
+                result = self._send_one_file(room_name, path)
+                if not result.ok:
+                    if n > 1:
+                        result.error = (f"{n - 1}개를 보낸 뒤 {n}번째에서 실패 "
+                                        f"— {result.error}")
+                    return result
+
+            if self.close_after_send:
+                try:
+                    self._keystroke("w", cmd=True)   # 창 닫기(목록만 남김)
+                except Exception:  # noqa: BLE001
+                    pass
+
+            log.info("[kakao_mac] SENT FILES room=%r files=%s",
+                     room_name, [p.name for p in resolved])
+            return SendResult(ok=True)
+
+        except AccessibilityError as exc:
+            return SendResult(ok=False, error=str(exc))
+        except Exception as exc:  # noqa: BLE001
+            log.exception("send_file 실패")
+            return SendResult(ok=False, error=f"kakao_mac: {exc}")
+
+    def _send_one_file(self, room_name: str, path) -> SendResult:
+        """파일 하나. 확인 시트가 어긋나면 **취소하고 아무것도 보내지 않는다.**"""
+        rows_before = self._chat_rows(room_name)
+
+        # ③ `파일전송 ⌘O` 단추 (help 값으로 찾는다)
+        if not self._click_file_button(room_name):
+            return SendResult(
+                ok=False,
+                error=f"file_button_not_found: 채팅창에서 "
+                      f"'{self.file_button_help}' 단추를 찾지 못했습니다 (전송 안 함)")
+
+        # ④ 열기 패널이 떴는지 확인 → 매번 Cmd+Shift+G 로 경로를 명시
+        if _wait_until(lambda: _is_open_panel(self._sheet_snapshot(room_name)),
+                       timeout=self.t_panel) is None:
+            return SendResult(ok=False,
+                              error="open_panel_not_shown: 파일 열기 창이 뜨지 "
+                                    "않았습니다 (전송 안 함)")
+
+        if not self._panel_goto(room_name, str(path)):
+            self._dismiss_sheet(room_name)
+            return SendResult(ok=False,
+                              error=f"path_not_entered: 열기 창에 경로를 넣지 "
+                                    f"못했습니다: {path} (전송 안 함)")
+
+        # ⑤ `열기` — Enter 만으로 패널이 닫히는 판도 있어, 확인 시트가 이미
+        #    떴으면 누르지 않는다.
+        if _wait_until(lambda: _is_confirm_sheet(self._sheet_snapshot(room_name)),
+                       timeout=self.t_confirm_quick) is None:
+            if not self._click_open_button(room_name):
+                self._dismiss_sheet(room_name)
+                return SendResult(ok=False,
+                                  error="open_button_not_found: 열기 단추를 찾지 "
+                                        "못했습니다 (전송 안 함)")
+
+            # ⑥ "파일 전송" 확인 시트를 기다린다. 안 뜨면 **아무것도 보내지 않는다.**
+            if _wait_until(lambda: _is_confirm_sheet(self._sheet_snapshot(room_name)),
+                           timeout=self.t_confirm) is None:
+                self._dismiss_sheet(room_name)
+                return SendResult(ok=False,
+                                  error="confirm_sheet_not_shown: 파일 전송 확인 "
+                                        "창이 뜨지 않았습니다 (전송 안 함)")
+
+        # ⑦ ★ 관문. 전부 맞을 때만 보낸다.
+        snapshot = self._sheet_snapshot(room_name)
+        reason = check_confirm_sheet(snapshot, room_name, [path.name])
+        if reason:
+            log.warning("확인 시트가 어긋났습니다 — 취소합니다: %s | snapshot=%r",
+                        reason, snapshot)
+            self._dismiss_sheet(room_name)
+            return SendResult(ok=False,
+                              error=f"gate_blocked: {reason} "
+                                    f"— 취소했습니다 (전송 안 함)")
+
+        # ⑧ `1개 전송`
+        button = SEND_BUTTON_FMT.format(n=1)
+        if not self._click_sheet_button(room_name, button):
+            self._dismiss_sheet(room_name)
+            return SendResult(ok=False,
+                              error=f"send_button_not_clicked: {button!r} 단추를 "
+                                    f"누르지 못했습니다 (전송 안 함)")
+
+        # ⑨ 줄 수가 늘었는지 확인.
+        #    보낸 뒤에는 파일 메시지 줄에 파일명이 AX 로 안 나온다 — 여기까지가
+        #    사후 검증의 한계다. 줄 수를 못 읽었으면 견주지 않는다(못 읽는 것과
+        #    안 나간 것은 다르다).
+        if rows_before is None:
+            log.warning("전송 전 대화 줄 수를 읽지 못해 결과를 견주지 못했습니다 room=%r",
+                        room_name)
+            return SendResult(ok=True)
+
+        grew = _wait_until(
+            lambda: (self._chat_rows(room_name) or 0) > rows_before,
+            timeout=self.t_sent,
+        )
+        if not grew:
+            # 단추는 이미 눌렀다. 나갔는지 아닌지 모르는 상태라 사람이 봐야 한다.
+            return SendResult(
+                ok=False,
+                error=f"send_unconfirmed: {button!r} 을 눌렀지만 대화 줄 수가 "
+                      f"늘지 않았습니다({rows_before}). 카톡을 직접 확인하세요 "
+                      f"— 다시 보내면 겹칠 수 있습니다")
+        return SendResult(ok=True)
+
+
+# ── 확인 시트 읽기·검사 (AX 와 떨어져 있어 그대로 시험할 수 있다) ────────────
+
+def parse_sheet_snapshot(raw: str) -> dict:
+    """`_sheet_snapshot` 이 읽어 온 줄들을 풀어 놓는다.
+
+    `KEY\tVALUE` 꼴이다. 단추 이름은 겹치면 하나만 남긴다 — 같은 단추가 두 겹으로
+    잡히면 "개수 단추가 여러 개" 로 잘못 읽힌다.
+    """
+    snapshot = {"front_title": "", "present": False, "identifier": "",
+                "buttons": [], "texts": [], "rows": None}
+    for line in (raw or "").splitlines():
+        key, _, value = line.partition("\t")
+        key, value = key.strip(), value.strip()
+        if key == "FRONT":
+            snapshot["front_title"] = value
+        elif key == "PRESENT":
+            snapshot["present"] = True
+        elif key == "IDENT":
+            snapshot["identifier"] = value
+        elif key == "BTN":
+            if value and value not in snapshot["buttons"]:
+                snapshot["buttons"].append(value)
+        elif key == "TXT":
+            if value:
+                snapshot["texts"].append(value)
+        elif key == "ROWS":
+            try:
+                snapshot["rows"] = int(value)
+            except ValueError:
+                pass
+    return snapshot
+
+
+def _is_open_panel(snapshot: dict) -> bool:
+    """지금 떠 있는 시트가 **파일 열기 패널**인가."""
+    if not snapshot.get("present"):
+        return False
+    return (snapshot.get("identifier") == OPEN_PANEL_ID
+            or OPEN_BUTTON_NAME in snapshot.get("buttons", []))
+
+
+def _is_confirm_sheet(snapshot: dict) -> bool:
+    """지금 떠 있는 시트가 **"파일 전송" 확인 시트**인가.
+
+    열기 패널에도 `취소` 는 있다. 개수가 박힌 단추(`N개 전송`)는 확인 시트에만
+    있으므로 그것으로 가른다.
+    """
+    if not snapshot.get("present"):
+        return False
+    buttons = snapshot.get("buttons", [])
+    return any(COUNT_BUTTON_RE.match(b) for b in buttons)
+
+
+def check_confirm_sheet(snapshot: dict, room_name: str,
+                        expected_names: List[str]) -> Optional[str]:
+    """★ 관문. 보내려던 것과 **정확히 같을 때만** None 을 돌려준다.
+
+    어긋나면 그 이유를 문자열로 돌려주고, 부르는 쪽은 **취소하고 아무것도 보내지
+    않는다.** 보낸 뒤에는 파일 메시지 줄에 파일명이 AX 로 안 나와서 되돌아볼
+    방법이 없다 — 그래서 나가기 전 이 자리가 유일한 진짜 관문이다.
+
+    AX 에서 떼어 놓은 **순수 함수**다. 가짜 스냅샷으로 그대로 시험할 수 있다.
+    """
+    want = list(expected_names or [])
+    if not snapshot or not snapshot.get("present"):
+        return "확인 시트가 없습니다"
+
+    # ① 방이 맞나 — 파일을 고르는 사이에 다른 창이 앞으로 나올 수 있다.
+    front = snapshot.get("front_title", "")
+    if front != room_name:
+        return f"방이 다릅니다: 앞에 있는 창 {front!r} != 대상 {room_name!r}"
+
+    buttons = snapshot.get("buttons", [])
+    if CANCEL_BUTTON not in buttons:
+        return f"확인 시트가 아닙니다({CANCEL_BUTTON!r} 단추가 없음): {buttons!r}"
+
+    # ② 개수 단추의 숫자 — 실기에서 개수가 단추 이름에 박혀 나온다(`1개 전송`).
+    counters = [b for b in buttons if COUNT_BUTTON_RE.match(b)]
+    if not counters:
+        return f"개수 단추를 찾지 못했습니다: {buttons!r}"
+    if len(counters) > 1:
+        return f"개수 단추가 여러 개입니다: {counters!r}"
+    shown = int(COUNT_BUTTON_RE.match(counters[0]).group(1))
+    if shown != len(want):
+        return (f"개수가 다릅니다: 시트는 {shown}개인데 "
+                f"보내려던 것은 {len(want)}개")
+
+    # ③ 표의 줄 수 = 파일 개수. 못 읽었으면 **통과시키지 않는다** —
+    #    못 읽는 것과 맞는 것은 다르다.
+    rows = snapshot.get("rows")
+    if rows is None:
+        return "시트의 파일 목록을 읽지 못했습니다"
+    if rows != len(want):
+        return f"파일 목록이 {rows}줄인데 보내려던 것은 {len(want)}개"
+
+    # ④ 파일명이 전부 있나.
+    texts = snapshot.get("texts", [])
+    missing = [n for n in want if n not in texts]
+    if missing:
+        return f"시트에 없는 파일: {missing!r} (시트에 있는 것: {texts!r})"
+    return None
 
 
 def _norm(text: str) -> str:
