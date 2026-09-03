@@ -204,10 +204,16 @@ def test_follow_up_batch_titles(client, db, seed, mode, title):
 # 자기 목록에서 찾다가 못 찾는다.
 
 def _mark_sent(db, contact_id, companies, user_id):
-    """이 담당자에게 회차를 하나 보낸 것으로 만든다."""
+    """이 담당자에게 **딜 소개** 회차를 하나 보낸 것으로 만든다.
+
+    `stage` 를 빼먹으면 안 된다 — 기업 목록에 번호를 붙여 내보낸 발송인지를
+    그 칸으로 가린다(`services/deal_numbers.for_contact`). 실제 발송도 늘
+    이 값을 채운다(`routers/deals.py`).
+    """
     from datetime import datetime, timezone
 
     from app.models import DealBatch, DealBatchCompany, SendItem, SendJob
+    from app.services.message_composer import STAGE_DAY1
 
     now = datetime.now(timezone.utc).isoformat()
     batch = DealBatch(user_id=user_id, title="지난 회차", sent_date=now[:10])
@@ -220,7 +226,8 @@ def _mark_sent(db, contact_id, companies, user_id):
     db.add(job)
     db.flush()
     db.add(SendItem(job_id=job.id, contact_id=contact_id, room_name="방",
-                    message="지난 회차", status="sent", sent_at=now))
+                    stage=STAGE_DAY1, message="지난 회차", status="sent",
+                    sent_at=now))
     db.commit()
     return batch
 

@@ -27,8 +27,8 @@ from ..models import (
 )
 from ..services import mail_sender, mailer, matcher
 from ..services import message_composer as mc
-from ..services import (deal_queue, sheet_owner, sourcing_link, sourcing_msg,
-                        template_pick)
+from ..services import (deal_numbers, deal_queue, sheet_owner, sourcing_link,
+                        sourcing_msg, template_pick)
 from ..services.message_composer import MAX_COMPANIES_PER_SEND
 
 router = APIRouter(prefix="/api/deals", tags=["deals"])
@@ -226,51 +226,21 @@ def _compose_for_contact(
         # STAGE_DAY1 이 아니면 기업 목록을 붙이지 않는다(composer 규칙).
         stage=follow_up[2] if follow_up else mc.STAGE_DAY1,
         include_opening=include_opening,
-        company_list=(build_company_list(db, contact, companies)
+        # 자료 전달의 "2번 기업 …" — 번호를 새로 매기지 않고 **딜 소개에서
+        # 붙인 번호**를 되읽는다(`deal_numbers`).
+        company_list=(deal_numbers.company_list(db, contact.id, companies)
                       if mode == MODE_IR else None),
         # `file_links` · `link_blocks` 를 넘기지 않는다 — 자료 전달은 이제
         # **한 통**이다. 링크가 빠졌으니 먼저 던질 것도 없다.
     )
 
 
-def deal_positions(db: Session, contact_id: int) -> dict:
-    """이 담당자가 **마지막으로 받은 회차**에서 각 기업이 몇 번이었는지.
-
-    투자사는 "5) 친환경 패키지 …" 처럼 번호로 기억하고 답한다. 자료를 보낼 때
-    같은 번호로 짚어 줘야 어느 기업인지 서로 맞는다. 번호를 새로 매기면
-    받는 쪽에서는 다른 기업 이야기로 읽힌다.
-    """
-    batch_id = db.execute(
-        select(SendJob.batch_id)
-        .join(SendItem, SendItem.job_id == SendJob.id)
-        .where(SendItem.contact_id == contact_id, SendItem.status == "sent",
-               SendJob.kind.in_(SEND_KINDS),
-               SendJob.batch_id.isnot(None))
-        .order_by(SendItem.id.desc()).limit(1)
-    ).scalar()
-    if batch_id is None:
-        return {}
-    return {
-        row.company_id: row.position
-        for row in db.execute(
-            select(DealBatchCompany).where(DealBatchCompany.batch_id == batch_id)
-        ).scalars().all()
-    }
-
-
-def build_company_list(db: Session, contact: VcContact,
-                       companies: List[IrCompany]) -> str:
-    """'1번 기업 샘플애그' · 여럿이면 '1번 기업 샘플애그, 3번 기업 …'.
-
-    지난 회차에 없던 기업은 번호를 붙이지 않는다 — 없는 번호를 지어내면
-    받는 쪽이 자기 목록에서 찾다가 못 찾는다.
-    """
-    positions = deal_positions(db, contact.id)
-    parts = []
-    for company in companies:
-        no = positions.get(company.id)
-        parts.append(f"{no}번 기업 {company.name}" if no else company.name)
-    return ", ".join(parts)
+# 자료 전달이 짚는 번호(`2번 기업 …`)를 만들던 자리가 여기였다
+# (`deal_positions` · `build_company_list`). **`services/deal_numbers.py` 로
+# 옮겼다** — 번호를 정하는 곳과 되읽는 곳이 떨어져 있어서 서로 다른 번호를
+# 냈다. 딜 소개는 고른 차례로 `1) 2) 3)` 을 붙이는데, 자료 전달은 "마지막으로
+# 나간 회차" 를 봐서 자료를 한 번 보내고 나면 1 부터 다시 셌고 리마인드를 한
+# 통 보내면 번호가 사라졌다. 이제 양쪽이 그 한 모듈을 함께 쓴다.
 
 
 # 자료 전달 문구에 **구글 드라이브 링크를 실어 보내던 자리**가 여기였다
@@ -640,7 +610,9 @@ def create_send_list(
     )
     db.add(batch)
     db.flush()
-    for pos, company in enumerate(companies, start=1):
+    # 회차에 남기는 번호 = 문구에 붙는 번호. 같은 자리에서 가져온다 —
+    # 자료 전달이 나중에 이 번호를 되읽어 "2번 기업 …" 이라고 짚는다.
+    for pos, company in deal_numbers.numbered(companies):
         db.add(DealBatchCompany(batch_id=batch.id, company_id=company.id, position=pos))
 
     # Job (queued) + items (pending, snapshotted message + room name)
