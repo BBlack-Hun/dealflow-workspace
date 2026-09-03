@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
-from datetime import date
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Request
@@ -141,14 +140,13 @@ def deals_page(
     # 회차명은 **보내는 날에서 만든다.** 손으로 적으면 "8월회차" · "8월 셋째주" ·
     # "0826" 이 섞여 남아, 나중에 몇 주차에 뭘 보냈는지 찾을 때 이력이 갈라진다.
     #
-    # 회차를 가르는 것은 **주**다(`cadence.cycle_anchor`). '다음 회차일'을 그대로
-    # 쓰면 회차일이 하루만 지나도 다음 회차로 넘어가, 같은 주에 나눠 보낸 것이
-    # 두 회차로 갈라진다 — 8/26(수)에 보내다 8/27(목)에 이어 보내면 `09/02` 가
-    # 떴다. 화면 다른 곳의 '다음 발송일'은 그대로 다음 회차일이다(여기와 다른 질문).
-    cycle_day = cadence.cycle_anchor(db, date.today())
+    # 앞 날짜는 **오늘**이다. 회차 기준일을 쓰면 9/2 회차 주의 9/3 에 열어도
+    # `09/02` 가 채워져, 오늘 만드는 회차 이름에 어제가 적혔다. 규칙과 그 예외
+    # (회차 주 밖이면 회차 기준일)는 `cadence.default_batch_title` 한 곳에 있다 —
+    # 화면 다른 곳의 '다음 발송일'은 그대로 다음 회차일이다(여기와 다른 질문).
     ctx.update({
         "companies": companies,
-        "default_batch_title": cadence.batch_title(cycle_day),
+        "default_batch_title": cadence.default_batch_title(db),
         "history": history,
         "recent_count": sum(1 for h in history.values() if h["recent"]),
         "recent_days": deal_history.RECENT_DAYS,

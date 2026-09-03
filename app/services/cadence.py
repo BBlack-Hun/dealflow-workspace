@@ -515,3 +515,40 @@ def batch_title(day: Optional[date] = None) -> str:
     day = day or date.today()
     week = sheet_import.week_of_month(day.isoformat())
     return f"{day.month:02d}/{day.day:02d} ({day.month}월 {week}주차)"
+
+
+def default_batch_title(db: Optional[Session] = None,
+                        today: Optional[date] = None) -> str:
+    """새 회차를 만들 때 화면에 채워 줄 회차명 — 앞 날짜는 **오늘**이다.
+
+    회차명 앞 날짜는 회차 기준일이었다. 그래서 9/2 회차 주의 9/3 에 화면을
+    열면 `09/02 (9월 1주차)` 가 채워졌다 — 오늘 만드는 회차인데 이름에는
+    어제가 적힌다. 나중에 "몇 월 며칠에 뭘 보냈지" 를 찾는 기준은 결국
+    **보낸 날**이라, 앞 날짜는 오늘이어야 한다.
+
+    **그 주 밖이면 회차 기준일 그대로 둔다.** 오늘을 그냥 쓰면 9/10 에
+    `09/10 (9월 2주차)` 가 되어 9/16(3주차) 회차가 2주차로 적힌다 — 회차와
+    주차가 어긋난다. 회차 주 밖이라는 것은 아직 **다음 회차를 미리 준비**
+    하는 중이라는 뜻이므로, 이름도 그 회차의 날짜여야 한다.
+    회차 주 안이라는 것은 지금 그 회차를 보내는 중이라는 뜻이다.
+
+    주가 같은지는 회차를 가르는 것과 **같은 함수**로 잰다(`weekly.week_start`,
+    `cycle_anchor` 가 쓰는 그것). 두 벌로 정의하면 한쪽만 고쳐지는 날 회차와
+    이름이 갈린다.
+
+    **이미 저장된 회차 이름은 건드리지 않는다.** 여기서 나오는 것은 화면
+    입력칸의 기본값뿐이고, 저장되는 이름은 사람이 화면에서 확정한 그 값이다
+    (`deals.py` 가 `req.title` 을 그대로 넣는다). 지난 회차 이름이 오늘에
+    따라 달라지면 발송 이력이 갈라진다 — `batch_title(day)` 는 받은 날짜만으로
+    정해지는 그대로 둔다.
+
+    회차 주의 월요일이 지난달일 수 있다(8/31 월 → 9/2 수 회차). 그때는
+    `08/31 (8월 5주차)` 가 된다 — 이름은 **그날 만든 것**을 말하므로 어긋난
+    것이 아니다. 괄호 안 주차는 늘 앞 날짜를 설명한다.
+    """
+    from . import weekly
+
+    today = today or _today()
+    anchor = cycle_anchor(db, today)
+    same_week = weekly.week_start(today) == weekly.week_start(anchor)
+    return batch_title(today if same_week else anchor)
