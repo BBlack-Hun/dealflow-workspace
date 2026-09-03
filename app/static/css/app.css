@@ -1608,6 +1608,13 @@ a.guard-go:hover { background: #1e4fd0; text-decoration: none; }
   .queue-what { white-space: normal; }
 }
 
+/* ── 데이터 되돌리기 ──────────────────────────────────────────────────────
+   지금 고른 지점이 어느 줄인지 표시한다. **`.only-picked` 를 쓰면 안 된다** —
+   그것은 `display:flex` 인 낱말 유틸이라 `<tr>` 에 걸면 표 줄이 통째로
+   깨진다(같은 이유로 `td` 에 flex 를 걸지 말라는 주석이 위에 있다). */
+.picked-row { background: #f2f7ff; }
+.picked-row:hover { background: #e9f1ff; }
+
 /* [전체 자동조합] 미리보기 목록.
  *
  * 바뀔 곳이 226줄이라 한 화면에 안 들어간다. **목록만 따로 스크롤**시킨다 —

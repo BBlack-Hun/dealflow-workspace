@@ -18,6 +18,9 @@ os.environ["DEALFLOW_TEST_ROOM"] = ""  # 테스트 모드 OFF (발송 대상 치
 # 실행 환경에 따라 결과가 달라지고, 공개 저장소에 실제 상호가 기대값으로 박힌다.
 os.environ["DEALFLOW_ROOM_SUFFIX"] = "Deal 공유 우리브이씨 Asset"
 os.environ["DEALFLOW_SEED_DEMO"] = "0"
+# 일일 백업 실을 끈다. 검사는 앱을 수십 번 만들었다 버리는데, 그때마다 실이 뜨고
+# 임시 폴더에 .db 를 쓰면 서로를 밟는다(백업 자체는 따로 검사한다).
+os.environ["DEALFLOW_DAILY_BACKUP"] = "0"
 # 메일 설정도 꺼 둔다. 켜져 있는 환경에서 돌리면 '메일 채널이 꺼져 있다'는
 # 검사가 그 환경 때문에 실패한다(방 이름 접미사에서 이미 겪었다).
 for _name in ("HOST", "PORT", "USER", "PASSWORD", "FROM", "TLS", "SSL"):

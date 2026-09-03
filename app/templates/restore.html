@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+
+{#
+  데이터 되돌리기 — 관리자만.
+
+  **스크립트가 없다.** 고르는 것은 링크(`?pick=`), 되돌리는 것은 폼 하나다.
+  되돌리기는 하필 무언가 잘못됐을 때 쓰는 기능이라, 스크립트가 한 번 어긋나는
+  날 이 화면까지 같이 죽으면 나갈 길이 사라진다(팀 현황의 수정칸을 주소로 여는
+  것과 같은 판단).
+#}
+
+{% block content %}
+<header class="page-head">
+  <h1>{{ page_title }}</h1>
+  <p class="muted">
+    저장된 지점으로 데이터 전체를 되돌립니다. 관리자만 볼 수 있습니다.
+    <a class="linkbtn" href="/team">팀 현황으로</a>
+  </p>
+</header>
+
+{% if msg %}<p class="flash">{{ msg }}</p>{% endif %}
+
+<!-- ── 백업이 실제로 돌고 있는가 ──────────────────────────────────────────
+     이 칸이 이 화면에서 제일 중요하다. 되돌릴 지점은 백업이 있어야 생기는데,
+     백업이 조용히 멈춰 있으면 아무도 모른 채 "돌아갈 수 있다" 고 믿는다.
+     실제로 서버가 그 상태였다. -->
+<section class="panel {% if health.stale %}warn-panel{% endif %}">
+  <h2 class="panel-title">일일 백업 상태</h2>
+  {% if health.stale %}
+  <div class="warn-box">
+    <b>⚠ {{ health.detail }}</b>
+    <p class="hint">
+      일일 백업은 앱과 같은 컨테이너 안에서 돕니다. 화면이 열리는데 백업만
+      멈춰 있다면 데이터 폴더에 쓸 수 없는 상태(권한·디스크)일 수 있습니다.
+    </p>
+    {% if health.error %}<p class="hint err">마지막 사유: {{ health.error }}</p>{% endif %}
+  </div>
+  {% else %}
+  <p class="hint ok">✅ {{ health.detail }}</p>
+  {% endif %}
+  <ul class="import-stats">
+    <li><span>가장 새 일일 백업</span><b>{{ health.latest or '없음' }}</b></li>
+    <li><span>뜬 시각</span>
+      <b>{{ health.latest_at.strftime('%Y-%m-%d %H:%M') if health.latest_at else '-' }}</b></li>
+    <li><span>보관 기간</span><b>최근 {{ keep_days }}일</b></li>
+  </ul>
+  <p class="hint">
+    하루 한 번, 최근 {{ keep_days }}일치를 남기고 오래된 것은 지웁니다.
+    배포 직전 백업(<code>predeploy-*</code>)은 성격이 다른 백업이라 지우지 않습니다.
+  </p>
+</section>
+
+<!-- ── 발송 중에는 되돌리지 않는다 ──────────────────────────────────────── -->
+{% if sending %}
+<section class="panel warn-panel">
+  <h2 class="panel-title">지금은 되돌릴 수 없습니다</h2>
+  <div class="warn-box">
+    <b>발송 회차가 돌고 있습니다.</b>
+    <p class="hint">
+      회차 중간에 데이터가 옛 것으로 바뀌면 <b>어디까지 나갔는지 기록이 어긋납니다.</b>
+      이미 카톡을 받은 투자사가 '아직 안 보냄' 으로 돌아가고, 발송 프로그램이
+      남은 건을 가져가면서 <b>그 사람에게 또 보냅니다.</b>
+      회차가 끝나거나 멈춘 뒤에 되돌려 주세요.
+    </p>
+    <ul class="import-stats">
+      {% for job in sending %}
+      <li><span>{{ job.id }}번 회차 ({{ job.kind }})</span>
+        <b class="warn">{{ job.status }} · {{ job.sent }}/{{ job.total }}건</b></li>
+      {% endfor %}
+    </ul>
+    <a class="secondary-btn" href="/jobs">발송 현황 보기</a>
+  </div>
+</section>
+{% endif %}
+
+<!-- ── 고른 지점: 되돌리면 무엇이 바뀌는가 ──────────────────────────────
+     날짜만 보고 누르게 하지 않는다. 표마다 지금과 그때를 나란히 세어 보여
+     주고 나서 확인을 받는다. -->
+{% if picked %}
+<section class="panel">
+  <h2 class="panel-title">되돌리면 이렇게 바뀝니다</h2>
+  <ul class="import-stats">
+    <li><span>되돌릴 지점</span><b>{{ picked.name }}</b></li>
+    <li><span>종류</span><b>{{ picked.kind }}</b></li>
+    <li><span>뜬 시각</span><b>{{ picked.at.strftime('%Y-%m-%d %H:%M') }}</b></li>
+    <li><span>크기</span><b>{{ picked.size_mb }}</b></li>
+  </ul>
+
+  {# 스키마 판은 `import-stats` 밖에 둔다. 그 목록은 180px 짜리 칸에 이름과
+     값을 양끝으로 미는 모양이라, `0051_one_liner_single_source` 처럼 긴 값이
+     들어오면 **이름 쪽이 짜부라져 세로로 쪼개진다**(`스키/마/판`). #}
+  {% if not picked.safe %}
+  <div class="warn-box"><b>⚠ 이 지점으로는 되돌릴 수 없습니다.</b>
+    <p class="hint">{{ picked.note }}</p></div>
+  {% else %}
+  <p class="hint">
+    스키마 판 <code>{{ picked.revision or '읽을 수 없음' }}</code> — {{ picked.note }}
+  </p>
+  {% endif %}
+
+  {% if risk and risk.warning %}
+  <div class="warn-box"><b>⚠ 로그인</b>
+    <p class="hint">{{ risk.warning }}</p></div>
+  {% endif %}
+
+  <div class="table-wrap">
+    <table class="grid-table compact">
+      <thead><tr>
+        <th>표</th><th class="num">지금</th><th class="num">그 지점</th><th class="num">되돌리면</th>
+      </tr></thead>
+      <tbody>
+        {% for row in diff %}
+        <tr>
+          <td>{{ row.label }}</td>
+          <td class="num">{{ row.now if row.now is not none else '-' }}</td>
+          <td class="num">{{ row.then if row.then is not none else '-' }}</td>
+          <td class="num">
+            {% if row.delta > 0 %}<b class="ok">+{{ row.delta }}</b>
+            {% elif row.delta < 0 %}<b class="warn-text">{{ row.delta }}</b>
+            {% else %}<span class="muted">0</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="hint">
+    음수는 <b>사라지는 것</b>입니다. 되돌리기 직전 상태는 자동으로 한 벌 떠 두므로,
+    잘못 되돌렸으면 <code>before-restore-*</code> 지점으로 다시 돌아올 수 있습니다.
+  </p>
+
+  {% if picked.safe and not sending %}
+  <form method="post" action="/team/restore/apply">
+    <input type="hidden" name="name" value="{{ picked.name }}">
+    <button class="danger-btn" type="submit">
+      {{ picked.name }} 지점으로 되돌리기
+    </button>
+    <a class="linkbtn" href="/team/restore">취소</a>
+  </form>
+  {% endif %}
+</section>
+{% endif %}
+
+<!-- ── 되돌릴 수 있는 지점 ──────────────────────────────────────────────── -->
+<section class="panel">
+  <h2 class="panel-title">되돌릴 수 있는 지점</h2>
+  {% if points %}
+  <div class="table-wrap">
+    <table class="grid-table compact">
+      <thead><tr>
+        <th>날짜</th><th>종류</th><th>파일</th><th class="num">크기</th>
+        <th>스키마 판</th><th></th>
+      </tr></thead>
+      <tbody>
+        {% for p in points %}
+        <tr {% if picked and picked.name == p.name %}class="picked-row"{% endif %}>
+          <td>{{ p.at.strftime('%Y-%m-%d %H:%M') }}</td>
+          <td>{{ p.kind }}</td>
+          <td class="muted">{{ p.name }}</td>
+          <td class="num">{{ p.size_mb }}</td>
+          <td>
+            {% if p.safe %}<span class="muted">{{ p.revision }}</span>
+            {% else %}<span class="warn-text" title="{{ p.note }}">되돌릴 수 없음</span>{% endif %}
+          </td>
+          <td>
+            {% if p.safe %}<a class="linkbtn" href="/team/restore?pick={{ p.name }}">고르기</a>
+            {% else %}<span class="hint">{{ p.note }}</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">되돌릴 수 있는 지점이 없습니다.</p>
+  {% endif %}
+  <p class="hint">
+    올린 시트 파일은 목록에 없습니다 — 이 앱은 <b>파일을 보관하지 않고</b> 읽어서
+    데이터로 넣기 때문입니다. 그래서 시트에서 온 내용은 위 표에 이미 들어 있습니다.
+  </p>
+</section>
+{% endblock %}

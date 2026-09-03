@@ -247,6 +247,34 @@
 </section>
 
 <div class="dash-grid">
+  <!-- 백업이 돌고 있는가. **이 자리에 있어야 한다.** 되돌리기 화면 안에만
+       두면, 되돌릴 일이 생기고 나서야 백업이 없다는 것을 알게 된다. 서버가
+       실제로 몇 달째 그 상태였다.
+
+       주의: 팀원 표 **아래쪽**(주석 포함)에는 긴 줄표(em dash)를 쓰지 않는다.
+       팀 현황 검사가 표의 마지막 줄을 다음 `<tr` 까지 잘라 내고 그 안의 긴
+       줄표 개수로 "비어 있는 칸" 을 세는데, 주석 안의 글자까지 같이 세어져
+       엉뚱한 검사가 빨개진다 (tests/test_consulting_visibility.py). -->
+  <section class="panel {% if backup.stale %}warn-panel{% endif %}">
+    <h2 class="panel-title">데이터 백업
+      <a class="linkbtn" href="/team/restore">되돌리기</a></h2>
+    {% if backup.stale %}
+    <p class="hint warn">⚠ {{ backup.detail }}</p>
+    {% else %}
+    <p class="hint ok">✅ {{ backup.detail }}</p>
+    {% endif %}
+    <ul class="import-stats">
+      <li><span>가장 새 일일 백업</span><b>{{ backup.latest or '없음' }}</b></li>
+      <li><span>뜬 시각</span>
+        <b>{{ backup.latest_at.strftime('%Y-%m-%d %H:%M') if backup.latest_at else '-' }}</b></li>
+      <li><span>보관 중</span><b>{{ backup.count }}개</b></li>
+    </ul>
+    <p class="hint">
+      하루 한 번 자동으로 뜹니다. 문제가 생기면 <b>되돌리기</b> 에서 지점을 골라
+      데이터 전체를 그때로 되돌릴 수 있습니다.
+    </p>
+  </section>
+
   <section class="panel">
     <h2 class="panel-title">메일 발송 설정</h2>
     {% if mail.configured %}
