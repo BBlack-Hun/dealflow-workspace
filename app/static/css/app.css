@@ -1270,10 +1270,13 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
 .bucket-head { font-size: 13px; margin: 0 0 6px; display: flex; align-items: center; gap: 8px; }
 .bucket-empty { font-size: 12px; margin: 0 0 4px; }
 
-/* NO 를 누르면 활동 이력이 열린다 — 월별 딜소개는 옆으로 끝없이 늘어나는 칸이라
-   표에 넣지 않고 여기서 본다. */
-.rowno.js-detail { cursor: pointer; }
-.rowno.js-detail:hover { color: var(--accent); text-decoration: underline; }
+/* NO 를 누르면 창이 열린다 — 투자사 관리 현황에서는 활동 이력(`js-detail`),
+   기업 표에서는 [수정] 창(`js-co-edit`)이다. 월별 딜소개는 옆으로 끝없이
+   늘어나는 칸이라 표에 넣지 않고 여기서 본다.
+   **누를 수 있다는 표시가 여기뿐이다** — 번호는 그냥 글자라, 커서와 hover 색이
+   없으면 눌러도 되는 칸인지 알 길이 없다. */
+.rowno.js-detail, .rowno.js-co-edit { cursor: pointer; }
+.rowno.js-detail:hover, .rowno.js-co-edit:hover { color: var(--accent); text-decoration: underline; }
 
 /* 업무 보고 — 팀원 골라 보기 */
 .chip-select { font: inherit; font-size: 12px; padding: 3px 8px;
