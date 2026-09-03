@@ -24,6 +24,8 @@ import re
 from dataclasses import dataclass, field
 from typing import List, Optional
 
+from . import deal_numbers
+
 # Stage constants
 STAGE_DAY1 = 1
 STAGE_REMIND = 2
@@ -150,8 +152,9 @@ def render_template(text: str, contact: ContactView, company_name: Optional[str]
     `{자료링크}` 는 **더 이상 채우지 않는다**(구글 드라이브 링크 방식 폐기).
     치환 목록에는 남아 있어야 옛 문구에 적힌 토큰이 빈칸으로 지워진다.
 
-    `{기업목록}` 은 IR 자료 전달에서 "1번 기업 샘플애그" 처럼 **지난 회차에서의 번호**로
-    채운다. 투자사는 그 번호로 기억하고 있어서, 번호가 없으면 어느 기업인지 못 찾는다.
+    `{기업목록}` 은 IR 자료 전달에서 "2번 기업 샘플애그" 처럼 **딜 소개에서 붙은
+    번호**로 채운다(`services/deal_numbers.py`). 투자사는 그 번호로 기억하고 있어서,
+    다른 번호로 짚으면 서로 다른 기업 이야기를 한다.
     """
     mapping = {
         "{담당자명}": contact.name or "",
@@ -307,7 +310,9 @@ def compose_message(
     if stage == STAGE_DAY1:
         if not companies:
             warnings.append("선택된 기업이 없습니다.")
-        for idx, company in enumerate(companies, start=1):
+        # 번호는 `deal_numbers` 가 정한다 — 회차에 남는 `position` 과 자료
+        # 전달의 "2번 기업 …" 이 같은 자리에서 나와야 서로 어긋나지 않는다.
+        for idx, company in deal_numbers.numbered(companies):
             summary = company_summary(company)
             parts.append("")  # blank line separator
             parts.append(f"{idx}) {summary}")
