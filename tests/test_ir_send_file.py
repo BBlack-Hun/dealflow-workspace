@@ -679,3 +679,198 @@ def test_every_agent_module_ships_in_the_zip():
     assert not missing, (
         f"zip 목록에 없는 발송기 모듈: {missing} — "
         f"app/routers/setup.py 의 AGENT_FILES 에 더하세요")
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  ★ 한글 파일명이 **두 형태로** 들어온다 — 눈에는 같은데 글자로는 다르다
+#
+#  macOS 는 한글 파일명을 **자모를 쪼갠 형태(NFD)** 로 디스크에 적는데, 웹
+#  화면에 타이핑한 값은 **합친 형태(NFC)** 로 들어온다. 파일을 여는 것은 어느
+#  쪽이든 되므로(볼륨이 형태를 가려 준다) 이 어긋남은 조용하다.
+#
+#  터지는 자리는 **확인 시트와 글자를 맞춰 보는 관문**이다. 그냥 `==` 로
+#  견주면 멀쩡한 파일인데 "시트에 없는 파일" 이라며 취소한다 — **가짜 실패**.
+#  실기에서 그대로 재현했고(자료 폴더의 한글 파일 대부분이 쪼갠 형태였다),
+#  아래가 그 자리를 못박는다.
+#
+#  ⚠ 여기 이름은 **전부 지어낸 것**이다. 실제 기업명·파일명을 쓰지 않는다.
+# ══════════════════════════════════════════════════════════════════════════
+
+import unicodedata  # noqa: E402
+
+#: 자모를 **합친** 형태 — 웹 화면에 타이핑하면 이렇게 들어온다.
+NFC_NAME = unicodedata.normalize("NFC", "가나다_회사소개_최종.pdf")
+#: 자모를 **쪼갠** 형태 — macOS 디스크에 적히는 꼴. 파인더에서 복사해 붙이면
+#: 이 형태가 그대로 웹 화면으로 들어온다.
+NFD_NAME = unicodedata.normalize("NFD", NFC_NAME)
+
+
+def test_the_two_forms_really_are_different_strings():
+    """전제 확인 — 눈에는 같아도 글자열로는 다르다. 여기가 어긋남의 출발점이다."""
+    assert NFC_NAME != NFD_NAME
+    assert str(NFC_NAME) == str(NFD_NAME) or True   # 화면에 찍으면 똑같이 보인다
+    assert base.nfc(NFD_NAME) == NFC_NAME
+
+
+def test_gate_lets_through_a_name_typed_in_the_other_form():
+    """★ 이 파일의 핵심.
+
+    시트는 합친 형태로 보여 주는데 보내려던 이름이 쪼갠 형태다. **같은 파일**
+    이므로 관문은 통과시켜야 한다. 예전에는 여기서 취소했다(가짜 실패).
+    """
+    sheet = confirm_sheet(files=(NFC_NAME,))
+
+    assert kakao_mac.check_confirm_sheet(sheet, ROOM, [NFD_NAME]) is None
+
+
+def test_gate_lets_it_through_the_other_way_round_too():
+    """반대 방향도 같다 — 어느 쪽이 어느 형태인지에 기대지 않는다."""
+    sheet = confirm_sheet(files=(NFD_NAME,))
+
+    assert kakao_mac.check_confirm_sheet(sheet, ROOM, [NFC_NAME]) is None
+
+
+def test_the_room_title_is_matched_the_same_way():
+    """방 제목도 사람이 웹에 적은 한글이다. 같은 어긋남이 난다."""
+    sheet = confirm_sheet(room=unicodedata.normalize("NFD", "라마바 딜 공유방"),
+                          files=(NFC_NAME,))
+
+    assert kakao_mac.check_confirm_sheet(
+        sheet, unicodedata.normalize("NFC", "라마바 딜 공유방"), [NFC_NAME]) is None
+
+
+def test_normalizing_does_not_make_the_gate_lenient():
+    """형태만 맞출 뿐이다 — **글자가 다른 이름은 그대로 막는다.**
+
+    관문을 무르게 하는 변경이 아니라는 것을 못박는다. 이게 무너지면 엉뚱한
+    자료가 투자사 방으로 나간다.
+    """
+    sheet = confirm_sheet(files=(NFC_NAME,))
+    other = unicodedata.normalize("NFC", "가나다_회사소개_초안.pdf")   # 최종 ↔ 초안
+
+    reason = kakao_mac.check_confirm_sheet(sheet, ROOM, [other])
+
+    assert reason and "시트에 없는 파일" in reason
+
+
+def test_a_file_saved_in_one_form_is_sent_when_asked_for_in_the_other(tmp_path):
+    """끝에서 끝까지 — **디스크는 쪼갠 형태, 서버가 준 이름은 합친 형태.**
+
+    실기의 모양 그대로다. 파일은 열리고(볼륨이 형태를 가려 준다) 확인 시트는
+    합친 형태로 보여 주는데, 서버가 준 이름은 합친 형태다. 전송 단추가 실제로
+    눌려야 한다.
+    """
+    root = tmp_path / "자료폴더"
+    root.mkdir()
+    (root / NFD_NAME).write_bytes(b"pretend pdf")     # ← 디스크에는 쪼갠 형태
+
+    mac = FakeMac(confirm_sheet(files=(NFC_NAME,)), ir_root=str(root))
+    result = mac.send_file(ROOM, [NFC_NAME])          # ← 서버는 합친 형태를 준다
+
+    assert result.ok, result.error
+    assert mac.sent and not mac.canceled
+
+
+def test_matching_forms_cannot_smuggle_a_path_separator():
+    """★ 정규화가 **빗장을 무르게 하지 않는다.**
+
+    NFKC 로 맞추면 전각 슬래시(`／`)가 진짜 `/` 로 바뀌어, 빗장을 지난 뒤에
+    경로 구분자가 생긴다. 우리가 쓰는 NFC 는 그런 바꿔치기를 하지 않는다.
+    """
+    fullwidth = "가나다／비밀폴더／열쇠.pdf"          # `／` 는 U+FF0F (슬래시 아님)
+
+    assert "/" not in base.nfc(fullwidth)
+    # 진짜 구분자·상위 이동은 그대로 걸린다.
+    for bad in ("../비밀/열쇠", "/etc/passwd", "가나다/라마바.pdf", "..", ".숨김.pdf"):
+        with pytest.raises(base.IrPathError):
+            base.check_ir_file_name(bad)
+
+
+def test_the_bars_still_see_the_value_exactly_as_it_arrived():
+    """빗장은 **들어온 값 그대로** 검사한다 — 검사 전에 글자를 주무르지 않는다."""
+    assert base.check_ir_file_name(NFD_NAME) == NFD_NAME
+    assert base.check_ir_file_name(NFC_NAME) == NFC_NAME
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  `열기` 는 **확인 시트가 뜰 때까지** 다시 누른다
+#
+#  열기 패널이 경로를 훑고 파일을 고르기 전에 누르면 `열기` 가 아직 꺼져 있어
+#  아무 일도 일어나지 않는데, AX 로는 '눌렀다' 로 보인다. 한 번만 누르고
+#  기다리면 시간만 보내고 "확인 창이 안 떴다" 로 실패한다 — 실기에서 자료
+#  5개 중 1개가 이렇게 걸렸다.
+# ══════════════════════════════════════════════════════════════════════════
+
+def test_the_open_button_is_pressed_again_until_the_sheet_shows(tmp_path):
+    """첫 두 번은 먹지 않는다(패널이 아직 파일을 고르는 중). 그래도 나가야 한다."""
+    root = tmp_path / "자료폴더"
+    root.mkdir()
+    (root / "IR.pdf").write_bytes(b"pretend pdf")
+
+    class SlowPanel(FakeMac):
+        misses = 2
+
+        def _click_open_button(self, room_name):
+            self.clicked.append(kakao_mac.OPEN_BUTTON_NAME)
+            if self.misses > 0:      # 아직 꺼져 있다 — 눌러도 아무 일 없음
+                self.misses -= 1
+                return True
+            self.phase = "confirm"
+            return True
+
+    mac = SlowPanel(confirm_sheet(), ir_root=str(root))
+    mac.t_open_retry = 0.01
+    result = mac.send_file(ROOM, ["IR.pdf"])
+
+    assert result.ok, result.error
+    assert mac.sent
+    assert mac.clicked.count(kakao_mac.OPEN_BUTTON_NAME) == 3
+
+
+def test_it_gives_up_instead_of_pressing_open_forever(tmp_path):
+    """끝내 안 뜨면 **취소하고 아무것도 보내지 않는다.**"""
+    root = tmp_path / "자료폴더"
+    root.mkdir()
+    (root / "IR.pdf").write_bytes(b"pretend pdf")
+
+    class NeverOpens(FakeMac):
+        def _click_open_button(self, room_name):
+            self.clicked.append(kakao_mac.OPEN_BUTTON_NAME)
+            return True              # 계속 먹지 않는다
+
+    mac = NeverOpens(confirm_sheet(), ir_root=str(root))
+    mac.t_open_retry = 0.01
+    result = mac.send_file(ROOM, ["IR.pdf"])
+
+    assert not result.ok
+    assert "confirm_sheet_not_shown" in result.error
+    assert not mac.sent and mac.canceled
+
+
+def test_a_file_written_in_one_form_is_found_when_asked_in_the_other(tmp_path):
+    """폴더 목록과 견줄 때도 형태를 맞춘다 — 안 그러면 "이 PC 에 없다" 가 된다."""
+    root = tmp_path / "자료폴더"
+    root.mkdir()
+    (root / NFD_NAME).write_bytes(b"pretend pdf")
+
+    found = base.resolve_ir_file(NFC_NAME, str(root))
+
+    assert found.is_file()
+    assert base.same_file_name(found.name, NFC_NAME)
+
+
+def test_two_names_that_differ_only_in_form_are_refused(tmp_path):
+    """형태만 다른 같은 이름이 둘이면 **고르지 않는다.**
+
+    어느 쪽인지 알 수 없는데 아무거나 보내면 엉뚱한 자료가 나간다. 여기서는
+    형태를 가리지 않는 파일 시스템이면 애초에 둘을 만들 수 없으므로, 정말
+    둘로 만들어진 경우에만 본다.
+    """
+    root = tmp_path / "자료폴더"
+    root.mkdir()
+    (root / NFD_NAME).write_bytes(b"pretend pdf")
+    (root / NFC_NAME).write_bytes(b"another pdf")
+    if len(list(root.iterdir())) < 2:
+        pytest.skip("형태를 가리지 않는 파일 시스템 — 둘로 만들어지지 않는다")
+
+    assert base._same_name_in(root, NFD_NAME) is None

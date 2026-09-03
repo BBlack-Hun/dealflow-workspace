@@ -6,6 +6,7 @@ never import them. The agent picks a concrete Sender at runtime.
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Sequence
@@ -112,6 +113,74 @@ class Sender:
 #     그 파일이 없다"고 분명히 실패해야 한다 — 조용히 아무것도 안 보내고
 #     성공으로 보고하는 것이 제일 나쁘다.
 
+#   ⓔ ★ 한글 파일명은 **두 형태로 들어온다** — 비교할 때만 맞춘다
+#
+#     macOS 는 한글 파일명을 **자모를 쪼갠 형태(NFD)** 로 디스크에 적는다.
+#     반면 웹 화면에 타이핑한 글자는 **합친 형태(NFC)** 로 들어온다. 눈에는
+#     똑같은데 글자열로는 다르다.
+#
+#     파일을 **여는 것**은 어느 쪽이든 된다 — 이 볼륨이 형태를 가려 준다
+#     (`exists()` 도 `open()` 도 통과한다). 그래서 이 어긋남은 조용하다.
+#
+#     터지는 자리는 **문자열끼리 맞춰 보는 곳**이다. 카톡 확인 시트에서 읽어 온
+#     이름과 보내려던 이름을 그냥 `==` 로 견주면, 멀쩡한 파일인데 "시트에 없는
+#     파일" 이라며 취소한다 — **가짜 실패**다(실기에서 그대로 재현했다).
+#     `iterdir()` 목록과 견주는 자리도 같다.
+#
+#     그래서 **비교하는 두 쪽을 같은 형태로 맞춘 뒤** 견준다(`nfc`).
+#
+#     ⚠ NFC 여야 한다. **NFKC 를 쓰면 안 된다** — NFKC 는 겉모습이 비슷한
+#       글자를 ASCII 로 바꿔 놓아서, 전각 슬래시(`／` U+FF0F)가 진짜 `/` 가
+#       된다. 빗장을 통과한 뒤에 경로 구분자가 생기는 셈이다. NFC 는 그런
+#       바꿔치기를 하지 않는다(자모를 합치기만 한다).
+#
+#     ⚠ 정규화는 **비교할 때만** 한다. 빗장(`check_ir_file_name`)은 들어온
+#       값 **그대로** 검사한다 — 검사 전에 글자를 주무르면, 무엇을 검사한
+#       것인지가 흐려진다.
+
+
+def nfc(text: str) -> str:
+    """한글 파일명 비교용 — 자모를 **합친 형태**로 맞춘다 (위 ⓔ).
+
+    쪼갠 형태(NFD)로 적힌 디스크 이름과 합친 형태(NFC)로 들어온 이름을 같은
+    파일로 보기 위한 것이다. **NFKC 가 아니라 NFC** 다 — 이유는 위에 적었다.
+    """
+    return unicodedata.normalize("NFC", text or "")
+
+
+def same_file_name(left: str, right: str) -> bool:
+    """두 파일명이 **같은 파일을 가리키나.** 자모 조합 형태만 맞춰 견준다.
+
+    대소문자는 맞추지 않는다 — 형태만 다른 것과 글자가 다른 것은 다른 이야기다.
+    """
+    return nfc(left) == nfc(right)
+
+
+def _same_name_in(root: Path, name: str) -> Optional[Path]:
+    """폴더 안에서 **형태만 다른 같은 이름**을 찾는다. 없으면 None (위 ⓔ).
+
+    `iterdir()` 는 디스크에 적힌 형태를 그대로 돌려준다 — 맥이면 쪼갠 형태다.
+    합친 형태로 들어온 이름과 그냥 견주면 하나도 안 맞는다.
+
+    ⚠ 맥에서는 여기까지 오지 않는다. 그 볼륨이 형태를 가려 줘서 `exists()` 가
+      이미 통과하기 때문이다. **그것에 기대지 않으려고** 둔다 — 형태를 가리지
+      않는 자리(다른 파일 시스템·네트워크 드라이브·시험 환경)에서는 이 되짚기가
+      없으면 멀쩡한 파일을 "이 PC 에 없다" 고 한다.
+
+    ⚠ 형태만 다른 이름이 **둘 이상**이면 고르지 않는다 — 어느 쪽인지 알 수
+      없는데 아무거나 보내면 엉뚱한 자료가 나간다(방 고르기와 같은 원칙).
+
+    폴더의 **바로 아래**만 본다. 빗장이 이미 이름 하나만 통과시켰으므로 여기서
+    폴더 밖으로 나갈 길은 없다.
+    """
+    want = nfc(name)
+    try:
+        hits = [p for p in root.iterdir() if nfc(p.name) == want]
+    except OSError:
+        return None
+    return hits[0] if len(hits) == 1 else None
+
+
 # `scheme://` 로 시작하는 값. 자료 칸에 남아 있는 옛 드라이브 링크를 파일명으로
 # 읽지 않기 위한 것이다.
 _URL_LIKE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.\-]*://")
@@ -194,9 +263,14 @@ def resolve_ir_file(file_name: str, configured_root: str) -> Path:
         ) from None
 
     if not path.exists():
-        raise IrFileMissing(
-            f"이 PC 에 {name!r} 파일이 없습니다 — {root} 에 넣어 주세요"
-        )
+        # 한글 이름은 **형태가 두 가지**다(위 ⓔ). 글자 그대로는 없어도 형태만
+        # 다른 같은 이름이 폴더에 있을 수 있다 — 그러면 같은 파일이다.
+        twin = _same_name_in(root, name)
+        if twin is None:
+            raise IrFileMissing(
+                f"이 PC 에 {name!r} 파일이 없습니다 — {root} 에 넣어 주세요"
+            )
+        path = twin
     if not path.is_file():
         raise IrPathError(f"파일이 아닙니다: {path}")
     return path

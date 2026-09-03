@@ -23,7 +23,8 @@ import subprocess
 import time
 from typing import List, Optional
 
-from .base import IrPathError, SendResult, Sender, ir_root, resolve_ir_file
+from .base import (IrPathError, SendResult, Sender, ir_root, nfc,
+                   resolve_ir_file, same_file_name)
 
 log = logging.getLogger("agent.kakao_mac")
 
@@ -47,7 +48,9 @@ CONFIRM_TITLE = "파일 전송"
 CANCEL_BUTTON = "취소"
 SEND_BUTTON_FMT = "{n}개 전송"
 COUNT_BUTTON_RE = re.compile(r"^(\d+)\s*개\s*전송$")
-# 표준 NSOpenPanel
+# 표준 NSOpenPanel. '폴더로 이동'은 `Cmd+Shift+G` — **키 코드**로 보낸다
+# (`keystroke "g"` 는 입력원이 한글이면 먹지 않는다. 실기에서 잡았다).
+GOTO_KEY_CODE = 5          # 자판의 `g` 자리
 OPEN_PANEL_ID = "open-panel"
 OPEN_BUTTON_ID = "OKButton"
 OPEN_BUTTON_NAME = "열기"
@@ -180,6 +183,8 @@ class KakaoMacSender(Sender):
         # Enter 만으로 패널이 닫히는 판이 있어, `열기` 를 누르기 전에 확인 시트가
         # 이미 떴는지 잠깐만 본다.
         self.t_confirm_quick = float(cfg.get("file_confirm_quick", 1.2))
+        # `열기` 를 다시 누르기까지의 간격 (아래 `_open_until_confirm`).
+        self.t_open_retry = float(cfg.get("file_open_retry_sec", 0.6))
         self.t_sent = float(cfg.get("file_sent_timeout", 8.0))
         # IR 자료 뿌리는 PC 마다 다르다 → 설정으로 받는다(agent/config.yaml 의
         # `ir_root`, 또는 환경변수 DEALFLOW_IR_ROOT).
@@ -236,8 +241,12 @@ class KakaoMacSender(Sender):
         mods = ' using command down' if cmd else ''
         _osa(f'tell application "System Events" to keystroke "{key}"{mods}')
 
-    def _key_code(self, code: int) -> None:
-        _osa(f'tell application "System Events" to key code {code}')
+    def _key_code(self, code: int, *, cmd: bool = False,
+                  shift: bool = False) -> None:
+        """**물리 키**를 보낸다. `keystroke` 와 달리 입력원(한/영)을 타지 않는다."""
+        mods = [m for m, on in (("command down", cmd), ("shift down", shift)) if on]
+        using = f' using {{{", ".join(mods)}}}' if mods else ''
+        _osa(f'tell application "System Events" to key code {code}{using}')
 
     def _press_enter(self) -> None:
         self._key_code(36)
@@ -826,6 +835,17 @@ class KakaoMacSender(Sender):
 
         칸을 못 찾으면 None. 되읽는 것이 핵심이다 — 넣었다고 믿고 Enter 를 치면
         엉뚱한 폴더가 열린다.
+
+        ★ **'폴더로 이동' 시트 안에서만 찾는다.** 열기 패널 자신에게도 텍스트
+          칸이 하나 있는데 그것은 **검색칸**(`AXIdentifier` = `Search`)이다.
+          예전에는 시트가 없으면 패널까지 뒤져서 그 검색칸을 잡았고, 거기에
+          경로를 넣고 **되읽어 같으니 통과**시켰다 — 되읽기 검증이 엉뚱한 칸을
+          확인해 주는 셈이라 아무 소용이 없었다. 그러고 Enter 를 치면 폴더로
+          가는 대신 **검색**이 돌아, 아무 파일도 골리지 않은 채 `열기` 가 먹지
+          않고 확인 시트가 끝내 뜨지 않는다(실기에서 이렇게 막혔다).
+
+          시트가 없으면 None 을 돌려준다 — **막히는 쪽이 맞다.** 엉뚱한 칸에
+          경로를 적어 넣는 것보다 "경로를 못 넣었다"고 실패하는 편이 낫다.
         """
         raw = _osa(
             f'tell application "System Events" to tell process "{APP}"\n'
@@ -835,10 +855,8 @@ class KakaoMacSender(Sender):
             f'  on error\n'
             f'    return "NOFIELD"\n'
             f'  end try\n'
-            f'  set g to p\n'
-            f'  try\n'
-            f'    if (exists sheet 1 of p) then set g to (sheet 1 of p)\n'
-            f'  end try\n'
+            f'  if not (exists sheet 1 of p) then return "NOFIELD"\n'
+            f'  set g to (sheet 1 of p)\n'
             f'  set target to missing value\n'
             f'  try\n'
             f'    set cands to (every combo box of g)\n'
@@ -886,9 +904,14 @@ class KakaoMacSender(Sender):
         여기서 쓰는 클립보드는 **시스템 열기 패널** 쪽이라 카톡 입력창과 다르다.
 
         어느 길로 넣었든 **되읽어 같은지 확인한 뒤에만** Enter 를 친다.
+
+        ⚠ `Cmd+Shift+G` 는 **키 코드**(key code 5)로 보낸다. `keystroke "g"` 로
+          보내면 입력원이 한글일 때 통째로 먹히지 않는다 — 글자를 찍는 방식이라
+          자판 배열을 타기 때문이다. 실기에서 이것 때문에 '폴더로 이동' 시트가
+          안 뜨고, 위 검색칸 문제와 겹쳐 **경로를 넣었다고 착각한 채** 확인
+          시트가 뜨지 않았다. 물리 키는 입력원과 무관하다.
         """
-        _osa(f'tell application "System Events" to keystroke "g" '
-             f'using {{command down, shift down}}')
+        self._key_code(GOTO_KEY_CODE, cmd=True, shift=True)
         if _wait_until(lambda: self._goto_field_do(room_name) is not None,
                        timeout=self.t_panel) is None:
             log.warning("'폴더로 이동' 입력칸을 찾지 못했습니다")
@@ -965,6 +988,38 @@ class KakaoMacSender(Sender):
             f'end tell'
         )
         return raw.strip() == "clicked"
+
+    def _open_until_confirm(self, room_name: str) -> Optional[str]:
+        """`열기` 를 눌러 "파일 전송" 확인 시트를 띄운다. 실패 사유(없으면 None).
+
+        ★ **뜰 때까지 다시 누른다.** 열기 패널이 경로를 훑고 그 파일을 고르기
+          전에 누르면 `열기` 가 아직 꺼져 있어 **아무 일도 일어나지 않는데**,
+          AX 로는 '눌렀다' 로 보인다 — 단추가 있는지만 보고 누르기 때문이다.
+          그래서 한 번만 누르고 기다리면 아무 일도 안 일어난 채 시간만 보내고
+          "확인 창이 안 떴다" 로 실패한다. 실기에서 자료 5개 중 1개가 이렇게
+          걸렸다(다시 돌리니 그대로 갔다 — 느려서 생기는 어긋남이다).
+
+          다시 눌러도 두 번 나가지 않는다. 확인 시트가 떠 있으면 애초에 누르지
+          않고, 실제로 내보내는 것은 관문을 지난 뒤의 `N개 전송` 이다.
+        """
+        found_button = False
+        deadline = time.time() + self.t_confirm
+        while True:
+            snapshot = self._sheet_snapshot(room_name)
+            if _is_confirm_sheet(snapshot):
+                return None
+            if not snapshot.get("present"):
+                # 패널이 사라졌다. 무엇이 열렸는지 모르는 상태로 더 누르지 않는다.
+                return "open_panel_gone: 파일 열기 창이 사라졌습니다 (전송 안 함)"
+            if self._click_open_button(room_name):
+                found_button = True
+            if time.time() >= deadline:
+                break
+            time.sleep(self.t_open_retry)
+        if not found_button:
+            return ("open_button_not_found: 열기 단추를 찾지 못했습니다 (전송 안 함)")
+        return ("confirm_sheet_not_shown: 파일 전송 확인 창이 뜨지 "
+                "않았습니다 (전송 안 함)")
 
     def _click_sheet_button(self, room_name: str, name: str) -> bool:
         """시트 안의 이름이 정확히 같은 단추를 누른다."""
@@ -1077,23 +1132,14 @@ class KakaoMacSender(Sender):
                               error=f"path_not_entered: 열기 창에 경로를 넣지 "
                                     f"못했습니다: {path} (전송 안 함)")
 
-        # ⑤ `열기` — Enter 만으로 패널이 닫히는 판도 있어, 확인 시트가 이미
-        #    떴으면 누르지 않는다.
+        # ⑤ Enter 만으로 확인 시트가 바로 뜨는 판도 있다 — 잠깐만 본다.
         if _wait_until(lambda: _is_confirm_sheet(self._sheet_snapshot(room_name)),
                        timeout=self.t_confirm_quick) is None:
-            if not self._click_open_button(room_name):
+            # ⑥ `열기` → "파일 전송" 확인 시트. 안 뜨면 **아무것도 보내지 않는다.**
+            reason = self._open_until_confirm(room_name)
+            if reason:
                 self._dismiss_sheet(room_name)
-                return SendResult(ok=False,
-                                  error="open_button_not_found: 열기 단추를 찾지 "
-                                        "못했습니다 (전송 안 함)")
-
-            # ⑥ "파일 전송" 확인 시트를 기다린다. 안 뜨면 **아무것도 보내지 않는다.**
-            if _wait_until(lambda: _is_confirm_sheet(self._sheet_snapshot(room_name)),
-                           timeout=self.t_confirm) is None:
-                self._dismiss_sheet(room_name)
-                return SendResult(ok=False,
-                                  error="confirm_sheet_not_shown: 파일 전송 확인 "
-                                        "창이 뜨지 않았습니다 (전송 안 함)")
+                return SendResult(ok=False, error=reason)
 
         # ⑦ ★ 관문. 전부 맞을 때만 보낸다.
         snapshot = self._sheet_snapshot(room_name)
@@ -1205,8 +1251,9 @@ def check_confirm_sheet(snapshot: dict, room_name: str,
         return "확인 시트가 없습니다"
 
     # ① 방이 맞나 — 파일을 고르는 사이에 다른 창이 앞으로 나올 수 있다.
+    #    한글은 자모 조합 형태가 두 가지라 그것만 맞춰 견준다(`base.nfc`).
     front = snapshot.get("front_title", "")
-    if front != room_name:
+    if nfc(front) != nfc(room_name):
         return f"방이 다릅니다: 앞에 있는 창 {front!r} != 대상 {room_name!r}"
 
     buttons = snapshot.get("buttons", [])
@@ -1233,8 +1280,18 @@ def check_confirm_sheet(snapshot: dict, room_name: str,
         return f"파일 목록이 {rows}줄인데 보내려던 것은 {len(want)}개"
 
     # ④ 파일명이 전부 있나.
+    #
+    #    ★ 두 쪽을 **같은 형태로 맞춘 뒤** 견준다(`base.same_file_name`).
+    #      시트에서 읽어 온 이름과 보내려던 이름은 한글 자모 조합 형태가
+    #      서로 다를 수 있다 — macOS 디스크는 쪼갠 형태(NFD), 웹 화면에
+    #      타이핑한 값은 합친 형태(NFC). 눈에는 같은데 `==` 로는 다르다.
+    #      그냥 견주면 **멀쩡한 파일을 "시트에 없다"며 취소**한다(가짜 실패).
+    #
+    #    ⚠ 무르게 하는 정규화가 아니다. 형태만 맞출 뿐 글자가 다른 이름은
+    #      그대로 걸린다 — 관문이 하는 일(다른 파일을 막는 것)은 그대로다.
     texts = snapshot.get("texts", [])
-    missing = [n for n in want if n not in texts]
+    missing = [n for n in want
+               if not any(same_file_name(n, shown) for shown in texts)]
     if missing:
         return f"시트에 없는 파일: {missing!r} (시트에 있는 것: {texts!r})"
     return None
