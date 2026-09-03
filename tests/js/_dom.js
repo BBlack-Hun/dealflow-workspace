@@ -140,7 +140,13 @@ function el(tag, attrs, kids) {
   const node = makeEl(tag);
   Object.keys(attrs || {}).forEach(function (k) {
     if (k === "class") String(attrs[k]).split(/\s+/).filter(Boolean).forEach(function (c) { node.classList.add(c); });
-    else node.setAttribute(k, attrs[k]);
+    else {
+      node.setAttribute(k, attrs[k]);
+      // 브라우저는 `value` 속성을 **칸의 값**으로도 비춰 준다. 여기서 안 비추면
+      // 화면 코드가 읽는 `input.value` 가 늘 빈 글자라, 번호를 실어 보내는
+      // 자리(`parseInt(c.value)`)가 검사에서만 조용히 `NaN` 이 된다.
+      if (k === "value") node.value = String(attrs[k]);
+    }
   });
   (kids || []).forEach(function (kid) { node.appendChild(kid); });
   return node;

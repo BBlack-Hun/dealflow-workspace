@@ -85,6 +85,28 @@ function sourcingCard(id, name, bucket) {
   }, [cb]);
 }
 
+// ① 소개할 기업 목록. **화면에 그려진 차례**가 곧 고르는 차례가 아니다 —
+// 3번째를 먼저 고르고 1번째를 나중에 골라도 고른 차례대로 나가야 한다.
+// 실제 화면(`deals.html`)과 같은 모양으로 세운다: `label.pick-card` 안에
+// 체크박스가 들어 있고, 고른 차례는 **카드**에 적힌다(`data-pick-order`).
+const COMPANIES = [
+  // id, 이름(가상)
+  [201, "가나애그"],
+  [202, "다라헬스"],
+  [203, "마바로보"]
+];
+
+function companyCard(id, name) {
+  const cb = el("input", {
+    id: "ccb-" + id, class: "company-cb", value: String(id),
+    "data-name": name, "data-thin": "0", "data-ir-url": "https://example.test/" + id
+  });
+  return el("label", {
+    class: "pick-card", "data-recent": "0",
+    "data-search": name.toLowerCase()
+  }, [cb, el("div", { class: "pick-body" }, [el("div", { class: "pick-name" }, [])])]);
+}
+
 // 예약 큐 한 줄. **`data-count` 가 화면이 지금 말하고 있는 수**다 — [시작] 이
 // 이 값을 서버로 함께 보내야, 서버가 다시 센 수와 다를 때 되물을 수 있다.
 // 실제 화면이 같은 속성을 그리는지는 파이썬 쪽(`tests/test_deal_queue.py`)이 본다.
@@ -106,7 +128,8 @@ function buildDom(people) {
   const blocked = blockedBlock();
   const sourcingCards = SOURCING.map(function (s) { return sourcingCard(s[0], s[1], s[2]); });
   const sourcingList = el("div", { id: "sourcing-list", class: "card-list" }, sourcingCards);
-  const companyList = el("div", { id: "company-list", class: "card-list" }, []);
+  const companyCards = COMPANIES.map(function (c) { return companyCard(c[0], c[1]); });
+  const companyList = el("div", { id: "company-list", class: "card-list" }, companyCards);
   const companyPanel = el("section", { class: "panel" }, [companyList]);
 
   // 그룹 칩은 명단에 실제로 있는 그룹만큼 선다(서버의 `sheet_owner.group_rows`).
@@ -163,7 +186,7 @@ function buildDom(people) {
   const blockedCbs = Array.prototype.slice.call(
     blocked.querySelectorAll(".contact-cb"));
   return { root: root, document: dom_.makeDocument(root), cards: cards,
-           sourcingCards: sourcingCards,
+           sourcingCards: sourcingCards, companyCards: companyCards,
            queuePanel: queuePanel, queueRows: queueRows,
            blocked: blocked, blockedCbs: blockedCbs,
            blockedCb: blockedCbs[blockedCbs.length - 1] };
@@ -174,6 +197,10 @@ function buildDom(people) {
 // `opts` 로 `fetch`·`confirm`·`alert` 를 갈아 끼울 수 있다 — 예약 큐 검사는
 // **서버가 돌려준 말이 확인창에 그대로 뜨는지**를 봐야 해서 둘 다 필요하다.
 // 안 주면 지금까지와 똑같다(절대 안 풀리는 약속 · 확인창은 늘 아니오).
+//
+// `opts.search` 는 주소 뒤에 붙는 물음표 뒷부분이다(`?companies=203,201`).
+// IR 관리에서 넘어오면 화면이 그것을 읽어 기업을 미리 켜 둔다 — 그 차례까지
+// 지켜지는지 보려면 이 자리가 필요하다.
 function run(people, opts) {
   const fs = require("fs");
   const path = require("path");
@@ -185,7 +212,7 @@ function run(people, opts) {
   const dom = buildDom(people);
   // `reload` 는 예약 큐가 줄을 다시 그리려고 부른다(대상 수는 서버가 센 값이라
   // 화면이 흉내 내면 붙인 순간 낡는다). 몇 번 불렸는지 세어 둔다.
-  const win = { location: { search: "", href: "", reloads: 0,
+  const win = { location: { search: opts.search || "", href: "", reloads: 0,
                             reload: function () { this.reloads += 1; } } };
   const ctx = {
     document: dom.document, console: console, window: win,
@@ -203,6 +230,73 @@ function run(people, opts) {
   vm.runInNewContext(src, ctx, { filename: "deals.js" });
   dom.window = win;
   return dom;
+}
+
+// ── 아주 작은 fetch 대역 ───────────────────────────────────────────────────
+//
+// 오간 요청을 그대로 모아 두고, 미리 정해 둔 답을 차례대로 돌려준다(약속은
+// 곧바로 풀린다 — 검사가 기다릴 것이 없다). **여기 한 벌만 둔다** — 검사마다
+// 한 벌씩 들고 있으면 한쪽만 고쳐져 나머지는 딴 것을 보증한다(`_dom.js` 와 같은 뜻).
+function fakeFetch(replies) {
+  const calls = [];
+  // `.then()` 이 또 약속을 돌려주면 **펴 준다**(진짜 Promise 처럼). deals.js 가
+  // `r.json().then(...)` 을 바깥 `.then` 에서 돌려주는데, 안 펴 주면 다음
+  // 단계가 값 대신 약속을 받아 엉뚱한 곳에서 죽는다.
+  function settled(value) {
+    return {
+      __settled: true,
+      then: function (fn) {
+        const next = fn(value);
+        return (next && next.__settled) ? next : settled(next);
+      },
+      catch: function () { return this; }
+    };
+  }
+  const fn = function (url, init) {
+    const body = JSON.parse((init && init.body) || "{}");
+    calls.push({ url: url, body: body });
+    // 문구 목록(GET)은 이 검사들과 무관하다 — 안 풀리는 약속을 준다.
+    if (!init || init.method !== "POST") {
+      return { then: function () { return this; }, catch: function () { return this; } };
+    }
+    const reply = replies.length ? replies.shift() : { ok: true, d: {} };
+    return settled({
+      ok: reply.ok !== false,
+      json: function () { return settled(reply.d); }
+    });
+  };
+  fn.calls = calls;
+  return fn;
+}
+
+// ── 기업 고르기 ────────────────────────────────────────────────────────────
+
+function companyBox(dom, name) {
+  const cb = dom.companyCards
+    .map(function (card) { return card.querySelector(".company-cb"); })
+    .filter(function (c) { return c.getAttribute("data-name") === name; })[0];
+  require("assert").ok(cb, "기업 카드를 못 찾았다: " + name);
+  return cb;
+}
+
+// 사람이 카드를 누르는 것과 같다 — 체크를 뒤집고 `change` 를 흘린다.
+function toggleCompany(dom, name) {
+  const cb = companyBox(dom, name);
+  cb.checked = !cb.checked;
+  cb.fire("change");
+  return cb;
+}
+
+// 카드에 **보이는 번호**. 안 고른 카드는 `null` 이다.
+// 화면에 뜨는 번호와 서버로 나가는 차례가 **같은 한 자리**에서 나와야 하므로
+// (`data-pick-order`), 검사도 그 한 자리를 본다.
+function pickNumbers(dom) {
+  const out = {};
+  dom.companyCards.forEach(function (card) {
+    out[card.querySelector(".company-cb").getAttribute("data-name")] =
+      card.getAttribute("data-pick-order");
+  });
+  return out;
 }
 
 function boxes(dom) {
@@ -225,6 +319,9 @@ function clickSelectAll(dom) { dom.document.getElementById("select-all-contacts"
 function clickClearAll(dom) { dom.document.getElementById("clear-all-contacts").fire("click"); }
 
 module.exports = { EMPTY_GROUP: EMPTY_GROUP, PEOPLE: PEOPLE, SOURCING: SOURCING,
+                   COMPANIES: COMPANIES,
+                   fakeFetch: fakeFetch, companyBox: companyBox,
+                   toggleCompany: toggleCompany, pickNumbers: pickNumbers,
                    buildDom: buildDom, queueRow: queueRow,
                    run: run, boxes: boxes, checkedNames: checkedNames,
                    shownNames: shownNames, pickGroup: pickGroup,

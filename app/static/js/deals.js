@@ -41,8 +41,65 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   var sendBtn = document.getElementById("send-btn");
   var lastPreviews = [];
 
+  // ── 고른 차례 ─────────────────────────────────────────────
+  //
+  // 문구는 `1) …` `2) …` 로 나가고 투자사는 **그 번호로 기억해서** "2번 자료
+  // 주세요" 라고 답한다. 그래서 어느 기업이 몇 번인지가 이 화면의 알맹이다.
+  //
+  // `querySelectorAll` 이 주는 것은 **목록에 그려진 차례**다. 그것만 쓰면 3번째
+  // 기업을 먼저 고르고 1번째를 나중에 골라도 목록 차례로 나가서, 사람이 머리에
+  // 담은 차례와 실제로 나간 번호가 어긋난다.
+  //
+  // ## 차례를 어디에 담는가 — **카드에 적는다**(`data-pick-order`)
+  //
+  // 화면 안 변수에 따로 들고 있지 않는다. 그러면 "무엇을 골랐나"(체크박스)와
+  // "몇 번째로 골랐나"(변수)가 **두 벌**이 되고, 어느 한쪽만 바뀌는 길이 생기면
+  // 화면에 보이는 번호와 서버로 나가는 차례가 조용히 갈린다 — 이 저장소가
+  // 반복해 겪은 일이다. 카드 하나에 둘을 함께 두면 갈릴 자리가 없다.
+  //
+  // 카드에 둔 덕에 **번호를 따로 그리지 않아도 된다** — CSS 가 이 속성을 그대로
+  // 읽어 배지로 띄운다(`#company-list .pick-card[data-pick-order]::before`).
+  // 번호를 화면에 한 번 더 적어 두면 그 순간 두 벌이 된다.
+  //
+  // 새로고침하면 **번호는 사라진다.** 서버가 그리는 체크박스는 전부 꺼진 채라
+  // 고른 것 자체가 없어지기 때문이고, 그게 맞다 — 화면이 서버가 모르는 차례를
+  // 기억하고 있으면 안 된다. 차례가 오래 남는 곳은 보내거나 예약한 뒤의 서버
+  // 쪽이다(`DealBatchCompany.position` · `DealQueueCompany.position`).
+  function cardOf(cb) { return cb.closest(".pick-card"); }
+
+  function pickOrderOf(card) {
+    var n = parseInt(card.getAttribute("data-pick-order") || "0", 10);
+    return n > 0 ? n : 0;
+  }
+
+  // 고른 카드를 **고른 차례대로**. 번호를 다시 매기는 일도 여기서 함께 한다.
+  function renumberPicks() {
+    var numbered = [];   // 이미 번호가 있는 것
+    var fresh = [];      // 방금 켠 것 — 아직 번호가 없다
+    companyCbs().forEach(function (cb) {
+      var card = cardOf(cb);
+      if (!card) return;
+      // 체크를 풀면 번호를 지운다. 남겨 두면 다시 골랐을 때 **아까 쓰던 번호로
+      // 되돌아가** 방금 고른 것이 앞으로 끼어든 줄 모른 채 나간다.
+      if (!cb.checked) { card.removeAttribute("data-pick-order"); return; }
+      (pickOrderOf(card) ? numbered : fresh).push(card);
+    });
+    numbered.sort(function (a, b) { return pickOrderOf(a) - pickOrderOf(b); });
+    // 빈 번호 없이 1부터 다시 붙인다 — 가운데를 풀면 뒤가 당겨져야 화면의
+    // 번호와 문구의 `1) 2) 3)` 이 같아진다.
+    var picked = numbered.concat(fresh);
+    picked.forEach(function (card, i) {
+      card.setAttribute("data-pick-order", String(i + 1));
+    });
+    return picked;
+  }
+
+  // **읽으면서 번호를 다시 매긴다.** 읽는 자리와 번호를 붙이는 자리를 떼어
+  // 놓으면, 한쪽만 불린 길에서 화면의 번호와 나가는 차례가 갈린다.
   function selectedCompanyIds() {
-    return companyCbs().filter(function (c) { return c.checked; }).map(function (c) { return parseInt(c.value, 10); });
+    return renumberPicks().map(function (card) {
+      return parseInt(card.querySelector(".company-cb").value, 10);
+    });
   }
   function selectedContactIds() {
     return contactCbs().filter(function (c) { return c.checked; }).map(function (c) { return parseInt(c.value, 10); });
@@ -469,7 +526,10 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     if (mode !== "ir") return;
     var list = document.getElementById("ir-links");
     list.innerHTML = "";
-    companyCbs().filter(function (c) { return c.checked; }).forEach(function (c) {
+    // **고른 차례대로.** 자료는 한 기업당 한 통씩 이 차례로 날아간다 —
+    // 여기만 목록 차례로 세면 화면에 적힌 차례와 실제로 나가는 차례가 갈린다.
+    renumberPicks().forEach(function (card) {
+      var c = card.querySelector(".company-cb");
       var li = document.createElement("li");
       var name = c.getAttribute("data-name");
       var url = c.getAttribute("data-ir-url");
@@ -950,21 +1010,38 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     var params = new URLSearchParams(window.location.search);
     var wanted = params.get("mode");
 
-    function check(boxes, raw) {
+    // `ordered` 는 **받은 차례가 곧 번호**인 목록(기업)에만 준다.
+    //
+    // 목록에 그려진 차례로 훑으면서 켜면 주소에 적힌 차례가 사라진다 —
+    // IR 관리에서 `?companies=203,201` 로 넘어오는데, 그 차례는 그 담당자가
+    // 요청한 차례이고 자료도 그 차례로 한 통씩 날아가야 한다.
+    // 받는 사람(`contacts`)에는 차례가 없다 — 번호를 붙여 나가지 않는다.
+    function check(boxes, raw, ordered) {
       var ids = (raw || "").split(",").map(function (v) { return v.trim(); })
         .filter(Boolean);
+      // 같은 번호가 두 번 적혀 있어도 한 번만 센다(상자는 하나다).
+      ids = ids.filter(function (id, i) { return ids.indexOf(id) === i; });
       if (!ids.length) return 0;
-      var want = {};
-      ids.forEach(function (id) { want[id] = true; });
+      var byValue = {};
+      boxes.forEach(function (c) { byValue[c.value] = c; });
       var hit = 0;
-      boxes.forEach(function (c) {
-        if (want[c.value]) { c.checked = true; hit += 1; }
+      ids.forEach(function (id, i) {
+        var c = byValue[id];
+        if (!c) return;
+        c.checked = true;
+        hit += 1;
+        // 목록에 없는 번호가 섞여 있으면 여기서 번호가 비는데, 바로 아래
+        // `updateCounts()` 안의 `renumberPicks()` 가 1부터 다시 붙인다.
+        if (ordered) {
+          var card = cardOf(c);
+          if (card) card.setAttribute("data-pick-order", String(i + 1));
+        }
       });
       return hit;
     }
 
     check(contactCbs(), params.get("contacts"));
-    var picked = check(companyCbs(), params.get("companies"));
+    var picked = check(companyCbs(), params.get("companies"), true);
 
     if (wanted && document.querySelector('.mode-tab[data-mode="' + wanted + '"]')) {
       setMode(wanted);
