@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import pathlib
 import sys
 from pathlib import Path
 
@@ -387,10 +388,189 @@ def test_an_empty_file_list_does_not_open_the_attach_path(agent_main):
     assert [kind for kind, _room, _what in sender.sent] == ["text"]
 
 
-def test_the_agent_tells_the_server_it_can_attach(agent_main):
-    """밝히지 않으면 서버가 파일이 실린 잡을 안 준다 — 두 곳이 같은 말을 써야 한다."""
-    main = (ROOT / "agent" / "main.py").read_text(encoding="utf-8")
-    assert '"files": 1' in main, "폴링에서 파일 처리 가능을 안 밝힌다"
+# ── 밝히는 자리 — **할 줄 알 때만** ─────────────────────────────────────────
+#
+# 판 번호로 되는 것이 아니다. 같은 0.7.0 이라도 Windows 발송기는 파일 전송을
+# 지원하지 않는다(실기 확인 전). 무조건 밝히면 그쪽은 **파일 잡을 받아 놓고 첫
+# 파일에서 실패**하고, 사람은 왜 계속 실패하는지 알 길이 없다.
+
+def _declared(client) -> int:
+    """이번 폴링에서 서버에 밝힌 `files` 값."""
+    return client.session.calls[-1]["files"]
+
+
+class RecordingSession:
+    """폴링에 실린 값만 받아 적는 가짜 통신."""
+
+    class _Empty:
+        status_code = 204
+
+        def raise_for_status(self):
+            pass
+
+    def __init__(self):
+        self.calls = []
+
+    def get(self, url, params=None, timeout=None):
+        self.calls.append(dict(params or {}))
+        return self._Empty()
+
+
+def _client_with(agent_main, sender):
+    client = agent_main.AgentClient({"server_url": "", "token": "t"})
+    client.session = RecordingSession()
+    client.sender_can_send_files = bool(getattr(sender, "can_send_files", False))
+    return client
+
+
+def test_a_sender_that_can_attach_says_so(agent_main):
+    from agent.sender.kakao_mac import KakaoMacSender
+
+    client = _client_with(agent_main, KakaoMacSender)
+    client.poll()
+    assert _declared(client) == 1
+
+
+def test_a_sender_that_cannot_attach_does_not_say_so(agent_main):
+    """★ Windows 발송기는 `send_file` 이 '지원 안 함' 이다 — 밝히면 안 된다.
+
+    밝히면 **파일 잡을 받아 놓고 첫 파일에서 실패**한다. 문구가 자료 없이 나가지는
+    않지만, 사람은 왜 계속 실패하는지 알 길이 없다.
+    """
+    from agent.sender.base import Sender
+    from agent.sender.kakao_windows import KakaoDesktopSender
+    from agent.sender.mock import MockSender
+
+    for sender in (KakaoDesktopSender, MockSender, Sender):
+        client = _client_with(agent_main, sender)
+        client.poll()
+        assert _declared(client) == 0, f"{sender.__name__} 이 할 줄 안다고 밝혔다"
+
+
+def test_what_it_declares_comes_from_the_sender_itself(agent_main):
+    """밝히는 값은 **붙어 있는 발송기**에서 온다 — 어딘가에 박힌 상수가 아니다."""
+    class Capable:
+        name = "확인된발송기"
+        can_send_files = True
+
+    client = agent_main.AgentClient({"server_url": "", "token": "t"})
+    client.session = RecordingSession()
+    assert client.sender_can_send_files is False, "붙기 전에는 아니오여야 한다"
+
+    client.poll()
+    assert _declared(client) == 0
+
+    client.sender_can_send_files = bool(getattr(Capable, "can_send_files", False))
+    client.poll()
+    assert _declared(client) == 1
+
+
+# ── 밝히는 자리 ↔ 내주는 자리 — **한 바퀴 돌려 본다** ──────────────────────
+#
+# 발송기의 칸 하나와 서버의 판단이 실제로 이어져 있는가. 둘을 따로 시험하면
+# 가운데(폴링이 무엇을 싣는가)가 빠져서, 무조건 `files=1` 을 밝히던 고장이
+# 양쪽 시험을 다 통과한 채 지나간다 — 실제로 그랬다.
+
+def _real_agent(stage, token, sender):
+    """진짜 `AgentClient` — 통신만 TestClient 로 바꾸고, 발송기는 그대로 물린다."""
+    from agent.main import AgentClient
+
+    client = AgentClient({"server_url": "", "token": token})
+    stage["client"].headers.update({"Authorization": f"Bearer {token}"})
+    client.session = stage["client"]
+    client.sender_can_send_files = bool(getattr(sender, "can_send_files", False))
+    return client
+
+
+def _token(db, users):
+    from app.models import AgentDevice
+
+    return db.query(AgentDevice).filter_by(user_id=users["u1"].id).one().token
+
+
+def test_a_windows_agent_is_not_handed_the_file_job(stage, db, users):
+    """★ Windows 발송기는 파일을 못 보낸다 — 받아 놓고 실패하느니 안 받는다.
+
+    그 실패는 **안전하다**(문구가 자료 없이 나가지 않는다). 그래도 사람은 왜 계속
+    실패하는지 알 길이 없다. 판 번호로는 가릴 수 없다 — 같은 0.7.0 이다.
+    """
+    from agent.sender.kakao_windows import KakaoDesktopSender
+    from app.models import SendJob
+
+    _turn_on(stage)
+    _send(stage, [stage["agri"].id])
+
+    agent = _real_agent(stage, _token(db, users), KakaoDesktopSender)
+    assert agent.poll() is None, "파일을 못 보내는 발송기가 파일 잡을 받아 갔다"
+
+    # 실패로 닫지 않는다 — 잡은 큐에 그대로 남는다.
+    db.expire_all()
+    assert db.query(SendJob).one().status == "queued"
+
+
+def test_a_mac_agent_gets_that_same_job(stage, db, users):
+    """붙일 줄 아는 발송기가 붙으면 그 잡이 그대로 나간다 — 잃은 것이 없다."""
+    from agent.sender.kakao_mac import KakaoMacSender
+
+    _turn_on(stage)
+    _send(stage, [stage["agri"].id])
+
+    job = _real_agent(stage, _token(db, users), KakaoMacSender).poll()
+    assert job is not None, "붙일 줄 아는 발송기가 파일 잡을 못 받았다"
+    assert job["items"][0]["files"] == [AGRI_FILE]
+
+
+def test_a_windows_agent_still_gets_the_plain_jobs(stage, db, users):
+    """파일 없는 잡까지 막으면 Windows 로는 아무것도 못 보낸다."""
+    from agent.sender.kakao_windows import KakaoDesktopSender
+
+    _send(stage, [stage["agri"].id])          # 자동 첨부를 켜지 않았다
+
+    job = _real_agent(stage, _token(db, users), KakaoDesktopSender).poll()
+    assert job is not None, "파일이 없는 잡까지 막혔다"
+    assert "files" not in job["items"][0]
+
+
+def test_the_flag_and_the_refusal_never_drift():
+    """★ 켜 놓고 거절하거나, 할 줄 아는데 안 켜 놓거나 — 둘 다 고장이다.
+
+    `can_send_files` 는 **부르기 전에** 묻는 답이고 `send_file` 의 거절은 **부른
+    뒤에** 받는 답이다. 같은 사실을 말해야 한다.
+    """
+    from agent.sender.base import FILE_SEND_UNSUPPORTED, Sender
+    from agent.sender.kakao_mac import KakaoMacSender
+    from agent.sender.kakao_windows import KakaoDesktopSender
+    from agent.sender.mock import MockSender
+
+    for cls in (Sender, MockSender, KakaoDesktopSender, KakaoMacSender):
+        writes_its_own = cls.send_file is not Sender.send_file
+
+        if cls.can_send_files:
+            assert writes_its_own, (
+                f"{cls.__name__}: 할 줄 안다고 켜 놓고 `send_file` 은 물려받은 "
+                f"거절 그대로다 — 파일 잡을 받아 놓고 전부 실패한다")
+            continue
+
+        if not writes_its_own:
+            continue          # 물려받은 거절이 곧 '지원 안 함' 이다
+
+        # 제 손으로 쓴 `send_file` 이 있는데 안 켰다면, 그것은 반드시 **거절**
+        # 이어야 한다. 보낼 줄 아는데 안 켜 두면 서버가 잡을 안 줘서 영영 안 불린다.
+        #
+        # 불러서 확인하지 않고 **적힌 것을 본다** — 진짜 발송기의 `send_file` 을
+        # 부르면 시험이 카카오톡을 건드릴 수 있다.
+        source = pathlib.Path(sys.modules[cls.__module__].__file__).read_text(
+            encoding="utf-8")
+        assert "FILE_SEND_UNSUPPORTED" in source or FILE_SEND_UNSUPPORTED in source, (
+            f"{cls.__name__}: 안 켰는데 `send_file` 이 거절하지 않는다 — "
+            f"보낼 줄 알면 `can_send_files` 를 켜야 서버가 잡을 준다")
+
+
+def test_the_default_is_no(agent_main):
+    """되는 척하지 않는다 — 새 발송기는 켜지 않은 채로 태어난다."""
+    from agent.sender.base import Sender
+
+    assert Sender.can_send_files is False
 
 
 def test_a_sender_that_cannot_attach_fails_loudly(agent_main):

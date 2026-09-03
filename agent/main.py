@@ -153,6 +153,11 @@ class AgentClient:
         self.hostname = socket.gethostname()
         # 어떤 발송기인지 서버에 알린다 — 배지에서 mock/실발송을 구분하기 위함.
         self.sender_name = "unknown"
+        # 그 발송기가 자료 파일을 붙일 줄 아는가(`Sender.can_send_files`).
+        # **기본은 아니오다** — `sender_name` 이 `unknown` 으로 시작하는 것과 같은
+        # 이유다. 붙기 전에는 모르고, 모르는 것을 할 줄 안다고 밝히면 못 할 일을
+        # 떠맡는다.
+        self.sender_can_send_files = False
         self.job_cap = job_cap(cfg)
 
     def heartbeat(self):
@@ -169,13 +174,22 @@ class AgentClient:
         # 97건을 통째로 내주고 우리가 앞 60건만 처리했는데, 나머지 37건이 그냥
         # 버려졌다. 서버가 60건만 주면 애초에 버릴 것이 없다.
         #
-        # 자료 파일을 붙일 줄 안다는 것도 함께 밝힌다(`files=1`). 밝히지 않으면
-        # 서버는 파일이 실린 잡을 내주지 않는다 — 이 칸을 모르는 구버전 발송기가
-        # 파일을 조용히 버리고 **문구만** 보내는 사고를 구조적으로 막는다
+        # 자료 파일을 붙일 줄 아는지도 함께 밝힌다(`files=`). 밝히지 않으면 서버는
+        # 파일이 실린 잡을 내주지 않는다 — 이 칸을 모르는 구버전 발송기가 파일을
+        # 조용히 버리고 **문구만** 보내는 사고를 구조적으로 막는다
         # (`send_item` 이 파일을 먼저 보낸다).
+        #
+        # ★ **붙어 있는 발송기가 실제로 할 줄 알 때만 밝힌다.** 판 번호로 되는
+        # 것이 아니다 — 같은 0.7.0 이라도 Windows 발송기는 파일 전송을 지원하지
+        # 않는다(실기 확인 전이라 `file_send_unsupported` 로 거절한다). 무조건
+        # 밝히면 그쪽은 **파일 잡을 받아 놓고 첫 파일에서 실패**하고, 사람은 왜
+        # 계속 실패하는지 알 길이 없다. 아예 안 받는 편이 낫다 — 잡은 큐에 남아
+        # 있다가 파일을 붙일 줄 아는 발송기가 붙는 날 그대로 나간다.
         r = self.session.get(f"{self.base}/api/agent/poll",
                              params={"kinds": ",".join(SUPPORTED_KINDS),
-                                     "cap": self.job_cap, "files": 1}, timeout=15)
+                                     "cap": self.job_cap,
+                                     "files": 1 if self.sender_can_send_files else 0},
+                             timeout=15)
         if r.status_code == 204:
             return None
         r.raise_for_status()
@@ -540,10 +554,10 @@ def apply_server_settings(sender, payload) -> bool:
     """
     if not isinstance(payload, dict):
         return False
-    if not hasattr(sender, "ir_root_setting"):
+    if not getattr(sender, "can_send_files", False):
         return False          # 파일을 못 보내는 발송기는 알 필요가 없다
     value = str(payload.get("ir_root") or "")
-    if sender.ir_root_setting == value:
+    if getattr(sender, "ir_root_setting", None) == value:
         return False
     sender.ir_root_setting = value
     return True
@@ -580,11 +594,12 @@ def preflight(sender) -> List[str]:
                 "보낼 채팅방 창을 카카오톡에서 미리 열어두면 발송됩니다. "
                 "(자동 열기까지 쓰려면 packaging/mac/setup.sh 를 다시 돌리세요)")
 
-    if hasattr(sender, "ir_root_setting"):
+    if getattr(sender, "can_send_files", False):
         # 보낼 때와 **같은 판단**을 쓴다 — 두 군데에 적으면 한쪽이 낡는다.
         from agent.sender.base import IrPathError, ir_root
         try:
-            notes.append(f"IR 자료 폴더: {ir_root(sender.ir_root_setting)} "
+            notes.append(f"IR 자료 폴더: "
+                         f"{ir_root(getattr(sender, 'ir_root_setting', ''))} "
                          f"— 보낼 자료를 이 폴더에 넣으세요")
         except IrPathError as exc:
             notes.append(f"⚠ {exc}")
@@ -633,6 +648,8 @@ def main(argv=None):
     sender = build_sender(cfg)
     client = AgentClient(cfg)
     client.sender_name = getattr(sender, "name", "unknown")
+    # 파일을 붙일 줄 아는지는 **발송기가 스스로 안다.** 폴링에서 그대로 밝힌다.
+    client.sender_can_send_files = bool(getattr(sender, "can_send_files", False))
 
     # 설정(IR 자료 폴더 자리)을 **먼저** 받아 온다 — 사전 점검이 그 값을 본다.
     # 서버에 못 닿아도 켜지는 것 자체는 막지 않는다(다음 박동에 다시 받는다).

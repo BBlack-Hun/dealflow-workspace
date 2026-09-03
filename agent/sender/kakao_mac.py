@@ -165,6 +165,10 @@ def _wait_until(check, timeout: float, interval: float = 0.1):
 class KakaoMacSender(Sender):
     name = "kakao_mac"
 
+    #: 실기로 끝까지 확인한 길이 여기 하나뿐이라, 이 발송기만 켠다
+    #: (첨부 단추 → 열기 패널 → "파일 전송" 확인 시트 → N개 전송).
+    can_send_files = True
+
     def __init__(self, cfg: Optional[dict] = None):
         cfg = cfg or {}
         self.t_activate = float(cfg.get("after_activate", 1.0))
