@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from sqlalchemy import select  # noqa: E402
 
-from app import config  # noqa: E402
+from app import config, deps  # noqa: E402
 from app.db import SessionLocal  # noqa: E402
 from app.models import (  # noqa: E402
     AgentDevice,
@@ -175,9 +175,14 @@ def bootstrap(db) -> dict:
             db.add(MessageTemplate(user_id=None, kind=kind, body=body, is_active=1))
             made["templates"] += 1
 
+    # 투자현황은 이제 **계정마다** 켜고 끈다(0054). 첫 관리자가 꺼진 채로
+    # 만들어지면 새로 깐 서버에서 그 화면을 아무도 못 연다 — 켜 줄 사람도
+    # 자기 자신뿐인데 본인 것은 못 켠다. 기본값 판정은 팀 현황의 계정 만들기와
+    # **같은 함수**를 읽는다.
     _admin, created = _get_or_create(
         db, User, phone=ADMIN_PHONE,
-        defaults=dict(name=ADMIN_NAME, role="admin"),
+        defaults=dict(name=ADMIN_NAME, role="admin",
+                      can_view_consulting=1 if deps.consulting_default_for("admin") else 0),
     )
     made["users"] += int(created)
     return made

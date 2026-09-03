@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import config, deps
-from .deps import NotAdmin, NotAuthenticated
+from .deps import NoConsulting, NotAdmin, NotAuthenticated
 from .services import backup
 from .routers import auth as auth_router
 from .routers import templates_crud
@@ -107,6 +107,16 @@ def create_app() -> FastAPI:
         한 곳에 있다(컨설턴트 차단과 같은 자리, 같은 판단).
         """
         return deps.admin_block_response(request)
+
+    @app.exception_handler(NoConsulting)
+    def _no_consulting(request: Request, exc: NoConsulting):
+        """투자현황이 막힌 계정 — 관리자 전용 차단과 **같은 자리, 같은 판단**.
+
+        누구든 켜고 끌 수 있게 되면서 생긴 길이다. 특히 투자컨설턴트는 이
+        화면이 첫 화면이라(`deps.home_for`), 막힌 채로 되돌려 보내면 같은
+        자리를 맴돈다 — 무슨 일이 일어났는지 글로 알려 준다.
+        """
+        return deps.consulting_block_response(request)
 
     @app.exception_handler(NotAuthenticated)
     def _needs_login(request: Request, exc: NotAuthenticated):

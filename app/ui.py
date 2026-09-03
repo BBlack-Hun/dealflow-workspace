@@ -74,20 +74,25 @@ NEEDS = {"consulting": may_view_consulting}
 def can_see(user: User, item: dict) -> bool:
     """이 사람에게 이 메뉴를 보여도 되는가.
 
-    관리자는 전부 본다. `needs` 가 붙은 메뉴는 그 화면의 접근 판정(`NEEDS`)이
-    통과한 사람만 본다 — 볼 사람 이름을 코드에 박으면 담당이 바뀔 때마다
-    배포해야 한다.
+    `admin_only` 인 메뉴는 관리자만 본다. `needs` 가 붙은 메뉴는 그 화면의 접근
+    판정(`NEEDS`)이 통과한 사람만 본다 — 볼 사람 이름을 코드에 박으면 담당이
+    바뀔 때마다 배포해야 한다.
 
     투자컨설턴트는 **자기 화면 하나만** 본다. 그 판정은 라우터를 막는 것과
     같은 목록(`deps.CONSULTANT_PATHS`)으로 한다 — 메뉴용 목록을 따로 두었더니
     메뉴는 걸러졌는데 주소를 직접 치면 열리는 상태가 됐다. 목록이 둘이면
     하나는 반드시 낡는다.
+
+    **`needs` 는 역할과 무관하게 끝까지 본다.** 예전에는 관리자와 컨설턴트가
+    그 앞에서 먼저 통과했다 — 그때는 두 역할이 역할만으로 투자현황이 열려
+    있어서 결과가 같았기 때문이다. 이제는 누구든 끌 수 있어서
+    (`deps.may_view_consulting`), 먼저 통과시키면 **끈 계정의 사이드바에 그
+    메뉴가 그대로 남는다** — 눌러야 막힌 것을 아는, 이 저장소가 반복해서 고쳐
+    온 그 거짓말이다.
     """
-    if user.role == "consultant":
-        return consultant_may_open(item["href"])
-    if user.role == "admin":
-        return True
-    if item.get("admin_only"):
+    if user.role == "consultant" and not consultant_may_open(item["href"]):
+        return False
+    if item.get("admin_only") and user.role != "admin":
         return False
     need = item.get("needs")
     return not need or NEEDS[need](user)
@@ -101,7 +106,7 @@ def screen_label(path: str) -> str:
     """이 주소가 좌측 메뉴의 어느 화면인가 — 없으면 빈 문자열.
 
     권한이 없어 막힌 화면이 "팀 현황 화면은 …" 이라고 제 이름을 대려면 필요하다
-    (`deps._admin_only_page`). 이름을 그 화면에 적어 두지 않고 메뉴에서
+    (`deps._guard_page`). 이름을 그 화면에 적어 두지 않고 메뉴에서
     가져오는 것은, 메뉴 이름을 고쳤을 때 안내창만 옛 이름으로 남지 않게
     하려는 것이다.
     """

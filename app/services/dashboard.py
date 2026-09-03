@@ -808,8 +808,10 @@ def admin_dashboard(db: Session, today: Optional[date] = None) -> dict:
             # 적어(`can_view_consulting or admin`) 라우터가 보는 조건과 갈렸고,
             # 컨설턴트 줄이 `막힘` 으로 떴는데 실제로는 열려 있었다.
             "consulting": deps.may_view_consulting(u),
-            # 역할로 이미 열린 계정에서는 켜고 끄는 단추를 보이지 않는다.
-            "consulting_fixed": deps.consulting_by_role(u),
+            # 이 계정을 끄면 **볼 화면이 하나도 안 남는가.** 표가 누르기 전에
+            # 확인 문구로 알려 준다 — 투자컨설턴트에게는 이 화면이 전부다.
+            # (끌 수 있는 줄인지는 표가 본다: 본인 줄만 못 끈다.)
+            "consulting_only_screen": deps.consulting_is_only_screen(u),
             # 딜소개를 보내지 않는 계정(투자컨설턴트)은 담당 투자사·발송 칸이
             # **원래 비어 있다.** 0 으로 그리면 설정이 덜 된 사람처럼 읽힌다.
             "sends_deals": deps.sends_deals(u),

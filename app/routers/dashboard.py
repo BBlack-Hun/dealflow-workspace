@@ -23,7 +23,8 @@ from sqlalchemy.orm import Session
 
 from .. import config
 from ..db import SessionLocal, get_db
-from ..deps import (admin_only, consulting_by_role, get_current_user,
+from ..deps import (admin_only, consulting_default_for,
+                    consulting_is_only_screen, get_current_user,
                     templates)
 from ..models import AgentDevice, User, WeeklyRoutine, WeeklyTask
 from ..services import auth as auth_svc
@@ -520,7 +521,11 @@ def create_member(
     # 생기는 것보다 낫다(권한 판정이 전부 이 값으로 갈린다).
     role = valid_role(role) or "user"
 
+    # 투자현황을 처음부터 켤지는 **역할이 기본값만 정한다**(그 뒤로는 팀 현황에서
+    # 누구든 끄고 켠다). 투자컨설턴트를 꺼진 채로 만들면 그 계정에는 볼 화면이
+    # 하나도 없어서, 만들어 준 사람이 무엇을 빠뜨렸는지 알기 어렵다.
     member = User(name=name.strip() or normalized, phone=normalized, role=role,
+                  can_view_consulting=1 if consulting_default_for(role) else 0,
                   password_hash=auth_svc.hash_password(config.INITIAL_PASSWORD),
                   must_change_password=1)
     db.add(member)
@@ -677,26 +682,41 @@ def toggle_consulting(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """투자현황 화면을 볼 수 있게 하거나 막는다.
+    """투자현황 화면을 볼 수 있게 하거나 막는다 — **누구든 끄고 켠다.**
 
-    **역할만으로 이미 열린 계정(관리자·투자컨설턴트)은 여기서 못 끈다.** 그냥
-    뒤집으면 "볼 수 없게 했습니다" 라고 알리면서 실제로는 계속 보인다 — 화면이
-    거짓말을 하는 그 어긋남이 이 칸의 버그였다. 표에도 그 줄에는 단추 대신
-    상태만 적는다(판정은 `deps.consulting_by_role` 한 곳).
+    예전에는 관리자·투자컨설턴트가 역할만으로 열려 있어 여기서 못 껐다. 그런데
+    이 화면을 누구에게 열지는 그때그때 사람이 정하는 일이지 역할로 굳어 있을
+    일이 아니다. 이제 칸 하나(`can_view_consulting`)가 전부이고, 역할이 하는
+    일은 새 계정의 기본값뿐이다(`deps.consulting_default_for`).
+
+    **본인은 못 끈다.** 관리자가 스스로를 잠그면 그 화면에 다시 들어갈 길이
+    없어져, 되돌리려면 다른 관리자를 부르거나 DB 를 직접 고쳐야 한다. 바로 위
+    권한 바꾸기가 같은 이유로 본인을 막고 있다 — 그 결을 따른다. 표에도 본인
+    줄에는 단추 대신 상태만 적는다.
+
+    **투자컨설턴트를 끄면 그 계정에는 볼 화면이 하나도 남지 않는다**
+    (`deps.CONSULTANT_PATHS` 가 허용 목록이라 `/consulting` 이 전부다). 막는
+    것 자체는 막지 않는다 — 관리자가 알고 끄는 일이 있다. 다만 **모르고 끄는
+    것**을 막으려고, 팀 현황이 누르기 전에 확인 문구를 띄우고 여기서는 끈 뒤
+    안내에 같은 사실을 적는다. 판정은 `deps.consulting_is_only_screen` 한 곳이라
+    두 문구가 갈릴 자리가 없다.
     """
     admin_only(user)
+    if member_id == user.id:
+        return RedirectResponse("/team?msg=본인+투자현황은+끄고+켤+수+없습니다",
+                                status_code=303)
     member = db.get(User, member_id)
     if member is None:
         raise HTTPException(status_code=404, detail="계정을 찾을 수 없습니다")
-    if consulting_by_role(member):
-        return RedirectResponse(
-            f"/team?msg={member.name}+님은+권한상+투자현황을+항상+볼+수+있습니다",
-            status_code=303)
     member.can_view_consulting = 0 if member.can_view_consulting else 1
     db.commit()
     state = "볼 수 있게" if member.can_view_consulting else "볼 수 없게"
-    return RedirectResponse(f"/team?msg={member.name}+님을+투자현황을+{state}+했습니다",
-                            status_code=303)
+    note = ""
+    if not member.can_view_consulting and consulting_is_only_screen(member):
+        note = "+—+이+계정에는+이제+볼+화면이+없습니다"
+    return RedirectResponse(
+        f"/team?msg={member.name}+님을+투자현황을+{state}+했습니다{note}",
+        status_code=303)
 
 
 @router.post("/team/members/{member_id}/reset-password", include_in_schema=False)

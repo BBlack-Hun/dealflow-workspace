@@ -54,9 +54,9 @@ def stage(db, users):
     member.can_view_consulting = 1
     other.can_view_consulting = 1
     consultant = User(name="컨설턴트시험", phone="01000000081", role="consultant",
-                      password_hash=pw)
+                      can_view_consulting=1, password_hash=pw)
     admin = User(name="관리자시험", phone="01000000082", role="admin",
-                 password_hash=pw)
+                 can_view_consulting=1, password_hash=pw)
     db.add_all([consultant, admin])
     db.commit()
 
