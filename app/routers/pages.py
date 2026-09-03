@@ -4,6 +4,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass
 from datetime import date
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
@@ -49,9 +50,24 @@ def index(request: Request, db: Session = Depends(get_db),
     return templates.TemplateResponse("dashboard.html", ctx)
 
 
+def _drop_query(request: Request, key: str) -> str:
+    """지금 주소에서 `key` 하나만 뺀 주소.
+
+    안내창을 **닫을 때 돌아올 곳**이다. 스크립트로 닫지 않고 평범한 링크로
+    닫기 때문에(아래 `ir_attach_guide` 주석), 같은 화면을 그대로 다시 열되
+    안내창만 안 뜨는 주소가 필요하다 — 골라 둔 담당자·기업은 나머지 조각에
+    그대로 실려 있어 다시 고를 필요가 없다.
+    """
+    left = [(k, v) for k, v in request.query_params.multi_items() if k != key]
+    return request.url.path + (f"?{urlencode(left)}" if left else "")
+
+
 @router.get("/deals", response_class=HTMLResponse)
 def deals_page(
     request: Request,
+    # IR 관리에서 [자료 보내기] 로 넘어왔는가. 넘어왔으면 "PC 에서 자료를
+    # 첨부하세요" 안내창을 띄운다(`/ir/deliver-guide` 가 붙여 준다).
+    attach: int = 0,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -160,6 +176,9 @@ def deals_page(
         "mail": mailer.status(),
         "blocked_reasons": {c.id: company_blocked_reason(c)
                             for c in companies if not c.introducible},
+        # 자료 첨부 안내창 — IR 관리에서 [자료 보내기] 로 넘어왔을 때만.
+        "ir_attach_guide": bool(attach),
+        "ir_attach_dismiss": _drop_query(request, "attach"),
     })
     return templates.TemplateResponse("deals.html", ctx)
 

@@ -905,6 +905,11 @@ td.cell.save-failed { background: #fdecec; }
 .due-group { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
 .due-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
 .due-head .primary-btn { margin-left: auto; }
+/* [자료 보내기] 는 폼 안의 단추다(누르면 이력이 남아 GET 이면 안 된다).
+   `margin-left:auto` 를 단추에만 걸면 폼 상자가 제자리에 남아 오른쪽으로
+   밀리지 않는다 — 미는 것은 바깥 상자여야 한다. */
+.due-head .deliver-form { margin-left: auto; }
+.due-head .deliver-form .primary-btn { margin-left: 0; }
 .due-list { list-style: none; margin: 0; padding: 0; }
 .due-list li { display: grid; grid-template-columns: 84px 1fr 200px auto; gap: 10px;
   align-items: center; padding: 6px 0; border-top: 1px solid var(--line); font-size: 13px; }

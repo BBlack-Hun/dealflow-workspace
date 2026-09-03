@@ -487,7 +487,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     schedulePreview();
     ssNote.textContent = askMode
       ? FOLLOW_UP[mode] + " — 기업 목록 없이 문구만 나갑니다"
-      : (mode === "ir" ? "자료를 먼저 보내고 문구를 뒤에 보냅니다"
+      : (mode === "ir" ? "자료는 PC 카톡에서 직접 첨부하고, 여기서는 문구만 보냅니다"
                        : (nc > MAX_COMPANIES ? "기업은 최대 " + MAX_COMPANIES + "개까지" : ""));
     if (mode === "ir") renderIrLinks();
 
@@ -526,7 +526,9 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     applyContactFilter();
   }
 
-  // 고른 기업의 IR 자료 링크를 띄운다 — 무엇을 보내야 하는지 그 자리에서 보여야 한다.
+  // 고른 기업의 IR 자료를 띄운다 — **사람이 PC 카톡에 첨부할 파일**이다.
+  // 링크를 문구에 실어 보내던 방식은 폐기했다(자료는 앱이 안 보낸다).
+  // 그래도 이 목록은 남는다 — 첨부할 자료를 여기서 열어 내려받는다.
   function renderIrLinks() {
     var box = document.getElementById("ir-attach");
     if (!box) return;
@@ -534,8 +536,8 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     if (mode !== "ir") return;
     var list = document.getElementById("ir-links");
     list.innerHTML = "";
-    // **고른 차례대로.** 자료는 한 기업당 한 통씩 이 차례로 날아간다 —
-    // 여기만 목록 차례로 세면 화면에 적힌 차례와 실제로 나가는 차례가 갈린다.
+    // **고른 차례대로.** 문구가 "1번 기업 …, 3번 기업 …" 을 그 차례로 짚기
+    // 때문에, 여기만 목록 차례로 세면 화면과 문구의 차례가 갈린다.
     renumberPicks().forEach(function (card) {
       var c = card.querySelector(".company-cb");
       var li = document.createElement("li");
@@ -546,7 +548,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
           '<a href="' + escapeHtml(url) + '" target="_blank" rel="noopener">자료 열기</a>';
       } else {
         li.innerHTML = escapeHtml(name) +
-          ' <span class="warn-text">— 자료 링크가 없습니다</span>';
+          ' <span class="warn-text">— 첨부할 자료가 없습니다</span>';
       }
       list.appendChild(li);
     });
@@ -603,7 +605,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     var help = document.getElementById("mode-help");
     if (help) help.textContent =
       mode === "ir"
-        ? "요청받은 기업을 고르면, 자료를 먼저 보내고 안내 문구를 뒤에 보냅니다"
+        ? "요청받은 기업을 고르세요 — 자료 파일은 PC 카톡에서 직접 첨부하고, 안내 문구만 여기서 보냅니다"
         : (sourcingMode
             ? "딜 소싱 명단에서 대상을 고르면, 갈래(시리즈 A 이상 · 투자사 대표 · 개인 참여 …)에 맞는 문구가 나갑니다"
             : (askMode ? FOLLOW_UP[mode] + " — 기업 목록 없이 문구만 보냅니다 (기업 선택 불필요)"
@@ -640,8 +642,9 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   // 미리보기는 **그대로 고쳐서 보낼 수 있다**.
   // 자동 조합이 늘 완벽할 수는 없어서, 담당자별로 한 줄 덧붙이거나 표현을 바꾸는 일이 잦다.
   // 고친 내용은 lastPreviews[i].message 에 남고 발송 시 그 문장이 그대로 나간다.
-  // 자료 전달은 한 통이 아니라 여러 통으로 나간다 — 링크를 먼저 한 통씩 던지고
-  // 설명이 마지막이다. 그게 보이지 않으면 무엇이 어떤 순서로 나가는지 확인할 수 없다.
+  // 여러 통으로 나뉘어 나가는 문구가 있으면 몇 통인지 보여 준다. 무엇이 어떤
+  // 순서로 나가는지 보이지 않으면 확인할 수가 없다.
+  // (자료 전달은 링크 방식을 폐기한 뒤로 한 통이라 여기 걸리지 않는다.)
   // 여기서 고치면 **한 통으로** 나간다(어디서 끊을지는 고친 사람만 안다).
   function splitNotice(p) {
     var parts = p.parts || [];
@@ -651,7 +654,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
         escapeHtml(t.split("\n")[0].slice(0, 40)) + '</li>';
     }).join("");
     return '<div class="split-notice">' +
-      '<b>' + parts.length + '통으로 나갑니다</b> — 링크가 먼저, 설명이 마지막' +
+      '<b>' + parts.length + '통으로 나갑니다</b> — 위에서부터 차례대로' +
       '<ol>' + heads + '</ol>' +
       '<span class="muted">여기서 고치면 한 통으로 나갑니다</span></div>';
   }

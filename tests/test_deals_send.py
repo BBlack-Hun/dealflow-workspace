@@ -282,13 +282,13 @@ def test_ir_requires_a_company(client, seed):
 
 
 def test_ir_warns_when_the_file_link_is_missing(client, db, seed):
-    """보낼 자료가 없으면 문구만 나가고 자료는 못 보낸다 — 목록을 만들기 전에 알린다."""
+    """첨부할 자료가 없으면 열어 내려받을 것도 없다 — 목록을 만들기 전에 알린다."""
     r = client.post("/api/deals/preview", json={
         "company_ids": [seed["company_id"]],
         "contact_ids": [seed["contact_id"]], "mode": "ir",
     })
     warnings = r.json()["previews"][0]["warnings"]
-    assert any("IR 자료 링크가 없는 기업" in w for w in warnings)
+    assert any("첨부할 IR 자료가 없는 기업" in w for w in warnings)
 
 
 def test_ir_has_no_warning_once_the_link_is_set(client, db, seed):
@@ -303,7 +303,7 @@ def test_ir_has_no_warning_once_the_link_is_set(client, db, seed):
         "contact_ids": [seed["contact_id"]], "mode": "ir",
     })
     preview = r.json()["previews"][0]
-    assert not any("IR 자료 링크가 없는" in w for w in preview["warnings"])
+    assert not any("첨부할 IR 자료가 없는" in w for w in preview["warnings"])
     assert preview["attachments"][0]["url"].startswith("https://drive.google.com/")
 
 

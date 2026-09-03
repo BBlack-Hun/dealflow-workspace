@@ -1,5 +1,29 @@
 {% extends "base.html" %}
 {% block content %}
+{% if ir_attach_guide %}
+{#
+  IR 관리에서 [자료 보내기] 로 넘어왔다. 자료 파일은 **앱이 보내지 않는다** —
+  구글 드라이브 링크를 문구에 실어 보내던 방식을 폐기해서(0053), 사람이 PC
+  카톡에서 파일을 직접 첨부한다. 그 사실을 여기서 말하지 않으면 예전처럼
+  [발송] 만 누르고 자료는 안 간 채로 "전달드리겠습니다" 만 나간다.
+
+  **스크립트로 닫지 않는다.** `admin_only.html` 의 안내창과 같은 이유다 —
+  닫는 길이 스크립트에 걸려 있으면 예외 하나에 발송 화면이 통째로 가려진다.
+  닫기는 같은 주소에서 `attach` 만 뺀 평범한 링크다(고른 담당자·기업은 그대로).
+#}
+<div class="guard-backdrop"></div>
+<div class="guard-modal" role="dialog" aria-modal="true" aria-labelledby="attach-title">
+  <p class="guard-emoji" aria-hidden="true">📎</p>
+  <h1 class="guard-title" id="attach-title">PC 에서 IR 자료를 첨부해주시기 바랍니다</h1>
+  <p class="guard-body">
+    구글 드라이브 링크를 문구에 실어 보내는 방식은 <b>더 이상 쓰지 않습니다.</b>
+    PC 카카오톡에서 해당 방에 <b>자료 파일을 직접 첨부해 보내신 뒤</b>,
+    이 화면에서 안내 문구를 발송하세요.
+    보내야 할 자료는 아래 <b>[보낼 자료]</b> 에서 열어 내려받을 수 있습니다.
+  </p>
+  <a class="primary-btn guard-go" href="{{ ir_attach_dismiss }}">확인</a>
+</div>
+{% endif %}
 <header class="page-head">
   <h1>{{ page_title }}</h1>
   {# 방식 설명은 없앴다 — 탭 아래 한 줄씩 이미 적혀 있어 같은 말이 두 번 나왔다. #}
@@ -679,7 +703,10 @@
       <button type="button" class="linkbtn" id="refresh-preview" hidden>미리보기 갱신</button>
     </h2>
     <div class="ir-attach" id="ir-attach" hidden>
-      <b>자료를 먼저 보내고, 이 문구를 뒤에 보냅니다.</b>
+      {# 예전에는 "자료를 먼저 보내고, 이 문구를 뒤에 보냅니다" 였다. 그 '먼저'
+         를 앱이 하지 않는다 — 링크 방식을 폐기해서 사람이 PC 에서 파일을
+         붙인다. 화면이 옛말을 그대로 달고 있으면 앱이 보내 주는 줄 안다. #}
+      <b>보낼 자료 — PC 카톡에서 직접 첨부한 뒤 이 문구를 보내세요.</b>
       <ul id="ir-links"></ul>
     </div>
     <div class="mail-fields" id="mail-fields" hidden>
