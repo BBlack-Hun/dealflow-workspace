@@ -574,6 +574,15 @@ class AgentDevice(TimestampMixin, Base):
     # 어떤 발송기가 붙었는지(mock/kakao_windows/kakao_mac/telegram).
     # mock 이 붙은 채로 실발송을 시도하면 잡을 가로채므로 화면에 드러내야 한다.
     sender: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # IR 자료를 둔 **그 PC 의 폴더 경로**. 발송기가 켜질 때 받아 간다.
+    #
+    # 왜 여기인가: 계정이 아니라 **기기**의 성질이다. `hostname`·`sender` 와 같은
+    # 자리 — 같은 사람이 PC 를 바꾸면 함께 바뀌어야 하는 값이다.
+    # 왜 config.yaml 이 아닌가: 발송기를 새로 내려받으면 설치 스크립트가
+    # config.yaml 을 다시 만들어 손으로 적은 값이 데모 값으로 되돌아간다.
+    # **본인만 넣는다.** 그 PC 앞에 앉은 사람만 그 경로가 맞는지 안다(관리자도 대신
+    # 넣지 않는다 — `app/routers/setup.py: save_ir_root`).
+    ir_root: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
 
 class SourcingContact(TimestampMixin, Base):

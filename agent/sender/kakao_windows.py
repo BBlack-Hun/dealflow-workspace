@@ -270,6 +270,22 @@ class KakaoDesktopSender(Sender):
             return self._fail(room_name, f"exception: {exc}")
 
     # --- helpers ---
+    def send_file(self, room_name: str, file_names) -> SendResult:
+        """Windows 는 **아직 파일 전송을 하지 않는다.**
+
+        되는 척하지 않는다. Mac 은 실기로 끝까지 확인한 길(첨부 단추 → 열기 패널
+        → "파일 전송" 확인 시트)이 있지만, Windows 는 그 확인을 못 했다.
+        확인 못 한 길로 자료를 내보내면 **어디로 무엇이 나갔는지 아무도 모른다** —
+        그럴 바에는 분명하게 실패하는 편이 낫다. 팀 PC 에서 확인한 뒤에 붙인다.
+        """
+        log.warning("[kakao_windows] 파일 전송 요청을 거절합니다 room=%r files=%r",
+                    room_name, list(file_names or []))
+        return SendResult(
+            ok=False,
+            error="file_send_unsupported: Windows 발송기는 아직 파일 전송을 "
+                  "지원하지 않습니다 (실기 확인 전 — 자료는 PC 에서 직접 첨부하세요)",
+        )
+
     def _input_text(self, chat) -> Optional[str]:
         """채팅창 입력란의 현재 텍스트.
 
