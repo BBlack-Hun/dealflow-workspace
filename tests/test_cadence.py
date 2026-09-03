@@ -396,40 +396,55 @@ def test_backfill_picks_up_past_sends(db, seed, logged):
 # 회차인데 이름에는 어제가 적힌다. 나중에 "몇 월 며칠에 뭘 보냈지" 를 찾는
 # 기준은 결국 **보낸 날**이라, 앞 날짜는 오늘이어야 한다.
 #
-# 다만 **오늘이 그 회차 주 밖이면 회차 기준일 그대로** 둔다. 9/10 에 오늘을
-# 쓰면 `09/10 (9월 2주차)` 가 되어, 9/16(3주차) 회차가 2주차로 적힌다 —
-# 회차와 주차가 어긋난다. 그 주 밖이라는 것은 아직 **다음 회차를 미리 준비**
-# 하는 중이라는 뜻이므로, 이름도 그 회차의 날짜여야 한다.
+# **회차일이 아직 오지 않았으면 회차 기준일 그대로다.** 그때는 보낸 날이
+# 없다 — 다음 회차를 미리 준비하는 중이다. 오늘을 그냥 쓰면 8/31(월)에
+# 준비한 9/2 회차가 `08/31 (8월 5주차)` 로 남아 9월 회차가 8월 이름을 달고,
+# 9/10 에는 `09/10 (9월 2주차)` 가 되어 9/16(3주차) 회차가 2주차로 적힌다.
 #
-# 주가 같은지는 회차를 가르는 것과 **같은 함수**로 잰다(`weekly.week_start`).
-# 두 벌로 정의하면 한쪽만 고쳐지는 날 회차와 이름이 갈린다.
+# 가르는 것은 **오늘이 회차 기준일보다 앞이냐** 하나다 — 요일로 재지 않는다.
+# 지금은 딜 주기가 첫째·셋째 수요일이라 월·화가 그 앞이지만, 주기는
+# `ScheduleRule` 이 정하고 실제로 한 번 바뀌었다.
 #
 # 날짜는 전부 인자로 넣는다 — 오늘이 언제냐에 따라 통과했다 실패했다 하면 안 된다.
 
-def test_title_date_is_today_inside_the_cycle_week(db):
-    """회차 주 안에서는 **오늘 날짜**가 앞에 온다. 이것이 사용자가 본 증상이다.
+# 9월 첫째 수요일 = 9/2 회차. 그 주는 8/31(월)~9/6(일) 이라 **달을 넘어간다.**
+CYCLE_DAY = date(2026, 9, 2)
 
-    고치기 전에는 9/3 에 열어도 `09/02 (9월 1주차)` 가 채워졌다.
+
+@pytest.mark.parametrize("today, expected", [
+    (date(2026, 8, 31), "09/02 (9월 1주차)"),   # 이틀 전 · 월 — **지난달이다**
+    (date(2026, 9, 1),  "09/02 (9월 1주차)"),   # 하루 전 · 화
+    (date(2026, 9, 2),  "09/02 (9월 1주차)"),   # 당일 · 수
+    (date(2026, 9, 3),  "09/03 (9월 1주차)"),   # 다음 날 · 목 — 사용자가 본 그날
+    (date(2026, 9, 4),  "09/04 (9월 1주차)"),   # 이틀 뒤 · 금
+    (date(2026, 9, 6),  "09/06 (9월 1주차)"),   # 회차 주 끝 · 일
+])
+def test_title_date_around_the_cycle_day(db, today, expected):
+    """회차일 **앞이면 회차 기준일 · 당일부터는 오늘 날짜.**"""
+    from app.services import cadence
+
+    assert cadence.cycle_anchor(None, today) == CYCLE_DAY, today   # 다 같은 회차다
+    assert cadence.default_batch_title(None, today) == expected
+
+
+def test_september_cycle_never_carries_an_august_name(db):
+    """**달을 넘어가는 자리** — 8/31(월)에 준비하는 것은 9/2 회차다.
+
+    오늘 날짜를 그대로 쓰면 `08/31 (8월 5주차)` 가 되어 9월 회차가 8월 이름으로
+    남는다. 발송 이력을 달로 훑을 때 9월 회차가 8월에 가 있으면 못 찾는다.
     """
     from app.services import cadence
 
-    wednesday = date(2026, 9, 2)           # 9월 첫째 수요일 = 회차일
-    thursday = date(2026, 9, 3)
-    assert cadence.cycle_anchor(None, thursday) == wednesday      # 회차는 그대로
-    assert cadence.default_batch_title(None, thursday) == "09/03 (9월 1주차)"
-
-
-def test_title_date_on_the_cycle_day_is_that_day(db):
-    """회차 당일에는 달라지는 것이 없다 — 오늘이 곧 회차 기준일이다."""
-    from app.services import cadence
-
-    wednesday = date(2026, 9, 2)
-    assert (cadence.default_batch_title(None, wednesday)
-            == cadence.batch_title(wednesday) == "09/02 (9월 1주차)")
+    monday = date(2026, 8, 31)
+    assert cadence.cycle_anchor(None, monday) == CYCLE_DAY      # 같은 주 · 같은 회차
+    assert monday < CYCLE_DAY                                   # 아직 회차일 전이다
+    title = cadence.default_batch_title(None, monday)
+    assert title == "09/02 (9월 1주차)"
+    assert "8월" not in title and title != cadence.batch_title(monday)
 
 
 def test_title_date_is_the_cycle_day_outside_its_week(db):
-    """회차 주 **밖**이면 회차 기준일 그대로다 — 주차가 어긋나지 않게."""
+    """회차 주 **밖**이면 회차 기준일이다 — 주차가 어긋나지 않게."""
     from app.services import cadence
 
     off_week = date(2026, 9, 10)           # 9/7~9/13 에는 회차일이 없다
@@ -439,22 +454,47 @@ def test_title_date_is_the_cycle_day_outside_its_week(db):
     assert cadence.default_batch_title(None, off_week) != cadence.batch_title(off_week)
 
 
-def test_title_date_follows_every_day_of_the_cycle_week(db):
-    """회차 주의 어느 날에 열어도 **그 날짜**가 앞에 온다.
+def test_title_date_never_runs_ahead_of_the_cycle_day(db):
+    """어느 날에 열어도 앞 날짜는 **회차 기준일 아니면 오늘**이다.
 
+    오늘을 쓰는 것은 회차일이 **왔을 때뿐**이다 — 아직 안 왔는데 오늘을 쓰면
+    보낸 적 없는 회차가 지난 이름을 단다.
     주차는 `sheet_import.week_of_month` **하나로만** 센다 — 같은 날이 화면마다
-    3주차·4주차로 갈리면 안 된다.
+    3주차·4주차로 갈리면 안 된다. 괄호 안은 늘 **앞 날짜**를 설명한다.
     """
-    from app.services import cadence, sheet_import, weekly
+    import re
 
-    wednesday = date(2026, 9, 2)
-    start = weekly.week_start(wednesday)
-    for i in range(7):
+    from app.services import cadence, sheet_import
+
+    start = date(2026, 8, 24)              # 회차가 없는 주부터 넉넉히 훑는다
+    for i in range(60):
         day = start + timedelta(days=i)
-        assert cadence.cycle_anchor(None, day) == wednesday, day
-        week = sheet_import.week_of_month(day.isoformat())
-        assert (cadence.default_batch_title(None, day)
-                == f"{day.month:02d}/{day.day:02d} ({day.month}월 {week}주차)"), day
+        anchor = cadence.cycle_anchor(None, day)
+        title = cadence.default_batch_title(None, day)
+        m = re.fullmatch(r"(\d{2})/(\d{2}) \((\d+)월 (\d)주차\)", title)
+        assert m, (day, title)
+
+        shown = (int(m.group(1)), int(m.group(2)))
+        assert shown in {(anchor.month, anchor.day), (day.month, day.day)}, (day, title)
+        if shown == (day.month, day.day) and day != anchor:
+            assert day > anchor, (day, anchor, title)      # 회차일이 온 뒤에만 오늘
+        # 괄호 안 달·주차는 앞 날짜에서 나온 값이다(자기모순이 없다).
+        assert int(m.group(3)) == shown[0], (day, title)
+        assert int(m.group(4)) == (shown[1] - 1) // 7 + 1 == sheet_import.week_of_month(
+            f"2026-{shown[0]:02d}-{shown[1]:02d}"), (day, title)
+
+
+def test_the_cycle_month_is_never_renamed(db):
+    """앞 날짜의 **달**은 늘 회차 기준일의 달이다 — 사용자가 걱정한 자리."""
+    from app.services import cadence
+
+    day = date(2026, 1, 1)
+    while day < date(2028, 1, 1):
+        anchor = cadence.cycle_anchor(None, day)
+        title = cadence.default_batch_title(None, day)
+        assert title.startswith(f"{anchor.month:02d}/"), (day, anchor, title)
+        assert title.split("(")[1].startswith(f"{anchor.month}월"), (day, anchor, title)
+        day += timedelta(days=1)
 
 
 def test_saved_titles_are_not_renamed(db):
@@ -473,17 +513,18 @@ def test_saved_titles_are_not_renamed(db):
         assert cadence.batch_title(day) == "08/19 (8월 3주차)", today
 
 
-def test_deal_screen_fills_in_todays_date(logged, db, monkeypatch):
+@pytest.mark.parametrize("today, expected", [
+    (date(2026, 9, 1), "09/02 (9월 1주차)"),    # 회차일 전 — 회차 기준일
+    (date(2026, 9, 3), "09/03 (9월 1주차)"),    # 회차일 뒤 — 오늘
+])
+def test_deal_screen_fills_in_the_title(logged, db, monkeypatch, today, expected):
     """화면 기본값이 실제로 그 값이다 — 서비스만 고치고 화면은 옛것일 수 있다."""
     import re
 
     from app import clock
-    from app.services import cadence
 
-    thursday = date(2026, 9, 3)            # 9/2 회차 주의 목요일
-    monkeypatch.setattr(clock, "today", lambda: thursday)
-
+    monkeypatch.setattr(clock, "today", lambda: today)
     body = logged.get("/deals").text
     m = re.search(r'id="batch-title" value="([^"]*)"', body)
     assert m, "회차명 칸이 없다"
-    assert m.group(1) == cadence.default_batch_title(None, thursday) == "09/03 (9월 1주차)"
+    assert m.group(1) == expected

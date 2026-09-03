@@ -142,8 +142,8 @@ def deals_page(
     #
     # 앞 날짜는 **오늘**이다. 회차 기준일을 쓰면 9/2 회차 주의 9/3 에 열어도
     # `09/02` 가 채워져, 오늘 만드는 회차 이름에 어제가 적혔다. 규칙과 그 예외
-    # (회차 주 밖이면 회차 기준일)는 `cadence.default_batch_title` 한 곳에 있다 —
-    # 화면 다른 곳의 '다음 발송일'은 그대로 다음 회차일이다(여기와 다른 질문).
+    # (회차일이 아직 안 왔으면 회차 기준일)는 `cadence.default_batch_title` 한 곳에
+    # 있다 — 화면 다른 곳의 '다음 발송일'은 그대로 다음 회차일이다(여기와 다른 질문).
     ctx.update({
         "companies": companies,
         "default_batch_title": cadence.default_batch_title(db),
