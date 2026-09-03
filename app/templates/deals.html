@@ -257,6 +257,13 @@
       <input type="text" id="batch-title" value="{{ default_batch_title }}" />
       <span class="hint">보내는 날에서 자동으로 들어갑니다 · 고쳐도 됩니다</span>
     </label>
+    {# 고른 차례가 곧 문구의 번호다(`1) 2) 3)`). 카드에 뜨는 번호가 그것인데,
+       왜 번호가 붙는지 말해 주지 않으면 목록 차례로 나가는 줄 안다. #}
+    <p class="hint">
+      <b>고른 차례가 곧 문구의 번호</b>입니다 — 카드에 붙는 번호대로
+      <code>1)</code> <code>2)</code> <code>3)</code> 으로 나갑니다.
+      차례를 바꾸려면 체크를 풀고 원하는 차례로 다시 고르세요.
+    </p>
     <p class="hint" id="company-hint">
       <b>내용 부족</b>으로 표시된 기업은 소개 문구에 넣을 내용이 모자랍니다.
       골라도 보낼 수는 있지만, 문구가 빈약해집니다.

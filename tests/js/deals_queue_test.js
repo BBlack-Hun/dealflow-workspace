@@ -16,39 +16,9 @@ const assert = require("assert");
 
 const deals_ = require("./_deals_dom.js");
 
-// 아주 작은 fetch 대역. 오간 요청을 그대로 모아 두고, 미리 정해 둔 답을
-// 차례대로 돌려준다(약속은 곧바로 풀린다 — 검사가 기다릴 것이 없다).
-function fakeFetch(replies) {
-  const calls = [];
-  // `.then()` 이 또 약속을 돌려주면 **펴 준다**(진짜 Promise 처럼). deals.js 가
-  // `r.json().then(...)` 을 바깥 `.then` 에서 돌려주는데, 안 펴 주면 다음
-  // 단계가 값 대신 약속을 받아 엉뚱한 곳에서 죽는다.
-  function settled(value) {
-    return {
-      __settled: true,
-      then: function (fn) {
-        const next = fn(value);
-        return (next && next.__settled) ? next : settled(next);
-      },
-      catch: function () { return this; }
-    };
-  }
-  const fn = function (url, init) {
-    const body = JSON.parse((init && init.body) || "{}");
-    calls.push({ url: url, body: body });
-    // 문구 목록·미리보기(GET)는 이 검사와 무관하다 — 안 풀리는 약속을 준다.
-    if (!init || init.method !== "POST") {
-      return { then: function () { return this; }, catch: function () { return this; } };
-    }
-    const reply = replies.length ? replies.shift() : { ok: true, d: {} };
-    return settled({
-      ok: reply.ok !== false,
-      json: function () { return settled(reply.d); }
-    });
-  };
-  fn.calls = calls;
-  return fn;
-}
+// `fakeFetch` 는 `_deals_dom.js` 에 한 벌만 둔다 — 여기에도 한 벌 두면 화면
+// 코드가 바뀔 때 한쪽만 고쳐져, 나머지는 딴 것을 보증한다.
+const fakeFetch = deals_.fakeFetch;
 
 function startCalls(fetch) {
   return fetch.calls.filter(function (c) { return c.url.indexOf("/start") >= 0; });
