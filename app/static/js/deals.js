@@ -65,6 +65,16 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   // 고른 것 자체가 없어지기 때문이고, 그게 맞다 — 화면이 서버가 모르는 차례를
   // 기억하고 있으면 안 된다. 차례가 오래 남는 곳은 보내거나 예약한 뒤의 서버
   // 쪽이다(`DealBatchCompany.position` · `DealQueueCompany.position`).
+  //
+  // ## 자료 전달에서는 **고른 차례가 번호가 아니다**
+  //
+  // 그때의 번호는 딜 소개에서 이미 붙인 번호다(`services/deal_numbers.py`).
+  // 투자사가 "2번 주세요" 라고 답한 그 번호라 담당자마다 다르고, 카드 하나에
+  // 적을 수 있는 값이 아니다. 그런데도 고른 차례를 배지로 띄우면 화면은 `1`,
+  // 문구는 `2번 기업 …` 이 되어 **어느 쪽이 맞는지 알 수 없다.** 그래서 이
+  // 탭에서는 배지를 비운다(`no-pick-badge`) — 실제 번호는 담당자별 미리보기
+  // 문구에 그대로 적혀 있다. 차례 자체는 그대로 쓴다: 문구가 기업을 짚는
+  // 차례이자 [보낼 자료] 목록의 차례다.
   function cardOf(cb) { return cb.closest(".pick-card"); }
 
   function pickOrderOf(card) {
@@ -536,8 +546,10 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     if (mode !== "ir") return;
     var list = document.getElementById("ir-links");
     list.innerHTML = "";
-    // **고른 차례대로.** 문구가 "1번 기업 …, 3번 기업 …" 을 그 차례로 짚기
+    // **고른 차례대로.** 문구가 "2번 기업 …, 3번 기업 …" 을 그 차례로 짚기
     // 때문에, 여기만 목록 차례로 세면 화면과 문구의 차례가 갈린다.
+    // (붙는 **번호**는 고른 차례가 아니라 딜 소개에서 붙인 번호다 —
+    //  `services/deal_numbers.py`. 그래서 이 목록에는 번호를 적지 않는다.)
     renumberPicks().forEach(function (card) {
       var c = card.querySelector(".company-cb");
       var li = document.createElement("li");
@@ -565,6 +577,8 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       b.classList.toggle("active", b.getAttribute("data-mode") === mode);
     });
     companyPanel.classList.toggle("dimmed", askMode);
+    // 자료 전달에서는 고른 차례가 번호가 아니다 — 배지를 비운다(위 설명 참고).
+    companyPanel.classList.toggle("no-pick-badge", mode === "ir");
     // 대상 목록 자체를 바꾼다 — 소싱은 받는 사람이 다른 명단에 있다.
     var sourcingMode = mode === "sourcing";
     var contactBox = document.getElementById("contact-list");

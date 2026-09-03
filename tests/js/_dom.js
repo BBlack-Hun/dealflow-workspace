@@ -97,7 +97,7 @@ function makeEl(tag) {
     nodeType: 1,
     children: [], parent: null, handlers: {},
     hidden: false, checked: false, disabled: false,
-    value: "", textContent: "", innerHTML: "",
+    value: "", textContent: "",
     classList: {
       _on: new Set(),
       add(c) { this._on.add(c); },
@@ -140,6 +140,21 @@ function makeEl(tag) {
       (documentHandlers[type] || []).forEach(function (fn) { fn(ev); });
     }
   };
+  // 브라우저는 `innerHTML` 을 넣으면 **있던 자식을 먼저 버린다.** 이 DOM 은
+  // 글자를 파싱하지 않아 새 자식이 생기지는 않지만, 버리는 것까지 안 하면
+  // "비우고 다시 그린다" 는 화면 코드가 여기서만 **줄을 쌓는다** — 그러면
+  // 두 번째로 그릴 때 목록이 두 벌이 되는 고장을 검사가 못 본다
+  // (`removeChild` 를 받아 주는 것과 같은 뜻이다).
+  let html = "";
+  Object.defineProperty(el, "innerHTML", {
+    enumerable: true,
+    get() { return html; },
+    set(value) {
+      html = String(value);
+      el.children.forEach(function (kid) { kid.parent = null; });
+      el.children.length = 0;
+    }
+  });
   return el;
 }
 

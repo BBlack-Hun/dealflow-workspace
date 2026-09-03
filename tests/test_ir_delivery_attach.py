@@ -58,7 +58,10 @@ def stage(client, db, users):
                   status="done")
     db.add(job)
     db.commit()
+    # `stage` 는 빼먹으면 안 된다 — 기업 목록에 번호를 붙여 내보낸 발송인지를
+    # 그 칸으로 가린다(`services/deal_numbers.for_contact`). 딜 소개는 늘 1 이다.
     db.add(SendItem(job_id=job.id, contact_id=contact.id, status="sent",
+                    stage=mc.STAGE_DAY1,
                     room_name="홍길동 팀장님", message="…"))
     # 투자사가 "1번, 2번 주세요" 라고 답한 상태 — [자료 보내기] 가 눌리는 자리.
     db.add_all([
