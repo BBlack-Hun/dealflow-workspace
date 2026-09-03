@@ -433,6 +433,11 @@ class PreviewRequest(BaseModel):
     mode: str = MODE_DEAL
     # 인사말을 붙일지. None 이면 방식별 기본값(딜소개 O · 문구만 X)을 쓴다.
     include_opening: Optional[bool] = None
+    # 딜 소싱에서 **화면이 고른 갈래**. 갈래마다 문구가 다른데(`sourcing_msg`),
+    # 아직 아무도 안 골랐을 때는 어느 갈래를 보여 줄지 화면만 안다 —
+    # 이 값이 없으면 늘 첫 갈래가 떠서, M&A 를 눌러도 시리즈 A 문구가 보였다.
+    # 사람을 고른 뒤에는 그 사람의 갈래가 이기므로 여기서만 쓰인다.
+    bucket: str = ""
 
 
 class MessageOverride(BaseModel):
@@ -498,7 +503,9 @@ def preview(
     companies = _load_companies(db, req.company_ids) if req.mode in MODES_WITH_COMPANIES else []
     previews = []
     sourcing = req.mode == MODE_SOURCING
-    recipients = ([_SampleRecipient(_sample_bucket(db) if sourcing else "")]
+    # 화면이 고른 갈래를 먼저 쓴다. 없을 때만 첫 갈래로 돌아간다.
+    sample_bucket = (req.bucket or "").strip() or _sample_bucket(db)
+    recipients = ([_SampleRecipient(sample_bucket if sourcing else "")]
                   if sample else _load_recipients(db, user, req.mode, req.contact_ids))
     # 투자사 관리 현황에서 연결해 둔 방이 있으면 미리보기에도 그 방이 떠야 한다 —
     # 화면에는 '방 미등록' 인데 실제로는 나가면, 어디로 갈지 모른 채 누르게 된다.

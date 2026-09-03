@@ -13,8 +13,10 @@ import re
 from datetime import date
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from urllib.parse import quote
+
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -22,7 +24,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import get_current_user, templates
 from ..models import SendItem, SourcingContact, User
-from ..services import sourcing_link
+from ..services import sourcing_buckets, sourcing_link
 from ..ui import base_ctx
 
 router = APIRouter(tags=["sourcing"])
@@ -144,7 +146,8 @@ def rows_of(db: Session, bucket: str = "") -> List[SourcingContact]:
 
 @router.get("/sourcing", response_class=HTMLResponse, include_in_schema=False)
 def sourcing_page(request: Request, db: Session = Depends(get_db),
-                  user: User = Depends(get_current_user), tab: str = ""):
+                  user: User = Depends(get_current_user), tab: str = "",
+                  msg: str = ""):
     tabs = buckets(db)
     # 아무 것도 고르지 않았으면 첫 갈래를 연다. 전체를 먼저 보여주면 갈래가
     # 나뉜 뜻이 사라진다.
@@ -161,8 +164,37 @@ def sourcing_page(request: Request, db: Session = Depends(get_db),
         "columns": COLUMNS,
         "rows": rows,
         "total": sum(t["count"] for t in tabs),
+        # 이름을 못 바꾼 까닭. 조용히 되돌아오면 왜 그대로인지 알 수 없다.
+        "msg": msg,
     })
     return templates.TemplateResponse("sourcing.html", ctx)
+
+
+@router.post("/sourcing/buckets/rename", include_in_schema=False)
+def rename_bucket(old: str = Form(""), new: str = Form(""),
+                  db: Session = Depends(get_db),
+                  user: User = Depends(get_current_user)):
+    """갈래 탭 이름 바꾸기 — 투자사 관리 현황·투자컨설턴트의 [이름 저장]과 같은 결.
+
+    **줄이 같이 따라간다.** 갈래 이름은 사람·문구·골라 둔 것 세 곳에 같은 글자로
+    적혀 있어서, 한 곳만 바꾸면 갈래가 둘로 갈린다(옛 이름의 유령 탭 —
+    `0039_consulting_startup_tab` 이 되돌려야 했던 그 사고). 옮기는 것은
+    `services/sourcing_buckets.rename` 한 곳이 한다.
+
+    이 화면을 볼 수 있는 사람이면 바꿀 수 있다 — 명단 이름 바꾸기와 같은
+    권한이다. 사람 수나 발송 대상이 바뀌는 조작이 아니다.
+    """
+    before, after = (old or "").strip(), sourcing_buckets.normalize_label(new)
+    if not before or not after or before == after:
+        return RedirectResponse(f"/sourcing?tab={quote(before)}", status_code=303)
+    try:
+        sourcing_buckets.rename(db, before, after)
+    except sourcing_buckets.RenameError as exc:
+        db.rollback()
+        return RedirectResponse(
+            f"/sourcing?tab={quote(before)}&msg={quote(str(exc))}", status_code=303)
+    db.commit()
+    return RedirectResponse(f"/sourcing?tab={quote(after)}", status_code=303)
 
 
 class SourcingIn(BaseModel):
