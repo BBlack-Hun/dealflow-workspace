@@ -145,13 +145,27 @@ function buildDom(people) {
   const groupBar = el("div", { id: "group-filter", "data-empty": EMPTY_GROUP }, chips);
   const groupBox = el("div", { id: "contact-filters", class: "pick-filters" }, [groupBar]);
 
+  // 갈래 칩. **딜 소싱은 갈래가 곧 문구**라, 이 칩은 목록만 거르는 것이 아니라
+  // 미리보기를 바꾼다 — 그 이음새를 보려면 진짜 칩이 서 있어야 한다.
+  // (실제 화면이 같은 아이디·속성을 그리는지는 파이썬 쪽이 따로 본다)
+  const bucketNames = [];
+  SOURCING.forEach(function (s) {
+    if (bucketNames.indexOf(s[2]) < 0) bucketNames.push(s[2]);
+  });
+  const bucketChips = [el("button", { class: "chip active", "data-value": "" })]
+    .concat(bucketNames.map(function (b) {
+      return el("button", { class: "chip", "data-value": b });
+    }));
+  const bucketBar = el("div", { id: "bucket-filter" }, bucketChips);
+  const sourcingBox = el("div", { id: "sourcing-filters", class: "pick-filters" },
+                         [bucketBar]);
+
   const simple = ["company-pill", "contact-pill", "contact-summary", "ss-companies",
                   "ss-contacts", "ss-note", "preview-tabs", "preview-area",
                   "send-warnings", "send-btn", "refresh-preview", "contact-search",
                   "only-picked-contacts", "company-search", "only-picked",
                   "company-filter-note", "contact-filter-note", "bucket-mix-note",
                   "select-all-contacts", "clear-all-contacts", "select-noreact",
-                  "sourcing-filters",
                   "batch-title", "include-opening", "tpl-opening", "tpl-closing",
                   "tpl-opening-wrap", "ir-attach", "ir-links",
                   "mail-fields", "mail-subject", "company-hint", "mode-help"]
@@ -176,8 +190,8 @@ function buildDom(people) {
     queueList
   ]);
 
-  [companyPanel, contactList, blocked, sourcingList, groupBox, arrow, channel,
-   queuePanel]
+  [companyPanel, contactList, blocked, sourcingList, groupBox, sourcingBox,
+   arrow, channel, queuePanel]
     .concat(simple).concat(modeTabs)
     .forEach(function (node) { root.appendChild(node); });
 
@@ -216,7 +230,10 @@ function run(people, opts) {
                             reload: function () { this.reloads += 1; } } };
   const ctx = {
     document: dom.document, console: console, window: win,
-    setTimeout: function () { return 0; }, clearTimeout: function () {},
+    // 미리보기는 손이 멈춘 뒤에 부른다(`schedulePreview`). 기본값은 지금까지와
+    // 같이 **안 부르는 것**이고, 그 부름까지 보려는 검사만 갈아 끼운다.
+    setTimeout: opts.setTimeout || function () { return 0; },
+    clearTimeout: function () {},
     URLSearchParams: URLSearchParams,
     alert: opts.alert || function () {},
     confirm: opts.confirm || function () { return false; },
@@ -315,6 +332,11 @@ function pickGroup(dom, value) {
   require("assert").ok(chip, "그룹 칩을 못 찾았다: " + value);
   chip.fire("click");
 }
+function pickBucket(dom, value) {
+  const chip = dom.document.querySelector('#bucket-filter .chip[data-value="' + value + '"]');
+  require("assert").ok(chip, "갈래 칩을 못 찾았다: " + value);
+  chip.fire("click");
+}
 function clickSelectAll(dom) { dom.document.getElementById("select-all-contacts").fire("click"); }
 function clickClearAll(dom) { dom.document.getElementById("clear-all-contacts").fire("click"); }
 
@@ -325,4 +347,5 @@ module.exports = { EMPTY_GROUP: EMPTY_GROUP, PEOPLE: PEOPLE, SOURCING: SOURCING,
                    buildDom: buildDom, queueRow: queueRow,
                    run: run, boxes: boxes, checkedNames: checkedNames,
                    shownNames: shownNames, pickGroup: pickGroup,
+                   pickBucket: pickBucket,
                    clickSelectAll: clickSelectAll, clickClearAll: clickClearAll };

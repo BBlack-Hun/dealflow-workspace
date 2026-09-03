@@ -20,6 +20,8 @@
   보낼 방이 없기 때문입니다.
 </p>
 
+{% if msg %}<p class="flash">{{ msg }}</p>{% endif %}
+
 <nav class="sheet-tabs">
   {% for t in tabs %}
   <a class="sheet-tab {% if selected == t.key %}active{% endif %}"
@@ -28,6 +30,18 @@
   <a class="sheet-tab {% if not selected %}active{% endif %}"
      href="/sourcing?tab=all">전체 <span>{{ total }}</span></a>
 </nav>
+
+{# 갈래 이름 바꾸기 — 투자사 관리 현황·투자컨설턴트의 [이름 저장]과 같은 모양.
+   그 이름을 단 줄(사람·문구·골라 둔 것)이 함께 따라간다. #}
+{% if selected %}
+<form method="post" action="/sourcing/buckets/rename" class="ref-rename sheet-rename">
+  <input type="text" name="new" value="{{ selected }}" maxlength="80"
+         aria-label="갈래 이름">
+  <input type="hidden" name="old" value="{{ selected }}">
+  <button class="linkbtn" type="submit">이름 저장</button>
+  <span class="hint">이 갈래의 사람 · 문구가 함께 따라갑니다</span>
+</form>
+{% endif %}
 
 <div class="toolbar">
   <div class="toolbar-right">

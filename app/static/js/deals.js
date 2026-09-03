@@ -231,7 +231,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     return groupFilter === EMPTY_GROUP ? value === "" : value === groupFilter;
   }
 
-  function bindFilter(id, set) {
+  function bindFilter(id, set, onPick) {
     var bar = document.getElementById(id);
     if (!bar) return null;
     bar.addEventListener("click", function (e) {
@@ -242,10 +242,15 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
         c.classList.toggle("active", c === chip);
       });
       applyContactFilter();
+      // 갈래를 누르면 **그 갈래 문구**가 떠야 한다. 목록만 걸러 놓으면
+      // M&A 를 골라 놓고 시리즈 A 문구를 보며 발송을 누르게 된다.
+      // (사람을 고른 뒤에는 그 사람의 갈래가 이기므로 달라지지 않는다)
+      if (onPick) onPick();
     });
     return bar;
   }
-  var bucketBar = bindFilter("bucket-filter", function (v) { bucketFilter = v; });
+  var bucketBar = bindFilter("bucket-filter", function (v) { bucketFilter = v; },
+                             schedulePreview);
   var assigneeBar = bindFilter("assignee-filter", function (v) { assigneeFilter = v; });
   bindFilter("group-filter", function (v) { groupFilter = v; });
 
@@ -432,7 +437,10 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       opening_template_id: o && o.value ? parseInt(o.value, 10) : null,
       closing_template_id: c && c.value ? parseInt(c.value, 10) : null,
       mode: mode,
-      include_opening: greet ? greet.checked : true
+      include_opening: greet ? greet.checked : true,
+      // 딜 소싱은 갈래마다 문구가 다르다. 아직 아무도 안 골랐을 때
+      // 어느 갈래를 보여 줄지는 **누른 칩**이 정한다.
+      bucket: bucketFilter || ""
     };
   }
 
