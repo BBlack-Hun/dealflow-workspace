@@ -260,17 +260,22 @@ def test_표와_창이_같은_값을_보여_준다(logged_in, company):
 # --- ③ 한줄 소개 자동 조합의 재료 ---------------------------------------------
 
 def test_창에서_고친_연도별_매출이_자동_조합에_쓰인다(logged_in, company):
-    """`매출 …` 토막은 **가장 최근에 적힌 한 해**에서 온다(one_liner)."""
+    """`매출 …` 토막은 **적힌 해를 다 늘어놓는다**(one_liner)."""
     _panel_save(logged_in, company.id, business_desc="B2B 농산물 선도거래 플랫폼",
                 revenue_2023="2억", revenue_2024="4억", one_liner="")
     row = logged_in.get(f"/api/companies/{company.id}").json()
-    assert "매출 4억" in row["one_liner"], row["one_liner"]
+    assert "매출 23년 2억, 24년 4억" in row["one_liner"], row["one_liner"]
     assert row["one_liner"].startswith("B2B 농산물 선도거래 플랫폼"), row["one_liner"]
 
-    # 25년을 채우면 **그 해**로 따라온다 — 재료를 고치면 결과가 바뀐다.
+    # 25년을 채우면 **그 해가 뒤에 붙는다** — 재료를 고치면 결과가 바뀐다.
     _panel_save(logged_in, company.id, revenue_2025="11억")
     row = logged_in.get(f"/api/companies/{company.id}").json()
-    assert "매출 11억" in row["one_liner"], row["one_liner"]
+    assert "매출 23년 2억, 24년 4억, 25년 11억" in row["one_liner"], row["one_liner"]
+
+    # 22년도 재료다 — 사용자 신고("22년이랑 23년 매출도 반영") 그대로.
+    _panel_save(logged_in, company.id, revenue_2022="1억")
+    row = logged_in.get(f"/api/companies/{company.id}").json()
+    assert "매출 22년 1억, 23년 2억, 24년 4억, 25년 11억" in row["one_liner"], row["one_liner"]
 
 
 def test_창에서_고친_사업_설명이_자동_조합의_첫_토막이_된다(logged_in, company):

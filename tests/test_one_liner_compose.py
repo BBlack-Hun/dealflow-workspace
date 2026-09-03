@@ -26,9 +26,10 @@ from .conftest import DEMO_PASSWORD
 
 def make(**kw):
     """조합에 쓰이는 칸만 가진 가짜 기업. 안 준 칸은 비어 있다."""
-    fields = dict(business_desc=None, revenue_2023=None, revenue_2024=None,
-                  revenue_2025=None, funding_total=None, raise_target=None,
-                  pre_value=None, competitiveness=None, one_liner=None)
+    fields = dict(business_desc=None, revenue_2022=None, revenue_2023=None,
+                  revenue_2024=None, revenue_2025=None, funding_total=None,
+                  raise_target=None, pre_value=None, competitiveness=None,
+                  one_liner=None)
     fields.update(kw)
     return SimpleNamespace(**fields)
 
@@ -58,21 +59,72 @@ def test_amounts_are_shown_in_eok_like_the_rest_of_the_screen():
     assert made == "소재 제조 | 누적투자금액 5.6억 | 8.3억 투자유치중 | Pre Value 150억"
 
 
-def test_most_recent_year_is_the_headline_revenue():
-    """23·24·25년 중 **가장 최근에 적힌 해**를 쓴다.
+def test_every_written_year_is_listed():
+    """적힌 해가 여럿이면 **다 나온다.** 사용자 신고가 바로 이것이다.
 
-    실데이터에서 사람이 쓴 매출 토막 88개를 대조했을 때, 가장 최근 한 해를 쓰는
-    쪽이 36개(40.9%) 일치했고 세 해를 늘어놓는 쪽은 6개(6.8%)뿐이었다.
+    모양(`매출 23년 A, 24년 B, 25년 C`)은 지어낸 것이 아니라 실데이터에 그대로
+    있는 줄에서 가져왔다 — `매출 23년 2억, 24년 4억, 25년 11억` 이 글자까지
+    이 모양이고, 쉼표만 뺀 같은 모양이 하나 더 있다.
     """
     made = compose_one_liner(make(business_desc="물류 최적화",
                                   revenue_2023="2억", revenue_2024="4억",
                                   revenue_2025="11억"))
-    assert made == "물류 최적화 | 매출 11억"
+    assert made == "물류 최적화 | 매출 23년 2억, 24년 4억, 25년 11억"
 
-    # 25년이 비면 그 앞 해로 내려온다.
-    made = compose_one_liner(make(business_desc="물류 최적화",
-                                  revenue_2023="2억", revenue_2024="4억"))
-    assert made == "물류 최적화 | 매출 4억"
+
+def test_2022_is_a_source_year_again():
+    """22년도 재료다.
+
+    한동안 일부러 빼 두었던 해다("소개 문구에 22년 매출을 적은 예가 시트에
+    하나도 없다"). 그 근거가 지금은 성립하지 않는다 — 운영 사본에 22년 값이
+    136곳(금액 92곳) 쌓였고, 사용자가 22·23년도 나오게 해 달라고 요청했다.
+    """
+    made = compose_one_liner(make(business_desc="소재 제조",
+                                  revenue_2022="2.6억", revenue_2023="2.8억",
+                                  revenue_2024="1.6억"))
+    assert made == "소재 제조 | 매출 22년 2.6억, 23년 2.8억, 24년 1.6억"
+
+
+def test_oldest_year_comes_first():
+    """차례는 **오래된 해부터**다. 뒤집히면 추세를 거꾸로 읽는다."""
+    made = compose_one_liner(make(revenue_2025="11억", revenue_2022="1억"))
+    assert made == "매출 22년 1억, 25년 11억"
+
+
+def test_a_single_year_carries_no_year_label():
+    """한 해뿐이면 연도를 안 붙인다 — `매출 13억`.
+
+    사람이 쓴 `매출 …` 짧은 토막 139개에는 연도가 없고, 연도를 적은 17개는
+    하나같이 연도를 **앞에** 둔다(`25년 매출 13억`). 한 해짜리에 연도를 붙이면
+    139개 쪽과 어긋나고, `25년 매출 13억` 으로 뒤집으면 여러 해일 때의 모양과
+    갈린다.
+    """
+    assert compose_one_liner(make(revenue_2024="13억")) == "매출 13억"
+    assert compose_one_liner(make(revenue_2022="13억")) == "매출 13억"
+
+
+def test_years_without_an_amount_drop_out_of_the_list():
+    """가운데 해가 메모면 **그 해만** 빠진다 — 자리를 비워 두지 않는다."""
+    made = compose_one_liner(make(revenue_2022="4억", revenue_2023="확인안됨",
+                                  revenue_2024="9억"))
+    assert made == "매출 22년 4억, 24년 9억"
+
+    # 그렇게 걸러 한 해만 남으면 연도가 다시 빠진다.
+    made = compose_one_liner(make(revenue_2022="확인안됨", revenue_2023="검색안됨",
+                                  revenue_2024="9억"))
+    assert made == "매출 9억"
+
+
+def test_a_note_that_carries_year_numbers_is_still_a_note():
+    """`23, 24, 25 매출액 없음` 의 23·24·25 는 금액이 아니라 **연도**다.
+
+    숫자가 들어 있어서 '숫자가 한 자라도 있는가' 규칙만으로는 통과해
+    `매출 23, 24, 25 매출액 없음` 이 되어 나간다. 운영 사본의 매출 칸 값 639개
+    중 `없음` 이 든 것은 4개뿐이고 넷 다 이런 메모다.
+    """
+    for note in ("23, 24, 25 매출액 없음", "2025년 설립, 해당없음",
+                 "2026년 6월 22일 설립된 신설법인으로, 과거 매출 실적은 없음"):
+        assert compose_one_liner(make(business_desc="소재", revenue_2024=note)) == "소재"
 
 
 # --- 금액은 글자다 ------------------------------------------------------------
