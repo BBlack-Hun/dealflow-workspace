@@ -7,6 +7,9 @@ token: "agt_demo_token_sprint1"        # 데모 토큰 (운영 시 재발급)
 # 같은 사람과의 다른 대화방을 걸러낼 수 있다. (예: "우리브이씨 Asset")
 room_marker: ""
 
+# IR 자료 폴더 자리는 **여기 적지 않는다.** 웹에 로그인해 [발송 프로그램] 화면에서
+# 넣으면 발송기가 박동 응답으로 받아 간다 — 발송기를 새로 내려받아도 남는다.
+
 sender: "auto"                          # auto → Windows=kakao_windows, 그 외=mock
                                         # telegram = 테스트 수신(본인에게만 발송)
 
@@ -37,6 +40,11 @@ kakao_mac:
   after_paste: 0.6
   after_send: 0.8
   close_after_send: true
+  # 파일 전송 — 시트가 뜨기까지 기다리는 시간. 짧게 잡으면 '안 떴다'고 보고
+  # 취소해 버린다. 넉넉히 두는 편이 안전하다.
+  file_panel_timeout: 6.0      # 파일 열기 패널
+  file_confirm_timeout: 8.0    # "파일 전송" 확인 시트
+  file_sent_timeout: 8.0       # 보낸 뒤 대화 줄 수가 늘기까지
 
 # TelegramSender (sender: telegram) — 카톡 붙이기 전 문구 실물 확인용.
 # 토큰은 설정파일에 박지 말고 환경변수로 넣는 것을 권장:

@@ -13,8 +13,8 @@ import io
 import zipfile
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi import APIRouter, Depends, Form, Request
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -133,6 +133,14 @@ def _server_url(request: Request) -> str:
     return str(request.base_url).rstrip("/")
 
 
+def _device(db: Session, user: User) -> AgentDevice:
+    """이 사용자의 기기 줄. 없으면 만든다 (사람마다 한 줄)."""
+    _ensure_token(db, user)
+    return db.execute(
+        select(AgentDevice).where(AgentDevice.user_id == user.id)
+    ).scalars().first()
+
+
 def _ensure_token(db: Session, user: User) -> str:
     """이 사용자의 에이전트 토큰. 없으면 만든다."""
     dev = db.execute(
@@ -157,8 +165,37 @@ def setup_page(
 ):
     """에이전트 설치 안내 + 다운로드 링크. 토큰은 **지금 선택된 사용자**의 것이다."""
     ctx = base_ctx(request, db, user, "setup")
-    ctx.update({"server_url": _server_url(request), "token": _ensure_token(db, user)})
+    ctx.update({"server_url": _server_url(request), "token": _ensure_token(db, user),
+                "ir_root": _device(db, user).ir_root or "",
+                "saved": request.query_params.get("saved") == "ir_root"})
     return templates.TemplateResponse("setup.html", ctx)
+
+
+@router.post("/setup/ir-root")
+def save_ir_root(
+    ir_root: str = Form(""),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """IR 자료 폴더 자리를 저장한다 — **본인 것만.**
+
+    ## 왜 본인만인가
+
+    이 값은 "그 PC 의 어느 폴더" 다. 그 PC 앞에 앉은 사람만 그 경로가 맞는지 안다.
+    관리자라도 대신 넣게 하면 안 된다 — 틀린 경로를 넣어 두면 발송기는 그 자리를
+    뒤지다 실패하고, 정작 본인은 자기가 넣지도 않은 값 때문에 막힌 줄을 모른다.
+    그래서 로그인한 사람의 기기 줄에만 쓴다(대상 사용자를 **받지 않는다**).
+
+    ## 여기서 경로를 검사하지 않는 이유
+
+    서버는 다른 기기다. 사용자 PC 에 그 폴더가 있는지 서버는 볼 수 없다.
+    있는지·폴더인지는 **발송기가** 켜질 때와 보내기 전에 확인하고 분명히
+    실패한다(`agent/sender/base.py: ir_root`). 여기서는 앞뒤 공백만 턴다.
+    """
+    device = _device(db, user)
+    device.ir_root = (ir_root or "").strip() or None
+    db.commit()
+    return RedirectResponse("/setup?saved=ir_root", status_code=303)
 
 
 @router.get("/download/agent")
