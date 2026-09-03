@@ -9,6 +9,8 @@
 """
 from __future__ import annotations
 
+import re
+from datetime import date
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -61,7 +63,14 @@ COLUMNS = [
 
 
 def buckets(db: Session) -> List[dict]:
-    """갈래별 인원. 탭에 건수를 띄운다 — 어디에 사람이 있는지 알아야 한다."""
+    """갈래별 인원. 탭에 건수를 띄운다 — 어디에 사람이 있는지 알아야 한다.
+
+    **탭 차례는 `position` 그대로다.** 갈래는 원본 시트의 탭 순서이고
+    (`scripts/import_sourcing.py` 가 `시트번호 * 1000 + 줄번호` 로 넣는다),
+    그 차례는 날짜와 아무 상관이 없다 — 갈래를 요청일로 세우면 누가 어느 날
+    참여를 수락했느냐에 따라 왼쪽 탭이 매일 자리를 바꾼다. 명단 안에서 무엇이
+    위로 오는지(아래 `rows_of`)와 **갈래가 늘어선 차례는 다른 판단**이다.
+    """
     rows = db.execute(
         select(SourcingContact.bucket, func.count(), func.min(SourcingContact.position))
         .group_by(SourcingContact.bucket)
@@ -70,11 +79,67 @@ def buckets(db: Session) -> List[dict]:
     return sorted(out, key=lambda x: (x["pos"], x["label"]))
 
 
-def rows_of(db: Session, bucket: str) -> List[SourcingContact]:
+# 참여 요청일은 **사람이 손으로 적은 글자**다(`String`). 그래서 표기가 이미
+# 섞여 있다 — 실측 40줄 중 `2026-07-01 00:00:00` 16곳 · `2026/05/21` 9곳 ·
+# 빈 곳 10곳.
+#
+# **글자로 정렬하면 틀린다.** `/`(0x2F) 가 `-`(0x2D) 보다 커서, 내림차순이면
+# `2026/05/21` 이 `2026-08-11` 보다 위로 올라온다 — 최신순이라고 해 놓고 석 달
+# 전 줄이 맨 위에 서는 것이라 정렬이 없느니만 못하다. 반드시 날짜로 읽는다.
+#
+# **저장된 글자는 고치지 않는다.** 표기를 맞추겠다고 값을 바꾸면 사람이 적어
+# 둔 원문이 사라진다. 화면은 적힌 그대로 보여 주고, 차례를 잡을 때만 해석한다.
+#
+# 끝을 막지 않는다 — 뒤에 시각(`00:00:00`)이나 말이 붙어도 앞의 날짜로 자리를
+# 잡는 편이, 통째로 '날짜 없음' 으로 밀어 내는 것보다 낫다. `수신일` 을 읽는
+# `routers/companies.py` 의 `_DATED` 와 같은 판단이고, 거기서 보지 않는 `/` 와
+# `.` 을 여기서 함께 보는 것은 이 칸의 실데이터가 그렇게 섞여 있기 때문이다.
+_DATED = re.compile(r"(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})")
+
+
+def requested_on(row: SourcingContact) -> Optional[date]:
+    """참여 요청일을 날짜로. 못 읽으면 `None` — 그 줄은 맨 아래로 간다."""
+    found = _DATED.match((row.requested_at or "").strip())
+    if found is None:
+        return None
+    try:
+        return date(*(int(part) for part in found.groups()))
+    except ValueError:
+        # 달력에 없는 날(`2026-02-31`). 날짜처럼 생겼을 뿐 날짜가 아니다.
+        return None
+
+
+def rows_of(db: Session, bucket: str = "") -> List[SourcingContact]:
+    """명단을 뿌릴 차례. **정렬 판단은 이 함수 한 곳**이다.
+
+    딜 제안 관리의 [딜 소싱 제안] 목록도 여기를 지난다(`routers/pages.py`) —
+    두 화면이 각자 `order_by` 를 들고 있으면 한쪽만 고쳐지는 날 같은 명단이
+    화면마다 다른 순서로 뜬다.
+
+    **참여 요청일 최신순.** 이 명단은 "언제 참여하겠다고 했나" 로 읽는 자리라,
+    방금 수락한 사람이 맨 위에 있어야 그 사람부터 연락한다.
+
+    날짜를 못 읽는 줄과 빈 줄(실측 40줄 중 10줄)은 **맨 아래**다. 위로 올리면
+    '최신순' 이라는 말이 거짓이 되고, 사이에 섞으면 어디까지가 날짜순인지 눈으로
+    가를 수 없다.
+
+    `position` 은 뜻을 잃은 것이 아니라 **한 칸 뒤로** 물러났다. 이 칸은 원본
+    시트에서 옮겨 온 차례이자 새 줄이 그 갈래 맨 아래로 가는 근거(`add_row`)이지,
+    사람이 끌어 옮기는 차례가 아니다 — 고칠 길이 아예 없다(`SourcingIn` 에도
+    화면에도 `position` 이 없다). 그래서 **같은 날짜 안**과 **날짜 없는 줄들
+    사이**의 차례로 남긴다: 질의가 `position, id` 로 세워 둔 것을 파이썬의 **안정
+    정렬**이 그대로 보존한다. 요청일이 같은 두 줄은 여전히 시트 순서이고, 요청일
+    없이 방금 넣은 줄은 여전히 그 갈래 맨 아래다.
+    """
     stmt = select(SourcingContact).order_by(SourcingContact.position, SourcingContact.id)
     if bucket:
         stmt = stmt.where(SourcingContact.bucket == bucket)
-    return db.execute(stmt).scalars().all()
+    dated: List[SourcingContact] = []
+    undated: List[SourcingContact] = []
+    for row in db.execute(stmt).scalars().all():
+        (dated if requested_on(row) is not None else undated).append(row)
+    dated.sort(key=requested_on, reverse=True)
+    return dated + undated
 
 
 @router.get("/sourcing", response_class=HTMLResponse, include_in_schema=False)

@@ -15,6 +15,7 @@
 """
 from __future__ import annotations
 
+import re
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -252,7 +253,47 @@ def search_text(c: IrCompany) -> str:
     return " ".join(filter(None, parts)).lower()
 
 
-def company_rows(db: Session) -> List[dict]:
+# 스타트업DB 탭의 차례를 정하는 `수신일` 이 **날짜로 적혀 있는가**.
+#
+# 실데이터 281곳 중 267곳이 `2025-01-07` 이고 14곳이 `날짜 미정` 이다. 이 칸은
+# 글자라 그냥 내림차순으로 세우면 `날짜 미정` 이 맨 위로 올라온다(`날` 이 숫자
+# 보다 크다) — 가장 최근을 보려고 정렬해 놓고 정작 날짜 없는 줄부터 읽게 된다.
+#
+# 끝을 막지 않는다(`$` 없음). `2025-01-07 (재확인)` 처럼 뒤에 말이 붙어도
+# 앞의 날짜로 자리를 잡는 편이, 통째로 '날짜 없음' 으로 밀어 내는 것보다 낫다.
+_DATED = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def sort_for_tab(rows: List[dict], tab: str) -> List[dict]:
+    """탭이 정하는 차례. **판단은 여기 한 곳**이다.
+
+    - `IR 기업 현황` — 이름순 그대로. 이 탭에는 `수신일` 칸 자체가 없어서
+      차례를 바꾸면 왜 그 순서인지 화면에서 알 길이 없다.
+    - `스타트업DB` — **수신일 최신순.** 이 탭은 홍보메일 답장이 들어온 순서로
+      읽는 자리라, 방금 들어온 곳이 맨 위에 있어야 한다.
+
+    날짜가 없는 줄(`날짜 미정` 13곳 · 빈 곳 62곳)은 **맨 아래**로 보내고 그
+    안에서는 이름순으로 둔다. 위로 올리면 '최신순' 이라는 말이 거짓이 되고,
+    사이에 섞으면 어디까지가 날짜순인지 눈으로 가를 수 없다.
+
+    파이썬 정렬이 **안정적**이라는 것에 기댄다 — 이름으로 먼저 세운 뒤 날짜로
+    다시 세우면 같은 날짜 안에서는 이름순이 그대로 남는다. 한 번에 넣으려면
+    날짜만 뒤집는 키를 지어내야 하는데, 그 키는 읽어서 뜻을 알 수 없다.
+    """
+    if tab != "db":
+        return rows
+    dated: List[dict] = []
+    undated: List[dict] = []
+    for row in rows:
+        bucket = dated if _DATED.match((row["received_at"] or "").strip()) else undated
+        bucket.append(row)
+    dated.sort(key=lambda r: r["name"])
+    dated.sort(key=lambda r: r["received_at"].strip(), reverse=True)
+    undated.sort(key=lambda r: r["name"])
+    return dated + undated
+
+
+def company_rows(db: Session, tab: str = "") -> List[dict]:
     companies = db.execute(select(IrCompany).order_by(IrCompany.name)).scalars().all()
     # 344행 × 두 번 조립하지 않도록 한 번만 만들어 둔다.
     made = {c.id: compose_one_liner(c) for c in companies}
@@ -260,7 +301,7 @@ def company_rows(db: Session) -> List[dict]:
     # 갈래 목록을 코드나 DB 에 따로 두면 사람이 갈래를 고친 날 어긋난다.
     # 한 번 배워 344행에 돌려 쓴다(행마다 배우면 344번 세게 된다).
     hints = Hints.learn(companies)
-    return [
+    rows = [
         {
             "id": c.id,
             "name": c.name,
@@ -291,11 +332,19 @@ def company_rows(db: Session) -> List[dict]:
             # 스타트업DB 탭 — 시트를 그대로 옮겨 담은 칸들.
             # 금액은 적은 그대로(글자)다: 원본에 `8.2억`·`1,224백만원`·
             # `150억 ~ 200억` 이 섞여 있어 숫자로 바꾸면 100배가 틀어진다.
-            "ceo": c.contact_name or "",
+            #
+            # **키 이름은 모델 칸 이름 그대로다.** 여기만 `ceo`·`phone`·`email`
+            # 이라는 짧은 별명을 쓰고 있었는데, 표는 같은 칸을 `data-field=
+            # "contact_name"` 으로 부르고 [수정] 창도 `id="f-contact_name"` 으로
+            # 부른다. 화면 코드(companies.js 의 `fill`)는 **칸 이름으로 값을
+            # 찾으므로**, 별명이 섞여 있으면 창을 열 때 그 칸이 늘 빈 채로 뜨고
+            # [저장] 한 번에 대표자·연락처·이메일이 지워진다 — 창은 표와 달리
+            # 모든 칸을 한 번에 보낸다. 한 칸에 이름이 둘이면 반드시 어긋난다.
+            "contact_name": c.contact_name or "",
             # 홍보메일 답장을 받은 날. 시트의 맨 앞 칸이다.
             "received_at": c.received_at or "",
-            "phone": c.contact_phone or "",
-            "email": c.contact_email or "",
+            "contact_phone": c.contact_phone or "",
+            "contact_email": c.contact_email or "",
             "revenue_2022": c.revenue_2022 or "",
             "revenue_2023": c.revenue_2023 or "",
             "revenue_2024": c.revenue_2024 or "",
@@ -342,19 +391,24 @@ def company_rows(db: Session) -> List[dict]:
         }
         for c in companies
     ]
+    # 차례는 탭이 정한다. **한 곳에서만** 정한다 — 화면 쪽에서 한 번 더 세우면
+    # 두 판단이 갈리고, 어느 쪽이 지금 보이는 차례인지 알 수 없게 된다.
+    return sort_for_tab(rows, tab)
 
 
 @router.get("/companies", response_class=HTMLResponse, include_in_schema=False)
 def companies_page(request: Request, db: Session = Depends(get_db),
                    user: User = Depends(get_current_user), msg: str = "", q: str = "",
                    tab: str = ""):
-    rows = company_rows(db)
+    # 시트의 하단 탭 두 개. 같은 레코드를 다르게 보는 것뿐이라, 한쪽에서
+    # 고치면 다른 쪽이 저절로 따라온다 — 맞춰 주는 코드가 없어야 안 어긋난다.
+    # 다른 것은 **차례 하나**다(`sort_for_tab`).
+    co_tab = "db" if tab == "db" else "status"
+    rows = company_rows(db, co_tab)
     ctx = base_ctx(request, db, user, active="su")
     ctx.update({
         "rows": rows,
-        # 시트의 하단 탭 두 개. 같은 레코드를 다르게 보는 것뿐이라, 한쪽에서
-        # 고치면 다른 쪽이 저절로 따라온다 — 맞춰 주는 코드가 없어야 안 어긋난다.
-        "co_tab": "db" if tab == "db" else "status",
+        "co_tab": co_tab,
         "msg": msg,
         "q": q,          # 발송 화면에서 '기업 정보 채우기' 로 넘어온 경우 그 기업을 바로 띄운다
         "counts": {
@@ -368,7 +422,8 @@ def companies_page(request: Request, db: Session = Depends(get_db),
             # 자리에 `기업 한줄 소개`(one_liner)가 선다(0051) — 뱃지가 세는
             # 것과 탭을 열었을 때 보이는 것이 같아야 한다.
             "with_info": sum(1 for r in rows
-                             if r["ceo"] or r["phone"] or r["one_liner"]),
+                             if r["contact_name"] or r["contact_phone"]
+                             or r["one_liner"]),
             # 사업분야가 빈 곳. 이 숫자가 없으면 '비어 있음' 으로 걸러 보기
             # 전에는 몇 곳이 남았는지 알 길이 없어, 다 채운 뒤에도 계속 확인하게 된다.
             #
@@ -622,7 +677,19 @@ def update_company(company_id: int, body: CompanyIn,
     # 소개 칸에 **글자를 적어 보낸** 경우만 손편집이다. 비워서 보낸 것은
     # "자동 조합을 다시 넣어 달라"는 뜻으로 받는다 — 비운 칸을 다시 비워 두면
     # 되돌릴 방법이 없다.
-    manual_edit = "one_liner" in sent and bool((sent.get("one_liner") or "").strip())
+    #
+    # **적어 보냈다고 다 손편집은 아니다.** 표에서 눌러 고치는 쪽은 만진 칸
+    # 하나만 보내지만 [수정] 창은 **모든 칸을 한 번에** 보낸다 — 그래서 매출만
+    # 고쳐 저장해도 되읽어 둔 소개가 글자 그대로 같이 실려 온다. 그것을 손편집
+    # 으로 세면 창에서 재료를 고치는 **모든** 저장이 자동 조합을 건너뛰고,
+    # 자동으로 만들어져 있던 줄이 그 순간 '사람이 쓴 값' 으로 굳는다 —
+    # 창을 입구로 만들어 놓고 자동 조합만 못 쓰게 되는 셈이다.
+    #
+    # 그래서 **저장된 값과 달라졌을 때만** 손편집으로 본다. 사람이 쓴 소개를
+    # 그대로 되보내는 경우도 여기서 걸러지는데, 그때는 아래 `sync_one_liner` 가
+    # `origin` 으로 손글씨를 알아보고 지킨다 — 지키는 판단이 한 곳에 모인다.
+    typed = (sent.get("one_liner") or "").strip()
+    manual_edit = bool(typed) and typed != (company.one_liner or "").strip()
 
     _assign(company, body)
 

@@ -217,22 +217,65 @@ def test_the_panel_select_can_show_every_value_the_api_returns(logged_in, db):
 # 번에 열여섯 칸을 통째로 보낸다 — 터진 것은 IR 링크가 아니라 같이 실려 간
 # 계약여부였는데, 사람에게는 마지막에 만진 칸이 문제로 보인다.
 
-# app/static/js/companies.js 의 FIELDS 와 같은 목록.
-PANEL_FIELDS = ["name", "sector_major", "sector_minor", "series", "one_liner",
-                "revenue_recent", "funding_total", "raise_target", "pre_value",
-                "competitiveness", "funding_status", "ir_drive_url",
-                "contract_status", "contract_received", "contract_month",
-                "summary_status", "note"]
-
-
-def test_the_panel_sends_the_same_fields_the_script_does():
-    """목록이 갈리면 이 파일의 검사만 통과하고 화면은 그대로 터진다."""
+# 수정 패널이 [저장] 때 보내는 칸 — **`companies.js` 에서 읽어 온다.**
+#
+# 예전에는 여기에 같은 목록을 손으로 한 벌 더 적어 두었다. 그러면 칸이 하나
+# 늘 때 고칠 곳이 셋이 되고(템플릿 · 스크립트 · 이 파일), 셋이 갈린 순간
+# **검사는 통과하는데 화면만 저장이 안 되는** 상태가 된다 — 이 파일이 막으려던
+# 바로 그 사고다. 정본은 스크립트 하나로 두고 여기서는 읽기만 한다.
+def _panel_fields() -> list:
     from pathlib import Path
 
     js = Path("app/static/js/companies.js").read_text(encoding="utf-8")
     listed = re.search(r"var FIELDS = \[(.*?)\];", js, re.S)
     assert listed, "companies.js 에서 저장 목록을 찾지 못했다"
-    assert re.findall(r'"([a-z_0-9]+)"', listed.group(1)) == PANEL_FIELDS
+    return re.findall(r'"([a-z_0-9]+)"', listed.group(1))
+
+
+PANEL_FIELDS = _panel_fields()
+
+# 저장 목록에 있으면 안 되는 칸. `합치기 전 값`(0051)은 **읽기 전용**이라
+# 창에 상자가 있어도 저장 요청에는 실리면 안 된다 — 실리면 되살리려고
+# 열어 본 것만으로 백업이 덮인다(tests/js/company_desc_backup_test.js).
+PANEL_READ_ONLY = {"desc_backup"}
+
+
+def test_the_panel_sends_every_field_it_shows():
+    """창에 세운 칸이 스크립트의 저장 목록에 없으면 **조용히 저장이 안 된다.**
+
+    이 저장소가 실제로 겪은 사고다. 칸은 화면에 버젓이 있고, 고쳐 넣고,
+    [저장]을 눌러도 200 이 온다 — 그런데 새로고침하면 옛 값이다. 어디가
+    잘못됐는지 화면 어디에도 안 나온다.
+
+    반대 방향도 같이 본다. 목록에만 있고 창에 칸이 없으면 `collect()` 가 그
+    칸을 건너뛰므로 **저장은 조용히 빠진 채** 나간다.
+    """
+    from pathlib import Path
+
+    html = Path("app/templates/companies.html").read_text(encoding="utf-8")
+    # `id="f-…"` 가 곧 창에 세운 칸이다(companies.js 의 `el("f-" + f)`).
+    shown = []
+    for field in re.findall(r'id="f-([a-z_0-9]+)"', html):
+        if field not in shown:
+            shown.append(field)
+    # 체크박스는 `collect()` 가 따로 싣는다(`body.is_top_deal`).
+    shown = [f for f in shown if f not in PANEL_READ_ONLY and f != "is_top_deal"]
+
+    missing = [f for f in shown if f not in PANEL_FIELDS]
+    assert not missing, (
+        "창에는 있는데 companies.js 의 FIELDS 에 없습니다 — 고쳐도 조용히 "
+        f"저장이 안 됩니다: {missing}")
+
+    orphan = [f for f in PANEL_FIELDS if f not in shown]
+    assert not orphan, (
+        "FIELDS 에는 있는데 창에 칸이 없습니다 — 저장할 때 그 칸만 조용히 "
+        f"빠집니다: {orphan}")
+
+
+def test_the_panel_does_not_send_the_read_only_backup():
+    """`합치기 전 값` 이 저장 목록에 끼면 열어 본 것만으로 백업이 덮인다."""
+    assert not (PANEL_READ_ONLY & set(PANEL_FIELDS)), \
+        f"읽기 전용 칸이 저장 목록에 있습니다: {PANEL_READ_ONLY & set(PANEL_FIELDS)}"
 
 
 # 억으로 보여 주고 숫자로 보내는 칸(companies.js 의 EOK_FIELDS).

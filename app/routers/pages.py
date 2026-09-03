@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..deps import get_current_user, may_manage_team_contacts, templates
-from ..models import IrCompany, SendJob, SourcingContact, User
+from ..models import IrCompany, SendJob, User
 from ..services import (cadence, contact_columns, deal_history, deal_queue,
                         deal_stage, mailer, ref_panel, sheet_import,
                         sheet_owner, sourcing_link)
@@ -20,6 +20,8 @@ from ..ui import MENU, base_ctx as _base_ctx
 from .companies import BLOCKED_CONTRACT
 from .companies import blocked_reason as company_blocked_reason
 from .contacts import contact_rows
+from .sourcing import buckets as sourcing_bucket_rows
+from .sourcing import rows_of as sourcing_rows
 
 router = APIRouter(tags=["pages"])
 
@@ -91,23 +93,20 @@ def deals_page(
     }
     # 딜 소싱 제안의 대상. 투자사 명단과 다른 표이고 **팀 공용**이다 —
     # 우리 딜을 같이 볼 사람이라 담당을 나눌 것이 아니다.
-    # 방 이름이 없으면 보낼 길이 없으므로 그것부터 보이게 정렬한다.
-    sourcing_contacts = db.execute(
-        select(SourcingContact).order_by(SourcingContact.position, SourcingContact.id)
-    ).scalars().all()
+    #
+    # 차례는 [딜 소싱] 화면과 **같은 함수**를 지난다(참여 요청일 최신순 —
+    # `routers/sourcing.py` 의 `rows_of`). 여기가 질의를 따로 들고 있었는데,
+    # 같은 명단을 두 화면이 각자 세우면 한쪽만 고쳐지는 날 순서가 갈린다.
+    sourcing_contacts = sourcing_rows(db)
     # 갈래는 곧 문구다. 이름을 검색창에 쳐서 찾게 하면 갈래가 몇 개인지도
-    # 모른 채 골라야 하므로, 누를 수 있는 필터로 내놓는다. 순서는 명단과
-    # 같게 — 좌측 [딜 소싱] 탭에서 보던 순서 그대로여야 헷갈리지 않는다.
-    sourcing_buckets = []
-    for c in sourcing_contacts:
-        if not sourcing_buckets or sourcing_buckets[-1]["name"] != c.bucket:
-            match = next((b for b in sourcing_buckets if b["name"] == c.bucket), None)
-            if match is None:
-                sourcing_buckets.append({"name": c.bucket, "count": 0})
-                match = sourcing_buckets[-1]
-        else:
-            match = sourcing_buckets[-1]
-        match["count"] += 1
+    # 모른 채 골라야 하므로, 누를 수 있는 필터로 내놓는다. 순서는 좌측
+    # [딜 소싱] 탭에서 보던 그대로여야 헷갈리지 않는다.
+    #
+    # **명단을 훑어 세지 않는다.** 명단이 요청일 순이 된 뒤로는 줄을 훑으면
+    # 갈래 차례가 그날 누가 참여를 수락했느냐를 따라 흔들린다 — 갈래 차례를
+    # 정하는 곳(`buckets`, `position` 기준)을 그대로 쓴다.
+    sourcing_buckets = [{"name": b["key"], "count": b["count"]}
+                        for b in sourcing_bucket_rows(db)]
     # 담당(우리 쪽 심사역)도 거를 수 있어야 한다 — 39명을 통째로 훑는 것과
     # 내 담당 14명만 보는 것은 다른 일이다. 많은 순으로 둔다.
     counted: dict = {}
