@@ -39,6 +39,8 @@ Revises: 0044_process_ref_back
 """
 from __future__ import annotations
 
+from datetime import datetime
+
 import sqlalchemy as sa
 from alembic import op
 
@@ -73,13 +75,22 @@ def upgrade() -> None:
     # **없는 열쇠만 넣는다.** 이미 있는 줄의 이름을 덮으면, 화면에서 고쳐 둔
     # 이름이 배포할 때마다 원래대로 돌아간다.
     have = {row[0] for row in bind.execute(sa.text(f"SELECT kind FROM {TABLE}"))}
+    # **시각을 직접 적는다.** 위 `create` 는 `checkfirst=True` 라 표가 이미 있으면
+    # 아무것도 안 하는데, 빈 DB 에서는 0001 의 `create_all()` 이 **모델대로**
+    # 만들어 둔 뒤다 — `TimestampMixin` 의 `created_at`·`updated_at` 이 거기서는
+    # NOT NULL 이다(모델의 `default=` 는 파이썬 쪽이라 생 INSERT 에 안 걸린다).
+    # 빼면 `NOT NULL constraint failed` 로 부팅이 죽는다.
+    #
+    # 값은 `app/clock.now_iso()` 와 같은 모양이다. 마이그레이션은 app 을
+    # 불러오지 않으므로(0001 만 예외) 같은 식을 여기 한 번 더 적는다.
+    now = datetime.now().astimezone().isoformat(timespec="seconds")
     for pos, (kind, label) in enumerate(DEFAULTS):
         if kind in have:
             continue
         bind.execute(
-            sa.text(f"INSERT INTO {TABLE} (kind, label, position) "
-                    "VALUES (:k, :l, :p)"),
-            {"k": kind, "l": label, "p": pos})
+            sa.text(f"INSERT INTO {TABLE} (kind, label, position, "
+                    "created_at, updated_at) VALUES (:k, :l, :p, :now, :now)"),
+            {"k": kind, "l": label, "p": pos, "now": now})
 
     # 줄이 **다른 이름**으로 쌓여 있으면(누가 그 이름으로 시트를 올린 경우)
     # 여기서 짝지어 주지 않는다. 짐작으로 맞추면 남의 탭을 뭉칠 수 있다.
@@ -88,4 +99,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_table(TABLE)
+    if TABLE in sa.inspect(op.get_bind()).get_table_names():
+        op.drop_table(TABLE)

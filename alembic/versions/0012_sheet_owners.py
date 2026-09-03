@@ -28,3 +28,12 @@ def upgrade() -> None:
         sa.Column("created_at", sa.String(), nullable=True),
         sa.Column("updated_at", sa.String(), nullable=True),
     )
+
+
+def downgrade() -> None:
+    # **이 판에는 원래 `downgrade` 가 아예 없었다.** 알렘빅은 되돌릴 길을
+    # 짤 때 판마다 이 함수를 찾는데, 하나라도 없으면 `AttributeError` 로
+    # **그 판을 지나가는 되돌리기 전체가 서지 않는다** — 0013 이후를 한 칸만
+    # 내리려 해도 계획 단계에서 멎는다.
+    if "sheet_owners" in set(sa.inspect(op.get_bind()).get_table_names()):
+        op.drop_table("sheet_owners")

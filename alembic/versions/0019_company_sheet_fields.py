@@ -38,11 +38,20 @@ NEW = [
 ]
 
 
+def _columns(table: str) -> set:
+    return {c["name"] for c in sa.inspect(op.get_bind()).get_columns(table)}
+
+
 def upgrade() -> None:
+    # 이미 있는 칸은 건너뛴다 — 빈 DB 는 0001 이 만들어 준 채로 온다(0018 참고).
+    have = _columns("ir_companies")
     for name, kind in NEW:
-        op.add_column("ir_companies", sa.Column(name, kind, nullable=True))
+        if name not in have:
+            op.add_column("ir_companies", sa.Column(name, kind, nullable=True))
 
 
 def downgrade() -> None:
+    have = _columns("ir_companies")
     for name, _kind in reversed(NEW):
-        op.drop_column("ir_companies", name)
+        if name in have:
+            op.drop_column("ir_companies", name)

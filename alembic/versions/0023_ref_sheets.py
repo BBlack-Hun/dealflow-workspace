@@ -19,7 +19,14 @@ branch_labels = None
 depends_on = None
 
 
+def _has_table(name: str) -> bool:
+    return name in sa.inspect(op.get_bind()).get_table_names()
+
+
 def upgrade() -> None:
+    # 이미 있으면 건너뛴다 — 빈 DB 는 0001 이 만들어 준 채로 온다(0018 참고).
+    if _has_table("ref_sheets"):
+        return
     op.create_table(
         "ref_sheets",
         sa.Column("id", sa.Integer(), primary_key=True),
@@ -34,4 +41,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_table("ref_sheets")
+    if _has_table("ref_sheets"):
+        op.drop_table("ref_sheets")

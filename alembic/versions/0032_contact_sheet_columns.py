@@ -18,14 +18,28 @@ branch_labels = None
 depends_on = None
 
 
+# 시트 표기가 자유 문장이다("전화완료 / 부재중" 등) — 원문을 보존한다.
+NEW = ("sourcing_note", "tips_note")
+
+
+def _columns(table: str) -> set:
+    return {c["name"] for c in sa.inspect(op.get_bind()).get_columns(table)}
+
+
 def upgrade() -> None:
-    with op.batch_alter_table("vc_contacts") as b:
-        # 시트 표기가 자유 문장이다("전화완료 / 부재중" 등) — 원문을 보존한다.
-        b.add_column(sa.Column("sourcing_note", sa.Text(), nullable=True))
-        b.add_column(sa.Column("tips_note", sa.Text(), nullable=True))
+    # 이미 있는 칸은 건너뛴다 — 빈 DB 는 0001 이 만들어 준 채로 온다(0018 참고).
+    have = _columns("vc_contacts")
+    missing = [name for name in NEW if name not in have]
+    if missing:
+        with op.batch_alter_table("vc_contacts") as b:
+            for name in missing:
+                b.add_column(sa.Column(name, sa.Text(), nullable=True))
 
 
 def downgrade() -> None:
-    with op.batch_alter_table("vc_contacts") as b:
-        b.drop_column("tips_note")
-        b.drop_column("sourcing_note")
+    have = _columns("vc_contacts")
+    present = [name for name in reversed(NEW) if name in have]
+    if present:
+        with op.batch_alter_table("vc_contacts") as b:
+            for name in present:
+                b.drop_column(name)
