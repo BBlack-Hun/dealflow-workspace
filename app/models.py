@@ -1055,6 +1055,33 @@ class WeeklyRoutine(TimestampMixin, Base):
     is_active: Mapped[int] = mapped_column(Integer, default=1)
 
 
+class OneLinerBackup(TimestampMixin, Base):
+    """[전체 자동조합] 을 되돌릴 버퍼 — 묶음 하나가 '한 번 누른 것'이다(0052).
+
+    **`IrCompany.desc_backup` 과 다른 것이다.** 그쪽은 0051 이 두 칸을 합치기
+    직전에 딱 한 번 찍어 둔 스냅숏이라 덮으면 영영 사라진다. 이쪽은 누를
+    때마다 쌓였다가 되돌리면 없어지는 버퍼다.
+
+    칸 하나로 두지 않고 표로 둔 이유는 **묶음**이다. [되돌리기] 는 방금 누른
+    그 묶음만 되돌려야 하는데, 기업마다 칸 하나로는 두 번째 적용이 첫 번째의
+    흔적을 덮어써서 어느 줄이 어느 묶음이었는지 남지 않는다.
+    """
+
+    __tablename__ = "one_liner_backups"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # 일괄 적용 한 번 = 한 묶음. `max(batch)+1` 로 매긴다.
+    batch: Mapped[int] = mapped_column(Integer, index=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("ir_companies.id"))
+    # **NULL 이면 그때 비어 있었다**는 뜻이다 — `''` 와 구분한다.
+    previous: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # 우리가 써 넣은 값. 되돌릴 때 **그 뒤에 사람이 또 고쳤는가**를 이 값과
+    # 맞춰 본다. 다르면 그 줄은 건드리지 않는다(0051 의 downgrade 와 같은 방식).
+    applied: Mapped[str] = mapped_column(Text)
+    user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"),
+                                                   nullable=True)
+
+
 class WeeklyTask(TimestampMixin, Base):
     """주간 업무 한 줄 — 항목 · 세부업무 · 일시 · 상태.
 
