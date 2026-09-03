@@ -317,11 +317,18 @@ def test_ir_screen_groups_by_contact(logged, db, seed):
 
     body = logged.get("/ir").text
     assert "<b>2</b>개 기업" in body
-    # 담당자와 기업이 함께 넘어가야 딜 제안 관리에서 다시 고르지 않는다
+    # 담당자와 기업이 함께 넘어가야 딜 제안 관리에서 다시 고르지 않는다.
+    #
+    # 링크가 아니라 **폼**이다 — 누르면 활동 이력에 한 줄이 남기 때문에
+    # (자료 파일은 앱이 안 보내고 사람이 PC 카톡에서 첨부한다), 주소를 여는
+    # 것만으로 쌓이면 안 된다.
     import re
-    link = re.search(r'/deals\?mode=ir&contacts=(\d+)&companies=([\d,]+)', body)
-    assert link is not None, "자료 보내기 링크에 기업이 실려 있지 않다"
-    assert len(link.group(2).split(",")) == 2
+    assert 'action="/ir/deliver-guide"' in body
+    who = re.search(r'name="contact_id" value="(\d+)"', body)
+    picked = re.search(r'name="company_ids" value="([\d,]+)"', body)
+    assert who is not None and picked is not None, "자료 보내기 폼에 기업이 없다"
+    assert int(who.group(1)) == seed["contact_id"]
+    assert len(picked.group(1).split(",")) == 2
 
 
 # --- 딜 진행 관리 (후속 + IR·미팅 통합) -------------------------------------

@@ -196,7 +196,11 @@ class ContactActivity(TimestampMixin, Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     contact_id: Mapped[int] = mapped_column(ForeignKey("vc_contacts.id"))
     month: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # 2026-08
-    # deal_intro | ir_request | meeting | memo
+    # deal_intro | ir_request | meeting | memo | ir_delivery
+    #
+    # `ir_delivery` 는 시트에서 옮겨 온 것이 아니라 **이 도구에서 누른 것**이다 —
+    # IR 관리의 [자료 보내기]. 자료 파일은 앱이 보내지 않고 사람이 PC 카톡에서
+    # 첨부하므로, 여기 적어 두지 않으면 손으로 한 일이 아무 데도 안 남는다.
     kind: Mapped[str] = mapped_column(String)
     content: Mapped[str] = mapped_column(Text)
     happened_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # 2026-08-13
@@ -528,9 +532,12 @@ class SendItem(TimestampMixin, Base):
     room_name: Mapped[str] = mapped_column(String)  # 카톡방 제목 · 메일이면 받는 주소
     subject: Mapped[Optional[str]] = mapped_column(String, nullable=True)   # 메일 제목
     message: Mapped[str] = mapped_column(Text)      # rendered final text snapshot (immutable)
-    # **여러 통으로 나눠 보낼 때**의 순서(JSON 배열). IR 자료 전달이 그렇다 —
-    # 링크를 먼저 한 통씩 던지고 마지막에 설명을 붙인다. 카톡에서는 링크가
-    # 각자 미리보기 카드로 떠야 하고, 설명이 그 아래 와야 읽힌다.
+    # **여러 통으로 나눠 보낼 때**의 순서(JSON 배열).
+    #
+    # IR 자료 전달이 그랬다 — 구글 드라이브 링크를 한 통씩 먼저 던지고 마지막에
+    # 설명을 붙였다. 그 방식은 폐기했고(0053) 자료는 사람이 PC 에서 첨부하므로
+    # 지금은 이 칸을 채우는 자리가 없다. **칸과 발송 프로그램 쪽 처리는
+    # 남겨 둔다** — 나눠 보내는 길 자체가 없어진 것은 아니다.
     #
     # 비어 있으면 `message` 를 한 통으로 보낸다(지금까지의 동작).
     # `message` 는 항상 **합친 전문**이라, 이 칸을 모르는 예전 발송 프로그램도

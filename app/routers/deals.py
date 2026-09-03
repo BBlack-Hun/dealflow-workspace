@@ -119,8 +119,11 @@ FOLLOW_UP_MODES = {
     # 이미 목록을 본 사람이 "그 중 몇 번을 달라"고 답한 상황이라,
     # 번호와 이름만 짚어 주면 된다.
     # 인사는 인사말이 맡는다 — 여기에 또 넣으면 인사가 두 번 나간다.
+    #
+    # **{자료링크} 를 뺐다.** 구글 드라이브 링크를 문구에 실어 보내는 방식은
+    # 폐기했다 — 자료는 이제 사람이 PC 카톡에서 파일로 직접 첨부한다.
     MODE_IR: ("ir_delivery",
-              "{기업목록} IR deck 먼저 전달드리겠습니다.\n\n{자료링크}",
+              "{기업목록} IR deck 먼저 전달드리겠습니다.",
               mc.STAGE_REMIND),
     # 미팅 뒤 열흘쯤 지나 결과를 묻는다. 원본 시트에도 "결과확인전화가 없으면
     # 계약을 잊어버리는 경우가 발생할 수 있습니다" 라고 적혀 있었다.
@@ -225,11 +228,8 @@ def _compose_for_contact(
         include_opening=include_opening,
         company_list=(build_company_list(db, contact, companies)
                       if mode == MODE_IR else None),
-        file_links=(build_file_links(db, contact, companies)
-                    if mode == MODE_IR else None),
-        # 링크를 먼저 한 통씩, 설명은 마지막에 — 카톡에서 읽히는 순서다.
-        link_blocks=(build_link_blocks(db, contact, companies)
-                     if mode == MODE_IR else None),
+        # `file_links` · `link_blocks` 를 넘기지 않는다 — 자료 전달은 이제
+        # **한 통**이다. 링크가 빠졌으니 먼저 던질 것도 없다.
     )
 
 
@@ -273,37 +273,14 @@ def build_company_list(db: Session, contact: VcContact,
     return ", ".join(parts)
 
 
-def build_file_links(db: Session, contact: VcContact,
-                     companies: List[IrCompany]) -> str:
-    """자료 전달 문구에 붙는 **링크 묶음**.
-
-        1번 (주)샘플애그
-        https://drive.google.com/file/d/…
-
-    이게 없으면 "IR deck 전달드리겠습니다" 만 나가고 정작 자료는 안 간다 —
-    실제로 그렇게 나갔다. 받은 쪽은 다시 물어봐야 한다.
-
-    번호는 지난 회차의 번호를 그대로 쓴다(`build_company_list` 와 같은 규칙).
-    링크가 없는 기업은 **빼지 않고** 그렇다고 적는다 — 조용히 빠지면 보낸 쪽도
-    받은 쪽도 몇 개를 주고받았는지 어긋난다.
-    """
-    return "\n\n".join(build_link_blocks(db, contact, companies))
-
-
-def build_link_blocks(db: Session, contact: VcContact,
-                      companies: List[IrCompany]) -> List[str]:
-    """기업 하나당 한 통. **순서대로** 나간다.
-
-    카톡에서 링크는 각자 미리보기 카드로 떠야 하므로 한 통에 몰아넣지 않는다.
-    """
-    positions = deal_positions(db, contact.id)
-    blocks = []
-    for company in companies:
-        no = positions.get(company.id)
-        head = f"{no}번 {company.name}" if no else company.name
-        url = (company.ir_drive_url or "").strip()
-        blocks.append(f"{head}\n{url}" if url else f"{head}\n(자료 준비 중)")
-    return blocks
+# 자료 전달 문구에 **구글 드라이브 링크를 실어 보내던 자리**가 여기였다
+# (`build_file_links` · `build_link_blocks`). 링크를 한 통씩 먼저 던지고
+# 설명을 마지막에 붙였는데, 그 방식 자체를 폐기했다 — 자료는 이제 사람이
+# PC 카톡에서 **파일로 직접 첨부**한다.
+#
+# **`ir_drive_url` 칸은 그대로 둔다.** 나가는 문구에서만 뗀 것이지, 자료가
+# 어디 있는지는 여전히 그 칸으로 안다 — 첨부할 파일을 내려받으려면 화면에서
+# 그 링크를 열어야 한다(`/ir` 의 [📎 열기] · 발송 화면의 자료 목록).
 
 
 def _room_of(contact, linked: dict) -> str:
@@ -529,15 +506,17 @@ def preview(
              f"IR 기업 현황에서 한줄소개·숫자를 채우면 문구가 좋아집니다"]
             if thin and req.mode != MODE_IR else []
         )
-        # IR 자료 전달인데 보낼 자료가 없으면 문구만 나가고 자료는 못 보낸다.
+        # 자료가 어디 있는지 모르면 **첨부할 파일을 찾을 수가 없다.**
+        # 링크는 이제 문구에 실려 나가지 않지만, 사람이 PC 에서 첨부하려면
+        # 그 자료를 열어 내려받아야 한다 — 그래서 없다는 것은 여전히 경고다.
         # 발송 목록을 만들기 **전에** 알려야 한다.
         if req.mode == MODE_IR:
             no_file = [c.name for c in companies
                        if not (c.ir_drive_url or "").strip()]
             if no_file:
                 thin_warnings.append(
-                    f"IR 자료 링크가 없는 기업: {', '.join(no_file)} — "
-                    f"IR 기업 현황에서 구글드라이브 링크를 넣어주세요"
+                    f"첨부할 IR 자료가 없는 기업: {', '.join(no_file)} — "
+                    f"IR 기업 현황에 자료를 등록해야 PC 에서 열어 첨부할 수 있습니다"
                 )
         previews.append({
             "contact_id": contact.id,
@@ -553,8 +532,8 @@ def preview(
             "room_verified": contact.room_verified,
             "room_warning": None if (sample or room) else "카톡방 이름 미등록",
             "message": result.text,
-            # 몇 통으로 나가는지 화면에서 보여야 한다 — 링크가 먼저 한 통씩
-            # 나가고 설명이 마지막이라는 게 보이지 않으면 확인할 수가 없다.
+            # 몇 통으로 나가는지 화면에서 보여야 한다. 자료 전달은 링크 방식을
+            # 폐기한 뒤로 한 통이라 여기가 비지만, 나눠 보내는 길 자체는 남는다.
             "parts": list(result.parts),
             "char_count": result.char_count,
             "too_long": result.too_long,
@@ -564,7 +543,8 @@ def preview(
             "has_history": False if (sourcing or sample) else _has_history(db, contact.id),
             # 이 문구는 아직 아무에게도 가지 않는다.
             "sample": sample,
-            # IR 자료 전달일 때 무엇을 먼저 보내야 하는지 화면에 띄운다.
+            # IR 자료 전달일 때 **사람이 PC 에서 첨부해야 할 자료**.
+            # 문구에 실려 나가지 않는다 — 여기서 열어 내려받는 자리다.
             "attachments": ([{"name": c.name, "url": c.ir_drive_url or ""}
                              for c in companies] if req.mode == MODE_IR else []),
             "fit": {
