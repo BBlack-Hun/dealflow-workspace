@@ -30,6 +30,7 @@ from ..services import auth as auth_svc
 from ..services.one_liner import (
     AUTO, SOURCE_FIELDS, apply_one_liner, compose_one_liner, origin, sync_one_liner,
 )
+from ..services.sector_hint import Hints
 from ..ui import base_ctx
 
 router = APIRouter(tags=["companies"])
@@ -255,11 +256,20 @@ def company_rows(db: Session) -> List[dict]:
     companies = db.execute(select(IrCompany).order_by(IrCompany.name)).scalars().all()
     # 344행 × 두 번 조립하지 않도록 한 번만 만들어 둔다.
     made = {c.id: compose_one_liner(c) for c in companies}
+    # 사업분야 제안의 잣대. **지금 화면에 뜨는 기업들에서 그때그때 배운다** —
+    # 갈래 목록을 코드나 DB 에 따로 두면 사람이 갈래를 고친 날 어긋난다.
+    # 한 번 배워 344행에 돌려 쓴다(행마다 배우면 344번 세게 된다).
+    hints = Hints.learn(companies)
     return [
         {
             "id": c.id,
             "name": c.name,
             "sector_major": c.sector_major or "",
+            # 빈 `사업분야` 에 넣을 만한 갈래(최대 3). **이미 값이 있으면 언제나
+            # 빈 목록**이라, 화면은 이것이 비었는지만 보면 된다 —
+            # '비었을 때만'을 화면에서 한 번 더 판단하면 두 곳이 어긋난다.
+            # 넣을지는 사람이 누른다. 이 값으로 저장하는 코드는 어디에도 없다.
+            "sector_suggestions": hints.suggest_for(c),
             "sector_minor": c.sector_minor or "",
             "series": c.series or "",
             # 실제 값은 "Pre A, Bridge (누적투자금 5억미만, 년매출액 10억이상)" 처럼 길다.
@@ -359,6 +369,14 @@ def companies_page(request: Request, db: Session = Depends(get_db),
             # 것과 탭을 열었을 때 보이는 것이 같아야 한다.
             "with_info": sum(1 for r in rows
                              if r["ceo"] or r["phone"] or r["one_liner"]),
+            # 사업분야가 빈 곳. 이 숫자가 없으면 '비어 있음' 으로 걸러 보기
+            # 전에는 몇 곳이 남았는지 알 길이 없어, 다 채운 뒤에도 계속 확인하게 된다.
+            #
+            # **공백만 있는 값도 빈 것으로 센다.** 단추를 누르면 걸리는 것은
+            # filters.js 의 `(비어 있음)` 인데, 거기서는 값을 다듬은 뒤 비면
+            # 빈 칸으로 모은다(`splitValues`). 여기서만 공백을 값으로 세면
+            # 단추에 적힌 수와 눌러서 나오는 줄 수가 어긋난다.
+            "no_sector": sum(1 for r in rows if not r["sector_major"].strip()),
         },
         # [삭제]를 보일지. 라우터가 막는 것과 **같은 판정**을 읽는다 —
         # 보이는데 못 누르거나, 안 보이는데 주소로는 되는 상태를 만들지 않는다.
