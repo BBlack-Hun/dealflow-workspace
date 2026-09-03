@@ -76,6 +76,112 @@ def test_rules_come_from_the_database(db):
     assert cadence.upcoming_send_dates(db, date(2026, 9, 1), count=1) == [date(2026, 9, 14)]
 
 
+def test_one_off_date_does_not_hide_a_nearer_cycle_day(db):
+    """일회성 회차일이 있어도 **더 이른 회차일**을 건너뛰지 않는다.
+
+    일회성 날짜를 개수에 함께 세는 바람에, 하나만 물으면(`count=1`) 규칙에서
+    나온 더 이른 날을 찾기도 전에 멈추고 뒤엣 날을 답했다.
+    """
+    from app.models import ScheduleRule
+    from app.services import cadence
+
+    db.add(ScheduleRule(key="deal_cycle", label="딜소개 회차",
+                        kind="monthly_weekday", weekday=2, nth_weeks="1,3",
+                        skip_weekend=1, extra_dates="2026-08-26"))
+    db.commit()
+    # 8/10 에서 보면 8월 셋째 수요일(8/19)이 8/26 보다 먼저다.
+    assert cadence.upcoming_send_dates(db, date(2026, 8, 10), count=1) == \
+        [date(2026, 8, 19)]
+    assert cadence.upcoming_send_dates(db, date(2026, 8, 10), count=3) == \
+        [date(2026, 8, 19), date(2026, 8, 26), date(2026, 9, 2)]
+    # 일회성 날짜는 여전히 목록에 든다.
+    assert date(2026, 8, 26) in cadence.upcoming_send_dates(db, date(2026, 8, 20), count=2)
+
+
+# --- 회차를 가르는 것은 주 ---------------------------------------------------
+#
+# 회차일에 다 못 보내고 다음 날 이어 보내는 일이 실제로 있다. 그때 회차가
+# 넘어가면 한 번 보낸 것이 두 회차로 갈라져 남는다.
+#
+# 날짜는 전부 못박는다 — 오늘이 언제냐에 따라 통과했다 실패했다 하면 안 된다.
+# 기본 규칙(수요일 · 1,3번째)으로만 재려고 `db=None` 을 쓴다.
+
+def test_cycle_does_not_move_the_day_after(db):
+    """**회차일 다음 날에도 같은 회차다.** 이것이 사용자가 본 증상이다.
+
+    고치기 전에는 8/19(수) 다음 날인 8/20(목)에 화면을 열면 회차명이
+    `08/26` 으로, 8/26(수) 다음 날에는 `09/02` 로 넘어갔다.
+    """
+    from app.services import cadence
+
+    wednesday = date(2026, 8, 19)          # 8월 셋째 수요일 = 회차일
+    thursday = date(2026, 8, 20)
+    assert cadence.cycle_anchor(None, wednesday) == wednesday
+    assert cadence.cycle_anchor(None, thursday) == wednesday
+    # 회차명까지 같아야 한 회차로 남는다.
+    assert (cadence.batch_title(cadence.cycle_anchor(None, thursday))
+            == cadence.batch_title(wednesday) == "08/19 (8월 3주차)")
+
+
+def test_cycle_holds_all_week(db):
+    """월~일 한 주는 통째로 한 회차다 — 회차일 앞이든 뒤든."""
+    from app.services import cadence
+
+    wednesday = date(2026, 9, 2)           # 9월 첫째 수요일
+    monday = date(2026, 8, 31)             # 그 주 월요일
+    sunday = date(2026, 9, 6)              # 그 주 일요일
+    for day in (monday, date(2026, 9, 1), wednesday,
+                date(2026, 9, 3), date(2026, 9, 4), sunday):
+        assert cadence.cycle_anchor(None, day) == wednesday, day
+
+
+def test_next_week_is_the_next_cycle(db):
+    """주가 넘어가면 회차도 넘어간다 — 붙잡아 두지는 않는다."""
+    from app.services import cadence
+
+    assert cadence.cycle_anchor(None, date(2026, 9, 6)) == date(2026, 9, 2)
+    # 하루 뒤 = 다음 주 월요일
+    assert cadence.cycle_anchor(None, date(2026, 9, 7)) == date(2026, 9, 16)
+
+
+def test_week_without_a_cycle_day_points_at_the_next_one(db):
+    """회차일이 없는 주는 그대로 다음 회차일을 가리킨다(전과 같다)."""
+    from app.services import cadence
+
+    off_week = date(2026, 9, 9)            # 9/7~9/13 에는 회차일이 없다
+    assert cadence.cycle_anchor(None, off_week) == date(2026, 9, 16)
+    assert (cadence.cycle_anchor(None, off_week)
+            == cadence.upcoming_send_dates(None, off_week, count=1)[0])
+
+
+def test_week_boundary_is_the_weekly_one(db):
+    """주 경계는 주간 업무와 **같은 것**을 쓴다 — 두 벌로 정의하지 않는다."""
+    from app.services import cadence, weekly
+
+    for day in (date(2026, 8, 20), date(2026, 9, 3), date(2026, 10, 8)):
+        anchor = cadence.cycle_anchor(None, day)
+        # 회차 기준일은 늘 그 날과 같은 주 안에 있거나(그 주에 회차일이 있을 때),
+        # 아직 오지 않은 다음 회차일이다.
+        assert (weekly.week_start(anchor) == weekly.week_start(day)
+                or anchor > day)
+
+
+def test_wednesday_cycle_never_straddles_a_week(db):
+    """딜 주기(수요일)는 월~일 주 안에 온전히 들어간다 — 주 경계가 회차일을 가르지 않는다.
+
+    주 경계를 일요일 시작으로 두거나 주기가 토·일로 옮겨가면 한 회차가 두 주에
+    걸쳐 갈라진다. 그 어긋남을 여기서 막는다.
+    """
+    from app.services import cadence, weekly
+
+    for day in cadence.upcoming_send_dates(None, date(2026, 1, 1), count=24):
+        assert day.weekday() <= 4, day          # 주말에 회차일을 두지 않는다
+        # 그 회차일이 속한 주의 어느 날에서 물어도 같은 회차가 나온다.
+        start = weekly.week_start(day)
+        for i in range(7):
+            assert cadence.cycle_anchor(None, start + timedelta(days=i)) == day
+
+
 def test_weekend_is_pushed_to_monday(db):
     from app.services import cadence
 

@@ -124,10 +124,15 @@ def deals_page(
     history = deal_history.annotate(companies, deal_history.last_sent_map(db))
     # 회차명은 **보내는 날에서 만든다.** 손으로 적으면 "8월회차" · "8월 셋째주" ·
     # "0826" 이 섞여 남아, 나중에 몇 주차에 뭘 보냈는지 찾을 때 이력이 갈라진다.
-    next_send = cadence.upcoming_send_dates(db, date.today())[0]
+    #
+    # 회차를 가르는 것은 **주**다(`cadence.cycle_anchor`). '다음 회차일'을 그대로
+    # 쓰면 회차일이 하루만 지나도 다음 회차로 넘어가, 같은 주에 나눠 보낸 것이
+    # 두 회차로 갈라진다 — 8/26(수)에 보내다 8/27(목)에 이어 보내면 `09/02` 가
+    # 떴다. 화면 다른 곳의 '다음 발송일'은 그대로 다음 회차일이다(여기와 다른 질문).
+    cycle_day = cadence.cycle_anchor(db, date.today())
     ctx.update({
         "companies": companies,
-        "default_batch_title": cadence.batch_title(next_send),
+        "default_batch_title": cadence.batch_title(cycle_day),
         "history": history,
         "recent_count": sum(1 for h in history.values() if h["recent"]),
         "recent_days": deal_history.RECENT_DAYS,

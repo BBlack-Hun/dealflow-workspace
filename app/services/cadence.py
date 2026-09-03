@@ -143,12 +143,17 @@ def upcoming_send_dates(db: Optional[Session] = None,
     # 규칙에서 벗어난 일회성 회차일. "다음 회차는 8/26" 처럼 규칙 밖 날짜가
     # 내려오는데, 규칙을 고치면 그 달 이후가 전부 따라 바뀐다.
     skip_days = set(_date_list(rule.get("skip_dates")))
-    out: List[date] = [d for d in _date_list(rule.get("extra_dates"))
-                       if d >= today and d not in skip_days]
+    extra = [d for d in _date_list(rule.get("extra_dates"))
+             if d >= today and d not in skip_days]
 
+    out: List[date] = []
     year, month = today.year, today.month
     # 규칙이 이상해도 무한 루프에 빠지지 않게 살펴볼 달 수를 제한한다.
     for _ in range(36):
+        # **규칙에서 나온 날만 세어 멈춘다.** 일회성 회차일을 함께 세면, 그 날이
+        # 뒤에 있어도 개수가 먼저 차서 규칙 날짜를 찾기 전에 멈춘다 —
+        # `count=1` 로 물으면 **더 이른 회차일을 건너뛴 답**이 나왔다
+        # (8/26 이 일회성으로 잡힌 달에 8/10 에서 물으면 8/19 대신 8/26).
         if len(out) >= count:
             break
         for nth in nths:
@@ -158,7 +163,7 @@ def upcoming_send_dates(db: Optional[Session] = None,
         month += 1
         if month > 12:
             year, month = year + 1, 1
-    return sorted(out)[:count]
+    return sorted(set(out) | set(extra))[:count]
 
 
 def follow_up_date(db: Session, sent_on: date, stage: int,
@@ -459,6 +464,33 @@ def has_reaction_since(db: Session, contact_id: int, since: Optional[str]) -> bo
             ContactActivity.happened_at >= cutoff,
         ).limit(1)
     ).first())
+
+def cycle_anchor(db: Optional[Session] = None,
+                 today: Optional[date] = None) -> date:
+    """오늘이 속한 **회차의 기준일**. 회차명은 이 날짜에서 나온다.
+
+    회차를 가르는 것은 **주**다. 같은 주에 나눠 보낸 것은 한 회차다 — 회차일에
+    다 못 보내고 다음 날 이어 보내는 일이 실제로 있고, 그때 회차가 넘어가면
+    한 번 보낸 것이 두 회차로 갈라져 남는다.
+
+    `upcoming_send_dates` 를 **오늘이 아니라 그 주 월요일부터** 찾는 것이 전부다.
+    오늘부터 찾으면 회차일이 하루라도 지나는 순간 다음 회차일로 건너뛴다 —
+    8/26(수)에 보내다 8/27(목)에 이어 보내면 회차명이 `09/02` 로 바뀌었다.
+    주 월요일부터 찾으면 그 주에 있는 회차일을 **지났더라도** 집는다.
+
+    회차일이 없는 주는 그대로 다음 회차일을 집는다(찾기 시작하는 날만 당겼을
+    뿐이라, 그 주에 아무것도 없으면 오늘부터 찾은 것과 같은 날이 나온다).
+
+    주 경계는 **주간 업무와 같은 것**을 쓴다(`weekly.week_start`, 월요일 시작).
+    두 벌로 정의하면 한쪽만 고쳐지는 날 같은 날이 다른 주로 갈린다.
+    딜 주기는 수요일(`ScheduleRule`)이라 월~일 주 안에 온전히 들어간다 —
+    주 경계가 회차일을 가르지 않는다.
+    """
+    from . import weekly
+
+    today = today or date.today()
+    return upcoming_send_dates(db, weekly.week_start(today), count=1)[0]
+
 
 def batch_title(day: Optional[date] = None) -> str:
     """회차명 — `08/26 (8월 4주차)`.
