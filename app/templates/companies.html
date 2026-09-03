@@ -23,6 +23,11 @@
            value="{{ q }}" autocomplete="off">
     <a class="secondary-btn" href="/api/export/companies.xlsx" download>엑셀 내려받기</a>
     <button type="button" class="secondary-btn" id="ir-bulk-btn">IR 링크 일괄 입력</button>
+    {# 관리자만. 한 번에 수백 줄의 소개를 바꾸는 일이라 라우터도 같이 막는다
+       (`companies.can_bulk_one_liner` — 화면과 라우터가 같은 판정을 읽는다). #}
+    {% if can_bulk_one_liner %}
+    <button type="button" class="secondary-btn" id="ol-bulk-btn">전체 자동조합</button>
+    {% endif %}
     <button type="button" class="primary-btn inline" id="co-add">기업 추가</button>
   </div>
 </div>
@@ -45,6 +50,35 @@
     </div>
   </form>
 </section>
+
+{% if can_bulk_one_liner %}
+{# 한 곳씩 눌러야 하던 자동 조합을 표 전체에. **누르면 바로 바뀌지 않는다** —
+   바뀔 곳을 다 보여주고 줄마다 골라서 적용한다. 빈 칸을 채우는 일이 아니라
+   이미 적힌 문장을 갈아엎는 일이라(사본 344곳 중 181곳이 그렇다) 미리 보지
+   않고 누르게 하면 안 된다. #}
+<section class="panel" id="ol-bulk" hidden>
+  <h2 class="panel-title">전체 자동조합
+    <button type="button" class="linkbtn" id="ol-bulk-close">닫기 ✕</button>
+  </h2>
+  <p class="hint" id="ol-summary">불러오는 중…</p>
+  <div class="assign-bar">
+    <label class="only-picked"><input type="checkbox" id="ol-pick-all"> 전체 선택</label>
+    <span class="muted" id="ol-count">0곳 선택</span>
+    <button type="button" class="primary-btn inline" id="ol-apply" disabled>고른 곳에 적용</button>
+    <button type="button" class="secondary-btn" id="ol-undo" hidden>되돌리기</button>
+    <span class="hint" id="ol-undo-note"></span>
+  </div>
+  {# 226줄이 한 화면에 들어가지 않는다. 목록만 따로 스크롤시키고 각 줄의 문장은
+     두 줄로 자른다 — 잘린 전체 글자는 `title` 로 남는다. #}
+  {# 머리글은 목록 **밖**에 둔다 — 안에 두면 스크롤에 같이 밀려 올라가서,
+     아래로 내려갈수록 어느 쪽이 지금 값인지 알 수 없게 된다. #}
+  <div class="ol-row ol-head">
+    <span></span><span class="ol-name">기업</span>
+    <span class="ol-now">지금 값</span><span class="ol-new">자동 조합값</span>
+  </div>
+  <div class="ol-list" id="ol-list"></div>
+</section>
+{% endif %}
 
 <div class="chip-row" data-filter-chips></div>
 <p class="hint" id="co-note" hidden></p>
@@ -616,4 +650,7 @@
 <script src="{{ asset('js/inline_edit.js') }}"></script>
 <script src="{{ asset('js/filters.js') }}"></script>
 <script src="{{ asset('js/companies.js') }}"></script>
+{% if can_bulk_one_liner %}
+<script src="{{ asset('js/one_liner_bulk.js') }}"></script>
+{% endif %}
 {% endblock %}

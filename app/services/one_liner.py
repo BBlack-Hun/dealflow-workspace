@@ -300,3 +300,49 @@ def apply_one_liner(company) -> str:
     if suggestion:
         company.one_liner = suggestion
     return suggestion
+
+
+# --- [전체 자동조합] — 미리보기와 적용이 함께 쓰는 하나의 판단 ----------------
+#
+# 한 곳씩 눌러야 하던 자동 조합을 표 전체에 한 번에 거는 기능이다. 그런데 이건
+# **빈 칸을 채우는 일이 아니라 이미 적힌 문장을 갈아엎는 일**이다 — 운영과 같은
+# 사본 344곳에서 45곳만 빈 칸이고 181곳은 사람이 쓴 값을 덮는 쪽이다.
+#
+# 그래서 **누르면 바로 바뀌지 않는다.** 먼저 바뀔 곳을 다 보여주고, 줄마다
+# 골라서 적용한다. 그 '바뀔 곳' 을 정하는 판단이 아래 하나이고, 미리보기와
+# 실제 적용이 **둘 다 이 함수를 지난다.** 두 벌로 만들면 "미리보기엔 A 인데
+# 눌렀더니 B" 가 된다 — 이 저장소가 반복해 겪은 부류의 고장이다.
+
+def bulk_rows(companies) -> List[dict]:
+    """[전체 자동조합] 이 건드릴 줄들. 안 건드릴 줄은 **아예 안 싣는다.**
+
+    빠지는 줄은 두 가지다.
+
+      · 조합할 재료가 없는 곳 — 만들 것이 없으니 고를 것도 없다(사본에서 63곳).
+        여기서 빈 줄을 만들어 멀쩡한 소개를 지우는 일은 절대 없어야 한다.
+      · 이미 조합값과 글자까지 같은 곳 — 눌러도 아무 일이 안 난다(55곳).
+
+    남는 것만 목록이 된다. `filled` 는 '지금 자리에 글자가 있는가' 다 —
+    화면이 덮어쓰기와 빈 칸 채우기를 갈라 보여주는 데 쓴다.
+
+    **`origin()` 으로 자동/수동을 매기지 않는다.** 여기서는 비교할 '고치기 전
+    조합값' 이 없어서 `origin` 을 부르면 글자가 다른 줄이 전부 MANUAL 로 나온다 —
+    예전에 이 코드가 만들어 둔 줄까지 '사람이 쓴 값' 으로 이름 붙게 된다.
+    화면에는 **지금 값과 조합값을 나란히** 보여주고 판단은 사람이 한다.
+    """
+    rows: List[dict] = []
+    for company in companies:
+        suggestion = compose_one_liner(company)
+        if not suggestion:
+            continue
+        current = _text(getattr(company, "one_liner", None))
+        if current == suggestion:
+            continue
+        rows.append({
+            "id": company.id,
+            "name": getattr(company, "name", "") or "",
+            "current": current,
+            "suggestion": suggestion,
+            "filled": bool(current),
+        })
+    return rows

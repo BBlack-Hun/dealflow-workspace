@@ -26,10 +26,11 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..deps import NotAdmin, admin_only, get_current_user, templates
-from ..models import IrCompany, User
+from ..models import IrCompany, OneLinerBackup, User
 from ..services import auth as auth_svc
 from ..services.one_liner import (
-    AUTO, SOURCE_FIELDS, apply_one_liner, compose_one_liner, origin, sync_one_liner,
+    AUTO, SOURCE_FIELDS, apply_one_liner, bulk_rows, compose_one_liner, origin,
+    sync_one_liner,
 )
 from ..services.sector_hint import Hints
 from ..ui import base_ctx
@@ -115,6 +116,28 @@ def contract_key(value) -> str:
     return CONTRACT_ALIAS.get(key, key)
 
 
+def _is_admin(user: User) -> bool:
+    """관리자인가. 아래 두 판정이 **함께 지나는 한 곳**이다."""
+    try:
+        admin_only(user)
+    except NotAdmin:
+        return False
+    return True
+
+
+def can_bulk_one_liner(user: User) -> bool:
+    """이 사람에게 [전체 자동조합] 을 보여도 되는가 — **관리자만**이다.
+
+    한 번 눌러 수백 줄의 문장을 바꾸는 일이고, 그중 대부분이 **사람이 손으로
+    쓴 소개**다(사본 344곳 중 181곳). 되돌리기를 붙여 두었지만 그것은 사고를
+    수습하는 장치이지 사고를 막는 장치가 아니다.
+
+    한 곳씩 누르는 [자동 조합으로 바꾸기] 는 그대로 **누구나** 쓴다 — 그쪽은
+    그 줄을 열어 보고 있는 사람이 그 줄 하나만 바꾼다.
+    """
+    return _is_admin(user)
+
+
 def can_delete_company(user: User) -> bool:
     """이 사람에게 [삭제] 를 보여도 되는가 — **판정은 `deps.admin_only` 하나**다.
 
@@ -124,11 +147,7 @@ def can_delete_company(user: User) -> bool:
     함수를 부르므로 **단추가 보이는 사람은 반드시 지울 수 있고, 안 보이는
     사람은 주소를 직접 쳐도 막힌다.**
     """
-    try:
-        admin_only(user)
-    except NotAdmin:
-        return False
-    return True
+    return _is_admin(user)
 
 # 소개 문구에 들어가는 칸. (모델 속성, 화면 이름)
 REQUIRED_FIELDS = [
@@ -436,6 +455,8 @@ def companies_page(request: Request, db: Session = Depends(get_db),
         # [삭제]를 보일지. 라우터가 막는 것과 **같은 판정**을 읽는다 —
         # 보이는데 못 누르거나, 안 보이는데 주소로는 되는 상태를 만들지 않는다.
         "can_delete": can_delete_company(user),
+        # [전체 자동조합]을 보일지. 라우터가 막는 것과 **같은 판정**을 읽는다.
+        "can_bulk_one_liner": can_bulk_one_liner(user),
         "required_fields": [label for _a, label in REQUIRED_FIELDS],
         "summary_labels": SUMMARY_LABELS,
         "contract_labels": CONTRACT_LABELS,
@@ -740,6 +761,131 @@ def use_auto_one_liner(company_id: int, db: Session = Depends(get_db),
     db.commit()
     return {"id": company.id, "one_liner": company.one_liner or "",
             "previous": before, "applied": bool(suggestion)}
+
+
+class BulkOneLinerIn(BaseModel):
+    """적용할 기업들. **화면이 고른 것만** 바뀐다."""
+
+    company_ids: List[int] = []
+
+
+def _bulk_state(db: Session) -> dict:
+    """미리보기 목록 + 지금 되돌릴 수 있는 묶음. 화면이 한 번에 받아 간다."""
+    companies = db.execute(select(IrCompany).order_by(IrCompany.name)).scalars().all()
+    rows = bulk_rows(companies)
+    made = {r["id"] for r in rows}
+    return {
+        "rows": rows,
+        "counts": {
+            # 목록에 뜨는 것 = 바뀔 곳. 나머지 둘은 "왜 344곳인데 226줄뿐인가"에
+            # 답하려고 함께 보낸다 — 숫자가 안 맞으면 사람은 빠뜨렸다고 읽는다.
+            "changes": len(rows),
+            "filled": sum(1 for r in rows if r["filled"]),
+            "empty": sum(1 for r in rows if not r["filled"]),
+            "unchanged": sum(1 for c in companies
+                             if c.id not in made and compose_one_liner(c)),
+            "no_source": sum(1 for c in companies if not compose_one_liner(c)),
+            "total": len(companies),
+        },
+        "undo": _undo_state(db),
+    }
+
+
+def _undo_state(db: Session) -> dict:
+    """되돌릴 수 있는 **가장 최근 묶음**. 없으면 `count` 가 0 이다."""
+    batch = db.execute(
+        select(OneLinerBackup.batch).order_by(OneLinerBackup.batch.desc()).limit(1)
+    ).scalar()
+    if batch is None:
+        return {"batch": None, "count": 0, "at": ""}
+    saved = db.execute(select(OneLinerBackup)
+                       .where(OneLinerBackup.batch == batch)).scalars().all()
+    return {"batch": batch, "count": len(saved),
+            "at": saved[0].created_at if saved else ""}
+
+
+@router.get("/api/one-liner/bulk")
+def bulk_one_liner_preview(db: Session = Depends(get_db),
+                           user: User = Depends(get_current_user)):
+    """[전체 자동조합] 미리보기 — **저장하지 않는다.**"""
+    admin_only(user)
+    return _bulk_state(db)
+
+
+@router.post("/api/one-liner/bulk")
+def bulk_one_liner_apply(body: BulkOneLinerIn, db: Session = Depends(get_db),
+                         user: User = Depends(get_current_user)):
+    """골라 온 기업들의 `한줄 소개` 를 자동 조합으로 바꾸고, **바꾸기 전 값을 남긴다.**
+
+    보내 온 id 를 그대로 믿지 않는다. 여기서 목록을 **다시 만들어** 그 안에 있는
+    id 에만 적용한다 — 미리보기를 띄워 둔 사이에 누가 스타트업DB 를 고쳤으면
+    화면이 보여준 조합값은 이미 낡았고, 그것을 그대로 쓰면 사람이 보지 못한
+    문장이 저장된다. 판단은 미리보기와 **같은 `bulk_rows`** 한 곳을 지난다.
+    """
+    admin_only(user)
+    wanted = set(body.company_ids or [])
+    if not wanted:
+        raise HTTPException(status_code=400, detail="적용할 기업을 고르세요")
+
+    companies = {c.id: c for c in
+                 db.execute(select(IrCompany)).scalars().all()}
+    plan = [r for r in bulk_rows(companies.values()) if r["id"] in wanted]
+    if not plan:
+        # 고른 것이 하나도 안 남았다 = 그 사이에 값이 바뀌었다.
+        raise HTTPException(status_code=409,
+                            detail="그 사이 값이 바뀌었습니다. 미리보기를 다시 열어 주세요")
+
+    batch = (db.execute(select(OneLinerBackup.batch)
+                        .order_by(OneLinerBackup.batch.desc()).limit(1)).scalar() or 0) + 1
+    for row in plan:
+        company = companies[row["id"]]
+        db.add(OneLinerBackup(
+            batch=batch, company_id=company.id,
+            # 비어 있던 줄은 NULL 로 남긴다 — 되돌릴 때 다시 비운다.
+            previous=company.one_liner or None,
+            applied=row["suggestion"], user_id=user.id))
+        company.one_liner = row["suggestion"]
+    db.commit()
+    return {"applied": len(plan), "batch": batch,
+            "skipped": len(wanted) - len(plan), **_bulk_state(db)}
+
+
+@router.post("/api/one-liner/bulk/undo")
+def bulk_one_liner_undo(db: Session = Depends(get_db),
+                        user: User = Depends(get_current_user)):
+    """가장 최근 묶음을 통째로 되돌린다.
+
+    **그 뒤에 사람이 또 고친 줄은 건드리지 않는다.** 지금 값이 우리가 써 넣은
+    값과 글자까지 같을 때만 되돌린다 — 0051 의 downgrade 가 쓰는 것과 같은
+    방식이다. 되돌린 묶음은 지운다(남기면 또 되돌리려 든다).
+    """
+    admin_only(user)
+    batch = db.execute(select(OneLinerBackup.batch)
+                       .order_by(OneLinerBackup.batch.desc()).limit(1)).scalar()
+    if batch is None:
+        raise HTTPException(status_code=404, detail="되돌릴 것이 없습니다")
+
+    saved = db.execute(select(OneLinerBackup)
+                       .where(OneLinerBackup.batch == batch)).scalars().all()
+    restored = kept = 0
+    back: List[dict] = []
+    for row in saved:
+        company = db.get(IrCompany, row.company_id)
+        if company is None:
+            continue
+        if (company.one_liner or "") != (row.applied or ""):
+            kept += 1          # 그 뒤에 사람이 고쳤다 — 그 손글씨를 덮지 않는다
+            continue
+        company.one_liner = row.previous
+        restored += 1
+        # 화면이 표의 그 칸을 그 자리에서 되칠할 수 있게 값을 함께 돌려준다 —
+        # 새로고침을 시키면 방금 무엇을 되돌렸는지 눈에서 사라진다.
+        back.append({"id": company.id, "one_liner": company.one_liner or ""})
+    for row in saved:
+        db.delete(row)
+    db.commit()
+    return {"restored": restored, "kept": kept, "batch": batch,
+            "restored_rows": back, **_bulk_state(db)}
 
 
 @router.delete("/api/companies/{company_id}")
