@@ -21,7 +21,13 @@ concurrency:
 jobs:
   pytest:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 검사 자체는 6분쯤 걸리는데 제한이 10분이었다. 러너가 느린 날에는 같은
+    # 묶음이 **2배 가까이** 걸려서(구간마다 재 봤다) 아무것도 안 고쳤는데 PR 이
+    # 빨개진다 — 실제로 94% 에서 잘렸다. 고장을 알리는 빨강과 러너가 느렸다는
+    # 빨강이 같아 보이면, 사람은 빨강을 안 믿게 된다.
+    #
+    # 넉넉히 준다. 이 값은 **멈춘 것을 끊는 안전장치**이지 속도 기준이 아니다.
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v4

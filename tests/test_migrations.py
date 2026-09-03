@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -90,9 +91,27 @@ def fresh_db(tmp_path_factory) -> Path:
 
 
 def test_an_empty_db_climbs_all_the_way_to_head(fresh_db):
-    """1. 끝까지 올라갔고, 그 자리가 정말 head 인가."""
-    where = _alembic(fresh_db, "current")
-    assert "(head)" in where.stdout + where.stderr, where.stdout + where.stderr
+    """1. 끝까지 올라갔고, 그 자리가 정말 마지막 판인가.
+
+    `alembic current` 를 부르지 않고 판 계보를 직접 읽는다. 프로세스를 한 번 덜
+    띄우는 김에, **머리가 둘로 갈라진 것**까지 잡는다 — 두 사람이 같은 판을
+    부모로 삼아 각자 판을 만들면 알렘빅은 `Multiple head revisions` 로 멎고,
+    그때도 부팅이 안 된다.
+    """
+    revisions, parents = set(), set()
+    for path in (ROOT / "alembic" / "versions").glob("0*.py"):
+        text = path.read_text(encoding="utf-8")
+        revisions |= set(re.findall(r'^revision = "([^"]+)"', text, re.M))
+        parents |= set(re.findall(r'^down_revision = "([^"]+)"', text, re.M))
+    heads = revisions - parents
+    assert len(heads) == 1, f"머리가 하나여야 한다 — 지금: {sorted(heads)}"
+
+    con = sqlite3.connect(fresh_db)
+    try:
+        at = [r[0] for r in con.execute("SELECT version_num FROM alembic_version")]
+    finally:
+        con.close()
+    assert at == list(heads), f"head 는 {sorted(heads)} 인데 DB 는 {at} 에 있다"
 
 
 def test_the_fresh_schema_matches_the_models(fresh_db):
@@ -162,15 +181,17 @@ def test_running_it_again_does_nothing(fresh_db, tmp_path):
     assert _schema(fresh_db) == before
 
 
-def test_it_comes_back_down_and_up_again(tmp_path):
+def test_it_comes_back_down_and_up_again(fresh_db, tmp_path):
     """5. 내려갔다 올라온다.
 
     `downgrade` 가 없는 판이 하나만 섞여 있어도 알렘빅은 되돌릴 길을 **짜지도
     못한다**(`AttributeError`) — 0012 가 그랬고, 그래서 0013 이후를 한 칸
     내리는 것조차 되지 않았다.
     """
+    # 이미 만들어 둔 것을 **복사해서** 쓴다 — 빈 DB 를 한 번 더 올리면
+    # 파이썬 프로세스가 공연히 하나 더 뜬다(느린 CI 러너에서 그게 값이 크다).
     db = tmp_path / "roundtrip.db"
-    assert _alembic(db, "upgrade", "head").returncode == 0
+    shutil.copy(fresh_db, db)
     top = _schema(db)
 
     down = _alembic(db, "downgrade", "base")
