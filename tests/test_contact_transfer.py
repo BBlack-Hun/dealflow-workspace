@@ -41,11 +41,14 @@ def people(db, users):
     from app.services import auth as auth_svc
 
     pw = auth_svc.hash_password(DEMO_PASSWORD)
+    # 투자현황은 계정마다 켜고 끈다 — 이 둘은 [계정 만들기]가 켜 주는 기본값
+    # 그대로다(`deps.consulting_default_for`). 컨설턴트는 로그인하면 곧장 그
+    # 화면으로 가므로, 꺼진 채로 두면 로그인부터 막힌 화면에 떨어진다.
     rows = [
         User(id=71, name="관리자시험", phone="01070000011", role="admin",
-             password_hash=pw),
+             can_view_consulting=1, password_hash=pw),
         User(id=73, name="컨설턴트시험", phone="01070000013", role="consultant",
-             password_hash=pw),
+             can_view_consulting=1, password_hash=pw),
     ]
     db.add_all(rows)
     db.commit()

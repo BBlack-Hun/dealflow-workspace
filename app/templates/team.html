@@ -172,16 +172,27 @@
            온 `m.consulting` 하나로 적는다. 여기에 조건을 따로 적었다가 컨설턴트
            줄이 `막힘` 으로 뜨는데 실제로는 열려 있었다.
 
-           관리자·투자컨설턴트는 **역할만으로 이미 열려 있어 끌 수 없다** —
-           눌러도 아무 일이 없는 단추를 두면 관리자는 껐다고 생각하는데 계속
-           열려 있다. 그래서 그 두 역할은 단추 대신 상태만 적는다. #}
+           **이제 누구든 끄고 켠다.** 예전에는 관리자·투자컨설턴트가 역할만으로
+           열려 있어 단추 자리에 상태만 적었다.
+
+           못 끄는 줄은 **본인**뿐이다 — 스스로를 잠그면 이 화면에 다시 들어올
+           수 없다. 바로 위 권한 칸이 같은 이유로 `본인 · 관리자` 라고만 적는다.
+           라우터도 같이 막는다(화면만 감추면 주소로 부를 수 있다).
+
+           투자컨설턴트를 끄면 **그 계정에 볼 화면이 하나도 안 남는다** — 누르기
+           전에 알려야 한다. 무엇이 그런 계정인지는 화면이 정하지 않는다
+           (`m.consulting_only_screen`, 판정은 `deps.consulting_is_only_screen`).
+           비밀번호 초기화·계정 정지가 되돌리기 어려운 일 앞에서 확인을 받는
+           것과 같은 자리다. #}
         <td class="consulting-cell">
           {% set label = '볼 수 있음' if m.consulting else '막힘' %}
-          {% if m.consulting_fixed %}
-            <span class="muted"
-                  title="{{ '관리자' if m.role == 'admin' else '투자컨설턴트' }}는 항상 볼 수 있습니다">{{ label }}</span>
+          {% if m.id == user.id %}
+            <span class="muted" title="본인 투자현황은 끄고 켤 수 없습니다">본인 · {{ label }}</span>
           {% else %}
-          <form method="post" action="/team/members/{{ m.id }}/consulting">
+          <form method="post" action="/team/members/{{ m.id }}/consulting"
+                {% if m.consulting and m.consulting_only_screen %}
+                onsubmit="return confirm('{{ m.name }} 님의 투자현황을 막을까요?\n이 계정에는 다른 화면이 없어, 로그인해도 보실 수 있는 화면이 없습니다.')"
+                {% endif %}>
             <button class="linkbtn" type="submit">{{ label }}</button>
           </form>
           {% endif %}

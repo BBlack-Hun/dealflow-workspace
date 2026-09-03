@@ -80,6 +80,22 @@ def admin_only(user: User) -> None:
         raise NotAdmin()
 
 
+# --- 투자현황이 막힌 계정 ----------------------------------------------------
+#
+# 관리자가 팀 현황에서 끈 계정이 그 화면에 닿았을 때. **어디서 끊는지가 아니라
+# 무엇을 돌려줄지**를 여기 한 곳에서 정한다 — `NotAdmin` 과 같은 방식이다.
+# 라우터(`routers/consulting.py`)는 `raise NoConsulting()` 만 하고, 화면이냐
+# 스크립트냐는 `app/main.py` 의 핸들러가 이 모듈을 읽어 가른다.
+CONSULTING_BLOCKED = "투자현황을 볼 권한이 없습니다"
+
+
+class NoConsulting(HTTPException):
+    """투자현황이 막힌 계정. 핸들러(app/main.py)가 화면과 조작을 갈라 답한다."""
+
+    def __init__(self) -> None:
+        super().__init__(status_code=403, detail=CONSULTING_BLOCKED)
+
+
 def require_admin(user: User = Depends(get_current_user)) -> User:
     """`Depends` 로 거는 같은 판정 — 검사는 위 함수를 그대로 쓴다.
 
@@ -229,18 +245,24 @@ def can_open(user: User, path: str) -> bool:
 def may_view_consulting(user: User) -> bool:
     """투자컨설턴트 현황 화면을 볼 수 있는가.
 
-    **판정은 여기 하나뿐이다.** 라우터는 역할까지 보고(`admin`·`consultant` 는
-    통과) 팀 현황 표는 `can_view_consulting` 칸만 봐서, 컨설턴트 줄에 `막힘`
-    이라고 떠 있는데 실제로는 열려 있었다 — 화면이 거짓말을 한 것이다.
-    같은 부류의 사고를 이 저장소는 이미 여러 번 겪었다(메뉴 목록과 라우터
-    목록이 갈려 컨설턴트에게 다 열려 있던 일, 투자사 수가 화면마다 달랐던 일).
-    화면은 판정하지 않고 이 함수를 읽는다.
+    **판정은 여기 하나뿐이다.** 라우터는 역할까지 보고 팀 현황 표는
+    `can_view_consulting` 칸만 봐서, 컨설턴트 줄에 `막힘` 이라고 떠 있는데
+    실제로는 열려 있었다 — 화면이 거짓말을 한 것이다. 같은 부류의 사고를 이
+    저장소는 여러 번 겪었다(메뉴 목록과 라우터 목록이 갈려 컨설턴트에게 다
+    열려 있던 일, 투자사 수가 화면마다 달랐던 일). 화면은 판정하지 않고 이
+    함수를 읽는다.
 
-    - 관리자는 팀 전체를 본다.
-    - 투자컨설턴트에게는 이 화면이 전부다 — 따로 켜 줄 필요가 없다.
-    - 팀원은 관리자가 켜 준 계정만(`can_view_consulting`).
+    **역할은 더 이상 이 판정에 끼지 않는다 — 계정마다 켜고 끈다.**
+    예전에는 `역할이 곧 권한` 이라 관리자·투자컨설턴트는 팀 현황에서 끌 수가
+    없었다(단추 자리에 상태만 떴다). 그런데 이 화면을 누구에게 열지는 그때그때
+    사람이 정하는 일이지 역할로 굳어 있을 일이 아니다. 역할이 하는 일은 이제
+    **새 계정의 기본값**뿐이다(`consulting_default_for`).
+
+    이 값을 읽는 곳: 좌측 메뉴(`ui.NEEDS`) · 라우터(`routers/consulting.py` 의
+    `require_access`) · 팀 현황 표(`services/dashboard.py`). 셋이 같은 함수를
+    읽으므로 켜고 끈 것이 세 곳에 한꺼번에 반영된다.
     """
-    return consulting_by_role(user) or bool(user.can_view_consulting)
+    return bool(user.can_view_consulting)
 
 
 def may_view_all_consulting(user: User) -> bool:
@@ -265,17 +287,36 @@ def may_view_all_consulting(user: User) -> bool:
     return may_view_consulting(user) and user.role != "consultant"
 
 
-def consulting_by_role(user: User) -> bool:
-    """`can_view_consulting` 칸과 상관없이 **역할만으로** 열려 있는가.
+def consulting_default_for(role: str) -> bool:
+    """이 역할로 **새로 만드는 계정**의 투자현황을 기본으로 켤 것인가.
 
-    켜고 끄는 단추를 보일지 정하는 자리다. 역할로 이미 열린 계정에서 그 단추는
-    눌러도 아무 일이 없다 — 관리자는 껐다고 생각하는데 계속 보이는, 화면이
-    거짓말을 하는 상태가 된다.
+    예전 `consulting_by_role` 자리다. 그때는 이 목록이 곧 권한이라 관리자·
+    투자컨설턴트를 팀 현황에서 끌 수 없었는데, 이제는 **기본값**만 정한다 —
+    만든 뒤에는 누구든 켜고 끈다(`routers/dashboard.py` 의 `toggle_consulting`).
 
-    역할 목록을 여기 한 번만 적는다. 화면·라우터가 각자 `("admin",
-    "consultant")` 를 적어 두면 역할이 하나 늘 때 한쪽만 고쳐진다.
+    투자컨설턴트를 켜 두는 이유가 관리자와 다르다. 그 계정에는 이 화면 말고
+    **볼 것이 하나도 없다**(`CONSULTANT_PATHS`). 꺼진 채로 만들어지면 로그인한
+    첫 화면부터 막혀 있어, 계정을 만든 사람이 뭘 잘못했는지 알기 어렵다.
+
+    역할 목록은 여기 한 번만 적는다 — 화면·라우터가 각자
+    `("admin", "consultant")` 를 적어 두면 역할이 하나 늘 때 한쪽만 고쳐진다.
     """
-    return user.role in ("admin", "consultant")
+    return role in ("admin", "consultant")
+
+
+def consulting_is_only_screen(user: User) -> bool:
+    """이 계정에는 투자현황 말고 **볼 화면이 없는가.**
+
+    끄기 전에 알려야 하는 자리다. 투자컨설턴트에게 열린 주소는
+    `CONSULTANT_PATHS` 가 전부이고, 그 안에서 화면이라 부를 것은 `/consulting`
+    하나뿐이다 — 이것을 끄면 로그인은 되는데 갈 데가 없다.
+
+    막는 것 자체는 막지 않는다(관리자가 알고 끄는 일이 있다). 다만 **모르고
+    끄는 것**을 막으려고, 팀 현황이 이 값을 읽어 확인 문구를 띄우고
+    라우터가 끈 뒤 안내에 같은 사실을 적는다. 판정을 두 곳에 적으면 한쪽만
+    낡는다.
+    """
+    return user.role == "consultant"
 
 
 def sends_deals(user: User) -> bool:
@@ -318,7 +359,28 @@ def admin_block_response(request: Request) -> Response:
     """
     if request.method != "GET" or _wants_json(request):
         return JSONResponse({"detail": ADMIN_ONLY}, status_code=403)
-    return _admin_only_page(request)
+    return _guard_page(request, "admin_only.html", "관리자 전용")
+
+
+def consulting_block_response(request: Request) -> Response:
+    """투자현황이 막힌 계정이 그 화면에 닿았을 때 무엇을 돌려줄지.
+
+    **바로 위 관리자 차단과 같은 판단이다** — 주소창이 여는 GET 만 화면으로
+    답하고, 스크립트가 부르는 것에는 403 을 그대로 준다.
+
+    자기 화면으로 되돌려 보내지 **않는다**(컨설턴트 차단은 그렇게 한다).
+    투자컨설턴트에게는 이 화면이 곧 첫 화면이라(`home_for`), 막힌 채로 되돌려
+    보내면 같은 자리를 맴돈다. 여기서 무슨 일이 일어났는지 글로 알려 주는 편이
+    낫다 — 그 계정이 볼 수 있는 화면이 하나도 남지 않는 경우가 실제로 있다.
+    """
+    if request.method != "GET" or _wants_json(request):
+        return JSONResponse({"detail": CONSULTING_BLOCKED}, status_code=403)
+    # **답은 예전처럼 403 이다** — 바뀌는 것은 사람이 보는 것뿐이다(날것의 JSON
+    # 대신 안내창). 관리자 전용 안내가 200 인 것은 그쪽이 원래 그렇게 답해 왔기
+    # 때문이고, 이 화면은 403 으로 답해 왔다. 막힌 것을 200 으로 바꾸면 그 값을
+    # 읽는 자리가 조용히 갈린다.
+    return _guard_page(request, "consulting_blocked.html", "투자컨설턴트",
+                       status_code=403)
 
 
 def _wants_json(request: Request) -> bool:
@@ -332,8 +394,9 @@ def _wants_json(request: Request) -> bool:
     return "application/json" in accept and "text/html" not in accept
 
 
-def _admin_only_page(request: Request) -> Response:
-    """앱 껍데기(사이드바)를 갖춘 빈 화면 + 대시보드로 가는 안내창.
+def _guard_page(request: Request, template: str, fallback_title: str,
+                status_code: int = 200) -> Response:
+    """앱 껍데기(사이드바)를 갖춘 빈 화면 + 나가는 길을 알려 주는 안내창.
 
     미들웨어·예외 핸들러는 라우팅 밖이라 `Depends` 를 쓸 수 없다 — 세션을
     직접 연다(`is_consultant` 와 같은 방식).
@@ -341,6 +404,10 @@ def _admin_only_page(request: Request) -> Response:
     **안내창은 서버가 그린 그대로 뜬다.** 스크립트 하나가 어긋난 날 상세
     패널이 통째로 안 열린 적이 있어서, 나가는 길을 알려 주는 창이 스크립트에
     기대면 같은 일이 난다(팀 현황의 수정칸을 주소로 여는 것과 같은 이유).
+
+    **막는 사유마다 다른 것은 안내문뿐이다.** 세션을 열고 사람을 찾고 껍데기를
+    세우는 이 순서를 사유마다 베껴 두면, 로그인이 끊겼을 때의 처리 같은 것이
+    한쪽에서만 낡는다 — 갈아 끼우는 것은 템플릿 하나다.
     """
     from .services import auth as auth_svc
     from .ui import base_ctx, screen_label  # ui 가 이 모듈을 부르므로 함수 안에서
@@ -352,12 +419,17 @@ def _admin_only_page(request: Request) -> Response:
             # 판정과 응답 사이에 세션이 끊긴 경우 — 권한 안내보다 로그인이 먼저다.
             return RedirectResponse(f"/login?next={request.url.path}", status_code=303)
         # 무엇을 열려 했는지 이름을 대 준다. 좌측 메뉴와 같은 목록에서 가져오므로
-        # 관리자 화면이 늘어도 이 화면이 따로 낡지 않는다.
+        # 화면이 늘어도 이 안내가 따로 낡지 않는다.
         label = screen_label(request.url.path)
         ctx = base_ctx(request, db, user, active="")
-        ctx["page_title"] = label or "관리자 전용"
+        ctx["page_title"] = label or fallback_title
         ctx["blocked_label"] = label
-        return templates.TemplateResponse("admin_only.html", ctx)
+        # 이 계정에 **다른 화면이 남아 있는가.** 안내문이 여기서 갈린다 —
+        # 투자컨설턴트는 투자현황을 끄면 볼 화면이 하나도 없어서, "다른 메뉴를
+        # 보세요" 라고 적으면 화면이 거짓말을 한다. 판정은 아래 한 곳이고
+        # 템플릿은 읽기만 한다(팀 현황의 확인 문구가 읽는 것과 같은 함수다).
+        ctx["no_other_screen"] = consulting_is_only_screen(user)
+        return templates.TemplateResponse(template, ctx, status_code=status_code)
     finally:
         db.close()
 

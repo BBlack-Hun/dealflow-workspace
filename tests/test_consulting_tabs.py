@@ -49,6 +49,7 @@ def consultant(db, users):
     from app.services import auth as auth_svc
 
     db.add(User(id=71, name="컨설턴트시험", phone="01000000071", role="consultant",
+                can_view_consulting=1,
                 password_hash=auth_svc.hash_password(DEMO_PASSWORD)))
     db.commit()
     c = TestClient(create_app())
@@ -290,7 +291,7 @@ def test_참고_자료는_모든_컨설턴트에게_같다(consultant, db, users
                     content_json=json.dumps({"body": "샘플 안내문"},
                                             ensure_ascii=False)))
     db.add(User(id=72, name="컨설턴트시험2", phone="01000000072",
-                role="consultant",
+                role="consultant", can_view_consulting=1,
                 password_hash=auth_svc.hash_password(DEMO_PASSWORD)))
     db.commit()
 

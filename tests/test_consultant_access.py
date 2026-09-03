@@ -82,14 +82,21 @@ def _url(path: str) -> str:
 
 
 def _blocked(resp) -> bool:
-    """막힌 응답인가.
+    """**컨설턴트 차단**에 걸린 응답인가.
 
     화면 요청은 자기 화면으로 돌려보내고, API 요청만 403 이다 — 주소창에
     403 만 뜨면 쓰는 사람은 고장인 줄 안다.
+
+    사유를 `deps.CONSULTANT_BLOCKED` 로 **그대로 견준다.** 예전에는 본문에
+    `투자컨설턴트` 라는 글자가 있는지만 봤는데, 그 글자는 좌측 메뉴에도 화면
+    제목에도 있다 — 다른 이유로 막힌 403(투자현황이 꺼진 팀원)까지 컨설턴트
+    차단으로 세어져, "남의 접근이 좁아졌다" 는 엉뚱한 검사가 빨개졌다.
     """
+    from app import deps
+
     if resp.status_code == 303 and resp.headers.get("location") == "/consulting":
         return True
-    return resp.status_code == 403 and "투자컨설턴트" in resp.text
+    return resp.status_code == 403 and deps.CONSULTANT_BLOCKED in resp.text
 
 
 @pytest.fixture()
@@ -99,11 +106,14 @@ def people(db, users):
     from app.services import auth as auth_svc
 
     pw = auth_svc.hash_password(DEMO_PASSWORD)
+    # `can_view_consulting` 을 손으로 켠다 — 투자현황은 이제 계정마다 켜고 끄고,
+    # 이 둘은 팀 현황의 [계정 만들기]가 켜 주는 기본값 그대로다
+    # (`deps.consulting_default_for`).
     rows = [
         User(id=91, name="컨설턴트시험", phone="01000000091",
-             role="consultant", password_hash=pw),
+             role="consultant", can_view_consulting=1, password_hash=pw),
         User(id=92, name="관리자시험", phone="01000000092",
-             role="admin", password_hash=pw),
+             role="admin", can_view_consulting=1, password_hash=pw),
     ]
     db.add_all(rows)
     db.commit()

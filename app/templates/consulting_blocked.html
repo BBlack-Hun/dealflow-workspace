@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{#
+  투자현황이 **막힌 계정**이 그 화면에 닿았을 때.
+
+  예전에는 이 자리가 없었다 — 관리자·투자컨설턴트는 역할만으로 늘 열려 있었고,
+  팀원은 메뉴에서 아예 빠져서 여기까지 올 일이 드물었다. 이제 누구든 끌 수
+  있으니(`deps.may_view_consulting`) 막힌 사람이 이 주소로 오는 길이 생겼다.
+
+  **`admin_only.html` 과 같은 결이다.** 본문은 비우고(볼 수 없는 화면이라 뒤에
+  그릴 것이 없다), 안내창에는 스크립트를 쓰지 않는다 — 나가는 길을 알려 주는
+  창이 스크립트에 기대면 그것이 어긋난 날 나갈 방법이 사라진다.
+#}
+{% block content %}
+<div class="guard-backdrop"></div>
+<div class="guard-modal" role="dialog" aria-modal="true" aria-labelledby="guard-title">
+  <p class="guard-emoji" aria-hidden="true">🔒</p>
+  <h1 class="guard-title" id="guard-title">투자현황이 막혀 있습니다</h1>
+  <p class="guard-body">
+    <b>{{ user.name }}</b> 님 계정은 지금 이 화면을 볼 수 없습니다.
+    관리자가 <b>팀 현황</b>에서 다시 켜 줄 수 있습니다.
+    {# 이 계정에 다른 화면이 남아 있는지 — 판정은 `deps.consulting_is_only_screen`
+       한 곳이고 화면은 그것을 읽기만 한다. 투자컨설턴트는 열린 주소가
+       `deps.CONSULTANT_PATHS` 뿐이라 이 화면을 끄면 갈 데가 없다. 그 사실을
+       적어 주지 않으면 "다른 메뉴를 눌러 보라" 는 말이 거짓말이 된다. #}
+    {% if no_other_screen %}
+    <br>이 계정에는 다른 화면이 없어, 켜 주실 때까지 보실 수 있는 화면이 없습니다.
+    {% endif %}
+  </p>
+  {% if no_other_screen %}
+  <a class="primary-btn guard-go" href="/logout">로그아웃</a>
+  {% else %}
+  <a class="primary-btn guard-go" href="/">대시보드로 가기</a>
+  {% endif %}
+</div>
+{% endblock %}
