@@ -105,11 +105,13 @@
         <th style="width:70px">대표자</th>
         <th style="width:104px">연락처</th>
         <th style="width:170px">이메일</th>
-        {# 카테고리가 아니라 **사업 설명**이다. 한줄 소개의 첫 토막이 된다. #}
-        {# 안내를 머리글 아래 줄로 두면 이름이 두 줄로 보인다. 이름은 한 줄이어야
-           하니 안내는 `title` 로 옮긴다 — 지우면 이 칸이 카테고리가 아니라
-           사업 설명이라는 것을 알 길이 없다. #}
-        <th style="width:300px" title="사업 설명 · 한줄 소개의 앞부분">사업분야</th>
+        {# 옆 탭(IR 기업 현황)의 `기업 한줄 소개` 와 **같은 칸**이다(one_liner).
+           예전에는 여기가 `사업분야`(business_desc)라는 **다른 칸**이었다 —
+           이름만 다를 뿐 둘 다 사업 설명인데 서로 다른 칸에 쌓이다 보니,
+           여기를 고쳐도 IR 화면의 소개는 그대로였다. 이제 한 칸이다(0051).
+           합치기 전 두 칸의 값은 [수정] 창의 `합치기 전 값` 에 남아 있다.
+           안내는 `title` 로 둔다 — 머리글 아래 줄로 붙이면 이름이 두 줄이 된다. #}
+        <th style="width:300px" title="딜 소개 문구에 그대로 들어갑니다 · 눌러서 수정">기업 한줄 소개</th>
         <th class="num" style="width:74px">22년 매출</th>
         <th class="num" style="width:74px">23년 매출</th>
         <th class="num" style="width:74px">24년 매출</th>
@@ -142,8 +144,8 @@
         <td class="cell" data-field="contact_name">{{ r.ceo }}</td>
         <td class="cell" data-field="contact_phone">{{ r.phone }}</td>
         <td class="cell ellipsis" data-field="contact_email" title="{{ r.email }}">{{ r.email }}</td>
-        <td title="{{ r.business_desc }}">
-          <div class="cell clamp2" data-field="business_desc" data-type="long">{{ r.business_desc }}</div>
+        <td title="{{ r.one_liner }}">
+          <div class="cell clamp2" data-field="one_liner" data-type="long">{{ r.one_liner }}</div>
         </td>
         {# 금액은 **적은 그대로** 글자다 — 원본에 억·백만원·범위가 섞여 있어
            숫자로 바꾸면 100배가 틀어진 채 딜소개 문구에 실려 나간다. #}
@@ -388,6 +390,26 @@
     <label class="field"><span>기업구분</span><input type="text" id="f-series" placeholder="예: Seed / SeriesA"></label>
     <label class="field wide"><span>기업 한줄 소개</span>
       <textarea id="f-one_liner" rows="2" placeholder="딜소개 문구에 그대로 들어갑니다"></textarea></label>
+    {# ── 합치기 전 값 (0051) ──────────────────────────────────────────────
+       `사업분야`(스타트업DB)와 `기업 한줄 소개`(IR 기업 현황)는 이름만 다른
+       같은 성격의 칸이었는데 따로 쌓였다. 한 칸으로 합치면서 **합치기 전 두
+       값을 그대로** 백업해 두었다(`ir_companies.desc_backup`).
+
+       **표가 아니라 여기에 둔다.** 표는 이미 화면보다 넓고, 이 값은 매일 보는
+       값이 아니라 "원래 사업분야에는 뭐라고 적혀 있었지" 를 물을 때 한 번
+       열어 보는 기록이다. 한 기업을 들여다보는 자리가 곧 이 자리다.
+
+       **읽기 전용이다.** 고칠 수 있게 두면 되살리려고 연 사람이 백업 자체를
+       덮어쓸 수 있다 — 그 순간 되돌릴 곳이 없어진다. 되살리는 방법은 글자를
+       골라 복사해 위 `기업 한줄 소개` 에 붙이는 것이고, 그것은 사람이 무엇을
+       되살리는지 보고 하는 일이라 실수해도 원본이 남는다.
+
+       백업이 없는 기업(합치기 전에도 두 칸이 다 비어 있었다)에서는 통째로
+       숨긴다 — 늘 보이면 빈 상자가 무슨 뜻인지 매번 다시 읽어야 한다. #}
+    <div class="field wide" id="f-desc_backup-box" hidden>
+      <span>합치기 전 값 <b class="hint">읽기 전용 · 되살리려면 복사해 위에 붙이세요</b></span>
+      <div id="f-desc_backup" class="backup-box"></div>
+    </div>
   </div>
 
   <h3 class="form-section">숫자 <span class="hint">단위: 억 (예 18.3)</span></h3>

@@ -110,6 +110,15 @@ function makeEl(tag) {
     hasAttribute(k) { return k in attrs; },
     removeAttribute(k) { delete attrs[k]; },
     appendChild(kid) { kid.parent = el; el.children.push(kid); return kid; },
+    // 브라우저는 `textContent = ""` 로도 자식을 지우는데, 이 DOM 에는 글자
+    // 노드가 없어서 그것만으로는 자식이 그대로 남는다. 다시 그리는 화면 코드는
+    // 표준대로 `removeChild` 를 쓰므로 여기서도 받아 준다 — 안 그러면 두 번째로
+    // 그릴 때 줄이 쌓이는 고장을 검사가 못 본다.
+    removeChild(kid) {
+      const at = el.children.indexOf(kid);
+      if (at >= 0) { el.children.splice(at, 1); kid.parent = null; }
+      return kid;
+    },
     addEventListener(type, fn) { (el.handlers[type] = el.handlers[type] || []).push(fn); },
     querySelector(sel) { return queryAll(el, sel)[0] || null; },
     querySelectorAll(sel) { return queryAll(el, sel); },
