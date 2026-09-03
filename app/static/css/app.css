@@ -1186,6 +1186,19 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
                    background: var(--bg-soft); cursor: pointer; white-space: nowrap; }
 .cell-pop-choice:hover { border-color: var(--accent); background: var(--bg); }
 .cell-pop-choice.on { border-color: var(--accent); font-weight: 700; }
+/* 한줄 소개를 보고 고른 후보. 목록 맨 앞에 서지만 **답이 아니라 후보**라,
+   고른 값(`.on`)과 같은 모양이면 안 된다 — 이미 정해진 값처럼 보인다.
+   테두리만 브랜드색으로 두고 굵게 하지 않는다. */
+.cell-pop-choice.suggested { border-color: var(--brand); color: var(--brand);
+                             background: #eef2ff; }
+
+/* 칸 옆에 세우는 작은 안내 딱지(빈 사업분야의 `추천 3`).
+   빈 칸은 글자가 없어 누를 자리가 한 줄뿐이다 — 이 딱지가 그 칸의 손잡이다. */
+.cell-hint { display: inline-block; margin-top: 2px; font: inherit; font-size: 11px;
+             line-height: 1.4; padding: 1px 7px; border-radius: 999px;
+             border: 1px solid #c7d7fb; background: #eef2ff; color: var(--brand);
+             font-weight: 600; cursor: pointer; white-space: nowrap; }
+.cell-hint:hover { border-color: var(--brand); }
 
 /* 후속 화면에서 이름을 눌러 IR 요청 기록으로 — 누를 수 있다는 게 보여야 한다. */
 .req-link { color: inherit; text-decoration: none; border-bottom: 1px dotted var(--line); }

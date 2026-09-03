@@ -71,6 +71,25 @@
 <div class="chip-row" data-filter-chips></div>
 <p class="hint" id="co-note" hidden></p>
 
+{# 사업분야가 빈 기업만 추려 보는 단추.
+
+   제안 기능만 있고 **찾을 길이 없으면 빈 칸은 영영 안 채워진다** — 344줄을
+   눈으로 훑어 빈 칸을 찾는 사람은 없다.
+
+   새 필터를 만들지 않는다. `사업분야 대분류` 칸에는 이미 필터가 있고,
+   filters.js 는 빈 값을 `(비어 있음)` 한 덩어리로 모아 둔다 — 이 단추는 그
+   필터를 대신 눌러 줄 뿐이다(`data-preset`, contacts.html 의 단계 단추와 같다).
+   따로 세면 표와 단추가 다른 수를 보이게 된다.
+
+   스타트업DB 탭에는 세우지 않는다. 그 탭에는 사업분야 칸도 그 필터도 없어서,
+   눌러도 filters.js 가 모르는 키라 **필터가 통째로 풀리기만 한다.** #}
+{% if co_tab != 'db' and counts.no_sector %}
+<div class="chip-row">
+  <button type="button" class="filter-chip" data-preset="sector={{ '(비어 있음)'|urlencode }}"
+          title="사업분야 대분류가 비어 있는 기업만 봅니다. 한줄 소개가 있는 곳에는 후보를 함께 띄웁니다.">사업분야 없음 {{ counts.no_sector }}</button>
+</div>
+{% endif %}
+
 {# 두 탭 다 화면보다 넓다(진행관리 12칸 · 스타트업DB 19칸). 높이를 잘라
    가로 스크롤바가 표 바로 아래 붙게 한다 — 안 그러면 문서 맨 아래로 밀린다. #}
 <div class="table-wrap wide">
@@ -256,9 +275,25 @@
         {# `data-filter-key` — 고친 값이 그 칸의 필터 목록에도 나오게 한다.
            칸 이름(DB 컬럼)과 필터 키가 다르면 이것이 없는 한 저장해도 행 값이
            그대로라, 값은 바뀌었는데 필터는 옛 목록을 보여 준다. #}
+        {# `data-suggest` — 한줄 소개를 보고 고른 갈래 후보(최대 3, `|` 로 이음).
+           **이미 값이 있으면 서버가 언제나 빈 목록을 준다**(services/sector_hint.py
+           의 `suggest_for`). 그래서 여기서 '비었는가'를 다시 따지지 않는다 —
+           두 곳에서 각자 판단하면 반드시 한쪽이 낡는다.
+
+           칸 **안에** 넣으면 안 된다. inline_edit.js 는 칸의 textContent 를 곧
+           지금 값으로 읽고(`before`), 같은 칸 글자들을 모아 고를 보기를 만든다
+           (`knownValues`) — 딱지 글자가 그 두 곳에 그대로 섞여 들어간다.
+           그래서 값은 attribute 로, 보이는 딱지는 `<td>` 안 형제로 둔다. #}
         <td title="{{ r.sector_major }}">
           <div class="cell clamp2" data-field="sector_major" data-type="pick"
-               data-filter-key="sector">{{ r.sector_major }}</div>
+               data-filter-key="sector"
+               data-suggest="{{ r.sector_suggestions|join('|') }}">{{ r.sector_major }}</div>
+          {% if r.sector_suggestions %}
+          {# 빈 칸은 누를 자리가 거의 없다(글자가 없어 높이가 한 줄뿐이다).
+             이 딱지가 곧 "여기 채울 것이 있다"는 표시이자 넉넉한 누를 자리다. #}
+          <button type="button" class="cell-hint"
+                  title="한줄 소개를 보고 고른 후보 {{ r.sector_suggestions|length }}개입니다. 눌러서 고르세요 — 저절로 들어가지는 않습니다.">추천 {{ r.sector_suggestions|length }}</button>
+          {% endif %}
         </td>
         <td title="{{ r.sector_minor }}">
           <div class="cell clamp2" data-field="sector_minor" data-type="pick"

@@ -41,6 +41,15 @@
 
     table.addEventListener("click", function (e) {
       var cell = e.target.closest(".cell[data-field]");
+      // 칸 옆에 세운 안내 딱지(`.cell-hint`)를 눌러도 그 칸이 열려야 한다.
+      // 빈 칸은 글자가 없어 누를 자리가 한 줄뿐이라, 옆의 딱지가 사실상
+      // 그 칸의 손잡이다 — 눌러도 아무 일이 없으면 고장으로 보인다.
+      if (!cell) {
+        var hint = e.target.closest(".cell-hint");
+        if (hint && hint.parentNode) {
+          cell = hint.parentNode.querySelector(".cell[data-field]");
+        }
+      }
       if (!cell || cell === editing || !table.contains(cell)) return;
       try {
         start(cell);
@@ -227,14 +236,24 @@
         knownValues(cell.getAttribute("data-field")).forEach(function (v) {
           if (used.indexOf(v) === -1) used.push(v);
         });
+
+        // 서버가 골라 준 후보(`data-suggest`)를 맨 앞으로.
+        var picked = suggestedFirst(used, cell.getAttribute("data-suggest"));
+        var suggested = picked.suggested;
+        used = picked.order;
+
         if (used.length) {
           var box = document.createElement("div");
           box.className = "cell-pop-choices";
           used.forEach(function (value) {
             var chip = document.createElement("button");
             chip.type = "button";
-            chip.className = "cell-pop-choice" + (value === before ? " on" : "");
+            chip.className = "cell-pop-choice" + (value === before ? " on" : "")
+              + (suggested.indexOf(value) !== -1 ? " suggested" : "");
             chip.textContent = value;
+            if (suggested.indexOf(value) !== -1) {
+              chip.title = "한줄 소개를 보고 고른 후보입니다 — 맞는지 보고 고르세요";
+            }
             // mousedown 이라야 input 의 blur 보다 먼저 잡힌다.
             chip.addEventListener("mousedown", function (e) {
               e.preventDefault();
@@ -245,8 +264,11 @@
           api.pop.appendChild(box);
         }
         api.pop.appendChild(hintLine(
-          used.length ? "골라 누르거나 새로 적습니다 · Enter 저장 · Esc 취소"
-                      : "Enter 저장 · Esc 취소"));
+          suggested.length
+            ? "앞 " + suggested.length + "개는 한줄 소개를 보고 고른 후보입니다 "
+              + "— 맞는 것이 없으면 아래에서 고르세요 · Enter 저장 · Esc 취소"
+            : used.length ? "골라 누르거나 새로 적습니다 · Enter 저장 · Esc 취소"
+                          : "Enter 저장 · Esc 취소"));
 
         input.addEventListener("keydown", function (e) {
           if (e.key === "Enter") { e.preventDefault(); input.blur(); }
@@ -331,6 +353,28 @@
   // 사람에게는 `AI, 헬스케어` 로 보여 주고, 필터는 `|` 로 나눠 **태그 단위**로
   // 거른다. 보이는 그대로 행에 적으면 `AI, 헬스케어` 가 통째로 값 하나가 되어,
   // 고친 그 사람만 목록에서 따로 떨어져 나온다(`AI` 를 골라도 안 걸린다).
+  // 서버가 골라 준 후보(`data-suggest`)를 고를 보기 맨 앞으로 옮긴다.
+  //
+  // **보기를 새로 만들지 않는다.** 후보는 이미 그 칸에 쓰이고 있는 값 중에서
+  // 온 것이라(services/sector_hint.py) 목록에 원래 들어 있다 — 순서만 앞으로
+  // 당길 뿐이다. 그래서 눌러 저장되는 값도, 저장하는 길도 여느 보기와 똑같다.
+  // 목록에 없는 후보(그 사이 사라진 갈래)는 **버린다** — 여기서 되살려 넣으면
+  // 쓰이지 않는 값이 제안을 타고 다시 늘어난다.
+  //
+  // 순서만 바꾸고 값은 그대로 둔다. 고를 것이 줄지도 늘지도 않아야, 후보가
+  // 다 틀렸을 때 사람이 아래에서 원래 값을 고를 수 있다.
+  function suggestedFirst(used, raw) {
+    var suggested = [];
+    String(raw || "").split("|").forEach(function (v) {
+      var value = v.trim();
+      if (value && used.indexOf(value) !== -1 && suggested.indexOf(value) === -1) {
+        suggested.push(value);
+      }
+    });
+    var rest = used.filter(function (v) { return suggested.indexOf(v) === -1; });
+    return { suggested: suggested, order: suggested.concat(rest) };
+  }
+
   // `data-filter-sep` 이 있는 칸만 나눈다 — 없으면 적힌 그대로가 값 하나다.
   function forFilter(cell, value) {
     var sep = cell.getAttribute("data-filter-sep");
