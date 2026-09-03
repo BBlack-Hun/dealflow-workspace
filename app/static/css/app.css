@@ -87,6 +87,26 @@ a:hover { text-decoration: underline; }
 
 .pick-card:hover { border-color: var(--brand); }
 .pick-card input { margin-top: 3px; }
+
+/* ── 몇 번째로 고른 기업인가 ───────────────────────────────────────────────
+   문구는 `1) …` `2) …` 로 나가고 투자사는 그 번호로 기억해서 답한다. 화면에
+   번호가 없으면 몇 번으로 나갈지 고르는 사람만 모른다.
+
+   번호는 **화면 코드가 카드에 적어 둔 그 값**을 그대로 읽는다(`data-pick-order`
+   — 서버로 나가는 차례를 담은 바로 그 자리다). 여기서 따로 그리면 두 벌이 되고,
+   어긋나도 아무도 모른 채 다른 번호로 나간다.
+
+   안 고른 카드도 같은 크기의 빈 자리를 남긴다(`attr()` 이 빈 글자를 준다) —
+   고를 때마다 줄이 들썩이면 어디를 눌렀는지 놓친다. */
+#company-list .pick-card::before {
+  content: attr(data-pick-order);
+  flex: 0 0 20px; height: 20px; margin-top: 2px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 11.5px; font-weight: 700; line-height: 1; border-radius: 999px;
+}
+#company-list .pick-card[data-pick-order]::before {
+  background: var(--brand); color: #fff;
+}
 .pick-body { min-width: 0; }
 .pick-name { font-weight: 700; }
 .pick-sub { font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
