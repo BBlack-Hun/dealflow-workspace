@@ -229,7 +229,7 @@ def _full_company(**kw):
     base = dict(name="샘플애그", sector_major="애그테크", revenue_recent=1200,
                 funding_total=560, raise_target=5000, pre_value=21000,
                 competitiveness="상급 유통사 12곳 계약",
-                ir_drive_url="https://drive.google.com/file/d/x/view")
+                ir_file_name="샘플_IR.pdf")
     base.update(kw)
     return IrCompany(**base)
 
@@ -260,7 +260,7 @@ def test_all_required_fields_must_be_filled(logged, db):
     db.commit()
     assert is_ready(full) is True
 
-    full.ir_drive_url = None
+    full.ir_file_name = None
     db.commit()
     assert is_ready(full) is False
     assert missing_fields(full) == ["IR 자료"]
@@ -279,7 +279,7 @@ def test_editing_makes_a_company_introducible(logged, db):
         "name": "채울기업", "sector_major": "핀테크", "revenue_recent": 500,
         "funding_total": 100, "raise_target": 1000, "pre_value": 5000,
         "competitiveness": "가맹점 300곳",
-        "ir_drive_url": "https://drive.google.com/file/d/y/view",
+        "ir_file_name": "샘플_IR.pdf",
     })
     assert r.status_code == 200
     assert r.json()["introducible"] is True
@@ -369,7 +369,7 @@ def test_companies_table_shows_ir_link_state(logged, db):
 
     db.add_all([
         IrCompany(name="자료있음", one_liner="소개", revenue_recent=10,
-                  ir_drive_url="https://drive.google.com/file/d/x/view"),
+                  ir_file_name="샘플_IR.pdf"),
         IrCompany(name="자료없음", one_liner="소개", revenue_recent=10),
     ])
     db.commit()

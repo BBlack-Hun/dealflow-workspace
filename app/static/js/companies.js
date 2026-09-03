@@ -37,7 +37,7 @@
     // 23·24·25년은 한줄 소개 자동 조합의 재료다(services/one_liner.py).
     "revenue_2022", "revenue_2023", "revenue_2024", "revenue_2025",
     "revenue_recent", "funding_total", "raise_target", "pre_value",
-    "competitiveness", "funding_status", "ir_drive_url",
+    "competitiveness", "funding_status", "ir_file_name",
     "contract_status", "contract_received", "contract_month",
     "summary_status", "note"];
 

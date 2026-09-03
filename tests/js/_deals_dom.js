@@ -99,7 +99,7 @@ const COMPANIES = [
 function companyCard(id, name) {
   const cb = el("input", {
     id: "ccb-" + id, class: "company-cb", value: String(id),
-    "data-name": name, "data-thin": "0", "data-ir-url": "https://example.test/" + id
+    "data-name": name, "data-thin": "0", "data-ir-file": name + "_IR.pdf"
   });
   return el("label", {
     class: "pick-card", "data-recent": "0",

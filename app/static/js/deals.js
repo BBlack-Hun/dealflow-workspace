@@ -536,9 +536,15 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     applyContactFilter();
   }
 
-  // 고른 기업의 IR 자료를 띄운다 — **사람이 PC 카톡에 첨부할 파일**이다.
-  // 링크를 문구에 실어 보내던 방식은 폐기했다(자료는 앱이 안 보낸다).
-  // 그래도 이 목록은 남는다 — 첨부할 자료를 여기서 열어 내려받는다.
+  // 고른 기업의 IR 자료를 띄운다 — **보낼 파일의 이름**이다.
+  //
+  // 예전에는 구글 드라이브 링크라 `[자료 열기]` 로 열 수 있었다. 이제 이 칸에는
+  // **파일명**이 들어간다(0056) — 파일은 각자 PC 의 자료 폴더에 있어서
+  // 브라우저가 열 수 있는 자리가 아니다. `href` 를 억지로 만들면 깨진 링크나
+  // (브라우저가 조용히 막는) `file://` 이 되어, 눌러도 아무 일이 없는 자리가
+  // 된다. 그래서 **이름을 그대로 보여 준다** — 자동 첨부를 켠 사람은 그 이름이
+  // 폴더에 있는지 눈으로 맞춰 보고, 켜지 않은 사람은 그 이름으로 파일을 찾아
+  // PC 카톡에 붙인다. 어느 쪽이든 필요한 것은 **이름 그 자체**다.
   function renderIrLinks() {
     var box = document.getElementById("ir-attach");
     if (!box) return;
@@ -554,10 +560,9 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       var c = card.querySelector(".company-cb");
       var li = document.createElement("li");
       var name = c.getAttribute("data-name");
-      var url = c.getAttribute("data-ir-url");
-      if (url) {
-        li.innerHTML = escapeHtml(name) + " — " +
-          '<a href="' + escapeHtml(url) + '" target="_blank" rel="noopener">자료 열기</a>';
+      var file = c.getAttribute("data-ir-file");
+      if (file) {
+        li.innerHTML = escapeHtml(name) + " — <code>" + escapeHtml(file) + "</code>";
       } else {
         li.innerHTML = escapeHtml(name) +
           ' <span class="warn-text">— 첨부할 자료가 없습니다</span>';

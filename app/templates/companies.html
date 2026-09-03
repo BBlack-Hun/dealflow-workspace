@@ -22,7 +22,7 @@
            title="기업명 · 대표자 · 연락처(전화번호) · 이메일 · 분야 · 한줄 소개로 찾습니다. 전화번호는 하이픈이 있든 없든, 뒷자리만으로도 찾아집니다."
            value="{{ q }}" autocomplete="off">
     <a class="secondary-btn" href="/api/export/companies.xlsx" download>엑셀 내려받기</a>
-    <button type="button" class="secondary-btn" id="ir-bulk-btn">IR 링크 일괄 입력</button>
+    <button type="button" class="secondary-btn" id="ir-bulk-btn">IR 파일명 일괄 입력</button>
     {# 관리자만. 한 번에 수백 줄의 소개를 바꾸는 일이라 라우터도 같이 막는다
        (`companies.can_bulk_one_liner` — 화면과 라우터가 같은 판정을 읽는다). #}
     {% if can_bulk_one_liner %}
@@ -34,16 +34,20 @@
 
 <!-- 297개를 하나씩 여닫으며 넣을 수는 없다. 시트에서 두 열을 복사해 붙인다. -->
 <section class="panel" id="ir-bulk" hidden>
-  <h2 class="panel-title">IR 자료 링크 일괄 입력
+  <h2 class="panel-title">IR 자료 파일명 일괄 입력
     <button type="button" class="linkbtn" id="ir-bulk-close">닫기 ✕</button>
   </h2>
   <p class="hint">
-    시트에서 <b>기업명</b>과 <b>링크</b> 두 열을 복사해 그대로 붙여넣으세요.
+    시트에서 <b>기업명</b>과 <b>파일명</b> 두 열을 복사해 그대로 붙여넣으세요.
     한 줄에 하나씩, 탭 또는 쉼표로 나뉩니다. <b>(주)</b>·띄어쓰기 차이는 알아서 맞춥니다.
+    <br>
+    자료 <b>폴더 경로는 넣지 않습니다</b> — 폴더는 PC 마다 달라서 각자
+    <a href="/setup">[발송 프로그램]</a> 화면에서 정하고, 여기에는 그 폴더 안의
+    <b>파일 이름</b>만 적습니다. 주소(<code>https://…</code>)는 받지 않습니다.
   </p>
-  <form method="post" action="/companies/ir-links">
+  <form method="post" action="/companies/ir-files">
     <textarea name="pasted" rows="8" class="bulk-paste"
-      placeholder="샘플애그&#9;https://drive.google.com/file/d/xxx/view&#10;샘플메디&#9;https://drive.google.com/file/d/yyy/view"></textarea>
+      placeholder="샘플애그&#9;샘플애그_IR_2026.pdf&#10;샘플메디&#9;샘플메디 IR deck.pdf"></textarea>
     <div class="detail-actions">
       <button class="primary-btn inline" type="submit">반영</button>
       <span class="hint">이름이 안 맞는 줄은 건너뛰고, 몇 건인지 알려드립니다.</span>
@@ -204,8 +208,11 @@
           <div class="cell clamp2" data-field="guarantee" data-type="long">{{ r.guarantee }}</div>
         </td>
         <td>
+          {# **링크가 아니다.** 이 칸에는 자료 폴더 안의 파일명이 들어 있고(0056),
+             파일은 각자 PC 에 있다 — 브라우저가 열 수 있는 자리가 아니다.
+             이름 전체는 짚어 보면 뜨고, 고치는 자리는 [수정] 창이다. #}
           {% if r.has_ir %}
-            <a class="room-badge ok" href="{{ r.ir_drive_url }}" target="_blank" rel="noopener">📎 열기</a>
+            <span class="room-badge ok" title="자료 파일: {{ r.ir_file_name }}">📎 있음</span>
           {% else %}
             <span class="room-badge warn" title="IR 요청이 와도 바로 보낼 자료가 없습니다">⚠ 없음</span>
           {% endif %}
@@ -381,8 +388,11 @@
             data-field="top_deal_kind" data-type="pick"
             data-filter-key="top">{{ r.top_deal_kind }}</td>
         <td>
+          {# **링크가 아니다.** 이 칸에는 자료 폴더 안의 파일명이 들어 있고(0056),
+             파일은 각자 PC 에 있다 — 브라우저가 열 수 있는 자리가 아니다.
+             이름 전체는 짚어 보면 뜨고, 고치는 자리는 [수정] 창이다. #}
           {% if r.has_ir %}
-            <a class="room-badge ok" href="{{ r.ir_drive_url }}" target="_blank" rel="noopener">📎 열기</a>
+            <span class="room-badge ok" title="자료 파일: {{ r.ir_file_name }}">📎 있음</span>
           {% else %}
             <span class="room-badge warn" title="IR 요청이 와도 바로 보낼 자료가 없습니다">⚠ 없음</span>
           {% endif %}
@@ -398,8 +408,10 @@
 </div>
 <p class="hint">
   금액 단위는 <b>억</b>입니다 — <code>18.3</code> 처럼 소수점도 됩니다.
-  <b>IR 자료</b>는 구글드라이브 공유 링크를 넣어 두면, 자료 요청이 왔을 때
-  <a href="/deals">딜 제안 관리 → IR 자료 전달</a>에서 바로 꺼내 쓸 수 있습니다.
+  <b>IR 자료</b>는 자료 폴더에 넣어 둔 <b>파일 이름</b>을 적습니다(주소가 아닙니다).
+  그러면 자료 요청이 왔을 때 <a href="/deals">딜 제안 관리 → IR 자료 전달</a>에서
+  바로 보낼 수 있습니다. 자료 폴더는 PC 마다 달라서
+  <a href="/setup">[발송 프로그램]</a> 화면에서 각자 정합니다.
 </p>
 
 <!-- 상세/편집 -->
@@ -423,7 +435,7 @@
     여기에 맞춰 표를 바꾸면 시트와 대조가 안 된다.
     (tests/test_ui_layout.py 가 이 짝을 지킨다)
 
-    표에 칸이 없는 값(투자 현황·소개 상태·IR 링크·메모)은 맞출 상대가 없어
+    표에 칸이 없는 값(투자 현황·소개 상태·IR 자료 파일명·메모)은 맞출 상대가 없어
     그대로 둔다.
   #}
   <h3 class="form-section">기본</h3>
@@ -585,9 +597,12 @@
     <label class="field wide"><span>특이사항 (장점)</span><textarea id="f-competitiveness" rows="2"></textarea></label>
     <label class="field wide"><span>투자 현황</span>
       <input type="text" id="f-funding_status" placeholder="예: Series A 진행 중"></label>
-    <label class="field wide"><span>IR 자료 링크 (구글드라이브)</span>
-      <input type="url" id="f-ir_drive_url"
-             placeholder="https://drive.google.com/... — 자료 요청이 오면 여기서 꺼내 씁니다"></label>
+    {# **주소 칸이 아니다**(0056). 자료 폴더 안의 **파일 이름 하나**를 적는다 —
+       폴더 경로는 PC 마다 달라서 각자 `/setup` 에서 정하고, 발송기가
+       `폴더 + 이름` 으로 조립해 붙여 보낸다. 경로·주소는 발송기가 거부한다. #}
+    <label class="field wide"><span>IR 자료 파일명</span>
+      <input type="text" id="f-ir_file_name"
+             placeholder="예: 샘플애그_IR_2026.pdf — 자료 폴더에 넣어 둔 파일 이름"></label>
   </div>
 
   <h3 class="form-section">상태</h3>

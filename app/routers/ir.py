@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import get_current_user, now_iso, templates
 from ..models import ContactActivity, IrRequest, Meeting, User, VcContact
-from ..services import cadence, flow, pipeline, sheet_owner
+from ..services import cadence, flow, ir_attach, pipeline, sheet_owner
 from . import followups
 from ..ui import base_ctx
 
@@ -68,6 +68,10 @@ def ir_page(request: Request, db: Session = Depends(get_db),
         # 후속 화면에서 이름을 눌러 넘어왔다 — 폼을 열고 그 사람을 골라 둔다.
         # 화면을 옮겨 담당자를 다시 고르는 사이에 "누구였더라" 가 된다.
         "preselect_contact": contact or 0,
+        # 자료를 **누가 붙이는가** — 발송 화면과 **같은 판단**을 읽는다
+        # (`services/ir_attach.py`). 두 화면이 따로 판단하면 여기서는 손으로
+        # 붙이라고 하는데 저기서는 발송기가 붙여 자료가 두 번 나간다.
+        "ir_auto_attach": ir_attach.auto_attach_enabled(db, user),
         "flow_tab": "ir",
         "flow_counts": flow.counts(db, user, today),
         "requests": requests,

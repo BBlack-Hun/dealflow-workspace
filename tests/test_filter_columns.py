@@ -185,7 +185,7 @@ def screens(client, db, users):
                   connect_stage="not_started", source_sheet="투자사 30"),
         IrCompany(name="샘플애그", sector_major="애그테크", sector_minor="스마트팜",
                   series="Seed", contract_status="free", is_top_deal=1,
-                  one_liner="스마트팜 관제", ir_drive_url="https://example.com/ir"),
+                  one_liner="스마트팜 관제", ir_file_name="샘플_IR.pdf"),
         # 딜 소싱의 선호 분야는 태그가 아니라 **들은 말 그대로**다. 쉼표가
         # 괄호 안에 섞여 있어서 쉼표로 나누면 없는 값 두 개가 생긴다 —
         # 그래서 이 칸에는 구분자를 주지 않는다. 아래 검사가 그 규칙을
