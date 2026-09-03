@@ -280,6 +280,24 @@ class IrCompany(TimestampMixin, Base):
     # 한줄 소개의 **첫 토막**이 이 값이다:
     #   {사업 설명} | 매출 N억 | 누적투자금액 N억 | … | {특이사항}
     business_desc: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # 두 칸을 하나로 합치기 **전**의 값을 담아 둔 자리(0051).
+    #
+    # `사업분야`(business_desc)와 `기업 한줄 소개`(one_liner)는 이름만 다를 뿐
+    # 둘 다 사업 설명이었는데, 서로 다른 탭에서 따로 고쳐 왔다 — 운영 321곳 중
+    # 235곳에 둘 다 들어 있고 그중 97곳은 글자가 서로 달랐다. 이제 one_liner
+    # 하나만 고치게 바꾸므로, **합치기 전에 무엇이 어디에 적혀 있었는지**를
+    # 여기 한 번 굳혀 둔다. 사람이 나중에 "원래 사업분야에는 뭐라고 적혀
+    # 있었지" 를 물을 때 돌아볼 곳이 이 칸뿐이다.
+    #
+    # **한 칸에 둘을 담는다** — JSON 한 덩이다.
+    # `{"one_liner": "…", "business_desc": "…"}`
+    # 칸을 둘로 파면 어느 쪽이 어느 쪽의 짝인지 지켜 주는 것이 없어서, 한쪽만
+    # 채워진 줄이 생기는 순간 되살릴 수가 없다. 키 이름이 곧 **어느 칸에서 온
+    # 값인지**라 따로 표를 볼 필요도 없다(`company_names` 가 같은 방식이다).
+    #
+    # 두 값 다 비어 있던 줄은 NULL 로 둔다 — 지킬 것이 없는데 `{}` 를 적어 두면
+    # "백업이 있다" 는 줄과 구분이 안 된다.
+    desc_backup: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     # `핵심` · `TOP` · `핵심, TOP`. 켜짐/꺼짐 하나로는 어느 쪽인지 알 수 없다.
     # `is_top_deal` 은 그대로 둔다 — 발송 화면의 '추천 딜' 이 그 값을 쓴다.
     top_deal_kind: Mapped[Optional[str]] = mapped_column(String, nullable=True)
@@ -296,6 +314,31 @@ class IrCompany(TimestampMixin, Base):
     # Deal summary: cached auto-composed text; manual edit takes priority.
     summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     summary_status: Mapped[str] = mapped_column(String, default="draft")  # done | draft | insufficient
+
+    @property
+    def desc_before_merge(self) -> dict:
+        """합치기 전 두 칸의 값 — `{칸 이름: 값}`.
+
+        키는 **모델의 칸 이름 그대로**다(`one_liner` · `business_desc`).
+        화면 이름으로 적어 두면 머리글을 고치는 날 백업이 안 읽힌다.
+
+        값이 깨져 있어도 화면을 죽이지 않는다 — 되살려 보려고 연 화면이
+        그것 때문에 안 열리면 백업을 둔 뜻이 없다(`SheetPage.companies` 와
+        같은 방식). 비어 있던 칸은 아예 빼고 돌려준다: 화면에 빈 줄을
+        보여 줘 봐야 되살릴 것이 없다.
+        """
+        import json
+
+        if not self.desc_backup:
+            return {}
+        try:
+            data = json.loads(self.desc_backup)
+        except (ValueError, TypeError):
+            return {}
+        if not isinstance(data, dict):
+            return {}
+        return {k: str(v) for k, v in data.items()
+                if isinstance(v, str) and v.strip()}
 
     @property
     def introducible(self) -> bool:

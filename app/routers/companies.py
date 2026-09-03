@@ -142,6 +142,27 @@ REQUIRED_FIELDS = [
 
 
 
+# 합치기 전 두 칸의 **화면 이름**(0051). `business_desc` 는 이제 화면 어디에도
+# 없는 칸이라, 백업에 적힌 키 이름(`business_desc`)만 보고는 그 값이 어느 탭
+# 어느 머리글에 적혀 있던 것인지 알 길이 없다. 탭째 없어진 뒤에 열어 볼 사람을
+# 위해 **없어진 자리까지 적어 둔다.**
+MERGED_LABELS = {
+    "business_desc": "사업분야 (스타트업DB)",
+    "one_liner": "기업 한줄 소개 (IR 기업 현황)",
+}
+
+
+def desc_backup_lines(c: IrCompany) -> List[dict]:
+    """합치기 전 값 — 화면에 그대로 보일 `[{label, value}]`.
+
+    차례는 `MERGED_LABELS` 가 정한다(사업분야 먼저). 저장된 JSON 의 키 순서를
+    따르면 판을 다시 만드는 날 화면의 줄 순서가 조용히 바뀐다.
+    """
+    saved = c.desc_before_merge
+    return [{"label": label, "value": saved[key]}
+            for key, label in MERGED_LABELS.items() if saved.get(key)]
+
+
 def eok(value: Optional[int]) -> str:
     """저장값(백만원)을 억으로. `1830` → `18.3`.
 
@@ -272,6 +293,10 @@ def company_rows(db: Session) -> List[dict]:
             "founded_year": c.founded_year or "",
             "guarantee": c.guarantee or "",
             "business_desc": c.business_desc or "",
+            # 합치기 전 두 칸의 값(0051). **표에는 안 싣고 수정창에서만 보인다** —
+            # 표는 이미 화면보다 넓은데, 이 값은 매일 보는 값이 아니라 "원래
+            # 사업분야에 뭐라고 적혀 있었지" 를 물을 때 한 번 열어 보는 기록이다.
+            "desc_backup": desc_backup_lines(c),
             "top_deal_kind": c.top_deal_kind or "",
             "assignee": c.assignee_name or "",
             "competitiveness": c.competitiveness or "",
@@ -329,8 +354,11 @@ def companies_page(request: Request, db: Session = Depends(get_db),
             "with_ir": sum(1 for r in rows if r["has_ir"]),
             # 스타트업DB 탭에 볼 것이 있는 기업 — 대표자·연락처 같은 기초자료가
             # 하나라도 들어온 곳. 전체와 나란히 놓으면 얼마나 채웠는지 보인다.
+            # 세는 칸이 `business_desc` 였다. 그 칸은 이제 화면에 없고, 그
+            # 자리에 `기업 한줄 소개`(one_liner)가 선다(0051) — 뱃지가 세는
+            # 것과 탭을 열었을 때 보이는 것이 같아야 한다.
             "with_info": sum(1 for r in rows
-                             if r["ceo"] or r["phone"] or r["business_desc"]),
+                             if r["ceo"] or r["phone"] or r["one_liner"]),
         },
         # [삭제]를 보일지. 라우터가 막는 것과 **같은 판정**을 읽는다 —
         # 보이는데 못 누르거나, 안 보이는데 주소로는 되는 상태를 만들지 않는다.

@@ -114,6 +114,41 @@
     return isNaN(n) ? null : Math.round(n * 100);
   }
 
+  // 합치기 전 값(`사업분야` · `기업 한줄 소개`) — **읽기 전용**이다.
+  //
+  // `FIELDS` 에 넣지 않는 것이 핵심이다. 넣으면 `collect()` 가 그 글자를 저장
+  // 요청에 그대로 실어, 백업을 **열어 본 것만으로** 덮어쓴다 — 되살리려고 연
+  // 화면이 되살릴 것을 지운다.
+  //
+  // 값은 `textContent` 로만 넣는다. 시트에서 옮겨 온 글자라 `<` 가 섞여 있어도
+  // 화면 구조를 건드릴 수 없어야 한다.
+  function fillBackup(lines) {
+    var box = el("f-desc_backup");
+    var wrap = el("f-desc_backup-box");
+    if (!box || !wrap) return;
+    // 다시 그릴 때 줄이 쌓이지 않게 먼저 비운다 — 패널 하나를 321개 기업이
+    // 돌려 쓴다.
+    while (box.children.length) box.removeChild(box.children[0]);
+
+    var rows = lines || [];
+    // 백업이 없는 기업(합치기 전에도 두 칸이 다 비어 있었다)에서는 통째로
+    // 숨긴다. 빈 상자가 늘 떠 있으면 그게 무슨 뜻인지 매번 다시 읽어야 한다.
+    wrap.hidden = !rows.length;
+    rows.forEach(function (item) {
+      var line = document.createElement("div");
+      line.className = "backup-line";
+      var label = document.createElement("span");
+      label.className = "backup-label";
+      label.textContent = item.label;
+      var value = document.createElement("span");
+      value.className = "backup-value";
+      value.textContent = item.value;
+      line.appendChild(label);
+      line.appendChild(value);
+      box.appendChild(line);
+    });
+  }
+
   function fill(data) {
     FIELDS.forEach(function (f) {
       var input = el("f-" + f);
@@ -122,6 +157,7 @@
       input.value = EOK_FIELDS.indexOf(f) >= 0 ? toEok(raw) : raw;
     });
     el("f-is_top_deal").checked = !!data.is_top_deal;
+    fillBackup(data.desc_backup);
     setStatus(data);
   }
 
