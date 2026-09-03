@@ -443,6 +443,38 @@ def test_september_cycle_never_carries_an_august_name(db):
     assert "8월" not in title and title != cadence.batch_title(monday)
 
 
+# 괄호 안 주차는 **회차의 이름**이다 — 사람들은 "첫째주 회차 / 셋째주 회차" 라고
+# 부르고 시트 머리글도 그렇다. 주차 칸은 1~7일씩 끊으므로(`week_of_month`) 회차일이
+# **7·14·21일**이면 그 다음 날은 다음 칸으로 넘어간다. 앞 날짜에서 주차를 다시 세면
+# 같은 회차가 `02/07 (2월 1주차)` 와 `02/08 (2월 2주차)` 두 이름으로 남아, 이력을
+# 주차로 찾을 때 갈라진다.
+#
+# 2024년 2월이 그 자리다 — 2/1 이 목요일이라 첫째 수요일이 **2/7**, 셋째가 **2/21**.
+
+@pytest.mark.parametrize("anchor, week", [
+    (date(2024, 2, 7), 1),                 # 1주차 칸의 마지막 날(1~7일)
+    (date(2024, 2, 21), 3),                # 3주차 칸의 마지막 날(15~21일)
+])
+def test_week_label_stays_with_the_cycle(db, anchor, week):
+    """회차일이 7·21일이어도 **그 다음 날 주차가 넘어가지 않는다.**"""
+    from app.services import cadence, sheet_import
+
+    assert cadence.cycle_anchor(None, anchor) == anchor
+    assert sheet_import.week_of_month(anchor.isoformat()) == week
+
+    for i in range(5):                     # 회차 당일 ~ 그 주 일요일
+        day = anchor + timedelta(days=i)
+        assert cadence.cycle_anchor(None, day) == anchor, day
+        title = cadence.default_batch_title(None, day)
+        # 앞 날짜는 보낸 날, 괄호 안 주차는 회차 그대로.
+        assert title == f"{day.month:02d}/{day.day:02d} (2월 {week}주차)", day
+
+    # 앞 날짜에서 다시 셌다면 그 다음 날부터 한 칸 넘어갔을 것이다.
+    next_day = anchor + timedelta(days=1)
+    assert sheet_import.week_of_month(next_day.isoformat()) == week + 1
+    assert cadence.default_batch_title(None, next_day) != cadence.batch_title(next_day)
+
+
 def test_title_date_is_the_cycle_day_outside_its_week(db):
     """회차 주 **밖**이면 회차 기준일이다 — 주차가 어긋나지 않게."""
     from app.services import cadence
@@ -478,22 +510,27 @@ def test_title_date_never_runs_ahead_of_the_cycle_day(db):
         assert shown in {(anchor.month, anchor.day), (day.month, day.day)}, (day, title)
         if shown == (day.month, day.day) and day != anchor:
             assert day > anchor, (day, anchor, title)      # 회차일이 온 뒤에만 오늘
-        # 괄호 안 달·주차는 앞 날짜에서 나온 값이다(자기모순이 없다).
-        assert int(m.group(3)) == shown[0], (day, title)
-        assert int(m.group(4)) == (shown[1] - 1) // 7 + 1 == sheet_import.week_of_month(
-            f"2026-{shown[0]:02d}-{shown[1]:02d}"), (day, title)
+        # 괄호 안 달·주차는 **회차 기준일**의 것이다 — 앞 날짜에서 다시 세지 않는다.
+        assert int(m.group(3)) == anchor.month, (day, title)
+        assert int(m.group(4)) == sheet_import.week_of_month(anchor.isoformat()), (day, title)
 
 
-def test_the_cycle_month_is_never_renamed(db):
-    """앞 날짜의 **달**은 늘 회차 기준일의 달이다 — 사용자가 걱정한 자리."""
-    from app.services import cadence
+def test_the_cycle_name_in_parens_never_drifts(db):
+    """괄호 안은 **늘 회차 기준일의 달·주차**다 — 어느 날에 열어도 같은 이름.
+
+    같은 회차가 두 이름으로 남으면 이력을 주차로 찾을 때 갈라진다.
+    2년치를 하루도 빼지 않고 훑는다.
+    """
+    from app.services import cadence, sheet_import
 
     day = date(2026, 1, 1)
     while day < date(2028, 1, 1):
         anchor = cadence.cycle_anchor(None, day)
+        week = sheet_import.week_of_month(anchor.isoformat())
         title = cadence.default_batch_title(None, day)
+        assert title.endswith(f"({anchor.month}월 {week}주차)"), (day, anchor, title)
+        # 앞 날짜의 달도 회차 기준일의 달이다(9월 회차가 8월 이름을 달지 않는다).
         assert title.startswith(f"{anchor.month:02d}/"), (day, anchor, title)
-        assert title.split("(")[1].startswith(f"{anchor.month}월"), (day, anchor, title)
         day += timedelta(days=1)
 
 
@@ -511,6 +548,8 @@ def test_saved_titles_are_not_renamed(db):
     # 오늘이 언제든 같은 값이다(인자를 받는 순수 함수).
     for today in (date(2026, 8, 20), date(2026, 9, 3), date(2027, 1, 5)):
         assert cadence.batch_title(day) == "08/19 (8월 3주차)", today
+    # 한 인자로 부르면 괄호 안도 **그 날짜**에서 나온다 — 예전 이름이 그렇게 만들어졌다.
+    assert cadence.batch_title(date(2024, 2, 8)) == "02/08 (2월 2주차)"
 
 
 @pytest.mark.parametrize("today, expected", [

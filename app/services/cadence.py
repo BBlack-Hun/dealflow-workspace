@@ -492,7 +492,8 @@ def cycle_anchor(db: Optional[Session] = None,
     return upcoming_send_dates(db, weekly.week_start(today), count=1)[0]
 
 
-def batch_title(day: Optional[date] = None) -> str:
+def batch_title(day: Optional[date] = None,
+                cycle_day: Optional[date] = None) -> str:
     """회차명 — `08/26 (8월 4주차)`.
 
     손으로 적으면 "8월회차" · "8월 셋째주" · "0826" 이 섞여 남는다. 나중에
@@ -509,12 +510,24 @@ def batch_title(day: Optional[date] = None) -> str:
     주차는 **1~7일이 1주차**다(`sheet_import.week_of_month`). 시트 머리글의
     "첫째주 수요일 / 셋째주" 표기가 그 규칙이고, 활동 이력도 그렇게 보여준다.
     한 화면에서 같은 날이 3주차와 4주차로 갈리면 안 된다.
+
+    `cycle_day` — **괄호 안 달·주차를 어느 날에서 셀지.** 기본은 `day` 자신이라
+    받은 날짜 하나로 정해지는 순수 함수 그대로다(저장된 회차 이름은 이 길로
+    만들어졌고, 오늘이 언제든 같은 값이어야 한다).
+
+    앞 날짜와 괄호 안이 갈릴 수 있는 것은 **회차 주차가 회차의 이름**이기
+    때문이다 — 사람들은 "첫째주 회차 / 셋째주 회차" 라고 부른다. 주차 칸은
+    1~7일씩 끊으므로 회차일이 7·14·21일이면 그 다음 날은 다음 칸으로 넘어간다.
+    2/7 회차를 2/8 에 보내면서 `2월 2주차` 라 적으면 같은 회차가 두 이름으로
+    남아, 이력을 주차로 찾을 때 갈라진다. 그래서 날짜는 보낸 날, 주차는 회차다
+    (`default_batch_title` 가 그렇게 부른다).
     """
     from . import sheet_import
 
     day = day or date.today()
-    week = sheet_import.week_of_month(day.isoformat())
-    return f"{day.month:02d}/{day.day:02d} ({day.month}월 {week}주차)"
+    cycle_day = cycle_day or day
+    week = sheet_import.week_of_month(cycle_day.isoformat())
+    return f"{day.month:02d}/{day.day:02d} ({cycle_day.month}월 {week}주차)"
 
 
 def default_batch_title(db: Optional[Session] = None,
@@ -549,11 +562,16 @@ def default_batch_title(db: Optional[Session] = None,
     따라 달라지면 발송 이력이 갈라진다 — `batch_title(day)` 는 받은 날짜만으로
     정해지는 그대로 둔다.
 
-    괄호 안 주차는 늘 **앞 날짜**를 설명한다(`09/03 (9월 2주차)` 같은 자기모순이
-    없다). 주차 칸은 1~7일씩 끊으므로(`sheet_import.week_of_month`) 회차 기준일이
-    7·14·21일이면 그 다음 날부터 라벨이 한 칸 넘어간다 — 2/7 회차의 2/8 은
-    `02/08 (2월 2주차)`. 날짜와 라벨 중 날짜를 믿는 쪽을 골랐다.
+    **괄호 안 주차는 언제나 회차 기준일의 것이다**(`cycle_day=anchor`). 앞 날짜에서
+    다시 세지 않는다 — 주차 칸은 1~7일씩 끊으므로(`sheet_import.week_of_month`)
+    회차일이 7·14·21일이면 그 다음 날은 다음 칸으로 넘어간다. 2/7 회차를 2/8 에
+    보내면서 `2월 2주차` 라 적으면 같은 회차가 두 이름으로 남는다.
+
+    주차가 곧 **회차의 이름**이기 때문이다 — 사람들은 "첫째주 회차 / 셋째주 회차"
+    라고 부르고, 시트 머리글도 "첫째주 수요일 / 셋째주" 다. 이력을 주차로 찾을 때
+    갈라지지 않으려면 주차는 회차를 가리켜야 한다. 그래서 **날짜는 보낸 날,
+    주차는 회차**로 출처가 갈린다 — 주차를 세는 규칙 자체는 하나뿐이다.
     """
     today = today or _today()
     anchor = cycle_anchor(db, today)
-    return batch_title(today if today >= anchor else anchor)
+    return batch_title(today if today >= anchor else anchor, cycle_day=anchor)
