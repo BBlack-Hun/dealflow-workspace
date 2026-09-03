@@ -166,26 +166,79 @@ token: "<웹 화면 [설정]에서 발급받은 값>"
 
 ---
 
-## 8. 백업
+## 8. 백업 — 손댈 것이 없다
 
-DB 가 한 파일이라 백업도 한 줄이다. 스냅샷 API 를 쓰므로 돌아가는 중에 떠도 된다.
+**일일 백업은 앱 안에서 돈다.** 호스트에 크론을 걸거나 타이머를 만들 필요가
+없고, 배포하면 같이 따라온다.
+
+- 하루 한 번, `/app/data/daily-<날짜>.db` (= 이 서버의 `DEALFLOW_DATA_DIR`)
+- **최근 7일**만 남기고 오래된 것은 지운다
+- `predeploy-*.db`(배포 직전 · `deploy.sh` 가 뜬다)와
+  `before-restore-*.db`(되돌리기 직전)는 **지우지 않는다** — 성격이 다르다
+- 뜨는 방법은 `scripts/db_snapshot.py` 와 같다(sqlite 백업 API). 서버를 멈출
+  필요가 없고, WAL 에 남은 최근 쓰기까지 한 덩어리로 들어간다
+
+### 왜 크론이 아니라 앱 안인가
+
+여기 원래 `/etc/cron.daily/dealflow-backup` 을 만드는 명령이 적혀 있었다.
+그런데 **그 크론은 서버에 없었다** — `dealflow`·`root`·`ubuntu` 어느 크론탭에도,
+`/etc/cron.d` 에도, systemd 타이머에도. 문서에 적힌 설치 명령은 사람이 손으로
+한 번 치는 것이고, 그렇게 친 것은 저장소에 남지 않는다. 서버를 다시 세우면
+같이 사라지고, **사라진 것을 아무도 모른다.**
+
+그동안 남아 있던 백업은 배포할 때마다 뜨는 `predeploy-*` 뿐이었다. 배포가 잦은
+주에는 촘촘해 보이지만 **배포가 없는 주에는 하루도 안 뜬다.**
+
+이미지 안으로 들여오면 잊을 자리가 없어진다. 인스턴스를 통째로 다시 만들어도
+4번(도커 + 코드)과 6번(올리기)만 하면 백업이 같이 살아난다.
+
+### 돌고 있는지는 화면이 알려준다
+
+**팀 현황(`/team`)의 `데이터 백업` 칸**에 마지막 백업 시각이 뜬다. 하루를
+넘겨 낡으면 빨갛게 바뀐다 — 조용히 멈춘 것을 아무도 모르는 상태가 이 기능이
+생긴 이유다.
+
+서버에서 직접 확인하려면:
 
 ```bash
-sudo tee /etc/cron.daily/dealflow-backup >/dev/null <<'EOF'
-#!/bin/sh
-cd /home/ubuntu/dealflow-workspace/deploy || exit 0
-STAMP=$(date +%Y%m%d)
+cd ~/dealflow-workspace/deploy
+docker compose -f docker-compose.prod.yml exec -T web ls -la /app/data
+# daily-<오늘 날짜>.db 가 있어야 한다
+
+# 그 파일이 진짜 열리는지까지 (무결성 · 표별 행수 · 스키마 판)
 docker compose -f docker-compose.prod.yml exec -T web \
-  python scripts/db_snapshot.py /app/data/dealflow.db /app/data/backup-$STAMP.db
-find /mnt/dealflow/data -name 'backup-*.db' -mtime +14 -delete
-EOF
-sudo chmod +x /etc/cron.daily/dealflow-backup
+  python scripts/db_snapshot.py --verify /app/data/daily-$(date +%Y%m%d).db
 ```
+
+바로 한 번 뜨게 하려면 (컨테이너를 다시 띄우면 시작할 때 오늘 것을 확인한다):
+
+```bash
+docker compose -f docker-compose.prod.yml restart web
+```
+
+며칠 치를 남길지는 `deploy/.env` 의 `DEALFLOW_BACKUP_KEEP_DAYS`(기본 7).
+
+### 되돌리기
+
+관리자는 **팀 현황 › 데이터 백업 › 되돌리기**(`/team/restore`)에서 지점을 골라
+데이터 전체를 그때로 되돌린다. 누르기 전에 지금과의 차이(기업 수·투자사 수·
+발송 회차 수 …)를 세어 보여 주고, 되돌리기 직전 상태를 자동으로 한 벌 떠 둔다.
+
+막는 경우가 셋 있다.
+
+- **발송 회차가 돌고 있을 때** — 회차 중간에 데이터가 옛 것으로 바뀌면 어디까지
+  나갔는지 기록이 어긋나고, 이미 받은 투자사에게 또 나간다
+- **백업이 지금 코드보다 새 판일 때** — 코드가 읽을 줄 모르는 스키마다
+- 옛 판인 백업은 되돌린 뒤 `alembic upgrade head` 를 자동으로 돌린다
+
+> **올린 시트 파일은 백업 대상이 아니다.** 이 앱은 업로드한 엑셀·CSV 를
+> 보관하지 않고 읽어서 DB 에 넣는다(`app/services/spreadsheet.py`). 그래서
+> 시트에서 온 내용은 DB 백업에 이미 들어 있다. 디스크에 남는 파일은 발송
+> 화면 갈무리(`agent_logs/*.png`)뿐이고, 그것은 볼륨 밖이라 컨테이너를 다시
+> 띄우면 어차피 사라지는 디버깅용이다.
 
 블록 볼륨 스냅샷(콘솔 › Block Volumes › 백업 정책)도 함께 걸어 두면,
 인스턴스가 통째로 날아가도 되살릴 수 있다.
-
----
 
 ## 도메인
 
@@ -215,3 +268,5 @@ DuckDNS 페이지에서 IP 만 갱신하면 된다.
 - [ ] `https://` 로 열린다 (http 아님)
 - [ ] 각자 PC 의 `agent/config.yaml` 을 새 주소로 고쳤다
 - [ ] 첫 발송 전에 `DEALFLOW_TEST_ROOM` 으로 한 건 확인했다
+- [ ] 올린 다음 날, 팀 현황(`/team`)의 `데이터 백업` 칸이 초록인지 봤다
+      (여기가 빨가면 일일 백업이 안 돌고 있다 — 되돌릴 지점이 안 쌓인다)

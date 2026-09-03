@@ -22,13 +22,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import config
-from ..db import get_db
+from ..db import SessionLocal, get_db
 from ..deps import (admin_only, consulting_by_role, get_current_user,
                     templates)
 from ..models import AgentDevice, User, WeeklyRoutine, WeeklyTask
 from ..services import auth as auth_svc
 from ..services import dashboard as dash
-from ..services import readiness, report, today, weekly
+from ..services import backup, readiness, report, today, weekly
 from ..ui import base_ctx
 
 router = APIRouter(tags=["dashboard"])
@@ -303,7 +303,118 @@ def team_page(request: Request, db: Session = Depends(get_db),
     ctx["msg"] = msg
     ctx["initial_password"] = config.INITIAL_PASSWORD if pw == "1" else ""
     ctx["edit_id"] = edit
+    # 백업이 조용히 멈춘 것을 아무도 모르는 상태가 이 기능이 생긴 이유다.
+    # 관리자가 매일 여는 화면에 상태를 띄운다 — 되돌리기 화면까지 들어가야
+    # 보인다면, 되돌릴 일이 생기고 나서야 백업이 없다는 것을 알게 된다.
+    ctx["backup"] = backup.health()
     return templates.TemplateResponse("team.html", ctx)
+
+
+# --- 데이터 되돌리기 (관리자 전용) --------------------------------------------
+#
+# 화면은 **서버가 그린 그대로** 움직인다. 고르는 것도 확인하는 것도 평범한
+# 링크와 폼이다 — 팀 현황의 수정칸을 주소(`?edit=`)로 여는 것과 같은 이유로,
+# 스크립트가 한 번 어긋나는 날 되돌릴 방법이 통째로 사라지면 안 된다.
+# 되돌리기는 하필 **무언가 잘못됐을 때** 쓰는 기능이다.
+
+@router.get("/team/restore", response_class=HTMLResponse, include_in_schema=False)
+def restore_page(request: Request, db: Session = Depends(get_db),
+                 user: User = Depends(get_current_user),
+                 pick: str = "", msg: str = ""):
+    """되돌릴 수 있는 지점 목록. `?pick=<파일>` 이면 **무엇이 바뀌는지**까지.
+
+    두 걸음으로 나눈 이유: 날짜만 보고 누르면 오늘 들어온 기업 열두 곳이
+    사라지는 것을 누른 뒤에야 안다. 고른 지점과 지금의 차이를 표로 세어
+    보여 주고 나서 확인을 받는다.
+
+    셈은 고른 지점 하나에 대해서만 한다. 목록에 있는 파일이 여든 개가 넘어
+    (배포마다 뜬 것이 쌓였다) 전부 세면 화면 여는 것만으로 느려진다 —
+    목록에는 파일이 들고 있는 값싼 것(날짜·크기·알렘빅 판)만 띄운다.
+    """
+    admin_only(user)
+    ctx = base_ctx(request, db, user, active="admin")
+    picked = backup.find_point(pick) if pick else None
+    ctx.update({
+        "page_title": "데이터 되돌리기",
+        "health": backup.health(),
+        "points": backup.restore_points(),
+        "picked": picked,
+        "diff": backup.diff(picked) if picked else [],
+        "risk": backup.login_risk(picked, user.phone) if picked else None,
+        # 발송이 돌고 있으면 되돌리지 않는다. 화면에서 미리 막아 두고,
+        # 누르는 쪽(아래 apply)에서 한 번 더 본다 — 화면을 열어 둔 채로
+        # 발송이 시작될 수 있다.
+        "sending": backup.sending_now(db),
+        "keep_days": backup.KEEP_DAILY_DAYS,
+        "msg": msg,
+    })
+    return templates.TemplateResponse("restore.html", ctx)
+
+
+@router.post("/team/restore/apply", include_in_schema=False)
+def restore_apply(name: str = Form(""), db: Session = Depends(get_db),
+                  user: User = Depends(get_current_user)):
+    """고른 지점으로 되돌린다.
+
+    **화면에서 막은 것을 여기서 다시 본다.** 확인 화면을 열어 둔 채로 발송이
+    시작될 수 있고, 주소를 직접 두드리면 확인 화면을 건너뛴다. 막는 판정은
+    화면과 같은 함수를 읽는다(`backup.sending_now`).
+    """
+    admin_only(user)
+    from urllib.parse import quote
+
+    def back(message: str, pick: str = "") -> RedirectResponse:
+        where = f"/team/restore?msg={quote(message)}"
+        return RedirectResponse(where + (f"&pick={quote(pick)}" if pick else ""),
+                                status_code=303)
+
+    # 폼으로 온 파일 이름을 그대로 열지 않는다 — 목록에 실제로 있는 것만 받는다.
+    point = backup.find_point((name or "").strip())
+    if point is None:
+        return back("되돌릴 지점을 찾을 수 없습니다")
+
+    running = backup.sending_now(db)
+    if running:
+        # 회차 중간에 DB 가 옛 것으로 바뀌면 어디까지 나갔는지 기록이 어긋나고,
+        # 이미 카톡을 받은 투자사에게 **또 나간다.**
+        return back(
+            f"발송 회차 {running[0].id}번이 {running[0].status} 상태입니다 — "
+            "끝나거나 멈춘 뒤에 되돌려 주세요", point.name)
+
+    # 우리 연결부터 놓는다. 되돌리기는 DB 안쪽을 통째로 덮으므로, 이 요청이
+    # 쥐고 있는 연결이 남아 있으면 그만큼 부딪힐 자리가 생긴다.
+    db.close()
+    try:
+        result = backup.restore(point)
+    except backup.BackupError as exc:
+        return back(str(exc), point.name)
+    except Exception as exc:  # noqa: BLE001 - 사유를 화면에 보여 준다
+        return back(f"되돌리지 못했습니다: {exc}", point.name)
+
+    note = f"{result['restored']} 지점으로 되돌렸습니다"
+    if result.get("migrated_to"):
+        note += f" (스키마를 {result['migrated_to']} 로 올렸습니다)"
+    note += f". 되돌리기 직전 상태는 {result['safety']} 에 남겨 두었습니다"
+
+    # **로그인 세션도 DB 안에 있다**(`sessions` 표). 되돌리면 지금 쓰는 세션이
+    # 그 시점 것으로 바뀌어 대개 사라지고, 누른 사람은 결과 알림조차 못 본 채
+    # 로그인 화면으로 튕긴다(실제로 그랬다) — 되돌렸는지 아닌지도 모르는 상태다.
+    #
+    # 되돌아가야 하는 것은 **데이터**이지 '지금 누가 쓰고 있는가' 가 아니므로,
+    # 계정이 그 시점에도 있으면 세션을 다시 붙여 준다. 계정 자체가 없으면
+    # 붙일 수 없고, 그때는 로그인 화면이 맞다(확인 화면에서 미리 경고한다).
+    resp = back(note)
+    fresh = SessionLocal()
+    try:
+        again = fresh.execute(
+            select(User).where(User.phone == user.phone, User.role == "admin")
+        ).scalars().first()
+        if again is not None:
+            auth_svc.set_session_cookie(
+                resp, auth_svc.create_session(fresh, again))
+    finally:
+        fresh.close()
+    return resp
 
 
 @router.get("/report", response_class=HTMLResponse, include_in_schema=False)

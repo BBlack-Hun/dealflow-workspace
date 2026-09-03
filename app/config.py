@@ -97,5 +97,19 @@ def assert_ready() -> None:
 # 비워두면 평소대로 각 담당자의 방으로 발송된다.
 TEST_ROOM = os.environ.get("DEALFLOW_TEST_ROOM", "").strip()
 
+# ── 일일 백업 ─────────────────────────────────────────────────────────────────
+# 무엇을 왜 이렇게 두었는지는 `app/services/backup.py` 머리말에 있다. 짧게:
+# 호스트 크론에 걸어 두었더니 **서버를 다시 세울 때 같이 사라졌고**, 사라진 것을
+# 아무도 몰랐다. 그래서 이미지 안에서 돈다.
+#
+# 끌 수 있게 두는 것은 **검사 때문**이다. 검사는 앱을 수십 번 만들었다 버리는데
+# 그때마다 백업 실이 뜨고 임시 폴더에 파일을 쓰면 검사가 느려지고 서로를 밟는다
+# (tests/conftest.py 가 0 으로 둔다). 운영에서 끄라고 둔 손잡이가 아니다.
+BACKUP_ENABLED = os.getenv("DEALFLOW_DAILY_BACKUP", "1") == "1"
+
+# 며칠 치를 남기나. 사용자가 "1주일이면 충분하다" 고 했다.
+# DB 한 개가 3MB 안팎이고 서버 여유가 29G 라 늘려도 부담은 없다.
+BACKUP_KEEP_DAILY_DAYS = int(os.getenv("DEALFLOW_BACKUP_KEEP_DAYS", "7"))
+
 STATIC_DIR = BASE_DIR / "app" / "static"
 TEMPLATES_DIR = BASE_DIR / "app" / "templates"

@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import config, deps
 from .deps import NotAdmin, NotAuthenticated
+from .services import backup
 from .routers import auth as auth_router
 from .routers import templates_crud
 from .routers import setup as setup_router
@@ -19,6 +20,12 @@ def create_app() -> FastAPI:
     # 인터넷에 올릴 때 기본 토큰·비밀번호가 그대로면 여기서 멈춘다.
     # 저장소가 공개라 그 기본값은 이미 아무나 아는 값이다.
     config.assert_ready()
+
+    # 일일 백업은 **이 프로세스 안에서** 돈다. 호스트 크론에 걸어 두었더니
+    # 서버를 다시 세울 때 같이 사라졌고, 사라진 것을 아무도 몰랐다 — 그래서
+    # 이미지 안으로 들여왔다(왜 그런지는 `app/services/backup.py` 머리말).
+    # 검사에서는 꺼진다(`config.BACKUP_ENABLED`).
+    backup.start_scheduler()
 
     app = FastAPI(title="dealflow", version="0.1.0 (Sprint 1)")
 

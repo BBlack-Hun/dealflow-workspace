@@ -62,11 +62,7 @@ def login(
         # 어디가 제자리인지 알 수 없다.
         target = home_for(user)
     resp = RedirectResponse(url=target, status_code=303)
-    resp.set_cookie(
-        auth_svc.SESSION_COOKIE, token,
-        max_age=60 * 60 * 24 * auth_svc.SESSION_DAYS,
-        httponly=True, samesite="lax",
-    )
+    auth_svc.set_session_cookie(resp, token)
     return resp
 
 

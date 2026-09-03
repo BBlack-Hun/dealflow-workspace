@@ -123,6 +123,21 @@ def create_session(db: OrmSession, user: User, user_agent: str = "") -> str:
     return token
 
 
+def set_session_cookie(response, token: str) -> None:
+    """로그인 쿠키를 굽는다. **여기 한 곳에서만 굽는다.**
+
+    로그인(`routers/auth.py`)과 되돌리기 뒤 세션 잇기(`routers/dashboard.py`)가
+    각자 `max_age`·`httponly`·`samesite` 를 적어 두면 하나는 반드시 낡는다 —
+    이 저장소가 같은 부류로 여러 번 당했다. 유효기간은 `SESSION_DAYS` 하나에서
+    나온다.
+    """
+    response.set_cookie(
+        SESSION_COOKIE, token,
+        max_age=60 * 60 * 24 * SESSION_DAYS,
+        httponly=True, samesite="lax",
+    )
+
+
 def user_for_token(db: OrmSession, token: Optional[str]) -> Optional[User]:
     if not token:
         return None
