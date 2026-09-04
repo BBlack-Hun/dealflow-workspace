@@ -1193,6 +1193,121 @@ def _ref_back(row, sheet: str = "") -> str:
     return back
 
 
+# 새로 만드는 빈 표의 크기. 표는 **몇 칸짜리인지 정해야 그릴 수 있고**, 줄이
+# 하나도 없으면 칸 고치기가 없는 칸이라며 되돌려 보내(`/cell` 의 400) 만들자마자
+# 손댈 수 없는 표가 된다. 위끝은 실수로 5000칸짜리를 만들지 않을 만큼만 둔다.
+REF_NEW_COLS, REF_NEW_ROWS = 3, 5
+REF_MAX_COLS, REF_MAX_ROWS = 12, 60
+
+
+def _ref_size(raw: str, default: int, top: int) -> int:
+    """폼에서 온 칸·줄 수. 숫자가 아니거나 비어 있으면 기본값이다.
+
+    `int = Form(...)` 로 두면 칸을 비운 채 누른 것만으로 422 화면이 뜬다 —
+    만들려던 사람은 무엇이 잘못됐는지 모른 채 앱 밖으로 튕긴다.
+    """
+    try:
+        n = int(str(raw).strip())
+    except (TypeError, ValueError):
+        return default
+    return max(1, min(top, n))
+
+
+def _blank_content(kind: str, cols: int, rows: int) -> str:
+    """빈 자료의 내용. 모양은 **이미 도는 두 가지** 그대로다(`RefSheet.kind`).
+
+    표의 머리글은 `칸 1 … 칸 N` 로 채운다. 비워 두면 머리행이 빈 줄로 서서
+    표가 그리다 만 것처럼 보이고, 칸이 몇 개인지도 화면에 안 남는다.
+
+    줄은 **한 줄씩 새로 만든다** — `[[""] * cols] * rows` 로 두면 모든 줄이
+    같은 리스트 하나를 가리켜 칸 하나를 고치면 그 열이 통째로 바뀐다.
+    """
+    import json
+
+    if kind == "table":
+        data = {"columns": [f"칸 {i + 1}" for i in range(cols)],
+                "rows": [["" for _ in range(cols)] for _ in range(rows)]}
+    else:
+        data = {"body": ""}
+    return json.dumps(data, ensure_ascii=False)
+
+
+@ref_router.post("/ref-sheets/new", include_in_schema=False)
+def new_ref_sheet(page: str = Form(""), title: str = Form(""),
+                  kind: str = Form("table"), cols: str = Form(""),
+                  rows: str = Form(""), sheet: str = Form(""),
+                  db: Session = Depends(get_db),
+                  user: User = Depends(get_current_user)):
+    """빈 참고 자료 하나 만들기.
+
+    지금까지 참고 자료는 **구글 시트에서 가져와야만** 생겼다. 이름을 바꾸고,
+    칸을 고치고, 지우는 길은 전부 화면에 있는데 첫 자료를 세울 자리만 없어서,
+    쓰다가 자료 하나가 더 필요해지면 스크립트를 돌릴 사람을 찾아야 했다.
+
+    **모양은 새로 만들지 않는다.** 표(`table`)와 글(`text`) 둘 다 이미 도는
+    길이라, 여기서는 그 둘 중 하나로 **빈 것**을 앉히기만 한다 — 만들고 나면
+    가져온 자료와 똑같이 칸을 눌러 고치고 이름을 바꾸고 지운다.
+
+    **누가 만들 수 있는가는 여기서 새로 정하지 않는다.** 지우기·이름 바꾸기가
+    `_editable_ref` 를 지나 `can_open(user, "/<화면>")` 하나를 읽는데, 만들기만
+    다른 규칙을 들면 "지울 수는 있는데 만들 수는 없는 화면" 이 생긴다. 고칠
+    자료가 아직 없어서 `_editable_ref` 를 못 쓸 뿐, 보는 것은 같은 판정이다.
+    """
+    from fastapi.responses import RedirectResponse
+
+    from ..models import RefSheet
+    from ..services import ref_panel
+
+    page = (page or "").strip()
+    # 어느 화면에 붙일지가 폼에서 온다 — 목록에 없는 값이면 어느 화면에도 안 뜨는
+    # 자료가 된다. 만든 사람 눈에는 그냥 사라진 것으로 보이므로 여기서 끊는다.
+    if page not in ref_panel.PAGES:
+        raise HTTPException(status_code=404, detail="없는 화면입니다")
+    if not can_open(user, f"/{page}"):
+        raise HTTPException(status_code=403, detail="이 화면에 자료를 만들 권한이 없습니다")
+
+    def back(msg: str) -> RedirectResponse:
+        """만들지 못했으면 **왜 못 만들었는지 적어** 돌려보낸다.
+
+        그냥 되돌아가면 눌렀는데 아무 일도 안 일어난 것으로 보여, 같은 이름을
+        몇 번이고 다시 넣게 된다.
+        """
+        url = f"/{page}?msg={quote(msg)}"
+        if sheet:
+            url += f"&sheet={quote(sheet)}"
+        return RedirectResponse(url, status_code=303)
+
+    name = (title or "").strip()[:80]
+    # 이름 없는 탭은 누를 자리가 없어진다 — 이름 바꾸기가 빈 이름을 물리는 것과
+    # 같은 이유다(거기서는 쓰던 이름이 남지만, 여기는 남을 이름이 없다).
+    if not name:
+        return back("참고자료 이름을 적어 주세요")
+    if kind not in ("table", "text"):
+        return back("표와 글 중에서 골라 주세요")
+    # 이 화면의 탭 목록. 한 번만 꺼내 **이름 겹침과 붙일 자리**를 같이 본다.
+    siblings = ref_panel.sheets(db, page)
+    # 같은 이름이 둘이면 탭 줄에서 갈리지 않는다(둘 다 `📄 같은이름`). 열어 봐야
+    # 아는 자료가 되므로 만들기 전에 물린다. **살아 있는 것만** 견준다 — 지운
+    # 자료는 탭에 안 서서 헷갈릴 자리가 없다.
+    if any(s.title == name for s in siblings):
+        return back("이미 쓰고 있는 탭 이름입니다")
+
+    row = RefSheet(
+        page=page, title=name, kind=kind, is_active=1,
+        content_json=_blank_content(
+            kind,
+            _ref_size(cols, REF_NEW_COLS, REF_MAX_COLS),
+            _ref_size(rows, REF_NEW_ROWS, REF_MAX_ROWS)),
+        # 탭 줄 **맨 뒤**에 붙는다. 0 으로 두면 가져온 자료 사이에 끼어들어,
+        # 방금 만든 것을 눈으로 찾아야 한다.
+        position=max((s.position or 0) for s in siblings) + 1 if siblings else 0,
+    )
+    db.add(row)
+    db.commit()
+    # 만들어 놓고 어디 있는지 찾게 하지 않는다 — 그 탭을 연 채로 돌려보낸다.
+    return RedirectResponse(_ref_back(row, sheet), status_code=303)
+
+
 @ref_router.patch("/api/ref-sheets/{sheet_id}/cell", include_in_schema=False)
 def edit_ref_cell(sheet_id: int, body: RefCellIn, db: Session = Depends(get_db),
                   user: User = Depends(get_current_user)):

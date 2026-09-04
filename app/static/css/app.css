@@ -1696,3 +1696,51 @@ a.guard-go:hover { background: #1e4fd0; text-decoration: none; }
      (`.ol-now` 는 흐리게, `.ol-new` 는 진하게). */
   .ol-head { display: none; }
 }
+
+/* 참고 자료 만들기 — 탭 줄 끝에 붙는 `+` 와 그 아래 뜨는 작은 창.
+   여닫이는 브라우저가 한다(`<details>`) — 이것 하나 때문에 JS 를 새로 붙이면
+   그 파일이 안 실린 화면에서 단추가 죽는다. 뜨는 창은 필터 창과 같은 모양이다
+   (`.filter-panel`) — 같은 자리에서 같은 식으로 열리는 것끼리 다르게 보일
+   이유가 없다.
+
+   뜨는 창의 기준은 `+` 가 아니라 **탭 줄**이다. `+` 에 붙이면 참고 자료가
+   여럿이라 오른쪽 끝까지 밀렸을 때 창이 본문 밖으로 나간다(탭 수는 화면마다
+   다르다). 줄에 붙이면 `+` 가 어디로 밀리든 창은 늘 같은 자리에서 열린다.
+   더하는 것이 `position: relative` 뿐이라 다른 탭 줄(기업·소싱)의 그림은
+   그대로다 — 띄울 것이 없으면 아무 일도 하지 않는 속성이다. */
+.sheet-tabs { position: relative; }
+/* 브라우저의 새 탭 `+` 처럼 작고 조용하게. 탭 줄에서 제일 중요한 것은 탭
+   이름이라, 이 단추가 그보다 진하면 안 된다 — 옆 탭과 같은 색을 쓰고 글자
+   하나만큼만 자리를 먹는다. */
+.ref-new-btn { cursor: pointer; list-style: none; color: var(--muted);
+               padding: 8px 10px; font-size: 15px; line-height: 1;
+               font-weight: 400; }
+/* 목록 표식(▶)을 지운다. 탭 줄에 서는 것이라 다른 탭과 같은 모양이어야 한다.
+   크롬 계열은 `list-style` 만으로는 안 지워져 짝을 이뤄 적는다. */
+.ref-new-btn::-webkit-details-marker { display: none; }
+.ref-new-btn:hover { color: var(--ink); background: #f7f9fc; }
+/* 열려 있는 동안에는 눌린 것이 보여야 한다 — 창만 떠 있고 단추가 그대로면
+   어디서 열린 창인지 눈으로 못 잇는다. */
+.ref-new[open] > .ref-new-btn { color: var(--brand); background: #eef2ff; }
+.ref-new-form { position: absolute; z-index: 30; top: 100%; left: 0; width: 268px;
+                background: var(--panel); border: 1px solid var(--line);
+                border-radius: 10px; padding: 12px 14px; margin-top: 2px;
+                box-shadow: 0 8px 24px rgba(16,21,29,.14); }
+.ref-new-form .field { margin-bottom: 10px; }
+.ref-new-kind { border: 0; padding: 0; margin: 0 0 10px; }
+.ref-new-kind legend { font-size: 12px; color: var(--muted); padding: 0; margin-bottom: 4px; }
+.ref-new-kind .check-row { align-items: center; font-size: 12.5px; padding: 2px 0; }
+.ref-new-size { display: flex; gap: 10px; }
+.ref-new-size .field { flex: 1; }
+/* 글에는 칸·줄이 없다 — 고른 모양에 안 쓰이는 값을 물어보지 않는다.
+   `:has` 를 못 읽는 브라우저는 이 규칙만 버린다(칸이 그냥 보일 뿐, 만드는
+   데는 지장이 없다 — 글로 만들면 서버가 무시한다). */
+.ref-new-form:has(input[name="kind"][value="text"]:checked) .ref-new-size { display: none; }
+.ref-new-acts { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+@media (max-width: 720px) {
+  /* 이 폭부터 탭 줄은 넘치는 것을 잘라 내며 가로로 민다(`.sheet-tabs`
+     `overflow-x`). 그 안에 떠 있으면 창이 통째로 잘려 만들 수가 없다 —
+     화면에 붙여 띄운다. */
+  .ref-new-form { position: fixed; top: 96px; left: 12px; right: 12px; width: auto; }
+}

@@ -57,15 +57,20 @@
     참고 시트 — 스크립트·가이드처럼 매번 구글 시트를 따로 열어 보던 자료.
     명단 탭과 성격이 달라 구분선 뒤에 둔다(누르면 명단 대신 그 자료가 열린다).
     쓰면서 추려 가라고 각 탭에 지우기를 붙였다.
+
+    **구분선과 [+ 참고자료 추가] 는 자료가 하나도 없어도 선다.** 예전에는 이
+    줄 전체가 `if ref_sheets` 안에 있었는데, 자료는 구글 시트에서 가져와야만
+    생겨서 없는 화면에는 만들 자리도 없었다 — 첫 자료를 세울 길이 사라진다.
   #}
-  {% if ref_sheets %}
   <span class="tab-divider" title="여기부터는 참고 자료입니다">|</span>
   {% for s in ref_sheets %}
   <a class="sheet-tab ref-tab {% if ref and ref.id == s.id %}active{% endif %}"
      href="{{ page.href }}?sheet={{ selected_sheet|urlencode }}&ref={{ s.id }}"
      title="참고 자료">📄 {{ s.title }}</a>
   {% endfor %}
-  {% endif %}
+  {# 만들기는 세 화면이 한 파일을 같이 쓴다 — 복사해 두면 한쪽만 고쳐진다. #}
+  {% set ref_page = page.page %}
+  {% include "_ref_new.html" %}
 </nav>
 
 {% set ref_back = page.href %}
