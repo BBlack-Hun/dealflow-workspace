@@ -144,15 +144,20 @@
   {#
     스크립트·가이드. 명단 탭과 성격이 달라 구분선 뒤에 둔다 —
     누르면 표 대신 그 자료가 열린다. 이름도 내용도 고칠 수 있다.
+
+    **만들기도 여기 선다.** 이 화면의 자료를 지우고 이름을 바꾸는 길은 이미
+    열려 있는데(같은 `/ref-sheets/…` 를 부른다), 만드는 것만 투자사 관리
+    현황에 두면 여기 사람은 스크립트 하나를 새로 세우려고 남의 화면을 거쳐야
+    한다 — 투자컨설턴트는 그 화면을 아예 못 연다.
   #}
-  {% if ref_sheets %}
   <span class="tab-divider" title="여기부터는 참고 자료입니다">|</span>
   {% for s in ref_sheets %}
   <a class="sheet-tab ref-tab {% if ref and ref.id == s.id %}active{% endif %}"
      href="/consulting?sheet={{ selected_sheet|urlencode }}&ref={{ s.id }}"
      title="참고 자료">📄 {{ s.title }}</a>
   {% endfor %}
-  {% endif %}
+  {% set ref_page = "consulting" %}
+  {% include "_ref_new.html" %}
 </nav>
 
 {#

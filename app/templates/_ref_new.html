@@ -1,0 +1,77 @@
+{#
+  참고자료 추가 `+` — 빈 참고 자료를 하나 만든다.
+
+  참고 자료 패널(`_ref_panel.html`)과 **같은 이유로 한 파일이다.** 이 단추는
+  탭 줄 안에 서야 해서 패널 안에 넣을 수 없는데(패널은 자료를 펼쳤을 때만
+  그려진다), 투자사 관리 현황·스타트업·투자컨설턴트 셋이 각자 탭 줄을 가지고
+  있다. 세 곳에 복사해 두면 한쪽만 고쳐진다 — 참고 자료가 실제로 그렇게 당했다
+  (이름 바꾸기가 한쪽에만 있었다).
+
+  부르는 쪽이 실어 주는 값:
+    `ref_page`  자료가 붙을 화면(`RefSheet.page` 와 같은 주소 조각)
+  `selected_sheet` 는 화면이 이미 들고 있다 — 만들고 나서 보던 명단 탭으로
+  돌아가야 해서 같이 보낸다.
+
+  **여는 것은 브라우저가 한다**(`<details>`). 여닫이 하나 때문에 JS 를 새로
+  붙이면 그 파일이 안 실린 화면에서 단추가 죽는다.
+#}
+<details class="ref-new">
+  {#
+    브라우저의 새 탭 `+` 와 같은 자리·같은 무게다 — **마지막 참고 자료 바로
+    오른쪽**에 작게 붙는다(참고 자료가 없으면 구분선 바로 뒤가 그 자리다).
+    탭 줄에서 제일 중요한 것은 탭 이름이라, 이 단추가 그보다 눈에 띄면 안 된다.
+
+    글자가 `+` 하나뿐이라 **가리키는 말을 반드시 단다** — 처음 보는 사람은
+    무엇이 열리는지 모른다(`title` 은 마우스, `aria-label` 은 읽어 주는 것).
+  #}
+  {# `ref-tab` 은 일부러 안 붙인다 — 그 이름은 **자료 탭 하나**를 가리키는
+     `<a>` 들의 것이라, 여기 붙이면 "참고 자료 탭 전부" 를 고르는 자리마다
+     단추가 자료인 척 섞인다(주소가 없어 그 자리에서 터진다). #}
+  <summary class="sheet-tab ref-new-btn"
+           title="참고자료 추가 — 빈 표나 글을 하나 만듭니다"
+           aria-label="참고자료 추가">+</summary>
+  <form method="post" action="/ref-sheets/new" class="ref-new-form">
+    <input type="hidden" name="page" value="{{ ref_page }}">
+    <input type="hidden" name="sheet" value="{{ selected_sheet }}">
+
+    <label class="field">
+      <span>이름</span>
+      {# 보기 글은 **실제 자료 이름을 쓰지 않는다.** 화면 어디에 그 글자가 있는지
+         세는 검사가 있어서(옮긴 자료가 두 화면에 다 뜨는지), 있지도 않은 탭이
+         있는 것으로 잡힌다. #}
+      <input type="text" name="title" maxlength="80" required
+             placeholder="예) 미팅 준비 체크리스트">
+    </label>
+
+    {#
+      모양은 **이미 도는 두 가지**뿐이다(`RefSheet.kind`). 만든 뒤에 바꿀 수는
+      없으니 여기서 고르게 한다.
+    #}
+    <fieldset class="ref-new-kind">
+      <legend>모양</legend>
+      <label class="check-row"><input type="radio" name="kind" value="table" checked>
+        <span>표 — 칸을 눌러 고칩니다</span></label>
+      <label class="check-row"><input type="radio" name="kind" value="text">
+        <span>글 — 줄글을 통째로 고칩니다</span></label>
+    </fieldset>
+
+    {#
+      표는 **몇 칸·몇 줄인지 정해야 그릴 수 있다.** 줄이 없으면 만들자마자
+      고칠 칸도 없다. 나중에 모자라면 지우고 다시 만든다.
+
+      글을 고르면 이 줄은 CSS 가 접는다(`:has`). 접히지 않는 브라우저에서도
+      그대로 보일 뿐 만드는 데는 지장이 없다 — 글에는 안 쓰이는 값이다.
+    #}
+    <div class="ref-new-size">
+      <label class="field"><span>칸 수</span>
+        <input type="number" name="cols" value="3" min="1" max="12"></label>
+      <label class="field"><span>줄 수</span>
+        <input type="number" name="rows" value="5" min="1" max="60"></label>
+    </div>
+
+    <div class="ref-new-acts">
+      <button class="primary-btn inline" type="submit">만들기</button>
+      <span class="hint">만들면 그 탭이 바로 열립니다.</span>
+    </div>
+  </form>
+</details>
