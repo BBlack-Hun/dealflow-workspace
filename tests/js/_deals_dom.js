@@ -223,8 +223,12 @@ function run(people, opts) {
   const fs = require("fs");
   const path = require("path");
   const vm = require("vm");
-  const SRC = path.join(__dirname, "..", "..", "app", "static", "js", "deals.js");
-  const src = fs.readFileSync(SRC, "utf8");
+  const JS = path.join(__dirname, "..", "..", "app", "static", "js");
+  // [보낼 자료] 목록과 [문구 복사] 는 **공용 한 벌**이다(IR 진행 관리의
+  // [자료 보내기] 창이 같은 것을 쓴다). 화면에서 deals.js 보다 먼저 실리므로
+  // 여기서도 같은 차례로 돌린다 — 안 돌리면 deals.js 가 그 한 벌을 못 찾는다.
+  const shared = fs.readFileSync(path.join(JS, "ir_attach_list.js"), "utf8");
+  const src = fs.readFileSync(path.join(JS, "deals.js"), "utf8");
 
   opts = opts || {};
   const dom = buildDom(people);
@@ -251,6 +255,7 @@ function run(people, opts) {
   };
   ctx.window = win;
   Object.assign(win, { location: win.location, document: dom.document });
+  vm.runInNewContext(shared, ctx, { filename: "ir_attach_list.js" });
   vm.runInNewContext(src, ctx, { filename: "deals.js" });
   dom.window = win;
   return dom;

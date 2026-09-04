@@ -723,7 +723,10 @@
        지금까지처럼 사람이 PC 카톡에서 붙인다. 화면이 옛말을 그대로 달고
        있으면 앱이 보내 주는 줄 알거나, 반대로 자료를 두 번 보낸다.
        판단은 서버 한 곳에서 온다(`services/ir_attach.py`). #}
-    <div class="ir-attach" id="ir-attach" hidden>
+    {# 자료를 누가 붙이는지는 이 칸의 머리말만 쓰는 것이 아니다 — 발송 요약줄도
+       그 말을 한다(`deals.js` 의 `ssNote`). 스크립트가 읽을 수 있게 **같은 값**을
+       칸에 적어 둔다. 화면이 다시 판단하지 않는다. #}
+    <div class="ir-attach" id="ir-attach" data-auto="{{ 1 if ir_auto_attach else 0 }}" hidden>
       {% if ir_auto_attach %}
       <b>보낼 자료 — 발송 프로그램이 아래 차례대로 파일을 보내고, 문구를 뒤에 보냅니다.</b>
       {% else %}
@@ -798,6 +801,9 @@
 </div>
 {% endblock %}
 {% block scripts %}
+{# [보낼 자료] 목록과 [문구 복사] 는 IR 진행 관리의 [자료 보내기] 창과
+   **같은 한 벌**이다. deals.js 가 그것을 읽으므로 먼저 와야 한다. #}
+<script src="{{ asset('js/ir_attach_list.js') }}"></script>
 <script src="{{ asset('js/deals.js') }}"></script>
 <script src="{{ asset('js/llm_brief.js') }}"></script>
 {% endblock %}

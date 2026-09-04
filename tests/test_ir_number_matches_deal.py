@@ -395,18 +395,24 @@ def test_번호를_적을_자리가_화면에_있다():
     """번호를 실어 보내도 **화면이 그것을 그리지 않으면** 아무 일도 안 난다.
 
     셋이 다 이어져야 한 바퀴가 돈다: 서버가 싣고(`attachments[].no`) → 화면이
-    적고(`renderIrLinks`) → CSS 가 배지로 보여준다.
+    적고(`ir_attach_list.js` 의 `renderList`) → CSS 가 배지로 보여준다.
+
+    목록을 그리는 자리는 **한 벌뿐이다** — 딜 제안 관리와 IR 진행 관리의
+    [자료 보내기] 창이 같은 것을 부른다(`deals.js` 의 `renderIrLinks` 는
+    그 한 벌에 넘길 뿐이다).
     """
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[1] / "app"
-    js = (root / "static" / "js" / "deals.js").read_text(encoding="utf-8")
+    js = (root / "static" / "js" / "ir_attach_list.js").read_text(encoding="utf-8")
+    deals_js = (root / "static" / "js" / "deals.js").read_text(encoding="utf-8")
     css = (root / "static" / "css" / "app.css").read_text(encoding="utf-8")
     html = (root / "templates" / "deals.html").read_text(encoding="utf-8")
 
     # 목록은 **미리보기의 자료 목록**에서 그린다 — 화면이 따로 세면 안 된다.
-    assert "p.attachments" in js, "[보낼 자료] 목록이 미리보기의 값을 안 쓴다"
+    assert "preview.attachments" in js, "[보낼 자료] 목록이 미리보기의 값을 안 쓴다"
     assert 'class="ir-no"' in js, "번호를 적는 자리가 없다"
+    assert "IrAttach.renderList" in deals_js, "발송 화면이 그 한 벌을 안 쓴다"
     assert ".ir-attach .ir-no" in css, "번호 배지를 CSS 가 안 읽는다"
     assert 'id="ir-no-note"' in html, "번호가 왜 그런지 적을 자리가 없다"
 

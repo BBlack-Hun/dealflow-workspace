@@ -133,6 +133,9 @@ function makeEl(tag) {
       return null;
     },
     get childNodes() { return el.children; },
+    // 브라우저가 부르는 이름. 화면 코드는 `parentNode` 를 쓰는데 여기 없으면
+    // 검사에서만 `undefined` 를 만나 죽는다 — 그 자리를 아무도 못 보게 된다.
+    get parentNode() { return el.parent; },
     // 이벤트는 버블링까지 흉내 낸다 — 칩은 줄(`#group-filter`)이 대신 듣는다.
     fire(type, extra) {
       const ev = Object.assign({ target: el, stopPropagation() {}, preventDefault() {} }, extra || {});
@@ -153,6 +156,26 @@ function makeEl(tag) {
   // "비우고 다시 그린다" 는 화면 코드가 여기서만 **줄을 쌓는다** — 그러면
   // 두 번째로 그릴 때 목록이 두 벌이 되는 고장을 검사가 못 본다
   // (`removeChild` 를 받아 주는 것과 같은 뜻이다).
+  // `class="…"` 를 통째로 갈아 끼우는 자리. 브라우저에서는 `classList` 와 같은
+  // 것을 가리키는데, 여기서 안 이어 두면 `className = "…"` 은 아무 데도 안
+  // 닿는 성질 하나가 되어 — 그렇게 붙인 이름은 선택자로 영영 안 잡힌다.
+  Object.defineProperty(el, "className", {
+    enumerable: true,
+    get() { return Array.from(el.classList._on).join(" "); },
+    set(value) {
+      el.classList._on.clear();
+      String(value).split(/\s+/).filter(Boolean)
+        .forEach(function (c) { el.classList._on.add(c); });
+    }
+  });
+  // 링크 주소. 브라우저는 성질과 속성을 서로 비춰 준다 — 안 이어 두면
+  // `a.href = "…"` 로 건 주소를 `getAttribute("href")` 가 못 보고, 검사는
+  // 서버가 그려 둔 옛 주소를 보며 통과한다.
+  Object.defineProperty(el, "href", {
+    enumerable: true,
+    get() { return el.getAttribute("href") || ""; },
+    set(value) { el.setAttribute("href", value); }
+  });
   let html = "";
   Object.defineProperty(el, "innerHTML", {
     enumerable: true,

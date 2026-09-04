@@ -9,7 +9,6 @@ IR 요청이 왔는데 "지난번 공유드린 기업들 검토 중…"이 또 �
 """
 from __future__ import annotations
 
-import json
 from datetime import date
 from urllib.parse import quote
 from typing import Optional
@@ -22,7 +21,7 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..deps import get_current_user, now_iso, templates
-from ..models import ContactActivity, IrRequest, Meeting, User, VcContact
+from ..models import IrRequest, Meeting, User, VcContact
 from ..services import cadence, flow, ir_attach, pipeline, sheet_owner
 from . import followups
 from ..ui import base_ctx
@@ -154,59 +153,60 @@ def create_request(
     return RedirectResponse(f"/ir?msg={quote(msg)}", status_code=303)
 
 
-# 자료 파일은 **사람이 PC 카톡에서 직접 첨부한다.** 구글 드라이브 링크를 문구에
-# 실어 보내던 방식은 폐기했다(0053) — 그래서 이 단추가 하는 일이 달라졌다.
+# [자료 보내기] 는 **그 자리에서 끝난다** — 화면을 옮기지 않는다.
 #
-# 예전에는 발송 화면으로 넘어가는 링크 하나였다. 링크만으로는 **손으로 한 일이
-# 아무 데도 안 남는다** — 자료를 앱이 보내지 않으니, 누가 언제 어느 기업 자료를
-# 보내려고 나섰는지는 여기서 적어 두지 않으면 기록이 없다.
+# 예전에는 이 자리가 하는 일이 둘이었다: 활동 이력에 한 줄을 남기고, 딜 제안
+# 관리(`/deals`)로 화면을 통째로 옮긴다. 둘 다 없앴다.
 #
-# ## 무엇을 적고 무엇을 적지 않나
+# ## 화면을 안 옮긴다
 #
-# `ContactActivity` 한 줄만 남긴다. **요청을 '전달함' 으로 닫지 않는다** —
-# 아직 아무것도 나가지 않았고, 여기서 닫으면 사람이 첨부를 잊어도 요청이
-# '보낼 자료' 목록에서 사라진다. 닫는 것은 지금처럼 발송이 성공한 뒤
-# `pipeline.close_requests_for` 가 맡는다(또는 사람이 [전달함] 을 누른다).
-# 같은 이유로 진행 단계(`deal_stage`)도 올리지 않는다 — 그 사다리의
-# `IR 자료 전달` 칸은 실제로 전달된 건을 세는 자리다.
-ATTACH_ON_PC = "IR 자료 전달 시작 — PC 에서 직접 첨부"
+# 넘어간 사람이 거기서 할 일은 이미 정해져 있었다 — **이 담당자에게, 이 기업들
+# 자료를, 지금 보낸다.** 그 한 가지를 하려고 기업 고르기·담당자 고르기·예약
+# 큐가 다 붙은 넓은 화면으로 옮기면, 돌아올 길을 스스로 찾아야 하고 옮긴
+# 화면에서 체크가 하나 풀려도 어디가 달라졌는지 모른다.
+#
+# 지금은 IR 관리 화면 안에서 창이 열려 번호·파일명·나갈 문구를 보여 주고 거기서
+# 보낸다(`static/js/ir_send.js`). **그 창이 값을 짓지 않는다** — 서버 미리보기
+# (`POST /api/deals/preview`)를 그대로 받아 그리고, 발송도 딜 제안 관리가 쓰는
+# 그 길(`POST /api/deals/send`)로 간다.
+#
+# ## 그래도 이 자리는 남는다 — **스크립트가 죽었을 때의 길**
+#
+# 화면의 [자료 보내기] 는 여전히 폼이고, 스크립트가 이 폼의 `submit` 을 가로채
+# 창을 연다. 스크립트가 안 실리거나 예외가 나면 폼은 폼대로 여기로 와서 예전처럼
+# 딜 제안 관리로 간다. 문구를 손보거나 담당자를 더하려면 그 화면이 필요해서,
+# 창 안에도 그리로 가는 길을 남겨 두었다.
+#
+# ## 이력은 여기서 안 적는다 — **보낸 때 적는다**
+#
+# 누른 것만으로 적으면 창을 열어 문구만 확인하고 닫아도 '자료 보냄' 이 남는다.
+# 그 자리에서 끝내는 흐름이 된 뒤로는 그렇게 닫는 것이 자연스러운 동작이라 더
+# 어긋난다. 적는 자리는 발송 목록을 만드는 한 곳으로 옮겼다
+# (`services/ir_attach.py: record_delivery` — 왜 거기인지 그 옆에 적어 두었다).
 
 
 @router.post("/ir/deliver-guide", include_in_schema=False)
 def deliver_guide(contact_id: int = Form(...), company_ids: str = Form(""),
                   db: Session = Depends(get_db),
                   user: User = Depends(get_current_user)):
-    """[자료 보내기] — 활동 이력에 남기고, 안내창과 함께 발송 화면으로 보낸다."""
+    """[자료 보내기] 의 **스크립트 없는 길** — 담당자·기업이 골라진 발송 화면으로.
+
+    스크립트가 살아 있으면 여기까지 오지 않는다(창이 그 자리에서 열린다).
+    """
+    # 남의 담당자로는 아무 데도 못 간다 — 주소에 남의 번호를 넣어도 여기서 막힌다.
     contact = _owned_contact(db, contact_id, user)
-    ids = [int(v) for v in company_ids.split(",") if v.strip().isdigit()]
-    # 이 담당자가 **열어 둔 요청** 중 지금 보내려는 기업의 이름. 화면이 넘겨준
-    # 번호를 그대로 믿지 않고 요청에서 되짚는다 — 남의 기업 번호가 주소에
-    # 섞여 들어와도 이력에는 이 담당자가 실제로 요청한 것만 남아야 한다.
-    names = [row.company_name for row in db.execute(
+    # 화면이 넘겨준 번호를 그대로 믿지 않는다. 이 담당자가 **열어 둔 요청**의
+    # 기업만 넘긴다 — 남의 기업 번호가 주소에 섞여 들어와도 발송 화면에는 이
+    # 담당자가 실제로 요청한 것만 골라져 있어야 한다.
+    asked = [int(v) for v in company_ids.split(",") if v.strip().isdigit()]
+    ids = [row.company_id for row in db.execute(
         select(IrRequest).where(IrRequest.contact_id == contact.id,
                                 IrRequest.status == "open",
-                                IrRequest.company_id.in_(ids))
-    ).scalars().all() if row.company_name]
-
-    today = date.today().isoformat()
-    payload = json.dumps(names, ensure_ascii=False)
-    # 두 번 눌렀다고 같은 줄이 두 번 쌓이면 이력이 아니라 소음이다.
-    already = db.execute(
-        select(ContactActivity).where(
-            ContactActivity.contact_id == contact.id,
-            ContactActivity.kind == "ir_delivery",
-            ContactActivity.happened_at == today,
-            ContactActivity.company_names == payload)
-    ).scalars().first()
-    if already is None:
-        db.add(ContactActivity(
-            contact_id=contact.id, kind="ir_delivery", source="system",
-            content=ATTACH_ON_PC, happened_at=today, month=today[:7],
-            company_names=payload, company_count=len(names) or None))
-        db.commit()
+                                IrRequest.company_id.in_(asked))
+    ).scalars().all() if row.company_id]
 
     # 넘어갈 곳은 예전과 같다 — 담당자와 기업이 이미 골라진 발송 화면.
-    # `attach=1` 이 거기서 안내창을 띄운다.
+    # `attach=1` 이 거기서 안내창을 띄운다(자동 첨부를 켜지 않은 계정만).
     query = (f"mode=ir&contacts={contact.id}"
              f"&companies={','.join(str(i) for i in ids)}&attach=1")
     return RedirectResponse(f"/deals?{query}", status_code=303)
