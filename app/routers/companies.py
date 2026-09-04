@@ -267,7 +267,11 @@ def search_text(c: IrCompany) -> str:
         c.name, c.contact_name, c.contact_email, phone,
         digits if digits != phone else "",
         c.sector_major, c.sector_minor, c.series,
-        c.one_liner, c.funding_status, c.competitiveness,
+        # 두 탭이 서로 다른 칸을 보여 준다(0058) — `딜 소개 문구 회사개요`
+        # (`one_liner`)는 IR 기업 현황에, `기업 한줄 소개`(`business_desc`)는
+        # 스타트업DB 에 선다. **둘 다 싣는다**: 검색은 탭을 가리지 않으므로
+        # 한쪽만 실으면 눈앞에 보이는 글자를 쳤는데 아무 줄도 안 걸린다.
+        c.one_liner, c.business_desc, c.funding_status, c.competitiveness,
     ]
     return " ".join(filter(None, parts)).lower()
 
@@ -437,12 +441,14 @@ def companies_page(request: Request, db: Session = Depends(get_db),
             "with_ir": sum(1 for r in rows if r["has_ir"]),
             # 스타트업DB 탭에 볼 것이 있는 기업 — 대표자·연락처 같은 기초자료가
             # 하나라도 들어온 곳. 전체와 나란히 놓으면 얼마나 채웠는지 보인다.
-            # 세는 칸이 `business_desc` 였다. 그 칸은 이제 화면에 없고, 그
-            # 자리에 `기업 한줄 소개`(one_liner)가 선다(0051) — 뱃지가 세는
-            # 것과 탭을 열었을 때 보이는 것이 같아야 한다.
+            # **뱃지가 세는 것과 탭을 열었을 때 보이는 것이 같아야 한다.**
+            # 0051 이 이 자리에 `one_liner` 을 세워 그것을 셌는데, 0058 이
+            # 그 칸을 옆 탭(`딜 소개 문구 회사개요`)으로 돌려보내고 이 탭에는
+            # 재료인 `business_desc`(머리글 `기업 한줄 소개`)를 세웠다 —
+            # 세는 칸도 함께 따라간다.
             "with_info": sum(1 for r in rows
                              if r["contact_name"] or r["contact_phone"]
-                             or r["one_liner"]),
+                             or r["business_desc"]),
             # 사업분야가 빈 곳. 이 숫자가 없으면 '비어 있음' 으로 걸러 보기
             # 전에는 몇 곳이 남았는지 알 길이 없어, 다 채운 뒤에도 계속 확인하게 된다.
             #
