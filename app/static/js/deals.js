@@ -505,7 +505,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     schedulePreview();
     ssNote.textContent = askMode
       ? FOLLOW_UP[mode] + " — 기업 목록 없이 문구만 나갑니다"
-      : (mode === "ir" ? "자료는 PC 카톡에서 직접 첨부하고, 여기서는 문구만 보냅니다"
+      : (mode === "ir" ? irSummaryNote()
                        : (nc > MAX_COMPANIES ? "기업은 최대 " + MAX_COMPANIES + "개까지" : ""));
     if (mode === "ir") renderIrLinks();
 
@@ -542,6 +542,21 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       : !(nc >= 1 && nc <= MAX_COMPANIES && nt >= 1);
     applyCompanyFilter();   // 선택 항목은 검색 중에도 계속 보이게
     applyContactFilter();
+  }
+
+  // 자료 전달 요약줄. **자료를 누가 붙이는가**를 말한다 — 바로 위 [보낼 자료]
+  // 칸의 머리말과 같은 뜻이어야 한다. 붙박이 글자였던 탓에, 자료 폴더를 등록해
+  // 발송기가 파일을 붙이는 계정에도 "PC 카톡에서 직접 첨부하고" 가 떴다.
+  // 머리말은 발송기가 붙인다고 하는데 그 아래 줄은 손으로 붙이라고 하니,
+  // 그 말대로 하면 **같은 자료가 두 번 나간다.**
+  //
+  // 판단은 서버 한 곳이고(`services/ir_attach.py`), 화면은 서버가 칸에 적어 준
+  // 값을 읽을 뿐이다 — 여기서 다시 판단하지 않는다.
+  function irSummaryNote() {
+    var box = document.getElementById("ir-attach");
+    return (box && box.getAttribute("data-auto") === "1")
+      ? "자료 파일은 발송 프로그램이 붙여 보냅니다"
+      : "자료는 PC 카톡에서 직접 첨부하고, 여기서는 문구만 보냅니다";
   }
 
   // 고른 기업의 IR 자료를 띄운다 — **번호와 파일 이름**이다.

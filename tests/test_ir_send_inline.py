@@ -181,14 +181,72 @@ def test_both_screens_say_the_same_thing_when_attaching_by_hand(stage):
     assert BY_SENDER not in html
 
 
-def test_both_screens_say_the_same_thing_when_the_sender_attaches(stage):
+def test_the_sender_attaching_account_goes_to_the_deal_screen(stage):
+    """**자료 폴더를 등록한 계정은 예전처럼 넘어간다** — 사용자가 그렇게 정했다.
+
+    가리는 방법이 **자리를 안 그리는 것**이라, 창도 스크립트도 실리지 않는다.
+    그러면 `ir_send.js` 가 가로챌 것이 없어 폼이 폼대로 `/ir/deliver-guide` 로
+    가고, 딜 제안 관리가 열린다(그 길은 아래 fallback 검사가 지킨다).
+    """
     _turn_on(stage)
     html = _ir(stage)
-    deals = stage["client"].get("/deals").text
 
-    assert BY_SENDER in html, "자료 폴더를 정해 둔 계정에 옛말이 그대로 떠 있다"
-    assert BY_SENDER in deals
+    assert 'id="ir-send-modal"' not in html, "넘어갈 계정에 그 자리 창이 떠 있다"
+    assert "js/ir_send.js" not in html, "쓰지도 않을 스크립트를 싣는다"
+    # 창이 없으니 그 안의 [보낼 자료] 칸도 없다 — 이 화면에서 볼 것이 아니다.
     assert BY_HAND not in html
+    assert BY_SENDER not in html
+    # 안내가 옛말을 달고 있으면 안 넘어간다고 말하는 화면이 넘어간다.
+    hint = html[html.index("<b>[자료 보내기]</b>"):][:400]
+    assert "딜 제안 관리가 열립니다" in hint
+    assert "이 화면에서" not in hint
+
+
+def test_the_deal_screen_still_tells_that_account_who_attaches(stage):
+    """넘어간 화면에서는 자료를 발송기가 붙인다고 말해야 한다 — 거기가 그 말을 할 자리다."""
+    _turn_on(stage)
+
+    assert BY_SENDER in stage["client"].get("/deals").text
+
+
+def test_the_deal_screen_does_not_contradict_itself_about_who_attaches(stage):
+    """넘어간 화면이 **한 화면 안에서 두 말**을 하면 안 된다.
+
+    [보낼 자료] 머리말은 `발송 프로그램이 … 파일을 보내고` 인데 바로 아래
+    발송 요약줄은 `자료는 PC 카톡에서 직접 첨부하고` 라는 붙박이 글자였다.
+    그 말대로 하면 **같은 자료가 두 번 나간다** — 발송기도 붙이고 사람도 붙인다.
+
+    화면이 다시 판단하지 않게, 서버가 칸에 적어 준 값 하나를 읽는다.
+    """
+    js = (JS_DIR / "deals.js").read_text(encoding="utf-8")
+    _turn_on(stage)
+    html = stage["client"].get("/deals").text
+
+    assert 'data-auto="1"' in html, "서버가 자료를 누가 붙이는지 칸에 안 적는다"
+    assert 'getAttribute("data-auto")' in js, "화면이 그 값을 안 읽는다"
+    # 붙박이 글자가 남아 있으면 켠 계정에서도 그것이 뜬다.
+    assert "자료는 PC 카톡에서 직접 첨부하고, 여기서는 문구만 보냅니다" in js
+    assert "자료 파일은 발송 프로그램이 붙여 보냅니다" in js
+
+
+def test_the_deal_screen_says_hand_attaching_for_a_plain_account(stage):
+    assert 'data-auto="0"' in stage["client"].get("/deals").text
+
+
+def test_only_one_place_decides_which_way(stage):
+    """창·스크립트·안내가 **같은 값 하나**를 읽는가.
+
+    셋이 따로 판단하면 창은 떴는데 스크립트가 없거나(단추가 죽는다), 안내만
+    옛말인 화면이 생긴다. 판단은 `services/ir_attach.py: auto_attach_enabled`
+    한 곳이고 화면은 그것을 `ir_auto_attach` 로 받는다.
+    """
+    html = (ROOT / "app" / "templates" / "ir.html").read_text(encoding="utf-8")
+
+    # 갈리는 자리는 셋이고 **읽는 값은 하나**다: 창 · 스크립트 · 안내.
+    assert html.count("{% if not ir_auto_attach %}") == 2, (
+        "창과 스크립트가 같은 조건으로 갈리지 않는다")
+    assert html.count("{% if ir_auto_attach %}") == 1, (
+        "안내가 다른 조건으로 갈린다 — 넘어가는 화면이 안 넘어간다고 말한다")
 
 
 def test_the_history_says_who_attached_the_files(stage):
@@ -261,6 +319,29 @@ def test_the_window_rule_is_not_swallowed_by_a_comment():
     body = rule.group(1)
     assert "position: fixed" in body, "떠 있지 않으면 뒤 화면과 섞인다"
     assert "z-index: 40" in body, "뒷막(39) 위에 서야 한다"
+
+
+# --- 패널 이름 ------------------------------------------------------------------
+
+def test_the_closed_followup_panel_is_called_by_its_new_name(stage):
+    """사용자가 부르기로 한 이름 — `끝난 후속` → `IR 요청 투자사`."""
+    html = _ir(stage)
+
+    assert "IR 요청 투자사" in html
+    assert "끝난 후속" not in html
+
+
+def test_both_copies_of_that_panel_carry_the_same_name():
+    """같은 표가 두 파일에 있다 — 한쪽만 고치면 이름이 갈린다.
+
+    `followups.html` 은 지금 **아무 라우트도 안 그린다**(`/followups` 는
+    `/ir#remind` 로 넘긴다). 그래도 함께 고친다 — 되살아나는 날 같은 표가
+    다른 이름을 달고 나오는 것을 막는 값이, 한 줄 고치는 값보다 크다.
+    """
+    for name in ("ir.html", "followups.html"):
+        page = (ROOT / "app" / "templates" / name).read_text(encoding="utf-8")
+        assert '<h2 class="panel-title">IR 요청 투자사' in page, name
+        assert "아직 끝난 후속이 없습니다" not in page, name
 
 
 # --- 시연 자료 --------------------------------------------------------------------
