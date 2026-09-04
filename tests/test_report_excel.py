@@ -332,6 +332,42 @@ def test_top_deal_grade_keeps_its_own_name(logged, db):
     assert "핵심/TOP Deal" in logged.get("/companies").text
 
 
+def test_the_meeting_company_column_is_named_the_same_everywhere(logged, db, users):
+    """미팅의 기업 칸은 **화면에서도 파일에서도 `기업`** 이다.
+
+    화면의 미팅 표는 기업을 담당자 칸 안에 태그로 얹고 있었다(머리글이 없었다).
+    제 칸으로 빼면서 이름을 새로 지으면, 같은 것을 화면은 `기업명` · 파일은
+    `기업` 으로 불러 또 갈린다 — 이미 `기업` 이라 부르던 곳(같은 화면의 '이 달의
+    반응' 표 · 엑셀 미팅/반응 시트 · IR 화면)에 맞춘다.
+    """
+    from app.models import Meeting, VcContact
+
+    contact = VcContact(user_id=users["u1"].id, name="담당자하나",
+                        title="심사역", firm="가나벤처스")
+    db.add(contact)
+    db.flush()
+    db.add(Meeting(user_id=users["u1"].id, contact_id=contact.id,
+                   company_name="가나테크", kind="first",
+                   scheduled_at="2026-08-24", status="done", outcome="review"))
+    db.commit()
+
+    grid = _grid(_book(_download(logged))["2026-08 미팅"])
+    at = next((i for i, row in enumerate(grid)
+               if "기업" in [str(c) for c in row]), None)
+    assert at is not None, "엑셀 미팅 시트에 `기업` 머리글이 있어야 한다"
+    head = [str(c) for c in grid[at]]
+    assert "기업명" not in head, "화면과 다른 이름을 쓰면 안 된다"
+    # 차례도 화면과 같다 — 담당자 · 투자사 다음이 기업이고, 그다음이 구분이다.
+    assert head.index("기업") == head.index("투자사") + 1
+    assert head.index("기업") < head.index("구분")
+    # 값이 **그 칸에** 실린다 — 머리글만 세워 두고 값을 옆 칸에 넣으면
+    # 파일을 열어 보기 전까지 아무도 모른다.
+    assert str(grid[at + 1][head.index("기업")]) == "가나테크"
+
+    screen = logged.get("/report?month=2026-08").text
+    assert "기업명" not in screen, "화면 머리글도 `기업` 이다"
+
+
 # --- 5. 조용한 달에도 열린다 -----------------------------------------------------
 
 def test_a_month_with_no_sends_still_opens(logged, db, users):
