@@ -515,8 +515,21 @@ def preview(
             "sample": sample,
             # IR 자료 전달일 때 **사람이 PC 에서 첨부해야 할 자료**.
             # 문구에 실려 나가지 않는다 — 여기서 열어 내려받는 자리다.
-            "attachments": ([{"name": c.name, "url": c.ir_drive_url or ""}
-                             for c in companies] if req.mode == MODE_IR else []),
+            #
+            # **번호를 함께 싣는다.** 자료를 손으로 붙이는 사람에게는 화면에
+            # 적힌 번호가 곧 붙이는 차례인데, 그 번호는 담당자마다 다르다
+            # (딜 소개에서 붙은 번호를 되읽는다 — `deal_numbers`). 화면이
+            # 고른 차례를 세면 목록은 `1`, 문구는 `2번 기업 …` 이 되어 어느
+            # 쪽이 맞는지 알 수 없다. 그래서 **문구를 만든 그 함수**가
+            # 목록의 번호도 함께 낸다(`numbered_companies`).
+            #
+            # 딜 소개에 없던 기업은 `no` 가 `null` 이다 — 지어내지 않는다.
+            # 문구도 그 기업만 이름으로 나간다.
+            "attachments": ([{"company_id": c.id, "name": c.name,
+                              "url": c.ir_drive_url or "", "no": no}
+                             for no, c in deal_numbers.numbered_companies(
+                                 db, contact.id, companies)]
+                            if req.mode == MODE_IR else []),
             "fit": {
                 "fit_count": fit.fit_count,
                 "mismatch_count": fit.mismatch_count,
