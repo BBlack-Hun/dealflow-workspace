@@ -13,17 +13,21 @@ import io
 import zipfile
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..deps import get_current_user, templates
+from ..deps import get_current_user, may_auto_attach, templates
 from ..models import AgentDevice, User
 from ..ui import base_ctx
 
 router = APIRouter(tags=["setup"])
+
+#: 자동 첨부가 꺼진 계정이 자료 폴더를 넣으려 할 때. 한 곳에 적어 두고
+#: 라우터와 검사가 같은 말을 읽는다.
+AUTO_ATTACH_BLOCKED = "자료 자동 첨부를 쓸 수 없는 계정입니다"
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -163,10 +167,22 @@ def setup_page(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """에이전트 설치 안내 + 다운로드 링크. 토큰은 **지금 선택된 사용자**의 것이다."""
+    """에이전트 설치 안내 + 다운로드 링크. 토큰은 **지금 선택된 사용자**의 것이다.
+
+    자료 폴더 칸은 **자동 첨부를 켜 준 계정에만** 그린다(`base_ctx` 가 실어 주는
+    `may_auto_attach`). 꺼진 계정에 값이 남아 있어도 여기서는 내보내지 않는다 —
+    화면에 그리지 않을 값을 컨텍스트에 태우면 언젠가 그 값을 쓰는 자리가
+    생긴다.
+
+    다만 **넣어 둔 값이 있었는지**(`ir_root_kept`)는 알려 준다. 화면이 그
+    한 줄로 "왜 칸이 사라졌는지" 를 답한다 — 이유는 `setup.html` 에.
+    """
     ctx = base_ctx(request, db, user, "setup")
+    saved_root = _device(db, user).ir_root or ""
+    allowed = ctx["may_auto_attach"]
     ctx.update({"server_url": _server_url(request), "token": _ensure_token(db, user),
-                "ir_root": _device(db, user).ir_root or "",
+                "ir_root": saved_root if allowed else "",
+                "ir_root_kept": bool(saved_root.strip()) and not allowed,
                 "saved": request.query_params.get("saved") == "ir_root"})
     return templates.TemplateResponse("setup.html", ctx)
 
@@ -177,7 +193,20 @@ def save_ir_root(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """IR 자료 폴더 자리를 저장한다 — **본인 것만.**
+    """IR 자료 폴더 자리를 저장한다 — **켜 준 계정의, 본인 것만.**
+
+    ## 왜 켜 준 계정만인가
+
+    이 값을 넣는 것이 곧 자동 첨부를 켜는 일이다(`services/ir_attach.py`).
+    화면에서 칸만 감추면 **주소로 그대로 부를 수 있어** 누구든 스스로 켤 수
+    있다 — 화면 목록과 라우터 목록이 갈려 막은 줄 알았던 것이 열려 있던 사고를
+    이 저장소는 여러 번 겪었다. 판정은 화면과 **같은 함수**를 읽는다
+    (`deps.may_auto_attach`).
+
+    막을 때 **403 을 준다.** 되돌려 보낼 화면이 없어서가 아니라, 이 길로 오는
+    것은 칸이 그려지지 않은 화면에서 온 요청뿐이기 때문이다 — 사람이 폼을
+    눌러서 닿을 수 있는 자리가 아니다. 안내 문구로 답하면 그 문구를 볼 화면이
+    없다.
 
     ## 왜 본인만인가
 
@@ -192,6 +221,8 @@ def save_ir_root(
     있는지·폴더인지는 **발송기가** 켜질 때와 보내기 전에 확인하고 분명히
     실패한다(`agent/sender/base.py: ir_root`). 여기서는 앞뒤 공백만 턴다.
     """
+    if not may_auto_attach(user):
+        raise HTTPException(status_code=403, detail=AUTO_ATTACH_BLOCKED)
     device = _device(db, user)
     device.ir_root = (ir_root or "").strip() or None
     db.commit()

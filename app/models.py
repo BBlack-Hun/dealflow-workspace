@@ -46,6 +46,17 @@ class User(TimestampMixin, Base):
     # 사람 이름을 코드에 박으면 사람이 바뀔 때마다 배포해야 하므로 계정 속성으로 둔다.
     # 관리자는 이 값과 무관하게 볼 수 있다.
     can_view_consulting: Mapped[int] = mapped_column(Integer, default=0)
+    # IR 자료를 **발송기가 붙여 보내게** 할 수 있는 계정인가(0059).
+    #
+    # 예전에는 문이 하나였다 — `/setup` 에서 자료 폴더를 넣으면 그것으로 켜졌고,
+    # 그래서 **누구든 스스로 켤 수 있었다.** 지금 이 기능은 정해진 사람만 쓴다.
+    # 옆의 `can_view_consulting` 과 **같은 자리, 같은 모양**이다: 관리자가 팀
+    # 현황에서 계정마다 켜고 끄고, 역할은 새 계정의 기본값만 정한다
+    # (`deps.auto_attach_default_for` — 지금은 어느 역할도 켜지 않는다).
+    #
+    # 이 칸이 꺼져 있으면 `agent_devices.ir_root` 를 **읽지 않는다.** 지우지는
+    # 않는다 — 다시 켜면 넣어 둔 폴더가 그대로 되돌아와야 한다.
+    can_auto_attach_ir: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class Session(TimestampMixin, Base):

@@ -26,8 +26,8 @@ from sqlalchemy.orm import Session
 from .. import config
 from ..db import get_db
 from ..services import cadence, pipeline
-from ..deps import get_agent_device, now_iso
-from ..models import AgentDevice, SendItem, SendJob
+from ..deps import get_agent_device, may_auto_attach, now_iso
+from ..models import AgentDevice, SendItem, SendJob, User
 
 router = APIRouter(prefix="/api/agent", tags=["agent"])
 
@@ -484,8 +484,19 @@ def heartbeat(
     # IR 자료 폴더 자리를 **여기에 실어 내려보낸다.** 발송기가 이미 주기적으로
     # 두드리는 통로라 새로 팔 것이 없고, 화면에서 값을 고치면 다음 박동에
     # 그대로 따라간다(발송기를 다시 켤 필요가 없다).
+    #
+    # **자동 첨부가 꺼진 계정에는 빈 값을 준다.** 값이 남아 있어도(끄면서 지우지
+    # 않는다) 읽지 않는 것이 이 기능을 끄는 방식이다 — 화면·저장 라우터와
+    # **같은 판정**을 읽는다(`deps.may_auto_attach`).
+    #
+    # 안 막아도 파일이 나가지는 않는다(발송 목록에 파일이 안 실린다). 그런데
+    # 발송기는 이 값으로 켜질 때 **"IR 자료 폴더: … — 보낼 자료를 이 폴더에
+    # 넣으세요"** 라고 적는다(`agent/main.py: preflight`). 그대로 두면 그 창이
+    # 쓰지도 않을 폴더를 챙기라고 말한다.
+    owner = db.get(User, device.user_id)
+    allowed = owner is not None and may_auto_attach(owner)
     return {"ok": True, "server_time": now_iso(),
-            "ir_root": device.ir_root or ""}
+            "ir_root": (device.ir_root or "") if allowed else ""}
 
 
 class Diagnostics(BaseModel):

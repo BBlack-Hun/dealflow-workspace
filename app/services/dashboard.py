@@ -812,6 +812,11 @@ def admin_dashboard(db: Session, today: Optional[date] = None) -> dict:
             # 확인 문구로 알려 준다 — 투자컨설턴트에게는 이 화면이 전부다.
             # (끌 수 있는 줄인지는 표가 본다: 본인 줄만 못 끈다.)
             "consulting_only_screen": deps.consulting_is_only_screen(u),
+            # 자료 자동 첨부를 **쓸 수 있는 계정인가.** 화면은 판정하지 않고
+            # 이 값을 읽는다 — `/setup` 의 자료 폴더 칸과 저장 라우터가 보는
+            # 것과 **같은 함수**다(`deps.may_auto_attach`). 표에는 켜졌다고
+            # 떠 있는데 그 사람 화면에는 칸이 없는, 그 어긋남을 막는다.
+            "auto_attach": deps.may_auto_attach(u),
             # 딜소개를 보내지 않는 계정(투자컨설턴트)은 담당 투자사·발송 칸이
             # **원래 비어 있다.** 0 으로 그리면 설정이 덜 된 사람처럼 읽힌다.
             "sends_deals": deps.sends_deals(u),

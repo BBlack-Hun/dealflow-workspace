@@ -5,14 +5,34 @@
 
 `config.yaml` 에 적지 않는 이유: 발송기를 새로 내려받으면 서버가 config 를
 즉석에서 다시 만들어(`CONFIG_TEMPLATE`) 손으로 적은 값이 데모 값으로 되돌아간다.
+
+여기가 보는 것은 **값이 오가는 길**이다. 그 길에 서기 전에 관리자가 이 계정에
+자동 첨부를 켜 주어야 한다(0059) — **켜고 끄는 자리 자체**는
+`tests/test_ir_auto_attach_access.py` 가 본다.
 """
 from __future__ import annotations
+
+import pytest
 
 from .conftest import DEMO_PASSWORD, DEMO_TOKEN, OTHER_TOKEN, auth
 
 # 실제 경로를 적지 않는다 — 이 저장소는 공개다.
 MY_FOLDER = "/Users/tester/Share/자료폴더"
 OTHER_FOLDER = "/Users/other/Documents/자료"
+
+
+@pytest.fixture(autouse=True)
+def auto_attach_allowed(db, users):
+    """이 파일의 전제 — 두 계정 다 자동 첨부를 **쓸 수 있는 계정**이다.
+
+    이 칸이 꺼져 있으면 자료 폴더 칸이 화면에 그려지지도, 저장 라우터가 값을
+    받지도 않는다(`deps.may_auto_attach`). 그 판정을 확인하는 것은 이 파일의
+    일이 아니라 `tests/test_ir_auto_attach_access.py` 의 일이라, 여기서는 켜
+    두고 **값이 오가는 길**만 본다.
+    """
+    users["u1"].can_auto_attach_ir = 1
+    users["u2"].can_auto_attach_ir = 1
+    db.commit()
 
 
 def _device(db, user_id):

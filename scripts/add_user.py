@@ -62,6 +62,9 @@ def add_user(db, name: str, phone: str, role: str) -> User:
         phone=normalized,
         role=role,
         can_view_consulting=1 if deps.consulting_default_for(role) else 0,
+        # 자료 자동 첨부도 같은 자리에서 가져온다(0059) — 지금은 어느 역할도
+        # 켜지 않고, 관리자가 팀 현황에서 켠다.
+        can_auto_attach_ir=1 if deps.auto_attach_default_for(role) else 0,
         password_hash=auth_svc.hash_password(config.INITIAL_PASSWORD),
         must_change_password=1,
     )

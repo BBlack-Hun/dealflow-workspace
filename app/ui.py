@@ -11,7 +11,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from . import config, version
-from .deps import agent_status, consultant_may_open, may_view_consulting
+from .deps import (agent_status, consultant_may_open, may_auto_attach,
+                   may_view_consulting)
 from .models import User
 
 # 좌측 메뉴. 쓰는 순서대로 둔다.
@@ -140,4 +141,13 @@ def base_ctx(request: Request, db: Session, user: User, active: str) -> dict:
         "current_path": request.url.path,
         "app_version": version.VERSION,
         "password_changed": request.query_params.get(PASSWORD_CHANGED) == "1",
+        # 자료 자동 첨부를 **쓸 수 있는 계정인가**(`deps.may_auto_attach`).
+        #
+        # 이 값을 여기 두는 것은, 이 기능을 가리키는 자리가 화면 넷에 흩어져
+        # 있기 때문이다: `/setup` 의 자료 폴더 칸 · IR 진행 관리의 안내 ·
+        # IR 기업 현황의 안내 · 발송 화면. 라우터마다 컨텍스트에 따로 실으면
+        # 한 곳을 빠뜨리는 날 **못 쓰는 사람에게 "여기서 정하세요" 라고 적혀
+        # 있는** 화면이 남는다 — 이 저장소가 반복해 고쳐 온 그 거짓말이다.
+        # 사이드바 메뉴가 `visible_menu` 한 곳에서 걸러지는 것과 같은 자리다.
+        "may_auto_attach": may_auto_attach(user),
     }

@@ -381,7 +381,7 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
 
    **th 폭 합계와 맞춰 둔다(현재 1,416px).** 모자라면 fixed 가 칸을 비율대로 눌러
    다시 잘린다. th 폭을 고치면 여기도 같이. */
-#team-table { min-width: 1416px; }
+#team-table { min-width: 1520px; }
 .grid-table { width: 100%; table-layout: fixed; border-collapse: collapse;
               background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
 /* 표 밀도. 8px/10px 이던 것을 6px/9px 로 — 글자 수 대비 자리가 남는 칸이

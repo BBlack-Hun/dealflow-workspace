@@ -6,10 +6,14 @@
 
 ## 누가 이 길을 타나
 
-**자기 PC 의 자료 폴더를 정해 둔 계정만**(`agent_devices.ir_root`). 사람 이름을
-코드에 적지 않는다 — 왜 그 칸으로 가르는지는 `app/services/ir_attach.py` 에
-적어 두었다. 정하지 않은 계정은 **지금까지 그대로**: 문구만 나가고 안내창이
-뜨고 사람이 PC 카톡에서 손으로 붙인다.
+**관리자가 켜 준 계정**(`users.can_auto_attach_ir`, 0059)이 **자기 PC 의 자료
+폴더를 정해 두었을 때**(`agent_devices.ir_root`). 사람 이름을 코드에 적지
+않는다 — 왜 그 두 칸으로 가르는지는 `app/services/ir_attach.py` 에 적어 두었다.
+그 밖에는 **지금까지 그대로**: 문구만 나가고 안내창이 뜨고 사람이 PC 카톡에서
+손으로 붙인다.
+
+켜고 끄는 자리 자체(팀 현황의 단추 · `/setup` 의 자료 폴더 칸 · 안내 문구가
+갈리는 것)는 `tests/test_ir_auto_attach_access.py` 가 본다.
 
 ## 무엇을 지키나
 
@@ -66,12 +70,18 @@ def stage(client, db, users):
 
 
 def _turn_on(stage):
-    """이 계정의 기기에 자료 폴더를 정해 둔다 — 자동 첨부를 켜는 유일한 스위치."""
+    """자동 첨부를 켠다 — **스위치가 둘**이다(0059).
+
+    관리자가 이 계정에 기능을 열어 주고(`users.can_auto_attach_ir`), 본인이 자기
+    PC 의 자료 폴더를 정한다(`agent_devices.ir_root`). 둘 중 하나만으로는 켜지지
+    않는다 — 왜 그렇게 갈랐는지는 `app/services/ir_attach.py` 에.
+    """
     from app.models import AgentDevice
 
     device = stage["db"].query(AgentDevice).filter_by(
         user_id=stage["user"].id).one()
     device.ir_root = "/Users/somebody/IR자료"
+    stage["user"].can_auto_attach_ir = 1
     stage["db"].commit()
     return device
 
