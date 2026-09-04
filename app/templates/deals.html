@@ -310,9 +310,11 @@
       <label class="pick-card {% if not c.introducible %}thin{% endif %} {% if h.recent %}recent-sent{% endif %}"
              data-recent="{{ 1 if h.recent else 0 }}"
              data-search="{{ (c.name ~ ' ' ~ (c.sector_major or '') ~ ' ' ~ (c.sector_minor or '') ~ ' ' ~ (c.one_liner or '') ~ ' ' ~ (c.series or ''))|lower }}">
+        {# 자료 파일 이름은 여기 싣지 않는다. [보낼 자료] 목록은 서버가 문구와
+           **같은 응답**에 실어 준 값으로 그린다(`attachments[].file`) — 번호가
+           그렇듯 파일도 한 곳에서 와야 목록과 문구가 갈리지 않는다. #}
         <input type="checkbox" class="company-cb" value="{{ c.id }}" data-name="{{ c.name }}"
-               data-thin="{{ 0 if c.introducible else 1 }}"
-               data-ir-file="{{ c.ir_file_name or '' }}">
+               data-thin="{{ 0 if c.introducible else 1 }}">
         <div class="pick-body">
           <div class="pick-name">
             {% if c.is_top_deal %}<span class="star">★</span>{% endif %}{{ c.name }}
@@ -709,11 +711,21 @@
        판단은 서버 한 곳에서 온다(`services/ir_attach.py`). #}
     <div class="ir-attach" id="ir-attach" hidden>
       {% if ir_auto_attach %}
-      <b>보낼 자료 — 발송 프로그램이 아래 파일을 먼저 보내고, 문구를 뒤에 보냅니다.</b>
+      <b>보낼 자료 — 발송 프로그램이 아래 차례대로 파일을 보내고, 문구를 뒤에 보냅니다.</b>
       {% else %}
-      <b>보낼 자료 — PC 카톡에서 직접 첨부한 뒤 이 문구를 보내세요.</b>
+      <b>보낼 자료 — 아래 차례대로 PC 카톡에 직접 첨부한 뒤 이 문구를 보내세요.</b>
       {% endif %}
+      {# 번호와 파일 이름을 함께 적는다.
+
+         **번호**는 자료가 나가는 차례다. 고른 차례가 아니라 딜 소개에서 붙은
+         번호이고 담당자마다 달라서, 화면이 세지 않고 서버가 문구와 같은 응답에
+         실어 준 값을 그대로 적는다(deals.js `renderIrLinks`).
+         번호가 오름차순이 아닐 수 있다 — 짚는 차례는 고른 차례다.
+
+         **파일 이름**은 링크가 아니다(0056). 발송기가 붙이든 사람이 붙이든,
+         그 이름으로 자료 폴더에서 파일을 찾는다. #}
       <ul id="ir-links"></ul>
+      <p class="hint muted" id="ir-no-note" hidden></p>
     </div>
     <div class="mail-fields" id="mail-fields" hidden>
       <label class="field">

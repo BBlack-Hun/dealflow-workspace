@@ -222,11 +222,12 @@ def test_the_attach_notice_still_shows_when_it_is_off(stage):
 def test_the_material_list_says_who_attaches(stage):
     """같은 목록이 두 가지 말을 한다 — 발송기가 붙이는가, 사람이 붙이는가."""
     off = stage["client"].get("/deals").text
-    assert "PC 카톡에서 직접 첨부한 뒤" in off
+    assert "아래 차례대로 PC 카톡에 직접 첨부한 뒤" in off
 
     _turn_on(stage)
     on = stage["client"].get("/deals").text
-    assert "발송 프로그램이 아래 파일을 먼저 보내고" in on
+    assert "발송 프로그램이 아래 차례대로 파일을 보내고" in on
+    assert "직접 첨부한 뒤" not in on, "켠 계정에 손으로 붙이라는 말이 남아 있다"
 
 
 def test_the_request_screen_says_the_same_thing(stage):
@@ -605,16 +606,37 @@ def test_the_material_list_shows_a_name_not_a_link():
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-def test_the_picker_carries_the_file_name_to_the_screen():
-    """화면 코드가 읽는 속성(`data-ir-file`)을 템플릿이 실제로 싣는가.
+def test_the_screen_reads_the_file_name_the_server_sends():
+    """화면이 읽는 칸(`attachments[].file`)을 서버가 실제로 싣는가.
 
     한쪽만 고치면 목록이 늘 "첨부할 자료가 없습니다" 로 뜬다 — 값은 DB 에
     멀쩡히 들어 있는데.
+
+    **고른 칸에서 따로 읽지 않는다.** 번호(`no`)가 서버에서 오는데 이름만 화면이
+    제 손으로 읽으면 한쪽만 낡는다 — 옛 `data-ir-url` 속성이 그렇게 아무도 안
+    읽는 채로 남아 있었다(#112 가 목록을 서버 응답에서 그리게 바꾼 뒤로).
     """
     root = Path(__file__).resolve().parents[1]
     html = (root / "app" / "templates" / "deals.html").read_text(encoding="utf-8")
     js = (root / "app" / "static" / "js" / "deals.js").read_text(encoding="utf-8")
+    router = (root / "app" / "routers" / "deals.py").read_text(encoding="utf-8")
 
-    assert 'data-ir-file="{{ c.ir_file_name' in html
-    assert 'getAttribute("data-ir-file")' in js
-    assert "data-ir-url" not in html + js, "옛 속성이 남아 있다"
+    assert '"file": c.ir_file_name or ""' in router, "서버가 파일 이름을 안 싣는다"
+    assert "a.file" in js, "화면이 서버가 준 파일 이름을 안 읽는다"
+    assert "data-ir" not in html + js, "아무도 안 읽는 옛 속성이 남아 있다"
+
+
+def test_the_number_and_the_file_name_travel_together(stage):
+    """번호(#112)와 파일 이름(0056)이 **같은 응답의 같은 줄**에 실린다.
+
+    둘이 갈리면 무엇을 몇 번째로 붙일지 알 수 없다.
+    """
+    body = stage["client"].post("/api/deals/preview", json={
+        "mode": "ir", "contact_ids": [stage["contact"].id],
+        "company_ids": [stage["agri"].id, stage["medi"].id]}).json()
+
+    rows = body["previews"][0]["attachments"]
+    assert [a["name"] for a in rows] == ["샘플애그", "샘플메디"], "고른 차례가 아니다"
+    assert [a["file"] for a in rows] == [AGRI_FILE, MEDI_FILE]
+    # 지난 딜 소개가 없으니 번호는 아직 없다 — 그래도 **칸은 있어야** 한다.
+    assert all("no" in a for a in rows), "번호 칸이 사라졌다"

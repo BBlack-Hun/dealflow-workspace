@@ -524,11 +524,23 @@ def preview(
             "has_history": False if (sourcing or sample) else _has_history(db, contact.id),
             # 이 문구는 아직 아무에게도 가지 않는다.
             "sample": sample,
-            # IR 자료 전달에 딸려 갈 자료. **링크가 아니라 파일 이름**이다(0056).
-            # 자동 첨부를 켰으면 발송기가 이 이름으로 파일을 찾아 붙이고,
-            # 켜지 않았으면 사람이 이 이름을 보고 PC 카톡에서 붙인다.
-            "attachments": ([{"name": c.name, "file": c.ir_file_name or ""}
-                             for c in companies] if req.mode == MODE_IR else []),
+            # IR 자료 전달에 딸려 갈 자료. **번호와 파일 이름**이 함께 간다.
+            #
+            # **번호**(#112) — 자료를 붙이는 차례다. 그 번호는 담당자마다 다르고
+            # (딜 소개에서 붙은 번호를 되읽는다 — `deal_numbers`) 화면이 고른
+            # 차례를 세면 목록은 `1`, 문구는 `2번 기업 …` 이 되어 어느 쪽이
+            # 맞는지 알 수 없다. 그래서 **문구를 만든 그 함수**가 목록의 번호도
+            # 함께 낸다(`numbered_companies`). 딜 소개에 없던 기업은 `no` 가
+            # `null` 이다 — 지어내지 않는다. 문구도 그 기업만 이름으로 나간다.
+            #
+            # **파일 이름**(0056) — 링크가 아니다. 자동 첨부를 켰으면 발송기가
+            # 이 이름으로 파일을 찾아 붙이고, 켜지 않았으면 사람이 이 이름을
+            # 보고 PC 카톡에서 붙인다. 어느 쪽이든 **번호 차례대로** 간다.
+            "attachments": ([{"company_id": c.id, "name": c.name,
+                              "file": c.ir_file_name or "", "no": no}
+                             for no, c in deal_numbers.numbered_companies(
+                                 db, contact.id, companies)]
+                            if req.mode == MODE_IR else []),
             "fit": {
                 "fit_count": fit.fit_count,
                 "mismatch_count": fit.mismatch_count,
