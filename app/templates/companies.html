@@ -143,13 +143,21 @@
         <th style="width:70px">대표자</th>
         <th style="width:104px">연락처</th>
         <th style="width:170px">이메일</th>
-        {# 옆 탭(IR 기업 현황)의 `기업 한줄 소개` 와 **같은 칸**이다(one_liner).
-           예전에는 여기가 `사업분야`(business_desc)라는 **다른 칸**이었다 —
-           이름만 다를 뿐 둘 다 사업 설명인데 서로 다른 칸에 쌓이다 보니,
-           여기를 고쳐도 IR 화면의 소개는 그대로였다. 이제 한 칸이다(0051).
-           합치기 전 두 칸의 값은 [수정] 창의 `합치기 전 값` 에 남아 있다.
+        {# ── 여기는 **재료**다(`business_desc`), 조합된 문구가 아니다(0058) ──
+           옆 탭(IR 기업 현황)의 `딜 소개 문구 회사개요`(`one_liner`)와 **다른
+           칸**이다. 0051 이 둘을 한 칸으로 합쳐 이 자리에도 `one_liner` 을
+           세웠는데, 그러자 자동 조합의 결과가 이 탭에 그대로 나왔다 —
+           `설명 | 매출 13억 | 누적투자금액 11억 | Pre Value 200억`.
+           스타트업DB 는 **넣는 자리**라 조합 결과가 아니라 넣은 값이 보여야
+           한다(사용자 요청). 그래서 조합의 첫 토막이자 유일한 사람 글인
+           `business_desc` 로 되돌린다 — 새 칸을 파지 않는다. 조합된 문구는
+           옆 탭에 `딜 소개 문구 회사개요` 라는 이름으로 그대로 남는다.
+
+           **머리글은 `기업 한줄 소개` 그대로다.** 이 칸이 담는 것이 곧 그것이고,
+           이름을 `사업분야` 로 되돌리면 옆 탭의 `사업분야 대분류`(`sector_major`)와
+           같은 말이 되어 서로 다른 두 칸을 가리킨다(0051 이 겪은 일이다).
            안내는 `title` 로 둔다 — 머리글 아래 줄로 붙이면 이름이 두 줄이 된다. #}
-        <th style="width:300px" title="딜 소개 문구에 그대로 들어갑니다 · 눌러서 수정">기업 한줄 소개</th>
+        <th style="width:300px" title="딜 소개 문구 회사개요의 첫 토막이 됩니다 · 눌러서 수정">기업 한줄 소개</th>
         <th class="num" style="width:74px">22년 매출</th>
         <th class="num" style="width:74px">23년 매출</th>
         <th class="num" style="width:74px">24년 매출</th>
@@ -187,8 +195,8 @@
         <td class="cell" data-field="contact_name">{{ r.contact_name }}</td>
         <td class="cell" data-field="contact_phone">{{ r.contact_phone }}</td>
         <td class="cell ellipsis" data-field="contact_email" title="{{ r.contact_email }}">{{ r.contact_email }}</td>
-        <td title="{{ r.one_liner }}">
-          <div class="cell clamp2" data-field="one_liner" data-type="long">{{ r.one_liner }}</div>
+        <td title="{{ r.business_desc }}">
+          <div class="cell clamp2" data-field="business_desc" data-type="long">{{ r.business_desc }}</div>
         </td>
         {# 금액은 **적은 그대로** 글자다 — 원본에 억·백만원·범위가 섞여 있어
            숫자로 바꾸면 100배가 틀어진 채 딜소개 문구에 실려 나간다. #}
@@ -248,8 +256,12 @@
         <th style="width:9%" data-filters="minor:소분류">소분류<div class="th-filters"></div></th>
         <th style="width:9%" data-filters="series:기업구분">기업구분<div class="th-filters"></div></th>
         {# 시트의 칸 이름(`한줄 소개`)과 다르다 — 가져오기는 시트 쪽 이름을 그대로
-           찾으므로(scripts/import_company_sheets.py) 여기만 바꾼다. #}
-        <th title="두 줄까지 보입니다 · 눌러서 수정">기업 한줄 소개</th>
+           찾으므로(scripts/import_company_sheets.py) 여기만 바꾼다.
+           이름이 `기업 한줄 소개` 였다. 그 이름은 이제 **옆 탭의 재료 칸**
+           (`business_desc`)이 쓴다 — 여기 실리는 것은 그 재료에 매출·누적투자
+           금액·Pre Value 를 이어 붙인 **조합 결과**이고, 딜 소개 문구에 그대로
+           나가는 회사 개요다(0058, 사용자 요청). #}
+        <th title="두 줄까지 보입니다 · 눌러서 수정">딜 소개 문구 회사개요</th>
         <th style="width:100px" data-filters="assignee:담당자">담당자<div class="th-filters"></div></th>
         {# 폭은 **이름이 아니라 단추**에 맞춘다. 필터가 하나뿐인 칸은 filters.js 가
            이름 글자를 지우고 `계약여부 ▾` 단추를 그 자리에 세우는데, 단추는 ` ▾` 와
@@ -457,7 +469,11 @@
     <label class="field"><span>설립년도</span><input type="text" id="f-founded_year" placeholder="예: 2015년"></label>
     <label class="field"><span>기보, 신보, 중진공</span>
       <input type="text" id="f-guarantee" placeholder="예: 기보 3억, 신보 2억"></label>
-    <label class="field wide"><span>기업 한줄 소개</span>
+    {# 이름은 **표 머리글(IR 기업 현황)과 한 글자도 다르지 않게** 둔다.
+       `기업 한줄 소개` 였는데, 그 이름은 이제 아래 `소개 내용` 의 재료 칸
+       (`business_desc`)이 쓴다 — 두 칸이 같은 이름을 쓰면 어느 쪽이 조합
+       결과인지 다시 알 수 없다(0058). #}
+    <label class="field wide"><span>딜 소개 문구 회사개요</span>
       <textarea id="f-one_liner" rows="2" placeholder="딜소개 문구에 그대로 들어갑니다"></textarea></label>
     {# ── 이 소개가 자동으로 만들어진 값인가, 사람이 쓴 값인가 ─────────────
        **읽기 전용으로 잠그지 않는다.** 344곳 중 293곳에 사람이 쓴 소개가 이미
@@ -567,33 +583,30 @@
   </div>
 
   <h3 class="form-section">소개 내용
-    <span class="hint">한줄 소개 자동 조합의 재료입니다</span></h3>
+    <span class="hint">딜 소개 문구 회사개요 자동 조합의 재료입니다</span></h3>
   <div class="form-grid">
-    {# ── 사업 설명 (`business_desc`) ────────────────────────────────────
+    {# ── 기업 한줄 소개 (`business_desc`) ──────────────────────────────
        **이름을 `사업분야` 라고 적으면 안 된다.** 옆 탭에 `사업분야 대분류`
        (`sector_major`)가 따로 있어서, 같은 말이 서로 다른 두 칸을 가리키게
-       된다 — 하나는 갈래(`헬스케어`)고 이 칸은 문장이다. 모델 주석이 이 칸을
-       부르는 말을 그대로 쓴다: **카테고리가 아니라 사업 설명이다.**
-       (services/one_liner.py 의 `SOURCE_FIELDS` 라벨도 같은 글자로 맞췄다 —
-       "무엇이 합쳐지는가" 를 두 곳이 다르게 부르면 안 된다.)
+       된다 — 하나는 갈래(`헬스케어`)고 이 칸은 문장이다.
 
-       **표에는 이 칸이 없다.** 어제 두 탭을 합치면서 화면에서 뗐는데(0051),
-       떼고 보니 자동 조합의 **첫 토막**이 그대로 살아 있는데 고칠 자리만
-       사라진 상태였다. 조합은 `사업 설명 | 매출 … | 누적투자금액 … |
-       특이사항` 순이라, 이 칸이 비면 한 줄이 매출부터 시작한다.
+       이름이 `사업 설명` 이었다. 그때는 이 칸이 **표 어디에도 없어서**
+       맞출 상대가 없었지만(0051 이 화면에서 뗐다), 이제 스타트업DB 표의
+       `기업 한줄 소개` 가 곧 이 칸이다(0058) — **표 머리글과 한 글자도
+       다르지 않아야** 한다(tests/test_ui_layout.py 가 그 짝을 지킨다).
+       services/one_liner.py 의 `SOURCE_FIELDS` 라벨도 같은 글자로 맞춘다 —
+       "무엇이 합쳐지는가" 를 두 곳이 다르게 부르면 안 된다.
 
-       그래서 **`소개 내용` 의 맨 앞**에 둔다. 이 섹션은 곧 "한 줄이 무엇으로
+       **`소개 내용` 의 맨 앞**에 둔다. 이 섹션은 곧 "한 줄이 무엇으로
        만들어지는가" 인데, 조합에서 첫 토막인 것이 여기서도 첫 칸이다.
-       (`기업 한줄 소개` 바로 옆에 두는 안은 버렸다 — 0051 이 어렵게 하나로
-       합친 그 칸 옆에 비슷한 칸을 다시 세우면 어느 쪽이 정본인지 또 흐려진다.
-       여기는 **재료**를 모아 두는 자리라 뜻이 갈리지 않는다.)
+       위 `딜 소개 문구 회사개요` 는 그 조합의 **결과**라 자리가 다르다.
 
        줄바꿈이 있는 값이 실제로 있다(Text 칸이다) — `<input>` 으로 두면
        브라우저가 줄바꿈을 지우고, 창은 모든 칸을 한 번에 보내므로 [저장]
        한 번에 그 줄이 사라진다. #}
-    <label class="field wide"><span>사업 설명</span>
+    <label class="field wide"><span>기업 한줄 소개</span>
       <textarea id="f-business_desc" rows="2"
-                placeholder="자동 조합의 첫 토막 — 예: B2B 농산물 선도거래 플랫폼"></textarea></label>
+                placeholder="조합의 첫 토막 — 예: B2B 농산물 선도거래 플랫폼"></textarea></label>
     <label class="field wide"><span>특이사항 (장점)</span><textarea id="f-competitiveness" rows="2"></textarea></label>
     <label class="field wide"><span>투자 현황</span>
       <input type="text" id="f-funding_status" placeholder="예: Series A 진행 중"></label>
