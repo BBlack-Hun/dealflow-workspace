@@ -25,6 +25,7 @@
 from __future__ import annotations
 
 import pathlib
+import re
 
 import pytest
 
@@ -36,6 +37,36 @@ from .conftest import DEMO_PASSWORD
 FILE = "샘플애그_IR.pdf"
 #: 폐기한 옛 값. 이것이 문구에 실리지 않는지가 이 파일의 첫 번째 검사다.
 LINK = "https://drive.google.com/file/d/agri/view"
+NOTICE = "PC 에서 IR 자료를 첨부해주시기 바랍니다"
+
+
+def _notice_body(stage) -> str:
+    """안내창 본문만."""
+    html = stage["client"].get("/deals?mode=ir&attach=1").text
+    body = re.search(r'<p class="guard-body">(.*?)</p>', html, re.S)
+    assert body, "안내창 본문을 찾지 못했습니다"
+    return re.sub(r"<[^>]+>", "", body.group(1))
+
+
+def _css_without_comments() -> str:
+    """주석을 걷어낸 CSS — **브라우저처럼** 안 닫힌 주석은 끝까지 삼킨다.
+
+    글자만 찾으면 `/*` 하나가 안 닫혀 아래 규칙이 통째로 죽은 날에도 검사가
+    통과한다(실제로 그랬다). 브라우저가 버리는 것을 여기서도 버려야 한다.
+    """
+    css = pathlib.Path("app/static/css/app.css").read_text(encoding="utf-8")
+    out, i = [], 0
+    while True:
+        start = css.find("/*", i)
+        if start < 0:
+            out.append(css[i:])
+            break
+        out.append(css[i:start])
+        end = css.find("*/", start + 2)
+        if end < 0:
+            break                       # 안 닫힌 주석 — 여기서부터 없는 것이다
+        i = end + 2
+    return "".join(out)
 
 
 @pytest.fixture()
@@ -273,7 +304,7 @@ def test_the_send_screen_says_to_attach_on_the_pc(stage):
     import re
 
     html = _press_deliver(stage, follow=True).text
-    assert "PC 에서 IR 자료를 첨부해주시기 바랍니다" in html
+    assert NOTICE in html
     # 닫는 길은 **평범한 링크**다 — 스크립트 예외 하나로 발송 화면이 통째로
     # 가려지면 안 된다(`admin_only.html` 과 같은 조심). 닫으면 안내창만 빠지고
     # 골라 둔 담당자·기업은 그대로다.
@@ -288,7 +319,66 @@ def test_the_send_screen_says_to_attach_on_the_pc(stage):
 def test_the_notice_is_not_shown_on_a_plain_visit(stage):
     """평소에 발송 화면을 열 때는 안내창이 뜨지 않는다."""
     html = stage["client"].get("/deals").text
-    assert "PC 에서 IR 자료를 첨부해주시기 바랍니다" not in html
+    assert NOTICE not in html
+
+
+def test_the_notice_needs_something_to_point_at(stage):
+    """`mode=ir` 없이 `attach=1` 만 있으면 **안내창을 띄우지 않는다**.
+
+    안내창은 `[보낼 자료]` 칸을 가리키는데 그 칸은 IR 자료 전달 방식에서만
+    켜진다(`deals.js` 의 `renderIrLinks`). 방식이 안 실린 주소에서는 화면에
+    없는 칸을 가리키는 안내가 되어, 자료를 어디서 받는지 찾다가 그냥 [발송]
+    을 누르게 된다 — 안내창이 막으려던 바로 그 일이다.
+
+    정상 경로로는 안 생긴다(`/ir/deliver-guide` 가 둘을 늘 함께 붙인다).
+    주소를 손보거나 즐겨찾기로 다시 열 때 생긴다.
+    """
+    assert NOTICE not in stage["client"].get("/deals?attach=1").text
+
+
+def test_the_notice_is_shown_when_the_mode_came_along(stage):
+    """둘이 함께 실려 오는 정상 경로에서는 그대로 뜬다."""
+    assert NOTICE in stage["client"].get("/deals?mode=ir&attach=1").text
+
+
+def test_the_notice_does_not_say_which_way_to_look(stage):
+    """가리킬 때 **방향을 말하지 않는다.**
+
+    `[보낼 자료]` 칸은 넓은 화면에서 오른쪽 미리보기 안에 있고, 좁은
+    화면(900px 이하)에서 칸이 세로로 쌓일 때만 아래다 — '아래' 든 '오른쪽'
+    이든 한쪽 폭에서는 틀린 말이 되어, 그 말대로 본 사람은 없는 자리를 본다.
+    """
+    body = _notice_body(stage)
+    assert "보낼 자료" in body, "가리키는 칸 이름은 남아 있어야 한다"
+    for way in ("아래", "위쪽", "오른쪽", "왼쪽", "우측", "좌측", "하단", "상단"):
+        assert way not in body, f"화면 폭에 따라 틀려지는 말입니다: {way}"
+
+
+def test_the_sidebar_dims_with_the_backdrop():
+    """뒷막이 뜨면 **좌측 메뉴도 눈에 띄게 어두워져야 한다.**
+
+    뒷막은 사이드바까지 덮어 메뉴를 정말로 막는다. 그런데 뒷막색이 사이드바
+    바탕색(#10151d)과 같아서 사이드바 위에서는 아무 일도 일어나지 않았다 —
+    본문만 흐려지고 메뉴는 멀쩡해 보이니 눌러 보고 나서야 막힌 줄 안다.
+
+    **주석을 걷어낸 뒤** 찾는다. 전에 CSS 주석이 안 닫혀 규칙이 통째로 죽은
+    적이 있는데, 글자만 찾으면 그때도 이 검사는 통과한다.
+    """
+    css = _css_without_comments()
+    rule = re.search(r"\.layout:has\(\.guard-backdrop\)\s+\.sidebar\s*\{([^}]*)\}", css)
+    assert rule, "뒷막이 떴을 때 사이드바를 어둡게 하는 규칙이 없습니다"
+    assert "brightness(" in rule.group(1), (
+        "어두운 색을 덧칠하는 방식으로는 이미 어두운 사이드바를 어둡게 할 수 없습니다")
+
+
+def test_the_backdrop_itself_is_not_made_heavier():
+    """본문 쪽은 지금보다 과해지지 않는다 — 뒷막에 `backdrop-filter` 를 걸면
+    사이드바와 함께 본문도 더 어두워진다."""
+    css = _css_without_comments()
+    rule = re.search(r"\.guard-backdrop\s*\{([^}]*)\}", css)
+    assert rule, "뒷막 규칙이 사라졌거나 주석 안에 갇혔습니다"
+    assert "rgba(16,21,29,.28)" in rule.group(1)
+    assert "backdrop-filter" not in rule.group(1)
 
 
 def test_another_persons_contact_is_refused(client, db, users, stage):
