@@ -615,8 +615,9 @@
    고쳐야 하면 아래 [딜 제안 관리에서 열기] 로 간다. #}
 <div class="send-modal" id="ir-send-modal" role="dialog" aria-modal="true"
      aria-labelledby="ir-send-title" hidden>
+  {# 창의 **이름**. 설명이 아니라 이 창이 무엇인지 가리키는 한 마디이고,
+     `aria-labelledby` 가 이것을 읽는다 — 없으면 이름 없는 창이 된다. #}
   <h2 class="send-modal-title" id="ir-send-title">자료 보내기</h2>
-  <p class="hint muted" id="ir-send-who"></p>
 
   {# 이 창은 **손으로 붙이는 계정 것**이라 갈래가 없다 — 발송기가 붙이는
      계정은 여기까지 오지 않는다(위 `{% raw %}{% if %}{% endraw %}`). 절대 안 뜨는
@@ -624,16 +625,32 @@
 
      글자는 딜 제안 관리의 같은 칸과 **한 글자도 다르면 안 된다** — 두 화면이
      같은 일을 다르게 말하면 자료를 두 번 보내거나 한 번도 안 보낸다. #}
+  {# **여기 한 줄만 남긴다.** 사용자가 창의 설명 글귀를 이것만 두고 지워
+     달라고 했다 — 자료를 손으로 붙이는 사람이 알아야 할 것이 이 한 줄이고,
+     나머지는 화면을 읽는 시간만 늘렸다.
+
+     번호가 왜 그렇게 적혔는지 말하던 줄(`ir-no-note`)도 함께 뺐다. 이 창은
+     담당자 하나만 다루므로 "담당자를 바꾸면 번호도 바뀝니다" 가 애초에 닿지
+     않는 말이었다. 번호가 없는 기업은 목록에 `번호 없음` 이라고 그대로 적히니
+     자리가 빈 것으로 읽히지도 않는다.
+
+     딜 제안 관리에는 그 줄이 그대로 있다 — 거기서는 탭을 옮기며 담당자를
+     바꾸므로 그 말이 필요하다. 목록을 그리는 공용 한 벌은 note 칸을 안 주면
+     조용히 건너뛴다(`ir_attach_list.js`). #}
   <div class="ir-attach" id="ir-attach">
     <b>보낼 자료 — 아래 차례대로 PC 카톡에 직접 첨부한 뒤 이 문구를 보내세요.</b>
     <ul id="ir-links"></ul>
-    <p class="hint muted" id="ir-no-note" hidden></p>
   </div>
 
-  <p class="hint muted send-modal-label">
-    실제로 나갈 문구 — 고치시려면 [딜 제안 관리에서 열기] 로 가세요.
-  </p>
   <textarea class="bubble-edit" id="ir-send-message" spellcheck="false" readonly></textarea>
+  {# 아래 둘은 설명이 아니라 **알림**이라 남는다.
+
+     `ir-send-state` — 어느 카톡방으로 나가는지, 그리고 보낸 뒤 됐다는 말.
+     어디로 갈지 모른 채 누르게 되면 안 되고, 눌렀는데 아무 일도 안 일어난
+     것처럼 보여도 안 된다.
+
+     `ir-send-warnings` — 서버가 막은 사유(방 미등록 · 자료 파일명 없음 ·
+     투자 성향과 안 맞음). 지우면 사람이 모르고 보낸다. #}
   <p class="hint muted" id="ir-send-state" hidden></p>
   <div class="warn-box" id="ir-send-warnings" hidden></div>
 

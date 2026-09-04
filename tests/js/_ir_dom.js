@@ -37,10 +37,11 @@ function deliverForm(name, contactId, companyIds) {
 function sendModal() {
   return el("div", { class: "send-modal", id: "ir-send-modal" }, [
     el("h2", { class: "send-modal-title", id: "ir-send-title" }),
-    el("p", { class: "hint muted", id: "ir-send-who" }),
+    // 설명 글귀는 한 줄만 남기고 뺐다(`ir.html`) — 여기서도 세우지 않는다.
+    // 가짜 화면이 없는 자리를 세우고 있으면, 그 자리를 쓰는 코드가 되살아나도
+    // 검사가 잡지 못한다.
     el("div", { class: "ir-attach", id: "ir-attach" }, [
-      el("ul", { id: "ir-links" }),
-      el("p", { class: "hint muted", id: "ir-no-note" })
+      el("ul", { id: "ir-links" })
     ]),
     el("textarea", { class: "bubble-edit", id: "ir-send-message", readonly: "" }),
     el("p", { class: "hint muted", id: "ir-send-state" }),
@@ -71,7 +72,7 @@ function buildDom() {
   // 서버가 그려 주는 **처음 모습**. 창은 닫혀 있고, 무엇이 나갈지 보기 전에는
   // 아무 단추도 못 누른다 — 이 검사가 "창이 열렸다" 를 볼 수 있으려면 시작이
   // 닫힌 상태여야 한다(`el()` 은 속성만 달고 `hidden` 성질은 안 켠다).
-  [modal, modal.querySelector("#ir-no-note"), modal.querySelector("#ir-send-state"),
+  [modal, modal.querySelector("#ir-send-state"),
    modal.querySelector("#ir-send-warnings"), modal.querySelector("#ir-send-job")]
     .forEach(function (node) { node.hidden = true; });
   modal.querySelector("#ir-send-go").disabled = true;

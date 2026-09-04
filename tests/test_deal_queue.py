@@ -460,3 +460,40 @@ def test_시작_단추가_화면의_수를_함께_보내고_서버의_말을_그
     result = subprocess.run([node, str(js)], capture_output=True,
                             text=True, timeout=60)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+# ── 화면에서 뺐다 ───────────────────────────────────────────────────────────
+#
+# 사용자가 예약 큐를 안 쓰기로 했다. **지우지 않고 감춘다** — 되살릴 수 있어야
+# 하고, `deals.js` 의 예약 추가·시작·취소 코드가 이 안의 칸들을 이름으로 찾기
+# 때문이다(통째로 들어내면 그 코드가 없는 것을 잡다가 죽는다).
+#
+# 위의 검사들은 **서버 쪽**을 본다 — 감춰도 API 는 그대로 살아 있고, 그래야
+# 다시 켤 때 돌아온다. 아래 둘만 화면을 본다.
+
+def test_예약_큐는_화면에서_감춰져_있다(client, db, seed):
+    from pathlib import Path
+
+    html = client.get("/deals").text
+    panel = html[html.index('id="deal-queue"'):][:80]
+
+    assert "hidden" in panel, f"예약 큐가 화면에 그대로 떠 있다: {panel}"
+    # 감췄어도 **자리는 남아 있어야 한다** — 지우면 예약 코드가 죽는다.
+    assert 'id="queue-list"' in html
+    assert 'id="queue-add"' in html
+
+
+def test_방식을_바꿔도_예약_큐가_다시_켜지지_않는다():
+    """화면이 방식(딜소개/자료전달/…)을 따라 이 칸을 켰다 껐다 한다.
+
+    감췄다는 표(`data-off`)를 안 보면, 딜 소개 탭을 누르는 순간 도로 켜진다 —
+    감춘 것이 감춰지지 않는다.
+    """
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1] / "app"
+    html = (root / "templates" / "deals.html").read_text(encoding="utf-8")
+    js = (root / "static" / "js" / "deals.js").read_text(encoding="utf-8")
+
+    assert 'data-off="1"' in html, "감췄다는 표가 화면에 없다"
+    assert 'hasAttribute("data-off")' in js, "화면 코드가 그 표를 안 본다"
