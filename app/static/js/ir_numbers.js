@@ -37,9 +37,9 @@
         d.items.forEach(function (item) {
           var b = document.createElement("button");
           b.type = "button";
-          b.className = "num-chip" + (item.has_link ? "" : " no-link");
+          b.className = "num-chip" + (item.has_file ? "" : " no-link");
           b.textContent = item.position + ") " + item.name;
-          b.title = item.has_link ? item.name : item.name + " — IR 자료 링크 없음";
+          b.title = item.has_file ? item.name : item.name + " — IR 자료 파일명 없음";
           b.addEventListener("click", function () { toggle(b, item.name); });
           pick.appendChild(b);
         });

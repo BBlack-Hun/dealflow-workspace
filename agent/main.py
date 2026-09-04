@@ -153,6 +153,11 @@ class AgentClient:
         self.hostname = socket.gethostname()
         # 어떤 발송기인지 서버에 알린다 — 배지에서 mock/실발송을 구분하기 위함.
         self.sender_name = "unknown"
+        # 그 발송기가 자료 파일을 붙일 줄 아는가(`Sender.can_send_files`).
+        # **기본은 아니오다** — `sender_name` 이 `unknown` 으로 시작하는 것과 같은
+        # 이유다. 붙기 전에는 모르고, 모르는 것을 할 줄 안다고 밝히면 못 할 일을
+        # 떠맡는다.
+        self.sender_can_send_files = False
         self.job_cap = job_cap(cfg)
 
     def heartbeat(self):
@@ -168,9 +173,23 @@ class AgentClient:
         # 상한(`cap`)도 함께 알려 **서버가 그만큼만 내주게** 한다. 전에는 서버가
         # 97건을 통째로 내주고 우리가 앞 60건만 처리했는데, 나머지 37건이 그냥
         # 버려졌다. 서버가 60건만 주면 애초에 버릴 것이 없다.
+        #
+        # 자료 파일을 붙일 줄 아는지도 함께 밝힌다(`files=`). 밝히지 않으면 서버는
+        # 파일이 실린 잡을 내주지 않는다 — 이 칸을 모르는 구버전 발송기가 파일을
+        # 조용히 버리고 **문구만** 보내는 사고를 구조적으로 막는다
+        # (`send_item` 이 파일을 먼저 보낸다).
+        #
+        # ★ **붙어 있는 발송기가 실제로 할 줄 알 때만 밝힌다.** 판 번호로 되는
+        # 것이 아니다 — 같은 0.7.0 이라도 Windows 발송기는 파일 전송을 지원하지
+        # 않는다(실기 확인 전이라 `file_send_unsupported` 로 거절한다). 무조건
+        # 밝히면 그쪽은 **파일 잡을 받아 놓고 첫 파일에서 실패**하고, 사람은 왜
+        # 계속 실패하는지 알 길이 없다. 아예 안 받는 편이 낫다 — 잡은 큐에 남아
+        # 있다가 파일을 붙일 줄 아는 발송기가 붙는 날 그대로 나간다.
         r = self.session.get(f"{self.base}/api/agent/poll",
                              params={"kinds": ",".join(SUPPORTED_KINDS),
-                                     "cap": self.job_cap}, timeout=15)
+                                     "cap": self.job_cap,
+                                     "files": 1 if self.sender_can_send_files else 0},
+                             timeout=15)
         if r.status_code == 204:
             return None
         r.raise_for_status()
@@ -213,19 +232,53 @@ class AgentClient:
 
 
 def send_item(sender, item: dict, cfg: dict):
-    """한 건을 보낸다. **여러 통으로 나뉘어 있으면 순서대로.**
+    """한 건을 보낸다 — **자료 파일이 먼저, 문구가 마지막.**
 
-    IR 자료 전달이 그렇다 — 링크를 한 통씩 먼저 던지고 마지막에 설명을 붙인다.
-    카톡에서 링크는 각자 미리보기 카드로 떠야 하고, 그게 먼저 와야 한다.
+    ## 차례
 
-    `parts` 가 없으면 `message` 한 통 (지금까지의 동작).
+        files[0] files[1] …      자료 파일. 서버가 준 차례 그대로다
+        parts[0] parts[1] …      문구. 없으면 `message` 한 통(지금까지의 동작)
 
-    한 통이라도 실패하면 그 건 전체를 실패로 본다. 링크만 가고 설명이 안 가면
-    받는 쪽은 뭘 받은 건지 모르고, 설명만 가고 링크가 안 가면 자료가 없다.
-    서버가 다시 큐에 넣을 때 **처음부터** 다시 보내야 순서가 맞는다.
+    자료가 먼저 가야 문구의 "1번 기업 …, 2번 기업 … 전달드리겠습니다" 가 방금
+    올라온 파일을 짚는 말이 된다. 문구가 먼저 가면 받는 쪽은 빈 약속을 먼저 읽고
+    자료를 기다린다.
+
+    파일명의 차례는 **투자사가 기억하는 번호의 차례**다(딜 소개에서 붙인 번호 —
+    `app/services/deal_numbers.py`). 여기서 다시 정렬하지 않는다.
+
+    ## ★ 파일이 하나라도 실패하면 문구를 보내지 않는다
+
+    "자료 보내드렸습니다" 만 가고 자료가 없는 것이 **제일 나쁜 결과**다. 받는
+    쪽은 자기가 놓친 줄 알고 찾아 헤매고, 보낸 쪽은 보냈다고 기록해 두어 아무도
+    다시 보내지 않는다. 반대로 파일만 가고 문구가 안 간 것은 **눈에 띄고**
+    (파일 뒤에 말이 없다) 서버가 그 건을 실패로 남겨 다시 보낼 수 있다.
+
+    `send_file` 은 **보내기 전에** 이름을 전부 걸러 실제 경로로 조립하므로
+    (`agent/sender/base.py: resolve_ir_file`), 이름이 하나라도 규칙에 어긋나면
+    카톡을 건드리기도 전에 실패한다.
+
+    ## 한 통이라도 실패하면 그 건 전체가 실패
+
+    문구도 마찬가지다. 서버가 다시 큐에 넣을 때 **처음부터** 다시 보내야 차례가
+    맞는다 — 그래서 다시 보내면 이미 나간 파일이 겹칠 수 있고, 그 사실은 실패
+    문구에 적힌다(`send_file` 이 몇 개를 보낸 뒤 막혔는지 적는다).
     """
-    parts = item.get("parts") or [item["message"]]
     gap = float(cfg.get("part_gap_sec", 1.2))
+
+    # 자료 파일 — 이 칸을 모르는 서버(구버전)는 주지 않는다. 그러면 지금까지처럼
+    # 문구만 나가고 자료는 사람이 PC 카톡에서 붙인다.
+    files = [str(f) for f in (item.get("files") or []) if str(f).strip()]
+    if files:
+        result = sender.send_file(item["room_name"], files)
+        if not result.ok:
+            result.error = (f"자료 파일을 보내지 못해 **문구도 보내지 않았습니다** "
+                            f"— {result.error}")
+            return result
+        # 파일이 다 올라간 뒤에 문구가 와야 한다. 연달아 쏟으면 카톡이 순서를
+        # 뒤집거나 묶어 버린다(통 사이 간격과 같은 이유·같은 값).
+        time.sleep(gap)
+
+    parts = item.get("parts") or [item["message"]]
 
     result = None
     for n, text in enumerate(parts, start=1):
@@ -501,10 +554,10 @@ def apply_server_settings(sender, payload) -> bool:
     """
     if not isinstance(payload, dict):
         return False
-    if not hasattr(sender, "ir_root_setting"):
+    if not getattr(sender, "can_send_files", False):
         return False          # 파일을 못 보내는 발송기는 알 필요가 없다
     value = str(payload.get("ir_root") or "")
-    if sender.ir_root_setting == value:
+    if getattr(sender, "ir_root_setting", None) == value:
         return False
     sender.ir_root_setting = value
     return True
@@ -541,11 +594,12 @@ def preflight(sender) -> List[str]:
                 "보낼 채팅방 창을 카카오톡에서 미리 열어두면 발송됩니다. "
                 "(자동 열기까지 쓰려면 packaging/mac/setup.sh 를 다시 돌리세요)")
 
-    if hasattr(sender, "ir_root_setting"):
+    if getattr(sender, "can_send_files", False):
         # 보낼 때와 **같은 판단**을 쓴다 — 두 군데에 적으면 한쪽이 낡는다.
         from agent.sender.base import IrPathError, ir_root
         try:
-            notes.append(f"IR 자료 폴더: {ir_root(sender.ir_root_setting)} "
+            notes.append(f"IR 자료 폴더: "
+                         f"{ir_root(getattr(sender, 'ir_root_setting', ''))} "
                          f"— 보낼 자료를 이 폴더에 넣으세요")
         except IrPathError as exc:
             notes.append(f"⚠ {exc}")
@@ -594,6 +648,8 @@ def main(argv=None):
     sender = build_sender(cfg)
     client = AgentClient(cfg)
     client.sender_name = getattr(sender, "name", "unknown")
+    # 파일을 붙일 줄 아는지는 **발송기가 스스로 안다.** 폴링에서 그대로 밝힌다.
+    client.sender_can_send_files = bool(getattr(sender, "can_send_files", False))
 
     # 설정(IR 자료 폴더 자리)을 **먼저** 받아 온다 — 사전 점검이 그 값을 본다.
     # 서버에 못 닿아도 켜지는 것 자체는 막지 않는다(다음 박동에 다시 받는다).

@@ -541,9 +541,11 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     applyContactFilter();
   }
 
-  // 고른 기업의 IR 자료를 띄운다 — **사람이 PC 카톡에 첨부할 파일**이다.
-  // 링크를 문구에 실어 보내던 방식은 폐기했다(자료는 앱이 안 보낸다).
-  // 그래도 이 목록은 남는다 — 첨부할 자료를 여기서 열어 내려받는다.
+  // 고른 기업의 IR 자료를 띄운다 — **번호와 파일 이름**이다.
+  //
+  // 자동 첨부를 켠 계정은 발송기가 이 차례로 파일을 붙여 보내고, 켜지 않은
+  // 계정은 사람이 이 목록을 보고 PC 카톡에 붙인다. 어느 쪽이든 이 목록이
+  // **무엇을 어떤 차례로 보내는가**를 말한다.
   //
   // ## 번호는 **지금 열어 둔 미리보기**에서 온다
   //
@@ -570,6 +572,20 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   // 지난 회차에 없던 기업은 번호가 없다(`no` 가 `null`). **지어내지 않는다** —
   // 문구도 그 기업만 이름으로 나가므로, 목록에는 번호 대신 `번호 없음` 이라고
   // 적는다. 자리를 그냥 비우면 화면이 덜 그려진 것으로 읽힌다.
+  //
+  // ## 자료는 **파일 이름**으로 적는다 (링크가 아니다)
+  //
+  // 예전에는 구글 드라이브 링크라 `[자료 열기]` 로 열 수 있었다. 이제 그 칸에는
+  // **파일명**이 들어간다(0056) — 파일은 각자 PC 의 자료 폴더에 있어서 브라우저가
+  // 열 수 있는 자리가 아니다. `href` 를 억지로 만들면 깨진 링크나 (브라우저가
+  // 조용히 막는) `file://` 이 되어, 눌러도 아무 일이 없는 자리가 된다.
+  //
+  // 그래서 **이름을 그대로 보여 준다.** 자동 첨부를 켠 사람은 그 이름이 폴더에
+  // 있는지 눈으로 맞춰 보고, 켜지 않은 사람은 그 이름으로 파일을 찾아 PC 카톡에
+  // 붙인다. 어느 쪽이든 필요한 것은 **이름 그 자체**다.
+  //
+  // 이름도 번호와 **같은 응답**에서 온다(`attachments[].file`). 고른 칸에서 따로
+  // 읽으면 번호는 서버 것, 이름은 화면 것이 되어 한쪽만 낡는다.
   function renderIrLinks() {
     var box = document.getElementById("ir-attach");
     if (!box) return;
@@ -592,11 +608,10 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       if (sample) badge = "";
       else if (a.no) badge = '<b class="ir-no">' + escapeHtml(String(a.no)) + '번</b> ';
       else { badge = '<span class="ir-no none">번호 없음</span> '; missing += 1; }
-      // 이름·링크는 **한 덩어리**로 싼다. 줄이 `flex` 라 안 싸면 글자와 링크가
+      // 이름·파일명은 **한 덩어리**로 싼다. 줄이 `flex` 라 안 싸면 글자와 파일명이
       // 각각 따로 서서 사이의 `—` 가 엉뚱한 자리로 밀린다.
-      li.innerHTML = badge + '<span class="ir-body">' + (a.url
-        ? escapeHtml(a.name) + " — " +
-          '<a href="' + escapeHtml(a.url) + '" target="_blank" rel="noopener">자료 열기</a>'
+      li.innerHTML = badge + '<span class="ir-body">' + (a.file
+        ? escapeHtml(a.name) + " — <code>" + escapeHtml(a.file) + "</code>"
         : escapeHtml(a.name) +
           ' <span class="warn-text">— 첨부할 자료가 없습니다</span>') + '</span>';
       list.appendChild(li);

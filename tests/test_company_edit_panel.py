@@ -226,7 +226,7 @@ def test_다른_칸을_고쳐도_열한_칸이_지워지지_않는다(logged_in,
     """창은 [저장] 한 번에 **모든 칸**을 보낸다.
 
     창이 못 읽는 칸이 하나라도 있으면(칸이 없거나 이름이 다르면) 그 칸은 빈
-    글자로 실려 나가, IR 링크 하나 고치려고 누른 [저장]이 대표자·연락처·매출을
+    글자로 실려 나가, IR 파일명 하나 고치려고 누른 [저장]이 대표자·연락처·매출을
     통째로 지운다. 표에서 눌러 고치는 쪽은 누른 칸 하나만 보내서 이런 일이
     안 나므로, **창에서만** 나는 사고다.
     """
@@ -234,11 +234,11 @@ def test_다른_칸을_고쳐도_열한_칸이_지워지지_않는다(logged_in,
     body["business_desc"] = "B2B 농산물 선도거래 플랫폼"
     _panel_save(logged_in, company.id, **body)
 
-    link = "https://drive.example.com/file/d/sample/view"
-    assert _panel_save(logged_in, company.id, ir_drive_url=link).status_code == 200
+    file_name = "샘플애그_IR_2026.pdf"
+    assert _panel_save(logged_in, company.id, ir_file_name=file_name).status_code == 200
 
     row = logged_in.get(f"/api/companies/{company.id}").json()
-    assert row["ir_drive_url"] == link
+    assert row["ir_file_name"] == file_name
     gone = [attr for attr, value in body.items() if row[attr] != value]
     assert not gone, f"다른 칸을 고쳤더니 이 칸들이 지워졌습니다: {gone}"
 

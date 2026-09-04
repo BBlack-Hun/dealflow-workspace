@@ -17,6 +17,10 @@
 - 그래도 **어느 기업 자료인지는 문구에 남는다** — 번호와 이름.
 - [자료 보내기] 를 누른 것이 **활동 이력에 남고**, 눌렀다는 이유만으로
   요청이 '전달함' 으로 닫히지는 않는다.
+
+여기 사람들은 **자동 첨부를 켜지 않은 계정**이다(자기 PC 의 자료 폴더를 정하지
+않았다). 그래서 지금까지의 동작 그대로다 — 문구만 나가고 안내창이 뜬다.
+켠 계정이 어떻게 달라지는지는 `tests/test_ir_attach_job.py` 가 지킨다.
 """
 from __future__ import annotations
 
@@ -29,6 +33,9 @@ from app.services import message_composer as mc
 
 from .conftest import DEMO_PASSWORD
 
+#: 자료 칸에 들어가는 값 — **파일명**이다(0056). 예전에는 드라이브 링크였다.
+FILE = "샘플애그_IR.pdf"
+#: 폐기한 옛 값. 이것이 문구에 실리지 않는지가 이 파일의 첫 번째 검사다.
 LINK = "https://drive.google.com/file/d/agri/view"
 NOTICE = "PC 에서 IR 자료를 첨부해주시기 바랍니다"
 
@@ -73,7 +80,7 @@ def stage(client, db, users):
                         firm="가나벤처스", source_sheet="내 명단",
                         channel_kakao=1, connect_stage="connected",
                         kakao_room_name="홍길동 팀장님")
-    agri = IrCompany(name="샘플애그", ir_drive_url=LINK)
+    agri = IrCompany(name="샘플애그", ir_file_name=FILE)
     medi = IrCompany(name="샘플메디")            # 자료 없음
     batch = DealBatch(user_id=users["u1"].id, title="8월 3주차",
                       sent_date="2026-08-19")
@@ -124,6 +131,9 @@ def test_the_link_is_not_in_the_message(stage):
     body = _preview(stage, [stage["agri"].id])["message"]
     assert LINK not in body, "구글 드라이브 링크 방식은 폐기했다"
     assert "drive.google.com" not in body
+    # 파일명도 문구에 적지 않는다. 받는 쪽에 필요한 것은 **번호와 기업 이름**
+    # 이고(투자사는 번호로 기억한다), 파일명은 보내는 쪽 사정이다.
+    assert FILE not in body
 
 
 def test_the_company_is_still_pointed_at_by_number(stage):
@@ -201,16 +211,37 @@ def test_the_agent_gets_one_message(stage, db):
 # --- 자료가 없으면 첨부할 것이 없다 --------------------------------------------
 
 def test_a_company_without_material_is_still_warned(stage):
-    """링크는 안 나가지만, **첨부할 파일을 내려받을 곳**은 있어야 한다."""
+    """파일명이 비어 있으면 붙일 것을 못 찾는다 — 보내기 전에 알려야 한다."""
     preview = _preview(stage, [stage["agri"].id, stage["medi"].id])
     assert any("샘플메디" in w and "첨부할 IR 자료가 없는 기업" in w
                for w in preview["warnings"])
 
 
-def test_the_attachment_list_still_carries_the_link(stage):
-    """화면에서 **열어 내려받는** 자리는 남는다 — `ir_drive_url` 칸을 지운 게 아니다."""
+def test_the_attachment_list_carries_the_file_name(stage):
+    """화면의 [보낼 자료] 목록은 남는다 — 담기는 값이 **파일명**으로 바뀌었을 뿐.
+
+    링크가 아니라서 열 수는 없다. 그래도 이름이 있어야 그 파일을 PC 에서 찾아
+    붙일 수 있다.
+    """
     preview = _preview(stage, [stage["agri"].id])
-    assert preview["attachments"][0]["url"] == LINK
+    assert preview["attachments"][0]["file"] == FILE
+    assert preview["attachments"][0]["name"] == "샘플애그"
+
+
+def test_a_plain_account_gets_no_files_in_the_job(stage, db):
+    """자동 첨부를 켜지 않은 계정은 **지금까지 그대로** — 문구만 나간다.
+
+    파일이 잡에 실리면 발송기가 붙여 보내고, 사람도 손으로 붙인다 —
+    같은 자료가 두 번 나간다.
+    """
+    from app.models import SendItem
+
+    r = stage["client"].post("/api/deals/send", json={
+        "mode": "ir", "contact_ids": [stage["contact"].id],
+        "company_ids": [stage["agri"].id]})
+    assert r.status_code == 200, r.text
+    item = db.query(SendItem).filter_by(job_id=r.json()["job_id"]).one()
+    assert item.files_json is None
 
 
 # --- [자료 보내기] — 활동 이력과 안내창 ----------------------------------------

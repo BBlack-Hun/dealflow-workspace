@@ -736,7 +736,6 @@ class ParsedCompany:
     one_liner: Optional[str] = None
     owner_name: Optional[str] = None
     ir_deck_raw: Optional[str] = None
-    ir_drive_url: Optional[str] = None
     contract_status: str = "no"
     contract_month: Optional[str] = None
     is_top_deal: int = 0
@@ -802,8 +801,15 @@ def parse_sheet_b(rows: Sequence[Sequence[str]], year: int) -> SheetBParse:
         deck_raw = _cell(row, cols["deck"])
         url = _extract_url(deck_raw)
         note = _cell(row, cols["note"]) or None
-        if not url and _has_deck(deck_raw):
-            # 링크를 모르면 '보유' 사실만 남기고 URL은 화면에서 수기 등록한다(DATA_MODEL §6).
+        if url:
+            # ⚠ 시트의 `IR deck유무` 칸에는 **드라이브 주소**가 적혀 있다.
+            # 자료 칸은 이제 **파일명**을 담는다(0056) — 주소를 그대로 넣으면
+            # 발송기가 거부할 값이 다시 쌓이고, 0056 이 치운 자리가 도로
+            # 더러워진다. 주소는 **비고에 남긴다**: 그 링크를 열어 파일을
+            # 내려받아야 자료 폴더에 넣을 수 있으니 버릴 값도 아니다.
+            note = norm(f"{note or ''} {IR_LINK_NOTE}{url}")
+        elif _has_deck(deck_raw):
+            # 링크를 모르면 '보유' 사실만 남기고 파일명은 화면에서 수기 등록한다.
             note = norm(f"{note or ''} IR deck 보유")
 
         out.companies.append(ParsedCompany(
@@ -815,7 +821,6 @@ def parse_sheet_b(rows: Sequence[Sequence[str]], year: int) -> SheetBParse:
             one_liner=_cell(row, cols["one_liner"]) or None,
             owner_name=_cell(row, cols["owner"]) or None,
             ir_deck_raw=deck_raw or None,
-            ir_drive_url=url,
             contract_status=_contract_status(_cell(row, cols["contract"])),
             contract_month=_contract_month(_cell(row, cols["contract_month"]), year),
             is_top_deal=1 if _is_top(_cell(row, cols["top"])) else 0,
@@ -826,6 +831,12 @@ def parse_sheet_b(rows: Sequence[Sequence[str]], year: int) -> SheetBParse:
             contact_email=_cell(row, cols["contact_email"]) or None,
         ))
     return out
+
+
+#: 시트에서 딸려 온 드라이브 주소를 비고에 적을 때 붙이는 머리.
+#: 0056 이 칸에서 비고로 옮긴 줄과 **같은 말**을 쓴다 — 두 곳에서 온 같은
+#: 성질의 값이 화면에 두 가지 문구로 보이면 사람이 다른 것으로 읽는다.
+IR_LINK_NOTE = "옛 IR 자료 링크(구글 드라이브): "
 
 
 def _extract_url(text: str) -> Optional[str]:
@@ -1112,7 +1123,6 @@ def apply_sheet_b(db: Session, parsed: SheetBParse, dry_run: bool = False) -> Im
         _fill_if_empty(company, "sector_minor", pc.sector_minor)
         _fill_if_empty(company, "series", pc.series)
         _fill_if_empty(company, "one_liner", pc.one_liner)
-        _fill_if_empty(company, "ir_drive_url", pc.ir_drive_url)
         _fill_if_empty(company, "note", pc.note)
         _fill_if_empty(company, "contact_name", pc.contact_name)
         _fill_if_empty(company, "contact_phone", pc.contact_phone)
