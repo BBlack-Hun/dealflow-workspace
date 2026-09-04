@@ -245,8 +245,15 @@ def test_a_plain_account_gets_no_files_in_the_job(stage, db):
 
 
 # --- [자료 보내기] — 활동 이력과 안내창 ----------------------------------------
+#
+# **이력은 보낸 때 남는다** — 누른 때가 아니다. [자료 보내기] 는 이제 화면을
+# 옮기지 않고 그 자리에서 창을 여는 단추라(`static/js/ir_send.js`), 열어서
+# 문구만 확인하고 닫는 것이 자연스러운 동작이다. 누른 때 적으면 보내지도 않은
+# 건이 '자료 보냄' 으로 남는다. 왜 발송 목록을 만드는 자리로 옮겼는지는
+# `app/services/ir_attach.py` 의 `record_delivery` 옆에 적어 두었다.
 
 def _press_deliver(stage, follow=False):
+    """스크립트가 죽었을 때의 길 — 폼이 그대로 서버로 온다."""
     return stage["client"].post(
         "/ir/deliver-guide",
         data={"contact_id": stage["contact"].id,
@@ -254,42 +261,92 @@ def _press_deliver(stage, follow=False):
         follow_redirects=follow)
 
 
-def test_pressing_it_leaves_a_line_in_the_history(stage, db):
-    """자료를 앱이 안 보내므로, 여기 안 적으면 손으로 한 일이 아무 데도 안 남는다."""
+def _send_ir(stage):
+    return stage["client"].post("/api/deals/send", json={
+        "mode": "ir", "contact_ids": [stage["contact"].id],
+        "company_ids": [stage["agri"].id, stage["medi"].id]})
+
+
+def _history(db, stage):
     from app.models import ContactActivity
 
-    _press_deliver(stage)
-
-    rows = db.query(ContactActivity).filter_by(
+    return db.query(ContactActivity).filter_by(
         contact_id=stage["contact"].id, kind="ir_delivery").all()
+
+
+def test_sending_leaves_a_line_in_the_history(stage, db):
+    """자료를 앱이 안 보내므로, 여기 안 적으면 손으로 한 일이 아무 데도 안 남는다."""
+    assert _send_ir(stage).status_code == 200
+
+    rows = _history(db, stage)
     assert len(rows) == 1
     assert "PC 에서 직접 첨부" in rows[0].content
     assert rows[0].source == "system"
     assert sorted(rows[0].companies) == ["샘플메디", "샘플애그"]
 
 
-def test_pressing_it_twice_does_not_pile_up(stage, db):
-    """두 번 눌렀다고 같은 줄이 두 번 쌓이면 이력이 아니라 소음이다."""
-    from app.models import ContactActivity
+def test_pressing_it_leaves_nothing_until_it_is_sent(stage, db):
+    """누르기만 한 것은 **아직 아무것도 아니다.**
 
+    창을 열어 문구만 보고 닫는 일이 흔한데, 그것까지 '자료 보냄' 으로 남으면
+    이력을 훑어도 무엇이 실제로 나갔는지 알 수 없다.
+    """
     _press_deliver(stage)
-    _press_deliver(stage)
 
-    assert db.query(ContactActivity).filter_by(
-        contact_id=stage["contact"].id, kind="ir_delivery").count() == 1
+    assert _history(db, stage) == []
 
 
-def test_pressing_it_does_not_close_the_request(stage, db):
-    """아직 아무것도 안 나갔다. 여기서 닫으면 첨부를 잊어도 '보낼 자료' 에서 사라진다."""
+def test_sending_twice_does_not_pile_up(stage, db):
+    """두 번 보냈다고 같은 줄이 두 번 쌓이면 이력이 아니라 소음이다.
+
+    실패해서 다시 보내는 것은 흔한 일이다 — 같은 날 같은 묶음이면 한 줄이다.
+    """
+    _send_ir(stage)
+    _send_ir(stage)
+
+    assert len(_history(db, stage)) == 1
+
+
+def test_the_deal_screen_leaves_the_same_line(stage, db):
+    """딜 제안 관리에서 바로 보내도 **같은 줄이 남는다.**
+
+    예전에는 IR 관리의 단추가 제 손으로 적어서, 그 화면을 거치지 않고 보낸
+    건은 이력에 아무 줄도 없었다 — 같은 일을 두 화면이 다르게 기록했다.
+    """
+    r = stage["client"].post("/api/deals/send", json={
+        "mode": "ir", "contact_ids": [stage["contact"].id],
+        "company_ids": [stage["agri"].id]})
+    assert r.status_code == 200, r.text
+
+    rows = _history(db, stage)
+    assert len(rows) == 1
+    assert rows[0].companies == ["샘플애그"]
+
+
+def test_a_deal_intro_leaves_no_ir_line(stage, db):
+    """딜 소개는 자료 전달이 아니다 — 그 줄이 붙으면 안 보낸 자료가 남는다."""
+    stage["client"].post("/api/deals/send", json={
+        "contact_ids": [stage["contact"].id], "company_ids": [stage["agri"].id]})
+
+    assert _history(db, stage) == []
+
+
+def test_sending_does_not_close_the_request(stage, db):
+    """발송 목록을 만든 것만으로는 닫지 않는다.
+
+    아직 나가지 않았다. 여기서 닫으면 발송이 실패해도 '보낼 자료' 에서 사라진다 —
+    닫는 것은 발송기가 실제로 보내고 난 뒤다(`pipeline.close_requests_for`).
+    """
     from app.models import IrRequest
 
-    _press_deliver(stage)
+    _send_ir(stage)
 
     rows = db.query(IrRequest).filter_by(contact_id=stage["contact"].id).all()
     assert [r.status for r in rows] == ["open", "open"]
 
 
-def test_it_lands_on_the_send_screen_with_everything_picked(stage):
+def test_the_fallback_lands_on_the_send_screen_with_everything_picked(stage):
+    """스크립트가 안 실렸을 때의 길 — 예전 그대로 발송 화면으로 간다."""
     r = _press_deliver(stage)
     assert r.status_code == 303
     where = r.headers["location"]

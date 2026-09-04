@@ -798,6 +798,9 @@
 </div>
 {% endblock %}
 {% block scripts %}
+{# [보낼 자료] 목록과 [문구 복사] 는 IR 진행 관리의 [자료 보내기] 창과
+   **같은 한 벌**이다. deals.js 가 그것을 읽으므로 먼저 와야 한다. #}
+<script src="{{ asset('js/ir_attach_list.js') }}"></script>
 <script src="{{ asset('js/deals.js') }}"></script>
 <script src="{{ asset('js/llm_brief.js') }}"></script>
 {% endblock %}

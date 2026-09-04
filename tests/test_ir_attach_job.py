@@ -615,15 +615,19 @@ def test_the_screen_reads_the_file_name_the_server_sends():
     **고른 칸에서 따로 읽지 않는다.** 번호(`no`)가 서버에서 오는데 이름만 화면이
     제 손으로 읽으면 한쪽만 낡는다 — 옛 `data-ir-url` 속성이 그렇게 아무도 안
     읽는 채로 남아 있었다(#112 가 목록을 서버 응답에서 그리게 바꾼 뒤로).
+
+    목록을 그리는 곳은 **한 벌뿐이다**(`ir_attach_list.js`) — 딜 제안 관리와
+    IR 진행 관리의 [자료 보내기] 창이 같은 것을 쓴다.
     """
     root = Path(__file__).resolve().parents[1]
     html = (root / "app" / "templates" / "deals.html").read_text(encoding="utf-8")
-    js = (root / "app" / "static" / "js" / "deals.js").read_text(encoding="utf-8")
+    js = (root / "app" / "static" / "js" / "ir_attach_list.js").read_text(encoding="utf-8")
+    deals_js = (root / "app" / "static" / "js" / "deals.js").read_text(encoding="utf-8")
     router = (root / "app" / "routers" / "deals.py").read_text(encoding="utf-8")
 
     assert '"file": c.ir_file_name or ""' in router, "서버가 파일 이름을 안 싣는다"
     assert "a.file" in js, "화면이 서버가 준 파일 이름을 안 읽는다"
-    assert "data-ir" not in html + js, "아무도 안 읽는 옛 속성이 남아 있다"
+    assert "data-ir" not in html + js + deals_js, "아무도 안 읽는 옛 속성이 남아 있다"
 
 
 def test_the_number_and_the_file_name_travel_together(stage):
