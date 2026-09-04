@@ -23,9 +23,9 @@ from sqlalchemy.orm import Session
 
 from .. import config
 from ..db import SessionLocal, get_db
-from ..deps import (admin_only, consulting_default_for,
-                    consulting_is_only_screen, get_current_user,
-                    templates)
+from ..deps import (admin_only, auto_attach_default_for,
+                    consulting_default_for, consulting_is_only_screen,
+                    get_current_user, templates)
 from ..models import AgentDevice, User, WeeklyRoutine, WeeklyTask
 from ..services import auth as auth_svc
 from ..services import dashboard as dash
@@ -570,8 +570,13 @@ def create_member(
     # 투자현황을 처음부터 켤지는 **역할이 기본값만 정한다**(그 뒤로는 팀 현황에서
     # 누구든 끄고 켠다). 투자컨설턴트를 꺼진 채로 만들면 그 계정에는 볼 화면이
     # 하나도 없어서, 만들어 준 사람이 무엇을 빠뜨렸는지 알기 어렵다.
+    # 자료 자동 첨부도 **역할이 기본값만 정한다** — 지금은 어느 역할도 켜지
+    # 않는다(`deps.auto_attach_default_for`). 값을 여기 적지 않고 그 함수를
+    # 읽는 것은, 계정을 만드는 자리가 셋이라(여기 · `scripts/bootstrap.py` ·
+    # `scripts/add_user.py`) 각자 숫자를 들고 있으면 그중 하나만 낡기 때문이다.
     member = User(name=name.strip() or normalized, phone=normalized, role=role,
                   can_view_consulting=1 if consulting_default_for(role) else 0,
+                  can_auto_attach_ir=1 if auto_attach_default_for(role) else 0,
                   password_hash=auth_svc.hash_password(config.INITIAL_PASSWORD),
                   must_change_password=1)
     db.add(member)
@@ -762,6 +767,58 @@ def toggle_consulting(
         note = "+—+이+계정에는+이제+볼+화면이+없습니다"
     return RedirectResponse(
         f"/team?msg={member.name}+님을+투자현황을+{state}+했습니다{note}",
+        status_code=303)
+
+
+@router.post("/team/members/{member_id}/auto-attach", include_in_schema=False)
+def toggle_auto_attach(
+    member_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """자료 자동 첨부를 쓸 수 있게 하거나 막는다 — **계정마다.**
+
+    바로 위 투자현황 칸과 **같은 자리, 같은 모양**이다(#107). 예전에는 이
+    기능을 켜는 문이 `/setup` 의 자료 폴더 칸 하나였는데, 그 칸은 본인이 넣는
+    값이라 **누구든 스스로 켤 수 있었다.** 이제 쓸 사람은 관리자가 여기서
+    정하고(`users.can_auto_attach_ir`), 역할이 하는 일은 새 계정의 기본값뿐이다
+    (`deps.auto_attach_default_for`).
+
+    **넣어 둔 자료 폴더는 지우지 않는다.** 끄면 `agent_devices.ir_root` 를 읽지
+    않을 뿐이라(`deps.may_auto_attach` 를 읽는 자리들), 다시 켜면 그대로
+    되돌아온다. 여기서 지우면 되살릴 값이 없어지고, 그 경로는 그 PC 앞에 앉은
+    본인만 아는 값이다.
+
+    ## 본인 것도 끄고 켠다 — 투자현황과 **다른 판단**이다
+
+    투자현황은 본인 줄을 막았다. 관리자가 스스로를 잠그면 그 화면에 다시
+    들어갈 길이 없어지기 때문이다. 여기는 그렇지 않다.
+
+    - **잠기는 화면이 없다.** 꺼져도 `/setup`·`/team` 은 그대로 열려 있고, 자료를
+      지금까지처럼 PC 카톡에서 손으로 붙일 뿐이다. 되돌리는 단추도 이 표에 그대로
+      남는다(`/team` 은 관리자면 늘 열린다 — 이 칸이 막지 않는다).
+    - **막으면 오히려 되돌릴 길이 없어진다.** 기본값이 꺼짐이라, 이 기능을 쓸
+      사람이 관리자 본인이면 **자기 것을 켤 수가 없다.** 새로 깐 서버의 첫
+      관리자라면 켜 줄 사람이 아예 없다.
+    """
+    admin_only(user)
+    member = db.get(User, member_id)
+    if member is None:
+        raise HTTPException(status_code=404, detail="계정을 찾을 수 없습니다")
+    member.can_auto_attach_ir = 0 if member.can_auto_attach_ir else 1
+    db.commit()
+    state = "쓰게" if member.can_auto_attach_ir else "쓸 수 없게"
+    # 켤 때는 **다음에 할 일**을 적는다. 켜 주기만 해서는 아무 일도 일어나지
+    # 않는다 — 본인이 `/setup` 에서 자기 PC 의 폴더를 정해야 비로소 켜진다
+    # (그 경로는 그 PC 앞에 앉은 사람만 안다). 이 한 줄이 없으면 관리자는
+    # 켜 줬다고 알리고, 정작 그 사람은 무엇을 더 해야 하는지 모른다.
+    note = ("+—+본인이+[발송+프로그램]+화면에서+자료+폴더를+정해야+켜집니다"
+            if member.can_auto_attach_ir else
+            "+—+정해+두신+자료+폴더는+지워지지+않습니다")
+    from urllib.parse import quote
+
+    return RedirectResponse(
+        f"/team?msg={quote(member.name)}+님이+자료+자동+첨부를+{state}+했습니다{note}",
         status_code=303)
 
 

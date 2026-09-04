@@ -304,6 +304,56 @@ def consulting_default_for(role: str) -> bool:
     return role in ("admin", "consultant")
 
 
+def may_auto_attach(user: User) -> bool:
+    """IR 자료를 **발송기가 붙여 보내게** 할 수 있는 계정인가.
+
+    **판정은 여기 하나뿐이다.** 화면(`/setup` 의 자료 폴더 칸 · IR 진행 관리와
+    IR 기업 현황의 안내 문구)도, 저장 라우터도, 실제로 파일을 실을지 가리는
+    자리(`services/ir_attach.py: auto_attach_enabled`)도, 발송기에 폴더를
+    내려보내는 자리(`routers/agent_api.py` 의 박동)도 전부 이 함수를 읽는다.
+    화면은 판정하지 않는다 — 이 저장소는 같은 판단이 두 곳에 적혀 갈리는 사고를
+    반복해 겪었다(메뉴 목록과 라우터 목록이 갈려 컨설턴트에게 다 열려 있던 일,
+    팀 현황의 `투자현황` 칸이 라우터와 갈렸던 일).
+
+    ## 왜 새 칸이 필요했나
+
+    예전에는 이 기능을 켜는 문이 **`/setup` 에서 자료 폴더를 넣는 것** 하나였다.
+    그 칸(`agent_devices.ir_root`)은 **본인이 넣는 값**이라, 문이 곧 스위치였고
+    누구든 스스로 켤 수 있었다. 이 기능은 정해진 사람만 쓰는데 그 사람을 가릴
+    자리가 코드에 없었던 것이다.
+
+    이제 `ir_root` 는 **"어느 폴더인가"** 라는 제 뜻만 지고, **"쓸 수 있는가"**
+    는 이 칸이 진다. 옆의 `may_view_consulting` 과 같은 자리, 같은 모양이다 —
+    이름을 코드에 박지 않고 계정마다 켜고 끄며(`routers/dashboard.py` 의
+    `toggle_auto_attach`), 역할이 하는 일은 새 계정의 기본값뿐이다
+    (`auto_attach_default_for`).
+
+    **꺼도 넣어 둔 폴더는 지우지 않는다.** 안 읽을 뿐이라, 다시 켜면 그대로
+    되돌아온다.
+    """
+    return bool(user.can_auto_attach_ir)
+
+
+def auto_attach_default_for(role: str) -> bool:
+    """이 역할로 **새로 만드는 계정**의 자료 자동 첨부를 기본으로 켤 것인가.
+
+    옆의 `consulting_default_for` 와 같은 자리다 — 계정을 만드는 곳이 셋이라
+    (`routers/dashboard.py` 의 [계정 만들기] · `scripts/bootstrap.py` ·
+    `scripts/add_user.py`) 각자 숫자를 들고 있으면 그중 하나만 낡는다.
+
+    **지금은 어느 역할도 켜지 않는다.** 이 기능은 정해진 사람만 쓰기로 했고,
+    누구인지는 역할로 정해지지 않는다 — 관리자가 팀 현황에서 계정마다 켠다.
+    `False` 를 반환하는 함수 하나로 두는 것은, 나중에 기본값을 바꿀 때 **고칠
+    자리를 한 곳으로 모아 두려는 것**이다(역할이 늘어도 여기만 본다).
+
+    켜진 채로 만들 이유가 없다는 것도 짚어 둔다. `consulting_default_for` 가
+    투자컨설턴트를 켜 두는 것은 **꺼진 채로 만들면 볼 화면이 하나도 없어서**인데,
+    여기는 꺼져도 잃는 화면이 없다 — 자료를 지금까지처럼 PC 카톡에서 손으로
+    붙일 뿐이다.
+    """
+    return False
+
+
 def consulting_is_only_screen(user: User) -> bool:
     """이 계정에는 투자현황 말고 **볼 화면이 없는가.**
 

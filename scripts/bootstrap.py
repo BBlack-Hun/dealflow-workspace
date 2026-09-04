@@ -185,7 +185,11 @@ def bootstrap(db) -> dict:
     _admin, created = _get_or_create(
         db, User, phone=ADMIN_PHONE,
         defaults=dict(name=ADMIN_NAME, role="admin",
-                      can_view_consulting=1 if deps.consulting_default_for("admin") else 0),
+                      can_view_consulting=1 if deps.consulting_default_for("admin") else 0,
+                      # 자료 자동 첨부(0059)도 같은 자리를 읽는다. 지금은 꺼진
+                      # 채로 나오고, 첫 관리자가 **자기 것을 스스로 켤 수 있다**
+                      # (투자현황과 달리 본인 줄도 끄고 켠다).
+                      can_auto_attach_ir=1 if deps.auto_attach_default_for("admin") else 0),
     )
     made["users"] += int(created)
     return made

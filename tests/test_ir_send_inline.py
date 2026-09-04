@@ -72,12 +72,18 @@ def stage(client, db, users):
 
 
 def _turn_on(stage):
-    """자료 폴더를 정해 둔다 — 자동 첨부를 켜는 유일한 스위치(`ir_attach`)."""
+    """자동 첨부를 켠다 — **스위치가 둘**이다(`ir_attach`, 0059).
+
+    관리자가 이 계정에 기능을 열어 주고(`users.can_auto_attach_ir`), 본인이 자기
+    PC 의 자료 폴더를 정해야(`agent_devices.ir_root`) 비로소 켜진다. 열어 주기만
+    하고 폴더가 없으면 자료 없이 문구만 나가므로, 둘을 `and` 로 묶는다.
+    """
     from app.models import AgentDevice
 
     device = stage["db"].query(AgentDevice).filter_by(
         user_id=stage["user"].id).one()
     device.ir_root = "/Users/somebody/IR자료"
+    stage["user"].can_auto_attach_ir = 1
     stage["db"].commit()
 
 
