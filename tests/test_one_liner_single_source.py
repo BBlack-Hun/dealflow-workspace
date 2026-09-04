@@ -32,6 +32,11 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 PREVIOUS = "0050_deal_queue"
+# **`head` 가 아니라 이 판까지만** 올린다. 이 파일이 재는 것은 0051 한 판이
+# 자료에 무엇을 했는가인데, `head` 로 두면 뒤에 붙는 판들이 같은 칸을 만져도
+# 그 결과가 0051 의 몫으로 읽힌다 — 실제로 0058 이 `business_desc` 를 채우자
+# "0051 이 사업분야를 건드렸다" 는 거짓 실패가 났다.
+REVISION = "0051_one_liner_single_source"
 
 # 운영 321곳의 분포 그대로. 이 숫자가 곧 사람이 화면에서 보게 될 결과다.
 BOTH_SAME = 138        # 둘 다 있고 글자까지 같음
@@ -142,13 +147,13 @@ def cycle(tmp_path_factory) -> dict:
 
     before = _read(db, "one_liner, business_desc")
 
-    upgraded = _alembic(db, "upgrade", "head")
+    upgraded = _alembic(db, "upgrade", REVISION)
     assert upgraded.returncode == 0, upgraded.stdout + upgraded.stderr
     after = _read(db, "one_liner, business_desc, desc_backup")
     after_columns = _columns(db)
 
     # 두 번 돌려도 아무 일도 안 일어나야 한다(중간에 끊겼다 다시 도는 길).
-    again = _alembic(db, "upgrade", "head")
+    again = _alembic(db, "upgrade", REVISION)
     assert again.returncode == 0, again.stdout + again.stderr
     twice = _read(db, "one_liner, business_desc, desc_backup")
 
@@ -332,24 +337,48 @@ def merged(db):
     return row
 
 
-def test_두_탭이_같은_칸을_보여_준다(logged_in, merged):
-    """스타트업DB 를 고쳤는데 IR 화면의 소개가 그대로이던 일이 여기서 끝난다."""
-    for path in ("/companies", "/companies?tab=db"):
-        html = logged_in.get(path).text
-        assert "사람이 다듬어 쓴 소개" in html, f"{path}: 한줄 소개가 안 보인다"
-        assert 'data-field="one_liner"' in html, f"{path}: 고칠 칸이 one_liner 이 아니다"
+def test_두_탭은_이제_서로_다른_칸을_보여_준다(logged_in, merged):
+    """0051 은 두 탭을 한 칸으로 묶었고, **0058 이 다시 갈랐다.**
+
+    갈랐다고 0051 이 되돌려진 것은 아니다 — 0051 이 없앤 것은 *같은 뜻을 담은
+    두 칸*이었고, 지금 갈라진 둘은 **재료와 그 조합 결과**라 뜻이 다르다.
+    (조합이 두 탭에서 어떻게 보이는지는 tests/test_one_liner_tab_split.py 가 잰다.)
+    """
+    ir = logged_in.get("/companies").text
+    assert 'data-field="one_liner"' in ir, "IR 기업 현황은 조합 결과를 보여 준다"
+    assert "사람이 다듬어 쓴 소개" in ir
+
+    db_tab = logged_in.get("/companies?tab=db").text
+    assert 'data-field="business_desc"' in db_tab, "스타트업DB 는 재료를 보여 준다"
+    assert "시트에 적혀 있던 사업 설명" in db_tab
 
 
-def test_한쪽에서_고치면_다른_쪽이_따라온다(logged_in, merged):
-    """맞춰 주는 코드가 **없어야** 안 어긋난다 — 같은 칸을 보기 때문이다."""
-    logged_in.patch(f"/api/companies/{merged.id}",
-                    json={"one_liner": "스타트업DB 에서 고친 소개"})
-    for path in ("/companies?tab=db", "/companies"):
-        assert "스타트업DB 에서 고친 소개" in logged_in.get(path).text, path
+def test_재료를_고치면_조합_결과가_따라온다(logged_in, db):
+    """0051 이 지키려던 것 — "고쳤는데 저쪽이 그대로" 가 없어야 한다.
+
+    칸이 갈라졌어도 **맞춰 주는 코드는 여전히 없다.** 스타트업DB 에서 재료를
+    고치면 조합이 다시 만들어져 IR 기업 현황이 따라온다(one_liner.sync).
+    """
+    from app.models import IrCompany
+
+    row = IrCompany(name="샘플나다물류", business_desc="물류 최적화 SaaS",
+                    one_liner="물류 최적화 SaaS")      # 조합값 그대로 = AUTO
+    db.add(row)
+    db.commit()
+
+    logged_in.patch(f"/api/companies/{row.id}",
+                    json={"business_desc": "스타트업DB 에서 고친 소개"})
+    assert "스타트업DB 에서 고친 소개" in logged_in.get("/companies?tab=db").text
+    assert "스타트업DB 에서 고친 소개" in logged_in.get("/companies").text, \
+        "재료를 고쳤는데 딜 소개 문구가 따라오지 않았다"
 
 
 def test_스타트업DB_에는_이제_사업분야_머리글이_없다(logged_in, merged):
-    """이름만 다른 같은 칸이 둘 다 보이면 어느 쪽이 정본인지 다시 알 수 없다."""
+    """이름만 다른 같은 칸이 둘 다 보이면 어느 쪽이 정본인지 다시 알 수 없다.
+
+    `business_desc` 가 이 탭으로 돌아온 뒤에도(0058) 머리글은 `기업 한줄 소개`
+    다 — `사업분야` 로 되돌리면 옆 탭의 `사업분야 대분류` 와 같은 말이 된다.
+    """
     import re
 
     head = logged_in.get("/companies?tab=db").text.split("</thead>")[0]
@@ -357,9 +386,6 @@ def test_스타트업DB_에는_이제_사업분야_머리글이_없다(logged_in
              for _a, m in re.findall(r"<th\b([^>]*)>(.*?)</th>", head, re.S)]
     assert "사업분야" not in names, names
     assert "기업 한줄 소개" in names, names
-    # 시트에서 온 그 글자는 화면 어디에도 안 실린다 — 표의 `title` 까지 본다.
-    assert "시트에 적혀 있던 사업 설명" not in \
-        logged_in.get("/companies?tab=db").text.split("</table>")[0]
 
 
 def test_합치기_전_값은_표가_아니라_수정창에서만_본다(logged_in, merged):
