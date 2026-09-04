@@ -128,7 +128,10 @@ DEMO_COMPANIES = [
          competitiveness="대학병원 3곳 PoC", summary_status="done"),
     dict(name="샘플페이", sector_major="핀테크", sector_minor="결제", series="SeriesB",
          one_liner="가맹점 정산 자동화 플랫폼",
-         ir_file_name="샘플로지_IR.pdf",
+         # 자기 이름을 단다 — 남의 회사 파일명이 붙어 있었다(`샘플로지_IR.pdf`).
+         # 시연 화면의 [보낼 자료] 목록은 사람이 **기업과 파일의 짝을 눈으로
+         # 맞춰 보는** 자리라, 여기가 어긋나 있으면 멀쩡한 화면이 고장으로 읽힌다.
+         ir_file_name="샘플페이_IR.pdf",
          contract_status="no", is_top_deal=1, funding_status="Series B 라운드 오픈",
          revenue_recent=12000, funding_total=8000, raise_target=15000, pre_value=60000,
          competitiveness="월 거래액 300억 돌파", summary_status="done"),

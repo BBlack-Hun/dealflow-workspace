@@ -263,6 +263,35 @@ def test_the_window_rule_is_not_swallowed_by_a_comment():
     assert "z-index: 40" in body, "뒷막(39) 위에 서야 한다"
 
 
+# --- 시연 자료 --------------------------------------------------------------------
+#
+# [보낼 자료] 목록은 사람이 **기업과 파일의 짝을 눈으로 맞춰 보는** 자리다.
+# 그러려면 시연 자료 자체의 짝이 맞아야 한다 — 실제로 `샘플페이` 가
+# `샘플로지_IR.pdf` 를 달고 있어서, 멀쩡한 화면이 "기업과 파일이 어긋난다" 로
+# 읽혔다(`scripts/bootstrap.py`).
+#
+# **이름 규칙을 붙들어 매지는 않는다.** `{기업명}_IR.pdf` 를 강요하면 시연
+# 자료를 손볼 때마다 검사가 걸리적거린다. 보는 것은 **짝이 맞는가** 하나다 —
+# 제 이름을 달고 있는가, 남의 이름을 달고 있지는 않은가.
+
+def test_the_demo_material_belongs_to_the_company_that_carries_it():
+    from scripts.bootstrap import DEMO_COMPANIES
+
+    named = [(c["name"], c.get("ir_file_name") or "") for c in DEMO_COMPANIES]
+    assert named, "시연 기업이 하나도 없다 — 검사가 헛돈다"
+
+    for name, ir_file in named:
+        if not ir_file:
+            continue        # 자료를 안 붙인 기업은 이 검사의 대상이 아니다
+        assert name in ir_file, (
+            f"scripts/bootstrap.py — '{name}' 의 자료 파일명에 제 이름이 없다"
+            f"({ir_file}). 화면에서 짝을 눈으로 맞출 수 없다")
+        others = [n for n, _ in named if n != name and n in ir_file]
+        assert not others, (
+            f"scripts/bootstrap.py — '{name}' 이 '{others[0]}' 의 자료를 달고 있다"
+            f"({ir_file}). 화면이 고장난 것으로 읽힌다")
+
+
 # --- 브라우저 검사 -----------------------------------------------------------------
 #
 # 폼을 막는지·서버에 무엇을 묻는지·막혔을 때 무슨 말이 뜨는지는 `ir_send.js` 를
