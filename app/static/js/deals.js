@@ -628,7 +628,11 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     // 그대로 떠 있으면 지금 탭에서 [시작] 을 누르면 이 탭의 문구가 나가는
     // 줄로 읽힌다 — 실제로 나가는 것은 딜 소개다.
     var queuePanel = document.getElementById("deal-queue");
-    if (queuePanel) queuePanel.hidden = mode !== "deal";
+    // `data-off` 가 붙어 있으면 **화면에서 뺀 것**이다(`deals.html`) — 방식이
+    // 바뀌었다고 다시 켜면 안 뺀 것이 된다. 감추는 결정은 화면 한 곳에 있다.
+    if (queuePanel && !queuePanel.hasAttribute("data-off")) {
+      queuePanel.hidden = mode !== "deal";
+    }
     applyContactFilter();
     // 설명 줄은 화면에서 뺐다. 없어도 터지지 않아야 한다.
     var help = document.getElementById("mode-help");

@@ -63,10 +63,13 @@ def auto_attach_enabled(db: Session, user: User) -> bool:
 
 
 def file_names(companies: Sequence) -> List[str]:
-    """붙여 보낼 파일명 — **고른 차례 그대로.**
+    """붙여 보낼 파일명 — **받은 차례 그대로.**
 
     문구가 기업을 짚는 차례이자 발송기가 파일을 보내는 차례다. 여기서 다시
     정렬하면 문구의 차례와 파일의 차례가 갈린다.
+
+    차례를 정하는 것은 부르는 쪽이다 — 자료 전달은 **번호 오름차순**으로 세운
+    목록을 넘긴다(`routers/deals.py` 의 `ir_order`).
     """
     return [name for name in ((c.ir_file_name or "").strip() for c in companies)
             if name]

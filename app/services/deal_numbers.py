@@ -12,7 +12,10 @@
   · 나가는 문구의 `1) 2) 3)`            (`message_composer.compose_message`)
   · 회차에 남는 번호                     (`DealBatchCompany.position`)
   · 자료 전달의 `2번 기업 …`              (`company_list`)
-  · 화면의 [보낼 자료] 목록에 적히는 번호   (`numbered_companies` → deals.js)
+  · 화면의 [보낼 자료] 목록에 적히는 번호   (`numbered_companies` → 화면 둘)
+
+되읽는 쪽 둘은 **번호 오름차순**으로 늘어선다(자료를 그 차례로 붙인다).
+만드는 쪽(`numbered`)은 여전히 고른 차례가 곧 번호다 — 그건 다른 일이다.
 
 앞의 둘은 `numbered()` 한 자리에서 나오고, 뒤의 둘은 그렇게 남은 번호를
 `for_contact()` 로 **되읽는다.** 자료 전달은 번호를 만들지 않는다.
@@ -88,18 +91,38 @@ def for_contact(db, contact_id: int) -> Dict[int, int]:
 
 def numbered_companies(db, contact_id: int,
                        companies) -> List[Tuple[Optional[int], object]]:
-    """`(번호, 기업)` 짝 — **고른 차례 그대로**, 번호가 없으면 `None`.
+    """`(번호, 기업)` 짝 — **번호 오름차순**, 번호가 없으면 `None`.
 
     나가는 문구(`company_list`)와 화면의 [보낼 자료] 목록이 **여기 하나만
     본다.** 화면이 따로 세면 목록에는 `2번`, 문구에는 `3번 기업 …` 이 되어
     사람이 자료를 엉뚱한 차례로 붙인다 — 자료를 손으로 첨부하는 지금은
     화면에 적힌 번호가 곧 붙이는 차례다.
 
-    차례를 다시 세우지 않는 것도 일부러다. 짚는 **차례**는 고른 차례이고
-    (자료를 청한 차례), **번호**만 딜 소개에서 붙은 것을 되읽는다.
+    ## 왜 번호순인가
+
+    예전에는 **고른 차례**로 두었다(자료를 청한 차례). 그런데 이 목록을 보는
+    사람이 하는 일은 **번호대로 파일을 붙이는 것**이라, 목록이 `3번 · 1번 ·
+    2번` 으로 서 있으면 붙일 때마다 눈으로 되짚어야 한다. 자료가 여럿일수록
+    틀리기 쉽고, 틀리면 받는 쪽은 자기가 청한 번호와 다른 자료를 받는다.
+
+    **문구도 같이 바뀐다** — 문구를 짓는 `company_list` 가 이 함수를 그대로
+    쓰기 때문이다. 목록만 번호순이고 문구가 고른 차례면 `1번, 3번` 을 보며
+    `3번, 1번` 차례로 붙이게 된다. 한 함수에서 나오니 갈릴 자리가 없다.
+
+    **딜 소개의 번호 매기기는 그대로다**(`numbered` — 고른 차례가 곧 번호).
+    그건 번호를 **만드는** 자리이고 여기는 만들어진 번호를 **되읽는** 자리다.
+
+    ## 번호 없는 기업은 끝에
+
+    지난 딜 소개에 없던 기업은 번호가 없다. 번호가 붙은 줄 사이에 끼우면
+    오름차순으로 훑던 눈이 끊긴다 — 붙이는 차례를 세는 것이 이 목록의 일이라,
+    셀 수 있는 것을 먼저 두고 못 세는 것을 뒤에 둔다. 그들끼리는 **고른 차례**
+    그대로다(정렬이 안정적이라 저절로 그렇게 된다).
     """
     positions = for_contact(db, contact_id)
-    return [(positions.get(company.id), company) for company in companies]
+    pairs = [(positions.get(company.id), company) for company in companies]
+    # 번호 있는 것 먼저(오름차순) · 없는 것은 뒤에, 둘 다 고른 차례를 지킨다.
+    return sorted(pairs, key=lambda pair: (pair[0] is None, pair[0] or 0))
 
 
 def company_list(db, contact_id: int, companies) -> str:
@@ -107,6 +130,9 @@ def company_list(db, contact_id: int, companies) -> str:
 
     번호는 **딜 소개에서 붙인 그 번호**다(`for_contact`). 고른 차례로 다시
     세지 않는다 — 자료를 요청받은 차례와 투자사가 기억하는 번호는 다르다.
+
+    짚는 차례는 **번호 오름차순**이다 — 화면의 [보낼 자료] 목록과 같은 함수에서
+    나오므로(`numbered_companies`) 둘이 갈릴 자리가 없다.
 
     딜 소개에 없던 기업은 번호를 붙이지 않는다 — 없는 번호를 지어내면 받는
     쪽이 자기 목록에서 찾다가 못 찾는다.

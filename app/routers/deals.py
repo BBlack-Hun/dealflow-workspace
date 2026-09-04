@@ -592,7 +592,9 @@ def create_send_list(
     #
     # 메일에는 붙이지 않는다. 파일은 **각자 PC** 에 있고 메일은 서버가 보낸다 —
     # 서버에는 그 파일이 없다(`services/mail_sender.py`).
-    attach_files: list = []
+    # 실을지 말지만 여기서 가린다. **무엇을 어떤 차례로** 실을지는 담당자마다
+    # 다르므로(번호가 담당자마다 다르다) 아래 담당자 고리에서 정한다.
+    attach_on = False
     if req.mode == MODE_IR and not by_email and ir_attach.auto_attach_enabled(db, user):
         # 파일명이 빈 기업이 하나라도 있으면 **목록을 만들지 않는다.**
         #
@@ -605,7 +607,7 @@ def create_send_list(
                 status_code=400,
                 detail=(f"'{blank[0]}' IR 자료 파일명 미등록 — IR 기업 현황에서 "
                         f"파일명을 넣거나 발송 대상에서 제외하세요"))
-        attach_files = ir_attach.file_names(companies)
+        attach_on = True
 
     # Resolve + validate target contacts (must be owned, must have a room name).
     sourcing = req.mode == MODE_SOURCING
@@ -680,6 +682,15 @@ def create_send_list(
     overrides = _override_map(req, {c.id for c in contacts})
 
     for contact in contacts:
+        # **번호순으로 늘어선 이 담당자의 기업들.** 화면의 [보낼 자료] 목록과
+        # 나가는 문구가 이 차례이므로(`deal_numbers.numbered_companies`),
+        # 발송기가 붙이는 파일도 같은 차례여야 한다 — 화면은 `1번 · 3번` 인데
+        # 파일이 고른 차례로 나가면 사람이 본 것과 받는 것이 갈린다.
+        #
+        # 번호는 담당자마다 다르므로 **담당자마다 다시 잡는다.**
+        ir_order = ([c for _no, c in deal_numbers.numbered_companies(
+            db, contact.id, companies)] if req.mode == MODE_IR else companies)
+        attach_files = ir_attach.file_names(ir_order) if attach_on else []
         if contact.id in overrides:
             # 사람이 고친 문구가 최우선. 고친 것은 통째로 한 통이다 —
             # 어디서 끊을지는 고친 사람만 안다.
@@ -725,24 +736,22 @@ def create_send_list(
                         if attach_files else None),
             status="pending",
         ))
-
-    # ── 자료 전달은 **담당자 이력에도 한 줄** ────────────────────────────
-    #
-    # 자료 전달은 나중에 "이 사람에게 언제 어느 기업 자료를 보냈나" 로 되짚는
-    # 일이라 담당자 이력에 남아야 한다. 예전에는 IR 진행 관리의 [자료 보내기]
-    # 를 **누른 순간** 그 화면이 적었는데, 그러면 (ㄱ) 보내지 않고 닫아도 남고
-    # (ㄴ) 딜 제안 관리에서 바로 보내면 아무 줄도 안 남았다.
-    #
-    # 두 화면이 함께 지나는 곳은 여기 하나뿐이라 여기서 적는다 — 어디서 보내도
-    # 같은 줄이 남고, 안 보낸 것은 안 남는다. 두 번 눌러도 한 줄인 것은 그대로다
-    # (`record_delivery` 가 같은 날·같은 묶음을 막는다).
-    #
-    # `attach_files` 가 곧 **발송기가 파일을 실었는가**다 — 그 판단을 여기서
-    # 다시 하지 않는다.
-    if req.mode == MODE_IR:
-        names = [c.name for c in companies]
-        for contact in contacts:
-            ir_attach.record_delivery(db, contact.id, names,
+        # ── 자료 전달은 **담당자 이력에도 한 줄** ────────────────────────
+        #
+        # 자료 전달은 나중에 "이 사람에게 언제 어느 기업 자료를 보냈나" 로
+        # 되짚는 일이라 담당자 이력에 남아야 한다. 예전에는 IR 진행 관리의
+        # [자료 보내기] 를 **누른 순간** 그 화면이 적었는데, 그러면 (ㄱ) 보내지
+        # 않고 닫아도 남고 (ㄴ) 딜 제안 관리에서 바로 보내면 아무 줄도 안 남았다.
+        #
+        # 두 화면이 함께 지나는 곳은 여기 하나뿐이라 여기서 적는다 — 어디서
+        # 보내도 같은 줄이 남고, 안 보낸 것은 안 남는다. 두 번 눌러도 한 줄인
+        # 것은 그대로다(`record_delivery` 가 같은 날·같은 묶음을 막는다).
+        #
+        # 기업 차례는 **나간 차례 그대로**(번호순)이고, `attach_files` 가 곧
+        # 발송기가 파일을 실었는가다 — 그 판단을 여기서 다시 하지 않는다.
+        if req.mode == MODE_IR:
+            ir_attach.record_delivery(db, contact.id,
+                                      [c.name for c in ir_order],
                                       by_sender=bool(attach_files))
 
     db.commit()
