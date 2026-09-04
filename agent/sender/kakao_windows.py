@@ -27,7 +27,7 @@ import platform
 import time
 from typing import Optional
 
-from .base import SendResult, Sender
+from .base import FILE_SEND_UNSUPPORTED, SendResult, Sender
 
 log = logging.getLogger("agent.kakao")
 
@@ -277,13 +277,17 @@ class KakaoDesktopSender(Sender):
         → "파일 전송" 확인 시트)이 있지만, Windows 는 그 확인을 못 했다.
         확인 못 한 길로 자료를 내보내면 **어디로 무엇이 나갔는지 아무도 모른다** —
         그럴 바에는 분명하게 실패하는 편이 낫다. 팀 PC 에서 확인한 뒤에 붙인다.
+
+        그때 `can_send_files` 도 함께 켠다(기본값 그대로 꺼져 있다). 켜지 않으면
+        서버가 파일이 실린 잡을 아예 안 주므로 **여기까지 오지도 않는다** —
+        지금은 그것이 맞다. 받아 놓고 실패하면 사람은 왜 실패하는지 모른다.
         """
         log.warning("[kakao_windows] 파일 전송 요청을 거절합니다 room=%r files=%r",
                     room_name, list(file_names or []))
         return SendResult(
             ok=False,
-            error="file_send_unsupported: Windows 발송기는 아직 파일 전송을 "
-                  "지원하지 않습니다 (실기 확인 전 — 자료는 PC 에서 직접 첨부하세요)",
+            error=f"{FILE_SEND_UNSUPPORTED}: Windows 발송기는 아직 파일 전송을 "
+                  f"지원하지 않습니다 (실기 확인 전 — 자료는 PC 에서 직접 첨부하세요)",
         )
 
     def _input_text(self, chat) -> Optional[str]:

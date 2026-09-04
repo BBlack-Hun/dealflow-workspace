@@ -105,7 +105,7 @@ def setup(db, user: User) -> None:
         company.one_liner = one_liner
         company.revenue_recent = revenue
         company.summary_status = "done"
-        company.ir_drive_url = "https://drive.google.com/file/d/rehearsal/view"
+        company.ir_file_name = "리허설_IR.pdf"
 
     db.commit()
     print(f"리허설 준비 완료 — 담당자 '{CONTACT}' · 기업 {len(COMPANIES)}개")
@@ -153,7 +153,7 @@ def teardown(db) -> None:
         ).scalars().first()
         if company is not None:
             company.summary_status = "insufficient"   # 소개 목록에서 빠진다
-            company.ir_drive_url = None
+            company.ir_file_name = None
             removed["기업"] += 1
 
     sheet = db.execute(

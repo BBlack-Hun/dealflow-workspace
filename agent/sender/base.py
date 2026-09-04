@@ -19,12 +19,35 @@ class SendResult:
     screenshot_b64: Optional[str] = None
 
 
+#: `send_file` 이 **"지원 안 함"** 으로 거절할 때 error 앞에 붙는 표식.
+#: 이 표식이 곧 "이 발송기는 파일을 못 보낸다" 는 답이다 — 다만 **부른 뒤에야**
+#: 받는 답이라, 부르기 전에 묻는 자리를 따로 둔다(`Sender.can_send_files`).
+FILE_SEND_UNSUPPORTED = "file_send_unsupported"
+
+
 class Sender:
     """Abstract sender. Implementations must be safe against mis-send:
     verify_room / send_text / send_file must FAIL (never guess) on an inexact
     room match."""
 
     name = "base"
+
+    #: 이 발송기가 자료 파일을 붙여 보낼 줄 아는가 — **부르기 전에** 묻는 자리.
+    #:
+    #: `send_file` 의 `FILE_SEND_UNSUPPORTED` 거절과 **같은 사실**을 말한다.
+    #: 두 자리로 나뉜 이유는 묻는 때가 다르기 때문이다: 거절은 이미 파일 잡을
+    #: 받아 든 뒤의 답이고, 이 칸은 **그 잡을 받기 전에** 답해야 한다. 발송기는
+    #: 폴링할 때 이 값을 서버에 밝히고(`files=`), 밝히지 않으면 서버가 파일이
+    #: 실린 잡을 아예 내주지 않는다(`app/routers/agent_api.py: poll`).
+    #:
+    #: 밝히지 않고 받으면 **받아 놓고 첫 파일에서 실패**한다. 문구가 자료 없이
+    #: 나가지는 않지만(`agent/main.py: send_item`), 사람은 왜 계속 실패하는지
+    #: 알 길이 없다.
+    #:
+    #: **기본은 아니오다 — 되는 척하지 않는다.** 실기로 확인한 발송기가 이 자리를
+    #: 켠다. 두 자리가 어긋나면(켜 놓고 거절하거나 그 반대) 시험이 잡는다
+    #: (`tests/test_ir_attach_job.py`).
+    can_send_files = False
 
     def verify_room(self, room_name: str) -> str:
         """Return 'verified' | 'not_found' | 'ambiguous'. (Used by Sprint 2 [방 연결 확인].)"""
@@ -46,11 +69,13 @@ class Sender:
 
         구현하는 쪽은 `send_text` 와 **같은 오발송 방지 원칙**을 지켜야 한다:
         창 제목이 방 이름과 정확히 일치할 때만, 그리고 보내기 직전 확인 화면이
-        보내려던 파일과 정확히 같을 때만 보낸다.
+        보내려던 파일과 정확히 같을 때만 보낸다. 그리고 **`can_send_files` 를
+        함께 켠다** — 켜지 않으면 서버가 파일이 실린 잡을 주지 않아, 구현해 놓고도
+        영영 안 불린다.
         """
         return SendResult(
             ok=False,
-            error=f"file_send_unsupported: {self.name} 발송기는 파일 전송을 지원하지 않습니다",
+            error=f"{FILE_SEND_UNSUPPORTED}: {self.name} 발송기는 파일 전송을 지원하지 않습니다",
         )
 
     def close(self) -> None:

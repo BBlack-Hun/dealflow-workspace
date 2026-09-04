@@ -303,7 +303,7 @@ def _panel_save(client, company_id, **over):
     return client.patch(f"/api/companies/{company_id}", json=body)
 
 
-def test_saving_an_ir_link_from_the_panel_works_for_old_rows(logged_in, db):
+def test_saving_an_ir_file_name_from_the_panel_works_for_old_rows(logged_in, db):
     """`저장 요청 오류` 의 재현. 예전 값(`no`)을 가진 기업 — 344개 중 244개."""
     from app.models import IrCompany
 
@@ -311,14 +311,16 @@ def test_saving_an_ir_link_from_the_panel_works_for_old_rows(logged_in, db):
     db.add(row)
     db.commit()
 
-    link = "https://drive.example.com/file/d/sample/view"
-    r = _panel_save(logged_in, row.id, ir_drive_url=link)
+    file_name = "샘플비_IR.pdf"
+    r = _panel_save(logged_in, row.id, ir_file_name=file_name)
     assert r.status_code == 200, f"패널 저장이 {r.status_code} 로 실패했다"
     # **되읽어서** 확인한다 — 저장은 됐는데 안 돌아오는 사고가 이 저장소에 여러 번 있었다.
-    assert logged_in.get(f"/api/companies/{row.id}").json()["ir_drive_url"] == link
-    assert 'href="' + link + '"' in logged_in.get("/companies").text, "표에 링크가 안 걸렸다"
-    assert 'href="' + link + '"' in logged_in.get("/companies?tab=db").text, \
-        "스타트업DB 탭에 링크가 안 걸렸다"
+    assert logged_in.get(f"/api/companies/{row.id}").json()["ir_file_name"] == file_name
+    # 표에는 **이름 그대로** 실린다 — 링크가 아니므로 열 자리가 없고, 짚어 보면
+    # 뜨는 자리(title)가 그 이름이 맞는지 확인하는 유일한 길이다.
+    assert file_name in logged_in.get("/companies").text, "표에 파일명이 안 실렸다"
+    assert file_name in logged_in.get("/companies?tab=db").text, \
+        "스타트업DB 탭에 파일명이 안 실렸다"
 
 
 def test_the_panel_never_empties_a_column_that_cannot_be_empty(logged_in, company):
@@ -328,13 +330,13 @@ def test_the_panel_never_empties_a_column_that_cannot_be_empty(logged_in, compan
     assert logged_in.get(f"/api/companies/{company.id}").json()["contract_status"] == "none"
 
 
-def test_editing_the_ir_link_twice_keeps_the_second_one(logged_in, company):
+def test_editing_the_ir_file_name_twice_keeps_the_second_one(logged_in, company):
     """한 번 되는 것과 계속 되는 것은 다르다."""
-    first = "https://drive.example.com/file/d/one/view"
-    second = "https://drive.example.com/file/d/two/view"
-    _panel_save(logged_in, company.id, ir_drive_url=first)
-    _panel_save(logged_in, company.id, ir_drive_url=second)
-    assert logged_in.get(f"/api/companies/{company.id}").json()["ir_drive_url"] == second
+    first = "샘플_IR_1.pdf"
+    second = "샘플_IR_2.pdf"
+    _panel_save(logged_in, company.id, ir_file_name=first)
+    _panel_save(logged_in, company.id, ir_file_name=second)
+    assert logged_in.get(f"/api/companies/{company.id}").json()["ir_file_name"] == second
 
 
 # ── ⑤ 딜소개 불가 — 발송 화면 목록에서 실제로 빠진다 ────────────────────────

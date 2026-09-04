@@ -27,8 +27,8 @@ from ..models import (
 )
 from ..services import mail_sender, mailer, matcher
 from ..services import message_composer as mc
-from ..services import (deal_numbers, deal_queue, sheet_owner, sourcing_link,
-                        sourcing_msg, template_pick)
+from ..services import (deal_numbers, deal_queue, ir_attach, sheet_owner,
+                        sourcing_link, sourcing_msg, template_pick)
 from ..services.message_composer import MAX_COMPANIES_PER_SEND
 
 router = APIRouter(prefix="/api/deals", tags=["deals"])
@@ -248,9 +248,13 @@ def _compose_for_contact(
 # 설명을 마지막에 붙였는데, 그 방식 자체를 폐기했다 — 자료는 이제 사람이
 # PC 카톡에서 **파일로 직접 첨부**한다.
 #
-# **`ir_drive_url` 칸은 그대로 둔다.** 나가는 문구에서만 뗀 것이지, 자료가
-# 어디 있는지는 여전히 그 칸으로 안다 — 첨부할 파일을 내려받으려면 화면에서
-# 그 링크를 열어야 한다(`/ir` 의 [📎 열기] · 발송 화면의 자료 목록).
+# **자료 칸은 그대로 쓴다.** 나가는 문구에서만 뗀 것이지, 어느 자료를 보낼지는
+# 여전히 그 칸으로 안다 — 다만 담기는 값이 링크에서 **파일명**으로 바뀌었다
+# (`ir_companies.ir_file_name`, 0056).
+#
+# 그 파일명이 이제 **발송 건에 함께 실린다**(`SendItem.files_json`) — 자동
+# 첨부를 켠 계정에 한해서다(`services/ir_attach.py`). 켜지 않은 계정은 지금까지
+# 그대로: 문구만 나가고 사람이 PC 카톡에서 파일을 붙인다.
 
 
 def _room_of(contact, linked: dict) -> str:
@@ -450,6 +454,10 @@ def preview(
     companies = _load_companies(db, req.company_ids) if req.mode in MODES_WITH_COMPANIES else []
     previews = []
     sourcing = req.mode == MODE_SOURCING
+    # 자료를 **발송기가 붙이는가**. 미리보기와 발송 목록 만들기가 같은 판단을
+    # 읽어야 한다 — 화면은 "손으로 붙이세요" 인데 파일이 함께 나가면(또는 그
+    # 반대면) 사람은 자료를 두 번 보내거나 한 번도 안 보낸다.
+    attach_on = req.mode == MODE_IR and ir_attach.auto_attach_enabled(db, user)
     # 화면이 고른 갈래를 먼저 쓴다. 없을 때만 첫 갈래로 돌아간다.
     sample_bucket = (req.bucket or "").strip() or _sample_bucket(db)
     recipients = ([_SampleRecipient(sample_bucket if sourcing else "")]
@@ -476,17 +484,20 @@ def preview(
              f"IR 기업 현황에서 한줄소개·숫자를 채우면 문구가 좋아집니다"]
             if thin and req.mode != MODE_IR else []
         )
-        # 자료가 어디 있는지 모르면 **첨부할 파일을 찾을 수가 없다.**
-        # 링크는 이제 문구에 실려 나가지 않지만, 사람이 PC 에서 첨부하려면
-        # 그 자료를 열어 내려받아야 한다 — 그래서 없다는 것은 여전히 경고다.
-        # 발송 목록을 만들기 **전에** 알려야 한다.
+        # 파일명이 비어 있으면 **붙일 것을 못 찾는다.** 발송기가 붙이든 사람이
+        # 붙이든 마찬가지다. 발송 목록을 만들기 **전에** 알려야 한다.
+        #
+        # 자동 첨부를 켠 계정에서는 경고로 끝나지 않는다 — 목록을 만드는 자리가
+        # 아예 막는다(`create_send_list`). 자료 없이 "보내드렸습니다" 만 나가는
+        # 것이 제일 나쁘기 때문이다.
         if req.mode == MODE_IR:
-            no_file = [c.name for c in companies
-                       if not (c.ir_drive_url or "").strip()]
+            no_file = ir_attach.missing_files(companies)
             if no_file:
                 thin_warnings.append(
                     f"첨부할 IR 자료가 없는 기업: {', '.join(no_file)} — "
-                    f"IR 기업 현황에 자료를 등록해야 PC 에서 열어 첨부할 수 있습니다"
+                    + ("IR 기업 현황에 자료 파일명을 등록해야 발송할 수 있습니다"
+                       if attach_on else
+                       "IR 기업 현황에 자료 파일명을 등록하세요")
                 )
         previews.append({
             "contact_id": contact.id,
@@ -513,20 +524,20 @@ def preview(
             "has_history": False if (sourcing or sample) else _has_history(db, contact.id),
             # 이 문구는 아직 아무에게도 가지 않는다.
             "sample": sample,
-            # IR 자료 전달일 때 **사람이 PC 에서 첨부해야 할 자료**.
-            # 문구에 실려 나가지 않는다 — 여기서 열어 내려받는 자리다.
+            # IR 자료 전달에 딸려 갈 자료. **번호와 파일 이름**이 함께 간다.
             #
-            # **번호를 함께 싣는다.** 자료를 손으로 붙이는 사람에게는 화면에
-            # 적힌 번호가 곧 붙이는 차례인데, 그 번호는 담당자마다 다르다
-            # (딜 소개에서 붙은 번호를 되읽는다 — `deal_numbers`). 화면이
-            # 고른 차례를 세면 목록은 `1`, 문구는 `2번 기업 …` 이 되어 어느
-            # 쪽이 맞는지 알 수 없다. 그래서 **문구를 만든 그 함수**가
-            # 목록의 번호도 함께 낸다(`numbered_companies`).
+            # **번호**(#112) — 자료를 붙이는 차례다. 그 번호는 담당자마다 다르고
+            # (딜 소개에서 붙은 번호를 되읽는다 — `deal_numbers`) 화면이 고른
+            # 차례를 세면 목록은 `1`, 문구는 `2번 기업 …` 이 되어 어느 쪽이
+            # 맞는지 알 수 없다. 그래서 **문구를 만든 그 함수**가 목록의 번호도
+            # 함께 낸다(`numbered_companies`). 딜 소개에 없던 기업은 `no` 가
+            # `null` 이다 — 지어내지 않는다. 문구도 그 기업만 이름으로 나간다.
             #
-            # 딜 소개에 없던 기업은 `no` 가 `null` 이다 — 지어내지 않는다.
-            # 문구도 그 기업만 이름으로 나간다.
+            # **파일 이름**(0056) — 링크가 아니다. 자동 첨부를 켰으면 발송기가
+            # 이 이름으로 파일을 찾아 붙이고, 켜지 않았으면 사람이 이 이름을
+            # 보고 PC 카톡에서 붙인다. 어느 쪽이든 **번호 차례대로** 간다.
             "attachments": ([{"company_id": c.id, "name": c.name,
-                              "url": c.ir_drive_url or "", "no": no}
+                              "file": c.ir_file_name or "", "no": no}
                              for no, c in deal_numbers.numbered_companies(
                                  db, contact.id, companies)]
                             if req.mode == MODE_IR else []),
@@ -540,7 +551,9 @@ def preview(
                 ],
             },
         })
-    return {"previews": previews}
+    # 자료를 발송기가 붙이는지 **화면도 알아야 한다** — [보낼 자료] 목록의
+    # 말이 달라지고(붙여 보냅니다 / 손으로 붙이세요), 안내창도 그 판단을 따른다.
+    return {"previews": previews, "auto_attach": attach_on}
 
 
 @router.post("/send")
@@ -570,6 +583,29 @@ def create_send_list(
             detail="메일 서버 설정이 없습니다 — 팀 현황에서 설정을 확인하세요")
 
     companies = _load_companies(db, req.company_ids) if req.mode in MODES_WITH_COMPANIES else []
+
+    # ── 자료를 발송기가 붙이는가 ────────────────────────────────────────────
+    #
+    # 켠 계정만 이 길을 탄다(`services/ir_attach.py` 에 왜 그 칸으로 가르는지
+    # 적어 두었다). 켜지 않은 계정은 지금까지 그대로 — 문구만 나가고 사람이
+    # PC 카톡에서 파일을 붙인다.
+    #
+    # 메일에는 붙이지 않는다. 파일은 **각자 PC** 에 있고 메일은 서버가 보낸다 —
+    # 서버에는 그 파일이 없다(`services/mail_sender.py`).
+    attach_files: list = []
+    if req.mode == MODE_IR and not by_email and ir_attach.auto_attach_enabled(db, user):
+        # 파일명이 빈 기업이 하나라도 있으면 **목록을 만들지 않는다.**
+        #
+        # 만들어 두면 발송기가 그 건에서 실패하고, 실패한 건은 문구도 안 나가서
+        # 그 사람만 아무것도 못 받는다 — 그것을 회차가 끝난 뒤에 알게 된다.
+        # 방 이름이 없을 때와 같은 자리에서 같은 방식으로 막는다: **말하고 멈춘다.**
+        blank = ir_attach.missing_files(companies)
+        if blank:
+            raise HTTPException(
+                status_code=400,
+                detail=(f"'{blank[0]}' IR 자료 파일명 미등록 — IR 기업 현황에서 "
+                        f"파일명을 넣거나 발송 대상에서 제외하세요"))
+        attach_files = ir_attach.file_names(companies)
 
     # Resolve + validate target contacts (must be owned, must have a room name).
     sourcing = req.mode == MODE_SOURCING
@@ -683,6 +719,10 @@ def create_send_list(
             # 메일은 한 통이다 — 나눠 보낼 곳이 없다.
             parts_json=(json.dumps(parts, ensure_ascii=False)
                         if parts and not by_email else None),
+            # 함께 붙여 보낼 자료. **고른 차례 그대로** — 발송기가 이 차례로
+            # 파일을 먼저 보내고 문구를 마지막에 보낸다.
+            files_json=(json.dumps(attach_files, ensure_ascii=False)
+                        if attach_files else None),
             status="pending",
         ))
 

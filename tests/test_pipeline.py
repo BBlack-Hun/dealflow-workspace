@@ -33,7 +33,7 @@ def seed(db, users):
                   firm="가나벤처스", source_sheet="내 명단",
                   connect_stage="connected", kakao_room_name="홍길동 방"),
         IrCompany(name="샘플애그", one_liner="B2B 농산물", revenue_recent=12,
-                  ir_drive_url="https://drive.google.com/file/d/x/view"),
+                  ir_file_name="샘플애그_IR.pdf"),
     ])
     db.commit()
     return {

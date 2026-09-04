@@ -20,7 +20,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel
-from sqlalchemy import select, text
+from sqlalchemy import and_, exists, select, text
 from sqlalchemy.orm import Session
 
 from .. import config
@@ -92,6 +92,7 @@ def poll(
     response: Response,
     kinds: Optional[str] = None,
     cap: Optional[int] = None,
+    files: int = 0,
     db: Session = Depends(get_db),
     device: AgentDevice = Depends(get_agent_device),
 ):
@@ -99,16 +100,34 @@ def poll(
 
     `kinds` (CSV) = 이 에이전트가 처리할 수 있는 잡 종류. 생략하면 발송 잡만 준다.
     `cap` = 이 에이전트가 한 번에 처리할 건수 상한(계정 보호). 아래 참고.
+    `files` = 자료 파일을 붙여 보낼 수 있는가. 아래 참고.
     """
     _touch_device(db, device)
 
+    # ★ 자료 파일이 실린 잡은 **파일을 붙일 줄 아는 발송기에만** 내준다.
+    #
+    # `kinds` 와 **같은 이유·같은 방식**이다. 이 칸을 모르는 구버전 발송기는
+    # `files` 를 그냥 무시하고 **문구만 보낸다** — 그러면 "1번 기업 … 자료
+    # 전달드리겠습니다" 만 나가고 자료가 없다. 자료 전달에서 그것이 제일 나쁜
+    # 결과다(`agent/main.py: send_item` 참고). 버전으로 가리지 않는 이유도
+    # `kinds` 와 같다: 버전은 짐작이고, 밝힌 것은 사실이다.
+    #
+    # 못 내주는 잡은 **큐에 그대로 둔다.** 실패로 닫으면 사람이 다시 만들어야
+    # 하는데, 여기서 막힌 이유는 발송기를 갱신하면 사라지는 것이다
+    # (`/setup` 에서 다시 내려받으면 그다음 폴링에 그대로 이어 나간다).
+    can_attach = bool(files)
+
     # Find a candidate queued job owned by this agent's user.
-    candidate = db.execute(
+    query = (
         select(SendJob.id)
         .where(SendJob.status == "queued", SendJob.user_id == device.user_id,
                SendJob.kind.in_(_requested_kinds(kinds)))
-        .order_by(SendJob.id)
-        .limit(1)
+    )
+    if not can_attach:
+        query = query.where(~exists().where(and_(SendItem.job_id == SendJob.id,
+                                                 SendItem.files_json.isnot(None))))
+    candidate = db.execute(
+        query.order_by(SendJob.id).limit(1)
     ).scalar_one_or_none()
 
     if candidate is None:
@@ -157,6 +176,13 @@ def poll(
              # 여러 통으로 나눠 보낼 때의 순서. 이 칸을 모르는 예전 발송
              # 프로그램은 message(합친 전문)를 한 통으로 보낸다 — 순서는 같다.
              **({"parts": json.loads(i.parts_json)} if i.parts_json else {}),
+             # 함께 붙여 보낼 자료의 **파일 이름**(경로가 아니다 — 자료 폴더는
+             # PC 마다 다르고 발송기가 조립한다). 차례대로 파일을 먼저 보내고
+             # 문구를 마지막에 보낸다.
+             #
+             # 파일이 실린 잡은 붙일 줄 아는 발송기에만 내준다(위 `can_attach`) —
+             # 여기까지 왔다는 것은 그 발송기라는 뜻이다.
+             **({"files": json.loads(i.files_json)} if i.files_json else {}),
              # 방 확인 잡에만 검색어(이름+직함)를 함께 준다. message 는 빈 채로 두어
              # 구버전 에이전트가 이 잡을 발송으로 오해해도 보낼 내용이 없게 한다.
              **({"query": f"{i.contact.name} {i.contact.title or ''}".strip(),

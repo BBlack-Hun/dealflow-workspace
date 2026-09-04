@@ -288,8 +288,8 @@ def test_ir_requires_a_company(client, seed):
     assert r.status_code == 400
 
 
-def test_ir_warns_when_the_file_link_is_missing(client, db, seed):
-    """첨부할 자료가 없으면 열어 내려받을 것도 없다 — 목록을 만들기 전에 알린다."""
+def test_ir_warns_when_the_file_name_is_missing(client, db, seed):
+    """파일명이 비어 있으면 붙일 것을 못 찾는다 — 목록을 만들기 전에 알린다."""
     r = client.post("/api/deals/preview", json={
         "company_ids": [seed["company_id"]],
         "contact_ids": [seed["contact_id"]], "mode": "ir",
@@ -298,11 +298,11 @@ def test_ir_warns_when_the_file_link_is_missing(client, db, seed):
     assert any("첨부할 IR 자료가 없는 기업" in w for w in warnings)
 
 
-def test_ir_has_no_warning_once_the_link_is_set(client, db, seed):
+def test_ir_has_no_warning_once_the_file_name_is_set(client, db, seed):
     from app.models import IrCompany
 
     company = db.get(IrCompany, seed["company_id"])
-    company.ir_drive_url = "https://drive.google.com/file/d/sample/view"
+    company.ir_file_name = "샘플애그_IR.pdf"
     db.commit()
 
     r = client.post("/api/deals/preview", json={
@@ -311,7 +311,8 @@ def test_ir_has_no_warning_once_the_link_is_set(client, db, seed):
     })
     preview = r.json()["previews"][0]
     assert not any("첨부할 IR 자료가 없는" in w for w in preview["warnings"])
-    assert preview["attachments"][0]["url"].startswith("https://drive.google.com/")
+    # 링크가 아니라 **파일명**이다(0056) — 화면은 이 이름으로 파일을 찾는다.
+    assert preview["attachments"][0]["file"] == "샘플애그_IR.pdf"
 
 
 # --- 탭 순서 = 일하는 순서 -----------------------------------------------------

@@ -24,6 +24,10 @@
   </div>
 </div>
 
+{% if moved %}
+<p class="hint">지난 주에서 <b>{{ moved }}건</b>을 이번 주로 가져왔습니다.</p>
+{% endif %}
+
 {% if carry %}
 <p class="hint sheet-owner-line">
   지난 주에 못 끝낸 일이 <b>{{ carry|length }}건</b> 있습니다 —
@@ -59,7 +63,8 @@
           <td class="cell multi" data-field="title">{{ t.title }}</td>
           <td class="cell" data-field="due_date" data-type="date">{{ t.due_date }}</td>
           <td>
-            <select class="task-status" data-id="{{ t.id }}">
+            {# 저장에 실패하면 이 값으로 되돌린다 — 안 그러면 화면만 바뀐 채 남는다 #}
+            <select class="task-status" data-id="{{ t.id }}" data-prev="{{ t.status }}">
               {% for key, label in statuses.items() %}
               <option value="{{ key }}" {% if t.status == key %}selected{% endif %}>{{ label }}</option>
               {% endfor %}
@@ -174,6 +179,7 @@
         <td>
           <form method="post" action="/todo/routines/{{ r.id }}/delete"
                 onsubmit="return confirm('이 반복 업무를 지울까요?\n이미 만들어진 이번 주 항목은 남습니다.')">
+            <input type="hidden" name="week" value="{{ week_start }}">
             <button class="linkbtn danger" type="submit">삭제</button>
           </form>
         </td>
@@ -185,6 +191,7 @@
   {% else %}<p class="muted">반복 업무가 없습니다.</p>{% endif %}
 
   <form method="post" action="/todo/routines" class="rule-form">
+    <input type="hidden" name="week" value="{{ week_start }}">
     <label class="field inline-field"><span>항목</span>
       <input type="text" name="category" placeholder="예: 메일" size="10"></label>
     <label class="field inline-field" style="flex:1"><span>세부업무</span>

@@ -150,28 +150,28 @@ def test_deals_page_marks_recent_companies(logged, db, users):
     assert "일 전 소개" in body
 
 
-# --- IR 링크 일괄 입력 ------------------------------------------------------
+# --- IR 자료 파일명 일괄 입력 -----------------------------------------------
 
-def test_bulk_links_apply(logged, db):
+def test_bulk_files_apply(logged, db):
     from app.models import IrCompany
 
     a = _company(db, "샘플애그")
     b = _company(db, "샘플메디")
-    logged.post("/companies/ir-links", follow_redirects=False, data={
-        "pasted": "샘플애그\thttps://drive.google.com/file/d/aaa/view\n"
-                  "샘플메디,https://drive.google.com/file/d/bbb/view",
+    logged.post("/companies/ir-files", follow_redirects=False, data={
+        "pasted": "샘플애그\t샘플애그_IR.pdf\n"
+                  "샘플메디,샘플메디_IR.pdf",
     })
     db.expire_all()
-    assert db.get(IrCompany, a.id).ir_drive_url.endswith("aaa/view")
-    assert db.get(IrCompany, b.id).ir_drive_url.endswith("bbb/view")
+    assert db.get(IrCompany, a.id).ir_file_name == "샘플애그_IR.pdf"
+    assert db.get(IrCompany, b.id).ir_file_name == "샘플메디_IR.pdf"
 
 
-def test_bulk_links_report_unmatched(logged, db):
+def test_bulk_files_report_unmatched(logged, db):
     """넣은 줄 알았는데 안 들어간 것이 제일 나쁘다 — 몇 건인지 알려 준다."""
     _company(db, "샘플애그")
-    r = logged.post("/companies/ir-links", follow_redirects=False, data={
-        "pasted": "샘플애그\thttps://drive.google.com/a\n"
-                  "없는기업\thttps://drive.google.com/b",
+    r = logged.post("/companies/ir-files", follow_redirects=False, data={
+        "pasted": "샘플애그\t샘플애그_IR.pdf\n"
+                  "없는기업\t없는기업_IR.pdf",
     })
     from urllib.parse import unquote
 
@@ -179,23 +179,52 @@ def test_bulk_links_report_unmatched(logged, db):
     assert "없는기업" in unquote(r.headers["location"])
 
 
-def test_bulk_links_ignore_lines_without_a_url(logged, db):
+def test_bulk_files_refuse_a_url(logged, db):
+    """이 자리는 원래 **드라이브 링크**를 받았다. 칸이 파일명으로 바뀐 뒤에도
+    옛 습관대로 붙여넣으면, 받아 두는 순간 발송기가 거부할 값이 다시 쌓인다."""
+    from app.models import IrCompany
+    from urllib.parse import unquote
+
+    a = _company(db, "샘플애그")
+    r = logged.post("/companies/ir-files", follow_redirects=False, data={
+        "pasted": "샘플애그\thttps://drive.google.com/file/d/aaa/view",
+    })
+    db.expire_all()
+    assert db.get(IrCompany, a.id).ir_file_name is None, "주소가 파일명 칸에 들어갔다"
+    # 조용히 버리지 않는다 — 몇 건이 왜 안 들어갔는지 말해 준다.
+    assert "파일명이 아닌 줄 1건" in unquote(r.headers["location"])
+
+
+def test_bulk_files_refuse_a_path(logged, db):
+    """폴더 경로도 안 된다 — 폴더는 PC 마다 다르고 각자 `/setup` 에서 정한다.
+    받아 두면 발송기가 자료 폴더 **밖**을 가리키는 값을 들고 있게 된다."""
     from app.models import IrCompany
 
     a = _company(db, "샘플애그")
-    logged.post("/companies/ir-links", follow_redirects=False, data={
-        "pasted": "샘플애그\t미정\n샘플애그\thttps://drive.google.com/ok",
+    logged.post("/companies/ir-files", follow_redirects=False, data={
+        "pasted": "샘플애그\t../비밀/열쇠.pdf",
     })
     db.expire_all()
-    assert db.get(IrCompany, a.id).ir_drive_url.endswith("/ok")
+    assert db.get(IrCompany, a.id).ir_file_name is None, "경로가 파일명 칸에 들어갔다"
 
 
-def test_bulk_links_match_name_variants(logged, db):
+def test_bulk_files_ignore_lines_without_a_name(logged, db):
+    from app.models import IrCompany
+
+    a = _company(db, "샘플애그")
+    logged.post("/companies/ir-files", follow_redirects=False, data={
+        "pasted": "샘플애그\n샘플애그\t샘플애그_IR.pdf",
+    })
+    db.expire_all()
+    assert db.get(IrCompany, a.id).ir_file_name == "샘플애그_IR.pdf"
+
+
+def test_bulk_files_match_name_variants(logged, db):
     from app.models import IrCompany
 
     a = _company(db, "(주)샘플애그")
-    logged.post("/companies/ir-links", follow_redirects=False, data={
-        "pasted": "샘플 애그\thttps://drive.google.com/x",
+    logged.post("/companies/ir-files", follow_redirects=False, data={
+        "pasted": "샘플 애그\t샘플애그_IR.pdf",
     })
     db.expire_all()
-    assert db.get(IrCompany, a.id).ir_drive_url.endswith("/x")
+    assert db.get(IrCompany, a.id).ir_file_name == "샘플애그_IR.pdf"

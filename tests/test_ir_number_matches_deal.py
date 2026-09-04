@@ -351,8 +351,8 @@ def test_자료를_안_올린_기업도_번호는_적힌다(client, db, seed, af
     """첨부할 파일이 없는 것과 번호가 없는 것은 **다른 이야기**다."""
     p = _preview_one(client, seed, "ir", _asked(seed))
 
-    # 이 저장소의 기본 자료(seed)에는 링크가 없다 — 그래도 번호는 나온다.
-    assert all(a["url"] == "" for a in p["attachments"]), p
+    # 이 저장소의 기본 자료(seed)에는 파일명이 없다 — 그래도 번호는 나온다.
+    assert all(a["file"] == "" for a in p["attachments"]), p
     assert _screen_numbers(p) == {"가나애그": 2, "다라헬스": 3}, p
 
 

@@ -14,7 +14,7 @@ from ..db import get_db
 from ..deps import get_current_user, may_manage_team_contacts, templates
 from ..models import IrCompany, SendJob, User
 from ..services import (cadence, contact_columns, deal_history, deal_queue,
-                        deal_stage, mailer, ref_panel, sheet_import,
+                        deal_stage, ir_attach, mailer, ref_panel, sheet_import,
                         sheet_owner, sourcing_link)
 from ..ui import MENU, base_ctx as _base_ctx
 from .companies import BLOCKED_CONTRACT
@@ -175,8 +175,16 @@ def deals_page(
         "blocked_reasons": {c.id: company_blocked_reason(c)
                             for c in companies if not c.introducible},
         # 자료 첨부 안내창 — IR 관리에서 [자료 보내기] 로 넘어왔을 때만.
-        "ir_attach_guide": bool(attach),
+        #
+        # **자동 첨부를 켠 계정에는 뜨지 않는다.** 그 계정에서는 발송기가 파일을
+        # 붙여 보내므로, "PC 에서 첨부하세요" 는 틀린 말이다 — 그대로 두면 자료가
+        # 두 번 나간다(사람이 붙인 것 + 발송기가 붙인 것). 판단은 발송 목록을
+        # 만드는 자리와 **같은 한 곳**에서 온다(`services/ir_attach.py`).
+        "ir_attach_guide": bool(attach) and not ir_attach.auto_attach_enabled(db, user),
         "ir_attach_dismiss": _drop_query(request, "attach"),
+        # [보낼 자료] 목록의 말이 이 값으로 갈린다 — 발송기가 붙이는가,
+        # 사람이 붙이는가. 안내창과 **같은 판단**을 읽는다.
+        "ir_auto_attach": ir_attach.auto_attach_enabled(db, user),
     })
     return templates.TemplateResponse("deals.html", ctx)
 
