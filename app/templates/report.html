@@ -303,7 +303,12 @@
     </div>
     <div class="table-wrap">
     <table class="grid-table compact">
+      {# 칸 차례는 아래 '이 달의 반응' 표, 그리고 엑셀 미팅 시트와 **같다**
+         (날짜 · 담당자 · 투자사 · 기업 · 구분 …). 기업은 담당자 칸 안에
+         태그로 붙어 있었는데, 머리글이 없으니 그게 무엇인지 알 수 없었다.
+         이름은 `기업` 이다 — 옆 표·IR 화면·엑셀이 모두 그렇게 부른다. #}
       <thead><tr><th style="width:88px">날짜</th><th style="width:170px">담당자 / 투자사</th>
+        <th style="width:132px">기업</th>
         <th style="width:62px">구분</th>{% if team_wide %}<th style="width:70px">팀원</th>{% endif %}
         <th style="width:72px">결과</th><th style="width:130px">결과 문의</th>
         {# 딜 진행 관리에서 적은 것을 그대로 가져온다 — 보고를 쓰려고 같은 말을
@@ -313,8 +318,10 @@
         {% for m in w['items'] %}
         <tr class="{% if m.followup_late %}overdue-row{% endif %}">
           <td class="muted">{{ m.date }}</td>
-          <td><b>{{ m.name }}</b> <span class="muted">{{ m.firm }}</span>
-            {% if m.company %}<span class="tag">{{ m.company }}</span>{% endif %}</td>
+          <td><b>{{ m.name }}</b> <span class="muted">{{ m.firm }}</span></td>
+          {# 적어 두지 않은 미팅은 빈 칸으로 둔다 — 없는 것을 `-` 로 지어내지
+             않는다. 옆 표('이 달의 반응')와 엑셀도 그렇게 둔다. #}
+          <td class="ellipsis" title="{{ m.company }}">{{ m.company }}</td>
           <td>{{ m.kind }}</td>
           {% if team_wide %}<td class="muted">{{ m.owner }}</td>{% endif %}
           <td>{{ m.outcome or '-' }}</td>

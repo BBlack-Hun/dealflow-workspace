@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 from datetime import date
+from html.parser import HTMLParser
 
 import pytest
 
@@ -26,7 +27,8 @@ def logged(client, users):
 
 
 def _meeting(db, users, when, *, status="done", outcome="reviewing",
-             followup_due=None, followup_done=0, user_key="u1", who="홍길동"):
+             followup_due=None, followup_done=0, user_key="u1", who="홍길동",
+             company=""):
     """`who` 로 담당자를 나눈다.
 
     한 담당자에게 미팅이 두 건이면 **뒤엣것이 앞엣것을 대신한다** — 2차 미팅을
@@ -41,6 +43,7 @@ def _meeting(db, users, when, *, status="done", outcome="reviewing",
         db.add(contact)
         db.flush()
     row = Meeting(user_id=users[user_key].id, contact_id=contact.id,
+                  company_name=company or None,
                   scheduled_at=when.isoformat(), kind="first", status=status,
                   done_at=when.isoformat() if status == "done" else None,
                   outcome=outcome if status == "done" else None,
@@ -165,6 +168,127 @@ def test_team_scope_is_admin_only(logged, db, users):
     body = logged.get("/report?month=2026-06&scope=team").text
     # 관리자가 아니면 scope=team 을 줘도 본인 것만 보인다
     assert "미팅 총 0개사" in body
+
+
+# --- 미팅 표의 칸 ---------------------------------------------------------------
+# 기업이 **담당자 칸 안에 태그로** 얹혀 있었다. 머리글이 없으니 그 글자가
+# 무엇인지 알 방법이 없었고, 같은 화면 아래 '이 달의 반응' 표는 이미 기업을 제
+# 칸으로 두고 있어 **한 화면이 같은 것을 두 가지로** 그리고 있었다.
+
+
+class _Tables(HTMLParser):
+    """그린 화면에서 표마다 (머리글 · 행별 칸) 을 모은다.
+
+    머리글 수와 몸통 칸 수가 어긋나는 표는 **그린 뒤**에만 잡힌다 —
+    `{% if team_wide %}` 로 칸이 늘고 주는 표라, 템플릿 글자를 세면 두 경우 중
+    어느 쪽도 실제로 재지 못한다.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.tables: list[dict] = []
+        self._table: dict | None = None
+        self._section = ""
+        self._cell: list | None = None
+
+    def handle_starttag(self, tag, attrs) -> None:
+        if tag == "table":
+            self._table = {"head": [], "rows": []}
+            self.tables.append(self._table)
+            self._section = ""
+        elif self._table is None:
+            return
+        elif tag in ("thead", "tbody"):
+            self._section = tag
+        elif tag == "tr" and self._section == "tbody":
+            self._table["rows"].append([])
+        elif tag == "th" and self._section == "thead":
+            self._cell = []
+            self._table["head"].append(self._cell)
+        elif tag == "td" and self._section == "tbody" and self._table["rows"]:
+            self._cell = []
+            self._table["rows"][-1].append(self._cell)
+
+    def handle_endtag(self, tag) -> None:
+        if tag in ("th", "td"):
+            self._cell = None
+        elif tag == "table":
+            self._table = None
+
+    def handle_data(self, data) -> None:
+        if self._cell is not None:
+            self._cell.append(data)
+
+
+def _meeting_table(body):
+    """'{달}월 미팅 총 N개사' 패널의 첫 주차 표 → (머리글, 행들).
+
+    주차마다 표가 하나씩이라 첫 표를 본다. 찾는 기준은 머리글 첫 두 칸이다 —
+    화면에는 표가 여럿 있고, 그중 이것만 `담당자 / 투자사` 로 시작한다.
+    """
+    def text(cell):
+        return " ".join("".join(cell).split())
+
+    reader = _Tables()
+    reader.feed(body)
+    seen = [([text(c) for c in t["head"]],
+             [[text(c) for c in r] for r in t["rows"]])
+            for t in reader.tables]
+    found = [t for t in seen if t[0][:2] == ["날짜", "담당자 / 투자사"]]
+    assert found, f"미팅 표를 못 찾았다 — 화면의 표들: {[t[0] for t in seen]}"
+    return found[0]
+
+
+def test_the_meeting_table_has_a_company_column(logged, db, users):
+    """기업에 **머리글이 붙는다.** 태그로 얹혀 있을 때는 그 글자가 투자사인지
+    기업인지 담당자의 무엇인지 화면만 봐서는 알 수 없었다."""
+    _meeting(db, users, date(2026, 6, 10), company="가나테크")
+
+    head, rows = _meeting_table(logged.get("/report?month=2026-06").text)
+    assert "기업" in head, f"기업 칸이 없다: {head}"
+    assert rows[0][head.index("기업")] == "가나테크"
+
+
+def test_the_meeting_columns_follow_the_reaction_table(logged, db, users):
+    """같은 화면의 '이 달의 반응' 표·엑셀 미팅 시트와 **차례가 같다** —
+    날짜 · 담당자 · 투자사 · 기업 · 구분. 한 화면에서 두 표가 같은 것을
+    다른 자리에 그리면 읽는 사람이 매번 다시 찾아야 한다."""
+    _meeting(db, users, date(2026, 6, 10), company="가나테크")
+
+    head, _ = _meeting_table(logged.get("/report?month=2026-06").text)
+    assert head.index("기업") == head.index("담당자 / 투자사") + 1
+    assert head.index("기업") < head.index("구분")
+
+
+@pytest.mark.parametrize("scope, wide", [("", False), ("team", True)])
+def test_the_meeting_header_and_body_have_the_same_cells(client, db, users,
+                                                         scope, wide):
+    """`{% if team_wide %}` 로 칸이 늘고 주는 표다. 머리글에만 칸을 더하고
+    몸통을 잊으면 **한 경우에서만** 줄이 밀린다 — 두 경우를 다 센다."""
+    users["u1"].role = "admin"
+    db.commit()
+    client.post("/login", data={"phone": "01000000001",
+                                "password": DEMO_PASSWORD})
+    _meeting(db, users, date(2026, 6, 10), company="가나테크")
+
+    head, rows = _meeting_table(
+        client.get(f"/report?month=2026-06&scope={scope}").text)
+    assert ("팀원" in head) is wide, f"scope={scope!r} 인데 머리글이 {head}"
+    assert rows, "미팅 한 건은 나와야 한다"
+    for row in rows:
+        assert len(row) == len(head), (
+            f"머리글 {len(head)}칸 / 몸통 {len(row)}칸 — {head} vs {row}")
+
+
+def test_a_meeting_with_no_company_leaves_the_cell_empty(logged, db, users):
+    """기업을 적어 두지 않은 미팅이 있다. 없는 것을 `-` 로 **지어내지 않는다** —
+    옆의 '이 달의 반응' 표도 엑셀도 그냥 비워 둔다. 칸 자체는 있어야 뒤 칸이
+    한 자리씩 밀리지 않는다."""
+    _meeting(db, users, date(2026, 6, 10))      # 기업을 안 적었다
+
+    head, rows = _meeting_table(logged.get("/report?month=2026-06").text)
+    assert rows[0][head.index("기업")] == ""
+    assert len(rows[0]) == len(head), "빈 칸이어도 칸은 서 있어야 한다"
 
 
 # --- 결과를 물어볼 필요가 없는 경우 --------------------------------------------
