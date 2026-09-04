@@ -1071,7 +1071,6 @@ class Meeting(TimestampMixin, Base):
     note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     followup_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     followup_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
 
 class WeeklyRoutine(TimestampMixin, Base):

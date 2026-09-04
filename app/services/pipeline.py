@@ -18,7 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..models import IrCompany, IrRequest, Meeting, User, VcContact
-from . import cadence
+from . import cadence, calendar_link
 from .sheet_import import normalize_company_name
 
 # 미팅이 끝나고 결과를 물어보기까지. 운영에서 쓰던 간격 그대로다.
@@ -209,6 +209,17 @@ def meeting_rows(db: Session, user: User) -> List[dict]:
             "note": row.note or "",
             "followup_note": row.followup_note or "",
             "followup_at": row.followup_at or "",
+            # 구글 캘린더 '일정 추가' 주소. **규칙은 `calendar_link` 한 곳에만
+            # 있다** — 화면마다 주소를 새로 조립하면 소요시간이나 시간대가
+            # 한 곳에서만 고쳐져 갈린다.
+            "gcal_url": calendar_link.meeting_url(
+                row.scheduled_at, row.scheduled_time,
+                name=contact.name if contact else "",
+                title=(contact.title or "") if contact else "",
+                firm=(contact.firm or "") if contact else "",
+                kind_label=MEETING_KINDS.get(row.kind, row.kind),
+                company_name=row.company_name or "",
+                note=row.note or ""),
             # 결과를 물어볼 필요가 남았는가.
             #   거절로 끝났다        → 물어볼 것이 없다
             #   다음 미팅을 잡았다    → 이미 이어졌다
@@ -222,7 +233,6 @@ def meeting_rows(db: Session, user: User) -> List[dict]:
                 and (row.outcome or "") not in NO_FOLLOWUP_OUTCOMES
                 and not superseded
                 and due is not None and due <= today),
-            "note": row.note or "",
         })
     return out
 

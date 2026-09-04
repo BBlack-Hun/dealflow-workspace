@@ -410,7 +410,10 @@
   {% if scheduled %}
   <div class="table-wrap">
   <table class="grid-table compact">
-    <thead><tr><th style="width:132px">날짜 · 시간</th><th>담당자</th><th>구분</th><th>기업</th><th class="num">남음</th><th></th></tr></thead>
+    {# 마지막 칸에 폭을 준다 — 안 주면 표가 앞의 칸에 다 나눠 주고, 손댈 것이
+       모인 이 칸만 좁아져 [구글 캘린더에 추가] 뒤의 [취소] 가 화면 밖으로
+       밀린다(1512px 에서 실제로 그랬다). #}
+    <thead><tr><th style="width:132px">날짜 · 시간</th><th>담당자</th><th>구분</th><th>기업</th><th class="num">남음</th><th style="width:320px"></th></tr></thead>
     <tbody>
       {% for m in scheduled %}
       <tr>
@@ -430,6 +433,17 @@
             </select>
             <button class="linkbtn" type="submit">완료</button>
           </form>
+          {#
+            여기서 저장까지 하지 않는다 — 누르면 **그 브라우저에 로그인된
+            계정**의 '일정 추가' 화면이 새 탭에 뜨고, 사람이 보고 [저장] 을
+            누른다. 서버는 주소 문자열만 만든다(인증도 비밀값도 없다).
+            참석자는 넣지 않는다 — 저장하는 순간 담당자에게 초대 메일이
+            실제로 나간다(`services/calendar_link.py`).
+          #}
+          {% if m.gcal_url %}
+          <a class="linkbtn" href="{{ m.gcal_url }}" target="_blank" rel="noopener"
+             title="구글 캘린더 '일정 추가' 화면이 새 탭에 열립니다. 저장은 직접 누르세요.">구글 캘린더에 추가</a>
+          {% endif %}
           <form method="post" action="/ir/meetings/{{ m.id }}/cancel">
             <button class="linkbtn danger" type="submit">취소</button>
           </form>
