@@ -511,4 +511,8 @@
 {# 머리글 필터는 공통 부품이다. consulting.js 가 init 을 부르므로 **먼저** 온다. #}
 <script src="{{ asset('js/filters.js') }}"></script>
 <script src="{{ asset('js/consulting.js') }}"></script>
+{# 참고 자료 패널(`_ref_panel.html`)은 이 화면도 같이 쓴다. 여기서 안 부르면
+   표가 그려지긴 하는데 머리글도 칸도 눌리지 않는다 — 화면이 "눌러서 고칩니다"
+   라고 적어 놓고 아무 일도 안 하는 꼴이라, 고장인지 원래 그런지 알 수 없다. #}
+<script src="{{ asset('js/ref_edit.js') }}"></script>
 {% endblock %}

@@ -30,11 +30,22 @@
   {% if ref.kind == 'table' %}
   {# 보기만 되던 자료다. 쓰면서 다듬는 것이라, 고치려고 구글 시트를 따로
      열어야 하면 화면 안으로 들여온 뜻이 없다. #}
-  <p class="hint">칸을 눌러 바로 고칩니다.</p>
+  <p class="hint">머리글과 칸을 눌러 바로 고칩니다.</p>
   <div class="table-wrap wide">
     <table class="grid-table compact" id="ref-table" data-ref-id="{{ ref.id }}">
+      {#
+        머리글도 **칸과 똑같이** 눌러서 고친다 — 같은 `ref-cell`, 같은 손잡이
+        (`js/ref_edit.js`). 표를 화면에서 세울 수 있게 되면서 머리글이
+        `칸 1 · 칸 2 …` 로 서는데, 표를 세울 수 있으면서 그 칸을 뭐라 부르는지
+        못 정하면 이름 없는 표가 그대로 굳는다. 한 표 안에서 머리글과 칸을
+        고치는 법이 다르면 쓰는 사람이 헷갈리고, 나중에 한쪽만 고쳐진다.
+
+        `ref-head` 는 **저장하는 자리가 다르다**는 표시다(`columns[col]` 이지
+        `rows[row][col]` 이 아니다). 그래서 줄 번호를 달지 않는다.
+      #}
       <thead><tr>
-        {% for c in ref_content.columns %}<th>{{ c }}</th>{% endfor %}
+        {% for c in ref_content.columns %}<th class="ref-cell ref-head" data-col="{{ loop.index0 }}"
+            title="눌러서 머리글 이름을 고칩니다">{{ c }}</th>{% endfor %}
       </tr></thead>
       <tbody>
         {% for row in ref_content.rows %}
