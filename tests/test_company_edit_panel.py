@@ -167,7 +167,7 @@ def test_열한_칸이_모두_창에_있고_저장_목록에도_있다():
     """창에만 세우고 `FIELDS` 에 안 넣으면 **조용히 저장이 안 된다.**"""
     text = TEMPLATE.read_text(encoding="utf-8")
     fields = _panel_fields()
-    for attr, label in STARTUP_DB_FIELDS + [("business_desc", "사업 설명")]:
+    for attr, label in STARTUP_DB_FIELDS + [("business_desc", "기업 한줄 소개")]:
         assert f'id="f-{attr}"' in text, f"{label}({attr}) 칸이 창에 없습니다"
         assert attr in fields, \
             f"{label}({attr}) 이 companies.js 의 FIELDS 에 없습니다 — 고쳐도 저장이 안 됩니다"
@@ -188,19 +188,21 @@ def test_창의_이름은_표_머리글과_한_글자도_다르지_않다():
             f"{attr}: 표 머리글이 '{label}' 이 아닙니다 — 창 쪽도 함께 보세요"
 
 
-def test_사업_설명은_표에_없어도_창에는_있어야_한다():
-    """표에서 뗀 칸인데 **자동 조합의 첫 재료**다(0051).
+def test_재료_칸의_이름은_한_곳에서만_정해진다():
+    """**자동 조합의 첫 재료**다(`business_desc`).
 
-    두 탭을 합치면서 화면에서 뗐더니, 조합은 그대로 이 칸을 읽는데 고칠 자리만
-    사라진 상태가 됐다. 이름을 `사업분야` 로 두면 옆 탭의 `사업분야 대분류`
-    (`sector_major`)와 같은 말이 되어 서로 다른 두 칸을 가리킨다.
+    한동안 표 어디에도 없어서 `사업 설명` 이라 불렀는데, 0058 이 스타트업DB
+    표의 `기업 한줄 소개` 자리에 이 칸을 세웠다 — 이름을 두 곳에서 각자 정하면
+    같은 칸을 표와 창이 다르게 부른다(짝 대조는 tests/test_ui_layout.py).
+    `사업분야` 로는 못 돌아간다: 옆 탭의 `사업분야 대분류`(`sector_major`)와
+    같은 말이 되어 서로 다른 두 칸을 가리킨다.
     """
     from app.services.one_liner import SOURCE_FIELDS
 
     text = TEMPLATE.read_text(encoding="utf-8")
     assert 'id="f-business_desc"' in text
     label = re.search(r"<span>([^<]*)</span>\s*\n?\s*<textarea id=\"f-business_desc\"", text)
-    assert label, "사업 설명 라벨을 못 찾았습니다"
+    assert label, "기업 한줄 소개 라벨을 못 찾았습니다"
     name = label.group(1).strip()
     assert name != "사업분야", "옆 탭의 `사업분야 대분류` 와 같은 말입니다"
     assert dict(SOURCE_FIELDS)["business_desc"] == name, (
