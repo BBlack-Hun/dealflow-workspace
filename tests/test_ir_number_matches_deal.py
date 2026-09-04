@@ -157,8 +157,12 @@ def test_요청받은_차례를_뒤집어_골라도_번호는_그대로다(clien
     ids = seed["ids"]
     text = _preview(client, seed, "ir", [ids["다라헬스"], ids["가나애그"]])
     assert _ir_numbers(text) == {"가나애그": 2, "다라헬스": 3}, text
-    # 짚는 **차례**는 고른 차례다 — 화면의 [보낼 자료] 목록과 같아야 한다.
-    assert text.index("3번 기업 다라헬스") < text.index("2번 기업 가나애그"), text
+    # 짚는 **차례는 번호 오름차순**이다 — 고른 차례를 뒤집어도 마찬가지다.
+    #
+    # 이 목록을 보는 사람이 하는 일은 **번호대로 파일을 붙이는 것**이라, 문구가
+    # `3번 … 2번` 으로 나가면 붙일 때마다 눈으로 되짚어야 한다. 화면의
+    # [보낼 자료] 목록과 **같은 함수**에서 나오므로 둘이 갈릴 자리가 없다.
+    assert text.index("2번 기업 가나애그") < text.index("3번 기업 다라헬스"), text
 
 
 def test_리마인드를_한_통_보낸_뒤에도_번호가_남는다(client, db, seed, after_deal):
@@ -253,16 +257,54 @@ def test_보낼_자료_목록의_번호가_문구의_번호와_같다(client, se
 
 
 def test_요청받은_차례를_뒤집어도_화면과_문구가_같이_간다(client, seed, after_deal):
-    """짚는 **차례**는 고른 차례, **번호**는 딜 소개에서 붙은 것.
+    """고른 차례를 뒤집어도 **번호순**으로 서고, 화면과 문구가 같이 간다.
 
-    번호가 오름차순이 아닐 수 있다는 뜻이라, 여기가 갈리기 제일 쉽다.
+    **번호**는 딜 소개에서 붙은 것이라 고른 차례와 무관하다. **차례**는 그
+    번호의 오름차순이다 — 자료를 그 차례로 붙이기 때문이다.
     """
     ids = seed["ids"]
     p = _preview_one(client, seed, "ir", [ids["다라헬스"], ids["가나애그"]])
 
-    assert [a["name"] for a in p["attachments"]] == ["다라헬스", "가나애그"], p
-    assert [a["no"] for a in p["attachments"]] == [3, 2], p
+    assert [a["name"] for a in p["attachments"]] == ["가나애그", "다라헬스"], p
+    assert [a["no"] for a in p["attachments"]] == [2, 3], p
     assert _screen_numbers(p) == _ir_numbers(p["message"]), p
+
+
+def test_보낼_자료_목록이_번호순으로_선다(client, db, seed, after_deal):
+    """★ 사용자가 요청한 것 — 목록이 **번호 오름차순**이어야 한다.
+
+    자료를 그 차례대로 붙이는데 목록이 `3번 · 1번 · 2번` 으로 서 있으면 붙일
+    때마다 눈으로 되짚어야 하고, 자료가 여럿일수록 틀리기 쉽다.
+    """
+    ids = seed["ids"]
+    picked = [ids["마바로보"], ids["다라헬스"], ids["가나애그"]]
+    p = _preview_one(client, seed, "ir", picked)
+
+    numbers = [a["no"] for a in p["attachments"]]
+    assert numbers == sorted(numbers), f"번호순이 아니다: {numbers}"
+    # 문구도 같은 차례여야 한다 — 목록만 번호순이면 또 갈린다.
+    assert _screen_numbers(p) == _ir_numbers(p["message"]), p
+    said = [int(n) for n in re.findall(r"(\d+)번 기업", p["message"])]
+    assert said == sorted(said), f"문구가 번호순이 아니다: {p['message']}"
+
+
+def test_번호가_없는_기업은_뒤에_선다(client, db, seed, after_deal):
+    """지난 딜 소개에 없던 기업은 번호가 없다 — 번호 붙은 줄 **뒤에** 둔다.
+
+    사이에 끼우면 오름차순으로 훑던 눈이 끊긴다. 붙이는 차례를 세는 것이 이
+    목록의 일이라, 셀 수 있는 것을 먼저 두고 못 세는 것을 뒤에 둔다.
+    """
+    from app.models import IrCompany
+
+    fresh = IrCompany(name="새로운기업", ir_file_name="새로운기업_IR.pdf")
+    db.add(fresh)
+    db.commit()
+
+    ids = seed["ids"]
+    p = _preview_one(client, seed, "ir", [fresh.id, ids["다라헬스"], ids["가나애그"]])
+
+    assert [a["no"] for a in p["attachments"]] == [2, 3, None], p
+    assert p["attachments"][-1]["name"] == "새로운기업", p
 
 
 def test_담당자마다_화면의_번호가_다르다(client, db, seed, after_deal, users):

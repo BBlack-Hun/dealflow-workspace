@@ -35,9 +35,7 @@
   if (!forms.length || !modal || !window.IrAttach) return;
 
   var el = function (id) { return document.getElementById(id); };
-  var who = el("ir-send-who");
   var links = el("ir-links");
-  var note = el("ir-no-note");
   var body = el("ir-send-message");
   var warnBox = el("ir-send-warnings");
   var stateLine = el("ir-send-state");
@@ -109,7 +107,9 @@
   }
 
   function fill(preview) {
-    window.IrAttach.renderList(links, note, preview);
+    // 번호가 왜 그렇게 적혔는지 말하던 줄은 이 창에서 뺐다 — note 칸을 안 주면
+    // 공용 한 벌이 조용히 건너뛴다. 딜 제안 관리에는 그대로 있다.
+    window.IrAttach.renderList(links, null, preview);
     body.value = preview.message || "";
     // 서버가 미리 잡아 준 걱정거리 — 자료 파일명이 빈 기업, 방 미등록.
     // **삼키지 않는다.** 발송이 막히는 사유가 여기 그대로 적힌다.
@@ -156,7 +156,6 @@
   function failLoad(detail) {
     body.value = "";
     links.innerHTML = "";
-    note.hidden = true;
     setWarn("미리보기를 불러오지 못했습니다"
       + (detail ? " — " + detail : "")
       + ". 딜 제안 관리에서 열어 확인해 주세요.");
@@ -227,14 +226,12 @@
       companyIds: ids,
       name: form.getAttribute("data-name") || ""
     };
-    who.textContent = open.name + " 님에게 " + ids.length + "개 기업 자료를 보냅니다.";
     // 딜 제안 관리로 가는 길 — 문구를 손보거나 담당자를 더할 때 필요하다.
     // 주소는 예전에 넘어가던 그것과 같다(`/ir/deliver-guide` 가 만들던 주소).
     dealsLink.href = "/deals?mode=ir&contacts=" + open.contactId
       + "&companies=" + ids.join(",") + "&attach=1";
     // 창을 다시 열 때는 지난번 결과가 남아 있으면 안 된다.
     links.innerHTML = "";
-    note.hidden = true;
     body.value = "";
     setWarn("");
     goBtn.hidden = false;
