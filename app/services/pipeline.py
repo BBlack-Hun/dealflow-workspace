@@ -12,7 +12,7 @@
 from __future__ import annotations
 
 from datetime import date, time, timedelta
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -157,6 +157,75 @@ def request_rows(db: Session, user: User) -> List[dict]:
     return out
 
 
+def _company_assignees(db: Session, ids: List[int]) -> Dict[int, str]:
+    """기업 → **IR 기업 현황의 `담당자` 칸**(`IrCompany.assignee_name`).
+
+    캘린더 제목 앞머리의 가운데 자리가 이 값이다 — 로그인한 사람의 팀이 아니라
+    **그 기업을 관리하는 쪽**이다.
+
+    `owner_user_id` 가 아니다. 그쪽은 계정을 가리키는 칸이라 화면의 `담당자`
+    머리글과 이름이 비슷하지만, 시트에서 넘어온 줄에는 채워지지 않는다 —
+    **운영 344곳이 전부 비어 있다.** 그 칸을 읽으면 제목의 그 자리가 늘 빈다.
+
+    적힌 글을 그대로 쓴다. 이 칸에는 넘긴 이력이 화살표로 쌓여 있기도 한데
+    (`담당 이력` 칸과 같은 모양이다 — `services/contact_columns.py`), 화살표
+    뒤만 잘라 오면 그 해석이 틀렸을 때 **엉뚱한 사람 이름이 제목에 앉는다.**
+    적힌 대로 두면 사람이 보고 안다.
+    """
+    picked = {i for i in ids if i}
+    if not picked:
+        return {}
+    return {
+        c.id: (c.assignee_name or "").strip()
+        for c in db.execute(
+            select(IrCompany).where(IrCompany.id.in_(picked))
+        ).scalars().all()
+    }
+
+
+def _calendar_groups(db: Session, rows: List[Meeting],
+                     contacts: Dict[int, VcContact], user: User
+                     ) -> Dict[int, Tuple[str, int]]:
+    """미팅 → (캘린더 주소, 그 주소가 담은 미팅 수).
+
+    **같은 담당자 · 같은 날**을 한 일정으로 묶는다. 투자사 한 분을 만나러 가면
+    그 자리에서 기업 둘셋을 잇달아 소개하는데, 건마다 따로 넣으면 같은 장소로
+    하루에 칸이 셋 생기고 정작 몇 시부터 몇 시까지 비워야 하는지가 안 보인다.
+
+    **상태도 묶음 열쇠에 넣는다.** 안 넣으면 같은 날 취소된 건이 예정된 건과
+    한 일정에 섞여, 사람이 저장하는 순간 안 가는 미팅이 캘린더에 적힌다.
+    """
+    assignees = _company_assignees(db, [r.company_id for r in rows])
+    groups: Dict[tuple, List[Meeting]] = {}
+    for row in rows:
+        if not row.scheduled_at:
+            continue
+        groups.setdefault((row.contact_id, row.scheduled_at[:10], row.status),
+                          []).append(row)
+
+    out: Dict[int, Tuple[str, int]] = {}
+    for (contact_id, _when, _status), members in groups.items():
+        contact = contacts.get(contact_id)
+        url = calendar_link.group_url(
+            user_name=user.name or "",
+            contact_name=contact.name if contact else "",
+            contact_title=(contact.title or "") if contact else "",
+            firm=(contact.firm or "") if contact else "",
+            phone=(contact.phone or "") if contact else "",
+            office_phone=(contact.office_phone or "") if contact else "",
+            address=(contact.address or "") if contact else "",
+            meetings=[{
+                "date": m.scheduled_at,
+                "time": m.scheduled_time or "",
+                "company": m.company_name or "",
+                "assignee": assignees.get(m.company_id or 0, ""),
+            } for m in members],
+        )
+        for m in members:
+            out[m.id] = (url, len(members))
+    return out
+
+
 def meeting_rows(db: Session, user: User) -> List[dict]:
     rows = db.execute(
         select(Meeting).where(Meeting.user_id == user.id)
@@ -166,6 +235,7 @@ def meeting_rows(db: Session, user: User) -> List[dict]:
                   Meeting.scheduled_time.desc())
     ).scalars().all()
     contacts = _contact_map(db, [r.contact_id for r in rows])
+    calendars = _calendar_groups(db, rows, contacts, user)
     today = date.today()
 
     # 담당자별 **가장 나중 미팅 날짜**. 2차 미팅을 이미 잡았다면 1차에
@@ -212,14 +282,14 @@ def meeting_rows(db: Session, user: User) -> List[dict]:
             # 구글 캘린더 '일정 추가' 주소. **규칙은 `calendar_link` 한 곳에만
             # 있다** — 화면마다 주소를 새로 조립하면 소요시간이나 시간대가
             # 한 곳에서만 고쳐져 갈린다.
-            "gcal_url": calendar_link.meeting_url(
-                row.scheduled_at, row.scheduled_time,
-                name=contact.name if contact else "",
-                title=(contact.title or "") if contact else "",
-                firm=(contact.firm or "") if contact else "",
-                kind_label=MEETING_KINDS.get(row.kind, row.kind),
-                company_name=row.company_name or "",
-                note=row.note or ""),
+            #
+            # 같은 담당자·같은 날의 미팅은 **한 주소를 함께 쓴다**. 그래서 그
+            # 묶음의 어느 줄에서 눌러도 같은 일정 하나가 뜬다 — 줄마다 다른
+            # 일정이 나오면 하루에 칸이 여럿 생긴다.
+            "gcal_url": calendars.get(row.id, ("", 0))[0],
+            # 이 주소가 미팅 몇 건을 담고 있는가. 화면이 링크 옆에 적어 준다 —
+            # 안 적으면 두 줄에서 두 번 눌러 같은 일정을 두 개 만든다.
+            "gcal_count": calendars.get(row.id, ("", 0))[1],
             # 결과를 물어볼 필요가 남았는가.
             #   거절로 끝났다        → 물어볼 것이 없다
             #   다음 미팅을 잡았다    → 이미 이어졌다

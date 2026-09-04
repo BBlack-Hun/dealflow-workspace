@@ -454,10 +454,16 @@
             누른다. 서버는 주소 문자열만 만든다(인증도 비밀값도 없다).
             참석자는 넣지 않는다 — 저장하는 순간 담당자에게 초대 메일이
             실제로 나간다(`services/calendar_link.py`).
+
+            같은 담당자·같은 날의 미팅은 **한 일정으로 묶인다.** 그 묶음의
+            줄들은 같은 주소를 들고 있으므로 몇 건짜리인지 링크에 적어 준다 —
+            안 적으면 두 줄에서 두 번 눌러 같은 일정을 두 개 만든다.
+            알림 시각과 어느 캘린더에 담을지는 주소로 못 정한다(구글이 그 칸을
+            안 받는다) — 저장 화면에서 고르면 된다.
           #}
           {% if m.gcal_url %}
           <a class="linkbtn" href="{{ m.gcal_url }}" target="_blank" rel="noopener"
-             title="구글 캘린더 '일정 추가' 화면이 새 탭에 열립니다. 저장은 직접 누르세요.">구글 캘린더에 추가</a>
+             title="구글 캘린더 '일정 추가' 화면이 새 탭에 열립니다. 저장은 직접 누르세요.{% if m.gcal_count > 1 %} 이 날 같은 담당자 미팅 {{ m.gcal_count }}건이 한 일정으로 담깁니다.{% endif %} 알림과 담을 캘린더는 저장 화면에서 고르세요.">구글 캘린더에 추가{% if m.gcal_count > 1 %} <span class="muted">{{ m.gcal_count }}건</span>{% endif %}</a>
           {% endif %}
           <form method="post" action="/ir/meetings/{{ m.id }}/cancel">
             <button class="linkbtn danger" type="submit">취소</button>
