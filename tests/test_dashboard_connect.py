@@ -200,7 +200,7 @@ def test_이름을_누르면_그_사람_상세가_열린다(logged, waiting, db)
 
 
 def test_명단을_통째로_쏟지_않고_나머지는_눌러서_본다(logged, waiting):
-    """대시보드는 한눈에 보는 화면이다 — '오늘 보낼 후속'과 같은 다섯 명."""
+    """대시보드는 한눈에 보는 화면이다 — '오늘 보낼 리마인드'와 같은 다섯 명."""
     from app.services.dashboard import PIPELINE_NAMES
 
     panel = _panel(logged.get("/").text)

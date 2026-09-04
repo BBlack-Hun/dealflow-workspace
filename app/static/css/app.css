@@ -927,7 +927,7 @@ td.cell.save-failed { background: #fdecec; }
 .ir-attach #ir-no-note { margin: 8px 0 0; font-size: 12px; }
 .warn-text { color: var(--amber); }
 
-/* ── 후속 관리 ──────────────────────────────────────────────── */
+/* ── 리마인드 ──────────────────────────────────────────────── */
 .due-group { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
 .due-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
 .due-head .primary-btn { margin-left: auto; }
@@ -1261,7 +1261,7 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
              font-weight: 600; cursor: pointer; white-space: nowrap; }
 .cell-hint:hover { border-color: var(--brand); }
 
-/* 후속 화면에서 이름을 눌러 IR 요청 기록으로 — 누를 수 있다는 게 보여야 한다. */
+/* 리마인드 구역에서 이름을 눌러 IR 요청 기록으로 — 누를 수 있다는 게 보여야 한다. */
 .req-link { color: inherit; text-decoration: none; border-bottom: 1px dotted var(--line); }
 .req-link:hover { border-bottom-color: var(--accent); }
 .req-link:hover b { color: var(--accent); }

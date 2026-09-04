@@ -115,7 +115,7 @@ def setup(db, user: User) -> None:
     print("  1) 회차 준비 점검(/readiness) 에서 막힌 것이 없는지")
     print(f"  2) 딜 제안 관리(/deals) 에서 '{MARK}' 기업 2개 + 위 담당자 선택 → 발송")
     print("  3) 발송 진행 화면에서 성공 확인 (카톡에 실제로 도착하는지)")
-    print("  4) 후속 관리(/followups) 에 리마인드가 잡혔는지")
+    print("  4) 딜 진행 관리(/ir#remind) 에 리마인드가 잡혔는지")
     print("  5) IR·미팅 관리(/ir) 에서 요청 기록 → [자료 보내기] → 요청이 닫히는지")
     print("  6) 미팅 등록 → 완료 → 결과 문의 날짜가 잡히는지")
     print()

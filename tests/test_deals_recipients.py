@@ -18,7 +18,7 @@
    `tests/js/deals_group_summary_test.js` 가 그 줄을 본다.
 
 같은 화면(딜 진행 관리)의 것도 여기서 함께 본다 — 미팅 후기의 기업명과 시각,
-그리고 예약된 후속의 이름 검색. 앞의 둘은 **없으면 빈칸**이고, 검색은
+그리고 예약된 리마인드의 이름 검색. 앞의 둘은 **없으면 빈칸**이고, 검색은
 투자사 관리 현황·딜 소싱과 **같은 방식**(`data-search` + `filters.js`)이다.
 """
 from __future__ import annotations
@@ -1055,21 +1055,21 @@ def test_미팅_시각_마이그레이션은_두_번_돌려도_죽지_않는다(
     assert "scheduled_time" in cols
 
 
-# ── 6) 예약된 후속에서 이름 검색 ────────────────────────────────────────────
+# ── 6) 예약된 리마인드에서 이름 검색 ────────────────────────────────────────
 
-def test_예약된_후속_패널은_두_화면이_같은_파일을_쓴다():
+def test_예약된_리마인드_패널은_두_화면이_같은_파일을_쓴다():
     """한 벌씩 들고 있으면 한쪽에만 검색칸이 달린다.
 
     이 저장소가 반복해 당한 부류다 — 좌측 메뉴 목록과 라우터 목록이 갈려
     컨설턴트에게 다 열려 있던 일, 투자사 수가 화면마다 달랐던 일.
     """
     shared = TEMPLATES / "_upcoming_followups.html"
-    assert shared.exists(), "예약된 후속 패널을 함께 쓰는 파일이 없다"
+    assert shared.exists(), "예약된 리마인드 패널을 함께 쓰는 파일이 없다"
     for name in ("ir.html", "followups.html"):
         page = (TEMPLATES / name).read_text(encoding="utf-8")
         assert '{% include "_upcoming_followups.html" %}' in page, (
-            f"{name} 이 예약된 후속을 따로 그리고 있다 — 한쪽만 고쳐진다")
-        assert "예약된 후속 <span" not in page, (
+            f"{name} 이 예약된 리마인드를 따로 그리고 있다 — 한쪽만 고쳐진다")
+        assert "예약된 리마인드 <span" not in page, (
             f"{name} 에 옛 패널이 남아 있다 — 두 벌이 된다")
 
 

@@ -334,7 +334,7 @@ def sweep_reactions(db: Session, user_id: int) -> int:
     """IR 요청·미팅 기록이 생긴 담당자의 후속을 멈춘다.
 
     활동은 시트 임포트로도 들어오므로, 기록이 생기는 모든 길목에 훅을 다는 대신
-    후속 화면을 열 때 한 번 훑는다. 놓치는 경로가 없고 비용도 작다(수십 건).
+    리마인드 구역을 열 때 한 번 훑는다. 놓치는 경로가 없고 비용도 작다(수십 건).
     """
     active = db.execute(
         select(SendSequence).where(SendSequence.user_id == user_id,
