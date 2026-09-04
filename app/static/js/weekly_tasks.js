@@ -9,17 +9,28 @@
     var select = e.target;
     if (!select.classList.contains("task-status")) return;
     var row = select.closest("tr");
+    // 저장에 실패하면 되돌아갈 값. 서버가 그려 준 상태에서 시작해서
+    // 저장이 될 때마다 따라 온다.
+    var before = select.getAttribute("data-prev");
+    var after = select.value;
     fetch("/api/todo/tasks/" + select.getAttribute("data-id"), {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: select.value })
+      body: JSON.stringify({ status: after })
     })
       .then(function (r) {
         if (!r.ok) throw new Error();
-        row.classList.toggle("task-done", select.value === "done");
-        if (select.value === "done") row.classList.remove("overdue-row");
+        select.setAttribute("data-prev", after);
+        row.classList.toggle("task-done", after === "done");
+        if (after === "done") row.classList.remove("overdue-row");
       })
-      .catch(function () { alert("상태를 저장하지 못했습니다."); });
+      .catch(function () {
+        // **고른 대로 되돌린다.** 그러지 않으면 칸에는 `완료` 가 떠 있고
+        // 서버에는 `예정` 이 남는다 — 새로고침해야 알 수 있고, 그때까지
+        // 다 한 줄로 보인다. 칸 수정(inline_edit.js)은 이미 이렇게 한다.
+        if (before !== null) select.value = before;
+        alert("상태를 저장하지 못했습니다.");
+      });
   });
 })();
 
