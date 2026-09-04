@@ -275,6 +275,9 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
 /* 참고 자료 고치기 — 보기만 되던 자료를 화면에서 다듬는다 */
 .ref-cell { cursor: text; }
 .ref-cell:hover { background: #f4f7ff; }
+/* 머리글도 같은 `.ref-cell` 이다 — 눌러 고치는 자리라는 뜻까지 같이 물려받는다.
+   머리행은 바탕이 회색(#f7f8fa)이라 칸과 같은 색으로 덧칠하면 표시가 안 난다. */
+.ref-head:hover { background: #eef2ff; }
 .ref-text-edit { width: 100%; font: inherit; font-size: 13px; line-height: 1.6;
   padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px;
   color: var(--ink); resize: vertical; }

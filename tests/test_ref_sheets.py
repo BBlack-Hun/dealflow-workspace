@@ -175,6 +175,174 @@ def test_each_cell_knows_its_own_row(seeded, table_sheet):
     assert 'data-row="0" data-col="0"' in panel
     assert 'data-row="1" data-col="1"' in panel
 
+# --- 머리글 고치기 -----------------------------------------------------------
+#
+# 표를 화면에서 세울 수 있게 되면서(`/ref-sheets/new`) 머리글이 `칸 1 · 칸 2 …`
+# 로 선다. 표는 세울 수 있는데 그 칸을 뭐라 부르는지 정할 길이 없으면 이름 없는
+# 표가 그대로 굳는다.
+#
+# 여기서 보는 것은 **칸 고치기와 같은 길을 지나는가**다 — 같은 화면, 같은 판정,
+# 같은 되읽기. 다른 것은 자료에서 손대는 자리(`columns`)뿐이다.
+
+def test_a_header_can_be_renamed(seeded, db, table_sheet):
+    import json
+
+    r = seeded.patch(f"/api/ref-sheets/{table_sheet.id}/column",
+                     json={"col": 1, "value": "주로 보는 단계"})
+    assert r.status_code == 200
+    db.refresh(table_sheet)
+    assert json.loads(table_sheet.content_json)["columns"] == ["명칭", "주로 보는 단계"]
+    # 되읽기 — 저장은 됐는데 화면에 안 뜨면 고친 사람은 실패한 줄 안다.
+    assert "주로 보는 단계" in seeded.get(f"/contacts?ref={table_sheet.id}").text
+
+
+def test_renaming_a_header_leaves_the_rows_alone(seeded, db, table_sheet):
+    """자료는 그대로 두고 부르는 이름만 바꾼다 — 탭 이름 바꾸기와 같은 일이다.
+
+    머리글을 고칠 때 그 열이 함께 비워지면 이름을 다듬을 때마다 적어 둔 것이
+    날아간다.
+    """
+    import json
+
+    seeded.patch(f"/api/ref-sheets/{table_sheet.id}/column",
+                 json={"col": 0, "value": "이름"})
+    db.refresh(table_sheet)
+    assert json.loads(table_sheet.content_json)["rows"] == [["VC", "초기"], ["PE", "성장"]]
+
+
+def test_an_empty_header_is_refused_out_loud(seeded, db, table_sheet):
+    """빈 머리글은 표를 그리다 만 것처럼 보이고, 칸이 몇 개인지도 안 남는다.
+
+    조용히 옛 이름으로 되돌리면 고친 사람은 저장된 줄 알고 넘어간다 — 화면이
+    되돌리면서 왜 안 됐는지 말할 수 있게 **이유를 실어** 물린다.
+    """
+    import json
+
+    r = seeded.patch(f"/api/ref-sheets/{table_sheet.id}/column",
+                     json={"col": 0, "value": "   "})
+    assert r.status_code == 400
+    assert "머리글" in r.json()["detail"]
+    db.refresh(table_sheet)
+    assert json.loads(table_sheet.content_json)["columns"] == ["명칭", "투자대상"]
+
+
+def test_a_header_outside_the_table_is_refused(seeded, db, table_sheet):
+    """없는 머리글에 쓰면 자료가 조용히 늘어난다 — 칸 고치기와 같은 이유다."""
+    assert seeded.patch(f"/api/ref-sheets/{table_sheet.id}/column",
+                        json={"col": 9, "value": "x"}).status_code == 400
+    assert seeded.patch(f"/api/ref-sheets/{table_sheet.id}/column",
+                        json={"col": -1, "value": "x"}).status_code == 400
+
+
+def test_two_headers_may_share_a_name(seeded, db, table_sheet):
+    """탭 이름과 달리 머리글은 **자리**가 가리킨다 — 겹쳐도 갈린다.
+
+    `1월`·`1월`, `비고`·`비고` 로 겹쳐 쓰는 표가 실제로 있다. 막으면 그렇게
+    생긴 표는 머리글을 아예 못 고치는 표가 된다.
+    """
+    import json
+
+    r = seeded.patch(f"/api/ref-sheets/{table_sheet.id}/column",
+                     json={"col": 1, "value": "명칭"})
+    assert r.status_code == 200
+    db.refresh(table_sheet)
+    assert json.loads(table_sheet.content_json)["columns"] == ["명칭", "명칭"]
+
+
+def test_a_text_sheet_has_no_headers(seeded, db):
+    """줄글에는 고칠 머리글이 없다 — 칸 고치기가 물리는 것과 같은 자리다."""
+    row = _sheet(db, "카톡방 연결 순서")
+    assert seeded.patch(f"/api/ref-sheets/{row.id}/column",
+                        json={"col": 0, "value": "x"}).status_code == 404
+
+
+def test_a_header_is_clicked_just_like_a_cell(seeded, table_sheet):
+    """한 표 안에서 머리글과 칸을 고치는 법이 다르면 쓰는 사람이 헷갈린다.
+
+    그래서 머리글도 **같은 `ref-cell`** 이다. 다른 것은 저장하는 자리를
+    가리키는 표시(`ref-head`)와 줄 번호가 없다는 것뿐이다.
+    """
+    body = seeded.get(f"/contacts?ref={table_sheet.id}").text
+    panel = body[body.index('id="ref-table"'):]
+    head = panel[:panel.index("</thead>")]
+
+    assert 'class="ref-cell ref-head" data-col="0"' in head
+    assert 'data-col="1"' in head
+    assert "data-row=" not in head          # 머리글에는 줄이 없다
+    assert "머리글" in body                  # 눌러도 되는 자리라고 화면이 말한다
+
+
+def test_a_table_made_on_screen_can_be_named(seeded, db):
+    """`칸 1 · 칸 2 …` 로 세워 놓고 못 고치면 이름 없는 표가 그대로 굳는다."""
+    import json
+
+    _make(seeded, title="성격 메모", kind="table", cols="2", rows="2")
+    row = _sheet(db, "성격 메모")
+    assert json.loads(row.content_json)["columns"] == ["칸 1", "칸 2"]
+
+    assert seeded.patch(f"/api/ref-sheets/{row.id}/column",
+                        json={"col": 0, "value": "투자사"}).status_code == 200
+    db.refresh(row)
+    assert json.loads(row.content_json)["columns"] == ["투자사", "칸 2"]
+
+
+def test_an_imported_table_can_be_named_too(seeded, db, table_sheet):
+    """가져온 표도 같이 고쳐진다.
+
+    `table_sheet` 는 가져오기가 만드는 모양 그대로다(원본 시트 첫 줄이 머리글).
+    자료는 그대로 두고 부르는 이름만 바꾸는 것이라, 이 화면이 탭 이름에 대해
+    이미 하고 있는 일과 같다 — 가져왔다는 이유로 막을 자리가 아니다.
+    """
+    import json
+
+    assert table_sheet.kind == "table"
+    r = seeded.patch(f"/api/ref-sheets/{table_sheet.id}/column",
+                     json={"col": 0, "value": "투자사 이름"})
+    assert r.status_code == 200
+    db.refresh(table_sheet)
+    data = json.loads(table_sheet.content_json)
+    assert data["columns"] == ["투자사 이름", "투자대상"]
+    assert data["rows"] == [["VC", "초기"], ["PE", "성장"]]
+
+
+def _table_on(db, page, title="표 자료"):
+    import json
+
+    from app.models import RefSheet
+
+    row = RefSheet(position=20, kind="table", is_active=1, page=page, title=title,
+                   content_json=json.dumps({"columns": ["칸 1", "칸 2"],
+                                            "rows": [["", ""]]},
+                                           ensure_ascii=False))
+    db.add(row)
+    db.commit()
+    return row
+
+
+@pytest.mark.parametrize("page", ["contacts", "consulting", "startup"])
+def test_every_screen_that_shows_the_panel_can_edit_headers(seeded, db, users, page):
+    """패널을 쓰는 화면 **셋 모두**에서 눌러 고쳐진다.
+
+    화면마다 스크립트를 따로 걸어 두는 곳이라, 한 화면에만 붙이면 나머지는
+    "눌러서 고칩니다" 라고 적어 놓고 아무 일도 안 하는 화면이 된다.
+    """
+    import json
+
+    users["u1"].can_view_consulting = 1
+    db.commit()
+    row = _table_on(db, page)
+
+    body = seeded.get(f"/{page}?ref={row.id}").text
+    assert 'class="ref-cell ref-head"' in body, f"/{page} 에 머리글이 안 서 있다"
+    assert "js/ref_edit.js" in body, f"/{page} 에서 눌러도 아무 일이 없다"
+
+    assert seeded.patch(f"/api/ref-sheets/{row.id}/column",
+                        json={"col": 1, "value": "메모"}).status_code == 200
+    db.refresh(row)
+    assert json.loads(row.content_json)["columns"] == ["칸 1", "메모"]
+    assert "메모" in seeded.get(f"/{page}?ref={row.id}").text
+
+
 # --- 어느 화면에 붙는가 ------------------------------------------------------
 #
 # 참고 탭은 투자사 관리 현황에만 붙었다. 투자컨설턴트 현황에도 스크립트가

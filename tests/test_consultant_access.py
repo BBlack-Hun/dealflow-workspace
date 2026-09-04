@@ -39,6 +39,10 @@ EXPECTED_OPEN = {
     # 참고 자료 패널(스크립트·가이드). 투자사 관리 현황과 주소를 같이 쓰므로
     # 어느 화면 자료인지는 라우터가 따로 본다.
     ("PATCH", "/api/ref-sheets/{sheet_id}/cell"),
+    # 머리글도 칸과 같이 눌러서 고친다 — 칸만 열어 두면 자기 화면에 세운 표의
+    # 머리글이 `칸 1 · 칸 2 …` 인 채로 굳는다. 어느 화면 자료인지는 칸과 똑같이
+    # 라우터가 따로 본다(`_editable_ref`).
+    ("PATCH", "/api/ref-sheets/{sheet_id}/column"),
     ("POST", "/ref-sheets/{sheet_id}/body"),
     ("POST", "/ref-sheets/{sheet_id}/rename"),
     ("POST", "/ref-sheets/{sheet_id}/delete"),
@@ -266,6 +270,33 @@ def test_the_reference_panel_stays_on_its_own_screen(portal, db):
     db.refresh(theirs)
     assert theirs.title == "연결 순서"
     assert theirs.is_active == 1
+
+
+def test_a_header_cannot_be_renamed_across_screens(portal, db):
+    """머리글도 칸과 같은 주소를 두 화면이 같이 쓴다 — 번호만 바꿔 남의 표를
+    못 건드린다. 이름만 바꾸는 것이라 가벼워 보이지만, 남의 화면 표가 무엇을
+    적는 칸인지 밖에서 바꿔 버리면 그 표를 쓰는 사람은 영문을 모른다."""
+    import json
+
+    from app.models import RefSheet
+
+    def table(page, title):
+        return RefSheet(page=page, title=title, kind="table", is_active=1,
+                        content_json=json.dumps({"columns": ["칸 1"],
+                                                 "rows": [["적음"]]},
+                                                ensure_ascii=False))
+
+    mine, theirs = table("consulting", "진행 표"), table("contacts", "성격정리")
+    db.add_all([mine, theirs])
+    db.commit()
+
+    client = portal["consultant"]
+    assert client.patch(f"/api/ref-sheets/{mine.id}/column",
+                        json={"col": 0, "value": "단계"}).status_code == 200
+    assert client.patch(f"/api/ref-sheets/{theirs.id}/column",
+                        json={"col": 0, "value": "가로채기"}).status_code == 403
+    db.refresh(theirs)
+    assert json.loads(theirs.content_json)["columns"] == ["칸 1"]
 
 
 def test_a_new_sheet_lands_on_the_screen_that_made_it(portal, db):
