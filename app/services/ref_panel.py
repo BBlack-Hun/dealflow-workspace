@@ -24,6 +24,14 @@ from sqlalchemy.orm import Session
 
 from ..models import RefSheet
 
+# 참고 자료가 붙을 수 있는 화면 전부. **주소 조각 그대로다**(위 설명 참고).
+#
+# 가져오기만 있던 동안에는 이 목록이 필요 없었다 — 자료를 만드는 것이 스크립트라
+# `page` 에 무엇을 넣을지는 그 스크립트가 알고 있었다. 화면에서 만들 수 있게 된
+# 지금은 그 값이 **폼에서 온다** — 아무 글자나 받으면 어느 화면에도 안 뜨는
+# 자료가 조용히 쌓인다(만든 사람 눈에는 실패로 안 보인다).
+PAGES = ("contacts", "consulting", "startup")
+
 
 def sheets(db: Session, page: str) -> list:
     """이 화면에 붙은 **살아 있는** 참고 자료. 탭에 그리는 순서 그대로.

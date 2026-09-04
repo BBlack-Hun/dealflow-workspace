@@ -42,6 +42,11 @@ EXPECTED_OPEN = {
     ("POST", "/ref-sheets/{sheet_id}/body"),
     ("POST", "/ref-sheets/{sheet_id}/rename"),
     ("POST", "/ref-sheets/{sheet_id}/delete"),
+    # 세우기도 같이 열린다. 지우고 이름 바꾸는 길만 열어 두면 자기 화면의
+    # 스크립트를 지울 수는 있는데 새로 세울 수는 없다 — 가져오기는 스크립트라
+    # 컨설턴트가 돌릴 수 없고, 투자사 관리 현황은 아예 못 연다.
+    # 어느 화면에 세우는지는 라우터가 따로 본다(`page` 를 `can_open` 이 본다).
+    ("POST", "/ref-sheets/new"),
     # 막으면 들어올 수도 나갈 수도 없다.
     ("GET", "/login"),
     ("POST", "/login"),
@@ -261,6 +266,24 @@ def test_the_reference_panel_stays_on_its_own_screen(portal, db):
     db.refresh(theirs)
     assert theirs.title == "연결 순서"
     assert theirs.is_active == 1
+
+
+def test_a_new_sheet_lands_on_the_screen_that_made_it(portal, db):
+    """세우는 것도 주소를 같이 쓴다 — 화면 이름만 바꿔 남의 화면에 못 세운다."""
+    from app.models import RefSheet
+
+    client = portal["consultant"]
+    ok = client.post("/ref-sheets/new",
+                     data={"page": "consulting", "title": "진행 스크립트",
+                           "kind": "text"}, follow_redirects=False)
+    assert ok.status_code == 303
+    made = db.query(RefSheet).filter_by(title="진행 스크립트").one()
+    assert made.page == "consulting"
+
+    assert client.post("/ref-sheets/new",
+                       data={"page": "contacts", "title": "끼워 넣기",
+                             "kind": "text"}).status_code == 403
+    assert db.query(RefSheet).filter_by(title="끼워 넣기").count() == 0
 
 
 # --- 남의 접근이 좁아지지 않았는가 ------------------------------------------
