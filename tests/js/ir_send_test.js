@@ -136,8 +136,29 @@ function opened(replies, opts) {
   const rows = ir_.attachRows(s.dom);
 
   assert.ok(rows[0].indexOf("번호 없음") >= 0, rows[0]);
-  assert.ok(s.dom.document.getElementById("ir-no-note").hidden === false,
-    "왜 번호가 없는지 말해 주지 않으면 고장으로 읽는다");
+  // 번호가 왜 그런지 말하던 줄은 이 창에서 뺐다(설명 글귀 정리) — 그 자리를
+  // 안 줘도 목록은 그대로 그려져야 한다.
+  assert.strictEqual(s.dom.document.getElementById("ir-no-note"), null);
+}());
+
+(function theListKeepsTheOrderTheServerSent() {
+  // **차례를 화면이 다시 세우지 않는다.** 번호순으로 세우는 것은 서버 일이고
+  // (`deal_numbers.numbered_companies`), 문구도 같은 함수에서 나온다.
+  // 화면이 여기서 또 정렬하면 서버가 어떤 차례로 보내든 화면만 달라져,
+  // 문구와 갈리는 자리가 하나 더 생긴다.
+  const s = opened([previewReply({
+    // 서버가 이미 번호순으로 보낸다: 1번 → 3번 → 번호 없음.
+    attachments: [
+      { company_id: 11, name: A, file: A + "_IR.pdf", no: 1 },
+      { company_id: 12, name: B, file: B + "_IR.pdf", no: 3 },
+      { company_id: 13, name: "마바로보", file: "마바로보_IR.pdf", no: null }
+    ]
+  })]);
+  const rows = ir_.attachRows(s.dom);
+
+  assert.deepStrictEqual(
+    rows.map(function (r) { const m = /(\d+)번/.exec(r); return m ? m[1] : null; }),
+    ["1", "3", null], "받은 차례를 그대로 그려야 한다: " + JSON.stringify(rows));
 }());
 
 (function aCompanyWithoutAFileIsSaidSo() {
@@ -260,6 +281,31 @@ function opened(replies, opts) {
   s.dom.document.getElementById("ir-send-copy").fire("click");
 
   assert.strictEqual(copied, preview().message);
+}());
+
+// ── ⑤ 설명 글귀는 한 줄만 ───────────────────────────────────────────────────
+
+(function onlyOneExplanationIsLeft() {
+  // 사용자가 창의 설명 글귀를 **한 줄만** 두고 지워 달라고 했다. 지운 것이
+  // 되살아나지 않게 못박는다 — 다만 **일하는 부분과 알림은 그대로**다.
+  const s = opened([previewReply()]);
+  const d = s.dom.document;
+
+  // 남은 한 줄.
+  assert.ok(s.dom.modal.querySelector(".ir-attach"), "[보낼 자료] 칸이 없다");
+  // 지운 설명들.
+  assert.strictEqual(d.getElementById("ir-send-who"), null, "누구에게 보낸다는 줄이 남았다");
+  assert.strictEqual(d.getElementById("ir-no-note"), null, "번호 설명 줄이 남았다");
+  assert.strictEqual(s.dom.modal.querySelector(".send-modal-label"), null,
+    "문구 칸 설명 줄이 남았다");
+  // **일하는 부분**은 그대로여야 한다 — 지우면 그 자리에서 보낼 수가 없다.
+  ["ir-links", "ir-send-message", "ir-send-copy", "ir-send-go", "ir-send-close",
+   "ir-send-open-deals"].forEach(function (id) {
+    assert.ok(d.getElementById(id), "일하는 자리가 사라졌다: " + id);
+  });
+  // **알림**도 그대로 — 지우면 어디로 가는지 모르고 누른다.
+  assert.ok(d.getElementById("ir-send-state"), "어디로 나가는지 말하는 자리가 없다");
+  assert.ok(d.getElementById("ir-send-warnings"), "막힌 사유를 말하는 자리가 없다");
 }());
 
 console.log("ok — [자료 보내기] 가 화면을 옮기지 않고 그 자리에서 끝낸다");

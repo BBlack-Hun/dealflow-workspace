@@ -98,15 +98,52 @@ def test_the_job_carries_the_file_names(stage):
     assert _files_of(stage, r.json()["job_id"]) == [AGRI_FILE, MEDI_FILE]
 
 
-def test_the_file_order_follows_the_pick_order(stage):
-    """문구가 기업을 짚는 차례이자 발송기가 파일을 보내는 차례다.
+def test_the_file_order_follows_the_message(stage):
+    """파일 차례 = **문구가 기업을 짚는 차례** = 화면의 [보낼 자료] 목록 차례.
 
-    여기서 다시 정렬하면 "1번 기업 …, 2번 기업 …" 과 올라온 파일의 차례가
-    갈린다 — 받는 쪽은 어느 파일이 어느 기업인지 알 수 없게 된다.
+    셋이 한 자리에서 나온다(`deal_numbers.numbered_companies`). 여기서 따로
+    정렬하면 "1번 기업 …, 3번 기업 …" 과 올라온 파일의 차례가 갈린다 —
+    받는 쪽은 어느 파일이 어느 기업인지 알 수 없게 된다.
+
+    번호를 받은 적 없는 기업끼리는 **고른 차례**가 그대로 남는다(세울 번호가
+    없으니 다른 기준이 없다).
     """
     _turn_on(stage)
 
     r = _send(stage, [stage["medi"].id, stage["agri"].id])
+    assert _files_of(stage, r.json()["job_id"]) == [MEDI_FILE, AGRI_FILE]
+
+
+def test_the_file_order_follows_the_numbers_when_there_are_any(stage, db, users):
+    """★ 번호가 있으면 **번호 오름차순**으로 올라간다 — 화면·문구와 같이.
+
+    사람이 화면에서 `1번 · 3번` 을 보는데 발송기가 딴 차례로 파일을 보내면,
+    받는 쪽이 붙은 자료와 문구가 짚는 번호를 맞춰 볼 수가 없다.
+    """
+    from app.models import (DealBatch, DealBatchCompany, SendItem, SendJob)
+    from app.services import message_composer as mc
+
+    # 지난 딜 소개에서 샘플메디가 1번, 샘플애그가 2번이었다.
+    batch = DealBatch(user_id=users["u1"].id, title="지난 회차",
+                      sent_date="2026-08-19")
+    db.add(batch)
+    db.flush()
+    db.add_all([
+        DealBatchCompany(batch_id=batch.id, company_id=stage["medi"].id, position=1),
+        DealBatchCompany(batch_id=batch.id, company_id=stage["agri"].id, position=2),
+    ])
+    job = SendJob(user_id=users["u1"].id, kind="deal_intro", batch_id=batch.id,
+                  status="done")
+    db.add(job)
+    db.flush()
+    db.add(SendItem(job_id=job.id, contact_id=stage["contact"].id, status="sent",
+                    stage=mc.STAGE_DAY1, room_name="홍길동 팀장님", message="…"))
+    db.commit()
+
+    _turn_on(stage)
+    # 2번을 먼저 골라도 1번이 앞선다.
+    r = _send(stage, [stage["agri"].id, stage["medi"].id])
+    assert r.status_code == 200, r.text
     assert _files_of(stage, r.json()["job_id"]) == [MEDI_FILE, AGRI_FILE]
 
 

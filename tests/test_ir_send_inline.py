@@ -321,6 +321,65 @@ def test_the_window_rule_is_not_swallowed_by_a_comment():
     assert "z-index: 40" in body, "뒷막(39) 위에 서야 한다"
 
 
+# --- 창의 설명 글귀 ---------------------------------------------------------------
+#
+# 사용자가 창의 설명 글귀를 **한 줄만** 두고 지워 달라고 했다. 지운 것은 설명뿐
+# 이고 **일하는 부분과 알림은 그대로**다 — 일하는 부분을 지우면 그 자리에서
+# 보낼 수가 없어져 이 창을 만든 뜻이 사라지고, 알림을 지우면 사람이 모르고 보낸다.
+
+#: 창에 남는 단 한 줄.
+THE_ONE_LINE = "보낼 자료 — 아래 차례대로 PC 카톡에 직접 첨부한 뒤 이 문구를 보내세요."
+
+
+def _modal(stage) -> str:
+    """그려진 화면에서 **창 부분만** 잘라 낸다.
+
+    페이지 전체에서 찾으면 창 밖의 글(요청 표 아래 안내 등)까지 걸려, 지웠는지
+    아닌지를 엉뚱한 자리로 판단한다. 창은 본문의 마지막이라 그 뒤는 스크립트다.
+    """
+    html = _ir(stage)
+    start = html.index('id="ir-send-modal"')
+    end = html.index("<script", start)
+    return html[start:end]
+
+
+def test_the_window_keeps_only_the_one_line(stage):
+    modal = _modal(stage)
+
+    assert THE_ONE_LINE in modal, "남겨야 할 한 줄이 사라졌다"
+    for gone in ("님에게", "개 기업 자료를 보냅니다",
+                 "담당자를 바꾸면 번호도 바뀝니다",
+                 "실제로 나갈 문구", "고치시려면"):
+        assert gone not in modal, f"지웠어야 할 설명이 남아 있다: {gone}"
+
+
+def test_the_window_keeps_everything_that_does_the_work(stage):
+    """지우다가 일하는 자리를 지우면 그 자리에서 보낼 수가 없다."""
+    modal = _modal(stage)
+
+    for keep in ('id="ir-links"', 'id="ir-send-message"', 'id="ir-send-copy"',
+                 'id="ir-send-go"', 'id="ir-send-close"', 'id="ir-send-open-deals"'):
+        assert keep in modal, f"일하는 자리가 사라졌다: {keep}"
+
+
+def test_the_window_keeps_the_warnings(stage):
+    """경고는 설명이 아니라 **알림**이다 — 지우면 사람이 모르고 보낸다."""
+    modal = _modal(stage)
+
+    # 어디로 나가는지 · 막힌 사유.
+    assert 'id="ir-send-state"' in modal
+    assert 'id="ir-send-warnings"' in modal
+
+
+def test_the_deal_screen_keeps_the_number_note(stage):
+    """번호 설명 줄은 **딜 제안 관리에는 남는다.**
+
+    거기서는 탭을 옮기며 담당자를 바꾸므로 "담당자를 바꾸면 번호도 바뀝니다"
+    가 실제로 필요한 말이다. IR 창은 담당자 하나만 다뤄 애초에 안 닿는 말이었다.
+    """
+    assert 'id="ir-no-note"' in stage["client"].get("/deals").text
+
+
 # --- 패널 이름 ------------------------------------------------------------------
 
 def test_the_closed_followup_panel_is_called_by_its_new_name(stage):
