@@ -72,8 +72,31 @@ def weekday_label(value: Optional[str]) -> str:
 
 # --- 반복 업무 --------------------------------------------------------------
 
+def active_routines(db: Session, user: User) -> List[WeeklyRoutine]:
+    """아직 도는 반복 업무. **화면도 이 목록을 그린다.**
+
+    예전에는 화면(`todo_page`)이 제 손으로 `user_id` 만 걸러 뽑고, 매주 채우는
+    쪽(`fill_week`)만 `is_active` 를 봤다. 지금은 지우기가 이 칸을 내리므로,
+    목록이 둘이면 **지운 규칙이 표에는 그대로 서 있고 새 항목만 안 생기는**
+    상태가 된다. 판정은 여기 하나뿐이어야 한다.
+    """
+    return list(db.execute(
+        select(WeeklyRoutine).where(WeeklyRoutine.user_id == user.id,
+                                    WeeklyRoutine.is_active == 1)
+        .order_by(WeeklyRoutine.id)
+    ).scalars().all())
+
+
 def ensure_routines(db: Session, user: User) -> int:
-    """처음 쓰는 사람에게 기본 반복 업무를 넣어 준다(한 번만)."""
+    """처음 쓰는 사람에게 기본 반복 업무를 넣어 준다(한 번만).
+
+    **'한 번만' 은 지운 것까지 세어서 판정한다.** 화면을 열 때마다 부르는
+    자리라(`todo_page`), 기준이 "지금 규칙이 하나도 없는가" 이면 우리 팀이
+    하지 않는 기본 규칙을 지운 사람에게 다음 새로고침 때 그대로 되살아난다 —
+    실제로 넷을 다 지우고 화면을 다시 열면 넷이 새 번호로 다시 서 있었다.
+    지우기는 `is_active=0` 으로 남으므로(`delete_routine`) 그 흔적이 여기서
+    "이미 넣어 준 적 있다"는 표시가 된다.
+    """
     exists = db.execute(
         select(WeeklyRoutine.id).where(WeeklyRoutine.user_id == user.id).limit(1)
     ).first()
@@ -86,16 +109,46 @@ def ensure_routines(db: Session, user: User) -> int:
     return len(DEFAULT_ROUTINES)
 
 
-def fill_week(db: Session, user: User, start: date) -> int:
+def delete_routine(db: Session, routine: WeeklyRoutine) -> None:
+    """반복 업무 규칙을 내린다 — 다음 주부터 새 항목이 생기지 않는다.
+
+    **줄을 지우지 않고 `is_active` 를 내린다.** 두 가지가 여기 걸려 있었다.
+
+    1) `weekly_tasks.routine_id` 가 이 표를 가리키는 외래키이고 SQLite 는
+       `PRAGMA foreign_keys=ON` 으로 돈다(`app/db.py`). 딸린 항목이 하나라도
+       있으면 삭제가 `FOREIGN KEY constraint failed` 로 튕겼고 화면에는 500 만
+       떴다. 반복 업무를 만들면 `/todo` 로 돌아오면서 `fill_week` 가 곧바로 그
+       주 항목을 하나 만들기 때문에, **만들자마자 지르는 [삭제]도 반드시**
+       500 이었다.
+    2) 줄이 통째로 사라지면 `ensure_routines` 가 "이 사람은 처음 쓰는구나" 로
+       읽고 기본 규칙 넷을 다시 넣었다 — 지운 것이 새로고침 한 번에 되살아났다.
+
+    내려 두면 둘 다 풀린다. 이미 만들어진 항목은 자기를 만든 규칙을 계속
+    가리킨 채 그대로 남고(지우기 창이 약속하는 그대로), 화면의 표는
+    `active_routines` 가 그리므로 그 줄만 사라진다.
+    """
+    routine.is_active = 0
+    db.commit()
+
+
+def fill_week(db: Session, user: User, start: date,
+              today: Optional[date] = None) -> int:
     """그 주에 아직 없는 반복 업무를 만들어 넣는다.
 
     화면을 열 때 부른다 — 스케줄러 없이도 그 주를 열면 채워진다.
     같은 규칙으로 두 번 만들지 않는다(`routine_id` 로 확인).
+
+    **이미 끝난 주는 채우지 않는다.** 예전에는 [← 지난 주] 를 누르기만 해도
+    그 주에 반복 업무가 새로 생겼다. 하지도 않았고 시킨 적도 없는 일이 날짜가
+    지난 채로 나타나서 그 자리에서 '지남' 이 되고, 이번 주 화면에는
+    "지난 주에 못 끝낸 일이 5건 있습니다" 라는 안내까지 떴다 — 지난 주를
+    한 번 들여다본 것이 없던 일을 만들어 낸 것이다. 지난 주 화면은 **그때
+    실제로 적혀 있던 것**만 보여야 한다.
     """
-    routines = db.execute(
-        select(WeeklyRoutine).where(WeeklyRoutine.user_id == user.id,
-                                    WeeklyRoutine.is_active == 1)
-    ).scalars().all()
+    today = today or date.today()
+    if start < week_start(today):
+        return 0
+    routines = active_routines(db, user)
     if not routines:
         return 0
 
@@ -162,6 +215,15 @@ def carry_over_candidates(db: Session, user: User, start: date) -> List[dict]:
     """지난 주에 못 끝낸 것. 이번 주로 가져올 수 있게 보여준다.
 
     그냥 두면 지난 주 화면에 묻혀 잊힌다.
+
+    **이번 주에 이미 같은 규칙의 줄이 서 있으면 빼고 센다.** 반복 업무는
+    이번 주에 제 손으로 다시 생기는데(`fill_week`), 지난 주 것까지 끌어오면
+    같은 규칙이 한 주에 두 줄로 앉는다 — [이번 주로 가져오기] 를 한 번 누르면
+    반복 업무가 전부 두 벌이 됐다. 규칙이 내려간 뒤라 이번 주에 다시 생기지
+    않는 줄은 그대로 가져온다(빠뜨리면 갈 곳이 없다).
+
+    안내 문구의 건수와 실제로 옮겨지는 수가 **같은 함수**에서 나온다 — 둘로
+    나누면 "3건 있습니다" 를 눌렀는데 하나만 옮겨지는 자리가 된다.
     """
     last = (start - timedelta(days=7)).isoformat()
     rows = db.execute(
@@ -169,8 +231,15 @@ def carry_over_candidates(db: Session, user: User, start: date) -> List[dict]:
                                  WeeklyTask.week_start == last,
                                  WeeklyTask.status != "done")
     ).scalars().all()
+    here = set(db.execute(
+        select(WeeklyTask.routine_id).where(
+            WeeklyTask.user_id == user.id,
+            WeeklyTask.week_start == start.isoformat(),
+            WeeklyTask.routine_id.isnot(None))
+    ).scalars().all())
     return [{"id": r.id, "category": r.category or "", "title": r.title,
-             "status_label": STATUS_LABELS.get(r.status, r.status)} for r in rows]
+             "status_label": STATUS_LABELS.get(r.status, r.status)}
+            for r in rows if r.routine_id not in here]
 
 
 def carry_over(db: Session, user: User, start: date) -> int:
