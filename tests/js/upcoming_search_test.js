@@ -1,4 +1,4 @@
-// 예약된 후속에서 이름을 쳐서 줄이 걸러지는가. (node tests/js/upcoming_search_test.js)
+// 예약된 리마인드에서 이름을 쳐서 줄이 걸러지는가. (node tests/js/upcoming_search_test.js)
 //
 // 검색 규칙을 여기 옮겨 적으면 두 벌이 되어 어긋나도 모른다. 그래서 **실제로
 // 나가는 코드 두 개를 그대로 돌린다** —
@@ -28,7 +28,7 @@ const PANEL = fs.readFileSync(
 
 // 화면이 필터를 거는 자리 — `src` 없는 `<script>` 가 그것이다.
 const inline = PANEL.match(/<script>([\s\S]*?)<\/script>/);
-assert.ok(inline, "예약된 후속 화면에서 필터를 거는 <script> 를 못 찾았다");
+assert.ok(inline, "예약된 리마인드 화면에서 필터를 거는 <script> 를 못 찾았다");
 const HOOK = inline[1];
 assert.ok(/upcoming-search/.test(HOOK) && /DealflowFilters/.test(HOOK),
   "그 <script> 가 검색칸을 공용 필터에 걸고 있지 않다");
@@ -118,13 +118,13 @@ function type(dom, text) {
 }
 
 // ── 아무 것도 안 걸리면 그렇다고 말한다 ─────────────────────────────────────
-// 빈 표만 남으면 후속이 없어진 줄 안다.
+// 빈 표만 남으면 리마인드가 없어진 줄 안다.
 {
   const dom = run();
   type(dom, "없는이름");
   assert.deepStrictEqual(shown(dom), []);
   assert.strictEqual(dom.document.getElementById("upcoming-empty").hidden, false,
-    "다 걸러졌는데 안내가 안 뜬다 — 후속이 사라진 줄 안다");
+    "다 걸러졌는데 안내가 안 뜬다 — 리마인드가 사라진 줄 안다");
   assert.strictEqual(dom.document.getElementById("upcoming-count").textContent,
     "0 / 3건");
 }

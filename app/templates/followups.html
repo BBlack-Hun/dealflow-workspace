@@ -24,7 +24,7 @@
 
 <!-- 오늘 보낼 것부터. 단계가 같은 건은 한 번에 같은 문구로 나간다. -->
 <section class="panel">
-  <h2 class="panel-title">오늘 보낼 후속</h2>
+  <h2 class="panel-title">오늘 보낼 리마인드</h2>
   {% if due_groups %}
   {% for g in due_groups %}
   <div class="due-group">
@@ -62,13 +62,13 @@
   </div>
   {% endfor %}
   {% else %}
-  <p class="all-clear">✅ 오늘 보낼 후속이 없습니다.</p>
+  <p class="all-clear">✅ 오늘 보낼 리마인드가 없습니다.</p>
   {% endif %}
 </section>
 
 <div class="dash-grid">
-  {# 예약된 후속 — 딜 진행 관리와 옛 후속 관리가 **같은 파일**을 쓴다.
-     각자 한 벌씩 들고 있으면 한쪽에만 검색칸이 달린다. #}
+  {# 예약된 리마인드 — 딜 진행 관리와 옛 화면(`followups.html`)이
+     **같은 파일**을 쓴다. 한 벌씩 들고 있으면 한쪽에만 검색칸이 달린다. #}
   {% include "_upcoming_followups.html" %}
 
   <section class="panel" id="rules">
@@ -135,8 +135,8 @@
        줄 수는 다를 수 있다. #}
     <h2 class="panel-title">IR 요청 투자사 <span class="hint">{{ closed|length }}건</span>
       <form method="post" action="/followups/backfill" class="inline-form"
-            onsubmit="return confirm('지난 발송 이력을 훑어 후속을 잡습니다. 계속할까요?')">
-        <button class="linkbtn" type="submit">지난 발송에서 후속 잡기</button>
+            onsubmit="return confirm('지난 발송 이력을 훑어 리마인드를 걸어 둡니다. 계속할까요?')">
+        <button class="linkbtn" type="submit">지난 발송에서 리마인드 걸기</button>
       </form>
     </h2>
     {% if closed %}
@@ -172,7 +172,7 @@
     {% else %}
     <p class="muted">
       아직 리마인드가 끝난 투자사가 없습니다.
-      이 기능을 켜기 전에 보낸 회차가 있다면 <b>[지난 발송에서 후속 잡기]</b> 를 눌러 주세요.
+      이 기능을 켜기 전에 보낸 회차가 있다면 <b>[지난 발송에서 리마인드 걸기]</b> 를 눌러 주세요.
     </p>
     {% endif %}
   </section>

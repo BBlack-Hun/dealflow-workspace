@@ -65,7 +65,7 @@ def build(db: Session, user: User, today: Optional[date] = None) -> dict:
             ", ".join(m["name"] for m in ir["due_followups"][:3]),
             "/ir", len(ir["due_followups"])))
 
-    # 3) 오늘 보낼 후속
+    # 3) 오늘 보낼 리마인드
     cadence.sweep_reactions(db, user.id)
     seq_rows = cadence.sequence_rows(db, user.id, today)
     due = [r for r in seq_rows if r["status"] == "active" and r["due"]
@@ -74,7 +74,7 @@ def build(db: Session, user: User, today: Optional[date] = None) -> dict:
         overdue = [r for r in due if r["overdue"]]
         items.append(_item(
             "followup", "urgent" if overdue else "soon",
-            "후속 문구 보내기",
+            "리마인드 보내기",
             ", ".join(f"{r['name']}({r['next_label']})" for r in due[:3]),
             "/followups", len(due)))
 

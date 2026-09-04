@@ -434,7 +434,7 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None,
             "href": "/setup", "level": "bad",
         })
 
-    # 오늘 보낼 후속 — 딜소개 회차보다 먼저 챙겨야 할 때가 많다.
+    # 오늘 보낼 리마인드 — 딜소개 회차보다 먼저 챙겨야 할 때가 많다.
     cadence.sweep_reactions(db, user.id)
     due_rows = cadence.sequence_rows(db, user.id, today)
     due_today = [r for r in due_rows if r["status"] == "active" and r["due"]
@@ -489,7 +489,7 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None,
     }
 
 
-# 패널에 이름을 몇 명까지 세울지. '오늘 보낼 후속'(5명)과 같은 수다 —
+# 패널에 이름을 몇 명까지 세울지. '오늘 보낼 리마인드'(5명)와 같은 수다 —
 # 대시보드는 한눈에 보는 화면이라 명단을 통째로 쏟으면 나머지가 안 보인다.
 # 나머지는 눌러서 본다(그래서 `more` 와 링크를 함께 내놓는다).
 PIPELINE_NAMES = 5

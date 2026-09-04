@@ -1,4 +1,4 @@
-"""후속 관리 — 딜소개 뒤에 무엇을 언제 보낼지 한 화면에서 본다.
+"""리마인드 — 딜소개 뒤에 무엇을 언제 보낼지 한 화면에서 본다.
 
 사람이 달력을 보며 챙기던 일이라 빠지기 쉬웠다. 여기서 **오늘 보낼 것**을
 먼저 보여주고, 눌러서 그대로 발송 화면으로 넘긴다.
@@ -29,7 +29,7 @@ router = APIRouter(tags=["followups"])
 def _owned(db: Session, sequence_id: int, user: User) -> SendSequence:
     seq = db.get(SendSequence, sequence_id)
     if seq is None or seq.user_id != user.id:
-        raise HTTPException(status_code=404, detail="후속 건을 찾을 수 없습니다")
+        raise HTTPException(status_code=404, detail="리마인드 건을 찾을 수 없습니다")
     return seq
 
 
@@ -131,11 +131,11 @@ def _rule_views(db: Session) -> List[dict]:
 @router.post("/followups/{sequence_id}/responded", include_in_schema=False)
 def mark_responded(sequence_id: int, db: Session = Depends(get_db),
                    user: User = Depends(get_current_user)):
-    """답이 왔으니 후속을 멈춘다."""
+    """답이 왔으니 리마인드를 멈춘다."""
     seq = _owned(db, sequence_id, user)
     cadence.stop(db, seq, "답을 받았습니다", status="responded")
     db.commit()
-    return RedirectResponse("/followups?msg=후속을+멈췄습니다", status_code=303)
+    return RedirectResponse("/followups?msg=리마인드를+멈췄습니다", status_code=303)
 
 
 @router.post("/followups/{sequence_id}/stop", include_in_schema=False)
@@ -145,7 +145,7 @@ def stop_sequence(sequence_id: int, reason: str = Form(""),
     seq = _owned(db, sequence_id, user)
     cadence.stop(db, seq, reason.strip() or "사람이 중단")
     db.commit()
-    return RedirectResponse("/followups?msg=후속을+중단했습니다", status_code=303)
+    return RedirectResponse("/followups?msg=리마인드를+중단했습니다", status_code=303)
 
 
 @router.post("/followups/{sequence_id}/resume", include_in_schema=False)
@@ -154,12 +154,12 @@ def resume_sequence(sequence_id: int, db: Session = Depends(get_db),
     seq = _owned(db, sequence_id, user)
     cadence.resume(db, seq)
     db.commit()
-    return RedirectResponse("/followups?msg=후속을+다시+켰습니다", status_code=303)
+    return RedirectResponse("/followups?msg=리마인드를+다시+켰습니다", status_code=303)
 
 
 @router.post("/followups/backfill", include_in_schema=False)
 def backfill(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """이 기능을 켜기 전에 나간 회차에도 후속을 잡아 준다."""
+    """이 기능을 켜기 전에 나간 회차에도 리마인드를 걸어 준다."""
     made = cadence.backfill_from_history(db, user.id)
     return RedirectResponse(f"/followups?msg=지난+발송에서+{made}건을+잡았습니다",
                             status_code=303)

@@ -342,7 +342,7 @@ def test_due_list_includes_overdue(db, seed, logged):
 def test_followups_page_opens(logged):
     r = logged.get("/followups")
     assert r.status_code == 200
-    assert "오늘 보낼 후속" in r.text
+    assert "오늘 보낼 리마인드" in r.text
 
 
 def test_mark_responded_stops_it(db, seed, logged):
