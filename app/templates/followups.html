@@ -122,7 +122,18 @@
   </section>
 
   <section class="panel wide">
-    <h2 class="panel-title">끝난 후속 <span class="hint">{{ closed|length }}건</span>
+    {# **`IR 요청 투자사`** — 사용자가 부르기로 한 이름이다.
+
+       담기는 것은 **리마인드가 끝난 담당자**다(`cadence.sequence_rows` 중
+       `status != active`). 끝나는 사유의 대부분이 `IR 자료를 요청했습니다`
+       라서(요청이 오면 리마인드를 멈춘다 — `routers/ir.py`) 이 목록을 그렇게
+       부르는 것인데, **미팅이 잡혔거나 손으로 멈춘 건도 함께 들어 있다.**
+
+       ⚠ 업무 보고·대시보드에도 `IR 요청 투자사` 라는 갈래가 있는데 **다른
+       것을 센다** — 그쪽은 요청 자체(`ir_requests` · `services/report.py`)와
+       진행 단계가 `IR 자료 요청` 인 담당자(`dashboard.html`)다. 이름만 같고
+       줄 수는 다를 수 있다. #}
+    <h2 class="panel-title">IR 요청 투자사 <span class="hint">{{ closed|length }}건</span>
       <form method="post" action="/followups/backfill" class="inline-form"
             onsubmit="return confirm('지난 발송 이력을 훑어 후속을 잡습니다. 계속할까요?')">
         <button class="linkbtn" type="submit">지난 발송에서 후속 잡기</button>
@@ -160,7 +171,7 @@
     </div>
     {% else %}
     <p class="muted">
-      아직 끝난 후속이 없습니다.
+      아직 리마인드가 끝난 투자사가 없습니다.
       이 기능을 켜기 전에 보낸 회차가 있다면 <b>[지난 발송에서 후속 잡기]</b> 를 눌러 주세요.
     </p>
     {% endif %}

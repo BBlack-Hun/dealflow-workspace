@@ -39,11 +39,17 @@ def test_복사하는_것은_고칠_수_있는_그_칸의_값이다():
 
     나가는 문구는 `#bubble-edit` 의 값이다 — 고친 것이 그대로 서버로 간다
     (`editedOverrides`). 그래서 복사도 같은 칸을 봐야 한다.
+
+    복사하는 손 자체는 **공용 한 벌**이다(`ir_attach_list.js`) — IR 진행 관리의
+    [자료 보내기] 창이 같은 단추를 단다.
     """
     js = (ROOT / "app" / "static" / "js" / "deals.js").read_text(encoding="utf-8")
+    shared = (ROOT / "app" / "static" / "js" / "ir_attach_list.js").read_text(
+        encoding="utf-8")
 
     assert "copyMessage(ta, copyBtn)" in js, "복사가 문구 칸을 안 본다"
-    assert "navigator.clipboard.writeText(ta.value)" in js, \
+    assert "IrAttach.copyText" in js, "복사를 공용 한 벌로 안 넘긴다 — 두 벌이 된다"
+    assert "navigator.clipboard.writeText(ta.value)" in shared, \
         "복사하는 것이 문구 칸의 값이 아니다 — 화면 장식이 섞인다"
     # 미리보기 칸(`previewArea.innerHTML`)을 통째로 담으면 머리말까지 딸려 간다.
     assert "previewArea.innerHTML" not in js.split("function copyMessage")[1] \
@@ -55,11 +61,14 @@ def test_복사_단추는_저장소에_이미_있는_방식을_따른다():
 
     이미 있는 것은 `llm_brief.js` 다 — 클립보드가 없거나 거절하면 **골라 두고
     그렇게 말해 준다**. 조용히 실패하면 복사된 줄 알고 빈 것을 붙여 넣는다.
+
+    발송 화면 쪽 복사는 `ir_attach_list.js` 한 벌이고, 딜 제안 관리와 IR 진행
+    관리의 [자료 보내기] 창이 그것을 같이 쓴다.
     """
-    js = (ROOT / "app" / "static" / "js" / "deals.js").read_text(encoding="utf-8")
+    js = (ROOT / "app" / "static" / "js" / "ir_attach_list.js").read_text(encoding="utf-8")
     brief = (ROOT / "app" / "static" / "js" / "llm_brief.js").read_text(encoding="utf-8")
 
-    for src, who in ((js, "deals.js"), (brief, "llm_brief.js")):
+    for src, who in ((js, "ir_attach_list.js"), (brief, "llm_brief.js")):
         # 있는지 보고 부른다 — https·localhost 가 아니면 물건 자체가 없다.
         assert "navigator.clipboard" in src, f"{who}: 클립보드를 안 쓴다"
         assert "navigator.clipboard.writeText(" in src, f"{who}: 담는 자리가 없다"

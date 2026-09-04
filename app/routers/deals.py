@@ -726,6 +726,25 @@ def create_send_list(
             status="pending",
         ))
 
+    # ── 자료 전달은 **담당자 이력에도 한 줄** ────────────────────────────
+    #
+    # 자료 전달은 나중에 "이 사람에게 언제 어느 기업 자료를 보냈나" 로 되짚는
+    # 일이라 담당자 이력에 남아야 한다. 예전에는 IR 진행 관리의 [자료 보내기]
+    # 를 **누른 순간** 그 화면이 적었는데, 그러면 (ㄱ) 보내지 않고 닫아도 남고
+    # (ㄴ) 딜 제안 관리에서 바로 보내면 아무 줄도 안 남았다.
+    #
+    # 두 화면이 함께 지나는 곳은 여기 하나뿐이라 여기서 적는다 — 어디서 보내도
+    # 같은 줄이 남고, 안 보낸 것은 안 남는다. 두 번 눌러도 한 줄인 것은 그대로다
+    # (`record_delivery` 가 같은 날·같은 묶음을 막는다).
+    #
+    # `attach_files` 가 곧 **발송기가 파일을 실었는가**다 — 그 판단을 여기서
+    # 다시 하지 않는다.
+    if req.mode == MODE_IR:
+        names = [c.name for c in companies]
+        for contact in contacts:
+            ir_attach.record_delivery(db, contact.id, names,
+                                      by_sender=bool(attach_files))
+
     db.commit()
 
     if by_email:

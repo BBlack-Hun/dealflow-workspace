@@ -68,11 +68,23 @@
         <b>{{ g.name }}</b> {{ g.title }} <span class="muted">{{ g.firm }}</span>
         <span class="count-pill on"><b>{{ g.rows|length }}</b>개 기업</span>
         {% if g.company_ids %}
-        {# 링크가 아니라 **폼**이다. 누르면 활동 이력에 한 줄이 남기 때문에,
-           주소를 여는 것만으로 쌓이면 안 된다(새로고침·미리 불러오기·뒤로가기).
-           넘어갈 곳은 예전과 같다 — 담당자와 요청받은 기업이 이미 골라진
-           발송 화면. 다만 거기서 뜨는 안내창이 하나 붙는다. #}
-        <form class="deliver-form" method="post" action="/ir/deliver-guide">
+        {# **폼 하나로 두 갈래를 다 태운다.**
+
+           자료를 손으로 붙이는 계정에서는 `ir_send.js` 가 이 폼의 `submit` 을
+           가로채 **그 자리에서** 창을 연다 — 번호·파일명·문구를 보고 그대로
+           보낸다. 여기서 넘어간 사람이 할 일은 이미 정해져 있는데(이 담당자 ·
+           이 기업들), 넓은 발송 화면으로 옮기면 체크가 하나 풀려도 어디가
+           달라졌는지 모른다.
+
+           자료 폴더를 등록해 **발송기가 파일을 붙이는 계정**에는 그 창도
+           스크립트도 안 실린다(사용자가 그렇게 정했다). 가로채는 것이 없으니
+           폼은 폼대로 `/ir/deliver-guide` 로 가서 딜 제안 관리가 열린다 —
+           예전 그대로다.
+
+           그래서 **링크가 아니라 폼**이다. 링크였다면 스크립트가 죽는 순간
+           아무 일도 안 하는 단추가 된다. #}
+        <form class="deliver-form" method="post" action="/ir/deliver-guide"
+              data-name="{{ g.name }}">
           <input type="hidden" name="contact_id" value="{{ g.contact_id }}">
           <input type="hidden" name="company_ids" value="{{ g.company_ids|join(',') }}">
           <button class="primary-btn inline" type="submit">자료 보내기</button>
@@ -141,16 +153,24 @@
   {% else %}
   <p class="all-clear">✅ 보낼 자료가 없습니다.</p>
   {% endif %}
+  {# 안내도 갈래를 따라간다 — 안 그러면 넘어가는 화면을 두고 안 넘어간다고
+     말하거나, 그 반대가 된다. 가르는 값은 창·스크립트와 **같은 하나**다. #}
   <p class="hint">
+    {% if ir_auto_attach %}
     <b>[자료 보내기]</b> 를 누르면 담당자와 요청받은 기업이 <b>이미 선택된 채로</b>
-    딜 제안 관리가 열리고, 누른 것이 <b>활동 이력에 남습니다</b>.
+    딜 제안 관리가 열립니다.
     발송에 성공하면 이 목록에서 <b>자동으로 빠집니다</b> —
     돌아와서 '전달함'을 누를 필요가 없습니다.<br>
-    {% if ir_auto_attach %}
     자료 파일은 <b>발송 프로그램이 붙여 보냅니다</b> — 위 표의 파일이
     자료 폴더에 있는지만 확인해 주세요. 파일이 하나라도 없으면
     <b>문구도 나가지 않습니다</b>(자료 없이 "보내드렸습니다" 만 가는 일은 없습니다).
     {% else %}
+    <b>[자료 보내기]</b> 를 누르면 <b>이 화면에서</b> 보낼 자료와 나갈 문구가
+    바로 뜹니다 — 딜 제안 관리로 넘어가지 않습니다.
+    발송에 성공하면 이 목록에서 <b>자동으로 빠집니다</b> —
+    돌아와서 '전달함'을 누를 필요가 없습니다.
+    문구를 복사해 손으로 보내셨다면 <b>'전달함'</b> 을 눌러 주세요 —
+    앱이 보내지 않은 것은 앱이 알 수 없습니다.<br>
     자료 파일은 <b>PC 카톡에서 직접 첨부</b>해 주세요 — 위 표의 파일 이름으로
     자료를 찾아 붙이시면 됩니다. 발송 프로그램에 맡기시려면
     <a href="/setup">[발송 프로그램]</a> 화면에서 이 PC 의 자료 폴더를 정하세요.
@@ -265,7 +285,18 @@
   </section>
 
   <section class="panel wide">
-    <h2 class="panel-title">끝난 후속 <span class="hint">{{ closed|length }}건</span>
+    {# **`IR 요청 투자사`** — 사용자가 부르기로 한 이름이다.
+
+       담기는 것은 **리마인드가 끝난 담당자**다(`cadence.sequence_rows` 중
+       `status != active`). 끝나는 사유의 대부분이 `IR 자료를 요청했습니다`
+       라서(요청이 오면 리마인드를 멈춘다 — `routers/ir.py`) 이 목록을 그렇게
+       부르는 것인데, **미팅이 잡혔거나 손으로 멈춘 건도 함께 들어 있다.**
+
+       ⚠ 업무 보고·대시보드에도 `IR 요청 투자사` 라는 갈래가 있는데 **다른
+       것을 센다** — 그쪽은 요청 자체(`ir_requests` · `services/report.py`)와
+       진행 단계가 `IR 자료 요청` 인 담당자(`dashboard.html`)다. 이름만 같고
+       줄 수는 다를 수 있다. #}
+    <h2 class="panel-title">IR 요청 투자사 <span class="hint">{{ closed|length }}건</span>
       <form method="post" action="/followups/backfill" class="inline-form"
             onsubmit="return confirm('지난 발송 이력을 훑어 후속을 잡습니다. 계속할까요?')">
         <button class="linkbtn" type="submit">지난 발송에서 후속 잡기</button>
@@ -303,7 +334,7 @@
     </div>
     {% else %}
     <p class="muted">
-      아직 끝난 후속이 없습니다.
+      아직 리마인드가 끝난 투자사가 없습니다.
       이 기능을 켜기 전에 보낸 회차가 있다면 <b>[지난 발송에서 후속 잡기]</b> 를 눌러 주세요.
     </p>
     {% endif %}
@@ -556,11 +587,82 @@
     {% else %}<p class="muted">아직 없습니다.</p>{% endif %}
   </section>
 </div>
+
+{% if not ir_auto_attach %}
+{# ── [자료 보내기] — 그 자리에서 끝낸다 ────────────────────────────────────
+   딜 제안 관리(`/deals`)로 넘어가지 않고 여기서 보고 보낸다.
+
+   **자료를 손으로 붙이는 계정에만 이 창이 있다.** 자료 폴더를 등록해 발송기가
+   파일을 붙여 보내는 계정은 예전처럼 딜 제안 관리로 넘어간다 — 사용자가 그렇게
+   정했다. 가르는 자리는 이 `{% raw %}{% if %}{% endraw %}` 하나이고, 판단은
+   서버 한 곳에서 온다(`services/ir_attach.py: auto_attach_enabled`).
+
+   가리는 방법이 **자리를 안 그리는 것**이라 스크립트는 손댈 것이 없다 —
+   `ir_send.js` 는 창이 없으면 아무것도 가로채지 않고(`if (!modal) return`),
+   그러면 [자료 보내기] 는 폼 그대로 `/ir/deliver-guide` 로 가서 넘어간다.
+
+   **여기 있는 것은 자리뿐이다.** 번호도 파일명도 문구도 서버 미리보기가
+   실어 준 값을 그대로 채운다(`POST /api/deals/preview`) — 화면이 스스로
+   세거나 짓는 값은 하나도 없다. 목록을 그리는 코드와 [문구 복사] 는 딜 제안
+   관리와 **같은 한 벌**을 쓴다(`ir_attach_list.js`). 발송도 그 화면이 쓰는
+   길 그대로다(`POST /api/deals/send`).
+
+   아이디는 딜 제안 관리의 [보낼 자료] 칸과 같다 — 같은 CSS 를 그대로 받으려는
+   것이고, 서로 다른 페이지라 겹치지 않는다.
+
+   문구는 **읽기 전용**이다. 손보는 자리는 딜 제안 관리에 이미 있고
+   (담당자별 수정본 · 되돌리기), 그 한 벌을 여기 베껴 오면 둘이 갈린다.
+   고쳐야 하면 아래 [딜 제안 관리에서 열기] 로 간다. #}
+<div class="send-modal" id="ir-send-modal" role="dialog" aria-modal="true"
+     aria-labelledby="ir-send-title" hidden>
+  <h2 class="send-modal-title" id="ir-send-title">자료 보내기</h2>
+  <p class="hint muted" id="ir-send-who"></p>
+
+  {# 이 창은 **손으로 붙이는 계정 것**이라 갈래가 없다 — 발송기가 붙이는
+     계정은 여기까지 오지 않는다(위 `{% raw %}{% if %}{% endraw %}`). 절대 안 뜨는
+     갈래를 남겨 두면 낡은 줄 아무도 모른다.
+
+     글자는 딜 제안 관리의 같은 칸과 **한 글자도 다르면 안 된다** — 두 화면이
+     같은 일을 다르게 말하면 자료를 두 번 보내거나 한 번도 안 보낸다. #}
+  <div class="ir-attach" id="ir-attach">
+    <b>보낼 자료 — 아래 차례대로 PC 카톡에 직접 첨부한 뒤 이 문구를 보내세요.</b>
+    <ul id="ir-links"></ul>
+    <p class="hint muted" id="ir-no-note" hidden></p>
+  </div>
+
+  <p class="hint muted send-modal-label">
+    실제로 나갈 문구 — 고치시려면 [딜 제안 관리에서 열기] 로 가세요.
+  </p>
+  <textarea class="bubble-edit" id="ir-send-message" spellcheck="false" readonly></textarea>
+  <p class="hint muted" id="ir-send-state" hidden></p>
+  <div class="warn-box" id="ir-send-warnings" hidden></div>
+
+  <div class="send-modal-acts">
+    <button type="button" class="linkbtn" id="ir-send-copy" disabled>문구 복사</button>
+    <a class="linkbtn" id="ir-send-open-deals" href="/deals">딜 제안 관리에서 열기</a>
+    <a class="linkbtn" id="ir-send-job" href="/jobs" hidden>발송 진행 보기</a>
+    <span class="send-modal-gap"></span>
+    <button type="button" class="secondary-btn" id="ir-send-close">닫기</button>
+    <button type="button" class="primary-btn" id="ir-send-go" disabled>보내기</button>
+  </div>
+</div>
+{% endif %}
 {% endblock %}
 
 {% block scripts %}
 <script src="{{ asset('js/inline_edit.js') }}"></script>
 <script src="{{ asset('js/ir_numbers.js') }}"></script>
+{% if not ir_auto_attach %}
+{# 그 자리에서 여는 창. **창을 그린 계정에만** 싣는다 — 위 `{% raw %}{% if %}{% endraw %}`
+   와 같은 조건이다. 둘 중 하나만 빠져도 넘어가는 옛 동작으로 내려앉을 뿐이라
+   (창 없으면 스크립트가 안 가로채고, 스크립트 없으면 폼이 그대로 간다)
+   어긋나도 위험한 쪽으로 기울지 않는다.
+
+   [보낼 자료] 목록과 [문구 복사] 는 딜 제안 관리와 **같은 한 벌**이고,
+   `ir_send.js` 가 그것을 읽으므로 먼저 와야 한다. #}
+<script src="{{ asset('js/ir_attach_list.js') }}"></script>
+<script src="{{ asset('js/ir_send.js') }}"></script>
+{% endif %}
 <script>
   // 후속 화면에서 이름을 눌러 넘어왔으면 폼이 이미 열려 있다 — 눈에 들어오게만
   // 옮겨 준다. 번호 목록은 ir_numbers.js 가 처음에 한 번 부르므로 여기서 또
