@@ -40,6 +40,11 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   var warnBox = document.getElementById("send-warnings");
   var sendBtn = document.getElementById("send-btn");
   var lastPreviews = [];
+  // **지금 열어 둔 미리보기 탭**(담당자 하나). [보낼 자료] 목록의 번호가 이
+  // 탭을 따른다 — 번호는 담당자마다 다르기 때문에 "누구 것인지" 없이는 적을
+  // 수 없다(`renderIrLinks` 설명 참고).
+  var currentPreview = 0;
+  var COPY_LABEL = "문구 복사";
 
   // ── 고른 차례 ─────────────────────────────────────────────
   //
@@ -539,33 +544,81 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   // 고른 기업의 IR 자료를 띄운다 — **사람이 PC 카톡에 첨부할 파일**이다.
   // 링크를 문구에 실어 보내던 방식은 폐기했다(자료는 앱이 안 보낸다).
   // 그래도 이 목록은 남는다 — 첨부할 자료를 여기서 열어 내려받는다.
+  //
+  // ## 번호는 **지금 열어 둔 미리보기**에서 온다
+  //
+  // 자료를 손으로 붙이는 사람에게 알맹이는 **몇 번 기업인지**다 — 번호 차례로
+  // 붙여야 하는데 화면에 안 적혀 있으면 어느 것이 몇 번인지 알 수가 없다.
+  //
+  // 그런데 그 번호는 **고른 차례가 아니다.** 딜 소개에서 붙은 번호이고
+  // (`services/deal_numbers.py`), 투자사가 "2번 주세요" 라고 답한 그 번호다.
+  // 담당자마다 다르다 — 같은 기업이 A 담당자에겐 2번, B 담당자에겐 5번일 수
+  // 있어서 **화면이 스스로 셀 수 있는 값이 아니다.**
+  //
+  // 그래서 서버가 문구와 **같은 응답**에 실어 준 값을 그대로 적는다
+  // (`attachments[].no` — 문구를 만든 그 함수가 함께 낸다). 화면이 따로 세면
+  // 목록은 `1`, 문구는 `2번 기업 …` 이 되어 어느 쪽이 맞는지 알 수 없다.
+  //
+  // 담당자를 여럿 고르면 번호도 여럿이라 목록에 하나로 적을 수 없다. 미리보기는
+  // 담당자별로 한 통씩 보여 주므로(탭 하나가 담당자 하나) 이 목록은 **지금 열어
+  // 둔 그 탭**을 따른다. 탭을 바꾸면 번호도 함께 바뀐다.
+  //
+  // 차례는 **여전히 고른 차례**다. 서버가 고른 차례로 실어 주고(`company_ids`),
+  // 문구도 그 차례로 짚는다 — 번호가 오름차순이 아닐 수 있다는 뜻이다
+  // ("3번 기업 다라헬스, 2번 기업 가나애그").
+  //
+  // 지난 회차에 없던 기업은 번호가 없다(`no` 가 `null`). **지어내지 않는다** —
+  // 문구도 그 기업만 이름으로 나가므로, 목록에는 번호 대신 `번호 없음` 이라고
+  // 적는다. 자리를 그냥 비우면 화면이 덜 그려진 것으로 읽힌다.
   function renderIrLinks() {
     var box = document.getElementById("ir-attach");
     if (!box) return;
     box.hidden = mode !== "ir";
     if (mode !== "ir") return;
     var list = document.getElementById("ir-links");
+    var note = document.getElementById("ir-no-note");
     list.innerHTML = "";
-    // **고른 차례대로.** 문구가 "2번 기업 …, 3번 기업 …" 을 그 차례로 짚기
-    // 때문에, 여기만 목록 차례로 세면 화면과 문구의 차례가 갈린다.
-    // (붙는 **번호**는 고른 차례가 아니라 딜 소개에서 붙인 번호다 —
-    //  `services/deal_numbers.py`. 그래서 이 목록에는 번호를 적지 않는다.)
-    renumberPicks().forEach(function (card) {
-      var c = card.querySelector(".company-cb");
+    if (note) { note.hidden = true; note.textContent = ""; }
+    var p = lastPreviews[currentPreview] || lastPreviews[0];
+    var items = (p && p.attachments) || [];
+    // 아직 아무도 안 고른 **기본 문구**에는 번호가 없다 — 번호는 담당자를
+    // 알아야 나온다. 그것을 "지난 회차에 없는 기업" 과 같은 말로 적으면,
+    // 있는 번호를 없다고 읽는다.
+    var sample = !!(p && p.sample);
+    var missing = 0;
+    items.forEach(function (a) {
       var li = document.createElement("li");
-      var name = c.getAttribute("data-name");
-      var url = c.getAttribute("data-ir-url");
-      if (url) {
-        li.innerHTML = escapeHtml(name) + " — " +
-          '<a href="' + escapeHtml(url) + '" target="_blank" rel="noopener">자료 열기</a>';
-      } else {
-        li.innerHTML = escapeHtml(name) +
-          ' <span class="warn-text">— 첨부할 자료가 없습니다</span>';
-      }
+      var badge;
+      if (sample) badge = "";
+      else if (a.no) badge = '<b class="ir-no">' + escapeHtml(String(a.no)) + '번</b> ';
+      else { badge = '<span class="ir-no none">번호 없음</span> '; missing += 1; }
+      // 이름·링크는 **한 덩어리**로 싼다. 줄이 `flex` 라 안 싸면 글자와 링크가
+      // 각각 따로 서서 사이의 `—` 가 엉뚱한 자리로 밀린다.
+      li.innerHTML = badge + '<span class="ir-body">' + (a.url
+        ? escapeHtml(a.name) + " — " +
+          '<a href="' + escapeHtml(a.url) + '" target="_blank" rel="noopener">자료 열기</a>'
+        : escapeHtml(a.name) +
+          ' <span class="warn-text">— 첨부할 자료가 없습니다</span>') + '</span>';
       list.appendChild(li);
     });
     if (!list.children.length) {
       list.innerHTML = '<li class="muted">보낼 기업을 고르세요.</li>';
+    }
+    // 번호가 왜 그렇게 적혔는지 말해 준다. 안 적으면 "번호 없음" 을 고장으로
+    // 읽거나, 담당자를 바꿔도 번호가 그대로인 줄 안다.
+    if (note && items.length) {
+      if (sample) {
+        note.textContent = "담당자를 고르면 그 담당자가 받은 번호가 나옵니다.";
+        note.hidden = false;
+      } else if (missing) {
+        note.textContent = "‘번호 없음’ 은 지난 딜 소개 목록에 없던 기업입니다 — "
+          + "문구에도 번호 없이 이름만 나갑니다.";
+        note.hidden = false;
+      } else {
+        note.textContent = "번호는 " + (p.name || "") + " 님이 받은 딜 소개 번호입니다 — "
+          + "담당자를 바꾸면 번호도 바뀝니다.";
+        note.hidden = false;
+      }
     }
   }
 
@@ -637,6 +690,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     var greet = document.getElementById("include-opening");
     if (greet) { greet.checked = (mode !== "ask"); syncOpeningToggle(); }
     lastPreviews = [];
+    currentPreview = 0;
     // 방식을 바꾸면 고친 것도 버린다 — 딜소개용으로 고친 문구가 IR 자료
     // 전달에 얹히면 엉뚱한 말이 나간다.
     savedEdits = {};
@@ -673,9 +727,51 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       '<span class="muted">여기서 고치면 한 통으로 나갑니다</span></div>';
   }
 
+  // 미리보기 문구를 클립보드로 — **문구는 사람이 손으로 보낸다.**
+  //
+  // 담는 것은 고칠 수 있는 그 칸의 값 그대로다(`p.message` — 발송할 때 서버로
+  // 가는 바로 그 문장이다). 머리말("○○ 심사역 · 💬 방이름 · 재연락")이나
+  // "3통으로 나갑니다" 같은 안내는 **화면의 것**이라 섞이면 그것까지 붙는다.
+  //
+  // 담당자를 여럿 고르면 문구도 여럿인데, 이 단추는 **지금 열어 둔 탭**의
+  // 문구만 담는다 — 붙여 넣을 카톡 창도 한 번에 하나이고, 옆에 선 [보낼 자료]
+  // 목록의 번호도 같은 탭을 따른다. 둘이 다른 담당자를 가리키면 엉뚱한 자료가
+  // 붙는다.
+  //
+  // `navigator.clipboard` 는 https 나 localhost 가 아니면 **아예 없다.** 눌렀는데
+  // 아무 일도 안 나면 복사된 줄 알고 빈 것을 붙여 넣는다. 그래서 세 겹으로 둔다:
+  // 클립보드 → 옛 방식(`execCommand`) → 그마저 안 되면 **골라 두고 그렇게 말해
+  // 준다**(llm_brief.js 가 쓰는 그 방식이다 — 복사 단추는 한 가지로만 둔다).
+  function copyMessage(ta, btn) {
+    function say(label) {
+      btn.textContent = label;
+      // 눌렀다는 것이 보여야 한다. 잠깐 뒤 원래 글자로 돌아온다.
+      setTimeout(function () { btn.textContent = COPY_LABEL; }, 2000);
+    }
+    function fallback() {
+      if (ta.focus) ta.focus();
+      if (ta.select) ta.select();
+      var ok = false;
+      try { ok = !!(document.execCommand && document.execCommand("copy")); }
+      catch (e) { ok = false; }
+      say(ok ? "복사했습니다" : "Ctrl/⌘+C 로 복사하세요");
+    }
+    if (typeof navigator !== "undefined" && navigator.clipboard
+        && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(ta.value).then(function () {
+        say("복사했습니다");
+      }, fallback);
+    } else {
+      fallback();
+    }
+  }
+
   function renderPreview(idx) {
     var p = lastPreviews[idx];
     if (!p) { previewArea.innerHTML = '<p class="muted">미리보기 없음</p>'; return; }
+    // [보낼 자료] 목록의 번호가 **이 탭을 따른다.** 번호는 담당자마다 달라서,
+    // 여기서 알려 주지 않으면 목록은 앞 담당자의 번호를 그대로 달고 있는다.
+    currentPreview = idx;
     Array.prototype.slice.call(previewTabs.children).forEach(function (t, i) {
       t.classList.toggle("active", i === idx);
     });
@@ -696,11 +792,19 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       splitNotice(p) +
       '<textarea class="bubble-edit" id="bubble-edit" spellcheck="false"></textarea>' +
       '<div class="charcount" id="charcount"></div>' +
+      // 문구는 **사람이 손으로 보낸다** — 카톡 창에 붙여 넣어야 하니 여기서
+      // 집어갈 수 있어야 한다. 담을 것은 아래 칸의 값 그대로다(장식·머리말이
+      // 섞이면 그것까지 붙는다).
+      '<button type="button" class="linkbtn" id="copy-message">' + COPY_LABEL + '</button>' +
       '<button type="button" class="linkbtn" id="revert-edit"' +
       (p.edited ? '' : ' hidden') + '>고친 것 되돌리기</button>';
 
     var ta = document.getElementById("bubble-edit");
     ta.value = p.message;               // innerHTML 이 아니라 value 로 넣어야 안전하다
+    // 이 탭의 자료 목록·번호. 문구와 같은 응답에서 나온다.
+    renderIrLinks();
+    var copyBtn = document.getElementById("copy-message");
+    if (copyBtn) copyBtn.addEventListener("click", function () { copyMessage(ta, copyBtn); });
     var flag = document.getElementById("edited-flag");
     flag.hidden = !p.edited;
     updateCharCount(ta.value);
@@ -802,7 +906,10 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
           b.onclick = function () { renderPreview(i); };
           previewTabs.appendChild(b);
         });
+        // 다시 그릴 때는 늘 첫 탭이다. 앞서 세 번째 탭을 열어 두었는데 담당자를
+        // 줄이면 그 자리가 없어져, [보낼 자료] 목록만 없는 담당자의 번호를 단다.
         if (lastPreviews.length) renderPreview(0);
+        else { currentPreview = 0; renderIrLinks(); }
         var warns = [];
         lastPreviews.forEach(function (p) {
           (p.warnings || []).forEach(function (w) { warns.push(p.name + ": " + w); });

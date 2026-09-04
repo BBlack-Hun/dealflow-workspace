@@ -12,9 +12,14 @@
   · 나가는 문구의 `1) 2) 3)`            (`message_composer.compose_message`)
   · 회차에 남는 번호                     (`DealBatchCompany.position`)
   · 자료 전달의 `2번 기업 …`              (`company_list`)
+  · 화면의 [보낼 자료] 목록에 적히는 번호   (`numbered_companies` → deals.js)
 
-앞의 둘은 `numbered()` 한 자리에서 나오고, 셋째는 그렇게 남은 번호를
+앞의 둘은 `numbered()` 한 자리에서 나오고, 뒤의 둘은 그렇게 남은 번호를
 `for_contact()` 로 **되읽는다.** 자료 전달은 번호를 만들지 않는다.
+
+뒤의 둘이 한 함수(`numbered_companies`)를 같이 쓰는 것도 같은 이유다. 자료는
+사람이 PC 카톡에 손으로 붙이는데 **화면에 적힌 번호가 곧 붙이는 차례**라,
+화면이 따로 세면 문구가 짚은 것과 다른 자료가 붙는다.
 
 ## 실제로 갈렸던 자리
 
@@ -32,7 +37,7 @@
 """
 from __future__ import annotations
 
-from typing import Dict, List, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 #: 딜 소개 발송의 잡 종류(`SendJob.kind`). 회차를 만드는 발송은 여럿이라,
 #: 번호를 되읽을 때 어느 회차를 볼지 가리는 데 쓴다.
@@ -81,6 +86,22 @@ def for_contact(db, contact_id: int) -> Dict[int, int]:
     }
 
 
+def numbered_companies(db, contact_id: int,
+                       companies) -> List[Tuple[Optional[int], object]]:
+    """`(번호, 기업)` 짝 — **고른 차례 그대로**, 번호가 없으면 `None`.
+
+    나가는 문구(`company_list`)와 화면의 [보낼 자료] 목록이 **여기 하나만
+    본다.** 화면이 따로 세면 목록에는 `2번`, 문구에는 `3번 기업 …` 이 되어
+    사람이 자료를 엉뚱한 차례로 붙인다 — 자료를 손으로 첨부하는 지금은
+    화면에 적힌 번호가 곧 붙이는 차례다.
+
+    차례를 다시 세우지 않는 것도 일부러다. 짚는 **차례**는 고른 차례이고
+    (자료를 청한 차례), **번호**만 딜 소개에서 붙은 것을 되읽는다.
+    """
+    positions = for_contact(db, contact_id)
+    return [(positions.get(company.id), company) for company in companies]
+
+
 def company_list(db, contact_id: int, companies) -> str:
     """'1번 기업 샘플애그' · 여럿이면 '1번 기업 샘플애그, 3번 기업 …'.
 
@@ -90,9 +111,7 @@ def company_list(db, contact_id: int, companies) -> str:
     딜 소개에 없던 기업은 번호를 붙이지 않는다 — 없는 번호를 지어내면 받는
     쪽이 자기 목록에서 찾다가 못 찾는다.
     """
-    positions = for_contact(db, contact_id)
-    parts = []
-    for company in companies:
-        no = positions.get(company.id)
-        parts.append(f"{no}번 기업 {company.name}" if no else company.name)
-    return ", ".join(parts)
+    return ", ".join(
+        f"{no}번 기업 {company.name}" if no else company.name
+        for no, company in numbered_companies(db, contact_id, companies)
+    )
