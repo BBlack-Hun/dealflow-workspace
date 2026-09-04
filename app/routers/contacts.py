@@ -1161,6 +1161,12 @@ class RefCellIn(BaseModel):
     value: str = ""
 
 
+class RefColumnIn(BaseModel):
+    """표 참고 자료의 머리글 하나. 줄 번호가 없다 — `columns` 는 줄이 없다."""
+    col: int
+    value: str = ""
+
+
 def _editable_ref(db: Session, sheet_id: int, user: User):
     """고칠 수 있는 참고 자료만 돌려준다.
 
@@ -1327,6 +1333,57 @@ def edit_ref_cell(sheet_id: int, body: RefCellIn, db: Session = Depends(get_db),
         raise HTTPException(status_code=400, detail="없는 칸입니다")
     rows[body.row][body.col] = body.value.strip()
     data["rows"] = rows
+    row.content_json = json.dumps(data, ensure_ascii=False)
+    db.commit()
+    return {"ok": True}
+
+
+@ref_router.patch("/api/ref-sheets/{sheet_id}/column", include_in_schema=False)
+def edit_ref_column(sheet_id: int, body: RefColumnIn, db: Session = Depends(get_db),
+                    user: User = Depends(get_current_user)):
+    """표 참고 자료의 **머리글** 고치기.
+
+    표를 화면에서 세울 수 있게 되면서 머리글이 `칸 1 · 칸 2 …` 로 선다
+    (`_blank_content`). 표는 세울 수 있는데 그 칸을 뭐라 부르는지 정할 길이
+    없으면 이름 없는 표가 그대로 굳는다. 화면에서는 **칸과 똑같이 눌러서**
+    고친다(`js/ref_edit.js` — 같은 손잡이·같은 입력칸이다).
+
+    **`/cell` 을 늘리지 않고 따로 둔다.** 자료에서 `columns` 는 `rows` 와 다른
+    자리이기도 하지만, 무엇보다 **빈 값 규칙이 서로 반대다** — 빈 칸은 그냥 빈
+    칸이고(표를 세우면 칸이 전부 비어 있다) 지우는 길이기도 한데, 빈 머리글은
+    표를 그리다 만 것으로 보인다. 한 손잡이에 두 규칙을 묶으면 `row` 를 빠뜨린
+    요청이 칸 대신 머리글을 덮고, `없는 칸입니다` 라는 대답이 머리글에는 맞지도
+    않는다. 줄글(`/body`)과 칸(`/cell`)이 이미 **자료의 어느 부분을 고치는가**로
+    갈려 있어, 세 번째 부분인 머리글도 그 결을 따른다.
+
+    **누가 고칠 수 있는가는 여기서 새로 정하지 않는다** — 칸 고치기·이름
+    바꾸기·지우기와 같은 `_editable_ref` 하나를 지난다. 그래서 가져온 표든
+    화면에서 만든 표든 구분이 없다: 자료(`rows`)는 그대로 두고 부르는 이름만
+    바꾸는 것이라, 탭 이름 바꾸기(`/rename`)가 이미 하는 일과 같다.
+
+    **같은 이름이 두 칸에 와도 막지 않는다.** 탭 이름은 그 글자 하나로 탭을
+    가리켜서 겹치면 갈리지 않지만(`/ref-sheets/new` 가 물리는 이유), 머리글은
+    자리가 가리킨다 — `1월`·`1월`, `비고`·`비고` 로 겹쳐 쓰는 표가 실제로 있고,
+    가져온 표가 이미 그렇게 생겼으면 막는 순간 **그 표는 못 고치는 표**가 된다.
+    """
+    import json
+
+    row = _editable_ref(db, sheet_id, user)
+    if row.kind != "table":
+        raise HTTPException(status_code=404, detail="표 참고 자료가 아닙니다")
+    data = json.loads(row.content_json or "{}")
+    columns = data.get("columns") or []
+    if not (0 <= body.col < len(columns)):
+        raise HTTPException(status_code=400, detail="없는 머리글입니다")
+    # 빈 머리글은 머리행이 빈 줄로 서서 표가 그리다 만 것처럼 보이고, 칸이 몇
+    # 개인지도 화면에 안 남는다(빈 표에 `칸 1 … 칸 N` 을 채워 두는 것과 같은
+    # 이유 — `_blank_content`). **조용히 옛 이름으로 되돌리지 않는다**: 화면이
+    # 이 대답을 보고 되돌리면서 왜 안 됐는지 말한다.
+    name = body.value.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="머리글 이름을 적어 주세요")
+    columns[body.col] = name
+    data["columns"] = columns
     row.content_json = json.dumps(data, ensure_ascii=False)
     db.commit()
     return {"ok": True}
