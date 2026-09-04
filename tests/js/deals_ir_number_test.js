@@ -85,8 +85,7 @@ function person(name, pairs) {
     parts: [],
     warnings: [],
     attachments: pairs.map(function (pair) {
-      return { name: pair[0], url: "https://example.test/" + pair[0],
-               no: pair[1] };
+      return { name: pair[0], file: pair[0] + "_IR.pdf", no: pair[1] };
     })
   };
 }

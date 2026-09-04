@@ -72,7 +72,7 @@ def test_response_says_whether_it_became_introducible(logged_in, db, company):
 
     for field, value in [("funding_total", 20), ("raise_target", 700),
                          ("pre_value", 3000), ("competitiveness", "특허 6건"),
-                         ("ir_drive_url", "https://drive.google.com/file/d/x/view"),
+                         ("ir_file_name", "샘플_IR.pdf"),
                          ("summary_status", "done")]:
         body = logged_in.patch(f"/api/companies/{company.id}",
                                json={field: value}).json()
@@ -251,8 +251,9 @@ def test_required_fields_are_visible_in_the_table(logged_in, company):
              __import__("re").findall(r'data-field="([a-z_]+)"', html)}
     # 컬럼이 아니어도 되는 것 — 이유가 분명한 경우만 여기 적는다
     excused = {
-        # 링크는 값 대신 [열기]/[없음] 배지로 보여 준다 (주소를 늘어놓을 자리가 없다)
-        "ir_drive_url",
+        # 파일명은 값 대신 [있음]/[없음] 배지로 보여 준다 — 이름이 길어 표에
+        # 늘어놓을 자리가 없다(짚어 보면 뜨고, 고치는 자리는 [수정] 창이다)
+        "ir_file_name",
         # 문장이 길어 한 칸에 안 들어간다. 없으면 '소개 가능' 칸이 이름을 대 준다
         "competitiveness",
     }

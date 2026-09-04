@@ -386,11 +386,16 @@ def test_parse_sheet_b_maps_columns():
     assert ag.sector_major == "애그테크" and ag.sector_minor == "B2B 유통"
     assert ag.series == "SeriesA" and ag.contract_status == "yes"
     assert ag.contract_month == "2026-07" and ag.is_top_deal == 1
-    assert ag.ir_drive_url == "https://drive.example.com/file/sample-ag"
+    # 시트의 `IR deck유무` 칸에는 **드라이브 주소**가 적혀 있다. 자료 칸은 이제
+    # 파일명을 담으므로(0056) 주소는 그 칸에 넣지 않고 **비고로 넘긴다** —
+    # 넣어 두면 발송기가 거부할 값이 다시 쌓이고, 링크 자체는 파일을 내려받는
+    # 유일한 실마리라 버릴 수도 없다.
+    assert not hasattr(ag, "ir_drive_url") and not hasattr(ag, "ir_file_name")
+    assert "https://drive.example.com/file/sample-ag" in ag.note
 
     medi = by_name["샘플메디"]
-    # deck '유' 인데 링크를 모르면 사실만 비고에 남기고 URL은 화면에서 수기 등록
-    assert medi.ir_drive_url is None and "IR deck 보유" in medi.note
+    # deck '유' 인데 링크를 모르면 사실만 비고에 남기고 파일명은 화면에서 수기 등록
+    assert "IR deck 보유" in medi.note
     assert medi.contract_status == "pending"
 
     pay = by_name["샘플페이"]

@@ -158,7 +158,7 @@ REQUIRED_FIELDS = [
     ("raise_target", "투자유치 진행금액"),
     ("pre_value", "Pre Value"),
     ("competitiveness", "특이사항"),
-    ("ir_drive_url", "IR 자료"),
+    ("ir_file_name", "IR 자료"),
 ]
 
 
@@ -379,9 +379,9 @@ def company_rows(db: Session, tab: str = "") -> List[dict]:
             "assignee": c.assignee_name or "",
             "competitiveness": c.competitiveness or "",
             "funding_status": c.funding_status or "",
-            "ir_drive_url": c.ir_drive_url or "",
+            "ir_file_name": c.ir_file_name or "",
             # 자료 링크 유무가 곧 'IR 요청이 오면 바로 보낼 수 있는가' 다.
-            "has_ir": bool((c.ir_drive_url or "").strip()),
+            "has_ir": bool((c.ir_file_name or "").strip()),
             # **저장된 글자 그대로가 아니라 맞춰서** 돌려준다. 예전 값(`no`·`yes`)이
             # 그대로 나가면 수정 패널의 <select> 에 같은 option 이 없어 고른 것이
             # 없는 상태가 되고, 그대로 [저장]하면 빈 값이 날아가 NOT NULL 인
@@ -464,20 +464,23 @@ def companies_page(request: Request, db: Session = Depends(get_db),
     return templates.TemplateResponse("companies.html", ctx)
 
 
-@router.post("/companies/ir-links", include_in_schema=False)
-def bulk_ir_links(pasted: str = Form(""), db: Session = Depends(get_db),
+@router.post("/companies/ir-files", include_in_schema=False)
+def bulk_ir_files(pasted: str = Form(""), db: Session = Depends(get_db),
                   user: User = Depends(get_current_user)):
-    """IR 자료 링크를 한 번에 붙여넣는다.
+    """IR 자료 **파일명**을 한 번에 붙여넣는다.
 
-    297개를 하나씩 여닫으며 넣을 수는 없다. 시트에서 **기업명과 링크 두 열을
+    297개를 하나씩 여닫으며 넣을 수는 없다. 시트에서 **기업명과 파일명 두 열을
     복사해 붙이면** 그대로 들어가게 한다(탭 또는 쉼표로 나뉜다).
+
+    ⚠ 이 자리는 원래 **드라이브 링크**를 받았다. 칸이 파일명으로 바뀌었으므로
+    (0056) 주소는 받지 않는다 — 받아 두면 발송기가 거부할 값이 다시 쌓인다.
 
     이름이 안 맞는 줄은 **조용히 버리지 않고** 몇 건인지 알려 준다 —
     넣은 줄 알았는데 안 들어간 것이 제일 나쁘다.
     """
     from urllib.parse import quote
 
-    matched, missed, blank = _apply_ir_links(db, pasted)
+    matched, missed, rejected = _apply_ir_files(db, pasted)
     db.commit()
 
     parts = [f"{matched}건 반영"]
@@ -485,14 +488,25 @@ def bulk_ir_links(pasted: str = Form(""), db: Session = Depends(get_db),
         shown = ", ".join(missed[:5])
         more = f" 외 {len(missed) - 5}건" if len(missed) > 5 else ""
         parts.append(f"못 찾은 기업 {len(missed)}건: {shown}{more}")
-    if blank:
-        parts.append(f"링크가 없는 줄 {blank}건")
+    if rejected:
+        parts.append(f"파일명이 아닌 줄 {rejected}건")
     return RedirectResponse(f"/companies?msg={quote(' · '.join(parts))}",
                             status_code=303)
 
 
-def _apply_ir_links(db: Session, pasted: str) -> tuple:
-    """붙여넣은 텍스트 → (반영 수, 못 찾은 기업명, 링크 없는 줄 수)."""
+def _looks_like_a_file_name(value: str) -> bool:
+    """파일명 자리에 들어와도 되는 값인가.
+
+    발송기가 거부하는 것과 **같은 것들**을 여기서도 거부한다
+    (`agent/sender/base.py: check_ir_file_name`) — 넣는 자리와 보내는 자리의
+    판단이 갈리면, 화면에서는 들어갔는데 발송에서만 실패한다.
+    """
+    return bool(value) and not value.startswith(".") \
+        and not any(bad in value for bad in ("/", "\\", ":", "\x00"))
+
+
+def _apply_ir_files(db: Session, pasted: str) -> tuple:
+    """붙여넣은 텍스트 → (반영 수, 못 찾은 기업명, 파일명이 아닌 줄 수)."""
     from ..services.sheet_import import normalize_company_name
 
     by_key = {}
@@ -501,7 +515,7 @@ def _apply_ir_links(db: Session, pasted: str) -> tuple:
         if key:
             by_key.setdefault(key, company)
 
-    matched, missed, blank = 0, [], 0
+    matched, missed, rejected = 0, [], 0
     for line in (pasted or "").splitlines():
         line = line.strip()
         if not line:
@@ -509,20 +523,20 @@ def _apply_ir_links(db: Session, pasted: str) -> tuple:
         # 탭이 먼저다 — 시트에서 복사하면 탭으로 나뉘고, 기업명에 쉼표가 있을 수 있다.
         parts = line.split("\t") if "\t" in line else line.rsplit(",", 1)
         if len(parts) < 2:
-            blank += 1
+            rejected += 1
             continue
-        name, url = parts[0].strip(), parts[-1].strip()
-        if not url or not url.lower().startswith("http"):
-            blank += 1
+        name, file_name = parts[0].strip(), parts[-1].strip()
+        if not _looks_like_a_file_name(file_name):
+            rejected += 1
             continue
         key = normalize_company_name(name).replace(" ", "").lower()
         company = by_key.get(key)
         if company is None:
             missed.append(name[:20])
             continue
-        company.ir_drive_url = url
+        company.ir_file_name = file_name
         matched += 1
-    return matched, missed, blank
+    return matched, missed, rejected
 
 
 # --- 편집 -------------------------------------------------------------------
@@ -554,7 +568,7 @@ class CompanyIn(BaseModel):
     top_deal_kind: Optional[str] = None
     assignee_name: Optional[str] = None
     funding_status: Optional[str] = None
-    ir_drive_url: Optional[str] = None
+    ir_file_name: Optional[str] = None
     contract_status: Optional[str] = None
     contract_received: Optional[str] = None
     contract_month: Optional[str] = None

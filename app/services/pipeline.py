@@ -132,7 +132,7 @@ def request_rows(db: Session, user: User) -> List[dict]:
             "firm": (contact.firm or "") if contact else "",
             "company_name": row.company_name,
             "company_id": row.company_id,
-            "ir_url": "",
+            "ir_file": "",
             "requested_at": row.requested_at,
             "waited": waited,
             # 사흘 넘게 안 보냈으면 눈에 띄어야 한다.
@@ -143,16 +143,17 @@ def request_rows(db: Session, user: User) -> List[dict]:
             "note": row.note or "",
         })
 
-    # 자료 링크를 함께 준다 — 요청 화면에서 바로 열어 보낼 수 있게.
+    # 자료 **파일명**을 함께 준다 — 요청 화면에서 무엇을 보낼지 보이게.
+    # (링크가 아니다: 파일은 각자 PC 의 자료 폴더에 있다 — 0056 참고)
     ids = [r["company_id"] for r in out if r["company_id"]]
     if ids:
-        urls = {
-            c.id: (c.ir_drive_url or "") for c in db.execute(
+        names = {
+            c.id: (c.ir_file_name or "") for c in db.execute(
                 select(IrCompany).where(IrCompany.id.in_(ids))
             ).scalars().all()
         }
         for row in out:
-            row["ir_url"] = urls.get(row["company_id"], "")
+            row["ir_file"] = names.get(row["company_id"], "")
     return out
 
 
@@ -268,7 +269,7 @@ def last_batch_items(db: Session, contact_id: int) -> dict:
         "sent_date": sent_date or "",
         "items": [{"position": link.position, "company_id": company.id,
                    "name": company.name,
-                   "has_link": bool((company.ir_drive_url or "").strip())}
+                   "has_file": bool((company.ir_file_name or "").strip())}
                   for link, company in links],
     }
 
@@ -328,13 +329,13 @@ def group_by_contact(requests: List[dict]) -> List[dict]:
         item = grouped.setdefault(row["contact_id"], {
             "contact_id": row["contact_id"], "name": row["name"],
             "title": row["title"], "firm": row["firm"],
-            "rows": [], "company_ids": [], "missing": [], "no_link": [],
+            "rows": [], "company_ids": [], "missing": [], "no_file": [],
         })
         item["rows"].append(row)
         if row["company_id"]:
             item["company_ids"].append(row["company_id"])
-            if not row["ir_url"]:
-                item["no_link"].append(row["company_name"])
+            if not row["ir_file"]:
+                item["no_file"].append(row["company_name"])
         else:
             item["missing"].append(row["company_name"])
     return sorted(grouped.values(), key=lambda g: -len(g["rows"]))

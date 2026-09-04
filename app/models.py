@@ -242,7 +242,18 @@ class IrCompany(TimestampMixin, Base):
     series: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     one_liner: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     owner_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
-    ir_drive_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # 보낼 IR 자료의 **파일 이름**. 경로가 아니라 이름 하나다.
+    #
+    # 원래는 구글 드라이브 링크를 담던 칸(`ir_drive_url`)이었다. 링크를 문구에
+    # 실어 보내는 방식은 폐기했고(0053), 자료는 이제 발송기가 파일로 붙여
+    # 보낸다(0055·0056) — **칸에 들어오는 값의 성질 자체가 바뀌었다.** 이름이
+    # 내용과 어긋난 채로 두면 다음 사람이 URL 을 넣는다.
+    #
+    # 실제 파일 자리는 **각 PC 가 조립한다**: `agent_devices.ir_root` + 이 이름
+    # (`agent/sender/base.py: resolve_ir_file`). 폴더는 PC 마다 다르고 이름은
+    # 팀이 함께 쓴다 — 그래서 이 칸에는 폴더가 들어오면 안 되고, 발송기가
+    # 경로 구분자·`..`·URL 을 전부 거부한다(`check_ir_file_name`).
+    ir_file_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     contract_status: Mapped[str] = mapped_column(String, default="no")  # yes | no | pending
     # 계약서를 **실제로 받았는가** — `O` / `X`, 아직 안 정했으면 NULL(빈 칸).
     #
@@ -543,6 +554,19 @@ class SendItem(TimestampMixin, Base):
     # `message` 는 항상 **합친 전문**이라, 이 칸을 모르는 예전 발송 프로그램도
     # 순서가 맞는 한 통을 보낸다.
     parts_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # **함께 붙여 보낼 자료 파일의 이름들**(JSON 배열). 경로가 아니라 이름이다.
+    #
+    # 자료 전달에서만 채워진다. 발송기가 **먼저 파일을, 그다음 문구 한 통**을
+    # 보낸다 — 순서가 이 칸의 차례 그대로여야 투자사가 기억하는 번호와 맞는다.
+    #
+    # `message` 와 같은 **스냅숏**이다. 목록을 만든 뒤에 기업의 자료 칸을 고쳐도
+    # 이미 만들어 둔 발송은 그때 고른 자료를 보낸다 — 문구는 "1번 기업 …" 이라고
+    # 적힌 채 다른 파일이 나가는 일이 없어야 한다.
+    #
+    # 비어 있으면 **지금까지의 동작**: 문구만 나가고 자료는 사람이 PC 에서
+    # 손으로 첨부한다. 자동 첨부를 켠 계정에서만 채워진다
+    # (`services/ir_attach.py: auto_attach_enabled`).
+    files_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     # pending | sending | sent | failed | canceled
     status: Mapped[str] = mapped_column(String, default="pending")
     error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

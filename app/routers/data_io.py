@@ -332,7 +332,10 @@ COMPANY_HEADERS = [
     # 둔다 — 이름을 바꾸면 이 파일을 받아 쓰던 수식이 어긋난다).
     # 자리도 화면과 같이 `계약` 바로 뒤다.
     "경쟁력", "계약", "계약서 수신됨", "계약월", "탑딜", "투자현황", "요약상태",
-    "IR 링크",
+    # 칸이 **파일명**으로 바뀌었다(0056). 머리글도 함께 바꾼다 — 내려받은
+    # 파일을 화면과 나란히 놓고 대조하는 자리라, 이름이 갈리면 어느 칸인지
+    # 매번 따져야 한다.
+    "IR 자료 파일명",
 ]
 
 
@@ -351,7 +354,7 @@ def export_companies(db: Session = Depends(get_db),
          # 순간 "확인했는데 안 왔다" 가 그 숫자에 들어간다.
          c.contract_received or "", c.contract_month or "",
          "★" if c.is_top_deal else "", c.funding_status or "",
-         c.summary_status or "", c.ir_drive_url or ""]
+         c.summary_status or "", c.ir_file_name or ""]
         for c in companies
     ]
     today = date.today().isoformat()

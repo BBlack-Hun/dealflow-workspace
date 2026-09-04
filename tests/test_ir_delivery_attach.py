@@ -17,10 +17,15 @@
 - 그래도 **어느 기업 자료인지는 문구에 남는다** — 번호와 이름.
 - [자료 보내기] 를 누른 것이 **활동 이력에 남고**, 눌렀다는 이유만으로
   요청이 '전달함' 으로 닫히지는 않는다.
+
+여기 사람들은 **자동 첨부를 켜지 않은 계정**이다(자기 PC 의 자료 폴더를 정하지
+않았다). 그래서 지금까지의 동작 그대로다 — 문구만 나가고 안내창이 뜬다.
+켠 계정이 어떻게 달라지는지는 `tests/test_ir_attach_job.py` 가 지킨다.
 """
 from __future__ import annotations
 
 import pathlib
+import re
 
 import pytest
 
@@ -28,7 +33,40 @@ from app.services import message_composer as mc
 
 from .conftest import DEMO_PASSWORD
 
+#: 자료 칸에 들어가는 값 — **파일명**이다(0056). 예전에는 드라이브 링크였다.
+FILE = "샘플애그_IR.pdf"
+#: 폐기한 옛 값. 이것이 문구에 실리지 않는지가 이 파일의 첫 번째 검사다.
 LINK = "https://drive.google.com/file/d/agri/view"
+NOTICE = "PC 에서 IR 자료를 첨부해주시기 바랍니다"
+
+
+def _notice_body(stage) -> str:
+    """안내창 본문만."""
+    html = stage["client"].get("/deals?mode=ir&attach=1").text
+    body = re.search(r'<p class="guard-body">(.*?)</p>', html, re.S)
+    assert body, "안내창 본문을 찾지 못했습니다"
+    return re.sub(r"<[^>]+>", "", body.group(1))
+
+
+def _css_without_comments() -> str:
+    """주석을 걷어낸 CSS — **브라우저처럼** 안 닫힌 주석은 끝까지 삼킨다.
+
+    글자만 찾으면 `/*` 하나가 안 닫혀 아래 규칙이 통째로 죽은 날에도 검사가
+    통과한다(실제로 그랬다). 브라우저가 버리는 것을 여기서도 버려야 한다.
+    """
+    css = pathlib.Path("app/static/css/app.css").read_text(encoding="utf-8")
+    out, i = [], 0
+    while True:
+        start = css.find("/*", i)
+        if start < 0:
+            out.append(css[i:])
+            break
+        out.append(css[i:start])
+        end = css.find("*/", start + 2)
+        if end < 0:
+            break                       # 안 닫힌 주석 — 여기서부터 없는 것이다
+        i = end + 2
+    return "".join(out)
 
 
 @pytest.fixture()
@@ -42,7 +80,7 @@ def stage(client, db, users):
                         firm="가나벤처스", source_sheet="내 명단",
                         channel_kakao=1, connect_stage="connected",
                         kakao_room_name="홍길동 팀장님")
-    agri = IrCompany(name="샘플애그", ir_drive_url=LINK)
+    agri = IrCompany(name="샘플애그", ir_file_name=FILE)
     medi = IrCompany(name="샘플메디")            # 자료 없음
     batch = DealBatch(user_id=users["u1"].id, title="8월 3주차",
                       sent_date="2026-08-19")
@@ -93,6 +131,9 @@ def test_the_link_is_not_in_the_message(stage):
     body = _preview(stage, [stage["agri"].id])["message"]
     assert LINK not in body, "구글 드라이브 링크 방식은 폐기했다"
     assert "drive.google.com" not in body
+    # 파일명도 문구에 적지 않는다. 받는 쪽에 필요한 것은 **번호와 기업 이름**
+    # 이고(투자사는 번호로 기억한다), 파일명은 보내는 쪽 사정이다.
+    assert FILE not in body
 
 
 def test_the_company_is_still_pointed_at_by_number(stage):
@@ -170,16 +211,37 @@ def test_the_agent_gets_one_message(stage, db):
 # --- 자료가 없으면 첨부할 것이 없다 --------------------------------------------
 
 def test_a_company_without_material_is_still_warned(stage):
-    """링크는 안 나가지만, **첨부할 파일을 내려받을 곳**은 있어야 한다."""
+    """파일명이 비어 있으면 붙일 것을 못 찾는다 — 보내기 전에 알려야 한다."""
     preview = _preview(stage, [stage["agri"].id, stage["medi"].id])
     assert any("샘플메디" in w and "첨부할 IR 자료가 없는 기업" in w
                for w in preview["warnings"])
 
 
-def test_the_attachment_list_still_carries_the_link(stage):
-    """화면에서 **열어 내려받는** 자리는 남는다 — `ir_drive_url` 칸을 지운 게 아니다."""
+def test_the_attachment_list_carries_the_file_name(stage):
+    """화면의 [보낼 자료] 목록은 남는다 — 담기는 값이 **파일명**으로 바뀌었을 뿐.
+
+    링크가 아니라서 열 수는 없다. 그래도 이름이 있어야 그 파일을 PC 에서 찾아
+    붙일 수 있다.
+    """
     preview = _preview(stage, [stage["agri"].id])
-    assert preview["attachments"][0]["url"] == LINK
+    assert preview["attachments"][0]["file"] == FILE
+    assert preview["attachments"][0]["name"] == "샘플애그"
+
+
+def test_a_plain_account_gets_no_files_in_the_job(stage, db):
+    """자동 첨부를 켜지 않은 계정은 **지금까지 그대로** — 문구만 나간다.
+
+    파일이 잡에 실리면 발송기가 붙여 보내고, 사람도 손으로 붙인다 —
+    같은 자료가 두 번 나간다.
+    """
+    from app.models import SendItem
+
+    r = stage["client"].post("/api/deals/send", json={
+        "mode": "ir", "contact_ids": [stage["contact"].id],
+        "company_ids": [stage["agri"].id]})
+    assert r.status_code == 200, r.text
+    item = db.query(SendItem).filter_by(job_id=r.json()["job_id"]).one()
+    assert item.files_json is None
 
 
 # --- [자료 보내기] — 활동 이력과 안내창 ----------------------------------------
@@ -242,7 +304,7 @@ def test_the_send_screen_says_to_attach_on_the_pc(stage):
     import re
 
     html = _press_deliver(stage, follow=True).text
-    assert "PC 에서 IR 자료를 첨부해주시기 바랍니다" in html
+    assert NOTICE in html
     # 닫는 길은 **평범한 링크**다 — 스크립트 예외 하나로 발송 화면이 통째로
     # 가려지면 안 된다(`admin_only.html` 과 같은 조심). 닫으면 안내창만 빠지고
     # 골라 둔 담당자·기업은 그대로다.
@@ -257,7 +319,66 @@ def test_the_send_screen_says_to_attach_on_the_pc(stage):
 def test_the_notice_is_not_shown_on_a_plain_visit(stage):
     """평소에 발송 화면을 열 때는 안내창이 뜨지 않는다."""
     html = stage["client"].get("/deals").text
-    assert "PC 에서 IR 자료를 첨부해주시기 바랍니다" not in html
+    assert NOTICE not in html
+
+
+def test_the_notice_needs_something_to_point_at(stage):
+    """`mode=ir` 없이 `attach=1` 만 있으면 **안내창을 띄우지 않는다**.
+
+    안내창은 `[보낼 자료]` 칸을 가리키는데 그 칸은 IR 자료 전달 방식에서만
+    켜진다(`deals.js` 의 `renderIrLinks`). 방식이 안 실린 주소에서는 화면에
+    없는 칸을 가리키는 안내가 되어, 자료를 어디서 받는지 찾다가 그냥 [발송]
+    을 누르게 된다 — 안내창이 막으려던 바로 그 일이다.
+
+    정상 경로로는 안 생긴다(`/ir/deliver-guide` 가 둘을 늘 함께 붙인다).
+    주소를 손보거나 즐겨찾기로 다시 열 때 생긴다.
+    """
+    assert NOTICE not in stage["client"].get("/deals?attach=1").text
+
+
+def test_the_notice_is_shown_when_the_mode_came_along(stage):
+    """둘이 함께 실려 오는 정상 경로에서는 그대로 뜬다."""
+    assert NOTICE in stage["client"].get("/deals?mode=ir&attach=1").text
+
+
+def test_the_notice_does_not_say_which_way_to_look(stage):
+    """가리킬 때 **방향을 말하지 않는다.**
+
+    `[보낼 자료]` 칸은 넓은 화면에서 오른쪽 미리보기 안에 있고, 좁은
+    화면(900px 이하)에서 칸이 세로로 쌓일 때만 아래다 — '아래' 든 '오른쪽'
+    이든 한쪽 폭에서는 틀린 말이 되어, 그 말대로 본 사람은 없는 자리를 본다.
+    """
+    body = _notice_body(stage)
+    assert "보낼 자료" in body, "가리키는 칸 이름은 남아 있어야 한다"
+    for way in ("아래", "위쪽", "오른쪽", "왼쪽", "우측", "좌측", "하단", "상단"):
+        assert way not in body, f"화면 폭에 따라 틀려지는 말입니다: {way}"
+
+
+def test_the_sidebar_dims_with_the_backdrop():
+    """뒷막이 뜨면 **좌측 메뉴도 눈에 띄게 어두워져야 한다.**
+
+    뒷막은 사이드바까지 덮어 메뉴를 정말로 막는다. 그런데 뒷막색이 사이드바
+    바탕색(#10151d)과 같아서 사이드바 위에서는 아무 일도 일어나지 않았다 —
+    본문만 흐려지고 메뉴는 멀쩡해 보이니 눌러 보고 나서야 막힌 줄 안다.
+
+    **주석을 걷어낸 뒤** 찾는다. 전에 CSS 주석이 안 닫혀 규칙이 통째로 죽은
+    적이 있는데, 글자만 찾으면 그때도 이 검사는 통과한다.
+    """
+    css = _css_without_comments()
+    rule = re.search(r"\.layout:has\(\.guard-backdrop\)\s+\.sidebar\s*\{([^}]*)\}", css)
+    assert rule, "뒷막이 떴을 때 사이드바를 어둡게 하는 규칙이 없습니다"
+    assert "brightness(" in rule.group(1), (
+        "어두운 색을 덧칠하는 방식으로는 이미 어두운 사이드바를 어둡게 할 수 없습니다")
+
+
+def test_the_backdrop_itself_is_not_made_heavier():
+    """본문 쪽은 지금보다 과해지지 않는다 — 뒷막에 `backdrop-filter` 를 걸면
+    사이드바와 함께 본문도 더 어두워진다."""
+    css = _css_without_comments()
+    rule = re.search(r"\.guard-backdrop\s*\{([^}]*)\}", css)
+    assert rule, "뒷막 규칙이 사라졌거나 주석 안에 갇혔습니다"
+    assert "rgba(16,21,29,.28)" in rule.group(1)
+    assert "backdrop-filter" not in rule.group(1)
 
 
 def test_another_persons_contact_is_refused(client, db, users, stage):
