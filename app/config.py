@@ -111,5 +111,36 @@ BACKUP_ENABLED = os.getenv("DEALFLOW_DAILY_BACKUP", "1") == "1"
 # DB 한 개가 3MB 안팎이고 서버 여유가 29G 라 늘려도 부담은 없다.
 BACKUP_KEEP_DAILY_DAYS = int(os.getenv("DEALFLOW_BACKUP_KEEP_DAYS", "7"))
 
+# ── 이 서비스의 주소 ──────────────────────────────────────────────────────────
+# Caddy 가 인증서를 받는 그 이름이다(`deploy/.env` 의 `DEALFLOW_DOMAIN`,
+# `deploy/Caddyfile` 이 같은 값을 읽는다). 문자로 보내는 링크가 이 주소를 쓴다 —
+# 주소를 코드에 박으면 도메인을 옮기는 날 **문자에 적힌 주소만** 옛것으로 남고,
+# 그 문자를 받은 사람은 링크가 죽었다는 것을 눌러 봐야 안다.
+#
+# 함수인 이유는 메일 설정과 같다: 부를 때마다 환경변수를 다시 읽는다. 모듈
+# 상수로 굳혀 두면 검사에서 값을 바꿔 끼울 수 없고, 무엇보다 "지금 켜져 있나"
+# 를 화면이 물어볼 때 굳은 값을 돌려준다.
+def domain() -> str:
+    """`dealflow.example.org` 처럼 **호스트 이름만**. 없으면 빈 문자열."""
+    return os.environ.get("DEALFLOW_DOMAIN", "").strip().strip("/")
+
+
+def base_url() -> str:
+    """`https://dealflow.example.org`. 주소가 없으면 빈 문자열.
+
+    **https 로 고정한다.** 이 앱은 Caddy 뒤에서만 열리고 Caddy 는 http 를
+    https 로 올린다(`deploy/Caddyfile`). 스킴까지 설정으로 받으면 실수로 http 가
+    들어갔을 때 그 링크가 문자로 나간다.
+    """
+    host = domain()
+    if not host:
+        return ""
+    # 이미 스킴이 붙어 들어온 값도 받아 준다 — `.env` 에 주소를 통째로 적는
+    # 사람이 있고, 그때 `https://https://…` 가 되면 링크가 조용히 죽는다.
+    if host.startswith("http://") or host.startswith("https://"):
+        return "https://" + host.split("://", 1)[1]
+    return f"https://{host}"
+
+
 STATIC_DIR = BASE_DIR / "app" / "static"
 TEMPLATES_DIR = BASE_DIR / "app" / "templates"

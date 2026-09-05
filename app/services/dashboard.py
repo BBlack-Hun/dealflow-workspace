@@ -22,7 +22,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import clock
-from . import cadence, mailer, pipeline, sheet_owner
+from . import cadence, followup_sms, mailer, pipeline, sheet_owner
 from .. import deps, version
 from ..models import (
     SEND_KINDS,
@@ -851,6 +851,9 @@ def admin_dashboard(db: Session, today: Optional[date] = None) -> dict:
         },
         "sectors": _distribution([c.sector_major for c in companies if c.sector_major], top=8),
         "mail": mailer.status(),
+        # 결과 문의 문자도 메일과 **나란히** 선다 — 켜졌는지, 무엇이
+        # 없는지, 그리고 오늘 나간 것이 어떻게 됐는지.
+        "sms": followup_sms.status(db),
         "warnings": _admin_warnings(rows, unassigned),
         "recent_batches": recent_batches(db, limit=8),
     }
