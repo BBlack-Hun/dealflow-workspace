@@ -49,9 +49,13 @@ def _label(when: date) -> str:
     return f"{when.isoformat()}({calendar_link.WEEKDAYS[when.weekday()]})"
 
 
-def _meet(when: date, at: str = "", company: str = "", assignee: str = "") -> dict:
+def _meet(when: date, at: str = "", company: str = "", assignee: str = "",
+          mode: str = "", remote: bool = False) -> dict:
+    """``mode`` 는 제목에 설 우리말 딱지(`대면`/`화상`), ``remote`` 는
+    **갈 곳이 없는가**다. 안 고른 미팅은 둘 다 기본값(빈 값·거짓)이다."""
     return {"date": when.isoformat(), "time": at,
-            "company": company, "assignee": assignee}
+            "company": company, "assignee": assignee,
+            "mode": mode, "remote": remote}
 
 
 # ── 1) 묶인 일정 ────────────────────────────────────────────────────────────
@@ -68,7 +72,7 @@ def test_같은_날_같은_담당자의_미팅_둘이_한_일정에_담긴다():
         ], **WHO))
 
     assert q["text"] == (
-        "[강민준/관리1팀/마포구] 가나컴퍼니, 다라컴퍼니 IR 미팅"
+        "[강민준/관리1팀] 가나컴퍼니, 다라컴퍼니 IR 미팅"
         " / 투자사 마바벤처스 홍길동 상무")
     assert q["details"].split("\n") == [
         "홍길동 상무",
@@ -144,7 +148,7 @@ def test_기업이_하나여도_업체1_로_적는다():
         user_name="강민준",
         meetings=[_meet(when, "10:00", "가나컴퍼니", "관리1팀")], **WHO))
 
-    assert q["text"] == ("[강민준/관리1팀/마포구] 가나컴퍼니 IR 미팅"
+    assert q["text"] == ("[강민준/관리1팀] 가나컴퍼니 IR 미팅"
                         " / 투자사 마바벤처스 홍길동 상무")
     assert q["details"].endswith(
         f"- 업체1 : 가나컴퍼니\n- 미팅 일정 : {_label(when)} 10:00")
@@ -175,7 +179,7 @@ def test_기업_담당자가_서로_다르면_둘_다_적는다():
         _meet(when, "15:00", "다라컴퍼니", "관리2팀"),
     ], **WHO))
 
-    assert q["text"].startswith("[강민준/관리1팀, 관리2팀/마포구]")
+    assert q["text"].startswith("[강민준/관리1팀, 관리2팀]")
 
 
 def test_기업_담당자가_같으면_한_번만_적는다():
@@ -185,49 +189,20 @@ def test_기업_담당자가_같으면_한_번만_적는다():
         _meet(when, "15:00", "다라컴퍼니", "관리1팀"),
     ], **WHO))
 
-    assert q["text"].startswith("[강민준/관리1팀/마포구]")
+    assert q["text"].startswith("[강민준/관리1팀]")
 
 
 def test_담당자를_안_적어_둔_기업은_그_자리가_빈다():
-    """빈 칸을 남기면(`[강민준//마포구]`) 무엇이 빠졌는지가 아니라
+    """빈 칸을 남기면(`[강민준//대면]`) 무엇이 빠졌는지가 아니라
     **뭔가 깨졌다**로 읽힌다."""
     when = date.today() + timedelta(days=1)
     q = _query(calendar_link.group_url(
         user_name="강민준", meetings=[_meet(when, "13:00", "가나컴퍼니")], **WHO))
 
-    assert q["text"].startswith("[강민준/마포구] 가나컴퍼니 IR 미팅")
+    assert q["text"].startswith("[강민준] 가나컴퍼니 IR 미팅")
 
 
-# ── 4) 지역구 ───────────────────────────────────────────────────────────────
-
-@pytest.mark.parametrize("address, expected", [
-    ("서울특별시 마포구 가나로 100", "마포구"),
-    ("서울시 성동구 다라길 1, 2층", "성동구"),
-    ("서울 종로구 마바대로 3", "종로구"),
-    # 광역 뒤에 시가 오면 그 시가 지역이다. **맨 앞 토막은 건너뛴다** —
-    # 거기는 `서울특별시` 처럼 광역 이름이라 지역구가 아니다.
-    ("경기도 가나시 다라구 마바로 7", "다라구"),
-    ("경상남도 가나시 다라로 9", "가나시"),
-    ("경기도 가나군 다라면 마바리 12", "가나군"),
-])
-def test_주소에서_지역구_한_토막을_집는다(address, expected):
-    """제목 앞머리에 어디로 가는지가 있어야 아침에 동선을 짠다. 주소를
-    통째로 실으면 달력 칸에서 그 줄만 남고 기업 이름이 잘린다."""
-    assert calendar_link.district_of(address) == expected
-
-
-@pytest.mark.parametrize("address", [
-    None, "", "   ",
-    "세종특별자치시 가나로 100",        # 구·군·시 토막이 없다
-    "12F, 34 Gana-daero, Seoul",       # 영문 주소
-])
-def test_지역구를_못_읽으면_지어내지_않는다(address):
-    """틀린 동네를 적어 두면 사람이 그리로 간다. 못 읽었으면 그 자리가
-    통째로 빠질 뿐이다."""
-    assert calendar_link.district_of(address) == ""
-
-
-# ── 5) 주소 ─────────────────────────────────────────────────────────────────
+# ── 4) 주소와 장소 ─────────────────────────────────────────────────────────────────
 
 def test_담당자_주소가_장소로_들어간다():
     when = date.today() + timedelta(days=1)
@@ -237,7 +212,7 @@ def test_담당자_주소가_장소로_들어간다():
 
 def test_주소가_없으면_장소_칸을_만들지_않는다():
     """빈 장소를 넣으면 캘린더가 그 자리를 지도로 찍으려다 엉뚱한 곳을 가리킨다.
-    제목의 지역구 자리도 함께 빠지고, 설명에서 주소 줄이 사라진다."""
+설명에서 주소 줄도 함께 사라진다."""
     when = date.today() + timedelta(days=1)
     q = _query(calendar_link.group_url(
         user_name="강민준", contact_name="홍길동", contact_title="상무",
@@ -459,7 +434,7 @@ def test_묶인_두_줄이_같은_주소를_들고_있다(db, users, scheduled_m
     when = scheduled_meetings["when"]
     assert q["dates"] == f"{when:%Y%m%d}T132000/{when:%Y%m%d}T153000"
     # 기업 담당자는 **IR 기업 현황의 `담당자` 칸**에서 온다.
-    assert q["text"].startswith("[강민준/관리1팀, 관리2팀/마포구]")
+    assert q["text"].startswith("[강민준/관리1팀, 관리2팀]")
 
 
 def test_취소된_건은_예정된_건과_한_일정에_섞이지_않는다(db, users):
@@ -533,3 +508,276 @@ def test_알림과_담을_캘린더는_주소에_없다():
     q = _query(calendar_link.group_url(meetings=[_meet(when, "10:00")], **WHO))
 
     assert set(q) <= {"action", "text", "dates", "ctz", "location", "details"}
+
+
+# ── 13) 담당을 넘긴 자국 — 지금 맡은 사람만 제목에 ──────────────────────────
+#
+# `담당자` 칸에는 넘긴 이력이 화살표로 쌓인다(`김담당 > 7/22 이담당`). 그대로
+# 제목에 실으면 앞머리가 이력으로 길어지고, **이미 손을 뗀 사람 이름이 먼저
+# 읽힌다.** 마지막 담당자만 집어낸다.
+#
+# 이름은 전부 가짜다.
+
+@pytest.mark.parametrize("written, expected", [
+    # 화살표 없음 — 건드릴 것이 없다
+    ("박담당", "박담당"),
+    ("관리1팀", "관리1팀"),
+    # 화살표 없이 **두 토막**으로 적어 둔 값. 사람이 통째로 적은 것이라
+    # 우리가 고쳐 읽지 않는다 — 적힌 대로 간다.
+    ("가나 관리1팀", "가나 관리1팀"),
+    # 화살표 하나
+    ("김담당 > 이담당", "이담당"),
+    ("김담당 -> 이담당", "이담당"),
+    ("김담당 → 이담당", "이담당"),
+    ("김담당>이담당", "이담당"),
+    # 화살표 여럿 — **마지막** 것만 남는다
+    ("김담당 > 이담당 > 박담당", "박담당"),
+    ("김담당 -> 7/21 이담당 → 8/3 박담당", "박담당"),
+    # 날짜가 붙은 것 — 화살표 뒤든 앞이든 뗀다
+    ("김담당 > 7/22 이담당", "이담당"),
+    ("7/21 박담당", "박담당"),
+    ("2026-03-15 관리1팀", "관리1팀"),
+    ("2026.3.15 관리1팀", "관리1팀"),
+    ("3월 15일 관리1팀", "관리1팀"),
+    ("김담당 > 8/6 관리1팀", "관리1팀"),
+    # 앞뒤 공백·겹공백
+    ("  박담당  ", "박담당"),
+    ("김담당   >    7/22   이담당", "이담당"),
+])
+def test_넘긴_자국에서_지금_맡은_사람만_집는다(written, expected):
+    from app.services import pipeline
+
+    assert pipeline.current_assignee(written) == expected
+
+
+@pytest.mark.parametrize("written", [
+    None, "", "   ",
+    "김담당 ->",              # 잘라 낸 자리가 비어 있다
+    "김담당 > ",
+    "김담당 > 7/22",          # 날짜를 떼면 아무것도 안 남는다
+    "김담당 > 관리팀으로 전환",  # 사람 이름이 아니라 문장이다
+])
+def test_집어낸_것이_미덥지_않으면_비운다(written):
+    """빈 자리는 제목에서 통째로 빠질 뿐이지만, 잘못 집은 이름은 **그 사람의
+    일정으로 읽힌다.** 미덥지 않으면 지어내지 않는다."""
+    from app.services import pipeline
+
+    assert pipeline.current_assignee(written) == ""
+
+
+def test_이름_앞의_숫자를_날짜로_읽지_않는다():
+    """가름표가 없는 숫자는 날짜가 아니다. 뜯어내면 `2팀` 이 `팀` 이 된다."""
+    from app.services import pipeline
+
+    assert pipeline.current_assignee("2팀") == "2팀"
+    assert pipeline.current_assignee("김담당 > 2팀") == "2팀"
+
+
+def test_제목에는_넘겨받은_사람이_선다(db, users):
+    """화면의 `담당자` 칸은 적힌 그대로 두고, **캘린더 제목에만** 지금 맡은
+    사람이 선다 — 넘긴 이력은 그 칸에서 관리하는 것이다."""
+    from app.models import IrCompany, Meeting, User, VcContact
+    from app.services import pipeline
+
+    contact = VcContact(user_id=users["u1"].id, name="홍길동", title="상무",
+                        firm="마바벤처스", address="서울특별시 마포구 가나로 100",
+                        connect_stage="connected")
+    company = IrCompany(name="가나컴퍼니", assignee_name="김담당 > 7/22 이담당")
+    db.add_all([contact, company])
+    db.flush()
+    db.add(Meeting(user_id=users["u1"].id, contact_id=contact.id,
+                   company_id=company.id, company_name="가나컴퍼니",
+                   scheduled_at=(date.today() + timedelta(days=2)).isoformat(),
+                   scheduled_time="11:00"))
+    db.commit()
+
+    row = pipeline.meeting_rows(db, db.get(User, 1))[0]
+    q = _query(row["gcal_url"])
+    assert q["text"].startswith("[강민준/이담당]")
+    assert "김담당" not in q["text"], "손 뗀 사람이 제목에 남았다"
+    assert "7/22" not in q["text"], "넘긴 날짜가 제목에 남았다"
+    # 칸에 적힌 글 자체는 그대로다 — 화면이 그것을 보여 준다.
+    assert db.get(IrCompany, company.id).assignee_name == "김담당 > 7/22 이담당"
+
+
+# ── 14) 대면인가 화상인가 ───────────────────────────────────────────────────
+#
+# 제목 앞머리의 **세 번째 자리**다. 손으로 적어 오던 양식이 거기에 만나는
+# 방식을 두었다 — 아침에 제목만 보고 나갈지 자리에 앉을지가 갈린다.
+
+def test_대면이면_제목에_대면이_선다():
+    when = date.today() + timedelta(days=1)
+    q = _query(calendar_link.group_url(
+        user_name="강민준",
+        meetings=[_meet(when, "10:00", "가나컴퍼니", "관리1팀", mode="대면")],
+        **WHO))
+
+    assert q["text"].startswith("[강민준/관리1팀/대면] 가나컴퍼니 IR 미팅")
+
+
+def test_화상이면_제목에_화상이_선다():
+    when = date.today() + timedelta(days=1)
+    q = _query(calendar_link.group_url(
+        user_name="강민준",
+        meetings=[_meet(when, "10:00", "가나컴퍼니", "관리1팀",
+                        mode="화상", remote=True)], **WHO))
+
+    assert q["text"].startswith("[강민준/관리1팀/화상] 가나컴퍼니 IR 미팅")
+
+
+def test_안_골랐으면_그_자리가_통째로_빠진다():
+    """이 칸이 생기기 전에 잡힌 미팅이 수백 건이다. 둘 중 하나를 기본값으로
+    두면 아무도 안 고른 미팅이 `대면` 을 달고 나가고, 사람은 그 말을 믿는다."""
+    when = date.today() + timedelta(days=1)
+    q = _query(calendar_link.group_url(
+        user_name="강민준",
+        meetings=[_meet(when, "10:00", "가나컴퍼니", "관리1팀")], **WHO))
+
+    assert q["text"].startswith("[강민준/관리1팀] 가나컴퍼니 IR 미팅")
+    assert "대면" not in q["text"] and "화상" not in q["text"]
+
+
+def test_묶인_날에_대면과_화상이_섞이면_둘_다_적는다():
+    """하나만 남기면 나머지 반이 감춰진다 — `대면` 만 보고 나갔는데 그중 한
+    건이 화상이거나, `화상` 만 보고 앉아 있는데 한 건은 찾아가야 하는 자리다.
+    담당자가 서로 다를 때 둘 다 적기로 한 것과 같은 결이다."""
+    when = date.today() + timedelta(days=2)
+    q = _query(calendar_link.group_url(user_name="강민준", meetings=[
+        _meet(when, "13:00", "가나컴퍼니", "관리1팀", mode="대면"),
+        _meet(when, "15:00", "다라컴퍼니", "관리1팀", mode="화상", remote=True),
+    ], **WHO))
+
+    assert q["text"].startswith("[강민준/관리1팀/대면, 화상]")
+
+
+def test_같은_방식끼리는_한_번만_적는다():
+    when = date.today() + timedelta(days=2)
+    q = _query(calendar_link.group_url(user_name="강민준", meetings=[
+        _meet(when, "13:00", "가나컴퍼니", "관리1팀", mode="대면"),
+        _meet(when, "15:00", "다라컴퍼니", "관리1팀", mode="대면"),
+    ], **WHO))
+
+    assert q["text"].startswith("[강민준/관리1팀/대면]")
+
+
+# ── 15) 화상이면 갈 곳이 없다 ───────────────────────────────────────────────
+
+def test_다_화상이면_장소를_넣지_않는다():
+    """갈 곳이 없는데 사무실 주소를 장소로 넣으면 캘린더가 그 자리를 지도로
+    찍고, 아침에 그것을 본 사람이 그리로 나선다. **주소 자체는 설명에 남는다** —
+    그 사람이 어디 있는지는 알아 둘 일이고, '거기로 가라' 와는 다르다."""
+    when = date.today() + timedelta(days=2)
+    q = _query(calendar_link.group_url(meetings=[
+        _meet(when, "13:00", "가나컴퍼니", mode="화상", remote=True),
+        _meet(when, "15:00", "다라컴퍼니", mode="화상", remote=True),
+    ], **WHO))
+
+    assert "location" not in q
+    assert "서울특별시 마포구 가나로 100" in q["details"]
+
+
+def test_한_건이라도_대면이면_장소가_남는다():
+    """섞인 날은 실제로 찾아가는 자리가 있다."""
+    when = date.today() + timedelta(days=2)
+    q = _query(calendar_link.group_url(meetings=[
+        _meet(when, "13:00", "가나컴퍼니", mode="대면"),
+        _meet(when, "15:00", "다라컴퍼니", mode="화상", remote=True),
+    ], **WHO))
+
+    assert q["location"] == "서울특별시 마포구 가나로 100"
+
+
+def test_안_고른_건은_화상으로_치지_않는다():
+    """모르는 것은 화상이라는 뜻이 아니다. 안 고른 건까지 화상으로 치면
+    주소가 조용히 사라진다."""
+    when = date.today() + timedelta(days=2)
+    q = _query(calendar_link.group_url(
+        meetings=[_meet(when, "13:00", "가나컴퍼니")], **WHO))
+
+    assert q["location"] == "서울특별시 마포구 가나로 100"
+
+
+# ── 16) 화면에서 고르기 ─────────────────────────────────────────────────────
+
+def test_미팅을_등록하며_대면_화상을_고른다(logged_in, db, users):
+    from app.models import Meeting, VcContact
+
+    contact = VcContact(user_id=users["u1"].id, name="홍길동", title="상무",
+                        firm="마바벤처스", connect_stage="connected")
+    db.add(contact)
+    db.commit()
+
+    when = (date.today() + timedelta(days=3)).isoformat()
+    logged_in.post("/ir/meetings", data={
+        "contact_id": contact.id, "scheduled_at": when,
+        "scheduled_time": "14:00", "kind": "first",
+        "meet_mode": "video", "company_name": "가나컴퍼니"})
+
+    row = db.query(Meeting).one()
+    assert row.meet_mode == "video"
+
+
+def test_모르는_방식은_빈_채로_둔다(logged_in, db, users):
+    """아무거나 골라 넣으면 그 말이 캘린더 제목에 실려 나간다."""
+    from app.models import Meeting, VcContact
+
+    contact = VcContact(user_id=users["u1"].id, name="홍길동",
+                        connect_stage="connected")
+    db.add(contact)
+    db.commit()
+
+    when = (date.today() + timedelta(days=3)).isoformat()
+    for bad in ("", "대면", "zoom"):
+        logged_in.post("/ir/meetings", data={
+            "contact_id": contact.id, "scheduled_at": when, "meet_mode": bad})
+    assert [m.meet_mode for m in db.query(Meeting).all()] == [None, None, None]
+
+
+def test_잡아_둔_미팅의_방식을_표에서_고친다(logged_in, db, users):
+    """등록할 때만 고르게 두면 이 칸이 생기기 전에 잡힌 미팅은 영영 빈 채로
+    남는다. **지우는 것도 되어야 한다** — 되돌릴 길이 없으면 사람은 미팅을
+    지우고 새로 만든다."""
+    from app.models import Meeting, VcContact
+
+    contact = VcContact(user_id=users["u1"].id, name="홍길동",
+                        connect_stage="connected")
+    db.add(contact)
+    db.flush()
+    row = Meeting(user_id=users["u1"].id, contact_id=contact.id,
+                  scheduled_at=(date.today() + timedelta(days=2)).isoformat())
+    db.add(row)
+    db.commit()
+
+    logged_in.post(f"/ir/meetings/{row.id}/mode", data={"meet_mode": "in_person"})
+    db.refresh(row)
+    assert row.meet_mode == "in_person"
+
+    logged_in.post(f"/ir/meetings/{row.id}/mode", data={"meet_mode": ""})
+    db.refresh(row)
+    assert row.meet_mode is None
+
+
+def test_남의_미팅_방식은_못_고친다(logged_in, db, users):
+    from app.models import Meeting, VcContact
+
+    contact = VcContact(user_id=users["u2"].id, name="홍길동",
+                        connect_stage="connected")
+    db.add(contact)
+    db.flush()
+    row = Meeting(user_id=users["u2"].id, contact_id=contact.id,
+                  scheduled_at=(date.today() + timedelta(days=2)).isoformat())
+    db.add(row)
+    db.commit()
+
+    logged_in.post(f"/ir/meetings/{row.id}/mode", data={"meet_mode": "video"})
+    db.refresh(row)
+    assert row.meet_mode is None
+
+
+def test_예정_표에서_대면_화상을_고를_수_있다(logged_in, scheduled_meetings):
+    html = logged_in.get("/ir").text
+
+    assert "대면·화상" in html
+    assert 'name="meet_mode"' in html
+    # 안 고른 것을 고를 수 있어야 되돌릴 수 있다.
+    assert "안 정함" in html

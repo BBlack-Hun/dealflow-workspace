@@ -17,7 +17,7 @@
 쓰던 모양으로 다시 적는다. 그래서 여기가 만드는 것은 팀이 이미 손으로 적어
 오던 그 양식이다::
 
-    [{적은 사람}/{기업 담당자}/{지역구}] {기업들} IR 미팅 / 투자사 {투자사} {이름} {직함}
+    [{적은 사람}/{기업 담당자}/{대면 또는 화상}] {기업들} IR 미팅 / 투자사 {투자사} {이름} {직함}
 
 **틀만 여기 있고 값은 전부 DB 에서 온다.**
 
@@ -35,9 +35,12 @@
 누르는 순간 구글이 그 주소로 **초대 메일을 실제로 보낸다.** 이쪽 화면에서
 미팅을 정리하려던 것이 투자사 담당자에게 나가는 메일이 된다. 되돌릴 수 없다.
 
-장소는 **적혀 있을 때만** 넣는다 — 투자사 담당자의 주소(`VcContact.address`)다.
-없으면 칸 자체를 안 만든다. 빈 장소를 넣으면 캘린더가 그 자리를 지도로
-찍으려다 엉뚱한 곳을 가리킨다.
+장소는 **찾아갈 자리가 있을 때만** 넣는다 — 투자사 담당자의 주소
+(`VcContact.address`)다. 주소가 없으면, 그리고 **묶인 미팅이 전부 화상이면**
+칸 자체를 안 만든다. 갈 곳이 없는데 사무실 주소를 장소로 넣으면 캘린더가 그
+자리를 지도로 찍고, 아침에 그것을 본 사람이 그리로 나선다. 주소 자체는 설명에
+그대로 남는다 — 그 사람이 어디 있는지는 알아 둘 일이고, '거기로 가라' 와는
+다르다.
 
 주소로 못 정하는 것
 -------------------
@@ -76,13 +79,6 @@ WEEKDAYS = "월화수목금토일"
 #: 팀이 쓰는 제목이 `IR 미팅` 한 가지다.
 MEETING_LABEL = "IR 미팅"
 
-#: 주소에서 지역을 집을 때 볼 꼬리. 구/군이 먼저다 —
-#: `경기도 가나시 다라구` 에서 사람이 말하는 '지역구' 는 `다라구` 다.
-DISTRICT_TAILS = ("구", "군")
-CITY_TAIL = "시"
-
-#: 주소 토막 끝에 붙어 오는 문장부호. `마포구,` 를 `마포구` 로 읽는다.
-_TRIM = " ,.·:;()[]"
 
 
 def timezone_name() -> str:
@@ -157,33 +153,6 @@ def phone_for(phone: Optional[str] = None, office_phone: Optional[str] = None) -
     return _text(phone) or _text(office_phone)
 
 
-def district_of(address: Optional[str] = None) -> str:
-    """주소에서 **지역구** 한 토막. `서울특별시 마포구 가나로 …` → `마포구`.
-
-    제목 앞머리에 어디로 가는지가 있어야 아침에 동선을 짠다. 그렇다고 주소를
-    통째로 제목에 실으면 달력 칸에서 그 줄만 남고 기업 이름이 잘린다.
-
-    규칙은 둘뿐이다.
-
-    1. 끝이 `구`·`군` 인 첫 토막 (`마포구` · `다라구` · `가나군`)
-    2. 없으면, **맨 앞 토막을 뺀** 뒤 끝이 `시` 인 첫 토막 (`경남 창원시` → `창원시`)
-       맨 앞을 빼는 이유: 그 자리는 `서울특별시` 처럼 광역 이름이라 지역구가 아니다.
-
-    둘 다 못 찾으면 **빈 문자열이다 — 지어내지 않는다.** 도로명만 적힌 주소,
-    영문 주소, 아예 안 적힌 담당자가 실제로 있다. 못 읽었으면 제목에서 그
-    자리가 통째로 빠질 뿐, 틀린 동네를 적어 두지 않는다.
-    """
-    tokens = [t.strip(_TRIM) for t in _text(address).split(" ")]
-    tokens = [t for t in tokens if len(t) >= 2]
-    for token in tokens:
-        if token.endswith(DISTRICT_TAILS):
-            return token
-    for token in tokens[1:]:
-        if token.endswith(CITY_TAIL):
-            return token
-    return ""
-
-
 def _ordered(meetings: Sequence[Mapping]) -> List[Mapping]:
     """설명에 적을 차례 — **이른 시각부터.**
 
@@ -239,25 +208,30 @@ def title_for(*, user_name: str = "", contact_name: str = "", contact_title: str
               meetings: Sequence[Mapping] = ()) -> str:
     """캘린더에 뜰 제목.
 
-    ``[적은 사람/기업 담당자/지역구] 기업들 IR 미팅 / 투자사 마바벤처스 홍길동 상무``
+    ``[적은 사람/기업 담당자/대면] 기업들 IR 미팅 / 투자사 마바벤처스 홍길동 상무``
 
     앞머리의 세 자리는 **손으로 적어 오던 순서 그대로**다: 누가 적었는지,
-    그 기업을 우리 팀에서 누가 맡고 있는지, 어디로 가는지.
+    그 기업을 우리 팀에서 누가 맡고 있는지, **대면인지 화상인지.**
 
     **기업 담당자가 서로 다른 기업을 한 자리에서 소개하는 날이 있다.** 그때는
     한 사람을 골라 적지 않고 **적힌 이름을 다 적는다**(쉼표). 하나를 고르면
     나머지 기업의 담당자에게는 그 미팅이 제 것으로 안 보인다 — 제목이 짧아지는
     대신 사람이 빠진다.
 
-    비어 있는 자리는 **자리를 차지하지 않는다.** 주소를 안 적어 둔 담당자가
-    실제로 있고, 그 자리에 빈 칸이 남으면(`[강민준//]`) 무엇이 빠졌는지가 아니라
-    **뭔가 깨졌다**로 읽힌다.
+    **한 날에 대면과 화상이 섞이는 날도 마찬가지로 둘 다 적는다.** 하나만
+    남기면 나머지 반이 감춰진다 — `대면` 만 보고 나갔는데 그중 한 건이 화상
+    이거나, `화상` 만 보고 자리에 앉아 있는데 한 건은 찾아가야 하는 자리다.
+
+    비어 있는 자리는 **자리를 차지하지 않는다.** 대면인지 화상인지 아직 안
+    고른 미팅이 있고(이 칸이 생기기 전에 잡힌 건은 전부 그렇다), 그 자리에
+    빈 칸이 남으면(`[강민준//]`) 무엇이 빠졌는지가 아니라 **뭔가 깨졌다**로
+    읽힌다.
     """
     ordered = _ordered(meetings)
     head = "/".join(p for p in (
         _text(user_name),
         ", ".join(_uniq(m.get("assignee") for m in ordered)),
-        district_of(address),
+        ", ".join(_uniq(m.get("mode") for m in ordered)),
     ) if p)
     companies = ", ".join(_uniq(m.get("company") for m in ordered))
     body = _who(companies, MEETING_LABEL)
@@ -329,7 +303,12 @@ def group_url(*, user_name: str = "", contact_name: str = "", contact_title: str
 
     ``meetings`` 는 **한 일정에 담을 미팅들**이다 — 같은 담당자·같은 날.
     각 항목은 ``{"date": "2026-08-24", "time": "13:20", "company": "가나컴퍼니",
-    "assignee": "관리1팀"}`` 꼴이고, ``time`` 과 ``company`` 는 비어 있을 수 있다.
+    "assignee": "관리1팀", "mode": "대면", "remote": False}`` 꼴이고,
+    ``time`` · ``company`` · ``mode`` 는 비어 있을 수 있다.
+
+    ``remote`` 는 **화상이라 갈 곳이 없는가**다. 어느 말이 화상인지는 여기서
+    정하지 않는다(`pipeline` 이 판단해 넘긴다) — 이 자리에 우리말 딱지를
+    박아 두면 딱지를 고치는 날 장소가 조용히 붙는다.
 
     빈 문자열이면 화면이 링크를 아예 안 그린다 — 눌러도 아무 일 없는 링크보다
     없는 편이 낫다.
@@ -346,7 +325,13 @@ def group_url(*, user_name: str = "", contact_name: str = "", contact_title: str
         ("ctz", timezone_name()),
     ]
     where = _text(address)
-    if where:
+    # **다 화상이면 장소를 안 넣는다.** 갈 곳이 없는데 사무실 주소를 장소로
+    # 넣으면 캘린더가 그 자리를 지도로 찍고, 아침에 그것을 본 사람이 그리로
+    # 나선다 — 없는 시각을 지어내지 않는 것과 같은 이유다.
+    #
+    # **한 건이라도 대면이면 남긴다**(섞인 날은 실제로 찾아가는 자리가 있다).
+    # 아직 안 고른 건도 남긴다 — 모르는 것은 화상이라는 뜻이 아니다.
+    if where and not (meetings and all(m.get("remote") for m in meetings)):
         params.append(("location", where))
     details = details_for(contact_name=contact_name, contact_title=contact_title,
                           firm=firm, phone=phone, office_phone=office_phone,

@@ -94,6 +94,7 @@ def ir_page(request: Request, db: Session = Depends(get_db),
                            key=lambda c: (c.firm or "", c.name)),
         "outcomes": pipeline.OUTCOMES,
         "kinds": pipeline.MEETING_KINDS,
+        "meet_modes": pipeline.MEETING_MODES,
         "followup_days": pipeline.MEETING_FOLLOWUP_DAYS,
         "today": today.isoformat(),
         "msg": msg,
@@ -248,6 +249,9 @@ def create_meeting(
     # 버린다 — 자정 미팅을 지어내는 것보다 빈칸이 정확하다.
     scheduled_time: str = Form(""),
     kind: str = Form("first"),
+    # 대면인가 화상인가. **비워 둘 수 있다** — 아직 안 정한 단계가 실제로 있고,
+    # 둘 중 하나를 고르게 하면 안 정한 미팅이 `대면` 으로 적혀 나간다.
+    meet_mode: str = Form(""),
     company_name: str = Form(""),
     note: str = Form(""),
     db: Session = Depends(get_db),
@@ -266,11 +270,34 @@ def create_meeting(
                    scheduled_at=when.isoformat(),
                    scheduled_time=pipeline.clean_time(scheduled_time),
                    kind=kind if kind in pipeline.MEETING_KINDS else "first",
+                   # 모르는 값은 **빈 채로** 둔다 — 아무거나 골라 넣으면
+                   # 그 말이 캘린더 제목에 실려 나간다.
+                   meet_mode=meet_mode if meet_mode in pipeline.MEETING_MODES else None,
                    note=note.strip() or None))
     # 미팅이 잡혔으면 답이 온 것이다.
     cadence.stop_on_reaction(db, contact.id, "미팅이 잡혔습니다")
     db.commit()
     return RedirectResponse("/ir?msg=미팅을 등록했습니다", status_code=303)
+
+
+@router.post("/ir/meetings/{meeting_id}/mode", include_in_schema=False)
+def set_meeting_mode(meeting_id: int, meet_mode: str = Form(""),
+                     db: Session = Depends(get_db),
+                     user: User = Depends(get_current_user)):
+    """잡아 둔 미팅이 **대면인지 화상인지** 고른다.
+
+    등록할 때만 고르게 두면 이 칸이 생기기 전에 잡힌 미팅 수백 건은 영영
+    빈 채로 남는다 — 그 미팅들의 캘린더 제목에서 그 자리가 계속 빠진다.
+    지우는 것도 되어야 한다(`안 정함`): 잘못 골랐을 때 되돌릴 길이 없으면
+    사람은 미팅을 지우고 새로 만든다.
+
+    표에서 고르는 순간 저장된다(`team.html` 의 권한 칸과 같은 방식) — 줄마다
+    [저장] 을 세우면 손댈 것이 모인 칸이 그만큼 좁아진다.
+    """
+    meeting = _owned_meeting(db, meeting_id, user)
+    meeting.meet_mode = meet_mode if meet_mode in pipeline.MEETING_MODES else None
+    db.commit()
+    return RedirectResponse("/ir#meetings", status_code=303)
 
 
 @router.post("/ir/meetings/{meeting_id}/done", include_in_schema=False)
