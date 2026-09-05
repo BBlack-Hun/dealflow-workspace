@@ -1164,3 +1164,57 @@ class WeeklyTask(TimestampMixin, Base):
     routine_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("weekly_routines.id"), nullable=True)
 
+
+
+class SmsNotice(TimestampMixin, Base):
+    """**팀원에게 문자로 알렸다는 표시.** 하루·한 사람·한 종류에 한 줄이다.
+
+    왜 줄을 남기나
+    --------------
+    알림을 보내는 실은 30분마다 깨어난다(`services/followup_sms.py`). 깰 때마다
+    "오늘 물어볼 미팅이 있나" 만 보고 보내면 **하루에 스무 통이 간다.** 그래서
+    보냈다는 사실을 남기고, `(kind, day, user_id)` 에 유일 색인을 걸어 그날의
+    자리를 하나만 잡게 한다 — `monthly_column_runs`(0041) 가 같은 이유로 있다.
+
+    미팅 쪽에 `문자 보냄` 칸을 붙이지 않은 이유
+    ------------------------------------------
+    한 통에 여러 건이 실린다(`홍길동님(가나벤처스) 외 2건`). 미팅마다 표시하면
+    한 통이 세 칸을 건드리고, 그 사이에 미팅이 하나 더 완료되면 **같은 날 두
+    번째 문자**가 나간다. 보낸 단위(사람·날)로 남겨야 보낸 횟수와 맞는다.
+
+    왜 보내기 **전에** 줄을 넣나
+    ----------------------------
+    성공한 뒤에 남기면, 업체가 받아 놓고 응답만 실패했을 때 다음에 깨어나 또
+    보낸다 — 문자는 돈이 나가고, 받는 사람 폰은 30분마다 울린다. 그래서 줄을
+    먼저 넣어 그날을 잡고(`sending`), 결과가 오면 그 줄을 고친다. **하루 한 번,
+    성공이든 실패든.** 실패한 날은 다음 날 다시 간다 — 결과 문의는 그때까지
+    그대로 밀려 있다(`followup_due_now` 는 `물어볼 날 <= 오늘`).
+
+    번호도 문구도 여기 적지 않는다
+    ------------------------------
+    누구에게 갔는지는 `user_id` 로 충분하다. 번호를 한 번 더 적어 두면 지울 곳이
+    한 곳 늘어날 뿐이다.
+    """
+
+    __tablename__ = "sms_notices"
+    __table_args__ = (
+        UniqueConstraint("kind", "day", "user_id",
+                         name="uq_sms_notices_kind_day_user"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # 무슨 알림인가. 지금은 `meeting_followup`(미팅 결과 문의) 하나다.
+    kind: Mapped[str] = mapped_column(String)
+    day: Mapped[str] = mapped_column(String)                   # YYYY-MM-DD
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    # 그 문자에 몇 건이 실렸는가. 화면이 "3건 알림" 으로 되짚는다.
+    count: Mapped[int] = mapped_column(Integer, default=0)
+    # sending(자리를 잡았다) | sent(업체가 접수했다) | failed(못 보냈다)
+    #
+    # `sending` 인 채로 남는 줄이 있을 수 있다 — 보내는 중에 컨테이너가 내려간
+    # 경우다. 그것도 **보이는 편이 낫다**: 조용히 지우면 그날 문자가 안 간 것을
+    # 아무도 모른다.
+    status: Mapped[str] = mapped_column(String, default="sending")
+    # 왜 못 보냈나. 화면에 그대로 보여 준다 — 조용히 삼키지 않는다.
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    sent_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)

@@ -105,6 +105,8 @@ docker exec dealflow-public-web-1 python scripts/import_sheets.py \
 | `DEALFLOW_ROOM_SUFFIX` | `Deal 공유 우리브이씨 Asset` | 카톡방 이름 끝에 붙는 고정 문구. 조직마다 다르므로 `.env` 로 실제 값을 준다 |
 | `DEALFLOW_SEED_DEMO` | `0` | `1` 이면 가상 담당자·기업까지 넣는다(둘러보기용) |
 | `DEALFLOW_INITIAL_PASSWORD` | `dealflow123` | 새 계정의 초기 비밀번호(첫 로그인 후 변경 요구) |
+| `DEALFLOW_SMS_API_KEY` · `DEALFLOW_SMS_API_SECRET` · `DEALFLOW_SMS_FROM` | (없음) | 결과 문의 문자 알림(솔라피). 하나라도 비면 **알림 실이 뜨지 않는다** |
+| `DEALFLOW_DOMAIN` | (없음) | 이 서비스의 주소. 문자에 넣는 링크가 이 값을 쓴다(Caddy 가 쓰는 그 이름) |
 
 `.env` 는 `.gitignore` 대상이다 — 실제 값은 저장소에 올라가지 않는다.
 

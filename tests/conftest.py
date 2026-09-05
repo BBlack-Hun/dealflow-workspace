@@ -25,6 +25,14 @@ os.environ["DEALFLOW_DAILY_BACKUP"] = "0"
 # 검사가 그 환경 때문에 실패한다(방 이름 접미사에서 이미 겪었다).
 for _name in ("HOST", "PORT", "USER", "PASSWORD", "FROM", "TLS", "SSL"):
     os.environ[f"DEALFLOW_SMTP_{_name}"] = ""
+# 문자 발송 설정도 비운다. 이유가 둘이다.
+#   1. 켜져 있는 환경에서 돌리면 '안 켜면 아무 일도 없다' 는 검사가 그 환경
+#      때문에 실패한다(메일 설정에서 이미 겪었다).
+#   2. **실수로라도 진짜 문자가 나가면 안 된다.** 설정이 비면 알림 실이 뜨지
+#      않고, 발송 코드는 그 앞에서 멈춘다. 검사는 가짜 발송기만 쓴다.
+for _name in ("API_KEY", "API_SECRET", "FROM"):
+    os.environ[f"DEALFLOW_SMS_{_name}"] = ""
+os.environ["DEALFLOW_DOMAIN"] = ""
 
 import pytest  # noqa: E402
 
