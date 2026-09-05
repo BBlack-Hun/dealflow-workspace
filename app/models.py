@@ -1066,6 +1066,14 @@ class Meeting(TimestampMixin, Base):
     # 값)과는 다르다 — 사람이 약속한 시각이라 서버가 언제 적었는지와 무관하다.
     scheduled_time: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # HH:MM
     kind: Mapped[str] = mapped_column(String, default="first")   # first | second | etc
+    # **대면인가 화상인가.** 캘린더 제목 앞머리의 세 번째 자리가 이 값이다.
+    #
+    # 비어 있을 수 있다 — **NOT NULL 로 두지 않는다.** 이 칸이 생기기 전에
+    # 잡힌 미팅이 수백 건이고, 둘 중 하나를 기본값으로 채우면 아무도 고르지
+    # 않은 미팅이 `대면` 으로 적히다가 그 날 아무도 안 나타난다. 빈칸이 곧
+    # `안 정함` 이고, 제목에서는 그 자리가 통째로 빠진다.
+    # 같은 모양의 칸이 이미 있다 — `IrCompany.contract_received`.
+    meet_mode: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # in_person | video
     # scheduled(예정) | done(완료) | canceled(취소)
     status: Mapped[str] = mapped_column(String, default="scheduled")
     done_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)

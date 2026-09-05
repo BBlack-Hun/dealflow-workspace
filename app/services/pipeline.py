@@ -11,8 +11,9 @@
 """
 from __future__ import annotations
 
+import re
 from datetime import date, time, timedelta
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -35,6 +36,17 @@ MEETING_STATUS = {
     "canceled": "취소",
 }
 MEETING_KINDS = {"first": "1차 미팅", "second": "2차 미팅", "etc": "기타"}
+
+#: 만나는 방식 — **캘린더 제목 앞머리의 세 번째 자리**가 이 값이다.
+#: 같은 표의 `kind`·`status`·`outcome` 과 같은 방식이다(DB 에는 코드, 화면에는
+#: 우리말). 비어 있으면 `안 정함` 이고 제목에서 그 자리가 슬래시째 빠진다 —
+#: 둘 중 하나를 기본값으로 두면 아무도 안 고른 미팅이 `대면` 으로 나간다.
+MEETING_MODES = {"in_person": "대면", "video": "화상"}
+
+#: 갈 곳이 없는 방식. 이 미팅만 모인 날은 **캘린더에 장소를 안 넣는다** —
+#: 사무실 주소를 장소로 넣으면 아침에 그것을 본 사람이 그리로 나선다.
+#: 어느 말이 화상인지 아는 곳은 여기 하나다(`calendar_link` 는 `remote` 참/거짓만 받는다).
+REMOTE_MODES = {"video"}
 OUTCOMES = {
     "reviewing": "검토 중",
     "investing": "투자 검토",
@@ -157,6 +169,134 @@ def request_rows(db: Session, user: User) -> List[dict]:
     return out
 
 
+#: 담당을 넘긴 자국. 시트에는 `->` · `>` · `→` 가 섞여 쓰인다. **`>` 하나만
+#: 갈라도 `->` 와 `=>` 가 함께 잘린다**(왼쪽 끝에 `-` 나 `=` 가 남을 뿐인데,
+#: 왼쪽은 지난 담당이라 버린다). 새 모양이 들어와도 오른쪽 토막은 안 다친다.
+HANDOVER = re.compile(r"[>＞→⇒»]")
+
+#: 넘긴 **날짜**. 운영에 적혀 있는 것은 `7/21` 한 가지뿐이지만, 연도가 붙거나
+#: 점·한글로 적힐 자리를 함께 받아 둔다. **가름표(`/` `.` `-` `월`)를 반드시
+#: 요구한다** — 안 그러면 `2팀` 같은 이름의 앞 숫자를 날짜로 읽고 뜯어낸다.
+DATE_PREFIX = re.compile(
+    r"^\s*(?:"
+    r"(?:\d{2,4}[./-])?\d{1,2}[./-]\d{1,2}"          # 7/21 · 07-21 · 2026.07.21
+    r"|(?:\d{2,4}\s*년\s*)?\d{1,2}\s*월\s*\d{1,2}\s*일?"   # 7월 21일
+    r")[.)\]]?\s*")
+
+#: 글자가 한 자라도 있어야 이름이다. 날짜를 뗀 뒤 숫자·부호만 남으면 이름이 아니다.
+LETTER = re.compile(r"[^\W\d_]")
+
+
+def current_assignee(value: Optional[str]) -> str:
+    """`담당자` 칸에 적힌 글 → **지금 맡고 있는 사람.**
+
+    이 칸에는 넘긴 이력이 화살표로 쌓인다 — `김담당 > 7/22 이담당` 은 김담당이
+    맡던 것을 7월 22일에 이담당에게 넘겼다는 뜻이고, **지금 맡은 사람은
+    화살표 뒤**다. 그대로 캘린더 제목에 실으면 앞머리가 이력으로 길어지고,
+    이미 손을 뗀 사람 이름이 먼저 읽힌다.
+
+    ::
+
+        김담당 > 7/22 이담당  →  이담당      마지막 화살표 뒤, 날짜는 뗀다
+        7/21 이담당          →  이담당      화살표가 없어도 날짜는 뗀다
+        박담당               →  박담당      건드릴 것이 없다
+        김담당 > 운영팀으로 전환 →  (빈 값)    잘라 낸 것이 이름 같지 않다
+        7/23 최담당 ->       →  (빈 값)    잘라 낸 자리가 비어 있다
+
+    **잘라 낸 값에만 그럴듯한지 따진다.** 화살표가 없는 값은 사람이 통째로
+    적어 둔 것이라 우리가 고쳐 읽을 것이 없다 — 두 토막이든 뭐든 적힌 대로
+    간다. 반면 화살표 뒤는 **우리가 해석해 집어낸 자리**라 틀릴 수 있는 곳이고,
+    미덥지 않으면(빈 값 · 날짜만 · 여러 토막) **비운다 — 지어내지 않는다.**
+    빈 자리는 제목에서 통째로 빠질 뿐이지만, 잘못 집은 이름은 그 사람의
+    일정으로 읽힌다.
+
+    화면의 `담당자` 칸은 **적힌 그대로** 둔다(`companies.html`). 넘긴 이력은
+    그 칸에서 관리하는 것이라 여기서 줄여 보일 것이 아니다.
+    """
+    text = re.sub(r"\s+", " ", value or "").strip()
+    if not text:
+        return ""
+    handed = HANDOVER.search(text) is not None
+    tail = DATE_PREFIX.sub("", HANDOVER.split(text)[-1].strip(), count=1).strip()
+    if not handed:
+        return tail
+    if not tail or " " in tail or not LETTER.search(tail):
+        return ""
+    return tail
+
+
+def _company_assignees(db: Session, ids: List[int]) -> Dict[int, str]:
+    """기업 → **IR 기업 현황의 `담당자` 칸**에서 읽은 지금 담당자.
+
+    캘린더 제목 앞머리의 가운데 자리가 이 값이다 — 로그인한 사람의 팀이 아니라
+    **그 기업을 관리하는 쪽**이다.
+
+    `owner_user_id` 가 아니다. 그쪽은 계정을 가리키는 칸이라 화면의 `담당자`
+    머리글과 이름이 비슷하지만, 시트에서 넘어온 줄에는 채워지지 않는다 —
+    **운영 344곳이 전부 비어 있다.** 그 칸을 읽으면 제목의 그 자리가 늘 빈다.
+
+    넘긴 이력이 쌓인 값은 `current_assignee` 가 마지막 담당자만 집어낸다.
+    """
+    picked = {i for i in ids if i}
+    if not picked:
+        return {}
+    return {
+        c.id: current_assignee(c.assignee_name)
+        for c in db.execute(
+            select(IrCompany).where(IrCompany.id.in_(picked))
+        ).scalars().all()
+    }
+
+
+def _calendar_groups(db: Session, rows: List[Meeting],
+                     contacts: Dict[int, VcContact], user: User
+                     ) -> Dict[int, Tuple[str, int]]:
+    """미팅 → (캘린더 주소, 그 주소가 담은 미팅 수).
+
+    **같은 담당자 · 같은 날**을 한 일정으로 묶는다. 투자사 한 분을 만나러 가면
+    그 자리에서 기업 둘셋을 잇달아 소개하는데, 건마다 따로 넣으면 같은 장소로
+    하루에 칸이 셋 생기고 정작 몇 시부터 몇 시까지 비워야 하는지가 안 보인다.
+
+    **상태도 묶음 열쇠에 넣는다.** 안 넣으면 같은 날 취소된 건이 예정된 건과
+    한 일정에 섞여, 사람이 저장하는 순간 안 가는 미팅이 캘린더에 적힌다.
+    """
+    assignees = _company_assignees(db, [r.company_id for r in rows])
+    groups: Dict[tuple, List[Meeting]] = {}
+    for row in rows:
+        if not row.scheduled_at:
+            continue
+        groups.setdefault((row.contact_id, row.scheduled_at[:10], row.status),
+                          []).append(row)
+
+    out: Dict[int, Tuple[str, int]] = {}
+    for (contact_id, _when, _status), members in groups.items():
+        contact = contacts.get(contact_id)
+        url = calendar_link.group_url(
+            user_name=user.name or "",
+            contact_name=contact.name if contact else "",
+            contact_title=(contact.title or "") if contact else "",
+            firm=(contact.firm or "") if contact else "",
+            phone=(contact.phone or "") if contact else "",
+            office_phone=(contact.office_phone or "") if contact else "",
+            address=(contact.address or "") if contact else "",
+            meetings=[{
+                "date": m.scheduled_at,
+                "time": m.scheduled_time or "",
+                "company": m.company_name or "",
+                "assignee": assignees.get(m.company_id or 0, ""),
+                # 제목에 설 우리말 딱지. 안 골랐으면 빈 문자열이다 —
+                # 제목에서 그 자리가 통째로 빠진다.
+                "mode": MEETING_MODES.get(m.meet_mode or "", ""),
+                # 찾아갈 자리가 있는가. **모르는 것은 화상이 아니다** —
+                # 안 고른 건까지 화상으로 치면 주소가 조용히 사라진다.
+                "remote": (m.meet_mode or "") in REMOTE_MODES,
+            } for m in members],
+        )
+        for m in members:
+            out[m.id] = (url, len(members))
+    return out
+
+
 def meeting_rows(db: Session, user: User) -> List[dict]:
     rows = db.execute(
         select(Meeting).where(Meeting.user_id == user.id)
@@ -166,6 +306,7 @@ def meeting_rows(db: Session, user: User) -> List[dict]:
                   Meeting.scheduled_time.desc())
     ).scalars().all()
     contacts = _contact_map(db, [r.contact_id for r in rows])
+    calendars = _calendar_groups(db, rows, contacts, user)
     today = date.today()
 
     # 담당자별 **가장 나중 미팅 날짜**. 2차 미팅을 이미 잡았다면 1차에
@@ -198,6 +339,10 @@ def meeting_rows(db: Session, user: User) -> List[dict]:
             "days_left": (when - today).days if when else None,
             "kind": row.kind,
             "kind_label": MEETING_KINDS.get(row.kind, row.kind),
+            # 대면인가 화상인가. 안 골랐으면 둘 다 빈 문자열이다 — 화면이
+            # `안 정함` 으로 그리고, 캘린더 제목에서는 그 자리가 빠진다.
+            "meet_mode": row.meet_mode or "",
+            "meet_mode_label": MEETING_MODES.get(row.meet_mode or "", ""),
             "status": row.status,
             "status_label": MEETING_STATUS.get(row.status, row.status),
             "outcome": row.outcome or "",
@@ -212,14 +357,14 @@ def meeting_rows(db: Session, user: User) -> List[dict]:
             # 구글 캘린더 '일정 추가' 주소. **규칙은 `calendar_link` 한 곳에만
             # 있다** — 화면마다 주소를 새로 조립하면 소요시간이나 시간대가
             # 한 곳에서만 고쳐져 갈린다.
-            "gcal_url": calendar_link.meeting_url(
-                row.scheduled_at, row.scheduled_time,
-                name=contact.name if contact else "",
-                title=(contact.title or "") if contact else "",
-                firm=(contact.firm or "") if contact else "",
-                kind_label=MEETING_KINDS.get(row.kind, row.kind),
-                company_name=row.company_name or "",
-                note=row.note or ""),
+            #
+            # 같은 담당자·같은 날의 미팅은 **한 주소를 함께 쓴다**. 그래서 그
+            # 묶음의 어느 줄에서 눌러도 같은 일정 하나가 뜬다 — 줄마다 다른
+            # 일정이 나오면 하루에 칸이 여럿 생긴다.
+            "gcal_url": calendars.get(row.id, ("", 0))[0],
+            # 이 주소가 미팅 몇 건을 담고 있는가. 화면이 링크 옆에 적어 준다 —
+            # 안 적으면 두 줄에서 두 번 눌러 같은 일정을 두 개 만든다.
+            "gcal_count": calendars.get(row.id, ("", 0))[1],
             # 결과를 물어볼 필요가 남았는가.
             #   거절로 끝났다        → 물어볼 것이 없다
             #   다음 미팅을 잡았다    → 이미 이어졌다
