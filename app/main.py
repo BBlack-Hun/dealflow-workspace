@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import config, deps
 from .deps import NoConsulting, NotAdmin, NotAuthenticated
-from .services import backup
+from .services import backup, followup_sms
 from .routers import auth as auth_router
 from .routers import templates_crud
 from .routers import setup as setup_router
@@ -26,6 +26,11 @@ def create_app() -> FastAPI:
     # 이미지 안으로 들여왔다(왜 그런지는 `app/services/backup.py` 머리말).
     # 검사에서는 꺼진다(`config.BACKUP_ENABLED`).
     backup.start_scheduler()
+
+    # 미팅 결과 문의 알림도 **같은 방식**으로 이 프로세스 안에서 돈다(30분마다
+    # 깨어나 오늘 것이 나갔는지 본다 — `services/followup_sms.py`).
+    # 문자 발송 설정이 없으면 실 자체가 뜨지 않는다: 안 켜면 아무 일도 없다.
+    followup_sms.start_scheduler()
 
     app = FastAPI(title="dealflow", version="0.1.0 (Sprint 1)")
 
