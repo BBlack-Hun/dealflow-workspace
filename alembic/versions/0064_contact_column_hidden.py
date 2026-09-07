@@ -14,16 +14,16 @@
 두지 않고 기본값 `0` 을 주는 것은 `SheetOwner.is_hidden` · `VcContact.is_hidden`
 과 맞춘 것이다(같은 뜻의 칸이 표마다 다른 모양이면 읽는 쪽이 매번 확인해야 한다).
 
-Revision ID: 0062_contact_column_hidden
-Revises: 0061_sms_notices
+Revision ID: 0064_contact_column_hidden
+Revises: 0063_weekly_routine_nth_weeks
 """
 from __future__ import annotations
 
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0062_contact_column_hidden"
-down_revision = "0061_sms_notices"
+revision = "0064_contact_column_hidden"
+down_revision = "0063_weekly_routine_nth_weeks"
 branch_labels = None
 depends_on = None
 
