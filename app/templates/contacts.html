@@ -202,7 +202,8 @@
   `month_columns` 가 비어서, 이 조건이 없으면 [칸 추가] 마저 사라져 첫 칸을
   세울 길이 없다(달마다 칸이 서는 배치에서는 늘 세울 수 있어야 한다).
 #}
-{% if selected_sheet and (layout.monthly or month_columns or folded_months) %}
+{% if selected_sheet and (layout.monthly or month_columns or folded_months
+                          or hidden_months) %}
 <div class="toolbar month-cols">
   <form method="post" action="/api/contacts/columns" class="inline-form">
     <input type="hidden" name="sheet" value="{{ selected_sheet }}">
@@ -218,6 +219,16 @@
              aria-label="칸 이름">
       <button class="linkbtn" type="submit">이름 저장</button>
     </form>
+    {#
+      칸 숨기기 — **지우는 것이 아니다.** 시트에서 딸려 온 옛 칸을 팀의 한
+      가지 모양으로 맞추면서 뺄 때 쓴다. 적혀 있던 내용은 그대로 남고
+      되돌리면 같은 자리에 다시 선다(명단 숨김과 같은 방식).
+    #}
+    <form method="post" action="/api/contacts/columns/{{ c.id }}/hide"
+          onsubmit="return confirm('{{ c.label }} 칸을 표에서 뺄까요?\n적힌 내용은 지워지지 않고, 아래에서 다시 되돌릴 수 있습니다.')">
+      <button class="linkbtn" type="submit"
+              title="표·수정창·엑셀에서 뺍니다. 적힌 내용은 그대로 남습니다.">칸 숨기기</button>
+    </form>
     {# 칸을 지우면 **그 달의 기록도 함께 사라진다** — 한 번 더 묻는다. #}
     <form method="post" action="/api/contacts/columns/{{ c.id }}/delete"
           onsubmit="return confirm('{{ c.label }} 칸을 지울까요?\n이 칸에 적힌 내용도 함께 사라집니다.')">
@@ -232,6 +243,27 @@
   {% elif show_all_months %}
   <a class="linkbtn" href="{{ page.href }}?sheet={{ selected_sheet|urlencode }}">최근 칸만 보기</a>
   {% endif %}
+</div>
+{% endif %}
+
+{#
+  숨긴 칸 — **되돌릴 자리가 늘 보여야 한다.** 감춰 놓고 켜는 단추까지 감추면
+  DB 를 직접 고쳐야 한다(명단 숨김이 같은 이유로 탭을 그대로 세워 둔다).
+  표·수정창·엑셀에서만 빠지고 적힌 내용은 그대로 있다는 것도 여기 적는다 —
+  안 적으면 지워진 줄 안다.
+#}
+{% if hidden_months %}
+<div class="toolbar month-cols hidden-cols">
+  <span class="hint">🙈 숨긴 칸 <b>{{ hidden_months|length }}개</b> — 표·수정창·엑셀에서
+    빠져 있습니다. 적힌 내용은 그대로 있습니다.</span>
+  {% for c in hidden_months %}
+  <span class="month-col-edit">
+    <span class="muted">{{ c.label }}</span>
+    <form method="post" action="/api/contacts/columns/{{ c.id }}/hide">
+      <button class="linkbtn" type="submit">숨김 해제</button>
+    </form>
+  </span>
+  {% endfor %}
 </div>
 {% endif %}
 

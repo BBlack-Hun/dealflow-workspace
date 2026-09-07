@@ -132,6 +132,26 @@ class Layout:
     month_kind: str = "pick"
     month_choices: str = "O,X"
     month_width: int = 186
+    # 달 이름이 붙은 칸이 **하나도 없는** 명단에 처음 세울 칸들. 달은 빼고
+    # 뒷말만 적는다(`리마인드 문자` → `8월 리마인드 문자`).
+    #
+    # **왜 필요한가.** 달마다 늘어나는 칸은 그 표의 가장 최근 달 칸을 본떠
+    # 만든다(`services/monthly_columns.py`) — 이름을 짓는 것이 코드가 아니라
+    # 그 표를 쓰던 사람이게 하려는 것이다. 그래서 본이 없는 명단은 비켜 갔고,
+    # 담당자별 스타트업 명단 중 **한 명의 것만** 달 칸이 서 왔다. 나머지는
+    # 사람이 첫 칸을 손으로 심어 줘야 자동 생성이 붙는데, 심는 것을 잊은 명단만
+    # 조용히 그 달 기록이 지난 칸에 섞여 들어간다.
+    #
+    # **명단 이름이 아니라 배치에 적는다.** "달 칸이 서 있는 그 명단에서 본떠
+    # 온다" 로 하면 코드가 사람 이름·명단 이름을 알아야 하고(이 저장소가 값으로
+    # 빼 둔 바로 그것 — `SheetOwner.layout` 주석), 본이 된 명단에서 누가 칸
+    # 이름을 고치는 순간 **남의 명단에 생길 칸 이름이 같이 바뀐다.** 이 세 칸은 팀이
+    # 함께 쓰는 한 가지 모양이라(담당자별 스타트업 워크북이 한 틀에서 나온다 —
+    # `scripts/import_startup_sheet.py` 의 `NOTES` 주석) 배치의 성질이 맞다.
+    #
+    # 비어 있으면 지금까지 그대로다 — 본이 없는 표에는 아무것도 만들지 않는다.
+    # 달을 안 쓰는 표에 달 칸이 생기면 그 표를 쓰던 사람이 지워야 한다.
+    month_seed: tuple = ()
 
 
 # ── 투자사 명함 (지금까지의 표) ──────────────────────────────────────────────
@@ -175,6 +195,9 @@ STARTUP_LAYOUT = Layout(
     # 관리 현황이 아니다. 두 곳에 다 뜨면 어느 쪽이 최신인지 알 수 없다.
     page=PAGE_STARTUP,
     monthly=True,
+    # 달 칸이 하나도 없는 명단에 처음 세울 셋. 담당자별 스타트업 워크북이
+    # 한 틀에서 나와 이 셋을 같이 쓴다 — 위 `Layout.month_seed` 주석 참고.
+    month_seed=("리마인드 문자", "리마인드 TEL", "카톡 연결"),
     head=[
         Column("NO", "no", 34, source="row_no"),
         # 기업명·성함이 **따로** 적힌다. 투자사 명단은 사람이 주인공이라
@@ -183,16 +206,40 @@ STARTUP_LAYOUT = Layout(
         Column("성함", "name", 84),
         Column("연락처", "phone", 116),
         Column("이메일", "email", 180),
-        # 계약까지 갔는가. **표에 세우고, 이메일 바로 뒤에 둔다.**
+        # ── 계약까지 가는 세 칸 ──────────────────────────────────────────
+        #
+        # **표에 세우고, 사람 정보(이메일) 바로 뒤에 둔다.**
         #
         # 달마다 칸이 세 개씩 붙는 표라 월별 칸 뒤(`tail`)에 두면 표 맨 끝에
-        # 선다 — 달이 쌓일수록 가로로 밀어야 닿는 자리로 물러난다. 이 칸은
+        # 선다 — 달이 쌓일수록 가로로 밀어야 닿는 자리로 물러난다. 이 칸들은
         # 명단을 훑을 때 **기업을 보는 순간 같이 읽는 값**이라(계약된 곳인지에
         # 따라 그 달에 보낼 말이 다르다) 사람 정보 바로 뒤가 제자리다.
+        # 그래서 `head` 의 마지막, **월별 칸 바로 앞**이다.
+        #
+        # 셋의 순서는 일이 일어나는 순서다 — 견적서를 보냈는가 → 계약했는가 →
+        # 계산서를 받았는가. 나란히 서야 한 줄을 훑으며 어디까지 갔는지 읽힌다.
+        # 떼어 놓으면 같은 기업의 상태를 세 군데서 모아야 한다.
+
+        # 견적서를 보냈는가. 값이 `O`/`X` 둘뿐이라 골라 넣게 한다 —
+        # `IR 자료 회신 여부` 와 같은 결이다. 새로 타이핑하면 `o`·`△`·`완료` 로
+        # 갈려 세는 것이 달라진다.
+        #
+        # 폭은 값(한 글자)이 아니라 **필터를 건 뒤의 머리글**에 맞춘다
+        # (`견적서 첨부여부 (1) ▾` = 137px). 값 길이로 잡으면 화면에서는
+        # 멀쩡하다가 필터를 거는 순간 머리글이 두 줄로 접힌다
+        # (`tests/test_startup_tab.py` 의 `머리글은_필터_단추까지_한_줄에_들어간다`).
+        Column("견적서 첨부여부", "quote_attached", 140, source="note",
+               kind="pick", choices="O,X"),
+        # 계약까지 갔는가.
         #
         # 보기는 IR 기업 현황의 계약 상태와 **같은 말**이다
         # (`routers/companies.py` 의 `CONTRACT_LABELS`). 같은 것을 두 화면에서
         # 다른 말로 부르면 어느 쪽이 맞는지 알 수 없다.
+        #
+        # **IR 기업 현황의 `IrCompany.contract_status` 와는 다른 칸이다.**
+        # 저쪽은 `free`/`paid` 두 값을 가진 기업 단위의 칸이고, 이쪽은 이 명단의
+        # 줄에 `notes` 로 붙는 글자 칸이다. 이름이 같다고 한쪽을 고치면 다른
+        # 쪽이 따라오지 않는다.
         #
         # 딱 하나, `딜소개 불가` 는 여기 두지 않는다. 그것은 계약 상태가 아니라
         # **발송 금지 표시**이고, 발송 목록을 만드는 것은 IR 기업 현황이다
@@ -200,10 +247,12 @@ STARTUP_LAYOUT = Layout(
         # 골라 놓고 막힌 줄 아는데 실제로는 아무것도 안 막는 칸이 된다.
         #
         # 폭은 값을 고른 뒤의 단추(`계약여부 (1) ▾` = 102px)에 맞춘다.
-        # 줄이면 머리글의 필터 꼬리표가 두 줄로 접힌다
-        # (`tests/test_startup_tab.py` 의 `머리글은_필터_단추까지_한_줄에_들어간다`).
+        # 줄이면 머리글의 필터 꼬리표가 두 줄로 접힌다.
         Column("계약여부", "contract", 110, source="note", kind="pick",
                choices="유료계약완료,무료계약완료,계약검토중,미계약"),
+        # 계산서를 받았는가. 위 `견적서 첨부여부` 와 같은 값·같은 폭이다.
+        Column("계산서 수신여부", "invoice_received", 140, source="note",
+               kind="pick", choices="O,X"),
     ],
     tail=[
         # 회신은 왔는가. 값이 `O`/`X` 둘뿐이라 골라 넣게 한다 —
@@ -422,12 +471,78 @@ def month_columns(db: Session, sheet: str,
     # 이번 달 칸까지 만들면, 8월 시트를 9월에 올렸을 때 시트에 없는 9월 칸이
     # 딸려 생기고 가져오기 결과가 돌린 날짜에 따라 달라진다.
     if create:
-        monthly_columns.ensure_contact(db, sheet, today=today)
+        monthly_columns.ensure_contact(db, sheet, today=today,
+                                       seed=month_seed(db, sheet))
     return db.execute(
         select(ContactColumn)
         .where(ContactColumn.sheet == sheet)
         .order_by(ContactColumn.position, ContactColumn.id)
     ).scalars().all()
+
+
+def month_seed(db: Session, sheet: str) -> tuple:
+    """이 명단에 **달 칸이 하나도 없을 때** 처음 세울 칸들.
+
+    명단이 아니라 **배치가 정한다**(`Layout.month_seed`) — 명단 이름을 코드가
+    알아야 할 이유를 만들지 않는다. 스타트업 리마인드 명단에만 값이 있고,
+    투자사 명단은 빈 값이라 지금까지 그대로 비켜 간다.
+    """
+    from . import sheet_owner        # noqa: PLC0415 — 서로 참조한다
+
+    return layout_of(sheet_owner.layout_of(db, sheet)).month_seed
+
+
+def ensure_months(db: Session, sheets: List[str],
+                  today: Optional[date] = None) -> None:
+    """이번 달 칸을 **탭을 열지 않아도** 세운다.
+
+    지금까지는 지금 고른 탭 하나만 챙겼다. 그러면 그 달에 아무도 안 연 명단은
+    칸이 안 서고, 그 달 기록이 지난달 칸에 섞여 들어간다 — 나중에 어느 달
+    것인지 가릴 방법이 없다. 투자컨설턴트 현황이 같은 이유로 보이는 표를 전부
+    돈다(`routers/consulting.py` 의 `_visible_column_scopes`).
+
+    **어느 명단을 훑을지는 배치가 정한다** — 심을 것을 정해 둔 배치
+    (`Layout.month_seed`)의 명단만이다. 지금은 스타트업 리마인드 하나다.
+
+    화면 이름으로도, 명단 이름으로도 가르지 않는다(`SheetOwner.layout` 주석).
+    그리고 **투자사 명단까지 넓히지 않는다** — 저쪽은 지금까지 연 탭만 챙겨
+    왔고, 그 범위를 이 판에서 같이 넓히면 무엇이 달라졌는지가 두 가지가 된다.
+    연 탭은 지금처럼 `month_columns` 가 배치를 안 가리고 챙긴다.
+
+    같은 달을 두 번 만들지 않는 것과 사람이 지운 달을 되살리지 않는 것은
+    `services/monthly_columns.py` 의 `MonthlyColumnRun` 이 그대로 본다.
+
+    칸은 **한 번에 읽는다.** 명단마다 질의를 내면 탭이 늘어날수록 화면을 열 때
+    질의가 그만큼 늘어난다.
+    """
+    seeds = {name: month_seed(db, name)
+             for name in dict.fromkeys(sheets) if name}
+    names = [name for name, seed in seeds.items() if seed]
+    if not names:
+        return
+    by_sheet: Dict[str, List[ContactColumn]] = {name: [] for name in names}
+    for row in db.execute(
+        select(ContactColumn)
+        .where(ContactColumn.sheet.in_(names))
+        .order_by(ContactColumn.position, ContactColumn.id)
+    ).scalars().all():
+        by_sheet.setdefault(row.sheet, []).append(row)
+    for name in names:
+        monthly_columns.ensure_contact(db, name, today=today, seed=seeds[name],
+                                       columns=by_sheet[name])
+
+
+def split_hidden(columns: List[ContactColumn]) -> tuple:
+    """(표에 세울 칸, 숨긴 칸). `SheetOwner.is_hidden` 과 **같은 방식**이다.
+
+    지우는 것이 아니라 세지 않는 것이라, 숨긴 칸의 값은 `notes` 에 그대로
+    남고 되돌리면 같은 자리에 다시 선다.
+
+    **숨긴 칸도 돌려준다.** 화면이 목록으로 세우고 되돌릴 단추를 붙여야 한다 —
+    감춰 놓고 켜는 단추까지 감추면 DB 를 직접 고쳐야 한다(명단 숨김과 같은 말).
+    """
+    return ([c for c in columns if not c.is_hidden],
+            [c for c in columns if c.is_hidden])
 
 
 def split_months(columns: List[ContactColumn], show_all: bool = False) -> tuple:

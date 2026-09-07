@@ -59,8 +59,31 @@
 기준은 12월 다음이 1월인 것을 그대로 안다. 달을 못 읽는 칸은 본을 고르는 데
 끼지 않는다 — 그 표의 고정 칸이지 어느 달인지를 가리키는 표시가 아니다.
 
-달을 적은 칸이 **하나도** 없는 표(담당자별 스타트업 명단이 그렇다)에는 여전히
-만들지 않는다. 거기까지 만들기 시작하면 달을 안 쓰는 표에 달 칸이 생긴다.
+## 본이 하나도 없는 표 — 배치가 심어 준다
+
+달을 적은 칸이 **하나도** 없는 표에는 오래 아무것도 만들지 않았다. 아무 표에나
+달 칸을 만들기 시작하면 달을 안 쓰는 표에 달 칸이 생기기 때문이다.
+
+그런데 담당자별 스타트업 명단이 전부 그 상태였다 — 달 칸이 서 있는 것은 **한
+명의 명단뿐**이고, 나머지는 사람이 첫 칸을 손으로 심어 줘야 그 뒤로 자동
+생성이 붙었다. 심는 것을 잊은 명단만 조용히 그 달 기록이 지난 칸에 섞여
+들어간다.
+
+그래서 **배치가 심을 것을 정해 둔 표에만** 만든다(`services/contact_columns.py`
+의 `Layout.month_seed` — 스타트업 리마인드는 `리마인드 문자`·`리마인드 TEL`·
+`카톡 연결` 셋). 정해 두지 않은 배치는 지금까지 그대로 비켜 간다.
+
+**본떠 올 명단을 코드가 고르게 하지 않았다.** "달 칸이 있는 다른 명단에서
+베낀다" 로 하면 코드가 어느 명단이 본인지 알아야 하고(이 저장소가 값으로 빼
+둔 그것), 본이 된 명단에서 누가 칸 이름을 고치는 순간 **남의 명단에 생길 칸
+이름이 같이 바뀐다.** 이 셋은 팀이 함께 쓰는 한 가지 모양이라 배치의 성질이다.
+
+## 숨긴 칸은 본이 되지 않는다
+
+사람이 안 쓰기로 하고 표에서 뺀 칸(`ContactColumn.is_hidden`)을 본떠 새 달 칸을
+만들면, **뺀 모양이 매달 다시 생긴다.** 그래서 본을 고르는 데는 숨긴 칸을 빼고,
+"이번 달 칸이 이미 있는가" 를 세는 데는 넣는다 — 숨기기는 지우기가 아니라서,
+숨긴 칸과 같은 달을 또 만들면 같은 달이 두 칸이 된다.
 
 ## 두 번 만들지 않는 것 · 지운 칸을 되살리지 않는 것
 
@@ -158,27 +181,42 @@ def latest_month(months: Sequence[Optional[int]],
     return min(seen, key=lambda m: (month - m) % 12)
 
 
-def plan(labels: Sequence[str], month: int) -> List[str]:
+def plan(labels: Sequence[str], month: int,
+         seed: Sequence[str] = (),
+         models: Optional[Sequence[str]] = None) -> List[str]:
     """이 표에 이번 달 칸을 세운다면 어떤 이름이 되는가. 셀 것이 없으면 빈 목록.
 
     `labels` 는 화면에 서는 순서(`position`)다. **그 순서는 어느 칸이 최근인지
     말해 주지 않는다** — 본뜰 달은 `latest_month` 가 달을 보고 정한다.
+
+    `models` 는 **본으로 삼아도 되는 칸**이다. 안 주면 `labels` 그대로다.
+    숨긴 칸(`ContactColumn.is_hidden`)을 여기서 빼려고 갈라 두었다 — 안 쓰기로
+    하고 표에서 뺀 옛 칸을 본떠 새 달 칸을 만들면, 뺀 모양이 **매달 다시
+    생긴다.** 반대로 "이미 있는가" 는 `labels` 로 본다: 숨기기는 지우기가
+    아니라서, 숨긴 칸과 같은 달을 또 만들면 같은 달이 두 칸이 된다.
+
+    `seed` 는 **본이 하나도 없을 때** 세울 칸들이다(달은 빼고 뒷말만 —
+    `리마인드 문자`). 어떤 배치가 무엇을 심는지는 `services/contact_columns.py`
+    의 `Layout.month_seed` 가 정한다. 비어 있으면 지금까지 그대로 아무것도
+    만들지 않는다.
     """
-    months = [month_of(x) for x in labels]
-    if not labels or month in months:
+    if month in [month_of(x) for x in labels]:
         # 이미 있으면 그만이다. 해가 바뀌어 같은 달 숫자가 다시 와도 만들지
         # 않는다 — 칸 이름에 연도가 없어서, 만들면 `8월` 두 칸이 나란히 서고
         # 어느 해 것인지 이름으로 가릴 수가 없다. 그때는 사람이 정리할 일이다.
         return []
+    source = list(labels if models is None else models)
+    months = [month_of(x) for x in source]
     head = latest_month(months, month)
     if head is None:
-        # 달을 적은 칸이 하나도 없다 — 달을 안 쓰는 표다. 여기에 달 칸을
-        # 만들면 그 표를 쓰던 사람이 지워야 한다.
-        return []
+        # 달을 적은 칸이 하나도 없다. 배치가 심을 것을 정해 두었으면 그것을
+        # 세우고(담당자별 스타트업 명단이 그렇다), 안 정해 두었으면 그대로 둔다
+        # — 달을 안 쓰는 표에 달 칸을 만들면 그 표를 쓰던 사람이 지워야 한다.
+        return [f"{month}월 {x}".strip() for x in seed if (x or "").strip()]
     # 같은 달 칸이 여럿인 표가 있다(문자 · TEL · 카톡 연결). 다 같이 만든다.
     # 세우는 차례는 **화면에 서 있던 순서 그대로**다 — 본이 된 칸들이 나란히
     # 서 있던 차례가 그 표를 쓰는 사람이 일하는 차례다.
-    return [relabel(x, month) for x, m in zip(labels, months) if m == head]
+    return [relabel(x, month) for x, m in zip(source, months) if m == head]
 
 
 def _claim(db: Session, target: str, scope: str, month: str,
@@ -204,17 +242,23 @@ def _month_key(day: date) -> str:
 
 
 def _ensure(db: Session, target: str, scope: str, columns: Sequence,
-            today: Optional[date] = None) -> List[str]:
+            today: Optional[date] = None,
+            seed: Sequence[str] = (),
+            models: Optional[Sequence[str]] = None) -> List[str]:
     """(공통) 이번 달 칸을 세우고 만든 이름을 돌려준다.
 
     `columns` 는 그 표의 칸을 **화면 순서 그대로**(`position`) 준다. 그 순서가
     달 순서라는 보장은 없다 — 본뜰 달은 `plan` 이 달을 보고 고른다.
 
+    `seed`·`models` 는 `plan` 이 읽는다(위 참고).
+
     새 칸은 맨 앞에 선다 — 지금 챙겨야 할 달이 먼저 보여야 하고, 사람이 [칸
-    추가] 로 넣을 때와 같은 자리여야 한다.
+    추가] 로 넣을 때와 같은 자리여야 한다. **숨긴 칸도 함께 밀린다** — 자리는
+    표에 서든 안 서든 한 줄로 이어져 있어야, 숨김을 되돌렸을 때 그 칸이
+    원래 있던 자리로 돌아온다.
     """
     day = today or clock.today()
-    labels = plan([c.label for c in columns], day.month)
+    labels = plan([c.label for c in columns], day.month, seed, models)
     if not labels:
         return []
     if not _claim(db, target, scope, _month_key(day), labels):
@@ -249,20 +293,36 @@ def ensure_consulting(db: Session, user_id: Optional[int], sheet: str,
 
 
 def ensure_contact(db: Session, sheet: str,
-                   today: Optional[date] = None) -> List[str]:
-    """투자사 관리 현황 명단의 이번 달 칸. 칸이 **명단마다**다.
+                   today: Optional[date] = None,
+                   seed: Sequence[str] = (),
+                   columns: Optional[Sequence[ContactColumn]] = None) -> List[str]:
+    """투자사 관리 현황·스타트업 명단의 이번 달 칸. 칸이 **명단마다**다.
 
     여기서 칸을 정하는 것은 올린 사람이 아니라 원본 시트이고, 명단은 담당이
     바뀌어도 같은 명단이다(`services/contact_columns.py` 참고).
+
+    `seed` 는 **달 칸이 하나도 없는 명단**에 처음 세울 것들이다. 명단마다 다른
+    값이라 여기서 정하지 않고 **배치가 준다**(`Layout.month_seed`) — 명단 이름을
+    코드가 알아야 할 이유를 만들지 않는다. 부르는 쪽은 대개
+    `contact_columns.month_columns`·`ensure_months` 다.
+
+    `columns` 를 주면 그것을 쓴다. 명단 여러 개를 한 번에 챙길 때 질의를 명단
+    수만큼 내지 않으려는 것뿐이다(`contact_columns.ensure_months`) — 안 주면
+    지금까지처럼 여기서 읽는다.
     """
     if not sheet:
         return []
-    columns = db.execute(
-        select(ContactColumn)
-        .where(ContactColumn.sheet == sheet)
-        .order_by(ContactColumn.position, ContactColumn.id)
-    ).scalars().all()
-    labels = _ensure(db, CONTACT, sheet, columns, today)
+    if columns is None:
+        columns = db.execute(
+            select(ContactColumn)
+            .where(ContactColumn.sheet == sheet)
+            .order_by(ContactColumn.position, ContactColumn.id)
+        ).scalars().all()
+    # 숨긴 칸은 **본이 되지 않는다** — 안 쓰기로 하고 표에서 뺀 옛 칸을 본떠
+    # 새 달 칸을 만들면 뺀 모양이 매달 다시 생긴다. 있는지 세는 데는 그대로
+    # 들어간다(`plan` 의 `labels`).
+    labels = _ensure(db, CONTACT, sheet, columns, today, seed,
+                     [c.label for c in columns if not c.is_hidden])
     for pos, label in enumerate(labels):
         db.add(ContactColumn(sheet=sheet, label=label, position=pos))
     if labels:

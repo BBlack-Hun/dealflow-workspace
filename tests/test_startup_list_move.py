@@ -374,13 +374,19 @@ def test_화면을_정하는_판정은_한_곳뿐이다():
 
 # ── 5. 계약여부 ─────────────────────────────────────────────────────────────
 
-def test_계약여부가_이메일_바로_뒤에_선다(lists):
-    """월별 칸 뒤에 두면 달이 쌓일수록 표 끝으로 밀린다 — 가로로 밀어야 닿는다."""
+def test_계약까지_가는_세_칸이_사람_정보_바로_뒤에_나란히_선다(lists):
+    """월별 칸 뒤에 두면 달이 쌓일수록 표 끝으로 밀린다 — 가로로 밀어야 닿는다.
+
+    셋은 **일이 일어나는 순서대로 붙어 서야 한다**(견적서 → 계약 → 계산서).
+    떼어 놓으면 한 기업이 어디까지 갔는지를 표 세 군데서 모아야 한다.
+    """
     head = _thead(lists.get(
         _pages()["startup"] + f"?sheet={quote(STARTUP_LISTS[0])}").text)
-    assert head.index("계약여부") == head.index("이메일") + 1, head
+    want = ["견적서 첨부여부", "계약여부", "계산서 수신여부"]
+    at = head.index("이메일") + 1
+    assert head[at:at + 3] == want, head
     # 월별 칸보다 앞이다.
-    assert head.index("계약여부") < head.index(f"{_month()}월 리마인드 문자")
+    assert head.index("계산서 수신여부") < head.index(f"{_month()}월 리마인드 문자")
 
 
 def test_계약여부_보기가_네_가지다(lists, db):

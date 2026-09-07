@@ -240,11 +240,18 @@ def _export_sheet(db: Session, user: User, label: str) -> Response:
     달마다 늘어나는 칸은 **접지 않고 전부** 넣는다 — 화면에서 접는 것은 가로로
     밀리기 때문이고, 파일에는 그 이유가 없다. 지난달 기록이 빠진 파일을 시트와
     대조하면 지워진 것으로 읽힌다.
+
+    **숨긴 칸은 다르다 — 파일에서도 뺀다**(`ContactColumn.is_hidden`). 접는 것은
+    화면이 가로로 밀려서 잠깐 감추는 것이고, 숨김은 사람이 **이 명단에서는 안
+    쓰는 칸이라고 정한 것**이다. 화면에 없는 칸이 파일에만 있으면 받은 사람이
+    화면과 다른 표를 들고 대조하게 된다. 값은 지워지지 않으므로 숨김을 되돌리면
+    화면과 파일에 함께 돌아온다.
     """
     from ..services import contact_columns as cc
 
     layout = cc.layout_of(sheet_owner.layout_of(db, label))
-    columns = [c for c in cc.panel_columns(layout, cc.month_columns(db, label))
+    months, _hidden = cc.split_hidden(cc.month_columns(db, label))
+    columns = [c for c in cc.panel_columns(layout, months)
                if c.source in ("field", "note")]
     # **화면과 같은 줄**이다. 감춘 줄은 화면에서 빠져 있으므로 여기서도 뺀다 —
     # 세어 보고 목록에서 찾을 수 없는 줄이 파일에만 있으면 수가 어긋난다.
