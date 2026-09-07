@@ -42,6 +42,7 @@ AGENT_FILES = [
     ("agent/sender/base.py", "agent/sender/base.py"),
     ("agent/sender/mock.py", "agent/sender/mock.py"),
     ("agent/sender/kakao_windows.py", "agent/sender/kakao_windows.py"),
+    ("agent/sender/win_clipboard.py", "agent/sender/win_clipboard.py"),
     ("agent/sender/kakao_mac.py", "agent/sender/kakao_mac.py"),
     ("agent/sender/telegram.py", "agent/sender/telegram.py"),
 ]
