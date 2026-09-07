@@ -25,9 +25,10 @@ from datetime import date, timedelta
 from typing import Dict, List, Optional
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ..models import User, WeeklyRoutine, WeeklyTask
+from ..models import User, WeeklyRoutine, WeeklyRoutineRun, WeeklyTask
 
 STATUS_LABELS = {"todo": "예정", "doing": "진행중", "done": "완료"}
 STATUS_ORDER = {"doing": 0, "todo": 1, "done": 2}
@@ -68,6 +69,65 @@ def parse_weekdays(value: Optional[str]) -> List[int]:
 def weekday_label(value: Optional[str]) -> str:
     days = parse_weekdays(value)
     return " · ".join(f"{WEEKDAYS[d]}" for d in days) if days else "요일 없음"
+
+
+def parse_nth_weeks(value: Optional[str]) -> List[int]:
+    """`"1,3"` → `[1, 3]`. 그 달의 몇째 주에 도는가.
+
+    **`ScheduleRule.nth_weeks` 와 같은 모양이다**(회차일이 "매월 첫째·셋째
+    수요일"). 같은 뜻에 다른 모양을 하나 더 만들 이유가 없다.
+
+    **비어 있으면 빈 목록이고, 그 뜻은 '매주'다.** 이 칸이 생기기 전의 규칙이
+    전부 그 상태라, 여기서 기본값을 지어내면 매주 나가던 일이 말없이 격주가
+    된다.
+
+    1~5 밖의 값은 버린다 — 한 달은 1~7일부터 29~31일까지 다섯 토막이다
+    (`week_of_month`).
+    """
+    out = []
+    for part in (value or "").split(","):
+        part = part.strip()
+        if part.isdigit() and 1 <= int(part) <= 5:
+            out.append(int(part))
+    return sorted(set(out))
+
+
+def nth_label(value: Optional[str]) -> str:
+    weeks = parse_nth_weeks(value)
+    return "·".join(str(n) for n in weeks) + "주차" if weeks else "매주"
+
+
+def week_of_month(day: date) -> int:
+    """그 날이 그 달의 몇째 주인가. **1~7일이 1주차.**
+
+    **규칙은 저장소에 하나뿐이다**(`sheet_import.week_of_month`) — 시트 머리글의
+    "첫째주 수요일" 표기이자 회차일이 세는 방식이다. 여기서 따로 세면 같은 날이
+    화면마다 3주차·4주차로 갈린다. 실제로 갈린 적이 있어 `report.py` 도 이렇게
+    그 하나를 부른다.
+    """
+    from .sheet_import import week_of_month as by_day
+
+    return by_day(day.isoformat()) or 1
+
+
+def routine_due(start: date, routine: WeeklyRoutine) -> Optional[date]:
+    """그 주에 이 반복 업무가 놓일 날. **그 주에 돌지 않으면 None.**
+
+    요일이 정해지지 않은 규칙은 그 주 월요일에 한 번 놓는다.
+
+    주차는 **놓일 날**로 본다. 그 줄이 실제로 서는 날이 그 날이고, 사람이 표에서
+    보는 날짜도 그것이다. 이러면 `1,3` 은 "매월 첫째·셋째 <그 요일>" 과 정확히
+    같은 뜻이 된다 — 그 달 n번째 <요일>은 늘 n주차에 든다(회차일이 쓰는 셈법과
+    같다, `services/cadence.py`). 달이 걸친 주도 저절로 풀린다: 8/31(월)~9/6 주의
+    월요일은 8월의 5주차이므로 `1,3` 규칙은 그 주를 건너뛰고, 9/7(월)부터 다시
+    1주차로 선다.
+    """
+    days = parse_weekdays(routine.weekdays)
+    due = start + timedelta(days=days[0]) if days else start
+    weeks = parse_nth_weeks(routine.nth_weeks)
+    if weeks and week_of_month(due) not in weeks:
+        return None
+    return due
 
 
 # --- 반복 업무 --------------------------------------------------------------
@@ -126,17 +186,54 @@ def delete_routine(db: Session, routine: WeeklyRoutine) -> None:
     내려 두면 둘 다 풀린다. 이미 만들어진 항목은 자기를 만든 규칙을 계속
     가리킨 채 그대로 남고(지우기 창이 약속하는 그대로), 화면의 표는
     `active_routines` 가 그리므로 그 줄만 사라진다.
+
+    **이미 만들어진 항목은 그대로 둔다.** 규칙을 내리면서 그 줄까지 걷어가는
+    길도 있었지만, 그 줄에는 이미 사람이 손댄 것이 얹혀 있다 — 상태를 `완료`
+    로 바꿔 놓았거나 메모를 적어 두었을 수 있고, 그것은 그 주에 실제로 한
+    일의 기록이다. 규칙 하나를 내렸다고 지난 기록을 말없이 걷어가는 것이 더
+    나쁘다. 남은 줄이 필요 없으면 **주간 업무 표에서 지우면 되고, 이제 그
+    지우기가 붙든다**(`fill_week` 머리말). 사람이 요청한 것도 그것이었다 —
+    "주간업무쪽에서는 지울 수 있게".
     """
     routine.is_active = 0
     db.commit()
 
 
+def _claim(db: Session, user: User, start: date, routine: WeeklyRoutine) -> bool:
+    """이 주 이 규칙 몫을 내가 맡는다. 이미 맡은 요청이 있으면 False.
+
+    유일 색인이 판정한다 — 세어 보고 넣으면 동시에 들어온 두 요청이 둘 다
+    "없네" 를 보고 둘 다 넣는다. 저장점(SAVEPOINT) 안에서 넣는 것은, 실패했을
+    때 **부르는 쪽이 하던 일까지 되돌리지 않기** 위해서다
+    (`services/monthly_columns.py` 의 `_claim` 과 같은 방식).
+    """
+    try:
+        with db.begin_nested():
+            db.add(WeeklyRoutineRun(user_id=user.id,
+                                    week_start=start.isoformat(),
+                                    routine_id=routine.id))
+    except IntegrityError:
+        return False
+    return True
+
+
 def fill_week(db: Session, user: User, start: date,
               today: Optional[date] = None) -> int:
-    """그 주에 아직 없는 반복 업무를 만들어 넣는다.
+    """그 주에 아직 안 만든 반복 업무를 만들어 넣는다.
 
     화면을 열 때 부른다 — 스케줄러 없이도 그 주를 열면 채워진다.
-    같은 규칙으로 두 번 만들지 않는다(`routine_id` 로 확인).
+
+    **줄이 아니라 만들었다는 사실을 본다**(`WeeklyRoutineRun`)
+    ------------------------------------------------------------
+    예전에는 "이 규칙 줄이 이번 주에 있나" 를 **지금 남아 있는
+    `WeeklyTask.routine_id`** 로 봤다. 그래서 사람이 그 줄을 지우면 자취까지
+    사라져 없는 것이 되고, `/todo` 로 돌아온 그 화면이 곧바로 "없으니 만들자"
+    를 다시 돌렸다 — **지운 줄이 그 자리에 다시 서 있었다.** 지운 사람 눈에는
+    지워지지 않는 줄이다.
+
+    `MonthlyColumnRun`(0041) 이 같은 문제를 같은 방식으로 풀어 두었다. 지워도
+    남는 표시를 보므로 되살아나지 않고, 유일 색인 덕에 화면 두 개를 같은 순간에
+    열어도 한 주에 두 줄로 앉지 않는다.
 
     **이미 끝난 주는 채우지 않는다.** 예전에는 [← 지난 주] 를 누르기만 해도
     그 주에 반복 업무가 새로 생겼다. 하지도 않았고 시킨 적도 없는 일이 날짜가
@@ -152,21 +249,24 @@ def fill_week(db: Session, user: User, start: date,
     if not routines:
         return 0
 
-    already = {
-        row.routine_id for row in db.execute(
-            select(WeeklyTask).where(WeeklyTask.user_id == user.id,
-                                     WeeklyTask.week_start == start.isoformat(),
-                                     WeeklyTask.routine_id.isnot(None))
-        ).scalars().all()
-    }
+    already = set(db.execute(
+        select(WeeklyRoutineRun.routine_id).where(
+            WeeklyRoutineRun.user_id == user.id,
+            WeeklyRoutineRun.week_start == start.isoformat())
+    ).scalars().all())
 
     made = 0
     for routine in routines:
         if routine.id in already:
             continue
-        days = parse_weekdays(routine.weekdays)
-        # 요일이 정해지지 않은 규칙은 그 주 월요일에 한 번 놓는다.
-        due = start + timedelta(days=days[0]) if days else start
+        due = routine_due(start, routine)
+        if due is None:
+            # 주차가 맞지 않는 주다(격주 규칙의 2·4주차). **표시를 남기지
+            # 않는다** — 만든 적이 없으니 적을 사실이 없고, 다음에 열 때 같은
+            # 답이 다시 나온다.
+            continue
+        if not _claim(db, user, start, routine):
+            continue        # 다른 요청이 먼저 맡았다
         db.add(WeeklyTask(
             user_id=user.id, week_start=start.isoformat(),
             category=routine.category, title=routine.title,
@@ -200,6 +300,11 @@ def task_rows(db: Session, user: User, start: date,
             "due_label": f"{due.month}/{due.day}({WEEKDAYS[due.weekday()]})" if due else "",
             "status": row.status,
             "status_label": STATUS_LABELS.get(row.status, row.status),
+            # 상태로 정렬할 때 쓰는 값. **글자순이 아니다** — `완료`·`예정`·
+            # `진행중` 을 가나다로 세우면 다 한 일이 맨 위에 온다. 아래에서
+            # 줄을 세우는 차례와 **같은 `STATUS_ORDER`** 를 화면에도 그대로
+            # 넘긴다(화면이 제 손으로 다시 매기면 두 벌이 되어 어긋난다).
+            "status_order": STATUS_ORDER.get(row.status, 9),
             "note": row.note or "",
             "routine": row.routine_id is not None,
             # 날짜가 지났는데 아직 안 끝난 것

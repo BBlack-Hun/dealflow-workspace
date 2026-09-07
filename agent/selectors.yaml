@@ -4,10 +4,16 @@
 
 backend: "uia"                       # pywinauto 백엔드 (uia | win32)
 main_window_title_re: "카카오톡.*"    # 메인 창 제목 정규식
+main_window_title_kw: "카카오톡"      # 포그라운드 창 제목 대조용
 
 search_hotkey: ["ctrl", "f"]          # 친구/채팅 검색 열기
 
 # 각 단계 대기 시간(초) — 느린 PC에서는 늘리세요
+#
+# ⚠ 이 묶음은 **하나뿐이어야 한다.** 예전에 `timings:` 가 이 파일에 두 번 있어서
+#   뒤엣것이 앞엣것을 통째로 덮었다(YAML 은 마지막 키만 남긴다). 그래서 위쪽
+#   대기시간이 전부 죽고 코드의 기본값으로만 돌았다 — 값이 코드 기본값과 같아서
+#   증상이 안 보였을 뿐이다. 늘리려고 고쳐도 안 먹었을 자리다.
 timings:
   window_wait: 5.0          # 메인 창 존재/준비 대기
   after_search_hotkey: 0.4  # Ctrl+F 후
@@ -17,14 +23,49 @@ timings:
   before_message_paste: 0.2
   after_message_paste: 0.5  # 붙여넣기 안정 대기
   after_send: 0.4           # Enter 전송 후
+  focus_retries: 5          # 포커스 확보 재시도 (카톡이 앞으로 안 나오면 키 입력 안 함)
+  after_focus: 0.4
+  # 파일 첨부 — 아래 file_send 참고
+  after_file_paste: 1.0     # 파일 Ctrl+V 후
+  confirm_wait: 5.0         # 확인 창이 뜨기를 기다리는 시간
+  after_confirm_click: 1.0  # 전송 단추를 누른 뒤
 
 # TODO(win, 1.10): 검색 결과 리스트 컨트롤 경로, 채팅창 제목 라벨 경로를
 # 실기에서 파악해 아래에 추가하고 kakao_windows.py의 정확 일치 검증에 연결.
 # search_result_list: { control_type: "List", ... }
 # chat_title_label: { control_type: "Text", ... }
 
-# 포커스 확보 재시도/대기 (카톡이 앞으로 안 나오면 키 입력을 하지 않는다)
-main_window_title_kw: "카카오톡"
-timings:
-  focus_retries: 5
-  after_focus: 0.4
+# ══════════════════════════════════════════════════════════════════════════
+#  파일 첨부 — ⚠⚠ **여기 값은 전부 추측이다.** 실기에서 확인하고 고칠 것.
+#
+#  Windows 카톡에 파일을 붙여 넣었을 때 확인 창이 뜨는지, 뜬다면 제목이 무엇이고
+#  단추 이름이 무엇인지, 파일명과 개수가 어디에 적히는지 — **아무도 못 봤다.**
+#  mac 에서 본 모양(`파일 전송` 시트 · `1개 전송` 단추)을 본떠 적어 둔 것이다.
+#
+#  틀려도 위험하지 않다. 확인 창을 못 찾거나 어긋나면 발송기가 **취소하고 아무것도
+#  보내지 않는다**(`kakao_windows.check_confirm_window`). 확인 전에는 잘못 보내는
+#  대신 안 보내고 실패로 남는 쪽이 맞다.
+#
+#  확인 절차는 docs/WINDOWS_TEST.md 의 "H. 파일 첨부 실기 확인" 에 있다.
+# ══════════════════════════════════════════════════════════════════════════
+file_send:
+  # ★ 실기에서 확인한 뒤에만 true 로 바꾼다. 이 값이 곧 `can_send_files` 다 —
+  #   true 로 두면 서버가 파일이 실린 잡을 이 PC 로 내준다. 확인 전에 켜면
+  #   그 회차의 자료 전달이 통째로 실패한다(자료가 막히면 문구도 안 나간다).
+  #
+  #   확인하는 그 한 창에서만 켜려면 코드를 고치지 말고 환경변수를 쓴다:
+  #       set DEALFLOW_WIN_FILE_SEND=1
+  verified: false
+
+  # 확인 창 제목 (정규식, 부분 일치)
+  confirm_title_re: "파일\\s*전송|전송\\s*확인"
+
+  # 단추 이름 (정규식, 전체 일치). `&` 는 밑줄 표시라 비교 전에 떼어 낸다.
+  cancel_button_re: "^(취소|아니오|Cancel)(\\(.\\))?$"
+  send_button_re: "^((\\d+)\\s*개\\s*)?(전송|보내기|확인|Send|OK)(\\(.\\))?$"
+
+  # 창의 글자나 단추에서 개수를 읽어 내는 본. (`1개 전송`, `파일 2개를 …`)
+  # 어디서도 개수를 못 읽으면 관문이 막는다.
+  count_re: "(\\d+)\\s*개"
+
+  paste_hotkey: ["ctrl", "v"]

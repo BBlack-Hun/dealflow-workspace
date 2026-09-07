@@ -1121,6 +1121,16 @@ class WeeklyRoutine(TimestampMixin, Base):
     category: Mapped[str] = mapped_column(String)          # 항목
     title: Mapped[str] = mapped_column(Text)               # 세부업무
     weekdays: Mapped[str] = mapped_column(String, default="")   # "0,2" = 월,수
+    # 달의 몇째 주에 하는가 — `"1,3"` 이면 1주차·3주차(격주).
+    #
+    # **`ScheduleRule.nth_weeks` 와 같은 모양이다.** 회차일이 "매월 첫째·셋째
+    # 수요일" 인 것과 같은 결의 값이라, 담는 모양을 새로 만들 이유가 없다.
+    # 주차를 세는 규칙도 하나뿐이다 — `sheet_import.week_of_month`(**1~7일이
+    # 1주차**). 두 번째 규칙을 만들면 같은 날이 화면마다 3주차·4주차로 갈린다.
+    #
+    # **비어 있으면 매주다.** 이 칸이 생기기 전의 규칙 전부가 그 상태로 남고,
+    # 지금까지처럼 매주 돈다.
+    nth_weeks: Mapped[Optional[str]] = mapped_column(String, nullable=True)    # "1,3"
     # 언제 하는 일인지 — 시트에 "화요일 오전" 처럼 시간대까지 적혀 있었다.
     # 비어 있으면 하루 중 아무 때나(예: 이메일 정리).
     time_of_day: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # am | pm
@@ -1175,10 +1185,55 @@ class WeeklyTask(TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String, default="todo")
     position: Mapped[int] = mapped_column(Integer, default=0)
     note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    # 반복 업무에서 생긴 줄이면 그 규칙. 같은 주에 두 번 만들지 않으려고 쓴다.
+    # 반복 업무에서 생긴 줄이면 그 규칙. 어디서 온 줄인지 보여 주려고 남긴다 —
+    # **같은 주에 두 번 만들지 않는 판정은 이 칸이 아니라 `WeeklyRoutineRun`**
+    # 이 한다(그 표의 설명 참고).
     routine_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("weekly_routines.id"), nullable=True)
 
+
+class WeeklyRoutineRun(TimestampMixin, Base):
+    """반복 업무를 **그 주에 한 번 만들었다**는 표시.
+
+    지운 항목이 되살아나던 자리
+    ---------------------------
+    주간 업무 줄은 모두 [삭제] 로 지울 수 있다. 그런데 반복 업무에서 생긴 줄을
+    지우고 `/todo` 로 돌아오면 **그 자리에 다시 서 있었다.** 화면을 열 때 도는
+    `fill_week`(`services/weekly.py`)가 "이 규칙 줄이 이번 주에 있나" 를 **지금
+    남아 있는 `WeeklyTask.routine_id`** 로만 봤기 때문이다 — 지우면 그 자취까지
+    사라져 없는 것이 되고, 곧바로 "없으니 만들자" 가 그대로 다시 돈다.
+    지운 사람 눈에는 지워지지 않는 줄이다.
+
+    `MonthlyColumnRun`(0041) 이 이미 같은 문제를 같은 방식으로 풀었다. **줄이
+    아니라 만들었다는 사실을 남긴다.** 지워도 이 표시는 남으므로 되살아나지
+    않는다.
+
+    한 번 더 얻는 것
+    ----------------
+    `(user_id, week_start, routine_id)` 에 유일 색인이 걸려 있어, 화면 두 개를
+    같은 순간에 열어도 **한쪽만 줄을 넣는 데 성공한다**(나머지는 IntegrityError
+    로 조용히 물러난다). 세어 보고 넣는 방식은 두 요청이 같은 순간에 세면 둘 다
+    통과한다 — 지금까지는 같은 반복 업무가 한 주에 두 줄로 앉을 수 있었다.
+
+    왜 `WeeklyTask` 에 '지웠음' 칸을 붙이지 않았나
+    ---------------------------------------------
+    지운 줄을 숨긴 채 남겨 두는 길도 있었다. 그러면 이 표를 읽는 모든 자리
+    (`task_rows` · `carry_over_candidates` · `carry_over` · 다음 `position`)가
+    전부 "지운 것은 빼고" 를 따로 기억해야 하고, 한 곳만 잊으면 지운 줄이 거기서
+    다시 보인다. 사람이 직접 만든 줄까지 안 지워지는 것도 이상하다 — 지우기는
+    지우기여야 한다.
+    """
+
+    __tablename__ = "weekly_routine_runs"
+    __table_args__ = (
+        UniqueConstraint("user_id", "week_start", "routine_id",
+                         name="uq_weekly_routine_runs_user_week_routine"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    week_start: Mapped[str] = mapped_column(String)        # 그 주 월요일 (YYYY-MM-DD)
+    routine_id: Mapped[int] = mapped_column(ForeignKey("weekly_routines.id"))
 
 
 class SmsNotice(TimestampMixin, Base):
