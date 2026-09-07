@@ -571,6 +571,88 @@ def _json(response):
         return None
 
 
+#: 발송기 이름 옆에 붙는 한 마디 — **실제 카톡으로 나가는가.**
+#: 켤 때 제일 먼저 확인해야 하는 것이 그것이라 이름만 적지 않는다. `mock` 과
+#: `kakao_windows` 는 이름만 봐서는 얼마나 다른지(하나는 아무 데도 안 보낸다)
+#: 드러나지 않는다.
+SENDER_NOTES = {
+    "kakao_windows": "실제 카카오톡으로 나갑니다 (Windows)",
+    "kakao_mac": "실제 카카오톡으로 나갑니다 (macOS)",
+    "mock": "흉내만 냅니다 — 카톡으로 아무것도 나가지 않습니다",
+    "telegram": "텔레그램 시험 수신 — 본인에게만 나갑니다",
+}
+
+
+def log_startup(client: "AgentClient") -> List[str]:
+    """★ 켤 때 **한눈에** — 어느 판이, 무엇으로, 어디에 붙어, 무엇을 할 줄 아나.
+
+    ## 왜 필요했나
+
+    새 발송기를 받아 켰는데 서버에는 여전히 **옛 판(0.7.0)** 으로 올라와 있었다.
+    받은 것과 켜 놓은 것이 달랐던 것인데, 판 번호는 서버에만 알리고
+    (`AgentClient.heartbeat`) **켠 사람 화면에는 안 적어서** 그 사람은 새것을
+    켰다고 믿고 있었다. 낡은 것을 짚어 주려고 만든 값인데 정작 짚을 사람 앞에
+    없었다.
+
+    파일 첨부도 같았다. 자료가 실린 잡이 안 내려오는 이유를 찾느라 **서버 DB 를
+    뒤졌다** — 이 발송기가 "파일을 붙일 줄 안다" 고 밝혔는지가 화면에 없었다.
+
+    ## 그래서 **서버에 밝히는 값을 그대로** 적는다
+
+    잡이 안 내려오는 이유는 셋뿐이다: 잡 종류(`kinds`)·파일 첨부(`files`)·
+    상한(`cap`). 셋 다 폴링에 실어 보내는 값이라(`AgentClient.poll`) 여기서
+    발송기가 아니라 **`client` 를 받는다** — 화면에 적힌 것과 서버가 받는 것이
+    갈릴 자리를 아예 없앤다.
+
+    맨 윗줄만 봐도 판 번호·발송기·파일 첨부가 다 있다. 아랫줄은 그것이 무슨
+    뜻인지와 붙은 자리다. 로그는 줄마다 앞에 시각·수준이 붙어서, 한 줄에 다
+    몰아넣으면 오히려 안 읽힌다.
+
+    ## 토큰은 적지 않는다
+
+    토큰은 세션 머리(`Authorization`)에만 실리고 코드 어느 자리에서도 로그로
+    나가지 않는다. 여기도 그 결을 지킨다 — 이 로그는 파일로도 남고
+    (`agent_logs/agent.log`), 그 꼬리가 진단 스냅샷에 실려 서버로 올라간다
+    (`collect_diagnostics: log_tail`). 사람이 화면을 찍어 붙이기도 한다.
+
+    ⚠ **시험 모드(서버가 모든 발송을 시험방 하나로 돌리는 것)는 적지 않는다.**
+      그것은 서버가 아는 값인데(`app/config.py: TEST_ROOM`) 발송기에게 알려
+      주는 통로가 없다 — 박동 응답에 오는 것은 IR 자료 폴더 자리 하나뿐이다
+      (`app/routers/agent_api.py: heartbeat`). 발송기가 모르는 것을 아는 척
+      지어내면 그 줄이 곧 거짓말이 된다. 적으려면 서버가 먼저 알려 줘야 한다.
+
+    찍은 줄을 그대로 돌려준다 — 무엇이 찍히는지 시험이 이것을 본다.
+    """
+    files_on = bool(client.sender_can_send_files)
+    # 칸 이름 뒤의 빈칸은 줄맞춤이다. 한글은 한 글자가 두 칸을 먹으므로 글자
+    # 수가 아니라 **보이는 폭**을 맞춰 두었다(어긋나도 읽는 데는 지장 없다).
+    lines = [
+        f"★ 발송 프로그램 v{client.version} · {client.sender_name} · "
+        f"파일 첨부 {'켜짐' if files_on else '꺼짐'}",
+        f"     서버       {client.base}",
+        f"     이 PC      {client.hostname}",
+        f"     발송기     {SENDER_NOTES.get(client.sender_name, '어떤 발송기인지 모릅니다')}",
+    ]
+
+    if files_on:
+        lines.append("     파일 첨부  자료 파일이 실린 잡도 받습니다")
+    else:
+        note = "자료 파일이 실린 잡은 오지 않습니다"
+        if client.sender_name == "kakao_windows":
+            # 켜는 손잡이가 어디 있는지 여기서 알려 준다 — 이 값을 화면에서
+            # 못 찾아 서버 DB 를 뒤진 것이 이 줄을 만든 이유다.
+            from agent.sender.kakao_windows import FILE_SEND_ENV
+            note += f" (켜려면 {FILE_SEND_ENV}=1 — docs/WINDOWS_TEST.md)"
+        lines.append(f"     파일 첨부  {note}")
+
+    lines.append(f"     받는 잡    {' · '.join(SUPPORTED_KINDS)} "
+                 f"(한 번에 최대 {client.job_cap}건)")
+
+    for line in lines:
+        log.info(line)
+    return lines
+
+
 def preflight(sender) -> List[str]:
     """켤 때 **미리** 짚어 주는 것들. 발송을 막지는 않는다.
 
@@ -644,12 +726,22 @@ def main(argv=None):
     _setup_logging()
 
     cfg = load_config(args.config)
-    log.info("agent starting; server=%s sender=%s", cfg["server_url"], cfg["sender"])
+    # 판 번호를 **발송기를 세우기 전에** 한 번 적는다. 여기서 터지면
+    # (없는 발송기 이름·pywinauto 미설치) 아래 요약까지 못 가는데, 그때야말로
+    # 어느 판이 터졌는지가 필요하다 — 함수 하나가 빠진 채 배포돼 사용자 PC 에서
+    # 터진 적이 있고, 받은 쪽은 그것이 낡은 것인지 고친 것인지 몰랐다.
+    log.info("발송 프로그램 v%s 켜는 중 — server=%s sender=%s",
+             VERSION, cfg["server_url"], cfg["sender"])
     sender = build_sender(cfg)
     client = AgentClient(cfg)
     client.sender_name = getattr(sender, "name", "unknown")
     # 파일을 붙일 줄 아는지는 **발송기가 스스로 안다.** 폴링에서 그대로 밝힌다.
     client.sender_can_send_files = bool(getattr(sender, "can_send_files", False))
+
+    # ★ 켤 때 한눈에 — 판 번호·발송기·파일 첨부·붙을 서버.
+    #   `client` 를 넘기는 이유는 `log_startup` 머리말에 있다(서버에 밝히는
+    #   값을 그대로 적는다).
+    log_startup(client)
 
     # 설정(IR 자료 폴더 자리)을 **먼저** 받아 온다 — 사전 점검이 그 값을 본다.
     # 서버에 못 닿아도 켜지는 것 자체는 막지 않는다(다음 박동에 다시 받는다).
