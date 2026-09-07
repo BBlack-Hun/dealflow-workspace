@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{#
+  문서로 들어가는 문 — 계약을 마친 기업마다 그 달에 **몇 곳이 요청했는지**.
+
+  세는 일도 가리는 일도 여기서 하지 않는다(`services/ir_monthly.py` ·
+  `services/ir_mask.py`). 화면이 직접 세면 나중에 발송이 붙을 때 두 숫자가
+  갈린다.
+#}
+{% block content %}
+<header class="page-head">
+  <h1>이번 달 귀사 IR 자료를 요청한 투자사</h1>
+  <p class="muted">
+    스타트업 대표에게 <b>월 1회</b> 드리는 문서입니다. 계약을 마친 기업
+    (<b>무료계약완료 · 유료계약완료</b>)만 대상입니다 —
+    이 달에 보낼 수 있는 문서는 <b>{{ sendable_count }}장</b>입니다.
+  </p>
+</header>
+
+<div class="toolbar">
+  <div class="quick-chips">
+    <select class="chip-select" onchange="location = this.value">
+      {% for m in months %}
+      <option value="/startup/ir-report?month={{ m }}"
+              {% if m == selected %}selected{% endif %}>{{ m }}</option>
+      {% endfor %}
+    </select>
+  </div>
+</div>
+
+{#
+  **못 맞춘 건은 조용히 빠지면 안 된다.** 요청 기록이 두 곳에 갈려 있고
+  (이 앱에서 누른 것 · 시트에서 옮겨 온 것), 시트 쪽은 기업명 문자열로 맞춰야
+  해서 상당수가 안 붙는다. 지어내지 않고 세지 않되, 몇 건이 그렇게 빠졌는지는
+  여기 적는다 — 안 적으면 `0곳` 이 진짜 0곳인지 못 맞춰서 0곳인지 알 수 없다.
+#}
+{% if skipped_count %}
+<p class="warn-box">
+  ⚠ <b>{{ selected }}</b> 요청 중 <b>{{ skipped_count }}건</b>은 어느 기업 몫인지
+  몰라 <b>어느 문서에도 안 실렸습니다.</b>
+  {% for s in skipped %}<br>· {{ s.label }} — {{ s.count }}건{% endfor %}
+</p>
+{% endif %}
+
+<div class="table-wrap">
+  <table class="grid-table">
+    <thead>
+      <tr>
+        <th>기업</th>
+        <th>계약</th>
+        <th>요청한 투자사</th>
+        <th>문서</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr{% if not row.sendable %} class="ir-row-off"{% endif %}>
+        <td>{{ row.company.name }}</td>
+        <td>{{ row.contract_label }}</td>
+        <td class="tabular">
+          {{ row.count }}곳
+          {#
+            한 곳뿐인 달이 대부분이다. 가려도 **가릴 상대가 없다** —
+            받는 대표가 가려진 이름 하나만 보고 누구인지 짐작할 여지가 가장 큰
+            자리라, 보내는 사람이 알고 보내야 한다.
+          #}
+          {% if row.alone %}<span class="status-badge warn">1곳 · 가릴 상대 없음</span>{% endif %}
+        </td>
+        <td>
+          {% if row.sendable %}
+          <a href="/startup/ir-report/{{ row.company.id }}?month={{ selected }}">문서 보기</a>
+          {% else %}
+          {# 0곳인 기업도 **목록에서 지우지 않는다**(까닭은 ir_monthly.overview).
+             다만 만들 문서가 없으므로 링크를 세우지 않는다. #}
+          <span class="muted">요청 없음</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+      {% if not rows %}
+      <tr><td colspan="4" class="muted">계약을 마친 기업이 없습니다.</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

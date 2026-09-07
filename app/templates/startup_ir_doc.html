@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{#
+  스타트업 대표에게 그대로 주는 **문서 한 장**.
+
+  화면과 종이가 같은 것을 그린다. PDF 를 서버에서 따로 만들지 않는다 —
+  라이브러리가 하나 늘고, 그 라이브러리가 그린 것과 화면이 어긋나면
+  **보이는 것과 나가는 것이 다른** 상태가 되어 아무도 눈치채지 못한다.
+  사람이 `인쇄 → PDF 로 저장` 을 누르고, 그때 좌측 메뉴·단추·안내가 빠지도록
+  `@media print`(app.css) 가 정리한다.
+
+  가려진 이름은 **여기서 만들지 않는다.** `services/ir_mask.py` 를 지나
+  이미 가려진 값이 들어온다 — 화면이 가리기 시작하면 발송·엑셀이 각자
+  가리게 되고, 낡은 쪽이 이름을 그대로 내보낸다.
+#}
+{% block title %}이번 달 IR 자료 요청 투자사 · CONTACTVC ASSET{% endblock %}
+{% block content %}
+
+{% if not report %}
+<header class="page-head no-print">
+  <h1>문서를 만들 수 없습니다</h1>
+  <p class="muted">
+    계약을 마친 기업(<b>무료계약완료 · 유료계약완료</b>)만 이 문서를 받습니다.
+    <a href="/startup/ir-report">목록으로</a>
+  </p>
+</header>
+{% else %}
+
+{# 화면에만 있는 줄. 종이에는 안 나간다. #}
+<div class="toolbar no-print">
+  <div class="quick-chips">
+    <a class="chip" href="/startup/ir-report?month={{ selected }}">← 목록</a>
+    <button class="secondary-btn" type="button" onclick="window.print()">인쇄 / PDF 로 저장</button>
+    {#
+      담당자 이름은 **기본으로 안 싣는다**(까닭은 routers/startup.py).
+      필요할 때만 켠다 — 켜도 가리는 규칙은 같은 함수를 지난다.
+    #}
+    <a class="chip {% if show_person %}active{% endif %}"
+       href="/startup/ir-report/{{ report.company.id }}?month={{ selected }}&who={{ 0 if show_person else 1 }}">
+      담당자 이름 {% if show_person %}끄기{% else %}켜기{% endif %}
+    </a>
+  </div>
+</div>
+
+{% if report.empty %}
+{# 요청이 0곳인 달. 문서는 열리되 **보낼 것이 아니라고** 분명히 말한다.
+   빈 문서를 그대로 보내면 받는 대표는 우리가 아무것도 안 한 줄로 읽는다. #}
+<p class="warn-box no-print">
+  <b>{{ report.month }}</b>에 <b>{{ report.company.name }}</b>의 IR 자료를 요청한
+  투자사가 <b>없습니다.</b> 보낼 문서가 아닙니다.
+  {% if report.skipped_count %}
+  다만 그 달에 <b>{{ report.skipped_count }}건</b>이 어느 기업 몫인지 몰라
+  빠졌습니다 — 아래 목록 화면에서 까닭을 볼 수 있습니다.
+  {% endif %}
+</p>
+{% endif %}
+
+<article class="ir-doc">
+  <header class="ir-doc-head">
+    <p class="ir-doc-to">{{ report.company.name }} 귀중</p>
+    <h1>이번 달 귀사 IR 자료를 요청한 투자사</h1>
+    <p class="ir-doc-when">{{ report.month }}</p>
+  </header>
+
+  {# 줄바꿈이 곧 공백이 된다 — 조사(`의`) 앞이 벌어지지 않게 붙여 쓴다. #}
+  <p class="ir-doc-lead">
+    <b class="ir-doc-count">{{ report.count }}</b>곳의 투자사가
+    <b>{{ report.company.name }}</b>의 IR 자료를 요청했습니다.
+  </p>
+
+  {% if report.requesters %}
+  <table class="ir-doc-table">
+    <thead>
+      <tr>
+        <th class="ir-doc-no">번호</th>
+        <th>투자사</th>
+        {% if show_person %}<th>담당자</th>{% endif %}
+        <th class="ir-doc-day">요청일</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in report.requesters %}
+      <tr>
+        <td class="ir-doc-no">{{ loop.index }}</td>
+        <td>{{ r.firm }}</td>
+        {% if show_person %}<td>{{ r.person }}</td>{% endif %}
+        <td class="ir-doc-day">{{ r.date or '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="ir-doc-none">이번 달에는 요청이 없었습니다.</p>
+  {% endif %}
+
+  <footer class="ir-doc-foot">
+    <p>
+      투자사명{% if show_person %}과 담당자명{% endif %}은 보호를 위해
+      가려서 보내 드립니다. 가린 글자 수는 <b>이름 길이와 관계없이 늘 같습니다</b> —
+      별표 개수로 이름 길이를 짐작할 수 없습니다.
+    </p>
+    <p class="ir-doc-issued">CONTACTVC ASSET</p>
+  </footer>
+</article>
+{% endif %}
+{% endblock %}
