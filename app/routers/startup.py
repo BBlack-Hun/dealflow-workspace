@@ -41,8 +41,10 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..deps import get_current_user
+from ..deps import get_current_user, templates
 from ..models import User
+from ..services import ir_monthly
+from ..ui import base_ctx
 from .pages import STARTUP_PAGE, list_page
 
 router = APIRouter(tags=["startup"])
@@ -72,3 +74,81 @@ def startup_page(
     """
     return list_page(request, db, user, STARTUP_PAGE, sheet=sheet, ref=ref,
                      contact=contact, months=months, hidden=hidden, msg=msg)
+
+
+# ── 이번 달 귀사 IR 자료를 요청한 투자사 ─────────────────────────────────────
+#
+# ## 왜 여기인가
+#
+# 업무 보고(`/report`)가 아니다. 그 화면은 **우리 팀원 단위**로 잘리는데(누가
+# 얼마나 했는가), 이 문서는 **스타트업 한 곳 단위**다(귀사에 몇 곳이 물어봤는가).
+# 받는 사람도 다르다 — 보고는 우리가 보고, 이 문서는 스타트업 대표가 본다.
+#
+# ## 세는 자리는 화면에 없다
+#
+# 두 출처를 합치고 못 맞춘 것을 세는 일은 전부 `services/ir_monthly.py` 에 있다.
+# 화면이 직접 세면 나중에 발송이 붙을 때 발송 쪽에서 또 세게 되고, 두 숫자가
+# 갈리는 날 문서에는 `3곳`, 화면에는 `2곳` 이 뜬다.
+#
+# ## 이름을 가리는 자리도 화면에 없다
+#
+# `services/ir_mask.py` 하나다. 화면에 가리는 규칙을 적으면 엑셀·발송이 각자
+# 적게 되고, 낡은 쪽이 이름을 그대로 내보낸다.
+
+
+@router.get("/startup/ir-report", response_class=HTMLResponse)
+def ir_report_list(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    month: str = "",
+):
+    """계약을 마친 기업마다 **그 달에 몇 곳이 요청했는지**. 문서로 들어가는 문.
+
+    요청이 0곳인 기업도 목록에 남는다(까닭은 `ir_monthly.overview`).
+    """
+    months = ir_monthly.month_options(db)
+    # 고른 달은 **모양만 본다.** 목록(`months`)은 기록이 있는 달로 만드는데,
+    # 기록이 하나도 없는 달을 열지 못하면 "그 달에 정말 요청이 없었는가" 를
+    # 화면에서 확인할 수가 없다 — 계약 기업 대부분이 그런 달이다.
+    selected = month if ir_monthly.is_month(month) else ir_monthly.this_month()
+    if selected not in months:
+        months = sorted(set(months) | {selected}, reverse=True)
+    ctx = base_ctx(request, db, user, STARTUP_PAGE.key)
+    ctx.update(ir_monthly.overview(db, selected))
+    ctx.update({"months": months, "selected": selected})
+    return templates.TemplateResponse("startup_ir_report.html", ctx)
+
+
+@router.get("/startup/ir-report/{company_id}", response_class=HTMLResponse)
+def ir_report_doc(
+    company_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    month: str = "",
+    who: int = 0,
+):
+    """문서 한 장 — 스타트업 대표에게 그대로 주는 화면.
+
+    ### 인쇄가 곧 PDF 다
+
+    새 라이브러리를 들이지 않는다. 사람이 `인쇄 → PDF 로 저장` 을 누르고, 그때
+    좌측 메뉴·단추·안내가 전부 빠지도록 `@media print` 가 정리한다(app.css).
+    PDF 를 서버에서 만들면 글꼴·줄바꿈이 화면과 달라져 **보이는 것과 나가는 것이
+    다른** 상태가 된다.
+
+    ### `who=1` — 담당자 이름을 실을지
+
+    기본은 **안 싣는다.** 회사명만으로도 알릴 것은 다 알리고, 사람 이름은 새는
+    자리를 하나 더 만든다(성 한 글자 + 가려진 회사명이 붙으면 짐작하기 훨씬
+    쉬워진다). 필요할 때만 켠다 — 가리는 규칙은 켜든 끄든 같은 함수를 지난다.
+    """
+    # 목록 화면과 **같은 판정**을 지난다. 여기서만 다르게 읽으면 목록에서
+    # 누른 달과 문서가 세는 달이 어긋난다.
+    selected = month if ir_monthly.is_month(month) else ir_monthly.this_month()
+    got = ir_monthly.report(db, company_id, selected)
+    ctx = base_ctx(request, db, user, STARTUP_PAGE.key)
+    ctx.update({"report": got, "show_person": bool(who), "selected": selected})
+    return templates.TemplateResponse("startup_ir_doc.html", ctx,
+                                      status_code=200 if got else 404)
