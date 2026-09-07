@@ -118,6 +118,7 @@ def todo_page(request: Request, db: Session = Depends(get_db),
         # 내려 둔 규칙이 표에는 그대로 서 있고 새 항목만 안 생긴다.
         "routines": weekly.active_routines(db, user),
         "weekday_label": weekly.weekday_label,
+        "nth_label": weekly.nth_label,
         "today_iso": today_.isoformat(),
         # [이번 주로 가져오기] 를 누르고 온 길. 안내 줄이 사라지는 것 말고는
         # 아무 표시가 없어서, 눌린 것인지 아닌지 알 수가 없었다.
@@ -241,8 +242,8 @@ def carry_over(week: str = Form(""), db: Session = Depends(get_db),
 
 @router.post("/todo/routines", include_in_schema=False)
 def add_routine(category: str = Form(""), title: str = Form(...),
-                weekdays: List[str] = Form([]), time_of_day: str = Form(""),
-                week: str = Form(""),
+                weekdays: List[str] = Form([]), nth_weeks: List[str] = Form([]),
+                time_of_day: str = Form(""), week: str = Form(""),
                 db: Session = Depends(get_db),
                 user: User = Depends(get_current_user)):
     """반복 업무 규칙을 만든다.
@@ -252,12 +253,20 @@ def add_routine(category: str = Form(""), title: str = Form(...),
     weekdays=3` 으로 나간다. 이것을 문자열 하나로 받으면 마지막 하나(`3`)만
     남고 앞의 둘은 조용히 버려졌다. 화면에는 셋을 골랐는데 표에는 `목` 만
     적히는, 눌린 대로 저장되지 않는 자리였다.
+
+    **주차도 같은 모양이다** — `nth_weeks=1&nth_weeks=3` 으로 온다. 고른 것이
+    없으면 빈 글자가 아니라 **`None`(빈칸)** 으로 넣는다. 빈칸이 곧 `매주`이고,
+    이 칸이 생기기 전의 규칙 수백 개가 그 상태로 남아 있다 — 같은 뜻을 두 가지
+    글자로 적어 두면 나중에 어느 쪽만 보는 코드가 생긴다.
     """
     if title.strip():
+        weeks = ",".join(str(n) for n in
+                         weekly.parse_nth_weeks(",".join(nth_weeks)))
         db.add(WeeklyRoutine(user_id=user.id, category=category.strip() or "기타",
                              title=title.strip(),
                              weekdays=",".join(str(d) for d in
                                                weekly.parse_weekdays(",".join(weekdays))),
+                             nth_weeks=weeks or None,
                              time_of_day=time_of_day if time_of_day in ("am", "pm") else None))
         db.commit()
     return RedirectResponse(_todo_url(week), status_code=303)

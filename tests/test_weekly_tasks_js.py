@@ -13,7 +13,9 @@ from pathlib import Path
 
 import pytest
 
-STATUS_TEST = Path(__file__).resolve().parent / "js" / "weekly_status_test.js"
+JS_DIR = Path(__file__).resolve().parent / "js"
+STATUS_TEST = JS_DIR / "weekly_status_test.js"
+SORT_TEST = JS_DIR / "table_sort_test.js"
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치 — 브라우저 로직 테스트 생략")
@@ -24,5 +26,19 @@ def test_status_reverts_when_the_save_fails():
     node = shutil.which("node")
     result = subprocess.run(
         [node, str(STATUS_TEST)], capture_output=True, text=True, timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치 — 브라우저 로직 테스트 생략")
+def test_the_header_click_sorting():
+    """머리글을 눌러 세우는가 — 항목 · 일시 · 상태, 오름/내림, 끄면 원래대로.
+
+    `table_sort.js` 는 이 저장소의 **첫 정렬 UI** 이고 다른 표도 따라 쓸 모양이라
+    (`data-sort` 선언 + `data-s-*` 값), 주간 업무 화면이 아니라 그 부품을 대고
+    돌린다. 로컬에서는 `node tests/js/table_sort_test.js` 로도 돈다.
+    """
+    result = subprocess.run(
+        [shutil.which("node"), str(SORT_TEST)], capture_output=True, text=True, timeout=60,
     )
     assert result.returncode == 0, result.stdout + result.stderr

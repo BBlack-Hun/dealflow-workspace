@@ -38,6 +38,9 @@ from app.models import (  # noqa: E402
     Session as SessionRow,
     User,
     VcContact,
+    WeeklyRoutine,
+    WeeklyRoutineRun,
+    WeeklyTask,
 )
 from scripts.bootstrap import (  # noqa: E402
     ADMIN_PHONE,
@@ -130,6 +133,16 @@ def purge(db, *, keep_history: bool = False, apply: bool = False) -> dict:
         db.execute(delete(AgentDevice).where(AgentDevice.user_id.in_(user_ids)))
         db.execute(delete(SessionRow).where(SessionRow.user_id.in_(user_ids)))
         db.execute(delete(SendJob).where(SendJob.user_id.in_(user_ids)))
+        # 주간 업무 — **만든 표시 → 줄 → 규칙** 차례다. 셋 다 `users.id` 를
+        # 가리키고, 앞의 둘은 규칙까지 가리킨다(SQLite 는 `foreign_keys=ON`).
+        #
+        # 여기 없으면 가상 계정이 `/todo` 를 한 번이라도 연 순간부터 이 스크립트가
+        # `FOREIGN KEY constraint failed` 로 죽는다 — 화면을 열기만 해도 그 주
+        # 목록이 채워지기 때문에(`services/weekly.py` 의 `fill_week`), 데모를
+        # 써 본 DB 는 거의 다 그 상태가 된다.
+        db.execute(delete(WeeklyRoutineRun).where(WeeklyRoutineRun.user_id.in_(user_ids)))
+        db.execute(delete(WeeklyTask).where(WeeklyTask.user_id.in_(user_ids)))
+        db.execute(delete(WeeklyRoutine).where(WeeklyRoutine.user_id.in_(user_ids)))
         db.execute(delete(User).where(User.id.in_(user_ids)))
 
     db.commit()

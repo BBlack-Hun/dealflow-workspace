@@ -12,10 +12,13 @@
 
 <div class="toolbar">
   <div class="quick-chips">
-    <a class="chip" href="/todo?week={{ prev_week }}">← 지난 주</a>
+    {# `data-sort-keep` — 주를 옮겨도 세워 둔 차례가 남는다(table_sort.js).
+       링크라 한 번 새로 그려지므로, 지금 정렬을 주소에 실어 주지 않으면
+       [다음 주 →] 한 번에 풀린다. #}
+    <a class="chip" href="/todo?week={{ prev_week }}" data-sort-keep>← 지난 주</a>
     <span class="chip active">{{ week_label }}</span>
-    <a class="chip" href="/todo?week={{ next_week }}">다음 주 →</a>
-    {% if not is_this_week %}<a class="chip" href="/todo">이번 주로</a>{% endif %}
+    <a class="chip" href="/todo?week={{ next_week }}" data-sort-keep>다음 주 →</a>
+    {% if not is_this_week %}<a class="chip" href="/todo" data-sort-keep>이번 주로</a>{% endif %}
   </div>
   <div class="toolbar-right">
     <span class="count-pill {% if summary.done %}on{% endif %}">
@@ -42,23 +45,28 @@
 <!-- 손으로 적는 체크리스트. 시트에 적던 것을 그대로 옮긴다. -->
 <section class="panel">
   <h2 class="panel-title">주간 업무
-    <span class="hint">칸을 눌러 바로 고칩니다</span>
+    <span class="hint">칸을 눌러 바로 고칩니다 · 머리글을 눌러 정렬합니다</span>
   </h2>
 
   <div class="table-wrap">
     <table class="grid-table" id="task-table" data-inline-url="/api/todo/tasks">
       <thead>
+        {# 정렬은 세 칸이다(table_sort.js). 값은 화면 글자가 아니라 줄에 적어
+           둔 `data-s-*` 를 본다 — `8/7(금)` 을 글자로 세우면 12/1 보다 뒤에
+           오고, 상태는 가나다가 아니라 `진행중 → 예정 → 완료` 차례다. #}
         <tr>
-          <th style="width:110px">항목</th>
+          <th style="width:110px" data-sort="category">항목</th>
           <th>세부업무</th>
-          <th style="width:120px">일시</th>
-          <th style="width:110px">상태</th>
+          <th style="width:120px" data-sort="due">일시</th>
+          <th style="width:110px" data-sort="status">상태</th>
           <th style="width:56px"></th>
         </tr>
       </thead>
       <tbody>
         {% for t in tasks %}
-        <tr data-id="{{ t.id }}" class="{% if t.status == 'done' %}task-done{% elif t.overdue %}overdue-row{% endif %}">
+        <tr data-id="{{ t.id }}" class="{% if t.status == 'done' %}task-done{% elif t.overdue %}overdue-row{% endif %}"
+            data-s-category="{{ t.category }}" data-s-due="{{ t.due_date }}"
+            data-s-status="{{ t.status_order }}">
           <td class="cell" data-field="category">{{ t.category }}</td>
           <td class="cell multi" data-field="title">{{ t.title }}</td>
           <td class="cell" data-field="due_date" data-type="date">{{ t.due_date }}</td>
@@ -151,14 +159,15 @@
 <!-- 반복 업무 규칙 -->
 <section class="panel">
   <h2 class="panel-title">반복 업무
-    <span class="hint">요일이 오면 그 주 목록에 저절로 생깁니다</span>
+    <span class="hint">정해 둔 주차·요일이 오면 그 주 목록에 저절로 생깁니다 ·
+      주차를 비우면 매주입니다</span>
   </h2>
   {% if routines %}
   <div class="table-wrap">
   <table class="grid-table compact" data-inline-url="/api/todo/routines" id="routine-table">
     <thead><tr>
       <th style="width:100px">항목</th><th>세부업무</th>
-      <th style="width:170px">요일 · 시간대</th><th style="width:56px"></th>
+      <th style="width:200px">주차 · 요일 · 시간대</th><th style="width:56px"></th>
     </tr></thead>
     <tbody>
       {% for r in routines %}
@@ -166,7 +175,8 @@
         <td class="cell" data-field="category">{{ r.category }}</td>
         <td class="cell" data-field="title">{{ r.title }}</td>
         <td class="muted">
-          {{ weekday_label(r.weekdays) }}
+          {# 주차가 비면 `매주` 다 — 이 칸이 생기기 전의 규칙 전부가 그 상태다. #}
+          {{ nth_label(r.nth_weeks) }} · {{ weekday_label(r.weekdays) }}
           <div class="cell-sub">
             {# 요일 옆 오전/오후 — 시트에는 "화요일 오전" 처럼 시간대까지
                적혀 있었다. 눌러서 바로 고른다. #}
@@ -178,7 +188,11 @@
         </td>
         <td>
           <form method="post" action="/todo/routines/{{ r.id }}/delete"
-                onsubmit="return confirm('이 반복 업무를 지울까요?\n이미 만들어진 이번 주 항목은 남습니다.')">
+                {# 약속은 그대로다 — 이미 만들어진 줄에는 사람이 바꿔 둔 상태와
+                   메모가 얹혀 있어서, 규칙 하나를 내렸다고 그 기록까지 걷어가면
+                   안 된다. 다만 이제 그 줄을 위 표에서 **지울 수 있다**
+                   (`services/weekly.py` 의 `fill_week`). #}
+                onsubmit="return confirm('이 반복 업무를 지울까요?\n이미 만들어진 이번 주 항목은 남습니다 — 필요 없으면 위 표에서 지우세요.')">
             <input type="hidden" name="week" value="{{ week_start }}">
             <button class="linkbtn danger" type="submit">삭제</button>
           </form>
@@ -202,6 +216,16 @@
         <label><input type="checkbox" name="weekdays" value="{{ i }}"> {{ wd }}</label>
         {% endfor %}
       </span></label>
+    {# 격주로 도는 업무 — 사용자가 확정한 격주의 뜻이 `1주차, 3주차` 다.
+       달 기준 주차이고(**1~7일이 1주차**), 회차일이 "매월 첫째·셋째 수요일"
+       인 것과 같은 셈법이다. **아무것도 안 고르면 매주** — 지금 있는 규칙이
+       전부 그 상태이므로 여기서 기본으로 골라 두지 않는다. #}
+    <label class="field inline-field"><span>주차</span>
+      <span class="weekday-pick">
+        {% for n in [1, 2, 3, 4, 5] %}
+        <label><input type="checkbox" name="nth_weeks" value="{{ n }}"> {{ n }}</label>
+        {% endfor %}
+      </span></label>
     <label class="field inline-field"><span>시간대</span>
       <select name="time_of_day">
         <option value="">상관없음</option>
@@ -217,4 +241,10 @@
 {% block scripts %}
 <script src="{{ asset('js/inline_edit.js') }}"></script>
 <script src="{{ asset('js/weekly_tasks.js') }}"></script>
+<script src="{{ asset('js/table_sort.js') }}"></script>
+<script>
+  // 머리글을 눌러 정렬. 끄면 서버가 그려 준 차례(`상태 → 일시 → position → id`)로
+  // 돌아간다 — 그 차례는 `services/weekly.py` 가 정한다.
+  window.DealflowSort && window.DealflowSort.init({ table: "#task-table" });
+</script>
 {% endblock %}
