@@ -532,6 +532,18 @@ class SendJob(TimestampMixin, Base):
 #: 있었다. 여기 한 곳만 보게 한다.
 SEND_KINDS = ("deal_intro", "ir_delivery", "sourcing_intro")
 
+#: 시험 발송 — `/setup` 의 **시험용** 자리가 만든다. 문구도 파일도 실제로
+#: 나가지만, 가는 곳은 `config.TEST_ROOM` 하나뿐이다(사람이 방을 고르지 못한다).
+#:
+#: **`SEND_KINDS` 에 넣지 않는다 — 바로 위와 같은 이유다.** 이건 투자사에게 보낸
+#: 것이 아니라 발송기가 도는지 본 것이라, 이번 주 보낸 건수·팀 현황·주간 보고에
+#: 섞이면 숫자가 더러워진다. 세는 자리가 전부 `SEND_KINDS` 한 곳을 읽으므로
+#: 여기 넣지 않는 것만으로 그 자리들이 함께 빠진다.
+#:
+#: 발송 프로그램 쪽에도 같은 값이 있다(`agent/main.py: TEST_KIND`). 거기 없으면
+#: 잡을 집어가지 않아 큐에 그대로 멈춘다.
+TEST_SEND_KIND = "test_send"
+
 
 class SendItem(TimestampMixin, Base):
     __tablename__ = "send_items"
