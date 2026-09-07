@@ -630,7 +630,15 @@ def test_other_senders_are_not_asked_about_quartz(monkeypatch):
 # ══════════════════════════════════════════════════════════════════════════
 
 def test_windows_refuses_to_send_files():
-    """실기 확인을 못 했다. 확인 못 한 길로 자료를 내보내면 안 된다."""
+    """★ 붙이는 길은 만들어 두었지만 **기본은 꺼져 있다.**
+
+    실기 확인을 못 했다. 켜면 서버가 파일이 실린 잡을 그 PC 로 내주는데, 확인
+    창의 모양이 추측이라 관문이 막으면 그 회차의 자료 전달이 통째로 실패한다
+    (자료가 막히면 문구도 안 나간다 — `send_item`). 확인 전에는 사람이 PC 에서
+    직접 붙이는 편이 낫다.
+
+    켜졌을 때 무엇이 막아 주는지는 `tests/test_ir_send_file_windows.py` 에 있다.
+    """
     from agent.sender import kakao_windows
 
     sender = kakao_windows.KakaoDesktopSender.__new__(kakao_windows.KakaoDesktopSender)
