@@ -9,6 +9,16 @@ from __future__ import annotations
 from .conftest import DEMO_PASSWORD
 
 
+def _task_table(body: str) -> str:
+    """화면에서 주간 업무 표만 떼어 낸다.
+
+    반복 업무 표에도 같은 이름이 서 있어서(규칙 이름이 곧 항목 이름이다),
+    화면 전체에서 찾으면 지워졌는지 알 수 없다 — `_routine_table` 의 반대편이다.
+    """
+    head = body.find('id="task-table"')
+    return body[head:body.find("</table>", head)] if head >= 0 else ""
+
+
 def _routine_table(body: str) -> str:
     """화면에서 반복 업무 표만 떼어 낸다.
 
@@ -81,6 +91,126 @@ def test_the_table_is_wired_and_new_routines_can_set_time(client, db, users):
     from app.models import WeeklyRoutine
     row = db.query(WeeklyRoutine).filter_by(title="발송").one()
     assert row.time_of_day == "pm"
+
+
+# --- 주간 업무 항목 지우기 ---------------------------------------------------
+#
+# 사용자가 든 증상: "반복업무로 생성된 일정은 지워지지 않음. 삭제가 될 수 있어야 함".
+# 되물으니 "반복 업무에 대해 주간업무로 만들어 지는거잖아. 주간업무쪽에서는
+# 지울 수 있게 해주는게 맞는거 같아".
+#
+# 지우는 길은 이미 있었다(`POST /todo/tasks/{id}/delete`, 모든 줄에 단추도 있다).
+# 지운 뒤 `/todo` 로 돌아오면 `fill_week` 가 **다시 만들었다** — "이 규칙 줄이
+# 이번 주에 있나" 를 지금 남아 있는 `WeeklyTask.routine_id` 로만 봤기 때문이다.
+# 지우면 그 자취까지 사라져 없는 것이 되고, 곧바로 다시 생긴다.
+
+
+def test_a_deleted_routine_row_stays_deleted(client, db, users):
+    """**이 검사가 제일 중요하다.** 지우고 화면을 다시 열어도 안 돌아와야 한다.
+
+    지우기 → `/todo` 로 리다이렉트 → 그 화면이 `fill_week` 를 돌린다. 사람이
+    실제로 하는 순서 그대로다.
+    """
+    from app.models import WeeklyRoutine, WeeklyTask
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    client.post("/todo/routines", data={"category": "메일", "title": "주간 정리",
+                                        "weekdays": "0"})
+    routine = db.query(WeeklyRoutine).filter_by(title="주간 정리").one()
+
+    client.get("/todo")                     # 그 주 항목이 생긴다
+    task = db.query(WeeklyTask).filter_by(routine_id=routine.id).one()
+
+    client.post(f"/todo/tasks/{task.id}/delete")
+    body = client.get("/todo").text         # 다시 열어 본다
+
+    db.expire_all()
+    assert db.query(WeeklyTask).filter_by(routine_id=routine.id).count() == 0, (
+        "지운 반복 업무 항목이 화면을 다시 여니 되살아났습니다")
+    assert "주간 정리" not in _task_table(body)
+
+
+def test_a_hand_written_row_can_be_deleted(client, db, users):
+    """반복이 아닌 항목 — 사람이 직접 적은 줄도 그대로 지워져야 한다.
+
+    되살아나는 것은 반복 업무 쪽 일이지만, 고치면서 이쪽이 함께 깨지면
+    아무도 눈치채지 못한다(이 줄에는 되살리는 코드가 애초에 없다).
+    """
+    from app.models import WeeklyTask
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    client.post("/todo/tasks", data={"category": "메일", "title": "손으로 적은 일"})
+    task = db.query(WeeklyTask).filter_by(title="손으로 적은 일").one()
+    assert task.routine_id is None
+
+    client.post(f"/todo/tasks/{task.id}/delete")
+    body = client.get("/todo").text
+
+    db.expire_all()
+    assert db.query(WeeklyTask).filter_by(title="손으로 적은 일").count() == 0
+    assert "손으로 적은 일" not in _task_table(body)
+
+
+def test_deleting_one_row_does_not_stop_the_next_week(client, db, users):
+    """이번 주 줄을 지운 것이 **다음 주까지 끄지는 않는다.**
+
+    만들었다는 표시는 (사람·주·규칙)으로 남는다. 주가 다르면 다른 표시라,
+    다음 주를 열면 그 주 몫은 그대로 선다 — 한 번 지운 것이 그 규칙을 영영
+    내리는 뜻이 되면, 지우기와 반복 업무 [삭제] 가 같은 것이 되어 버린다.
+    """
+    from datetime import date, timedelta
+
+    from app.models import WeeklyRoutine, WeeklyTask
+    from app.services import weekly
+
+    next_week = weekly.week_start(date.today()) + timedelta(days=7)
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    client.post("/todo/routines", data={"title": "주간 정리", "weekdays": "0"})
+    routine = db.query(WeeklyRoutine).filter_by(title="주간 정리").one()
+
+    client.get("/todo")
+    task = db.query(WeeklyTask).filter_by(routine_id=routine.id).one()
+    client.post(f"/todo/tasks/{task.id}/delete")
+
+    client.get(f"/todo?week={next_week}")
+    db.expire_all()
+    assert db.query(WeeklyTask).filter_by(week_start=next_week.isoformat(),
+                                          routine_id=routine.id).count() == 1
+
+
+def test_a_past_week_is_never_filled(client, db, users):
+    """지난 주는 `fill_week` 가 애초에 채우지 않는다(`start < week_start(today)`).
+
+    그래서 지난 주 화면에서 지운 줄은 되살아날 길 자체가 없다. 되살아나지
+    않는 이유가 **두 가지**(안 채운다 · 표시가 남는다)라는 것을 적어 둔다 —
+    한쪽만 보고 다른 쪽을 지우는 날이 온다.
+    """
+    from datetime import date, timedelta
+
+    from app.models import WeeklyRoutine, WeeklyTask
+    from app.services import weekly
+
+    last_week = weekly.week_start(date.today()) - timedelta(days=7)
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    client.post("/todo/routines", data={"title": "주간 정리", "weekdays": "0"})
+    routine = db.query(WeeklyRoutine).filter_by(title="주간 정리").one()
+
+    # 지난 주에 서 있던 줄(그때 만들어진 것). 손으로 세워 둔다 — 지난 주 화면은
+    # 그 주를 채우지 않으므로 화면을 열어서는 만들 수 없다.
+    db.add(WeeklyTask(user_id=users["u1"].id, week_start=last_week.isoformat(),
+                      category="메일", title="주간 정리", routine_id=routine.id))
+    db.commit()
+    task_id = db.query(WeeklyTask).filter_by(
+        week_start=last_week.isoformat()).one().id
+
+    client.post(f"/todo/tasks/{task_id}/delete", data={"week": last_week.isoformat()})
+    client.get(f"/todo?week={last_week}")
+
+    db.expire_all()
+    assert db.query(WeeklyTask).filter_by(
+        week_start=last_week.isoformat()).count() == 0
 
 
 # --- 반복 업무 지우기 --------------------------------------------------------
@@ -276,3 +406,185 @@ def test_opening_a_past_week_does_not_invent_work(client, db, users):
 
     assert db.query(WeeklyTask).filter_by(
         week_start=last_week.isoformat()).count() == 0
+
+
+# --- 반복 업무의 주차(격주) --------------------------------------------------
+#
+# 사용자 원문: "지금 업무가 격주로 진행되고 있는데, 반복업무 셋팅할때 주차도
+# 셋팅할 수 있게". 되물어 확정한 격주의 뜻은 **1주차, 3주차**다 — 달 기준이고,
+# 딜 회차가 매월 첫째·셋째 수요일인 것과 같은 셈법이다.
+#
+# **날짜를 박지 않는다.** 예전에 박아 둔 검사가 그날이 되자 깨졌다. 오늘에서
+# 앞으로 세어 조건에 맞는 주를 찾아 쓴다 — `fill_week` 는 지난 주를 채우지
+# 않으므로(`start < week_start(today)`) 앞으로 세는 것이 조건이기도 하다.
+
+
+def _week_where(nth: int, weekday: int = 0):
+    """오늘 이후로, 그 요일이 `nth`주차에 드는 첫 주의 월요일."""
+    from datetime import date, timedelta
+
+    from app.services import weekly
+
+    start = weekly.week_start(date.today())
+    for _ in range(60):
+        if weekly.week_of_month(start + timedelta(days=weekday)) == nth:
+            return start
+        start += timedelta(days=7)
+    raise AssertionError(f"{nth}주차인 주를 못 찾았다 — 주차 셈법이 바뀌었나")
+
+
+def test_the_week_rule_is_the_one_the_whole_repo_uses():
+    """주차 규칙은 `sheet_import.week_of_month` **하나뿐**이어야 한다.
+
+    예전에 같은 날이 화면마다 3주차·4주차로 갈린 적이 있다. 여기서 따로 세면
+    반복 업무만 다른 달력을 쓰게 된다 — `tests/test_cadence.py` 가 회차일에
+    대고 지키는 것과 같은 규칙이다.
+    """
+    from datetime import date, timedelta
+
+    from app.services import sheet_import, weekly
+
+    day = date.today()
+    for _ in range(400):
+        assert weekly.week_of_month(day) == sheet_import.week_of_month(day.isoformat()), day
+        day += timedelta(days=1)
+
+
+def test_a_biweekly_routine_only_shows_up_on_its_weeks(client, db, users):
+    """`1,3` 규칙은 1·3주차에만 생기고 2·4주차에는 안 생긴다."""
+    from app.models import WeeklyRoutine, WeeklyTask
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    client.post("/todo/routines", data={"title": "격주 정리", "weekdays": "0",
+                                        "nth_weeks": ["1", "3"]})
+    routine = db.query(WeeklyRoutine).filter_by(title="격주 정리").one()
+    assert routine.nth_weeks == "1,3"
+
+    def rows_in(start):
+        client.get(f"/todo?week={start}")
+        db.expire_all()
+        return db.query(WeeklyTask).filter_by(week_start=start.isoformat(),
+                                              routine_id=routine.id).count()
+
+    for nth in (1, 3):
+        assert rows_in(_week_where(nth)) == 1, f"{nth}주차인데 안 생겼습니다"
+    for nth in (2, 4):
+        assert rows_in(_week_where(nth)) == 0, f"{nth}주차인데 생겼습니다"
+
+
+def test_an_empty_week_setting_means_every_week(client, db, users):
+    """주차를 비우면 **매주**다. 이 칸이 생기기 전의 규칙 수백 개가 그 상태다."""
+    from app.models import WeeklyRoutine, WeeklyTask
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    client.post("/todo/routines", data={"title": "매주 정리", "weekdays": "0"})
+    routine = db.query(WeeklyRoutine).filter_by(title="매주 정리").one()
+    # 빈 글자가 아니라 **빈칸**이어야 한다 — 같은 뜻을 두 글자로 적어 두면
+    # 나중에 어느 한쪽만 보는 코드가 생긴다.
+    assert routine.nth_weeks is None
+
+    for nth in (1, 2, 3, 4):
+        start = _week_where(nth)
+        client.get(f"/todo?week={start}")
+        db.expire_all()
+        assert db.query(WeeklyTask).filter_by(week_start=start.isoformat(),
+                                              routine_id=routine.id).count() == 1, (
+            f"{nth}주차에 매주 규칙이 안 생겼습니다")
+
+
+def test_routines_made_before_this_column_still_run_every_week(client, db, users):
+    """칸이 생기기 전에 만들어진 규칙(값이 NULL)은 그대로 매주여야 한다.
+
+    이주가 기본값을 채워 넣었다면 여기서 걸린다 — 매주 나가던 홍보 메일이
+    말없이 두 주에 한 번이 된다.
+    """
+    from app.models import WeeklyRoutine, WeeklyTask
+
+    routine = WeeklyRoutine(user_id=users["u1"].id, category="메일",
+                            title="옛날 규칙", weekdays="0")
+    db.add(routine)
+    db.commit()
+    assert routine.nth_weeks is None
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    for nth in (1, 2, 3, 4):
+        start = _week_where(nth)
+        client.get(f"/todo?week={start}")
+        db.expire_all()
+        assert db.query(WeeklyTask).filter_by(week_start=start.isoformat(),
+                                              routine_id=routine.id).count() == 1
+
+
+def test_the_form_offers_the_weeks_and_shows_them_back(client, db, users):
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    body = client.get("/todo").text
+    assert 'name="nth_weeks"' in body, "반복 업무 폼에 주차를 고를 자리가 없습니다"
+
+    client.post("/todo/routines", data={"title": "격주 정리", "weekdays": "0",
+                                        "nth_weeks": ["1", "3"]})
+    table = _routine_table(client.get("/todo").text)
+    assert "1·3주차" in table
+    # 매주 도는 규칙은 `매주` 라고 적힌다 — 빈칸이 그 뜻이다.
+    assert "매주" in _routine_table(client.get("/todo").text)
+
+
+def test_junk_weeks_are_dropped(client, db, users):
+    """한 달은 1~7일부터 29~31일까지 다섯 토막이다. 그 밖의 값은 버린다."""
+    from app.services import weekly
+
+    assert weekly.parse_nth_weeks("1,3") == [1, 3]
+    assert weekly.parse_nth_weeks("3,1,3") == [1, 3]
+    assert weekly.parse_nth_weeks("0,6,x,,-1") == []
+    assert weekly.parse_nth_weeks(None) == []
+    assert weekly.nth_label(None) == "매주"
+    assert weekly.nth_label("3,1") == "1·3주차"
+
+
+# --- 주간 업무 표 정렬 -------------------------------------------------------
+#
+# 사용자 원문: "주간 업무 정렬이 추가되어야함 기준은 항목, 일시, 상태를 기준으로
+# 오름 및 내림차순". 되물으니 "정렬은 머리글을 눌러서".
+#
+# 세우는 일은 브라우저가 한다(60줄 안팎이라 왕복할 이유가 없다,
+# `app/static/js/table_sort.js`). 여기서는 **화면이 세울 값을 내주는가**를 본다 —
+# 값이 안 실리면 정렬은 조용히 아무것도 안 한다.
+
+
+def test_the_task_table_hands_the_browser_what_it_needs_to_sort(client, db, users):
+    from app.models import WeeklyTask
+    from app.services import weekly
+
+    # 일시는 **적어 둔 날짜 그대로** 실려야 한다. 어느 날이든 같아야 하는
+    # 성질이라 오늘에서 떼어 만든다 — 날짜를 박으면 그날이 왔을 때 깨진다.
+    start = weekly.week_start()
+    db.add(WeeklyTask(user_id=users["u1"].id, week_start=start.isoformat(),
+                      category="메일", title="정렬용 줄", status="doing",
+                      due_date=start.isoformat()))
+    db.commit()
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    body = client.get("/todo").text
+    table = _task_table(body)
+
+    # 머리글 세 칸이 정렬 대상이라고 선언되어 있는가.
+    for key in ("category", "due", "status"):
+        assert f'data-sort="{key}"' in table, f"{key} 머리글에 정렬이 안 걸렸습니다"
+    # 줄에 세울 값이 실려 있는가. **일시는 화면 글자(`8/7(금)`)가 아니라 원래
+    # 날짜**여야 한다 — 글자로 세우면 8/7 이 12/1 보다 뒤로 간다.
+    assert f'data-s-due="{start.isoformat()}"' in table
+    assert 'data-s-category="메일"' in table
+    # 상태는 **가나다가 아니라** `진행중 → 예정 → 완료` 차례다. 서버가 그 차례를
+    # 숫자로 적어 준다(`STATUS_ORDER`) — 화면이 다시 매기면 두 벌이 된다.
+    assert f'data-s-status="{weekly.STATUS_ORDER["doing"]}"' in table
+    assert "js/table_sort.js" in body
+
+
+def test_moving_weeks_keeps_the_sort(client, db, users):
+    """주를 옮기는 링크가 정렬을 실어 갈 수 있게 표시돼 있는가.
+
+    [← 지난 주] 는 **링크**라 한 번 새로 그려진다. 표시가 없으면 세워 둔
+    차례가 그 한 번에 풀린다(주소를 실어 주는 일은 table_sort.js 가 한다).
+    """
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    body = client.get("/todo").text
+    assert body.count("data-sort-keep") >= 2, "주 이동 링크에 정렬 표시가 없습니다"

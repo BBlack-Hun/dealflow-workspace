@@ -467,6 +467,33 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
               background: #fff; color: var(--muted); cursor: pointer; font-weight: 600;
               word-break: keep-all; }
 .filter-btn.on { border-color: var(--brand); color: var(--brand); background: #eef2ff; }
+
+/* 머리글을 눌러서 정렬 (table_sort.js) — 이 저장소의 첫 정렬 UI다.
+
+   **단추가 컬럼 이름 자리를 대신한다.** 이름 옆에 정렬 단추를 또 두면 같은 말이
+   두 번 나오고, 좁은 칸에서 이름이 접힌다 — 필터 단추가 같은 판단으로 이미
+   그렇게 서 있다(`.filter-only`). 그래서 머리글처럼 보이게 꾸미되, 실체는
+   `<button>` 이라 Tab 으로 닿고 Enter·Space 로 눌린다.
+
+   `▲`/`▼` 앞은 줄바꿈 없는 공백이라 이름과 갈라지지 않는다(table_sort.js).
+   낱말 **안에서** 끊기는 것은 `keep-all` 이 막는다 — 한글은 기본값이 글자
+   사이에서도 끊겨서 `일시` 가 `일` / `시` 가 된다. */
+.sort-btn { font: inherit; color: inherit; background: none; border: 0; padding: 0;
+            cursor: pointer; text-align: inherit; word-break: keep-all; }
+/* 꼬리표(`↕`·`▲`·`▼`). 앞의 `\00a0` 는 **줄바꿈 없는 공백**이라 이름과 갈라지지
+   않는다 — 보통 공백이면 폭이 조금만 모자랄 때 `일시` / `▲` 로 갈린다.
+   (`nowrap` 이 아니다. 긴 컬럼 이름은 띄어쓰기에서 여전히 접혀야 한다.) */
+.sort-btn::after { content: "\00a0" attr(data-mark); opacity: .3; }
+.sort-btn:hover { color: var(--brand); }
+.sort-btn:hover::after { opacity: .7; }
+/* 지금 세워져 있는 칸. 표시가 `▲` 하나뿐이면 어느 칸으로 세웠는지 훑어봐야
+   보인다 — 색까지 같이 바뀌어야 한눈에 걸린다. */
+.sort-btn.on { color: var(--brand); }
+.sort-btn.on::after { opacity: 1; }
+/* 키보드로 옮겨 온 자리는 **보여야 한다.** 단추를 머리글처럼 꾸미느라 테두리를
+   지웠으므로, 기본 초점 테두리가 남아 있어도 눈에 잘 안 띈다. */
+.sort-btn:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px;
+                          border-radius: 4px; }
 .filter-panel { position: absolute; z-index: 30; top: 100%; left: 6px; min-width: 200px; max-width: 280px;
                 background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 8px;
                 box-shadow: 0 8px 24px rgba(16,21,29,.14); }

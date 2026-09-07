@@ -109,7 +109,14 @@ function makeEl(tag) {
     setAttribute(k, v) { attrs[k] = String(v); },
     hasAttribute(k) { return k in attrs; },
     removeAttribute(k) { delete attrs[k]; },
-    appendChild(kid) { kid.parent = el; el.children.push(kid); return kid; },
+    // 브라우저에서 `appendChild` 는 **이미 어딘가에 붙어 있는 줄이면 옮긴다**
+    // (복사가 아니다). 그냥 밀어 넣기만 하면 같은 줄이 두 곳에 서고, 차례를
+    // 바꾸는 화면 코드(`table_sort.js` 가 표를 다시 세우는 자리)가 여기서만
+    // 줄을 불린다 — 검사가 브라우저와 다른 것을 보증하게 된다.
+    appendChild(kid) {
+      if (kid.parent) kid.parent.removeChild(kid);
+      kid.parent = el; el.children.push(kid); return kid;
+    },
     // 브라우저는 `textContent = ""` 로도 자식을 지우는데, 이 DOM 에는 글자
     // 노드가 없어서 그것만으로는 자식이 그대로 남는다. 다시 그리는 화면 코드는
     // 표준대로 `removeChild` 를 쓰므로 여기서도 받아 준다 — 안 그러면 두 번째로
@@ -118,6 +125,22 @@ function makeEl(tag) {
       const at = el.children.indexOf(kid);
       if (at >= 0) { el.children.splice(at, 1); kid.parent = null; }
       return kid;
+    },
+    // 줄 **차례를 바꾸는** 화면 코드가 쓰는 짝(`table_sort.js`). 없으면 그 코드가
+    // 검사에서만 죽어, 차례가 어떻게 서는지를 아무도 못 본다.
+    // `before` 가 없으면 맨 끝 — 브라우저와 같다.
+    insertBefore(kid, before) {
+      if (kid.parent) kid.parent.removeChild(kid);
+      kid.parent = el;
+      const at = before ? el.children.indexOf(before) : -1;
+      if (at >= 0) el.children.splice(at, 0, kid);
+      else el.children.push(kid);
+      return kid;
+    },
+    get nextSibling() {
+      if (!el.parent) return null;
+      const at = el.parent.children.indexOf(el);
+      return at >= 0 ? (el.parent.children[at + 1] || null) : null;
     },
     addEventListener(type, fn) { (el.handlers[type] = el.handlers[type] || []).push(fn); },
     // 글자 칸을 골라 두는 자리(복사 단추의 마지막 수단). 여기서 할 일은 없지만
