@@ -1822,3 +1822,54 @@ a.guard-go:hover { background: #1e4fd0; text-decoration: none; }
      화면에 붙여 띄운다. */
   .ref-new-form { position: fixed; top: 96px; left: 12px; right: 12px; width: auto; }
 }
+
+/* ── 스타트업 대표에게 주는 문서 한 장 ──────────────────────────────────────
+   (app/templates/startup_ir_doc.html · app/routers/startup.py)
+
+   화면과 종이가 **같은 것**을 그린다. PDF 를 서버에서 만들지 않으므로
+   (라이브러리가 늘고, 그것이 그린 것과 화면이 어긋나면 보이는 것과 나가는
+   것이 다른 상태가 된다), 사람이 `인쇄 → PDF 로 저장` 을 누른다.
+   그때 종이에 남으면 안 되는 것을 아래 `@media print` 가 걷어낸다. */
+.ir-doc { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+          padding: 44px 48px 36px; margin-top: 16px; max-width: 780px; }
+.ir-doc-head { border-bottom: 2px solid var(--ink); padding-bottom: 14px; margin-bottom: 22px; }
+.ir-doc-to { margin: 0 0 10px; font-size: 13px; color: var(--muted); letter-spacing: .02em; }
+.ir-doc-head h1 { margin: 0 0 6px; font-size: 24px; line-height: 1.3; }
+.ir-doc-when { margin: 0; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ir-doc-lead { margin: 0 0 20px; font-size: 15px; line-height: 1.7; }
+.ir-doc-count { font-size: 26px; font-variant-numeric: tabular-nums; margin-right: 2px; }
+.ir-doc-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.ir-doc-table th { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--ink);
+                   font-size: 12.5px; color: var(--muted); font-weight: 700; }
+.ir-doc-table td { padding: 10px; border-bottom: 1px solid var(--line); }
+/* 가려진 이름은 별표라 폭이 들쭉날쭉해 보인다 — 자릿수를 고정해 표가 흔들리지
+   않게 한다. 별표 **개수**는 이름 길이와 무관하게 늘 같다(services/ir_mask.py). */
+.ir-doc-table td { font-variant-numeric: tabular-nums; }
+.ir-doc-no { width: 56px; text-align: right; color: var(--muted); }
+.ir-doc-day { width: 120px; font-variant-numeric: tabular-nums; }
+.ir-doc-none { margin: 0; padding: 24px 0; color: var(--muted); }
+.ir-doc-foot { margin-top: 26px; padding-top: 14px; border-top: 1px solid var(--line);
+               font-size: 12px; color: var(--muted); line-height: 1.7; }
+.ir-doc-foot p { margin: 0 0 6px; }
+.ir-doc-issued { font-weight: 700; letter-spacing: .06em; }
+/* 이번 달 요청이 0곳인 기업. 목록에서 지우지 않고 흐리게 둔다 — 지우면
+   진짜 0곳인 것과 이름을 못 맞춰 0곳이 된 것이 똑같이 사라진다. */
+.ir-row-off td { color: var(--muted); }
+
+@media print {
+  /* 도구는 화면에만 있다. 종이에 `인쇄` 단추가 찍혀 나가면 문서가 아니라
+     화면을 복사한 것으로 읽힌다. */
+  .sidebar, .no-print, .test-banner, .agent-badge, .toolbar, .warn-box { display: none; }
+  /* 사이드바가 빠지면 본문이 종이 전체를 쓴다. `.layout` 이 flex 인 채로
+     두면 폭 계산이 남아 오른쪽에 빈 기둥이 생긴다. */
+  .layout { display: block; min-height: 0; }
+  .content { padding: 0; }
+  body { background: #fff; font-size: 12pt; }
+  /* 종이에는 테두리도 그림자도 없다 — 종이가 곧 테두리다. */
+  .ir-doc { border: 0; border-radius: 0; padding: 0; margin: 0; max-width: none; }
+  /* 표가 쪽을 넘길 때 한 줄이 반으로 잘리지 않게. 잘린 줄은 다음 쪽에서
+     투자사 이름 없이 날짜만 남아, 무엇의 날짜인지 알 수 없게 된다. */
+  .ir-doc-table tr { break-inside: avoid; page-break-inside: avoid; }
+  .ir-doc-table thead { display: table-header-group; }
+  @page { margin: 18mm 16mm; }
+}

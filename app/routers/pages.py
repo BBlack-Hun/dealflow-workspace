@@ -218,6 +218,13 @@ class ListPage:
     # 아무 명단도 안 골랐을 때의 표. 명단이 하나도 없는 화면에서만 쓰인다 —
     # 없으면 스타트업 화면이 투자사 명함 표를 그린다.
     default_layout: str
+    # 이 화면에서 뽑아 주는 문서. 없는 화면에는 단추가 서지 않는다.
+    #
+    # 화면(`contacts.html`)에 `if page.key == 'startup'` 을 심지 않는다 —
+    # 심으면 화면이 하나 늘 때마다 또 심어야 하고, 심는 것을 잊은 화면만
+    # 조용히 단추가 빈다. 두 화면의 **차이는 이 dataclass 에 전부** 적힌다.
+    doc_href: str = ""
+    doc_label: str = ""
 
     @property
     def href(self) -> str:
@@ -229,7 +236,12 @@ CONTACTS_PAGE = ListPage(key="vc", page=contact_columns.PAGE_CONTACTS,
                          default_layout=contact_columns.DEFAULT)
 STARTUP_PAGE = ListPage(key="startup", page=contact_columns.PAGE_STARTUP,
                         investors=False, row_label="기업",
-                        default_layout=contact_columns.STARTUP)
+                        default_layout=contact_columns.STARTUP,
+                        # 스타트업 대표에게 줄 문서(`routers/startup.py`).
+                        # 업무 보고가 아니다 — 그 화면은 팀원 단위로 잘리는데
+                        # 이 문서는 스타트업 **한 곳** 단위다.
+                        doc_href="/startup/ir-report",
+                        doc_label="IR 요청 문서")
 
 
 def list_page(
