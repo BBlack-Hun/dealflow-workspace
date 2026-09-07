@@ -37,9 +37,11 @@ LIST = "샘플 스타트업(9)"
 OTHER = "샘플 투자사 20"
 
 # 시트 머리글 그대로. 달마다 세 칸씩 늘어나는 부분은 따로 둔다.
-# `계약여부` 는 **이메일 바로 뒤**다. 월별 칸 뒤에 두면 달이 쌓일수록 표
-# 끝으로 밀려, 명단을 훑을 때 가로로 밀어야 닿는 자리가 된다.
-HEAD = ["NO", "기업명", "성함", "연락처", "이메일", "계약여부"]
+# 계약까지 가는 세 칸(견적서 → 계약 → 계산서)은 **이메일 바로 뒤에 나란히**
+# 선다. 월별 칸 뒤에 두면 달이 쌓일수록 표 끝으로 밀려, 명단을 훑을 때 가로로
+# 밀어야 닿는 자리가 된다.
+HEAD = ["NO", "기업명", "성함", "연락처", "이메일",
+        "견적서 첨부여부", "계약여부", "계산서 수신여부"]
 
 # **이번 달**로 만든다. 월별 칸은 이제 화면을 열 때 저절로 생기므로
 # (`app/services/monthly_columns.py`), 지난달 이름으로 밑자리를 깔면 검사가
@@ -352,6 +354,147 @@ def test_금액과_비율은_적힌_그대로_남는다(sheets, db):
     got = sheets.get(f"/api/contacts/{contact.id}").json()["contact"]["notes"]
     for key, value in raw.items():
         assert got[key] == value
+
+
+# ── 2-b. 계약까지 가는 세 칸 ────────────────────────────────────────────────
+
+def test_계약여부_앞뒤에_견적서와_계산서_칸이_선다(sheets):
+    """셋은 **일이 일어나는 순서대로 붙어** 서야 한다.
+
+    견적서를 보냈는가 → 계약했는가 → 계산서를 받았는가. 떼어 놓으면 한 기업이
+    어디까지 갔는지를 표 세 군데서 모아야 한다. 그리고 셋 다 **월별 칸보다
+    앞**이다 — 뒤에 두면 달이 쌓일수록 가로로 밀어야 닿는 자리로 물러난다.
+    """
+    head = _thead(sheets.get(_url(LIST)).text)
+    want = ["견적서 첨부여부", "계약여부", "계산서 수신여부"]
+    at = head.index("이메일") + 1
+    assert head[at:at + 3] == want, head
+    assert head.index("계산서 수신여부") < head.index(MONTHS[0]), head
+
+
+def test_두_칸은_O_와_X_중에서_고른다(sheets, db):
+    """새로 타이핑하면 `o`·`△`·`완료` 로 갈려 **세는 것이 달라진다.**
+
+    `IR 자료 회신 여부` 와 같은 결이다 — 값이 둘뿐인 칸은 골라 넣게 한다.
+    골라서 저장되고 되읽히는지까지 본다(한 곳만 빠져도 증상이 조용하다).
+    """
+    from app.models import VcContact
+    from app.services import contact_columns as cc
+
+    body = sheets.get(_url(LIST)).text
+    for key in ("quote_attached", "invoice_received"):
+        column = next(c for c in cc.STARTUP_LAYOUT.head if c.key == key)
+        assert column.kind == "pick"
+        assert column.choices.split(",") == ["O", "X"], column
+        assert column.source == "note"
+        # 표에 필터가 서고, 값을 고르는 칸으로 그려진다.
+        assert f'data-filters="{key}:{column.label}"' in body
+        assert f'data-field="{key}" data-note data-type="pick"' in body
+
+    row = db.query(VcContact).filter(VcContact.source_sheet == LIST).first()
+    sheets.patch(f"/api/contacts/{row.id}",
+                 json={"notes": {"quote_attached": "O", "invoice_received": "X"}})
+    got = sheets.get(f"/api/contacts/{row.id}").json()["contact"]["notes"]
+    assert got["quote_attached"] == "O"
+    assert got["invoice_received"] == "X"
+
+
+def test_투자사_표에는_두_칸이_서지_않는다(sheets):
+    """스타트업 명단의 칸이다 — 투자사 명단 머리글은 한 칸도 안 바뀐다."""
+    head = _thead(sheets.get(_url(OTHER)).text)
+    for label in ("견적서 첨부여부", "계산서 수신여부"):
+        assert label not in head, head
+
+
+def test_이름이_같은_IR_기업_현황의_계약_상태와_다른_칸이다():
+    """`IrCompany.contract_status`(`free`/`paid`)와 **서로 다른 칸**이다.
+
+    이름이 같다고 한쪽을 고치면 다른 쪽이 따라오지 않는다 — 여기서 못 박아
+    둔다. 이쪽은 명단 줄의 `notes` 에 붙는 글자 칸이고, 저쪽은 기업 단위다.
+    """
+    from app.models import IrCompany
+    from app.services import contact_columns as cc
+
+    column = next(c for c in cc.STARTUP_LAYOUT.head if c.key == "contract")
+    assert column.source == "note", "스타트업 표의 계약여부는 notes 칸이다"
+    assert "contract" not in {c.name for c in IrCompany.__table__.columns}
+    assert "contract_status" in {c.name for c in IrCompany.__table__.columns}
+    # 보기도 서로 다른 말이다.
+    assert set(column.choices.split(",")) != {"free", "paid"}
+
+
+# ── 2-c. 칸 숨기기 — 지우는 것이 아니다 ─────────────────────────────────────
+
+def _hide(client, column_id: int):
+    return client.post(f"/api/contacts/columns/{column_id}/hide",
+                       follow_redirects=False)
+
+
+def test_숨긴_칸은_표와_수정창에서_빠지고_값은_남는다(sheets, db):
+    """**지우는 것이 아니다.** [칸 삭제] 는 적힌 내용까지 지운다.
+
+    명단마다 시트에서 딸려 온 옛 칸이 있는데, 팀의 한 가지 모양으로 맞추면서
+    그 칸들은 표에서 빼되 지난 기록은 남겨야 한다.
+    """
+    from app.models import ContactColumn, VcContact
+    from app.services import contact_columns as cc
+
+    column = db.query(ContactColumn).filter(
+        ContactColumn.sheet == LIST, ContactColumn.label == MONTHS[0]).one()
+    key = cc.note_key(column.id)
+    row = db.query(VcContact).filter(VcContact.source_sheet == LIST).first()
+    assert cc.load_notes(row.notes).get(key) == "O", "밑자리에 값이 있어야 한다"
+
+    assert _hide(sheets, column.id).status_code == 303
+    html = sheets.get(_url(LIST)).text
+    assert MONTHS[0] not in _thead(html), _thead(html)
+    assert f'data-note="{key}"' not in html, "수정창에도 서면 안 된다"
+    # **값은 그대로다.** 지운 것이 아니다.
+    db.expire_all()
+    row = db.query(VcContact).filter(VcContact.source_sheet == LIST).first()
+    assert cc.load_notes(row.notes).get(key) == "O"
+    # 되돌릴 자리가 화면에 있어야 한다 — 없으면 DB 를 직접 고쳐야 한다.
+    assert "숨김 해제" in html and MONTHS[0] in html
+
+
+def test_숨김을_되돌리면_칸도_값도_그대로_돌아온다(sheets, db):
+    from app.models import ContactColumn
+
+    column = db.query(ContactColumn).filter(
+        ContactColumn.sheet == LIST, ContactColumn.label == MONTHS[0]).one()
+    _hide(sheets, column.id)
+    _hide(sheets, column.id)
+    html = sheets.get(_url(LIST)).text
+    assert _thead(html)[:-1] == [_same(t) for t in HEAD + MONTHS + TAIL]
+    body = _rows(html)[0]
+    assert ">O<" in body, "되돌렸는데 값이 안 보입니다"
+
+
+def test_숨긴_칸은_엑셀에서도_빠진다(sheets, db):
+    """접는 것과 다르다. 접기는 **화면이 가로로 밀려서** 잠깐 감추는 것이고,
+    숨김은 사람이 **이 명단에서는 안 쓰는 칸**이라고 정한 것이다.
+
+    화면에 없는 칸이 파일에만 있으면 받은 사람이 화면과 다른 표를 들고
+    대조하게 된다. 값은 남으므로 되돌리면 파일에도 함께 돌아온다.
+    """
+    import io
+
+    openpyxl = pytest.importorskip("openpyxl")
+    from app.models import ContactColumn
+
+    def _head() -> list:
+        res = sheets.get("/api/export/contacts.xlsx", params={"sheet": LIST})
+        assert res.status_code == 200, res.text
+        ws = openpyxl.load_workbook(io.BytesIO(res.content)).active
+        return list(next(ws.iter_rows(values_only=True)))
+
+    assert MONTHS[0] in _head()
+    column = db.query(ContactColumn).filter(
+        ContactColumn.sheet == LIST, ContactColumn.label == MONTHS[0]).one()
+    _hide(sheets, column.id)
+    assert MONTHS[0] not in _head(), "숨긴 칸이 파일에는 남아 있습니다"
+    _hide(sheets, column.id)
+    assert MONTHS[0] in _head(), "숨김을 되돌렸는데 파일에 안 돌아왔습니다"
 
 
 # ── 3. 감춘 명단 — 세는 곳을 전수로 훑는다 ──────────────────────────────────

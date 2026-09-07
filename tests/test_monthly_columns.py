@@ -167,12 +167,55 @@ def test_합쳐진_탭의_뒤쪽_달도_가장_최근이면_본이_된다():
     assert plan(labels, 9) == ["9월 딜소개"]
 
 
-def test_달이_하나도_없는_명단에는_여전히_안_만든다():
-    """달과 무관한 표에 달 칸이 생기면 안 된다 — 이 동작은 그대로다."""
+def test_심을_것을_안_정해_둔_배치에는_여전히_안_만든다():
+    """달과 무관한 표에 달 칸이 생기면 안 된다 — 이 동작은 그대로다.
+
+    `seed` 를 안 주면 지금까지 그대로다. 투자사 명단이 그렇다.
+    """
     from app.services.monthly_columns import plan
 
     assert plan([], 9) == []
     assert plan(["투자유치 여부", "카톡 연결", "담당자 메모"], 9) == []
+
+
+def test_배치가_심을_것을_정해_뒀으면_본이_없어도_만든다():
+    """달 칸이 하나도 없는 명단에는 오래 아무것도 안 섰다 — 담당자별 스타트업
+    명단이 전부 그 상태라, 달 칸이 서는 것은 **한 명의 명단뿐**이었다.
+
+    이름을 코드가 짓는 것이 아니라 **배치가 정해 둔 것**을 세운다
+    (`Layout.month_seed`). 다른 명단에서 본떠 오지 않는 이유는, 그러면 코드가
+    어느 명단이 본인지 알아야 하고 본이 된 명단에서 칸 이름을 고치는 순간
+    남의 명단에 생길 이름이 같이 바뀌기 때문이다.
+    """
+    from app.services.monthly_columns import plan
+
+    seed = ("리마인드 문자", "리마인드 TEL", "카톡 연결")
+    assert plan([], 9, seed) == ["9월 리마인드 문자", "9월 리마인드 TEL",
+                                 "9월 카톡 연결"]
+    # 달과 무관한 칸만 있어도 마찬가지다 — 담당자별 명단의 실제 모양이다.
+    assert plan(["카톡방 연결여부", "리마인드 카톡(월1회)"], 9, seed) == [
+        "9월 리마인드 문자", "9월 리마인드 TEL", "9월 카톡 연결"]
+    # **본이 있으면 씨앗은 안 쓴다** — 그 표를 쓰던 사람이 지은 이름이 이긴다.
+    assert plan(["8월 리마인드 문자 (8/28)"], 9, seed) == ["9월 리마인드 문자"]
+    # 이미 이번 달이 있으면 그만이다.
+    assert plan(["9월 무엇"], 9, seed) == []
+
+
+def test_숨긴_칸은_본이_되지_않는다():
+    """안 쓰기로 하고 표에서 뺀 옛 칸을 본떠 새 달 칸을 만들면, **뺀 모양이
+    매달 다시 생긴다.**
+
+    "이번 달이 이미 있는가" 는 반대로 숨긴 칸까지 센다 — 숨기기는 지우기가
+    아니라서, 숨긴 칸과 같은 달을 또 만들면 같은 달이 두 칸이 된다.
+    """
+    from app.services.monthly_columns import plan
+
+    seed = ("리마인드 문자", "리마인드 TEL", "카톡 연결")
+    # 숨긴 `8월 옛 칸` 을 본뜨지 않고, 배치가 정해 둔 셋을 세운다.
+    assert plan(["8월 옛 칸"], 9, seed, models=[]) == [
+        "9월 리마인드 문자", "9월 리마인드 TEL", "9월 카톡 연결"]
+    # 숨긴 칸이 이번 달이면 또 만들지 않는다.
+    assert plan(["9월 옛 칸"], 9, seed, models=[]) == []
 
 
 @pytest.mark.parametrize("labels,month,want", [
@@ -455,8 +498,8 @@ def test_실측한_두_명단에_9월_칸이_선다(db):
     assert _contact_labels(db, "샘플 딜소개현황") == made + DESC_SHEET
 
 
-def test_달_없는_명단에는_9월_칸이_안_선다(db):
-    """달과 무관한 표(담당자별 스타트업 명단이 그렇다)는 그대로 둔다.
+def test_달_없는_투자사_명단에는_9월_칸이_안_선다(db):
+    """배치가 심을 것을 정해 두지 않았으면 그대로 둔다 — 투자사 명단이 그렇다.
 
     맨 앞 칸을 건너뛰고 뒤를 보게 고쳤다고 해서, 여기까지 만들기 시작하면
     달을 쓰지 않는 표에 달 칸이 생긴다.
@@ -464,9 +507,138 @@ def test_달_없는_명단에는_9월_칸이_안_선다(db):
     from app.services import monthly_columns as mc
 
     plain = ["투자유치 여부", "카톡 연결", "담당자 메모", "비고", "업종", "홈페이지"]
-    _contact_cols(db, plain, sheet="샘플 스타트업(달 없음)")
-    assert mc.ensure_contact(db, "샘플 스타트업(달 없음)", today=SEP) == []
-    assert _contact_labels(db, "샘플 스타트업(달 없음)") == plain
+    _contact_cols(db, plain, sheet="샘플 투자사(달 없음)")
+    assert mc.ensure_contact(db, "샘플 투자사(달 없음)", today=SEP) == []
+    assert _contact_labels(db, "샘플 투자사(달 없음)") == plain
+
+
+# --- 담당자별 스타트업 명단 — 한 명만 서 있던 자리 --------------------------
+#
+# 달 칸이 서는 것은 **한 사람의 명단뿐**이었다. 나머지는 달 이름이 붙은 칸이
+# 하나도 없어 본을 못 찾고 비켜 갔고, 사람이 첫 칸을 손으로 심어 줘야 그
+# 뒤로 자동 생성이 붙었다.
+
+def _sheet_owner(db, label, layout):
+    from app.models import SheetOwner
+
+    db.add(SheetOwner(label=label, layout=layout))
+    db.commit()
+
+
+def test_달_칸이_없는_스타트업_명단에도_셋이_선다(db):
+    """**배치가 심을 것을 정해 뒀다**(`STARTUP_LAYOUT.month_seed`).
+
+    이름을 여기 적지 않는다 — 배치가 정한 것을 그대로 돌린다. 적어 두면 배치가
+    바뀔 때 한쪽만 고쳐진다.
+    """
+    from app.services import contact_columns as cc
+    from app.services import monthly_columns as mc
+
+    name = "샘플 스타트업(달 없음)"
+    _sheet_owner(db, name, cc.STARTUP)
+    _contact_cols(db, ["카톡방 연결여부", "리마인드 카톡(월1회)"], sheet=name)
+
+    made = mc.ensure_contact(db, name, today=SEP, seed=cc.STARTUP_LAYOUT.month_seed)
+    assert made == [f"9월 {x}" for x in cc.STARTUP_LAYOUT.month_seed]
+    # 새 칸이 **맨 앞**이다 — 지금 챙겨야 할 달이 먼저 보여야 한다.
+    assert _contact_labels(db, name) == made + ["카톡방 연결여부",
+                                                "리마인드 카톡(월1회)"]
+    # 두 번 불러도 하나다.
+    assert mc.ensure_contact(db, name, today=SEP,
+                             seed=cc.STARTUP_LAYOUT.month_seed) == []
+
+
+def test_명단의_칸을_읽는_것만으로도_배치가_심어_준다(db):
+    """씨앗을 부르는 쪽이 손으로 넘기지 않는다 — **칸이 나오는 문 하나**가
+    명단의 배치를 보고 알아서 가져온다(`contact_columns.month_seed`)."""
+    from app.services import contact_columns as cc
+
+    name = "샘플 스타트업(빈 명단)"
+    _sheet_owner(db, name, cc.STARTUP)
+    got = [c.label for c in cc.month_columns(db, name, today=SEP)]
+    assert got == [f"9월 {x}" for x in cc.STARTUP_LAYOUT.month_seed]
+
+
+def test_투자사_명단은_건드리지_않는다(db):
+    """**스타트업 배치에만** 적용된다. 배치가 정한 씨앗이 없으면 아무것도 안 선다."""
+    from app.services import contact_columns as cc
+
+    for layout in (cc.INVESTOR, cc.INVESTOR_MONTHLY):
+        name = f"샘플 투자사({layout})"
+        _sheet_owner(db, name, layout)
+        _contact_cols(db, ["부서", "직함"], sheet=name)
+        assert cc.month_seed(db, name) == ()
+        assert [c.label for c in cc.month_columns(db, name, today=SEP)] == [
+            "부서", "직함"]
+
+
+def test_숨긴_칸을_본떠_새_칸을_만들지_않는다(db):
+    """안 쓰기로 하고 표에서 뺀 옛 칸이 본이 되면 **뺀 모양이 매달 다시 생긴다.**
+
+    대신 배치가 정해 둔 셋이 선다 — 옛 칸을 지우지 않고 숨긴 명단이 지나는 길이다.
+    """
+    from app.models import ContactColumn
+    from app.services import contact_columns as cc
+
+    name = "샘플 스타트업(옛 칸)"
+    _sheet_owner(db, name, cc.STARTUP)
+    _contact_cols(db, ["8월 옛 칸"], sheet=name)
+    old = db.query(ContactColumn).filter(ContactColumn.sheet == name).one()
+    old.is_hidden = 1
+    db.commit()
+
+    got = [c.label for c in cc.month_columns(db, name, today=SEP)]
+    assert "9월 옛 칸" not in got, f"숨긴 칸을 본떴습니다: {got}"
+    # 숨긴 칸은 **지워지지 않는다** — 자리만 뒤로 밀린다.
+    assert got == [f"9월 {x}" for x in cc.STARTUP_LAYOUT.month_seed] + ["8월 옛 칸"]
+
+
+def test_숨긴_칸과_같은_달을_또_만들지_않는다(db):
+    """숨기기는 지우기가 아니다 — 같은 달이 두 칸이 되면 기록이 갈린다."""
+    from app.models import ContactColumn
+    from app.services import contact_columns as cc
+
+    name = "샘플 스타트업(이번 달을 숨김)"
+    _sheet_owner(db, name, cc.STARTUP)
+    _contact_cols(db, ["9월 리마인드 문자"], sheet=name)
+    db.query(ContactColumn).filter(ContactColumn.sheet == name).one().is_hidden = 1
+    db.commit()
+
+    assert [c.label for c in cc.month_columns(db, name, today=SEP)] == [
+        "9월 리마인드 문자"]
+
+
+def test_탭을_열지_않아도_스타트업_명단마다_선다(db):
+    """지금 고른 탭 하나만 챙기면, 그 달에 아무도 안 연 명단은 칸이 안 서고
+    그 달 기록이 지난달 칸에 섞여 들어간다 — 나중에 가릴 방법이 없다.
+
+    투자컨설턴트 현황이 같은 이유로 보이는 표를 전부 돈다.
+
+    **훑는 범위를 화면이 고르지 않는다** — 심을 것을 정해 둔 배치의 명단만이다.
+    투자사 명단은 지금까지처럼 연 탭만 챙긴다(그 범위를 같이 넓히면 이 판에서
+    달라진 것이 두 가지가 된다).
+    """
+    from app.services import contact_columns as cc
+
+    names = ["샘플 스타트업(가)", "샘플 스타트업(나)",
+             "샘플 투자사(다)", "샘플 투자사 딜공유(라)"]
+    layouts = [cc.STARTUP, cc.STARTUP, cc.INVESTOR, cc.INVESTOR_MONTHLY]
+    for name, layout in zip(names, layouts):
+        _sheet_owner(db, name, layout)
+    _contact_cols(db, ["카톡방 연결여부"], sheet=names[1])
+    _contact_cols(db, ["부서"], sheet=names[2])
+    _contact_cols(db, ["8월 딜소개"], sheet=names[3])
+
+    cc.ensure_months(db, names, today=SEP)
+    want = [f"9월 {x}" for x in cc.STARTUP_LAYOUT.month_seed]
+    assert _contact_labels(db, names[0]) == want
+    assert _contact_labels(db, names[1]) == want + ["카톡방 연결여부"]
+    assert _contact_labels(db, names[2]) == ["부서"], "투자사 명단을 건드렸습니다"
+    assert _contact_labels(db, names[3]) == ["8월 딜소개"], (
+        "투자사 딜공유 명단까지 훑었습니다 — 이 판이 넓히기로 한 범위가 아니다")
+    # 그 탭을 **열면** 지금까지처럼 선다 — 배치를 안 가리는 자리는 그대로다.
+    assert [c.label for c in cc.month_columns(db, names[3], today=SEP)] == [
+        "9월 딜소개", "8월 딜소개"]
 
 
 def test_이미_9월이_선_명단은_건드리지_않는다(db):

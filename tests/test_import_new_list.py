@@ -691,7 +691,10 @@ def test_원본번호와_담당_이력은_달마다_늘어나는_칸이_아니�
 
     months = cc.month_columns(db, LIST, today=date(2026, 8, 15))
     labels = [c.label for c in months]
-    assert labels == ["카톡방 연결여부", "리마인드 카톡(월1회-수or목or금)"], (
+    # 시트에서 온 칸은 이 둘뿐이다. 앞의 세 칸은 **달 칸이 하나도 없는 스타트업
+    # 명단에 배치가 심어 준 것**이라(`Layout.month_seed`) 시트와 무관하다.
+    seeded = [f"8월 {x}" for x in cc.STARTUP_LAYOUT.month_seed]
+    assert labels == seeded + ["카톡방 연결여부", "리마인드 카톡(월1회-수or목or금)"], (
         f"원본NO·담당자를 달마다 늘어나는 칸으로 세웠습니다: {labels}")
 
     kept = rows_in(db, LIST)[0]
@@ -700,13 +703,15 @@ def test_원본번호와_담당_이력은_달마다_늘어나는_칸이_아니�
     assert notes.get("owner_history") == "7/21 김담당 -> 8/19 이담당"
     assert not kept.name, f"담당 이력이 성함으로 갔습니다: {kept.name!r}"
     # 그 달의 기록은 달 칸 그대로 남는다 — 옮긴 것은 위의 두 칸뿐이다.
-    assert notes.get(cc.note_key(months[0].id)) == "7/24 o"
+    kakao = next(c for c in months if c.label == "카톡방 연결여부")
+    assert notes.get(cc.note_key(kakao.id)) == "7/24 o"
     assert kept.phone == "010-7000-0001"
     assert kept.memo == "전화가 와서 카톡으로 안내"
 
-    # 표에 서는 것은 **그 달의 기록**이어야 한다.
+    # 표에 서는 것은 **그 달의 기록**이어야 한다 — 원본 번호도 담당 이력도
+    # 아니고, 배치가 심어 준 이번 달 세 칸이다.
     visible, _folded = cc.split_months(months)
-    assert [c.label for c in visible] == ["카톡방 연결여부"]
+    assert [c.label for c in visible] == seeded
 
 
 # ── 시트를 읽는 규칙은 두 임포터가 나눠 쓴다 ────────────────────────────────

@@ -63,7 +63,13 @@ NOTES = [
     ("기업구분", "company_kind"),
     ("한줄 소개", "one_liner"),
     ("IR dack", "ir_deck"),
+    # 계약까지 가는 세 칸. **여기서 안 잡으면 남는 머리글이라 월별 칸으로
+    # 선다** — 그러면 시트에 적혀 있던 자리(계약여부 앞뒤)가 아니라 달 칸
+    # 사이에 서고, `VISIBLE_MONTHS` 가 1이라 그 달의 기록을 접어 버린다
+    # (`contact_columns.STARTUP_LAYOUT` 의 같은 자리 주석 · 아래 `원본NO`).
+    ("견적서 첨부", "quote_attached"),
     ("계약여부", "contract"),
+    ("계산서 수신", "invoice_received"),
     ("성공보수율", "success_fee"),
     # 담당자 워크북에만 있는 두 칸. **여기 적어 두는 이유는 월별 칸이 아니어서다.**
     #
