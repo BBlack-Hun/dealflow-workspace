@@ -335,7 +335,17 @@ def list_page(
     # 기록이 **화면 어디에도 안 뜬다**(지워지지 않았는데 사라진 것처럼 보인다).
     # 칸이 없는 명단에서는 이 호출이 빈 목록이라 값이 드는 데가 없다
     # (`monthly_columns.plan` 이 본뜰 칸이 없으면 아무것도 안 만든다).
-    all_months = contact_columns.month_columns(db, selected) if selected else []
+    # 이번 달 칸을 **탭을 열지 않아도** 세운다. 지금 고른 탭 하나만 챙기면
+    # 그 달에 아무도 안 연 명단은 칸이 안 서고, 그 달 기록이 지난달 칸에 섞여
+    # 들어간다(투자컨설턴트 현황이 같은 이유로 보이는 표를 전부 돈다 —
+    # `routers/consulting.py`). **어느 명단을 훑을지는 배치가 정한다** — 화면이
+    # 여기서 고르지 않는다(`contact_columns.ensure_months` 참고).
+    contact_columns.ensure_months(db, [t["key"] for t in tabs])
+    # 숨긴 칸은 **표에서 빠지되 값은 남는다**(`ContactColumn.is_hidden`).
+    # 접기(`split_months`)보다 **먼저** 걸러야 한다 — 안 그러면 안 쓰기로 한
+    # 옛 칸이 펴 둘 한 달치 자리를 먹어, 정작 이번 달 칸이 접힌다.
+    all_months, hidden_months = contact_columns.split_hidden(
+        contact_columns.month_columns(db, selected) if selected else [])
     shown_months, folded_months = contact_columns.split_months(
         all_months, show_all=(months == "all"))
 
@@ -382,6 +392,10 @@ def list_page(
         "month_columns": shown_months,
         # **접었다는 것을 사람이 알아야 한다** — 그냥 안 보이면 지워진 줄 안다.
         "folded_months": folded_months,
+        # 숨긴 칸 — 표에는 없지만 **되돌릴 자리는 화면에 있어야 한다.**
+        # 감춰 놓고 켜는 단추까지 감추면 DB 를 직접 고쳐야 한다(명단 숨김과
+        # 같은 말 — `routers/contacts.py` 의 `toggle_sheet_hidden`).
+        "hidden_months": hidden_months,
         "show_all_months": months == "all",
         # 감춘 줄 — 몇 줄인지와, 되돌리러 갈 자리.
         "hidden_count": len(hidden_rows),

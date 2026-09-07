@@ -732,6 +732,35 @@ def rename_column(column_id: int, label: str = Form(...),
     return RedirectResponse(f"{_back(db, col.sheet)}?sheet={quote(col.sheet)}", status_code=303)
 
 
+@router.post("/columns/{column_id}/hide", include_in_schema=False)
+def toggle_column_hidden(column_id: int, db: Session = Depends(get_db),
+                         user: User = Depends(get_current_user)):
+    """칸 하나를 **표에서 빼거나 되돌린다. 지우는 것이 아니다.**
+
+    명단마다 시트에서 그대로 딸려 온 옛 칸이 있다. 팀이 쓰는 한 가지 모양으로
+    맞추면서 그 칸들은 더 안 쓰는데, [칸 삭제] 를 누르면 **적혀 있던 내용도
+    함께 사라진다**(아래 `delete_column`). 지난 기록은 남겨 두고 표에서만
+    빼는 자리가 필요하다.
+
+    `SheetOwner.is_hidden`(명단 숨김)과 **같은 방식**이다 — 누를 때마다 뒤집히고,
+    지금 상태가 단추 글자에 적혀 있고, 되돌리는 단추가 화면에 그대로 남는다.
+    감춰 놓고 켜는 단추까지 감추면 DB 를 직접 고쳐야 한다.
+
+    숨긴 칸은 **달마다 늘어나는 칸의 본이 되지 않는다**
+    (`services/monthly_columns.py`). 안 쓰기로 한 옛 칸을 본떠 새 달 칸을
+    만들면 뺀 모양이 매달 다시 생긴다.
+    """
+    from fastapi.responses import RedirectResponse
+
+    col = db.get(ContactColumn, column_id)
+    if col is None:
+        raise HTTPException(status_code=404, detail="칸을 찾을 수 없습니다")
+    col.is_hidden = 0 if col.is_hidden else 1
+    db.commit()
+    return RedirectResponse(f"{_back(db, col.sheet)}?sheet={quote(col.sheet)}",
+                            status_code=303)
+
+
 @router.post("/columns/{column_id}/delete", include_in_schema=False)
 def delete_column(column_id: int, db: Session = Depends(get_db),
                   user: User = Depends(get_current_user)):

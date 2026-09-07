@@ -970,6 +970,21 @@ class ContactColumn(TimestampMixin, Base):
     sheet: Mapped[str] = mapped_column(String)          # SheetOwner.label
     label: Mapped[str] = mapped_column(String)          # 시트의 열 이름 그대로
     position: Mapped[int] = mapped_column(Integer, default=0)   # 왼→오 순서
+    # 이 칸을 **표에서 뺄까.**
+    #
+    # 명단마다 시트에서 그대로 딸려 온 옛 칸이 있다. 팀이 쓰는 한 가지 모양으로
+    # 맞추면서 그 칸들은 더 안 쓰는데, **지우면 적혀 있던 내용이 함께 사라진다**
+    # (`routers/contacts.py` 의 `delete_column` 이 그 값을 `notes` 에서 지운다).
+    # 지난달까지의 기록은 남겨 두고 표에서만 빼야 한다.
+    #
+    # `SheetOwner.is_hidden` 과 **같은 방식**이다 — 지우는 것이 아니라 세지
+    # 않는 것. 켜고 끄는 자리도 같은 자리(탭 옆 단추)이고, 되돌리면 값이 그대로
+    # 다시 보인다. 새 장치를 하나 더 만들면 배울 것도 고칠 곳도 두 벌이 된다.
+    #
+    # 숨긴 칸은 **달마다 늘어나는 칸의 본이 되지 않는다**
+    # (`services/monthly_columns.py` 의 `plan`). 안 쓰기로 한 옛 칸을 본떠
+    # 새 달 칸을 만들면, 뺀 모양이 매달 다시 생긴다.
+    is_hidden: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class MonthlyColumnRun(TimestampMixin, Base):
