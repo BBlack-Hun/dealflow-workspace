@@ -43,7 +43,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import get_current_user, templates
 from ..models import User
-from ..services import ir_monthly
+from ..services import ir_kakao, ir_monthly
 from ..ui import base_ctx
 from .pages import STARTUP_PAGE, list_page
 
@@ -152,3 +152,67 @@ def ir_report_doc(
     ctx.update({"report": got, "show_person": bool(who), "selected": selected})
     return templates.TemplateResponse("startup_ir_doc.html", ctx,
                                       status_code=200 if got else 404)
+
+
+# ── 카톡으로 나가는 글 ───────────────────────────────────────────────────────
+#
+# ## 문서와 무엇이 다른가
+#
+# 위 문서(#131)는 **인쇄해서 주는 한 장**이고, 이것은 **카톡에 붙여 넣는 글**이다.
+# 사용자가 실제로 보내던 것이 글 쪽이었다. 문서는 지우지 않는다 — Windows 파일
+# 첨부 시험에 쓰인다.
+#
+# 다른 점이 둘 더 있다.
+#   · **누적이다.** `7월 말까지` 는 7월 한 달이 아니라 그때까지 쌓인 것 전부다.
+#   · 담당자 이름을 켤 자리가 없다. 실물에 투자사만 적혀 있다 — 새는 자리를
+#     하나 덜 만드는 쪽이라 굳이 켜는 길을 내지 않는다.
+#
+# ## 한 대표에게 기업이 여럿일 때 — **묶지 않는다**
+#
+# 실물은 한 글에 기업 둘(`(주)가 , (주)나`)을 담고 있었다. 그래서 "같은 대표의
+# 기업을 어떻게 묶을 것인가" 를 먼저 봤다. 앱이 대표를 아는 칸은 셋이다 —
+# `IrCompany.contact_name` · `contact_phone` · `contact_email`. **어느 것도
+# 묶을 근거가 되지 못했다.**
+#
+#   · `contact_phone` · `contact_email` — 계약 기업 중 채워진 것이 전부
+#     **서로 다른 값**이었다. 겹치는 짝이 하나도 없다. 이 둘로 묶으면 묶이는
+#     기업이 0곳이라, 묶는 길을 내도 하는 일이 없다.
+#   · `contact_name` — 겹치는 짝이 딱 하나 있었는데, **그 둘은 전화번호가
+#     서로 달랐다.** 즉 같은 이름의 **다른 사람**일 가능성이 크다. 명단의
+#     이름은 대부분 세 글자 한국 이름이라 동명이인이 흔하다.
+#
+# 이름으로 묶었다면 이 저장소에서 지금 일어날 일은 **딱 한 건**이고, 그 한 건이
+# 하필 **틀린 묶음**이다 — 남의 회사 IR 요청 목록이 엉뚱한 대표에게 간다.
+# 이 일에서 되돌릴 수 없는 사고는 그것 하나뿐이라, 얻는 것이 0이고 잃을 것이
+# 그것인 거래는 하지 않는다.
+#
+# **그래서 화면은 기업 하나씩 부른다.** 글을 짓는 함수(`ir_kakao.compose`)는
+# 기업을 **여럿** 받게 두었다 — 실물의 모양이 그것이고, 나중에 "이 기업들은
+# 한 대표" 라고 말해 주는 칸이 생기면 함수는 그대로 두고 부르는 쪽만 바꾸면
+# 된다. 없는 근거를 이름으로 지어내는 대신, 근거가 들어올 자리를 비워 둔다.
+
+
+@router.get("/startup/ir-kakao/{company_id}", response_class=HTMLResponse)
+def ir_kakao_message(
+    company_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    month: str = "",
+):
+    """카톡에 붙여 넣을 글 한 통 — 보고 [문구 복사] 를 누르는 자리.
+
+    **여기서 보내지 않는다.** 스타트업 카톡방이 자료에 없다(`IrCompany` 에 방
+    칸 자체가 없다). 보내는 시늉을 내는 단추를 세우면 눌러 놓고 나간 줄 아는
+    사람이 생긴다 — 짓고 · 보여 주고 · 복사하는 데까지만이다.
+
+    요청이 **한 곳도 없으면 404** 다. 글을 짓지 않는 판정은 `ir_kakao.compose`
+    한 곳에 있다 — 화면이 따로 세면 두 판정이 갈린다.
+    """
+    # 문서 화면과 **같은 판정**을 지난다.
+    selected = month if ir_monthly.is_month(month) else ir_monthly.this_month()
+    msg = ir_kakao.for_company(db, company_id, selected)
+    ctx = base_ctx(request, db, user, STARTUP_PAGE.key)
+    ctx.update({"msg": msg, "selected": selected, "company_id": company_id})
+    return templates.TemplateResponse("startup_ir_kakao.html", ctx,
+                                      status_code=200 if msg else 404)

@@ -10,9 +10,19 @@
 <header class="page-head">
   <h1>이번 달 귀사 IR 자료를 요청한 투자사</h1>
   <p class="muted">
-    스타트업 대표에게 <b>월 1회</b> 드리는 문서입니다. 계약을 마친 기업
+    스타트업 대표에게 <b>월 1회</b> 드립니다. 계약을 마친 기업
     (<b>무료계약완료 · 유료계약완료</b>)만 대상입니다 —
-    이 달에 보낼 수 있는 문서는 <b>{{ sendable_count }}장</b>입니다.
+    이 달에 보낼 수 있는 문서는 <b>{{ sendable_count }}장</b>,
+    카톡 문구는 <b>{{ msg_sendable_count }}통</b>입니다.
+  </p>
+  {#
+    **두 수가 다른 것이 정상이다.** 문서는 고른 **한 달치**를 싣고, 카톡 문구는
+    실물이 그렇듯 `7월 말까지` — **그 달 말까지 쌓인 것 전부**를 싣는다.
+    이번 달에 요청이 0곳이어도 지난 달 것이 있으면 문구는 나간다.
+  #}
+  <p class="muted">
+    📄 <b>문서</b>는 고른 달 <b>한 달치</b>(인쇄용) ·
+    💬 <b>카톡 문구</b>는 그 달 <b>말까지 쌓인 것 전부</b>입니다.
   </p>
 </header>
 
@@ -47,13 +57,17 @@
       <tr>
         <th>기업</th>
         <th>계약</th>
-        <th>요청한 투자사</th>
+        <th>이 달 요청</th>
+        <th>말까지 누적</th>
         <th>문서</th>
+        <th>카톡 문구</th>
       </tr>
     </thead>
     <tbody>
       {% for row in rows %}
-      <tr{% if not row.sendable %} class="ir-row-off"{% endif %}>
+      {# 둘 다 보낼 것이 없을 때만 줄을 죽인다 — 문서는 없어도 누적 문구는
+         나가는 줄이 있다(그 줄까지 흐리면 있는 것을 없는 것처럼 보인다). #}
+      <tr{% if not row.sendable and not row.msg_sendable %} class="ir-row-off"{% endif %}>
         <td>{{ row.company.name }}</td>
         <td>{{ row.contract_label }}</td>
         <td class="tabular">
@@ -65,6 +79,7 @@
           #}
           {% if row.alone %}<span class="status-badge warn">1곳 · 가릴 상대 없음</span>{% endif %}
         </td>
+        <td class="tabular">{{ row.total_count }}곳</td>
         <td>
           {% if row.sendable %}
           <a href="/startup/ir-report/{{ row.company.id }}?month={{ selected }}">문서 보기</a>
@@ -74,10 +89,19 @@
           <span class="muted">요청 없음</span>
           {% endif %}
         </td>
+        <td>
+          {# 문구는 **누적**으로 판정한다. 이 달 0곳이어도 지난 달 것이 있으면
+             `7월 말까지` 에 실린다 — 이 달 수로 막으면 실물과 다른 글이 된다. #}
+          {% if row.msg_sendable %}
+          <a href="/startup/ir-kakao/{{ row.company.id }}?month={{ selected }}">문구 보기</a>
+          {% else %}
+          <span class="muted">요청 없음</span>
+          {% endif %}
+        </td>
       </tr>
       {% endfor %}
       {% if not rows %}
-      <tr><td colspan="4" class="muted">계약을 마친 기업이 없습니다.</td></tr>
+      <tr><td colspan="6" class="muted">계약을 마친 기업이 없습니다.</td></tr>
       {% endif %}
     </tbody>
   </table>
