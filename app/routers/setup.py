@@ -22,7 +22,8 @@ from sqlalchemy.orm import Session
 from .. import config
 from ..db import get_db
 from ..deps import get_current_user, may_auto_attach, templates
-from ..models import TEST_SEND_KIND, AgentDevice, SendItem, SendJob, User
+from ..models import TEST_SEND_KIND, AgentDevice, IrCompany, SendItem, SendJob, User
+from ..services import startup_msg
 from ..ui import base_ctx
 
 router = APIRouter(tags=["setup"])
@@ -70,10 +71,43 @@ AUTO_ATTACH_BLOCKED = "자료 자동 첨부를 쓸 수 없는 계정입니다"
 TEST_FILE_MESSAGE = "[시험] 자료 첨부 시험입니다 — 실제 발송이 아닙니다."
 
 #: 칸을 비운 채 눌렀을 때. 주소에 실려 화면이 다시 읽는다(`setup.html`).
+#:
+#: `no_template` 만 성격이 다르다 — 사람이 안 적은 것이 아니라 **문구틀이
+#: 비어 있는 것**이라, 고칠 자리가 이 화면이 아니다. 그래서 어디로 가야
+#: 하는지를 말에 담는다(화면이 그 자리로 가는 고리를 함께 그린다).
 TEST_INPUT_MISSING = {
     "need_file": "시험할 파일 이름을 적어주세요",
     "need_room": "확인할 카톡방 이름을 적어주세요",
+    "need_company": "어느 기업 것으로 만들지 골라주세요",
+    "no_template": ("「기업 리마인드 — 문자」 문구가 비어 있습니다 — "
+                    "딜 제안 문구에서 먼저 적어 주세요"),
 }
+
+
+def _test_companies(db: Session) -> list:
+    """시험용 기업 고르개에 담을 명단 — **스타트업 명단 전부**, 이름 순.
+
+    ## 왜 거르지 않나
+
+    "월말 리마인드를 **누구에게** 보내는가" 는 이번에 정하지 않는다. 그건
+    대상 고르기·중복 방지·이력 남기기가 따라붙는 별개의 일이라, 여기서
+    슬쩍 정해 버리면 그 규칙이 시험 화면 안에 숨은 채 실전의 기준이 된다.
+    이 자리는 **문구가 어떤 모양으로 나가는지** 보는 자리다.
+
+    거르면 정작 봐야 할 것도 가려진다 — 담당자 성함이 빈 줄은 문구가
+    `안녕하세요  대표님` 으로 나가는데, 그 줄을 목록에서 빼면 그것을 볼 수
+    있는 자리가 없어진다.
+
+    ## `딜소개 불가` 기업도 뺀 것이 아니다
+
+    발송 화면은 그런 기업을 목록에서 아예 뺀다 — "목록에 있는 것만으로 실수로
+    고를 수 있다"(`routers/companies.BLOCKED_CONTRACT`). 그 규칙이 막는 사고는
+    **그 기업을 투자사에 소개해 버리는 것**이다. 여기서는 소개하지 않고, 골라도
+    그 기업에게는 **아무것도 가지 않는다**(가는 곳은 시험방 하나뿐이다).
+    막을 사고가 없는데 목록에서 빼면, 정작 그 기업에 보낼 문구가 어떻게
+    생겼는지만 못 보게 된다.
+    """
+    return list(db.execute(select(IrCompany).order_by(IrCompany.name)).scalars().all())
 
 
 def test_tools_on() -> bool:
@@ -261,6 +295,10 @@ def setup_page(
                 # 화면만 감추면 주소로 부를 수 있고, 라우터만 막으면 눌러야
                 # 막힌 것을 아는 단추가 남는다.
                 "test_tools": test_tools_on(),
+                # 시험용 자리를 안 그릴 때는 명단도 싣지 않는다 — 화면에
+                # 그리지 않을 값을 컨텍스트에 태우면 언젠가 그 값을 쓰는
+                # 자리가 생긴다(바로 위 `ir_root` 와 같은 조심).
+                "test_companies": _test_companies(db) if test_tools_on() else [],
                 # 칸을 비운 채 눌렀을 때 되돌아오며 실려 오는 말.
                 "test_msg": TEST_INPUT_MISSING.get(
                     request.query_params.get("test", ""), "")})
@@ -396,6 +434,69 @@ def test_attach(
         return RedirectResponse("/setup?test=need_file", status_code=303)
     job_id = _queue_test_job(db, user, TEST_SEND_KIND, room,
                              TEST_FILE_MESSAGE, [name])
+    return RedirectResponse(f"/jobs/{job_id}", status_code=303)
+
+
+@router.post("/setup/test/startup-remind")
+def test_startup_remind(
+    company_id: int = Form(0),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """[시험] 월말 리마인드 문구 — **시험방으로** 그 문구를 한 통 보낸다.
+
+    ## 왜 이 자리가 필요한가
+
+    스타트업에 매월 보내는 문구는 이미 있다 — `startup_sms`. 그런데 **그 문구를
+    보내는 코드가 없어서** 지금까지는 사람이 문구 화면에서 글을 복사해 손으로
+    보냈다. 손으로 옮기면 `{담당자명}` 같은 자리를 눈으로 갈아 끼우게 되는데,
+    이 저장소는 갈아 끼우는 것을 잊은 `{…}` 가 **글자 그대로** 카톡방에 나간
+    적이 있다. 여기서 눌러 보면 실제로 어떤 글자가 나가는지 먼저 보게 된다.
+
+    ## 문구를 여기서 짓지 않는다
+
+    짓는 일은 `services/startup_msg.py` 에 있다. 명단 전체에 실제로 돌리는 길은
+    아직 없지만(대상 고르기·중복 방지·이력이 따라붙는 별개의 일이다), 그 길을
+    낼 때 문구를 **다시 짜지 않아도 되게** 밖에 빼 두었다. 문구틀의 어느 자리가
+    채워지고 어디가 비는지도 그 파일 머리말에 있다.
+
+    ## 왜 기업을 고르게 하나
+
+    아무 값이나 채워 넣으면 그때 보이는 것은 **시험용으로 지어낸 문구**지 실제로
+    나갈 문구가 아니다. 명단의 기업을 그대로 쓰면 담당자 성함이 빈 줄·이름에
+    괄호가 섞인 줄처럼 **실제 자료가 만드는 모양**이 그대로 드러난다.
+
+    ## 문구틀이 비어 있으면 — **잡을 만들지 않는다**
+
+    코드에 적힌 뼈대를 대신 보내지 않는다. 그것을 보내면 사람은 그것이 팀이 정한
+    문구인 줄 알고, 정작 문구틀은 빈 채로 남는다. 대신 어디에 적어야 하는지를
+    말로 돌려준다(`TEST_INPUT_MISSING["no_template"]`).
+
+    ## 왜 `may_auto_attach` 를 보지 않나
+
+    이 시험은 **파일을 붙이지 않는다.** 파일 시험이 그 판정을 함께 읽는 것은
+    발송기가 자료 폴더를 알아야 파일 이름을 실제 자리로 조립할 수 있기
+    때문인데(`routers/agent_api.py: heartbeat`), 문구만 나가는 이 길에는 그
+    이유가 없다. 없는 이유로 막으면 못 고치는 단추를 하나 더 그리는 것이다.
+
+    ## 머리말을 붙이지 않는다
+
+    딜소개는 시험 모드에서 `[테스트 발송 → …]` 를 앞에 붙인다
+    (`routers/deals.py: _apply_test_room`). 거기서는 150명 몫이 한 방에 쏟아져
+    누구에게 갈 문구였는지 알 수 없기 때문이다. 여기는 사람이 기업을 골라 한 통을
+    보내는 자리이고, **문구틀이 만든 것과 글자 하나까지 같은지**를 보는 것이 이
+    시험의 알맹이다 — 앞에 한 줄이라도 얹으면 그것을 볼 수 없다.
+    """
+    room = _test_room()
+    company = db.get(IrCompany, company_id) if company_id else None
+    if company is None:
+        # 없는 번호를 밀어 넣은 경우도 같은 길이다 — 고를 수 있는 것은 명단에
+        # 있는 기업뿐이고, 없는 것을 골랐다는 말은 화면에 적을 자리가 없다.
+        return RedirectResponse("/setup?test=need_company", status_code=303)
+    message = startup_msg.compose(db, user, company)
+    if not message:
+        return RedirectResponse("/setup?test=no_template", status_code=303)
+    job_id = _queue_test_job(db, user, TEST_SEND_KIND, room, message, [])
     return RedirectResponse(f"/jobs/{job_id}", status_code=303)
 
 
