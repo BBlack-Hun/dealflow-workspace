@@ -1881,4 +1881,7 @@ a.guard-go:hover { background: #1e4fd0; text-decoration: none; }
 .test-tools h3 { font-size: 13px; margin: 16px 0 4px; }
 .test-tools h3:first-of-type { margin-top: 6px; }
 .test-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 6px 0 2px; }
-.test-form input[type=text] { flex: 1 1 320px; min-width: 0; }
+/* 고르개도 적는 칸과 **같은 자리**를 차지한다. 나란히 선 시험들의 칸 너비가
+   서로 다르면 하나가 덤으로 붙은 것처럼 보인다. 생김새는 손대지 않는다 —
+   적는 칸도 브라우저 기본 모양이라, 고르개만 꾸미면 오히려 어긋난다. */
+.test-form input[type=text], .test-form select { flex: 1 1 320px; min-width: 0; }

@@ -446,3 +446,260 @@ def test_the_counting_places_all_read_one_list(rehearsal):
     from app.models import SEND_KINDS, TEST_SEND_KIND
 
     assert TEST_SEND_KIND not in SEND_KINDS
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  ⑦ 월말 리마인드 문구 시험 — **문구틀이 만든 것을 그대로**
+# ══════════════════════════════════════════════════════════════════════════
+#
+# 스타트업에 매월 보내는 문구(`startup_sms`)는 문구 화면에 있었는데 **그것을
+# 보내는 코드가 한 줄도 없었다.** 사람이 복사해 손으로 보냈고, 그러면
+# `{담당자명}` 같은 자리를 눈으로 갈아 끼우게 된다 — 잊은 `{…}` 가 글자
+# 그대로 나간 사고를 이 저장소는 이미 겪었다.
+#
+# 여기서 보는 것은 넷이다.
+#   ★ 시험방이 없으면 이 자리도 없다(위 ① 과 같은 안전선)
+#     시험방으로만 간다 — 고르는 것은 기업이지 방이 아니다
+#     문구틀이 만든 것과 **글자 하나까지** 같다(손으로 쓴 문구가 아니다)
+#     문구틀이 비어 있으면 **아무것도 만들지 않고** 어디에 적으라고 말한다
+
+THE_COMPANY_FIELD = 'name="company_id"'
+REMIND = "/setup/test/startup-remind"
+
+
+@pytest.fixture()
+def a_company(db):
+    """시험에 쓸 스타트업 한 곳. 담당자 성함이 곧 `{담당자명}` 이다."""
+    from app.models import IrCompany
+
+    row = IrCompany(name="샘플애그", contact_name="홍길동")
+    db.add(row)
+    db.commit()
+    return row
+
+
+@pytest.fixture()
+def a_template(db):
+    """팀 기본 `startup_sms` 문구 하나. 바꿔치기 자리를 전부 담아 둔다."""
+    from app.models import MessageTemplate
+
+    row = MessageTemplate(
+        user_id=None, kind="startup_sms", name="기본",
+        body=("안녕하세요 {담당자명} {직함}\n"
+              "{기업명} 투자유치 진행 상황을 여쭙습니다.\n"
+              "투자사: {투자사}/ 개수: {개수}/ 목록: {기업목록}/ 링크: {자료링크}"),
+        is_active=1)
+    db.add(row)
+    db.commit()
+    return row
+
+
+def _sole_item(db):
+    from app.models import SendItem
+
+    items = db.query(SendItem).order_by(SendItem.id).all()
+    assert len(items) == 1, items
+    return items[0]
+
+
+def test_the_remind_test_is_gone_without_a_test_room(logged_in, db, a_company,
+                                                     a_template):
+    """★ 안전선은 하나다 — 시험방이 없으면 화면에도 없고 주소로도 없다."""
+    assert THE_COMPANY_FIELD not in logged_in.get("/setup").text
+    r = _press(logged_in, REMIND, company_id=a_company.id)
+    assert r.status_code == 404
+    assert _jobs(db) == []
+
+
+def test_the_remind_test_appears_with_the_company_picker(logged_in, rehearsal,
+                                                         a_company, a_template):
+    html = logged_in.get("/setup").text
+    assert THE_COMPANY_FIELD in html
+    assert a_company.name in html, "고를 기업이 목록에 없다"
+
+
+def test_the_picker_lists_every_company(logged_in, rehearsal, db, a_company,
+                                        a_template):
+    """**거르지 않는다.** 누구에게 보내는가는 이번에 정하는 일이 아니고,
+    담당자 성함이 빈 줄이야말로 문구가 어떻게 나가는지 봐야 할 줄이다."""
+    from app.models import IrCompany
+
+    db.add(IrCompany(name="이름없는곳", contact_name=None, contract_status="none"))
+    db.commit()
+    html = logged_in.get("/setup").text
+    assert "이름없는곳" in html
+
+
+def test_the_remind_goes_to_the_test_room_only(logged_in, rehearsal, db,
+                                               a_company, a_template):
+    """방을 고르는 칸이 아예 없다 — 밀어 넣어도 시험방으로 간다."""
+    r = logged_in.post(REMIND,
+                       data={"company_id": a_company.id, "room_name": "엉뚱한방"},
+                       follow_redirects=False)
+    _job_id(r)
+    assert _sole_item(db).room_name == TEST_ROOM
+
+
+def test_the_remind_sends_what_the_template_makes(logged_in, rehearsal, db,
+                                                  users, a_company, a_template):
+    """★ 이 시험의 알맹이 — 손으로 쓴 문구가 아니라 **문구틀이 만든 것**이다.
+
+    앞에 머리말 한 줄도 얹지 않는다. 얹으면 실제로 나갈 모양을 볼 수 없다.
+    """
+    from app.services import startup_msg
+
+    _job_id(_press(logged_in, REMIND, company_id=a_company.id))
+    made = startup_msg.compose(db, users["u1"], a_company)
+    assert _sole_item(db).message == made
+
+
+def test_which_slots_get_filled_and_which_stay_blank(db, users, a_company,
+                                                     a_template):
+    """문구틀의 자리마다 무엇이 들어가나 — 이 판단이 곧 문구의 모양이다."""
+    from app.services import startup_msg
+
+    text = startup_msg.compose(db, users["u1"], a_company)
+    # 채워지는 둘.
+    assert "홍길동" in text
+    assert "샘플애그" in text
+    # `{직함}` 은 명단에 직함 칸이 없어 존칭만 붙고, 앞 공백은 지워진다.
+    assert "안녕하세요 홍길동님" in text
+    # 받는 쪽이 스타트업이라 투자사가 없다. 딜소개용 자리도 함께 빈칸이다.
+    assert text.endswith("투자사: / 개수: / 목록: / 링크:")
+    # 무엇보다 **바꿔치기가 남지 않는다** — `{…}` 가 그대로 나간 사고가 있었다.
+    assert "{" not in text and "}" not in text
+
+
+def test_a_blank_name_shows_up_instead_of_being_hidden(db, users, a_template):
+    """담당자 성함이 빈 기업도 문구가 만들어진다 — 그 모양을 보는 것이 시험이다."""
+    from app.models import IrCompany
+    from app.services import startup_msg
+
+    company = IrCompany(name="이름없는곳", contact_name=None)
+    db.add(company)
+    db.commit()
+    text = startup_msg.compose(db, users["u1"], company)
+    assert text.startswith("안녕하세요")
+    assert "이름없는곳" in text
+
+
+def test_an_empty_template_makes_nothing(logged_in, rehearsal, db, a_company):
+    """문구틀이 비어 있으면 **잡을 만들지 않고** 어디에 적으라고 말한다.
+
+    코드에 적힌 뼈대를 대신 보내면 사람은 그것이 팀이 정한 문구인 줄 안다.
+    """
+    from app.routers.setup import TEST_INPUT_MISSING
+
+    r = _press(logged_in, REMIND, company_id=a_company.id)
+    assert r.status_code == 303
+    assert r.headers["location"] == "/setup?test=no_template"
+    assert _jobs(db) == []
+
+    html = logged_in.get("/setup?test=no_template").text
+    assert TEST_INPUT_MISSING["no_template"] in html
+    assert "/templates#startup_sms" in html, "고칠 자리로 가는 고리가 없다"
+
+
+def test_a_whitespace_only_template_counts_as_empty(logged_in, rehearsal, db,
+                                                    a_company):
+    from app.models import MessageTemplate
+
+    db.add(MessageTemplate(user_id=None, kind="startup_sms", name="빈 것",
+                           body="   \n  ", is_active=1))
+    db.commit()
+    r = _press(logged_in, REMIND, company_id=a_company.id)
+    assert r.headers["location"] == "/setup?test=no_template"
+    assert _jobs(db) == []
+
+
+def test_no_company_picked_just_comes_back(logged_in, rehearsal, db, a_template):
+    from app.routers.setup import TEST_INPUT_MISSING
+
+    r = _press(logged_in, REMIND, company_id="")
+    assert r.headers["location"] == "/setup?test=need_company"
+    assert _jobs(db) == []
+    assert TEST_INPUT_MISSING["need_company"] in logged_in.get(
+        "/setup?test=need_company").text
+
+
+def test_a_company_that_is_not_there_makes_nothing(logged_in, rehearsal, db,
+                                                   a_template):
+    r = _press(logged_in, REMIND, company_id=99999)
+    assert r.headers["location"] == "/setup?test=need_company"
+    assert _jobs(db) == []
+
+
+def test_the_remind_carries_no_files(logged_in, rehearsal, db, a_company,
+                                     a_template):
+    """파일을 안 붙이므로 **파일 못 붙이는 발송기도** 이 잡을 집어간다."""
+    _job_id(_press(logged_in, REMIND, company_id=a_company.id))
+    assert _sole_item(db).files_json is None
+
+    from agent.main import SUPPORTED_KINDS
+
+    r = logged_in.get("/api/agent/poll",
+                      params={"kinds": ",".join(SUPPORTED_KINDS), "files": 0},
+                      headers=auth(DEMO_TOKEN))
+    assert r.status_code == 200, "파일이 없는데도 안 내려갔다"
+    assert r.json()["kind"] == "test_send"
+
+
+def test_the_remind_does_not_need_auto_attach(logged_in, rehearsal, db, users,
+                                              a_company, a_template):
+    """파일을 안 붙이는데 자료 폴더 권한으로 막으면 없는 이유로 막는 것이다."""
+    assert not users["u1"].can_auto_attach_ir
+    html = logged_in.get("/setup").text
+    assert THE_FILE_FIELD not in html, "파일 시험은 여전히 그 계정만"
+    assert THE_COMPANY_FIELD in html
+    _job_id(_press(logged_in, REMIND, company_id=a_company.id))
+
+
+def test_the_remind_reuses_the_test_kind(logged_in, rehearsal, db, a_company,
+                                         a_template):
+    """새 잡 종류를 만들지 않는다 — 만들면 발송기를 갱신할 때까지 큐에 선다.
+    `SEND_KINDS` 에 없는 종류라 이력·통계에도 저절로 안 섞인다."""
+    from app.models import SEND_KINDS, TEST_SEND_KIND
+
+    _job_id(_press(logged_in, REMIND, company_id=a_company.id))
+    assert _jobs(db)[0].kind == TEST_SEND_KIND
+    assert TEST_SEND_KIND not in SEND_KINDS
+
+
+def test_the_remind_job_belongs_to_whoever_pressed_it(logged_in, rehearsal, db,
+                                                      users, a_company,
+                                                      a_template):
+    _job_id(_press(logged_in, REMIND, company_id=a_company.id))
+    assert _jobs(db)[0].user_id == users["u1"].id
+
+
+def test_you_have_to_be_logged_in_for_the_remind(client, rehearsal, db,
+                                                 a_company, a_template):
+    r = client.post(REMIND, data={"company_id": a_company.id},
+                    follow_redirects=False)
+    assert r.status_code == 303 and "/login" in r.headers["location"]
+    assert _jobs(db) == []
+
+
+def test_a_consultant_cannot_reach_the_remind(client, db, rehearsal, a_company,
+                                              a_template):
+    from app.models import User
+    from app.services import auth as auth_svc
+
+    db.add(User(name="컨설턴트", phone="01000000007", role="consultant",
+                password_hash=auth_svc.hash_password(DEMO_PASSWORD)))
+    db.commit()
+    client.post("/login", data={"phone": "01000000007", "password": DEMO_PASSWORD})
+
+    r = client.post(REMIND, data={"company_id": a_company.id},
+                    follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/consulting"
+    assert _jobs(db) == []
+
+
+def test_the_composer_lives_outside_the_screen(rehearsal):
+    """문구 짓는 일은 시험 화면 안에 묻어 두지 않았다 — 실제 발송 길을 낼 때
+    다시 짜지 않게 하려는 것이다."""
+    from app.services import startup_msg
+
+    assert startup_msg.KIND == "startup_sms"
+    assert callable(startup_msg.compose) and callable(startup_msg.body_for)
