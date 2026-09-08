@@ -54,18 +54,35 @@ TAIL_COLUMNS = [
     ("이메일", "email"),
 ]
 
-# `관리 스타트업` 탭에만 한 칸 더 선다 — `기업 관리` **바로 오른쪽**이다.
+# `관리 스타트업` 탭에만 서는 칸들 — 전부 `기업 관리` **오른쪽**이다.
 #
-# 투자사에 이 기업을 어떻게 소개할지 적는 자리가 표에 없어서 지금까지 옆 칸에
-# 같이 적혀 있었다. `기업 관리` 는 **지금 어떻게 되고 있는가**를 적는 칸이고
-# 그 값으로 칩·KPI 를 세는 자리라(`services/consulting_status.py`), 소개 문구가
-# 거기 섞이면 문구 안에 우연히 든 `관리` 한 낱말로 엉뚱한 갈래에 걸린다.
+# 앞의 셋은 **견적서 → 계약 → 계산서**, 컨설턴트가 기업 하나를 붙들고 가는
+# 흐름의 세 마디다. 마지막 하나는 투자사에 그 기업을 어떻게 소개할지 적는
+# `딜 소개문구` 다.
+#
+# 넷 다 지금까지 옆 `기업 관리` 한 칸에 문장으로 섞여 있었다
+# (`관리 중 : 미팅 완. -> 견적서 보내기 완료.`). 섞여 있으면 두 가지를 잃는다.
+#
+#   · **아직 안 한 곳**을 골라낼 수가 없다 — 적힌 것은 검색으로 찾아지지만
+#     안 적힌 것은 안 찾아진다.
+#   · `기업 관리` 는 그 값으로 칩·KPI 를 세는 칸이라
+#     (`services/consulting_status.py`) 문장이 길어질수록 `관리`·`드랍` 같은
+#     낱말이 우연히 들어가 그 줄이 엉뚱한 갈래에 걸린다.
 #
 # 다른 두 탭(`경영본부 전달 기업` · `월간 계약 업무현황표`)에는 안 세운다.
-# 소개 문구는 아직 관리 중인 기업에 대고 쓰는 말이고, 계약 탭은 표 자체가
-# 다르다. 그래서 `FIXED_COLUMNS` 에 넣지 않고 이 탭만의 묶음을 따로 둔다 —
-# `FIXED_COLUMNS` 는 지금도 스타트업·경영본부 두 탭이 함께 쓴다.
-STARTUP_COLUMNS = FIXED_COLUMNS + [("딜 소개문구", "deal_pitch")]
+# 이 넷은 아직 관리 중인 기업에 대고 쓰는 말이고, 계약 탭은 표 자체가 다르다
+# (그쪽에는 `계약서 수신여부` 가 이미 서 있다 — 계약 줄의 서류 이야기라 같은
+# 칸이 아니다). 그래서 `FIXED_COLUMNS` 에 넣지 않고 이 탭만의 묶음을 따로
+# 둔다 — `FIXED_COLUMNS` 는 지금도 스타트업·경영본부 두 탭이 함께 쓴다.
+STARTUP_COLUMNS = FIXED_COLUMNS + [
+    ("견적서 첨부여부", "quote_attached"),      # O / X
+    # **자유 글이다.** 이름이 `~여부` 가 아니라 `~관리` 로 끝나는 것이
+    # 그 표시다 — 이 표에서 `~관리` 로 끝나는 칸(`기업 관리`)은 문단이
+    # 들어오는 자유 문장이다. 보기를 세우지 않은 까닭은 0065 참고.
+    ("계약관리", "contract_management"),
+    ("계산서 수신여부", "invoice_received"),    # O / X
+    ("딜 소개문구", "deal_pitch"),
+]
 
 # `월간 계약 업무현황표` 는 다른 두 탭과 **표 자체가 다르다.**
 #
@@ -576,6 +593,13 @@ def company_rows(db: Session, user: User, sheet: str = "",
             # 실어 둔다 — 화면이 탭마다 다른 dict 를 받으면 없는 칸을 꺼내다
             # 터지는 자리가 생긴다. 머리글·칸을 세우는 것은 화면 쪽이다.
             "deal_pitch": c.deal_pitch or "",
+            # 같은 탭의 세 칸. 위와 같은 이유로 탭을 가리지 않고 늘 싣는다.
+            #
+            # 앞뒤 둘은 빈 문자열이 곧 `아직 안 정함` 이다(`계약서 수신여부`
+            # 와 같다) — 머리글 필터가 그것을 `(비어 있음)` 으로 세워 준다.
+            "quote_attached": c.quote_attached or "",
+            "contract_management": c.contract_management or "",
+            "invoice_received": c.invoice_received or "",
             "notes": seen,
             # 어느 달이든 기록이 있는가 — `연락 기록 없음` 칩이 보는 값이다.
             "contacted": status.contacted(seen.values()),
@@ -603,6 +627,14 @@ def company_rows(db: Session, user: User, sheet: str = "",
                 # (`consulting.js` 의 `refreshRowFlags`) 고치기 전후로 검색
                 # 결과가 달라진다.
                 c.deal_pitch if startup else "",
+                # 세 칸도 **칸이 서는 탭에서만** 넣는다(위 `deal_pitch` 와
+                # 같은 이유). 화면에서 고치면 브라우저가 `td.cell` 을 전부
+                # 이어 붙여 이 값을 다시 적으므로(`consulting.js` 의
+                # `refreshRowFlags`), 서버가 안 넣으면 고치기 전후로 검색
+                # 결과가 달라진다.
+                c.quote_attached if startup else "",
+                c.contract_management if startup else "",
+                c.invoice_received if startup else "",
                 *notes.values(),
             ])).lower(),
         })
@@ -746,6 +778,10 @@ class CompanyIn(BaseModel):
     # `관리 스타트업` 탭의 칸. **긴 글이라 줄바꿈이 그대로 들어온다** —
     # `_assign` 이 앞뒤 공백만 떼므로 가운데 줄바꿈은 살아서 저장된다.
     deal_pitch: Optional[str] = None
+    # 같은 탭의 세 칸. **여기 안 적으면 화면에서 고쳐도 조용히 안 저장된다.**
+    quote_attached: Optional[str] = None
+    contract_management: Optional[str] = None
+    invoice_received: Optional[str] = None
     # {"열id": "내용"} — 월별 리마인드
     notes: Optional[Dict[str, str]] = None
 
@@ -967,7 +1003,13 @@ CONTRACT_EXPORT_HEADERS = ["성공보수율", "계약금", "계약서 수신여�
 # 자리는 **맨 뒤**다. 화면 순서대로 `기업 관리` 옆에 끼우면 그 뒤 월 열이
 # 통째로 한 칸씩 밀려, 지난번에 내려받아 둔 파일과 나란히 놓고 볼 수가 없다
 # (계약 탭 칸들도 같은 이유로 뒤에 붙어 있다).
-STARTUP_EXPORT_HEADERS = ["딜 소개문구"]
+#
+# 새로 느는 칸도 **`딜 소개문구` 뒤에** 붙인다. 화면 차례(`기업 관리` 바로 뒤)
+# 대로 끼우면 그 뒤 월 열이 통째로 세 칸씩 밀려, 지난번에 내려받아 둔 파일과
+# 나란히 놓고 볼 수가 없다 — 이 목록의 차례는 화면 차례가 아니라 **이미
+# 내려받아 둔 파일의 차례**다.
+STARTUP_EXPORT_HEADERS = ["딜 소개문구", "견적서 첨부여부", "계약관리",
+                          "계산서 수신여부"]
 
 
 @router.get("/api/export/consulting.xlsx")
@@ -990,7 +1032,8 @@ def export_consulting(db: Session = Depends(get_db),
         + [r["notes"].get(str(c.id), "") for c in cols]
         + [r["ceo_name"], r["phone"], r["email"]]
         + [r["success_fee"], r["contract_fee"], r["contract_received"]]
-        + [r["deal_pitch"]]
+        + [r["deal_pitch"], r["quote_attached"], r["contract_management"],
+           r["invoice_received"]]
         for r in company_rows(db, user)
     ]
     try:
@@ -1033,12 +1076,40 @@ def parse_rows(rows: List[List[str]]) -> dict:
                 return j
         return None
 
+    def fixed(*tokens) -> Optional[int]:
+        """**월 열이 아닌 것 중에서** 찾는다.
+
+        `견적서`·`계약 관리` 같은 말은 월별 리마인드 열 이름에도 들어갈 수
+        있다(`9월 견적서 리마인드 톡`). `find` 로 찾으면 그런 열을 채가서,
+        그 달 기록이 갈 곳을 잃은 채 조용히 사라진다 — 아래 `note_cols` 는
+        여기서 집어 간 열을 빼고 세기 때문이다.
+
+        달이 적힌 이름은 월 열이라는 뜻이니 건너뛴다. 달을 읽는 규칙은
+        `services/monthly_columns.py` 한 곳이고 여기서 다시 적지 않는다.
+        """
+        for j, h in enumerate(header):
+            if monthly_columns.month_of(h) is None \
+                    and all(t in h for t in tokens):
+                return j
+        return None
+
     idx = {
         "position": find("NO"),
         "region": find("지역"),
         "meeting_at": find("미팅일"),
         "company_name": find("기업명"),
         "management": find("기업 관리"),
+        # 원본 시트에도 이 세 칸이 있을 수 있다. 여기서 안 받으면 **월별
+        # 리마인드 열로 딸려 들어간다** — 아래 `note_cols` 가 못 알아본 열을
+        # 전부 월 열로 삼기 때문이다. 그러면 같은 이름이 표에 두 번 서고
+        # (전용 칸은 빈 채로) 값은 엉뚱한 쪽에 담긴다.
+        #
+        # 토막을 둘씩 준다 — 시트에 `계약 관리` 로 띄어 적혀 있을 수도,
+        # `견적서 첨부 여부` 로 적혀 있을 수도 있다. `기업 관리` 는 `계약` 이
+        # 없어 `계약관리` 자리에 안 걸린다.
+        "quote_attached": fixed("견적서", "첨부"),
+        "contract_management": fixed("계약", "관리"),
+        "invoice_received": fixed("계산서", "수신"),
         "ceo_name": find("대표자"),
         "phone": find("연락처"),
         "email": find("이메일"),
@@ -1112,7 +1183,9 @@ def apply_rows(db: Session, parsed: dict, user: User,
         else:
             updated += 1
         for field in ("region", "meeting_at", "company_name", "management",
-                      "ceo_name", "phone", "email"):
+                      "ceo_name", "phone", "email",
+                      "quote_attached", "contract_management",
+                      "invoice_received"):
             value = item.get(field)
             if value:
                 setattr(company, field, value)

@@ -837,6 +837,32 @@ class ConsultingCompany(TimestampMixin, Base):
     # 쓰는 말이라 화면도 그 탭에서만 이 칸을 세운다
     # (`routers/consulting.py` 의 `STARTUP_COLUMNS`).
     deal_pitch: Mapped[Optional[str]] = mapped_column(Text, nullable=True)     # 딜 소개문구
+    # 견적서를 보냈는가 — `O` / `X`. **빈칸은 `아직 안 정함`이다**
+    # (바로 위 `contract_received` 와 같은 뜻·같은 모양이다). 이미 들어 있는
+    # 줄을 `X` 로 채우지 않는 이유도 같다 — 아무도 확인한 적 없는 사실이다.
+    quote_attached: Mapped[Optional[str]] = mapped_column(
+        String, nullable=True)                                                 # 견적서 첨부여부
+    # 계약이 어떻게 되고 있는가. **보기를 정해 두지 않은 자유 글**이라 `Text` 다.
+    #
+    # 옆 두 칸은 이름이 `~여부` 로 끝나고 값이 `O`/`X` 두 가지인데, 이 칸만
+    # `~관리` 다. 이 표에서 `~관리` 로 끝나는 칸은 이미 하나 있고
+    # (`management` = `기업 관리`) 그것도 자유 문장이다 — 시트를 쓰는 사람이
+    # 붙인 이름이 값의 모양을 말하고 있어서 그 결을 그대로 따른다.
+    #
+    # `IrCompany.contract_status`(`무료계약완료`·`유료계약완료`) 처럼 보기를
+    # 세울 수도 있었지만, 사용자가 무엇을 담을 칸인지 안 적었다. 보기를 잘못
+    # 정해 두면 **사람이 적을 자리가 없어진다** — 자유 글로 두면 나중에 값이
+    # 몇 가지로 모이는 것이 보일 때 보기를 세우면 그만이고, 그때는 이미
+    # 적힌 값이 근거가 된다. 반대 방향은 되돌리기가 어렵다.
+    #
+    # **어떤 판정에도 안 쓴다.** 칩·KPI 는 `기업 관리` 한 갈래만 본다
+    # (`services/consulting_status.py`) — `계약`·`관리` 라는 낱말이 이 칸에
+    # 들어 있다는 이유로 줄이 엉뚱한 갈래에 걸리면 안 된다.
+    contract_management: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True)                                                   # 계약관리
+    # 계산서를 받았는가 — `O` / `X`. 빈칸은 `아직 안 정함` 이다(위와 같다).
+    invoice_received: Mapped[Optional[str]] = mapped_column(
+        String, nullable=True)                                                 # 계산서 수신여부
     # 나누기 **전의 한 줄**. 지우지 않는다 — 나눈 결과가 틀렸을 때 여기서 다시
     # 나눌 수 있어야 하고, 원본 시트와 글자 그대로 대조할 수 있어야 한다.
     source_line: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

@@ -188,7 +188,12 @@ def test_엑셀에도_실린다(allowed, db, users):
 
     _row(db, users["u1"].id, sheet=STARTUP, position=1, company_name="샘플마",
          deal_pitch=PITCH)
-    assert STARTUP_EXPORT_HEADERS == ["딜 소개문구"]
+    # **맨 앞이 `딜 소개문구`** 인 것까지만 못 박는다. 이 탭에는 그 뒤로 칸이
+    # 더 붙었고(`견적서 첨부여부`·`계약관리`·`계산서 수신여부`), 새 칸은 늘
+    # **뒤에** 붙는다 — 이미 내려받아 둔 파일의 칸 자리가 안 밀려야 한다.
+    # 목록 전체를 못 박으면 칸을 더할 때마다 이 줄이 같이 빨개지는데, 그때
+    # 이 검사가 지키려던 것(`딜 소개문구` 가 엑셀에 실린다)은 멀쩡하다.
+    assert STARTUP_EXPORT_HEADERS[0] == "딜 소개문구"
     # 계약 탭 칸들 뒤에 붙는다 — 이미 내려받아 둔 파일의 칸 자리가 안 밀린다.
     src = pathlib.Path("app/routers/consulting.py").read_text(encoding="utf-8")
     assert "CONTRACT_EXPORT_HEADERS\n               + STARTUP_EXPORT_HEADERS" in src
@@ -226,18 +231,30 @@ def test_다른_두_탭에는_칸도_값도_안_선다(allowed, db, users):
         "대표자", "연락처", "이메일", ""]
 
 
-def test_스타트업_탭에서만_기업_관리_바로_오른쪽에_선다(allowed, db, users):
-    """사용자가 부른 자리 그대로다 — `기업 관리` **바로 오른쪽**.
+def test_스타트업_탭에서만_서는_칸들_끝에_선다(allowed, db, users):
+    """이 탭에만 서는 칸 묶음 **안**에 있고, 머리글과 칸이 **같은 차례**다.
 
-    칸 순서가 머리글과 어긋나면 그 뒤가 통째로 한 칸씩 밀린다.
+    처음에는 `기업 관리` 바로 오른쪽이었다. 지금은 그 사이에 견적서 → 계약 →
+    계산서 세 마디가 들어와 있고(`tests/test_consulting_quote_invoice.py`),
+    소개 문구는 그 뒤로 물러났다 — 세 마디는 일이 나아가는 차례라 `기업 관리`
+    에 붙어 있어야 읽히고, 소개 문구는 그 흐름과 다른 축의 메모다.
+
+    자리를 한 칸으로 못 박지 않는다. 이 검사가 지키는 것은 **머리글 차례와 칸
+    차례가 안 어긋난다**는 것이다 — 어긋나면 그 뒤가 통째로 밀린다.
     """
     _row(db, users["u1"].id, sheet=STARTUP, position=1, company_name="샘플아",
          management="관리 중", deal_pitch="스마트팜 관제 SaaS")
     body = _open(allowed, STARTUP)
     heads = _heads(body)
-    assert heads.index("딜 소개문구") == heads.index("기업 관리") + 1, heads
     fields = re.findall(r'data-field="([^"]+)"', body.split("<tbody>", 1)[1])
-    assert fields.index("deal_pitch") == fields.index("management") + 1, fields
+    # 이 탭에만 서는 칸 묶음의 **맨 뒤**다. 앞은 `기업 관리`, 뒤는 다시 모든
+    # 탭이 함께 쓰는 `대표자` 다.
+    assert heads[heads.index("기업 관리") + 4] == "딜 소개문구", heads
+    assert heads[heads.index("딜 소개문구") + 1] == "대표자", heads
+    # 머리글과 칸이 같은 차례인가 — 이름은 다르지만 자리가 같아야 한다.
+    assert fields.index("deal_pitch") - fields.index("management") \
+        == heads.index("딜 소개문구") - heads.index("기업 관리"), (heads, fields)
+    assert fields[fields.index("deal_pitch") + 1] == "ceo_name", fields
 
 
 def test_다른_탭에_값이_남아_있어도_그_탭_화면에는_안_나온다(allowed, db, users):
