@@ -208,10 +208,16 @@ def ir_kakao_message(
 
     요청이 **한 곳도 없으면 404** 다. 글을 짓지 않는 판정은 `ir_kakao.compose`
     한 곳에 있다 — 화면이 따로 세면 두 판정이 갈린다.
+
+    머리말은 **문구틀**(`startup_sms` — 「기업 리마인드 — 문자」)에서 온다.
+    `/setup` 의 시험 자리가 보내는 글과 이 화면이 보여 주는 글은 **같은 함수**가
+    만든다 — 갈리면 시험이 거짓말을 한다.
     """
     # 문서 화면과 **같은 판정**을 지난다.
     selected = month if ir_monthly.is_month(month) else ir_monthly.this_month()
-    msg = ir_kakao.for_company(db, company_id, selected)
+    # 문구를 짓는 자리는 `ir_kakao.compose` **하나**다 — `/setup` 의 시험 자리도
+    # 같은 함수를 지난다. `user` 는 머리말 문구틀을 고르는 데 쓴다.
+    msg = ir_kakao.for_company(db, user, company_id, selected)
     ctx = base_ctx(request, db, user, STARTUP_PAGE.key)
     ctx.update({"msg": msg, "selected": selected, "company_id": company_id})
     return templates.TemplateResponse("startup_ir_kakao.html", ctx,
