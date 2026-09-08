@@ -162,3 +162,76 @@ def test_send_history_shows_companies_not_the_room_name(sent_batch, db):
     assert row["company_count"] == 3
     assert "홍길동" not in row["content"]
     assert row["week"] == 3 and row["weekday"] == "수"
+
+
+# --- ④ 전달한 자료 → 미팅 요청 --------------------------------------------
+#
+# 자료를 보낸 다음에 하는 말은 "미팅 가능하실지요" 다. 그런데 그 말을 보내려면
+# 딜 제안 관리로 옮겨 `미팅 요청` 탭을 누르고, 방금 자료를 보낸 그 담당자를
+# 목록에서 **다시 찾아** 골라야 했다 — 이미 화면에 떠 있는 이름이다.
+#
+# 새 길을 내는 것이 아니라 [자료 보내기] 가 쓰던 그 주소에 방식만 바꿔 단다.
+
+
+@pytest.fixture()
+def delivered(sent_batch, db):
+    """자료를 전달한 요청 한 건 — `전달한 자료` 표에 서는 줄."""
+    from app.models import IrRequest
+
+    row = IrRequest(user_id=sent_batch["contact"].user_id,
+                    contact_id=sent_batch["contact"].id,
+                    company_id=sent_batch["companies"][0].id,
+                    company_name="샘플애그", requested_at="2026-08-20",
+                    status="delivered", delivered_at="2026-08-21")
+    db.add(row)
+    db.commit()
+    return sent_batch
+
+
+def test_the_firm_links_to_the_meeting_request(delivered):
+    """투자사명을 누르면 **미팅 요청 방식**의 발송 화면으로 간다."""
+    from app.routers.deals import MODE_MEETING
+
+    body = delivered["client"].get("/ir").text
+    assert f'/deals?mode={MODE_MEETING}&contacts={delivered["contact"].id}' in body
+
+
+def test_the_meeting_mode_is_a_real_tab(delivered):
+    """`mode=meeting` 이 발송 화면에 **없는 탭**이면 링크는 딜 소개로 열린다.
+
+    화면 코드가 `.mode-tab[data-mode=…]` 를 못 찾으면 방식을 안 바꾼다 —
+    담당자만 골라진 채 딜 소개 문구가 준비된다.
+    """
+    from app.routers.deals import FOLLOW_UP_MODES, MODE_MEETING, MODE_TITLES
+
+    assert MODE_MEETING in FOLLOW_UP_MODES
+    assert MODE_TITLES[MODE_MEETING] == "미팅 요청"
+    assert f'data-mode="{MODE_MEETING}"' in delivered["client"].get("/deals").text
+
+
+def test_no_companies_ride_along(delivered):
+    """기업은 안 싣는다 — 미팅 요청 문구가 기업 목록을 안 쓴다."""
+    import re
+
+    from app.routers.deals import MODE_MEETING, MODES_WITH_COMPANIES
+
+    assert MODE_MEETING not in MODES_WITH_COMPANIES
+    body = delivered["client"].get("/ir").text
+    links = re.findall(r'/deals\?mode=meeting[^"\']*', body)
+    assert links, "미팅 요청 링크가 없다"
+    assert not any("companies=" in href for href in links), links
+
+
+def test_someone_elses_contact_never_reaches_the_send_list(sent_batch, db, client):
+    """넘어간 곳에서 **남의 담당자는 여전히 못 고른다.**
+
+    주소에 번호를 실어 보내는 길이라 "링크를 만들면 고를 수 있게 되나" 를
+    확인해 둔다 — 발송 화면의 목록은 서버가 그린다. 없으면 없는 것이다.
+    """
+    from .conftest import DEMO_PASSWORD
+
+    client.post("/login", data={"phone": "01000000002",
+                                "password": DEMO_PASSWORD})
+    body = client.get("/deals").text
+    assert f'class="contact-cb" value="{sent_batch["contact"].id}"' not in body
+    assert "홍길동" not in body
