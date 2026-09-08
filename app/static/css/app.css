@@ -1887,3 +1887,14 @@ a.guard-go:hover { background: #1e4fd0; text-decoration: none; }
    서로 다르면 하나가 덤으로 붙은 것처럼 보인다. 생김새는 손대지 않는다 —
    적는 칸도 브라우저 기본 모양이라, 고르개만 꾸미면 오히려 어긋난다. */
 .test-form input[type=text], .test-form select { flex: 1 1 320px; min-width: 0; }
+/* 나란히 선 두 문구 시험은 **받는 명단이 서로 반대다** — 월말 리마인드는
+   스타트업으로, 미팅 후기는 투자사로 간다. 제목만으로는 그 차이가 안 보여서
+   받는 쪽을 제목 옆에 표로 단다. 색을 다르게 두는 것은 꾸밈이 아니라 **둘을
+   헷갈리지 않게 하는 것**이 이 표의 일이기 때문이다. */
+.to-who {
+  display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 10px;
+  font-size: 11px; font-weight: 600; vertical-align: middle; white-space: nowrap;
+  border: 1px solid currentColor;
+}
+.to-startup { color: #b45309; background: #fffbeb; }
+.to-investor { color: #1d4ed8; background: #eff6ff; }
