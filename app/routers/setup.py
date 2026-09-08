@@ -22,9 +22,14 @@ from sqlalchemy.orm import Session
 from .. import config
 from ..db import get_db
 from ..deps import get_current_user, may_auto_attach, templates
-from ..models import TEST_SEND_KIND, AgentDevice, IrCompany, SendItem, SendJob, User
-from ..services import startup_msg
+from ..models import (TEST_SEND_KIND, AgentDevice, IrCompany, Meeting, SendItem,
+                      SendJob, User, VcContact)
+from ..services import pipeline, startup_msg
 from ..ui import base_ctx
+# 미팅 후기 문구는 **발송 화면이 이미 짓는다**(미팅 후기 탭). 여기서 다시
+# 조립하면 두 벌이 되고, 두 벌은 반드시 어긋난다 — 문구 관리 화면이 같은
+# 이유로 같은 곳을 부른다(`templates_crud` 의 `deals_view`).
+from . import deals as deals_view
 
 router = APIRouter(tags=["setup"])
 
@@ -79,6 +84,7 @@ TEST_INPUT_MISSING = {
     "need_file": "시험할 파일 이름을 적어주세요",
     "need_room": "확인할 카톡방 이름을 적어주세요",
     "need_company": "어느 기업 것으로 만들지 골라주세요",
+    "need_meeting": "어느 미팅 것으로 만들지 골라주세요",
     "no_template": ("「기업 리마인드 — 문자」 문구가 비어 있습니다 — "
                     "딜 제안 문구에서 먼저 적어 주세요"),
 }
@@ -108,6 +114,66 @@ def _test_companies(db: Session) -> list:
     생겼는지만 못 보게 된다.
     """
     return list(db.execute(select(IrCompany).order_by(IrCompany.name)).scalars().all())
+
+
+def _test_meetings(db: Session, user: User) -> list:
+    """시험용 미팅 고르개에 담을 목록 — **내 미팅 전부**, 결과 문의가 밀린 것부터.
+
+    ## 왜 미팅을 고르게 하나
+
+    미팅 후기는 **미팅을 마친 투자사 담당자**에게 나간다. 담당자를 직접 고르게
+    하면 미팅을 한 적 없는 사람에게 "지난번 미팅은 어떻게 보셨는지요" 를 만들어
+    보게 되고, 그건 실제로 나갈 자리가 아니다. 미팅을 고르면 받는 사람이 저절로
+    **그 미팅을 한 사람**으로 정해진다.
+
+    ## 왜 `due_followups` 로 거르지 않나  ★ 이 판단이 목록의 모양이다
+
+    결과 문의가 예정된 미팅(`pipeline.today_items` 의 `due_followups`)만 담을 수도
+    있었다. 그러지 않은 까닭은 둘이다.
+
+    **첫째, 문구가 미팅을 안 읽는다.** 미팅 후기 문구에 꽂히는 값은 이름·직함·
+    투자사 셋뿐이다(`deals._to_contact_view`). 언제 만났는지·결과가 무엇인지는
+    어느 자리에도 안 들어간다. 그래서 결과 문의가 밀린 미팅으로 만들든 어제 잡힌
+    미팅으로 만들든 **나오는 글자가 같다** — 걸러도 시험이 더 진짜가 되지 않는다.
+
+    **둘째, 거르면 시험할 것이 없는 때가 있다.** 이 자리는 발송기를 새 PC 에 깔
+    때 쓴다. 그 시점에 결과 문의가 밀린 미팅이 하나도 없는 것은 흔한 일이고
+    (미팅이 `done` 이고, 결과가 거절이 아니고, 뒤에 잡힌 미팅이 없고, 물어볼 날이
+    지났어야 한다), 그러면 정작 필요한 순간에 고르개가 비어 버린다.
+
+    거르는 대신 **어느 것이 결과 문의 차례인지 표를 달아** 준다. 그 판정은 여기서
+    새로 하지 않고 `pipeline.meeting_rows` 가 이미 내는 `followup_due_now` 를
+    읽는다 — 대시보드·오늘 할 일과 같은 값이라야 화면마다 다른 미팅이 밀렸다고
+    말하지 않는다. 밀린 것을 위로 올려 두면 실제로 쓸 때 고를 그 줄이 맨 위에 온다.
+
+    ## 담당자가 **내 명단에 없는** 줄은 뺀다
+
+    문구는 담당자에서 나온다 — 이름·직함·투자사가 그 줄에서 온다. 미팅은 내
+    것인데 담당자가 남의 명단에 있으면, 그 사람의 이름과 투자사가 내 시험방에
+    실려 나간다. 시험방이라도 그것은 남의 자료다.
+
+    골라도 되돌아올 줄을 그려 두지 않는 것이기도 하다 — 눌러 봐야 안 되는 단추는
+    이 저장소가 반복해 고쳐 온 거짓말이다. `딜소개 불가` 기업을 월말 리마인드
+    목록에 남겨 둔 것과는 다른 자리다. 그쪽은 골라도 **문구가 만들어진다.**
+    """
+    rows = pipeline.meeting_rows(db, user)
+    mine = {
+        c.id: c for c in db.execute(
+            select(VcContact).where(VcContact.user_id == user.id)
+        ).scalars().all()
+    }
+    out = [{
+        "id": row["id"],
+        # 받는 사람을 그대로 적는다 — 이 고르개의 알맹이는 "누구에게 가는가" 다.
+        "who": " ".join(p for p in (row["name"], row["title"]) if p).strip(),
+        "firm": row["firm"],
+        "when": row["when_label"] or row["scheduled_at"] or "",
+        "kind_label": row["kind_label"],
+        # 결과 문의 차례인가. 판정은 `pipeline` 한 곳에서 온다.
+        "due": row["followup_due_now"],
+    } for row in rows if row["contact_id"] in mine]
+    # 결과 문의가 밀린 것이 먼저. 그 안의 차례는 `meeting_rows` 가 정한 그대로다.
+    return sorted(out, key=lambda m: not m["due"])
 
 
 def test_tools_on() -> bool:
@@ -299,6 +365,9 @@ def setup_page(
                 # 그리지 않을 값을 컨텍스트에 태우면 언젠가 그 값을 쓰는
                 # 자리가 생긴다(바로 위 `ir_root` 와 같은 조심).
                 "test_companies": _test_companies(db) if test_tools_on() else [],
+                # 미팅 후기 시험이 고를 미팅. 받는 사람이 스타트업이 아니라
+                # **투자사 담당자**라, 위 명단과 섞이지 않게 따로 싣는다.
+                "test_meetings": _test_meetings(db, user) if test_tools_on() else [],
                 # 칸을 비운 채 눌렀을 때 되돌아오며 실려 오는 말.
                 "test_msg": TEST_INPUT_MISSING.get(
                     request.query_params.get("test", ""), "")})
@@ -496,6 +565,71 @@ def test_startup_remind(
     message = startup_msg.compose(db, user, company)
     if not message:
         return RedirectResponse("/setup?test=no_template", status_code=303)
+    job_id = _queue_test_job(db, user, TEST_SEND_KIND, room, message, [])
+    return RedirectResponse(f"/jobs/{job_id}", status_code=303)
+
+
+@router.post("/setup/test/meeting-review")
+def test_meeting_review(
+    meeting_id: int = Form(0),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """[시험] 미팅 후기 문구 — **시험방으로** 그 문구를 한 통 보낸다.
+
+    ## 받는 사람이 **투자사 담당자**다 — 월말 리마인드와 반대쪽이다  ★
+
+    바로 위 월말 리마인드는 **스타트업**에게 나간다. 이것은 미팅을 마친
+    **투자사**에게 "그 뒤 어떻게 보셨는지" 를 묻는 문구다. 두 자리가 나란히
+    있으니 화면이 그 차이를 분명히 적어야 한다(`setup.html`) — 헷갈려서 반대로
+    누르면 스타트업에게 투자사용 문구가, 투자사에게 스타트업용 문구가 간다.
+    시험방으로만 나가므로 실제 사고는 안 나지만, 그러면 **시험이 거짓말을 한다**.
+
+    ## 문구를 여기서 짓지 않는다 — 그리고 새로 만들지도 않았다
+
+    `meeting_review` 를 짓는 자리는 **이미 있다**: 발송 화면의 미팅 후기 탭
+    (`routers/deals.py: FOLLOW_UP_MODES[MODE_REVIEW]`). 그래서 #133 이
+    `startup_sms` 에 한 것처럼 새 서비스를 내지 않고, 그 길에 부를 수 있는
+    입구만 냈다(`deals.review_message`). 조립 규칙을 여기 다시 적으면 두 벌이
+    되고, 두 벌은 반드시 어긋난다.
+
+    ## 왜 미팅을 고르게 하나
+
+    받는 사람이 **미팅을 한 그 담당자**여야 실제로 나갈 모양이 나온다. 담당자를
+    직접 고르게 하면 미팅을 한 적 없는 사람으로도 만들 수 있는데, 그건 이 문구가
+    나갈 자리가 아니다. 어느 미팅을 담을지는 `_test_meetings` 에 적었다 —
+    짧게: **거르지 않고, 결과 문의가 밀린 것에 표를 달아 위로 올린다.**
+
+    ## 문구틀이 비어 있어도 **막지 않는다** — 월말 리마인드와 다른 점  ★
+
+    월말 리마인드는 문구틀이 없으면 잡을 만들지 않는다. 코드에 적힌 뼈대를 보내면
+    사람이 그것을 팀이 정한 문구로 오해하기 때문이다. 여기는 반대로 **막는 것이
+    거짓말이 된다** — 미팅 후기 탭은 문구틀이 없어도 코드에 적힌 한 문장을
+    실제로 내보낸다(`FOLLOW_UP_MODES` 의 폴백). 저장소 기본 시드에도
+    `meeting_review` 문구가 없어서, 지금 이 문구를 보내면 나가는 것은 바로 그
+    폴백이다. 여기서 막으면 **오늘 실제로 나가는 문구를 볼 방법이 없어진다.**
+
+    대신 화면이 그 사실을 적는다 — 지금 나간 것이 문구틀에서 온 것인지 코드에
+    적힌 폴백인지 사람이 알아야 고칠지 말지를 정한다.
+
+    ## 왜 `may_auto_attach` 를 보지 않나
+
+    파일을 붙이지 않는다. 월말 리마인드와 같은 자리, 같은 이유다.
+
+    ## 머리말을 붙이지 않는다
+
+    문구틀(또는 폴백)이 만든 것과 **글자 하나까지 같은지**가 이 시험의 알맹이다.
+    앞에 한 줄이라도 얹으면 그것을 볼 수 없다.
+    """
+    room = _test_room()
+    meeting = db.get(Meeting, meeting_id) if meeting_id else None
+    contact = (db.get(VcContact, meeting.contact_id)
+               if meeting is not None and meeting.user_id == user.id else None)
+    if meeting is None or contact is None or contact.user_id != user.id:
+        # 남의 미팅·지워진 담당자도 같은 길이다 — 고를 수 있는 것은 화면에 뜬
+        # 줄뿐이고, 그 밖의 것을 골랐다는 말은 화면에 적을 자리가 없다.
+        return RedirectResponse("/setup?test=need_meeting", status_code=303)
+    message = deals_view.review_message(db, user, contact)
     job_id = _queue_test_job(db, user, TEST_SEND_KIND, room, message, [])
     return RedirectResponse(f"/jobs/{job_id}", status_code=303)
 
