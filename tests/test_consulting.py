@@ -227,12 +227,20 @@ def test_new_month_column_goes_first(allowed, db):
     assert cols[0].label == "9월 마지막주 리마인드"
 
 
-def test_deleting_a_column_removes_its_notes(allowed, db):
+def test_deleting_a_column_removes_its_notes(allowed, db, users):
+    """지우면 그 달에 적어 둔 내용도 함께 사라진다 — 남은 값은 어느 칸의
+    것인지 모르는 값이 되어 JSON 에 쌓인다.
+
+    **관리자로 지운다.** 칸은 탭마다 한 벌이라 지우는 손이 팀 전체의 줄에
+    닿는다(`routers/consulting.py` 의 `may_edit_column`).
+    """
     import json
 
     from app.models import ConsultingColumn, ConsultingCompany
 
     _import(allowed)
+    users["u1"].role = "admin"
+    db.commit()
     db.expire_all()
     august = db.query(ConsultingColumn).filter_by(
         label="8월 마지막주 리마인드 톡 or TEL").first()
@@ -448,11 +456,12 @@ def test_only_recent_months_are_shown(client, db, users):
 def test_the_user_is_told_that_months_are_folded(client, db, users):
     """그냥 안 보이면 지워진 줄 안다."""
     from app.models import ConsultingColumn
+    from app.services.consulting_sheets import default_label
 
-    # 표에는 주인이 있다 — 남의 열이 내 표에 섞이면 안 된다
+    # 칸은 탭에 붙는다 — 담당이 아니라 탭이 열쇠다(`models.ConsultingColumn`).
     for i, m in enumerate(range(12, 0, -1)):
         db.add(ConsultingColumn(label=f"{m}월 리마인드", position=i,
-                                user_id=users["u1"].id))
+                                sheet=default_label(db)))
     db.commit()
 
     users["u1"].can_view_consulting = 1
@@ -685,7 +694,7 @@ def _consulting_ctx(db, users, columns, rows_notes):
 
     cols = []
     for pos, label in enumerate(columns):
-        col = ConsultingColumn(user_id=users["u1"].id, sheet=default_label(db),
+        col = ConsultingColumn(sheet=default_label(db),
                                label=label, position=pos)
         db.add(col)
         cols.append(col)
@@ -711,7 +720,7 @@ def _mgmt_ctx(db, users, managements, notes=None):
 
     col = None
     if notes is not None:
-        col = ConsultingColumn(user_id=users["u1"].id, sheet=default_label(db),
+        col = ConsultingColumn(sheet=default_label(db),
                                label="8월 리마인드", position=0)
         db.add(col)
         db.flush()

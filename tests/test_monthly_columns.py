@@ -256,25 +256,23 @@ def test_잘_돌던_명단의_답은_그대로다():
 
 # --- 투자컨설턴트 -----------------------------------------------------------
 
-def _col(db, user_id, label, position=0, sheet=SHEET):
+def _col(db, label, position=0, sheet=SHEET):
     from app.models import ConsultingColumn
 
-    row = ConsultingColumn(user_id=user_id, sheet=sheet, label=label,
+    row = ConsultingColumn(sheet=sheet, label=label,
                            position=position)
     db.add(row)
     db.commit()
     return row
 
 
-def _labels(db, sheet=SHEET, user_id=1):
-    """그 사람의 그 탭 열만. 열은 **사람마다·탭마다**라 둘 다 걸러야 한다."""
+def _labels(db, sheet=SHEET):
+    """그 탭의 칸만. 칸은 **탭마다** 한 벌이다(`models.ConsultingColumn`)."""
     from sqlalchemy import select
 
     from app.models import ConsultingColumn
 
     stmt = select(ConsultingColumn).where(ConsultingColumn.sheet == sheet)
-    stmt = (stmt.where(ConsultingColumn.user_id == user_id) if user_id
-            else stmt.where(ConsultingColumn.user_id.is_(None)))
     return [c.label for c in db.execute(
         stmt.order_by(ConsultingColumn.position, ConsultingColumn.id)).scalars()]
 
@@ -282,8 +280,8 @@ def _labels(db, sheet=SHEET, user_id=1):
 def test_컨설턴트_표에_이번_달_열이_선다(db, users):
     from app.services import monthly_columns as mc
 
-    _col(db, users["u1"].id, "7월 마지막주 리마인드 톡 or TEL")
-    made = mc.ensure_consulting(db, users["u1"].id, SHEET, today=AUG)
+    _col(db, "7월 마지막주 리마인드 톡 or TEL")
+    made = mc.ensure_consulting(db, SHEET, today=AUG)
     assert made == ["8월 마지막주 리마인드 톡 or TEL"]
     # 새 열은 **맨 앞**이다 — 지금 챙겨야 할 달이 먼저 보여야 한다.
     assert _labels(db) == ["8월 마지막주 리마인드 톡 or TEL",
@@ -293,9 +291,9 @@ def test_컨설턴트_표에_이번_달_열이_선다(db, users):
 def test_두_번_불러도_열은_하나다(db, users):
     from app.services import monthly_columns as mc
 
-    _col(db, users["u1"].id, "7월 리마인드")
-    mc.ensure_consulting(db, users["u1"].id, SHEET, today=AUG)
-    assert mc.ensure_consulting(db, users["u1"].id, SHEET, today=AUG) == []
+    _col(db, "7월 리마인드")
+    mc.ensure_consulting(db, SHEET, today=AUG)
+    assert mc.ensure_consulting(db, SHEET, today=AUG) == []
     assert _labels(db) == ["8월 리마인드", "7월 리마인드"]
 
 
@@ -306,56 +304,82 @@ def test_사람이_지운_열은_되살리지_않는다(db, users):
     from app.models import ConsultingColumn
     from app.services import monthly_columns as mc
 
-    _col(db, users["u1"].id, "7월 리마인드")
-    mc.ensure_consulting(db, users["u1"].id, SHEET, today=AUG)
+    _col(db, "7월 리마인드")
+    mc.ensure_consulting(db, SHEET, today=AUG)
 
     made = db.execute(select(ConsultingColumn)
                       .where(ConsultingColumn.label == "8월 리마인드")).scalar_one()
     db.delete(made)
     db.commit()
 
-    assert mc.ensure_consulting(db, users["u1"].id, SHEET, today=AUG) == []
+    assert mc.ensure_consulting(db, SHEET, today=AUG) == []
     assert _labels(db) == ["7월 리마인드"]
 
 
-def test_사람마다_탭마다_따로_선다(db, users):
-    """열은 사람마다·탭마다다 — 한 사람 것을 세웠다고 남의 표에 서면 안 된다."""
+def test_탭마다_따로_선다(db, users):
+    """칸은 탭마다다 — 한 탭에 세웠다고 옆 탭에 서면 안 된다.
+
+    한동안 **사람마다·탭마다**였다. 컨설턴트가 둘이 되는 순간 같은 탭에 같은
+    달 칸이 사람 수만큼 서는 것이 드러나 탭 단위로 맞췄다
+    (`models.ConsultingColumn`).
+    """
     from app.services import monthly_columns as mc
 
-    _col(db, users["u1"].id, "7월 리마인드")
-    _col(db, users["u2"].id, "7월 리마인드")
-    _col(db, users["u1"].id, "7월 리마인드", sheet="경영본부 전달 기업")
+    _col(db, "7월 리마인드")
+    _col(db, "7월 리마인드", sheet="경영본부 전달 기업")
 
-    mc.ensure_consulting(db, users["u1"].id, SHEET, today=AUG)
-    assert _labels(db) == ["8월 리마인드", "7월 리마인드"]      # u1 · 스타트업만
+    mc.ensure_consulting(db, SHEET, today=AUG)
+    assert _labels(db) == ["8월 리마인드", "7월 리마인드"]
     assert _labels(db, "경영본부 전달 기업") == ["7월 리마인드"]
 
-    mc.ensure_consulting(db, users["u1"].id, "경영본부 전달 기업", today=AUG)
+    mc.ensure_consulting(db, "경영본부 전달 기업", today=AUG)
     assert _labels(db, "경영본부 전달 기업") == ["8월 리마인드", "7월 리마인드"]
 
 
-def test_주인_없는_표에는_안_만든다(db, users):
-    """배정 전이라 누구의 표가 될지 모른다 — 미리 만들면 배정한 사람이 지워야 한다."""
+def test_담당이_둘이어도_같은_달_칸은_하나다(db, users):
+    """이 표의 본래 자리는 팀이 컨설턴트들의 표를 나란히 놓고 보는 화면이다.
+
+    칸이 사람마다이던 시절에는 거기서 `8월 …` 머리글이 사람 수만큼 서고,
+    줄마다 자기 담당의 칸에만 값이 있어 표의 절반이 늘 빈칸이었다.
+    """
+    from app.models import ConsultingCompany
     from app.services import monthly_columns as mc
 
-    _col(db, None, "7월 리마인드")
-    assert mc.ensure_consulting(db, None, SHEET, today=AUG) == []
-    assert _labels(db, user_id=0) == ["7월 리마인드"]
+    _col(db, "7월 리마인드")
+    db.add_all([
+        ConsultingCompany(user_id=users["u1"].id, sheet=SHEET,
+                          company_name="샘플기업1", position=1),
+        ConsultingCompany(user_id=users["u2"].id, sheet=SHEET,
+                          company_name="샘플기업2", position=2),
+    ])
+    db.commit()
+
+    mc.ensure_consulting(db, SHEET, today=AUG)
+    assert _labels(db) == ["8월 리마인드", "7월 리마인드"]
+
+
+def test_탭_이름이_없으면_안_만든다(db, users):
+    """어느 표에 세울지 모르는 칸을 만들면 아무 탭에도 안 뜬다."""
+    from app.services import monthly_columns as mc
+
+    _col(db, "7월 리마인드")
+    assert mc.ensure_consulting(db, "", today=AUG) == []
+    assert _labels(db) == ["7월 리마인드"]
 
 
 def test_해가_바뀌어도_같은_달_숫자를_또_만들지_않는다(db, users):
     """칸 이름에 연도가 없다 — 만들면 `1월` 두 칸이 서고 이름으로 못 가린다."""
     from app.services import monthly_columns as mc
 
-    _col(db, users["u1"].id, "1월 리마인드")
-    assert mc.ensure_consulting(db, users["u1"].id, SHEET, today=JAN) == []
+    _col(db, "1월 리마인드")
+    assert mc.ensure_consulting(db, SHEET, today=JAN) == []
 
 
 def test_화면을_열면_저절로_선다(client, db, users):
     """예약 실행 장치가 없다 — 달이 바뀐 것을 알아채는 자리는 요청뿐이다."""
     users["u1"].can_view_consulting = 1
     db.commit()
-    _col(db, users["u1"].id, "7월 마지막주 리마인드 톡 or TEL")
+    _col(db, "7월 마지막주 리마인드 톡 or TEL")
 
     client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
     body = client.get("/consulting").text
@@ -380,8 +404,8 @@ def test_동시에_들어온_요청_중_하나만_만든다(db, users):
     from app.models import ConsultingColumn, MonthlyColumnRun
     from app.services import monthly_columns as mc
 
-    _col(db, users["u1"].id, "7월 리마인드")
-    key = f"{users['u1'].id}:{SHEET}"
+    _col(db, "7월 리마인드")
+    key = SHEET
 
     s1, s2 = SessionLocal(), SessionLocal()
     try:
@@ -389,8 +413,7 @@ def test_동시에_들어온_요청_중_하나만_만든다(db, users):
         def seen(session):
             return session.execute(
                 select(ConsultingColumn)
-                .where(ConsultingColumn.user_id == users["u1"].id,
-                       ConsultingColumn.sheet == SHEET)
+                .where(ConsultingColumn.sheet == SHEET)
                 .order_by(ConsultingColumn.position)).scalars().all()
 
         cols1, cols2 = seen(s1), seen(s2)

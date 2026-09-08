@@ -67,8 +67,7 @@ def stage(db, users):
     for key, who in people.items():
         rows[key] = ConsultingCompany(user_id=who.id, company_name=f"샘플기업-{key}",
                                       region=f"지역-{key}", position=1)
-        cols[key] = ConsultingColumn(user_id=who.id, label=f"8월 리마인드-{key}",
-                                     position=0)
+        cols[key] = ConsultingColumn(label=f"8월 리마인드-{key}", position=0)
         db.add_all([rows[key], cols[key]])
     # 주인이 없는 줄 — 관리자에게만 보인다(배정해야 할 것이 남았다는 뜻이다).
     rows["unassigned"] = ConsultingCompany(user_id=None, company_name="샘플기업-미배정",
@@ -267,10 +266,16 @@ def test_the_screen_marks_exactly_the_rows_it_will_let_you_edit(stage, sign_in, 
 
 @pytest.mark.parametrize("who", ["member", "other", "consultant", "admin"])
 def test_the_same_holds_for_the_month_columns(stage, sign_in, db, who):
-    """열도 사람마다 다르다 — 남의 달 이름을 바꾸면 그 사람 표의 머리글이 바뀐다.
+    """월 칸은 **탭마다 한 벌**이라 누구에게나 다 보이고, 지우는 것은 관리자뿐이다.
 
-    열은 줄을 따라간다. 남의 줄이 보이는데 그 줄의 월 기록만 안 보이면 화면이
-    거짓말을 하는 것이다(기록은 있는데 빈 칸으로 뜬다).
+    한동안 칸도 줄처럼 사람마다였다. 두 번째 컨설턴트가 들어오는 순간 같은
+    탭에 같은 달 머리글이 사람 수만큼 서는 것이 드러나 탭 단위로 맞췄다
+    (`models.ConsultingColumn`).
+
+    그래서 여기서 견줄 것이 줄과 다르다. **보이는 것은 전부**이고(칸에는
+    주인이 없다), 고칠 수 있는 것만 갈린다 — 한 칸을 지우면 그 달 기록이
+    팀 전체의 줄에서 사라지기 때문이다. 화면이 [✕] 를 세운 칸과 실제로
+    고쳐지는 칸이 같아야 한다는 것은 그대로다.
     """
     from app.models import ConsultingColumn
 
@@ -279,8 +284,9 @@ def test_the_same_holds_for_the_month_columns(stage, sign_in, db, who):
     marked = _editable_columns(client)
     everything = {c.id for c in db.query(ConsultingColumn).all()}
     assert seen, f"{who}: 화면에 아무 열도 없다 — 검사가 헛돈다"
-    assert bool(everything - seen) == (who == ONLY_MINE), (
-        f"{who}: 보이는 열 {sorted(seen)} / 전체 {sorted(everything)}")
+    # 칸은 탭에 붙어 있다 — 자기 줄만 보는 사람에게도 머리글은 다 선다.
+    assert everything - seen == set(), (
+        f"{who}: 안 보이는 칸이 있다 {sorted(everything - seen)}")
     assert bool(everything - marked) == (who != EDITS_ALL), (
         f"{who}: 지울 수 있다고 그린 열 {sorted(marked)} / 전체 {sorted(everything)}")
 
@@ -288,8 +294,6 @@ def test_the_same_holds_for_the_month_columns(stage, sign_in, db, who):
     assert editable == marked, (
         f"{who}: 화면이 [✕] 를 세운 열 {sorted(marked)} 과 "
         f"실제로 고쳐지는 열 {sorted(editable)} 이 다르다")
-    assert editable <= seen, (
-        f"{who}: 화면에 안 뜨는 열이 고쳐진다 {sorted(editable - seen)}")
 
 
 # --- 남의 줄 ------------------------------------------------------------------
@@ -414,44 +418,79 @@ def test_someone_elses_column_cannot_be_deleted(stage, sign_in, db):
     assert kept[str(theirs.id)] == "통화 기록-other"
 
 
-def test_deleting_my_column_does_not_reach_into_someone_elses_rows(stage, sign_in, db):
-    """자기 열을 지우는 것뿐인데 손이 남의 줄까지 닿으면 안 된다.
+def test_a_column_cannot_be_deleted_by_anyone_but_the_admin(stage, sign_in, db):
+    """칸을 지우는 손은 **팀 전체의 줄**에 닿는다 — 그래서 관리자만이다.
 
-    예전에는 기록을 지우면서 표 전체를 훑었다. 열 번호가 겹치는 날 남의
-    기록이 조용히 사라진다.
+    칸이 사람마다이던 시절에는 자기 칸을 지우는 것이 자기 표만 건드렸다.
+    이제 칸은 탭에 붙어 있어 그 칸에 적힌 기록이 담당을 가리지 않고 흩어져
+    있다(`models.ConsultingColumn`). 한 사람이 혼자 누를 단추가 아니다.
+    """
+    from app.models import ConsultingColumn
+
+    col_id = stage["cols"]["member"].id
+    for who in ("member", "other", "consultant"):
+        r = sign_in(who).post(f"/consulting/columns/{col_id}/delete",
+                              follow_redirects=False)
+        assert r.status_code == 404, f"{who} 가 팀의 칸을 지웠다"
+        db.expire_all()
+        assert db.get(ConsultingColumn, col_id) is not None
+
+
+def test_deleting_a_column_clears_that_month_from_every_row_in_the_tab(stage, sign_in, db):
+    """지우면 **그 탭의 모든 줄에서** 그 달 기록이 사라진다.
+
+    자기 줄만 훑으면 남의 줄에 그 칸을 가리키는 열쇠가 남아, 어느 칸의
+    것인지 모르는 값이 JSON 에 쌓인다(`routers/contacts.py` 의 `delete_column`
+    이 같은 이유로 명단 전체를 훑는다).
     """
     from app.models import ConsultingColumn, ConsultingCompany
 
-    mine = stage["cols"]["member"]
+    doomed = stage["cols"]["member"]
     theirs_row = stage["rows"]["other"]
-    # 남의 줄에 **내 열 번호로 된 기록**을 심어 둔다 — 훑는 범위가 넓으면 이것이 사라진다.
     theirs_row.notes = json.dumps({str(stage["cols"]["other"].id): "통화 기록-other",
-                                   str(mine.id): "남의 줄에 남은 기록"},
+                                   str(doomed.id): "남의 줄에 남은 기록"},
                                   ensure_ascii=False)
     db.commit()
 
-    mine_id, mine_row_id, theirs_row_id = mine.id, stage["rows"]["member"].id, theirs_row.id
-    r = sign_in("member").post(f"/consulting/columns/{mine_id}/delete",
-                               follow_redirects=False)
+    col_id = doomed.id
+    mine_row_id, theirs_row_id = stage["rows"]["member"].id, theirs_row.id
+    other_col_id = stage["cols"]["other"].id
+    r = sign_in("admin").post(f"/consulting/columns/{col_id}/delete",
+                              follow_redirects=False)
     assert r.status_code == 303
     db.expunge_all()
-    assert db.get(ConsultingColumn, mine_id) is None                    # 내 열은 지워졌고
-    assert str(mine_id) not in json.loads(
-        db.get(ConsultingCompany, mine_row_id).notes)                   # 내 기록도 지워졌고
-    kept = json.loads(db.get(ConsultingCompany, theirs_row_id).notes)
-    assert kept[str(mine_id)] == "남의 줄에 남은 기록"                    # 남의 줄은 그대로다
+    assert db.get(ConsultingColumn, col_id) is None
+    for row_id in (mine_row_id, theirs_row_id):
+        assert str(col_id) not in json.loads(db.get(ConsultingCompany, row_id).notes)
+    # 옆 칸의 기록은 그대로다 — 지운 것은 한 칸이다.
+    assert json.loads(db.get(ConsultingCompany, theirs_row_id).notes)[
+        str(other_col_id)] == "통화 기록-other"
 
 
-def test_adding_a_month_column_does_not_shuffle_someone_elses(stage, sign_in, db):
-    """새 열은 맨 앞에 오면서 나머지를 한 칸씩 민다 — 그 손도 자기 표 안이어야 한다."""
+def test_adding_a_month_column_does_not_shuffle_the_other_tabs(stage, sign_in, db):
+    """새 칸은 맨 앞에 오면서 나머지를 한 칸씩 민다 — 그 손은 **그 탭 안**이다.
+
+    칸은 탭마다 한 벌이라 같은 탭의 칸은 다 같이 밀리는 것이 맞다. 밀리면
+    안 되는 것은 **옆 탭**이다 — 거기까지 밀면 아무도 안 건드린 탭의 머리글
+    차례가 조용히 바뀐다.
+    """
     from app.models import ConsultingColumn
+    from app.services.consulting_sheets import ensure
 
+    sheets = [s.label for s in ensure(db)]
+    here, next_tab = sheets[0], sheets[1]
+    stage["cols"]["other"].sheet = next_tab
+    db.commit()
     before = stage["cols"]["other"].position
+    same_tab = stage["cols"]["member"]
+    same_tab_before = same_tab.position
+
     assert sign_in("member").post("/consulting/columns",
-                                  data={"label": "9월 리마인드"},
+                                  data={"label": "9월 리마인드", "sheet": here},
                                   follow_redirects=False).status_code == 303
     db.expire_all()
     assert db.get(ConsultingColumn, stage["cols"]["other"].id).position == before
+    assert db.get(ConsultingColumn, same_tab.id).position == same_tab_before + 1
 
 
 # --- 읽는 쪽도 같은 범위인가 -----------------------------------------------------
@@ -490,8 +529,10 @@ def test_the_export_carries_only_what_the_screen_shows(stage, sign_in, db):
     assert "샘플기업-consultant" in body
     for key in ("member", "other", "admin", "미배정"):
         assert f"샘플기업-{key}" not in body, f"{key} 의 줄이 엑셀에 섞였다"
-    # 열 머리글도 마찬가지다 — 남의 달 이름이 내 파일에 뜨면 그 자체가 정보다.
-    assert "8월 리마인드-other" not in body
+    # **머리글은 다 선다.** 월 칸은 탭마다 한 벌이라 누구의 것도 아니다
+    # (`models.ConsultingColumn`) — 화면에도 그대로 서 있으므로 파일에서만
+    # 빼면 받은 파일과 화면이 어긋난다.
+    assert "8월 리마인드-other" in body
     # 담당 칸은 안 선다 — 같은 이름이 줄마다 반복될 뿐이다.
     assert "담당" not in body
 

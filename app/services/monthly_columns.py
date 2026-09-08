@@ -2,8 +2,8 @@
 
 두 표가 같은 모양을 쓴다.
 
-    ConsultingColumn   투자컨설턴트      `8월 마지막주 리마인드 톡 or TEL`
-    ContactColumn      투자사 관리 현황   `7월 리마인드 문자 (7/28)` · `7월 리마인드 TEL`
+    ConsultingColumn   투자컨설턴트      `8월 마지막주 리마인드 톡 or TEL`   탭마다
+    ContactColumn      투자사 관리 현황   `7월 리마인드 문자 (7/28)` · `7월 리마인드 TEL`   명단마다
 
 지금까지는 사람이 [칸 추가] 를 눌러야 했다. 누르는 것을 잊으면 그 달 통화 기록이
 **지난달 칸에 섞여 들어간다** — 나중에 어느 달 것인지 가릴 방법이 없다.
@@ -268,25 +268,25 @@ def _ensure(db: Session, target: str, scope: str, columns: Sequence,
     return labels
 
 
-def ensure_consulting(db: Session, user_id: Optional[int], sheet: str,
+def ensure_consulting(db: Session, sheet: str,
                       today: Optional[date] = None) -> List[str]:
-    """투자컨설턴트의 이번 달 칸. 칸이 **사람마다·탭마다**라 둘을 같이 본다.
+    """투자컨설턴트의 이번 달 칸. 칸이 **탭마다**라 탭 하나만 본다.
 
-    주인 없는 줄(`user_id` 가 비어 있는 것)은 배정 전이라 건드리지 않는다 —
-    누구의 표가 될지 모르는 칸을 미리 만들면 배정한 사람이 지워야 한다.
+    한동안 **사람마다·탭마다**였다(`"{user_id}:{sheet}"` 가 그 흔적이다).
+    컨설턴트가 둘이 되는 순간 같은 탭에 같은 달 칸이 사람 수만큼 서는 것이
+    드러나 탭 단위로 맞췄다 — 이유는 `models.ConsultingColumn` 참고.
+    이제 아래 `ensure_contact` 와 **같은 모양**이다. 표(탭·명단)가 열쇠다.
     """
-    if not user_id or not sheet:
+    if not sheet:
         return []
     columns = db.execute(
         select(ConsultingColumn)
-        .where(ConsultingColumn.user_id == user_id,
-               ConsultingColumn.sheet == sheet)
+        .where(ConsultingColumn.sheet == sheet)
         .order_by(ConsultingColumn.position, ConsultingColumn.id)
     ).scalars().all()
-    labels = _ensure(db, CONSULTING, f"{user_id}:{sheet}", columns, today)
+    labels = _ensure(db, CONSULTING, sheet, columns, today)
     for pos, label in enumerate(labels):
-        db.add(ConsultingColumn(user_id=user_id, sheet=sheet,
-                                label=label, position=pos))
+        db.add(ConsultingColumn(sheet=sheet, label=label, position=pos))
     if labels:
         db.commit()
     return labels
