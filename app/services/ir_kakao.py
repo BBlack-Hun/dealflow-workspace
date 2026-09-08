@@ -11,26 +11,44 @@
 가리는 자리는 하나씩**이다 — 이 파일은 `ir_monthly`(세기)와 `ir_mask`(가리기)를
 부르기만 하고, 제 손으로 세지도 가리지도 않는다.
 
-## 왜 문구틀(`message_templates`)이 아니라 코드인가
+## 기업 리마인드 문구는 **이것 하나다**  ★
 
-이 저장소는 나가는 글을 문구틀에 두는 결이 있다(`template_pick` · `startup_msg`).
-여기서는 **따르지 않는다.** 까닭이 셋이다.
+`startup_sms`(문구 화면의 **기업 리마인드 — 문자**)와 이 글은 **같은 뜻**이었다 —
+둘 다 "IR 자료를 요청한 투자사가 있다, 미팅이 잡히면 연락드리겠다" 를 그 기업
+대표에게 알리는 글이다. 그런데 짓는 자리가 둘이었다: 문구틀 쪽은 목록이 없는
+옛 글을 냈고(사람이 손으로 목록을 붙였다), 이 파일은 목록을 붙인 글을 냈다.
+같은 뜻의 문구가 둘이면 쓰는 사람은 어느 것을 보낼지 모르고, 언젠가 한쪽만
+고쳐진다. **그래서 하나로 모았다 — 짓는 자리는 이 파일이다.**
 
-1. **글의 몸통이 통째로 자료다.** 문구틀이 쓸모 있는 것은 사람이 고칠 문장이
-   있을 때다. 이 글에서 사람이 고칠 수 있는 것은 머리말 세 줄뿐이고, 나머지는
-   줄마다 날짜·기업·투자사가 다른 **목록**이다. 문구틀에 넣으면 편집자에게
-   주는 것은 거의 없고, **깨뜨릴 방법**은 하나 생긴다 — 목록 자리를 지우면
-   대표에게 머리말만 있는 글이 나간다.
+`/setup` 의 시험 자리도, 스타트업 메뉴의 화면도 `compose()` 를 지난다.
+`services/startup_msg.py` 는 **지웠다**(#133 이 냈던 파일이다). 남겨 두면
+목록 없는 글을 만드는 길이 그대로 남아, 모은 뜻이 없어진다.
+
+## 머리말은 문구틀, 목록은 코드  ★
+
+**머리말 세 줄은 `startup_sms` 문구틀에서 온다** — 팀이 화면에서 고칠 수 있어야
+할 문장이기 때문이다. **목록은 코드가 붙인다.** 목록까지 문구틀에 맡기지 않는
+까닭은 셋이다.
+
+1. **목록의 몸통이 통째로 자료다.** 줄마다 날짜·기업·투자사가 다르다.
+   문구틀에 넣으면 편집자에게 주는 것은 거의 없고, **깨뜨릴 방법**은 하나
+   생긴다 — 목록 자리를 지우면 대표에게 머리말만 있는 글이 나간다.
 2. **`{기업목록}` 은 이미 다른 뜻이다.** `message_composer.render_template` 의
    그 자리는 투자사에게 보내는 "2번 기업 …" 이다(`deal_numbers` 가 붙인 번호).
    한 토큰이 화면마다 다른 것을 뜻하기 시작하면 문구를 고치는 사람이 무엇이
-   나올지 알 수 없다.
+   나올지 알 수 없다. 그래서 머리말이 쓰는 자리는 **`{달}` · `{기업들}`** 로
+   따로 냈다 — 이 문구에서만 쓰는 이름이다.
 3. **가리기가 문구틀 밖에 있어야 한다.** 문구틀이 목록을 만들 수 있게 하면
    `{투자사}` 처럼 **안 가려진** 자리도 같은 글에 쓸 수 있게 된다. 가리는 것을
    문구를 고치는 사람 손에 맡기는 셈이라, 한 번 잘못 적히면 그대로 나간다.
 
-머리말을 팀이 고치고 싶어지면 그때 머리말**만** 문구틀로 뺄 수 있다 — 목록을
-짓는 이 함수는 그대로 둔 채로.
+### 문구틀이 비어 있으면 — **코드에 적힌 머리말로 짓는다**
+
+#133 은 반대였다(문구틀이 비면 아무것도 안 만들었다). 여기서 그러면 스타트업
+화면이 **404** 가 된다 — 요청이 실제로 와 있는 기업인데도 대표에게 보낼 글을
+만들 길이 없어지고, 화면은 "요청이 없다" 는 뜻의 안내를 띄운다(있는데 없다고
+말하는 거짓말이다). 그래서 `DEFAULT_HEAD` 로 짓되, **문구틀에서 온 것인지**를
+`head_from_template` 에 실어 화면이 그 사실을 적게 한다.
 
 ## 실물의 띄어쓰기를 그대로 둔다
 
@@ -53,9 +71,14 @@ from typing import Dict, List, Optional, Sequence
 
 from sqlalchemy.orm import Session
 
-from ..models import IrCompany
+from ..models import IrCompany, User
 from . import ir_monthly
 from . import message_composer as mc
+from . import template_pick
+
+#: 이 문구의 종류. 화면 이름은 `기업 리마인드 — 문자`
+#: (`routers/templates_crud.py: KINDS`). 머리말을 여기서 읽어 온다.
+KIND = "startup_sms"
 
 #: 머리말 첫 줄. 받는 사람이 대표라 이름을 부르지 않는다 —
 #: 이름을 넣으려면 그 이름이 정말 대표인지 아는 칸이 있어야 한다(아래 참고).
@@ -67,6 +90,19 @@ LEAD = ("IR 자료 요청한투자사 리스트 입니다 "
 
 #: 머리말에서 기업을 잇는 글자. 실물이 `(주)가 , (주)나` 다.
 COMPANY_SEP = " , "
+
+#: 머리말이 쓰는 자리 둘. **자료라 코드가 채운다** — 사람이 고칠 문장이 아니다.
+#: 이름을 `{기업목록}` 과 겹치지 않게 지은 까닭은 위 머리말에 있다.
+MONTH_TOKEN = "{달}"
+COMPANIES_TOKEN = "{기업들}"
+
+#: 문구틀이 비어 있을 때 쓰는 머리말. **시드 문구와 같은 글**이다
+#: (`scripts/bootstrap.py`) — 둘이 갈리면 문구틀을 지운 사람만 다른 글을 받는다.
+DEFAULT_HEAD = "\n".join([
+    HELLO,
+    f"{MONTH_TOKEN} 말까지 {COMPANIES_TOKEN}",
+    LEAD,
+])
 
 #: 한 통이 이보다 길면 나눈다. **새 숫자를 짓지 않는다** —
 #: 이 저장소가 이미 카톡 한 통의 한계로 쓰는 값이다(`message_composer`).
@@ -106,6 +142,10 @@ class KakaoMessage:
     undated: int = 0
     skipped: List[ir_monthly.Skip] = field(default_factory=list)
     skipped_count: int = 0
+    # 머리말이 문구틀에서 왔나. 거짓이면 `DEFAULT_HEAD` 로 지은 것이고,
+    # 화면은 **그 사실을 적어야 한다** — 코드에 적힌 글을 팀이 정한 문구로
+    # 오해하면 문구틀은 빈 채로 남는다.
+    head_from_template: bool = True
 
     @property
     def char_count(self) -> int:
@@ -137,13 +177,49 @@ def day_label(date: str) -> str:
     return f"{int(bits[1])}/{int(bits[2][:2])}"
 
 
-def header(month: str, companies: Sequence[str]) -> str:
-    """머리말 세 줄. 기업이 여럿이면 둘째 줄에 **다 적힌다**."""
-    return "\n".join([
-        HELLO,
-        f"{month_label(month)} 말까지 {COMPANY_SEP.join(companies)}",
-        LEAD,
-    ])
+def head_body(db: Session, user: Optional[User]) -> tuple:
+    """머리말의 **원문**과 그것이 문구틀에서 왔는지. `(글, 문구틀인가)`.
+
+    무엇을 쓸지(고른 것 > 내 것 > 팀 것)는 `template_pick` 이 정한다 — 딜소개·
+    딜 소싱과 같은 곳을 읽어야 같은 사람이 화면마다 다른 문구를 받지 않는다.
+
+    비어 있으면 `DEFAULT_HEAD` 다. 막지 않는 까닭은 이 파일 머리말에 있다.
+    """
+    found = template_pick.pick(db, user.id, KIND) if user is not None else None
+    body = ((found.body if found else "") or "").strip()
+    return (body, True) if body else (DEFAULT_HEAD, False)
+
+
+def contact_of(company: Optional[IrCompany]) -> mc.ContactView:
+    """문구틀에 꽂을 상대 — **기업 쪽 연락 담당자**다.
+
+    `title` 도 `firm` 도 주지 않는다. 스타트업 명단에는 직함 칸이 없고
+    (`models.IrCompany` 에 성함·연락처·이메일뿐이다), 받는 쪽이 스타트업이라
+    투자사도 없다. 빈 채로 두면 `render_template` 이 이미 정해 둔 길을 탄다 —
+    `{직함}` 은 '님' 이 되고 `{투자사}` 는 빈칸이 된다. **'대표' 를 지어 넣지
+    않는다**: 그 사람이 대표라고 말해 주는 칸이 없어서, 지어 넣으면 재무
+    담당자에게 대표님이 나가고 자료가 없으니 시험에서도 안 드러난다.
+    """
+    return mc.ContactView(name=((company.contact_name if company else "") or "").strip())
+
+
+def header(month: str, companies: Sequence[str], body: str = "",
+           contact: Optional[mc.ContactView] = None) -> str:
+    """머리말 세 줄. 기업이 여럿이면 둘째 줄에 **다 적힌다**.
+
+    `body` 는 문구틀에서 온 원문이다(비면 `DEFAULT_HEAD`). 채우는 차례가 둘인
+    까닭은 이렇다 — 먼저 **이 저장소가 이미 아는 자리**(`{담당자명}`·`{기업명}`
+    …)를 `render_template` 이 채운다. 그래야 운영에 저장돼 있던 옛 문구에 적힌
+    `{담당자명}` 이 **글자 그대로** 대표에게 나가지 않는다(이 저장소가 겪은
+    사고다). 그 다음에 이 문구만 쓰는 `{달}`·`{기업들}` 을 채운다 —
+    `render_template` 은 모르는 `{…}` 를 건드리지 않으므로 남아 있다.
+    """
+    joined = COMPANY_SEP.join(companies)
+    text = mc.render_template((body or "").strip() or DEFAULT_HEAD,
+                              contact or mc.ContactView(name=""),
+                              company_name=joined)
+    return (text.replace(MONTH_TOKEN, month_label(month))
+                .replace(COMPANIES_TOKEN, joined)).strip()
 
 
 def pack(head: str, lines: Sequence[str], limit: int = LIMIT) -> List[str]:
@@ -175,9 +251,16 @@ def pack(head: str, lines: Sequence[str], limit: int = LIMIT) -> List[str]:
 
 # ── 글 짓기 ─────────────────────────────────────────────────────────────────
 
-def compose(db: Session, companies: Sequence[IrCompany],
+def compose(db: Session, user: Optional[User], companies: Sequence[IrCompany],
             month: str) -> Optional[KakaoMessage]:
     """이 기업(들)에 대해 **그 달 말까지 쌓인** 요청을 글 한 통으로.
+
+    **기업 리마인드 문구를 짓는 자리는 여기 하나다.** 스타트업 화면도
+    `/setup` 의 시험 자리도 이 함수를 지난다 — 두 곳이 갈리면 시험에서 본 글과
+    대표가 받는 글이 달라진다.
+
+    `user` 는 **머리말 문구틀을 고르는 데만** 쓴다(고른 것 > 내 것 > 팀 것).
+    `None` 이면 코드에 적힌 머리말로 짓는다.
 
     요청이 **한 곳도 없으면 `None`** 이다. 빈 목록을 보내면 대표는 우리가
     아무것도 안 한 줄로 읽는다 — 문서 화면이 이미 그렇게 한다(#131).
@@ -211,7 +294,12 @@ def compose(db: Session, companies: Sequence[IrCompany],
 
     lines.sort(key=order)
 
-    head = header(month, [names[c.id] for c in companies])
+    body, from_template = head_body(db, user)
+    # 담당자 이름은 **첫 기업 것**이다. 기업이 여럿인 글은 한 대표에게 가는
+    # 것이라(위 `compose` 설명) 상대가 하나뿐인데, 앱에는 그 한 사람을 가리키는
+    # 칸이 없다. 지금 화면은 모두 기업 하나씩 부르므로 갈릴 일이 없다.
+    head = header(month, [names[c.id] for c in companies], body,
+                  contact_of(companies[0] if companies else None))
     parts = pack(head, [ln.text for ln in lines])
     return KakaoMessage(
         month=month,
@@ -224,10 +312,11 @@ def compose(db: Session, companies: Sequence[IrCompany],
         undated=sum(1 for ln in lines if not ln.date),
         skipped=data.skipped,
         skipped_count=data.skipped_count,
+        head_from_template=from_template,
     )
 
 
-def for_company(db: Session, company_id: int,
+def for_company(db: Session, user: Optional[User], company_id: int,
                 month: str) -> Optional[KakaoMessage]:
     """기업 하나짜리 글. 계약을 안 마친/없는 기업이면 `None`.
 
@@ -239,4 +328,4 @@ def for_company(db: Session, company_id: int,
                    None)
     if company is None:
         return None
-    return compose(db, [company], month)
+    return compose(db, user, [company], month)

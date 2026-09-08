@@ -42,14 +42,29 @@ SUMMARY_LABELS = {
     "draft": "작성 중",
     "insufficient": "보류",
 }
-# 계약 상태. **운영에서 쓰는 다섯 가지** 그대로 둔다 —
+# 계약 상태. **운영에서 쓰는 말 그대로** 둔다 —
 # 완료/진행중/없음 셋으로 뭉치면 '무료'와 '유료'가 같은 칸에 들어가고,
 # '딜소개불가'(더 이상 소개하면 안 되는 기업)가 '없음'에 섞여 사고가 난다.
+#
+# **뒤의 둘은 계약이 아니라 무료 IR 미팅 제공 단계다**(사용자 요청). 계약 전
+# 단계라 `미계약` 에 섞여 있었는데, 그러면 "아직 아무것도 안 한 곳" 과
+# "미팅을 주기로 한 곳" 이 같은 숫자에 들어간다. 언제 주는지/줬는지는 옆의
+# `미팅제공일자`(`IrCompany.meeting_offered_at`)가 받는다.
+#
+# **화면에 보이는 글자는 사용자가 준 그대로다** — `무료IR 미팅제공예정` 은
+# `무료IR` 이 붙어 있고 `무료 IR 미팅제공완료함` 은 떨어져 있다. 띄어쓰기가
+# 서로 다른 것을 임의로 맞추지 않는다: 이 말은 시트에도 그대로 적히고,
+# 가져오기가 **이 말을 견줘** 값을 찾는다(`scripts/import_company_sheets.py` ·
+# `services/sheet_import.py` 둘 다 아래 `contract_key` 를 지난다).
+# 그 길은 띄어쓰기를 지우고 견주므로, 사람이 어느 모양으로 적어 보내도 같은
+# 값으로 들어간다.
 CONTRACT_LABELS = {
     "none": "미계약",
     "free": "무료계약완료",
     "paid": "유료계약완료",
     "review": "계약검토중",
+    "free_meet_planned": "무료IR 미팅제공예정",
+    "free_meet_done": "무료 IR 미팅제공완료함",
     "blocked": "딜소개 불가",
 }
 # 예전 값 → 지금 값. 이미 쌓인 데이터를 화면에서 그대로 읽을 수 있어야 한다.
@@ -402,6 +417,9 @@ def company_rows(db: Session, tab: str = "") -> List[dict]:
             # 필터는 그것을 `(비어 있음)` 으로 모은다 — 없는 값을 지어내
             # `X` 로 채우면 "확인했는데 안 왔다" 는 뜻이 되어 버린다.
             "contract_received": c.contract_received or "",
+            # 무료 IR 미팅을 **언제** 주기로 했는가 / 줬는가. 손으로 적는 글자다 —
+            # 아직 안 정한 곳은 빈 글자로 나가 표에서 빈 칸으로 보인다.
+            "meeting_offered_at": c.meeting_offered_at or "",
             "contract_month": c.contract_month or "",
             "is_top_deal": bool(c.is_top_deal),
             "summary_status": c.summary_status or "draft",
@@ -577,6 +595,7 @@ class CompanyIn(BaseModel):
     ir_file_name: Optional[str] = None
     contract_status: Optional[str] = None
     contract_received: Optional[str] = None
+    meeting_offered_at: Optional[str] = None
     contract_month: Optional[str] = None
     is_top_deal: Optional[bool] = None
     summary_status: Optional[str] = None

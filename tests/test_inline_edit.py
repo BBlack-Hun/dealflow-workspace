@@ -486,20 +486,36 @@ def test_top_deal_is_a_choice_not_a_switch(logged_in, db):
     assert 'data-field="top_deal_kind" data-type="pick"' in html
 
 
-def test_contract_has_the_five_states(logged_in, company):
+def test_contract_has_every_state_operations_uses(logged_in, company):
     """완료/진행중/없음 셋으로 뭉치면 '무료'와 '유료'가 같은 칸에 들어가고,
-    '딜소개 불가'(더 이상 소개하면 안 되는 기업)가 '없음'에 섞여 사고가 난다."""
+    '딜소개 불가'(더 이상 소개하면 안 되는 기업)가 '없음'에 섞여 사고가 난다.
+
+    뒤의 둘은 계약이 아니라 **무료 IR 미팅 제공 단계**다(사용자 요청). 이것이
+    없으면 "미팅을 주기로 한 곳" 이 `미계약` 에 섞여, 아직 아무것도 안 한 곳과
+    같은 숫자로 세어진다.
+
+    **글자는 사용자가 준 그대로다** — `무료IR` 은 붙어 있고 `무료 IR` 은
+    떨어져 있다. 보기 좋으라고 맞추면 시트에 적힌 말과 갈린다.
+    """
     from app.routers.companies import CONTRACT_LABELS, contract_key
 
     assert set(CONTRACT_LABELS.values()) == {
-        "미계약", "무료계약완료", "유료계약완료", "계약검토중", "딜소개 불가"}
+        "미계약", "무료계약완료", "유료계약완료", "계약검토중", "딜소개 불가",
+        "무료IR 미팅제공예정", "무료 IR 미팅제공완료함"}
     # 예전 값도 그대로 읽힌다
     assert contract_key("yes") == "paid"
     assert contract_key("no") == "none"
     assert contract_key(None) == "none"
+    # 화면에 보이는 말로 들어와도 값으로 바뀐다 — 표에서 눌러 고치면 말이 온다.
+    assert contract_key("무료IR 미팅제공예정") == "free_meet_planned"
+    assert contract_key("무료 IR 미팅제공완료함") == "free_meet_done"
+    # 띄어쓰기가 달라도 같은 값이다. 사람은 `무료 IR` 과 `무료IR` 을 같은 말로 쓴다.
+    assert contract_key("무료 IR 미팅제공예정") == "free_meet_planned"
+    assert contract_key("무료IR 미팅제공완료함") == "free_meet_done"
 
     html = logged_in.get("/companies").text
     assert "유료계약완료" in html and "딜소개 불가" in html
+    assert "무료IR 미팅제공예정" in html and "무료 IR 미팅제공완료함" in html
 
 
 def test_top_deal_order_does_not_split_the_filter():

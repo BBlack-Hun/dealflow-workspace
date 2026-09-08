@@ -362,9 +362,10 @@ def review_message(db: Session, user: User, contact) -> str:
     두 벌은 반드시 어긋난다(문구 화면이 `sample_message` 를 부르는 것과 같은
     자리, 같은 이유).
 
-    스타트업 월말 리마인드는 반대였다 — `startup_sms` 를 짓는 코드가 한 줄도
-    없어서 `services/startup_msg.py` 를 새로 냈다(#133). 여기는 있으니 만들지
-    않는다.
+    스타트업 기업 리마인드는 그 값을 치른 자리다 — #133 이 `services/startup_msg.py`
+    를 새로 냈는데, 같은 뜻의 문구를 짓는 자리가 이미 있었다(`services/ir_kakao.py`).
+    한동안 두 벌이었고, 나중에 하나로 모으면서 그 파일을 지웠다. 여기는 있으니
+    만들지 않는다.
 
     ## 무엇이 들어오나
 

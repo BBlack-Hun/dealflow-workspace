@@ -449,44 +449,75 @@ def test_the_counting_places_all_read_one_list(rehearsal):
 
 
 # ══════════════════════════════════════════════════════════════════════════
-#  ⑦ 월말 리마인드 문구 시험 — **문구틀이 만든 것을 그대로**
+#  ⑦ 기업 리마인드 문구 시험 — **스타트업 화면과 같은 함수가 만든다**
 # ══════════════════════════════════════════════════════════════════════════
 #
-# 스타트업에 매월 보내는 문구(`startup_sms`)는 문구 화면에 있었는데 **그것을
-# 보내는 코드가 한 줄도 없었다.** 사람이 복사해 손으로 보냈고, 그러면
-# `{담당자명}` 같은 자리를 눈으로 갈아 끼우게 된다 — 잊은 `{…}` 가 글자
-# 그대로 나간 사고를 이 저장소는 이미 겪었다.
+# 같은 뜻의 문구가 **둘**이었다. 문구 화면의 `startup_sms`(기업 리마인드 —
+# 문자)는 목록 없는 글을 냈고, 스타트업 메뉴의 카톡 문구 화면(#135)은 IR 자료를
+# 요청한 투자사 목록을 붙인 글을 냈다. 둘 다 "요청한 투자사가 있다, 미팅이
+# 잡히면 연락드리겠다" 를 그 기업 대표에게 알리는 글이다. 쓰는 사람은 어느
+# 것을 보낼지 알 수 없었고, 언젠가 한쪽만 고쳐질 참이었다.
 #
-# 여기서 보는 것은 넷이다.
-#   ★ 시험방이 없으면 이 자리도 없다(위 ① 과 같은 안전선)
+# 그래서 **하나로 모았다** — 짓는 자리는 `services/ir_kakao.py` 하나이고,
+# `services/startup_msg.py` 는 지웠다. 머리말은 문구틀에서 오고 목록은 코드가
+# 붙인다.
+#
+# 여기서 보는 것은 여섯이다.
+#   ★ 시험 자리와 스타트업 화면이 **글자까지 같은 문구**를 낸다
+#   ★ 머리말을 문구틀에서 고치면 **둘 다** 따라온다
 #     시험방으로만 간다 — 고르는 것은 기업이지 방이 아니다
-#     문구틀이 만든 것과 **글자 하나까지** 같다(손으로 쓴 문구가 아니다)
-#     문구틀이 비어 있으면 **아무것도 만들지 않고** 어디에 적으라고 말한다
+#     문구틀이 비어 있으면 **기본 머리말**로 짓고, 그 사실을 화면이 적는다
+#     요청이 0곳이면 **아무것도 만들지 않는다**(빈 목록은 안 보낸다)
+#     가려진 투자사명이 시험방으로도 안 샌다
 
 THE_COMPANY_FIELD = 'name="company_id"'
 REMIND = "/setup/test/startup-remind"
 
+#: 전부 지어낸 이름이다 — 이 저장소는 공개다.
+THE_FIRM = "가나벤처스"
+
+
+def _this_month() -> str:
+    from app import clock
+
+    return clock.today().strftime("%Y-%m")
+
 
 @pytest.fixture()
-def a_company(db):
-    """시험에 쓸 스타트업 한 곳. 담당자 성함이 곧 `{담당자명}` 이다."""
-    from app.models import IrCompany
+def a_company(db, users):
+    """시험에 쓸 스타트업 한 곳 — **계약을 마쳤고 요청이 한 건 있다.**
 
-    row = IrCompany(name="샘플애그", contact_name="홍길동")
-    db.add(row)
+    둘 다 있어야 문구가 만들어진다(`ir_kakao.for_company`). 계약을 안 했거나
+    요청이 0곳이면 짓지 않는 것이 이 저장소의 결이다(#131 · #135).
+    """
+    from app.models import IrCompany, IrRequest, VcContact
+
+    row = IrCompany(name="샘플애그", contact_name="홍길동", contract_status="paid")
+    firm = VcContact(user_id=1, name="김심사", firm=THE_FIRM)
+    db.add_all([row, firm])
+    db.flush()
+    db.add(IrRequest(user_id=1, contact_id=firm.id, company_id=row.id,
+                     company_name=row.name,
+                     requested_at=f"{_this_month()}-03"))
     db.commit()
     return row
 
 
 @pytest.fixture()
 def a_template(db):
-    """팀 기본 `startup_sms` 문구 하나. 바꿔치기 자리를 전부 담아 둔다."""
+    """팀 기본 `startup_sms` 문구 하나 — **머리말만** 담는다.
+
+    목록은 문구틀이 아니라 코드가 붙인다. 여기에는 머리말이 쓰는 자리
+    (`{달}`·`{기업들}`)와, 옛 문구가 쓰던 자리(`{담당자명}` …)를 함께 담아
+    **글자 그대로 새는 `{…}` 가 없는지**까지 함께 본다.
+    """
     from app.models import MessageTemplate
 
     row = MessageTemplate(
         user_id=None, kind="startup_sms", name="기본",
         body=("안녕하세요 {담당자명} {직함}\n"
-              "{기업명} 투자유치 진행 상황을 여쭙습니다.\n"
+              "{달} 말까지 {기업들}\n"
+              "IR 자료 요청한투자사 리스트 입니다.\n"
               "투자사: {투자사}/ 개수: {개수}/ 목록: {기업목록}/ 링크: {자료링크}"),
         is_active=1)
     db.add(row)
@@ -500,6 +531,18 @@ def _sole_item(db):
     items = db.query(SendItem).order_by(SendItem.id).all()
     assert len(items) == 1, items
     return items[0]
+
+
+def _screen_text(client, company_id: int) -> str:
+    """스타트업 화면이 보여 주는 문구 전문 — 화면에 실제로 박힌 글자 그대로."""
+    import re
+
+    r = client.get(f"/startup/ir-kakao/{company_id}")
+    assert r.status_code == 200, r.status_code
+    body = re.search(r'id="ir-kakao-message"[^>]*>(.*?)</textarea>', r.text,
+                     re.S)
+    assert body, "화면에 문구 칸이 없다"
+    return body.group(1)
 
 
 def test_the_remind_test_is_gone_without_a_test_room(logged_in, db, a_company,
@@ -540,76 +583,170 @@ def test_the_remind_goes_to_the_test_room_only(logged_in, rehearsal, db,
     assert _sole_item(db).room_name == TEST_ROOM
 
 
-def test_the_remind_sends_what_the_template_makes(logged_in, rehearsal, db,
-                                                  users, a_company, a_template):
-    """★ 이 시험의 알맹이 — 손으로 쓴 문구가 아니라 **문구틀이 만든 것**이다.
+def test_the_test_and_the_startup_screen_say_the_same_thing(logged_in, rehearsal,
+                                                            db, a_company,
+                                                            a_template):
+    """★ 이 일의 알맹이 — 두 자리가 **글자 하나까지 같은 문구**를 낸다.
 
-    앞에 머리말 한 줄도 얹지 않는다. 얹으면 실제로 나갈 모양을 볼 수 없다.
+    갈리면 시험이 거짓말을 한다: 여기서 본 글과 대표가 받을 글이 달라진다.
     """
-    from app.services import startup_msg
+    import html as html_mod
 
     _job_id(_press(logged_in, REMIND, company_id=a_company.id))
-    made = startup_msg.compose(db, users["u1"], a_company)
-    assert _sole_item(db).message == made
+    sent = _sole_item(db).message
+    shown = html_mod.unescape(_screen_text(logged_in, a_company.id))
+    assert sent == shown, f"시험 자리와 화면이 다른 글을 낸다\n{sent!r}\n{shown!r}"
 
 
-def test_which_slots_get_filled_and_which_stay_blank(db, users, a_company,
-                                                     a_template):
-    """문구틀의 자리마다 무엇이 들어가나 — 이 판단이 곧 문구의 모양이다."""
-    from app.services import startup_msg
+def test_the_headline_comes_from_the_template_for_both(logged_in, rehearsal, db,
+                                                       a_company, a_template):
+    """★ 머리말을 문구 화면에서 고치면 **두 자리가 함께** 바뀐다."""
+    import html as html_mod
 
-    text = startup_msg.compose(db, users["u1"], a_company)
-    # 채워지는 둘.
-    assert "홍길동" in text
-    assert "샘플애그" in text
-    # `{직함}` 은 명단에 직함 칸이 없어 존칭만 붙고, 앞 공백은 지워진다.
-    assert "안녕하세요 홍길동님" in text
-    # 받는 쪽이 스타트업이라 투자사가 없다. 딜소개용 자리도 함께 빈칸이다.
-    assert text.endswith("투자사: / 개수: / 목록: / 링크:")
-    # 무엇보다 **바꿔치기가 남지 않는다** — `{…}` 가 그대로 나간 사고가 있었다.
-    assert "{" not in text and "}" not in text
-
-
-def test_a_blank_name_shows_up_instead_of_being_hidden(db, users, a_template):
-    """담당자 성함이 빈 기업도 문구가 만들어진다 — 그 모양을 보는 것이 시험이다."""
-    from app.models import IrCompany
-    from app.services import startup_msg
-
-    company = IrCompany(name="이름없는곳", contact_name=None)
-    db.add(company)
+    a_template.body = "고쳐 적은 머리말\n{달} 말까지 {기업들}"
     db.commit()
-    text = startup_msg.compose(db, users["u1"], company)
-    assert text.startswith("안녕하세요")
-    assert "이름없는곳" in text
+
+    _job_id(_press(logged_in, REMIND, company_id=a_company.id))
+    sent = _sole_item(db).message
+    assert sent.startswith("고쳐 적은 머리말\n")
+    assert html_mod.unescape(_screen_text(logged_in, a_company.id)) == sent
 
 
-def test_an_empty_template_makes_nothing(logged_in, rehearsal, db, a_company):
-    """문구틀이 비어 있으면 **잡을 만들지 않고** 어디에 적으라고 말한다.
+def test_the_list_is_added_by_the_code_not_the_template(logged_in, rehearsal, db,
+                                                        a_company, a_template):
+    """머리말만 고쳐 적어도 **목록은 붙는다** — 목록은 문구틀 몫이 아니다."""
+    from app.services import ir_mask
 
-    코드에 적힌 뼈대를 대신 보내면 사람은 그것이 팀이 정한 문구인 줄 안다.
+    a_template.body = "머리말 한 줄뿐"
+    db.commit()
+    _job_id(_press(logged_in, REMIND, company_id=a_company.id))
+    sent = _sole_item(db).message
+    assert sent.startswith("머리말 한 줄뿐\n\n")
+    assert ir_mask.mask_company(THE_FIRM) in sent, "요청 목록이 안 붙었다"
+
+
+def test_the_month_and_the_companies_are_filled_by_the_code(logged_in, rehearsal,
+                                                            db, a_company,
+                                                            a_template):
+    """`{달}`·`{기업들}` 은 자료라 코드가 채운다 — 사람이 갈아 끼우지 않는다."""
+    from app.services import ir_kakao
+
+    _job_id(_press(logged_in, REMIND, company_id=a_company.id))
+    sent = _sole_item(db).message
+    assert f"{ir_kakao.month_label(_this_month())} 말까지 {a_company.name}" in sent
+
+
+def test_no_substitution_is_left_behind(logged_in, rehearsal, db, a_company,
+                                        a_template):
+    """`{…}` 가 **글자 그대로** 나간 사고를 이 저장소는 이미 겪었다.
+
+    운영에 저장돼 있던 옛 문구가 `{담당자명}` 을 쓰고 있으므로, 머리말을
+    문구틀로 옮긴 뒤에도 그 자리는 여전히 채워져야 한다.
     """
-    from app.routers.setup import TEST_INPUT_MISSING
+    _job_id(_press(logged_in, REMIND, company_id=a_company.id))
+    sent = _sole_item(db).message
+    assert "안녕하세요 홍길동님" in sent, "옛 문구의 자리가 안 채워졌다"
+    assert "{" not in sent and "}" not in sent
 
-    r = _press(logged_in, REMIND, company_id=a_company.id)
-    assert r.status_code == 303
-    assert r.headers["location"] == "/setup?test=no_template"
-    assert _jobs(db) == []
 
-    html = logged_in.get("/setup?test=no_template").text
-    assert TEST_INPUT_MISSING["no_template"] in html
+def test_the_masked_firm_never_leaks_into_the_test_room(logged_in, rehearsal, db,
+                                                        a_company, a_template):
+    """가리는 자리는 `ir_mask` 하나다 — 시험 길로 샌다면 가린 것이 아니다."""
+    from app.services import ir_mask
+
+    _job_id(_press(logged_in, REMIND, company_id=a_company.id))
+    sent = _sole_item(db).message
+    assert THE_FIRM not in sent
+    assert ir_mask.mask_company(THE_FIRM) in sent
+
+
+def test_an_empty_template_still_makes_the_message(logged_in, rehearsal, db,
+                                                   a_company):
+    """문구틀이 비어 있으면 **코드에 적힌 머리말**로 짓는다.
+
+    #133 은 반대로 막았지만, 그 판단을 그대로 두면 스타트업 화면이 404 가 된다 —
+    요청이 실제로 와 있는데 "요청이 없다" 는 뜻의 안내가 뜬다. 대신 화면이
+    **기본 머리말로 지었다**고 적는다.
+    """
+    from app.services import ir_kakao
+
+    _job_id(_press(logged_in, REMIND, company_id=a_company.id))
+    sent = _sole_item(db).message
+    assert sent.startswith(ir_kakao.HELLO)
+    assert ir_kakao.LEAD in sent
+
+    html = logged_in.get(f"/startup/ir-kakao/{a_company.id}").text
+    assert "기본 머리말" in html, "문구틀이 빈 줄 모르고 지나간다"
     assert "/templates#startup_sms" in html, "고칠 자리로 가는 고리가 없다"
 
 
 def test_a_whitespace_only_template_counts_as_empty(logged_in, rehearsal, db,
                                                     a_company):
     from app.models import MessageTemplate
+    from app.services import ir_kakao
 
     db.add(MessageTemplate(user_id=None, kind="startup_sms", name="빈 것",
                            body="   \n  ", is_active=1))
     db.commit()
-    r = _press(logged_in, REMIND, company_id=a_company.id)
-    assert r.headers["location"] == "/setup?test=no_template"
+    _job_id(_press(logged_in, REMIND, company_id=a_company.id))
+    assert _sole_item(db).message.startswith(ir_kakao.HELLO)
+
+
+def test_a_company_with_no_requests_makes_nothing(logged_in, rehearsal, db,
+                                                  a_template):
+    """요청이 0곳이면 **잡을 만들지 않는다** — 빈 목록을 보내면 받는 대표는
+    우리가 아무것도 안 한 줄로 읽는다."""
+    from app.models import IrCompany
+    from app.routers.setup import TEST_INPUT_MISSING
+
+    company = IrCompany(name="조용한곳", contract_status="paid")
+    db.add(company)
+    db.commit()
+
+    r = _press(logged_in, REMIND, company_id=company.id)
+    assert r.status_code == 303
+    assert r.headers["location"] == "/setup?test=no_requests"
     assert _jobs(db) == []
+    assert TEST_INPUT_MISSING["no_requests"] in logged_in.get(
+        "/setup?test=no_requests").text
+
+
+def test_a_company_without_a_contract_makes_nothing(logged_in, rehearsal, db,
+                                                    a_company, a_template):
+    """계약을 안 마친 기업도 같은 길이다 — 판정은 `ir_kakao` 한 곳이 한다."""
+    a_company.contract_status = "none"
+    db.commit()
+    r = _press(logged_in, REMIND, company_id=a_company.id)
+    assert r.headers["location"] == "/setup?test=no_requests"
+    assert _jobs(db) == []
+
+
+def test_a_long_message_is_sent_in_parts(logged_in, rehearsal, db, a_company,
+                                          a_template):
+    """한 통에 안 들어가면 **나뉜 채로** 나간다 — 합쳐 보내면 실제로는 잘린다."""
+    from app.models import IrRequest, VcContact
+
+    for i in range(400):
+        firm = VcContact(user_id=1, name="김심사",
+                         firm=f"마바사아자캐피탈파트너스{i}")
+        db.add(firm)
+        db.flush()
+        db.add(IrRequest(user_id=1, contact_id=firm.id, company_id=a_company.id,
+                         company_name=a_company.name,
+                         requested_at=f"{_this_month()}-05"))
+    db.commit()
+
+    _job_id(_press(logged_in, REMIND, company_id=a_company.id))
+    item = _sole_item(db)
+    assert item.parts_json, "여러 통인데 나눠 보내지 않는다"
+    assert len(json.loads(item.parts_json)) > 1
+
+
+def test_a_short_message_carries_no_parts(logged_in, rehearsal, db, a_company,
+                                          a_template):
+    """한 통이면 `parts_json` 은 비운다 — `SendItem` 이 정해 둔 약속이다."""
+    _job_id(_press(logged_in, REMIND, company_id=a_company.id))
+    assert _sole_item(db).parts_json is None
 
 
 def test_no_company_picked_just_comes_back(logged_in, rehearsal, db, a_template):
@@ -696,27 +833,42 @@ def test_a_consultant_cannot_reach_the_remind(client, db, rehearsal, a_company,
     assert _jobs(db) == []
 
 
-def test_the_composer_lives_outside_the_screen(rehearsal):
-    """문구 짓는 일은 시험 화면 안에 묻어 두지 않았다 — 실제 발송 길을 낼 때
-    다시 짜지 않게 하려는 것이다."""
-    from app.services import startup_msg
+def test_there_is_only_one_composer(rehearsal):
+    """★ **짓는 자리가 하나다.** 두 벌이 남으면 이번에 모은 뜻이 없다.
 
-    assert startup_msg.KIND == "startup_sms"
-    assert callable(startup_msg.compose) and callable(startup_msg.body_for)
+    - `services/startup_msg.py` 는 없다(#133 이 냈던 파일이다).
+    - 시험 자리도 스타트업 화면도 `ir_kakao` 를 부르고, 제 손으로 조립하지 않는다.
+    """
+    import inspect
+    import pathlib
+
+    from app.routers import setup as setup_router
+    from app.routers import startup as startup_router
+    from app.services import ir_kakao
+
+    root = pathlib.Path(__file__).resolve().parent.parent
+    assert not (root / "app" / "services" / "startup_msg.py").exists(), \
+        "목록 없는 옛 문구를 짓는 자리가 남아 있다"
+
+    assert ir_kakao.KIND == "startup_sms"
+    for fn in (setup_router.test_startup_remind, startup_router.ir_kakao_message):
+        src = inspect.getsource(fn)
+        assert "ir_kakao." in src, "짓는 자리를 안 지난다"
+        assert "render_template" not in src and "compose_message" not in src, \
+            "화면이 제 손으로 문구를 조립한다"
 
 
 # ══════════════════════════════════════════════════════════════════════════
 #  ⑧ 미팅 후기 문구 시험 — **받는 사람이 투자사다**
 # ══════════════════════════════════════════════════════════════════════════
 #
-# 바로 위 월말 리마인드는 **스타트업**으로 나가고, 이것은 미팅을 마친
+# 바로 위 기업 리마인드는 **스타트업**으로 나가고, 이것은 미팅을 마친
 # **투자사**로 나간다. 나란히 선 두 단추가 서로 반대쪽 명단을 향하므로,
 # 화면에서 그 차이가 보이는지도 여기서 함께 본다.
 #
-# 짓는 자리를 새로 만들지 않았다는 것이 #133 과 다른 점이다. `startup_sms` 는
-# 짓는 코드가 한 줄도 없어서 서비스를 새로 냈지만, `meeting_review` 는 **발송
-# 화면의 미팅 후기 탭**이 이미 짓는다. 그래서 그 길을 부른다 — 여기서 다시
-# 조립하면 두 벌이 되고, 두 벌은 반드시 어긋난다.
+# 여기도 짓는 자리를 새로 만들지 않았다 — `meeting_review` 는 **발송 화면의
+# 미팅 후기 탭**이 이미 짓는다. 그래서 그 길을 부른다. 위 기업 리마인드가
+# 두 벌을 두었다가 하나로 모은 자리다.
 #
 # 보는 것은 여섯이다.
 #   ★ 시험방이 없으면 이 자리도 없다(① 과 같은 안전선)
@@ -1117,9 +1269,9 @@ def test_a_consultant_cannot_reach_the_review(client, db, rehearsal, a_meeting,
 def test_the_composer_is_the_send_screens_own(rehearsal):
     """★ 짓는 자리를 **새로 만들지 않았다.**
 
-    `startup_sms` 는 짓는 코드가 없어서 서비스를 새로 냈지만(#133),
     `meeting_review` 는 발송 화면이 이미 짓는다. 그 길을 부를 수 있게 입구만
-    냈다 — 여기서 다시 조립하면 두 벌이 되고, 두 벌은 반드시 어긋난다.
+    냈다 — 여기서 다시 조립하면 두 벌이 되고, 두 벌은 반드시 어긋난다
+    (기업 리마인드가 그 값을 치른 자리다).
     """
     import inspect
 

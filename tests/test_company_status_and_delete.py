@@ -666,3 +666,201 @@ def test_저장_뒤_되그리기는_브라우저에_있으니_거기서_잰다()
     out = subprocess.run([shutil.which("node"), str(script)],
                          capture_output=True, text=True, timeout=60)
     assert out.returncode == 0, out.stdout + out.stderr
+
+
+# ── ⑩ 무료 IR 미팅 — 두 상태와 `미팅제공일자` ──────────────────────────────
+#
+# `계약여부` 에 **계약이 아닌 두 단계**가 생겼다(사용자 요청):
+# `무료IR 미팅제공예정` · `무료 IR 미팅제공완료함`. 그전에는 이 기업들이
+# `미계약` 에 섞여, 아직 아무것도 안 한 곳과 같은 숫자로 세어졌다.
+#
+# 상태만으로는 "그래서 언제냐" 를 적을 자리가 없어 `미팅제공일자` 칸이 함께
+# 온다 — **손으로 적는 글자 칸**이다(달력 고르개가 아니다).
+#
+# 이 부류가 조용히 깨지는 자리는 늘 같다: 한 곳에만 더하고 나머지를 잊는 것.
+# 그래서 화면·수정창·엑셀·시트 가져오기를 **한 검사 안에서** 함께 본다.
+
+_MEET_PLANNED = "무료IR 미팅제공예정"          # `무료IR` 이 붙어 있다
+_MEET_DONE = "무료 IR 미팅제공완료함"          # 이쪽은 떨어져 있다
+
+
+def test_새_두_상태는_표와_수정창_양쪽에서_고를_수_있다(logged_in, company):
+    """한쪽에만 더하면 **그 화면에서만** 고를 수 있는 상태가 된다.
+
+    표는 `data-choices` 로 보기를 늘 싣고(값이 하나도 없어도 고를 수 있어야
+    한다), 수정창은 `<select>` 로 세운다. 둘 다 `CONTRACT_LABELS` 한 곳에서
+    나와야 한다 — 손으로 한 벌 더 적어 두면 이 검사가 막으려는 그 사고가
+    다음 상태를 더할 때 그대로 난다.
+    """
+    html = logged_in.get("/companies").text
+
+    cell = re.search(r'data-field="contract_status"[^>]*data-choices="([^"]*)"', html)
+    assert cell, "표의 계약여부 칸에 보기가 안 실렸다"
+    assert _MEET_PLANNED in cell.group(1) and _MEET_DONE in cell.group(1)
+
+    panel = re.search(r'<select id="f-contract_status">(.*?)</select>', html, re.S)
+    assert panel, "수정창에 계약여부가 없다"
+    options = dict(re.findall(r'<option value="([^"]*)">([^<]*)</option>', panel.group(1)))
+    assert options.get("free_meet_planned") == _MEET_PLANNED, options
+    assert options.get("free_meet_done") == _MEET_DONE, options
+    # 원래 있던 다섯도 그대로다 — 더하는 일이지 갈아 끼우는 일이 아니다.
+    assert set(options.values()) >= {"미계약", "무료계약완료", "유료계약완료",
+                                     "계약검토중", "딜소개 불가"}
+
+
+def test_표에서_눌러_고쳐도_수정창에서_골라도_같은_값이_남는다(logged_in, db, company):
+    """표는 **보이는 글자**를, 수정창은 **값**을 보낸다. 저장되는 것은 하나다.
+
+    이 짝이 어긋나면 고쳐지지도 막히지도 않는다 — 200 은 오는데 되읽으면
+    `미계약` 이라, 사람에게는 "저장이 안 된다" 로 보인다(이 파일 머리 참고).
+    """
+    r = logged_in.patch(f"/api/companies/{company.id}",
+                        json={"contract_status": _MEET_PLANNED})
+    assert r.status_code == 200
+    db.expire_all()
+    db.refresh(company)
+    assert company.contract_status == "free_meet_planned"
+    # 되읽기까지 맞아야 화면이 안 어긋난다 — 표는 값이 아니라 말을 보여 준다.
+    assert r.json()["contract_label"] == _MEET_PLANNED
+    assert r.json()["blocked"] is False, "계약 전 단계일 뿐 막을 기업이 아니다"
+
+    r = logged_in.patch(f"/api/companies/{company.id}",
+                        json={"contract_status": "free_meet_done"})
+    assert r.status_code == 200
+    db.expire_all()
+    db.refresh(company)
+    assert company.contract_status == "free_meet_done"
+    assert logged_in.get(f"/api/companies/{company.id}").json()["contract_label"] == _MEET_DONE
+
+
+def test_표는_미팅제공일자를_계약여부_바로_앞에_세운다(logged_in, company):
+    """자리가 뜻이다(사용자 요청). 옆 칸의 두 상태가 곧 이 날짜를 묻는 말이라,
+    날짜를 먼저 읽고 상태를 읽는 차례로 서야 한 줄로 읽힌다."""
+    head = re.search(r"<thead>(.*?)</thead>", logged_in.get("/companies").text, re.S)
+    assert head
+    names = [re.sub(r"<[^>]+>", "", c).strip()
+             for c in re.findall(r"<th\b[^>]*>(.*?)</th>", head.group(1), re.S)]
+    assert "미팅제공일자" in names, names
+    assert names[names.index("계약여부") - 1] == "미팅제공일자", names
+
+
+def test_미팅제공일자는_달력이_아니라_글자로_적는다(logged_in, db, company):
+    """사용자가 그렇게 청했다. `9월 중` · `미정` 처럼 실제로 쓰는 말이 들어올
+    자리라, 날짜형으로 못 박으면 그 말을 적을 데가 없어져 메모 칸으로 샌다."""
+    html = logged_in.get("/companies").text
+    field = re.search(r'<input[^>]*id="f-meeting_offered_at"[^>]*>', html)
+    assert field, "수정창에 이 칸이 없다"
+    assert 'type="text"' in field.group(0), field.group(0)
+    assert 'type="date"' not in field.group(0)
+    # 표에서 눌러 고칠 때도 목록이 아니라 그냥 글자 칸이다(`data-type` 없음).
+    cell = re.search(r'<td class="cell" data-field="meeting_offered_at"[^>]*>', html)
+    assert cell and "data-type" not in cell.group(0), cell
+
+
+def test_적은_날짜가_저장되고_되읽힌다(logged_in, db, company):
+    """새 칸의 기본값은 없다 — 아직 안 정한 곳은 빈 칸이다."""
+    assert company.meeting_offered_at is None, "기본값이 붙으면 안 된다"
+    assert logged_in.get(f"/api/companies/{company.id}").json()["meeting_offered_at"] == ""
+
+    r = logged_in.patch(f"/api/companies/{company.id}",
+                        json={"meeting_offered_at": "2026-09-15"})
+    assert r.status_code == 200
+    db.expire_all()
+    db.refresh(company)
+    assert company.meeting_offered_at == "2026-09-15"
+
+    # 날짜가 아닌 말도 그대로 받는다 — 그러라고 글자 칸이다.
+    logged_in.patch(f"/api/companies/{company.id}",
+                    json={"meeting_offered_at": "9월 중"})
+    db.expire_all()
+    db.refresh(company)
+    assert company.meeting_offered_at == "9월 중"
+    assert logged_in.get(f"/api/companies/{company.id}").json()["meeting_offered_at"] == "9월 중"
+
+    # 비우면 다시 미정으로 — 잘못 적은 것을 되돌릴 길이 있어야 한다.
+    logged_in.patch(f"/api/companies/{company.id}", json={"meeting_offered_at": ""})
+    db.expire_all()
+    db.refresh(company)
+    assert company.meeting_offered_at is None
+
+
+def test_엑셀에도_미팅제공일자가_계약_바로_앞에_실린다(logged_in, db):
+    """IR 기업현황 엑셀은 머리글을 **손으로 적어 두는** 자리다. 표에 칸을
+    세우고 그것을 잊으면 엑셀에서만 칸이 빠진 채 내려온다 — 예전에 그렇게
+    한 번 빠졌다. 새 상태도 값 그대로 실린다."""
+    import io
+
+    import openpyxl
+
+    from app.models import IrCompany
+
+    db.add(IrCompany(name="샘플무료", contract_status="free_meet_planned",
+                     meeting_offered_at="2026-09-15"))
+    db.add(IrCompany(name="샘플아직", contract_status="none"))     # 아직 안 정함
+    db.commit()
+
+    book = openpyxl.load_workbook(
+        io.BytesIO(logged_in.get("/api/export/companies.xlsx").content))
+    sheet = book.active
+    head = [c.value for c in sheet[1]]
+    assert "미팅제공일자" in head, head
+    assert head[head.index("계약") - 1] == "미팅제공일자", head
+
+    col = head.index("미팅제공일자")
+    rows = {r[0]: r for r in sheet.iter_rows(min_row=2, values_only=True)}
+    assert rows["샘플무료"][col] == "2026-09-15"
+    assert rows["샘플무료"][head.index("계약")] == "free_meet_planned"
+    # 안 적은 곳은 빈 칸이다 — 없는 날짜를 지어내지 않는다.
+    # (openpyxl 은 빈 글자를 `None` 으로 읽어 온다 — 엑셀에서는 둘 다 빈 칸이다.)
+    assert rows["샘플아직"][col] in (None, "")
+
+
+def test_시트에_적힌_말도_그대로_새_상태로_들어온다():
+    """시트 가져오기가 **말을 먼저 견딘다.**
+
+    `_contract_status` 의 어림짐작(`완료` 가 들었나 · `예` 가 들었나)이 먼저
+    돌면 `무료IR 미팅제공예정` 은 `예` 에, `무료 IR 미팅제공완료함` 은 `완료`
+    에 걸려 **둘 다 `유료계약완료`** 로 들어간다. 무료로 봐 준 기업이 돈을 낸
+    기업으로 뒤바뀌는 것이라, 조용히 틀리면 알아챌 길이 없다.
+
+    같은 어림짐작이 원래 `무료계약완료` 도 `유료계약완료` 로 읽고 있었다 —
+    말을 먼저 견주면 그 부류가 통째로 사라진다.
+    """
+    from app.services.sheet_import import _contract_status
+
+    assert _contract_status(_MEET_PLANNED) == "free_meet_planned"
+    assert _contract_status(_MEET_DONE) == "free_meet_done"
+    # 띄어쓰기가 달라도 같은 값이다 — 사람은 `무료IR` 과 `무료 IR` 을 섞어 쓴다.
+    assert _contract_status("무료 IR 미팅제공예정") == "free_meet_planned"
+    assert _contract_status("무료계약완료") == "free"
+    # 말이 아닌 값(옛 시트의 `완료`·`진행중`)은 하던 대로 읽는다
+    assert _contract_status("완료") == "yes"
+    assert _contract_status("진행중") == "pending"
+    assert _contract_status("") == "no"
+
+
+def test_계약_기업을_세는_곳은_그대로다(db):
+    """**지금은 그대로 둔다** — 새 두 상태를 여기에 넣을지는 사용자가 정한다.
+
+    `services/ir_monthly.py` 의 `CONTRACTED` 가 'IR 요청 문서·문구를 받는
+    기업' 을 고르는 단 한 곳이다. 무료 IR 미팅은 **계약 전 단계**라, 여기에
+    넣는 순간 아직 계약하지 않은 기업에게 우리가 받은 투자사 반응이 나간다 —
+    그 자체가 영업 자료다. 되돌릴 수 없는 종류의 실수라 사람이 정할 일이다.
+
+    넣기로 하면 고칠 곳은 `CONTRACTED` 한 줄이고, 화면의 안내 문구
+    (`startup_ir_doc.html` · `startup_ir_report.html` · `startup_ir_kakao.html`
+    의 `무료계약완료 · 유료계약완료`)도 함께 고쳐야 한다.
+    """
+    from app.models import IrCompany
+    from app.services import ir_monthly
+
+    assert ir_monthly.CONTRACTED == ("free", "paid")
+
+    db.add(IrCompany(name="샘플계약", contract_status="paid"))
+    db.add(IrCompany(name="샘플예정", contract_status="free_meet_planned"))
+    db.add(IrCompany(name="샘플완료", contract_status="free_meet_done"))
+    db.commit()
+
+    names = {c.name for c in ir_monthly.contracted(db)}
+    assert "샘플계약" in names
+    assert "샘플예정" not in names and "샘플완료" not in names
