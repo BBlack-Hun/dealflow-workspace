@@ -265,6 +265,18 @@ class IrCompany(TimestampMixin, Base):
     # 팀이 함께 쓴다 — 그래서 이 칸에는 폴더가 들어오면 안 되고, 발송기가
     # 경로 구분자·`..`·URL 을 전부 거부한다(`check_ir_file_name`).
     ir_file_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # 무료 IR 미팅을 **언제 주기로 했는가 / 언제 줬는가**. 옆의 `계약여부` 에
+    # `무료IR 미팅제공예정`·`무료 IR 미팅제공완료함` 두 상태가 생기면서, "그래서
+    # 그게 언제냐" 를 적을 자리가 필요해졌다(사용자 요청).
+    #
+    # **글자다 — 달력에서 고르는 값이 아니다.** `contract_month`(홍보메일삭제)·
+    # `received_at`(수신일)이 이미 같은 결이고, 그 칸들에 실제로 들어 있는 값이
+    # `삭제 완료` · `민진 8/13 삭제` 처럼 날짜가 아닌 메모다. 날짜 칸으로 못
+    # 박으면 `9월 중` · `미정` 같은 실제로 쓰는 말을 적을 데가 없어지고, 사람은
+    # 그것을 메모 칸에 적어 버려 이 칸이 빈 채로 남는다.
+    #
+    # 아직 안 정한 곳이 대부분이라 기본값을 두지 않는다 — 빈칸이 곧 `미정`이다.
+    meeting_offered_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     contract_status: Mapped[str] = mapped_column(String, default="no")  # yes | no | pending
     # 계약서를 **실제로 받았는가** — `O` / `X`, 아직 안 정했으면 NULL(빈 칸).
     #

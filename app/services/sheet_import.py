@@ -850,9 +850,29 @@ def _has_deck(text: str) -> bool:
 
 
 def _contract_status(text: str) -> str:
-    t = norm(text).lower()
+    """시트에 적힌 말 → `ir_companies.contract_status` 에 넣을 값.
+
+    **화면에 보이는 말이 그대로 적혀 있으면 그것이 답이다.** 아래 '무슨 글자가
+    들었나' 어림짐작은 그 다음이다 — 순서를 반대로 두면 `무료계약완료` 가
+    `완료` 에 걸려 `유료계약완료` 로 들어간다. 무료로 봐 준 기업이 돈을 낸
+    기업으로 뒤바뀌는 것이라, 조용히 틀리면 알아챌 길이 없다.
+
+    `무료IR 미팅제공예정` · `무료 IR 미팅제공완료함` 이 생기면서 이 자리가
+    더 위험해졌다: 앞의 것은 `예`, 뒤의 것은 `완료` 에 걸려 **둘 다**
+    `유료계약완료` 가 된다. 말을 먼저 견주면 그 부류가 통째로 사라진다.
+    (띄어쓰기를 지우고 견주는 것도 `CONTRACT_FROM_LABEL` 이 맡는다 — 사람은
+    `무료IR` 과 `무료 IR` 을 같은 말로 쓴다.)
+    """
+    # 순환 import 를 피해 늦게 부른다 — routers/companies 가 이 모듈을 읽는다.
+    from ..routers.companies import CONTRACT_FROM_LABEL
+
+    t = norm(text)
     if not t:
         return "no"
+    known = CONTRACT_FROM_LABEL.get(t.replace(" ", ""))
+    if known:
+        return known
+    t = t.lower()
     if any(k in t for k in ("진행", "협의", "검토", "pending")):
         return "pending"
     if any(k in t for k in ("완료", "체결", "유", "예")) or t in ("o", "y", "yes"):

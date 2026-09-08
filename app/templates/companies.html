@@ -272,7 +272,26 @@
            24px 이 더 드는데, 그건 안 재고 92px 로 두었더니 필터를 걸자마자 다시
            두 줄이 됐다(위 세 칸도 같은 이유로 함께 넓혔다). 이제는
            `단추 폭 + th 좌우 여백 18px + 두 자리 수 여유 7px` 로 잡는다. #}
-        <th style="width:110px" data-filters="contract:계약여부">계약여부<div class="th-filters"></div></th>
+        {# 무료 IR 미팅을 언제 주기로 했는가 / 언제 줬는가.
+           **`계약여부` 바로 앞**이다(사용자 요청). 옆 칸의 두 상태
+           (`무료IR 미팅제공예정` · `무료 IR 미팅제공완료함`)가 곧 이 날짜를
+           묻는 말이라, 날짜를 먼저 읽고 상태를 읽는 차례로 선다.
+
+           **손으로 적는 칸이다** — 달력 고르개를 붙이지 않는다(사용자 요청).
+           `9월 중` · `미정` 처럼 실제로 쓰는 말이 들어올 자리다
+           (옆의 `홍보메일삭제` 가 이미 그 모양이다).
+
+           필터는 안 세운다. 값이 줄마다 다른 날짜라 목록으로 고를 것이 아니다 —
+           같은 결인 `홍보메일삭제` 도 필터가 없다. 그래서 폭은 단추가 아니라
+           **이름**(`미팅제공일자` 63px + th 좌우 여백 18px)에 맞춘다. #}
+        <th style="width:100px" title="무료 IR 미팅을 언제 제공하는지 · 눌러서 수정">미팅제공일자</th>
+        {# **여기는 값이 이름보다 넓다.** 새로 든 `무료 IR 미팅제공완료함` 은
+           115px 이라 110px 에서는 `무료 IR 미팅제공완` / `료함` 으로 낱말
+           한가운데가 끊겼고, 그 줄만 키가 커져 표가 들쭉날쭉해졌다. 값까지
+           재서 134px(115 + th 좌우 여백 18) — 옆의 `계약서 수신됨` 과 같은 폭이다.
+           (위 검사들은 이름과 필터 단추만 잰다. 값이 이름보다 긴 칸은 이 표에서
+            여기뿐이라 적어 둔다 — 다음에 상태를 더할 때 이 폭을 다시 재야 한다.) #}
+        <th style="width:134px" data-filters="contract:계약여부">계약여부<div class="th-filters"></div></th>
         {# 계약서 종이가 실제로 들어왔는가. **`계약여부` 바로 오른쪽**이다 —
            `유료계약완료` 를 읽는 그 눈으로 "그런데 서류는?" 을 같이 보는 칸이라
            떨어뜨려 놓으면 두 칸을 번갈아 짚어야 한다.
@@ -373,11 +392,15 @@
         </td>
         <td class="cell" data-field="assignee_name" data-type="pick"
             data-filter-key="assignee">{{ r.assignee }}</td>
+        {# 자유 입력이다 — `data-type` 을 주지 않으면 inline_edit.js 가 그냥
+           글자 칸으로 연다(옆의 `홍보메일삭제` 와 같다). `pick` 을 달면 이미
+           적힌 날짜들이 보기로 뜨는데, 날짜는 고를 목록이 아니다. #}
+        <td class="cell" data-field="meeting_offered_at">{{ r.meeting_offered_at }}</td>
         {# 칸에는 **말**이 보이고, 저장되는 것은 값(`blocked`)이다. 라우터가
            그 짝을 맞춘다(`CONTRACT_FROM_LABEL`) — 여기서 값을 보여 주면
            고르는 사람이 `blocked` 라는 글자를 읽게 된다.
 
-           `data-choices` 로 다섯 가지를 **늘** 세운다. 없으면 편집창은 지금
+           `data-choices` 로 **모든 보기를** 늘 세운다. 없으면 편집창은 지금
            표에 실려 있는 값만 모아 보여 주므로(inline_edit.js 의
            `knownValues`), `딜소개 불가` 인 기업이 하나도 없는 순간 그 말을
            고를 길이 사라진다 — 똑같이 받아 적어야 했다. #}
@@ -412,7 +435,7 @@
         <td><button type="button" class="linkbtn js-co-edit">수정</button></td>
       </tr>
       {% else %}
-      <tr><td colspan="13" class="muted">등록된 기업이 없습니다. [기업 추가]로 시작하세요.</td></tr>
+      <tr><td colspan="14" class="muted">등록된 기업이 없습니다. [기업 추가]로 시작하세요.</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -631,13 +654,20 @@
       <select id="f-summary_status">
         {% for key, label in summary_labels.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
       </select></label>
+    {# 표의 `미팅제공일자` 와 **같은 자리·같은 이름**이다 — 표에서 계약여부
+       앞에 선 칸이 수정창에서는 뒤에 있으면 같은 칸인지 알 수 없다.
+       `<input type="text">` 다: 달력 고르개(`type="date"`)로 두면 `9월 중` ·
+       `미정` 을 적을 수 없고, 브라우저마다 다른 모양의 고르개가 뜬다. #}
+    <label class="field" title="무료 IR 미팅을 언제 제공하는지">
+      <span>미팅제공일자</span>
+      <input type="text" id="f-meeting_offered_at" placeholder="예: 2026-09-15"></label>
+    {# 보기는 **한 곳에서** 온다(`routers/companies.py` 의 `CONTRACT_LABELS`).
+       손으로 적어 두었더니 그 목록에 새 상태를 더해도 이 창만 옛 다섯 가지를
+       보여 주었다 — 표에서는 고를 수 있는데 수정창에서는 없는 상태가 된다.
+       위 `소개 상태`(`summary_labels`)가 이미 이렇게 돈다. #}
     <label class="field"><span>계약여부</span>
       <select id="f-contract_status">
-        <option value="none">미계약</option>
-        <option value="free">무료계약완료</option>
-        <option value="paid">유료계약완료</option>
-        <option value="review">계약검토중</option>
-        <option value="blocked">딜소개 불가</option>
+        {% for key, label in contract_labels.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
       </select></label>
     {# 여기만 `<input>` 이 아니라 `<select>` 다. 값이 `O`/`X` 둘뿐인 칸이라
        손으로 적게 두면 `o`·`△`·`확인중` 으로 갈리고, 그 순간 "몇 곳에서
