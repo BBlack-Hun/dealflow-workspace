@@ -24,7 +24,7 @@ from ..db import get_db
 from ..deps import get_current_user, may_auto_attach, templates
 from ..models import (TEST_SEND_KIND, AgentDevice, IrCompany, Meeting, SendItem,
                       SendJob, User, VcContact)
-from ..services import ir_kakao, ir_monthly, pipeline
+from ..services import ir_kakao, ir_monthly, pipeline, test_demo
 from ..ui import base_ctx
 # 미팅 후기 문구는 **발송 화면이 이미 짓는다**(미팅 후기 탭). 여기서 다시
 # 조립하면 두 벌이 되고, 두 벌은 반드시 어긋난다 — 문구 관리 화면이 같은
@@ -77,17 +77,15 @@ TEST_FILE_MESSAGE = "[시험] 자료 첨부 시험입니다 — 실제 발송이
 
 #: 칸을 비운 채 눌렀을 때. 주소에 실려 화면이 다시 읽는다(`setup.html`).
 #:
-#: `no_requests` 만 성격이 다르다 — 사람이 안 적은 것이 아니라 **그 기업에
-#: 실을 것이 없는 것**이다. 요청이 0곳이면 문구를 짓지 않는 것은 이 저장소가
-#: 이미 정한 결이다(#131 · #135): 빈 목록을 보내면 받는 대표는 우리가 아무것도
-#: 안 한 줄로 읽는다. 판정은 `ir_kakao.compose` 한 곳에 있다.
+#: **`no_requests` 는 없앴다.** 요청이 0곳인 기업을 골라도 이제는 되돌려 보내지
+#: 않고 **보기 자료로 문구를 짓는다**(`services/test_demo.py`) — 그러지 않으면
+#: 시험 자리에서 문구를 눌러 볼 수가 없는 때가 있고, 그 자리를 만든 뜻이
+#: 사라진다. 실제로 나가는 쪽(스타트업 화면)은 **그대로** 0곳이면 안 만든다.
 TEST_INPUT_MISSING = {
     "need_file": "시험할 파일 이름을 적어주세요",
     "need_room": "확인할 카톡방 이름을 적어주세요",
     "need_company": "어느 기업 것으로 만들지 골라주세요",
     "need_meeting": "어느 미팅 것으로 만들지 골라주세요",
-    "no_requests": ("그 기업에 만들 문구가 없습니다 — 계약을 마친 기업이면서 "
-                    "이 달 말까지 IR 자료를 요청한 투자사가 있어야 합니다"),
 }
 
 
@@ -551,15 +549,31 @@ def test_startup_remind(
     나갈 문구가 아니다. 명단의 기업을 그대로 쓰면 담당자 성함이 빈 줄·이름에
     괄호가 섞인 줄처럼 **실제 자료가 만드는 모양**이 그대로 드러난다.
 
-    ## 요청이 0곳이면 — **잡을 만들지 않는다**
+    ## 요청이 0곳이면 — **보기 자료로 짓는다**  ★ 시험 자리에서만
 
-    문구틀이 비어 있어도 막지 않는다(코드에 적힌 머리말로 짓고, 화면이 그
-    사실을 적는다 — 까닭은 `ir_kakao` 머리말에). 대신 **실을 목록이 없으면**
-    만들지 않는다: 빈 목록을 보내면 받는 대표는 우리가 아무것도 안 한 줄로
-    읽는다. 문서(#131)·카톡 문구 화면(#135)이 이미 그렇게 한다.
+    예전에는 여기서 되돌려 보냈다("그 기업에 만들 문구가 없습니다"). 요청이
+    0곳인 것은 흔한 일이고 — 특히 **발송기를 새 PC 에 처음 깔 때** 그렇다 —
+    그러면 정작 시험이 필요한 순간에 단추를 눌러 볼 수가 없었다. 그 자리를
+    만든 뜻이 사라진다.
 
-    계약을 마치지 않은 기업도 같은 길이다 — 고르개는 명단 전부를 담고
-    (`_test_companies`), 판정은 `ir_kakao` 한 곳이 한다.
+    **진짜가 있으면 진짜를 쓴다.** 시험의 값어치가 거기 있다(담당자 성함이
+    빈 줄, 목록이 길어 두 통으로 나뉘는 글 — 지어낸 자료로는 안 보인다).
+    `ir_kakao.for_company` 가 `None` 을 낼 때에**만** 보기 자료로 떨어진다.
+    계약을 마치지 않은 기업도 같은 길이다 — 판정은 여전히 `ir_kakao` 한 곳이
+    하고, 여기서 다시 세지 않는다.
+
+    보기 자료로 지은 글에는 **가짜라는 표시가 실린다**(`services/test_demo.py`
+    의 `MARK`, 그리고 `보기기업` 같은 이름). 시험방으로만 가더라도 진짜와
+    구별이 안 되면 사람이 헷갈린다.
+
+    ## ★ 스타트업 화면(진짜 쪽)은 **그대로다**
+
+    거기서는 요청이 0곳이면 여전히 아무것도 만들지 않는다(404) — 빈 목록을
+    보내면 받는 대표는 우리가 아무것도 안 한 줄로 읽는다(#131 · #135).
+    보기 자료로 떨어지는 것은 **이 시험 라우터뿐**이다.
+
+    문구틀이 비어 있어도 막지 않는 것은 그대로다(코드에 적힌 머리말로 짓고,
+    화면이 그 사실을 적는다 — 까닭은 `ir_kakao` 머리말에).
 
     ## 왜 `may_auto_attach` 를 보지 않나
 
@@ -583,14 +597,21 @@ def test_startup_remind(
     (`SendItem.parts_json`)에 그대로 실어 보낸다.
     """
     room = _test_room()
-    company = db.get(IrCompany, company_id) if company_id else None
-    if company is None:
-        # 없는 번호를 밀어 넣은 경우도 같은 길이다 — 고를 수 있는 것은 명단에
-        # 있는 기업뿐이고, 없는 것을 골랐다는 말은 화면에 적을 자리가 없다.
+    month = ir_monthly.this_month()
+    msg = None
+    if company_id:
+        company = db.get(IrCompany, company_id)
+        if company is None:
+            # 없는 번호를 밀어 넣은 경우다 — 고를 수 있는 것은 명단에 있는
+            # 기업뿐이고, 없는 것을 골랐다는 말은 화면에 적을 자리가 없다.
+            return RedirectResponse("/setup?test=need_company", status_code=303)
+        msg = ir_kakao.for_company(db, user, company.id, month)
+    elif _test_companies(db):
+        # 고를 것이 있는데 안 골랐다. 이때만 "골라 주세요" 다 — 명단 자체가
+        # 비어 있으면 고르개도 없으므로(`setup.html`) 되돌려 보낼 곳이 없다.
         return RedirectResponse("/setup?test=need_company", status_code=303)
-    msg = ir_kakao.for_company(db, user, company.id, ir_monthly.this_month())
     if msg is None:
-        return RedirectResponse("/setup?test=no_requests", status_code=303)
+        msg = test_demo.startup_remind(db, user, month)
     job_id = _queue_test_job(db, user, TEST_SEND_KIND, room, msg.text,
                              [], parts=msg.parts)
     return RedirectResponse(f"/jobs/{job_id}", status_code=303)
@@ -627,6 +648,17 @@ def test_meeting_review(
     나갈 자리가 아니다. 어느 미팅을 담을지는 `_test_meetings` 에 적었다 —
     짧게: **거르지 않고, 결과 문의가 밀린 것에 표를 달아 위로 올린다.**
 
+    ## 고를 미팅이 하나도 없으면 — **보기 자료로 짓는다**  ★
+
+    기업 리마인드와 **같은 문제, 같은 답**이다. 다만 걸리는 자리가 다르다 —
+    이 문구는 요청 수를 안 읽으므로(이름·직함·투자사 셋뿐이다) 미팅을 하나라도
+    고를 수 있으면 늘 지어진다. 막히는 것은 **고르개가 통째로 빈 때**뿐이고,
+    그것이 곧 발송기를 새 PC 에 처음 깔 때다.
+
+    **미팅이 하나라도 있으면 진짜를 쓴다.** 그때는 골라야 하고, 안 고르면
+    "골라 주세요" 로 되돌아온다. 보기 자료는 되돌려 보낼 고르개조차 없을 때만
+    나온다. 그 글에는 가짜라는 표시가 실린다(`services/test_demo.py`).
+
     ## 문구틀이 비어 있어도 **막지 않는다** — 월말 리마인드와 다른 점  ★
 
     월말 리마인드는 문구틀이 없으면 잡을 만들지 않는다. 코드에 적힌 뼈대를 보내면
@@ -649,6 +681,13 @@ def test_meeting_review(
     앞에 한 줄이라도 얹으면 그것을 볼 수 없다.
     """
     room = _test_room()
+    if not meeting_id and not _test_meetings(db, user):
+        # 고를 미팅이 하나도 없다 — 보기 자료로 짓는다. 되돌려 보내 봐야
+        # 고르개가 없어 누를 것이 없다(까닭은 `services/test_demo.py`).
+        message = test_demo.marked(
+            deals_view.review_message(db, user, test_demo.review_contact(user)))
+        job_id = _queue_test_job(db, user, TEST_SEND_KIND, room, message, [])
+        return RedirectResponse(f"/jobs/{job_id}", status_code=303)
     meeting = db.get(Meeting, meeting_id) if meeting_id else None
     contact = (db.get(VcContact, meeting.contact_id)
                if meeting is not None and meeting.user_id == user.id else None)

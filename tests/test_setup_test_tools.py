@@ -692,33 +692,36 @@ def test_a_whitespace_only_template_counts_as_empty(logged_in, rehearsal, db,
     assert _sole_item(db).message.startswith(ir_kakao.HELLO)
 
 
-def test_a_company_with_no_requests_makes_nothing(logged_in, rehearsal, db,
-                                                  a_template):
-    """요청이 0곳이면 **잡을 만들지 않는다** — 빈 목록을 보내면 받는 대표는
-    우리가 아무것도 안 한 줄로 읽는다."""
+def test_a_company_with_no_requests_falls_back_to_demo(logged_in, rehearsal, db,
+                                                       a_template):
+    """요청이 0곳이면 **보기 자료로 짓는다** — 되돌려 보내면 눌러 볼 수가 없다.
+
+    예전에는 `/setup?test=no_requests` 로 되돌려 보냈다. 요청이 0곳인 것은 흔한
+    일이고 특히 발송기를 새 PC 에 깔 때 그런데, 그러면 정작 시험이 필요한
+    순간에 문구를 눌러 볼 수가 없다 — 그 자리를 만든 뜻이 사라진다.
+    """
     from app.models import IrCompany
-    from app.routers.setup import TEST_INPUT_MISSING
+    from app.services import test_demo
 
     company = IrCompany(name="조용한곳", contract_status="paid")
     db.add(company)
     db.commit()
 
-    r = _press(logged_in, REMIND, company_id=company.id)
-    assert r.status_code == 303
-    assert r.headers["location"] == "/setup?test=no_requests"
-    assert _jobs(db) == []
-    assert TEST_INPUT_MISSING["no_requests"] in logged_in.get(
-        "/setup?test=no_requests").text
+    _job_id(_press(logged_in, REMIND, company_id=company.id))
+    assert test_demo.MARK in _sole_item(db).message
 
 
-def test_a_company_without_a_contract_makes_nothing(logged_in, rehearsal, db,
-                                                    a_company, a_template):
-    """계약을 안 마친 기업도 같은 길이다 — 판정은 `ir_kakao` 한 곳이 한다."""
+def test_a_company_without_a_contract_falls_back_to_demo(logged_in, rehearsal,
+                                                         db, a_company,
+                                                         a_template):
+    """계약을 안 마친 기업도 같은 길이다 — 판정은 여전히 `ir_kakao` 한 곳이 하고,
+    그것이 `None` 을 낼 때 보기 자료로 떨어진다."""
+    from app.services import test_demo
+
     a_company.contract_status = "none"
     db.commit()
-    r = _press(logged_in, REMIND, company_id=a_company.id)
-    assert r.headers["location"] == "/setup?test=no_requests"
-    assert _jobs(db) == []
+    _job_id(_press(logged_in, REMIND, company_id=a_company.id))
+    assert test_demo.MARK in _sole_item(db).message
 
 
 def test_a_long_message_is_sent_in_parts(logged_in, rehearsal, db, a_company,
@@ -749,7 +752,10 @@ def test_a_short_message_carries_no_parts(logged_in, rehearsal, db, a_company,
     assert _sole_item(db).parts_json is None
 
 
-def test_no_company_picked_just_comes_back(logged_in, rehearsal, db, a_template):
+def test_no_company_picked_just_comes_back(logged_in, rehearsal, db, a_company,
+                                           a_template):
+    """**고를 것이 있는데** 안 고르면 되돌아온다. 명단이 통째로 빈 때는
+    되돌려 보낼 고르개가 없으므로 보기 자료로 간다(아래 ⑨)."""
     from app.routers.setup import TEST_INPUT_MISSING
 
     r = _press(logged_in, REMIND, company_id="")
@@ -1283,3 +1289,307 @@ def test_the_composer_is_the_send_screens_own(rehearsal):
     src = inspect.getsource(setup_router.test_meeting_review)
     assert "review_message" in src
     assert "compose_message" not in src and "render_template" not in src
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  ⑨ ★ 실을 진짜가 없을 때 — **보기 자료로 짓는다**
+# ══════════════════════════════════════════════════════════════════════════
+#
+# 시험 자리는 "눌러서 실제로 어떤 글자가 나가는지 먼저 본다" 는 자리다. 그런데
+# 기업 리마인드는 그 달 요청이 **한 곳도 없으면** 글을 짓지 않았고(`compose` 가
+# `None` 을 낸다), 미팅 후기는 **고를 미팅이 없으면** 고르개가 비어 단추조차
+# 서지 않았다. 둘 다 **발송기를 새 PC 에 처음 깔 때**의 모습이다 — 정작 시험이
+# 필요한 순간에 눌러 볼 것이 없었다.
+#
+# 그래서 **없을 때만** 보기 자료로 떨어지게 했다. 여기서 보는 것은 다섯이다.
+#   ★ 진짜가 있으면 **진짜를 쓴다** — 시험의 값어치가 거기 있다
+#   ★ 스타트업 화면(진짜 쪽)은 **그대로** 0곳이면 안 만든다(#131 · #135)
+#   ★ 가짜라는 것이 문구에 **두 겹으로** 보인다(표시 줄 · 보기 이름)
+#     보기 자료는 **시험 잡에서만** 쓰인다 — 실제 발송 길로 못 샌다
+#     보기 담당자는 명단에 **남지 않는다**
+
+
+def test_the_demo_is_used_only_when_there_is_nothing_real(logged_in, rehearsal,
+                                                          db, a_company,
+                                                          a_template):
+    """★ 진짜 요청이 있으면 **진짜를 쓴다.** 보기 표시가 붙으면 안 된다.
+
+    시험의 값어치는 실제 자료가 만드는 모양에 있다 — 담당자 성함이 빈 줄,
+    목록이 길어 두 통으로 나뉘는 글. 지어낸 자료로는 그중 어느 것도 안 보인다.
+    """
+    import html as html_mod
+
+    from app.services import test_demo
+
+    _job_id(_press(logged_in, REMIND, company_id=a_company.id))
+    sent = _sole_item(db).message
+    assert test_demo.MARK not in sent
+    assert test_demo.COMPANY not in sent
+    # 스타트업 화면과 여전히 글자 하나까지 같다.
+    assert sent == html_mod.unescape(_screen_text(logged_in, a_company.id))
+
+
+def test_an_empty_startup_list_still_gives_a_button(logged_in, rehearsal, db,
+                                                    a_template):
+    """명단이 통째로 비어도 **누를 단추가 선다** — 그때가 새 PC 에 깐 직후다."""
+    from app.services import test_demo
+
+    html = logged_in.get("/setup").text
+    assert THE_COMPANY_FIELD not in html, "고를 것이 없는데 고르개를 그렸다"
+    assert "보기 자료로 시험방에 보내보기" in html
+
+    _job_id(_press(logged_in, REMIND))
+    assert test_demo.MARK in _sole_item(db).message
+
+
+def test_the_demo_message_says_it_is_a_demo(logged_in, rehearsal, db, a_template):
+    """★ **두 겹으로** 드러낸다 — 맨 앞 표시 줄과, 이름 자체가 보기 이름.
+
+    한 겹이면 그 한 겹이 잘려 나갈 때 표시가 통째로 사라진다. 여러 통으로
+    나뉘면 표시 줄은 첫 통에만 실리는데(`ir_kakao.pack`), 둘째 통을 따로 본
+    사람에게도 `보기기업` 은 그대로 보인다.
+    """
+    from app.services import test_demo
+
+    _job_id(_press(logged_in, REMIND))
+    sent = _sole_item(db).message
+    # ① 맨 앞 한 줄. 카톡에서 먼저 읽히는 자리다.
+    assert sent.startswith(test_demo.MARK)
+    # ② 이름 자체가 보기 이름이다.
+    assert test_demo.COMPANY in sent and test_demo.CONTACT in sent
+    # 머리말은 **진짜와 같은 문구틀**에서 온다 — 보러 온 것이 그것이다.
+    assert "IR 자료 요청한투자사 리스트" in sent
+    # 바꿔치기가 남지 않는 것도 진짜와 같다.
+    assert "{" not in sent and "}" not in sent
+
+
+def test_the_demo_masks_its_firms_like_the_real_one(logged_in, rehearsal, db,
+                                                    a_template):
+    """가리기까지가 이 문구의 모양이다 — 안 가리고 보여 주면 틀리게 배운다."""
+    from app.services import ir_mask, test_demo
+
+    _job_id(_press(logged_in, REMIND))
+    sent = _sole_item(db).message
+    for firm in test_demo.FIRMS:
+        assert firm not in sent
+        assert ir_mask.mask_company(firm) in sent
+
+
+def test_the_startup_screen_still_makes_nothing_with_no_requests(logged_in, db,
+                                                                 rehearsal,
+                                                                 a_template):
+    """★ **진짜 쪽은 그대로다.** 요청이 0곳이면 여전히 404 이고, 보기 자료가
+    끼어들지 않는다 — 빈 목록을 보내면 대표는 우리가 아무것도 안 한 줄로
+    읽는다(#131 · #135).
+    """
+    from app.models import IrCompany
+    from app.services import ir_kakao, ir_monthly, test_demo
+
+    company = IrCompany(name="조용한곳", contract_status="paid")
+    db.add(company)
+    db.commit()
+
+    r = logged_in.get(f"/startup/ir-kakao/{company.id}")
+    assert r.status_code == 404
+    assert test_demo.MARK not in r.text
+    assert test_demo.COMPANY not in r.text
+    # 짓는 함수 자체도 그대로 `None` 이다.
+    assert ir_kakao.for_company(db, None, company.id,
+                                ir_monthly.this_month()) is None
+
+
+def test_the_demo_cannot_reach_a_real_send(rehearsal):
+    """★ 보기 자료가 **실제 발송 길로 샐 수 없다.**
+
+    부르는 곳은 시험 잡 두 개뿐이다. 스타트업 화면도, 발송 화면도 이 파일을
+    모른다 — 알면 언젠가 그 길로 지어낸 글이 나간다.
+    """
+    import ast
+    import inspect
+    import pathlib
+
+    from app.routers import deals as deals_view
+    from app.routers import setup as setup_router
+    from app.routers import startup as startup_router
+
+    def imports_it(path: pathlib.Path) -> bool:
+        # 글로 이름을 적은 것(주석·설명)은 부르는 것이 아니다 — 실제로 들여온
+        # 자리만 센다.
+        for node in ast.walk(ast.parse(path.read_text())):
+            if isinstance(node, ast.ImportFrom):
+                if any(a.name == "test_demo" for a in node.names):
+                    return True
+            elif isinstance(node, ast.Import):
+                if any(a.name.endswith("test_demo") for a in node.names):
+                    return True
+        return False
+
+    root = pathlib.Path(__file__).resolve().parent.parent
+    callers = sorted(f.relative_to(root).as_posix()
+                     for f in (root / "app").rglob("*.py")
+                     if f.name != "test_demo.py" and imports_it(f))
+    assert callers == ["app/routers/setup.py"], callers
+
+    for fn in (startup_router.ir_kakao_message, deals_view.review_message):
+        assert "test_demo" not in inspect.getsource(fn)
+    # 시험 라우터 안에서도 **그 두 함수 안에서만** 쓰인다.
+    for fn in (setup_router.test_startup_remind, setup_router.test_meeting_review):
+        assert "test_demo." in inspect.getsource(fn)
+
+
+def test_the_demo_job_is_a_test_job_in_the_test_room(logged_in, rehearsal, db,
+                                                     a_template):
+    """보기 자료로 지은 잡도 **시험 잡**이고 **시험방**으로만 간다."""
+    from app.models import SEND_KINDS, TEST_SEND_KIND
+
+    _job_id(logged_in.post(REMIND, data={"room_name": "엉뚱한방"},
+                           follow_redirects=False))
+    assert _jobs(db)[0].kind == TEST_SEND_KIND
+    assert TEST_SEND_KIND not in SEND_KINDS
+    assert _sole_item(db).room_name == TEST_ROOM
+
+
+def test_the_demo_is_gone_without_a_test_room(logged_in, db):
+    """★ 안전선은 그대로 하나다 — 시험방이 없으면 보기 자료도 없다."""
+    r = _press(logged_in, REMIND)
+    assert r.status_code == 404
+    assert _jobs(db) == []
+
+
+# ── 미팅 후기도 같은 문제였다 — 다만 걸리는 자리가 다르다 ──────────────────
+#
+# 이 문구는 요청 수를 안 읽는다(이름·직함·투자사 셋뿐이다). 그래서 미팅을
+# 하나라도 고를 수 있으면 늘 지어진다 — 막히는 것은 **고르개가 통째로 빈
+# 때**뿐이고, 그것이 곧 발송기를 새 PC 에 처음 깔 때다.
+
+
+def test_the_review_falls_back_to_demo_with_no_meetings(logged_in, rehearsal, db,
+                                                        a_review_template):
+    """미팅이 하나도 없어도 **눌러 볼 수 있다.**"""
+    from app.services import test_demo
+
+    html = logged_in.get("/setup").text
+    assert THE_MEETING_FIELD not in html, "고를 것이 없는데 고르개를 그렸다"
+    assert "보기 자료로 시험방에 보내보기" in html
+
+    _job_id(_press(logged_in, REVIEW))
+    sent = _sole_item(db).message
+    assert sent.startswith(test_demo.MARK)
+    assert test_demo.INVESTOR_NAME in sent and test_demo.INVESTOR_FIRM in sent
+    assert "{" not in sent and "}" not in sent
+
+
+def test_the_demo_review_is_the_send_screens_own_message(logged_in, rehearsal, db,
+                                                         users, a_review_template):
+    """짓는 자리는 그대로 발송 화면이다 — 표시 줄 한 줄만 앞에 얹는다."""
+    from app.routers import deals as deals_view
+    from app.services import test_demo
+
+    _job_id(_press(logged_in, REVIEW))
+    made = deals_view.review_message(db, users["u1"],
+                                     test_demo.review_contact(users["u1"]))
+    assert _sole_item(db).message == test_demo.marked(made)
+
+
+def test_a_real_meeting_still_wins(logged_in, rehearsal, db, users, a_meeting,
+                                   an_investor, a_review_template):
+    """★ 미팅이 있으면 **진짜를 쓴다.** 보기 표시가 붙으면 안 된다."""
+    from app.routers import deals as deals_view
+    from app.services import test_demo
+
+    _job_id(_press(logged_in, REVIEW, meeting_id=a_meeting.id))
+    sent = _sole_item(db).message
+    assert test_demo.MARK not in sent
+    assert sent == deals_view.review_message(db, users["u1"], an_investor)
+
+
+def test_not_picking_a_meeting_still_comes_back_when_there_are_meetings(
+        logged_in, rehearsal, db, a_meeting, a_review_template):
+    """고를 것이 있는데 안 고르면 **되돌아온다** — 보기 자료로 새지 않는다."""
+    r = _press(logged_in, REVIEW, meeting_id="")
+    assert r.headers["location"] == "/setup?test=need_meeting"
+    assert _jobs(db) == []
+
+
+def test_the_demo_contact_is_never_written_down(logged_in, rehearsal, db, users,
+                                                a_review_template):
+    """보기 담당자는 **명단에 남지 않는다.** 남으면 시험 한 번에 한 줄씩 늘고,
+    그 줄이 언젠가 실제 발송 대상 목록에 선다."""
+    from app.models import VcContact
+    from app.services import test_demo
+
+    before = db.query(VcContact).count()
+    _job_id(_press(logged_in, REVIEW))
+    db.expire_all()
+    assert db.query(VcContact).count() == before
+    assert db.query(VcContact).filter_by(name=test_demo.INVESTOR_NAME).count() == 0
+
+
+def test_the_demo_review_is_gone_without_a_test_room(logged_in, db):
+    """★ 안전선은 그대로 하나다."""
+    r = _press(logged_in, REVIEW)
+    assert r.status_code == 404
+    assert _jobs(db) == []
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  ⑩ 설명 글을 걷어냈다 — 남긴 것과 지운 것
+# ══════════════════════════════════════════════════════════════════════════
+#
+# 사용자가 기업 리마인드 안내를 읽고 "이건 왜 있는거야" 를 물었다. 머리말이
+# 어디서 오는지 · `{달}`·`{기업들}` 을 누가 채우는지 · 투자사 이름을 어떻게
+# 가리는지가 문단으로 적혀 있었는데, 전부 **눌러 보면 보이는 것**이다.
+# 앞서 자료 첨부 안내에도 같은 말을 했다("대표 내용 빼고 다 지워주면 됨").
+#
+# 남길 것은 넷이다 — 그 넷은 눌러 봐도 안 보이거나, 틀리면 되돌릴 수 없다.
+
+
+def test_what_the_test_panel_still_says(logged_in, rehearsal, may_attach,
+                                        a_company, a_meeting, a_template,
+                                        a_review_template):
+    """남긴 것 — **누구에게 · 어디로 · 무엇을 적는 칸 · 고칠 자리로 가는 고리.**"""
+    html = logged_in.get("/setup").text
+    # ① 누구에게 가는가. 헷갈리면 엉뚱한 쪽으로 보낸다.
+    assert "받는 사람 → 스타트업" in html
+    assert "받는 사람 → 투자사" in html
+    assert "스타트업에게 가는 문구가 아닙니다" in html
+    # ② 시험방으로만 간다.
+    assert "방으로만 나갑니다" in html
+    assert "고른 기업에게는 아무것도 가지 않습니다" in html
+    assert "고른 담당자에게는 아무것도 가지 않습니다" in html
+    # ③ 무엇을 적는 칸인가.
+    assert "<b>파일 이름</b>을 그대로 적으세요" in html
+    assert "<b>방 이름</b>이 카카오톡에서 열리는지만 봅니다" in html
+    # ④ 막혔을 때 고칠 자리로 가는 고리 — **설명 문장이 아니라 링크 한 줄**이다.
+    assert '<a href="/templates#startup_sms">' in html
+    assert '<a href="/templates#meeting_review">' in html
+    # 알림은 설명이 아니다 — 지우지 않았다.
+    assert "이 자리는 테스트 모드에서만 보입니다" in html
+    assert "아무것도 보내지 않습니다" in html
+
+
+def test_what_the_test_panel_no_longer_explains(logged_in, rehearsal, may_attach,
+                                                a_company, a_meeting, a_template,
+                                                a_review_template):
+    """지운 것 — 눌러 보면 보이는 것들. 사용자가 "이건 왜 있는거야" 를 물은 글이다."""
+    html = logged_in.get("/setup").text
+    for gone in (
+        # 기업 리마인드 — 머리말이 어디서 오는지 · 자리 채우기 · 가리기
+        "거기서 고치면 이 자리와 스타트업 화면이 함께 바뀝니다",
+        "은 앱이 채우고",
+        "첫 글자만",
+        "글자 하나까지 같은 문구",
+        # 미팅 후기 — 자리마다 무엇이 들어가는지
+        "여기서는 채워집니다",
+        "문구에 쓰지 마세요",
+        "기본 문구 한 문장이 나갑니다",
+        # 자료 첨부 — 차례와 서버가 모르는 것
+        "서버는 그 PC 폴더에 무엇이 있는지 모릅니다",
+        "파일 먼저, 문구 나중",
+        # 방 이름 — 왜 아무 이름이나 되는지
+        "그래서 아무 이름이나 적어도 됩니다",
+        # 진행 화면 — 오류 문구 보기
+        "시트에 없는 파일",
+        "개수가 다릅니다",
+    ):
+        assert gone not in html, f"아직 남아 있다: {gone}"
