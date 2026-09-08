@@ -99,7 +99,7 @@ def test_탭_이름을_바꾸면_그_탭의_줄이_따라온다(client, db, user
     db.add_all([
         ConsultingCompany(user_id=users["u1"].id, sheet=before, position=1,
                           company_name="샘플기업A"),
-        ConsultingColumn(user_id=users["u1"].id, sheet=before,
+        ConsultingColumn(sheet=before,
                          label="8월 마지막주 리마인드 톡 or TEL", position=0),
     ])
     db.commit()

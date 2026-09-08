@@ -66,7 +66,7 @@ def test_새_줄의_기본_탭도_같이_바뀌었다(db, users):
     from app.services.consulting_sheets import default_label
 
     row = _row(db, users["u1"].id, company_name="샘플기업")
-    col = ConsultingColumn(user_id=users["u1"].id, label="8월 리마인드")
+    col = ConsultingColumn(label="8월 리마인드")
     db.add(col)
     db.commit()
     assert row.sheet == default_label(db)
@@ -75,15 +75,23 @@ def test_새_줄의_기본_탭도_같이_바뀌었다(db, users):
 
 def test_옛_이름의_시트를_다시_올려도_유령_탭이_안_생긴다(db):
     """사람이 들고 있는 xlsx 는 여전히 옛 이름이다. 그대로 받으면 같은 명단이
-    두 탭으로 갈린다 — 가져오기가 이름을 옮겨 준다."""
+    두 탭으로 갈린다 — 가져오기가 이름을 옮겨 준다.
+
+    짝은 **이름이 아니라 열쇠**로 맺는다(`ConsultingSheet.kind`). 이름은 화면
+    에서 고치는 값이라, 여기에 이름을 적어 두면 누가 탭 이름을 고친 날 짝이
+    조용히 끊어진다.
+    """
     import sys
 
     sys.path.insert(0, "scripts")
-    from import_consulting import SHEET_ALIAS
+    from import_consulting import resolve_sheet
 
-    from app.services.consulting_sheets import default_label
+    from app.services import consulting_sheets as cs
 
-    assert SHEET_ALIAS["중요 스타트업"] == default_label(db)
+    assert resolve_sheet(db, "중요 스타트업") == cs.default_label(db)
+    # 탭 이름을 고쳐도 같은 탭으로 간다.
+    cs.rename(db, cs.STARTUP, "관리 스타트업")
+    assert resolve_sheet(db, "중요 스타트업") == "관리 스타트업"
 
 
 def test_옛_이름으로_넣으려_하면_거절한다(allowed):

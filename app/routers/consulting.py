@@ -207,6 +207,27 @@ def may_edit_row(user: User, owner_id: Optional[int]) -> bool:
     return owner_id is not None and owner_id == user.id
 
 
+def may_edit_column(user: User) -> bool:
+    """월 칸의 **이름을 바꾸고 지울** 수 있는가 — 관리자만이다.
+
+    세우는 쪽은 좁히지 않는다(`add_column` 참고) — 달 칸이 하나도 없는 탭은
+    본이 없어 자동 생성이 안 붙고, 그 첫 칸을 심는 것이 이 화면을 쓰는
+    사람이다. 여기서 막는 것은 **이미 서 있는 칸을 없애는 쪽**뿐이다.
+
+    **새 규칙이 아니다.** 칸은 이제 탭에 붙어 있어 주인이 없고
+    (`models.ConsultingColumn`), 위 `may_edit_row` 에 `주인 없음` 을 그대로
+    넣으면 나오는 답이 이것이다. 판정을 여기 새로 적지 않는 이유는 이 저장소가
+    반복해 당한 유형이라서다 — 같은 판단이 두 곳에 적히면 한쪽은 반드시 낡아,
+    화면에는 [✕] 가 서 있는데 누르면 404 가 난다.
+
+    **결과도 맞다.** 예전에는 칸이 사람마다라 자기 칸을 지우는 것이 자기 표만
+    건드렸는데, 이제 그 칸은 팀이 함께 보는 머리글이다. 하나 지우면 그 달
+    기록이 **팀 전체의 줄에서** 사라진다(`delete_column`). 한 사람이 혼자
+    누를 단추가 아니다.
+    """
+    return may_edit_row(user, None)
+
+
 def owned(db: Session, model, row_id: int, user: User, what: str):
     """고칠 수 있는 줄 하나. 아니면 **없는 것으로** 답한다.
 
@@ -233,6 +254,22 @@ def owned(db: Session, model, row_id: int, user: User, what: str):
     if row is None or not may_edit_row(user, row.user_id):
         raise HTTPException(status_code=404, detail=f"{what}을 찾을 수 없습니다")
     return row
+
+
+def _editable_column(db: Session, column_id: int, user: User) -> ConsultingColumn:
+    """고칠 수 있는 월 칸 하나. 아니면 **없는 것으로** 답한다.
+
+    줄에 쓰는 `owned()` 와 같은 모양이되 `scope()` 를 안 태운다 — 칸에는
+    주인이 없어 좁힐 것이 없다(`models.ConsultingColumn`). 판정은 그대로
+    `may_edit_column` 한 곳이고, 화면이 [✕] 를 세우는 근거도 같은 함수다.
+
+    없는 번호와 못 고치는 번호를 **같은 404** 로 답한다. 403 으로 갈라 주면
+    번호를 훑어 칸이 몇 번까지 있는지 알 수 있다(`owned()` 와 같은 이유다).
+    """
+    col = db.get(ConsultingColumn, column_id)
+    if col is None or not may_edit_column(user):
+        raise HTTPException(status_code=404, detail="열을 찾을 수 없습니다")
+    return col
 
 
 def owner_tabs(db: Session, user: User, sheet: str = "") -> List[dict]:
@@ -367,22 +404,24 @@ def split_contract_line(line: str) -> Dict[str, str]:
     return out
 
 
-def _visible_column_scopes(db: Session, user: User,
-                           owner: int = 0) -> List[tuple]:
-    """이 요청에서 월 열을 세워도 되는 (사람, 탭) 묶음.
+def _column_sheets(db: Session) -> List[str]:
+    """이 요청에서 월 칸을 세워야 하는 **탭**들.
 
-    **보는 범위를 그대로 쓴다**(`scope()`). 관리자가 열면 자기가 볼 수 있는
-    표 전부를, 컨설턴트가 열면 자기 표만 챙긴다 — 여기에 따로 조건을 적으면
-    보는 범위와 갈려서, 안 보이는 남의 표에 열이 생기는 자리가 된다.
+    칸은 이제 탭마다 한 벌이라(`models.ConsultingColumn`) 누가 열었는지와
+    무관하다. 컨설턴트가 열어도 팀이 함께 쓰는 그 탭의 이번 달 칸이 서는
+    것이고, 그것이 이 표에서 맞는 결과다 — 예전에는 **자기 칸만** 서서,
+    아무도 안 연 사람의 표는 그 달 기록이 지난달 칸에 섞여 들어갔다.
 
-    **이미 열이 있는 묶음만** 돌려준다. 열이 하나도 없는 표는 이름 지을 본이
+    보는 범위(`scope()`)로 좁히지 않는다. 좁히면 컨설턴트가 연 달에는 그
+    사람이 보는 탭에만 칸이 서서, **같은 탭이 사람에 따라 다른 달까지**
+    자라는 표가 된다. 두 번 세우지 않는 것은 `MonthlyColumnRun` 이 본다.
+
+    **이미 칸이 있는 탭만** 돌려준다. 칸이 하나도 없는 탭은 이름 지을 본이
     없어 어차피 만들지 못한다(`services/monthly_columns.py` 참고).
     """
-    rows = db.execute(scope(
-        select(ConsultingColumn.user_id, ConsultingColumn.sheet)
-        .group_by(ConsultingColumn.user_id, ConsultingColumn.sheet),
-        ConsultingColumn, user, owner)).all()
-    return [(uid, name) for uid, name in rows if uid and name]
+    rows = db.execute(
+        select(ConsultingColumn.sheet).group_by(ConsultingColumn.sheet)).all()
+    return [name for (name,) in rows if name]
 
 
 def sheet_tabs(db: Session, user: User, owner: int = 0) -> List[dict]:
@@ -415,22 +454,14 @@ def _column_stmt(sheet: str = ""):
     return stmt.where(ConsultingColumn.sheet == sheet) if sheet else stmt
 
 
-def _columns(db: Session, user: User, sheet: str = "",
-             owner: int = 0) -> List[ConsultingColumn]:
-    """화면에 세울 월 열 — **보는 범위**다."""
-    return db.execute(scope(_column_stmt(sheet), ConsultingColumn, user,
-                            owner)).scalars().all()
+def _columns(db: Session, sheet: str = "") -> List[ConsultingColumn]:
+    """화면에 세울 월 칸. **탭 하나에 한 벌**이라 누가 보든 같다.
 
-
-def _my_columns(db: Session, user: User,
-                sheet: str = "") -> List[ConsultingColumn]:
-    """**내 표의** 월 열. 자리를 밀거나 시트를 올릴 때 손이 닿는 범위다.
-
-    보는 범위(`_columns`)를 쓰면 안 된다 — 팀원은 이제 팀 전체를 보므로, 열을
-    하나 세우면서 남의 열까지 한 칸씩 밀게 된다.
+    담당(`owner`)으로 갈리지 않는다 — 갈리는 것은 줄이지 칸이 아니다
+    (`models.ConsultingColumn`). 담당을 바꿔 가며 봐도 머리글은 그대로이고,
+    `담당: 전체` 에서도 같은 달이 한 번만 선다.
     """
-    return db.execute(own(_column_stmt(sheet), ConsultingColumn,
-                          user)).scalars().all()
+    return db.execute(_column_stmt(sheet)).scalars().all()
 
 
 def _split_columns(columns: List[ConsultingColumn], show_all: bool = False) -> tuple:
@@ -530,7 +561,7 @@ def _notes(company: ConsultingCompany) -> Dict[str, str]:
 
 def company_rows(db: Session, user: User, sheet: str = "",
                  owner: int = 0) -> List[dict]:
-    cols = _columns(db, user, sheet, owner)
+    cols = _columns(db, sheet)
     prev_keys = _prev_month_columns(cols)
     stmt = select(ConsultingCompany).order_by(ConsultingCompany.position,
                                               ConsultingCompany.id)
@@ -658,18 +689,19 @@ def consulting_page(request: Request, db: Session = Depends(get_db),
     # 방식이다 — `services/weekly.py` 의 `fill_week`). 두 번 만들지 않는 것과
     # 사람이 지운 열을 되살리지 않는 것은 `services/monthly_columns.py` 가 본다.
     #
-    # **보이는 표마다** 세운다. 열은 사람마다·탭마다인데, 지금 고른 탭 하나만
-    # 챙기면 아무도 안 연 탭은 그 달 기록이 지난달 열에 섞여 들어간다.
-    for uid, name in _visible_column_scopes(db, user, owner):
-        monthly_columns.ensure_consulting(db, uid, name)
+    # **탭마다** 세운다. 칸은 이제 탭에 붙어 있어(`models.ConsultingColumn`)
+    # 지금 고른 탭 하나만 챙기면, 아무도 안 연 탭은 그 달 기록이 지난달 칸에
+    # 섞여 들어간다.
+    for name in _column_sheets(db):
+        monthly_columns.ensure_consulting(db, name)
 
     rows = company_rows(db, user, selected, owner)
     can_pick = may_view_all_consulting(user)
     people = owner_tabs(db, user, selected) if can_pick else []
-    prev_label = _prev_month_label(_columns(db, user, selected, owner))
+    prev_label = _prev_month_label(_columns(db, selected))
     # 달마다 한 칸씩 늘어나는 표라, 최근 몇 달만 펴 둔다.
     # `months=all` 은 일부러 다 본다는 뜻이다.
-    shown, hidden = _split_columns(_columns(db, user, selected, owner),
+    shown, hidden = _split_columns(_columns(db, selected),
                                    show_all=(months == "all"))
     fixed, tail = layout_of(db, selected)
 
@@ -697,10 +729,14 @@ def consulting_page(request: Request, db: Session = Depends(get_db),
         "columns": shown,
         # **접었다는 것을 사람이 알아야 한다** — 그냥 안 보이면 지워진 줄 안다.
         "hidden_columns": hidden,
-        # **[✕] 를 세워도 되는 월 열.** 열도 사람마다 따로 있어서, 남의 달에
-        # 단추를 세워 두면 눌렀을 때 404 만 난다(`owned()`). 판정은 줄과 같은
-        # 함수 하나다 — 화면이 따로 정하면 한쪽이 낡는다.
-        "editable_columns": {c.id for c in shown if may_edit_row(user, c.user_id)},
+        # **[✕]·이름 고치기를 세워도 되는 월 칸.** 칸은 이제 탭에 붙어 있어
+        # 주인이 없다 — 그래서 관리자만이다. 새 규칙이 아니라 이미 있는 판정에
+        # `주인 없음` 을 그대로 넣은 결과다(`may_edit_row`). 팀이 함께 보는
+        # 머리글을 한 사람이 지우면 그 달 기록이 **팀 전체에서** 사라지므로
+        # 결과도 맞다. 판정은 줄과 같은 함수 하나다 — 화면이 따로 정하면
+        # 한쪽이 낡아서, 세워 둔 단추가 눌렀을 때 404 가 난다.
+        "editable_columns": ({c.id for c in shown}
+                             if may_edit_column(user) else set()),
         "show_all_months": months == "all",
         # 화면 위의 **사람을 고르는 자리.** 숫자는 지금 탭의 건수라
         # 눌렀을 때 나올 수와 같다.
@@ -901,26 +937,42 @@ def rename_sheet(kind: str = Form(""), label: str = Form(""),
 
 
 @router.post("/consulting/columns", include_in_schema=False)
-def add_column(label: str = Form(...), db: Session = Depends(get_db),
+def add_column(label: str = Form(...), sheet: str = Form(""),
+               db: Session = Depends(get_db),
                user: User = Depends(get_current_user)):
-    """달이 바뀌면 열을 하나 늘린다. 새 열이 **맨 앞**에 오도록 한다.
+    """달이 바뀌면 칸을 하나 늘린다. 새 칸이 **맨 앞**에 오도록 한다.
 
     지금 챙겨야 할 달이 먼저 보여야 한다. (시트가 늘 그 순서인 것은 아니다 —
     `services/monthly_columns.py` 참고. 새로 세우는 자리를 정하는 것뿐이다.)
+
+    **보고 있는 탭에 세운다.** 예전에는 탭을 안 받아서 어느 탭에서 눌러도 첫
+    탭에 들어갔다 — 누른 사람 화면에는 아무것도 안 늘어난다. 칸이 탭마다인
+    지금은 그 어긋남이 곧 남의 탭에 칸을 하나 세우는 일이다.
     """
+    # **세우는 것은 지금까지 그대로 열려 있다.** 이 화면을 쓰는 사람이면
+    # 누구나다. 칸이 탭에 붙게 되었어도 여기서는 규칙을 좁히지 않는다 —
+    # 달 칸이 하나도 없는 탭은 본이 없어 자동 생성이 아예 안 붙고
+    # (`services/monthly_columns.py`), 그 첫 칸을 심는 것이 이 자리다.
+    # 좁히면 새 탭의 첫 달을 관리자를 불러야 세울 수 있다.
+    #
+    # 좁힌 것은 **지우고 이름을 바꾸는 쪽**뿐이다(`may_edit_column`) — 그쪽은
+    # 한 번 누르면 팀 전체의 기록이 사라진다.
     require_access(user)
     label = label.strip()
+    known = {t.label for t in cs.all_sheets(db)}
+    # 없는 탭 이름이 실려 오면 첫 탭으로 돌린다 — 모델 기본값(`스타트업`)에
+    # 떨어뜨리면 탭 이름을 고친 뒤에는 그 이름을 쓰는 탭이 없어서 새 칸이
+    # 유령 탭에 쌓인다.
+    name = sheet if sheet in known else cs.default_label(db)
+    back = f"/consulting?sheet={quote(name)}"
     if not label:
-        return RedirectResponse("/consulting?msg=열+이름을+입력하세요", status_code=303)
-    for col in _my_columns(db, user):
+        return RedirectResponse(f"{back}&msg=열+이름을+입력하세요", status_code=303)
+    for col in _columns(db, name):
         col.position += 1
-    # **어느 탭의 열인지 여기서 정해 준다.** 안 주면 모델 기본값(`스타트업`)으로
-    # 떨어지는데, 탭 이름을 고친 뒤에는 그 이름을 쓰는 탭이 없어서 새 열이
-    # 유령 탭에 쌓인다 — 세운 사람 화면에는 아무것도 안 늘어난다.
-    db.add(ConsultingColumn(label=label, position=0, user_id=user.id,
-                            sheet=cs.default_label(db)))
+    db.add(ConsultingColumn(label=label, position=0, sheet=name))
     db.commit()
-    return RedirectResponse(f"/consulting?msg={label}+열을+추가했습니다", status_code=303)
+    return RedirectResponse(f"{back}&msg={quote(label)}+열을+추가했습니다",
+                            status_code=303)
 
 
 @router.post("/consulting/columns/{column_id}/rename", include_in_schema=False)
@@ -928,8 +980,10 @@ def rename_column(column_id: int, label: str = Form(...),
                   db: Session = Depends(get_db),
                   user: User = Depends(get_current_user)):
     require_access(user)
-    # 열도 사람마다 다르다 — 남의 달 이름을 바꾸면 그 사람 표의 머리글이 바뀐다.
-    col = owned(db, ConsultingColumn, column_id, user, "열")
+    # 칸은 탭마다 한 벌이라 이름을 바꾸면 **팀 전체의 머리글**이 바뀐다.
+    # 그래서 관리자만이다(`may_edit_column`). 없는 번호와 같은 404 로 답한다 —
+    # 갈라 주면 번호를 훑어 남의 표가 몇 번까지 있는지 알 수 있다.
+    col = _editable_column(db, column_id, user)
     if label.strip():
         col.label = label.strip()
         db.commit()
@@ -941,13 +995,15 @@ def delete_column(column_id: int, db: Session = Depends(get_db),
                   user: User = Depends(get_current_user)):
     """열을 지우면 그 달의 기록도 함께 사라진다 — 화면에서 한 번 더 묻는다."""
     require_access(user)
-    col = owned(db, ConsultingColumn, column_id, user, "열")
+    col = _editable_column(db, column_id, user)
     key = str(col.id)
-    # 기록을 지우는 범위도 **보는 범위와 같다.** 전체를 훑으면 자기 열을 지우는
-    # 것뿐인데 손은 남의 줄까지 닿는다 — 열 번호가 겹치는 날 남의 기록이
-    # 조용히 사라진다.
+    # **탭 전체를 훑는다.** 칸이 탭마다 한 벌이라 그 칸에 적힌 기록은 담당을
+    # 가리지 않고 흩어져 있다 — 자기 줄만 훑으면 남의 줄에 그 칸을 가리키는
+    # 열쇠가 남아, 어느 칸의 것인지 모르는 값이 JSON 에 쌓인다
+    # (`routers/contacts.py` 의 `delete_column` 이 같은 이유로 전체를 훑는다).
+    # 이것을 관리자만 누를 수 있게 한 것이 `may_edit_column` 이다.
     for company in db.execute(
-        own(select(ConsultingCompany), ConsultingCompany, user)
+        select(ConsultingCompany).where(ConsultingCompany.sheet == col.sheet)
     ).scalars().all():
         notes = _notes(company)
         if key in notes:
@@ -1016,7 +1072,9 @@ STARTUP_EXPORT_HEADERS = ["딜 소개문구", "견적서 첨부여부", "계약�
 def export_consulting(db: Session = Depends(get_db),
                       user: User = Depends(get_current_user)):
     require_access(user)
-    cols = _columns(db, user)
+    # 탭을 가리지 않고 한 장으로 내려받으므로 칸도 전부 세운다. 담당으로는
+    # 안 갈린다 — 칸은 탭마다 한 벌이다(`models.ConsultingColumn`).
+    cols = _columns(db)
     # **화면과 같은 칸이 선다.** 여러 사람의 표를 한 파일로 내려받으면서 담당이
     # 없으면 누구 줄인지 알 수 없다 — 화면에는 `담당` 칸이 서 있는데 받은
     # 파일에만 없으면, 그 파일을 여는 사람은 55줄을 한 사람 것으로 읽는다.
@@ -1156,12 +1214,17 @@ def apply_rows(db: Session, parsed: dict, user: User,
             ConsultingCompany.user_id == user.id).delete()
         db.commit()
 
-    # 열 먼저 — 기업의 notes 가 열 id 를 키로 쓴다
-    existing_cols = {c.label: c for c in _my_columns(db, user)}
+    # 열 먼저 — 기업의 notes 가 열 id 를 키로 쓴다.
+    #
+    # **이름이 같으면 이미 있는 칸을 그대로 쓴다.** 칸은 탭마다 한 벌이라
+    # (`models.ConsultingColumn`) 여기서 새로 만들면 팀이 쓰던 머리글 옆에
+    # 같은 이름의 칸이 하나 더 서고, 올린 사람의 기록만 새 칸으로 간다.
+    sheet_name = cs.default_label(db)
+    existing_cols = {c.label: c for c in _columns(db, sheet_name)}
     for pos, label in enumerate(parsed["columns"]):
         col = existing_cols.get(label)
         if col is None:
-            col = ConsultingColumn(label=label, position=pos, user_id=user.id)
+            col = ConsultingColumn(label=label, position=pos, sheet=sheet_name)
             db.add(col)
             existing_cols[label] = col
     db.flush()

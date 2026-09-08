@@ -360,9 +360,9 @@
         {% for col in columns %}
         <th style="width:200px" class="month-col">
           <span title="{{ col.label }}">{{ col.label }}</span>
-          {# 남의 달에는 세우지 않는다 — 눌러도 404 만 나는 단추가 된다.
-             월 열은 사람마다 따로 있어서, 여러 사람의 표를 같이 보면 같은
-             이름의 달이 사람 수만큼 선다. #}
+          {# 관리자에게만 세운다 — 눌러도 404 만 나는 단추를 만들지 않는다.
+             칸은 탭마다 한 벌이라 지우면 그 달 기록이 **팀 전체의 줄에서**
+             사라진다(`routers/consulting.py` 의 `may_edit_column`). #}
           {% if col.id in editable_columns %}
           <form method="post" action="/consulting/columns/{{ col.id }}/delete" class="col-del"
                 onsubmit="return confirm('{{ col.label }} 열을 지울까요?\n이 달에 적어 둔 내용도 함께 사라집니다.')">
@@ -563,7 +563,12 @@
     <b>다른 담당자의 줄은 볼 수만 있습니다</b> — 고칠 일이 있으면 담당자나 관리자에게 요청하세요.
     {% endif %}
   </p>
+  {# **보고 있는 탭에 세운다**(`selected_sheet`). 안 실어 보내면 어느 탭에서
+     눌러도 첫 탭에 들어가, 누른 사람 화면에는 아무것도 안 늘어난다.
+     세우는 것은 이 화면을 쓰는 사람 누구나다 — 달 칸이 없는 탭은 자동 생성이
+     안 붙어서, 그 첫 칸을 심는 자리가 여기다. #}
   <form method="post" action="/consulting/columns" class="add-col">
+    <input type="hidden" name="sheet" value="{{ selected_sheet }}">
     <input type="text" name="label" placeholder="예: 9월 마지막주 리마인드 톡 or TEL" required>
     <button class="secondary-btn" type="submit">월 열 추가</button>
   </form>

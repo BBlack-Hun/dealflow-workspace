@@ -379,7 +379,7 @@ def test_월별_열_자동_생성에_안_낀다(allowed, db, users):
     from app.models import ConsultingColumn
 
     _row(db, users["u1"].id, sheet=STARTUP, position=1, company_name="샘플파")
-    db.add(ConsultingColumn(user_id=users["u1"].id, sheet=STARTUP,
+    db.add(ConsultingColumn(sheet=STARTUP,
                             label="8월 마지막주 리마인드 톡 or TEL", position=0))
     db.commit()
     _open(allowed, STARTUP)
