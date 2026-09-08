@@ -33,16 +33,25 @@
 (`계약여부` 의 새 두 상태는 값이 글자라 스키마를 건드리지 않는다. 내려도
 `ir_companies.contract_status` 에 그대로 남고, 다시 올리면 그대로 읽힌다.)
 
-Revision ID: 0065_ir_meeting_offered_at
-Revises: 0064_contact_column_hidden
+## 왜 0065 가 아니라 0066 인가
+
+처음엔 0065 로 적었는데, 그 번호를 옆 가지(`0065_consulting_quote_contract_invoice`)
+가 먼저 가져갔다. 같은 `down_revision` 을 가리키는 판이 둘이 되면 **머리가
+둘**이 되어 `alembic upgrade head` 가 "Multiple head revisions" 로 멎는다 —
+화면도 시험도 아니라 **켜는 것 자체가** 안 된다. 그래서 그 뒤로 다시 엮는다.
+가지를 여럿 놓고 일하는 동안에는 번호가 아니라 **그때의 머리**를 보고 잇는
+것이 맞다(`alembic heads` 로 확인한다).
+
+Revision ID: 0066_ir_meeting_offered_at
+Revises: 0065_consulting_quote_contract_invoice
 """
 from __future__ import annotations
 
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0065_ir_meeting_offered_at"
-down_revision = "0064_contact_column_hidden"
+revision = "0066_ir_meeting_offered_at"
+down_revision = "0065_consulting_quote_contract_invoice"
 branch_labels = None
 depends_on = None
 
