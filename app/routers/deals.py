@@ -350,6 +350,41 @@ def sample_message(db: Session, user: User, mode: str, bucket: str = "") -> str:
     return _compose_for_contact(db, user, who, [], mode=mode).text
 
 
+def review_message(db: Session, user: User, contact) -> str:
+    """미팅을 마친 **그 투자사 담당자**에게 나갈 미팅 후기 문구 전문.
+
+    ## 왜 여기인가 — 짓는 자리를 두 벌로 두지 않는다
+
+    미팅 후기 문구(`meeting_review`)는 이미 이 파일이 짓는다. 발송 화면의
+    **미팅 후기** 탭이 그것이고, `FOLLOW_UP_MODES[MODE_REVIEW]` 가 문구 종류와
+    폴백과 단계를 정해 둔 그대로 나간다. 그래서 밖에서 이 문구가 필요할 때
+    새로 짓지 않고 **이 한 줄을 부른다** — 조립 규칙을 다시 적으면 두 벌이 되고,
+    두 벌은 반드시 어긋난다(문구 화면이 `sample_message` 를 부르는 것과 같은
+    자리, 같은 이유).
+
+    스타트업 월말 리마인드는 반대였다 — `startup_sms` 를 짓는 코드가 한 줄도
+    없어서 `services/startup_msg.py` 를 새로 냈다(#133). 여기는 있으니 만들지
+    않는다.
+
+    ## 무엇이 들어오나
+
+    받는 사람은 **투자사 담당자**(`VcContact`)다. 스타트업이 아니다 — 미팅을
+    한 쪽에게 "그 뒤 어떻게 되셨는지" 를 묻는 문구다.
+
+    미팅 자체는 **문구에 들어가지 않는다.** 이 함수가 받는 것이 미팅이 아니라
+    담당자인 까닭이 그것이다 — 문구가 쓰는 값은 이름·직함·투자사 셋뿐이고
+    (`_to_contact_view`), 언제 만났는지·무엇을 이야기했는지는 어느 자리에도
+    안 꽂힌다. 미팅은 **누구에게 물을지**를 가리키는 데까지만 쓰인다.
+
+    ## 인사말이 붙는다
+
+    `opening_is_included(MODE_REVIEW)` 가 참이라 인사말 + 본문 두 덩이가 나간다.
+    발송 화면과 같은 판단을 지나므로 여기서 따로 정하지 않는다 — 정하면 화면이
+    보여 준 것과 실제로 나가는 것이 인사말 한 덩어리만큼 어긋난다.
+    """
+    return _compose_for_contact(db, user, contact, [], mode=MODE_REVIEW).text
+
+
 def _load_recipients(db: Session, user: User, mode: str, ids: List[int]) -> List:
     """이 방식이 보내는 대상. 화면에서 고른 순서를 지킨다.
 
