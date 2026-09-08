@@ -1,4 +1,4 @@
-"""0066 — 투자컨설턴트 월 칸을 **사람마다**에서 **탭마다**로.
+"""0067 — 투자컨설턴트 월 칸을 **사람마다**에서 **탭마다**로.
 
 이 판이 하는 일은 스키마 한 칸을 떼는 것이 아니라 **자료를 합치는 것**이다.
 운영에는 이미 사람이 적어 둔 기록이 `notes` 에 `{"칸 id": "내용"}` 으로 들어
@@ -24,8 +24,8 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
-BEFORE = "0065_consulting_quote_contract_invoice"
-AFTER = "0066_consulting_columns_per_sheet"
+BEFORE = "0066_ir_meeting_offered_at"
+AFTER = "0067_consulting_columns_per_sheet"
 
 
 def _alembic(db: Path, *args: str) -> subprocess.CompletedProcess:
@@ -43,13 +43,13 @@ def _alembic(db: Path, *args: str) -> subprocess.CompletedProcess:
 
 @pytest.fixture()
 def old_db(tmp_path) -> Path:
-    """0065 까지만 올린 DB — 아직 `consulting_columns.user_id` 가 있다."""
+    """이 판 **바로 앞**까지만 올린 DB — 아직 `consulting_columns.user_id` 가 있다."""
     db = tmp_path / "before.db"
     done = _alembic(db, "upgrade", BEFORE)
     assert done.returncode == 0, done.stdout + done.stderr
     with sqlite3.connect(db) as con:
         have = {r[1] for r in con.execute("PRAGMA table_info(consulting_columns)")}
-    assert "user_id" in have, "0065 자리인데 담당 칸이 없다 — 검사가 헛돈다"
+    assert "user_id" in have, "앞 판 자리인데 담당 칸이 없다 — 검사가 헛돈다"
     return db
 
 

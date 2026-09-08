@@ -60,8 +60,8 @@ id 로 **다시 적는다**. 이 다시 적기를 빼먹으면 기록이 화면�
 월 칸이 안 보이고(옛 코드가 `user_id` 로 걸렀다) 관리자가 배정하면 된다 —
 **칸에 적힌 기록은 `notes` 에 그대로 남는다.** 다시 올리면 같은 자리로 돌아온다.
 
-Revision ID: 0066_consulting_columns_per_sheet
-Revises: 0065_consulting_quote_contract_invoice
+Revision ID: 0067_consulting_columns_per_sheet
+Revises: 0066_ir_meeting_offered_at
 """
 from __future__ import annotations
 
@@ -70,8 +70,8 @@ import json
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0066_consulting_columns_per_sheet"
-down_revision = "0065_consulting_quote_contract_invoice"
+revision = "0067_consulting_columns_per_sheet"
+down_revision = "0066_ir_meeting_offered_at"
 branch_labels = None
 depends_on = None
 
