@@ -313,6 +313,17 @@
     if (received && tr.hasAttribute("data-f-received")) {
       tr.setAttribute("data-f-received", received.textContent.trim());
     }
+    // `견적서 첨부여부` · `계산서 수신여부` 는 `관리 스타트업` 탭에만 있는
+    // 칸이다. 위와 **같은 규칙**이라 한 자리에서 돌린다 — 규칙이 칸마다
+    // 따로 적히면 한 벌은 반드시 낡는다. `계약관리` 는 필터를 안 세운
+    // 자유 글 칸이라 여기 없다(다시 적을 행 값이 없다).
+    [["quote_attached", "data-f-quote"],
+     ["invoice_received", "data-f-invoice"]].forEach(function (pair) {
+      var td = tr.querySelector('[data-field="' + pair[0] + '"]');
+      if (td && tr.hasAttribute(pair[1])) {
+        tr.setAttribute(pair[1], td.textContent.trim());
+      }
+    });
     // **적힌 것이 있는가**는 앞뒤 공백을 뗀 뒤에 본다. 서버도 같은 규칙이다
     // (`consulting_status.contacted`) — 예전에는 서버가 공백만 든 칸을 기록으로
     // 세서, 그런 줄이 아무 칸이나 고치는 순간 `연락 기록 없음` 으로 넘어갔다.

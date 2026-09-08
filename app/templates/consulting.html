@@ -301,6 +301,43 @@
         <th style="width:120px">미팅일</th>
         <th style="width:150px">기업명</th>
         <th style="width:220px" data-filters="mgmt:기업 관리">기업 관리<div class="th-filters"></div></th>
+        {# **견적서 → 계약 → 계산서.** 컨설턴트가 기업 하나를 붙들고 가는
+           흐름의 세 마디다. 지금까지는 옆 `기업 관리` 에 한 문장으로 섞여
+           있었는데(`관리 중 : 미팅 완. -> 견적서 보내기 완료.`), 섞여 있으면
+           **아직 안 한 곳**을 골라낼 수가 없다 — 적힌 것은 검색으로 찾아지지만
+           안 적힌 것은 안 찾아진다.
+
+           `관리 스타트업` 탭에만 세운다. `not is_contract_sheet` 로 갈랐다간
+           `경영본부 전달 기업` 과 사람이 시트를 올려 만든 탭에도 같이 서고,
+           그 탭들에는 값이 영영 안 들어간다(`딜 소개문구` 와 같은 판정을 쓴다).
+           계약 탭에는 `계약서 수신여부` 가 이미 서 있다 — 그쪽은 계약 줄의
+           서류 이야기고 이 셋은 관리 중인 기업의 진행 이야기라, 같은 칸이
+           아니다. #}
+        {% if is_startup_sheet %}
+        {# 값이 `O`·`X` 두 가지로 정해져 있어 고를 것이 모인다. 무엇보다
+           **빈칸(아직 안 정함)을 고를 수 있어야** 한다 — filters.js 가 빈 값을
+           `(비어 있음)` 으로 세워 주므로, 채워 넣어야 할 줄을 찾는 길이
+           그것뿐이다. 계약 탭의 `계약서 수신여부` 가 같은 이유로 필터를 단다.
+
+           칩(`관리 중`·`드랍`…)에는 안 세운다. 그 넷은 `기업 관리` **한
+           갈래**를 서로 겹치지 않게 나눈 것이라 한 번에 하나만 눌리는데,
+           이 셋은 다른 축이라 거기 끼면 둘을 같이 걸 수가 없다.
+
+           `견적서 첨부여부 (1) ▾` 가 한 줄에 들어가야 한다 — 이름 105px
+           + th 여백 18px + 단추 여백 14px = 137px. #}
+        <th style="width:140px" data-filters="quote:견적서 첨부여부">견적서 첨부여부<div class="th-filters"></div></th>
+        {# **필터를 안 세운다.** 보기를 정해 두지 않은 자유 글이라 줄마다 다르고,
+           고를 것이 모이지 않는다 — 같은 표의 `미팅일`·`딜 소개문구` 와 같다.
+           왜 보기를 안 세웠는지는 `alembic/versions/0065_…` 에 적어 두었다.
+           필터가 없으므로 행에도 `data-f-*` 를 안 싣는다 — 실으면 아무 머리글도
+           안 보는 죽은 속성이 된다(`tests/test_filter_columns.py` 의 2번).
+
+           폭은 `기업 관리`(220px)보다 좁게 잡는다. 같은 자유 글이지만 이 칸에
+           적히는 것은 계약 한 건의 상태라 문단이 아니라 한두 마디다. #}
+        <th style="width:180px">계약관리</th>
+        {# 위 `견적서 첨부여부` 와 같은 칸이다. 폭도 같다. #}
+        <th style="width:140px" data-filters="invoice:계산서 수신여부">계산서 수신여부<div class="th-filters"></div></th>
+        {% endif %}
         {# 투자사에 이 기업을 어떻게 소개할지. **메모처럼 쓰는 긴 글**이다.
 
            `관리 스타트업` 탭에만 세운다 — `not is_contract_sheet` 로 갈랐다간
@@ -371,6 +408,10 @@
              실어 두면 아무도 안 보는 죽은 속성이 된다
              (tests/test_filter_columns.py 의 2번이 그것을 막는다). #}
           {% if is_contract_sheet %}data-f-received="{{ r.contract_received }}"{% endif %}
+          {# 같은 이유로 **스타트업 탭에서만** 싣는다. `계약관리` 는 필터를
+             안 세운 칸이라 여기에도 없다. #}
+          {% if is_startup_sheet %}data-f-quote="{{ r.quote_attached }}"
+          data-f-invoice="{{ r.invoice_received }}"{% endif %}
           data-f-mgmt="{{ r.mgmt }}">
         <td class="num muted">{{ r.no }}</td>
         {# 편집 칸(`td.cell`)이 아니다 — 담당을 옮기는 것은 표를 통째로 옮기는
@@ -414,6 +455,27 @@
         <td class="cell" data-field="meeting_at">{{ r.meeting_at }}</td>
         <td class="cell strong" data-field="company_name">{{ r.company_name }}</td>
         <td class="cell multi" data-field="management" data-filter-key="mgmt">{{ r.management }}</td>
+        {# 머리글과 **같은 차례로** 갈라 둔다 — 어긋나면 그 뒤 칸이 통째로
+           밀린다. 세 칸이 서는 조건도 머리글과 같은 `is_startup_sheet` 다. #}
+        {% if is_startup_sheet %}
+        {# `O` / `X` 를 **골라서** 넣는다. 그냥 타이핑하게 두면 같은 뜻이
+           `O`·`o`·`ㅇ`·`○` 로 갈려 필터 목록에 네 줄로 서는데, 두 가지뿐인
+           칸에서 그건 곧 필터가 못 쓰게 된다는 뜻이다. 계약 탭의
+           `계약서 수신여부` 가 같은 이유로 `data-choices="O,X"` 를 쓴다.
+           빈칸(아직 안 정함)으로 되돌리는 길도 편집창에 있다.
+
+           칸 이름(`quote_attached`)과 필터 키(`quote`)가 다르다 —
+           `data-filter-key` 가 없으면 여기서 고쳐도 행 값이 그대로라
+           **채워 넣어도 필터는 옛 목록 그대로**다. #}
+        <td class="cell" data-field="quote_attached" data-filter-key="quote"
+            data-choices="O,X">{{ r.quote_attached }}</td>
+        {# `multi` — 이 표에서 **긴 글 칸이 쓰는 표시**다(위 `기업 관리` 와 같다).
+           누르면 textarea 가 열려 엔터로 줄을 나눌 수 있다. 보기를 안 정한
+           칸이라 `data-choices` 도, `data-filter-key` 도 없다. #}
+        <td class="cell multi" data-field="contract_management">{{ r.contract_management }}</td>
+        <td class="cell" data-field="invoice_received" data-filter-key="invoice"
+            data-choices="O,X">{{ r.invoice_received }}</td>
+        {% endif %}
         {# `multi` — 이 표에서 **긴 글 칸이 쓰는 표시**다. 누르면 한 줄짜리
            입력이 아니라 textarea 가 열려(consulting.js 의 `startEdit`) 엔터로
            줄을 나눌 수 있고, 표에서는 `td.cell.multi` 가 높이로 접는다
@@ -457,14 +519,15 @@
       {# 칸 수는 탭마다 다르다 —
          계약 탭     = NO + 7 + 월 열 + 삭제                          = 9 + 월
          경영본부 탭 = NO + 4 + 월 열 + 대표자·연락처·이메일 + 삭제    = 9 + 월
-         스타트업 탭 = 위에 `딜 소개문구` 한 칸 더                     = 10 + 월
+         스타트업 탭 = 위에 네 칸 더(견적서 첨부여부 · 계약관리 ·
+                       계산서 수신여부 · 딜 소개문구)                  = 13 + 월
 
-         앞의 둘이 같은 것은 **우연**이다. 스타트업 탭만 한 칸 더 세면서 그
+         앞의 둘이 같은 것은 **우연**이다. 스타트업 탭만 칸을 더 세면서 그
          우연이 깨졌으므로 더하는 자리에도 적어 둔다. `담당` 칸도 서면 하나 더
          든다 — 둘 다 안 세면 빈 표 안내 줄이 짧아 표 오른쪽에 빈 칸이 남는다. #}
       <tr><td class="muted"
           colspan="{{ 9 + columns|length + (1 if can_pick_owner else 0)
-                        + (1 if is_startup_sheet else 0) }}">
+                        + (4 if is_startup_sheet else 0) }}">
         {#
           **왜 비었는지 적는다.** 그냥 빈 표는 고장으로 읽힌다.
 
