@@ -107,6 +107,75 @@
 </div>
 {% endif %}
 
+{# ── 시험용 자리 — **시험방이 정해졌을 때만** ────────────────────────────
+   ★ 이 조건이 이 기능의 안전선이다. 운영에는 `DEALFLOW_TEST_ROOM` 이 없어서
+   이 자리가 **저절로 닫힌다** — 끄는 것을 사람이 기억하지 않아도 된다.
+   화면에서 감추기만 하면 주소로 그대로 부를 수 있으므로 라우터도 같이 닫혀
+   있고(`routers/setup.py` 의 `_test_room`), 두 쪽이 **같은 함수**를 읽는다
+   (`test_tools_on`). ③ 자료 폴더 칸이 `may_auto_attach` 하나를 함께 읽는 것과
+   같은 자리, 같은 이유다.
+
+   임시로 두지 않고 남긴 까닭은 라우터 머리말에 적었다 — 짧게: 발송기를 깔
+   때마다 쓰는 자리이고, 지우는 것을 기억할 사람이 없어도 운영에서는 없다.
+   대신 **시험용이라는 것이 화면에 분명히 보여야 한다.** #}
+{% if test_tools %}
+<div class="panel test-tools">
+  <h2 class="panel-title">🧪 시험용 — 여기서 눌러 봅니다</h2>
+  <p class="hint">
+    <b>이 자리는 테스트 모드에서만 보입니다.</b> 보내는 시험은 실제 담당자가 아니라
+    <code>{{ test_room }}</code> 방으로만 나갑니다 — <b>방은 고를 수 없습니다.</b>
+  </p>
+  {% if test_msg %}<p class="hint error">{{ test_msg }}</p>{% endif %}
+
+  {# 파일 첨부 시험은 **자료 폴더를 정할 수 있는 계정에만**. 발송 프로그램은
+     폴더를 알아야 파일 이름을 실제 자리로 조립하는데, 그 폴더는 자동 첨부가
+     켜진 계정에만 내려간다(`routers/agent_api.py: heartbeat`). 꺼진 계정에
+     그려 두면 눌러 봐야 무조건 실패하고, 위 ③ 칸이 없어 고칠 수도 없다. #}
+  {% if may_auto_attach %}
+  <h3>자료 파일 첨부해 보기</h3>
+  <p class="hint">
+    위 <b>③ 에서 정한 자료 폴더 안</b>에 있는 파일 이름을 그대로 적으세요.
+    서버는 그 PC 폴더에 무엇이 있는지 모릅니다 — <b>발송 프로그램만 압니다.</b><br>
+    실제 자료 전달과 <b>같은 차례</b>로 나갑니다: <b>파일 먼저, 문구 나중.</b>
+    파일이 실패하면 문구는 나가지 않습니다.
+  </p>
+  <form method="post" action="/setup/test/attach" class="test-form">
+    <input type="text" name="file_name" class="input wide" placeholder="예) 회사소개서.pdf"
+           autocomplete="off" spellcheck="false">
+    <button class="btn primary" type="submit">시험방으로 보내보기</button>
+  </form>
+  {% else %}
+  <h3>자료 파일 첨부해 보기</h3>
+  <p class="hint">
+    이 시험은 <b>자료 자동 첨부를 켜 준 계정</b>에서만 할 수 있습니다.
+    발송 프로그램이 자료 폴더를 모르면 파일을 어차피 찾지 못합니다 —
+    필요하면 관리자에게 <b>팀 현황</b>에서 켜 달라고 하세요.
+  </p>
+  {% endif %}
+
+  <h3>카톡방 이름 확인해 보기</h3>
+  <p class="hint">
+    적은 이름의 방이 카카오톡에서 <b>열리는지만</b> 봅니다 —
+    <b>아무것도 보내지 않습니다.</b> 그래서 아무 이름이나 적어도 됩니다.<br>
+    스타트업 방 이름을 명단에 넣기 <b>전에</b> 맞는 이름인지 여기서 맞춰 보세요.
+  </p>
+  <form method="post" action="/setup/test/room" class="test-form">
+    <input type="text" name="room_name" class="input wide" placeholder="예) 회사이름 대표님"
+           autocomplete="off" spellcheck="false">
+    <button class="btn" type="submit">방 이름만 확인</button>
+  </form>
+
+  <p class="hint">
+    누르면 <b>진행 화면</b>으로 갑니다(2초마다 스스로 갱신). 막히면 그 <b>까닭이
+    「사유 / 시각」 칸에 그대로</b> 뜹니다 — <code>시트에 없는 파일: …</code> ·
+    <code>방이 다릅니다: …</code> · <code>개수가 다릅니다: …</code>.
+    그 문구를 보고 폴더나 파일 이름을 고치세요.<br>
+    <b>대기 중</b> 에서 멈춰 있으면 발송 프로그램이 꺼져 있거나 낡은 것입니다 —
+    위 <b>①</b> 에서 다시 내려받아 켜세요.
+  </p>
+</div>
+{% endif %}
+
 <div class="panel">
   <h2 class="panel-title">잘 안 될 때</h2>
   <details class="tpl-new">

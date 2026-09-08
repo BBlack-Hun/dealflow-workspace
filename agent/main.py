@@ -42,7 +42,15 @@ log = logging.getLogger("agent")
 # 서버의 `app/models.py: SEND_KINDS` 와 같아야 한다.
 SEND_KINDS = ("deal_intro", "ir_delivery", "sourcing_intro")
 VERIFY_KIND = "verify_room"
-SUPPORTED_KINDS = SEND_KINDS + (VERIFY_KIND,)
+# 시험 발송 (`/setup` 의 시험용 자리). 문구도 파일도 **실제로 나가지만** 가는
+# 곳은 서버가 정한 시험방 하나뿐이다 — 여기서는 발송 잡과 똑같이 처리한다.
+#
+# 서버가 이 종류를 `SEND_KINDS` 에 넣지 않는 것은 발송 이력·통계에 섞이지 않게
+# 하려는 것이다(`app/models.py: TEST_SEND_KIND`). 그쪽 사정이라 이 파일의
+# `SEND_KINDS` 와는 갈린다 — 여기 목록은 "서버의 발송 잡 종류" 를 그대로 베낀
+# 것이고(위 주석), 시험 잡은 그 목록에 없는 잡이다.
+TEST_KIND = "test_send"
+SUPPORTED_KINDS = SEND_KINDS + (VERIFY_KIND, TEST_KIND)
 
 DEFAULT_CONFIG = {
     "server_url": "http://127.0.0.1:8000",
@@ -370,7 +378,10 @@ def process_job(client: AgentClient, sender, job: dict, cfg: dict):
     kind = job.get("kind") or "deal_intro"
     if kind == VERIFY_KIND:
         return process_verify_job(client, sender, job, cfg)
-    if kind not in SEND_KINDS:
+    # 시험 잡은 **발송 잡과 똑같이** 처리한다. 파일 먼저 문구 나중이라는 차례도,
+    # 사람 흉내 간격도, [중단] 확인도 그대로여야 시험이 시험 구실을 한다 —
+    # 다르게 처리하면 여기서 되는 것이 실전에서 안 될 수 있다.
+    if kind not in SEND_KINDS and kind != TEST_KIND:
         log.error("모르는 잡 종류 %r — 전송하지 않고 실패 처리합니다", kind)
         for item in job.get("items", []):
             client.report_item(item["id"], "failed",
