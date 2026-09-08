@@ -43,10 +43,21 @@ from ..models import ContactActivity, IrCompany, IrRequest, VcContact
 from . import ir_mask
 from .sheet_import import normalize_company_name
 
-# 이 문서를 받는 기업. **계약을 마친 곳만**이다 — 계약검토중·미계약 기업에
+# 이 문서를 받는 기업. **관계가 맺어진 곳만**이다 — 계약검토중·미계약 기업에
 # 우리가 받은 투자사 반응을 보내면 그것 자체가 영업 자료가 된다.
-# 값은 `routers/companies.CONTRACT_LABELS` 의 키다(`무료계약완료`·`유료계약완료`).
-CONTRACTED = ("free", "paid")
+#
+# 계약 둘(`free`·`paid`)에 더해 **무료 IR 미팅 둘**(`free_meet_planned` ·
+# `free_meet_done`)도 대상이다. 무료 IR 미팅은 계약 전 단계지만 이미 미팅을
+# 드리기로 한 곳이라 사용자가 대상에 넣기로 정했다 — 되돌릴 수 없는 종류의
+# 결정이라 여기 적어 둔다.
+#
+# 값은 `routers/companies.CONTRACT_LABELS` 의 키다(`무료계약완료` ·
+# `유료계약완료` · `무료IR 미팅제공예정` · `무료 IR 미팅제공완료함`).
+#
+# **대상을 고르는 곳은 여기 한 줄뿐이다.** 아래 `contracted()` 만 이것을 읽고,
+# 문서·보고·카톡 세 화면이 모두 그 함수를 지난다. 화면마다 따로 세면 문서에는
+# 실리고 카톡에는 안 실리는 기업이 생긴다.
+CONTRACTED = ("free", "paid", "free_meet_planned", "free_meet_done")
 
 # 못 맞춘 까닭. 화면에 그대로 뜬다 — 숫자만 보여 주면 무엇을 고쳐야 할지 모른다.
 SKIP_NO_MATCH = "기업 이름을 우리 목록에서 못 찾음"
@@ -280,7 +291,10 @@ def monthly_requests(db: Session, month: str,
 # ── 문서가 읽는 것 ───────────────────────────────────────────────────────────
 
 def contracted(db: Session) -> List[IrCompany]:
-    """문서를 받는 기업 — 계약을 마친 곳만, 이름 순."""
+    """문서를 받는 기업 — `CONTRACTED` 에 든 곳만, 이름 순.
+
+    무엇이 대상인지는 **위 `CONTRACTED` 한 줄이 정한다.** 여기서 조건을 다시
+    적지 않는다."""
     from ..routers.companies import contract_key   # 순환 import 를 피해 늦게 부른다
 
     rows = db.execute(select(IrCompany).order_by(IrCompany.name)).scalars().all()

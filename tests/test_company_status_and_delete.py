@@ -839,28 +839,57 @@ def test_시트에_적힌_말도_그대로_새_상태로_들어온다():
     assert _contract_status("") == "no"
 
 
-def test_계약_기업을_세는_곳은_그대로다(db):
-    """**지금은 그대로 둔다** — 새 두 상태를 여기에 넣을지는 사용자가 정한다.
+def test_무료IR_미팅_두_상태도_문서_대상이다(db):
+    """**사용자가 정했다** — 무료 IR 미팅 둘도 IR 요청 문서·문구를 받는다.
 
-    `services/ir_monthly.py` 의 `CONTRACTED` 가 'IR 요청 문서·문구를 받는
-    기업' 을 고르는 단 한 곳이다. 무료 IR 미팅은 **계약 전 단계**라, 여기에
-    넣는 순간 아직 계약하지 않은 기업에게 우리가 받은 투자사 반응이 나간다 —
-    그 자체가 영업 자료다. 되돌릴 수 없는 종류의 실수라 사람이 정할 일이다.
+    `services/ir_monthly.py` 의 `CONTRACTED` 가 대상을 고르는 단 한 곳이다.
+    무료 IR 미팅은 계약 전 단계지만 이미 미팅을 드리기로 한 곳이라 대상에
+    넣는다. 반대로 **아직 정해지지 않은 곳**(`계약검토중` · `미계약`)과
+    `딜소개 불가` 는 여전히 빠져야 한다 — 그런 기업에 우리가 받은 투자사
+    반응이 나가면 그것 자체가 영업 자료다.
 
-    넣기로 하면 고칠 곳은 `CONTRACTED` 한 줄이고, 화면의 안내 문구
-    (`startup_ir_doc.html` · `startup_ir_report.html` · `startup_ir_kakao.html`
-    의 `무료계약완료 · 유료계약완료`)도 함께 고쳐야 한다.
+    옛 값도 같이 본다. 시트에서 넘어온 `no` · `pending` 은 `contract_key` 가
+    `none` · `review` 로 읽으므로 대상이 아니다. 값 이름만 보고 넣고 빼면
+    옛 데이터가 통째로 새거나 통째로 빠진다.
     """
     from app.models import IrCompany
     from app.services import ir_monthly
 
-    assert ir_monthly.CONTRACTED == ("free", "paid")
+    assert ir_monthly.CONTRACTED == ("free", "paid",
+                                     "free_meet_planned", "free_meet_done")
 
-    db.add(IrCompany(name="샘플계약", contract_status="paid"))
-    db.add(IrCompany(name="샘플예정", contract_status="free_meet_planned"))
-    db.add(IrCompany(name="샘플완료", contract_status="free_meet_done"))
+    받는다 = {"샘플유료": "paid", "샘플무료": "free",
+              "샘플예정": "free_meet_planned", "샘플완료": "free_meet_done"}
+    못받는다 = {"샘플검토": "review", "샘플미계약": "none", "샘플불가": "blocked",
+                "샘플옛미계약": "no", "샘플옛검토": "pending"}
+    for name, status in {**받는다, **못받는다}.items():
+        db.add(IrCompany(name=name, contract_status=status))
     db.commit()
 
     names = {c.name for c in ir_monthly.contracted(db)}
-    assert "샘플계약" in names
-    assert "샘플예정" not in names and "샘플완료" not in names
+    assert set(받는다) <= names, names
+    assert not (set(못받는다) & names), names
+
+
+def test_안내_문구에_대상_넷이_다_적혀_있다():
+    """화면이 대상을 **말로도** 적어 둔다.
+
+    `CONTRACTED` 만 고치고 문구를 두면, 대표는 `계약을 마친 기업만` 이라고
+    읽는데 실제로는 무료 IR 미팅 기업에도 문서가 나간다 — 화면과 동작이
+    어긋나는 부류라 사람이 알아채지 못한다.
+    """
+    from pathlib import Path
+
+    from app.routers.companies import CONTRACT_LABELS
+
+    대상 = [CONTRACT_LABELS[k] for k in
+            ("free", "paid", "free_meet_planned", "free_meet_done")]
+    화면들 = ("startup_ir_doc.html", "startup_ir_report.html",
+              "startup_ir_kakao.html")
+
+    뿌리 = Path(__file__).resolve().parents[1] / "app" / "templates"
+    for 이름 in 화면들:
+        # 문구가 줄바꿈으로 갈려 있어 공백을 눌러 놓고 견준다.
+        글 = " ".join((뿌리 / 이름).read_text(encoding="utf-8").split())
+        for 말 in 대상:
+            assert 말 in 글, (이름, 말)
