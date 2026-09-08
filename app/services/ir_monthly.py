@@ -35,7 +35,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import clock
@@ -79,6 +79,12 @@ class MonthlyRequests:
     """한 달치 답 전부."""
 
     month: str
+    # **그 달 하나인가, 그 달 말까지 쌓인 것 전부인가.**
+    #
+    # 문서(#131)는 한 달치를 싣고, 카톡 글은 `7월 말까지` 로 누적을 싣는다.
+    # 어느 쪽인지 값으로 들고 있어야 화면이 `3곳` 이라고 적어 둔 것이
+    # 한 달치인지 누적인지 나중에 읽는 사람이 알 수 있다.
+    cumulative: bool = False
     # {기업 id: 요청한 투자사들}. 요청이 없는 기업은 **키 자체가 없다.**
     by_company: Dict[int, List[Requester]] = field(default_factory=dict)
     # 어느 기업 몫인지 몰라 어디에도 못 붙인 요청들.
@@ -152,8 +158,33 @@ def _act_month(act: ContactActivity) -> str:
     return act.month or ""
 
 
-def monthly_requests(db: Session, month: str) -> MonthlyRequests:
+def _within(got: str, month: str, cumulative: bool) -> bool:
+    """이 기록이 우리가 보는 창(窓) 안에 드는가.
+
+    `YYYY-MM` 은 **글자로 비교해도 시간 순서와 같다**(자리수가 고정이고 앞이
+    0 으로 채워져 있다). 그래서 `<=` 하나로 `그 달 말까지` 가 된다 — 달을
+    날짜로 바꿔 마지막 날을 계산하면 윤달·월말 계산이 하나 더 생기고,
+    그 계산은 두 출처(날짜 있는 것 · 달만 적힌 것)에서 서로 다르게 틀린다.
+    """
+    if not got:
+        return False
+    return got <= month if cumulative else got == month
+
+
+def monthly_requests(db: Session, month: str,
+                     cumulative: bool = False) -> MonthlyRequests:
     """`2026-09` 한 달치. **두 출처를 합쳐** 기업별로 나눈다.
+
+    ### `cumulative=True` — 그 달 **말까지 쌓인 것 전부**
+
+    카톡 글이 `7월 말까지 … 요청한투자사 리스트` 라고 적혀 나간다. 그 말은
+    7월 한 달이 아니라 **그때까지 들어온 것 전부**다. 한 달치만 실으면 지난
+    달에 물어본 곳이 목록에서 사라지고, 대표는 그 사이에 무슨 일이 있었는지를
+    매달 조각으로만 본다.
+
+    누적에서도 **같은 투자사 × 같은 기업은 한 줄**이다(아래 참고). 8월에 또
+    물어봤다고 두 줄이 되면 `몇 곳이 요청했는가` 가 틀어진다 — 남는 것은
+    **먼저 온 날**이라, 그 투자사가 언제부터 관심을 보였는지가 남는다.
 
     ### 같은 요청이 두 번 세어지지 않게
 
@@ -162,7 +193,7 @@ def monthly_requests(db: Session, month: str) -> MonthlyRequests:
     친다 — 문서가 세는 것은 요청 횟수가 아니라 `몇 곳이 요청했는가` 라서,
     두 줄로 두면 `2곳` 이라고 적히지만 실제로는 한 곳이다.
     """
-    out = MonthlyRequests(month=month)
+    out = MonthlyRequests(month=month, cumulative=cumulative)
     if not month:
         return out
 
@@ -192,10 +223,13 @@ def monthly_requests(db: Session, month: str) -> MonthlyRequests:
             picked[key] = row
 
     # ── 출처 1: 이 앱에서 누른 요청 ──────────────────────────────────────
+    # 날짜 문자열의 앞 일곱 자가 곧 달이다(`2026-09-22` → `2026-09`).
+    # 누적이면 `<=`, 한 달치면 `==` — 판정은 `_within` 과 **같은 규칙**이다.
+    req_month = func.substr(IrRequest.requested_at, 1, 7)
     rows = db.execute(
         select(IrRequest, VcContact)
         .outerjoin(VcContact, IrRequest.contact_id == VcContact.id)
-        .where(IrRequest.requested_at.startswith(month))
+        .where(req_month <= month if cumulative else req_month == month)
     ).all()
     for req, contact in rows:
         # 외래키가 있으면 그것이 답이다 — 이름으로 다시 맞추지 않는다.
@@ -215,7 +249,7 @@ def monthly_requests(db: Session, month: str) -> MonthlyRequests:
         .where(ContactActivity.kind == "ir_request")
     ).all()
     for act, contact in acts:
-        if _act_month(act) != month:
+        if not _within(_act_month(act), month, cumulative):
             continue
         names = act.companies
         if not names:
@@ -299,15 +333,25 @@ def overview(db: Session, month: str) -> dict:
     않는다(`sendable=False`).
     """
     data = monthly_requests(db, month)
+    # 카톡 글은 **그 달 말까지 쌓인 것 전부**를 싣는다(`ir_kakao`). 그래서
+    # 한 달치로 `0곳` 인 기업도 글은 나갈 수 있다 — 두 수를 나란히 두지 않으면
+    # 목록에서 `요청 없음` 으로 보이는 줄에 [문구 보기] 가 서 있는 꼴이 되고,
+    # 그것이 고장으로 읽힌다.
+    total = monthly_requests(db, month, cumulative=True)
     rows = []
     for company in contracted(db):
         got = data.of(company.id)
+        piled = total.of(company.id)
         rows.append({
             "company": company,
             "contract_label": contract_label(company),
             "count": len(got),
+            # 그 달 말까지 쌓인 수 — 카톡 글에 실리는 줄 수다.
+            "total_count": len(piled),
             # 보낼 수 있는 문서가 되는가. 0곳이면 적을 것이 없다.
             "sendable": bool(got),
+            # 보낼 수 있는 **카톡 글**이 되는가. 누적이 0곳이면 짓지 않는다.
+            "msg_sendable": bool(piled),
             # 한 곳뿐이면 **가릴 상대가 없다.** 받는 대표가 가려진 이름 하나만 보고
             # 누구인지 짐작할 여지가 가장 큰 자리라, 보내는 사람이 알고 보내야 한다.
             "alone": len(got) == 1,
@@ -318,6 +362,7 @@ def overview(db: Session, month: str) -> dict:
         "skipped": data.skipped,
         "skipped_count": data.skipped_count,
         "sendable_count": sum(1 for r in rows if r["sendable"]),
+        "msg_sendable_count": sum(1 for r in rows if r["msg_sendable"]),
     }
 
 
