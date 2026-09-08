@@ -266,6 +266,40 @@ def test_칸이_많아지면_접고_접었다는_것을_적는다(sheets, db):
                 if "리마인드" in h or "카톡 연결" in h]) == 9
 
 
+def test_맨_앞의_옛_칸이_이번_달_칸을_밀어내지_않는다(sheets, db):
+    """**운영에서 나온 순서**다 — 맨 앞이 달과 무관한 칸이고, 그 뒤 월별 칸이
+    오름차순이라 이번 달이 맨 뒤에 선다(`services/monthly_columns.py` 의
+    "어느 칸을 본으로 삼는가" 가 실측으로 든 그 순서다).
+
+    접는 자리는 앞에서부터 센다. 그 한 칸이 펴 둘 한 달치 자리를 통째로 먹으면
+    표에는 **달과 상관없는 옛 칸만 서고 이번 달 세 칸이 통째로 접힌다** —
+    그 달에 무엇을 보냈는지 적을 자리가 화면에서 사라진다. 시트에서 칸이
+    딸려 온 명단만 조용히 그렇게 된다.
+    """
+    from sqlalchemy import select
+
+    from app.models import ContactColumn
+
+    rows = db.execute(
+        select(ContactColumn).where(ContactColumn.sheet == LIST)
+    ).scalars().all()
+    # 이번 달 칸을 **맨 뒤로** 민다. 그 앞에 달 없는 옛 칸 하나와 지난달 세 칸.
+    for col in rows:
+        col.position += 4
+    db.add(ContactColumn(sheet=LIST, label="샘플 옛 칸", position=0))
+    for i, what in enumerate(("리마인드 문자", "리마인드 TEL", "카톡 연결")):
+        db.add(ContactColumn(sheet=LIST, label=f"{_month(-1)}월 {what}",
+                             position=1 + i))
+    db.commit()
+
+    heads = _thead(sheets.get(_url(LIST)).text)
+    for label in MONTHS:
+        assert _same(label) in heads, (
+            f"이번 달 칸이 표에서 접혔습니다: {label}\n  화면 {heads}")
+    # 지난 달은 지금까지 그대로 접힌다 — 표를 넓히라고 고친 것이 아니다.
+    assert f"{_month(-1)}월 리마인드 문자" not in heads
+
+
 def test_머리글은_필터_단추까지_한_줄에_들어간다(sheets):
     """값을 고르면 라벨 뒤에 `(1) ▾` 가 붙어 24px 이 더 든다.
 

@@ -60,6 +60,7 @@ from typing import Dict, List, Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .. import clock
 from ..models import ContactColumn
 from . import monthly_columns
 
@@ -545,7 +546,8 @@ def split_hidden(columns: List[ContactColumn]) -> tuple:
             [c for c in columns if c.is_hidden])
 
 
-def split_months(columns: List[ContactColumn], show_all: bool = False) -> tuple:
+def split_months(columns: List[ContactColumn], show_all: bool = False,
+                 today: Optional[date] = None) -> tuple:
     """(펴 둘 칸, 접어 둔 칸). **달 단위로** 자른다.
 
     **접었다는 것을 사람이 알아야 한다** — 그냥 안 보이면 지워진 줄 안다.
@@ -553,19 +555,47 @@ def split_months(columns: List[ContactColumn], show_all: bool = False) -> tuple:
 
     이름에서 달을 못 읽는 칸은 **혼자 한 묶음**으로 본다. 옆 달에 붙이면 그
     칸 때문에 남의 달이 통째로 접히거나 펴진다 — 어느 쪽이든 이유를 알 수 없다.
+
+    ## 이번 달 칸은 **자리에 상관없이 편다**
+
+    자르는 자리는 앞에서부터 센다. 그런데 **앞이 최근이라는 보장이 없다** —
+    `services/monthly_columns.py` 의 "어느 칸을 본으로 삼는가" 가 든 그
+    사실이 여기에도 그대로 걸린다. 올라온 시트에 오름차순도 내림차순도 있고,
+    두 명단 다 **맨 앞이 달과 무관한 고정 칸**이었다.
+
+    그 순서에서는 맨 앞 칸 하나가 펴 둘 한 달치 자리를 통째로 먹는다. 표에는
+    달과 상관없는 옛 칸 하나만 서고 **이번 달 세 칸이 통째로 접힌다** —
+    그 달에 무엇을 보냈는지 적을 자리가 화면에서 사라진다. 시트에서 딸려 온
+    칸이 앞에 서 있는 명단만 조용히 그렇게 된다.
+
+    접는 것은 표가 가로로 밀리지 않게 **지난 달**을 잠시 감추는 일이지, 지금
+    채워 넣어야 할 칸을 감추는 일이 아니다. 그래서 이번 달 칸은 자리가 어디든
+    센 자리 밖에서 따로 편다. 지난 달이 접히는 것은 지금까지 그대로다.
+
+    달을 여기서 읽는 것은 `monthly_columns` 가 칸을 세울 때 읽는 것과 같은
+    시계(`app/clock.py`)다 — 세우는 쪽과 펴는 쪽이 다른 날을 보면, 갓 선 칸이
+    선 그날 접힌다. `today` 는 검사에서 날짜를 못 박으려고 받는다.
     """
     if show_all:
         return list(columns), []
+    month = (today or clock.today()).month
     seen: List[str] = []
+    cut = len(columns)
     for i, col in enumerate(columns):
-        month = monthly_columns.month_of(col.label)
-        key = f"{month}월" if month is not None else f"#{i}"
+        key_month = monthly_columns.month_of(col.label)
+        key = f"{key_month}월" if key_month is not None else f"#{i}"
         if key in seen:
             continue
         if len(seen) == VISIBLE_MONTHS:
-            return list(columns[:i]), list(columns[i:])
+            cut = i
+            break
         seen.append(key)
-    return list(columns), []
+
+    def keep(i: int, col: ContactColumn) -> bool:
+        return i < cut or monthly_columns.month_of(col.label) == month
+
+    return ([c for i, c in enumerate(columns) if keep(i, c)],
+            [c for i, c in enumerate(columns) if not keep(i, c)])
 
 
 def note_key(column_id: int) -> str:
