@@ -83,8 +83,9 @@ def seeded(db, users):
     return {"a": a, "b": b, "off": off, "month": now, "last": last}
 
 
-def _msg(db, seeded, company="a", month=None):
-    return ir_kakao.for_company(db, seeded[company].id, month or seeded["month"])
+def _msg(db, seeded, company="a", month=None, user=None):
+    return ir_kakao.for_company(db, user, seeded[company].id,
+                                month or seeded["month"])
 
 
 # ── 1. 가리기 ───────────────────────────────────────────────────────────────
@@ -185,7 +186,7 @@ def test_계약_안_한_기업은_문구를_안_만든다(db, seeded):
                            company_names=json.dumps([COMPANY_OFF],
                                                     ensure_ascii=False)))
     db.commit()
-    assert ir_kakao.for_company(db, seeded["off"].id, seeded["month"]) is None
+    assert ir_kakao.for_company(db, None, seeded["off"].id, seeded["month"]) is None
 
 
 def test_계약_안_한_기업은_화면도_404(logged_in, seeded):
@@ -285,14 +286,14 @@ def test_줄이_날짜_순으로_선다(db, seeded):
 
 def test_기업이_여럿이면_머리말에_다_적힌다(db, seeded):
     """실물이 `(주)가 , (주)나` 다."""
-    got = ir_kakao.compose(db, [seeded["a"], seeded["b"]], seeded["month"])
+    got = ir_kakao.compose(db, None, [seeded["a"], seeded["b"]], seeded["month"])
     assert got is not None
     assert f"{COMPANY_A}{ir_kakao.COMPANY_SEP}{COMPANY_B}" in got.text
 
 
 def test_줄마다_어느_기업_몫인지_적힌다(db, seeded):
     """섞인 목록에서 기업이 안 적히면 대표는 남의 회사 요청까지 제 것으로 읽는다."""
-    got = ir_kakao.compose(db, [seeded["a"], seeded["b"]], seeded["month"])
+    got = ir_kakao.compose(db, None, [seeded["a"], seeded["b"]], seeded["month"])
     assert {ln.company for ln in got.lines} == {COMPANY_A, COMPANY_B}
     for ln in got.lines:
         assert ln.company in ln.text
