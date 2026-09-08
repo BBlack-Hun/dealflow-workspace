@@ -24,7 +24,7 @@ from ..db import get_db
 from ..deps import get_current_user, may_auto_attach, templates
 from ..models import (TEST_SEND_KIND, AgentDevice, IrCompany, Meeting, SendItem,
                       SendJob, User, VcContact)
-from ..services import pipeline, startup_msg
+from ..services import ir_kakao, ir_monthly, pipeline
 from ..ui import base_ctx
 # 미팅 후기 문구는 **발송 화면이 이미 짓는다**(미팅 후기 탭). 여기서 다시
 # 조립하면 두 벌이 되고, 두 벌은 반드시 어긋난다 — 문구 관리 화면이 같은
@@ -77,16 +77,17 @@ TEST_FILE_MESSAGE = "[시험] 자료 첨부 시험입니다 — 실제 발송이
 
 #: 칸을 비운 채 눌렀을 때. 주소에 실려 화면이 다시 읽는다(`setup.html`).
 #:
-#: `no_template` 만 성격이 다르다 — 사람이 안 적은 것이 아니라 **문구틀이
-#: 비어 있는 것**이라, 고칠 자리가 이 화면이 아니다. 그래서 어디로 가야
-#: 하는지를 말에 담는다(화면이 그 자리로 가는 고리를 함께 그린다).
+#: `no_requests` 만 성격이 다르다 — 사람이 안 적은 것이 아니라 **그 기업에
+#: 실을 것이 없는 것**이다. 요청이 0곳이면 문구를 짓지 않는 것은 이 저장소가
+#: 이미 정한 결이다(#131 · #135): 빈 목록을 보내면 받는 대표는 우리가 아무것도
+#: 안 한 줄로 읽는다. 판정은 `ir_kakao.compose` 한 곳에 있다.
 TEST_INPUT_MISSING = {
     "need_file": "시험할 파일 이름을 적어주세요",
     "need_room": "확인할 카톡방 이름을 적어주세요",
     "need_company": "어느 기업 것으로 만들지 골라주세요",
     "need_meeting": "어느 미팅 것으로 만들지 골라주세요",
-    "no_template": ("「기업 리마인드 — 문자」 문구가 비어 있습니다 — "
-                    "딜 제안 문구에서 먼저 적어 주세요"),
+    "no_requests": ("그 기업에 만들 문구가 없습니다 — 계약을 마친 기업이면서 "
+                    "이 달 말까지 IR 자료를 요청한 투자사가 있어야 합니다"),
 }
 
 
@@ -417,7 +418,7 @@ def save_ir_root(
 
 
 def _queue_test_job(db: Session, user: User, kind: str, room: str,
-                    message: str, files: list) -> int:
+                    message: str, files: list, parts: list = None) -> int:
     """시험 잡 한 건을 큐에 넣고 회차 번호를 돌려준다.
 
     **로그인한 사람 것으로 만든다.** 발송 잡은 그 사람의 기기 토큰으로만 내려가고
@@ -427,6 +428,10 @@ def _queue_test_job(db: Session, user: User, kind: str, room: str,
 
     두 시험이 이 한 곳을 함께 쓴다 — 잡과 건을 세우는 절차를 두 벌로 두면
     한쪽만 고쳐진다(`_requeue` 가 같은 이유로 한 곳에 있다).
+
+    `parts` 는 **나눠 보낼 차례**다(비면 `message` 한 통). 기업 리마인드는 목록이
+    길면 한 통에 안 들어간다 — 합쳐 보내면 시험은 통과하는데 실제로는 잘린다.
+    칸의 뜻은 `SendItem.parts_json` 에 이미 적혀 있고 발송기가 읽을 줄 안다.
     """
     job = SendJob(user_id=user.id, kind=kind, status="queued", total=1,
                   sent=0, failed=0)
@@ -439,6 +444,7 @@ def _queue_test_job(db: Session, user: User, kind: str, room: str,
         contact_id=None,
         room_name=room,
         message=message,
+        parts_json=json.dumps(parts, ensure_ascii=False) if parts else None,
         files_json=json.dumps(files, ensure_ascii=False) if files else None,
         status="pending",
     ))
@@ -512,22 +518,32 @@ def test_startup_remind(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """[시험] 월말 리마인드 문구 — **시험방으로** 그 문구를 한 통 보낸다.
+    """[시험] 기업 리마인드 문구 — **시험방으로** 그 문구를 한 통 보낸다.
 
     ## 왜 이 자리가 필요한가
 
-    스타트업에 매월 보내는 문구는 이미 있다 — `startup_sms`. 그런데 **그 문구를
-    보내는 코드가 없어서** 지금까지는 사람이 문구 화면에서 글을 복사해 손으로
-    보냈다. 손으로 옮기면 `{담당자명}` 같은 자리를 눈으로 갈아 끼우게 되는데,
-    이 저장소는 갈아 끼우는 것을 잊은 `{…}` 가 **글자 그대로** 카톡방에 나간
-    적이 있다. 여기서 눌러 보면 실제로 어떤 글자가 나가는지 먼저 보게 된다.
+    스타트업 대표에게 매월 보내는 문구는 이미 있다. 그런데 **그 문구를 보내는
+    코드가 없어서** 지금까지는 사람이 문구 화면에서 글을 복사하고, 그 아래에
+    IR 자료를 요청한 투자사 목록을 손으로 붙여 보냈다. 손으로 옮기면
+    `{담당자명}` 같은 자리를 눈으로 갈아 끼우게 되는데, 이 저장소는 갈아 끼우는
+    것을 잊은 `{…}` 가 **글자 그대로** 카톡방에 나간 적이 있다. 여기서 눌러
+    보면 실제로 어떤 글자가 나가는지 먼저 보게 된다.
 
-    ## 문구를 여기서 짓지 않는다
+    ## 스타트업 화면과 **같은 함수**를 지난다  ★
 
-    짓는 일은 `services/startup_msg.py` 에 있다. 명단 전체에 실제로 돌리는 길은
-    아직 없지만(대상 고르기·중복 방지·이력이 따라붙는 별개의 일이다), 그 길을
-    낼 때 문구를 **다시 짜지 않아도 되게** 밖에 빼 두었다. 문구틀의 어느 자리가
-    채워지고 어디가 비는지도 그 파일 머리말에 있다.
+    글을 짓는 자리는 `services/ir_kakao.py` 하나다. 스타트업 메뉴의
+    [IR 요청 투자사 — 카톡 문구] 화면도 같은 함수를 부른다 — 여기서 본 글과
+    그 화면의 글이 **글자 하나까지 같아야** 이 시험이 거짓말을 하지 않는다.
+
+    예전에는 이 자리가 목록 없는 옛 문구(`services/startup_msg.py`)를 보냈다.
+    같은 뜻의 문구가 둘이라 어느 것을 보낼지 알 수 없었고, 한쪽만 고쳐질
+    참이었다. 그래서 그 파일을 **지우고** 하나로 모았다.
+
+    ## 머리말은 문구틀, 목록은 코드
+
+    머리말 세 줄은 「기업 리마인드 — 문자」(`startup_sms`)에서 온다 — 화면에서
+    고치면 여기서도 저 화면에서도 따라온다. 그 아래 **IR 자료를 요청한 투자사
+    목록**은 코드가 붙인다(투자사 이름은 첫 글자만 남기고 가려서 나간다).
 
     ## 왜 기업을 고르게 하나
 
@@ -535,11 +551,15 @@ def test_startup_remind(
     나갈 문구가 아니다. 명단의 기업을 그대로 쓰면 담당자 성함이 빈 줄·이름에
     괄호가 섞인 줄처럼 **실제 자료가 만드는 모양**이 그대로 드러난다.
 
-    ## 문구틀이 비어 있으면 — **잡을 만들지 않는다**
+    ## 요청이 0곳이면 — **잡을 만들지 않는다**
 
-    코드에 적힌 뼈대를 대신 보내지 않는다. 그것을 보내면 사람은 그것이 팀이 정한
-    문구인 줄 알고, 정작 문구틀은 빈 채로 남는다. 대신 어디에 적어야 하는지를
-    말로 돌려준다(`TEST_INPUT_MISSING["no_template"]`).
+    문구틀이 비어 있어도 막지 않는다(코드에 적힌 머리말로 짓고, 화면이 그
+    사실을 적는다 — 까닭은 `ir_kakao` 머리말에). 대신 **실을 목록이 없으면**
+    만들지 않는다: 빈 목록을 보내면 받는 대표는 우리가 아무것도 안 한 줄로
+    읽는다. 문서(#131)·카톡 문구 화면(#135)이 이미 그렇게 한다.
+
+    계약을 마치지 않은 기업도 같은 길이다 — 고르개는 명단 전부를 담고
+    (`_test_companies`), 판정은 `ir_kakao` 한 곳이 한다.
 
     ## 왜 `may_auto_attach` 를 보지 않나
 
@@ -553,8 +573,14 @@ def test_startup_remind(
     딜소개는 시험 모드에서 `[테스트 발송 → …]` 를 앞에 붙인다
     (`routers/deals.py: _apply_test_room`). 거기서는 150명 몫이 한 방에 쏟아져
     누구에게 갈 문구였는지 알 수 없기 때문이다. 여기는 사람이 기업을 골라 한 통을
-    보내는 자리이고, **문구틀이 만든 것과 글자 하나까지 같은지**를 보는 것이 이
-    시험의 알맹이다 — 앞에 한 줄이라도 얹으면 그것을 볼 수 없다.
+    보내는 자리이고, **스타트업 화면이 내는 것과 글자 하나까지 같은지**를 보는
+    것이 이 시험의 알맹이다 — 앞에 한 줄이라도 얹으면 그것을 볼 수 없다.
+
+    ## 여러 통으로 나뉘는 글이면 나뉜 채로 보낸다
+
+    목록이 길면 한 통에 안 들어간다(`ir_kakao.pack`). 합쳐 한 통으로 보내면
+    시험은 통과하는데 실제로는 잘려 나가므로, 발송기가 이미 아는 자리
+    (`SendItem.parts_json`)에 그대로 실어 보낸다.
     """
     room = _test_room()
     company = db.get(IrCompany, company_id) if company_id else None
@@ -562,10 +588,11 @@ def test_startup_remind(
         # 없는 번호를 밀어 넣은 경우도 같은 길이다 — 고를 수 있는 것은 명단에
         # 있는 기업뿐이고, 없는 것을 골랐다는 말은 화면에 적을 자리가 없다.
         return RedirectResponse("/setup?test=need_company", status_code=303)
-    message = startup_msg.compose(db, user, company)
-    if not message:
-        return RedirectResponse("/setup?test=no_template", status_code=303)
-    job_id = _queue_test_job(db, user, TEST_SEND_KIND, room, message, [])
+    msg = ir_kakao.for_company(db, user, company.id, ir_monthly.this_month())
+    if msg is None:
+        return RedirectResponse("/setup?test=no_requests", status_code=303)
+    job_id = _queue_test_job(db, user, TEST_SEND_KIND, room, msg.text,
+                             [], parts=msg.parts)
     return RedirectResponse(f"/jobs/{job_id}", status_code=303)
 
 
