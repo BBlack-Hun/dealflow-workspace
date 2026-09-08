@@ -38,7 +38,8 @@
     "revenue_2022", "revenue_2023", "revenue_2024", "revenue_2025",
     "revenue_recent", "funding_total", "raise_target", "pre_value",
     "competitiveness", "funding_status", "ir_file_name",
-    "contract_status", "contract_received", "contract_month",
+    // 무료 IR 미팅 제공일 — **글자다**(`9월 중` 같은 말이 들어온다).
+    "contract_status", "contract_received", "meeting_offered_at", "contract_month",
     "summary_status", "note"];
 
   function rows() {

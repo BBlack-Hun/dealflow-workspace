@@ -338,7 +338,10 @@ COMPANY_HEADERS = [
     # 되짚어야 한다(옆의 `계약`·`계약월` 은 예전부터 쓰던 줄임말이라 그대로
     # 둔다 — 이름을 바꾸면 이 파일을 받아 쓰던 수식이 어긋난다).
     # 자리도 화면과 같이 `계약` 바로 뒤다.
-    "경쟁력", "계약", "계약서 수신됨", "계약월", "탑딜", "투자현황", "요약상태",
+    # `미팅제공일자` 도 **화면 이름 그대로**, 자리도 화면과 같이 `계약` 바로
+    # 앞이다. 머리글을 손으로 적어 두는 자리라, 표에 칸을 세우고 여기를 잊으면
+    # **엑셀에서만 칸이 빠진 채** 내려온다(예전에 그렇게 한 번 빠졌다).
+    "경쟁력", "미팅제공일자", "계약", "계약서 수신됨", "계약월", "탑딜", "투자현황", "요약상태",
     # 칸이 **파일명**으로 바뀌었다(0056). 머리글도 함께 바꾼다 — 내려받은
     # 파일을 화면과 나란히 놓고 대조하는 자리라, 이름이 갈리면 어느 칸인지
     # 매번 따져야 한다.
@@ -356,7 +359,9 @@ def export_companies(db: Session = Depends(get_db),
          c.one_liner or "", "O" if c.introducible else "",
          _eok(c.revenue_recent), _eok(c.funding_total),
          _eok(c.raise_target), _eok(c.pre_value),
-         c.competitiveness or "", c.contract_status or "",
+         c.competitiveness or "",
+         # 아직 안 정한 기업은 **빈 칸**이다 — 없는 날짜를 지어내지 않는다.
+         c.meeting_offered_at or "", c.contract_status or "",
          # 아직 안 정한 기업은 **빈 칸**이다 — `X` 로 채우면 엑셀에서 세는
          # 순간 "확인했는데 안 왔다" 가 그 숫자에 들어간다.
          c.contract_received or "", c.contract_month or "",

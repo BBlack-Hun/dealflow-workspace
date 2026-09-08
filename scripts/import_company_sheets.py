@@ -32,13 +32,19 @@ from sqlalchemy import select  # noqa: E402
 
 from app.db import SessionLocal  # noqa: E402
 from app.models import IrCompany  # noqa: E402
-from app.routers.companies import top_deal_kind  # noqa: E402
+from app.routers.companies import contract_key, top_deal_kind  # noqa: E402
 
-# 계약여부는 시트에 적힌 말 → 저장하는 값
-CONTRACT_FROM_SHEET = {
-    "미계약": "none", "무료계약완료": "free", "유료계약완료": "paid",
-    "계약검토중": "review", "딜소개 불가": "blocked", "딜소개불가": "blocked",
-}
+# 계약여부는 시트에 적힌 말 → 저장하는 값. **짝은 앱이 들고 있는 것 하나뿐이다**
+# (`routers/companies.py` 의 `CONTRACT_LABELS` → `contract_key`).
+#
+# 여기 손으로 베껴 두었더니 앱에 상태를 더해도 이 스크립트만 옛 다섯 가지를
+# 알았다 — 시트에 `무료IR 미팅제공예정` 이 적혀 있어도 모르는 말로 보고 글자를
+# 그대로 넣어, DB 에는 어느 상태에도 안 맞는 값이 남는다(화면에서는 `미계약`
+# 으로 보이고 고친 적 없는 것처럼 된다).
+#
+# `contract_key` 는 띄어쓰기를 지우고 견주므로 `딜소개 불가` · `딜소개불가` 를
+# 함께 받고, 예전 값(`yes`·`no`)과 지금 값(`paid`)도 그대로 통과시킨다 —
+# 손으로 적어 둔 표가 하던 일을 모두 한다.
 
 # IR 기업현황(진행관리) 탭 — 시트 컬럼 → 모델 칸
 STATUS_COLUMNS = [
@@ -47,6 +53,8 @@ STATUS_COLUMNS = [
     ("기업구분", "series"),
     ("한줄 소개", "one_liner"),
     ("담당자", "assignee_name"),
+    # `미팅제공일자` 는 `계약여부` **앞**이다 — 화면과 같은 차례로 적어 둔다.
+    ("미팅제공일자", "meeting_offered_at"),
     ("계약여부", "contract_status"),
     ("날짜 기입", "contract_month"),
     ("핵심/TOP Deal", "top_deal_kind"),
@@ -130,7 +138,7 @@ def load(ws, columns, by_name, args, create=False):
             if not value:
                 continue
             if field == "contract_status":
-                value = CONTRACT_FROM_SHEET.get(value, value)
+                value = contract_key(value)
             if field == "top_deal_kind":
                 # `TOP, 핵심` 과 `핵심, TOP` 은 같은 뜻이다 — 한 모양으로 모은다.
                 value = top_deal_kind(value) or ""
