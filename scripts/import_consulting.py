@@ -154,12 +154,40 @@ def text(value) -> str:
 # 순서대로 칸에 나눠 담는다**(`기업명 / 계약금액 / 성공보수율 / 계약일`).
 # 나누는 규칙은 앱과 같은 것을 쓴다 — 여기 따로 적으면 다시 올릴 때마다 화면과
 # 다른 모양이 들어간다. 나누기 전 줄은 `source_line` 에 그대로 남는다.
+#
+# **한 시트에 모양이 둘이다.** 같은 탭 아래쪽에서는 이름을 쉼표로 묶어 한 줄에
+# 적는다:
+#
+#     누적
+#     무료 계약 기업 │ 가나컴퍼니, 다라컴퍼니, 마바컴퍼니 │ 3개
+#     유료 계약 기업 │ 파하컴퍼니, 가나헬스 │ 2개
+#
+# 슬래시가 없다고 건너뛰었더니 이 줄들이 통째로 빠졌다(9개사가 0줄). 쉼표로
+# 나눠 **기업 하나에 한 줄**로 만든다. 이 모양에는 계약금액·성공보수율·계약일이
+# 아예 없으니 그 칸은 비운다 — 시트에 없는 값을 앱이 지어내지 않는다.
 _MONTH_LINE = re.compile(r"^\s*(\d{1,2})\s*월")
-_HEADER_LINE = re.compile(r"기업명\s*/")
+# 머리글 줄. 쉼표 묶음 쪽 머리글(`기업명, 계약금액`)도 같은 자리에서 거른다.
+_HEADER_LINE = re.compile(r"기업명\s*[/,]")
+# 달이 아닌 묶음 제목. 쉼표 묶음은 이 아래에 온다.
+_CUMULATIVE = re.compile(r"^\s*누적")
+# 쉼표 묶음의 왼쪽 라벨 — `무료 계약 기업` / `유료 계약 기업`.
+_LIST_LABEL = re.compile(r"(무료|유료)\s*계약")
+_COMMA = re.compile(r"[,，]")
+_COUNT = re.compile(r"\d+")
 
 
-def parse_contract_sheet(ws) -> list:
-    """월 묶음 자유 서식 → 줄 목록."""
+def parse_contract_sheet(ws, notes: list | None = None) -> list:
+    """월 묶음 자유 서식 → 줄 목록. **기업 하나에 한 줄.**
+
+    두 모양이 한 시트에 섞여 있다(위 설명). 나오는 줄의 모양은 둘 다 같다 —
+    다른 두 탭과 같은 한 줄짜리 기록이다. 쉼표 묶음에서 나온 줄은 이름이
+    이미 나뉘어 있어 `name` 에 담아 두고, 슬래시 줄은 예전처럼 `line` 을
+    앱과 같은 규칙(`split_contract_line`)으로 나눈다.
+
+    `notes` 를 주면 **사람에게 할 말**(개수가 안 맞는다)을 거기에 담는다.
+    줄에 섞지 않는 것은 그것이 자료가 아니라 경고라서다 — 줄에 담으면 앱에
+    같이 들어간다.
+    """
     out, month = [], ""
     for r in range(1, ws.max_row + 1):
         label = text(ws.cell(r, 1).value)
@@ -169,15 +197,59 @@ def parse_contract_sheet(ws) -> list:
         if m and "/" not in (label + body).replace(m.group(0), "", 1)[:3]:
             month = f"{int(m.group(1))}월"
             continue
-        if not body or _HEADER_LINE.search(body):
+        # `누적` 은 달이 아니지만 **묶음 제목**이다. 여기서 안 잡으면 그 아래
+        # 쉼표 줄이 바로 위 달을 그대로 물려받아, 그 달의 계약이 아닌 것이
+        # 그 달로 들어간다. 지어내지 않으려면 시트가 적어 둔 말을 그대로
+        # 쓰는 수밖에 없다 — 그래서 달 칸에 `누적` 이라고 적는다.
+        # 한 칸에만 글이 있는 줄일 때만 제목으로 본다(값 줄이 아니다).
+        if _CUMULATIVE.match(label or body) and not (label and body):
+            month = "누적"
+            continue
+        if not body or _HEADER_LINE.search(body) or squash(body) == "기업명":
             continue          # 머리글 줄은 값이 아니다
-        if "/" not in body:
-            continue          # 계약 줄이 아니다
 
-        # 무료·유료는 줄 안에 적혀 있다. 왼쪽 라벨은 병합 때문에 줄과
-        # 어긋나 있어(3행이 '무료 계약', 4행이 '유료 계약') 믿을 수 없다.
-        kind = "유료" if "유료" in body else ("무료" if "무료" in body else "")
-        out.append({"month": month, "kind": kind, "line": body})
+        if "/" in body:
+            # 무료·유료는 줄 안에 적혀 있다. 왼쪽 라벨은 병합 때문에 줄과
+            # 어긋나 있어(3행이 '무료 계약', 4행이 '유료 계약') 믿을 수 없다.
+            kind = "유료" if "유료" in body else ("무료" if "무료" in body else "")
+            out.append({"month": month, "kind": kind, "line": body, "name": ""})
+            continue
+
+        # --- 이름을 쉼표로 묶어 한 줄에 적은 모양 --------------------------
+        #
+        #     무료 계약 기업 │ 가나컴퍼니, 다라컴퍼니, 마바컴퍼니 │ 3개
+        #
+        # **여기서만 왼쪽 라벨을 믿는다.** 슬래시 줄에서 라벨을 못 믿는 까닭은
+        # 병합이라 라벨 하나가 여러 줄을 덮고 줄과 한 칸씩 어긋나기 때문인데,
+        # 이 모양은 줄마다 제 라벨을 같은 행에 들고 있고 줄 안에는 무료·유료
+        # 라는 말이 아예 없다. 그래서 **모양마다 믿을 수 있는 쪽을 쓴다** —
+        # 슬래시 줄은 줄 안의 글자, 쉼표 줄은 라벨. 두 길을 한 줄에 겹쳐
+        # 쓰지는 않는다(겹쳐 쓰면 `유료헬스` 같은 상호가 라벨을 이긴다).
+        #
+        # 라벨은 이 줄을 **알아보는 조건**이기도 하다. 슬래시도 없고 라벨도
+        # 아니면 예전처럼 건너뛴다 — 계약 줄이 아니다.
+        lm = _LIST_LABEL.search(label)
+        if not lm:
+            continue          # 계약 줄이 아니다
+        kind = lm.group(1)
+
+        # 이름 안에 쉼표가 든 상호(`가나, 다라 주식회사`)를 글자만 보고
+        # 가려낼 방법은 없다. 그냥 쉼표로 나누고, 세 번째 칸의 개수(`3개`)와
+        # 안 맞으면 **사람에게 말한다** — 그 칸이 이 줄의 유일한 검산이다.
+        # 조용히 맞추지 않는 것은 개수와 이름 중 어느 쪽이 맞는지 여기서 알
+        # 수 없어서고, 넣기를 멈추지 않는 것은 개수 칸이 자주 안 맞는(사람이
+        # 이름만 더하고 개수를 안 고치는) 칸이라서다. 원본 줄은 `line` 에
+        # 그대로 남으므로 사람이 보고 고칠 수 있다.
+        names = [n.strip() for n in _COMMA.split(body) if n.strip()]
+        said = _COUNT.search(text(ws.cell(r, 3).value))
+        if notes is not None and said and int(said.group(0)) != len(names):
+            notes.append(f"{r}행 {kind}: 시트는 {said.group(0)}개라는데 이름은 "
+                         f"{len(names)}개로 나뉩니다"
+                         f"(상호 안의 쉼표일 수 있습니다) — {body}")
+        for name in names:
+            # 계약금액·성공보수율·계약일은 이 모양에 **아예 없다.** 비운다.
+            out.append({"month": month, "kind": kind, "line": body,
+                        "name": name})
     return out
 
 
@@ -269,24 +341,31 @@ def main(argv=None) -> int:
         moved = "" if squash(sheet) == squash(sheet_name) else f"  ← 시트 `{sheet_name}`"
         # 계약 현황표는 머리글 있는 표가 아니라 월 묶음 자유 서식이다.
         if cs.kind_of(db, sheet) == cs.CONTRACT:
-            lines = parse_contract_sheet(ws)
+            warns = []
+            lines = parse_contract_sheet(ws, warns)
             gone = wipe(db, sheet, args.owner)
             removed += gone
             for pos, item in enumerate(lines, start=1):
-                parts = split_contract_line(item["line"])
+                # 쉼표 묶음에서 나온 줄은 이름이 **이미 나뉘어** 있다. 다시
+                # 나눌 것도, 채울 것도 없다 — 나머지 세 칸은 시트에 없다.
+                parts = {} if item["name"] else split_contract_line(item["line"])
                 db.add(ConsultingCompany(
                     sheet=sheet, position=pos, user_id=args.owner,
                     region=item["month"],            # 어느 달의 계약인가
                     management=item["kind"],         # 계약여부 — 무료 / 유료
                     # 나누기 전 한 줄. 나눈 결과가 틀렸을 때 여기서 다시 나눈다.
                     source_line=item["line"],
-                    company_name=parts.get("company_name") or item["line"],
+                    company_name=(item["name"] or parts.get("company_name")
+                                  or item["line"]),
                     contract_fee=parts.get("contract_fee"),
                     success_fee=parts.get("success_fee"),
                     meeting_at=parts.get("meeting_at")))   # 계약일
             total += len(lines)
             print(f"  {sheet:22} 지움 {gone:3}줄 → 넣음 {len(lines):3}줄 "
                   f"(월 묶음){moved}")
+            # 개수 칸과 이름 수가 안 맞는 줄. 넣기는 넣되 **말은 한다.**
+            for w in warns:
+                print(f"    주의: {w}")
             continue
 
         hr = header_row(ws)
