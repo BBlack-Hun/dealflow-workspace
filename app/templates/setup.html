@@ -153,6 +153,42 @@
   </p>
   {% endif %}
 
+  {# ── 월말 리마인드 문구 — **문구틀이 만든 것을 그대로** ────────────────
+     지금까지 이 문구는 코드가 보낸 적이 없다(`startup_sms` 를 부르는 곳이
+     없었다). 사람이 문구 화면에서 복사해 손으로 보냈고, 그러면 `{담당자명}`
+     같은 자리를 눈으로 갈아 끼우게 된다 — 잊은 `{…}` 가 글자 그대로 나간
+     사고를 이 저장소는 이미 겪었다. 여기서 먼저 눈으로 본다.
+
+     문구를 짓는 일은 화면이 아니라 `services/startup_msg.py` 에 있다. 명단
+     전체에 실제로 돌리는 길을 나중에 낼 때 다시 짜지 않게 하려는 것이다. #}
+  <h3>월말 리마인드 문구 보내 보기</h3>
+  <p class="hint">
+    <b>딜 제안 문구</b> 의 <a href="/templates#startup_sms">「기업 리마인드 — 문자」</a>
+    가 만드는 문구를 <b>그대로</b> 한 통 보냅니다 — 여기서 따로 쓰지 않습니다.<br>
+    <b>{담당자명}</b> 과 <b>{기업명}</b> 은 고른 기업의 값으로 채워집니다.
+    <b>{직함}</b> 은 명단에 직함 칸이 없어 <b>「님」</b> 만 붙고,
+    <b>{투자사}</b> 는 받는 쪽이 스타트업이라 <b>빈칸</b>이 됩니다 —
+    <b>대표님</b> 처럼 부르려면 문구에 글자로 적어 두세요.
+  </p>
+  {% if test_companies %}
+  <form method="post" action="/setup/test/startup-remind" class="test-form">
+    <select name="company_id" class="input wide">
+      <option value="">어느 기업 것으로 만들까요</option>
+      {% for c in test_companies %}
+      <option value="{{ c.id }}">{{ c.name }}</option>
+      {% endfor %}
+    </select>
+    <button class="btn primary" type="submit">시험방으로 보내보기</button>
+  </form>
+  <p class="hint">
+    <b>보내는 것은 시험방 한 곳뿐입니다</b> — 고른 기업에게는 아무것도 가지 않습니다.
+  </p>
+  {% else %}
+  <p class="hint">
+    스타트업 명단이 비어 있어 만들 수 있는 문구가 없습니다.
+  </p>
+  {% endif %}
+
   <h3>카톡방 이름 확인해 보기</h3>
   <p class="hint">
     적은 이름의 방이 카카오톡에서 <b>열리는지만</b> 봅니다 —
