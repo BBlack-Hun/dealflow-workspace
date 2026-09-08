@@ -146,6 +146,10 @@ class KakaoMessage:
     # 화면은 **그 사실을 적어야 한다** — 코드에 적힌 글을 팀이 정한 문구로
     # 오해하면 문구틀은 빈 채로 남는다.
     head_from_template: bool = True
+    # **보기 자료로 지은 글인가.** 참이면 `assemble` 이 맨 앞에 표시 줄
+    # (`test_demo.MARK`)을 얹었다 — `/setup` 의 시험 자리에서 실을 것이 하나도
+    # 없을 때만 참이 된다. 스타트업 화면은 이 값이 참인 글을 만들지 않는다.
+    demo: bool = False
 
     @property
     def char_count(self) -> int:
@@ -251,6 +255,53 @@ def pack(head: str, lines: Sequence[str], limit: int = LIMIT) -> List[str]:
 
 # ── 글 짓기 ─────────────────────────────────────────────────────────────────
 
+def assemble(db: Session, user: Optional[User], month: str,
+             companies: Sequence[str], lines: Sequence[Line],
+             contact: Optional[mc.ContactView] = None,
+             skipped: Optional[Sequence] = None, skipped_count: int = 0,
+             prefix: str = "") -> KakaoMessage:
+    """줄이 다 모인 뒤 — 머리말을 얹고 통을 나눠 **글 한 통으로 묶는다.**
+
+    ## 왜 `compose` 에서 떼어 냈나
+
+    보기 자료로 짓는 길(`services/test_demo.py`)이 **같은 조립을 지나야** 하기
+    때문이다. 조립을 두 벌로 두면 시험 자리에서 본 모양과 대표가 받을 모양이
+    갈린다 — 이 파일이 이미 그 값을 치렀다(머리말 참고). 다른 것은 **줄을 어디서
+    얻느냐** 뿐이라, 갈리는 자리를 그 위로 올렸다.
+
+    ## `prefix` — 맨 앞에 얹는 한 줄
+
+    **진짜 자료로 지을 때는 비어 있다.** 앞에 한 줄이라도 얹으면 실제로 나갈
+    모양을 볼 수 없다(`routers/setup.py` 의 "머리말을 붙이지 않는다").
+    보기 자료로 지을 때만 채워지고, 그때 그 줄이 **가짜라는 표시**다 —
+    시험방으로만 가더라도 진짜와 구별이 안 되면 사람이 헷갈린다.
+
+    표시는 **머리말 앞**에 붙는다. 뒤가 아니라 앞인 까닭은 카톡에서 먼저 읽히는
+    자리가 거기이고, 여러 통으로 나뉘어도 **첫 통**에 실리기 때문이다
+    (`pack` 이 머리말을 첫 통에만 붙인다).
+    """
+    body, from_template = head_body(db, user)
+    head = header(month, companies, body, contact)
+    if prefix:
+        head = f"{prefix}\n{head}"
+    parts = pack(head, [ln.text for ln in lines])
+    return KakaoMessage(
+        month=month,
+        companies=list(companies),
+        lines=list(lines),
+        text="\n\n".join(parts),
+        # 한 통이면 비운다 — `SendItem.parts_json` 과 같은 약속이다
+        # ("비어 있으면 `message` 를 한 통으로 보낸다").
+        parts=parts if len(parts) > 1 else [],
+        undated=sum(1 for ln in lines if not ln.date),
+        skipped=list(skipped or []),
+        skipped_count=skipped_count,
+        head_from_template=from_template,
+        demo=bool(prefix),
+    )
+
+
+
 def compose(db: Session, user: Optional[User], companies: Sequence[IrCompany],
             month: str) -> Optional[KakaoMessage]:
     """이 기업(들)에 대해 **그 달 말까지 쌓인** 요청을 글 한 통으로.
@@ -294,26 +345,12 @@ def compose(db: Session, user: Optional[User], companies: Sequence[IrCompany],
 
     lines.sort(key=order)
 
-    body, from_template = head_body(db, user)
     # 담당자 이름은 **첫 기업 것**이다. 기업이 여럿인 글은 한 대표에게 가는
     # 것이라(위 `compose` 설명) 상대가 하나뿐인데, 앱에는 그 한 사람을 가리키는
     # 칸이 없다. 지금 화면은 모두 기업 하나씩 부르므로 갈릴 일이 없다.
-    head = header(month, [names[c.id] for c in companies], body,
-                  contact_of(companies[0] if companies else None))
-    parts = pack(head, [ln.text for ln in lines])
-    return KakaoMessage(
-        month=month,
-        companies=[names[c.id] for c in companies],
-        lines=lines,
-        text="\n\n".join(parts),
-        # 한 통이면 비운다 — `SendItem.parts_json` 과 같은 약속이다
-        # ("비어 있으면 `message` 를 한 통으로 보낸다").
-        parts=parts if len(parts) > 1 else [],
-        undated=sum(1 for ln in lines if not ln.date),
-        skipped=data.skipped,
-        skipped_count=data.skipped_count,
-        head_from_template=from_template,
-    )
+    return assemble(db, user, month, [names[c.id] for c in companies], lines,
+                    contact_of(companies[0] if companies else None),
+                    data.skipped, data.skipped_count)
 
 
 def for_company(db: Session, user: Optional[User], company_id: int,
