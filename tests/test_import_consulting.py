@@ -262,3 +262,93 @@ def test_월_칸은_탭에_붙는다(db, users, tabs, tmp_path):
     assert [c.sheet for c in made] == [tabs["startup"]]
     assert not hasattr(ConsultingColumn, "user_id"), (
         "칸에 담당 칸이 다시 생겼습니다 — 같은 달 머리글이 사람 수만큼 섭니다")
+
+
+# --- 6. 계약 현황표 — 한 시트에 모양이 둘이다 ---------------------------------
+#
+# 위쪽은 월 묶음 + 슬래시 한 줄, 아래쪽(`누적`)은 이름을 쉼표로 묶은 한 줄이다.
+# 슬래시가 없다고 건너뛰었더니 아래쪽 9개사가 0줄로 들어갔다.
+
+CONTRACT_ROWS = [
+    ["6월  (무료계약 1개사)", "", ""],
+    ["무료 계약", "기업명 / 계약금액 / 성공보수율 / 계약일", ""],
+    ["", "샘플가/ 무료/ 3.5%/ 미정", ""],
+    ["누적", "", ""],
+    ["무료 계약 기업", "샘플나, 샘플다", "2개"],
+    ["유료 계약 기업", "샘플라", "1개"],
+]
+
+
+def contract_file(tmp_path: Path, tab: str, rows=None, name="계약.xlsx") -> str:
+    """계약 현황표 한 장. 머리글 있는 표가 아니라 **자유 서식**이다."""
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+    ws = wb.create_sheet(tab[:31])
+    for row in rows if rows is not None else CONTRACT_ROWS:
+        ws.append(row)
+    path = tmp_path / name
+    wb.save(path)
+    return str(path)
+
+
+def _contract_rows(db, sheet):
+    from app.models import ConsultingCompany
+
+    return (db.query(ConsultingCompany).filter_by(sheet=sheet)
+            .order_by(ConsultingCompany.position).all())
+
+
+def test_쉼표로_묶인_줄도_기업마다_한_줄로_들어간다(db, users, tabs, tmp_path):
+    contract = tabs["contract"]
+    out = run(contract_file(tmp_path, contract), "--owner",
+              str(users["u1"].id), "--apply", db=db)
+    assert out.returncode == 0, out.stderr
+
+    rows = _contract_rows(db, contract)
+    # 슬래시 줄 하나 + 쉼표로 묶인 셋 = 넉 줄. 무료/유료는 쉼표 줄에서
+    # **왼쪽 라벨**이 정한다(줄 안에 그 말이 없다), 달은 시트에 적힌 그대로.
+    assert [(r.company_name, r.management, r.region) for r in rows] == [
+        ("샘플가", "무료", "6월"),
+        ("샘플나", "무료", "누적"),
+        ("샘플다", "무료", "누적"),
+        ("샘플라", "유료", "누적"),
+    ]
+
+
+def test_시트에_없는_계약금액_보수율_계약일은_비운다(db, users, tabs, tmp_path):
+    """쉼표 모양에는 그 세 가지가 아예 없다. 지어내지 않는다.
+
+    슬래시 모양은 여전히 칸으로 나뉘어야 한다 — 그쪽이 원래 쓰던 것이다.
+    """
+    contract = tabs["contract"]
+    assert run(contract_file(tmp_path, contract), "--owner",
+               str(users["u1"].id), "--apply", db=db).returncode == 0
+
+    slash, comma = _contract_rows(db, contract)[0], _contract_rows(db, contract)[1]
+    assert (slash.contract_fee, slash.success_fee, slash.meeting_at) == (
+        "무료", "3.5%", "미정")
+    assert not comma.contract_fee
+    assert not comma.success_fee
+    assert not comma.meeting_at
+    # 나누기 전 줄은 그대로 남는다 — 나눈 것이 틀렸을 때 여기서 다시 나눈다
+    assert comma.source_line == "샘플나, 샘플다"
+
+
+def test_미리보기가_쉼표_줄까지_세어_말한다(db, users, tabs, tmp_path):
+    """몇 줄이 들어갈지 말해야 사람이 사고를 막는다."""
+    out = run(contract_file(tmp_path, tabs["contract"]), "--owner",
+              str(users["u1"].id), db=db)
+    assert out.returncode == 0, out.stderr
+    assert "넣을 줄 4개" in out.stdout, out.stdout
+
+
+def test_개수_칸과_이름_수가_다르면_미리보기가_말한다(db, users, tabs, tmp_path):
+    """개수 칸이 이 줄의 유일한 검산이다. 넣기는 넣되 말은 한다 —
+    상호 안에 쉼표가 들었을 때 사람이 알아볼 자리가 여기뿐이다."""
+    path = contract_file(tmp_path, tabs["contract"], rows=[
+        ["누적", "", ""],
+        ["유료 계약 기업", "샘플가, 샘플나 주식회사", "1개"],
+    ])
+    out = run(path, "--owner", str(users["u1"].id), db=db)
+    assert out.returncode == 0, out.stderr
+    assert "주의" in out.stdout and "쉼표" in out.stdout, out.stdout
