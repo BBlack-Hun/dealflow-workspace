@@ -689,6 +689,31 @@ def test_한_달의_칸은_다_같이_서거나_다_같이_접힌다(db):
     assert len(shown) == 5 and [c.label for c in folded] == ["7월 칸"]
 
 
+def test_이번_달_칸은_자리에_상관없이_펴_둔다(db):
+    """**운영에서 나온 순서**다(`ASC_SHEET`) — 맨 앞이 달 없는 칸이고, 그 뒤
+    월별 칸이 오름차순이라 이번 달이 **맨 뒤**에 선다.
+
+    접기는 자리(`position`)를 앞에서부터 세는데, 이 순서에서는 맨 앞 칸 하나가
+    펴 둘 한 달치 자리를 통째로 먹는다. 그러면 표에는 달과 상관없는 옛 칸
+    하나만 서고 **이번 달 기록이 통째로 접힌다** — 그 달에 무엇을 보냈는지
+    적을 자리가 화면에서 사라진다.
+
+    이번 달 칸은 자리가 어디든 편다. 접는 것은 가로로 밀리지 않게 **지난 달**을
+    잠시 감추는 일이지, 지금 채워 넣어야 할 칸을 감추는 일이 아니다.
+    """
+    from app.models import ContactColumn
+    from app.services import contact_columns as cc
+
+    now = ["9월 문자", "9월 TEL", "9월 카톡 연결"]
+    cols = [ContactColumn(sheet=LIST, label=x, position=i)
+            for i, x in enumerate(ASC_SHEET + now)]
+    shown, folded = cc.split_months(cols, today=SEP)
+    assert [c.label for c in shown][-3:] == now
+    assert [c.label for c in folded if cc.monthly_columns.month_of(c.label) == 9] == []
+    # 지난 달은 지금까지 그대로 접힌다 — 넓어지라고 고친 것이 아니다.
+    assert "8월 문자" in [c.label for c in folded]
+
+
 def test_사람이_펴_둔_것을_다시_접지_않는다(db):
     """편 상태는 **요청에 실려 있고 DB 에 없다** — 달이 바뀌어 칸이 저절로
     생겨도 접는 쪽이 손댈 수 있는 자리가 없다."""
