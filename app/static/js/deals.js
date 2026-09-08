@@ -38,6 +38,16 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   var previewTabs = document.getElementById("preview-tabs");
   var previewArea = document.getElementById("preview-area");
   var warnBox = document.getElementById("send-warnings");
+  // 링크를 타고 들어오며 **못 고른 것**(담당자·기업). 미리보기 응답이 이 칸을
+  // 통째로 다시 쓰기 때문에(`refreshPreview` 끝), 거기 그냥 적어 두면 화면을
+  // 연 한 박자 뒤에 말없이 지워진다 — 실제로 그랬다. 그래서 따로 들고 있다가
+  // 미리보기 경고와 **함께** 세운다. 방식 탭을 사람이 누르면 지운다(`setMode`).
+  var incomingWarns = [];
+  function showWarnings(extra) {
+    var all = incomingWarns.concat(extra || []);
+    warnBox.hidden = !all.length;
+    warnBox.innerHTML = all.map(escapeHtml).join("<br>");
+  }
   var sendBtn = document.getElementById("send-btn");
   var lastPreviews = [];
   // **지금 열어 둔 미리보기 탭**(담당자 하나). [보낼 자료] 목록의 번호가 이
@@ -662,7 +672,10 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     savedEdits = {};
     previewTabs.innerHTML = "";
     previewArea.innerHTML = '<p class="muted">불러오는 중…</p>';
-    warnBox.hidden = true;
+    // 링크로 받은 경고도 여기서 지운다 — 사람이 방식을 직접 바꾼 순간부터는
+    // 넘어오며 못 골랐다는 말이 지금 화면의 이야기가 아니다.
+    incomingWarns = [];
+    showWarnings([]);
     loadTemplates(true);
     updateCounts();   // 여기서 미리보기가 따라온다
   }
@@ -852,8 +865,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
         lastPreviews.forEach(function (p) {
           (p.warnings || []).forEach(function (w) { warns.push(p.name + ": " + w); });
         });
-        if (warns.length) { warnBox.hidden = false; warnBox.innerHTML = warns.map(escapeHtml).join("<br>"); }
-        else { warnBox.hidden = true; }
+        showWarnings(warns);
       })
       .catch(function () {
         if (seq !== previewSeq) return;
@@ -1110,20 +1122,38 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       return hit;
     }
 
-    check(contactCbs(), params.get("contacts"));
+    var gotWho = check(contactCbs(), params.get("contacts"));
     var picked = check(companyCbs(), params.get("companies"), true);
 
     if (wanted && document.querySelector('.mode-tab[data-mode="' + wanted + '"]')) {
       setMode(wanted);
     }
+    var warns = [];
+    // 넘겨받은 담당자가 **이 목록에 없을 수 있다.** 이 화면의 대상은 `내
+    // 담당` 보다 좁다 — 딜 소개 명단에 있고 카톡방 연결까지 끝난 사람만
+    // 선다(`sheet_owner.recipients`). 담당이 넘어간 뒤의 IR 요청 줄에서
+    // 넘어오면 남의 담당자라 아예 없다.
+    //
+    // 그때 조용히 아무도 안 골라 두면, 화면은 "고를 준비가 된 척" 을 하고
+    // 사람은 왜 비었는지 모른 채 이름을 찾아 헤맨다. 못 골랐다고 말한다.
+    // (소싱은 대상 목록이 아예 다른 표라 여기서 세면 안 된다 — 위 `check` 는
+    // 방식을 바꾸기 전, 즉 투자사 담당자 목록을 보고 있다.)
+    var askedWho = (params.get("contacts") || "").split(",")
+      .map(function (v) { return v.trim(); }).filter(Boolean)
+      .filter(function (v, i, a) { return a.indexOf(v) === i; }).length;
+    if (askedWho && gotWho < askedWho && wanted !== "sourcing") {
+      warns.push("담당자 " + (askedWho - gotWho) + "명을 대상 목록에서 찾지 " +
+        "못했습니다 — 내 담당이 아니거나, 딜 소개 명단·카톡방 연결이 아직 " +
+        "끝나지 않은 담당자입니다.");
+    }
     // 받은 기업이 목록에 없으면(소개 불가로 빠졌거나 지워졌으면) 알려 준다.
     var asked = (params.get("companies") || "").split(",").filter(Boolean).length;
     if (asked && picked < asked) {
-      warnBox.hidden = false;
-      warnBox.textContent =
-        "요청받은 기업 " + (asked - picked) + "개를 목록에서 찾지 못했습니다 — " +
-        "IR 기업 현황에서 등록 상태를 확인하세요.";
+      warns.push("요청받은 기업 " + (asked - picked) + "개를 목록에서 찾지 못했습니다 — " +
+        "IR 기업 현황에서 등록 상태를 확인하세요.");
     }
+    incomingWarns = warns;
+    showWarnings([]);
     if (picked) applyCompanyFilter();
   })();
 
