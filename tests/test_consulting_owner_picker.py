@@ -293,3 +293,79 @@ def test_the_read_only_rule_is_written_where_the_rows_are(stage, sign_in):
     mine_only = sign_in("member").get(
         f"/consulting?sheet={STARTUP}&owner={stage['member'].id}").text
     assert "다른 담당자의 줄은 볼 수만 있습니다" not in mine_only
+
+
+# --- 6. 담당을 갈라도 **월 칸은 한 벌**이다 -------------------------------------
+#
+# 여기가 55줄을 나누기 전에 손봐야 했던 자리다. 칸이 사람마다이던 동안에는
+# 컨설턴트가 하나뿐이라 아무 차이가 없었는데, 두 사람째가 들어오면 이 화면
+# ─ 팀이 표를 나란히 놓고 보는 바로 그 자리 ─ 가 무너진다
+# (`models.ConsultingColumn` 에 무엇이 무너지는지 적어 두었다).
+
+def _headers(html: str) -> list:
+    """표 머리글에 선 월 칸 이름들."""
+    head = html.split("<thead>", 1)[1].split("</thead>", 1)[0]
+    return re.findall(r'<th style="width:200px" class="month-col">\s*'
+                      r'<span title="([^"]*)"', head)
+
+
+@pytest.fixture()
+def month_column(db):
+    """탭에 월 칸 하나. 칸은 **담당이 아니라 탭**에 붙는다."""
+    from app.models import ConsultingColumn
+
+    col = ConsultingColumn(sheet=STARTUP, label="8월 마지막주 리마인드 톡 or TEL",
+                           position=0)
+    db.add(col)
+    db.commit()
+    return col
+
+
+def test_the_month_columns_do_not_multiply_with_the_owners(stage, sign_in,
+                                                           month_column):
+    """`담당: 전체` 에서 같은 달 머리글이 **한 번만** 선다.
+
+    칸이 사람마다이던 시절에는 사람 수만큼 겹쳐 서고, 줄마다 자기 담당의
+    칸에만 값이 있어 표의 절반이 늘 빈칸이었다.
+    """
+    head = _headers(sign_in("member").get(f"/consulting?sheet={STARTUP}").text)
+    assert head.count("8월 마지막주 리마인드 톡 or TEL") == 1, head
+
+
+def test_the_headers_do_not_change_when_you_switch_owners(stage, sign_in,
+                                                          month_column):
+    """고르는 자리는 **줄**을 가른다 — 머리글까지 갈리면 사람마다 다른 표를
+    보는 것이 되어, 나란히 놓고 볼 수가 없다."""
+    client = sign_in("member")
+    everyone = _headers(client.get(f"/consulting?sheet={STARTUP}").text)
+    for who in ("member", "first"):
+        picked = _headers(client.get(
+            f"/consulting?sheet={STARTUP}&owner={stage[who].id}").text)
+        assert picked == everyone, f"{who} 를 고르니 머리글이 달라졌다: {picked}"
+
+
+def test_a_consultant_sees_the_same_month_columns(stage, sign_in, month_column):
+    """자기 줄만 보는 사람에게도 머리글은 그대로다.
+
+    칸에는 주인이 없다 — 사람마다 갈리면 그 사람 화면에서만 그 달 기록을 적을
+    자리가 사라진다(`routers/consulting.py` 의 `_columns`).
+    """
+    mine = _headers(sign_in("first").get(f"/consulting?sheet={STARTUP}").text)
+    team = _headers(sign_in("member").get(f"/consulting?sheet={STARTUP}").text)
+    assert mine == team, f"컨설턴트 {mine} / 팀 {team}"
+    assert "8월 마지막주 리마인드 톡 or TEL" in mine
+
+
+def test_a_consultant_opening_the_page_stands_up_this_months_column(
+        stage, sign_in, month_column):
+    """이번 달 칸은 **탭마다** 선다 — 누가 열었는지와 무관하다.
+
+    칸이 사람마다이던 시절에는 자기 칸만 서서, 아무도 안 연 사람의 표는 그
+    달 기록이 지난달 칸에 섞여 들어갔다. 어느 달 것인지 나중에 가릴 방법이
+    없다(`services/monthly_columns.py`).
+    """
+    from app import clock
+
+    month = clock.today().month
+    head = _headers(sign_in("first").get(f"/consulting?sheet={STARTUP}").text)
+    assert sum(1 for x in head if x.startswith(f"{month}월")) == 1, head
