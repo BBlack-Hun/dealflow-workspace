@@ -304,21 +304,22 @@
     tr.setAttribute("data-f-mgmt", managementTags(mgmt ? mgmt.textContent : ""));
     var region = tr.querySelector('[data-field="region"]');
     tr.setAttribute("data-f-region", region ? region.textContent.trim() : "");
-    // `계약서 수신여부` 는 계약 탭에만 있는 칸이다. **행이 이미 그 값을 싣고
-    // 있을 때만** 다시 적는다 — 없는 속성을 여기서 새로 만들면 다른 탭에
-    // 아무도 안 보는 죽은 값이 생긴다(머리글이 선언하지 않은 값이다).
-    // 적히는 것은 칸의 글자 그대로다 — `O`/`X` 는 이미 추려진 값이라 판정할
+    // 탭마다 서는 고르는 칸들. **행이 이미 그 값을 싣고 있을 때만** 다시
+    // 적는다 — 없는 속성을 여기서 새로 만들면 그 칸이 없는 탭에 아무도 안 보는
+    // 죽은 값이 생긴다(머리글이 선언하지 않은 값이다).
+    //
+    // 적히는 것은 칸의 글자 그대로다 — 값이 몇 가지로 정해진 칸이라 판정할
     // 것이 없다(그래서 `consulting_status.py` 에 규칙이 늘지 않는다).
-    var received = tr.querySelector('[data-field="contract_received"]');
-    if (received && tr.hasAttribute("data-f-received")) {
-      tr.setAttribute("data-f-received", received.textContent.trim());
-    }
-    // `견적서 첨부여부` · `계산서 수신여부` 는 `관리 스타트업` 탭에만 있는
-    // 칸이다. 위와 **같은 규칙**이라 한 자리에서 돌린다 — 규칙이 칸마다
-    // 따로 적히면 한 벌은 반드시 낡는다. `계약관리` 는 필터를 안 세운
-    // 자유 글 칸이라 여기 없다(다시 적을 행 값이 없다).
-    [["quote_attached", "data-f-quote"],
-     ["invoice_received", "data-f-invoice"]].forEach(function (pair) {
+    //
+    //   contract_received  `계약서 수신여부`(계약 탭) = `계약서 수신완료여부`
+    //                      (관리 스타트업 탭). **같은 칸이라 키도 하나**다.
+    //   contract_done      `계약완료여부` — 관리 스타트업 탭에만 있다.
+    //
+    // 한 자리에서 돌린다 — 규칙이 칸마다 따로 적히면 한 벌은 반드시 낡는다.
+    // `계약관리` 는 필터를 안 세운 자유 글 칸이라 여기 없다(다시 적을 행 값이
+    // 없다).
+    [["contract_received", "data-f-received"],
+     ["contract_done", "data-f-done"]].forEach(function (pair) {
       var td = tr.querySelector('[data-field="' + pair[0] + '"]');
       if (td && tr.hasAttribute(pair[1])) {
         tr.setAttribute(pair[1], td.textContent.trim());

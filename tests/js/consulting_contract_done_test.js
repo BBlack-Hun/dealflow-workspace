@@ -1,6 +1,6 @@
-// `견적서 첨부여부` · `계산서 수신여부` 칸을 눌러 O/X 를 고르면 **정말 저장되고
-// 필터에도 걸리는가.** 그리고 `계약관리` 는 자유 글로 열리는가.
-// (node tests/js/consulting_quote_invoice_test.js)
+// `계약완료여부` · `계약서 수신완료여부` 칸을 눌러 보기를 고르면 **정말
+// 저장되고 필터에도 걸리는가.** 그리고 `계약관리` 는 자유 글로 열리는가.
+// (node tests/js/consulting_contract_done_test.js)
 //
 // 이 저장소는 칸을 고쳐도 조용히 저장이 안 되는 사고를 여러 번 겪었다 —
 // pydantic 스키마에 이름을 안 적어 그냥 버려지거나(라우터의 `CompanyIn`),
@@ -10,9 +10,9 @@
 // (`consulting_contract_received_test.js` 와 같은 방식이다.)
 //
 // 여기서 막는 것은 다섯이다.
-//   1. 골라 넣을 수 있는가 — `O`·`o`·`ㅇ`·`○` 로 갈리면 두 가지뿐인 칸에서
-//      필터가 못 쓰게 된다.
-//   2. 무엇이 나가는가 — **칸 이름**(`quote_attached`·`invoice_received`)으로
+//   1. 골라 넣을 수 있는가 — 손으로 적게 두면 `무료계약완료`·`무료 계약 완료`
+//      로 갈려 두 가지뿐인 칸에서 필터가 못 쓰게 된다.
+//   2. 무엇이 나가는가 — **칸 이름**(`contract_done`·`contract_received`)으로
 //      나가야 한다.
 //   3. 고친 값이 행에 적히는가 — 안 적히면 머리글 필터가 옛 목록을 보여 준다.
 //      **두 칸이 서로의 값을 덮지 않는가**까지 본다.
@@ -28,41 +28,46 @@ const D = require("./_dom.js");
 const SRC = path.join(__dirname, "..", "..", "app", "static", "js", "consulting.js");
 const src = fs.readFileSync(SRC, "utf8");
 
+// 서버가 화면에 그리는 보기 그대로다(`routers/consulting.py` 의
+// `CONTRACT_DONE_CHOICES` → `data-choices`). 이 파일이 말을 지어내지 않게
+// 파이썬 쪽에서도 같은 값을 확인한다(`tests/test_consulting_contract_done.py`).
+const DONE = ["무료계약완료", "유료계약완료"];
+
 // --- 서버가 `관리 스타트업` 탭에 그리는 것과 같은 모양의 줄 -------------------
-function row(id, quote, invoice) {
+function row(id, done, received) {
   const mgmt = D.el("td", {
     class: "cell multi", "data-field": "management", "data-filter-key": "mgmt"
   });
   mgmt.textContent = "관리 중";
-  const q = D.el("td", {
-    class: "cell", "data-field": "quote_attached",
-    "data-filter-key": "quote", "data-choices": "O,X"
-  });
-  q.textContent = quote;
   const c = D.el("td", { class: "cell multi", "data-field": "contract_management" });
   c.textContent = "";
-  const i = D.el("td", {
-    class: "cell", "data-field": "invoice_received",
-    "data-filter-key": "invoice", "data-choices": "O,X"
+  const d = D.el("td", {
+    class: "cell", "data-field": "contract_done",
+    "data-filter-key": "done", "data-choices": DONE.join(",")
   });
-  i.textContent = invoice;
+  d.textContent = done;
+  const r = D.el("td", {
+    class: "cell", "data-field": "contract_received",
+    "data-filter-key": "received", "data-choices": "O,X"
+  });
+  r.textContent = received;
 
   return D.el("tr", {
     "data-id": String(id),
     "data-search": "",
     "data-f-region": "",
-    "data-f-quote": quote,
-    "data-f-invoice": invoice,
+    "data-f-done": done,
+    "data-f-received": received,
     "data-f-mgmt": "관리 중",
     "data-contacted": "0",
     "data-contacted-folded": "0",
     "data-contacted-prev": "0"
-  }, [mgmt, q, c, i]);
+  }, [mgmt, c, d, r]);
 }
 
 function build() {
   // 스타트업 탭이다 — `기업 관리` 는 문장이라 추려서 건다(`data-contract-sheet=0`).
-  const rows = [row(1, "", ""), row(2, "O", "X")];
+  const rows = [row(1, "", ""), row(2, "무료계약완료", "X")];
   const table = D.el("table", { id: "cs-table", "data-contract-sheet": "0" }, [
     D.el("tbody", {}, rows)
   ]);
@@ -154,17 +159,20 @@ async function choose(tr, field, label) {
   run(dom);
 
   const AXES = [
-    { field: "quote_attached", attr: "data-f-quote" },
-    { field: "invoice_received", attr: "data-f-invoice" }
+    { field: "contract_done", attr: "data-f-done",
+      choices: DONE, pick: "유료계약완료" },
+    { field: "contract_received", attr: "data-f-received",
+      choices: ["O", "X"], pick: "X" }
   ];
 
   for (const axis of AXES) {
     // --- 1. 골라 넣을 수 있는가 ---------------------------------------------
     const ui = open(dom.rows[0], axis.field);
     assert.deepStrictEqual(
-      ui.chips.map(function (c) { return c.textContent; }), ["O", "X", "비움"],
-      axis.field + ": `O`/`X` 를 골라 넣을 수 없습니다 — 손으로 적게 두면 "
-      + "`o`·`ㅇ`·`○` 로 갈립니다");
+      ui.chips.map(function (c) { return c.textContent; }),
+      axis.choices.concat(["비움"]),
+      axis.field + ": 보기를 골라 넣을 수 없습니다 — 손으로 적게 두면 같은 뜻이 "
+      + "여러 글자로 갈립니다");
 
     // 빈칸인 줄에서는 `비움` 이 지금 값이다 — 빈칸도 값 하나로 서야
     // "아직 안 정했다" 가 화면에서 읽힌다.
@@ -176,16 +184,17 @@ async function choose(tr, field, label) {
 
     // --- 2. 무엇이 나가는가 -------------------------------------------------
     sent.length = 0;
-    const picked = await choose(dom.rows[0], axis.field, "X");
+    const picked = await choose(dom.rows[0], axis.field, axis.pick);
     const body = {};
-    body[axis.field] = "X";
+    body[axis.field] = axis.pick;
     assert.deepStrictEqual(sent, [{
       url: "/api/consulting/1", method: "PATCH", body: body
     }], "칸 이름(`" + axis.field + "`)으로 저장되지 않습니다");
-    assert.strictEqual(picked.cell.textContent, "X", "고른 값이 칸에 안 남습니다");
+    assert.strictEqual(picked.cell.textContent, axis.pick,
+      "고른 값이 칸에 안 남습니다");
 
     // --- 3. 고친 값이 행에 적히는가 -----------------------------------------
-    assert.strictEqual(dom.rows[0].getAttribute(axis.attr), "X",
+    assert.strictEqual(dom.rows[0].getAttribute(axis.attr), axis.pick,
       axis.attr + " 가 다시 안 적혔습니다 — 채워 넣어도 머리글 필터는 옛 목록 "
       + "그대로입니다");
 
@@ -205,14 +214,14 @@ async function choose(tr, field, label) {
   // **두 칸이 서로를 덮지 않는가.** 규칙을 한 자리에서 돌리므로 짝을 잘못
   // 적으면 한 칸을 고쳤을 때 다른 축의 값이 같이 바뀐다 — 화면은 멀쩡한데
   // 필터만 거짓말을 한다.
-  await choose(dom.rows[1], "quote_attached", "X");
-  assert.strictEqual(dom.rows[1].getAttribute("data-f-quote"), "X");
-  assert.strictEqual(dom.rows[1].getAttribute("data-f-invoice"), "X",
-    "`계산서 수신여부` 값이 `견적서 첨부여부` 를 고치면서 바뀌었습니다");
-  await choose(dom.rows[1], "invoice_received", "O");
-  assert.strictEqual(dom.rows[1].getAttribute("data-f-quote"), "X",
-    "`견적서 첨부여부` 값이 `계산서 수신여부` 를 고치면서 바뀌었습니다");
-  assert.strictEqual(dom.rows[1].getAttribute("data-f-invoice"), "O");
+  await choose(dom.rows[1], "contract_done", "유료계약완료");
+  assert.strictEqual(dom.rows[1].getAttribute("data-f-done"), "유료계약완료");
+  assert.strictEqual(dom.rows[1].getAttribute("data-f-received"), "X",
+    "`계약서 수신완료여부` 값이 `계약완료여부` 를 고치면서 바뀌었습니다");
+  await choose(dom.rows[1], "contract_received", "O");
+  assert.strictEqual(dom.rows[1].getAttribute("data-f-done"), "유료계약완료",
+    "`계약완료여부` 값이 `계약서 수신완료여부` 를 고치면서 바뀌었습니다");
+  assert.strictEqual(dom.rows[1].getAttribute("data-f-received"), "O");
 
   // --- 5. `계약관리` 는 자유 글이다 ------------------------------------------
   //
@@ -224,22 +233,25 @@ async function choose(tr, field, label) {
     "자유 글 칸에 고를 단추가 섰습니다 — 사람이 적을 자리가 없어집니다");
   assert.strictEqual(free.input.tag, "textarea",
     "여러 줄로 안 열립니다 — 엔터가 저장이 되어 줄을 나눌 수가 없습니다");
-  free.input.value = "무료계약 완료\n유료 전환 논의 중";
+  free.input.value = "무료로 시작.\n유료 전환 논의 중";
   free.input.fire("blur", { target: free.input });
   await settle();
   assert.deepStrictEqual(sent, [{
     url: "/api/consulting/1", method: "PATCH",
-    body: { contract_management: "무료계약 완료\n유료 전환 논의 중" }
+    body: { contract_management: "무료로 시작.\n유료 전환 논의 중" }
   }], "칸 이름(`contract_management`)으로 저장되지 않습니다");
   // 필터를 안 세운 칸이라 행에 값이 새로 생기면 안 된다 — 아무 머리글도 안
   // 보는 죽은 속성이 된다.
   assert.ok(!dom.rows[0].hasAttribute("data-f-contract_management"));
   assert.ok(!dom.rows[0].hasAttribute("data-f-contract"));
   // 검색은 따라와야 한다(서버가 그리는 `data-search` 와 같은 재료다).
-  assert.ok(dom.rows[0].getAttribute("data-search").indexOf("무료계약 완료") >= 0,
+  assert.ok(dom.rows[0].getAttribute("data-search").indexOf("유료 전환 논의 중") >= 0,
     "검색이 새 값을 못 봅니다");
 
   // --- 6. 그 칸이 없는 표에는 값을 새로 만들지 않는다 ------------------------
+  //
+  // `계약서 수신완료여부` 는 두 탭에 서지만 나머지 탭에는 없고,
+  // `계약완료여부` 는 `관리 스타트업` 탭에만 있다.
   const other = build();
   other.rows.forEach(function (tr) {
     AXES.forEach(function (axis) {
@@ -263,5 +275,5 @@ async function choose(tr, field, label) {
       "그 칸이 없는 표에 `" + axis.attr + "` 를 새로 만들었습니다");
   });
 
-  console.log("consulting_quote_invoice_test OK");
+  console.log("consulting_contract_done_test OK");
 })().catch(function (e) { console.error(e); process.exit(1); });

@@ -863,10 +863,22 @@ class ConsultingCompany(TimestampMixin, Base):
     # 골라 볼 수 있으므로(`static/js/filters.js` 의 `EMPTY`) 미정인 줄을 찾는
     # 길도 막히지 않는다.
     #
-    # 다른 탭에서는 비어 있다. 계약서는 계약 줄에만 있는 개념이라 화면도 계약
-    # 탭에서만 이 칸을 세운다(`routers/consulting.py` 의 `CONTRACT_COLUMNS`).
+    # **두 탭이 이 한 칸을 함께 쓴다.** `월간 계약 업무현황표` 에서는
+    # `계약서 수신여부`, `관리 스타트업` 에서는 `계약서 수신완료여부` 라는
+    # 이름으로 선다(`routers/consulting.py` 의 `CONTRACT_COLUMNS` ·
+    # `STARTUP_COLUMNS`). 묻는 사실이 **같아서** 칸을 새로 만들지 않았다 —
+    # 계약서가 왔는가, 하나뿐인 물음이다. 뜻이 같은데 칸을 둘로 두면 같은
+    # 기업의 같은 사실이 두 군데에 갈려 어느 쪽이 맞는지 알 수 없게 된다(이
+    # 저장소가 되풀이해 겪은 유형이다).
+    #
+    # 탭마다 이름이 다른 것은 이 표에서 이미 하는 일이다 — 같은 `region` 이
+    # 한 탭에서는 `지역`, 다른 탭에서는 `월` 로 서고 `meeting_at` 도 그렇다.
+    # 이름은 탭이 정하고 담기는 칸은 하나다.
+    #
+    # 나머지 탭(`경영본부 전달 기업` · 사람이 시트를 올려 만든 탭)에서는 비어
+    # 있고 화면도 이 칸을 안 세운다.
     contract_received: Mapped[Optional[str]] = mapped_column(
-        String, nullable=True)                                                 # 계약서 수신여부
+        String, nullable=True)                                                 # 계약서 수신(완료)여부
     # 투자사에 이 기업을 어떻게 소개할지. **메모처럼 쓰는 긴 글**이라 `Text` 다
     # (`management` · `notes` 와 같다). 줄바꿈도 적힌 그대로 남는다.
     #
@@ -880,32 +892,49 @@ class ConsultingCompany(TimestampMixin, Base):
     # 쓰는 말이라 화면도 그 탭에서만 이 칸을 세운다
     # (`routers/consulting.py` 의 `STARTUP_COLUMNS`).
     deal_pitch: Mapped[Optional[str]] = mapped_column(Text, nullable=True)     # 딜 소개문구
-    # 견적서를 보냈는가 — `O` / `X`. **빈칸은 `아직 안 정함`이다**
-    # (바로 위 `contract_received` 와 같은 뜻·같은 모양이다). 이미 들어 있는
-    # 줄을 `X` 로 채우지 않는 이유도 같다 — 아무도 확인한 적 없는 사실이다.
-    quote_attached: Mapped[Optional[str]] = mapped_column(
-        String, nullable=True)                                                 # 견적서 첨부여부
     # 계약이 어떻게 되고 있는가. **보기를 정해 두지 않은 자유 글**이라 `Text` 다.
     #
-    # 옆 두 칸은 이름이 `~여부` 로 끝나고 값이 `O`/`X` 두 가지인데, 이 칸만
-    # `~관리` 다. 이 표에서 `~관리` 로 끝나는 칸은 이미 하나 있고
-    # (`management` = `기업 관리`) 그것도 자유 문장이다 — 시트를 쓰는 사람이
-    # 붙인 이름이 값의 모양을 말하고 있어서 그 결을 그대로 따른다.
+    # 이름이 `~여부` 가 아니라 `~관리` 로 끝나는 것이 그 표시다. 이 표에서
+    # `~관리` 로 끝나는 칸은 이미 하나 있고(`management` = `기업 관리`) 그것도
+    # 문단이 들어오는 자유 문장이다 — 시트를 쓰는 사람이 붙인 이름이 값의
+    # 모양을 말하고 있어서 그 결을 그대로 따른다.
     #
-    # `IrCompany.contract_status`(`무료계약완료`·`유료계약완료`) 처럼 보기를
-    # 세울 수도 있었지만, 사용자가 무엇을 담을 칸인지 안 적었다. 보기를 잘못
-    # 정해 두면 **사람이 적을 자리가 없어진다** — 자유 글로 두면 나중에 값이
-    # 몇 가지로 모이는 것이 보일 때 보기를 세우면 그만이고, 그때는 이미
-    # 적힌 값이 근거가 된다. 반대 방향은 되돌리기가 어렵다.
+    # 보기가 필요한 값은 바로 옆 `contract_done` 이 받는다. 이 칸에 보기를
+    # 세우면 **사람이 적을 자리가 없어진다** — 그 자리가 따로 생겼으므로
+    # 여기는 계속 자유 글이다(0065 참고).
     #
     # **어떤 판정에도 안 쓴다.** 칩·KPI 는 `기업 관리` 한 갈래만 본다
     # (`services/consulting_status.py`) — `계약`·`관리` 라는 낱말이 이 칸에
     # 들어 있다는 이유로 줄이 엉뚱한 갈래에 걸리면 안 된다.
     contract_management: Mapped[Optional[str]] = mapped_column(
         Text, nullable=True)                                                   # 계약관리
-    # 계산서를 받았는가 — `O` / `X`. 빈칸은 `아직 안 정함` 이다(위와 같다).
-    invoice_received: Mapped[Optional[str]] = mapped_column(
-        String, nullable=True)                                                 # 계산서 수신여부
+    # 계약이 **끝났는가, 어느 쪽으로** — `무료계약완료` / `유료계약완료`.
+    # **빈칸은 `아직 안 정함`이다**(위 `contract_received` 와 같다). 아직 안
+    # 정한 기업이 대부분이라 기본값을 두지 않는다 — 둘 중 하나로 채우면 앱이
+    # 아무도 확인한 적 없는 사실을 단정하는 것이 된다(0047·0048·0049·0065 가
+    # 같은 이유로 backfill 을 안 했다).
+    #
+    # **화면에 보이는 말이 곧 저장되는 값이다.** 이 표의 다른 고르는 칸
+    # (`O`/`X`)과 같은 방식이고, 이 표의 편집기는 칸에 보이는 글자를 그대로
+    # 보낸다(`static/js/consulting.js`) — 말과 값을 갈라 두면 표가 보내는
+    # 글자가 어느 값에도 안 맞아 조용히 안 저장되는 자리가 생긴다
+    # (`routers/companies.py` 의 `CONTRACT_FROM_LABEL` 이 그 사고다).
+    #
+    # **`IrCompany.contract_status` 와는 다른 칸이다.** 저쪽은 IR 기업 현황의
+    # 기업 줄(`ir_companies`)에 붙고 이쪽은 컨설턴트 표의 줄
+    # (`consulting_companies`)에 붙는다. 두 표를 잇는 열쇠가 없어서(기업명이
+    # 같다는 보장도 없다) 값을 한쪽에서 가져올 수 없다 — 같은 기업의 계약을
+    # 두 화면에서 각자 적는 셈인 것은 맞지만, 그것을 하나로 만드는 것은 이
+    # 요청의 범위 밖이다. **말만은 한 곳에서 가져온다** —
+    # `routers/consulting.py` 의 `CONTRACT_DONE_CHOICES` 가
+    # `routers/companies.CONTRACT_LABELS` 에서 뽑는다. 한쪽에서 글자를 고치면
+    # 다른 쪽도 같이 바뀐다.
+    #
+    # `관리 스타트업` 탭에만 값이 있다(`routers/consulting.py` 의
+    # `STARTUP_COLUMNS`). **어떤 판정에도 안 쓴다** — 칩·KPI 는 `기업 관리`
+    # 한 갈래만 본다.
+    contract_done: Mapped[Optional[str]] = mapped_column(
+        String, nullable=True)                                                 # 계약완료여부
     # 나누기 **전의 한 줄**. 지우지 않는다 — 나눈 결과가 틀렸을 때 여기서 다시
     # 나눌 수 있어야 하고, 원본 시트와 글자 그대로 대조할 수 있어야 한다.
     source_line: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
