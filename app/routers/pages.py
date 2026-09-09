@@ -20,6 +20,7 @@ from ..ui import MENU, base_ctx as _base_ctx
 from .companies import BLOCKED_CONTRACT
 from .companies import blocked_reason as company_blocked_reason
 from .contacts import contact_rows
+from .deals import MODE_DEAL, MODE_TITLES
 from .sourcing import buckets as sourcing_bucket_rows
 from .sourcing import rows_of as sourcing_rows
 
@@ -144,9 +145,21 @@ def deals_page(
     # `09/02` 가 채워져, 오늘 만드는 회차 이름에 어제가 적혔다. 규칙과 그 예외
     # (회차일이 아직 안 왔으면 회차 기준일)는 `cadence.default_batch_title` 한 곳에
     # 있다 — 화면 다른 곳의 '다음 발송일'은 그대로 다음 회차일이다(여기와 다른 질문).
+    #
+    # **정규 발송(딜 소개)만 주차를 단다.** 리마인드·미팅 요청은 회차에 매인
+    # 것이 아니라, 주차 대신 무엇을 보내는지가 들어간다(`09/09 (리마인드)`).
+    # 방식마다 한 벌씩 미리 만들어 화면에 실어 준다 — 탭을 누르면 회차명도
+    # 따라 바뀌어야 하는데(`deals.js`), 그 계산을 JS 에서 또 하면 회차일·주차
+    # 규칙이 두 벌이 된다. 괄호 안 말은 탭 이름 그대로다(`MODE_TITLES`).
+    batch_titles = {
+        mode: (cadence.default_batch_title(db) if mode == MODE_DEAL
+               else cadence.default_batch_title(db, label=label))
+        for mode, label in MODE_TITLES.items()
+    }
     ctx.update({
         "companies": companies,
-        "default_batch_title": cadence.default_batch_title(db),
+        "default_batch_title": batch_titles[MODE_DEAL],
+        "batch_titles": batch_titles,
         "history": history,
         "recent_count": sum(1 for h in history.values() if h["recent"]),
         "recent_days": deal_history.RECENT_DAYS,
