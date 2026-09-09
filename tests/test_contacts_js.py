@@ -14,6 +14,7 @@ import pytest
 
 OPEN_TEST = Path(__file__).resolve().parent / "js" / "contacts_open_test.js"
 TRANSFER_TEST = Path(__file__).resolve().parent / "js" / "contact_transfer_test.js"
+SORT_TEST = Path(__file__).resolve().parent / "js" / "contacts_sort_test.js"
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치 — 브라우저 로직 테스트 생략")
@@ -52,5 +53,27 @@ def test_transfer_confirm_names_who_goes_where():
     node = shutil.which("node")
     result = subprocess.run(
         [node, str(TRANSFER_TEST)], capture_output=True, text=True, timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치 — 브라우저 로직 테스트 생략")
+def test_이름_머리글을_눌러_정렬하고_NO_를_다시_매기는가():
+    """투자사 관리 현황을 **이름으로 세운다** — 그리고 세운 뒤에 `NO` 를 다시 매긴다.
+
+    세우는 일 자체는 주간 업무가 쓰던 부품이 한다(`table_sort.js`) — 화면마다
+    정렬기를 새로 만들면 "빈 값은 어디로 가나" 같은 판단이 두 벌이 되어 한쪽만
+    낡는다. 그래서 여기서 보는 것은 **그 부품이 이 표에 물렸는가**와, 이 화면에만
+    있는 두 가지다.
+
+    · `NO` 는 보이는 것 기준 1,2,3… 이라 **차례가 곧 번호**다. 줄을 세우고 번호를
+      안 다시 매기면 정렬한 표의 번호가 `3,5,1,4,2` 로 남아 목록을 셀 수가 없다.
+    · 검색·필터를 걸어 둔 채로 머리글을 눌렀을 때 감춰 둔 줄이 되살아나면,
+      세우는 순간 걸어 둔 조건이 풀린다.
+
+    로컬에서는 `node tests/js/contacts_sort_test.js` 로도 돈다.
+    """
+    result = subprocess.run(
+        [shutil.which("node"), str(SORT_TEST)], capture_output=True, text=True, timeout=60,
     )
     assert result.returncode == 0, result.stdout + result.stderr
