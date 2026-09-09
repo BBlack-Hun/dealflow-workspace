@@ -69,6 +69,10 @@ NOTES = [
     # (`contact_columns.STARTUP_LAYOUT` 의 같은 자리 주석 · 아래 `원본NO`).
     ("견적서 첨부", "quote_attached"),
     ("계약여부", "contract"),
+    # **시트 머리글은 `계산서 수신` 그대로다.** 화면 이름만 `계약서 수신여부`
+    # 로 바뀌었고(`contact_columns.STARTUP_LAYOUT`), 저장 자리와 시트 머리글은
+    # 안 건드렸다 — 여기를 화면 이름에 맞춰 고치면 원본 시트의 그 열을 못 찾아
+    # 값이 통째로 안 들어온다.
     ("계산서 수신", "invoice_received"),
     ("성공보수율", "success_fee"),
     # 담당자 워크북에만 있는 두 칸. **여기 적어 두는 이유는 월별 칸이 아니어서다.**
