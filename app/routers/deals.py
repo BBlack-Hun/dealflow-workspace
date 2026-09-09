@@ -15,6 +15,7 @@ from ..db import get_db
 from ..deps import get_current_user, now_iso
 from ..models import (
     SEND_KINDS,
+    STARTUP_SEND_KIND,
     DealBatch,
     DealBatchCompany,
     IrCompany,
@@ -27,8 +28,9 @@ from ..models import (
 )
 from ..services import mail_sender, mailer, matcher
 from ..services import message_composer as mc
-from ..services import (deal_numbers, deal_queue, ir_attach, sheet_owner,
-                        sourcing_link, sourcing_msg, template_pick)
+from ..services import (deal_numbers, deal_queue, ir_attach, ir_kakao,
+                        ir_monthly, sheet_owner, sourcing_link, sourcing_msg,
+                        startup_send, template_pick)
 from ..services.message_composer import MAX_COMPANIES_PER_SEND
 
 router = APIRouter(prefix="/api/deals", tags=["deals"])
@@ -100,6 +102,15 @@ MODE_REVIEW = "review"      # 미팅 후기 — 미팅 열흘 뒤 결과 문의
 # 딜 소싱 제안 — 받는 사람이 다른 명단(딜 소싱)에 있고, 부탁하는 것도 다르다.
 # 우리 딜을 보여 주는 게 아니라 **당신이 뺀 딜을 달라**고 청한다.
 MODE_SOURCING = "sourcing"
+# 스타트업 월간 발송 — 받는 사람이 **투자사가 아니라 스타트업 대표**다.
+#
+# 앞의 것들과 다른 점이 셋이다.
+#   · 받는 줄이 `ir_companies` 다(사람 표가 아니라 기업 표).
+#   · 문구를 여기서 짓지 않는다 — `services/ir_kakao.py` 하나가 짓는다.
+#     그래서 `FOLLOW_UP_MODES` 에도 `MODE_TEMPLATE_KIND` 에도 줄이 없다
+#     (머리말 문구틀은 `ir_kakao.KIND` 가 안다).
+#   · **정해진 한 계정만** 쓸 수 있다(`services/startup_send.may_send`).
+MODE_STARTUP = "startup"
 
 # 딜소개 말고는 전부 **기업 목록 없이 문구만** 나간다.
 # 이미 목록을 받은 사람에게 같은 목록을 다시 밀어 넣는 것은 후속이 아니라 재발송이다.
@@ -154,6 +165,7 @@ MODE_TITLES = {
     MODE_IR: "IR 자료 전달",
     MODE_REVIEW: "미팅 후기",
     MODE_SOURCING: "딜 소싱 제안",
+    MODE_STARTUP: "스타트업 월간 발송",
 }
 MODE_TITLES[MODE_DEAL] = "딜 소개"
 
@@ -272,8 +284,13 @@ def _apply_test_room(contact, text: str, linked: Optional[dict] = None) -> tuple
     """
     if not config.TEST_ROOM:
         return _room_of(contact, linked or {}), text
-    who = f"{contact.name} {contact.title or ''}".strip()
-    firm = f" / {contact.firm}" if contact.firm else ""
+    # **직함도 투자사도 없는 줄이 지난다.** 스타트업 월간 발송의 상대는 기업
+    # 줄(`IrCompany`)이라 그 두 칸이 아예 없다 — 점으로 읽으면 여기서 터지고,
+    # 터지는 자리가 하필 **시험방으로 돌릴 때**라 실방으로 나갈 때는 멀쩡하다.
+    # 시험이 안 되는 안전장치는 없는 것과 같으므로 없는 칸을 빈 값으로 읽는다.
+    who = f"{contact.name} {getattr(contact, 'title', '') or ''}".strip()
+    firm_name = getattr(contact, "firm", "") or ""
+    firm = f" / {firm_name}" if firm_name else ""
     banner = (f"[테스트 발송 → {who}{firm}]\n"
               f"원래 방: {_room_of(contact, linked or {})}\n\n")
     return config.TEST_ROOM, banner + text
@@ -392,7 +409,13 @@ def _load_recipients(db: Session, user: User, mode: str, ids: List[int]) -> List
     딜 소싱만 다른 표(`sourcing_contacts`)에서 온다. 소싱 명단은 스타트업
     관리처럼 **팀 공용**이라 담당자로 거르지 않는다 — 명단 자체가 하나다.
     """
-    if mode == MODE_SOURCING:
+    if mode == MODE_STARTUP:
+        # 받는 줄이 **기업**이다. 고를 수 있는 기업을 정하는 자리는
+        # `ir_monthly.contracted` 하나다 — 문서·보고·카톡 세 화면이 이미 그
+        # 함수를 지난다. 여기서 조건을 다시 적으면 화면에는 안 뜨는 기업에게
+        # 발송만 나가는 날이 온다.
+        rows = [c for c in ir_monthly.contracted(db) if c.id in set(ids)]
+    elif mode == MODE_SOURCING:
         rows = db.execute(
             select(SourcingContact).where(SourcingContact.id.in_(ids))
         ).scalars().all()
@@ -450,6 +473,13 @@ class SendRequest(BaseModel):
     # 발송 프로그램이 집어가지 않는다(`agent_api.poll` 은 `queued` 만 고른다).
     # 사람이 진행 화면에서 [발송 시작] 을 눌러야 `queued` 가 된다.
     #
+    # 어느 달치인가 — `2026-09`. **스타트업 월간 발송에서만 쓴다.**
+    #
+    # 다른 방식은 달을 모른다(딜소개는 오늘 고른 기업이 전부다). 이 발송만
+    # 글의 내용이 달로 정해진다 — `7월 말까지 … 요청한투자사 리스트` 의 그
+    # 달이다. 화면이 고른 달을 그대로 실어 보내지 않으면, 화면에서 8월을 보고
+    # 눌렀는데 9월치가 나가는 일이 생긴다.
+    month: str = ""
     # 발송 화면에서는 오지 않는 값이다(기본 거짓 — 지금까지 그대로 바로 나간다).
     # 쓰는 곳은 결과 문의 대기 목록을 **미리 세워 두는** 자리다
     # (`services/auto_send.py`). 거기서 만들고 나서 상태를 고치는 방법도 있지만,
@@ -491,6 +521,16 @@ def preview(
     # 아무도 안 골랐으면 **기본 문구**를 보여 준다. 문구를 확인하려고
     # 아무나 한 명 체크했다가 그대로 발송을 누르는 일이 있었다.
     sample = not req.contact_ids
+    # 스타트업 월간 발송은 **여기서 미리 보지 않는다.** 그 글을 짓는 자리는
+    # `ir_kakao` 하나이고, 보여 주는 화면도 따로 있다(`/deals/startup-ir`).
+    # 이 길로 들여보내면 `_compose_for_contact` 가 기업 id 를 투자사 담당자 id 로
+    # 알고 딜소개 문구를 지어 내놓는다 — 실제로 나갈 글과 아무 상관이 없는
+    # 미리보기라, 그것을 보고 [발송] 을 누르는 쪽이 훨씬 위험하다.
+    if req.mode == MODE_STARTUP:
+        if not startup_send.may_send(db, user):
+            raise HTTPException(status_code=404, detail="없는 자리입니다")
+        raise HTTPException(status_code=400,
+                            detail=f"{startup_send.LABEL} 화면에서 보세요")
     if (not sample and req.mode in MODES_WITH_COMPANIES
             and not (1 <= len(req.company_ids) <= MAX_COMPANIES_PER_SEND)):
         raise HTTPException(
@@ -622,6 +662,29 @@ def create_send_list(
     if not req.contact_ids:
         raise HTTPException(status_code=400, detail="대상 담당자를 1명 이상 선택하세요")
 
+    # ── 스타트업 월간 발송은 **정해진 한 계정만** ──────────────────────────
+    #
+    # 화면을 안 보여 주는 것만으로는 부족하다 — 주소로 이 함수까지 곧장 찌를 수
+    # 있고, 그 한 번이 스타트업 대표 카톡방을 여는 요청이다. 막는 판정은 메뉴를
+    # 그리는 자리와 **같은 함수**를 읽는다(`startup_send.may_send`).
+    #
+    # 없는 것처럼 답한다(404). 403 은 "그런 자리가 있는데 너는 안 된다" 라
+    # 이 계정으로 쓸 수 없는 기능의 존재를 알려 준다.
+    if req.mode == MODE_STARTUP:
+        if not startup_send.may_send(db, user):
+            raise HTTPException(status_code=404, detail="없는 자리입니다")
+        # 달을 짐작하지 않는다. 못 읽는 값이면 **이번 달로 대신 보내지 않는다** —
+        # 글에 `7월 말까지` 라고 적혀 나가는 자리라, 짐작이 틀리면 그 거짓말이
+        # 그대로 대표에게 간다.
+        if not ir_monthly.is_month(req.month):
+            raise HTTPException(status_code=400,
+                                detail="어느 달치인지가 없습니다 — 달을 고르세요")
+        # 메일로는 나가지 않는다. 받는 곳이 **카톡방**이고, 앱이 대표 메일
+        # 주소를 이 발송의 상대로 확인해 준 적이 없다(`ir_kakao.contact_of`).
+        if req.channel == "email":
+            raise HTTPException(status_code=400,
+                                detail="스타트업 월간 발송은 카톡으로만 나갑니다")
+
     by_email = req.channel == "email"
     if by_email and not mailer.is_configured():
         raise HTTPException(
@@ -675,7 +738,10 @@ def create_send_list(
     #
     # 조용히 빼지 않고 **말하고 멈춘다.** 골라 둔 사람이 소리 없이 사라지면
     # 몇 명에게 나갔는지 아무도 모른다(빈 문구를 막는 것과 같은 이유).
-    if not sourcing:
+    # 멈춤 표시는 **투자사 명단의 칸**이다(`sheet_owner`). 소싱 명단에도
+    # 스타트업 기업 줄에도 그 칸이 없다 — 없는 칸을 물으면 늘 거짓이라
+    # 아무것도 막지 못하면서 판정만 하나 늘어난다.
+    if req.mode not in (MODE_SOURCING, MODE_STARTUP):
         held = [c for c in contacts if sheet_owner.is_paused(c)]
         if held:
             raise HTTPException(
@@ -717,7 +783,11 @@ def create_send_list(
         user_id=user.id,
         # IR 자료 전달은 딜소개와 다른 일이다. 종류를 남겨야 후속을 멈추고
         # 요청을 '전달함'으로 닫을 수 있다.
-        kind=("ir_delivery" if req.mode == MODE_IR
+        # 스타트업 월간 발송은 **`SEND_KINDS` 밖의 종류**다 — 받는 쪽이
+        # 투자사가 아니라 스타트업 대표라, 딜소개 실적에 섞이면 안 된다
+        # (까닭은 `models.STARTUP_SEND_KIND`).
+        kind=(STARTUP_SEND_KIND if req.mode == MODE_STARTUP
+              else "ir_delivery" if req.mode == MODE_IR
               else "sourcing_intro" if sourcing else "deal_intro"),
         batch_id=batch.id,
         # `draft` 면 발송기가 집어가지 않는다 — 사람이 누를 때까지 기다린다.
@@ -743,6 +813,27 @@ def create_send_list(
             # 사람이 고친 문구가 최우선. 고친 것은 통째로 한 통이다 —
             # 어디서 끊을지는 고친 사람만 안다.
             text, parts = overrides[contact.id], []
+        elif req.mode == MODE_STARTUP:
+            # ── 글을 짓는 자리는 `ir_kakao` **하나다** ★ ──────────────────
+            #
+            # 스타트업 화면(`/startup/ir-kakao/{id}`)도 `/setup` 의 시험 자리도
+            # 같은 함수를 지난다. 여기서 한 줄이라도 이어 붙이면 사람이 화면에서
+            # 보고 고른 글과 대표가 받는 글이 갈리고, 그 차이는 나간 뒤에야
+            # 드러난다. 가리기(`ir_mask`)와 세기(`ir_monthly`)도 그 함수 안에서
+            # 지난다 — 여기에 이름이 지나가는 자리 자체가 없다.
+            #
+            # `user` 는 머리말 문구틀을 고르는 데 쓴다(고른 것 > 내 것 > 팀 것).
+            composed = ir_kakao.for_company(db, user, contact.id, req.month)
+            if composed is None:
+                # **조용히 건너뛰지 않는다.** 빈 목록을 보내면 대표는 우리가
+                # 아무것도 안 한 줄로 읽고, 소리 없이 빠지면 몇 곳에 나갔는지
+                # 아무도 모른다 — 방 이름이 없을 때와 같은 자리에서 같은
+                # 방식으로 막는다: 말하고 멈춘다.
+                raise HTTPException(
+                    status_code=400,
+                    detail=(f"'{contact.name}' {req.month} 말까지 요청한 투자사가 "
+                            "없습니다 — 발송 대상에서 제외하세요"))
+            text, parts = composed.text, list(composed.parts)
         else:
             composed = _compose_for_contact(db, user, contact, companies,
                                             req.opening_template_id,
@@ -764,11 +855,14 @@ def create_send_list(
             parts = _apply_test_room_to_parts(contact, parts, linked)
             subject = None
 
+        startup = req.mode == MODE_STARTUP
         db.add(SendItem(
             job_id=job.id,
-            # 소싱 대상은 다른 표에 있다 — 둘 중 하나만 채운다.
-            contact_id=None if sourcing else contact.id,
+            # 받는 줄이 세 표에 나뉜다 — **셋 중 하나만** 채운다.
+            # 투자사 담당자 / 딜 소싱 명단 / 스타트업 기업.
+            contact_id=None if (sourcing or startup) else contact.id,
             sourcing_contact_id=contact.id if sourcing else None,
+            ir_company_id=contact.id if startup else None,
             stage=(FOLLOW_UP_MODES[req.mode][2] if req.mode in FOLLOW_UP_MODES
                    else mc.STAGE_DAY1),
             channel="email" if by_email else "kakao",

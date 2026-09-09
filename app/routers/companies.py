@@ -383,6 +383,9 @@ def company_rows(db: Session, tab: str = "") -> List[dict]:
             "received_at": c.received_at or "",
             "contact_phone": c.contact_phone or "",
             "contact_email": c.contact_email or "",
+            # 대표와의 카톡방 제목. 스타트업 월간 발송이 이 방으로 나간다
+            # (`services/startup_send.py`) — 비면 그 기업은 못 보낸다.
+            "kakao_room_name": c.kakao_room_name or "",
             "revenue_2022": c.revenue_2022 or "",
             "revenue_2023": c.revenue_2023 or "",
             "revenue_2024": c.revenue_2024 or "",
@@ -581,6 +584,7 @@ class CompanyIn(BaseModel):
     contact_name: Optional[str] = None
     contact_phone: Optional[str] = None
     contact_email: Optional[str] = None
+    kakao_room_name: Optional[str] = None
     revenue_2022: Optional[str] = None
     revenue_2023: Optional[str] = None
     revenue_2024: Optional[str] = None

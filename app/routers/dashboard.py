@@ -907,6 +907,59 @@ def save_auto_send(
     return RedirectResponse(f"/team?msg={note}", status_code=303)
 
 
+@router.post("/team/startup-send", include_in_schema=False)
+def save_startup_send(
+    enabled: str = Form(""),
+    user_id: int = Form(0),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """**스타트업 월간 발송을 누가 쓸 수 있는가** — 그 한 가지를 정하는 자리.
+
+    ## 왜 팀 현황인가
+
+    바로 위 `save_auto_send` 와 같은 까닭이다 — 짧게: `/setup` 은 본인이 자기
+    PC 를 손보는 화면이라 **누구든 스스로 켤 수 있다.** 여기 두면 켜는 사람이
+    관리자 하나다(`admin_only`, 옆칸 둘과 같은 문).
+
+    ## 여기서 켜도 카톡은 나가지 않는다
+
+    켜지는 것은 **그 계정의 딜 제안 관리에 메뉴 하나**다. 그 사람이 달을 고르고
+    대기 목록을 세운 뒤 진행 화면에서 [발송 시작] 을 눌러야 나간다.
+
+    ## 이름을 코드에 적지 않는다
+
+    이 발송은 **정해진 한 PC 의 카톡**에서만 나간다. 그 한 사람을 코드에 적으면
+    담당이 바뀔 때마다 배포해야 하고, 이 저장소는 공개다.
+    """
+    admin_only(user)
+    from urllib.parse import quote
+
+    from ..services import startup_send
+
+    member = db.get(User, user_id) if user_id else None
+    want_on = enabled == "on"
+
+    # 고르는 계정은 **딜소개를 보내는 살아 있는 계정**이어야 한다. 정지된
+    # 계정이나 투자컨설턴트(발송 프로그램이 붙은 PC 가 없다)를 고르면 메뉴만
+    # 서고 누를 사람이 없다 — 옆칸과 같은 조건이다.
+    if want_on and (member is None or not member.is_active
+                    or not deps.sends_deals(member)):
+        return RedirectResponse(
+            "/team?msg=이+메뉴를+켜려면+보내는+계정을+고르세요", status_code=303)
+
+    setting = startup_send.save(db, enabled=want_on,
+                                user_id=member.id if member else None)
+    label = startup_send.LABEL
+    if not startup_send.is_on(setting):
+        return RedirectResponse(
+            f"/team?msg={quote(label)}+메뉴를+껐습니다+—+아무+계정에도+보이지+않습니다",
+            status_code=303)
+    return RedirectResponse(
+        f"/team?msg={quote(label)}+메뉴+켜짐+—+{quote(member.name)}+계정에만+보입니다",
+        status_code=303)
+
+
 @router.post("/team/members/{member_id}/reset-password", include_in_schema=False)
 def reset_member_password(
     member_id: int,

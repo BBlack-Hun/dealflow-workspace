@@ -576,6 +576,16 @@
     <label class="field"><span>연락처</span>
       <input type="tel" id="f-contact_phone" placeholder="010-0000-0000"></label>
     <label class="field"><span>이메일</span><input type="email" id="f-contact_email"></label>
+    {#
+      대표와의 **카톡방 제목**. 스타트업 월간 발송이 이 방으로 나간다.
+
+      **글자까지 정확해야 한다** — 발송기는 카톡 목록에서 제목이 똑같은 방을
+      찾고, 한 글자만 달라도 못 찾는다. 그래서 안내에 "그대로 붙여 넣으라" 고
+      적는다(투자사 담당자 방 이름과 같은 규칙이다).
+    #}
+    <label class="field wide"><span>대표 카톡방</span>
+      <input type="text" id="f-kakao_room_name"
+             placeholder="카톡에 보이는 방 제목을 그대로 (비면 월간 발송 대상에서 빠집니다)"></label>
   </div>
 
   {# ── 연도별 매출 ───────────────────────────────────────────────────────

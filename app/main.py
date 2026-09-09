@@ -13,7 +13,7 @@ from .routers import templates_crud
 from .routers import setup as setup_router
 from .routers import (agent_api, companies, consulting, contacts, dashboard,
                       data_io, deals, followups, ir, jobs, llm_brief, pages,
-                      sourcing, startup)
+                      sourcing, startup, startup_send)
 
 
 def create_app() -> FastAPI:
@@ -62,6 +62,7 @@ def create_app() -> FastAPI:
     app.include_router(ir.router)
     app.include_router(sourcing.router)
     app.include_router(startup.router)
+    app.include_router(startup_send.router)
     app.include_router(llm_brief.router)
     # /setup, /download 는 pages 의 캐치올(/{placeholder}) 보다 먼저 등록해야 가려지지 않는다.
     # `/startup` 도 마찬가지다 — 뒤에 두면 캐치올이 먼저 잡아 `준비 중` 안내만 뜬다.
