@@ -37,11 +37,11 @@ LIST = "샘플 스타트업(9)"
 OTHER = "샘플 투자사 20"
 
 # 시트 머리글 그대로. 달마다 세 칸씩 늘어나는 부분은 따로 둔다.
-# 계약까지 가는 세 칸(견적서 → 계약 → 계산서)은 **이메일 바로 뒤에 나란히**
+# 계약까지 가는 세 칸(견적서 → 계약 → 계약서)은 **이메일 바로 뒤에 나란히**
 # 선다. 월별 칸 뒤에 두면 달이 쌓일수록 표 끝으로 밀려, 명단을 훑을 때 가로로
 # 밀어야 닿는 자리가 된다.
 HEAD = ["NO", "기업명", "성함", "연락처", "이메일",
-        "견적서 첨부여부", "계약여부", "계산서 수신여부"]
+        "견적서 첨부여부", "계약여부", "계약서 수신여부"]
 
 # **이번 달**로 만든다. 월별 칸은 이제 화면을 열 때 저절로 생기므로
 # (`app/services/monthly_columns.py`), 지난달 이름으로 밑자리를 깔면 검사가
@@ -392,18 +392,18 @@ def test_금액과_비율은_적힌_그대로_남는다(sheets, db):
 
 # ── 2-b. 계약까지 가는 세 칸 ────────────────────────────────────────────────
 
-def test_계약여부_앞뒤에_견적서와_계산서_칸이_선다(sheets):
+def test_계약여부_앞뒤에_견적서와_계약서_칸이_선다(sheets):
     """셋은 **일이 일어나는 순서대로 붙어** 서야 한다.
 
-    견적서를 보냈는가 → 계약했는가 → 계산서를 받았는가. 떼어 놓으면 한 기업이
+    견적서를 보냈는가 → 계약했는가 → 계약서를 받았는가. 떼어 놓으면 한 기업이
     어디까지 갔는지를 표 세 군데서 모아야 한다. 그리고 셋 다 **월별 칸보다
     앞**이다 — 뒤에 두면 달이 쌓일수록 가로로 밀어야 닿는 자리로 물러난다.
     """
     head = _thead(sheets.get(_url(LIST)).text)
-    want = ["견적서 첨부여부", "계약여부", "계산서 수신여부"]
+    want = ["견적서 첨부여부", "계약여부", "계약서 수신여부"]
     at = head.index("이메일") + 1
     assert head[at:at + 3] == want, head
-    assert head.index("계산서 수신여부") < head.index(MONTHS[0]), head
+    assert head.index("계약서 수신여부") < head.index(MONTHS[0]), head
 
 
 def test_두_칸은_O_와_X_중에서_고른다(sheets, db):
@@ -436,8 +436,43 @@ def test_두_칸은_O_와_X_중에서_고른다(sheets, db):
 def test_투자사_표에는_두_칸이_서지_않는다(sheets):
     """스타트업 명단의 칸이다 — 투자사 명단 머리글은 한 칸도 안 바뀐다."""
     head = _thead(sheets.get(_url(OTHER)).text)
-    for label in ("견적서 첨부여부", "계산서 수신여부"):
+    for label in ("견적서 첨부여부", "계약서 수신여부"):
         assert label not in head, head
+
+
+def test_세_번째_칸은_계약서_수신여부로_보이고_저장_자리는_invoice_received다(sheets, db):
+    """**머리글은 `계약서 수신여부`, 저장 자리는 `invoice_received` 그대로다.**
+
+    처음 이름은 `계산서 수신여부` 였다. 사용자가 이름을 바로잡았는데, 열쇠까지
+    같이 바꾸면 이미 `notes` 에 들어 있는 `O`/`X` 가 통째로 끊긴다 — 값은
+    `notes[invoice_received]` 에 붙어 있고 열쇠가 바뀌면 화면이 못 찾는다.
+
+    그래서 여기서 둘을 함께 못 박는다: 화면에 새 이름이 나올 것, 옛 이름은
+    어디에도 안 남을 것, 그리고 그 칸에 넣은 값이 **옛 열쇠로** 되읽힐 것.
+    셋 중 하나만 어긋나도 증상이 조용하다 — 머리글만 보고는 값이 끊긴 줄
+    모른다.
+    """
+    from app.models import VcContact
+    from app.services import contact_columns as cc
+
+    body = sheets.get(_url(LIST)).text
+    head = _thead(body)
+    assert "계약서 수신여부" in head, head
+    # 옛 이름은 머리글에도 표 어디에도 안 남는다(필터 단추·수정창 포함).
+    assert not [h for h in head if "계산서" in h], head
+    assert "계산서" not in body
+
+    column = next(c for c in cc.STARTUP_LAYOUT.head
+                  if c.label == "계약서 수신여부")
+    assert column.key == "invoice_received", \
+        "이름만 바뀐 것이다 — 열쇠를 바꾸면 이미 들어 있는 값이 끊긴다"
+    assert column.source == "note"
+
+    # 값은 옛 열쇠 그대로 붙고 되읽힌다.
+    row = db.query(VcContact).filter(VcContact.source_sheet == LIST).first()
+    sheets.patch(f"/api/contacts/{row.id}", json={"notes": {"invoice_received": "O"}})
+    got = sheets.get(f"/api/contacts/{row.id}").json()["contact"]["notes"]
+    assert got["invoice_received"] == "O"
 
 
 def test_이름이_같은_IR_기업_현황의_계약_상태와_다른_칸이다():
