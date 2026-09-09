@@ -12,7 +12,11 @@
   <h1>{{ page_title }}</h1>
   <p class="muted">
     {{ page.row_label }} <b data-filter-count>{{ rows|length }} / {{ rows|length }}명</b>
-    · 행을 클릭하면 오른쪽에 상세·활동 이력이 열립니다
+    · 행을 클릭하면 오른쪽에 상세·활동 이력이 열립니다{#
+      정렬은 **투자사 명함 표에만** 붙어 있다(아래 `layout.key == 'investor'`).
+      다른 배치의 표에서도 이 줄이 뜨면, 눌러도 아무 일이 없는 머리글을
+      찾아 헤매게 된다. #}{% if layout.key == 'investor' %}
+    · <b>이름</b> 머리글을 눌러 정렬합니다{% endif %}
   </p>
 </header>
 
@@ -448,7 +452,13 @@
            시트와 나란히 놓고 대조하는 일이 잦은데, 이름이 다르면 그때마다
            "이게 그 칸인가" 를 한 번씩 멈춰서 확인해야 한다. #}
         <th class="num" style="width:34px" title="누르면 활동 이력이 열립니다">NO</th>
-        <th style="width:96px">이름</th>
+        {# **이름으로 세운다** — 머리글을 눌러 오름/내림/끔(`table_sort.js`).
+           정렬기는 주간 업무가 쓰던 것을 그대로 쓴다: 화면마다 따로 만들면
+           "빈 값은 어디로 가나" 같은 판단이 두 벌이 되어 한쪽만 낡는다.
+           세울 값은 화면 글자가 아니라 줄에 적어 둔 `data-s-name` 을 본다
+           (아래 `<tr>` 참고) — 짝이 하나라도 빠지면 머리글만 눌리고 아무 일도
+           안 일어난다. 한글 차례는 `localeCompare('ko')` 가 정한다. #}
+        <th style="width:96px" data-sort="name">이름</th>
         {# `담당자` 는 한동안 뺐던 칸이다(요청). **다시 세운 이유**는 걸 곳이
            필요해서다 — 대시보드의 `연결 담당: 미지정 1명` 이 이 칸으로 눌러
            들어온다. `filters.js` 는 **선언되지 않은 키를 통째로 버리므로**
@@ -541,7 +551,11 @@
         머리글에 선언해 두었다** — 값이 필요해지면 늘 그 순서다(칸 먼저,
         그다음 선언, 그다음 싣기. tests/test_filter_columns.py 가 이 짝을 지킨다).
       #}
+      {# `data-s-*` 는 **세울 값**이다(`data-f-*` 가 거를 값인 것과 같은 결).
+         머리글의 `data-sort="name"` 과 짝이어야 한다 — 선언만 하고 안 실으면
+         머리글이 단추로 서기만 하고 아무 줄도 안 움직인다. #}
       <tr class="data-row" data-id="{{ r.id }}" data-name="{{ r.name }}"
+          data-s-name="{{ r.name }}"
           data-f-assignee="{{ r.assignee }}"
           data-f-group="{{ r.group_name }}"
           data-f-firm="{{ r.firm }}"
@@ -737,7 +751,23 @@
 </div>
 {% endif %}
 
-{# 우측 슬라이드 상세 패널 — 표에는 요약만, 세부·수정은 여기서 #}
+{#
+  ── 우측 슬라이드 상세 패널(수정창) — 표에는 요약만, 세부·수정은 여기서 ──
+
+  **뒷막을 함께 세운다.** 창이 열려 있는 동안 표를 덮어, 표의 칸을 눌러 바로
+  고치는 길(`inline_edit.js`)이 막힌다. 그것이 이 뒷막의 목적이다:
+
+  · 겹침 — 칸 위에 뜨는 편집창(`.cell-pop`, z-60)이 이 창(z-40)보다 위에
+    그려져 최대 392px 을 덮었다. 뒷막이 있으면 그 창이 뜰 일 자체가 없다.
+  · 조용히 사라지는 값 — 같은 칸 열한 개를 이 창(폼 전체를 [저장] 때 한 번에)과
+    표(칸 하나를 누르는 즉시)가 서로 다른 시점에 저장해서, 창을 열어 둔 채
+    표에서 고치고 [저장]을 누르면 옛 값으로 되돌아갔다.
+
+  뒷막 모양은 딜 기업 DB 가 이미 쓰던 `.panel-backdrop`(z-39) 그대로다 —
+  새로 만들면 두 화면의 뒷막이 서로 다른 것이 된다.
+  누르면 **묻고 나서** 닫는다(`panel_modal.js`) — 그냥 닫으면 적던 값이 사라진다.
+#}
+<div class="panel-backdrop" id="detail-backdrop" hidden></div>
 <aside class="detail-panel" id="detail-panel" hidden>
   <div class="detail-head">
     <b id="detail-title">담당자</b>
@@ -979,6 +1009,13 @@
 <script src="{{ asset('js/inline_edit.js') }}"></script>
 <script src="{{ asset('js/pool_assign.js') }}"></script>
 <script src="{{ asset('js/filters.js') }}"></script>
+{# 정렬기는 **contacts.js 보다 먼저** 와야 한다 — 표를 세우고 NO 를 다시 매기는
+   일이 contacts.js 안에 있어서, 여기가 뒤면 `window.DealflowSort` 가 아직 없다. #}
+<script src="{{ asset('js/table_sort.js') }}"></script>
+{# 수정창을 모달로 세우는 공통 부품 — **contacts.js 보다 먼저** 와야 한다.
+   뒤에 오면 `window.PanelModal` 이 아직 없어 창이 통째로 안 붙는다.
+   딜 기업 DB(`companies.html`)도 같은 파일을 부른다. #}
+<script src="{{ asset('js/panel_modal.js') }}"></script>
 <script src="{{ asset('js/contacts.js') }}"></script>
 {# 업로드 패널을 안 세우는 화면에서는 스크립트도 부르지 않는다 — 없는 칸을
    찾다 콘솔에 오류만 남기고, 그 오류가 진짜 고장을 덮는다. #}

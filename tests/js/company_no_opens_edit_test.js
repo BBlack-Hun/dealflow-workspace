@@ -24,6 +24,8 @@ const HTML = fs.readFileSync(
   path.join(ROOT, "app", "templates", "companies.html"), "utf8");
 const src = fs.readFileSync(
   path.join(ROOT, "app", "static", "js", "companies.js"), "utf8");
+const MODAL = fs.readFileSync(
+  path.join(ROOT, "app", "static", "js", "panel_modal.js"), "utf8");
 
 // --- ⓪ 템플릿과 스크립트가 **한 벌**인가 -------------------------------------
 //
@@ -120,6 +122,9 @@ function run(dom, name) {
     }
   };
   vm.createContext(sandbox);
+  // 수정창을 모달로 세우는 공통 부품. 화면(`companies.html`)이 이것을 **먼저**
+  // 부르므로 여기서도 먼저 돌린다 — 없으면 `window.PanelModal` 이 비어 창이 안 붙는다.
+  vm.runInContext(MODAL, sandbox, { filename: "panel_modal.js" });
   vm.runInContext(src, sandbox, { filename: "companies.js" });
 }
 

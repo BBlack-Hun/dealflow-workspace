@@ -6,7 +6,6 @@
   var table = document.getElementById("co-table");
   if (!table) return;
 
-  var panel = document.getElementById("co-panel");
   var search = document.getElementById("co-search");
   var note = document.getElementById("co-note");
   var status = document.getElementById("co-status");
@@ -251,15 +250,22 @@
     }
   }
 
-  function close() {
-    panel.hidden = true;
-    document.getElementById("co-backdrop").hidden = true;
-  }
+  // 여닫는 일은 **공통 부품**이 맡는다(`panel_modal.js`) — 투자사 관리 현황의
+  // 수정창도 같은 부품을 쓴다. 여기 있던 "뒷막을 누르면 그대로 닫는다" 는
+  // 적던 값을 아무 말 없이 버리는 결함이었다: 창을 다 채워 놓고 표를 한 번
+  // 보려고 옆을 눌렀을 뿐인데 적은 것이 통째로 사라졌다. 이제는 묻는다.
+  var modal = window.PanelModal.init({
+    panel: "#co-panel",
+    backdrop: "#co-backdrop",
+    closers: ["#co-close", "#co-cancel"],
+    // 저장할 때 보내는 것과 **같은 것**을 읽는다(`collect`). 화면 글자를 따로
+    // 긁어 모으면 안 고쳐도 묻는 창이 되고, 그러면 사람은 곧 확인창을 안 읽는다.
+    snapshot: function () { return JSON.stringify(collect()); }
+  });
 
   function open(id) {
     current = id;
-    panel.hidden = false;
-    document.getElementById("co-backdrop").hidden = false;
+    modal.open();
     // 관리자가 아니면 단추 자체가 없다(companies.html 이 안 그린다).
     if (el("co-delete")) el("co-delete").hidden = !id;
     if (!id) {
@@ -269,6 +275,9 @@
       // 없는 값을 넣으면 select 가 고른 것 없는 상태가 되고, 그대로 [저장]하면
       // 빈 값이 날아가 NOT NULL 인 칸에서 저장 전체가 500 이 났다.
       fill({ contract_status: "none", summary_status: "draft" });
+      // **채운 뒤에** 기준선을 잡는다. 채우기 전 것을 기준으로 두면 창을 열자마자
+      // 고쳐진 것으로 잡혀, 아무것도 안 건드리고 닫아도 묻는다.
+      modal.mark();
       el("f-name").focus();
       return;
     }
@@ -279,6 +288,7 @@
         el("co-title").textContent = d.name;
         currentName = d.name || "";
         fill(d);
+        modal.mark();
       });
   }
 
@@ -297,12 +307,8 @@
   }
 
   el("co-add").addEventListener("click", function () { open(null); });
-  el("co-close").addEventListener("click", close);
-  el("co-cancel").addEventListener("click", close);
-  el("co-backdrop").addEventListener("click", close);
-  document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape" && !panel.hidden) close();
-  });
+  // [닫기 ✕] · [취소] · 뒷막 · Escape 는 모두 공통 부품이 맡는다 — 닫는 길이
+  // 넷인데 미저장 확인이 그중 하나에만 걸려 있으면 나머지 셋으로 값이 샌다.
 
   table.addEventListener("click", function (e) {
     if (!e.target.classList.contains("js-co-edit")) return;

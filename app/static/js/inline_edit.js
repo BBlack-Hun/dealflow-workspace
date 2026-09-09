@@ -29,6 +29,8 @@
 // 같이 들어 있던 버튼이 사라진다.
 //
 // 칸을 벗어날 때만 저장한다. 글자마다 저장하면 요청이 쏟아진다.
+// 칸 안에서 고치는 것은 입력칸을 벗어날 때(blur), **떠서 고치는 창(long·pick)은
+// 창 바깥을 눌렀을 때** 끝난다 — 창 안이면 여백이든 보기 목록이든 안 닫힌다.
 // 저장 뒤 `inline-saved` 이벤트에 서버 응답(detail.data)이 실려 온다 —
 // 다른 칸이 따라 바뀌는 표(기업의 '소개 가능')는 그걸 보고 고쳐 그린다.
 (function (global) {
@@ -137,15 +139,39 @@
         cancel: function () { canceled = true; },
         // 목록에서 골랐을 때처럼 곧바로 끝내는 길
         commit: function (value) { finish(value); },
+        // 지금 적힌 그대로 끝내는 길(Enter · ⌘/Ctrl+Enter). 예전에는 이 자리에서
+        // `input.blur()` 를 불러 blur 처리에 얹혀 갔는데, 이제 blur 로 닫지
+        // 않으므로 끝내는 말을 직접 해야 한다.
+        close: function () { finish(); },
         place: place
       };
       var input = build(api);
 
-      // 여기서도 빠져나갈 길이 먼저다 — 아래에서 던지면 창이 닫히지 않는다.
-      input.addEventListener("blur", function () { finish(); });
-      input.addEventListener("keydown", function (e) {
-        if (e.key === "Escape") { canceled = true; input.blur(); }
-      });
+      // ── 언제 닫히는가 ────────────────────────────────────────────────
+      //
+      // **창 바깥을 눌렀을 때만 닫는다.** 예전에는 입력칸의 `blur` 하나에만
+      // 걸어 두어서, 창의 여백이나 보기 목록의 스크롤바(`.cell-pop-choices` 는
+      // 132px 에서 넘치면 스크롤된다)를 눌러도 focus 가 빠지면서 **창이
+      // 저장되며 닫혔다** — 고를 것을 보려고 목록을 내리다 창이 사라진다.
+      //
+      // 바깥 판정은 `pop.contains` 하나로 한다. 그래서 칸 옆의 안내 딱지
+      // (`.cell-hint`)는 **바깥이다** — 그것은 다른 칸의 손잡이라, 누르면 지금
+      // 창이 끝나고 그 칸이 열려야 한다(누르는 순서가 pointerdown → click 이라
+      // 이 창이 먼저 닫히고 그 다음에 새 칸이 열린다).
+      //
+      // 잡는 자리를 문서로 올린 값: 여백을 눌러 focus 가 창 밖으로 빠진 뒤에도
+      // Escape 로 취소할 수 있다.
+      function onDown(e) {
+        if (pop.contains(e.target)) return;
+        finish();
+      }
+      function onKey(e) {
+        if (e.key !== "Escape") return;
+        canceled = true;
+        finish();
+      }
+      document.addEventListener("pointerdown", onDown, true);
+      document.addEventListener("keydown", onKey);
 
       place();
       try {
@@ -176,6 +202,8 @@
         if (done) return;
         done = true;
         if (editing === cell) editing = null;
+        document.removeEventListener("pointerdown", onDown, true);
+        document.removeEventListener("keydown", onKey);
         global.removeEventListener("scroll", place, true);
         global.removeEventListener("resize", place);
 
@@ -201,7 +229,7 @@
         area.addEventListener("keydown", function (e) {
           if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
             e.preventDefault();
-            area.blur();
+            api.close();
           }
         });
         grow();
@@ -271,7 +299,7 @@
                           : "Enter 저장 · Esc 취소"));
 
         input.addEventListener("keydown", function (e) {
-          if (e.key === "Enter") { e.preventDefault(); input.blur(); }
+          if (e.key === "Enter") { e.preventDefault(); api.close(); }
         });
         return input;
       });
@@ -332,6 +360,12 @@
             || cell.getAttribute("data-field");
           if (row && row.hasAttribute("data-f-" + fkey)) {
             row.setAttribute("data-f-" + fkey, forFilter(cell, value));
+          }
+          // 세우는 값도 같은 이유로 행에 적어 둔다(`data-s-*` · table_sort.js).
+          // 안 적으면 화면에는 새 이름이 떠 있는데 머리글을 누르면 **옛 이름
+          // 자리**에 선다 — 필터가 겪은 것과 같은 어긋남이다.
+          if (row && row.hasAttribute("data-s-" + field)) {
+            row.setAttribute("data-s-" + field, value);
           }
           setTimeout(function () { cell.classList.remove("saved"); }, 900);
           return r.json().catch(function () { return {}; }).then(function (data) {

@@ -25,6 +25,7 @@ const vm = require("vm");
 const D = require("./_dom.js");
 const SRC = path.join(__dirname, "..", "..", "app", "static", "js");
 const src = fs.readFileSync(path.join(SRC, "companies.js"), "utf8");
+const MODAL = fs.readFileSync(path.join(SRC, "panel_modal.js"), "utf8");
 
 // 서버가 실제로 주는 모양 그대로(`routers/companies.py` 의 `desc_backup_lines`).
 const 가나 = {
@@ -101,6 +102,9 @@ function run(dom, byId) {
     }
   };
   vm.createContext(sandbox);
+  // 수정창을 모달로 세우는 공통 부품. 화면(`companies.html`)이 이것을 **먼저**
+  // 부르므로 여기서도 먼저 돌린다 — 없으면 `window.PanelModal` 이 비어 창이 안 붙는다.
+  vm.runInContext(MODAL, sandbox, { filename: "panel_modal.js" });
   vm.runInContext(src, sandbox, { filename: "companies.js" });
 }
 
