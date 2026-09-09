@@ -478,6 +478,65 @@
     </p>
   </section>
 
+  {# 스타트업 월간 발송 — **누가 보낼 수 있는가** 한 가지만 정하는 판.
+
+     옆의 미팅 후기 판과 담는 표가 같다(`auto_send_settings`, 종류마다 한 줄).
+     다른 것은 **때맞춰 저절로 서지 않는다**는 점이다 — 달마다 한 번 사람이
+     화면에서 보고 고르는 일이라, 시각·하루 상한 칸이 없다
+     (`services/startup_send.py` 머리말).
+
+     여기서 켠다고 카톡이 나가지 않는다. 켜지는 것은 **그 계정의 딜 제안 관리에
+     메뉴 하나**이고, 나가는 것은 그 사람이 대기 목록을 세운 뒤 [발송 시작] 을
+     누른 때다. #}
+  <section class="panel">
+    <h2 class="panel-title">{{ startup_send.label }}</h2>
+    {% if startup_send.on %}
+    <ul class="import-stats">
+      <li><span>보내는 계정</span><b>{{ startup_send.sender }}</b></li>
+    </ul>
+    <p class="hint ok">
+      ✅ <b>{{ startup_send.sender }}</b> 님의 <b>딜 제안 관리</b> 화면에만
+      이 메뉴가 보입니다. 다른 계정에는 메뉴도 주소도 없습니다.
+      실제 발송은 그분이 대기 목록을 세운 뒤 <b>[발송 시작]</b> 을 눌렀을 때입니다.
+    </p>
+    {% else %}
+    <p class="hint">
+      꺼져 있습니다 — <b>아무 계정에도</b> 이 메뉴가 보이지 않습니다.
+      스타트업 대표에게 보낼 문구는 지금까지처럼
+      <a class="linkbtn" href="/startup/ir-report">스타트업</a> 화면에서 복사해
+      손으로 보냅니다.
+    </p>
+    {% endif %}
+
+    <form method="post" action="/team/startup-send" class="rule-form">
+      <label class="field inline-field"><span>이 메뉴</span>
+        <select name="enabled">
+          <option value="">꺼짐</option>
+          <option value="on" {% if startup_send.enabled %}selected{% endif %}>켜짐</option>
+        </select></label>
+      <label class="field inline-field"><span>보내는 계정</span>
+        <select name="user_id">
+          <option value="0">— 고르세요 —</option>
+          {# 딜소개를 보내는 살아 있는 계정만. 발송 프로그램이 붙어 있는 그 PC
+             에서 나가는 일이라, 그것이 없는 계정을 고르면 세워 두고 아무도 못
+             보낸다(옆 판과 같은 조건이다). #}
+          {% for m in members if m.sends_deals and m.active %}
+          <option value="{{ m.id }}" {% if m.id == startup_send.sender_id %}selected{% endif %}>
+            {{ m.name }} · {{ m.agent }}</option>
+          {% endfor %}
+        </select></label>
+      <button class="secondary-btn" type="submit">저장</button>
+    </form>
+
+    <p class="hint">
+      달마다 한 번, 그 달 <b>말까지 IR 자료를 요청한 투자사 목록</b>(가려서)을
+      스타트업 대표 카톡방으로 보냅니다. <b>대표 카톡방 이름이 빈 기업은
+      보낼 수 없고</b>, 그 사실이 목록 화면에 그대로 드러납니다 —
+      방 이름은 <a class="linkbtn" href="/companies">IR 기업 현황</a> 의
+      [수정] 에서 넣습니다.
+    </p>
+  </section>
+
   <section class="panel">
     <h2 class="panel-title">IR 기업 현황 <a class="linkbtn" href="/companies">전체 보기</a></h2>
     <ul class="import-stats">

@@ -15,7 +15,7 @@ from ..deps import get_current_user, may_manage_team_contacts, templates
 from ..models import IrCompany, SendJob, User
 from ..services import (cadence, contact_columns, deal_history, deal_queue,
                         deal_stage, ir_attach, mailer, ref_panel, sheet_import,
-                        sheet_owner, sourcing_link)
+                        sheet_owner, sourcing_link, startup_send)
 from ..ui import MENU, base_ctx as _base_ctx
 from .companies import BLOCKED_CONTRACT
 from .companies import blocked_reason as company_blocked_reason
@@ -198,6 +198,12 @@ def deals_page(
         # [보낼 자료] 목록의 말이 이 값으로 갈린다 — 발송기가 붙이는가,
         # 사람이 붙이는가. 안내창과 **같은 판단**을 읽는다.
         "ir_auto_attach": ir_attach.auto_attach_enabled(db, user),
+        # 스타트업 월간 발송으로 가는 링크를 보일지. **정해진 한 계정만**이다.
+        # 판정은 라우터를 막는 것과 같은 함수를 지난다
+        # (`services/startup_send.may_send`) — 목록을 따로 두었더니 메뉴는
+        # 걸러졌는데 주소를 직접 치면 열리던 자리가 이 저장소에 있었다.
+        "startup_send_on": startup_send.may_send(db, user),
+        "startup_send_label": startup_send.LABEL,
     })
     return templates.TemplateResponse("deals.html", ctx)
 

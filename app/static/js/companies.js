@@ -33,6 +33,10 @@
     "founded_year", "guarantee",
     // 기업 쪽 연락처 — 표(스타트업DB)의 맨 앞 네 칸.
     "received_at", "contact_name", "contact_phone", "contact_email",
+    // 대표와의 **카톡방 제목**. 스타트업 월간 발송이 이 방으로 나간다
+    // (`services/startup_send.py`). 비면 그 기업은 못 보내고, 그 사실이
+    // 발송 목록 화면에 그대로 드러난다 — 조용히 빠지지 않는다.
+    "kakao_room_name",
     // 연도별 매출 — **글자**다(`19.8억` · `1,224백만원`). 숫자로 바꾸지 않는다.
     // 23·24·25년은 한줄 소개 자동 조합의 재료다(services/one_liner.py).
     "revenue_2022", "revenue_2023", "revenue_2024", "revenue_2025",

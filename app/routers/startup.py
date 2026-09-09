@@ -43,7 +43,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import get_current_user, templates
 from ..models import User
-from ..services import ir_kakao, ir_monthly
+from ..services import ir_kakao, ir_monthly, startup_send
 from ..ui import base_ctx
 from .pages import STARTUP_PAGE, list_page
 
@@ -202,9 +202,17 @@ def ir_kakao_message(
 ):
     """카톡에 붙여 넣을 글 한 통 — 보고 [문구 복사] 를 누르는 자리.
 
-    **여기서 보내지 않는다.** 스타트업 카톡방이 자료에 없다(`IrCompany` 에 방
-    칸 자체가 없다). 보내는 시늉을 내는 단추를 세우면 눌러 놓고 나간 줄 아는
-    사람이 생긴다 — 짓고 · 보여 주고 · 복사하는 데까지만이다.
+    **여기서 보내지 않는다. 보내는 자리는 딜 제안 관리로 옮겼다**
+    (`routers/startup_send.py`). 이 화면은 짓고 · 보여 주고 ·
+    복사하는 데까지다 — 지정되지 않은 계정은 지금까지처럼 여기서 복사해 손으로
+    보낸다.
+
+    **글을 짓는 자리는 그대로 하나다**(`ir_kakao.compose`). 옮긴 것은 보내는
+    일뿐이라, 새 화면도 이 화면도 같은 함수가 지은 **같은 글**을 낸다 — 두 벌로
+    두었다면 옮기는 순간 화면에서 본 글과 나가는 글이 갈렸을 것이다.
+
+    보낼 수 있는 계정에게는 **새 자리로 가는 길**을 적어 준다. 안 적으면 옮긴
+    것을 모르는 사람이 여기서 복사해 손으로 보내고, 발송 이력은 비어 남는다.
 
     요청이 **한 곳도 없으면 404** 다. 글을 짓지 않는 판정은 `ir_kakao.compose`
     한 곳에 있다 — 화면이 따로 세면 두 판정이 갈린다.
@@ -219,6 +227,10 @@ def ir_kakao_message(
     # 같은 함수를 지난다. `user` 는 머리말 문구틀을 고르는 데 쓴다.
     msg = ir_kakao.for_company(db, user, company_id, selected)
     ctx = base_ctx(request, db, user, STARTUP_PAGE.key)
-    ctx.update({"msg": msg, "selected": selected, "company_id": company_id})
+    ctx.update({"msg": msg, "selected": selected, "company_id": company_id,
+                # 새 자리로 가는 길을 적을지. **메뉴를 그리는 것과 같은 판정**
+                # 이다 — 여기만 따로 두면 못 여는 자리로 데려간다.
+                "send_here": startup_send.may_send(db, user),
+                "send_label": startup_send.LABEL})
     return templates.TemplateResponse("startup_ir_kakao.html", ctx,
                                       status_code=200 if msg else 404)

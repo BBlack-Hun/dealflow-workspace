@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{#
+  스타트업 월간 발송 — **누르기 전에 보는 표.**
+
+  왜 딜 제안 관리 안에 있는지, 왜 `draft` 로 세우는지, 왜 정해진 한 계정만
+  쓰는지는 `routers/startup_send.py` 에 적혀 있다.
+
+  화면이 하지 않는 것 셋을 여기 적어 둔다 — 이 셋이 화면으로 새면 사람이 본 것과
+  대표가 받는 것이 갈린다.
+    · 글을 짓지 않는다(`services/ir_kakao.py`)
+    · 세지 않는다(`services/ir_monthly.py`)
+    · 가리지 않는다(`services/ir_mask.py`)
+#}
+{% block title %}{{ label }} · CONTACTVC ASSET{% endblock %}
+{% block content %}
+
+<header class="page-head">
+  <h1>{{ label }}</h1>
+  <p class="muted">
+    <b>{{ selected }}</b> 말까지 <b>IR 자료를 요청한 투자사 목록</b>을 그 기업
+    대표 카톡방으로 보냅니다 — 달마다 한 번입니다.
+    투자사 이름은 <b>첫 글자만</b> 남기고 가려서 나갑니다.
+  </p>
+  {#
+    **여기서는 한 통도 나가지 않는다.** 이 말이 화면에 없으면 [대기 목록
+    만들기] 를 누른 사람이 보냈다고 알고 창을 닫는다.
+  #}
+  <p class="hint">
+    ✋ 이 화면은 <b>대기 목록을 세우는 데까지</b>입니다 — 누른 뒤 진행 화면에서
+    <b>[발송 시작]</b> 을 눌러야 실제로 나갑니다.
+  </p>
+</header>
+
+{% if msg %}
+<p class="warn-box">⚠ {{ msg }}</p>
+{% endif %}
+
+<div class="toolbar">
+  <div class="quick-chips">
+    <select class="chip-select" onchange="location = this.value">
+      {% for m in months %}
+      <option value="/deals/startup-ir?month={{ m }}"
+              {% if m == selected %}selected{% endif %}>{{ m }}</option>
+      {% endfor %}
+    </select>
+    <a class="chip" href="/startup/ir-report?month={{ selected }}">스타트업 현황·문서</a>
+  </div>
+</div>
+
+{#
+  **방 이름이 빈 기업은 조용히 빠지지 않는다.** 목록에 남기고, 몇 곳인지 여기
+  머리에 적는다 — 표를 끝까지 훑지 않아도 보이도록. 손댈 수 있는 쪽이라
+  고치는 자리(IR 기업 현황의 [수정])까지 함께 적는다.
+#}
+{% if no_room_count %}
+<p class="warn-box">
+  ⚠ <b>{{ no_room_count }}곳</b>은 <b>{{ no_room_label }}</b>이라 보낼 수 없습니다 —
+  아래 표에 그대로 남아 있습니다(조용히 빠지지 않습니다).
+  <a href="/companies">IR 기업 현황</a>에서 그 기업의 [수정] 을 열어
+  <b>대표 카톡방</b> 칸에 <b>카톡에 보이는 방 제목을 글자까지 그대로</b>
+  적어 주세요 — 한 글자만 달라도 발송기가 방을 찾지 못합니다.
+</p>
+{% endif %}
+
+{% if skipped_count %}
+<p class="warn-box">
+  ⚠ <b>{{ selected }}</b> 말까지의 요청 중 <b>{{ skipped_count }}건</b>은 어느 기업
+  몫인지 몰라 <b>어느 글에도 안 실립니다.</b>
+  {% for s in skipped %}<br>· {{ s.label }} — {{ s.count }}건{% endfor %}
+</p>
+{% endif %}
+
+<form method="post" action="/deals/startup-ir/send">
+  <input type="hidden" name="month" value="{{ selected }}">
+
+  <div class="table-wrap">
+    <table class="grid-table">
+      <thead>
+        <tr>
+          <th>보냄</th>
+          <th>기업</th>
+          <th>계약</th>
+          <th>대표 카톡방</th>
+          <th>{{ selected }} 말까지</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr{% if not row.sendable %} class="ir-row-off"{% endif %}>
+          <td>
+            {#
+              못 보내는 줄은 **고를 수 없다.** 줄 자체는 남는다 — 빼 버리면
+              계약 기업인데 왜 안 보이는지 물을 자리가 없어진다.
+            #}
+            {% if row.sendable %}
+            <input type="checkbox" name="company_ids" value="{{ row.company.id }}" checked>
+            {% else %}
+            <span class="muted">—</span>
+            {% endif %}
+          </td>
+          <td>{{ row.company.name }}</td>
+          <td>{{ row.contract_label }}</td>
+          <td>
+            {#
+              **어느 방으로 가는지 줄마다 보인다.** 누른 뒤에 아는 것은 늦다 —
+              발송은 되돌릴 수 없다.
+            #}
+            {% if row.room %}{{ row.room }}
+            {% else %}<span class="status-badge warn">{{ no_room_label }}</span>
+            {% endif %}
+          </td>
+          <td class="tabular">
+            {{ row.count }}줄
+            {% if row.reason and not row.room %}
+            {# 까닭을 줄에도 적는다. 머리의 안내를 지나친 사람이 여기서 본다. #}
+            {% elif row.reason %}
+            <span class="status-badge warn">{{ row.reason }}</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+        {% if not rows %}
+        <tr><td colspan="5" class="muted">계약을 마친 기업이 없습니다.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="toolbar">
+    <label class="field">
+      <span>회차명</span>
+      {# 손으로 적으면 이력이 갈라진다 — 기본값은 `cadence` 가 만든다. #}
+      <input type="text" name="title" value="{{ default_title }}">
+    </label>
+  </div>
+
+  {#
+    **몇 곳에 가는지 단추에 적는다.** 취소분 재발송·이어 보내기가 같은 이유로
+    단추에 수를 적는다 — 누른 뒤에 숫자를 아는 것은 늦다.
+  #}
+  <button type="submit" class="primary" {% if not sendable_count %}disabled{% endif %}>
+    {{ sendable_count }}곳 대기 목록 만들기
+  </button>
+  <p class="hint">
+    누르면 <b>{{ sendable_count }}곳</b>짜리 회차가 <b>대기(draft)</b> 로 섭니다.
+    발송 프로그램은 <b>대기 회차를 집어가지 않습니다</b> — 진행 화면에서
+    <b>[발송 시작]</b> 을 눌러야 나갑니다.
+    {% if no_lines_count %}
+    <br>({{ no_lines_count }}곳은 {{ selected }} 말까지 요청한 투자사가 없어
+    보낼 글이 없습니다 — 빈 목록을 보내면 대표는 우리가 아무것도 안 한 줄로 읽습니다.)
+    {% endif %}
+  </p>
+</form>
+
+{% endblock %}

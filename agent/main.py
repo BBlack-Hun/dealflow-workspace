@@ -50,7 +50,14 @@ VERIFY_KIND = "verify_room"
 # `SEND_KINDS` 와는 갈린다 — 여기 목록은 "서버의 발송 잡 종류" 를 그대로 베낀
 # 것이고(위 주석), 시험 잡은 그 목록에 없는 잡이다.
 TEST_KIND = "test_send"
-SUPPORTED_KINDS = SEND_KINDS + (VERIFY_KIND, TEST_KIND)
+# 스타트업 월간 발송 — 그 달 IR 자료를 요청한 투자사 목록을 **스타트업 대표**
+# 카톡방으로 보낸다. 처리는 발송 잡과 **똑같다**(방 하나에 문구 한 통).
+#
+# 서버가 이 종류를 `SEND_KINDS` 에 넣지 않는 것은 받는 쪽이 투자사가 아니라
+# 발송 이력·통계에 섞이면 안 되기 때문이다(`app/models.py: STARTUP_SEND_KIND`).
+# 시험 잡과 같은 사정이라 여기서도 `SEND_KINDS` 밖에 따로 둔다.
+STARTUP_KIND = "startup_ir"
+SUPPORTED_KINDS = SEND_KINDS + (VERIFY_KIND, TEST_KIND, STARTUP_KIND)
 
 DEFAULT_CONFIG = {
     "server_url": "http://127.0.0.1:8000",
@@ -381,7 +388,9 @@ def process_job(client: AgentClient, sender, job: dict, cfg: dict):
     # 시험 잡은 **발송 잡과 똑같이** 처리한다. 파일 먼저 문구 나중이라는 차례도,
     # 사람 흉내 간격도, [중단] 확인도 그대로여야 시험이 시험 구실을 한다 —
     # 다르게 처리하면 여기서 되는 것이 실전에서 안 될 수 있다.
-    if kind not in SEND_KINDS and kind != TEST_KIND:
+    # 스타트업 월간 발송도 여기서 갈리지 않는다 — 방 하나에 문구 한 통이라
+    # 발송 잡과 처리가 같다. 종류를 가르는 것은 **통계와 이력**의 사정이다.
+    if kind not in SEND_KINDS and kind not in (TEST_KIND, STARTUP_KIND):
         log.error("모르는 잡 종류 %r — 전송하지 않고 실패 처리합니다", kind)
         for item in job.get("items", []):
             client.report_item(item["id"], "failed",

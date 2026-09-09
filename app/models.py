@@ -299,6 +299,29 @@ class IrCompany(TimestampMixin, Base):
     contact_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     contact_phone: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     contact_email: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # 이 기업 대표와의 **카톡방 제목**. 달마다 한 번 나가는 「IR 자료를 요청한
+    # 투자사 목록」이 이 방으로 간다(`services/startup_send.py`).
+    #
+    # ## 왜 여기인가
+    #
+    # 방을 여는 상대가 **기업 한 곳의 대표**다. 투자사 담당자 쪽 방 이름은
+    # 사람 줄에 붙어 있는데(`VcContact.kakao_room_name`), 이쪽은 사람을 가리키는
+    # 줄이 따로 없다 — 앱이 아는 대표는 이 표의 `contact_name` 한 칸뿐이라
+    # 기업 줄이 곧 상대다.
+    #
+    # ## 글자까지 정확해야 한다
+    #
+    # 발송기는 카톡 목록에서 **제목이 똑같은 방**을 찾는다. 한 글자만 달라도
+    # 못 찾고(`room_mismatch`), 같은 이름의 방이 둘이면 어느 쪽인지 모른다.
+    # 그래서 여기 적는 값은 카톡에 보이는 제목을 그대로 옮긴 것이어야 한다.
+    #
+    # ## 비어 있으면 **못 보낸다 — 조용히 빠지지 않는다**
+    #
+    # 빈 칸은 "보내지 말라" 가 아니라 **아직 안 적었다**는 뜻이다. 목록에서
+    # 조용히 빼면 그 기업만 매달 빠지는데 아무도 그 사실을 모른다. 화면이 그
+    # 줄을 `방 이름 없음` 으로 드러내 고르지 못하게 하고(`startup_send.rows`),
+    # 주소로 억지로 넣어도 목록을 만드는 자리가 거절한다.
+    kakao_room_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     # Amounts in 백만원 (millions of KRW); displayed in 억 (÷100).
     # 연도별 매출. 시트가 22~25년을 따로 들고 있다 — 한 해만 남기면 성장 추세가
     # 사라진다("작년 대비" 가 딜소개에서 자주 쓰인다).
@@ -557,6 +580,20 @@ SEND_KINDS = ("deal_intro", "ir_delivery", "sourcing_intro")
 #: 잡을 집어가지 않아 큐에 그대로 멈춘다.
 TEST_SEND_KIND = "test_send"
 
+#: 스타트업 월간 발송 — 그 달 **IR 자료를 요청한 투자사 목록**(가려서)을 그
+#: 기업 대표 카톡방으로 보내는 잡.
+#:
+#: **`SEND_KINDS` 에 넣지 않는다.** 그 목록은 "투자사에게 딜을 보낸 건" 을 세는
+#: 자리들이 함께 읽는 값이다(이번 주 보낸 건수 · 팀 현황 · 주간 보고). 받는
+#: 쪽이 투자사가 아니라 **스타트업 대표**인 이 발송이 거기 섞이면 팀원의 딜소개
+#: 실적이 부풀고, 그 수를 보고 다음 회차 대상을 정하는 사람이 틀린 수를 본다.
+#: 시험 발송이 같은 이유로 빠져 있다(바로 위).
+#:
+#: 발송 프로그램 쪽에도 같은 값이 있다(`agent/main.py: STARTUP_KIND`).
+#: **거기 없으면 잡을 집어가지 않아 큐에 그대로 멈춘다** — 딜 소싱 제안이
+#: 실제로 그렇게 멈춘 적이 있다.
+STARTUP_SEND_KIND = "startup_ir"
+
 
 class SendItem(TimestampMixin, Base):
     __tablename__ = "send_items"
@@ -570,6 +607,14 @@ class SendItem(TimestampMixin, Base):
         ForeignKey("vc_contacts.id"), nullable=True)
     sourcing_contact_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("sourcing_contacts.id"), nullable=True)
+    # 받는 쪽이 **스타트업 기업**일 때(월간 발송). 투자사도 소싱 명단도 아니라
+    # 가리키는 칸이 또 하나 필요했다 — 위 둘과 마찬가지로 셋 중 하나만 찬다.
+    #
+    # 사람 줄이 아니라 **기업 줄**을 가리키는 것이 이 칸의 성질이다. 앱이 아는
+    # 대표는 `IrCompany.contact_name` 한 칸뿐이고 그 사람을 가리키는 표가 없다
+    # (`routers/startup.py` 에 왜 대표로 묶지 않는지 적어 두었다).
+    ir_company_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("ir_companies.id"), nullable=True)
     # FK to send_sequences arrives in Sprint 3 — kept nullable, no constraint yet.
     sequence_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     stage: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # 1 day1 | 2 remind | 3 meeting
@@ -613,12 +658,19 @@ class SendItem(TimestampMixin, Base):
     job: Mapped["SendJob"] = relationship(back_populates="items")
     contact: Mapped[Optional["VcContact"]] = relationship()
     sourcing_contact: Mapped[Optional["SourcingContact"]] = relationship()
+    ir_company: Mapped[Optional["IrCompany"]] = relationship()
 
     @property
     def recipient_name(self) -> Optional[str]:
         """누구에게 갔는가. 화면·기록에서 이 값만 쓴다 —
-        받는 사람이 두 표에 나뉘어 있는 것을 부르는 쪽이 알 필요는 없다."""
-        who = self.contact or self.sourcing_contact
+        받는 사람이 **세 표**에 나뉘어 있는 것을 부르는 쪽이 알 필요는 없다.
+
+        스타트업 월간 발송은 기업 줄이 곧 상대라 **기업 이름**이 나온다. 대표
+        이름을 대신 내놓지 않는다 — 그 이름이 정말 대표인지 말해 주는 칸이
+        없고(`services/ir_kakao.contact_of`), 진행 화면에 사람 이름이 뜨면
+        그것이 확인된 사실로 읽힌다.
+        """
+        who = self.contact or self.sourcing_contact or self.ir_company
         return who.name if who else None
 
 

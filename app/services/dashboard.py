@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 
 from .. import clock
 from . import (auto_send, cadence, followup_sms, mailer, pipeline,
-               sheet_owner)
+               sheet_owner, startup_send)
 from .. import deps, version
 from ..models import (
     SEND_KINDS,
@@ -863,6 +863,10 @@ def admin_dashboard(db: Session, today: Optional[date] = None) -> dict:
         # 아니라 **세워 두고 아직 아무도 안 누른 목록**까지 보여 준다:
         # 보내는 것은 사람이라, 서 있는 줄 모르면 그대로 밀린다.
         "auto_send": auto_send.status(db),
+        # 스타트업 월간 발송 — **누가 보낼 수 있는가** 하나만 담긴 판.
+        # 옆의 자동 준비와 같은 표를 쓰지만 때맞춰 저절로 서지는 않는다
+        # (`services/startup_send.py` 머리말).
+        "startup_send": startup_send.status(db),
         "warnings": _admin_warnings(rows, unassigned),
         "recent_batches": recent_batches(db, limit=8),
     }
