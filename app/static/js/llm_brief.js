@@ -39,13 +39,22 @@
         return r.text();
       })
       .then(function (text) {
-        out.textContent = text;
+        var data = null;
+        try { data = JSON.parse(text); } catch (e) { data = null; }
+        // **시킬 말 + 자료를 한 덩어리로.** LLM 창에 그대로 붙여 넣으면 되게.
+        //
+        // 시킬 말은 여기서 짓지 않는다 — 서버가 자료에 실어 보낸 `prompt` 를
+        // 그대로 앞에 붙인다. 화면이 제 문장을 들고 있으면 서버 쪽 문장과
+        // 반드시 갈린다(이 저장소가 반복해 당한 사고다).
+        //
+        // **자료 부분은 서버가 준 글자 그대로다.** [화면에서 보기] 는 내보내기
+        // 전에 사람이 눈으로 훑는 자리라, 여기 보이는 것과 실제로 나가는 것이
+        // 다르면 그 확인이 거짓말이 된다.
+        out.textContent = compose(data, text);
         out.hidden = false;
         copy.hidden = false;
         // 몇 건인지 먼저 말해 준다. 자료가 비어 있는데 그대로 붙여 넣고
         // "왜 아무것도 안 골라 주지" 하는 일이 없게.
-        var data = null;
-        try { data = JSON.parse(text); } catch (e) { data = null; }
         state.textContent = data
           ? ("투자사 " + data.investors.length + "곳 · 기업 "
              + data.companies.length + "곳 · " + data.scope)
@@ -54,7 +63,14 @@
       .catch(function () { state.textContent = "자료를 꺼내지 못했습니다."; });
   });
 
+  // 시킬 말이 없으면(옛 서버) 자료만 담는다 — 붙여 넣을 것이 아예 없는 것보다
+  // 낫고, 그때는 사람이 직접 시킬 말을 적으면 된다.
+  function compose(data, text) {
+    return (data && data.prompt ? data.prompt + "\n\n" : "") + text;
+  }
+
   copy.addEventListener("click", function () {
+    // 화면에 보이는 그것을 그대로 복사한다 — 시킬 말과 자료가 함께 들어간다.
     var text = out.textContent;
     // 클립보드 권한이 없거나 http 로 열었으면 `navigator.clipboard` 가 없다.
     // 그때는 조용히 실패하지 말고 **직접 복사할 수 있게** 골라 준다 —

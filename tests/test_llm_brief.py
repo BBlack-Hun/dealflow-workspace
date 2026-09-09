@@ -32,11 +32,11 @@ CONTACT_COLUMNS_ALLOWED_OUT = {
     "sectors", "round_size", "stages",
     "sourcing_note", "memo", "tips_note", "interest_level",
 }
-# IR 기업은 소개하려고 모은 자료라 **이름이 나간다** — 그것 말고는 마찬가지다.
-# 특히 기업 쪽 연락 담당자(`contact_name`·`contact_phone`·`contact_email`)는
-# 나가면 안 된다.
+# 기업도 **이름이 나가지 않는다.** 맞추는 데 쓰이는 것은 분야·단계·요약·규모이고,
+# 이름은 답으로 돌아온 `C-7` 을 앱 안에서 되돌려 얻는다. `name` 이 여기 없는 것이
+# 이 검사의 요점이다 — 다시 넣으려면 이 줄을 손대야 하고, 손대는 순간 사람이 본다.
 COMPANY_COLUMNS_ALLOWED_OUT = {
-    "name", "sector_major", "series", "one_liner", "summary",
+    "sector_major", "series", "one_liner", "summary",
 }
 
 
@@ -85,6 +85,39 @@ def _company(db, **kw):
     return row
 
 
+def _sent(db, contact, companies, *, status="sent", kind="deal_intro"):
+    """이 담당자에게 이 기업들을 **한 회차로 보냈다** 고 적어 둔다.
+
+    `status` 를 바꾸면 만들다 만 것·실패·취소를 흉내 낼 수 있다.
+    """
+    from app.models import DealBatch, DealBatchCompany, SendItem, SendJob
+
+    batch = DealBatch(user_id=contact.user_id, title="가상 회차")
+    db.add(batch)
+    db.flush()
+    for position, company in enumerate(companies, start=1):
+        db.add(DealBatchCompany(batch_id=batch.id, company_id=company.id,
+                                position=position))
+    job = SendJob(user_id=contact.user_id, kind=kind, batch_id=batch.id,
+                  status="done")
+    db.add(job)
+    db.flush()
+    db.add(SendItem(job_id=job.id, contact_id=contact.id, room_name="가상 방",
+                    message="가상 문구", status=status))
+    db.commit()
+    return batch
+
+
+def _sheet_sent(db, contact, names, *, when="2026-08-13"):
+    """시트에서 옮겨 온 지난 발송 기록 — 거기에는 **기업 이름**이 적혀 있다."""
+    from app.models import ContactActivity
+
+    db.add(ContactActivity(contact_id=contact.id, kind="deal_intro",
+                           content="딜소개", happened_at=when,
+                           company_names=json.dumps(names, ensure_ascii=False)))
+    db.commit()
+
+
 def _brief(db, user):
     from app.services import llm_brief
 
@@ -111,6 +144,9 @@ def test_an_investor_goes_out_as_a_number_and_their_preferences(db, users):
         "tips_note": "팁스 운영사",
         "interest_level": "높음",
         "room_open": True,
+        # 이미 보낸 기업. 보낸 적이 없어도 칸은 남는다 — 칸이 없는 것과
+        # '보낸 적 없다' 를 읽는 쪽이 구별할 길이 없다.
+        "sent_before": [],
     }]
 
 
@@ -131,7 +167,8 @@ def test_an_empty_field_is_left_out_rather_than_sent_as_null(db, users):
     row = _contact(db, users["u1"].id, sectors="AI", memo="   ")
 
     got = _brief(db, users["u1"])["investors"][0]
-    assert got == {"id": f"V-{row.id}", "sectors": "AI", "room_open": True}
+    assert got == {"id": f"V-{row.id}", "sectors": "AI", "room_open": True,
+                   "sent_before": []}
 
 
 def test_whether_the_room_is_open_is_the_dashboards_own_judgement(db, users):
@@ -158,14 +195,50 @@ def test_whether_the_room_is_open_is_the_dashboards_own_judgement(db, users):
     assert set(got.values()) == {True, False}
 
 
-def test_a_company_goes_out_with_its_name_and_its_own_introducible_flag(db, users):
+def test_a_company_goes_out_as_a_number_not_a_name(db, users):
+    """기업도 **번호로만** 나간다 — 이름은 답을 되돌릴 때 앱 안에서 붙는다.
+
+    맞추는 데 쓰이는 것은 분야·단계·요약·규모다. 이름은 그 일에 쓰이지 않고,
+    앱 밖으로 나가는 자료에서 필요 없는 것을 빼는 것이 가장 확실한 보호다.
+    """
+    ok = _company(db, name="가상바이오", raise_target=3000, pre_value=12000)
+
+    got = {c["id"]: c for c in _brief(db, users["u1"])["companies"]}
+    assert "name" not in got[f"C-{ok.id}"]
+    assert "가상바이오" not in json.dumps(got, ensure_ascii=False)
+    # 맞추는 데 쓰는 것은 그대로 남는다.
+    assert got[f"C-{ok.id}"]["sector_major"] == "바이오"
+
+
+def test_a_company_that_names_itself_in_its_own_summary_is_masked(db, users):
+    """이름 칸을 빼도 **문장 안에 자기 이름이 남는** 줄이 있다.
+
+    개발 자료 344곳 중 5곳이 그랬다. 투자사 쪽에서 이미 겪은 것과 같은 일이라
+    **같은 `_scrub`** 을 지나게 한다 — 두 벌로 만들면 한쪽이 낡는다.
+    """
+    from app.services.llm_brief import MASK
+
+    _company(db, name="가상바이오", one_liner="가상바이오는 세포 배양 장비를 만든다",
+             summary="가상바이오 창업자 김대표", contact_name="김대표",
+             contact_phone="010-0000-0002", assignee_name="박담당",
+             kakao_room_name="가상바이오 대표님")
+
+    got = _brief(db, users["u1"])["companies"][0]
+    dumped = json.dumps(got, ensure_ascii=False)
+    for secret in ("가상바이오", "김대표", "010-0000-0002", "박담당"):
+        assert secret not in dumped, secret
+    # 지운 자리는 비우지 않고 표시한다.
+    assert MASK in got["one_liner"]
+    assert "세포 배양 장비를 만든다" in got["one_liner"]
+
+
+def test_a_thin_company_is_flagged_rather_than_hidden(db, users):
     """`IrCompany.introducible` 을 **다시 계산하지 않고** 그대로 읽는다."""
     ok = _company(db, name="가상바이오", raise_target=3000, pre_value=12000)
     thin = _company(db, name="가상로보틱스", sector_major="", one_liner="",
                     revenue_recent=None)
 
     got = {c["id"]: c for c in _brief(db, users["u1"])["companies"]}
-    assert got[f"C-{ok.id}"]["name"] == "가상바이오"
     assert got[f"C-{ok.id}"]["introducible"] is ok.introducible is True
     # 내용이 모자란 기업도 **감추지 않는다** — 채우면 되는 것이라 보여야 한다.
     assert got[f"C-{thin.id}"]["introducible"] is thin.introducible is False
@@ -270,6 +343,66 @@ def test_a_one_letter_value_never_blanks_a_whole_sentence(db, users):
 
 
 
+def test_another_rows_company_name_written_in_a_memo_is_masked(db, users):
+    """**남의 상호는 지운다.**
+
+    기업을 번호로만 내보내기로 해 놓고 그 이름이 옆줄 메모로 나가면, 규칙이
+    지켜지는 줄과 안 지켜지는 줄이 섞인 채로 나간다 — 그런 보호는 없는 것과
+    같다. 실데이터에서 실제로 나온 모양이다(투자사 메모 12곳 · 남의 소개
+    문장 1곳).
+    """
+    from app.services.llm_brief import MASK
+
+    _company(db, name="가상바이오테크")
+    _contact(db, users["u1"].id, firm="가나벤처스",
+             memo="가상바이오테크 소개드렸습니다")
+
+    got = _brief(db, users["u1"])["investors"][0]["memo"]
+    assert "가상바이오테크" not in got
+    assert got == f"{MASK} 소개드렸습니다"
+
+
+def test_another_investors_firm_written_in_a_memo_is_masked(db, users):
+    """남의 투자사명도 마찬가지다 — 실데이터에서 3곳 나왔다."""
+    _contact(db, users["u1"].id, firm="가나벤처스", memo="마바벤처스와 공동검토")
+    _contact(db, users["u1"].id, firm="마바벤처스", sectors="바이오")
+
+    memos = [i.get("memo", "") for i in _brief(db, users["u1"])["investors"]]
+    assert not any("마바벤처스" in m for m in memos)
+
+
+def test_a_short_org_name_does_not_blank_other_peoples_sentences(db, users):
+    """짧은 값으로 남의 문장까지 지우면 멀쩡한 글이 뭉개진다.
+
+    `카카오` 를 지우면 `카카오톡` 이야기가 `[가림]톡` 이 된다. 그래서 남의
+    상호는 **일정 길이 이상**만 지운다(`CROSS_MIN_LEN`).
+    """
+    from app.services.llm_brief import CROSS_MIN_LEN
+
+    short = "가나" * 1
+    assert len(short) < CROSS_MIN_LEN, "이 검사는 짧은 상호를 전제로 한다"
+    _company(db, name=short)
+    _contact(db, users["u1"].id, firm="마바벤처스", memo="가나다라 분야를 본다")
+
+    assert _brief(db, users["u1"])["investors"][0]["memo"] == "가나다라 분야를 본다"
+
+
+def test_someone_elses_person_name_is_left_alone_on_purpose(db, users):
+    """사람 이름은 남의 것까지 지우지 않는다 — 두세 글자라 우연히 들어맞는다.
+
+    실제로 세 글자 담당자 이름이 남의 메모 261곳에 들어맞았다. 지켜야 하는
+    것은 **그 줄이 누구인지 알아볼 수 없는 것**이라, 그 줄 자신의 값만 지운다.
+    """
+    _contact(db, users["u1"].id, name="김치", firm="마바벤처스",
+             memo="김치 관련 기업을 찾는다")
+    _contact(db, users["u1"].id, name="홍길동", firm="사아파트너스",
+             memo="김치 관련 기업을 찾는다")
+
+    memos = [i.get("memo", "") for i in _brief(db, users["u1"])["investors"]]
+    # 자기 이름이 든 줄은 가려지고, 남의 줄은 문장이 살아 있다.
+    assert "김치 관련 기업을 찾는다" in memos
+
+
 def _mark_every_other_column(model, row, allowed):
     """내보내면 안 되는 글자 칸마다 그 칸 이름이 든 표식을 심는다.
 
@@ -316,8 +449,6 @@ def test_no_company_side_contact_column_leaks_out_even_if_someone_adds_one(db, u
 
     row = _company(db, revenue_recent=1830)
     marks = _mark_every_other_column(IrCompany, row, COMPANY_COLUMNS_ALLOWED_OUT)
-    # 이름은 나가야 하므로 표식 뒤에 다시 가상 이름을 넣는다.
-    row.name = "가상바이오"
     db.commit()
 
     out = _brief(db, users["u1"])
@@ -326,7 +457,9 @@ def test_no_company_side_contact_column_leaks_out_even_if_someone_adds_one(db, u
     dumped = json.dumps(out, ensure_ascii=False)
     leaked = sorted(name for name, mark in marks.items() if mark in dumped)
     assert not leaked, "기업 자료에 이 칸이 새어 나갔습니다: " + ", ".join(leaked)
-    for must in ("contact_name", "contact_phone", "contact_email"):
+    # **이름 칸도 표식 대상이다** — 여기 없으면 위 검사가 이름을 안 본 것이다.
+    for must in ("name", "contact_name", "contact_phone", "contact_email",
+                 "kakao_room_name", "assignee_name"):
         assert must in marks, f"{must} 칸에 표식을 못 심었습니다"
 
 
@@ -336,18 +469,24 @@ def test_the_keys_that_go_out_are_exactly_these(db, users):
     위 표식 검사는 **값**이 새는 것을 잡고, 이것은 **칸**이 느는 것을 잡는다.
     값이 우연히 안 겹치는 칸(숫자·참거짓)이 붙어도 여기서 걸린다.
     """
-    _contact(db, users["u1"].id, sectors="AI", round_size="30억", stages="Seed",
-             sourcing_note="메모", memo="메모", tips_note="메모", interest_level="높음")
-    _company(db, summary="요약", funding_total=500, raise_target=3000, pre_value=12000)
+    who = _contact(db, users["u1"].id, sectors="AI", round_size="30억",
+                   stages="Seed", sourcing_note="메모", memo="메모",
+                   tips_note="메모", interest_level="높음")
+    what = _company(db, summary="요약", funding_total=500, raise_target=3000,
+                    pre_value=12000)
+    _sent(db, who, [what])
+    _sheet_sent(db, who, ["이제는없는기업"])
 
     out = _brief(db, users["u1"])
     assert set(out) == {"generated_at", "scope", "amount_unit", "note",
-                        "investors", "companies"}
+                        "prompt", "investors", "companies"}
     assert set(out["investors"][0]) == {
         "id", "sectors", "round_size", "stages",
-        "sourcing_note", "memo", "tips_note", "interest_level", "room_open"}
+        "sourcing_note", "memo", "tips_note", "interest_level", "room_open",
+        "sent_before", "sent_before_unmatched"}
+    # **`name` 이 없다** — 기업도 번호로만 나간다.
     assert set(out["companies"][0]) == {
-        "id", "name", "sector_major", "series", "one_liner", "summary",
+        "id", "sector_major", "series", "one_liner", "summary",
         "revenue_recent", "funding_total", "raise_target", "pre_value",
         "introducible"}
 
@@ -358,15 +497,24 @@ def test_the_answer_that_actually_leaves_the_server_has_no_names_in_it(db, users
 
     라우터가 뒤에 무엇을 덧붙였을 수도 있다 — 나가는 바이트를 직접 훑는다.
     """
-    _contact(db, users["u1"].id, name="홍길동", firm="가나벤처스",
-             phone="010-0000-0001", email="hong@example.invalid",
-             kakao_room_name="가나벤처스 Deal 공유", title="심사역",
-             group_name="가나그룹", assignee_name="김담당", sectors="AI")
+    who = _contact(db, users["u1"].id, name="홍길동", firm="가나벤처스",
+                   phone="010-0000-0001", email="hong@example.invalid",
+                   kakao_room_name="가나벤처스 Deal 공유", title="심사역",
+                   group_name="가나그룹", assignee_name="김담당", sectors="AI")
+    # 기업 이름도 **한 글자도** 나가면 안 된다. 이미 보낸 회차가 있어도
+    # 이력에는 번호만 실린다.
+    what = _company(db, name="가상바이오", contact_name="김대표",
+                    contact_email="ceo@example.invalid",
+                    one_liner="가상바이오의 세포 배양 장비")
+    _sent(db, who, [what])
 
     body = logged_in.get("/api/llm-brief.json").text
     for secret in ("홍길동", "가나벤처스", "010-0000-0001", "hong@example.invalid",
-                   "가나벤처스 Deal 공유", "심사역", "가나그룹", "김담당"):
+                   "가나벤처스 Deal 공유", "심사역", "가나그룹", "김담당",
+                   "가상바이오", "김대표", "ceo@example.invalid"):
         assert secret not in body, f"내보낸 자료에 `{secret}` 이 들어 있습니다"
+    # 검사가 헛돌지 않았는지 — 그 기업이 실제로 이력에 실렸어야 한다.
+    assert f'"C-{what.id}"' in body
 
 
 # ── 누가 받는가 ─────────────────────────────────────────────────────────────
@@ -418,6 +566,276 @@ def test_a_consultant_cannot_reach_either_address(db, users, people):
 def test_a_visitor_who_is_not_logged_in_gets_nothing(client):
     assert client.get("/api/llm-brief.json").status_code == 401
     assert client.post("/api/llm-brief/resolve", json={"text": "V-1"}).status_code == 401
+
+
+# ── 이미 보낸 기업 ──────────────────────────────────────────────────────────
+#
+# 맞추는 쪽이 제일 먼저 하는 일이 **이미 보낸 것을 빼는 것**이다. 이 자료가
+# 틀리면 두 가지로 틀린다 — 안 보낸 것을 보냈다고 하면 멀쩡한 후보가 빠지고,
+# 보낸 것을 빠뜨리면 지난달에 보낸 기업을 또 고른다.
+
+def test_the_history_lists_what_was_already_sent_by_number(db, users):
+    """이름을 또 적지 않는다 — **자료에 이미 있는 번호**로 가리킨다."""
+    who = _contact(db, users["u1"].id, sectors="AI")
+    first = _company(db, name="가상바이오")
+    second = _company(db, name="가상로보틱스")
+    _sent(db, who, [first, second])
+
+    got = _brief(db, users["u1"])["investors"][0]
+    assert sorted(got["sent_before"]) == sorted([f"C-{first.id}", f"C-{second.id}"])
+    assert "sent_before_more" not in got
+
+
+def test_an_investor_with_no_history_still_carries_an_empty_list(db, users):
+    """칸이 없는 것과 '보낸 적 없다' 를 읽는 쪽이 구별할 길이 없다."""
+    _contact(db, users["u1"].id, sectors="AI")
+    _company(db)
+
+    assert _brief(db, users["u1"])["investors"][0]["sent_before"] == []
+
+
+def test_only_what_actually_went_out_counts_as_sent(db, users):
+    """만들다 만 것·가는 중·실패·취소는 **보낸 것이 아니다.**
+
+    안 나간 기업을 이력에 넣으면 LLM 이 멀쩡한 후보를 빼 버리고, 빠진 이유가
+    자료 어디에도 안 보인다.
+    """
+    who = _contact(db, users["u1"].id, sectors="AI")
+    sent = _company(db, name="가상바이오")
+    _sent(db, who, [sent])
+    for status in ("pending", "sending", "failed", "canceled"):
+        _sent(db, who, [_company(db, name=f"가상{status}")], status=status)
+
+    got = _brief(db, users["u1"])["investors"][0]["sent_before"]
+    assert got == [f"C-{sent.id}"], "실제로 나간 것만 이력에 들어야 한다"
+
+
+def test_a_send_that_never_reaches_an_investor_is_not_history(db, users):
+    """시험 발송·스타트업 월간 발송도 `sent` 로 남는다 — 그러나 투자사에게
+    보낸 것이 아니다. 세는 자리마다 따로 거르면 한 곳이 빠지므로
+    `models.SEND_KINDS` 한 곳을 읽는다.
+    """
+    from app.models import SEND_KINDS, STARTUP_SEND_KIND, TEST_SEND_KIND
+
+    who = _contact(db, users["u1"].id, sectors="AI")
+    real = _company(db, name="가상바이오")
+    _sent(db, who, [real], kind="deal_intro")
+    for kind in (TEST_SEND_KIND, STARTUP_SEND_KIND, "verify_room"):
+        assert kind not in SEND_KINDS, kind
+        _sent(db, who, [_company(db, name=f"가상{kind}")], kind=kind)
+
+    assert _brief(db, users["u1"])["investors"][0]["sent_before"] == [f"C-{real.id}"]
+
+
+def test_a_company_no_longer_on_the_list_is_still_named_in_the_history(db, users):
+    """옛 회차의 기업이 지금 목록에 없어도 **말없이 빠뜨리지 않는다.**
+
+    조용히 빼면 LLM 이 '안 보낸 기업' 으로 읽고 다시 고른다. 번호만 실리므로
+    목록에 없는 번호가 무엇인지는 자료의 `note` 가 말해 준다.
+    """
+    from app.routers.companies import BLOCKED_CONTRACT
+
+    who = _contact(db, users["u1"].id, sectors="AI")
+    gone = _company(db, name="가상소재", contract_status=BLOCKED_CONTRACT)
+    _sent(db, who, [gone])
+
+    out = _brief(db, users["u1"])
+    assert f"C-{gone.id}" not in [c["id"] for c in out["companies"]]
+    assert out["investors"][0]["sent_before"] == [f"C-{gone.id}"]
+    assert "sent_before" in out["note"] and "이미 보낸" in out["note"]
+
+
+def test_the_same_company_sent_twice_is_listed_once(db, users):
+    who = _contact(db, users["u1"].id, sectors="AI")
+    once = _company(db, name="가상바이오")
+    _sent(db, who, [once])
+    _sent(db, who, [once])
+
+    assert _brief(db, users["u1"])["investors"][0]["sent_before"] == [f"C-{once.id}"]
+
+
+def test_a_long_history_is_cut_and_says_so_in_the_data(db, users, monkeypatch):
+    """조용히 자르면 읽는 쪽이 그게 전부인 줄 안다 — 자른 개수를 밝힌다."""
+    from app.services import llm_brief
+
+    monkeypatch.setattr(llm_brief, "HISTORY_LIMIT", 3)
+    who = _contact(db, users["u1"].id, sectors="AI")
+    for _ in range(5):
+        _sent(db, who, [_company(db)])
+
+    got = llm_brief.brief(db, users["u1"], now=FIXED_NOW)["investors"][0]
+    assert len(got["sent_before"]) == 3
+    assert got["sent_before_more"] == 2
+
+
+def test_someone_elses_history_does_not_come_along(db, users):
+    """이력도 자료와 **같은 모집단**이다 — 남의 담당은 줄 자체가 없다."""
+    mine = _contact(db, users["u1"].id, sectors="AI")
+    theirs = _contact(db, users["u2"].id, sectors="바이오")
+    what = _company(db)
+    _sent(db, theirs, [what])
+
+    got = _brief(db, users["u1"])["investors"]
+    assert [i["id"] for i in got] == [f"V-{mine.id}"]
+    assert got[0]["sent_before"] == []
+
+
+def test_the_history_carries_numbers_and_nothing_else(db, users):
+    """**칸이 늘어도 이력으로는 새지 않는다.**
+
+    담당자 줄과 기업 줄 양쪽에 표식을 심고, 이력이 실린 자료를 통째로 훑는다.
+    회차 제목·문구 같은 자유 문장을 나중에 이력에 얹으면 여기서 걸린다.
+    """
+    from app.models import IrCompany, VcContact
+
+    who = _contact(db, users["u1"].id, sectors="AI")
+    what = _company(db, revenue_recent=1830)
+    _sent(db, who, [what])
+
+    marks = _mark_every_other_column(VcContact, who, CONTACT_COLUMNS_ALLOWED_OUT)
+    marks.update(_mark_every_other_column(IrCompany, what,
+                                          COMPANY_COLUMNS_ALLOWED_OUT))
+    db.commit()
+
+    out = _brief(db, users["u1"])
+    assert out["investors"][0]["sent_before"] == [f"C-{what.id}"], \
+        "이력이 비면 이 검사는 아무것도 못 본다"
+    dumped = json.dumps(out, ensure_ascii=False)
+    leaked = sorted(name for name, mark in marks.items() if mark in dumped)
+    assert not leaked, "자료에 이 칸이 새어 나갔습니다: " + ", ".join(leaked)
+
+
+def test_the_history_also_reads_what_the_sheet_brought_over(db, users):
+    """이력은 **두 곳**에 있다 — 이 시스템으로 보낸 회차와 시트에서 옮겨 온 기록.
+
+    시스템으로 보내기 시작한 것이 최근이라 지난 것은 거의 다 시트 쪽에 있다.
+    한쪽만 세면 대부분의 투자사가 "보낸 적 없음" 으로 나가고, 그건 사실이
+    아니다(개발 자료로 274명 중 시스템 발송만으로는 5명, 둘을 합치면 125명).
+    """
+    who = _contact(db, users["u1"].id, sectors="AI")
+    by_system = _company(db, name="가상바이오")
+    by_sheet = _company(db, name="가상로보틱스")
+    _sent(db, who, [by_system])
+    _sheet_sent(db, who, ["가상로보틱스"])
+
+    got = _brief(db, users["u1"])["investors"][0]["sent_before"]
+    assert sorted(got) == sorted([f"C-{by_system.id}", f"C-{by_sheet.id}"])
+
+
+def test_a_sheet_name_is_matched_the_same_way_the_rest_of_the_app_matches(db,
+                                                                         users):
+    """`(주)`·띄어쓰기 차이로 다른 기업이 되면 안 된다 — 규칙은 한 곳이다."""
+    who = _contact(db, users["u1"].id, sectors="AI")
+    what = _company(db, name="가상바이오")
+    _sheet_sent(db, who, ["(주)가상바이오"])
+
+    assert _brief(db, users["u1"])["investors"][0]["sent_before"] == [f"C-{what.id}"]
+
+
+def test_a_name_that_cannot_be_matched_is_counted_not_dropped_and_not_named(db,
+                                                                           users):
+    """못 이은 이름을 조용히 버리면 읽는 쪽이 목록을 전부인 줄 안다.
+
+    그렇다고 이름을 내보낼 수도 없다 — **몇 곳인지만** 밝힌다.
+    """
+    who = _contact(db, users["u1"].id, sectors="AI")
+    known = _company(db, name="가상바이오")
+    _sheet_sent(db, who, ["가상바이오", "이제는없는기업", "또없는기업"])
+
+    out = _brief(db, users["u1"])
+    got = out["investors"][0]
+    assert got["sent_before"] == [f"C-{known.id}"]
+    assert got["sent_before_unmatched"] == 2
+    dumped = json.dumps(out, ensure_ascii=False)
+    for gone in ("이제는없는기업", "또없는기업"):
+        assert gone not in dumped, gone
+    assert "sent_before_unmatched" in out["note"]
+
+
+def test_nothing_unmatched_means_no_extra_key(db, users):
+    who = _contact(db, users["u1"].id, sectors="AI")
+    _sheet_sent(db, who, ["가상바이오"])
+    _company(db, name="가상바이오")
+
+    assert "sent_before_unmatched" not in _brief(db, users["u1"])["investors"][0]
+
+
+def test_only_deal_intro_records_count_as_history(db, users):
+    """`ir_request`·`meeting` 은 기업을 소개한 기록이 아니다."""
+    who = _contact(db, users["u1"].id, sectors="AI")
+    _company(db, name="가상바이오")
+    from app.models import ContactActivity
+
+    db.add(ContactActivity(contact_id=who.id, kind="ir_request", content="자료요청",
+                           happened_at="2026-08-13",
+                           company_names=json.dumps(["가상바이오"],
+                                                    ensure_ascii=False)))
+    db.commit()
+
+    assert _brief(db, users["u1"])["investors"][0]["sent_before"] == []
+
+
+# ── 시킬 말 ────────────────────────────────────────────────────────────────
+
+def test_the_prompt_says_to_exclude_what_was_sent_and_to_answer_in_numbers(db,
+                                                                          users):
+    """사용자가 청한 세 가지가 다 들어 있어야 한다 —
+    이미 보낸 것 빼기 · 성향 보기 · 몇 곳을 고를지, 그리고 **번호로 답하기.**
+    """
+    from app.services.llm_brief import ANSWER_EXAMPLE, PICK_COUNT
+
+    got = _brief(db, users["u1"])["prompt"]
+    assert "sent_before" in got and "빼" in got
+    for preference in ("sectors", "stages", "round_size", "memo"):
+        assert preference in got, preference
+    assert f"{PICK_COUNT}곳" in got
+    # 번호로 답해 달라는 요구가 없으면 [번호 → 이름 찾기] 가 못 읽는다.
+    assert "번호로" in got
+    assert ANSWER_EXAMPLE in got
+
+
+def test_the_number_to_pick_is_written_in_exactly_one_place(db, users):
+    """`8` 을 여기저기 적어 두면 한 곳만 고쳐진다 — 값을 바꿔 보고 따라오는지 본다."""
+    from app.services import llm_brief
+
+    before = llm_brief.prompt()
+    assert "8곳" in before
+
+    llm_brief.PICK_COUNT = 5
+    try:
+        after = llm_brief.prompt()
+    finally:
+        llm_brief.PICK_COUNT = 8
+    assert "5곳" in after and "8곳" not in after
+
+
+def test_the_prompt_is_built_in_the_service_and_nowhere_else(logged_in):
+    """화면과 API 가 각자 문장을 들고 있으면 반드시 갈린다.
+
+    화면이 부르는 자료 안에 시킬 말이 실려 있고, 템플릿·스크립트에는 그 문장이
+    없어야 한다 — 스크립트는 받은 것을 앞에 붙이기만 한다.
+    """
+    from app.services import llm_brief
+
+    sentence = llm_brief.prompt().splitlines()[0]
+    assert sentence and sentence in logged_in.get("/api/llm-brief.json").text
+
+    for path in (Path("app/templates/deals.html"),
+                 Path("app/static/js/llm_brief.js")):
+        src = (Path(__file__).resolve().parent.parent / path).read_text(
+            encoding="utf-8")
+        assert sentence not in src, f"{path} 가 시킬 말을 따로 들고 있습니다"
+    # 스크립트는 서버가 보낸 것을 읽기만 한다.
+    js = (Path(__file__).resolve().parent.parent
+          / "app" / "static" / "js" / "llm_brief.js").read_text(encoding="utf-8")
+    assert "data.prompt" in js
+
+
+def test_the_answer_example_is_the_same_as_the_paste_box_placeholder(logged_in):
+    """사람이 보는 예시와 LLM 이 받은 지시가 다르면, 못 읽는 모양으로 답이 온다."""
+    from app.services.llm_brief import ANSWER_EXAMPLE
+
+    assert ANSWER_EXAMPLE in logged_in.get("/deals").text
 
 
 # ── 번호를 다시 이름으로 ────────────────────────────────────────────────────
