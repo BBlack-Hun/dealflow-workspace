@@ -22,7 +22,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import clock
-from . import cadence, followup_sms, mailer, pipeline, sheet_owner
+from . import (auto_send, cadence, followup_sms, mailer, pipeline,
+               sheet_owner)
 from .. import deps, version
 from ..models import (
     SEND_KINDS,
@@ -820,6 +821,9 @@ def admin_dashboard(db: Session, today: Optional[date] = None) -> dict:
             # 딜소개를 보내지 않는 계정(투자컨설턴트)은 담당 투자사·발송 칸이
             # **원래 비어 있다.** 0 으로 그리면 설정이 덜 된 사람처럼 읽힌다.
             "sends_deals": deps.sends_deals(u),
+            # 정지된 계정인가. 발송 준비의 **보내는 계정 고르개**가 이것을 읽는다
+            # — 정지된 사람을 고르면 목록이 서도 누를 사람이 없다.
+            "active": bool(u.is_active),
             "last_login": (u.last_login_at or "")[:10],
         })
 
@@ -854,6 +858,11 @@ def admin_dashboard(db: Session, today: Optional[date] = None) -> dict:
         # 결과 문의 문자도 메일과 **나란히** 선다 — 켜졌는지, 무엇이
         # 없는지, 그리고 오늘 나간 것이 어떻게 됐는지.
         "sms": followup_sms.status(db),
+        # 미팅 후기 **발송 대기 목록 자동 준비**. 메일·문자와 나란히 선다 —
+        # 서버가 때맞춰 알아서 하는 것들이 한 화면에 모인다. 켜짐/꺼짐만이
+        # 아니라 **세워 두고 아직 아무도 안 누른 목록**까지 보여 준다:
+        # 보내는 것은 사람이라, 서 있는 줄 모르면 그대로 밀린다.
+        "auto_send": auto_send.status(db),
         "warnings": _admin_warnings(rows, unassigned),
         "recent_batches": recent_batches(db, limit=8),
     }

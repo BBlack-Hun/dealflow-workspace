@@ -446,6 +446,16 @@ class SendRequest(BaseModel):
     closing_template_id: Optional[int] = None
     # 담당자별 수정본. 없는 담당자는 서버가 다시 조합한다.
     overrides: List[MessageOverride] = []
+    # **만들어만 두고 아직 내보내지 않는다.** 참이면 회차가 `draft` 로 서서
+    # 발송 프로그램이 집어가지 않는다(`agent_api.poll` 은 `queued` 만 고른다).
+    # 사람이 진행 화면에서 [발송 시작] 을 눌러야 `queued` 가 된다.
+    #
+    # 발송 화면에서는 오지 않는 값이다(기본 거짓 — 지금까지 그대로 바로 나간다).
+    # 쓰는 곳은 결과 문의 대기 목록을 **미리 세워 두는** 자리다
+    # (`services/auto_send.py`). 거기서 만들고 나서 상태를 고치는 방법도 있지만,
+    # 만드는 것과 고치는 것 사이에 발송기가 폴링하면 **사람이 누르기 전에
+    # 나간다.** 세울 때 정해야 그 틈이 없다.
+    draft: bool = False
 
 
 def _override_map(req: SendRequest, contact_ids: set) -> dict:
@@ -710,7 +720,9 @@ def create_send_list(
         kind=("ir_delivery" if req.mode == MODE_IR
               else "sourcing_intro" if sourcing else "deal_intro"),
         batch_id=batch.id,
-        status="queued", total=len(contacts), sent=0, failed=0,
+        # `draft` 면 발송기가 집어가지 않는다 — 사람이 누를 때까지 기다린다.
+        status=("draft" if req.draft else "queued"),
+        total=len(contacts), sent=0, failed=0,
     )
     db.add(job)
     db.flush()
@@ -792,9 +804,13 @@ def create_send_list(
 
     db.commit()
 
-    if by_email:
+    if by_email and not req.draft:
         # 요청 안에서 다 보내면 110명일 때 몇 분이 걸려 요청이 끊긴다.
         # 목록만 만들고 뒤에서 한 건씩 보낸다 — 진행 화면이 카톡과 똑같이 폴링한다.
+        #
+        # `draft` 면 **보내지 않는다.** 카톡은 발송기가 `queued` 만 집어가서
+        # 저절로 기다리지만, 메일은 서버가 바로 보내므로 여기서 막지 않으면
+        # 사람이 누르기 전에 나간다.
         background.add_task(mail_sender.send_job, job.id)
 
     return {"job_id": job.id, "batch_id": batch.id, "total": len(contacts),

@@ -161,6 +161,50 @@ def resend_canceled(job_id: int, background: BackgroundTasks,
     return _requeue(db, job, canceled_items, background)
 
 
+@router.post("/jobs/{job_id}/start")
+def start_draft(job_id: int, background: BackgroundTasks,
+                db: Session = Depends(get_db),
+                user: User = Depends(get_current_user)):
+    """[발송 시작] — **미리 세워 둔 대기 목록을 그때 내보낸다.**
+
+    ## 무엇이 `draft` 로 서 있나
+
+    결과 문의(미팅 후기)는 물어볼 때가 되면 서버가 **대기 목록만** 만들어 둔다
+    (`services/auto_send.py`). 그 회차는 `draft` 라 발송 프로그램이 집어가지
+    않는다(`agent_api.poll` 은 `queued` 만 고른다). 여기를 눌러야 나간다 —
+    **누르는 것은 사람이다.**
+
+    ## 누르기 전에 무엇을 보게 되나  ★
+
+    이 화면이 곧 대기 목록이다. 표에 **누구에게 · 어느 방으로** 가는지가 줄마다
+    있고, `대기` 칸이 몇 건인지 말한다. 단추에도 인원수가 적힌다. 발송은 되돌릴
+    수 없으므로 **누른 뒤에 숫자를 아는 것은 늦다** — 취소분 재발송·이어 보내기가
+    같은 이유로 단추에 수를 적는다.
+
+    ## 왜 [이어 보내기] 를 쓰지 않나
+
+    하는 일은 같다(대기 건을 큐에 올린다). 그래서 **되살리는 절차는 같은 곳**을
+    쓴다(`_requeue`) — 두 벌로 두면 한쪽만 고쳐져 카톡은 되살아나는데 메일은
+    안 나간다. 다른 것은 **말**이다. 이어 보내기는 **가다 만 회차**를 마저
+    보내는 자리이고, 여기는 아직 **한 건도 나가지 않은** 회차를 처음 내보내는
+    자리다. 한 단추에 두 뜻을 담으면 화면이 거짓말을 한다.
+
+    ## `draft` 만 받는다
+
+    이미 돌고 있거나 끝난 회차를 여기로 되살리지 않는다. 그쪽은 [실패 재시도] ·
+    [취소분 재발송] · [이어 보내기] 가 각자 맡고, 무엇을 되살릴지 좁게 고르는
+    것이 그 셋의 규칙이다 — 발송은 되돌릴 수 없다.
+    """
+    job = _job_or_404(db, job_id, user)
+    if job.status != "draft":
+        raise HTTPException(status_code=400,
+                            detail="이미 시작된 회차입니다")
+    pending_items = [i for i in job.items if i.status == "pending"]
+    if not pending_items:
+        raise HTTPException(status_code=400, detail="보낼 대기 건이 없습니다")
+    return _requeue(db, job, pending_items, background)
+
+
 @router.post("/jobs/{job_id}/resume")
 def resume_pending(job_id: int, background: BackgroundTasks,
                    db: Session = Depends(get_db),

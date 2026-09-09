@@ -18,7 +18,7 @@ from typing import List, Optional
 from sqlalchemy.orm import Session
 
 from ..models import User
-from . import cadence, pipeline, readiness
+from . import auto_send, cadence, pipeline, readiness
 
 # 줄 하나 = 오늘 할 일 하나.
 #   kind  : 화면에서 묶어 보여줄 종류
@@ -64,6 +64,17 @@ def build(db: Session, user: User, today: Optional[date] = None) -> dict:
             "meeting", "urgent", "미팅 결과 문의",
             ", ".join(m["name"] for m in ir["due_followups"][:3]),
             "/ir", len(ir["due_followups"])))
+
+    # 세워 두고 **아직 안 누른 발송 목록.** 결과 문의 목록을 켜 두면 서버가
+    # 때맞춰 목록을 만들어 두는데(`services/auto_send.py`), 보내는 것은 사람이라
+    # 여기 뜨지 않으면 서 있는 줄도 모른 채 그날이 지나간다.
+    #
+    # **급한 것으로 둔다.** 이미 물어볼 날이 지난 건들이고, 누르기만 하면 된다.
+    for waiting in auto_send.waiting_for(db, user):
+        items.append(_item(
+            "meeting", "urgent", "보낼 목록이 서 있습니다",
+            f"미팅 후기 {waiting['count']}명 — 확인하고 [발송 시작]",
+            f"/jobs/{waiting['job_id']}", waiting["count"]))
 
     # 3) 오늘 보낼 리마인드
     cadence.sweep_reactions(db, user.id)
