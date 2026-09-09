@@ -223,25 +223,25 @@ def test_계약_탭의_머리글은_시트가_부르는_이름이다(allowed, db
 def test_다른_탭의_표는_한_칸도_안_바뀐다(allowed, db, users):
     """탭 하나를 고치다 **다른 탭의 표가 바뀌면** 안 된다.
 
-    스타트업 탭에 `딜 소개문구` · `견적서 첨부여부` · `계약관리` ·
-    `계산서 수신여부` 가 선 것은 그 탭에 대고 따로 만든 칸이라 여기서 세는
-    자리에 들어 있다(`tests/test_consulting_deal_pitch.py` ·
-    `tests/test_consulting_quote_invoice.py`). 계약 탭의 칸이 새어 나온 것과는
-    다르다 — 아래 `계약서 수신여부` 검사가 그쪽을 본다.
+    스타트업 탭에 `딜 소개문구` · `계약관리` · `계약완료여부` ·
+    `계약서 수신완료여부` 가 선 것은 그 탭에 대고 따로 정한 자리라 여기서 세는
+    목록에 들어 있다(`tests/test_consulting_deal_pitch.py` ·
+    `tests/test_consulting_contract_done.py`). 계약 탭의 칸이 **저절로** 새어
+    나온 것과는 다르다 — 아래 검사가 그쪽을 본다.
 
-    이 검사가 지키는 것은 **계약 탭의 칸이 스타트업 탭으로 새지 않는다**는
-    것이지 스타트업 표가 영영 안 바뀐다는 것이 아니다.
+    이 검사가 지키는 것은 **계약 탭에만 있는 칸이 스타트업 탭으로 새지
+    않는다**는 것이지 스타트업 표가 영영 안 바뀐다는 것이 아니다.
     """
     _row(db, users["u1"].id, company_name="샘플자", region="서울",
          ceo_name="김샘플", phone="010-0000-0000", email="a@example.com")
     body = _open(allowed, "스타트업")
     assert _heads(body) == ["NO", "담당", "지역", "미팅일", "기업명", "기업 관리",
-                            "견적서 첨부여부", "계약관리", "계산서 수신여부",
+                            "계약관리", "계약완료여부", "계약서 수신완료여부",
                             "딜 소개문구", "대표자", "연락처", "이메일",
                             ""], _heads(body)
     assert _fields(body) == ["region", "meeting_at", "company_name",
-                             "management", "quote_attached",
-                             "contract_management", "invoice_received",
+                             "management", "contract_management",
+                             "contract_done", "contract_received",
                              "deal_pitch", "ceo_name", "phone", "email"]
 
 
@@ -386,30 +386,37 @@ def test_계약서_수신여부_필터는_세_곳이_짝이_맞는다(allowed, d
     assert 'data-choices="O,X"' in body
 
 
-def test_다른_탭은_이_칸을_아예_안_세운다(allowed, db, users):
-    """계약서는 계약 줄에만 있는 개념이다.
+def test_계약_탭에만_있는_칸은_다른_탭으로_안_샌다(allowed, db, users):
+    """`성공보수율`·`계약금`·`계약월` 은 계약 줄에만 있는 개념이다.
 
-    다른 두 탭의 같은 자리 칸은 `기업 관리` 라는 **자유 서술**이라 성격이
-    아예 다르다. 빈 값이라도 늘 실어 두면 아무 머리글도 안 보는 죽은 속성이
-    된다(`tests/test_filter_columns.py` 의 2번).
+    다른 두 탭에는 그 자리에 값이 영영 안 들어간다. 빈 값이라도 칸을 세우면
+    자리만 먹고, 행에 값을 실으면 아무 머리글도 안 보는 죽은 속성이 된다
+    (`tests/test_filter_columns.py` 의 2번).
+
+    **`계약서 수신여부` 는 여기 없다.** 그 칸(`contract_received`)은 사용자가
+    `관리 스타트업` 탭에도 세워 달라고 부른 칸이라(`계약서 수신완료여부`) 두
+    탭에 함께 선다 — 묻는 사실이 하나뿐이라 칸을 새로 만들지 않았다
+    (`tests/test_consulting_contract_done.py`). 이름만 탭이 정한다.
     """
     _row(db, users["u1"].id, company_name="샘플더", management="관리 중 : 미팅 완")
     body = _open(allowed, "스타트업")
-    assert "계약서 수신여부" not in body
-    assert "data-f-received" not in body
-    assert "contract_received" not in body
-    # 계약 탭이 세우는 칸은 이것뿐이다 — 스타트업 표로 새어 나가지 않는다.
-    # `견적서 첨부여부`·`계약관리`·`계산서 수신여부`·`딜 소개문구` 는 스타트업
-    # 탭에 대고 따로 만든 칸이라 여기 들어 있다
-    # (`tests/test_consulting_quote_invoice.py` ·
+    for label in ("성공보수율", "계약금", "계약월"):
+        assert label not in body, label
+    for field in ("success_fee", "contract_fee"):
+        assert field not in body, field
+    # 계약 탭 이름 그대로는 안 선다 — 이 탭의 이름은 `계약서 수신완료여부` 다.
+    assert 'data-filters="received:계약서 수신여부"' not in body
+    # `계약관리`·`계약완료여부`·`계약서 수신완료여부`·`딜 소개문구` 는 스타트업
+    # 탭에 대고 따로 정한 자리라 여기 들어 있다
+    # (`tests/test_consulting_contract_done.py` ·
     #  `tests/test_consulting_deal_pitch.py`).
     assert _heads(body) == ["NO", "담당", "지역", "미팅일", "기업명", "기업 관리",
-                            "견적서 첨부여부", "계약관리", "계산서 수신여부",
+                            "계약관리", "계약완료여부", "계약서 수신완료여부",
                             "딜 소개문구", "대표자", "연락처", "이메일",
                             ""], _heads(body)
     assert _fields(body) == ["region", "meeting_at", "company_name",
-                             "management", "quote_attached",
-                             "contract_management", "invoice_received",
+                             "management", "contract_management",
+                             "contract_done", "contract_received",
                              "deal_pitch", "ceo_name", "phone", "email"]
 
 
