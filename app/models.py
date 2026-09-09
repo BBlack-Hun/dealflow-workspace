@@ -289,6 +289,37 @@ class IrCompany(TimestampMixin, Base):
     # 거짓말이 그대로 숫자가 된다. 빈칸이 곧 `미정`이고, 필터에서는
     # `(비어 있음)` 으로 골라진다(`static/js/filters.js`).
     # 같은 모양의 칸이 이미 있다 — `VcContact.kakao_joined`(카톡방 참여여부).
+    #
+    # **같은 물음을 적는 칸이 셋이다.** 이 문단이 그 셋을 적어 두는 한 곳이고,
+    # 나머지 두 곳은 여기를 가리킨다(설명을 세 벌 두면 한 벌이 낡는다).
+    #
+    #   · `IrCompany.contract_received` — 이 칸. `딜 진행 관리` 의 IR 기업
+    #     현황에 `계약서 수신됨` 으로 선다(`routers/companies.py` 의
+    #     `RECEIVED_CHOICES` · `received_key`).
+    #   · `ConsultingCompany.contract_received` — `투자컨설턴트` 의 `계약` 탭
+    #     `계약서 수신여부` · `관리 스타트업` 탭 `계약서 수신완료여부`
+    #     (`routers/consulting.py` 의 `CONTRACT_COLUMNS` · `STARTUP_COLUMNS`).
+    #   · `VcContact.notes["invoice_received"]` — `스타트업` 명단의
+    #     `계약서 수신여부`(`services/contact_columns.py` 의 `STARTUP_LAYOUT`).
+    #     머리글만 바뀌고 열쇠는 옛 이름 그대로다.
+    #
+    # **셋은 값을 주고받지 않는다.** 한 곳에 `O` 를 넣어도 나머지 둘은 계속
+    # 비어 있다. 세 화면이 같은 기업을 함께 보고 있다고 읽으면 안 된다.
+    #
+    # **합치려면 칸을 지우는 게 아니라 기업 목록부터 맞춰야 한다.** 세 표
+    # 사이에는 외래키가 없고(`ir_companies` · `consulting_companies` ·
+    # `vc_contacts` 는 `users` 만 가리킨다), 기업명으로 맞춰 봐도
+    # `스타트업` 명단과 `투자컨설턴트` 는 **겹치는 기업이 0곳**이다 — 서로 다른
+    # 기업 무리를 본다. 목록을 잇지 않은 채 칸만 하나로 모으면 값이 옮겨지는
+    # 것이 아니라 갈 곳이 없어 사라진다.
+    #
+    # 언젠가 잇는다면 **`IrCompany` 가 공통 축**이다. 나머지 둘은 서로 닿지
+    # 않고, `VcContact` 는 사람 줄 · `ConsultingCompany` 는 시트 줄이라
+    # (`sheet` 칸) 한 기업이 여러 번 실린다 — 기업 하나에 줄 하나인 것은 이
+    # 표뿐이다.
+    #
+    # 주석은 낡는다. 셋이 여전히 서로 다른 자리라는 사실 쪽은 시험이 지킨다
+    # (`tests/test_contract_received_xref.py`).
     contract_received: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     contract_month: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     is_top_deal: Mapped[int] = mapped_column(Integer, default=0)
@@ -877,6 +908,12 @@ class ConsultingCompany(TimestampMixin, Base):
     #
     # 나머지 탭(`경영본부 전달 기업` · 사람이 시트를 올려 만든 탭)에서는 비어
     # 있고 화면도 이 칸을 안 세운다.
+    #
+    # **탭 둘이 아니라 화면 셋이 같은 물음을 적는다.** 이 칸 말고도
+    # `IrCompany.contract_received`(IR 기업 현황)와
+    # `VcContact.notes["invoice_received"]`(`스타트업` 명단)이 같은 것을 묻고,
+    # 셋은 값을 주고받지 않는다. 어디에 무엇이 있고 왜 아직 못 합치는지는
+    # `IrCompany.contract_received` 의 주석에 적혀 있다 — 합치기 전에 읽어라.
     contract_received: Mapped[Optional[str]] = mapped_column(
         String, nullable=True)                                                 # 계약서 수신(완료)여부
     # 투자사에 이 기업을 어떻게 소개할지. **메모처럼 쓰는 긴 글**이라 `Text` 다
