@@ -15,8 +15,11 @@ const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
 
-const SRC = path.join(__dirname, "..", "..", "app", "static", "js", "contacts.js");
-const src = fs.readFileSync(SRC, "utf8");
+const JS = path.join(__dirname, "..", "..", "app", "static", "js");
+const src = fs.readFileSync(path.join(JS, "contacts.js"), "utf8");
+// 수정창을 모달로 세우는 공통 부품 — 화면(`contacts.html`)이 contacts.js 보다
+// **먼저** 부른다. 여기서도 먼저 돌리지 않으면 `window.PanelModal` 이 비어 창이 안 붙는다.
+const modalSrc = fs.readFileSync(path.join(JS, "panel_modal.js"), "utf8");
 
 // 가상의 담당자다 — 저장소가 공개라 실제 이름·번호를 두지 않는다.
 const CONTACT = {
@@ -77,6 +80,12 @@ function makeDom() {
 
   const document = {
     getElementById(id) { return nodes[id] || (nodes[id] = makeEl(id)); },
+    // 수정창 부품(`panel_modal.js`)이 창·뒷막을 이 길로 찾는다.
+    querySelector(sel) {
+      return sel && sel.charAt(0) === "#" ? this.getElementById(sel.slice(1)) : null;
+    },
+    // Escape 는 문서에서 듣는다 — 이 검사는 누르지 않으므로 받아만 둔다.
+    addEventListener() {},
     querySelectorAll(sel) {
       if (sel === ".detail-tab") return tabs;
       if (sel === "[data-panel]") return panels;
@@ -86,6 +95,7 @@ function makeDom() {
   };
   // 상세 패널은 처음엔 닫혀 있다 — 열렸는지가 이 검사의 전부다.
   document.getElementById("detail-panel").hidden = true;
+  document.getElementById("detail-backdrop").hidden = true;
 
   return { document: document, nodes: nodes, el: el, tr: tr, tabs: tabs, panels: panels };
 }
@@ -110,7 +120,9 @@ function run(setup) {
   ctx.window = win;
   Object.assign(win, ctx);
   if (setup) setup(win, dom);
-  vm.runInNewContext(src, ctx, { filename: "contacts.js" });
+  vm.createContext(ctx);
+  vm.runInContext(modalSrc, ctx, { filename: "panel_modal.js" });
+  vm.runInContext(src, ctx, { filename: "contacts.js" });
   return { dom: dom, calls: calls, win: win };
 }
 

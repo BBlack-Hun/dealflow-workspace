@@ -51,9 +51,34 @@
     msg.className = "hint" + (isError ? " error" : "");
   }
 
+  // 수정창을 **모달**로 세운다 — 뒷막 · Escape · 미저장 확인은 공통 부품이
+  // 맡는다(`panel_modal.js`). 딜 기업 DB 도 같은 부품을 쓴다: 같은 판단이 두
+  // 곳에 있으면 반드시 한쪽이 낡는다.
+  //
+  // **뒷막이 표를 덮는 것이 이 고침의 핵심이다.** 수정창이 열려 있는 동안에는
+  // 표의 칸을 누를 수 없고, 그래서 칸 위에 뜨는 편집창(`.cell-pop`, z-60)이
+  // 수정창(z-40) 위에 겹쳐 그려지는 일 자체가 없어진다. 같은 칸을 두 자리에서
+  // 서로 다른 시점에 저장하다 값이 조용히 되돌아가던 것도 함께 막힌다.
+  var modal = window.PanelModal.init({
+    panel: "#detail-panel",
+    backdrop: "#detail-backdrop",
+    closers: ["#detail-close"],
+    // 저장할 때 보내는 것과 **같은 것**을 읽는다. 화면 글자를 따로 긁어 모으면
+    // 저장에는 가는데 기준선에는 없는 칸이 생겨 안 고쳐도 묻는 창이 된다.
+    snapshot: function () { return JSON.stringify(readForm()); }
+  });
+
+  // 다른 줄로 넘어갈 때 묻는 말. 닫을 때와 하는 일이 달라 문구도 다르다 —
+  // "닫을까요" 라고 물어 놓고 다른 줄을 여는 창이면 무엇을 누른 건지 모른다.
+  var ASK_SWITCH = "고친 내용이 아직 저장되지 않았습니다. 버리고 다른 줄을 열까요?\n\n" +
+    "[취소] 를 누르면 지금 창에 그대로 남습니다 — 남기려면 [저장] 을 누르세요.";
+
   function openPanel(title) {
     el("detail-title").textContent = title;
-    panel.hidden = false;
+    // 창을 세우면서 **지금 폼을 기준선으로 잡는다.** 부르는 자리들이 모두
+    // 채운 다음에 이것을 부르므로(loadContact · [담당자 추가]) 기준선은 늘
+    // "막 채워 넣은 그대로" 다.
+    modal.open();
     showTab("info");
   }
 
@@ -160,6 +185,10 @@
   }
 
   function loadContact(id) {
+    // **적어 둔 것을 확인 없이 덮지 않는다.** 예전에는 수정창에 타이핑만 해
+    // 두고 표의 다른 줄을 누르면 fillForm 이 폼을 통째로 갈아 끼워, 적던 것이
+    // 아무 말 없이 사라졌다. 안 고쳤으면 묻지 않는다(창이 닫혀 있을 때도 같다).
+    if (!modal.allowLeave(ASK_SWITCH)) return;
     fetch("/api/contacts/" + id)
       .then(function (r) { return r.json(); })
       .then(function (d) {
@@ -197,7 +226,9 @@
   }
 
   function remove() {
-    if (!current) { panel.hidden = true; return; }
+    // 새로 넣던 줄이면 지울 것이 없다 — 창만 닫는다. 사람이 [삭제] 를
+    // 눌러 버리기로 정한 길이라 다시 묻지 않는다.
+    if (!current) { modal.close(true); return; }
     if (!confirm("이 담당자를 삭제할까요? 활동 이력도 함께 지워집니다.\n" +
       "(이직·투자사 변경이면 삭제 대신 '검토중단' 을 권합니다 — 이력이 남습니다)")) return;
     fetch("/api/contacts/" + current, { method: "DELETE" })
@@ -292,7 +323,8 @@
     });
   }
 
-  on("detail-close", "click", function () { panel.hidden = true; });
+  // [닫기 ✕] · 뒷막 · Escape 는 모두 공통 부품이 맡는다(`closers`) — 닫는 길이
+  // 셋인데 미저장 확인이 그중 하나에만 걸려 있으면 나머지 둘로 값이 샌다.
   on("save-btn", "click", save);
   on("delete-btn", "click", remove);
   // 줄 감추기 — **지우기가 아니다.** 표에서 안 보이게 하고 발송 대상에서 뺀다.
@@ -322,6 +354,9 @@
     verify(visibleIds(), "현재 목록의");
   });
   on("add-btn", "click", function () {
+    // 고치던 줄을 두고 새 줄로 넘어가는 것도 폼을 갈아 끼우는 일이다 —
+    // 다른 줄을 누를 때와 같은 확인을 거친다.
+    if (!modal.allowLeave(ASK_SWITCH)) return;
     current = null;
     // 연결 상태는 **비워 두지 않는다.** `<select>` 를 빈 값으로 두면 아무
     // 보기도 안 골라진 채로 서서, 새로 넣는 사람마다 값이 제각각이 된다.

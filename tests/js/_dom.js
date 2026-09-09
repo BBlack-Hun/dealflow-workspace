@@ -143,10 +143,24 @@ function makeEl(tag) {
       return at >= 0 ? (el.parent.children[at + 1] || null) : null;
     },
     addEventListener(type, fn) { (el.handlers[type] = el.handlers[type] || []).push(fn); },
+    removeEventListener(type, fn) {
+      const list = el.handlers[type] || [];
+      const at = list.indexOf(fn);
+      if (at >= 0) list.splice(at, 1);
+    },
     // 글자 칸을 골라 두는 자리(복사 단추의 마지막 수단). 여기서 할 일은 없지만
     // **있어야 한다** — 없으면 화면 코드가 검사에서만 죽어, 클립보드가 없는
     // 브라우저에서 무슨 일이 나는지 아무도 못 본다.
     focus() {}, select() {},
+    // 자리를 잡는 코드(`inline_edit.js` 의 칸 편집창)가 쓰는 것들. 이 DOM 에는
+    // 그림이 없으니 **0 짜리 상자**를 준다 — 좌표 계산 자체는 여기서 볼 것이
+    // 아니고, 없으면 그 코드가 검사에서만 죽어 정작 봐야 할 것(창이 언제
+    // 닫히는가)을 아무도 못 본다.
+    style: {},
+    offsetWidth: 0, offsetHeight: 0,
+    getBoundingClientRect() {
+      return { top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0 };
+    },
     querySelector(sel) { return queryAll(el, sel)[0] || null; },
     querySelectorAll(sel) { return queryAll(el, sel); },
     closest(sel) {
@@ -155,10 +169,22 @@ function makeEl(tag) {
       while (node) { if (matchesCompound(node, c)) return node; node = node.parent; }
       return null;
     },
+    // 그 줄이 이 줄의 안쪽인가(자기 자신도 안쪽이다 — 브라우저와 같다).
+    // "창 바깥을 눌렀는가" 를 가리는 자리가 쓴다(`inline_edit.js` 의 편집창).
+    // 없으면 그 코드가 검사에서만 죽어, 창이 언제 닫히는지를 아무도 못 본다.
+    contains(other) {
+      let node = other;
+      while (node) { if (node === el) return true; node = node.parent; }
+      return false;
+    },
     get childNodes() { return el.children; },
     // 브라우저가 부르는 이름. 화면 코드는 `parentNode` 를 쓰는데 여기 없으면
     // 검사에서만 `undefined` 를 만나 죽는다 — 그 자리를 아무도 못 보게 된다.
     get parentNode() { return el.parent; },
+    // 화면 코드가 스스로 알리는 자리(`table.dispatchEvent(new CustomEvent(…))`).
+    // 없으면 그 줄에서 예외가 나고, 그 예외를 감싼 `catch` 가 **저장이 실패한
+    // 것처럼** 화면을 되돌린다 — 멀쩡한 저장이 검사에서만 실패로 보인다.
+    dispatchEvent(ev) { el.fire(ev && ev.type, ev); return true; },
     // 이벤트는 버블링까지 흉내 낸다 — 칩은 줄(`#group-filter`)이 대신 듣는다.
     fire(type, extra) {
       const ev = Object.assign({ target: el, stopPropagation() {}, preventDefault() {} }, extra || {});
@@ -271,6 +297,13 @@ function makeDocument(root) {
     querySelectorAll(sel) { return queryAll(root, sel); },
     createElement(tag) { return makeEl(tag); },
     addEventListener(type, fn) { (documentHandlers[type] = documentHandlers[type] || []).push(fn); },
+    // **정말로 뗀다.** 흉내만 내고 놔두면, 닫힌 창이 계속 듣고 있는 고장을
+    // 검사가 못 본다(`inline_edit.js` 의 칸 편집창이 문서에서 바깥 누름을 듣는다).
+    removeEventListener(type, fn) {
+      const list = documentHandlers[type] || [];
+      const at = list.indexOf(fn);
+      if (at >= 0) list.splice(at, 1);
+    },
     body: root
   };
 }
