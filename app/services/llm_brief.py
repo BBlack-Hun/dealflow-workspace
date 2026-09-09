@@ -23,11 +23,27 @@
 `resolve()` 가 앱 안에서 다시 이름으로 바꾼다 — 그 길이 없으면 번호로
 내보내는 순간 답을 못 쓴다.
 
-**IR 기업은 이름을 넣는다.** 소개하려고 모아 둔 자료라 이름이 없으면 읽히지
-않고, 어차피 딜소개 문구에 실려 투자사에게 그대로 나가는 이름이다.
+**기업도 이름 없이 번호로 나간다.** 처음에는 이름을 넣었다 — 소개하려고 모아
+둔 자료라 이름이 없으면 읽히지 않는다고 보았다. 그런데 맞추는 데 쓰이는 것은
+분야·단계·요약·규모이지 이름이 아니고, 답은 `C-7` 로 돌아와 `resolve()` 가 앱
+안에서 이름으로 되돌린다 — **사람이 잃는 것이 없다.** 개발 자료로 재 보니
+IR 기업 344곳 중 한줄소개·요약 문장 안에 자기 이름이 또 적힌 곳은 5곳뿐이라,
+이름 칸을 빼도 남는 설명이 그대로다.
+
+바로 위 문단이 말하는 "필요 없는 것을 내보내지 않는 것이 가장 확실한 보호" 가
+**기업 쪽에서는 지켜지지 않고 있었다.** 이제 양쪽이 같은 규칙이다.
+
+무엇을 이미 보냈는지도 함께 나간다
+----------------------------------
+맞추는 쪽이 제일 먼저 하는 일이 **이미 보낸 것을 빼는 것**이다. 그 사실이
+자료에 없으면 LLM 은 지난달에 보낸 기업을 다시 고르고, 사람이 그것을 매번
+손으로 걸러야 한다. 그래서 투자사 줄마다 `sent_before` 로 **이미 보낸 기업
+번호**를 싣는다 — 번호만이다. 회차 제목·문구 같은 자유 문장은 싣지 않는다
+(안 내보내는 것이 가리는 것보다 낫다).
 """
 from __future__ import annotations
 
+import json
 import re
 from typing import Dict, List, Optional
 from urllib.parse import quote
@@ -53,9 +69,45 @@ COMPANY_PREFIX = "C"
 # 어긋나고, 어긋난 쪽을 읽은 답은 100배가 틀어진 채 돌아온다.
 AMOUNT_UNIT = "백만원"
 
-NOTE = ("투자사는 이름 없이 번호로만 나갑니다. 답하실 때 V-… · C-… 를 그대로 "
-        "적어 주시면 앱에서 누구인지 다시 찾을 수 있습니다. "
-        f"금액 단위는 {AMOUNT_UNIT} 입니다.")
+#: 시트에서 옮겨 온 지난 발송 기록의 종류(`ContactActivity.kind`).
+#: `services/deal_history.py` 가 같은 값을 읽는다 — 기업별 '최근에 보냄' 표시가
+#: 세는 것과 여기서 세는 것이 같은 기록이어야 한다.
+ACTIVITY_KIND = "deal_intro"
+
+#: 이력에 담는 기업 번호의 **최대 개수**(투자사 한 명당, 최근 것부터).
+#:
+#: 회차가 쌓이면 한 사람의 이력만 수백 개가 된다. 300여 명분이면 자료가
+#: 통째로 무거워지는데, 정작 쓰이는 것은 "이건 이미 보냈다" 는 사실뿐이라
+#: 오래된 것까지 다 실을 값어치가 없다. **자른 사실은 자료 안에 밝힌다**
+#: (`sent_before_more`) — 조용히 자르면 읽는 쪽이 그게 전부인 줄 안다.
+HISTORY_LIMIT = 60
+
+#: 한 투자사에게 **몇 곳을 골라 달라고 할지.**
+#:
+#: **이 수를 여기 말고 다른 데 적지 마라.** 프롬프트도 화면도 이 값을 읽는다
+#: — 두 곳에 적으면 한쪽만 고쳐지고, 사람은 8곳을 시켰다고 믿는데 10곳이
+#: 온다. `tests/test_llm_brief.py` 가 이 값을 바꿔 보고 프롬프트가 따라오는지
+#: 확인한다.
+PICK_COUNT = 8
+
+#: 답이 어떤 모양이어야 하는지 보여 주는 한 줄.
+#:
+#: **화면의 붙여넣기 칸 예시(`templates/deals.html`)와 같은 문장이다.** 둘이
+#: 갈리면 사람이 보는 예시와 LLM 이 받은 지시가 달라지고, 그러면
+#: [번호 → 이름 찾기] 가 못 읽는 모양으로 답이 온다(맨숫자는 일부러 안 읽는다).
+ANSWER_EXAMPLE = "V-31 님께는 C-7, C-12 를 소개하시면 좋겠습니다"
+
+NOTE = ("투자사도 기업도 이름 없이 번호로만 나갑니다. 답하실 때 V-… · C-… 를 "
+        "그대로 적어 주시면 앱에서 누구인지 다시 찾을 수 있습니다. "
+        f"금액 단위는 {AMOUNT_UNIT} 입니다. "
+        "`sent_before` 는 그 투자사에게 **이미 보낸** 기업 번호입니다 — "
+        "실제로 발송된 것만 셉니다(만들다 만 것·실패·취소는 세지 않습니다). "
+        f"최근 {HISTORY_LIMIT}개까지만 싣고, 더 있으면 `sent_before_more` 에 "
+        "남은 개수를 적습니다. 이력의 번호 중에는 아래 기업 목록에 없는 것이 "
+        "있을 수 있습니다 — 지금은 소개할 수 없게 된 기업이며, 그래도 "
+        "**이미 보낸 것**이므로 다시 고르지 마세요. "
+        "`sent_before_unmatched` 는 옛 기록에는 남아 있지만 지금 기업 목록에서 "
+        "찾지 못한 곳의 **개수**입니다 — 그만큼 더 보냈다는 뜻입니다.")
 
 
 def investor_ref(contact_id: int) -> str:
@@ -104,7 +156,9 @@ def parse_refs(text: str) -> Dict[str, List[int]]:
 # 표식이 섞여 나오는지 본다 — 칸이 늘어도 검사가 먼저 걸린다.
 INVESTOR_FIELDS = ("sectors", "round_size", "stages",
                    "sourcing_note", "memo", "tips_note", "interest_level")
-COMPANY_FIELDS = ("name", "sector_major", "series", "one_liner", "summary",
+# **`name` 이 없다 — 일부러다.** 맞추는 데 쓰이는 것은 분야·단계·요약·규모이고,
+# 이름은 `resolve()` 가 앱 안에서 되돌린다(모듈 설명 참고).
+COMPANY_FIELDS = ("sector_major", "series", "one_liner", "summary",
                   "revenue_recent", "funding_total", "raise_target", "pre_value")
 
 
@@ -116,13 +170,27 @@ COMPANY_FIELDS = ("name", "sector_major", "series", "one_liner", "summary",
 # 2곳, 이메일 모양이 1곳에 있었다. 칸만 막으면 이것이 그대로 나간다 — 번호로만
 # 내보내는 뜻이 그 한 줄에서 사라진다.
 #
-# **그 줄 자신의 값만 지운다.** 남의 이름까지 전부 지우려면 300여 명의 값을
-# 300여 줄에 다 대 봐야 하는데, 담당자 이름·직함은 두세 글자라 멀쩡한 문장이
-# 통째로 뭉개진다(실제로 세 글자 담당자 이름이 남의 메모 261곳에 우연히
-# 들어맞았다). 지켜야 하는 것은 **이 줄이 누구인지 알아볼 수 없는 것**이므로,
-# 그 줄을 가리키는 값만 지우면 번호로 내보내는 뜻이 유지된다.
-IDENTIFYING_FIELDS = ("kakao_room_name", "firm", "name", "email",
-                      "phone", "office_phone", "office_fax")
+# **사람 이름·연락처는 그 줄 자신의 것만 지운다.** 남의 것까지 전부 지우려면
+# 300여 명의 값을 300여 줄에 다 대 봐야 하는데, 담당자 이름·직함은 두세 글자라
+# 멀쩡한 문장이 통째로 뭉개진다(실제로 세 글자 담당자 이름이 남의 메모 261곳에
+# 우연히 들어맞았다). 지켜야 하는 것은 **이 줄이 누구인지 알아볼 수 없는 것**
+# 이므로, 그 줄을 가리키는 값만 지우면 번호로 내보내는 뜻이 유지된다.
+#
+# **상호(기업명·투자사명)는 다르다 — 남의 것도 지운다.** 아래 `_org_pattern`
+# 참고. 짧아서 뭉개지는 문제가 상호에는 없고, 지금 이 자료는 기업도 번호로만
+# 내보내므로 남의 메모에 적힌 기업명 하나가 그 규칙을 통째로 무르게 한다.
+INVESTOR_IDENTIFYING_FIELDS = ("kakao_room_name", "firm", "name", "email",
+                               "phone", "office_phone", "office_fax")
+
+# 기업도 같은 처리를 받는다. 이름 칸을 빼도 **문장 안에 자기 이름이 남는**
+# 줄이 있다(개발 자료 344곳 중 5곳). 칸만 막고 끝내면 번호로 내보내는 뜻이
+# 그 다섯 줄에서 사라진다 — 투자사 쪽에서 이미 겪은 것과 같은 일이다.
+#
+# **같은 `_scrub` 을 쓴다.** 기업용 함수를 따로 만들면 한쪽이 낡는다(전화·
+# 이메일 모양을 한쪽에만 더하는 식으로). 다른 것은 "그 줄 자신을 가리키는
+# 값" 의 목록뿐이라, 목록만 갈라 둔다.
+COMPANY_IDENTIFYING_FIELDS = ("name", "kakao_room_name", "contact_name",
+                              "contact_email", "contact_phone", "assignee_name")
 
 # 지운 자리는 **비우지 않고 표시한다.** 그냥 빼면 "이사님과 통화" 처럼 문장이
 # 멀쩡해 보여서, 뭔가 지워졌다는 것을 읽는 쪽도 사람도 알 수 없다.
@@ -132,9 +200,61 @@ MASK = "[가림]"
 _PHONE = re.compile(r"0\d{1,2}[-.\s]?\d{3,4}[-.\s]?\d{4}")
 _EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
 
+#: 남의 상호를 지울 때의 **최소 길이**.
+#:
+#: 짧은 값으로 지우기 시작하면 멀쩡한 문장이 뭉개진다(`카카오` 를 지우면
+#: `카카오톡` 이야기가 `[가림]톡` 이 된다). 개발 자료로 3·4·5·6자를 다 재
+#: 보니 3자와 4자가 잡아내는 것이 **똑같았고**(걸린 칸 9개 · 76자), 값의
+#: 개수만 582개에서 541개로 줄었다 — 잡는 것이 같다면 덜 지우는 쪽이 낫다.
+CROSS_MIN_LEN = 4
 
-def _scrub(text: str, row=None) -> str:
+
+def _org_pattern(db: Session):
+    """자료에 나오면 안 되는 **상호**를 한 번에 잡는 그물. 없으면 `None`.
+
+    ## 왜 남의 것까지 지우나
+
+    `_scrub` 은 그 줄 자신의 값만 지운다. 그런데 실데이터를 훑어 보니 **투자사
+    메모에 다른 기업의 이름이 적혀 있었다**("○○ 소개드렸습니다" 류로 12곳,
+    남의 투자사명이 3곳, 남의 기업명이 다른 기업 소개 문장에 1곳). 기업을
+    번호로만 내보내기로 해 놓고 그 이름이 옆줄 메모로 나가면, 규칙이 지켜지는
+    줄과 안 지켜지는 줄이 섞인 채로 나간다 — 그런 보호는 없는 것과 같다.
+
+    ## 얼마나 뭉개지나
+
+    개발 자료로 재 보니 자유 문장 1,018칸 47,226자 중 **9칸 76자**가 가려진다
+    (0.16%). 남는 문장은 그대로다 — 상호는 문장의 뼈대가 아니라 이름표다.
+
+    ## 사람 이름은 여기 넣지 않는다
+
+    두세 글자라 남의 멀쩡한 문장에 우연히 들어맞는다(바로 위 문단). 사람
+    이름은 지금까지대로 **그 줄 자신의 것만** 지운다.
+
+    ## 한 번만 짓는다
+
+    자료 한 벌에 문장이 1,000칸 넘게 들어 있어서, 칸마다 상호 500여 개를 대
+    보면 느리다. `brief()` 가 한 번 지어 두 함수에 넘긴다.
+    """
+    from ..models import VcContact
+
+    values = {(c.name or "").strip()
+              for c in db.execute(select(IrCompany)).scalars().all()}
+    values |= {(c.firm or "").strip()
+               for c in db.execute(select(VcContact)).scalars().all()}
+    # 긴 것부터 — 짧은 것을 먼저 지우면 긴 상호의 나머지가 남는다.
+    picked = sorted((v for v in values if len(v) >= CROSS_MIN_LEN),
+                    key=len, reverse=True)
+    if not picked:
+        return None
+    return re.compile("|".join(re.escape(v) for v in picked))
+
+
+def _scrub(text: str, row=None,
+           identifying=INVESTOR_IDENTIFYING_FIELDS, others=None) -> str:
     """문장에서 그 줄을 알아볼 수 있는 것을 지운다.
+
+    **투자사와 기업이 같이 쓴다.** 다른 것은 `identifying` — 그 줄 자신을
+    가리키는 칸이 무엇인가뿐이다.
 
     **날짜는 건드리지 않는다**(`8/19 : 초기 기업보다는…`). 언제 들은 요청인지가
     그 자체로 정보라 사람이 남겨 달라고 못 박은 자리다 — 여기서 지우는 것은
@@ -144,16 +264,21 @@ def _scrub(text: str, row=None) -> str:
     Deal 공유`), 짧은 쪽을 먼저 지우면 방 이름의 나머지가 남는다.
     """
     for value in sorted(
-            {(getattr(row, f, None) or "").strip() for f in IDENTIFYING_FIELDS},
+            {(getattr(row, f, None) or "").strip() for f in identifying},
             key=len, reverse=True):
         # 한 글자짜리 값으로 지우기 시작하면 멀쩡한 문장이 통째로 뭉개진다.
         if len(value) >= 2:
             text = text.replace(value, MASK)
+    # 남의 상호(`_org_pattern`). 자기 값을 먼저 지운 뒤에 훑는다 — 순서가
+    # 바뀌어도 결과는 같지만, 자기 값이 더 정확해서 먼저 잡는 편이 낫다.
+    if others is not None:
+        text = others.sub(MASK, text)
     text = _PHONE.sub(MASK, text)
     return _EMAIL.sub(MASK, text)
 
 
-def _fill(row, fields, scrub_with=None) -> dict:
+def _fill(row, fields, scrub_with=None,
+          identifying=INVESTOR_IDENTIFYING_FIELDS, others=None) -> dict:
     """값이 있는 칸만 담는다.
 
     투자사 300여 명 중 소싱메모·팁스메모가 든 사람은 소수다. 빈 칸을 전부
@@ -165,13 +290,142 @@ def _fill(row, fields, scrub_with=None) -> dict:
     for field in fields:
         value = getattr(row, field, None)
         if isinstance(value, str):
-            value = _scrub(value.strip(), scrub_with)
+            value = _scrub(value.strip(), scrub_with, identifying, others)
         if value not in (None, "", 0):
             out[field] = value
     return out
 
 
-def investors(db: Session, user: User) -> List[dict]:
+# ── 이미 보낸 기업 ──────────────────────────────────────────────────────────
+
+#: `SendItem.status` 중 **실제로 나간 것**. 이 값 하나만 이력에 든다.
+#:
+#: 나머지는 `pending`(아직 안 감) · `sending`(가는 중) · `failed`(못 감) ·
+#: `canceled`(사람이 멈춤)이고, 잡 쪽에도 `draft`(만들다 만 목록)가 있다.
+#: **그것들을 "보냈다" 로 세면 안 된다** — 안 나간 기업이 이력에 들면 LLM 이
+#: 멀쩡한 후보를 빼 버리고, 빠진 이유가 자료 어디에도 안 보인다.
+#: 앱의 다른 자리도 모두 이 값 하나로 센다(`routers/deals.py: _has_history` ·
+#: `services/deal_numbers.py: for_contact` · 대시보드).
+SENT_STATUS = "sent"
+
+
+def sent_history(db: Session, contact_ids) -> Dict[int, tuple]:
+    """`{담당자 id: ([기업 번호…], 못 실은 개수)}` — **최근 것부터**.
+
+    ## 이력은 **두 곳**에 있다
+
+      ① 이 시스템으로 보낸 회차 — `SendItem`(누구에게) → `SendJob`(어느 회차)
+         → `DealBatchCompany`(그 회차에 어떤 기업이 실렸나). 회차에 기업이 없는
+         발송(리마인드·미팅 요청 등)은 이어지는 줄이 없어 저절로 빠진다.
+      ② 시트에서 옮겨 온 지난 발송 기록 — `ContactActivity`. 담당자 줄에
+         **기업 이름**이 적혀 있다.
+
+    **②를 빼면 이 기능이 거의 헛돈다.** 개발 자료로 재 보니 ①이 30짝인데 ②가
+    2,495짝이었다(투자사 274명 중 ①로 이력이 생기는 사람이 5명, ②까지 세면
+    125명). 이 시스템으로 보내기 시작한 것이 최근이라 지난 것은 거의 다 ②에
+    있다 — ①만 세면 274명 중 269명이 "보낸 적 없음" 으로 나가고, 그건 사실이
+    아니다. `services/deal_history.py` 도 같은 이유로 둘을 합쳐 읽는다.
+
+    ## ② 는 이름으로 잇는다 — 못 이으면 **개수로 밝힌다**
+
+    ②에는 기업 번호가 아니라 이름이 적혀 있어서 지금 IR 기업 목록과 이름으로
+    맞춘다. 맞추는 규칙은 `deal_history._key` **그 한 곳**이다((주)·띄어쓰기
+    차이로 다른 기업이 되지 않게 다듬는다) — 여기에 다시 적으면 화면의
+    `최근에 보냄` 표시와 갈린다.
+
+    못 맞춘 이름이 있다(개발 자료로 2,913건 중 339건). **그것을 조용히 버리면
+    안 된다** — 읽는 쪽은 목록이 전부인 줄 알고 그 기업을 다시 고른다. 그렇다고
+    이름을 내보낼 수도 없다. 그래서 **몇 곳인지만** 세 번째 값으로 돌려준다.
+
+    ## 무엇을 "보냈다" 로 세는가
+
+    둘 다여야 한다 — **실제로 나갔고**(`SENT_STATUS`), **문구가 나가는 종류의
+    잡**(`SEND_KINDS`)이어야 한다. 뒤쪽은 이 저장소가 이미 한 번 데인 자리다:
+    방 연결 확인·시험 발송·스타트업 월간 발송도 `sent` 로 남는데, 그것을 세면
+    투자사에게 보낸 적 없는 기업이 이력에 든다. 세는 자리마다 따로 거르면 한
+    곳이 빠지므로 `models.SEND_KINDS` 한 곳을 읽는다.
+
+    소싱 명단으로 나간 건은 `contact_id` 가 비어 있어(받는 줄이 다른 표에 있다)
+    담당자 번호로 묶는 이 질의에 애초에 걸리지 않는다.
+
+    ## 같은 기업이 여러 번 나갔으면 한 번만
+
+    한 기업을 두 회차에 걸쳐 보냈어도 사람이 알아야 하는 것은 "보냈다" 하나다.
+    **자르는 것은 겹치는 것을 지운 뒤**라, 60개라면 서로 다른 기업 60곳이다.
+    """
+    from ..models import (ContactActivity, DealBatchCompany, SendItem, SendJob,
+                          SEND_KINDS)
+    # 이름을 맞추는 규칙은 그 한 곳뿐이다(밑줄로 시작하지만 이 저장소에서는
+    # 이미 공유되는 판정이다 — `_room_state` 와 같은 자리).
+    from .deal_history import _key
+
+    ids = set(contact_ids)
+    if not ids:
+        return {}
+
+    # `(언제, 기업 id)` — 두 곳에서 모아 뒤에서 한 번에 추린다.
+    found: Dict[int, List[tuple]] = {}
+    unmatched: Dict[int, set] = {}
+
+    # ① 이 시스템으로 보낸 회차
+    for contact_id, when, company_id in db.execute(
+        select(SendItem.contact_id, SendItem.sent_at, DealBatchCompany.company_id)
+        .join(SendJob, SendJob.id == SendItem.job_id)
+        .join(DealBatchCompany, DealBatchCompany.batch_id == SendJob.batch_id)
+        .where(SendItem.contact_id.in_(ids),
+               SendItem.status == SENT_STATUS,
+               SendJob.kind.in_(SEND_KINDS))
+        .order_by(SendItem.id.desc(), DealBatchCompany.position)
+    ).all():
+        found.setdefault(contact_id, []).append((when or "", company_id))
+
+    # ② 시트에서 옮겨 온 지난 발송 기록 — 이름으로 잇는다.
+    by_name: Dict[str, int] = {}
+    for c in db.execute(select(IrCompany)).scalars().all():
+        by_name.setdefault(_key(c.name), c.id)
+    by_name.pop("", None)
+
+    for act in db.execute(
+        select(ContactActivity).where(ContactActivity.contact_id.in_(ids),
+                                      ContactActivity.kind == ACTIVITY_KIND)
+    ).scalars().all():
+        try:
+            names = json.loads(act.company_names or "[]")
+        except (TypeError, ValueError):
+            continue
+        for name in names:
+            key = _key(name or "")
+            if not key:
+                continue
+            company_id = by_name.get(key)
+            if company_id:
+                found.setdefault(act.contact_id, []).append(
+                    (act.happened_at or "", company_id))
+            else:
+                # **이름은 담지 않는다** — 몇 곳인지만 센다.
+                unmatched.setdefault(act.contact_id, set()).add(key)
+
+    out: Dict[int, tuple] = {}
+    for contact_id in ids:
+        seen: set = set()
+        refs: List[str] = []
+        more = 0
+        # 최근 것부터. 날짜가 비어 있는 줄은 뒤로 밀린다 — 자를 일이 생겼을 때
+        # 언제 것인지 아는 쪽을 먼저 남긴다.
+        for _when, company_id in sorted(found.get(contact_id, []),
+                                        key=lambda pair: pair[0], reverse=True):
+            if company_id in seen:
+                continue
+            seen.add(company_id)
+            if len(refs) < HISTORY_LIMIT:
+                refs.append(company_ref(company_id))
+            else:
+                more += 1
+        out[contact_id] = (refs, more, len(unmatched.get(contact_id, ())))
+    return out
+
+
+def investors(db: Session, user: User, *, others=None) -> List[dict]:
     """맞추는 데 쓸 투자사 자료 — **이름 없이 번호로만**.
 
     누구를 담느냐는 **투자사 관리 현황이 세는 그 모집단**이다
@@ -189,10 +443,22 @@ def investors(db: Session, user: User) -> List[dict]:
 
     rows = sheet_owner.managed(db, user,
                                team_wide=may_manage_team_contacts(user))
+    history = sent_history(db, [c.id for c in rows])
     out = []
     for c in rows:
         item = {"id": investor_ref(c.id)}
-        item.update(_fill(c, INVESTOR_FIELDS, scrub_with=c))
+        item.update(_fill(c, INVESTOR_FIELDS, scrub_with=c, others=others))
+        # 이미 보낸 기업 — **번호만**. 비어 있어도 칸을 남긴다: 다른 칸과
+        # 달리 여기서 칸이 없는 것과 "보낸 적 없다" 는 것을 읽는 쪽이 구별할
+        # 길이 없고, 그 둘을 헷갈리면 이력을 실은 뜻이 사라진다.
+        refs, more, unmatched = history.get(c.id, ([], 0, 0))
+        item["sent_before"] = refs
+        if more:
+            item["sent_before_more"] = more
+        # 옛 기록의 이름 중 지금 기업 목록에서 못 찾은 것. **개수만** 나간다 —
+        # 조용히 버리면 읽는 쪽이 목록을 전부인 줄 안다.
+        if unmatched:
+            item["sent_before_unmatched"] = unmatched
         # 방이 살아 있어야 딜 소개가 나간다. 맞춰 놓고 보낼 길이 없으면
         # 그 추천은 쓸 수 없으므로 자료에 함께 담는다 — 거르지는 않는다
         # (막힌 사람을 골라 주면 그때 방부터 뚫으면 된다).
@@ -201,7 +467,7 @@ def investors(db: Session, user: User) -> List[dict]:
     return out
 
 
-def companies(db: Session) -> List[dict]:
+def companies(db: Session, *, others=None) -> List[dict]:
     """소개할 수 있는 IR 기업 자료 — 이름을 넣는다.
 
     기업은 **팀 공용**이다(`/companies` 화면도 담당으로 나누지 않는다).
@@ -216,9 +482,11 @@ def companies(db: Session) -> List[dict]:
     다시 계산하지 않고 `IrCompany.introducible` 을 그대로 읽는다 — 여기서
     조건을 새로 적으면 화면의 `내용 부족` 표시와 갈린다.
 
-    이름은 나가야 하므로 가리지 않는다. 다만 한줄소개·요약에 **연락처가 문장째
-    적혀 있는** 경우가 있어(투자사 쪽에서 실제로 나왔다) 전화·이메일 모양은
-    여기서도 지운다 — `_scrub` 에 줄을 주지 않으면 그 둘만 걸린다.
+    **이름은 나가지 않는다**(모듈 설명 참고). 칸을 뺐다고 끝이 아니라, 한줄
+    소개·요약 **문장 안에 자기 이름이 또 적힌** 줄이 있어(개발 자료 344곳 중
+    5곳) 투자사와 **같은 `_scrub`** 을 지나게 한다. 기업 쪽 연락 담당자·대표
+    카톡방·우리 팀 담당자 이름도 같은 자리에서 지워진다
+    (`COMPANY_IDENTIFYING_FIELDS`).
     """
     from ..routers.companies import BLOCKED_CONTRACT, contract_key
 
@@ -228,10 +496,60 @@ def companies(db: Session) -> List[dict]:
         if contract_key(c.contract_status) == BLOCKED_CONTRACT:
             continue
         item = {"id": company_ref(c.id)}
-        item.update(_fill(c, COMPANY_FIELDS))
+        item.update(_fill(c, COMPANY_FIELDS, scrub_with=c,
+                          identifying=COMPANY_IDENTIFYING_FIELDS,
+                          others=others))
         item["introducible"] = bool(c.introducible)
         out.append(item)
     return out
+
+
+# ── 시킬 말 ────────────────────────────────────────────────────────────────
+
+def prompt() -> str:
+    """LLM 창에 자료와 함께 붙여 넣을 **지시문**.
+
+    ## 짓는 자리는 여기 하나다
+
+    화면(`templates/deals.html`)도 스크립트(`static/js/llm_brief.js`)도 이
+    문장을 들고 있지 않다. 스크립트는 이 함수가 지어 `/api/llm-brief.json` 에
+    실어 보낸 `prompt` 를 **받아서** 쓴다. 화면과 API 가 각자 문장을 들고
+    있으면 반드시 갈린다 — 이 저장소가 반복해 당한 사고다(좌측 메뉴와 라우터,
+    투자사 수 117명·123명).
+
+    ## 뽑을 개수는 `PICK_COUNT` 하나뿐이다
+
+    문장 안에 `8` 을 적지 않는다. 여기저기 흩어 적으면 한 곳만 고쳐지고,
+    사람은 8곳을 시켰다고 믿는데 다른 수가 온다.
+
+    ## 번호로 답해 달라는 요구가 반드시 든다
+
+    이 요구가 빠지면 답이 이름·설명으로 돌아오고, 그러면
+    [번호 → 이름 찾기] 가 아무것도 못 읽는다(맨숫자는 일부러 안 읽는다).
+    예시는 화면의 붙여넣기 칸과 **같은 문장**이다(`ANSWER_EXAMPLE`).
+
+    ## 끝을 `── 자료 ──` 로 맺는다
+
+    복사하면 이 글 바로 뒤에 자료가 붙는다. 경계가 없으면 지시문과 자료가
+    한 덩어리로 읽혀서, 자료 안의 메모 문장이 지시로 읽힐 수 있다.
+    """
+    return "\n".join([
+        "아래 자료(JSON)를 보고, 투자사마다 소개하면 좋을 기업을 골라 주세요.",
+        "",
+        f"1. 투자사마다 기업 {PICK_COUNT}곳을 골라 주세요.",
+        "2. 그 투자사에게 **이미 보낸 기업(`sent_before`)은 빼 주세요.**",
+        "3. 투자사의 성향 — 관심 분야(`sectors`) · 투자 단계(`stages`) · "
+        "투자 규모(`round_size`) · 메모(`memo` · `sourcing_note` · `tips_note`) "
+        "— 를 보고 맞는 곳을 골라 주세요.",
+        f"4. 빼고 나니 {PICK_COUNT}곳이 안 되면 되는 만큼만 적고 몇 곳인지 "
+        "밝혀 주세요. 수를 채우려고 안 맞는 곳을 넣지 마세요.",
+        f"5. 답은 **번호로** 적어 주세요. 예) {ANSWER_EXAMPLE}",
+        "",
+        "투자사도 기업도 이름 없이 번호로만 나갑니다. 자료 맨 앞의 `note` 에 "
+        "나머지 규칙이 적혀 있으니 함께 읽어 주세요.",
+        "",
+        "── 자료 ──",
+    ])
 
 
 def brief(db: Session, user: User, *, now: Optional[str] = None) -> dict:
@@ -244,6 +562,9 @@ def brief(db: Session, user: User, *, now: Optional[str] = None) -> dict:
     from ..deps import may_manage_team_contacts
 
     team_wide = may_manage_team_contacts(user)
+    # 상호를 잡는 그물은 **한 번만** 짓는다(`_org_pattern` 참고). 두 함수가
+    # 각자 지으면 같은 것을 두 번 짓고, 언젠가 한쪽만 안 쓰게 된다.
+    others = _org_pattern(db)
     return {
         # 언제 꺼낸 자료인지. 메모에 날짜가 섞여 있어서(`8/19 : …`) 자료 자체가
         # 언제 것인지 없으면 그 날짜들을 어디에 견줘야 할지 알 수 없다.
@@ -251,8 +572,12 @@ def brief(db: Session, user: User, *, now: Optional[str] = None) -> dict:
         "scope": "팀 전체" if team_wide else "본인 담당",
         "amount_unit": AMOUNT_UNIT,
         "note": NOTE,
-        "investors": investors(db, user),
-        "companies": companies(db),
+        # 시킬 말도 **자료와 함께** 나간다. 화면의 [복사] 는 이것을 앞에
+        # 붙여 한 덩어리로 담고, [자료 내려받기] 로 받은 파일만 봐도 무엇을
+        # 시키는 자료인지 알 수 있다.
+        "prompt": prompt(),
+        "investors": investors(db, user, others=others),
+        "companies": companies(db, others=others),
     }
 
 
