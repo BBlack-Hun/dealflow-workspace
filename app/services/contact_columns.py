@@ -258,6 +258,13 @@ STARTUP_LAYOUT = Layout(
         # 처음에는 `계산서 수신여부` 였고, 이름만 바꾸었다. 열쇠를 같이 바꾸면
         # 이미 `notes` 에 들어 있는 `O`/`X` 가 통째로 끊긴다. **이름과 열쇠가
         # 어긋난 것은 알고 둔 것이니 "오타" 로 보고 고치지 마라.**
+        #
+        # **같은 물음을 적는 칸이 다른 화면에도 둘 더 있다** —
+        # `models.IrCompany.contract_received`(IR 기업 현황 `계약서 수신됨`)와
+        # `models.ConsultingCompany.contract_received`(`투자컨설턴트` 의 `계약` ·
+        # `관리 스타트업` 탭). 셋은 값을 주고받지 않는다 — 여기에 `O` 를 넣어도
+        # 저 둘은 계속 비어 있다. 왜 아직 하나로 못 모으는지는
+        # `models.IrCompany.contract_received` 의 주석에 적혀 있다.
         Column("계약서 수신여부", "invoice_received", 140, source="note",
                kind="pick", choices="O,X"),
     ],
