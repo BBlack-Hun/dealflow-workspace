@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import config, deps
 from .deps import NoConsulting, NotAdmin, NotAuthenticated
-from .services import backup, followup_sms
+from .services import auto_send, backup, followup_sms
 from .routers import auth as auth_router
 from .routers import templates_crud
 from .routers import setup as setup_router
@@ -31,6 +31,14 @@ def create_app() -> FastAPI:
     # 깨어나 오늘 것이 나갔는지 본다 — `services/followup_sms.py`).
     # 문자 발송 설정이 없으면 실 자체가 뜨지 않는다: 안 켜면 아무 일도 없다.
     followup_sms.start_scheduler()
+
+    # 결과 문의(미팅 후기)의 **발송 대기 목록**도 같은 방식으로 이 프로세스 안에서
+    # 선다. 물어볼 때가 되면 목록만 만들어 두고, 보내는 것은 그 계정이 진행
+    # 화면에서 [발송 시작] 을 눌렀을 때다(`services/auto_send.py`).
+    #
+    # **켠 종류가 하나도 없으면 실이 아예 뜨지 않는다.** 기본은 꺼짐이라 새로
+    # 세운 서버·검사에서는 이 줄이 아무 일도 하지 않는다(메일·문자가 그렇다).
+    auto_send.start_scheduler()
 
     app = FastAPI(title="dealflow", version="0.1.0 (Sprint 1)")
 

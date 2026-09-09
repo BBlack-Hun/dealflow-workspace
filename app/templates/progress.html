@@ -25,6 +25,14 @@
 <div class="progress-actions">
   <span id="job-status-badge" class="status-badge">-</span>
   {% if not readonly %}
+  {# [발송 시작] — **아직 한 건도 안 나간 회차**를 처음 내보낸다.
+     결과 문의 대기 목록이 그 상태로 선다(`services/auto_send.py`): 서버가
+     목록만 만들어 두고, 발송 프로그램은 `queued` 만 집어가므로 여기를 누를
+     때까지 아무것도 나가지 않는다. 단추 글자에 인원수가 들어가므로 실제
+     글자는 폴링 때마다 progress.js 가 채운다. #}
+  {# `inline` 은 줄 안에 서는 단추다 — 없으면 `.primary-btn` 이 폭을 다 먹어
+     같은 줄의 [엑셀 내려받기] 가 두 줄로 접힌다(예약 큐의 [시작] 과 같은 차림). #}
+  <button type="button" id="start-btn" class="primary-btn inline" hidden>발송 시작</button>
   <button type="button" id="cancel-btn" class="danger-btn">중단</button>
   <button type="button" id="retry-btn" class="secondary-btn" hidden>{% if verify %}불일치 재확인{% else %}실패 재시도{% endif %}</button>
   {# [중단] 으로 남은 취소 건을 다시 보낸다. 취소된 건이 없으면 progress.js 가 감춘다 —
@@ -41,6 +49,13 @@
   {% else %}
   <a href="/deals" class="linkbtn">새 발송</a>
   {% endif %}
+</div>
+
+{# 누르기 전에 **아무것도 안 나갔다는 것**을 분명히 적는다. 표가 곧 대기
+   목록이라 누구에게 가는지는 아래에 줄마다 있다. #}
+<div class="warn-box" id="draft-note" hidden>
+  <b>아직 아무것도 나가지 않았습니다.</b> 아래는 <b>보낼 목록</b>입니다 —
+  누구에게 어느 방으로 갈지 확인하고 <b>[발송 시작]</b> 을 누르면 그때 나갑니다.
 </div>
 
 {% if verify %}

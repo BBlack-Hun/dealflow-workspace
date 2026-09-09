@@ -21,7 +21,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import config
+from .. import config, deps
 from ..db import SessionLocal, get_db
 from ..deps import (admin_only, auto_attach_default_for,
                     consulting_default_for, consulting_is_only_screen,
@@ -829,6 +829,82 @@ def toggle_auto_attach(
     return RedirectResponse(
         f"/team?msg={quote(member.name)}+님이+자료+자동+첨부를+{state}+했습니다{note}",
         status_code=303)
+
+
+@router.post("/team/auto-send", include_in_schema=False)
+def save_auto_send(
+    kind: str = Form(""),
+    enabled: str = Form(""),
+    user_id: int = Form(0),
+    from_hour: int = Form(0),
+    until_hour: int = Form(0),
+    max_per_day: int = Form(0),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """**결과 문의 대기 목록을 자동으로 세울지** 정하는 자리. 여기가 손잡이다.
+
+    켜 두면 물어볼 때가 된 건을 모아 발송 목록이 저절로 선다 —
+    **보내는 것은 사람이다**(목록은 `draft` 로 서고, 그 계정이 진행 화면에서
+    [발송 시작] 을 눌러야 나간다).
+
+    ## 왜 `/setup` 이 아니라 팀 현황인가  ★ 이 판단이 이 기능의 모양이다
+
+    `/setup` 은 **본인이 자기 PC 를 손보는 화면**이다 — 발송기를 내려받고, 그 PC
+    의 자료 폴더를 적고, 시험을 눌러 본다. 거기 두면 **누구든 스스로 켤 수 있다.**
+
+    이 저장소는 그 값을 이미 치렀다. 자료 자동 첨부는 처음에 `/setup` 의 폴더 칸
+    하나로 켜졌고, 그래서 아무나 켤 수 있었다 — 지금은 관리자가 팀 현황에서
+    계정마다 정한다(바로 위 `toggle_auto_attach`, #107). 여기도 같은 자리에
+    둔다: 켜면 **그 계정 화면에 누를 것이 저절로 생긴다.**
+
+    팀 현황에 두어야 하는 이유가 둘 더 있다.
+
+    - **묻는 것이 "누구 계정으로 무엇을 언제" 다.** `/setup` 은 내 PC 하나만 알고,
+      다른 계정을 고르는 칸이 있을 자리가 아니다.
+    - **메일·문자 설정이 이미 여기 나란히 서 있다.** 서버가 때맞춰 알아서 하는
+      것들이 한 화면에 모인다.
+
+    **누가 설정할 수 있는지에 대한 새 규칙을 만들지 않았다** — 옆칸 둘과 같은
+    문이다(`admin_only`).
+
+    ## 값은 여기서 판정하지 않는다
+
+    시각과 상한을 자르는 것은 `auto_send.save` 한 곳이다(`clamp_hours` ·
+    `clamp_cap`). 화면과 라우터가 각각 자르면 언젠가 한쪽만 고쳐진다.
+    """
+    admin_only(user)
+    from urllib.parse import quote
+
+    from ..services import auto_send
+
+    if kind not in auto_send.KINDS:
+        raise HTTPException(status_code=404, detail="그런 자동 준비는 없습니다")
+
+    member = db.get(User, user_id) if user_id else None
+    want_on = enabled == "on"
+
+    # 고르는 계정은 **딜소개를 보내는 살아 있는 계정**이어야 한다. 정지된 계정이나
+    # 투자컨설턴트(담당 투자사도 발송기도 없다)를 고르면 목록이 서기만 하고 누를
+    # 사람이 없다 — 켜 두고 아무 일도 안 일어나는 것이 제일 나쁘다.
+    if want_on and (member is None or not member.is_active
+                    or not deps.sends_deals(member)):
+        return RedirectResponse(
+            "/team?msg=자동+준비를+켜려면+보내는+계정을+고르세요", status_code=303)
+
+    setting = auto_send.save(db, kind, enabled=want_on,
+                             user_id=member.id if member else None,
+                             from_hour=from_hour, until_hour=until_hour,
+                             max_per_day=max_per_day)
+    label = auto_send.KINDS[kind].label
+    if not auto_send.is_on(setting):
+        return RedirectResponse(
+            f"/team?msg={quote(label)}+자동+준비를+껐습니다", status_code=303)
+    # 켤 때는 **무엇이 정해졌는지 그대로 되읽어 준다.** 잘라 넣은 값이 있으면
+    # 여기서 드러난다(고른 것과 다른 값이 적혀 있으면 바로 보인다).
+    note = (f"{label}+대기+목록+자동+준비+켜짐+—+{quote(member.name)}+계정으로+"
+            f"{quote(auto_send.window_label(setting))}+·+하루+{setting.max_per_day}건까지")
+    return RedirectResponse(f"/team?msg={note}", status_code=303)
 
 
 @router.post("/team/members/{member_id}/reset-password", include_in_schema=False)

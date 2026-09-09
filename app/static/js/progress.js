@@ -44,6 +44,25 @@
         "</tr>";
     }).join("");
 
+    // 아직 **한 건도 나가지 않은** 회차. 결과 문의 대기 목록이 이 상태로 선다
+    // (`services/auto_send.py`) — 발송 프로그램은 `queued` 만 집어가므로,
+    // 사람이 [발송 시작] 을 누를 때까지 그대로 기다린다.
+    var draft = (d.status === "draft");
+    var startBtn = document.getElementById("start-btn");
+    if (startBtn) {
+      var waiting = d.counts.pending || 0;
+      startBtn.hidden = !(draft && waiting > 0);
+      // **몇 명에게 나가는지 누르기 전에** 보여야 한다 — 발송은 되돌릴 수 없다.
+      // 취소분 재발송·이어 보내기가 같은 이유로 단추에 수를 적는다.
+      startBtn.textContent = "발송 시작 (" + waiting + "명)";
+      startBtn.dataset.count = waiting;
+    }
+    var draftNote = document.getElementById("draft-note");
+    if (draftNote) draftNote.hidden = !draft;
+    // 아직 안 보낸 회차를 [중단] 할 일은 없다 — 중단할 것이 없다.
+    var cancelBtn2 = document.getElementById("cancel-btn");
+    if (cancelBtn2) cancelBtn2.hidden = draft;
+
     var terminal = (d.status === "done" || d.status === "done_with_errors" || d.status === "canceled");
     // 관리자가 읽기 전용으로 보고 있으면 버튼 자체가 없다 — 재시도 표시할 곳도 없다.
     var retryBtn = document.getElementById("retry-btn");
@@ -129,6 +148,17 @@
       : "아직 못 보낸 " + n + "명에게 마저 보냅니다.\n이미 발송된 사람에게는 가지 않습니다. 계속할까요?";
     if (!confirm(q)) return;
     fetch("/api/jobs/" + jobId + "/resume", { method: "POST" })
+      .then(function (r) { return r.json(); })
+      .then(function () { if (!timer) timer = setInterval(poll, 2000); poll(); });
+  });
+
+  var startClickBtn = document.getElementById("start-btn");
+  if (startClickBtn) startClickBtn.addEventListener("click", function () {
+    var n = Number(startClickBtn.dataset.count || 0);
+    // 되돌릴 수 없는 일이라 누르기 전에 한 번 더 묻는다. 화면에 보인 수를 그대로
+    // 쓴다 — 여기서 다시 세면 단추와 확인창이 다른 수를 말할 수 있다.
+    if (!confirm(n + "명에게 지금 보냅니다.\n보낸 뒤에는 되돌릴 수 없습니다. 계속할까요?")) return;
+    fetch("/api/jobs/" + jobId + "/start", { method: "POST" })
       .then(function (r) { return r.json(); })
       .then(function () { if (!timer) timer = setInterval(poll, 2000); poll(); });
   });
