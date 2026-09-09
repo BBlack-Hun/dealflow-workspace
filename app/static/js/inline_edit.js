@@ -333,6 +333,12 @@
           if (row && row.hasAttribute("data-f-" + fkey)) {
             row.setAttribute("data-f-" + fkey, forFilter(cell, value));
           }
+          // 세우는 값도 같은 이유로 행에 적어 둔다(`data-s-*` · table_sort.js).
+          // 안 적으면 화면에는 새 이름이 떠 있는데 머리글을 누르면 **옛 이름
+          // 자리**에 선다 — 필터가 겪은 것과 같은 어긋남이다.
+          if (row && row.hasAttribute("data-s-" + field)) {
+            row.setAttribute("data-s-" + field, value);
+          }
           setTimeout(function () { cell.classList.remove("saved"); }, 900);
           return r.json().catch(function () { return {}; }).then(function (data) {
             table.dispatchEvent(new CustomEvent("inline-saved",

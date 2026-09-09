@@ -235,8 +235,21 @@
       def.th.appendChild(btn);
     });
 
+    // 줄에 적힌 값(`data-s-*`)을 **다시 읽는다.** 값은 처음 한 번만 읽으므로,
+    // 칸을 눌러 고친 뒤(`inline_edit.js`) 다시 읽어 주지 않으면 화면에는 새 이름이
+    // 떠 있는데 머리글을 누르면 **옛 이름 자리에 선다.** 필터가 같은 이유로 이미
+    // `refresh` 를 갖고 있다(`filters.js`) — 값을 캐시해 두는 쪽은 둘 다 이 짝이
+    // 있어야 한다.
+    function refresh() {
+      rows.forEach(function (tr, i) {
+        keys.forEach(function (k) { data[i].values[k] = tr.getAttribute("data-s-" + k); });
+      });
+      apply();
+    }
+
     apply();
-    return { apply: apply, getState: function () { return state; } };
+    return { apply: apply, refresh: refresh,
+             getState: function () { return state; } };
   }
 
   var API = {
