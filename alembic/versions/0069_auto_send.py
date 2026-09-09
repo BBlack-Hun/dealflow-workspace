@@ -26,7 +26,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "0069_auto_send"
-down_revision = "0067_consulting_columns_per_sheet"
+down_revision = "0068_consulting_contract_done"
 branch_labels = None
 depends_on = None
 
