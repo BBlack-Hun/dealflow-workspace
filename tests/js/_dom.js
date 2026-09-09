@@ -98,6 +98,12 @@ function makeEl(tag) {
     children: [], parent: null, handlers: {},
     hidden: false, checked: false, disabled: false,
     value: "", textContent: "",
+    // `data-*` 를 담는 자리. 브라우저는 속성과 이어 주지만 여기서는 평범한
+    // 객체로 둔다 — 화면 코드가 이 칸에 넣고 곧바로 되읽는 용도로만 쓴다
+    // (단추에 적힌 인원수 · 걸어 둔 예약 시각 — `progress.js`).
+    // 없으면 그 코드가 검사에서만 `undefined` 에 값을 넣다 죽어, 정작 봐야 할
+    // 자리를 아무도 못 본다.
+    dataset: {},
     classList: {
       _on: new Set(),
       add(c) { this._on.add(c); },

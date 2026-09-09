@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import config, deps
 from .deps import NoConsulting, NotAdmin, NotAuthenticated
-from .services import auto_send, backup, followup_sms
+from .services import auto_send, backup, followup_sms, scheduled_send
 from .routers import auth as auth_router
 from .routers import templates_crud
 from .routers import setup as setup_router
@@ -39,6 +39,15 @@ def create_app() -> FastAPI:
     # **켠 종류가 하나도 없으면 실이 아예 뜨지 않는다.** 기본은 꺼짐이라 새로
     # 세운 서버·검사에서는 이 줄이 아무 일도 하지 않는다(메일·문자가 그렇다).
     auto_send.start_scheduler()
+
+    # 예약 발송도 같은 얼개다 — 30초마다 깨어나, **시각이 된 회차**를
+    # [발송 시작] 과 같은 길로 내보낸다(`services/scheduled_send.py`).
+    #
+    # **끄는 스위치를 두지 않는다.** 켜고 끄는 칸이 있으면 사람은 예약을 걸어
+    # 두고 화면에서 `9/10 14:00 에 55명에게 나갑니다` 를 읽는데 실은 떠 있지
+    # 않은 상태가 생긴다 — 예약해 놓고 잊는 것이 이 기능에서 가장 흔한 사고인데,
+    # 그 위에 '켜 두는 것을 잊는' 사고를 하나 더 얹는 셈이다.
+    scheduled_send.start_scheduler()
 
     app = FastAPI(title="dealflow", version="0.1.0 (Sprint 1)")
 

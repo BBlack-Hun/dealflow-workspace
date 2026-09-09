@@ -14,8 +14,8 @@ from ..db import get_db
 from ..deps import get_current_user, may_manage_team_contacts, templates
 from ..models import IrCompany, SendJob, User
 from ..services import (cadence, contact_columns, deal_history, deal_queue,
-                        deal_stage, ir_attach, mailer, ref_panel, sheet_import,
-                        sheet_owner, sourcing_link, startup_send)
+                        deal_stage, ir_attach, mailer, ref_panel, scheduled_send,
+                        sheet_import, sheet_owner, sourcing_link, startup_send)
 from ..ui import MENU, base_ctx as _base_ctx
 from .companies import BLOCKED_CONTRACT
 from .companies import blocked_reason as company_blocked_reason
@@ -204,6 +204,11 @@ def deals_page(
         # 걸러졌는데 주소를 직접 치면 열리던 자리가 이 저장소에 있었다.
         "startup_send_on": startup_send.may_send(db, user),
         "startup_send_label": startup_send.LABEL,
+        # 예약 발송으로 고를 수 있는 시각의 폭. **서버가 정한 값을 화면에
+        # 실어 준다** — 화면에 숫자를 적어 두면 서버와 두 벌이 되어, 막는 자리와
+        # 안내하는 자리가 다른 말을 하는 날이 온다(`services/scheduled_send.py`).
+        "send_earliest_hour": scheduled_send.EARLIEST_HOUR,
+        "send_latest_hour": scheduled_send.LATEST_HOUR,
     })
     return templates.TemplateResponse("deals.html", ctx)
 

@@ -994,6 +994,27 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     go(false);
   });
 
+  // 고른 예약 시각. 안 골랐으면 빈 글자, **고를 수 없는 시각이면 `null`**.
+  //
+  // 화면에서도 막는다 — 서버가 다시 보지만(`services/scheduled_send.py: check`),
+  // 여기서 걸러 주면 왜 안 되는지를 누르는 그 자리에서 안다. 폭(09~19시)은
+  // 서버가 화면에 실어 준 값이다(`send_earliest_hour`) — 여기 숫자를 적으면
+  // 두 벌이 된다.
+  function scheduledAt() {
+    var box = document.getElementById("send-at");
+    var value = (box && box.value) || "";
+    if (!value) return "";
+    var early = Number(box.getAttribute("data-earliest"));
+    var late = Number(box.getAttribute("data-latest"));
+    var hour = parseInt(value.slice(11, 13), 10);
+    if (early && late && !(hour >= early && hour < late)) {
+      alert("예약은 " + early + ":00~" + late + ":00 안에서만 고를 수 있습니다 — "
+            + "받는 분들의 업무시간입니다.");
+      return null;
+    }
+    return value;
+  }
+
   function send() {
     var cids = selectedCompanyIds();
     var tids = selectedContactIds();
@@ -1008,8 +1029,14 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     var lastCheck = currentChannel() === "email"
       ? "\n받는 주소를 최종 확인하셨나요?"
       : "\n방 이름을 최종 확인하셨나요?";
+    // **언제 보낼까.** 비어 있으면 지금까지와 똑같이 바로 나간다.
+    var at = scheduledAt();
+    if (at === null) return;  // 고른 시각이 창 밖이다 — 이미 말했다
+    // 확인창이 **언제 나가는지**를 말한다. 고른 값을 그대로 읽어 적는다 —
+    // 여기서 날짜를 다시 지으면 서버가 회차 화면에 적는 문장과 두 벌이 된다.
+    var when = at ? ("\n" + at.replace("T", " ") + " 에 나갑니다 (지금은 나가지 않습니다).") : "";
     if (!confirm(what + "\n" + via + "대상 " + tids.length + "명에게 발송합니다."
-                 + editNote + lastCheck)) return;
+                 + when + editNote + lastCheck)) return;
     sendBtn.disabled = true;
     fetch("/api/deals/send", {
       method: "POST",
@@ -1017,6 +1044,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       body: JSON.stringify(Object.assign(
         { company_ids: cids, contact_ids: tids, title: title,
           overrides: editedOverrides(), channel: currentChannel(),
+          scheduled_at: at,
           subject: (document.getElementById("mail-subject") || {}).value || null },
         selectedTemplateIds()))
     })

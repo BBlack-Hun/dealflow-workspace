@@ -586,6 +586,27 @@ class SendJob(TimestampMixin, Base):
     started_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     finished_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
+    #: **언제 내보낼까** — 예약 발송(`services/scheduled_send.py`).
+    #:
+    #: 비어 있으면 예약이 아니다(지금까지와 같다). 값이 있으면 회차는 `draft`
+    #: 로 서서 기다린다 — **`queued` 로 미리 만들어 두지 않는다.** 발송기는
+    #: `queued` 만 집어가므로(`routers/agent_api.py: poll`), `queued` 인 채로
+    #: 시각을 재서 거르면 그 사이 폴링에 그대로 새어 나간다. 결과 문의 대기
+    #: 목록이 같은 이유로 `draft` 를 골랐다(`services/auto_send.py`).
+    #:
+    #: 저장 모양은 이 앱의 다른 시각 칸과 같다 — `clock.now_iso()` 의
+    #: `2026-09-10T14:00:00+09:00`.
+    scheduled_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+    #: 그 예약을 **푼 시각.** 예약이 두 번 풀리지 않게 하는 자물쇠다.
+    #:
+    #: 푸는 쪽은 이 칸이 빈 줄만 원자적으로 집는다(`scheduled_send._claim` —
+    #: `agent_api.poll` 의 선점과 같은 방식). 상태(`draft`→`queued`)로 집지
+    #: 않는 이유: 상태를 먼저 올려 커밋하면 그 순간 발송기가 집어갈 수 있는데,
+    #: 뒤이어 대기 건을 세우는 쪽이 상태를 한 번 더 만지면 이미 `running` 인
+    #: 회차를 `queued` 로 되돌려 **같은 사람에게 두 번** 나갈 수 있다.
+    released_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
     items: Mapped[list["SendItem"]] = relationship(
         back_populates="job", cascade="all, delete-orphan", order_by="SendItem.id"
     )

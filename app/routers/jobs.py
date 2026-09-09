@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from ..clock import now_iso
 from ..db import get_db
 from ..deps import agent_status, get_current_user
 from ..models import SendItem, SendJob, User
-from ..services import mail_sender
+from ..services import mail_sender, scheduled_send
 
 router = APIRouter(prefix="/api", tags=["jobs"])
 
@@ -49,6 +51,18 @@ def job_status(job_id: int, db: Session = Depends(get_db), user: User = Depends(
         "counts": _counts(job),
         "started_at": job.started_at,
         "finished_at": job.finished_at,
+        # **예약이 걸려 있는가.** 판정도 문장도 서버가 만든다
+        # (`services/scheduled_send.py`) — 화면이 따로 세면 화면에는 `대기 중`
+        # 인데 서버는 이미 지났다고 보는 상태가 생긴다.
+        "scheduled": scheduled_send.describe(job),
+        # **발송기가 붙어 있는가.** `queued` 인 회차가 안 나가고 있을 때,
+        # 막힌 것인지 그냥 서 있는 것인지는 이것으로 갈린다 — PC 가 꺼져 있으면
+        # 잡은 큐에 그대로 서서 기다린다(고장이 아니다). 화면이 그 둘을
+        # 구분하지 못하면 사람이 [중단] 을 누르거나 회차를 다시 만든다.
+        #
+        # 그 회차 **주인의** 기기를 본다(보고 있는 사람이 아니라) — 관리자가
+        # 남의 회차를 열어 봐도 실제로 그 잡을 집어갈 기기는 주인 것이다.
+        "agent": agent_status(db, job.user_id),
         "items": [
             {
                 "id": i.id,
@@ -202,6 +216,12 @@ def start_draft(job_id: int, background: BackgroundTasks,
     pending_items = [i for i in job.items if i.status == "pending"]
     if not pending_items:
         raise HTTPException(status_code=400, detail="보낼 대기 건이 없습니다")
+    # 예약이 걸린 회차를 사람이 먼저 눌렀다면 **그 예약은 여기서 끝난다.**
+    # 상태가 `queued` 로 올라가는 것만으로도 예약은 못 풀리지만(`_claim` 은
+    # `status='draft'` 인 줄만 집는다), 자물쇠를 함께 잠가 둔다 — 나중에 누가
+    # 이 회차를 다시 `draft` 로 되돌려도 같은 회차가 두 번 나가지 않는다.
+    if job.scheduled_at and not job.released_at:
+        job.released_at = now_iso()
     return _requeue(db, job, pending_items, background)
 
 
@@ -255,3 +275,63 @@ def resume_pending(job_id: int, background: BackgroundTasks,
 def get_agent_status(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Sidebar connection badge (FEATURE_SPEC §0.2) — 지금 선택된 사용자의 기기 기준."""
     return agent_status(db, user.id)
+
+
+# ── 예약 발송 ────────────────────────────────────────────────────────────────
+#
+# **누르면 바로 나가던 것을, 정한 시각에 나가게 한다.** 대상을 고르고 회차를
+# 세우는 것까지는 지금과 똑같다(`services/scheduled_send.py` 머리말).
+#
+# 여기서 발송 경로를 새로 만들지 않는다. 시각이 되면 예약을 푸는 쪽이
+# **위 `_requeue`** 를 그대로 부른다 — [발송 시작] 이 지나는 그 길이다.
+
+
+class ScheduleRequest(BaseModel):
+    """언제 보낼지. 화면의 `<input type="datetime-local">` 값 그대로다."""
+
+    at: str
+
+
+@router.post("/jobs/{job_id}/schedule")
+def schedule_job(job_id: int, req: ScheduleRequest,
+                 db: Session = Depends(get_db),
+                 user: User = Depends(get_current_user)):
+    """[예약] — 아직 안 나간 회차에 **나갈 시각**을 단다. 시각 변경도 여기다.
+
+    ## 아직 안 나간 것만
+
+    `draft` 인 회차만 받는다. 이미 `queued` 가 된 뒤에는 발송기가 언제든
+    집어갈 수 있어서, 시각을 달아 봐야 화면이 "아직 안 나갔다" 고 거짓말을
+    하게 된다 — 그쪽은 기존 [중단] 이 맡는다.
+
+    ## 되는 값인지는 **서버가** 본다
+
+    화면이 고르개를 09~19시로 좁혀 두었어도 여기서 다시 본다
+    (`scheduled_send.check`). 주소로 폼을 흉내 내면 무엇이든 들어오고, 한
+    회차가 55~114명이라 그 한 번이 새벽에 투자사 카톡방을 여는 값이다.
+    """
+    job = _job_or_404(db, job_id, user)
+    if not scheduled_send.can_schedule(job):
+        raise HTTPException(status_code=400,
+                            detail="이미 시작된 회차입니다 — 예약할 수 없습니다")
+    if not any(i.status == "pending" for i in job.items):
+        raise HTTPException(status_code=400, detail="보낼 대기 건이 없습니다")
+    try:
+        return scheduled_send.set_at(db, job, req.at)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+
+
+@router.delete("/jobs/{job_id}/schedule")
+def unschedule_job(job_id: int, db: Session = Depends(get_db),
+                   user: User = Depends(get_current_user)):
+    """[예약 취소] — **예약만 뗀다.** 회차는 `draft` 로 남아 그대로 기다린다.
+
+    회차까지 버리지 않는 이유는 `scheduled_send.clear` 에 적어 두었다. 이미
+    나간 회차에는 듣지 않는다 — 그쪽은 [중단] 이다.
+    """
+    job = _job_or_404(db, job_id, user)
+    if not scheduled_send.can_schedule(job):
+        raise HTTPException(status_code=400,
+                            detail="이미 시작된 회차입니다 — [중단] 을 쓰세요")
+    return scheduled_send.clear(db, job)
