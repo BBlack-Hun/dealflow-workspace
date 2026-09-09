@@ -109,8 +109,9 @@ function run(dom, search) {
   Object.assign(win, sandbox);
   vm.createContext(sandbox);
   // 화면이 부르는 차례 그대로다(contacts.html) — 정렬기가 뒤에 오면
-  // contacts.js 가 `window.DealflowSort` 를 못 본다.
-  ["filters.js", "table_sort.js", "contacts.js"].forEach(function (name) {
+  // contacts.js 가 `window.DealflowSort` 를, 수정창 부품이 뒤에 오면
+  // `window.PanelModal` 을 못 본다.
+  ["filters.js", "table_sort.js", "panel_modal.js", "contacts.js"].forEach(function (name) {
     vm.runInContext(read(name), sandbox, { filename: name });
   });
   return { urls: urls, win: win };

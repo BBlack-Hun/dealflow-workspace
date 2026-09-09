@@ -31,6 +31,8 @@ const HTML = fs.readFileSync(
   path.join(ROOT, "app", "templates", "companies.html"), "utf8");
 const src = fs.readFileSync(
   path.join(ROOT, "app", "static", "js", "companies.js"), "utf8");
+const MODAL = fs.readFileSync(
+  path.join(ROOT, "app", "static", "js", "panel_modal.js"), "utf8");
 
 // 창에 실제로 세워진 칸. **템플릿에서 읽는다** — 여기에 손으로 한 벌 더 적으면
 // 칸이 늘 때 고칠 곳이 하나 더 생기고, 그 순간 이 검사가 막으려던 그 사고가
@@ -137,6 +139,9 @@ function run(dom, payload) {
     }
   };
   vm.createContext(sandbox);
+  // 수정창을 모달로 세우는 공통 부품. 화면(`companies.html`)이 이것을 **먼저**
+  // 부르므로 여기서도 먼저 돌린다 — 없으면 `window.PanelModal` 이 비어 창이 안 붙는다.
+  vm.runInContext(MODAL, sandbox, { filename: "panel_modal.js" });
   vm.runInContext(src, sandbox, { filename: "companies.js" });
 }
 

@@ -28,6 +28,7 @@ const ROOT = path.join(__dirname, "..", "..");
 const SRC = path.join(ROOT, "app", "static", "js");
 const FILTERS = fs.readFileSync(path.join(SRC, "filters.js"), "utf8");
 const COMPANIES = fs.readFileSync(path.join(SRC, "companies.js"), "utf8");
+const MODAL = fs.readFileSync(path.join(SRC, "panel_modal.js"), "utf8");
 
 // 서버가 줄에 실어 주는 것과 **같은 규칙**으로 만든다
 // (app/routers/companies.py 의 `search_text`). 번호는 적은 그대로와 숫자만
@@ -97,6 +98,8 @@ function run(query) {
   win.document = dom.document;
   vm.runInNewContext(FILTERS, ctx, { filename: "filters.js" });
   assert.ok(ctx.window.DealflowFilters, "공용 필터 모듈이 안 실렸다");
+  // 수정창을 모달로 세우는 공통 부품 — 화면이 companies.js 보다 **먼저** 부른다.
+  vm.runInNewContext(MODAL, ctx, { filename: "panel_modal.js" });
   vm.runInNewContext(COMPANIES, ctx, { filename: "companies.js" });
   return dom;
 }

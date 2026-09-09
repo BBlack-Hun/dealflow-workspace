@@ -24,6 +24,7 @@ const vm = require("vm");
 const D = require("./_dom.js");
 const SRC = path.join(__dirname, "..", "..", "app", "static", "js");
 const src = fs.readFileSync(path.join(SRC, "companies.js"), "utf8");
+const MODAL = fs.readFileSync(path.join(SRC, "panel_modal.js"), "utf8");
 const F = require(path.join(SRC, "filters.js"));
 
 // --- 표 한 줄 — 템플릿의 IR 기업 현황 탭과 같은 속성만 세운다 ---------------
@@ -81,6 +82,9 @@ function run(dom) {
     }
   };
   vm.createContext(sandbox);
+  // 수정창을 모달로 세우는 공통 부품. 화면(`companies.html`)이 이것을 **먼저**
+  // 부르므로 여기서도 먼저 돌린다 — 없으면 `window.PanelModal` 이 비어 창이 안 붙는다.
+  vm.runInContext(MODAL, sandbox, { filename: "panel_modal.js" });
   vm.runInContext(src, sandbox, { filename: "companies.js" });
 }
 
