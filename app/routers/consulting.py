@@ -37,6 +37,9 @@ from ..services import consulting_status as status
 from ..services import monthly_columns
 from ..services import spreadsheet as sp
 from ..ui import base_ctx
+# 계약을 부르는 말이 있는 곳. 여기에 다시 적지 않는다 —
+# `CONTRACT_DONE_CHOICES` 주석 참고(`routers/pages.py` 도 같은 방식이다).
+from .companies import CONTRACT_LABELS
 
 router = APIRouter(tags=["consulting"])
 
@@ -54,10 +57,28 @@ TAIL_COLUMNS = [
     ("이메일", "email"),
 ]
 
+# 고르는 칸 `계약완료여부` 의 보기. **말은 이미 있는 곳에서 가져온다** —
+# IR 기업 현황이 계약을 부르는 그 말이다(`routers/companies.py` 의
+# `CONTRACT_LABELS`). 여기에 글자를 다시 적어 두면 한쪽에서 `무료계약완료` 를
+# 고치는 날 두 화면이 서로 다른 말로 같은 것을 부르게 되고, 그때는 어느 쪽이
+# 맞는지 알 수가 없다(`services/ir_monthly.py` 도 같은 이유로 저기서 가져온다).
+#
+# **담기는 칸은 그래도 따로다.** 저쪽은 `ir_companies` 의 기업 줄에 붙고
+# 이쪽은 `consulting_companies` 의 컨설턴트 줄에 붙는데, 두 표를 잇는 열쇠가
+# 없어서(기업명이 같다는 보장도 없다) 값을 끌어올 수가 없다. 가져올 수 있는
+# 것은 **말**뿐이라 말만 가져온다(`models.ConsultingCompany.contract_done`).
+#
+# 넷 중 둘만 쓴다. 사용자가 부른 것이 `무료계약완료`·`유료계약완료` 두
+# 가지이고, `계약검토중`·`미계약` 은 **아직 계약이 안 끝난 상태**라 이름이
+# `계약완료여부` 인 칸에 설 값이 아니다. 그 상태는 빈칸(아직 안 정함)과
+# 옆 `계약관리` 자유 글이 받는다.
+CONTRACT_DONE_CHOICES = (CONTRACT_LABELS["free"], CONTRACT_LABELS["paid"])
+
 # `관리 스타트업` 탭에만 서는 칸들 — 전부 `기업 관리` **오른쪽**이다.
 #
-# 앞의 셋은 **견적서 → 계약 → 계산서**, 컨설턴트가 기업 하나를 붙들고 가는
-# 흐름의 세 마디다. 마지막 하나는 투자사에 그 기업을 어떻게 소개할지 적는
+# 앞의 셋은 **계약관리 → 계약완료여부 → 계약서 수신완료여부**, 컨설턴트가
+# 기업 하나를 붙들고 가는 흐름의 세 마디다(어떻게 되고 있나 → 끝났나 →
+# 서류는 왔나). 마지막 하나는 투자사에 그 기업을 어떻게 소개할지 적는
 # `딜 소개문구` 다.
 #
 # 넷 다 지금까지 옆 `기업 관리` 한 칸에 문장으로 섞여 있었다
@@ -69,18 +90,25 @@ TAIL_COLUMNS = [
 #     (`services/consulting_status.py`) 문장이 길어질수록 `관리`·`드랍` 같은
 #     낱말이 우연히 들어가 그 줄이 엉뚱한 갈래에 걸린다.
 #
-# 다른 두 탭(`경영본부 전달 기업` · `월간 계약 업무현황표`)에는 안 세운다.
-# 이 넷은 아직 관리 중인 기업에 대고 쓰는 말이고, 계약 탭은 표 자체가 다르다
-# (그쪽에는 `계약서 수신여부` 가 이미 서 있다 — 계약 줄의 서류 이야기라 같은
-# 칸이 아니다). 그래서 `FIXED_COLUMNS` 에 넣지 않고 이 탭만의 묶음을 따로
+# **`계약서 수신완료여부` 는 계약 탭의 `계약서 수신여부` 와 같은 칸이다**
+# (`contract_received`). 묻는 사실이 하나뿐이라 — 계약서가 왔는가 — 칸을 새로
+# 만들지 않았다. 뜻이 같은데 칸을 둘로 두면 같은 기업의 같은 사실이 두 군데에
+# 갈린다. 탭마다 이름이 다른 것은 이 표에서 이미 하는 일이다(같은 `region` 이
+# 한 탭에서는 `지역`, 다른 탭에서는 `월` 이다).
+#
+# 다른 두 탭(`경영본부 전달 기업` · `월간 계약 업무현황표`)에는 나머지 셋을
+# 안 세운다. 이 마디들은 아직 관리 중인 기업에 대고 쓰는 말이고, 계약 탭은
+# 표 자체가 다르다. 그래서 `FIXED_COLUMNS` 에 넣지 않고 이 탭만의 묶음을 따로
 # 둔다 — `FIXED_COLUMNS` 는 지금도 스타트업·경영본부 두 탭이 함께 쓴다.
 STARTUP_COLUMNS = FIXED_COLUMNS + [
-    ("견적서 첨부여부", "quote_attached"),      # O / X
     # **자유 글이다.** 이름이 `~여부` 가 아니라 `~관리` 로 끝나는 것이
     # 그 표시다 — 이 표에서 `~관리` 로 끝나는 칸(`기업 관리`)은 문단이
     # 들어오는 자유 문장이다. 보기를 세우지 않은 까닭은 0065 참고.
     ("계약관리", "contract_management"),
-    ("계산서 수신여부", "invoice_received"),    # O / X
+    # 보기 둘 + 빈칸. 값은 `CONTRACT_DONE_CHOICES` 한 곳에서 온다.
+    ("계약완료여부", "contract_done"),
+    # 계약 탭과 **같은 칸**이다(이름만 탭이 정한다 — 위 참고).
+    ("계약서 수신완료여부", "contract_received"),   # O / X
     ("딜 소개문구", "deal_pitch"),
 ]
 
@@ -624,13 +652,14 @@ def company_rows(db: Session, user: User, sheet: str = "",
             # 실어 둔다 — 화면이 탭마다 다른 dict 를 받으면 없는 칸을 꺼내다
             # 터지는 자리가 생긴다. 머리글·칸을 세우는 것은 화면 쪽이다.
             "deal_pitch": c.deal_pitch or "",
-            # 같은 탭의 세 칸. 위와 같은 이유로 탭을 가리지 않고 늘 싣는다.
+            # 같은 탭의 두 칸. 위와 같은 이유로 탭을 가리지 않고 늘 싣는다.
+            # (`계약서 수신완료여부` 는 바로 위 `contract_received` 다 — 계약
+            #  탭과 같은 칸이라 여기 또 적지 않는다.)
             #
-            # 앞뒤 둘은 빈 문자열이 곧 `아직 안 정함` 이다(`계약서 수신여부`
-            # 와 같다) — 머리글 필터가 그것을 `(비어 있음)` 으로 세워 준다.
-            "quote_attached": c.quote_attached or "",
+            # `계약완료여부` 는 빈 문자열이 곧 `아직 안 정함` 이다 — 머리글
+            # 필터가 그것을 `(비어 있음)` 으로 세워 준다.
             "contract_management": c.contract_management or "",
-            "invoice_received": c.invoice_received or "",
+            "contract_done": c.contract_done or "",
             "notes": seen,
             # 어느 달이든 기록이 있는가 — `연락 기록 없음` 칩이 보는 값이다.
             "contacted": status.contacted(seen.values()),
@@ -663,9 +692,8 @@ def company_rows(db: Session, user: User, sheet: str = "",
                 # 이어 붙여 이 값을 다시 적으므로(`consulting.js` 의
                 # `refreshRowFlags`), 서버가 안 넣으면 고치기 전후로 검색
                 # 결과가 달라진다.
-                c.quote_attached if startup else "",
                 c.contract_management if startup else "",
-                c.invoice_received if startup else "",
+                c.contract_done if startup else "",
                 *notes.values(),
             ])).lower(),
         })
@@ -754,6 +782,11 @@ def consulting_page(request: Request, db: Session = Depends(get_db),
         # `딜 소개문구` 는 이 탭에만 선다. `not is_contract_sheet` 로 갈랐다간
         # `경영본부 전달 기업` 에도 같이 서므로 **따로** 넘긴다.
         "is_startup_sheet": is_startup(db, selected),
+        # `계약완료여부` 의 보기. **화면에 글자를 적어 두지 않는다** — 계약을
+        # 부르는 말은 `routers/companies.py` 의 `CONTRACT_LABELS` 한 곳이고,
+        # 여기 적으면 그 말을 고치는 날 두 화면이 갈린다
+        # (`CONTRACT_DONE_CHOICES` 주석 참고).
+        "contract_done_choices": ",".join(CONTRACT_DONE_CHOICES),
         "fixed_columns": fixed,
         "tail_columns": tail,
         "msg": msg,
@@ -814,10 +847,11 @@ class CompanyIn(BaseModel):
     # `관리 스타트업` 탭의 칸. **긴 글이라 줄바꿈이 그대로 들어온다** —
     # `_assign` 이 앞뒤 공백만 떼므로 가운데 줄바꿈은 살아서 저장된다.
     deal_pitch: Optional[str] = None
-    # 같은 탭의 세 칸. **여기 안 적으면 화면에서 고쳐도 조용히 안 저장된다.**
-    quote_attached: Optional[str] = None
+    # 같은 탭의 두 칸. **여기 안 적으면 화면에서 고쳐도 조용히 안 저장된다.**
+    # (`계약서 수신완료여부` 는 위 `contract_received` 다 — 계약 탭과 같은
+    #  칸이라 여기 또 적지 않는다.)
     contract_management: Optional[str] = None
-    invoice_received: Optional[str] = None
+    contract_done: Optional[str] = None
     # {"열id": "내용"} — 월별 리마인드
     notes: Optional[Dict[str, str]] = None
 
@@ -1061,11 +1095,15 @@ CONTRACT_EXPORT_HEADERS = ["성공보수율", "계약금", "계약서 수신여�
 # (계약 탭 칸들도 같은 이유로 뒤에 붙어 있다).
 #
 # 새로 느는 칸도 **`딜 소개문구` 뒤에** 붙인다. 화면 차례(`기업 관리` 바로 뒤)
-# 대로 끼우면 그 뒤 월 열이 통째로 세 칸씩 밀려, 지난번에 내려받아 둔 파일과
-# 나란히 놓고 볼 수가 없다 — 이 목록의 차례는 화면 차례가 아니라 **이미
-# 내려받아 둔 파일의 차례**다.
-STARTUP_EXPORT_HEADERS = ["딜 소개문구", "견적서 첨부여부", "계약관리",
-                          "계산서 수신여부"]
+# 대로 끼우면 그 뒤 월 열이 통째로 밀려, 지난번에 내려받아 둔 파일과 나란히
+# 놓고 볼 수가 없다 — 이 목록의 차례는 화면 차례가 아니라 **이미 내려받아 둔
+# 파일의 차례**다.
+#
+# **`계약서 수신완료여부` 는 여기 없다.** 그 칸은 계약 탭과 같은
+# `contract_received` 라 위 `CONTRACT_EXPORT_HEADERS` 의 `계약서 수신여부` 로
+# 이미 실린다. 엑셀은 탭을 가리지 않고 한 장이므로 여기 또 세우면 **같은 값이
+# 두 칸에** 나오고, 그 파일을 여는 사람은 둘이 다른 사실인 줄 안다.
+STARTUP_EXPORT_HEADERS = ["딜 소개문구", "계약관리", "계약완료여부"]
 
 
 @router.get("/api/export/consulting.xlsx")
@@ -1090,8 +1128,7 @@ def export_consulting(db: Session = Depends(get_db),
         + [r["notes"].get(str(c.id), "") for c in cols]
         + [r["ceo_name"], r["phone"], r["email"]]
         + [r["success_fee"], r["contract_fee"], r["contract_received"]]
-        + [r["deal_pitch"], r["quote_attached"], r["contract_management"],
-           r["invoice_received"]]
+        + [r["deal_pitch"], r["contract_management"], r["contract_done"]]
         for r in company_rows(db, user)
     ]
     try:
@@ -1134,20 +1171,26 @@ def parse_rows(rows: List[List[str]]) -> dict:
                 return j
         return None
 
-    def fixed(*tokens) -> Optional[int]:
+    def fixed(*tokens, without: tuple = ()) -> Optional[int]:
         """**월 열이 아닌 것 중에서** 찾는다.
 
-        `견적서`·`계약 관리` 같은 말은 월별 리마인드 열 이름에도 들어갈 수
-        있다(`9월 견적서 리마인드 톡`). `find` 로 찾으면 그런 열을 채가서,
+        `계약 관리`·`계약완료` 같은 말은 월별 리마인드 열 이름에도 들어갈 수
+        있다(`10월 계약 관리 확인`). `find` 로 찾으면 그런 열을 채가서,
         그 달 기록이 갈 곳을 잃은 채 조용히 사라진다 — 아래 `note_cols` 는
         여기서 집어 간 열을 빼고 세기 때문이다.
 
         달이 적힌 이름은 월 열이라는 뜻이니 건너뛴다. 달을 읽는 규칙은
         `services/monthly_columns.py` 한 곳이고 여기서 다시 적지 않는다.
+
+        `without` 은 **옆 칸을 채가지 않게** 하는 자리다. 이 탭의 머리글 셋은
+        서로의 낱말을 품고 있어서(`계약서 수신완료여부` 안에 `계약`·`완료` 가
+        들어 있다) 토막만으로 가르면 한 열을 두 칸이 집어 간다 — 그러면 같은
+        값이 두 칸에 담기고, 정작 제 칸은 빈 채로 남는다.
         """
         for j, h in enumerate(header):
             if monthly_columns.month_of(h) is None \
-                    and all(t in h for t in tokens):
+                    and all(t in h for t in tokens) \
+                    and not any(t in h for t in without):
                 return j
         return None
 
@@ -1163,11 +1206,15 @@ def parse_rows(rows: List[List[str]]) -> dict:
         # (전용 칸은 빈 채로) 값은 엉뚱한 쪽에 담긴다.
         #
         # 토막을 둘씩 준다 — 시트에 `계약 관리` 로 띄어 적혀 있을 수도,
-        # `견적서 첨부 여부` 로 적혀 있을 수도 있다. `기업 관리` 는 `계약` 이
+        # `계약 완료 여부` 로 적혀 있을 수도 있다. `기업 관리` 는 `계약` 이
         # 없어 `계약관리` 자리에 안 걸린다.
-        "quote_attached": fixed("견적서", "첨부"),
+        #
+        # 셋이 서로의 낱말을 품고 있어서 `without` 으로 갈라 준다. 시트에
+        # `계약완료여부` 칸 없이 `계약서 수신완료여부` 만 있으면, 그냥
+        # `계약`+`완료` 로 찾을 때 그 한 열을 두 칸이 같이 집어 간다.
         "contract_management": fixed("계약", "관리"),
-        "invoice_received": fixed("계산서", "수신"),
+        "contract_done": fixed("계약", "완료", without=("수신", "관리")),
+        "contract_received": fixed("계약서", "수신"),
         "ceo_name": find("대표자"),
         "phone": find("연락처"),
         "email": find("이메일"),
@@ -1247,8 +1294,8 @@ def apply_rows(db: Session, parsed: dict, user: User,
             updated += 1
         for field in ("region", "meeting_at", "company_name", "management",
                       "ceo_name", "phone", "email",
-                      "quote_attached", "contract_management",
-                      "invoice_received"):
+                      "contract_management", "contract_done",
+                      "contract_received"):
             value = item.get(field)
             if value:
                 setattr(company, field, value)
