@@ -35,6 +35,31 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   var NEEDS_COMPANIES = { deal: true, ir: true };
   function isFollowUp() { return !!FOLLOW_UP[mode]; }
   function needsCompanies() { return !!NEEDS_COMPANIES[mode]; }
+  // 회차명 — **방식마다 다르다.** 정규 발송(딜 소개)만 주차를 달고
+  // (`09/16 (9월 3주차)`), 나머지는 주차 대신 무엇을 보내는지가 들어간다
+  // (`09/09 (리마인드)`). 서버가 방식마다 한 벌씩 만들어 `data-titles` 에
+  // 실어 준다 — 여기서 만들면 회차일·주차 규칙이 두 벌이 된다.
+  //
+  // 탭을 누르면 따라 바꿔야 한다. 서버가 처음 채워 준 것은 딜 소개 이름이라,
+  // 그대로 두면 **딜소개 이름을 단 채 리마인드가 나간다** — 발송 이력에서
+  // 무엇을 보낸 회차인지 이름으로는 갈라지지 않는다.
+  var titleBox = document.getElementById("batch-title");
+  var MODE_TITLES = (function () {
+    if (!titleBox) return {};
+    try { return JSON.parse(titleBox.getAttribute("data-titles") || "{}"); }
+    catch (e) { return {}; }
+  })();
+  // **우리가 채워 넣은 값**. 사람이 손으로 고쳤는지 가리는 유일한 기준이다 —
+  // 지금 칸이 이것과 다르면 사람이 쓴 이름이므로 덮어쓰지 않는다.
+  var filledTitle = titleBox ? titleBox.value : "";
+  function syncBatchTitle() {
+    if (!titleBox) return;
+    var next = MODE_TITLES[mode];
+    if (!next) return;                       // 서버가 모르는 방식 — 그대로 둔다
+    if (titleBox.value.trim() !== filledTitle.trim()) return;   // 사람이 고친 이름
+    titleBox.value = next;
+    filledTitle = next;
+  }
   var previewTabs = document.getElementById("preview-tabs");
   var previewArea = document.getElementById("preview-area");
   var warnBox = document.getElementById("send-warnings");
@@ -597,6 +622,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   // ── 보내는 방식 전환 ───────────────────────────────────────
   function setMode(next) {
     mode = next;
+    syncBatchTitle();
     var askMode = !needsCompanies();
     document.querySelectorAll(".mode-tab").forEach(function (b) {
       b.classList.toggle("active", b.getAttribute("data-mode") === mode);

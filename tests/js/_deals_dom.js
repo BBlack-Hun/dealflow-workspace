@@ -17,6 +17,23 @@ const el = dom_.el;
 // `EMPTY` 와 같은 글자여야 한다 — 그 짝은 파이썬 쪽 검사가 지킨다.
 const EMPTY_GROUP = "(비어 있음)";
 
+// 회차명 — 서버가 **방식마다 한 벌씩** 만들어 `data-titles` 에 실어 준다
+// (`pages.py` · `cadence.default_batch_title`). 정규 발송(딜 소개)만 주차를
+// 달고, 나머지는 주차 대신 무엇을 보내는지가 들어간다.
+//
+// **날짜는 아무 날이다.** 오늘에서 만들면 그날이 되어 검사가 깨진다 — 여기서
+// 보려는 것은 "탭을 바꾸면 그 방식 것으로 갈아 끼우는가" 하나다.
+// 괄호 안 말이 실제 탭 이름과 같은지는 파이썬 쪽이 본다(`MODE_TITLES`).
+const BATCH_TITLES = {
+  deal: "09/16 (9월 3주차)",
+  ir: "09/09 (IR 자료 전달)",
+  remind: "09/09 (리마인드)",
+  meeting: "09/09 (미팅 요청)",
+  review: "09/09 (미팅 후기)",
+  ask: "09/09 (선호 분야 묻기)",
+  sourcing: "09/09 (딜 소싱 제안)"
+};
+
 const PEOPLE = [
   // id, 이름(가상), 그룹, 반응 없음
   [1, "가담당", "1군", true],
@@ -166,13 +183,17 @@ function buildDom(people) {
                   "only-picked-contacts", "company-search", "only-picked",
                   "company-filter-note", "contact-filter-note", "bucket-mix-note",
                   "select-all-contacts", "clear-all-contacts", "select-noreact",
-                  "batch-title", "include-opening", "tpl-opening", "tpl-closing",
+                  "include-opening", "tpl-opening", "tpl-closing",
                   "tpl-opening-wrap", "ir-attach", "ir-links", "ir-no-note",
                   "mail-fields", "mail-subject", "company-hint", "mode-help"]
     .map(function (id) { return el("div", { id: id }); });
   // 방식을 바꾸면 이 칸의 이름표(`안내문`/`문구`)를 고쳐 쓴다 — 속 `span` 이
   // 없으면 탭을 누르는 순간 화면 코드가 그대로 죽는다(실제 화면에는 있다).
   simple.push(el("div", { id: "tpl-closing-wrap" }, [el("span", {})]));
+  // 회차명 칸. **진짜 입력칸**이어야 한다 — 값도 읽고 `data-titles` 도 읽는다.
+  // 서버가 방식마다 한 벌씩 만들어 실어 준다(`pages.py`).
+  simple.push(el("input", { id: "batch-title", value: BATCH_TITLES.deal,
+                            "data-titles": JSON.stringify(BATCH_TITLES) }));
 
   const arrow = el("span", { class: "ss-arrow" });
   const modeTabs = ["deal", "ir", "remind", "meeting", "review", "ask", "sourcing"]
@@ -373,7 +394,7 @@ function clickSelectAll(dom) { dom.document.getElementById("select-all-contacts"
 function clickClearAll(dom) { dom.document.getElementById("clear-all-contacts").fire("click"); }
 
 module.exports = { EMPTY_GROUP: EMPTY_GROUP, PEOPLE: PEOPLE, SOURCING: SOURCING,
-                   COMPANIES: COMPANIES,
+                   COMPANIES: COMPANIES, BATCH_TITLES: BATCH_TITLES,
                    fakeFetch: fakeFetch, companyBox: companyBox,
                    toggleCompany: toggleCompany, pickNumbers: pickNumbers,
                    buildDom: buildDom, queueRow: queueRow,
