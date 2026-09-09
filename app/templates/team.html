@@ -378,6 +378,102 @@
     </p>
   </section>
 
+  {# ⚠ 미팅 후기 **자동 발송** — 위 두 판과 성격이 하나 다르다.
+
+     메일도 문자도 **우리 쪽**으로 간다(메일은 사람이 눌러 보내고, 문자는 팀원에게만
+     간다). 이것은 사람이 아무것도 안 눌러도 **실투자사 카톡방**으로 글이 나간다.
+     `docs/TECH_SPEC.md` §8 이 오래 "수동 트리거만" 이라고 적어 둔 자리이고,
+     사용자가 그 리스크를 알고 바꾸기로 정했다(까닭은 `services/auto_send.py`).
+
+     그래서 이 판은 다른 둘과 달리 **고치는 칸**을 갖는다. 왜 `/setup` 이 아니라
+     여기인지는 `routers/dashboard.py: save_auto_send` 에 적었다 — 짧게: `/setup`
+     은 본인이 자기 PC 를 손보는 화면이라 **누구든 스스로 켤 수 있고**, 자료 자동
+     첨부가 그 이유로 이미 이 화면으로 옮겨 왔다.
+
+     켜져 있으면 판에 테두리를 세운다(백업이 멈췄을 때와 같은 표시) — 무인으로
+     나가는 중이라는 것이 한눈에 보여야 한다. #}
+  <section class="panel {% if auto_send.on %}warn-panel{% endif %}">
+    <h2 class="panel-title">{{ auto_send.label }} 자동 발송</h2>
+    {% if auto_send.on %}
+    <ul class="import-stats">
+      <li><span>보내는 계정</span><b>{{ auto_send.sender }}</b></li>
+      <li><span>보내는 때</span><b>{{ auto_send.window }}</b></li>
+      <li><span>하루 상한</span><b>{{ auto_send.max_per_day }}건</b></li>
+    </ul>
+    <p class="hint ok">
+      ✅ 미팅이 끝나고 열흘 뒤가 되면 <b>{{ auto_send.sender }}</b> 님 계정에서
+      그 투자사에게 미팅 후기 카톡이 <b>사람이 누르지 않아도</b> 나갑니다.
+    </p>
+    {% else %}
+    <p class="hint">
+      꺼져 있습니다 — 지금은 아무것도 저절로 나가지 않습니다.
+      결과 문의는 지금까지처럼 <a class="linkbtn" href="/ir#meetings">IR 진행 관리</a>
+      에서 손으로 보냅니다.
+    </p>
+    {% endif %}
+
+    {# 켤 때만 확인을 받는다. 끄는 것은 되돌리기 쉬운 쪽이라 묻지 않는다 —
+       이 화면이 비밀번호 초기화·계정 정지에서 쓰는 것과 같은 기준이다. #}
+    <form method="post" action="/team/auto-send" class="rule-form"
+          onsubmit="return this.enabled.value !== 'on' || confirm('자동 발송을 켤까요?\n\n사람이 누르지 않아도 실제 투자사 카톡방으로 미팅 후기가 나갑니다.\n되돌릴 수 없습니다.')">
+      <input type="hidden" name="kind" value="{{ auto_send.kind }}">
+      <label class="field inline-field"><span>자동 발송</span>
+        <select name="enabled">
+          <option value="">꺼짐</option>
+          <option value="on" {% if auto_send.enabled %}selected{% endif %}>켜짐</option>
+        </select></label>
+      <label class="field inline-field"><span>보내는 계정</span>
+        <select name="user_id">
+          <option value="0">— 고르세요 —</option>
+          {# 딜소개를 보내는 살아 있는 계정만. 투자컨설턴트는 담당 투자사도
+             발송 프로그램도 없어서 고르면 잡이 서기만 하고 안 내려간다. #}
+          {% for m in members if m.sends_deals and m.active %}
+          <option value="{{ m.id }}" {% if m.id == auto_send.sender_id %}selected{% endif %}>
+            {{ m.name }} · {{ m.agent }}</option>
+          {% endfor %}
+        </select></label>
+      <label class="field inline-field"><span>시작</span>
+        <select name="from_hour">
+          {% for h in auto_send.hours %}
+          <option value="{{ h }}" {% if h == auto_send.from_hour %}selected{% endif %}>{{ '%02d'|format(h) }}:00</option>
+          {% endfor %}
+        </select></label>
+      <label class="field inline-field"><span>마감</span>
+        <select name="until_hour">
+          {% for h in auto_send.hours %}
+          <option value="{{ h }}" {% if h == auto_send.until_hour %}selected{% endif %}>{{ '%02d'|format(h) }}:00</option>
+          {% endfor %}
+        </select></label>
+      <label class="field inline-field"><span>하루 최대</span>
+        <input type="number" name="max_per_day" min="1" max="{{ auto_send.hard_max }}"
+               value="{{ auto_send.max_per_day }}"></label>
+      <button class="secondary-btn" type="submit">저장</button>
+    </form>
+
+    {% if auto_send.today %}
+    <ul class="import-stats">
+      {% for row in auto_send.today %}
+      <li><span>{{ row.name }}{% if row.at %} · {{ row.at }}{% endif %}</span>
+        {% if row.status == 'queued' %}
+        <b class="ok"><a class="linkbtn" href="/jobs/{{ row.job_id }}">발송 목록 보기</a></b>
+        {% elif row.status == 'failed' %}<b class="warn">실패</b>
+        {% else %}<b class="warn">만드는 중</b>{% endif %}</li>
+      {% if row.error %}<li><span>사유</span><b class="warn">{{ row.error }}</b></li>{% endif %}
+      {% endfor %}
+    </ul>
+    {% elif auto_send.on %}
+    <p class="hint">오늘 자동으로 나간 것은 없습니다.</p>
+    {% endif %}
+
+    <p class="hint">
+      <b>카카오 운영정책상 자동화는 계정 제재 소지가 있습니다.</b>
+      그래서 <b>평일 {{ '%02d'|format(auto_send.earliest) }}~{{ '%02d'|format(auto_send.latest) }}시</b>
+      안에서만 고를 수 있고, 하루 <b>{{ auto_send.hard_max }}건</b>을 넘길 수 없습니다.
+      나간 것은 위 링크와 <b>최근 발송 회차</b>(제목에 <b>(자동)</b>)에 그대로 남습니다.
+      켠 뒤 실제로 돌기 시작하는 것은 <b>다음 배포부터</b>입니다.
+    </p>
+  </section>
+
   <section class="panel">
     <h2 class="panel-title">IR 기업 현황 <a class="linkbtn" href="/companies">전체 보기</a></h2>
     <ul class="import-stats">

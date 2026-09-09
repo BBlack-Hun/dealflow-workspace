@@ -11,7 +11,8 @@ from __future__ import annotations
 
 from typing import Optional
 
-from sqlalchemy import ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (ForeignKey, Index, Integer, String, Text,
+                        UniqueConstraint)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .clock import now_iso as _now_iso
@@ -1369,3 +1370,124 @@ class SmsNotice(TimestampMixin, Base):
     # 왜 못 보냈나. 화면에 그대로 보여 준다 — 조용히 삼키지 않는다.
     error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     sent_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+
+class AutoSendSetting(TimestampMixin, Base):
+    """**무인 자동 발송을 켜는 자리.** 종류마다 한 줄이다.
+
+    ## ⚠ 이 표가 있다는 것은 문서를 넘어선 결정이다
+
+    `docs/TECH_SPEC.md` §8 은 오래 **수동 트리거만**(무인 스케줄 발송 금지)이라고
+    적어 두었다. 카카오 운영정책이 자동화 프로그램을 통한 이용을 금지하고 있어,
+    무인 발송은 계정 이용 제한(제재)을 부를 수 있다 — 이 도구의 최대 리스크다.
+
+    **사용자가 그 사실을 알고 자동 발송을 하기로 정했다.** 그래서 이 표가 있고,
+    문서도 함께 고쳤다(같은 절). 되돌리기 전에 그 판단부터 확인할 것 — "왜 문서와
+    다르지" 로 읽고 지우면 사용자가 정한 것을 코드가 되돌리는 셈이 된다.
+
+    대신 위험을 좁히는 것을 전부 이 줄이 들고 있다: **기본은 꺼짐**, 보내는 계정
+    하나, 보내는 시각의 창, 하루 상한. 아무것도 안 넣으면 아무 일도 일어나지
+    않는다(메일·문자 설정이 그렇다).
+
+    ## 왜 계정 칸(`users.can_…`)이 아니라 이 줄인가
+
+    이 저장소는 비슷한 것을 두 번 계정 칸으로 풀었다(`can_view_consulting` ·
+    `can_auto_attach_ir`). 그 둘은 **여러 사람에게 저마다 열어 주는 권한**이라
+    계정마다 켜는 칸이 맞았다.
+
+    여기는 다르다. 자동 발송은 팀 전체에서 **한 계정에서만** 나가고(사용자가
+    그렇게 정했다), 그 계정이 누구인지는 이 기능의 설정값 그 자체다. 계정 칸으로
+    두면 "켜짐인 계정"과 "이 기능의 보내는 계정"이 두 벌이 되어, 둘이 갈리는 날
+    누구 카톡에서 나갈지 아무도 확신할 수 없다. 한 줄에 함께 둔다.
+
+    ## 종류마다 한 줄인 이유
+
+    지금 서 있는 종류는 미팅 후기(`meeting_review`) 하나다. 월말 기업 리마인드도
+    곧 같은 방식으로 나갈 예정이라, 그때는 **줄 하나만 더 서면 된다** — 표도
+    실도 화면도 그대로다(`services/auto_send.py` 머리말에 무엇을 더하면 되는지
+    적어 두었다).
+    """
+
+    __tablename__ = "auto_send_settings"
+    __table_args__ = (
+        UniqueConstraint("kind", name="uq_auto_send_settings_kind"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    #: 무엇을 자동으로 보내는가. `services/auto_send.py: KINDS` 가 아는 값만 온다.
+    kind: Mapped[str] = mapped_column(String)
+    #: **기본은 꺼짐.** 줄이 아예 없는 것도 꺼짐이다.
+    enabled: Mapped[int] = mapped_column(Integer, default=0)
+    #: **어느 계정에서 나가는가.** 잡이 이 계정 것으로 서고, 그 계정의 기기
+    #: 토큰으로만 내려간다(`routers/agent_api.py: poll`). 비어 있으면 꺼짐과
+    #: 같다 — 보낼 사람이 없는 자동 발송은 돌 수 없다.
+    user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"),
+                                                   nullable=True)
+    #: 몇 시부터 몇 시까지 내보내는가(그 날의 지역 시각). 받는 쪽이 **투자사**라
+    #: 새벽·밤에 나가면 안 된다. 고를 수 있는 폭 자체를 코드가 좁혀 둔다
+    #: (`auto_send.EARLIEST_HOUR`~`LATEST_HOUR`).
+    from_hour: Mapped[int] = mapped_column(Integer, default=10)
+    until_hour: Mapped[int] = mapped_column(Integer, default=17)
+    #: **하루에 몇 건까지.** 회당이 아니라 하루다 — 실이 30분마다 깨어나므로
+    #: 회당 상한만 두면 하루 총량이 잡히지 않는다(까닭은 `auto_send.run_once`).
+    max_per_day: Mapped[int] = mapped_column(Integer, default=10)
+
+
+class AutoSendRun(TimestampMixin, Base):
+    """**자동으로 내보냈다는 표시.** 한 건에 한 줄, 영구히 남는다.
+
+    ## 왜 줄을 남기나 — 두 번 보내면 되돌릴 수 없다
+
+    `SmsNotice` 와 같은 자리, 같은 이유다. 다만 열쇠가 다르다.
+
+    문자는 `(종류, 날, 사람)` 이었다. 하루 한 통이면 되는 알림이라 그렇다.
+    여기는 **미팅 한 건에 카톡 한 통**이고, 그 미팅은 담당자가 결과를 적기 전까지
+    `due_followups` 에 계속 남는다(`pipeline.followup_due_now` 는 `물어볼 날 <=
+    오늘`). 날짜를 열쇠에 넣으면 **다음 날 또 나간다** — 실투자사에게 같은 문구가
+    매일 간다는 뜻이다. 그래서 `(kind, ref_id)` 하나로 잡고, 그 자리는 영원히
+    비지 않는다.
+
+    `ref_id` 는 그 종류가 가리키는 대상의 id 다. 미팅 후기는 `meetings.id`,
+    나중에 설 월말 리마인드는 그 달의 기업 줄이 된다.
+
+    ## 왜 보내기 **전에** 넣나
+
+    성공한 뒤에 남기면, 잡은 만들어졌는데 응답만 실패했을 때 30분 뒤 실이 다시
+    깨어나 **한 통 더** 만든다. 문자와 달리 이쪽은 실투자사 카톡방이라 되돌릴
+    길이 없다. 그래서 먼저 자리를 잡고(`claimed`), 잡이 서면 그 줄을 고친다.
+
+    잡을 못 만든 줄은 `failed` 로 남고 **다시 시도하지 않는다.** 자동이 조용히
+    재시도하는 것보다, 사람이 화면에서 그 사유를 보고 손으로 보내는 편이 안전하다
+    — 결과 문의 목록에는 그 건이 그대로 남아 있다.
+
+    ## 미팅 표에 칸을 붙이지 않은 이유
+
+    `meetings.followup_done` 은 **물어보고 답을 들었다**는 뜻이다(무엇을 들었는지
+    `followup_note` 에 적는다). 자동 발송은 묻기만 하고 답은 못 듣는다 — 여기서
+    그 칸을 켜면 목록에서 사라져 아무도 답을 적지 않는다.
+    """
+
+    __tablename__ = "auto_send_runs"
+    __table_args__ = (
+        UniqueConstraint("kind", "ref_id", name="uq_auto_send_runs_kind_ref"),
+        # 하루 상한을 셀 때마다 이 두 칸으로 훑는다(`auto_send.remaining_today`).
+        Index("ix_auto_send_runs_kind_day", "kind", "day"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    kind: Mapped[str] = mapped_column(String)
+    #: 무엇 한 건인가. 미팅 후기는 `meetings.id`.
+    ref_id: Mapped[int] = mapped_column(Integer)
+    #: 어느 계정에서 나갔나(그때의 설정값). 나중에 계정을 바꿔도 이 줄은
+    #: 그날 누구 카톡에서 나갔는지를 그대로 들고 있어야 한다.
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    #: 하루 상한을 세는 열쇠. `YYYY-MM-DD`.
+    day: Mapped[str] = mapped_column(String)
+    #: 어느 발송 잡이 되었나. 화면이 `/jobs/{id}` 로 데려간다 — **무엇이 나갔는지
+    #: 사람이 볼 수 있어야** 자동 발송을 믿을 수 있다.
+    job_id: Mapped[Optional[int]] = mapped_column(ForeignKey("send_jobs.id"),
+                                                  nullable=True)
+    #: claimed(자리를 잡았다) | queued(잡이 섰다) | failed(잡을 못 만들었다)
+    status: Mapped[str] = mapped_column(String, default="claimed")
+    #: 왜 못 만들었나. 조용히 삼키지 않는다.
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

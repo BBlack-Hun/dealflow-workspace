@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import config, deps
 from .deps import NoConsulting, NotAdmin, NotAuthenticated
-from .services import backup, followup_sms
+from .services import auto_send, backup, followup_sms
 from .routers import auth as auth_router
 from .routers import templates_crud
 from .routers import setup as setup_router
@@ -31,6 +31,15 @@ def create_app() -> FastAPI:
     # 깨어나 오늘 것이 나갔는지 본다 — `services/followup_sms.py`).
     # 문자 발송 설정이 없으면 실 자체가 뜨지 않는다: 안 켜면 아무 일도 없다.
     followup_sms.start_scheduler()
+
+    # ⚠ **미팅 후기 자동 발송.** 사람이 [발송 시작] 을 누르지 않아도 실투자사
+    # 카톡방으로 문구가 나가는 유일한 길이다. `docs/TECH_SPEC.md` §8 은 오래
+    # "수동 트리거만(무인 스케줄 발송 금지)" 이었고, **사용자가 그 리스크를 알고
+    # 바꾸기로 정했다** — 까닭과 안전선은 `services/auto_send.py` 머리말에 있다.
+    #
+    # **켠 종류가 하나도 없으면 실이 아예 뜨지 않는다.** 기본은 꺼짐이라 새로
+    # 세운 서버·검사에서는 이 줄이 아무 일도 하지 않는다(메일·문자가 그렇다).
+    auto_send.start_scheduler()
 
     app = FastAPI(title="dealflow", version="0.1.0 (Sprint 1)")
 
