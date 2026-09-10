@@ -226,7 +226,12 @@
 #}
 <section class="panel">
   <h2 class="panel-title">{{ month }}월 발송
-    <span class="hint">딜 소개 · 딜 소싱</span>
+    {# 무엇을 세는 패널인지 — **아래 묶음에서 그대로 읽는다.** 여기 손으로
+       적어 두면 묶음이 늘 때 머리말만 옛말로 남는다(엑셀도 같은 곳을 읽는다).
+
+       묶음 사이는 `/` 다. 묶음 **이름 안에** 가운뎃점이 들어 있어서
+       (`미팅 요청 · 미팅 후기`) 같은 점으로 이으면 넷이 여섯으로 읽힌다. #}
+    <span class="hint">{{ sends.groups | map(attribute='label') | join(' / ') }}</span>
   </h2>
   {% if sends.rounds %}
   {% if sends.left %}

@@ -28,7 +28,7 @@ def logged(client, users):
     return client
 
 
-def _people(db, users, count, *, user_key="u1", sourcing=False):
+def _people(db, users, count, *, user_key="u1", sourcing=False, start=0):
     """받는 사람 `count` 명. 이름이 같으면 **같은 사람**이다.
 
     회차 둘의 대상이 겹치는 상황을 만들 수 있어야 한다 — 그래야 '총 N명' 이
@@ -37,7 +37,7 @@ def _people(db, users, count, *, user_key="u1", sourcing=False):
     from app.models import SourcingContact, VcContact
 
     out = []
-    for i in range(count):
+    for i in range(start, start + count):
         name = f"{'소싱대상' if sourcing else '담당자'}{i}"
         if sourcing:
             row = db.query(SourcingContact).filter_by(name=name).first()
@@ -56,7 +56,8 @@ def _people(db, users, count, *, user_key="u1", sourcing=False):
 
 def _round(db, users, *, title, when, kind="deal_intro", user_key="u1",
            sent=0, canceled=0, failed=0, pending=0, companies=0,
-           deals="핵심딜", status="done", sent_date=True):
+           deals="핵심딜", status="done", sent_date=True, stage=None,
+           people_from=0):
     """회차 하나. 발송 목록의 **건별 상태**까지 그대로 만든다.
 
     보고가 세는 것은 잡에 적힌 `sent` 칸이 아니라 실제 발송 건이라,
@@ -64,6 +65,13 @@ def _round(db, users, *, title, when, kind="deal_intro", user_key="u1",
 
     `deals` 가 같으면 **같은 기업**을 소개한 회차다 — 중단된 회차를 다시 돌리면
     같은 딜을 다시 보내게 되므로, 그 경우가 기본이다.
+
+    `stage` 는 그 회차가 **어떤 방식이었나**다(`message_composer.STAGE_*`).
+    기본값 `None` 은 **`stage` 칸이 생기기 전의 옛 회차**다 — 위 검사들이 전부
+    그 모양이라, 옛 회차가 계속 딜 소개로 읽히는지가 함께 잠긴다.
+
+    `people_from` 은 받는 사람 이름의 시작 번호다. 다른 회차와 겹치지 않는
+    사람에게 보낸 경우를 만들 수 있어야 '총 N명' 이 묶음마다 갈리는지 잰다.
     """
     from app.models import (DealBatch, DealBatchCompany, IrCompany, SendItem,
                             SendJob)
@@ -90,7 +98,7 @@ def _round(db, users, *, title, when, kind="deal_intro", user_key="u1",
     db.flush()
 
     who = _people(db, users, total, user_key=user_key,
-                  sourcing=(kind == "sourcing_intro"))
+                  sourcing=(kind == "sourcing_intro"), start=people_from)
     plan = (["sent"] * sent + ["canceled"] * canceled
             + ["failed"] * failed + ["pending"] * pending)
     for contact, item_status in zip(who, plan):
@@ -99,6 +107,7 @@ def _round(db, users, *, title, when, kind="deal_intro", user_key="u1",
             contact_id=None if kind == "sourcing_intro" else contact.id,
             sourcing_contact_id=contact.id if kind == "sourcing_intro" else None,
             room_name=f"{contact.name} 방", message="본문",
+            stage=stage,
             status=item_status,
             sent_at=(f"{when.isoformat()}T11:20:00+09:00"
                      if item_status == "sent" else None),
@@ -417,3 +426,206 @@ def test_yearly_page_shows_the_sends(logged, db, users):
 
     body = logged.get("/report?span=year&year=2026").text
     assert "발송 회차" in body and "보낸 건수" in body and "안 나감" in body
+
+
+# --- 딜 소개에 섞여 있던 다른 발송 ------------------------------------------------
+#
+# `SendJob.kind` 는 IR 전달·소싱·스타트업만 갈라 적는다. 그래서 **미팅 요청·
+# 리마인드·선호 분야 묻기·미팅 후기가 전부 `deal_intro`** 로 들어가, 업무 보고의
+# `딜 소개` 묶음에 회차 줄로 함께 서고 `총 N명` 에도 들어 있었다. 회차명으로
+# 눈으로는 갈라 보였지만 카톡으로 보고하던 숫자는 뭉쳐 있었다.
+#
+# 가르는 값은 `SendItem.stage` 다 — `kind` 를 새로 쪼개면 옛 회차가 옛 값으로
+# 남아 지난달이 안 맞는다.
+
+def test_a_meeting_round_leaves_the_deal_intro_group(db, users):
+    """미팅 요청 회차는 `딜 소개` 에서 빠진다 — **총 N명도 함께 빠진다.**
+
+    줄만 옮기고 합계를 안 고치면 화면이 스스로 모순된다.
+    """
+    from app.services import report
+
+    _round(db, users, title="9/02 (9월 1주차)", when=date(2026, 9, 2),
+           sent=100, companies=7, stage=1)
+    _round(db, users, title="09/10 (미팅 요청)", when=date(2026, 9, 10),
+           sent=30, stage=3, people_from=500)
+
+    data = report.monthly(db, 2026, 9, users["u1"], today=date(2026, 9, 30))
+    deal = _group(data, "deal_intro")
+    assert deal["rounds"] == 1
+    assert deal["sent"] == 100
+    assert deal["contacts"] == 100, "미팅 요청 30명이 '총 N명' 에 남아 있다"
+
+    meeting = _group(data, "deal_intro_meeting")
+    assert meeting["rounds"] == 1
+    assert meeting["sent"] == 30
+    assert meeting["contacts"] == 30
+
+    # 보낸 건수 전체는 그대로다 — 가른 것이지 지운 것이 아니다.
+    assert data["sends"]["sent"] == 130
+    assert data["sends"]["rounds"] == 2
+
+
+def test_remind_and_ask_leave_the_deal_intro_group(db, users):
+    """리마인드·선호 분야 묻기도 마찬가지다(둘 다 `stage 2`)."""
+    from app.services import report
+
+    _round(db, users, title="9/02 (9월 1주차)", when=date(2026, 9, 2),
+           sent=100, companies=7, stage=1)
+    _round(db, users, title="09/08 (리마인드)", when=date(2026, 9, 8),
+           sent=40, stage=2, people_from=500)
+    _round(db, users, title="09/09 (선호 분야 묻기)", when=date(2026, 9, 9),
+           sent=10, stage=2, people_from=700)
+
+    data = report.monthly(db, 2026, 9, users["u1"], today=date(2026, 9, 30))
+    deal = _group(data, "deal_intro")
+    assert deal["rounds"] == 1 and deal["sent"] == 100 and deal["contacts"] == 100
+
+    later = _group(data, "deal_intro_remind")
+    assert later["rounds"] == 2
+    assert later["sent"] == 50
+    assert later["contacts"] == 50
+
+
+def test_stage_three_keeps_meeting_and_review_together(db, users):
+    """**`stage 3` 은 가르지 못한다** — 미팅 요청과 미팅 후기가 함께 쓴다.
+
+    발송 건에 남는 것은 `stage` 뿐이고 어느 문구였는지는 저장되지 않는다.
+    회차명으로 가르지 않는다 — 사람이 이름을 고치면 회차가 소리 없이 다른
+    묶음으로 옮겨 간다. 그래서 **한 묶음에 두고 이름에 둘 다 적는다.**
+    """
+    from app.services import report
+
+    _round(db, users, title="09/10 (미팅 요청)", when=date(2026, 9, 10),
+           sent=30, stage=3)
+    _round(db, users, title="09/12 (미팅 후기)", when=date(2026, 9, 12),
+           sent=5, stage=3, people_from=500)
+
+    data = report.monthly(db, 2026, 9, users["u1"], today=date(2026, 9, 30))
+    both = _group(data, "deal_intro_meeting")
+    assert both["rounds"] == 2 and both["sent"] == 35
+    assert both["label"] == "미팅 요청 · 미팅 후기", \
+        "가르지 못한다면 이름이 그렇게 말해야 한다"
+
+
+def test_old_rounds_without_a_stage_are_deal_intro(db, users):
+    """`stage` 칸이 비어 있는 옛 회차는 딜 소개다.
+
+    `kind` 를 새로 쪼개지 않은 이유가 이것이다 — 옛 회차는 이주 없이 그대로
+    제 자리에 선다.
+    """
+    from app.services import report
+
+    _round(db, users, title="8/27 (8월 4주차)", when=date(2026, 8, 27),
+           sent=116, companies=7, stage=None)
+
+    data = report.monthly(db, 2026, 8, users["u1"], today=date(2026, 8, 31))
+    assert _group(data, "deal_intro")["sent"] == 116
+    assert [g["key"] for g in data["sends"]["groups"]] == ["deal_intro",
+                                                           "sourcing_intro"]
+
+
+def test_sourcing_is_not_read_as_a_follow_up(db, users):
+    """딜 소싱 건도 `stage 2` 로 적힌다(`deals.FOLLOW_UP_MODES`).
+
+    단계만 보고 가르면 소싱 회차가 리마인드 묶음으로 넘어간다 — `kind` 를
+    먼저 본다.
+    """
+    from app.services import report
+
+    _round(db, users, title="09/03 (딜 소싱)", when=date(2026, 9, 3),
+           kind="sourcing_intro", sent=2, stage=2)
+
+    data = report.monthly(db, 2026, 9, users["u1"], today=date(2026, 9, 30))
+    assert _group(data, "sourcing_intro")["sent"] == 2
+    assert not [g for g in data["sends"]["groups"] if g["key"] == "deal_intro_remind"]
+
+
+def test_the_same_person_in_two_groups_is_counted_in_both(db, users):
+    """한 사람이 딜 소개도 받고 미팅 요청도 받았다면 **양쪽에 한 명씩**이다.
+
+    묶음의 '총 N명' 은 그 묶음에서 대상이 된 사람 수라, 두 묶음에 각각 서는
+    것이 맞다. 합쳐 세면 딜 소개 숫자가 다시 부푼다.
+    """
+    from app.services import report
+
+    _round(db, users, title="9/02 (9월 1주차)", when=date(2026, 9, 2),
+           sent=10, companies=3, stage=1)
+    # 같은 이름 = 같은 사람(`_people`)
+    _round(db, users, title="09/10 (미팅 요청)", when=date(2026, 9, 10),
+           sent=10, stage=3)
+
+    data = report.monthly(db, 2026, 9, users["u1"], today=date(2026, 9, 30))
+    assert _group(data, "deal_intro")["contacts"] == 10
+    assert _group(data, "deal_intro_meeting")["contacts"] == 10
+
+
+def test_an_empty_month_does_not_show_empty_follow_up_groups(db, users):
+    """후속 묶음은 있을 때만 선다 — 빈 칸 넷이 깔리면 있는 줄이 묻힌다.
+
+    딜 소개·딜 소싱은 없는 달에도 자리를 지킨다(사용자가 카톡 보고에 늘 두
+    줄을 적었다).
+    """
+    from app.services import report
+
+    data = report.monthly(db, 2026, 5, users["u1"], today=date(2026, 9, 30))
+    assert [g["key"] for g in data["sends"]["groups"]] == ["deal_intro",
+                                                           "sourcing_intro"]
+
+
+def test_the_page_shows_the_follow_up_group(logged, db, users):
+    """화면에도 갈라 선다 — 보고를 옮겨 적는 사람이 보는 것이 이 줄이다."""
+    _round(db, users, title="09/10 (미팅 요청)", when=date(2026, 9, 10),
+           sent=30, stage=3)
+
+    body = logged.get("/report?month=2026-09").text
+    assert "미팅 요청 · 미팅 후기" in body
+    assert "09/10 (미팅 요청)" in body
+
+
+def test_yearly_totals_do_not_move_when_groups_split(db, users):
+    """가른 것이지 지운 것이 아니다 — 연간 합계는 그대로여야 한다."""
+    from app.services import report
+
+    _round(db, users, title="3월 회차", when=date(2026, 3, 11), sent=40, stage=1)
+    _round(db, users, title="3월 미팅 요청", when=date(2026, 3, 18), sent=9,
+           stage=3, people_from=500)
+
+    got = report.yearly(db, 2026, users["u1"], today=date(2026, 12, 31))
+    assert got["totals"]["send_rounds"] == 2
+    assert got["totals"]["send_sent"] == 49
+
+    march = report.monthly(db, 2026, 3, users["u1"], today=date(2026, 12, 31))
+    assert march["sends"]["sent"] == 49
+    assert _group(march, "deal_intro")["sent"] == 40
+
+
+# --- 실제로 발송 목록을 만들어 본다 -------------------------------------------------
+
+def test_a_meeting_round_made_by_the_app_lands_in_the_meeting_group(
+        logged, db, users):
+    """검사용으로 꾸민 줄이 아니라 **앱이 만든 회차**로 잰다.
+
+    `stage` 를 적는 곳이 한 군데뿐이라(`deals.create_send_list`) 그 자리가
+    바뀌면 보고가 조용히 다시 뭉친다 — 여기서 함께 잠근다.
+    """
+    from app.models import VcContact
+    from app.services import report
+
+    who = VcContact(user_id=users["u1"].id, name="담당자900", firm="가나벤처스",
+                    kakao_room_name="가나벤처스 Deal 공유",
+                    room_verified="verified", connect_stage="connected",
+                    channel_kakao=1)
+    db.add(who)
+    db.commit()
+
+    made = logged.post("/api/deals/send", json={
+        "contact_ids": [who.id], "mode": "meeting", "draft": True,
+        "title": "09/10 (미팅 요청)"})
+    assert made.status_code == 200, made.text
+
+    today = date.today()
+    data = report.monthly(db, today.year, today.month, users["u1"], today=today)
+    assert _group(data, "deal_intro_meeting")["rounds"] == 1
+    deal = _group(data, "deal_intro")
+    assert not [r for r in deal["rows"] if r["title"] == "09/10 (미팅 요청)"]
