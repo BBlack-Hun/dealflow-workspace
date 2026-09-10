@@ -36,6 +36,15 @@
 
   그래서 못 찾았을 때는 **어디를 더 봐야 하는지 있는 그대로** 말해 준다.
   없는 검색칸을 가리키면 그것도 거짓말이다(아래 `closed-empty`).
+
+  ── 줄에 걸 수 있는 것 ─────────────────────────────────────────────────
+  **[다시 켜기]** 와 **[지우기]** 둘뿐이다. 둘 다 `SendSequence` 줄 하나만
+  건드린다 — 지우기도 **이 표에서 없애는 것**이지 투자사를 지우는 것이
+  아니다(명단·발송 기록·활동은 그대로다 · `routers/followups.delete_sequence`).
+
+  누가 눌러도 되는가는 **둘이 같은 판정**을 쓴다(`followups._owned`) —
+  남의 담당 줄은 서버가 막는다. 화면에서만 감추면 주소를 아는 사람이
+  그대로 부를 수 있다.
 #}
 <section class="panel wide">
   <h2 class="panel-title">IR 요청 투자사 <span class="hint">{{ closed|length }}건</span>
@@ -91,12 +100,36 @@
         <td>{{ r.stage_label }}</td>
         <td><span class="status-badge">{{ r.status_label }}</span></td>
         <td class="muted">{{ r.reason }}</td>
+        {#
+          단추 둘을 **나란히 두되 붙이지 않는다.** 되살리려고 [다시 켜기] 를
+          누르러 왔다가 [지우기] 를 누르는 것이 이 표에서 가장 나쁜 실수다 —
+          고친 값과 달리 지운 줄은 화면 어디에도 안 남는다. 그래서 셋을 겹쳐
+          둔다: 사이를 벌리고(`.closed-actions`), 가운뎃점으로 끊고, 색을
+          달리하고(`linkbtn danger`), 확인창을 하나 세운다.
+
+          확인 문구가 **되살아난다는 것까지 말한다.** 이 표 머리의 [지난
+          발송에서 리마인드 걸기] 를 누르면 그 담당자의 딜소개 발송 기록에서
+          같은 줄이 다시 선다(`cadence.backfill_from_history`). 그 말을 안
+          해 두면, 지운 뒤 백필을 눌러 다시 뜬 줄을 보고 "안 지워졌다" 로
+          읽는다.
+        #}
         <td>
+          {# 벌리는 것은 **칸 안쪽 `div`** 다. `<td>` 자체에 `display:flex` 를
+             주면 그 칸이 테이블 레이아웃에서 빠져 줄이 통째로 어긋난다 —
+             이 저장소가 세 번 겪은 자리다(`tests/test_ui_layout.py`). #}
+          <div class="closed-actions">
           {% if r.status in ['stopped', 'responded'] %}
           <form method="post" action="/followups/{{ r.id }}/resume">
             <button class="linkbtn" type="submit">다시 켜기</button>
           </form>
+          <span class="sep" aria-hidden="true">·</span>
           {% endif %}
+          <form method="post" action="/followups/{{ r.id }}/delete"
+                onsubmit="return confirm('이 줄을 IR 요청 투자사 표에서 지울까요?\n담당자 명단과 발송 기록·활동은 그대로 남습니다 — 이 표의 줄 하나만 사라집니다.\n[지난 발송에서 리마인드 걸기] 를 누르면 그 발송 기록에서 다시 생깁니다.')">
+            <button class="linkbtn danger" type="submit"
+                    title="이 표에서만 없앱니다. 담당자 명단·발송 기록은 남습니다.">지우기</button>
+          </form>
+          </div>
         </td>
       </tr>
       {% endfor %}
