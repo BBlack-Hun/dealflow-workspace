@@ -39,6 +39,10 @@ from sqlalchemy.orm import Session
 
 from ..models import (DealBatch, DealBatchCompany, IrCompany, IrRequest,
                       Meeting, SendItem, SendJob, User, VcContact)
+# 단계 값(`STAGE_*`)은 **문구를 짓는 쪽이 정한 것**을 그대로 읽는다.
+# 여기 숫자를 다시 적어 두면 한쪽이 바뀔 때 보고만 옛 값으로 남는다
+# (`routers/deals.py` 도 같은 곳을 `mc` 로 읽는다).
+from . import message_composer as mc
 from .pipeline import (IR_MEETING_ASK_DAYS, MEETING_FOLLOWUP_DAYS,
                        MEETING_KINDS, NO_FOLLOWUP_OUTCOMES, OUTCOMES,
                        REQUEST_STATUS, meeting_ask_state)
@@ -54,7 +58,83 @@ WEEK_NAMES = ["첫주", "둘째주", "셋째주", "넷째주", "다섯째주", "
 #: 요청받은 것과 전달한 것을 이미 세고 있어, 여기 또 실으면 같은 일이 두 번
 #: 세어진다. 방 연결 확인(`verify_room`)은 아무것도 보내지 않으므로 애초에
 #: 발송이 아니다(`models.SEND_KINDS` 의 이유와 같다).
-SEND_GROUPS = (("deal_intro", "딜 소개"), ("sourcing_intro", "딜 소싱"))
+SEND_REPORT_KINDS = ("deal_intro", "sourcing_intro")
+
+#: 묶음 열쇠. `SendJob.kind` 값이 아니다 — `deal_intro` 하나에 네 가지 일이
+#: 들어 있어서(아래 `send_group_key`) 열쇠를 따로 둔다.
+GROUP_DEAL = "deal_intro"
+GROUP_REMIND = "deal_intro_remind"
+GROUP_MEETING = "deal_intro_meeting"
+GROUP_SOURCING = "sourcing_intro"
+
+#: 발송 묶음 — `(열쇠, 이름, 늘 보이는가)`. 이 차례가 화면·엑셀에 그대로 나온다.
+#:
+#: ## 왜 `딜 소개` 를 쪼개는가
+#:
+#: `SendJob.kind` 는 **IR 전달·소싱·스타트업만** 갈라 적는다. 그래서 미팅
+#: 요청·리마인드·선호 분야 묻기·미팅 후기가 전부 `deal_intro` 로 들어가,
+#: `딜 소개` 묶음의 `회차 N개 · 대상 N명` 에 함께 세어졌다. 회차명으로 눈으로는
+#: 갈라 보이지만 숫자는 뭉쳐 있어서, 카톡으로 보고하던 `딜소개 업무 총 N명` 이
+#: 실제 딜 소개보다 부풀었다.
+#:
+#: **`kind` 를 새로 쪼개지 않는다.** 옛 회차는 이미 `deal_intro` 로 적혀 있어서
+#: 새 값을 만들면 지난달이 옛 값 그대로 남는다. 대신 `SendItem.stage` 로 읽는다
+#: — 회차 하나가 곧 방식 하나라(`deals.create_send_list` 가 회차마다 한 가지
+#: `stage` 만 적는다) 이주 없이 옛 회차까지 그대로 갈린다.
+#:
+#: ## 이름은 회차명이 쓰는 말과 같다
+#:
+#: `deals.MODE_TITLES` 의 말을 그대로 쓴다 — 회차명은 `미팅 요청` 인데 묶음이
+#: `미팅 요청 발송` 이면 같은 것이 둘로 읽힌다. 두 방식이 한 묶음인 자리는
+#: **두 이름을 다 적는다**(아래 `send_group_key` 의 '아는 흠').
+#:
+#: ## 늘 보이는 묶음
+#:
+#: `딜 소개`·`딜 소싱` 은 회차가 없는 달에도 자리를 지킨다 — 사용자가 카톡
+#: 보고에 늘 두 줄을 적었고, 빈 칸이 보여야 "이 달은 안 했다" 를 읽는다.
+#: 후속 묶음은 있을 때만 선다. 늘 세워 두면 대부분의 달에 `이 달에는 없습니다`
+#: 가 넷씩 깔려 정작 회차가 있는 줄이 묻힌다. **거르는 자리는 여기 한 곳이라
+#: 화면과 엑셀이 같은 묶음을 본다.**
+SEND_GROUPS = (
+    (GROUP_DEAL, "딜 소개", True),
+    (GROUP_REMIND, "리마인드 · 선호 분야 묻기", False),
+    (GROUP_MEETING, "미팅 요청 · 미팅 후기", False),
+    (GROUP_SOURCING, "딜 소싱", True),
+)
+
+
+def send_group_key(kind: str, stage: Optional[int]) -> str:
+    """이 회차는 어느 묶음인가. ★ **가르는 판정은 여기 하나다.**
+
+    화면(`templates/report.html`)·엑셀(`routers/data_io.py`)·연간 보고가 전부
+    `_sends()` 가 만든 묶음을 그대로 읽는다. 각자 세면 같은 달이 화면마다 다른
+    수로 보인다 — 이 저장소가 반복해 겪은 사고다.
+
+    `stage` 는 그 회차 발송 건의 단계다(`services/message_composer.STAGE_*`).
+
+        1 딜 소개   2 리마인드·선호 분야 묻기   3 미팅 요청·미팅 후기
+
+    비어 있으면 딜 소개로 읽는다 — `stage` 칸이 생기기 전의 옛 건이고,
+    `cadence.progress` 도 같은 자리에서 같은 값으로 읽는다.
+
+    ## 아는 흠 — 두 방식이 한 `stage` 를 함께 쓴다
+
+    `2` 는 리마인드와 선호 분야 묻기가, `3` 은 미팅 요청과 미팅 후기가 함께
+    쓴다(`deals.FOLLOW_UP_MODES`). **가를 수 있는 값이 어디에도 없다** —
+    발송 건에 남는 것은 `stage` 뿐이고 문구 종류는 저장되지 않는다. 억지로
+    회차명으로 가르지 않는다: 회차명은 사람이 고쳐 쓸 수 있어서, 이름을 바꾼
+    회차가 소리 없이 다른 묶음으로 옮겨 간다.
+
+    그래서 **한 묶음으로 두고 이름에 둘 다 적는다.** 갈라 놓은 척하는 것보다
+    낫다 — 숫자가 무엇을 세었는지가 이름에 그대로 적혀 있다.
+    """
+    if kind != "deal_intro":
+        return kind
+    if stage == mc.STAGE_REMIND:
+        return GROUP_REMIND
+    if stage == mc.STAGE_MEETING:
+        return GROUP_MEETING
+    return GROUP_DEAL
 
 #: 회차 상태를 읽는 말로. 발송 진행 화면(`static/js/progress.js` 의
 #: `JOB_STATUS_KO`)과 **같은 말을 써야 한다** — 같은 회차가 화면마다 다른
@@ -315,11 +395,15 @@ def _sends(db: Session, start: date, end: date, user: Optional[User],
     회차 수·건수는 `SendJob.total`/`sent` 같은 세어 둔 칸을 믿지 않고 발송 건을
     직접 센다. 세어 둔 칸은 중단·재시도를 거치며 실제와 어긋날 수 있고, 보고는
     그 어긋남이 드러나야 할 자리다.
+
+    **후속 발송은 딜 소개와 갈라 센다.** 미팅 요청·리마인드·선호 분야 묻기·
+    미팅 후기가 전부 `SendJob.kind == "deal_intro"` 로 적히는 탓에 위 보고의
+    `총 N명` 에 함께 들어 있었다 — 어느 묶음인지는 `send_group_key` 한 곳이
+    정하고, 화면·엑셀·연간 보고가 그 답을 그대로 읽는다.
     """
-    kinds = [kind for kind, _ in SEND_GROUPS]
     stmt = (select(SendJob, DealBatch)
             .outerjoin(DealBatch, DealBatch.id == SendJob.batch_id)
-            .where(SendJob.kind.in_(kinds)))
+            .where(SendJob.kind.in_(SEND_REPORT_KINDS)))
     if user is not None:
         stmt = stmt.where(SendJob.user_id == user.id)
 
@@ -330,9 +414,11 @@ def _sends(db: Session, start: date, end: date, user: Optional[User],
     job_ids = [job.id for job, _ in jobs]
     counts: Dict[int, Counter] = {}
     people: Dict[int, set] = {}
-    for item_id, job_id, status, contact_id, sourcing_id in db.execute(
+    stages: Dict[int, Counter] = {}
+    for item_id, job_id, status, contact_id, sourcing_id, stage in db.execute(
         select(SendItem.id, SendItem.job_id, SendItem.status,
-               SendItem.contact_id, SendItem.sourcing_contact_id)
+               SendItem.contact_id, SendItem.sourcing_contact_id,
+               SendItem.stage)
         .where(SendItem.job_id.in_(job_ids or [0]))
     ).all():
         counts.setdefault(job_id, Counter())[status or ""] += 1
@@ -341,6 +427,26 @@ def _sends(db: Session, start: date, end: date, user: Optional[User],
         who = (("c", contact_id) if contact_id
                else ("s", sourcing_id) if sourcing_id else ("i", item_id))
         people.setdefault(job_id, set()).add(who)
+        # 이 회차가 어떤 방식이었나 — 발송 건에 남은 유일한 자국이다.
+        stages.setdefault(job_id, Counter())[stage] += 1
+
+    # ── 회차 하나 = 방식 하나 ────────────────────────────────────────────
+    #
+    # `deals.create_send_list` 는 회차마다 한 가지 `stage` 만 적는다. 그래도
+    # **섞였을 때 무엇을 할지는 정해 둔다** — 손으로 고친 자료나 옛 이주가
+    # 남긴 줄이 있으면, 정해 두지 않은 쪽은 데이터베이스가 주는 순서대로
+    # 갈려서 같은 달을 두 번 열면 다른 묶음에 선다. 가장 많은 쪽으로 읽고,
+    # 같은 수면 앞 단계로 읽는다(비어 있는 것이 딜 소개다).
+    def _stage_of(job_id: int) -> Optional[int]:
+        got = stages.get(job_id)
+        if not got:
+            return None
+        return min(got.items(), key=lambda t: (-t[1], t[0] or 0))[0]
+
+    # **가르는 판정은 `send_group_key` 한 곳**이고, 여기서 회차마다 한 번만
+    # 부른다 — 아래 묶음 고르기가 같은 답을 다시 계산하지 않는다.
+    belongs = {job.id: send_group_key(job.kind, _stage_of(job.id))
+               for job, _ in jobs}
 
     # 그 회차에 무엇을 소개했나 — 사용자가 `핵심 딜 7개사` 라고 적던 값.
     batch_ids = [b.id for _, b in jobs if b is not None]
@@ -354,12 +460,16 @@ def _sends(db: Session, start: date, end: date, user: Optional[User],
         named.setdefault(batch_id, []).append(name)
 
     groups = []
-    for kind, label in SEND_GROUPS:
+    for key, label, always in SEND_GROUPS:
         # **회차마다 한 줄.** 같은 날 회차가 둘이어도 합치지 않는다 — 8/27 에
         # 두 회차가 있었고 하나는 18건에서 멈췄는데, 합치면 그 사실이 묻혀
         # `116개 완료` 가 된다. 손으로 쓰던 보고가 실제로 그렇게 틀렸다.
-        picked = sorted((t for t in jobs if t[0].kind == kind),
+        picked = sorted((t for t in jobs if belongs[t[0].id] == key),
                         key=lambda t: (_job_date(*t), t[0].id))
+        # 없는 후속 묶음은 아예 세우지 않는다 — 거르는 자리가 여기 하나라
+        # 화면과 엑셀이 같은 묶음을 본다(까닭은 `SEND_GROUPS`).
+        if not picked and not always:
+            continue
         rows, targeted, companies = [], set(), set()
         for job, batch in picked:
             got = counts.get(job.id, Counter())
@@ -401,7 +511,7 @@ def _sends(db: Session, start: date, end: date, user: Optional[User],
                 "level": "bad" if job.status == "canceled" else ("warn" if left else ""),
             })
         groups.append({
-            "key": kind,
+            "key": key,
             "label": label,
             "rows": rows,
             "rounds": len(rows),
