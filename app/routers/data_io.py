@@ -619,7 +619,11 @@ def _kpi(sheet, data):
 def _sends_sheet(sheet, data, team_wide):
     """발송 — 화면 맨 위 패널. 카톡으로 손으로 쓰던 보고가 이 표다."""
     sends = data["sends"]
-    sheet.band(f"{data['month']}월 발송  ·  딜 소개 · 딜 소싱")
+    # 무엇을 세는 표인지 — **묶음에서 그대로 읽는다**(화면 머리말과 같은 곳).
+    # 묶음 사이는 `/` — 이름 안에 가운뎃점이 든 묶음이 있어서 같은 점으로
+    # 이으면 넷이 여섯으로 읽힌다(`templates/report.html` 과 같은 이유).
+    kinds = " / ".join(g["label"] for g in sends["groups"])
+    sheet.band(f"{data['month']}월 발송  ·  {kinds}")
     if sends["left"]:
         # 화면이 먼저 말하는 것과 같은 말. 이 줄이 없으면 대상 수를 완료로
         # 옮겨 적는 일이 그대로 다시 일어난다.

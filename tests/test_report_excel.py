@@ -85,7 +85,7 @@ def test_the_send_panel_is_in_the_file(logged, db, users):
 
     grid = _grid(wb["2026-08 발송"])
     flat = [str(c) for row in grid for c in row]
-    assert "8월 발송  ·  딜 소개 · 딜 소싱" in flat
+    assert "8월 발송  ·  딜 소개 / 딜 소싱" in flat
     for title in ("8/26 (8월 4주차)", "09/02 (9월 1주차)"):
         assert title in flat, f"{title} 회차가 파일에 없습니다"
     assert "8/27(목)" in flat, "날짜에 요일이 붙어야 한다 — 회차는 요일로 기억된다"
@@ -436,3 +436,50 @@ def test_the_filename_says_which_month(logged, db, users):
     got = _download(logged, month="2026-08")
     assert "%EC%97%85%EB%AC%B4%EB%B3%B4%EA%B3%A0_2026-08.xlsx" in \
         got.headers["content-disposition"], "업무보고_2026-08.xlsx"
+
+
+def test_the_split_groups_match_the_screen(logged, db, users):
+    """**딜 소개에서 갈라낸 묶음이 파일에도 같은 수로 선다.**
+
+    화면·엑셀·연간 보고가 각자 세면 숫자가 갈린다 — 그래서 가르는 판정은
+    `report.send_group_key` 한 곳이고, 여기서 두 곳이 같은 답을 말하는지 잰다.
+    """
+    from app.services import report
+
+    _round(db, users, title="8/26 (8월 4주차)", when=date(2026, 8, 27),
+           sent=97, companies=7, stage=1)
+    _round(db, users, title="08/28 (미팅 요청)", when=date(2026, 8, 28),
+           sent=30, stage=3, people_from=500)
+    _round(db, users, title="08/29 (리마인드)", when=date(2026, 8, 29),
+           sent=12, stage=2, people_from=700)
+
+    seen = report.monthly(db, 2026, 8, users["u1"], today=date(2026, 8, 31))
+    grid = _grid(_book(_download(logged))["2026-08 발송"])
+    body = logged.get("/report?month=2026-08").text
+
+    for group in seen["sends"]["groups"]:
+        head = _find(grid, f"{group['label']}   {group['sent']}건 완료")
+        assert head is not None, f"{group['label']} 묶음이 파일에 없습니다"
+        assert f"회차 {group['rounds']}개 · 대상 {group['contacts']}명" in str(head[0])
+        assert group["label"] in body, f"{group['label']} 묶음이 화면에 없습니다"
+
+    deal = next(g for g in seen["sends"]["groups"] if g["key"] == "deal_intro")
+    assert (deal["sent"], deal["contacts"], deal["rounds"]) == (97, 97, 1), \
+        "미팅 요청 30명·리마인드 12명이 딜 소개에 남아 있다"
+    # 가른 것이지 지운 것이 아니다 — 요약 줄은 셋을 다 더한 값 그대로다.
+    assert seen["sends"]["sent"] == 139
+    labels = _find(grid, "보낸 건수")
+    assert grid[grid.index(labels) + 1][0] == 139
+
+
+def test_the_band_names_the_groups_it_shows(logged, db, users):
+    """표 머리말이 **그 달에 실제로 선 묶음**을 말한다.
+
+    손으로 적어 두면 묶음이 늘어도 머리말만 옛말로 남는다.
+    """
+    _round(db, users, title="08/28 (미팅 요청)", when=date(2026, 8, 28),
+           sent=30, stage=3)
+
+    grid = _grid(_book(_download(logged))["2026-08 발송"])
+    assert _find(grid, "8월 발송  ·  딜 소개 / 미팅 요청 · 미팅 후기 / 딜 소싱") \
+        is not None
