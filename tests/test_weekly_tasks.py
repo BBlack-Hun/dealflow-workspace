@@ -588,3 +588,52 @@ def test_moving_weeks_keeps_the_sort(client, db, users):
     client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
     body = client.get("/todo").text
     assert body.count("data-sort-keep") >= 2, "주 이동 링크에 정렬 표시가 없습니다"
+
+
+# --- 끝난 일의 겉모습 --------------------------------------------------------
+#
+# 완료로 바꾸면 줄에 **취소선**이 그어졌다. 읽기 힘들다고 해서 뺐다.
+# 다만 뺄 것은 취소선뿐이다 — 흐린 색(`--muted`)까지 같이 지우면 끝난 일과
+# 안 끝난 일이 겉으로 구분되지 않는다. 그래서 **둘 다** 잠근다.
+
+def _task_done_rules() -> str:
+    """app.css 에서 `.task-done` 이 대상인 규칙만 모아 온다."""
+    import pathlib
+    import re
+
+    css = pathlib.Path("app/static/css/app.css").read_text(encoding="utf-8")
+    out = []
+    for block in re.finditer(r"([^{}]+)\{([^{}]*)\}", css):
+        selectors = [s.strip() for s in block.group(1).split(",")]
+        if any("task-done" in s for s in selectors):
+            out.append(block.group(2))
+    return "\n".join(out)
+
+
+def test_a_finished_row_is_not_struck_through():
+    rules = _task_done_rules()
+    assert rules, ".task-done 규칙이 사라졌습니다"
+    assert "line-through" not in rules, (
+        "끝난 일에 취소선이 돌아왔습니다 — 읽기 힘들다고 해서 뺀 것입니다."
+    )
+
+
+def test_a_finished_row_still_looks_different():
+    """취소선을 뺀 자리를 흐린 색이 대신한다 — 이것까지 빼면 구분이 사라진다."""
+    rules = _task_done_rules()
+    assert "var(--muted)" in rules, (
+        "끝난 일의 흐린 색이 사라졌습니다. 취소선을 뺀 뒤로 끝난 일과 안 끝난 "
+        "일을 구분해 주는 것은 이 색뿐입니다 — 바꾸려면 사용자에게 먼저 물으세요."
+    )
+
+
+def test_nothing_strikes_the_row_from_the_page_or_the_script():
+    """CSS 만 고치고 마는 일을 막는다 — 화면·스크립트가 직접 그으면 그대로 남는다."""
+    import pathlib
+
+    watched = [pathlib.Path("app/templates/todo.html"),
+               pathlib.Path("app/static/js/weekly_tasks.js")]
+    for path in watched:
+        text = path.read_text(encoding="utf-8")
+        assert "line-through" not in text, f"{path} 가 직접 취소선을 긋고 있습니다"
+        assert "textDecoration" not in text, f"{path} 가 직접 취소선을 긋고 있습니다"
