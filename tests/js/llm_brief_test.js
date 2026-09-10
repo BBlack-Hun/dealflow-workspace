@@ -27,7 +27,7 @@ const src = fs.readFileSync(SRC, "utf8");
 const BRIEF = {
   generated_at: "2026-09-01T09:00:00+09:00",
   // 무엇이 담겼는지는 **서버가 지은 문장**이다 — 화면은 그것을 그대로 보여준다.
-  scope: "본인 담당 · 카톡방 확인됨 1곳 (내가 맡은 투자사 3곳 중)",
+  scope: "내 명단의 투자사 3곳 중 카톡방 확인됨 1곳",
   amount_unit: "백만원",
   // 시킬 말은 **서버가 지어 보낸다.** 화면이 제 문장을 들고 있으면 서버 쪽과
   // 반드시 갈린다 — 여기서는 서버가 보냈다고 치고 그것이 실려 나가는지만 본다.
@@ -152,7 +152,8 @@ async function main() {
     // 몇 건인지 먼저 말해 준다 — 빈 자료를 그대로 붙여 넣는 일이 없게.
     assert.ok(app.nodes["llm-state"].textContent.indexOf("투자사 1곳") >= 0,
       app.nodes["llm-state"].textContent);
-    assert.ok(app.nodes["llm-state"].textContent.indexOf("본인 담당") >= 0);
+    assert.ok(app.nodes["llm-state"].textContent.indexOf("카톡방 확인됨") >= 0,
+      app.nodes["llm-state"].textContent);
   }
   {
     // 링크의 주소를 바꾸면 [화면에서 보기] 도 그리로 따라가야 한다.
