@@ -436,6 +436,20 @@ def list_page(
         # 감춘 줄 — 몇 줄인지와, 되돌리러 갈 자리.
         "hidden_count": len(hidden_rows),
         "show_hidden": bool(hidden),
+        # 감춘 줄을 골라 **정말로 지우는** 자리를 세울까.
+        #
+        # 두 가지를 함께 본다.
+        #   ① `hidden`(= [함께 보기] 로 들어왔다) — **평소 화면에는 체크상자도
+        #      [선택 삭제] 도 없다.** 감춘 것이 기본으로 섞여 나오면 감춘 뜻이
+        #      없고, 지우는 단추가 늘 떠 있으면 감추기라는 한 걸음이 무의미해진다.
+        #   ② `page.investors` — 이 길은 **투자사 관리 현황 하나만** 쓴다.
+        #      시트를 새로 올리며 감춘 줄을 정리하는 것이 그 화면의 일이고,
+        #      다른 화면에 삭제를 붙이는 것은 이번에 하는 일이 아니다.
+        #
+        # 지울 수 있는 사람인지는 여기서 가르지 않는다 — 이 표에 뜨는 줄이 곧
+        # 이 사람이 고칠 수 있는 줄이고(`contact_rows` 의 `team_wide`), 서버가
+        # 같은 판정을 한 번 더 본다(`routers/contacts.py` 의 `_owned`).
+        "delete_view": bool(hidden) and bool(hidden_rows) and page.investors,
         "msg": msg,
         "funnel": stage_funnel,
         # 대시보드의 '내 투자사 선호'에서 눌러 오면 그 사람 상세를 바로 연다 —

@@ -1075,6 +1075,14 @@ td.cell.save-failed { background: #fdecec; }
 /* 감춘 줄. `?hidden=1` 로 함께 볼 때만 그려지므로, 지운 줄이 아니라 감춘
    줄이라는 것이 한눈에 보여야 한다. */
 .hidden-rows-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+/* 감춘 줄 골라 지우기 막대. 생김새는 풀 할당 막대(`.assign-bar`)와 같되
+   **색만 다르다** — 하는 일이 되돌릴 수 없는 삭제라, 명단에 더하는 파란 막대와
+   한눈에 갈라져야 한다. 자리·간격을 따로 적으면 둘이 어긋난다. */
+.assign-bar.delete-bar { background: #fdf2f2; border-color: #f3c9c9; }
+/* 막대 안의 단추는 `.primary-btn.inline`(풀 할당)과 **같은 크기**여야 한다 —
+   단추는 글자 크기를 물려받지 않아서, 이 줄이 없으면 같은 막대 안에서 두
+   단추의 글자가 서로 다르게 선다. */
+.danger-btn.inline { width: auto; margin: 0; padding: 8px 14px; font-size: 13px; }
 .grid-table tbody tr.row-hidden { opacity: .55; background: repeating-linear-gradient(
   45deg, transparent, transparent 6px, #f4f6f9 6px, #f4f6f9 12px); }
 
