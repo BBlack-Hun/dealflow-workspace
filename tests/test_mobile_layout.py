@@ -12,13 +12,16 @@
     업무 보고        804px
     팀 현황          808px
 
-원인은 둘이고, 아래 검사는 그 둘을 못 박는다.
+원인은 셋이고, 아래 검사는 그 셋을 못 박는다.
 
   1. `min-width` 를 준 표가 **`.table-wrap` 밖**에 있었다.
      받아 줄 상자가 없으니 그 폭이 그대로 페이지를 밀었다.
   2. 표가 든 격자 칸이 `1fr` 이었다. `1fr` 은 `minmax(auto, 1fr)` 이라
      **속 내용의 최소폭 아래로는 안 줄어든다** — 한 줄로 세워 놓고도 칸이
      표 폭(2,030px)만큼 벌어졌다.
+  3. 표가 아닌 것도 밀었다. 여러 칸으로 나뉜 **줄**(`.due-list li`)이 폰에서
+     그대로 서 있었고, 폰 규칙에 적혀 있던 `flex-wrap` 은 격자에 아무 일도
+     하지 않았다 — 딜 진행 관리가 422·441px 이었다(7절).
 
 화면 이름을 여기 적어 두지 않는다. 템플릿 폴더를 훑으므로 **화면이 새로
 생기면 저절로 걸린다.**
@@ -28,6 +31,8 @@ from __future__ import annotations
 import pathlib
 import re
 import sys
+
+import pytest
 
 CSS = pathlib.Path("app/static/css/app.css")
 TEMPLATES = pathlib.Path("app/templates")
@@ -364,3 +369,184 @@ def test_the_desktop_header_shape_is_untouched():
             for prop in ("text-align", "vertical-align", "white-space"):
                 assert prop not in decl, \
                     f"{header} 의 `{selector}` 가 머리글 {prop} 을 덮어쓴다"
+
+
+# ── 7. 여러 칸으로 나뉜 줄은 좁은 폭에서 다시 짜야 한다 ─────────────────────
+#
+# 표가 아닌 것이 페이지를 민 세 번째 원인이다. 딜 진행 관리의 리마인드·미팅
+# 후기 줄(`.due-list li`)은 **격자**인데(`날짜 84px | 이름 1fr | 무엇 200px |
+# 단추 auto`), 폰 규칙에 적혀 있던 것은 `flex-wrap: wrap` 하나뿐이었다.
+# **격자에는 `flex-wrap` 이 아무 일도 하지 않는다** — 접히는 줄로 알고 있었지만
+# 네 칸이 그대로 서서 마지막 칸이 화면 밖으로 나갔다. 390px 에서 잰 값:
+#
+#     리마인드(#remind)      422px
+#     미팅 후기(#meetings)   441px
+#
+# 눈에 안 띄던 까닭은 **아무 일도 안 하는 선언이 일하는 것처럼 보였기**
+# 때문이다. 그래서 아래 둘을 못 박는다.
+#
+#   1. 격자에 `flex-wrap` 을 걸지 않는다 — 걸어 봐야 안 접힌다.
+#   2. 칸이 셋 이상인 격자는 좁은 폭 규칙에서 **칸을 다시 정해야** 한다.
+#
+# 표와는 다른 처방이다. 넓은 표는 `.table-wrap` 안에서 **가로로 굴리고**(위 2절),
+# 글자·단추가 든 줄은 **접는다**. 굴릴 것과 접을 것을 뒤바꾸면, 표는 짜부라져
+# 못 읽고 단추 줄에는 쓸데없는 스크롤바가 생긴다.
+
+# 좁은 폭 규칙이 사는 곳. 화면 종류가 아니라 **폭**으로 갈린다.
+NARROW = ("@media (max-width: 1100px)", "@media (max-width: 1080px)",
+          "@media (max-width: 900px)", "@media (max-width: 860px)",
+          "@media (max-width: 720px)", "@media (max-width: 400px)")
+
+
+def _pieces(selector: str):
+    """`a, b c` → `['a', 'b c']`. 공백을 한 칸으로 맞춰 앞뒤를 견줄 수 있게."""
+    return [re.sub(r"\s+", " ", one).strip() for one in selector.split(",") if one.strip()]
+
+
+def _narrow_css(css: str) -> str:
+    """좁은 폭 규칙을 전부 이어 붙인 것."""
+    return "\n".join(_block(css, header) for header in NARROW if header in css)
+
+
+def _outside_media(css: str) -> str:
+    """`@media` 블록을 전부 걷어낸 나머지 — **넓은 폭에서의 본 모습**.
+
+    맨 앞을 잘라 쓰면 안 된다. 규칙은 첫 `@media` 뒤에도 계속 나온다 —
+    `.due-list li` 자체가 1100px 블록보다 **아래**에 적혀 있었다.
+    """
+    out, i = [], 0
+    while True:
+        j = css.find("@media", i)
+        if j < 0:
+            out.append(css[i:])
+            return "".join(out)
+        out.append(css[i:j])
+        depth, k = 0, css.index("{", j)
+        for k in range(k, len(css)):
+            if css[k] == "{":
+                depth += 1
+            elif css[k] == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+        i = k + 1
+
+
+def _grid_selectors(css: str) -> set:
+    """`display: grid` 로 선언된 선택자들."""
+    grids: set = set()
+    for selector, body in _rules(_outside_media(css)):
+        if re.search(r"display:\s*(inline-)?grid", body):
+            grids |= set(_pieces(selector))
+    return grids
+
+
+def test_격자에는_줄바꿈을_걸지_않는다():
+    """`flex-wrap` 은 flex 상자에만 듣는다 — 격자에 걸면 조용히 아무 일도 없다.
+
+    이 한 줄 때문에 `.due-list li` 가 '폰에서 접힌다' 고 적힌 채로 안 접혔다.
+    고쳐 놓고도 안 고쳐진 것이 가장 나쁘다 — 아무도 다시 안 본다.
+    """
+    css = _css()
+    grids = _grid_selectors(css)
+    assert grids, "격자 규칙을 하나도 못 찾았다 — 훑기가 고장 났다"
+    bad = []
+    for selector, body in _rules(_narrow_css(css)):
+        if "flex-wrap" not in body:
+            continue
+        bad += [one for one in _pieces(selector) if one in grids]
+    assert not bad, (
+        "다음은 `display: grid` 인데 `flex-wrap` 이 걸려 있다 — 격자에는 듣지 "
+        f"않아서 칸이 그대로 선다: {sorted(set(bad))}")
+
+
+def _tracks(value: str) -> int:
+    """`84px 1fr 200px auto` → 4. 괄호 안(`repeat(...)`)은 한 덩어리로 센다."""
+    depth, count, seen = 0, 0, False
+    for ch in value.strip():
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+        if depth == 0 and ch.isspace():
+            if seen:
+                count += 1
+                seen = False
+        else:
+            seen = True
+    return count + (1 if seen else 0)
+
+
+def _wide_grids(css: str):
+    """칸이 셋 이상인 격자. `auto-fit`·`auto-fill` 은 스스로 접으므로 뺀다."""
+    found = {}
+    for selector, body in _rules(_outside_media(css)):
+        m = re.search(r"grid-template-columns:\s*([^;]+)", body)
+        if not m:
+            continue
+        value = m.group(1).strip()
+        if "auto-fit" in value or "auto-fill" in value:
+            continue
+        if _tracks(value) < 3:
+            continue
+        for one in _pieces(selector):
+            found[one] = value
+    return found
+
+
+def test_칸이_셋_이상인_줄은_좁은_폭에서_다시_짠다():
+    """칸을 그대로 두면 `84 + 이름 + 200 + 단추` 가 390px 을 넘긴다.
+
+    좁은 폭에서 칸을 다시 정하기만 하면 되고(한 줄로 세우든 폭을 줄이든),
+    **아예 손대지 않은 것**만 잡는다 — `.bar-row` 처럼 좁혀서 들어가는 줄도
+    있으므로 '무조건 한 칸' 을 강요하지 않는다.
+    """
+    css = _css()
+    narrow = _narrow_css(css)
+    touched = set()
+    for selector, body in _rules(narrow):
+        if "grid-template-columns" in body:
+            touched |= set(_pieces(selector))
+    missing = {one: value for one, value in _wide_grids(css).items() if one not in touched}
+    assert not missing, (
+        "다음 격자가 좁은 폭에서 그대로다 — 칸을 합친 폭이 화면을 넘겨 마지막 "
+        f"칸이 밖으로 나간다: {missing}")
+
+
+def test_리마인드_줄은_폰에서_한_줄로_선다():
+    """`.due-list li` 는 딜 진행 관리·업무 화면이 함께 쓰는 줄이다.
+
+    여기가 다시 여러 칸이 되면 세 화면이 한꺼번에 가로로 밀린다. 위 훑기는
+    '손댔는가' 만 보므로, 실제로 밀렸던 이 자리는 **한 칸**임을 못 박는다.
+    """
+    for selector, body in _rules(_block(_css(), PHONE)):
+        if ".due-list li" not in _pieces(selector):
+            continue
+        m = re.search(r"grid-template-columns:\s*([^;]+)", body)
+        if not m:
+            continue
+        assert _tracks(m.group(1)) == 1, \
+            f"폰에서 `.due-list li` 가 아직 여러 칸이다: {m.group(1).strip()}"
+        assert "minmax(0" in m.group(1), (
+            "`1fr` 은 속 내용의 최소폭 아래로 안 줄어든다 — `minmax(0, 1fr)` 이어야 "
+            f"한다: {m.group(1).strip()}")
+        return
+    raise AssertionError(f"{PHONE} 에 `.due-list li` 의 칸 규칙이 없다")
+
+
+def test_훑기가_진짜로_잡는지(monkeypatch):
+    """안 잡히는 검사는 없는 것과 같다 — 고쳐 놓기 전 모습을 그대로 넣어 본다."""
+    broken = """
+      .due-list li { display: grid; grid-template-columns: 84px 1fr 200px auto; }
+      @media (max-width: 1100px) { .x { color: red; } }
+      @media (max-width: 720px) { .due-list li { flex-wrap: wrap; } }
+    """
+    monkeypatch.setattr(sys.modules[__name__], "_css", lambda: broken)
+    assert _grid_selectors(broken) == {".due-list li"}
+    assert list(_wide_grids(broken)) == [".due-list li"]        # 좁은 폭에서 안 짜였다
+    with pytest.raises(AssertionError):
+        test_격자에는_줄바꿈을_걸지_않는다()
+    with pytest.raises(AssertionError):
+        test_칸이_셋_이상인_줄은_좁은_폭에서_다시_짠다()
+    with pytest.raises(AssertionError):
+        test_리마인드_줄은_폰에서_한_줄로_선다()
