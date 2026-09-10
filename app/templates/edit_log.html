@@ -13,7 +13,9 @@
   <h1>수정 로그</h1>
   <p class="muted">
     <b>내가 안 한 변경</b>만 모읍니다 — 남의 것을 고친 일과 공용 자료를 고친 일.
-    자기 것만 고친 것은 남기지 않습니다.
+    자기 것만 <b>고친</b> 것은 남기지 않습니다.
+    <b>지운 것은 자기 것이라도 남습니다</b> — 지운 줄은 화면 어디에도 없어
+    무엇이 있었는지 물을 자리가 여기밖에 없기 때문입니다.
     <a class="linkbtn" href="/team">팀 현황으로</a>
   </p>
 </header>
@@ -29,6 +31,10 @@
        href="/team/edit-log?scope=others{% if screen %}&screen={{ screen }}{% endif %}">남의 것</a>
     <a class="chip {% if scope == 'shared' %}active{% endif %}"
        href="/team/edit-log?scope=shared{% if screen %}&screen={{ screen }}{% endif %}">공용</a>
+    {# 자기 것은 **지운 것만** 남는다 — 그래서 이 갈래는 사실상 '누가 무엇을
+       지웠나' 다. 80줄을 한 번에 지우는 길이 생긴 뒤로는 이것부터 본다. #}
+    <a class="chip {% if scope == 'mine' %}active{% endif %}"
+       href="/team/edit-log?scope=mine{% if screen %}&screen={{ screen }}{% endif %}">자기 것 지움</a>
   </div>
 
   <div class="filter-line">
@@ -61,6 +67,10 @@
           <td>
             {% if row.scope == 'others' %}
             <span class="tag">남의 것{% if row.target %} · {{ row.target }}{% endif %}</span>
+            {% elif row.scope == 'mine' %}
+            {# 자기 줄은 **지운 것만** 여기 온다. `공용` 으로 뭉뚱그리면
+               누구 담당이던 줄이 사라진 것인지 읽을 수가 없다. #}
+            <span class="tag">자기 것{% if row.target %} · {{ row.target }}{% endif %}</span>
             {% else %}
             <span class="tag soft">공용</span>
             {% endif %}

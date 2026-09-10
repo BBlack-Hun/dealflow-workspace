@@ -10,6 +10,10 @@
 **자기 것만 고친 것은 남기지 않는다.** 남기면 하루에 수백 줄이 쌓여 아무도 안
 본다. 볼 수 있는 로그여야 쓸모가 있다.
 
+**다만 지운 것은 자기 것이라도 남긴다.** 고친 값은 그 줄에 그대로 있어 다시
+고치면 되지만, 지운 줄은 화면 어디에도 없다 — 무엇이 있었는지 물을 자리가
+여기밖에 없다. 그 범위가 `SCOPE_MINE` 이다(`_row_scope`).
+
 왜 세션 이벤트 한 곳인가 (고른 근거)
 ------------------------------------
 공용·타인 화면의 쓰기 경로는 지금 **49개**다(companies 7 · ir 11 ·
@@ -88,6 +92,9 @@ WRITE_METHODS = frozenset({"POST", "PATCH", "PUT", "DELETE"})
 
 SCOPE_OTHERS = "others"   # 남의 것
 SCOPE_SHARED = "shared"   # 공용
+#: 자기 것 — **지운 것만** 이 범위로 남는다(아래 `_row_scope` 참고).
+#: 고친 것은 자기 것이면 남기지 않는다. 그 규칙은 그대로다.
+SCOPE_MINE = "mine"
 
 ACTION_CREATE = "create"
 ACTION_UPDATE = "update"
@@ -450,6 +457,19 @@ def _row_scope(obj, watch: Watch, actor_id: int, action: str):
         # 주인이 아직 없는 줄(배정 전 명단 · 배정 전 컨설팅 줄)은 공용으로 본다.
         return True, SCOPE_SHARED, None
     if owner_id == actor_id:
+        # **지운 것은 자기 것이라도 남긴다.**
+        #
+        # 고치는 것과 지우는 것은 되돌릴 수 있느냐가 다르다. 고친 값은 그
+        # 줄에 그대로 있어 다시 고치면 되고, 그래서 자기 줄을 고친 것까지
+        # 남기면 하루에 수백 줄이 쌓여 아무도 안 본다(위 머리글). 지운 줄은
+        # 화면 어디에도 없다 — 무엇이 있었는지 물을 자리가 **여기밖에** 없다.
+        #
+        # 계기는 투자사 관리 현황의 [선택 삭제] 다. 시트를 새로 올리며 감춘
+        # 80줄을 한 번에 지우는 길인데, 그 80줄은 대개 **지우는 사람 본인의
+        # 담당**이다. 자기 것이라고 빼면 80줄을 지우고도 로그가 비어, 다음
+        # 달에 "그 투자사 어디 갔지" 를 물을 곳이 없어진다.
+        if action == ACTION_DELETE:
+            return True, SCOPE_MINE, owner_id
         return False, "", owner_id
     return True, SCOPE_OTHERS, owner_id
 
@@ -618,7 +638,7 @@ def recent(db, *, scope: str = "", screen: str = "", limit: int = PAGE_SIZE):
     names = {u.id: u.name for u in db.execute(select(User)).scalars().all()}
 
     stmt = select(EditLog).order_by(EditLog.at.desc(), EditLog.id.desc())
-    if scope in (SCOPE_OTHERS, SCOPE_SHARED):
+    if scope in (SCOPE_OTHERS, SCOPE_SHARED, SCOPE_MINE):
         stmt = stmt.where(EditLog.scope == scope)
     if screen:
         stmt = stmt.where(EditLog.screen == screen)

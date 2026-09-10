@@ -558,6 +558,9 @@ WRITE_ROUTES = {
     ("POST", "/api/contacts"): WATCHED,
     ("PATCH", "/api/contacts/{contact_id}"): WATCHED,
     ("DELETE", "/api/contacts/{contact_id}"): WATCHED,
+    # 감춘 줄을 골라 한꺼번에 지운다. **줄마다 한 줄씩** 남는다
+    # (`confirm` 없이 부르면 세어 보기만 하고 아무 것도 안 지운다).
+    ("POST", "/api/contacts/bulk-delete"): WATCHED,
     ("POST", "/ref-sheets/new"): WATCHED,
     ("PATCH", "/api/ref-sheets/{sheet_id}/cell"): WATCHED,
     ("PATCH", "/api/ref-sheets/{sheet_id}/column"): WATCHED,
@@ -687,10 +690,10 @@ def test_the_six_shared_routers_still_hold_the_forty_nine_paths(portal):
     for (_m, _p), mod in _write_routes(portal["app"]).items():
         if mod in SHARED_ROUTERS:
             counted[mod] = counted.get(mod, 0) + 1
-    # contacts 는 명단 라우터 14 + 참고 자료 6 이다(참고 자료는 주소에 접두가
-    # 없어 파일만 같이 쓴다).
+    # contacts 는 명단 라우터 15 + 참고 자료 6 이다(참고 자료는 주소에 접두가
+    # 없어 파일만 같이 쓴다). 15번째가 감춘 줄 한꺼번에 지우기(`/bulk-delete`)다.
     assert counted == {"companies": 7, "ir": 11, "consulting": 8,
-                       "templates_crud": 5, "sourcing": 4, "contacts": 20}
+                       "templates_crud": 5, "sourcing": 4, "contacts": 21}
 
 
 def test_every_table_is_either_watched_or_explained(db):
@@ -749,7 +752,11 @@ def test_every_watched_table_can_answer_who_owns_it_and_which_screen(db):
 KNOWN_BULK = {
     ("app/routers/consulting.py", "ConsultingCompany"):
         "시트를 다시 올릴 때 **자기 줄만** 지우고 새로 넣는다"
-        "(`ConsultingCompany.user_id == user.id`). 자기 것이라 어차피 안 남는다.",
+        "(`ConsultingCompany.user_id == user.id`). 한꺼번에 지우기라 flush 를 "
+        "지나지 않아 안 남는다 — 사람이 줄을 고른 것이 아니라 시트 한 장을 "
+        "통째로 갈아 끼우는 길이고, 무엇이 들어왔는지는 새로 선 줄이 말한다. "
+        "**사람이 줄을 골라 지우는 길은 이렇게 하면 안 된다** — 투자사 관리 "
+        "현황의 [선택 삭제] 가 줄마다 `db.delete()` 로 지우는 이유가 그것이다.",
 }
 
 _BULK = re.compile(r"\.delete\(\s*\)|execute\(\s*delete\(|execute\(\s*update\(|"
