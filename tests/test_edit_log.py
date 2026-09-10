@@ -570,6 +570,8 @@ WRITE_ROUTES = {
     ("POST", "/team/members/{member_id}/profile"): WATCHED,
     ("POST", "/team/members/{member_id}/role"): WATCHED,
     ("POST", "/team/members/{member_id}/consulting"): WATCHED,
+    # 누구의 줄을 누가 고쳐도 되는가 — 권한을 넓힌 것 자체가 남아야 한다.
+    ("POST", "/team/members/{member_id}/consulting-editors"): WATCHED,
     ("POST", "/team/members/{member_id}/auto-attach"): WATCHED,
     ("POST", "/team/members/{member_id}/reset-password"): WATCHED,
     ("POST", "/team/members/{member_id}/deactivate"): WATCHED,
@@ -854,6 +856,47 @@ def _sample_row(db, model, *, owner_is=None):
     return row
 
 
+def _a_logged_field(db, model, row):
+    """값이 로그에 실리는 칸 하나와 **거기 넣어 볼 값**. 없으면 `(None, None)`.
+
+    **글자 칸만 찾던 자리다.** 값을 남기는 칸이 전부 번호인 표가 생기자
+    (`consulting_row_grants` — `누구의 줄을 누가 고치나` 두 번호가 전부다)
+    찾지 못해 검사가 그 표에서 멎었다. 이 검사가 묻는 것은 `값이 실리는 칸을
+    고치면 로그가 남는가` 이지 **그 칸이 글자인가**가 아니므로 번호 칸도
+    그대로 고른다.
+
+    두 가지를 지킨다.
+
+    · **주인 칸은 마지막에 고른다.** 담당을 옮기는 것은 보통의 수정과 다른
+      길을 지나므로(`_row_scope` 가 고치기 **전**의 주인으로 판정한다), 다른
+      칸이 있으면 그쪽으로 검사한다.
+    · **번호 칸은 실재하는 줄을 가리키게 바꾼다.** 아무 숫자나 넣으면 없는
+      계정을 가리켜 저장 자체가 막힌다(`PRAGMA foreign_keys=ON`).
+    """
+    from sqlalchemy import select
+    from app.services import edit_log as svc
+
+    watch = svc.WATCHED[model.__tablename__]
+    columns = [c for c in model.__table__.columns if c.key in svc.VALUE_FIELDS]
+    # 주인 칸을 뒤로 민다.
+    columns.sort(key=lambda c: c.key == watch.owner)
+    for column in columns:
+        if isinstance(column.type, String):
+            return column.key, "바꾼값"
+        if not isinstance(column.type, Integer):
+            continue
+        now = getattr(row, column.key, None)
+        if not column.foreign_keys:
+            return column.key, (now or 0) + 1
+        target = list(column.foreign_keys)[0].column.table.name
+        ids = [r.id for r in
+               db.execute(select(_model_for(target))).scalars().all()]
+        other = next((i for i in ids if i != now), None)
+        if other is not None:
+            return column.key, other
+    return None, None
+
+
 @pytest.mark.parametrize("table", sorted(
     t for t in __import__("app.services.edit_log", fromlist=["x"]).WATCHED
     if t != "users"))
@@ -870,15 +913,11 @@ def test_every_watched_table_actually_leaves_a_line(db, users, groundwork, table
     db.commit()
     before = len(_logs(db))
 
-    changed = None
-    for column in model.__table__.columns:
-        if column.key in svc.VALUE_FIELDS and isinstance(column.type, String):
-            changed = column.key
-            break
-    assert changed, f"{table} 에 값을 남기는 글자 칸이 하나도 없습니다"
+    changed, value = _a_logged_field(db, model, row)
+    assert changed, f"{table} 에 값을 남기는 칸이 하나도 없습니다"
 
     with _acting_as(users["u1"].id, "PATCH", "/시험"):
-        setattr(row, changed, "바꾼값")
+        setattr(row, changed, value)
         db.commit()
 
     logs = [x for x in _logs(db)[before:] if x.table_name == table]
@@ -899,11 +938,10 @@ def test_a_table_that_is_watched_but_edited_by_its_owner_leaves_nothing(db, user
         db.add(row)
         db.commit()
         before = len(_logs(db))
+        changed, value = _a_logged_field(db, model, row)
+        assert changed, f"{table} 에 값을 남기는 칸이 하나도 없습니다"
         with _acting_as(users["u1"].id, "PATCH", "/시험"):
-            row.__setattr__(
-                next(c.key for c in model.__table__.columns
-                     if c.key in svc.VALUE_FIELDS and isinstance(c.type, String)),
-                "바꾼값")
+            setattr(row, changed, value)
             db.commit()
         assert len(_logs(db)) == before, f"{table} — 자기 줄을 고쳤는데 남았습니다"
 

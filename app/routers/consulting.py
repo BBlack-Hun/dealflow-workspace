@@ -31,7 +31,8 @@ from .. import clock
 from ..db import get_db
 from ..deps import (NoConsulting, get_current_user, may_view_all_consulting,
                     may_view_consulting, templates)
-from ..models import ConsultingColumn, ConsultingCompany, User
+from ..models import (ConsultingColumn, ConsultingCompany, ConsultingRowGrant,
+                      User)
 from ..services import consulting_sheets as cs
 from ..services import consulting_status as status
 from ..services import monthly_columns
@@ -219,23 +220,71 @@ def own(stmt, model, user: User):
     return stmt.where(model.user_id == user.id)
 
 
-def may_edit_row(user: User, owner_id: Optional[int]) -> bool:
+def grant_owner_ids(db: Session, user: User) -> frozenset:
+    """이 사람이 **누구의 줄**을 고쳐도 되는가 — 관리자가 준 것만.
+
+    돌려주는 것은 줄 주인의 계정 번호들이다(`ConsultingRowGrant.user_id`).
+    **판정이 아니라 자료다** — 고칠 수 있는지는 아래 `may_edit_row` 하나가
+    답하고, 여기는 그 함수가 읽는 값을 떠 올 뿐이다.
+
+    한 사람에 한 번만 묻게 해 둔다. 표를 그리는 자리는 줄마다 이 판정을
+    부르는데(`company_rows`), 줄마다 조회를 열면 서른 줄짜리 탭에서 서른 번
+    나간다 — 그래서 부르는 쪽이 한 번 떠서 `grants=` 로 넘긴다.
+    """
+    rows = db.execute(
+        select(ConsultingRowGrant.user_id)
+        .where(ConsultingRowGrant.editor_user_id == user.id)
+    ).scalars().all()
+    return frozenset(rows)
+
+
+def may_edit_row(db: Session, user: User, owner_id: Optional[int],
+                 *, grants: Optional[frozenset] = None) -> bool:
     """이 줄(또는 열)을 고칠 수 있는가 — **판정은 여기 한 곳이다.**
 
     화면이 `읽기 전용` 이라고 그리는 줄과 서버가 404 로 막는 줄이 **같아야**
     한다. 두 곳에 적으면 하나는 반드시 낡아서, 고칠 수 있게 그려 놓고 누르면
     `찾을 수 없습니다` 가 뜨거나(팀 현황의 담당자 칸이 그랬다) 반대로 못 고치는
-    것처럼 그려 놓고 실제로는 고쳐진다.
+    것처럼 그려 놓고 실제로는 고쳐진다. **넓힐 때도 여기만 넓힌다** — 새 판정
+    함수를 만들어 라우터 여기저기서 부르면 그것이 곧 두 번째 규칙이다.
 
-    관리자는 전부, 그 외에는 자기 줄만이다. 주인 없는 줄은 아무도 못 고친다 —
-    배정할 것이 남았다는 뜻이지, 먼저 본 사람이 갖는 것이 아니다.
+    관리자는 전부, 그 외에는 자기 줄과 **관리자가 맡겨 준 사람의 줄**이다.
+    주인 없는 줄은 아무도 못 고친다 — 배정할 것이 남았다는 뜻이지, 먼저 본
+    사람이 갖는 것이 아니다(맡기는 단위도 `사람` 이라 줄 자체는 못 맡긴다).
+
+    ## 남의 줄을 여는 문에 `may_view_all_consulting` 을 그대로 태운다
+
+    조건을 여기에 새로 적지 않고 **보는 판정을 그대로 읽는다.** 한 줄로 둘을
+    한꺼번에 답하기 때문이다.
+
+    · **못 보면 못 고친다.** 관리자가 팀 현황에서 `투자현황` 을 끄면 그 사람은
+      이 화면에 못 들어온다(`require_access`). 그때 맡긴 것만 살아 있으면,
+      막아 둔 줄 알았던 사람이 주소로 남의 줄을 계속 고친다 — 화면이 거짓말을
+      하는 그 자리다. 맡긴 줄을 지우지는 않는다(다시 켜면 그대로 돌아온다).
+    · **투자컨설턴트는 이 길로 남의 줄에 닿지 못한다.** 그 화면은 각자의 개인
+      표이고 서로를 덮는다(`deps.may_view_all_consulting` 의 설명). 맡겨 준
+      줄이 있어도 여기서 먼저 끊긴다.
+
+    반대쪽 — `맡겼는데 화면을 못 봐서 아무 소용이 없는` 상태 — 는 **주는
+    자리**가 막는다. 팀 현황의 고르는 칸은 이 함수에 두 번 물어(`맡기기 전` 과
+    `맡긴 뒤`) **답이 달라지는 사람만** 세운다(`routers/dashboard.py` 의
+    `_grant_candidates`) — 맡겨도 안 통하는 사람은 애초에 안 선다. 거기서도
+    조건을 다시 적지 않는 이유가 이것이다.
     """
     if user.role == "admin":
         return True
-    return owner_id is not None and owner_id == user.id
+    if owner_id is None:
+        return False
+    if owner_id == user.id:
+        return True
+    if not may_view_all_consulting(user):
+        return False
+    if grants is None:
+        grants = grant_owner_ids(db, user)
+    return owner_id in grants
 
 
-def may_edit_column(user: User) -> bool:
+def may_edit_column(db: Session, user: User) -> bool:
     """월 칸의 **이름을 바꾸고 지울** 수 있는가 — 관리자만이다.
 
     세우는 쪽은 좁히지 않는다(`add_column` 참고) — 달 칸이 하나도 없는 탭은
@@ -253,7 +302,7 @@ def may_edit_column(user: User) -> bool:
     기록이 **팀 전체의 줄에서** 사라진다(`delete_column`). 한 사람이 혼자
     누를 단추가 아니다.
     """
-    return may_edit_row(user, None)
+    return may_edit_row(db, user, None)
 
 
 def owned(db: Session, model, row_id: int, user: User, what: str):
@@ -279,7 +328,7 @@ def owned(db: Session, model, row_id: int, user: User, what: str):
     row = db.execute(
         scope(select(model).where(model.id == row_id), model, user)
     ).scalar_one_or_none()
-    if row is None or not may_edit_row(user, row.user_id):
+    if row is None or not may_edit_row(db, user, row.user_id):
         raise HTTPException(status_code=404, detail=f"{what}을 찾을 수 없습니다")
     return row
 
@@ -295,7 +344,7 @@ def _editable_column(db: Session, column_id: int, user: User) -> ConsultingColum
     번호를 훑어 칸이 몇 번까지 있는지 알 수 있다(`owned()` 와 같은 이유다).
     """
     col = db.get(ConsultingColumn, column_id)
-    if col is None or not may_edit_column(user):
+    if col is None or not may_edit_column(db, user):
         raise HTTPException(status_code=404, detail="열을 찾을 수 없습니다")
     return col
 
@@ -596,6 +645,10 @@ def company_rows(db: Session, user: User, sheet: str = "",
     if sheet:
         stmt = stmt.where(ConsultingCompany.sheet == sheet)
     companies = db.execute(scope(stmt, ConsultingCompany, user, owner)).scalars().all()
+    # **줄마다 묻지 않고 한 번 떠 온다.** 아래에서 줄마다 `may_edit_row` 를
+    # 부르는데, 판정이 이 자료를 볼 때마다 조회를 열면 서른 줄짜리 탭에서
+    # 서른 번 나간다. 판정은 그대로 한 곳이다 — 읽는 값만 미리 준다.
+    grants = grant_owner_ids(db, user)
     out = []
     for order, c in enumerate(companies, start=1):
         notes = _notes(c)
@@ -621,7 +674,7 @@ def company_rows(db: Session, user: User, sheet: str = "",
             # **화면이 고칠 수 있다고 그리는 것과 서버가 허락하는 것이 같아야
             # 한다.** 판정은 `may_edit_row` 한 곳이고 화면은 그것을 읽기만 한다
             # (`owned()` 도 같은 함수를 태운다).
-            "editable": may_edit_row(user, c.user_id),
+            "editable": may_edit_row(db, user, c.user_id, grants=grants),
             # 화면의 NO 는 **보이는 순서대로 1부터**다. 시트에서 옮겨 온 번호는
             # 중간이 비거나 3부터 시작해서, 몇 번째 줄인지 세는 데 쓸 수 없다.
             "no": order,
@@ -764,7 +817,7 @@ def consulting_page(request: Request, db: Session = Depends(get_db),
         # 결과도 맞다. 판정은 줄과 같은 함수 하나다 — 화면이 따로 정하면
         # 한쪽이 낡아서, 세워 둔 단추가 눌렀을 때 404 가 난다.
         "editable_columns": ({c.id for c in shown}
-                             if may_edit_column(user) else set()),
+                             if may_edit_column(db, user) else set()),
         "show_all_months": months == "all",
         # 화면 위의 **사람을 고르는 자리.** 숫자는 지금 탭의 건수라
         # 눌렀을 때 나올 수와 같다.

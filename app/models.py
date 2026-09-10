@@ -1052,6 +1052,58 @@ class ConsultingCompany(TimestampMixin, Base):
     source_line: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
 
+class ConsultingRowGrant(TimestampMixin, Base):
+    """**이 사람의 줄을 고쳐도 되는 팀원.** 관리자가 팀 현황에서 정한다.
+
+    ## 왜 칸이 아니라 표인가
+
+    옆의 `users.can_view_consulting` 은 **화면 하나를 열고 닫는** 참거짓이라
+    칸으로 충분했다. 이번 것은 다르다 — 주는 단위가 `누구의 줄인가` 이고,
+    한 사람의 줄에 **여러 팀원**을 붙일 수 있어야 한다. 계정 칸에 담으려면
+    글자에 번호를 이어 붙이는 수밖에 없는데(`"3,7"`), 그러면 계정이 지워질 때
+    남는 번호를 아무도 못 치우고 조회로 거를 수도 없다.
+
+    그래서 **줄 하나 = 허락 하나**로 둔다. 지우는 것도 줄을 지우는 것이라
+    상태가 반쪽으로 남지 않는다.
+
+    ## 두 칸이 각각 무엇인가
+
+    `user_id` 는 **줄의 주인**이다 — `ConsultingCompany.user_id` 와 같은 것을
+    가리킨다. 이름을 맞춰 둔 이유가 있다: 수정 로그가 `누구의 것인가` 를 이
+    칸 이름으로 읽으므로(`services/edit_log.py` 의 `Watch`), 여기서 다른 이름을
+    쓰면 로그의 판정과 화면의 판정이 갈린다.
+
+    `editor_user_id` 는 그 줄을 고쳐도 되는 사람이다.
+
+    ## 이 표가 **판정을 새로 짓지는 않는다**
+
+    고칠 수 있는가는 지금도 `routers/consulting.py` 의 `may_edit_row`
+    한 곳이 답한다. 이 표는 그 함수가 읽는 자료일 뿐이다 — 판정이 두 곳에
+    적히면 한쪽이 낡아, 화면에는 고칠 수 있게 그려 두고 누르면 404 가 난다.
+
+    특히 **보기 권한을 여기서 다시 정하지 않는다.** 못 보는 사람은 못 고친다는
+    것을 `may_edit_row` 가 `deps.may_view_all_consulting` 을 그대로 태워서
+    답한다 — 투자컨설턴트가 이 길로 남의 줄에 닿지 못하는 것도 같은 한 줄에서
+    나온다(그 화면은 각자의 개인 표라 서로를 덮는다).
+
+    ## 같은 짝은 한 번만
+
+    두 번 눌러 줄이 둘 생겨도 결과는 같지만, 뺄 때 하나만 지워지면 **화면에는
+    빠졌는데 서버는 아직 허락하는** 상태가 된다. 열쇠로 막는다.
+    """
+
+    __tablename__ = "consulting_row_grants"
+    __table_args__ = (
+        UniqueConstraint("user_id", "editor_user_id", name="uq_consulting_grant"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # 줄의 주인. `ConsultingCompany.user_id` 와 같은 것을 가리킨다.
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    # 그 줄을 고쳐도 되는 팀원.
+    editor_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+
+
 class ScheduleRule(TimestampMixin, Base):
     """발송 주기 규칙 — 코드가 아니라 DB 가 정한다.
 

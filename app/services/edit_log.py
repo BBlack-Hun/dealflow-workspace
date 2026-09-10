@@ -153,6 +153,13 @@ WATCHED: Dict[str, Watch] = {
     "meetings": Watch(
         owner="user_id", href="/followups", label=_attr("company_name"),
         why="미팅. `ir_requests` 와 같은 이유."),
+    "consulting_row_grants": Watch(
+        owner="user_id", href="/team", label=lambda row: "줄 편집 허용",
+        why="**누구의 줄을 누가 고쳐도 되는가.** 팀 현황에서 관리자가 정하는 것이라 "
+            "바로 아래 `users` 와 같은 자리이고, 이 표가 늘어나면 그만큼 **남의 줄을 "
+            "고치는 일이 늘어난다** — 권한을 넓힌 것 자체가 남아야 넓힌 뒤에 생긴 "
+            "변경을 되짚을 수 있다. 주인은 줄의 주인이다(`user_id`) — "
+            "`consulting_companies` 와 같은 칸 이름을 쓴 이유가 이것이다.",),
     "users": Watch(
         owner="id", href="/team", label=_attr("name"),
         why="계정. 남의 권한·투자현황·비밀번호를 바꾸는 것은 공용 화면(팀 현황)에서 "
@@ -246,6 +253,10 @@ VALUE_FIELDS = frozenset({
     # 누가 맡았나 · 어디 속했나 — 남이 바꾸면 발송이 통째로 딴 사람에게 간다.
     "user_id", "assignee_name", "source_sheet", "sheet", "bucket",
     "group_name", "page", "role",
+    # **누구에게 맡겼나.** 줄 자체가 `누가 누구의 줄을 고쳐도 되는가` 하나뿐이라
+    # (`models.ConsultingRowGrant`) 이 칸이 안 실리면 `추가` 만 남고 **누구에게**
+    # 가 빠진다 — 그 로그로는 아무 것도 알 수 없다.
+    "editor_user_id",
     # `position`(줄·열 차례)은 일부러 뺐다. `차례 2 → 3` 은 읽는 사람에게
     # 아무 뜻이 없고, 표를 정렬하기만 해도 모든 줄에 그 한 줄이 붙는다.
     # 차례가 바뀐 것은 발송이 어긋나는 일도 아니다.
@@ -294,7 +305,8 @@ SECRET_HINTS = ("password", "token", "secret", "hash", "api_key", "credential")
 # 화면에서 읽을 칸 이름. 없으면 칸 이름을 그대로 보여 준다 — 억지로 다 적어
 # 두면 칸이 하나 늘 때 여기만 낡아서, 화면에 옛 이름이 남는다.
 FIELD_LABELS = {
-    "user_id": "담당", "assignee_name": "담당자 이름", "source_sheet": "명단",
+    "user_id": "담당", "editor_user_id": "줄 편집 허용",
+    "assignee_name": "담당자 이름", "source_sheet": "명단",
     "sheet": "탭", "bucket": "갈래", "group_name": "묶음", "role": "권한",
     "name": "이름", "label": "이름", "title": "제목", "firm": "소속",
     "company_name": "기업", "connect_stage": "연결 단계", "status": "상태",

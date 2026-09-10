@@ -286,13 +286,19 @@ def test_picking_a_person_with_nothing_in_this_tab_says_so(stage, sign_in):
 
 
 def test_the_read_only_rule_is_written_where_the_rows_are(stage, sign_in):
-    """눌러도 아무 일이 없는 칸이 있으면 왜 안 되는지 적혀 있어야 한다."""
+    """눌러도 아무 일이 없는 칸이 있으면 왜 안 되는지 적혀 있어야 한다.
+
+    문구가 `다른 담당자` 에서 `맡지 않은 담당자` 로 바뀌었다. 관리자가 팀
+    현황에서 **특정 담당자의 줄을 맡겨 줄 수 있게** 된 뒤로는
+    (`models.ConsultingRowGrant`) 남의 줄이라고 다 못 고치는 것이 아니다 —
+    옛 문구는 맡은 줄이 하나라도 있으면 거짓말이 된다.
+    """
     body = sign_in("member").get(f"/consulting?sheet={STARTUP}").text
-    assert "다른 담당자의 줄은 볼 수만 있습니다" in body
+    assert "맡지 않은 담당자의 줄은 볼 수만 있습니다" in body
     # 남의 줄이 하나도 없으면 그 안내도 없다 — 안 걸리는 규칙을 적어 두면 잡음이다.
     mine_only = sign_in("member").get(
         f"/consulting?sheet={STARTUP}&owner={stage['member'].id}").text
-    assert "다른 담당자의 줄은 볼 수만 있습니다" not in mine_only
+    assert "맡지 않은 담당자의 줄은 볼 수만 있습니다" not in mine_only
 
 
 # --- 6. 담당을 갈라도 **월 칸은 한 벌**이다 -------------------------------------

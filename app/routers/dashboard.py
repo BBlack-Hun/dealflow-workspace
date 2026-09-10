@@ -26,7 +26,8 @@ from ..db import SessionLocal, get_db
 from ..deps import (admin_only, auto_attach_default_for,
                     consulting_default_for, consulting_is_only_screen,
                     get_current_user, templates)
-from ..models import AgentDevice, User, WeeklyRoutine, WeeklyTask
+from ..models import (AgentDevice, ConsultingRowGrant, User, WeeklyRoutine,
+                      WeeklyTask)
 from ..services import auth as auth_svc
 from ..services import dashboard as dash
 from ..services import backup, edit_log, readiness, report, today, weekly
@@ -338,7 +339,7 @@ def readiness_page(request: Request, db: Session = Depends(get_db),
 @router.get("/team", response_class=HTMLResponse, include_in_schema=False)
 def team_page(request: Request, db: Session = Depends(get_db),
               user: User = Depends(get_current_user), msg: str = "", pw: str = "",
-              edit: int = 0):
+              edit: int = 0, grant: int = 0):
     """팀 현황. 남의 담당분이 다 보이므로 관리자만 들어온다.
 
     `pw=1` 은 **'초기 비밀번호를 이 화면에 적어 달라'는 표시**일 뿐이고 값이
@@ -347,7 +348,8 @@ def team_page(request: Request, db: Session = Depends(get_db),
     남는다)에 남는다. 늘 띄워 두지 않는 것은 어깨너머로 보일 자리를 줄이려는
     것이다(초기화 직후 한 번만 보이면 전달하기에 충분하다).
 
-    `edit=<계정번호>` 는 그 줄 아래에 이름·로그인 ID 수정칸을 펴 달라는 표시다.
+    `edit=<계정번호>` · `grant=<계정번호>` 는 그 줄 아래에 칸을 펴 달라는
+    표시다(이름·로그인 ID / 그 사람의 줄을 맡길 팀원).
     **여는 것도 서버가 한다** — 자바스크립트로 감췄다 폈다 하면 스크립트가 한
     번 어긋나는 날 관리자에게 그 칸으로 가는 길이 아예 없어진다(상세 패널이
     통째로 안 열린 적이 있다). 이 화면은 SSR 이므로 주소로 여는 편이 같은
@@ -359,6 +361,11 @@ def team_page(request: Request, db: Session = Depends(get_db),
     ctx["msg"] = msg
     ctx["initial_password"] = config.INITIAL_PASSWORD if pw == "1" else ""
     ctx["edit_id"] = edit
+    # 투자컨설턴트 줄을 **누구에게 맡길지** 고르는 칸. 여는 방식은 옆의
+    # `?edit=` 과 같다 — 스크립트로 폈다 접었다 하면 스크립트가 한 번 어긋나는
+    # 날 관리자에게 그 칸으로 가는 길이 아예 없어진다.
+    ctx["grant_id"] = grant
+    ctx["grant_candidates"] = _grant_candidates(db, ctx["members"], grant)
     # 백업이 조용히 멈춘 것을 아무도 모르는 상태가 이 기능이 생긴 이유다.
     # 관리자가 매일 여는 화면에 상태를 띄운다 — 되돌리기 화면까지 들어가야
     # 보인다면, 되돌릴 일이 생기고 나서야 백업이 없다는 것을 알게 된다.
@@ -814,6 +821,101 @@ def toggle_consulting(
     return RedirectResponse(
         f"/team?msg={member.name}+님을+투자현황을+{state}+했습니다{note}",
         status_code=303)
+
+
+def _grant_candidates(db: Session, members: List[dict], owner_id: int) -> List[dict]:
+    """`owner_id` 의 줄을 맡길 수 있는 사람들 — 고르는 칸에 세울 목록.
+
+    **누구를 세울지도 고치는 판정 하나가 정한다**
+    (`routers/consulting.py` 의 `may_edit_row`). 여기에 `관리자는 빼고
+    컨설턴트도 빼고` 를 손으로 적으면 그것이 두 번째 규칙이 되어, 세워 둔
+    칸을 눌러 저장했는데 그 사람 화면에서는 아무 것도 안 고쳐지는 상태가 된다.
+
+    세우는 사람은 둘이다.
+
+    · **맡기면 달라지는 사람.** 지금은 못 고치는데(`already`) 맡기면 고칠 수
+      있게 되는 사람이다. 관리자는 이미 전부 고치므로 저절로 빠지고,
+      투자컨설턴트와 투자현황이 막힌 팀원은 맡겨도 안 통하므로 저절로 빠진다.
+    · **이미 맡겨 둔 사람.** 지금 안 통하더라도(투자현황을 나중에 끈 경우)
+      반드시 세운다 — 안 세우면 **뺄 방법이 없어진다.**
+
+    정지된 계정은 세우지 않는다. 다시 살리면 맡겨 둔 것은 그대로 남아 있다.
+    """
+    from ..routers import consulting as consulting_router  # noqa: PLC0415
+
+    if not owner_id:
+        return []
+    granted = {e["id"] for m in members if m["id"] == owner_id
+               for e in m["editors"]}
+    out = []
+    for row in members:
+        if row["id"] == owner_id or not row["active"]:
+            continue
+        who = db.get(User, row["id"])
+        if who is None:
+            continue
+        already = consulting_router.may_edit_row(db, who, owner_id,
+                                                 grants=frozenset())
+        would = consulting_router.may_edit_row(db, who, owner_id,
+                                               grants=frozenset({owner_id}))
+        if row["id"] in granted or (would and not already):
+            out.append({"id": row["id"], "name": row["name"],
+                        "checked": row["id"] in granted,
+                        # 맡겨는 두었는데 지금은 안 통하는 사람. 왜 안 통하는지
+                        # 는 옆칸(`투자현황`)이 이미 말하고 있다.
+                        "works": would})
+    return out
+
+
+@router.post("/team/members/{member_id}/consulting-editors", include_in_schema=False)
+def save_consulting_editors(
+    member_id: int,
+    editor: List[int] = Form(default=[]),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """이 사람의 **투자컨설턴트 줄을 고칠 수 있는 팀원**을 정한다 — 관리자만.
+
+    옆칸 둘(`투자현황` · `자료 자동첨부`)과 **같은 자리, 같은 문**이다
+    (`admin_only`). 다른 점은 켜고 끄는 참거짓이 아니라 **사람 목록**이라는
+    것뿐이라, 칸이 아니라 표로 담는다(`models.ConsultingRowGrant`).
+
+    **고르는 칸에 있는 그대로 갈아 끼운다.** 하나씩 더하고 빼는 길을 만들면
+    화면에 없는 사람이 서버에만 남을 수 있다 — 체크상자는 원래 `지금 켜져
+    있는 것 전부` 를 보내는 물건이라 그대로 받는 것이 어긋날 자리가 없다.
+
+    **여기서 권한을 판정하지 않는다.** 맡긴 것이 실제로 통하는가는
+    `routers/consulting.py` 의 `may_edit_row` 한 곳이 답한다 — 투자컨설턴트가
+    이 길로 남의 줄에 닿지 못하는 것도, 투자현황이 막힌 사람에게는 맡겨도 안
+    통하는 것도 그 함수 한 줄에서 나온다. 여기에 같은 조건을 다시 적으면 두
+    벌이 되어 한쪽이 낡는다. 이 자리가 막는 것은 **말이 안 되는 자료**뿐이다:
+    없는 계정과 자기 자신(자기 줄은 원래 자기가 고친다).
+
+    맡겨 둔 것을 **지우지는 않는다** — 투자현황을 껐다 켜면 그대로 돌아온다.
+    옆칸의 자료 폴더가 같은 이유로 남는다.
+    """
+    admin_only(user)
+    owner = db.get(User, member_id)
+    if owner is None:
+        raise HTTPException(status_code=404, detail="계정을 찾을 수 없습니다")
+
+    picked = {i for i in editor if i != member_id and db.get(User, i) is not None}
+    current = {g.editor_user_id: g for g in db.execute(
+        select(ConsultingRowGrant)
+        .where(ConsultingRowGrant.user_id == member_id)).scalars().all()}
+    for gone in set(current) - picked:
+        db.delete(current[gone])
+    for added in picked - set(current):
+        db.add(ConsultingRowGrant(user_id=member_id, editor_user_id=added))
+    db.commit()
+
+    if picked:
+        names = ", ".join(
+            (db.get(User, i).name or "-") for i in sorted(picked))
+        note = f"{owner.name}+님의+줄을+{names}+님이+고칠+수+있습니다"
+    else:
+        note = f"{owner.name}+님의+줄을+맡은+팀원이+없습니다"
+    return RedirectResponse(f"/team?msg={note}", status_code=303)
 
 
 @router.post("/team/members/{member_id}/auto-attach", include_in_schema=False)
