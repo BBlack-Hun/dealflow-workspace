@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -260,17 +261,178 @@ def test_a_company_marked_do_not_introduce_is_left_out(db, users):
     assert f"C-{blocked.id}" not in ids
 
 
-def test_the_amount_unit_is_declared_once_and_numbers_are_left_alone(db, users):
+def test_the_amount_unit_is_declared_once_and_the_bands_use_it(db, users):
     """저장은 백만원이다. 바꾸지 않고 단위만 밝힌다 — 두 표기를 같이 내보내면
-    언젠가 둘이 어긋나고, 어긋난 쪽을 읽은 답은 100배가 틀어진다."""
+    언젠가 둘이 어긋나고, 어긋난 쪽을 읽은 답은 100배가 틀어진다.
+
+    **구간 표기도 같은 단위다.** 억으로 고쳐 적으면 한 자료 안에 두 단위가
+    섞인다.
+    """
+    from app.services.llm_brief import (AMOUNT_EDGES, ZERO_BAND, amount_band,
+                                        amount_bands)
+
     _company(db, revenue_recent=1830, funding_total=500,
              raise_target=3000, pre_value=12000)
 
     out = _brief(db, users["u1"])
     assert out["amount_unit"] == "백만원"
     got = out["companies"][0]
+    # 값 자체를 여기 또 적지 않는다 — 경계는 `AMOUNT_EDGES` 한 곳에서 온다.
     assert (got["revenue_recent"], got["funding_total"],
-            got["raise_target"], got["pre_value"]) == (1830, 500, 3000, 12000)
+            got["raise_target"], got["pre_value"]) == (
+        amount_band(1830), amount_band(500),
+        amount_band(3000), amount_band(12000))
+    # 구간 표에 쓰인 숫자는 **경계 그 자체**여야 한다. 억으로 고쳐 적으면
+    # (`10000+` → `100+`) 여기서 걸린다 — 한 자료에 두 단위가 섞이는 순간이다.
+    for band in amount_bands():
+        if band == ZERO_BAND:
+            continue
+        for number in re.findall(r"\d+", band):
+            assert int(number) in AMOUNT_EDGES, f"{band} 이 다른 눈금입니다"
+
+
+# ── 금액이 구간으로 나가는가 ────────────────────────────────────────────────
+#
+# **이름을 뺐어도 숫자가 이름 노릇을 한다.** 실제 자료로 재 보니 나가는 317곳
+# 중 분야+단계+수치 조합이 그 기업 하나만 가리키는 곳이 123곳이었고, 수치가
+# 있는 114곳만 보면 112곳이 유일했다. 아래 검사들이 잠그는 것은 그 구멍이다.
+
+#: 구간으로 나가야 하는 칸에 심는 **표식 값**. 경계와 겹치지 않는 숫자다 —
+#: `1000` 을 심으면 구간 이름 `1000~5000` 안에 그 숫자가 들어 있어서, 값이
+#: 새어 나갔는지 구간 이름을 본 것인지 구별할 수 없다.
+AMOUNT_MARKS = {"revenue_recent": 1837, "funding_total": 4293,
+                "raise_target": 7411, "pre_value": 26543}
+
+
+def test_no_exact_amount_appears_anywhere_in_the_data(db, users):
+    """**칸 이름이 아니라 값을 본다.** 표식 숫자를 심고 결과 전체를 훑는다.
+
+    칸만 확인하면 다른 자리(요약 문장·이력·설명문)로 같은 숫자가 함께 나가는
+    것을 못 잡는다 — 이름에 대해 이미 같은 방식으로 잠가 두었다.
+    """
+    _company(db, **AMOUNT_MARKS)
+
+    dumped = json.dumps(_brief(db, users["u1"]), ensure_ascii=False)
+    for field, value in AMOUNT_MARKS.items():
+        assert str(value) not in dumped, f"{field} 의 정확한 값이 나갔습니다"
+    # 검사가 헛돌지 않았는지 — 그 기업이 실제로 실려 있어야 한다.
+    assert '"revenue_recent"' in dumped
+
+
+def test_the_answer_that_actually_leaves_the_server_has_no_exact_amount(
+        db, users, logged_in):
+    """서비스가 아니라 **주소가 실제로 돌려주는 바이트**를 훑는다."""
+    _company(db, **AMOUNT_MARKS)
+
+    body = logged_in.get("/api/llm-brief.json").text
+    for field, value in AMOUNT_MARKS.items():
+        assert str(value) not in body, f"{field} 의 정확한 값이 나갔습니다"
+
+
+def test_a_missing_amount_and_a_zero_are_different_facts(db, users):
+    """없는 것을 맨 아래 구간에 넣으면 **없다는 사실이 사라진다.**
+
+    "아직 매출이 없다" 와 "얼마인지 모른다" 는 다른 사실이고, 투자사에게
+    보이는 뜻도 다르다.
+    """
+    from app.services.llm_brief import ZERO_BAND
+
+    zero = _company(db, revenue_recent=0, funding_total=0,
+                    raise_target=3000, pre_value=None)
+    unknown = _company(db, revenue_recent=None, raise_target=3000)
+
+    rows = {c["id"]: c for c in _brief(db, users["u1"])["companies"]}
+    got_zero, got_unknown = rows[f"C-{zero.id}"], rows[f"C-{unknown.id}"]
+
+    assert got_zero["revenue_recent"] == ZERO_BAND
+    assert got_zero["funding_total"] == ZERO_BAND
+    # 모르는 값은 **칸이 아예 없다** — `0` 으로도 `~1000` 으로도 채우지 않는다.
+    assert "pre_value" not in got_zero
+    assert "revenue_recent" not in got_unknown
+    assert "funding_total" not in got_unknown
+
+
+def test_a_value_sitting_exactly_on_a_boundary_goes_up(db, users):
+    """경계값이 어느 쪽으로 가는지 못 박는다 — **앞 숫자 포함, 뒤 숫자 미포함.**
+
+    정해 두지 않으면 같은 값이 사람마다 다른 구간으로 읽히고, 그 어긋남은
+    자료만 봐서는 안 보인다.
+    """
+    from app.services.llm_brief import AMOUNT_EDGES, ZERO_BAND, amount_band
+
+    first = AMOUNT_EDGES[0]
+    assert amount_band(first - 1) == f"~{first}"
+    assert amount_band(first) != f"~{first}", "경계값이 아래 구간에 남았습니다"
+    for low, high in zip(AMOUNT_EDGES, AMOUNT_EDGES[1:]):
+        assert amount_band(low) == f"{low}~{high}"
+        assert amount_band(high - 1) == f"{low}~{high}"
+    last = AMOUNT_EDGES[-1]
+    assert amount_band(last) == f"{last}+"
+    # 0 은 어느 구간에도 안 들어간다.
+    assert amount_band(0) == ZERO_BAND
+    assert amount_band(None) is None
+
+
+def test_the_band_edges_are_written_in_exactly_one_place(db, users):
+    """경계를 화면·자료·검사가 각자 들고 있으면 반드시 갈린다.
+
+    값을 바꿔 보고 **나가는 자료와 읽는 법 설명이 둘 다** 따라오는지 본다
+    (`PICK_COUNT` 와 같은 방식이다).
+    """
+    from app.services import llm_brief
+
+    _company(db, revenue_recent=1830)
+    # 검사가 경계를 또 적지 않는다 — 지금 값이 무엇이든 따라오는지만 본다.
+    original = llm_brief.AMOUNT_EDGES
+    was = llm_brief.amount_band(1830)
+
+    before = _brief(db, users["u1"])
+    assert before["companies"][0]["revenue_recent"] == was
+    assert was in before["note"]
+
+    llm_brief.AMOUNT_EDGES = (2000,)
+    try:
+        after = _brief(db, users["u1"])
+    finally:
+        llm_brief.AMOUNT_EDGES = original
+
+    assert after["companies"][0]["revenue_recent"] == "~2000"
+    assert "~2000" in after["note"], "읽는 법 설명이 옛 경계를 들고 있습니다"
+    assert was not in json.dumps(after, ensure_ascii=False), \
+        "경계를 고쳤는데 옛 구간이 어딘가에 그대로 남아 있습니다"
+
+
+def test_the_screen_does_not_write_the_edges_down_again(logged_in):
+    """화면은 **구간으로 나간다는 사실만** 말한다 — 숫자는 자료가 들고 있다.
+
+    구간 표를 화면에도 적어 두면 경계를 고치는 날 그 문장만 옛말이 되고,
+    사람은 화면을 믿는다. `PICK_COUNT` · 시킬 말과 같은 자리다.
+    """
+    from app.services.llm_brief import ZERO_BAND, amount_bands
+
+    assert "구간" in logged_in.get("/deals").text, \
+        "금액이 구간으로 나간다는 것을 화면이 말하지 않습니다"
+
+    root = Path(__file__).resolve().parent.parent
+    for path in ("app/templates/deals.html", "app/static/js/llm_brief.js"):
+        src = (root / path).read_text(encoding="utf-8")
+        for band in amount_bands():
+            if band == ZERO_BAND:      # `0` 은 어디에나 있는 글자다
+                continue
+            assert band not in src, f"{path} 가 구간 표를 따로 들고 있습니다"
+
+
+def test_the_data_says_how_to_read_a_band(db, users):
+    """구간 표만 던져 두면 읽는 쪽이 앞 숫자를 값으로 읽는다."""
+    from app.services.llm_brief import AMOUNT_FIELDS, AMOUNT_UNIT, amount_bands
+
+    got = _brief(db, users["u1"])["note"]
+    assert AMOUNT_UNIT in got
+    for field in AMOUNT_FIELDS:
+        assert field in got, field
+    for band in amount_bands():
+        assert band in got, band
+    assert "구간" in got and "포함" in got
 
 
 # ── 이름이 새는가 ───────────────────────────────────────────────────────────

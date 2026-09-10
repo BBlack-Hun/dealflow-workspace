@@ -33,6 +33,20 @@ IR 기업 344곳 중 한줄소개·요약 문장 안에 자기 이름이 또 적
 바로 위 문단이 말하는 "필요 없는 것을 내보내지 않는 것이 가장 확실한 보호" 가
 **기업 쪽에서는 지켜지지 않고 있었다.** 이제 양쪽이 같은 규칙이다.
 
+왜 금액이 구간으로 나가는가
+--------------------------
+이름 칸을 빼고 나니 **남은 숫자가 이름 노릇을 하고 있었다.** 실제 자료로 재
+보니 나가는 317곳 중 분야+단계+수치 조합이 그 기업 하나만 가리키는 곳이
+123곳(38.8%)이었고, **수치가 있는 114곳만 보면 112곳(98.2%)**이 유일했다.
+값 하나만으로도 특정됐다 — 최근 매출값이 있는 82곳 중 49곳이 그 값 하나로
+유일했다. 이름을 뺀 뜻이 숫자에서 그대로 풀리는 셈이다.
+
+그래서 금액 넷은 **정확한 숫자 대신 구간**으로 나간다(`amount_band`). 맞추는
+쪽이 판단하는 것은 "이 기업이 이 투자사 규모에 맞는가" 이고, 시드 규모인지
+시리즈B 규모인지가 갈리면 그 판단은 그대로 선다 — 정확한 숫자는 애초에
+필요하지 않았다. 경계는 지어내지 않고 기업구분(`series`) 칸이 이미 적어 둔
+단계 정의에서 가져왔다(`AMOUNT_EDGES` 참고).
+
 무엇을 이미 보냈는지도 함께 나간다
 ----------------------------------
 맞추는 쪽이 제일 먼저 하는 일이 **이미 보낸 것을 빼는 것**이다. 그 사실이
@@ -67,7 +81,100 @@ COMPANY_PREFIX = "C"
 # 저장은 백만원이다(`IrCompany` 참고). 화면은 억으로 보여주지만 여기서는
 # **바꾸지 않고 단위만 밝힌다** — 두 표기를 같이 내보내면 언젠가 둘이
 # 어긋나고, 어긋난 쪽을 읽은 답은 100배가 틀어진 채 돌아온다.
+#
+# **구간 표기도 같은 단위다**(`AMOUNT_EDGES`). `1000~5000` 은 백만원 기준이고
+# 억으로 고쳐 적지 않는다 — 한 자료 안에 두 단위가 섞이는 순간, 어느 쪽으로
+# 읽었는지에 따라 답이 100배 틀어진다.
 AMOUNT_UNIT = "백만원"
+
+#: 금액을 나누는 **자리**(단위는 `AMOUNT_UNIT` = 백만원). 10억 · 50억 · 100억.
+#:
+#: **여기 말고 다른 데 적지 마라.** 화면도 자료도 검사도 이 값 하나를 읽는다 —
+#: 경계를 두 곳에 적으면 반드시 갈리고, 갈린 자료는 겉보기에 멀쩡하다
+#: (`PICK_COUNT` · 투자사 수 117명·123명이 같은 사고였다).
+#: `tests/test_llm_brief.py` 가 이 값을 바꿔 보고 자료와 설명이 따라오는지 본다.
+#:
+#: ## 왜 이 자리인가
+#:
+#: 기업구분(`series`) 칸이 **자기 규모를 이미 적어 두고 있다** — 실제 값이
+#: `Angel, Seed (누적투자금 0, 년매출액 3억미만)` · `Pre A, Bridge (누적투자금
+#: 5억미만…)` · `Series A (누적투자금 10억이상, 년매출액 10억이상)` ·
+#: `Series B (누적투자금 20억 이상, 년매출액 50억이상)` ·
+#: `Series C (누적투자금 50억 이상, 년매출액 80억이상)` 이다. 경계를 지어내지
+#: 않고 **그 단계 정의에서 가져왔다**: 10억(A 라인) · 50억(B~C 라인) ·
+#: 100억(그 위). 투자사가 보는 것도 같은 눈금이라, 시드 규모인지 시리즈B
+#: 규모인지는 이것만으로 갈린다.
+#:
+#: ## 왜 더 잘게 나누지 않았나
+#:
+#: 개발 자료(317곳)로 분포를 재고 정했다. 더 잘게 나눌수록 구간 조합이 다시
+#: 그 기업 하나만 가리킨다 — 3억·10억·20억·50억 넷으로 나눠 보면 유일한 곳이
+#: 116곳으로 거의 안 줄었고, 지금 셋으로는 105곳이다(정확한 숫자일 때 123곳).
+#: 반대로 너무 거칠면 한 구간에 다 몰려 맞추는 데 못 쓴다 — 셋으로 나눈 지금
+#: 가장 큰 구간이 각 칸의 50~64%다.
+AMOUNT_EDGES = (1000, 5000, 10000)
+
+#: 정확히 `0` 인 값의 표. **없는 것과 갈라 두려고 따로 둔다** — 없는 칸은
+#: 자료에 아예 안 실리고(`_fill`), 0 은 이 표로 실린다. 0 을 맨 아래 구간
+#: (`~1000`)에 넣으면 "아직 매출이 없다" 와 "얼마인지 모른다" 가 한 칸이 되어,
+#: 읽는 쪽이 없는 사실을 되찾을 길이 사라진다.
+ZERO_BAND = "0"
+
+#: 구간으로 내보내는 칸. 이 넷만 숫자가 아니라 구간 이름으로 나간다.
+AMOUNT_FIELDS = ("revenue_recent", "funding_total", "raise_target", "pre_value")
+
+
+def amount_band(value) -> Optional[str]:
+    """정확한 금액 대신 **구간 이름**. 값이 없으면 `None`.
+
+    ## 왜 정확한 숫자를 안 보내나
+
+    이름을 빼도 **숫자로 특정된다.** 개발 자료로 재 보니 나가는 317곳 중
+    분야+단계+수치 조합이 그 기업 하나만 가리키는 곳이 123곳(38.8%)이었고,
+    수치가 있는 114곳만 보면 112곳(98.2%)이 유일했다. 값 하나만으로도
+    특정됐다 — `revenue_recent` 값이 있는 82곳 중 49곳, `funding_total`
+    42곳 중 22곳, `pre_value` 52곳 중 16곳, `raise_target` 81곳 중 8곳이
+    그 값 하나로 유일했다. 이름을 뺀 뜻이 숫자에서 그대로 풀린다.
+
+    맞추는 데 필요한 것은 **규모의 자리**다 — 시드 규모인가 시리즈B 규모인가.
+    구간이면 그 판단이 그대로 서고, 특정은 안 된다.
+
+    ## 경계에 딱 걸리는 값
+
+    **앞 숫자는 포함, 뒤 숫자는 미포함**(`1000` → `1000~5000`,
+    `5000` → `5000~10000`). 한쪽으로 못 박아 두지 않으면 같은 값이 사람마다
+    다른 구간으로 읽히고, 그 어긋남은 자료만 봐서는 안 보인다.
+
+    ## 표 모양
+
+    `~1000` (0 초과 1000 미만) · `1000~5000` · `5000~10000` · `10000+`,
+    그리고 정확히 0 은 `0`. 맨 아래를 `0~1000` 으로 적지 않는 것은 그 표가
+    `0` 과 헷갈리기 때문이다.
+    """
+    if value is None or value == "":
+        return None
+    if value == 0:
+        return ZERO_BAND
+    index = 0
+    while index < len(AMOUNT_EDGES) and value >= AMOUNT_EDGES[index]:
+        index += 1
+    if index == 0:
+        return f"~{AMOUNT_EDGES[0]}"
+    if index == len(AMOUNT_EDGES):
+        return f"{AMOUNT_EDGES[-1]}+"
+    return f"{AMOUNT_EDGES[index - 1]}~{AMOUNT_EDGES[index]}"
+
+
+def amount_bands() -> List[str]:
+    """나올 수 있는 구간 이름을 **작은 것부터**. 설명문이 이것을 읽는다.
+
+    손으로 또 적지 않는다 — `AMOUNT_EDGES` 를 고치면 설명도 같이 따라와야
+    하고, 따라오지 않으면 사람이 읽는 표와 실제로 나가는 표가 갈린다.
+    """
+    edges = AMOUNT_EDGES
+    return [ZERO_BAND] + [amount_band(v) for v in
+                          (edges[0] - 1, *edges)]
+
 
 #: 시트에서 옮겨 온 지난 발송 기록의 종류(`ContactActivity.kind`).
 #: `services/deal_history.py` 가 같은 값을 읽는다 — 기업별 '최근에 보냄' 표시가
@@ -97,17 +204,36 @@ PICK_COUNT = 8
 #: [번호 → 이름 찾기] 가 못 읽는 모양으로 답이 온다(맨숫자는 일부러 안 읽는다).
 ANSWER_EXAMPLE = "V-31 님께는 C-7, C-12 를 소개하시면 좋겠습니다"
 
-NOTE = ("투자사도 기업도 이름 없이 번호로만 나갑니다. 답하실 때 V-… · C-… 를 "
-        "그대로 적어 주시면 앱에서 누구인지 다시 찾을 수 있습니다. "
-        f"금액 단위는 {AMOUNT_UNIT} 입니다. "
-        "`sent_before` 는 그 투자사에게 **이미 보낸** 기업 번호입니다 — "
-        "실제로 발송된 것만 셉니다(만들다 만 것·실패·취소는 세지 않습니다). "
-        f"최근 {HISTORY_LIMIT}개까지만 싣고, 더 있으면 `sent_before_more` 에 "
-        "남은 개수를 적습니다. 이력의 번호 중에는 아래 기업 목록에 없는 것이 "
-        "있을 수 있습니다 — 지금은 소개할 수 없게 된 기업이며, 그래도 "
-        "**이미 보낸 것**이므로 다시 고르지 마세요. "
-        "`sent_before_unmatched` 는 옛 기록에는 남아 있지만 지금 기업 목록에서 "
-        "찾지 못한 곳의 **개수**입니다 — 그만큼 더 보냈다는 뜻입니다.")
+
+def note() -> str:
+    """자료 맨 앞에 싣는 **읽는 법**.
+
+    상수가 아니라 함수인 것은 **구간 표(`AMOUNT_EDGES`)를 여기서 읽기**
+    때문이다. 문장에 경계를 손으로 적어 두면 경계를 고치는 날 설명만 옛말이
+    되고, 그러면 읽는 쪽은 없는 구간을 찾게 된다.
+    """
+    return ("투자사도 기업도 이름 없이 번호로만 나갑니다. 답하실 때 V-… · C-… 를 "
+            "그대로 적어 주시면 앱에서 누구인지 다시 찾을 수 있습니다. "
+            f"금액 단위는 {AMOUNT_UNIT} 입니다. "
+            # 금액은 **정확한 숫자가 아니다.** 그 사실을 밝히지 않으면 읽는
+            # 쪽이 구간 표를 무슨 뜻인지 몰라 그냥 버리거나, 더 나쁘게는 앞
+            # 숫자를 값으로 읽는다.
+            f"{' · '.join(AMOUNT_FIELDS)} 는 정확한 금액이 아니라 **구간**으로 "
+            f"나갑니다({' · '.join(amount_bands())}). "
+            f"앞 숫자는 포함, 뒤 숫자는 미포함입니다(예: {AMOUNT_EDGES[0]} 은 "
+            f"`{amount_band(AMOUNT_EDGES[0])}` 입니다). "
+            f"구간 표가 `{ZERO_BAND}` 인 칸은 정확히 0 이라는 뜻이고, "
+            "**칸이 아예 없으면 값을 모른다**는 뜻입니다 — 이 둘은 다른 "
+            "사실입니다. "
+            "규모가 맞는지만 보시면 됩니다. 정확한 숫자는 필요하지 않습니다. "
+            "`sent_before` 는 그 투자사에게 **이미 보낸** 기업 번호입니다 — "
+            "실제로 발송된 것만 셉니다(만들다 만 것·실패·취소는 세지 않습니다). "
+            f"최근 {HISTORY_LIMIT}개까지만 싣고, 더 있으면 `sent_before_more` 에 "
+            "남은 개수를 적습니다. 이력의 번호 중에는 아래 기업 목록에 없는 것이 "
+            "있을 수 있습니다 — 지금은 소개할 수 없게 된 기업이며, 그래도 "
+            "**이미 보낸 것**이므로 다시 고르지 마세요. "
+            "`sent_before_unmatched` 는 옛 기록에는 남아 있지만 지금 기업 목록에서 "
+            "찾지 못한 곳의 **개수**입니다 — 그만큼 더 보냈다는 뜻입니다.")
 
 
 def investor_ref(contact_id: int) -> str:
@@ -158,8 +284,9 @@ INVESTOR_FIELDS = ("sectors", "round_size", "stages",
                    "sourcing_note", "memo", "tips_note", "interest_level")
 # **`name` 이 없다 — 일부러다.** 맞추는 데 쓰이는 것은 분야·단계·요약·규모이고,
 # 이름은 `resolve()` 가 앱 안에서 되돌린다(모듈 설명 참고).
-COMPANY_FIELDS = ("sector_major", "series", "one_liner", "summary",
-                  "revenue_recent", "funding_total", "raise_target", "pre_value")
+#: **금액 넷은 구간으로 나간다**(`AMOUNT_FIELDS` · `amount_band`). 목록을 여기
+#: 다시 적지 않는다 — 한쪽만 늘면 새 금액 칸이 정확한 숫자로 새어 나간다.
+COMPANY_FIELDS = ("sector_major", "series", "one_liner", "summary") + AMOUNT_FIELDS
 
 
 # ── 자유 문장에 섞여 든 이름·연락처 ────────────────────────────────────────
@@ -278,18 +405,29 @@ def _scrub(text: str, row=None,
 
 
 def _fill(row, fields, scrub_with=None,
-          identifying=INVESTOR_IDENTIFYING_FIELDS, others=None) -> dict:
+          identifying=INVESTOR_IDENTIFYING_FIELDS, others=None,
+          banded=()) -> dict:
     """값이 있는 칸만 담는다.
 
     투자사 300여 명 중 소싱메모·팁스메모가 든 사람은 소수다. 빈 칸을 전부
     `null` 로 채우면 자료의 절반이 빈 칸 이름이 되어, 읽는 쪽이 실제 내용을
     그 사이에서 찾아야 한다. **날짜가 붙은 메모(`8/19 : 초기 기업보다는…`)는
     다듬지 않고 그대로 담는다** — 언제 들은 요청인지가 그 자체로 정보다.
+
+    `banded` 에 적힌 칸은 **정확한 값 대신 구간 이름**으로 담는다
+    (`amount_band`). 이 자리에서 바꾸는 것이 요점이다 — 담고 나서 다시 훑어
+    고치는 길로 짜면, 사이에 낀 코드가 정확한 값을 한 번 보게 된다.
+
+    **0 은 살아남는다.** 아래에서 떨어져 나가는 `0` 은 `_fill` 이 원래 빈
+    값으로 치던 정수 0 이고, 구간 칸의 0 은 그 전에 `"0"` 표가 되어 있다 —
+    값이 없는 것과 정확히 0 인 것은 다른 사실이라 갈라 두어야 한다.
     """
     out = {}
     for field in fields:
         value = getattr(row, field, None)
-        if isinstance(value, str):
+        if field in banded:
+            value = amount_band(value)
+        elif isinstance(value, str):
             value = _scrub(value.strip(), scrub_with, identifying, others)
         if value not in (None, "", 0):
             out[field] = value
@@ -468,7 +606,7 @@ def investors(db: Session, user: User, *, others=None) -> List[dict]:
 
 
 def companies(db: Session, *, others=None) -> List[dict]:
-    """소개할 수 있는 IR 기업 자료 — 이름을 넣는다.
+    """소개할 수 있는 IR 기업 자료 — 이름 없이 번호와 규모만.
 
     기업은 **팀 공용**이다(`/companies` 화면도 담당으로 나누지 않는다).
     누구 담당이든 소개할 딜은 같은 목록에서 고른다.
@@ -487,6 +625,9 @@ def companies(db: Session, *, others=None) -> List[dict]:
     5곳) 투자사와 **같은 `_scrub`** 을 지나게 한다. 기업 쪽 연락 담당자·대표
     카톡방·우리 팀 담당자 이름도 같은 자리에서 지워진다
     (`COMPANY_IDENTIFYING_FIELDS`).
+
+    **금액은 구간으로 나간다**(`AMOUNT_FIELDS` · `amount_band`). 이름을 빼도
+    숫자가 남으면 그 숫자로 특정된다 — 재 본 값은 `amount_band` 에 적어 두었다.
     """
     from ..routers.companies import BLOCKED_CONTRACT, contract_key
 
@@ -498,7 +639,7 @@ def companies(db: Session, *, others=None) -> List[dict]:
         item = {"id": company_ref(c.id)}
         item.update(_fill(c, COMPANY_FIELDS, scrub_with=c,
                           identifying=COMPANY_IDENTIFYING_FIELDS,
-                          others=others))
+                          others=others, banded=AMOUNT_FIELDS))
         item["introducible"] = bool(c.introducible)
         out.append(item)
     return out
@@ -571,7 +712,7 @@ def brief(db: Session, user: User, *, now: Optional[str] = None) -> dict:
         "generated_at": now or clock.now_iso(),
         "scope": "팀 전체" if team_wide else "본인 담당",
         "amount_unit": AMOUNT_UNIT,
-        "note": NOTE,
+        "note": note(),
         # 시킬 말도 **자료와 함께** 나간다. 화면의 [복사] 는 이것을 앞에
         # 붙여 한 덩어리로 담고, [자료 내려받기] 로 받은 파일만 봐도 무엇을
         # 시키는 자료인지 알 수 있다.
