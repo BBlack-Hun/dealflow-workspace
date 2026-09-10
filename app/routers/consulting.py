@@ -32,7 +32,7 @@ from ..db import get_db
 from ..deps import (NoConsulting, get_current_user, may_view_all_consulting,
                     may_view_consulting, templates)
 from ..models import (ConsultingColumn, ConsultingCompany, ConsultingRowGrant,
-                     User)
+                      User)
 from ..services import consulting_sheets as cs
 from ..services import consulting_status as status
 from ..services import monthly_columns
@@ -265,9 +265,11 @@ def may_edit_row(db: Session, user: User, owner_id: Optional[int],
       표이고 서로를 덮는다(`deps.may_view_all_consulting` 의 설명). 맡겨 준
       줄이 있어도 여기서 먼저 끊긴다.
 
-    반대쪽 — `맡겼는데 화면을 못 봐서 아무 소용이 없는` 상태 — 는 주는 자리가
-    막는다. 팀 현황에서 맡기면 그 사람의 `투자현황` 을 같이 켠다
-    (`routers/dashboard.py` 의 `save_consulting_editors`).
+    반대쪽 — `맡겼는데 화면을 못 봐서 아무 소용이 없는` 상태 — 는 **주는
+    자리**가 막는다. 팀 현황의 고르는 칸은 이 함수에 두 번 물어(`맡기기 전` 과
+    `맡긴 뒤`) **답이 달라지는 사람만** 세운다(`routers/dashboard.py` 의
+    `_grant_candidates`) — 맡겨도 안 통하는 사람은 애초에 안 선다. 거기서도
+    조건을 다시 적지 않는 이유가 이것이다.
     """
     if user.role == "admin":
         return True
