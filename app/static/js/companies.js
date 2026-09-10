@@ -119,22 +119,12 @@
   // ── 상세 편집 ──────────────────────────────────────────────
   function el(id) { return document.getElementById(id); }
 
-  // 화면은 억, 저장은 백만원. DB 는 백만원으로 쌓여 있다(임포트·딜소개 문구가
-  // 그 단위를 쓴다). 사람에게는 어디서도 백만원을 보여주지 않는다 — 표는 억인데
-  // 수정 창만 백만원이면 같은 값이 100배 차이로 보인다.
-  var EOK_FIELDS = ["revenue_recent", "funding_total", "raise_target", "pre_value"];
-
-  function toEok(v) {
-    if (v === null || v === undefined || v === "") return "";
-    var n = Number(v) / 100;
-    return String(Math.round(n * 10) / 10);      // 18.3 · 150 · 0.2
-  }
-
-  function toStored(v) {
-    if (v === "" || v === null || v === undefined) return null;
-    var n = Number(v);
-    return isNaN(n) ? null : Math.round(n * 100);
-  }
+  // 금액 넷은 **적은 글자 그대로** 오가고 그대로 저장된다(0074).
+  //
+  // 예전에는 여기서 억↔백만원을 곱하고 나눴다(`toEok` · `toStored`). 저장이
+  // 억 글자가 되면서 곱할 것이 없어졌고, **없어야 한다** — 곱하는 자리가 남아
+  // 있으면 `5-10억` 같은 값이 `Number()` 에서 `NaN` 이 되어 통째로 사라진다.
+  // 사람이 적은 글자를 화면이 손대지 않는 것이 이 칸의 규칙이다.
 
   // 합치기 전 값(`사업분야` · `기업 한줄 소개`) — **읽기 전용**이다.
   //
@@ -230,7 +220,7 @@
       var input = el("f-" + f);
       if (!input) return;
       var raw = data[f] === null || data[f] === undefined ? "" : data[f];
-      input.value = EOK_FIELDS.indexOf(f) >= 0 ? toEok(raw) : raw;
+      input.value = raw;
     });
     el("f-is_top_deal").checked = !!data.is_top_deal;
     fillBackup(data.desc_backup);
@@ -298,8 +288,7 @@
       var input = el("f-" + f);
       if (!input) return;
       var v = input.value.trim();
-      if (EOK_FIELDS.indexOf(f) >= 0) body[f] = toStored(v);
-      else if (input.type === "number") body[f] = v === "" ? null : parseInt(v, 10);
+      if (input.type === "number") body[f] = v === "" ? null : parseInt(v, 10);
       else body[f] = v;
     });
     body.is_top_deal = el("f-is_top_deal").checked;

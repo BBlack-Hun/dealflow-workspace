@@ -15,7 +15,8 @@ Assembly (Day 1):
     {클로징}
 
 Remind / meeting stages repeat NO company summaries — short opening + closing only.
-Money fields are stored in 백만원 (millions of KRW) and rendered in 억 (÷100).
+Money fields hold the text the human wrote, in 억 (`5.6` · `5-10억 사이` · `~`).
+`services/amount.py` is the single place that reads a number out of that text.
 Empty summary segments are dropped entirely (no "매출 억").
 """
 from __future__ import annotations
@@ -24,7 +25,7 @@ import re
 from dataclasses import dataclass, field
 from typing import List, Optional
 
-from . import deal_numbers
+from . import amount, deal_numbers
 
 # Stage constants
 STAGE_DAY1 = 1
@@ -47,10 +48,12 @@ class CompanyView:
     sector_major: Optional[str] = None
     sector_minor: Optional[str] = None
     one_liner: Optional[str] = None
-    revenue_recent: Optional[int] = None   # 백만원
-    funding_total: Optional[int] = None    # 백만원
-    raise_target: Optional[int] = None     # 백만원
-    pre_value: Optional[int] = None        # 백만원
+    # 금액 넷은 **사람이 적은 글자**다(단위 억). `5-10억 사이` · `~` 가 들어온다.
+    # 문구에 실을 수량은 `services/amount.py` 가 정한다 — 여기서 해석하지 않는다.
+    revenue_recent: Optional[str] = None   # 억 (적은 그대로)
+    funding_total: Optional[str] = None    # 억 (적은 그대로)
+    raise_target: Optional[str] = None     # 억 (적은 그대로)
+    pre_value: Optional[str] = None        # 억 (적은 그대로)
     competitiveness: Optional[str] = None
     summary: Optional[str] = None          # manual/cached summary; takes priority when set
 
@@ -75,27 +78,37 @@ class ComposeResult:
     parts: List[str] = field(default_factory=list)
 
 
-def format_eok(value_baekman: Optional[int]) -> Optional[str]:
-    """Convert 백만원 (millions of KRW) into a 억 display string.
+def format_eok(value) -> Optional[str]:
+    """문구에 실을 **금액 표기**. 못 읽는 값이면 `None`(토막째 뺀다).
 
-    100 백만원 == 1억. Trailing ".0" is stripped. Returns None for empty input
-    so the caller can drop the whole segment.
+    이름은 예전 그대로지만 **하는 일이 바뀌었다.** 예전에는 백만원 정수를 억으로
+    나누는 계산이었고, 지금은 사람이 적은 글자(`5-10억 사이`)에서 문구에 실을
+    표기(`5~10억`)를 고르는 일이다 — 그 판단은 `services/amount.py` 한 곳이 한다.
+
+    **단위까지 붙어서 온다.** 그래서 아래 틀에 `억` 이 없다. 틀에 `억` 을 적어
+    두면 `5천만원` 을 적은 순간 `5천만원억` 이 된다 — 단위를 아는 곳은
+    `services/amount.py` 하나여야 한다.
+
+    옛 자료는 글자로 옮겨져 있어(0074) `"5.6"` → `"5.6억"` 으로, 예전 문구와
+    한 글자도 다르지 않게 지난다.
     """
-    if value_baekman is None:
-        return None
-    eok = value_baekman / 100.0
-    if eok == int(eok):
-        return str(int(eok))
-    # One decimal place is enough for these figures (e.g. 3090 -> "30.9").
-    return f"{eok:.1f}".rstrip("0").rstrip(".")
+    return amount.phrase(value)
 
 
 def auto_company_summary(company: CompanyView) -> str:
     """Compose the deal summary line from raw fields.
 
     Format: [분야] | 한줄소개 | 매출 N억 | 누적투자금액 N억 | N억 투자유치중
-            | Pre Value 약 N억원 | 경쟁력
+            | Pre Value 약 N억 | 경쟁력
     Empty segments are omitted entirely.
+
+    **단위는 `format_eok` 가 붙인다.** 그래야 `5천만원` 처럼 억이 아닌 단위로
+    적힌 값이 `누적투자금액 5천만원` 으로 나간다.
+
+    `Pre Value 약 N억원` 이 `Pre Value 약 N억` 이 된 것도 그래서다 — 이 자리가
+    이 저장소에서 **유일하게 `원` 을 붙이던 곳**이었고, 실데이터에서 사람이 쓰는
+    모양은 `Pre Value 200억` 이다(세어 둔 것은 `services/one_liner.py`). 한줄소개
+    쪽과도 이제 같은 모양이다.
     """
     segments: List[str] = []
 
@@ -110,21 +123,25 @@ def auto_company_summary(company: CompanyView) -> str:
     #   그래서 항목마다 '한줄 소개에 이미 있는지' 보고 없을 때만 덧붙인다.
     said = (company.one_liner or "")
 
+    # 못 읽는 값(`투자 유치 협의중` 같은 자유 문장)은 `None` 이 되어 **토막째
+    # 빠진다.** 사람이 아무 글자나 넣을 수 있게 된 이상, 못 읽는 것을 그대로
+    # 실어 투자사에게 보내는 쪽이 훨씬 나쁘다 — 빼면 그 항목만 없는 문구가 되고,
+    # 그것은 값이 비었을 때와 똑같은 모양이라 읽는 사람이 이상하게 보지 않는다.
     revenue = format_eok(company.revenue_recent)
     if revenue is not None and "매출" not in said:
-        segments.append(f"매출 {revenue}억")
+        segments.append(f"매출 {revenue}")
 
     funding = format_eok(company.funding_total)
     if funding is not None and "누적투자" not in said:
-        segments.append(f"누적투자금액 {funding}억")
+        segments.append(f"누적투자금액 {funding}")
 
     raise_target = format_eok(company.raise_target)
     if raise_target is not None and "투자유치" not in said:
-        segments.append(f"{raise_target}억 투자유치중")
+        segments.append(f"{raise_target} 투자유치중")
 
     pre_value = format_eok(company.pre_value)
     if pre_value is not None and not any(k in said.lower() for k in ("pre value", "밸류")):
-        segments.append(f"Pre Value 약 {pre_value}억원")
+        segments.append(f"Pre Value 약 {pre_value}")
 
     if company.competitiveness and company.competitiveness.strip() not in said:
         segments.append(company.competitiveness.strip())

@@ -50,9 +50,10 @@ HTML.replace(/id="f-([a-z_0-9]+)"/g, function (_all, f) {
 const NOT_SENT = ["desc_backup", "is_top_deal"];
 const FIELDS = SHOWN.filter((f) => NOT_SENT.indexOf(f) < 0);
 
-// 억으로 보여 주고 백만원으로 보내는 칸(companies.js 의 `EOK_FIELDS`).
-// 이 넷만 글자가 아니라 숫자로 오간다.
-const EOK = ["revenue_recent", "funding_total", "raise_target", "pre_value"];
+// 금액 넷. **다른 칸과 똑같이 글자로 오간다**(0074) — 예전에는 여기만 억↔백만원
+// 으로 곱하고 나눴는데, 그 자리가 있으면 `5-10억 사이` 가 `Number()` 에서 `NaN`
+// 이 되어 통째로 사라진다. 아래 SAMPLE 이 실제로 구간과 `~` 를 넣어 본다.
+const MONEY = ["revenue_recent", "funding_total", "raise_target", "pre_value"];
 
 // `<select>` 인 칸은 아무 글자나 못 고른다 — 화면에 있는 값으로만 잰다.
 const CHOICES = {
@@ -68,6 +69,14 @@ const CHOICES = {
 // 숫자 칸이나 날짜 칸으로 바꿔 둔 순간 브라우저가 못 읽어 빈 값이 되는데,
 // 그 고장이 바로 여기서 걸린다.
 const SAMPLE = {
+  // 금액 넷 — 사용자가 넣고 싶어 한 표기가 전부 여기 있다(0074).
+  // 숫자 칸으로 되돌리는 순간 브라우저가 못 읽어 빈 값이 되고, 여기서 걸린다.
+  revenue_recent: "18.3",
+  funding_total: "5-10억 사이",
+  // 1억 미만은 한글 단위로도 적는다(사용자 요청). 숫자 칸으로 되돌리는 순간
+  // 브라우저가 `5천만원` 을 아예 못 받고 빈 값이 되는데, 그 고장이 여기서 걸린다.
+  raise_target: "5천만원",
+  pre_value: "~",
   revenue_2022: "8.2억",
   revenue_2023: "1,224백만원",
   revenue_2024: "150억 ~ 200억",
@@ -172,7 +181,7 @@ async function main() {
   {
     const payload = { id: 1, name: "샘플가나헬스", introducible: true };
     FIELDS.forEach(function (f) {
-      payload[f] = EOK.indexOf(f) >= 0 ? 1830 : valueFor(f);
+      payload[f] = valueFor(f);
     });
     const dom = await openAndSave(payload);
 
@@ -182,15 +191,10 @@ async function main() {
       "창에 있는 칸이 저장 요청에 안 실렸습니다 ★ 고쳐도 조용히 저장이 안 됩니다");
 
     FIELDS.forEach(function (f) {
-      if (EOK.indexOf(f) >= 0) {
-        // 화면은 억, 저장은 백만원 — 되돌아와야 한다.
-        assert.strictEqual(sent[f], 1830, f + ": 억↔백만원 되돌림이 어긋났습니다");
-      } else {
-        assert.strictEqual(sent[f], payload[f],
-          f + ": 되읽은 값과 보내는 값이 다릅니다 (" +
-          JSON.stringify(payload[f]) + " → " + JSON.stringify(sent[f]) + ")");
-      }
-      assert.strictEqual(dom.inputs[f].value, EOK.indexOf(f) >= 0 ? "18.3" : payload[f],
+      assert.strictEqual(sent[f], payload[f],
+        f + ": 되읽은 값과 보내는 값이 다릅니다 (" +
+        JSON.stringify(payload[f]) + " → " + JSON.stringify(sent[f]) + ")");
+      assert.strictEqual(dom.inputs[f].value, payload[f],
         f + ": 창에 되읽어진 값이 다릅니다");
     });
   }
@@ -201,6 +205,17 @@ async function main() {
   // 그 값이 그대로 딜소개 문구의 `매출 …` 토막이 된다.
   {
     ["revenue_2022", "revenue_2023", "revenue_2024", "revenue_2025"].forEach(function (f) {
+      assert.strictEqual(typeof sent[f], "string", f + ": 글자가 아닙니다");
+      assert.strictEqual(sent[f], SAMPLE[f], f + ": 값이 다듬어졌습니다");
+    });
+  }
+
+  // ── 2-1. 금액 넷도 **적힌 그대로**다 ──────────────────────────────────
+  //
+  // 요청이 막혀 있던 자리가 정확히 여기다 — 숫자 칸이라 `5-10억 사이` 를 아예
+  // 못 넣었고, 넣었다 해도 화면이 곱하는 자리에서 `NaN` 이 되어 사라졌다.
+  {
+    MONEY.forEach(function (f) {
       assert.strictEqual(typeof sent[f], "string", f + ": 글자가 아닙니다");
       assert.strictEqual(sent[f], SAMPLE[f], f + ": 값이 다듬어졌습니다");
     });

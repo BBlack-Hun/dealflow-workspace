@@ -41,9 +41,10 @@ def test_full_line_follows_the_sheet_notation():
     made = compose_one_liner(make(
         business_desc="비전AI 기반 미세먼지·병충해 측정 솔루션",
         revenue_2025="13억",
-        funding_total=1100,   # 백만원 → 11억
-        raise_target=3000,    # → 30억
-        pre_value=20000,      # → 200억
+        # 금액 넷도 **적은 그대로**다(0074). 단위는 억.
+        funding_total="11",
+        raise_target="30",
+        pre_value="200",
         competitiveness="TIPS 24년 선정",
     ))
     assert made == ("비전AI 기반 미세먼지·병충해 측정 솔루션 | 매출 13억 | "
@@ -52,11 +53,36 @@ def test_full_line_follows_the_sheet_notation():
 
 
 def test_amounts_are_shown_in_eok_like_the_rest_of_the_screen():
-    """백만원 정수는 화면·딜소개와 같은 단위(억)로 나온다. 소수 한 자리까지."""
+    """적은 그대로가 화면·딜소개와 같은 단위(억)로 나온다."""
     made = compose_one_liner(make(business_desc="소재 제조",
-                                  funding_total=560, raise_target=830,
-                                  pre_value=15000))
+                                  funding_total="5.6", raise_target="8.3",
+                                  pre_value="150"))
     assert made == "소재 제조 | 누적투자금액 5.6억 | 8.3억 투자유치중 | Pre Value 150억"
+
+
+def test_a_range_stays_a_range_in_the_line():
+    """`5-10억 사이` 라고 적었으면 한줄 소개에도 구간이 남아야 한다.
+
+    숫자 하나로 뭉개면 사람이 적은 뜻이 사라지고, 뭉갠 숫자가 그대로 투자사에게
+    나간다. 구분자만 `~` 한 모양으로 선다.
+    """
+    made = compose_one_liner(make(business_desc="소재 제조",
+                                  funding_total="5-10억 사이",
+                                  raise_target="30~50억"))
+    assert made == "소재 제조 | 누적투자금액 5~10억 | 30~50억 투자유치중"
+
+
+def test_what_cannot_be_read_never_reaches_the_line():
+    """`~`(모름)과 자유 문장은 **토막째 빠진다.**
+
+    금액 칸이 글자가 되면서 사람은 아무 말이나 적을 수 있게 됐다. 그것이 그대로
+    투자사에게 나가면 안 된다 — 빼면 값이 비었을 때와 똑같은 모양이 된다.
+    """
+    made = compose_one_liner(make(business_desc="소재 제조",
+                                  funding_total="~",
+                                  raise_target="투자 유치 협의중",
+                                  pre_value="150"))
+    assert made == "소재 제조 | Pre Value 150억"
 
 
 def test_every_written_year_is_listed():
@@ -164,9 +190,9 @@ def test_not_a_number_notes_are_not_shown_as_revenue(note):
 @pytest.mark.parametrize("only", [
     {"business_desc": "헬스케어 기기 제조"},
     {"revenue_2024": "8.9억"},
-    {"funding_total": 4000},
-    {"raise_target": 500},
-    {"pre_value": 12000},
+    {"funding_total": "40"},
+    {"raise_target": "5"},
+    {"pre_value": "120"},
     {"competitiveness": "특허 17건"},
 ])
 def test_missing_items_leave_no_empty_slot(only):
@@ -185,8 +211,8 @@ def test_missing_items_leave_no_empty_slot(only):
 def test_partial_row_keeps_the_order():
     """가운데가 비어도 남은 토막의 **순서**는 그대로다."""
     made = compose_one_liner(make(business_desc="시니어 문화여가 콘텐츠 공급",
-                                  revenue_2024="8.9억", funding_total=4000,
-                                  raise_target=1000))
+                                  revenue_2024="8.9억", funding_total="40",
+                                  raise_target="10"))
     assert made == "시니어 문화여가 콘텐츠 공급 | 매출 8.9억 | 누적투자금액 40억 | 10억 투자유치중"
 
 
@@ -196,8 +222,20 @@ def test_nothing_filled_makes_nothing():
 
 def test_zero_is_a_real_amount():
     """'0' 과 '아직 안 적음'은 다르다 — 0 을 빈 칸으로 삼키면 안 된다."""
-    assert compose_one_liner(make(business_desc="초기 단계", funding_total=0)) == \
+    assert compose_one_liner(make(business_desc="초기 단계", funding_total="0")) == \
         "초기 단계 | 누적투자금액 0억"
+
+
+def test_zero_and_unknown_are_different_facts():
+    """`0`(없음)은 문구에 나가고, `~`(모름)은 안 나간다.
+
+    둘을 한 칸으로 뭉개면 "아직 투자를 못 받았다"는 **아는 사실**이 "모른다"로
+    바뀌어 사라진다. 투자사에게 보이는 뜻이 서로 다르다.
+    """
+    assert compose_one_liner(make(business_desc="초기 단계", funding_total="0")) == \
+        "초기 단계 | 누적투자금액 0억"
+    assert compose_one_liner(make(business_desc="초기 단계", funding_total="~")) == \
+        "초기 단계"
 
 
 # --- 사업분야에 이미 다 적혀 온 경우 ------------------------------------------
@@ -209,8 +247,8 @@ def test_does_not_repeat_what_the_business_desc_already_says():
     """
     made = compose_one_liner(make(
         business_desc="비전AI 측정 엔진 | 매출 13억 | 누적투자금액 11억 | Pre Value 200억",
-        revenue_2024="9억", funding_total=500, pre_value=3000,
-        raise_target=3000,
+        revenue_2024="9억", funding_total="5", pre_value="30",
+        raise_target="30",
     ))
     # 이미 말한 매출·누적투자·Pre Value 는 다시 안 붙고, 없던 투자유치만 붙는다.
     assert made == ("비전AI 측정 엔진 | 매출 13억 | 누적투자금액 11억 | "
@@ -235,7 +273,7 @@ def test_dash_placeholder_is_dropped():
 def test_manual_line_is_never_silently_replaced():
     """사람이 쓴 소개는 스타트업DB 를 고쳐도 그대로 남는다."""
     c = make(one_liner="사람이 다듬어 쓴 소개", business_desc="소재 제조",
-             funding_total=1000)
+             funding_total="10")
     result = sync_one_liner(c, previous_auto="예전 자동 조합 값")
     assert c.one_liner == "사람이 다듬어 쓴 소개"
     assert result["applied"] is False
@@ -245,7 +283,7 @@ def test_manual_line_is_never_silently_replaced():
 
 
 def test_empty_line_is_filled():
-    c = make(business_desc="소재 제조", funding_total=1000)
+    c = make(business_desc="소재 제조", funding_total="10")
     result = sync_one_liner(c, previous_auto=None)
     assert c.one_liner == "소재 제조 | 누적투자금액 10억"
     assert result["applied"] is True
@@ -254,7 +292,7 @@ def test_empty_line_is_filled():
 def test_previously_auto_line_is_refreshed():
     """전에 이 코드가 만든 값이면 갱신한다 — 지울 손글씨가 없다."""
     before = "소재 제조"
-    c = make(one_liner=before, business_desc="소재 제조", funding_total=1000)
+    c = make(one_liner=before, business_desc="소재 제조", funding_total="10")
     result = sync_one_liner(c, previous_auto=before)
     assert c.one_liner == "소재 제조 | 누적투자금액 10억"
     assert result["applied"] is True
@@ -315,8 +353,8 @@ def company(db):
 def test_filling_the_startup_db_tab_updates_the_line(logged_in, db, company):
     """요청의 핵심 — 스타트업DB 칸을 채우면 한줄 소개가 실제로 바뀐다."""
     r = logged_in.patch(f"/api/companies/{company.id}",
-                        json={"revenue_2024": "8.9억", "funding_total": 4000,
-                              "raise_target": 1000, "pre_value": 12000,
+                        json={"revenue_2024": "8.9억", "funding_total": "40",
+                              "raise_target": "10", "pre_value": "120",
                               "competitiveness": "TIPS 선정"})
     assert r.status_code == 200, r.text
     assert r.json()["one_liner_applied"] is True
@@ -329,7 +367,7 @@ def test_hand_written_line_survives_a_startup_db_edit(logged_in, db, company):
     company.one_liner = "사람이 다듬어 쓴 소개"
     db.commit()
 
-    r = logged_in.patch(f"/api/companies/{company.id}", json={"funding_total": 4000})
+    r = logged_in.patch(f"/api/companies/{company.id}", json={"funding_total": "40"})
     assert r.status_code == 200, r.text
     body = r.json()
     db.refresh(company)
@@ -348,7 +386,7 @@ def test_unrelated_edit_does_not_touch_the_line(logged_in, db, company):
 
 def test_preview_does_not_save(logged_in, db, company):
     company.one_liner = "사람이 다듬어 쓴 소개"
-    company.funding_total = 4000
+    company.funding_total = "40"
     db.commit()
 
     body = logged_in.get(f"/api/companies/{company.id}/one-liner").json()
@@ -363,7 +401,7 @@ def test_preview_does_not_save(logged_in, db, company):
 def test_choosing_the_auto_line_replaces_the_manual_one(logged_in, db, company):
     """자동 조합을 쓸지 손으로 쓴 것을 지킬지는 **언제나 사람이 고른다**."""
     company.one_liner = "사람이 다듬어 쓴 소개"
-    company.funding_total = 4000
+    company.funding_total = "40"
     db.commit()
 
     body = logged_in.post(f"/api/companies/{company.id}/one-liner").json()
@@ -375,7 +413,7 @@ def test_choosing_the_auto_line_replaces_the_manual_one(logged_in, db, company):
 def test_clearing_the_line_brings_the_auto_one_back(logged_in, db, company):
     """소개를 비워 보내면 '자동 조합을 다시 넣어 달라'는 뜻으로 받는다."""
     company.one_liner = "사람이 다듬어 쓴 소개"
-    company.funding_total = 4000
+    company.funding_total = "40"
     db.commit()
 
     logged_in.patch(f"/api/companies/{company.id}", json={"one_liner": ""})
@@ -386,7 +424,7 @@ def test_clearing_the_line_brings_the_auto_one_back(logged_in, db, company):
 def test_table_rows_carry_the_preview(logged_in, db, company):
     """표를 보는 사람이 '지금 값 vs 자동 조합'을 나란히 볼 수 있어야 한다."""
     company.one_liner = "사람이 다듬어 쓴 소개"
-    company.funding_total = 4000
+    company.funding_total = "40"
     db.commit()
 
     row = next(r for r in logged_in.get("/api/companies").json()["rows"]

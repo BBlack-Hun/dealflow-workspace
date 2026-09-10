@@ -27,7 +27,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import NotAdmin, admin_only, get_current_user, templates
 from ..models import IrCompany, OneLinerBackup, User
-from ..services import auth as auth_svc
+from ..services import amount, auth as auth_svc
 from ..services.one_liner import (
     AUTO, SOURCE_FIELDS, apply_one_liner, bulk_rows, compose_one_liner, origin,
     sync_one_liner,
@@ -199,15 +199,18 @@ def desc_backup_lines(c: IrCompany) -> List[dict]:
             for key, label in MERGED_LABELS.items() if saved.get(key)]
 
 
-def eok(value: Optional[int]) -> str:
-    """저장값(백만원)을 억으로. `1830` → `18.3`.
+def eok(value) -> str:
+    """금액 칸을 표에 **적은 그대로** 보여준다. `"5-10억 사이"` → `5-10억 사이`.
 
-    표에 백만원을 그대로 두면 `1,000` 이 10억이라 아무도 못 읽는다. 딜소개
-    문구는 이미 억으로 나가고 있어서 표와 문구가 서로 다른 숫자를 보여줬다.
+    이름은 예전 그대로지만 하는 일이 바뀌었다 — 저장이 백만원 정수였을 때는
+    100 으로 나누는 계산이었고, 지금은 **글자를 그대로 내보내는 일**이다(0074).
+    옛 값은 글자로 옮겨져 있어(`560` → `"5.6"`) 표에 뜨던 글자가 그대로다.
+
+    **여기서 다듬지 않는다.** 사람이 적은 그대로가 표에 보여야, 무엇을 고쳐야
+    문구가 바뀌는지 알 수 있다. 문구에 실을 때만 한 모양으로 세운다
+    (`services/amount.py: quantity`).
     """
-    from ..services.message_composer import format_eok
-
-    return format_eok(value) or ""
+    return amount.text(value)
 
 
 # 핵심/TOP Deal 은 시트에 `핵심` · `TOP` · `핵심, TOP` · `TOP, 핵심` 으로
@@ -576,10 +579,13 @@ class CompanyIn(BaseModel):
     sector_minor: Optional[str] = None
     series: Optional[str] = None
     one_liner: Optional[str] = None
-    revenue_recent: Optional[int] = None
-    funding_total: Optional[int] = None
-    raise_target: Optional[int] = None
-    pre_value: Optional[int] = None
+    # 금액 넷은 **글자**다(0074). 단위는 억이고, 화면이 보낸 글자가 그대로
+    # 저장된다 — `5-10억 사이` · `~` 가 온다. 숫자로 바꾸는 자리는 어디에도
+    # 없다(`services/amount.py` 가 읽을 때만 뽑는다).
+    revenue_recent: Optional[str] = None
+    funding_total: Optional[str] = None
+    raise_target: Optional[str] = None
+    pre_value: Optional[str] = None
     competitiveness: Optional[str] = None
     contact_name: Optional[str] = None
     contact_phone: Optional[str] = None

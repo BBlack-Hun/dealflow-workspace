@@ -92,7 +92,7 @@ def _company(db, **kw):
     from app.models import IrCompany
 
     values = dict(name="가상바이오", sector_major="바이오", series="Series A",
-                  one_liner="세포 배양 장비", revenue_recent=1830)
+                  one_liner="세포 배양 장비", revenue_recent="18.3")
     values.update(kw)
     row = IrCompany(**values)
     db.add(row)
@@ -250,7 +250,7 @@ def test_a_company_goes_out_as_a_number_not_a_name(db, users):
     맞추는 데 쓰이는 것은 분야·단계·요약·규모다. 이름은 그 일에 쓰이지 않고,
     앱 밖으로 나가는 자료에서 필요 없는 것을 빼는 것이 가장 확실한 보호다.
     """
-    ok = _company(db, name="가상바이오", raise_target=3000, pre_value=12000)
+    ok = _company(db, name="가상바이오", raise_target="30", pre_value="120")
 
     got = {c["id"]: c for c in _brief(db, users["u1"])["companies"]}
     assert "name" not in got[f"C-{ok.id}"]
@@ -283,7 +283,7 @@ def test_a_company_that_names_itself_in_its_own_summary_is_masked(db, users):
 
 def test_a_thin_company_is_flagged_rather_than_hidden(db, users):
     """`IrCompany.introducible` 을 **다시 계산하지 않고** 그대로 읽는다."""
-    ok = _company(db, name="가상바이오", raise_target=3000, pre_value=12000)
+    ok = _company(db, name="가상바이오", raise_target="30", pre_value="120")
     thin = _company(db, name="가상로보틱스", sector_major="", one_liner="",
                     revenue_recent=None)
 
@@ -319,8 +319,10 @@ def test_the_amount_unit_is_declared_once_and_the_bands_use_it(db, users):
     from app.services.llm_brief import (AMOUNT_EDGES, ZERO_BAND, amount_band,
                                         amount_bands)
 
-    _company(db, revenue_recent=1830, funding_total=500,
-             raise_target=3000, pre_value=12000)
+    # 저장은 **사람이 적은 글자(억)** 다(0074). 자료로 나갈 때 `amount.million`
+    # 이 백만원으로 옮기고, 그 숫자가 구간이 된다 — 아래 기대값의 정수와 같은 값이다.
+    _company(db, revenue_recent="18.3", funding_total="5",
+             raise_target="30", pre_value="120")
 
     out = _brief(db, users["u1"])
     assert out["amount_unit"] == "백만원"
@@ -348,8 +350,13 @@ def test_the_amount_unit_is_declared_once_and_the_bands_use_it(db, users):
 #: 구간으로 나가야 하는 칸에 심는 **표식 값**. 경계와 겹치지 않는 숫자다 —
 #: `1000` 을 심으면 구간 이름 `1000~5000` 안에 그 숫자가 들어 있어서, 값이
 #: 새어 나갔는지 구간 이름을 본 것인지 구별할 수 없다.
-AMOUNT_MARKS = {"revenue_recent": 1837, "funding_total": 4293,
-                "raise_target": 7411, "pre_value": 26543}
+#: **적는 글자와 그것이 뜻하는 백만원 정수를 함께 둔다**(0074). 나가면 안 되는
+#: 것은 둘 다다 — 구간으로 바꿔 내보내면서 사람이 적은 글자(`18.37`)를 어딘가에
+#: 그대로 실어 보내면, 이름을 뺀 뜻이 그 글자에서 그대로 풀린다.
+AMOUNT_MARKS = {"revenue_recent": "18.37", "funding_total": "42.93",
+                "raise_target": "74.11", "pre_value": "265.43"}
+AMOUNT_MARK_MILLIONS = {"revenue_recent": 1837, "funding_total": 4293,
+                        "raise_target": 7411, "pre_value": 26543}
 
 
 def test_no_exact_amount_appears_anywhere_in_the_data(db, users):
@@ -362,6 +369,8 @@ def test_no_exact_amount_appears_anywhere_in_the_data(db, users):
 
     dumped = json.dumps(_brief(db, users["u1"]), ensure_ascii=False)
     for field, value in AMOUNT_MARKS.items():
+        assert str(value) not in dumped, f"{field} 에 적힌 글자가 나갔습니다"
+    for field, value in AMOUNT_MARK_MILLIONS.items():
         assert str(value) not in dumped, f"{field} 의 정확한 값이 나갔습니다"
     # 검사가 헛돌지 않았는지 — 그 기업이 실제로 실려 있어야 한다.
     assert '"revenue_recent"' in dumped
@@ -374,6 +383,8 @@ def test_the_answer_that_actually_leaves_the_server_has_no_exact_amount(
 
     body = logged_in.get("/api/llm-brief.json").text
     for field, value in AMOUNT_MARKS.items():
+        assert str(value) not in body, f"{field} 에 적힌 글자가 나갔습니다"
+    for field, value in AMOUNT_MARK_MILLIONS.items():
         assert str(value) not in body, f"{field} 의 정확한 값이 나갔습니다"
 
 
@@ -385,9 +396,9 @@ def test_a_missing_amount_and_a_zero_are_different_facts(db, users):
     """
     from app.services.llm_brief import ZERO_BAND
 
-    zero = _company(db, revenue_recent=0, funding_total=0,
-                    raise_target=3000, pre_value=None)
-    unknown = _company(db, revenue_recent=None, raise_target=3000)
+    zero = _company(db, revenue_recent="0", funding_total="0",
+                    raise_target="30", pre_value=None)
+    unknown = _company(db, revenue_recent=None, raise_target="30")
 
     rows = {c["id"]: c for c in _brief(db, users["u1"])["companies"]}
     got_zero, got_unknown = rows[f"C-{zero.id}"], rows[f"C-{unknown.id}"]
@@ -429,7 +440,7 @@ def test_the_band_edges_are_written_in_exactly_one_place(db, users):
     """
     from app.services import llm_brief
 
-    _company(db, revenue_recent=1830)
+    _company(db, revenue_recent="18.3")   # = 1830 백만원
     # 검사가 경계를 또 적지 않는다 — 지금 값이 무엇이든 따라오는지만 본다.
     original = llm_brief.AMOUNT_EDGES
     was = llm_brief.amount_band(1830)
@@ -676,7 +687,7 @@ def test_no_company_side_contact_column_leaks_out_even_if_someone_adds_one(db, u
     """기업은 이름이 나간다 — 그 대신 **기업 쪽 연락처**가 새면 안 된다."""
     from app.models import IrCompany
 
-    row = _company(db, revenue_recent=1830)
+    row = _company(db, revenue_recent="18.3")
     marks = _mark_every_other_column(IrCompany, row, COMPANY_COLUMNS_ALLOWED_OUT)
     db.commit()
 
@@ -701,8 +712,8 @@ def test_the_keys_that_go_out_are_exactly_these(db, users):
     who = _contact(db, users["u1"].id, sectors="AI", round_size="30억",
                    stages="Seed", sourcing_note="메모", memo="메모",
                    tips_note="메모", interest_level="높음")
-    what = _company(db, summary="요약", funding_total=500, raise_target=3000,
-                    pre_value=12000)
+    what = _company(db, summary="요약", funding_total="5", raise_target="30",
+                    pre_value="120")
     _sent(db, who, [what])
     _sheet_sent(db, who, ["이제는없는기업"])
 
@@ -1102,7 +1113,7 @@ def test_the_history_carries_numbers_and_nothing_else(db, users):
     from app.models import IrCompany, VcContact
 
     who = _contact(db, users["u1"].id, sectors="AI")
-    what = _company(db, revenue_recent=1830)
+    what = _company(db, revenue_recent="18.3")
     _sent(db, who, [what])
 
     marks = _mark_every_other_column(VcContact, who, CONTACT_COLUMNS_ALLOWED_OUT,

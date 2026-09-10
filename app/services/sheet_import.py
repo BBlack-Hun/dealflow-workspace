@@ -33,7 +33,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..models import ContactActivity, IrCompany, User, VcContact
-from . import firm_type, sheet_owner
+from . import amount, firm_type, sheet_owner
 from .room_name import DEFAULT_SUFFIX, build_room_name, normalize_space, split_name_title
 
 # 활동 종류 (DATA_MODEL §2.6)
@@ -496,6 +496,47 @@ def parse_money_to_million(text: Optional[str]) -> Optional[int]:
     if not values:
         return None
     return int(round(min(values)))
+
+
+# 칸에 **앱이 아는 단위가 적혀 있는가.** 이것이 있어야 적힌 글자를 그대로
+# 옮긴다(아래 `_company_amount`).
+#
+# `백만` 은 일부러 없다 — 앱은 그 단위를 안 받는다(`services/amount.py`).
+# `1,224백만원` 은 아래 2번 길로 가서 억으로 옮겨진다. 앞에 `\d` 를 요구하므로
+# `백만원` 의 `만원` 이 여기 걸리는 일도 없다(앞 글자가 `백` 이라 숫자가 아니다).
+_WRITTEN_WITH_UNIT = re.compile(r"\d\s*(?:억|천만|만원)")
+
+
+def _company_amount(raw: Optional[str]) -> Optional[str]:
+    """시트 칸 → 기업 금액 칸에 담을 **글자(억)**. 담을 것이 없으면 `None`.
+
+    금액 칸 넷은 이제 사람이 적은 글자다(0074). 시트에서 읽어 넣는 자리도
+    **같은 규칙을 지나야** 한다 — 여기서만 다르게 담으면 시트에서 들어온 값과
+    손으로 적은 값이 서로 다른 뜻으로 읽힌다.
+
+    길은 둘이다.
+
+    1. 칸에 **앱이 아는 단위가 적혀 있고** 앱의 문법으로 읽히면(`8.2억` ·
+       `150억 ~ 200억` · `2억원~5억` · `3천만원`) 그 뜻을 그대로 옮긴다 —
+       구간은 구간으로 남고(`150~200억`), 억 미만은 만원인 채로 남는다.
+       예전에는 여기서 작은 쪽 정수 하나만 남아 **구간이라는 사실이 사라졌고**,
+       `3천만원` 은 `0.3` 이 되어 읽기 어려워졌다.
+    2. 그 밖에는 예전 그대로 `parse_money_to_million` 이 읽고
+       (`1,224백만원` · `3천만` · `10억 이상`), 그 정수를 `from_million` 이
+       글자로 옮긴다 — 화면에 뜨던 글자와 한 글자도 다르지 않다.
+
+    **단위가 없는 맨숫자(`1224`)는 1번 길로 보내지 않는다.** 앱 안에서는 맨숫자가
+    억이지만 시트 칸은 단위가 제각각이라, 여기서 억으로 읽으면 100배가 틀어진 채
+    딜소개 문구에 실려 나간다. 2번 길이 예전부터 맨숫자를 **연도 오인 방지**로
+    버려 왔고(`parse_money_to_million` 참고) 그 판단을 그대로 둔다.
+    """
+    written = norm(raw)
+    if not written:
+        return None
+    if (_WRITTEN_WITH_UNIT.search(written)
+            and amount.state(written) in (amount.NUMBER, amount.RANGE)):
+        return amount.phrase(written)
+    return amount.from_million(parse_money_to_million(raw))
 
 
 # ── 시트 A ──────────────────────────────────────────────────────────────────
@@ -1231,9 +1272,9 @@ def apply_company_financials(db, rows, *, dry_run: bool = False) -> ImportReport
                            ("raise_target", "raise_target"),
                            ("funding_total", "funding_total"),
                            ("pre_value", "pre_value")):
-            if getattr(company, field) not in (None, 0):
+            if amount.text(getattr(company, field)) not in ("", "0"):
                 continue   # 사람이 넣어둔 값 보존
-            value = parse_money_to_million(_raw_cell(row, cols[col]))
+            value = _company_amount(_raw_cell(row, cols[col]))
             if value:
                 setattr(company, field, value)
                 changed = True

@@ -1352,6 +1352,13 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
              font-weight: 600; cursor: pointer; white-space: nowrap; }
 .cell-hint:hover { border-color: var(--brand); }
 
+/* 금액 칸의 `⚠ 문구에서 빠짐`. 파란 안내 딱지와 **색으로 갈라 둔다** — 하나는
+   "여기 채울 것이 있다"는 권유고, 이것은 "적어 뒀는데 안 나간다"는 경고다.
+   같은 색이면 표를 훑을 때 둘이 한 덩어리로 보인다. */
+.cell-hint.warn-hint { border-color: #f3c9a4; background: #fff4e8; color: #a4560b;
+                       cursor: help; }
+.cell-hint.warn-hint:hover { border-color: #a4560b; }
+
 /* 리마인드 구역에서 이름을 눌러 IR 요청 기록으로 — 누를 수 있다는 게 보여야 한다. */
 .req-link { color: inherit; text-decoration: none; border-bottom: 1px dotted var(--line); }
 .req-link:hover { border-bottom-color: var(--accent); }

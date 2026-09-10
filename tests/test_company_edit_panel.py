@@ -101,11 +101,12 @@ def _panel_save(client, company_id: int, **over):
     "다른 칸을 고쳤더니 이 칸이 지워졌다" 를 못 잡는다.
     """
     row = client.get(f"/api/companies/{company_id}").json()
-    eok = {"revenue_recent", "funding_total", "raise_target", "pre_value"}
     body = {}
     for field in _panel_fields():
+        # **금액 넷도 글자다**(0074). 창의 모든 칸이 `input.value.trim()` 을
+        # 그대로 보내므로(companies.js 의 `collect`), 빈 칸은 빈 글자다.
         value = row.get(field)
-        body[field] = value if field in eok else ("" if value is None else str(value))
+        body[field] = "" if value is None else str(value)
     body["is_top_deal"] = bool(row.get("is_top_deal"))
     body.update(over)
     return client.patch(f"/api/companies/{company_id}", json=body)

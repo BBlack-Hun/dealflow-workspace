@@ -34,7 +34,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import get_current_user, may_manage_team_contacts
 from ..models import IrCompany, SendItem, SendJob, User, VcContact
-from ..services import (report as report_svc, sheet_import, sheet_owner,
+from ..services import (amount, report as report_svc, sheet_import, sheet_owner,
                         spreadsheet as sp)
 from .contacts import contact_rows
 
@@ -324,8 +324,24 @@ def export_contacts(sheet: str = "", db: Session = Depends(get_db),
 
 
 def _eok(value):
-    """저장값(백만원) → 억. 엑셀에서 계산할 수 있게 **숫자로** 둔다."""
-    return None if value is None else round(value / 100, 1)
+    """금액 칸(글자, 억) → 엑셀 한 칸.
+
+    **숫자로 읽히면 숫자로 둔다** — 받아서 합계·평균을 내는 자리라, 옛 정수
+    값에서 오던 `5.6` 이 그대로 숫자여야 한다. `5천만원` 처럼 억이 아닌 단위로
+    적힌 값도 억으로 옮겨 `0.47` 같은 숫자로 나간다(머리글이 `(억)` 이다).
+
+    **구간·`~`·못 읽는 글자는 적은 그대로** 내려간다(`5-10억 사이` · `~`).
+    하한 숫자만 내려보내면 `5~10억` 이 `5억` 이라는 **틀린 단정**으로 남고,
+    엑셀만 보는 사람은 그것이 구간이었다는 사실을 되찾을 길이 없다. 그 줄은
+    합계에 안 들어가지만, 원래 그 값은 합계에 넣을 수 있는 값이 아니었다.
+
+    숫자로 뽑는 판단은 `services/amount.py` 하나다 — 여기서 다시 읽지 않는다.
+    """
+    if amount.state(value) != amount.NUMBER:
+        return amount.text(value)
+    # **억으로 옮겨서 내보낸다.** 머리글이 `(억)` 이라 `5천만원` 을 그대로 실으면
+    # 그 열만 단위가 달라진다 — 합계를 내는 사람이 100배를 헛짚는다.
+    return float(amount.eok(value))
 
 
 COMPANY_HEADERS = [

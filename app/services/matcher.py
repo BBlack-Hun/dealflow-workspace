@@ -6,7 +6,7 @@
 시트 데이터 기준:
   - 담당자(vc_contacts): sectors(CSV), stages(CSV), round_size(자유 텍스트)
       예) sectors="AI,헬스케어" / stages="Seed,SeriesA" / round_size="건당 100억~1,000억"
-  - 기업(ir_companies): sector_major, sector_minor, series, raise_target(백만원)
+  - 기업(ir_companies): sector_major, sector_minor, series, raise_target(글자·억)
 
 담당자 데이터는 비어 있는 경우가 흔하다(시트 '투자분야/라운드사이즈' 공란).
 **정보가 없으면 '부적합'이 아니라 '판단 불가'로 처리**한다 — 근거 없이 발송을 막지 않기 위함.
@@ -16,6 +16,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from typing import List, Optional, Sequence
+
+from . import amount
 
 # 판정 결과
 FIT = "fit"              # 성향에 맞음
@@ -91,6 +93,7 @@ def evaluate_company(contact, company) -> CompanyFit:
 
     contact: sectors / stages / round_size 속성을 가진 객체 (VcContact 또는 뷰)
     company: sector_major / sector_minor / series / raise_target 속성을 가진 객체
+             (raise_target 은 글자다 — `services/amount.py` 가 숫자를 뽑는다)
     """
     reasons: List[str] = []
     signals: List[str] = []  # 각 축의 판정
@@ -128,9 +131,12 @@ def evaluate_company(contact, company) -> CompanyFit:
 
     # ── 라운드 사이즈 ─────────────────────────────────────────────────────
     rng = parse_round_size_eok(getattr(contact, "round_size", None))
-    raise_target = getattr(company, "raise_target", None)  # 백만원
-    if rng and raise_target:
-        target_eok = raise_target / 100.0
+    # 희망투자는 **사람이 적은 글자**다(0074). 숫자를 뽑는 규칙은
+    # `services/amount.py` 하나 — 구간(`5~10억`)이면 아래를 쓰고, `~`(모름)·
+    # 못 읽는 글자는 `None` 이 되어 이 신호를 아예 세지 않는다(없는 숫자로
+    # 규모가 맞는다/안 맞는다를 판단할 수는 없다).
+    target_eok = amount.eok(getattr(company, "raise_target", None))
+    if rng and target_eok:
         lo, hi = rng
         if (lo is not None and target_eok < lo) or (hi is not None and target_eok > hi):
             signals.append(MISMATCH)

@@ -226,8 +226,9 @@ def _full_company(**kw):
     """소개 문구에 들어가는 칸이 하나도 안 빈 기업."""
     from app.models import IrCompany
 
-    base = dict(name="샘플애그", sector_major="애그테크", revenue_recent=1200,
-                funding_total=560, raise_target=5000, pre_value=21000,
+    # 금액 넷은 **적은 그대로 글자**다(0074). 단위는 억.
+    base = dict(name="샘플애그", sector_major="애그테크", revenue_recent="12",
+                funding_total="5.6", raise_target="50", pre_value="210",
                 competitiveness="상급 유통사 12곳 계약",
                 ir_file_name="샘플_IR.pdf")
     base.update(kw)
@@ -276,8 +277,8 @@ def test_editing_makes_a_company_introducible(logged, db):
     assert not is_ready(company)
 
     r = logged.patch(f"/api/companies/{company.id}", json={
-        "name": "채울기업", "sector_major": "핀테크", "revenue_recent": 500,
-        "funding_total": 100, "raise_target": 1000, "pre_value": 5000,
+        "name": "채울기업", "sector_major": "핀테크", "revenue_recent": "5",
+        "funding_total": "1", "raise_target": "10", "pre_value": "50",
         "competitiveness": "가맹점 300곳",
         "ir_file_name": "샘플_IR.pdf",
     })
