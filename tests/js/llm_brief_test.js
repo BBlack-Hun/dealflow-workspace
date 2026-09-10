@@ -32,8 +32,11 @@ const BRIEF = {
   // 반드시 갈린다 — 여기서는 서버가 보냈다고 치고 그것이 실려 나가는지만 본다.
   prompt: "가상 지시문 1줄\n\n── 자료 ──",
   investors: [{ id: "V-31", sectors: "AI", room_open: true, sent_before: ["C-7"] }],
-  // 기업도 이름 없이 번호로만 나간다.
-  companies: [{ id: "C-7", sector_major: "바이오", introducible: true }]
+  // 기업도 이름 없이 번호로만 나간다. **금액은 정확한 숫자가 아니라 구간**이다
+  // — 경계는 서버(`services/llm_brief.py` 의 `AMOUNT_EDGES`)가 정하고, 화면은
+  // 받은 글자를 그대로 보여 주기만 한다.
+  companies: [{ id: "C-7", sector_major: "바이오", revenue_recent: "1000~5000",
+                pre_value: "10000+", introducible: true }]
 };
 
 function build() {
@@ -140,6 +143,10 @@ async function main() {
     assert.ok(shown.indexOf(BRIEF.prompt) === 0, shown.slice(0, 80));
     assert.ok(shown.indexOf(JSON.stringify(BRIEF, null, 2)) > 0,
       "자료는 서버가 준 글자 그대로여야 한다 — 다르면 눈으로 훑는 일이 거짓말이 된다");
+    // **구간도 그대로다.** 화면이 구간을 숫자로 되돌려 보여 주면, 사람은
+    // 정확한 금액이 나간 줄 알거나 안 나간 줄 알거나 — 어느 쪽이든 틀린다.
+    assert.ok(shown.indexOf("1000~5000") >= 0 && shown.indexOf("10000+") >= 0,
+      "구간 표가 화면에 그대로 보여야 한다");
     assert.strictEqual(app.nodes["llm-copy"].hidden, false);
     // 몇 건인지 먼저 말해 준다 — 빈 자료를 그대로 붙여 넣는 일이 없게.
     assert.ok(app.nodes["llm-state"].textContent.indexOf("투자사 1곳") >= 0,
