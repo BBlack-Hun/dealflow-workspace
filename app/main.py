@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import config, deps
 from .deps import NoConsulting, NotAdmin, NotAuthenticated
-from .services import auto_send, backup, followup_sms, scheduled_send
+from .services import auto_send, backup, edit_log, followup_sms, scheduled_send
 from .routers import auth as auth_router
 from .routers import templates_crud
 from .routers import setup as setup_router
@@ -49,6 +49,12 @@ def create_app() -> FastAPI:
     # 그 위에 '켜 두는 것을 잊는' 사고를 하나 더 얹는 셈이다.
     scheduled_send.start_scheduler()
 
+    # 수정 로그의 세션 이벤트를 건다. 여기서 한 번 걸면 **앞으로 생기는
+    # 라우터까지** 저절로 지난다 — 라우터마다 로그 호출을 붙이는 방식이었다면
+    # 새 길이 생길 때마다 붙이는 것을 잊는다(왜 이 자리인지는
+    # `services/edit_log.py` 머리말).
+    edit_log.install()
+
     app = FastAPI(title="dealflow", version="0.1.0 (Sprint 1)")
 
     app.mount("/static", StaticFiles(directory=str(config.STATIC_DIR)), name="static")
@@ -79,6 +85,31 @@ def create_app() -> FastAPI:
     app.include_router(templates_crud.router)
     app.include_router(setup_router.router)
     app.include_router(pages.router)
+
+    # **가장 먼저 등록한다 = 가장 안쪽이다.** 컨설턴트 차단보다 안쪽에 두어야
+    # 막힌 요청에는 문맥이 아예 심기지 않는다.
+    @app.middleware("http")
+    async def _edit_log_actor(request: Request, call_next):
+        """수정 로그가 쓸 **누가 · 어느 주소** 를 이 요청 동안만 심어 둔다.
+
+        세션 이벤트는 무엇이 바뀌었는지는 알지만 **누구인지는 모른다** —
+        세션은 요청을 모른다. 그 한 조각만 여기서 채운다.
+
+        **쓰기 메서드일 때만 심는다.** 읽기(GET)는 문맥이 없으니 그 사이에
+        무엇이 저장되더라도 로그에 남지 않는다. 미들웨어는 라우팅 전에 돌아
+        `Depends` 를 쓸 수 없으므로 쿠키를 직접 본다(`deps.is_consultant` 와
+        같은 방식이고, 쿠키가 없으면 조회조차 하지 않는다).
+        """
+        if request.method not in edit_log.WRITE_METHODS:
+            return await call_next(request)
+        user_id = edit_log.actor_from_request(request)
+        if user_id is None:
+            return await call_next(request)
+        token = edit_log.begin(user_id, request.method, request.url.path)
+        try:
+            return await call_next(request)
+        finally:
+            edit_log.end(token)
 
     # `_no_store` 보다 **먼저** 등록한다. 나중에 등록한 미들웨어가 바깥이라,
     # 순서를 바꾸면 여기서 바로 돌려주는 리다이렉트에 캐시 금지 헤더가 안 붙는다.

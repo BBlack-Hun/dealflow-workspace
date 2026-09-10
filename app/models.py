@@ -1638,3 +1638,67 @@ class AutoSendRun(TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String, default="claimed")
     #: 왜 못 세웠나. 조용히 삼키지 않는다.
     error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
+class EditLog(Base):
+    """**남의 것 · 공용 자료를 고치면 여기 한 줄이 남는다.**
+
+    두 가지를 한 곳에 묶는다.
+
+    * 남의 것을 고쳤을 때 — 곧 팀원이 서로의 명단을 고칠 수 있게 된다. 그 순간
+      `이거 누가 바꿨지?` 가 반드시 생기고, 이 명단은 **발송 대상**이라 잘못
+      바뀐 채로 지나가면 그대로 오발송이다.
+    * 공용 화면을 고쳤을 때 — IR 기업 현황 · 딜 소싱 · 딜 제안 문구처럼 주인이
+      없는 자료는 누가 고쳐도 팀 전체에 그대로 보인다.
+
+    **자기 것만 고친 것은 남지 않는다.** 남기면 하루에 수백 줄이 쌓여 아무도
+    안 본다 — 볼 수 있는 로그여야 쓸모가 있다. 판정은 `services/edit_log.py`
+    한 곳에서 한다.
+
+    `TimestampMixin` 을 쓰지 않는다. 이 표는 고쳐지지 않는 기록이라
+    `updated_at` 이 뜻을 갖지 않고, 언제인지는 `at` 하나로 충분하다.
+    """
+
+    __tablename__ = "edit_logs"
+    __table_args__ = (
+        # 화면은 늘 최신순으로 읽는다.
+        Index("ix_edit_logs_at", "at"),
+        # `이 줄이 그동안 어떻게 바뀌었나` — 한 줄의 이력을 모을 때.
+        Index("ix_edit_logs_row", "table_name", "row_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    #: 언제. `2026-09-10T14:00:00+09:00` (이 저장소의 모든 시각과 같은 모양).
+    at: Mapped[str] = mapped_column(String, default=_now_iso)
+    #: 누가. 계정은 지우지 않고 정지시키므로(`deactivate_member`) 이름을 따로
+    #: 베껴 두지 않는다 — 화면에서 이어 붙인다.
+    actor_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    #: **누구 것이 바뀌었나.** 주인 없는 공용 자료는 비어 있다. 나중에 `내 것이
+    #: 바뀐 것만` 을 걸러 보여 줄 때 쓰는 칸이다.
+    target_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"),
+                                                          nullable=True)
+    #: `others`(남의 것) | `shared`(공용). 자기 것은 애초에 남지 않는다.
+    scope: Mapped[str] = mapped_column(String)
+    #: `create` | `update` | `delete`.
+    action: Mapped[str] = mapped_column(String)
+    #: 어느 표의 몇 번 줄인가. 화면 이름이 아니라 표 이름을 적는다 — 화면
+    #: 이름은 바뀌지만(`ui.MENU`) 표 이름은 이주 없이는 안 바뀐다.
+    table_name: Mapped[str] = mapped_column(String)
+    row_id: Mapped[int] = mapped_column(Integer)
+    #: 어느 화면의 줄인가 — 그때의 화면 이름을 **베껴 둔다.** 메뉴 이름이
+    #: 바뀌어도 그날 사람이 본 화면 이름으로 읽혀야 한다.
+    screen: Mapped[str] = mapped_column(String, default="")
+    #: 그 줄이 무엇인가(기업 이름 · 명단 이름 …). 없으면 `vc_contacts 418`
+    #: 이라고만 남아 사람이 읽을 수가 없다.
+    row_label: Mapped[str] = mapped_column(String, default="")
+    #: 어느 주소를 눌러 일어난 일인가. 같은 표를 여러 화면이 고치므로
+    #: (참고 자료가 그렇다) 어디서 눌렀는지가 따로 필요하다.
+    method: Mapped[str] = mapped_column(String, default="")
+    path: Mapped[str] = mapped_column(String, default="")
+    #: 무엇이 어떻게 바뀌었나. `[{"field": …, "before": …, "after": …}]` 또는
+    #: 값을 남기지 않는 칸이면 `[{"field": …, "changed": true}]`.
+    #: **무엇을 남기고 무엇을 `바뀜` 으로만 둘지는 허용 목록 한 곳**에서
+    #: 정한다(`services/edit_log.VALUE_FIELDS`). 목록에 없는 칸의 값은 절대
+    #: 실리지 않는다 — 비밀번호·토큰이 여기 쌓이지 않게 하는 것이 그 방식의
+    #: 첫째 이유다.
+    changes_json: Mapped[str] = mapped_column(Text, default="[]")
