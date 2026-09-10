@@ -71,8 +71,13 @@ from . import sheet_owner
 # 방이 살아 있는지는 **대시보드가 세는 그 판정**을 그대로 쓴다. 여기에 다시
 # 적으면 화면 숫자와 어긋난다 — 투자사 관리 현황 117명 · 대시보드 123명으로
 # 갈렸던 사고가 판정을 두 벌로 적어 둔 탓이었다(`readiness.py` 도 같은 것을
-# 읽는다). 밑줄로 시작하지만 이 저장소에서는 이미 공유되는 판정이다.
-from .dashboard import _SENDABLE_ROOM, _room_state
+# 읽는다).
+#
+# `room_confirmed` 는 갈래 이름을 `_room_state` 에서 받아 오고, `ROOM_LABELS`
+# 는 화면(투자사 관리 현황)이 그 칸을 거를 때 쓰는 **바로 그 말**이다 — 자료가
+# "카톡방 확인됨" 이라고 적고 화면이 같은 말로 링크를 걸어야, 눌렀을 때 실제로
+# 그 줄만 남는다(표가 모르는 말로 걸면 눌러도 아무것도 안 걸러진다).
+from .dashboard import ROOM_CONFIRMED, ROOM_LABELS, room_confirmed, room_href
 
 # 번호 앞에 붙는 글자. 투자사와 기업이 섞여 오므로 무엇의 번호인지가 필요하다.
 INVESTOR_PREFIX = "V"
@@ -214,6 +219,14 @@ def note() -> str:
     """
     return ("투자사도 기업도 이름 없이 번호로만 나갑니다. 답하실 때 V-… · C-… 를 "
             "그대로 적어 주시면 앱에서 누구인지 다시 찾을 수 있습니다. "
+            # **무엇이 담겼는지**를 자료가 스스로 말한다. 몇 곳인지는 `scope` 가
+            # 적고, 여기서는 그 수가 왜 그런지를 적는다 — 담기지 않은 투자사가
+            # 있다는 사실을 모르면 "왜 이 투자사가 없지" 를 알 길이 없다.
+            f"투자사 목록에는 **{ROOM_LABELS[ROOM_CONFIRMED][0]}인 카톡방이 있는 "
+            "본인 담당 투자사만** 담겨 있습니다 — 지금 딜 소개를 실제로 보낼 수 "
+            "있는 곳입니다. 방이 없거나 확인되지 않은 곳, 다른 담당자의 투자사는 "
+            "담기지 않았습니다(맞춰 드려도 보낼 수가 없습니다). 몇 곳이 담겼는지는 "
+            "`scope` 에 적혀 있습니다. "
             f"금액 단위는 {AMOUNT_UNIT} 입니다. "
             # 금액은 **정확한 숫자가 아니다.** 그 사실을 밝히지 않으면 읽는
             # 쪽이 구간 표를 무슨 뜻인지 몰라 그냥 버리거나, 더 나쁘게는 앞
@@ -563,24 +576,78 @@ def sent_history(db: Session, contact_ids) -> Dict[int, tuple]:
     return out
 
 
+def investor_rows(db: Session, user: User, *,
+                  held: Optional[List] = None) -> List:
+    """자료에 담기는 투자사 줄 — **자료도 화면도 `resolve()` 도 여기서 나온다.**
+
+    문이 둘이다.
+
+    ## ① 자기 담당분 — 관리자여도 팀 전체는 담지 않는다
+
+    `sheet_owner.managed` 는 **투자사 관리 현황이 세는 그 모집단**이라, 감춘
+    줄·투자사가 아닌 명단은 이미 빠져 있다(여기서 또 거르면 두 수가 갈린다).
+    거기에 `team_wide` 를 주지 않는다: 딜 소개는 담당자별로 나가므로 남의 담당
+    투자사를 추천받아도 **보낼 수가 없다.** 관리자 계정으로 꺼내면 팀 전체
+    677곳이 담기고 그중 실제로 보낼 수 있는 곳은 114곳이던 자리다 — 추천 대부분이
+    처음부터 쓸 수 없는 것이었다. 팀 전체를 보고 고르는 것은 투자사 관리 현황에서
+    할 일이고, 이 자료는 **받는 사람이 바로 쓸 수 있는 것**만 담는다.
+
+    ## ② 카톡방 확인이 끝난 곳 — 맞춰 놓고 보낼 수 없으면 못 쓴다
+
+    판정은 **여기서 짓지 않고** 대시보드가 방 갈래를 나누는 그 함수를 부른다
+    (`dashboard.room_confirmed` → `_room_state`). 같은 판정을 두 곳에 적으면
+    화면 숫자와 자료 수가 갈린다 — 이 저장소가 반복해 겪은 사고다.
+
+    `held` 는 이미 꺼내 둔 담당분을 다시 질의하지 않으려는 것뿐이다. **거르는
+    식은 이 함수 한 줄뿐**이라, 넘기든 안 넘기든 담기는 사람은 같다.
+    """
+    rows = sheet_owner.managed(db, user) if held is None else held
+    return [c for c in rows if room_confirmed(c)]
+
+
+def scope(db: Session, user: User) -> dict:
+    """무엇이 담기는지 — **몇 곳이고 왜 그 수인지.**
+
+    자료의 `scope` 칸과 화면의 안내문이 **이 한 곳에서 나온다.** 677곳이 담기던
+    동안 화면은 아무 말도 하지 않았고, 사람은 114곳만 보낼 수 있다는 것을 자료
+    어디에서도 읽을 수 없었다 — 수가 갈렸다는 사실 자체를 모르는 것이 제일 나쁘다.
+
+    `count` 는 `investor_rows` 를 세어 얻는다. 자료에 담기는 목록과 **같은
+    함수**라 둘이 갈릴 수 없다.
+    """
+    held = sheet_owner.managed(db, user)
+    rows = investor_rows(db, user, held=held)
+    label = ROOM_LABELS[ROOM_CONFIRMED][0]
+    text = (f"본인 담당 · 카톡방 {label} {len(rows)}곳"
+            f" (내가 맡은 투자사 {len(held)}곳 중)")
+    if not rows:
+        # **빈 자료를 조용히 내보내지 않는다.** 그대로 붙여 넣으면 LLM 은
+        # 아무것도 못 고르고, 사람은 시킨 말이 잘못된 줄 안다.
+        text += " — 담을 투자사가 없습니다. [방 연결 확인]을 먼저 돌리세요"
+    return {
+        "count": len(rows),
+        "held": len(held),
+        "label": label,
+        "text": text,
+        "empty": not rows,
+        # 어디를 보면 그 사람들이 있는지. 거르는 값(`확인됨`)은 투자사 관리
+        # 현황이 그 칸을 거를 때 쓰는 말 그대로다(`ROOM_LABELS`) — 손으로 적으면
+        # 눌러도 아무것도 안 걸러진 채 화면만 열린다(이 저장소가 두 번 당했다).
+        #
+        # **줄 수가 이 수와 꼭 같지는 않다.** 관리자의 투자사 관리 현황은 팀
+        # 전체를 보여 주고 `내 담당만` 으로 거르는 칸이 없다. 그래서 화면의 링크
+        # 글도 "담기는 투자사" 가 아니라 거르는 조건 그대로 적는다.
+        "href": room_href(ROOM_CONFIRMED),
+    }
+
+
 def investors(db: Session, user: User, *, others=None) -> List[dict]:
     """맞추는 데 쓸 투자사 자료 — **이름 없이 번호로만**.
 
-    누구를 담느냐는 **투자사 관리 현황이 세는 그 모집단**이다
-    (`sheet_owner.managed`). 그 화면이 감춘 줄·투자사가 아닌 명단을 이미
-    걸러 두었으므로, 여기서 따로 거르면 두 수가 갈린다.
-
-    **자기 담당분이다**(관리자만 팀 전체). 추천은 전체를 보고 하는 일이라
-    전부 내보내는 길도 있었지만, 딜 소개는 담당자별로 나간다 — 남의 담당
-    투자사를 추천받아도 보낼 수가 없고, 번호를 되찾는 `resolve()` 도 같은
-    모집단이라 누구인지조차 못 본다. 받는 사람이 **바로 쓸 수 있는 것**만
-    나가는 편이 맞다. 팀 전체를 보고 고르는 것은 관리자의 일이고, 그 판정은
-    담당자 줄을 고칠 수 있는가와 **같은 함수**를 읽는다.
+    누구를 담느냐는 `investor_rows` 한 곳이 정한다(그 설명 참고). 여기서 다시
+    거르면 화면에 적힌 수·`resolve()` 가 찾는 범위와 갈린다.
     """
-    from ..deps import may_manage_team_contacts   # deps → services 는 순환이 아니다
-
-    rows = sheet_owner.managed(db, user,
-                               team_wide=may_manage_team_contacts(user))
+    rows = investor_rows(db, user)
     history = sent_history(db, [c.id for c in rows])
     out = []
     for c in rows:
@@ -597,10 +664,11 @@ def investors(db: Session, user: User, *, others=None) -> List[dict]:
         # 조용히 버리면 읽는 쪽이 목록을 전부인 줄 안다.
         if unmatched:
             item["sent_before_unmatched"] = unmatched
-        # 방이 살아 있어야 딜 소개가 나간다. 맞춰 놓고 보낼 길이 없으면
-        # 그 추천은 쓸 수 없으므로 자료에 함께 담는다 — 거르지는 않는다
-        # (막힌 사람을 골라 주면 그때 방부터 뚫으면 된다).
-        item["room_open"] = _room_state(c) in _SENDABLE_ROOM
+        # `room_open` 칸은 **없앴다.** 예전에는 방이 막힌 사람도 담고 그 사실을
+        # 칸으로 알렸는데(막힌 사람을 골라 주면 그때 방부터 뚫으면 된다는
+        # 생각이었다), 실제로는 677곳 중 563곳이 그런 줄이라 추천 대부분이
+        # 쓸 수 없는 것으로 돌아왔다. 지금은 `investor_rows` 가 아예 담지 않으므로
+        # 이 칸은 늘 참이다 — 늘 같은 값인 칸은 읽는 쪽을 헷갈리게만 한다.
         out.append(item)
     return out
 
@@ -700,9 +768,6 @@ def brief(db: Session, user: User, *, now: Optional[str] = None) -> dict:
     (좌측 메뉴 목록과 라우터 목록, 투자사 수 117명·123명). 화면의
     [자료 내려받기] 는 이 함수를 부르는 주소를 그대로 여는 링크다.
     """
-    from ..deps import may_manage_team_contacts
-
-    team_wide = may_manage_team_contacts(user)
     # 상호를 잡는 그물은 **한 번만** 짓는다(`_org_pattern` 참고). 두 함수가
     # 각자 지으면 같은 것을 두 번 짓고, 언젠가 한쪽만 안 쓰게 된다.
     others = _org_pattern(db)
@@ -710,7 +775,9 @@ def brief(db: Session, user: User, *, now: Optional[str] = None) -> dict:
         # 언제 꺼낸 자료인지. 메모에 날짜가 섞여 있어서(`8/19 : …`) 자료 자체가
         # 언제 것인지 없으면 그 날짜들을 어디에 견줘야 할지 알 수 없다.
         "generated_at": now or clock.now_iso(),
-        "scope": "팀 전체" if team_wide else "본인 담당",
+        # **무엇이 담겼는지 자료가 스스로 말한다.** 화면도 같은 문장을 읽는다
+        # (`scope`) — 두 곳이 각자 적으면 갈린다.
+        "scope": scope(db, user)["text"],
         "amount_unit": AMOUNT_UNIT,
         "note": note(),
         # 시킬 말도 **자료와 함께** 나간다. 화면의 [복사] 는 이것을 앞에
@@ -730,20 +797,17 @@ def resolve(db: Session, user: User, text: str) -> dict:
     이 길이 없으면 번호로 내보내는 기능은 반쪽이다 — 답을 받아도 누구인지
     알 수 없다.
 
-    **찾는 범위는 자료를 꺼낼 때와 같다.** 번호만 바꿔 넣어 남의 담당
-    투자사를 알아내는 길이 되면 안 되고, 애초에 내보낸 적 없는 번호가 이름을
-    돌려주면 그것도 유출이다. 그래서 `investors()` 와 같은 모집단
-    (`sheet_owner.managed`)에서만 찾는다.
+    **찾는 범위는 자료를 꺼낼 때와 같다** — `investor_rows` 한 함수를 부른다.
+    두 방향으로 갈리면 안 된다: 내보낸 적 없는 번호가 이름을 돌려주면 그것은
+    유출이고(번호만 바꿔 넣어 남의 담당·방이 막힌 곳을 알아내는 길이 된다),
+    반대로 자료에 담긴 번호가 안 찾아지면 답을 받아도 쓸 수가 없다.
 
     못 찾은 번호는 **버리지 않고 그대로 돌려준다.** 조용히 빠지면 다섯을
     붙여 넣고 셋만 뜬 것을 눈치채지 못한다.
     """
-    from ..deps import may_manage_team_contacts
-
     refs = parse_refs(text)
 
-    contacts = {c.id: c for c in sheet_owner.managed(
-        db, user, team_wide=may_manage_team_contacts(user))}
+    contacts = {c.id: c for c in investor_rows(db, user)}
     found_investors = []
     for number in refs["investors"]:
         c = contacts.get(number)

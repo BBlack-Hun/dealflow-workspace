@@ -18,6 +18,7 @@ import json
 import re
 import shutil
 import subprocess
+from html import escape
 from pathlib import Path
 
 import pytest
@@ -144,7 +145,6 @@ def test_an_investor_goes_out_as_a_number_and_their_preferences(db, users):
         "memo": "후속 검토 중",
         "tips_note": "팁스 운영사",
         "interest_level": "높음",
-        "room_open": True,
         # 이미 보낸 기업. 보낸 적이 없어도 칸은 남는다 — 칸이 없는 것과
         # '보낸 적 없다' 를 읽는 쪽이 구별할 길이 없다.
         "sent_before": [],
@@ -168,32 +168,67 @@ def test_an_empty_field_is_left_out_rather_than_sent_as_null(db, users):
     row = _contact(db, users["u1"].id, sectors="AI", memo="   ")
 
     got = _brief(db, users["u1"])["investors"][0]
-    assert got == {"id": f"V-{row.id}", "sectors": "AI", "room_open": True,
-                   "sent_before": []}
+    assert got == {"id": f"V-{row.id}", "sectors": "AI", "sent_before": []}
 
 
-def test_whether_the_room_is_open_is_the_dashboards_own_judgement(db, users):
-    """방 상태는 **대시보드가 세는 그 판정**이다 — 여기서 다시 정하지 않는다.
+def test_only_a_room_that_was_actually_checked_goes_into_the_data(db, users):
+    """**보낼 수 없는 곳은 담지 않는다** — 맞춰 놓고 보낼 길이 없으면 못 쓴다.
 
-    두 벌로 적어 두면 화면 숫자와 어긋난다(투자사 관리 현황 117명 · 대시보드
-    123명으로 갈렸던 그 사고다). 그래서 판정을 옮겨 적지 않고, 같은 함수가
-    말하는 것과 결과가 같은지를 본다 — 갈래가 하나 늘어도 같이 움직인다.
+    677곳을 내보내고 실제로 보낼 수 있는 곳은 114곳이던 자리다. 방이 없거나
+    확인되지 않은 곳까지 담으면 추천의 대부분이 처음부터 쓸 수 없는 것으로
+    돌아온다.
     """
-    from app.services.dashboard import _SENDABLE_ROOM, _room_state
+    verified = _contact(db, users["u1"].id, room_verified="verified")
+    for kw in ({"room_verified": "unverified"},
+               {"room_verified": "not_found"},
+               {"room_verified": "ambiguous"},
+               {"kakao_room_name": ""},                       # 방 미등록
+               {"channel_kakao": 0, "channel_email": 1}):     # 메일 채널
+        _contact(db, users["u1"].id, **kw)
+
+    ids = [item["id"] for item in _brief(db, users["u1"])["investors"]]
+    assert ids == [f"V-{verified.id}"]
+
+
+def test_the_filter_is_the_one_the_screens_already_use(db, users):
+    """거르는 판정을 **여기서 다시 짓지 않는다** — 화면이 쓰는 그 함수를 부른다.
+
+    두 벌로 적어 두면 화면 숫자와 자료 수가 어긋난다(투자사 관리 현황 117명 ·
+    대시보드 123명으로 갈렸던 그 사고다). 그래서 판정을 옮겨 적지 않고, 같은
+    함수가 말하는 것과 담긴 줄이 같은지를 본다 — 갈래가 하나 늘거나 `not_found`
+    가 어느 쪽으로 가는지가 바뀌어도 둘이 같이 움직인다.
+
+    **둘이 갈리면 여기가 깨진다.** `room_confirmed` 가 참인데 안 담기거나,
+    거짓인데 담기면 그 자리에서 걸린다.
+    """
+    from app.services.dashboard import room_confirmed
 
     rows = [
         _contact(db, users["u1"].id, room_verified="verified"),
         _contact(db, users["u1"].id, room_verified="unverified"),
         _contact(db, users["u1"].id, room_verified="not_found"),
+        _contact(db, users["u1"].id, room_verified="ambiguous"),
+        _contact(db, users["u1"].id, room_verified=""),          # 처음 보는 값
         _contact(db, users["u1"].id, kakao_room_name=""),        # 방 미등록
         _contact(db, users["u1"].id, channel_kakao=0, channel_email=1),
     ]
-    got = {item["id"]: item["room_open"] for item in _brief(db, users["u1"])["investors"]}
+    ids = {item["id"] for item in _brief(db, users["u1"])["investors"]}
 
     for row in rows:
-        assert got[f"V-{row.id}"] == (_room_state(row) in _SENDABLE_ROOM), row.id
+        assert (f"V-{row.id}" in ids) == room_confirmed(row), row.id
     # 다 같은 답이 나오면 검사가 아무것도 안 본 것이다.
-    assert set(got.values()) == {True, False}
+    assert 0 < len(ids) < len(rows)
+
+
+def test_the_room_state_column_is_gone_because_every_row_now_has_one(db, users):
+    """늘 같은 값인 칸은 읽는 쪽을 헷갈리게만 한다.
+
+    방이 막힌 사람을 담고 칸으로 알리던 자리다. 이제 담지 않으므로 칸도 없다 —
+    남겨 두면 "거짓인 줄도 있나" 를 읽는 쪽이 계속 따져 보게 된다.
+    """
+    _contact(db, users["u1"].id)
+
+    assert "room_open" not in _brief(db, users["u1"])["investors"][0]
 
 
 def test_a_company_goes_out_as_a_number_not_a_name(db, users):
@@ -565,15 +600,25 @@ def test_someone_elses_person_name_is_left_alone_on_purpose(db, users):
     assert "김치 관련 기업을 찾는다" in memos
 
 
-def _mark_every_other_column(model, row, allowed):
+# 표식을 심으면 그 줄이 **자료에서 통째로 빠지는** 칸. 자료가 담는 사람이
+# `방 확인됨` 으로 좁아진 뒤로, 여기에 아무 글자나 넣으면 `_room_state` 가
+# '보낼 수 없음' 으로 읽어 줄이 사라진다 — 줄이 없으면 표식 검사는 언제나
+# 통과한다. 그래서 이 칸은 표식 대신 **이름과 값을 따로** 지킨다(아래 검사).
+GATE_COLUMNS = {"room_verified"}
+
+
+def _mark_every_other_column(model, row, allowed, gate=()):
     """내보내면 안 되는 글자 칸마다 그 칸 이름이 든 표식을 심는다.
 
     **모델의 칸을 훑는다** — 손으로 적은 목록은 칸이 하나 늘 때 낡는다.
     표식에 칸 이름을 넣어 두어서, 걸렸을 때 어느 칸이 샜는지 바로 나온다.
+
+    `gate` 는 줄이 자료에 담기는지를 **결정하는** 칸이다(`GATE_COLUMNS`).
     """
     marks = {}
     for column in model.__table__.columns:
-        if column.name in allowed or not isinstance(column.type, (String, Text)):
+        if (column.name in allowed or column.name in gate
+                or not isinstance(column.type, (String, Text))):
             continue
         mark = f"표식-{column.name}-표식"
         marks[column.name] = mark
@@ -591,7 +636,8 @@ def test_no_investor_column_leaks_out_even_if_someone_adds_one(db, users):
     from app.models import VcContact
 
     row = _contact(db, users["u1"].id, sectors="AI")
-    marks = _mark_every_other_column(VcContact, row, CONTACT_COLUMNS_ALLOWED_OUT)
+    marks = _mark_every_other_column(VcContact, row, CONTACT_COLUMNS_ALLOWED_OUT,
+                                     gate=GATE_COLUMNS)
     db.commit()
 
     out = _brief(db, users["u1"])
@@ -603,6 +649,10 @@ def test_no_investor_column_leaks_out_even_if_someone_adds_one(db, users):
     # 표식을 심을 칸이 없으면 위 검사는 언제나 통과한다 — 그것도 잡는다.
     for must in ("name", "firm", "phone", "email", "kakao_room_name"):
         assert must in marks, f"{must} 칸에 표식을 못 심었습니다"
+    # 표식을 못 심는 칸(줄이 담기는지를 결정하는 칸)은 **저장값 그대로** 본다.
+    for column in GATE_COLUMNS:
+        value = getattr(row, column)
+        assert value and value not in dumped, f"{column} 칸이 새어 나갔습니다"
 
 
 def test_no_company_side_contact_column_leaks_out_even_if_someone_adds_one(db, users):
@@ -644,7 +694,7 @@ def test_the_keys_that_go_out_are_exactly_these(db, users):
                         "prompt", "investors", "companies"}
     assert set(out["investors"][0]) == {
         "id", "sectors", "round_size", "stages",
-        "sourcing_note", "memo", "tips_note", "interest_level", "room_open",
+        "sourcing_note", "memo", "tips_note", "interest_level",
         "sent_before", "sent_before_unmatched"}
     # **`name` 이 없다** — 기업도 번호로만 나간다.
     assert set(out["companies"][0]) == {
@@ -689,17 +739,96 @@ def test_a_member_gets_only_the_contacts_they_manage(db, users):
     ids = [c["id"] for c in _brief(db, users["u1"])["investors"]]
     assert ids == [f"V-{mine.id}"]
     assert f"V-{theirs.id}" not in ids
-    assert _brief(db, users["u1"])["scope"] == "본인 담당"
+    assert _brief(db, users["u1"])["scope"].startswith("본인 담당")
 
 
-def test_an_admin_gets_the_whole_team(db, users, people):
-    """관리자는 이미 팀 전체를 보고 담당까지 옮긴다 — 판정도 그 함수를 읽는다."""
-    mine = _contact(db, users["u1"].id, sectors="AI")
+def test_an_admin_gets_only_their_own_contacts_too(db, users, people):
+    """**관리자도 자기 담당분만** 담는다 — 팀 전체를 담지 않는다.
+
+    관리자 계정에서 꺼내면 팀 전체 677곳이 담기던 자리다. 딜 소개는 담당자별로
+    나가므로 남의 담당 투자사를 추천받아도 **보낼 수가 없고**, 번호를 되찾는
+    `resolve()` 도 같은 모집단이라 누구인지조차 못 본다. 팀 전체를 보고 고르는
+    것은 투자사 관리 현황에서 할 일이다.
+    """
+    mine = _contact(db, people["admin"].id, sectors="AI")
     theirs = _contact(db, users["u2"].id, sectors="바이오")
 
     out = _brief(db, people["admin"])
-    assert {c["id"] for c in out["investors"]} == {f"V-{mine.id}", f"V-{theirs.id}"}
-    assert out["scope"] == "팀 전체"
+    assert {c["id"] for c in out["investors"]} == {f"V-{mine.id}"}
+    assert f"V-{theirs.id}" not in json.dumps(out, ensure_ascii=False)
+    assert out["scope"].startswith("본인 담당")
+
+
+# ── 몇 곳이 담기는지 말하는가 ───────────────────────────────────────────────
+#
+# 677 과 114 가 갈렸는데 화면도 자료도 아무 말을 안 해서, 사람은 답을 받고 나서야
+# 대부분 못 보내는 곳인 것을 알았다. 수가 갈렸다는 사실 자체를 모르는 것이 제일
+# 나쁘다.
+
+def test_the_data_says_how_many_went_in_and_why(db, users):
+    """자료를 열면 **몇 곳인지·왜 그 수인지** 읽을 수 있어야 한다."""
+    kept = _contact(db, users["u1"].id)
+    _contact(db, users["u1"].id, room_verified="not_found")
+    _contact(db, users["u1"].id, kakao_room_name="")
+
+    out = _brief(db, users["u1"])
+    # 담긴 수와 맡은 수가 **둘 다** 적힌다 — 하나만 적으면 왜 줄었는지 모른다.
+    assert out["scope"] == "본인 담당 · 카톡방 확인됨 1곳 (내가 맡은 투자사 3곳 중)"
+    assert len(out["investors"]) == 1 and out["investors"][0]["id"] == f"V-{kept.id}"
+    # 무엇이 빠졌는지도 자료 안에 적혀 있어야 한다 — 담기지 않은 투자사가
+    # 있다는 것을 모르면 "왜 이 투자사가 없지" 를 알 길이 없다.
+    assert "확인됨" in out["note"] and "본인 담당" in out["note"]
+
+
+def test_the_count_in_the_data_is_the_number_of_rows_in_it(db, users):
+    """적힌 수와 실제 줄 수가 갈리면 적어 둔 뜻이 사라진다."""
+    from app.services import llm_brief
+
+    for kw in ({}, {}, {"room_verified": "unverified"}, {"kakao_room_name": ""}):
+        _contact(db, users["u1"].id, **kw)
+
+    out = _brief(db, users["u1"])
+    picked = llm_brief.scope(db, users["u1"])
+    assert picked["count"] == len(out["investors"]) == 2
+    assert str(picked["count"]) + "곳" in out["scope"]
+
+
+def test_the_screen_says_the_same_number_as_the_data(logged_in, db, users):
+    """화면과 자료가 **같은 문장**을 읽는다 — 각자 적으면 반드시 갈린다."""
+    from app.services import llm_brief
+
+    _contact(db, users["u1"].id)
+    _contact(db, users["u1"].id, room_verified="not_found")
+
+    html = logged_in.get("/deals").text
+    picked = llm_brief.scope(db, users["u1"])
+    assert picked["text"] in html, "화면이 몇 곳이 담기는지 말하지 않습니다"
+    assert picked["text"] == _brief(db, users["u1"])["scope"]
+    # 눌러 가면 **담긴 그 사람들**만 남아야 한다 — 세는 곳과 가는 곳이 다르면
+    # 화면에 적힌 수를 확인할 길이 없다.
+    # HTML 에서는 `&` 가 `&amp;` 로 새겨진다 — 새긴 뒤의 글자로 견준다.
+    assert escape(picked["href"]) in html
+
+
+def test_an_empty_data_set_says_so_instead_of_going_out_silently(logged_in, db,
+                                                                 users):
+    """방이 확인된 곳이 하나도 없으면 **자료도 화면도 그렇게 말한다.**
+
+    빈 자료를 그대로 붙여 넣으면 LLM 은 아무것도 못 고르고, 사람은 시킨 말이
+    잘못된 줄 안다 — 무엇을 하면 되는지까지 적어 둔다.
+    """
+    from app.services import llm_brief
+
+    _contact(db, users["u1"].id, room_verified="not_found")
+
+    out = _brief(db, users["u1"])
+    assert out["investors"] == []
+    assert "담을 투자사가 없습니다" in out["scope"]
+    assert "방 연결 확인" in out["scope"], "무엇을 하면 되는지 말하지 않습니다"
+
+    picked = llm_brief.scope(db, users["u1"])
+    assert picked["empty"] is True
+    assert picked["text"] in logged_in.get("/deals").text
 
 
 def test_a_consultant_cannot_reach_either_address(db, users, people):
@@ -854,7 +983,8 @@ def test_the_history_carries_numbers_and_nothing_else(db, users):
     what = _company(db, revenue_recent=1830)
     _sent(db, who, [what])
 
-    marks = _mark_every_other_column(VcContact, who, CONTACT_COLUMNS_ALLOWED_OUT)
+    marks = _mark_every_other_column(VcContact, who, CONTACT_COLUMNS_ALLOWED_OUT,
+                                     gate=GATE_COLUMNS)
     marks.update(_mark_every_other_column(IrCompany, what,
                                           COMPANY_COLUMNS_ALLOWED_OUT))
     db.commit()
@@ -1074,12 +1204,39 @@ def test_a_number_that_is_not_found_is_reported_not_dropped(db, users):
         (f"V-{who.id}", True), ("V-9999", False)]
 
 
-def test_an_admin_resolves_across_the_team(db, users, people):
-    """관리자에게는 팀 전체가 나가므로 되돌리는 범위도 같아야 한다."""
+def test_an_admin_does_not_resolve_across_the_team_either(db, users, people):
+    """관리자에게도 자기 담당분만 나가므로 되돌리는 범위도 같다."""
     theirs = _contact(db, users["u2"].id, name="홍길동")
 
     got = _resolve(db, people["admin"], f"V-{theirs.id}")
-    assert got["investors"][0]["name"] == "홍길동"
+    assert got["investors"][0]["found"] is False
+    assert "홍길동" not in json.dumps(got, ensure_ascii=False)
+
+
+def test_the_data_and_the_lookup_share_one_population(db, users, people):
+    """**자료에 담긴 번호는 반드시 되찾아지고, 안 담긴 번호는 되찾히면 안 된다.**
+
+    둘이 갈리는 방향이 둘 다 사고다 — 안 담긴 번호가 이름을 돌려주면 번호만
+    바꿔 넣어 남의 담당·방이 막힌 곳을 알아내는 길이 되고, 담긴 번호가 안
+    찾아지면 답을 받아도 쓸 수가 없다. 그래서 같은 함수 하나를 부른다.
+
+    **모집단이 둘로 갈리면 여기가 깨진다.**
+    """
+    rows = [
+        _contact(db, users["u1"].id),                              # 담긴다
+        _contact(db, users["u1"].id, room_verified="not_found"),   # 방이 막혔다
+        _contact(db, users["u1"].id, kakao_room_name=""),          # 방 미등록
+        _contact(db, users["u2"].id),                              # 남의 담당
+        _contact(db, people["admin"].id),                          # 관리자 담당
+    ]
+    in_data = {c["id"] for c in _brief(db, users["u1"])["investors"]}
+    got = _resolve(db, users["u1"],
+                   " ".join(f"V-{row.id}" for row in rows))
+    found = {item["id"] for item in got["investors"] if item["found"]}
+
+    assert found == in_data
+    # 다 담기거나 다 빠지면 검사가 아무것도 안 본 것이다.
+    assert 0 < len(in_data) < len(rows)
 
 
 # ── 화면 단추와 API 가 갈리지 않는가 ────────────────────────────────────────
