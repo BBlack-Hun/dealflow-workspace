@@ -372,9 +372,28 @@
       <li><span>요청받음</span><b>{{ ir_requested }}</b></li>
       <li><span>전달함</span><b class="ok">{{ ir_delivered }}</b></li>
       <li><span>아직 안 보냄</span><b class="{% if ir_open %}warn{% endif %}">{{ ir_open }}</b></li>
+      {#
+        **자료를 보내 놓고 아무 말도 안 한 건.** 자료를 전달하면 리마인드가
+        멈춘다(답이 왔으니 맞다) — 그래서 미팅 요청을 안 보낸 담당자는
+        `오늘 보낼 리마인드`·`오늘 할 일` 어디에도 다시 안 뜨고, 자료만 보내
+        놓고 끝나는 길이 열려 있었다.
+
+        **줄이 아니라 담당자를 센다** — 미팅 요청 카톡은 담당자당 한 통이라,
+        한 투자사가 기업 3곳 자료를 받아도 보낼 것은 하나다.
+        `일` 은 코드가 정한다(`pipeline.IR_MEETING_ASK_DAYS`).
+      #}
+      <li><span>미팅 요청 안 보냄</span>
+        <b class="{% if ir_meeting_ask_overdue %}warn{% endif %}">{{ ir_meeting_ask_missing }}명
+          <span class="hint">({{ ir_meeting_ask_days }}일 지남 {{ ir_meeting_ask_overdue }}명)</span>
+        </b></li>
     </ul>
     {% if ir_open %}
     <p class="hint warn">아직 안 보낸 요청이 있습니다 — <a href="/ir">딜 진행 관리</a></p>
+    {% endif %}
+    {% if ir_meeting_ask_overdue %}
+    <p class="hint warn">자료를 보낸 지 {{ ir_meeting_ask_days }}일이 지났는데 미팅 요청을
+      안 보낸 담당자가 {{ ir_meeting_ask_overdue }}명 있습니다 —
+      <a href="/ir">딜 진행 관리</a></p>
     {% endif %}
   </section>
 </div>

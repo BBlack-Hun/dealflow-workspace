@@ -39,8 +39,9 @@ from sqlalchemy.orm import Session
 
 from ..models import (DealBatch, DealBatchCompany, IrCompany, IrRequest,
                       Meeting, SendItem, SendJob, User, VcContact)
-from .pipeline import (MEETING_FOLLOWUP_DAYS, MEETING_KINDS,
-                       NO_FOLLOWUP_OUTCOMES, OUTCOMES, REQUEST_STATUS)
+from .pipeline import (IR_MEETING_ASK_DAYS, MEETING_FOLLOWUP_DAYS,
+                       MEETING_KINDS, NO_FOLLOWUP_OUTCOMES, OUTCOMES,
+                       REQUEST_STATUS, meeting_ask_state)
 from .weekly import WEEKDAYS
 
 WEEK_NAMES = ["첫주", "둘째주", "셋째주", "넷째주", "다섯째주", "여섯째주"]
@@ -208,6 +209,10 @@ def monthly(db: Session, year: int, month: int,
     # 발송도 같은 규칙으로 — 관리자가 팀 전체를 볼 때는 `user` 가 없다.
     sends = _sends(db, start, end, user, owners)
 
+    # 자료를 전달한 담당자마다 **미팅 요청까지 갔는가**. `today` 를 넘겨
+    # 준다 — 실제 시계를 읽으면 특정 날에만 다른 수가 나온다.
+    ask = meeting_ask_state(db, requests, today=today)
+
     return {
         "year": year,
         "month": month,
@@ -241,6 +246,19 @@ def monthly(db: Session, year: int, month: int,
         "ir_requested": len(requests),
         "ir_delivered": sum(1 for r in requests if r.status == "delivered"),
         "ir_open": sum(1 for r in requests if r.status == "open"),
+        # **자료를 보내 놓고 아무 말도 안 한 건.** 전달하면 리마인드가 멈춰서
+        # (답이 왔으니 맞다) 미팅 요청을 안 보낸 담당자는 어느 목록에도 다시
+        # 안 뜬다 — 이 보고가 잡아내야 할 것이 그것이다.
+        #
+        # **담당자 수다(줄 수가 아니다).** 미팅 요청 카톡은 담당자당 한 통이라
+        # (`deals.MODES_WITH_COMPANIES` 에 미팅이 없다) 줄로 세면 한 번 보낼
+        # 일이 세 건으로 보인다. 판정은 `pipeline.meeting_ask_state` 한 곳이
+        # 하고 IR 화면도 같은 곳을 읽는다 — 두 화면이 다른 수를 말하면 안 된다.
+        "ir_meeting_ask_missing": sum(1 for st in ask.values() if not st["asked"]),
+        "ir_meeting_ask_overdue": sum(1 for st in ask.values() if st["overdue"]),
+        # 화면 안내문이 "7일" 이라고 말할 때 쓰는 값 — 코드와 화면이 다른
+        # 숫자를 말하면 안 된다(`followup_days` 와 같은 방식).
+        "ir_meeting_ask_days": IR_MEETING_ASK_DAYS,
     }
 
 
