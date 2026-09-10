@@ -79,27 +79,36 @@ class ComposeResult:
 
 
 def format_eok(value) -> Optional[str]:
-    """문구에 실을 **수량 표기**. 못 읽는 값이면 `None`(토막째 뺀다).
+    """문구에 실을 **금액 표기**. 못 읽는 값이면 `None`(토막째 뺀다).
 
     이름은 예전 그대로지만 **하는 일이 바뀌었다.** 예전에는 백만원 정수를 억으로
     나누는 계산이었고, 지금은 사람이 적은 글자(`5-10억 사이`)에서 문구에 실을
-    수량(`5~10`)을 고르는 일이다 — 그 판단은 `services/amount.py` 한 곳이 한다.
+    표기(`5~10억`)를 고르는 일이다 — 그 판단은 `services/amount.py` 한 곳이 한다.
 
-    **여기서 다시 해석하지 않는다.** 이 파일에서 `억` 을 붙이는 자리가 넷이고
-    한줄소개에 셋이 더 있는데, 그 일곱이 각자 글자를 읽기 시작하면 같은 값이
-    문구마다 다르게 나간다.
+    **단위까지 붙어서 온다.** 그래서 아래 틀에 `억` 이 없다. 틀에 `억` 을 적어
+    두면 `5천만원` 을 적은 순간 `5천만원억` 이 된다 — 단위를 아는 곳은
+    `services/amount.py` 하나여야 한다.
 
-    옛 자료는 글자로 옮겨져 있어(0074) `"5.6"` → `"5.6"` 으로 그대로 지난다.
+    옛 자료는 글자로 옮겨져 있어(0074) `"5.6"` → `"5.6억"` 으로, 예전 문구와
+    한 글자도 다르지 않게 지난다.
     """
-    return amount.quantity(value)
+    return amount.phrase(value)
 
 
 def auto_company_summary(company: CompanyView) -> str:
     """Compose the deal summary line from raw fields.
 
     Format: [분야] | 한줄소개 | 매출 N억 | 누적투자금액 N억 | N억 투자유치중
-            | Pre Value 약 N억원 | 경쟁력
+            | Pre Value 약 N억 | 경쟁력
     Empty segments are omitted entirely.
+
+    **단위는 `format_eok` 가 붙인다.** 그래야 `5천만원` 처럼 억이 아닌 단위로
+    적힌 값이 `누적투자금액 5천만원` 으로 나간다.
+
+    `Pre Value 약 N억원` 이 `Pre Value 약 N억` 이 된 것도 그래서다 — 이 자리가
+    이 저장소에서 **유일하게 `원` 을 붙이던 곳**이었고, 실데이터에서 사람이 쓰는
+    모양은 `Pre Value 200억` 이다(세어 둔 것은 `services/one_liner.py`). 한줄소개
+    쪽과도 이제 같은 모양이다.
     """
     segments: List[str] = []
 
@@ -120,19 +129,19 @@ def auto_company_summary(company: CompanyView) -> str:
     # 그것은 값이 비었을 때와 똑같은 모양이라 읽는 사람이 이상하게 보지 않는다.
     revenue = format_eok(company.revenue_recent)
     if revenue is not None and "매출" not in said:
-        segments.append(f"매출 {revenue}억")
+        segments.append(f"매출 {revenue}")
 
     funding = format_eok(company.funding_total)
     if funding is not None and "누적투자" not in said:
-        segments.append(f"누적투자금액 {funding}억")
+        segments.append(f"누적투자금액 {funding}")
 
     raise_target = format_eok(company.raise_target)
     if raise_target is not None and "투자유치" not in said:
-        segments.append(f"{raise_target}억 투자유치중")
+        segments.append(f"{raise_target} 투자유치중")
 
     pre_value = format_eok(company.pre_value)
     if pre_value is not None and not any(k in said.lower() for k in ("pre value", "밸류")):
-        segments.append(f"Pre Value 약 {pre_value}억원")
+        segments.append(f"Pre Value 약 {pre_value}")
 
     if company.competitiveness and company.competitiveness.strip() not in said:
         segments.append(company.competitiveness.strip())

@@ -30,29 +30,105 @@ from app.services import amount
 
 ROOT = Path(__file__).resolve().parent.parent
 
-# 옛 자료가 어떤 글자로 옮겨지는가(0074). **여기 적힌 오른쪽이 곧 예전에 화면에
-# 뜨던 글자**다 — `format_eok(560)` 이 `"5.6"` 이었다.
-LEGACY = [(560, "5.6"), (3090, "30.9"), (1000, "10"), (21000, "210"),
-          (0, "0"), (1224, "12.2"), (15000, "150")]
+# 옛 정수(백만원)가 어떤 글자로 옮겨지는가(0074).
+#
+# **위쪽 표는 화면 글자가 한 글자도 안 바뀌는 값들**이다 — 억으로 적어도 잃는
+# 것이 없어서 옛 화면 글자(`format_eok(560)` = `"5.6"`)가 그대로 선다.
+# 운영 자료 262칸 중 252칸이 이쪽이다.
+LEGACY_SAME = [(0, "0"), (50, "0.5"), (100, "1"), (560, "5.6"),
+               (1000, "10"), (3090, "30.9"), (15000, "150"), (21000, "210")]
+
+# **아래쪽은 억으로 적으면 값을 잃는 값들.** 운영 자료에서 실제로 그랬던 10칸의
+# 모양을 그대로 넣었다(숫자만 옮겼다 — 어느 기업 줄인지는 여기 없다).
+#
+# 짝은 `(백만원, 옮긴 글자, 예전에 화면에 뜨던 글자)` 다. 셋째 칸이 있는 것은
+# **무엇이 달라지는지 눈으로 세기 위해서**다: 전부 반올림값 → 정확한 값이고,
+# `1 → "0"` 은 `0`(= 없음)이라는 거짓말이 사라지는 자리다.
+LEGACY_LOSSY = [
+    (1, "100만원", "0"),        # ← 값이 통째로 사라지던 자리
+    (6, "600만원", "0.1"),
+    (13, "1300만원", "0.1"),
+    (34, "3400만원", "0.3"),
+    (47, "4700만원", "0.5"),
+    (55, "5500만원", "0.6"),
+    (68, "6800만원", "0.7"),
+    (194, "1.94", "1.9"),
+    (225, "2.25", "2.2"),
+    (318, "3.18", "3.2"),
+]
+
+LEGACY = [(number, written) for number, written, _shown in LEGACY_LOSSY] + LEGACY_SAME
 
 
 # ── ① 적은 그대로 ────────────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("written, quantity, million", [
-    ("5-10억 사이", "5~10", 500),
-    ("5~10억", "5~10", 500),
-    ("5억~10억", "5~10", 500),
-    ("5-10", "5~10", 500),
-    ("10-5", "5~10", 500),          # 거꾸로 적어도 작은 쪽이 아래다
-    ("18.3", "18.3", 1830),
-    ("18.3억", "18.3", 1830),
-    ("약 5억", "5", 500),
-    ("1,200", "1200", 120000),
-    ("0", "0", 0),
+@pytest.mark.parametrize("written, phrase, million", [
+    # 억 — 이 칸의 기본 단위. 단위를 안 적으면 억이다.
+    ("18.3", "18.3억", 1830),
+    ("18.3억", "18.3억", 1830),
+    ("약 5억", "5억", 500),
+    ("1,200", "1200억", 120000),
+    ("0", "0억", 0),
+    # 1억 미만 — 사용자가 요청한 표기. **적은 단위가 그대로 남는다.**
+    ("5천만원", "5천만원", 50),
+    # `천만` 과 `천만원` 은 같은 단위다 — 문구에는 한 모양으로 선다
+    #   (`누적투자금액 5천만` 은 말이 안 된다).
+    ("5천만", "5천만원", 50),
+    ("2억원", "2억", 200),
+    ("4700만원", "4700만원", 47),
+    ("5,000만원", "5000만원", 50),
+    ("100만원", "100만원", 1),
+    ("약 3천만원", "3천만원", 30),
+    # 구간 — 양쪽 단위가 같으면 단위를 한 번만 적는다.
+    ("5-10억 사이", "5~10억", 500),
+    ("5~10억", "5~10억", 500),
+    ("5억~10억", "5~10억", 500),
+    ("5-10", "5~10억", 500),
+    ("10-5", "5~10억", 500),          # 거꾸로 적어도 작은 쪽이 아래다
+    ("3천만원~9천만원", "3~9천만원", 30),
+    # 단위가 섞인 구간 — 각자의 단위가 그대로 남는다.
+    ("3천만원~1억", "3천만원~1억", 30),
+    ("1억~3억", "1~3억", 100),
 ])
-def test_what_a_person_writes_keeps_its_meaning(written, quantity, million):
-    assert amount.quantity(written) == quantity
+def test_what_a_person_writes_keeps_its_meaning(written, phrase, million):
+    assert amount.phrase(written) == phrase
     assert amount.million(written) == million
+
+
+@pytest.mark.parametrize("written", [
+    # `5천` — `5천만원` 인지 `5천원` 인지 글자만으로 못 가른다. 짐작해 읽으면
+    # 그 짐작이 그대로 투자사에게 나간다.
+    "5천",
+    # `백만원` 은 옛 저장 단위다. 여기서 다시 받으면 "이 칸은 백만원이었지" 하는
+    # 기억과 섞인다 — 시트에서 오는 값은 가져오기가 억으로 옮겨 담는다.
+    "1,224백만원",
+    "5백만원",
+    # 한쪽만 열린 구간. 문구 자리에 넣을 모양이 없다.
+    "10억 이상",
+    "1억 미만",
+    # 그냥 말
+    "투자 유치 협의중",
+    "5천만원쯤 될 듯",
+])
+def test_what_is_deliberately_not_accepted(written):
+    """**받는 것과 안 받는 것을 여기 못 박는다.**
+
+    안 받는 값도 저장은 된다 — 사람이 적은 것을 지우지 않는다. 다만 숫자로 읽지
+    않고, 문구에서 빠지고, 표에 `⚠ 문구에서 빠짐` 딱지가 붙는다.
+    """
+    assert amount.state(written) == amount.UNREADABLE, written
+    assert amount.phrase(written) is None
+    assert amount.million(written) is None
+
+
+def test_a_bare_number_is_always_eok():
+    """단위를 안 적으면 **언제나 억**이다 — 규칙이 둘이 되면 안 된다.
+
+    맨숫자를 원으로도 읽기 시작하면 `18.3` 과 `50000000` 이 같은 칸 안에서 서로
+    다른 단위가 된다. 이 칸은 예전부터 억이었고(입력창이 억이었다) 그대로 둔다.
+    """
+    assert amount.million("0.5") == 50
+    assert amount.million("5") == 500
 
 
 def test_a_range_reaches_the_deal_message(logged_in, db):
@@ -135,16 +211,54 @@ def test_unknown_is_still_visible_on_the_screen(logged_in, db):
     assert ">~<" in logged_in.get("/companies?tab=db").text
 
 
-# ── ③ 옛 정수 값이 전과 똑같이 보인다 ────────────────────────────────────────
+# ── ③ 옛 정수 값을 한 줄도 잃지 않는다 ──────────────────────────────────────
 
-@pytest.mark.parametrize("baekman, shown", LEGACY)
-def test_old_integers_become_exactly_what_the_screen_used_to_show(baekman, shown):
-    """옮기는 규칙이 **예전 화면 계산과 같은 것**이어야 한다.
+def test_no_old_row_is_ever_lost():
+    """**옛 정수 → 글자 → 다시 정수가 원래 값이어야 한다.** 0~300억 전 구간.
 
-    `format_eok` · `companies.eok` · `data_io._eok` 셋 다 백만원을 100 으로
-    나눠 소수 한 자리에서 끊고 있었다. `from_million` 이 그 계산 그대로다.
+    처음에는 옛 화면 계산 그대로(소수 한 자리) 옮겼다. 화면 글자는 한 글자도 안
+    바뀌지만 **저장값이 조금 달라진다** — 운영 자료 262칸 중 10칸이 그랬고,
+    `raise_target 1(백만원)` 은 `"0"`(= 없음)이 되어 **값이 통째로 사라졌다.**
+
+    반올림이 아니라 다른 사실로 바뀌는 것이라, 화면 글자를 지키자고 값을 잃을
+    수는 없다. 이 검사가 그 자리를 잠근다.
+
+    **한 검사 안에서 훑는다.** 값마다 검사를 세우면 시험 목록 3만 줄이 이것
+    하나로 덮여, 정작 무엇이 깨졌는지 안 보인다. 대신 어긋난 값을 세어 보여준다.
     """
-    assert amount.from_million(baekman) == shown
+    lost = [(baekman, amount.from_million(baekman))
+            for baekman in range(0, 30001)
+            if amount.million(amount.from_million(baekman)) != baekman]
+    assert not lost, f"{len(lost)}개가 되읽으면 달라집니다 (앞 5개: {lost[:5]})"
+
+
+@pytest.mark.parametrize("baekman, written", LEGACY_SAME)
+def test_rows_that_lose_nothing_keep_the_screen_letters(baekman, written):
+    """잃을 것이 없으면 **옛 화면 글자 그대로**다.
+
+    `format_eok` · `companies.eok` · `data_io._eok` 셋 다 백만원을 100 으로 나눠
+    소수 한 자리에서 끊고 있었다. 그 계산이 값을 안 잃는 줄에서는 그대로 쓰인다 —
+    운영 자료 262칸 중 252칸이 이쪽이라, 표를 열어도 달라진 데가 없다.
+    """
+    assert amount.from_million(baekman) == written
+
+
+@pytest.mark.parametrize("baekman, written, used_to_show", LEGACY_LOSSY)
+def test_rows_that_would_lose_get_a_notation_that_does_not(baekman, written,
+                                                            used_to_show):
+    """잃는 줄만 표기가 바뀐다 — **그리고 그 10칸이 전부다.**
+
+    1억 미만은 만원으로(`47 → "4700만원"`). `0.47억` 이라고 적어 두면 사람이 매번
+    억을 만원으로 되돌려 읽어야 하고, 문구에 `누적투자금액 0.47억` 이 나간다 —
+    투자사가 쓰는 말이 아니다. 1억 이상은 억을 끊지 않는다(`318 → "3.18"`) —
+    억 단위에서 소수 둘째 자리는 그대로 읽히고 `31800만원` 이 오히려 어렵다.
+    """
+    assert amount.from_million(baekman) == written
+    assert amount.million(written) == baekman
+    # 바뀌기 **전에** 화면에 뜨던 글자. 값이 커지거나 작아지는 칸은 없다.
+    assert written != used_to_show
+    assert amount.million(used_to_show) != baekman, \
+        "이 줄은 잃지 않는다 — LEGACY_SAME 으로 옮기세요"
 
 
 def _insert_legacy(con, index: int, baekman: int) -> None:
@@ -165,14 +279,12 @@ def _insert_legacy(con, index: int, baekman: int) -> None:
         tuple(filled.values()))
 
 
-def test_the_migration_moves_old_rows_without_changing_what_is_shown(tmp_path):
+def test_the_migration_moves_old_rows_without_losing_a_single_one(tmp_path):
     """진짜로 판을 오르내려 본다.
 
     빈 DB 는 `0001_initial` 이 **지금 모델**로 만들어 이미 글자 칸이다. 그래서
     옛 DB 를 흉내 내려면 먼저 **0074 를 되돌려** 칸을 정수로 만든다 — 이 한
     번으로 되돌리기까지 함께 확인된다.
-
-    옮긴 뒤의 글자가 **화면에 뜨던 글자와 같아야** 한다(`LEGACY` 의 오른쪽).
     """
     import os
 
@@ -193,7 +305,7 @@ def test_the_migration_moves_old_rows_without_changing_what_is_shown(tmp_path):
         kinds = {r[1]: r[2] for r in con.execute('PRAGMA table_info("ir_companies")')}
         assert kinds["funding_total"].upper().startswith("INT"), \
             "되돌리기가 칸을 정수로 되돌리지 않았다"
-        for index, (baekman, _shown) in enumerate(LEGACY):
+        for index, (baekman, _written) in enumerate(LEGACY):
             _insert_legacy(con, index, baekman)
         con.commit()
     finally:
@@ -205,10 +317,10 @@ def test_the_migration_moves_old_rows_without_changing_what_is_shown(tmp_path):
     try:
         got = dict(con.execute(
             "SELECT id, funding_total FROM ir_companies WHERE id >= 900").fetchall())
-        for index, (_baekman, shown) in enumerate(LEGACY):
-            assert got[900 + index] == shown, index
+        for index, (_baekman, written) in enumerate(LEGACY):
+            assert got[900 + index] == written, index
 
-        # 구간을 하나 적어 두고 되돌려 본다.
+        # 사람이 새로 적은 구간을 한 줄 섞어 두고 되돌려 본다.
         con.execute("UPDATE ir_companies SET funding_total = '5-10억 사이' WHERE id = 900")
         con.commit()
     finally:
@@ -222,20 +334,24 @@ def test_the_migration_moves_old_rows_without_changing_what_is_shown(tmp_path):
             "SELECT id, funding_total FROM ir_companies WHERE id >= 900").fetchall())
         assert got[900] is None, \
             "구간은 정수 칸에 담을 자리가 없다 — 하한으로 눌러 담으면 틀린 단정이 남는다"
-        for index, (_baekman, shown) in list(enumerate(LEGACY))[1:]:
-            # 옮겼다 되돌리면 **적혀 있던 글자가 뜻하는 정수**로 돌아온다.
-            # 소수 한 자리에서 끊이며 잃은 만큼(최대 5백만원)은 돌아오지 않는다 —
-            # 그 자리는 화면·문구·엑셀이 이미 끊어 보여주던 자리다.
-            assert got[900 + index] == amount.million(shown), index
+        # **이 판이 옮긴 줄은 한 줄도 안 잃고 원래 정수로 돌아온다.**
+        for index, (baekman, _written) in list(enumerate(LEGACY))[1:]:
+            assert got[900 + index] == baekman, index
     finally:
         con.close()
 
 
 def test_the_excel_still_holds_a_number_for_old_values(logged_in, db):
-    """엑셀에서 계산할 수 있게 **숫자로** 둔다 — 옛 값은 예전과 같은 숫자다."""
+    """엑셀에서 계산할 수 있게 **숫자로** 둔다 — 옛 값은 예전과 같은 숫자다.
+
+    `5천만원` 처럼 억이 아닌 단위로 적힌 값도 **억으로 옮겨** 숫자로 나간다.
+    머리글이 `(억)` 이라, 그 열에만 만원이 섞이면 합계를 내는 사람이 100배를
+    헛짚는다.
+    """
     from app.models import IrCompany
 
-    db.add(IrCompany(name="샘플옛값", revenue_recent="18.3", pre_value="150"))
+    db.add(IrCompany(name="샘플옛값", revenue_recent="18.3", pre_value="150",
+                     funding_total="4700만원"))
     db.commit()
 
     book = openpyxl.load_workbook(
@@ -248,6 +364,7 @@ def test_the_excel_still_holds_a_number_for_old_values(logged_in, db):
     assert row[col["최근매출(억)"]] == 18.3
     assert isinstance(row[col["최근매출(억)"]], (int, float))
     assert row[col["Pre Value(억)"]] == 150
+    assert row[col["누적투자(억)"]] == 0.47
 
 
 # ── ④ 숫자를 뽑는 규칙이 한 곳 ───────────────────────────────────────────────
@@ -312,12 +429,13 @@ def test_every_reader_agrees_on_the_number():
     """
     from app.services import llm_brief, message_composer, one_liner
 
-    written = "5-10억 사이"
-    number = amount.million(written)          # 500 백만원 (구간이면 아래)
+    for written in ("5-10억 사이", "5천만원"):
+        number = amount.million(written)       # 구간이면 아래
+        assert message_composer.format_eok(written) == amount.phrase(written)
+        assert llm_brief.amount_band(written) == llm_brief.amount_band(number)
 
-    assert message_composer.format_eok(written) == amount.quantity(written)
-    assert one_liner._eok_segment(written, "누적투자금액 {}억") == "누적투자금액 5~10억"
-    assert llm_brief.amount_band(written) == llm_brief.amount_band(number)
+    assert one_liner._eok_segment("5-10억 사이", "누적투자금액 {}") == "누적투자금액 5~10억"
+    assert one_liner._eok_segment("5천만원", "누적투자금액 {}") == "누적투자금액 5천만원"
 
 
 # ── ⑤ LLM 자료 — 구간화가 계속 돌고 정확한 수치가 안 나간다 ──────────────────
@@ -394,11 +512,13 @@ def test_the_screen_says_which_values_will_be_dropped(logged_in, db):
 # ── 시트에서 읽어 넣는 자리도 같은 규칙을 지난다 ─────────────────────────────
 
 @pytest.mark.parametrize("cell, stored", [
-    ("8.2억", "8.2"),
-    ("150억 ~ 200억", "150~200"),     # 구간이 **구간인 채로** 들어온다
-    ("2억원~5억", "2~5"),
-    ("1,224백만원", "12.2"),          # 단위가 억이 아니면 예전 길로 읽는다
-    ("10억 이상", "10"),              # 앱 문법 밖 → 예전 길(작은 쪽)
+    ("8.2억", "8.2억"),
+    ("150억 ~ 200억", "150~200억"),   # 구간이 **구간인 채로** 들어온다
+    ("2억원~5억", "2~5억"),
+    ("3천만원", "3천만원"),            # 억 미만은 만원인 채로 남는다
+    ("1,224백만원", "12.24"),         # 앱이 안 받는 단위 → 예전 길로 읽어 억으로
+    # 앱 문법 밖이라 예전 길로 간다 — 작은 쪽을 억으로 옮겨 담는다.
+    ("10억 이상", "10"),
     ("미정", None),
     ("2020", None),                   # 단위 없는 맨숫자는 연도일 수 있다
 ])

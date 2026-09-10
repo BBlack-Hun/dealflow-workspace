@@ -498,9 +498,13 @@ def parse_money_to_million(text: Optional[str]) -> Optional[int]:
     return int(round(min(values)))
 
 
-# `\d억` — 칸에 **억 단위가 적혀 있는가.** 이것이 있어야 적힌 글자를 그대로
+# 칸에 **앱이 아는 단위가 적혀 있는가.** 이것이 있어야 적힌 글자를 그대로
 # 옮긴다(아래 `_company_amount`).
-_WRITTEN_IN_EOK = re.compile(r"\d\s*억")
+#
+# `백만` 은 일부러 없다 — 앱은 그 단위를 안 받는다(`services/amount.py`).
+# `1,224백만원` 은 아래 2번 길로 가서 억으로 옮겨진다. 앞에 `\d` 를 요구하므로
+# `백만원` 의 `만원` 이 여기 걸리는 일도 없다(앞 글자가 `백` 이라 숫자가 아니다).
+_WRITTEN_WITH_UNIT = re.compile(r"\d\s*(?:억|천만|만원)")
 
 
 def _company_amount(raw: Optional[str]) -> Optional[str]:
@@ -512,9 +516,11 @@ def _company_amount(raw: Optional[str]) -> Optional[str]:
 
     길은 둘이다.
 
-    1. 칸에 **억이 적혀 있고** 앱의 문법으로 읽히면(`8.2억` · `150억 ~ 200억` ·
-       `2억원~5억`) 그 뜻을 그대로 옮긴다 — 구간은 구간으로 남는다(`150~200`).
-       예전에는 여기서 작은 쪽 정수 하나만 남아 **구간이라는 사실이 사라졌다.**
+    1. 칸에 **앱이 아는 단위가 적혀 있고** 앱의 문법으로 읽히면(`8.2억` ·
+       `150억 ~ 200억` · `2억원~5억` · `3천만원`) 그 뜻을 그대로 옮긴다 —
+       구간은 구간으로 남고(`150~200억`), 억 미만은 만원인 채로 남는다.
+       예전에는 여기서 작은 쪽 정수 하나만 남아 **구간이라는 사실이 사라졌고**,
+       `3천만원` 은 `0.3` 이 되어 읽기 어려워졌다.
     2. 그 밖에는 예전 그대로 `parse_money_to_million` 이 읽고
        (`1,224백만원` · `3천만` · `10억 이상`), 그 정수를 `from_million` 이
        글자로 옮긴다 — 화면에 뜨던 글자와 한 글자도 다르지 않다.
@@ -527,9 +533,9 @@ def _company_amount(raw: Optional[str]) -> Optional[str]:
     written = norm(raw)
     if not written:
         return None
-    if (_WRITTEN_IN_EOK.search(written)
+    if (_WRITTEN_WITH_UNIT.search(written)
             and amount.state(written) in (amount.NUMBER, amount.RANGE)):
-        return amount.quantity(written)
+        return amount.phrase(written)
     return amount.from_million(parse_money_to_million(raw))
 
 

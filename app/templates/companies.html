@@ -183,11 +183,11 @@
         <th class="num" style="width:74px">23년 매출</th>
         <th class="num" style="width:74px">24년 매출</th>
         <th class="num" style="width:74px">25년 매출</th>
-        <th class="num" style="width:96px" title="단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 모르면 `~`">누적투자금액</th>
-        <th class="num" style="width:120px" title="단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 모르면 `~`">투자유치희망금액</th>
-        <th class="num" style="width:76px" title="단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 모르면 `~`">Pre Value</th>
+        <th class="num" style="width:96px" title="단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 1억 미만은 `5천만원` · 모르면 `~`">누적투자금액</th>
+        <th class="num" style="width:120px" title="단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 1억 미만은 `5천만원` · 모르면 `~`">투자유치희망금액</th>
+        <th class="num" style="width:76px" title="단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 1억 미만은 `5천만원` · 모르면 `~`">Pre Value</th>
         <th style="width:260px">특이사항 (장점)</th>
-        <th class="num" style="width:90px" title="단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 모르면 `~`">최근 매출액</th>
+        <th class="num" style="width:90px" title="단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 1억 미만은 `5천만원` · 모르면 `~`">최근 매출액</th>
         <th style="width:72px">설립년도</th>
         <th style="width:130px">기보, 신보, 중진공</th>
         {# IR 자료는 어느 탭에서 보든 맨 끝에 그대로 둔다. #}
@@ -645,14 +645,18 @@
 
      안내에 든 예는 **앱이 문구에 실을 수 있는 모양 그대로**다. 여기 없는
      모양(`10억 이상` 같은 것)은 저장은 되지만 딜소개 문구에서 빠지고, 표에
-     `⚠ 문구에서 빠짐` 딱지가 붙는다. #}
+     `⚠ 문구에서 빠짐` 딱지가 붙는다.
+
+     `1억 미만 5천만원` 은 사용자가 따로 요청한 것이다 — `0.5억` 이라고 적어
+     두면 사람이 매번 억을 만원으로 되돌려 읽어야 한다. 적은 단위는 문구까지
+     그대로 간다(`누적투자금액 5천만원`). #}
   <h3 class="form-section">금액
-    <span class="hint">단위: 억 · 숫자 `18.3` · 구간 `5-10억` · 모르면 `~`</span></h3>
+    <span class="hint">단위: 억 · 숫자 `18.3` · 1억 미만 `5천만원` · 구간 `5-10억` · 모르면 `~`</span></h3>
   <div class="form-grid">
-    <label class="field"><span>최근 매출액</span><input type="text" id="f-revenue_recent" placeholder="18.3 · 5-10억 · ~"></label>
-    <label class="field"><span>누적투자금액</span><input type="text" id="f-funding_total" placeholder="18.3 · 5-10억 · ~"></label>
-    <label class="field"><span>투자유치희망금액</span><input type="text" id="f-raise_target" placeholder="18.3 · 5-10억 · ~"></label>
-    <label class="field"><span>Pre Value</span><input type="text" id="f-pre_value" placeholder="18.3 · 5-10억 · ~"></label>
+    <label class="field"><span>최근 매출액</span><input type="text" id="f-revenue_recent" placeholder="18.3 · 5천만원 · 5-10억 · ~"></label>
+    <label class="field"><span>누적투자금액</span><input type="text" id="f-funding_total" placeholder="18.3 · 5천만원 · 5-10억 · ~"></label>
+    <label class="field"><span>투자유치희망금액</span><input type="text" id="f-raise_target" placeholder="18.3 · 5천만원 · 5-10억 · ~"></label>
+    <label class="field"><span>Pre Value</span><input type="text" id="f-pre_value" placeholder="18.3 · 5천만원 · 5-10억 · ~"></label>
   </div>
 
   <h3 class="form-section">소개 내용

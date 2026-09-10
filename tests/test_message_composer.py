@@ -10,17 +10,38 @@ from app.services.message_composer import CompanyView, ContactView
 # `services/amount.py` 한 곳에 있다.
 
 def test_format_eok_passes_the_written_number_through():
-    """옛 정수가 옮겨진 글자(`3090` → `"30.9"`)가 그대로 지나야 한다."""
-    assert mc.format_eok("30.9") == "30.9"
-    assert mc.format_eok("50") == "50"
-    assert mc.format_eok("200") == "200"
-    assert mc.format_eok("5.6") == "5.6"
+    """옛 정수가 옮겨진 글자(`3090` → `"30.9"`)가 그대로 지나야 한다.
+
+    **단위까지 붙어서 온다.** 틀에 `억` 을 적어 두면 `5천만원` 을 적은 순간
+    `5천만원억` 이 된다 — 단위를 아는 곳은 `services/amount.py` 하나여야 한다.
+    """
+    assert mc.format_eok("30.9") == "30.9억"
+    assert mc.format_eok("50") == "50억"
+    assert mc.format_eok("200") == "200억"
+    assert mc.format_eok("5.6") == "5.6억"
+
+
+def test_format_eok_keeps_the_written_unit():
+    """`5천만원` 이라고 적었으면 문구에도 `5천만원` 으로 나가야 한다.
+
+    `0.5억` 으로 고쳐 내보내면 사람이 굳이 그렇게 적은 뜻이 사라지고, 투자사가
+    실제로 쓰는 말도 아니다(사용자 요청이 정확히 이것이다).
+    """
+    assert mc.format_eok("5천만원") == "5천만원"
+    assert mc.format_eok("4700만원") == "4700만원"
+    assert mc.format_eok("5,000만원") == "5000만원"
 
 
 def test_format_eok_keeps_a_range_a_range():
-    """`5-10억 사이` 라고 적었으면 문구에도 구간이 남아야 한다."""
-    assert mc.format_eok("5-10억 사이") == "5~10"
-    assert mc.format_eok("5~10억") == "5~10"
+    """`5-10억 사이` 라고 적었으면 문구에도 구간이 남아야 한다.
+
+    양쪽 단위가 같으면 단위를 **한 번만** 적는다(`5억~10억` 이 아니라 `5~10억`) —
+    사람이 쓰는 모양이 그것이다. 섞여 있으면 각자의 단위가 그대로 남는다.
+    """
+    assert mc.format_eok("5-10억 사이") == "5~10억"
+    assert mc.format_eok("5~10억") == "5~10억"
+    assert mc.format_eok("5억~10억") == "5~10억"
+    assert mc.format_eok("3천만원~1억") == "3천만원~1억"
 
 
 def test_format_eok_none_returns_none():
@@ -48,8 +69,9 @@ def test_the_number_rule_lives_in_exactly_one_place():
     """
     from app.services import amount
 
-    for written in ("30.9", "5-10억 사이", "0", "~", "말도 안 되는 값"):
-        assert mc.format_eok(written) == amount.quantity(written), written
+    for written in ("30.9", "5천만원", "5-10억 사이", "3천만원~1억", "0", "~",
+                    "말도 안 되는 값"):
+        assert mc.format_eok(written) == amount.phrase(written), written
 
 
 # --- auto_company_summary --------------------------------------------------
@@ -62,9 +84,29 @@ def test_auto_summary_full():
         pre_value="210", competitiveness="상급 유통사 12곳 계약",
     )
     summary = mc.auto_company_summary(c)
+    # `Pre Value 약 210억원` 이 `Pre Value 약 210억` 이 됐다. 이 자리가 이 저장소에서
+    # **유일하게 `원` 을 붙이던 곳**이었고, 실데이터에서 사람이 쓰는 모양은
+    # `Pre Value 200억` 이다(세어 둔 것은 `services/one_liner.py`). 단위를
+    # `services/amount.py` 한 곳으로 모으면서 그 예외를 없앤다 — 한줄소개와도
+    # 이제 같은 모양이다.
     assert summary == (
         "[애그테크] | B2B 농산물 선도거래 'Presell' | 매출 30.9억 | "
-        "누적투자금액 5.6억 | 20억 투자유치중 | Pre Value 약 210억원 | 상급 유통사 12곳 계약"
+        "누적투자금액 5.6억 | 20억 투자유치중 | Pre Value 약 210억 | 상급 유통사 12곳 계약"
+    )
+
+
+def test_a_sub_eok_amount_keeps_its_unit_all_the_way_to_the_investor():
+    """1억 미만을 `5천만원` 으로 적으면 **문구까지 그대로** 간다.
+
+    틀이 `{}억` 이던 시절에는 이 값이 `5천만원억` 이 되거나, 억으로 뭉개져
+    `0.5억` 으로 나갔다. 둘 다 사람이 적은 뜻이 아니다.
+    """
+    c = CompanyView(name="샘플애그", sector_major="애그테크", one_liner="선도거래",
+                    funding_total="5천만원", raise_target="3천만원~1억",
+                    pre_value="4700만원")
+    assert mc.auto_company_summary(c) == (
+        "[애그테크] | 선도거래 | 누적투자금액 5천만원 | 3천만원~1억 투자유치중 | "
+        "Pre Value 약 4700만원"
     )
 
 

@@ -185,15 +185,14 @@ def _revenue_segment(company) -> str:
 
 
 def _eok_segment(value, template: str) -> str:
-    """금액 글자 → `{}` 자리에 수량을 넣은 토막. **못 읽으면 토막 자체를 뺀다.**
+    """금액 글자 → `{}` 자리에 금액 표기를 넣은 토막. **못 읽으면 토막째 뺀다.**
 
     빠지는 것은 셋이다: 빈 칸 · `~`(모름) · 숫자로 못 읽는 글자. 셋 다 문구에
     실을 수량이 없다는 점에서 같다 — 없는 숫자를 지어낼 수 없고, 사람이 적은
     자유 문장을 그대로 실어 투자사에게 보낼 수도 없다.
 
-    수량을 고르는 판단은 `format_eok`(= `services/amount.py`) 하나다.
-    여기서 `억` 을 붙이는 자리가 셋이고 딜소개 문구에 넷이 더 있는데, 그
-    일곱이 각자 글자를 읽으면 같은 값이 문구마다 다르게 나간다.
+    **단위까지 붙어서 온다.** 그래서 틀에 `억` 이 없다 — 적어 두면 `5천만원` 을
+    적은 순간 `5천만원억` 이 된다. 단위를 아는 곳은 `services/amount.py` 하나다.
     """
     quantity = format_eok(value)
     return "" if quantity is None else template.format(quantity)
@@ -221,15 +220,15 @@ def compose_one_liner(company) -> str:
     if revenue and "매출" not in said:
         segments.append(revenue)
 
-    funding = _eok_segment(getattr(company, "funding_total", None), "누적투자금액 {}억")
+    funding = _eok_segment(getattr(company, "funding_total", None), "누적투자금액 {}")
     if funding and "누적투자" not in said:
         segments.append(funding)
 
-    raising = _eok_segment(getattr(company, "raise_target", None), "{}억 투자유치중")
+    raising = _eok_segment(getattr(company, "raise_target", None), "{} 투자유치중")
     if raising and "투자유치" not in said and "투자 유치" not in said:
         segments.append(raising)
 
-    pre = _eok_segment(getattr(company, "pre_value", None), "Pre Value {}억")
+    pre = _eok_segment(getattr(company, "pre_value", None), "Pre Value {}")
     if pre and not any(k in said.lower() for k in ("pre value", "pre-value", "프리벨류", "밸류")):
         segments.append(pre)
 
