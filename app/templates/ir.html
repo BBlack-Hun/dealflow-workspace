@@ -455,7 +455,18 @@
 
 <div class="dash-grid">
   <section class="panel">
+    {# 자료를 보낸 다음에 하는 말이 **미팅 요청**이다. 그런데 자료를 전달하면
+       리마인드가 멈춰서(답이 왔으니 맞다), 미팅 요청을 안 보낸 담당자는 어느
+       목록에도 다시 안 뜬다 — 자료만 보내 놓고 끝나는 길이 열려 있었다.
+       여기서 세어 보여 준다. **줄이 아니라 담당자를 센다**(미팅 요청 카톡은
+       담당자당 한 통이다). #}
     <h2 class="panel-title">전달한 자료 <span class="hint">{{ done_requests|length }}건</span></h2>
+    {% if meeting_ask_missing %}
+    <p class="hint {% if meeting_ask_overdue %}warn{% endif %}">
+      미팅 요청 안 보냄 {{ meeting_ask_missing }}명
+      ({{ meeting_ask_days }}일 지남 {{ meeting_ask_overdue }}명)
+    </p>
+    {% endif %}
     {% if done_requests %}
     <div class="table-wrap">
     <table class="grid-table compact">
@@ -465,8 +476,10 @@
         <th style="width:104px">상태</th><th style="width:120px"></th>
       </tr></thead>
       <tbody>
-        {% for r in done_requests[:20] %}
-        <tr>
+        {# 지난 줄은 위에 세워 두고(`routers/ir.py`), 20줄이 넘더라도
+           **한 줄도 안 자른다**. 재촉할 것이 잘려 안 보이면 세는 뜻이 없다. #}
+        {% for r in done_requests[:done_limit] %}
+        <tr class="{% if r.meeting_ask_overdue %}overdue-row{% endif %}">
           <td class="muted">{{ r.requested_at }}</td>
           {#
             투자사명을 누르면 **딜 제안 관리의 `미팅 요청`** 으로 넘어간다 —
@@ -494,7 +507,20 @@
           {# 배지 옆에 날짜를 나란히 두면 좁은 칸에서 둘이 엉켜 끊긴다.
              배지는 한 덩어리로 두고 날짜는 아랫줄로 내린다. #}
           <td class="status-cell"><span class="status-badge">{{ r.status_label }}</span>
-            {% if r.delivered_at %}<span class="status-when muted">{{ r.delivered_at }}</span>{% endif %}</td>
+            {% if r.delivered_at %}<span class="status-when muted">{{ r.delivered_at }}</span>{% endif %}
+            {#
+              **자료를 보낸 뒤 미팅 요청까지 갔는가.** 이 줄 하나가 아니라 이
+              **담당자**의 상태다 — 같은 사람의 자료 줄이 셋이면 셋 다 같은
+              표시가 붙는다(나가는 카톡은 한 통이다).
+
+              판정은 `services/pipeline.meeting_ask_state` 한 곳이 한다.
+              화면에서 다시 세지 않는다.
+            #}
+            {% if r.meeting_asked %}
+            <span class="status-when ok">미팅 요청 보냄 · {{ r.meeting_asked_at }}</span>
+            {% elif r.meeting_ask_overdue %}
+            <span class="status-when bad">{{ meeting_ask_days }}일 지남</span>
+            {% endif %}</td>
           <td class="row-acts">
             {# 미팅은 **자료를 보낸 그 건**에서 이어진다. 담당자·기업을 처음부터
                다시 고르게 하면 이미 아는 정보를 사람이 또 타이핑하는 셈이다. #}
@@ -502,6 +528,20 @@
                     data-contact="{{ r.contact_id }}"
                     data-company="{{ r.company_name }}"
                     data-name="{{ r.name }}">미팅 잡기</button>
+            {# 카톡으로 **사람이 직접** 보낸 건은 앱이 모른다. 적을 자리가
+               없으면 「안 보냄」이 영영 떠 있고, 거짓으로 뜨는 숫자는 곧
+               아무도 안 본다.
+
+               담당자에게 적는다(줄이 아니다) — 판정이 담당자 단위라 줄에
+               적으면 같은 사람의 다른 줄이 그대로 남는다. #}
+            {% if r.status == 'delivered' and not r.meeting_asked %}
+            <form method="post"
+                  action="/ir/contacts/{{ r.contact_id }}/meeting-asked">
+              <button class="linkbtn" type="submit"
+                      title="카톡으로 이미 보냈다면 눌러 두세요 — 이 담당자에게 적힙니다"
+                      >보냈음으로 표시</button>
+            </form>
+            {% endif %}
             <form method="post" action="/ir/requests/{{ r.id }}/delete"
                   onsubmit="return confirm('이 기록을 지울까요?')">
               <button class="linkbtn danger" type="submit">삭제</button>

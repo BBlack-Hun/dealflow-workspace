@@ -708,9 +708,15 @@ def _meetings_sheet(sheet, data, team_wide):
         sheet.note(f"취소 {data['canceled']}건")
     sheet.blank()
     sheet.band(f"IR 자료 요청  ·  {data['month']}월")
+    # 미팅 요청 줄도 함께 싣는다 — 화면에만 있고 파일에 없으면, 파일을 받아
+    # 보는 사람은 자료만 보내 놓고 끝난 건을 영영 못 본다. 세는 것은 화면과
+    # 같은 dict 다(여기서 다시 세지 않는다).
     sheet.stats([("요청받음", data["ir_requested"]),
                  ("전달함", data["ir_delivered"]),
-                 ("아직 안 보냄", data["ir_open"])])
+                 ("아직 안 보냄", data["ir_open"]),
+                 ("미팅 요청 안 보냄(명)", data["ir_meeting_ask_missing"]),
+                 (f"그중 {data['ir_meeting_ask_days']}일 지남(명)",
+                  data["ir_meeting_ask_overdue"])])
 
 
 def _buckets_sheet(sheet, data, team_wide):
