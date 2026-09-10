@@ -397,15 +397,28 @@ def test_the_closed_followup_panel_is_called_by_its_new_name(stage):
 
 
 def test_both_copies_of_that_panel_carry_the_same_name():
-    """같은 표가 두 파일에 있다 — 한쪽만 고치면 이름이 갈린다.
+    """같은 표를 **두 화면이 한 파일로 나눠 쓴다** — 이름이 갈릴 자리가 없다.
+
+    예전에는 이 표가 `ir.html` 과 `followups.html` 에 한 벌씩 들어 있어서, 한쪽만
+    고치면 같은 표가 다른 이름을 달고 나왔다. 예약된 리마인드가 먼저 겪은 일이라
+    같은 길로 모았다(`_closed_followups.html`) — 이제 볼 것은 **둘 다 그 파일을
+    include 하는가** 와, 옛 표가 남아 있지 않은가다.
 
     `followups.html` 은 지금 **아무 라우트도 안 그린다**(`/followups` 는
-    `/ir#remind` 로 넘긴다). 그래도 함께 고친다 — 되살아나는 날 같은 표가
+    `/ir#remind` 로 넘긴다). 그래도 함께 본다 — 되살아나는 날 같은 표가
     다른 이름을 달고 나오는 것을 막는 값이, 한 줄 고치는 값보다 크다.
     """
+    shared = ROOT / "app" / "templates" / "_closed_followups.html"
+    assert shared.exists(), "IR 요청 투자사 표를 함께 쓰는 파일이 없다"
+    assert '<h2 class="panel-title">IR 요청 투자사' in \
+        shared.read_text(encoding="utf-8")
+
     for name in ("ir.html", "followups.html"):
         page = (ROOT / "app" / "templates" / name).read_text(encoding="utf-8")
-        assert '<h2 class="panel-title">IR 요청 투자사' in page, name
+        assert '{% include "_closed_followups.html" %}' in page, (
+            f"{name} 이 IR 요청 투자사 표를 따로 그리고 있다 — 한쪽만 고쳐진다")
+        assert '<h2 class="panel-title">IR 요청 투자사' not in page, (
+            f"{name} 에 옛 표가 남아 있다 — 두 벌이 된다")
         assert "아직 끝난 후속이 없습니다" not in page, name
 
 
