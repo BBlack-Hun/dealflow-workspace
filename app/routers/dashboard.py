@@ -29,7 +29,7 @@ from ..deps import (admin_only, auto_attach_default_for,
 from ..models import AgentDevice, User, WeeklyRoutine, WeeklyTask
 from ..services import auth as auth_svc
 from ..services import dashboard as dash
-from ..services import backup, readiness, report, today, weekly
+from ..services import backup, edit_log, readiness, report, today, weekly
 from ..ui import base_ctx
 
 router = APIRouter(tags=["dashboard"])
@@ -372,6 +372,43 @@ def team_page(request: Request, db: Session = Depends(get_db),
 # 링크와 폼이다 — 팀 현황의 수정칸을 주소(`?edit=`)로 여는 것과 같은 이유로,
 # 스크립트가 한 번 어긋나는 날 되돌릴 방법이 통째로 사라지면 안 된다.
 # 되돌리기는 하필 **무언가 잘못됐을 때** 쓰는 기능이다.
+
+@router.get("/team/edit-log", response_class=HTMLResponse, include_in_schema=False)
+def edit_log_page(request: Request, db: Session = Depends(get_db),
+                  user: User = Depends(get_current_user),
+                  scope: str = "", screen: str = ""):
+    """수정 로그 — **내가 안 한 변경이 무엇인가.**
+
+    남의 것을 고친 일과 공용 자료를 고친 일이 **한 목록**에 있다. 둘을 두
+    화면에 갈라 놓으면 "이거 누가 바꿨지?" 를 알아보려고 두 곳을 다 열어야
+    한다. 가르는 것은 위쪽 [남의 것] · [공용] 단추뿐이다.
+
+    **팀 현황 안에 둔다.** 이 화면이 답하는 질문("팀이 무엇을 건드렸나")은
+    팀 현황이 답하는 질문과 같은 갈래이고, 되돌리기(`/team/restore`)와 나란히
+    있어야 한다 — 로그에서 잘못된 변경을 찾은 다음에 가는 곳이 거기다.
+
+    **관리자만 본다.** 팀원에게도 열면 "누가 언제 무엇을 고쳤는가" 가 팀
+    전체에 공개된다. 공용 자료는 팀 전체가 늘 함께 고치는 자리라 그 목록은
+    사실상 팀 전체의 근무 일지가 된다 — 팀 현황을 관리자만 보게 한 것과 같은
+    이유다. 투자컨설턴트는 여기까지 오지도 못한다(`deps.CONSULTANT_PATHS` 에
+    없으므로 미들웨어가 먼저 끊는다).
+
+    **자기 것이 바뀐 사람에게 알리는 일은 다른 문제다.** 목록을 통째로 여는
+    것으로는 풀리지 않고(본인도 매번 열어 봐야 한다) 알림이 있어야 한다 —
+    이번에는 만들지 않는다. 그때 쓸 칸은 이미 있다(`EditLog.target_user_id`).
+    """
+    admin_only(user)
+    ctx = base_ctx(request, db, user, active="admin")
+    ctx.update({
+        "rows": edit_log.recent(db, scope=scope, screen=screen),
+        "scope": scope,
+        "screen": screen,
+        "screens": edit_log.screens(),
+        "retention_months": edit_log.RETENTION_MONTHS,
+        "page_size": edit_log.PAGE_SIZE,
+    })
+    return templates.TemplateResponse("edit_log.html", ctx)
+
 
 @router.get("/team/restore", response_class=HTMLResponse, include_in_schema=False)
 def restore_page(request: Request, db: Session = Depends(get_db),
