@@ -188,13 +188,19 @@
       });
     }
 
+    // **`#구역` 도 그대로 둔다.** 남의 쿼리를 지키는 것과 같은 이유다.
+    // 딜 진행 관리는 한 페이지에 구역이 넷이고 `/followups` 는 `/ir#remind`
+    // 로 넘긴다 — 그런데 화면을 그리자마자 여기서 주소를 `/ir` 로 고쳐 써서
+    // 해시가 사라졌다. 스크롤은 이미 끝난 뒤라 그 순간에는 티가 안 나고,
+    // 새로고침하거나 그 주소를 복사해 가면 **맨 위**가 열린다.
     function syncUrl() {
       if (!global.history || !global.history.replaceState) return;
       var parts = keptQuery();
       var mine = buildQuery(state).replace(/^\?/, "");
       if (mine) parts.push(mine);
       global.history.replaceState(null, "", global.location.pathname +
-        (parts.length ? "?" + parts.join("&") : ""));
+        (parts.length ? "?" + parts.join("&") : "") +
+        (global.location.hash || ""));
     }
 
     function renderButtons() {

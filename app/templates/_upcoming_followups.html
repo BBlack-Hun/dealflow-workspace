@@ -10,6 +10,12 @@
   검색은 **이 앱이 이미 쓰는 방식** 그대로다 — 줄에 `data-search` 를 싣고
   `filters.js` 의 `extra` 로 건다(투자사 관리 현황·IR 기업현황·딜 소싱과 같다).
   고를 칸(`data-filters`)이 없어도 검색만 걸린다.
+
+  **이 표만 걸린다.** 리마인드 구역은 세 묶음이다 — `오늘 보낼 리마인드` ·
+  이 표 · `IR 요청 투자사`. 검색칸이 붙은 것은 **뒤의 두 표뿐**이고, 각자 제
+  표만 거른다. 오늘 보낼 리마인드에 일부러 안 단 까닭은
+  `_closed_followups.html` 머리말에 **한 번만** 적어 두었다. 못 찾았을 때는
+  어디를 더 봐야 하는지 말해 준다(아래 `upcoming-empty`).
 #}
 <section class="panel">
   <h2 class="panel-title">예약된 리마인드 <span class="hint">{{ upcoming|length }}건</span></h2>
@@ -22,7 +28,8 @@
   <div class="toolbar">
     <div class="toolbar-right">
       <input type="search" id="upcoming-search"
-             placeholder="이름 · 회사 · 다음 단계 검색"
+             placeholder="이름 · 투자사 · 다음 단계"
+             title="담당자 이름 · 투자사(회사) · 다음 단계로 찾습니다. 이 표만 걸립니다 — IR 요청 투자사는 그 표의 검색칸으로, 오늘 보낼 리마인드는 위 목록에서 눈으로 확인해 주세요."
              autocomplete="off" aria-label="예약된 리마인드 검색">
       <span class="hint" id="upcoming-count"></span>
     </div>
@@ -65,7 +72,13 @@
     </tbody>
   </table>
   </div>
-  <p class="muted" id="upcoming-empty" hidden>친 글자에 맞는 리마인드가 없습니다.</p>
+  {# 다 걸러졌을 때 **빈 표만 남기지 않는다.** 그러면 그 투자사가 딜 진행
+     관리에 아예 없는 줄 안다 — 실제로는 옆 묶음에 있을 수 있다. #}
+  <p class="muted" id="upcoming-empty" hidden>
+    친 글자에 맞는 예약 리마인드가 없습니다 — <b>이 표만</b> 걸립니다.
+    <b>IR 요청 투자사</b>는 그 표의 검색칸으로,
+    <b>오늘 보낼 리마인드</b>는 위 목록에서 확인해 주세요.
+  </p>
   {#
     스크립트를 여기 함께 둔다 — 화면 쪽 `{% block scripts %}` 에 나눠 적으면
     한쪽만 고쳐지는 그 문제로 되돌아간다. 표는 이 위에 이미 그려져 있고,

@@ -37,6 +37,7 @@ ROOT = Path(__file__).resolve().parent.parent
 JS_TEST = ROOT / "tests" / "js" / "deals_select_all_test.js"
 GROUP_SUMMARY_JS_TEST = ROOT / "tests" / "js" / "deals_group_summary_test.js"
 SEARCH_JS_TEST = ROOT / "tests" / "js" / "upcoming_search_test.js"
+CLOSED_SEARCH_JS_TEST = ROOT / "tests" / "js" / "closed_search_test.js"
 TEMPLATES = ROOT / "app" / "templates"
 
 
@@ -1118,5 +1119,118 @@ def test_친_글자로_실제로_줄이_걸러진다():
         pytest.skip("node 미설치 — 브라우저 로직 테스트 생략 "
                     "(호스트에서 `node tests/js/upcoming_search_test.js`)")
     result = subprocess.run([node, str(SEARCH_JS_TEST)], capture_output=True,
+                            text=True, timeout=60)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+# ── 7) IR 요청 투자사에서 이름 검색 ─────────────────────────────────────────
+#
+# 사용자 요청: "딜 진행 관리에서 … 지금 투자사 검색을 할 수가 없게 되어 있는데
+# 이름 검색창 추가". 리마인드 구역은 묶음이 셋인데 검색칸이 **예약된 리마인드
+# 하나뿐**이었다 — 리마인드가 끝나 `IR 요청 투자사` 로 넘어간 투자사는 이름을
+# 알아도 찾을 길이 없었다. 6) 과 같은 방식(`filters.js` + `data-search`)으로 건다.
+
+
+def test_IR_요청_투자사_검색칸이_이_앱의_방식_그대로다():
+    """툴바 안에 두어야 크기가 `--ctl-h` 한 값에서 나온다. 줄은 `data-search` 를
+    싣고, 거는 것은 공용 필터(`filters.js`)다 — 새로 만들지 않는다."""
+    shared = (TEMPLATES / "_closed_followups.html").read_text(encoding="utf-8")
+    toolbar = re.search(r'<div class="toolbar">(.*?)</div>\s*</div>', shared, re.S)
+    assert toolbar and 'type="search"' in toolbar.group(1), \
+        "검색칸이 툴바 밖에 있다 — 이 줄만 브라우저 기본 입력칸으로 따로 논다"
+    assert 'data-search=' in shared, "줄이 검색할 값을 싣지 않는다"
+    assert "DealflowFilters" in shared, "공용 필터를 안 쓰고 새로 만들었다"
+
+
+def test_placeholder_에_적은_것과_줄이_싣는_것이_같다():
+    """**적어 놓고 안 찾아지면 거짓말이다.**
+
+    검색칸에 `이름 · 투자사 · 단계 · 상태 · 사유` 라고 적어 두었으면 그 다섯이
+    그대로 `data-search` 에 실려 있어야 한다. 반대로 안 적힌 것으로 걸리면,
+    쳐서 남은 줄을 보며 "왜 이게 걸렸지" 가 된다.
+
+    node 가 없는 CI 에서도 이 짝은 반드시 지켜져야 하므로 pytest 에도 둔다
+    (`tests/js/closed_search_test.js` 는 같은 짝을 브라우저 쪽에서 본다)."""
+    shared = (TEMPLATES / "_closed_followups.html").read_text(encoding="utf-8")
+
+    ph = re.search(r'placeholder="([^"]*)"', shared)
+    assert ph, "무엇으로 찾는지 안 적혀 있다 — 사람은 안 되는 줄 알고 안 쳐 본다"
+    assert [w.strip() for w in ph.group(1).split("·")] == \
+        ["이름", "투자사", "단계", "상태", "사유"]
+
+    carried = re.search(r'data-search="\{\{(.*?)\}\}"', shared, re.S)
+    assert carried, "줄이 검색할 값을 안 싣는다"
+    for field in ("r.name", "r.firm", "r.stage_label", "r.status_label", "r.reason"):
+        assert field in carried.group(1), \
+            f"{field} 이 data-search 에 없다 — placeholder 가 거짓말이 된다"
+    assert "|lower" in carried.group(1), \
+        "소문자로 안 내린다 — 영문 투자사를 대문자로 치면 안 걸린다"
+
+
+def test_두_화면_모두에서_IR_요청_투자사_검색칸이_그려진다(logged_in, db, users):
+    """`/followups` 는 지금 `/ir#remind` 로 보내는 옛 주소다 — 따라가서 본다."""
+    from app.models import DealBatch, SendSequence, VcContact
+
+    contact = VcContact(user_id=users["u1"].id, name="가담당", firm="가나벤처스",
+                        connect_stage="connected")
+    batch = DealBatch(user_id=users["u1"].id, title="시험 회차")
+    db.add_all([contact, batch])
+    db.flush()
+    # 리마인드가 **끝난** 건이라야 `IR 요청 투자사` 에 담긴다(status != active).
+    db.add(SendSequence(user_id=users["u1"].id, contact_id=contact.id,
+                        batch_id=batch.id, stage=2, next_stage=3,
+                        next_due_date=None, status="responded",
+                        stopped_reason="IR 자료를 요청했습니다"))
+    db.commit()
+
+    for url in ("/ir", "/followups"):
+        html = logged_in.get(url, follow_redirects=True).text
+        assert 'id="closed-search"' in html, f"{url} 에 IR 요청 투자사 검색칸이 없다"
+        assert 'id="closed-table"' in html
+        # 줄이 이름·투자사·단계·상태·사유를 싣는다 — 화면에 보이는 것만.
+        row = re.search(
+            r'<tr class="data-row"\s*\n?\s*data-search="([^"]*)"[^>]*>\s*'
+            r'<td>\s*\n?\s*<a class="req-link"', html)
+        assert row, f"{url} 의 IR 요청 투자사 줄이 검색할 값을 안 싣는다"
+        carried = row.group(1)
+        for word in ("가담당", "가나벤처스", "리마인드", "답 옴", "ir 자료를 요청했습니다"):
+            assert word in carried, f"{url}: `{word}` 로는 못 찾는다"
+
+
+def test_다_걸러졌을_때_다른_묶음을_가리킨다():
+    """빈 표만 남으면 그 투자사가 딜 진행 관리에 **아예 없는 줄 안다.**
+
+    리마인드 구역은 묶음이 셋인데 검색칸은 **표 둘에만** 있다. 오늘 보낼
+    리마인드는 단계별 묶음마다 [X 보내기] 링크가 **묶음 전체**의 담당자를
+    달고 가서, 걸러 놓고 누르면 화면에 보이는 사람보다 훨씬 많이 나간다 —
+    그래서 일부러 안 건다.
+
+    그러니 못 찾았을 때 **어디를 더 봐야 하는지** 말해 줘야 하고, 그 말이
+    정확해야 한다 — 검색칸이 없는 묶음을 "검색칸으로 찾아라" 고 가리키면
+    그것도 똑같은 거짓말이다.
+    """
+    for name, other in (("_closed_followups.html", "예약된 리마인드"),
+                        ("_upcoming_followups.html", "IR 요청 투자사")):
+        page = (TEMPLATES / name).read_text(encoding="utf-8")
+        box = "closed-empty" if name.startswith("_closed") else "upcoming-empty"
+        empty = re.search(rf'id="{box}"[^>]*>(.*?)</p>', page, re.S)
+        assert empty, f"{name}: 다 걸러졌을 때 뜨는 안내가 없다"
+        text = empty.group(1)
+        assert other in text, f"{name}: 검색칸이 있는 옆 표를 안 가리킨다"
+
+        at = text.find("오늘 보낼 리마인드")
+        assert at >= 0, f"{name}: 검색칸이 없는 묶음을 아예 안 가리킨다"
+        assert "검색칸" not in text[at:], (
+            f"{name}: 오늘 보낼 리마인드에 검색칸이 있는 것처럼 적혀 있다 — 없다")
+
+
+def test_친_글자로_실제로_IR_요청_투자사_줄이_걸러진다():
+    """규칙을 옮겨 적으면 두 벌이 된다 — `filters.js` 와 화면이 거는 자리를
+    **그대로 실행**해 본다. 한글·영문·대소문자·앞뒤 공백까지 본다."""
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node 미설치 — 브라우저 로직 테스트 생략 "
+                    "(호스트에서 `node tests/js/closed_search_test.js`)")
+    result = subprocess.run([node, str(CLOSED_SEARCH_JS_TEST)], capture_output=True,
                             text=True, timeout=60)
     assert result.returncode == 0, result.stdout + result.stderr
