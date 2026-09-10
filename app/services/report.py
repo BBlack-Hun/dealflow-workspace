@@ -291,6 +291,25 @@ def monthly(db: Session, year: int, month: int,
 
     # 자료를 전달한 담당자마다 **미팅 요청까지 갔는가**. `today` 를 넘겨
     # 준다 — 실제 시계를 읽으면 특정 날에만 다른 수가 나온다.
+    #
+    # ── 달이 걸치는 경우 ──────────────────────────────────────────────
+    #
+    # 8월에 받아 8월에 전달한 요청인데 미팅 요청은 9월에 나갔다면, **8월
+    # 보고에 `미팅 요청 보냄 · 2026-09-03` 으로 뜬다.** 달을 자르지 않는다.
+    #
+    #   · 이 줄은 기록이 아니라 **아직 남은 일**이다. 이미 보낸 건이 지난달
+    #     보고에서 영영 "안 보냄" 으로 남아 있으면, 그건 거짓 경보이고
+    #     거짓으로 뜨는 숫자는 곧 아무도 안 본다(#162 가 적어 둔 이유와 같다).
+    #   · 숫자(`ir_meeting_ask_missing`)가 이미 그렇게 센다. 줄만 달을 잘라
+    #     보이면 **같은 화면 안에서 숫자와 목록이 갈린다** — 이 저장소가 반복해
+    #     겪은 사고다.
+    #   · 판정 자리(`pipeline.meeting_ask_state`)는 **마지막 전달일**에 맞춘다.
+    #     그래서 9월에 자료를 또 보냈으면 9월치로 다시 세어지고, 8월 보고의
+    #     그 줄도 새 전달일 기준으로 말한다 — 묻히는 건이 없다.
+    #
+    # 대신 이 판은 **지난달을 다시 열면 그때와 숫자가 다를 수 있다.** 그 달에
+    # 무엇을 받았는지(`요청받음`·`전달함`)는 안 변하고, 변하는 것은 "그래서
+    # 지금 남은 일" 쪽이다.
     ask = meeting_ask_state(db, requests, today=today)
 
     return {
@@ -298,8 +317,11 @@ def monthly(db: Session, year: int, month: int,
         "month": month,
         # 한 달에 두 번(첫째·셋째 수요일) 도는 일이라, 그 달에 무엇이 오갔는지를
         # **한눈에** 봐야 한다. 네 갈래를 날짜와 함께 그대로 늘어놓는다.
+        # `ask` 를 넘겨 준다 — `IR 요청 투자사` 갈래의 상태 칸이 **누가**
+        # 미팅 요청을 안 보냈는지 말한다. 갈래가 다시 세지 않고 위에서 이미
+        # 한 판정을 받아 쓴다(두 곳에서 세면 숫자가 갈린다).
         "buckets": _buckets(meetings, requests, contacts, owners, today,
-                            open_followup),
+                            open_followup, ask),
         # 그 달에 나간 회차. 카톡으로 손으로 쓰던 보고가 이것이다.
         "sends": sends,
         # 연간 보고가 달마다 더해 쓰는 값. **월간과 같은 곳에서 나와야** 두
@@ -532,7 +554,32 @@ def _call_state(due: Optional[str], today: date) -> str:
     return f"{due} 예정"
 
 
-def _buckets(meetings, requests, contacts, owners, today, open_followup) -> List[dict]:
+def meeting_ask_note(state: Optional[dict]) -> tuple:
+    """자료를 받은 담당자에게 **미팅 요청까지 갔는가** — 한 줄 글과 색.
+
+    ★ 이 글자를 짓는 곳은 여기 하나다. 업무 보고 화면(`report.html`)과 엑셀
+    보고(`routers/data_io._buckets_sheet`)가 **같은 문자열**을 받아 쓴다 —
+    양쪽이 각자 지으면 화면에는 재촉하는 말이 떠 있는데 파일에는 아무 말도
+    없는 일이 생기고, 그때 사람은 어느 쪽을 믿을지 알 수 없다.
+
+    **세지는 않는다.** 판정은 `pipeline.meeting_ask_state` 한 곳이 하고
+    여기서는 그 답을 사람 말로 옮기기만 한다.
+
+    돌려주는 것은 `(글, 빛깔)`. 빛깔은 `ok`(보냄) · `bad`(지남) ·
+    `warn`(아직 안 보냈지만 기한은 남음) 셋이다. 안 보낸 것을 전부 빨강으로
+    두면 오늘 할 일과 아직 여유 있는 것이 구별되지 않는다.
+    """
+    if not state:
+        return "", ""
+    if state["asked"]:
+        return f"미팅 요청 보냄 · {state['asked_at']}", "ok"
+    if state["overdue"]:
+        return f"미팅 요청 안 보냄 · {IR_MEETING_ASK_DAYS}일 지남", "bad"
+    return f"미팅 요청 안 보냄 · {state['due']}까지", "warn"
+
+
+def _buckets(meetings, requests, contacts, owners, today, open_followup,
+             ask: Dict[int, dict]) -> List[dict]:
     """반응 네 갈래를 **그 달치로, 날짜와 함께**.
 
     숫자만 보면 "그게 누구였지" 가 이어진다. 보고에서는 이름과 날짜가
@@ -550,11 +597,36 @@ def _buckets(meetings, requests, contacts, owners, today, open_followup) -> List
         return {"name": c.name, "title": c.title or "", "firm": c.firm or ""}
 
     def row(when, contact_id, company, note, user_id):
+        # `ask`·`ask_state` 는 IR 갈래만 채운다. 그래도 **모든 줄에 둔다** —
+        # 화면과 엑셀이 갈래를 가리지 않고 같은 고리를 도는데, 한 갈래에만
+        # 있으면 파일 쪽이 `KeyError` 로 통째로 안 받아진다.
         return {"date": when or "", **who(contact_id), "company": company or "",
-                "note": note or "", "owner": owners.get(user_id, "")}
+                "note": note or "", "owner": owners.get(user_id, ""),
+                "ask": "", "ask_state": ""}
 
-    ir = [row(r.requested_at, r.contact_id, r.company_name,
-              REQUEST_STATUS.get(r.status, r.status), r.user_id) for r in requests]
+    # ── IR 요청 — **누가 미팅 요청을 안 보냈는지 여기서 보인다** ──────────
+    #
+    # 업무 보고에는 `미팅 요청 안 보냄 N명` 이라는 숫자만 있었다. 사용자는
+    # 업무 보고를 보며 일을 하는데, 그 화면에서는 **누구인지**를 알 수 없어
+    # 딜 진행 관리로 건너가 다시 찾아야 했다.
+    #
+    # 새 표를 만들지 않는다 — 이 갈래에 날짜·담당자·투자사·기업·상태가 이미
+    # 다 있다. 상태 칸에 한 줄을 얹는 것으로 족하다.
+    #
+    # **줄이 아니라 담당자의 상태다.** 한 담당자가 기업 셋 자료를 받았으면
+    # 세 줄에 같은 표시가 붙는다(나가는 카톡은 한 통이라 숫자는 1이다) —
+    # `/ir` 의 `전달한 자료` 표와 같은 방식이라 두 화면이 같아 보인다.
+    #
+    # **`전달함` 인 줄에만 붙인다.** 아직 안 보낸 요청 줄에까지 붙으면
+    # "자료도 안 줬는데 미팅 요청 안 보냄" 이라는 앞뒤 없는 말이 된다.
+    ir = []
+    for r in requests:
+        one = row(r.requested_at, r.contact_id, r.company_name,
+                  REQUEST_STATUS.get(r.status, r.status), r.user_id)
+        if r.status == "delivered":
+            one["ask"], one["ask_state"] = meeting_ask_note(ask.get(r.contact_id))
+        ir.append(one)
+
     asked = [m for m in meetings if m.status != "done"]
     done = [m for m in meetings if m.status == "done"]
 

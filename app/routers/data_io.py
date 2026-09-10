@@ -728,11 +728,17 @@ def _buckets_sheet(sheet, data, team_wide):
 
     갈래는 화면(`report.monthly` 의 `buckets`)에서 그대로 받는다. 여기서
     따로 만들지 않으므로 화면에서 갈래가 늘거나 줄면 파일도 같이 움직인다.
+
+    **미팅 요청을 보냈는지도 이 표가 싣는다**(`IR 요청 투자사` 갈래의 상태
+    칸). 화면에만 있으면 파일로 받아 보는 사람은 자료만 보내 놓고 끝난 건을
+    영영 못 본다. 글자는 화면과 **같은 문자열**이다(`report.meeting_ask_note`
+    가 지은 `ask`) — 여기서 다시 짓지 않는다.
     """
     sheet.title(f"{data['year']}년 {data['month']}월 · 이 달의 반응",
                 "숫자만 보면 '그게 누구였지' 가 이어집니다 — 이름과 날짜를 함께 둡니다.")
     headers = (["날짜", "담당자", "직함", "투자사", "기업", "상태"]
                + (["담당 팀원"] if team_wide else []))
+    status_col = 5
     for bucket in data["buckets"]:
         sheet.blank()
         sheet.group(f"{bucket['label']}   {len(bucket['rows'])}건")
@@ -741,9 +747,18 @@ def _buckets_sheet(sheet, data, team_wide):
             continue
         sheet.head(headers)
         for r in bucket["rows"]:
+            # 화면은 `전달함` 아래에 한 줄을 더 깐다. 파일에서도 **한 칸 안에서
+            # 줄을 바꾼다** — 칸을 새로 만들면 나머지 세 갈래에서 내내 비어
+            # 있는 칸이 하나 생기고, ` · ` 로 이어 붙이면 상태와 미팅 요청이
+            # 한 낱말처럼 읽힌다.
+            status = r["note"] + (f"\n{r['ask']}" if r["ask"] else "")
             sheet.row([r["date"], r["name"], r["title"], r["firm"],
-                       r["company"], r["note"]]
-                      + ([r["owner"]] if team_wide else []))
+                       r["company"], status]
+                      + ([r["owner"]] if team_wide else []),
+                      # 지난 줄은 화면의 `overdue-row` 와 같이 눈에 띄어야
+                      # 한다. 인쇄해서 보는 문서라 더 그렇다.
+                      level="bad" if r["ask_state"] == "bad" else "",
+                      wraps={status_col})
 
 
 def report_workbook(data: dict, *, team_wide: bool, who: str,
@@ -786,8 +801,10 @@ def report_workbook(data: dict, *, team_wide: bool, who: str,
                      9 if team_wide else 8),
         data, team_wide)
     _buckets_sheet(
+        # 상태 칸이 16 → 26. `미팅 요청 보냄 · 2026-09-10` 이 한 줄에 들어가야
+        # 한다 — 16 이면 접혀서 날짜만 아랫줄로 떨어진다.
         _ReportSheet(wb.create_sheet(f"{tag} 반응"),
-                     [12, 14, 12, 26, 26, 16, 10],
+                     [12, 14, 12, 26, 26, 26, 10],
                      7 if team_wide else 6),
         data, team_wide)
 
