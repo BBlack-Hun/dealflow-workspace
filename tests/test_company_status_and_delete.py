@@ -278,9 +278,8 @@ def test_the_panel_does_not_send_the_read_only_backup():
         f"읽기 전용 칸이 저장 목록에 있습니다: {PANEL_READ_ONLY & set(PANEL_FIELDS)}"
 
 
-# 억으로 보여 주고 숫자로 보내는 칸(companies.js 의 EOK_FIELDS).
-# 나머지는 전부 글자로 간다 — 빈 칸은 빈 글자다(`input.value.trim()`).
-PANEL_NUMBER_FIELDS = ["revenue_recent", "funding_total", "raise_target", "pre_value"]
+# 금액 넷도 **글자로 간다**(0074). 창의 모든 칸이 `input.value.trim()` 을
+# 그대로 보내고, 빈 칸은 빈 글자다 — 따로 갈라 둘 칸이 없어졌다.
 
 
 def _panel_save(client, company_id, **over):
@@ -294,10 +293,7 @@ def _panel_save(client, company_id, **over):
     body = {}
     for f in PANEL_FIELDS:
         value = row.get(f)
-        if f in PANEL_NUMBER_FIELDS:
-            body[f] = value                     # 빈 칸은 null
-        else:
-            body[f] = "" if value is None else str(value)
+        body[f] = "" if value is None else str(value)
     body["is_top_deal"] = bool(row.get("is_top_deal"))
     body.update(over)
     return client.patch(f"/api/companies/{company_id}", json=body)

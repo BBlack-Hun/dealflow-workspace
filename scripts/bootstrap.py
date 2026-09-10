@@ -126,14 +126,18 @@ DEMO_COMPANIES = [
          one_liner="B2B 농산물 선도거래 'Presell'",
          ir_file_name="샘플애그_IR.pdf",
          contract_status="yes", contract_month="2026-07", is_top_deal=1,
-         funding_status="Series A 진행 중", revenue_recent=3090, funding_total=560,
-         raise_target=5000, pre_value=21000, competitiveness="상급 유통사 12곳 계약",
+         # 금액 넷은 **적은 그대로 글자**(단위 억)다(0074). 시연 자료에도
+         # 구간 표기를 하나 섞어 둔다 — 화면을 처음 여는 사람이 "이렇게도
+         # 적을 수 있다" 를 바로 본다.
+         funding_status="Series A 진행 중", revenue_recent="30.9", funding_total="5.6",
+         raise_target="50", pre_value="210", competitiveness="상급 유통사 12곳 계약",
          summary_status="done"),
     dict(name="샘플메디", sector_major="헬스케어", sector_minor="의료AI", series="Seed",
          one_liner="뇌영상 분석 AI 솔루션",
          ir_file_name="샘플메디_IR.pdf",
          contract_status="pending", is_top_deal=0, funding_status="Seed 마감 임박",
-         revenue_recent=420, funding_total=1500, raise_target=3000, pre_value=8000,
+         revenue_recent="4.2", funding_total="15", raise_target="5-10억 사이",
+         pre_value="80",
          competitiveness="대학병원 3곳 PoC", summary_status="done"),
     dict(name="샘플페이", sector_major="핀테크", sector_minor="결제", series="SeriesB",
          one_liner="가맹점 정산 자동화 플랫폼",
@@ -142,7 +146,7 @@ DEMO_COMPANIES = [
          # 맞춰 보는** 자리라, 여기가 어긋나 있으면 멀쩡한 화면이 고장으로 읽힌다.
          ir_file_name="샘플페이_IR.pdf",
          contract_status="no", is_top_deal=1, funding_status="Series B 라운드 오픈",
-         revenue_recent=12000, funding_total=8000, raise_target=15000, pre_value=60000,
+         revenue_recent="120", funding_total="80", raise_target="150", pre_value="600",
          competitiveness="월 거래액 300억 돌파", summary_status="done"),
 ]
 

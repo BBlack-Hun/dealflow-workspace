@@ -107,10 +107,18 @@ weekly_stats   (퇴사 삭제 후에도 남는 익명화 집계)
 | is_top_deal | INTEGER | 핵심/TOP Deal | 0/1 |
 | funding_status | TEXT NULL | 투자유치상태 | 예: "Series A 진행 중" |
 | note | TEXT NULL | 비고 | |
-| revenue_recent | INTEGER NULL | (추가) | 최근 매출(백만 원) |
-| funding_total | INTEGER NULL | (추가) | 누적 투자(백만 원) |
-| raise_target | INTEGER NULL | (추가) | 유치 희망(백만 원) |
-| pre_value | INTEGER NULL | (추가) | Pre Value(백만 원) |
+| revenue_recent | TEXT NULL | (0074) | 최근 매출 — **적은 그대로**, 단위 억 |
+| funding_total | TEXT NULL | (0074) | 누적 투자 — **적은 그대로**, 단위 억 |
+| raise_target | TEXT NULL | (0074) | 유치 희망 — **적은 그대로**, 단위 억 |
+| pre_value | TEXT NULL | (0074) | Pre Value — **적은 그대로**, 단위 억 |
+
+> **금액 넷은 글자다(0074).** `INTEGER`(백만 원)였는데, 그래서 금액을 정확히
+> 모를 때 적을 길이 없었다. 이제 `18.3` · `5-10억 사이` · `~`(모름)을 적은
+> 그대로 담고, **숫자를 뽑는 규칙은 `app/services/amount.py` 한 곳**이다
+> (문구 · 한줄소개 · 소개가능 판정 · LLM 구간 · 엑셀 · 매칭이 모두 그것을 읽는다).
+> 문구에 실리는 모양은 둘뿐이다 — 단일(`5.6`)과 구간(`5~10`). 그 밖의 글자는
+> 문구에서 토막째 빠지고 표에 `⚠ 문구에서 빠짐` 딱지가 붙는다.
+> 구간은 **아래**를 숫자로 쓴다(부풀려 소개하지 않는 쪽).
 | competitiveness | TEXT NULL | (추가) | 경쟁력 항목(요약 자동 조합 말미, 예: "상급 유통사 12곳 계약") |
 | summary | TEXT NULL | (추가) | **딜 요약문**. 필드 자동 조합(`[분야] \| 한줄소개 \| 매출 N억 \| 누적투자금액 N억 \| N억 투자유치중 \| Pre Value 약 N억원 \| 경쟁력`) 결과를 캐시, 수동 수정본 우선 |
 | summary_status | TEXT | (추가) | `done`(작성완료) \| `draft`(미작성) \| `insufficient`(정보부족) |
@@ -355,7 +363,7 @@ active(stage=1 발송됨)
   "owner_user_id": 1, "ir_drive_url": "https://drive.google.com/file/d/1AbC.../view",
   "contract_status": "yes", "contract_month": "2026-07", "is_top_deal": 1,
   "funding_status": "Series A 진행 중", "note": "",
-  "revenue_recent": 3090, "funding_total": 560, "raise_target": 5000, "pre_value": 20000,
+  "revenue_recent": "30.9", "funding_total": "5.6", "raise_target": "50", "pre_value": "200",
   "summary": "[샘플애그] B2B 농산물 선도거래 플랫폼 'Presell'. 매출 30.9억, 누적투자 5.6억. Series A 50억 모집.",
   "summary_status": "done", "introducible": 1 }
 

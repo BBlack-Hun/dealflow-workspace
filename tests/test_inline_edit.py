@@ -24,7 +24,7 @@ def company(db):
     from app.models import IrCompany
 
     row = IrCompany(name="샘플애그", sector_major="애그테크",
-                    one_liner="B2B 농산물 선도거래", revenue_recent=1200)
+                    one_liner="B2B 농산물 선도거래", revenue_recent="12")
     db.add(row)
     db.commit()
     return row
@@ -45,22 +45,58 @@ def contact(db, users):
 
 def test_one_field_is_enough(logged_in, db, company):
     r = logged_in.patch(f"/api/companies/{company.id}",
-                        json={"revenue_recent": 3400})
+                        json={"revenue_recent": "34"})
     assert r.status_code == 200, r.text
     db.refresh(company)
-    assert company.revenue_recent == 3400
+    assert company.revenue_recent == "34"
     assert company.name == "샘플애그", "이름을 안 보냈다고 지워지면 안 된다"
+
+
+def test_a_range_is_stored_exactly_as_it_was_typed(logged_in, db, company):
+    """요청의 핵심 — `5-10억 사이` 라고 적으면 **그대로** 저장된다.
+
+    숫자 하나로 뭉개면 사람이 적은 뜻이 사라진다. 표도 [수정] 창도 저장된 그
+    글자를 보여주므로, 여기서 다듬으면 사람은 자기가 적은 것을 다시 볼 수 없다.
+    """
+    r = logged_in.patch(f"/api/companies/{company.id}",
+                        json={"funding_total": "5-10억 사이"})
+    assert r.status_code == 200, r.text
+    db.refresh(company)
+    assert company.funding_total == "5-10억 사이"
+
+    table = logged_in.get("/companies?tab=db").text
+    assert "5-10억 사이" in table, "표가 적은 그대로를 안 보여준다"
 
 
 def test_zero_is_not_empty(logged_in, db, company):
     """'매출 0' 과 '아직 안 적음'은 다르다."""
-    logged_in.patch(f"/api/companies/{company.id}", json={"revenue_recent": 0})
+    logged_in.patch(f"/api/companies/{company.id}", json={"revenue_recent": "0"})
     db.refresh(company)
-    assert company.revenue_recent == 0
+    assert company.revenue_recent == "0"
 
     logged_in.patch(f"/api/companies/{company.id}", json={"revenue_recent": None})
     db.refresh(company)
     assert company.revenue_recent is None
+
+
+def test_unknown_is_not_zero(logged_in, db, company):
+    """`~`(모름)과 `0`(없음)은 다른 사실이다.
+
+    `0` 은 아는 사실이라 딜소개 문구에 `누적투자금액 0억` 으로 나가고, `~` 는
+    모른다는 표시라 문구에서 빠진다. 둘 다 저장은 적은 그대로다 — 화면에서
+    `~` 는 빈 칸('아직 안 봤다')과 눈으로 구별된다.
+    """
+    from app.services.message_composer import CompanyView, auto_company_summary
+
+    logged_in.patch(f"/api/companies/{company.id}", json={"funding_total": "~"})
+    db.refresh(company)
+    assert company.funding_total == "~"
+    assert logged_in.get("/companies?tab=db").text.count(">~<") >= 1
+
+    said = auto_company_summary(CompanyView(name="x", funding_total="~"))
+    assert "누적투자금액" not in said
+    said = auto_company_summary(CompanyView(name="x", funding_total="0"))
+    assert "누적투자금액 0억" in said
 
 
 def test_response_says_whether_it_became_introducible(logged_in, db, company):
@@ -70,8 +106,8 @@ def test_response_says_whether_it_became_introducible(logged_in, db, company):
     assert body["introducible"] is False
     assert "없음" in body["blocked_reason"], "무엇이 모자란지 말해 줘야 채울 수 있다"
 
-    for field, value in [("funding_total", 20), ("raise_target", 700),
-                         ("pre_value", 3000), ("competitiveness", "특허 6건"),
+    for field, value in [("funding_total", "0.2"), ("raise_target", "7"),
+                         ("pre_value", "30"), ("competitiveness", "특허 6건"),
                          ("ir_file_name", "샘플_IR.pdf"),
                          ("summary_status", "done")]:
         body = logged_in.patch(f"/api/companies/{company.id}",
@@ -117,7 +153,7 @@ def test_cannot_touch_someone_elses(client, db, users, contact):
 def test_tables_are_wired(logged_in, company, contact):
     companies = logged_in.get("/companies?tab=db").text
     assert 'data-inline-url="/api/companies"' in companies
-    assert 'data-field="revenue_recent" data-type="number"' in companies
+    assert 'data-field="revenue_recent"' in companies
     assert "inline_edit.js" in companies
 
     contacts = logged_in.get("/contacts").text
@@ -266,9 +302,15 @@ def test_required_fields_are_visible_in_the_table(logged_in, company):
 
 
 def test_the_money_columns_can_all_be_typed_into(logged_in, company):
+    """금액 칸은 **글자로** 고친다(0074).
+
+    `data-type="number"` 가 붙어 있으면 화면이 `Number()` 로 읽어 `5-10억` 이
+    통째로 사라진다 — 그것을 막는 것이 이 검사다.
+    """
     html = logged_in.get("/companies?tab=db").text
     for field in ("revenue_recent", "funding_total", "raise_target", "pre_value"):
-        assert f'data-field="{field}" data-type="number"' in html, field
+        assert f'data-field="{field}"' in html, field
+        assert f'data-field="{field}" data-type="number"' not in html, field
 
 
 # --- 금액 단위 ---------------------------------------------------------------
@@ -279,9 +321,10 @@ def test_the_money_columns_can_all_be_typed_into(logged_in, company):
 def test_money_columns_show_eok(logged_in, db):
     from app.models import IrCompany
 
-    db.add(IrCompany(name="샘플로지", revenue_recent=1830,   # 18.3억
-                     funding_total=1000,                     # 10억
-                     pre_value=15000))                       # 150억
+    # 0074 가 옛 정수를 이 글자로 옮긴다(1830 → "18.3" · 1000 → "10" · 15000 → "150").
+    db.add(IrCompany(name="샘플로지", revenue_recent="18.3",
+                     funding_total="10",
+                     pre_value="150"))
     db.commit()
 
     html = logged_in.get("/companies?tab=db").text
@@ -294,18 +337,18 @@ def test_money_columns_show_eok(logged_in, db):
     assert html.count('class="th-unit">억<') == 0
 
 
-def test_editing_in_eok_stores_baekman():
-    """사람이 `18.3` 이라고 적으면 1830 으로 저장돼야 한다."""
-    js = pathlib.Path("app/static/js/inline_edit.js").read_text(encoding="utf-8")
-    assert 'unit === "eok" ? Math.round(n * 100) : n' in js, \
-        "억 → 백만원 되돌림이 없다"
-    assert 'data-unit' in js
+def test_the_screen_never_does_arithmetic_on_the_money_fields():
+    """화면이 금액을 곱하거나 나누지 않는다.
 
-
-def test_the_money_cells_are_marked_as_eok(logged_in, company):
-    html = logged_in.get("/companies?tab=db").text
-    for field in ("revenue_recent", "funding_total", "raise_target", "pre_value"):
-        assert f'data-field="{field}" data-type="number" data-unit="eok"' in html, field
+    저장이 백만원 정수였을 때는 화면이 억↔백만원을 곱하고 나눴다. 저장이 억
+    글자가 되면서 곱할 것이 없어졌고, **없어야 한다** — 곱하는 자리가 남아
+    있으면 `5-10억` 이 `Number()` 에서 `NaN` 이 되어 통째로 사라진다.
+    """
+    js = pathlib.Path("app/static/js/companies.js").read_text(encoding="utf-8")
+    code = "\n".join(line for line in js.splitlines()
+                     if not line.lstrip().startswith("//"))
+    for gone in ("EOK_FIELDS", "toEok(", "toStored("):
+        assert gone not in code, f"{gone} 이 남아 있다 — 억↔백만원 환산이 살아 있다"
 
 
 def test_the_version_is_at_the_top(logged_in):
@@ -321,17 +364,21 @@ def test_the_version_is_at_the_top(logged_in):
 
 
 def test_the_edit_modal_is_in_eok_too(logged_in, company):
-    """표는 억인데 수정 창만 백만원이면 같은 값이 100배 차이로 보인다."""
+    """표는 억인데 수정 창만 백만원이면 같은 값이 100배 차이로 보인다.
+
+    **글자 칸이어야 한다**(0074). `type="number"` 면 브라우저가 `5-10억 사이` 를
+    아예 받지 않는다 — 요청이 막혀 있던 자리가 정확히 여기다.
+    """
     html = logged_in.get("/companies").text
     assert "단위: 억" in html
     assert "백만원" not in html
-    # 18.3 같은 값을 넣을 수 있어야 한다
     for field in ("revenue_recent", "funding_total", "raise_target", "pre_value"):
-        assert f'step="0.1" id="f-{field}"' in html, field
+        assert f'<input type="text" id="f-{field}"' in html, field
+        assert f'type="number" step="0.1" id="f-{field}"' not in html, field
 
-    js = pathlib.Path("app/static/js/companies.js").read_text(encoding="utf-8")
-    assert "EOK_FIELDS" in js
-    assert "Math.round(n * 100)" in js, "억 → 백만원 되돌림이 없다"
+    # 창이 보내는 것도 적은 글자 그대로다 — 곱하는 자리가 남아 있으면
+    # `5-10억` 이 `Number()` 에서 `NaN` 이 되어 통째로 사라진다
+    # (`test_the_screen_never_does_arithmetic_on_the_money_fields` 가 지킨다).
 
 
 def test_the_excel_matches_the_screen(logged_in, db):
@@ -342,7 +389,7 @@ def test_the_excel_matches_the_screen(logged_in, db):
 
     from app.models import IrCompany
 
-    db.add(IrCompany(name="샘플로지", revenue_recent=1830, pre_value=15000))
+    db.add(IrCompany(name="샘플로지", revenue_recent="18.3", pre_value="150"))
     db.commit()
 
     book = openpyxl.load_workbook(
@@ -358,6 +405,33 @@ def test_the_excel_matches_the_screen(logged_in, db):
     assert row[col["Pre Value(억)"]] == 150
     # 엑셀에서 계산할 수 있게 문자열이 아니라 숫자여야 한다
     assert isinstance(row[col["최근매출(억)"]], (int, float))
+
+
+def test_the_excel_keeps_a_range_a_range(logged_in, db):
+    """구간은 **적은 그대로** 내려간다 — 하한 숫자로 눌러 담지 않는다.
+
+    `5~10억` 을 `5` 로 내려보내면 엑셀만 보는 사람에게는 그것이 **틀린 단정**
+    으로 남고, 구간이었다는 사실을 되찾을 길이 없다. 그 줄은 합계에 안 들어가지만,
+    원래 그 값은 합계에 넣을 수 있는 값이 아니었다.
+    """
+    import io
+
+    import openpyxl
+
+    from app.models import IrCompany
+
+    db.add(IrCompany(name="샘플구간", funding_total="5-10억 사이", pre_value="~"))
+    db.commit()
+
+    book = openpyxl.load_workbook(
+        io.BytesIO(logged_in.get("/api/export/companies.xlsx").content))
+    sheet = book.active
+    head = [c.value for c in sheet[1]]
+    col = {name: i for i, name in enumerate(head)}
+    row = next(r for r in sheet.iter_rows(min_row=2, values_only=True)
+               if r[0] == "샘플구간")
+    assert row[col["누적투자(억)"]] == "5-10억 사이"
+    assert row[col["Pre Value(억)"]] == "~"
 
 
 # --- 시트의 하단 탭 -----------------------------------------------------------

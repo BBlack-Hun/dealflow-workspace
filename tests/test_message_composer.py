@@ -3,23 +3,53 @@ from app.services import message_composer as mc
 from app.services.message_composer import CompanyView, ContactView
 
 
-# --- format_eok -----------------------------------------------------------
+# --- format_eok -------------------------------------------------------------
+#
+# 저장이 백만원 정수에서 **사람이 적은 글자(억)** 로 바뀌었다(0074). `format_eok`
+# 은 이제 그 글자에서 **문구에 실을 수량**을 고르는 일을 하고, 고르는 판단은
+# `services/amount.py` 한 곳에 있다.
 
-def test_format_eok_decimal():
-    assert mc.format_eok(3090) == "30.9"   # 백만원 -> 억
+def test_format_eok_passes_the_written_number_through():
+    """옛 정수가 옮겨진 글자(`3090` → `"30.9"`)가 그대로 지나야 한다."""
+    assert mc.format_eok("30.9") == "30.9"
+    assert mc.format_eok("50") == "50"
+    assert mc.format_eok("200") == "200"
+    assert mc.format_eok("5.6") == "5.6"
 
 
-def test_format_eok_whole_number_strips_decimal():
-    assert mc.format_eok(5000) == "50"
-    assert mc.format_eok(20000) == "200"
-
-
-def test_format_eok_small_fraction():
-    assert mc.format_eok(560) == "5.6"
+def test_format_eok_keeps_a_range_a_range():
+    """`5-10억 사이` 라고 적었으면 문구에도 구간이 남아야 한다."""
+    assert mc.format_eok("5-10억 사이") == "5~10"
+    assert mc.format_eok("5~10억") == "5~10"
 
 
 def test_format_eok_none_returns_none():
     assert mc.format_eok(None) is None
+
+
+def test_format_eok_drops_what_it_cannot_read():
+    """`~`(모름)과 자유 문장은 **문구에 실리지 않는다.**
+
+    사람이 아무 글자나 넣을 수 있게 된 이상, 못 읽는 것을 그대로 투자사에게
+    보내는 쪽이 훨씬 나쁘다. 부르는 쪽은 `None` 을 보고 토막째 뺀다.
+    """
+    assert mc.format_eok("~") is None
+    assert mc.format_eok("투자 유치 협의중") is None
+    assert mc.format_eok("") is None
+
+
+def test_the_number_rule_lives_in_exactly_one_place():
+    """`format_eok` 은 **스스로 해석하지 않는다** — `amount.quantity` 를 부른다.
+
+    이 파일에서 `억` 을 붙이는 자리가 넷이고 한줄소개에 셋이 더 있다. 그 일곱이
+    각자 글자를 읽기 시작하면 같은 값이 문구마다 다르게 나가고, 갈린 숫자는
+    겉보기에 멀쩡하다. 규칙을 옮기고 싶으면 `services/amount.py` 를 고쳐라 —
+    이 검사는 그 자리를 바꾸면 깨지도록 되어 있다.
+    """
+    from app.services import amount
+
+    for written in ("30.9", "5-10억 사이", "0", "~", "말도 안 되는 값"):
+        assert mc.format_eok(written) == amount.quantity(written), written
 
 
 # --- auto_company_summary --------------------------------------------------
@@ -28,8 +58,8 @@ def test_auto_summary_full():
     c = CompanyView(
         name="샘플애그", sector_major="애그테크",
         one_liner="B2B 농산물 선도거래 'Presell'",
-        revenue_recent=3090, funding_total=560, raise_target=2000,
-        pre_value=21000, competitiveness="상급 유통사 12곳 계약",
+        revenue_recent="30.9", funding_total="5.6", raise_target="20",
+        pre_value="210", competitiveness="상급 유통사 12곳 계약",
     )
     summary = mc.auto_company_summary(c)
     assert summary == (
@@ -118,7 +148,7 @@ def _contact():
 
 def _companies():
     return [
-        CompanyView(name="샘플애그", sector_major="애그테크", one_liner="선도거래", revenue_recent=3090),
+        CompanyView(name="샘플애그", sector_major="애그테크", one_liner="선도거래", revenue_recent="30.9"),
         CompanyView(name="샘플메디", sector_major="헬스케어", one_liner="뇌영상 AI"),
         CompanyView(name="세번째", sector_major="핀테크", one_liner="결제"),
     ]

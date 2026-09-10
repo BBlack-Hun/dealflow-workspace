@@ -10,7 +10,6 @@
 //       <td class="cell multi" data-field="memo">…</td>          여러 줄
 //       <td class="cell" data-field="due_date" data-type="date">2026-08-26</td>
 //       <td class="cell num" data-field="revenue_recent" data-type="number">1,200</td>
-//       <td class="cell num" data-field="pre_value" data-type="number" data-unit="eok">150</td>
 //       <td><div class="cell clamp2" data-field="one_liner" data-type="long">긴 문장…</div></td>
 //       <td class="cell" data-field="sector_major" data-type="pick">애그테크</td>
 //
@@ -72,9 +71,6 @@
       var before = cell.hasAttribute("data-value")
         ? cell.getAttribute("data-value") : cell.textContent.trim();
       var type = cell.getAttribute("data-type") || "";
-      // 억 단위로 보여 주는 칸은 **보이는 그대로** 고친다. 저장할 때만
-      // 백만원으로 되돌린다(DB 는 백만원으로 쌓여 있다).
-      var unit = cell.getAttribute("data-unit") || "";
       if (type === "number") before = before.replace(/,/g, "");
       if (before === "-") before = "";        // 빈 칸을 '-' 로 그려 둔 표가 있다
 
@@ -118,7 +114,7 @@
         editing = null;
         var after = input.value.trim();
         cell.textContent = type === "number" ? withCommas(after) : after;
-        if (after !== before) save(cell, after, before, type, unit);
+        if (after !== before) save(cell, after, before, type);
       }
     }
 
@@ -327,7 +323,7 @@
       return hint;
     }
 
-    function save(cell, value, before, type, unit) {
+    function save(cell, value, before, type) {
       var row = cell.closest("tr");
       var id = row && row.getAttribute("data-id");
       if (!id) return;
@@ -341,7 +337,7 @@
         body.notes[field] = value;
       } else {
         // 숫자 칸은 빈 값이면 null 로 보낸다 — 0 과 '아직 안 적음'은 다르다.
-        body[field] = type === "number" ? toStored(value, unit) : value;
+        body[field] = type === "number" ? toStored(value) : value;
       }
 
       cell.classList.add("saving");
@@ -432,13 +428,16 @@
     input.setSelectionRange(input.value.length, input.value.length);
   }
 
-  // 화면은 억, 저장은 백만원. 1억 = 100백만원.
-  // 사람이 "18.3억" 이라고 적으면 1830 으로 넣는다 — 소수점 오차가 나지 않게 반올림.
-  function toStored(value, unit) {
+  // 숫자 칸은 빈 값이면 `null` 로 보낸다 — `0` 과 '아직 안 적음'은 다르다.
+  //
+  // **여기에 단위 환산을 다시 들이지 마라.** 기업 금액 넷이 억↔백만원을 여기서
+  // 곱하고 나눴는데(`data-unit="eok"`), 그 자리 때문에 `5-10억 사이` 같은 값을
+  // 아예 넣을 수 없었다. 이제 그 넷은 글자 칸이고(0074), 숫자를 뽑는 규칙은
+  // `app/services/amount.py` 한 곳이다.
+  function toStored(value) {
     if (value === "") return null;
     var n = Number(value);
-    if (isNaN(n)) return null;
-    return unit === "eok" ? Math.round(n * 100) : n;
+    return isNaN(n) ? null : n;
   }
 
   function withCommas(value) {

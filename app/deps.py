@@ -15,10 +15,15 @@ from .db import SessionLocal, get_db
 from .models import AgentDevice, User
 
 def _eok(value) -> str:
-    """저장값(백만원) → 억 표기. `1830` → `18.3`."""
-    from .services.message_composer import format_eok
+    """금액 칸을 화면에 **적은 그대로**. `"5-10억 사이"` → `5-10억 사이`.
 
-    return format_eok(value) or ""
+    저장이 백만원 정수였을 때는 100 으로 나누는 계산이었다. 지금은 글자라
+    (0074) 나눌 것이 없고, 옛 값은 이미 억 글자로 옮겨져 있어 화면에 뜨던
+    글자가 그대로다. `routers/companies.eok` 과 **같은 일을 하는 같은 한 줄**이다.
+    """
+    from .services import amount
+
+    return amount.text(value)
 
 
 templates = Jinja2Templates(directory=str(config.TEMPLATES_DIR))
@@ -26,9 +31,32 @@ templates = Jinja2Templates(directory=str(config.TEMPLATES_DIR))
 # 전역으로 두어야 base.html 을 포함한 모든 화면에서 쓸 수 있다(컨텍스트에
 # 넣으면 화면 하나에서 빠뜨리는 순간 그 화면만 캐시에 물린다).
 templates.env.globals["asset"] = assets.asset
-# 금액은 어느 화면에서든 억으로 보여 준다 — 저장은 백만원이라 그대로 두면
-# `1,000` 이 10억으로 읽히지 않는다.
+# 금액은 어느 화면에서든 **사람이 적은 그대로** 보여 준다(단위는 억).
+# 다듬는 자리를 화면에 두면 표와 문구가 다른 글자를 보이게 된다.
 templates.env.globals["eok"] = _eok
+
+
+def _amount_warn(value) -> str:
+    """이 금액이 **문구에 못 실리는 값이면** 그 까닭. 실릴 수 있으면 빈 글자.
+
+    금액 칸이 글자가 되면서(0074) 사람은 아무 말이나 적을 수 있게 됐다. 그런데
+    앱이 문구에 실을 수 있는 모양은 둘뿐이라(단일 · 구간), 나머지는 딜소개 문구
+    에서 **조용히 빠진다.** 조용히 빠지면 사람은 적어 뒀는데 왜 안 나오는지 알
+    길이 없다 — 그래서 표에 딱지로 띄운다.
+
+    `~`(모름)에는 딱지를 안 붙인다. 그것은 실수가 아니라 **일부러 적은 표시**라,
+    문구에서 빠지는 것이 적은 사람의 뜻 그대로다.
+    """
+    from .services import amount
+
+    if amount.state(value) != amount.UNREADABLE:
+        return ""
+    return ("숫자로 읽지 못해 딜소개 문구에서 빠집니다 — "
+            "`18.3` 이나 `5-10억` 처럼 적어 주세요. "
+            "값을 모른다는 뜻이면 `~` 로 적습니다.")
+
+
+templates.env.globals["amount_warn"] = _amount_warn
 
 
 # 저장용 시각은 `app/clock.py` 하나에서만 만든다 — 왜 지역시간인지는 그쪽에.

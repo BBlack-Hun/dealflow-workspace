@@ -67,6 +67,7 @@ from sqlalchemy.orm import Session
 
 from .. import clock
 from ..models import IrCompany, User
+from . import amount as amount_text
 from . import sheet_owner
 # 방이 살아 있는지는 **대시보드가 세는 그 판정**을 그대로 쓴다. 여기에 다시
 # 적으면 화면 숫자와 어긋난다 — 투자사 관리 현황 117명 · 대시보드 123명으로
@@ -150,7 +151,24 @@ def amount_band(value) -> Optional[str]:
     `~1000` (0 초과 1000 미만) · `1000~5000` · `5000~10000` · `10000+`,
     그리고 정확히 0 은 `0`. 맨 아래를 `0~1000` 으로 적지 않는 것은 그 표가
     `0` 과 헷갈리기 때문이다.
+
+    ## 들어오는 것은 **글자**다
+
+    금액 칸 넷은 사람이 적은 글자다(0074 · `services/amount.py`). 여기서 다시
+    읽지 않고 `amount.million` 하나를 지난다 — 구간(`5~10억`)이면 **아래**가
+    나오고, `~`(모름)·못 읽는 글자는 `None` 이 되어 **자료에 아예 안 실린다**
+    (`_fill`). 그것이 맞다: 읽는 쪽에게 "모른다" 는 곧 "칸이 없다" 이고,
+    이 자료의 설명문이 이미 그렇게 적어 두었다.
+
+    **`0` 은 여전히 `0` 표로 실린다.** `0`(없음)과 `~`(모름)은 다른 사실이라
+    갈라 두어야 한다 — 0 을 모름으로 뭉개면 "아직 매출이 없는 초기 기업" 이
+    자료에서 사라진다.
+
+    숫자(백만원 정수)를 그대로 넘겨도 예전처럼 동작한다 — 시험이 경계값을
+    숫자로 넣어 보고, `amount_bands()` 도 경계 숫자로 표를 만든다.
     """
+    if isinstance(value, str):
+        value = amount_text.million(value)
     if value is None or value == "":
         return None
     if value == 0:

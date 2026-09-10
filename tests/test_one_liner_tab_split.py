@@ -46,7 +46,7 @@ STAMP = "2026-09-04T09:00:00+09:00"
 # 재료가 다 찬 기업 하나. 조합하면 아래 `COMPOSED` 가 나온다.
 SOURCE = dict(business_desc="비전AI 기반 미세먼지 측정 솔루션",
               revenue_2023="2억", revenue_2024="4억",
-              funding_total=1100, pre_value=20000)
+              funding_total="11", pre_value="200")
 COMPOSED = ("비전AI 기반 미세먼지 측정 솔루션 | 매출 23년 2억, 24년 4억"
             " | 누적투자금액 11억 | Pre Value 200억")
 

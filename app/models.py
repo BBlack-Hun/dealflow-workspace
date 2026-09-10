@@ -17,6 +17,9 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .clock import now_iso as _now_iso
 from .db import Base
+# 금액 글자에서 숫자를 뽑는 **하나뿐인 규칙**. 여기서 다시 해석하지 않는다.
+# (`amount` 는 표준 라이브러리만 쓰므로 모델이 불러도 서로 물리지 않는다.)
+from .services import amount
 
 
 class TimestampMixin:
@@ -401,10 +404,22 @@ class IrCompany(TimestampMixin, Base):
     # 이 기업을 맡은 팀원. 투자사 쪽 `assignee_name` 과 같은 성격이다.
     assignee_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
-    revenue_recent: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    funding_total: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    raise_target: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    pre_value: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # ── 금액 넷 — **사람이 적은 글자 그대로**, 단위는 억 ─────────────────
+    #
+    # `Integer`(백만원)였다. 그래서 화면 입력이 `<input type="number">` 였고
+    # **정확히 모르는 금액을 적을 길이 없었다** — `5-10억 사이` · `~` 를 넣고
+    # 싶다는 요청이 여기서 막혀 있었다(0074 가 옮겼다).
+    #
+    # 숫자로 쓰는 곳이 여섯이다(문구 · 한줄소개 · 소개가능 판정 · LLM 구간 ·
+    # 엑셀 · 매칭). **뽑는 규칙은 `services/amount.py` 하나뿐이다** — 여섯이
+    # 각자 해석하면 숫자가 갈리고, 갈린 숫자는 겉보기에 멀쩡하다.
+    #
+    # 단위가 억인 것은 표(`(억)`)와 수정 창(`단위: 억`)이 억이기 때문이다.
+    # 보는 단위와 저장 단위가 같아야 `5-10억` 에서 곱할 자리가 안 생긴다.
+    revenue_recent: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    funding_total: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    raise_target: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    pre_value: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     competitiveness: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     # Deal summary: cached auto-composed text; manual edit takes priority.
     summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -447,12 +462,25 @@ class IrCompany(TimestampMixin, Base):
         - summary_status 는 사람의 판단 스위치로 남긴다(insufficient=보류).
         - 소개할 내용(분야 또는 한줄소개)과 숫자 하나 이상은 있어야 한다.
           숫자가 하나도 없으면 '이름만 나열'이 되어 소개가 되지 않는다.
+
+        **금액은 이제 글자다**(0074). '숫자 하나 이상' 을 세는 규칙은
+        `services/amount.py: is_countable` 하나이고, 예전 판정을 그대로 옮겼다:
+
+          · `0`  — 세지 않는다(예전 `v not in (None, 0)` 그대로). 넷이 다 0 이면
+                   '이름만 나열' 이라는 원래 근거가 그대로 선다. 다만 문구에는
+                   예전처럼 `누적투자금액 0억` 으로 나간다 — 아는 사실이다.
+          · `~`  — 세지 않는다. **`0` 과 다른 값이다**: `0` 은 '없음' 이고 `~` 는
+                   '모름' 이라, 문구에도 LLM 자료에도 나가지 않는다. 화면에는
+                   적은 그대로 남아 빈 칸('아직 안 봤다')과 눈으로 구별된다.
+          · 구간 — **센다.** `5~10억` 은 문구에 그대로 실려 나가므로 소개할
+                   근거가 된다. 이 줄이 요청의 요점이다.
+          · 못 읽는 글자 — 세지 않는다. 문구에 못 나가는 값은 근거가 못 된다.
         """
         if not self.name or self.summary_status == "insufficient":
             return False
         has_text = bool(self.sector_major or self.one_liner)
         has_number = any(
-            v not in (None, 0)
+            amount.is_countable(v)
             for v in (self.revenue_recent, self.funding_total,
                       self.raise_target, self.pre_value)
         )

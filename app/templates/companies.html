@@ -1,5 +1,26 @@
 {% extends "base.html" %}
 
+{# ── 금액 칸 한 개 ────────────────────────────────────────────────────────
+   금액 넷(`최근매출` · `누적투자금액` · `희망투자` · `Pre Value`)은 **사람이
+   적은 글자**다(0074 · `services/amount.py`). 단위는 억이고, 표에는 다듬지
+   않고 그대로 보여준다 — 무엇을 고쳐야 문구가 바뀌는지 보이려면 적은 것이
+   그대로 보여야 한다.
+
+   **네 칸을 여기 한 곳으로 모은다.** 예전에는 같은 `<td>` 가 네 번 적혀
+   있었고, 실제로 그중 하나만 고쳐 두는 사고가 이 저장소에 여러 번 있었다.
+
+   숫자로 못 읽는 값에는 딱지가 붙는다 — 그 값은 딜소개 문구에서 **조용히
+   빠지기** 때문이다(`deps._amount_warn`). #}
+{% macro amount_cell(value, field) -%}
+<td class="num">
+  <span class="cell" data-field="{{ field }}">{{ eok(value) }}</span>
+  {%- set warn = amount_warn(value) -%}
+  {%- if warn %}
+  <span class="cell-hint warn-hint" title="{{ warn }}">⚠ 문구에서 빠짐</span>
+  {%- endif %}
+</td>
+{%- endmacro %}
+
 {% block content %}
 <header class="page-head">
   <h1>{{ page_title }}</h1>
@@ -162,11 +183,11 @@
         <th class="num" style="width:74px">23년 매출</th>
         <th class="num" style="width:74px">24년 매출</th>
         <th class="num" style="width:74px">25년 매출</th>
-        <th class="num" style="width:96px">누적투자금액</th>
-        <th class="num" style="width:120px">투자유치희망금액</th>
-        <th class="num" style="width:76px">Pre Value</th>
+        <th class="num" style="width:96px" title="단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 모르면 `~`">누적투자금액</th>
+        <th class="num" style="width:120px" title="단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 모르면 `~`">투자유치희망금액</th>
+        <th class="num" style="width:76px" title="단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 모르면 `~`">Pre Value</th>
         <th style="width:260px">특이사항 (장점)</th>
-        <th class="num" style="width:90px">최근 매출액</th>
+        <th class="num" style="width:90px" title="단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 모르면 `~`">최근 매출액</th>
         <th style="width:72px">설립년도</th>
         <th style="width:130px">기보, 신보, 중진공</th>
         {# IR 자료는 어느 탭에서 보든 맨 끝에 그대로 둔다. #}
@@ -204,13 +225,16 @@
         <td class="cell num" data-field="revenue_2023">{{ r.revenue_2023 }}</td>
         <td class="cell num" data-field="revenue_2024">{{ r.revenue_2024 }}</td>
         <td class="cell num" data-field="revenue_2025">{{ r.revenue_2025 }}</td>
-        <td class="cell num" data-field="funding_total" data-type="number" data-unit="eok">{{ eok(r.funding_total) }}</td>
-        <td class="cell num" data-field="raise_target" data-type="number" data-unit="eok">{{ eok(r.raise_target) }}</td>
-        <td class="cell num" data-field="pre_value" data-type="number" data-unit="eok">{{ eok(r.pre_value) }}</td>
+        {# 금액 넷도 **적은 그대로** 글자다(0074) — `5-10억 사이` · `~` 가 들어온다.
+           단위는 억이고 표 머리글이 그 단위를 말한다. `data-type="number"` 를
+           두면 화면이 `Number()` 로 읽어 구간이 통째로 사라진다. #}
+        {{ amount_cell(r.funding_total, "funding_total") }}
+        {{ amount_cell(r.raise_target, "raise_target") }}
+        {{ amount_cell(r.pre_value, "pre_value") }}
         <td title="{{ r.competitiveness }}">
           <div class="cell clamp2" data-field="competitiveness" data-type="long">{{ r.competitiveness }}</div>
         </td>
-        <td class="cell num" data-field="revenue_recent" data-type="number" data-unit="eok">{{ eok(r.revenue_recent) }}</td>
+        {{ amount_cell(r.revenue_recent, "revenue_recent") }}
         <td class="cell" data-field="founded_year">{{ r.founded_year }}</td>
         <td title="{{ r.guarantee }}">
           <div class="cell clamp2" data-field="guarantee" data-type="long">{{ r.guarantee }}</div>
@@ -614,12 +638,21 @@
     <label class="field"><span>25년 매출</span><input type="text" id="f-revenue_2025"></label>
   </div>
 
-  <h3 class="form-section">숫자 <span class="hint">단위: 억 (예 18.3)</span></h3>
+  {# ── 금액 넷 ────────────────────────────────────────────────────────────
+     `<input type="number">` 였다. 그래서 **정확히 모르는 금액을 적을 길이
+     없었다** — 사용자가 넣고 싶어 한 것은 `5-10억 사이` · `~` 다(0074).
+     이제 글자 칸이고, 적은 그대로 저장된다.
+
+     안내에 든 예는 **앱이 문구에 실을 수 있는 모양 그대로**다. 여기 없는
+     모양(`10억 이상` 같은 것)은 저장은 되지만 딜소개 문구에서 빠지고, 표에
+     `⚠ 문구에서 빠짐` 딱지가 붙는다. #}
+  <h3 class="form-section">금액
+    <span class="hint">단위: 억 · 숫자 `18.3` · 구간 `5-10억` · 모르면 `~`</span></h3>
   <div class="form-grid">
-    <label class="field"><span>최근 매출액</span><input type="number" step="0.1" id="f-revenue_recent" placeholder="0"></label>
-    <label class="field"><span>누적투자금액</span><input type="number" step="0.1" id="f-funding_total" placeholder="0"></label>
-    <label class="field"><span>투자유치희망금액</span><input type="number" step="0.1" id="f-raise_target" placeholder="0"></label>
-    <label class="field"><span>Pre Value</span><input type="number" step="0.1" id="f-pre_value" placeholder="0"></label>
+    <label class="field"><span>최근 매출액</span><input type="text" id="f-revenue_recent" placeholder="18.3 · 5-10억 · ~"></label>
+    <label class="field"><span>누적투자금액</span><input type="text" id="f-funding_total" placeholder="18.3 · 5-10억 · ~"></label>
+    <label class="field"><span>투자유치희망금액</span><input type="text" id="f-raise_target" placeholder="18.3 · 5-10억 · ~"></label>
+    <label class="field"><span>Pre Value</span><input type="text" id="f-pre_value" placeholder="18.3 · 5-10억 · ~"></label>
   </div>
 
   <h3 class="form-section">소개 내용

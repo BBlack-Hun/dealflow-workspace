@@ -20,7 +20,9 @@ class K:  # company
     sector_major: Optional[str] = None
     sector_minor: Optional[str] = None
     series: Optional[str] = None
-    raise_target: Optional[int] = None  # 백만원
+    # **사람이 적은 글자**다(0074). 단위는 억이고 `5~10억` 같은 구간도 온다 —
+    # 숫자를 뽑는 것은 `services/amount.py` 하나뿐이다.
+    raise_target: Optional[str] = None  # 억 (적은 그대로)
 
 
 def test_sector_match_and_mismatch():
@@ -45,10 +47,10 @@ def test_stage_normalization():
 
 def test_round_size_range():
     # 선호 100억~1,000억인데 5억 유치면 규모 미달
-    small = matcher.evaluate_company(C(round_size="건당 100억~1,000억"), K(raise_target=500))
+    small = matcher.evaluate_company(C(round_size="건당 100억~1,000억"), K(raise_target="5"))
     assert small.verdict == matcher.MISMATCH
     # 200억 유치면 적합
-    ok = matcher.evaluate_company(C(round_size="건당 100억~1,000억"), K(raise_target=20000))
+    ok = matcher.evaluate_company(C(round_size="건당 100억~1,000억"), K(raise_target="200"))
     assert ok.verdict == matcher.FIT
 
 

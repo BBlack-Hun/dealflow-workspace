@@ -25,8 +25,9 @@
 `150억 ~ 200억` · `4월 기준 3억` 이 한 칸에 섞여 있어서, 숫자로 바꾸려면 단위를
 판별해야 한다. 잘못 읽으면 100배가 틀어진 채 딜소개 문구에 실려 나간다 —
 **적힌 그대로** 옮기고 단위를 붙이거나 다듬지 않는다.
-(누적투자금액·투자유치·Pre Value 는 모델이 이미 백만원 정수라, 화면·딜소개와
-같은 `format_eok` 로 억으로 옮긴다. 표와 문구가 다른 숫자를 보이면 안 된다.)
+(누적투자금액·투자유치·Pre Value 도 **적은 그대로**다 — 0074 부터 이 셋도
+글자로 담긴다. 문구에 실을 수량은 화면·딜소개와 같은 `format_eok`
+(= `services/amount.py`)가 고른다. 표와 문구가 다른 숫자를 보이면 안 된다.)
 
 `funding_status`(투자현황)는 **쓰지 않는다.** 이름만 보면 '진행 상태' 같지만
 실데이터 344행 중 335행이 `한줄 소개` 와 **글자까지 똑같은 사본**이고, 나머지도
@@ -183,12 +184,19 @@ def _revenue_segment(company) -> str:
     return "매출 " + ", ".join(f"{year}년 {value}" for year, value in written)
 
 
-def _eok_segment(value: Optional[int], template: str) -> str:
-    """백만원 정수 → `{}` 자리에 억을 넣은 토막. 비어 있으면 토막 자체를 뺀다."""
-    if value is None:
-        return ""
-    amount = format_eok(value)
-    return "" if amount is None else template.format(amount)
+def _eok_segment(value, template: str) -> str:
+    """금액 글자 → `{}` 자리에 수량을 넣은 토막. **못 읽으면 토막 자체를 뺀다.**
+
+    빠지는 것은 셋이다: 빈 칸 · `~`(모름) · 숫자로 못 읽는 글자. 셋 다 문구에
+    실을 수량이 없다는 점에서 같다 — 없는 숫자를 지어낼 수 없고, 사람이 적은
+    자유 문장을 그대로 실어 투자사에게 보낼 수도 없다.
+
+    수량을 고르는 판단은 `format_eok`(= `services/amount.py`) 하나다.
+    여기서 `억` 을 붙이는 자리가 셋이고 딜소개 문구에 넷이 더 있는데, 그
+    일곱이 각자 글자를 읽으면 같은 값이 문구마다 다르게 나간다.
+    """
+    quantity = format_eok(value)
+    return "" if quantity is None else template.format(quantity)
 
 
 def compose_one_liner(company) -> str:
