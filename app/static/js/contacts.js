@@ -231,8 +231,34 @@
     if (!current) { modal.close(true); return; }
     if (!confirm("이 담당자를 삭제할까요? 활동 이력도 함께 지워집니다.\n" +
       "(이직·투자사 변경이면 삭제 대신 '검토중단' 을 권합니다 — 이력이 남습니다)")) return;
+    // **서버가 준 사유를 그대로 띄운다.**
+    //
+    // 여기는 `.then(reload)` 한 줄이었다 — 응답이 409 든 500 이든 보지 않고
+    // 화면만 다시 그렸다. 그래서 발송 기록·미팅이 걸린 줄을 지우려 하면
+    // 아무 말 없이 새로 그려지고, 사람은 **지워진 줄 알았다가 그 줄이 그대로
+    // 있는 것을 나중에 발견했다.** 왜 안 되는지 물을 자리조차 없었다.
+    //
+    // 그래서 실패하면 멈춰 세우고(`alert`) 창에도 남긴다(`setMsg`). 둘 다
+    // 하는 이유는, 확인창은 누르면 사라져서 무엇이 몇 건 걸렸는지 다시 볼 수
+    // 없기 때문이다 — 수정창에 남아 있으면 [이 줄 감추기] 를 누르기 전에
+    // 다시 읽을 수 있다.
     fetch("/api/contacts/" + current, { method: "DELETE" })
-      .then(function () { window.location.reload(); })
+      .then(function (r) {
+        // 사유가 본문에 없을 수도 있다(502 · 빈 응답) — 그때도 성공으로
+        // 넘어가지 않게 `ok` 는 응답에서 읽는다.
+        return r.json().then(
+          function (d) { return { ok: r.ok, d: d || {} }; },
+          function () { return { ok: r.ok, d: {} }; });
+      })
+      .then(function (res) {
+        if (!res.ok) {
+          var why = res.d.detail || "삭제하지 못했습니다 (사유를 받지 못했습니다)";
+          setMsg(why, true);
+          alert(why);
+          return;
+        }
+        window.location.reload();
+      })
       .catch(function () { setMsg("삭제 오류", true); });
   }
 
