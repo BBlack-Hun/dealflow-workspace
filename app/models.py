@@ -414,7 +414,7 @@ class IrCompany(TimestampMixin, Base):
     # 엑셀 · 매칭). **뽑는 규칙은 `services/amount.py` 하나뿐이다** — 여섯이
     # 각자 해석하면 숫자가 갈리고, 갈린 숫자는 겉보기에 멀쩡하다.
     #
-    # 단위가 억인 것은 표(`(억)`)와 수정 창(`단위: 억`)이 억이기 때문이다.
+    # 단위가 억인 것은 표 머리글·수정 창(`단위: 억`)·엑셀이 모두 억이기 때문이다.
     # 보는 단위와 저장 단위가 같아야 `5-10억` 에서 곱할 자리가 안 생긴다.
     revenue_recent: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     funding_total: Mapped[Optional[str]] = mapped_column(String, nullable=True)
