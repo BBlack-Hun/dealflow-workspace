@@ -395,7 +395,7 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
 
    **th 폭 합계와 맞춰 둔다(현재 1,416px).** 모자라면 fixed 가 칸을 비율대로 눌러
    다시 잘린다. th 폭을 고치면 여기도 같이. */
-#team-table { min-width: 1520px; }
+#team-table { min-width: 1670px; }
 .grid-table { width: 100%; table-layout: fixed; border-collapse: collapse;
               background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
 /* 표 밀도. 8px/10px 이던 것을 6px/9px 로 — 글자 수 대비 자리가 남는 칸이
@@ -634,6 +634,11 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
 .inline-field { flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
 .inline-field input, .inline-field select { padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; }
 .inline-field input[type=number] { width: 90px; }
+/* 체크상자는 이름 **옆**에 선다. `.inline-field` 는 칸 이름을 위에 올리는
+   규칙이라(팀 현황의 `줄 편집 허용` 같은 고르는 칸에) 그대로 두면 상자 하나가
+   두 줄을 먹고, 여럿을 나란히 세울 때 어느 이름이 어느 상자인지 흐려진다. */
+.field.check-field { flex-direction: row; align-items: center; gap: 6px;
+  font-size: 13px; color: var(--ink); }
 .import-result { margin-top: 8px; }
 .import-summary { border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: #fafbfc; }
 .import-stats { list-style: none; margin: 8px 0 0; padding: 0; display: grid;

@@ -122,6 +122,7 @@
         <th class="num" style="width:56px">미팅</th>
         <th style="width:140px">발송 프로그램</th>
         <th style="width:88px">투자현황</th>
+        <th style="width:150px">줄 편집 허용</th>
         <th style="width:104px">자료 자동첨부</th>
         <th style="width:270px"></th>
       </tr>
@@ -214,6 +215,28 @@
           </form>
           {% endif %}
         </td>
+        {# **이 사람의 투자컨설턴트 줄을 고칠 수 있는 팀원.** 바로 옆칸이
+           `이 화면을 볼 수 있는가` 하나를 켜고 끄는 자리이고, 이 칸은 그 다음
+           물음에 답한다 — **누구의 줄을** 고쳐도 되는가. 투자컨설턴트 표는
+           줄마다 담당이 붙은 개인 표라, 화면을 열어 준다고 남의 줄까지
+           고쳐지지는 않는다(`routers/consulting.py` 의 `may_edit_row`).
+
+           **화면은 판정하지 않는다.** 이름도, 지금 통하는지도 서버가 준 것을
+           읽기만 한다(`services/dashboard.py` 의 `_consulting_editors`) —
+           여기에 조건을 적었다가 투자현황 칸이 거짓말을 한 적이 있다.
+
+           맡겨는 두었는데 지금 안 통하는 줄에는 `막힘` 을 붙인다. 감추면
+           관리자는 맡겨 둔 줄 아는데 그 사람 화면에서는 안 고쳐진다 — 왜
+           안 되는지 알 길이 없어진다. 대개는 바로 왼쪽 칸이 꺼져 있다. #}
+        <td class="grant-cell">
+          {% if m.editors %}
+          {% for e in m.editors %}
+          <span class="tag {% if not e.works %}warn{% endif %}"
+                {% if not e.works %}title="투자현황이 막혀 있어 지금은 못 고칩니다"{% endif %}>{{ e.name }}{% if not e.works %} 막힘{% endif %}</span>
+          {% endfor %}
+          {% else %}<span class="muted">없음</span>{% endif %}
+          <a class="linkbtn" href="/team?grant={{ m.id }}">맡기기</a>
+        </td>
         {# 자료 자동 첨부 — 발송기가 IR 자료 파일을 붙여 보내게 할 것인가.
 
            옆칸(투자현황)과 **같은 모양**이다: 값은 서버가 판정해 준 것을 읽고
@@ -267,7 +290,7 @@
          적으면 그 자리에서 세션이 끊겨 어느 번호로도 못 들어온다. #}
       {% if edit_id == m.id and m.id != user.id %}
       <tr class="member-edit-row">
-        <td colspan="12">
+        <td colspan="13">
           <div class="member-form">
             <form method="post" action="/team/members/{{ m.id }}/profile">
               <label class="field inline-field"><span>이름</span>
@@ -285,6 +308,49 @@
               계속 발송되는 것을 막습니다). 넘겨받는 사람이 로그인해
               <b>[발송 프로그램 설치]</b>에서 다시 내려받아야 발송됩니다.
               담당 투자사와 발송 이력은 그대로 남습니다.
+            </p>
+          </div>
+        </td>
+      </tr>
+      {% endif %}
+
+      {# **줄을 맡기는 칸.** 여는 방식은 바로 위 `?edit=` 과 같다 — 스크립트가
+         한 번 어긋나는 날 이 칸으로 가는 길이 통째로 사라지면 안 된다.
+
+         **고를 사람을 화면이 추리지 않는다.** 목록은 서버가 고치는 판정
+         하나로 뽑는다(`routers/dashboard.py` 의 `_grant_candidates`) — 맡겨도
+         안 통하는 사람(투자컨설턴트 · 투자현황이 막힌 팀원)은 애초에 안 서고,
+         이미 전부 고치는 관리자도 안 선다. 세워 두고 눌러도 아무 일이 없는
+         칸을 만들지 않으려는 것이다.
+
+         체크상자는 **켜져 있는 것 전부**를 보낸다 — 라우터가 그대로 갈아
+         끼우므로 화면에 없는 사람이 서버에만 남을 자리가 없다. #}
+      {% if grant_id == m.id %}
+      <tr class="member-edit-row">
+        <td colspan="13">
+          <div class="member-form">
+            <form method="post" action="/team/members/{{ m.id }}/consulting-editors">
+              {% if grant_candidates %}
+              {% for c in grant_candidates %}
+              <label class="field inline-field check-field">
+                <input type="checkbox" name="editor" value="{{ c.id }}"
+                       {% if c.checked %}checked{% endif %}>
+                <span>{{ c.name }}{% if not c.works %} (투자현황 막힘){% endif %}</span>
+              </label>
+              {% endfor %}
+              <button class="primary-btn inline" type="submit">저장</button>
+              {% else %}
+              <p class="hint">맡길 수 있는 팀원이 없습니다.</p>
+              {% endif %}
+              <a class="linkbtn" href="/team">취소</a>
+            </form>
+            <p class="hint">
+              고른 팀원은 <b>{{ m.name }} 님 담당으로 되어 있는 줄</b>만 고칠 수 있습니다 —
+              투자컨설턴트 현황의 다른 담당자 줄에는 그대로 손이 닿지 않고,
+              월 열을 지우거나 이름을 바꾸는 것은 계속 관리자만 합니다.
+              고친 것은 <a href="/team/edit-log">수정 로그</a>에 남습니다.
+              <b>투자현황을 볼 수 있는 팀원만 고를 수 있습니다</b> — 왼쪽
+              <b>투자현황</b> 칸이 막혀 있으면 먼저 열어 주세요.
             </p>
           </div>
         </td>

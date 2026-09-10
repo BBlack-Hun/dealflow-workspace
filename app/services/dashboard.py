@@ -750,6 +750,38 @@ def recent_batches(db: Session, user_id: Optional[int] = None, limit: int = 5) -
 
 # --- 관리자 대시보드 --------------------------------------------------------
 
+def _consulting_editors(db: Session, users) -> Dict[int, List[dict]]:
+    """`{줄 주인 번호: [그 줄을 고칠 수 있는 사람들]}`.
+
+    **판정을 여기서 새로 짓지 않는다.** 맡겨 두었다는 것과 지금 실제로
+    고쳐진다는 것은 다른 말이라(투자현황을 끄면 안 통한다), 통하는지는
+    화면·라우터와 **같은 함수** 하나에 묻는다
+    (`routers/consulting.py` 의 `may_edit_row`). 여기에 조건을 다시 적으면
+    팀 현황에는 `고칠 수 있음` 이라고 떠 있는데 눌러 보면 404 가 나는, 이
+    저장소가 반복해 겪은 그 상태가 된다.
+    """
+    from ..models import ConsultingRowGrant  # noqa: PLC0415
+    from ..routers import consulting as consulting_router  # noqa: PLC0415
+
+    by_id = {u.id: u for u in users}
+    out: Dict[int, List[dict]] = {}
+    rows = db.execute(
+        select(ConsultingRowGrant).order_by(ConsultingRowGrant.id)
+    ).scalars().all()
+    for grant in rows:
+        editor = by_id.get(grant.editor_user_id)
+        if editor is None:
+            # 계정이 지워진 자리. 표에 이름 없는 줄을 세우지 않는다.
+            continue
+        out.setdefault(grant.user_id, []).append({
+            "id": editor.id,
+            "name": editor.name or "-",
+            "works": consulting_router.may_edit_row(
+                db, editor, grant.user_id, grants=frozenset({grant.user_id})),
+        })
+    return out
+
+
 def admin_dashboard(db: Session, today: Optional[date] = None) -> dict:
     today = today or date.today()
     cutoff = (today - timedelta(days=REACTION_WINDOW_DAYS)).isoformat()
@@ -769,6 +801,9 @@ def admin_dashboard(db: Session, today: Optional[date] = None) -> dict:
     devices = {
         d.user_id: d for d in db.execute(select(AgentDevice)).scalars().all()
     }
+
+    # 누구의 줄을 누가 고칠 수 있게 맡겨 두었나(`models.ConsultingRowGrant`).
+    editors_by_owner = _consulting_editors(db, users)
 
     # 이번 달 사용자별 성공 발송 수
     sent_rows = db.execute(
@@ -821,6 +856,12 @@ def admin_dashboard(db: Session, today: Optional[date] = None) -> dict:
             # 딜소개를 보내지 않는 계정(투자컨설턴트)은 담당 투자사·발송 칸이
             # **원래 비어 있다.** 0 으로 그리면 설정이 덜 된 사람처럼 읽힌다.
             "sends_deals": deps.sends_deals(u),
+            # **이 사람의 줄을 고칠 수 있게 맡겨 둔 팀원들.** 옆칸(투자현황)과
+            # 같은 모양이다 — 화면은 판정하지 않고 서버가 준 것을 읽는다.
+            # `works` 가 거짓인 줄은 맡겨는 두었으나 지금은 안 통하는 것이다
+            # (투자현황이 꺼졌거나 투자컨설턴트가 되었거나). 감추지 않고
+            # 그대로 그린다 — 감추면 "왜 안 고쳐지지" 를 알 길이 없어진다.
+            "editors": editors_by_owner.get(u.id, []),
             # 정지된 계정인가. 발송 준비의 **보내는 계정 고르개**가 이것을 읽는다
             # — 정지된 사람을 고르면 목록이 서도 누를 사람이 없다.
             "active": bool(u.is_active),
