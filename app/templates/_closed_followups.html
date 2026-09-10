@@ -1,0 +1,146 @@
+{#
+  IR 요청 투자사 — **두 화면이 같은 파일을 쓴다.**
+
+  딜 진행 관리(`ir.html`)와 옛 화면(`followups.html`)에 똑같은 표가 한 벌씩
+  들어 있었다. 예약된 리마인드가 이미 겪은 일이라 같은 길로 모은다
+  (`_upcoming_followups.html` 의 머리말 참고) — 한쪽에만 검색칸을 달면
+  다른 쪽에서는 여전히 이름을 못 찾는다.
+
+  ── 이 목록에 담기는 것 ────────────────────────────────────────────────
+  **`IR 요청 투자사`** 는 사용자가 부르기로 한 이름이다.
+
+  담기는 것은 **리마인드가 끝난 담당자**다(`cadence.sequence_rows` 중
+  `status != active`). 끝나는 사유의 대부분이 `IR 자료를 요청했습니다`
+  라서(요청이 오면 리마인드를 멈춘다 — `routers/ir.py`) 이 목록을 그렇게
+  부르는 것인데, **미팅이 잡혔거나 손으로 멈춘 건도 함께 들어 있다.**
+
+  ⚠ 업무 보고·대시보드에도 `IR 요청 투자사` 라는 갈래가 있는데 **다른
+  것을 센다** — 그쪽은 요청 자체(`ir_requests` · `services/report.py`)와
+  진행 단계가 `IR 자료 요청` 인 담당자(`dashboard.html`)다. 이름만 같고
+  줄 수는 다를 수 있다.
+
+  ── 검색 ───────────────────────────────────────────────────────────────
+  검색은 **이 앱이 이미 쓰는 방식** 그대로다 — 줄에 `data-search` 를 싣고
+  `filters.js` 의 `extra` 로 건다(예약된 리마인드·투자사 관리 현황·IR 기업
+  현황·딜 소싱과 같다). 고를 칸(`data-filters`)이 없어도 검색만 걸린다.
+
+  **이 표만 걸린다.** 리마인드 구역은 세 묶음이다 —
+  `오늘 보낼 리마인드` · `예약된 리마인드` · 이 표. 검색칸이 붙은 것은
+  **뒤의 두 표뿐**이고, 각자 제 표만 거른다.
+
+  오늘 보낼 리마인드에는 **일부러 안 달았다.** 그 목록은 단계별 묶음마다
+  [X 보내기] 단추가 붙어 있는데, 그 링크는 **묶음 전체**의 담당자 번호를
+  달고 간다(`/deals?contacts=…`). 걸러서 세 명만 보이는데 누르면 스무 명에게
+  나가면, 거른 상태와 단추가 싸운다 — 되돌릴 수 없는 쪽으로. 그 목록은
+  "오늘 것" 이라 길지 않아 눈으로 훑을 수 있다.
+
+  그래서 못 찾았을 때는 **어디를 더 봐야 하는지 있는 그대로** 말해 준다.
+  없는 검색칸을 가리키면 그것도 거짓말이다(아래 `closed-empty`).
+#}
+<section class="panel wide">
+  <h2 class="panel-title">IR 요청 투자사 <span class="hint">{{ closed|length }}건</span>
+    <form method="post" action="/followups/backfill" class="inline-form"
+          onsubmit="return confirm('지난 발송 이력을 훑어 리마인드를 걸어 둡니다. 계속할까요?')">
+      <button class="linkbtn" type="submit">지난 발송에서 리마인드 걸기</button>
+    </form>
+  </h2>
+  {% if closed %}
+  {#
+    검색칸은 **툴바 안**에 둔다 — 툴바 요소는 높이를 `--ctl-h` 한 값에서 받고
+    검색칸 모양은 `.toolbar input[type="search"]` 가 자리로 잡는다. 밖에 두면
+    이 줄만 브라우저 기본 입력칸(22px)으로 따로 논다(예전에 실제로 그랬다).
+
+    `placeholder` 에 적은 것과 **줄이 싣는 것(`data-search`)이 같아야 한다.**
+    적어 놓고 안 찾아지면 거짓말이고, 안 적힌 것으로 걸리면 쳐서 남은 줄을
+    보며 "왜 이게 걸렸지" 가 된다.
+  #}
+  <div class="toolbar">
+    <div class="toolbar-right">
+      <input type="search" id="closed-search"
+             placeholder="이름 · 투자사 · 단계 · 상태 · 사유"
+             title="담당자 이름 · 투자사(회사) · 마지막 단계 · 상태 · 사유로 찾습니다. 이 표만 걸립니다 — 예약된 리마인드는 그 표의 검색칸으로, 오늘 보낼 리마인드는 위 목록에서 눈으로 확인해 주세요."
+             autocomplete="off" aria-label="IR 요청 투자사 검색">
+      <span class="hint" id="closed-count"></span>
+    </div>
+  </div>
+  <div class="table-wrap">
+  <table class="grid-table compact" id="closed-table">
+    <thead><tr><th>담당자</th><th>마지막 단계</th><th>상태</th><th>사유</th><th></th></tr></thead>
+    <tbody>
+      {% for r in closed %}
+      {#
+        `data-search` 에는 **이 줄이 화면에 보여 주는 것만** 넣는다 — 이름 ·
+        투자사 · 마지막 단계 · 상태 · 사유. 그것이 곧 위 `placeholder` 에
+        적힌 다섯이다.
+
+        사유(`IR 자료를 요청했습니다` 등)를 뺄까 했지만 **칸에 보이는 글자**고,
+        "IR 자료" 로 쳐서 요청이 온 투자사만 추리는 것이 이 표를 여는 이유
+        그 자체다. 대신 `status_label`(`답 옴` · `중단` · `완료`)도 같이 싣는다 —
+        둘이 나란히 보이는데 하나만 걸리면 어느 쪽이 걸리는지 알 수 없다.
+      #}
+      <tr class="data-row"
+          data-search="{{ (r.name ~ ' ' ~ (r.firm or '') ~ ' ' ~ (r.stage_label or '') ~ ' ' ~ (r.status_label or '') ~ ' ' ~ (r.reason or ''))|lower }}">
+        <td>
+          {# 답이 오면 여기서 곧바로 기록한다 — 화면을 옮겨 담당자를 다시
+             고르는 사이에 "누구였더라" 가 된다. #}
+          <a class="req-link" href="/ir?contact={{ r.contact_id }}"
+             title="이 투자사의 IR 자료 요청 기록하기">
+            <b>{{ r.name }}</b> <span class="muted">{{ r.firm }}</span>
+          </a>
+        </td>
+        <td>{{ r.stage_label }}</td>
+        <td><span class="status-badge">{{ r.status_label }}</span></td>
+        <td class="muted">{{ r.reason }}</td>
+        <td>
+          {% if r.status in ['stopped', 'responded'] %}
+          <form method="post" action="/followups/{{ r.id }}/resume">
+            <button class="linkbtn" type="submit">다시 켜기</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {# 다 걸러졌을 때 **빈 표만 남기지 않는다.** 그러면 그 투자사가 딜 진행
+     관리에 아예 없는 줄 안다 — 실제로는 옆 묶음에 있을 수 있다. #}
+  <p class="muted" id="closed-empty" hidden>
+    친 글자에 맞는 투자사가 없습니다 — <b>이 표만</b> 걸립니다.
+    <b>예약된 리마인드</b>는 그 표의 검색칸으로,
+    <b>오늘 보낼 리마인드</b>는 위 목록에서 확인해 주세요.
+  </p>
+  {#
+    스크립트를 여기 함께 둔다 — 화면 쪽 `{% block scripts %}` 에 나눠 적으면
+    한쪽만 고쳐지는 그 문제로 되돌아간다. 표는 이 위에 이미 그려져 있고,
+    `filters.js` 도 여기서 먼저 불러오므로 순서가 맞는다(같은 주소라 예약된
+    리마인드가 이미 불러왔으면 브라우저가 다시 받지 않는다).
+  #}
+  <script src="{{ asset('js/filters.js') }}"></script>
+  <script>
+    (function () {
+      var box = document.getElementById("closed-search");
+      // 컬럼 필터는 없고 검색만 있다. `extra` 만 줘도 걸린다 — 고를 칸이
+      // 없다고 검색까지 죽던 것은 이미 고쳐져 있다(filters.js 주석 참고).
+      var api = window.DealflowFilters && window.DealflowFilters.init({
+        table: "#closed-table",
+        count: "#closed-count",
+        empty: "#closed-empty",
+        unit: "건",
+        extra: function (tr) {
+          var q = ((box && box.value) || "").trim().toLowerCase();
+          return !q || (tr.getAttribute("data-search") || "").indexOf(q) !== -1;
+        }
+      });
+      // **줄을 감추는 일은 한 곳에서만 한다.** 검색이 따로 `tr.hidden` 을
+      // 만지면 다른 조건과 번갈아 서로를 지운다 — 이 저장소가 겪은 일이다.
+      if (box) box.addEventListener("input", function () { api && api.apply(); });
+    })();
+  </script>
+  {% else %}
+  <p class="muted">
+    아직 리마인드가 끝난 투자사가 없습니다.
+    이 기능을 켜기 전에 보낸 회차가 있다면 <b>[지난 발송에서 리마인드 걸기]</b> 를 눌러 주세요.
+  </p>
+  {% endif %}
+</section>

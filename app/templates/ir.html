@@ -299,61 +299,9 @@
     {% endif %}
   </section>
 
-  <section class="panel wide">
-    {# **`IR 요청 투자사`** — 사용자가 부르기로 한 이름이다.
-
-       담기는 것은 **리마인드가 끝난 담당자**다(`cadence.sequence_rows` 중
-       `status != active`). 끝나는 사유의 대부분이 `IR 자료를 요청했습니다`
-       라서(요청이 오면 리마인드를 멈춘다 — `routers/ir.py`) 이 목록을 그렇게
-       부르는 것인데, **미팅이 잡혔거나 손으로 멈춘 건도 함께 들어 있다.**
-
-       ⚠ 업무 보고·대시보드에도 `IR 요청 투자사` 라는 갈래가 있는데 **다른
-       것을 센다** — 그쪽은 요청 자체(`ir_requests` · `services/report.py`)와
-       진행 단계가 `IR 자료 요청` 인 담당자(`dashboard.html`)다. 이름만 같고
-       줄 수는 다를 수 있다. #}
-    <h2 class="panel-title">IR 요청 투자사 <span class="hint">{{ closed|length }}건</span>
-      <form method="post" action="/followups/backfill" class="inline-form"
-            onsubmit="return confirm('지난 발송 이력을 훑어 리마인드를 걸어 둡니다. 계속할까요?')">
-        <button class="linkbtn" type="submit">지난 발송에서 리마인드 걸기</button>
-      </form>
-    </h2>
-    {% if closed %}
-    <div class="table-wrap">
-    <table class="grid-table compact">
-      <thead><tr><th>담당자</th><th>마지막 단계</th><th>상태</th><th>사유</th><th></th></tr></thead>
-      <tbody>
-        {% for r in closed %}
-        <tr>
-          <td>
-            {# 답이 오면 여기서 곧바로 기록한다 — 화면을 옮겨 담당자를 다시
-               고르는 사이에 "누구였더라" 가 된다. #}
-            <a class="req-link" href="/ir?contact={{ r.contact_id }}"
-               title="이 투자사의 IR 자료 요청 기록하기">
-              <b>{{ r.name }}</b> <span class="muted">{{ r.firm }}</span>
-            </a>
-          </td>
-          <td>{{ r.stage_label }}</td>
-          <td><span class="status-badge">{{ r.status_label }}</span></td>
-          <td class="muted">{{ r.reason }}</td>
-          <td>
-            {% if r.status in ['stopped', 'responded'] %}
-            <form method="post" action="/followups/{{ r.id }}/resume">
-              <button class="linkbtn" type="submit">다시 켜기</button>
-            </form>
-            {% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    </div>
-    {% else %}
-    <p class="muted">
-      아직 리마인드가 끝난 투자사가 없습니다.
-      이 기능을 켜기 전에 보낸 회차가 있다면 <b>[지난 발송에서 리마인드 걸기]</b> 를 눌러 주세요.
-    </p>
-    {% endif %}
-  </section>
+  {# IR 요청 투자사 — 딜 진행 관리와 옛 화면(`followups.html`)이
+     **같은 파일**을 쓴다. 한 벌씩 들고 있으면 한쪽에만 검색칸이 달린다. #}
+  {% include "_closed_followups.html" %}
 </div>
 </div>
 
@@ -507,7 +455,18 @@
 
 <div class="dash-grid">
   <section class="panel">
+    {# 자료를 보낸 다음에 하는 말이 **미팅 요청**이다. 그런데 자료를 전달하면
+       리마인드가 멈춰서(답이 왔으니 맞다), 미팅 요청을 안 보낸 담당자는 어느
+       목록에도 다시 안 뜬다 — 자료만 보내 놓고 끝나는 길이 열려 있었다.
+       여기서 세어 보여 준다. **줄이 아니라 담당자를 센다**(미팅 요청 카톡은
+       담당자당 한 통이다). #}
     <h2 class="panel-title">전달한 자료 <span class="hint">{{ done_requests|length }}건</span></h2>
+    {% if meeting_ask_missing %}
+    <p class="hint {% if meeting_ask_overdue %}warn{% endif %}">
+      미팅 요청 안 보냄 {{ meeting_ask_missing }}명
+      ({{ meeting_ask_days }}일 지남 {{ meeting_ask_overdue }}명)
+    </p>
+    {% endif %}
     {% if done_requests %}
     <div class="table-wrap">
     <table class="grid-table compact">
@@ -517,8 +476,10 @@
         <th style="width:104px">상태</th><th style="width:120px"></th>
       </tr></thead>
       <tbody>
-        {% for r in done_requests[:20] %}
-        <tr>
+        {# 지난 줄은 위에 세워 두고(`routers/ir.py`), 20줄이 넘더라도
+           **한 줄도 안 자른다**. 재촉할 것이 잘려 안 보이면 세는 뜻이 없다. #}
+        {% for r in done_requests[:done_limit] %}
+        <tr class="{% if r.meeting_ask_overdue %}overdue-row{% endif %}">
           <td class="muted">{{ r.requested_at }}</td>
           {#
             투자사명을 누르면 **딜 제안 관리의 `미팅 요청`** 으로 넘어간다 —
@@ -546,7 +507,20 @@
           {# 배지 옆에 날짜를 나란히 두면 좁은 칸에서 둘이 엉켜 끊긴다.
              배지는 한 덩어리로 두고 날짜는 아랫줄로 내린다. #}
           <td class="status-cell"><span class="status-badge">{{ r.status_label }}</span>
-            {% if r.delivered_at %}<span class="status-when muted">{{ r.delivered_at }}</span>{% endif %}</td>
+            {% if r.delivered_at %}<span class="status-when muted">{{ r.delivered_at }}</span>{% endif %}
+            {#
+              **자료를 보낸 뒤 미팅 요청까지 갔는가.** 이 줄 하나가 아니라 이
+              **담당자**의 상태다 — 같은 사람의 자료 줄이 셋이면 셋 다 같은
+              표시가 붙는다(나가는 카톡은 한 통이다).
+
+              판정은 `services/pipeline.meeting_ask_state` 한 곳이 한다.
+              화면에서 다시 세지 않는다.
+            #}
+            {% if r.meeting_asked %}
+            <span class="status-when ok">미팅 요청 보냄 · {{ r.meeting_asked_at }}</span>
+            {% elif r.meeting_ask_overdue %}
+            <span class="status-when bad">{{ meeting_ask_days }}일 지남</span>
+            {% endif %}</td>
           <td class="row-acts">
             {# 미팅은 **자료를 보낸 그 건**에서 이어진다. 담당자·기업을 처음부터
                다시 고르게 하면 이미 아는 정보를 사람이 또 타이핑하는 셈이다. #}
@@ -554,6 +528,20 @@
                     data-contact="{{ r.contact_id }}"
                     data-company="{{ r.company_name }}"
                     data-name="{{ r.name }}">미팅 잡기</button>
+            {# 카톡으로 **사람이 직접** 보낸 건은 앱이 모른다. 적을 자리가
+               없으면 「안 보냄」이 영영 떠 있고, 거짓으로 뜨는 숫자는 곧
+               아무도 안 본다.
+
+               담당자에게 적는다(줄이 아니다) — 판정이 담당자 단위라 줄에
+               적으면 같은 사람의 다른 줄이 그대로 남는다. #}
+            {% if r.status == 'delivered' and not r.meeting_asked %}
+            <form method="post"
+                  action="/ir/contacts/{{ r.contact_id }}/meeting-asked">
+              <button class="linkbtn" type="submit"
+                      title="카톡으로 이미 보냈다면 눌러 두세요 — 이 담당자에게 적힙니다"
+                      >보냈음으로 표시</button>
+            </form>
+            {% endif %}
             <form method="post" action="/ir/requests/{{ r.id }}/delete"
                   onsubmit="return confirm('이 기록을 지울까요?')">
               <button class="linkbtn danger" type="submit">삭제</button>

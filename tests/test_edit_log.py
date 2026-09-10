@@ -517,6 +517,10 @@ WRITE_ROUTES = {
     ("POST", "/ir/requests/{request_id}/deliver"): WATCHED,
     ("POST", "/ir/requests/{request_id}/drop"): WATCHED,
     ("POST", "/ir/requests/{request_id}/delete"): WATCHED,
+    # 카톡으로 직접 보낸 미팅 요청을 표시한다 — `contact_activities` 에 한 줄.
+    # 그 표는 `UNWATCHED` 라 값이 남지 않지만, 남의 담당자 줄에 적히는 길이라
+    # 갈래는 보는 쪽이다.
+    ("POST", "/ir/contacts/{contact_id}/meeting-asked"): WATCHED,
     ("POST", "/ir/meetings"): WATCHED,
     ("POST", "/ir/meetings/{meeting_id}/mode"): WATCHED,
     ("POST", "/ir/meetings/{meeting_id}/done"): WATCHED,
@@ -692,7 +696,8 @@ def test_the_six_shared_routers_still_hold_the_forty_nine_paths(portal):
             counted[mod] = counted.get(mod, 0) + 1
     # contacts 는 명단 라우터 15 + 참고 자료 6 이다(참고 자료는 주소에 접두가
     # 없어 파일만 같이 쓴다). 15번째가 감춘 줄 한꺼번에 지우기(`/bulk-delete`)다.
-    assert counted == {"companies": 7, "ir": 11, "consulting": 8,
+    # ir 의 12번째는 미팅 요청을 손으로 보냈다고 적는 자리다.
+    assert counted == {"companies": 7, "ir": 12, "consulting": 8,
                        "templates_crud": 5, "sourcing": 4, "contacts": 21}
 
 

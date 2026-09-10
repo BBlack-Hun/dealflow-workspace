@@ -19,7 +19,10 @@
   var CHECKS = ["channel_kakao", "channel_email"];
   var KIND_KO = {
     deal_intro: "딜소개", ir_request: "IR 요청", meeting: "미팅",
-    memo: "메모", ir_delivery: "IR 전달"
+    // 자료를 보낸 뒤의 미팅 요청을 **사람이 카톡에서 직접 보내고 표시한** 줄
+    // (`services/pipeline.MEETING_ASK_KIND`). 여기 없으면 이력에 코드값
+    // `meeting_ask` 가 그대로 찍힌다.
+    memo: "메모", ir_delivery: "IR 전달", meeting_ask: "미팅 요청"
   };
 
   var panel = document.getElementById("detail-panel");

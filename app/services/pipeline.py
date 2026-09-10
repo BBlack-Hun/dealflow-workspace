@@ -15,15 +15,39 @@ import re
 from datetime import date, time, timedelta
 from typing import Dict, List, Optional, Tuple
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ..models import IrCompany, IrRequest, Meeting, User, VcContact
+from ..models import (ContactActivity, IrCompany, IrRequest, Meeting, SendItem,
+                      User, VcContact)
 from . import cadence, calendar_link
 from .sheet_import import normalize_company_name
 
 # 미팅이 끝나고 결과를 물어보기까지. 운영에서 쓰던 간격 그대로다.
 MEETING_FOLLOWUP_DAYS = 10
+
+#: IR 자료를 전달하고 **미팅 요청을 보내기까지**. 이 수를 아는 곳은 여기 하나다 —
+#: 화면 안내문도 이 값을 읽는다(`report.html` · `ir.html`). 코드와 화면이 다른
+#: 날짜를 말하면 "7일이라며 왜 9일째에 뜨나" 를 아무도 못 푼다.
+#:
+#: **달력 7일이다 — 영업일이 아니다.** 위 `MEETING_FOLLOWUP_DAYS` 는
+#: `cadence.next_business_day` 를 지나 주말을 건너뛰지만, 여기는 안 건넌다.
+#: 이건 **나가는 발송의 날짜**가 아니라 "안 보낸 지 며칠 됐나" 를 세는 자다 —
+#: 주말을 빼면 금요일에 보낸 자료가 다음다음 주 화요일에야 지난 것이 되어,
+#: 열흘이 지나도록 아무 말이 없는 건이 화면 어디에도 안 뜬다.
+IR_MEETING_ASK_DAYS = 7
+
+#: **손으로 보냈다고 표시한 자국** — `ContactActivity.kind`.
+#:
+#: 미팅 요청은 앱을 안 거치고 카톡에서 사람이 바로 보내는 일이 흔하다. 그것을
+#: 적을 자리가 없으면 「안 보냄」이 영영 떠 있고, 거짓으로 뜨는 숫자는 곧
+#: 아무도 안 본다.
+#:
+#: **새 표도 새 칸도 만들지 않는다.** `kind` 는 글자 칸이라 이주가 필요 없다
+#: (`ir_attach.record_delivery` 의 `ir_delivery` 와 같은 방식).
+MEETING_ASK_KIND = "meeting_ask"
+#: 그 줄에 적는 말. 이력을 훑는 사람이 **앱이 보낸 것과 구별**할 수 있어야 한다.
+MEETING_ASK_BY_HAND = "미팅 요청 — 카톡으로 직접 보냄"
 
 REQUEST_STATUS = {
     "open": "요청받음",
@@ -120,13 +144,151 @@ def _contact_map(db: Session, ids: List[int]) -> Dict[int, VcContact]:
     }
 
 
-def request_rows(db: Session, user: User) -> List[dict]:
+def meeting_ask_state(db: Session, requests, *,
+                      today: Optional[date] = None) -> Dict[int, dict]:
+    """자료를 받은 **담당자마다** 미팅 요청을 보냈는가. ★ 판정하는 곳은 여기 하나다.
+
+    돌려주는 것은 `{담당자 id: {...}}` — 자료를 전달받은 담당자만 들어 있다.
+
+        delivered_at  마지막으로 자료를 받은 날
+        asked         미팅 요청을 보냈는가
+        asked_at      보냈으면 그 날 (안 보냈으면 빈 글자)
+        due           보내야 하는 날 (= 전달일 + `IR_MEETING_ASK_DAYS`)
+        overdue       안 보냈는데 그 날이 지났다
+
+    ## 왜 이 판정이 필요한가
+
+    자료를 전달하면 리마인드 시퀀스가 멈춘다(`cadence` 가 `responded` 로
+    닫는다 — 상대가 답을 했으니 맞는 동작이다). 그런데 그 뒤에 미팅 요청을
+    안 보내면 그 담당자는 `오늘 보낼 리마인드` 에도 `오늘 할 일` 에도 다시 안
+    뜬다. **자료만 보내 놓고 아무 말 없이 끝나는 길**이 열려 있었다.
+
+    ## 왜 `send_items` 로 판정하는가 — 새 칸을 안 만든다
+
+    `IrRequest` 에 `meeting_asked_at` 같은 칸을 두면 "화면은 보냄인데 실제로는
+    발송기가 꺼져 있어 한 통도 안 나간" 상태가 만들어진다. 이 저장소가 반복해
+    겪은 사고라 `auto_send` 도 같은 이유로 `sent` 를 따로 두지 않는다 —
+    **실제로 나갔는지는 `send_items` 만 안다.**
+
+    ## 왜 담당자 단위인가
+
+    미팅 요청 문구는 기업 목록을 쓰지 않는다(`deals.MODES_WITH_COMPANIES` 에
+    미팅이 없다). 한 투자사가 기업 3곳 자료를 받아도 나가는 카톡은 **한 통**이라,
+    `IrRequest` 줄마다 세면 한 번 보낸 것이 세 번으로 보인다.
+
+    ## 왜 **마지막** 전달일에 맞추는가
+
+    첫 전달일에 맞추면, 3월에 미팅 요청을 한 번 보낸 담당자는 그 뒤 자료를
+    몇 번을 더 받아도 영영 안 뜬다 — 새로 보낸 자료가 소리 없이 묻힌다.
+    자료를 새로 보냈으면 그 뒤에 다시 말을 붙이는 것이 이 흐름이다.
+
+    ## 아는 흠
+
+    `stage == 3` 은 **미팅 요청과 미팅 후기가 함께 쓴다**
+    (`deals.FOLLOW_UP_MODES`). 후기를 보냈다면 미팅은 이미 끝난 뒤이므로
+    재촉할 것이 없다 — 안 뜨는 쪽으로 틀리는 것이라 그대로 둔다.
+    `stage` 를 더 쪼개는 일은 지난달 숫자를 건드리므로 여기서 하지 않는다.
+    """
+    today = today or date.today()
+
+    # ── 언제부터 세는가 — 담당자별 **마지막 전달일** ──────────────────────
+    anchors: Dict[int, str] = {}
+    for row in requests:
+        if row.status != "delivered":
+            continue
+        day = (row.delivered_at or "")[:10]
+        if day and day > anchors.get(row.contact_id, ""):
+            anchors[row.contact_id] = day
+    if not anchors:
+        return {}
+
+    ids = list(anchors)
+    # ── 보냈다는 근거 두 가지 ────────────────────────────────────────────
+    # 자리는 둘이지만 **판정은 여기 한 번**이다. 읽는 화면이 각자 세면
+    # 업무 보고와 IR 화면이 서로 다른 수를 말한다.
+    asked: Dict[int, str] = {}
+
+    def _note(contact_id: int, when: Optional[str]) -> None:
+        day = (when or "")[:10]
+        if day and day > asked.get(contact_id, ""):
+            asked[contact_id] = day
+
+    # ① 앱이 내보낸 것. `sent` 인 것만 — 대기·실패는 안 나간 것이다.
+    for contact_id, when in db.execute(
+        select(SendItem.contact_id, func.max(SendItem.sent_at))
+        .where(SendItem.contact_id.in_(ids),
+               SendItem.stage == cadence.STAGE_MEETING,
+               SendItem.status == "sent",
+               SendItem.sent_at.isnot(None))
+        .group_by(SendItem.contact_id)
+    ).all():
+        _note(contact_id, when)
+
+    # ② 사람이 카톡에서 직접 보내고 표시한 것.
+    for contact_id, when in db.execute(
+        select(ContactActivity.contact_id, func.max(ContactActivity.happened_at))
+        .where(ContactActivity.contact_id.in_(ids),
+               ContactActivity.kind == MEETING_ASK_KIND,
+               ContactActivity.happened_at.isnot(None))
+        .group_by(ContactActivity.contact_id)
+    ).all():
+        _note(contact_id, when)
+
+    out: Dict[int, dict] = {}
+    now = today.isoformat()
+    for contact_id, delivered in anchors.items():
+        when = asked.get(contact_id, "")
+        ok = bool(when) and when >= delivered
+        try:
+            due = (date.fromisoformat(delivered)
+                   + timedelta(days=IR_MEETING_ASK_DAYS)).isoformat()
+        except ValueError:
+            # 날짜가 깨진 줄 하나 때문에 화면이 죽지 않는다. 셀 수 없으면
+            # 재촉하지도 않는다 — 근거 없는 경보가 제일 나쁘다.
+            due = ""
+        out[contact_id] = {
+            "delivered_at": delivered,
+            "asked": ok,
+            "asked_at": when if ok else "",
+            "due": due,
+            "overdue": bool(not ok and due and now >= due),
+        }
+    return out
+
+
+def record_meeting_ask(db: Session, contact_id: int,
+                       when: Optional[date] = None) -> bool:
+    """미팅 요청을 **사람이 직접 보냈다**고 이력에 적는다. 새로 적었으면 `True`.
+
+    **같은 날 두 번 눌러도 한 줄이다** — `ir_attach.record_delivery` 와 같은
+    방식이다. 같은 줄이 두 번 쌓이면 이력이 아니라 소음이다.
+
+    커밋은 부르는 쪽이 한다(다른 변경과 한 번에 묶을 수 있게).
+    """
+    day = (when or date.today()).isoformat()
+    already = db.execute(
+        select(ContactActivity).where(
+            ContactActivity.contact_id == contact_id,
+            ContactActivity.kind == MEETING_ASK_KIND,
+            ContactActivity.happened_at == day)
+    ).scalars().first()
+    if already is not None:
+        return False
+    db.add(ContactActivity(
+        contact_id=contact_id, kind=MEETING_ASK_KIND, source="system",
+        content=MEETING_ASK_BY_HAND, happened_at=day, month=day[:7]))
+    return True
+
+
+def request_rows(db: Session, user: User,
+                 today: Optional[date] = None) -> List[dict]:
     rows = db.execute(
         select(IrRequest).where(IrRequest.user_id == user.id)
         .order_by(IrRequest.status != "open", IrRequest.requested_at.desc())
     ).scalars().all()
     contacts = _contact_map(db, [r.contact_id for r in rows])
-    today = date.today()
+    # 날짜는 **받아서 쓴다** — 실제 시계에 기대면 특정 날에만 깨지는 검사가 된다.
+    today = today or date.today()
 
     out = []
     for row in rows:
@@ -154,6 +316,21 @@ def request_rows(db: Session, user: User) -> List[dict]:
             "delivered_at": row.delivered_at or "",
             "note": row.note or "",
         })
+
+    # ── 미팅 요청을 보냈는가 ────────────────────────────────────────────
+    # 판정은 `meeting_ask_state` 한 곳이 한다. 여기서는 그 답을 줄에 붙이기만
+    # 한다 — 화면이 다시 세면 업무 보고와 수가 갈린다.
+    #
+    # **이 값은 담당자의 상태다.** 한 담당자가 자료를 세 건 받았으면 세 줄
+    # 모두에 같은 표시가 붙는다(나가는 카톡은 한 통이라 그게 사실이다).
+    # 세는 자리는 담당자를 겹치지 않게 모은다.
+    state = meeting_ask_state(db, rows, today=today)
+    for row in out:
+        st = state.get(row["contact_id"]) if row["status"] == "delivered" else None
+        row["meeting_asked"] = bool(st and st["asked"])
+        row["meeting_asked_at"] = st["asked_at"] if st else ""
+        row["meeting_ask_due"] = st["due"] if st else ""
+        row["meeting_ask_overdue"] = bool(st and st["overdue"])
 
     # 자료 **파일명**을 함께 준다 — 요청 화면에서 무엇을 보낼지 보이게.
     # (링크가 아니다: 파일은 각자 PC 의 자료 폴더에 있다 — 0056 참고)
@@ -499,7 +676,7 @@ def group_by_contact(requests: List[dict]) -> List[dict]:
 def today_items(db: Session, user: User, today: Optional[date] = None) -> dict:
     """지금 손대야 할 것만. 대시보드와 '오늘 할 일'이 같은 값을 쓴다."""
     today = today or date.today()
-    requests = [r for r in request_rows(db, user) if r["status"] == "open"]
+    requests = [r for r in request_rows(db, user, today) if r["status"] == "open"]
     meetings = meeting_rows(db, user)
     return {
         "open_requests": requests,

@@ -188,6 +188,10 @@ a:hover { text-decoration: underline; }
    (td 에는 flex 를 걸지 않는다 — 표 레이아웃이 깨진다) */
 .status-cell .status-when { display: block; font-size: 11.5px; margin-top: 3px;
   white-space: nowrap; }
+/* 자료를 보낸 뒤 **미팅 요청까지 갔는가**. 지난 것은 눈에 띄어야 하고 이미
+   보낸 것은 조용해야 한다 — 둘 다 회색이면 훑을 때 구별이 안 된다. */
+.status-cell .status-when.ok { color: var(--green); }
+.status-cell .status-when.bad { color: var(--red); font-weight: 600; }
 
 .log-table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
 .log-table th, .log-table td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); font-size: 13px; }

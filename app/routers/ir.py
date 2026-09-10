@@ -55,9 +55,31 @@ def ir_page(request: Request, db: Session = Depends(get_db),
             user: User = Depends(get_current_user), msg: str = "",
             contact: int = 0):
     today = date.today()
-    requests = pipeline.request_rows(db, user)
+    requests = pipeline.request_rows(db, user, today)
     meetings = pipeline.meeting_rows(db, user)
     items = pipeline.today_items(db, user, today)
+
+    # ── 전달한 자료 — **지난 것을 위로** ────────────────────────────────────
+    #
+    # 이 판은 오래 쓸수록 줄이 쌓여서 최근 20줄만 그린다. 그런데 이 기능이
+    # 보여 주려는 것이 바로 **오래된 채로 말이 안 붙은 건**이라, 그것이 20줄
+    # 밖으로 밀려 안 보이면 기능의 뜻이 없다. 그래서 둘을 같이 한다.
+    #
+    #   ① 지난 줄을 맨 위로 올린다(그 안의 차례는 그대로 — 안정 정렬).
+    #   ② 지난 줄이 20보다 많으면 **그만큼 늘린다.** 재촉할 것은 한 줄도
+    #      안 자른다.
+    #
+    # 전부 그리지 않는 이유: 전달 기록은 계속 쌓이기만 하는 표라 몇백 줄이
+    # 되면 화면이 느려지고, 무엇보다 끝난 옛 줄이 눈을 가린다. 잘라도 되는
+    # 것은 **이미 말이 붙은 줄**뿐이다.
+    done = [r for r in requests if r["status"] != "open"]
+    done.sort(key=lambda r: 0 if r["meeting_ask_overdue"] else 1)
+
+    # **담당자 단위로 센다.** 한 투자사가 기업 3곳 자료를 받아도 미팅 요청
+    # 카톡은 한 통이라, 줄마다 세면 한 번 보낼 일이 세 건으로 보인다.
+    delivered = [r for r in done if r["status"] == "delivered"]
+    ask_missing = {r["contact_id"] for r in delivered if not r["meeting_asked"]}
+    ask_overdue = {r["contact_id"] for r in delivered if r["meeting_ask_overdue"]}
 
     ctx = base_ctx(request, db, user, active="flow")
     # 리마인드 구역도 이 한 페이지 안에 있다 — 딴 페이지로 갈리면
@@ -79,7 +101,14 @@ def ir_page(request: Request, db: Session = Depends(get_db),
         # 한 담당자가 여러 기업을 요청하는 일이 잦다 — 한 번에 보내야 자연스럽다.
         "request_groups": pipeline.group_by_contact(
             [r for r in requests if r["status"] == "open"]),
-        "done_requests": [r for r in requests if r["status"] != "open"],
+        "done_requests": done,
+        # 지난 줄은 한 줄도 안 자른다 — 위 주석 참고.
+        "done_limit": max(20, sum(1 for r in done if r["meeting_ask_overdue"])),
+        "meeting_ask_missing": len(ask_missing),
+        "meeting_ask_overdue": len(ask_overdue),
+        # 화면 안내문이 "7일" 이라고 말할 때 쓰는 값. 코드와 화면이 다른
+        # 숫자를 말하면 안 된다(`followup_days` 와 같은 방식).
+        "meeting_ask_days": pipeline.IR_MEETING_ASK_DAYS,
         "scheduled": [m for m in meetings if m["status"] == "scheduled"],
         "finished": [m for m in meetings if m["status"] != "scheduled"],
         "items": items,
@@ -236,6 +265,26 @@ def delete_request(request_id: int, db: Session = Depends(get_db),
     db.delete(_owned_request(db, request_id, user))
     db.commit()
     return RedirectResponse("/ir?msg=요청을 지웠습니다", status_code=303)
+
+
+@router.post("/ir/contacts/{contact_id}/meeting-asked", include_in_schema=False)
+def mark_meeting_asked(contact_id: int, db: Session = Depends(get_db),
+                       user: User = Depends(get_current_user)):
+    """미팅 요청을 **카톡으로 직접 보냈다**고 표시한다.
+
+    앱을 안 거치고 사람이 바로 보내는 일이 흔하다. 그것을 적을 자리가 없으면
+    「안 보냄」이 영영 떠 있고, 거짓으로 뜨는 숫자는 곧 아무도 안 본다.
+
+    **줄이 아니라 담당자에게 적는다** — 나가는 카톡이 담당자당 한 통이라
+    (`deals.MODES_WITH_COMPANIES` 에 미팅이 없다) 자료 줄에 적으면 같은 사람의
+    다른 줄이 여전히 「안 보냄」으로 남는다. 판정도 담당자 단위다
+    (`pipeline.meeting_ask_state`).
+    """
+    contact = _owned_contact(db, contact_id, user)
+    pipeline.record_meeting_ask(db, contact.id)
+    db.commit()
+    return RedirectResponse("/ir?msg=미팅 요청을 보냈다고 표시했습니다",
+                            status_code=303)
 
 
 # --- 미팅 ------------------------------------------------------------------
