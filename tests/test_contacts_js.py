@@ -15,6 +15,7 @@ import pytest
 OPEN_TEST = Path(__file__).resolve().parent / "js" / "contacts_open_test.js"
 TRANSFER_TEST = Path(__file__).resolve().parent / "js" / "contact_transfer_test.js"
 SORT_TEST = Path(__file__).resolve().parent / "js" / "contacts_sort_test.js"
+DELETE_TEST = Path(__file__).resolve().parent / "js" / "hidden_delete_test.js"
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치 — 브라우저 로직 테스트 생략")
@@ -75,5 +76,29 @@ def test_이름_머리글을_눌러_정렬하고_NO_를_다시_매기는가():
     """
     result = subprocess.run(
         [shutil.which("node"), str(SORT_TEST)], capture_output=True, text=True, timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치 — 브라우저 로직 테스트 생략")
+def test_감춘_줄을_골라_지우는_길이_실수를_막는가():
+    """감춘 줄 [선택 삭제] — **되돌릴 수 없는 조작**이라 화면 쪽 잠금을 잰다.
+
+    서버 쪽(누가 지울 수 있나 · 무엇이 막히나 · 로그에 남나)은
+    `tests/test_contacts_bulk_delete.py` 가 본다. 여기서만 잴 수 있는 것이 넷이다.
+
+    · [전체 선택]이 **검색·필터로 감춰 둔 줄까지** 켜면, 사람이 못 보는 줄이
+      그대로 사라진다(딜 제안 관리의 [전체선택]이 같은 함정을 안고 있었다).
+    · 확인창에서 [취소]를 눌렀는데 이미 나가 버리면 확인창은 장식이다.
+    · 확인 전에 서버에 묻는 부름이 `confirm: true` 로 나가면 세어 보기가 곧
+      삭제가 된다.
+    · 못 지우는 줄이 섞여 있을 때 체크를 풀고 멈추는가 — 그대로 나머지를
+      지우면 고른 것과 사라진 것이 달라진다.
+
+    로컬에서는 `node tests/js/hidden_delete_test.js` 로도 돈다.
+    """
+    result = subprocess.run(
+        [shutil.which("node"), str(DELETE_TEST)], capture_output=True, text=True,
+        timeout=60,
     )
     assert result.returncode == 0, result.stdout + result.stderr

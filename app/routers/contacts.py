@@ -23,8 +23,8 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..deps import can_open, get_current_user, may_manage_team_contacts
-from ..models import (ContactActivity, ContactColumn, IrCompany, SendItem,
-                      SendJob, User, VcContact)
+from ..models import (ContactActivity, ContactColumn, IrCompany, IrRequest,
+                      Meeting, SendItem, SendJob, SendSequence, User, VcContact)
 from ..services import (contact_columns, deal_stage, firm_type, room_name,
                         sheet_import, sheet_owner)
 from ..services.room_name import DEFAULT_SUFFIX, build_room_name
@@ -1062,6 +1062,165 @@ def delete_contact(
     db.delete(contact)
     db.commit()
     return {"ok": True}
+
+
+# ── 감춘 줄 한꺼번에 지우기 ─────────────────────────────────────────────────
+#
+# 왜 필요한가
+# -----------
+# 현황 시트를 새로 올리면 **새 시트에 없는 줄**이 남는다. 지우지 않고
+# `VcContact.is_hidden` 으로 감춘다 — 시트가 잘못 올라간 날 되돌릴 수 있어야
+# 하기 때문이다(`models.VcContact.is_hidden`). 한 번은 그렇게 80줄이 감겼다.
+#
+# 그런데 감춘 뒤에 **정리하는 길이 없었다.** 한 줄씩 [수정] 창을 열어 지우는
+# 길뿐이라 80번을 눌러야 했고, 그래서 감춘 줄은 계속 쌓이기만 했다.
+#
+# 무엇을 지울 수 있나 — **감춘 줄만**
+# -----------------------------------
+# 이 길은 보이는 줄에 닿지 않는다. 감추기가 곧 '지워도 되는지 한 번 더 보는
+# 자리' 이고, 그 두 걸음이 이 기능의 안전장치 전부다. 화면에서도 [감춘 줄
+# 보기] 안에서만 체크상자가 서지만, **화면만 감추면 번호를 직접 보내는 길이
+# 남는다** — 그래서 서버가 다시 본다(딜 소싱 풀 할당이 같은 이유로 두 겹이다).
+#
+# 누가 지울 수 있나
+# -----------------
+# **한 줄 고치기와 같은 판정**(`_owned` → `deps.may_manage_team_contacts`)이다.
+# 여기서 새로 지으면 화면에 뜬 줄을 눌러도 서버가 404 를 내는, 이 저장소가
+# 반복해서 당한 그 어긋남이 또 난다. 팀원은 자기 담당분만, 관리자는 팀 전체다.
+#
+# 딸린 것은 어떻게 하나
+# ---------------------
+# 담당자 줄에는 다섯 가지가 걸릴 수 있다.
+#
+#   · 활동 이력(`ContactActivity`) — **함께 지운다.** 시트의 월별 칸을 줄로
+#     편 것이라 그 담당자 줄 밖에서는 뜻이 없다. 한 줄 지우기가 이미 그렇게
+#     한다(바로 위) — 여기서 달리 하면 같은 일이 두 가지로 굴러간다.
+#   · 발송 기록(`SendItem`) · 후속 흐름(`SendSequence`) · IR 요청
+#     (`IrRequest`) · 미팅(`Meeting`) — **걸려 있으면 지우지 않는다.**
+#
+# 뒤의 넷을 함께 지우지 않는 이유는 그것이 **팀의 이력**이기 때문이다. 주간·
+# 월간 보고가 그 줄들을 세어 실적을 낸다(`services/report.py`) — 담당자 한 줄을
+# 정리하려다 지난달 보고 숫자가 조용히 바뀌면, 나중에 어느 쪽이 맞는지 알 수
+# 없다. 그렇다고 가리키는 줄만 남기고 지우면 고아 자료가 된다.
+#
+# 그래서 **막고, 무엇이 걸렸는지 세어서 보여 준다.** 막힌 줄은 감춘 채로
+# 그대로 있으면 되고(발송 대상에서 이미 빠져 있다) 그 상태가 안전하다.
+# 실제로 정리하려는 80줄은 시트에서 사라진 줄이라 대개 아무 것도 안 걸려 있다.
+
+#: **함께 지우는** 것. `(응답 키, 표, 사람이 읽을 이름)`.
+CASCADING_LINKS = (
+    ("activities", ContactActivity, "활동 이력"),
+)
+
+#: 걸려 있으면 **못 지우는** 것들. 같은 모양이다.
+BLOCKING_LINKS = (
+    ("sends", SendItem, "발송 기록"),
+    ("sequences", SendSequence, "후속 발송"),
+    ("ir_requests", IrRequest, "IR 요청"),
+    ("meetings", Meeting, "미팅"),
+)
+
+# 두 목록을 **표 하나도 빠짐없이** 채우는지는 검사가 본다
+# (`tests/test_contacts_bulk_delete.py`) — 담당자 줄을 가리키는 표가 새로
+# 생기면 거기서 걸린다. 어느 쪽인지 정하지 않은 표가 있으면 그 표는 조용히
+# 고아가 되거나, 반대로 아무도 모르게 함께 사라진다.
+
+
+def _linked_counts(db: Session, ids: List[int], links) -> Dict[str, Dict[int, int]]:
+    """`{갈래: {담당자 번호: 몇 건}}`. 줄마다 세지 않고 갈래마다 한 번에 센다."""
+    out: Dict[str, Dict[int, int]] = {}
+    for key, model, _label in links:
+        rows = db.execute(
+            select(model.contact_id, func.count(model.id))
+            .where(model.contact_id.in_(ids))
+            .group_by(model.contact_id)).all()
+        out[key] = {int(cid): int(n) for cid, n in rows if cid is not None}
+    return out
+
+
+class BulkDeleteIn(BaseModel):
+    contact_ids: List[int] = []
+    #: **확인 없이는 한 줄도 안 지운다.** 화면은 이 값 없이 한 번 불러 무엇이
+    #: 사라지는지 세어 보여 주고, 사람이 [확인] 을 누른 뒤에야 참으로 보낸다.
+    #: 확인을 화면에만 두면(`confirm()` 창) 번호를 직접 보내는 길로 80줄이
+    #: 아무 말 없이 사라진다 — 되돌릴 수 없는 일이라 서버가 다시 묻는다.
+    confirm: bool = False
+
+
+@router.post("/bulk-delete")
+def bulk_delete_contacts(body: BulkDeleteIn, db: Session = Depends(get_db),
+                         user: User = Depends(get_current_user)):
+    """감춘 줄 여러 개를 **정말로 지운다**(감추기가 아니다).
+
+    `confirm` 없이 부르면 **아무 것도 지우지 않고** 무엇이 사라지는지만 세어
+    돌려준다. 화면은 그 수를 사람에게 보여 주고 나서 다시 부른다.
+
+    지운 것은 **줄마다 한 줄씩** 수정 로그에 남는다(`services/edit_log.py`).
+    한 건으로 뭉치지 않는 것은 #157 의 판단 그대로다 — 되돌릴 것을 고르려면
+    "몇 시에 누가 몇 줄" 이 아니라 **어느 줄이 사라졌는지**가 필요하다.
+    자기 담당분을 지워도 남는다(`edit_log.SCOPE_MINE`).
+    """
+    ids = list(dict.fromkeys(int(i) for i in (body.contact_ids or [])))
+    if not ids:
+        raise HTTPException(status_code=400, detail="지울 줄을 고르지 않았습니다")
+
+    # 권한 — 한 줄 고치기와 **같은 판정**이다. 남의 담당은 여기서 404 로 끝나고
+    # 한 줄도 지워지지 않는다(부분 삭제는 없다).
+    rows = [_owned(db, cid, user) for cid in ids]
+
+    if any(not r.is_hidden for r in rows):
+        raise HTTPException(
+            status_code=400,
+            detail="감춘 줄만 지울 수 있습니다 — 먼저 그 줄을 감춰 주세요")
+
+    linked = _linked_counts(db, ids, BLOCKING_LINKS)
+    cascading = _linked_counts(db, ids, CASCADING_LINKS)
+
+    blocked = []
+    for row in rows:
+        why = [label for key, _model, label in BLOCKING_LINKS
+               if linked[key].get(row.id)]
+        if why:
+            blocked.append({"id": row.id, "name": row.name or "", "why": why})
+
+    plan = {
+        "total": len(rows),
+        "blocked": blocked,
+        "deletable": len(rows) - len(blocked),
+    }
+    # 함께 사라지는 것도, 막는 것도 **세어서 보여 준다** — 몇 건이 걸려
+    # 못 지우는지 모르면 체크만 풀고 왜 그런지는 영영 알 수 없고,
+    # 무엇이 딸려 나가는지 모르면 누르고 나서 알게 된다.
+    for key, _model, _label in CASCADING_LINKS:
+        plan[key] = sum(cascading[key].values())
+    for key, _model, _label in BLOCKING_LINKS:
+        plan[key] = sum(linked[key].values())
+
+    if not body.confirm:
+        return {"ok": False, "confirmed": False, "deleted": 0, "plan": plan}
+
+    if blocked:
+        # 통째로 거절한다. 걸린 줄만 빼고 나머지를 지우면, 사람이 고른 것과
+        # 실제로 사라진 것이 달라진다 — 되돌릴 수 없는 일에서 가장 나쁜 어긋남이다.
+        raise HTTPException(
+            status_code=409,
+            detail=(f"발송 기록·IR 요청·미팅이 걸린 줄 {len(blocked)}개가 "
+                    "들어 있어 한 줄도 지우지 않았습니다. 그 줄의 체크를 "
+                    "풀고 다시 눌러 주세요."))
+
+    # 딸린 것 중 **함께 지우기로 한 것**부터 치운다(지금은 활동 이력 하나).
+    # 로그는 안 남는다 — 그 표는 일부러 안 보는 표다(`edit_log.UNWATCHED`).
+    for _key, model, _label in CASCADING_LINKS:
+        db.query(model).filter(
+            model.contact_id.in_(ids)).delete(synchronize_session=False)
+
+    # **줄마다 지운다.** 한꺼번에 지우면 flush 를 지나지 않아 수정 로그가
+    # 통째로 빈다(`edit_log` 머리글의 '한계' 참고). 80줄을 지웠는데 로그가
+    # 비는 것이 이 기능의 가장 큰 구멍이다.
+    for row in rows:
+        db.delete(row)
+    db.commit()
+    return {"ok": True, "confirmed": True, "deleted": len(rows), "plan": plan}
 
 
 def _assign(contact: VcContact, body: ContactIn) -> str:
