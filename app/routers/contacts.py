@@ -12,7 +12,7 @@ RBAC: 조회·수정 모두 **자기 담당분**이다(``VcContact.user_id == �
 from __future__ import annotations
 
 from datetime import date, timedelta
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from urllib.parse import quote
 
@@ -1051,23 +1051,17 @@ def update_contact(
     return out
 
 
-@router.delete("/{contact_id}")
-def delete_contact(
-    contact_id: int,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    contact = _owned(db, contact_id, user)
-    db.query(ContactActivity).filter(ContactActivity.contact_id == contact.id).delete()
-    db.delete(contact)
-    db.commit()
-    return {"ok": True}
-
-
-# ── 감춘 줄 한꺼번에 지우기 ─────────────────────────────────────────────────
+# ── 담당자 줄 지우기 — 한 줄 · 여러 줄 ─────────────────────────────────────
 #
-# 왜 필요한가
-# -----------
+# **지우는 길이 둘이다.** 수정창의 [삭제] 로 한 줄씩 지우는 길과, 감춘 줄을
+# 체크해 한꺼번에 지우는 길. 걸음(확인 · 고르는 자리)은 서로 다르지만
+# **지워도 되는지를 가리는 판정은 하나여야 한다** — 아래 `CASCADING_LINKS` ·
+# `BLOCKING_LINKS` · `_blocking_reasons` 가 그 한 자리다. 둘로 갈라 적으면
+# 표가 하나 늘었을 때 한쪽만 고쳐지고, 그러면 같은 줄이 한 길에서는 지워지고
+# 다른 길에서는 막힌다. 이 저장소가 반복해 당한 사고가 그것이다.
+#
+# 여러 줄 지우기는 왜 필요했나
+# ----------------------------
 # 현황 시트를 새로 올리면 **새 시트에 없는 줄**이 남는다. 지우지 않고
 # `VcContact.is_hidden` 으로 감춘다 — 시트가 잘못 올라간 날 되돌릴 수 있어야
 # 하기 때문이다(`models.VcContact.is_hidden`). 한 번은 그렇게 80줄이 감겼다.
@@ -1075,12 +1069,14 @@ def delete_contact(
 # 그런데 감춘 뒤에 **정리하는 길이 없었다.** 한 줄씩 [수정] 창을 열어 지우는
 # 길뿐이라 80번을 눌러야 했고, 그래서 감춘 줄은 계속 쌓이기만 했다.
 #
-# 무엇을 지울 수 있나 — **감춘 줄만**
-# -----------------------------------
-# 이 길은 보이는 줄에 닿지 않는다. 감추기가 곧 '지워도 되는지 한 번 더 보는
-# 자리' 이고, 그 두 걸음이 이 기능의 안전장치 전부다. 화면에서도 [감춘 줄
+# 여러 줄 지우기는 무엇에 닿나 — **감춘 줄만**
+# --------------------------------------------
+# 그 길은 보이는 줄에 닿지 않는다. 감추기가 곧 '지워도 되는지 한 번 더 보는
+# 자리' 이고, 그 두 걸음이 그 기능의 안전장치 전부다. 화면에서도 [감춘 줄
 # 보기] 안에서만 체크상자가 서지만, **화면만 감추면 번호를 직접 보내는 길이
 # 남는다** — 그래서 서버가 다시 본다(딜 소싱 풀 할당이 같은 이유로 두 겹이다).
+# 한 줄 지우기에는 이 제한이 없다 — 수정창을 열어 한 줄을 보고 누르는 길이라
+# '한 번 더 본다' 를 사람이 이미 한 셈이다.
 #
 # 누가 지울 수 있나
 # -----------------
@@ -1093,8 +1089,7 @@ def delete_contact(
 # 담당자 줄에는 다섯 가지가 걸릴 수 있다.
 #
 #   · 활동 이력(`ContactActivity`) — **함께 지운다.** 시트의 월별 칸을 줄로
-#     편 것이라 그 담당자 줄 밖에서는 뜻이 없다. 한 줄 지우기가 이미 그렇게
-#     한다(바로 위) — 여기서 달리 하면 같은 일이 두 가지로 굴러간다.
+#     편 것이라 그 담당자 줄 밖에서는 뜻이 없다. 두 길 다 그렇게 한다.
 #   · 발송 기록(`SendItem`) · 후속 흐름(`SendSequence`) · IR 요청
 #     (`IrRequest`) · 미팅(`Meeting`) — **걸려 있으면 지우지 않는다.**
 #
@@ -1103,8 +1098,15 @@ def delete_contact(
 # 정리하려다 지난달 보고 숫자가 조용히 바뀌면, 나중에 어느 쪽이 맞는지 알 수
 # 없다. 그렇다고 가리키는 줄만 남기고 지우면 고아 자료가 된다.
 #
-# 그래서 **막고, 무엇이 걸렸는지 세어서 보여 준다.** 막힌 줄은 감춘 채로
-# 그대로 있으면 되고(발송 대상에서 이미 빠져 있다) 그 상태가 안전하다.
+# 그래서 **막고, 무엇이 몇 건 걸렸는지 세어서 보여 준다.** 막혔다는 말만 하고
+# 이유를 감추면 사람은 왜 안 되는지 알 길이 없다 — 실제로 한 줄 지우기가 오래
+# 그랬다. 눌러도 아무 일이 없거나 500 이 났고, 화면은 그냥 새로 그려져서
+# **지워진 줄 알았다가 그대로 있는 것을 나중에 발견하는** 상태였다.
+#
+# 막힌 줄에게 남는 길은 **감추기**다. 감추면 표에서 빠지고 발송 대상에서도
+# 빠지므로(`contact_rows` · 발송 대상 고르기) 실무에서는 지운 것과 같고,
+# 이력은 보고 쪽에 그대로 남는다. 막을 때 그 다음 걸음을 한 줄로 같이 말한다 —
+# 안 그러면 사람이 막다른 길에 선다.
 # 실제로 정리하려는 80줄은 시트에서 사라진 줄이라 대개 아무 것도 안 걸려 있다.
 
 #: **함께 지우는** 것. `(응답 키, 표, 사람이 읽을 이름)`.
@@ -1136,6 +1138,91 @@ def _linked_counts(db: Session, ids: List[int], links) -> Dict[str, Dict[int, in
             .group_by(model.contact_id)).all()
         out[key] = {int(cid): int(n) for cid, n in rows if cid is not None}
     return out
+
+
+#: 막는 것이 걸린 줄 하나에 대한 사유. `[(사람이 읽을 이름, 몇 건), …]`.
+BlockingWhy = List[Tuple[str, int]]
+
+
+def _blocking_reasons(db: Session, ids: List[int],
+                      linked: Optional[Dict[str, Dict[int, int]]] = None,
+                      ) -> Dict[int, BlockingWhy]:
+    """**지워도 되는지 가리는 한 자리.** 걸린 줄만 `{번호: [(이름, 건수)]}`.
+
+    한 줄 지우기(`delete_contact`)와 여러 줄 지우기(`bulk_delete_contacts`)가
+    **둘 다 이 함수를 읽는다.** 같은 판단을 두 곳에 적으면 반드시 한쪽이
+    낡는다 — 표가 하나 늘었을 때 한 길에서는 막히고 다른 길에서는 그대로
+    지워지면, 고아 자료가 어느 길로 생겼는지조차 알 수 없다.
+    (`tests/test_contact_delete_reason.py` 가 두 길이 이 함수를 지나는지 본다)
+
+    `linked` 는 이미 세어 둔 것이 있으면 다시 세지 않으려고 받는다 — 여러 줄
+    지우기는 화면에 보여 줄 합계를 내느라 어차피 한 번 센다.
+    """
+    linked = _linked_counts(db, ids, BLOCKING_LINKS) if linked is None else linked
+    out: Dict[int, BlockingWhy] = {}
+    for cid in ids:
+        why = [(label, linked[key][cid])
+               for key, _model, label in BLOCKING_LINKS if linked[key].get(cid)]
+        if why:
+            out[cid] = why
+    return out
+
+
+def _blocking_sentence(why: BlockingWhy) -> str:
+    """`발송 기록 12건 · 미팅 1건` — **무엇이 몇 건인지** 말한다.
+
+    갈래 이름만 늘어놓으면(`발송 기록 · 미팅`) 사람은 그 줄에 무엇이 얼마나
+    걸렸는지 모른 채 "그냥 안 되는구나" 로 끝낸다. 건수가 있어야 한 건짜리
+    미팅 하나 때문인지, 손댈 수 없는 이력 뭉치인지 판단이 선다.
+    """
+    return " · ".join(f"{label} {n}건" for label, n in why)
+
+
+#: 막았을 때 **다음에 뭘 하면 되는지** 한 줄. 막기만 하고 길을 안 알려 주면
+#: 사람이 막다른 길에 선다 — 감추면 실무에서는 지운 것과 같아진다.
+BLOCKED_NEXT_STEP = ("이력이 사라지면 지난 주간·월간 보고의 수가 바뀝니다. "
+                     "대신 [이 줄 감추기] 를 누르면 표에서 빠지고 딜 소개 발송 "
+                     "대상에서도 빠집니다.")
+
+
+@router.delete("/{contact_id}")
+def delete_contact(
+    contact_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """담당자 줄 **하나**를 지운다 — 수정창의 [삭제].
+
+    걸린 이력이 있으면 **409 로 막고 무엇이 몇 건인지 말한다.** 예전에는
+    활동 이력만 지우고 `db.delete()` 를 던졌는데, 나머지 넷이 걸려 있으면
+    외래키에 막혀 500 이 나거나 조용히 실패했다 — 화면은 그냥 새로 그려져서
+    **왜 안 지워지는지 알 길이 없었다.**
+
+    무엇이 함께 사라지고 무엇이 막는지는 여러 줄 지우기와 **같은 자리**에서
+    가린다(`_blocking_reasons`). 권한도 한 줄 고치기와 같은 `_owned` 다.
+    """
+    contact = _owned(db, contact_id, user)
+
+    why = _blocking_reasons(db, [contact.id]).get(contact.id)
+    if why:
+        # 상태 번호는 여러 줄 지우기와 **같은 409** 다. 같은 이유로 막는데
+        # 번호가 다르면 화면이 길마다 다르게 받아야 한다.
+        raise HTTPException(
+            status_code=409,
+            detail=(f"{_blocking_sentence(why)}이 걸려 있어 지울 수 없습니다. "
+                    + BLOCKED_NEXT_STEP))
+
+    # 함께 지우기로 한 것부터 치운다(지금은 활동 이력 하나). 갈래를 여기서
+    # 손으로 적지 않는다 — 목록이 늘면 두 길이 저절로 따라간다.
+    for _key, model, _label in CASCADING_LINKS:
+        db.query(model).filter(
+            model.contact_id == contact.id).delete(synchronize_session=False)
+
+    # `db.delete()` 로 지운다 — flush 를 지나야 수정 로그에 남는다
+    # (`services/edit_log.py`, `ACTION_DELETE` 는 자기 담당분이라도 남긴다).
+    db.delete(contact)
+    db.commit()
+    return {"ok": True}
 
 
 class BulkDeleteIn(BaseModel):
@@ -1176,12 +1263,13 @@ def bulk_delete_contacts(body: BulkDeleteIn, db: Session = Depends(get_db),
     linked = _linked_counts(db, ids, BLOCKING_LINKS)
     cascading = _linked_counts(db, ids, CASCADING_LINKS)
 
-    blocked = []
-    for row in rows:
-        why = [label for key, _model, label in BLOCKING_LINKS
-               if linked[key].get(row.id)]
-        if why:
-            blocked.append({"id": row.id, "name": row.name or "", "why": why})
+    # **한 줄 지우기와 같은 자리에서 가린다**(`_blocking_reasons`). 화면에
+    # 보여 줄 때는 갈래 이름만 쓴다 — 줄이 80개면 건수까지 다 적을 자리가 없고,
+    # 한 줄 지우기는 줄이 하나라 건수까지 말한다.
+    reasons = _blocking_reasons(db, ids, linked)
+    blocked = [{"id": row.id, "name": row.name or "",
+                "why": [label for label, _n in reasons[row.id]]}
+               for row in rows if row.id in reasons]
 
     plan = {
         "total": len(rows),

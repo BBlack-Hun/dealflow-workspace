@@ -16,6 +16,8 @@ OPEN_TEST = Path(__file__).resolve().parent / "js" / "contacts_open_test.js"
 TRANSFER_TEST = Path(__file__).resolve().parent / "js" / "contact_transfer_test.js"
 SORT_TEST = Path(__file__).resolve().parent / "js" / "contacts_sort_test.js"
 DELETE_TEST = Path(__file__).resolve().parent / "js" / "hidden_delete_test.js"
+ROW_DELETE_TEST = (Path(__file__).resolve().parent / "js"
+                   / "contact_delete_reason_test.js")
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치 — 브라우저 로직 테스트 생략")
@@ -100,5 +102,31 @@ def test_감춘_줄을_골라_지우는_길이_실수를_막는가():
     result = subprocess.run(
         [shutil.which("node"), str(DELETE_TEST)], capture_output=True, text=True,
         timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치 — 브라우저 로직 테스트 생략")
+def test_한_줄_삭제가_막혔을_때_왜_막혔는지_화면에_뜨는가():
+    """수정창의 [삭제] — **서버가 준 사유를 화면이 실제로 보여 주는가.**
+
+    여기는 `.then(reload)` 한 줄이라 응답을 보지 않았다. 409 든 500 이든 그냥
+    화면을 다시 그렸고, 사람은 **지워진 줄 알았다가 그 줄이 그대로 서 있는
+    것을 나중에 발견했다.** 서버가 사유를 아무리 잘 지어 보내도 화면이 안
+    읽으면 하나도 나아지지 않는다 — 서버만 고치고 끝내면 안 되는 자리다.
+
+    서버 쪽(무엇이 막나 · 사유를 어떻게 짓나 · 로그)은
+    `tests/test_contact_delete_reason.py` 가 본다. 여기서만 잴 수 있는 것이
+    셋이다.
+
+    · 막혔을 때 **사유가 그대로** 뜨는가(무엇이 몇 건인지 · 다음 걸음).
+    · 막혔을 때 **화면을 다시 안 그리는가.** 다시 그리면 지워진 것처럼 보인다.
+    · 사유가 안 실려 온 응답(빈 본문·502)에서 성공으로 새 나가지 않는가.
+
+    로컬에서는 `node tests/js/contact_delete_reason_test.js` 로도 돈다.
+    """
+    result = subprocess.run(
+        [shutil.which("node"), str(ROW_DELETE_TEST)], capture_output=True,
+        text=True, timeout=60,
     )
     assert result.returncode == 0, result.stdout + result.stderr
