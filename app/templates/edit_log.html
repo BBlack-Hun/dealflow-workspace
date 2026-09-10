@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+
+{#
+  수정 로그 — 관리자만.
+
+  **스크립트가 없다.** 걸러 보는 것은 전부 평범한 링크(`?scope=` · `?screen=`)다.
+  되돌리기 화면과 같은 판단이다 — 이 화면은 하필 **무언가 잘못됐을 때** 여는
+  자리라, 스크립트가 한 번 어긋나는 날 같이 죽으면 안 된다.
+#}
+
+{% block content %}
+<header class="page-head">
+  <h1>수정 로그</h1>
+  <p class="muted">
+    <b>내가 안 한 변경</b>만 모읍니다 — 남의 것을 고친 일과 공용 자료를 고친 일.
+    자기 것만 고친 것은 남기지 않습니다.
+    <a class="linkbtn" href="/team">팀 현황으로</a>
+  </p>
+</header>
+
+<section class="panel">
+  <h2 class="panel-title">걸러 보기</h2>
+
+  <div class="filter-line">
+    <span class="filter-label">범위</span>
+    <a class="chip {% if not scope %}active{% endif %}"
+       href="/team/edit-log{% if screen %}?screen={{ screen }}{% endif %}">전부</a>
+    <a class="chip {% if scope == 'others' %}active{% endif %}"
+       href="/team/edit-log?scope=others{% if screen %}&screen={{ screen }}{% endif %}">남의 것</a>
+    <a class="chip {% if scope == 'shared' %}active{% endif %}"
+       href="/team/edit-log?scope=shared{% if screen %}&screen={{ screen }}{% endif %}">공용</a>
+  </div>
+
+  <div class="filter-line">
+    <span class="filter-label">화면</span>
+    <a class="chip {% if not screen %}active{% endif %}"
+       href="/team/edit-log{% if scope %}?scope={{ scope }}{% endif %}">전부</a>
+    {% for name in screens %}
+    <a class="chip {% if screen == name %}active{% endif %}"
+       href="/team/edit-log?screen={{ name }}{% if scope %}&scope={{ scope }}{% endif %}">{{ name }}</a>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel">
+  <h2 class="panel-title">최근 {{ page_size }}건</h2>
+
+  {% if not rows %}
+  <p class="hint">아직 남은 것이 없습니다. 자기 것만 고쳤다면 여기에는 아무 것도 뜨지 않습니다.</p>
+  {% else %}
+  <div class="table-wrap">
+    <table class="grid-table compact">
+      <thead><tr>
+        <th>언제</th><th>누가</th><th>범위</th><th>화면</th><th>줄</th><th>무엇이</th>
+      </tr></thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td>{{ row.at[:16].replace('T', ' ') }}</td>
+          <td>{{ row.actor }}</td>
+          <td>
+            {% if row.scope == 'others' %}
+            <span class="tag">남의 것{% if row.target %} · {{ row.target }}{% endif %}</span>
+            {% else %}
+            <span class="tag soft">공용</span>
+            {% endif %}
+          </td>
+          <td>{{ row.screen }}</td>
+          <td>
+            {{ row.row_label }}
+            {% if row.action == 'create' %}<span class="tag soft">추가</span>
+            {% elif row.action == 'delete' %}<span class="tag soft">삭제</span>{% endif %}
+          </td>
+          <td>
+            {# 값을 남기는 칸만 전→후가 보인다. 메모·연락처·비밀값은 `바뀜`
+               표시만이다 — 왜 그런지는 `services/edit_log.VALUE_FIELDS`. #}
+            {% for c in row.changes %}
+            <div class="cell-sub">
+              <b>{{ c.label }}</b>
+              {% if not c.value_kept %}
+              <span class="muted">바뀜</span>
+              {% elif row.action == 'create' %}
+              {# 줄이 새로 선 것이라 `(빈 값) →` 는 읽는 눈만 잡아먹는다. #}
+              {{ c.after }}
+              {% elif row.action == 'delete' %}
+              {{ c.before }}
+              {% else %}
+              <span class="muted">{{ c.before }}</span> → {{ c.after }}
+              {% endif %}
+            </div>
+            {% endfor %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <p class="hint">
+    메모 · 연락처 · 긴 글은 <b>바뀜</b> 이라고만 남습니다. 값이 로그에 통째로
+    쌓이면 같은 자료가 두 벌이 되기 때문입니다 — 되돌릴 값이 필요하면
+    <a href="/team/restore">되돌리기</a> 의 그날 백업을 쓰세요.
+    비밀번호 · 토큰은 어떤 경우에도 값이 남지 않습니다.
+  </p>
+  <p class="hint">
+    보관 정책은 <b>{{ retention_months }}개월</b> 입니다(오래된 것을 지우는 일은
+    아직 만들지 않았습니다 — 지금은 쌓이기만 합니다).
+  </p>
+</section>
+{% endblock %}
