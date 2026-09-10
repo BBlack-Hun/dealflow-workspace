@@ -7,6 +7,9 @@
 //      화면은 옛 주소를 부른다 — 이 저장소가 반복해 당한 사고다.
 //   ② 붙여 넣은 답에서 번호를 뽑아 **이름으로 그려 주는가**.
 //      이 길이 없으면 번호로 내보내는 기능은 반쪽이다.
+//   ③ [복사] 가 **시킬 말 + 자료**를 한 덩어리로 담는가, 그리고 그것이
+//      **화면에 보이는 것과 같은가**. [화면에서 보기] 는 내보내기 전에 눈으로
+//      훑는 자리라, 보이는 것과 나가는 것이 다르면 그 확인이 거짓말이 된다.
 //
 // 둘 다 브라우저 안에서 일어나는 일이라 `<script>` 태그가 그려지는지만 보는
 // 검사로는 못 잡는다. 그래서 파일을 vm 으로 **그대로 실행**한다.
@@ -25,8 +28,12 @@ const BRIEF = {
   generated_at: "2026-09-01T09:00:00+09:00",
   scope: "본인 담당",
   amount_unit: "백만원",
-  investors: [{ id: "V-31", sectors: "AI", room_open: true }],
-  companies: [{ id: "C-7", name: "가상바이오", introducible: true }]
+  // 시킬 말은 **서버가 지어 보낸다.** 화면이 제 문장을 들고 있으면 서버 쪽과
+  // 반드시 갈린다 — 여기서는 서버가 보냈다고 치고 그것이 실려 나가는지만 본다.
+  prompt: "가상 지시문 1줄\n\n── 자료 ──",
+  investors: [{ id: "V-31", sectors: "AI", room_open: true, sent_before: ["C-7"] }],
+  // 기업도 이름 없이 번호로만 나간다.
+  companies: [{ id: "C-7", sector_major: "바이오", introducible: true }]
 };
 
 function build() {
@@ -127,7 +134,12 @@ async function main() {
       ["/api/llm-brief.json"]);
     assert.strictEqual(app.nodes["llm-out"].hidden, false,
       "꺼낸 자료가 화면에 보여야 내보내기 전에 눈으로 훑을 수 있다");
-    assert.ok(app.nodes["llm-out"].textContent.indexOf("V-31") >= 0);
+    const shown = app.nodes["llm-out"].textContent;
+    assert.ok(shown.indexOf("V-31") >= 0);
+    // 시킬 말이 **앞에** 붙고, 뒤에 자료가 그대로 온다.
+    assert.ok(shown.indexOf(BRIEF.prompt) === 0, shown.slice(0, 80));
+    assert.ok(shown.indexOf(JSON.stringify(BRIEF, null, 2)) > 0,
+      "자료는 서버가 준 글자 그대로여야 한다 — 다르면 눈으로 훑는 일이 거짓말이 된다");
     assert.strictEqual(app.nodes["llm-copy"].hidden, false);
     // 몇 건인지 먼저 말해 준다 — 빈 자료를 그대로 붙여 넣는 일이 없게.
     assert.ok(app.nodes["llm-state"].textContent.indexOf("투자사 1곳") >= 0,
@@ -217,7 +229,12 @@ async function main() {
     app.nodes["llm-copy"].fire("click");
     await settle();
     assert.strictEqual(copied.length, 1);
-    assert.ok(copied[0].indexOf("V-31") >= 0, "화면에 보이는 그것을 복사해야 한다");
+    assert.strictEqual(copied[0], app.nodes["llm-out"].textContent,
+      "화면에 보이는 그것을 그대로 복사해야 한다");
+    // 한 덩어리에 **시킬 말과 자료가 둘 다** 들어 있어야 LLM 창에 그대로
+    // 붙여 넣을 수 있다.
+    assert.ok(copied[0].indexOf(BRIEF.prompt) === 0);
+    assert.ok(copied[0].indexOf("V-31") >= 0 && copied[0].indexOf("C-7") >= 0);
     assert.ok(app.nodes["llm-state"].textContent.indexOf("복사") >= 0);
   }
   {
@@ -231,6 +248,24 @@ async function main() {
     assert.deepStrictEqual(app.picked, [app.nodes["llm-out"]]);
     assert.ok(app.nodes["llm-state"].textContent.indexOf("골라") >= 0,
       app.nodes["llm-state"].textContent);
+  }
+
+  // ── 시킬 말이 없는 자료(옛 서버)라도 자료는 담긴다 ──────────────────────
+  {
+    const copied = [];
+    const app = run(null, { navigator: { clipboard: { writeText: function (t) {
+      copied.push(t);
+      return Promise.resolve();
+    } } } });
+    const saved = BRIEF.prompt;
+    delete BRIEF.prompt;
+    app.nodes["llm-show"].fire("click");
+    await settle();
+    app.nodes["llm-copy"].fire("click");
+    await settle();
+    BRIEF.prompt = saved;
+    assert.ok(copied[0].indexOf("V-31") >= 0,
+      "시킬 말이 없어도 자료는 담긴다 — 붙여 넣을 것이 아예 없는 것보다 낫다");
   }
 
   console.log("llm_brief_test: 통과");
