@@ -12,13 +12,14 @@
 """
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
+from .. import clock
 from ..models import User
-from . import auto_send, cadence, pipeline, readiness
+from . import auto_send, cadence, pipeline, readiness, scheduled_send
 
 # 줄 하나 = 오늘 할 일 하나.
 #   kind  : 화면에서 묶어 보여줄 종류
@@ -29,6 +30,19 @@ def _item(kind: str, level: str, title: str, detail: str,
           href: str, count: Optional[int] = None) -> dict:
     return {"kind": kind, "level": level, "title": title,
             "detail": detail, "href": href, "count": count}
+
+
+def _at(day: date) -> datetime:
+    """그날 **이 시각**. 예약이 지났는지는 날짜가 아니라 시각으로 갈린다.
+
+    오늘 것이면 진짜 지금을 쓴다(`clock.now()`). 검사가 `today=` 로 다른 날을
+    못박았으면 그날 정오로 본다 — 그 날짜의 하루 안쪽이면 어느 시각이든 같은
+    답이 나오게 하려는 것이다. 실제 시계에 기대는 검사를 만들지 않는다.
+    """
+    now = clock.now()
+    if day == now.date():
+        return now
+    return datetime(day.year, day.month, day.day, 12, 0).astimezone()
 
 
 def build(db: Session, user: User, today: Optional[date] = None) -> dict:
@@ -75,6 +89,19 @@ def build(db: Session, user: User, today: Optional[date] = None) -> dict:
             "meeting", "urgent", "보낼 목록이 서 있습니다",
             f"미팅 후기 {waiting['count']}명 — 확인하고 [발송 시작]",
             f"/jobs/{waiting['job_id']}", waiting["count"]))
+
+    # **걸어 두고 아직 안 나간 예약 발송.** 예약해 놓고 잊는 것이 그 기능에서
+    # 가장 흔한 사고라, 아침에 여는 이 화면에 서 있어야 한다
+    # (`services/scheduled_send.py: standing_for`).
+    #
+    # 급한 차례는 서비스가 정한다 — 지나 버린 것(저절로 안 나간다) > 오늘 것 >
+    # 그 뒤. 여기서 다시 가리면 두 벌이 된다.
+    for booked in scheduled_send.standing_for(db, user, _at(today)):
+        items.append(_item(
+            "send", booked["level"],
+            ("예약 시각이 지났습니다" if booked["state"] == "expired"
+             else "예약해 둔 발송"),
+            booked["sentence"], f"/jobs/{booked['job_id']}", booked["count"]))
 
     # 3) 오늘 보낼 리마인드
     cadence.sweep_reactions(db, user.id)

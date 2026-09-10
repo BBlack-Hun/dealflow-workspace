@@ -58,6 +58,36 @@
   누구에게 어느 방으로 갈지 확인하고 <b>[발송 시작]</b> 을 누르면 그때 나갑니다.
 </div>
 
+{# ── 예약 발송 ────────────────────────────────────────────────────────────
+   [발송 시작] 옆자리다. **누르면 바로 나가던 것을, 정한 시각에 나가게 한다** —
+   고르고 만드는 것은 그대로 사람이 한다.
+
+   걸어 둔 예약은 **눈에 보여야 한다**(`#schedule-note` 에 서버가 만든 한 줄이
+   그대로 들어간다: `9/10(목) 14:00 에 55명에게 나갑니다`). 예약해 놓고 잊는
+   것이 이 기능에서 가장 흔한 사고라, 오늘 할 일에도 같은 문장이 선다.
+
+   시각을 판정하는 곳은 서버 하나다(`services/scheduled_send.py`) — 화면은
+   `state` 를 보고 무엇을 보일지만 정한다. #}
+{% if not readonly %}
+<div class="schedule-box" id="schedule-box" hidden>
+  <p class="schedule-note" id="schedule-note"></p>
+  <div class="schedule-pick">
+    <label for="schedule-at">보낼 시각</label>
+    {# 고를 수 있는 폭(09~19시)은 서버가 말해 준다. 브라우저의 이 칸은 시간대를
+       좁혀 주지 못해서 화면 쪽 확인은 progress.js 가 하고, **서버가 다시 본다** —
+       화면만 막으면 주소로 폼을 흉내 내는 순간 뚫린다. #}
+    <input type="datetime-local" id="schedule-at">
+    <button type="button" id="schedule-btn" class="secondary-btn inline">예약</button>
+    <button type="button" id="unschedule-btn" class="linkbtn" hidden>예약 취소</button>
+  </div>
+  <p class="hint muted" id="schedule-hint"></p>
+</div>
+{% endif %}
+
+{# 큐에 서 있는데 발송기가 안 붙어 있을 때. **막힌 것이 아니라 서 있는 것**이다 —
+   그 둘을 구분하지 못하면 사람이 [중단] 을 누르거나 회차를 다시 만든다. #}
+<div class="warn-box" id="standing-note" hidden></div>
+
 {% if verify %}
 <div class="warn-box">
   불일치 건은 카카오톡에서 방 제목을 확인한 뒤 <a href="/contacts">내 투자사</a> 상세에서

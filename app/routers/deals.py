@@ -29,8 +29,8 @@ from ..models import (
 from ..services import mail_sender, mailer, matcher
 from ..services import message_composer as mc
 from ..services import (deal_numbers, deal_queue, ir_attach, ir_kakao,
-                        ir_monthly, sheet_owner, sourcing_link, sourcing_msg,
-                        startup_send, template_pick)
+                        ir_monthly, scheduled_send, sheet_owner, sourcing_link,
+                        sourcing_msg, startup_send, template_pick)
 from ..services.message_composer import MAX_COMPANIES_PER_SEND
 
 router = APIRouter(prefix="/api/deals", tags=["deals"])
@@ -486,6 +486,15 @@ class SendRequest(BaseModel):
     # 만드는 것과 고치는 것 사이에 발송기가 폴링하면 **사람이 누르기 전에
     # 나간다.** 세울 때 정해야 그 틈이 없다.
     draft: bool = False
+    # **언제 내보낼까** — 비어 있으면 지금까지와 같다(만들면서 바로 나간다).
+    # 값이 있으면 회차가 `draft` 로 서서 그 시각을 기다린다
+    # (`services/scheduled_send.py`). 화면의 `datetime-local` 값 그대로다.
+    #
+    # 여기서 함께 받는 이유: 목록을 만들고 나서 시각을 다는 두 걸음으로 나누면,
+    # 그 사이에 회차가 `queued` 로 서 있는 순간이 생기거나(발송기가 집어간다)
+    # 시각이 안 되는 값이었을 때 **아무도 안 볼 회차**만 남는다. 만들 때
+    # 정해야 그 틈이 없다(`draft` 가 같은 이유로 여기 있다).
+    scheduled_at: str = ""
 
 
 def _override_map(req: SendRequest, contact_ids: set) -> dict:
@@ -764,6 +773,21 @@ def create_send_list(
                 detail=f"'{contact.name}' 카톡방 이름 미등록 — 발송 대상에서 제외하세요",
             )
 
+    # ── 언제 내보낼까 ──────────────────────────────────────────────────────
+    #
+    # **아무것도 만들기 전에 본다.** 시각이 안 되는 값인데 회차부터 세우면,
+    # 사람은 오류만 보고 화면을 떠나고 아무도 안 볼 `draft` 회차가 남는다.
+    # 되는 값인지 가리는 자리는 한 곳이다(`scheduled_send.check`) — 화면이
+    # 고르개를 좁혀 두어도 주소로 폼을 흉내 내면 무엇이든 들어온다.
+    scheduled = None
+    if (req.scheduled_at or "").strip():
+        try:
+            scheduled = scheduled_send.check(scheduled_send.parse(req.scheduled_at))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+    # 예약을 걸었으면 **세워만 둔다** — `draft` 와 같은 뜻이다.
+    standing = req.draft or scheduled is not None
+
     # Batch + companies
     batch = DealBatch(
         user_id=user.id,
@@ -790,9 +814,14 @@ def create_send_list(
               else "ir_delivery" if req.mode == MODE_IR
               else "sourcing_intro" if sourcing else "deal_intro"),
         batch_id=batch.id,
-        # `draft` 면 발송기가 집어가지 않는다 — 사람이 누를 때까지 기다린다.
-        status=("draft" if req.draft else "queued"),
+        # `draft` 면 발송기가 집어가지 않는다 — 사람이 누를 때까지, 또는
+        # **정해 둔 시각까지** 기다린다.
+        status=("draft" if standing else "queued"),
         total=len(contacts), sent=0, failed=0,
+        # 예약을 걸었으면 그 시각이 회차에 붙는다. 푸는 것은
+        # `services/scheduled_send.py` 이고, 푸는 길은 [발송 시작] 과 같다.
+        scheduled_at=(scheduled.isoformat(timespec="seconds") if scheduled
+                      else None),
     )
     db.add(job)
     db.flush()
@@ -898,7 +927,7 @@ def create_send_list(
 
     db.commit()
 
-    if by_email and not req.draft:
+    if by_email and not standing:
         # 요청 안에서 다 보내면 110명일 때 몇 분이 걸려 요청이 끊긴다.
         # 목록만 만들고 뒤에서 한 건씩 보낸다 — 진행 화면이 카톡과 똑같이 폴링한다.
         #
@@ -908,7 +937,10 @@ def create_send_list(
         background.add_task(mail_sender.send_job, job.id)
 
     return {"job_id": job.id, "batch_id": batch.id, "total": len(contacts),
-            "status": job.status, "channel": req.channel}
+            "status": job.status, "channel": req.channel,
+            # 예약을 걸었으면 **언제 몇 명에게 나가는지** 한 줄로 돌려준다.
+            # 문장을 서버가 만든다 — 화면이 따로 지으면 두 벌이 된다.
+            "scheduled": scheduled_send.describe(job)}
 
 
 # ── 예약 큐 ─────────────────────────────────────────────────────────────────
