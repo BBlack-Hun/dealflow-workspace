@@ -1511,8 +1511,26 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
   .only-picked { white-space: normal; }
 
   /* 줄바꿈이 안 되던 것들 — 긴 기업명·주소가 화면을 밀어낸다 */
-  .due-list li, .due-head, .req-rank a { flex-wrap: wrap; }
+  .due-head, .req-rank a { flex-wrap: wrap; }
   .memo, .ellipsis { max-width: 100%; }
+
+  /* 리마인드·미팅 후기 줄은 **격자**다(`날짜 84px | 이름 1fr | 무엇 200px |
+     단추 auto`). 한동안 위의 `flex-wrap: wrap` 에 이 선택자가 같이 적혀
+     있었는데, 격자에는 `flex-wrap` 이 아무 일도 하지 않는다 — 접히는 줄로
+     알고 있었지만 네 칸이 그대로 서서, 390px 에서 마지막 칸(`.due-acts`)이
+     화면 밖으로 나갔다(리마인드 422px · 미팅 후기 441px, 본문이 통째로
+     가로로 밀렸다).
+
+     `.tl-item`·`.queue-row` 와 같은 방식으로 한 줄로 세운다. 넓은 표를 굴리는
+     `.table-wrap` 과는 다른 자리다 — 여기 든 것은 표가 아니라 글자·단추라
+     가로로 굴릴 것이 아니라 접어야 한다.
+
+     `minmax(0, 1fr)` 인 이유는 이 블록 맨 위에 적어 두었다 — `1fr` 은 속
+     내용의 최소폭 아래로 안 줄어든다. */
+  .due-list li { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  /* 칸이 하나가 되면 단추 줄만 왼쪽에 몰려 어느 줄의 것인지 흐려진다 —
+     날짜·이름 아래에서 오른쪽으로 붙여 줄의 끝을 표시한다. */
+  .due-list li .due-acts { justify-content: flex-end; flex-wrap: wrap; }
 
   /* ── 손가락으로 누를 크기 ──────────────────────────────────────────
      마우스 화살표는 끝이 1px 이지만 손가락은 대략 9mm(≈44px)로 눌린다.
