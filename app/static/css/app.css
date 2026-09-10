@@ -814,6 +814,12 @@ a.secondary-btn { display: inline-flex; align-items: center; text-decoration: no
 .tag.warn { background: #fff4e5; color: var(--amber); }
 .tag.bad { background: #fdecec; color: var(--red); }
 .linkbtn.danger { color: var(--red); }
+/* IR 요청 투자사 — [다시 켜기] 와 [지우기] 를 한 줄에 두되 **붙이지 않는다.**
+   되살리려다 지우는 것이 그 표에서 가장 나쁜 실수다(고친 값과 달리 지운 줄은
+   화면 어디에도 안 남는다). 사이를 벌리고 가운뎃점으로 끊어 둔다.
+   좁은 화면에서는 접히게 둔다 — `nowrap` 으로 붙들면 표가 가로로 넘친다. */
+.closed-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; }
+.closed-actions .sep { color: var(--line); user-select: none; }
 /* 화면 위 검색칸. **id 를 하나씩 적지 않는다** — 투자컨설턴트 현황(`#cs-search`)이
    그 목록에서 빠져 있어 혼자만 브라우저 기본 입력칸(22px · 모서리 0 · 테두리
    회색)으로 서 있었다. 화면이 하나 늘 때마다 id 를 더 적어야 하는 규칙은

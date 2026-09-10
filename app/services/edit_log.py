@@ -139,6 +139,33 @@ def _attr(name: str) -> Callable[[Any], str]:
     return lambda row: str(getattr(row, name, "") or "")
 
 
+def _sequence_label(row) -> str:
+    """리마인드 줄 하나가 **누구의 것인가** — 담당자 이름과 소속.
+
+    다른 표는 줄 안에 이름 칸이 있어 `_attr` 로 끝나는데, 이 표에는 담당자
+    **번호**만 있다(`contact_id`). 번호만 남기면 지운 줄을 되짚을 때 로그를
+    봐도 누가 사라졌는지 알 수 없다 — 줄이 지워진 뒤에는 그 번호로 찾아갈
+    화면도 없다.
+
+    **flush 를 지나는 자리라 자동 flush 를 끄고 읽는다.** 켜 둔 채로 조회하면
+    지금 밀어 넣는 중인 그 flush 가 다시 돌게 된다. 담당자 줄이 없으면(먼저
+    지워졌거나 시험 자료) 빈 이름을 돌려주고, 그때는 화면이 `표 이름 + 번호`
+    로 대신 보여 준다(`recent`).
+    """
+    from sqlalchemy.orm import object_session
+
+    from ..models import VcContact
+
+    session = object_session(row)
+    if session is None or not getattr(row, "contact_id", None):
+        return ""
+    with session.no_autoflush:
+        contact = session.get(VcContact, row.contact_id)
+    if contact is None:
+        return ""
+    return " ".join(part for part in (contact.name, contact.firm) if part).strip()
+
+
 WATCHED: Dict[str, Watch] = {
     # ── 주인이 있는 자료 ────────────────────────────────────────────────────
     "vc_contacts": Watch(
@@ -167,6 +194,14 @@ WATCHED: Dict[str, Watch] = {
             "고치는 일이 늘어난다** — 권한을 넓힌 것 자체가 남아야 넓힌 뒤에 생긴 "
             "변경을 되짚을 수 있다. 주인은 줄의 주인이다(`user_id`) — "
             "`consulting_companies` 와 같은 칸 이름을 쓴 이유가 이것이다.",),
+    "send_sequences": Watch(
+        owner="user_id", href="/followups", label=_sequence_label,
+        why="`IR 요청 투자사` 표의 줄. **사람이 화면에서 지울 수 있게 되어** 여기로 "
+            "옮겼다(`/followups/{id}/delete`). 세우고 멈추는 것은 여전히 기계라 "
+            "자기 줄을 고친 것은 안 남지만, **지운 것은 자기 것이라도 남는다**"
+            "(`_row_scope`) — 지운 줄은 화면 어디에도 없어 무엇이 있었는지 물을 "
+            "자리가 여기밖에 없다. 주인은 줄의 주인이고(`user_id`), 그 칸이 곧 "
+            "[다시 켜기]·[지우기]가 보는 칸이다(`routers/followups._owned`)."),
     "users": Watch(
         owner="id", href="/team", label=_attr("name"),
         why="계정. 남의 권한·투자현황·비밀번호를 바꾸는 것은 공용 화면(팀 현황)에서 "
@@ -223,7 +258,6 @@ UNWATCHED: Dict[str, str] = {
     "deal_queue_companies": "발송 대기에 실린 기업. 위와 같다.",
     "send_jobs": "발송 작업. 보낸 기록이다.",
     "send_items": "발송 한 건. 보낸 기록이다(문구가 통째로 들어 있기도 하다).",
-    "send_sequences": "후속 문구 회차. 기계가 세우고 기계가 멈춘다.",
     "monthly_column_runs": "이달 열을 이미 세웠다는 표시. 사람이 보는 자료가 아니다.",
     "weekly_routines": "주간 업무 되풀이 — 계정마다의 개인 화면이다.",
     "weekly_tasks": "주간 업무 할 일 — 개인 화면이다.",
