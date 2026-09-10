@@ -75,6 +75,19 @@ def _contact(db, user_id: int, **kw):
     return row
 
 
+def _sheet(db, label: str, *, user_id=None, hidden=False):
+    """명단(시트) 한 줄. **담당은 계정이 아니라 이 표가 정한다**(`SheetOwner`).
+
+    `user_id` 가 비어 있으면 아직 누구의 것도 아닌 **투자사 풀**이다.
+    """
+    from app.models import SheetOwner
+
+    row = SheetOwner(label=label, user_id=user_id, is_hidden=1 if hidden else 0)
+    db.add(row)
+    db.commit()
+    return row
+
+
 def _company(db, **kw):
     from app.models import IrCompany
 
@@ -601,10 +614,11 @@ def test_someone_elses_person_name_is_left_alone_on_purpose(db, users):
 
 
 # 표식을 심으면 그 줄이 **자료에서 통째로 빠지는** 칸. 자료가 담는 사람이
-# `방 확인됨` 으로 좁아진 뒤로, 여기에 아무 글자나 넣으면 `_room_state` 가
-# '보낼 수 없음' 으로 읽어 줄이 사라진다 — 줄이 없으면 표식 검사는 언제나
-# 통과한다. 그래서 이 칸은 표식 대신 **이름과 값을 따로** 지킨다(아래 검사).
-GATE_COLUMNS = {"room_verified"}
+# `내 명단 · 방 확인됨` 으로 좁아진 뒤로, 여기에 아무 글자나 넣으면
+# `_room_state` 가 '보낼 수 없음' 으로, `is_mine` 이 '남의 명단' 으로 읽어 줄이
+# 사라진다 — 줄이 없으면 표식 검사는 언제나 통과한다. 그래서 이 칸들은 표식
+# 대신 **저장값이 자료에 안 나오는지**를 따로 지킨다(아래 검사).
+GATE_COLUMNS = {"room_verified", "source_sheet"}
 
 
 def _mark_every_other_column(model, row, allowed, gate=()):
@@ -635,7 +649,10 @@ def test_no_investor_column_leaks_out_even_if_someone_adds_one(db, users):
     """
     from app.models import VcContact
 
-    row = _contact(db, users["u1"].id, sectors="AI")
+    # 표식을 못 심는 칸도 **값이 들어 있어야** 아래 검사가 무엇인가를 본다.
+    _sheet(db, "내 딜소개현황", user_id=users["u1"].id)
+    row = _contact(db, users["u1"].id, sectors="AI",
+                   source_sheet="내 딜소개현황")
     marks = _mark_every_other_column(VcContact, row, CONTACT_COLUMNS_ALLOWED_OUT,
                                      gate=GATE_COLUMNS)
     db.commit()
@@ -739,7 +756,7 @@ def test_a_member_gets_only_the_contacts_they_manage(db, users):
     ids = [c["id"] for c in _brief(db, users["u1"])["investors"]]
     assert ids == [f"V-{mine.id}"]
     assert f"V-{theirs.id}" not in ids
-    assert _brief(db, users["u1"])["scope"].startswith("본인 담당")
+    assert "내 명단" in _brief(db, users["u1"])["scope"]
 
 
 def test_an_admin_gets_only_their_own_contacts_too(db, users, people):
@@ -756,7 +773,98 @@ def test_an_admin_gets_only_their_own_contacts_too(db, users, people):
     out = _brief(db, people["admin"])
     assert {c["id"] for c in out["investors"]} == {f"V-{mine.id}"}
     assert f"V-{theirs.id}" not in json.dumps(out, ensure_ascii=False)
-    assert out["scope"].startswith("본인 담당")
+    assert "내 명단" in out["scope"]
+
+
+# ── 담당은 계정이 아니라 명단이다 ───────────────────────────────────────────
+#
+# 사용자가 정정한 자리다 — "`전체 딜소개현황-○○○` 이게 내꺼임.. 그 외의것은 내
+# 담당이 아님." 계정만 보고 좁혔을 때는 실제 자료에서 수가 **우연히 같았다**:
+# 계정 기준 265곳 중 방 확인됨이 114곳이고, 자기 명단(118곳) 중 방 확인됨도
+# 114곳이었다. 나머지 명단(투자사 풀)에 방 확인된 줄이 하나도 없었을 뿐이라,
+# 그 명단에서 방이 하나라도 확인되는 순간 담당이 아닌 줄이 자료에 섞인다.
+
+def test_a_row_on_someone_elses_sheet_is_not_mine_even_on_my_account(db, users):
+    """**같은 계정이 들고 있어도** 내 명단이 아니면 안 담긴다.
+
+    투자사 풀은 분류 단위일 뿐 누구의 담당도 아니다 — 거기 사람에게 딜 소개를
+    추천받아도 보낼 수가 없다. 방이 확인돼 있어도 마찬가지다(방만 보고 담으면
+    바로 이 줄이 섞인다).
+    """
+    _sheet(db, "내 딜소개현황", user_id=users["u1"].id)
+    _sheet(db, "투자사 풀")                     # 아직 누구의 것도 아니다
+    _sheet(db, "남의 딜소개현황", user_id=users["u2"].id)
+
+    mine = _contact(db, users["u1"].id, source_sheet="내 딜소개현황")
+    pool = _contact(db, users["u1"].id, source_sheet="투자사 풀")
+    theirs = _contact(db, users["u1"].id, source_sheet="남의 딜소개현황")
+
+    ids = [c["id"] for c in _brief(db, users["u1"])["investors"]]
+    assert ids == [f"V-{mine.id}"]
+    assert f"V-{pool.id}" not in ids and f"V-{theirs.id}" not in ids
+
+
+def test_a_row_on_several_sheets_counts_if_one_of_them_is_mine(db, users):
+    """`source_sheet` 는 **쉼표로 이어 붙는다** — 부분 일치로 봐야 한다.
+
+    임포트할 때마다 명단 이름이 누적되므로 한 줄이 여러 명단에 속한다. 내
+    명단이 하나라도 있으면 내 담당이고, 통째로 견주면 그 줄이 통째로 빠진다.
+    """
+    _sheet(db, "내 딜소개현황", user_id=users["u1"].id)
+    _sheet(db, "투자사 150")
+
+    both = _contact(db, users["u1"].id,
+                    source_sheet="내 딜소개현황,투자사 150")
+    pool_only = _contact(db, users["u1"].id, source_sheet="투자사 150")
+
+    ids = [c["id"] for c in _brief(db, users["u1"])["investors"]]
+    assert ids == [f"V-{both.id}"], "여러 명단에 걸친 줄이 빠졌습니다"
+    assert f"V-{pool_only.id}" not in ids
+
+
+def test_a_row_that_only_lives_on_a_hidden_sheet_is_left_out(db, users):
+    """감춘 명단은 투자사로 세지 않는다 — 자료에도 들어가면 안 된다.
+
+    감춤은 지우기가 아니라 **투자사로 안 세는** 표시라, 한 줄이 살아 있는
+    명단에도 함께 올라 있으면 그쪽이 이긴다(`sheet_owner.is_investor`).
+    """
+    _sheet(db, "내 딜소개현황", user_id=users["u1"].id)
+    _sheet(db, "스타트업 명단", user_id=users["u1"].id, hidden=True)
+
+    kept = _contact(db, users["u1"].id, source_sheet="내 딜소개현황")
+    both = _contact(db, users["u1"].id,
+                    source_sheet="내 딜소개현황,스타트업 명단")
+    hidden_only = _contact(db, users["u1"].id, source_sheet="스타트업 명단")
+
+    ids = {c["id"] for c in _brief(db, users["u1"])["investors"]}
+    assert ids == {f"V-{kept.id}", f"V-{both.id}"}
+    assert f"V-{hidden_only.id}" not in ids
+
+
+def test_the_sheet_gate_is_the_one_the_dashboard_already_uses(db, users):
+    """모집단을 **여기서 다시 짓지 않는다** — '내 담당' 을 세는 그 함수를 부른다.
+
+    대시보드·후속이 쓰는 `sheet_owner.my_contacts` 와 담긴 줄이 갈리면 여기가
+    깨진다. 명단 판정이 하나 늘어도(감춘 줄·직접 추가 …) 자료가 같이 움직인다.
+    """
+    from app.services import sheet_owner
+    from app.services.dashboard import room_confirmed
+
+    _sheet(db, "내 딜소개현황", user_id=users["u1"].id)
+    _sheet(db, "투자사 150")
+    _sheet(db, "스타트업 명단", user_id=users["u1"].id, hidden=True)
+
+    for sheet in ("내 딜소개현황", "투자사 150", "스타트업 명단",
+                  "내 딜소개현황,투자사 150", ""):
+        for room in ("verified", "unverified", "not_found"):
+            _contact(db, users["u1"].id, source_sheet=sheet, room_verified=room)
+
+    ids = {c["id"] for c in _brief(db, users["u1"])["investors"]}
+    want = {f"V-{c.id}" for c in sheet_owner.my_contacts(db, users["u1"])
+            if room_confirmed(c)}
+    assert ids == want
+    # 다 담기거나 다 빠지면 검사가 아무것도 안 본 것이다.
+    assert 0 < len(ids) < 15
 
 
 # ── 몇 곳이 담기는지 말하는가 ───────────────────────────────────────────────
@@ -772,12 +880,13 @@ def test_the_data_says_how_many_went_in_and_why(db, users):
     _contact(db, users["u1"].id, kakao_room_name="")
 
     out = _brief(db, users["u1"])
-    # 담긴 수와 맡은 수가 **둘 다** 적힌다 — 하나만 적으면 왜 줄었는지 모른다.
-    assert out["scope"] == "본인 담당 · 카톡방 확인됨 1곳 (내가 맡은 투자사 3곳 중)"
+    # 담긴 수와 **견주는 수**가 둘 다 적힌다 — 하나만 적으면 왜 줄었는지 모른다.
+    # 견주는 수도 같은 모집단(내 명단)이라, 빠진 수는 오직 방 때문이다.
+    assert out["scope"] == "내 명단의 투자사 3곳 중 카톡방 확인됨 1곳"
     assert len(out["investors"]) == 1 and out["investors"][0]["id"] == f"V-{kept.id}"
     # 무엇이 빠졌는지도 자료 안에 적혀 있어야 한다 — 담기지 않은 투자사가
     # 있다는 것을 모르면 "왜 이 투자사가 없지" 를 알 길이 없다.
-    assert "확인됨" in out["note"] and "본인 담당" in out["note"]
+    assert "확인됨" in out["note"] and "내 명단" in out["note"]
 
 
 def test_the_count_in_the_data_is_the_number_of_rows_in_it(db, users):
@@ -829,6 +938,19 @@ def test_an_empty_data_set_says_so_instead_of_going_out_silently(logged_in, db,
     picked = llm_brief.scope(db, users["u1"])
     assert picked["empty"] is True
     assert picked["text"] in logged_in.get("/deals").text
+
+
+def test_an_empty_sheet_and_an_unchecked_room_are_different_things(db, users):
+    """할 말이 다르다 — 방을 확인하라고만 하면 명단이 빈 사람은 헤맨다."""
+    from app.services import llm_brief
+
+    _sheet(db, "투자사 풀")
+    _contact(db, users["u1"].id, source_sheet="투자사 풀")   # 내 명단이 아니다
+
+    picked = llm_brief.scope(db, users["u1"])
+    assert picked["held"] == 0 and picked["empty"] is True
+    assert "내 명단에 올라 있는 투자사가 없습니다" in picked["text"]
+    assert "방 연결 확인" not in picked["text"], "없는 단추를 찾아 헤매게 됩니다"
 
 
 def test_a_consultant_cannot_reach_either_address(db, users, people):
@@ -1222,12 +1344,15 @@ def test_the_data_and_the_lookup_share_one_population(db, users, people):
 
     **모집단이 둘로 갈리면 여기가 깨진다.**
     """
+    _sheet(db, "투자사 풀")
+
     rows = [
         _contact(db, users["u1"].id),                              # 담긴다
         _contact(db, users["u1"].id, room_verified="not_found"),   # 방이 막혔다
         _contact(db, users["u1"].id, kakao_room_name=""),          # 방 미등록
-        _contact(db, users["u2"].id),                              # 남의 담당
-        _contact(db, people["admin"].id),                          # 관리자 담당
+        _contact(db, users["u1"].id, source_sheet="투자사 풀"),      # 내 명단이 아니다
+        _contact(db, users["u2"].id),                              # 남의 계정
+        _contact(db, people["admin"].id),                          # 관리자 계정
     ]
     in_data = {c["id"] for c in _brief(db, users["u1"])["investors"]}
     got = _resolve(db, users["u1"],
