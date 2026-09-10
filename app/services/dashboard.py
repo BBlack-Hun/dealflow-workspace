@@ -48,12 +48,17 @@ REACTION_WINDOW_DAYS = 60
 
 # --- 공통 집계 --------------------------------------------------------------
 
+# 방 제목을 실제 방과 **대조까지 끝낸** 갈래. 글자를 여기 한 번만 적는다 —
+# 아래 `_SENDABLE_ROOM` 도, 화면이 거르는 값(`ROOM_LABELS`)도, 맞추기용 자료가
+# 담는 사람(`llm_brief.investor_rows`)도 이 이름을 읽는다.
+ROOM_CONFIRMED = "verified"
+
 # 방 확인 결과를 **명시적으로** 나눈다. 예전에는 모르는 값을 전부 '미확인'으로
 # 떨어뜨렸는데, 그래서 '방 없음(not_found)' 으로 확인된 사람까지 발송 가능으로
 # 세어졌다(투자사 관리 현황 117명 · 대시보드 123명으로 어긋난 원인).
-_SENDABLE_ROOM = {"verified", "unverified"}
+_SENDABLE_ROOM = {ROOM_CONFIRMED, "unverified"}
 _ROOM_ALIAS = {
-    "verified": "verified",
+    ROOM_CONFIRMED: ROOM_CONFIRMED,
     "unverified": "unverified",
     "failed": "failed",
     "not_found": "failed",       # 방이 없다고 확인된 것 — 보낼 수 없다
@@ -71,6 +76,23 @@ def _room_state(c: VcContact) -> str:
     # 처음 보는 값은 '확인 안 됨'이 아니라 **보낼 수 없음**으로 본다.
     # 모르는 상태를 낙관적으로 해석하면 못 가는 곳에 갈 수 있다고 세게 된다.
     return _ROOM_ALIAS.get(c.room_verified or "", "failed")
+
+
+def room_confirmed(c: VcContact) -> bool:
+    """방 확인이 **끝난** 사람인가 — 실제로 그 방으로 나가는 것이 확인된 줄.
+
+    `_SENDABLE_ROOM`(확인됨 + 미확인)보다 **좁다.** 미확인은 "제목이 실제와
+    다르면 그때 가서 빠지는" 줄이라, 회차 준비 점검도 그 사람들을 따로 경고로
+    센다(`readiness._targets_check`) — 보낼 수 있다고 세되 확실하지는 않다.
+
+    확실한 쪽만 담아야 하는 자리가 따로 있다. 맞추기용 자료(`llm_brief`)는 앱
+    밖으로 나가 추천을 받아 오는 자료라, 못 보내는 곳이 섞이면 그 추천이 통째로
+    버려진다 — 677곳을 내보내고 실제로 보낼 수 있는 곳은 114곳이던 자리다.
+
+    **판정을 그 자리에 옮겨 적지 않고 여기서 부른다.** 갈래를 나누는 규칙은
+    `_room_state` 하나뿐이라, 갈래가 하나 늘어도 읽는 곳이 같이 움직인다.
+    """
+    return _room_state(c) == ROOM_CONFIRMED
 
 
 # 세는 것만 보여주고 갈 곳이 없으면, 그 6명이 누구인지 알 수 없다.
@@ -156,7 +178,7 @@ def clamp_top(top: int) -> int:
 
 
 ROOM_LABELS = {
-    "verified": ("확인됨", "ok"),
+    ROOM_CONFIRMED: ("확인됨", "ok"),
     "unverified": ("미확인", "warn"),
     "failed": ("방 없음 · 실패", "bad"),
     "missing": ("방 미등록", "bad"),

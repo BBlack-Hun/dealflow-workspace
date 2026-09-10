@@ -14,8 +14,9 @@ from ..db import get_db
 from ..deps import get_current_user, may_manage_team_contacts, templates
 from ..models import IrCompany, SendJob, User
 from ..services import (cadence, contact_columns, deal_history, deal_queue,
-                        deal_stage, ir_attach, mailer, ref_panel, scheduled_send,
-                        sheet_import, sheet_owner, sourcing_link, startup_send)
+                        deal_stage, ir_attach, llm_brief, mailer, ref_panel,
+                        scheduled_send, sheet_import, sheet_owner,
+                        sourcing_link, startup_send)
 from ..ui import MENU, base_ctx as _base_ctx
 from .companies import BLOCKED_CONTRACT
 from .companies import blocked_reason as company_blocked_reason
@@ -209,6 +210,13 @@ def deals_page(
         # 안내하는 자리가 다른 말을 하는 날이 온다(`services/scheduled_send.py`).
         "send_earliest_hour": scheduled_send.EARLIEST_HOUR,
         "send_latest_hour": scheduled_send.LATEST_HOUR,
+        # [LLM 에 물어보기] 자료에 **몇 곳이 담기는지**. 화면이 아무 말도 안 하던
+        # 동안 관리자 계정에서는 677곳이 담기고 실제로 보낼 수 있는 곳은 114곳이라
+        # 사람이 헤맸다 — 수가 갈렸다는 것을 화면에서 먼저 알아야 한다.
+        #
+        # **문장을 여기서 짓지 않는다.** 자료의 `scope` 칸과 같은 함수가 짓는다
+        # (`services/llm_brief.scope`) — 화면과 자료가 각자 적으면 갈린다.
+        "llm_scope": llm_brief.scope(db, user),
     })
     return templates.TemplateResponse("deals.html", ctx)
 

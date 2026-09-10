@@ -126,8 +126,11 @@
       return;
     }
     var missing = rows.filter(function (r) { return !r.found; }).length;
+    // 못 찾은 번호가 있으면 **왜 없는지**까지 말한다. 자료에 담기는 범위가
+    // 좁아진 뒤로(내 담당 + 카톡방 확인됨), 못 찾는 번호는 대개 LLM 이 자료에
+    // 없는 번호를 지어낸 것이다 — "내 담당이 아니다" 만으로는 그것을 모른다.
     foundState.textContent = rows.length + "개 번호"
-      + (missing ? " · " + missing + "개는 내 담당에 없습니다" : "");
+      + (missing ? " · " + missing + "개는 이 자료에 없는 번호입니다" : "");
 
     rows.forEach(function (row) {
       var item = document.createElement("div");
@@ -147,7 +150,8 @@
       } else {
         var note = document.createElement("span");
         note.classList.add("muted");
-        note.textContent = "내 담당에 없는 번호입니다";
+        note.textContent = "이 자료에 담기지 않은 번호입니다 — "
+          + "내 담당이 아니거나 카톡방이 확인되지 않은 곳입니다";
         item.appendChild(note);
       }
       found.appendChild(item);

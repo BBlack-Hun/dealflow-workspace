@@ -589,6 +589,12 @@ WRITE_ROUTES = {
     ("POST", "/api/import/contacts"): WATCHED,
     # 발송 날짜 규칙은 팀 전체의 일정이다.
     ("POST", "/followups/rules/{key}"): WATCHED,
+    # `IR 요청 투자사` 표에서 줄 하나 지우기. 자기 줄만 지울 수 있지만
+    # (`followups._owned`) **지운 것은 자기 것이라도 남는다** — `send_sequences`
+    # 를 보는 표로 옮긴 이유가 이 길 하나다. 옆의 [답 옴]·[중단]·[다시 켜기] 는
+    # 같은 표를 **고치기만** 해서 자기 줄이면 안 남는다 — 그래서 아래 기계 쪽에
+    # 그대로 둔다.
+    ("POST", "/followups/{sequence_id}/delete"): WATCHED,
 
     # ── 자기 것만 ───────────────────────────────────────────────────────────
     ("POST", "/login"): SELF,

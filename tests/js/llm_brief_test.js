@@ -26,12 +26,13 @@ const src = fs.readFileSync(SRC, "utf8");
 // 가상의 자료다 — 저장소가 공개라 실제 이름·회사를 두지 않는다.
 const BRIEF = {
   generated_at: "2026-09-01T09:00:00+09:00",
-  scope: "본인 담당",
+  // 무엇이 담겼는지는 **서버가 지은 문장**이다 — 화면은 그것을 그대로 보여준다.
+  scope: "내 명단의 투자사 3곳 중 카톡방 확인됨 1곳",
   amount_unit: "백만원",
   // 시킬 말은 **서버가 지어 보낸다.** 화면이 제 문장을 들고 있으면 서버 쪽과
   // 반드시 갈린다 — 여기서는 서버가 보냈다고 치고 그것이 실려 나가는지만 본다.
   prompt: "가상 지시문 1줄\n\n── 자료 ──",
-  investors: [{ id: "V-31", sectors: "AI", room_open: true, sent_before: ["C-7"] }],
+  investors: [{ id: "V-31", sectors: "AI", sent_before: ["C-7"] }],
   // 기업도 이름 없이 번호로만 나간다. **금액은 정확한 숫자가 아니라 구간**이다
   // — 경계는 서버(`services/llm_brief.py` 의 `AMOUNT_EDGES`)가 정하고, 화면은
   // 받은 글자를 그대로 보여 주기만 한다.
@@ -151,7 +152,8 @@ async function main() {
     // 몇 건인지 먼저 말해 준다 — 빈 자료를 그대로 붙여 넣는 일이 없게.
     assert.ok(app.nodes["llm-state"].textContent.indexOf("투자사 1곳") >= 0,
       app.nodes["llm-state"].textContent);
-    assert.ok(app.nodes["llm-state"].textContent.indexOf("본인 담당") >= 0);
+    assert.ok(app.nodes["llm-state"].textContent.indexOf("카톡방 확인됨") >= 0,
+      app.nodes["llm-state"].textContent);
   }
   {
     // 링크의 주소를 바꾸면 [화면에서 보기] 도 그리로 따라가야 한다.
@@ -200,8 +202,14 @@ async function main() {
     assert.ok(rows[1].classList.contains("missing"));
     assert.strictEqual(rows[1].children[0].textContent, "V-99");
     assert.strictEqual(rows[1].children[1].tag, "span");
-    assert.ok(app.nodes["llm-found-state"].textContent.indexOf("1개는 내 담당에 없습니다") >= 0,
+    // 못 찾은 번호가 있으면 **왜 없는지**까지 말한다 — 자료에 담기는 범위가
+    // 좁아진 뒤로(내 담당 + 카톡방 확인됨), 못 찾는 번호는 대개 자료에 없는
+    // 번호를 지어낸 것이다.
+    assert.ok(app.nodes["llm-found-state"].textContent
+      .indexOf("1개는 이 자료에 없는 번호입니다") >= 0,
       app.nodes["llm-found-state"].textContent);
+    assert.ok(rows[1].children[1].textContent.indexOf("카톡방이 확인되지 않은") >= 0,
+      rows[1].children[1].textContent);
     assert.strictEqual(rows[2].children[1].textContent, "가상바이오");
     assert.ok(rows[2].children[1].href.indexOf("/companies?q=") === 0);
   }

@@ -157,6 +157,30 @@ def resume_sequence(sequence_id: int, db: Session = Depends(get_db),
     return RedirectResponse("/followups?msg=리마인드를+다시+켰습니다", status_code=303)
 
 
+@router.post("/followups/{sequence_id}/delete", include_in_schema=False)
+def delete_sequence(sequence_id: int, db: Session = Depends(get_db),
+                    user: User = Depends(get_current_user)):
+    """`IR 요청 투자사` 표에서 줄 하나를 없앤다.
+
+    **지우는 것은 `SendSequence` 한 줄뿐이다.** 명단(`VcContact`)·발송 기록
+    (`SendJob`·`SendItem`)·활동(`ContactActivity`)은 건드리지 않는다 — 사람이
+    바라는 것은 "이 표에서 안 보이게" 이지 투자사를 지우는 것이 아니다.
+    지운 뒤에도 담당자 줄을 눌러 IR 요청을 기록할 수 있어야 한다.
+
+    **되살아난다.** 그 담당자에게 나간 딜소개 발송 기록이 남아 있으므로
+    [지난 발송에서 리마인드 걸기](`/followups/backfill`)를 누르면 이 줄이 다시
+    선다. 지웠는데 다시 생기면 사람은 고장으로 읽으니, 확인 문구에 그 사실을
+    적어 두었다(`app/templates/_closed_followups.html`).
+
+    누가 지울 수 있나는 **[다시 켜기]와 같은 판정**이다(`_owned`) — 남의
+    담당 줄은 찾을 수 없다고 답한다. 여기서 새로 짓지 않는다.
+    """
+    seq = _owned(db, sequence_id, user)
+    db.delete(seq)
+    db.commit()
+    return RedirectResponse("/followups?msg=리마인드+줄을+지웠습니다", status_code=303)
+
+
 @router.post("/followups/backfill", include_in_schema=False)
 def backfill(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """이 기능을 켜기 전에 나간 회차에도 리마인드를 걸어 준다."""
