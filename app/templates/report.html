@@ -390,17 +390,24 @@
     {% if ir_open %}
     <p class="hint warn">아직 안 보낸 요청이 있습니다 — <a href="/ir">딜 진행 관리</a></p>
     {% endif %}
-    {% if ir_meeting_ask_overdue %}
-    <p class="hint warn">자료를 보낸 지 {{ ir_meeting_ask_days }}일이 지났는데 미팅 요청을
-      안 보낸 담당자가 {{ ir_meeting_ask_overdue }}명 있습니다 —
-      <a href="/ir">딜 진행 관리</a></p>
+    {% if ir_meeting_ask_missing %}
+    {# 숫자만 있으면 **누구인지** 알 수 없어, 업무 보고를 보다가 딜 진행 관리로
+       건너가 다시 찾아야 했다. 아래 `이 달의 반응` 표의 상태 칸이 줄마다
+       말해 준다 — 여기서는 그리로 보낸다. #}
+    <p class="hint {% if ir_meeting_ask_overdue %}warn{% endif %}">
+      {% if ir_meeting_ask_overdue %}자료를 보낸 지 {{ ir_meeting_ask_days }}일이
+      지났는데 미팅 요청을 안 보낸 담당자가 {{ ir_meeting_ask_overdue }}명
+      있습니다 — {% endif %}누구인지는
+      <a href="#reactions">아래 <b>이 달의 반응</b></a> 의
+      <b>IR 요청 투자사</b> 표에 줄마다 적혀 있습니다.
+      보내려면 <a href="/ir">딜 진행 관리</a>.</p>
     {% endif %}
   </section>
 </div>
 
 {# 한 달에 두 번 도는 일이라, 그 달에 무엇이 오갔는지를 **한눈에** 봐야 한다.
    숫자만 보면 "그게 누구였지" 가 이어지므로 이름과 날짜를 나란히 둔다. #}
-<section class="panel">
+<section class="panel" id="reactions">
   <h2 class="panel-title">이 달의 반응
     <span class="hint">{{ year }}년 {{ month }}월</span>
   </h2>
@@ -417,17 +424,32 @@
         <th style="width:22%">담당자</th>
         <th style="width:22%">투자사</th>
         <th>기업</th>
-        <th style="width:96px">상태</th>
+        {# 상태 칸이 `미팅 요청 보냄 · 날짜` 를 함께 인다. 96px 로는 날짜가
+           `202…` 에서 끊긴다 — `/ir` 의 같은 칸에서 실제로 끊겼던 자리다.
+           여기서 제일 긴 글은 `미팅 요청 안 보냄 · 2026-09-17까지` 로,
+           헤드리스 크롬에서 재니 170px 였다(`/ir` 은 그 글을 안 쓴다). #}
+        <th style="width:184px">상태</th>
         {% if not viewing %}<th style="width:80px">담당 팀원</th>{% endif %}
       </tr></thead>
       <tbody>
         {% for r in b.rows %}
-        <tr>
+        {# 지난 줄은 훑을 때 눈에 걸려야 한다 — `/ir` 의 `전달한 자료` 표와
+           같은 빛깔을 쓴다. #}
+        <tr class="{% if r.ask_state == 'bad' %}overdue-row{% endif %}">
           <td class="muted tabular">{{ r.date }}</td>
           <td><b>{{ r.name }}</b> <span class="muted">{{ r.title }}</span></td>
           <td class="ellipsis" title="{{ r.firm }}">{{ r.firm }}</td>
           <td class="ellipsis" title="{{ r.company }}">{{ r.company }}</td>
-          <td class="muted">{{ r.note }}</td>
+          {#
+            **누가 미팅 요청을 안 보냈는가.** 숫자(위 `IR 자료 요청` 판)만으로는
+            대상을 알 수 없어 딜 진행 관리로 건너가 다시 찾아야 했다.
+
+            글자는 `services/report.meeting_ask_note` 가 짓는다 — **엑셀 보고도
+            같은 문자열을 받아 쓴다.** 화면에서 따로 지으면 파일과 말이 갈린다.
+            세는 것도 여기서 하지 않는다(`pipeline.meeting_ask_state` 한 곳).
+          #}
+          <td class="muted status-cell">{{ r.note }}
+            {% if r.ask %}<span class="status-when {{ r.ask_state }}">{{ r.ask }}</span>{% endif %}</td>
           {% if not viewing %}<td class="muted">{{ r.owner }}</td>{% endif %}
         </tr>
         {% endfor %}

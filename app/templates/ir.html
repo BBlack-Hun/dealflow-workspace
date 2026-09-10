@@ -453,8 +453,21 @@
   {% endif %}
 </section>
 
+{#
+  **두 판 다 한 줄을 통째로 쓴다**(`.panel.wide`). 예전에는 이 격자가 둘을
+  나란히 세워 판 하나가 544px 였는데, 그 안에서 「전달한 자료」 표는 칸이
+  다섯이고 줄마다 단추가 셋이다. 헤드리스 크롬으로 재 보니 단추 칸은 207px 를
+  요구하는데 120px 를 받아 **`삭제` 가 통째로 잘려 안 보였고**(넘침 87px),
+  상태 칸은 `미팅 요청 보냄 · 2026-09-10` 이 147px 인데 104px 를 받아 날짜가
+  `202…` 에서 끊겼다(넘침 43px). 칸 너비만 늘리면 담당자·기업에 남는 폭이
+  44px 씩이라 이번에는 이름이 짜부라진다 — **판이 좁은 것이 원인**이라
+  자리를 만들어 준다.
+
+  「미팅 후기」도 같이 넓힌다. 하나만 넓히면 아래 줄 오른쪽이 빈 채로 남고,
+  저 표는 `min-width: 2030px` 라 절반 폭에서는 늘 가로로 굴려야 했다.
+#}
 <div class="dash-grid">
-  <section class="panel">
+  <section class="panel wide">
     {# 자료를 보낸 다음에 하는 말이 **미팅 요청**이다. 그런데 자료를 전달하면
        리마인드가 멈춰서(답이 왔으니 맞다), 미팅 요청을 안 보낸 담당자는 어느
        목록에도 다시 안 뜬다 — 자료만 보내 놓고 끝나는 길이 열려 있었다.
@@ -469,11 +482,21 @@
     {% endif %}
     {% if done_requests %}
     <div class="table-wrap">
-    <table class="grid-table compact">
-      {# 칸 너비를 안 주면 '상태' 가 제일 좁게 눌려서 배지가 중간에 끊긴다. #}
+    <table class="grid-table compact" id="delivered-table">
+      {#
+        칸 너비를 안 주면 '상태' 가 제일 좁게 눌려서 배지가 중간에 끊긴다.
+        **그 이유는 그대로 두고 필요한 만큼만 넓혔다** — 값은 헤드리스 크롬에서
+        `scrollWidth` 로 잰 것이다.
+
+          상태   104 → 168px   (`미팅 요청 보냄 · 2026-09-10` 이 147px)
+          단추   120 → 216px   (`미팅 잡기`·`보냈음으로 표시`·`삭제` 가 207px)
+
+        글자를 줄여 때우지 않는다 — `미팅 요청 보냄` 을 `보냄` 으로 줄이면
+        무엇을 보냈다는 말인지 알 수 없다.
+      #}
       <thead><tr>
         <th style="width:96px">요청일</th><th>담당자</th><th>기업</th>
-        <th style="width:104px">상태</th><th style="width:120px"></th>
+        <th style="width:168px">상태</th><th style="width:216px"></th>
       </tr></thead>
       <tbody>
         {# 지난 줄은 위에 세워 두고(`routers/ir.py`), 20줄이 넘더라도
@@ -556,7 +579,7 @@
   </section>
 
   {# 미팅 후기 — 끝난 미팅에 결과를 물었는지 보는 자리. 탭이 여기로 온다. #}
-  <section class="panel" id="reviews">
+  <section class="panel wide" id="reviews">
     <h2 class="panel-title">미팅 후기
       <span class="hint">끝난 미팅 {{ finished|length }}건 · 열흘쯤 뒤 결과를 묻습니다</span>
     </h2>
