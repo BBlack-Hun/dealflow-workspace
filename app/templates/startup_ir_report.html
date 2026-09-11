@@ -24,6 +24,9 @@
     📄 <b>문서</b>는 고른 달 <b>한 달치</b>(인쇄용) ·
     💬 <b>카톡 문구</b>는 그 달 <b>말까지 쌓인 것 전부</b>입니다.
   </p>
+  {# **거른 뒤 몇 줄 남았는지 적는다.** 안 적으면 줄이 줄어든 것이 걸러서인지
+     그 달에 원래 그만큼인지 알 수 없다. #}
+  <p class="muted">기업 <b id="ir-report-count">{{ rows|length }} / {{ rows|length }}곳</b></p>
 </header>
 
 <div class="toolbar">
@@ -51,12 +54,24 @@
 </p>
 {% endif %}
 
+{# 고른 조건을 한 줄로 보여 주고 한 번에 풀 수 있게 한다 — 다른 표와 같은 자리. #}
+<div class="chip-row" data-filter-chips></div>
+
 <div class="table-wrap">
-  <table class="grid-table">
+  <table class="grid-table" id="ir-report-table">
     <thead>
       <tr>
+        {#
+          **계약에만 필터를 단다** — 여기서 값이 몇 개로 정해진 칸은 이것뿐이다
+          (`routers/companies.py` 의 `CONTRACT_LABELS`).
+
+          나머지는 안 단다. `기업` 은 줄마다 하나씩이라 목록이 줄 수만큼
+          생겨 고를 것이 없고, `이 달 요청`·`말까지 누적` 은 고르는 값이 아니라
+          **크기를 비교하는 수**라 `0곳`·`1곳`·`2곳` 을 낱낱이 골라야 한다.
+          `문서`·`카톡 문구` 는 값이 아니라 눌러서 들어가는 자리다.
+        #}
         <th>기업</th>
-        <th>계약</th>
+        <th data-filters="contract:계약">계약<div class="th-filters"></div></th>
         <th>이 달 요청</th>
         <th>말까지 누적</th>
         <th>문서</th>
@@ -67,7 +82,8 @@
       {% for row in rows %}
       {# 둘 다 보낼 것이 없을 때만 줄을 죽인다 — 문서는 없어도 누적 문구는
          나가는 줄이 있다(그 줄까지 흐리면 있는 것을 없는 것처럼 보인다). #}
-      <tr{% if not row.sendable and not row.msg_sendable %} class="ir-row-off"{% endif %}>
+      <tr class="data-row{% if not row.sendable and not row.msg_sendable %} ir-row-off{% endif %}"
+          data-f-contract="{{ row.contract_label }}">
         <td>{{ row.company.name }}</td>
         <td>{{ row.contract_label }}</td>
         <td class="tabular">
@@ -105,5 +121,28 @@
       {% endif %}
     </tbody>
   </table>
+  {# 다 걸러 낸 자리. **줄이 없는 것과 명단이 비는 것은 다른 말이다** —
+     같은 안내를 쓰면 걸러 낸 것을 그 달에 기업이 없는 것으로 읽는다. #}
+  <div class="placeholder-card" data-filter-empty hidden>
+    <p>조건에 맞는 줄이 없습니다.</p>
+  </div>
 </div>
+
+{#
+  **줄이 하나도 없을 때는 걸지 않는다.** 그때 표에 남는 `<tr>` 은 안내 문구
+  한 줄인데, `filters.js` 는 셀 줄을 하나도 못 찾으면 `tbody` 의 줄을 전부
+  줄로 본다 — 계약 기업이 0곳인 달에 `1 / 1곳` 이라고 적힌다.
+#}
+{% if rows %}
+<script src="{{ asset('js/filters.js') }}"></script>
+<script>
+  // 머리글 필터. 걸고 푸는 일·주소에 남기는 일·남은 줄을 세는 일이 전부
+  // `filters.js` 안에 있다 — 화면마다 다시 짜면 한 화면만 조용히 달라진다.
+  window.DealflowFilters && window.DealflowFilters.init({
+    table: "#ir-report-table",
+    count: "#ir-report-count",
+    unit: "곳"
+  });
+</script>
+{% endif %}
 {% endblock %}
