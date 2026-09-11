@@ -401,7 +401,72 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
      편이 낫다 — 얇은 표는 눈에 보이지만 잘린 스크롤바는 안 보인다. */
   min-height: min(320px, calc(100vh - var(--head))); }
 /* 세로로 밀 때 컬럼 이름이 사라지면 어느 칸을 보고 있는지 알 수 없다. */
-.table-wrap.wide thead th { position: sticky; top: 0; z-index: 2; }
+.table-wrap.wide thead th { position: sticky; top: 0; z-index: 3; }
+
+/* ── 첫 열 고정 — **가로**로 밀 때 어느 줄인지 잃지 않게 ────────────────
+   머리행은 오래전부터 고정이었는데(바로 위 규칙) 첫 열은 아니었다. 이 표들은
+   화면보다 1,900px 넘게 넓어서, 오른쪽 끝의 이번 달 칸을 보는 동안 **어느
+   기업 줄인지 알 수가 없었다.** 사용자가 든 말이 그것이다 — "첫 행은 고정인데
+   왜 좌우 스크롤이 되면 스타트업 이름은 고정이 또 아닌 건지, 일관된 UX 규칙이
+   없는 것 같습니다."
+
+   **두 표에 같이 건다.** 투자사 관리 현황과 스타트업은 같은 화면 파일을 쓰고
+   같은 `.table-wrap.wide` 안에 선다 — 한쪽만 고정하면 화면을 옮길 때마다
+   규칙이 바뀐다.
+
+   ## 왼쪽 자리를 CSS 가 정하지 않는 이유
+
+   `left` 는 앞 칸들의 폭을 더한 값인데, 그 폭은 배치가 들고 있고(스타트업은
+   `NO` 34 + `기업명` 180, 투자사는 34 + 96) 감춘 줄을 함께 볼 때는 앞에
+   체크상자 칸이 32px 더 붙는다. 여기 숫자를 박으면 세 값을 두 군데서 맞춰야
+   하고, 한쪽만 고쳐지는 날 고정된 칸이 반 칸씩 어긋나 **글자가 겹쳐 보인다.**
+   그래서 화면이 더해 넘겨 주는 `--stick-a` · `--stick-b` 만 읽는다
+   (`contacts.html`). 넘어온 값이 없으면 0 — 겹치지 않는 쪽으로 물러난다.
+
+   ## 겹치는 모서리
+
+   머리행도 고정이고 첫 열도 고정이면 **왼쪽 위 칸은 둘 다**여야 한다. 한
+   축만 고정하면 다른 축으로 밀 때 그 칸만 흘러가 이름 위에 남의 값이 겹친다.
+   `position: sticky` 는 `top` 과 `left` 를 함께 받으므로 칸은 그대로 두고
+   쌓는 차례(`z-index`)만 층으로 나눈다:
+
+       머리행의 고정 칸 4 > 머리행 3 > 몸통의 고정 칸 2 > 보통 칸 (0)
+
+   몸통의 고정 칸이 머리행보다 위면 세로로 밀 때 기업명이 머리글을 덮고,
+   보통 칸보다 아래면 가로로 밀 때 남의 값이 기업명을 덮는다. 두 가지 다
+   겪었다. (수정창 z-40 · 칸 편집창 z-60 은 이보다 한참 위라 그대로다.)
+
+   ## 바탕색
+
+   고정 칸은 다른 칸 **위에** 그려지므로 바탕이 비치면 안 된다. 머리글은 이미
+   제 색(#f7f8fa)이 있고, 몸통 칸은 색이 없어서 여기서 준다 — 줄에 걸린 색
+   (마우스 올림·감춘 줄)도 같이 따라와야 그 줄이 끊겨 보이지 않는다.
+   경계선은 `box-shadow` 로 긋는다. `border-right` 는 `table-layout: fixed`
+   에서 칸 폭을 1px 밀어 머리글이 접히는 자리를 만든다. */
+/* 몸통 칸만 여기서 `sticky` 로 바꾼다. 머리글 칸은 **이미** 위 규칙으로
+   `sticky` 라(세로 고정) 다시 적지 않는다 — 두 번 적으면 한쪽만 고쳐지는 날
+   머리행 고정이 조용히 풀린다. */
+.table-wrap.wide td.stick { position: sticky; z-index: 2;
+  background: var(--panel); }
+.table-wrap.wide th.stick { z-index: 4; }
+.table-wrap.wide .stick-lead { left: 0; }
+.table-wrap.wide .stick-a { left: var(--stick-a, 0px); }
+.table-wrap.wide .stick-b { left: var(--stick-b, 0px);
+  box-shadow: 1px 0 0 var(--line); }
+/* 표의 **왼쪽 테두리는 세우지 않는다.**
+   `border-collapse: collapse` 에서 그 1px 은 표에 붙어 함께 밀려 가는데, 고정된
+   맨 앞 칸의 바탕은 그 1px **뒤**에서 시작한다. 가로로 밀면 남은 한 줄 틈으로
+   밑을 지나가는 글자가 비쳤다 — 1px 이라 고장으로는 안 보여도, 고정해 놓고
+   글자가 겹치는 것과 같은 부류다. 칸 쪽에 테두리를 옮겨 주거나 바탕을 왼쪽으로
+   늘려 덮는 것은 둘 다 안 통했다(헤드리스 크롬으로 넷을 재 봤다). 테두리를
+   아예 안 세우면 칸이 그 자리에서 시작해 틈이 생기지 않는다 — 표의 왼쪽 끝은
+   머리글 바탕색이 이미 그어 준다. */
+.table-wrap.wide .grid-table { border-left: 0; }
+/* 줄에 걸린 색이 고정 칸에서 끊기면 **그 줄이 두 줄처럼 보인다.** */
+.table-wrap.wide .grid-table tbody tr:hover > td.stick { background: #f8faff; }
+.table-wrap.wide .grid-table tbody tr.row-hidden > td.stick {
+  background: repeating-linear-gradient(
+    45deg, var(--panel), var(--panel) 6px, #f4f6f9 6px, #f4f6f9 12px); }
 /* 컬럼 폭 합(1,922px)보다 넉넉하게. 모자라면 다시 짜부라진다. */
 .table-wrap.wide .grid-table { min-width: 2030px; }
 /* IR 기업현황은 `계약서 수신됨`(134px) · `미팅제공일자`(100px)가 늘어 두 칸 더 넓고,
@@ -490,8 +555,33 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
 .grid-table td { padding: 6px 9px; border-bottom: 1px solid var(--line); vertical-align: top;
                  overflow: hidden; font-size: 13px; }
 .grid-table tbody tr:hover { background: #f8faff; cursor: pointer; }
+
+/* ── 넓은 표는 **줄을 얇게** ────────────────────────────────────────────
+   표 글자를 12→13px 로 올리면서(#174) 긴 메모가 든 줄이 세로로 15~25% 길어졌다.
+   글자 크기는 사용자가 정한 값이라 되돌리지 않는다 — 대신 **글자가 아닌 것**을
+   줄인다. 위아래 여백 6→4px, 두 줄 접는 칸의 줄 간격 1.45→1.35.
+   둘 다 글자에는 손대지 않고 줄 하나에서 7~8px 을 돌려받는다.
+
+   **`.table-wrap.wide` 안에서만** 줄인다. 여든 줄을 훑는 표가 그 안에 있고,
+   바깥의 짧은 표(주간 업무·팀 현황)는 줄 수가 문제가 된 적이 없다 — 거기까지
+   좁히면 얻는 것 없이 모양만 빽빽해진다. */
+.table-wrap.wide .grid-table td { padding: 4px 9px; }
+.table-wrap.wide .grid-table .clamp2 { line-height: 1.35; }
+
+/* [촘촘히 보기] 는 **긴 글도 한 줄로** 접는다.
+   여백만 줄이던 토글이라 정작 줄 높이를 정하는 것(두 줄짜리 메모 칸)은 그대로
+   여서, 눌러도 줄 수가 거의 안 늘었다. 여기서 한 줄로 접으면 같은 화면에
+   여덟 줄쯤이 더 선다. 잘린 글은 마우스를 올리면(`title`) 그 자리에서,
+   전문은 [수정] 창에서 본다 — 값은 어디로도 가지 않는다. */
 .grid-table.dense td { padding: 3px 9px; }
+/* 넓은 표에서도 촘촘히가 이긴다. 위 `.table-wrap.wide .grid-table td` 와 셈이
+   같아 뒤에 적는 것만으로는 안 걸린다 — 눌러도 아무 일이 없던 자리다. */
+.table-wrap.wide .grid-table.dense td { padding: 3px 9px; }
+.grid-table.dense .clamp2 { -webkit-line-clamp: 1; }
 .grid-table.dense .cell-sub { display: none; }
+/* 줄 끝의 [수정] 은 **글자 단추**다. 브라우저 기본 여백이 붙어 30px 이라,
+   긴 글을 한 줄로 접고 나면 이 단추 하나가 줄 높이를 붙잡는다. */
+.table-wrap.wide .grid-table td > .linkbtn { padding: 0; line-height: 1.5; }
 .cell-main, .cell-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cell-main { font-weight: 600; }
 .cell-sub { font-size: 11.5px; margin-top: 2px; }
@@ -1120,8 +1210,36 @@ td.cell.save-failed { background: #fdecec; }
 .sheet-tab.muted-tab { opacity: .62; }
 .sheet-tab.muted-tab.active { opacity: 1; }
 
+/* ── 표 위의 **자주 안 쓰는 것**을 접는 상자 ────────────────────────────
+   왜 접는지는 `contacts.html` 의 그 자리 주석에 적어 두었다 — 요약하면 표 위가
+   543px 이라 여든 줄짜리 명단이 여섯 줄밖에 안 보였다.
+
+   접힌 줄은 **한 줄**이어야 뜻이 있다. 그래서 삼각형 표식까지 포함해 34px 에
+   맞추고, 무엇이 들어 있는지는 여는 줄의 글자가 말한다(개수까지). */
+.sheet-fold { margin: 6px 0 8px; }
+.sheet-fold > summary { cursor: pointer; font-size: 12px; color: var(--muted);
+  line-height: 1.6; padding: 4px 2px; list-style-position: outside;
+  width: fit-content; border-radius: 6px; }
+.sheet-fold > summary:hover { color: var(--ink); }
+/* 펼친 속은 접힌 줄과 갈라져 보여야 한다 — 안 그러면 어디까지가 설정이고
+   어디부터가 표인지 알 수 없다. */
+.sheet-fold-body { margin-top: 6px; padding: 10px 12px; border: 1px solid var(--line);
+  border-radius: 10px; background: var(--bg); }
+.sheet-fold-body > :first-child { margin-top: 0; }
+.sheet-fold-body > :last-child { margin-bottom: 0; }
+/* 접는 상자 안의 명단 이름 칸은 제목만 한 크기(15px)일 이유가 없다. */
+.sheet-fold-body .sheet-rename { margin: 0 0 8px; }
+.sheet-fold-body .sheet-rename input { font-size: 13px; min-width: 220px; }
+
+/* 지난 달 칸이 접혀 있다는 것은 **접는 상자 밖**에 적는다 — 설정이 아니라
+   지금 표가 무엇을 보여 주는가라서다(화면 주석 참고). */
+.fold-months { margin: 4px 0 6px; }
+
 /* 달마다 늘어나는 칸을 세우고 이름을 고치는 줄. */
 .month-cols { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.sheet-fold-body .month-cols { margin-top: 8px; padding-top: 8px;
+  border-top: 1px solid var(--line); }
+.month-cols input[type="text"], .month-cols button { height: auto; }
 .month-cols input[type="text"] { padding: 4px 8px; border: 1px solid var(--line);
   border-radius: 6px; font-size: 12px; width: 190px; }
 /* 이름을 `month-col` 로 두면 안 된다 — 투자컨설턴트 현황이 그 이름을
@@ -1589,6 +1707,18 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
      `--fit` 을 읽어 따라오므로, JS 에 폭을 다시 적지 않는다.
      (`--head` 값은 JS 가 못 돌 때의 대비값이다) */
   .table-wrap.wide { --head: 210px; --fit: screen; }
+
+  /* 폰에서는 **첫 열을 고정하지 않는다.**
+     고정 폭이 `NO`+`기업명` 으로 214px 인데 폰에서 표에 주어진 자리는 362px
+     이다 — 59% 가 묶이면 밀어서 볼 자리가 148px 밖에 안 남아, 한 화면에 칸
+     하나가 겨우 선다. 고정은 "넓은 표에서 줄을 잃지 않으려고" 거는 것이지
+     볼 자리를 뺏으려는 것이 아니다.
+     화면 크기 경계는 이 미디어 규칙 **한 곳**이다(위 `--fit` 과 같은 자리). */
+  .table-wrap.wide td.stick { position: static; background: none; }
+  /* 머리글 칸은 `sticky` 그대로 두고 **가로 자리만** 푼다 — `position` 을
+     건드리면 머리행 세로 고정까지 같이 풀린다. */
+  .table-wrap.wide .stick-lead, .table-wrap.wide .stick-a,
+  .table-wrap.wide .stick-b { left: auto; box-shadow: none; }
 
   /* 가로로 늘어선 줄은 밀어서 본다. 접으면 눌러야 보인다. */
   .sheet-tabs, .jump-bar, .funnel, .mode-tabs, .quick-chips, .chip-row,
