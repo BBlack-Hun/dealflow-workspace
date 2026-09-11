@@ -119,6 +119,61 @@
   // ── 상세 편집 ──────────────────────────────────────────────
   function el(id) { return document.getElementById(id); }
 
+  // ── 창에서 고를 값 ─────────────────────────────────────────
+  //
+  // 목록 자체는 **화면이 그려 준다**(companies.html 의 `<datalist>`, `rows` 에서
+  // 바로 모은다) — 한 곳이고, 탭을 안 가리고, 스크립트가 죽어도 고를 것이 뜬다.
+  //
+  // 여기서 하는 일은 둘뿐이다.
+  //
+  //   1. **표에서 방금 고친 갈래를 보탠다.** 화면이 그린 목록은 페이지를 받은
+  //      그 순간의 것이라, 표에서 새 갈래를 적어 넣고 곧바로 [수정]을 연
+  //      사람에게는 방금 적은 그 말이 없다. 보태는 값은 표의 그 칸에서
+  //      읽으므로(`DealflowFilters.usedValues` — 머리글 필터가 세는 자리와
+  //      같다) 없던 목록을 새로 지어내는 것이 아니다.
+  //   2. **한글 차례로 다시 세운다.** 화면 쪽 `sort` 는 파이썬 차례라
+  //      로마자(`B2B …`)를 한글 앞에 둔다 — 표·필터와 차례가 어긋난다.
+  //
+  // 왼쪽이 창의 칸 이름이 아니라 **목록의 id** 인 이유: `FIELDS` 와 이름이
+  // 겹치면 저장하는 쪽(`collect`)이 목록까지 값으로 읽는다.
+  var OPTION_LISTS = {
+    "opts-sector_major": "sector",
+    "opts-sector_minor": "minor"
+  };
+
+  function fillOptionLists() {
+    Object.keys(OPTION_LISTS).forEach(function (id) {
+      var list = el(id);
+      if (!list) return;
+
+      var seen = {};
+      var values = [];
+      function add(value) {
+        var text = String(value == null ? "" : value).trim();
+        if (!text || seen[text]) return;
+        seen[text] = true;
+        values.push(text);
+      }
+
+      // 화면이 그려 준 목록이 바탕이다.
+      Array.prototype.forEach.call(list.querySelectorAll("option"), function (opt) {
+        add(opt.value || opt.getAttribute("value"));
+      });
+      // 표에서 이번에 고친 값을 보탠다.
+      if (window.DealflowFilters && window.DealflowFilters.usedValues) {
+        window.DealflowFilters.usedValues(table, OPTION_LISTS[id]).forEach(add);
+      }
+
+      values.sort(function (a, b) { return a.localeCompare(b, "ko"); });
+      list.innerHTML = "";        // 다시 그릴 때 값이 두 벌로 쌓이지 않게
+      values.forEach(function (value) {
+        var opt = document.createElement("option");
+        opt.value = value;
+        list.appendChild(opt);
+      });
+    });
+  }
+
   // 금액 넷은 **적은 글자 그대로** 오가고 그대로 저장된다(0074).
   //
   // 예전에는 여기서 억↔백만원을 곱하고 나눴다(`toEok` · `toStored`). 저장이
@@ -256,6 +311,7 @@
   function open(id) {
     current = id;
     modal.open();
+    fillOptionLists();
     // 관리자가 아니면 단추 자체가 없다(companies.html 이 안 그린다).
     if (el("co-delete")) el("co-delete").hidden = !id;
     if (!id) {
