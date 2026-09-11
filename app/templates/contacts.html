@@ -875,12 +875,35 @@
         {# `data-email-hint` — 메일 칸이면 `@` 뒤 도메인 후보가 뜬다. 어느 칸이
            메일 칸인지는 **배치가 정한다**(`contact_columns` 의 `kind`) —
            여기서 칸 이름으로 고르면 배치가 하나 늘 때 또 적어야 한다. #}
+        {# `list=` — 정해 둔 보기가 있는 칸이면 창에서도 **골라 넣을 수 있다.**
+           표에서 칸을 눌러 고치는 길에는 이미 같은 것이 붙어 있는데
+           (`data-type="pick"` · inline_edit.js) 창만 빈 글자 칸이라, 같은 칸을
+           어디서 고치느냐에 따라 `발송 완료` 와 `발송완료` 로 갈렸다.
+
+           보기가 여덟 가지인 칸이 생기면서 안내(`placeholder`)로는 못 세운다 —
+           한 줄에 다 안 들어가 잘린 채로 보이고, 잘린 뒤는 무엇이 있었는지
+           알 수가 없다.
+
+           **`<select>` 가 아닌 이유**(딜 기업 DB 가 같은 판단을 했다 —
+           `companies.html` 의 `사업분야 대분류`): `list=` 는 `<input>` 을 묶지
+           않아 목록에 없는 말도 그대로 쳐서 저장된다. 이 칸들에는 사람이
+           자유롭게 적어 둔 옛 글이 들어 있어서, 묶는 순간 창을 여는 것만으로
+           그 값이 화면에서 사라진다.
+
+           보기는 **배치가 정한 것 하나**(`Column.choices`)에서 나온다 — 표
+           머리글·필터·표 칸이 읽는 바로 그 목록이라 갈릴 자리가 없다. #}
         <input type="text"
                {% if c.source == 'note' %}id="f-note-{{ c.key }}" data-note="{{ c.key }}"
                {% else %}id="f-{{ c.key }}"{% endif %}
                {% if c.kind == 'email' %}data-email-hint{% endif %}
+               {% if c.choices %}list="opts-panel-{{ c.key }}"{% endif %}
                {% if c.hint %}placeholder="{{ c.hint }}"
-               {% elif c.choices %}placeholder="{{ c.choices|replace(',', ' / ') }}"{% endif %}>
+               {% elif c.choices %}placeholder="고르거나 새로 적습니다"{% endif %}>
+        {% if c.choices %}
+        <datalist id="opts-panel-{{ c.key }}">
+          {% for v in c.choices.split(',') %}<option value="{{ v.strip() }}"></option>{% endfor %}
+        </datalist>
+        {% endif %}
         {% endif %}
       </label>
       {% endfor %}
