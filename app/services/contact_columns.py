@@ -84,7 +84,7 @@ class Column:
     key: str                    # 행이 싣는 이름 (field 면 모델 칸, note 면 notes 키)
     width: int                  # px. 값 길이에 맞춘다(머리글 길이가 아니라)
     source: str = "field"       # field | note | row_no | actions
-    kind: str = "text"          # text | long | pick — 어떻게 고치나
+    kind: str = "text"          # text | long | pick | email — 어떻게 고치나
     choices: str = ""           # pick 일 때 정해진 보기 (`O,X`)
     hint: str = ""              # 수정창의 placeholder. **이름이 아니다**
     in_table: bool = True       # 표에 세울까 (False = 수정창에서만)
@@ -101,9 +101,13 @@ class Column:
         (`static/js/inline_edit.js` 의 `startPick`). 고르는 칸인데 필터만 조용히
         빠지는 것이 정확히 이 저장소가 반복해 당한 부류다.
 
-        **자유롭게 적는 칸에는 안 단다.** `text`(이름·연락처·이메일)와
-        `long`(메모·한줄 소개)은 줄마다 값이 달라서, 필터를 열면 줄 수만큼
-        항목이 생긴다 — 고를 것이 없는 목록이라 자리만 먹는다.
+        **자유롭게 적는 칸에는 안 단다.** `text`(이름·연락처)와 `long`(메모·
+        한줄 소개)은 줄마다 값이 달라서, 필터를 열면 줄 수만큼 항목이 생긴다 —
+        고를 것이 없는 목록이라 자리만 먹는다.
+
+        `email` 도 같다. 그 칸이 후보를 띄우기는 하지만 띄우는 것은 **`@` 뒤
+        도메인**뿐이고(`static/js/email_hint.js`), 값 자체는 줄마다 다르다 —
+        `pick` 과 달리 필터를 걸 것이 없다.
         """
         return self.kind == "pick"
 
@@ -224,7 +228,11 @@ STARTUP_LAYOUT = Layout(
         Column("기업명", "firm", 180),
         Column("성함", "name", 84),
         Column("연락처", "phone", 116),
-        Column("이메일", "email", 180),
+        # `kind="email"` — 눌러 고칠 때 `@` 뒤 도메인 후보가 뜬다. 주소 자체는
+        # 줄마다 달라 고를 것이 못 되지만 도메인은 겹친다
+        # (`services/email_domains.py` 에 재 둔 값과 자르는 근거가 있다).
+        # 필터는 안 붙는다 — `filterable` 은 `pick` 만 본다(위 주석).
+        Column("이메일", "email", 180, kind="email"),
         # ── 계약까지 가는 세 칸 ──────────────────────────────────────────
         #
         # **표에 세우고, 사람 정보(이메일) 바로 뒤에 둔다.**
@@ -389,7 +397,9 @@ INVESTOR_MONTHLY_LAYOUT = Layout(
     extra=[
         # 명함 칸들. 표에 세우면 스무 칸이 넘어 정작 매달 보는 월별 칸이 눌린다.
         # 값은 그대로 들어가고 수정창에서 보고 고친다.
-        Column("전자 메일 주소", "email", 0, in_table=False),
+        # 표에 안 서는 칸이지만 `kind` 는 똑같이 정한다 — 수정창의 그 칸에
+        # 도메인 후보를 붙일지를 배치가 정하기 때문이다(`contacts.html`).
+        Column("전자 메일 주소", "email", 0, in_table=False, kind="email"),
         Column("부서", "department", 0, in_table=False),
         Column("직함", "title", 0, in_table=False),
         Column("관심도 (월말기준)", "interest_level", 0, in_table=False),

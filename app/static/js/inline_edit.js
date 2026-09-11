@@ -22,6 +22,10 @@
 //          정해져 있는 칸은 새로 타이핑하면 표기가 갈라진다("헬스케어" vs
 //          "헬스 케어"). 목록은 같은 컬럼의 다른 행에서 그때그때 모은다 —
 //          서버에 목록을 따로 두면 실제 값과 어긋난다.
+//   email — 한 줄 + **`@` 뒤 도메인 후보**. 주소 자체는 줄마다 달라 고를 것이
+//          못 되지만 도메인은 겹친다(`services/email_domains.py` 의 재 둔 값).
+//          `pick` 과 달리 목록은 이 표에서 모으지 않는다 — 메일 칸이 표에 안
+//          선 명단이 있어서, 표에서 모으면 그 명단에서만 후보가 없어진다.
 //
 // `.cell` 은 td 가 아니어도 된다. 한 칸에 여러 줄이 들어 있는 표(투자사 관리 현황 처럼
 // 메모 밑에 버튼이 붙어 있는 곳)에서는 고칠 줄에만 붙인다 — td 째로 바꾸면
@@ -76,6 +80,7 @@
 
       if (type === "long") { startLong(cell, before, type); return; }
       if (type === "pick") { startPick(cell, before, type); return; }
+      if (type === "email") { startEmail(cell, before, type); return; }
 
       var multi = cell.classList.contains("multi");
       var input = document.createElement(multi ? "textarea" : "input");
@@ -297,6 +302,49 @@
         input.addEventListener("keydown", function (e) {
           if (e.key === "Enter") { e.preventDefault(); api.close(); }
         });
+        return input;
+      });
+    }
+
+    // 메일 칸. **주소는 고를 것이 아니고 도메인만 고른다.**
+    //
+    // 후보를 띄우는 일 자체는 공통 부품이 한다(`email_hint.js`) — 수정창의
+    // 메일 칸도 같은 부품을 쓴다. 같은 조작을 두 벌로 만들면 "`@` 앞을
+    // 건드리나" · "언제 닫히나" 같은 판단이 갈려서 어느 쪽으로 들어왔느냐에
+    // 따라 화면이 달라진다.
+    //
+    // **목록 상자를 `api.pop` 안에 세우는 것이 이 자리의 핵심이다.** 밖에
+    // 세우면 후보를 누르는 순간 이 편집창의 "바깥을 눌렀나" 판정(`popover` 의
+    // `onDown`)에 걸려, **고르기도 전에 저장되고 창이 닫힌다** — #152 가
+    // `.cell-pop` 여백에서 고친 것과 같은 함정이다.
+    function startEmail(cell, before, type) {
+      popover(cell, before, type, function (api) {
+        var input = document.createElement("input");
+        // `type="email"` 로 두지 않는다. 커서를 끝에 두는 자리가 그 타입을
+        // 건너뛰고(`SELECTABLE`), 브라우저가 제 나름의 검사를 얹는다 —
+        // 이 칸은 적힌 그대로 저장되는 칸이다.
+        input.type = "text";
+        input.className = "cell-pop-input one-line";
+        input.value = before;
+        api.pop.appendChild(input);
+
+        var hint = global.DealflowEmailHint;
+        if (hint) {
+          hint.attach(input, {
+            anchor: api.pop,
+            // 고를 것이 없을 때의 Enter — 적힌 그대로 저장하고 닫는다.
+            onEnter: api.close,
+            // 목록이 뜨고 지면 창 높이가 바뀐다(아래로 자랄 자리 판정).
+            onResize: api.place
+          });
+        } else {
+          // 부품을 못 불러왔어도 **고치는 것 자체는 되어야 한다.**
+          input.addEventListener("keydown", function (e) {
+            if (e.key === "Enter") { e.preventDefault(); api.close(); }
+          });
+        }
+        api.pop.appendChild(hintLine(
+          "`@` 까지 치면 도메인 후보가 뜹니다 · Enter 저장 · Esc 취소"));
         return input;
       });
     }

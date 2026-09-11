@@ -648,7 +648,12 @@
         <td class="cell ellipsis" data-field="firm" title="{{ r.firm }}">{{ r.firm }}</td>
         <td class="cell" data-field="department" data-type="pick">{{ r.department }}</td>
         <td class="cell" data-field="title" data-type="pick">{{ r.title }}</td>
-        <td class="cell ellipsis" data-field="email" title="{{ r.email }}">{{ r.email }}</td>
+        {# `data-type="email"` — 눌러 고칠 때 `@` 뒤 도메인 후보가 뜬다.
+           수정창의 메일 칸과 **같은 부품**을 쓴다(`static/js/email_hint.js`) —
+           들어온 길에 따라 되고 안 되는 칸이 되면 안 된다.
+           스타트업 표의 같은 칸은 배치가 정한다(`contact_columns` 의 `kind`). #}
+        <td class="cell ellipsis" data-field="email" data-type="email"
+            title="{{ r.email }}">{{ r.email }}</td>
         <td class="cell" data-field="office_phone">{{ r.office_phone }}</td>
         <td class="cell" data-field="office_fax">{{ r.office_fax }}</td>
         <td class="cell ellipsis" data-field="address" title="{{ r.address }}">{{ r.address }}</td>
@@ -833,6 +838,19 @@
   </div>
 
   <div class="detail-body" data-panel="info">
+    {# ── 도메인 후보를 싣는 **한 곳** ──────────────────────────────────────
+       값을 세는 자리도 하나다(`services/email_domains.py`) — 재료는 이 화면이
+       지금 그리는 `rows` 라, 표에 보이는 것과 후보가 갈릴 자리가 없다.
+
+       **배치 밖에 둔다.** 안에 두면 배치마다 한 벌씩 생기고, 그중 하나만
+       고쳐지는 날 명단에 따라 후보가 달라진다. 표 칸도 이 하나를 읽는다.
+
+       `<datalist>` 가 아닌 이유: 브라우저는 친 글자를 **앞에서부터** 맞춰
+       보므로 `hong@` 다음에 `@example.com` 이 안 걸린다. 여기서는 값을 나르기만
+       하고, 무엇을 어떻게 띄울지는 부품이 정한다(`static/js/email_hint.js`).
+
+       값이 하나도 없으면 빈 목록이고, 그때 메일 칸은 그냥 보통 글자 칸이다. #}
+    <div id="opts-email-domain" hidden data-domains='{{ email_domains|tojson }}'></div>
     {#
       ── 명단이 정한 칸으로 세우는 수정창 ────────────────────────────────────
 
@@ -854,9 +872,13 @@
                   {% else %}id="f-{{ c.key }}"{% endif %}
                   {% if c.hint %}placeholder="{{ c.hint }}"{% endif %}></textarea>
         {% else %}
+        {# `data-email-hint` — 메일 칸이면 `@` 뒤 도메인 후보가 뜬다. 어느 칸이
+           메일 칸인지는 **배치가 정한다**(`contact_columns` 의 `kind`) —
+           여기서 칸 이름으로 고르면 배치가 하나 늘 때 또 적어야 한다. #}
         <input type="text"
                {% if c.source == 'note' %}id="f-note-{{ c.key }}" data-note="{{ c.key }}"
                {% else %}id="f-{{ c.key }}"{% endif %}
+               {% if c.kind == 'email' %}data-email-hint{% endif %}
                {% if c.hint %}placeholder="{{ c.hint }}"
                {% elif c.choices %}placeholder="{{ c.choices|replace(',', ' / ') }}"{% endif %}>
         {% endif %}
@@ -929,7 +951,13 @@
       <label class="field"><span>선호 투자분야</span>
         <input type="text" id="f-sectors" placeholder="AI, 헬스케어 — 쉼표로 구분"></label>
       <label class="field wide"><span>라운드 사이즈(투자운영금액)</span><input type="text" id="f-round_size"></label>
-      <label class="field"><span>전자 메일 주소</span><input type="text" id="f-email"></label>
+      {# `data-email-hint` — `@` 까지 치면 도메인 후보가 뜬다. 재 보니 이 명단의
+         주소 753개가 도메인 503가지인데 **절반 가까운 347개**가 두 번 이상 쓰인
+         도메인이다(`services/email_domains.py` 에 근거가 적혀 있다). 주소 자체는
+         후보가 못 된다 — 줄마다 다르고, 눌리면 남의 주소가 들어앉는다. #}
+      <label class="field"><span>전자 메일 주소</span>
+        <input type="text" id="f-email" data-email-hint
+               placeholder="예: hong@example.com (고르거나 새로 적습니다)"></label>
       <label class="field"><span>휴대폰</span><input type="text" id="f-phone"></label>
       {# 담당자는 표에도 칸이 있다(대시보드의 `연결 담당` 이 그 칸으로 눌러
          들어온다). 이름을 **표 머리글과 한 글자도 다르지 않게** 둔다 —
@@ -1060,6 +1088,9 @@
 {% endblock %}
 {% block scripts %}
 <script>window.DEALFLOW_OPEN_CONTACT = {{ open_contact or 0 }};</script>
+{# 메일 칸의 도메인 후보. `inline_edit.js` 가 표 칸에서 이 부품을 쓰므로
+   **먼저** 실려야 한다 — 없으면 표 쪽만 조용히 후보 없는 칸이 된다. #}
+<script src="{{ asset('js/email_hint.js') }}"></script>
 <script src="{{ asset('js/inline_edit.js') }}"></script>
 <script src="{{ asset('js/pool_assign.js') }}"></script>
 {# 감춘 줄 골라 지우기. 막대가 없으면(평소 화면) 아무 일도 하지 않는다. #}

@@ -27,7 +27,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import NotAdmin, admin_only, get_current_user, templates
 from ..models import IrCompany, OneLinerBackup, User
-from ..services import amount, auth as auth_svc
+from ..services import amount, auth as auth_svc, email_domains
 from ..services.one_liner import (
     AUTO, SOURCE_FIELDS, apply_one_liner, bulk_rows, compose_one_liner, origin,
     sync_one_liner,
@@ -487,6 +487,12 @@ def companies_page(request: Request, db: Session = Depends(get_db),
         "can_delete": can_delete_company(user),
         # [전체 자동조합]을 보일지. 라우터가 막는 것과 **같은 판정**을 읽는다.
         "can_bulk_one_liner": can_bulk_one_liner(user),
+        # 메일 칸에 띄울 **도메인 후보**. 세는 자리는 한 곳이고
+        # (`services/email_domains.py`), 재료는 지금 그리는 줄들이라 표에
+        # 보이는 것과 후보가 갈릴 자리가 없다. 탭을 안 가린다 — `rows` 는 두
+        # 탭이 같은 것이고, 메일 칸은 한쪽 탭에만 서 있다.
+        "email_domains": email_domains.domain_options(
+            r["contact_email"] for r in rows),
         "required_fields": [label for _a, label in REQUIRED_FIELDS],
         "summary_labels": SUMMARY_LABELS,
         "contract_labels": CONTRACT_LABELS,
