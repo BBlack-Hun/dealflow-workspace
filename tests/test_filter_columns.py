@@ -44,6 +44,10 @@ ROOT = Path(__file__).resolve().parent.parent
 TEMPLATES = ROOT / "app" / "templates"
 JS_DIR = ROOT / "app" / "static" / "js"
 
+# 스타트업 명단 하나. **코드가 이 이름을 알아서는 안 된다** — 어느 화면에
+# 서는지는 배치(`Layout.page`)가 정한다(`tests/test_startup_tab.py` 참고).
+STARTUP_SHEET = "샘플 스타트업(9)"
+
 
 # ── 표 읽기 ────────────────────────────────────────────────────────────────
 # 머리글을 Jinja 반복문으로 세우는 표(딜 소싱)가 있어 **그린 뒤**에 읽는다.
@@ -163,10 +167,11 @@ def screens(client, db, users):
     """
     from datetime import date, timedelta
 
-    from app.models import (ConsultingColumn, ConsultingCompany, IrCompany,
-                            Meeting, SourcingContact, VcContact, WeeklyRoutine,
-                            WeeklyTask)
+    from app.models import (ConsultingColumn, ConsultingCompany, ContactColumn,
+                            IrCompany, Meeting, SheetOwner, SourcingContact,
+                            VcContact, WeeklyRoutine, WeeklyTask)
     from app.services.consulting_sheets import CONTRACT, by_kind, default_label
+    from app.services import contact_columns as cc
     from app.services import weekly
 
     u1 = users["u1"]
@@ -196,6 +201,24 @@ def screens(client, db, users):
                         round_size="10~30억"),
     ])
     db.flush()
+    # 스타트업 명단 — 표가 **반복문으로** 세워진다. 그래서 템플릿 글자만 훑는
+    # 정적 검사는 이 표를 통째로 건너뛰고, 이 픽스처에 없으면 아래 1~7 번도
+    # 한 번도 이 표를 못 본다(오래 그 상태였다). 달마다 칸이 늘어나는 표라
+    # 특히 어긋나기 쉬운 쪽이다.
+    db.add(SheetOwner(label=STARTUP_SHEET, user_id=u1.id,
+                      layout=cc.STARTUP, is_hidden=1))
+    db.flush()
+    db.add(ContactColumn(sheet=STARTUP_SHEET, position=0,
+                         label=f"{date.today().month}월 리마인드 문자"))
+    db.flush()
+    startup_month = cc.month_columns(db, STARTUP_SHEET)[0]
+    db.add(VcContact(
+        user_id=u1.id, source_sheet=STARTUP_SHEET, name="김샘플",
+        firm="샘플기업", phone="01000000011", email="sample@example.com",
+        memo="통화 메모", notes=cc.dump_notes({
+            "quote_attached": "O", "contract": "미계약",
+            "invoice_received": "X", "ir_reply": "O",
+            cc.note_key(startup_month.id): "O"})))
     # 투자컨설턴트 현황 — `기업 관리` 는 한 줄에 두 마디가 같이 오는 일이
     # 잦아(`백업팀으로 전환 … 드랍`) 필터 값도 여러 개가 된다. 그런 줄을
     # 하나 넣어 둬야 구분자 검사가 실제로 볼 것이 생긴다.
@@ -239,6 +262,12 @@ def screens(client, db, users):
     client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
     return {
         "투자사 관리 현황": client.get("/contacts?sheet=all").text,
+        # 스타트업 명단 — 머리글을 반복문으로 세우는 표라 템플릿 글자를
+        # 훑는 쪽으로는 절대 안 잡힌다. **그려서** 봐야 한다.
+        "스타트업":
+            client.get(f"/startup?sheet={quote(STARTUP_SHEET)}").text,
+        # 같은 메뉴의 다른 화면. 명단 표만 보면 이쪽은 통째로 빠진다.
+        "스타트업(IR 요청 문서)": client.get("/startup/ir-report").text,
         "IR 기업현황": client.get("/companies").text,
         "스타트업DB": client.get("/companies?tab=db").text,
         "딜 소싱": client.get("/sourcing").text,

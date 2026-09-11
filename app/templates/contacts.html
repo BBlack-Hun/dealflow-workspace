@@ -714,11 +714,16 @@
         <th class="num" style="width:{{ c.width }}px"
             title="누르면 활동 이력이 열립니다">{{ c.label }}</th>
         {% else %}
-        {# 값이 몇 개로 정해진 칸(`O`/`X`)만 필터를 세운다. 자유 문장 칸
-           (메모)은 서른두 줄에 서른두 가지가 나와 고를 것이 없다. #}
+        {# **고를 수 있는 칸**(`Column.filterable`)에 필터를 세운다. 자유롭게
+           적는 칸(이름·연락처·메모)은 서른두 줄에 서른두 가지가 나와 고를
+           것이 없다. 어느 칸이 필터를 지는지는 여기서 고르지 않고 **배치가
+           정한 목록 하나**(`contact_columns.header_filters`)에서 나온다 —
+           여기에 조건을 심으면 칸이 하나 늘 때마다 또 심어야 하고, 심는 것을
+           잊은 칸만 조용히 필터가 빠진다. 이 표는 달마다 칸이 는다. #}
+        {% set th_filters = header_filters.get(c.key, '') %}
         <th style="width:{{ c.width }}px" title="{{ c.label }}"
-            {% if c.choices %}data-filters="{{ c.key }}:{{ c.label }}"{% endif %}
-        >{{ c.label }}{% if c.choices %}<div class="th-filters"></div>{% endif %}</th>
+            {% if th_filters %}data-filters="{{ th_filters }}"{% endif %}
+        >{{ c.label }}{% if th_filters %}<div class="th-filters"></div>{% endif %}</th>
         {% endif %}
         {% endfor %}
         <th style="width:44px"></th>
@@ -729,7 +734,13 @@
       <tr class="data-row{% if r.is_hidden %} row-hidden{% endif %}" data-id="{{ r.id }}"
           data-name="{{ r.name }}"
           data-search="{{ (r.name ~ ' ' ~ (r.firm or '') ~ ' ' ~ (r.email or ''))|lower }}"
-          {% for c in table_columns if c.choices %}
+          {#
+            거를 수 있는 칸의 값을 행이 싣는다. 머리글의 선언과 **같은 판정
+            하나**에서 나온 목록이라(`contact_columns.filter_columns`) 한쪽만
+            빠질 자리가 없다 — 선언만 하고 안 실으면 필터를 열어도 늘 빈
+            목록이고, 싣기만 하고 선언이 없으면 아무도 안 보는 죽은 속성이다.
+          #}
+          {% for c in filter_columns %}
           data-f-{{ c.key }}="{{ r.notes.get(c.key, '') if c.source == 'note' else r[c.key] }}"
           {% endfor %}>
         {% if delete_view %}

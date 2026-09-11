@@ -67,6 +67,22 @@ def test_edited_cells_show_up_in_the_filter():
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+@pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치 — 브라우저 로직 테스트 생략")
+def test_머리글_필터가_실제로_줄을_거른다():
+    """단추를 눌러 값을 고르는 **한 바퀴**를 돌린다.
+
+    `filters_test.js` 는 순수 함수(`matchRow`·`facets`)만 본다. 그래서 단추가
+    서고 · 창이 열리고 · 고른 값이 줄을 감추는 자리(`init` 안)는 여태 아무
+    검사도 안 지났다 — 규칙은 맞는데 화면에서는 안 걸리는 상태가 조용히
+    생길 수 있는 자리다.
+    """
+    result = subprocess.run(
+        [shutil.which("node"), str(JS_DIR / "startup_filters_test.js")],
+        capture_output=True, text=True, timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_preview_edits_survive_a_refresh():
     """미리보기에서 고친 문구가 다시 그려도 남아야 한다.
 

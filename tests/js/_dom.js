@@ -192,8 +192,19 @@ function makeEl(tag) {
     // 것처럼** 화면을 되돌린다 — 멀쩡한 저장이 검사에서만 실패로 보인다.
     dispatchEvent(ev) { el.fire(ev && ev.type, ev); return true; },
     // 이벤트는 버블링까지 흉내 낸다 — 칩은 줄(`#group-filter`)이 대신 듣는다.
+    // **`stopPropagation()` 을 정말로 듣는다.** 흉내만 내고 계속 위로 올리면,
+    // 바깥 누름을 문서에서 듣는 코드가 자기 창을 곧바로 되닫는다 — 필터 창이
+    // 그렇다(`filters.js` 는 단추에서 전파를 끊고, 문서 쪽에서 창을 닫는다).
+    // 브라우저에서는 멀쩡한 창이 이 DOM 위에서만 안 열려, 정작 봐야 할 것
+    // (무엇이 걸러지는가)을 검사가 못 본다.
+    //
+    // 끊어도 **그 줄에 걸린 나머지 손은 다 부른다** — 브라우저와 같다
+    // (거기까지 끊는 것은 `stopImmediatePropagation` 이다).
     fire(type, extra) {
-      const ev = Object.assign({ target: el, stopPropagation() {}, preventDefault() {} }, extra || {});
+      let stopped = false;
+      const ev = Object.assign(
+        { target: el, stopPropagation() { stopped = true; }, preventDefault() {} },
+        extra || {});
       let node = el;
       while (node) {
         // 브라우저는 `onclick = …` 도 함께 부른다. 안 부르면 그렇게 맨 화면
@@ -201,6 +212,7 @@ function makeEl(tag) {
         const direct = node["on" + type];
         if (typeof direct === "function") direct.call(node, ev);
         (node.handlers[type] || []).forEach(function (fn) { fn(ev); });
+        if (stopped) return;
         node = node.parent;
       }
       (documentHandlers[type] || []).forEach(function (fn) { fn(ev); });
@@ -302,6 +314,19 @@ function makeDocument(root) {
     querySelector(sel) { return queryAll(root, sel)[0] || null; },
     querySelectorAll(sel) { return queryAll(root, sel); },
     createElement(tag) { return makeEl(tag); },
+    // **글자 노드도 만들어 준다.** 없으면 `document.createTextNode` 를 쓰는
+    // 코드가 이 DOM 위에서만 죽는다 — `filters.js` 가 필터 목록의 값·건수를
+    // 그렇게 적어서, 필터 창을 여는 자리는 여태 아무 검사도 못 지났다.
+    //
+    // 이 DOM 의 글자는 `textContent` 한 칸에 담기므로(위 `makeEl` 주석),
+    // 글자 노드도 그 칸을 가진 자식으로 둔다. `nodeType` 은 3 이라 머리글
+    // 이름을 지우는 코드(`n.nodeType === 3`)가 브라우저와 같게 동작한다.
+    createTextNode(text) {
+      const node = makeEl("#text");
+      node.nodeType = 3;
+      node.textContent = String(text);
+      return node;
+    },
     addEventListener(type, fn) { (documentHandlers[type] = documentHandlers[type] || []).push(fn); },
     // **정말로 뗀다.** 흉내만 내고 놔두면, 닫힌 창이 계속 듣고 있는 고장을
     // 검사가 못 본다(`inline_edit.js` 의 칸 편집창이 문서에서 바깥 누름을 듣는다).

@@ -89,6 +89,24 @@ class Column:
     hint: str = ""              # 수정창의 placeholder. **이름이 아니다**
     in_table: bool = True       # 표에 세울까 (False = 수정창에서만)
 
+    @property
+    def filterable(self) -> bool:
+        """이 칸에 머리글 필터를 다는가 — **고를 수 있는 칸인가**로 정한다.
+
+        판정을 `choices`(미리 적어 둔 보기)로 하지 않는다. 보기 목록은 "지금
+        정해 둔 값이 있느냐" 이고, 필터가 필요한지는 "이 칸이 **고르는 칸이냐**"
+        가 정한다. 둘은 지금 표에 선 칸에서만 우연히 겹친다 — 보기를 안 적고
+        `pick` 으로 둔 칸이 셋 있고(`사업분야 대분류`·`소분류`·`기업구분`),
+        그 칸들은 수정창에서 **이미 다른 줄이 쓰고 있는 값을 모아** 고르게 한다
+        (`static/js/inline_edit.js` 의 `startPick`). 고르는 칸인데 필터만 조용히
+        빠지는 것이 정확히 이 저장소가 반복해 당한 부류다.
+
+        **자유롭게 적는 칸에는 안 단다.** `text`(이름·연락처·이메일)와
+        `long`(메모·한줄 소개)은 줄마다 값이 달라서, 필터를 열면 줄 수만큼
+        항목이 생긴다 — 고를 것이 없는 목록이라 자리만 먹는다.
+        """
+        return self.kind == "pick"
+
 
 @dataclass(frozen=True)
 class Layout:
@@ -664,6 +682,30 @@ def panel_columns(layout: Layout, months: List[ContactColumn]) -> List[Column]:
     return ([c for c in layout.head if c.source != "row_no"]
             + [as_column(m, layout) for m in months]
             + list(layout.tail) + list(layout.extra))
+
+
+def filter_columns(layout: Layout, months: List[ContactColumn]) -> List[Column]:
+    """거를 수 있는 칸 — **행이 `data-f-*` 로 실어야 하는 목록**.
+
+    머리글이 선언만 하고 행이 안 실으면 필터를 열어도 늘 빈 목록이고, 행만
+    싣고 선언이 없으면 아무도 안 보는 죽은 속성이 된다. 두 쪽이 **같은 목록
+    하나**에서 나와야 어긋날 자리가 없다(`tests/test_filter_columns.py`).
+    """
+    return [c for c in table_columns(layout, months) if c.filterable]
+
+
+def header_filters(layout: Layout,
+                   months: List[ContactColumn]) -> Dict[str, str]:
+    """머리글의 칸 `key` → 그 머리글이 적을 `data-filters` 값.
+
+    **필터는 자기 칸 머리글에만 선다.** 다른 칸 머리글에 얹지 않는다 — 그
+    머리글이 보여 주는 값과 거르는 값이 달라지면, 라벨은 맞는데 결과가 다른
+    필터가 된다(`tests/test_filter_columns.py` 의 3·4번이 그것을 막는다).
+    그래서 표에 안 서는 칸은 이 기전으로 거를 수가 없다 — 거르려면 그 칸을
+    표에 세워야 한다(`Column.in_table`).
+    """
+    return {c.key: f"{c.key}:{c.label}"
+            for c in filter_columns(layout, months)}
 
 
 def note_keys(layout: Layout, months: List[ContactColumn]) -> List[str]:
