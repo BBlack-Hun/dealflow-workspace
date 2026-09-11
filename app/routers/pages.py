@@ -432,6 +432,18 @@ def list_page(
         # ── 명단이 정한 표 배치 ──
         "layout": layout,
         "table_columns": contact_columns.table_columns(layout, shown_months),
+        # ── 머리글 필터 ──
+        #
+        # 어느 칸을 거를 수 있는지는 **배치가 정한다**(`Column.filterable`).
+        # 화면에서 `if 이 칸이면` 으로 고르면 칸이 하나 늘 때마다 또 적어야
+        # 하고, 적는 것을 잊은 칸만 조용히 필터가 빠진다 — 값은 보이는데
+        # 거를 수가 없는, 아무도 눈치 못 채는 부류다.
+        #
+        # 선언(`header_filters`)과 행이 싣는 값(`filter_columns`)은 **같은
+        # 판정 하나**에서 나온다. 둘을 따로 적으면 한쪽만 고쳐지는 날 필터가
+        # 말없이 빈 목록을 준다(`tests/test_filter_columns.py`).
+        "header_filters": contact_columns.header_filters(layout, shown_months),
+        "filter_columns": contact_columns.filter_columns(layout, shown_months),
         "panel_columns": contact_columns.panel_columns(layout, all_months),
         "month_columns": shown_months,
         # **접었다는 것을 사람이 알아야 한다** — 그냥 안 보이면 지워진 줄 안다.

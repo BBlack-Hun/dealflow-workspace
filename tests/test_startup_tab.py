@@ -884,3 +884,146 @@ def test_딜소개를_보내는_명단인지도_한_곳에서만_판정한다():
             assert said not in body, (
                 f"{module.__name__} 이 연결 완료를 직접 견줍니다({said}) — "
                 "`sheet_owner.can_send_to` 를 지나야 합니다")
+
+
+# ── 6. 머리글 필터 — **고를 수 있는 칸 전부** ───────────────────────────────
+#
+# 값이 몇 가지로 정해진 칸은 눈으로 훑는 것이 아니라 **골라서 좁히는** 칸이다.
+# 그런데 필터를 다는 자리가 칸마다 손으로 적는 구조면, 칸이 하나 늘 때 다는
+# 것을 잊은 칸만 조용히 빠진다 — 값은 보이는데 거를 수가 없는, 화면이 멀쩡해
+# 보여서 아무도 못 보는 부류다. 이 표는 **달마다 칸이 세 개씩 늘어난다.**
+#
+# 그래서 기준을 칸 하나하나가 아니라 **성질**에 건다(`Column.filterable`):
+# 고르는 칸(`kind == "pick"`)이면 붙고, 자유롭게 적는 칸(`text`·`long`)이면
+# 안 붙는다. 아래 검사들은 그 기준이 화면에서 지켜지는지를 본다 — 칸 이름을
+# 여기 적어 두지 않는다(적어 두면 새 칸이 검사 없이 지나간다).
+
+
+def _filters_of(attrs: str) -> list:
+    """그 머리글이 선언한 필터 키들."""
+    m = re.search(r'data-filters="([^"]*)"', attrs)
+    return [p.split(":", 1)[0] for p in m.group(1).split("|")] if m else []
+
+
+def _thead_filters(html: str) -> dict:
+    """머리글 이름 → 그 머리글이 선언한 필터 키들."""
+    return {_flat(cell): _filters_of(attrs) for attrs, cell in _thead_cells(html)}
+
+
+def test_고를_수_있는_칸_전부에_필터가_선다(sheets, db):
+    """표에 선 칸 중 **고르는 칸**은 하나도 빠짐없이 필터를 진다.
+
+    목록을 여기 적지 않고 배치가 정한 것을 그대로 돈다 — 적어 두면 칸이 하나
+    늘 때 여기 넣는 것을 잊고, 그 칸만 검사 없이 지나간다.
+    """
+    from app.services import contact_columns as cc
+
+    layout = cc.layout_of(cc.STARTUP)
+    months = cc.month_columns(db, LIST)
+    columns = cc.table_columns(layout, months)
+    assert any(c.filterable for c in columns), "고를 수 있는 칸이 하나도 없습니다"
+
+    got = _thead_filters(sheets.get(_url(LIST)).text)
+    missing = [c.label for c in columns
+               if c.filterable and c.key not in got.get(_same(c.label), [])]
+    assert not missing, (
+        "고를 수 있는 칸인데 필터가 안 섰습니다 — 값은 보이는데 거를 수가 "
+        f"없습니다: {missing}")
+
+
+def test_자유롭게_적는_칸에는_필터가_안_선다(sheets, db):
+    """줄마다 값이 다른 칸에 필터를 달면 **줄 수만큼 항목**이 생긴다.
+
+    고를 것이 없는 목록이라 자리만 먹고, 머리글의 이름 자리까지 단추가
+    차지한다(필터가 하나뿐인 칸은 이름이 지워진다 — `filters.js`).
+    """
+    from app.services import contact_columns as cc
+
+    layout = cc.layout_of(cc.STARTUP)
+    months = cc.month_columns(db, LIST)
+    got = _thead_filters(sheets.get(_url(LIST)).text)
+
+    extra = [c.label for c in cc.table_columns(layout, months)
+             if not c.filterable and got.get(_same(c.label))]
+    assert not extra, (
+        "고르는 칸이 아닌데 필터가 섰습니다 — 열어 봐야 줄 수만큼 항목이 "
+        f"나옵니다: {extra}")
+    # 실제로 그 칸들이다. 기준이 뒤집혀 전부 `pick` 이 되면 위 검사는 통과하는데
+    # (안 붙는 칸이 없으니) 표는 필터투성이가 된다 — 그것까지 못 박는다.
+    for label in ("기업명", "성함", "연락처", "이메일"):
+        assert not got.get(label), f"`{label}` 에 필터가 섰습니다"
+    assert not got.get(_same(TAIL[1])), "메모 칸에 필터가 섰습니다"
+
+
+def test_칸을_새로_더해도_필터가_따라_붙는다(sheets, db):
+    """**다음 달 칸에는 아무도 필터를 안 단다** — 그러니 저절로 붙어야 한다.
+
+    이 표는 달마다 칸이 세 개씩 늘고, 화면의 [칸 추가] 로도 는다. 그 칸들은
+    `O`/`X` 를 적는 자리라 필터가 가장 잘 듣는 칸인데, 손으로 다는 구조면
+    다는 것을 잊은 달만 조용히 빠진다.
+    """
+    label = f"{_month()}월 리마인드 카톡"
+    sheets.post("/api/contacts/columns", data={"sheet": LIST, "label": label},
+                follow_redirects=False)
+
+    html = sheets.get(_url(LIST)).text
+    keys = _thead_filters(html).get(label)
+    assert keys, f"새로 더한 칸(`{label}`)에 필터가 안 섰습니다"
+    # 선언만으로는 안 된다 — **행이 그 값을 실어야** 필터가 볼 것이 생긴다.
+    # (값은 `<tr>` 태그의 속성이라 줄 안쪽이 아니라 여는 태그에서 찾는다.)
+    opens = re.findall(r'<tr class="data-row[^"]*"([^>]*)>', html)
+    assert opens, "표에 줄이 하나도 없습니다 — 검사가 볼 것이 없습니다"
+    for attrs in opens:
+        assert f'data-f-{keys[0]}=' in attrs, (
+            f"새 칸의 값을 행이 안 싣습니다 — `{label}` 필터는 늘 빈 목록입니다")
+
+
+def test_투자사_딜공유_명단의_월별_칸에는_필터가_안_선다(sheets, db, users):
+    """같은 반복문이 그리는 표인데 **저쪽 월별 칸은 글 칸**이다.
+
+    한 칸에 회차별 기업 목록이 줄바꿈으로 쌓여(가장 긴 줄이 400자 넘는다) 값이
+    줄 수만큼 갈린다 — 필터로 고를 것이 없다. 기준을 `pick` 으로 건 것이
+    저쪽까지 건드리지 않는지 여기서 본다.
+    """
+    from app.models import ContactColumn, SheetOwner, VcContact
+    from app.services import contact_columns as cc
+
+    deal = "샘플 딜공유 20"
+    u1 = users["u1"]
+    db.add(SheetOwner(label=deal, user_id=u1.id, layout=cc.INVESTOR_MONTHLY))
+    db.flush()
+    db.add(ContactColumn(sheet=deal, position=0, label=f"{_month()}월 딜소개"))
+    db.flush()
+    column = cc.month_columns(db, deal)[0]
+    db.add(VcContact(user_id=u1.id, source_sheet=deal, name="박투자",
+                     firm="샘플벤처스",
+                     notes=cc.dump_notes({cc.note_key(column.id): "가나다 외 3곳"})))
+    db.commit()
+
+    from urllib.parse import quote
+
+    html = sheets.get(f"/contacts?sheet={quote(deal)}").text
+    got = _thead_filters(html)
+    assert column.label in got, f"월별 칸이 표에 안 섰습니다: {sorted(got)}"
+    assert not got[column.label], (
+        "글을 적는 월별 칸에 필터가 섰습니다 — 값이 줄마다 달라 고를 것이 "
+        "없습니다")
+
+
+def test_투자사_관리_현황의_필터는_한_개도_안_바뀐다(sheets):
+    """매일 보는 화면이다. 스타트업 쪽을 손보다가 여기가 바뀌면 안 된다."""
+    got = _thead_filters(sheets.get(_url(OTHER)).text)
+    want = {
+        "담당자": ["assignee"],
+        "관심도 (월말기준)": ["interest"],
+        "카톡방 참여여부": ["joined"],
+        "선호 투자분야": ["sector"],
+        "회사": ["firm"],
+        "그룹": ["group"],
+        "진행 단계": ["dealstage", "connect"],
+        "채널": ["channel"],
+        "카톡방": ["room"],
+    }
+    for label, keys in want.items():
+        assert got.get(label) == keys, (
+            f"투자사 표의 `{label}` 필터가 바뀌었습니다: {got.get(label)}")

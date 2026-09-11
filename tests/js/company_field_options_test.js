@@ -74,6 +74,24 @@ const ROWS = [
 const MAJORS = ["애그테크", "핀테크", "헬스케어"];
 const MINORS = ["결제", "의료AI", "B2B 유통"];
 
+// 필터 창의 보기 한 줄에서 **값 글자**를 읽는다.
+//
+// 그 줄은 `체크상자 + 글자`로 만들어진다(`filters.js` 의 `openFor`). 이 DOM 에서
+// 글자는 `document.createTextNode` 로 선 **글자 노드 자식**에 담기므로, 줄 자체의
+// `textContent` 를 읽으면 늘 빈 글자다 — 글자 노드만 골라 이어 붙여야 한다.
+// `tests/js/startup_filters_test.js` 의 `optionText` 와 **같은 규칙**이다(둘 다
+// 같은 창을 읽는다 — 규칙이 갈리면 한쪽만 고쳐진다).
+//
+// `" 헬스케어 (2)"` → `"헬스케어"`. 뒤의 건수는 그 컬럼에 남는 줄 수라 값이 아니다.
+function optionText(label) {
+  return label.children
+    .filter(function (n) { return n.nodeType === 3; })
+    .map(function (n) { return n.textContent; })
+    .join("")
+    .trim()
+    .replace(/\s*\(\d+\)$/, "");
+}
+
 function cell(field, filterKey, text) {
   const node = D.el("div", {
     class: "cell clamp2", "data-field": field, "data-type": "pick",
@@ -211,21 +229,15 @@ function run(dom) {
       return pop.querySelectorAll(".cell-pop-choice")
         .map(function (c) { return c.textContent; });
     },
-    // 머리글 필터가 고르라고 내놓는 값.
-    //
-    // 단추의 handler 를 **직접** 부른다. 브라우저에서 이 단추는
-    // `e.stopPropagation()` 으로 문서까지 올라가는 것을 막는데(안 막으면
-    // 문서에 걸린 "바깥을 누르면 닫는다" 가 방금 연 창을 곧바로 닫는다),
-    // 이 DOM 의 `fire` 는 그 말을 안 듣고 늘 문서까지 올린다. 그대로 누르면
-    // 창이 열렸다 닫혀 버려, **브라우저에서는 안 나는 일**을 보게 된다.
+    // 머리글 필터가 고르라고 내놓는 값. **단추를 실제로 누른다** —
+    // `filters.js` 는 단추에서 전파를 끊어(`e.stopPropagation()`) 문서에 걸린
+    // "바깥을 누르면 닫는다" 가 방금 연 창을 되닫지 못하게 하는데, 이 DOM 은
+    // 그 말을 정말로 듣는다(`_dom.js` 의 `fire`).
     filtered: function (th) {
-      th.querySelector(".filter-btn").onclick({ stopPropagation: function () {} });
+      th.querySelector(".filter-btn").fire("click");
       const panel = th.querySelector(".filter-panel");
       assert.ok(panel, "머리글 단추를 눌렀는데 필터 창이 안 떴다");
-      return panel.querySelectorAll(".filter-option").map(function (label) {
-        // `" 헬스케어 (2)"` → `"헬스케어"`
-        return label.textContent.trim().replace(/\s*\(\d+\)$/, "");
-      });
+      return panel.querySelectorAll(".filter-option").map(optionText);
     }
   };
 }
