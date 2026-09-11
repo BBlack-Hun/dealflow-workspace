@@ -92,7 +92,12 @@ def test_the_menu_is_there_and_opens(moved, client):
 
     page = client.get(PATH)
     assert page.status_code == 200
-    assert "준비 중" not in page.text
+    # **안내 문장 전체로 짚는다.** `준비 중` 세 글자만 보면 화면에 그 말이
+    # 들어간 값이 하나라도 서는 날 걸린다 — 실제로 스타트업 화면의 `투자유치
+    # 상태` 보기에 `투자유치 준비 중` 이 들어오면서 그랬다. 값은 담당자가 쓰던
+    # 말 그대로라 바꿀 것이 아니고, 여기서 찾아야 하는 것은 **캐치올이 그린
+    # 준비 중 화면**이지 그 세 글자가 아니다(`templates/placeholder.html`).
+    assert "화면은 준비 중입니다" not in page.text
 
 
 def test_the_screen_title_comes_from_the_menu(moved, client):
