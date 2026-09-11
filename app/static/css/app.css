@@ -30,9 +30,15 @@
 
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
+/* `<button>`·`<select>`·`<input>` 은 글꼴도 **크기도** 물려받지 않는다. 여기서
+   글꼴만 물려주고 크기를 빼 두었더니, 크기를 안 적은 단추·고르개가 전부 브라우저
+   기본값(13.3333px)으로 섰다 — 디자인한 값이 아니라 **규칙을 안 쓴 자리**다.
+   화면 한 줄 안에서 13px 단추 옆에 13.3333px 단추가 서 있었다.
+   `inherit` 한 줄로 그 자리들을 전부 제자리(부모 크기)로 끌어온다. */
 body, button, input, select, textarea, table {
   font-family: var(--font-body);
   color: var(--ink);
+  font-size: inherit;
 }
 body { background: var(--bg); font-size: 14px; line-height: 1.5; }
 .tabular { font-variant-numeric: tabular-nums; }
@@ -70,7 +76,11 @@ a:hover { text-decoration: underline; }
 .agent-badge.off { color: #9aa4b0; } .agent-badge.off .dot { background: var(--gray); }
 
 .content { flex: 1; padding: 24px 28px; min-width: 0; }
-.page-head h1 { margin: 0 0 4px; font-size: 22px; }
+/* 화면 제목. `.page-title` 은 `<header class="page-head">` 없이 h1 만 쓰는
+   화면(문구 관리·설치 안내·비밀번호 변경)이 쓰는 이름인데 **규칙이 없어서**
+   h1 브라우저 기본값(2em = 28px)으로 혼자 6px 크게 서 있었다. 같은 제목이니
+   같은 크기로 둔다. */
+.page-head h1, .page-title { margin: 0 0 4px; font-size: 22px; }
 .page-head .muted, .muted { color: var(--muted); }
 .hint { font-size: 12px; color: var(--muted); }
 
@@ -81,6 +91,13 @@ a:hover { text-decoration: underline; }
 .panel-title .hint { font-weight: 400; }
 .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; font-size: 12px; color: var(--muted); }
 .field input, input[type=text] { padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; color: var(--ink); }
+/* 고르개(`<select>`)·여러 줄 칸은 **칸 이름 크기를 물려받으면 안 된다.**
+   `label.field`·`.tpl-picker label` 의 12px 은 칸 **이름**을 위한 값이라, 그것을
+   물려받으면 같은 줄에 선 `<input>`(바로 위 14px)보다 고르개만 작아진다.
+   적는 칸과 같은 값으로 세운다 — 한 줄 안에서 칸마다 글자가 다르면 안 된다.
+   (생김새는 건드리지 않는다: 고르개 속은 브라우저가 직접 그리는 자리라
+    테두리·여백까지 맞추면 브라우저마다 달라진다.) */
+.field select, .field textarea, .tpl-picker select { font-size: 14px; }
 
 .card-list { display: flex; flex-direction: column; gap: 8px; max-height: 460px; overflow-y: auto; }
 .pick-card { display: flex; gap: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
@@ -159,8 +176,18 @@ a:hover { text-decoration: underline; }
 /* Buttons */
 .primary-btn { width: 100%; margin-top: 14px; padding: 12px; border: 0; border-radius: 10px; background: var(--brand); color: #fff; font-weight: 700; font-size: 15px; cursor: pointer; }
 .primary-btn:disabled { background: #b8c4d8; cursor: not-allowed; }
-.secondary-btn { padding: 8px 14px; border: 1px solid var(--line); background: #fff; border-radius: 8px; cursor: pointer; font-weight: 600; }
-.danger-btn { padding: 8px 14px; border: 1px solid #f3b4b4; background: #fff; color: var(--red); border-radius: 8px; cursor: pointer; font-weight: 600; }
+/* 단추 글자는 **13px 한 값**이다. 크기를 안 적어 두면 `<button>` 은 브라우저
+   기본값으로 서는데, 그 값이 자리마다 달라 보였다 — 같은 `.secondary-btn` 이
+   툴바 안에서는 13px(`--ctl-h` 줄이 정해 준다), 밖에서는 13.3333px 이었다.
+   `inherit` 만으로는 부모 크기를 따라가 또 자리마다 갈리므로 여기서 못 박는다.
+   (`.primary-btn` 은 폭 100% 짜리 큰 제출 단추라 15px 그대로 둔다 —
+    줄 안에 서는 `.primary-btn.inline` 은 이미 13px 이다.) */
+.secondary-btn { padding: 8px 14px; border: 1px solid var(--line); background: #fff; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 13px; }
+.danger-btn { padding: 8px 14px; border: 1px solid #f3b4b4; background: #fff; color: var(--red); border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 13px; }
+/* 로그인·문구 관리·설치 안내·비밀번호 변경이 쓰는 단추. 그동안 **규칙이 하나도
+   없어** 브라우저가 그리는 대로 서 있었다(13.3333px). 생김새는 건드리지 않고
+   크기만 다른 단추와 맞춘다. */
+.btn { font-size: 13px; }
 .linkbtn { border: 0; background: none; color: var(--brand); cursor: pointer; font-size: 12px; font-weight: 600; }
 /* 눌러도 아무 일이 없는 단추는 지우지 않고 흐린다 — 자리에서 사라지면
    그런 기능이 있다는 것 자체를 모르게 되고, 나타났다 사라지면 줄이 튄다. */
@@ -212,10 +239,16 @@ a:hover { text-decoration: underline; }
           padding: 8px 12px; font-size: 13px; margin: 0 0 10px; }
 .steps { margin: 6px 0 0 18px; padding: 0; line-height: 1.9; }
 .steps li { margin-bottom: 4px; }
-.kv { width: 100%; border-collapse: collapse; }
-.kv th { text-align: left; width: 160px; padding: 8px 10px; color: var(--muted);
-         font-weight: 600; vertical-align: top; }
-.kv td { padding: 8px 10px; }
+/* 이름-값 표(설치 안내의 연결 정보 · 문구 관리의 딜 제안 문구).
+   **한 곳에서만 정한다.** 예전에는 여기와 아래 문구 관리 자리에 같은 선택자가
+   두 벌 적혀 있었고, 뒤쪽이 앞쪽 여백을 덮어써서 앞쪽 값은 아무 일도 하지
+   않았다 — 앞쪽만 고친 사람은 화면이 안 바뀌는 이유를 찾지 못한다.
+   크기도 여기서 정한다: 안 적어 두어 본문(14px)을 물려받아 표 내용(13px)보다
+   혼자 컸다. */
+.kv { width: 100%; border-collapse: collapse; font-size: 13px; }
+.kv th { text-align: left; width: 160px; padding: 4px 12px 4px 0; color: var(--muted);
+         font-weight: 600; vertical-align: top; white-space: nowrap; }
+.kv td { padding: 4px 0; }
 code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e5e7eb);
        border-radius: 4px; padding: 1px 6px; font-size: 12.5px;
        font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
@@ -450,8 +483,12 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
 .grid-table thead .th-note { text-align: left; }
 /* 숫자 칸만은 오른쪽을 지킨다 — 자릿수를 세로로 맞춰 보는 칸이다. */
 .grid-table thead th.num { text-align: right; }
+/* 표 내용은 **13px 한 값**이다. 크기를 안 적어 두었더니 칸이 본문(14px)을
+   물려받고, 바로 옆의 `td.cell` 은 제 규칙대로 12px 이라 **한 줄 안에서 두 크기가
+   섞여** 보였다. 크기를 정하는 자리는 여기 하나다 — 화면마다 따로 적으면
+   화면이 하나 늘 때 또 갈린다(주간 업무가 그래서 제 값을 따로 들고 있었다). */
 .grid-table td { padding: 6px 9px; border-bottom: 1px solid var(--line); vertical-align: top;
-                 overflow: hidden; }
+                 overflow: hidden; font-size: 13px; }
 .grid-table tbody tr:hover { background: #f8faff; cursor: pointer; }
 .grid-table.dense td { padding: 3px 9px; }
 .grid-table.dense .cell-sub { display: none; }
@@ -631,8 +668,6 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
 .tpl-new { margin-top: 8px; }
 .tpl-new summary { cursor: pointer; color: var(--brand); font-size: 13px; }
 .tpl-new input[type=text] { width: 100%; padding: 6px 8px; margin: 8px 0; border: 1px solid var(--line); border-radius: 8px; }
-.kv th { text-align: left; padding: 4px 12px 4px 0; font-weight: 600; white-space: nowrap; }
-.kv td { padding: 4px 0; }
 
 
 /* ── 투자사 현황 업로드 ─────────────────────────────────────── */
@@ -808,9 +843,16 @@ a.secondary-btn { display: inline-flex; align-items: center; text-decoration: no
   padding: 8px 12px; font-size: 13px; margin-bottom: 10px; }
 
 /* 딜 기업 DB */
-.grid-table.compact td, .grid-table.compact th { padding: 6px 8px; font-size: 12px; }
+/* `.compact` 는 **여백만** 줄인다. 크기까지 쥐고 있었더니 같은 `<td class=cell>`
+   이 표에 따라 12px 과 13px 로 갈렸다 — 이 표가 앱의 표 절반 이상(IR·업무 보고·
+   수정 로그·되살리기·팀 현황·참고 시트)이라 "표 글자는 13px" 이 사실이 아니게
+   된다. 머리글 12px 은 `.grid-table th` 가 이미 같은 값으로 정하고 있다. */
+.grid-table.compact td, .grid-table.compact th { padding: 6px 8px; }
 .ellipsis { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rowno { text-align: right; font-variant-numeric: tabular-nums; font-size: 11px; }
+/* 줄번호는 표 글자(13px)보다 작다 — 칸마다 반복되는 번호라 읽는 값이 아니다.
+   `td.` 를 붙여 `.grid-table td` 와 **같은 무게**로 만든다(뒤에 있어 이긴다).
+   클래스만 적어 두면 표 규칙에 져서 11px 이 조용히 사라진다. */
+td.rowno, .rowno { text-align: right; font-variant-numeric: tabular-nums; font-size: 11px; }
 .field.wide { grid-column: 1 / -1; }
 .hint.ok { color: var(--green); }
 .hint.warn { color: var(--amber); }
@@ -933,8 +975,12 @@ a.secondary-btn { display: inline-flex; align-items: center; text-decoration: no
    그 폭이 그대로 페이지 폭이 된다(다른 표들이 그렇게 깨졌다). */
 .sheet-table { table-layout: fixed; }
 .table-wrap .sheet-table { min-width: 1200px; }
-.sheet-table th { vertical-align: top; font-size: 11.5px; line-height: 1.35; }
-.sheet-table td { vertical-align: top; }
+/* 머리글은 `.grid-table th` 와 **같은 12px** 이다. 혼자 11.5px 이라 두 표를
+   나란히 놓으면 컨설턴트 표 머리글만 반 픽셀 작아 흐릿하게 보였다. */
+.sheet-table th { vertical-align: top; font-size: 12px; line-height: 1.35; }
+/* 시트형 표의 칸도 표 글자 한 값(13px)이다. 안 적어 두면 `.cell` 이 안 붙은
+   칸만 본문(14px)을 물려받아 한 줄 안에서 갈린다. */
+.sheet-table td { vertical-align: top; font-size: 13px; }
 .sheet-table .month-col { position: relative; padding-right: 20px; }
 .sheet-table .month-col span { display: block; overflow: hidden; text-overflow: ellipsis;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
@@ -942,7 +988,7 @@ a.secondary-btn { display: inline-flex; align-items: center; text-decoration: no
 .col-del button { font-size: 11px; padding: 0 2px; }
 
 /* 칸을 눌러 바로 고친다 — 원본이 시트라 그 조작에 익숙하다 */
-td.cell { cursor: text; white-space: pre-wrap; word-break: break-word; font-size: 12px; }
+td.cell { cursor: text; white-space: pre-wrap; word-break: break-word; font-size: 13px; }
 /* 남의 담당 줄 — 볼 수는 있고 고칠 수는 없다. 커서와 밑줄 표시가 그대로면
    눌러 보고 나서야 안 되는 것을 알게 된다. */
 tr[data-readonly] td.cell { cursor: default; }
@@ -959,7 +1005,7 @@ td.cell.saving { background: #fff8e6; }
 td.cell.saved { background: #eaf7ee; transition: background .6s; }
 td.cell.save-failed { background: #fdecec; }
 .cell-input { width: 100%; border: 1px solid var(--brand); border-radius: 6px;
-  padding: 4px 6px; font: inherit; font-size: 12px; line-height: 1.45; resize: vertical; }
+  padding: 4px 6px; font: inherit; font-size: 13px; line-height: 1.45; resize: vertical; }
 .sheet-foot { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 10px; }
 .add-col { display: flex; gap: 8px; margin-left: auto; }
 .add-col input { min-width: 300px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; }
@@ -1485,8 +1531,9 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
             white-space: pre-wrap; word-break: break-word;
             max-height: 520px; overflow-y: auto; }
 /* 참고 표는 칸마다 글 길이가 들쭉날쭉하다 — 줄바꿈을 허용한다. */
-.ref-cell { white-space: pre-wrap; vertical-align: top; font-size: 12px;
-            line-height: 1.5; }
+/* (크기는 안 적는다 — 표 글자 한 값을 따른다. 예전에 적어 둔 12px 은
+    `.grid-table.compact` 에 가려 실제로는 한 번도 쓰이지 않았다.) */
+.ref-cell { white-space: pre-wrap; vertical-align: top; line-height: 1.5; }
 
 /* ── 폰·태블릿에서 보기 ────────────────────────────────────────────────
    **보기 전용**이다. 발송은 PC 의 발송 프로그램이 하므로 폰에서 하지 않는다.
@@ -1524,7 +1571,7 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
   .kpi-card, .react { width: auto; }
   .toolbar { flex-direction: column; align-items: stretch; gap: 8px; }
   .toolbar-right { flex-wrap: wrap; }
-  .page-head h1 { font-size: 19px; }
+  .page-head h1, .page-title { font-size: 19px; }
 
   /* 표는 좁히면 못 읽는다 — 폭을 지키고 가로로 민다.
      (가로 스크롤은 `.table-wrap` 기본 규칙에 있다. 여기서는 폭만 못 박는다.)
@@ -1649,7 +1696,10 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
    아침에 이 화면만 보고 하루를 시작하는데, 정작 "무엇을 하라" 는 설명이
    회색 12px 이라 눈에 안 들어왔다. 제목만큼은 아니어도 읽히게 한다. */
 .todo-body .muted { color: var(--ink); font-size: 12.5px; opacity: .82; }
-#task-table .cell, #routine-table .cell { font-size: 13px; }
+/* (표 칸 13px 은 여기서 따로 적지 않는다 — `.grid-table td` 가 같은 값을 준다.
+    예전에는 이 화면만 크게 보려고 `#task-table .cell` 로 따로 올려 두었는데,
+    이제 표 글자가 처음부터 13px 이라 같은 말을 두 번 적는 셈이 된다. 두 벌로
+    두면 표 크기를 고칠 때 이 화면만 옛 값으로 남는다.) */
 /* 각 구역이 무엇을 하는 곳인지 알려주는 줄 — 여기가 제일 연했다 */
 .todo-page .panel-title .hint { color: var(--ink); opacity: .7; font-weight: 500; }
 .todo-page .hint { font-size: 12.5px; }
@@ -1719,10 +1769,10 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
 .todo-page .todo-body .muted,
 .todo-page .check-body .muted { font-size: 12px; }
 
-/* 표 두 개(주간 업무·반복 업무)도 같은 밀도로 */
+/* 표 두 개(주간 업무·반복 업무)도 같은 밀도로.
+   **여백만** 손댄다 — 글자 크기는 `.grid-table td` 가 이미 13px 로 정한다. */
 .todo-page .grid-table th,
 .todo-page .grid-table td { padding: 7px 10px; }
-.todo-page .grid-table td { font-size: 13px; }
 
 /* 제목 줄 — 이름과 설명 사이가 붙어 있었다 */
 .todo-page .panel-title { gap: 10px; margin-bottom: 10px; }
