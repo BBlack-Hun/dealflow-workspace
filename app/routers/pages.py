@@ -14,8 +14,8 @@ from ..db import get_db
 from ..deps import get_current_user, may_manage_team_contacts, templates
 from ..models import IrCompany, SendJob, User
 from ..services import (cadence, contact_columns, deal_history, deal_queue,
-                        deal_stage, ir_attach, llm_brief, mailer, ref_panel,
-                        scheduled_send, sheet_import, sheet_owner,
+                        deal_stage, email_domains, ir_attach, llm_brief, mailer,
+                        ref_panel, scheduled_send, sheet_import, sheet_owner,
                         sourcing_link, startup_send)
 from ..ui import MENU, base_ctx as _base_ctx
 from .companies import BLOCKED_CONTRACT
@@ -483,6 +483,14 @@ def list_page(
             {"key": key, "label": label, "count": stages.get(key, 0)}
             for key, label in sheet_import.CONNECT_LABELS.items()
         ],
+        # 메일 칸에 띄울 **도메인 후보**. 세는 자리는 한 곳이다
+        # (`services/email_domains.py`) — 화면 둘이 그 함수 하나를 지난다.
+        #
+        # 재료를 표가 아니라 `rows` 에서 잡는 이유: 배치에 따라 메일 칸이 표에
+        # 안 서는 명단이 있다(`contact_columns` 의 `in_table=False`). 표에서
+        # 모으면 그 명단에서 연 수정창만 후보가 비어, 어느 명단으로 들어왔느냐에
+        # 따라 화면이 달라진다.
+        "email_domains": email_domains.domain_options(r["email"] for r in rows),
         # 같은 이유로 `상태` 도 말을 실어 준다. 이 값은 **발송 대상 판정이 읽는
         # 값**이라(`sheet_owner.can_send_to`), 화면이 이름을 따로 적어 두면
         # 판정과 화면이 서로 다른 것을 가리키게 된다 — 딜 제안 관리의 안내가
