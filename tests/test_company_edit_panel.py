@@ -380,3 +380,153 @@ def test_번호를_누르면_그_줄의_창이_열린다():
     out = subprocess.run([shutil.which("node"), str(script)],
                          capture_output=True, text=True, timeout=60)
     assert out.returncode == 0, out.stdout + out.stderr
+
+
+# --- ⑥ 분야 두 칸을 **고르거나 친다** (사용자 요청) ---------------------------
+#
+# "대분류 소분류 이메일 주소 드롭다운 추가 및 직접입력 메뉴 추가".
+#
+# 고르는 값은 **이미 자료에 있는 것**에서 모은다. 목록을 코드에 박으면 갈래가
+# 늘어난 날부터 창과 필터가 서로 다른 말을 한다 — 이 저장소가 계약여부·단계
+# 에서 이미 겪은 부류다(services/sector_hint.py 의 머리말이 같은 이야기를 한다).
+#
+# 모으는 자리는 **행에 실린 `data-f-*`** 하나다. 필터가 세는 자리와 같아서
+# 둘이 어긋날 수 없다(`DealflowFilters.usedValues`). 그 규칙이 실제로 지켜
+# 지는지는 브라우저에서 재고(tests/js/company_field_options_test.js), 여기서는
+# **템플릿이 그 자리를 두 탭 모두에 깔아 두었는가**를 본다 — 창은 두 탭이 함께
+# 쓰는 물건이라 한쪽 탭에만 깔면 어느 탭에서 들어왔느냐에 따라 화면이 달라진다.
+
+
+@pytest.fixture()
+def sectored(db):
+    """갈래가 섞여 있는 기업 몇 곳. 값은 전부 지어낸 것이다.
+
+    일부러 이렇게 둔다:
+      · 같은 대분류가 **두 곳**에 있다 → 목록에는 한 번만 떠야 한다
+      · 대분류에도 소분류에도 **빈 칸**이 있다 → `(비어 있음)` 이 새면 안 된다
+        (필터에서는 "안 적은 줄" 이라는 뜻이지만, 창에서 고르면 그 글자가
+         값으로 저장된다)
+    """
+    from app.models import IrCompany
+
+    made = [
+        IrCompany(name="샘플가나", sector_major="헬스케어", sector_minor="의료AI"),
+        IrCompany(name="샘플다라", sector_major="핀테크", sector_minor="결제"),
+        IrCompany(name="샘플마바", sector_major="헬스케어", sector_minor=None),
+        IrCompany(name="샘플사아", sector_major=None, sector_minor="의료AI"),
+    ]
+    db.add_all(made)
+    db.commit()
+    return made
+
+
+def _options(html: str, list_id: str) -> list:
+    """그려진 `<datalist>` 가 내놓는 값."""
+    block = re.search(rf'<datalist id="{list_id}">(.*?)</datalist>', html, re.S)
+    assert block, f"{list_id} 목록이 화면에 없습니다"
+    return re.findall(r'<option value="([^"]*)"', block.group(1))
+
+
+def test_고를_값은_자료에_있는_것에서_모은다(logged_in, sectored):
+    """목록을 코드에 박지 않는다 — **그리는 기업들에서 그때그때** 모은다.
+
+    박아 두면 갈래가 늘어난 날부터 창과 필터가 서로 다른 말을 한다. 이
+    저장소가 계약여부·단계에서 이미 겪은 부류다.
+    """
+    html = logged_in.get("/companies").text
+    assert _options(html, "opts-sector_major") == ["핀테크", "헬스케어"], \
+        "대분류 목록이 자료와 다릅니다"
+    assert _options(html, "opts-sector_minor") == ["결제", "의료AI"], \
+        "소분류 목록이 자료와 다릅니다"
+
+    # 새 갈래가 생기면 **고칠 곳 없이** 목록에 뜬다.
+    logged_in.patch(f"/api/companies/{sectored[0].id}", json={"sector_major": "우주항공"})
+    again = logged_in.get("/companies").text
+    assert "우주항공" in _options(again, "opts-sector_major"), \
+        "새 갈래가 목록에 안 뜹니다 ★ 목록이 자료를 안 보고 있습니다"
+
+
+def test_창의_목록과_머리글_필터가_같은_갈래를_말한다(logged_in, sectored):
+    """목록을 모으는 자리가 **한 곳**인가.
+
+    필터는 줄에 실린 `data-f-sector`·`data-f-minor` 를 세고, 창의 목록은
+    같은 `rows` 에서 모은다. 어느 한쪽이 제 목록을 따로 모으기 시작하면 —
+    서버에 한 벌 두거나, 템플릿에 박아 두거나 — 갈래를 고친 날 둘이 다른
+    말을 한다. 그 어긋남이 여기서 걸린다.
+
+    필터 쪽에는 빈 값이 더 있다. filters.js 가 그것을 `(비어 있음)` 한
+    덩어리로 모아 "안 적은 줄" 을 걸러 보게 해 주는데, 창에서는 고를 값이
+    아니다 — 그래서 빈 것을 뺀 나머지가 같아야 한다.
+    """
+    html = logged_in.get("/companies").text
+    for attr, list_id in (("data-f-sector", "opts-sector_major"),
+                          ("data-f-minor", "opts-sector_minor")):
+        on_rows = {v for v in re.findall(rf'{attr}="([^"]*)"', html) if v.strip()}
+        assert on_rows, f"{attr} 를 싣는 줄이 없습니다 — 검사 전제가 틀렸습니다"
+        assert on_rows == set(_options(html, list_id)), (
+            f"{list_id} 가 내놓는 갈래와 머리글 필터가 세는 갈래가 다릅니다 "
+            f"★ 목록을 두 곳에서 따로 모으고 있습니다")
+
+
+def test_목록은_탭을_안_가린다(logged_in, sectored):
+    """[수정] 창은 두 탭이 함께 쓴다 — 어느 탭에서 열든 고를 것이 같아야 한다.
+
+    스타트업DB 탭에는 사업분야 칸도 그 필터도 없다. 목록을 표에서 모았다면
+    그 탭에서 연 창만 고를 것이 없어, **어느 탭에서 들어왔느냐에 따라 다른
+    화면**이 된다. 그래서 목록은 그리는 칸이 아니라 `rows` 를 본다.
+    """
+    ir = logged_in.get("/companies").text
+    db_tab = logged_in.get("/companies?tab=db").text
+    for list_id in ("opts-sector_major", "opts-sector_minor"):
+        assert _options(db_tab, list_id) == _options(ir, list_id), (
+            f"{list_id} 가 탭마다 다릅니다 ★ 어느 탭에서 [수정]을 열었느냐에 "
+            f"따라 고를 값이 달라집니다")
+
+
+def test_값이_하나도_없어도_화면이_안_깨진다(logged_in):
+    """이제 채우기 시작하는 저장소 — 고를 것이 없을 뿐, 칸은 그대로 열려야 한다."""
+    for url in ("/companies", "/companies?tab=db"):
+        page = logged_in.get(url)
+        assert page.status_code == 200, f"{url} 가 안 열립니다"
+        for list_id in ("opts-sector_major", "opts-sector_minor"):
+            assert _options(page.text, list_id) == [], \
+                f"기업이 하나도 없는데 {list_id} 에 값이 떴습니다"
+        assert 'id="f-sector_major"' in page.text, "고를 것이 없다고 칸까지 사라졌습니다"
+
+
+def test_이메일에는_목록을_안_붙인다():
+    """같은 값이 여러 줄에 나와야 목록이 뜻이 있다 — 이메일은 아니다.
+
+    이 저장소가 이미 재 본 바로, 채워져 있는 `contact_email` 은 **전부 서로
+    다른 값**이고 겹치는 짝이 하나도 없었다(routers/startup.py 의 "한 대표에게
+    기업이 여럿일 때"). 겹치는 값이 없다는 말은 목록에 뜨는 후보가 전부
+    **남의 회사 주소**라는 뜻이다 — 두어 글자만 쳐도 엉뚱한 기업의 주소가
+    떠서 눌리면, 그 기업의 연락처 칸에 남의 주소가 조용히 들어앉는다.
+
+    붙이지 **않기로** 한 결정이라, 지킬 수 있는 것은 "아무 근거 없이 붙지
+    않았는가" 뿐이다. 붙이려면 먼저 재고 그 숫자를 여기 적어야 한다.
+    """
+    html = TEMPLATE.read_text(encoding="utf-8")
+    mail = re.search(r'<input[^>]*id="f-contact_email"[^>]*>', html)
+    assert mail, "창에 이메일 칸이 없습니다"
+    assert "list=" not in mail.group(0), (
+        "이메일 칸에 고를 목록이 붙었습니다 ★ 후보가 전부 남의 회사 주소가 됩니다 — "
+        "붙이려면 '도메인은 실제로 겹치는가' 를 먼저 재고 그 숫자를 적으세요")
+
+
+@pytest.mark.skipif(shutil.which("node") is None,
+                    reason="node 미설치 — 브라우저 로직 테스트 생략")
+def test_분야_두_칸이_고르거나_치거나_인가():
+    """목록이 뜨는지 · 목록에 없는 값도 저장되는지 · 창과 표와 필터가 같은 말을
+    하는지는 **브라우저 코드를 돌려야** 보인다.
+
+    파이썬으로는 태그가 있는지까지만 볼 수 있다. 창을 열었을 때 목록이 실제로
+    채워지는지, 표에서 방금 고친 갈래가 곧바로 창에 뜨는지, 값이 하나도 없을 때
+    안 깨지는지는 `companies.js` · `filters.js` · `inline_edit.js` 를 함께
+    돌려 봐야 한다.
+    로컬에서는 `node tests/js/company_field_options_test.js` 로도 돈다.
+    """
+    script = ROOT / "tests" / "js" / "company_field_options_test.js"
+    out = subprocess.run([shutil.which("node"), str(script)],
+                         capture_output=True, text=True, timeout=60)
+    assert out.returncode == 0, out.stdout + out.stderr

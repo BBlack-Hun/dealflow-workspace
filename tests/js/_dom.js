@@ -120,6 +120,17 @@ function makeEl(tag) {
     // 바꾸는 화면 코드(`table_sort.js` 가 표를 다시 세우는 자리)가 여기서만
     // 줄을 불린다 — 검사가 브라우저와 다른 것을 보증하게 된다.
     appendChild(kid) {
+      // 글자 노드(`document.createTextNode`)는 **자식으로 세우지 않고**
+      // 이 줄의 글자에 잇는다. 이 DOM 에는 글자 노드가 없다는 성질을 그대로
+      // 두면서(`childNodes` 는 여전히 요소만 준다), 글자를 그렇게 붙이는
+      // 화면 코드가 만든 글자를 검사가 읽을 수 있게 하는 자리다 —
+      // 필터 창의 보기 한 줄이 `체크상자 + 글자` 로 그렇게 만들어진다
+      // (filters.js 의 `openFor`). 안 이어 두면 그 줄의 글자가 통째로 비어,
+      // 무엇을 고르라고 내놓았는지 검사가 볼 수 없다.
+      if (kid && kid.nodeType === 3) {
+        el.textContent = String(el.textContent || "") + String(kid.textContent || "");
+        return kid;
+      }
       if (kid.parent) kid.parent.removeChild(kid);
       kid.parent = el; el.children.push(kid); return kid;
     },
@@ -302,6 +313,8 @@ function makeDocument(root) {
     querySelector(sel) { return queryAll(root, sel)[0] || null; },
     querySelectorAll(sel) { return queryAll(root, sel); },
     createElement(tag) { return makeEl(tag); },
+    // 글자 노드. 붙이는 쪽(`appendChild`)이 부모의 글자에 이어 준다.
+    createTextNode(text) { return { nodeType: 3, textContent: String(text) }; },
     addEventListener(type, fn) { (documentHandlers[type] = documentHandlers[type] || []).push(fn); },
     // **정말로 뗀다.** 흉내만 내고 놔두면, 닫힌 창이 계속 듣고 있는 고장을
     // 검사가 못 본다(`inline_edit.js` 의 칸 편집창이 문서에서 바깥 누름을 듣는다).

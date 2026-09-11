@@ -119,6 +119,36 @@
     return a.localeCompare(b, "ko");
   }
 
+  // ── 칸에 적어 넣을 때 고를 **이미 쓰고 있는 값** ──────────────────────────
+  //
+  // 목록을 모으는 자리는 **여기 한 곳**이다. 필터가 세는 자리(행에 실린
+  // `data-f-*`)에서 같은 함수(`splitValues`)로 그대로 모으므로, 고를 목록과
+  // 필터 목록은 **어긋날 수가 없다.**
+  //
+  // 서버나 템플릿에 목록을 한 벌 더 두지 않는다. 갈래는 사람이 쌓아 온 것이라
+  // 두 벌이 되면 갈래를 고친 날 반드시 갈린다 — 필터에는 새 값이 뜨는데 고를
+  // 목록에는 안 뜨거나, 이미 안 쓰는 값이 목록에만 남는다.
+  //
+  // `(비어 있음)` 은 뺀다. 필터에서는 "아직 안 적은 줄" 이라는 **뜻**이 있지만,
+  // 적어 넣는 칸에서는 고를 값이 아니다 — 고르면 그 글자가 값으로 저장된다.
+  //
+  // 세는 것(`facets`)과 달리 **건수를 안 준다.** 고를 때 필요한 것은 "지금
+  // 쓰이는 말이 무엇인가" 뿐이고, 건수는 그 자리에서 뜻이 없다.
+  function usedValues(table, key) {
+    if (!table || !key) return [];
+    var seen = {};
+    var out = [];
+    var rows = table.querySelectorAll("tbody tr[data-f-" + key + "]");
+    Array.prototype.forEach.call(rows, function (tr) {
+      splitValues(tr.getAttribute("data-f-" + key)).forEach(function (value) {
+        if (value === EMPTY || seen[value]) return;
+        seen[value] = true;
+        out.push(value);
+      });
+    });
+    return out.sort(compareValues);
+  }
+
   // ── DOM 연결 ──────────────────────────────────────────────────────────────
 
   function init(options) {
@@ -428,6 +458,7 @@
     buildQuery: buildQuery,
     matchRow: matchRow,
     facets: facets,
+    usedValues: usedValues,
     init: init
   };
 
