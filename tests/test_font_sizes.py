@@ -203,12 +203,8 @@ def test_the_row_number_outweighs_the_table_rule():
     `.rowno` 로만 적어 두면 표 규칙에 져서 11px 이 조용히 13px 이 된다 —
     화면에서는 번호 칸만 커지는데, CSS 를 읽으면 11px 이라 적혀 있다.
     """
-    css = _css()
-    owners = [sel for sel, body in _rules(css)
-              if "font-size: 11px" in body.replace("  ", " ")
-              and sel.endswith("rowno")]
-    assert "td.rowno" in owners, \
-        "`td.rowno` 가 없다 — `.rowno` 만으로는 `.grid-table td` 에 진다"
+    assert _size_of("td.rowno") == "11px", \
+        "`td.rowno` 규칙이 없다 — `.rowno` 만으로는 `.grid-table td` 에 진다"
 
 
 # ── 5. 같은 선택자를 두 번 적지 않는다 ──────────────────────────────────────
