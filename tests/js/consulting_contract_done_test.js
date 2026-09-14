@@ -1,5 +1,5 @@
-// `계약완료여부` · `계약서 수신완료여부` 칸을 눌러 보기를 고르면 **정말
-// 저장되고 필터에도 걸리는가.** 그리고 `계약관리` 는 자유 글로 열리는가.
+// `견적서 첨부 여부` · `계약완료여부` · `계약서 수신완료여부` 칸을 눌러 보기를
+// 고르면 **정말 저장되고 필터에도 걸리는가.**
 // (node tests/js/consulting_contract_done_test.js)
 //
 // 이 저장소는 칸을 고쳐도 조용히 저장이 안 되는 사고를 여러 번 겪었다 —
@@ -12,12 +12,14 @@
 // 여기서 막는 것은 다섯이다.
 //   1. 골라 넣을 수 있는가 — 손으로 적게 두면 `무료계약완료`·`무료 계약 완료`
 //      로 갈려 두 가지뿐인 칸에서 필터가 못 쓰게 된다.
-//   2. 무엇이 나가는가 — **칸 이름**(`contract_done`·`contract_received`)으로
-//      나가야 한다.
+//   2. 무엇이 나가는가 — **칸 이름**으로 나가야 한다. `견적서 첨부 여부` 는
+//      화면 이름과 칸 이름이 다르다(`contract_management`) — 화면 이름으로
+//      보내면 서버의 pydantic 이 모르는 칸이라 조용히 버린다.
 //   3. 고친 값이 행에 적히는가 — 안 적히면 머리글 필터가 옛 목록을 보여 준다.
-//      **두 칸이 서로의 값을 덮지 않는가**까지 본다.
+//      **세 칸이 서로의 값을 덮지 않는가**까지 본다.
 //   4. 빈칸(아직 안 정함)으로 되돌아올 수 있는가.
-//   5. `계약관리` 는 보기 없이 **여러 줄로** 열리는가 — 자유 글 칸이다.
+//   5. `견적서 첨부 여부` 가 **여러 줄 입력으로 안 열리는가** — 자유 글이던
+//      때의 `multi` 가 남아 있으면 고르는 칸에 줄바꿈이 들어간다.
 "use strict";
 const assert = require("assert");
 const fs = require("fs");
@@ -34,13 +36,18 @@ const src = fs.readFileSync(SRC, "utf8");
 const DONE = ["무료계약완료", "유료계약완료"];
 
 // --- 서버가 `관리 스타트업` 탭에 그리는 것과 같은 모양의 줄 -------------------
-function row(id, done, received) {
+function row(id, done, received, quote) {
   const mgmt = D.el("td", {
     class: "cell multi", "data-field": "management", "data-filter-key": "mgmt"
   });
   mgmt.textContent = "관리 중";
-  const c = D.el("td", { class: "cell multi", "data-field": "contract_management" });
-  c.textContent = "";
+  // 화면 이름은 `견적서 첨부 여부`, 칸 이름은 `contract_management`,
+  // 필터 키는 `quote` — 셋이 다 다르다(consulting.html 참고).
+  const c = D.el("td", {
+    class: "cell", "data-field": "contract_management",
+    "data-filter-key": "quote", "data-choices": "O,X"
+  });
+  c.textContent = quote || "";
   const d = D.el("td", {
     class: "cell", "data-field": "contract_done",
     "data-filter-key": "done", "data-choices": DONE.join(",")
@@ -58,6 +65,7 @@ function row(id, done, received) {
     "data-f-region": "",
     "data-f-done": done,
     "data-f-received": received,
+    "data-f-quote": quote || "",
     "data-f-mgmt": "관리 중",
     "data-contacted": "0",
     "data-contacted-folded": "0",
@@ -67,7 +75,7 @@ function row(id, done, received) {
 
 function build() {
   // 스타트업 탭이다 — `기업 관리` 는 문장이라 추려서 건다(`data-contract-sheet=0`).
-  const rows = [row(1, "", ""), row(2, "무료계약완료", "X")];
+  const rows = [row(1, "", "", ""), row(2, "무료계약완료", "X", "X")];
   const table = D.el("table", { id: "cs-table", "data-contract-sheet": "0" }, [
     D.el("tbody", {}, rows)
   ]);
@@ -162,7 +170,9 @@ async function choose(tr, field, label) {
     { field: "contract_done", attr: "data-f-done",
       choices: DONE, pick: "유료계약완료" },
     { field: "contract_received", attr: "data-f-received",
-      choices: ["O", "X"], pick: "X" }
+      choices: ["O", "X"], pick: "X" },
+    { field: "contract_management", attr: "data-f-quote",
+      choices: ["O", "X"], pick: "O" }
   ];
 
   for (const axis of AXES) {
@@ -211,47 +221,42 @@ async function choose(tr, field, label) {
       "행에는 옛 값이 남았습니다 — 필터에서 `(비어 있음)` 으로 안 걸립니다");
   }
 
-  // **두 칸이 서로를 덮지 않는가.** 규칙을 한 자리에서 돌리므로 짝을 잘못
+  // **세 칸이 서로를 덮지 않는가.** 규칙을 한 자리에서 돌리므로 짝을 잘못
   // 적으면 한 칸을 고쳤을 때 다른 축의 값이 같이 바뀐다 — 화면은 멀쩡한데
-  // 필터만 거짓말을 한다.
+  // 필터만 거짓말을 한다. 세 칸 중 둘이 같은 `O`/`X` 라 특히 어긋나기 쉽다.
   await choose(dom.rows[1], "contract_done", "유료계약완료");
   assert.strictEqual(dom.rows[1].getAttribute("data-f-done"), "유료계약완료");
   assert.strictEqual(dom.rows[1].getAttribute("data-f-received"), "X",
     "`계약서 수신완료여부` 값이 `계약완료여부` 를 고치면서 바뀌었습니다");
+  assert.strictEqual(dom.rows[1].getAttribute("data-f-quote"), "X",
+    "`견적서 첨부 여부` 값이 `계약완료여부` 를 고치면서 바뀌었습니다");
   await choose(dom.rows[1], "contract_received", "O");
   assert.strictEqual(dom.rows[1].getAttribute("data-f-done"), "유료계약완료",
     "`계약완료여부` 값이 `계약서 수신완료여부` 를 고치면서 바뀌었습니다");
   assert.strictEqual(dom.rows[1].getAttribute("data-f-received"), "O");
+  assert.strictEqual(dom.rows[1].getAttribute("data-f-quote"), "X",
+    "`견적서 첨부 여부` 값이 `계약서 수신완료여부` 를 고치면서 바뀌었습니다");
+  await choose(dom.rows[1], "contract_management", "O");
+  assert.strictEqual(dom.rows[1].getAttribute("data-f-quote"), "O");
+  assert.strictEqual(dom.rows[1].getAttribute("data-f-received"), "O",
+    "`계약서 수신완료여부` 값이 `견적서 첨부 여부` 를 고치면서 바뀌었습니다");
+  assert.strictEqual(dom.rows[1].getAttribute("data-f-done"), "유료계약완료",
+    "`계약완료여부` 값이 `견적서 첨부 여부` 를 고치면서 바뀌었습니다");
 
-  // --- 5. `계약관리` 는 자유 글이다 ------------------------------------------
+  // --- 5. `견적서 첨부 여부` 는 여러 줄로 안 열린다 ---------------------------
   //
-  // 보기가 없어야 하고(무엇을 담을 칸인지 정한 적이 없다), 여러 줄로 열려야
-  // 한다 — 한 줄짜리 입력이면 엔터가 저장이 되어 줄을 나눌 수가 없다.
-  sent.length = 0;
-  const free = open(dom.rows[0], "contract_management");
-  assert.strictEqual(free.chips.length, 0,
-    "자유 글 칸에 고를 단추가 섰습니다 — 사람이 적을 자리가 없어집니다");
-  assert.strictEqual(free.input.tag, "textarea",
-    "여러 줄로 안 열립니다 — 엔터가 저장이 되어 줄을 나눌 수가 없습니다");
-  free.input.value = "무료로 시작.\n유료 전환 논의 중";
-  free.input.fire("blur", { target: free.input });
+  // 자유 글이던 때에는 `multi` 가 붙어 textarea 로 열렸다. 고르는 칸이 된
+  // 뒤에도 그 표시가 남아 있으면 두 글자만 서야 할 자리에 줄바꿈이 들어간다.
+  const picked = open(dom.rows[0], "contract_management");
+  assert.strictEqual(picked.input.tag, "input",
+    "고르는 칸이 여러 줄(textarea)로 열립니다 — `multi` 가 남아 있습니다");
+  picked.input.fire("blur", { target: picked.input });
   await settle();
-  assert.deepStrictEqual(sent, [{
-    url: "/api/consulting/1", method: "PATCH",
-    body: { contract_management: "무료로 시작.\n유료 전환 논의 중" }
-  }], "칸 이름(`contract_management`)으로 저장되지 않습니다");
-  // 필터를 안 세운 칸이라 행에 값이 새로 생기면 안 된다 — 아무 머리글도 안
-  // 보는 죽은 속성이 된다.
-  assert.ok(!dom.rows[0].hasAttribute("data-f-contract_management"));
-  assert.ok(!dom.rows[0].hasAttribute("data-f-contract"));
-  // 검색은 따라와야 한다(서버가 그리는 `data-search` 와 같은 재료다).
-  assert.ok(dom.rows[0].getAttribute("data-search").indexOf("유료 전환 논의 중") >= 0,
-    "검색이 새 값을 못 봅니다");
 
   // --- 6. 그 칸이 없는 표에는 값을 새로 만들지 않는다 ------------------------
   //
   // `계약서 수신완료여부` 는 두 탭에 서지만 나머지 탭에는 없고,
-  // `계약완료여부` 는 `관리 스타트업` 탭에만 있다.
+  // `계약완료여부` · `견적서 첨부 여부` 는 `관리 스타트업` 탭에만 있다.
   const other = build();
   other.rows.forEach(function (tr) {
     AXES.forEach(function (axis) {

@@ -302,8 +302,13 @@
   function refreshRowFlags(tr) {
     var mgmt = tr.querySelector('[data-field="management"]');
     tr.setAttribute("data-f-mgmt", managementTags(mgmt ? mgmt.textContent : ""));
+    // **행이 이미 그 값을 싣고 있을 때만** 다시 적는다 — 계약 탭에는 `월`
+    // 머리글이 없어 이 값도 안 실려 있는데, 여기서 새로 만들면 아무도 안 보는
+    // 죽은 속성이 생긴다(아래 고르는 칸들과 같은 규칙이다).
     var region = tr.querySelector('[data-field="region"]');
-    tr.setAttribute("data-f-region", region ? region.textContent.trim() : "");
+    if (region && tr.hasAttribute("data-f-region")) {
+      tr.setAttribute("data-f-region", region.textContent.trim());
+    }
     // 탭마다 서는 고르는 칸들. **행이 이미 그 값을 싣고 있을 때만** 다시
     // 적는다 — 없는 속성을 여기서 새로 만들면 그 칸이 없는 탭에 아무도 안 보는
     // 죽은 값이 생긴다(머리글이 선언하지 않은 값이다).
@@ -311,15 +316,16 @@
     // 적히는 것은 칸의 글자 그대로다 — 값이 몇 가지로 정해진 칸이라 판정할
     // 것이 없다(그래서 `consulting_status.py` 에 규칙이 늘지 않는다).
     //
-    //   contract_received  `계약서 수신여부`(계약 탭) = `계약서 수신완료여부`
-    //                      (관리 스타트업 탭). **같은 칸이라 키도 하나**다.
-    //   contract_done      `계약완료여부` — 관리 스타트업 탭에만 있다.
+    //   contract_received   `계약서 수신여부`(계약 탭) = `계약서 수신완료여부`
+    //                       (관리 스타트업 탭). **같은 칸이라 키도 하나**다.
+    //   contract_done       `계약완료여부` — 관리 스타트업 탭에만 있다.
+    //   contract_management `견적서 첨부 여부` — 관리 스타트업 탭에만 있다.
+    //                       칸 이름과 필터 키(`quote`)가 다르다.
     //
     // 한 자리에서 돌린다 — 규칙이 칸마다 따로 적히면 한 벌은 반드시 낡는다.
-    // `계약관리` 는 필터를 안 세운 자유 글 칸이라 여기 없다(다시 적을 행 값이
-    // 없다).
     [["contract_received", "data-f-received"],
-     ["contract_done", "data-f-done"]].forEach(function (pair) {
+     ["contract_done", "data-f-done"],
+     ["contract_management", "data-f-quote"]].forEach(function (pair) {
       var td = tr.querySelector('[data-field="' + pair[0] + '"]');
       if (td && tr.hasAttribute(pair[1])) {
         tr.setAttribute(pair[1], td.textContent.trim());

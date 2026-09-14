@@ -1,10 +1,18 @@
-"""투자컨설턴트 → `관리 스타트업` 탭의 `계약관리` · `계약완료여부` ·
+"""투자컨설턴트 → `관리 스타트업` 탭의 `견적서 첨부 여부` · `계약완료여부` ·
 `계약서 수신완료여부` — `기업 관리` **바로 뒤** 세 칸.
 
-컨설턴트가 기업 하나를 붙들고 가는 흐름의 세 마디다(어떻게 되고 있나 →
+컨설턴트가 기업 하나를 붙들고 가는 흐름의 세 마디다(견적서를 보냈나 → 계약이
 끝났나 → 서류는 왔나). 지금까지는 옆 `기업 관리` 에 한 문장으로 섞여 있었는데
 (`관리 중 : 미팅 완. -> 계약서 보내기 완료.`), 섞여 있으면 **아직 안 한 곳**을
 골라낼 수가 없다 — 적힌 것은 검색으로 찾아지지만 안 적힌 것은 안 찾아진다.
+
+## 첫 마디의 이름이 `계약관리` 에서 바뀌었다
+
+자유 글이던 칸인데 128줄 중 값이 한 줄도 없었고, 물어야 할 것이 `견적서를
+보냈는가` 하나로 정해지면서 **뒤의 두 마디와 같은 `O`/`X` 칸**이 됐다.
+**담기는 칸은 `contract_management` 그대로다** — 열쇠를 같이 바꾸면 들어 있던
+값이 끊긴다(지금은 비어 있어도 규칙은 규칙이다). 그래서 아래 검사들은 이름이
+아니라 **열쇠**로 짝을 맞춘다.
 
 ## `계약서 수신완료여부` 는 **새 칸이 아니다**
 
@@ -12,13 +20,17 @@
 사실이 하나뿐이라 — 계약서가 왔는가 — 칸을 새로 만들지 않았다. 뜻이 같은데
 칸을 둘로 두면 같은 기업의 같은 사실이 두 군데에 갈려 어느 쪽이 맞는지 알 수
 없게 된다. 탭마다 이름이 다른 것은 이 표가 이미 하는 일이다(같은 `region` 이
-한 탭에서는 `지역`, 다른 탭에서는 `월` 이다).
+한 탭에서는 `미팅일`, 계약 탭에서는 `계약월` 이다 — 같은 `meeting_at` 이다).
 
-## `견적서 첨부여부` · `계산서 수신여부` 는 **없어졌다**
+## `quote_attached` · `invoice_received` 두 **칸**은 없어졌다
 
-0065 가 세웠던 칸인데 사용자가 다시 부른 자리에 없다. 값이 한 줄도 없어서
-지웠다(0068). 화면·엑셀·시트 올리기 어디에도 남아 있으면 안 된다 — 남으면
-아무도 안 채우는 칸이 표를 넓히고, 엑셀에서는 늘 비어 있는 열이 된다.
+0065 가 세웠다가 값이 한 줄도 없어서 지운 칸이다(0068). 모델·DB·화면·엑셀·시트
+올리기 어디에도 남아 있으면 안 된다 — 남으면 아무도 안 채우는 칸이 표를 넓히고,
+엑셀에서는 늘 비어 있는 열이 된다.
+
+**묻는 말이 돌아온 것과 칸이 돌아온 것은 다르다.** `견적서를 보냈는가` 는 이제
+`contract_management` 가 받는다(화면 이름 `견적서 첨부 여부`) — 이미 있던 칸의
+이름과 입력 방식만 바꾼 것이라 `quote_attached` 는 여전히 없어야 한다.
 
 여기서 막는 것은 일곱이다.
 
@@ -54,17 +66,22 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 # 이 탭에 새로 세운 세 칸을 한 자리에 적어 둔다. 검사마다 이름을 따로 적으면
 # 하나를 고칠 때 나머지가 낡는다 — (화면 이름, 칸 이름, 필터 키) 다.
-# `계약관리` 는 필터를 안 세운 칸이라 키가 없다.
+# 셋 다 `O`/`X` 를 골라 넣는 칸이라 셋 다 필터 키가 있다.
 COLUMNS = [
-    ("계약관리", "contract_management", ""),
+    ("견적서 첨부 여부", "contract_management", "quote"),
     ("계약완료여부", "contract_done", "done"),
     ("계약서 수신완료여부", "contract_received", "received"),
 ]
 
-# 0065 가 세웠다가 이번에 지운 칸들. 화면·엑셀·시트 올리기·모델·DB 어디에도
-# 남아 있으면 안 된다.
-GONE = [("견적서 첨부여부", "quote_attached"),
-        ("계산서 수신여부", "invoice_received")]
+# 0065 가 세웠다가 0068 이 지운 **칸 이름**들. 모델·DB·화면·엑셀·시트 올리기
+# 어디에도 이 열쇠가 남아 있으면 안 된다.
+#
+# **묻는 말이 돌아온 것과 칸이 돌아온 것은 다르다.** `견적서를 보냈는가` 는
+# 이제 `contract_management` 가 받는다(화면 이름 `견적서 첨부 여부`) — 칸을
+# 새로 만들지 않고 이미 있던 칸의 이름과 입력 방식만 바꾼 것이라, `quote_attached`
+# 는 여전히 없어야 한다. 그래서 여기서 보는 것은 **열쇠**다.
+GONE = [("quote_attached", "견적서 첨부여부"),
+        ("invoice_received", "계산서 수신여부")]
 
 
 @pytest.fixture()
@@ -108,7 +125,7 @@ def _fields(html: str) -> list:
 # --- 1. 눌러 고치면 정말 저장되는가 ------------------------------------------
 
 @pytest.mark.parametrize("field,value", [
-    ("contract_management", "유료 전환 논의 중"),
+    ("contract_management", "O"),
     ("contract_done", "무료계약완료"),
     ("contract_received", "O"),
 ])
@@ -131,7 +148,8 @@ def test_세_칸은_고쳐지고_다시_읽힌다(allowed, db, users, field, val
     assert value in _open(allowed, STARTUP)
 
 
-@pytest.mark.parametrize("field", ["contract_done", "contract_received"])
+@pytest.mark.parametrize("field",
+                         ["contract_management", "contract_done", "contract_received"])
 def test_빈칸으로_되돌릴_수_있다(allowed, db, users, field):
     """빈칸이 곧 **`아직 안 정함`** 이다.
 
@@ -154,35 +172,14 @@ def test_빈칸으로_되돌릴_수_있다(allowed, db, users, field):
     assert f'data-f-{key}=""' in body
 
 
-def test_계약관리는_줄바꿈이_살아남는다(allowed, db, users):
-    """보기를 정해 두지 않은 **자유 글**이라 여러 줄이 들어온다.
+def test_견적서_첨부_여부는_옆_칸들과_같은_방식으로_골라_넣는다(allowed, db, users):
+    """`O`/`X` 두 가지뿐인 칸이다. 손으로 적게 두면 같은 뜻이 `O`·`o`·`ㅇ`·`○`
+    로 갈려, 두 가지뿐인 칸에서 그건 곧 머리글 필터가 못 쓰게 된다는 뜻이다.
 
-    이름이 `~여부` 가 아니라 `~관리` 로 끝나는 것이 그 표시다 — 이 표에서
-    `~관리` 로 끝나는 칸(`기업 관리`)은 이미 문단이 들어오는 자유 문장이다.
-    `_assign` 은 앞뒤 공백만 뗀다.
-    """
-    from app.models import ConsultingCompany
-
-    text = "무료로 시작(9/2).\n유료 전환은 파일럿 뒤에 다시 이야기."
-    row = _row(db, users["u1"].id, sheet=STARTUP, position=1, company_name="샘플다")
-    allowed.patch(f"/api/consulting/{row.id}",
-                  json={"contract_management": f"  {text}  "})
-    db.expire_all()
-    assert db.get(ConsultingCompany, row.id).contract_management == text
-    cell = re.search(
-        r'<td class="cell multi" data-field="contract_management">(.*?)</td>',
-        _open(allowed, STARTUP), re.S)
-    assert cell and cell.group(1) == text, repr(cell and cell.group(1))
-
-
-def test_고르는_두_칸은_골라서_넣고_계약관리는_자유_글이다(allowed, db, users):
-    """같은 뜻이 여러 글자로 갈리면 두세 가지뿐인 칸에서 필터가 못 쓰게 된다.
-
-    반대로 `계약관리` 에 보기를 달면 **사람이 적을 자리가 없어진다** — 무엇을
-    담을 칸인지 정해진 적이 없어서 자유 글로 두었다(0065).
-
-    긴 글 칸이 쓰는 표시는 `multi` 다. 다른 화면의 `data-type="long"` 은 공통
-    편집기 `inline_edit.js` 의 것이라 이 표에 달면 아무 일도 안 일어난다.
+    **새로 만들지 않고 옆 칸들이 쓰는 방식을 그대로 쓴다** — 이 표의 편집기가
+    보는 `data-choices`(consulting.js 의 `addChoices`) 하나다. 긴 글 표시
+    (`multi`)는 떼어야 한다. 남아 있으면 누를 때 textarea 가 열려 고르는 칸에
+    줄바꿈이 들어간다.
     """
     from app.routers.consulting import CONTRACT_DONE_CHOICES
 
@@ -190,12 +187,32 @@ def test_고르는_두_칸은_골라서_넣고_계약관리는_자유_글이다(
     body = _open(allowed, STARTUP)
     m = re.search(r'data-field="contract_done"[^>]*data-choices="([^"]*)"', body)
     assert m and m.group(1) == ",".join(CONTRACT_DONE_CHOICES), body[:0] or m
-    m = re.search(r'data-field="contract_received"[^>]*data-choices="([^"]*)"', body)
-    assert m and m.group(1) == "O,X"
+    for field in ("contract_received", "contract_management"):
+        m = re.search(rf'data-field="{field}"[^>]*data-choices="([^"]*)"', body)
+        assert m and m.group(1) == "O,X", (field, m and m.group(1))
     html = (ROOT / "app" / "templates" / "consulting.html").read_text(encoding="utf-8")
-    assert '<td class="cell multi" data-field="contract_management">' in html
-    assert 'data-field="contract_management" data-choices' not in html
-    assert 'data-field="contract_management" data-type=' not in html
+    assert '<td class="cell multi" data-field="contract_management">' not in html, \
+        "고르는 칸에 긴 글 표시(multi)가 남아 있습니다 — textarea 가 열립니다"
+    # 옛 이름이 화면 어디에도 안 남는다.
+    assert "계약관리" not in body, "옛 이름이 화면에 남아 있습니다"
+
+
+def test_저장_자리는_contract_management_그대로다():
+    """이름이 바뀌었다고 **열쇠를 같이 바꾸면 들어 있던 값이 끊긴다.**
+
+    바꿀 때 이 칸은 비어 있었지만(128줄 중 0건) 규칙은 규칙이다 — 이 저장소가
+    `VcContact.notes["invoice_received"]` 에서 같은 이유로 어긋난 이름을 그대로
+    두고 있다. 새 열쇠가 생기지 않았는지도 같이 본다.
+    """
+    from app.models import ConsultingCompany
+    from app.routers import consulting
+
+    startup = dict((f, label) for label, f in consulting.STARTUP_COLUMNS)
+    assert startup["contract_management"] == "견적서 첨부 여부"
+    names = set(ConsultingCompany.__table__.c.keys())
+    assert "contract_management" in names
+    for word in ("quote_attached", "quote_sent", "estimate_attached"):
+        assert word not in names, f"같은 뜻의 칸이 두 벌입니다: {word}"
 
 
 # --- 2. 보기 값은 어디서 오는가 ----------------------------------------------
@@ -228,7 +245,8 @@ def test_계약검토중과_미계약은_이_칸에_안_선다():
     """이름이 `계약완료여부` 인 칸이다.
 
     `계약검토중`·`미계약` 은 **아직 계약이 안 끝난 상태**라 여기 세우면 이름과
-    값이 어긋난다. 그 상태는 빈칸(아직 안 정함)과 옆 `계약관리` 자유 글이 받는다.
+    값이 어긋난다. 그 상태는 **빈칸**(아직 안 정함)이 받는다 — 문장으로 적을
+    자리는 `기업 관리` 한 칸이다.
     `딜소개 불가` 는 계약 상태가 아니라 발송 금지 표시라 더욱 아니다.
     """
     from app.routers.consulting import CONTRACT_DONE_CHOICES
@@ -241,7 +259,7 @@ def test_계약검토중과_미계약은_이_칸에_안_선다():
 # --- 3. 자리 -----------------------------------------------------------------
 
 def test_기업_관리_바로_뒤에_차례대로_선다(allowed, db, users):
-    """사용자가 부른 자리 그대로다 — `기업 관리` **다음**, 계약관리 →
+    """사용자가 부른 자리 그대로다 — `기업 관리` **다음**, 견적서 첨부 여부 →
     계약완료여부 → 계약서 수신완료여부 차례.
 
     칸 순서가 머리글과 어긋나면 그 뒤가 통째로 밀린다. `딜 소개문구` 는 이
@@ -249,7 +267,7 @@ def test_기업_관리_바로_뒤에_차례대로_선다(allowed, db, users):
     읽힌다.
     """
     _row(db, users["u1"].id, sheet=STARTUP, position=1, company_name="샘플마",
-         management="관리 중", contract_management="무료로 시작",
+         management="관리 중", contract_management="O",
          contract_done="무료계약완료", contract_received="O")
     body = _open(allowed, STARTUP)
     heads = _heads(body)
@@ -299,7 +317,7 @@ def test_다른_두_탭에는_이_묶음이_안_선다(allowed, db, users):
 
     계약 탭의 `계약서 수신여부` 는 예외다. 그 칸(`contract_received`)은 원래
     거기 서 있었고 이번에 스타트업 탭에도 **같은 칸으로** 섰다 — 그래서 이
-    검사는 `계약완료여부` 와 `계약관리` 만 본다.
+    검사는 `계약완료여부` 와 `견적서 첨부 여부` 만 본다.
     """
     _row(db, users["u1"].id, sheet=HANDOVER, position=1, company_name="샘플사")
     _row(db, users["u1"].id, sheet=CONTRACT, position=1, company_name="샘플아",
@@ -353,6 +371,8 @@ def test_다른_탭에_값이_남아_있어도_그_탭_화면에는_안_나온�
     body = _open(allowed, HANDOVER)
     assert "옮겨 오기 전에 적어 둔 말" not in body
     db.expire_all()
+    # 이름이 `계약관리` 이던 때 적어 둔 자유 글도 그대로 남는다 — 이름과 입력
+    # 방식만 바뀌었고 열쇠도 값도 안 건드렸다.
     assert db.get(ConsultingCompany, row.id).contract_management \
         == "옮겨 오기 전에 적어 둔 말"
 
@@ -377,28 +397,30 @@ def test_표_모양은_이름이_아니라_열쇠로_짝짓는다(db):
 
 # --- 5. 필터 · 검색 · 판정 ----------------------------------------------------
 
-def test_고르는_두_칸에는_필터를_세우고_계약관리에는_안_세운다(allowed, db, users):
+def test_세_칸_모두_필터를_세우고_행에도_값을_싣는다(allowed, db, users):
     """보기가 정해진 칸은 고를 것이 모이고, 무엇보다 **빈칸(아직 안 정함)을
     고를 수 있어야** 한다 — filters.js 가 빈 값을 `(비어 있음)` 으로 세워
     주므로, 채워 넣어야 할 줄을 찾는 길이 그것뿐이다.
 
-    `계약관리` 는 자유 글이라 줄마다 달라 고를 것이 모이지 않는다. 세우지
-    않았으므로 **행에도 값을 안 싣는다** — 실으면 아무 머리글도 안 보는 죽은
-    속성이 된다(`tests/test_filter_columns.py` 의 2번이 잡는다).
+    `견적서 첨부 여부` 는 자유 글이던 때에 필터가 없었다. `O`/`X` 가 되면서
+    옆 두 칸과 조건이 같아졌다 — 아직 안 보낸 곳을 찾는 길이 그것뿐이다.
+
+    머리글이 선언한 키 · 행이 싣는 값 · 칸이 고칠 키, 셋이 같은 것을 가리켜야
+    한다(`tests/test_filter_columns.py` 의 부류).
     """
     _row(db, users["u1"].id, sheet=STARTUP, position=1, company_name="샘플카",
-         contract_management="유료 전환 논의 중", contract_done="유료계약완료",
+         contract_management="O", contract_done="유료계약완료",
          contract_received="X")
     body = _open(allowed, STARTUP)
-    assert 'data-filters="done:계약완료여부"' in body
-    assert 'data-filters="received:계약서 수신완료여부"' in body
+    for label, field, key in COLUMNS:
+        assert f'data-filters="{key}:{label}"' in body, label
+        assert f'data-field="{field}" data-filter-key="{key}"' in body, field
+    assert 'data-f-quote="O"' in body
     assert 'data-f-done="유료계약완료"' in body
     assert 'data-f-received="X"' in body
-    assert 'data-field="contract_done" data-filter-key="done"' in body
-    assert 'data-field="contract_received" data-filter-key="received"' in body
+    # 칸 이름을 필터 키로 그대로 쓰면 안 된다 — 머리글이 선언한 것은 `quote` 다.
     assert 'data-filters="contract_management' not in body
-    assert "data-f-contract" not in body
-    assert 'data-field="contract_management" data-filter-key' not in body
+    assert "data-f-contract_management" not in body
 
 
 def test_검색에는_넣는다(allowed, db, users):
@@ -406,10 +428,9 @@ def test_검색에는_넣는다(allowed, db, users):
     칸을 고치면 `refreshRowFlags` 가 `td.cell` 을 전부 이어 붙여 다시 적으므로
     그때는 걸리는데, 새로고침하면 서버가 그린 값으로 돌아가 안 걸린다."""
     _row(db, users["u1"].id, sheet=STARTUP, position=1, company_name="샘플타",
-         contract_management="유료 전환 논의 중", contract_done="유료계약완료")
+         contract_management="O", contract_done="유료계약완료")
     row = re.search(r'<tr [^>]*data-search="([^"]*)"', _open(allowed, STARTUP))
     assert row, "줄에서 data-search 를 못 찾았습니다"
-    assert "유료 전환 논의 중" in row.group(1), row.group(1)
     assert "유료계약완료" in row.group(1), row.group(1)
 
 
@@ -421,9 +442,8 @@ def test_칩과_KPI_와_갈래_판정은_이_칸들을_안_본다():
     KPI 도 마찬가지다 — 위 숫자 넷은 탭을 가리지 않고 늘 서는데, 이 칸들은 한
     탭에만 있어서 다른 탭에서는 늘 0 이 되고 그 0 이 사실처럼 읽힌다.
 
-    무엇보다 `계약관리` 는 자유 글이라 `관리` 라는 낱말이 늘 들어 있고
-    `계약완료여부` 에는 `계약` 이 늘 들어 있다 — 갈래 판정이 이 칸들을 보는
-    순간 그 탭의 모든 줄이 `관리 중` 이 된다.
+    무엇보다 `계약완료여부` 에는 `계약` 이라는 낱말이 늘 들어 있다 — 갈래
+    판정이 이 칸들을 보는 순간 그 탭의 모든 줄이 `관리 중` 이 된다.
     """
     src = (ROOT / "app" / "services"
            / "consulting_status.py").read_text(encoding="utf-8")
@@ -453,11 +473,12 @@ def test_엑셀에도_실리고_이미_받아_둔_파일의_자리는_안_밀린
     from app.routers.consulting import (CONTRACT_EXPORT_HEADERS,
                                         STARTUP_EXPORT_HEADERS)
 
-    assert STARTUP_EXPORT_HEADERS == ["딜 소개문구", "계약관리", "계약완료여부"]
+    assert STARTUP_EXPORT_HEADERS == ["딜 소개문구", "견적서 첨부 여부",
+                                      "계약완료여부"]
     assert "계약서 수신여부" in CONTRACT_EXPORT_HEADERS
 
     _row(db, users["u1"].id, sheet=STARTUP, position=1, company_name="샘플파",
-         contract_management="무료로 시작", contract_done="무료계약완료",
+         contract_management="X", contract_done="무료계약완료",
          contract_received="O")
     r = allowed.get("/api/export/consulting.xlsx")
     assert r.status_code == 200 and len(r.content) > 0
@@ -472,16 +493,18 @@ def test_엑셀에도_실리고_이미_받아_둔_파일의_자리는_안_밀린
     # 머리글 수와 줄의 칸 수가 같은가 — 하나라도 빠지면 그 뒤가 통째로 밀린다.
     body = list(grid[1])
     assert len(body) == len(head)
-    for label in ("계약관리", "계약완료여부", "계약서 수신여부"):
+    for label in ("견적서 첨부 여부", "계약완료여부", "계약서 수신여부"):
         assert head.count(label) == 1, (label, head)
+    assert "계약관리" not in head, head
     # 지운 두 칸은 엑셀에도 없다.
-    for label, _field in GONE:
+    for _field, label in GONE:
         assert label not in head, label
-    for value in ("무료로 시작", "무료계약완료"):
-        assert body.count(value) == 1, (value, body)
-    # 계약서 수신 여부는 **한 칸에** 실린다.
+    assert body.count("무료계약완료") == 1, body
+    # 세 칸이 **각자 제 자리에** 실린다. `O`/`X` 를 서로 다른 글자로 넣어 두는
+    # 것은 두 칸이 같은 값을 실어도 못 알아채는 자리를 없애려는 것이다.
+    assert body[head.index("견적서 첨부 여부")] == "X"
     assert body[head.index("계약서 수신여부")] == "O"
-    assert body.count("O") == 1, body
+    assert body.count("O") == 1 and body.count("X") == 1, body
 
 
 # --- 7. 월별 열 · 시트 올리기 --------------------------------------------------
@@ -516,15 +539,15 @@ def test_시트를_올릴_때_월별_열로_딸려_들어가지_않는다(allowe
     from app.routers.consulting import apply_rows, parse_rows
 
     rows = [
-        ["NO", "지역", "미팅일", "기업명", "기업 관리", "계약 관리",
+        ["NO", "지역", "미팅일", "기업명", "기업 관리", "견적서 첨부여부",
          "계약완료여부", "계약서 수신완료여부", "8월 마지막주 리마인드 톡"],
-        ["1", "서울", "9/16", "샘플거", "관리 중", "무료로 시작", "무료계약완료",
+        ["1", "서울", "9/16", "샘플거", "관리 중", "X", "무료계약완료",
          "O", "통화함"],
     ]
     parsed = parse_rows(rows)
     assert parsed["columns"] == ["8월 마지막주 리마인드 톡"], parsed["columns"]
     item = parsed["companies"][0]
-    assert item["contract_management"] == "무료로 시작"
+    assert item["contract_management"] == "X"
     assert item["contract_done"] == "무료계약완료"
     assert item["contract_received"] == "O"
 
@@ -533,7 +556,27 @@ def test_시트를_올릴_때_월별_열로_딸려_들어가지_않는다(allowe
 
     saved = db.query(ConsultingCompany).filter_by(company_name="샘플거").one()
     assert (saved.contract_management, saved.contract_done,
-            saved.contract_received) == ("무료로 시작", "무료계약완료", "O")
+            saved.contract_received) == ("X", "무료계약완료", "O")
+
+
+def test_시트의_계약_관리_열은_이제_월별_열로_들어간다(db):
+    """이름이 `계약관리` 이던 때에 만들어진 시트가 아직 돌아다닌다.
+
+    그 열에 적혀 있는 것은 자유 문장(`관리 중 : 미팅 완 …`)인데, 이 칸은 이제
+    `O`/`X` 만 서는 자리다. 그대로 받으면 두 글자만 서야 할 칸에 문단이 들어와
+    머리글 필터가 줄마다 다른 값으로 갈린다.
+
+    **버리지는 않는다.** 못 알아본 열은 월별 리마인드 열이 되어 기록으로 남는다
+    — 이 저장소는 시트에 적힌 것을 지우지 않는다.
+    """
+    from app.routers.consulting import parse_rows
+
+    parsed = parse_rows([["NO", "기업명", "계약 관리"],
+                         ["1", "샘플고", "관리 중 : 미팅 완"]])
+    assert parsed["columns"] == ["계약 관리"], parsed["columns"]
+    item = parsed["companies"][0]
+    assert item.get("contract_management") is None, item
+    assert item["notes"] == {"계약 관리": "관리 중 : 미팅 완"}
 
 
 def test_한_열을_두_칸이_집어_가지_않는다(allowed, db, users):
@@ -561,17 +604,17 @@ def test_이름이_비슷한_월_열은_안_채간다(allowed, db, users):
     from app.routers.consulting import parse_rows
 
     rows = [
-        ["NO", "기업명", "9월 계약 완료 확인 톡", "10월 계약 관리 확인"],
+        ["NO", "기업명", "9월 계약 완료 확인 톡", "10월 견적서 첨부 확인"],
         ["1", "샘플더", "톡 발송", "통화 완"],
     ]
     parsed = parse_rows(rows)
     assert parsed["columns"] == ["9월 계약 완료 확인 톡",
-                                 "10월 계약 관리 확인"], parsed["columns"]
+                                 "10월 견적서 첨부 확인"], parsed["columns"]
     item = parsed["companies"][0]
     assert item.get("contract_done") is None
     assert item.get("contract_management") is None
     assert item["notes"] == {"9월 계약 완료 확인 톡": "톡 발송",
-                             "10월 계약 관리 확인": "통화 완"}
+                             "10월 견적서 첨부 확인": "통화 완"}
 
 
 # --- 8. 지운 두 칸 ------------------------------------------------------------
@@ -589,8 +632,7 @@ def test_지운_두_칸은_어디에도_안_남는다(allowed, db, users):
     body = _open(allowed, STARTUP)
     names = set(ConsultingCompany.__table__.c.keys())
     layout = [f for _label, f in consulting.STARTUP_COLUMNS]
-    for label, field in GONE:
-        assert label not in body, label
+    for field, label in GONE:
         assert field not in body, field
         assert field not in names, f"모델에 {field} 가 남아 있습니다"
         assert field not in layout, field
@@ -599,15 +641,16 @@ def test_지운_두_칸은_어디에도_안_남는다(allowed, db, users):
     src = (ROOT / "app" / "routers" / "consulting.py").read_text(encoding="utf-8")
     js = (ROOT / "app" / "static" / "js"
           / "consulting.js").read_text(encoding="utf-8")
-    for _label, field in GONE:
+    for field, _label in GONE:
         assert field not in src, field
         assert field not in js, field
-    # 시트에 그 이름의 열이 남아 있으면 **월별 리마인드 열**로 들어간다 —
-    # 전용 칸이 없어졌으니 그것이 맞는 자리다(기록이 사라지지 않는다).
+    # 시트에 `견적서 첨부여부` 열이 있으면 **`contract_management` 로 들어간다** —
+    # 묻는 말이 그 칸으로 돌아왔기 때문이다(`quote_attached` 는 여전히 없다).
     parsed = consulting.parse_rows(
         [["NO", "기업명", "견적서 첨부여부"], ["1", "샘플머", "O"]])
-    assert parsed["columns"] == ["견적서 첨부여부"], parsed["columns"]
-    assert parsed["companies"][0]["notes"] == {"견적서 첨부여부": "O"}
+    assert parsed["columns"] == [], parsed["columns"]
+    assert parsed["companies"][0]["contract_management"] == "O"
+    assert parsed["companies"][0]["notes"] == {}
 
 
 # --- 9. 마이그레이션 ----------------------------------------------------------

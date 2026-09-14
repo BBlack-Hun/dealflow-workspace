@@ -500,7 +500,7 @@ def test_the_promo_mail_column_is_named_after_what_it_holds(logged_in, db):
     assert logged_in.get(f"/api/companies/{row.id}").json()["contract_month"] == "삭제 완료"
 
 
-# ── ⑨ `계약서 수신됨` — 안 정한 것과 안 받은 것은 다르다 ────────────────────
+# ── ⑨ `계약서 수신 여부` — 안 정한 것과 안 받은 것은 다르다 ────────────────
 #
 # `계약여부` 는 **맺기로 했는가**이고 이 칸은 **서류가 실제로 왔는가**다.
 # `유료계약완료` 인데 서류는 아직인 기업을 적을 자리가 없어서 생긴 칸이다.
@@ -575,14 +575,17 @@ def test_표는_계약여부_바로_오른쪽에_이_칸을_세운다(logged_in,
     names = [re.sub(r"<[^>]+>", "", c).strip()
              for c in re.findall(r"<th\b[^>]*>(.*?)</th>", head.group(1), re.S)]
     assert "계약여부" in names, names
-    assert names[names.index("계약여부") + 1] == "계약서 수신됨", names
+    assert names[names.index("계약여부") + 1] == "계약서 수신 여부", names
+    # 옛 이름이 화면 어디에도 안 남는다 — 같은 칸을 두 이름으로 부르면
+    # 엑셀·수정창과 대조할 때 어느 것이 맞는지 알 수가 없다.
+    assert "계약서 수신됨" not in logged_in.get("/companies").text
 
 
 def test_고쳐도_필터가_따라오게_세_곳이_같은_키를_본다(logged_in, company):
     """머리글이 선언한 키 · 행이 싣는 값 · 칸이 고칠 키, 셋이 어긋나면 필터는
     **아무 말 없이** 빈 목록이 된다(tests/test_filter_columns.py 의 부류)."""
     html = logged_in.get("/companies").text
-    assert 'data-filters="received:계약서 수신됨"' in html
+    assert 'data-filters="received:계약서 수신 여부"' in html
     assert 'data-f-received=' in html
     assert 'data-filter-key="received"' in html
     # 늘 두 가지를 세운다 — 값이 하나도 없는 순간 고를 말이 사라지면 안 된다
@@ -619,9 +622,12 @@ def test_엑셀에도_화면과_같은_이름으로_계약_바로_뒤에_실린�
         io.BytesIO(logged_in.get("/api/export/companies.xlsx").content))
     sheet = book.active
     head = [c.value for c in sheet[1]]
-    assert head[head.index("계약") + 1] == "계약서 수신됨", head
+    assert head[head.index("계약") + 1] == "계약서 수신 여부", head
+    # 엑셀에도 옛 이름이 안 남는다 — 받은 파일을 화면과 나란히 놓고 대조하는
+    # 자리라, 한쪽만 옛 이름이면 어느 칸인지 매번 되짚어야 한다.
+    assert "계약서 수신됨" not in head, head
 
-    col = head.index("계약서 수신됨")
+    col = head.index("계약서 수신 여부")
     rows = {r[0]: r for r in sheet.iter_rows(min_row=2, values_only=True)}
     assert rows["샘플로지"][col] == "O"
     # 안 정한 곳은 **빈 칸**이다 — `X` 로 채우면 엑셀에서 세는 순간 그것이

@@ -211,19 +211,115 @@ def test_계약_탭의_머리글은_시트가_부르는_이름이다(allowed, db
     # 계약서를 받은 것은 다른 사실이라 나란히 놓고 봐야 뜻이 갈린다.
     # `담당` 은 여러 사람의 표를 같이 보는 사람에게만 선다(이 검사의 `allowed`
     # 가 그렇다). 탭과 무관한 칸이라 계약 탭에도 같은 자리에 있다.
-    assert heads == ["NO", "담당", "월", "계약월", "기업명", "계약여부",
+    #
+    # **`월` 은 안 선다**(사용자 요청). 시트의 월 묶음 제목이 `region` 에 담겨
+    # 서 있던 칸인데, 바로 옆 `계약월`(`meeting_at`)이 같은 물음을 받고 있어
+    # 달을 적을 자리는 그대로 남는다 — 아래 검사가 그것을 짚는다.
+    assert heads == ["NO", "담당", "계약월", "기업명", "계약여부",
                      "계약서 수신여부", "성공보수율", "계약금", ""], heads
     # 머리글과 데이터 칸이 **같은 순서로** 갈라져야 한다. 어긋나면 그 뒤가
     # 통째로 한 칸씩 밀린다.
     assert _fields(_open(allowed, CONTRACT)) == [
-        "region", "meeting_at", "company_name", "management",
+        "meeting_at", "company_name", "management",
         "contract_received", "success_fee", "contract_fee"]
+
+
+def test_월_칸을_빼도_달을_적을_자리는_남는다(allowed, db, users):
+    """`월` 을 뺀 자리에 `계약월`(`meeting_at`)이 그대로 선다.
+
+    둘 다 없어지면 이 탭에서 달을 적을 곳이 사라진다 — 계약이 몇 월 것인지가
+    이 표의 이름(`월간 계약 업무현황표`) 자체다.
+    """
+    from app.routers import consulting
+
+    row = _row(db, users["u1"].id, sheet=CONTRACT, position=1,
+               company_name="샘플가", region="6월", meeting_at="8")
+    body = _open(allowed, CONTRACT)
+    assert "계약월" in _heads(body)
+    assert 'data-field="meeting_at"' in body
+    assert (r := allowed.patch(f"/api/consulting/{row.id}",
+                               json={"meeting_at": "9"})).status_code == 200, r.text
+    contract = dict((f, label) for label, f in consulting.CONTRACT_COLUMNS)
+    assert contract["meeting_at"] == "계약월"
+    assert "region" not in contract
+
+
+def test_월_칸은_화면에서만_빠지고_값과_옆_탭의_지역은_그대로다(allowed, db, users):
+    """**같은 저장 자리를 두 탭이 다른 이름으로 쓴다**(`region`).
+
+    계약 탭의 `월` 을 지운다고 값까지 비우면 `관리 스타트업` 탭의 `지역` 이
+    같이 날아간다 — 이 저장소가 겪으면 안 되는 부류다. 화면에서만 뺀다.
+    """
+    from app.models import ConsultingCompany
+
+    row = _row(db, users["u1"].id, sheet=CONTRACT, position=1,
+               company_name="샘플나", region="6월")
+    other = _row(db, users["u1"].id, sheet="스타트업", position=1,
+                 company_name="샘플다", region="서울")
+
+    body = _open(allowed, CONTRACT)
+    assert "6월" not in body, "계약 탭에 `월` 값이 아직 그려집니다"
+    # 머리글이 없으니 행에도 안 싣는다 — 실으면 아무도 안 보는 죽은 속성이다
+    # (`tests/test_filter_columns.py` 의 2번).
+    assert "data-f-region" not in body
+    assert 'data-filters="region:' not in body
+
+    # 옆 탭의 `지역` 은 머리글도 칸도 값도 그대로다.
+    startup = _open(allowed, "스타트업")
+    assert "지역" in _heads(startup)
+    assert 'data-filters="region:지역"' in startup
+    assert 'data-f-region="서울"' in startup
+    assert "서울" in startup
+
+    # DB 에도 둘 다 남아 있다.
+    db.expire_all()
+    assert db.get(ConsultingCompany, row.id).region == "6월"
+    assert db.get(ConsultingCompany, other.id).region == "서울"
+    # API 로도 그대로 읽힌다 — 화면에서 뺀 것이지 자료를 지운 것이 아니다.
+    assert allowed.get(f"/api/consulting/{row.id}").json()["region"] == "6월"
+
+
+def test_엑셀은_계약_줄의_달을_지역_머리글로_계속_내린다(allowed, db, users):
+    """엑셀 머리글은 `FIXED_COLUMNS` 에서 뽑는다 — 계약 탭의 칸 목록과 무관하다.
+
+    화면에서 `월` 을 뺐다고 내려받은 파일에서도 그 값이 사라지면, 지난달에
+    받아 둔 파일과 나란히 놓았을 때 그 열만 비어 있게 된다.
+    """
+    import io
+
+    from openpyxl import load_workbook
+
+    _row(db, users["u1"].id, sheet=CONTRACT, position=1,
+         company_name="샘플라", region="누적", management="무료")
+    r = allowed.get("/api/export/consulting.xlsx")
+    assert r.status_code == 200
+    ws = load_workbook(io.BytesIO(r.content)).active
+    grid = list(ws.values)
+    head = list(grid[0])
+    assert "지역" in head and "월" not in head, head
+    row = next(x for x in grid[1:] if "샘플라" in x)
+    assert row[head.index("지역")] == "누적"
+
+
+def test_빈_계약_탭의_안내_줄이_표_전체를_덮는다(allowed, db, users):
+    """`colspan` 이 어긋나면 안내 문구 오른쪽에 빈 칸이 남아 표가 깨져 보인다.
+
+    `월` 을 빼면서 이 탭만 칸이 하나 줄었다 — 예전에는 `경영본부 전달 기업`
+    탭과 우연히 같은 수였다.
+    """
+    import re
+
+    body = _open(allowed, CONTRACT)
+    head = len(_heads(body))
+    m = re.search(r'colspan="(\d+)"', body)
+    assert m, "빈 표 안내 줄을 못 찾았습니다"
+    assert int(m.group(1)) == head, (m.group(1), head)
 
 
 def test_다른_탭의_표는_한_칸도_안_바뀐다(allowed, db, users):
     """탭 하나를 고치다 **다른 탭의 표가 바뀌면** 안 된다.
 
-    스타트업 탭에 `딜 소개문구` · `계약관리` · `계약완료여부` ·
+    스타트업 탭에 `딜 소개문구` · `견적서 첨부 여부` · `계약완료여부` ·
     `계약서 수신완료여부` 가 선 것은 그 탭에 대고 따로 정한 자리라 여기서 세는
     목록에 들어 있다(`tests/test_consulting_deal_pitch.py` ·
     `tests/test_consulting_contract_done.py`). 계약 탭의 칸이 **저절로** 새어
@@ -236,9 +332,9 @@ def test_다른_탭의_표는_한_칸도_안_바뀐다(allowed, db, users):
          ceo_name="김샘플", phone="010-0000-0000", email="a@example.com")
     body = _open(allowed, "스타트업")
     assert _heads(body) == ["NO", "담당", "지역", "미팅일", "기업명", "기업 관리",
-                            "계약관리", "계약완료여부", "계약서 수신완료여부",
-                            "딜 소개문구", "대표자", "연락처", "이메일",
-                            ""], _heads(body)
+                            "견적서 첨부 여부", "계약완료여부",
+                            "계약서 수신완료여부", "딜 소개문구",
+                            "대표자", "연락처", "이메일", ""], _heads(body)
     assert _fields(body) == ["region", "meeting_at", "company_name",
                              "management", "contract_management",
                              "contract_done", "contract_received",
@@ -406,14 +502,14 @@ def test_계약_탭에만_있는_칸은_다른_탭으로_안_샌다(allowed, db,
         assert field not in body, field
     # 계약 탭 이름 그대로는 안 선다 — 이 탭의 이름은 `계약서 수신완료여부` 다.
     assert 'data-filters="received:계약서 수신여부"' not in body
-    # `계약관리`·`계약완료여부`·`계약서 수신완료여부`·`딜 소개문구` 는 스타트업
+    # `견적서 첨부 여부`·`계약완료여부`·`계약서 수신완료여부`·`딜 소개문구` 는
     # 탭에 대고 따로 정한 자리라 여기 들어 있다
     # (`tests/test_consulting_contract_done.py` ·
     #  `tests/test_consulting_deal_pitch.py`).
     assert _heads(body) == ["NO", "담당", "지역", "미팅일", "기업명", "기업 관리",
-                            "계약관리", "계약완료여부", "계약서 수신완료여부",
-                            "딜 소개문구", "대표자", "연락처", "이메일",
-                            ""], _heads(body)
+                            "견적서 첨부 여부", "계약완료여부",
+                            "계약서 수신완료여부", "딜 소개문구",
+                            "대표자", "연락처", "이메일", ""], _heads(body)
     assert _fields(body) == ["region", "meeting_at", "company_name",
                              "management", "contract_management",
                              "contract_done", "contract_received",
