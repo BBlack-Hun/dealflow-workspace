@@ -1075,3 +1075,25 @@ def test_투자사_관리_현황의_필터는_한_개도_안_바뀐다(sheets):
     for label, keys in want.items():
         assert got.get(label) == keys, (
             f"투자사 표의 `{label}` 필터가 바뀌었습니다: {got.get(label)}")
+
+
+def test_IR_Deck_은_화면에서_바르게_적고_시트는_옛_철자로_읽는다():
+    """화면 이름은 `IR Deck`, 시트에서 읽는 열쇠는 `IR dack` 그대로.
+
+    원본 시트에 `IR dack` 으로 적혀 있다. 시트가 안 바뀌었으므로 **읽는 쪽까지
+    고치면 그 열을 못 찾아 값이 안 들어온다.** 둘이 갈려 있는 것이 맞고,
+    한쪽만 고치는 실수를 이 검사가 잡는다.
+    """
+    import inspect
+    from app.services import contact_columns
+    from scripts import import_startup_sheet
+
+    labels = [c.label for c in contact_columns.STARTUP_LAYOUT.head
+              + contact_columns.STARTUP_LAYOUT.extra
+              + contact_columns.STARTUP_LAYOUT.tail]
+    assert "IR Deck 유무" in labels, labels
+    assert "IR dack 유무" not in labels
+
+    # 시트에서 읽는 쪽은 옛 철자 그대로여야 한다.
+    src = inspect.getsource(import_startup_sheet)
+    assert '"IR dack"' in src
