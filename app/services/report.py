@@ -312,6 +312,13 @@ def monthly(db: Session, year: int, month: int,
     # 지금 남은 일" 쪽이다.
     ask = meeting_ask_state(db, requests, today=today)
 
+    # 판에 함께 밝힐 **요청 건수** — 안 보낸 그 담당자들이 받은 요청 줄 수다.
+    # 세는 곳은 `meeting_ask_state` 하나이고 여기서는 더하기만 한다. 글자는
+    # `meeting_ask_count_note` 가 짓고 화면과 엑셀이 그걸 그대로 쓴다.
+    ask_missing = sum(1 for st in ask.values() if not st["asked"])
+    ask_rows = sum(st["requests"] for st in ask.values() if not st["asked"])
+    ask_count, ask_why = meeting_ask_count_note(ask_missing, ask_rows)
+
     return {
         "year": year,
         "month": month,
@@ -356,8 +363,14 @@ def monthly(db: Session, year: int, month: int,
         # (`deals.MODES_WITH_COMPANIES` 에 미팅이 없다) 줄로 세면 한 번 보낼
         # 일이 세 건으로 보인다. 판정은 `pipeline.meeting_ask_state` 한 곳이
         # 하고 IR 화면도 같은 곳을 읽는다 — 두 화면이 다른 수를 말하면 안 된다.
-        "ir_meeting_ask_missing": sum(1 for st in ask.values() if not st["asked"]),
+        "ir_meeting_ask_missing": ask_missing,
         "ir_meeting_ask_overdue": sum(1 for st in ask.values() if st["overdue"]),
+        # **같은 수를 두 단위로.** 위 숫자는 담당자 수고 이건 그 담당자들이
+        # 받은 요청 줄 수다 — 아래 `IR 요청 투자사` 표가 그 줄 수만큼 선다.
+        # 둘이 같으면 `_note`·`_why` 가 빈 글자라 화면에 아무 말도 안 붙는다.
+        "ir_meeting_ask_rows": ask_rows,
+        "ir_meeting_ask_rows_note": ask_count,
+        "ir_meeting_ask_rows_why": ask_why,
         # 화면 안내문이 "7일" 이라고 말할 때 쓰는 값 — 코드와 화면이 다른
         # 숫자를 말하면 안 된다(`followup_days` 와 같은 방식).
         "ir_meeting_ask_days": IR_MEETING_ASK_DAYS,
@@ -576,6 +589,55 @@ def meeting_ask_note(state: Optional[dict]) -> tuple:
     if state["overdue"]:
         return f"미팅 요청 안 보냄 · {IR_MEETING_ASK_DAYS}일 지남", "bad"
     return f"미팅 요청 안 보냄 · {state['due']}까지", "warn"
+
+
+def meeting_ask_count_note(missing: int, requests: int) -> tuple:
+    """`미팅 요청 안 보냄 N명` 옆에 **요청이 몇 건인지**를 같이 밝힌다.
+
+    ★ 이 글자를 짓는 곳도 여기 하나다(`meeting_ask_note` 와 같은 결). 업무
+    보고 화면(`report.html`)과 엑셀 보고(`routers/data_io._meetings_sheet`)가
+    **같은 문자열**을 받아 쓴다 — 양쪽이 각자 지으면 화면과 파일이 다른 말로
+    설명하게 되고, 그때 사람은 어느 쪽을 믿을지 알 수 없다.
+
+    ## 무엇이 안 맞아 보였는가
+
+    사용자가 본 화면이 이랬다.
+
+        미팅 요청 안 보냄   4명        ← 판
+        IR 요청 투자사      5줄        ← 표
+
+    **둘 다 맞는 수인데 세는 단위가 다르다.** 미팅 요청 카톡은 담당자에게
+    한 통만 나가서(`deals.MODES_WITH_COMPANIES` 에 미팅이 없다) 한 투자사가
+    기업 두 곳 자료를 받아도 "미팅 가능하실지요" 는 한 번이다. 그래서 판은
+    담당자로 세고, 표는 어느 기업 자료였는지를 보여야 하니 요청 줄마다 선다.
+    화면이 그걸 말해 주지 않아서 **안 맞아 보였다.**
+
+    숫자는 안 바꾼다 — 바꾸면 둘 중 하나가 틀린 수가 된다. 대신 판이 건수를
+    같이 밝혀 두 단위가 화면 안에서 만나게 한다.
+
+    ## 왜 **세지는 않는가**
+
+    건수는 `pipeline.meeting_ask_state` 가 이미 센 값(`requests`)을 받아
+    쓴다. 여기서 다시 세면 판과 표의 수가 또 갈린다 — 이 저장소가 반복해
+    겪은 사고다.
+
+    ## 같을 때는 **아무 말도 안 한다**
+
+    `4명 (요청 4건)` 은 아무것도 설명하지 않는다. 단위가 다르다는 것은 두
+    수가 **다를 때만** 드러나므로, 같으면 빈 글자를 돌려주어 괄호가 아예 안
+    붙는다. 늘 켜져 있는 군더더기는 곧 아무도 안 읽는다.
+
+    돌려주는 것은 `(짧은 글, 까닭)`. 짧은 글은 판의 숫자 옆에, 까닭은 그
+    아래 안내문에 선다. 할 말이 없으면 둘 다 빈 글자다.
+    """
+    if missing <= 0 or requests <= missing:
+        return "", ""
+    return (
+        f"요청 {requests}건",
+        f"미팅 요청 카톡은 담당자당 한 통이라 이 수는 담당자 {missing}명입니다"
+        f" — 그 {missing}명이 받은 자료 요청은 {requests}건이고,"
+        f" IR 요청 투자사 표는 요청 줄마다 한 줄이라 수가 더 많습니다.",
+    )
 
 
 def _buckets(meetings, requests, contacts, owners, today, open_followup,

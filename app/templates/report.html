@@ -386,10 +386,18 @@
         **줄이 아니라 담당자를 센다** — 미팅 요청 카톡은 담당자당 한 통이라,
         한 투자사가 기업 3곳 자료를 받아도 보낼 것은 하나다.
         `일` 은 코드가 정한다(`pipeline.IR_MEETING_ASK_DAYS`).
+
+        그래서 아래 `IR 요청 투자사` 표(요청 줄마다 한 줄)와 **수가 다를 수
+        있다.** 둘 다 맞는 수인데 화면이 그걸 말해 주지 않아 `4 / 5` 로
+        안 맞아 보였다 — 그래서 **요청 건수를 같이 밝힌다.**
+        글자는 `services/report.meeting_ask_count_note` 가 짓는다(엑셀 보고도
+        같은 문자열을 쓴다). **여기서 세지 않는다** — 다시 세면 판과 표의
+        수가 또 갈린다(`pipeline.meeting_ask_state` 한 곳).
+        사람 수와 건수가 같으면 빈 글자라 괄호가 아예 안 붙는다.
       #}
       <li><span>미팅 요청 안 보냄</span>
         <b class="{% if ir_meeting_ask_overdue %}warn{% endif %}">{{ ir_meeting_ask_missing }}명
-          <span class="hint">({{ ir_meeting_ask_days }}일 지남 {{ ir_meeting_ask_overdue }}명)</span>
+          <span class="hint">({% if ir_meeting_ask_rows_note %}{{ ir_meeting_ask_rows_note }} · {% endif %}{{ ir_meeting_ask_days }}일 지남 {{ ir_meeting_ask_overdue }}명)</span>
         </b></li>
     </ul>
     {% if ir_open %}
@@ -406,6 +414,12 @@
       <a href="#reactions">아래 <b>이 달의 반응</b></a> 의
       <b>IR 요청 투자사</b> 표에 줄마다 적혀 있습니다.
       보내려면 <a href="/ir">딜 진행 관리</a>.</p>
+    {% endif %}
+    {# 왜 위 숫자와 아래 표의 줄 수가 다른가. 글자는 엑셀 보고와 **같은
+       문자열**이다(`services/report.meeting_ask_count_note`) — 두 곳에서
+       따로 지으면 화면과 파일이 다른 말로 설명한다. #}
+    {% if ir_meeting_ask_rows_why %}
+    <p class="hint">{{ ir_meeting_ask_rows_why }}</p>
     {% endif %}
   </section>
 </div>

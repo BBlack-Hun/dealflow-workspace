@@ -404,6 +404,19 @@ def _reactions_sheet(logged, when):
     return wb[name]
 
 
+def _meetings_sheet(logged, when):
+    """`IR 자료 요청` 요약이 실리는 시트(`… 미팅`)."""
+    import io
+
+    import openpyxl
+
+    resp = logged.get(f"/api/export/report.xlsx?month={when.year}-{when.month:02d}")
+    assert resp.status_code == 200, resp.status_code
+    wb = openpyxl.load_workbook(io.BytesIO(resp.content))
+    name = [s for s in wb.sheetnames if "미팅" in s][0]
+    return wb[name]
+
+
 def _cells(ws) -> list:
     return [str(c.value) for row in ws.iter_rows() for c in row if c.value]
 
@@ -528,3 +541,162 @@ def test_보고_표의_상태_칸도_넉넉하다():
     status = [w for w in widths if w]
     assert max(status) >= NEEDS["보고 상태"], (
         f"보고 표의 상태 칸이 좁다({status}) — 날짜가 `2026-09-17까…` 로 끊긴다")
+
+
+# --- 7) 판의 `N명` 과 표의 `N줄` 이 왜 다른지 화면이 말한다 -------------------
+#
+# 사용자가 업무 보고를 보고 말했다: "미팅 요청 안보냄이랑 밑에 요청 투자사의
+# 개수가 4/5 로 갯수가 안맞음".
+#
+# **버그가 아니다. 세는 단위가 다르다.** 미팅 요청 카톡은 담당자에게 한 통만
+# 나가서(`deals.MODES_WITH_COMPANIES` 에 미팅이 없다) 판은 담당자로 세고,
+# 표는 어느 기업 자료였는지를 보여야 하니 요청 줄마다 선다. 둘 다 맞는
+# 수인데 화면이 그걸 말해 주지 않아 안 맞아 보였다.
+#
+# 여기서 못박는 것.
+#
+#   · 한 담당자가 두 건을 받으면 판에 **사람 수와 건수가 둘 다** 뜬다
+#   · 둘이 **같으면** 괄호가 안 붙는다(아무 말도 안 하는 군더더기다)
+#   · **화면과 엑셀이 같은 말**을 쓴다
+#   · **세는 자리가 하나**다 — 화면이 따로 세면 이 검사가 깨진다
+
+def _ask_li(html: str) -> str:
+    """`미팅 요청 안 보냄` 줄을 공백 하나로 눌러서."""
+    flat = re.sub(r"\s+", " ", html)
+    hit = re.search(r"미팅 요청 안 보냄</span>.{0,220}?</b>", flat)
+    assert hit, "판의 `미팅 요청 안 보냄` 줄을 못 찾았다"
+    return hit.group(0)
+
+
+def _four_of_five(db, users):
+    """사용자가 본 그 화면 — 요청 줄 **5**, 서로 다른 담당자 **4**.
+
+    담당자 하나가 기업 두 곳 자료를 받았다. 나가는 카톡은 그래도 한 통이다.
+    """
+    when = _old_month()
+    twice = _contact(db, users, "가담당")
+    _delivered(db, users, twice, "샘플애그", when=when)
+    _delivered(db, users, twice, "샘플메디", when=when)      # ← 여기가 원인
+    for name, company in (("나담당", "샘플페이"), ("다담당", "샘플로지"),
+                          ("라담당", "샘플케어")):
+        _delivered(db, users, _contact(db, users, name), company, when=when)
+    return when
+
+
+def test_사람_수와_건수가_다르면_판이_둘_다_말한다(db, users, logged):
+    """★ `4 / 5` 가 안 맞아 보이던 자리 — 판이 건수를 같이 밝힌다."""
+    when = _four_of_five(db, users)
+    html = _report(logged, when)
+
+    assert _n(html, r"미팅 요청 안 보냄</span> ?<b[^>]*>(\d+)명") == 4
+    assert len(_bucket_rows(html, "IR 요청 투자사")) == 5, "표는 요청 줄마다 선다"
+    # 숫자를 바꾸지 않았다 — 판 옆에 건수를 **덧붙였을** 뿐이다.
+    assert "요청 5건" in _ask_li(html), _ask_li(html)
+    # 왜 다른지가 글로도 적혀 있다 — 숫자 둘만 던지면 여전히 안 맞아 보인다.
+    assert "담당자당 한 통" in html
+
+
+def test_사람_수와_건수가_같으면_괄호가_안_붙는다(db, users, logged):
+    """`4명 (요청 4건)` 은 아무것도 설명하지 않는다 — 그때는 아무 말도 안 한다.
+
+    단위가 다르다는 것은 두 수가 **다를 때만** 드러난다. 늘 켜져 있는
+    군더더기는 곧 아무도 안 읽는다.
+    """
+    when = _old_month()
+    for name, company in (("가담당", "샘플애그"), ("나담당", "샘플메디")):
+        _delivered(db, users, _contact(db, users, name), company, when=when)
+
+    html = _report(logged, when)
+    assert _n(html, r"미팅 요청 안 보냄</span> ?<b[^>]*>(\d+)명") == 2
+    assert "요청 2건" not in _ask_li(html), _ask_li(html)
+    assert "담당자당 한 통" not in html, "설명할 것이 없는데 설명이 붙었다"
+
+
+def test_요청이_한_건뿐이어도_괄호가_안_붙는다(db, users, logged):
+    """`1명 (요청 1건)` 도 마찬가지다."""
+    when = _old_month()
+    _delivered(db, users, _contact(db, users, "가담당"), "샘플애그", when=when)
+
+    html = _report(logged, when)
+    assert "요청 1건" not in _ask_li(html), _ask_li(html)
+
+
+@pytest.mark.parametrize("missing,rows,says", [
+    (0, 0, False),      # 안 보낸 사람이 없다 — 할 말이 없다
+    (1, 1, False),      # 한 사람 한 건
+    (4, 4, False),      # 사람 수 = 건수
+    (1, 2, True),       # 한 사람이 두 건
+    (4, 5, True),       # 사용자가 본 그 화면
+])
+def test_짓는_함수가_같은_수에는_빈_글자를_낸다(missing, rows, says):
+    """짓는 자리는 하나다 — 화면도 엑셀도 이 함수만 부른다."""
+    from app.services.report import meeting_ask_count_note
+
+    note, why = meeting_ask_count_note(missing, rows)
+    assert bool(note) is says and bool(why) is says, (note, why)
+    if says:
+        assert note == f"요청 {rows}건"
+        assert str(missing) in why and str(rows) in why
+
+
+def test_화면과_엑셀이_같은_말로_설명한다(db, users, logged):
+    """★ 화면에만 있으면 파일로 받는 사람은 여전히 헷갈린다.
+
+    글자를 두 곳에서 지으면 갈린다 — 짓는 곳은
+    `report.meeting_ask_count_note` 하나다.
+    """
+    from app.services import report as report_svc
+
+    when = _four_of_five(db, users)
+    data = report_svc.monthly(db, when.year, when.month, users["u1"])
+    why = data["ir_meeting_ask_rows_why"]
+    assert why, "설명할 것이 있는데 빈 글자다"
+
+    assert why in _report(logged, when), "화면에 없다"
+    assert why in "\n".join(_cells(_reactions_sheet(logged, when))
+                            + _cells(_meetings_sheet(logged, when))), "엑셀에 없다"
+
+
+def test_엑셀이_명과_건을_나란히_싣는다(db, users, logged):
+    """`(명)` 만 있으면 파일에서는 여전히 단위가 안 보인다."""
+    when = _four_of_five(db, users)
+    ws = _meetings_sheet(logged, when)
+    pairs = {str(r[0].value): r[1].value for r in ws.iter_rows(max_col=2)
+             if r[0].value}
+    assert pairs.get("미팅 요청 안 보냄(명)") == 4
+    assert pairs.get("그 담당자가 받은 자료 요청(건)") == 5
+
+
+def test_엑셀도_같을_때는_그_줄을_안_싣는다(db, users, logged):
+    when = _old_month()
+    for name, company in (("가담당", "샘플애그"), ("나담당", "샘플메디")):
+        _delivered(db, users, _contact(db, users, name), company, when=when)
+
+    cells = _cells(_meetings_sheet(logged, when))
+    assert "미팅 요청 안 보냄(명)" in cells
+    assert "그 담당자가 받은 자료 요청(건)" not in cells
+
+
+def test_건수를_화면이_따로_세지_않는다(db, users, logged, monkeypatch):
+    """★ 세는 자리는 `pipeline.meeting_ask_state` 하나다.
+
+    그 함수가 내는 값을 바꿔치면 **화면이 그대로 따라와야** 한다. 화면이나
+    보고가 요청 줄을 다시 세고 있다면 여기서 깨진다 — 두 곳에서 세면 판과
+    표의 수가 또 갈린다.
+    """
+    from app.services import report as report_svc
+
+    real = report_svc.meeting_ask_state
+
+    def bumped(db_, requests, **kw):
+        state = real(db_, requests, **kw)
+        for one in state.values():
+            one["requests"] = 9          # 진짜와 다른 값
+        return state
+
+    monkeypatch.setattr(report_svc, "meeting_ask_state", bumped)
+
+    when = _old_month()
+    _delivered(db, users, _contact(db, users, "가담당"), "샘플애그", when=when)
+
+    assert "요청 9건" in _ask_li(_report(logged, when)), "화면이 따로 세고 있다"

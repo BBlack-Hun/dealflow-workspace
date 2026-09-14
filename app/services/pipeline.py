@@ -151,6 +151,7 @@ def meeting_ask_state(db: Session, requests, *,
     돌려주는 것은 `{담당자 id: {...}}` — 자료를 전달받은 담당자만 들어 있다.
 
         delivered_at  마지막으로 자료를 받은 날
+        requests      그 담당자가 자료를 받은 **요청 줄 수** (보통 1)
         asked         미팅 요청을 보냈는가
         asked_at      보냈으면 그 날 (안 보냈으면 빈 글자)
         due           보내야 하는 날 (= 전달일 + `IR_MEETING_ASK_DAYS`)
@@ -192,10 +193,16 @@ def meeting_ask_state(db: Session, requests, *,
     today = today or date.today()
 
     # ── 언제부터 세는가 — 담당자별 **마지막 전달일** ──────────────────────
+    #
+    # 줄 수(`lines`)도 여기서 함께 센다. 화면이 따로 세면 판과 표의 수가 또
+    # 갈린다 — 받은 줄을 아는 곳은 이 함수뿐이니(요청 줄을 받는다) 세는 것도
+    # 여기 한 번이다.
     anchors: Dict[int, str] = {}
+    lines: Dict[int, int] = {}
     for row in requests:
         if row.status != "delivered":
             continue
+        lines[row.contact_id] = lines.get(row.contact_id, 0) + 1
         day = (row.delivered_at or "")[:10]
         if day and day > anchors.get(row.contact_id, ""):
             anchors[row.contact_id] = day
@@ -248,6 +255,9 @@ def meeting_ask_state(db: Session, requests, *,
             due = ""
         out[contact_id] = {
             "delivered_at": delivered,
+            # 이 담당자가 자료를 받은 **요청 줄 수**. 사람 수와 줄 수가 왜
+            # 다른지를 화면이 말할 수 있게 하는 값이다(보통 1).
+            "requests": lines.get(contact_id, 0),
             "asked": ok,
             "asked_at": when if ok else "",
             "due": due,
