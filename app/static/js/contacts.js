@@ -54,6 +54,77 @@
     msg.className = "hint" + (isError ? " error" : "");
   }
 
+  // ── 다시 그릴 때 **표가 서 있던 자리를 잃지 않는다** ──────────────────
+  //
+  // 수정창에서 [저장]·[삭제]·[이관]·[감추기] 를 누르면 화면을 통째로 다시
+  // 받는다. 그 까닭은 그대로다 — **표에 선 값 중에 서버가 만드는 것이 있다.**
+  // 최근 딜소개·반응 같은 집계, 방 상태(`room-badge`), 연결 상태, 그리고
+  // 서버가 저 혼자 바꾸는 값(방 이름을 지우면 따라 바뀌는 연결 상태 ·
+  // `room_verified` 가 `unverified` 로 돌아가는 것 — `routers/contacts.py` 의
+  // `update_contact`). 저장 응답에는 그것들이 안 실려 오므로, 화면에서 그 줄만
+  // 고쳐 그리면 **서버가 바꾼 값이 옛것으로 남는다.** 그래서 되그리기를
+  // 없애지 않았다. 그 값들이 맞게 보이는 유일한 길이 다시 받는 것이다.
+  //
+  // 없앤 것은 **자리 잃음**이다. 여든 줄짜리 명단의 예순째 줄을 고칠 때마다
+  // 표가 (0,0) 으로 돌아가서, 고칠 때마다 그 줄을 처음부터 다시 찾아야 했다.
+  // 가로로도 1,900px 넘게 밀어 둔 표라 두 방향 다 잃는다.
+  //
+  // 기억은 `sessionStorage` 에 **이 주소 몫으로만** 둔다 — 명단마다 탭이
+  // 다르고(`?sheet=…`), 남겨 두면 다음에 그 화면을 열 때 엉뚱한 자리로 간다.
+  // 그래서 되돌린 즉시 지운다. 못 쓰는 환경(사생활 보호 모드)에서도 되그리기
+  // 자체는 되어야 하므로 전부 `try` 로 감싼다 — 자리는 곁가지다.
+  function scrollKey() {
+    var at = window.location || {};
+    return "dealflow:list-scroll:" + (at.pathname || "") + (at.search || "");
+  }
+
+  function tableWrap() {
+    return table && table.closest ? table.closest(".table-wrap") : null;
+  }
+
+  function reload() {
+    var wrap = tableWrap();
+    try {
+      if (wrap) {
+        window.sessionStorage.setItem(scrollKey(), JSON.stringify({
+          x: wrap.scrollLeft || 0, y: wrap.scrollTop || 0,
+          page: window.pageYOffset || 0
+        }));
+      }
+    } catch (err) { /* 자리는 곁가지다 — 못 적어도 다시 받는 것은 한다 */ }
+    window.location.reload();
+  }
+
+  function restoreScroll() {
+    var wrap = tableWrap();
+    if (!wrap) return;
+    var raw = null;
+    try {
+      raw = window.sessionStorage.getItem(scrollKey());
+      window.sessionStorage.removeItem(scrollKey());
+    } catch (err) {
+      return;
+    }
+    if (!raw) return;
+    var at;
+    try { at = JSON.parse(raw); } catch (err) { return; }
+    if (!at) return;
+
+    function put() {
+      wrap.scrollLeft = at.x || 0;
+      wrap.scrollTop = at.y || 0;
+      if (at.page) window.scrollTo(0, at.page);
+    }
+    put();
+    // **한 번으로는 모자란다.** 표 키는 `table_fit.js` 가 감싸개의 실제 자리를
+    // 재서 나중에 정하고(`--head`), 글꼴이 늦게 오면 한 번 더 바뀐다. 키가
+    // 정해지기 전에 넣은 세로 자리는 브라우저가 0 으로 깎는다 — 그림이 다
+    // 선 뒤에 한 번 더 넣는다.
+    if (window.addEventListener) {
+      window.addEventListener("load", put, { once: true });
+    }
+  }
+
   // 수정창을 **모달**로 세운다 — 뒷막 · Escape · 미저장 확인은 공통 부품이
   // 맡는다(`panel_modal.js`). 딜 기업 DB 도 같은 부품을 쓴다: 같은 판단이 두
   // 곳에 있으면 반드시 한쪽이 낡는다.
@@ -222,8 +293,9 @@
         // `지금 연결 중` 으로 계속 뜨는 이유를 아무도 알 수 없었다.
         // 새로고침이 뒤따르므로 화면에 적어 두면 그대로 지나간다 — 멈춰 세운다.
         if (res.d.connect_note) alert(res.d.connect_note);
-        // 표의 집계값(최근 딜소개·반응)은 서버에서 만든다 → 새로고침이 가장 정확하다.
-        window.location.reload();
+        // 표의 집계값(최근 딜소개·반응)은 서버에서 만든다 → 다시 받는 것이
+        // 가장 정확하다. **표가 서 있던 자리는 들고 간다**(위 `reload`).
+        reload();
       })
       .catch(function () { setMsg("저장 오류", true); });
   }
@@ -260,7 +332,7 @@
           alert(why);
           return;
         }
-        window.location.reload();
+        reload();
       })
       .catch(function () { setMsg("삭제 오류", true); });
   }
@@ -309,7 +381,7 @@
               "\n\n되돌리려면 " + owner + " 님이(또는 관리자가) 같은 자리에서 도로 넘기면 됩니다.");
         // 명단별 인원(탭)·전체 수·필터의 `N / M명` 은 모두 서버가 그린다 —
         // 줄만 지우면 숫자가 옛것으로 남는다.
-        window.location.reload();
+        reload();
       })
       .catch(function () { setMsg("이관 요청 오류", true); btn.disabled = false; });
   }
@@ -370,7 +442,7 @@
       })
         .then(function (r) {
           if (!r.ok) throw new Error();
-          window.location.reload();
+          reload();
         })
         .catch(function () { setMsg("감추지 못했습니다", true); });
     });
@@ -435,6 +507,9 @@
   // window 로 내보내 부르는 방법도 있지만, 부르는 곳이 여기 한 군데뿐인 함수를
   // 페이지 전역에 올려 두면 다음 사람은 어디서 불러도 되는 함수로 읽는다.
   if (window.DEALFLOW_OPEN_CONTACT) loadContact(window.DEALFLOW_OPEN_CONTACT);
+
+  // 방금 [저장]·[삭제]·[이관]·[감추기] 로 다시 받은 화면이면 그 자리로.
+  restoreScroll();
 })();
 
 // NO 는 **보이는 것** 기준으로 1부터. 걸러낸 뒤 몇 명인지 그 자리에서 세기 위해서다

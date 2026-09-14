@@ -1097,6 +1097,14 @@ td.cell.strong { font-weight: 600; }
 td.cell.saving { background: #fff8e6; }
 td.cell.saved { background: #eaf7ee; transition: background .6s; }
 td.cell.save-failed { background: #fdecec; }
+/* **키보드가 지금 어느 칸에 있는가.**
+   칸이 스무 개 넘고 화면보다 1,900px 넓은 표에서 초점 표시가 없으면, 키를
+   눌러 옮겨 다닐 때 어디에 서 있는지 알 수가 없다 — 그러면 키로 다니지
+   못하고 다시 마우스로 조준하게 된다. `td` 가 아닌 칸(메모처럼 td 안쪽
+   div 인 것)도 같이 받게 `.cell[data-field]` 로 건다.
+   테두리가 아니라 `outline` 이다 — 테두리는 칸 폭을 늘려 표를 흔든다. */
+.cell[data-field]:focus { outline: 2px solid var(--brand); outline-offset: -2px;
+  background: #eef4ff; }
 .cell-input { width: 100%; border: 1px solid var(--brand); border-radius: 6px;
   padding: 4px 6px; font: inherit; font-size: 13px; line-height: 1.45; resize: vertical; }
 .sheet-foot { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 10px; }
@@ -1510,6 +1518,14 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
    테두리만 브랜드색으로 두고 굵게 하지 않는다. */
 .cell-pop-choice.suggested { border-color: var(--brand); color: var(--brand);
                              background: #eef2ff; }
+/* ↑↓ 로 짚고 있는 보기. 고른 값(`.on`)과 **다른 표시**여야 한다 — 짚은 것은
+   아직 저장된 값이 아니라 Enter 를 기다리고 있는 자리다. */
+.cell-pop-choice.key-on { outline: 2px solid var(--brand); outline-offset: 1px; }
+/* 숫자 단축키(`3` 한 번으로 셋째 보기). **글자가 아니라 속성으로** 그린다 —
+   글자에 섞어 넣으면 눌러 저장되는 값에 번호가 딸려 간다. 직접 적기 시작하면
+   속성이 지워지고 번호도 함께 사라진다(안 되는 길이 보이면 그게 더 나쁘다). */
+.cell-pop-choice[data-key]::before { content: attr(data-key); margin-right: 5px;
+  font-size: 10px; font-weight: 700; color: var(--muted); }
 
 /* ── 메일 칸의 도메인 후보 (static/js/email_hint.js) ───────────────────
    `@` 까지 치면 `친글자@도메인` 후보가 칸 바로 아래에 뜬다.
