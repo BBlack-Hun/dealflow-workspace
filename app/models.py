@@ -940,6 +940,11 @@ class ConsultingColumn(TimestampMixin, Base):
     sheet: Mapped[str] = mapped_column(String, default="스타트업")
     label: Mapped[str] = mapped_column(String)          # 시트의 열 이름 그대로
     position: Mapped[int] = mapped_column(Integer, default=0)   # 왼→오 순서
+    # `ContactColumn.month`·`kind` 와 **같은 칸**이다(뜻도 규칙도 같다 — 저쪽
+    # 설명 참고). 두 표가 달마다 늘어나는 같은 모양이라 읽는 쪽이 표마다 다른
+    # 방식을 배우지 않아도 되게 맞춘다.
+    month: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    kind: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
 
 class ConsultingCompany(TimestampMixin, Base):
@@ -1277,6 +1282,22 @@ class ContactColumn(TimestampMixin, Base):
     sheet: Mapped[str] = mapped_column(String)          # SheetOwner.label
     label: Mapped[str] = mapped_column(String)          # 시트의 열 이름 그대로
     position: Mapped[int] = mapped_column(Integer, default=0)   # 왼→오 순서
+    # 이 칸이 가리키는 **연·달**(`"2026-09"`)과 **종류**(`"리마인드 문자"`).
+    #
+    # 지금까지 그 둘은 이름 안에만 있었다(`9월 리마인드 문자`). 그래서 어느 달
+    # 칸인지 물으려면 읽는 쪽마다 이름을 다시 뜯어야 했고, **해는 아예 적혀
+    # 있지 않아** 12월과 1월이 나란히 서면 어느 해 것인지 이름으로 가릴 수가
+    # 없었다. 이름에만 있던 것을 값으로 올린다.
+    #
+    # `label` 은 **그대로 둔다.** 원본 시트·엑셀과 나란히 놓고 대조하는 글자라
+    # 앱이 다시 지어내면 안 된다(`services/monthly_columns.py` 모듈 설명).
+    # 여기 둘은 그 이름에서 읽어 낸 것이지 이름을 대신하는 것이 아니다.
+    #
+    # 달을 못 읽는 칸은 **둘 다 비운다**(`카톡방 연결여부` 처럼 애초에 월별 칸이
+    # 아닌 것들). 지어내면 없던 달이 생긴다 — 비어 있는 것이 "월별 칸이 아니다"
+    # 라는 뜻이다.
+    month: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    kind: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     # 이 칸을 **표에서 뺄까.**
     #
     # 명단마다 시트에서 그대로 딸려 온 옛 칸이 있다. 팀이 쓰는 한 가지 모양으로

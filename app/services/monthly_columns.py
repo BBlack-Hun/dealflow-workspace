@@ -102,7 +102,7 @@ from __future__ import annotations
 import json
 import re
 from datetime import date
-from typing import List, Optional, Sequence
+from typing import List, Mapping, Optional, Sequence
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -135,6 +135,23 @@ def month_of(label: str) -> Optional[int]:
     return value if 1 <= value <= 12 else None
 
 
+def _without_sent_days(label: str) -> str:
+    """이름에서 **보낸 날**만 뗀다. 달은 그대로 둔다.
+
+    `relabel`(다음 달 이름 짓기)과 `kind_of`(뒷말 읽기)가 **이 한 벌**을 쓴다.
+    둘이 각자 떼면 어느 날 한쪽만 고쳐져, 새로 서는 칸 이름과 이미 선 칸에서
+    읽어 낸 뒷말이 서로 다른 글자가 된다.
+    """
+    out = _DATE_PAREN.sub("", label or "")
+    # 괄호 없는 토막은 **그 칸의 달과 숫자가 같을 때만** 날짜로 본다. 달을 못
+    # 읽는 이름은 대조할 것이 없으니 손대지 않는다 — 지우는 쪽이 더 나쁘다.
+    was = month_of(out)
+    if was is not None:
+        out = _DATE_BARE.sub(
+            lambda m: "" if int(m.group(1)) == was else m.group(0), out)
+    return out
+
+
 def relabel(label: str, month: int) -> str:
     """`7월 리마인드 문자 (7/28)` + 8 → `8월 리마인드 문자`.
 
@@ -146,17 +163,65 @@ def relabel(label: str, month: int) -> str:
 
     보낸 날은 떼고 옮긴다 — `8월 딜소개 8/5 8/12 8/19` + 9 → `9월 딜소개`.
     """
-    out = _DATE_PAREN.sub("", label or "")
-    # 괄호 없는 토막은 **그 칸의 달과 숫자가 같을 때만** 날짜로 본다. 달을 못
-    # 읽는 이름은 대조할 것이 없으니 손대지 않는다 — 지우는 쪽이 더 나쁘다.
-    was = month_of(out)
-    if was is not None:
-        out = _DATE_BARE.sub(
-            lambda m: "" if int(m.group(1)) == was else m.group(0), out)
-    out = _MONTH.sub(f"{month}월", out)
+    out = _MONTH.sub(f"{month}월", _without_sent_days(label))
     # 안쪽 공백은 손대지 않는다 — 시트 이름에 두 칸짜리 공백이 그대로 들어
     # 있는 칸이 있고(`리마인드 카톡  or  TEL`), 고르면 시트와 글자가 달라진다.
     return out.strip()
+
+
+def kind_of(label: str) -> str:
+    """칸 이름에서 달·보낸날을 뗀 **뒷말**. `7월 리마인드 문자 (7/28)` → `리마인드 문자`.
+
+    `relabel` 이 다음 달 이름을 지을 때 **남겨 두는 그 부분**이다(위 `_without_sent_days`
+    를 함께 쓴다). 같은 뒷말이면 달만 다른 같은 성격의 칸이라, 이름에만 있던
+    `종류` 를 값으로 올릴 때 이것을 적는다.
+
+    안쪽 공백은 줄이지 않는다 — `6월 마지막주 리마인드 카톡  or  TEL` 의 두 칸짜리
+    공백은 시트에 그대로 있는 글자다. 앞뒤 공백만 턴다.
+    """
+    return _MONTH.sub("", _without_sent_days(label)).strip()
+
+
+def months_back(frm: int, month: int) -> int:
+    """`frm` 월에서 `month` 월까지 **거꾸로 몇 달**인가. 0~11.
+
+    이름에 연도가 없어서 이 셈 하나로 해를 가린다 — 1월에 선 `12월` 칸은 한 달
+    전(`(1 - 12) % 12 == 1`)이고, 2월에 서면 두 달 전이다. `latest_month`(본뜰
+    칸 고르기)와 `month_key_of`(이미 선 칸의 해 되찾기)가 같은 셈을 본다.
+    """
+    return (frm - month) % 12
+
+
+def month_key_of(label: str, created: Optional[date] = None,
+                 runs: Optional[Mapping[str, Sequence[str]]] = None
+                 ) -> Optional[str]:
+    """이미 서 있는 칸이 가리키는 **연·달**(`"2026-07"`). 못 읽으면 None.
+
+    칸 이름에는 달만 적혀 있고 해가 없다(`7월 리마인드 문자`). 해를 되찾는 길이
+    둘인데, **확실한 쪽을 먼저** 본다.
+
+    1. `runs` — `MonthlyColumnRun.labels` 를 그 표(`target`·`scope`) 몫만 모아
+       `{이름: [달, …]}` 로 준 것. 앱이 그 칸을 **세운 날 적어 둔 기록**이라
+       짐작이 아니다. 같은 이름이 서로 다른 달로 두 번 적혀 있으면(해가 바뀌어
+       `9월` 이 다시 선 표) 어느 쪽인지 고를 근거가 없으므로 다음으로 넘긴다.
+    2. `created` 에서 **거꾸로 세기** — 칸이 만들어진 날에서 그 달까지 거꾸로
+       몇 달인지(`months_back`)만큼 물린 해. 8월 28일에 선 `7월` 칸은 한 달
+       전이므로 그해 7월이다. 앱이 새 달 칸을 세우는 것은 그 달 안이고, 시트를
+       옮겨 실은 칸도 옮긴 달 언저리라 이 셈이 맞는다.
+    3. 둘 다 못 읽으면 **None** — `카톡방 연결여부` 처럼 애초에 달 칸이 아닌
+       것들이다. 지어내지 않는다.
+    """
+    if runs:
+        months = {m for m in runs.get(label or "", ()) if m}
+        if len(months) == 1:
+            return months.pop()
+    month = month_of(label)
+    if month is None or created is None:
+        return None
+    # 그 달까지 거꾸로 물린다. 12월에서 1월로 넘어가는 자리를 달 수로 셈해
+    # 해가 저절로 하나 줄어든다.
+    total = created.year * 12 + (created.month - 1) - months_back(created.month, month)
+    return f"{total // 12:04d}-{total % 12 + 1:02d}"
 
 
 def latest_month(months: Sequence[Optional[int]],
@@ -178,7 +243,7 @@ def latest_month(months: Sequence[Optional[int]],
     seen = [m for m in months if m is not None]
     if not seen:
         return None
-    return min(seen, key=lambda m: (month - m) % 12)
+    return min(seen, key=lambda m: months_back(month, m))
 
 
 def plan(labels: Sequence[str], month: int,
