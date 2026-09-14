@@ -458,3 +458,28 @@ def test_the_picker_is_a_dropdown_not_buttons(client, db, users):
     assert len(re.findall(r'class="chip[^"]*"[^>]*>\d+년 \d+월', picker)) == 0
     # 월간·연간은 남긴다 — 두 개뿐이라 눈에 보이는 편이 낫다
     assert ">월간<" in picker and ">연간<" in picker
+
+
+def test_ir_판의_안_보낸_건은_무엇이_안_나갔는지_말한다(client, db):
+    """`아직 안 보냄` 만으로는 무엇이 안 나갔는지 알 수 없다.
+
+    업무 보고에는 발송 회차에도 `아직 안 보냄` 이 있다(`services/report.py` 의
+    `left_label` — 그 회차에서 아직 안 나간 건수다). 두 자리가 같은 말을
+    쓰면 보는 사람이 IR 자료 이야기인지 회차 이야기인지 못 가른다.
+    **IR 판의 것만** 무엇인지 밝힌다 — 회차 쪽은 그대로 둔다.
+    """
+    from app.routers import data_io
+    import inspect
+
+    page = (__import__("pathlib").Path("app/templates/report.html")).read_text(encoding="utf-8")
+    assert "IR 자료 아직 안 보냄" in page
+    # 화면의 IR 판에 맨 `아직 안 보냄` 이 남아 있으면 안 된다.
+    assert "<span>아직 안 보냄</span>" not in page
+
+    # 엑셀도 같은 말을 쓴다 — 화면만 고치면 파일을 받는 사람은 옛 말을 본다.
+    src = inspect.getsource(data_io)
+    assert '("IR 자료 아직 안 보냄", data["ir_open"])' in src
+
+    # 회차 쪽(`left_label`)은 건드리지 않았다.
+    from app.services import report as report_svc
+    assert '"아직 안 보냄"' in inspect.getsource(report_svc)
