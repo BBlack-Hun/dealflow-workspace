@@ -130,3 +130,33 @@ def test_한_줄_삭제가_막혔을_때_왜_막혔는지_화면에_뜨는가():
         text=True, timeout=60,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+SCROLL_TEST = Path(__file__).resolve().parent / "js" / "contacts_scroll_keep_test.js"
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치 — 브라우저 로직 테스트 생략")
+def test_수정창_저장_뒤에_표가_서_있던_자리를_지키는가():
+    """[저장] 한 번에 표가 `(0,0)` 으로 돌아가면 **그 줄을 다시 찾아야** 한다.
+
+    담당 줄이 여든인 사람이 예순째 줄을 고칠 때마다 스크롤을 처음부터 다시
+    했다. 가로로도 1,900px 넘게 밀어 둔 표라 두 방향 다 잃는다.
+
+    **다시 받는 것 자체는 없애지 않았다.** 표에 선 값 중에 서버가 만드는 것이
+    있고(집계·방 상태·연결 상태), 저장 응답에는 그것들이 안 실려 온다 — 화면
+    에서 그 줄만 고쳐 그리면 서버가 저 혼자 바꾼 값이 옛것으로 남는다. 그래서
+    다시 받되 **자리만 들고 간다.** 여기서 그 셋을 다 잠근다:
+
+    · 저장하면 자리를 적어 두고 다시 받는가(그리고 `connect_note` 는 그대로
+      멈춰 세워 알리는가)
+    · 다시 받은 화면이 그 자리로 돌아가고, 적어 둔 자리를 지우는가
+      (안 지우면 다음에 그 화면을 그냥 열 때 엉뚱한 자리에서 시작한다)
+    · 적어 둔 자리가 없으면 아무 데도 안 미는가
+
+    로컬에서는 `node tests/js/contacts_scroll_keep_test.js` 로도 돈다.
+    """
+    result = subprocess.run(
+        [shutil.which("node"), str(SCROLL_TEST)], capture_output=True, text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr

@@ -36,6 +36,29 @@
 // 창 바깥을 눌렀을 때** 끝난다 — 창 안이면 여백이든 보기 목록이든 안 닫힌다.
 // 저장 뒤 `inline-saved` 이벤트에 서버 응답(detail.data)이 실려 온다 —
 // 다른 칸이 따라 바뀌는 표(기업의 '소개 가능')는 그걸 보고 고쳐 그린다.
+//
+// ── 키보드로 칸·줄 사이를 넘어간다 ──────────────────────────────────────
+//
+// 담당 줄이 여든인 사람이 같은 칸을 여든 번 고친다. 지금까지는 칸 하나를
+// 끝낼 때마다 초점이 문서 맨 위(BODY)로 빠져서, **다음 칸을 마우스로 다시
+// 조준**해야 했다 — 여든 줄이면 백예순 번이다. 값을 적는 일이 아니라 겨냥하는
+// 일이 대부분이었다.
+//
+//   Tab · Shift+Tab   옆 칸. **줄의 끝에서는 막지 않는다** — 브라우저가 차례대로
+//                     그 줄의 [수정] 단추로, 그다음 줄로 넘긴다. 여기서 가로채
+//                     다음 줄로 건너뛰면 표 안에서 그 단추에 닿을 길이 없어진다.
+//   Enter             고치기 시작 / 고치던 것을 저장하고 **아래 줄 같은 칸**으로.
+//                     시트에서 세로로 훑어 내려가며 적던 그 손놀림이다.
+//   방향키            고치지 않는 동안의 이동. 위·아래는 같은 칸, 좌·우는 옆 칸.
+//   pick 창           ↑↓ 로 보기를 고르고 Enter 로 확정. 보기에는 숫자가 붙어
+//                     있어 `3` 한 번으로도 고른다(아래 `startPick`).
+//
+// **거른 표에서는 보이는 줄만 지난다**(`tr.hidden` 을 건너뛴다). 안 그러면
+// 걸러 놓고 안 보이는 줄을 고치게 된다 — 고친 사람은 무엇을 고쳤는지 모른다.
+//
+// **초점이 간 칸이 안 보이면 따라 민다**(`reveal`). 이 표들은 화면보다
+// 1,900px 넘게 넓고 첫 열·머리행이 고정이라, 그냥 두면 초점이 고정된 칸
+// **밑에** 숨거나 화면 밖에 선다 — 그러면 사람이 길을 잃는다.
 (function (global) {
   "use strict";
 
@@ -65,6 +88,103 @@
         editing = null;
         throw err;
       }
+    });
+
+    // ── 키보드 길 ──────────────────────────────────────────────────────
+    //
+    // **칸이 초점을 받을 수 있어야 키가 닿는다.** 표에 그려져 있는 칸에 한 번만
+    // 달아 둔다 — 이 표들은 서버가 다 그려 보내고 줄이 늘거나 줄지 않는다.
+    // 이미 적혀 있으면 그대로 둔다(화면이 제 뜻으로 정해 둔 차례를 덮지 않게).
+    table.querySelectorAll(".cell[data-field]").forEach(function (cell) {
+      if (!cell.hasAttribute("tabindex")) cell.setAttribute("tabindex", "0");
+    });
+
+    // 그 줄에서 고칠 수 있는 칸들, **그려진 차례 그대로**.
+    function cellsIn(row) {
+      return Array.prototype.slice.call(row.querySelectorAll(".cell[data-field]"));
+    }
+
+    // **보이는 줄만.** 거른 표에서 `tr.hidden` 을 지나가면, 걸러 놓고 안 보이는
+    // 줄을 고치게 된다(`filters.js` 가 줄을 그렇게 감춘다).
+    // 머리행은 고칠 칸이 없어서 저절로 빠진다 — `thead` 를 이름으로 짚지 않는
+    // 이유는 이 편집기를 쓰는 표 중에 머리를 따로 안 감싼 것이 있어서다.
+    function liveRows() {
+      return Array.prototype.filter.call(table.querySelectorAll("tr"),
+        function (tr) { return !tr.hidden && cellsIn(tr).length > 0; });
+    }
+
+    function sideways(cell, step) {
+      var row = cell.closest("tr");
+      if (!row) return null;
+      var list = cellsIn(row);
+      return list[list.indexOf(cell) + step] || null;
+    }
+
+    // 위·아래는 **같은 칸**으로 간다. 자리 번호가 아니라 `data-field` 로 찾는다 —
+    // 줄마다 칸 수가 다른 표(감춘 줄에만 서는 체크상자)에서 번호로 세면 한 칸씩
+    // 밀린 자리에 내려앉는다. 이름이 없으면 그때만 번호로 물러난다.
+    function downward(cell, step) {
+      var row = cell.closest("tr");
+      var rows = liveRows();
+      var at = rows.indexOf(row);
+      if (at < 0) return null;          // 고치는 사이에 걸러져 감춰진 줄
+      var next = rows[at + step];
+      if (!next) return null;
+      var field = cell.getAttribute("data-field");
+      var list = cellsIn(next);
+      for (var i = 0; i < list.length; i += 1) {
+        if (list[i].getAttribute("data-field") === field) return list[i];
+      }
+      return list[cellsIn(row).indexOf(cell)] || null;
+    }
+
+    // 옮겨 간 칸에 초점을 주고, 안 보이면 따라 민다.
+    function focusCell(cell) {
+      if (!cell) return;
+      // `preventScroll` — **브라우저가 먼저 밀지 못하게 한다.** 브라우저의
+      // '보이게 하기' 는 붙어 선 칸(`.stick`)과 머리행을 모르기 때문에 초점을
+      // 그 밑으로 밀어 넣는다. 우리가 밀기 전에 그쪽이 움직이면 화면이 두 번
+      // 튄다. 모르는 브라우저는 이 값을 무시하고 예전처럼 민다 — 그래도 바로
+      // 뒤의 `reveal` 이 제자리로 잡는다.
+      try { cell.focus({ preventScroll: true }); } catch (err) { /* 초점은 곁가지다 */ }
+      reveal(cell);
+    }
+
+    // 고치던 것을 끝낸 뒤 **아래 줄 같은 칸**으로. 마지막 줄이면 제자리에
+    // 남는다 — 초점을 놓아 버리면 다음 Tab 이 문서 맨 위로 간다(고치기 전과
+    // 같은 상태다).
+    function stepDown(cell) {
+      focusCell(downward(cell, 1) || cell);
+    }
+
+    table.addEventListener("keydown", function (e) {
+      var cell = e.target && e.target.closest && e.target.closest(".cell[data-field]");
+      // **칸 안의 입력칸에서 친 키는 그 입력칸이 맡는다.** 여기서 같이 받으면
+      // 글자를 치는 동안 초점이 옆 칸으로 달아난다.
+      if (!cell || cell !== e.target || !table.contains(cell)) return;
+      if (e.altKey || e.ctrlKey || e.metaKey) return;
+
+      // F2 는 시트에서 '이 칸 고치기'다. Enter 와 같이 둔다 — 쓰던 손이 있다.
+      if (e.key === "Enter" || e.key === "F2") {
+        e.preventDefault();
+        start(cell);
+        return;
+      }
+      if (e.key === "Tab") {
+        var side = sideways(cell, e.shiftKey ? -1 : 1);
+        // 줄의 끝에서는 **브라우저에 맡긴다** — 그래야 [수정] 단추와 다음 줄로
+        // 차례가 이어진다(위 머리말 참고).
+        if (!side) return;
+        e.preventDefault();
+        focusCell(side);
+        return;
+      }
+      var step = ARROWS[e.key];
+      if (!step) return;
+      var to = step[0] ? downward(cell, step[0]) : sideways(cell, step[1]);
+      if (!to) return;        // 끝 줄·끝 칸에서는 막지 않는다(표가 밀리게 둔다)
+      e.preventDefault();
+      focusCell(to);
     });
 
     function start(cell) {
@@ -99,11 +219,38 @@
       // 실제로 그랬다(아래 setSelectionRange 참고).
       input.addEventListener("blur", finish);
       input.addEventListener("keydown", function (e) {
-        if (e.key === "Escape") { input.value = before; input.blur(); }
+      // **한글을 조합하는 중에는 비켜선다.** 한글 입력기는 글자를 만드는
+      // 동안 Enter·방향키를 제가 쓴다(조합을 굳히고, 후보를 고른다). 여기서
+      // 가로채면 `ㄱㅏ` 를 굳히려고 친 Enter 가 **칸을 저장하고 아래 줄로**
+      // 가 버려서, 만들던 글자가 통째로 사라진다 — 이 앱은 적는 말이 죄다
+      // 한글이라 그 자리가 곧 일상이다. `keyCode 229` 는 옛 브라우저의 같은 말.
+      if (e.isComposing || e.keyCode === 229) return;
+        // 끝낸 뒤에 **초점을 그 칸에 돌려준다.** 안 돌려주면 초점이 문서 맨
+        // 위(BODY)로 빠져서, 다음 칸을 마우스로 다시 조준해야 한다 — 이 고침이
+        // 없애려는 바로 그것이다.
+        if (e.key === "Escape") {
+          input.value = before;
+          input.blur();
+          focusCell(cell);
+          return;
+        }
         // 여러 줄 칸에서는 엔터가 줄바꿈이어야 한다. 저장은 Ctrl/Cmd+Enter.
         if (e.key === "Enter" && (!multi || e.metaKey || e.ctrlKey)) {
           e.preventDefault();
+          input.blur();                 // 여기서 finish() 가 돌아 저장까지 간다
+          stepDown(cell);
+          return;
+        }
+        // Tab 은 **저장하고 옆 칸**이다. 옮겨 간 칸을 바로 열지는 않는다 —
+        // 지나가는 길에 값이 열려 버리면, 훑어보려던 칸이 저장 대상이 된다.
+        if (e.key === "Tab") {
+          // **여기서는 줄의 끝에서도 막는다.** 안 막으면 브라우저가 초점을
+          // 옮기는 사이에 `blur` 가 이 입력칸을 지워 버려서, 초점이 어디로
+          // 갈지가 브라우저 사정이 된다. 저장하고 그 칸에 돌려놓으면, 다음
+          // Tab 은 칸에서 눌리는 것이라 예전처럼 [수정] 단추로 이어진다.
+          e.preventDefault();
           input.blur();
+          focusCell(sideways(cell, e.shiftKey ? -1 : 1) || cell);
         }
       });
 
@@ -170,14 +317,42 @@
         if (e.key !== "Escape") return;
         canceled = true;
         finish();
+        // 취소해도 **초점은 표에 남는다.** 안 돌려주면 Escape 한 번에 초점이
+        // 문서 맨 위로 빠져, 다음 칸을 다시 마우스로 찾아야 한다.
+        focusCell(cell);
       }
+      // ── Tab — **저장하고 옆 칸** ─────────────────────────────────────
+      //
+      // 창 하나에 걸어 두고 long·pick·email 이 함께 쓴다. 안 걸어 두면 Tab 이
+      // 브라우저 기본대로 초점만 빼 가는데, **이 창은 바깥을 '눌렀을' 때만
+      // 닫히므로**(#152) 초점이 빠져도 안 닫힌다 — 창은 떠 있는데 키는 딴 데서
+      // 먹는 상태가 된다. 칸이 초점을 받게 된 뒤로는 그 자리가 늘 열려 있다.
+      //
+      // 줄의 끝에서도 막는다(칸 안에서 고칠 때와 같은 이유). 저장하고 그 칸에
+      // 돌려놓으면 다음 Tab 은 칸에서 눌리는 것이라 [수정] 단추로 이어진다.
+      function onTab(e) {
+        if (e.key !== "Tab" || e.isComposing || e.keyCode === 229) return;
+        e.preventDefault();
+        var side = sideways(cell, e.shiftKey ? -1 : 1);
+        finish();
+        focusCell(side || cell);
+      }
+      pop.addEventListener("keydown", onTab);
+
       document.addEventListener("pointerdown", onDown, true);
       document.addEventListener("keydown", onKey);
 
       place();
       try {
         input.focus();
-        putCaretAtEnd(input, input.tagName === "TEXTAREA", "");
+        // **값이 정해진 칸은 글자를 통째로 골라 둔다**(`data-select-all`).
+        // 커서를 끝에 두면 치는 글자가 옛 값 **뒤에 이어 붙어서**, `미확인` 이
+        // 든 칸에 적으면 `미확인투자유치 진행 중` 이 저장된다 — 보기가 정해진
+        // 칸에서 그런 값이 하나 생기면 필터가 그 줄만 따로 센다.
+        // 자유롭게 적는 칸(long·email)은 그대로 끝에 둔다 — 그쪽은 이어 적는
+        // 것이 하려던 일이다(메모에 한 줄 덧붙이기 · 주소 뒤 도메인 고치기).
+        if (input.getAttribute("data-select-all") && input.select) input.select();
+        else putCaretAtEnd(input, input.tagName === "TEXTAREA", "");
       } catch (err) {
         /* 커서 위치는 곁가지다 */
       }
@@ -228,9 +403,11 @@
 
         area.addEventListener("input", grow);
         area.addEventListener("keydown", function (e) {
+          if (e.isComposing || e.keyCode === 229) return;   // 조합 중에는 비켜선다
           if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
             e.preventDefault();
             api.close();
+            stepDown(cell);
           }
         });
         grow();
@@ -252,6 +429,9 @@
         input.type = "text";
         input.className = "cell-pop-input one-line";
         input.value = before;
+        // 열면 글자가 통째로 골라져 있다 — 치는 순간 옛 값이 밀려난다.
+        // 왜 이 칸만 그런지는 `popover` 의 초점 잡는 자리에 적어 두었다.
+        input.setAttribute("data-select-all", "1");
         api.pop.appendChild(input);
 
         // 정해진 보기가 있는 칸은 그것을 먼저 세운다. 값이 하나도 없는
@@ -271,15 +451,25 @@
         var suggested = picked.suggested;
         used = picked.order;
 
+        // 키로 고르는 자리. `at` 은 지금 **키가 짚고 있는** 보기다 —
+        // `-1` 이면 아무것도 안 짚은 것이고, 그때 Enter 는 적힌 그대로 저장한다.
+        var chips = [];
+        var at = -1;
+
         if (used.length) {
           var box = document.createElement("div");
           box.className = "cell-pop-choices";
-          used.forEach(function (value) {
+          used.forEach(function (value, i) {
             var chip = document.createElement("button");
             chip.type = "button";
             chip.className = "cell-pop-choice" + (value === before ? " on" : "")
               + (suggested.indexOf(value) !== -1 ? " suggested" : "");
             chip.textContent = value;
+            // **번호는 글자가 아니라 속성이다**(`data-key`). CSS 가 앞에 그려
+            // 준다 — 글자에 섞어 넣으면 눌러 저장되는 값에 번호가 딸려 간다.
+            // 아홉까지만 붙인다. 두 자리 수를 치는 동안에는 앞자리가 먼저
+            // 저장돼 버려서, 번호가 오히려 함정이 된다.
+            if (i < 9) chip.setAttribute("data-key", String(i + 1));
             if (suggested.indexOf(value) !== -1) {
               chip.title = "한줄 소개를 보고 고른 후보입니다 — 맞는지 보고 고르세요";
             }
@@ -288,6 +478,7 @@
               e.preventDefault();
               api.commit(value);
             });
+            chips.push(chip);
             box.appendChild(chip);
           });
           api.pop.appendChild(box);
@@ -295,12 +486,72 @@
         api.pop.appendChild(hintLine(
           suggested.length
             ? "앞 " + suggested.length + "개는 한줄 소개를 보고 고른 후보입니다 "
-              + "— 맞는 것이 없으면 아래에서 고르세요 · Enter 저장 · Esc 취소"
-            : used.length ? "골라 누르거나 새로 적습니다 · Enter 저장 · Esc 취소"
+              + "— 맞는 것이 없으면 아래에서 고르세요 · ↑↓ 또는 숫자키로 고르기 "
+              + "· Enter 저장 · Esc 취소"
+            : used.length ? "↑↓ 또는 숫자키로 고릅니다(새로 적어도 됩니다) "
+                            + "· Enter 저장 · Esc 취소"
                           : "Enter 저장 · Esc 취소"));
 
+        // 지금 값에서 시작한다. 목록에 없는 값(자유롭게 적어 둔 것)이면 아무
+        // 것도 안 짚는다 — 그래야 **아무 키도 안 누르고 Enter** 를 쳤을 때
+        // 값이 그대로 남는다(고치려던 것이 아니라 열어 본 것일 수 있다).
+        mark(used.indexOf(before));
+
+        function mark(next) {
+          at = next;
+          chips.forEach(function (chip, i) {
+            chip.classList.toggle("key-on", i === at);
+          });
+          // 보기 목록은 132px 에서 넘치면 스크롤된다 — 짚은 것이 그 밖에
+          // 있으면 무엇을 고르는 중인지 안 보인다.
+          if (at >= 0 && chips[at] && chips[at].scrollIntoView) {
+            try { chips[at].scrollIntoView({ block: "nearest" }); } catch (err) { }
+          }
+        }
+
+        function move(step) {
+          if (!chips.length) return;
+          if (at < 0) mark(step > 0 ? 0 : chips.length - 1);
+          else mark(Math.min(chips.length - 1, Math.max(0, at + step)));
+        }
+
+        // 고르고 **아래 줄 같은 칸**으로. 여든 줄을 같은 칸으로 훑어 내려가는
+        // 것이 이 표에서 하는 일이다.
+        function take(value) {
+          var to = downward(cell, 1) || cell;
+          api.commit(value);
+          focusCell(to);
+        }
+
+        // **직접 적기 시작하면 숫자 단축키를 거둔다.** 값에 숫자가 들어가는
+        // 칸이 있어서(`2026-09`), 치는 숫자가 보기를 고르면 적을 수가 없다.
+        // 번호 표시도 같이 지운다 — 안 되는 길이 보이면 그게 더 나쁘다.
+        var typed = false;
+        input.addEventListener("input", function () {
+          if (typed) return;
+          typed = true;
+          chips.forEach(function (chip) { chip.removeAttribute("data-key"); });
+          mark(-1);
+        });
+
         input.addEventListener("keydown", function (e) {
-          if (e.key === "Enter") { e.preventDefault(); api.close(); }
+          // 조합 중에는 비켜선다 — ↑↓ 는 입력기의 후보 고르기이고, Enter 는
+          // 만들던 글자를 굳히는 키다(위 `start` 의 같은 자리 참고).
+          if (e.isComposing || e.keyCode === 229) return;
+          if (e.key === "ArrowDown") { e.preventDefault(); move(1); return; }
+          if (e.key === "ArrowUp") { e.preventDefault(); move(-1); return; }
+          if (!typed && !e.altKey && !e.ctrlKey && !e.metaKey
+              && /^[1-9]$/.test(e.key) && chips[Number(e.key) - 1]) {
+            e.preventDefault();
+            take(used[Number(e.key) - 1]);
+            return;
+          }
+          if (e.key === "Enter") {
+            e.preventDefault();
+            if (at >= 0) { take(used[at]); return; }
+            api.close();
+            stepDown(cell);
+          }
         });
         return input;
       });
@@ -332,15 +583,21 @@
         if (hint) {
           hint.attach(input, {
             anchor: api.pop,
-            // 고를 것이 없을 때의 Enter — 적힌 그대로 저장하고 닫는다.
-            onEnter: api.close,
+            // 고를 것이 없을 때의 Enter — 적힌 그대로 저장하고 **아래 줄
+            // 같은 칸**으로. 여기서 초점을 놓으면 메일 칸만 흐름이 끊긴다.
+            onEnter: function () { api.close(); stepDown(cell); },
             // 목록이 뜨고 지면 창 높이가 바뀐다(아래로 자랄 자리 판정).
             onResize: api.place
           });
         } else {
           // 부품을 못 불러왔어도 **고치는 것 자체는 되어야 한다.**
           input.addEventListener("keydown", function (e) {
-            if (e.key === "Enter") { e.preventDefault(); api.close(); }
+            if (e.isComposing || e.keyCode === 229) return;   // 조합 중에는 비켜선다
+            if (e.key === "Enter") {
+              e.preventDefault();
+              api.close();
+              stepDown(cell);
+            }
           });
         }
         api.pop.appendChild(hintLine(
@@ -461,6 +718,65 @@
       .map(function (s) { return s.trim(); })
       .filter(function (s) { return s.length > 0; })
       .join("|");
+  }
+
+  // 방향키가 가리키는 곳 — `[줄, 칸]`. 하나는 늘 0 이다.
+  var ARROWS = { ArrowDown: [1, 0], ArrowUp: [-1, 0],
+                 ArrowRight: [0, 1], ArrowLeft: [0, -1] };
+
+  // 칸이 끝에 딱 붙으면 옆 칸과 구분이 안 간다 — 그만큼 더 민다.
+  var EDGE = 12;
+
+  // 초점이 간 칸이 안 보이면 **표를 따라 민다.**
+  //
+  // 브라우저에 맡길 수 없다. 이 표들은 머리행이 위에 붙어 서 있고(`sticky`)
+  // 왼쪽 한두 칸도 붙어 서 있다(`.stick` — 어느 기업 줄인지 잃지 않으려고).
+  // 브라우저의 '보이게 하기' 는 붙어 선 칸들을 모르기 때문에 초점을 그 **밑으로**
+  // 밀어 넣고 다 됐다고 본다 — 초점은 있는데 사람 눈에는 없다. 표가 화면보다
+  // 1,900px 넘게 넓어서 가로로는 아예 화면 밖에 서기도 한다.
+  //
+  // 그림이 없는 곳(검사의 가짜 DOM)에서는 잰 값이 전부 0 이라 아무 데도 안
+  // 민다 — 여기서 터지면 정작 봐야 할 것(키가 어디로 가는가)을 못 본다.
+  function reveal(cell) {
+    var wrap = cell.closest && cell.closest(".table-wrap");
+    if (!wrap || !wrap.getBoundingClientRect || !cell.getBoundingClientRect) return;
+    var box, view;
+    try {
+      box = cell.getBoundingClientRect();
+      view = wrap.getBoundingClientRect();
+    } catch (err) {
+      return;
+    }
+    if (typeof wrap.scrollLeft === "number") {
+      var left = view.left + stuckLeft(cell);
+      if (box.left < left) wrap.scrollLeft -= (left - box.left) + EDGE;
+      else if (box.right > view.right) wrap.scrollLeft += (box.right - view.right) + EDGE;
+    }
+    if (typeof wrap.scrollTop === "number") {
+      var top = view.top + stuckTop(wrap);
+      if (box.top < top) wrap.scrollTop -= (top - box.top) + EDGE;
+      else if (box.bottom > view.bottom) wrap.scrollTop += (box.bottom - view.bottom) + EDGE;
+    }
+  }
+
+  // 왼쪽에 붙어 선 칸들이 덮는 폭. **자기가 그 칸이면 0 이다** — 붙어 선 칸은
+  // 밀어도 제자리라 밀어 봐야 헛일이고, 빼 주면 표가 오른쪽으로 튄다.
+  function stuckLeft(cell) {
+    if (cell.closest && cell.closest(".stick")) return 0;
+    var row = cell.closest && cell.closest("tr");
+    if (!row) return 0;
+    var wide = 0;
+    row.querySelectorAll(".stick").forEach(function (el) {
+      if (el.getBoundingClientRect) wide += el.getBoundingClientRect().width || 0;
+    });
+    return wide;
+  }
+
+  // 위에 붙어 선 머리행의 키.
+  function stuckTop(wrap) {
+    var head = wrap.querySelector && wrap.querySelector("thead");
+    if (!head || !head.getBoundingClientRect) return 0;
+    return head.getBoundingClientRect().height || 0;
   }
 
   // 커서를 끝에 둔다. **아무 input 에서나 되는 게 아니다** — number·date·email

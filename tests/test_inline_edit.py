@@ -7,6 +7,8 @@
 from __future__ import annotations
 
 import pathlib
+import shutil
+import subprocess
 
 import pytest
 
@@ -676,3 +678,58 @@ def test_old_contract_values_are_not_treated_as_blocked(logged_in, db):
     db.add(IrCompany(name="예전값기업", sector_major="AI", contract_status="yes"))
     db.commit()
     assert "예전값기업" in logged_in.get("/deals").text
+
+
+# ── 키보드로 칸·줄 사이를 넘어간다 ──────────────────────────────────────────
+#
+# 로직이 브라우저에 있으므로 검사도 같은 언어로 둔다(tests/test_contacts_js.py 와
+# 같은 방식). node 가 없는 환경(운영 도커 이미지)에서는 건너뛴다 — 브라우저
+# 자산 검사라 서버를 띄우는 데 필요한 의존성이 아니다.
+
+KEYS_TEST = pathlib.Path(__file__).resolve().parent / "js" / "inline_edit_keys_test.js"
+
+
+@pytest.mark.skipif(shutil.which("node") is None,
+                    reason="node 미설치 — 브라우저 로직 테스트 생략")
+def test_키보드로_칸과_줄_사이를_넘어가는가():
+    """담당 줄이 여든인 사람이 **마우스로 조준하지 않고** 같은 칸을 훑는다.
+
+    칸 하나를 끝내면 초점이 문서 맨 위(BODY)로 빠졌다 — 표 안에서 초점을 받는
+    것이 그 줄의 [수정] 단추뿐이었기 때문이다. 그래서 여든 줄이면 다음 칸을
+    **백예순 번 겨냥**해야 했다. 적는 일보다 겨냥하는 일이 많았다.
+
+    여기서 잠그는 것:
+
+    · Tab 은 옆 칸. **줄의 끝에서는 가로채지 않는다** — 그 자리를 막으면 표
+      안에서 [수정] 단추에 닿을 길이 없어진다.
+    · Enter 는 고치기 시작하고, 고치던 것은 저장하고 **아래 줄 같은 칸**으로.
+    · **거른 표에서는 보이는 줄만** 지난다(`tr.hidden`). 안 그러면 걸러 놓고
+      안 보이는 줄을 고치게 된다.
+    · 고르는 칸은 ↑↓ 로 짚고 Enter 로 확정한다(숫자키로도).
+    · **고르는 칸을 열면 옛 값이 통째로 골라져 있다.** 커서를 끝에 두면 치는
+      글자가 옛 값 뒤에 붙어 `미확인투자유치 진행 중` 이 저장됐다.
+
+    로컬에서는 `node tests/js/inline_edit_keys_test.js` 로도 돈다.
+    """
+    result = subprocess.run(
+        [shutil.which("node"), str(KEYS_TEST)], capture_output=True, text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_초점이_간_칸이_보이게_CSS_가_표시하는가():
+    """초점 표시가 없으면 키로 옮겨 다닐 때 **어디에 서 있는지 알 수 없다.**
+
+    칸이 스무 개 넘고 화면보다 1,900px 넓은 표다. 표시가 없으면 키로 다니다
+    말고 다시 마우스로 조준하게 된다 — 고치려던 것이 그것이다.
+
+    테두리(`border`)가 아니라 `outline` 인지도 본다. 테두리는 칸 폭을 늘려
+    표를 통째로 흔든다.
+    """
+    css = pathlib.Path("app/static/css/app.css").read_text(encoding="utf-8")
+    assert ".cell[data-field]:focus" in css, (
+        "초점이 간 칸에 표시가 없다 ★ 키로 다니면서 어디 있는지 알 수가 없다"
+    )
+    rule = css.split(".cell[data-field]:focus", 1)[1].split("}", 1)[0]
+    assert "outline:" in rule, "초점 표시가 outline 이 아니다 — 테두리는 표를 흔든다"
