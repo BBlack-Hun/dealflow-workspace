@@ -733,7 +733,7 @@ def _meetings_sheet(sheet, data, team_wide):
     # 같은 dict 다(여기서 다시 세지 않는다).
     sheet.stats([("요청받음", data["ir_requested"]),
                  ("전달함", data["ir_delivered"]),
-                 ("아직 안 보냄", data["ir_open"]),
+                 ("IR 자료 아직 안 보냄", data["ir_open"]),
                  ("미팅 요청 안 보냄(명)", data["ir_meeting_ask_missing"]),
                  (f"그중 {data['ir_meeting_ask_days']}일 지남(명)",
                   data["ir_meeting_ask_overdue"])])
