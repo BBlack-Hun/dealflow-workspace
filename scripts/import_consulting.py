@@ -351,7 +351,13 @@ def main(argv=None) -> int:
                 parts = {} if item["name"] else split_contract_line(item["line"])
                 db.add(ConsultingCompany(
                     sheet=sheet, position=pos, user_id=args.owner,
-                    region=item["month"],            # 어느 달의 계약인가
+                    # 어느 달의 계약인가. **읽기는 그대로 둔다** — 화면에서
+                    # `월` 칸을 뺐지만(`routers/consulting.py` 의
+                    # `CONTRACT_COLUMNS`) 시트가 적어 둔 묶음 제목은 이 줄이
+                    # 어느 달에서 왔는지를 말해 주는 유일한 기록이다. 안 담으면
+                    # 다시 올릴 때마다 그 사실이 사라진다 — 화면에 안 서는
+                    # 것과 자료를 안 남기는 것은 다른 일이다.
+                    region=item["month"],
                     management=item["kind"],         # 계약여부 — 무료 / 유료
                     # 나누기 전 한 줄. 나눈 결과가 틀렸을 때 여기서 다시 나눈다.
                     source_line=item["line"],

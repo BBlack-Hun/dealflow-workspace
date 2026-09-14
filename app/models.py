@@ -297,7 +297,7 @@ class IrCompany(TimestampMixin, Base):
     # 나머지 두 곳은 여기를 가리킨다(설명을 세 벌 두면 한 벌이 낡는다).
     #
     #   · `IrCompany.contract_received` — 이 칸. `딜 진행 관리` 의 IR 기업
-    #     현황에 `계약서 수신됨` 으로 선다(`routers/companies.py` 의
+    #     현황에 `계약서 수신 여부` 로 선다(`routers/companies.py` 의
     #     `RECEIVED_CHOICES` · `received_key`).
     #   · `ConsultingCompany.contract_received` — `투자컨설턴트` 의 `계약` 탭
     #     `계약서 수신여부` · `관리 스타트업` 탭 `계약서 수신완료여부`
@@ -1005,8 +1005,8 @@ class ConsultingCompany(TimestampMixin, Base):
     # 기업의 같은 사실이 두 군데에 갈려 어느 쪽이 맞는지 알 수 없게 된다(이
     # 저장소가 되풀이해 겪은 유형이다).
     #
-    # 탭마다 이름이 다른 것은 이 표에서 이미 하는 일이다 — 같은 `region` 이
-    # 한 탭에서는 `지역`, 다른 탭에서는 `월` 로 서고 `meeting_at` 도 그렇다.
+    # 탭마다 이름이 다른 것은 이 표에서 이미 하는 일이다 — 같은 `meeting_at`
+    # 이 한 탭에서는 `미팅일`, 계약 탭에서는 `계약월` 로 선다.
     # 이름은 탭이 정하고 담기는 칸은 하나다.
     #
     # 나머지 탭(`경영본부 전달 기업` · 사람이 시트를 올려 만든 탭)에서는 비어
@@ -1032,22 +1032,26 @@ class ConsultingCompany(TimestampMixin, Base):
     # 쓰는 말이라 화면도 그 탭에서만 이 칸을 세운다
     # (`routers/consulting.py` 의 `STARTUP_COLUMNS`).
     deal_pitch: Mapped[Optional[str]] = mapped_column(Text, nullable=True)     # 딜 소개문구
-    # 계약이 어떻게 되고 있는가. **보기를 정해 두지 않은 자유 글**이라 `Text` 다.
+    # 견적서를 보냈는가 — `O` / `X`. **화면 이름은 `견적서 첨부 여부` 인데
+    # 칸 이름은 `contract_management` 다.** 처음에는 `계약관리` 라는 자유 글
+    # 칸이었고(0065), 뒤에 묻는 것이 `견적서를 보냈는가` 하나로 정해지면서
+    # 이름과 입력 방식만 바뀌었다. **열쇠를 같이 바꾸면 이미 들어 있던 값이
+    # 통째로 끊긴다** — 바꿀 때 이 칸은 비어 있었지만(128줄 중 0건) 규칙은
+    # 규칙이다. 이름과 열쇠가 어긋난 것은 알고 둔 것이니 "오타" 로 보고 고치지
+    # 마라(`VcContact.notes["invoice_received"]` 가 같은 자리다).
     #
-    # 이름이 `~여부` 가 아니라 `~관리` 로 끝나는 것이 그 표시다. 이 표에서
-    # `~관리` 로 끝나는 칸은 이미 하나 있고(`management` = `기업 관리`) 그것도
-    # 문단이 들어오는 자유 문장이다 — 시트를 쓰는 사람이 붙인 이름이 값의
-    # 모양을 말하고 있어서 그 결을 그대로 따른다.
+    # **빈칸은 `아직 안 정함`이다**(아래 `contract_done` · 위 `contract_received`
+    # 와 같다). 둘 중 하나로 채워 두면 앱이 아무도 확인한 적 없는 사실을
+    # 단정하는 것이 된다.
     #
-    # 보기가 필요한 값은 바로 옆 `contract_done` 이 받는다. 이 칸에 보기를
-    # 세우면 **사람이 적을 자리가 없어진다** — 그 자리가 따로 생겼으므로
-    # 여기는 계속 자유 글이다(0065 참고).
+    # 자료형은 `Text` 그대로 둔다. 자유 글이던 때에 정해진 것인데, SQLite 에서
+    # `String` 과 담기는 모양이 같아 바꿔 봐야 표를 다시 만드는 이주 하나가
+    # 늘 뿐이고 값이 달라지지 않는다 — **이름만 바뀐 일에 이주를 붙이지 않는다.**
     #
     # **어떤 판정에도 안 쓴다.** 칩·KPI 는 `기업 관리` 한 갈래만 본다
-    # (`services/consulting_status.py`) — `계약`·`관리` 라는 낱말이 이 칸에
-    # 들어 있다는 이유로 줄이 엉뚱한 갈래에 걸리면 안 된다.
+    # (`services/consulting_status.py`).
     contract_management: Mapped[Optional[str]] = mapped_column(
-        Text, nullable=True)                                                   # 계약관리
+        Text, nullable=True)                                     # 견적서 첨부 여부
     # 계약이 **끝났는가, 어느 쪽으로** — `무료계약완료` / `유료계약완료`.
     # **빈칸은 `아직 안 정함`이다**(위 `contract_received` 와 같다). 아직 안
     # 정한 기업이 대부분이라 기본값을 두지 않는다 — 둘 중 하나로 채우면 앱이

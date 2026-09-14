@@ -1,4 +1,4 @@
-// `계약서 수신됨` 칸이 저장 뒤에 **맞춘 값**으로 되그려지는가.
+// `계약서 수신 여부` 칸이 저장 뒤에 **맞춘 값**으로 되그려지는가.
 // (node tests/js/company_contract_received_test.js)
 //
 // 이 칸은 `O`/`X` 라 화면 글자가 곧 저장되는 값이다 — 옆 칸(`계약여부`)이
@@ -140,7 +140,7 @@ function saved(dom, cell, data) {
                          contract_received: "O" });
 
   assert.strictEqual(dom.received.textContent, "X",
-    "이름을 고쳤는데 계약서 수신됨 칸이 덮였습니다");
+    "이름을 고쳤는데 계약서 수신 여부 칸이 덮였습니다");
   assert.strictEqual(dom.contract.textContent, "유료계약완료",
     "이름을 고쳤는데 계약여부 칸이 덮였습니다");
   assert.strictEqual(dom.name.textContent, "샘플에이");
@@ -157,7 +157,7 @@ function saved(dom, cell, data) {
   assert.strictEqual(dom.contract.textContent, "딜소개 불가",
     "계약여부 되그리기가 안 걸렸습니다");
   assert.strictEqual(dom.received.textContent, "X",
-    "계약여부를 고쳤는데 계약서 수신됨 칸까지 덮였습니다");
+    "계약여부를 고쳤는데 계약서 수신 여부 칸까지 덮였습니다");
 }
 
 console.log("company_contract_received_test OK");

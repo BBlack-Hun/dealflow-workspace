@@ -455,7 +455,7 @@ STARTUP_LAYOUT = Layout(
         # 어긋난 것은 알고 둔 것이니 "오타" 로 보고 고치지 마라.**
         #
         # **같은 물음을 적는 칸이 다른 화면에도 둘 더 있다** —
-        # `models.IrCompany.contract_received`(IR 기업 현황 `계약서 수신됨`)와
+        # `models.IrCompany.contract_received`(IR 기업 현황 `계약서 수신 여부`)와
         # `models.ConsultingCompany.contract_received`(`투자컨설턴트` 의 `계약` ·
         # `관리 스타트업` 탭). 셋은 값을 주고받지 않는다 — 여기에 `O` 를 넣어도
         # 저 둘은 계속 비어 있다. 왜 아직 하나로 못 모으는지는
