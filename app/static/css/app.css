@@ -2214,3 +2214,26 @@ a.guard-go:hover { background: #1e4fd0; text-decoration: none; }
 }
 .to-startup { color: #b45309; background: #fffbeb; }
 .to-investor { color: #1d4ed8; background: #eff6ff; }
+
+/* ── 손으로 보낸 것 적기 (`templates/deals.html` 의 [손으로 보냈다면]) ──────
+   ③ 미리보기·발송 칸 **바로 아래**에 선다. 보내는 자리와 적는 자리가 한
+   흐름이라, 위 ①② 에서 고른 그대로 적는다. 생김새는 예약 칸(`.send-when`)과
+   같은 결로 두어 "여기도 마지막 한 걸음" 으로 읽히게 한다. */
+.manual-panel { margin-top: 18px; }
+.manual-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+              margin: 10px 0 6px; }
+.manual-row label { font-size: 13px; color: var(--muted); }
+.manual-row select, .manual-row input { padding: 5px 8px;
+  border: 1px solid var(--line); border-radius: 6px; }
+.manual-row input[type="number"] { width: 72px; }
+.manual-row button { margin-left: auto; }
+.manual-batches { margin-top: 10px; }
+.manual-batches summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+.manual-batch { display: flex; align-items: center; gap: 10px;
+                padding: 6px 2px; border-bottom: 1px solid var(--line);
+                font-size: 13px; }
+.manual-batch button { margin-left: auto; }
+/* 되돌린 판도 **목록에 남긴다** — 사라지면 사람은 자기가 되돌렸는지 애초에
+   안 적었는지를 알 수 없다. 흐리게 두어 살아 있는 판과 갈라 보이게 한다. */
+.manual-batch.undone { color: var(--muted); text-decoration: line-through; }
+.manual-batch.undone .tag { text-decoration: none; }

@@ -271,18 +271,17 @@ def record_meeting_ask(db: Session, contact_id: int,
     """미팅 요청을 **사람이 직접 보냈다**고 이력에 적는다. 새로 적었으면 `True`.
 
     **같은 날 두 번 눌러도 한 줄이다** — `ir_attach.record_delivery` 와 같은
-    방식이다. 같은 줄이 두 번 쌓이면 이력이 아니라 소음이다.
+    방식이고, 그 판정은 `manual_send.existing` **한 곳**이다(손으로 적는 길도
+    같은 함수를 지난다). 같은 줄이 두 번 쌓이면 이력이 아니라 소음이다.
+
+    기업은 안 본다 — 미팅 요청 카톡은 담당자당 한 통이고 딸 기업이 없다.
 
     커밋은 부르는 쪽이 한다(다른 변경과 한 번에 묶을 수 있게).
     """
+    from .manual_send import existing
+
     day = (when or date.today()).isoformat()
-    already = db.execute(
-        select(ContactActivity).where(
-            ContactActivity.contact_id == contact_id,
-            ContactActivity.kind == MEETING_ASK_KIND,
-            ContactActivity.happened_at == day)
-    ).scalars().first()
-    if already is not None:
+    if existing(db, contact_id, MEETING_ASK_KIND, day) is not None:
         return False
     db.add(ContactActivity(
         contact_id=contact_id, kind=MEETING_ASK_KIND, source="system",

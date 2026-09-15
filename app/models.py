@@ -9,11 +9,13 @@ arrive in later sprints (send_sequences → Sprint 3), so schemas don't drift.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 from typing import Optional
 
 from sqlalchemy import (ForeignKey, Index, Integer, String, Text,
-                        UniqueConstraint)
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+                        UniqueConstraint, event)
+from sqlalchemy.orm import (Mapped, Session as OrmSession, mapped_column,
+                            relationship, with_loader_criteria)
 
 from .clock import now_iso as _now_iso
 from .db import Base
@@ -229,7 +231,33 @@ class ContactActivity(TimestampMixin, Base):
     company_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     # 파싱 전 원문 조각 — 파싱이 틀렸을 때 무엇을 잘못 읽었는지 추적하는 근거.
     raw_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    source: Mapped[str] = mapped_column(String, default="import")  # import | system
+    #: 이 줄이 **어디서 왔나**. `import`(시트) · `system`(앱이 적음) ·
+    #: `manual`(사람이 화면에서 손으로 적음 — `services/manual_send.py`).
+    #:
+    #: 갈래를 새로 만들지 않고 이 칸으로 가른다. `kind` 로 거르는 자리가
+    #: 아홉 곳인데 거기 새 값을 넣으면 그 아홉 곳이 새 값을 몰라 안 읽는다
+    #: (#162 가 `meeting_ask` 하나만 만들어 딜 소개가 남은 것이 그 모양이다).
+    #: 글자 칸이라 옛 줄을 한 줄도 옮기지 않는다.
+    source: Mapped[str] = mapped_column(String, default="import")
+
+    #: 한 번에 적은 **묶음**의 표시. 사람이 80명을 한 번에 적으면 그 80줄이
+    #: 같은 값을 갖는다. 앱·시트가 만든 줄은 비어 있다.
+    #:
+    #: 없으면 잘못 적은 한 판을 **묶음째** 되돌릴 수가 없다 — 줄마다 지우면
+    #: 80번을 눌러야 하고, 그 사이에 몇 줄을 빠뜨렸는지 알 길이 없다.
+    batch_key: Mapped[Optional[str]] = mapped_column(String, nullable=True,
+                                                     index=True)
+
+    #: 되돌린 시각. **비어 있으면 보이는 줄이다.**
+    #:
+    #: 지우지 않는다 — `VcContact.is_hidden` 과 같은 뜻이다(잘못 올라간 날
+    #: 되돌릴 수 있어야 한다). 다만 이 표는 지우면 무엇이 있었는지 물을 자리가
+    #: 없다: 보고·단계·이력이 전부 이 줄을 읽는다.
+    #:
+    #: **거르는 자리는 아래 `_hide_undone_activities` 한 곳이다.** 읽는 곳이
+    #: 열네 군데라 각자 걸러 두면 한 곳이 빠지고, 한 곳이라도 계속 읽으면
+    #: 되돌린 뜻이 없다.
+    undone_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
     contact: Mapped["VcContact"] = relationship()
 
@@ -245,6 +273,86 @@ class ContactActivity(TimestampMixin, Base):
         except (ValueError, TypeError):
             return []
         return [str(x) for x in data] if isinstance(data, list) else []
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 되돌린 활동 줄은 **어디에서도 안 읽힌다** — 거르는 자리 한 곳
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# ## 왜 한 곳인가
+#
+# `ContactActivity` 를 읽는 자리가 열네 군데다(진행 단계 · 기업별 최근 발송 ·
+# IR 월간 · 대시보드 반응 · LLM `sent_before` · 투자사 목록의 `마지막 딜소개` ·
+# 이력 타임라인 · 미팅 요청 판정 · 리마인드 멈추기 · 중복 판정 셋 …).
+# 자리마다 `undone_at is NULL` 을 적어 두면 **한 곳이 반드시 빠진다** — 이
+# 저장소가 `SEND_KINDS` 에서 이미 그렇게 데였고(네 곳이 빠져 있었다), 거기서는
+# 잘못 세는 것으로 끝났지만 여기서는 **되돌린 줄이 계속 읽힌다**. 되돌렸는데
+# 보고 숫자가 그대로면 되돌린 뜻이 없다.
+#
+# ## 왜 상수가 아니라 세션 이벤트인가
+#
+# `SEND_KINDS` 처럼 값 하나를 두고 모두가 읽게 하는 방식도 생각했지만, 그건
+# **읽는 쪽이 부르는 것을 잊지 않아야** 성립한다. 앞으로 생기는 열다섯 번째
+# 조회에는 아무도 안 붙인다(수정 로그가 `Depends` 를 버린 것과 같은 이유 —
+# `services/edit_log.py` 머리글). 세션 이벤트는 **지나갈 수밖에 없는 자리**다:
+# ORM 으로 나가는 모든 조회가 여기를 거치고, 새 조회도 저절로 걸린다.
+#
+# `with_loader_criteria` 는 줄 단위 조회뿐 아니라 **칸만 고르는 조회와 셈
+# (`select(ContactActivity.kind, func.count())`)에도 걸린다** — 이 표를 읽는
+# 자리 대부분이 그 모양이라 그게 중요했다(`tests/test_manual_send.py` 가 네
+# 모양을 다 확인한다).
+#
+# ## 지우기·고치기에는 안 걸린다
+#
+# `is_select` 일 때만 건다. 담당자 줄을 지울 때 딸린 활동을 함께 지우는 길
+# (`routers/contacts.py: CASCADING_LINKS`)은 되돌린 줄까지 치워야 하고,
+# 되돌리는 것 자체도 `undone_at` 을 적는 쓰기다.
+
+#: 사람이 손으로 적은 줄. `source` 의 세 번째 값이다(`import` · `system`).
+SOURCE_MANUAL = "manual"
+
+_UNDONE_OFF = "dealflow_include_undone_activities"
+
+
+def _hide_undone_activities(state) -> None:
+    """되돌린 활동 줄을 모든 ORM 조회에서 뺀다."""
+    if not state.is_select:
+        return
+    if state.session.info.get(_UNDONE_OFF):
+        return
+    state.statement = state.statement.options(
+        with_loader_criteria(ContactActivity,
+                             lambda cls: cls.undone_at.is_(None),
+                             include_aliases=True))
+
+
+@contextmanager
+def including_undone(db):
+    """이 블록 안에서만 **되돌린 줄까지** 보인다.
+
+    되돌린 묶음을 화면에 `되돌림` 으로 세워 주는 자리(`services/manual_send.py`
+    의 묶음 목록)가 이것을 쓴다. 되돌린 판이 목록에서 통째로 사라지면 사람은
+    자기가 되돌렸는지 애초에 안 적었는지를 알 수 없다.
+
+    **읽기 전용으로 쓴다.** 되돌린 줄을 다시 세거나 보고에 태우는 데 쓰면 위
+    한 곳에서 거르는 뜻이 사라진다.
+    """
+    info = db.info
+    before = info.get(_UNDONE_OFF)
+    info[_UNDONE_OFF] = True
+    try:
+        yield db
+    finally:
+        if before is None:
+            info.pop(_UNDONE_OFF, None)
+        else:
+            info[_UNDONE_OFF] = before
+
+
+# **불러 두기만 해도 걸린다.** `install()` 을 따로 두면 그것을 안 부르는 길
+# (검사 · 백업 · 가져오기 스크립트)에서만 되돌린 줄이 새어 나온다 — 이 표를
+# 쓰려면 이 모듈을 불러야 하므로, 여기서 거는 것이 가장 빠뜨릴 수 없는 자리다.
+event.listen(OrmSession, "do_orm_execute", _hide_undone_activities)
 
 
 class IrCompany(TimestampMixin, Base):

@@ -518,10 +518,18 @@ WRITE_ROUTES = {
     ("POST", "/ir/requests/{request_id}/drop"): WATCHED,
     ("POST", "/ir/requests/{request_id}/delete"): WATCHED,
     # 카톡으로 직접 보낸 미팅 요청을 표시한다 — `contact_activities` 에 한 줄.
-    # 그 표는 `UNWATCHED` 라 값이 남지 않지만, 남의 담당자 줄에 적히는 길이라
-    # 갈래는 보는 쪽이다.
+    # 그 표는 이제 **사람이 손으로 적은 줄만** 본다(`Watch.only`) — 이 길이
+    # 만드는 줄은 `source="system"` 이라 값이 남지 않지만, 남의 담당자 줄에
+    # 적히는 길이라 갈래는 보는 쪽이다. 손으로 적는 쪽은 아래
+    # `/api/deals/manual-sends` 이고 그쪽은 실제로 줄마다 남는다.
     ("POST", "/ir/contacts/{contact_id}/meeting-asked"): WATCHED,
     ("POST", "/ir/meetings"): WATCHED,
+
+    # 손으로 보낸 것을 적는 길. **묶음 입력이 남의 담당자 줄에도 닿고**
+    # 한 번에 80줄이 들어온다 — 되돌릴 근거가 수정 로그 말고 없다
+    # (`services/manual_send.py` · `edit_log.WATCHED["contact_activities"]`).
+    ("POST", "/api/deals/manual-sends"): WATCHED,
+    ("POST", "/api/deals/manual-sends/{batch_key}/undo"): WATCHED,
     ("POST", "/ir/meetings/{meeting_id}/mode"): WATCHED,
     ("POST", "/ir/meetings/{meeting_id}/done"): WATCHED,
     ("POST", "/ir/meetings/{meeting_id}/followup"): WATCHED,
@@ -871,6 +879,11 @@ def _sample_row(db, model, *, owner_is=None):
                 1 if isinstance(column.type, Integer) else "시험값")
     if watch.owner and watch.owner != "id" and owner_is is not None:
         setattr(row, watch.owner, owner_is)
+    # 표 안에서 다시 가리는 표가 있다(`Watch.only` — 지금은 활동 이력 하나).
+    # **그 칸과 값을 여기서 그대로 채운다** — 표 이름을 아는 예외를 심으면
+    # 다음에 그런 표가 하나 더 생겼을 때 이 검사가 조용히 빗나간다.
+    if watch.only:
+        setattr(row, watch.only[0], watch.only[1])
     return row
 
 

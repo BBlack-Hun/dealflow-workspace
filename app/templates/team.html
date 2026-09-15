@@ -171,7 +171,12 @@
           {% if m.missing %}<span class="tag bad">{{ m.missing }}명 막힘</span>{% endif %}
           {% else %}<span class="muted">-</span>{% endif %}
         </td>
-        <td class="num">{{ m.sent_month }}</td>
+        {# 손으로 보낸 것도 이 수에 **함께** 들어 있다(`manual_send.counted`).
+           합친 수만 보이면 되짚을 길이 없으므로 그중 몇이 손으로 적은 것인지
+           짚어 보면 나오게 둔다 — 숫자를 가르지는 않는다. #}
+        <td class="num"
+            {% if m.sent_month_manual %}title="그중 손으로 적음 {{ m.sent_month_manual }}건"{% endif %}>
+          {{ m.sent_month }}{% if m.sent_month_manual %}<span class="muted"> (손 {{ m.sent_month_manual }})</span>{% endif %}</td>
         <td class="num">{{ m.ir }}</td>
         <td class="num">{{ m.meeting }}</td>
         <td class="{% if m.agent_old %}warn{% elif m.agent_ok %}ok{% else %}muted{% endif %}"

@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy import exists, select
 from sqlalchemy.orm import Session
 
-from .. import config
+from .. import clock, config
 from ..db import get_db
 from ..deps import get_current_user, now_iso
 from ..models import (
@@ -29,8 +29,9 @@ from ..models import (
 from ..services import mail_sender, mailer, matcher
 from ..services import message_composer as mc
 from ..services import (deal_numbers, deal_queue, ir_attach, ir_kakao,
-                        ir_monthly, scheduled_send, sheet_owner, sourcing_link,
-                        sourcing_msg, startup_send, template_pick)
+                        ir_monthly, manual_send, scheduled_send, sheet_owner,
+                        sourcing_link, sourcing_msg, startup_send,
+                        template_pick)
 from ..services.message_composer import MAX_COMPANIES_PER_SEND
 
 router = APIRouter(prefix="/api/deals", tags=["deals"])
@@ -1100,3 +1101,169 @@ def cancel_queue_item(
     item.status = deal_queue.STATUS_CANCELED
     db.commit()
     return {"ok": True, "status": item.status}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 손으로 보낸 것 적기
+#
+# 왜 이 화면인가
+# --------------
+# 여기는 이미 **기업을 고르고 사람을 고르는** 자리다. 손으로 보낸 것을 적는
+# 일도 고르는 것이 똑같다 — `이번 주 딜소개는 8개 기업`, 대상 80명. 따로 화면을
+# 세우면 고르는 목록이 두 벌이 되고, 둘 중 한쪽만 `발송 대상` 규칙을 따라가는
+# 날이 온다(`sheet_owner.recipients` · 멈춰 둔 사람 빼기 · 방 연결).
+#
+# 무엇을 지키나 — `bulk-delete` 의 결 그대로
+# ------------------------------------------
+#   · 확인 없이 부르면 **세기만** 한다(`confirm=False`). 한 줄도 안 쓴다.
+#   · **부분 적용을 안 한다.** 남의 담당자가 섞이면 `_owned` 가 그 자리에서
+#     404 를 내고, 그때까지 아무 것도 안 적혔다.
+#   · 권한 판정을 여기서 새로 짓지 않는다 — 한 줄 고치기와 **같은 `_owned`** 다.
+#
+# 엑셀 되올리기로 적는 길은 만들지 않는다(`routers/data_io.py` 에 까닭이 있다 —
+# 내보낸 표를 되올려 활동 635건이 뻥튀기된 적이 있다).
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class ManualSendIn(BaseModel):
+    contact_ids: List[int] = []
+    #: `deal_intro` · `ir_delivery` · `meeting_ask`(`manual_send.KIND_LABELS`).
+    kind: str = manual_send.DEAL_INTRO
+    #: 보낸 날 `YYYY-MM-DD`. **비어 있으면 오늘이 아니라 400 이다** —
+    #: 오늘로 짐작하면 리마인드가 서는 쪽으로 기울고, 그건 되돌리기 번거롭다.
+    day: str = ""
+    #: 그 판에 실은 기업. **판 하나에 한 번만 고른다** — 80명에게 같은 8개사를
+    #: 보낸 것이 보통이라 줄마다 고르게 하면 80번 고르는 일이 된다.
+    company_ids: List[int] = []
+    #: 이름 없이 **개수만** 적힌 판(`핵심 딜 8개사`). 시트에 그렇게만 적힌
+    #: 경우가 실제로 있어서 길을 열어 둔다.
+    company_count: Optional[int] = None
+    #: **확인 없이는 한 줄도 안 적는다.** 화면은 이 값 없이 한 번 불러
+    #: 무엇이 몇 줄인지 보여 주고, 사람이 [확인] 을 누른 뒤에야 참으로 보낸다.
+    confirm: bool = False
+
+
+def _manual_targets(db: Session, user: User, ids: List[int]) -> List[VcContact]:
+    """적을 담당자 줄. **남의 줄이 섞이면 한 줄도 안 적는다.**
+
+    판정은 투자사 관리 현황의 한 줄 고치기와 **같은 `_owned`** 다 — 여기서 새로
+    지으면 화면에 뜬 줄을 눌러도 서버가 막는, 이 저장소가 반복해 당한 어긋남이
+    또 난다(팀원은 자기 담당분만, 관리자는 팀 전체).
+    """
+    from .contacts import _owned
+
+    clean = list(dict.fromkeys(int(i) for i in (ids or [])))
+    if not clean:
+        raise HTTPException(status_code=400, detail="적을 담당자를 고르지 않았습니다")
+    if len(clean) > manual_send.MAX_ROWS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"한 번에 {manual_send.MAX_ROWS}줄까지 적을 수 있습니다")
+    # **한 줄이라도 남의 것이면 여기서 끝난다** — 아직 아무 것도 안 적혔다.
+    return [_owned(db, cid, user) for cid in clean]
+
+
+def _manual_names(db: Session, kind: str, company_ids: List[int]) -> List[str]:
+    """고른 기업의 **이름**. 없는 번호가 섞이면 말하고 멈춘다.
+
+    이력에 남는 것은 번호가 아니라 이름이다(`ContactActivity.company_names`).
+    `llm_brief.sent_history` 와 `deal_history.last_sent_map` 이 그 이름으로
+    **이미 보낸 기업**을 만든다 — 기업 없이 줄만 적으면 다음 회차에 LLM 이 같은
+    기업을 또 추천한다.
+    """
+    if kind not in manual_send.KINDS_WITH_COMPANIES or not company_ids:
+        return []
+    # 차례를 지키고 없는 번호를 가려 주는 자리가 이미 있다.
+    companies = _load_companies(db, company_ids)
+    return [c.name for c in companies]
+
+
+@router.get("/manual-sends")
+def manual_send_batches(db: Session = Depends(get_db),
+                        user: User = Depends(get_current_user)):
+    """내가 되돌릴 수 있는 판들. **되돌린 것까지** 보여 준다.
+
+    되돌린 판이 목록에서 사라지면 사람은 자기가 되돌렸는지 애초에 안 적었는지를
+    알 수 없다(`manual_send.batches`).
+
+    보이는 범위는 **손대도 되는 범위와 같다** — 내 담당자(관리자는 팀 전체)의
+    줄만 본다. 되돌릴 수 없는 판이 목록에 떠 있으면 눌러 보고서야 안 된다는 것을
+    알게 된다.
+    """
+    from ..deps import may_manage_team_contacts
+
+    stmt = select(VcContact.id)
+    if not may_manage_team_contacts(user):
+        stmt = stmt.where(VcContact.user_id == user.id)
+    ids = list(db.execute(stmt).scalars().all())
+    return {"batches": manual_send.batches(db, ids),
+            "remind_note": manual_send.REMIND_NOTE}
+
+
+@router.post("/manual-sends")
+def create_manual_send(body: ManualSendIn, db: Session = Depends(get_db),
+                       user: User = Depends(get_current_user)):
+    """손으로 보낸 것을 **한 판으로** 적는다.
+
+    `confirm` 없이 부르면 아무 것도 적지 않고 무엇이 몇 줄인지만 돌려준다.
+    """
+    if body.kind not in manual_send.KIND_LABELS:
+        raise HTTPException(status_code=400, detail="적을 수 없는 갈래입니다")
+    if not manual_send.is_day(body.day):
+        raise HTTPException(status_code=400,
+                            detail="보낸 날짜를 골라 주세요 (YYYY-MM-DD)")
+    # **앞날로는 못 적는다.** 아직 안 한 일을 적는 길이 열려 있으면 보고가
+    # 미래를 세고, 오늘 것만 리마인드를 세우는 규칙도 뜻을 잃는다.
+    if body.day > clock.today().isoformat():
+        raise HTTPException(status_code=400,
+                            detail="앞날로는 적을 수 없습니다 — 이미 보낸 것만 적습니다")
+
+    contacts = _manual_targets(db, user, body.contact_ids)
+    names = _manual_names(db, body.kind, body.company_ids)
+
+    plan = manual_send.plan(db, contacts, body.kind, body.day,
+                            company_names=names,
+                            company_count=body.company_count)
+    if not body.confirm:
+        return {"ok": False, "confirmed": False, "added": 0, "plan": plan}
+
+    result = manual_send.record(db, contacts, body.kind, body.day,
+                                company_names=names,
+                                company_count=body.company_count)
+    db.commit()
+    return {"ok": True, "confirmed": True, "added": result.added,
+            "plan": plan, **result.as_dict()}
+
+
+class ManualUndoIn(BaseModel):
+    confirm: bool = False
+
+
+@router.post("/manual-sends/{batch_key}/undo")
+def undo_manual_send(batch_key: str, body: ManualUndoIn,
+                     db: Session = Depends(get_db),
+                     user: User = Depends(get_current_user)):
+    """잘못 적은 판을 **묶음째** 되돌린다. 지우지 않고 숨긴다.
+
+    숨긴 줄은 읽는 자리 어디에서도 안 읽힌다(`models._hide_undone_activities`).
+
+    권한은 적을 때와 **같은 `_owned`** 다 — 남의 담당자 줄이 한 줄이라도
+    섞여 있으면 한 줄도 안 숨긴다. 관리자가 팀원을 대신 적어 준 판을 그
+    팀원이 되돌리지 못하는 것은 맞다: 되돌리는 것도 적는 것과 같은 무게다.
+    """
+    rows = manual_send.rows_of(db, batch_key)
+    if not rows:
+        raise HTTPException(status_code=404, detail="그 판을 찾을 수 없습니다")
+    # 한 줄이라도 남의 것이면 여기서 끝난다 — 아직 아무 것도 안 숨겼다.
+    _manual_targets(db, user, [row.contact_id for row in rows])
+
+    plan = {"rows": len(rows),
+            "kind": rows[0].kind,
+            "kind_label": manual_send.KIND_LABELS.get(rows[0].kind, rows[0].kind),
+            "day": rows[0].happened_at or ""}
+    if not body.confirm:
+        return {"ok": False, "confirmed": False, "undone": 0, "plan": plan}
+
+    n = manual_send.undo(db, rows)
+    db.commit()
+    return {"ok": True, "confirmed": True, "undone": n, "plan": plan}

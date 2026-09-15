@@ -281,7 +281,10 @@
           <td class="num" title="{{ r.left_label }}">{% if r.left %}<span class="tag bad">{{ r.left }}</span>{% else %}-{% endif %}</td>
           <td><span class="status-badge {{ r.level }}">{{ r.status_label }}</span></td>
           {% if team_wide %}<td class="muted">{{ r.owner }}</td>{% endif %}
-          <td><a class="linkbtn" href="/jobs/{{ r.job_id }}">보기</a></td>
+          {# 손으로 적은 줄은 **볼 회차가 없다** — 발송기를 지나지 않았으므로
+             `/jobs/0` 은 없는 자리다. 그 줄이 무엇이었는지는 회차명이 말하고
+             (`손으로 보냄 · 딜 소개`), 누구에게였는지는 담당자 이력에 남는다. #}
+          <td>{% if r.job_id %}<a class="linkbtn" href="/jobs/{{ r.job_id }}">보기</a>{% else %}<span class="muted">-</span>{% endif %}</td>
         </tr>
         {% endfor %}
       </tbody>

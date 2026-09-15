@@ -135,6 +135,46 @@ function queueRow(id, group, count) {
   ]);
 }
 
+// ── 손으로 보냈다면 (`manual_send.js`) ──────────────────────────────────────
+//
+// ③ 미리보기·발송 칸 **아래**에 서는 칸이다. 위 ①② 에서 고른 것을 그대로 읽어
+// 적으므로, 이 검사도 같은 화면 위에서 돈다 — 고르는 목록을 한 벌 더 세우면
+// 검사가 화면과 다른 것을 보증한다.
+//
+// **오늘 날짜는 붙박이가 아니다.** 서버가 실어 준다(`pages.py: manual_today`) —
+// 여기서 `new Date()` 로 만들면 자정을 넘기는 순간 검사가 깨진다.
+const MANUAL_TODAY = "2026-09-15";
+const MANUAL_LONG_AGO = "2026-09-01";
+// 서버가 실어 주는 안내문(`manual_send.REMIND_NOTE`). 글자가 같은지는 파이썬
+// 쪽이 본다 — 여기서는 **화면이 그 글자에 오늘/지난 날을 덧붙이는지**만 본다.
+const MANUAL_NOTE = "오늘 날짜로 적으면 리마인드가 잡힙니다 · 지난 날짜는 기록만 남습니다";
+
+function manualBlock() {
+  const kind = el("select", { id: "manual-kind" }, [
+    el("option", { value: "deal_intro" }),
+    el("option", { value: "ir_delivery" }),
+    el("option", { value: "meeting_ask" })
+  ]);
+  kind.value = "deal_intro";
+  const day = el("input", { id: "manual-day", value: MANUAL_TODAY });
+  const count = el("input", { id: "manual-count", type: "number" });
+  const countWrap = el("label", { id: "manual-count-wrap" });
+  const button = el("button", { id: "manual-btn" });
+  const note = el("p", { id: "manual-note", class: "hint" });
+  note.textContent = MANUAL_NOTE;
+  const state = el("p", { id: "manual-state", class: "hint" });
+  const list = el("div", { id: "manual-batch-list" });
+  const batches = el("details", { id: "manual-batches" }, [
+    el("summary", {}), list
+  ]);
+  return el("section", {
+    id: "manual-send", class: "panel manual-panel",
+    "data-today": MANUAL_TODAY,
+    "data-with-companies": "deal_intro,ir_delivery"
+  }, [kind, day, countWrap, count, button, note, state, batches]);
+}
+
+
 function buildDom(people) {
   dom_.resetHandlers();
   const root = makeEl("html");
@@ -211,8 +251,10 @@ function buildDom(people) {
     queueList
   ]);
 
+  const manual = manualBlock();
+
   [companyPanel, contactList, blocked, sourcingList, groupBox, sourcingBox,
-   arrow, channel, queuePanel]
+   arrow, channel, queuePanel, manual]
     .concat(simple).concat(modeTabs)
     .forEach(function (node) { root.appendChild(node); });
 
@@ -227,6 +269,7 @@ function buildDom(people) {
            // `dimmed`(문구만 보낼 때) · `no-pick-badge`(자료 전달).
            companyPanel: companyPanel,
            queuePanel: queuePanel, queueRows: queueRows,
+           manual: manual,
            blocked: blocked, blockedCbs: blockedCbs,
            blockedCb: blockedCbs[blockedCbs.length - 1] };
 }
@@ -278,6 +321,13 @@ function run(people, opts) {
   Object.assign(win, { location: win.location, document: dom.document });
   vm.runInNewContext(shared, ctx, { filename: "ir_attach_list.js" });
   vm.runInNewContext(src, ctx, { filename: "deals.js" });
+  // [손으로 보냈다면] 칸은 **화면에서도 deals.js 뒤에 실린다**(deals.html).
+  // 기본으로 안 돌리는 이유는 그 칸이 `fetch` 를 한 번 더 쓰기 때문이다 —
+  // 지금 있는 검사들의 가짜 서버가 그 부름까지 세면 답이 어긋난다.
+  if (opts.manual) {
+    vm.runInNewContext(fs.readFileSync(path.join(JS, "manual_send.js"), "utf8"),
+                       ctx, { filename: "manual_send.js" });
+  }
   dom.window = win;
   return dom;
 }

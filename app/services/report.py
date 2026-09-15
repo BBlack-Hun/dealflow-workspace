@@ -42,6 +42,7 @@ from ..models import (DealBatch, DealBatchCompany, IrCompany, IrRequest,
 # 단계 값(`STAGE_*`)은 **문구를 짓는 쪽이 정한 것**을 그대로 읽는다.
 # 여기 숫자를 다시 적어 두면 한쪽이 바뀔 때 보고만 옛 값으로 남는다
 # (`routers/deals.py` 도 같은 곳을 `mc` 로 읽는다).
+from . import manual_send
 from . import message_composer as mc
 from .pipeline import (IR_MEETING_ASK_DAYS, MEETING_FOLLOWUP_DAYS,
                        MEETING_KINDS, NO_FOLLOWUP_OUTCOMES, OUTCOMES,
@@ -390,6 +391,94 @@ def _job_date(job: SendJob, batch: Optional[DealBatch]) -> str:
     return (batch.sent_date if batch is not None else None) or (job.started_at or "")[:10]
 
 
+#: 손으로 적은 회차 줄의 상태 글자. 앱 발송의 `SEND_STATUS` 와 **같은 자리에**
+#: 서는 값이라 말이 겹치면 안 된다 — `완료` 라고 적으면 발송기가 돌려준 결과로
+#: 읽힌다. 이 줄은 사람이 "보냈다" 고 적어 준 것이 근거의 전부다.
+MANUAL_STATUS = "손으로 보냄"
+
+
+def _manual_rounds(db: Session, start: date, end: date, user: Optional[User],
+                   owners: Dict[int, str]) -> Dict[str, List[dict]]:
+    """손으로 보냈다고 적은 것을 **회차 줄 모양**으로. `{묶음 열쇠: [줄…]}`.
+
+    ## 왜 판마다 한 줄인가
+
+    한 번에 80명을 적는다(`services/manual_send.py`). 그 80줄이 표에 80줄로
+    서면 보고가 아니라 명부가 된다. 사람이 카톡 보고에 적던 단위도 회차다 —
+    `딜소개 업무(핵심 딜 7개사) / 총 126명`. 그래서 **한 판 = 한 줄**이고,
+    그 판의 표시(`ContactActivity.batch_key`)가 곧 회차 번호 노릇을 한다.
+
+    ## 안 나간 건이 없다
+
+    `대상 = 완료` 다. 앱 발송은 대상에 올려 두고 실제로 안 나간 건이 생기는데
+    (중단·실패·대기), 손으로 적는 것은 **이미 보낸 것을 적는 일**이라 그 틈이
+    없다. `left` 를 0 으로 두는 것은 값이 없어서가 아니라 그것이 답이어서다.
+
+    ## 회차 화면이 없다
+
+    `job_id` 가 0 이다 — 볼 회차가 없다(`/jobs/0` 은 없는 자리다). 화면은 그
+    칸을 비운다. 무엇을 보냈는지는 담당자 이력 타임라인에 줄마다 남아 있다.
+    """
+    rows = manual_send.counted(
+        db, send_kinds=SEND_REPORT_KINDS,
+        since=start.isoformat(), until=end.isoformat(),
+        user_id=user.id if user is not None else None)
+
+    # 판 + 주인 단위로 모은다. 관리자가 남의 줄까지 한 판에 적을 수 있는데,
+    # 그때 `팀원` 칸이 한 사람만 가리키면 거짓말이 된다.
+    packs: Dict[tuple, dict] = {}
+    for row in rows:
+        key = send_group_key(row["send_kind"], row["stage"])
+        pack_id = (key, row["batch_key"] or f"day:{row['day']}", row["user_id"])
+        got = packs.get(pack_id)
+        if got is None:
+            got = packs[pack_id] = {
+                "group": key, "day": row["day"], "user_id": row["user_id"],
+                "kind": row["kind"], "people": set(), "companies": set(),
+                "count": row["company_count"] or 0,
+            }
+        got["people"].add(("c", row["contact_id"]))
+        got["companies"].update(row["companies"])
+        # 이름 없이 **개수만** 적은 판(`핵심 딜 8개사`)이 실제로 있다.
+        # 그때는 셀 이름이 없으므로 적어 준 개수를 그대로 쓴다.
+        got["count"] = max(got["count"], row["company_count"] or 0)
+
+    out: Dict[str, List[dict]] = {}
+    for (key, _pack, _uid), got in sorted(packs.items()):
+        n = len(got["people"])
+        names = sorted(got["companies"])
+        when = got["day"] or ""
+        label = manual_send.KIND_LABELS.get(got["kind"], got["kind"])
+        out.setdefault(key, []).append({
+            "row": {
+                # 볼 회차가 없다 — 화면이 이 값으로 [보기] 칸을 비운다.
+                "job_id": 0,
+                # **손으로 적은 줄임이 이름에 그대로 적힌다.** 합쳐 센 수를
+                # 되짚는 자리가 여기다(대시보드는 부제에서 밝힌다).
+                "title": f"{manual_send.BY_HAND} · {label}",
+                "manual": True,
+                "date": when,
+                "day": day_label(when),
+                "companies": len(names) or got["count"],
+                "company_names": names,
+                "target": n,
+                "sent": n,
+                "failed": 0,
+                "canceled": 0,
+                "waiting": 0,
+                "left": 0,
+                "left_label": "",
+                "status": "manual",
+                "status_label": MANUAL_STATUS,
+                "owner": owners.get(got["user_id"], ""),
+                "level": "",
+            },
+            "people": got["people"],
+            "companies": set(names),
+        })
+    return out
+
+
 def _sends(db: Session, start: date, end: date, user: Optional[User],
            owners: Dict[int, str]) -> dict:
     """그 달에 나간 딜 소개·딜 소싱 회차.
@@ -413,6 +502,17 @@ def _sends(db: Session, start: date, end: date, user: Optional[User],
     미팅 후기가 전부 `SendJob.kind == "deal_intro"` 로 적히는 탓에 위 보고의
     `총 N명` 에 함께 들어 있었다 — 어느 묶음인지는 `send_group_key` 한 곳이
     정하고, 화면·엑셀·연간 보고가 그 답을 그대로 읽는다.
+
+    **손으로 보낸 것도 여기서 함께 센다.** 프로그램으로 안 보내고 카톡에서
+    손으로 보내는 사람이 있어서, 그 사람의 `딜 소개 총 N명` 이 늘 비어 있었다.
+    합치는 판정은 `manual_send.counted` 한 곳이고(대시보드 두 곳도 같은 함수를
+    읽는다), 어느 묶음으로 설지는 여기서도 `send_group_key` 가 정한다 —
+    판정을 두 벌로 두지 않으려고 수동 기록을 **앱 발송의 말**(`SendJob.kind` ·
+    `SendItem.stage`)로 옮겨 받는다.
+
+    합쳐도 **되짚을 수 있다** — 수동 기록은 회차 줄로 따로 서고 그 줄에
+    `손으로 보냄` 이 적힌다. 숫자를 가르지 않는 이유는 보고에 옮겨 적는 수가
+    어차피 합계이기 때문이다(가르면 사람이 두 수를 더해야 한다).
     """
     stmt = (select(SendJob, DealBatch)
             .outerjoin(DealBatch, DealBatch.id == SendJob.batch_id)
@@ -472,6 +572,9 @@ def _sends(db: Session, start: date, end: date, user: Optional[User],
     ).all():
         named.setdefault(batch_id, []).append(name)
 
+    # 손으로 보낸 것 — 회차가 없으므로 **판(`batch_key`)마다 한 줄**로 세운다.
+    manual_rounds = _manual_rounds(db, start, end, user, owners)
+
     groups = []
     for key, label, always in SEND_GROUPS:
         # **회차마다 한 줄.** 같은 날 회차가 둘이어도 합치지 않는다 — 8/27 에
@@ -484,6 +587,10 @@ def _sends(db: Session, start: date, end: date, user: Optional[User],
         if not picked and not always:
             continue
         rows, targeted, companies = [], set(), set()
+        for got in manual_rounds.get(key, []):
+            rows.append(got["row"])
+            targeted |= got["people"]
+            companies.update(got["companies"])
         for job, batch in picked:
             got = counts.get(job.id, Counter())
             target = sum(got.values())
@@ -523,6 +630,10 @@ def _sends(db: Session, start: date, end: date, user: Optional[User],
                 # 이 보고에서 가장 비싼 실수라 눈에 띄어야 한다.
                 "level": "bad" if job.status == "canceled" else ("warn" if left else ""),
             })
+        # 손으로 적은 줄과 앱이 보낸 줄을 **날짜 순으로 섞는다.** 출처별로
+        # 뭉쳐 두면 같은 주에 있었던 일이 표 위아래로 갈려서 읽을 수가 없다
+        # (담당자 이력 타임라인이 같은 이유로 섞는다).
+        rows.sort(key=lambda r: (r["date"] or "", r["job_id"], r["title"]))
         groups.append({
             "key": key,
             "label": label,
