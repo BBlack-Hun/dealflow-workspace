@@ -267,6 +267,28 @@ def million(value) -> Optional[int]:
     return int((pair[0] * 100).to_integral_value(rounding="ROUND_HALF_UP"))
 
 
+def million_top(value) -> Optional[int]:
+    """**백만원 정수 하나 — 구간이면 `위`.** 못 읽으면 `None`.
+
+    `million()` 의 짝이다. 하나만으로 규모를 말할 때는 언제나 아래를 쓰지만
+    (부풀리지 않는 쪽), **"이 값이 어떤 선을 확실히 넘는가/못 넘는가"** 를
+    가릴 때는 위쪽도 있어야 한다.
+
+        `3~10억` 은 아래가 `300` 이라 `500` 선을 못 넘는 것처럼 보이지만,
+        실제로는 넘을 수도 있다 — 아래만 보면 **모르는 것이 아니라는 쪽으로**
+        잘못 단정하게 된다.
+
+    단일 값이면 `million()` 과 **같은 숫자**다(`_sides` 가 양쪽을 같게 준다).
+
+    **환산은 여기 말고 어디에도 없다**(`tests/test_amount_range.py` 의
+    `READERS`). 부르는 쪽이 `* 100` 을 하기 시작하면 규칙이 갈린다.
+    """
+    pair = bounds(value)
+    if pair is None:
+        return None
+    return int((pair[1] * 100).to_integral_value(rounding="ROUND_HALF_UP"))
+
+
 def eok(value) -> Optional[Decimal]:
     """**억 단위 수 하나.** 구간이면 아래를 쓴다(`million` 과 같은 판단).
 
