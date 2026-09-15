@@ -36,8 +36,12 @@ const BRIEF = {
   // 기업도 이름 없이 번호로만 나간다. **금액은 정확한 숫자가 아니라 구간**이다
   // — 경계는 서버(`services/llm_brief.py` 의 `AMOUNT_EDGES`)가 정하고, 화면은
   // 받은 글자를 그대로 보여 주기만 한다.
+  // `revenue_over` 는 **넘는가 아닌가** 한 칸이다 — 정확한 금액은 실리지 않는다
+  // (판정은 서버의 `llm_brief.revenue_over` 한 곳).
   companies: [{ id: "C-7", sector_major: "바이오", revenue_recent: "1000~5000",
-                pre_value: "10000+", introducible: true }]
+                pre_value: "10000+", introducible: true, revenue_over: "예" }],
+  // 수요를 셀 때 쓸 **분야 이름**. 세는 일은 LLM 이 하고, 앱은 눈금만 싣는다.
+  sector_names: ["바이오"]
 };
 
 function build() {

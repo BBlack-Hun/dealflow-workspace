@@ -494,6 +494,149 @@ def test_the_data_says_how_to_read_a_band(db, users):
     assert "구간" in got and "포함" in got
 
 
+# ── 매출이 계약 기준선을 넘는가 ─────────────────────────────────────────────
+#
+# 사용자 요구는 "유료계약·무료계약은 년매출 5억 이상 기업으로" 다. 그런데 금액이
+# 구간으로 나가면서(#156) 기준선이 맨 아래 구간 안에 통째로 묻혔다 — LLM 이
+# 자료만 보고는 판단할 수가 없다. 아래 검사들이 잠그는 것은 그 구멍이고,
+# **정확한 금액은 여전히 안 나간다**는 것까지 함께 잠근다.
+
+#: 기업구분 칸이 실제로 적어 두는 모양. 매출 기준이 **누적투자금 조건과 한 줄에**
+#: 있어서, `5억미만` 만 찾으면 누적투자금 쪽을 매출로 읽는다.
+SEED_SERIES = "Angel, Seed (누적투자금 0, 년매출액 3억미만)"
+PRE_A_SERIES = "Pre A, Bridge (누적투자금 5억미만, 년매출액 10억이상)"
+
+
+def _over(db, users, **kw):
+    """기업 하나를 그 조건으로 만들고 **나가는 자료에서** 판정을 읽어 온다.
+
+    함수를 직접 부르지 않고 자료를 거치는 것이 요점이다 — 판정이 맞아도
+    자료에 안 실리면 LLM 은 못 본다.
+    """
+    row = _company(db, **kw)
+    got = {c["id"]: c for c in _brief(db, users["u1"])["companies"]}
+    return got[f"C-{row.id}"]["revenue_over"]
+
+
+def test_every_company_says_whether_it_clears_the_contract_line(db, users):
+    """칸이 **늘 있다.** 없으면 `모름` 과 `아니오` 를 구별할 자리가 사라진다."""
+    from app.services.llm_brief import OVER_NO, OVER_UNKNOWN, OVER_YES
+
+    _company(db, series=None, revenue_recent=None)
+    for row in _brief(db, users["u1"])["companies"]:
+        assert row["revenue_over"] in (OVER_YES, OVER_NO, OVER_UNKNOWN)
+
+
+def test_the_line_is_read_from_both_the_series_column_and_the_recent_number(db,
+                                                                           users):
+    """같은 사실이 두 칸에 적혀 있다 — **하나라도 넘으면 `예`.**"""
+    from app.services.llm_brief import OVER_NO, OVER_YES
+
+    # 기업구분만으로 넘는다(최근매출은 비어 있다).
+    assert _over(db, users, series=PRE_A_SERIES, revenue_recent=None) == OVER_YES
+    # 최근매출만으로 넘는다(기업구분에는 매출 기준이 없다).
+    assert _over(db, users, series="Series A", revenue_recent="7") == OVER_YES
+    # 둘이 어긋나면 넘는 쪽이 이긴다 — 넘는다는 근거가 한 곳에라도 있으면 된다.
+    assert _over(db, users, series=SEED_SERIES, revenue_recent="7") == OVER_YES
+    # 둘 다 못 넘는다.
+    assert _over(db, users, series=SEED_SERIES, revenue_recent="1") == OVER_NO
+
+
+def test_unknown_is_never_folded_into_no(db, users):
+    """**`모름` 은 `아니오` 가 아니다** — 못 넘는다는 뜻이 아니라 알 수 없다는 뜻.
+
+    두 칸이 다 비어 있는 줄이 많다. 그것을 `아니오` 로 적으면 "매출이 안 되는
+    곳" 이라는 **없는 사실**이 생기고, 읽는 쪽은 그 기업을 통째로 뺀다.
+    """
+    from app.services.llm_brief import OVER_UNKNOWN
+
+    # 아무 근거도 없다.
+    assert _over(db, users, series=None, revenue_recent=None) == OVER_UNKNOWN
+    # `~` 는 '적었는데 모른다' 다 — 빈 칸과 같이 다뤄진다(`services/amount.py`).
+    assert _over(db, users, series="Series A", revenue_recent="~") == OVER_UNKNOWN
+    # 기준선을 **걸치는** 구간. 아래만 보고 `아니오` 라 적으면 모르는 것을
+    # 뭉개는 것이 된다 — 실제로 넘을 수도 있다.
+    assert _over(db, users, series=None, revenue_recent="3~10억") == OVER_UNKNOWN
+    # 기업구분이 걸치는 조건을 적어 둔 경우도 같다.
+    assert _over(db, users, series="Series X (년매출액 10억미만)",
+                 revenue_recent=None) == OVER_UNKNOWN
+
+
+def test_a_zero_revenue_is_a_known_fact_not_an_unknown(db, users):
+    """`0` 은 **아는 사실**이다 — 기준선을 못 넘는 것이 확실하다.
+
+    `0`(없음)과 `~`(모름)을 가른 자리가 이 자료에 이미 있다(`ZERO_BAND`).
+    같은 가름이 여기서도 서야 한다.
+    """
+    from app.services.llm_brief import OVER_NO
+
+    assert _over(db, users, series=None, revenue_recent="0") == OVER_NO
+
+
+def test_the_contract_line_is_written_in_exactly_one_place(db, users):
+    """기준선을 코드·설명문·시킬 말이 각자 들고 있으면 반드시 갈린다.
+
+    값을 바꿔 보고 **나가는 판정과 읽는 법 설명이 둘 다** 따라오는지 본다
+    (`AMOUNT_EDGES` · `PICK_COUNT` 와 같은 방식이다).
+    """
+    from app.services import llm_brief
+
+    what = _company(db, series=None, revenue_recent="7")   # = 700 백만원
+
+    original = llm_brief.REVENUE_GATE
+    unit = llm_brief.AMOUNT_UNIT
+    before = _brief(db, users["u1"])
+    got = {c["id"]: c for c in before["companies"]}[f"C-{what.id}"]
+    assert got["revenue_over"] == llm_brief.OVER_YES
+    # **단위까지 붙여 본다.** `500` 만 찾으면 구간 이름(`5000~10000`) 안의 글자에
+    # 걸려 검사가 헛돈다.
+    assert f"{original}{unit}" in before["note"], "읽는 법 설명에 기준선이 없습니다"
+
+    # 구간 경계(`AMOUNT_EDGES`)와 겹치지 않는 값으로 옮긴다 — 겹치면 판정이
+    # 따라온 것인지 구간이 따라온 것인지 구별할 수 없다.
+    llm_brief.REVENUE_GATE = 777
+    try:
+        after = _brief(db, users["u1"])
+    finally:
+        llm_brief.REVENUE_GATE = original
+
+    got = {c["id"]: c for c in after["companies"]}[f"C-{what.id}"]
+    assert got["revenue_over"] == llm_brief.OVER_NO, \
+        "기준선을 올렸는데 판정이 따라오지 않았습니다"
+    assert f"777{unit}" in after["note"], "읽는 법 설명이 옛 기준선을 들고 있습니다"
+    assert f"{original}{unit}" not in after["note"]
+
+
+def test_the_line_is_decided_in_the_service_and_nowhere_else(db, users):
+    """판정이 두 벌로 적히는 것을 막는다 — **`revenue_over()` 한 곳**이다.
+
+    화면도 스크립트도 매출 기준을 스스로 세지 않는다. 기준선 숫자를 화면에
+    적어 두면 고치는 날 그 문장만 옛말이 되고, 사람은 화면을 믿는다.
+    """
+    from app.services.llm_brief import REVENUE_GATE
+
+    root = Path(__file__).resolve().parent.parent
+    for path in ("app/templates/deals.html", "app/static/js/llm_brief.js"):
+        src = (root / path).read_text(encoding="utf-8")
+        assert str(REVENUE_GATE) not in src, f"{path} 가 기준선을 따로 들고 있습니다"
+
+
+def test_the_line_never_carries_the_exact_amount_with_it(db, users):
+    """`예`/`아니오` 는 **넘는가 아닌가**뿐이다 — 숫자가 딸려 나가면 안 된다.
+
+    #156 이 막은 구멍(이름을 빼도 숫자로 특정된다)이 이 칸으로 다시 열리는
+    것을 잠근다.
+    """
+    _company(db, series=PRE_A_SERIES, **AMOUNT_MARKS)
+
+    dumped = json.dumps(_brief(db, users["u1"]), ensure_ascii=False)
+    for field, value in AMOUNT_MARKS.items():
+        assert str(value) not in dumped, f"{field} 에 적힌 글자가 나갔습니다"
+    for field, value in AMOUNT_MARK_MILLIONS.items():
+        assert str(value) not in dumped, f"{field} 의 정확한 값이 나갔습니다"
+    assert '"revenue_over"' in dumped
+
+
 # ── 이름이 새는가 ───────────────────────────────────────────────────────────
 #
 # 칸을 고르는 것만으로는 부족하다 — **메모 안에 이름이 문장째 적혀 있는** 줄이
@@ -718,17 +861,20 @@ def test_the_keys_that_go_out_are_exactly_these(db, users):
     _sheet_sent(db, who, ["이제는없는기업"])
 
     out = _brief(db, users["u1"])
+    # `sector_names` 는 **분야 이름뿐**이다 — 수요를 세는 쪽이 쓸 눈금이고,
+    # 세는 일은 앱이 하지 않는다(`llm_brief.sector_names` 설명 참고).
     assert set(out) == {"generated_at", "scope", "amount_unit", "note",
-                        "prompt", "investors", "companies"}
+                        "prompt", "investors", "companies", "sector_names"}
     assert set(out["investors"][0]) == {
         "id", "sectors", "round_size", "stages",
         "sourcing_note", "memo", "tips_note", "interest_level",
         "sent_before", "sent_before_unmatched"}
     # **`name` 이 없다** — 기업도 번호로만 나간다.
+    # `revenue_over` 는 정확한 금액이 아니라 **넘는가 아닌가** 한 칸이다.
     assert set(out["companies"][0]) == {
         "id", "sector_major", "series", "one_liner", "summary",
         "revenue_recent", "funding_total", "raise_target", "pre_value",
-        "introducible"}
+        "introducible", "revenue_over"}
 
 
 def test_the_answer_that_actually_leaves_the_server_has_no_names_in_it(db, users,
@@ -1232,6 +1378,107 @@ def test_the_number_to_pick_is_written_in_exactly_one_place(db, users):
     finally:
         llm_brief.PICK_COUNT = 8
     assert "5곳" in after and "8곳" not in after
+
+
+def test_the_prompt_asks_for_one_set_for_everyone_not_one_per_investor(db, users):
+    """**시킬 말이 실제 운영과 같은 것을 시켜야 한다.**
+
+    한동안 "투자사마다 기업 8곳" 을 시켰다. 실제로는 이번 주 8개사를 정해
+    **그 한 벌을 전원에게** 보낸다 — 투자사 114곳이면 912 짝을 만들라고 시켜
+    놓고 그중 아무것도 쓰지 않는 셈이었고, 사람이 받은 답을 손으로 한 벌로
+    다시 추려야 했다.
+    """
+    from app.services.llm_brief import PICK_COUNT
+
+    got = _brief(db, users["u1"])["prompt"]
+    assert "한 벌" in got and "전원" in got
+    # 옛 지시가 남아 있으면 안 된다 — 이 한 줄이 곧 912 짝을 만들라는 말이다.
+    assert f"투자사마다 기업 {PICK_COUNT}곳" not in got
+    assert f"{PICK_COUNT}곳 한 벌" in got
+
+
+def test_the_prompt_asks_to_split_the_set_by_what_investors_asked_for(db, users):
+    """한 벌을 **수요 분포에 맞게** 나누라고 시키는가.
+
+    사람이 실제로 그렇게 뽑아 봤고 그 방식이 통했다 — 투자사가 적어 둔 말에서
+    분야 수요를 세고, 자리를 그 비례로 나눈다.
+    """
+    from app.services.llm_brief import PICK_COUNT
+
+    got = _brief(db, users["u1"])["prompt"]
+    assert "수요" in got and "비례" in got
+    assert f"{PICK_COUNT}자리" in got
+    # 무엇을 읽고 세는지가 적혀 있어야 한다.
+    for field in ("sectors", "stages", "round_size", "memo"):
+        assert field in got, field
+
+
+def test_the_prompt_makes_the_counting_use_the_names_that_are_in_the_data(db,
+                                                                         users):
+    """**세는 이름이 기업 값과 같아야 한다** — 다르면 수요가 통째로 사라진다.
+
+    사람이 손으로 해 보다 실제로 당한 자리다: `AI`·`로보틱스` 로 셌는데 기업
+    값은 `AI·SaaS·데이터` 였고 `로보틱스` 라는 분야는 아예 없어서(로봇은
+    `딥테크·제조` 에 든다) 그 수요가 한 곳도 안 걸렸다.
+    """
+    got = _brief(db, users["u1"])["prompt"]
+    assert "sector_names" in got
+    assert "없는 이름" in got or "거기 없는" in got
+
+
+def test_the_data_carries_the_sector_names_so_the_counting_can_land(db, users):
+    """세라고 시키려면 **셀 눈금이 자료 안에** 있어야 한다.
+
+    앱이 하는 일은 여기까지다 — 이름을 꺼내는 것은 자료를 꺼내는 일이고,
+    세는 것은 판단이라 LLM 이 한다(`services/llm_brief.py` 머리말).
+    """
+    _company(db, sector_major="딥테크·제조")
+    _company(db, sector_major="AI·SaaS·데이터")
+    _company(db, sector_major="딥테크·제조")
+    _company(db, sector_major=None)
+
+    got = _brief(db, users["u1"])["sector_names"]
+    assert got == ["AI·SaaS·데이터", "딥테크·제조"]
+    # **이름만이다.** 개수·순위가 붙으면 앱이 먼저 추린 것이 되고, 앱이 추린
+    # 것은 LLM 이 볼 수조차 없다.
+    assert all(isinstance(v, str) for v in got)
+
+
+def test_a_sector_that_is_not_in_the_data_is_not_in_the_name_list(db, users):
+    """목록과 줄이 갈리면 **자료에 없는 분야로 수요를 세게 된다.**
+
+    `딜소개 불가` 로 빠진 기업의 분야가 목록에만 남으면, 그 분야로 나눈 자리를
+    채울 기업이 자료 안에 하나도 없다.
+    """
+    from app.routers.companies import BLOCKED_CONTRACT
+
+    _company(db, sector_major="딥테크·제조")
+    _company(db, sector_major="보낼수없는분야", contract_status=BLOCKED_CONTRACT)
+
+    out = _brief(db, users["u1"])
+    assert out["sector_names"] == ["딥테크·제조"]
+    # 자료에 실린 줄에서 꺼낸 것이라 둘이 갈릴 수 없다.
+    assert set(out["sector_names"]) == {c["sector_major"]
+                                        for c in out["companies"]
+                                        if c.get("sector_major")}
+
+
+def test_the_prompt_prefers_the_revenue_line_without_dropping_early_companies(
+        db, users):
+    """사용자 요구는 **고르는 말**이지 거르는 말이 아니다.
+
+    "5억 미만은 무조건 빼라" 로 적으면 초기 기업을 찾는 투자사의 수요가 통째로
+    죽는다 — `stages` 에 `Seed`·`Pre-seed` 가 적힌 곳이 실제로 있고, 그
+    사람들에게 보낼 것이 자료에서 사라진다.
+    """
+    from app.services.llm_brief import OVER_NO, OVER_UNKNOWN, OVER_YES
+
+    got = _brief(db, users["u1"])["prompt"]
+    assert "revenue_over" in got and OVER_YES in got
+    # 무조건 빼라는 말이 **아니라는 것**이 적혀 있어야 한다.
+    assert OVER_NO in got and OVER_UNKNOWN in got
+    assert "아닙니다" in got
+    assert "Seed" in got
 
 
 def test_the_prompt_is_built_in_the_service_and_nowhere_else(logged_in):
