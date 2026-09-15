@@ -22,8 +22,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import clock
-from . import (auto_send, cadence, followup_sms, mailer, pipeline,
-               sheet_owner, startup_send)
+from . import (auto_send, cadence, followup_sms, mailer, manual_send,
+               pipeline, sheet_owner, startup_send)
 from .. import deps, version
 from ..models import (
     SEND_KINDS,
@@ -405,11 +405,22 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None,
                SendJob.kind.in_(SEND_KINDS),
                func.coalesce(SendItem.sent_at, "") >= week_start.isoformat())
     ).scalars().all()
-    sent_this_week = len(sent_rows)
+    # ── 손으로 보낸 것도 함께 센다 ──────────────────────────────────────────
+    #
+    # 프로그램으로 안 보내고 **카톡에서 손으로** 보내는 사람이 있다. 그 사람의
+    # 이번 주는 여기서 늘 0 이었다 — 실제로 80명에게 보냈는데도.
+    #
+    # **세는 자리를 새로 만들지 않는다.** 합치는 판정은 `manual_send.counted`
+    # 한 곳이고, 여기서는 이미 쓰던 기준(`SEND_KINDS`)을 그대로 넘겨 준다.
+    # 업무 보고와 팀 현황도 같은 함수를 읽는다.
+    manual = manual_send.counted(db, send_kinds=SEND_KINDS, user_id=user.id,
+                                 since=week_start.isoformat())
+    sent_this_week = len(sent_rows) + len(manual)
     # 누르면 그 사람들이 **체크된 채로** 발송 화면이 열린다. 숫자만 보고
     # 누구에게 갔는지 모르면 다음에 누구를 챙길지 정할 수 없다.
     # (소싱 발송은 contact_id 가 비어 있다 — 투자사 목록에서 고를 수 없다)
-    sent_ids = sorted({c for c in sent_rows if c})
+    sent_ids = sorted({c for c in sent_rows if c}
+                      | {m["contact_id"] for m in manual if m["contact_id"]})
 
     # 막힌 것 — 발송 전에 손봐야 할 목록
     #
@@ -474,8 +485,12 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None,
              "sub": "내 명단에 있는 사람", "href": "/contacts"},
             # 누르면 이번 주에 **실제로 도착한 사람**이 나온다 — 숫자만 보고
             # 누구에게 갔는지 모르면 다음에 누구를 챙길지 정할 수 없다.
+            # **합쳤어도 되짚을 수 있어야 한다.** 손으로 적은 것이 섞여 있으면
+            # 몇 건인지 아래 줄이 밝힌다 — 숫자를 가르지는 않는다(가르면 사람이
+            # 두 수를 더해야 하고, 보고에 적는 수는 어차피 합계다).
             {"key": "sent", "label": "이번 주 보낸 건수", "value": sent_this_week,
-             "sub": f"{week_start.strftime('%m/%d')}부터 · 도착 성공",
+             "sub": (f"{week_start.strftime('%m/%d')}부터 · 도착 성공"
+                     + (f" · 손으로 적음 {len(manual)}" if manual else "")),
              "href": ("/deals?contacts=" + ",".join(str(i) for i in sent_ids)
                       if sent_ids else "/deals")},
         ],
@@ -836,6 +851,14 @@ def admin_dashboard(db: Session, today: Optional[date] = None) -> dict:
         .group_by(SendJob.user_id)
     ).all()
     sent_by_user = {uid: n for uid, n in sent_rows}
+    # 손으로 보낸 것도 같이 센다 — 판정은 `manual_send.counted` 한 곳이고,
+    # 사용자 대시보드가 넘기는 것과 **같은 기준**(`SEND_KINDS`)을 넘긴다.
+    # 두 화면이 같은 사람을 다른 수로 부르면 어느 쪽을 믿을지 알 수 없다.
+    manual_by_user: Dict[int, int] = {}
+    for row in manual_send.counted(db, send_kinds=SEND_KINDS,
+                                   since=f"{month_prefix}-01",
+                                   until=f"{month_prefix}-31"):
+        manual_by_user[row["user_id"]] = manual_by_user.get(row["user_id"], 0) + 1
 
     rows = []
     for u in users:
@@ -853,7 +876,11 @@ def admin_dashboard(db: Session, today: Optional[date] = None) -> dict:
             "ready": ready,
             "ready_percent": round(ready * 100 / (len(mine) or 1)),
             "missing": states["missing"] + states["failed"],
-            "sent_month": sent_by_user.get(u.id, 0),
+            "sent_month": (sent_by_user.get(u.id, 0)
+                           + manual_by_user.get(u.id, 0)),
+            # 그중 손으로 적은 것. 화면이 `126 (손 80)` 으로 밝힌다 —
+            # 합친 수만 보이면 되짚을 길이 없다.
+            "sent_month_manual": manual_by_user.get(u.id, 0),
             "ir": acts.get("ir_request", 0),
             "meeting": acts.get("meeting", 0),
             "agent": _agent_label(device),

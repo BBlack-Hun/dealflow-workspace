@@ -138,23 +138,21 @@ def record_delivery(db: Session, contact_id: int, company_names: Sequence[str],
 
     **두 번 눌러도 한 줄이다.** 같은 날 · 같은 담당자 · 같은 기업 묶음이면
     다시 적지 않는다 — 같은 줄이 두 번 쌓이면 이력이 아니라 소음이고, 실패해서
-    다시 보내는 것은 흔한 일이다.
+    다시 보내는 것은 흔한 일이다. **그 판정은 `manual_send.existing` 한
+    곳이다** — 손으로 적는 길도 같은 함수를 지난다(세 곳이 각자 적어 두면
+    한쪽만 고쳐진 날 같은 줄이 두 번 쌓인다).
 
     `by_sender` 는 **자료를 누가 붙였는가**다. 자동 첨부를 켠 계정은 발송기가
     파일을 실어 보내고, 그 밖에는 사람이 PC 카톡에서 붙인다 — 나중에 되짚을 때
     다른 일이라 말이 달라야 한다. 판단 자체는 `auto_attach_enabled` 한 곳이고
     여기서 다시 하지 않는다(부르는 쪽이 실제로 파일을 실었는지를 넘겨준다).
     """
+    from .manual_send import existing
+
     day = (when or date.today()).isoformat()
     payload = json.dumps([str(n) for n in company_names], ensure_ascii=False)
-    already = db.execute(
-        select(ContactActivity).where(
-            ContactActivity.contact_id == contact_id,
-            ContactActivity.kind == "ir_delivery",
-            ContactActivity.happened_at == day,
-            ContactActivity.company_names == payload)
-    ).scalars().first()
-    if already is not None:
+    if existing(db, contact_id, "ir_delivery", day,
+                company_names=company_names) is not None:
         return False
     db.add(ContactActivity(
         contact_id=contact_id, kind="ir_delivery", source="system",

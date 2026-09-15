@@ -216,12 +216,10 @@ def _as_date(value: Optional[str]) -> Optional[date]:
 
 def start_or_advance(db: Session, item: SendItem, job: SendJob,
                      rng: Optional[random.Random] = None) -> Optional[SendSequence]:
-    """발송이 **성공했을 때** 부른다. 시퀀스를 시작하거나 다음 단계로 넘긴다.
+    """**앱이 보낸 건**이 성공했을 때 부른다.
 
-    - 딜소개(stage 1) → 시퀀스 시작, 리마인드 예약
-    - 리마인드(stage 2) → 미팅 요청 예약
-    - 미팅 요청(stage 3) → 끝
-    - IR 자료 전달은 답이 왔다는 뜻이므로 시퀀스를 멈춘다
+    판정은 하지 않는다 — 발송 건에서 값을 꺼내 아래 `advance` 에 넘기기만
+    한다. 단계를 어떻게 올리고 다음 날짜를 언제로 잡는지는 거기 한 곳이다.
     """
     if item.status != "sent":
         return None
@@ -229,16 +227,47 @@ def start_or_advance(db: Session, item: SendItem, job: SendJob,
     # 딜을 봐 달라는 초대라 "검토 중이신가요" 를 이어 보낼 것이 없다.
     if item.contact_id is None:
         return None
+    return advance(db, user_id=job.user_id, contact_id=item.contact_id,
+                   batch_id=job.batch_id, kind=job.kind,
+                   stage=item.stage or STAGE_DAY1, sent_at=item.sent_at,
+                   rng=rng)
 
+
+def advance(db: Session, *, user_id: int, contact_id: int,
+            batch_id: Optional[int], kind: str, stage: Optional[int],
+            sent_at: Optional[str],
+            rng: Optional[random.Random] = None) -> Optional[SendSequence]:
+    """**무엇이 나갔다**는 사실 하나로 시퀀스를 시작하거나 다음 단계로 넘긴다.
+
+    - 딜소개(stage 1) → 시퀀스 시작, 리마인드 예약
+    - 리마인드(stage 2) → 미팅 요청 예약
+    - 미팅 요청(stage 3) → 끝
+    - IR 자료 전달은 답이 왔다는 뜻이므로 시퀀스를 멈춘다
+
+    ## 왜 `SendItem` 을 안 받는가
+
+    손으로 보낸 것을 적는 길이 생겼다(`services/manual_send.py`). 그쪽에는
+    발송 건도 회차도 없다 — 사람이 카톡에서 직접 보내고 나서 적는 것이다.
+    그렇다고 **판정을 두 벌로 만들지 않는다.** 단계 사다리와 다음 예정일
+    계산이 두 곳에 있으면, 한쪽만 고쳐진 날 손으로 보낸 사람의 후속만 다른
+    날짜로 잡힌다 — 그런 어긋남은 몇 달 뒤에야 드러난다.
+
+    그래서 **받는 것을 값으로 내렸다.** 앱이 보낸 건은 위 `start_or_advance`
+    가 발송 건에서 값을 꺼내 넘기고, 손으로 적은 것은 그 값을 직접 넘긴다.
+    둘 다 여기 한 함수를 지난다.
+
+    `kind` 는 `SendJob.kind` 의 말이고 `stage` 는 `SendItem.stage` 의 말이다 —
+    부르는 쪽이 자기 말로 바꾸지 않는다(`manual_send.AS_SEND` 가 옮긴다).
+    """
     seq = db.execute(
-        select(SendSequence).where(SendSequence.contact_id == item.contact_id)
+        select(SendSequence).where(SendSequence.contact_id == contact_id)
         .order_by(SendSequence.id.desc()).limit(1)
     ).scalars().first()
 
-    stage = item.stage or STAGE_DAY1
-    sent_on = _as_date(item.sent_at) or _today()
+    stage = stage or STAGE_DAY1
+    sent_on = _as_date(sent_at) or _today()
 
-    if job.kind == "ir_delivery":
+    if kind == "ir_delivery":
         # 자료를 보냈다는 것은 상대가 달라고 했다는 뜻이다.
         if seq and seq.status == "active":
             stop(db, seq, "IR 자료를 전달했습니다", status="responded")
@@ -247,15 +276,15 @@ def start_or_advance(db: Session, item: SendItem, job: SendJob,
     if stage == STAGE_DAY1:
         if seq is not None and seq.status == "active":
             # 같은 사람에게 새 회차를 보냈다면 그 회차 기준으로 다시 센다.
-            seq.batch_id = job.batch_id
+            seq.batch_id = batch_id
         else:
-            seq = SendSequence(user_id=job.user_id, contact_id=item.contact_id,
-                               batch_id=job.batch_id)
+            seq = SendSequence(user_id=user_id, contact_id=contact_id,
+                               batch_id=batch_id)
             db.add(seq)
         seq.stage = STAGE_DAY1
         seq.status = "active"
         seq.stopped_reason = None
-        seq.day1_sent_at = item.sent_at or _now_iso()
+        seq.day1_sent_at = sent_at or _now_iso()
         seq.last_sent_at = seq.day1_sent_at
         seq.next_stage = STAGE_REMIND
         due = follow_up_date(db, sent_on, STAGE_REMIND, rng)
@@ -267,7 +296,7 @@ def start_or_advance(db: Session, item: SendItem, job: SendJob,
         return seq
 
     seq.stage = stage
-    seq.last_sent_at = item.sent_at or _now_iso()
+    seq.last_sent_at = sent_at or _now_iso()
     if stage == STAGE_REMIND:
         seq.next_stage = STAGE_MEETING
         # 미팅 요청은 **딜소개일 기준**으로 잡는다. 리마인드가 늦어졌다고

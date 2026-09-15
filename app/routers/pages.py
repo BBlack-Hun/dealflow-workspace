@@ -10,13 +10,14 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from .. import clock
 from ..db import get_db
 from ..deps import get_current_user, may_manage_team_contacts, templates
 from ..models import IrCompany, SendJob, User
 from ..services import (cadence, contact_columns, deal_history, deal_queue,
                         deal_stage, email_domains, ir_attach, llm_brief, mailer,
-                        ref_panel, scheduled_send, sheet_import, sheet_owner,
-                        sourcing_link, startup_send)
+                        manual_send, ref_panel, scheduled_send, sheet_import,
+                        sheet_owner, sourcing_link, startup_send)
 from ..ui import MENU, base_ctx as _base_ctx
 from .companies import BLOCKED_CONTRACT
 from .companies import blocked_reason as company_blocked_reason
@@ -217,6 +218,17 @@ def deals_page(
         # **문장을 여기서 짓지 않는다.** 자료의 `scope` 칸과 같은 함수가 짓는다
         # (`services/llm_brief.scope`) — 화면과 자료가 각자 적으면 갈린다.
         "llm_scope": llm_brief.scope(db, user),
+        # ── 손으로 보낸 것 적기 ────────────────────────────────────────────
+        #
+        # **말도 날짜도 서버가 실어 준다.** 화면에 글자를 박아 두면 규칙이
+        # 바뀌는 날 화면만 옛말을 한다 — 예약 시각 폭(`send_earliest_hour`)을
+        # 서버가 실어 주는 것과 같은 이유다. 특히 `manual_remind_note` 는
+        # **리마인드를 세울지 가르는 그 함수와 같은 곳**에서 온다
+        # (`manual_send.REMIND_NOTE` · `sets_reminder`).
+        "manual_kinds": manual_send.KIND_LABELS,
+        "manual_kinds_with_companies": list(manual_send.KINDS_WITH_COMPANIES),
+        "manual_remind_note": manual_send.REMIND_NOTE,
+        "manual_today": clock.today().isoformat(),
     })
     return templates.TemplateResponse("deals.html", ctx)
 

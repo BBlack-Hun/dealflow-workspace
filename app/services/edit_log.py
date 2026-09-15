@@ -85,6 +85,9 @@ from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm.attributes import get_history
 
 from ..clock import now_iso
+# 사람이 손으로 적은 줄을 가리는 값. **여기 글자를 다시 적지 않는다** —
+# 저장하는 쪽과 가리는 쪽이 다른 글자를 쓰면 로그가 통째로 빈다.
+from ..models import SOURCE_MANUAL
 
 # 쓰기로 보는 메서드. 읽기(GET·HEAD·OPTIONS)는 여기 없으므로 문맥이 심기지
 # 않고, 문맥이 없으면 아무 것도 남지 않는다.
@@ -123,16 +126,29 @@ class Watch:
     새로 지으면 화면의 권한과 로그의 판정이 갈린다.
     """
 
-    __slots__ = ("owner", "href", "label", "why")
+    __slots__ = ("owner", "href", "label", "why", "only")
 
     def __init__(self, *, owner: Optional[str], href, label: Callable[[Any], str],
-                 why: str) -> None:
+                 why: str, only: Optional[tuple] = None) -> None:
         self.owner = owner
         #: 이 줄을 보는 화면의 주소. 줄마다 다르면 함수로 준다(참고 자료).
         self.href = href
         #: 그 줄이 무엇인가 — 사람이 읽을 이름.
         self.label = label
         self.why = why
+        #: **표 안에서 다시 가릴 때** — `(칸 이름, 그 값)`. 없으면 다 본다.
+        #:
+        #: 표 하나가 통째로 사람 자료이거나 통째로 기계 기록인 것이 보통이라
+        #: 대개 비어 있다. 딱 한 표가 둘 다다 — `contact_activities` 는 같은
+        #: 표에 가져오기·발송이 만든 줄(하루 수천)과 사람이 화면에서 적은
+        #: 줄(`source="manual"`)이 함께 산다. 앞엣것까지 남기면 로그가 기계
+        #: 기록으로 덮여 아무도 안 본다.
+        #:
+        #: **함수가 아니라 칸과 값이다.** 표를 훑는 검사
+        #: (`tests/test_edit_log.py`)가 이 표의 줄을 하나 지어 보는데, 함수면
+        #: 그 줄이 어떤 모양이어야 걸리는지 검사가 알 수 없어 **표 이름을 아는
+        #: 예외**를 검사 안에 심게 된다. 칸과 값이면 검사가 그대로 채워 넣는다.
+        self.only = only
 
 
 def _attr(name: str) -> Callable[[Any], str]:
@@ -164,6 +180,16 @@ def _sequence_label(row) -> str:
     if contact is None:
         return ""
     return " ".join(part for part in (contact.name, contact.firm) if part).strip()
+
+
+def _activity_label(row) -> str:
+    """활동 줄 하나가 **누구의 무엇인가** — 담당자 이름과 갈래.
+
+    `_sequence_label` 과 같은 자리·같은 방식이다(이 표에도 담당자 **번호**만
+    있어서, 번호만 남기면 되돌릴 판을 고를 때 누구 줄인지 알 수 없다).
+    """
+    return " · ".join(part for part in (_sequence_label(row),
+                                        getattr(row, "kind", "") or "") if part)
 
 
 WATCHED: Dict[str, Watch] = {
@@ -214,6 +240,19 @@ WATCHED: Dict[str, Watch] = {
             "좁히지 않고**(`company_rows` 는 `user` 를 받지도 않는다) 손으로 세운 줄에만 "
             "채워진다 — 시트에서 넘어온 줄은 전부 비어 있다(`services/pipeline.py`). "
             "화면이 이미 '누구나 어느 기업이든 고친다' 로 움직이므로 공용이 맞다."),
+    "contact_activities": Watch(
+        owner=None, href="/contacts", label=_activity_label,
+        only=("source", SOURCE_MANUAL),
+        why="담당자 활동 이력 — **사람이 손으로 적은 줄만** 본다"
+            "(`source=\"manual\"` · `services/manual_send.py`). "
+            "가져오기와 발송이 만드는 줄은 안 남긴다: 시트 한 번에 수백 줄, "
+            "회차 한 번에 수십 줄이 쌓여 로그가 기계 기록으로 덮인다. "
+            "손으로 적는 길은 다르다 — **묶음 입력이 남의 담당자 줄에도 닿고**, "
+            "80줄을 한 판에 적으므로 되돌릴 근거가 여기 말고 없다. "
+            "주인 칸이 없어 공용으로 본다(줄의 주인은 담당자 줄 쪽에 있다) — "
+            "그래서 자기 담당분을 적어도 남는다. 그게 맞다: 되돌릴 판을 고르려면 "
+            "누구 것이었는지가 아니라 **언제 무엇이 들어왔는지**가 필요하다.",
+    ),
     "sourcing_contacts": Watch(
         owner=None, href="/sourcing", label=_attr("name"),
         why="딜 소싱 명단. 주인 칸이 없고 로그인한 사람이면 누구나 고친다."),
@@ -246,9 +285,6 @@ UNWATCHED: Dict[str, str] = {
     "edit_logs": "이 표 자신. 로그가 로그를 남기면 끝이 없다.",
     "sessions": "로그인 세션. 기계 기록이고 값에 세션 열쇠가 들어 있다.",
     "agent_devices": "보내는 기기의 상태(몇 초마다 오는 신호). 사람이 고친 것이 아니다.",
-    "contact_activities": "담당자 줄에 딸린 활동 기록. 가져오기와 발송이 만든다 — "
-                          "사람이 화면에서 고치는 자료가 아니고, 줄 자체가 바뀐 것은 "
-                          "`vc_contacts` 쪽에 이미 남는다.",
     "template_choices": "어느 문구 본을 쓸지 고른 표시. 화면에 보이는 자료가 아니라 "
                         "`message_templates` 를 가리키는 손가락이고, 갈래 이름을 한 번 "
                         "바꾸면 사람 수만큼 줄이 쌓인다. 이름이 바뀐 것은 문구 쪽에 남는다.",
@@ -525,6 +561,11 @@ def _collect(session: OrmSession, action: str, rows, ctx: dict) -> List[dict]:
         watch = WATCHED.get(table)
         if watch is None:
             continue
+        # 표 안에서 다시 가리는 자리(지금은 `contact_activities` 하나).
+        if watch.only is not None:
+            field, want = watch.only
+            if getattr(obj, field, None) != want:
+                continue
         if action == ACTION_UPDATE and not session.is_modified(
                 obj, include_collections=False):
             continue

@@ -404,10 +404,17 @@ def test_판의_머리가_하나다():
     이 저장소에서 번호가 겹쳐 CI 가 터진 적이 있다.
     (`tests/test_migrations.py` 도 같은 것을 본다 — 새 판을 더하는 이 자리에서
     한 번 더 본다.)
+
+    **머리의 이름은 못 박지 않는다.** `0075` 라고 적어 두었더니 그 위에 판을
+    하나 얹는 순간 이 검사가 빨개졌다 — 묻는 것은 "머리가 하나인가" 이지
+    "머리가 0075 인가" 가 아니다. 대신 0075 가 **사슬 안에 있는지**를 본다:
+    누군가 이 판을 사슬에서 떼어 내면 그건 진짜로 잡아야 할 일이다.
     """
     revisions, parents = set(), set()
     for path in (ROOT / "alembic" / "versions").glob("0*.py"):
         text = path.read_text(encoding="utf-8")
         revisions |= set(re.findall(r'^revision = "([^"]+)"', text, re.M))
         parents |= set(re.findall(r'^down_revision = "([^"]+)"', text, re.M))
-    assert revisions - parents == {"0075_column_month_kind"}
+    heads = revisions - parents
+    assert len(heads) == 1, f"머리가 하나여야 한다 — 지금: {sorted(heads)}"
+    assert "0075_column_month_kind" in revisions
