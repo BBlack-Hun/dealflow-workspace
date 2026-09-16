@@ -848,13 +848,41 @@
       <p class="hint muted" id="ir-no-note" hidden></p>
     </div>
     <div class="mail-fields" id="mail-fields" hidden>
-      <label class="field">
-        <span>메일 제목</span>
-        <input type="text" id="mail-subject" placeholder="회차명이 기본으로 들어갑니다">
-      </label>
+      {# **고르개가 먼저, 채워질 칸이 다음.** 이 칸(③ 미리보기·발송)은 넓은
+         화면에서도 370px 남짓이라 둘이 한 줄에 서지 않고 감싸 넘어간다
+         (1440px 에서 잰 값이다). 그러면 눈은 위에서 아래로 읽으므로,
+         "고른다 → 아래 칸에 들어간다" 차례로 세운다. 칸이 넓어지면 왼쪽에
+         고르개, 오른쪽에 제목으로 한 줄에 서고 읽는 차례는 그대로다. #}
+      <div class="mail-subject-row">
+        {# **고르면 아래 칸에 채운다** — 골라 둔 것을 그대로 보내지 않는다.
+           제목은 회차마다 한 마디가 달라지는 자리라(“9월 3주차”), 고른 뒤
+           손볼 수 없으면 결국 또 손으로 적게 된다. 채우고 나면 나갈 제목은
+           **칸의 값 하나**라 서버로 가는 길도 지금까지 그대로다.
+
+           문구가 하나도 없으면 이 칸 대신 만들러 가는 길을 띄운다
+           (`deals.js` 가 `/api/templates` 를 보고 가른다) — 고를 것이 없는데
+           빈 고르개만 서 있으면 무엇을 해야 하는 화면인지 흐려진다. #}
+        <label class="field" id="mail-subject-tpl-wrap" hidden>
+          <span>제목 문구에서 가져오기</span>
+          <select id="mail-subject-tpl">
+            <option value="">직접 입력</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>메일 제목</span>
+          <input type="text" id="mail-subject" placeholder="회차명이 기본으로 들어갑니다">
+        </label>
+      </div>
+      <p class="hint" id="mail-subject-none" hidden>
+        <a href="/templates#mail_subject">[딜 제안 문구] 의 <b>홍보메일 제목</b></a> 에
+        제목을 만들어 두면 여기서 골라 쓸 수 있습니다.
+      </p>
       <p class="hint">
         메일은 <b>서버가 바로 보냅니다</b> — 발송 프로그램을 켜 둘 필요가 없습니다.
         메일 주소가 없는 담당자는 발송 전에 막힙니다.
+        제목을 <b>비워 두면 회차명</b>이 그대로 제목이 됩니다.
+        제목에 적은 <code>{담당자명}</code>·<code>{직함}</code>·<code>{투자사}</code>·<code>{개수}</code>
+        는 문구와 똑같이 받는 분마다 채워집니다.
       </p>
     </div>
     <div class="send-summary" id="send-summary">
