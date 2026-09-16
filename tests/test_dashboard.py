@@ -802,20 +802,19 @@ def _mine_with_sheet(db, users, name):
     return db.query(VcContact).filter_by(name=name).first()
 
 
-def test_monthly_reactions_show_this_month_and_last_month_only(db, users):
-    """기본으로 보이는 달은 **이 달과 지난 달, 둘**이다.
+def test_monthly_reactions_show_four_months(db, users):
+    """기본으로 보이는 달은 **이 달 + 지난 3달, 넷**이다.
 
-    사용자가 정한 수다. 넉 달을 세우면 "이번 달이 지난달보다 나은가" 라는
-    견줌이 넷 중 하나로 묻힌다. 화면의 `최근 N개월` 글자도 이 목록의 길이를
-    그대로 읽으므로, 여기만 고치면 글자도 따라간다.
+    한 번 둘로 줄였다가 사용자가 넷으로 되돌렸다. 화면의 `최근 N개월` 글자도
+    이 목록의 길이를 그대로 읽으므로, 여기만 고치면 글자도 따라간다.
     """
     from app.services.dashboard import REACTION_MONTHS, monthly_reactions
 
-    assert REACTION_MONTHS == 2
-    contact = _mine_with_sheet(db, users, "두달만")
+    assert REACTION_MONTHS == 4
+    contact = _mine_with_sheet(db, users, "넉달")
     keys = [m["key"] for m in
             monthly_reactions(db, [contact.id], today=date(2026, 9, 16))]
-    assert keys == ["2026-09", "2026-08"], keys
+    assert keys == ["2026-09", "2026-08", "2026-07", "2026-06"], keys
 
 
 def test_monthly_reactions_split_the_same_numbers_by_month(db, users):

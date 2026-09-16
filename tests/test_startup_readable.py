@@ -27,6 +27,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
+
 from .test_startup_tab import LIST, OTHER, _thead_cells, _url, sheets  # noqa: F401
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -138,6 +140,108 @@ def test_머리글과_칸에_같은_수의_고정_표시가_붙는다(sheets):  
             got = len(re.findall(r'class="[^"]*\bstick\b', row))
             assert got == want, (
                 f"{sheet}: 머리글 {want}칸 · 줄 {got}칸 — 짝이 안 맞습니다")
+
+
+# ── 세 번째 화면 — IR 기업 현황 ────────────────────────────────────────────
+#
+# 같은 불만이 이 표에도 그대로 있었다. 2,386px 인데 1440px 화면에서 보이는
+# 자리가 1,184px 뿐이라, 오른쪽 끝(`계약여부`·`계약서 수신 여부`·`IR 자료`)을
+# 보려면 1,200px 을 밀어야 하고 그동안 기업명이 화면에서 사라졌다.
+#
+# **스타트업DB 탭은 건드리지 않는다**(사용자가 범위를 못 박았다).
+
+COMPANIES = (ROOT / "app" / "templates" / "companies.html").read_text(encoding="utf-8")
+
+
+def _co_head(html: str, which: str) -> str:
+    """두 탭 중 한쪽의 `<thead>`. 두 표가 **같은 id** 를 쓰므로 탭으로 가른다."""
+    heads = re.findall(r"<thead>(.*?)</thead>", html, re.S)
+    assert heads, "표 머리글을 못 찾았습니다"
+    for head in heads:
+        if which in head:
+            return head
+    raise AssertionError(f"`{which}` 가 있는 표를 못 찾았습니다")
+
+
+@pytest.fixture()
+def co(db, client, users):
+    """IR 기업 현황에 줄이 **있는** 상태. 빈 표에서는 칸 짝을 잴 수 없다."""
+    from app.models import IrCompany
+
+    from .conftest import DEMO_PASSWORD
+
+    db.add_all([IrCompany(name="샘플애그", one_liner="소개"),
+                # `딜소개 불가` 줄 — 고정 칸에서 색이 끊기는지 보는 줄이다.
+                IrCompany(name="샘플메디", one_liner="소개",
+                          contract_status="blocked")])
+    db.commit()
+    client.post("/login", data={"phone": "01000000001",
+                                "password": DEMO_PASSWORD})
+    return client
+
+
+def test_IR_기업_현황도_첫_두_칸이_고정된다(co):
+    """`NO` 와 `기업명` — 다른 두 표와 **정확히 같은 규칙**이다.
+
+    `Layout.sticky = 2` 가 말하는 그 둘이다: `NO` 와 그다음 한 칸, 그 한 칸이
+    이 표의 주인공 이름. 한 칸 더 고정하면(`사업분야 대분류`) 고정 폭이 300px
+    을 넘어 정작 밀어서 볼 자리가 준다.
+    """
+    head = _co_head(co.get("/companies").text, "딜 소개 문구 회사개요")
+    cells = re.findall(r"<th\b([^>]*)>(.*?)</th>", head, re.S)
+    assert "stick stick-a" in cells[0][0], cells[0]
+    assert "stick stick-b" in cells[1][0], cells[1]
+    assert "기업명" in cells[1][1], cells[1]
+    assert "stick" not in cells[2][0], \
+        "세 칸째까지 고정하면 고정 폭이 300px 을 넘습니다"
+
+
+def test_IR_기업_현황도_머리글과_칸에_같은_수의_고정_표시가_붙는다(co):
+    """한쪽만 붙으면 머리글은 멈춰 서고 칸은 따라 흘러간다."""
+    body = co.get("/companies").text
+    head = _co_head(body, "딜 소개 문구 회사개요")
+    want = len(re.findall(r'class="[^"]*\bstick\b', head))
+    assert want == 2, f"머리글의 고정 칸이 {want}개입니다"
+    rows = re.findall(r'<tr data-id="\d+".*?</tr>', body, re.S)
+    assert rows, "줄이 하나도 없어 검사할 수 없습니다"
+    for row in rows:
+        got = len(re.findall(r'class="[^"]*\bstick\b', row))
+        assert got == want, f"머리글 {want}칸 · 줄 {got}칸 — 짝이 안 맞습니다"
+
+
+def test_스타트업DB_탭은_안_건드린다(co):
+    """사용자가 범위를 못 박았다 — "스타트업 DB 말고 IR 기업 현황만"."""
+    head = _co_head(co.get("/companies?tab=db").text, "수신일")
+    assert "stick" not in head, "범위 밖의 표에 고정을 붙였습니다"
+
+
+def test_퍼센트_칸의_왼쪽_자리는_앞_칸_폭_하나로_낸다():
+    """`기업명` 은 `width:13%` 다 — **`%` 는 더할 수 없다.**
+
+    더해야 하는 것은 그 칸 **앞**의 칸들뿐이고 이 표에서는 `NO` 하나다. 자기
+    폭은 자리에 안 들어가므로, `%` 를 px 로 바꾸지 않고(그건 이 표의 폭 설계를
+    통째로 건드리는 일이다) `NO` 폭 하나만 넘긴다.
+
+    그 폭은 **한 곳에만 적혀 있어야 한다** — 머리글의 `width:` 와 `--stick-b`
+    가 같은 값을 읽어야, 폭을 고친 날 고정 칸이 반 칸씩 어긋나지 않는다.
+    """
+    assert "{% set no_w = 36 %}" in COMPANIES, "`NO` 폭을 적는 자리가 없습니다"
+    assert "--stick-b:{{ no_w }}px" in COMPANIES, \
+        "왼쪽 자리에 px 을 손으로 적었습니다 — 폭과 두 군데가 됩니다"
+    assert 'style="width:{{ no_w }}px"' in COMPANIES, \
+        "머리글 폭이 `--stick-b` 와 다른 값을 읽습니다"
+    assert "--stick-a:0px" in COMPANIES, "첫 칸의 왼쪽 자리가 없습니다"
+
+
+def test_딜소개_불가_줄의_색이_고정_칸에서_안_끊긴다():
+    """고정 칸은 제 바탕을 깔고 다른 칸 **위에** 선다.
+
+    안 적어 두면 붉은 줄의 맨 앞 두 칸만 흰색으로 남아 그 줄이 두 줄처럼
+    보인다(`tr:hover`·`tr.row-hidden` 이 같은 이유로 이미 그렇게 돼 있다).
+    """
+    assert "tr.blocked-row > td.stick" in CSS, \
+        "`딜소개 불가` 줄의 색이 고정 칸에서 끊깁니다"
+    assert "tr.blocked-row:hover > td.stick" in CSS
 
 
 def test_폰에서는_가로_고정만_풀고_머리행은_남긴다():
