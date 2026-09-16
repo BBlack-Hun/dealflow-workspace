@@ -66,7 +66,10 @@ def _month(offset: int = 0) -> int:
 
 MONTHS = [f"{_month()}월 리마인드 문자", f"{_month()}월 리마인드 TEL",
           f"{_month()}월 카톡 연결"]
-TAIL = ["IR 자료 회신 여부",
+# `카톡 연결 여부` 는 **월별 칸 뒤**다. 사용자가 `IR 자료 회신 여부` 바로
+# 앞이라고 한 자리이고, 그 자리가 마침 `tail` 의 맨 앞이라 달 칸 묶음을
+# 쪼개지 않는다(`contact_columns.STARTUP_LAYOUT` 의 그 칸 주석).
+TAIL = ["카톡 연결 여부", "IR 자료 회신 여부",
         "메모 ( 통화내용 /  카톡내용  /  카톡답신내용)"]
 
 
@@ -240,6 +243,17 @@ def test_칸을_하나_늘려도_머리글과_데이터_칸이_함께_늘어난�
         assert len(re.findall(r"<td\b", row)) == len(heads)
 
 
+def _month_heads(heads: list) -> list:
+    """머리글 중 **달마다 늘어나는 칸**만. 이름 앞의 `N월` 로 가른다.
+
+    뒷말(`카톡 연결`·`리마인드`)로 고르면 안 된다 — 붙박이 칸에도 같은 말이
+    선다(`카톡 연결 여부`). 실제로 그 칸이 붙으면서 접기 검사가 월별 칸을 넷으로
+    세었다. 달 칸인지 아닌지는 **달 이름이 붙었는가**가 가른다(`split_months`
+    가 접을 자리를 고를 때 보는 것과 같은 것이다).
+    """
+    return [h for h in heads if re.match(r"\d+월\s", h)]
+
+
 def test_칸이_많아지면_접고_접었다는_것을_적는다(sheets, db):
     """그냥 안 보이면 **지워진 줄 안다.**
 
@@ -265,7 +279,7 @@ def test_칸이_많아지면_접고_접었다는_것을_적는다(sheets, db):
             pos += 1
     db.commit()
     html = sheets.get(_url(LIST)).text
-    months = [h for h in _thead(html) if "리마인드" in h or "카톡 연결" in h]
+    months = _month_heads(_thead(html))
     # 이번 달 세 칸만 편다 — 한 달의 칸은 **다 같이** 서거나 다 같이 접힌다.
     assert len(months) == 3, f"펴 둔 칸이 이번 달 세 칸이 아닙니다: {months}"
     assert all(f"{_month()}월" in h for h in months), months
@@ -273,8 +287,7 @@ def test_칸이_많아지면_접고_접었다는_것을_적는다(sheets, db):
     assert "펴기" in html, "접어 놓고 그 사실을 화면에 적지 않았습니다"
 
     everything = _thead(sheets.get(_url(LIST, months="all")).text)
-    assert len([h for h in everything
-                if "리마인드" in h or "카톡 연결" in h]) == 9
+    assert len(_month_heads(everything)) == 9
 
 
 def test_맨_앞의_옛_칸이_이번_달_칸을_밀어내지_않는다(sheets, db):
@@ -479,6 +492,78 @@ def test_두_칸은_O_와_X_중에서_고른다(sheets, db):
     got = sheets.get(f"/api/contacts/{row.id}").json()["contact"]["notes"]
     assert got["quote_attached"] == "O"
     assert got["invoice_received"] == "X"
+
+
+def test_카톡_연결_여부는_IR_회신_바로_앞에_서고_저장_자리를_새로_만들지_않는다(
+        sheets, db):
+    """**`VcContact.kakao_joined` 를 그대로 보이고 고치는 칸**이다.
+
+    사용자가 말한 자리는 `IR 자료 회신 여부` 바로 앞이고, 그 자리가 마침
+    `tail` 의 맨 앞이라 달 칸 묶음(`table_columns`)을 쪼개지 않는다.
+
+    여기서 못 박는 것은 **저장 자리**다. `source="note"` 로 새 키를 파면 같은
+    사실이 세 군데에 적힌다 — 이 칸 · 월별 `N월 카톡 연결` · 모델 칸. 셋 중
+    어느 것이 최신인지는 아무도 모르고 화면은 멀쩡하다. 그래서 이 칸은
+    모델 칸 그 자체여야 하고, `notes` 에는 **아무것도 안 남아야** 한다.
+    """
+    from app.services import contact_columns as cc
+
+    column = cc.STARTUP_LAYOUT.tail[0]
+    assert column.label == "카톡 연결 여부"
+    assert column.key == "kakao_joined", \
+        "새 키를 파면 대시보드·투자사 표가 보는 값과 갈린다"
+    assert column.source == "field", column
+    assert column.kind == "pick" and column.choices.split(",") == ["O", "X"]
+    assert column.in_table is True
+
+    head = _thead(sheets.get(_url(LIST)).text)
+    # 달 칸 묶음 **뒤**, `IR 자료 회신 여부` **바로 앞**.
+    assert head.index(MONTHS[-1]) < head.index("카톡 연결 여부"), head
+    assert head[head.index("카톡 연결 여부") + 1] == "IR 자료 회신 여부", head
+
+    body = sheets.get(_url(LIST)).text
+    # 고르는 칸으로 그려지고 보기가 붙는다. `data-note` 는 **없어야** 한다 —
+    # 붙으면 값이 `notes` 묶음으로 나가 세 번째 저장 자리가 생긴다.
+    cell = re.search(r'<td class="cell ellipsis[^"]*" data-field="kakao_joined"'
+                     r'([^>]*)>', body)
+    assert cell, "표에 `kakao_joined` 칸이 안 섰습니다"
+    assert 'data-type="pick"' in cell.group(1), cell.group(1)
+    assert 'data-choices="O,X"' in cell.group(1), cell.group(1)
+    assert "data-note" not in cell.group(1), \
+        "`notes` 로 보내면 모델 칸이 아니라 세 번째 자리에 적힌다"
+    # 필터가 서고, 행이 그 값을 싣는다(한쪽만 있으면 필터는 늘 빈 목록이다).
+    assert 'data-filters="kakao_joined:카톡 연결 여부"' in body
+    assert "data-f-kakao_joined=" in body
+
+
+def test_카톡_연결_여부는_고치면_모델_칸에_들어가고_투자사_표와_같은_값이다(
+        sheets, db):
+    """고치는 척하고 안 저장되면 값을 잃는다 — **저장 경로까지 본다.**
+
+    그리고 저장된 곳이 모델 칸이어야, 같은 값을 보는 다른 자리(투자사 표의
+    `카톡방 참여여부` · 수정창 · 엑셀)가 같이 움직인다.
+    """
+    from app.models import VcContact
+
+    row = db.query(VcContact).filter(VcContact.source_sheet == LIST).first()
+    assert not (row.kakao_joined or ""), "밑자리는 빈칸이어야 이 검사가 뜻이 있다"
+
+    assert sheets.patch(f"/api/contacts/{row.id}",
+                        json={"kakao_joined": "O"}).status_code == 200
+    db.expire_all()
+    row = db.get(VcContact, row.id)
+    assert row.kakao_joined == "O", "표에서 고친 값이 모델 칸에 안 들어갔습니다"
+    # **`notes` 에는 아무것도 안 남는다** — 남으면 같은 사실이 두 군데가 된다.
+    from app.services import contact_columns as cc
+    assert "kakao_joined" not in cc.load_notes(row.notes)
+
+    # 창을 다시 열면 그 값이 돌아온다(되읽기가 빠지면 증상이 조용하다).
+    got = sheets.get(f"/api/contacts/{row.id}").json()["contact"]
+    assert got["kakao_joined"] == "O"
+    # 표에도 그대로 선다.
+    body = sheets.get(_url(LIST)).text
+    assert re.search(r'data-field="kakao_joined"[^>]*>\s*O\s*</td>', body), \
+        "고친 값이 표에 안 보입니다"
 
 
 def test_투자사_표에는_두_칸이_서지_않는다(sheets):
@@ -1000,7 +1085,9 @@ def test_자유롭게_적는_칸에는_필터가_안_선다(sheets, db):
     # (안 붙는 칸이 없으니) 표는 필터투성이가 된다 — 그것까지 못 박는다.
     for label in ("기업명", "성함", "연락처", "이메일"):
         assert not got.get(label), f"`{label}` 에 필터가 섰습니다"
-    assert not got.get(_same(TAIL[1])), "메모 칸에 필터가 섰습니다"
+    # 메모는 **`tail` 의 마지막**이다. 자리로 세면 `tail` 에 칸이 하나 붙을
+    # 때마다 다른 칸을 가리키게 된다(실제로 `카톡 연결 여부` 가 붙으며 그랬다).
+    assert not got.get(_same(TAIL[-1])), "메모 칸에 필터가 섰습니다"
 
 
 def test_칸을_새로_더해도_필터가_따라_붙는다(sheets, db):

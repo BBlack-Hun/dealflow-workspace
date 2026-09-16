@@ -41,6 +41,7 @@ const COLLAB = ["확인 전", "협업 논의 중", "당사 통한 진행 희망"
 
 // 표 두 줄. 2번 줄에 **목록에 없는 옛 글**이 남아 있다 — 원본 시트에 실제로
 // 그런 식으로 적혀 있었다(한 칸에 결과와 할 일과 사람이 섞인다).
+const JOINED = ["O", "X"];
 const OLD_SEND = "7/30 문자 및 명함 발송";
 const OLD_COLLAB = "당분간 자체 진행 예정";
 
@@ -53,10 +54,23 @@ function cell(field, choices, text) {
   return div;
 }
 
+// **담당자 모델의 칸**(`source="field"`)은 `data-note` 가 없다 — 값이 묶음이
+// 아니라 그 이름 그대로 나간다. 스타트업 표의 `카톡 연결 여부` 가 그렇다
+// (`contact_columns.STARTUP_LAYOUT.tail` — 저장 자리는 `VcContact.kakao_joined`).
+function fieldCell(field, choices, text) {
+  const div = D.el("div", {
+    class: "cell", "data-field": field,
+    "data-type": "pick", "data-choices": choices.join(",")
+  });
+  div.textContent = text || "";
+  return div;
+}
+
 function build() {
   const send1 = cell("c12", SEND, "");
   const call1 = cell("c13", CALL, "");
   const collab1 = cell("collab_status", COLLAB, "");
+  const joined1 = fieldCell("kakao_joined", JOINED, "");
   // 옛 글이 남아 있는 줄.
   const send2 = cell("c12", SEND, OLD_SEND);
   const collab2 = cell("collab_status", COLLAB, OLD_COLLAB);
@@ -65,7 +79,7 @@ function build() {
   const rows = [
     D.el("tr", { "data-id": "11" }, [
       D.el("td", {}, [send1]), D.el("td", {}, [call1]),
-      D.el("td", {}, [collab1]), plain
+      D.el("td", {}, [collab1]), D.el("td", {}, [joined1]), plain
     ]),
     D.el("tr", { "data-id": "12" }, [
       D.el("td", {}, [send2]), D.el("td", {}, [cell("c13", CALL, "")]),
@@ -76,7 +90,8 @@ function build() {
     { id: "contacts-table", "data-inline-url": "/api/contacts" },
     [D.el("tbody", {}, rows)]);
   return { root: D.el("div", {}, [table]),
-           send1: send1, call1: call1, collab1: collab1, plain: plain };
+           send1: send1, call1: call1, collab1: collab1,
+           joined1: joined1, plain: plain };
 }
 
 function run(dom) {
@@ -208,6 +223,29 @@ async function main() {
     assert.strictEqual(t.sent[0].url, "/api/contacts/11");
     assert.deepStrictEqual(t.sent[0].body, { notes: { c12: "발송 완료" } },
       "값이 `notes` 묶음으로 안 나갔다 ★ 서버가 200 을 주면서 아무것도 안 넣는다");
+  }
+
+  // ── 6. **모델 칸은 묶음이 아니라 그 이름 그대로 나간다** ──────────────
+  //
+  // `카톡 연결 여부`(`VcContact.kakao_joined`)는 그 명단에만 있는 칸이 아니라
+  // 담당자 모델의 칸이다. 여기에 `data-note` 를 붙이면 값이 `notes` 로 가서
+  // **세 번째 저장 자리**가 생기고, 대시보드·투자사 표가 보는 값과 갈린다.
+  //
+  // 보기(`O`/`X`)도 같이 본다 — 표의 `note` 칸에만 `data-choices` 를 붙이던
+  // 때에는, 아무도 안 채운 칸에서 보기가 하나도 안 떠 빈 칸에 타이핑하게 됐다.
+  {
+    const dom = build();
+    const t = run(dom);
+    t.press(dom.joined1);
+    assert.deepStrictEqual(t.chips(), JOINED,
+      "모델 칸에 정해 둔 보기가 안 뜬다 ★ `O`·`o`·`완료` 로 갈린다\n" +
+      "  뜬 것 " + JSON.stringify(t.chips()));
+    t.pop().querySelectorAll(".cell-pop-choice")[JOINED.indexOf("O")]
+      .fire("mousedown");
+    await flush();
+    assert.strictEqual(t.sent.length, 1, "보기를 골랐는데 저장이 안 나갔다");
+    assert.deepStrictEqual(t.sent[0].body, { kakao_joined: "O" },
+      "모델 칸 값이 `notes` 묶음으로 나갔다 ★ 같은 사실이 두 군데에 적힌다");
   }
 
   console.log("startup_status_pick_test: 통과");
