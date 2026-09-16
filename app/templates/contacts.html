@@ -765,7 +765,18 @@
         <td class="cell ellipsis" data-field="address" title="{{ r.address }}">{{ r.address }}</td>
         <td class="cell" data-field="card_registered_at" data-type="date">{{ r.card_registered_at }}</td>
         {# 앱이 만든 칸 — 시트에는 없다 #}
+        {# `data-choices` — 이 칸은 **A~F 뿐이다**(`services/group_name`).
+           보기가 없으면 `pick` 창에 뜨는 것은 **다른 줄이 이미 쓰고 있는 값**뿐
+           이라(`inline_edit.js` 의 `knownValues`), 아무도 안 채운 자리에서는 빈
+           칸에 그대로 타이핑하게 된다 — `A` 옆에 `A그룹`·`a` 가 생기는 자리다.
+           갈린 값은 딜 제안 관리의 그룹 칩·그룹 발송에서 **다른 그룹**이 된다.
+
+           글자를 여기 적지 않는다. 서버가 `group_name.CHOICES` 를 그대로
+           넘겨 주고(`routers/pages.py` 의 `group_choices`), 아래 수정창의
+           보기도 **그 값 하나**를 쓴다 — 두 곳에 적으면 한쪽만 고쳐진다.
+           투자사 딜공유 배치는 이미 같은 목록을 쓴다(`Column.choices`). #}
         <td class="cell" data-field="group_name" data-type="pick"
+            data-choices="{{ group_choices }}"
             data-filter-key="group">{{ r.group_name }}</td>
         <td><span class="stage-pill {{ r.deal_stage_cls }}">{{ r.deal_stage_label }}</span></td>
         {# 대시보드의 '메일 채널' · '채널 미지정' 에서 눌러 오면 이 칸으로 걸러진다. #}
@@ -1089,7 +1100,21 @@
          사람의 두 값으로 읽힌다. `이름 · 직함 · 회사 · 부서` 는 명함 한 장을
          읽는 차례라, 여기 서면 누구의 부서인지가 자리로 드러난다. #}
       <label class="field"><span>부서</span><input type="text" id="f-department"></label>
-      <label class="field"><span>그룹</span><input type="text" id="f-group_name"></label>
+      {# **보기를 `list=` 로 묶는다.** 표에서 이 칸을 누르면 A~F 중에서 고르는데
+         (`data-type="pick"` · `data-choices` — 위 표 줄), 이 창만 빈 글자 칸이면
+         **같은 칸을 어디서 고치느냐에 따라 값이 갈린다.** 관심도가 방금 같은
+         이유로 묶였고(`O`·`o`·`완료` 로 이미 데인 자리), 그룹은 갈리면 딜 제안
+         관리의 그룹 칩과 그룹 발송 대상에서 그 사람만 빠진다.
+
+         `<select>` 가 아닌 이유는 이 창의 다른 `list=` 칸과 같다 — 목록에 없는
+         옛 값이 창을 여는 것만으로 사라지면 안 된다. 보기는 표 칸과 **같은 값
+         하나**(`group_choices`)에서 그린다. #}
+      <label class="field"><span>그룹</span>
+        <input type="text" id="f-group_name" list="opts-panel-group_name"
+               placeholder="고르거나 새로 적습니다">
+        <datalist id="opts-panel-group_name">
+          {% for v in group_choices.split(',') %}<option value="{{ v.strip() }}"></option>{% endfor %}
+        </datalist></label>
       <label class="field wide"><span>카톡방 이름 <b class="warn-text">정확히 일치해야 발송됩니다</b></span>
         <input type="text" id="f-kakao_room_name"></label>
       {#
@@ -1167,8 +1192,18 @@
         (`contact_columns.STARTUP_LAYOUT`). 그쪽 이름은 그 화면의 것이라
         건드리지 않는다 — 화면이 다르면 이름도 그 화면에 맞는 것이 맞다.
       #}
-      <label class="field"><span>카톡방 참여여부</span><input type="text" id="f-kakao_joined"
-             placeholder="O / X"></label>
+      {# 보기를 `list=` 로 묶는 이유는 바로 위 `그룹`·아래 `관심도` 와 같다 —
+         표 칸은 `O`/`X` 중에서 고르는데(`data-choices="O,X"` — 위 표 줄) 이
+         창만 자유 글자 칸이면 같은 칸이 `O`·`o`·`완료` 로 갈린다.
+         보기 글자는 **표 칸의 `data-choices` 와 같은 말**이어야 한다
+         (`tests/test_group_choices.py` 가 그 짝을 잰다). #}
+      <label class="field"><span>카톡방 참여여부</span>
+        <input type="text" id="f-kakao_joined" list="opts-panel-kakao_joined"
+               placeholder="고르거나 새로 적습니다">
+        <datalist id="opts-panel-kakao_joined">
+          <option value="O"></option>
+          <option value="X"></option>
+        </datalist></label>
       {# 상태 이름도 화면에 적지 않는다(위 `연결 상태` 와 같은 규칙). 이 값은
          **발송 대상 판정이 읽는 값**이라(`sheet_owner.can_send_to`), 말이 여기
          따로 있으면 판정과 화면이 서로 다른 것을 가리키게 된다. #}

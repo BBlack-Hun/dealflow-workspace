@@ -15,9 +15,10 @@ from ..db import get_db
 from ..deps import get_current_user, may_manage_team_contacts, templates
 from ..models import IrCompany, SendJob, User
 from ..services import (cadence, contact_columns, deal_history, deal_queue,
-                        deal_stage, email_domains, ir_attach, llm_brief, mailer,
-                        manual_send, ref_panel, scheduled_send, sheet_import,
-                        sheet_owner, sourcing_link, startup_send)
+                        deal_stage, email_domains, group_name, ir_attach,
+                        llm_brief, mailer, manual_send, ref_panel,
+                        scheduled_send, sheet_import, sheet_owner,
+                        sourcing_link, startup_send)
 from ..ui import MENU, base_ctx as _base_ctx
 from .companies import BLOCKED_CONTRACT
 from .companies import blocked_reason as company_blocked_reason
@@ -551,6 +552,23 @@ def list_page(
             {"key": key, "label": label}
             for key, label in sheet_owner.STATUS_LABELS.items()
         ],
+        # `그룹` 칸에 **넣을 수 있는 값**. `연결 상태`·`상태` 와 같은 규칙이다 —
+        # 판정한 곳의 목록을 그대로 넘기고 화면에는 글자를 안 적는다.
+        #
+        # 그룹은 A~F 뿐이다(`services/group_name`). 그 판정 하나를 시트 임포트
+        # (`sheet_import.apply_sheet_a`)와 정리 스크립트(`scripts/clean_group_name.py`)
+        # 가 함께 읽는다 — A~F 로 안 읽히는 값은 다음 업로드에서 memo 로 옮겨지고
+        # 그룹 칸은 비워진다. 그래서 **화면에서 넣을 수 있는 값이 그 목록과 갈리면
+        # 안 된다.** 갈리면 `A` 와 `A그룹` 이 서로 다른 그룹이 되어, 딜 제안 관리의
+        # 그룹 칩(`sheet_owner.group_rows`)과 그룹 발송 대상
+        # (`deal_queue.targets` → `sheet_owner.in_group`, 글자가 같아야 한다)에서
+        # 그 사람만 빠진다 — 그룹을 넣었는데 그룹으로 안 잡히는 그 모습이다.
+        #
+        # 투자사 딜공유 배치는 이 목록을 이미 쓴다(`contact_columns` 의
+        # `Column("그룹", …, choices=group_name.CHOICES)`). 투자사 명함 배치의
+        # 표·수정창은 `contacts.html` 에 손으로 적혀 있어 배치를 안 지난다 —
+        # 그래서 여기서 같은 목록을 넘겨 준다.
+        "group_choices": group_name.CHOICES,
     })
     return templates.TemplateResponse("contacts.html", ctx)
 
