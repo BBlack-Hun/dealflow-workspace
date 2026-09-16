@@ -24,6 +24,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..clock import stamp_text
 from ..db import get_db
 from ..deps import NotAdmin, admin_only, get_current_user, templates
 from ..models import IrCompany, OneLinerBackup, User
@@ -465,6 +466,18 @@ def company_rows(db: Session, tab: str = "", sent=None) -> List[dict]:
             # 무료 IR 미팅을 **언제** 주기로 했는가 / 줬는가. 손으로 적는 글자다 —
             # 아직 안 정한 곳은 빈 글자로 나가 표에서 빈 칸으로 보인다.
             "meeting_offered_at": c.meeting_offered_at or "",
+            # 이 줄을 **마지막으로 고친 시각**. 앱이 적는 값이라 사람이 만질
+            # 칸이 없다(`TimestampMixin.updated_at` 의 `onupdate`).
+            #
+            # 화면 꼴로 바꾸는 자리는 **여기 한 곳**이다(`clock.stamp_text`).
+            # 템플릿에서 잘라 쓰면 표와 [수정] 창과 PATCH 응답이 각자 자르게
+            # 되고, 그중 하나만 고쳐지는 날 같은 값이 세 가지 꼴로 보인다.
+            "updated_at": stamp_text(c.updated_at),
+            # **한 번도 안 고친 줄**은 만든 시각이 그대로 `updated_at` 이다.
+            # 그것을 아무 표시 없이 보이면 "이때 누가 고쳤구나" 로 읽히는데,
+            # 사실은 아무도 안 고친 줄이다. 화면이 옅게 적고 짚으면 말해 준다 —
+            # 값을 비우지는 않는다(빈 칸은 '못 읽었다' 로도 읽힌다).
+            "updated_never": stamp_text(c.updated_at) == stamp_text(c.created_at),
             "contract_month": c.contract_month or "",
             "is_top_deal": bool(c.is_top_deal),
             "summary_status": c.summary_status or "draft",
@@ -833,8 +846,13 @@ def update_company(company_id: int, body: CompanyIn,
               else {"applied": False, "suggestion": compose_one_liner(company),
                     "kept": False, "origin": ""})
     db.commit()
+    # **고친 시각을 응답에 싣는다.** 표의 `수정한 날짜` 칸이 이것으로 그 자리에서
+    # 바뀐다 — 새로고침해야 보이면, 방금 고친 것이 실제로 저장됐는지 그 칸으로는
+    # 알 수 없다(그 칸의 쓸모가 곧 그것이다). `db.commit()` **뒤**에 읽는다:
+    # commit 이 속성을 만료시키므로 여기서 읽으면 DB 에 적힌 새 값이 온다.
     return {"id": company.id, "introducible": is_ready(company),
             "blocked_reason": blocked_reason(company),
+            "updated_at": stamp_text(company.updated_at),
             **_contract_result(company),
             **_one_liner_result(company, synced)}
 
