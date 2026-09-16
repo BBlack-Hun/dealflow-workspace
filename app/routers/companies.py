@@ -27,7 +27,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import NotAdmin, admin_only, get_current_user, templates
 from ..models import IrCompany, OneLinerBackup, User
-from ..services import amount, auth as auth_svc, email_domains
+from ..services import amount, auth as auth_svc, deal_history, email_domains
 from ..services.one_liner import (
     AUTO, SOURCE_FIELDS, apply_one_liner, bulk_rows, compose_one_liner, origin,
     sync_one_liner,
@@ -334,10 +334,41 @@ def sort_for_tab(rows: List[dict], tab: str) -> List[dict]:
     return dated + undated
 
 
-def company_rows(db: Session, tab: str = "") -> List[dict]:
+def history_rows(hist) -> List[dict]:
+    """[수정] 창의 `소개 이력` 표에 그대로 실리는 줄들.
+
+    **투자사는 수로만 나간다** — 이름은 담지 않는다. 남의 담당 투자사는
+    `contacts._owned` 가 404 로 답하는 값이라, 기업 화면이 그 명단을 읽는
+    우회로가 되면 안 된다(`services/deal_history.py` 머리글).
+
+    `guessed` 는 보낸 사람이 **추정**이라는 표시다. 화면이 그 값으로 `(담당)`
+    을 붙인다 — 붙이는 말은 서비스 한 곳에서 온다(`Sender.label`).
+    """
+    return [{
+        "day": r.day,
+        "weekday": r.weekday,
+        "investors": r.investors,
+        "senders": [{"label": s.label, "count": s.count, "guessed": s.guessed}
+                    for s in r.senders],
+        "batch_title": r.batch_title,
+        "source": r.source,
+        "source_label": r.source_label,
+    } for r in hist.rounds]
+
+
+def company_rows(db: Session, tab: str = "", sent=None) -> List[dict]:
+    """표 한 벌. `sent` 는 `deal_history.scan()` 결과 — 안 주면 여기서 훑는다.
+
+    부르는 쪽이 이미 훑어 두었으면 그것을 그대로 받는다. 한 요청 안에서 두 번
+    훑으면 표의 `소개 횟수` 와 창의 `소개 이력` 이 (그 사이에 발송이 끝났을 때)
+    서로 다른 수를 말할 수 있다.
+    """
+    sent = deal_history.scan(db) if sent is None else sent
     companies = db.execute(select(IrCompany).order_by(IrCompany.name)).scalars().all()
     # 344행 × 두 번 조립하지 않도록 한 번만 만들어 둔다.
     made = {c.id: compose_one_liner(c) for c in companies}
+    # 이력도 한 번만 찾는다 — 줄마다 네 값을 각자 찾으면 344행 × 4번이 된다.
+    seen = {c.id: sent.of(c.name) for c in companies}
     # 사업분야 제안의 잣대. **지금 화면에 뜨는 기업들에서 그때그때 배운다** —
     # 갈래 목록을 코드나 DB 에 따로 두면 사람이 갈래를 고친 날 어긋난다.
     # 한 번 배워 344행에 돌려 쓴다(행마다 배우면 344번 세게 된다).
@@ -402,6 +433,14 @@ def company_rows(db: Session, tab: str = "") -> List[dict]:
             "desc_backup": desc_backup_lines(c),
             "top_deal_kind": c.top_deal_kind or "",
             "assignee": c.assignee_name or "",
+            # 소개 이력 요약. **셋을 함께 싣는다** — 보낸 날 수만 보이면
+            # 180건짜리와 103건짜리가 똑같이 `6회` 로 읽힌다
+            # (`services/deal_history.py` 머리글). 자세한 줄은 [수정] 창에
+            # 있고, 같은 훑기에서 나온다.
+            "sent_rounds": seen[c.id].days,
+            "sent_investors": seen[c.id].investors,
+            "sent_total": seen[c.id].sends,
+            "last_sent": seen[c.id].last_sent,
             "competitiveness": c.competitiveness or "",
             "funding_status": c.funding_status or "",
             "ir_file_name": c.ir_file_name or "",
@@ -451,7 +490,11 @@ def companies_page(request: Request, db: Session = Depends(get_db),
     # 고치면 다른 쪽이 저절로 따라온다 — 맞춰 주는 코드가 없어야 안 어긋난다.
     # 다른 것은 **차례 하나**다(`sort_for_tab`).
     co_tab = "db" if tab == "db" else "status"
-    rows = company_rows(db, co_tab)
+    # **훑기는 한 번이다.** 표의 `소개 횟수` 도, 창이 띄우는 `소개 이력` 도,
+    # 아래 `막히는 것` 두 줄도 전부 이 하나에서 나온다
+    # (`services/deal_history.py` 머리글).
+    sent = deal_history.scan(db)
+    rows = company_rows(db, co_tab, sent=sent)
     ctx = base_ctx(request, db, user, active="su")
     ctx.update({
         "rows": rows,
@@ -493,6 +536,18 @@ def companies_page(request: Request, db: Session = Depends(get_db),
         # 탭이 같은 것이고, 메일 칸은 한쪽 탭에만 서 있다.
         "email_domains": email_domains.domain_options(
             r["contact_email"] for r in rows),
+        # ── 합계가 안 맞는 이유. **화면이 말해야 한다** ──────────────────
+        #
+        # 기업 줄에서 출발하는 집계라, 다음 둘은 이 표 어디에도 안 잡힌다.
+        # 조용히 빠지면 사람은 "우리가 이만큼만 보냈나" 로 읽는다.
+        #
+        #   · 개수만 적힌 회차 — `핵심 딜 8개사` 처럼 기업 이름이 없는 줄
+        #   · 이력에만 있고 기업 목록에 없는 이름 — 이름이 안 맞아 못 이은 것
+        #
+        # `llm_brief` 도 뒤엣것을 `sent_before_unmatched` 로 **개수만** 세어
+        # 다룬다 — 이름을 내보내지 않는 것이 같고, 세는 자리도 같다.
+        "sent_count_only": sent.count_only,
+        "sent_unmatched": sent.unmatched,
         "required_fields": [label for _a, label in REQUIRED_FIELDS],
         "summary_labels": SUMMARY_LABELS,
         "contract_labels": CONTRACT_LABELS,
@@ -676,7 +731,11 @@ def get_company(company_id: int, db: Session = Depends(get_db),
     company = db.get(IrCompany, company_id)
     if company is None:
         raise HTTPException(status_code=404, detail="기업을 찾을 수 없습니다")
-    row = next(r for r in company_rows(db) if r["id"] == company_id)
+    sent = deal_history.scan(db)
+    row = next(r for r in company_rows(db, sent=sent) if r["id"] == company_id)
+    # 창에서만 쓰는 값이라 표에는 안 싣는다 — 344줄 × 이력 줄을 매 요청마다
+    # 실어 보내면 목록 응답이 이력 때문에 커진다. 창은 한 기업씩 연다.
+    row["history"] = history_rows(sent.of(company.name))
     return row
 
 
