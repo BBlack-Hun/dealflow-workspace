@@ -33,8 +33,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..models import ContactActivity, IrCompany, User, VcContact
-from . import (amount, firm_type, group_name as gn, invest_stage as ist,
-               sheet_owner)
+from . import (amount, company_names as cnames, firm_type, group_name as gn,
+               invest_stage as ist, sheet_owner)
 from .room_name import DEFAULT_SUFFIX, build_room_name, normalize_space, split_name_title
 
 # 활동 종류 (DATA_MODEL §2.6)
@@ -51,14 +51,9 @@ _KIND_KEYWORDS: Sequence[Tuple[str, Tuple[str, ...]]] = (
 )
 
 _MONTH_RE = re.compile(r"(\d{1,2})\s*월")
-# '8/13(목) 기업A, 기업B' · '8.4 핵심 딜' · '08/19(수)' — 요일 괄호는 있을 수도 없을 수도.
-_DATE_PREFIX_RE = re.compile(
-    r"^\s*(\d{1,2})\s*[/.\-]\s*(\d{1,2})\s*(?:\(\s*([월화수목금토일])?[^)]*\))?\s*[:·\-]?\s*"
-)
-# '핵심 딜 8개사' — 기업명 없이 개수만 적힌 회차.
-_COUNT_ONLY_RE = re.compile(r"(\d+)\s*개\s*사")
-# '1.샘플가  2.샘플나  3.샘플다' — 번호 매김(구분자가 이중공백일 수 있음).
-_NUMBERED_RE = re.compile(r"(?:^|\s)\d{1,2}\s*[.)]\s*")
+# 회차 줄을 가르는 일(`8/13(목) 기업A, 기업B` · `[8/5] …`)과 기업 이름을 쪼개는
+# 일은 **`services/company_names` 한 곳**이다. 여기에 또 적으면 이미 들어와 있는
+# 줄을 다시 쪼개는 스크립트와 갈린다.
 # 법인 표기 — 같은 기업이 '(주)샘플가 / ㈜샘플가 / 샘플가'로 섞여 적힌다.
 _CORP_MARKS = ("(주)", "㈜", "(유)", "주식회사", "유한회사", "(재)", "(사)")
 
@@ -218,35 +213,30 @@ def parse_activity_cell(text: str, month: Optional[str], kind: str,
         8/4(화) 핵심 딜 8개사
         (빈 줄)
         8/13(목) 샘플애그, 샘플메디
-        8/19(수) 샘플페이
+        [8/19] 샘플페이
 
     → 3건. 날짜로 시작하지 않는 줄은 직전 회차의 내용에 이어 붙인다
     (기업 목록이 다음 줄로 넘어가는 경우가 잦다).
+
+    **대괄호를 씌운 날짜(`[8/19]`)도 날짜다.** 실제 칸 값 1,988줄 중 453줄이 그
+    꼴인데 예전에는 날짜로 안 읽혀서, 그 회차가 통째로 앞 회차에 붙고 기업 이름이
+    `앞기업 [8/19] 뒷기업` 으로 뭉쳤다. 회차를 가르는 일도, 이름을 쪼개는 일도
+    `services/company_names` 한 곳이다.
 
     회차 안의 기업 목록은 **월마다 표기가 다르다**(쉼표 나열 / `1.A  2.B  3.C` 번호 매김 /
     개수만). 세 형태를 모두 읽고, 원문 조각을 raw_text 로 함께 남긴다.
     """
     entries: List[ParsedActivity] = []
-    for raw_line in (text or "").splitlines():
-        line = norm(raw_line)
-        if not line:
-            continue
-        m = _DATE_PREFIX_RE.match(line)
-        if m:
-            mm, dd = int(m.group(1)), int(m.group(2))
-            content = norm(line[m.end():])
-            happened = _safe_date(_year_for_month(year, month, mm), mm, dd)
-            entries.append(ParsedActivity(
-                month=month or (happened[:7] if happened else None),
-                kind=kind, content=content or line,
-                happened_at=happened, weekday=m.group(3),
-                raw_text=line,
-            ))
-        elif entries:
-            entries[-1].content = norm(f"{entries[-1].content} {line}")
-            entries[-1].raw_text = f"{entries[-1].raw_text}\n{line}"
-        else:
-            entries.append(ParsedActivity(month=month, kind=kind, content=line, raw_text=line))
+    for chunk in cnames.rounds(text):
+        happened = (_safe_date(_year_for_month(year, month, chunk.month),
+                               chunk.month, chunk.day)
+                    if chunk.dated else None)
+        entries.append(ParsedActivity(
+            month=month or (happened[:7] if happened else None),
+            kind=kind, content=chunk.content or chunk.raw,
+            happened_at=happened, weekday=chunk.weekday,
+            raw_text=chunk.raw,
+        ))
 
     for entry in entries:
         entry.companies, entry.company_count = parse_company_list(entry.content)
@@ -286,43 +276,13 @@ def week_of_month(iso_date: str) -> Optional[int]:
 def parse_company_list(content: str) -> tuple:
     """회차 내용 → (기업명 목록, 기업 수).
 
-    세 가지 표기를 모두 읽는다:
-      - `핵심 딜 8개사`            → ([], 8)          개수만 있고 목록이 없다
-      - `샘플애그, 샘플메디`        → ([2개], 2)       쉼표 나열
-      - `1.(주)샘플가  2.샘플나`    → ([2개], 2)       번호 매김(구분자가 이중공백일 수 있음)
+    **쪼개는 규칙은 여기 없다** — `services/company_names.split()` 한 곳이다.
+    이미 들어와 있는 줄을 다시 쪼개는 스크립트(`scripts/resplit_deal_companies.py`)가
+    같은 함수를 부르기 때문이다. 규칙이 두 벌이면 앞으로 들어오는 것과 이미 있는
+    것이 **다르게 쪼개진다**.
     """
-    text = norm(content)
-    if not text:
-        return ([], None)
-
-    numbered = [norm(p) for p in _NUMBERED_RE.split(text) if norm(p)]
-    if len(numbered) >= 2 and _NUMBERED_RE.search(text):
-        names = numbered
-    elif "," in text:
-        names = [norm(p) for p in text.split(",") if norm(p)]
-    else:
-        names = []
-
-    if not names:
-        m = _COUNT_ONLY_RE.search(text)
-        if m:
-            # 기업명이 적히지 않은 회차 — 개수만 남긴다(없는 목록을 지어내지 않는다).
-            return ([], int(m.group(1)))
-        # 단일 기업명으로 보이면 1건으로 센다. 서술형 메모는 기업으로 세지 않는다.
-        return (([text], 1) if _looks_like_company(text) else ([], None))
-
-    names = [n for n in names if _looks_like_company(n)]
-    return (names, len(names) or None)
-
-
-def _looks_like_company(name: str) -> bool:
-    """기업명 후보인지. 문장형 메모('검토 중', '핵심 딜 8개사')를 걸러낸다."""
-    t = norm(name)
-    if not t or len(t) > 40:
-        return False
-    if _COUNT_ONLY_RE.search(t):
-        return False
-    return True
+    parsed = cnames.split(content)
+    return (parsed.names, parsed.count)
 
 
 def normalize_company_name(name: str) -> str:
