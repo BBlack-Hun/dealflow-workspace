@@ -225,7 +225,10 @@ function buildDom(people) {
                   "select-all-contacts", "clear-all-contacts", "select-noreact",
                   "include-opening", "tpl-opening", "tpl-closing",
                   "tpl-opening-wrap", "ir-attach", "ir-links", "ir-no-note",
-                  "mail-fields", "mail-subject", "company-hint", "mode-help"]
+                  "mail-fields", "company-hint", "mode-help",
+                  // 메일 제목 문구를 고르면 **이 칸을 채운다** — 고르개가
+                  // 없으면 그 이음새를 아무도 못 본다.
+                  "mail-subject-tpl-wrap", "mail-subject-none"]
     .map(function (id) { return el("div", { id: id }); });
   // 방식을 바꾸면 이 칸의 이름표(`안내문`/`문구`)를 고쳐 쓴다 — 속 `span` 이
   // 없으면 탭을 누르는 순간 화면 코드가 그대로 죽는다(실제 화면에는 있다).
@@ -234,6 +237,12 @@ function buildDom(people) {
   // 서버가 방식마다 한 벌씩 만들어 실어 준다(`pages.py`).
   simple.push(el("input", { id: "batch-title", value: BATCH_TITLES.deal,
                             "data-titles": JSON.stringify(BATCH_TITLES) }));
+  // 메일 제목 칸과 제목 문구 고르개. **진짜 입력칸·진짜 고르개**여야 한다 —
+  // 고르개에 값을 넣고(`sel.value`) 그 값으로 제목 칸을 채우는지를 본다.
+  // 실제 화면이 같은 아이디를 그리는지는 파이썬 쪽이 따로 본다
+  // (`tests/test_mail_subject_template.py`).
+  simple.push(el("input", { id: "mail-subject" }));
+  simple.push(el("select", { id: "mail-subject-tpl" }));
 
   const arrow = el("span", { class: "ss-arrow" });
   const modeTabs = ["deal", "ir", "remind", "meeting", "review", "ask", "sourcing"]
@@ -337,7 +346,10 @@ function run(people, opts) {
 // 오간 요청을 그대로 모아 두고, 미리 정해 둔 답을 차례대로 돌려준다(약속은
 // 곧바로 풀린다 — 검사가 기다릴 것이 없다). **여기 한 벌만 둔다** — 검사마다
 // 한 벌씩 들고 있으면 한쪽만 고쳐져 나머지는 딴 것을 보증한다(`_dom.js` 와 같은 뜻).
-function fakeFetch(replies) {
+// `templates` 를 주면 문구 목록(GET `/api/templates`)도 **풀리는 답**으로
+// 돌려준다. 안 주면 지금까지와 같다(안 풀리는 약속) — 대부분의 검사는 문구
+// 목록과 무관하고, 거기까지 답을 지어 주면 검사마다 문구를 한 벌씩 들게 된다.
+function fakeFetch(replies, templates) {
   const calls = [];
   // `.then()` 이 또 약속을 돌려주면 **펴 준다**(진짜 Promise 처럼). deals.js 가
   // `r.json().then(...)` 을 바깥 `.then` 에서 돌려주는데, 안 펴 주면 다음
@@ -355,8 +367,12 @@ function fakeFetch(replies) {
   const fn = function (url, init) {
     const body = JSON.parse((init && init.body) || "{}");
     calls.push({ url: url, body: body });
-    // 문구 목록(GET)은 이 검사들과 무관하다 — 안 풀리는 약속을 준다.
+    // 문구 목록(GET)은 대개 이 검사들과 무관하다 — 안 풀리는 약속을 준다.
     if (!init || init.method !== "POST") {
+      if (templates && String(url).indexOf("/api/templates") === 0) {
+        return settled({ ok: true,
+                         json: function () { return settled({ templates: templates }); } });
+      }
       return { then: function () { return this; }, catch: function () { return this; } };
     }
     const reply = replies.length ? replies.shift() : { ok: true, d: {} };
