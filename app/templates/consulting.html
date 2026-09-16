@@ -209,7 +209,26 @@
 </p>
 {% endif %}
 
-<div class="table-wrap wide-scroll">
+{#
+  **넓은 표의 감싸개는 `.table-wrap.wide` 하나뿐이다.**
+
+  이 자리에는 `wide-scroll` 이라는 다른 이름이 서 있었다. 이 화면이 만들어질
+  때(#19) 공용 `.wide` 가 아직 없어서 `overflow-x: auto` 한 줄을 따로 적어 둔
+  것인데, 나흘 뒤 같은 뜻의 공용 규칙이 생겼고(#38) 이 화면만 옮겨 오지
+  않았다. 그 뒤로 `.wide` 에 붙은 것들이 이 표에는 하나도 안 붙었다:
+
+    · **표 키를 화면에 맞춰 자르기.** 안 자르면 표가 페이지만큼 길어져
+      가로 스크롤바가 문서 맨 아래로 밀린다. 실제로 55줄 탭의 감싸개가
+      1,825px 이라 화면(900px) 아래 1,324px 밖에 있었다.
+    · **머리행 세로 고정.** 55줄을 훑는 동안 컬럼 이름이 사라졌다.
+    · **최소 키**(`min-height`). 줄이 적은 탭은 감싸개가 100px 남짓이라,
+      머리글 필터 창이 그 밖으로 잘려 목록도 [모두 선택]·[해제]도 안 보였다.
+      이 셋 중 사용자가 든 것이 이것이다.
+
+  세 가지가 전부 같은 한 가지 사실에서 나온다 — 이것도 넓은 표다.
+  (감싸개 안에 필터 창이 드는지는 tests/js/table_fit_test.js 가 지킨다)
+#}
+<div class="table-wrap wide">
   {# 계약 탭인지 표에 실어 둔다. `계약여부` 칸은 값이 `무료`/`유료` 라 추리지
      않고 그대로 거는데, 화면에서 고친 뒤 필터 값을 다시 적는 것은 JS 다
      (consulting.js 의 `managementTags`). 서버와 규칙이 갈리면 고친 직후와
@@ -358,6 +377,18 @@
            `계약서 수신완료여부 (1) ▾` 가 한 줄에 들어가야 한다 — 이름 135px
            + th 여백 18px + 단추 여백 14px = 167px. #}
         <th style="width:170px" data-filters="received:계약서 수신완료여부">계약서 수신완료여부<div class="th-filters"></div></th>
+        {# 이 기업과 카톡방이 연결됐는가. `O`/`X` 두 가지라 위 칸들과 같은
+           방식으로 골라 넣고 필터를 세운다 — 무엇보다 **빈칸(아직 안 정함)을
+           고를 수 있어야** 한다(filters.js 가 빈 값을 `(비어 있음)` 으로 세워
+           준다). 아직 연결 안 된 곳을 찾는 길이 그것뿐이다.
+
+           필터 키는 `joined` 다 — `내 투자사` 화면의 `카톡방 참여여부` 가
+           같은 이름의 칸에 같은 키를 쓴다(`contacts.html`). **두 화면의
+           값이 이어져 있다는 뜻은 아니다**(`models.ConsultingCompany.
+           kakao_joined` 주석 참고) — 필터 키는 표 안에서만 쓰인다.
+
+           `카톡 연결 여부 (1) ▾` 가 한 줄에 들어가야 한다 — 이름 70px
+           + th 여백 18px + 단추 여백 14px + 꼬리표 28px = 130px. #}
         {% endif %}
         {# 투자사에 이 기업을 어떻게 소개할지. **메모처럼 쓰는 긴 글**이다.
 
@@ -376,6 +407,7 @@
            칸이라 좁으면 접힌 두어 줄에 아무것도 안 남는다. #}
         {% if is_startup_sheet %}
         <th style="width:240px">딜 소개문구</th>
+        <th style="width:140px" data-filters="joined:카톡 연결 여부">카톡 연결 여부<div class="th-filters"></div></th>
         {% endif %}
         {% endif %}
         {% for col in columns %}
@@ -437,10 +469,11 @@
              머리글이 없어서 실으면 아무도 안 보는 죽은 속성이 된다
              (tests/test_filter_columns.py 의 2번이 그것을 막는다). #}
           {% if is_contract_sheet or is_startup_sheet %}data-f-received="{{ r.contract_received }}"{% endif %}
-          {# 같은 이유로 **스타트업 탭에서만** 싣는다. 세 칸이 다 그 탭에만
+          {# 같은 이유로 **스타트업 탭에서만** 싣는다. 이 셋이 다 그 탭에만
              서므로 다른 탭에 실으면 아무 머리글도 안 보는 죽은 속성이 된다. #}
           {% if is_startup_sheet %}data-f-done="{{ r.contract_done }}"{% endif %}
           {% if is_startup_sheet %}data-f-quote="{{ r.contract_management }}"{% endif %}
+          {% if is_startup_sheet %}data-f-joined="{{ r.kakao_joined }}"{% endif %}
           data-f-mgmt="{{ r.mgmt }}">
         <td class="num muted">{{ r.no }}</td>
         {# 편집 칸(`td.cell`)이 아니다 — 담당을 옮기는 것은 표를 통째로 옮기는
@@ -536,6 +569,16 @@
            때 `data-search` 에 그대로 들어가므로 검색은 그 자리에서 따라간다. #}
         {% if is_startup_sheet %}
         <td class="cell multi" data-field="deal_pitch">{{ r.deal_pitch }}</td>
+        {# 카톡방이 연결됐는가. 바로 위 칸과 **글자 하나까지 같은 방식**이다 —
+           `O`/`X` 를 골라 넣고(consulting.js 의 `addChoices`) 빈칸으로 되돌릴
+           수 있다. 손으로 적게 두면 같은 뜻이 `O`·`o`·`ㅇ`·`○` 로 갈려 두
+           가지뿐인 칸에서 머리글 필터가 못 쓰게 된다.
+
+           칸 이름(`kakao_joined`)과 필터 키(`joined`)가 다르다 —
+           `data-filter-key` 가 없으면 여기서 고쳐도 행 값이 그대로라
+           **채워 넣어도 필터는 옛 목록 그대로**다. #}
+        <td class="cell" data-field="kakao_joined" data-filter-key="joined"
+            data-choices="O,X">{{ r.kakao_joined }}</td>
         {% endif %}
         {% endif %}
         {% for col in columns %}
@@ -563,8 +606,9 @@
       {# 칸 수는 탭마다 다르다 —
          계약 탭     = NO + 6 + 월 열 + 삭제                          = 8 + 월
          경영본부 탭 = NO + 4 + 월 열 + 대표자·연락처·이메일 + 삭제    = 9 + 월
-         스타트업 탭 = 위에 네 칸 더(견적서 첨부 여부 · 계약완료여부 ·
-                       계약서 수신완료여부 · 딜 소개문구)              = 13 + 월
+         스타트업 탭 = 위에 다섯 칸 더(견적서 첨부 여부 · 계약완료여부 ·
+                       계약서 수신완료여부 · 카톡 연결 여부 ·
+                       딜 소개문구)                                    = 14 + 월
 
          계약 탭이 한 칸 적은 것은 `월` 칸을 뺐기 때문이다 — 예전에는 경영본부
          탭과 우연히 같았다. `담당` 칸도 서면 하나 더 든다 — 셋 다 안 세면 빈 표
@@ -572,7 +616,7 @@
       <tr><td class="muted"
           colspan="{{ 9 + columns|length + (1 if can_pick_owner else 0)
                         - (1 if is_contract_sheet else 0)
-                        + (4 if is_startup_sheet else 0) }}">
+                        + (5 if is_startup_sheet else 0) }}">
         {#
           **왜 비었는지 적는다.** 그냥 빈 표는 고장으로 읽힌다.
 

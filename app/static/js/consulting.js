@@ -321,11 +321,16 @@
     //   contract_done       `계약완료여부` — 관리 스타트업 탭에만 있다.
     //   contract_management `견적서 첨부 여부` — 관리 스타트업 탭에만 있다.
     //                       칸 이름과 필터 키(`quote`)가 다르다.
+    //   kakao_joined        `카톡 연결 여부` — 관리 스타트업 탭에만 있다.
+    //                       칸 이름과 필터 키(`joined`)가 다르다. 이름이
+    //                       `내 투자사` 화면의 칸과 같지만 **다른 표의 다른
+    //                       칸**이다(`models.ConsultingCompany.kakao_joined`).
     //
     // 한 자리에서 돌린다 — 규칙이 칸마다 따로 적히면 한 벌은 반드시 낡는다.
     [["contract_received", "data-f-received"],
      ["contract_done", "data-f-done"],
-     ["contract_management", "data-f-quote"]].forEach(function (pair) {
+     ["contract_management", "data-f-quote"],
+     ["kakao_joined", "data-f-joined"]].forEach(function (pair) {
       var td = tr.querySelector('[data-field="' + pair[0] + '"]');
       if (td && tr.hasAttribute(pair[1])) {
         tr.setAttribute(pair[1], td.textContent.trim());

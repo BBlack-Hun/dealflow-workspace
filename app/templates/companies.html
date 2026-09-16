@@ -267,7 +267,41 @@
   </table>
 {% else %}
   {# ── IR 기업 현황(진행관리) ── 시트 컬럼 그대로 #}
-  <table class="grid-table" data-inline-url="/api/companies" id="co-table">
+  {# ── 왼쪽 두 칸은 **가로로 밀어도 제자리** ──────────────────────────────
+     이 표는 2,386px 인데 1440px 화면에서 보이는 자리는 1,184px 뿐이다. 오른쪽
+     끝(`계약여부`·`계약서 수신 여부`·`IR 자료`)을 보려면 1,200px 을 밀어야
+     하고, 미는 동안 **어느 기업 줄인지 알 수가 없었다.** 머리행은 이미 세로로
+     고정돼 있는데(`app.css` 의 `thead th { top: 0 }`) 가로만 없었던 것이다 —
+     사용자가 든 말이 그것이다: "첫 행은 고정인데 왜 좌우 스크롤이 되면 이름은
+     고정이 아닌지, 일관된 UX 규칙이 없다"(`services/contact_columns.py` 의
+     `Layout.sticky` 주석에 그대로 인용돼 있다).
+
+     **두 칸이다** — 투자사 명단·스타트업과 같은 규칙이다(`Layout.sticky = 2`:
+     `NO` 와 그다음 한 칸, 그 한 칸이 이 표의 주인공 이름). `NO` 만 고정하면
+     번호만 남아 어느 기업인지 여전히 모르고, 한 칸 더 고정하면(`사업분야
+     대분류`) 고정 폭이 300px 을 넘어 정작 밀어서 볼 자리가 준다.
+
+     **규칙은 새로 만들지 않는다.** `app.css` 의 `.table-wrap.wide td.stick` ·
+     `.stick-a` · `.stick-b` 를 그대로 쓴다 — 폰에서 가로 고정을 푸는 규칙도,
+     겹치는 모서리의 쌓는 차례도 이미 거기 한 곳에 있다. 여기서 또 적으면
+     한쪽만 고쳐지는 날이 온다.
+
+     ## 왼쪽 자리(`left`)를 어떻게 냈나 — **`%` 는 더할 수 없다**
+
+     이 표는 폭 단위가 `%` 와 `px` 로 섞여 있고(바로 아래 주석), `기업명` 이
+     `width:13%` 다. 투자사 명단처럼 "앞 칸 폭을 더해서" 낼 수 있는 모양이
+     아니다 — `%` 는 표 폭이 정해져야 px 이 되고, 표 폭은 화면 폭에 따라 는다.
+
+     그런데 **더해야 하는 것은 `기업명` 앞의 칸들뿐이고, 그것은 `NO` 하나다.**
+     자기 폭은 자리에 안 들어간다. 그래서 `%` 칸을 px 로 바꾸지 않고
+     (그건 이 표의 폭 설계를 통째로 건드리는 일이다) `NO` 의 폭 하나만 더한다.
+
+     그 폭도 **여기 한 곳에 적는다**(`no_w`). 머리글의 `width:` 와 `--stick-b`
+     가 같은 값을 읽으므로, 폭을 고칠 때 한 군데만 고치면 된다 — 두 군데에
+     적어 두면 한쪽만 고쳐지는 날 고정된 칸이 반 칸씩 어긋난다. #}
+  {% set no_w = 36 %}
+  <table class="grid-table" data-inline-url="/api/companies" id="co-table"
+         style="--stick-a:0px; --stick-b:{{ no_w }}px">
     {# `<thead` 로 `>` 가 빠져 있었다. 브라우저가 알아서 고쳐 주어(`<tr>` 을
        속성으로 삼키고 행을 다시 만든다) 화면은 멀쩡해 보였지만, 머리글을
        `<thead>` 로 찾는 검사들(tests/test_ui_layout.py)이 **이 표만 통째로
@@ -283,8 +317,8 @@
        전체 폭은 2,030px 그대로라 app.css 의 min-width 는 손대지 않는다. #}
     <thead>
       <tr>
-        <th class="num" style="width:36px" title="눌러서 수정">NO</th>
-        <th style="width:13%">기업명</th>
+        <th class="num stick stick-a" style="width:{{ no_w }}px" title="눌러서 수정">NO</th>
+        <th class="stick stick-b" style="width:13%">기업명</th>
         <th style="width:10%" data-filters="sector:사업분야 대분류">사업분야 대분류<div class="th-filters"></div></th>
         <th style="width:9%" data-filters="minor:소분류">소분류<div class="th-filters"></div></th>
         <th style="width:9%" data-filters="series:기업구분">기업구분<div class="th-filters"></div></th>
@@ -296,6 +330,22 @@
            나가는 회사 개요다(0058, 사용자 요청). #}
         <th title="두 줄까지 보입니다 · 눌러서 수정">딜 소개 문구 회사개요</th>
         <th style="width:100px" data-filters="assignee:담당자">담당자<div class="th-filters"></div></th>
+        {# 이 기업을 **몇 번** 딜 소개에 넣었나. `담당자` 바로 뒤다 — 누가 맡은
+           기업인지를 읽은 그 눈으로 "그래서 몇 번 나갔나" 를 이어 읽는다.
+
+           **수가 둘이다**(`6회 · 180건`). 보낸 날 수만 적으면 180건짜리와
+           103건짜리가 똑같이 `6회` 로 보인다 — 한 명에게만 나간 날도 하루로
+           세기 때문이다(`services/deal_history.py` 머리글). 날짜별로 몇 명에게
+           갔는지까지는 [수정] 창의 `소개 이력` 이 펼친다.
+
+           **필터를 안 세운다.** 값이 줄마다 다른 숫자라 목록으로 고를 것이
+           아니다 — 같은 결인 `미팅제공일자` 도 필터가 없다. 세워 두면
+           tests/test_filter_columns.py 가 안 쓰이는 필터 속성으로 잡는다.
+
+           폭은 이름(`소개 횟수` 45.6px + th 좌우 여백 18px)이 아니라 **값**에
+           맞춘다 — `6회 · 180건` 이 한 줄에 서야 줄 키가 들쭉날쭉해지지 않는다. #}
+        <th class="num" style="width:84px"
+            title="딜 소개에 넣은 날 수 · 발송 건수 — 짚으면 마지막 날짜">소개 횟수</th>
         {# 폭은 **이름이 아니라 단추**에 맞춘다. 필터가 하나뿐인 칸은 filters.js 가
            이름 글자를 지우고 `계약여부 ▾` 단추를 그 자리에 세우는데, 단추는 ` ▾` 와
            자기 padding·테두리(14px)만큼 이름보다 넓다. 이름(66px)만 보고 72px 를
@@ -390,8 +440,10 @@
            번호에 있다. **여는 길은 그대로 하나다**: 같은 `js-co-edit` 을
            달아 companies.js 의 그 handler 를 탄다 — 여기에 두 번째 길을
            내면 한쪽만 고쳐지고 조용히 갈린다. #}
-        <td class="rowno muted js-co-edit" title="눌러서 수정"></td>
-        <td class="co-name">
+        {# 고정 표시는 **머리글과 칸에 같은 수**로 붙는다 — 한쪽만 붙으면
+           머리글은 멈춰 서고 칸은 따라 흘러가, 기업명 위에 남의 값이 겹친다. #}
+        <td class="rowno muted js-co-edit stick stick-a" title="눌러서 수정"></td>
+        <td class="co-name stick stick-b">
           <b class="cell" data-field="name">{{ r.name }}</b>
         </td>
         {# `data-filter-key` — 고친 값이 그 칸의 필터 목록에도 나오게 한다.
@@ -430,6 +482,18 @@
         </td>
         <td class="cell" data-field="assignee_name" data-type="pick"
             data-filter-key="assignee">{{ r.assignee }}</td>
+        {# **눌러 고치는 칸이 아니다**(`cell` 이 없다) — 이력에서 세어 낸 값이라
+           손으로 적을 것이 없다. 짚으면 마지막 날짜와 사람 수가 뜬다.
+
+           한 번도 안 나간 기업은 `–` 다. 빈칸으로 두면 "안 보냈다" 인지
+           "값을 못 읽었다" 인지 화면이 말하지 못한다. #}
+        <td class="num sent-count">
+          {% if r.sent_rounds %}
+          <span title="마지막 {{ r.last_sent }} · 투자사 {{ r.sent_investors }}명 · 발송 {{ r.sent_total }}건"><b>{{ r.sent_rounds }}회</b> <span class="muted">· {{ r.sent_total }}건</span></span>
+          {% else %}
+          <span class="muted" title="아직 딜 소개에 넣은 적이 없습니다">–</span>
+          {% endif %}
+        </td>
         {# 자유 입력이다 — `data-type` 을 주지 않으면 inline_edit.js 가 그냥
            글자 칸으로 연다(옆의 `홍보메일삭제` 와 같다). `pick` 을 달면 이미
            적힌 날짜들이 보기로 뜨는데, 날짜는 고를 목록이 아니다. #}
@@ -473,7 +537,7 @@
         <td><button type="button" class="linkbtn js-co-edit">수정</button></td>
       </tr>
       {% else %}
-      <tr><td colspan="14" class="muted">등록된 기업이 없습니다. [기업 추가]로 시작하세요.</td></tr>
+      <tr><td colspan="15" class="muted">등록된 기업이 없습니다. [기업 추가]로 시작하세요.</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -845,6 +909,81 @@
     <label class="field check-row"><input type="checkbox" id="f-is_top_deal"> <span>추천 딜 (★)</span></label>
     <label class="field wide"><span>메모</span><textarea id="f-note" rows="2"></textarea></label>
   </div>
+
+  {# ── 소개 이력 ───────────────────────────────────────────────────────────
+     **읽기만 하는 표다.** 그래서 `form-grid` 가 아니라 `table-wrap` +
+     `grid-table compact` 다 — 칸마다 이름표가 붙는 격자에 날짜 여섯 줄을
+     세우면 이름표가 값보다 많아진다.
+
+     `.detail-foot` 은 창 바닥에 붙어 있다(#185). 그래서 이 구역이 아무리
+     길어도 [저장]·[삭제] 는 안 밀리고, 이 구역은 `.detail-body` 의 굴림
+     안에서 끝까지 내려가며 읽힌다.
+
+     **줄은 화면 코드가 그린다**(`companies.js` 의 `fillHistory`). 창 하나를
+     344개 기업이 돌려 쓰므로, 여기 미리 그려 두면 열 때마다 앞 기업의 줄을
+     지우는 자리가 또 생긴다 — 그리는 자리도 지우는 자리도 한 곳이어야 한다
+     (`합치기 전 값` 상자가 같은 이유로 그렇다). #}
+  <h3 class="form-section">소개 이력
+    <span class="hint">언제 · 몇 명에게 · 누가 보냈나</span></h3>
+  {# 한 줄 요약. `보낸 날` 과 `발송` 을 **나란히** 적는다 — 날짜만 세면
+     180건짜리와 103건짜리가 똑같이 `6회` 로 보인다. #}
+  <p class="hint" id="co-history-sum"></p>
+  <div class="table-wrap">
+    <table class="grid-table compact" id="co-history">
+      <thead>
+        <tr>
+          <th style="width:92px">날짜</th>
+          {# 시트에 적힌 요일 **그대로**다. 날짜에서 계산하지 않는다 — 연도
+             추정이 틀리면 계산값이 어긋나므로 사용자가 쓴 값을 보존해 표시에
+             쓴다(`models.ContactActivity.weekday`). 앱 회차에는 그 값이
+             없어 빈 칸이다. #}
+          <th style="width:44px" title="시트에 적힌 요일 그대로입니다">요일</th>
+          {# **이름이 아니라 수다.** 남의 담당 투자사는 이름을 내주지 않는
+             자리라(`routers/contacts._owned` 가 404 로 답한다), 기업 화면이
+             그 명단을 읽는 우회로가 되면 안 된다. #}
+          <th class="num" style="width:62px"
+              title="그날 이 기업이 나간 사람 수입니다">투자사</th>
+          <th>보낸 사람</th>
+          <th>회차명</th>
+          <th style="width:76px">출처</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  {# 이력이 없는 기업. **빈 표로 두지 않는다** — 빈칸은 "안 보냈다" 인지
+     "이름이 안 맞았다" 인지 말하지 못한다. 개발 자료로 344곳 중 249곳이
+     여기에 해당한다. #}
+  <p class="hint" id="co-history-empty" hidden>
+    아직 딜 소개에 넣은 적이 없습니다.
+    <span class="muted">— 보낸 적이 있는데 안 보인다면 이력에 적힌 기업명이
+    이 줄의 기업명과 달라 못 이은 것입니다.</span>
+  </p>
+  {# **왜 이름 옆에 `(담당)` 이 붙는지** 한 줄로 밝힌다. 이 말이 없으면
+     같은 표의 두 이름이 서로 다른 것을 뜻한다는 것을 알 길이 없다. #}
+  <p class="hint">
+    <b>(담당)</b> 이 붙은 이름은 <b>추정</b>입니다 — <b>시트</b>·<b>손으로
+    적음</b> 줄에는 보낸 사람이 안 적혀 있어, 그 투자사를 <b>지금 담당하는
+    팀원</b>을 대신 적습니다. 담당이 바뀌면 과거 발송도 새 담당자 앞으로 옮겨
+    붙습니다. <b>앱 발송</b>만 실제로 보낸 사람이 남습니다.
+  </p>
+  {# ── 이 표에 안 잡히는 것 ────────────────────────────────────────────────
+     기업 줄에서 출발하는 집계라 둘이 빠진다. 조용히 빠지면 사람은 합계가 왜
+     안 맞는지 물을 자리가 없다. 숫자는 서버가 세어 준다(한 훑기에서 나온다). #}
+  {% if sent_count_only.rounds or sent_unmatched %}
+  <p class="hint warn">
+    {% if sent_count_only.rounds %}
+    개수만 적혀 <b>기업을 알 수 없는 회차가 {{ sent_count_only.rounds }}개</b>
+    있습니다({{ sent_count_only.rows }}줄{% if sent_count_only.days %} ·
+    {{ sent_count_only.days|join(', ') }}{% endif %}) — 이 표에는 한 줄도 안
+    잡힙니다.
+    {% endif %}
+    {% if sent_unmatched %}
+    이력에만 있고 기업 목록에 없는 이름이 <b>{{ sent_unmatched }}곳</b>
+    있습니다 — 그만큼 어느 기업 줄에도 안 붙습니다.
+    {% endif %}
+  </p>
+  {% endif %}
   </div>
 
   {#

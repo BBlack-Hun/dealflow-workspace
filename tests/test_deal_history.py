@@ -48,7 +48,7 @@ def test_history_comes_from_imported_activities(db, users):
         company_names=json.dumps(["샘플애그", "샘플메디"], ensure_ascii=False)))
     db.commit()
 
-    sent = deal_history.last_sent_map(db)
+    sent = deal_history.scan(db)
     info = deal_history.annotate([company], sent, today=date(2026, 8, 20))
     assert info[company.id]["last_sent"] == "2026-08-10"
     assert info[company.id]["days_ago"] == 10
@@ -66,7 +66,7 @@ def test_history_comes_from_our_own_batches(db, users):
     db.add(DealBatchCompany(batch_id=batch.id, company_id=company.id, position=1))
     db.commit()
 
-    sent = deal_history.last_sent_map(db)
+    sent = deal_history.scan(db)
     info = deal_history.annotate([company], sent, today=date(2026, 8, 20))
     assert info[company.id]["last_sent"] == "2026-08-12"
 
@@ -107,7 +107,7 @@ def test_company_name_variants_match(db, users):
                            company_names=json.dumps(["샘플애그"], ensure_ascii=False)))
     db.commit()
 
-    info = deal_history.annotate([company], deal_history.last_sent_map(db),
+    info = deal_history.annotate([company], deal_history.scan(db),
                                  today=date(2026, 8, 20))
     assert info[company.id]["last_sent"] == "2026-08-10"
 
@@ -126,7 +126,7 @@ def test_old_send_is_not_recent(db, users):
                            company_names=json.dumps(["샘플애그"], ensure_ascii=False)))
     db.commit()
 
-    info = deal_history.annotate([company], deal_history.last_sent_map(db),
+    info = deal_history.annotate([company], deal_history.scan(db),
                                  today=date(2026, 8, 20))
     assert info[company.id]["recent"] is False
 
