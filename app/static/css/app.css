@@ -1874,6 +1874,32 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
   td input, th input, td textarea, th textarea, td a, th a,
   .cell-pop button, .cell-pop input, .cell-pop textarea { min-height: 0; }
   td .linkbtn, th .linkbtn { display: inline; }
+  /* ── 위 되돌리기에서 **다시 빼는 둘** ──────────────────────────────────
+     위 규칙이 표와 칸 편집창을 한 묶음으로 잡은 까닭은 둘뿐이다: 표 줄
+     높이와 머리글 두 줄 규칙. 아래 둘은 그 둘 중 어느 것도 걸리지 않는데
+     같이 끌려 들어가 있었다.
+
+     1) 칸 하나를 고르는 칩(`.cell-pop-choice`). 표 안이 아니라 **칸 위에 뜬
+        창** 안이고, 폰에서 그 창은 이미 화면 폭을 다 쓴다(`.cell-pop` 의
+        `width: calc(100vw - 24px)`) — 칩이 커져도 밀릴 것이 없다. 그리고
+        폰에서 한 칸을 고치는 길이 바로 이 칩을 누르는 것이다.
+        390px 에서 38~76 × **24px** 이었다.
+     2) 「달별 반응」의 달 이름(`.month-react thead a`). 그 달의 업무 보고로
+        가는 **유일한 길**인데 390px 에서 20 × **15px** 이었다. 이 표는 네
+        줄짜리 요약이라(`dashboard.REACTION_ROWS`) 지킬 줄 밀도가 없다 —
+        여든 줄을 훑는 `.grid-table` 과는 다른 자리다.
+
+     둘 다 `.grid-table` 머리글이 아니라서 위에서 못 박은 머리글 모양
+     (가로 왼쪽 · 세로 가운데 · 줄바꿈 허용)은 건드리지 않는다. */
+  .cell-pop .cell-pop-choice { min-height: 44px; }
+  /* 칸을 통째로 누르게 한다 — 20px 짜리 글자만 누를 자리로 두면 44px 로
+     키워도 세로만 커지고 가로는 20px 그대로다. 여백을 칸에서 링크로 옮겨
+     **칸이 곧 누를 자리**가 되게 한다(37×44 → 49×44). 표 폭은 그대로다 —
+     옮긴 것이지 더한 것이 아니다. 숫자 칸이 오른쪽 정렬이라 링크 안에서도
+     오른쪽에 붙인다(`.month-react th` 의 `text-align: right`). */
+  .month-react thead .mr-num { padding: 0; }
+  .month-react thead .mr-num a { display: flex; min-height: 44px;
+    padding: 0 6px; align-items: center; justify-content: flex-end; }
   /* 체크박스는 44px 로 키우면 네모가 우스꽝스럽게 커진다 — 손끝에 걸릴
      만큼만 키우고, 대신 감싸는 라벨을 눌러도 되게 넉넉히 둔다. */
   input[type=checkbox], input[type=radio] { width: 20px; height: 20px; }
