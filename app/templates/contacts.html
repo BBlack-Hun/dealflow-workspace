@@ -765,16 +765,23 @@
         <td class="cell ellipsis" data-field="address" title="{{ r.address }}">{{ r.address }}</td>
         <td class="cell" data-field="card_registered_at" data-type="date">{{ r.card_registered_at }}</td>
         {# 앱이 만든 칸 — 시트에는 없다 #}
-        {# `data-choices` — 이 칸은 **A~F 뿐이다**(`services/group_name`).
+        {# `data-choices` — 이 칸이 담는 갈래(`services/group_name`). 한 글자
+           여섯과 **뜻이 있는 이름들**이다(사용자가 둘 다 쓴다).
+
            보기가 없으면 `pick` 창에 뜨는 것은 **다른 줄이 이미 쓰고 있는 값**뿐
            이라(`inline_edit.js` 의 `knownValues`), 아무도 안 채운 자리에서는 빈
-           칸에 그대로 타이핑하게 된다 — `A` 옆에 `A그룹`·`a` 가 생기는 자리다.
-           갈린 값은 딜 제안 관리의 그룹 칩·그룹 발송에서 **다른 그룹**이 된다.
+           칸에 그대로 타이핑하게 된다 — `A` 옆에 `A그룹`, `Series B 이상` 옆에
+           `시리즈B` 가 생기는 자리다. 갈린 값은 딜 제안 관리의 그룹 칩·그룹
+           발송에서 **다른 그룹**이 된다.
 
-           글자를 여기 적지 않는다. 서버가 `group_name.CHOICES` 를 그대로
-           넘겨 주고(`routers/pages.py` 의 `group_choices`), 아래 수정창의
-           보기도 **그 값 하나**를 쓴다 — 두 곳에 적으면 한쪽만 고쳐진다.
-           투자사 딜공유 배치는 이미 같은 목록을 쓴다(`Column.choices`). #}
+           글자를 여기 적지 않는다. 서버가 넘겨 준 목록 하나를 쓰고
+           (`routers/pages.py` 의 `group_choices` = 고정 갈래 + 지금 쓰고 있는
+           값), 아래 수정창의 보기도 **그 값 하나**를 쓴다 — 두 곳에 적으면
+           한쪽만 고쳐지고, 그 순간 표와 창이 다른 말을 넣게 된다.
+
+           **묶는 것이 아니다.** `pick` 창은 글자 칸이라 목록에 없는 말도 그대로
+           적힌다(수정창의 `<datalist>` 와 같은 성질) — 사용자가 새 이름을 쓰면
+           그 이름은 다음 화면부터 이 목록에 함께 선다. #}
         <td class="cell" data-field="group_name" data-type="pick"
             data-choices="{{ group_choices }}"
             data-filter-key="group">{{ r.group_name }}</td>
@@ -1100,15 +1107,19 @@
          사람의 두 값으로 읽힌다. `이름 · 직함 · 회사 · 부서` 는 명함 한 장을
          읽는 차례라, 여기 서면 누구의 부서인지가 자리로 드러난다. #}
       <label class="field"><span>부서</span><input type="text" id="f-department"></label>
-      {# **보기를 `list=` 로 묶는다.** 표에서 이 칸을 누르면 A~F 중에서 고르는데
-         (`data-type="pick"` · `data-choices` — 위 표 줄), 이 창만 빈 글자 칸이면
-         **같은 칸을 어디서 고치느냐에 따라 값이 갈린다.** 관심도가 방금 같은
-         이유로 묶였고(`O`·`o`·`완료` 로 이미 데인 자리), 그룹은 갈리면 딜 제안
-         관리의 그룹 칩과 그룹 발송 대상에서 그 사람만 빠진다.
+      {# **보기를 `list=` 로 세운다.** 표에서 이 칸을 누르면 갈래 목록에서
+         고르는데(`data-type="pick"` · `data-choices` — 위 표 줄), 이 창만 빈
+         글자 칸이면 **같은 칸을 어디서 고치느냐에 따라 값이 갈린다.** 관심도가
+         방금 같은 이유로 묶였고(`O`·`o`·`완료` 로 이미 데인 자리), 그룹은
+         갈리면 딜 제안 관리의 그룹 칩과 그룹 발송 대상에서 그 사람만 빠진다.
 
-         `<select>` 가 아닌 이유는 이 창의 다른 `list=` 칸과 같다 — 목록에 없는
-         옛 값이 창을 여는 것만으로 사라지면 안 된다. 보기는 표 칸과 **같은 값
-         하나**(`group_choices`)에서 그린다. #}
+         **묶는 것이 아니다**(`<select>` 가 아닌 이유는 이 창의 다른 `list=`
+         칸과 같다): 목록에 없는 옛 값이 창을 여는 것만으로 사라지면 안 되고,
+         사용자가 **새 이름을 쓴다**. 새로 적은 이름은 다음 화면부터 이 목록에
+         함께 선다(`group_choices` = 고정 갈래 + 지금 쓰고 있는 값).
+
+         보기는 표 칸과 **같은 값 하나**에서 그린다 — 표에서는 고르기만 되고
+         창에서는 새로 적힌다면 또 갈린다. 둘 다 고를 수도, 새로 적을 수도 있다. #}
       <label class="field"><span>그룹</span>
         <input type="text" id="f-group_name" list="opts-panel-group_name"
                placeholder="고르거나 새로 적습니다">

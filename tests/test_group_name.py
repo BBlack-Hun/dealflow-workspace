@@ -1,4 +1,4 @@
-"""그룹 칸은 **A~F 만** 담는다 — 판정 · 임포트 거르기 · 정리 스크립트.
+"""그룹 칸은 **정해 둔 갈래만** 담는다 — 판정 · 임포트 거르기 · 정리 스크립트.
 
 세 자리가 **같은 함수 하나**(`app/services/group_name.decide`)를 부른다. 규칙이
 두 군데 적히면 한쪽이 낡고, 그러면 여기서 정리해 둔 것을 다음 업로드가 통째로
@@ -6,10 +6,18 @@
 않고, **시트를 읽어 넣는 쪽과 정리 스크립트가 그 판정을 실제로 지나는지**까지
 본다.
 
-값은 운영에 실제로 있던 **다섯 꼴**로 짠다:
+갈래는 **두 줄기**다. 한 글자 여섯(`A`~`F`)과, 사용자가 그 뒤로 쓰기 시작한
+**뜻이 있는 이름들**(`특정분야` · `Pre IPO` · `Series B 이상` … 50줄). 물었더니
+"일부러 넣은 것이고 앞으로도 쓴다" 였다 — 그래서 이름도 갈래로 인정한다.
 
-    `A`                  이미 맞는 값
-    `b그룹`               A~F 인데 꼬리말이 붙었다
+**바뀌지 않은 것이 이 파일의 절반이다**: 문장은 여전히 안 들어온다. 이름을
+더한다고 `Seed~PreA 30억` 까지 통과시키면 158줄이 그대로 돌아온다.
+
+값은 운영에 실제로 있던 **여섯 꼴**로 짠다:
+
+    `A`                  이미 맞는 값(한 글자)
+    `특정분야`            이미 맞는 값(이름) — 가장 많이 쓰는 이름이다
+    `b그룹`               갈래인데 표기가 다르다
     `Seed~PreA 30억`      `round_size` 에 이미 있는 말
     `AI/바이오`            `sectors` 에 이미 있는 말
     `첫 미팅은 대면 선호`   여기에만 있는 말
@@ -24,6 +32,8 @@ import sys
 from pathlib import Path
 
 import pytest
+
+from html import unescape
 
 from app.services import group_name as gn
 
@@ -43,8 +53,42 @@ def test_A부터_F까지는_그대로_통과한다():
         assert gn.decide(one).group == one
 
 
+def test_사용자가_쓰는_이름_여덟도_그대로_통과한다():
+    """운영에서 50줄이 이 여덟을 쓰고 있다. **사용자가 일부러 넣은 값**이라
+    통과시켜야 한다 — 안 그러면 다음 업로드·정리에서 메모로 쓸려 간다."""
+    for name in gn.NAMED:
+        assert gn.decide(name).action == gn.KEEP, name
+        assert gn.decide(name).group == name, name
+    # 받아들이는 값과 화면의 고정 보기는 **같은 목록 하나**에서 나온다.
+    assert gn.KNOWN == gn.GROUPS + gn.NAMED
+    assert gn.CHOICES == ",".join(gn.KNOWN)
+
+
+def test_이름은_적어_둔_글자_그대로_돌려준다():
+    """표기가 갈린 것은 **제 글자로 모은다.** 표에서 고른 값과 창에서 친 값이
+    한 글자라도 다르면 딜 제안 관리에서 다른 그룹이 된다."""
+    for raw, want in (("series b이상", "Series B 이상"), ("PRE IPO", "Pre IPO"),
+                      ("Series  C이상", "Series C 이상"), ("m&a", "M&A"),
+                      ("seed", "Seed"), ("tips", "TIPS")):
+        decision = gn.decide(raw)
+        assert decision.action == gn.FIX, raw
+        assert decision.group == want, raw
+    # 앞뒤 공백만 다른 것은 `decide` 가 먼저 다듬으므로 **고칠 것이 없다**.
+    assert gn.decide(" 특정분야 ").action == gn.KEEP
+    assert gn.decide(" 특정분야 ").group == "특정분야"
+
+
+def test_Seed_는_라운드_칸과_겹쳐_보여도_안_지운다():
+    """`Seed` 는 갈래이면서 `round_size` 에도 흔히 든 말이다. 겹침을 먼저 보면
+    사용자가 고른 갈래가 **소리 없이 비워진다** — 차례(② 가 ③ 보다 앞)가 그것을
+    막는다. 이 검사는 그 차례를 지킨다."""
+    decision = gn.decide("Seed", round_size="Seed~Pre A | 30억", sectors="")
+    assert decision.action == gn.KEEP
+    assert decision.group == "Seed"
+
+
 def test_b그룹도_소문자_a도_한_글자로_읽는다():
-    """`A,B,C,D,E,F` 로 고르는 칸이라, 한 글자로 안 맞으면 필터에서 통째로 빠진다."""
+    """골라서 거르는 칸이라, 갈래로 안 맞으면 필터에서 따로 떨어져 나온다."""
     for raw, want in (("b그룹", "B"), ("a", "A"), ("C 그룹", "C"),
                       (" f그룹 ", "F"), ("그룹 D", "D")):
         decision = gn.decide(raw)
@@ -53,9 +97,19 @@ def test_b그룹도_소문자_a도_한_글자로_읽는다():
 
 
 def test_G_는_그룹이_아니다():
-    """여섯 가지뿐이다. 일곱 번째 글자를 통과시키면 고르는 칸이 아니게 된다."""
+    """한 글자는 여섯뿐이다. 일곱 번째 글자를 통과시키면 고르는 칸이 아니게 된다."""
     assert gn.decide("G").action == gn.MOVE
     assert gn.letter("G") is None
+    assert gn.canonical("G") is None
+
+
+def test_이름을_더했다고_문장까지_들어오지는_않는다():
+    """이 파일의 절반이 이것이다. 전에 158줄이 문장이었고 그중 64줄이 메모로
+    갔다 — 갈래를 넓혔다고 그 문장들이 다시 그룹 칸에 앉으면 안 된다."""
+    for sentence in ("Seed~PreA 30억", "Series B 이상 선호하고 바이오만 봄",
+                     "AI/바이오 선호", "첫 미팅은 대면 선호", "TIPS 운영사 투자금 1-10억"):
+        assert gn.canonical(sentence) is None, sentence
+        assert gn.decide(sentence, round_size="", sectors="").action == gn.MOVE, sentence
 
 
 def test_라운드_칸에_이미_있는_말은_메모로_옮기지_않고_비운다():
@@ -120,7 +174,7 @@ def test_빈_그룹_칸은_아무것도_하지_않는다():
 
 # ── ② 칸 정의 ───────────────────────────────────────────────────────────────
 
-def test_그룹_칸은_A부터_F까지_고르는_칸이고_필터가_붙는다():
+def test_그룹_칸은_정해_둔_갈래를_고르는_칸이고_필터가_붙는다():
     """이름을 `그룹` 으로 줄인 것이 이 판의 핵심이다. 옛 이름
     (`그룹/투자분야/라운드사이즈`)이 세 가지를 한 칸에 적으라고 시켰다."""
     from app.services import contact_columns as cc
@@ -129,7 +183,12 @@ def test_그룹_칸은_A부터_F까지_고르는_칸이고_필터가_붙는다()
                   if c.key == "group_name")
     assert column.label == "그룹"
     assert column.kind == "pick"
-    assert column.choices == gn.CHOICES == "A,B,C,D,E,F"
+    # **글자를 여기 다시 적지 않는다.** 배치가 목록을 따로 들면, 화면에서 고른
+    # 값이 임포트에서는 없는 값이 되는 날이 온다.
+    assert column.choices == gn.CHOICES
+    assert column.choices.startswith("A,B,C,D,E,F,")   # 한 글자가 먼저다
+    for name in gn.NAMED:
+        assert name in column.choices.split(","), name
     # `filterable` 은 `kind == "pick"` 이다 — 고르는 칸이니 필터가 붙는 것이 맞다.
     assert column.filterable
     # 표에 서는 것은 지금까지 그대로다(이 판에서 건드리지 않았다).
@@ -249,11 +308,13 @@ SCRIPT = ROOT / "scripts" / "clean_group_name.py"
 
 
 def _seed(db):
-    """다섯 꼴을 한 줄씩. 스크립트가 각각을 어떻게 가르는지 본다."""
+    """여섯 꼴을 한 줄씩. 스크립트가 각각을 어떻게 가르는지 본다."""
     from app.models import VcContact
 
     rows = [
         VcContact(user_id=1, name="가", firm="가벤처스", group_name="A"),
+        # 사용자가 일부러 넣은 이름. **스크립트가 건드리면 안 되는 줄**이다.
+        VcContact(user_id=1, name="사", firm="사벤처스", group_name="특정분야"),
         VcContact(user_id=1, name="나", firm="나벤처스", group_name="b그룹"),
         VcContact(user_id=1, name="다", firm="다벤처스", group_name=ROUND,
                   round_size=ROUND),
@@ -316,14 +377,43 @@ def test_미리보기가_다섯_꼴을_갈라_센다(db, users):
     ids = _seed(db)
     text = _run(_db_path(), "--dry-run", "--limit", "0")
 
-    assert _counted(text, "그대로 (A~F 한 글자") == 1
-    assert _counted(text, "고침   (A~F + \'그룹\' 꼴") == 1
+    assert _counted(text, "그대로 (정해 둔 갈래") == 2      # `A` 와 `특정분야`
+    assert _counted(text, "고침   (표기만 다름") == 1
     assert _counted(text, "라운드 사이즈와 겹침") == 1
     assert _counted(text, "선호 투자분야와 겹침") == 1
     assert _counted(text, "둘 다 겹침") == 0
     assert _counted(text, "옮김   (아무 데도 안 겹침") == 1
     # 바뀌는 줄은 id 로 가리킨다.
     assert str(ids["나"]) in text
+
+
+def test_정리_스크립트는_사용자가_넣은_이름을_안_건드린다(db, users, tmp_path):
+    """운영에서 50줄이 이름 갈래를 쓴다. 스크립트를 다시 돌릴 일이 생겼을 때
+    그 값을 메모로 쓸어 가면, 사용자가 일부러 넣은 것이 사라진다.
+
+    `--apply` 까지 돌려서 본다 — 미리보기만 보면 "세는 자리는 맞는데 쓰는
+    자리가 다른" 경우를 못 잡는다.
+    """
+    from app.models import VcContact
+
+    ids = {}
+    for i, name in enumerate(gn.NAMED):
+        row = VcContact(user_id=1, name=f"이름{i}", firm=f"{i}벤처스",
+                        group_name=name, memo="8/20 통화")
+        db.add(row)
+        db.flush()
+        ids[name] = row.id
+    db.commit()
+    path = _db_path()
+
+    # `--apply` 는 되돌릴 파일을 반드시 받는다(스크립트가 정한 규칙).
+    _run(path, "--apply", "--save-baseline", str(tmp_path / "group.json"))
+
+    for name, row_id in ids.items():
+        group, memo = _read(path, row_id)
+        assert group == name, name          # 그대로 있다
+        assert memo == "8/20 통화", name     # 메모에 옮겨 붙지도 않았다
+        assert gn.MOVED_MARK not in (memo or ""), name
 
 
 def test_미리보기는_값을_안_찍는다(db, users):
@@ -457,7 +547,7 @@ def test_표_머리글이_그룹_이고_필터가_붙는다(monthly_sheet):
     assert "그룹/투자분야/라운드사이즈" not in html, "옛 이름이 화면에 남아 있습니다"
 
 
-def test_표의_그룹_칸을_누르면_A부터_F_가_뜬다(monthly_sheet):
+def test_표의_그룹_칸을_누르면_정해_둔_갈래가_뜬다(monthly_sheet):
     """수정창에는 `list=` 로 이미 붙어 있었다. 표만 빈 글자 칸이면 **어디서
     고치느냐에 따라** `A` 와 `a그룹` 으로 갈린다 — 방금 정리한 그것이다."""
     from urllib.parse import quote
@@ -467,10 +557,14 @@ def test_표의_그룹_칸을_누르면_A부터_F_가_뜬다(monthly_sheet):
     assert cells, "표에 그룹 칸이 없습니다"
     for cell in cells:
         assert 'data-type="pick"' in cell, cell
-        assert f'data-choices="{gn.CHOICES}"' in cell, cell
+        # **`M&A` 는 화면에서 `M&amp;A` 로 적힌다** — 브라우저가 읽을 때 다시
+        # `M&A` 가 되므로 값은 같다. 검사도 같은 자로 읽는다.
+        m = re.search(r'data-choices="([^"]*)"', cell)
+        assert m, cell
+        assert unescape(m.group(1)) == gn.CHOICES, cell
 
 
-def test_수정창의_그룹_칸에도_A부터_F_가_붙는다(monthly_sheet):
+def test_수정창의_그룹_칸에도_같은_갈래가_붙는다(monthly_sheet):
     from urllib.parse import quote
 
     html = monthly_sheet.get(f"/contacts?sheet={quote(DEAL)}").text
@@ -478,5 +572,6 @@ def test_수정창의_그룹_칸에도_A부터_F_가_붙는다(monthly_sheet):
     picks = re.search(r'<datalist id="opts-panel-group_name">(.*?)</datalist>',
                       html, re.S)
     assert picks, "수정창에 그룹 보기 목록이 없습니다"
-    assert [v for v in re.findall(r'value="([^"]*)"', picks.group(1))] \
-        == list(gn.GROUPS)
+    # 한 글자 여섯 **과 이름들**이 함께 뜬다 — 사용자가 둘 다 쓴다.
+    assert [unescape(v) for v in re.findall(r'value="([^"]*)"', picks.group(1))] \
+        == list(gn.KNOWN)

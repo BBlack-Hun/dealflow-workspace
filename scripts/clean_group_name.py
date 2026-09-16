@@ -2,9 +2,16 @@
 
 이 칸의 화면 이름은 오랫동안 `그룹/투자분야/라운드사이즈` 였다. 이름이 시키는
 대로 사람들이 투자 단계·규모·분야를 한 칸에 문장으로 적어 왔고, 그 말들은 이미
-제 칸이 있다(`round_size` · `sectors`). 사용자가 정했다 — **그룹 칸은 A~F 만
-담는다.** 화면 칸은 이제 `A,B,C,D,E,F` 로 고르는 칸이라, 한 글자로 안 맞는 값은
-필터에서 통째로 빠진다(저장은 되는데 걸러지지는 않는 값이 된다).
+제 칸이 있다(`round_size` · `sectors`). 사용자가 정했다 — **그룹 칸은 정해 둔
+갈래만 담는다. 문장은 안 담는다.** 갈래는 한 글자 여섯(`A`~`F`)과 **뜻이 있는
+이름들**(`특정분야` · `Pre IPO` · `Series B 이상` …)이다. 화면 칸은 그 갈래에서
+고르는 칸이라, 갈래로 안 읽히는 값은 필터에서 따로 떨어져 나온다(저장은 되는데
+같은 갈래로는 안 걸리는 값이 된다).
+
+**사용자가 일부러 넣은 이름은 건드리지 않는다.** 무엇이 갈래인지는 이 파일이
+아니라 `app/services/group_name.KNOWN` 이 정한다 — 이름이 하나 늘면 거기에만
+적는다. 여기서 또 가리면 그날로 둘이 갈리고, 그때 이 스크립트가 사용자가
+적어 둔 이름을 메모로 쓸어 간다.
 
     # ① 무엇이 어떻게 바뀌는지 본다 (**기본이 미리보기다** — DB 에 안 쓴다)
     python scripts/clean_group_name.py
@@ -28,8 +35,9 @@
 시트를 읽어 넣는 쪽(`services/sheet_import`)이 부르는 바로 그 함수다. 규칙이 두
 군데 적히면 한쪽이 낡고, 그러면 여기서 정리해 둔 것을 다음 업로드가 되돌린다.
 
-    그대로   이미 A~F 한 글자다. 손대지 않는다.
-    고침     `b그룹` · 소문자 `a` → `B` · `A`.
+    그대로   이미 정해 둔 갈래다(`A` · `특정분야` …). 손대지 않는다.
+    고침     표기만 다르다. `b그룹` · `a` → `B` · `A`, `series b이상` →
+             `Series B 이상`.
     지움     `round_size` 나 `sectors` 에 **이미 있는 말**이다. 그냥 비운다 —
              메모로 옮기면 같은 말이 세 군데가 된다.
     옮김     여기에만 있는 말이다. `memo` 뒤에 `[그룹 칸에서 옮김]` 표시와 함께
@@ -153,8 +161,8 @@ def summarize(rows: list) -> Counter:
 def print_summary(rows: list) -> None:
     counts = summarize(rows)
     lines = [
-        ("그대로 (A~F 한 글자)", counts["keep"]),
-        ("고침   (A~F + '그룹' 꼴)", counts["fix"]),
+        ("그대로 (정해 둔 갈래)", counts["keep"]),
+        ("고침   (표기만 다름)", counts["fix"]),
         (f"지움   ({WHERE_ROUND})", counts[WHERE_ROUND]),
         (f"지움   ({WHERE_SECTORS})", counts[WHERE_SECTORS]),
         (f"지움   ({WHERE_BOTH})", counts[WHERE_BOTH]),
@@ -265,7 +273,7 @@ def default_db() -> Path:
 
 def main() -> int:
     ap = argparse.ArgumentParser(
-        description="그룹 칸을 A~F 만 담게 정리한다 (기본은 미리보기 — DB 에 안 쓴다)")
+        description="그룹 칸을 정해 둔 갈래만 담게 정리한다 (기본은 미리보기 — DB 에 안 쓴다)")
     ap.add_argument("--db", default="", help="SQLite 파일 (기본: DATABASE_URL)")
     # `--dry-run` 은 **기본값**이라 안 적어도 미리보기다. 그래도 받는다 —
     # 적어 두고 돌린 명령이 "안 적었으니 저장됐나" 로 읽히면 안 된다.
@@ -314,7 +322,7 @@ def main() -> int:
         rows = plan(con)
 
         print(f"자료      : {path}" + ("" if args.apply else "  (읽기 전용)"))
-        print("무엇을 하나: 그룹 칸은 A~F 만 담는다 "
+        print("무엇을 하나: 그룹 칸은 정해 둔 갈래만 담는다 — 문장은 아니다 "
               "(판정은 `app/services/group_name.decide`)")
         print("쓰는가     : " + ("**쓴다 (--apply)**" if args.apply
                                  else "아니다 — 미리보기"))
