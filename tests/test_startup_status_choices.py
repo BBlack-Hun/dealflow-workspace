@@ -467,7 +467,7 @@ def test_투자사_관리_현황은_한_칸도_안_바뀐다(sheets):
     from app.services import contact_columns as cc
 
     html = sheets.get(f"/{cc.page_of(cc.INVESTOR)}?sheet={quote(OTHER)}").text
-    assert "명함 등록일" in html and "관심도 (월말기준)" in html
+    assert "명함 등록일" in html and "관심도" in html
     for key, (label, _v) in PROPOSED.items():
         assert label not in html, f"투자사 표에 `{label}` 이 끼어들었습니다"
 

@@ -533,7 +533,7 @@
         #}
         {#
           폭은 **실제 글자 길이**로 잡았다(90%가 들어가는 선).
-              그룹 8자 · 이름+직함 12자 · 담당자 3자 · 투자사명 30자
+              그룹 8자 · 이름+직함 12자 · 연결 담당 4자 · 투자사명 30자
               선호분야 17자 · 라운드사이즈 38자
           짧은 값이 든 칸에 넓은 자리를 주면 표가 헐렁해 보이고, 정작 긴 칸은
           잘린다. 담당자(3자)에 72px 을 주고 라운드사이즈(38자)를 130px 로
@@ -543,7 +543,7 @@
           칸은 이름 대신 `채널 ▾` 단추가 그 자리에 서고(filters.js), 값을 고르면
           `채널 (1) ▾` 로 24px 이 더 늘어난다. 그 늘어나는 몫을 안 재고 이름
           길이로만 잡아 둔 탓에, 필터를 거는 순간 일곱 칸이 두 줄로 접혔다
-          (`관심도 (월말기준)`·`카톡방 참여여부`·`선호 투자분야`·`라운드
+          (`관심도`·`카톡방 참여여부`·`선호 투자분야`·`라운드
           사이즈(투자운영금액)`·`그룹`·`진행 단계`·`채널`).
 
           그래서 이 칸들의 폭은 **`단추 폭 + th 좌우 여백 18px + 두 자리 수
@@ -563,21 +563,48 @@
            (아래 `<tr>` 참고) — 짝이 하나라도 빠지면 머리글만 눌리고 아무 일도
            안 일어난다. 한글 차례는 `localeCompare('ko')` 가 정한다. #}
         <th class="stick stick-b" style="width:96px" data-sort="name">이름</th>
-        {# `담당자` 는 한동안 뺐던 칸이다(요청). **다시 세운 이유**는 걸 곳이
+        {# 이 칸에 서는 사람은 **우리 팀원**이다 — 이 줄을 맡아 연결을 끌고
+           가는 사람. 같은 표의 `부서`·`직함` 은 **투자사 쪽 사람**의 것이라,
+           `담당자` 라고만 적혀 있으면 둘 중 누구를 가리키는 이름인지 화면만
+           보고는 가릴 길이 없었다. 그래서 **대시보드가 이미 이 값을 부르던
+           이름**으로 맞춘다 — `연결 담당`(`services/dashboard.py` ·
+           `templates/dashboard.html`). 바꾸는 것은 **화면 이름뿐**이고 저장
+           자리는 `assignee_name` 그대로다.
+
+           **필터 키(`assignee`)는 안 바꾼다.** 대시보드 링크와 사람들이
+           저장해 둔 주소가 `/contacts?assignee=…` 로 들어온다 — 키를 같이
+           바꾸면 그 주소들이 눌려도 아무 일이 안 일어난다(아래 그 부류).
+
+           이 칸은 한동안 뺐던 칸이다(요청). **다시 세운 이유**는 걸 곳이
            필요해서다 — 대시보드의 `연결 담당: 미지정 1명` 이 이 칸으로 눌러
            들어온다. `filters.js` 는 **선언되지 않은 키를 통째로 버리므로**
            칸 없이 링크만 걸면 눌러도 306명이 그대로 뜬다. 링크는 살아 있고
            화면도 열려서 아무도 눈치채지 못하는, 이 저장소가 두 번 당한 부류다.
            그리고 값이 보이는 칸이 없으면 **무엇으로 걸러졌는지 확인할 수가 없다.**
+           (이름을 바꾼 지금은 그 링크 이름과 이 칸 이름이 같은 말이라,
+            어디서 눌러 들어왔는지도 화면에서 바로 읽힌다.)
 
            `미지정`(연결 담당이 안 정해진 사람)은 빈 값이라 필터에서
            `(비어 있음)` 으로 선다 — 대시보드가 거는 값도 그것이다
            (`services/dashboard.py` 의 `FILTER_EMPTY`).
 
-           폭은 글자(3자)가 아니라 **필터 단추**(`담당자 (1) ▾`)에 맞춘다 —
-           필터가 하나뿐인 칸은 이름이 지워지고 단추가 그 자리를 대신한다. #}
-        <th style="width:92px" data-filters="assignee:담당자">담당자<div class="th-filters"></div></th>
-        <th style="width:152px" data-filters="interest:관심도 (월말기준)">관심도 (월말기준)<div class="th-filters"></div></th>
+           폭은 글자(4자)가 아니라 **필터 단추**(`연결 담당 (1) ▾`)에 맞춘다 —
+           필터가 하나뿐인 칸은 이름이 지워지고 단추가 그 자리를 대신한다.
+           이름이 한 자 늘어 단추가 91px → 105px 이 되었다. 92px 에 그대로
+           두면 `연결 담당` / `(1) ▾` 로 접힌다. 여유 7px 을 두어 112px. #}
+        <th style="width:112px" data-filters="assignee:연결 담당">연결 담당<div class="th-filters"></div></th>
+        {# `(월말기준)` 을 뗐다 — **앱이 지키지 않는 약속**이었다. 어느 달
+           기준인지 적는 칸이 없고, 달이 바뀔 때 이 값을 비우거나 달 이름을
+           붙이는 코드도 없다. 안 지키는 약속을 이름에 달아 두니 뒤쪽 `상태`
+           와 같은 뜻으로 읽혔다 — 실제로 그래서 지적이 올라왔다. 엑셀
+           내보내기는 이미 `관심도` 로 적고 있다(`routers/data_io.py` 의
+           `CONTACT_HEADERS`). 필터 키(`interest`)는 그대로다.
+
+           폭도 다시 잰다. 152px 은 옛 이름 단추(`관심도 (월말기준) (1) ▾`
+           = 144px)에 맞춘 값이었다. 새 단추(`관심도 (1) ▾`)는 91px 이면
+           서므로 여유 7px 을 두어 100px 로 줄인다 — 값이 `높음/중간/낮음`
+           석 자라 남는 자리는 옆의 긴 칸들이 쓴다. #}
+        <th style="width:100px" data-filters="interest:관심도">관심도<div class="th-filters"></div></th>
         {# 이 칸도 필터가 하나뿐이라 이름 대신 `카톡방 참여여부 ▾` 단추가 선다.
            이름은 114px 에 들어가지만 단추는 ` ▾` 와 자기 padding·테두리만큼
            넓어 119px 이 필요했다 — 헤드리스 크롬으로 재 보니 실제로 `카톡방
@@ -1059,7 +1086,36 @@
       <label class="field"><span>그룹</span><input type="text" id="f-group_name"></label>
       <label class="field wide"><span>카톡방 이름 <b class="warn-text">정확히 일치해야 발송됩니다</b></span>
         <input type="text" id="f-kakao_room_name"></label>
-      <label class="field"><span>초대완료여부</span><input type="text" id="f-invited_status" placeholder="완료"></label>
+      {#
+        ── `초대 완료 여부`(`invited_status`) 는 **이 창에서만 뺐다** ──────────
+
+        되돌리려면 **아래 한 줄**을 주석 밖으로 꺼내면 된다. 그 한 줄이면
+        되는 이유는 이 화면의 `contacts.js` 가 든 `FIELDS` 목록에
+        `invited_status` 가 **그대로 남아 있어서**다 — 값 채우기도 저장도 그
+        목록이 한다(`static/js` 폴더의 그 파일).
+
+            <label class="field"><span>초대완료여부</span><input type="text" id="f-invited_status" placeholder="완료"></label>
+
+        **모델 칸은 안 지웠다. 이주도 안 만들었다.** 값 125줄은 그대로 있고,
+        시트 임포트와 엑셀은 지금까지처럼 이 값을 읽고 쓴다.
+
+        왜 창에서 뺐나 — **여기서 고쳐도 아무 데도 안 걸린다.** `PATCH` 는 이
+        값을 대입만 하고 `connect_stage` 를 다시 계산하지 않는다
+        (`routers/contacts.py` 의 `_assign`). 표·필터·대시보드·`llm_brief`
+        어디도 이 값을 안 읽는다. 읽는 곳은 **시트 임포트**(연결 상태를 만드는
+        재료)와 **엑셀 내보내기** 둘뿐이고, 둘 다 이 창과 상관이 없다. 고쳐도
+        아무 일이 안 일어나는 칸을 창에 세워 두면, 여기를 `완료` 로 바꿔 놓고
+        발송이 열리기를 기다리는 사람이 생긴다.
+
+        그리고 이 칸은 아래 `카톡방 참여여부` 와 **같은 물음을 시트별로 다르게
+        부른 것**이다 — `services/sheet_import.py` 의 `connect_stage` 주석대로
+        명단 시트는 `카톡방 참여여부(O/X)`, 딜소개현황 시트는
+        `초대 완료여부(완료)` 를 쓰고 임포트는 **둘 다 본다**. 창에 둘을 나란히
+        세우면 같은 물음에 두 번 답하라는 화면이 된다.
+
+        (칸이 보이지 않는다고 지워진 것이 아니다 — 다음 사람이 "빠졌네" 하고
+         도로 붙이기 전에 이 문단을 읽으라고 자리를 주석으로 남겨 둔다.)
+      #}
       {#
         연결 상태 — **그동안 화면 어디에서도 못 고치던 값**이다. 임포트와
         '방 이름 지우기' 만 이 값을 바꿨다. 그래서 카톡방을 나가신 분을
@@ -1079,6 +1135,34 @@
           {% endfor %}
         </select>
       </label>
+      {#
+        ── `카톡방 참여여부` 는 **바로 위 `연결 상태` 밑에 둔다** ────────────
+
+        표에는 있는데 이 창에 없어서 적을 자리가 없던 칸이라 창에 세웠는데,
+        세우고 보니 한 창에서 카톡방을 말하는 자리가 **넷**이 되었다:
+        `카톡방 이름`+`채널` · 이 칸 · `연결 상태`. 이름만 보아서는 **어느
+        것이 발송을 가르는지** 알 수가 없다.
+
+        가르는 것은 **바로 위 `연결 상태`**(`connect_stage`)다 —
+        `sheet_owner.can_send_to` 가 그 값을 직접 읽는다. 이 칸은 **스위치가
+        아니라 시트에서 온 기록**이고, 그 기록은 `연결 상태` 를 만드는
+        **재료**다(`sheet_import.connect_stage`). 실측이 그대로 말해 준다 —
+        `카톡방 참여 O` 130줄 중 **16줄은 실제로 딜이 안 나가고**(방 확인 실패
+        11 · 카톡 채널 아님 5), **참여여부가 빈 7줄은 잘 나간다.**
+
+        이름에 `(시트 원문)` 을 붙이는 길도 있었지만 **안 붙였다.** 이 칸은
+        표에도 서는 칸이라 이름이 표 머리글과 한 글자만 달라도 "같은 칸인가"
+        를 따지게 되고(`tests/test_ui_layout.py` 가 그 짝을 잰다), 이 창은
+        `(쉼표)` 같은 **이름 뒤 꼬리표는 이름이 아니라고** 이미 정해 두었다
+        (위 첫 주석). 자리를 옮기면 **이름을 하나도 건드리지 않고** 관계가
+        읽힌다 — 위가 앱이 발송에 쓰는 값, 아래가 그 값을 만든 재료.
+
+        스타트업 배치의 `카톡 연결 여부` 칸은 **이 모델 칸 자체**를 보여 준다
+        (`contact_columns.STARTUP_LAYOUT`). 그쪽 이름은 그 화면의 것이라
+        건드리지 않는다 — 화면이 다르면 이름도 그 화면에 맞는 것이 맞다.
+      #}
+      <label class="field"><span>카톡방 참여여부</span><input type="text" id="f-kakao_joined"
+             placeholder="O / X"></label>
       {# 상태 이름도 화면에 적지 않는다(위 `연결 상태` 와 같은 규칙). 이 값은
          **발송 대상 판정이 읽는 값**이라(`sheet_owner.can_send_to`), 말이 여기
          따로 있으면 판정과 화면이 서로 다른 것을 가리키게 된다. #}
@@ -1089,9 +1173,19 @@
           {% endfor %}
         </select>
       </label>
-      {# `단계 태그` 는 표에 칸이 없다 — 맞출 상대가 없어 이름을 그대로 둔다.
-         다만 안내 자리는 아래 칸들과 통일한다. #}
-      <label class="field"><span>단계 태그</span>
+      {# `단계 태그` 였다. 두 칸 아래 `라운드 사이즈` 옆에 그렇게만 적혀 있어
+         **"라운드의 단계"** 로 읽혔는데, 여기 적는 것은 그게 아니라 **이
+         투자사가 선호하는 투자 단계**다(Seed·SeriesA…).
+
+         `matcher.evaluate_company` 가 이 값을 기업의 `series` 와 견주어
+         `단계 불일치` 경고를 내고, `라운드 사이즈` 는 **금액 축**으로 따로
+         본다. 축이 둘이라는 것이 이름에 드러나야 한다 — `선호 투자단계` 는
+         옆 칸 `선호 투자분야` 와도 같은 결이다(둘 다 투자사가 미리 적어 둔
+         선호이고, 둘 다 매칭이 읽는다).
+
+         표에는 이 칸이 없다 — 맞출 상대가 없으므로 이름은 여기서 정한다.
+         저장 자리는 `stages` 그대로다. 안내 자리는 아래 칸들과 통일한다. #}
+      <label class="field"><span>선호 투자단계</span>
         <input type="text" id="f-stages" placeholder="Seed, SeriesA — 쉼표로 구분"></label>
       <label class="field"><span>선호 투자분야</span>
         <input type="text" id="f-sectors" placeholder="AI, 헬스케어 — 쉼표로 구분"></label>
@@ -1104,10 +1198,15 @@
         <input type="text" id="f-email" data-email-hint
                placeholder="예: hong@example.com (고르거나 새로 적습니다)"></label>
       <label class="field"><span>휴대폰</span><input type="text" id="f-phone"></label>
-      {# 담당자는 표에도 칸이 있다(대시보드의 `연결 담당` 이 그 칸으로 눌러
-         들어온다). 이름을 **표 머리글과 한 글자도 다르지 않게** 둔다 —
-         tests/test_ui_layout.py 가 이 짝을 지킨다. #}
-      <label class="field"><span>담당자</span><input type="text" id="f-assignee_name"></label>
+      {# `연결 담당` 은 표에도 칸이 있다(대시보드의 `연결 담당` 이 그 칸으로
+         눌러 들어온다). 이름을 **표 머리글과 한 글자도 다르지 않게** 둔다 —
+         tests/test_ui_layout.py 가 이 짝을 지킨다.
+
+         `담당자` 였던 이름이다. 바로 아래 `부서` 와 맨 위 `직함` 은 **투자사
+         쪽 사람**의 것이라, 이름만으로는 우리 팀원 칸인지 가릴 수가 없었다 —
+         그 자리 관계가 이 창에서 제일 잘 보인다. 저장 자리는 `assignee_name`
+         그대로고, 왜 이 이름인지는 표 머리글 쪽 주석에 적어 두었다. #}
+      <label class="field"><span>연결 담당</span><input type="text" id="f-assignee_name"></label>
       {#
         아래는 시트에 있는데 표에는 안 넣은 값들. 표에 다 넣으면 20칸이 되어
         정작 매일 보는 칸이 눌린다 — 가끔 찾는 값은 여기서 본다.
@@ -1117,13 +1216,25 @@
       <label class="field"><span>근무처 팩스</span><input type="text" id="f-office_fax"></label>
       <label class="field wide"><span>근무지 주소 번지</span><input type="text" id="f-address"></label>
       <label class="field"><span>명함 등록일</span><input type="text" id="f-card_registered_at"></label>
-      <label class="field"><span>관심도 (월말기준)</span><input type="text" id="f-interest_level"
-             placeholder="높음 / 중간 / 낮음"></label>
-      {# 표에는 있는데 이 창에 없어서 **적을 자리가 없었다.** 표 칸을 눌러도
-         고칠 수는 있지만, 스무 칸을 가로로 밀어 찾아야 한다. 이름은 표와
-         같게 둔다 — 두 이름을 놓고 같은 칸인지 따지게 하지 않는다. #}
-      <label class="field"><span>카톡방 참여여부</span><input type="text" id="f-kakao_joined"
-             placeholder="O / X"></label>
+      {# `관심도 (월말기준)` 이었다. `(월말기준)` 은 **앱이 지키지 않는
+         약속**이라 뗐다 — 왜 그런지는 표 머리글 쪽 주석에 적어 두었다.
+
+         **보기를 `list=` 로 묶는다.** 표에서 이 칸을 누르면 `높음/중간/낮음`
+         셋 중에서 고르는데(`data-type="pick"` · `data-choices` — 위 표 줄),
+         이 창만 빈 글자 칸이라 **같은 칸을 어디서 고치느냐에 따라 값이
+         갈렸다.** 이 저장소가 `O`·`o`·`완료` 로 이미 데인 자리다.
+
+         `<select>` 가 아닌 이유는 이 창의 다른 `list=` 칸과 같다 — 목록에 없는
+         옛 값이 창을 여는 것만으로 사라지면 안 된다(위 배치 쪽 주석 참고).
+         보기 글자는 **표 칸의 `data-choices` 와 같은 말**이어야 한다. #}
+      <label class="field"><span>관심도</span>
+        <input type="text" id="f-interest_level" list="opts-panel-interest_level"
+               placeholder="고르거나 새로 적습니다">
+        <datalist id="opts-panel-interest_level">
+          <option value="높음"></option>
+          <option value="중간"></option>
+          <option value="낮음"></option>
+        </datalist></label>
       <label class="field wide"><span>딜소싱 참여 투자사</span><input type="text" id="f-sourcing_note"></label>
       <label class="field wide"
              title="TIPS 운영사 투자금 1-10억 스타트업매출액 3-20억 기업에 주로 투자">
