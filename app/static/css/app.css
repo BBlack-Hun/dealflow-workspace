@@ -912,6 +912,39 @@ a.secondary-btn { display: inline-flex; align-items: center; text-decoration: no
 .react { display: flex; flex-direction: column; justify-content: center;
          gap: 3px; min-width: 0; }
 
+/* 달별 반응 — 위 누적과 같은 다섯(중 넷)을 달로 갈라 놓은 표.
+
+   왜 `.table-wrap` 을 안 쓰는가: 그 상자의 폰 규칙이 표를 760px 로 벌린다
+   (`@media (max-width: 720px)`). 여기 표는 칸이 다섯뿐이라 390px 안에 그냥
+   들어가는데, 그 규칙에 걸리면 가로로 밀 것도 없이 스크롤만 생긴다.
+   그래도 감싸는 상자는 둔다 — 담당 명단이 커져 달 수가 늘면 그때 밀린다.
+
+   글자는 13px 한 값이다(#174). 숫자만 조금 키워 눈이 먼저 닿게 한다. */
+.month-react-wrap { overflow-x: auto; }
+/* 폭을 못 박는다. `width:100%` 만 두면 1280px 화면에서 반응 이름과 숫자가
+   화면 양 끝으로 갈라져, 한 줄을 눈으로 이어 읽기가 어렵다. */
+.month-react { width: 100%; max-width: 760px; border-collapse: collapse;
+  font-size: 13px; }
+.month-react th, .month-react td { padding: 7px 6px; border-bottom: 1px solid var(--line);
+  text-align: right; font-weight: 400; }
+.month-react tbody tr:last-child th,
+.month-react tbody tr:last-child td { border-bottom: 0; }
+/* 반응 이름 칸. 제일 긴 글이 `IR 미팅 요청 투자사`(12자)라 이 폭이면 한 줄에
+   선다. 그래도 넘치면 자르고 `title` 이 전문을 든다. */
+.month-react .mr-head { text-align: left; color: var(--muted); width: 40%;
+  min-width: 118px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.month-react thead .mr-head { color: var(--muted); font-weight: 600; }
+.month-react .mr-num { font-variant-numeric: tabular-nums; min-width: 44px; }
+.month-react tbody .mr-num { font-size: 15px; font-weight: 700; }
+/* 이번 달은 아직 안 끝난 달이다 — 지난 달들과 같은 무게로 읽히면 안 된다. */
+.month-react .now { background: #f6f9ff; }
+.month-react thead .now a { color: var(--brand); font-weight: 700; }
+.month-react thead a { color: var(--muted); text-decoration: none; font-weight: 600; }
+.month-react thead a:hover { color: var(--brand); text-decoration: underline; }
+/* 0 은 흐리게 — 숫자가 있는 달이 눈에 먼저 걸려야 한다. */
+.month-react .zero { color: var(--muted); font-weight: 400; }
+
 /* 미니 막대 차트 (라이브러리 없이) */
 .mini-charts { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .mini-title { font-size: 12px; color: var(--muted); margin: 0 0 6px; font-weight: 600; }

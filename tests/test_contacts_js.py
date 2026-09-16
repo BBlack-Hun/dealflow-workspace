@@ -160,3 +160,33 @@ def test_수정창_저장_뒤에_표가_서_있던_자리를_지키는가():
         timeout=60,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+ADD_ROW_TEST = Path(__file__).resolve().parent / "js" / "startup_add_row_test.js"
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치 — 브라우저 로직 테스트 생략")
+def test_명단마다_다른_필수_칸을_화면이_실제로_지키는가():
+    """[줄 추가] — **필수 칸이 명단마다 다르다.**
+
+    이 파일(`contacts.js`)은 화면 둘이 같이 쓰는데 저장 앞에 `if (!body.name)`
+    한 줄이 박혀 있었다. 스타트업 명단은 **기업이 주인공**이라 성함이 비어 있는
+    줄이 흔한데(담당자를 아직 모르는 기업), 그대로 두면 기업명을 채우고도
+    `담당자명을 입력하세요` 에 막혀 **한 줄도 못 넣는다.**
+
+    서버 쪽(누가 넣을 수 있나 · 어느 명단에 들어가나 · 무엇이 필수인가 · 로그)은
+    `tests/test_startup_add_row.py` 가 본다. 여기서만 잴 수 있는 것이 넷이다.
+
+    · 필수 칸과 창 제목이 **서버가 준 값**에서 나오는가(화면 이름을 안 심었나)
+    · **지금 보고 있는 탭**을 실어 보내는가 — 안 실으면 그 줄은 `직접 추가` 로
+      밀려 방금 보던 화면 어느 탭에도 안 뜬다
+    · 막을 때 **정말 안 보내는가** — 안내만 띄우고 나가면 반쪽짜리 줄이 생긴다
+    · **고칠 때는 안 막는가** — 표에서 칸 하나 눌러 고치는 길이 죽으면 안 된다
+
+    로컬에서는 `node tests/js/startup_add_row_test.js` 로도 돈다.
+    """
+    result = subprocess.run(
+        [shutil.which("node"), str(ADD_ROW_TEST)], capture_output=True,
+        text=True, timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
