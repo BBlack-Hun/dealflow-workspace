@@ -139,7 +139,10 @@ def deals_page(
     sourcing_linked = sourcing_link.linked_rooms(db, sourcing_contacts)
     ctx = _base_ctx(request, db, user, "deal")
     # 매 회차 같은 기업을 또 보내면 받는 쪽에서는 지난번을 기억 못 한다고 읽는다.
-    history = deal_history.annotate(companies, deal_history.last_sent_map(db))
+    #
+    # **훑기는 한 번이다**(`deal_history.scan`) — `최근에 소개함` 표시와 카드에
+    # 서는 `N회` 가 같은 훑기에서 나와야 둘이 갈리지 않는다.
+    history = deal_history.annotate(companies, deal_history.scan(db))
     # 회차명은 **보내는 날에서 만든다.** 손으로 적으면 "8월회차" · "8월 셋째주" ·
     # "0826" 이 섞여 남아, 나중에 몇 주차에 뭘 보냈는지 찾을 때 이력이 갈라진다.
     #
