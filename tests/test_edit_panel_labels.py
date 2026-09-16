@@ -221,6 +221,33 @@ def test_관심도는_표에서_고르는_칸인데_창만_빈_글자칸이면_�
 
 # ── ④ 카톡방 참여여부 — 자리를 `연결 상태` 아래로 ───────────────────────────
 
+def test_부서는_회사_옆이지_연결_담당_옆이_아니다(panel):
+    """둘이 가리키는 사람이 아예 다르다 (사용자 지적).
+
+    `연결 담당`(`assignee_name`)은 **우리 팀원**이고 `부서`(`department`)는
+    **투자사 쪽 사람**의 부서다. 한동안 나란히 서 있어서 같은 사람의 두 값으로
+    읽혔다 — 이름을 `연결 담당` 으로 고쳐도 옆에 `부서` 가 붙어 있으면 그
+    오해가 그대로 남는다.
+
+    `이름 · 직함 · 회사 · 부서` 는 **명함 한 장을 읽는 차례**라, 여기 서면
+    누구의 부서인지가 자리로 드러난다.
+    """
+    at_firm = panel.index('id="f-firm"')
+    at_dept = panel.index('id="f-department"')
+    at_assignee = panel.index('id="f-assignee_name"')
+
+    assert at_firm < at_dept, "`부서` 가 `회사` 위에 있습니다"
+    assert at_dept < at_assignee, \
+        "`부서` 가 아직 `연결 담당` 뒤에 있습니다 — 옮기다 만 것입니다"
+
+    # `회사` 가 닫힌 자리부터 `부서` 가 **열리는** 자리까지 다른 칸이 없어야
+    # 한다(위 `카톡방 참여여부` 검사와 같은 자다).
+    between = panel[panel.index("</label>", at_firm):
+                    panel.rindex('<label class="field', 0, at_dept)]
+    assert '<label class="field' not in between, \
+        "`회사` 와 `부서` 사이에 다른 칸이 끼었습니다"
+
+
 def test_카톡방_참여여부는_연결_상태_바로_아래에_선다(panel):
     """한 창에 카톡방을 적는 자리가 넷이라(`카톡방 이름`+`채널` · 이 칸 ·
     `연결 상태`) 이름만으로는 **어느 것이 발송을 가르는지** 알 수 없었다.

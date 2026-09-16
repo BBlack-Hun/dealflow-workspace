@@ -1083,6 +1083,12 @@
       <label class="field"><span>이름</span><input type="text" id="f-name"></label>
       <label class="field"><span>직함</span><input type="text" id="f-title" placeholder="대표님 / 심사역"></label>
       <label class="field"><span>회사</span><input type="text" id="f-firm"></label>
+      {# `부서` 는 **회사 바로 옆**이다. 한동안 `연결 담당` 다음에 서 있었는데,
+         그 둘은 가리키는 사람이 아예 다르다 — `연결 담당` 은 **우리 팀원**이고
+         `부서` 는 **투자사 쪽 사람**의 부서다(사용자 지적). 나란히 두면 같은
+         사람의 두 값으로 읽힌다. `이름 · 직함 · 회사 · 부서` 는 명함 한 장을
+         읽는 차례라, 여기 서면 누구의 부서인지가 자리로 드러난다. #}
+      <label class="field"><span>부서</span><input type="text" id="f-department"></label>
       <label class="field"><span>그룹</span><input type="text" id="f-group_name"></label>
       <label class="field wide"><span>카톡방 이름 <b class="warn-text">정확히 일치해야 발송됩니다</b></span>
         <input type="text" id="f-kakao_room_name"></label>
@@ -1211,7 +1217,6 @@
         아래는 시트에 있는데 표에는 안 넣은 값들. 표에 다 넣으면 20칸이 되어
         정작 매일 보는 칸이 눌린다 — 가끔 찾는 값은 여기서 본다.
       #}
-      <label class="field"><span>부서</span><input type="text" id="f-department"></label>
       <label class="field"><span>근무처 전화</span><input type="text" id="f-office_phone"></label>
       <label class="field"><span>근무처 팩스</span><input type="text" id="f-office_fax"></label>
       <label class="field wide"><span>근무지 주소 번지</span><input type="text" id="f-address"></label>
