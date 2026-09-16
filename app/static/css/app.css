@@ -1139,11 +1139,23 @@ td.rowno, .rowno { text-align: right; font-variant-numeric: tabular-nums; font-s
 .form-grid .check-row { align-self: end; align-items: center; min-height: 34px; }
 
 /* ── 투자컨설턴트 현황 (시트를 그대로 옮긴 표) ───────────────── */
-.wide-scroll { overflow-x: auto; }
+/* 여기 `.wide-scroll { overflow-x: auto; }` 이 있었다. **지웠다.**
+   이 화면이 만들어질 때(#19) 공용 `.table-wrap.wide` 가 아직 없어서 적어 둔
+   한 줄인데, 나흘 뒤 같은 뜻의 공용 규칙이 생겼고(#38) 이 화면만 안 옮겨
+   왔다. 그 뒤 `.table-wrap` 자체가 `overflow-x: auto` 를 갖게 되면서
+   (#41) 이 이름은 **아무것도 안 하는 두 번째 이름**으로 남았고, 대신
+   `.wide` 에 붙은 것들(표 키 자르기·머리행 고정·최소 키)이 이 표만 비켜
+   갔다. 감싸개는 `.table-wrap.wide` 하나로 둔다 — 두 벌로 두면 한쪽이 낡고,
+   실제로 낡았다(consulting.html 의 감싸개 주석). */
 /* 폭은 **감싼 상자 안에서만** 못 박는다 — 상자 밖에서 걸면 받아 줄 데가 없어
    그 폭이 그대로 페이지 폭이 된다(다른 표들이 그렇게 깨졌다). */
 .sheet-table { table-layout: fixed; }
-.table-wrap .sheet-table { min-width: 1200px; }
+/* **`.wide` 의 공용 폭(2,030px)을 쓰지 않는다.** 이 표는 컬럼이 다르고 폭 합이
+   1,200px 이라, 공용 값을 받으면 830px 이 빈 채로 가로로 밀린다. 그래서
+   선택자에 `.wide` 를 같이 적는다 — 위 `.table-wrap.wide .grid-table`
+   (min-width: 2030px)과 **셈이 같아야** 나중에 선 이 규칙이 이긴다.
+   (이 표는 `grid-table sheet-table` 두 이름을 같이 달고 있다) */
+.table-wrap.wide .sheet-table { min-width: 1200px; }
 /* 머리글은 `.grid-table th` 와 **같은 12px** 이다. 혼자 11.5px 이라 두 표를
    나란히 놓으면 컨설턴트 표 머리글만 반 픽셀 작아 흐릿하게 보였다. */
 .sheet-table th { vertical-align: top; font-size: 12px; line-height: 1.35; }
@@ -1892,6 +1904,32 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
   td input, th input, td textarea, th textarea, td a, th a,
   .cell-pop button, .cell-pop input, .cell-pop textarea { min-height: 0; }
   td .linkbtn, th .linkbtn { display: inline; }
+  /* ── 위 되돌리기에서 **다시 빼는 둘** ──────────────────────────────────
+     위 규칙이 표와 칸 편집창을 한 묶음으로 잡은 까닭은 둘뿐이다: 표 줄
+     높이와 머리글 두 줄 규칙. 아래 둘은 그 둘 중 어느 것도 걸리지 않는데
+     같이 끌려 들어가 있었다.
+
+     1) 칸 하나를 고르는 칩(`.cell-pop-choice`). 표 안이 아니라 **칸 위에 뜬
+        창** 안이고, 폰에서 그 창은 이미 화면 폭을 다 쓴다(`.cell-pop` 의
+        `width: calc(100vw - 24px)`) — 칩이 커져도 밀릴 것이 없다. 그리고
+        폰에서 한 칸을 고치는 길이 바로 이 칩을 누르는 것이다.
+        390px 에서 38~76 × **24px** 이었다.
+     2) 「달별 반응」의 달 이름(`.month-react thead a`). 그 달의 업무 보고로
+        가는 **유일한 길**인데 390px 에서 20 × **15px** 이었다. 이 표는 네
+        줄짜리 요약이라(`dashboard.REACTION_ROWS`) 지킬 줄 밀도가 없다 —
+        여든 줄을 훑는 `.grid-table` 과는 다른 자리다.
+
+     둘 다 `.grid-table` 머리글이 아니라서 위에서 못 박은 머리글 모양
+     (가로 왼쪽 · 세로 가운데 · 줄바꿈 허용)은 건드리지 않는다. */
+  .cell-pop .cell-pop-choice { min-height: 44px; }
+  /* 칸을 통째로 누르게 한다 — 20px 짜리 글자만 누를 자리로 두면 44px 로
+     키워도 세로만 커지고 가로는 20px 그대로다. 여백을 칸에서 링크로 옮겨
+     **칸이 곧 누를 자리**가 되게 한다(37×44 → 49×44). 표 폭은 그대로다 —
+     옮긴 것이지 더한 것이 아니다. 숫자 칸이 오른쪽 정렬이라 링크 안에서도
+     오른쪽에 붙인다(`.month-react th` 의 `text-align: right`). */
+  .month-react thead .mr-num { padding: 0; }
+  .month-react thead .mr-num a { display: flex; min-height: 44px;
+    padding: 0 6px; align-items: center; justify-content: flex-end; }
   /* 체크박스는 44px 로 키우면 네모가 우스꽝스럽게 커진다 — 손끝에 걸릴
      만큼만 키우고, 대신 감싸는 라벨을 눌러도 되게 넉넉히 둔다. */
   input[type=checkbox], input[type=radio] { width: 20px; height: 20px; }

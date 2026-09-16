@@ -174,4 +174,76 @@ for (const top of [650, 811, 1032]) {
   assert.strictEqual(writes, first, "값이 그대로인데 style 을 다시 썼다");
 }
 
+// ── 6) ★ 머리글 필터 창이 감싸개 안에 든다 ────────────────────────────────
+//
+// 필터 창(`.filter-panel`)은 머리글 칸에 붙어 **감싸개 안쪽에** 뜬다
+// (`position: absolute; top: 100%`). 감싸개는 `overflow: auto` 라 세로로도
+// 자르므로, 감싸개가 얕으면 창의 아래쪽 — 값 목록과 [모두 선택]·[해제] — 이
+// 잘려 나간다. 눌러도 고를 것이 안 보인다.
+//
+// 실제로 났다. 투자컨설턴트 화면의 감싸개만 `.wide` 가 아니라
+// (`wide-scroll`) 최소 키가 없었고, 줄이 적은 탭에서 감싸개가 102px 이라
+// 창이 **PC(1440×900)에서 33px · 폰(390×844)에서 26px** 잘렸다. 높이 문제라
+// 화면 폭과 상관이 없었다.
+//
+// **이것을 지키는 것은 `min-height` 한 줄뿐이다.** 브라우저에서 잰, 머리글
+// 아래로 가장 깊이 내려가는 짝(머리행 높이 + 창 높이):
+//
+//     투자컨설턴트 `지역`      36 + 277 = 313px   (390×844)
+//     투자컨설턴트 `기업 관리` 36 + 209 = 245px   (390×844)
+//     투자사 관리 현황 `담당자` 78 + 115 = 193px   (390×844)
+//     스타트업DB `IR 자료`     36 + 107 = 143px   (390×844)
+//
+// 최소 키를 그보다 낮추면 창이 다시 잘린다 — 그때 여기가 빨개진다.
+const PANELS = [
+  { name: "투자컨설턴트 `지역`",      head: 36, panel: 277 },
+  { name: "투자컨설턴트 `기업 관리`", head: 36, panel: 209 },
+  { name: "투자사 관리 현황 `담당자`", head: 78, panel: 115 },
+  { name: "스타트업DB `IR 자료`",     head: 36, panel: 107 },
+];
+const DEEPEST = Math.max.apply(null, PANELS.map((p) => p.head + p.panel));
+
+// 6-a) 최소 키가 **가장 깊은 창**을 담는다.
+for (const p of PANELS) {
+  assert.ok(
+    FLOOR >= p.head + p.panel,
+    `최소 키 ${FLOOR}px 로는 ${p.name} 의 필터 창이 안 들어간다 ` +
+    `(머리행 ${p.head} + 창 ${p.panel} = ${p.head + p.panel}px). ` +
+    `창의 아래쪽 — 값 목록과 [모두 선택]·[해제] — 이 잘린다.`
+  );
+}
+
+// 6-b) **줄이 적은 탭**에서 실제로 담긴다.
+//
+// 두 줄짜리 탭은 표 자체가 102px 이다. 감싸개가 표 키를 그대로 따라가면
+// 창이 들어갈 자리가 없다 — `min-height` 가 자리를 만들어 준다.
+// 남는 자리가 그보다 얕은 화면에서는 남는 자리까지만이다(그 판단은 1) 이
+// 지키는 것과 같다 — 얇은 표가 잘린 스크롤바보다 낫다).
+for (const h of HEIGHTS) {
+  for (const top of [291, 443, 478]) {          // 실측 머리 깊이
+    const wrap = makeWrap({ top: top, natural: 102 });   // 두 줄짜리 탭
+    run([wrap], h);
+    const height = applyCss(wrap, h);
+    const room = h - top - GAP;
+    assert.ok(
+      height >= Math.min(DEEPEST, room),
+      `창 ${h}px · 머리 ${top}px: 감싸개가 ${height}px 라 필터 창(${DEEPEST}px)이 ` +
+      `잘린다 — 줄이 두 개뿐이어도 창이 들어갈 자리는 있어야 한다`
+    );
+    assert.ok(top + height <= h,
+      `창 ${h}px · 머리 ${top}px: 자리를 만드느라 감싸개가 화면 밖으로 나갔다 ` +
+      `(아래쪽 끝 ${top + height}px)`);
+  }
+}
+
+// 6-c) 최소 키를 빼면 빨개진다 — 예전 `wide-scroll` 이 그랬다.
+//
+// 6-a·6-b 가 **정말 무엇을 보는지** 못 박는다. 감싸개가 표 키를 그대로
+// 따라가면(최소 키 없음) 두 줄짜리 탭에서 창이 들어갈 자리가 없다.
+{
+  const bare = Math.min(102, 900 - (291 + GAP));   // min-height 가 없을 때의 키
+  assert.ok(bare < DEEPEST,
+    "최소 키가 없어도 필터 창이 들어간다면, 6-a·6-b 는 아무것도 안 지킨다");
+}
+
 console.log("table_fit_test.js ok");
