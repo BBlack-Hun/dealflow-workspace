@@ -276,9 +276,30 @@
       .catch(function () { setMsg("조회 오류", true); });
   }
 
+  // ── 줄 하나를 **새로** 넣을 때 필요한 것 ────────────────────────────────
+  //
+  // 어느 명단에 넣는지 · 무엇이 반드시 있어야 하는지 · 뭐라고 부르는지를
+  // **서버가 준다**(`routers/pages.py` 의 `add_row`). 이 파일은 화면 둘이
+  // 같이 쓰는데(투자사 관리 현황 · 스타트업), 여기에 `if 스타트업이면 기업명`
+  // 을 심으면 화면이 하나 늘 때 또 심어야 하고 심는 것을 잊은 화면만 조용히
+  // 옛 말을 쓴다 — 이 저장소가 반복해 당한 부류다.
+  //
+  // 못 넣는 화면·명단에서는 `null` 이고, 그때는 [추가] 단추 자체가 안 선다.
+  var ADD = window.DEALFLOW_ADD_ROW || null;
+
   function save() {
     var body = readForm();
-    if (!body.name) { setMsg("담당자명을 입력하세요", true); return; }
+    // 새로 넣을 때만 본다. 고칠 때는 칸 하나만 올라오는 일이 잦아(표에서 눌러
+    // 고치기) 여기서 막으면 메모 한 줄 고치는 데 이름이 필요해진다.
+    if (!current) {
+      var need = ADD ? ADD.required : "name";
+      var needLabel = ADD ? ADD.required_label : "담당자명";
+      if (!body[need]) { setMsg(needLabel + "을 입력하세요", true); return; }
+      // **지금 보고 있는 탭에 넣는다.** 안 실으면 그 줄은 `직접 추가` 로
+      // 밀려나 방금 보던 화면 어느 탭에도 안 뜬다 — 넣어 놓고도 안 들어간
+      // 줄 안다(`routers/contacts.py` 의 `ContactIn.sheet`).
+      if (ADD && ADD.sheet) body.sheet = ADD.sheet;
+    }
     var url = current ? "/api/contacts/" + current : "/api/contacts";
     fetch(url, {
       method: current ? "PATCH" : "POST",
@@ -461,10 +482,13 @@
     current = null;
     // 연결 상태는 **비워 두지 않는다.** `<select>` 를 빈 값으로 두면 아무
     // 보기도 안 골라진 채로 서서, 새로 넣는 사람마다 값이 제각각이 된다.
+    // 그 칸이 없는 명단에서는 `fillForm` 이 건너뛴다(스타트업 표에는 없다).
     fillForm({ status: "active", channel_kakao: 1, connect_stage: "not_started" });
     if (el("f-channel_kakao")) el("f-channel_kakao").checked = true;
-    openPanel("담당자 추가");
-    setMsg("투자사명을 넣으면 카톡방 이름이 자동 생성됩니다(비워둘 경우).");
+    // 창 제목도 안내도 **서버가 준 말**이다. 여기 적어 두면 스타트업 화면에서
+    // 기업을 넣는데 창에는 `담당자 추가` 라고 뜬다.
+    openPanel((ADD ? ADD.label : "담당자") + " 추가");
+    setMsg(ADD ? ADD.hint : "");
   });
   Array.prototype.forEach.call(document.querySelectorAll(".detail-tab"), function (b) {
     b.addEventListener("click", function () { showTab(b.getAttribute("data-tab")); });

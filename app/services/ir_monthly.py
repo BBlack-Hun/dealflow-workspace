@@ -158,15 +158,23 @@ class _Index:
 
 # ── 두 출처 ──────────────────────────────────────────────────────────────────
 
-def _act_month(act: ContactActivity) -> str:
-    """이 활동은 어느 달 것인가.
+def act_month(happened_at: Optional[str], month: Optional[str]) -> str:
+    """이 활동은 어느 달 것인가 — **판정은 여기 하나뿐이다.**
 
     날짜가 있으면 날짜가 정하고, 없으면 시트가 적어 둔 달을 쓴다 —
     `routers/contacts._activity_date` 와 같은 순서다.
+
+    값 두 개를 받는다(줄 통째가 아니라). 세는 쪽이 늘 ORM 객체를 들고 있는
+    것은 아니라서다 — 대시보드의 달별 반응은 칸 셋만 뽑아 온다. 객체를 받는
+    모양으로 두면 그쪽이 같은 판정을 한 줄 더 적게 되고, 그 한 줄이 낡는다.
     """
-    if act.happened_at and len(act.happened_at) >= 7:
-        return act.happened_at[:7]
-    return act.month or ""
+    if happened_at and len(happened_at) >= 7:
+        return happened_at[:7]
+    return month or ""
+
+
+def _act_month(act: ContactActivity) -> str:
+    return act_month(act.happened_at, act.month)
 
 
 def _within(got: str, month: str, cumulative: bool) -> bool:
