@@ -33,7 +33,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..models import ContactActivity, IrCompany, User, VcContact
-from . import amount, firm_type, sheet_owner
+from . import amount, firm_type, group_name as gn, sheet_owner
 from .room_name import DEFAULT_SUFFIX, build_room_name, normalize_space, split_name_title
 
 # 활동 종류 (DATA_MODEL §2.6)
@@ -1022,6 +1022,10 @@ def apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
     owners: Dict[str, Optional[int]] = {}
     unmatched_owners: Dict[str, int] = {}
     no_owner_rows = 0
+    # 시트의 그룹 칸을 어떻게 했는지 — **세어서 리포트에 적는다.**
+    # 조용히 옮기면 사용자가 자기가 적은 글이 어디로 갔는지 못 찾는다.
+    group_actions: Dict[str, int] = {gn.EMPTY: 0, gn.KEEP: 0, gn.FIX: 0,
+                                     gn.DROP: 0, gn.MOVE: 0}
 
     for pc in parsed.contacts:
         owner_id = None
@@ -1059,7 +1063,6 @@ def apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
         _set_if_value(contact, "kakao_joined", pc.kakao_joined)
         # 프로필·연락처: 시트마다 조각이 나뉘어 있다 → 비어 있을 때만 채운다(병합)
         _fill_if_empty(contact, "title", pc.title)
-        _fill_if_empty(contact, "group_name", pc.group_name)
         _fill_if_empty(contact, "round_size", pc.round_size or pc.profile_raw)
         _fill_if_empty(contact, "memo", pc.memo)
         _fill_if_empty(contact, "phone", pc.phone)
@@ -1072,6 +1075,31 @@ def apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
             contact.channel_email = 1
         if pc.sectors:
             _fill_if_empty(contact, "sectors", ",".join(pc.sectors))
+        # ── 그룹 칸에는 A~F 만 넣는다 ────────────────────────────────────
+        #
+        # **시트 머리글은 아직 `그룹/투자분야/라운드사이즈` 다.** 화면 이름만
+        # `그룹` 으로 바꿔 놓으면(`services/contact_columns`) 다음 업로드에
+        # 문장이 그대로 또 들어온다 — 정리해 놓은 것이 한 번에 되돌아간다.
+        #
+        # 판정은 **정리 스크립트와 같은 함수**다(`services/group_name.decide`).
+        # 규칙을 두 군데 적으면 한쪽이 낡는다.
+        #
+        # 여기서 보는 `round_size`·`sectors`·`memo` 는 **방금 채운 뒤의 값**이다.
+        # 그래서 이번 시트가 라운드 칸에 넣은 말이 그룹 칸에도 적혀 있으면 그
+        # 자리에서 겹친 것으로 읽힌다(줄 하나에 같은 말이 두 번 들어가지 않게).
+        decision = gn.decide(pc.group_name,
+                             round_size=contact.round_size,
+                             sectors=contact.sectors,
+                             memo=contact.memo)
+        if decision.action in (gn.KEEP, gn.FIX):
+            # **비어 있을 때만 채운다** — 옆 칸들과 같은 규칙이다. 이미 손으로
+            # 골라 둔 그룹을 오래된 시트가 밀어내면 안 된다.
+            _fill_if_empty(contact, "group_name", decision.group)
+        elif decision.action == gn.MOVE and decision.memo is not None:
+            # 그룹 칸에만 있던 글이다 — **버리지 않고** 메모 뒤로 옮긴다.
+            # 같은 말이 이미 메모에 있으면 `decide` 가 `memo=None` 을 준다.
+            contact.memo = decision.memo
+        group_actions[decision.action] += 1
         if source_label:
             contact.source_sheet = _append_label(contact.source_sheet, source_label)
         # 시트의 담당자 이름은 계정이 없어도 보관한다. 버리면 누구 담당인지가
@@ -1138,6 +1166,18 @@ def apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
             ))
             report.activities_created += 1
 
+    # 그룹 칸을 거른 결과. **몇 줄을 어디로 옮겼는지 적는다** — 값이 화면에서
+    # 사라졌는데 어디로 갔는지 알 수 없는 것이 이 칸에서 가장 나쁜 결과다.
+    # 아무것도 안 걸렀으면 줄을 안 늘린다(리포트가 잡음으로 덮이지 않게).
+    if any(group_actions[a] for a in (gn.FIX, gn.DROP, gn.MOVE)):
+        report.notes.append(
+            "그룹 칸은 A~F 만 담습니다 — "
+            f"A~F 로 고침 {group_actions[gn.FIX]}행 · "
+            f"메모 뒤로 옮김 {group_actions[gn.MOVE]}행 · "
+            f"라운드 사이즈·선호 투자분야에 이미 있어 안 넣음 "
+            f"{group_actions[gn.DROP]}행 "
+            f"(옮긴 글에는 `{gn.MOVED_MARK}` 표시가 붙습니다)"
+        )
     if unmatched_owners:
         detail = ", ".join(f"{n}({c}명)" for n, c in sorted(unmatched_owners.items()))
         report.notes.append(

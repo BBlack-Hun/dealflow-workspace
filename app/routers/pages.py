@@ -436,6 +436,43 @@ def list_page(
         "transfer_targets": sheet_owner.transfer_targets(db, page=page.page),
         # 풀 탭에서는 골라서 내 명단으로 할당할 수 있다.
         "pool_view": any(t["key"] == selected and t["kind"] == "pool" for t in tabs),
+        # ── 줄 하나를 **새로** 넣는 자리 ──
+        #
+        # 없으면(`None`) 단추가 안 선다. **눌러도 아무 일이 없는 단추가 더
+        # 나쁘다**(`ListPage.investors` 주석과 같은 말) — 못 넣는 명단인데
+        # 단추만 서 있으면 눌러 보고 403 을 받고서야 안다.
+        #
+        # 누가 넣을 수 있는지는 여기서 가르지 않는다. **서버가 보는 그 판정
+        # 하나**를 읽는다(`sheet_owner.may_add_row` — `routers/contacts.py` 의
+        # `create_contact` 이 같은 것을 본다). 화면이 따로 적어 두면 한쪽만
+        # 고쳐지는 날 단추와 서버가 갈린다.
+        #
+        # 안에 실리는 것은 **화면마다 다른 것 전부**다. 화면(`contacts.html`)
+        # 이나 부품(`contacts.js`)에 `if 스타트업이면` 을 심지 않는 이유는
+        # 늘 같다 — 화면이 하나 늘 때 또 심어야 하고, 심는 것을 잊은 쪽만
+        # 조용히 옛 말을 쓴다.
+        #
+        # **명단을 안 고른 자리는 투자사 화면에서만 뜻이 있다.** 거기서 넣은
+        # 줄은 `직접 추가` 로 가고 `전체` 탭에 그대로 선다. 그 탭이 없는
+        # 화면에서는 같은 줄이 **어느 탭에도 안 뜬다** — 넣어 놓고도 안 들어간
+        # 줄 아는, 이 일에서 고치고 있는 바로 그 증상이다. 그래서 명단이 하나도
+        # 안 잡히는 화면에는 단추를 세우지 않는다.
+        "add_row": ({
+            # 지금 보고 있는 탭. 새 줄이 여기로 들어간다(`VcContact.
+            # source_sheet`) — 안 실으면 `직접 추가` 로 밀려 어느 탭에도
+            # 안 뜬다.
+            "sheet": selected,
+            # 세는 것의 이름 — 투자사 화면은 `담당자`, 스타트업은 `기업`.
+            "label": page.row_label,
+            # 반드시 있어야 하는 칸과 그 칸을 부르는 말. 배치가 정한다.
+            "required": layout.required,
+            "required_label": layout.required_label,
+            # 넣고 나서 적어 줄 안내. **투자사 명단에만 뜻이 있다** — 카톡방
+            # 이름은 딜소개를 보낼 방이라 그 화면에서만 지어진다.
+            "hint": ("투자사명을 넣으면 카톡방 이름이 자동 생성됩니다(비워둘 경우)."
+                     if page.investors else ""),
+        } if ((selected or page.investors)
+              and sheet_owner.may_add_row(db, user, selected)) else None),
         # `전체` 탭에 적히는 수. **투자사로 세는 사람만** — 여기가 부풀면
         # 대시보드와 다른 수가 나온다(예전에 117명 · 123명으로 갈렸다).
         # `전체` 탭에 적히는 수도 **딜 제안 관리와 같은 판정**을 지난다 —

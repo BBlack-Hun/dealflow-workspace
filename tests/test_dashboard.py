@@ -781,6 +781,169 @@ def test_the_dashboard_shows_the_five_reactions(client, db, users):
     assert summary["meeting_call"] == 1, "결과 문의를 마친 곳까지 세면 안 된다"
 
 
+# --- 반응을 달로 가른다 ---------------------------------------------------
+#
+# 누적만 보면 "요즘 반응이 줄었나" 를 알 수 없다 — 누적은 한 번 오르면
+# 내려오지 않아서, 석 달째 아무 반응이 없어도 화면이 그대로다.
+#
+# 여기서 지키려는 것은 둘이다.
+#   1. 달별 수와 위 누적이 **같은 모집단**에서 나온다. 갈리면 위아래 두 수가
+#      안 맞아 보이고, 사용자는 그것을 버그로 읽는다.
+#   2. **없는 값을 0 으로 세우지 않는다.** '미팅완료 리마인드 TEL' 은 지금
+#      상태라 지난달 값을 만들어 낼 수 없다.
+
+def _mine_with_sheet(db, users, name):
+    from app.models import SheetOwner, VcContact
+
+    db.add(SheetOwner(label="내 명단", user_id=users["u1"].id))
+    _mine(db, users, name=name, channel_kakao=1, kakao_room_name="방1",
+          room_verified="verified")
+    db.commit()
+    return db.query(VcContact).filter_by(name=name).first()
+
+
+def test_monthly_reactions_split_the_same_numbers_by_month(db, users):
+    """같은 투자사가 두 달에 걸쳐 요청했으면 **두 달 모두 1** 이고,
+    누적은 1 이다 — 건수가 아니라 투자사를 센다."""
+    import json
+
+    from app.models import ContactActivity
+    from app.services.dashboard import monthly_reactions, user_dashboard
+
+    contact = _mine_with_sheet(db, users, "두달반응")
+    db.add_all([
+        ContactActivity(contact_id=contact.id, kind="ir_request", content="8월 요청",
+                        happened_at="2026-08-12",
+                        company_names=json.dumps(["샘플애그"], ensure_ascii=False)),
+        ContactActivity(contact_id=contact.id, kind="ir_request", content="9월 요청",
+                        happened_at="2026-09-03",
+                        company_names=json.dumps(["샘플메디", "샘플페이"],
+                                                 ensure_ascii=False)),
+    ])
+    db.commit()
+
+    rows = {m["key"]: m for m in
+            monthly_reactions(db, [contact.id], today=date(2026, 9, 16))}
+    assert rows["2026-09"]["ir_contacts"] == 1
+    assert rows["2026-08"]["ir_contacts"] == 1
+    assert rows["2026-07"]["ir_contacts"] == 0
+    # 기업은 달마다 다른 것을 받았다
+    assert rows["2026-09"]["requested_companies"] == 2
+    assert rows["2026-08"]["requested_companies"] == 1
+    # 누적은 그대로 — 달을 붙였다고 위 패널이 달라지면 안 된다
+    assert user_dashboard(db, users["u1"])["reactions"]["ir_contacts"] == 1
+
+
+def test_monthly_reactions_read_the_sheet_month_when_the_date_is_blank(db, users):
+    """시트에서 옮겨 온 줄은 날짜가 비고 달만 적힌 것이 있다.
+    그 줄을 빠뜨리면 옛 달이 통째로 0 이 된다."""
+    from app.models import ContactActivity
+    from app.services.dashboard import monthly_reactions
+
+    contact = _mine_with_sheet(db, users, "달만적힘")
+    db.add(ContactActivity(contact_id=contact.id, kind="ir_request",
+                           content="7월 요청", happened_at=None, month="2026-07"))
+    db.commit()
+
+    rows = {m["key"]: m for m in
+            monthly_reactions(db, [contact.id], today=date(2026, 9, 16))}
+    assert rows["2026-07"]["ir_contacts"] == 1
+    assert rows["2026-08"]["ir_contacts"] == 0
+
+
+def test_monthly_reactions_cut_meetings_by_the_month_they_were_held(db, users):
+    from app.models import Meeting
+    from app.services.dashboard import monthly_reactions
+
+    contact = _mine_with_sheet(db, users, "미팅두달")
+    db.add_all([
+        Meeting(user_id=users["u1"].id, contact_id=contact.id, kind="first",
+                status="done", scheduled_at="2026-08-20"),
+        Meeting(user_id=users["u1"].id, contact_id=contact.id, kind="second",
+                status="scheduled", scheduled_at="2026-09-10"),
+    ])
+    db.commit()
+
+    rows = {m["key"]: m for m in
+            monthly_reactions(db, [contact.id], today=date(2026, 9, 16))}
+    assert rows["2026-08"]["meeting_done"] == 1
+    assert rows["2026-09"]["meeting_done"] == 0, "9월 미팅은 아직 안 끝났다"
+    assert rows["2026-09"]["meeting_contacts"] == 1
+
+
+def test_the_reminder_call_count_is_not_invented_per_month(db, users):
+    """'아직 결과를 안 물어본 곳' 은 **지금 상태**다. 전화를 걸고 나면 지난달
+    수가 뒤늦게 줄어드는 값이라, 달별로 만들어 내지 않는다 — 0 으로 두면
+    "그 달엔 전화할 곳이 없었다" 는 없는 사실이 된다."""
+    from app.models import Meeting
+    from app.services.dashboard import REACTION_ROWS, monthly_reactions
+
+    contact = _mine_with_sheet(db, users, "전화할곳")
+    db.add(Meeting(user_id=users["u1"].id, contact_id=contact.id, kind="first",
+                   status="done", scheduled_at="2026-08-20"))
+    db.commit()
+
+    for row in monthly_reactions(db, [contact.id], today=date(2026, 9, 16)):
+        assert row["meeting_call"] is None
+    assert "meeting_call" not in [r["key"] for r in REACTION_ROWS]
+
+
+def test_monthly_reactions_use_the_same_people_as_the_cumulative_panel(db, users):
+    """남의 명단에 있는 사람은 위 누적에도, 아래 달별에도 없어야 한다."""
+    from app.models import ContactActivity, VcContact
+    from app.services.dashboard import user_dashboard
+
+    mine = _mine_with_sheet(db, users, "내사람")
+    theirs = VcContact(user_id=users["u2"].id, name="남의사람",
+                       firm="다라인베스트", source_sheet="남의 명단")
+    db.add(theirs)
+    db.commit()
+    db.add_all([
+        ContactActivity(contact_id=mine.id, kind="ir_request", content="요청",
+                        happened_at="2026-09-03"),
+        ContactActivity(contact_id=theirs.id, kind="ir_request", content="요청",
+                        happened_at="2026-09-03"),
+    ])
+    db.commit()
+
+    data = user_dashboard(db, users["u1"], today=date(2026, 9, 16))
+    rows = {m["key"]: m for m in data["reaction_months"]}
+    assert data["reactions"]["ir_contacts"] == 1
+    assert rows["2026-09"]["ir_contacts"] == 1, "남의 명단까지 세면 위아래가 갈린다"
+
+
+def test_month_keys_cross_the_year_boundary():
+    """1월에서 거슬러 가면 작년으로 넘어가야 한다."""
+    from app.services.dashboard import month_keys
+
+    assert month_keys(date(2027, 1, 15), 4) == ["2027-01", "2026-12",
+                                                "2026-11", "2026-10"]
+    # 해가 다른 달은 이름에 해를 붙인다 — 12월과 작년 12월이 같아 보이면 안 된다
+    from app.services.dashboard import monthly_reactions
+    labels = [m["label"] for m in monthly_reactions(None, [], date(2027, 1, 15))]
+    assert labels[0] == "1월"
+    assert labels[1] == "26년 12월"
+
+
+def test_the_dashboard_shows_the_monthly_reaction_table(client, db, users):
+    """전체 기간 누적은 그대로 두고, 그 **밑에** 달별 수치를 붙인다."""
+    from app.models import ContactActivity
+
+    contact = _mine_with_sheet(db, users, "달별표")
+    db.add(ContactActivity(contact_id=contact.id, kind="ir_request",
+                           content="요청", happened_at=date.today().isoformat()))
+    db.commit()
+
+    body = _dash(client)
+    assert "전체 기간 누적" in body, "누적 패널을 그대로 둬야 한다"
+    assert "달별 반응" in body
+    # 달 이름을 누르면 그 달의 업무 보고로 간다 — 그 화면은 `?month=` 를 받는다
+    this_month = f"{date.today():%Y-%m}"
+    assert f'href="/report?month={this_month}"' in body
+    # 달로 못 가르는 것을 왜 뺐는지 화면이 말해야, 사용자가 찾아 나서지 않는다
+    assert "달로 가르지 않았습니다" in body
+
+
 # --- 관리자가 팀 회차를 조회 -------------------------------------------------
 
 def test_admin_can_view_but_not_act_on_others_jobs(client, db, users):

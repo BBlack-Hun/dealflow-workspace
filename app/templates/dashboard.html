@@ -276,6 +276,68 @@
     </p>
   </section>
 
+  {#
+    달별 반응 — 위 패널과 **같은 수치를 달로 갈라** 놓은 것.
+
+    누적만 보면 "요즘 반응이 줄었나" 를 알 수 없다. 누적은 한 번 오르면
+    내려오지 않아서, 석 달째 아무 반응이 없어도 화면은 그대로다.
+
+    위 누적은 **건드리지 않는다.** 여기는 그 밑에 덧붙은 자리다.
+
+    세는 곳은 위와 같은 함수(`services/dashboard._reaction_summary`)이고
+    모집단도 같은 `내 명단`이다 — 위아래가 갈리면 사용자는 어느 쪽을 믿을지
+    알 수 없다.
+
+    다섯 중 넷만 있다. 어느 것이 설 수 있는지는 `dashboard.REACTION_ROWS`
+    한 곳이 정하고 여기서는 돌기만 한다.
+  #}
+  <section class="panel wide">
+    <h2 class="panel-title">달별 반응
+      <span class="hint">최근 {{ reaction_months|length }}개월</span>
+    </h2>
+    <div class="month-react-wrap">
+    <table class="month-react">
+      <thead>
+        <tr>
+          <th class="mr-head">반응</th>
+          {# 달 이름을 누르면 그 달의 업무 보고로 간다. **숫자에는 링크를 걸지
+             않는다** — 이 넷을 달로 걸러 주는 목록 화면이 없어서, 걸면 달과
+             상관없는 목록이 열린다. #}
+          {% for m in reaction_months %}
+          <th class="mr-num{% if m.this_month %} now{% endif %}">
+            <a href="/report?month={{ m.key }}">{{ m.label }}</a>
+          </th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in reaction_rows %}
+        <tr>
+          <th class="mr-head" title="{{ row.label }}">{{ row.label }}</th>
+          {% for m in reaction_months %}
+          {# 0 은 흐리게 — 숫자가 있는 달이 눈에 먼저 걸려야 한다. #}
+          <td class="mr-num{% if m.this_month %} now{% endif %}{% if not m[row.key] %} zero{% endif %}">{{ m[row.key] }}</td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    <p class="hint">
+      달 이름을 누르면 그 달의 업무 보고로 갑니다.
+      업무 보고는 이 앱에 쌓인 기록만 세므로, 시트에서 옮겨 온 옛 달은
+      여기 수가 더 큽니다.
+    </p>
+    {# 없는 것을 0 으로 세우지 않는다. 왜 넷뿐인지 화면이 말해야, 사용자가
+       "한 칸이 빠졌네" 하고 찾아 나서지 않는다. #}
+    <p class="hint">
+      <b>미팅완료 리마인드 TEL</b> 은 달로 가르지 않았습니다 —
+      그건 <b>아직 결과를 안 물어본 곳</b>(지금 상태)이라,
+      전화를 걸고 나면 지난달 수가 뒤늦게 줄어듭니다.
+      전체 수는 위 패널에 있습니다.
+    </p>
+  </section>
+
   <section class="panel">
     <h2 class="panel-title">카톡방 연결 상태
       <a class="linkbtn" href="/contacts">내 투자사</a>
