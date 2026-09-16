@@ -434,6 +434,15 @@
             {% elif h.last_sent %}
             <span class="tag soft" title="{{ h.last_sent }} 에 소개함">{{ h.days_ago }}일 전</span>
             {% endif %}
+            {# 몇 **번** 나갔나. 날짜 표시 옆에 세운다 — `3일 전 소개` 만으로는
+               이번이 두 번째인지 일곱 번째인지 알 수 없고, 그 둘은 고를 때
+               다른 판단이다. 숫자 둘을 함께 적는다: 날짜만 세면 180건짜리와
+               103건짜리가 똑같이 `6회` 로 보인다(`services/deal_history.py`).
+               자세한 줄은 [IR 기업 현황] 의 [수정] 창에 있다. #}
+            {% if h.rounds %}
+            <span class="tag soft"
+                  title="보낸 날 {{ h.rounds }}번 · 투자사 {{ h.investors }}명 · 발송 {{ h.sends }}건 — 자세한 것은 IR 기업 현황의 [수정] 창">{{ h.rounds }}회</span>
+            {% endif %}
           </div>
           <div class="pick-sub muted">[{{ c.sector_major or '-' }}] {{ c.one_liner or '' }}</div>
           {% if not c.introducible %}

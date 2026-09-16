@@ -483,7 +483,25 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
    (2,288 → 2,302 : `계약서 수신 여부` 로 이름을 고치면서 그 칸이 134 → 148px
     이 됐다. 안 올리면 폭을 안 준 `기업 한줄 소개` 가 그 14px 을 내어 준다 —
     이 표에서 제일 많이 읽는 칸이라 깎을 자리가 아니다. companies.html 참고) */
-#co-table { min-width: 2302px; }
+/* (2,302 → 2,386 : `소개 횟수` 칸(84px)이 들었다. 안 올리면 폭을 안 준
+    `딜 소개 문구 회사개요` 가 그 84px 을 통째로 내어 준다 — 이 표에서 제일
+    많이 읽는 칸이라 깎을 자리가 아니다. companies.html 참고) */
+#co-table { min-width: 2386px; }
+/* 표의 `소개 횟수` — 회차 수와 건수를 한 줄에 세운다. 둘을 나란히 두는
+   까닭은 `services/deal_history.py` 머리글에 있다(회차 수만 보면 180건짜리와
+   103건짜리가 똑같이 `6회` 로 읽힌다). */
+#co-table td.sent-count { white-space: nowrap; }
+
+/* ── [수정] 창의 `소개 이력` 표 ────────────────────────────────────────────
+   창은 520px(폰에서는 화면 폭 전체)이라 칸 여섯이 그대로는 안 선다. 폭을
+   못 박고 `.table-wrap` 이 가로로 굴리게 둔다 — 안 박으면 `table-layout:
+   fixed` 가 `보낸 사람`·`회차명` 을 40px 남짓으로 눌러 글자가 한 자씩 끊긴다.
+   (폭을 못 박는 규칙과 가로 스크롤은 늘 한 쌍이다 — tests/test_mobile_layout.py) */
+.table-wrap #co-history { min-width: 460px; }
+/* 보낸 사람이 **추정**인 줄. 글자에 `(담당)` 이 이미 붙어 있고(서비스가 짓는다),
+   여기서는 그것이 단언이 아니라는 것만 색으로 거든다. */
+#co-history td.guessed { color: var(--muted); }
+#co-history-sum { margin: 0 0 6px; }
 /* 투자사 관리 현황은 시트 컬럼 18개를 그대로 세운다 — 더 넓다.
    폭은 th 에서 잡고, 여기서는 표가 줄어들지 않게만 막는다.
 
@@ -1919,8 +1937,14 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
 /* 딜소개 불가 — 더 이상 소개하면 안 되는 기업.
    발송 화면 목록에서는 아예 빠지지만, 여기서는 남겨 두고 눈에 띄게 한다.
    지운 게 아니라 '보내면 안 되는 곳' 이라는 걸 알아야 하기 때문이다. */
-.blocked-row { background: #fdf3f3; }
-.blocked-row:hover { background: #fbe9e9; }
+/* 고정 칸까지 **같은 선택자에서** 색을 준다. 고정 칸은 다른 칸 위에 제 바탕을
+   깔고 서므로(`.table-wrap.wide td.stick`), 여기 안 적으면 붉은 줄의 맨 앞
+   두 칸만 흰색으로 남아 그 줄이 두 줄처럼 보인다(`tr:hover`·`tr.row-hidden`
+   이 같은 이유로 이미 그렇게 돼 있다). 색은 여기 한 번씩만 적힌다. */
+.blocked-row,
+.table-wrap.wide .grid-table tbody tr.blocked-row > td.stick { background: #fdf3f3; }
+.blocked-row:hover,
+.table-wrap.wide .grid-table tbody tr.blocked-row:hover > td.stick { background: #fbe9e9; }
 /* 취소선은 긋지 않는다 — 지운 기업처럼 읽히는데, 실제로는 지금도 관리하는
    곳이고 계약여부만 '딜소개 불가' 일 뿐이다. 붉은 바탕으로 충분하다. */
 .blocked-row .co-name b { color: var(--red); }

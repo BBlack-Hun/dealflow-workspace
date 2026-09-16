@@ -216,6 +216,75 @@
     });
   }
 
+  // ── 소개 이력 ───────────────────────────────────────────────────────────
+  //
+  // **값은 서버가 다 만들어 준다**(`routers/companies.py` 의 `history_rows`).
+  // 여기서 하는 일은 줄을 세우는 것뿐이다 — `(담당)` 을 붙일지, 무엇을 `시트`
+  // 라 부를지 같은 판단을 여기서 다시 하면 서비스와 두 벌이 되고, 한쪽만
+  // 고쳐지는 날 화면이 조용히 다른 말을 한다(`services/deal_history.py`).
+  //
+  // 창 하나를 344개 기업이 돌려 쓴다. **먼저 비운다** — 안 비우면 두 번째로 연
+  // 기업의 표에 앞 기업의 회차가 그대로 남아, **다른 회사에 보낸 것**을 이
+  // 회사 것으로 읽는다(`합치기 전 값` 상자가 겪은 그 부류다).
+  function fillHistory(data) {
+    var table = el("co-history");
+    var sum = el("co-history-sum");
+    var empty = el("co-history-empty");
+    if (!table || !sum || !empty) return;
+    var body = table.querySelector("tbody");
+    while (body.children.length) body.removeChild(body.children[0]);
+
+    var rows = data.history || [];
+    // 합계는 **줄에서 그대로 더한다.** 서버가 준 줄이 곧 화면에 보이는 줄이라,
+    // 요약과 표가 어긋날 자리가 없다.
+    var sends = 0, last = "";
+    rows.forEach(function (r) {
+      sends += r.investors || 0;
+      if (r.day && r.day > last) last = r.day;
+    });
+
+    empty.hidden = rows.length > 0;
+    sum.hidden = rows.length === 0;
+    if (!rows.length) return;
+
+    // 서로 다른 **사람** 수는 화면이 셀 수 없다 — 줄에는 수만 있고 누구인지는
+    // 안 온다(투자사 이름은 내보내지 않는다). 서버가 세어 준 값을 쓴다.
+    var investors = data.sent_investors;
+    sum.textContent = "보낸 날 " + rows.length + "회" +
+      (investors === undefined || investors === null
+        ? "" : " · 투자사 " + investors + "명") +
+      " · 발송 " + sends + "건" + (last ? " · 마지막 " + last : "");
+
+    rows.forEach(function (r) {
+      var tr = document.createElement("tr");
+      function cell(text, cls, title) {
+        var td = document.createElement("td");
+        if (cls) td.className = cls;
+        if (title) td.setAttribute("title", title);
+        td.textContent = text;
+        tr.appendChild(td);
+        return td;
+      }
+      cell(r.day || "", "");
+      cell(r.weekday || "", "muted");
+      // 한 명에게만 나간 날이 이 수로 그대로 읽혀야 한다 — `113` 과 `1` 이
+      // 같은 `1회` 로 뭉치지 않게 하려고 이 표를 펼친 것이다.
+      cell(String(r.investors === undefined ? "" : r.investors), "num",
+           r.investors === 0
+             ? "회차에는 실렸지만 실제로 나간 건이 없습니다"
+             : "이 날 이 기업이 나간 사람 수");
+      var senders = (r.senders || []).map(function (s) {
+        return s.count > 1 ? s.label + " " + s.count : s.label;
+      });
+      cell(senders.join(" · "), senders.some(function (_x, i) {
+        return (r.senders[i] || {}).guessed;
+      }) ? "guessed" : "");
+      cell(r.batch_title || "", "muted");
+      cell(r.source_label || "", "muted");
+      body.appendChild(tr);
+    });
+  }
+
   // 한줄 소개가 **자동으로 만들어진 값인가, 사람이 쓴 값인가.**
   //
   // 서버는 이 판정을 진작부터 실어 보내고 있었는데(`one_liner_auto` ·
@@ -279,6 +348,7 @@
     });
     el("f-is_top_deal").checked = !!data.is_top_deal;
     fillBackup(data.desc_backup);
+    fillHistory(data);
     fillOneLinerNote(data);
     setStatus(data);
   }
