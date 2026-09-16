@@ -658,7 +658,12 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
 .filter-option:hover { background: #f2f5fb; }
 
 /* 우측 슬라이드 상세 패널 */
-.detail-panel { position: fixed; top: 0; right: 0; width: 420px; height: 100vh; z-index: 40;
+/* `100dvh` — 바닥 줄이 화면 밖으로 밀리지 않게. 폰 브라우저의 `100vh` 는
+   주소창을 뺀 높이가 아니라 **숨겼을 때의 높이**라, 주소창이 보이는 동안은
+   창 밑동이 화면 아래로 내려간다. 단추가 본문 안에 있던 때는 굴리면 그만이라
+   티가 안 났지만, 바닥에 붙인 뒤로는 그 줄이 통째로 안 보이게 된다.
+   `100vh` 를 먼저 두어 `dvh` 를 모르는 브라우저가 지금 그대로 서게 한다. */
+.detail-panel { position: fixed; top: 0; right: 0; width: 420px; height: 100vh; height: 100dvh; z-index: 40;
                 background: #fff; border-left: 1px solid var(--line); box-shadow: -8px 0 24px rgba(16,21,29,.10);
                 display: flex; flex-direction: column; }
 .detail-head { display: flex; align-items: center; justify-content: space-between;
@@ -1062,9 +1067,29 @@ td.rowno, .rowno { text-align: right; font-variant-numeric: tabular-nums; font-s
   padding-bottom: 4px; border-bottom: 1px solid var(--line); }
 .form-section:first-child { margin-top: 0; }
 .form-section .hint { font-weight: 400; }
-.detail-foot { display: flex; gap: 8px; align-items: center; padding: 12px 16px;
+/* ── 창 바닥에 붙는 단추 줄 ───────────────────────────────────────────────
+   `.detail-panel` 은 세로 flex 고 `.detail-body` 가 `flex:1 · overflow-y:auto`
+   라, 이 줄을 **본문 바깥**에 두면 굴려도 안 사라진다. 그것이 이 줄의 전부다 —
+   창의 칸은 달마다 늘어나는데(`services/monthly_columns.py`) 단추가 본문 안에
+   있으면 그만큼 멀어진다.
+
+   `flex: 0 0 auto` — 본문이 아무리 길어도 이 줄은 안 눌린다. 안 적어 두면
+   내용이 아주 많은 창에서 이 줄만 납작해져 단추가 잘린다. */
+.detail-foot { display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  flex: 0 0 auto; padding: 12px 16px;
   border-top: 1px solid var(--line); background: #fafbfc; }
-.detail-foot .secondary-btn { margin-left: auto; }
+/* 되돌릴 수 없는 단추는 **줄의 반대쪽 끝**으로 민다. 고친 값은 다시 고치면
+   되지만 지운 줄은 화면 어디에도 안 남는다 — 저장하러 온 손이 스치면 그대로다.
+   `_closed_followups.html` 의 [다시 켜기]·[지우기] 와 같은 방법이다:
+   벌리고 · 끊고(`.sep`) · 색을 달리하고 · 확인창을 세운다. */
+.detail-foot .danger-btn { margin-left: auto; }
+.detail-foot .sep { margin-left: auto; color: var(--line); user-select: none; }
+/* 끊는 점을 세웠으면 미는 일은 그 점이 맡는다 — 둘 다 밀면 사이가 벌어진다. */
+.detail-foot .sep + .danger-btn { margin-left: 0; }
+/* 저장·삭제가 왜 막혔는지 적는 자리(`#detail-msg`). 단추와 같은 줄에 끼면
+   눌려 한 글자도 안 보인다 — 제 줄을 준다. 빈 동안은 자리를 안 먹는다. */
+.detail-foot .hint { flex: 1 0 100%; margin: 0; }
+.detail-foot .hint:empty { display: none; }
 .form-grid input[type=number] { text-align: right; font-variant-numeric: tabular-nums; }
 
 /* 합치기 전 값 — `사업분야`(스타트업DB) · `기업 한줄 소개`(IR 기업 현황)를 한
