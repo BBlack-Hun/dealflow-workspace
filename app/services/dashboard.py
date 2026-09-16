@@ -22,8 +22,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import clock
-from . import (auto_send, cadence, followup_sms, mailer, manual_send,
-               pipeline, sheet_owner, startup_send)
+from . import (auto_send, cadence, followup_sms, ir_monthly, mailer,
+               manual_send, pipeline, report, sheet_owner, startup_send)
 from .. import deps, version
 from ..models import (
     SEND_KINDS,
@@ -261,8 +261,9 @@ def top_requesters(db: Session, contact_ids: List[int], limit: int = 10) -> List
     return out
 
 
-def _reaction_summary(db: Session, contact_ids: List[int]) -> dict:
-    """반응 요약 — **기간을 자르지 않는다**.
+def _reaction_summary(db: Session, contact_ids: List[int],
+                      month: str = "") -> dict:
+    """반응 요약. `month` 가 없으면 **기간을 자르지 않는다**.
 
     예전엔 '최근 60일'이었는데, 61일째가 되면 숫자가 갑자기 줄어드는 것을
     화면만 보고는 알 수 없었다. 반응은 한 번 오면 없어지는 것이 아니므로
@@ -271,20 +272,54 @@ def _reaction_summary(db: Session, contact_ids: List[int]) -> dict:
     세는 단위도 나눈다. IR 요청·미팅은 **투자사(담당자) 몇 곳**이 반응했는지가
     궁금하고(같은 곳이 세 번 요청해도 한 곳이다), 요청받은 **기업 수**는
     따로 봐야 한다.
-    """
-    if not contact_ids:
-        return {"ir_contacts": 0, "meeting_contacts": 0, "requested_companies": 0,
-                "meeting_done": 0, "meeting_call": 0}
 
-    rows = db.execute(
+    ### `month="2026-09"` — 그 달치만
+
+    **세는 함수를 새로 만들지 않는다.** 누적과 달별이 각자 세면 둘이 어긋나고,
+    그때 사용자는 어느 쪽을 믿을지 알 수 없다. 모집단(`contact_ids`)도 같은
+    것을 받으므로 달별 수를 다 더해도 누적과 어긋나지 않는다(같은 투자사가 두
+    달에 걸쳐 반응하면 누적이 더 작다 — 투자사를 세지 건수를 세지 않는다).
+
+    달을 가르는 판정도 이미 있는 것을 부른다 — 활동은 `ir_monthly.act_month`,
+    요청·미팅은 업무 보고와 같은 `report.month_range` 의 경계다.
+
+    **`meeting_call` 은 달로 가르지 않는다.** 그건 '아직 결과를 안 물어본 곳'
+    이라 지금 상태일 뿐이고(전화를 걸면 지난달 수가 소급해서 줄어든다), 지난
+    달의 값을 만들어 낼 방법이 없다. `month` 를 주면 `None` 으로 돌려준다 —
+    0 으로 두면 "그 달엔 전화할 곳이 없었다" 는 없는 사실이 된다.
+    """
+    blank = {"ir_contacts": 0, "meeting_contacts": 0, "requested_companies": 0,
+             "meeting_done": 0, "meeting_call": None if month else 0}
+    if not contact_ids:
+        return blank
+
+    act_stmt = (
         select(ContactActivity.kind, ContactActivity.contact_id,
-               ContactActivity.company_names)
+               ContactActivity.company_names,
+               ContactActivity.happened_at, ContactActivity.month)
         .where(ContactActivity.contact_id.in_(contact_ids),
-               ContactActivity.kind.in_(("ir_request", "meeting")))
-    ).all()
+               ContactActivity.kind.in_(("ir_request", "meeting"))))
+    ir_stmt = (select(IrRequest.contact_id, IrRequest.company_name)
+               .where(IrRequest.contact_id.in_(contact_ids)))
+    meet_stmt = select(Meeting).where(Meeting.contact_id.in_(contact_ids))
+    if month:
+        # 달의 경계는 업무 보고가 쓰는 것과 **같은 자리**에서 나와야 한다.
+        # 여기서 월말을 다시 계산하면 그 계산이 두 화면에서 따로 틀린다.
+        try:
+            year, mon = (int(x) for x in month.split("-")[:2])
+            start, end = report.month_range(year, mon)
+        except (ValueError, TypeError):
+            return blank
+        ir_stmt = ir_stmt.where(IrRequest.requested_at >= start.isoformat(),
+                                IrRequest.requested_at <= end.isoformat())
+        meet_stmt = meet_stmt.where(Meeting.scheduled_at >= start.isoformat(),
+                                    Meeting.scheduled_at <= end.isoformat())
 
     ir_contacts, meeting_contacts, companies = set(), set(), set()
-    for kind, contact_id, names in rows:
+    for kind, contact_id, names, happened_at, act_mon in db.execute(act_stmt).all():
+        # 시트에서 옮겨 온 줄은 날짜가 빈 것이 있어 달만 적혀 있다.
+        if month and ir_monthly.act_month(happened_at, act_mon) != month:
+            continue
         if kind == "ir_request":
             ir_contacts.add(contact_id)
             for name in _company_names(names):
@@ -293,19 +328,14 @@ def _reaction_summary(db: Session, contact_ids: List[int]) -> dict:
             meeting_contacts.add(contact_id)
 
     # 이 시스템으로 받은 요청도 함께 센다(시트 이력만 보면 최근 것이 빠진다).
-    for contact_id, company_name in db.execute(
-        select(IrRequest.contact_id, IrRequest.company_name)
-        .where(IrRequest.contact_id.in_(contact_ids))
-    ).all():
+    for contact_id, company_name in db.execute(ir_stmt).all():
         ir_contacts.add(contact_id)
         if company_name:
             companies.add(company_name.strip())
     # 미팅은 '요청' 과 '완료' 를 나눠 센다. 끝난 미팅은 다음 할 일이 다르다 —
     # 열흘 뒤 결과를 물어봐야 하고, 그걸 놓치면 계약을 통째로 잊는다.
     done_contacts, call_contacts = set(), set()
-    for meeting in db.execute(
-        select(Meeting).where(Meeting.contact_id.in_(contact_ids))
-    ).scalars().all():
+    for meeting in db.execute(meet_stmt).scalars().all():
         meeting_contacts.add(meeting.contact_id)
         if meeting.status == "done":
             done_contacts.add(meeting.contact_id)
@@ -315,11 +345,68 @@ def _reaction_summary(db: Session, contact_ids: List[int]) -> dict:
 
     return {
         "meeting_done": len(done_contacts),
-        "meeting_call": len(call_contacts),
+        "meeting_call": None if month else len(call_contacts),
         "ir_contacts": len(ir_contacts),
         "meeting_contacts": len(meeting_contacts),
         "requested_companies": len(companies),
     }
+
+
+#: 달로 **가를 수 있는** 반응과 그 이름.
+#:
+#: 다섯 중 넷이다. `meeting_call`(미팅완료 리마인드 TEL)은 여기 없다 —
+#: `_reaction_summary` 가 그 이유를 적어 두었다. 화면이 이 목록을 그대로
+#: 돌기 때문에, 가를 수 있는지 없는지의 판정은 이 한 줄에만 있다.
+#:
+#: 이름은 누적 패널의 것과 같은 글자다. 같은 수치를 위아래에서 다르게 부르면
+#: 사용자는 서로 다른 것을 세는 줄로 읽는다.
+REACTION_ROWS = [
+    {"key": "ir_contacts", "label": "IR 요청 투자사"},
+    {"key": "meeting_contacts", "label": "IR 미팅 요청 투자사"},
+    {"key": "requested_companies", "label": "IR 요청받은 기업"},
+    {"key": "meeting_done", "label": "IR 미팅완료 투자사"},
+]
+
+#: 달별 반응을 몇 달치 보일지 — 이 달 + 지난 3달.
+#:
+#: 실제 자료가 4달치다(시트에서 옮겨 온 활동이 6월부터, 이 앱에서 쌓인 요청·
+#: 미팅이 8월부터). 더 늘리면 화면에는 0 만 늘어서고, 390px 폰에서 칸이 서로
+#: 밀려 숫자가 줄바꿈된다.
+REACTION_MONTHS = 4
+
+
+def month_keys(today: date, count: int = REACTION_MONTHS) -> List[str]:
+    """최근 달들을 `2026-09` 꼴로, **최근 것이 먼저**.
+
+    달을 거슬러 세는 판정은 업무 보고(`report.recent_months`)에 이미 있다 —
+    12월에서 1월로 넘어가며 해가 바뀌는 자리라 두 곳에 적으면 그 한 달에
+    한쪽만 틀린다.
+    """
+    return [f"{y:04d}-{m:02d}" for y, m in report.recent_months(today, count)]
+
+
+def monthly_reactions(db: Session, contact_ids: List[int],
+                      today: Optional[date] = None,
+                      count: int = REACTION_MONTHS) -> List[dict]:
+    """「반응」 패널 아래에 세울 달별 수치.
+
+    모집단은 **위 누적과 같은 `contact_ids`** 다. 범위가 갈리면 위아래 두 수가
+    안 맞아 보이고, 그건 사용자에게 버그로 읽힌다(이 저장소가 여러 번 겪었다).
+    """
+    today = today or date.today()
+    out = []
+    for key in month_keys(today, count):
+        got = _reaction_summary(db, contact_ids, month=key)
+        year, mon = (int(x) for x in key.split("-"))
+        out.append({
+            "key": key,
+            # `9월` 로 짧게. 폰에서 `2026-09` 는 칸 폭을 혼자 다 먹는다.
+            # 해가 바뀌면 그때만 해를 붙인다 — 12월과 작년 12월이 같아 보이면 안 된다.
+            "label": f"{mon}월" if year == today.year else f"{year % 100}년 {mon}월",
+            "this_month": key == f"{today.year:04d}-{today.month:02d}",
+            **got,
+        })
+    return out
 
 
 def _company_names(raw: Optional[str]) -> List[str]:
@@ -519,6 +606,10 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None,
         # 대시보드와 투자사 목록의 수가 어긋난 적이 있어 테스트가 지키고 있다.
         "sendable": sendable,
         "reactions": _reaction_summary(db, ids),
+        # 같은 다섯 수치를 **달로 갈라** 한 번 더. 모집단(`ids`)이 같아야
+        # 위 누적과 아래 달별이 서로 어긋나 보이지 않는다.
+        "reaction_months": monthly_reactions(db, ids, today),
+        "reaction_rows": REACTION_ROWS,
         "stages": _distribution([s for c in contacts for s in _split_csv(c.stages)]),
         "sectors": _distribution([s for c in contacts for s in _split_csv(c.sectors)]),
         # 다음 회차에 누구를 먼저 챙길지 — 자료를 달라고 한 횟수가 관심의 크기다.
