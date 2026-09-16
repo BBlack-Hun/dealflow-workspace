@@ -861,7 +861,14 @@
           >{{ r[c.key] }}</div>
         </td>
         {% else %}
+        {# `data-choices` — 정해 둔 보기가 있으면 칸을 눌러 고칠 때 그 목록이
+           뜬다(`inline_edit.js` 의 `startPick`). **담당자 칸(`note`)에만
+           붙어 있었다** — 그쪽만 고르는 칸이었기 때문이다. 배치의 칸
+           (`field`)에도 보기가 생기면서(`그룹` = A~F) 여기가 비어 있으면,
+           같은 칸인데 수정창에서는 골라 넣고 표에서는 자유 입력이 된다.
+           그렇게 갈리면 `A` 와 `a그룹` 이 다시 섞인다 — 방금 정리한 그것이다. #}
         <td class="cell ellipsis{{ sc }}" data-field="{{ c.key }}" data-type="{{ c.kind }}"
+            {% if c.choices %}data-choices="{{ c.choices }}"{% endif %}
             title="{{ r[c.key] }}">{{ r[c.key] }}</td>
         {% endif %}
         {% endfor %}
