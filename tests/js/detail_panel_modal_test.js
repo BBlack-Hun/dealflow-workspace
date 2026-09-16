@@ -72,13 +72,20 @@ function buildContacts() {
       D.el("textarea", { id: "f-memo" }),
       // 그 명단에만 있는 칸(달마다 늘어나는 칸)도 폼의 일부다 — 이것만 고쳐도
       // 물어야 한다. 이름을 손으로 적지 않고 `data-note` 로 찾는 그 길이다.
-      D.el("textarea", { id: "f-note-2026-08", "data-note": "2026-08" }),
-      D.el("button", { id: "save-btn" }),
-      D.el("button", { id: "delete-btn" }),
-      D.el("p", { class: "hint", id: "detail-msg" })
+      D.el("textarea", { id: "f-note-2026-08", "data-note": "2026-08" })
     ]),
     D.el("div", { class: "detail-body", "data-panel": "timeline" }, [
       D.el("ul", { id: "timeline" })
+    ]),
+    // 단추 줄은 **본문 바깥**이다 — 칸이 달마다 늘어나 [저장] 이 굴러 내려가던
+    // 것을 그렇게 고쳤다(`tests/test_panel_actions_pinned.py`). 여기 든 것은
+    // 화면 모양이지만, 이 검사가 폼을 읽는 길(`panel.querySelectorAll`)이
+    // 창 전체를 훑는다는 것도 함께 지킨다 — 본문만 훑으면 달 칸을 잃는다.
+    D.el("div", { class: "detail-foot", "data-panel": "info" }, [
+      D.el("button", { id: "save-btn" }),
+      D.el("span", { class: "sep" }),
+      D.el("button", { class: "danger-btn", id: "delete-btn" }),
+      D.el("p", { class: "hint", id: "detail-msg" })
     ])
   ]);
   const add = D.el("button", { id: "add-btn" });

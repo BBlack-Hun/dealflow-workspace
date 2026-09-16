@@ -847,16 +847,28 @@
   </div>
   </div>
 
+  {#
+    바닥 줄. **굴러가지 않는다** — 창의 칸이 세로로 쌓여도 [저장] 은 늘 같은
+    자리에 있다(`.detail-body` 가 굴리는 자리고 이 줄은 그 바깥이다).
+    투자사 관리 현황의 수정창도 같은 모양으로 맞췄다(`contacts.html`).
+  #}
   <div class="detail-foot">
     <button type="button" class="primary-btn inline" id="co-save">저장</button>
+    <button type="button" class="secondary-btn" id="co-cancel">취소</button>
     {# 관리자만. 판정은 라우터가 막는 것과 **같은 함수**를 지난다
        (`routers/companies.py` 의 `can_delete_company` → `deps.admin_only`) —
        화면이 따로 `role == "admin"` 을 들고 있으면 반드시 갈린다.
-       팀원에게는 아예 **없다**: 눌러도 안 되는 단추가 보이면 고장으로 읽힌다. #}
+       팀원에게는 아예 **없다**: 눌러도 안 되는 단추가 보이면 고장으로 읽힌다.
+
+       **[저장] 옆에 두지 않는다.** 여기 있었다 — 8px 떨어져 나란히 섰다(재 봤다).
+       지운 기업은 화면 어디에도 안 남으니 손이 미끄러지면 그대로다. 투자사
+       관리 현황과 같은 방법으로 넷을 겹친다: 사이를 벌리고(`.detail-foot
+       .danger-btn` 의 `margin-left:auto` — 줄의 반대쪽 끝), 끊어 주고(`.sep`),
+       색을 달리하고(`danger-btn`), 확인창을 세운다(`companies.js`). #}
     {% if can_delete %}
+    <span class="sep" aria-hidden="true">·</span>
     <button type="button" class="danger-btn" id="co-delete">삭제</button>
     {% endif %}
-    <button type="button" class="secondary-btn" id="co-cancel">취소</button>
   </div>
 </aside>
 {% endblock %}
