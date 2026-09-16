@@ -370,7 +370,6 @@
 
            `카톡 연결 여부 (1) ▾` 가 한 줄에 들어가야 한다 — 이름 70px
            + th 여백 18px + 단추 여백 14px + 꼬리표 28px = 130px. #}
-        <th style="width:140px" data-filters="joined:카톡 연결 여부">카톡 연결 여부<div class="th-filters"></div></th>
         {% endif %}
         {# 투자사에 이 기업을 어떻게 소개할지. **메모처럼 쓰는 긴 글**이다.
 
@@ -389,6 +388,7 @@
            칸이라 좁으면 접힌 두어 줄에 아무것도 안 남는다. #}
         {% if is_startup_sheet %}
         <th style="width:240px">딜 소개문구</th>
+        <th style="width:140px" data-filters="joined:카톡 연결 여부">카톡 연결 여부<div class="th-filters"></div></th>
         {% endif %}
         {% endif %}
         {% for col in columns %}
@@ -533,16 +533,6 @@
            이고 같은 `received` 키다. 값이 `O`/`X` 두 가지뿐이라 골라 넣는다. #}
         <td class="cell" data-field="contract_received" data-filter-key="received"
             data-choices="O,X">{{ r.contract_received }}</td>
-        {# 카톡방이 연결됐는가. 바로 위 칸과 **글자 하나까지 같은 방식**이다 —
-           `O`/`X` 를 골라 넣고(consulting.js 의 `addChoices`) 빈칸으로 되돌릴
-           수 있다. 손으로 적게 두면 같은 뜻이 `O`·`o`·`ㅇ`·`○` 로 갈려 두
-           가지뿐인 칸에서 머리글 필터가 못 쓰게 된다.
-
-           칸 이름(`kakao_joined`)과 필터 키(`joined`)가 다르다 —
-           `data-filter-key` 가 없으면 여기서 고쳐도 행 값이 그대로라
-           **채워 넣어도 필터는 옛 목록 그대로**다. #}
-        <td class="cell" data-field="kakao_joined" data-filter-key="joined"
-            data-choices="O,X">{{ r.kakao_joined }}</td>
         {% endif %}
         {# `multi` — 이 표에서 **긴 글 칸이 쓰는 표시**다. 누르면 한 줄짜리
            입력이 아니라 textarea 가 열려(consulting.js 의 `startEdit`) 엔터로
@@ -560,6 +550,16 @@
            때 `data-search` 에 그대로 들어가므로 검색은 그 자리에서 따라간다. #}
         {% if is_startup_sheet %}
         <td class="cell multi" data-field="deal_pitch">{{ r.deal_pitch }}</td>
+        {# 카톡방이 연결됐는가. 바로 위 칸과 **글자 하나까지 같은 방식**이다 —
+           `O`/`X` 를 골라 넣고(consulting.js 의 `addChoices`) 빈칸으로 되돌릴
+           수 있다. 손으로 적게 두면 같은 뜻이 `O`·`o`·`ㅇ`·`○` 로 갈려 두
+           가지뿐인 칸에서 머리글 필터가 못 쓰게 된다.
+
+           칸 이름(`kakao_joined`)과 필터 키(`joined`)가 다르다 —
+           `data-filter-key` 가 없으면 여기서 고쳐도 행 값이 그대로라
+           **채워 넣어도 필터는 옛 목록 그대로**다. #}
+        <td class="cell" data-field="kakao_joined" data-filter-key="joined"
+            data-choices="O,X">{{ r.kakao_joined }}</td>
         {% endif %}
         {% endif %}
         {% for col in columns %}

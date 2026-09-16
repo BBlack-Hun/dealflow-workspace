@@ -272,14 +272,14 @@ def test_기업_관리_바로_뒤에_차례대로_선다(allowed, db, users):
     body = _open(allowed, STARTUP)
     heads = _heads(body)
     at = heads.index("기업 관리")
-    # 세 마디 뒤로 `카톡 연결 여부` 가 한 칸 더 섰다(사용자가 정한 자리 —
-    # `tests/test_consulting_kakao_joined.py`). 그 칸까지 넣어 차례를 본다.
+    # 세 마디 뒤로 `딜 소개문구` · `카톡 연결 여부` 가 차례로 선다(카톡 칸의
+    # 자리는 사용자가 정했다 — `tests/test_consulting_kakao_joined.py`).
     assert heads[at + 1:at + 6] == [label for label, _f, _k in COLUMNS] \
-        + ["카톡 연결 여부", "딜 소개문구"], heads
+        + ["딜 소개문구", "카톡 연결 여부"], heads
     fields = _fields(body)
     at = fields.index("management")
     assert fields[at + 1:at + 6] == [field for _l, field, _k in COLUMNS] \
-        + ["kakao_joined", "deal_pitch"], fields
+        + ["deal_pitch", "kakao_joined"], fields
 
 
 def test_머리글_수와_몸통_칸_수가_같다(allowed, db, users):
@@ -392,7 +392,7 @@ def test_표_모양은_이름이_아니라_열쇠로_짝짓는다(db):
         consulting.STARTUP_COLUMNS, consulting.TAIL_COLUMNS)
     assert consulting.STARTUP_COLUMNS[len(consulting.FIXED_COLUMNS):] == [
         (label, field) for label, field, _key in COLUMNS
-    ] + [("카톡 연결 여부", "kakao_joined"), ("딜 소개문구", "deal_pitch")]
+    ] + [("딜 소개문구", "deal_pitch"), ("카톡 연결 여부", "kakao_joined")]
     assert consulting.layout_of(db, "경영본부 전달 기업") == (
         consulting.FIXED_COLUMNS, consulting.TAIL_COLUMNS)
 

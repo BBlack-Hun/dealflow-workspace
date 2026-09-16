@@ -152,8 +152,11 @@ def test_옆_칸과_같은_방식으로_골라_넣는다(allowed, db, users):
 
 # --- 2. 자리 -----------------------------------------------------------------
 
-def test_계약서_수신완료여부_뒤_딜_소개문구_앞이다(allowed, db, users):
-    """사용자가 정한 자리 그대로다.
+def test_딜_소개문구_다음에_맨_뒤로_선다(allowed, db, users):
+    """사용자가 정한 자리 그대로다 — `딜 소개문구` **다음**, 묶음의 맨 뒤다.
+
+    한 번 `계약서 수신완료여부` 뒤로 세웠다가 사용자가 고쳐 정했다. 계약 세
+    마디의 흐름에 끼는 칸이 아니라 그 뒤에 따로 붙는 칸이다.
 
     머리글 차례와 칸 차례가 어긋나면 그 뒤가 통째로 밀린다 — 화면에서는 그냥
     값이 이상해 보일 뿐이라 원인을 못 찾는다.
@@ -164,16 +167,18 @@ def test_계약서_수신완료여부_뒤_딜_소개문구_앞이다(allowed, db
          management="관리 중", contract_received="O", kakao_joined="O")
     heads = _heads(_open(allowed, STARTUP))
     at = heads.index("계약서 수신완료여부")
-    assert heads[at + 1:at + 3] == [LABEL, "딜 소개문구"], heads
+    assert heads[at + 1:at + 3] == ["딜 소개문구", LABEL], heads
     fields = _fields(_open(allowed, STARTUP))
     at = fields.index("contract_received")
-    assert fields[at + 1:at + 3] == [FIELD, "deal_pitch"], fields
+    assert fields[at + 1:at + 3] == ["deal_pitch", FIELD], fields
     # 칸 묶음 쪽도 같은 차례다 — 화면만 고치고 묶음을 안 고치면 탭 하나가
     # 다른 차례로 그려진다.
     labels = [label for label, _f in consulting.STARTUP_COLUMNS]
     at = labels.index("계약서 수신완료여부")
-    assert labels[at + 1:at + 3] == [LABEL, "딜 소개문구"], labels
-    assert consulting.STARTUP_COLUMNS[at + 1] == (LABEL, FIELD)
+    assert labels[at + 1:at + 3] == ["딜 소개문구", LABEL], labels
+    assert consulting.STARTUP_COLUMNS[at + 2] == (LABEL, FIELD)
+    # 묶음의 **맨 뒤** 칸이다 — 뒤에 무엇이 붙으면 이 검사가 먼저 깨진다.
+    assert consulting.STARTUP_COLUMNS[-1] == (LABEL, FIELD)
 
 
 def test_머리글_수와_몸통_칸_수가_같다(allowed, db, users):
