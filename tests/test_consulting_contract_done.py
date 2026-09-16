@@ -272,12 +272,14 @@ def test_기업_관리_바로_뒤에_차례대로_선다(allowed, db, users):
     body = _open(allowed, STARTUP)
     heads = _heads(body)
     at = heads.index("기업 관리")
-    assert heads[at + 1:at + 5] == [label for label, _f, _k in COLUMNS] \
-        + ["딜 소개문구"], heads
+    # 세 마디 뒤로 `딜 소개문구` · `카톡 연결 여부` 가 차례로 선다(카톡 칸의
+    # 자리는 사용자가 정했다 — `tests/test_consulting_kakao_joined.py`).
+    assert heads[at + 1:at + 6] == [label for label, _f, _k in COLUMNS] \
+        + ["딜 소개문구", "카톡 연결 여부"], heads
     fields = _fields(body)
     at = fields.index("management")
-    assert fields[at + 1:at + 5] == [field for _l, field, _k in COLUMNS] \
-        + ["deal_pitch"], fields
+    assert fields[at + 1:at + 6] == [field for _l, field, _k in COLUMNS] \
+        + ["deal_pitch", "kakao_joined"], fields
 
 
 def test_머리글_수와_몸통_칸_수가_같다(allowed, db, users):
@@ -390,7 +392,7 @@ def test_표_모양은_이름이_아니라_열쇠로_짝짓는다(db):
         consulting.STARTUP_COLUMNS, consulting.TAIL_COLUMNS)
     assert consulting.STARTUP_COLUMNS[len(consulting.FIXED_COLUMNS):] == [
         (label, field) for label, field, _key in COLUMNS
-    ] + [("딜 소개문구", "deal_pitch")]
+    ] + [("딜 소개문구", "deal_pitch"), ("카톡 연결 여부", "kakao_joined")]
     assert consulting.layout_of(db, "경영본부 전달 기업") == (
         consulting.FIXED_COLUMNS, consulting.TAIL_COLUMNS)
 
@@ -474,7 +476,7 @@ def test_엑셀에도_실리고_이미_받아_둔_파일의_자리는_안_밀린
                                         STARTUP_EXPORT_HEADERS)
 
     assert STARTUP_EXPORT_HEADERS == ["딜 소개문구", "견적서 첨부 여부",
-                                      "계약완료여부"]
+                                      "계약완료여부", "카톡 연결 여부"]
     assert "계약서 수신여부" in CONTRACT_EXPORT_HEADERS
 
     _row(db, users["u1"].id, sheet=STARTUP, position=1, company_name="샘플파",
@@ -504,6 +506,9 @@ def test_엑셀에도_실리고_이미_받아_둔_파일의_자리는_안_밀린
     # 것은 두 칸이 같은 값을 실어도 못 알아채는 자리를 없애려는 것이다.
     assert body[head.index("견적서 첨부 여부")] == "X"
     assert body[head.index("계약서 수신여부")] == "O"
+    # `카톡 연결 여부` 는 이 줄에서 비워 두었다 — `O`/`X` 를 세는 이 검사가
+    # 어느 칸의 값인지 헷갈리지 않게 하려는 것이다(그 칸은
+    # `tests/test_consulting_kakao_joined.py` 가 따로 본다).
     assert body.count("O") == 1 and body.count("X") == 1, body
 
 
