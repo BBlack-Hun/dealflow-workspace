@@ -38,6 +38,11 @@ LIST_SHEETS = re.compile(r"\d+\s*\(|\d+명")
 COLUMNS = [
     ("담당자", "assignee_name"),
     ("메모", "memo"),
+    # **`선호 투자` 보다 먼저 온다.** 아래 매칭이 '포함' 이라 `선호 투자단계`
+    # 라는 머리글은 `선호 투자` 에도 걸린다 — 먼저 잡아 두지 않으면 단계 값이
+    # `sectors` 로 들어간다. (아직 어느 시트에도 없는 칸이다. 생기는 날을 위해
+    # 자리만 열어 둔다.)
+    ("투자단계", "stages"),
     ("선호 투자", "sectors"),          # `선호 투자분야` · `선호 투자 분야`
     ("라운드 사이즈", "round_size"),
     ("휴대폰", "phone"),
@@ -88,6 +93,27 @@ def bare_name(value) -> str:
 
 def firm_key(value) -> str:
     return re.sub(r"\(주\)|주식회사|㈜|\s", "", text(value))
+
+
+def columns_of(head: dict) -> dict:
+    """머리글 `{글자: 열 번호}` → `{머리글 라벨: (열 번호, 모델 칸)}`.
+
+    **한 열은 한 칸에만 준다.** 머리글이 서로의 조각을 품고 있어서
+    (`선호 투자단계` 안에 `선호 투자` 가 그대로 들어 있다) 안 막으면 한 열이 두
+    칸 노릇을 한다 — 단계 값이 `sectors` 로도 들어간다.
+    `import_investor_list._columns_of` 가 같은 이유로 잡힌 자리를 빼 둔다.
+
+    `COLUMNS` 에 **적은 차례가 곧 우선순위**다. 더 좁은 쪽(`투자단계`)이 넓은
+    쪽(`선호 투자`)보다 앞에 서 있어야 한다.
+    """
+    where, taken = {}, set()
+    for label, field in COLUMNS:
+        col = next((c for h, c in head.items()
+                    if label in h and c not in taken), None)
+        if col is not None:
+            where[label] = (col, field)
+            taken.add(col)
+    return where
 
 
 def header_row(ws) -> int:
@@ -162,11 +188,7 @@ def main() -> None:
             print(f"  건너뜀 (이름 칸 없음): {name}")
             continue
 
-        where = {}
-        for label, field in COLUMNS:
-            col = next((c for h, c in head.items() if label in h), None)
-            if col is not None:
-                where[label] = (col, field)
+        where = columns_of(head)
 
         print(f"── {name} (머리 {hr}행) ──")
         for r in range(hr + 1, ws.max_row + 1):
