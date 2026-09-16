@@ -804,6 +804,53 @@ def sheet_rows(db: Session, contacts: List[VcContact],
     return out
 
 
+# ── 이 명단에 줄을 **새로** 넣어도 되는가 ───────────────────────────────────
+#
+# 아래 `add_to_sheet` 이 **이미 있는 줄을 내 명단에 얹는** 일이라면, 이것은
+# 표에 없던 줄을 처음 만드는 일이다. 판정을 여기 한 곳에 두는 이유는 늘 같다 —
+# 화면의 단추와 서버가 각자 조건을 들고 있으면 한쪽만 고쳐지는 날 **눌러도
+# 아무 일이 없는 단추**(또는 그 반대로, 안 보이는데 주소로는 되는 길)가 된다.
+#
+# 판정은 **줄 하나를 고칠 수 있는가**와 같은 모양이다(`routers/contacts.py` 의
+# `_owned`) — 내 것이거나 관리자다. 다만 여기서 묻는 주인은 줄이 아니라
+# **명단의 주인**이다. 새 줄은 아직 주인이 없고, 들어갈 명단이 그 줄의 담당을
+# 정하기 때문이다(`owner_for`).
+#
+# 담당이 없는 명단(투자사 풀)은 **관리자만** 넣는다. 풀은 누구의 담당도 아니라
+# 거기 새 줄을 세우면 그 줄의 담당을 아무도 정한 적이 없는 상태가 된다 —
+# 그런 줄은 어느 팀원의 화면에도 안 뜬다(`managed` 가 `user_id` 로 좁힌다).
+
+
+def may_add_row(db: Session, user: User, label: str) -> bool:
+    """이 명단에 줄을 새로 넣어도 되는가. **화면의 단추와 서버가 같이 읽는다.**
+
+    이름이 비어 있으면(투자사 관리 현황의 `전체` 탭처럼 명단을 안 고른 자리)
+    참이다 — 그 줄은 `직접 추가` 로 들어가고, 그것은 언제나 넣는 사람 본인의
+    것이다(`my_labels`).
+    """
+    from ..deps import may_manage_team_contacts   # deps → services 는 순환이 아니다
+
+    if not (label or "").strip():
+        return True
+    owner = owner_map(db).get(label.strip())
+    if owner is None:
+        return may_manage_team_contacts(user)
+    return owner == user.id or may_manage_team_contacts(user)
+
+
+def owner_for(db: Session, label: str, user: User) -> int:
+    """이 명단에 새로 넣는 줄의 **담당**(`VcContact.user_id`).
+
+    명단에 주인이 있으면 **그 사람**이다. 넣는 사람을 담당으로 적으면, 관리자가
+    팀원의 명단에 한 줄을 넣는 순간 그 줄만 담당이 관리자로 서서 **정작 그
+    팀원의 화면에는 안 뜬다**(`managed` 가 `user_id` 로 좁힌다) — 넣어 놓고도
+    안 들어간 줄 아는, 이 저장소가 반복해 당한 부류다.
+
+    주인이 없는 명단·명단을 안 고른 자리는 넣는 사람이다.
+    """
+    return owner_map(db).get((label or "").strip()) or user.id
+
+
 def add_to_sheet(db: Session, contacts: List[VcContact], label: str,
                  user_id: int) -> int:
     """풀에 있는 담당자를 내 명단으로 **할당**한다.
