@@ -350,7 +350,27 @@
     fillBackup(data.desc_backup);
     fillHistory(data);
     fillOneLinerNote(data);
+    fillUpdated(data);
     setStatus(data);
+  }
+
+  // 마지막으로 고친 시각. **표의 그 칸과 같은 글자**가 온다(라우터의
+  // `stamp_text` 한 곳에서 만든다) — 창에서 다시 자르면 같은 값이 두 꼴로 보인다.
+  //
+  // 새 기업(아직 만들지 않은 줄)에는 시각이 없다. 숨긴다 — `-` 를 적어 두면
+  // "값을 못 읽었다" 로도 읽힌다.
+  function fillUpdated(data) {
+    var line = el("co-updated");
+    if (!line) return;
+    var stamp = data && data.updated_at;
+    line.hidden = !stamp;
+    if (!stamp) { line.textContent = ""; return; }
+    // 한 번도 안 고친 줄은 그 시각이 **만든 시각**이다. 표의 그 칸이 옅은
+    // 글씨와 짚는 말로 구분해 주는 것과 같은 말을 여기서도 한다 — 두 화면이
+    // 같은 값을 두고 다른 말을 하면 어느 쪽이 맞는지 알 수 없다.
+    line.textContent = data.updated_never
+      ? "🕓 만든 뒤로 아직 고친 적이 없습니다 — 만든 시각 " + stamp
+      : "🕓 마지막으로 고친 시각 " + stamp;
   }
 
   function setStatus(data) {
@@ -613,5 +633,33 @@
       btn.textContent = on ? "★ 핵심" : "☆";
       row.setAttribute("data-f-top", on ? "★ 핵심" : "일반");
     }).catch(function () { alert("저장하지 못했습니다."); });
+  });
+})();
+
+// 수정한 날짜 — **고친 그 자리에서 바뀐다.**
+//
+// 이 칸이 답하는 물음은 "방금 고친 것이 실제로 저장됐나 / 이 줄이 최근 것인가"
+// 하나다. 새로고침해야 값이 바뀌면 그 물음에 답하지 못한다 — 고치고 나서 칸을
+// 보면 **고치기 전 시각**이 그대로 앉아 있어, 오히려 저장이 안 된 것처럼 보인다.
+//
+// 값은 **응답이 준 것**을 쓴다. 여기서 `new Date()` 로 지어내면 브라우저 시계와
+// 서버 시계가 다른 만큼 어긋나고, 새로고침하는 순간 다른 시각으로 바뀐다 —
+// 계약여부 두 칸이 같은 이유로 응답 값을 되그린다.
+//
+// **옅은 글씨를 걷어낸다.** 그 표시는 "만든 뒤로 고친 적이 없다" 는 뜻인데,
+// 방금 고쳤으니 더는 참이 아니다(짚어서 뜨는 말도 함께 바꾼다).
+(function () {
+  var table = document.getElementById("co-table");
+  if (!table) return;
+
+  table.addEventListener("inline-saved", function (e) {
+    var data = e.detail.data || {};
+    if (!("updated_at" in data)) return;
+    var row = e.detail.row;
+    var cell = row && row.querySelector("td.updated-at");
+    if (!cell) return;
+    cell.textContent = data.updated_at;
+    cell.classList.remove("muted");
+    cell.title = "마지막으로 고친 시각";
   });
 })();
