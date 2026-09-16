@@ -371,6 +371,18 @@ class ContactIn(BaseModel):
     notes: Optional[Dict[str, str]] = None
     # 이 줄만 표에서 감출까(1) 다시 보일까(0).
     is_hidden: Optional[int] = None
+    # **새 줄을 어느 명단에 넣을까.** 만들 때만 읽는다(`create_contact`).
+    #
+    # 화면이 지금 보고 있는 탭을 그대로 보낸다. 안 보내면 그 줄은 `직접 추가`
+    # 로 들어가는데, 명단별 탭은 `source_sheet` 로 갈리므로(`routers/pages.py`
+    # 의 `list_page`) **방금 넣은 줄이 지금 보던 화면에 안 뜬다.** 투자사
+    # 관리 현황에는 `전체` 탭이 있어 거기서는 보였지만, 그 탭이 없는 화면
+    # (스타트업)에서는 어느 탭에도 안 뜬다 — 넣어 놓고도 안 들어간 줄 안다.
+    #
+    # 고칠 때(PATCH)는 읽지 않는다. 명단을 옮기는 일은 [이관] 하나다
+    # (`sheet_owner.move_to`) — 옛 명단에서 뺄지 말지 같은 판단이 거기 있고,
+    # 여기서 또 적으면 두 벌이 된다.
+    sheet: Optional[str] = None
 
 
 class VerifyRequest(BaseModel):
@@ -795,12 +807,52 @@ def create_contact(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    name = (body.name or "").strip()
-    if not name:
-        raise HTTPException(status_code=400, detail="담당자명을 입력하세요")
-    contact = VcContact(user_id=user.id, name=name, status=body.status or "active")
+    """줄 하나를 새로 넣는다 — **두 화면이 같이 쓰는 길**이다.
+
+    투자사 관리 현황의 [담당자 추가] 와 스타트업의 [기업 추가] 가 여기로 온다.
+    새로 짜지 않은 이유는 이 저장소가 반복해 당한 사고 때문이다 — 같은 일을
+    두 벌로 적으면 그중 하나만 고쳐지는 날 두 화면이 갈린다(투자사 수가 화면
+    마다 다르던 일, 좌측 메뉴 목록과 라우터 목록이 갈린 일).
+
+    화면마다 **다른 것 셋**은 전부 값에서 나온다.
+
+      · **어느 명단에 들어가나** — 화면이 보낸 `sheet`(지금 보고 있는 탭).
+      · **무엇이 반드시 있어야 하나** — 그 명단의 배치가 정한다
+        (`Layout.required`). 투자사는 `이름`, 스타트업은 `기업명` 이다.
+      · **담당은 누구인가** — 그 명단의 주인이다(`sheet_owner.owner_for`).
+
+    권한도 여기서 다시 본다. 화면이 단추를 감추는 것과 **같은 판정**을 읽으므로
+    (`sheet_owner.may_add_row`), 주소를 직접 두드려도 남의 명단에는 못 넣는다.
+    """
+    sheet = (body.sheet or "").strip()
+    # 화면의 단추와 **같은 판정**이다. 여기서만 따로 적으면 한쪽만 고쳐지는 날
+    # 눌러도 아무 일이 없는 단추가 되거나, 안 보이는데 주소로는 되는 길이 된다.
+    if not sheet_owner.may_add_row(db, user, sheet):
+        raise HTTPException(status_code=403, detail="이 명단에는 줄을 넣을 수 없습니다")
+    # 명단이 정한 표가 **무엇이 반드시 있어야 하는지**까지 정한다. 명단을 안
+    # 고른 자리(투자사 `전체`)는 지금까지 그대로 투자사 명함 표다.
+    layout = contact_columns.layout_of(
+        sheet_owner.layout_of(db, sheet) if sheet else contact_columns.DEFAULT)
+    required = (getattr(body, layout.required, None) or "").strip()
+    if not required:
+        raise HTTPException(status_code=400,
+                            detail=f"{layout.required_label}을 입력하세요")
+    contact = VcContact(user_id=sheet_owner.owner_for(db, sheet, user),
+                        name=(body.name or "").strip(),
+                        status=body.status or "active")
+    if sheet:
+        # **지금 보고 있는 탭에 들어간다.** 안 적으면 `직접 추가` 로 밀려나
+        # 그 화면 어느 탭에도 안 뜬다(`labels_of` 의 기본값).
+        contact.source_sheet = sheet
     _assign(contact, body)
-    if not contact.kakao_room_name and contact.firm:
+    # 카톡방 이름은 **투자사 관리 현황에 사는 명단에서만** 짓는다.
+    #
+    # 짓는 규칙이 `이름·직함·투자사` 로 된 투자사 방 제목이라(room_name.py),
+    # 기업이 주인공인 명단에 그대로 쓰면 기업명이 심사역 자리에 박힌 방 이름이
+    # 생긴다. 게다가 방 이름이 서면 연결 상태가 `연결 완료` 로 따라 서서
+    # (`_assign`), 아무도 연결한 적 없는 줄이 발송 대상에 뜬다.
+    if (layout.page == contact_columns.PAGE_CONTACTS
+            and not contact.kakao_room_name and contact.firm):
         # 이름·직함·투자사만으로 실제 방 제목 규칙을 재현할 수 있다(room_name.py).
         contact.kakao_room_name = build_room_name(contact.name, contact.title,
                                                   contact.firm, suffix=DEFAULT_SUFFIX)
