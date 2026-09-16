@@ -861,7 +861,14 @@
           >{{ r[c.key] }}</div>
         </td>
         {% else %}
+        {# `data-choices` — 담당자 칸(`source="field"`)에도 정해 둔 보기가 있으면
+           표에서 눌러 고칠 때 그것부터 뜬다(`static/js/inline_edit.js` 의
+           `startPick`). 이것이 없으면 `data-type="pick"` 만 서고 보기는 **다른
+           줄이 이미 쓰고 있는 값**뿐이라, 아무도 안 채운 칸에서는 빈 칸에
+           타이핑하게 된다 — `O`·`o`·`완료` 로 갈리는 바로 그 자리다.
+           `note` 칸에는 위에서 이미 같은 것을 붙이고 있었다. #}
         <td class="cell ellipsis{{ sc }}" data-field="{{ c.key }}" data-type="{{ c.kind }}"
+            {% if c.choices %}data-choices="{{ c.choices }}"{% endif %}
             title="{{ r[c.key] }}">{{ r[c.key] }}</td>
         {% endif %}
         {% endfor %}
