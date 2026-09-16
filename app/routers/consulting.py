@@ -129,6 +129,19 @@ STARTUP_COLUMNS = FIXED_COLUMNS + [
     ("계약완료여부", "contract_done"),
     # 계약 탭과 **같은 칸**이다(이름만 탭이 정한다 — 위 참고).
     ("계약서 수신완료여부", "contract_received"),   # O / X
+    # 이 기업과 카톡방이 연결됐는가. **자리는 사용자가 정했다** — `계약서
+    # 수신완료여부` 바로 뒤, `딜 소개문구` 앞이다(처음에는 `IR 자료 회신여부`
+    # 앞이라고 불렀는데 이 탭에는 그런 칸이 없다. 없는 칸을 새로 세우는 대신
+    # 자리를 다시 물어 정했다).
+    #
+    # 위 세 마디와 같은 `O`/`X` 칸이다(빈칸은 `아직 안 정함`).
+    #
+    # **`VcContact.kakao_joined` 와 이름이 같지만 다른 표의 다른 칸이다.**
+    # 한쪽에 `O` 를 넣어도 다른 쪽은 계속 비어 있다 — 같은 기업이 스타트업
+    # 화면과 이 화면에서 다른 답을 보일 수 있고, 그것은 알고 둔 것이다.
+    # 어디에 또 있고 왜 안 이었는지는 `models.ConsultingCompany.kakao_joined`
+    # 주석에 한 곳으로 적혀 있다(설명을 두 벌 두면 한 벌이 낡는다).
+    ("카톡 연결 여부", "kakao_joined"),   # O / X
     ("딜 소개문구", "deal_pitch"),
 ]
 
@@ -742,6 +755,10 @@ def company_rows(db: Session, user: User, sheet: str = "",
             # 필터가 그것을 `(비어 있음)` 으로 세워 준다.
             "contract_management": c.contract_management or "",
             "contract_done": c.contract_done or "",
+            # 같은 탭의 `카톡 연결 여부`. 빈 문자열이 곧 `아직 안 정함` 이다.
+            # (`VcContact.kakao_joined` 와 이름만 같은 다른 칸이다 —
+            #  `models.ConsultingCompany.kakao_joined` 주석 참고.)
+            "kakao_joined": c.kakao_joined or "",
             "notes": seen,
             # 어느 달이든 기록이 있는가 — `연락 기록 없음` 칩이 보는 값이다.
             "contacted": status.contacted(seen.values()),
@@ -783,6 +800,7 @@ def company_rows(db: Session, user: User, sheet: str = "",
                 # 결과가 달라진다.
                 c.contract_management if startup else "",
                 c.contract_done if startup else "",
+                c.kakao_joined if startup else "",
                 *notes.values(),
             ])).lower(),
         })
@@ -941,6 +959,9 @@ class CompanyIn(BaseModel):
     #  칸이라 여기 또 적지 않는다.)
     contract_management: Optional[str] = None
     contract_done: Optional[str] = None
+    # 같은 탭의 `카톡 연결 여부`. 여기 안 적으면 화면에서 고쳐도 조용히 안
+    # 저장된다(위와 같다).
+    kakao_joined: Optional[str] = None
     # {"열id": "내용"} — 월별 리마인드
     notes: Optional[Dict[str, str]] = None
 
@@ -1192,7 +1213,8 @@ CONTRACT_EXPORT_HEADERS = ["성공보수율", "계약금", "계약서 수신여�
 # `contract_received` 라 위 `CONTRACT_EXPORT_HEADERS` 의 `계약서 수신여부` 로
 # 이미 실린다. 엑셀은 탭을 가리지 않고 한 장이므로 여기 또 세우면 **같은 값이
 # 두 칸에** 나오고, 그 파일을 여는 사람은 둘이 다른 사실인 줄 안다.
-STARTUP_EXPORT_HEADERS = ["딜 소개문구", "견적서 첨부 여부", "계약완료여부"]
+STARTUP_EXPORT_HEADERS = ["딜 소개문구", "견적서 첨부 여부", "계약완료여부",
+                          "카톡 연결 여부"]
 
 
 @router.get("/api/export/consulting.xlsx")
@@ -1217,7 +1239,8 @@ def export_consulting(db: Session = Depends(get_db),
         + [r["notes"].get(str(c.id), "") for c in cols]
         + [r["ceo_name"], r["phone"], r["email"]]
         + [r["success_fee"], r["contract_fee"], r["contract_received"]]
-        + [r["deal_pitch"], r["contract_management"], r["contract_done"]]
+        + [r["deal_pitch"], r["contract_management"], r["contract_done"],
+           r["kakao_joined"]]
         for r in company_rows(db, user)
     ]
     try:
@@ -1310,6 +1333,15 @@ def parse_rows(rows: List[List[str]]) -> dict:
         "contract_management": fixed("견적서", "첨부"),
         "contract_done": fixed("계약", "완료", without=("수신", "관리")),
         "contract_received": fixed("계약서", "수신"),
+        # 시트에 `카톡 연결 여부` 열이 있으면 여기로 받는다. 안 받으면 월별
+        # 리마인드 열로 딸려 들어가 같은 이름이 표에 두 번 선다(위 참고).
+        #
+        # 달이 적힌 이름(`9월 카톡 연결`)은 `fixed` 가 이미 건너뛴다 — 그런
+        # 이름은 `스타트업` 명단이 달마다 세우는 칸이고
+        # (`services/contact_columns.py`), 이 표에서는 월별 리마인드 열로
+        # 남아야 한다. 그 달 기록을 한 칸에 뭉쳐 덮으면 어느 달 값이 남았는지
+        # 알 수 없게 된다.
+        "kakao_joined": fixed("카톡", "연결"),
         "ceo_name": find("대표자"),
         "phone": find("연락처"),
         "email": find("이메일"),
@@ -1390,7 +1422,7 @@ def apply_rows(db: Session, parsed: dict, user: User,
         for field in ("region", "meeting_at", "company_name", "management",
                       "ceo_name", "phone", "email",
                       "contract_management", "contract_done",
-                      "contract_received"):
+                      "contract_received", "kakao_joined"):
             value = item.get(field)
             if value:
                 setattr(company, field, value)

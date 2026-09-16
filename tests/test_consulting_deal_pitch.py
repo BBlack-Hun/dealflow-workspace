@@ -250,7 +250,9 @@ def test_스타트업_탭에서만_서는_칸들_끝에_선다(allowed, db, user
     fields = re.findall(r'data-field="([^"]+)"', body.split("<tbody>", 1)[1])
     # 이 탭에만 서는 칸 묶음의 **맨 뒤**다. 앞은 `기업 관리`, 뒤는 다시 모든
     # 탭이 함께 쓰는 `대표자` 다.
-    assert heads[heads.index("기업 관리") + 4] == "딜 소개문구", heads
+    # 세 마디 뒤에 `카톡 연결 여부` 가 한 칸 더 서서 자리가 한 칸 밀렸다
+    # (`tests/test_consulting_kakao_joined.py`). 여전히 이 묶음의 맨 뒤다.
+    assert heads[heads.index("기업 관리") + 5] == "딜 소개문구", heads
     assert heads[heads.index("딜 소개문구") + 1] == "대표자", heads
     # 머리글과 칸이 같은 차례인가 — 이름은 다르지만 자리가 같아야 한다.
     assert fields.index("deal_pitch") - fields.index("management") \

@@ -333,11 +333,13 @@ def test_다른_탭의_표는_한_칸도_안_바뀐다(allowed, db, users):
     body = _open(allowed, "스타트업")
     assert _heads(body) == ["NO", "담당", "지역", "미팅일", "기업명", "기업 관리",
                             "견적서 첨부 여부", "계약완료여부",
-                            "계약서 수신완료여부", "딜 소개문구",
+                            "계약서 수신완료여부", "카톡 연결 여부",
+                            "딜 소개문구",
                             "대표자", "연락처", "이메일", ""], _heads(body)
     assert _fields(body) == ["region", "meeting_at", "company_name",
                              "management", "contract_management",
                              "contract_done", "contract_received",
+                             "kakao_joined",
                              "deal_pitch", "ceo_name", "phone", "email"]
 
 
@@ -508,11 +510,13 @@ def test_계약_탭에만_있는_칸은_다른_탭으로_안_샌다(allowed, db,
     #  `tests/test_consulting_deal_pitch.py`).
     assert _heads(body) == ["NO", "담당", "지역", "미팅일", "기업명", "기업 관리",
                             "견적서 첨부 여부", "계약완료여부",
-                            "계약서 수신완료여부", "딜 소개문구",
+                            "계약서 수신완료여부", "카톡 연결 여부",
+                            "딜 소개문구",
                             "대표자", "연락처", "이메일", ""], _heads(body)
     assert _fields(body) == ["region", "meeting_at", "company_name",
                              "management", "contract_management",
                              "contract_done", "contract_received",
+                             "kakao_joined",
                              "deal_pitch", "ceo_name", "phone", "email"]
 
 
