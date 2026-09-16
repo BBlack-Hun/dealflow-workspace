@@ -358,11 +358,17 @@ def test_되돌리면_값도_파일도_sha256_까지_원래대로(monkeypatch, d
     """
     from app.db import engine
 
+    from app.services import group_name
+
     for i in range(5):
-        contact(db, users["u1"].id, f"김샘플{i}", "샘플투자",
-                memo="앱에서 적어 둔 글" if i % 2 else None)
+        # 세 가지 처음 상태를 섞는다 — 빈 칸 · 사람이 적은 글 ·
+        # **그룹 칸 정리가 옮겨 둔 글**(운영에서 이미 돌았다).
+        memo = (None if i % 3 == 0 else "앱에서 적어 둔 글" if i % 3 == 1
+                else f"{group_name.MOVED_MARK} Seed~Pre A 30억")
+        contact(db, users["u1"].id, f"김샘플{i}", "샘플투자", memo=memo)
     xlsx = book(tmp_path, [sheet_row(f"김샘플{i}", "샘플투자",
-                                     etc=f"8/1{i} 딜소싱 네트워크 소개",
+                                     # 가리기까지 되돌리기 길에 태운다
+                                     etc=f"8/1{i} 소개 · 강민준님 확인",
                                      talk=f"샘플{i} 분야를 보신다고 하심")
                            for i in range(5)])
 
@@ -466,3 +472,232 @@ def test_옮기는_칸은_llm_brief_가_읽는_칸이다():
 
     for field in pref_notes.FIELDS:
         assert field in llm_brief.INVESTOR_FIELDS
+
+
+# ── 8. 우리 쪽 사람 이름을 가린다 ──────────────────────────────────────────
+#
+# **여섯째 꼴이다.** 옮기는 순간 생기는 문제라, 옮기는 검사 옆에 둔다.
+#
+# `llm_brief` 는 이것을 못 막는다 — 저쪽이 지우는 사람 이름은 그 줄 자신의
+# 것뿐이다(`llm_brief._scrub`). 그리고 남의 이름까지 지우지 않기로 한 것은
+# 거기 적힌 실측(세 글자 이름이 남의 문장 261곳에 우연히 맞았다) 때문이라,
+# **여기서는 앞뒤를 보고 가린다.**
+
+def owner(db, label, assignee):
+    """명단 담당 팀원. 계정이 없어도 이름이 여기 남는다(`SheetOwner`)."""
+    from app.models import SheetOwner
+
+    row = SheetOwner(label=label, assignee_name=assignee)
+    db.add(row)
+    db.commit()
+    return row
+
+
+def test_세_자리에서_온_팀원_이름이_모두_가려진다(monkeypatch, db, users, tmp_path):
+    """계정 · 명단 담당 · 담당자 칸 — `NAME_SOURCES` 셋이 다 쓰인다.
+
+    한 자리만 보면 그 자리에 없는 팀원이 통째로 새어 나간다. 계정이 아직 없는
+    팀원은 명단 담당에만 있고, 명단이 없는 팀원은 담당자 칸에만 있다.
+    """
+    from app.services import pref_notes
+
+    owner(db, "샘플 명단", "박담당 팀장")          # sheet_owners.assignee_name
+    contact(db, users["u2"].id, "정담당", "샘플파트너스",
+            assignee_name="최담당")                # vc_contacts.assignee_name
+    row = contact(db, users["u1"].id, "김샘플", "샘플투자")
+    xlsx = book(tmp_path, [sheet_row(
+        "김샘플", "샘플투자",
+        # 강민준 = users 붙박이 계정 이름(`conftest.users`)
+        etc="강민준님 카톡방 임시 관리\n이후 박담당님 연결\n최담당님 확인",
+        talk="윤서아님께 전달 완료")])
+    apply(monkeypatch, xlsx, tmp_path)
+
+    got = refresh(db, row)
+    for name in ("강민준", "박담당", "최담당", "윤서아"):
+        assert name not in got.sourcing_note + got.memo
+    # **지우지 않고 가린다** — 나머지 말은 살아 있어야 한다.
+    assert pref_notes.TEAM_MASK in got.sourcing_note
+    assert "카톡방 임시 관리" in got.sourcing_note
+    assert "연결" in got.sourcing_note
+    assert "전달 완료" in got.memo
+
+
+@pytest.mark.parametrize("text,masked", [
+    # 가린다 — 이름이 낱말을 열고, 뒤가 호칭이거나 한글이 아니다
+    ("강민준님과 통화", True),
+    ("강민준 / 9월 카톡방", True),
+    ("이후 강민준 연결", True),
+    ("민준부장 들어와 있음", True),          # 성을 뗀 이름 + 직함
+    ("오후 5:15 민준 넵 확인했습니다", True),  # 대화 로그의 발화자 자리
+    # **안 가린다 — 헛맞음이다**
+    ("윤서아이디어 회의록 정리", False),      # 뒤가 한글이고 직함이 아니다
+    ("계약서아카이브를 정리했다", False),      # 이름이 낱말 한가운데 박혔다
+    ("강민준비물을 챙긴다", False),
+    ("서아 담당으로 옮김", False),            # 성 뗀 이름인데 호칭이 안 붙었다
+])
+def test_헛맞음_앞뒤를_보고_가른다(db, users, text, masked):
+    """**한글 이름은 두세 자라 보통 글자에 그냥 박힌다.**
+
+    순진하게 부분문자열로 지우면 멀쩡한 문장이 뭉개진다 — `llm_brief` 가 실측
+    261곳으로 재고 그만둔 그 방식이다. 여기서는 대는 이름이 팀원 몇 명뿐이라
+    앞뒤를 볼 여유가 있다.
+    """
+    from app.services import pref_notes
+
+    names = pref_notes.team_names(["강민준", "윤서아"])
+    pattern = pref_notes.team_pattern(names)
+    out, spots = pref_notes.mask_team(text, pattern)
+    assert bool(spots) is masked
+    assert (out != text) is masked
+
+
+def test_발화자_자리는_시각을_남기고_이름만_가린다(db):
+    """대화가 **언제** 오갔는지는 그 자체로 정보다 — `llm_brief._scrub` 도
+    날짜는 안 지운다. 발화자만 바꾸고 시각은 그대로 둔다.
+    """
+    from app.services import pref_notes
+
+    pattern = pref_notes.team_pattern(pref_notes.team_names(["강민준"]))
+    out, spots = pref_notes.mask_team("오후 5:15 민준 넵 확인했습니다", pattern)
+    assert spots == 1
+    assert out == f"오후 5:15 {pref_notes.TEAM_MASK} 넵 확인했습니다"
+
+
+def test_가리고_나니_남는_말이_없으면_안_옮긴다(monkeypatch, db, users, tmp_path,
+                                              capsys):
+    """이름 말고는 거의 없던 줄. 옮기면 메모에 표시만 쌓인다.
+
+    **따로 센다** — `껍데기` 와 한 수로 뭉치면 가리기가 무엇을 지웠는지 안 보인다.
+    """
+    row = contact(db, users["u1"].id, "김샘플", "샘플투자")
+    xlsx = book(tmp_path, [sheet_row("김샘플", "샘플투자", etc="강민준님")])
+    apply(monkeypatch, xlsx, tmp_path)
+
+    assert refresh(db, row).sourcing_note is None
+    assert "가리니 빔" in capsys.readouterr().out
+
+
+def test_앱이_모르는_이름은_못_가린다(monkeypatch, db, users, tmp_path, capsys):
+    """**이 방법의 한계다.** 계정도 담당 표시도 없는 팀원은 못 거른다.
+
+    사용자가 알고 고른 길이지만, 검사와 미리보기 둘 다에 적어 둔다 — 안 적으면
+    "자동으로 다 걸러진다" 고 믿게 된다.
+    """
+    row = contact(db, users["u1"].id, "김샘플", "샘플투자")
+    xlsx = book(tmp_path, [sheet_row("김샘플", "샘플투자",
+                                     etc="없는분님 카톡방 임시 관리")])
+    apply(monkeypatch, xlsx, tmp_path)
+
+    assert "없는분" in refresh(db, row).sourcing_note
+    out = capsys.readouterr().out
+    assert "앱이 아는 이름만 가린다" in out and "못 거른다" in out
+
+
+def test_이름_목록은_직함을_버리고_쪼갠다():
+    """`담당자` 칸은 자유 글자다 — `김샘플 팀장` · `샘플가/샘플나`."""
+    from app.services import pref_notes
+
+    got = pref_notes.team_names(
+        ["김샘플 팀장", "샘플가/샘플나", "팀장", "", None, "김샘플", "A", "너무긴이름입니다"])
+    assert got == ("김샘플", "샘플가", "샘플나")
+
+
+def test_미리보기와_저장이_같은_글을_쓴다(monkeypatch, db, users, tmp_path, capsys):
+    """가리는 일은 `decide()` 안에서 **한 번만** 일어난다.
+
+    미리보기가 따로 다시 가리면 본 것과 들어가는 것이 갈리고, 그러면 사람이
+    확인할 자리가 없어진다.
+    """
+    row = contact(db, users["u1"].id, "김샘플", "샘플투자")
+    xlsx = book(tmp_path, [sheet_row("김샘플", "샘플투자",
+                                     etc="강민준님 카톡방 임시 관리")])
+    assert run(monkeypatch, xlsx, "--show-values") == 0
+    shown = capsys.readouterr().out
+    apply(monkeypatch, xlsx, tmp_path)
+
+    written = refresh(db, row).sourcing_note
+    assert "[팀원]님 카톡방 임시 관리" in written
+    # 미리보기가 **가리기 전/후를 나란히** 놓는다 — 확인할 유일한 길이다.
+    assert "가리기 전" in shown and "가린  뒤" in shown
+    assert "강민준님 카톡방 임시 관리" in shown       # 전
+    assert "[팀원]님 카톡방 임시 관리" in shown       # 후
+
+
+def test_가리기_전_글이_이미_있으면_가린_판을_또_안_붙인다(
+        monkeypatch, db, users, tmp_path, capsys):
+    """다른 임포터가 먼저 **덮어쓴** 판이 있는 경우.
+
+    가린 판을 한 벌 더 붙이면 같은 말이 두 번 서고, 먼저 들어온 판에는 이름이
+    그대로 남아 있어 가린 뜻도 안 산다. **덮지는 않되 몇 줄인지는 알린다.**
+    """
+    raw = "강민준님 카톡방 임시 관리"
+    row = contact(db, users["u1"].id, "김샘플", "샘플투자", sourcing_note=raw)
+    xlsx = book(tmp_path, [sheet_row("김샘플", "샘플투자", etc=raw)])
+    apply(monkeypatch, xlsx, tmp_path)
+
+    assert refresh(db, row).sourcing_note == raw
+    assert "이미 그 칸에 들어 있는" in capsys.readouterr().out
+
+
+def test_가린_뒤에도_두_번_돌리면_안_늘어난다(monkeypatch, db, users, tmp_path):
+    """**멱등.** 가리기가 끼어도 두 번째 실행이 한 벌을 더 붙이면 안 된다."""
+    row = contact(db, users["u1"].id, "김샘플", "샘플투자")
+    xlsx = book(tmp_path, [sheet_row("김샘플", "샘플투자",
+                                     etc="강민준님 카톡방 임시 관리",
+                                     talk="오후 5:15 민준 확인했습니다")])
+    apply(monkeypatch, xlsx, tmp_path, "one.json")
+    once = (refresh(db, row).sourcing_note, refresh(db, row).memo)
+    apply(monkeypatch, xlsx, tmp_path, "two.json")
+    assert (refresh(db, row).sourcing_note, refresh(db, row).memo) == once
+
+
+# ── 9. 그룹 칸 정리가 남긴 글과 같은 칸에 선다 ─────────────────────────────
+
+def test_그룹_칸_정리가_memo_에_옮겨_둔_글과_부딪히지_않는다(
+        monkeypatch, db, users, tmp_path):
+    """**운영에서 이미 돌아간 정리다.** `clean_group_name` 이 그룹 칸의 문장을
+    `[그룹 칸에서 옮김]` 표시와 함께 `memo` 뒤로 옮겨 두었다.
+
+    그 뒤에 이 스크립트가 같은 칸에 붙는다 — 표시 두 종류가 한 칸에 선다.
+    앞의 글이 **한 글자도 안 변해야** 하고, 순서도 지켜져야 한다.
+    """
+    from app.services import group_name, pref_notes
+
+    moved = f"{group_name.MOVED_MARK} Seed~Pre A 30억 규모 위주"
+    row = contact(db, users["u1"].id, "김샘플", "샘플투자", memo=moved)
+    xlsx = book(tmp_path, [sheet_row("김샘플", "샘플투자",
+                                     talk="바이오만 보신다고 하심")])
+    apply(monkeypatch, xlsx, tmp_path)
+
+    got = refresh(db, row).memo
+    lines = got.splitlines()
+    assert lines[0] == moved                       # 앞의 글은 그대로
+    assert lines[-1].startswith(pref_notes.MARK_TALK)
+    assert group_name.MOVED_MARK in got and pref_notes.MARK_TALK in got
+
+
+def test_그룹_칸_정리가_옮긴_말과_같은_말이면_한_번만_선다(
+        monkeypatch, db, users, tmp_path):
+    """두 도구가 **같은 말**을 옮기는 경우. 겹침 판정을 같은 자로 하므로
+    (`group_name.squash`) 뒤에 오는 쪽이 알아보고 안 붙인다.
+    """
+    from app.services import group_name
+
+    same = "초기보다 성장단계 위주로 검토"
+    row = contact(db, users["u1"].id, "김샘플", "샘플투자",
+                  memo=f"{group_name.MOVED_MARK} {same}")
+    xlsx = book(tmp_path, [sheet_row("김샘플", "샘플투자", talk=same)])
+    apply(monkeypatch, xlsx, tmp_path)
+
+    assert refresh(db, row).memo.count(same) == 1
+
+
+def test_그룹_칸_정리가_이_스크립트가_붙인_글을_되밟지_않는다(db, users):
+    """반대 방향도 본다 — 이 스크립트가 먼저 붙은 `memo` 에 `clean_group_name`
+    이 나중에 도는 경우. 저쪽도 **이미 있는 말은 안 붙인다.**
+    """
+    from app.services import group_name, pref_notes
+
+    memo = f"{pref_notes.MARK_TALK} 바이오만 보신다고 하심"
+    first = group_name.decide("바이오만 보신다고 하심", memo=memo)
+    assert first.memo is None or first.moved == ""

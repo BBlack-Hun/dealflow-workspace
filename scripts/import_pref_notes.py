@@ -32,6 +32,21 @@
 같은 이유로 미리보기는 **id 와 값의 모양(길이)** 만 찍는다. 값 자체는
 `--show-values` 를 따로 줬을 때만 나온다(기본은 끔).
 
+## 옮기기 전에 **우리 쪽 사람 이름을 가린다**
+
+`기타` 는 원래 살림 칸이라 팀원 이름이 그대로 적혀 있다(`○○○님 카톡방 임시
+관리`). 시트에만 있을 때는 아무 일도 아니었는데 `memo` 로 옮기면 `llm_brief` 가
+그 글을 읽어 내보낸다 — 저쪽이 지우는 사람 이름은 **그 줄 자신의 것**뿐이다.
+
+이름은 앱에서 얻는다(`pref_notes.NAME_SOURCES` — 계정 · 명단 담당 · 담당자 칸).
+**지우지 않고 가린다**(`[팀원]`) — 줄째 안 옮기면 쓸모 있는 딜소싱 경로까지
+같이 잃는다. 가리는 일은 `pref_notes.decide` 안에서 **한 번만** 일어나므로
+미리보기에서 본 글과 실제로 들어가는 글이 같다.
+
+**앱이 모르는 이름은 못 가린다.** 계정도 담당 표시도 없는 팀원이 그렇다.
+미리보기가 마지막에 이 사실을 찍는다 — 안 적으면 "자동으로 다 걸러진다" 고
+믿게 된다.
+
 ## 애매한 줄은 **건드리지 않는다**
 
 시트 한 줄이 앱의 **여러 줄**에 맞으면 어느 쪽이 그 사람인지 여기서 못 가린다.
@@ -75,8 +90,12 @@ LABELS = {
     "add": "붙임",
     "same": "이미 있음",
     "shell": "껍데기",
+    "blanked": "가리니 빔",
     "empty": "빈 칸",
 }
+
+# ②·③에 펴는 차례. `pref_notes` 가 돌려주는 값을 그대로 열쇠로 쓴다.
+ACTIONS = ("add", "same", "shell", "blanked", "empty")
 
 # 시트 줄을 앱 줄에 못 대는 두 경우. **세기만 한다.**
 SKIP_MANY = "여러 줄에 맞음"
@@ -197,6 +216,26 @@ def match_index(con: sqlite3.Connection) -> dict:
     return index
 
 
+def read_team_names(con: sqlite3.Connection) -> tuple:
+    """앱이 아는 **팀원 이름**. 어느 표의 어느 칸인지는 `NAME_SOURCES` 한 곳에.
+
+    없는 표는 건너뛴다 — 이 스크립트는 마이그레이션이 덜 돈 DB 에도 겨눌 수
+    있고, 그때 이름 목록이 비는 것은 맞지만 멈추는 것은 맞지 않다(가릴 것이
+    없다는 뜻이지 옮길 것이 없다는 뜻은 아니다).
+    """
+    from app.services import pref_notes
+
+    values = []
+    for table, column in pref_notes.NAME_SOURCES:
+        try:
+            values += [row[0] for row in con.execute(
+                f"SELECT DISTINCT {column} FROM {table} "
+                f"WHERE {column} IS NOT NULL AND TRIM({column}) != ''")]
+        except sqlite3.OperationalError:
+            continue
+    return pref_notes.team_names(values)
+
+
 def current_values(con: sqlite3.Connection) -> dict:
     """`id` → `{칸: 지금 값}`. 손대는 칸만 읽는다."""
     from app.services import pref_notes
@@ -220,6 +259,10 @@ def plan(con: sqlite3.Connection, sheet: list) -> tuple:
 
     index = match_index(con)
     now = current_values(con)
+    # 그물은 **한 번만** 짓는다 — 칸마다 다시 지으면 줄 수만큼 정규식을
+    # 컴파일한다(`llm_brief._org_pattern` 이 같은 이유로 한 번만 짓는다).
+    names = read_team_names(con)
+    pattern = pref_notes.team_pattern(names)
     counts: Counter = Counter()
     by_id: dict = {}
     order: list = []
@@ -242,22 +285,36 @@ def plan(con: sqlite3.Connection, sheet: list) -> tuple:
         if row_id not in by_id:
             before = {f: now[row_id][f] for f in pref_notes.FIELDS}
             by_id[row_id] = {"actions": {}, "before": before,
-                             "after": dict(before)}
+                             "after": dict(before), "raw": {}, "safe": {}}
             order.append(row_id)
         entry = by_id[row_id]
         for source in pref_notes.SOURCES:
             decision = pref_notes.decide(texts.get(source.label),
                                          entry["after"][source.field],
-                                         source.mark)
+                                         source.mark, pattern)
             counts[f"{source.label}:{decision.action}"] += 1
             entry["actions"][source.label] = decision.action
+            if decision.masked:
+                counts[f"{source.label}:가린 자리"] += decision.masked
+                counts[f"{source.label}:가린 줄"] += 1
+            if decision.stale:
+                counts[f"{source.label}:묵은 판"] += 1
+            # 가리기 전 글도 들고 있는다 — `--show-values` 가 **가리기 전/후**를
+            # 나란히 놓는 자리다. 사람이 확인할 유일한 길이다.
+            entry["raw"][source.label] = texts.get(source.label) or ""
+            entry["safe"][source.label] = decision.text
             if decision.changes:
                 entry["after"][source.field] = decision.value
 
     rows = [(row_id, by_id[row_id]["actions"], by_id[row_id]["before"],
-             by_id[row_id]["after"]) for row_id in order]
+             by_id[row_id]["after"], by_id[row_id]["raw"],
+             by_id[row_id]["safe"]) for row_id in order]
     counts["맞은 앱 줄"] = len(rows)
     counts["바뀌는 줄"] = sum(1 for r in rows if r[2] != r[3])
+    counts["가린 줄"] = sum(
+        1 for r in rows if any(r[4].get(s.label, "") != r[5].get(s.label, "")
+                               for s in pref_notes.SOURCES))
+    counts["아는 이름"] = len(names)
     return rows, counts
 
 
@@ -286,46 +343,95 @@ def print_summary(sheet: list, counts: Counter) -> None:
 
     print("② 칸마다 몇 줄을 가져오나 (맞은 줄 안에서)")
     print("   " + pad("시트 칸", 16) + pad("→ 앱 칸", 16)
-          + "".join(pad(LABELS[a], 11, right=True)
-                    for a in ("add", "same", "shell", "empty")))
+          + "".join(pad(LABELS[a], 11, right=True) for a in ACTIONS))
     for source in pref_notes.SOURCES:
         print("   " + pad(source.label, 16) + pad(f"→ {source.field}", 16)
               + "".join(pad(str(counts[f"{source.label}:{a}"]), 11, right=True)
-                        for a in ("add", "same", "shell", "empty")))
+                        for a in ACTIONS))
     print(f"   {pad('─ 실제로 바뀌는 줄', 32)}{counts['바뀌는 줄']:6}")
+    print()
+
+    print(f"③ 우리 쪽 사람 이름 가리기 — 아는 이름 {counts['아는 이름']}개"
+          f" (`{'` · `'.join(f'{t}.{c}' for t, c in pref_notes.NAME_SOURCES)}`)")
+    print("   " + pad("시트 칸", 16) + pad("가린 줄", 10, right=True)
+          + pad("가린 자리", 12, right=True)
+          + pad("가리니 남는 말이 없어 못 옮긴 줄", 36, right=True))
+    for source in pref_notes.SOURCES:
+        print("   " + pad(source.label, 16)
+              + pad(str(counts[f"{source.label}:가린 줄"]), 10, right=True)
+              + pad(str(counts[f"{source.label}:가린 자리"]), 12, right=True)
+              + pad(str(counts[f"{source.label}:blanked"]), 36, right=True))
+    stale = sum(counts[f"{s.label}:묵은 판"] for s in pref_notes.SOURCES)
+    if stale:
+        # **이 도구가 못 고치는 줄이다.** 덮지 않는 것이 규칙이라 여기서
+        # 손대지 않는다. 그래도 몇 줄인지는 보여야 사람이 손볼 수 있다.
+        print(f"   ⚠ 가리기 전 글이 **이미 그 칸에 들어 있는** 줄 {stale}개 —"
+              " 다른 임포터가 먼저 덮어쓴 판이다.")
+        print("      이름이 가려지지 않은 채로 남아 있지만 **여기서 덮지 않는다.**"
+              " 앱에서 고치거나 따로 정리해야 한다.")
+    # **못 거르는 것을 밝힌다.** 안 적으면 "자동으로 다 걸러진다" 고 믿게 된다.
+    print("   ※ 앱이 아는 이름만 가린다 — 계정도 담당 표시도 없는 팀원 이름은")
+    print("      **못 거른다.** 성을 뗀 이름은 호칭·직함이 붙었거나 대화 로그의")
+    print("      발화자 자리일 때만 가린다. 투자사 쪽 사람 이름은 안 가린다")
+    print("      (그 줄 자신의 이름은 `llm_brief` 가 내보낼 때 지운다).")
+    print("      `--show-values` 로 가리기 전/후를 견줘 보아라.")
     print()
 
 
 def print_rows(rows: list, limit: int, show_values: bool) -> None:
-    """바뀌는 줄만 편다. **값은 안 찍는다** — `--show-values` 일 때만."""
+    """바뀌는 줄만 편다. **값은 안 찍는다** — `--show-values` 일 때만.
+
+    `--show-values` 는 **가리기 전/후를 나란히** 놓는다. 가린 것이 맞는지(그리고
+    멀쩡한 말이 안 뭉개졌는지) 사람이 확인할 유일한 길이라, 한쪽만 찍으면 볼
+    이유가 없는 출력이 된다.
+    """
     from app.services import pref_notes
 
     changing = [r for r in rows if r[2] != r[3]]
-    print(f"③ 바뀌는 줄 {len(changing)}개"
+    print(f"④ 바뀌는 줄 {len(changing)}개"
           + ("" if show_values else " — 값은 모양(길이)으로만 찍는다"
                                    " (`--show-values` 로 값을 본다)"))
-    print("   " + pad("id", 7, right=True) + "  "
-          + "".join(pad(f"{s.label} → {s.field}", 34) for s in pref_notes.SOURCES))
-    for row_id, actions, before, after in changing[:limit or None]:
+    if not show_values:
+        print("   " + pad("id", 7, right=True) + "  "
+              + "".join(pad(f"{s.label} → {s.field}", 34)
+                        for s in pref_notes.SOURCES))
+    for row_id, actions, before, after, raw, safe in changing[:limit or None]:
+        if show_values:
+            _print_values(row_id, actions, before, after, raw, safe)
+            continue
         drawn = []
         for source in pref_notes.SOURCES:
             action = actions.get(source.label, "empty")
             was, now = before[source.field], after[source.field]
+            hid = raw.get(source.label, "") != safe.get(source.label, "")
             if action != "add":
-                drawn.append(pad(LABELS[action], 34))
-            elif show_values:
-                # **붙인 글만** 보여 준다. 앞의 글은 안 건드렸으니 다시 찍을
-                # 것이 없고, 표시(`mark`)는 줄마다 같아서 자리만 먹는다.
-                added = now[len(was or ""):].lstrip("\n")
-                if added.startswith(source.mark):
-                    added = added[len(source.mark):].lstrip()
-                drawn.append(pad(one_line(added, 32), 34))
+                drawn.append(pad(LABELS[action] + (" ·가림" if hid else ""), 34))
             else:
                 drawn.append(pad(f"{shape(was)} → {shape(now)} "
-                                 f"(+{len(now) - len(was or '')}자)", 34))
+                                 f"(+{len(now) - len(was or '')}자)"
+                                 + (" ·가림" if hid else ""), 34))
         print("   " + pad(str(row_id), 7, right=True) + "  " + "".join(drawn))
     if limit and len(changing) > limit:
         print(f"   … {len(changing) - limit}줄 더 (`--limit 0` 으로 전부 편다)")
+    print()
+
+
+def _print_values(row_id, actions, before, after, raw, safe) -> None:
+    """`--show-values` 일 때 한 줄을 편다 — **가리기 전 / 뒤**를 위아래로."""
+    from app.services import pref_notes
+
+    for source in pref_notes.SOURCES:
+        text = raw.get(source.label, "")
+        if not text:
+            continue
+        hidden = safe.get(source.label, "")
+        print(f"   id {row_id} · {source.label} → {source.field}"
+              f"  [{LABELS[actions.get(source.label, 'empty')]}]")
+        print("      가리기 전: " + one_line(text, 78))
+        if hidden and hidden != text:
+            print("      가린  뒤: " + one_line(hidden, 78))
+        elif hidden:
+            print("      가린  뒤: (가릴 이름 없음 — 그대로)")
     print()
 
 
@@ -337,7 +443,7 @@ def apply_plan(con: sqlite3.Connection, rows: list) -> int:
 
     sets = ", ".join(f"{f} = ?" for f in pref_notes.FIELDS)
     changed = 0
-    for row_id, _actions, before, after in rows:
+    for row_id, _actions, before, after, _raw, _safe in rows:
         if before == after:
             continue
         con.execute(f"UPDATE {TABLE} SET {sets} WHERE id = ?",
@@ -351,7 +457,8 @@ def save_baseline(path: Path, rows: list) -> int:
     """되돌리기 파일. **바뀌는 줄**의 `전`·`후` 를 그대로 적는다."""
     data = [{"id": row_id, "actions": actions,
              "before": before, "after": after}
-            for row_id, actions, before, after in rows if before != after]
+            for row_id, actions, before, after, _raw, _safe in rows
+            if before != after]
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2),
                     encoding="utf-8")
     return len(data)
@@ -386,7 +493,7 @@ def check_baseline(con: sqlite3.Connection, path: Path) -> int:
             now[row[0]] = dict(zip(pref_notes.FIELDS, row[1:]))
 
     bad = [item["id"] for item in data if now.get(item["id"]) != item["after"]]
-    print(f"④ 기준과 맞추기 — 떠 둔 {len(data)}줄")
+    print(f"⑤ 기준과 맞추기 — 떠 둔 {len(data)}줄")
     print(f"   계획대로 {len(data) - len(bad)}줄 · 어긋남 {len(bad)}줄")
     if bad:
         print(f"   어긋난 id: {', '.join(str(i) for i in bad[:20])}"
@@ -425,7 +532,7 @@ def main() -> int:
     ap.add_argument("--show-values", action="store_true",
                     help="값 자체를 찍는다. 기본은 끔 — 실명이 섞여 있다")
     ap.add_argument("--limit", type=int, default=30,
-                    help="③에 몇 줄까지 펼까 (0 = 전부)")
+                    help="④에 몇 줄까지 펼까 (0 = 전부)")
     args = ap.parse_args()
 
     path = Path(args.db) if args.db else default_db()
