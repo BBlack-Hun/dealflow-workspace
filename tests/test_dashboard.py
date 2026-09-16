@@ -802,6 +802,22 @@ def _mine_with_sheet(db, users, name):
     return db.query(VcContact).filter_by(name=name).first()
 
 
+def test_monthly_reactions_show_this_month_and_last_month_only(db, users):
+    """기본으로 보이는 달은 **이 달과 지난 달, 둘**이다.
+
+    사용자가 정한 수다. 넉 달을 세우면 "이번 달이 지난달보다 나은가" 라는
+    견줌이 넷 중 하나로 묻힌다. 화면의 `최근 N개월` 글자도 이 목록의 길이를
+    그대로 읽으므로, 여기만 고치면 글자도 따라간다.
+    """
+    from app.services.dashboard import REACTION_MONTHS, monthly_reactions
+
+    assert REACTION_MONTHS == 2
+    contact = _mine_with_sheet(db, users, "두달만")
+    keys = [m["key"] for m in
+            monthly_reactions(db, [contact.id], today=date(2026, 9, 16))]
+    assert keys == ["2026-09", "2026-08"], keys
+
+
 def test_monthly_reactions_split_the_same_numbers_by_month(db, users):
     """같은 투자사가 두 달에 걸쳐 요청했으면 **두 달 모두 1** 이고,
     누적은 1 이다 — 건수가 아니라 투자사를 센다."""
@@ -822,8 +838,11 @@ def test_monthly_reactions_split_the_same_numbers_by_month(db, users):
     ])
     db.commit()
 
+    # `count` 를 직접 준다 — 이 검사가 보는 것은 **달로 가르는 규칙**이지
+    # 화면에 몇 달을 세우는가가 아니다. 기본값(`REACTION_MONTHS`)에 매달면
+    # 보이는 달 수를 바꿀 때마다 이 검사가 엉뚱하게 깨진다.
     rows = {m["key"]: m for m in
-            monthly_reactions(db, [contact.id], today=date(2026, 9, 16))}
+            monthly_reactions(db, [contact.id], today=date(2026, 9, 16), count=3)}
     assert rows["2026-09"]["ir_contacts"] == 1
     assert rows["2026-08"]["ir_contacts"] == 1
     assert rows["2026-07"]["ir_contacts"] == 0
@@ -846,7 +865,7 @@ def test_monthly_reactions_read_the_sheet_month_when_the_date_is_blank(db, users
     db.commit()
 
     rows = {m["key"]: m for m in
-            monthly_reactions(db, [contact.id], today=date(2026, 9, 16))}
+            monthly_reactions(db, [contact.id], today=date(2026, 9, 16), count=3)}
     assert rows["2026-07"]["ir_contacts"] == 1
     assert rows["2026-08"]["ir_contacts"] == 0
 
