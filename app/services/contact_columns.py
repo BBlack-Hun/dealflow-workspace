@@ -672,7 +672,7 @@ INVESTOR_MONTHLY_LAYOUT = Layout(
         # 그래서 이 저장소에서 **처음으로 머리글을 시트와 다르게 적는다.**
         # 이름이 시키는 대로 적은 것이 어긋남의 원인이었으므로, 이름을 그대로
         # 두면 다음 업로드에 같은 문장이 또 들어온다. 값이 갈 자리는 이미 다
-        # 있다(`선호 투자분야`·`라운드 사이즈`·`단계 태그`).
+        # 있다(`선호 투자분야`·`라운드 사이즈`·`선호 투자단계`).
         #
         # `pick` 이라 머리글에 필터가 저절로 붙는다(`Column.filterable`).
         # 그게 맞다 — 그룹은 골라서 거르는 값이고, 실제로 딜 발송이 이 값으로
@@ -706,7 +706,11 @@ INVESTOR_MONTHLY_LAYOUT = Layout(
         Column("전자 메일 주소", "email", 0, in_table=False, kind="email"),
         Column("부서", "department", 0, in_table=False),
         Column("직함", "title", 0, in_table=False),
-        Column("관심도 (월말기준)", "interest_level", 0, in_table=False),
+        # `(월말기준)` 은 **앱이 지키지 않는 약속**이라 이름에서 뗐다 — 어느
+        # 달 기준인지 적는 칸이 없고, 달이 바뀔 때 비우거나 달 이름을 붙이는
+        # 코드도 없다. 투자사 명함 배치의 같은 칸도 같이 뗐다(`contacts.html`
+        # 의 그 머리글 주석). 저장 자리는 `interest_level` 그대로다.
+        Column("관심도", "interest_level", 0, in_table=False),
         Column("카톡방 참여여부", "kakao_joined", 0, in_table=False),
         Column("딜소싱 참여 투자사", "sourcing_note", 0, in_table=False),
         Column("선호 투자분야", "sectors", 0, in_table=False),
