@@ -550,3 +550,104 @@ def test_훑기가_진짜로_잡는지(monkeypatch):
         test_칸이_셋_이상인_줄은_좁은_폭에서_다시_짠다()
     with pytest.raises(AssertionError):
         test_리마인드_줄은_폰에서_한_줄로_선다()
+
+
+# ── 8. 폰에만 없던 것 ───────────────────────────────────────────────────────
+#
+# 여기 셋은 전부 **넓은 화면에서는 되는데 폰에서만 안 되던 것**이다. 숨긴 것도
+# 잘린 것도 아니라서 위 일곱 절의 훑기에는 안 걸렸다 — 문서는 390px 안에 얌전히
+# 들어가 있었고, `display:none` 도 하나(`.ol-head`, 이유가 코드 옆에 있다)뿐
+# 이었다. 1440×900 과 390×844 두 폭에서 같은 화면을 열어 **재서** 나온 것이다.
+
+def _phone_rule(selector_part: str):
+    """폰 규칙에서 `selector_part` 를 담은 것들을 **전부** 모아 준다.
+
+    한 자리를 규칙 둘로 적을 때가 있다(여백은 칸에서 떼고 크기는 링크에
+    준다). 첫 줄만 보면 그중 하나만 읽고 "없다" 고 말한다.
+    """
+    hit = [(selector, body) for selector, body in _rules(_block(_css(), PHONE))
+           if selector_part in selector]
+    if not hit:
+        return None, None
+    return " , ".join(s for s, _ in hit), " ".join(b for _, b in hit)
+
+
+def test_눕힌_줄은_지금_있는_자리를_보여_준다():
+    """좁은 폭에서 메뉴·명단 탭은 가로로 눕는데, 눕힌 줄은 늘 맨 왼쪽에서 시작했다.
+
+    390px 에서 잰 활성 메뉴의 자리(줄의 보이는 폭은 390px):
+
+        주간 업무 84–177 · 딜 제안 관리 181–265 · 투자사 관리 현황 269–376 은
+        보이지만, 스타트업 380–447 · IR 기업 현황 451–535 · 딜 진행 관리
+        602–687 · 투자컨설턴트 779–868 · 업무 보고 872–942 · 팀 현황 946–1005
+        은 **줄 밖**이었다 — 열 화면 중 여섯.
+
+    1440px 에서는 메뉴가 세로라 열 화면 모두 보인다. 폰에만 없던 것이다.
+    """
+    base = (TEMPLATES / "base.html").read_text(encoding="utf-8")
+    assert "js/menu_scroll.js" in base, (
+        "눕힌 줄을 끌어오는 부품이 base 에 안 실렸다 — 화면마다 붙이면 새 화면에서 "
+        "빠뜨린다(`table_fit.js` 와 같은 이유로 여기 둔다)")
+
+    # 주석은 걷어낸다 — **왜 안 쓰는지**를 적어 둔 글이 코드로 세어진다.
+    js = re.sub(r"//[^\n]*", "",
+                pathlib.Path("app/static/js/menu_scroll.js").read_text(encoding="utf-8"))
+    # **줄만 민다.** `scrollIntoView` 는 조상까지 밀어서 페이지가 세로로 튄다 —
+    # 화면을 열자마자 본문이 내려가 있으면 무엇이 움직였는지 알 수가 없다.
+    assert "scrollIntoView" not in js, \
+        "`scrollIntoView` 는 조상까지 민다 — 줄의 `scrollLeft` 만 건드려야 한다"
+    assert "scrollLeft" in js, "줄을 미는 처리가 없다"
+    # 화면 크기 경계를 JS 에 다시 적지 않는다(`table_fit.js` 와 같은 약속).
+    assert "scrollWidth" in js and "clientWidth" in js, \
+        "가로로 밀리는 줄인지 재지 않고 무조건 손댄다 — 넓은 화면에서도 돈다"
+    assert not re.search(r"max-width|innerWidth\s*[<>]|matchMedia", js), \
+        "폭 경계는 CSS 한 곳이다 — JS 에 또 적으면 한쪽만 고쳐진다"
+
+
+def test_칸_편집창의_값_칩은_손가락_크기다():
+    """폰에서 **한 칸을 고치는 길**이 이 칩을 누르는 것이다 — 390px 에서 24px 이었다.
+
+    표 밀도를 지키는 되돌리기(`.cell-pop button { min-height: 0 }`)에 같이
+    끌려 들어가 있었다. 그 되돌리기의 이유는 **표 줄 높이와 머리글 두 줄
+    규칙**인데, 이 칩은 표 안이 아니라 칸 위에 뜬 창 안이라 둘 중 어느 것도
+    걸리지 않는다(그 창은 폰에서 이미 화면 폭을 다 쓴다).
+    """
+    selector, body = _phone_rule(".cell-pop-choice")
+    assert selector, f"{PHONE} 에 `.cell-pop-choice` 규칙이 없다"
+    assert re.search(r"min-height:\s*44px", body), \
+        f"칸 편집창의 값 칩이 눌릴 크기가 아니다: {selector} {{{body.strip()}}}"
+
+
+def test_달별_반응의_달_이름은_눌린다():
+    """그 달의 업무 보고로 가는 **유일한 길**인데 390px 에서 20×15 였다.
+
+    `th a { min-height: 0 }` 은 여든 줄을 훑는 표의 밀도를 지키려는 것이다.
+    「달별 반응」은 네 줄짜리 요약표라(`dashboard.REACTION_ROWS`) 지킬 밀도가
+    없다 — `.grid-table` 도 아니라서 머리글 모양 약속과도 상관이 없다.
+    """
+    selector, body = _phone_rule(".month-react thead")
+    assert selector, f"{PHONE} 에 「달별 반응」 머리글 링크 규칙이 없다"
+    assert re.search(r"min-height:\s*44px", body), \
+        f"달 이름이 눌릴 크기가 아니다: {selector} {{{body.strip()}}}"
+    # 세로만 키우면 20px 짜리 글자는 그대로다 — 칸을 통째로 눌러야 한다.
+    assert re.search(r"display:\s*flex", body), \
+        "링크가 칸을 다 쓰지 않는다 — 세로만 커지고 누를 가로 폭은 20px 그대로다"
+
+
+def test_되살린_둘이_표_밀도와_머리글_모양을_안_건드린다():
+    """되돌리기를 다시 뒤집는 일이라, **어디까지 뒤집었는지**를 못 박는다.
+
+    표 줄(`td`/`th` 안)과 머리글 필터 단추는 그대로여야 한다 — 여러 번 고쳐
+    확정한 자리다(6절·5절).
+    """
+    phone = _block(_css(), PHONE)
+    big = [selector for selector, body in _rules(phone)
+           if re.search(r"min-height:\s*44px", body)]
+    for selector in big:
+        assert ".filter-btn" not in selector, \
+            f"머리글 필터 단추를 키우면 컬럼 이름 두 줄 규칙이 깨진다: {selector}"
+    # 새로 키운 둘은 **표 칸 안의 것을 통째로** 되살리면 안 된다.
+    for selector in big:
+        for bad in ("td button", "th button", "td a", "td select", "td input"):
+            assert bad not in selector, \
+                f"표 칸 안까지 44px 로 되살리면 한 화면에 보이는 줄이 반으로 준다: {selector}"
