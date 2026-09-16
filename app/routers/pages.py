@@ -15,9 +15,10 @@ from ..db import get_db
 from ..deps import get_current_user, may_manage_team_contacts, templates
 from ..models import IrCompany, SendJob, User
 from ..services import (cadence, contact_columns, deal_history, deal_queue,
-                        deal_stage, email_domains, ir_attach, llm_brief, mailer,
-                        manual_send, ref_panel, scheduled_send, sheet_import,
-                        sheet_owner, sourcing_link, startup_send)
+                        deal_stage, email_domains, group_name, ir_attach,
+                        llm_brief, mailer, manual_send, ref_panel,
+                        scheduled_send, sheet_import, sheet_owner,
+                        sourcing_link, startup_send)
 from ..ui import MENU, base_ctx as _base_ctx
 from .companies import BLOCKED_CONTRACT
 from .companies import blocked_reason as company_blocked_reason
@@ -551,6 +552,25 @@ def list_page(
             {"key": key, "label": label}
             for key, label in sheet_owner.STATUS_LABELS.items()
         ],
+        # `그룹` 칸에서 **고를 거리**. `연결 상태`·`상태` 와 같은 규칙이다 —
+        # 세는 곳의 목록을 그대로 넘기고 화면에는 글자를 안 적는다.
+        #
+        # 왜 필요했나: 이 화면의 표·수정창은 배치(`contact_columns.Layout`)를
+        # 안 지나고 `contacts.html` 에 손으로 적혀 있어서, 보기가 **둘 다 빠져
+        # 있었다.** 그래서 같은 칸인데 어디서 고치느냐에 따라 값이 갈렸다 —
+        # `A` 옆에 `A그룹`, `Series B 이상` 옆에 `시리즈B`. 갈린 값은 딜 제안
+        # 관리의 그룹 칩(`sheet_owner.group_rows`)과 그룹 발송 대상
+        # (`deal_queue.targets` → `sheet_owner.in_group`, 글자가 같아야 한다)에서
+        # **다른 그룹**이 된다 — 그룹을 넣었는데 그룹으로 안 잡히는 그 모습이다.
+        #
+        # 목록은 `고정 갈래 + 지금 이 화면이 쓰고 있는 값`이다
+        # (`group_name.options`). 사용자는 새 이름을 쓴다 — 이름이 늘 때마다
+        # 코드를 고쳐야 하면 어제 자기가 적은 말이 오늘 목록에 없다.
+        #
+        # 재료를 표가 아니라 `rows` 에서 잡는 이유는 **메일 도메인과 같다**(위):
+        # 배치에 따라 그룹 칸이 표에 안 서는 명단이 있어서, 표에서 모으면 그
+        # 명단에서 연 수정창만 보기가 비어 버린다.
+        "group_choices": group_name.options(r["group_name"] for r in rows),
     })
     return templates.TemplateResponse("contacts.html", ctx)
 

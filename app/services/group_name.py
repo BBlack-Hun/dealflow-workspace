@@ -8,7 +8,16 @@
 `stages`). 그래서 같은 말이 두 군데에 갈렸고, 그룹으로 고르려고 열면 목록에
 줄 수만큼 항목이 떴다.
 
-사용자가 정했다 — **그룹 칸은 A~F 만 담는다.**
+사용자가 정했다 — **그룹 칸은 정해 둔 갈래만 담는다. 문장은 안 담는다.**
+
+갈래는 두 줄기다. 처음에는 한 글자 여섯(`A`~`F`)뿐이었는데, 정리한 뒤로
+사용자가 **뜻이 있는 이름**을 함께 쓰기 시작했다(`특정분야` · `Pre IPO` ·
+`Series B 이상` … 50줄). 물었더니 "일부러 넣은 것이고 앞으로도 쓴다 — 이름으로도
+쓸 것 같다" 였다. 그래서 여기 적힌 것은 `A~F` 가 아니라 **`KNOWN`** 이다.
+
+**바뀌지 않은 것**: 문장은 여전히 안 들어온다. 열어 두면 `Seed~PreA 30억` ·
+`AI/바이오 선호` 같은 158줄이 그대로 돌아오고, 그룹으로 고르려고 열면 목록에
+줄 수만큼 항목이 뜬다 — 이 모듈이 생긴 이유가 그것이다.
 
 그 판정이 필요한 자리가 둘이다. 하나는 시트를 읽어 넣는 쪽
 (`services/sheet_import.apply_sheet_a`)이고, 다른 하나는 이미 들어가 있는 값을
@@ -19,6 +28,7 @@
 ## 무엇을 하는가
 
     A · b그룹 · a        → `A` · `B` · `A`          (`fix`)
+    `series b이상`        → `Series B 이상`          (`fix` — 이름도 제 글자로)
     `Seed~PreA 30억`     → round_size 에 이미 있다   (`drop` — 그냥 비운다)
     `AI/바이오 선호`      → sectors 에 이미 있다      (`drop`)
     여기에만 있는 문장    → memo 뒤에 옮겨 붙인다     (`move`)
@@ -39,21 +49,54 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Optional
+from typing import Iterable, Optional
 
-# 그룹은 이 여섯 가지다. 화면의 고르는 칸도 이 목록을 쓴다
-# (`contact_columns` 의 `Column("그룹", "group_name", …, choices=CHOICES)`) —
-# 거기에 글자를 따로 적어 두면 필터에 서는 보기와 여기 통과 규칙이 갈린다.
+# ── 그룹으로 **인정되는 값** ────────────────────────────────────────────────
+#
+# 처음에는 한 글자 여섯뿐이었다. 그런데 사용자가 그 뒤로 **뜻이 있는 이름**을
+# 함께 쓰기 시작했다(50줄). 물었더니 "일부러 넣은 것이고 앞으로도 쓴다 —
+# 이름으로도 쓸 것 같다" 였다. 그래서 갈래는 **두 줄기**다.
+#
+# 한 글자. 시트가 오래전부터 쓰던 꼴이고, `A그룹`·`a` 처럼 꼬리말·대소문자가
+# 갈려 들어온다 — `letter()` 가 그것을 한 글자로 읽는다.
 GROUPS = ("A", "B", "C", "D", "E", "F")
-CHOICES = ",".join(GROUPS)
+
+# 뜻이 있는 이름. **글자까지 사용자가 적어 둔 그대로**다(운영에서 세어 온 값) —
+# 앱이 줄여 부르거나 차례를 바꾸면 시트·문서와 나란히 놓고 대조할 수가 없다.
+# 차례는 **줄 수가 많은 것부터**다. 고르는 칸에서 자주 쓰는 말이 위에 서야
+# 여덟을 눈으로 훑지 않는다.
+NAMED = ("특정분야", "Pre IPO", "Series B 이상", "Series C 이상", "Seed",
+         "M&A", "Series A 이상", "TIPS")
+
+#: 이 칸이 **받아들이는 값 전부**. 임포트가 통과시키는 값이자 정리 스크립트가
+#: `그대로` 로 두는 값이다.
+KNOWN = GROUPS + NAMED
+
+#: 화면이 **고를 거리로 세우는 값**(`Column.choices` · `data-choices` ·
+#: `<datalist>`). **받아들이는 값에서 그대로 나온다** — 목록을 따로 적으면
+#: 화면에서 고른 값이 임포트에서는 없는 값이 되는 날이 온다.
+#:
+#: 다만 둘은 **같은 것이 아니다.** 여기 있는 것은 *고를 거리*일 뿐이고, 화면은
+#: 목록에 없는 말도 새로 적을 수 있다(`<datalist>` 는 `<input>` 을 묶지 않고,
+#: 표의 `pick` 창도 글자 칸이다). 사용자가 새 이름을 쓰면 **그 이름은 그때부터
+#: 화면의 보기에 함께 뜬다** — 보기는 `고정 목록 + 지금 그 화면이 쓰고 있는 값`
+#: 으로 만든다(`routers/pages.py` 의 `group_choices`, `inline_edit.js` 의
+#: `startPick` 이 표에서 하는 셈과 같다). 그래서 이름이 하나 는다고 코드를
+#: 고쳐야 하는 것은 아니다.
+#:
+#: 코드를 고쳐야 하는 자리는 **하나뿐이다** — 그 이름이 *시트로도* 들어오거나,
+#: 정리 스크립트가 그것을 문장으로 보지 않게 하려면 `NAMED` 에 적어야 한다.
+#: 그 둘은 "무엇이 그룹인가" 를 정하는 일이라 열어 둘 수 없다: 열면 예전에
+#: 158줄이 문장으로 들어왔던 자리가 그대로 돌아온다.
+CHOICES = ",".join(KNOWN)
 
 # 옮겨 붙인 글 앞에 서는 표시. 출처를 적어 두는 자리다.
 MOVED_MARK = "[그룹 칸에서 옮김]"
 
 # `decide()` 가 내놓는 판정.
 EMPTY = "empty"   # 빈 칸 — 아무 일도 하지 않는다
-KEEP = "keep"     # 이미 A~F 한 글자다
-FIX = "fix"       # `b그룹` · `a` → `B` · `A`
+KEEP = "keep"     # 이미 정해 둔 갈래다(한 글자 또는 이름)
+FIX = "fix"       # `b그룹` · `a` · `series b이상` → 제 글자로
 DROP = "drop"     # round_size 나 sectors 에 이미 있는 말 — 그냥 비운다
 MOVE = "move"     # 여기에만 있는 말 — memo 뒤로 옮기고 비운다
 
@@ -93,14 +136,79 @@ class Decision:
 
 
 def letter(value: Optional[str]) -> Optional[str]:
-    """`b그룹` → `B`. A~F 한 글자로 읽히지 않으면 `None`.
+    """`b그룹` → `B`. **한 글자 갈래**로 읽히지 않으면 `None`.
 
-    `A,B,C,D,E,F` 로 골라야 하는 칸이라, 한 글자로 맞지 않는 값은 **필터에서
-    통째로 빠진다** — 저장은 되는데 걸러지지 않는 값이 된다. 그래서 읽어낼 수
-    있는 것은 읽어내고, 못 읽는 것은 `None` 으로 분명히 가른다.
+    골라서 거르는 칸이라, 갈래 이름으로 맞지 않는 값은 **필터에서 따로 떨어져
+    나온다** — 저장은 되는데 같은 갈래로는 안 걸리는 값이 된다. 그래서 읽어낼
+    수 있는 것은 읽어내고, 못 읽는 것은 `None` 으로 분명히 가른다.
+
+    이름 갈래(`NAMED`)는 여기서 안 본다 — 대문자로 올리면 `Pre IPO` 가
+    `PRE IPO` 가 되어 적어 둔 글자와 달라진다. 둘을 함께 보는 자리는
+    `canonical()` 이다.
     """
     text = _GROUP_WORD.sub("", (value or "").strip()).strip().upper()
     return text if text in GROUPS else None
+
+
+def canonical(value: Optional[str]) -> Optional[str]:
+    """이 값이 **그룹으로 인정되는가** — 인정되면 정해 둔 글자 그대로 돌려준다.
+
+    받아들이는 값은 `KNOWN` 하나다. 한 글자는 `letter()` 가 읽고, 이름은
+    **모양을 지우고**(`squash` — 공백·`|`·`·`·`,`·`/` 를 지우고 소문자)
+    맞춘다. `series b이상` · `Series B 이상` 이 같은 값으로 모이게 하려는
+    것이고, 그 자는 `overlaps` 가 쓰는 자와 **같다** — 한 모듈 안에서 같은
+    말인지를 두 가지 자로 재면 한쪽만 고쳐지는 날이 온다.
+
+    돌려주는 것은 **적어 둔 글자**다(`NAMED` 의 그 꼴). 그래야 표에서 골라
+    넣은 값과 창에서 쳐 넣은 값이 한 글자도 다르지 않게 모인다 — 갈리면 딜
+    제안 관리의 그룹 칩과 그룹 발송에서 다른 그룹이 된다.
+    """
+    text = (value or "").strip()
+    if not text:
+        return None
+    one = letter(text)
+    if one is not None:
+        return one
+    key = squash(text)
+    for name in NAMED:
+        if squash(name) == key:
+            return name
+    return None
+
+
+def options(used: Iterable[Optional[str]] = ()) -> str:
+    """화면이 세울 **고를 거리** — `고정 목록 + 지금 쓰고 있는 값`.
+
+    `CHOICES` 를 그대로 쓰지 않는 이유는 하나다. 사용자가 **새 이름을 쓸 수
+    있다.** 그때마다 코드를 고쳐야 한다면, 어제 자기가 적은 말이 오늘 고를
+    목록에 없는 화면이 된다 — 그러면 또 빈 칸에 새로 치게 되고, 그 자리에서
+    `Series B 이상` 과 `시리즈B 이상` 이 갈린다.
+
+    표가 이미 같은 셈을 한다(`static/js/inline_edit.js` 의 `startPick` —
+    `data-choices` 를 먼저 세우고 그 뒤에 `knownValues`, 즉 다른 줄이 쓰고 있는
+    값을 보탠다). 수정창에는 훑을 표가 없으므로 **서버가 같은 셈을 해서 넘긴다**
+    — 그래야 표에서 고를 때와 창에서 적을 때 **같은 목록**을 본다.
+
+    **고정 목록이 먼저다.** 정해 둔 갈래가 위에 서야, 새로 적힌 비슷한 말이
+    목록 맨 위를 차지해 그것을 또 고르는 일이 없다.
+
+    쉼표가 든 값은 **뺀다.** 이 목록은 쉼표로 이어 붙여 화면으로 가고
+    (`data-choices` · `Column.choices`) 거기서 다시 쉼표로 갈린다 — 값 안의
+    쉼표가 한 값을 둘로 쪼갠다.
+
+    받아들이는 값(`KNOWN`)과 **같은 것이 아니다.** 여기 있는 것은 고를
+    거리일 뿐이고, 여기 없는 말도 화면에서는 그대로 새로 적힌다. 무엇이
+    그룹으로 인정되는가는 `decide()` 가 따로 가른다.
+    """
+    seen = {name: True for name in KNOWN}
+    extra = []
+    for value in used:
+        text = (value or "").strip()
+        if not text or "," in text or text in seen:
+            continue
+        seen[text] = True
+        extra.append(text)
+    return ",".join(list(KNOWN) + sorted(extra))
 
 
 def squash(value: Optional[str]) -> str:
@@ -146,7 +254,9 @@ def decide(value: Optional[str], round_size: Optional[str] = None,
     차례가 곧 규칙이다:
 
       ① 빈 칸은 손대지 않는다.
-      ② A~F 로 읽히면 그 한 글자로 둔다(`KEEP` · `FIX`).
+      ② 정해 둔 갈래로 읽히면 그 글자로 둔다(`KEEP` · `FIX`) — 한 글자든
+         이름이든 `canonical()` 한 곳이 가른다. **이것이 ③ 보다 앞이라**
+         `Seed` 가 `round_size` 의 `Seed~PreA 30억` 과 겹쳐 보여도 안 지워진다.
       ③ 그 말이 `round_size` 나 `sectors` 에 이미 있으면 **그냥 비운다**
          (`DROP`). memo 로 옮기면 같은 말이 세 군데가 된다.
       ④ 그 밖에는 **여기에만 있는 정보**다. 비우기 전에 memo 로 옮긴다(`MOVE`).
@@ -158,7 +268,7 @@ def decide(value: Optional[str], round_size: Optional[str] = None,
     if not text:
         return Decision(EMPTY)
 
-    found = letter(text)
+    found = canonical(text)
     if found is not None:
         return Decision(KEEP if text == found else FIX, group=found)
 
