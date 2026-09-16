@@ -142,6 +142,13 @@ class VcContact(TimestampMixin, Base):
     invited_status: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     # 명단 시트들에만 있는 칸들. 표기가 자유로워(O/X/△/문장) 원문을 그대로 둔다.
     interest_level: Mapped[Optional[str]] = mapped_column(String, nullable=True)   # 관심도(월말 기준)
+    # **이 줄이 카톡방에 들어와 있는가.** 여기서 하나 더 하는 일이 있다 —
+    # 이 값이 `connect_stage` 를 거쳐 **지금 보낼 수 있는가**를 정한다
+    # (`services/sheet_import.py` · `services/sheet_owner.can_send_to`).
+    #
+    # 같은 물음을 적는 자리가 셋이고, 값은 서로 오가지 않는다. 어디에 무엇이
+    # 있고 왜 아직 안 이었는지는 `ConsultingCompany.kakao_joined` 의 주석에
+    # **한 곳**으로 적혀 있다 — 설명을 세 벌 두면 한 벌이 낡는다.
     kakao_joined: Mapped[Optional[str]] = mapped_column(String, nullable=True)     # 카톡방 참여여부
     # 시트에 있는데 앱에 칸이 없어 통째로 버려지던 값들.
     # "명함 받은 날" 은 언제부터 아는 사이인지를 말해 준다 — 오래 알던 분께
@@ -1192,6 +1199,53 @@ class ConsultingCompany(TimestampMixin, Base):
     # 한 갈래만 본다.
     contract_done: Mapped[Optional[str]] = mapped_column(
         String, nullable=True)                                                 # 계약완료여부
+    # 이 기업과 **카톡방이 연결됐는가** — `O` / `X`. `관리 스타트업` 탭의
+    # `카톡 연결 여부` 다(`routers/consulting.py` 의 `STARTUP_COLUMNS`).
+    # **빈칸은 `아직 안 정함`이다** — 위 `contract_received` · `contract_done`
+    # 과 같다. 둘 중 하나로 채워 두면 앱이 아무도 확인한 적 없는 사실을
+    # 단정하는 것이 된다(0047 · 0048 · 0049 · 0065 · 0068 이 같은 이유로
+    # backfill 을 안 했다).
+    #
+    # **이름을 `VcContact.kakao_joined` 와 일부러 같게 두었다.** 묻는 사실이
+    # 같은 칸에는 같은 이름을 쓰는 것이 이 표의 방식이다 —
+    # `IrCompany.contract_received` 와 `ConsultingCompany.contract_received`
+    # 가 이미 그렇게 서 있다(다른 표의 다른 칸, 같은 이름, 같은 물음).
+    # 이름을 달리 지으면 같은 물음이라는 사실이 코드에서 사라져, 다음 사람이
+    # 둘을 견주어 볼 생각조차 못 한다.
+    #
+    # ## 같은 물음을 적는 자리가 **셋**이다 — 값은 서로 오가지 않는다
+    #
+    #   · `VcContact.kakao_joined` — **줄마다 하나**. `내 투자사` 화면의
+    #     `카톡방 참여여부` 이고 대시보드의 `카톡방 연결 상태` 가 이 값을
+    #     읽는다. **발송 가능 여부까지 이 칸이 정한다**
+    #     (`services/sheet_import.connect_stage` → `is_connected` →
+    #     `services/sheet_owner.py` 의 `can_send_to`).
+    #   · `VcContact.notes["<열id>"]` 의 월별 `N월 카톡 연결` — **달마다
+    #     하나**. `스타트업` 명단이 달마다 세우는 칸이다
+    #     (`services/contact_columns.py` 의 `STARTUP_LAYOUT` ·
+    #     `KAKAO_CHOICES`). 보기도 여덟 가지로 이 칸과 다르다.
+    #   · **이 칸** — `투자컨설턴트` 표의 컨설턴트 줄에만 산다.
+    #
+    # **왜 안 이었나.** `consulting_companies` 와 `vc_contacts` 사이에는
+    # 외래키가 없고(둘 다 `users` 만 가리킨다) 기업명으로 맞춰도 겹치지
+    # 않는다 — 어느 쪽도 이름에 유일성이 없고, `VcContact` 는 사람 줄이라
+    # 한 기업에 여러 줄이 실린다. 세는 방법과 근거는
+    # `IrCompany.contract_received` 의 주석에 한 벌로 적혀 있다(같은 세 표
+    # 이야기라 여기에 다시 적지 않는다). 이어 주는 것이 없는 채로 값을
+    # 끌어오면, 같은 이름의 다른 기업 줄에서 값이 넘어온다.
+    #
+    # **그래서 같은 기업이 스타트업 화면과 컨설턴트 화면에서 서로 다른
+    # 답을 보일 수 있다.** 사용자가 알고 정한 것이다 — 컨설턴트가 자기
+    # 표에서 보는 사실과 명단이 달마다 적는 사실이 애초에 다른 일이다.
+    # 한 화면만 보고 `카톡 연결이 된 곳이 몇 곳` 을 세면 안 된다.
+    #
+    # 주석은 낡는다. 셋이 여전히 서로 다른 자리라는 사실 쪽은 시험이 지킨다
+    # (`tests/test_consulting_kakao_joined.py`).
+    #
+    # **어떤 판정에도 안 쓴다.** 칩·KPI 는 `기업 관리` 한 갈래만 본다
+    # (`services/consulting_status.py`). 발송은 이 칸을 아예 모른다.
+    kakao_joined: Mapped[Optional[str]] = mapped_column(
+        String, nullable=True)                                                 # 카톡 연결 여부
     # 나누기 **전의 한 줄**. 지우지 않는다 — 나눈 결과가 틀렸을 때 여기서 다시
     # 나눌 수 있어야 하고, 원본 시트와 글자 그대로 대조할 수 있어야 한다.
     source_line: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
