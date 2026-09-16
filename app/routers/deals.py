@@ -248,6 +248,41 @@ def _compose_for_contact(
     )
 
 
+def _mail_subject(req, contact, companies: List[IrCompany]) -> str:
+    """메일 한 통의 제목 — **적은 제목 → 회차명 → "딜 소개"** 그대로다.
+
+    ## 비었을 때의 차례는 손대지 않는다
+
+    제목을 안 적으면 예전과 똑같이 회차명이 나가고, 회차명도 없으면
+    `"딜 소개"` 다. 화면의 제목 문구 고르개는 **칸을 채울 뿐**이라
+    (`deals.js` 의 `applySubject`), 골라도 서버에는 여느 제목과 똑같이
+    글자 하나로 들어온다 — 그래서 여기에 갈래가 늘지 않는다.
+
+    ## 적은 제목만 치환을 지난다
+
+    제목 문구는 문구 화면(`/templates` 의 `mail_subject`)에서 만드는데,
+    그 화면은 `{담당자명}`·`{직함}`·`{투자사}`·`{개수}` 를 쓸 수 있다고
+    적어 두고 있다. 제목만 그것을 안 지나면 **`{담당자명}` 이 글자 그대로
+    투자사 메일함에 꽂힌다** — 이 저장소가 이미 겪은 고장이라
+    (`services/ir_kakao.py` 의 같은 자리), 문구가 쓰는 그 손을 그대로 쓴다.
+    새 치환 자리는 만들지 않는다(`{회차}`·`{날짜}` 같은 것은 문구에도 없다).
+
+    회차명으로 떨어진 제목은 **치환을 안 지난다.** 회차명은 문구가 아니라
+    사람이 그 회차에 붙인 이름이고, 이미 그 이름 그대로 나가고 있는 메일이
+    있다 — 여기에 손질을 끼우면 그 제목이 달라진다.
+
+    `{개수}` 가 세는 수는 본문과 같아야 한다. 본문은 딜 소개일 때만 기업을
+    세고 후속 문구는 0 이다(`message_composer.compose_message` 의 `count`).
+    제목만 다른 수를 말하면 열어 보기 전에 이미 어긋난다.
+    """
+    typed = (req.subject or "").strip()
+    if not typed:
+        return req.title or "딜 소개"
+    count = 0 if req.mode in FOLLOW_UP_MODES else len(companies)
+    return mc.render_template(typed, _to_contact_view(contact),
+                              company_count=count)
+
+
 # 자료 전달이 짚는 번호(`2번 기업 …`)를 만들던 자리가 여기였다
 # (`deal_positions` · `build_company_list`). **`services/deal_numbers.py` 로
 # 옮겼다** — 번호를 정하는 곳과 되읽는 곳이 떨어져 있어서 서로 다른 번호를
@@ -876,7 +911,7 @@ def create_send_list(
             # 카톡방을 하나로 모으는 장치다. 대신 제목에 표시를 남긴다.
             target = (contact.email or "").strip()
             message = text
-            subject = (req.subject or "").strip() or (req.title or "딜 소개")
+            subject = _mail_subject(req, contact, companies)
             if config.TEST_ROOM:
                 subject = f"[테스트] {subject}"
         else:

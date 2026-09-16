@@ -436,6 +436,59 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
                        sourcing: "sourcing_intro" };
     fill("tpl-closing", byKind[kindByMode[mode]] || [],
          CLOSING_DEFAULT[mode] || "기본 안내문");
+    fillSubjects(byKind["mail_subject"] || []);
+  }
+
+  // ── 메일 제목 문구 ───────────────────────────────────────────────────────
+  //
+  // 위 `fill` 과 다른 손을 쓰는 까닭: 인사말·안내문은 **고른 번호를 그대로**
+  // 서버로 보내는데(`opening_template_id`), 제목은 **고르면 칸에 채운다.**
+  // 격주로 나가는 제목은 회차마다 한 마디가 달라서(“9월 3주차”), 고른 뒤
+  // 손볼 수 없으면 결국 또 처음부터 적게 된다. 채우고 나면 나갈 제목은
+  // `#mail-subject` 한 칸이라, 서버로 가는 길은 지금까지와 같다.
+  function fillSubjects(list) {
+    var sel = document.getElementById("mail-subject-tpl");
+    var wrap = document.getElementById("mail-subject-tpl-wrap");
+    var none = document.getElementById("mail-subject-none");
+    if (!sel) return;
+    // 고를 것이 없으면 빈 고르개를 세우지 않고 만들러 가는 길을 띄운다.
+    if (wrap) wrap.hidden = !list.length;
+    if (none) none.hidden = list.length > 0;
+
+    var keep = sel.value;
+    sel.innerHTML = "";
+    var base = document.createElement("option");
+    base.value = "";
+    base.textContent = "직접 입력";
+    sel.appendChild(base);
+    list.forEach(function (t) {
+      var o = document.createElement("option");
+      o.value = String(t.id);
+      // 이름이 비슷하면 이름만으로 구별이 안 된다 — 첫 줄을 함께 적는다
+      // (문구 화면의 `_snippet` 과 같은 뜻).
+      o.textContent = t.name + " — " + subjectLine(t.body).slice(0, 30);
+      sel.appendChild(o);
+    });
+    if (keep && sel.querySelector('option[value="' + keep + '"]')) sel.value = keep;
+    if (!sel.dataset.bound) {
+      sel.addEventListener("change", applySubject);
+      sel.dataset.bound = "1";
+    }
+  }
+
+  // 제목은 **한 줄**이다. 문구 칸은 여러 줄을 받으므로(textarea), 줄바꿈이
+  // 섞인 문구를 그대로 넣으면 메일 헤더에 못 실린다 — 한 줄로 편다.
+  function subjectLine(body) {
+    return String(body || "").replace(/\s+/g, " ").trim();
+  }
+
+  function applySubject() {
+    var sel = document.getElementById("mail-subject-tpl");
+    var box = document.getElementById("mail-subject");
+    if (!sel || !box || !sel.value) return;   // '직접 입력' 은 칸을 건드리지 않는다
+    var id = parseInt(sel.value, 10);
+    var hit = (templateCache || []).filter(function (t) { return t.id === id; })[0];
+    if (hit) box.value = subjectLine(hit.body);
   }
 
   function fill(selectId, list, defaultLabel) {
