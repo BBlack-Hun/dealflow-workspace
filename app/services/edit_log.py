@@ -155,6 +155,27 @@ def _attr(name: str) -> Callable[[Any], str]:
     return lambda row: str(getattr(row, name, "") or "")
 
 
+def _contact_label(row) -> str:
+    """담당자 줄 하나가 **무엇인가** — 이름, 비어 있으면 기업명.
+
+    `_attr("name")` 하나로는 모자란다. 명단마다 **줄의 주인공이 다르다** —
+    투자사 명단은 사람이지만 스타트업 명단은 기업이라, `성함` 이 비어 있는
+    줄이 흔하다(담당자를 아직 모르는 기업 · `contact_columns.STARTUP_LAYOUT`
+    의 `required`). 이름만 읽으면 그런 줄이 `vc_contacts 12` 로 남아, 무엇이
+    생기고 사라졌는지 로그를 봐도 알 수가 없다 — 로그를 여는 까닭이 바로
+    그것이라 여기가 비면 그 줄은 없는 것과 같다.
+
+    **배치를 묻지 않는다.** 이 자리는 flush 를 지나는 길목이라 명단 설정을
+    다시 조회하면 그 flush 가 또 돌고, 줄이 지워지는 판에서는 물어볼 명단도
+    이미 없다. 채워진 쪽을 쓰는 것으로 족하다.
+    """
+    for name in ("name", "firm"):
+        value = (getattr(row, name, "") or "").strip()
+        if value:
+            return value
+    return ""
+
+
 def _sequence_label(row) -> str:
     """리마인드 줄 하나가 **누구의 것인가** — 담당자 이름과 소속.
 
@@ -195,7 +216,7 @@ def _activity_label(row) -> str:
 WATCHED: Dict[str, Watch] = {
     # ── 주인이 있는 자료 ────────────────────────────────────────────────────
     "vc_contacts": Watch(
-        owner="user_id", href="/contacts", label=_attr("name"),
+        owner="user_id", href="/contacts", label=_contact_label,
         why="투자사 담당자 명단 — 이 표가 곧 발송 대상이다. 남이 고치면 오발송이 된다."),
     "sheet_owners": Watch(
         owner="user_id", href="/contacts", label=_attr("label"),
