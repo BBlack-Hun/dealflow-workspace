@@ -113,7 +113,8 @@ from sqlalchemy import select  # noqa: E402
 from app.db import SessionLocal  # noqa: E402
 from app.models import ContactColumn, SheetOwner, User, VcContact  # noqa: E402
 from app.services import contact_columns as cc  # noqa: E402
-from app.services import firm_type, sheet_import, sheet_owner  # noqa: E402
+from app.services import firm_type, invest_stage, sheet_import  # noqa: E402
+from app.services import sheet_owner  # noqa: E402
 from app.services import spreadsheet as sp  # noqa: E402
 from app.services.auth import normalize_phone  # noqa: E402
 from app.services.sourcing_link import MIN_DIGITS, digits  # noqa: E402
@@ -259,6 +260,12 @@ def _columns_of(header):
         # 쪼개면 근거 없는 값이 되고, 안 잡으면 아래 둘이 나눠 가져간다.
         ("group_name", lambda h: si.find_column(h, ["그룹"])),
         ("round_size", lambda h: si.find_column(h, ["라운드"])),
+        # `선호 투자단계` 를 `선호 투자분야` 보다 **먼저** 잡는다. 아래 줄의
+        # 토큰(`선호`+`투자분야`)이 단계 머리글에 걸리지는 않지만, 잡힌 자리는
+        # 다시 안 주는 이 목록에서 더 좁은 쪽이 앞서는 것이 규약이다.
+        # **아직 어느 시트에도 없는 칸이다** — 생기는 날 자동으로 들어온다.
+        ("stages", lambda h: si.first_column(h, ["투자", "단계"],
+                                             ["선호", "단계"], ["단계", "태그"])),
         ("sectors", lambda h: si.find_column(h, ["선호", "투자분야"])),
         ("interest_level", lambda h: si.find_column(h, ["관심도"])),
         ("kakao_joined", lambda h: si.find_column(h, ["카톡방", "참여"])),
@@ -301,9 +308,10 @@ def _columns_of(header):
 
 # 앱의 칸 중 **글자를 담는 모델 칸**. 나머지(`note:`)는 notes 로 간다.
 FIELD_KEYS = {"name", "firm", "phone", "email", "group_name", "round_size",
-              "sectors", "interest_level", "kakao_joined", "sourcing_note",
-              "tips_note", "department", "title", "office_phone", "office_fax",
-              "address", "card_registered_at", "memo"}
+              "sectors", "stages", "interest_level", "kakao_joined",
+              "sourcing_note", "tips_note", "department", "title",
+              "office_phone", "office_fax", "address", "card_registered_at",
+              "memo"}
 
 
 def looks_shifted(firm: str) -> bool:
@@ -510,6 +518,16 @@ def apply_values(contact, item, columns) -> None:
     """
     for field, value in item["fields"].items():
         setattr(contact, field, value)
+    # 시트에 단계 칸이 없으니(위 `_columns_of` 참고) 라운드 칸에 섞여 들어온
+    # 단계 말을 읽어낸다. 안 하면 이 길로 들어온 줄만 `stages` 가 비어,
+    # 정리 스크립트를 돌려 놓은 것이 다음 임포트에 도로 갈린다.
+    #
+    # 판정은 **한 곳**이다 — `sheet_import.apply_sheet_a` 와
+    # `scripts/fill_stages_from_round.py` 가 부르는 바로 그 함수다.
+    # 값이 이미 있으면 `decide` 가 `TAKEN` 을 주므로 덮어쓸 길이 없다.
+    decision = invest_stage.decide(contact.round_size, stages=contact.stages)
+    if decision.changes:
+        contact.stages = decision.stages
     values = cc.load_notes(contact.notes)
     values.update(item["notes"])
     for label, text in item["months"].items():

@@ -33,7 +33,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..models import ContactActivity, IrCompany, User, VcContact
-from . import amount, firm_type, group_name as gn, sheet_owner
+from . import (amount, firm_type, group_name as gn, invest_stage as ist,
+               sheet_owner)
 from .room_name import DEFAULT_SUFFIX, build_room_name, normalize_space, split_name_title
 
 # 활동 종류 (DATA_MODEL §2.6)
@@ -555,6 +556,12 @@ class ParsedContact:
     profile_raw: Optional[str] = None       # 투자분야/라운드사이즈 원문
     sectors: List[str] = field(default_factory=list)
     round_size: Optional[str] = None
+    # 선호 투자단계(CSV). **시트에 이 칸이 있는 명단은 아직 하나도 없다** —
+    # 실 워크북의 명단 탭 머리글은 `그룹/투자분야/라운드사이즈` 한 칸뿐이고,
+    # 픽스처(`sheet_a_sample` · `sheet_a_list_sample`)에도 단계 칸이 없다.
+    # 그래도 자리를 열어 둔다: 시트에 칸이 생기는 날 코드를 고치지 않아도
+    # 들어오고, 안 생겨도 `apply_sheet_a` 가 `round_size` 에서 읽어낸다.
+    stages: Optional[str] = None
     memo: Optional[str] = None
     phone: Optional[str] = None             # 연락처(휴대폰)
     office_phone: Optional[str] = None      # 유선전화
@@ -633,6 +640,11 @@ def parse_sheet_a(rows: Sequence[Sequence[str]], year: int) -> SheetAParse:
         "kakao_joined": first_column(header, ["카톡방", "참여"], ["카톡", "연결"]),
         "sectors": first_column(header, ["선호", "투자분야"], ["투자분야"]),
         "round": find_column(header, ["라운드"]),
+        # 아직 어느 시트에도 없는 칸이다(위 `ParsedContact.stages` 참고).
+        # `투자` 와 `단계` 를 **둘 다** 요구한다 — `단계` 하나로 찾으면
+        # `성장단계` 같은 말이 적힌 다른 칸을 가져간다.
+        "stages": first_column(header, ["투자", "단계"], ["선호", "단계"],
+                               ["단계", "태그"]),
         "memo": find_column(header, ["메모"]),
         "phone": first_column(header, ["휴대"], ["연락처"]),
         # 시트는 `근무처 전화` 라고 쓴다. `유선` 만 찾으면 아무것도 못 잡는다.
@@ -701,6 +713,10 @@ def parse_sheet_a(rows: Sequence[Sequence[str]], year: int) -> SheetAParse:
             # (자유 서술이라 쪼개면 근거 없는 값이 된다 — split_sector_tags 참고).
             sectors=split_sector_tags(sectors_raw),
             round_size=(sectors_raw if combined else round_raw) or None,
+            # 단계 칸이 있는 시트라면 **원문 그대로** 담는다. 그 칸에 적은 것은
+            # 사람이 단계를 적을 자리라고 알고 적은 값이라, 여기서 다시 읽어
+            # 고치면 근거 없이 뜻이 바뀐다(모듈 설명 ④).
+            stages=_cell(row, cols["stages"]) or None,
             memo=_cell(row, cols["memo"]) or None,
             phone=_cell(row, cols["phone"]) or None,
             office_phone=_cell(row, cols["office_phone"]) or None,
@@ -1026,6 +1042,10 @@ def apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
     # 조용히 옮기면 사용자가 자기가 적은 글이 어디로 갔는지 못 찾는다.
     group_actions: Dict[str, int] = {gn.EMPTY: 0, gn.KEEP: 0, gn.FIX: 0,
                                      gn.DROP: 0, gn.MOVE: 0}
+    # 라운드 칸에서 읽어낸 투자 단계도 같은 자로 센다. **안 넣은 줄까지 적는다**
+    # — `애매`·`뒤집힘` 이 몇 줄인지 보여야 사람이 그 줄을 손으로 채울 수 있다.
+    stage_actions: Dict[str, int] = {ist.EMPTY: 0, ist.TAKEN: 0, ist.NONE: 0,
+                                     ist.VAGUE: 0, ist.NEGATED: 0, ist.FILL: 0}
 
     for pc in parsed.contacts:
         owner_id = None
@@ -1064,6 +1084,7 @@ def apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
         # 프로필·연락처: 시트마다 조각이 나뉘어 있다 → 비어 있을 때만 채운다(병합)
         _fill_if_empty(contact, "title", pc.title)
         _fill_if_empty(contact, "round_size", pc.round_size or pc.profile_raw)
+        _fill_if_empty(contact, "stages", pc.stages)
         _fill_if_empty(contact, "memo", pc.memo)
         _fill_if_empty(contact, "phone", pc.phone)
         _fill_if_empty(contact, "office_phone", pc.office_phone)
@@ -1075,6 +1096,27 @@ def apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
             contact.channel_email = 1
         if pc.sectors:
             _fill_if_empty(contact, "sectors", ",".join(pc.sectors))
+        # ── 선호 투자단계는 라운드 칸에 섞여 들어온다 ────────────────────
+        #
+        # **시트에는 단계 칸이 없다.** 적을 자리가 화면에 없으니 사람들이 라운드
+        # 칸에 함께 적어 왔다(`Series C 이상 6/30`). 그 말을 여기서 읽어내지
+        # 않으면 `stages` 는 계속 비고, `matcher` 의 단계 축이 죽어 있다.
+        #
+        # 판정은 **정리 스크립트와 같은 함수**다
+        # (`services/invest_stage.decide` ← `scripts/fill_stages_from_round.py`).
+        # 규칙을 두 군데 적으면 한쪽이 낡고, 그러면 정리해 둔 것을 다음 업로드가
+        # 되돌린다 — 바로 위 그룹 칸이 같은 이유로 그렇게 짜여 있다.
+        #
+        # 여기서 보는 `round_size`·`stages` 는 **방금 채운 뒤의 값**이다. 값이
+        # 이미 있으면 `decide` 가 `TAKEN` 을 주므로 덮어쓸 길이 없다.
+        #
+        # **원문은 안 건드린다.** 같은 말이 두 칸에 남지만, 읽는 쪽이 갈리지
+        # 않는다 — `matcher` 는 단계를 `stages` 에서만, 금액을 `round_size`
+        # 에서만 읽는다(`scripts/fill_stages_from_round.py` 모듈 설명).
+        stage_decision = ist.decide(contact.round_size, stages=contact.stages)
+        if stage_decision.changes:
+            contact.stages = stage_decision.stages
+        stage_actions[stage_decision.action] += 1
         # ── 그룹 칸에는 A~F 만 넣는다 ────────────────────────────────────
         #
         # **시트 머리글은 아직 `그룹/투자분야/라운드사이즈` 다.** 화면 이름만
@@ -1177,6 +1219,16 @@ def apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
             f"라운드 사이즈·선호 투자분야에 이미 있어 안 넣음 "
             f"{group_actions[gn.DROP]}행 "
             f"(옮긴 글에는 `{gn.MOVED_MARK}` 표시가 붙습니다)"
+        )
+    # 라운드 칸에서 단계를 읽어낸 결과. 넣은 줄과 **일부러 안 넣은 줄**을 함께
+    # 적는다 — 안 넣은 줄이 보이지 않으면 "단계 말이 없는 줄" 과 구별되지 않는다.
+    if stage_actions[ist.FILL] or stage_actions[ist.VAGUE] or stage_actions[ist.NEGATED]:
+        report.notes.append(
+            "선호 투자단계를 라운드 사이즈 칸에서 읽었습니다 — "
+            f"넣음 {stage_actions[ist.FILL]}행 · "
+            f"애매해서 안 넣음 {stage_actions[ist.VAGUE]}행 · "
+            f"뜻이 뒤집혀 안 넣음 {stage_actions[ist.NEGATED]}행 "
+            "(라운드 사이즈 원문은 그대로 둡니다)"
         )
     if unmatched_owners:
         detail = ", ".join(f"{n}({c}명)" for n, c in sorted(unmatched_owners.items()))
