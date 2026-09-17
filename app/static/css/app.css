@@ -100,10 +100,53 @@ a:hover { text-decoration: underline; }
 .field select, .field textarea, .tpl-picker select { font-size: 14px; }
 
 .card-list { display: flex; flex-direction: column; gap: 8px; max-height: 460px; overflow-y: auto; }
-.pick-card { display: flex; gap: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+/* ── 고르는 카드의 세로 맞춤 ──────────────────────────────────────────────
+   카드 키는 카드마다 다르다. 꼬리표(★ · 시리즈 · `내용 부족` · `3일 전 소개` ·
+   `3회`)가 늘면 이름이 두 줄로 접히고, 담당자 카드에는 방 이름 줄까지 붙는다 —
+   1440px 에서 재 보니 한 장이 61 · 82 · 106.8 · 148.8px 이었다.
+
+   **가운데가 아니라 이름 첫 줄에 맞춘다.** 가운데로 맞추면 체크박스가 카드마다
+   다른 높이에 서서 목록을 훑을 때 눈이 줄을 못 따라간다(같은 폭에서 카드 위
+   30.5 · 41 · 53.4 · 74.4px). 첫 줄에 맞추면 어느 카드든 같은 자리이고, 고른
+   차례 번호(`::before`)도 같은 줄에 서서 번호 · 체크박스 · 이름이 한 줄에 놓인다.
+
+   **손으로 민 값은 두지 않는다.** 자리는 줄 키와 제 키에서 나온다:
+   `(줄 − 상자) ÷ 2`. 둘 다 아래에 이름을 달아 두었으니(`--pick-line` ·
+   `--pick-box`) 한쪽이 바뀌면 자리도 저절로 따라온다 — 폰에서 체크박스가
+   20px 로 커지는 자리가 바로 그 경우다(#195).
+
+   여기 `margin-top: 3px` 이 있었다. 브라우저 기본 체크박스(13px)에 손으로 맞춘
+   값인데, 그 뒤로 `align-items` 가 기본값(stretch)인 채 **키를 안 준 체크박스가
+   카드 키만큼 늘어나** 있었다 — 1440px 에서 잰 체크박스 상자가 33 · 54 · 78.8 ·
+   120.8px 이고 그 한가운데 그려진 13px 네모는 이름 첫 줄보다 9.5 · 20 · 32.4 ·
+   53.3px 아래에 섰다. 그래서 `align-items` 를 못 박고 크기를 준다. */
+.pick-card {
+  display: flex; align-items: flex-start; gap: 10px; padding: 10px;
+  border: 1px solid var(--line); border-radius: 10px; cursor: pointer;
+  /* 이름 한 줄의 줄상자 키 — `body` 의 `14px × 1.5` 그 값이다. 여기에 적어 두는
+     까닭은 하나다: **글자 크기를 바꾸면 체크박스도 따라 내려와야 한다.** 둘이
+     갈리면 `tests/test_pick_card_align.py` 가 빨개진다.
+
+     `.pick-name` 에 `line-height` 를 못 박지는 않는다 — 길이로 적으면 그 값이
+     속 꼬리표(11px)에까지 물려 내려가 줄상자가 21 → 22px 로 자란다. 여기서
+     고치는 것은 체크박스 자리이지 이름 줄의 생김새가 아니다.
+
+     **px 로 둔다** — `em` 으로 두면 글자 크기가 다른 자리에서(번호 배지는
+     11.5px) 같은 이름이 다른 키를 뜻하게 된다. */
+  --pick-line: 21px;
+  /* 체크박스 한 변. 브라우저 기본값(13~14px)은 브라우저마다 달라 맞출 기준이
+     못 된다 — 값을 못 박아야 어디서 열어도 같은 자리에 선다. */
+  --pick-box: 16px;
+  --pick-badge: 20px;    /* 고른 차례 번호 */
+}
 
 .pick-card:hover { border-color: var(--brand); }
-.pick-card input { margin-top: 3px; }
+/* 누를 자리는 `<label>` 통째로다(#195) — 여기서 줄이는 것은 하나도 없다.
+   체크박스 네모만 제자리에 세운다. */
+.pick-card > input[type=checkbox] {
+  flex: none; width: var(--pick-box); height: var(--pick-box);
+  margin: calc((var(--pick-line) - var(--pick-box)) / 2) 0 0;
+}
 
 /* ── 몇 번째로 고른 기업인가 ───────────────────────────────────────────────
    문구는 `1) …` `2) …` 로 나가고 투자사는 그 번호로 기억해서 답한다. 화면에
@@ -117,7 +160,10 @@ a:hover { text-decoration: underline; }
    고를 때마다 줄이 들썩이면 어디를 눌렀는지 놓친다. */
 #company-list .pick-card::before {
   content: attr(data-pick-order);
-  flex: 0 0 20px; height: 20px; margin-top: 2px;
+  /* 체크박스와 **같은 줄 한가운데**다(위 `.pick-card` 참고) — 번호가 체크박스
+     위나 아래로 어긋나면 어느 카드의 번호인지 헷갈린다. */
+  flex: 0 0 var(--pick-badge); height: var(--pick-badge);
+  margin-top: calc((var(--pick-line) - var(--pick-badge)) / 2);
   display: inline-flex; align-items: center; justify-content: center;
   font-size: 11.5px; font-weight: 700; line-height: 1; border-radius: 999px;
 }
@@ -1971,6 +2017,10 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
   /* 체크박스는 44px 로 키우면 네모가 우스꽝스럽게 커진다 — 손끝에 걸릴
      만큼만 키우고, 대신 감싸는 라벨을 눌러도 되게 넉넉히 둔다. */
   input[type=checkbox], input[type=radio] { width: 20px; height: 20px; }
+  /* 고르는 카드의 체크박스도 같이 커진다. **맞춤이 읽는 값도 같이 올린다** —
+     안 올리면 위 규칙만 20px 이 되고 자리는 16px 기준으로 잡혀 2px 어긋난다
+     (`.pick-card` 의 `--pick-box`). */
+  .pick-card { --pick-box: 20px; }
   .only-picked, .check-row label, .filter-option, .channel-opt,
   .weekday-pick label { min-height: 32px; align-items: center; }
   /* 한 줄 입력 폼은 칸 높이를 변수 하나로 맞춰 둔다 — 그 값도 같이 올린다.
