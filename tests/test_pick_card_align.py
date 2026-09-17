@@ -115,12 +115,19 @@ def test_no_hand_nudged_offset_comes_back():
 
     손으로 민 값은 그때 쓰던 체크박스 크기에만 맞는다. 폰에서 체크박스가
     커지거나(#195) 글자가 커지면 그 값만 제자리에 남아 어긋난다.
+
+    **자리는 `align-items: center` 가 정한다** — 사용자가 카드 세로 한가운데로
+    정했다(한 번 이름 첫 줄에 맞췄다가 되돌렸다). 그러니 체크박스에는 미는 값이
+    아예 없어야 한다.
     """
     css = _base_css()
+    card = _rule(css, ".pick-card")
+    assert _prop(card, "align-items") == "center", (
+        "카드 세로 한가운데 정렬이 아니다 — 사용자가 정한 자리다")
     box = _rule(css, ".pick-card > input[type=checkbox]")
-    margin = _prop(box, "margin") or _prop(box, "margin-top") or ""
-    assert "var(--pick-line)" in margin and "var(--pick-box)" in margin, (
-        f"체크박스 자리가 계산에서 나오지 않는다: {margin}")
+    margin = (_prop(box, "margin") or _prop(box, "margin-top") or "0").strip()
+    assert not re.search(r"[1-9]", margin), (
+        f"체크박스를 손으로 밀고 있다: {margin} — 자리는 정렬이 정한다")
     assert not re.search(r"\.pick-card\s+input\s*\{[^}]*margin-top:\s*\d", css), \
         "`.pick-card input { margin-top: …px }` 이 되살아났다"
 
