@@ -754,7 +754,15 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
 .form-grid .field.wide { grid-column: 1 / -1; }
 .form-grid input, .form-grid select, .form-grid textarea {
   padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; width: 100%; }
-.check-row { display: flex; gap: 12px; font-size: 13px; color: var(--ink); }
+/* 체크박스·라디오와 그 글자는 **한 줄에 나란히** 선다.
+   `label.field` 와 함께 붙는 자리가 있는데(`class="field check-row"`),
+   `.field` 가 `flex-direction: column` 이라 방향을 여기서 **다시 못 박지
+   않으면 세로로 쌓인다** — 실제로 그랬다: 체크박스가 위에 뜨고 글자가
+   아래로 내려가며, 같이 걸린 `align-items: center`(아래 `.form-grid`)가
+   세로 방향에서는 **가로 가운데**로 미는 바람에 글자만 칸 한복판에 섰다.
+   방향을 안 적으면 어느 쪽이 이기는지가 붙는 클래스 차례에 달린다. */
+.check-row { display: flex; flex-direction: row; align-items: center;
+             gap: 12px; font-size: 13px; color: var(--ink); }
 .detail-actions { display: flex; gap: 8px; margin-top: 16px; }
 
 /* 이관 줄 — 고르는 칸과 단추가 한 줄에 선다. 좁아지면 단추가 아래로 내려가되
@@ -1204,7 +1212,9 @@ td.rowno, .rowno { text-align: right; font-variant-numeric: tabular-nums; font-s
 
 /* 체크박스 칸은 위에 라벨이 없어서 격자 칸 맨 위로 떠오른다 —
    옆 칸의 입력창과 눈높이가 어긋난다. 칸 아래쪽에 붙여 줄을 맞춘다. */
-.form-grid .check-row { align-self: end; align-items: center; min-height: 34px; }
+/* 방향·세로 정렬은 `.check-row` 가 정한다(위) — 여기서는 격자 안에서의
+   자리만 본다. */
+.form-grid .check-row { align-self: end; min-height: 34px; }
 
 /* ── 투자컨설턴트 현황 (시트를 그대로 옮긴 표) ───────────────── */
 /* 여기 `.wide-scroll { overflow-x: auto; }` 이 있었다. **지웠다.**
