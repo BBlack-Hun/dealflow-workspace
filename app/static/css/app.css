@@ -484,10 +484,10 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
     이 됐다. 안 올리면 폭을 안 준 `기업 한줄 소개` 가 그 14px 을 내어 준다 —
     이 표에서 제일 많이 읽는 칸이라 깎을 자리가 아니다. companies.html 참고) */
 /* (2,302 → 2,386 : `소개 횟수` 칸(84px)이 들었다. 안 올리면 폭을 안 준
-    `딜 소개 문구 회사개요` 가 그 84px 을 통째로 내어 준다 — 이 표에서 제일
+    `딜 소개 문구` 가 그 84px 을 통째로 내어 준다 — 이 표에서 제일
     많이 읽는 칸이라 깎을 자리가 아니다. companies.html 참고) */
 /* (2,386 → 2,536 : `수정한 날짜` 칸(150px)이 들었다. 안 올리면 폭을 안 준
-    `딜 소개 문구 회사개요` 가 그 150px 을 통째로 내어 준다 — 이 표에서 제일
+    `딜 소개 문구` 가 그 150px 을 통째로 내어 준다 — 이 표에서 제일
     많이 읽는 칸이라 깎을 자리가 아니다. companies.html 참고) */
 #co-table { min-width: 2536px; }
 /* 표의 `소개 횟수` — 회차 수와 건수를 한 줄에 세운다. 둘을 나란히 두는
@@ -1133,6 +1133,16 @@ td.rowno, .rowno { text-align: right; font-variant-numeric: tabular-nums; font-s
    긴 낱말(URL 등)이 상자를 밀어내지 않게 `break-word` 도 같이 건다. */
 .backup-value { font-size: 13px; color: var(--ink); white-space: pre-wrap;
   overflow-wrap: break-word; }
+
+/* 자동 조합 미리보기 — [수정] 창의 `딜 소개 문구` 아래.
+   칸의 기본은 **사람이 쓴 문구**라 자동 조합은 고를 때만 들어간다. 그러니
+   [자동 조합으로 바꾸기] 를 누르기 전에 **무엇이 들어오는지** 보여야 한다.
+   위의 `.backup-box` 와 같은 결(점선·옅은 바탕)로 둔다 — 둘 다 "적는 자리가
+   아니라 읽는 자리" 다. 조합값에는 `|` 로 이어 붙인 긴 줄이 오므로 줄바꿈을
+   살리고(`pre-wrap`) 긴 낱말이 창을 밀지 않게 끊어 준다. */
+#one-liner-preview { margin-top: 6px; padding: 6px 8px; border-radius: 8px;
+  background: #f4f6f8; border: 1px dashed var(--line); color: var(--ink);
+  white-space: pre-wrap; overflow-wrap: break-word; }
 
 /* ── 보내는 방법(채널) ──────────────────────────────────────── */
 .channel-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap;

@@ -262,35 +262,44 @@ def test_표와_창이_같은_값을_보여_준다(logged_in, company):
 
 # --- ③ 한줄 소개 자동 조합의 재료 ---------------------------------------------
 
+# 창에서 고친 재료는 **조합값(`one_liner_suggestion`)** 으로 따라온다. 칸 자체는
+# 사람이 고르기 전에는 안 바뀐다 — 칸의 기본이 사용자 정의 문구다.
+# 그래서 여기서 재는 것은 "재료를 고치면 **권해 오는 한 줄**이 바뀌는가" 다.
+
 def test_창에서_고친_연도별_매출이_자동_조합에_쓰인다(logged_in, company):
     """`매출 …` 토막은 **적힌 해를 다 늘어놓는다**(one_liner)."""
     _panel_save(logged_in, company.id, business_desc="B2B 농산물 선도거래 플랫폼",
                 revenue_2023="2억", revenue_2024="4억", one_liner="")
-    row = logged_in.get(f"/api/companies/{company.id}").json()
-    assert "매출 23년 2억, 24년 4억" in row["one_liner"], row["one_liner"]
-    assert row["one_liner"].startswith("B2B 농산물 선도거래 플랫폼"), row["one_liner"]
+    made = logged_in.get(f"/api/companies/{company.id}").json()["one_liner_suggestion"]
+    assert "매출 23년 2억, 24년 4억" in made, made
+    assert made.startswith("B2B 농산물 선도거래 플랫폼"), made
 
     # 25년을 채우면 **그 해가 뒤에 붙는다** — 재료를 고치면 결과가 바뀐다.
     _panel_save(logged_in, company.id, revenue_2025="11억")
-    row = logged_in.get(f"/api/companies/{company.id}").json()
-    assert "매출 23년 2억, 24년 4억, 25년 11억" in row["one_liner"], row["one_liner"]
+    made = logged_in.get(f"/api/companies/{company.id}").json()["one_liner_suggestion"]
+    assert "매출 23년 2억, 24년 4억, 25년 11억" in made, made
 
     # 22년도 재료다 — 사용자 신고("22년이랑 23년 매출도 반영") 그대로.
     _panel_save(logged_in, company.id, revenue_2022="1억")
+    made = logged_in.get(f"/api/companies/{company.id}").json()["one_liner_suggestion"]
+    assert "매출 22년 1억, 23년 2억, 24년 4억, 25년 11억" in made, made
+
+    # **고르면 그 줄이 칸에 들어간다** — 권하는 데서 끝나지 않는다.
+    logged_in.post(f"/api/companies/{company.id}/one-liner")
     row = logged_in.get(f"/api/companies/{company.id}").json()
-    assert "매출 22년 1억, 23년 2억, 24년 4억, 25년 11억" in row["one_liner"], row["one_liner"]
+    assert row["one_liner"] == made, row["one_liner"]
 
 
 def test_창에서_고친_사업_설명이_자동_조합의_첫_토막이_된다(logged_in, company):
     """이 칸을 못 고치면 조합이 늘 매출부터 시작한다."""
     _panel_save(logged_in, company.id, business_desc="뇌영상 분석 AI 솔루션",
                 revenue_2024="4억", one_liner="")
-    row = logged_in.get(f"/api/companies/{company.id}").json()
-    assert row["one_liner"].startswith("뇌영상 분석 AI 솔루션"), row["one_liner"]
+    made = logged_in.get(f"/api/companies/{company.id}").json()["one_liner_suggestion"]
+    assert made.startswith("뇌영상 분석 AI 솔루션"), made
 
     _panel_save(logged_in, company.id, business_desc="가축 사료 B2B 유통")
-    row = logged_in.get(f"/api/companies/{company.id}").json()
-    assert row["one_liner"].startswith("가축 사료 B2B 유통"), row["one_liner"]
+    made = logged_in.get(f"/api/companies/{company.id}").json()["one_liner_suggestion"]
+    assert made.startswith("가축 사료 B2B 유통"), made
 
 
 def test_사람이_쓴_소개는_재료를_고쳐도_안_덮인다(logged_in, company):

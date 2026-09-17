@@ -11,7 +11,7 @@
 고쳐야 그 줄이 바뀌는지 화면에서 알 수 없고, 매출·누적투자금액은 바로 옆 칸에
 또 적혀 있어 같은 숫자가 한 줄에 두 번 보인다. 그래서 두 탭이 다른 칸을 본다.
 
-    IR 기업 현황  머리글 `딜 소개 문구 회사개요`  → one_liner      (조합 결과)
+    IR 기업 현황  머리글 `딜 소개 문구`  → one_liner      (조합 결과)
     스타트업DB    머리글 `기업 한줄 소개`         → business_desc  (재료)
 
 **칸을 새로 파지 않았다.** `business_desc` 는 0020 부터 있던 칸이고 조합의 첫
@@ -115,18 +115,18 @@ def _headers(html: str) -> list:
 def test_머리글은_탭마다_다른_이름이다(logged_in, composed):
     """같은 이름이면 어느 쪽이 조합 결과인지 화면에서 가를 수 없다."""
     status = _headers(logged_in.get("/companies").text)
-    assert "딜 소개 문구 회사개요" in status, status
+    assert "딜 소개 문구" in status, status
     assert "기업 한줄 소개" not in status, "IR 기업 현황에 옛 이름이 남아 있다"
 
     db_tab = _headers(logged_in.get("/companies?tab=db").text)
     assert "기업 한줄 소개" in db_tab, db_tab
-    assert "딜 소개 문구 회사개요" not in db_tab, "재료 칸이 결과 이름을 쓰고 있다"
+    assert "딜 소개 문구" not in db_tab, "재료 칸이 결과 이름을 쓰고 있다"
 
 
 def test_수정_창도_같은_두_이름으로_부른다():
     """창이 다르게 부르면 같은 칸인지 알 수 없다(짝 대조는 test_ui_layout.py)."""
     text = TEMPLATE.read_text(encoding="utf-8")
-    for field, label in (("one_liner", "딜 소개 문구 회사개요"),
+    for field, label in (("one_liner", "딜 소개 문구"),
                          ("business_desc", "기업 한줄 소개")):
         block = re.search(r"<span>([^<]*)</span>\s*\n?\s*<textarea id=\"f-%s\"" % field,
                           text)

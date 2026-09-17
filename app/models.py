@@ -370,6 +370,24 @@ class IrCompany(TimestampMixin, Base):
     sector_major: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     sector_minor: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     series: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # IR 기업 현황의 **`딜 소개 문구`**(예전 이름 `딜 소개 문구 회사개요`).
+    # 딜소개에 그대로 실려 나가는 회사 개요 한 줄이다.
+    #
+    # ★ 투자컨설턴트 화면의 **`딜 소개문구`**(`ConsultingCompany.deal_pitch`)와
+    #   **다른 칸이다.** 띄어쓰기 하나(`딜 소개 문구` / `딜 소개문구`)만 다른
+    #   이름이 된 것은 사용자가 이 칸 이름에서 `회사개요` 를 빼 달라고 해서다.
+    #   갈라 보는 기준은 이렇다.
+    #
+    #     · 여기(`IrCompany.one_liner`)  — IR 기업 현황 표. 344곳짜리 기업 DB 의
+    #       한 줄이고, 투자사에게 나가는 딜소개 문구에 **그대로 실린다.**
+    #       스타트업DB 칸들로 자동 조합할 수 있다(`services/one_liner.py`) —
+    #       다만 **기본은 사람이 쓴 문구**이고 자동 조합은 고를 때만 들어온다.
+    #     · 저기(`ConsultingCompany.deal_pitch`) — 투자컨설턴트 `관리 스타트업`
+    #       탭. 컨설팅 계약을 맺은 기업을 어떻게 소개할지 담당자가 **메모처럼**
+    #       쓰는 자유 문장이고, 딜소개 발송에는 쓰이지 않는다.
+    #
+    #   둘은 표도 다르고(`ir_companies` / `consulting_companies`) 줄도 서로
+    #   이어져 있지 않다. 한쪽을 고쳐도 다른 쪽은 그대로다 — 합치려 들지 마라.
     one_liner: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     owner_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     # 보낼 IR 자료의 **파일 이름**. 경로가 아니라 이름 하나다.
@@ -1151,6 +1169,14 @@ class ConsultingCompany(TimestampMixin, Base):
     # `관리 스타트업` 탭에만 값이 있다. 소개 문구는 아직 관리 중인 기업에 대고
     # 쓰는 말이라 화면도 그 탭에서만 이 칸을 세운다
     # (`routers/consulting.py` 의 `STARTUP_COLUMNS`).
+    #
+    # ★ IR 기업 현황의 **`딜 소개 문구`**(`IrCompany.one_liner`)와 **다른 칸이다.**
+    #   띄어쓰기 하나만 다른 이름이 됐지만(그 칸에서 `회사개요` 를 뺐다 — 사용자
+    #   요청) 서로 남남이다: 저기는 투자사에게 나가는 딜소개 문구에 그대로 실리는
+    #   회사 개요 한 줄이고 자동 조합(`services/one_liner.py`)이 붙어 있다.
+    #   여기는 컨설팅 담당자가 손으로만 쓰는 메모이고 발송에는 안 쓰인다.
+    #   표가 다르니(`consulting_companies` / `ir_companies`) 한쪽을 고쳐도 다른
+    #   쪽은 그대로다. 위 `IrCompany.one_liner` 주석에 같은 설명이 있다.
     deal_pitch: Mapped[Optional[str]] = mapped_column(Text, nullable=True)     # 딜 소개문구
     # 견적서를 보냈는가 — `O` / `X`. **화면 이름은 `견적서 첨부 여부` 인데
     # 칸 이름은 `contract_management` 다.** 처음에는 `계약관리` 라는 자유 글
