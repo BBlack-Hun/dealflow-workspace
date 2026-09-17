@@ -96,11 +96,51 @@ def format_eok(value) -> Optional[str]:
 
 
 def auto_company_summary(company: CompanyView) -> str:
-    """Compose the deal summary line from raw fields.
+    """딜 소개에 실을 기업 한 토막.
 
-    Format: [분야] | 한줄소개 | 매출 N억 | 누적투자금액 N억 | N억 투자유치중
-            | Pre Value 약 N억 | 경쟁력
-    Empty segments are omitted entirely.
+    **`딜 소개 문구`(`one_liner`)에 적어 둔 글이 있으면 그 글자 그대로, 그것만
+    나간다.** 앞의 `[분야]` 도 뒤의 재무 토막도 붙지 않는다.
+
+    ── 왜 뒤집었나: 덧붙임을 막던 검사가 새는 검사였다 ──
+    예전에는 `[분야] | 적은 글 | 매출 … | 누적투자금액 … | N억 투자유치중 |
+    Pre Value 약 … | 특이사항` 을 만들고, 뒤 토막마다 **"적은 글에 그 낱말이
+    이미 있는가"** 를 보고 없을 때만 붙였다(`said`). 그런데 그것은 낱말 포함
+    검사라, 같은 사실을 **다른 말로** 적으면 그대로 빠져나간다 —
+    `작년 30억을 팔았고` 에는 `매출` 이 없고 `시리즈 A 유치 완료` 에는
+    `누적투자` 가 없다. 사람이 문장을 다듬을수록 더 잘 새는 검사다.
+
+    운영에서 한 기업을 재어 보면 **적은 글 186자가 629자가 되어 나갔다.**
+    443자가 앞뒤로 덧붙었고 그중 어느 한 글자도 사람이 이 칸에 적은 것이
+    아니다 — 사람이 골라 쓴 문장이 코드가 이어 붙인 토막에 묻힌다.
+
+    그래서 검사를 더 촘촘하게 만드는 대신 **갈래를 없앴다.** 적은 글이 있으면
+    아무것도 안 붙이니 '이미 말했는가' 를 볼 일 자체가 없다(`said` 가 통째로
+    사라진 이유다 — 그 검사는 *적은 글이 있을 때* 무엇을 덧붙일지 고르던
+    자리였다). 남은 겹침 판정은 `services/one_liner.compose_one_liner` 한
+    곳뿐이고, 그쪽은 여전히 필요하다: 거기 첫 토막(`기업 한줄 소개`)에는
+    재무가 통째로 적혀 온 값이 실제로 있고, 그 줄은 **사람이 [자동 조합] 을
+    눌렀을 때 만들어지는 제안**이라 이 함수와 하는 일이 다르다.
+
+    #203 이 이 칸의 기본을 **사용자 정의 문구**로 뒤집은 것과 같은 결이다.
+    거기서는 재료를 고쳐도 칸을 덮지 않게 했고, 여기서는 칸에 적힌 글을
+    나가는 문구에서 덮지 않게 한다.
+
+    ── 비어 있으면: 예전처럼 재료로 조합한다 ──
+    아무것도 안 내는 쪽도 "기본은 사용자 정의" 와 결이 맞지만, 그러면 **빈 줄이
+    그대로 투자사에게 나갈 자리**가 남는다.
+
+    소개 대상에 서는 조건(`models.IrCompany.introducible`)은 `사업분야 대분류
+    **또는** 딜 소개 문구` + 금액 하나다 — 문구가 비어도 분야만 있으면 선다.
+    `/deals` 의 `내용 부족` 딱지도 그 판정을 그대로 쓰고
+    (`routers/pages.py` 의 `blocked_reasons`), 이유를 적는 쪽
+    (`routers/companies.blocked_reason` → `REQUIRED_FIELDS`)에는 `one_liner`
+    가 아예 없다. **문구가 비었다고 알려 주는 화면이 한 곳도 없다.**
+
+    개발 사본에서 세어 보면 344곳 중 문구가 빈 곳은 6곳이고, 그 여섯은 금액이
+    하나도 없어 지금은 소개 대상에 서지 않는다(소개 가능 114곳 중 문구가 빈
+    곳은 **0곳**이다). 다만 그중 한 곳은 분야가 이미 적혀 있어 **금액 한 칸만
+    채우면 그날로 소개 대상**이 된다 — 그때 `1) ` 만 찍힌 줄이 카톡으로 나간다.
+    그것을 막는 자리가 화면에 없으니 여기 남겨 둔다.
 
     **단위는 `format_eok` 가 붙인다.** 그래야 `5천만원` 처럼 억이 아닌 단위로
     적힌 값이 `누적투자금액 5천만원` 으로 나간다.
@@ -110,47 +150,53 @@ def auto_company_summary(company: CompanyView) -> str:
     모양은 `Pre Value 200억` 이다(세어 둔 것은 `services/one_liner.py`). 한줄소개
     쪽과도 이제 같은 모양이다.
     """
+    typed = (company.one_liner or "").strip()
+    if typed:
+        return typed
+
+    # ── 여기 아래는 `딜 소개 문구` 가 **빈** 기업뿐이다 ────────────────────
+    # 그래서 '적은 글에 이미 있는가' 를 보지 않는다. 볼 글이 없다.
     segments: List[str] = []
 
     if company.sector_major:
         segments.append(f"[{company.sector_major}]")
-    if company.one_liner:
-        segments.append(company.one_liner.strip())
-
-    # ★ 시트의 '한줄 소개'는 이미 재무까지 담은 완성 문구인 경우가 많다
-    #   (예: "… | 매출 30.9억 | 누적투자금액 5.6억 | 투자유치 협의중 | …").
-    #   같은 항목을 또 붙이면 '매출 2.2억 … 매출 10억' 처럼 **중복되고 숫자가 어긋난다**.
-    #   그래서 항목마다 '한줄 소개에 이미 있는지' 보고 없을 때만 덧붙인다.
-    said = (company.one_liner or "")
 
     # 못 읽는 값(`투자 유치 협의중` 같은 자유 문장)은 `None` 이 되어 **토막째
     # 빠진다.** 사람이 아무 글자나 넣을 수 있게 된 이상, 못 읽는 것을 그대로
     # 실어 투자사에게 보내는 쪽이 훨씬 나쁘다 — 빼면 그 항목만 없는 문구가 되고,
     # 그것은 값이 비었을 때와 똑같은 모양이라 읽는 사람이 이상하게 보지 않는다.
     revenue = format_eok(company.revenue_recent)
-    if revenue is not None and "매출" not in said:
+    if revenue is not None:
         segments.append(f"매출 {revenue}")
 
     funding = format_eok(company.funding_total)
-    if funding is not None and "누적투자" not in said:
+    if funding is not None:
         segments.append(f"누적투자금액 {funding}")
 
     raise_target = format_eok(company.raise_target)
-    if raise_target is not None and "투자유치" not in said:
+    if raise_target is not None:
         segments.append(f"{raise_target} 투자유치중")
 
     pre_value = format_eok(company.pre_value)
-    if pre_value is not None and not any(k in said.lower() for k in ("pre value", "밸류")):
+    if pre_value is not None:
         segments.append(f"Pre Value 약 {pre_value}")
 
-    if company.competitiveness and company.competitiveness.strip() not in said:
+    if company.competitiveness and company.competitiveness.strip():
         segments.append(company.competitiveness.strip())
 
     return " | ".join(segments)
 
 
 def company_summary(company: CompanyView) -> str:
-    """Return the manual/cached summary if present, else auto-compose (수동 수정본 우선)."""
+    """Return the manual/cached summary if present, else auto-compose (수동 수정본 우선).
+
+    **`summary` 는 지금 아무 데서도 채우지 않는다.** 화면의 수정 창에도
+    (`routers/companies.CompanyIn`), 시트 가져오기에도(`services/sheet_import`
+    가 "요약문(summary)은 임포트하지 않는다" 라고 적어 둔 그 칸이다) 넣는 길이
+    없어 개발 사본 344곳이 전부 비어 있다. 그래서 실제로 나가는 것은 언제나
+    아래 `auto_company_summary` 이고, `딜 소개 문구에 적은 것이 무조건 나간다`
+    는 규칙이 이 한 줄에 가려지지 않는다.
+    """
     if company.summary and company.summary.strip():
         return company.summary.strip()
     return auto_company_summary(company)

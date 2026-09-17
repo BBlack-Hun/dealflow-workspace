@@ -132,11 +132,17 @@ def test_a_bare_number_is_always_eok():
 
 
 def test_a_range_reaches_the_deal_message(logged_in, db):
-    """요청의 핵심 — `5-10억 사이` 가 딜소개 문구까지 **구간인 채로** 간다."""
+    """요청의 핵심 — `5-10억 사이` 가 딜소개 문구까지 **구간인 채로** 간다.
+
+    **기업에서 `one_liner="선도거래"` 를 뺐다.** 금액이 문구에 실리는 길이
+    `딜 소개 문구가 빈 기업` 하나로 좁아졌기 때문이다 — 적어 둔 글이 있으면
+    그 글만 나가고 금액은 아예 안 붙는다(`services/message_composer`).
+    문구를 적어 둔 채로 두면 이 검사는 구간이 아니라 그 문장을 재게 된다.
+    """
     from app.models import IrCompany
     from app.services.message_composer import CompanyView, auto_company_summary
 
-    row = IrCompany(name="샘플구간", sector_major="애그테크", one_liner="선도거래",
+    row = IrCompany(name="샘플구간", sector_major="애그테크",
                     funding_total="5-10억 사이")
     db.add(row)
     db.commit()
@@ -475,11 +481,13 @@ def test_what_cannot_be_read_never_reaches_an_investor(written):
     from app.services.one_liner import compose_one_liner
     from types import SimpleNamespace
 
+    # 문구 칸(`one_liner`)은 비워 둔다. 적어 두면 그 글만 나가서 못 읽는 값이
+    # 빠졌는지 아닌지를 **잴 수 없다** — 무엇을 적든 통과하는 검사가 된다.
     said = auto_company_summary(CompanyView(
-        name="x", sector_major="AI", one_liner="소개",
+        name="x", sector_major="AI",
         revenue_recent=written, funding_total=written,
         raise_target=written, pre_value=written))
-    assert said == "[AI] | 소개", said
+    assert said == "[AI]", said
     assert written not in said
 
     made = compose_one_liner(SimpleNamespace(

@@ -124,9 +124,9 @@ weekly_stats   (퇴사 삭제 후에도 남는 익명화 집계)
 > 구간은 **아래**를 숫자로 쓴다(부풀려 소개하지 않는 쪽).
 > `from_million` 은 **한 줄도 잃지 않는다** — 되읽으면 원래 정수가 그대로 나온다.
 | competitiveness | TEXT NULL | (추가) | 경쟁력 항목(요약 자동 조합 말미, 예: "상급 유통사 12곳 계약") |
-| summary | TEXT NULL | (추가) | **딜 요약문**. 필드 자동 조합(`[분야] \| 한줄소개 \| 매출 N억 \| 누적투자금액 N억 \| N억 투자유치중 \| Pre Value 약 N억원 \| 경쟁력`) 결과를 캐시, 수동 수정본 우선 |
+| summary | TEXT NULL | (추가) | **딜 요약문** 캐시. 지금은 넣는 길이 없어 전부 비어 있다(수정 창에도 시트 가져오기에도 없다). 실제로 나가는 글은 `딜 소개 문구`(one_liner)이고, 그 칸이 비었을 때만 `[분야] \| 매출 N억 \| 누적투자금액 N억 \| N억 투자유치중 \| Pre Value 약 N억 \| 경쟁력`으로 조합된다 |
 | summary_status | TEXT | (추가) | `done`(작성완료) \| `draft`(미작성) \| `insufficient`(정보부족) |
-| introducible | INTEGER | (파생) | summary_status=done AND 필수필드(name·sector_major·series) 충족 |
+| introducible | INTEGER | (파생) | `summary_status != insufficient` AND 이름 AND (`sector_major` **또는** `one_liner`) AND 금액 넷 중 하나(`services/amount.is_countable`) — **`딜 소개 문구`는 필수가 아니다**(비면 재료로 조합해 나간다) |
 
 > **파일 저장 없음(확정)**: IR 파일은 서버에 업로드하지 않는다. 사용자가 구글 드라이브에 수기 업로드 후 `ir_drive_url`만 등록하며, 발송 메시지 본문에 링크 텍스트로 포함된다.
 
