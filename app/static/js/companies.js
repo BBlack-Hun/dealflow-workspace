@@ -285,22 +285,27 @@
     });
   }
 
-  // 한줄 소개가 **자동으로 만들어진 값인가, 사람이 쓴 값인가.**
+  // `딜 소개 문구` 가 **직접 쓴 값인가, 자동 조합과 같은 값인가.**
   //
   // 서버는 이 판정을 진작부터 실어 보내고 있었는데(`one_liner_auto` ·
   // `one_liner_suggestion`) 화면이 한 번도 안 읽었다. 그래서 스타트업DB 를
-  // 채워도 소개가 왜 그대로인지 알 길이 없었고, 반대로 자동으로 바뀐 줄도
-  // 모르고 있었다.
+  // 채워도 소개가 왜 그대로인지 알 길이 없었다.
   //
   // 판정은 **서버 것을 그대로 쓴다.** 여기서 `one_liner === suggestion` 을 다시
   // 따지면 같은 판단이 두 곳에 생겨 반드시 한쪽이 낡는다
   // (services/one_liner.py 의 `origin`).
+  //
+  // **칸의 기본은 사용자 정의 문구다.** 저장하는 길에서는 자동 조합이 절대 안
+  // 들어간다 — 그러니 화면이 할 일은 둘이다: 지금 값이 그대로 남는다고 **말해
+  // 주는 것**, 그리고 자동 조합을 쓰고 싶을 때 누를 곳을 **또렷하게 두는 것**.
+  // 그래서 만들어질 한 줄을 단추 아래에 그대로 펼쳐 둔다(`one-liner-preview`).
   var suggestion = "";                 // 지금 칸들로 만들면 나올 한 줄
 
   function fillOneLinerNote(data) {
     var wrap = el("f-one_liner-note");
     var state = el("one-liner-state");
     var btn = el("one-liner-auto");
+    var preview = el("one-liner-preview");
     if (!wrap || !state || !btn) return;
 
     suggestion = data.one_liner_suggestion || "";
@@ -311,21 +316,33 @@
     // 두면 "그래서 어쩌라는 것인가" 가 남는다.
     if (!current) {
       state.textContent = suggestion
-        ? "아직 비어 있습니다 — 아래 재료로 자동 조합할 수 있습니다."
-        : "아직 비어 있습니다 — 사업 설명 · 연도별 매출 · 금액을 채우면 자동으로 만들어집니다.";
+        ? "아직 비어 있습니다 — 기본은 직접 쓴 문구입니다. 아래 조합을 쓰려면 단추를 누르세요."
+        : "아직 비어 있습니다 — 직접 쓰거나, 사업 설명 · 연도별 매출 · 금액을 채우면 자동 조합을 고를 수 있습니다.";
     } else if (auto) {
-      state.textContent = "자동으로 만든 값입니다 — 아래 재료를 고치면 따라옵니다.";
+      state.textContent = "자동으로 만든 값과 같습니다 — 재료를 고쳐도 이 칸은 저절로 안 바뀝니다.";
     } else {
-      state.textContent = "직접 쓰신 값입니다 — 재료를 고쳐도 이 문장은 그대로 둡니다.";
+      state.textContent = "직접 쓰신 값입니다 — 기본이라 재료를 고쳐도 그대로 둡니다.";
     }
 
     // 이미 조합 결과와 같은 줄에는 단추를 안 보인다 — 눌러도 아무 일이 안
     // 일어나는 단추가 있으면 고장으로 읽힌다.
     btn.hidden = !suggestion || suggestion === current;
+    // **바뀔 문장을 누르기 전에 보여 준다.** 단추가 뜨는 그때만 뜬다 — 같은
+    // 글자를 위아래로 두 번 보여 주는 것은 안내가 아니라 소음이다.
+    if (preview) {
+      preview.textContent = btn.hidden ? "" : "자동 조합: " + suggestion;
+      preview.hidden = btn.hidden;
+    }
     wrap.hidden = false;
   }
 
-  // [자동 조합으로 바꾸기] — **칸에 넣어 줄 뿐 저장하지 않는다.**
+  // [자동 조합으로 바꾸기] — **자동 조합이 칸에 들어오는 길.**
+  //
+  // 저장하는 길은 이제 자동 조합을 넣지 않는다(기본이 사용자 정의 문구다).
+  // 그래서 창에서 자동 조합을 쓰는 길은 이 단추 하나이고, 표 전체에 거는 길이
+  // 위의 [전체 자동조합] 이다.
+  //
+  // **칸에 넣어 줄 뿐 저장하지 않는다.**
   //
   // 곧바로 덮는 API 가 따로 있지만(`POST /api/companies/{id}/one-liner`) 부르지
   // 않는다. 그 자리에서 커밋해 버리면 [취소] 를 눌러도 이미 바뀌어 있어서,

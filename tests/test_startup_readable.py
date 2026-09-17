@@ -187,7 +187,7 @@ def test_IR_기업_현황도_첫_두_칸이_고정된다(co):
     이 표의 주인공 이름. 한 칸 더 고정하면(`사업분야 대분류`) 고정 폭이 300px
     을 넘어 정작 밀어서 볼 자리가 준다.
     """
-    head = _co_head(co.get("/companies").text, "딜 소개 문구 회사개요")
+    head = _co_head(co.get("/companies").text, "딜 소개 문구")
     cells = re.findall(r"<th\b([^>]*)>(.*?)</th>", head, re.S)
     assert "stick stick-a" in cells[0][0], cells[0]
     assert "stick stick-b" in cells[1][0], cells[1]
@@ -199,7 +199,7 @@ def test_IR_기업_현황도_첫_두_칸이_고정된다(co):
 def test_IR_기업_현황도_머리글과_칸에_같은_수의_고정_표시가_붙는다(co):
     """한쪽만 붙으면 머리글은 멈춰 서고 칸은 따라 흘러간다."""
     body = co.get("/companies").text
-    head = _co_head(body, "딜 소개 문구 회사개요")
+    head = _co_head(body, "딜 소개 문구")
     want = len(re.findall(r'class="[^"]*\bstick\b', head))
     assert want == 2, f"머리글의 고정 칸이 {want}개입니다"
     rows = re.findall(r'<tr data-id="\d+".*?</tr>', body, re.S)

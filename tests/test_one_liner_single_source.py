@@ -353,24 +353,31 @@ def test_두_탭은_이제_서로_다른_칸을_보여_준다(logged_in, merged)
     assert "시트에 적혀 있던 사업 설명" in db_tab
 
 
-def test_재료를_고치면_조합_결과가_따라온다(logged_in, db):
+def test_재료를_고치면_새_조합값을_권해_온다(logged_in, db):
     """0051 이 지키려던 것 — "고쳤는데 저쪽이 그대로" 가 없어야 한다.
 
-    칸이 갈라졌어도 **맞춰 주는 코드는 여전히 없다.** 스타트업DB 에서 재료를
-    고치면 조합이 다시 만들어져 IR 기업 현황이 따라온다(one_liner.sync).
+    **다만 따라오는 것은 조합값이지 칸이 아니다.** 칸의 기본은 사용자 정의
+    문구라(사용자 요청) 재료를 고쳐도 적힌 문장은 그대로 있는다 — 대신 새
+    재료로 만든 한 줄이 `one_liner_suggestion` 으로 따라와, 화면이 그것으로
+    [자동 조합으로 바꾸기] 를 권한다. "고쳤는데 아무 말이 없다" 가 없어야 한다는
+    뜻은 그대로 지킨다(tests/test_one_liner_manual_default.py).
     """
     from app.models import IrCompany
 
     row = IrCompany(name="샘플나다물류", business_desc="물류 최적화 SaaS",
-                    one_liner="물류 최적화 SaaS")      # 조합값 그대로 = AUTO
+                    one_liner="물류 최적화 SaaS")      # 조합값과 글자까지 같다
     db.add(row)
     db.commit()
 
-    logged_in.patch(f"/api/companies/{row.id}",
-                    json={"business_desc": "스타트업DB 에서 고친 소개"})
+    body = logged_in.patch(f"/api/companies/{row.id}",
+                           json={"business_desc": "스타트업DB 에서 고친 소개"}).json()
     assert "스타트업DB 에서 고친 소개" in logged_in.get("/companies?tab=db").text
-    assert "스타트업DB 에서 고친 소개" in logged_in.get("/companies").text, \
-        "재료를 고쳤는데 딜 소개 문구가 따라오지 않았다"
+    assert body["one_liner_suggestion"] == "스타트업DB 에서 고친 소개", body
+    assert body["one_liner"] == "물류 최적화 SaaS", "고르지도 않았는데 칸이 바뀌었다"
+
+    # 고르면 그때 따라온다.
+    logged_in.post(f"/api/companies/{row.id}/one-liner")
+    assert "스타트업DB 에서 고친 소개" in logged_in.get("/companies").text
 
 
 def test_스타트업DB_에는_이제_사업분야_머리글이_없다(logged_in, merged):

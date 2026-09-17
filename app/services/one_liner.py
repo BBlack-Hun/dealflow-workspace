@@ -1,4 +1,11 @@
-"""스타트업DB 칸 → IR 기업현황의 `딜 소개 문구 회사개요` 자동 조합.
+"""스타트업DB 칸 → IR 기업현황 `딜 소개 문구` 의 **자동 조합(고를 때만)**.
+
+**기본은 사용자 정의 문구다.** 이 파일이 만드는 한 줄은 어디에서도 저절로
+칸에 들어가지 않는다 — 사람이 [자동 조합으로 바꾸기] 를 누르거나(창),
+[전체 자동조합] 으로 고르거나, `POST /api/companies/{id}/one-liner` 를 부를
+때만 들어간다(사용자 요청). 재료를 고치면 화면은 "이렇게 만들 수 있다"를
+보여 줄 뿐이고, 칸에 적힌 문장은 그대로 있는다. 아래 `조합값은 권할 뿐이다`
+칸을 보라.
 
 시트를 쓰던 사람은 **스타트업DB 탭**(기업 한줄 소개 · 연도별 매출 · 누적투자금액 ·
 투자유치희망금액 · Pre Value · 특이사항)에 값을 넣는다. 그런데 정작 딜소개에
@@ -8,7 +15,7 @@
     기업 한줄 소개 | 매출 … | 누적투자금액 N억 | N억 투자유치중 | Pre Value N억 | 특이사항
 
 **만든 줄이 서는 자리는 IR 기업 현황 탭 하나다**(`one_liner`, 머리글
-`딜 소개 문구 회사개요`). 재료가 있는 스타트업DB 탭에는 재료가 그대로 보인다
+`딜 소개 문구`). 재료가 있는 스타트업DB 탭에는 재료가 그대로 보인다
 (`business_desc`, 머리글 `기업 한줄 소개`) — 넣는 자리에 조합 결과가 서면
 무엇을 고쳐야 그 줄이 바뀌는지 알 수 없다(0058).
 
@@ -169,9 +176,11 @@ def _revenue_segment(company) -> str:
     근거로는 쓰지 않는다.
 
     (되돌리고 싶어지면 이 함수만 고치면 된다. 다만 **형식을 바꾸면 예전에 자동
-    으로 만들어 둔 줄이 `origin()` 에 '사람이 쓴 값' 으로 보인다** — 그 줄들은
-    스타트업DB 를 고쳐도 따라오지 않는다. 이 판의 운영 사본에서는 5곳이 그랬고,
-    [자동 조합으로 바꾸기] 를 한 번 눌러 주면 다시 AUTO 로 돌아온다.)
+    으로 만들어 둔 줄이 `origin()` 에 '사람이 쓴 값' 으로 보인다** — 창에 뜨는
+    말이 `자동으로 만든 값입니다` 에서 `직접 쓰신 값입니다` 로 바뀐다. 칸이
+    저절로 바뀌지는 않는다(기본이 사용자 정의 문구라 어차피 아무 줄도 따라오지
+    않는다). 이 판의 운영 사본에서는 5곳이 그랬고, [자동 조합으로 바꾸기] 를
+    한 번 눌러 주면 다시 조합값과 같아진다.)
     """
     written = [(year, _text(getattr(company, attr, None)))
                for attr, year in REVENUE_YEARS]
@@ -239,73 +248,81 @@ def compose_one_liner(company) -> str:
     return " | ".join(segments)
 
 
-# --- 손으로 쓴 소개를 지키는 규칙 ---------------------------------------------
+# --- 조합값은 권할 뿐이다 — 칸의 기본은 **사용자 정의 문구** ------------------
 #
 # 지금 344곳 중 293곳에 **사람이 쓴 한줄 소개**가 들어 있다. 스타트업DB 를 고칠
 # 때마다 무턱대고 덮으면 그게 소리 없이 사라진다 — 되돌릴 수 없다.
 #
-# 그렇다고 '비었을 때만 채운다'로 두면, 이미 293곳이 차 있어서 **스타트업DB 를
-# 채워도 한줄 소개가 그대로**다. 그건 요청의 핵심을 못 지킨다.
+# 한동안은 **자동으로 만든 줄인지 사람이 쓴 줄인지 가려내서** 자동인 줄만 따라
+# 갱신했다(아래 `origin`). 그 규칙에서는 칸의 기본이 사실상 '자동' 이었다:
+# 한 번 조합값과 글자가 같아진 줄은 재료를 고칠 때마다 저절로 다시 쓰였고,
+# 칸을 비워서 저장하면 자동 조합이 도로 들어왔다.
 #
-# 그래서 **자동으로 만든 값인지 사람이 쓴 값인지 가려내서** 다르게 다룬다.
-# 가려내는 방법은 '표시를 남기는 것'이 아니라 **다시 만들어 맞춰 보는 것**이다 —
-# 고치기 **전** 칸들로 한 줄을 만들어, 지금 저장된 소개와 글자까지 같으면 그건
-# 이 코드가 만든 값이니 새 값으로 갱신해도 잃을 것이 없다. 다르면 사람이 손을
-# 댄 것이니 **그대로 둔다.** (모델에 '자동/수동' 칸을 새로 파지 않아도 되고,
-# 이미 쌓인 344행에 표시를 소급해 넣을 필요도 없다.)
+# **사용자가 그 기본을 뒤집었다**("기본 값은 사용자 정의 문구 사용"). 그래서
+# 이제 **칸에 값을 넣는 함수는 `apply_one_liner` 하나뿐이고, 그것은 사람이
+# 골랐을 때만 불린다.** 저장하는 길(PATCH/POST)은 조합값을 만들어 **돌려주기만**
+# 한다 — 무엇으로 바뀔 수 있는지는 화면이 보여 주고, 바꿀지는 사람이 누른다.
 #
-# 사람이 쓴 소개가 있어 자동 갱신을 건너뛴 경우에도 **조용히 넘어가지 않는다.**
-# 만들어 둔 값을 `suggestion` 으로 함께 돌려주어 화면이 "이 값으로 바꾸기"를
-# 권할 수 있게 하고, 사람이 그걸 고르면 apply_one_liner 로 덮는다.
-# 즉 자동 조합을 쓸지 손으로 쓴 것을 지킬지는 **언제나 사람이 고른다.**
+#   · 재료를 고쳐 저장   → 칸은 그대로. 새 조합값은 `suggestion` 으로 따라온다
+#   · 칸을 비워서 저장   → **빈 채로 둔다.** 비우는 것도 사람의 결정이다
+#   · [자동 조합으로 바꾸기] · [전체 자동조합] · `POST …/one-liner`
+#                        → 이때만 칸에 들어간다
+#
+# **자동 조합을 없앤 것이 아니다.** 스타트업DB 를 채우면 한 줄이 만들어지고,
+# 그 줄은 표와 창에 나란히 보인다(`one_liner_suggestion`). 달라진 것은 **누가
+# 넣기로 정하는가** 하나다.
+#
+# `origin()` 은 남는다. 이제는 '덮을지' 를 정하는 자리가 아니라 **지금 칸에 든
+# 글자가 조합값과 같은지**를 화면에 알려 주는 자리다(`자동으로 만든 값입니다` /
+# `직접 쓰신 값입니다`). 표시를 새로 남기는 대신 **다시 만들어 맞춰 보는** 방식
+# 그대로다 — 모델에 '자동/수동' 칸을 파지 않아도 되고, 이미 쌓인 344행에 표시를
+# 소급해 넣을 필요도 없다.
 
-AUTO = "auto"        # 이 코드가 만든 값 그대로다 → 갱신해도 잃을 것이 없다
-MANUAL = "manual"    # 사람이 손댄 값이다 → 덮지 않는다
-EMPTY = "empty"      # 아직 비어 있다 → 채운다
+AUTO = "auto"        # 칸에 든 글자가 **지금 재료로 만든** 조합값과 같다
+MANUAL = "manual"    # 사람이 쓴 글자다(조합값을 넣은 뒤 손댄 것도 여기다)
+EMPTY = "empty"      # 아직 비어 있다
 
 
-def origin(current: Optional[str], previous_auto: Optional[str]) -> str:
-    """지금 저장된 소개가 자동으로 만든 값인가, 사람이 쓴 값인가.
+def origin(current: Optional[str], suggestion: Optional[str]) -> str:
+    """지금 칸에 든 글자가 조합값 그대로인가, 사람이 쓴 것인가. **읽기만 한다.**
 
-    `previous_auto` 는 **고치기 전** 칸들로 만든 한 줄이다.
+    `suggestion` 은 지금 재료로 만든 한 줄(`compose_one_liner`)이다.
     """
     text = _text(current)
     if not text:
         return EMPTY
-    return AUTO if text == _text(previous_auto) else MANUAL
+    return AUTO if text == _text(suggestion) else MANUAL
 
 
-def sync_one_liner(company, previous_auto: Optional[str], manual_edit: bool = False) -> dict:
-    """스타트업DB 를 고친 뒤 `한줄 소개` 를 맞춘다.
+def one_liner_status(company) -> dict:
+    """저장 응답에 실을 `딜 소개 문구` 의 상태. **칸을 건드리지 않는다.**
 
-    `manual_edit` 은 이번 요청이 한줄 소개 자체를 손으로 고친 경우다 — 방금 사람이
-    적은 문장을 같은 요청 안에서 자동 조합으로 덮으면 타이핑이 눈앞에서 사라진다.
+    (예전 이름은 `sync_one_liner` 였고, 이름 그대로 조건이 맞으면 칸을 갱신했다.
+    기본이 사용자 정의 문구가 되면서 **맞출 일 자체가 없어졌다** — 이름도 하는
+    일에 맞춰 바꾼다. 갱신하는 길은 `apply_one_liner` 하나다.)
 
     돌려주는 값:
-      applied     실제로 갱신했는가
-      suggestion  만들어 둔 한 줄(안 덮었을 때 화면이 권할 값)
-      kept        사람이 쓴 소개를 지키느라 건너뛰었는가
-      origin      갱신 전 소개의 출처(auto/manual/empty)
+      applied     칸에 조합값을 넣었는가 — **언제나 False** 다. 키를 남겨 두는
+                  것은 응답 모양(`one_liner_applied`)을 읽는 곳이 있어서고,
+                  실제로 넣는 길(`POST …/one-liner`)은 제 값을 따로 돌려준다.
+      suggestion  지금 재료로 만든 한 줄. 화면이 이것으로 "이렇게 바꿀까요?" 를 권한다
+      kept        사람이 쓴 문장을 그대로 두었는가
+      origin      지금 칸의 출처(auto/manual/empty)
     """
     suggestion = compose_one_liner(company)
-    where = origin(getattr(company, "one_liner", None), previous_auto)
-
-    if manual_edit:
-        # 방금 손으로 적었다. 그 값이 곧 사람의 결정이다.
-        return {"applied": False, "suggestion": suggestion, "kept": True, "origin": MANUAL}
-    if not suggestion:
-        # 조합할 내용이 하나도 없다. **있는 소개를 비우지는 않는다** —
-        # 스타트업DB 가 비었다는 이유로 멀쩡한 소개를 지우면 그게 제일 나쁘다.
-        return {"applied": False, "suggestion": "", "kept": where == MANUAL, "origin": where}
-    if where == MANUAL:
-        return {"applied": False, "suggestion": suggestion, "kept": True, "origin": MANUAL}
-
-    company.one_liner = suggestion
-    return {"applied": True, "suggestion": suggestion, "kept": False, "origin": where}
+    where = origin(getattr(company, "one_liner", None), suggestion)
+    return {"applied": False, "suggestion": suggestion,
+            "kept": where == MANUAL, "origin": where}
 
 
 def apply_one_liner(company) -> str:
     """사람이 "자동 조합을 쓰겠다"고 고른 경우 — 손으로 쓴 소개까지 덮는다.
+
+    **이 파일에서 `one_liner` 에 값을 넣는 함수는 이것 하나뿐이다.** 부르는 곳도
+    사람이 고른 자리 셋뿐이다(창의 [자동 조합으로 바꾸기] 는 칸에 넣어만 주고,
+    `POST /api/companies/{id}/one-liner` 와 [전체 자동조합] 이 저장한다).
+    새로 부르는 곳을 만들 때는 **사람이 누른 결과인지** 먼저 따져라 — 아니면
+    293곳의 손글씨가 소리 없이 사라지는 길이 하나 더 생기는 것이다.
 
     조합할 내용이 없으면 아무것도 하지 않는다(빈 줄로 지우지 않는다).
     """
