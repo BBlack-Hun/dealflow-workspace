@@ -75,11 +75,19 @@ def test_the_number_rule_lives_in_exactly_one_place():
 
 
 # --- auto_company_summary --------------------------------------------------
+#
+# **적어 둔 글이 있으면 그것만 나간다.** 아래 조합 검사들은 그래서 전부
+# `딜 소개 문구`(`one_liner`)가 **빈** 기업으로 서 있다 — 조합은 이제 그
+# 갈래에서만 돈다. 예전 판에서는 같은 검사들이 `one_liner="선도거래"` 처럼
+# 문구를 적어 둔 채로 `[분야] | 선도거래 | 매출 …` 을 견줬는데, 그 모양은
+# 더 이상 만들어지지 않는다(그 줄이 바로 사용자가 고쳐 달라고 한 것이다).
+# 검사가 재던 것(단위·`Pre Value 약 N억` 모양·빈 토막 생략)은 그대로 살아
+# 있으니, 문구만 비우고 자리를 옮겼다.
 
-def test_auto_summary_full():
+def test_auto_summary_composes_the_materials_when_nothing_was_written():
+    """`딜 소개 문구` 가 비면 — 그때만 — 재료로 한 줄을 만든다."""
     c = CompanyView(
         name="샘플애그", sector_major="애그테크",
-        one_liner="B2B 농산물 선도거래 'Presell'",
         revenue_recent="30.9", funding_total="5.6", raise_target="20",
         pre_value="210", competitiveness="상급 유통사 12곳 계약",
     )
@@ -90,7 +98,7 @@ def test_auto_summary_full():
     # `services/amount.py` 한 곳으로 모으면서 그 예외를 없앤다 — 한줄소개와도
     # 이제 같은 모양이다.
     assert summary == (
-        "[애그테크] | B2B 농산물 선도거래 'Presell' | 매출 30.9억 | "
+        "[애그테크] | 매출 30.9억 | "
         "누적투자금액 5.6억 | 20억 투자유치중 | Pre Value 약 210억 | 상급 유통사 12곳 계약"
     )
 
@@ -100,24 +108,33 @@ def test_a_sub_eok_amount_keeps_its_unit_all_the_way_to_the_investor():
 
     틀이 `{}억` 이던 시절에는 이 값이 `5천만원억` 이 되거나, 억으로 뭉개져
     `0.5억` 으로 나갔다. 둘 다 사람이 적은 뜻이 아니다.
+
+    (예전에는 `one_liner="선도거래"` 를 함께 두고 쟀다. 문구가 있으면 금액이
+    아예 안 붙게 되었으므로 문구를 비운다 — 재는 것은 그대로 단위다.)
     """
-    c = CompanyView(name="샘플애그", sector_major="애그테크", one_liner="선도거래",
+    c = CompanyView(name="샘플애그", sector_major="애그테크",
                     funding_total="5천만원", raise_target="3천만원~1억",
                     pre_value="4700만원")
     assert mc.auto_company_summary(c) == (
-        "[애그테크] | 선도거래 | 누적투자금액 5천만원 | 3천만원~1억 투자유치중 | "
+        "[애그테크] | 누적투자금액 5천만원 | 3천만원~1억 투자유치중 | "
         "Pre Value 약 4700만원"
     )
 
 
 def test_auto_summary_omits_empty_segments():
-    """Empty values must drop the whole segment (no '매출 억')."""
-    c = CompanyView(name="빈기업", sector_major="AI", one_liner="한줄 소개")
+    """Empty values must drop the whole segment (no '매출 억').
+
+    빈 칸 하나만 남기던 예전 검사는 `one_liner="한줄 소개"` 로 서 있었는데,
+    이제 그 기업은 조합을 지나지 않아 **무엇이 생략되는지 재지 못한다.**
+    그래서 문구를 비우고 금액 한 칸만 채워 둔다 — 찬 토막은 나오고 빈 토막은
+    통째로 빠지는 것이 이 검사의 요점이다.
+    """
+    c = CompanyView(name="빈기업", sector_major="AI", funding_total="5")
     summary = mc.auto_company_summary(c)
-    assert summary == "[AI] | 한줄 소개"
+    assert summary == "[AI] | 누적투자금액 5억"
     assert "매출" not in summary
-    assert "억" not in summary
     assert "Pre Value" not in summary
+    assert "투자유치중" not in summary
 
 
 def test_company_summary_prefers_manual_override():
@@ -127,8 +144,102 @@ def test_company_summary_prefers_manual_override():
 
 
 def test_company_summary_falls_back_to_auto():
+    """`summary` 가 비면 `auto_company_summary` 가 답한다.
+
+    답이 `[AI] | auto` 에서 `auto` 로 바뀐 것이 이번 변경이다 — 적어 둔 글이
+    있으면 분야도 안 붙는다.
+    """
     c = CompanyView(name="X", sector_major="AI", one_liner="auto", summary="   ")
-    assert mc.company_summary(c) == "[AI] | auto"
+    assert mc.company_summary(c) == "auto"
+
+
+# --- 적어 둔 글은 **한 글자도 안 바뀌고** 나간다 -----------------------------
+
+def test_what_was_written_goes_out_untouched_even_with_every_number_filled():
+    """이번 변경의 핵심. 재무 칸이 다 차 있어도 **아무것도 안 붙는다.**
+
+    운영 실측이 이 모양이었다: 적은 글 186자가 나갈 때는 629자였다. 앞에
+    `[분야]` 가 붙고 뒤에 `매출 …| 누적투자금액 …| N억 투자유치중 |
+    Pre Value 약 …| 경쟁력` 이 443자 붙었다.
+
+    **예전 판은 왜 못 막았나.** 덧붙일지 말지를 "적은 글에 그 낱말이 이미
+    있는가" 로 봤는데, 아래 글에는 `매출`·`누적투자`·`투자유치`·`Pre Value`
+    라는 **낱말이 하나도 없다** — 같은 사실을 사람 말로 적었을 뿐이다.
+    그래서 검사를 다 통과하고 전부 다시 붙었다. 이 검사는 그 글을 그대로
+    쓴다(낱말 검사로는 못 막는 글이라는 것이 요점이다).
+    """
+    written = ("반도체 후공정 검사 장비를 만듭니다. 작년에 19억을 팔았고 "
+               "시리즈 A 까지 13억을 받았습니다. 올해 40억을 더 받으려 합니다.")
+    c = CompanyView(
+        name="샘플장비", sector_major="딥테크·제조", one_liner=written,
+        revenue_recent="19.1", funding_total="13.38", raise_target="40",
+        pre_value="200", competitiveness="특허 12건 · 대기업 3곳 납품(장문)",
+    )
+    said = mc.auto_company_summary(c)
+
+    assert said == written, "적은 글이 한 글자도 안 바뀌어야 한다"
+    assert len(said) == len(written), f"{len(written)}자가 {len(said)}자가 됐다"
+    for leaked in ("[딥테크·제조]", "매출", "누적투자금액", "투자유치중",
+                   "Pre Value", "19.1", "13.38", "200억", "특허 12건"):
+        assert leaked not in said, f"{leaked} 이 덧붙었습니다"
+
+
+def test_the_written_intro_is_what_actually_goes_out():
+    """함수 하나가 아니라 **나가는 문구 전체**에서 확인한다.
+
+    `auto_company_summary` 만 재면 사이에 낀 `company_summary`(수동 요약 우선)나
+    `compose_message` 가 무엇을 더 붙였는지 놓친다 — 사용자가 본 것은 카톡에
+    붙여 넣을 그 글 전체다.
+    """
+    written = "생산 공정을 스스로 바꾸는 로봇 셀을 만듭니다."
+    c = CompanyView(name="샘플장비", sector_major="딥테크·제조", one_liner=written,
+                    revenue_recent="19.1", funding_total="13.38",
+                    raise_target="40", pre_value="200",
+                    competitiveness="특허 12건")
+    text = mc.compose_message("안녕하세요, {담당자명} {직함}", "핵심 딜 {개수}개사 공유드립니다.",
+                              _contact(), [c], stage=mc.STAGE_DAY1).text
+    assert f"1) {written}" in text
+    for leaked in ("[딥테크·제조]", "매출", "누적투자금액", "투자유치중",
+                   "Pre Value", "특허 12건"):
+        assert leaked not in text, f"{leaked} 이 덧붙었습니다"
+
+
+def test_only_the_padding_around_the_written_intro_is_trimmed():
+    """앞뒤 공백만 떼고, 안쪽 글자는 손대지 않는다.
+
+    `|` 로 이어 적어 둔 글도 **그 모양 그대로** 나간다 — 구분자를 다시 맞추거나
+    토막을 골라내는 자리는 여기에 없다(그 일은 [자동 조합] 쪽 일이다).
+    """
+    written = "설명 | 매출 13억 | 누적투자금액 11억"
+    c = CompanyView(name="X", sector_major="AI", one_liner=f"  {written}\n")
+    assert mc.auto_company_summary(c) == written
+
+
+def test_a_company_can_be_introducible_with_no_written_intro():
+    """**비었을 때 조합을 남겨 둔 이유.** 문구가 비어도 소개 대상에 설 수 있다.
+
+    `IrCompany.introducible` 은 `사업분야 대분류 **또는** 딜 소개 문구` + 금액
+    하나를 본다 — 문구 칸은 필수가 아니다. `/deals` 의 `내용 부족` 딱지도 그
+    판정을 그대로 쓰고, 이유를 적는 `REQUIRED_FIELDS` 에는 이 칸이 아예 없다.
+    즉 **문구가 비었다고 알려 주는 화면이 없다.**
+
+    아무것도 안 내기로 했다면 이런 기업이 `1) ` 한 줄로 카톡에 나간다.
+    (개발 사본 344곳에서 문구가 빈 곳은 6곳이고 그 여섯은 금액이 없어 오늘은
+    소개 대상이 아니다. 그중 한 곳은 분야가 이미 있어 **금액 한 칸만 채우면**
+    아래와 똑같은 모양이 된다.)
+    """
+    from app.models import IrCompany
+
+    row = IrCompany(name="샘플", sector_major="AI", funding_total="12",
+                    summary_status="draft")
+    assert row.one_liner is None
+    assert row.introducible is True, "문구가 비어도 소개 대상에 선다"
+
+    said = mc.auto_company_summary(CompanyView(
+        name=row.name, sector_major=row.sector_major, one_liner=row.one_liner,
+        funding_total=row.funding_total))
+    assert said == "[AI] | 누적투자금액 12억"
+    assert said.strip(), "빈 줄이 투자사에게 나가면 안 된다"
 
 
 # --- render_template -------------------------------------------------------
@@ -203,11 +314,17 @@ def test_compose_day1_structure():
     text = result.text
     assert text.startswith("안녕하세요 홍길동 대표님, 딜소개드립니다.")
     # 실제 운영 문구 형식: 번호는 "1)", 안내문은 목록 '위'에 온다.
-    assert "1) [애그테크] | 선도거래 | 매출 30.9억" in text
-    assert "2) [헬스케어] | 뇌영상 AI" in text
-    assert "3) [핀테크] | 결제" in text
+    #
+    # 예전에는 `1) [애그테크] | 선도거래 | 매출 30.9억` 이었다. 세 기업 모두
+    # `딜 소개 문구` 를 적어 두었으므로 이제 **적은 글만** 나간다 — 분야도
+    # 재무도 붙지 않는다. `샘플애그` 의 매출 칸은 일부러 채워 둔 채 두었다:
+    # 아래 `not in` 이 그 값이 다시 붙지 않는 것을 여기서도 못 박는다.
+    assert "1) 선도거래" in text
+    assert "2) 뇌영상 AI" in text
+    assert "3) 결제" in text
+    assert "[애그테크]" not in text and "매출 30.9억" not in text
     assert text.index("관심 가시는 기업") < text.index("1) ")
-    assert text.rstrip().endswith("3) [핀테크] | 결제")
+    assert text.rstrip().endswith("3) 결제")
     # blank line separators between blocks
     assert "\n\n1)" in text
     assert "\n\n2)" in text
