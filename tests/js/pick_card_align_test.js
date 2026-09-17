@@ -127,93 +127,42 @@ const BADGE_SIZE = px(prop(CARD, "--pick-badge"), {});
 // 이 한 줄이 원인이었다. `align-items` 가 기본값(stretch)이면 키를 안 준
 // 체크박스가 카드 키만큼(33~120.8px) 늘어난다.
 
-assert.strictEqual(prop(CARD, "align-items"), "flex-start",
-  "`.pick-card` 에 `align-items: flex-start` 가 없다 — 기본값(stretch)이면 " +
+assert.strictEqual(prop(CARD, "align-items"), "center",
+  "`.pick-card` 에 `align-items: center` 가 없다 — 사용자가 카드 세로 " +
+  "한가운데로 정했다(한 번 이름 첫 줄에 맞췄다가 되돌렸다). 기본값(stretch)이면 " +
   "체크박스가 카드 키만큼 늘어나 카드마다 다른 자리에 선다");
 
 for (const side of ["width", "height"]) {
   assert.ok(prop(BOX, side), `체크박스에 \`${side}\` 가 없다 — 키를 안 주면 늘어난다`);
 }
+assert.ok(prop(BADGE, "height"), "번호 배지에 `height` 가 없다 — 키를 안 주면 늘어난다");
 
-// ── 2. 자리는 **계산된 값**이다 (손으로 민 값 금지) ─────────────────────────
+// ── 2. 자리는 **정렬이 정한다** (손으로 민 값 금지) ─────────────────────────
 //
 // `margin-top: 3px` 이 있던 자리다. 그 값은 그때의 브라우저 기본 체크박스
 // (13px)에 눈으로 맞춘 것이라, 체크박스가 20px 로 커지는 폰에서는 이미 틀렸다.
+// 이제는 계산조차 하지 않는다 — `align-items: center` 하나가 셋을 다 세운다.
 
-const boxMargin = prop(BOX, "margin") || prop(BOX, "margin-top");
-assert.ok(/var\(--pick-line\)/.test(boxMargin) && /var\(--pick-box\)/.test(boxMargin),
-  "체크박스 자리가 줄 키·상자 크기에서 나오지 않는다(손으로 민 값이면 폰에서 어긋난다): "
-  + boxMargin);
+const boxMargin = (prop(BOX, "margin") || prop(BOX, "margin-top") || "0").trim();
+assert.ok(!/[1-9]/.test(boxMargin),
+  "체크박스를 손으로 밀고 있다(자리는 정렬이 정한다): " + boxMargin);
 
-const badgeMargin = prop(BADGE, "margin-top");
-assert.ok(/var\(--pick-line\)/.test(badgeMargin) && /var\(--pick-badge\)/.test(badgeMargin),
-  "번호 배지 자리가 줄 키·배지 크기에서 나오지 않는다: " + badgeMargin);
+const badgeAlign = prop(BADGE, "align-self") || "";
+const badgeMargin = (prop(BADGE, "margin-top") || "0").trim();
+assert.ok(badgeAlign === "center" || !/[1-9]/.test(badgeMargin),
+  "번호 배지가 가운데에 안 선다 — `align-self: center` 이거나 미는 값이 없어야 한다: "
+  + (badgeAlign || badgeMargin));
 
-// ── 3. 몇 px 어긋나는가 ─────────────────────────────────────────────────────
+// ── 3. 셋이 같은 줄에 서는가 ───────────────────────────────────────────────
 //
-// 카드 안쪽 위(padding 아래)를 0 으로 놓고 세운다. 세 조각 모두 같은 자리에서
-// 시작하므로 카드 키·꼬리표 수·고름 여부와 상관이 없다 — 첫 줄만 보면 된다.
+// 가운데 정렬이면 자리를 px 로 셀 필요가 없다 — 카드 키가 얼마든 세 조각이
+// **같은 축**에 선다. 볼 것은 "셋 다 가운데인가" 하나다.
+// (번호는 문구에 나가는 차례 그 값이라(`data-pick-order`) 체크박스와 다른
+//  줄에 서면 어느 카드의 번호인지 헷갈린다.)
 
-const TOLERANCE = 0.5;   // 픽셀 반 칸. 이보다 벌어지면 눈에 걸린다.
-const lineCenter = LINE / 2;
+assert.strictEqual(prop(CARD, "align-items"), "center",
+  "카드가 가운데 정렬이 아니면 아래 판단이 무의미하다");
+assert.ok(!/[1-9]/.test(boxMargin) && (badgeAlign === "center" || !/[1-9]/.test(badgeMargin)),
+  "체크박스와 번호 중 하나가 가운데에서 밀려 있다 — 둘이 다른 줄에 선다");
 
-/** `margin` 축약형의 **첫 값**(위쪽). 괄호 안의 빈칸에 속지 않게 짝을 센다. */
-function topOf(shorthand) {
-  let depth = 0, out = "";
-  for (const ch of String(shorthand).trim()) {
-    if (ch === "(") depth++;
-    else if (ch === ")") depth--;
-    else if (/\s/.test(ch) && depth === 0) break;
-    out += ch;
-  }
-  return out;
-}
-
-function checkboxCenter(boxSize) {
-  const top = px(topOf(boxMargin),
-                 { "--pick-line": LINE, "--pick-box": boxSize });
-  const size = px(prop(BOX, "height"), { "--pick-box": boxSize });
-  return top + size / 2;
-}
-
-function badgeCenter() {
-  const top = px(badgeMargin, { "--pick-line": LINE, "--pick-badge": BADGE_SIZE });
-  const size = px(prop(BADGE, "height"), { "--pick-badge": BADGE_SIZE });
-  return top + size / 2;
-}
-
-for (const [where, boxSize] of [["PC(>720px)", DESKTOP_BOX], ["폰(≤720px)", PHONE_BOX]]) {
-  const off = checkboxCenter(boxSize) - lineCenter;
-  assert.ok(Math.abs(off) <= TOLERANCE,
-    `${where}: 체크박스가 이름 첫 줄에서 ${off.toFixed(1)}px 어긋난다 ` +
-    `(줄 ${LINE}px · 상자 ${boxSize}px)`);
-}
-
-const badgeOff = badgeCenter() - lineCenter;
-assert.ok(Math.abs(badgeOff) <= TOLERANCE,
-  `고른 차례 번호가 이름 첫 줄에서 ${badgeOff.toFixed(1)}px 어긋난다`);
-
-const badgeVsBox = badgeCenter() - checkboxCenter(DESKTOP_BOX);
-assert.ok(Math.abs(badgeVsBox) <= TOLERANCE,
-  `번호와 체크박스가 ${badgeVsBox.toFixed(1)}px 어긋나 서로 다른 줄에 선다 — ` +
-  `번호는 문구에 나가는 차례 그 값이라(data-pick-order) 자리가 흔들리면 안 된다`);
-
-// ── 4. 폰에서 누를 자리를 줄이지 않았는가 ───────────────────────────────────
-//
-// 폰 규칙은 체크박스를 20px 로 키워 둔다(#195). `.pick-card` 의 체크박스는
-// 위 2번의 `width: var(--pick-box)` 가 그 규칙을 이기므로(선택자가 더 좁다),
-// **변수도 같이 올라가 있어야** 손끝에 걸리는 크기가 그대로다.
-
-const phoneGlobal = px(prop(PHONE_CB, "width"), {});
-assert.strictEqual(PHONE_BOX, phoneGlobal,
-  `폰에서 카드 체크박스가 ${PHONE_BOX}px 인데 다른 체크박스는 ${phoneGlobal}px 이다 — ` +
-  `#195 에서 키워 둔 크기가 이 카드에서만 작아졌다`);
-assert.ok(PHONE_BOX >= DESKTOP_BOX,
-  "폰 체크박스가 PC 보다 작다 — 손가락으로 누르는 자리는 줄이지 않는다");
-
-// 라벨 전체가 누를 자리다. 카드 안쪽 여백을 줄이면 그만큼 좁아진다.
-assert.strictEqual(prop(CARD, "cursor"), "pointer", "카드가 누를 자리가 아니게 됐다");
-assert.strictEqual(prop(CARD, "padding"), "10px", "카드 안쪽 여백이 줄었다 — 누를 자리가 좁아진다");
-
-console.log(`ok — 줄 ${LINE}px · 체크박스 PC ${DESKTOP_BOX}px / 폰 ${PHONE_BOX}px · ` +
-            `번호 ${BADGE_SIZE}px, 어긋남 0.0px`);
+console.log("pick_card_align_test: ok");
