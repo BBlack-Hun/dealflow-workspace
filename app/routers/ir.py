@@ -117,6 +117,13 @@ def ir_page(request: Request, db: Session = Depends(get_db),
     ask_overdue = {r["contact_id"] for r in delivered if r["meeting_ask_overdue"]}
 
     ctx = base_ctx(request, db, user, active="flow")
+    # 담당자 고르기에 세울 사람들 — **맡은 사람 전부**(`my_contacts`)다.
+    # 발송 대상(`recipients`)이 아니라는 것이 이 화면의 뜻이다: 여기는 보내는
+    # 곳이 아니라 **이미 일어난 일을 적는** 곳이라, 방을 나간 분이 메일로
+    # 요청한 일도 적을 수 있어야 한다. 대신 왜 이 사람이 목록에 있는지를
+    # 줄마다 적는다(아래 `pick_notes`).
+    picks = sorted(sheet_owner.my_contacts(db, user),
+                   key=lambda c: (c.firm or "", c.name))
     # 리마인드 구역도 이 한 페이지 안에 있다 — 딴 페이지로 갈리면
     # "자료 보냈나 → 답 없으면 리마인드 → 미팅 잡기" 흐름이 끊긴다.
     ctx.update(followups.remind_context(db, user, today))
@@ -154,8 +161,11 @@ def ir_page(request: Request, db: Session = Depends(get_db),
             "followup": len(items["due_followups"]),
         },
         # 담당자 고르기 — 내 명단만
-        "contacts": sorted(sheet_owner.my_contacts(db, user),
-                           key=lambda c: (c.firm or "", c.name)),
+        "contacts": picks,
+        # 그 줄에 함께 적을 **상태**(`[방 나감]` · `[검토중단]` …). 판정도
+        # 한글 이름도 서버 한 곳에서 나온다 — 화면이 `connect_stage` 값을
+        # 직접 보고 말을 지어내면, 임포트가 말을 바꾸는 날 이 화면만 낡는다.
+        "pick_notes": sheet_owner.pick_notes(db, picks),
         # 「요청받은 기업」 칸의 후보. **질의는 이 한 번뿐**이다 — 위 함수 참고.
         "company_names": _company_names(db),
         "outcomes": pipeline.OUTCOMES,

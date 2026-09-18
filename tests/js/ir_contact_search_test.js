@@ -16,6 +16,8 @@
 //   · 검색어를 지우면 전부 되돌아온다.
 //   · 폼 **둘 다**(요청 적기 · 미팅 등록) 붙는다 — 한쪽만 달리면 그게 원래 문제다.
 //   · [미팅 잡기] 로 사람을 넣는 길이 걸러 둔 목록에 막히지 않는다.
+//   · **상태 꼬리표(`[방 나감]`)로도 좁혀진다** — 화면에 적어 놓고 그 말로
+//     못 찾으면 꼬리표는 훑어야 보이는 글자일 뿐이다.
 //
 // 이름·투자사는 전부 지어낸 것이다 — 저장소가 공개다.
 "use strict";
@@ -31,19 +33,26 @@ const SEARCH = fs.readFileSync(path.join(SRC, "ir_contact_search.js"), "utf8");
 const NUMBERS = fs.readFileSync(path.join(SRC, "ir_numbers.js"), "utf8");
 
 //: 화면이 그리는 담당자들. `data-search` 는 서버가 소문자로 만들어 싣는다.
+//: `note` 는 **상태 꼬리표**(`sheet_owner.pick_note`) — 딜 제안 관리에서는
+//: 빠지는데 이 고르기에는 남는 사람에게만 붙는다. 대부분은 안 붙는다.
 const PEOPLE = [
   { id: 11, name: "가담당", title: "심사역", firm: "가나벤처스" },
   { id: 12, name: "나담당", title: "팀장", firm: "가나벤처스" },
   { id: 13, name: "다담당", title: "대표", firm: "다라인베스트" },
-  { id: 14, name: "라담당", title: "수석", firm: "마바캐피탈" }
+  { id: 14, name: "라담당", title: "수석", firm: "마바캐피탈" },
+  { id: 15, name: "마담당", title: "이사", firm: "사아파트너스", note: "방 나감" }
 ];
 
 function option(person) {
+  // 서버가 그리는 그대로다(`ir.html` 의 `contact_pick`) — 보이는 글자 끝에
+  // 대괄호 꼬리표가 붙고, **거르는 값에도 같은 말이 들어간다.**
+  const tag = person.note ? " [" + person.note + "]" : "";
   const node = D.el("option", {
     value: String(person.id),
-    "data-search": (person.name + " " + person.title + " " + person.firm).toLowerCase()
+    "data-search": (person.name + " " + person.title + " " + person.firm
+                    + " " + (person.note || "")).toLowerCase()
   });
-  node.textContent = person.name + " " + person.title + " · " + person.firm;
+  node.textContent = person.name + " " + person.title + " · " + person.firm + tag;
   return node;
 }
 
@@ -296,6 +305,36 @@ function main() {
         fs.readFileSync(path.join(SRC, f), "utf8")));
     assert.deepStrictEqual(readers, ["ir_contact_search.js"],
       "담당자 검색을 거르는 자리가 둘 이상이다 ★ 화면마다 다른 사람이 나온다");
+  }
+
+  // ── 12. **상태로도 좁혀진다** ────────────────────────────────────────
+  //
+  // 꼬리표를 적어 놓고 그 말로 못 찾으면, 꼬리표는 훑어 내려가야 보이는
+  // 글자일 뿐이다. `방 나감` 을 쳐서 **그 사람들만** 볼 수 있어야 한다.
+  {
+    const dom = build();
+    run(dom);
+    type(dom.request.box, "방 나감");
+    assert.deepStrictEqual(listed(dom.request.select),
+      ["마담당 이사 · 사아파트너스 [방 나감]"],
+      "상태로 안 좁혀진다 ★ 꼬리표를 보고 친 말로 아무도 안 나온다");
+    // 미팅 등록 폼도 같은 한 벌이다.
+    type(dom.meeting.box, "방 나감");
+    assert.strictEqual(listed(dom.meeting.select).length, 1,
+      "미팅 등록 폼에서는 상태로 안 좁혀진다");
+  }
+
+  // ── 13. 꼬리표가 **고르는 값을 흔들지 않는다** ───────────────────────
+  //
+  // 이 칸이 보내는 것은 번호다. 꼬리표는 보이는 글자일 뿐이라, 골라 보낸
+  // 값은 여전히 `15` 여야 한다.
+  {
+    const dom = build();
+    run(dom);
+    type(dom.request.box, "방 나감");
+    enter(dom.request.box);
+    assert.strictEqual(dom.request.select.value, "15",
+      "꼬리표가 붙은 사람을 고르니 번호가 안 실린다 ★ 엉뚱한 사람에게 적힌다");
   }
 
   console.log("ir_contact_search_test OK");
