@@ -109,7 +109,7 @@ def difference_note(shown: int, now: int, group_name: str) -> str:
 def company_ids(item: DealQueueItem) -> List[int]:
     """예약에 붙여 둔 기업 — **적어 둔 순서 그대로.**
 
-    순서가 곧 문구의 번호다(`1번 기업 …`). 뒤섞이면 받는 쪽이 기억하는 번호와
+    순서가 곧 문구의 번호다(`[기업1] …`). 뒤섞이면 받는 쪽이 기억하는 번호와
     어긋난다.
     """
     return [row.company_id for row in sorted(item.companies,

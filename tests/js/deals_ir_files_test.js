@@ -35,12 +35,14 @@ function person(name, rows) {
     title: "심사역",
     room_name: name + " 심사역님",
     message: rows.map(function (r) {
-      return r[1] ? r[1] + "번 기업 " + r[0] : r[0];
+      return r[1] ? "[기업" + r[1] + "] " + r[0] : r[0];
     }).join(", ") + " IR deck 먼저 전달드리겠습니다.",
     parts: [],
     warnings: [],
+    // `label` 은 서버가 짓는다 — 화면은 받아 적기만 한다.
     attachments: rows.map(function (r) {
-      return { name: r[0], no: r[1], file: r[2] };
+      return { name: r[0], no: r[1], file: r[2],
+               label: r[1] ? "[기업" + r[1] + "]" : "" };
     })
   };
 }
@@ -69,9 +71,9 @@ function show(dom, previews) {
   const shown = rows(dom);
   assert.strictEqual(shown.length, 2, "고른 기업이 목록에 없다: " + shown.join(" | "));
 
-  assert.ok(shown[0].indexOf("3번") >= 0, "번호가 사라졌다: " + shown[0]);
+  assert.ok(shown[0].indexOf("[기업3]") >= 0, "번호가 사라졌다: " + shown[0]);
   assert.ok(shown[0].indexOf(A + "_IR.pdf") >= 0, "파일 이름이 없다: " + shown[0]);
-  assert.ok(shown[1].indexOf("1번") >= 0 && shown[1].indexOf(B + "_IR.pdf") >= 0,
+  assert.ok(shown[1].indexOf("[기업1]") >= 0 && shown[1].indexOf(B + "_IR.pdf") >= 0,
             "두 번째 줄에 번호나 파일 이름이 빠졌다: " + shown[1]);
 
   // 링크가 아니다 — 눌러도 열리지 않는 자리를 만들지 않는다.
@@ -91,7 +93,7 @@ function show(dom, previews) {
 
   assert.ok(shown[0].indexOf("첨부할 자료가 없습니다") >= 0,
             "자료가 없는데 아무 말도 안 한다: " + shown[0]);
-  assert.ok(shown[0].indexOf("2번") >= 0,
+  assert.ok(shown[0].indexOf("[기업2]") >= 0,
             "자료가 없다고 번호까지 지웠다: " + shown[0]);
 }
 
@@ -116,11 +118,12 @@ function show(dom, previews) {
     person("가담당", [[A, 3, A + "_IR.pdf"], [B, 1, B + "_IR.pdf"]]),
     person("나담당", [[A, 7, A + "_IR.pdf"], [B, 9, B + "_IR.pdf"]])
   ]);
-  assert.ok(rows(dom)[0].indexOf("3번") >= 0, "첫 탭의 번호가 아니다");
+  assert.ok(rows(dom)[0].indexOf("[기업3]") >= 0, "첫 탭의 번호가 아니다");
 
   deals_.pickPreviewTab(dom, 1);
   const shown = rows(dom);
-  assert.ok(shown[0].indexOf("7번") >= 0, "탭을 바꿨는데 번호가 안 따라왔다: " + shown[0]);
+  assert.ok(shown[0].indexOf("[기업7]") >= 0,
+            "탭을 바꿨는데 번호가 안 따라왔다: " + shown[0]);
   assert.ok(shown[0].indexOf(A + "_IR.pdf") >= 0,
             "탭을 바꾸니 파일 이름이 사라졌다: " + shown[0]);
 }

@@ -53,12 +53,14 @@ function person(name, pairs) {
     room_name: name + " 심사역님",
     has_history: true,
     message: pairs.map(function (pair) {
-      return pair[1] ? pair[1] + "번 기업 " + pair[0] : pair[0];
+      return pair[1] ? "[기업" + pair[1] + "] " + pair[0] : pair[0];
     }).join(", ") + " IR deck 먼저 전달드리겠습니다.",
     parts: [],
     warnings: [],
     attachments: pairs.map(function (pair) {
-      return { name: pair[0], file: pair[0] + "_IR.pdf", no: pair[1] };
+      // `label` 은 서버가 짓는다 — 화면은 받아 적기만 한다.
+      return { name: pair[0], file: pair[0] + "_IR.pdf", no: pair[1],
+               label: pair[1] ? "[기업" + pair[1] + "]" : "" };
     })
   };
 }
@@ -118,7 +120,7 @@ const NA = person("나담당", [[B, 1], [A, 5]]);
   const rows = Array.prototype.slice
     .call(dom.document.getElementById("ir-links").children)
     .map(function (li) { return li.innerHTML; });
-  assert.ok(/1번/.test(rows[0]) && /5번/.test(rows[1]),
+  assert.ok(/\[기업1\]/.test(rows[0]) && /\[기업5\]/.test(rows[1]),
     "복사한 문구와 [보낼 자료] 목록이 다른 담당자를 가리킨다: " + rows.join(" | "));
 }
 

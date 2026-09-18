@@ -7,7 +7,7 @@
     https://drive.google.com/file/d/…       ← 이 통들이 없어졌다
 
     홍길동 팀장님 안녕하세요.
-    1번 기업 (주)샘플애그 IR deck 먼저 전달드리겠습니다.
+    [기업1] (주)샘플애그 IR deck 먼저 전달드리겠습니다.
 
 그 방식을 폐기했다. 링크는 더 이상 문구에 실리지 않고, 앱은 **안내 문구만**
 보낸다. 자료 파일은 사람이 PC 카카오톡에서 직접 첨부한다.
@@ -139,18 +139,18 @@ def test_the_link_is_not_in_the_message(stage):
 def test_the_company_is_still_pointed_at_by_number(stage):
     """자료는 안 실려도 **어느 기업 자료인지**는 남아야 한다.
 
-    투자사는 지난 회차의 번호로 기억하고 답한다("2번 주세요").
+    투자사는 지난 회차의 번호로 기억하고 답한다("기업2 주세요").
     """
     body = _preview(stage, [stage["agri"].id])["message"]
-    assert "1번 기업 샘플애그" in body
+    assert "[기업1] 샘플애그" in body
 
 
 def test_it_goes_as_one_message(stage):
     """링크를 한 통씩 먼저 던지던 것이 없어졌으니 나눌 것도 없다."""
     preview = _preview(stage, [stage["agri"].id, stage["medi"].id])
     assert preview["parts"] == []
-    assert "1번 기업 샘플애그" in preview["message"]
-    assert "2번 기업 샘플메디" in preview["message"]
+    assert "[기업1] 샘플애그" in preview["message"]
+    assert "[기업2] 샘플메디" in preview["message"]
 
 
 def test_an_old_template_token_does_not_leak(db, stage):

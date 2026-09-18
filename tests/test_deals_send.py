@@ -93,7 +93,7 @@ def test_ask_mode_message_has_no_company_list(client, db, seed):
         "company_ids": [], "contact_ids": [seed["contact_id"]], "mode": "ask",
     })
     text = r.json()["previews"][0]["message"]
-    assert "1)" not in text            # 번호 매긴 목록이 곧 '기업이 붙었다'는 신호다
+    assert "[기업1]" not in text       # 번호 매긴 목록이 곧 '기업이 붙었다'는 신호다
     assert "선호하는 기업분야" in text
 
 
@@ -105,7 +105,7 @@ def test_ask_mode_ignores_companies_even_if_sent(client, db, seed):
         "mode": "ask",
     })
     assert r.status_code == 200, r.text
-    assert "1)" not in _sent_message(db, r.json()["job_id"])
+    assert "[기업1]" not in _sent_message(db, r.json()["job_id"])
 
 
 def test_deal_mode_still_requires_companies(client, seed):
@@ -152,7 +152,7 @@ def test_greeting_can_be_turned_off_for_deals(client, db, seed):
     assert r.status_code == 200, r.text
     text = _sent_message(db, r.json()["job_id"])
     assert "안녕하세요" not in text
-    assert "1)" in text                # 기업 목록은 그대로 있어야 한다
+    assert "[기업1]" in text           # 기업 목록은 그대로 있어야 한다
 
 
 # --- 리마인드 · 미팅 요청 ---------------------------------------------------
@@ -172,7 +172,7 @@ def test_follow_up_modes_send_only_text(client, seed, mode, expect):
     assert r.status_code == 200, r.text
     text = r.json()["previews"][0]["message"]
     assert expect in text
-    assert "1)" not in text            # 기업 목록이 붙으면 안 된다
+    assert "[기업1]" not in text       # 기업 목록이 붙으면 안 된다
     # 인사말은 **기본으로 붙는다.** 빼는 것은 선호 분야를 되물을 때뿐이다 —
     # 그건 이미 대화가 오간 방에 한 줄만 덧붙이는 것이라 다시 인사하면 어색하다.
     # 리마인드·미팅 요청은 며칠 지나 다시 거는 말이라 인사가 자연스럽다.
@@ -199,7 +199,7 @@ def test_follow_up_batch_titles(client, db, seed, mode, title):
 
 # --- IR 자료 전달 -----------------------------------------------------------
 #
-# 투자사는 "5) 친환경 패키지 …" 처럼 **번호로 기억하고** 답한다. 자료를 보낼 때
+# 투자사는 "[기업5] 친환경 패키지 …" 처럼 **번호로 기억하고** 답한다. 자료를 보낼 때
 # 같은 번호로 짚어 줘야 서로 맞는다. 번호를 새로 매기면 받는 쪽에서는
 # 자기 목록에서 찾다가 못 찾는다.
 
@@ -238,7 +238,7 @@ def test_ir_message_uses_the_number_from_the_last_batch(client, db, seed, users)
     other = IrCompany(name="샘플메디", one_liner="뇌영상 분석", revenue_recent=42)
     db.add(other)
     db.commit()
-    # 지난 회차: 1) 샘플메디  2) 샘플애그
+    # 지난 회차: [기업1] 샘플메디  [기업2] 샘플애그
     _mark_sent(db, seed["contact_id"], [other.id, seed["company_id"]], users["u1"].id)
 
     r = client.post("/api/deals/preview", json={
@@ -247,7 +247,7 @@ def test_ir_message_uses_the_number_from_the_last_batch(client, db, seed, users)
     })
     assert r.status_code == 200, r.text
     text = r.json()["previews"][0]["message"]
-    assert "2번 기업 샘플애그" in text          # 새로 1번을 매기면 안 된다
+    assert "[기업2] 샘플애그" in text           # 새로 1번을 매기면 안 된다
     assert "IR deck 먼저 전달드리겠습니다" in text
 
 
@@ -259,7 +259,7 @@ def test_ir_message_omits_the_number_when_never_sent(client, db, seed):
     })
     text = r.json()["previews"][0]["message"]
     assert "샘플애그 IR deck" in text
-    assert "번 기업" not in text
+    assert "[기업" not in text
 
 
 def test_ir_message_greets_once(client, seed):
@@ -272,12 +272,17 @@ def test_ir_message_greets_once(client, seed):
 
 
 def test_ir_message_has_no_company_list(client, seed):
-    """이미 목록을 본 사람이 '그 중 몇 번을 달라'고 답한 상황이다."""
+    """이미 목록을 본 사람이 '그 중 몇 번을 달라'고 답한 상황이다.
+
+    자료 전달 문구도 번호로 짚지만(`[기업2] 샘플애그`) 그것은 **한 줄 안**이다.
+    목록 줄은 빈 줄 뒤에 번호가 서는 모양이라(`\n\n[기업1] …`), 그 모양으로
+    본다 — 이름만 보면 짚어 주는 번호까지 없다고 읽는다.
+    """
     r = client.post("/api/deals/preview", json={
         "company_ids": [seed["company_id"]],
         "contact_ids": [seed["contact_id"]], "mode": "ir",
     })
-    assert "1)" not in r.json()["previews"][0]["message"]
+    assert "\n\n[기업1]" not in r.json()["previews"][0]["message"]
 
 
 def test_ir_requires_a_company(client, seed):

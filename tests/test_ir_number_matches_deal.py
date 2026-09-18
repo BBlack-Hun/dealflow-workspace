@@ -1,14 +1,18 @@
 """IR 자료 전달의 번호는 **딜 소개의 번호와 같아야 한다.**
 
-딜 소개 문구는 `1) …` `2) …` 로 나가고 투자사는 그 번호로 기억해서 답한다
-("2번, 3번 자료 주세요"). 자료를 보낼 때 다른 번호로 짚으면 서로 다른 기업
-이야기를 한다 — 받는 쪽은 자기 목록에서 찾다가 못 찾는다.
+딜 소개 문구는 `[기업1] …` `[기업2] …` 로 나가고 투자사는 그 번호로 기억해서
+답한다("기업2, 기업3 자료 주세요"). 자료를 보낼 때 다른 번호로 짚으면 서로 다른
+기업 이야기를 한다 — 받는 쪽은 자기 목록에서 찾다가 못 찾는다.
+
+**모양도 같아야 한다.** 번호만 같고 한쪽이 `[기업2]`, 다른 쪽이 `2번 기업` 이면
+같은 것을 두 이름으로 부르는 셈이라, 받는 쪽도 붙이는 쪽도 눈으로 맞춰야 한다.
+모양을 짓는 자리는 `deal_numbers.label` 하나다.
 
 ## 고치기 전에 실제로 나오던 값
 
 기업 셋을 **거꾸로** 골라 딜 소개를 보낸다(마바로보 → 가나애그 → 다라헬스).
-문구는 `1) 마바로보  2) 가나애그  3) 다라헬스` 로 나갔다. 그 뒤 가나애그·
-다라헬스 자료를 보내려 할 때 번호는 이랬다.
+문구는 `[기업1] 마바로보  [기업2] 가나애그  [기업3] 다라헬스` 로 나갔다. 그 뒤
+가나애그·다라헬스 자료를 보내려 할 때 번호는 이랬다.
 
     딜 소개 직후          2번 가나애그 · 3번 다라헬스     ← 맞았다
     리마인드를 한 통 뒤    번호가 통째로 사라짐            ← 어긋났다
@@ -64,10 +68,10 @@ def seed(client, db, users):
 
 
 def _deal_numbers(text: str) -> dict:
-    """딜 소개 문구의 `1) 2) 3)` — `{기업명: 번호}`."""
+    """딜 소개 문구의 `[기업1] [기업2] [기업3]` — `{기업명: 번호}`."""
     out = {}
     for line in text.splitlines():
-        m = re.match(r"^(\d+)\)\s*(.*)$", line)
+        m = re.match(r"^\[기업(\d+)\]\s*(.*)$", line)
         if not m:
             continue
         for name in NAMES:
@@ -77,10 +81,10 @@ def _deal_numbers(text: str) -> dict:
 
 
 def _ir_numbers(text: str) -> dict:
-    """자료 전달 문구의 `2번 기업 …` — 번호가 없으면 `None`."""
+    """자료 전달 문구의 `[기업2] …` — 번호가 없으면 `None`."""
     out = {}
     for name in NAMES:
-        m = re.search(r"(\d+)번 기업 " + name, text)
+        m = re.search(r"\[기업(\d+)\] " + name, text)
         if m:
             out[name] = int(m.group(1))
         elif name in text:
@@ -160,9 +164,9 @@ def test_요청받은_차례를_뒤집어_골라도_번호는_그대로다(clien
     # 짚는 **차례는 번호 오름차순**이다 — 고른 차례를 뒤집어도 마찬가지다.
     #
     # 이 목록을 보는 사람이 하는 일은 **번호대로 파일을 붙이는 것**이라, 문구가
-    # `3번 … 2번` 으로 나가면 붙일 때마다 눈으로 되짚어야 한다. 화면의
+    # `[기업3] … [기업2]` 로 나가면 붙일 때마다 눈으로 되짚어야 한다. 화면의
     # [보낼 자료] 목록과 **같은 함수**에서 나오므로 둘이 갈릴 자리가 없다.
-    assert text.index("2번 기업 가나애그") < text.index("3번 기업 다라헬스"), text
+    assert text.index("[기업2] 가나애그") < text.index("[기업3] 다라헬스"), text
 
 
 def test_리마인드를_한_통_보낸_뒤에도_번호가_남는다(client, db, seed, after_deal):
@@ -221,7 +225,8 @@ def test_다음_회차가_나가면_그_회차의_번호를_따른다(client, db
 
 
 def test_번호를_만드는_곳은_한_곳이다(client, db, seed):
-    """문구의 `1) 2) 3)` 과 회차에 남는 `position` 이 같은 자리에서 나온다.
+    """문구의 `[기업1] [기업2] [기업3]` 과 회차에 남는 `position` 이 같은
+    자리에서 나온다.
 
     두 곳에서 따로 세면 어긋나도 아무도 모르고, 그러면 다음에 자료를 보낼 때
     엉뚱한 기업을 짚는다.
@@ -241,6 +246,89 @@ def test_번호를_만드는_곳은_한_곳이다(client, db, seed):
     assert {seed["ids"][name]: no for name, no in said.items()} == kept, text
 
 
+# ── 번호의 **모양** ─────────────────────────────────────────────────────────
+#
+# 번호가 같아도 모양이 다르면 같은 것을 두 이름으로 부르는 셈이다 — 딜 소개는
+# `[기업2]`, 자료 전달은 `2번 기업`. 받는 쪽은 자기가 본 글자로 답하고
+# ("기업2 주세요"), 자료를 붙이는 사람은 두 표기를 눈으로 맞춰야 한다.
+#
+# 모양을 짓는 자리는 `deal_numbers.label` 하나다. 아래 검사들이 그 한 곳에서
+# 나온 글자가 **세 자리에 똑같이** 적히는 것을 못박는다.
+
+def test_번호의_모양을_짓는_함수는_하나다():
+    """`label` 이 짓고, `parse_label` 이 되읽는다."""
+    from app.services import deal_numbers
+
+    assert deal_numbers.label(2) == "[기업2]"
+    assert deal_numbers.label(12) == "[기업12]"
+    # 받아 적는 사람은 투자사가 말한 글자를 그대로 친다.
+    assert deal_numbers.parse_label("[기업2]") == 2
+    assert deal_numbers.parse_label("기업2") == 2
+    # 옛 문구(`2) …`)를 받은 투자사는 여전히 "2번" 이라고 답한다.
+    assert deal_numbers.parse_label("2") == 2
+    # 이름은 번호가 아니다 — 여기서 번호로 읽으면 엉뚱한 기업이 걸린다.
+    assert deal_numbers.parse_label("가나애그") is None
+    assert deal_numbers.parse_label("기업은행") is None
+
+
+def test_딜_소개는_연번_대신_기업_꼬리표로_나간다(client, seed):
+    """★ 사용자가 요청한 것 — `1)` 이 아니라 `[기업1]` 이다."""
+    text = _preview(client, seed, "deal", _reversed_pick(seed))
+
+    assert "[기업1] 마바로보" in text, text
+    assert "[기업2] 가나애그" in text, text
+    # 옛 연번이 한 줄이라도 남으면 한 통 안에서 두 모양이 섞인다.
+    assert not re.search(r"^\d+\)", text, re.M), text
+
+
+def test_딜_소개와_자료_전달이_같은_글자로_짚는다(client, seed, after_deal):
+    """★ 한쪽만 바꾸면 딜 소개는 `[기업2]`, 자료 전달은 `2번 기업` 이 된다.
+
+    투자사가 기억하는 것은 **번호가 아니라 받은 글자**다. 두 문구가 같은 기업을
+    같은 글자로 짚어야 서로 같은 것을 말하고 있다는 것이 한눈에 보인다.
+    """
+    deal = _preview(client, seed, "deal", _reversed_pick(seed))
+    ir = _preview(client, seed, "ir", _asked(seed))
+
+    for name in ("가나애그", "다라헬스"):
+        token = f"[기업{after_deal[name]}]"
+        assert f"{token} {name}" in deal, deal
+        assert f"{token} {name}" in ir, ir
+    # 옛 모양이 자료 전달에 남아 있으면 안 된다.
+    assert "번 기업" not in ir, ir
+
+
+def test_보낼_자료_목록도_문구와_같은_글자를_적는다(client, seed, after_deal):
+    """★ 화면·딜 소개·자료 전달 — 세 자리가 같은 글자다.
+
+    자료는 사람이 PC 카톡에 손으로 붙인다. 목록이 `2번`, 문구가 `[기업2]` 면
+    붙이는 사람이 두 표기를 맞춰 봐야 한다 — 자료가 여럿일수록 틀리기 쉽다.
+    """
+    p = _preview_one(client, seed, "ir", _asked(seed))
+    deal = _preview(client, seed, "deal", _reversed_pick(seed))
+
+    for a in p["attachments"]:
+        assert a["label"] == f"[기업{a['no']}]", p
+        assert f"{a['label']} {a['name']}" in p["message"], p
+        assert f"{a['label']} {a['name']}" in deal, deal
+
+
+def test_화면은_모양을_짓지_않고_받아_적는다():
+    """목록은 서버가 지어 준 글자를 그대로 쓴다(`attachments[].label`).
+
+    화면이 `no` 를 받아 제 모양으로 적으면 모양을 바꿀 때 목록만 옛 모양으로
+    남는다 — 이 저장소가 번호로 이미 겪은 일이다.
+    """
+    from pathlib import Path
+
+    js = (Path(__file__).resolve().parents[1] / "app" / "static" / "js"
+          / "ir_attach_list.js").read_text(encoding="utf-8")
+    body = js.split('"use strict"', 1)[1]          # 머리말 설명은 뺀다
+    assert "a.label" in body, "서버가 지어 준 글자를 안 쓴다"
+    # 꼬리표 모양(`[기업…]`)을 화면이 조립하고 있으면 안 된다.
+    assert "[기업" not in body, "화면이 모양을 직접 짓고 있다"
+
+
 # ── 화면에 적히는 번호 ──────────────────────────────────────────────────────
 #
 # 자료는 **사람이 PC 카톡에 손으로 붙인다.** 번호 차례대로 붙여야 하는데 화면에
@@ -250,7 +338,7 @@ def test_번호를_만드는_곳은_한_곳이다(client, db, seed):
 # 화면과 문구가 갈리면 이 일을 한 뜻이 없다. 아래 검사들이 그것을 못박는다.
 
 def test_보낼_자료_목록의_번호가_문구의_번호와_같다(client, seed, after_deal):
-    """★ 화면이 `1·2` 인데 문구가 "3번 기업 …" 이면 엉뚱한 자료가 붙는다."""
+    """★ 화면이 `1·2` 인데 문구가 "[기업3] …" 이면 엉뚱한 자료가 붙는다."""
     p = _preview_one(client, seed, "ir", _asked(seed))
 
     assert _screen_numbers(p) == _ir_numbers(p["message"]), p
@@ -284,7 +372,7 @@ def test_보낼_자료_목록이_번호순으로_선다(client, db, seed, after_
     assert numbers == sorted(numbers), f"번호순이 아니다: {numbers}"
     # 문구도 같은 차례여야 한다 — 목록만 번호순이면 또 갈린다.
     assert _screen_numbers(p) == _ir_numbers(p["message"]), p
-    said = [int(n) for n in re.findall(r"(\d+)번 기업", p["message"])]
+    said = [int(n) for n in re.findall(r"\[기업(\d+)\]", p["message"])]
     assert said == sorted(said), f"문구가 번호순이 아니다: {p['message']}"
 
 
@@ -371,7 +459,7 @@ def test_회차에_없던_기업은_번호_없이_나간다(client, db, seed, af
     assert _screen_numbers(p) == {"가나애그": 2, "사아푸드": None}, p
     # 문구에도 번호가 없다 — 이름만 적힌다.
     assert "사아푸드" in p["message"], p
-    assert "번 기업 사아푸드" not in p["message"], p
+    assert not re.search(r"\[기업\d+\] 사아푸드", p["message"]), p
 
 
 def test_담당자를_안_고르면_번호가_없다(client, seed, after_deal):
@@ -406,7 +494,7 @@ def test_자료를_안_올린_기업도_번호는_적힌다(client, db, seed, af
 # 마다 다르다. deals.js 를 **그대로 실행**해서 본다.
 
 def test_자료_전달_탭에서는_고른_차례를_번호처럼_띄우지_않는다():
-    """★ 화면은 `1`, 문구는 `2번 기업 …` — 어느 쪽이 맞는지 알 수 없었다."""
+    """★ 화면은 `1`, 문구는 `[기업2] …` — 어느 쪽이 맞는지 알 수 없었다."""
     import shutil
     import subprocess
     from pathlib import Path
@@ -436,7 +524,7 @@ def test_배지를_비우는_규칙이_css_에_있다():
 def test_번호를_적을_자리가_화면에_있다():
     """번호를 실어 보내도 **화면이 그것을 그리지 않으면** 아무 일도 안 난다.
 
-    셋이 다 이어져야 한 바퀴가 돈다: 서버가 싣고(`attachments[].no`) → 화면이
+    셋이 다 이어져야 한 바퀴가 돈다: 서버가 싣고(`attachments[].label`) → 화면이
     적고(`ir_attach_list.js` 의 `renderList`) → CSS 가 배지로 보여준다.
 
     목록을 그리는 자리는 **한 벌뿐이다** — 딜 제안 관리와 IR 진행 관리의

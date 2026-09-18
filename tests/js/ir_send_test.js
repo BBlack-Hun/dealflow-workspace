@@ -27,11 +27,12 @@ function preview(over) {
     room_name: "가담당 팀장님", room_from: "", room_verified: "verified",
     room_warning: null, has_history: true, sample: false, parts: [],
     char_count: 120, too_long: false, warnings: [],
-    message: "가담당 팀장 안녕하세요.\n1번 기업 " + A + ", 3번 기업 " + B
+    message: "가담당 팀장 안녕하세요.\n[기업1] " + A + ", [기업3] " + B
       + " IR deck 먼저 전달드리겠습니다.",
+    // `label` 은 서버가 짓는다 — 화면은 받아 적기만 한다.
     attachments: [
-      { company_id: 11, name: A, file: A + "_IR.pdf", no: 1 },
-      { company_id: 12, name: B, file: B + "_IR.pdf", no: 3 }
+      { company_id: 11, name: A, file: A + "_IR.pdf", no: 1, label: "[기업1]" },
+      { company_id: 12, name: B, file: B + "_IR.pdf", no: 3, label: "[기업3]" }
     ]
   }, over || {});
 }
@@ -46,7 +47,7 @@ const SENT = { ok: true, d: { job_id: 42, batch_id: 9, total: 1,
 // 문구에 적힌 번호 — `{기업명: 번호}`. 화면에 뜬 번호와 맞대 보려는 것이다.
 function numbersInMessage(text) {
   const out = {};
-  const re = /(\d+)번 기업 ([^\s,]+)/g;
+  const re = /\[기업(\d+)\] ([^\s,]+)/g;
   let m;
   while ((m = re.exec(text)) !== null) out[m[2]] = parseInt(m[1], 10);
   return out;
@@ -97,7 +98,7 @@ function opened(replies, opts) {
   const rows = ir_.attachRows(s.dom);
 
   assert.strictEqual(rows.length, 2, "보낼 자료가 두 줄이어야 한다");
-  assert.ok(rows[0].indexOf("1번") >= 0 && rows[0].indexOf(A) >= 0, rows[0]);
+  assert.ok(rows[0].indexOf("[기업1]") >= 0 && rows[0].indexOf(A) >= 0, rows[0]);
   assert.ok(rows[0].indexOf(A + "_IR.pdf") >= 0,
     "파일 이름이 없으면 어느 파일을 붙일지 알 수 없다: " + rows[0]);
   // 링크가 아니다(0056) — 파일은 각자 PC 에 있어서 브라우저가 열 자리가 없다.
@@ -107,7 +108,7 @@ function opened(replies, opts) {
 
 (function theListNumbersMatchTheMessageNumbers() {
   // **여기가 이 일을 한 뜻이다.** 화면이 제 손으로 세면 목록은 `1, 2`, 문구는
-  // `1번, 3번` 이 되어 어느 쪽이 맞는지 알 수 없다. 딜 제안 관리의 같은 검사
+  // `[기업1], [기업3]` 이 되어 어느 쪽이 맞는지 알 수 없다. 딜 제안 관리의 같은 검사
   // (`deals_ir_number_test.js`)와 **같은 것을 본다** — 두 화면이 한 벌을 쓰므로.
   const s = opened([previewReply()]);
   const shown = ir_.attachNumbers(s.dom, [A, B]);
@@ -131,7 +132,8 @@ function opened(replies, opts) {
   // 지난 회차에 없던 기업은 번호가 없다. **지어내지 않는다** — 자리를 비우면
   // 화면이 덜 그려진 것으로 읽힌다.
   const s = opened([previewReply({
-    attachments: [{ company_id: 11, name: A, file: A + "_IR.pdf", no: null }]
+    attachments: [{ company_id: 11, name: A, file: A + "_IR.pdf", no: null,
+                    label: "" }]
   })]);
   const rows = ir_.attachRows(s.dom);
 
@@ -147,23 +149,26 @@ function opened(replies, opts) {
   // 화면이 여기서 또 정렬하면 서버가 어떤 차례로 보내든 화면만 달라져,
   // 문구와 갈리는 자리가 하나 더 생긴다.
   const s = opened([previewReply({
-    // 서버가 이미 번호순으로 보낸다: 1번 → 3번 → 번호 없음.
+    // 서버가 이미 번호순으로 보낸다: [기업1] → [기업3] → 번호 없음.
     attachments: [
-      { company_id: 11, name: A, file: A + "_IR.pdf", no: 1 },
-      { company_id: 12, name: B, file: B + "_IR.pdf", no: 3 },
-      { company_id: 13, name: "마바로보", file: "마바로보_IR.pdf", no: null }
+      { company_id: 11, name: A, file: A + "_IR.pdf", no: 1, label: "[기업1]" },
+      { company_id: 12, name: B, file: B + "_IR.pdf", no: 3, label: "[기업3]" },
+      { company_id: 13, name: "마바로보", file: "마바로보_IR.pdf", no: null,
+        label: "" }
     ]
   })]);
   const rows = ir_.attachRows(s.dom);
 
   assert.deepStrictEqual(
-    rows.map(function (r) { const m = /(\d+)번/.exec(r); return m ? m[1] : null; }),
+    rows.map(function (r) {
+      const m = /\[기업(\d+)\]/.exec(r); return m ? m[1] : null;
+    }),
     ["1", "3", null], "받은 차례를 그대로 그려야 한다: " + JSON.stringify(rows));
 }());
 
 (function aCompanyWithoutAFileIsSaidSo() {
   const s = opened([previewReply({
-    attachments: [{ company_id: 11, name: A, file: "", no: 1 }],
+    attachments: [{ company_id: 11, name: A, file: "", no: 1, label: "[기업1]" }],
     warnings: ["첨부할 IR 자료가 없는 기업: " + A + " — IR 기업 현황에 자료 파일명을 등록하세요"]
   })]);
 

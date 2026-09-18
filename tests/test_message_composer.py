@@ -198,7 +198,7 @@ def test_the_written_intro_is_what_actually_goes_out():
                     competitiveness="특허 12건")
     text = mc.compose_message("안녕하세요, {담당자명} {직함}", "핵심 딜 {개수}개사 공유드립니다.",
                               _contact(), [c], stage=mc.STAGE_DAY1).text
-    assert f"1) {written}" in text
+    assert f"[기업1] {written}" in text
     for leaked in ("[딥테크·제조]", "매출", "누적투자금액", "투자유치중",
                    "Pre Value", "특허 12건"):
         assert leaked not in text, f"{leaked} 이 덧붙었습니다"
@@ -223,7 +223,7 @@ def test_a_company_can_be_introducible_with_no_written_intro():
     판정을 그대로 쓰고, 이유를 적는 `REQUIRED_FIELDS` 에는 이 칸이 아예 없다.
     즉 **문구가 비었다고 알려 주는 화면이 없다.**
 
-    아무것도 안 내기로 했다면 이런 기업이 `1) ` 한 줄로 카톡에 나간다.
+    아무것도 안 내기로 했다면 이런 기업이 `[기업1] ` 한 줄로 카톡에 나간다.
     (개발 사본 344곳에서 문구가 빈 곳은 6곳이고 그 여섯은 금액이 없어 오늘은
     소개 대상이 아니다. 그중 한 곳은 분야가 이미 있어 **금액 한 칸만 채우면**
     아래와 똑같은 모양이 된다.)
@@ -313,21 +313,21 @@ def test_compose_day1_structure():
     result = mc.compose_message(opening, closing, _contact(), _companies(), stage=mc.STAGE_DAY1)
     text = result.text
     assert text.startswith("안녕하세요 홍길동 대표님, 딜소개드립니다.")
-    # 실제 운영 문구 형식: 번호는 "1)", 안내문은 목록 '위'에 온다.
+    # 실제 운영 문구 형식: 번호는 "[기업1]", 안내문은 목록 '위'에 온다.
     #
     # 예전에는 `1) [애그테크] | 선도거래 | 매출 30.9억` 이었다. 세 기업 모두
     # `딜 소개 문구` 를 적어 두었으므로 이제 **적은 글만** 나간다 — 분야도
     # 재무도 붙지 않는다. `샘플애그` 의 매출 칸은 일부러 채워 둔 채 두었다:
     # 아래 `not in` 이 그 값이 다시 붙지 않는 것을 여기서도 못 박는다.
-    assert "1) 선도거래" in text
-    assert "2) 뇌영상 AI" in text
-    assert "3) 결제" in text
+    assert "[기업1] 선도거래" in text
+    assert "[기업2] 뇌영상 AI" in text
+    assert "[기업3] 결제" in text
     assert "[애그테크]" not in text and "매출 30.9억" not in text
-    assert text.index("관심 가시는 기업") < text.index("1) ")
-    assert text.rstrip().endswith("3) 결제")
+    assert text.index("관심 가시는 기업") < text.index("[기업1] ")
+    assert text.rstrip().endswith("[기업3] 결제")
     # blank line separators between blocks
-    assert "\n\n1)" in text
-    assert "\n\n2)" in text
+    assert "\n\n[기업1]" in text
+    assert "\n\n[기업2]" in text
 
 
 def test_compose_intro_company_count_token():

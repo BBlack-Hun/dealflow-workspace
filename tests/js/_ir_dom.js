@@ -127,12 +127,14 @@ function attachRows(dom) {
     .map(function (li) { return li.innerHTML; });
 }
 
-// 목록에 **보이는** 번호 — `{기업명: 번호}`.
+// 목록에 **보이는** 번호 — `{기업명: 번호}`. 목록은 문구와 같은 꼬리표를
+// 적는다(`[기업2]`) — 여기서 다른 모양을 찾으면 화면만 옛 모양으로 남아도
+// 안 걸린다.
 function attachNumbers(dom, names) {
   const out = {};
   attachRows(dom).forEach(function (row) {
     const name = names.filter(function (n) { return row.indexOf(n) >= 0; })[0];
-    const m = /(\d+)번/.exec(row);
+    const m = /\[기업(\d+)\]/.exec(row);
     if (name && m) out[name] = parseInt(m[1], 10);
   });
   return out;

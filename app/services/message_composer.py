@@ -139,8 +139,8 @@ def auto_company_summary(company: CompanyView) -> str:
     개발 사본에서 세어 보면 344곳 중 문구가 빈 곳은 6곳이고, 그 여섯은 금액이
     하나도 없어 지금은 소개 대상에 서지 않는다(소개 가능 114곳 중 문구가 빈
     곳은 **0곳**이다). 다만 그중 한 곳은 분야가 이미 적혀 있어 **금액 한 칸만
-    채우면 그날로 소개 대상**이 된다 — 그때 `1) ` 만 찍힌 줄이 카톡으로 나간다.
-    그것을 막는 자리가 화면에 없으니 여기 남겨 둔다.
+    채우면 그날로 소개 대상**이 된다 — 그때 `[기업1] ` 만 찍힌 줄이 카톡으로
+    나간다. 그것을 막는 자리가 화면에 없으니 여기 남겨 둔다.
 
     **단위는 `format_eok` 가 붙인다.** 그래야 `5천만원` 처럼 억이 아닌 단위로
     적힌 값이 `누적투자금액 5천만원` 으로 나간다.
@@ -215,9 +215,10 @@ def render_template(text: str, contact: ContactView, company_name: Optional[str]
     `{자료링크}` 는 **더 이상 채우지 않는다**(구글 드라이브 링크 방식 폐기).
     치환 목록에는 남아 있어야 옛 문구에 적힌 토큰이 빈칸으로 지워진다.
 
-    `{기업목록}` 은 IR 자료 전달에서 "2번 기업 샘플애그" 처럼 **딜 소개에서 붙은
+    `{기업목록}` 은 IR 자료 전달에서 "[기업2] 샘플애그" 처럼 **딜 소개에서 붙은
     번호**로 채운다(`services/deal_numbers.py`). 투자사는 그 번호로 기억하고 있어서,
-    다른 번호로 짚으면 서로 다른 기업 이야기를 한다.
+    다른 번호로 짚으면 서로 다른 기업 이야기를 한다. 모양(`[기업2]`)도 딜 소개
+    문구와 같은 자리에서 나온다(`deal_numbers.label`).
     """
     mapping = {
         "{담당자명}": contact.name or "",
@@ -349,7 +350,8 @@ def compose_message(
 ) -> ComposeResult:
     """Assemble the final Kakao message text for one contact.
 
-    Day1 includes numbered company summaries; remind/meeting stages omit them.
+    Day1 includes numbered company summaries (`[기업1] …`); remind/meeting
+    stages omit them.
 
     ``include_opening=False`` 는 인사말을 빼고 본문만 보낸다. 이미 대화가 오간
     방에 한 줄만 덧붙일 때는 매번 "안녕하세요, ○○○ 님" 을 다시 붙이는 편이
@@ -374,11 +376,14 @@ def compose_message(
         if not companies:
             warnings.append("선택된 기업이 없습니다.")
         # 번호는 `deal_numbers` 가 정한다 — 회차에 남는 `position` 과 자료
-        # 전달의 "2번 기업 …" 이 같은 자리에서 나와야 서로 어긋나지 않는다.
+        # 전달의 "[기업2] …" 이 같은 자리에서 나와야 서로 어긋나지 않는다.
+        # **모양도 거기서 나온다**(`label`) — 투자사는 받은 글자 그대로
+        # 기억해서 답하므로("기업2 자료 주세요"), 자료 전달이 다른 모양으로
+        # 짚으면 같은 기업을 두 이름으로 부르게 된다.
         for idx, company in deal_numbers.numbered(companies):
             summary = company_summary(company)
             parts.append("")  # blank line separator
-            parts.append(f"{idx}) {summary}")
+            parts.append(f"{deal_numbers.label(idx)} {summary}")
 
     body = "\n".join(parts).strip()
 

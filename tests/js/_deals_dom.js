@@ -451,7 +451,7 @@ function pickPreviewTab(dom, i) {
 }
 
 // 서버가 미리보기로 돌려주는 한 통. 화면이 실제로 읽는 칸만 채운다
-// (`attachments[].no` 는 문구의 번호와 **같은 응답에서** 나온다).
+// (`attachments[].no` · `.label` 은 문구의 번호와 **같은 응답에서** 나온다).
 function previewReply(previews) {
   return { ok: true, d: { previews: previews } };
 }

@@ -115,8 +115,10 @@
   function matches(list, query) {
     var raw = String(query == null ? "" : query).trim();
     if (!raw) return [];
-    // 숫자만 친 조각은 **번호**다 — 여기서 이름을 권하면 뜻이 바뀐다.
-    if (/^\d+$/.test(raw)) return [];
+    // 번호로 친 조각에는 이름을 안 권한다 — 여기서 이름을 넣어 주면 뜻이
+    // 바뀐다. 받는 모양은 서버와 같다(`deal_numbers.parse_label`):
+    // `2` · `기업2` · `[기업2]`.
+    if (/^\[?\s*(기업\s*)?\d+\s*\]?$/.test(raw)) return [];
     var key = raw.toLowerCase();
     var head = [], body = [];
     (list || []).forEach(function (one) {

@@ -97,7 +97,7 @@ def test_one_cycle_flows_end_to_end(stage, db):
     job_id = _send(stage, company_ids=[stage["agri"], stage["medi"]],
                    contact_ids=[stage["contact_id"]], title="8월 회차")
     item = db.query(SendItem).filter_by(job_id=job_id).first()
-    assert "1)" in item.message and "2)" in item.message   # 기업 목록이 붙는다
+    assert "[기업1]" in item.message and "[기업2]" in item.message  # 기업 목록이 붙는다
     assert "안녕하세요" in item.message                     # 인사말도
 
     # 아직 성공 보고 전 — 후속이 잡히면 안 된다
@@ -132,8 +132,9 @@ def test_one_cycle_flows_end_to_end(stage, db):
     assert db.get(SendJob, ir_job).kind == "ir_delivery"
 
     ir_item = db.query(SendItem).filter_by(job_id=ir_job).first()
-    assert "1번 기업 샘플애그" in ir_item.message           # 지난 회차 번호로 짚는다
-    assert "1)" not in ir_item.message                     # 목록은 다시 붙이지 않는다
+    assert "[기업1] 샘플애그" in ir_item.message            # 지난 회차 번호로 짚는다
+    # 목록은 다시 붙이지 않는다 — 목록 줄은 빈 줄 뒤에 번호가 서는 모양이다.
+    assert "\n\n[기업1]" not in ir_item.message
 
     _agent_reports_sent(stage, db, ir_job)
     assert db.query(IrRequest).one().status == "delivered"
