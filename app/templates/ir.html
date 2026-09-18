@@ -1,5 +1,56 @@
 {% extends "base.html" %}
 
+{#
+  담당자 고르기 — **한 벌을 두 폼이 나눠 쓴다**(「요청 받았다고 적기」 ·
+  「미팅 등록」). 두 곳에 같은 모양을 적어 두면 한쪽에만 검색칸이 달린다 —
+  아래 「IR 요청 투자사」를 두 화면이 한 파일로 나눠 쓰는 것과 같은 이유다.
+
+  ## 왜 `<select>` 를 그대로 두는가
+
+  이 자리는 **`contact_id`(번호)를 보내는 칸**이다(`POST /ir/requests` ·
+  `POST /ir/meetings` 둘 다 `contact_id: int = Form(...)`). `<input list=…>`
+  로 바꾸면 사람이 고른 값이 **글자**가 되어 번호를 따로 실어 보내야 하고,
+  목록에 없는 글자를 치고 보내는 길이 생긴다 — `required` 가 "고르지 않고
+  보내는 일" 을 막던 것이 그때 풀린다.
+
+  그래서 **고르는 칸은 그대로 두고 그 위에 검색칸을 얹는다.** 딜 제안 관리의
+  담당자 고르기(`deals.html` 의 `.picker-search` + `data-search`)와 같은 결이고,
+  거르는 재료(`data-search`)도 그 화면과 같은 칸들에서 만든다.
+#}
+{% macro contact_pick(pick_id) %}
+      <div class="field inline-field contact-pick">
+        <span>담당자</span>
+        {# 133명짜리 목록은 이름을 알아도 훑어 내려가야 한다. 검색칸은 고르는
+           칸 **위**에 선다 — 딜 제안 관리와 같은 자리다. #}
+        <input type="search" class="pick-filter" data-contact-pick="{{ pick_id }}"
+               placeholder="이름 · 투자사 검색 ({{ contacts|length }}명)"
+               autocomplete="off" aria-label="담당자 검색">
+        <select id="{{ pick_id }}" name="contact_id" required aria-label="담당자">
+          {#
+            **빈 보기가 맨 앞에 선다.** 이 칸은 `required` 였는데, 첫 보기가
+            곧 어떤 사람이라 아무것도 안 고르고 [기록] 을 눌러도 그대로
+            넘어갔다 — 막는 것이 아무것도 없었다는 뜻이다. 그렇게 넘어간 값은
+            `회사 이름 순` 첫 사람이라, 요청이 **엉뚱한 담당자에게** 적힌다.
+            빈 보기가 있어야 `required` 가 실제로 일한다.
+
+            리마인드 구역에서 이름을 눌러 넘어왔으면 그 사람이 이미 골라져
+            있다 — 그때는 빈 보기가 골라지지 않는다.
+          #}
+          <option value="" {% if not preselect_contact %}selected{% endif %}>담당자를 고르세요</option>
+          {% for c in contacts %}
+          {# `data-search` 는 **거르는 값**이고 보이는 글자는 그 아래다. 딜 제안
+             관리의 담당자 카드와 같은 칸들을 담는다 — 두 화면에서 같은 말로
+             검색했는데 다른 사람이 나오면 안 된다. #}
+          <option value="{{ c.id }}" {% if c.id == preselect_contact %}selected{% endif %}
+                  data-search="{{ (c.name ~ ' ' ~ (c.title or '') ~ ' ' ~ (c.firm or '') ~ ' ' ~ (c.department or '') ~ ' ' ~ (c.group_name or ''))|lower }}">{{ c.name }} {{ c.title or '' }} · {{ c.firm or '' }}</option>
+          {% endfor %}
+        </select>
+        {# 몇 명으로 좁혀졌는지. 아무도 안 맞으면 **고르는 칸이 빈다** —
+           그 사실을 말해 주지 않으면 사람은 왜 저장이 안 되는지 모른다. #}
+        <p class="hint pick-note" data-contact-pick-note="{{ pick_id }}" hidden></p>
+      </div>
+{% endmacro %}
+
 {% block content %}
 <header class="page-head">
   <h1>{{ page_title }}</h1>
@@ -32,19 +83,21 @@
   </h2>
 
   <div class="member-form" id="new-request" {% if not preselect_contact %}hidden{% endif %}>
-    <form method="post" action="/ir/requests">
-      <label class="field inline-field"><span>담당자</span>
-        <select name="contact_id" required>
-          {% for c in contacts %}
-          <option value="{{ c.id }}" {% if c.id == preselect_contact %}selected{% endif %}>{{ c.name }} {{ c.title or '' }} · {{ c.firm or '' }}</option>
-          {% endfor %}
-        </select></label>
+    {# `pick-form` — 좁은 화면에서 칸을 **한 줄씩** 세우는 표시. 이 폼들은
+       칸이 가로로 늘어서 있어서(`inline-field`) 390px 에서는 담당자 고르기가
+       자리를 거의 다 먹고 기업 칸이 35px 로 눌린다. #}
+    <form class="pick-form" method="post" action="/ir/requests">
+{{ contact_pick("request-contact") }}
       <div class="field inline-field wide" id="last-batch" hidden>
         <span>지난 회차에서 고르기 <em id="last-batch-title" class="muted"></em></span>
         <div class="num-pick" id="num-pick"></div>
       </div>
+      {# 여러 개를 줄바꿈으로 적는 칸이라 `<datalist>` 가 안 붙는다(그건 한 줄
+         입력칸에만 붙는다). 그래서 **치는 줄에만** 후보를 띄운다 —
+         `static/js/ir_company_hint.js`. 칸 모양도 보내는 값도 그대로다. #}
       <label class="field inline-field" style="flex:1"><span>요청받은 기업 (여러 개면 줄바꿈)</span>
         <textarea name="company_name" id="request-companies" rows="2" required
+                  data-company-hint
                   placeholder="2, 4  —  번호로 적어도 됩니다"></textarea></label>
       <label class="field inline-field"><span>요청받은 날</span>
         <input type="date" name="requested_at" value="{{ today }}"></label>
@@ -54,8 +107,15 @@
       투자사는 <b>"4번, 6번 주세요"</b> 라고 답합니다. 담당자를 고르면 그 사람에게
       마지막으로 보낸 회차의 번호가 뜨니 눌러서 기록하세요 —
       <b>번호를 직접 적어도 됩니다</b>(<code>2, 4</code>). 지난 회차의 번호로 읽습니다.<br>
+      기업명을 치면 <b>그 줄에만</b> 후보가 뜹니다(↑↓·Enter 로 고르기 · Esc 로 닫기).
+      숫자만 친 줄에는 안 뜹니다 — 그 줄은 번호로 읽는 줄입니다.<br>
       요청이 왔다는 것은 답이 왔다는 뜻이라, 그 담당자의 <b>리마인드는 자동으로 멈춥니다.</b>
     </p>
+    {# 후보 이름은 **서버가 한 번에 실어 준다** — 타이핑마다 물으면 이름 한
+       줄을 적는 동안 질의가 열 번 넘게 나간다. 목록을 만드는 자리는 한
+       곳이다(`routers/ir.py` 의 `_company_names`). 메일 도메인 후보를 싣는
+       칸과 같은 방식이다(`#opts-email-domain`). #}
+    <div id="opts-ir-company" hidden data-names='{{ company_names|tojson }}'></div>
   </div>
 
   {% if request_groups %}
@@ -313,13 +373,8 @@
   </h2>
 
   <div class="member-form" id="new-meeting" hidden>
-    <form method="post" action="/ir/meetings">
-      <label class="field inline-field"><span>담당자</span>
-        <select name="contact_id" required>
-          {% for c in contacts %}
-          <option value="{{ c.id }}" {% if c.id == preselect_contact %}selected{% endif %}>{{ c.name }} {{ c.title or '' }} · {{ c.firm or '' }}</option>
-          {% endfor %}
-        </select></label>
+    <form class="pick-form" method="post" action="/ir/meetings">
+{{ contact_pick("meeting-contact") }}
       <label class="field inline-field"><span>미팅 날짜</span>
         <input type="date" name="scheduled_at" value="{{ today }}" required></label>
       {#
@@ -762,6 +817,10 @@
 {% block scripts %}
 <script src="{{ asset('js/inline_edit.js') }}"></script>
 <script src="{{ asset('js/ir_numbers.js') }}"></script>
+{# 고르는 두 칸을 거들어 주는 것들. **자산이 안 실려도 폼은 그대로 산다** —
+   검색칸은 그냥 빈 칸이 되고 `<select>` 는 133명을 그대로 들고 있다. #}
+<script src="{{ asset('js/ir_contact_search.js') }}"></script>
+<script src="{{ asset('js/ir_company_hint.js') }}"></script>
 {% if not ir_auto_attach %}
 {# 그 자리에서 여는 창. **창을 그린 계정에만** 싣는다 — 위 `{% raw %}{% if %}{% endraw %}`
    와 같은 조건이다. 둘 중 하나만 빠져도 넘어가는 옛 동작으로 내려앉을 뿐이라

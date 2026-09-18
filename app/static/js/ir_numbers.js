@@ -85,6 +85,12 @@
     var kind = btn.getAttribute("data-kind") || "";
 
     var select = box.querySelector('select[name="contact_id"]');
+    // 검색으로 좁혀 둔 채로 값을 넣으면 **그 보기가 목록에 없어 값이 안
+    // 들어간다** — 화면은 엉뚱한 사람을 가리킨 채로 미팅이 등록된다.
+    // 그래서 넣기 전에 검색어를 지운다(`ir_contact_search.js`).
+    if (window.DealflowContactPick && select) {
+      window.DealflowContactPick.clear(select.getAttribute("id"));
+    }
     if (select) select.value = contact;
     var companyInput = box.querySelector('input[name="company_name"]');
     if (companyInput) companyInput.value = company;
