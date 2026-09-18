@@ -1724,23 +1724,44 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
 
    z-60 은 표 칸의 편집창(`.cell-pop`)이다. 그 안에 뜨는 목록이라 그보다
    위여야 한다. */
-.email-hint { position: fixed; z-index: 70; display: flex; flex-wrap: wrap;
-              gap: 4px; max-width: 440px; padding: 6px;
-              border: 1px solid var(--brand); border-radius: 6px;
-              background: var(--panel);
-              box-shadow: 0 6px 20px rgba(0,0,0,.18); }
-.email-hint-item { font: inherit; font-size: 12px; padding: 2px 9px;
-                   border: 1px solid var(--line); border-radius: 999px;
-                   background: var(--bg); color: inherit;
-                   cursor: pointer; white-space: nowrap; }
-.email-hint-item:hover { border-color: var(--brand); }
+/* 「요청받은 기업」 칸의 이름 후보(static/js/ir_company_hint.js)도 **같은
+   모양**이다. 고르는 자리가 화면마다 다르게 생기면, 쓰는 사람은 여기서도
+   눌러 고르는 것인지 매번 다시 알아봐야 한다. 그래서 규칙을 한 벌로 둔다 —
+   이름만 칸에 맞게 나뉜다(`.name-hint`). */
+.email-hint, .name-hint {
+  position: fixed; z-index: 70; display: flex; flex-wrap: wrap;
+  gap: 4px; max-width: 440px; padding: 6px;
+  border: 1px solid var(--brand); border-radius: 6px;
+  background: var(--panel);
+  box-shadow: 0 6px 20px rgba(0,0,0,.18); }
+.email-hint-item, .name-hint-item {
+  font: inherit; font-size: 12px; padding: 2px 9px;
+  border: 1px solid var(--line); border-radius: 999px;
+  background: var(--bg); color: inherit;
+  cursor: pointer; white-space: nowrap; }
+.email-hint-item:hover, .name-hint-item:hover { border-color: var(--brand); }
 /* 키보드로 짚어 둔 줄. **누르면 저장되는 값**이라 마우스가 얹힌 것과 다르게
    보여야 한다 — Enter 를 치기 전에 무엇이 들어갈지 알아볼 수 있어야 한다. */
-.email-hint-item.on { border-color: var(--brand); background: #eef2ff;
-                      color: var(--brand); font-weight: 700; }
+.email-hint-item.on, .name-hint-item.on {
+  border-color: var(--brand); background: #eef2ff;
+  color: var(--brand); font-weight: 700; }
 /* 자른 사실과 고르는 법. **한 줄을 통째로 차지한다**(flex-basis 100%) —
    딱지 사이에 끼면 후보처럼 보여서 눌러 보게 된다. */
-.email-hint-note { flex: 0 0 100%; font-size: 11px; color: var(--muted); }
+.email-hint-note, .name-hint-note { flex: 0 0 100%; font-size: 11px; color: var(--muted); }
+
+/* ── 담당자 고르기 위의 검색칸 (static/js/ir_contact_search.js) ─────────
+   133명짜리 `<select>` 위에 얹힌다. `.field.inline-field` 가 세로 칸이라
+   검색칸 → 고르는 칸 → 안내줄이 그대로 위아래로 선다.
+
+   **폭을 고르는 칸에 맞춘다.** 검색칸이 더 넓으면 폼의 가로 줄이 그만큼
+   밀려, 옆 칸들이 390px 에서 한 칸씩 더 내려간다. */
+.contact-pick { min-width: 0; }
+.contact-pick input[type="search"] { max-width: 100%; box-sizing: border-box;
+                                     font-size: 13px; }
+.contact-pick select { max-width: 320px; }
+/* 몇 명으로 좁혀졌는지 적는 줄. 떠 있을 때만 자리를 차지한다 — `.hint` 의
+   위 여백을 그대로 두면 고르는 칸과 사이가 벌어져 한 칸처럼 안 보인다. */
+.contact-pick .pick-note { margin: 2px 0 0; font-size: 11px; }
 
 /* 칸 옆에 세우는 작은 안내 딱지(빈 사업분야의 `추천 3`).
    빈 칸은 글자가 없어 누를 자리가 한 줄뿐이다 — 이 딱지가 그 칸의 손잡이다. */
@@ -1940,6 +1961,24 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
 
   /* 폰에서 뜨는 편집창은 화면을 벗어나면 안 된다 */
   .cell-pop { width: calc(100vw - 24px) !important; left: 12px !important; }
+  /* 칸 아래 뜨는 후보 목록도 같다. 자리는 스크립트가 잡지만 **폭의 상한은
+     여기서** 못 박는다 — 좁은 화면에서 상자가 화면 끝에 딱 붙으면 마지막
+     딱지가 잘린 것처럼 보인다(440px 은 390px 화면보다 넓다). */
+  .email-hint, .name-hint { max-width: calc(100vw - 24px); }
+
+  /* 고르는 칸이 붙은 폼(`ir.html` 의 「요청 받았다고 적기」·「미팅 등록」)은
+     **칸을 한 줄씩** 세운다.
+
+     이 폼들은 칸이 가로로 늘어선다(`.inline-field`). 담당자 고르기는 이름·
+     직함·투자사가 한 줄에 들어가서 제 폭이 255px 이고, 390px 화면에서는 그
+     하나가 자리를 거의 다 먹는다 — 옆의 「요청받은 기업」 칸이 35px 로 눌려
+     기업 이름을 칠 수가 없었다. 폭을 나눠 주는 것으로는 안 된다(고르는 칸이
+     좁아지면 누구인지 안 보인다). 한 줄씩 세우는 것이 답이다. */
+  .pick-form .field.inline-field { flex-basis: 100%; }
+  .pick-form .field.inline-field select,
+  .pick-form .field.inline-field input,
+  .pick-form .field.inline-field textarea { width: 100%; max-width: 100%;
+                                            box-sizing: border-box; }
 
   /* 제목 줄은 `양끝 정렬`이라 제목과 오른쪽 단추가 한 줄에 붙어 있었다.
      `내 투자사 선호` + `10명 30명 100명` 처럼 둘 다 있는 칸에서 줄이 안 접혀

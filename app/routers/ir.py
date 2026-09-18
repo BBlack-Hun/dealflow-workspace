@@ -21,12 +21,47 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..deps import get_current_user, now_iso, templates
-from ..models import IrRequest, Meeting, User, VcContact
+from ..models import IrCompany, IrRequest, Meeting, User, VcContact
 from ..services import cadence, flow, ir_attach, pipeline, sheet_owner
 from . import followups
+from .companies import BLOCKED_CONTRACT, contract_key
 from ..ui import base_ctx
 
 router = APIRouter(tags=["ir"])
+
+
+def _company_names(db: Session) -> list:
+    """「요청받은 기업」 칸의 **후보 이름들** — 한 번에 실어 보낸다.
+
+    ## 왜 서버가 한 번에 주나
+
+    타이핑할 때마다 서버에 물으면 이름 한 줄을 적는 동안 질의가 열 번 넘게
+    나간다. 후보 목록은 344곳짜리 표 하나이고 화면을 여는 사이에 바뀌지도
+    않아서, **화면을 그릴 때 한 번** 읽어 싣는 편이 맞다. 도메인 후보를 싣는
+    자리와 같은 방식이다(`services/email_domains.py` → `#opts-email-domain`).
+
+    이름 두 칸만 읽는다 — 줄 전체를 들고 오면 344줄짜리 객체가 그려지지도
+    않을 화면에 실린다.
+
+    ## 무엇을 빼나 — **딜소개 불가**
+
+    발송 화면(`routers/pages.py` 의 `deals_page`)이 목록에서 빼는 그 기업이다.
+    "보내면 안 되는 곳" 이라 목록에 있는 것만으로 실수로 고를 수 있다는 것이
+    거기 적힌 이유이고, 여기도 **고르는 자리**라 같은 이유가 그대로 선다.
+    값이 예전 말(`딜소개 불가`)로 적혀 있어도 걸러지도록 `contract_key` 를
+    지난다(`services/llm_brief.py` 가 같은 것을 부른다).
+
+    **거르는 것이지 막는 것이 아니다.** 후보에 없는 이름을 손으로 적으면
+    지금처럼 그대로 기록된다 — 서버는 이 목록을 모른다
+    (`pipeline.resolve_request_names`).
+    """
+    rows = db.execute(select(IrCompany.name, IrCompany.contract_status)).all()
+    names = {
+        (name or "").strip()
+        for name, contract in rows
+        if (name or "").strip() and contract_key(contract) != BLOCKED_CONTRACT
+    }
+    return sorted(names)
 
 
 def _owned_contact(db: Session, contact_id: int, user: User) -> VcContact:
@@ -121,6 +156,8 @@ def ir_page(request: Request, db: Session = Depends(get_db),
         # 담당자 고르기 — 내 명단만
         "contacts": sorted(sheet_owner.my_contacts(db, user),
                            key=lambda c: (c.firm or "", c.name)),
+        # 「요청받은 기업」 칸의 후보. **질의는 이 한 번뿐**이다 — 위 함수 참고.
+        "company_names": _company_names(db),
         "outcomes": pipeline.OUTCOMES,
         "kinds": pipeline.MEETING_KINDS,
         "meet_modes": pipeline.MEETING_MODES,
