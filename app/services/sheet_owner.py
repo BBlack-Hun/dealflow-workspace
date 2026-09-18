@@ -454,6 +454,110 @@ def blocked_stages(db: Session, rows: List[VcContact]) -> List[dict]:
     return sorted(out, key=lambda s: (s["done"], -s["count"], s["label"]))
 
 
+# ── 고르기 줄에 적는 **상태 꼬리표** ────────────────────────────────────────
+#
+# 딜 진행 관리(`/ir`)의 담당자 고르기는 `my_contacts` 를 쓴다 — **맡은 사람
+# 전부**다. 발송 대상(`recipients`)은 여기서 문을 둘 더 지나므로, 아래 세
+# 갈래는 딜 제안 관리에서는 사라지는데 이 고르기에는 그대로 남는다.
+#
+#     `검토중단`            `is_paused`
+#     `참여 안 함` · `방 나감` 등 연결이 안 끝난 단계   `is_connected`
+#     딜소개 명단에서 내린 사람                        `on_deal_list`
+#
+# 쓰는 사람에게는 이것이 **"지운 사람이 아직 나온다"** 로 보였다. 그렇다고
+# 빼면 안 된다 — 이 화면은 *보내는* 곳이 아니라 **이미 일어난 일을 적는**
+# 곳이다. 방을 나간 분이 메일로 자료를 요청한 일을 적을 길이 사라진다.
+#
+# 그래서 빼는 대신 **왜 이 사람이 여기 있는지 상태를 함께 적는다.**
+#
+#     홍길동 심사역 · 가나벤처스 [방 나감]
+#     김철수 팀장 · 나다벤처스 [검토중단 · 방 나감]
+#
+# ## 왜 서버에서 만드나 (템플릿이 아니라)
+#
+#   ① **말이 서버에 있다.** `STATUS_LABELS`(여기) · `CONNECT_LABELS`
+#      (`sheet_import`). 템플릿에서 붙이려면 그 사전을 화면까지 들고 가거나
+#      `방 나감` 을 손으로 적어야 하는데, 손으로 적는 순간 임포트가 말을
+#      바꾸는 날 이 화면만 옛말로 남는다.
+#   ② **꼬리표를 안 붙이는 조건이 곧 발송 판정이다.** `활발` + `연결 완료` +
+#      `명단 안` 은 `can_send_to` 와 `on_deal_list` 가 보는 바로 그 값들이다.
+#      템플릿에 `c.status == 'active' and c.connect_stage == 'connected'` 를
+#      적어 두면 판정이 두 벌이 되고, 문이 하나 늘 때 한쪽만 고쳐진다 —
+#      이 모듈 첫머리가 줄곧 막아 온 부류다.
+#   ③ **명단 상태는 질의가 필요하다.** `명단 밖`인지는 `SheetOwner` 줄을
+#      읽어야 안다(`off_deal_labels`). 템플릿에서는 애초에 알 수 없다.
+#
+# ## 안 붙이는 자리
+#
+# `활발` + `연결 완료` + `명단 안` 이면 **아무것도 안 붙는다.** 대부분이
+# 그렇다 — 개발 자료는 125명이 전부 그렇고, 운영에서 걸린 것은 133명 중
+# `방 나감` 1명뿐이었다. 다 붙이면 꼬리표가 눈에 안 들어오는 소음이 된다.
+# 꼬리표는 **드물어야 눈에 띈다.**
+
+#: 딜소개 명단에서 내린 사람. **사람의 상태가 아니라 명단의 상태**라 상태
+#: 이름 사전(`STATUS_LABELS` · `CONNECT_LABELS`)에 넣지 않고 여기 따로 둔다.
+#: 화면이 이미 쓰는 말과 같은 말이다(딜 제안 관리의 `딜소개 명단 밖 K명`).
+OFF_LIST_LABEL = "명단 밖"
+
+
+def pick_note(contact: VcContact, off: Set[str]) -> str:
+    """이 사람 줄에 적을 상태. 붙일 것이 없으면 빈 글자.
+
+    **걸린 갈래를 전부 적는다**(`검토중단 · 방 나감`). 하나만 골라 적으면,
+    `검토중단` 을 풀어 준 사람이 "고쳤는데 왜 아직 딜 제안 관리에 안 뜨지"
+    로 되돌아온다 — 남은 이유가 화면에 없기 때문이다. 겹치는 사람은 원래
+    드물다(운영 133명 중 0명, 개발 125명 중 0명).
+
+    차례는 **상태 → 연결 → 명단**이다. 사람이 손으로 정한 값이 앞에 서고,
+    임포트가 정하는 값과 명단 설정이 뒤에 선다.
+
+    모르는 값은 **감추지 않는다** — 값을 그대로 적는다. 단계가 하나 늘었는데
+    여기 이름이 없다고 조용히 넘어가면, 빠진 사람을 보이게 하려고 만든
+    자리에서 정작 그 사람만 안 보인다(`blocked_stages` 와 같은 규칙).
+    """
+    from .sheet_import import CONNECT_LABELS, STAGE_CONNECTED
+
+    parts: List[str] = []
+
+    # ① 사람이 고른 상태. **`활발` 과 빈 값에는 안 붙는다** — 빈 값은 "멈춰
+    #    두지 않았다" 로 읽는 곳(`is_paused`)과 같은 뜻이어야 한다.
+    status = (contact.status or "").strip()
+    if status and status != STATUS_ACTIVE:
+        parts.append(STATUS_LABELS.get(status, status))
+
+    # ② 연결 단계. `연결 완료` 말고는 전부 적는다 — 그 사람들이 딜 제안
+    #    관리에 안 뜨는 이유다(`is_connected`).
+    stage = (contact.connect_stage or "").strip()
+    if stage != STAGE_CONNECTED:
+        parts.append(CONNECT_LABELS.get(stage, stage or "-"))
+
+    # ③ 명단. 사람이 아니라 **명단** 쪽 사정이지만 같은 자리에 적는다 —
+    #    쓰는 사람이 여기서 묻는 것은 "왜 저쪽에서는 안 보이나" 하나이고,
+    #    이것을 빼면 명단에서 내린 사람만 아무 표시 없이 섞인다.
+    if not on_deal_list(contact, off):
+        parts.append(OFF_LIST_LABEL)
+
+    return " · ".join(parts)
+
+
+def pick_notes(db: Session, contacts: List[VcContact]) -> Dict[int, str]:
+    """고르기에 세울 사람들의 상태 꼬리표 — `{담당자 번호: 적을 말}`.
+
+    **붙을 것이 있는 사람만** 담는다. 화면은 `pick_notes.get(c.id)` 로 묻고,
+    없으면 아무것도 안 적는다.
+
+    명단 설정은 **한 번만** 읽는다. 사람마다 물으면 125줄짜리 화면에서 질의가
+    125번 나간다.
+    """
+    off = off_deal_labels(db)
+    notes: Dict[int, str] = {}
+    for c in contacts:
+        note = pick_note(c, off)
+        if note:
+            notes[c.id] = note
+    return notes
+
+
 def recipient_counts(db: Session, user: User, *,
                      team_wide: bool = False) -> dict:
     """명단 N명 중 보낼 수 있는 M명 — 화면이 그 차이를 드러내는 데 쓴다.
