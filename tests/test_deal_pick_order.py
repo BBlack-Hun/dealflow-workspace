@@ -1,7 +1,7 @@
 """딜 소개 — **고른 차례가 곧 문구의 번호다.**
 
-문구는 `1) …` `2) …` 로 나가고 투자사는 그 번호로 기억해서 "2번 자료 주세요"
-라고 답한다. 그래서 어느 기업이 몇 번인지가 이 화면의 알맹이다.
+문구는 `[기업1] …` `[기업2] …` 로 나가고 투자사는 그 번호로 기억해서
+"기업2 자료 주세요" 라고 답한다. 그래서 어느 기업이 몇 번인지가 이 화면의 알맹이다.
 
 화면이 고른 차례를 안 들고 있어서 **목록에 그려진 차례**로 나가던 일을 고쳤다
 (`tests/js/deals_pick_order_test.js`). 여기서는 그 차례가 서버를 지나는 동안
@@ -11,7 +11,7 @@
 따라가는 길은 셋이고 전부 **거꾸로 고른 경우**로 본다(차례대로 고르면 목록
 차례와 같아서 뒤섞여도 안 걸린다).
 
-  · 미리보기 문구의 `1) 2) 3)`
+  · 미리보기 문구의 `[기업1] [기업2] [기업3]`
   · 실제 발송 — `DealBatchCompany.position` 과 저장된 문구
   · 예약 큐 — `DealQueueCompany.position`, 그리고 [시작] 이 만든 회차
 
@@ -76,10 +76,10 @@ def _reversed_pick(seed):
 
 
 def _numbered_names(text: str) -> list:
-    """문구에서 `1) [분야] 이름 …` 의 **번호 붙은 차례**만 뽑는다."""
-    return [line.split(")", 1)[1].strip()
+    """문구에서 `[기업1] 이름 …` 의 **번호 붙은 차례**만 뽑는다."""
+    return [line.split("]", 1)[1].strip()
             for line in text.splitlines()
-            if re.match(r"^\d+\)\s", line)]
+            if re.match(r"^\[기업\d+\]\s", line)]
 
 
 def _first(names: list) -> list:
@@ -96,7 +96,8 @@ def _first(names: list) -> list:
 # ── 미리보기 ────────────────────────────────────────────────────────────────
 
 def test_preview_numbers_follow_the_pick_order(client, seed):
-    """`1) 2) 3)` 은 **받은 차례**대로 붙는다 — 목록 차례로 다시 세우지 않는다."""
+    """`[기업1] [기업2] [기업3]` 은 **받은 차례**대로 붙는다 — 목록 차례로 다시
+    세우지 않는다."""
     r = client.post("/api/deals/preview", json={
         "company_ids": _reversed_pick(seed),
         "contact_ids": [seed["contact_id"]],
@@ -113,7 +114,7 @@ def test_send_writes_positions_in_the_pick_order(client, db, seed):
     """`DealBatchCompany.position` 이 고른 차례 그대로다.
 
     이 번호는 **다음 회차까지 남는다** — 자료를 보낼 때 `deal_positions` 가
-    이것을 읽어 "2번 기업 …" 이라고 짚어 준다. 여기서 어긋나면 투자사가 기억한
+    이것을 읽어 "[기업2] …" 라고 짚어 준다. 여기서 어긋나면 투자사가 기억한
     번호와 다른 기업 이야기가 나간다.
     """
     from sqlalchemy import select

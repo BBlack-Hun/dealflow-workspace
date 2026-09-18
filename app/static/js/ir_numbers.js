@@ -1,8 +1,12 @@
 // IR 요청 기록 — 지난 회차의 **번호**로 고른다.
 //
-// 투자사는 "4번, 6번 주세요" 라고 답한다. 그 번호가 어느 기업인지 사람이
+// 투자사는 "기업4, 기업6 주세요" 라고 답한다. 그 번호가 어느 기업인지 사람이
 // 지난 카톡을 뒤져 맞추고 있었다. 담당자를 고르면 그 사람에게 마지막으로 보낸
 // 회차의 번호를 그대로 보여주고, 눌러서 기록하게 한다.
+//
+// 딱지에 적는 글자는 **나간 문구와 같은 모양**이다(`[기업4] …` —
+// `deal_numbers.label`). 여기만 다른 모양으로 적으면(예전의 `4) …`) 투자사가
+// 말한 글자와 화면의 글자가 달라, 어느 것이 그 번호인지 눈으로 맞춰야 한다.
 (function () {
   var form = document.getElementById("new-request");
   if (!form) return;
@@ -38,7 +42,7 @@
           var b = document.createElement("button");
           b.type = "button";
           b.className = "num-chip" + (item.has_file ? "" : " no-link");
-          b.textContent = item.position + ") " + item.name;
+          b.textContent = item.label + " " + item.name;
           b.title = item.has_file ? item.name : item.name + " — IR 자료 파일명 없음";
           b.addEventListener("click", function () { toggle(b, item.name); });
           pick.appendChild(b);

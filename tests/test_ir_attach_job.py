@@ -112,7 +112,7 @@ def test_the_file_order_follows_the_message(stage):
     """파일 차례 = **문구가 기업을 짚는 차례** = 화면의 [보낼 자료] 목록 차례.
 
     셋이 한 자리에서 나온다(`deal_numbers.numbered_companies`). 여기서 따로
-    정렬하면 "1번 기업 …, 3번 기업 …" 과 올라온 파일의 차례가 갈린다 —
+    정렬하면 "[기업1] …, [기업3] …" 과 올라온 파일의 차례가 갈린다 —
     받는 쪽은 어느 파일이 어느 기업인지 알 수 없게 된다.
 
     번호를 받은 적 없는 기업끼리는 **고른 차례**가 그대로 남는다(세울 번호가
@@ -391,7 +391,7 @@ class FakeSender:
 
 
 NO_GAP = {"part_gap_sec": 0}
-ITEM = {"room_name": "홍길동 팀장님", "message": "1번 기업 샘플애그 전달드리겠습니다."}
+ITEM = {"room_name": "홍길동 팀장님", "message": "[기업1] 샘플애그 전달드리겠습니다."}
 
 
 def test_files_go_before_the_message(agent_main):

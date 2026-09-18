@@ -173,7 +173,7 @@ def last_batch(contact_id: int, db: Session = Depends(get_db),
                user: User = Depends(get_current_user)):
     """그 담당자에게 마지막으로 보낸 회차의 **번호와 기업**.
 
-    투자사는 "4번, 6번 주세요" 라고 답한다. 번호를 눌러 기록할 수 있어야
+    투자사는 "기업4, 기업6 주세요" 라고 답한다. 번호를 눌러 기록할 수 있어야
     지난 카톡을 뒤지지 않는다.
     """
     _owned_contact(db, contact_id, user)
@@ -191,7 +191,10 @@ def create_request(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """자료 요청을 받았다고 적는다. **번호로 적어도 된다** — "2, 4" 처럼."""
+    """자료 요청을 받았다고 적는다. **번호로 적어도 된다** — "[기업2], 4" 처럼.
+
+    받는 모양은 `deal_numbers.parse_label` 이 정한다(`2` · `기업2` · `[기업2]`).
+    """
     contact = _owned_contact(db, contact_id, user)
     when = (requested_at or "").strip() or date.today().isoformat()
 
@@ -200,7 +203,7 @@ def create_request(
         return RedirectResponse("/ir?msg=기업명이나 번호를 입력하세요", status_code=303)
     if not rows:
         return RedirectResponse(
-            f"/ir?msg={quote('지난 회차에 없는 번호입니다: ' + ', '.join(unknown) + '번')}",
+            f"/ir?msg={quote('지난 회차에 없는 번호입니다: ' + ', '.join(unknown))}",
             status_code=303)
 
     for row in rows:
@@ -216,7 +219,7 @@ def create_request(
     msg = f"{len(rows)}건 기록했습니다"
     if unknown:
         # 조용히 버리면 요청 하나가 통째로 사라진 줄 모른다.
-        msg += f" (지난 회차에 없는 번호는 건너뜀: {', '.join(unknown)}번)"
+        msg += f" (지난 회차에 없는 번호는 건너뜀: {', '.join(unknown)})"
     return RedirectResponse(f"/ir?msg={quote(msg)}", status_code=303)
 
 

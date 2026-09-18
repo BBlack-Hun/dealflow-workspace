@@ -2,10 +2,10 @@
 //
 // 딜 소개 탭에서는 고른 차례가 곧 문구의 번호라, 카드에 그 번호를 배지로
 // 띄운다(`data-pick-order`). 자료 전달은 다르다 — 그때의 번호는 **딜 소개에서
-// 이미 붙은 번호**이고(`app/services/deal_numbers.py`), 투자사가 "2번 주세요"
+// 이미 붙은 번호**이고(`app/services/deal_numbers.py`), 투자사가 "기업2 주세요"
 // 라고 답한 그 번호다. 담당자마다 다르므로 카드 하나에 적을 수 있는 값이 아니다.
 //
-// 그런데도 고른 차례를 배지로 띄우면 화면은 `1`, 나가는 문구는 `2번 기업 …` 이
+// 그런데도 고른 차례를 배지로 띄우면 화면은 `1`, 나가는 문구는 `[기업2] …` 가
 // 되어 **어느 쪽이 맞는지 알 수 없다.** 그래서 카드 배지는 비운다
 // (`no-pick-badge` — CSS 가 그 표시를 읽는지는 파이썬 쪽이 따로 본다).
 //
@@ -18,7 +18,8 @@
 // 번호가 없으면 어느 것이 몇 번인지 알 수가 없다. 카드에는 못 적지만
 // (담당자마다 다르다) 미리보기는 **담당자별로 한 통씩** 보여 주므로, 그 옆의
 // [보낼 자료] 목록은 지금 열어 둔 담당자의 번호를 적을 수 있다 — 서버가 문구와
-// 같은 응답에 실어 준 값이다(`attachments[].no`).
+// 같은 응답에 실어 준 값이다(`attachments[].label` — 나가는 문구가 쓰는 바로
+// 그 글자다).
 //
 // **화면과 문구가 갈리면 이 일을 한 뜻이 없다.** 그래서 아래 검사들은 화면에
 // 뜬 번호를 문구에서 뽑은 번호와 직접 맞대 본다.
@@ -50,11 +51,13 @@ function irNames(dom) {
 }
 
 // 목록에 **보이는** 번호 — `{기업명: 번호}`. 번호가 없으면 넣지 않는다.
+// 목록도 문구와 같은 꼬리표를 적는다(`[기업2]`) — 여기서 다른 모양을 찾으면
+// 화면만 옛 모양으로 남아도 안 걸린다.
 function irNumbers(dom) {
   const out = {};
   irRows(dom).forEach(function (row) {
     const name = [A, B, C].filter(function (n) { return row.indexOf(n) >= 0; })[0];
-    const m = /(\d+)번/.exec(row);
+    const m = /\[기업(\d+)\]/.exec(row);
     if (name && m) out[name] = parseInt(m[1], 10);
   });
   return out;
@@ -65,7 +68,7 @@ function irNumbers(dom) {
 function messageNumbers(text) {
   const out = {};
   [A, B, C].forEach(function (name) {
-    const m = new RegExp("(\\d+)번 기업 " + name).exec(text || "");
+    const m = new RegExp("\\[기업(\\d+)\\] " + name).exec(text || "");
     if (m) out[name] = parseInt(m[1], 10);
   });
   return out;
@@ -80,12 +83,14 @@ function person(name, pairs) {
     title: "심사역",
     room_name: name + " 심사역님",
     message: pairs.map(function (pair) {
-      return pair[1] ? pair[1] + "번 기업 " + pair[0] : pair[0];
+      return pair[1] ? "[기업" + pair[1] + "] " + pair[0] : pair[0];
     }).join(", ") + " IR deck 먼저 전달드리겠습니다.",
     parts: [],
     warnings: [],
+    // `label` 은 서버가 짓는다 — 화면은 받아 적기만 한다.
     attachments: pairs.map(function (pair) {
-      return { name: pair[0], file: pair[0] + "_IR.pdf", no: pair[1] };
+      return { name: pair[0], file: pair[0] + "_IR.pdf", no: pair[1],
+               label: pair[1] ? "[기업" + pair[1] + "]" : "" };
     })
   };
 }
@@ -104,7 +109,7 @@ function reply(previews) { return deals_.previewReply(previews); }
   deals_.pickMode(dom, "ir");
   assert.ok(dom.companyPanel.classList.contains("no-pick-badge"),
             "자료 전달 탭에서 고른 차례를 번호처럼 띄우고 있다 — " +
-            "화면은 `1`, 문구는 `2번 기업 …` 이 되어 어느 쪽이 맞는지 알 수 없다");
+            "화면은 `1`, 문구는 `[기업2] …` 가 되어 어느 쪽이 맞는지 알 수 없다");
 
   // 다른 탭으로 돌아오면 다시 켜진다. 한 번 끄고 안 켜면, 딜 소개에서 몇 번으로
   // 나갈지 고르는 사람만 모른다.
@@ -128,7 +133,7 @@ function reply(previews) { return deals_.previewReply(previews); }
 
 // ── 3) ★ 배지를 껐다고 **차례까지 버리지는 않는다** ────────────────────────
 //
-// 문구는 고른 차례로 기업을 짚는다("3번 기업 다라헬스, 2번 기업 가나애그").
+// 문구는 고른 차례로 기업을 짚는다("[기업3] 다라헬스, [기업2] 가나애그").
 // [보낼 자료] 목록이 목록 차례로 서면 화면과 문구가 갈린다.
 {
   const fetch = deals_.fakeFetch([reply([person("가담당", [[B, 3], [A, 2]])])]);
@@ -160,8 +165,8 @@ function reply(previews) { return deals_.previewReply(previews); }
 // ── 4) ★★ 목록의 번호가 **문구의 번호와 같은가** ──────────────────────────
 //
 // 이 일의 알맹이다. 자료는 사람이 PC 카톡에 손으로 붙이는데, 화면에 적힌
-// 번호가 곧 붙이는 차례다. 화면이 `1·2` 라고 적는데 문구가 "3번 기업 다라헬스,
-// 2번 기업 가나애그" 라고 하면 **엉뚱한 자료가 3번 자리에 붙는다.**
+// 번호가 곧 붙이는 차례다. 화면이 `1·2` 라고 적는데 문구가 "[기업3] 다라헬스,
+// [기업2] 가나애그" 라고 하면 **엉뚱한 자료가 3번 자리에 붙는다.**
 //
 // 그래서 화면에 뜬 번호를 문구에서 뽑은 번호와 **직접 견준다** — 규칙을 옮겨
 // 적어 견주면 두 벌이 되어, 둘 다 틀려도 통과한다.
@@ -236,8 +241,9 @@ function reply(previews) { return deals_.previewReply(previews); }
   dom.document.getElementById("refresh-preview").fire("click");
 
   const rows = irRows(dom);
-  assert.ok(/3번/.test(rows[0]), "번호가 있는 기업에 번호가 안 붙었다: " + rows[0]);
-  assert.ok(!/\d번/.test(rows[1]),
+  assert.ok(/\[기업3\]/.test(rows[0]),
+            "번호가 있는 기업에 번호가 안 붙었다: " + rows[0]);
+  assert.ok(!/\[기업\d+\]/.test(rows[1]),
     "지난 회차에 없던 기업에 번호를 지어냈다: " + rows[1]);
   assert.ok(/번호 없음/.test(rows[1]),
     "번호가 없다는 것이 화면에 안 보인다: " + rows[1]);

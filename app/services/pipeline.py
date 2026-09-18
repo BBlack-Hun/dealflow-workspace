@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 
 from ..models import (ContactActivity, IrCompany, IrRequest, Meeting, SendItem,
                       User, VcContact)
-from . import cadence, calendar_link
+from . import cadence, calendar_link, deal_numbers
 from .sheet_import import normalize_company_name
 
 # 미팅이 끝나고 결과를 물어보기까지. 운영에서 쓰던 간격 그대로다.
@@ -608,7 +608,12 @@ def last_batch_items(db: Session, contact_id: int) -> dict:
         "batch_id": batch_id,
         "title": title or "지난 회차",
         "sent_date": sent_date or "",
-        "items": [{"position": link.position, "company_id": company.id,
+        # `label` — 나간 문구가 이 기업을 짚은 **그 글자**다(`[기업2]`).
+        # 화면이 `position` 을 받아 제 모양으로 적으면 문구의 모양을 바꿀 때
+        # 이 딱지만 옛 모양으로 남는다.
+        "items": [{"position": link.position,
+                   "label": deal_numbers.label(link.position),
+                   "company_id": company.id,
                    "name": company.name,
                    "has_file": bool((company.ir_file_name or "").strip())}
                   for link, company in links],
@@ -619,31 +624,38 @@ def resolve_request_names(db: Session, contact_id: int,
                           raw: str) -> tuple:
     """적어 넣은 것을 기업으로 푼다. **번호도 이름처럼 받는다.**
 
-    투자사는 "2, 4 주세요" 라고 답한다. 지금까지는 그 번호를 기업명으로 읽어서
-    `2` 라는 이름의 요청이 그대로 만들어졌다 — 어느 기업인지 아무도 모르는
+    투자사는 "기업2, 기업4 주세요" 라고 답한다. 지금까지는 그 번호를 기업명으로
+    읽어서 `2` 라는 이름의 요청이 그대로 만들어졌다 — 어느 기업인지 아무도 모르는
     기록이 남고, 자료 전달 문구도 만들 수 없었다.
 
-    번호는 **그 담당자에게 마지막으로 보낸 회차**의 자리 번호로 읽는다.
-    이름과 섞여 있어도 된다("2, 샘플애그, 4").
+    번호로 읽는 모양은 `deal_numbers.parse_label` 이 정한다 — `2` · `기업2` ·
+    `[기업2]`. 문구가 짚는 글자가 `[기업2]` 라 받아 적는 사람도 그 글자를
+    그대로 치고, 옛 문구(`2) …`)를 받은 투자사는 여전히 "2번" 이라고 답한다.
 
-    돌려주는 것: (풀린 목록, 못 찾은 번호 목록)
+    번호는 **그 담당자에게 마지막으로 보낸 회차**의 자리 번호로 읽는다.
+    이름과 섞여 있어도 된다("[기업2], 샘플애그, 4").
+
+    돌려주는 것: (풀린 목록, 못 찾은 번호 목록 — `[기업9]` 모양)
     """
     tokens = [t.strip() for t in raw.replace(",", "\n").splitlines() if t.strip()]
     if not tokens:
         return [], []
 
+    asked = [(t, deal_numbers.parse_label(t)) for t in tokens]
     numbered = {}
-    if any(t.isdigit() for t in tokens):
+    if any(no is not None for _t, no in asked):
         batch = last_batch_items(db, contact_id)
-        numbered = {str(item["position"]): item for item in batch["items"]}
+        numbered = {item["position"]: item for item in batch["items"]}
 
     resolved, unknown = [], []
-    for token in tokens:
-        if token.isdigit():
-            item = numbered.get(token)
+    for token, no in asked:
+        if no is not None:
+            item = numbered.get(no)
             if item is None:
                 # 없는 번호를 조용히 이름으로 남기면 '3' 이라는 기업이 생긴다.
-                unknown.append(token)
+                # 적어 넣은 글자가 아니라 **문구가 쓰는 모양**으로 되돌려 준다 —
+                # `2` 라고 쳤어도 사람이 찾아볼 곳은 문구의 `[기업2]` 다.
+                unknown.append(deal_numbers.label(no))
                 continue
             resolved.append({"name": item["name"], "company_id": item["company_id"]})
             continue

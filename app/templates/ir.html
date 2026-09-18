@@ -98,17 +98,18 @@
       <label class="field inline-field" style="flex:1"><span>요청받은 기업 (여러 개면 줄바꿈)</span>
         <textarea name="company_name" id="request-companies" rows="2" required
                   data-company-hint
-                  placeholder="2, 4  —  번호로 적어도 됩니다"></textarea></label>
+                  placeholder="[기업2], [기업4]  —  번호로 적어도 됩니다"></textarea></label>
       <label class="field inline-field"><span>요청받은 날</span>
         <input type="date" name="requested_at" value="{{ today }}"></label>
       <button class="primary-btn inline" type="submit">기록</button>
     </form>
     <p class="hint">
-      투자사는 <b>"4번, 6번 주세요"</b> 라고 답합니다. 담당자를 고르면 그 사람에게
+      투자사는 <b>"기업4, 기업6 주세요"</b> 라고 답합니다. 담당자를 고르면 그 사람에게
       마지막으로 보낸 회차의 번호가 뜨니 눌러서 기록하세요 —
-      <b>번호를 직접 적어도 됩니다</b>(<code>2, 4</code>). 지난 회차의 번호로 읽습니다.<br>
+      <b>번호를 직접 적어도 됩니다</b>(<code>[기업2]</code> · <code>기업2</code> ·
+      <code>2</code>). 지난 회차의 번호로 읽습니다.<br>
       기업명을 치면 <b>그 줄에만</b> 후보가 뜹니다(↑↓·Enter 로 고르기 · Esc 로 닫기).
-      숫자만 친 줄에는 안 뜹니다 — 그 줄은 번호로 읽는 줄입니다.<br>
+      번호만 친 줄에는 안 뜹니다 — 그 줄은 번호로 읽는 줄입니다.<br>
       요청이 왔다는 것은 답이 왔다는 뜻이라, 그 담당자의 <b>리마인드는 자동으로 멈춥니다.</b>
     </p>
     {# 후보 이름은 **서버가 한 번에 실어 준다** — 타이핑마다 물으면 이름 한

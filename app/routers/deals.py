@@ -239,8 +239,8 @@ def _compose_for_contact(
         # STAGE_DAY1 이 아니면 기업 목록을 붙이지 않는다(composer 규칙).
         stage=follow_up[2] if follow_up else mc.STAGE_DAY1,
         include_opening=include_opening,
-        # 자료 전달의 "2번 기업 …" — 번호를 새로 매기지 않고 **딜 소개에서
-        # 붙인 번호**를 되읽는다(`deal_numbers`).
+        # 자료 전달의 "[기업2] …" — 번호를 새로 매기지 않고 **딜 소개에서
+        # 붙인 번호**를 되읽는다(`deal_numbers`). 모양도 딜 소개와 같다.
         company_list=(deal_numbers.company_list(db, contact.id, companies)
                       if mode == MODE_IR else None),
         # `file_links` · `link_blocks` 를 넘기지 않는다 — 자료 전달은 이제
@@ -283,12 +283,13 @@ def _mail_subject(req, contact, companies: List[IrCompany]) -> str:
                               company_count=count)
 
 
-# 자료 전달이 짚는 번호(`2번 기업 …`)를 만들던 자리가 여기였다
+# 자료 전달이 짚는 번호(`[기업2] …`)를 만들던 자리가 여기였다
 # (`deal_positions` · `build_company_list`). **`services/deal_numbers.py` 로
 # 옮겼다** — 번호를 정하는 곳과 되읽는 곳이 떨어져 있어서 서로 다른 번호를
-# 냈다. 딜 소개는 고른 차례로 `1) 2) 3)` 을 붙이는데, 자료 전달은 "마지막으로
-# 나간 회차" 를 봐서 자료를 한 번 보내고 나면 1 부터 다시 셌고 리마인드를 한
-# 통 보내면 번호가 사라졌다. 이제 양쪽이 그 한 모듈을 함께 쓴다.
+# 냈다. 딜 소개는 고른 차례로 `[기업1] [기업2] [기업3]` 을 붙이는데, 자료
+# 전달은 "마지막으로 나간 회차" 를 봐서 자료를 한 번 보내고 나면 1 부터 다시
+# 셌고 리마인드를 한 통 보내면 번호가 사라졌다. 이제 양쪽이 그 한 모듈을 함께
+# 쓴다.
 
 
 # 자료 전달 문구에 **구글 드라이브 링크를 실어 보내던 자리**가 여기였다
@@ -659,16 +660,22 @@ def preview(
             #
             # **번호**(#112) — 자료를 붙이는 차례다. 그 번호는 담당자마다 다르고
             # (딜 소개에서 붙은 번호를 되읽는다 — `deal_numbers`) 화면이 고른
-            # 차례를 세면 목록은 `1`, 문구는 `2번 기업 …` 이 되어 어느 쪽이
+            # 차례를 세면 목록은 `1`, 문구는 `[기업2] …` 가 되어 어느 쪽이
             # 맞는지 알 수 없다. 그래서 **문구를 만든 그 함수**가 목록의 번호도
             # 함께 낸다(`numbered_companies`). 딜 소개에 없던 기업은 `no` 가
             # `null` 이다 — 지어내지 않는다. 문구도 그 기업만 이름으로 나간다.
+            #
+            # **적히는 글자(`label`)도 서버가 짓는다** — `[기업2]` 라는 모양을
+            # 화면이 따로 적으면 문구의 모양을 바꿀 때 목록만 옛 모양으로
+            # 남는다(`2번`). 번호가 없으면 빈 글자다 — 화면이 그때만 다르게
+            # 적는다("번호 없음").
             #
             # **파일 이름**(0056) — 링크가 아니다. 자동 첨부를 켰으면 발송기가
             # 이 이름으로 파일을 찾아 붙이고, 켜지 않았으면 사람이 이 이름을
             # 보고 PC 카톡에서 붙인다. 어느 쪽이든 **번호 차례대로** 간다.
             "attachments": ([{"company_id": c.id, "name": c.name,
-                              "file": c.ir_file_name or "", "no": no}
+                              "file": c.ir_file_name or "", "no": no,
+                              "label": deal_numbers.label(no) if no else ""}
                              for no, c in deal_numbers.numbered_companies(
                                  db, contact.id, companies)]
                             if req.mode == MODE_IR else []),
@@ -834,7 +841,7 @@ def create_send_list(
     db.add(batch)
     db.flush()
     # 회차에 남기는 번호 = 문구에 붙는 번호. 같은 자리에서 가져온다 —
-    # 자료 전달이 나중에 이 번호를 되읽어 "2번 기업 …" 이라고 짚는다.
+    # 자료 전달이 나중에 이 번호를 되읽어 "[기업2] …" 라고 짚는다.
     for pos, company in deal_numbers.numbered(companies):
         db.add(DealBatchCompany(batch_id=batch.id, company_id=company.id, position=pos))
 
@@ -867,8 +874,8 @@ def create_send_list(
     for contact in contacts:
         # **번호순으로 늘어선 이 담당자의 기업들.** 화면의 [보낼 자료] 목록과
         # 나가는 문구가 이 차례이므로(`deal_numbers.numbered_companies`),
-        # 발송기가 붙이는 파일도 같은 차례여야 한다 — 화면은 `1번 · 3번` 인데
-        # 파일이 고른 차례로 나가면 사람이 본 것과 받는 것이 갈린다.
+        # 발송기가 붙이는 파일도 같은 차례여야 한다 — 화면은 `[기업1] · [기업3]`
+        # 인데 파일이 고른 차례로 나가면 사람이 본 것과 받는 것이 갈린다.
         #
         # 번호는 담당자마다 다르므로 **담당자마다 다시 잡는다.**
         ir_order = ([c for _no, c in deal_numbers.numbered_companies(
