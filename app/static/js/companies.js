@@ -116,6 +116,43 @@
     });
   }
 
+  // ── 머리글을 눌러 세운다 ───────────────────────────────────────
+  //
+  // **주간 업무·투자사 명단이 쓰던 그 부품 그대로다**(`table_sort.js`). 어느
+  // 칸을 세우는지와 무엇을 세울 값으로 삼는지는 화면이 정하고
+  // (`companies.html` 의 `data-sort` · `data-s-*`), 나머지 판단은 전부 그
+  // 부품에 이미 있다 — 빈 값은 방향과 상관없이 늘 끝, 같은 값끼리는 서버가
+  // 그려 준 차례, 세 번째 누르면 끔, `?sort=` 로 주소에 남음.
+  //
+  // **여기(`renumber` 가 있는 자리)에 거는 이유**는 둘이 한 짝이기 때문이다.
+  // 이 표의 `NO` 는 보이는 것 기준 1,2,3… 이라 차례가 곧 번호다 — 줄을 세우고
+  // 번호를 안 다시 매기면 정렬한 표의 번호가 `3,5,1,4,2` 로 남아 목록을 셀 수가
+  // 없다. 정렬을 화면에서 따로 걸면 그 짝이 두 파일로 갈라진다
+  // (`contacts.js` 가 같은 이유로 같은 모양이다).
+  //
+  // 거르는 일(`filters.js`)과 싸우지 않는다: 필터는 줄을 `hidden` 으로 감출 뿐
+  // 차례를 안 보고, 정렬은 감춘 줄까지 **함께** 옮기므로 세우고 나서도 걸어 둔
+  // 조건이 그대로 남는다. 위 필터가 먼저 한 번 돌고 나서 여기가 선다.
+  var sort = window.DealflowSort && window.DealflowSort.init({
+    table: "#co-table",
+    onChange: renumber
+  });
+
+  // 칸을 눌러 고치면 **세울 값도 다시 읽는다.** 값은 처음 한 번만 읽으므로,
+  // 안 읽으면 화면에는 새 값이 떠 있는데 머리글을 누르면 옛 값 자리에 선다.
+  //
+  // 저장 직후가 아니라 **한 박자 뒤**에 읽는다. 같은 이벤트를 듣고 줄을 다듬는
+  // 블록이 이 파일 아래쪽에 여럿 있어서다 — `수정한 날짜` 칸과 `data-s-updated`
+  // 를 응답 값으로 고쳐 적는 것도 그중 하나다. 그 정리보다 먼저 읽으면 방금
+  // 고친 줄만 옛 자리에 남는다. (`filters.js` 가 같은 자리에서 같은 이유로
+  // `setTimeout(…, 0)` 을 쓴다.)
+  if (sort) {
+    table.addEventListener("inline-saved", function () {
+      if (window.setTimeout) window.setTimeout(sort.refresh, 0);
+      else sort.refresh();
+    });
+  }
+
   // ── 상세 편집 ──────────────────────────────────────────────
   function el(id) { return document.getElementById(id); }
 
@@ -678,5 +715,39 @@
     cell.textContent = data.updated_at;
     cell.classList.remove("muted");
     cell.title = "마지막으로 고친 시각";
+    // **세울 값도 같이 적는다**(`data-s-updated` · table_sort.js). 안 적으면
+    // 이 칸으로 세워 둔 표에서 한 줄을 고쳤을 때, 칸에는 방금 시각이 떠 있는데
+    // 줄은 **옛 시각 자리**에 그대로 앉아 있다 — 필터가 `data-f-*` 에서 겪은
+    // 것과 같은 어긋남이고, `inline_edit.js` 가 저 혼자 맞춰 줄 수 없는 값이다
+    // (고친 칸의 이름이 `updated` 가 아니다 — 아무 칸을 고쳐도 이 값이 오른다).
+    if (row.hasAttribute("data-s-updated")) {
+      row.setAttribute("data-s-updated", data.updated_at);
+    }
+  });
+})();
+
+// 미팅제공일자 — **세울 값을 응답에서 받아 적는다.**
+//
+// 이 칸으로 세우는 값은 화면 글자가 아니라 거기서 **날짜만 추려 낸 것**이다
+// (`routers/companies.py` 의 `meeting_sort_key` — `9월 중`·`미정` 이 섞여
+// 들어오는 칸이라 글자 그대로는 못 세운다). 추리는 규칙이 서버에 있으므로
+// 여기서 다시 만들지 않는다: 같은 규칙을 화면에도 적으면 두 벌이 되어 한쪽만
+// 고쳐지는 날이 온다. 그래서 PATCH 응답이 `meeting_sort` 를 함께 보낸다.
+//
+// 칸 이름(`meeting_offered_at`)과 세울 값의 이름(`meeting`)이 달라
+// `inline_edit.js` 의 일반 규칙(`data-s-<칸 이름>`)이 못 닿는 자리다.
+//
+// 어느 칸을 고쳤든 적는다 — 응답은 늘 그 줄의 지금 값을 준다.
+(function () {
+  var table = document.getElementById("co-table");
+  if (!table) return;
+
+  table.addEventListener("inline-saved", function (e) {
+    var data = e.detail.data || {};
+    if (!("meeting_sort" in data)) return;
+    var row = e.detail.row;
+    if (row && row.hasAttribute("data-s-meeting")) {
+      row.setAttribute("data-s-meeting", data.meeting_sort);
+    }
   });
 })();
