@@ -305,6 +305,35 @@ def search_text(c: IrCompany) -> str:
 _DATED = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
+def meeting_sort_key(text: str | None) -> str:
+    """`미팅제공일자` 를 **머리글로 세울 때 쓰는 값**(`data-s-meeting`).
+
+    이 칸은 손으로 적는 자유 글자다 — 달력 고르개를 일부러 안 붙였고
+    (`companies.html` 의 그 칸 주석), `2026-09-15` 옆에 `9월 중`·`미정` 이
+    나란히 들어온다. 그 글자를 그대로 세우면 두 가지가 한꺼번에 어긋난다.
+
+    · `10월 중` 이 `9월 중` 보다 **앞**에 선다. 글자 차례로는 `1` 이 `9` 보다
+      작다 — `table_sort.js` 머리글이 `8/7(금)` 을 들어 경고하는 바로 그것이다.
+    · 내림차순에서 `미정` 이 **맨 위**로 올라온다. 한글이 숫자보다 커서다.
+      가장 나중 날짜를 보려고 세웠는데 날짜 없는 줄부터 읽게 된다 —
+      바로 위 `_DATED` 주석이 `수신일` 에서 겪은 그대로다.
+
+    그래서 **날짜로 적힌 것만 세운다.** 날짜가 안 보이는 글자는 빈 값으로
+    내보내고, 빈 값은 `table_sort.js` 가 방향과 상관없이 늘 끝에 둔다
+    (`order` 의 '빈 값은 뒤집는 곱셈 밖') — `sort_for_tab` 이 `수신일` 에서
+    정한 규칙과 같은 자리다: 날짜 없는 줄은 맨 아래, 그 안에서는 서버가
+    그려 준 차례(이 탭은 이름순) 그대로.
+
+    ``search`` 다(``match`` 가 아니다). `확정: 2026-09-15` 처럼 앞에 말이
+    붙어 있어도 그 날짜로 자리를 잡는 편이, 통째로 '날짜 없음' 으로 밀어
+    내는 것보다 낫다 — `_DATED` 주석이 뒤에 붙는 말을 두고 한 판단과 같다.
+
+    ISO 날짜는 **글자 차례가 곧 날짜 차례**라 여기서 더 손댈 것이 없다.
+    """
+    found = _DATED.search(text or "")
+    return found.group(0) if found else ""
+
+
 def sort_for_tab(rows: List[dict], tab: str) -> List[dict]:
     """탭이 정하는 차례. **판단은 여기 한 곳**이다.
 
@@ -465,6 +494,10 @@ def company_rows(db: Session, tab: str = "", sent=None) -> List[dict]:
             # 무료 IR 미팅을 **언제** 주기로 했는가 / 줬는가. 손으로 적는 글자다 —
             # 아직 안 정한 곳은 빈 글자로 나가 표에서 빈 칸으로 보인다.
             "meeting_offered_at": c.meeting_offered_at or "",
+            # 그 칸을 **머리글로 세울 때 쓰는 값**이다(`data-s-meeting`).
+            # 화면 글자와 따로 두는 이유는 `meeting_sort_key` 에 적어 두었다 —
+            # `9월 중` 같은 말이 섞여 들어오는 칸이라 글자 그대로는 못 세운다.
+            "meeting_sort": meeting_sort_key(c.meeting_offered_at),
             # 이 줄을 **마지막으로 고친 시각**. 앱이 적는 값이라 사람이 만질
             # 칸이 없다(`TimestampMixin.updated_at` 의 `onupdate`).
             #
@@ -842,9 +875,15 @@ def update_company(company_id: int, body: CompanyIn,
     # 바뀐다 — 새로고침해야 보이면, 방금 고친 것이 실제로 저장됐는지 그 칸으로는
     # 알 수 없다(그 칸의 쓸모가 곧 그것이다). `db.commit()` **뒤**에 읽는다:
     # commit 이 속성을 만료시키므로 여기서 읽으면 DB 에 적힌 새 값이 온다.
+    # **세울 값도 함께 싣는다.** 표에서 `미팅제공일자` 를 눌러 고치면 화면 글자는
+    # 바뀌는데, 줄에 적힌 세울 값(`data-s-meeting`)은 날짜만 추려 낸 것이라
+    # 브라우저가 제 손으로 다시 만들 수 없다 — 추리는 규칙을 화면에도 적으면
+    # 두 벌이 되어 한쪽만 고쳐지는 날이 온다(`meeting_sort_key` 한 곳이다).
+    # 안 실으면 고친 줄이 **옛 날짜 자리**에 그대로 선다(`updated_at` 과 같은 짝).
     return {"id": company.id, "introducible": is_ready(company),
             "blocked_reason": blocked_reason(company),
             "updated_at": stamp_text(company.updated_at),
+            "meeting_sort": meeting_sort_key(company.meeting_offered_at),
             **_contract_result(company),
             **_one_liner_result(company)}
 
