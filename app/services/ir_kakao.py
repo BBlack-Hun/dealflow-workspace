@@ -117,22 +117,32 @@ LIMIT = mc.MESSAGE_WARN_CHARS
 
 @dataclass(frozen=True)
 class Line:
-    """목록 한 줄 — `5/22 (주)가 W…`.
+    """목록 한 줄 — `5/22 (주)가 W… 김*** 심사역`.
 
-    `firm` 은 **이미 가려진 값**이다. 원래 이름은 이 자료구조에 담지 않는다
-    (`ir_monthly.Requester` 와 같은 규칙, 같은 까닭).
+    `firm` 도 `person` 도 **이미 가려진 값**이다. 원래 이름은 이 자료구조에
+    담지 않는다(`ir_monthly.Requester` 와 같은 규칙, 같은 까닭). 가리는 자리는
+    `ir_mask` 하나이고, 이 파일은 **가려진 채로 받기만** 한다.
+
+    `title`(직함)만 원문 그대로다 — 이름이 아니라서 가릴 것이 없다. 까닭은
+    `ir_monthly.Requester` 에 한 번 적혀 있다.
     """
 
     date: str       # `5/22` — 앞에 0 을 붙이지 않는다. 모르면 빈 문자열
     company: str    # 어느 기업 몫인지. 한 대표가 여러 기업이면 줄마다 갈린다
     firm: str       # 가려진 투자사명
+    person: str = ""   # 가려진 심사역 이름. 모르면 빈 문자열
+    title: str = ""    # 직함 원문(`심사역`·`이사`). 모르면 빈 문자열
 
     @property
     def text(self) -> str:
-        # 날짜를 모르는 줄은 **날짜 자리를 비운다.** `?` 나 그 달 1일 같은 것을
-        # 넣으면 없는 사실을 지어내는 것이고, 그 글은 대표에게 그대로 간다.
-        return f"{self.date} {self.company} {self.firm}".strip() \
-            if self.date else f"{self.company} {self.firm}"
+        # **비어 있는 자리는 통째로 뺀다.** 빈 칸을 남기면 줄 가운데에 두 칸이
+        # 벌어지고, `?` 나 `담당` 같은 말을 끼워 넣으면 없는 사실을 지어내는
+        # 것이다 — 그 글은 대표에게 그대로 간다.
+        #
+        # 날짜가 그 규칙을 먼저 썼고(모르는 날짜 자리를 비운다), 직함도 같다:
+        # 명단에 직함이 안 적힌 심사역은 **이름에서 줄이 끝난다.**
+        return " ".join(bit for bit in (self.date, self.company, self.firm,
+                                        self.person, self.title) if bit)
 
 
 @dataclass
@@ -336,18 +346,26 @@ def compose(db: Session, user: Optional[User], companies: Sequence[IrCompany],
     lines: List[Line] = []
     for company in companies:
         for req in data.of(company.id):
+            # `req` 가 내놓는 투자사명·심사역 이름은 **이미 가려져 있다**
+            # (`ir_monthly.Requester`). 여기서 다시 가리지도, 원래 이름을
+            # 다시 찾아오지도 않는다.
             lines.append(Line(date=day_label(req.date),
-                              company=names[company.id], firm=req.firm))
+                              company=names[company.id], firm=req.firm,
+                              person=req.person, title=req.title))
     if not lines:
         return None
 
     # 날짜 순. 날짜를 모르는 줄은 **맨 뒤**로 — 사이에 끼면 그 앞뒤 날짜
     # 사이에 온 것처럼 읽힌다.
     def order(line: Line):
+        # 같은 날 같은 기업이면 투자사 → 심사역 차례다. 심사역까지 보는 까닭은
+        # 한 투자사에서 두 사람이 물어보면 그 두 줄의 차례가 돌릴 때마다
+        # 달라지기 때문이다(줄 자체는 사람마다 하나씩 선다 — `ir_monthly` 가
+        # **투자사가 아니라 사람**으로 묶는다).
         if not line.date:
-            return (1, 0, 0, line.company, line.firm)
+            return (1, 0, 0, line.company, line.firm, line.person)
         m, d = line.date.split("/")
-        return (0, int(m), int(d), line.company, line.firm)
+        return (0, int(m), int(d), line.company, line.firm, line.person)
 
     lines.sort(key=order)
 
