@@ -117,7 +117,7 @@ LIMIT = mc.MESSAGE_WARN_CHARS
 
 @dataclass(frozen=True)
 class Line:
-    """목록 한 줄 — `5/22 (주)가 W… 김*** 심사역`.
+    """목록 한 줄 — `05/22 (주)가 W… 김*** 심사역`.
 
     `firm` 도 `person` 도 **이미 가려진 값**이다. 원래 이름은 이 자료구조에
     담지 않는다(`ir_monthly.Requester` 와 같은 규칙, 같은 까닭). 가리는 자리는
@@ -127,7 +127,7 @@ class Line:
     `ir_monthly.Requester` 에 한 번 적혀 있다.
     """
 
-    date: str       # `5/22` — 앞에 0 을 붙이지 않는다. 모르면 빈 문자열
+    date: str       # `05/22` — **두 자리**다(까닭은 `day_label`). 모르면 빈 문자열
     company: str    # 어느 기업 몫인지. 한 대표가 여러 기업이면 줄마다 갈린다
     firm: str       # 가려진 투자사명
     person: str = ""   # 가려진 심사역 이름. 모르면 빈 문자열
@@ -186,15 +186,28 @@ def month_label(month: str) -> str:
 
 
 def day_label(date: str) -> str:
-    """`2026-05-22` → `5/22`. 앞에 0 이 없다. 날짜가 아니면 빈 문자열.
+    """`2026-05-22` → `05/22`. **두 자리**다. 날짜가 아니면 빈 문자열.
 
-    달만 적힌 기록(`2026-05`)도 빈 문자열이다 — 일(日)을 모르는데 `5/1` 로
+    ## 왜 앞에 0 을 붙이나 — **바뀐 규칙이다**
+
+    예전에는 `5/22` 였다(실물이 그랬다). 사용자가 **줄이 가지런히 서게** 두
+    자리로 바꿔 달라고 정했다 — 날짜 자리의 글자 수가 줄마다 달라지면 그
+    뒷자리(기업 · 투자사)가 줄마다 다른 데서 시작한다.
+
+    **가지런해지는 데에는 한계가 있다.** 카톡 글꼴은 글자폭이 일정하지 않아서
+    숫자를 두 자리로 맞춰도 완전히 줄이 맞지는 않는다. 그래도 `5/3` 과 `11/22`
+    가 섞이던 때보다는 낫고, 이것이 이 자리에서 할 수 있는 전부다.
+
+    `month_label` 의 `7월` 은 **그대로 둔다.** 저것은 머리말의 문장 안에 있는
+    말이라 줄을 맞출 것이 없고, 실물이 `7월 말까지` 다.
+
+    달만 적힌 기록(`2026-05`)은 빈 문자열이다 — 일(日)을 모르는데 `05/01` 로
     적으면 대표는 그날 요청이 온 줄로 읽는다.
     """
     bits = (date or "").split("-")
     if len(bits) < 3 or not (bits[1].isdigit() and bits[2][:2].isdigit()):
         return ""
-    return f"{int(bits[1])}/{int(bits[2][:2])}"
+    return f"{int(bits[1]):02d}/{int(bits[2][:2]):02d}"
 
 
 def head_body(db: Session, user: Optional[User]) -> tuple:
@@ -364,6 +377,8 @@ def compose(db: Session, user: Optional[User], companies: Sequence[IrCompany],
         # **투자사가 아니라 사람**으로 묶는다).
         if not line.date:
             return (1, 0, 0, line.company, line.firm, line.person)
+        # 두 자리로 찍힌 뒤에도 그대로다 — `int("05")` 는 5 다. 글자로 견주면
+        # `11/2` 가 `5/3` 앞에 서므로 여기서는 반드시 숫자로 본다.
         m, d = line.date.split("/")
         return (0, int(m), int(d), line.company, line.firm, line.person)
 
