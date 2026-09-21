@@ -101,7 +101,7 @@ docker exec dealflow-public-web-1 python scripts/import_sheets.py \
 
 | 이름 | 기본값 | 용도 |
 |---|---|---|
-| `DEALFLOW_TEST_ROOM` | (없음) | 값이 있으면 **모든 발송이 이 방 하나로만** 나간다(오발송 방지) |
+| `DEALFLOW_TEST_ROOM` | (없음) | `/setup` 의 **시험 단추**가 보내는 방. 값이 있으면 그 자리가 생긴다. **일반 발송은 이 값을 읽지 않는다** — 켜 두어도 각 담당자 방으로 나간다 |
 | `DEALFLOW_ROOM_SUFFIX` | `Deal 공유 우리브이씨 Asset` | 카톡방 이름 끝에 붙는 고정 문구. 조직마다 다르므로 `.env` 로 실제 값을 준다 |
 | `DEALFLOW_SEED_DEMO` | `0` | `1` 이면 가상 담당자·기업까지 넣는다(둘러보기용) |
 | `DEALFLOW_INITIAL_PASSWORD` | `dealflow123` | 새 계정의 초기 비밀번호(첫 로그인 후 변경 요구) |
@@ -125,6 +125,10 @@ docker exec dealflow-public-web-1 python scripts/rehearsal.py --teardown   # 흔
 `--setup` 은 리허설용 담당자 1명과 기업 2개를 만든다. 담당자의 카톡방은
 `DEALFLOW_TEST_ROOM`(대개 '나와의 채팅')이라 **발송 프로그램이 실제로 움직여도
 나에게만** 온다. `DEALFLOW_TEST_ROOM` 이 비어 있으면 아예 실행되지 않는다.
+
+리허설이 안전한 까닭은 **그 담당자의 방 이름이 시험방이기 때문**이지, 시험방이
+켜져 있기 때문이 아니다. 시험방이 켜져 있어도 다른 담당자에게는 그 사람 방으로
+그대로 나간다 — 리허설 대상만 골라서 보내야 한다.
 
 걸어 볼 순서:
 

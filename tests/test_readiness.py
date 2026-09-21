@@ -1,12 +1,15 @@
 """회차 준비 점검 · 규칙 밖 회차일.
 
-발송 당일에 "왜 안 나가지?"를 찾는 것은 늦다. 막히는 자리는 정해져 있고,
-그중 가장 위험한 두 가지는 서로 정반대다.
+발송 당일에 "왜 안 나가지?"를 찾는 것은 늦다. 막히는 자리는 정해져 있다 —
+발송 프로그램이 안 켜져 있거나, 방 제목이 실제와 다르거나, 보낼 기업이 안
+골라져 있다. 그것들을 '막힘' 으로 잡는다.
 
-- **리허설인데 테스트 모드가 꺼져 있다** → 실제 투자사에게 연습 문구가 나간다
-- **실발송인데 테스트 모드가 켜져 있다** → 아무에게도 안 나가고 나갔다고 착각한다
-
-둘 다 '막힘'으로 잡는다.
+**시험방은 더는 '막힘' 이 아니다.** 예전에는 실발송인데 시험방이 켜져 있으면
+막았다 — 그때는 시험방이 켜진 순간 발송이 전부 그 방으로 모였기 때문이다.
+이제 일반 발송은 시험방을 읽지 않으므로(`tests/test_test_room_scope.py`)
+막을 사고가 없다. 막을 것이 없는데 막으면 사람은 빨강을 안 믿게 되고,
+**진짜 빨강도 같이 지나친다.** 리허설 쪽만 그대로 막는다 — 시험방 제목이
+없으면 리허설 담당자를 만들 수가 없다.
 """
 from __future__ import annotations
 
@@ -100,26 +103,56 @@ def test_everything_ready(db, ready_state, monkeypatch):
     assert not result["blocked"]
 
 
-def test_rehearsal_without_test_room_is_blocked(db, ready_state, monkeypatch):
-    """리허설인데 테스트 모드가 꺼져 있으면 실제 투자사에게 나간다."""
+def test_rehearsal_without_a_test_room_is_blocked(db, ready_state, monkeypatch):
+    """리허설인데 시험방이 없으면 리허설 담당자를 만들 수가 없다.
+
+    리허설이 안전한 까닭은 **그 담당자의 방 이름이 시험방**이기 때문이다
+    (`scripts/rehearsal.py`). 방 제목이 없으면 그 담당자가 안 만들어진다.
+    """
     from app import config
     from app.services import readiness
 
     monkeypatch.setattr(config, "TEST_ROOM", "")
     result = readiness.report(db, ready_state, rehearsal=True)
     titles = [c["title"] for c in result["blocked"]]
-    assert "테스트 모드" in titles
+    assert "시험방" in titles
 
 
-def test_live_send_with_test_room_is_blocked(db, ready_state, monkeypatch):
-    """실발송인데 테스트 모드가 켜져 있으면 아무에게도 안 나간다."""
+def test_live_send_with_a_test_room_is_not_blocked(db, ready_state, monkeypatch):
+    """★ 시험방이 켜져 있어도 실발송을 막지 않는다.
+
+    예전에는 여기가 `BLOCK` 이었고 그럴 만했다 — 시험방이 켜져 있으면 발송이
+    전부 그 방으로 모였으니 끄지 않고 보내면 투자사가 아무것도 못 받았다.
+    이제 일반 발송은 시험방을 읽지 않는다. 막을 사고가 없는데 계속 막으면
+    사람은 이 화면의 빨강을 "또 그 소리" 로 읽고 **다음 빨강도 같이 지나친다.**
+    """
     from app import config
     from app.services import readiness
 
     monkeypatch.setattr(config, "TEST_ROOM", "나와의 채팅")
     result = readiness.report(db, ready_state, rehearsal=False)
-    titles = [c["title"] for c in result["blocked"]]
-    assert "테스트 모드" in titles
+
+    assert not result["blocked"], [c["title"] for c in result["blocked"]]
+    assert result["ready"] is True
+    # 막지는 않되 **켜져 있다는 사실은 적는다** — 모른 채 누르면 안 된다.
+    room_check = next(c for c in result["checks"] if c["title"] == "시험방")
+    assert "나와의 채팅" in room_check["detail"]
+    assert "/setup" in room_check["detail"]
+
+
+def test_a_test_room_no_longer_means_rehearsal(db, ready_state, monkeypatch):
+    """★ `rehearsal` 을 안 주면 **실발송 기준**이다.
+
+    예전 기본값은 `bool(config.TEST_ROOM)` 이었다 — 시험방이 켜져 있으면 그날
+    나가는 것이 전부 시험방행이었으니 "지금은 리허설" 이 사실이었다. 지금
+    그대로 두면 **진짜 회차 날 아침에 "리허설 점검" 이라고 적힌 화면**을 보게
+    되고, 거기 적힌 "실제 담당자에게는 가지 않습니다" 는 거짓말이다.
+    """
+    from app import config
+    from app.services import readiness
+
+    monkeypatch.setattr(config, "TEST_ROOM", "나와의 채팅")
+    assert readiness.report(db, ready_state)["rehearsal"] is False
 
 
 def test_stale_agent_is_blocked(db, ready_state, monkeypatch):
@@ -164,6 +197,47 @@ def test_no_sendable_target_is_blocked(db, users, monkeypatch):
     monkeypatch.setattr(config, "TEST_ROOM", "")
     result = readiness.report(db, users["u1"], rehearsal=False)
     assert any(c["title"] == "발송 대상" for c in result["blocked"])
+
+
+def test_the_detail_page_draws_both_modes(logged, ready_state, monkeypatch):
+    """점검 화면이 두 기준을 **둘 다 그려야** 한다 — 그리고 서로 오갈 수 있어야.
+
+    예전에는 시험방이 켜져 있으면 리허설 점검이 저절로 떴다. 그 추측을 없앴으니
+    (`readiness.report`) 리허설 점검으로 가는 길을 화면에 두지 않으면, 주소를
+    아는 사람만 볼 수 있는 화면이 된다.
+    """
+    from app import config
+
+    monkeypatch.setattr(config, "TEST_ROOM", "나와의 채팅")
+
+    live = logged.get("/readiness/detail")
+    assert live.status_code == 200
+    assert "실발송 점검" in live.text
+    assert "시험방이 켜져 있어도 그렇습니다" in live.text
+    assert "/readiness/detail?mode=rehearsal" in live.text
+
+    rehearsal = logged.get("/readiness/detail?mode=rehearsal")
+    assert rehearsal.status_code == 200
+    assert "리허설 점검" in rehearsal.text
+    assert "/readiness/detail?mode=live" in rehearsal.text
+
+
+def test_the_detail_page_no_longer_tells_people_to_flip_the_test_room(
+        logged, ready_state, monkeypatch):
+    """★ "테스트 모드를 켜고 딜 제안 관리에서 한 건" 은 이제 **실발송 지시**다.
+
+    그 문장이 맞던 때는 시험방을 켜면 발송이 전부 그리로 갔기 때문이다.
+    남겨 두면 화면이 회차 전날 실제 투자사에게 보내라고 시키는 것이 된다.
+    """
+    from app import config
+
+    monkeypatch.setattr(config, "TEST_ROOM", "")
+    html = logged.get("/readiness/detail").text
+
+    assert "테스트 모드를 켜고" not in html
+    assert "모든 발송이 그 방 하나로만" not in html
+    # 대신 발송기 확인은 `/setup` 의 시험 단추로 보낸다.
+    assert "시험 단추" in html
 
 
 def test_readiness_moved_into_the_weekly_page(logged, ready_state):

@@ -193,21 +193,24 @@ def test_follow_up_send_advances_the_sequence(stage, db):
     assert 11 <= gap <= 16
 
 
-def test_test_room_redirects_every_send(stage, db, monkeypatch):
-    """테스트 모드에서는 실제 담당자 방으로 나가면 안 된다."""
+def test_a_test_room_does_not_touch_the_real_send(stage, db, monkeypatch):
+    """★ 시험방이 켜져 있어도 딜 소개는 **담당자 방**으로 간다.
+
+    예전에는 반대였다 — 시험방이 켜져 있으면 이 회차 전체가 그 방으로 모였다.
+    운영에 값이 한 번 들어가자 투자사가 아무것도 못 받았다. 이제 시험방으로
+    가는 것은 `/setup` 의 시험 단추뿐이다(`tests/test_test_room_scope.py`).
+    """
     from app import config
     from app.models import SendItem
-    from app.routers import deals
 
     monkeypatch.setattr(config, "TEST_ROOM", "나와의 채팅")
-    monkeypatch.setattr(deals.config, "TEST_ROOM", "나와의 채팅")
 
     job_id = _send(stage, company_ids=[stage["agri"]],
                    contact_ids=[stage["contact_id"]])
     item = db.query(SendItem).filter_by(job_id=job_id).first()
-    assert item.room_name == "나와의 채팅"
-    assert "테스트 발송" in item.message           # 원래 누구에게 갈 문구였는지 남는다
-    assert "홍길동 심사역님 가나벤처스" in item.message
+    assert item.room_name == "홍길동 심사역님 가나벤처스"
+    assert item.room_name != "나와의 채팅"
+    assert "테스트 발송" not in item.message       # 머리말도 붙지 않는다
 
 
 def test_every_screen_opens(stage):

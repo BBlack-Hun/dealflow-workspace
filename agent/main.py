@@ -635,7 +635,7 @@ def log_startup(client: "AgentClient") -> List[str]:
     (`agent_logs/agent.log`), 그 꼬리가 진단 스냅샷에 실려 서버로 올라간다
     (`collect_diagnostics: log_tail`). 사람이 화면을 찍어 붙이기도 한다.
 
-    ⚠ **시험 모드(서버가 모든 발송을 시험방 하나로 돌리는 것)는 적지 않는다.**
+    ⚠ **시험방 설정(`/setup` 의 시험 단추가 쓰는 방)은 적지 않는다.**
       그것은 서버가 아는 값인데(`app/config.py: TEST_ROOM`) 발송기에게 알려
       주는 통로가 없다 — 박동 응답에 오는 것은 IR 자료 폴더 자리 하나뿐이다
       (`app/routers/agent_api.py: heartbeat`). 발송기가 모르는 것을 아는 척
