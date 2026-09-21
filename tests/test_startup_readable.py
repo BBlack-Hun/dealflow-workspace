@@ -29,7 +29,8 @@ from pathlib import Path
 
 import pytest
 
-from .test_startup_tab import LIST, OTHER, _thead_cells, _url, sheets  # noqa: F401
+from .test_startup_tab import (  # noqa: F401
+    LIST, OTHER, _month, _thead_cells, _url, sheets)
 
 ROOT = Path(__file__).resolve().parent.parent
 CSS = (ROOT / "app" / "static" / "css" / "app.css").read_text(encoding="utf-8")
@@ -301,12 +302,15 @@ def test_지난_칸_펴기는_접지_않는다(sheets):  # noqa: F811
     지난달 칸이 접혀 있다는 것을 모르면 그 달 기록이 지워진 줄 안다
     (`services/contact_columns.split_months` 주석이 든 그 사고다).
     """
-    # 지난달 칸을 하나 세워 둔다 — 안 그러면 이 줄이 뜰 일이 없다.
+    # 접힐 옛 칸을 세워 둔다 — 안 그러면 이 줄이 뜰 일이 없다. 표는 석 달치를
+    # 펴므로(`monthly_columns.VISIBLE_MONTHS`) **넉 달째**부터 접힌다.
     from app.models import ContactColumn
     from app.db import SessionLocal
 
     db = SessionLocal()
-    db.add(ContactColumn(sheet=LIST, label="1월 리마인드 문자", position=99))
+    for i, back in enumerate((1, 2, 3, 4)):
+        db.add(ContactColumn(sheet=LIST, label=f"{_month(-back)}월 리마인드 문자",
+                             position=99 + i))
     db.commit()
     db.close()
 

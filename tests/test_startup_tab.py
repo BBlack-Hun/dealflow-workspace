@@ -278,15 +278,17 @@ def test_칸이_많아지면_접고_접었다는_것을_적는다(sheets, db):
     달라 달 중간이 잘린다 — `8월 리마인드 문자` 는 보이는데 `8월 카톡 연결` 은
     접혀 있는 표가 된다.
     """
-    from app.services import contact_columns as cc
+    from app.services import monthly_columns as mc
 
     from app.models import ContactColumn
 
-    # 밑자리에 이번 달 세 칸(자리 0~2)이 있다. 지난 두 달을 **그 오른쪽에** 둔다 —
+    # 밑자리에 이번 달 세 칸(자리 0~2)이 있다. 지난 **네** 달을 그 오른쪽에 둔다 —
     # 시트도 최근 달이 왼쪽이다. (화면의 [칸 추가] 는 늘 맨 앞에 세우므로
-    # 지난달을 그것으로 만들면 순서가 뒤집힌다.)
+    # 지난달을 그것으로 만들면 순서가 뒤집힌다.) 펴 두는 것이 석 달이므로
+    # 네 달을 깔아야 접히는 달이 생긴다.
     pos = 3
-    for back in (1, 2):
+    back_months = (1, 2, 3, 4)
+    for back in back_months:
         for what in ("리마인드 문자", "리마인드 TEL", "카톡 연결"):
             db.add(ContactColumn(sheet=LIST, label=f"{_month(-back)}월 {what}",
                                  position=pos))
@@ -294,14 +296,15 @@ def test_칸이_많아지면_접고_접었다는_것을_적는다(sheets, db):
     db.commit()
     html = sheets.get(_url(LIST)).text
     months = _month_heads(_thead(html))
-    # 이번 달 세 칸만 편다 — 한 달의 칸은 **다 같이** 서거나 다 같이 접힌다.
-    assert len(months) == 3, f"펴 둔 칸이 이번 달 세 칸이 아닙니다: {months}"
-    assert all(f"{_month()}월" in h for h in months), months
-    assert cc.VISIBLE_MONTHS == 1
+    # 석 달치 아홉 칸이 선다 — 한 달의 칸은 **다 같이** 서거나 다 같이 접힌다.
+    assert mc.VISIBLE_MONTHS == 3
+    assert len(months) == 9, f"펴 둔 칸이 석 달치 아홉 칸이 아닙니다: {months}"
+    shown = {f"{_month(-back)}월" for back in (0, 1, 2)}
+    assert {h.split("월")[0] + "월" for h in months} == shown, months
     assert "펴기" in html, "접어 놓고 그 사실을 화면에 적지 않았습니다"
 
     everything = _thead(sheets.get(_url(LIST, months="all")).text)
-    assert len(_month_heads(everything)) == 9
+    assert len(_month_heads(everything)) == 3 * (1 + len(back_months))
 
 
 def test_맨_앞의_옛_칸이_이번_달_칸을_밀어내지_않는다(sheets, db):
@@ -321,21 +324,27 @@ def test_맨_앞의_옛_칸이_이번_달_칸을_밀어내지_않는다(sheets, 
     rows = db.execute(
         select(ContactColumn).where(ContactColumn.sheet == LIST)
     ).scalars().all()
-    # 이번 달 칸을 **맨 뒤로** 민다. 그 앞에 달 없는 옛 칸 하나와 지난달 세 칸.
+    # 이번 달 칸을 **맨 뒤로** 민다. 그 앞에 달 없는 옛 칸 하나와 지난 석 달.
+    #
+    # 달 없는 칸은 혼자 한 묶음이라(`split_months`) 펴 둘 석 달 중 하나를
+    # 통째로 먹는다. 그러면 자리로는 이번 달이 잘려 나가는 순서가 된다 —
+    # 이번 달 칸이 자리에 상관없이 펴지는지를 보는 것이 이 검사다.
+    old = [f"{_month(-back)}월 {what}"
+           for back in (1, 2, 3)
+           for what in ("리마인드 문자", "리마인드 TEL", "카톡 연결")]
     for col in rows:
-        col.position += 4
+        col.position += 1 + len(old)
     db.add(ContactColumn(sheet=LIST, label="샘플 옛 칸", position=0))
-    for i, what in enumerate(("리마인드 문자", "리마인드 TEL", "카톡 연결")):
-        db.add(ContactColumn(sheet=LIST, label=f"{_month(-1)}월 {what}",
-                             position=1 + i))
+    for i, label in enumerate(old):
+        db.add(ContactColumn(sheet=LIST, label=label, position=1 + i))
     db.commit()
 
     heads = _thead(sheets.get(_url(LIST)).text)
     for label in MONTH_HEADS:
         assert _same(label) in heads, (
             f"이번 달 칸이 표에서 접혔습니다: {label}\n  화면 {heads}")
-    # 지난 달은 지금까지 그대로 접힌다 — 표를 넓히라고 고친 것이 아니다.
-    assert f"{_month(-1)}월 리마인드 문자{MONTH_SUFFIX}" not in heads
+    # 펴 두는 석 달 **밖**은 지금까지 그대로 접힌다 — 다 펴라고 고친 것이 아니다.
+    assert f"{_month(-3)}월 리마인드 문자{MONTH_SUFFIX}" not in heads
 
 
 def test_머리글은_필터_단추까지_한_줄에_들어간다(sheets):

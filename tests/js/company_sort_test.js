@@ -69,7 +69,9 @@ function build() {
     th({ "data-sort": "updated" }, "수정한 날짜"),
     // 같은 표에 필터도 붙어 있다 — 정렬이 그것을 풀지 않는지 봐야 한다.
     th({ "data-filters": "assignee:담당자" }, "담당자"),
-    th({ class: "num", "data-sort": "sent" }, "소개 횟수"),
+    // 왼쪽 정렬이다 — `num` 을 뗐다(사용자 요청 「세로 좌측 정렬」).
+    // 세우는 값은 그대로 `data-s-sent`(회차 수)다.
+    th({ "data-sort": "sent" }, "소개 횟수"),
     th({ "data-sort": "meeting" }, "미팅제공일자")
   ])]);
 
@@ -81,9 +83,10 @@ function build() {
     const assignee = D.el("td", { class: "cell", "data-field": "assignee_name",
                                   "data-filter-key": "assignee" });
     assignee.textContent = r.assignee;
-    // 화면에는 `2회 · 12건` 같은 **글자**가 뜬다. 세울 값은 그것이 아니다.
-    const sent = D.el("td", { class: "num sent-count" });
-    sent.textContent = r.sent ? r.sent + "회 · " + (r.sent * 6) + "건" : "–";
+    // 화면에는 `2회` / `12명` 이 **두 줄**로 뜬다(사용자 요청 「세로 좌측
+    // 정렬」). 세울 값은 그 글자가 아니라 `data-s-sent` 다.
+    const sent = D.el("td", { class: "sent-count" });
+    sent.textContent = r.sent ? r.sent + "회 " + (r.sent * 6) + "명" : "–";
     const meeting = D.el("td", { class: "cell", "data-field": "meeting_offered_at" });
     meeting.textContent = r.meetingText;
 

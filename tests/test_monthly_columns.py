@@ -685,18 +685,50 @@ def test_명단이_다르면_따로_선다(db):
 
 # --- 접기 ------------------------------------------------------------------
 
-def test_명단은_이번_달만_펴_둔다(db):
-    """한 달에 세 칸씩 붙는 표라 두 달치면 여섯 칸이고, 그만큼 가로로 밀린다."""
+def test_명단도_석_달치를_펴_둔다(db):
+    """사용자 요청: "스타트업도 3개월치 리마인드 메뉴가 나올 수 있고".
+
+    **달 수는 투자컨설턴트와 한 값이다**(`monthly_columns.VISIBLE_MONTHS`) —
+    아래 `test_두_표가_같은_달_수를_본다` 가 그것을 맞대 본다.
+    """
     from app.models import ContactColumn
     from app.services import contact_columns as cc
+    from app.services import monthly_columns as mc
 
     cols = [ContactColumn(sheet=LIST, label=f"{m}월 {what}", position=i)
             for i, (m, what) in enumerate(
-                [(8, "문자"), (8, "TEL"), (8, "카톡"), (7, "문자"), (7, "TEL")])]
-    shown, folded = cc.split_months(cols)
-    assert [c.label for c in shown] == ["8월 문자", "8월 TEL", "8월 카톡"]
-    assert [c.label for c in folded] == ["7월 문자", "7월 TEL"]
-    assert cc.VISIBLE_MONTHS == 1
+                [(9, "문자"), (9, "TEL"), (9, "카톡"),
+                 (8, "문자"), (8, "TEL"), (8, "카톡"),
+                 (7, "문자"), (7, "TEL"), (7, "카톡"),
+                 (6, "문자"), (6, "TEL")])]
+    shown, folded = cc.split_months(cols, today=SEP)
+    assert {mc.month_of(c.label) for c in shown} == {9, 8, 7}
+    assert [c.label for c in folded] == ["6월 문자", "6월 TEL"]
+    assert mc.VISIBLE_MONTHS == 3
+
+
+def test_두_표가_같은_달_수를_본다(db):
+    """**"몇 달치를 보는가" 는 한 곳에서 정한다.**
+
+    접는 자리가 둘이다 — 투자컨설턴트 현황(`routers/consulting._split_columns`)
+    과 투자사 관리 현황·스타트업(`contact_columns.split_months`). 두 곳이 각자
+    숫자를 적어 두면 한쪽만 고쳐지는 날이 오고, 그때 두 표는 같은 화면에서
+    **서로 다른 달 수**를 보여 준다. 이 저장소가 반복해 당한 부류다.
+
+    `contact_columns` 쪽은 이제 숫자를 안 적고 `monthly_columns` 것을 읽는다.
+    `routers/consulting.py` 는 지금 다른 판에서 쓰이는 중이라 이번에 못 고쳤다 —
+    그래서 **여기서 맞대 본다.** 그 파일이 자유로워지면 이 검사가 아니라
+    `import` 하나로 바뀐다.
+    """
+    from app.routers import consulting
+    from app.services import contact_columns as cc
+    from app.services import monthly_columns as mc
+
+    assert consulting.VISIBLE_MONTHS == mc.VISIBLE_MONTHS, (
+        "투자컨설턴트와 나머지 표가 다른 달 수를 봅니다 — "
+        f"{consulting.VISIBLE_MONTHS} vs {mc.VISIBLE_MONTHS}")
+    assert not hasattr(cc, "VISIBLE_MONTHS"), \
+        "`contact_columns` 에 달 수가 또 적혔습니다 — 한 곳이어야 합니다"
 
 
 def test_한_달의_칸은_다_같이_서거나_다_같이_접힌다(db):
@@ -704,12 +736,13 @@ def test_한_달의_칸은_다_같이_서거나_다_같이_접힌다(db):
     from app.models import ContactColumn
     from app.services import contact_columns as cc
 
-    # 이번 달에 다섯 칸이 붙은 명단. 칸 수로 잘랐다면 여기서 잘렸다.
-    cols = [ContactColumn(sheet=LIST, label=f"8월 칸{i}", position=i)
-            for i in range(5)] + [ContactColumn(sheet=LIST, label="7월 칸",
-                                                position=5)]
-    shown, folded = cc.split_months(cols)
-    assert len(shown) == 5 and [c.label for c in folded] == ["7월 칸"]
+    # 펴 두는 석 달에 다섯 칸씩 붙은 명단. 칸 수로 잘랐다면 여기서 잘렸다.
+    cols = [ContactColumn(sheet=LIST, label=f"{m}월 칸{i}", position=p)
+            for p, (m, i) in enumerate(
+                [(m, i) for m in (9, 8, 7) for i in range(5)])]
+    cols.append(ContactColumn(sheet=LIST, label="6월 칸", position=len(cols)))
+    shown, folded = cc.split_months(cols, today=SEP)
+    assert len(shown) == 15 and [c.label for c in folded] == ["6월 칸"]
 
 
 def test_이번_달_칸은_자리에_상관없이_펴_둔다(db):
@@ -728,13 +761,14 @@ def test_이번_달_칸은_자리에_상관없이_펴_둔다(db):
     from app.services import contact_columns as cc
 
     now = ["9월 문자", "9월 TEL", "9월 카톡 연결"]
+    old = ["5월 문자", "5월 TEL"]
     cols = [ContactColumn(sheet=LIST, label=x, position=i)
-            for i, x in enumerate(ASC_SHEET + now)]
+            for i, x in enumerate(ASC_SHEET + old + now)]
     shown, folded = cc.split_months(cols, today=SEP)
     assert [c.label for c in shown][-3:] == now
     assert [c.label for c in folded if cc.monthly_columns.month_of(c.label) == 9] == []
-    # 지난 달은 지금까지 그대로 접힌다 — 넓어지라고 고친 것이 아니다.
-    assert "8월 문자" in [c.label for c in folded]
+    # 펴 두는 석 달 **밖**은 지금까지 그대로 접힌다 — 다 펴자고 고친 것이 아니다.
+    assert set(old) <= set(c.label for c in folded)
 
 
 def test_사람이_펴_둔_것을_다시_접지_않는다(db):

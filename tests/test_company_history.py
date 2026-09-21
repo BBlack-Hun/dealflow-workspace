@@ -297,13 +297,18 @@ def test_표에_회차와_사람_수가_함께_선다(logged, db, users):
 
     page = logged.get("/companies").text
     assert "소개 횟수" in page
-    cell = re.search(r'<td class="num sent-count">(.*?)</td>', page, re.S)
+    cell = re.search(r'<td class="sent-count"(.*?)</td>', page, re.S)
     assert cell, "`소개 횟수` 칸이 없다"
     # 단위가 `건` 이었다. 사용자가 **`명` 으로** 정했다 — 세는 값은 그대로
     # 발송 건수다(같은 투자사에게 두 회차에 걸쳐 나가면 둘로 센다).
     assert "2회" in cell.group(1) and "4명" in cell.group(1), \
         "회차 수만 보이면 180명짜리와 103명짜리가 똑같아 보인다 ★"
     assert "마지막 2026-08-19" in cell.group(1)
+    # **두 수가 위아래로 선다**(사용자 요청 — 「세로 좌측 정렬」). 이 저장소가
+    # 성질 다른 두 수를 한 칸에 담을 때 쓰는 관용구다.
+    assert 'class="cell-main"' in cell.group(1) \
+        and 'class="cell-sub muted"' in cell.group(1), \
+        "회차 수와 사람 수가 한 줄에 붙어 있다 ★"
 
 
 def test_소개_횟수_칸에는_필터를_안_건다():
@@ -315,10 +320,36 @@ def test_소개_횟수_칸에는_필터를_안_건다():
     from pathlib import Path
 
     text = Path(TEMPLATE).read_text(encoding="utf-8")
-    head = re.search(r'<th class="num" style="width:84px"[^>]*>소개 횟수</th>', text)
+    head = re.search(r'<th style="width:84px"[^>]*>소개 횟수</th>', text)
     assert head, "`소개 횟수` 머리글 모양이 바뀌었다"
     assert "data-filters" not in head.group(0)
     assert "data-f-sent" not in text, "행에 안 쓰이는 필터 값을 싣고 있다"
+
+
+def test_소개_횟수는_왼쪽에_선다():
+    """사용자 요청 — "소개횟수 컬럼의 내용은 **세로 좌측 정렬**로".
+
+    `num` 은 오른쪽 정렬 + `tabular-nums` 두 가지를 한 규칙에 묶어 둔 클래스다
+    (`app.css`). 왼쪽으로 옮기려면 그것을 떼야 하는데, **머리글과 칸을 함께**
+    떼야 한다 — 한쪽만 떼면 머리글은 오른쪽, 값은 왼쪽이 되어 어느 머리글이
+    어느 칸인지 매번 다시 맞춰야 한다(그 클래스 주석이 적어 둔 사고다).
+
+    `tabular-nums` 는 따로 남긴다. 왼쪽으로 옮길수록 오히려 더 필요하다 —
+    `6회`·`12회` 가 세로로 자릿수를 맞춰 서야 「세로 좌측 정렬」이 된다.
+    """
+    from pathlib import Path
+
+    text = Path(TEMPLATE).read_text(encoding="utf-8")
+    head = re.search(r'<th[^>]*>소개 횟수</th>', text)
+    assert head and "num" not in head.group(0), "머리글이 아직 오른쪽 정렬이다 ★"
+    cell = re.search(r'<td class="[^"]*sent-count[^"]*"', text)
+    assert cell and "num" not in cell.group(0), "칸이 아직 오른쪽 정렬이다 ★"
+
+    css = (Path(TEMPLATE).parent.parent / "static" / "css" / "app.css") \
+        .read_text(encoding="utf-8")
+    rule = re.search(r"#co-table td\.sent-count\s*\{[^}]*\}", css)
+    assert rule and "tabular-nums" in rule.group(0), \
+        "`num` 을 떼면서 숫자 폭 맞춤까지 같이 잃었다 ★"
 
 
 # ── ⑥ `/deals` 카드의 `N회` 뱃지 ────────────────────────────────────────────

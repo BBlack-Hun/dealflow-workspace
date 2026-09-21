@@ -634,10 +634,12 @@ STARTUP_LAYOUT = Layout(
         # 아니라 이미 적히고 있던 값을 화면에 세우는 이야기다.**
         #
         # 화면 꼴로 줄이는 자리는 **`app/clock.py` 의 `stamp_text` 한 곳**이다
-        # (`2026-09-16T19:44:43+09:00` → `2026-09-16 19:44:43`). 라우터가 거기서
+        # (`2026-09-16T19:44:43+09:00` → `2026-09-16 19:44`). 라우터가 거기서
         # 한 번 만들어 행에 싣는다(`routers/contacts.contact_rows`) — 표와
         # 응답이 각자 자르면 같은 값이 두 꼴로 보이고 한쪽만 고쳐지는 날이 온다.
-        # 초를 안 자르는 이유와 오프셋을 떼는 이유는 그 함수에 적혀 있다.
+        # **초를 뺀 것은 사용자가 나중에 다시 정한 것이다**("모든 수정한
+        # 날짜에서 초는 빼줘"). 이 화면은 그 한 곳을 지나기만 하므로 고칠 것이
+        # 폭밖에 없었다 — 왜 빼는지와 오프셋을 떼는 이유는 그 함수에 적혀 있다.
         #
         # ## 고칠 수 없다
         #
@@ -654,17 +656,22 @@ STARTUP_LAYOUT = Layout(
         # `pick` 만 보므로 저절로 빠진다 — 세워 두면 `tests/test_filter_columns.py`
         # 가 안 쓰이는 필터 속성으로 잡는다.
         #
-        # ## 폭 150px — **이름이 아니라 값**에 맞춘다
+        # ## 폭 130px — **이름이 아니라 값**에 맞춘다
         #
-        # 값이 **언제나 19자**(`2026-09-16 19:44:43`)라, 13px 본문 글꼴로
-        # 130px 이다. 여기에 td 좌우 여백 18px 을 더하면 148px — 2px 여유를
-        # 두어 150px. 머리글(`수정한 날짜` = 56px + 18)보다 값이 훨씬 넓은
-        # 칸이라 이 표의 다른 칸들(필터 건 뒤의 머리글에 맞춘다)과 자가 다르다.
-        # IR 기업 현황의 같은 칸도 같은 이유로 150px 이다(#200).
+        # 값이 **언제나 16자**(`2026-09-16 19:44`)라, 13px 본문 글꼴로 110px
+        # 이다(헤드리스 크롬 실측 108.1px). 여기에 td 좌우 여백 18px 을 더하면
+        # 128px — 2px 여유를 두어 130px. 머리글(`수정한 날짜` = 56px + 18)보다
+        # 값이 훨씬 넓은 칸이라 이 표의 다른 칸들(필터 건 뒤의 머리글에 맞춘다)과
+        # 자가 다르다. IR 기업 현황의 같은 칸도 같은 이유로 130px 이다(#200).
+        #
+        # **150 → 130px.** 초를 빼면서(`clock.stamp_text`) 글자가 19자에서
+        # 16자로 줄어든 만큼 다시 쟀다 — 안 줄이면 그 20px 이 값 오른쪽의
+        # 빈자리로 남는다. 표 폭은 칸 폭의 합이라(`contacts.html`) 저절로
+        # 20px 따라 줄고, 손으로 맞출 데가 없다.
         #
         # 한 줄로 고정한다(`app.css` 의 `.startup-table td.updated-at`) —
         # 달 칸이 늘어 표가 넓어지는 날 빈칸 자리에서 접히면 그 줄만 키가 큰다.
-        Column("수정한 날짜", "updated_at", 150, source="stamp"),
+        Column("수정한 날짜", "updated_at", 130, source="stamp"),
     ],
     tail=[
         # ⑦ **지금 카톡방에 연결돼 있는가.** 달에 안 매이는 값이다.
@@ -778,8 +785,9 @@ STARTUP_LAYOUT = Layout(
         # 이 배치의 월별 칸은 `O`/`X` 고르기다(`month_kind="pick"`). 이 둘을
         # 거기 두면 **한 번 고치는 순간 적힌 글이 한 글자로 덮인다** — 위
         # `INVESTOR_LAYOUT` 주석이 든 것과 같은 사고다. 게다가 시트에서 이 둘이
-        # 앞에 적혀 있어 월별 칸의 맨 앞자리를 먹는다: `VISIBLE_MONTHS` 가 1이라
-        # 정작 그 달의 기록이 접히고 표에는 이 칸만 선다.
+        # 앞에 적혀 있어 월별 칸의 맨 앞자리를 먹는다 — 달을 못 읽는 칸은
+        # 혼자 한 묶음이라(`split_months`) 펴 둘 달 하나를 통째로 먹고,
+        # 정작 그 달의 기록이 접힌다.
         #
         # 표에 안 세우는 이유는 옆 칸들과 같다 — 매달 보는 칸이 눌린다.
         Column("원본NO", "origin_no", 0, source="note", in_table=False,
@@ -936,24 +944,6 @@ def firm_leads(layout_key: Optional[str]) -> bool:
     return False
 
 
-# 표에 한 번에 펴 둘 **달** 수. 칸 수가 아니라 달로 센다.
-#
-# 칸 수로 자르면 **달 중간이 잘린다.** 한 달에 몇 칸이 붙는지가 명단마다 다르고
-# (스타트업 리마인드는 문자·TEL·카톡 연결 셋, 딜공유는 딜소개·IR 요청·미팅 셋,
-# 시트에 따라 한 칸뿐인 달도 있다), 자동 생성이 붙인 칸까지 더해지면 더 어긋난다.
-# 그러면 `8월 리마인드 문자` 는 보이는데 `8월 카톡 연결` 은 접혀 있는, 한 달의
-# 기록 일부만 보이는 표가 된다.
-#
-# **이번 달만 편다.** 매달 칸이 세 개씩 붙는 표라 두 달치면 여섯 칸이고, 그만큼
-# 가로로 밀어야 이름·연락처가 보인다. 지난달은 접되 **접었다는 것을 화면에 적고
-# 펴는 길을 남긴다**(`split_months` 참고) — 그냥 안 보이면 지워진 줄 안다.
-#
-# 사람이 펴 둔 상태(`?months=all`)는 **요청에 실려 있고 DB 에 없다.** 그래서 달이
-# 바뀌어 칸이 저절로 생겨도 편 것을 다시 접을 수가 없다 — 접는 것은 이 함수뿐이고,
-# 이 함수는 `show_all` 이 오면 아무것도 안 접는다.
-VISIBLE_MONTHS = 1
-
-
 def month_columns(db: Session, sheet: str,
                   today: Optional[date] = None,
                   create: bool = True) -> List[ContactColumn]:
@@ -1056,6 +1046,27 @@ def split_hidden(columns: List[ContactColumn]) -> tuple:
             [c for c in columns if c.is_hidden])
 
 
+# 몇 달치를 펴 둘지는 **여기서 정하지 않는다** — `services/monthly_columns.py`
+# 의 `VISIBLE_MONTHS` 하나다. 투자컨설턴트 현황이 접는 자리
+# (`routers/consulting._split_columns`)와 **같은 숫자**여야 하는 값이라, 여기에
+# 숫자를 다시 적으면 한쪽만 고쳐지는 날 두 표가 같은 화면에서 다른 달 수를
+# 보여 준다(`tests/test_monthly_columns.py` 가 두 자리를 맞대 본다).
+#
+# 여기서 **달로 센다**는 것만 적어 둔다. 칸 수로 자르면 **달 중간이 잘린다** —
+# 한 달에 몇 칸이 붙는지가 명단마다 다르고(스타트업 리마인드는 문자·TEL·카톡
+# 연결 셋, 딜공유는 딜소개·IR 요청·미팅 셋, 시트에 따라 한 칸뿐인 달도 있다),
+# 그러면 `8월 리마인드 문자` 는 보이는데 `8월 카톡 연결` 은 접혀 있는, 한 달의
+# 기록 일부만 보이는 표가 된다.
+#
+# 넘어간 달은 접되 **접었다는 것을 화면에 적고 펴는 길을 남긴다**
+# (`split_months` 참고) — 그냥 안 보이면 지워진 줄 안다. 접힌 달의 값은 DB 에
+# 그대로 있고 수정창에도 그대로 선다(`panel_columns`).
+#
+# 사람이 펴 둔 상태(`?months=all`)는 **요청에 실려 있고 DB 에 없다.** 그래서 달이
+# 바뀌어 칸이 저절로 생겨도 편 것을 다시 접을 수가 없다 — 접는 것은 이 함수뿐이고,
+# 이 함수는 `show_all` 이 오면 아무것도 안 접는다.
+
+
 def split_months(columns: List[ContactColumn], show_all: bool = False,
                  today: Optional[date] = None) -> tuple:
     """(펴 둘 칸, 접어 둔 칸). **달 단위로** 자른다.
@@ -1096,7 +1107,7 @@ def split_months(columns: List[ContactColumn], show_all: bool = False,
         key = f"{key_month}월" if key_month is not None else f"#{i}"
         if key in seen:
             continue
-        if len(seen) == VISIBLE_MONTHS:
+        if len(seen) == monthly_columns.VISIBLE_MONTHS:
             cut = i
             break
         seen.append(key)

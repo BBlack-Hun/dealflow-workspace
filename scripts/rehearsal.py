@@ -7,6 +7,11 @@
 `DEALFLOW_TEST_ROOM`(대개 '나와의 채팅')으로 두어, 발송 프로그램이 실제로
 움직여도 **나에게만** 간다.
 
+★ 안전한 까닭은 **이 담당자의 방 이름이 시험방이기 때문**이다. 시험방이 켜져
+있다고 해서 다른 담당자의 발송까지 그리로 가지는 **않는다**(예전에는 그랬다 —
+`app/config.py: TEST_ROOM`). 그러니 리허설할 때는 여기서 만든 담당자만 골라야
+한다. 실담당자를 함께 고르면 **실제로 그 사람에게 간다.**
+
     python scripts/rehearsal.py --check          # 지금 상태만 본다
     python scripts/rehearsal.py --setup          # 리허설 담당자·기업 만들기
     python scripts/rehearsal.py --teardown       # 리허설 흔적 지우기
@@ -171,9 +176,13 @@ def teardown(db) -> None:
 
 def check(db, user: User) -> None:
     print(f"계정: {user.name} ({user.phone})")
-    print(f"테스트 방: {config.TEST_ROOM or '(꺼짐 — 실제 담당자 방으로 나갑니다)'}")
+    print(f"시험방: {config.TEST_ROOM or '(없음 — 리허설 담당자를 만들 수 없습니다)'}")
+    print("  ※ 일반 발송은 시험방과 무관하게 각 담당자 방으로 나갑니다.")
     print()
-    result = readiness.report(db, user)
+    # **리허설 기준으로 본다.** 기본값은 실발송 기준인데(시험방이 켜져 있어도
+    # 일반 발송은 제 갈 곳으로 가므로) 이 스크립트는 리허설 자리라, 시험방이
+    # 없으면 여기서 막혀야 한다 — 없으면 리허설 담당자를 못 만든다.
+    result = readiness.report(db, user, rehearsal=True)
     print(f"다음 회차: {result['next_send']} · {result['days_left']}일 남음")
     print(f"보낼 수 있는 상태: {'예' if result['ready'] else '아니오'}")
     print()
