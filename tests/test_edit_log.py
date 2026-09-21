@@ -598,6 +598,12 @@ WRITE_ROUTES = {
     ("POST", "/team/members/{member_id}/reset-password"): WATCHED,
     ("POST", "/team/members/{member_id}/deactivate"): WATCHED,
     ("POST", "/team/auto-send"): WATCHED,
+    # 공지 — 관리자가 올리고 내리는 **팀 전원의 화면에 뜨는 글**이다.
+    # 내린 것은 아무에게도 안 뜨는데 줄은 남으므로, 누가 언제 내렸는지를
+    # 물을 자리가 로그 말고 없다(`edit_log.WATCHED["notices"]`).
+    ("POST", "/team/notices"): WATCHED,
+    ("POST", "/team/notices/{notice_id}/off"): WATCHED,
+    ("POST", "/team/notices/{notice_id}/on"): WATCHED,
     ("POST", "/team/startup-send"): WATCHED,
 
     # 시트 가져오기 — 남의 명단까지 통째로 갈아 끼운다.
@@ -622,6 +628,9 @@ WRITE_ROUTES = {
     ("POST", "/todo/routines/{routine_id}/delete"): SELF,
     ("POST", "/todo/carry-over"): SELF,
     ("POST", "/setup/ir-root"): SELF,
+    # 공지를 **내가 확인했다**는 표시. 늘 자기 줄이고(`notice_reads.user_id`),
+    # 남기면 사람 수 × 공지 수만큼 쌓여 로그가 `누가 공지를 닫았다` 로 덮인다.
+    ("POST", "/notices/seen"): SELF,
 
     # ── 기계 기록 ───────────────────────────────────────────────────────────
     ("POST", "/logout"): MACHINE,

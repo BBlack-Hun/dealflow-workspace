@@ -297,6 +297,14 @@ WATCHED: Dict[str, Watch] = {
     "schedule_rules": Watch(
         owner=None, href="/followups", label=_attr("label"),
         why="발송 일정 규칙. 팀 전체의 날짜를 정하는 자리라 공용이다."),
+    "notices": Watch(
+        owner=None, href="/team", label=_attr("title"),
+        why="공지. 팀 현황에서 관리자가 올리고 내리는 **팀 전원의 화면에 뜨는 글**이라 "
+            "바로 위 `auto_send_settings` 와 같은 자리다. 내린 것은 아무에게도 안 뜨는데 "
+            "줄은 그대로 남으므로(`services/notices.turn_off`), 누가 언제 내렸는지는 "
+            "여기 말고 물을 자리가 없다. **본문(`body`)은 값이 안 실린다** — 허용 "
+            "목록에 없는 칸이라 `바뀜` 으로만 남고, 공지에는 사람·기업 이름이 실릴 수 "
+            "있어 그 편이 맞다."),
 }
 
 
@@ -323,6 +331,10 @@ UNWATCHED: Dict[str, str] = {
     "one_liner_backups": "한 줄 소개 되돌리기용 버퍼. 되돌릴 값을 담아 두는 자리이고, "
                          "무엇이 바뀌었는지는 `ir_companies` 쪽에 이미 남는다.",
     "auto_send_runs": "자동 준비가 오늘 몇 건 돌았나. 기계 기록이다.",
+    "notice_reads": "공지를 확인했다는 표시. 자기가 읽었다고 적는 줄이라 늘 자기 것이고"
+                    "(남길 일이 아니다), 사람 수 × 공지 수만큼 쌓인다 — 남기면 로그가 "
+                    "`누가 공지를 닫았다` 로 덮여 `누가 무엇을 고쳤나` 가 안 보인다. "
+                    "공지 자체가 언제 올라오고 내려갔는지는 `notices` 쪽에 남는다.",
 }
 
 

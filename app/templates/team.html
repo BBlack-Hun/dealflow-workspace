@@ -42,6 +42,77 @@
 </section>
 {% endif %}
 
+<!-- ── 공지 ────────────────────────────────────────────────────────────────
+     **팀에게 무엇이 바뀌었는지 알리는 자리.** 아래 수정 로그 바로 위에 둔다 —
+     둘은 이름이 비슷하지만 하는 일이 반대다. 수정 로그는 기계가 남기는
+     `누가 무슨 줄을 고쳤나` 이고 관리자만 본다. 이쪽은 사람이 적는
+     `이번에 무엇이 바뀌었나` 이고 팀 전원이 본다(`services/notices.py`). -->
+<section class="panel">
+  <h2 class="panel-title">공지</h2>
+  <p class="hint">
+    올리면 팀 전원의 화면 <b>맨 위</b>에 뜹니다. [확인했습니다] 를 누른
+    사람에게는 <b>다시 뜨지 않습니다</b> — 그래서 읽힌 수가 같이 보입니다.
+    자료를 누가 고쳤는지는 여기가 아니라
+    <a class="linkbtn" href="/team/edit-log">수정 로그</a> 입니다.
+  </p>
+
+  <form class="notice-form" method="post" action="/team/notices">
+    <label class="field"><span>제목</span>
+      <input type="text" name="title" required maxlength="80"
+             placeholder="예: 미팅 종류 칸이 생겼습니다"></label>
+    <label class="field"><span>내용 (없어도 됩니다)</span>
+      <textarea name="body" rows="3" maxlength="2000"
+                placeholder="줄을 나눠 적어도 그대로 보입니다."></textarea></label>
+    <button class="primary-btn inline" type="submit">올리기</button>
+  </form>
+
+  {% if notice_board %}
+  <div class="table-wrap">
+    <table class="grid-table compact">
+      <thead><tr>
+        <th style="width:120px">올린 날</th><th>공지</th><th style="width:96px">올린 사람</th>
+        <th class="num" style="width:80px">읽음</th><th style="width:80px">상태</th><th style="width:88px"></th>
+      </tr></thead>
+      <tbody>
+        {% for n in notice_board %}
+        <tr>
+          <td class="muted">{{ n.when }}</td>
+          <td>
+            {{ n.title }}
+            {% if n.body %}<div class="cell-sub">{{ n.body }}</div>{% endif %}
+          </td>
+          <td>{{ n.author }}</td>
+          {# 모수는 **살아 있는 계정**이다 — 정지된 계정은 로그인하지 않아
+             분모에 두면 영영 안 차는 숫자가 된다. #}
+          <td class="num">{{ n.seen }} / {{ n.people }}</td>
+          <td>
+            {% if n.active %}<span class="tag">떠 있음</span>
+            {% else %}<span class="tag soft">내림</span>{% endif %}
+          </td>
+          <td>
+            {# 끄는 길. 줄을 지우지 않는 것은 누가 무엇을 언제 알렸는지가
+               통째로 사라지지 않게 하려는 것이다(`services/notices.turn_off`). #}
+            <form method="post"
+                  action="/team/notices/{{ n.id }}/{% if n.active %}off{% else %}on{% endif %}">
+              <button class="linkbtn" type="submit">
+                {% if n.active %}내리기{% else %}다시 올리기{% endif %}</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="hint">
+    <b>다시 올려도 이미 확인한 사람에게는 안 뜹니다.</b> 잘못 내린 것을
+    되돌리는 길이지, 같은 공지를 한 번 더 읽히는 길이 아닙니다 — 그럴 때는
+    새로 적는 것이 맞습니다.
+  </p>
+  {% else %}
+  <p class="muted">아직 올린 공지가 없습니다.</p>
+  {% endif %}
+</section>
+
 <!-- ── 수정 로그 ──────────────────────────────────────────────────────────
      팀원 표 **위**에 둔다. 아래에 두면 팀 현황 검사가 마지막 줄을 훑을 때
      이 글자까지 같이 세어진다(같은 파일 아래쪽 주석 참고).

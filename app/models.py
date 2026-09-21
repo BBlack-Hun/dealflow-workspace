@@ -2017,3 +2017,77 @@ class EditLog(Base):
     #: 실리지 않는다 — 비밀번호·토큰이 여기 쌓이지 않게 하는 것이 그 방식의
     #: 첫째 이유다.
     changes_json: Mapped[str] = mapped_column(Text, default="[]")
+
+
+class Notice(TimestampMixin, Base):
+    """**이번에 무엇이 바뀌었는지** 팀에게 알리는 한 장. 관리자가 손으로 적는다.
+
+    왜 있는가
+    ---------
+    화면을 여덟 군데 고쳐 놓아도 **팀이 모르면 없는 것과 같다.** 지금까지는
+    고친 사람이 카톡방에 따로 적었고, 그 방을 안 보는 사람에게는 닿지 않았다.
+    닿아야 하는 자리는 그 사람이 **반드시 지나는 곳**, 곧 로그인한 뒤 열리는
+    화면이다.
+
+    **자료가 바뀐 일(`EditLog`)과 다른 표다.** 저쪽은 기계가 flush 마다 남기는
+    기록이라 하루에 수백 줄이 쌓이고 관리자만 본다(`/team/edit-log`). 이쪽은
+    사람이 한 달에 몇 번 적는 글이고 팀 전체가 본다. 둘을 한 표에 묶으면
+    "누가 무슨 기업 줄의 어느 칸을 고쳤다" 가 전원의 화면에 뜬다 — 그건 공지가
+    아니라 남의 근무 기록이다.
+
+    누가 적는가
+    -----------
+    관리자만(`/team` 의 공지 판). 코드가 만들어 내지 않는다 — 기계가 뽑은
+    변경 목록은 `수정 로그` 가 이미 하고 있고, **사람에게 읽히는 말**로
+    옮기는 일은 사람이 해야 한다.
+
+    끄는 길
+    -------
+    `is_active` 를 내리면 그 순간 아무에게도 안 뜬다. 줄을 지우지 않는 것은,
+    지우면 누가 무엇을 언제 알렸는지가 통째로 사라지기 때문이다 — 이 앱이
+    계정을 지우지 않고 정지시키는 것과 같은 판단이다(`User.is_active`).
+
+    한 번 본 것은 다시 안 뜬다
+    --------------------------
+    본 사람은 옆 표(`NoticeRead`)에 한 줄로 남는다. **띄운 것만으로는 안 남고**
+    [확인] 을 눌러야 남는다 — 스쳐 지나간 것을 읽은 것으로 세면, 그 공지는
+    아무도 안 읽은 채로 영영 사라진다.
+    """
+
+    __tablename__ = "notices"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    #: 한 줄 제목. 이것만 읽고 닫는 사람이 대부분이라 여기에 알맹이가 있어야 한다.
+    title: Mapped[str] = mapped_column(String)
+    #: 본문(여러 줄). 비어 있어도 된다 — 제목 한 줄이면 되는 공지가 많다.
+    body: Mapped[str] = mapped_column(Text, default="")
+    #: 띄우고 있는가. 0 이면 아무에게도 안 뜬다(`끄는 길`).
+    is_active: Mapped[int] = mapped_column(Integer, default=1)
+    #: 누가 올렸나. 화면에 이름을 적어 준다 — 누가 알린 것인지 모르면
+    #: 되물을 자리가 없다. 계정은 지우지 않고 정지시키므로 이름을 따로
+    #: 베껴 두지 않는다(`EditLog.actor_user_id` 와 같은 판단).
+    author_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+
+
+class NoticeRead(Base):
+    """**이 사람이 이 공지를 봤다**는 표시 한 줄.
+
+    왜 따로 표인가 — 공지 한 장을 사람 수만큼이 읽으므로 `notices` 쪽에 담을
+    자리가 없다. `(notice_id, user_id)` 에 유일 색인을 걸어 두 번 눌러도 줄이
+    하나다(`SmsNotice` 가 `(kind, day, user_id)` 로 그날 자리를 하나만 잡는
+    것과 같은 방식이다 — 열쇠만 다르다).
+
+    `TimestampMixin` 을 쓰지 않는다. 이 줄은 고쳐지지 않아 `updated_at` 이
+    뜻을 갖지 않고, 언제인지는 `at` 하나로 충분하다(`EditLog` 와 같다).
+    """
+
+    __tablename__ = "notice_reads"
+    __table_args__ = (
+        UniqueConstraint("notice_id", "user_id", name="uq_notice_reads_notice_user"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    notice_id: Mapped[int] = mapped_column(ForeignKey("notices.id"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    #: 언제 확인했나. 관리자 화면에서 `몇 명이 봤나` 를 세는 근거다.
+    at: Mapped[str] = mapped_column(String, default=_now_iso)
