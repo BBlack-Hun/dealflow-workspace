@@ -82,6 +82,15 @@ FIRMS = ("보기벤처스", "예시캐피탈", "가상인베스트먼트")
 #: 흩어져 있어야 정렬된 목록의 모양이 보인다.
 DAYS = (3, 11, 22)
 
+#: 보기 심사역 셋. 첫 글자가 서로 다르다 — 가려진 뒤에도 세 줄이 서로 다른
+#: 사람으로 보여야 한다(투자사와 같은 까닭).
+PEOPLE = ("보기심", "예시담", "가상책")
+
+#: 보기 직함 셋. **마지막 하나는 비어 있다** — 명단에 직함이 안 적힌 심사역이
+#: 실제로 있고, 그때 줄이 이름에서 끝난다는 것이 이 자리에서 보여야 한다.
+#: 보기 자료가 늘 꽉 찬 모양만 내면 사람은 빈 직함을 고장으로 읽는다.
+TITLES = ("심사역", "이사", "")
+
 #: 보기 투자사 담당자 — 미팅 후기가 쓰는 값 셋(`deals._to_contact_view`).
 INVESTOR_NAME = "보기담당"
 INVESTOR_TITLE = "심사역"
@@ -106,14 +115,16 @@ def startup_remind(db: Session, user: Optional[User],
     머리말은 **진짜와 같은 문구틀**에서 온다(`ir_kakao.head_body`) — 보러 온
     것이 그 머리말이기 때문이다. 지어내는 것은 기업 이름과 요청 목록뿐이다.
 
-    투자사 이름은 진짜와 **같은 자리에서 가린다**(`ir_mask`). 지어낸 이름이라
-    안 가려도 새지 않지만, 가리기까지가 이 문구의 모양이다 — 안 가리고 보여
-    주면 "실제로는 이렇게 나가는구나" 를 틀리게 배운다.
+    투자사 이름도 심사역 이름도 진짜와 **같은 자리에서 가린다**(`ir_mask`).
+    지어낸 이름이라 안 가려도 새지 않지만, 가리기까지가 이 문구의 모양이다 —
+    안 가리고 보여 주면 "실제로는 이렇게 나가는구나" 를 틀리게 배운다.
+    직함은 진짜와 같이 **원문 그대로** 간다(가릴 이름이 아니다).
     """
     lines: List[ir_kakao.Line] = [
         ir_kakao.Line(date=ir_kakao.day_label(f"{month}-{day:02d}"),
-                      company=COMPANY, firm=ir_mask.mask_company(firm))
-        for day, firm in zip(DAYS, FIRMS)
+                      company=COMPANY, firm=ir_mask.mask_company(firm),
+                      person=ir_mask.mask_person(person), title=title)
+        for day, firm, person, title in zip(DAYS, FIRMS, PEOPLE, TITLES)
     ]
     # 머리말에 꽂을 상대. `ir_kakao.contact_of` 와 **같은 모양**이다 — 이름만
     # 주고 직함·투자사는 비운다(스타트업 명단에 그 칸 자체가 없다).
