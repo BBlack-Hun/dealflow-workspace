@@ -292,10 +292,13 @@
 {% if folded_months or show_all_months %}
 <p class="hint fold-months">
   {% if folded_months %}
-  🗂 지난 달 칸 <b>{{ folded_months|length }}개</b>가 접혀 있습니다 —
+  {# **몇 달치를 펴는지는 여기 안 적는다.** 그 숫자는
+     `services/monthly_columns.VISIBLE_MONTHS` 한 곳이고, 화면이 "최근 석 달"
+     이라고 적어 두면 그 값을 고치는 날 이 글자만 낡는다. #}
+  🗂 옛 달 칸 <b>{{ folded_months|length }}개</b>가 접혀 있습니다 —
   <a class="linkbtn" href="{{ page.href }}?sheet={{ selected_sheet|urlencode }}&months=all">펴기</a>
   {% else %}
-  🗂 지난 달 칸까지 펴 둔 상태입니다 —
+  🗂 옛 달 칸까지 펴 둔 상태입니다 —
   <a class="linkbtn" href="{{ page.href }}?sheet={{ selected_sheet|urlencode }}">최근 칸만 보기</a>
   {% endif %}
 </p>

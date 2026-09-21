@@ -161,10 +161,14 @@ def test_줄이_세울_값을_싣는다():
 def test_수정한_날짜는_화면에_뜨는_그_값을_싣는다(logged_in, db, users):
     """세울 값과 보이는 글자가 **같은 한 곳**(`clock.stamp_text`)에서 온다.
 
-    `YYYY-MM-DD HH:MM:SS` 는 자릿수가 늘 같아 글자 차례가 곧 시각 차례다 —
+    `YYYY-MM-DD HH:MM` 은 자릿수가 늘 같아 글자 차례가 곧 시각 차례다 —
     `8/7(금)` 처럼 바로잡을 것이 없다. 원본 저장값(`…T…+09:00`)을 따로 싣지
     않는 이유는 `companies.html` 의 그 `<tr>` 주석에 적어 두었다(오프셋은
     구분하는 것이 없고, 옛 값에는 `+00:00` 이 섞여 있다).
+
+    **초를 뺀 뒤에도 그대로다**(사용자 요청). 자릿수가 줄었을 뿐 늘 같아서
+    글자 차례는 여전히 시각 차례다. 달라지는 것은 같은 분에 고친 두 줄이
+    동률이 되는 것뿐이고, 그 줄들은 `table_sort.js` 가 처음 차례를 지킨다.
     """
     from app.models import IrCompany
 
@@ -174,8 +178,8 @@ def test_수정한_날짜는_화면에_뜨는_그_값을_싣는다(logged_in, db
 
     row = re.search(r'<tr data-id="\d+"[^>]*>', html, re.S).group(0)
     value = re.search(r'data-s-updated="([^"]*)"', row).group(1)
-    assert re.fullmatch(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", value), (
-        f"세울 값이 시분초까지의 그 꼴이 아닙니다: {value!r}")
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}", value), (
+        f"세울 값이 분까지의 그 꼴이 아닙니다: {value!r}")
     assert f'<td class="updated-at muted"' in html or 'class="updated-at' in html
     assert f">{value}</td>" in html, (
         "줄에 실은 세울 값과 칸에 그린 글자가 다릅니다 — 둘은 한 곳에서 와야 합니다")
