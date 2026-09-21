@@ -8,10 +8,15 @@
    통째로 서므로(`contact_columns.table_columns`) `head` 의 맨 끝이 곧 그
    자리다. 자리는 요청의 절반이라 여기서 못 박는다 — 칸이 하나 더 끼면
    밀린다.
-2. **꼴** — 시·분·초가 다 보인다. 저장값은 `2026-09-16T19:44:43+09:00` 이라
+2. **꼴** — 날짜와 **시·분**이 보인다. 저장값은 `2026-09-16T19:44:43+09:00` 이라
    그대로 내보이면 `T` 와 오프셋이 함께 나가고, 아무 생각 없이 `[:10]` 으로
-   자르면 **초는커녕 시각이 통째로 사라진다**(이 저장소에는 `sent_at[:10]`
-   관용구가 스무 곳 넘게 있다 — 다음 사람이 그것을 여기에도 쓸 수 있다).
+   자르면 **시각이 통째로 사라진다**(이 저장소에는 `sent_at[:10]` 관용구가
+   스무 곳 넘게 있다 — 다음 사람이 그것을 여기에도 쓸 수 있다).
+
+   **초는 뺀다 — 처음에는 남겼었다.** 첫 요청이 '시분초까지' 여서 19자를
+   그대로 보였는데, 두 화면에서 써 본 뒤 사용자가 다시 정했다("모든 수정한
+   날짜에서 초는 빼줘"). 줄이는 자리가 `clock.stamp_text` 한 곳이라 이 화면은
+   따라오기만 했다 — 여기서 고친 것은 폭뿐이다(150 → 130px).
 3. **못 고친다** — 앱이 적는 값이다. 사람이 고칠 수 있으면 "언제 고쳤나" 가
    그 자리에서 거짓이 된다. 막는 자리가 셋이다: 표(눌러 고치기) · 수정창 ·
    서버 스키마. 화면만 막으면 주소로 직접 보내는 길이 늘 남는다.
@@ -44,14 +49,17 @@ SCRIPT = ROOT / "app" / "static" / "js" / "contacts.js"
 CSS = ROOT / "app" / "static" / "css" / "app.css"
 
 COLUMN = "수정한 날짜"
-WIDTH_PX = 150          # 값(130px)에 맞춘 폭 — 아래 `test_폭은_값에_맞춘다`
+# 값(110px)에 맞춘 폭. 초를 빼면서 글자가 19자 → 16자가 되어 150 → 130px 이
+# 됐다 — 아래 `test_폭은_값에_맞춘다`.
+WIDTH_PX = 130
 
 LIST = "샘플 스타트업(9)"
 
 # 아주 옛 시각. 고쳤을 때 값이 실제로 **오르는지** 보려면 출발점이 지금과
-# 뚜렷이 달라야 한다 — 같은 초 안에 두 번 고치면 초까지만 적는 값은 안 변한다.
+# 뚜렷이 달라야 한다 — 같은 **분** 안에 두 번 고치면 분까지만 보이는 값은
+# 안 변한다(초를 뺀 뒤로 그 창이 1초에서 1분으로 넓어졌다).
 OLD = "2020-01-02T03:04:05+09:00"
-OLD_TEXT = "2020-01-02 03:04:05"
+OLD_TEXT = "2020-01-02 03:04"
 
 
 def _month() -> int:
@@ -187,11 +195,12 @@ def test_머리와_칸이_같은_수만큼_늘었다(sheets):
 # ── ② 꼴 — 시·분·초까지 ─────────────────────────────────────────────────────
 
 def test_표에_실리는_값이_자르는_한_곳을_지난다(sheets, db, row):
-    """`2026-09-16T19:44:43+09:00` → `2026-09-16 19:44:43`.
+    """`2026-09-16T19:44:43+09:00` → `2026-09-16 19:44`.
 
     줄이는 자리는 `app/clock.py` 의 `stamp_text` 한 곳이고 라우터가 거기를
     지난다. 화면에서 또 자르면 같은 값이 두 꼴로 보이고, 그중 하나만 고쳐지는
-    날이 온다.
+    날이 온다 — **초를 뺀 판이 그것을 실제로 확인한 판이었다.** 이 화면은
+    아무 것도 안 고쳤는데도 함께 따라왔다.
     """
     from app.clock import stamp_text
 
@@ -200,7 +209,8 @@ def test_표에_실리는_값이_자르는_한_곳을_지난다(sheets, db, row)
     assert OLD_TEXT in html, "화면에 시각이 안 실렸습니다"
     assert OLD not in html, \
         "`T` 와 시간대 오프셋이 붙은 저장값이 화면에 그대로 나갔습니다"
-    assert re.fullmatch(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", stamp_text(OLD))
+    assert "03:04:05" not in html, "초가 화면에 남아 있습니다"
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}", stamp_text(OLD))
 
 
 # ── ③ 못 고친다 — 표 · 수정창 · 서버 ────────────────────────────────────────
@@ -280,10 +290,16 @@ def test_필터를_안_세운다(sheets, db):
     months = cc.month_columns(db, LIST)
     assert "updated_at" not in {c.key for c in
                                 cc.filter_columns(cc.STARTUP_LAYOUT, months)}
+    # **폭으로 찾지 않는다.** 150 → 130px 이 되면서 `투자유치 상태` 와 폭이
+    # 같아졌고, 폭만 보고 찾던 정규식이 그 칸을 집어 와 엉뚱한 곳에서 터졌다
+    # (그 칸에는 필터가 있다). 찾는 기준은 **이름**이어야 한다 — 폭은 언제든
+    # 다른 칸과 겹칠 수 있는 값이다.
     html = sheets.get(_url()).text
-    th = re.search(r'<th[^>]*style="width:%dpx"[^>]*>' % WIDTH_PX, html)
+    th = next((m.group(0) for m in re.finditer(r"<th\b[^>]*>(.*?)</th>", html, re.S)
+               if COLUMN in re.sub(r"<[^>]+>", " ", m.group(1))), None)
     assert th, f"`{COLUMN}` 머리글을 못 찾았습니다"
-    assert "data-filters" not in th.group(0), "시각은 골라서 거를 값이 아닙니다"
+    assert f"width:{WIDTH_PX}px" in th, f"폭이 {WIDTH_PX}px 이 아닙니다: {th}"
+    assert "data-filters" not in th, "시각은 골라서 거를 값이 아닙니다"
     assert "data-f-updated_at=" not in html, "행이 죽은 값을 싣습니다"
 
 
@@ -303,7 +319,7 @@ def test_칸을_고치면_시각이_오른다(sheets, db, row):
     after = clock.stamp_text(row.updated_at)
     assert after != OLD_TEXT, "칸을 고쳤는데 `수정한 날짜` 가 그대로입니다"
     assert after.startswith(clock.today().isoformat()), after
-    assert re.fullmatch(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", after), after
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}", after), after
     assert after in sheets.get(_url()).text
 
 
@@ -396,9 +412,13 @@ def test_폭은_값에_맞춘다():
     """이 표의 다른 칸들과 **자가 다르다.**
 
     옆 칸들은 *필터를 건 뒤의 머리글*에 맞춘다(값이 한두 글자인 고르는 칸들).
-    이 칸은 값이 **언제나 19자**라 머리글(`수정한 날짜`)보다 훨씬 넓다 — 그래서
+    이 칸은 값이 **언제나 16자**라 머리글(`수정한 날짜`)보다 훨씬 넓다 — 그래서
     값에 맞춘다. `%` 로 두지 않는 이유도 같다: 달 칸이 늘어 표가 넓어지는 날
     비율이 줄면 글자가 조용히 두 줄로 접힌다.
+
+    **150 → 130px.** 초를 빼면서 값이 19자에서 16자가 됐다. 폭을 정하는 것이
+    값이므로 값이 줄면 폭도 같이 줄어야 한다 — 안 줄이면 20px 이 빈자리로
+    남는다. 아래 `19자 시절 폭` 검사가 그것을 못 박는다.
     """
     from app.services import contact_columns as cc
 
@@ -406,9 +426,14 @@ def test_폭은_값에_맞춘다():
 
     column = cc.STARTUP_LAYOUT.head[-1]
     assert column.width == WIDTH_PX, column
-    need = round(_text_px("2026-09-16 19:44:43") + 18)
+    need = round(_text_px("2026-09-16 19:44") + 18)
     assert need <= column.width, f"값이 안 들어갑니다: {need}px 필요"
     assert round(_text_px(COLUMN) + 18) <= column.width
+    # 넉넉하다고 그냥 두면 안 된다 — 빈자리도 폭이다. 150px 은 초까지 보이던
+    # 19자 시절의 폭이다(`_text_px` 는 12px 머리글 자라 13px 본문 값을 조금
+    # 좁게 셈한다 — 위 아래 한계로만 쓰고, 실측값은 docstring 에 적어 두었다).
+    assert column.width < 150, (
+        f"초를 뺐는데 폭이 19자 시절 그대로입니다: {column.width}px")
 
 
 def test_한_줄로_고정한다():
