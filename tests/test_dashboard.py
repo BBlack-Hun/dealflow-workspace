@@ -11,12 +11,17 @@
 """
 from __future__ import annotations
 
+import shutil
+import subprocess
 from datetime import date
+from pathlib import Path
 from urllib.parse import quote
 
 import pytest
 
 from .conftest import DEMO_PASSWORD
+
+ROOT = Path(__file__).resolve().parent.parent
 
 
 @pytest.fixture()
@@ -802,19 +807,30 @@ def _mine_with_sheet(db, users, name):
     return db.query(VcContact).filter_by(name=name).first()
 
 
-def test_monthly_reactions_show_four_months(db, users):
-    """기본으로 보이는 달은 **이 달 + 지난 3달, 넷**이다.
+def test_monthly_reactions_show_twelve_months(db, users):
+    """기본으로 보이는 달은 **이 달 + 지난 11달, 열둘**이다.
 
-    한 번 둘로 줄였다가 사용자가 넷으로 되돌렸다. 화면의 `최근 N개월` 글자도
-    이 목록의 길이를 그대로 읽으므로, 여기만 고치면 글자도 따라간다.
+    왜 넷이 아닌가: 한 번 둘로 줄였다가 사용자가 넷으로 되돌렸고, 이번에
+    사용자가 열둘로 정했다. 사용자가 정한 값이라 검사도 따라 올린다 — 이
+    숫자를 다시 줄이려거든 사용자에게 먼저 물어라(`REACTION_MONTHS` 주석).
+
+    자료는 여전히 넉 달치뿐이라 앞선 여덟 달은 0 으로 선다. 그건 버그가
+    아니라 "여기서부터 쌓이기 시작했다" 는 뜻이고, 그래서 화면은 표를
+    뒤집어(줄 = 달) 0 인 달이 세로로 늘어서게 두었다.
+
+    화면의 `최근 N개월` 글자도 이 목록의 길이를 그대로 읽으므로, 여기만
+    고치면 글자도 따라간다.
     """
     from app.services.dashboard import REACTION_MONTHS, monthly_reactions
 
-    assert REACTION_MONTHS == 4
-    contact = _mine_with_sheet(db, users, "넉달")
+    assert REACTION_MONTHS == 12
+    contact = _mine_with_sheet(db, users, "열두달")
     keys = [m["key"] for m in
             monthly_reactions(db, [contact.id], today=date(2026, 9, 16))]
-    assert keys == ["2026-09", "2026-08", "2026-07", "2026-06"], keys
+    assert keys[:4] == ["2026-09", "2026-08", "2026-07", "2026-06"], keys
+    assert len(keys) == 12, keys
+    # 해를 거슬러 간다 — 열두 달이면 반드시 작년으로 넘어간다
+    assert keys[-1] == "2025-10", keys
 
 
 def test_monthly_reactions_split_the_same_numbers_by_month(db, users):
@@ -1101,25 +1117,109 @@ def test_imported_history_counts_too(db, users):
 
 def test_the_count_is_user_selectable(client, db, users):
     """새로고침 없이 바꾼다 — 대시보드 전체를 다시 그리면 스크롤이 맨 위로
-    튀고, 이 목록 하나 보려고 나머지를 다 기다린다."""
+    튀고, 이 목록 하나 보려고 나머지를 다 기다린다.
+
+    **칩 단추가 아니라 드롭다운이다.** 사용자가 100단위를 더 달라고 해서 고를
+    값이 여섯(10~300)이 됐는데, 칩 여섯은 390px 에서 343px 로 패널(328px)을
+    넘기고 1440px 에서 두 줄로 접혔다. 드롭다운은 값이 몇이든 한 칸이다.
+    """
     client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
     body = client.get("/").text
-    from app.services.dashboard import TOP_CHOICES, TOP_DEFAULT
+    from app.services.dashboard import TOP_CHOICES, TOP_DEFAULT, clamp_top
 
     for n in TOP_CHOICES:
-        assert f'data-n="{n}"' in body, f"{n}명 고르는 단추가 없다"
+        assert f'value="{n}"' in body, f"{n}명 고르는 값이 없다"
+    assert 'select class="chip-select js-top-n"' in body, \
+        "칩 여섯은 폰에서 줄을 넘긴다 — 드롭다운이어야 한다"
     # 기본은 넉넉히 — 10명만 보면 그 아래에 누가 있는지 몰라 매번 늘려야 했다
     assert TOP_DEFAULT == 50
-    assert f'data-n="{TOP_DEFAULT}" class' in body or 'active' in body
+    assert f'value="{TOP_DEFAULT}" selected' in body
+
+    # 100단위를 더 달라고 한 것이라 300까지 있다. 그 위는 안 세운다 — 모집단이
+    # 내 명단이고 DB 전체 담당자가 334명이라 400은 300과 같은 목록이 된다.
+    assert TOP_CHOICES[-1] == 300
+    assert [10, 30, 50, 100, 200, 300] == TOP_CHOICES
 
     # 목록만 따로 주는 길이 있어야 화면을 다시 안 그린다
     r = client.get("/api/dashboard/top-requesters?top=20")
     assert r.status_code == 200
     assert "rows" in r.json()
 
-    # 터무니없는 값은 범위 안으로 접는다
+    # 터무니없는 값은 범위 안으로 접는다. **위끝은 목록을 따라 늘어야 한다** —
+    # 숫자를 따로 박아 두면 단추는 300인데 `?top=300` 이 100으로 잘린다.
+    assert clamp_top(999) == 300
+    assert clamp_top(300) == 300
+    assert clamp_top(1) == 5
     assert client.get("/?top=999").status_code == 200
     assert client.get("/api/dashboard/top-requesters?top=999").status_code == 200
+
+
+def test_the_screen_says_why_a_bigger_number_changes_nothing(client, db, users):
+    """`300명` 을 골라도 10명만 나오는 것이 정상이다 — IR 자료를 달라고 한
+    곳이 그만큼뿐이라서다. 머리글의 `N명` 칸만으로는 모자랐다. 그건 "지금
+    10명" 이라고만 할 뿐 "더 늘려도 10명" 이라고는 말하지 않는다.
+
+    다 찼을 때는 숨긴다 — 더 있을지 모르는데 "이게 전부" 라고 하면 거짓말이다.
+    """
+    import json
+
+    from app.models import ContactActivity
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    # 여섯 곳을 만든다 — `clamp_top` 의 아래끝이 5 라, 다섯 곳 이하로는
+    # "다 찼다" 는 쪽을 만들 수 없다. 명단(시트)은 한 번만 만든다 —
+    # `_mine_with_sheet` 는 부를 때마다 같은 이름으로 또 만들어 부딪힌다.
+    from app.models import VcContact
+
+    _mine_with_sheet(db, users, "요청한곳0")
+    for i in range(1, 6):
+        _mine(db, users, name=f"요청한곳{i}", channel_kakao=1,
+              kakao_room_name="방1", room_verified="verified")
+    db.commit()
+    for i in range(6):
+        contact = db.query(VcContact).filter_by(name=f"요청한곳{i}").first()
+        db.add(ContactActivity(contact_id=contact.id, kind="ir_request",
+                               content="요청", happened_at="2026-09-03",
+                               company_names=json.dumps([f"샘플{i}"],
+                                                        ensure_ascii=False)))
+    db.commit()
+
+    def _hint_tag(body: str) -> str:
+        return body.split('id="req-rank-all"')[1].split(">")[0]
+
+    def _rank_count(body: str) -> int:
+        tail = body.split('id="req-rank-count"')[1]
+        return int(tail.split("<b>")[1].split("</b>")[0])
+
+    # 300명으로 놓았는데 몇 곳뿐 — 까닭을 적는다
+    body = client.get("/?top=300").text
+    assert "req-rank-all" in body, "고른 수보다 적게 나온 까닭을 적는 줄이 없다"
+    got = _rank_count(body)
+    assert 0 < got < 300, got
+    assert "hidden" not in _hint_tag(body), f"{got}곳뿐인데 안내가 숨어 있다"
+
+    # 고른 수를 걸린 수까지 줄이면 다 찬 것이라 안내를 숨긴다
+    body = client.get(f"/?top={got}").text
+    assert "hidden" in _hint_tag(body), \
+        "다 찼는데 '이게 전부' 라고 하면 거짓말이다"
+
+
+@pytest.mark.skipif(shutil.which("node") is None,
+                    reason="node 미설치 — 브라우저 로직 테스트 생략")
+def test_인원_고르개는_브라우저에_있으니_거기서_잰다():
+    """고르면 목록이 바뀌고 안내 줄이 따라 켜지는가를 **agent_badge.js 를
+    그대로 돌려서** 본다.
+
+    파이썬으로는 서버가 그려 준 글자에 값이 있는지까지만 볼 수 있다. 칩에서
+    드롭다운으로 옮기며 `click` 이 `change` 가 된 것, 고른 수보다 적게 나왔을
+    때 안내가 켜지고 다 찼을 때 꺼지는 것은 브라우저 코드를 돌려야 보인다
+    (tests/js/top_requesters_pick_test.js).
+    로컬에서는 `node tests/js/top_requesters_pick_test.js` 로도 돈다.
+    """
+    script = ROOT / "tests" / "js" / "top_requesters_pick_test.js"
+    out = subprocess.run([shutil.which("node"), str(script)],
+                         capture_output=True, text=True, timeout=60)
+    assert out.returncode == 0, out.stdout + out.stderr
 
 
 def test_clicking_a_requester_opens_their_detail(client, db, users):
