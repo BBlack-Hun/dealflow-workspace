@@ -510,7 +510,19 @@ def owner_tabs(db: Session, user: User, sheet: str = "") -> List[dict]:
 # 표에 한 번에 보여줄 월 수. 달마다 한 칸씩 늘어나는 표라, 그냥 두면 한 해
 # 뒤에는 열두 칸이 되어 가로로 밀어야 읽힌다. 실제로 챙기는 것은 최근 몇
 # 달뿐이다.
-VISIBLE_MONTHS = 3
+#
+# **숫자를 여기 안 적는다.** 접는 자리가 둘이다 — 이 화면(`_split_columns`)과
+# 투자사 관리 현황·스타트업(`contact_columns.split_months`). 두 곳이 각자
+# 숫자를 들고 있으면 한쪽만 고쳐지는 날이 오고, 그때 두 표는 같은 화면에서
+# **서로 다른 달 수**를 보여 준다(이 저장소가 반복해 당한 부류다).
+#
+# 한 곳은 **두 접기 함수가 이미 함께 쓰는 모듈**이다 —
+# `services/monthly_columns.VISIBLE_MONTHS`. #221 이 저쪽을 그리로 옮기면서
+# 이 파일은 다른 판이 쓰는 중이라 못 고쳤고, 그동안은
+# `tests/test_monthly_columns.py` 가 두 숫자를 맞대 보고 있었다. 그 판이 바로
+# 이 판이라 여기서 마저 잇는다 — 이제 맞댈 것이 없다(검사도 `import` 하나를
+# 보는 것으로 바뀐다).
+VISIBLE_MONTHS = monthly_columns.VISIBLE_MONTHS
 
 
 # 탭 이름은 **여기 없다.** 화면에서 고치는 값이라 `ConsultingSheet` 행에 있고,

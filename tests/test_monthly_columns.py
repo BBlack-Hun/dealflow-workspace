@@ -18,11 +18,14 @@
 """
 from __future__ import annotations
 
+import pathlib
 from datetime import date
 
 import pytest
 
 from .conftest import DEMO_PASSWORD
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 AUG = date(2026, 8, 3)          # 8월 초 — 새 달이 막 시작한 날
 SEP = date(2026, 9, 1)          # 운영에서 두 명단만 칸이 안 선 날
@@ -715,11 +718,14 @@ def test_두_표가_같은_달_수를_본다(db):
     숫자를 적어 두면 한쪽만 고쳐지는 날이 오고, 그때 두 표는 같은 화면에서
     **서로 다른 달 수**를 보여 준다. 이 저장소가 반복해 당한 부류다.
 
-    `contact_columns` 쪽은 이제 숫자를 안 적고 `monthly_columns` 것을 읽는다.
-    `routers/consulting.py` 는 지금 다른 판에서 쓰이는 중이라 이번에 못 고쳤다 —
-    그래서 **여기서 맞대 본다.** 그 파일이 자유로워지면 이 검사가 아니라
-    `import` 하나로 바뀐다.
+    **이제 둘 다 숫자를 안 적는다.** `contact_columns` 는 처음부터
+    `monthly_columns` 것을 읽었고, `routers/consulting.py` 는 그때 다른 판에서
+    쓰이는 중이라 못 고쳐 여기서 **맞대 보고만** 있었다. 그 판이 끝나면서
+    잇는 한 줄이 들어갔으니(`VISIBLE_MONTHS = monthly_columns.VISIBLE_MONTHS`)
+    이 검사도 **맞대기가 아니라 글자를 본다** — 숫자가 다시 적히는 순간 깨진다.
     """
+    import re
+
     from app.routers import consulting
     from app.services import contact_columns as cc
     from app.services import monthly_columns as mc
@@ -729,6 +735,12 @@ def test_두_표가_같은_달_수를_본다(db):
         f"{consulting.VISIBLE_MONTHS} vs {mc.VISIBLE_MONTHS}")
     assert not hasattr(cc, "VISIBLE_MONTHS"), \
         "`contact_columns` 에 달 수가 또 적혔습니다 — 한 곳이어야 합니다"
+    # 값이 우연히 같은 것이 아니라 **한 곳에서 온다.** 숫자를 다시 적어 두면
+    # 지금은 통과하고 한쪽을 고치는 날 갈린다 — 그 하루를 여기서 막는다.
+    src = (ROOT / "app" / "routers" / "consulting.py").read_text(encoding="utf-8")
+    assert re.search(r"^VISIBLE_MONTHS = monthly_columns\.VISIBLE_MONTHS$",
+                     src, re.M), \
+        "투자컨설턴트가 달 수를 다시 적어 두었습니다 — 한 곳에서 읽어야 합니다"
 
 
 def test_한_달의_칸은_다_같이_서거나_다_같이_접힌다(db):
