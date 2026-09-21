@@ -183,6 +183,42 @@
 {% set ref_back = "/consulting" %}
 {% include "_ref_panel.html" %}
 
+{#
+  **여러 줄을 골라 스타트업 명단으로 보내기.**
+
+  `이관` 이라 부르지 않는다. 이 저장소에서 이관(`sheet_owner.move_to`)은 줄
+  하나의 **담당**을 바꾸고 옛 명단에서 빼는 일인데, 여기는 표가 아예 다르고
+  (`ConsultingCompany` ↔ `VcContact`) **이 줄은 그대로 남는다.** 같은 말을
+  쓰면 누른 사람이 이 표에서 빠진 줄 안다.
+
+  **`관리 스타트업` 탭에만 선다**(`is_startup_sheet`). 왜 나머지 둘에는 안
+  서는지는 `routers/consulting.py` 의 `send_to_startup` 주석에 있다.
+
+  고를 명단이 하나도 없으면 줄 자체가 안 선다(`startup_targets`) — 눌러도
+  아무 일이 없는 단추를 세우지 않는다. 그 목록은 **서버가 읽는 판정과 같은
+  함수**로 걸러져 있다(`sheet_owner.may_add_row`).
+
+  모양은 투자사 풀의 [내 명단으로 할당] 줄을 그대로 따른다
+  (`contacts.html` 의 `assign-bar` · `static/js/pool_assign.js`) — 여러 줄을
+  고르는 자리가 화면마다 다르게 생기면 같은 일을 두 번 배우게 된다.
+
+  **보낼 화면의 이름은 `startup_label` 이다**(좌측 메뉴가 들고 있는 그 이름 —
+  `ui.MENU`). 여기 글자로 적으면 메뉴를 고친 날 이 단추만 옛 이름으로 남는다. #}
+{% if is_startup_sheet and startup_targets %}
+<div class="assign-bar" id="cs-startup-bar" data-page-label="{{ startup_label }}">
+  <label class="only-picked"><input type="checkbox" id="cs-pick-all"> 전체 선택</label>
+  <span class="muted" id="cs-pick-count">0개 선택</span>
+  <select id="cs-startup-target" aria-label="보낼 {{ startup_label }} 명단">
+    {% for t in startup_targets %}
+    <option value="{{ t.label }}">{{ t.label }} ({{ t.owner }})</option>
+    {% endfor %}
+  </select>
+  <button type="button" class="primary-btn inline" id="cs-startup-send" disabled>
+    {{ startup_label }} 명단으로 보내기</button>
+  <span class="hint">이 표에서 빠지지 않습니다 — 기업명·대표자·연락처·이메일·기업 관리만 옮겨 적습니다.</span>
+</div>
+{% endif %}
+
 {# 고른 조건을 되짚어 볼 자리. 없으면 filters.js 가 칩을 그릴 곳이 없어,
    무엇으로 걸러진 목록인지 화면 어디에도 안 남는다. #}
 <div class="chip-row" data-filter-chips></div>
@@ -237,6 +273,12 @@
          data-contract-sheet="{{ 1 if is_contract_sheet else 0 }}">
     <thead>
       <tr>
+        {# 고르는 칸. 위 [스타트업 명단으로 보내기] 줄과 **같이 서고 같이
+           없어진다** — 둘 다 "여기서 골라 보낼 수 있다" 는 한 가지 사실에서
+           나온다(`can_pick_owner` 와 `담당` 칸이 같은 방식이다). #}
+        {% if is_startup_sheet and startup_targets %}
+        <th style="width:46px"></th>
+        {% endif %}
         <th class="num" style="width:44px">NO</th>
         {# **누구의 줄인가.** 여러 사람의 표를 한 화면에서 보는 자리라, 줄만
            보고는 누구 것인지 알 수 없으면 위 칩을 다시 확인해야 한다.
@@ -475,6 +517,37 @@
           {% if is_startup_sheet %}data-f-quote="{{ r.contract_management }}"{% endif %}
           {% if is_startup_sheet %}data-f-joined="{{ r.kakao_joined }}"{% endif %}
           data-f-mgmt="{{ r.mgmt }}">
+        {#
+          **이미 스타트업 명단에 있는 기업은 체크 칸 대신 표시가 선다.**
+
+          지우는 대신 표시하는 자리다 — 이 표의 줄은 보낸 뒤에도 그대로 남으니
+          (원본을 안 지운다) 같은 기업이 두 화면에 있다는 것을 사람이 볼 수
+          있어야 한다. 그리고 **고를 수가 없으니** 눌렀다가 조용히 건너뛰는
+          일도 안 생긴다.
+
+          **화면만 막는 것이 아니다.** 서버도 같은 판정으로 건너뛴다
+          (`routers/consulting.send_to_startup` — 둘 다
+          `services/startup_handoff.py` 하나를 읽는다). 화면만 감추면 번호를
+          직접 보내는 길이 남는다. #}
+        {% if is_startup_sheet and startup_targets %}
+        <td class="pick-cell">
+          {# **`✓` 가 아니라 글자다.** 체크 칸 바로 옆자리라, 체크 표시를 쓰면
+             `골라 놓은 줄` 로 읽힌다 — 실제로는 고를 수가 없는 줄인데 위
+             막대에는 `0개 선택` 이라 적혀 있어 화면이 서로 다른 말을 한다
+             (390px 에서는 두 모양이 한 칸 안에서 나란히 선다). #}
+          {% if r.in_startup %}
+          <span class="in-startup"
+                title="이 기업은 이미 {{ startup_label }} 명단에 있습니다">있음</span>
+          {% else %}
+          {# `data-firm` 은 **보내면 설 이름**이다(`기업명` 칸 글자가 아니다).
+             그 칸에는 계약일·보수율이 함께 적혀 있을 수 있어, 칸 글자를 그대로
+             확인창에 세우면 물어본 이름과 실제로 서는 이름이 다르다. #}
+          <input type="checkbox" class="cs-pick" value="{{ r.id }}"
+                 data-firm="{{ r.startup_firm }}"
+                 aria-label="{{ startup_label }} 명단으로 보낼 기업 고르기">
+          {% endif %}
+        </td>
+        {% endif %}
         <td class="num muted">{{ r.no }}</td>
         {# 편집 칸(`td.cell`)이 아니다 — 담당을 옮기는 것은 표를 통째로 옮기는
            일이라(월별 리마인드 열이 사람마다 따로 있다) 칸을 눌러 이름을 고쳐
@@ -612,11 +685,16 @@
 
          계약 탭이 한 칸 적은 것은 `월` 칸을 뺐기 때문이다 — 예전에는 경영본부
          탭과 우연히 같았다. `담당` 칸도 서면 하나 더 든다 — 셋 다 안 세면 빈 표
-         안내 줄이 짧아 표 오른쪽에 빈 칸이 남는다. #}
+         안내 줄이 짧아 표 오른쪽에 빈 칸이 남는다.
+
+         **고르는 칸도 하나 더 든다**(스타트업 명단으로 보내는 자리). 머리글과
+         **같은 조건**으로 센다 — 어긋나면 안내 줄이 한 칸 짧거나 길어져 표
+         오른쪽이 어긋난다. #}
       <tr><td class="muted"
           colspan="{{ 9 + columns|length + (1 if can_pick_owner else 0)
                         - (1 if is_contract_sheet else 0)
-                        + (5 if is_startup_sheet else 0) }}">
+                        + (5 if is_startup_sheet else 0)
+                        + (1 if is_startup_sheet and startup_targets else 0) }}">
         {#
           **왜 비었는지 적는다.** 그냥 빈 표는 고장으로 읽힌다.
 
@@ -676,4 +754,8 @@
    표가 그려지긴 하는데 머리글도 칸도 눌리지 않는다 — 화면이 "눌러서 고칩니다"
    라고 적어 놓고 아무 일도 안 하는 꼴이라, 고장인지 원래 그런지 알 수 없다. #}
 <script src="{{ asset('js/ref_edit.js') }}"></script>
+{# 여러 줄을 골라 스타트업 명단으로 보내는 자리. **consulting.js 뒤에 온다** —
+   [전체 선택] 이 `tr.hidden` 을 보는데, 줄을 감추는 것이 저 파일이다.
+   막대가 안 선 탭에서는 스스로 아무 일도 안 한다(`cs-startup-bar` 가 없다). #}
+<script src="{{ asset('js/consulting_to_startup.js') }}"></script>
 {% endblock %}
