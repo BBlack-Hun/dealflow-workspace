@@ -90,6 +90,91 @@ def test_회사명은_첫_글자만_남는다():
     assert FIRM_SHORT[1:] not in ir_mask.mask_company(FIRM_SHORT)
 
 
+# ── 1-2. 투자사 꼬리말  ★ ───────────────────────────────────────────────────
+#
+# 사용자가 정했다: `파트너스` · `인베스트먼트` · `자산운용` 같은 **뒷말은
+# 보이게**. 일부러 덜 가리는 변경이라 무엇이 드러나고 무엇이 그대로인지를
+# 여기에 박아 둔다. 이름은 전부 **지어낸 것**이다(저장소가 공개다).
+
+FIRM_SUFFIXED = "샘플파트너스"
+FIRM_SPACED = "샘플 파트너스"
+
+
+def test_투자사는_꼬리말이_드러난다():
+    assert ir_mask.mask_firm(FIRM_SUFFIXED) == "샘" + ir_mask.STARS + "파트너스"
+
+
+def test_앞은_그대로_첫_글자_하나다():
+    """덜 가리는 것은 **꼬리말뿐**이다 — 남기는 글자를 늘리지 않았다."""
+    got = ir_mask.mask_firm(FIRM_SUFFIXED)
+    assert got.startswith("샘" + ir_mask.STARS)
+    assert "샘플" not in got, "앞을 두 글자 남겼다"
+    assert got.count("*") == len(ir_mask.STARS), "별표 개수가 늘었다"
+
+
+def test_꼬리말_앞의_빈칸은_버린다():
+    """빈칸이 있었는지도 이름의 생김새다 — 모든 줄이 같은 모양이어야 한다."""
+    assert ir_mask.mask_firm(FIRM_SPACED) == ir_mask.mask_firm(FIRM_SUFFIXED)
+
+
+def test_사용자가_쓴_자산운영도_받는다():
+    """흔한 표기는 `자산운용` 인데 사용자는 `자산운영` 이라고 적었다.
+    한쪽만 받으면 다른 쪽이 들어온 날 **조용히** 안 걸린다."""
+    for tail in ("자산운용", "자산운영", "파트너즈", "인베스트먼트"):
+        assert ir_mask.mask_firm("샘플" + tail) == "샘" + ir_mask.STARS + tail
+
+
+def test_꼬리말은_이름_끝에_있을_때만_뗀다():
+    """`파트너스자산운용` 은 끝에 있는 것만 떼고, 가운데 말은 가려진 쪽에 남는다."""
+    got = ir_mask.mask_firm("파트너스자산운용")
+    assert got == "파" + ir_mask.STARS + "자산운용"
+    assert "파트너스" not in got[1:], "가운데 말까지 드러났다"
+
+
+def test_이름이_통째로_꼬리말이면_꼬리말도_가린다():
+    """드러내는 순간 이름 전부가 드러나는 자리다 — 옛 규칙으로 떨어진다."""
+    assert ir_mask.mask_firm("파트너스") == "파" + ir_mask.STARS
+    assert ir_mask.mask_firm("(주)파트너스") == "파" + ir_mask.STARS
+
+
+def test_안_든_꼬리말은_안_드러난다():
+    """`벤처스` · `캐피탈` · `증권` 은 일부러 뺐다 — 넣으면 한 곳으로 확정되는
+    비율이 42% 에서 47% · 55% 로 오른다(`ir_mask` 에 잰 값이 적혀 있다)."""
+    for tail in ("벤처스", "캐피탈", "증권"):
+        assert ir_mask.mask_firm("샘플" + tail) == "샘" + ir_mask.STARS
+
+
+def test_꼬리말이_붙어도_길이_힌트는_안_샌다():
+    """같은 꼬리말을 단 둘은 **길이가 달라도 똑같이** 보여야 한다."""
+    a = ir_mask.mask_firm("샘플파트너스")
+    b = ir_mask.mask_firm("샘플가나다라마바파트너스")
+    assert a == b
+
+
+def test_사람_이름에는_꼬리말_규칙이_없다():
+    """꼬리말은 여러 곳이 함께 쓰는 **업종 말**이라 아무도 집어내지 못한다.
+    사람 이름에는 그런 말이 없으므로 그대로 첫 글자 하나다."""
+    assert ir_mask.mask_person("파트너스") == "파" + ir_mask.STARS
+
+
+def test_기업명_가리기는_안_바뀌었다():
+    """갈래를 나눈 까닭이다 — 꼬리말 목록은 **투자사** 이름의 말이라,
+    회사명 일반을 가리는 자리까지 따라 바뀌면 안 된다."""
+    assert ir_mask.mask_company(FIRM_SUFFIXED) == "샘" + ir_mask.STARS
+
+
+def test_꼬리말을_떼는_자리도_한_곳이다():
+    """별표와 같은 규칙이다 — 목록이 두 군데 적히면 한쪽이 낡는다."""
+    import pathlib as _p
+
+    root = _p.Path(__file__).resolve().parent.parent
+    for path in (root / "app").rglob("*.py"):
+        if path.name == "ir_mask.py":
+            continue
+        src = path.read_text(encoding="utf-8")
+        assert "FIRM_SUFFIXES" not in src or "ir_mask.FIRM_SUFFIXES" in src, \
+            f"{path} 가 꼬리말 목록을 따로 적었다"
+
 def test_사람_이름은_성만_남는다():
     got = ir_mask.mask_person(PERSON_SHORT)
     assert got.startswith(PERSON_SHORT[0])
@@ -177,7 +262,7 @@ def test_문서에_투자사_원래_이름이_한_글자도_통째로_안_나온
     for name in (FIRM_SHORT, FIRM_LONG, PERSON_SHORT, PERSON_LONG):
         assert name not in html, f"원래 이름이 그대로 나왔다: {name}"
     # 가린 값은 떠 있어야 한다 — 아무것도 안 나오면 가린 것이 아니라 빈 것이다.
-    assert ir_mask.mask_company(FIRM_SHORT) in html
+    assert ir_mask.mask_firm(FIRM_SHORT) in html
     assert ir_mask.mask_person(PERSON_LONG) in html
 
 
@@ -186,7 +271,7 @@ def test_담당자_이름은_기본으로_안_실린다(logged_in, seeded):
     r = logged_in.get(f"/startup/ir-report/{seeded['a'].id}?month={seeded['month']}")
     assert r.status_code == 200
     assert ir_mask.mask_person(PERSON_SHORT) not in r.text
-    assert ir_mask.mask_company(FIRM_SHORT) in r.text, "투자사는 실려야 한다"
+    assert ir_mask.mask_firm(FIRM_SHORT) in r.text, "투자사는 실려야 한다"
 
 
 def test_목록에도_투자사_이름이_안_나온다(logged_in, seeded):

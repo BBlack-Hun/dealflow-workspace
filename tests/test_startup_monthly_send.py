@@ -391,7 +391,8 @@ def test_나가는_글에_투자사_원래_이름이_없다(db, seeded, client):
     for firm in (FIRM, FIRM_OLD):
         assert firm not in message, f"원래 이름이 그대로 나간다: {firm}"
         assert firm[1:] not in message, "뒷부분이 새고 있다"
-        assert ir_mask.mask_company(firm) in message
+        # 투자사는 `mask_firm` — 꼬리말은 남는다(`ir_mask`).
+        assert ir_mask.mask_firm(firm) in message
     # 담당자 이름은 아예 안 실린다.
     assert PERSON not in message
 

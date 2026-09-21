@@ -38,8 +38,13 @@
     <b>{{ msg.companies | join(' , ') }}</b> 대표께 보낼 글입니다 —
     <b>{{ msg.month }}</b> 말까지 쌓인 <b>{{ msg.lines | length }}줄</b>
     (이번 달치만이 아닙니다).
-    줄 차례는 <b>날짜 · 기업 · 투자사 · 심사역 · 직함</b>이고,
-    투자사와 심사역 이름은 <b>첫 글자만</b> 남기고 가려서 나갑니다.
+    줄 차례는 <b>날짜 · 투자사 · 심사역 · 직함</b>입니다
+    (기업이 <b>여럿인 글에서만</b> 날짜 뒤에 기업명이 한 칸 더 섭니다 —
+    하나면 그 이름은 이미 머리말에 있습니다).
+    심사역 이름은 <b>첫 글자만</b> 남기고 가려서 나가고, 투자사는
+    <b>첫 글자 + 꼬리말</b>입니다(<b>파트너스 · 인베스트먼트 · 자산운용</b> 같은
+    뒷말은 보입니다 — 어떤 성격의 돈인지는 대표가 알아야 할 것이라 사용자가
+    그렇게 정했습니다).
     직함은 명단에 적힌 그대로이고, <b>안 적힌 분은 이름에서 줄이 끝납니다</b> —
     없는 직함을 지어내지 않습니다.
   </p>
@@ -86,16 +91,34 @@
 #}
 {% if msg.head_from_template %}
 <p class="hint">
-  ✏ 위 <b>머리말 세 줄</b>은
+  ✏ 위 <b>제목과 머리말</b>은
   <a href="/templates#startup_sms">「기업 리마인드 — 문자」</a> 문구에서 옵니다 —
   거기서 고치면 이 화면과 <b>설정</b> 의 시험 자리가 함께 바뀝니다.
-  아래 <b>요청 투자사 목록</b>은 앱이 붙입니다.
+  가운데 <b>요약 숫자와 요청 투자사 목록</b>은 앱이 붙입니다(사람이 적은 숫자는
+  목록과 갈립니다).
 </p>
 {% else %}
 <p class="hint">
   ⚠ <a href="/templates#startup_sms">「기업 리마인드 — 문자」</a> 문구가 비어 있어
-  <b>기본 머리말</b>로 지었습니다 — 팀이 정한 문구가 아닙니다.
-  고치려면 그 자리에 머리말을 적어 주세요.
+  <b>기본 제목·머리말</b>로 지었습니다 — 팀이 정한 문구가 아닙니다.
+  고치려면 그 자리에 적어 주세요.
+</p>
+{% endif %}
+
+{#
+  맺음말도 같다. **목록 아래**에 오는 문장이라 문구를 따로 두었다(까닭은
+  `services/ir_kakao.py` 머리말 — 한 덩어리로 두면 문구틀에 목록 자리를
+  내줘야 하고, 그러면 가리는 일이 문구를 고치는 사람 손에 넘어간다).
+#}
+{% if msg.tail_from_template %}
+<p class="hint">
+  ✏ 목록 <b>아래 한 줄</b>은
+  <a href="/templates#startup_sms_tail">「기업 리마인드 — 맺음말」</a> 문구입니다.
+</p>
+{% else %}
+<p class="hint">
+  ⚠ <a href="/templates#startup_sms_tail">「기업 리마인드 — 맺음말」</a> 문구가
+  비어 있어 <b>기본 맺음말</b>로 지었습니다 — 팀이 정한 문구가 아닙니다.
 </p>
 {% endif %}
 
@@ -104,14 +127,15 @@
 <p class="split-notice">
   ✂ 글이 길어 <b>{{ msg.part_count }}통</b>으로 나눠 보내야 합니다 —
   아래 전문에서 <b>빈 줄로 갈린 덩어리</b>가 각각 한 통입니다.
-  (인사말은 첫 통에만 붙습니다.)
+  (제목·인사·요약은 <b>첫 통</b>에만, 맺음말은 <b>마지막 통</b>에 붙습니다.)
 </p>
 {% endif %}
 
 <textarea class="bubble-edit" id="ir-kakao-message" spellcheck="false" readonly
           {# 줄 수를 따라 늘리되 화면을 넘기지 않는다 — [문구 복사] 가 접히면
              복사하러 온 사람이 스크롤을 해야 한다. #}
-          rows="{{ [(msg.lines | length) + 4, 20] | min }}">{{ msg.text }}</textarea>
+          {# 제목 두 줄 · 요약 · 구분선 둘 · 맺음말이 줄 수에 더 붙는다(+8). #}
+          rows="{{ [(msg.lines | length) + 8, 20] | min }}">{{ msg.text }}</textarea>
 <div class="charcount">{{ msg.char_count }}자 · {{ msg.lines | length }}줄</div>
 <button type="button" class="linkbtn" id="ir-kakao-copy">문구 복사</button>
 
