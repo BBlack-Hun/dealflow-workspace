@@ -637,3 +637,141 @@ def test_nothing_strikes_the_row_from_the_page_or_the_script():
         text = path.read_text(encoding="utf-8")
         assert "line-through" not in text, f"{path} 가 직접 취소선을 긋고 있습니다"
         assert "textDecoration" not in text, f"{path} 가 직접 취소선을 긋고 있습니다"
+
+
+# --- 세부업무의 줄바꿈 -------------------------------------------------------
+#
+# 사용자가 든 증상: "반복업무쪽 세부업무에서 줄바꿈 작성이 안되는데… 되게끔
+# 수정해줘. 엔터로는 추가가 안되게 해주고, 추가버튼을 눌러야 추가가 되게".
+#
+# **담는 쪽은 처음부터 여러 줄을 받았다** — `WeeklyRoutine.title` 이 `Text` 다.
+# 막고 있던 것은 적는 칸이다: `<input type="text">` 에는 줄바꿈이 안 들어간다.
+# 그래서 이 묶음은 화면(무엇이 서 있는가)과 값(줄바꿈이 어디까지 살아남는가)을
+# 둘 다 본다 — 한쪽만 보면 칸만 바꿔 놓고 표에서 뭉개지는 것을 못 본다.
+
+MULTI_TITLE = "홍보 메일 발송\n- 수신거부 정리\n- 회신 확인"
+
+
+def _routine_form(body: str) -> str:
+    """반복 업무 **등록 폼**만 떼어 낸다(위 표가 아니라 아래 폼)."""
+    head = body.find('action="/todo/routines"')
+    return body[head:body.find("</form>", head)] if head >= 0 else ""
+
+
+def _task_form(body: str) -> str:
+    head = body.find('action="/todo/tasks"')
+    return body[head:body.find("</form>", head)] if head >= 0 else ""
+
+
+def test_the_routine_form_takes_more_than_one_line(client, users):
+    """세부업무 칸이 `<textarea>` 여야 한다 — 한 줄짜리 입력이면 애초에
+    줄바꿈을 칠 수가 없다(엔터가 폼을 보낸다)."""
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    form = _routine_form(client.get("/todo").text)
+
+    assert '<textarea name="title"' in form, "세부업무가 아직 한 줄짜리 칸입니다"
+    assert 'rows="2"' in form, (
+        "몇 줄을 보일지 적어 두지 않으면 브라우저 기본값(2줄이 아니다)으로 서서 "
+        "칸이 가로로 늘어선 이 줄이 통째로 커집니다")
+    assert '<input type="text" name="title"' not in form
+
+
+def test_the_weekly_task_form_takes_more_than_one_line(client, users):
+    """주간 업무 쪽도 **같이** 바꾼다.
+
+    위 표의 세부업무 칸은 이 고침 전부터 여러 줄이었다(`td.cell.multi`) —
+    적을 때만 한 줄이고 고칠 때는 여러 줄인, 설명할 수 없는 상태였다. 게다가
+    반복 업무가 만들어 내는 줄이 이 표에 선다: 반복 쪽만 여러 줄이면 **기계가
+    넣은 줄에는 줄바꿈이 있고 사람이 적은 줄에는 없는** 표가 된다.
+    """
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    form = _task_form(client.get("/todo").text)
+
+    assert '<textarea name="title"' in form
+    assert 'rows="2"' in form
+
+
+def test_enter_does_not_add_and_the_button_does(client, users):
+    """엔터로는 안 들어가고 [추가] 를 눌러야 들어간다.
+
+    막는 일 자체는 브라우저에서 한다(`weekly_tasks.js` — `tests/js/
+    weekly_enter_submit_test.js` 가 그 파일을 그대로 돌린다). 여기서는 **그
+    표시가 두 폼에 다 붙어 있는가**와 누를 단추가 서 있는가만 본다 — 표시가
+    빠지면 스크립트는 멀쩡한데 아무 폼도 안 막힌다.
+    """
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    body = client.get("/todo").text
+
+    for form in (_routine_form(body), _task_form(body)):
+        assert "data-no-enter-submit" in form
+        assert '<button class="secondary-btn" type="submit">추가</button>' in form
+
+
+def test_the_routine_cell_is_multiline_too(client, db, users):
+    """표에서 **고칠 때도** 여러 줄이어야 한다.
+
+    등록만 여러 줄이면, 그 칸을 한 번 눌러 고치는 순간(한 줄짜리 입력이 열려
+    값이 한 줄로 합쳐진다) 줄바꿈이 사라진다. 고치려던 사람이 지우는 셈이다.
+    """
+    from app.models import WeeklyRoutine
+
+    db.add(WeeklyRoutine(user_id=users["u1"].id, category="메일",
+                         title=MULTI_TITLE, weekdays="0"))
+    db.commit()
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    table = _routine_table(client.get("/todo").text)
+
+    assert '<td class="cell multi" data-field="title">' in table
+    # 표에도 줄이 나뉘어 보인다(`td.cell` 이 `white-space: pre-wrap`).
+    assert "- 수신거부 정리" in table
+
+
+def test_a_routine_keeps_the_line_breaks(client, db, users):
+    """폼으로 보낸 여러 줄이 그대로 담긴다. 앞뒤 공백만 털어 낸다."""
+    from app.models import WeeklyRoutine
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    client.post("/todo/routines", data={"category": "메일",
+                                        "title": "  " + MULTI_TITLE + "  ",
+                                        "weekdays": "0"})
+
+    row = db.query(WeeklyRoutine).filter_by(category="메일").one()
+    assert row.title == MULTI_TITLE
+
+
+def test_inline_edit_keeps_the_line_breaks(client, db, users):
+    """표에서 고쳐 보낸 여러 줄도 그대로 담긴다(`PATCH /api/todo/routines`)."""
+    from app.models import WeeklyRoutine
+
+    routine = WeeklyRoutine(user_id=users["u1"].id, category="메일",
+                            title="홍보 메일 발송", weekdays="0")
+    db.add(routine)
+    db.commit()
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    assert client.patch(f"/api/todo/routines/{routine.id}",
+                        json={"title": MULTI_TITLE}).status_code == 200
+    db.refresh(routine)
+    assert routine.title == MULTI_TITLE
+
+
+def test_the_line_breaks_survive_into_the_weekly_row(client, db, users):
+    """**반복 → 주간으로 넘어갈 때도 살아 있어야 한다.**
+
+    반복 업무는 그 자체로 끝이 아니라 주간 항목을 만들어 낸다(`fill_week`).
+    거기서 한 줄로 잘리면 여러 줄을 적어 둔 보람이 없다 — 사람이 실제로 보는
+    것은 위쪽 주간 업무 표다.
+    """
+    from app.models import WeeklyRoutine, WeeklyTask
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    client.post("/todo/routines", data={"category": "메일", "title": MULTI_TITLE,
+                                        "weekdays": "0"})
+    routine = db.query(WeeklyRoutine).filter_by(category="메일").one()
+
+    body = client.get("/todo").text            # 이 화면이 `fill_week` 를 돌린다
+    task = db.query(WeeklyTask).filter_by(routine_id=routine.id).one()
+
+    assert task.title == MULTI_TITLE, "주간 항목으로 옮겨 가면서 줄이 뭉개졌습니다"
+    assert "- 회신 확인" in _task_table(body)
