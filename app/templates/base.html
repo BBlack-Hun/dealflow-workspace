@@ -66,6 +66,11 @@
       {% if password_changed %}
       <p class="flash">✅ 비밀번호가 변경되었습니다. 다른 기기의 로그인은 모두 해제되었습니다.</p>
       {% endif %}
+      {# 아직 확인하지 않은 공지. 비밀번호 알림 바로 아래, **같은 이유로**
+         여기 있다 — 화면마다 심으면 새 화면이 하나 생겼을 때 그 화면만
+         조용히 아무 말이 없다. 관리자가 팀 현황에서 적고, [확인] 을 누른
+         사람에게는 다시 안 뜬다(`services/notices.py`). #}
+      {% if notices %}{% include "_notices.html" %}{% endif %}
       {% block content %}{% endblock %}
     </main>
   </div>

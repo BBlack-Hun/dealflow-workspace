@@ -14,6 +14,7 @@ from . import config, version
 from .deps import (agent_status, consultant_may_open, may_auto_attach,
                    may_view_consulting)
 from .models import User
+from .services import notices
 
 # 좌측 메뉴. 쓰는 순서대로 둔다.
 #
@@ -150,4 +151,12 @@ def base_ctx(request: Request, db: Session, user: User, active: str) -> dict:
         # 있는** 화면이 남는다 — 이 저장소가 반복해 고쳐 온 그 거짓말이다.
         # 사이드바 메뉴가 `visible_menu` 한 곳에서 걸러지는 것과 같은 자리다.
         "may_auto_attach": may_auto_attach(user),
+        # **아직 확인하지 않은 공지.** 비밀번호 변경 알림 바로 위, 같은 자리,
+        # 같은 이유다 — 화면마다 심으면 새 화면이 하나 생겼을 때 그 화면만
+        # 조용히 아무 말이 없다. 공지는 하필 **그 새 화면이 생겼다**고
+        # 알리는 자리라 그것이 특히 나쁘다.
+        #
+        # 값싸다: 켜져 있는 공지가 대개 없고, 있어도 한둘이다. 없으면
+        # 밑틀은 아무 것도 그리지 않는다(`_notices.html`).
+        "notices": notices.unread(db, user),
     }
