@@ -544,6 +544,13 @@ WRITE_ROUTES = {
     ("POST", "/consulting/columns/{column_id}/rename"): WATCHED,
     ("POST", "/consulting/columns/{column_id}/delete"): WATCHED,
     ("POST", "/consulting/import"): WATCHED,
+    # 고른 투자컨설턴트 줄들을 스타트업 명단에 세운다. **주소는
+    # `/api/contacts/…` 인데 파일은 `consulting.py` 다** — 투자컨설턴트를
+    # 미들웨어가 주소로 막게 하려는 것이고, 그 까닭은 그 라우트 바로 위에
+    # 적혀 있다. 여기서는 남의 명단에 **새 줄이 생기는** 길이라 보는 쪽이다
+    # (줄은 `POST /api/contacts` 를 그대로 불러 만든다 — 그래서 `vc_contacts`
+    #  의 INSERT 가 저절로 로그에 남는다).
+    ("POST", "/api/contacts/from-consulting"): WATCHED,
 
     ("POST", "/templates/choose"): WATCHED,
     ("POST", "/templates/copy"): WATCHED,
@@ -711,7 +718,12 @@ def test_the_six_shared_routers_still_hold_the_forty_nine_paths(portal):
     # contacts 는 명단 라우터 15 + 참고 자료 6 이다(참고 자료는 주소에 접두가
     # 없어 파일만 같이 쓴다). 15번째가 감춘 줄 한꺼번에 지우기(`/bulk-delete`)다.
     # ir 의 12번째는 미팅 요청을 손으로 보냈다고 적는 자리다.
-    assert counted == {"companies": 7, "ir": 12, "consulting": 8,
+    #
+    # **`consulting` 의 아홉 번째는 주소가 `/api/contacts/from-consulting` 이다**
+    # — 여기서 세는 것은 주소가 아니라 **그 길을 담고 있는 파일**이라
+    # (`_write_routes` 가 `endpoint.__module__` 을 본다) 저 길도 여기로 온다.
+    # 왜 파일과 주소가 갈라져 있는지는 그 라우트 위 주석에 있다.
+    assert counted == {"companies": 7, "ir": 12, "consulting": 9,
                        "templates_crud": 5, "sourcing": 4, "contacts": 21}
 
 

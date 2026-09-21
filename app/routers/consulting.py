@@ -29,18 +29,24 @@ from sqlalchemy.orm import Session
 
 from .. import clock
 from ..db import get_db
-from ..deps import (NoConsulting, get_current_user, may_view_all_consulting,
-                    may_view_consulting, templates)
+from ..deps import (NoConsulting, can_open, get_current_user,
+                    may_view_all_consulting, may_view_consulting, templates)
 from ..models import (ConsultingColumn, ConsultingCompany, ConsultingRowGrant,
                       User)
 from ..services import consulting_sheets as cs
 from ..services import consulting_status as status
 from ..services import monthly_columns
+from ..services import sheet_owner
 from ..services import spreadsheet as sp
-from ..ui import base_ctx
+from ..services import startup_handoff
+from ..ui import base_ctx, menu_label
 # 계약을 부르는 말이 있는 곳. 여기에 다시 적지 않는다 —
 # `CONTRACT_DONE_CHOICES` 주석 참고(`routers/pages.py` 도 같은 방식이다).
 from .companies import CONTRACT_LABELS
+# **줄을 새로 넣는 길은 저것 하나다.** 아래 `send_to_startup` 이 그대로 부른다 —
+# 왜 여기서 `VcContact(...)` 를 만들지 않는지는 `services/startup_handoff.py`
+# 첫머리에 적혀 있다.
+from .contacts import ContactIn, create_contact
 
 router = APIRouter(tags=["consulting"])
 
@@ -693,6 +699,13 @@ def company_rows(db: Session, user: User, sheet: str = "",
     # 부르는데, 판정이 이 자료를 볼 때마다 조회를 열면 서른 줄짜리 탭에서
     # 서른 번 나간다. 판정은 그대로 한 곳이다 — 읽는 값만 미리 준다.
     grants = grant_owner_ids(db, user)
+    # **이 기업이 이미 스타트업 명단에 서 있는가.** 줄마다 묻지 않고 한 번
+    # 떠 온다(바로 위 `grants` 와 같은 이유 — 쉰 줄짜리 탭에서 쉰 번 나간다).
+    #
+    # 표의 표시와 서버의 건너뛰기가 **같은 값**을 읽는다
+    # (`services/startup_handoff.py`). 두 벌이면 표에는 아무 표시가 없는데
+    # 눌러도 안 들어가는 줄이 생긴다.
+    in_startup = startup_handoff.existing_firms(db)
     out = []
     for order, c in enumerate(companies, start=1):
         notes = _notes(c)
@@ -737,6 +750,22 @@ def company_rows(db: Session, user: User, sheet: str = "",
             "ceo_name": c.ceo_name or "",
             "phone": c.phone or "",
             "email": c.email or "",
+            # **같은 기업이 두 화면에 다 있는가.** 스타트업 명단으로 보내도
+            # 이 줄은 그대로 남으므로(지우지 않는다), 두 곳에 있다는 사실이
+            # 화면에 적혀 있지 않으면 사람이 알 길이 없다 — 그러면 다음 달에
+            # 어느 쪽을 고쳐야 하는지 모르게 된다.
+            #
+            # 탭을 가리지 않고 늘 싣는다. 보내는 것은 `관리 스타트업` 탭에서만
+            # 하지만, **알아야 하는 것은 그 탭 밖에서도 마찬가지**다(같은
+            # 기업이 `경영본부 전달 기업` 으로 옮겨 간 뒤에도 스타트업 명단에는
+            # 남아 있다). 화면이 표시를 세우는 것은 체크 칸이 서는 탭뿐이다.
+            "in_startup": startup_handoff.is_in_startup(in_startup, c),
+            # **보내면 어느 이름으로 서는가.** 확인창이 이 값을 읽는다
+            # (`static/js/consulting_to_startup.js`). 화면이 `기업명` 칸 글자를
+            # 그대로 쓰면 `라마바이오 / 무료 / 3%` 라고 물어 놓고 실제로는
+            # `라마바이오` 가 서서, 확인창이 거짓말을 한다 — 꺼내는 규칙은
+            # 서버 한 곳이다(`startup_handoff.company_name_of`).
+            "startup_firm": startup_handoff.company_name_of(c.company_name),
             # `월간 계약 업무현황표` 탭에만 값이 있다. 다른 탭에서는 빈 문자열이라
             # 화면이 탭마다 다른 dict 를 받지 않는다 — 없는 칸을 꺼내다 터지는
             # 자리를 만들지 않으려는 것이다.
@@ -891,6 +920,27 @@ def consulting_page(request: Request, db: Session = Depends(get_db),
         # `딜 소개문구` 는 이 탭에만 선다. `not is_contract_sheet` 로 갈랐다간
         # `경영본부 전달 기업` 에도 같이 서므로 **따로** 넘긴다.
         "is_startup_sheet": is_startup(db, selected),
+        # ── 스타트업 명단으로 보내기 ────────────────────────────────────────
+        #
+        # 고를 수 있는 명단. 비어 있으면 화면이 그 줄을 아예 안 세운다 —
+        # 고를 것이 하나도 없는 자리를 세우면 눌러도 아무 일이 없는 단추가
+        # 된다(위 `담당` 칩이 같은 이유로 컨설턴트에게는 안 선다).
+        #
+        # **그 명단에 넣어도 되는 사람인지까지 여기서 거른다.** 서버가
+        # 읽는 판정과 **같은 함수**다(`sheet_owner.may_add_row`) — 화면이
+        # 따로 정하면 세워 둔 단추가 눌렀을 때 403 이 난다.
+        #
+        # 역할 문도 같이 지난다(`deps.can_open`). 투자컨설턴트는
+        # `/api/contacts` 가 허용 목록 밖이라 이 줄이 아예 안 선다 —
+        # 왜 열지 않았는지는 `send_to_startup` 주석에 있다.
+        "startup_targets": ([
+            t for t in startup_handoff.target_sheets(db)
+            if sheet_owner.may_add_row(db, user, t["label"])
+        ] if can_open(user, "/api/contacts/from-consulting") else []),
+        # 보낼 화면의 이름. **여기 적지 않는다** — 좌측 메뉴가 그 이름을 이미
+        # 들고 있고(`ui.MENU`), 두 곳에 적으면 메뉴를 고친 날 이 단추만 옛
+        # 이름으로 남는다(화면 제목이 같은 자리에서 나오는 것과 같은 방식이다).
+        "startup_label": menu_label("startup"),
         # `계약완료여부` 의 보기. **화면에 글자를 적어 두지 않는다** — 계약을
         # 부르는 말은 `routers/companies.py` 의 `CONTRACT_LABELS` 한 곳이고,
         # 여기 적으면 그 말을 고치는 날 두 화면이 갈린다
@@ -1048,6 +1098,153 @@ def delete_company(company_id: int, db: Session = Depends(get_db),
     db.delete(company)
     db.commit()
     return {"deleted": company_id}
+
+
+# --- 여러 줄을 골라 스타트업 명단으로 보내기 ---------------------------------
+#
+# **이관이 아니다.** 이 저장소에서 `이관`(`sheet_owner.move_to`)은 줄 하나의
+# 담당을 바꾸는 일이고, 그 주석이 *"이관은 **누가 맡는지**를 바꾸는 일이지
+# 화면을 옮기는 일이 아니다"* 라고 못 박아 두었다 — 그래서 그 길은 같은 화면
+# 안에서만 움직이고 옛 명단에서 뺀다. 여기는 표가 아예 다르고
+# (`ConsultingCompany` ↔ `VcContact`) **원본을 빼지 않는다.** 그래서 화면에도
+# 코드에도 다른 말을 쓴다 — `스타트업 명단으로 보내기`.
+#
+# 규칙(무엇이 어느 칸에 들어가나 · 기업명을 어떻게 꺼내나 · 이미 있는 기업을
+# 어떻게 보나)은 전부 `services/startup_handoff.py` 한 곳이다. 여기는 문을
+# 지키고 그 규칙을 부르기만 한다.
+
+
+class ToStartupIn(BaseModel):
+    """고른 줄들과 **보낼 명단**. 명단은 사람이 화면에서 고른다."""
+
+    company_ids: List[int] = []
+    label: str = ""
+
+
+# **주소가 `/api/contacts/…` 밑이다.** 파일은 여기인데 주소가 저쪽인 것이
+# 어색해 보이지만, 그것이 이 길의 **권한이 정해지는 방식**이다.
+#
+#   · 투자컨설턴트는 허용 목록(`deps.CONSULTANT_PATHS`)에 있는 주소만 연다.
+#     `/api/consulting/…` 밑에 두면 이 길이 **저절로 열린다** — 그 사람이
+#     보이지도 않는 명단에 줄을 세우게 되고, 막으려면 라우터 안에 역할 판정을
+#     한 벌 더 적어야 한다. `/api/contacts/…` 밑에 두면 **새 주소의 기본값이
+#     막힘**이라 아무것도 안 적어도 된다(`contacts.transfer_contact` 의
+#     docstring 이 같은 말을 한다).
+#   · 이 길이 실제로 하는 일도 **담당자 줄을 만드는 것**이다 — 주소가 하는
+#     일과 같은 이름을 갖는다.
+#
+# 파일이 `contacts.py` 가 아닌 이유는 하나다. 이 길은 투자컨설턴트 줄을
+# **보이는 만큼만** 읽어야 하고(`scope`) 어느 탭인지도 봐야 하는데
+# (`is_startup`), 그 둘이 여기 있다. 저쪽에서 여기를 부르면 두 라우터가
+# 서로를 임포트하게 된다(여기는 이미 `create_contact` 를 부른다).
+@router.post("/api/contacts/from-consulting")
+def send_to_startup(body: ToStartupIn, db: Session = Depends(get_db),
+                    user: User = Depends(get_current_user)):
+    """고른 투자컨설턴트 줄들을 **스타트업 명단에 세운다.** 원본은 그대로 둔다.
+
+    ── 문이 셋이다 ─────────────────────────────────────────────────────────
+
+    ① **이 화면을 볼 수 있는가** (`require_access`).
+    ② **역할.** 여기 아무것도 안 적혀 있다 — 주소가 `/api/contacts/…` 라
+       투자컨설턴트는 미들웨어에서 끊긴다(바로 위 주석). 그 사람이 보이지도
+       않는 명단에 줄을 세우면, 세워 놓고 어디로 갔는지 확인할 길이 없고
+       잘못 넣어도 되돌릴 화면이 없다.
+    ③ **그 명단에 줄을 넣어도 되는 사람인가** (`sheet_owner.may_add_row`).
+       줄마다 부르는 `create_contact` 안에 이미 있는 판정이지만 **먼저 한 번
+       더 묻는다** — 거기서 걸리면 앞의 몇 줄은 이미 들어간 뒤라, 사람이 보는
+       것은 "절반만 들어갔다" 가 된다.
+
+    ── 어느 탭에서 되나 ────────────────────────────────────────────────────
+
+    `관리 스타트업` 탭만이다(`is_startup` — 화면이 칸을 세울 때 쓰는 그 판정).
+    나머지 둘을 막는 이유는 탭마다 다르다.
+
+      · `월간 계약 업무현황표` 는 **대표자·연락처·이메일 칸 자체가 없다**
+        (화면도 안 세운다). 거기서 보내면 연락할 길이 하나도 없는 줄이 선다.
+      · `경영본부 전달 기업` 은 이름 그대로 **이미 경영본부로 넘긴** 기업이다.
+        거기서 또 스타트업 명단으로 보내면 누가 맡는지가 두 갈래로 갈린다.
+
+    넓혀야 하면 고칠 곳은 아래 판정 한 줄이다.
+    """
+    require_access(user)
+    label = (body.label or "").strip()
+    targets = {t["label"]: t for t in startup_handoff.target_sheets(db)}
+    if label not in targets:
+        # 화면이 이미 그런 곳을 안 보여 주지만, 화면만 감추면 이름을 직접
+        # 보내는 길이 남는다(`contacts.transfer_contact` 가 같은 이유로 막는다).
+        raise HTTPException(status_code=400,
+                            detail="담당이 정해진 명단으로만 보낼 수 있습니다")
+    # ③ 화면의 단추와 **같은 판정**이다. `create_contact` 안에 또 있지만,
+    #    거기서 걸리면 이미 몇 줄이 들어간 뒤다.
+    if not sheet_owner.may_add_row(db, user, label):
+        raise HTTPException(status_code=403, detail="이 명단에는 줄을 넣을 수 없습니다")
+
+    ids = [int(x) for x in (body.company_ids or [])]
+    if not ids:
+        raise HTTPException(status_code=400, detail="보낼 기업을 고르세요")
+
+    # **보이는 줄만.** 남의 줄을 번호로 찍는 길을 남기지 않는다 — 판정은
+    # 표를 그릴 때와 같은 `scope()` 하나다(`get_company` 도 같은 뜻으로 막는다).
+    companies = db.execute(
+        scope(select(ConsultingCompany)
+              .where(ConsultingCompany.id.in_(ids))
+              .order_by(ConsultingCompany.position, ConsultingCompany.id),
+              ConsultingCompany, user)
+    ).scalars().all()
+    if len(companies) != len(set(ids)):
+        raise HTTPException(status_code=404, detail="기업을 찾을 수 없습니다")
+    off = [c for c in companies if not is_startup(db, c.sheet)]
+    if off:
+        # **탭 이름을 여기 적지 않는다.** 화면에서 고칠 수 있는 값이라
+        # (`ConsultingSheet.label`) 적어 두면 이름을 바꾼 날 이 안내만 옛
+        # 이름으로 남는다 — 열쇠로 찾아 지금 이름을 읽는다.
+        tab = next((s.label for s in cs.ensure(db) if s.kind == cs.STARTUP), "")
+        raise HTTPException(status_code=400,
+                            detail=f"`{tab}` 탭에서만 보낼 수 있습니다")
+
+    # **이미 스타트업 명단에 있는 기업은 말없이 두 줄로 만들지 않는다.**
+    # 판정은 표에 `있음` 표시를 다는 것과 같은 함수다(`company_rows`) — 두
+    # 벌로 적으면 표에는 아무 표시가 없는데 눌러도 안 들어가는 줄이 생긴다.
+    seen = startup_handoff.existing_firms(db)
+    added: List[str] = []
+    skipped: List[str] = []
+    blank: List[int] = []
+    for company in companies:
+        fields = startup_handoff.contact_body(company)
+        firm = fields["firm"]
+        if not firm:
+            # 기업명을 못 꺼낸 줄. `create_contact` 도 같은 이유로 막지만
+            # (`Layout.required`) 그쪽은 400 을 내고 멈춰서, 나머지 줄까지
+            # 통째로 못 들어간다. 여기서는 **그 줄만** 빼고 그렇다고 알린다.
+            blank.append(company.id)
+            continue
+        key = startup_handoff.compare_key(firm)
+        if key in seen:
+            skipped.append(firm)
+            continue
+        # **줄을 세우는 길은 `POST /api/contacts` 하나다.** 여기서 `VcContact`
+        # 를 직접 만들면 반드시 있어야 하는 칸(`Layout.required`)·담당
+        # (`owner_for`)·권한(`may_add_row`)이 두 벌이 된다.
+        made = create_contact(ContactIn(sheet=label, **fields), db, user)
+        # **같은 요청 안의 중복도 막는다.** 같은 기업이 두 줄로 적힌 표가
+        # 실제로 있어서, 둘 다 골라 누르면 스타트업 명단에 두 줄이 선다.
+        seen[key] = made["id"]
+        added.append(firm)
+
+    return {
+        "ok": True,
+        "label": label,
+        "owner": targets[label]["owner"],
+        # **무엇이 어떻게 됐는지 그대로 돌려준다.** 몇 건인지만 주면 건너뛴
+        # 기업이 무엇이었는지 알 수가 없어, 사람이 다시 표를 뒤져야 한다
+        # (`contacts.transfer_contact` 가 `moved` 를 돌려주는 것과 같은 뜻이다).
+        "added": added,
+        "skipped": skipped,
+        "blank": blank,
+        # 돌아가서 확인할 화면. 주소를 화면에 못 박으면 명단이 사는 화면이
+        # 바뀌는 날 남의 화면으로 튄다(`sheet_owner.page_href`).
+        "href": f"{sheet_owner.page_href(db, label)}?sheet={quote(label)}",
+    }
 
 
 # --- 월별 열 ----------------------------------------------------------------
