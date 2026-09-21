@@ -370,6 +370,31 @@ def test_수정_로그로는_못_한다(allowed, db, users):
     assert list(_stamps(db, others.id)) == [f"note:{col.id}"]
 
 
+def test_수정_로그에_잡음을_안_더한다(allowed, db, users):
+    """`field_stamps` 는 **앱이 적는 칸**이라 사람이 칸을 고칠 때마다 반드시
+    같이 바뀐다. 로그에 남기면 남의 줄을 고친 기록마다 `field_stamps 바뀜` 이
+    한 줄씩 더 붙어, 정작 무엇이 바뀌었는지가 묻힌다 — `updated_at` 을 빼 둔
+    것과 같은 이유다(`services/edit_log.py` 의 `_changes`).
+
+    그 안에 든 것도 이미 로그에 있다: 어느 칸이 언제 바뀌었는지는 그 칸의
+    줄과 로그의 시각(`at`)이 말한다.
+    """
+    from app.models import EditLog
+
+    row = _row(db, users["u2"].id, sheet=STARTUP, position=1, company_name="샘플거")
+    users["u1"].role = "admin"
+    db.commit()
+    allowed.patch(f"/api/consulting/{row.id}", json={"kakao_joined": "O"})
+    logs = db.execute(select(EditLog)
+                      .where(EditLog.row_id == row.id)).scalars().all()
+    assert logs, "남의 줄을 고쳤는데 로그가 안 남았습니다"
+    fields = [c["field"] for log in logs for c in json.loads(log.changes_json)]
+    assert "kakao_joined" in fields
+    assert "field_stamps" not in fields, fields
+    # 날짜는 그래도 제대로 찍혀 있다 — 로그에 안 남길 뿐이다.
+    assert "kakao_joined" in _stamps(db, row.id)
+
+
 # --- 6. 이주 -----------------------------------------------------------------
 
 def test_이주는_기존_줄에_날짜를_지어_넣지_않는다():
