@@ -253,8 +253,8 @@ def pack(head: str, lines: Sequence[str], limit: int = LIMIT) -> List[str]:
 
     ### 머리말은 **첫 통에만** 붙인다
 
-    통마다 붙이면 같은 인사가 서너 번 온다. 이 저장소가 이미 그렇게 한다
-    (`routers/deals._apply_test_room_to_parts`).
+    통마다 붙이면 같은 인사가 서너 번 온다. 시험 발송의 보기 표시 줄도 같은
+    결로 첫 통에만 실린다(`assemble(prefix=...)`).
     """
     parts: List[str] = []
     cur, sep = head, "\n\n"     # 머리말과 첫 줄 사이에만 빈 줄

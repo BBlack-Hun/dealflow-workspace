@@ -33,11 +33,20 @@
     {% if rehearsal %}리허설 점검{% else %}실발송 점검{% endif %}
     <span class="hint">
       {% if rehearsal %}
-        테스트 방으로만 나가는 상태입니다 — 실제 담당자에게는 가지 않습니다
+        리허설 담당자에게 걸어 봅니다 — 그 사람의 방이 시험방입니다
       {% else %}
-        실제 담당자 방으로 나갑니다
+        실제 담당자 방으로 나갑니다{% if test_room %} (시험방이 켜져 있어도 그렇습니다){% endif %}
       {% endif %}
     </span>
+    {# 리허설 점검으로 가는 길. 예전에는 시험방이 켜져 있으면 저절로 리허설
+       점검이 떴는데, 그 추측을 없앴다(`services/readiness.py: report`) —
+       없앤 자리에 **사람이 고르는 길**을 두지 않으면 리허설 점검이 주소를
+       아는 사람만 볼 수 있는 화면이 된다. #}
+    {% if rehearsal %}
+    <a class="hint" href="/readiness/detail?mode=live">실발송 기준으로 보기</a>
+    {% else %}
+    <a class="hint" href="/readiness/detail?mode=rehearsal">리허설 기준으로 보기</a>
+    {% endif %}
   </h2>
   <ul class="check-list">
     {% for c in checks %}
@@ -60,16 +69,19 @@
   <h2 class="panel-title">발송일 순서</h2>
   <ol class="steps">
     <li><b>전날</b> — 이 화면에서 막힌 것이 없는지 확인합니다</li>
-    <li><b>전날</b> — 테스트 모드를 켜고 <a href="/deals">딜 제안 관리</a>에서 한 건 보내 봅니다
-      <span class="hint">(문구·방 이름·첨부가 의도대로 나가는지)</span></li>
-    <li><b>당일</b> — 테스트 모드를 <b>끄고</b> 발송 프로그램을 켭니다</li>
+    <li><b>전날</b> — <a href="/setup">설정 화면</a>의 <b>시험 단추</b>로 한 통 보내 봅니다
+      <span class="hint">(문구·방 이름·첨부가 의도대로 나가는지 — 시험방으로만 갑니다)</span></li>
+    <li><b>당일</b> — 발송 프로그램을 켭니다</li>
     <li><b>당일</b> — 기업을 고르고 대상 담당자를 확인한 뒤 발송합니다</li>
     <li><b>발송 후</b> — <a href="/jobs">진행 화면</a>에서 실패 건을 재시도합니다</li>
     <li><b>이후</b> — <a href="/followups">딜 진행 관리</a>에 리마인드가 자동으로 잡힙니다</li>
   </ol>
   <p class="hint">
-    테스트 모드는 <code>.env</code> 의 <code>DEALFLOW_TEST_ROOM</code> 으로 켜고 끕니다.
-    값이 있으면 <b>모든 발송이 그 방 하나로만</b> 갑니다.
+    시험방은 <code>.env</code> 의 <code>DEALFLOW_TEST_ROOM</code> 으로 정합니다.
+    값이 있으면 <a href="/setup">설정 화면</a>에 <b>시험 단추</b>가 생기고,
+    <b>그 단추가 만든 발송만</b> 그 방으로 갑니다 —
+    딜 소개·IR 전달·리마인드는 값이 있든 없든 <b>각 담당자 방</b>으로 나갑니다.
+    그래서 회차 전에 값을 지울 필요가 없습니다.
   </p>
 </section>
 {% endblock %}

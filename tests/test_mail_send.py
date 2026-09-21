@@ -188,14 +188,19 @@ def test_failure_reason_is_kept(logged, db, seed, mail_on, monkeypatch):
     assert "비밀번호" in db.query(SendItem).filter_by(job_id=job_id).one().error
 
 
-def test_test_mode_marks_the_subject(logged, db, seed, mail_on, monkeypatch):
-    """메일은 방을 하나로 모을 수 없다 — 대신 제목에 표시를 남긴다."""
+def test_a_test_room_does_not_mark_the_subject(logged, db, seed, mail_on,
+                                               monkeypatch):
+    """★ 제목에 `[테스트]` 를 붙이지 않는다 — 붙으면 투자사가 그것을 읽는다.
+
+    붙이던 까닭은 카톡이 전부 시험방으로 모이는 동안 메일만 진짜로 나가서,
+    그 차이를 제목으로나마 알리자는 것이었다. 이제 카톡도 제 갈 곳으로 가므로
+    알릴 차이가 없다.
+    """
     from app import config
     from app.models import SendItem
-    from app.routers import deals
     from app.services import mail_sender
 
     monkeypatch.setattr(mail_sender, "send_job", lambda *a, **k: None)
-    monkeypatch.setattr(deals.config, "TEST_ROOM", "나와의 채팅")
+    monkeypatch.setattr(config, "TEST_ROOM", "나와의 채팅")
     job_id = _send(logged, seed, [seed["ok"]], subject="딜 소개").json()["job_id"]
-    assert db.query(SendItem).filter_by(job_id=job_id).one().subject == "[테스트] 딜 소개"
+    assert db.query(SendItem).filter_by(job_id=job_id).one().subject == "딜 소개"

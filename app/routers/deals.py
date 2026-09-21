@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy import exists, select
 from sqlalchemy.orm import Session
 
-from .. import clock, config
+from .. import clock
 from ..db import get_db
 from ..deps import get_current_user, now_iso
 from ..models import (
@@ -312,38 +312,25 @@ def _room_of(contact, linked: dict) -> str:
     return own or (linked.get(getattr(contact, "id", 0)) or {}).get("room", "")
 
 
-def _apply_test_room(contact, text: str, linked: Optional[dict] = None) -> tuple:
-    """테스트 모드면 발송 대상 방을 테스트 방 하나로 바꾼다.
-
-    config.TEST_ROOM 이 설정돼 있으면 실제 담당자 방으로 나가지 않고 전부
-    그 방으로만 간다. 실투자사 150명에게 잘못 나가는 사고를 막기 위한 장치.
-    누구에게 갈 문구였는지 알 수 있도록 머리말을 붙인다.
-    """
-    if not config.TEST_ROOM:
-        return _room_of(contact, linked or {}), text
-    # **직함도 투자사도 없는 줄이 지난다.** 스타트업 월간 발송의 상대는 기업
-    # 줄(`IrCompany`)이라 그 두 칸이 아예 없다 — 점으로 읽으면 여기서 터지고,
-    # 터지는 자리가 하필 **시험방으로 돌릴 때**라 실방으로 나갈 때는 멀쩡하다.
-    # 시험이 안 되는 안전장치는 없는 것과 같으므로 없는 칸을 빈 값으로 읽는다.
-    who = f"{contact.name} {getattr(contact, 'title', '') or ''}".strip()
-    firm_name = getattr(contact, "firm", "") or ""
-    firm = f" / {firm_name}" if firm_name else ""
-    banner = (f"[테스트 발송 → {who}{firm}]\n"
-              f"원래 방: {_room_of(contact, linked or {})}\n\n")
-    return config.TEST_ROOM, banner + text
-
-
-def _apply_test_room_to_parts(contact, parts: List[str],
-                              linked: Optional[dict] = None) -> List[str]:
-    """테스트 머리말은 첫 통에만 붙인다.
-
-    통마다 붙이면 테스트 방이 "[테스트 발송 → …]" 로 도배돼 정작 무엇이
-    나가는지 안 보인다.
-    """
-    if not parts or not config.TEST_ROOM:
-        return parts
-    _room, first = _apply_test_room(contact, parts[0], linked)
-    return [first] + parts[1:]
+# ── 시험방은 **`/setup` 의 시험 단추만** 쓴다  ★ ─────────────────────────────
+#
+# 예전에는 `config.TEST_ROOM` 이 비어 있지 않으면 **여기를 지나는 모든 발송**의
+# 방 이름을 그 한 방으로 바꿔 치웠다(`_apply_test_room`). 딜 소개도 IR 전달도
+# 리마인드도 소싱도 스타트업 월간도 전부. 그 장치의 전제는 "운영에는 시험방이
+# 없다" 였는데, 전제가 깨지는 순간 **딜 소개가 투자사 대신 시험방으로 갔다** —
+# 아무도 못 받았다는 것을 며칠 뒤에나 안다.
+#
+# 이제 가르는 것은 **잡 종류**다(`models.TEST_SEND_KIND`). 시험 발송은 만드는
+# 자리 자체가 다르고(`routers/setup.py: _queue_test_job`) 거기서만 방 이름이
+# 시험방으로 굳는다. 이 함수가 만드는 잡은 종류가 무엇이든 `TEST_SEND_KIND` 가
+# 아니므로, **여기서는 시험방을 아예 읽지 않는다.**
+#
+# 그래서 이 자리에 `config.TEST_ROOM` 이 다시 등장하면 안 된다. 되살아나는 것을
+# 막는 것은 `tests/test_test_room_scope.py` 다 — 갈래마다 한 줄씩 못박아 둔다.
+#
+# **리허설은 어떻게 하나.** 담당자 줄의 방 이름 자체를 시험방으로 두면 된다
+# (`scripts/rehearsal.py` 가 그렇게 만든다). 방을 바꿔 치우는 장치가 아니라
+# 받는 사람이 나인 것이고, 그 편이 화면에 보이는 것과 나가는 것이 같다.
 
 
 def _load_companies(db: Session, company_ids: List[int]) -> List[IrCompany]:
@@ -914,17 +901,17 @@ def create_send_list(
                                             include_opening=req.include_opening)
             text, parts = composed.text, list(composed.parts)
         if by_email:
-            # 메일은 테스트 방 치환이 없다 — 주소가 곧 대상이고, 테스트 모드는
-            # 카톡방을 하나로 모으는 장치다. 대신 제목에 표시를 남긴다.
+            # **제목에 `[테스트]` 를 붙이지 않는다.** 붙이던 까닭은 카톡이 전부
+            # 시험방으로 모이는 동안 메일만 진짜로 나가서, 그 차이를 제목으로나마
+            # 알리자는 것이었다. 이제 카톡도 제 갈 곳으로 가므로 그 차이 자체가
+            # 없다 — 남겨 두면 **투자사 메일함에 `[테스트]` 가 꽂힌다.**
             target = (contact.email or "").strip()
             message = text
             subject = _mail_subject(req, contact, companies)
-            if config.TEST_ROOM:
-                subject = f"[테스트] {subject}"
         else:
-            target, message = _apply_test_room(contact, text, linked)
-            # 머리말은 **첫 통에만**. 통마다 붙으면 테스트 방이 배너로 도배된다.
-            parts = _apply_test_room_to_parts(contact, parts, linked)
+            # 담당자의 방 그대로. 시험방은 이 길을 지나지 않는다(위 머리말).
+            target = _room_of(contact, linked)
+            message = text
             subject = None
 
         startup = req.mode == MODE_STARTUP
