@@ -80,9 +80,9 @@ def _month(offset: int = 0) -> int:
 def _url(sheet: str = LIST, show_all: bool = False) -> str:
     """그 명단의 화면.
 
-    `show_all` 은 **접힌 달까지 펴서** 본다(`?months=all`). 표에는 이번 달
-    칸만 서므로(`VISIBLE_MONTHS`), 시트에서 딸려 온 옛 칸까지 보려면 펴야
-    한다 — 거기가 꼬리말이 조용히 빠질 수 있는 자리다.
+    `show_all` 은 **접힌 달까지 펴서** 본다(`?months=all`). 표에는 최근 몇
+    달만 서므로(`monthly_columns.VISIBLE_MONTHS`), 시트에서 딸려 온 옛 칸까지
+    보려면 펴야 한다 — 거기가 꼬리말이 조용히 빠질 수 있는 자리다.
     """
     from urllib.parse import quote
 
