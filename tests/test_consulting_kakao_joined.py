@@ -556,8 +556,9 @@ def test_두_표를_잇는_길이_없다():
 def test_월별_카톡_칸은_여전히_명단_쪽에_있다():
     """세 번째 자리 — `스타트업` 명단이 **달마다** 세우는 `N월 카톡 연결`.
 
-    보기부터 다르다(여덟 가지). 이 칸(`O`/`X`)과 같은 것으로 읽고 한쪽을
-    지우면 그 달 기록이 통째로 사라진다.
+    **애초에 고르는 칸이 아니다** — 그 달에 무엇을 했는지 적는 여러 줄 메모다
+    (사용자가 `o,x` 에서 그렇게 되돌렸다). 이 칸(`O`/`X`)과 같은 것으로 읽고
+    한쪽을 지우면 그 달 기록이 통째로 사라진다.
 
     (`services/contact_columns.py` 는 다른 작업이 만지고 있는 파일이라 여기서
      **읽기만** 한다.)
@@ -565,8 +566,10 @@ def test_월별_카톡_칸은_여전히_명단_쪽에_있다():
     from app.services import contact_columns as cc
 
     assert "카톡 연결" in cc.STARTUP_LAYOUT.month_seed
-    assert len(cc.KAKAO_CHOICES.split(",")) > 2, \
-        "월별 칸의 보기가 `O`/`X` 로 줄었다면 두 자리가 합쳐진 것이다"
+    assert cc.STARTUP_LAYOUT.month_kind == "long", \
+        "월별 칸이 `O`/`X` 고르기로 돌아갔다면 두 자리가 합쳐진 것이다"
+    assert cc.STARTUP_LAYOUT.month_choices == "", \
+        "월별 칸에 보기가 붙었다면 두 자리가 합쳐진 것이다"
 
 
 def test_설명은_한_곳에만_적혀_있다():

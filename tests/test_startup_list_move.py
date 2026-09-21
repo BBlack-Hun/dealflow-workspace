@@ -199,7 +199,9 @@ def test_월별_칸을_새_화면에서_세우고_고치고_지운다(lists, db)
     assert r.status_code == 303
     assert r.headers["location"].startswith(home), (
         f"칸을 세운 뒤 남의 화면으로 갔습니다: {r.headers['location']}")
-    assert f"{_month()}월 카톡 연결" in _thead(lists.get(url).text)
+    # 머리글에는 배치가 정한 꼬리말이 붙는다(`Layout.month_label_suffix`) —
+    # 저장된 이름은 시트 그대로다(`tests/test_startup_month_memo.py`).
+    assert f"{_month()}월 카톡 연결(내용 기입)" in _thead(lists.get(url).text)
 
     col = db.query(ContactColumn).filter(
         ContactColumn.sheet == label,
@@ -273,7 +275,8 @@ def test_엑셀이_이_명단의_칸으로_나온다(lists):
     assert res.status_code == 200
     rows = sp.read_rows("x.xlsx", res.content, None)
     head = [str(c or "") for c in rows[0]]
-    for want in ("기업명", "성함", "이메일", "계약여부", f"{_month()}월 리마인드 문자"):
+    for want in ("기업명", "성함", "이메일", "계약여부",
+                 f"{_month()}월 리마인드 문자(내용 기입)"):
         assert want in head, f"엑셀에 `{want}` 칸이 없습니다: {head}"
     # 투자사 명함 칸이 딸려 오면 빈 칸만 스무 개다.
     assert "근무처 팩스" not in head
@@ -399,7 +402,8 @@ def test_계약까지_가는_세_칸이_흐름_안에서_나란히_선다(lists)
     assert head[at:at + 3] == want, head
     # 사람 정보 뒤이고, 월별 칸보다 앞이다.
     assert head.index("이메일") < at, head
-    assert head.index("계약서 수신여부") < head.index(f"{_month()}월 리마인드 문자")
+    assert head.index("계약서 수신여부") < head.index(
+        f"{_month()}월 리마인드 문자(내용 기입)")
 
 
 def test_계약여부_보기가_네_가지다(lists, db):
