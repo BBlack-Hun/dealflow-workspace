@@ -93,12 +93,19 @@
     </table>
   </div>
 
-  <form method="post" action="/todo/tasks" class="rule-form">
+  {# `data-no-enter-submit` — 엔터로는 추가되지 않는다. [추가] 를 눌러야
+     들어간다(weekly_tasks.js). 세부업무가 여러 줄 칸이 되면서 그 칸의 엔터는
+     줄바꿈이 됐는데, 같은 폼의 한 줄 칸(항목)에서 친 엔터는 여전히 폼을
+     보냈다 — 적다 만 줄이 그대로 들어간다. #}
+  <form method="post" action="/todo/tasks" class="rule-form" data-no-enter-submit>
     <input type="hidden" name="week" value="{{ week_start }}">
     <label class="field inline-field"><span>항목</span>
       <input type="text" name="category" placeholder="예: 메일" size="10"></label>
+    {# 위 표의 세부업무 칸은 **이미 여러 줄**이다(`td.cell.multi`) — 여기만 한
+       줄이면 적을 때는 못 나누고 고칠 때만 나눌 수 있다. 아래 반복 업무 폼과
+       같은 모양으로 둔다. #}
     <label class="field inline-field" style="flex:1"><span>세부업무</span>
-      <input type="text" name="title" required placeholder="예: 홍보 메일 발송 - 60개"></label>
+      <textarea name="title" rows="2" required placeholder="예: 홍보 메일 발송 - 60개"></textarea></label>
     <label class="field inline-field"><span>일시</span>
       <input type="date" name="due_date" value="{{ today_iso }}"></label>
     <button class="secondary-btn" type="submit">추가</button>
@@ -173,7 +180,22 @@
       {% for r in routines %}
       <tr data-id="{{ r.id }}">
         <td class="cell" data-field="category">{{ r.category }}</td>
-        <td class="cell" data-field="title">{{ r.title }}</td>
+        {# `multi` — 누르면 한 줄짜리 입력이 아니라 textarea 가 열린다
+           (inline_edit.js). 등록은 여러 줄인데 고칠 때 한 줄이면 **한 번
+           누르는 것만으로 줄바꿈이 사라진다.** 위 주간 업무 표의 같은 칸과
+           같은 표시이고, 투자컨설턴트 현황의 긴 글 칸도 이것이다.
+
+           **줄 높이는 내용만큼 자란다.** 글자는 `td.cell` 의 `white-space:
+           pre-wrap` 이 그대로 보여 주고(그래서 줄바꿈이 표에 보인다), 옆의
+           `td.cell.multi { max-height: 96px }` 은 표 칸에서는 브라우저가
+           안 읽는다 — 칸 높이를 내용으로 정하는 자리다. 여기서는 그 편이
+           맞다: 사람이 **일부러 나눠 적은 줄**을 접어 버리면 나눈 보람이
+           없다. 1440px 에서 세 줄짜리 칸이 74px 이다.
+
+           한줄소개처럼 두 줄로 접는 길(`.clamp2`)도 있지만 그건 306행짜리
+           표에서 **읽으라고 적어 둔 적 없는 긴 문장**을 줄이는 자리다. 이
+           표는 규칙 몇 줄이고, 그 몇 줄이 곧 할 일 목록이다. #}
+        <td class="cell multi" data-field="title">{{ r.title }}</td>
         <td class="muted">
           {# 주차가 비면 `매주` 다 — 이 칸이 생기기 전의 규칙 전부가 그 상태다. #}
           {{ nth_label(r.nth_weeks) }} · {{ weekday_label(r.weekdays) }}
@@ -204,12 +226,20 @@
   </div>
   {% else %}<p class="muted">반복 업무가 없습니다.</p>{% endif %}
 
-  <form method="post" action="/todo/routines" class="rule-form">
+  <form method="post" action="/todo/routines" class="rule-form" data-no-enter-submit>
     <input type="hidden" name="week" value="{{ week_start }}">
     <label class="field inline-field"><span>항목</span>
       <input type="text" name="category" placeholder="예: 메일" size="10"></label>
+    {# 세부업무는 **여러 줄**이다. 시트에 적던 반복 업무는 한 줄이 아니라
+       "홍보 메일 발송 / 수신거부 정리 / 회신 확인" 처럼 갈래가 있어서, 한 줄
+       칸에서는 그걸 나눌 수가 없었다. 담는 쪽은 그대로다 —
+       `WeeklyRoutine.title` 이 이미 `Text` 다(이주가 필요 없다).
+
+       **두 줄만 보인다(`rows="2"`).** 이 폼은 칸이 가로로 늘어선 한 줄이라
+       더 키우면 그 줄이 통째로 커져 위 표가 아래로 밀린다. 더 적을 때는
+       손으로 늘린다(`resize: vertical`). #}
     <label class="field inline-field" style="flex:1"><span>세부업무</span>
-      <input type="text" name="title" required placeholder="예: 홍보 메일 발송"></label>
+      <textarea name="title" rows="2" required placeholder="예: 홍보 메일 발송"></textarea></label>
     <label class="field inline-field"><span>요일</span>
       <span class="weekday-pick">
         {% for i, wd in [(0,'월'),(1,'화'),(2,'수'),(3,'목'),(4,'금')] %}

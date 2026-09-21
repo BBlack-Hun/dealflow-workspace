@@ -248,6 +248,14 @@ function makeEl(tag) {
         .forEach(function (c) { el.classList._on.add(c); });
     }
   });
+  // 브라우저가 부르는 태그 이름 — **대문자다**(`"INPUT"`). 화면 코드는 칸의
+  // 종류를 이것으로 가른다(`weekly_tasks.js` 의 엔터 막기, `contacts.js` 의
+  // 링크 지나치기). 없으면 그 코드가 검사에서만 `undefined` 를 보고 다른
+  // 길로 가서, 정작 봐야 할 갈림이 아무도 안 본 채로 남는다.
+  Object.defineProperty(el, "tagName", {
+    enumerable: true,
+    get() { return el.tag.toUpperCase(); }
+  });
   // 링크 주소. 브라우저는 성질과 속성을 서로 비춰 준다 — 안 이어 두면
   // `a.href = "…"` 로 건 주소를 `getAttribute("href")` 가 못 보고, 검사는
   // 서버가 그려 둔 옛 주소를 보며 통과한다.
@@ -312,6 +320,11 @@ function el(tag, attrs, kids) {
       // 화면 코드가 읽는 `input.value` 가 늘 빈 글자라, 번호를 실어 보내는
       // 자리(`parseInt(c.value)`)가 검사에서만 조용히 `NaN` 이 된다.
       if (k === "value") node.value = String(attrs[k]);
+      // `type` 도 같은 까닭으로 비춘다. 브라우저에서 `input.type` 은 늘 값이
+      // 있는데(안 적으면 `"text"`), 여기서 안 이어 두면 `undefined` 라 —
+      // 칸의 종류로 갈라지는 코드가 검사에서만 다른 길로 간다(`weekly_tasks.js`
+      // 의 엔터 막기는 단추 칸만 통과시킨다).
+      if (k === "type") node.type = String(attrs[k]);
     }
   });
   (kids || []).forEach(function (kid) { node.appendChild(kid); });

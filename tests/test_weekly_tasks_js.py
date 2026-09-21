@@ -16,6 +16,7 @@ import pytest
 JS_DIR = Path(__file__).resolve().parent / "js"
 STATUS_TEST = JS_DIR / "weekly_status_test.js"
 SORT_TEST = JS_DIR / "table_sort_test.js"
+ENTER_TEST = JS_DIR / "weekly_enter_submit_test.js"
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치 — 브라우저 로직 테스트 생략")
@@ -40,5 +41,19 @@ def test_the_header_click_sorting():
     """
     result = subprocess.run(
         [shutil.which("node"), str(SORT_TEST)], capture_output=True, text=True, timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치 — 브라우저 로직 테스트 생략")
+def test_enter_does_not_send_the_form():
+    """엔터로는 추가되지 않고 [추가] 를 눌러야 들어가는가.
+
+    막으면 안 되는 둘까지 같이 본다 — 여러 줄 칸의 줄바꿈과, 키보드로 누르는
+    [추가] 단추(체크상자의 스페이스도). 로컬에서는
+    `node tests/js/weekly_enter_submit_test.js` 로도 돈다.
+    """
+    result = subprocess.run(
+        [shutil.which("node"), str(ENTER_TEST)], capture_output=True, text=True, timeout=60,
     )
     assert result.returncode == 0, result.stdout + result.stderr

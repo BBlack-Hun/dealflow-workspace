@@ -861,7 +861,8 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
 .import-panel { margin-bottom: 16px; }
 .import-controls { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin: 10px 0; }
 .inline-field { flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
-.inline-field input, .inline-field select { padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; }
+.inline-field input, .inline-field select,
+.inline-field textarea { padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; }
 .inline-field input[type=number] { width: 90px; }
 /* 체크상자는 이름 **옆**에 선다. `.inline-field` 는 칸 이름을 위에 올리는
    규칙이라(팀 현황의 `줄 편집 허용` 같은 고르는 칸에) 그대로 두면 상자 하나가
@@ -1354,6 +1355,11 @@ td.cell.save-failed { background: #fdecec; }
 .rule-form .secondary-btn {
   height: var(--ctl-h); box-sizing: border-box; }
 .rule-form .secondary-btn { padding: 0 16px; }
+/* 여러 줄 칸(세부업무)만 그 높이에서 빠진다 — 한 값으로 묶으면 한 줄만 보여
+   여러 줄을 적는 칸이라는 것이 안 보인다. `rows="2"` 가 높이를 정하고, 그
+   아래로는 안 줄어든다. 더 적을 때는 손으로 늘린다. */
+.rule-form textarea { line-height: 1.45; resize: vertical;
+  min-height: var(--ctl-h); }
 .rule-form .weekday-pick { padding: 0; align-items: center; }
 /* 규칙 이름은 칸이 아니라 줄 제목이다 — 칸 높이에 맞춰 가운데에 둔다. */
 .rule-form .rule-label { font-size: 13px; font-weight: 600; min-width: 88px;
