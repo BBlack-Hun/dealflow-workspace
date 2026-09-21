@@ -30,7 +30,8 @@ from ..models import (AgentDevice, ConsultingRowGrant, User, WeeklyRoutine,
                       WeeklyTask)
 from ..services import auth as auth_svc
 from ..services import dashboard as dash
-from ..services import backup, edit_log, readiness, report, today, weekly
+from ..services import (backup, edit_log, notices, readiness, report, today,
+                        weekly)
 from ..ui import base_ctx
 
 router = APIRouter(tags=["dashboard"])
@@ -370,6 +371,10 @@ def team_page(request: Request, db: Session = Depends(get_db),
     # 관리자가 매일 여는 화면에 상태를 띄운다 — 되돌리기 화면까지 들어가야
     # 보인다면, 되돌릴 일이 생기고 나서야 백업이 없다는 것을 알게 된다.
     ctx["backup"] = backup.health()
+    # 공지 판. **올리는 자리가 여기인 이유**는 이 화면이 이미 `팀 전체에
+    # 영향을 주는 것을 관리자가 정하는 자리` 이기 때문이다(계정 · 권한 ·
+    # 자동 준비 스위치). 보는 자리는 밑틀이고, 여기는 적고 내리는 자리다.
+    ctx["notice_board"] = notices.board(db)
     return templates.TemplateResponse("team.html", ctx)
 
 

@@ -1,0 +1,41 @@
+{#
+  아직 확인하지 않은 공지. **밑틀이 부른다**(`base.html`) — 화면마다 심으면
+  새 화면이 하나 생겼을 때 그 화면만 조용히 아무 말이 없고, 공지는 하필
+  그 새 화면이 생겼다고 알리는 자리라 그것이 특히 나쁘다.
+
+  **스크립트가 없다.** 닫는 것도 평범한 폼 한 장이다 — 팀 현황의 수정칸을
+  주소로 여는 것과 같은 판단이다(`routers/dashboard.team_page`). 스크립트로
+  감췄다 폈다 하면 스크립트가 한 번 어긋나는 날 **판이 닫히지 않는 채로 모든
+  화면 위에 남는다.**
+
+  번호는 **지금 떠 있는 것만** 숨은 칸으로 들려 보낸다. 서버가 `켜져 있는 것
+  전부` 를 읽음으로 삼으면, 이 화면을 열어 둔 사이에 올라온 공지가 뜨지도
+  않고 읽음이 된다(`services/notices.mark_seen`).
+#}
+<section class="notice-card">
+  <h2 class="notice-head">
+    <span>📣 공지</span>
+    {% if notices|length > 1 %}<span class="notice-count">{{ notices|length }}건</span>{% endif %}
+  </h2>
+
+  <ul class="notice-list">
+    {% for n in notices %}
+    <li class="notice-item">
+      <p class="notice-title">{{ n.title }}</p>
+      {% if n.body %}<p class="notice-body">{{ n.body }}</p>{% endif %}
+      <p class="notice-meta">{{ n.when }} · {{ n.author }}</p>
+    </li>
+    {% endfor %}
+  </ul>
+
+  <form class="notice-foot" method="post" action="/notices/seen">
+    {% for n in notices %}
+    <input type="hidden" name="notice_id" value="{{ n.id }}">
+    {% endfor %}
+    {# 누른 뒤 돌아갈 화면. 판이 모든 화면에 서므로 서버는 어디서 눌렸는지를
+       이 값으로만 안다(`routers/notices._back` 가 밖으로 나가는 주소는 막는다). #}
+    <input type="hidden" name="back" value="{{ current_path }}">
+    <button class="primary-btn inline" type="submit">확인했습니다</button>
+    <span class="hint">확인하면 이 공지는 다시 뜨지 않습니다.</span>
+  </form>
+</section>
