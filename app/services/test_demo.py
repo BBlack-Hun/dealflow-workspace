@@ -125,8 +125,11 @@ def startup_remind(db: Session, user: Optional[User],
     직함은 진짜와 같이 **원문 그대로** 간다(가릴 이름이 아니다).
     """
     lines: List[ir_kakao.Line] = [
+        # 기업 자리를 **비운다** — 이 글은 기업 하나짜리라 진짜 자료로 지어도
+        # 줄에서 기업명이 빠진다(`ir_kakao.compose`). 여기서만 채우면 시험
+        # 자리에서 본 모양과 대표가 받는 모양이 갈린다.
         ir_kakao.Line(date=ir_kakao.day_label(f"{month}-{day:02d}"),
-                      company=COMPANY, firm=ir_mask.mask_firm(firm),
+                      company="", firm=ir_mask.mask_firm(firm),
                       person=ir_mask.mask_person(person), title=title)
         for day, firm, person, title in zip(DAYS, FIRMS, PEOPLE, TITLES)
     ]

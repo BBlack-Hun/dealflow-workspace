@@ -672,11 +672,15 @@ def test_an_empty_template_still_makes_the_message(logged_in, rehearsal, db,
 
     _job_id(_press(logged_in, REMIND, company_id=a_company.id))
     sent = _sole_item(db).message
-    assert sent.startswith(ir_kakao.HELLO)
-    assert ir_kakao.LEAD in sent
+    # **바뀐 검사다.** 보고서 모양이 되면서 맨 앞줄은 **제목**이고 인사는 그
+    # 아래다. 맺음말도 목록 아래로 내려갔다(`services/ir_kakao.py`).
+    assert sent.startswith(ir_kakao.DEFAULT_HEAD.splitlines()[0])
+    assert ir_kakao.HELLO in sent
+    assert sent.endswith(ir_kakao.DEFAULT_TAIL)
 
     html = logged_in.get(f"/startup/ir-kakao/{a_company.id}").text
-    assert "기본 머리말" in html, "문구틀이 빈 줄 모르고 지나간다"
+    # 화면 말도 바뀌었다 — 이제 문구틀이 제목까지 갖는다.
+    assert "기본 제목·머리말" in html, "문구틀이 빈 줄 모르고 지나간다"
     assert "/templates#startup_sms" in html, "고칠 자리로 가는 고리가 없다"
 
 
@@ -689,7 +693,8 @@ def test_a_whitespace_only_template_counts_as_empty(logged_in, rehearsal, db,
                            body="   \n  ", is_active=1))
     db.commit()
     _job_id(_press(logged_in, REMIND, company_id=a_company.id))
-    assert _sole_item(db).message.startswith(ir_kakao.HELLO)
+    # 맨 앞줄은 제목이다(위 검사와 같은 까닭).
+    assert ir_kakao.HELLO in _sole_item(db).message
 
 
 def test_a_company_with_no_requests_falls_back_to_demo(logged_in, rehearsal, db,

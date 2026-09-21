@@ -328,14 +328,70 @@ def test_달은_7월_꼴이다():
     assert ir_kakao.month_label("아무거나") == ""
 
 
-def test_머리말_세_줄이_실물_그대로다(db, seeded):
+def test_글이_보고서_모양이다(db, seeded):
+    """**바뀐 검사다.** 예전에는 머리말 세 줄이 실물 그대로였다
+    (`안녕하세요 대표님` / `{달} 말까지 {기업들}` / 맺음말).
+
+    사용자가 모양 몇 개를 보고 **보고서 느낌**을 골랐다 — 제목 두 줄, 요약 한
+    줄, 목록을 감싸는 구분선, 그리고 **목록 아래로 내려간 맺음말**이다.
+    """
     got = _msg(db, seeded)
-    head = got.text.splitlines()
-    assert head[0] == "안녕하세요 대표님"
-    assert head[1].startswith(f"{ir_kakao.month_label(seeded['month'])} 말까지 ")
-    assert head[1].endswith(COMPANY_A)
-    assert head[2] == ir_kakao.LEAD
-    assert head[3] == "", "머리말과 목록 사이에 빈 줄이 없다"
+    lines = got.text.splitlines()
+    assert lines[0] == "[01. 월간 IR 진행 현황]"
+    assert lines[1].endswith(ir_kakao.ym_label(seeded["month"]))
+    assert lines[2] == ""
+    assert lines[3] == ir_kakao.HELLO
+    assert lines[4].startswith(COMPANY_A)
+    assert lines[5] == ""
+    assert lines[6].startswith(ir_kakao.SUMMARY_MARK), "요약 줄이 없다"
+    assert lines[7] == ir_kakao.RULE, "목록 위 구분선이 없다"
+    # 목록 → 구분선 → 맺음말.
+    assert lines[8] == got.lines[0].text
+    assert lines[-2] == ir_kakao.RULE, "목록 아래 구분선이 없다"
+    assert lines[-1] == ir_kakao.DEFAULT_TAIL
+
+
+def test_맺음말은_목록_아래에_온다(db, seeded):
+    """사용자가 고른 모양이다 — 예전에는 머리말 셋째 줄이었다."""
+    got = _msg(db, seeded)
+    assert got.text.index(got.tail) > got.text.index(got.lines[-1].text)
+
+
+def test_요약이_목록과_셈이_맞는다(db, seeded):
+    """`12곳` 이라고 적힌 글에 줄이 15개면 대표는 셈이 안 맞는다고 읽는다.
+
+    줄은 **사람마다** 하나씩 선다(`ir_monthly`). 그래서 곳과 명이 갈릴 때는
+    둘 다 적는다.
+    """
+    from app.services import ir_monthly
+
+    got = _msg(db, seeded)
+    tally = ir_monthly.monthly_requests(
+        db, seeded["month"], cumulative=True).tally_of(seeded["a"].id)
+    assert tally.people == len(got.lines), "명이 줄 수와 다르다"
+    assert got.summary.startswith(f"{ir_kakao.SUMMARY_MARK} 누적 ")
+    assert ir_kakao.count_label(tally.firms, tally.people) in got.summary
+    # 신규는 **그 달에 처음** 물어본 것이다 — 지난 달 것은 안 센다.
+    assert f"{ir_kakao.month_label(seeded['month'])} 신규 " in got.summary
+    assert tally.new_people == 2 and tally.people == 3, "신규가 누적과 같다"
+
+
+def test_요약_숫자는_문구틀이_아니라_코드가_짓는다():
+    """사람이 손으로 적은 숫자는 목록과 갈린다 — 갈린 채로 대표에게 간다."""
+    from scripts import bootstrap
+
+    for kind, body in bootstrap.TEAM_TEMPLATES:
+        if kind.startswith("startup_sms"):
+            assert "누적" not in body and ir_kakao.SUMMARY_MARK not in body
+
+
+def test_시드_문구가_코드에_적힌_것과_같다():
+    """둘이 갈리면 **문구틀을 지운 사람만** 다른 글을 받는다."""
+    from scripts import bootstrap
+
+    seeds = dict(bootstrap.TEAM_TEMPLATES)
+    assert seeds[ir_kakao.KIND] == ir_kakao.DEFAULT_HEAD
+    assert seeds[ir_kakao.TAIL_KIND] == ir_kakao.DEFAULT_TAIL
 
 
 def test_줄은_날짜_기업_투자사_심사역_직함_차례다(db, seeded):
@@ -348,9 +404,12 @@ def test_줄은_날짜_기업_투자사_심사역_직함_차례다(db, seeded):
     """
     got = _msg(db, seeded)
     line = next(ln for ln in got.lines if ln.title)
-    assert line.text == (f"{line.date} {line.company} {line.firm} "
+    # **바뀐 줄이다.** ① 기업이 하나인 글에서는 기업 자리가 빈다(그 이름은
+    # 머리말에 있다). ② 자리 사이가 **두 칸**이다 — 사용자가 고른 모양이고,
+    # 자리가 자리로 보여야 훑어 읽힌다. 직함만 이름에 한 칸으로 붙는다.
+    assert line.text == (f"{line.date}  {line.firm}  "
                          f"{line.person} {line.title}")
-    assert line.company == COMPANY_A
+    assert line.company == "", "기업이 하나인데 줄에 기업명이 또 적혔다"
 
 
 def test_직함이_빈_심사역은_이름에서_줄이_끝난다(db, seeded):
@@ -369,9 +428,11 @@ def test_직함이_빈_심사역은_이름에서_줄이_끝난다(db, seeded):
     # (`…인베스트먼트`)이 남으므로 `mask_company` 로는 줄을 못 찾는다.
     bare = next(ln for ln in got.lines if ln.firm == ir_mask.mask_firm(FIRM_OLD))
     assert bare.title == ""
-    assert bare.text == f"{bare.date} {bare.company} {bare.firm} {bare.person}"
+    assert bare.text == f"{bare.date}  {bare.firm}  {bare.person}"
     assert not bare.text.endswith(" "), "빈 직함 자리가 공백으로 남았다"
-    assert "  " not in bare.text, "줄 가운데가 두 칸 벌어졌다"
+    # 자리 사이는 두 칸이다(사용자가 고른 모양) — 빈 자리가 남아 **세 칸**이
+    # 벌어지면 그것이 고장이다.
+    assert "   " not in bare.text, "빈 자리가 공백으로 남았다"
     assert "담당" not in got.text, "없는 직함을 지어냈다"
 
 
@@ -455,6 +516,22 @@ def test_줄마다_어느_기업_몫인지_적힌다(db, seeded):
         assert ln.company in ln.text
 
 
+def test_기업이_여럿이면_같은_투자사를_두_번_세지_않는다(db, seeded):
+    """한 투자사가 두 기업에 물어봤으면 그것은 **한 곳**이다 — 기업별로 세어
+    더하면 `곳` 이 부풀고, 부푼 수가 그대로 대표에게 간다."""
+    from app.services import ir_monthly
+
+    data = ir_monthly.monthly_requests(db, seeded["month"], cumulative=True)
+    a, b = seeded["a"].id, seeded["b"].id
+    both = data.tally_of(a, b)
+    assert both.people == len(data.of(a)) + len(data.of(b)), "명이 줄 수와 다르다"
+    assert both.firms < data.tally_of(a).firms + data.tally_of(b).firms, \
+        "두 기업에 물어본 한 곳이 두 곳으로 세어졌다"
+
+    got = ir_kakao.compose(db, None, [seeded["a"], seeded["b"]], seeded["month"])
+    assert ir_kakao.count_label(both.firms, both.people) in got.summary
+
+
 def test_화면은_기업을_묶지_않는다(logged_in, db, seeded):
     """한 대표가 여러 기업을 갖는지 앱이 알 길이 없다(까닭은 routers/startup.py).
     엉뚱한 대표에게 남의 회사 목록이 가는 것이 이 일의 유일한 되돌릴 수 없는
@@ -500,6 +577,97 @@ def test_나눌_자리는_글자_수로_정한다():
     short = ir_kakao.pack("머리말", ["5/1 가 나***"] * 300)
     long_ = ir_kakao.pack("머리말", ["5/1 아주아주긴기업이름주식회사 나***"] * 300)
     assert len(long_) > len(short), "줄 수만 보고 잘랐다"
+
+
+# ── 7-2. 맺음말 · 옛 문구틀  ★ ──────────────────────────────────────────────
+#
+# 맺음말이 **목록 아래**로 내려갔다(사용자가 고른 보고서 모양). 문구틀에
+# `{목록}` 같은 자리를 내주지 않고 **문구를 둘로 나눠서** 그렇게 했다 —
+# 목록을 어디에 놓을지는 여전히 코드만 안다(`services/ir_kakao.py` 머리말).
+
+
+def _template(db, kind, body, user_id=None):
+    from app.models import MessageTemplate
+
+    db.add(MessageTemplate(user_id=user_id, kind=kind, name="시험", body=body,
+                           is_active=1))
+    db.commit()
+
+
+def test_맺음말_문구를_고치면_글이_바뀐다(db, seeded, users):
+    _template(db, ir_kakao.TAIL_KIND, "맺음말을 팀이 고쳤습니다.")
+    got = _msg(db, seeded, user=users["u1"])
+    assert got.text.endswith("맺음말을 팀이 고쳤습니다.")
+    assert got.tail_from_template
+
+
+def test_문구틀에_목록_자리를_내주지_않았다(db, seeded, users):
+    """`{목록}` 을 주면 같은 문구에 **안 가려진** 자리도 쓸 수 있게 된다 —
+    가리는 일이 문구를 고치는 사람 손으로 넘어간다. 맺음말을 목록 아래로
+    내리면서도 그 선은 넘지 않았다(문구를 **둘로 나눴다**).
+    """
+    _template(db, ir_kakao.KIND, f"{ir_kakao.HELLO}\n{{목록}}")
+    got = _msg(db, seeded, user=users["u1"])
+    head = got.text.split(ir_kakao.RULE)[0]
+    for line in got.lines:
+        assert line.text not in head, "문구틀 자리에 목록이 들어갔다"
+        assert got.text.count(line.text) == 1, "목록이 두 번 적혔다"
+
+    from app.routers import templates_crud
+
+    # 화면이 안내하는 자리에도 없다 — 안내에 뜨면 사람이 쓴다.
+    assert "{목록}" not in str(templates_crud.VARIABLES)
+
+
+def test_옛_문구틀의_맺음말이_목록_아래로_내려간다(db, seeded, users):
+    """운영 DB 의 `startup_sms` 에는 맺음말이 **머리말 셋째 줄**로 들어 있다.
+    그대로 두면 같은 말이 목록 위에 한 번, 아래에 또 한 번 적힌다."""
+    old_body = "\n".join([ir_kakao.HELLO,
+                          f"{ir_kakao.MONTH_TOKEN} 말까지 "
+                          f"{ir_kakao.COMPANIES_TOKEN}",
+                          ir_kakao.LEAD])
+    _template(db, ir_kakao.KIND, old_body)
+    got = _msg(db, seeded, user=users["u1"])
+    assert got.text.count(ir_kakao.LEAD) == 1, "맺음말이 두 번 적혔다"
+    assert got.text.endswith(ir_kakao.LEAD), "맺음말이 목록 아래로 안 내려갔다"
+    assert not got.tail_from_template, "내려온 줄인데 문구틀에서 온 것으로 적혔다"
+
+
+def test_팀이_고쳐_쓴_문장은_안_옮긴다(db, seeded, users):
+    """저장소가 시드로 내보냈던 문장과 **글자까지 같을 때만** 옮긴다.
+    남의 문장을 짐작해서 옮기기 시작하면 무엇이 나갈지 아무도 모른다."""
+    mine = "우리 팀이 고쳐 쓴 맺음말입니다."
+    _template(db, ir_kakao.KIND, f"{ir_kakao.HELLO}\n{mine}")
+    got = _msg(db, seeded, user=users["u1"])
+    assert got.text.splitlines()[1] == mine, "고쳐 쓴 문장을 코드가 옮겼다"
+
+
+def test_맺음말은_마지막_통에_붙고_잘리지_않는다():
+    """맺음말은 목록 아래에 오는 문장이라 첫 통에 붙으면 글이 거기서 끝난
+    것처럼 읽힌다. 그리고 **잘리면 안 된다** — 잘린 자리가 마지막 문장이다."""
+    lines = [f"05/{n % 28 + 1}  가***  홍*** 심사역" for n in range(400)]
+    tail = "맺음말 한 줄입니다."
+    parts = ir_kakao.pack("머리말", lines, tail)
+    assert len(parts) > 1
+    assert parts[-1].endswith(tail)
+    assert all(tail not in p for p in parts[:-1]), "맺음말이 가운데 통에 붙었다"
+    assert all(len(p) <= ir_kakao.LIMIT for p in parts), "한 통이 한계를 넘었다"
+
+
+def test_자리가_없으면_맺음말만_한_통으로_간다():
+    """넘치는 채로 붙이면 카톡에서 뒤가 잘려 나간다."""
+    tail = "맺음말은 길다"
+    parts = ir_kakao.pack("머리말", ["가" * 10] * 3, tail, limit=40)
+    assert parts[-1] == tail, "자리가 없는데 우겨 넣었다"
+    assert all(len(p) <= 40 for p in parts)
+
+
+def test_구분선이_목록을_감싼다(db, seeded):
+    got = _msg(db, seeded)
+    body = got.text.split(ir_kakao.RULE)
+    assert len(body) == 3, "구분선이 둘이 아니다"
+    for line in got.lines:
+        assert line.text in body[1], "줄이 구분선 밖으로 나갔다"
 
 
 # ── 8. 화면 ─────────────────────────────────────────────────────────────────

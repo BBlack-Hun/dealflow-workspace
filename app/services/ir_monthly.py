@@ -89,6 +89,29 @@ class Requester:
 
 
 @dataclass(frozen=True)
+class Tally:
+    """한 기업(또는 여러 기업)의 요청 **수** — 글 머리에 적히는 요약이다.
+
+    ## 왜 `곳` 과 `명` 이 둘 다 있나
+
+    줄은 **사람마다 하나씩** 선다(`monthly_requests` 의 묶는 규칙 — 한 투자사에서
+    둘이 물어보면 두 건이다). 그래서 `12곳` 이라고만 적으면 줄이 15개인 글이
+    나가고, 받는 대표는 **셈이 안 맞는다**고 읽는다. 둘이 다를 때는 둘 다 적는다.
+
+    ## 곳(투자사) 수를 **가려진 이름으로 세지 않는다**
+
+    가려진 값은 서로 다른 두 곳이 같아질 수 있다(`가***` 은 여럿이다). 그것으로
+    세면 조용히 적게 센다. 그래서 세는 일은 **원래 이름을 아는 이 파일**에서
+    하고, 밖으로는 수만 나간다.
+    """
+
+    firms: int        # 곳 — 서로 다른 투자사 수
+    people: int       # 명 — 줄 수와 같다
+    new_firms: int    # 그 달에 **처음** 들어온 곳
+    new_people: int   # 그 달에 처음 들어온 명
+
+
+@dataclass(frozen=True)
 class Skip:
     label: str
     count: int
@@ -109,6 +132,12 @@ class MonthlyRequests:
     by_company: Dict[int, List[Requester]] = field(default_factory=dict)
     # 어느 기업 몫인지 몰라 어디에도 못 붙인 요청들.
     skipped: List[Skip] = field(default_factory=list)
+    # {기업 id: [(투자사 묶음키, 그 달에 처음인가)]} — 요약을 세는 재료다.
+    #
+    # **묶음키는 이름이 아니다.** 이 호출 안에서만 뜻이 있는 번호라, 새어도
+    # 어느 투자사인지 알 수 없다. 이름을 담아 두면 화면이 그것을 그리는 날
+    # 통째로 샌다(`Requester` 와 같은 까닭).
+    keys_by_company: Dict[int, List[Tuple[str, bool]]] = field(default_factory=dict)
 
     @property
     def skipped_count(self) -> int:
@@ -116,6 +145,18 @@ class MonthlyRequests:
 
     def of(self, company_id: int) -> List[Requester]:
         return self.by_company.get(company_id, [])
+
+    def tally_of(self, *company_ids: int) -> Tally:
+        """기업 하나(또는 여럿)의 요약 수.
+
+        **여럿을 그냥 더하지 않는다** — 한 투자사가 두 기업에 물어봤으면 그것은
+        한 곳이다. 더하면 `곳` 이 부풀고, 부푼 수가 대표에게 그대로 나간다.
+        """
+        rows = [pair for cid in company_ids
+                for pair in self.keys_by_company.get(cid, [])]
+        fresh = [key for key, is_new in rows if is_new]
+        return Tally(firms=len({key for key, _ in rows}), people=len(rows),
+                     new_firms=len(set(fresh)), new_people=len(fresh))
 
 
 # ── 기업명 맞추기 ────────────────────────────────────────────────────────────
@@ -234,6 +275,19 @@ def monthly_requests(db: Session, month: str,
     def skip(reason: str, count: int = 1) -> None:
         skips[reason] = skips.get(reason, 0) + count
 
+    # {심사역 id: 투자사 묶음키}. **이름이 아니라 번호**다(위 `keys_by_company`).
+    # 같은 이름이면 같은 번호가 되어야 곳 수가 맞으므로, 법인 표기를 뗀 이름으로
+    # 맞춘다(`normalize_company_name` — 가리는 자리가 쓰는 것과 같은 규칙).
+    firm_keys: Dict[str, str] = {}
+    key_of_contact: Dict[int, str] = {}
+
+    def firm_key(contact: VcContact) -> str:
+        name = normalize_company_name(contact.firm or "")
+        # 투자사명이 비어 있으면 **한 곳으로 묶지 않는다** — 빈 값끼리 묶으면
+        # 서로 다른 곳이 한 곳으로 줄어든다.
+        seed = name or f"(빈칸 {contact.id})"
+        return firm_keys.setdefault(seed, str(len(firm_keys)))
+
     # {(심사역 id, 기업 id): Requester} — 겹치면 **먼저 온 날**을 남긴다.
     #
     # 묶는 자리가 투자사가 아니라 **사람**인 까닭: 같은 투자사에서 두 심사역이
@@ -254,6 +308,7 @@ def monthly_requests(db: Session, month: str,
                         person=ir_mask.mask_person(contact.name),
                         date=(date or "")[:10], source=source,
                         title=(contact.title or "").strip())
+        key_of_contact.setdefault(contact.id, firm_key(contact))
         key = (contact.id, company_id)
         old = picked.get(key)
         if old is None or (row.date and (not old.date or row.date < old.date)):
@@ -308,6 +363,15 @@ def monthly_requests(db: Session, month: str,
         rows_.sort(key=lambda r: (r.date or "9999", r.firm, r.person))
 
     out.by_company = by_company
+    # 요약을 셀 재료. **그 달에 처음인가**는 남아 있는 날짜로 본다 — 겹친 줄은
+    # 먼저 온 날을 남기므로(위 참고), 지난 달에 물어본 사람은 이번 달에 또
+    # 물어봐도 신규가 아니다. 날짜를 모르는 줄은 신규로 세지 않는다.
+    keys: Dict[int, List[Tuple[str, bool]]] = {}
+    for (contact_id, company_id), row in picked.items():
+        keys.setdefault(company_id, []).append(
+            (key_of_contact.get(contact_id, str(contact_id)),
+             bool(row.date) and row.date[:7] == month))
+    out.keys_by_company = keys
     # 많은 것부터 — 무엇을 먼저 손봐야 하는지가 위에 온다.
     out.skipped = [Skip(label=label, count=count)
                    for label, count in sorted(skips.items(), key=lambda kv: -kv[1])]
