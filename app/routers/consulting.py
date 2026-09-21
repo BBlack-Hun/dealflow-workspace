@@ -28,6 +28,10 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import clock
+# 저장된 시각 글자를 **화면 꼴로 줄이는 자리는 여기 한 곳**이다
+# (`app/clock.py` 의 `stamp_text`). 화면이나 브라우저에서 다시 자르면 같은
+# 값이 두 꼴로 보인다 — IR 기업 현황·스타트업 명단이 같은 함수를 부른다.
+from ..clock import stamp_text
 from ..db import get_db
 from ..deps import (NoConsulting, can_open, get_current_user,
                     may_view_all_consulting, may_view_consulting, templates)
@@ -741,6 +745,48 @@ def _notes(company: ConsultingCompany) -> Dict[str, str]:
         return {}
 
 
+# 월별 리마인드 칸의 **수정한 날짜** 열쇠 앞머리. 모델 칸 이름(`deal_pitch`)과
+# 섞이지 않게 앞에 붙인다 — 열 id 는 숫자라 그냥 두면 `12` 가 되고, 나중에
+# `12` 라는 이름의 모델 칸이 생기지 않는다는 보장이 없다.
+#
+# **여기 한 곳에서 만든다.** 적는 쪽(`_assign`)과 읽는 쪽(`company_rows`)과
+# 화면이 같은 글자를 써야 하는데, 세 곳에 적으면 한쪽만 고쳐질 때 날짜가
+# 조용히 안 뜬다(값은 멀쩡히 들어 있는데 화면만 빈다).
+NOTE_STAMP = "note:"
+
+
+def note_stamp_key(column_id) -> str:
+    return f"{NOTE_STAMP}{column_id}"
+
+
+def _stamps(company: ConsultingCompany) -> Dict[str, str]:
+    """이 줄의 **칸마다 마지막으로 바뀐 시각.** 깨진 값은 빈 dict 다.
+
+    `_notes` 와 같은 모양이다 — 읽다 터지면 표 한 줄이 아니라 화면 전체가
+    안 뜬다. 날짜가 안 보이는 것과 표가 안 열리는 것은 무게가 다르다.
+    """
+    try:
+        return json.loads(company.field_stamps or "{}")
+    except (TypeError, ValueError):
+        return {}
+
+
+def shown_stamps(company: ConsultingCompany) -> Dict[str, str]:
+    """화면에 그대로 그릴 수 있는 꼴 — `{"deal_pitch": "2026-09-21 14:30", …}`.
+
+    **줄이는 자리는 `clock.stamp_text` 한 곳이다.** 화면이나 브라우저에서 다시
+    자르면 같은 값이 두 꼴로 보인다(`routers/companies.py` ·
+    `routers/contacts.py` 가 같은 함수를 부른다). 초를 뺄지 말지도 저기서
+    정한다 — 여기에 날짜 만드는 셈을 적지 않는다.
+
+    빈 값은 **아예 안 싣는다.** 화면이 `{% if %}` 하나로 잔글씨를 세울지 말지
+    정할 수 있어야 하는데, 빈 글자를 실어 두면 모든 줄에 빈 `<div>` 가 서서
+    344줄짜리 표가 통째로 한 줄만큼 키가 커진다.
+    """
+    return {key: text for key, value in _stamps(company).items()
+            if (text := stamp_text(value))}
+
+
 def company_rows(db: Session, user: User, sheet: str = "",
                  owner: int = 0) -> List[dict]:
     cols = _columns(db, sheet)
@@ -858,6 +904,15 @@ def company_rows(db: Session, user: User, sheet: str = "",
             #  `models.ConsultingCompany.kakao_joined` 주석 참고.)
             "kakao_joined": c.kakao_joined or "",
             "notes": seen,
+            # **칸마다 마지막으로 바뀐 시각** — 화면이 값 밑에 잔글씨로 세운다.
+            # 줄에 붙어 있는 값이라 **조회가 한 번도 안 는다**(344줄짜리 표에서
+            # 줄마다 로그를 캐물으면 344번 나간다 — 그래서 `edit_logs` 가 아니라
+            # 줄에 담았다. 왜 저기서 못 끌어오는지는
+            # `models.ConsultingCompany.field_stamps` 주석에 한 곳으로 적혀 있다).
+            #
+            # 접힌 달의 것도 들어 있다 — 화면이 세우는 것은 펴 둔 달뿐이지만,
+            # 여기서 골라내면 `모두 펴기` 로 열었을 때 그 달만 날짜가 빈다.
+            "stamps": shown_stamps(c),
             # 어느 달이든 기록이 있는가 — `연락 기록 없음` 칩이 보는 값이다.
             "contacted": status.contacted(seen.values()),
             # 지난달에 연락했는가. 이번 달은 아직 진행 중이라 세어 봐야
@@ -1024,6 +1079,12 @@ def consulting_page(request: Request, db: Session = Depends(get_db),
         # 부르는 말은 `routers/companies.py` 의 `CONTRACT_LABELS` 한 곳이고,
         # 여기 적으면 그 말을 고치는 날 두 화면이 갈린다
         # (`CONTRACT_DONE_CHOICES` 주석 참고).
+        # 월별 리마인드 칸의 **수정한 날짜** 열쇠를 만드는 함수. 화면이
+        # `'note:' ~ col.id` 라고 적어 두면 앞머리를 고치는 날 그 자리만 옛
+        # 열쇠를 찾아 **날짜가 조용히 빈다**(값은 멀쩡히 들어 있는데 화면만
+        # 비어, 안 찍힌 것인지 못 읽은 것인지 알 수가 없다). 한 곳은
+        # `note_stamp_key` 다.
+        "note_stamp_key": note_stamp_key,
         "contract_done_choices": ",".join(CONTRACT_DONE_CHOICES),
         # `미팅종류` 의 보기. 위 칸과 **같은 방식**이다 — 화면에 글자를 적어
         # 두지 않는다. 한 곳은 `MEETING_KIND_CHOICES` 다.
@@ -1108,17 +1169,62 @@ class CompanyIn(BaseModel):
 
 
 def _assign(company: ConsultingCompany, body: CompanyIn) -> None:
+    """화면이 보낸 값을 줄에 넣고, **바뀐 칸에 시각을 찍는다.**
+
+    ## 왜 여기서 찍나
+
+    이 표에 값이 들어오는 길이 셋이다 — 줄 세우기(`create_company`) · 칸 고치기
+    (`update_company`) · 여러 줄 보내기(`send_to_startup` 은 읽기만 한다).
+    앞의 둘이 **이 함수 하나를 지난다.** 라우터마다 찍으면 한 곳은 반드시
+    빠지고, 빠진 길로 들어온 값은 날짜 없이 바뀐다 — 화면은 "안 고쳤다" 고
+    읽는다(이 저장소가 반복해 당한 부류다: 목록과 라우터가 갈리는 사고).
+
+    시트 올리기(`apply_rows`)는 이 함수를 안 지난다. **일부러 그렇다** —
+    통째로 갈아끼우는 길이라 한 번에 수백 칸이 같은 시각으로 찍히고, 그러면
+    `수정한 날짜` 가 "누가 언제 이 칸을 챙겼나" 가 아니라 "마지막으로 시트를
+    언제 올렸나" 가 된다. 물음이 다르다.
+
+    ## 바뀐 칸만
+
+    값이 그대로면 안 찍는다. 안 그러면 칸을 눌렀다 아무것도 안 고치고 나온
+    것도 `고쳤다` 가 되고, 같은 값을 다시 저장하는 길(브라우저는 안 보내지만
+    API 는 열려 있다)로 날짜를 얼마든지 밀 수 있다.
+
+    ## 어떤 칸이든 찍는다
+
+    화면이 지금 날짜를 보여 주는 칸은 셋뿐이지만(`딜 소개문구` ·
+    `카톡 연결 여부` · 월별 리마인드), 목록을 여기 적어 두지 않는다. 적어 두면
+    **그 목록이 낡는다** — 다음에 네 번째 칸을 보여 달라는 날 여기를 같이
+    고쳐야 하는 것을 아무도 모른다. 무엇을 보여 줄지는 화면이 정한다.
+    """
     data = body.model_dump(exclude_unset=True)
     notes = data.pop("notes", None)
+    at = clock.now_iso()
+    stamps = _stamps(company)
+    touched = False
     for field, value in data.items():
-        setattr(company, field,
-                value.strip() if isinstance(value, str) else value)
+        after = value.strip() if isinstance(value, str) else value
+        if after != getattr(company, field, None):
+            setattr(company, field, after)
+            stamps[field] = at
+            touched = True
     if notes is not None:
         # 통째로 덮지 않고 병합한다 — 화면이 보내지 않은 달의 기록이 사라지면 안 된다.
         merged = _notes(company)
-        merged.update({k: (v or "").strip() for k, v in notes.items()})
+        for key, raw in notes.items():
+            value = (raw or "").strip()
+            if merged.get(key, "") == value:
+                continue
+            merged[key] = value
+            # **달마다 제 날짜다.** 석 달치가 `notes` 한 칸에 들어 있어도
+            # 시각은 열 id 별로 따로 찍는다 — 한 개만 찍으면 9월 칸을 고쳤는데
+            # 7월 칸 밑의 날짜까지 같이 바뀌어 보인다.
+            stamps[note_stamp_key(key)] = at
+            touched = True
         company.notes = json.dumps({k: v for k, v in merged.items() if v},
                                    ensure_ascii=False)
+    if touched:
+        company.field_stamps = json.dumps(stamps, ensure_ascii=False)
 
 
 @router.get("/api/consulting/{company_id}")
@@ -1176,7 +1282,18 @@ def update_company(company_id: int, body: CompanyIn,
     company = owned(db, ConsultingCompany, company_id, user, "기업")
     _assign(company, body)
     db.commit()
-    return {"id": company.id}
+    # **고친 시각을 응답에 싣는다.** 표의 잔글씨가 이것으로 그 자리에서
+    # 바뀐다 — 새로고침해야 날짜가 따라오면, 방금 고친 칸 밑에 **옛 날짜**가
+    # 그대로 적혀 있어 화면이 거짓말을 한다(IR 기업 현황·스타트업 명단이 같은
+    # 이유로 같은 것을 돌려준다 — `routers/companies.py` · `routers/contacts.py`).
+    #
+    # 꼴을 여기서 정하지 않는다 — `shown_stamps` 가 `clock.stamp_text` 한 곳을
+    # 지난다. 브라우저가 다시 자르면 같은 값이 두 꼴로 보인다.
+    #
+    # **줄 전체를 돌려주지 않는다.** 그러면 `company_rows` 를 한 번 더 도는데,
+    # 거기에는 이 응답에 필요 없는 조회가 둘 붙어 있다(줄 편집 허용 ·
+    # 스타트업 명단에 이미 있는 기업).
+    return {"id": company.id, "stamps": shown_stamps(company)}
 
 
 @router.delete("/api/consulting/{company_id}")

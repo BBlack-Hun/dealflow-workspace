@@ -1,5 +1,38 @@
 {% extends "base.html" %}
 
+{#
+  **값 아래 잔글씨로 `수정한 날짜`.** 이 표가 값과 곁말을 한 칸에 세우는
+  관용구는 `cell-main`/`cell-sub` 하나다(`app.css` · `report.html` ·
+  `todo.html` · `sourcing.html` 이 같은 이름을 쓴다).
+
+  ## 왜 칸을 따로 안 세우나
+
+  사용자가 부른 칸이 셋인데 그중 `당월 리마인드` 가 **석 달치**라, 날짜 칸을
+  세우면 한 번에 다섯 개가 는다. 이 표는 이미 2,900px 이라 한 화면에 안
+  들어가고, 달이 바뀔 때마다 날짜 칸이 하나씩 더 늘어야 한다 — 월별 리마인드를
+  칸이 아니라 JSON 으로 둔 이유와 같다.
+
+  ## 값이 `.cell-main` 안으로 들어간다 — **편집기가 그것만 읽는다**
+
+  이 표는 칸을 눌러 그 자리에서 고치는데(`consulting.js` 의 `startEdit`),
+  전에는 `td` 의 글자를 통째로 읽었다. 잔글씨를 같은 `td` 에 두면 **날짜까지
+  값으로 딸려 들어가** 저장된다. 그래서 값을 `.cell-main` 으로 감싸고, 편집기는
+  그 상자 하나만 읽고 쓴다(`valueBox`).
+
+  ## 빈 날짜는 `<div>` 자체를 안 세운다
+
+  344줄짜리 표라, 빈 잔글씨 상자를 늘 세우면 **모든 줄의 키가 한 줄만큼**
+  올라간다(이 저장소가 넓은 표의 위아래 여백을 6→4px 로 깎아 되찾은 그
+  자리다 — `app.css`). 날짜가 생긴 뒤에는 브라우저가 그 자리에서 만든다
+  (`consulting.js` 의 `showStamp`).
+
+  `title` 을 단다 — 잔글씨만 보고는 이것이 **그 칸**의 날짜인지 줄 전체의
+  날짜인지 알 수 없다(줄 전체를 쓰면 틀린다는 것이 이 요청의 핵심이다).
+#}
+{%- macro stamped(value, at) -%}
+<div class="cell-main">{{ value }}</div>{% if at %}<div class="cell-sub muted" title="이 칸을 마지막으로 고친 시각">{{ at }}</div>{% endif %}
+{%- endmacro -%}
+
 {% block content %}
 <header class="page-head">
   <h1>{{ page_title }}</h1>
@@ -708,7 +741,12 @@
            행 값이 없다. 고친 글은 `refreshRowFlags` 가 `td.cell` 을 이어 붙일
            때 `data-search` 에 그대로 들어가므로 검색은 그 자리에서 따라간다. #}
         {% if is_startup_sheet %}
-        <td class="cell multi" data-field="deal_pitch">{{ r.deal_pitch }}</td>
+        {# 값 아래 **이 칸을 마지막으로 고친 시각**(사용자 요청). 줄 전체의
+           `updated_at` 을 쓰면 **틀린다** — 카톡 칸만 고쳐도 여기 날짜가 같이
+           바뀌어 보인다. 칸마다 따로 찍는 자리는 `routers/consulting.py` 의
+           `_assign` 이고, 꼴을 정하는 자리는 `app/clock.py` 의 `stamp_text`
+           한 곳이다(위 `stamped` 매크로 주석 참고). #}
+        <td class="cell multi" data-field="deal_pitch">{{- stamped(r.deal_pitch, r.stamps.get('deal_pitch')) -}}</td>
         {# 카톡방이 연결됐는가. 바로 위 칸과 **글자 하나까지 같은 방식**이다 —
            `O`/`X` 를 골라 넣고(consulting.js 의 `addChoices`) 빈칸으로 되돌릴
            수 있다. 손으로 적게 두면 같은 뜻이 `O`·`o`·`ㅇ`·`○` 로 갈려 두
@@ -718,7 +756,7 @@
            `data-filter-key` 가 없으면 여기서 고쳐도 행 값이 그대로라
            **채워 넣어도 필터는 옛 목록 그대로**다. #}
         <td class="cell" data-field="kakao_joined" data-filter-key="joined"
-            data-choices="O,X">{{ r.kakao_joined }}</td>
+            data-choices="O,X">{{- stamped(r.kakao_joined, r.stamps.get('kakao_joined')) -}}</td>
         {% endif %}
         {% endif %}
         {% for col in columns %}
@@ -726,8 +764,13 @@
            센다. 없으면 브라우저가 어느 칸이 지난달인지 알 수 없어, 여기를
            채워도 그 숫자가 안 줄어든다(열 이름이 자유 문장이라 브라우저가
            달을 읽게 두면 규칙이 또 한 벌 생긴다). #}
+        {# **달마다 제 날짜다.** 석 달치가 서므로 날짜도 석 달치가 선다 —
+           한 개만 붙이면 9월 칸을 고쳤는데 7월 칸 밑의 날짜까지 같이 바뀐
+           것처럼 보인다. 열쇠를 만드는 자리는 `routers/consulting.py` 의
+           `note_stamp_key` 한 곳이다(여기서 `'note:' ~ col.id` 라고 적어 두면
+           앞머리를 고치는 날 이 자리만 옛 열쇠를 찾아 날짜가 조용히 빈다). #}
         <td class="cell multi" data-note="{{ col.id }}"
-            {% if counts.prev_month_shown and col.label == counts.prev_month_label %}data-prev-note="1"{% endif %}>{{ r.notes.get(col.id|string, '') }}</td>
+            {% if counts.prev_month_shown and col.label == counts.prev_month_label %}data-prev-note="1"{% endif %}>{{- stamped(r.notes.get(col.id|string, ''), r.stamps.get(note_stamp_key(col.id))) -}}</td>
         {% endfor %}
         {% if not is_contract_sheet %}
         <td class="cell" data-field="ceo_name">{{ r.ceo_name }}</td>

@@ -1201,6 +1201,46 @@ class ConsultingCompany(TimestampMixin, Base):
     phone: Mapped[Optional[str]] = mapped_column(String, nullable=True)       # 연락처
     email: Mapped[Optional[str]] = mapped_column(String, nullable=True)       # 이메일
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)         # {"열id": "내용"}
+    # **칸마다 마지막으로 바뀐 시각** — `{"deal_pitch": "2026-09-21T14:30:12+09:00",
+    # "note:12": …}`. 화면의 `수정한 날짜` 잔글씨가 이 값을 읽는다.
+    #
+    # ## 왜 `updated_at` 으로 안 되나
+    #
+    # 저것은 **줄 전체**가 마지막으로 바뀐 때다. 딜 소개문구만 고쳤는데 옆
+    # `카톡 연결 여부` 칸 밑에도 같은 날짜가 뜨면, 화면이 "그때 카톡 칸을
+    # 고쳤다" 고 **거짓말**을 한다. 사용자가 부른 것은 칸마다의 날짜다
+    # (월별 리마인드는 석 달치가 각자 제 날짜를 가져야 한다).
+    #
+    # ## 왜 `edit_logs` 에서 못 끌어오나 — **두 가지가 다 막는다**
+    #
+    #   · **자기 줄을 고친 것은 아예 안 남는다.** `services/edit_log.py` 의
+    #     `_row_scope` 가 `owner_id == actor_id` 인 UPDATE 를 버린다(하루 수백
+    #     줄이 쌓이면 아무도 안 보기 때문이다). 이 표는 줄마다 담당이 붙어 있고
+    #     그 담당이 자기 줄을 고치는 화면이라, **거의 모든 편집이 안 남는다.**
+    #   · **달을 구분할 수가 없다.** 월별 리마인드 석 달치가 `notes` **한 칸**에
+    #     JSON 으로 들어 있어서, 로그에는 `notes 바뀜` 한 줄만 남는다. 어느 달을
+    #     고쳤는지는 로그 어디에도 없다.
+    #
+    # 그 둘을 고쳐 로그를 쓰게 만드는 길도 있었지만, 그러면 **보안·용량 규칙을
+    # 바꾸는 일**(자기 줄 편집까지 다 남기기)이 되고 344줄짜리 표를 그릴 때마다
+    # 로그 표를 뒤져야 한다. 값은 줄에 붙어 있는 편이 맞다 — 표를 그릴 때
+    # **조회가 한 번도 안 는다.**
+    #
+    # ## 담기는 꼴
+    #
+    # 열쇠는 모델 칸 이름(`deal_pitch`)이고, 월별 리마인드는 `note:<열 id>` 다
+    # (`routers/consulting.py` 의 `note_stamp_key`). 값은 `clock.now_iso()` 가
+    # 적는 그 글자 그대로이고, 화면 꼴로 줄이는 것은 `clock.stamp_text` 한
+    # 곳이다 — 여기서 잘라 담으면 같은 값이 두 꼴로 남는다.
+    #
+    # **바뀐 칸만** 적힌다(`_assign`). 같은 값을 다시 저장해도 날짜가 안
+    # 움직인다 — 안 그러면 칸을 눌렀다 그냥 나온 것도 `고쳤다` 가 된다.
+    #
+    # **사람이 못 고친다.** 화면에서 눌러 고칠 수 없고(`td.cell` 이 아니다)
+    # API 에도 안 실린다(`CompanyIn` 에 없다) — 고칠 수 있으면 "언제 고쳤나"
+    # 가 곧 거짓이 된다(`services/contact_columns.py` 의 `source="stamp"` 가
+    # 같은 이유로 갈래를 따로 두었다).
+    field_stamps: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # `월간 계약 업무현황표` 탭에만 값이 있는 칸들. 그 시트는 머리글 있는 표가
     # 아니라 **한 칸에 슬래시로 이어 붙인 줄**이었다:
