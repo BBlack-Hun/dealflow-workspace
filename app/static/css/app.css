@@ -1470,6 +1470,13 @@ td.cell.save-failed { background: #fdecec; }
 /* 명단이 정한 칸으로 세우는 표. 폭은 칸 폭의 합이라 표 자신이 들고 있다
    (달마다 칸이 늘어나므로 여기 숫자를 적어 두면 곧 옛날 값이 된다). */
 .startup-table td .cell.clamp2 { min-height: 1.35em; }
+/* 표의 `수정한 날짜` — `2026-09-16 19:44:43` 을 **한 줄로** 세운다.
+   `table-layout: fixed` 라 칸이 조금이라도 좁아지면(달 칸이 늘어 표가 넓어지는
+   날) 빈칸 자리에서 접혀 그 줄만 키가 커진다. 접히느니 넘치게 두고, 넘치는
+   것은 `.grid-table td { overflow: hidden }` 이 잘라 준다 — 그러면 화면이
+   "칸이 좁다" 고 말해 주는데, 접히면 아무 말 없이 표만 들쭉날쭉해진다.
+   (IR 기업 현황의 같은 칸도 같은 이유로 그렇다 — `#co-table td.updated-at`) */
+.startup-table td.updated-at { white-space: nowrap; }
 
 /* ── 회차 준비 점검 ─────────────────────────────────────────── */
 .hero-card.blocked { background: linear-gradient(135deg, #c0392b 0%, #96281b 100%); }

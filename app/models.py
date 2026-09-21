@@ -1260,8 +1260,9 @@ class ConsultingCompany(TimestampMixin, Base):
     #     `services/sheet_owner.py` 의 `can_send_to`).
     #   · `VcContact.notes["<열id>"]` 의 월별 `N월 카톡 연결` — **달마다
     #     하나**. `스타트업` 명단이 달마다 세우는 칸이다
-    #     (`services/contact_columns.py` 의 `STARTUP_LAYOUT` ·
-    #     `KAKAO_CHOICES`). 보기도 여덟 가지로 이 칸과 다르다.
+    #     (`services/contact_columns.py` 의 `STARTUP_LAYOUT`). 애초에 고르는
+    #     칸이 아니라 **그 달에 무엇을 했는지 적는 여러 줄 메모**라, 이 칸
+    #     (`O`/`X`)과 같은 것으로 읽고 한쪽을 지우면 그 달 기록이 사라진다.
     #   · **이 칸** — `투자컨설턴트` 표의 컨설턴트 줄에만 산다.
     #
     # **왜 안 이었나.** `consulting_companies` 와 `vc_contacts` 사이에는

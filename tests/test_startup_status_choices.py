@@ -1,22 +1,23 @@
-"""스타트업 화면의 **골라 넣는 칸들** — 값·옛 값·새 달·필터·두 가지 고치는 길.
+"""스타트업 화면의 **골라 넣는 칸** — 값·옛 값·필터·두 가지 고치는 길.
 
 자유롭게 적던 칸이라 한 칸에 `무료계약완료` · `견적 전달함` · `대표님이
-초대해주심` 이 섞여 들어갔고, 세거나 거를 수가 없었다. 그 칸들을 골라 넣는
-칸으로 바꾸면서 **조용히 깨질 수 있는 다섯 가지**를 여기서 잠근다.
+초대해주심` 이 섞여 들어갔고, 세거나 거를 수가 없었다. 골라 넣는 칸으로
+바꾸면서 **조용히 깨질 수 있는 네 가지**를 여기서 잠근다.
 
-여섯이었다가 **다섯이 되었다** — ④ `회신 상태` 는 사용자 요청으로 표에서 뺐다
-(`tests/test_startup_reply_status_removed.py`). 보기 목록 `REPLY_CHOICES` 는
-남아 있어서 아래 `통화_결과와_회신_상태는_서로의_값을_갖지_않는다` 도 그대로
-돈다 — `notes` 에 남은 옛 값이 무슨 말이었는지는 그 목록만 알고 있다.
+여섯이었다가 **둘이 되었다.**
+
+  · ④ `회신 상태` 는 사용자 요청으로 표에서 뺐다
+    (`tests/test_startup_reply_status_removed.py`). 보기 목록 `REPLY_CHOICES`
+    는 남아 있다 — `notes` 에 남은 옛 값이 무슨 말이었는지는 그 목록만 알고
+    있다.
+  · 달마다의 ③⑤⑥ 은 사용자가 **여러 줄 메모**로 되돌렸다
+    (`tests/test_startup_month_memo.py` 가 그 셋을 잰다).
 
   1. 보기가 제안서와 글자·차례까지 같은가
   2. **목록에 없는 옛 값이 화면에서 사라지지 않는가** — 이번 판에서 제일 중요하다.
      자료를 옮기는 일은 하지 않기로 했으므로, 옛 글은 그대로 보여야 한다.
-  3. **다음 달에 저절로 생기는 칸에도 보기가 붙는가** — 달마다 손으로 붙이는
-     구조면 다음 달 칸에는 아무도 안 붙인다. 그 달만 조용히 자유 입력으로
-     돌아가고 필터도 같이 빠진다.
-  4. 고를 수 있는 칸이 되었으니 **머리글 필터가 따라 붙는가**(#171 의 기준)
-  5. 표에서 눌러 고치는 길과 수정창, **두 길이 같은 보기를 말하는가**
+  3. 고를 수 있는 칸이 되었으니 **머리글 필터가 따라 붙는가**(#171 의 기준)
+  4. 표에서 눌러 고치는 길과 수정창, **두 길이 같은 보기를 말하는가**
 
 이름·회사·번호는 전부 지어낸 값이다 — 저장소가 공개다.
 """
@@ -55,14 +56,8 @@ PROPOSED = {
 }
 # 표에서 뺀 ④ 는 여기 없다. 보기 목록만 남아 있고 칸은 없다 —
 # `tests/test_startup_reply_status_removed.py` 가 그 자리를 따로 잰다.
-# 월별 칸 셋. 열쇠는 달마다 바뀌므로(`c12`) **칸 이름의 뒷말**로 짚는다.
-PROPOSED_MONTHLY = {
-    "리마인드 문자": ["미발송", "발송 예정", "발송 완료", "발송 실패", "발송 제외"],
-    "리마인드 TEL": ["미시도", "통화 예정", "통화 완료", "부재중",
-                     "통화 중 / 재시도 필요", "재통화 요청", "연락처 오류", "통화 거절"],
-    "카톡 연결": ["미연결", "초대 요청", "초대 완료 / 입장 대기", "연결 완료",
-                  "기존 연결방 이용", "연결 보류", "연결 거절", "연결 종료"],
-}
+# 달마다의 ③⑤⑥ 도 여기 없다 — 고르는 칸이 아니라 메모다
+# (`tests/test_startup_month_memo.py`).
 
 
 def _month(offset: int = 0) -> int:
@@ -156,7 +151,7 @@ def sheets(client, db, users):
 
 # ── 1. 보기가 제안서 그대로다 ───────────────────────────────────────────────
 
-def test_달에_매이지_않는_세_칸의_보기가_제안서_그대로다():
+def test_달에_매이지_않는_두_칸의_보기가_제안서_그대로다():
     """값도 **차례도** 그대로다. 차례가 곧 일이 진행되는 순서다."""
     from app.services import contact_columns as cc
 
@@ -171,36 +166,20 @@ def test_달에_매이지_않는_세_칸의_보기가_제안서_그대로다():
             f"  제안서 {want}\n  배치   {_split(column.choices)}")
 
 
-def test_월별_세_칸의_보기가_제안서_그대로다():
-    """칸 이름의 **뒷말**로 보기가 정해진다 — 달이 바뀌어도 뒷말은 그대로다."""
-    from app.services import contact_columns as cc
+def test_회신_상태와_협업_상태는_서로의_값을_갖지_않는다():
+    """**회신이 왔다** 와 **우리와 하기로 했다** 는 같은 말이 아니다.
 
-    for tail, want in PROPOSED_MONTHLY.items():
-        for month in (1, _month(), 12):
-            label = f"{month}월 {tail}"
-            got = _split(cc.month_choices(cc.STARTUP_LAYOUT, label))
-            assert got == want, (
-                f"`{label}` 의 보기가 제안서와 다릅니다:\n"
-                f"  제안서 {want}\n  배치   {got}")
-
-
-def test_통화_결과와_회신_상태는_서로의_값을_갖지_않는다():
-    """**`통화 완료` 와 `진행 의사 있음` 을 같게 취급하지 마라.**
-
-    전화가 닿았다는 것과 하겠다는 답을 들었다는 것은 다른 말이다. 한 목록으로
-    합치면 "통화는 됐는데 거절" 을 적을 자리가 없어진다.
-
-    `회신 상태` 칸은 표에서 뺐지만 이 검사는 남는다. `notes["reply_status"]` 에
-    옛 값이 그대로 있고, `REPLY_CHOICES` 가 그 말이 무엇이었는지 아는 유일한
-    자리다 — 통화 보기가 같은 말을 쓰기 시작하면 그 옛 값을 잘못 짚게 된다.
+    한 목록으로 합치면 "회신은 왔는데 거절" 을 적을 자리가 없어진다.
+    (달마다의 통화 기록은 이제 고르는 칸이 아니라 메모다 —
+     `tests/test_startup_month_memo.py`.)
     """
     from app.services import contact_columns as cc
 
-    call = set(_split(cc.CALL_CHOICES))
     reply = set(_split(cc.REPLY_CHOICES))
-    assert not (call & reply), f"두 칸이 같은 값을 갖고 있습니다: {call & reply}"
-    assert "통화 완료" in call and "통화 완료" not in reply
-    assert "회신 받음" in reply and "회신 받음" not in call
+    collab = set(_split(cc.COLLAB_CHOICES))
+    assert not (reply & collab), f"두 칸이 같은 값을 갖고 있습니다: {reply & collab}"
+    assert "회신 받음" in reply and "회신 받음" not in collab
+    assert "협업 종료" in collab and "협업 종료" not in reply
 
 
 def test_자체_진행_예정은_투자유치가_아니라_협업_상태에_있다():
@@ -215,17 +194,6 @@ def test_자체_진행_예정은_투자유치가_아니라_협업_상태에_있�
     assert "자체 진행 예정" not in _split(cc.FUNDING_CHOICES)
 
 
-def test_문자_칸에는_연결이_없다():
-    """기존 문자 칸의 `연결` 은 ③ 이 아니라 ④ 로 간다.
-
-    보냈다는 기록이 아니라 **보낸 뒤에 돌아온 반응**이기 때문이다.
-    """
-    from app.services import contact_columns as cc
-
-    send = _split(cc.SEND_CHOICES)
-    assert all(v.startswith("발송") or v == "미발송" for v in send), send
-
-
 # ── 2. 목록에 없는 옛 값이 화면에서 사라지지 않는다 ─────────────────────────
 
 def test_목록에_없는_옛_값도_표에_그대로_보인다(sheets, db):
@@ -235,18 +203,8 @@ def test_목록에_없는_옛_값도_표에_그대로_보인다(sheets, db):
     옛 글이 안 보이면, 사람은 지워진 줄 알고 다시 적는다 — 그때는 이미 원래
     무엇이 적혀 있었는지 화면 어디에서도 알 수 없다.
     """
-    from app.services import contact_columns as cc
-
     html = sheets.get(_url()).text
-    months = cc.month_columns(db, LIST)
-    keys = {cc.month_choices(cc.STARTUP_LAYOUT, m.label): cc.note_key(m.id)
-            for m in months}
-    old = {
-        keys[cc.SEND_CHOICES]: "7/30 문자 및 명함 발송",
-        keys[cc.CALL_CHOICES]: "통화함 - 진행 의사 있음",
-        keys[cc.KAKAO_CHOICES]: "대표님이 초대해주심",
-        "funding_status": "당분간 자체 진행 예정",
-    }
+    old = {"funding_status": "당분간 자체 진행 예정"}
     for key, value in old.items():
         assert value in _cells(html, key), (
             f"옛 값이 표에서 사라졌습니다: {value}\n"
@@ -270,71 +228,9 @@ def test_옛_값이_수정창에서도_저장되고_되읽힌다(sheets, db):
     assert got["collab_status"] == free
 
 
-# ── 3. 새로 생기는 월별 칸에도 보기가 붙는다 ────────────────────────────────
-
-def test_다음_달에_저절로_생기는_칸에도_보기가_붙는다(sheets, db):
-    """달마다 손으로 붙이는 구조면 **다음 달 칸에는 아무도 안 붙인다.**
-
-    새 칸은 직전 달 칸에서 달 숫자만 바뀌어 나오므로(`monthly_columns.relabel`)
-    뒷말은 그대로다 — 그 뒷말을 보고 보기가 따라 붙는지 본다. 여기서 막지
-    않으면 다음 달 한 달만 조용히 자유 입력으로 돌아가고, 필터도 같이 빠진다.
-    """
-    from datetime import date
-
-    from app import clock
-    from app.services import contact_columns as cc
-    from app.services import monthly_columns
-
-    today = clock.today()
-    # 다음 달 1일로 달력을 넘긴다. 12월이면 해가 바뀐다 — 그 자리도 같이 본다.
-    nxt = date(today.year + (today.month == 12), _month(1), 1)
-    made = monthly_columns.ensure_contact(db, LIST, today=nxt,
-                                          seed=cc.STARTUP_LAYOUT.month_seed)
-    assert made, "다음 달 칸이 만들어지지 않았습니다"
-
-    months = cc.month_columns(db, LIST, today=nxt)
-    fresh = [m for m in months if m.label in made]
-    assert len(fresh) == 3, [m.label for m in fresh]
-    for column in fresh:
-        got = _split(cc.as_column(column, cc.STARTUP_LAYOUT).choices)
-        tail = column.label.split("월", 1)[1].strip()
-        assert got == PROPOSED_MONTHLY[tail], (
-            f"새로 생긴 `{column.label}` 에 보기가 안 붙었습니다: {got}")
-
-
-def test_밑자리로_심는_칸과_보기를_고르는_말이_갈리지_않는다():
-    """달 칸이 하나도 없는 **새 명단**에 처음 서는 칸에도 보기가 붙어야 한다.
-
-    밑자리(`month_seed`)와 보기를 고르는 말(`month_picks`)을 따로 적어 두면,
-    한쪽만 고쳐지는 날 새 명단의 그 칸만 조용히 자유 입력이 된다.
-    """
-    from app.services import contact_columns as cc
-
-    layout = cc.STARTUP_LAYOUT
-    for tail in layout.month_seed:
-        label = f"{_month()}월 {tail}"
-        assert cc.month_choices(layout, label) != layout.month_choices, (
-            f"밑자리로 심는 `{label}` 에 보기가 안 붙습니다")
-        assert _split(cc.month_choices(layout, label)) == PROPOSED_MONTHLY[tail]
-
-
-def test_팀이_정한_세_모양이_아닌_칸에는_남의_보기를_안_붙인다():
-    """시트에서 딸려 온 다른 칸에 카톡방 보기를 붙이면 **옛 글을 잘못 짚는다.**
-
-    한 명단에 `리마인드 카톡(월1회-…)` 이 서 있는데 그것은 보내는 칸이지
-    카톡방 연결 상태가 아니다.
-    """
-    from app.services import contact_columns as cc
-
-    layout = cc.STARTUP_LAYOUT
-    for label in ("리마인드 카톡(월1회-수or목or금)", "카톡방 연결여부", "샘플 옛 칸"):
-        assert cc.month_choices(layout, label) == layout.month_choices, (
-            f"`{label}` 에 남의 보기가 붙었습니다")
-
-
 # ── 4. 고를 수 있는 칸이 되었으니 필터도 붙는다 (#171) ──────────────────────
 
-def test_고르는_칸_전부에_머리글_필터가_붙는다(sheets, db):
+def test_달에_안_매이는_칸_전부에_머리글_필터가_붙는다(sheets, db):
     """#171 이 "고를 수 있는 칸에는 필터가 붙는다" 로 기준을 바꿔 놓았다.
 
     선언(머리글 `data-filters`)과 행이 싣는 값(`data-f-*`)이 **둘 다** 있어야
@@ -346,7 +242,6 @@ def test_고르는_칸_전부에_머리글_필터가_붙는다(sheets, db):
     html = sheets.get(_url()).text
     months = cc.month_columns(db, LIST)
     want = {key: label for key, (label, _v) in PROPOSED.items()}
-    want.update({cc.note_key(m.id): m.label for m in months})
 
     filterable = {c.key for c in cc.filter_columns(cc.STARTUP_LAYOUT, months)}
     for key, label in want.items():
@@ -380,16 +275,12 @@ def test_필터_단추가_머리글_한_줄에_들어간다(sheets):
 
 # ── 5. 표에서 눌러 고치기 · 수정창 — 두 길이 같은 보기를 말한다 ─────────────
 
-def test_표에서_눌러_고치는_칸에_보기가_실린다(sheets, db):
+def test_표에서_눌러_고치는_칸에_보기가_실린다(sheets):
     """`data-type="pick"` + `data-choices` — 이미 있던 기전 그대로다."""
-    from app.services import contact_columns as cc
 
     html = sheets.get(_url()).text
-    months = cc.month_columns(db, LIST)
     want = {key: choices for key, (_l, choices) in
             ((k, (lab, ",".join(v))) for k, (lab, v) in PROPOSED.items())}
-    want.update({cc.note_key(m.id): cc.month_choices(cc.STARTUP_LAYOUT, m.label)
-                 for m in months})
 
     for key, choices in want.items():
         cell = re.search(
@@ -427,21 +318,16 @@ def test_수정창에서도_같은_보기를_고른다(sheets, db):
             f"  창   {got}\n  배치 {_split(column.choices)}")
 
 
-def test_여섯_칸이_저장되고_되읽힌다(sheets, db):
+def test_두_칸이_저장되고_되읽힌다(sheets, db):
     """스키마 · 저장 · 되읽기 — 한 곳만 빠져도 증상이 조용하다.
 
     PATCH 는 200 을 주는데 아무것도 안 들어가거나, 저장은 되는데 다시 열면
     빈칸이다.
     """
     from app.models import VcContact
-    from app.services import contact_columns as cc
 
     row = db.query(VcContact).filter(VcContact.source_sheet == LIST).first()
-    months = cc.month_columns(db, LIST)
     sent = {key: values[0] for key, (_l, values) in PROPOSED.items()}
-    sent.update({cc.note_key(m.id):
-                 _split(cc.month_choices(cc.STARTUP_LAYOUT, m.label))[0]
-                 for m in months})
 
     res = sheets.patch(f"/api/contacts/{row.id}", json={"notes": sent})
     assert res.status_code == 200, res.text
@@ -487,14 +373,18 @@ def test_투자사_배치의_월별_칸은_지금까지_그대로_글_칸이다(
     """딜공유 명단의 월별 칸은 한 칸에 회차별 기업 목록이 쌓인다.
 
     고르는 칸으로 바꾸면 **고치는 순간 그 달 기록이 한 글자로 덮인다.**
-    이 판에서 월별 칸의 보기를 이름으로 고르게 하면서, 저 배치가 딸려 오지
-    않는지 본다 — 붙일 것을 안 적어 두었으니 붙을 리 없지만, 붙는 날의
-    증상이 조용하다(고친 사람만 자기 기록이 사라진 것을 나중에 안다).
+    스타트업 배치의 월별 칸을 메모로 되돌리면서 저쪽이 흔들리지 않는지 본다.
+
+    **머리글 꼬리말도 안 붙는다** — `(내용 기입)` 은 스타트업 배치가 정한
+    말이다(`Layout.month_label_suffix`). 여기 붙으면 딜공유 시트의 칸 이름이
+    화면에서 시트와 달라져, 나란히 놓고 대조할 수가 없다.
     """
     from app.services import contact_columns as cc
 
     for layout in (cc.INVESTOR_LAYOUT, cc.INVESTOR_MONTHLY_LAYOUT):
         assert layout.month_kind == "long"
-        assert layout.month_picks == ()
+        assert layout.month_choices == ""
+        assert layout.month_label_suffix == ""
         for tail in ("리마인드 문자", "리마인드 TEL", "카톡 연결", "딜소개"):
-            assert cc.month_choices(layout, f"{_month()}월 {tail}") == ""
+            label = f"{_month()}월 {tail}"
+            assert cc.month_label(layout, label) == label

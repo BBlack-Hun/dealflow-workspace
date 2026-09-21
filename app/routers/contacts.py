@@ -21,6 +21,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from ..clock import stamp_text
 from ..db import get_db
 from ..deps import can_open, get_current_user, may_manage_team_contacts
 from ..models import (ContactActivity, ContactColumn, IrCompany, IrRequest,
@@ -259,6 +260,21 @@ def contact_rows(db: Session, user: User, team_wide: bool = False,
             "status_label": STATUS_LABELS.get(c.status, c.status),
             "memo": c.memo or "",
             "channel_tags": _channel_tags(c),
+            # 이 줄을 **마지막으로 고친 시각**. 앱이 적는 값이라 사람이 만질
+            # 칸이 없다(`models.TimestampMixin.updated_at` 의 `onupdate`).
+            # 스타트업 표의 `수정한 날짜` 칸이 읽는다
+            # (`services/contact_columns.STARTUP_LAYOUT` — `source="stamp"`).
+            #
+            # 화면 꼴로 줄이는 자리는 **여기 한 곳**이다(`clock.stamp_text`).
+            # 화면에서 잘라 쓰면 표와 PATCH 응답이 각자 자르게 되고, 그중
+            # 하나만 고쳐지는 날 같은 값이 두 꼴로 보인다. IR 기업 현황의
+            # 같은 칸이 먼저 그렇게 섰다(#200 · `routers/companies.py`).
+            "updated_at": stamp_text(c.updated_at),
+            # **한 번도 안 고친 줄**은 만든 시각이 그대로 `updated_at` 이다.
+            # 아무 표시 없이 보이면 "이때 누가 고쳤구나" 로 읽히는데 사실은
+            # 아무도 안 고친 줄이다. 화면이 옅게 적고 짚어서 말해 준다 —
+            # 값을 비우지는 않는다(빈 칸은 '못 읽었다' 로도 읽힌다).
+            "updated_never": stamp_text(c.updated_at) == stamp_text(c.created_at),
         })
     return rows
 
@@ -1097,7 +1113,13 @@ def update_contact(
     # `connect_note` 는 **서버가 저 혼자 바꾼 것**을 화면이 사람에게 전할 자리다.
     # 없으면 응답에 넣지 않는다 — 늘 있는 값이면 화면이 읽지 않게 된다.
     out = {"ok": True, "room_verified": contact.room_verified,
-           "connect_stage": contact.connect_stage}
+           "connect_stage": contact.connect_stage,
+           # **고친 시각을 응답에 싣는다.** 스타트업 표의 `수정한 날짜` 칸이
+           # 이것으로 그 자리에서 바뀐다 — 새로고침해야 보이면, 방금 고친 것이
+           # 실제로 저장됐는지를 그 칸으로 알 수 없다(그 칸의 쓸모가 곧
+           # 그것이다). `db.commit()` **뒤**에 읽는다: commit 이 속성을
+           # 만료시키므로 여기서 읽으면 DB 에 적힌 새 값이 온다.
+           "updated_at": stamp_text(contact.updated_at)}
     if note:
         out["connect_note"] = note
     return out
