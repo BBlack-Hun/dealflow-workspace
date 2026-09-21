@@ -1563,6 +1563,12 @@ def delete_column(column_id: int, db: Session = Depends(get_db),
     # 열쇠가 남아, 어느 칸의 것인지 모르는 값이 JSON 에 쌓인다
     # (`routers/contacts.py` 의 `delete_column` 이 같은 이유로 전체를 훑는다).
     # 이것을 관리자만 누를 수 있게 한 것이 `may_edit_column` 이다.
+    #
+    # **`수정한 날짜`도 같이 지운다.** 안 지우면 `note:<열 id>` 가 남는데,
+    # SQLite 의 줄 번호는 **다시 쓰인다**(자동증가를 안 걸어 둔 표는 `max(id)+1`
+    # 이라, 맨 뒤 칸을 지우고 새 칸을 세우면 같은 번호가 나온다). 그러면 새 칸
+    # 밑에 **지운 칸의 날짜**가 떠서, 아직 아무도 안 적은 칸이 "언제 고쳤다" 고
+    # 말한다 — 값은 비어 있는데 날짜만 있는, 눈으로는 못 찾는 부류다.
     for company in db.execute(
         select(ConsultingCompany).where(ConsultingCompany.sheet == col.sheet)
     ).scalars().all():
@@ -1570,6 +1576,9 @@ def delete_column(column_id: int, db: Session = Depends(get_db),
         if key in notes:
             notes.pop(key)
             company.notes = json.dumps(notes, ensure_ascii=False)
+        stamps = _stamps(company)
+        if stamps.pop(note_stamp_key(col.id), None) is not None:
+            company.field_stamps = json.dumps(stamps, ensure_ascii=False)
     db.delete(col)
     db.commit()
     return RedirectResponse("/consulting?msg=열을+삭제했습니다", status_code=303)

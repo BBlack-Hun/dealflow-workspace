@@ -397,6 +397,35 @@ def test_모델과_마이그레이션이_같은_자료형을_말한다():
     assert isinstance(col.type, sa.Text) and col.nullable
 
 
+def test_월_칸을_지우면_그_날짜도_같이_사라진다(allowed, db, users):
+    """SQLite 의 줄 번호는 **다시 쓰인다**(자동증가를 안 걸어 둔 표는
+    `max(id)+1`). 지운 칸의 날짜를 남겨 두면 같은 번호를 받은 **새 칸** 밑에
+    그것이 떠서, 아직 아무도 안 적은 칸이 "언제 고쳤다" 고 말한다 — 값은 비어
+    있는데 날짜만 있는, 눈으로는 못 찾는 부류다."""
+    from app.models import ConsultingColumn
+    from app.routers.consulting import note_stamp_key
+
+    users["u1"].role = "admin"
+    db.commit()
+    col = _column(db)
+    # 지우고 나면 그 객체에서 번호를 못 읽는다(만료된 채 사라진 줄이다).
+    col_id = col.id
+    row = _row(db, users["u1"].id, sheet=STARTUP, position=1, company_name="샘플하")
+    allowed.patch(f"/api/consulting/{row.id}", json={"notes": {str(col_id): "통화"}})
+    allowed.patch(f"/api/consulting/{row.id}", json={"deal_pitch": "한 줄"})
+    assert note_stamp_key(col_id) in _stamps(db, row.id)
+
+    assert allowed.post(f"/consulting/columns/{col_id}/delete",
+                        follow_redirects=False).status_code == 303
+    db.expire_all()
+    assert db.execute(select(ConsultingColumn.id)
+                      .where(ConsultingColumn.id == col_id)).scalar() is None
+    got = _stamps(db, row.id)
+    assert note_stamp_key(col_id) not in got, got
+    # 옆 칸의 날짜는 **안 건드린다** — 지운 것은 그 달 하나다.
+    assert "deal_pitch" in got
+
+
 def test_깨진_값이_화면을_안_죽인다(allowed, db, users):
     """읽다 터지면 표 한 줄이 아니라 **화면 전체**가 안 뜬다. 날짜가 안 보이는
     것과 표가 안 열리는 것은 무게가 다르다(`_notes` 와 같은 규칙)."""
