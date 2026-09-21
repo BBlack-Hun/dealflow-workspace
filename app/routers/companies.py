@@ -463,7 +463,7 @@ def company_rows(db: Session, tab: str = "", sent=None) -> List[dict]:
             "top_deal_kind": c.top_deal_kind or "",
             "assignee": c.assignee_name or "",
             # 소개 이력 요약. **셋을 함께 싣는다** — 보낸 날 수만 보이면
-            # 180건짜리와 103건짜리가 똑같이 `6회` 로 읽힌다
+            # 180명짜리와 103명짜리가 똑같이 `6회` 로 읽힌다
             # (`services/deal_history.py` 머리글). 자세한 줄은 [수정] 창에
             # 있고, 같은 훑기에서 나온다.
             "sent_rounds": seen[c.id].days,
