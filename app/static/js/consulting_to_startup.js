@@ -24,6 +24,31 @@
   // 날 이 확인창만 옛 이름으로 남는다.
   var pageLabel = bar.getAttribute("data-page-label") || "";
 
+  // 이 막대를 감싼 **접었다 펴는 상자.** 기본은 닫힘이다(consulting.html).
+  // 없을 수도 있다 — 여닫이는 화면 쪽 일이라 이 파일이 그것에 기대지 않는다.
+  var fold = document.getElementById("cs-startup-fold");
+  // 사람이 **직접 접은 적이 있는가.** 한 번 접으면 그 뒤로는 안 건드린다 —
+  // 접어 둔 것을 줄을 고를 때마다 자꾸 펴면 그것도 화면이 말을 안 듣는 것이다.
+  var closedByHand = false;
+  if (fold) {
+    fold.addEventListener("toggle", function () {
+      if (!fold.open) closedByHand = true;
+    });
+  }
+
+  // **처음 하나를 고르면 저절로 펴진다.** 체크 칸은 표 안에 있어 접어도 그대로
+  // 보이는데, 접힌 채로는 [보내기] 단추도 명단 고르는 자리도 안 보인다 —
+  // 줄을 골라 놓고 아무 일도 못 하는 상태가 된다.
+  //
+  // 펼친 상태를 어딘가에 **기억시키지는 않는다.** 고르고 보내는 동안 화면이
+  // 다시 그려지지 않아서다(검색·칩·머리글 필터는 줄을 감추거나 주소만 고치고,
+  // 칸 고치기는 그 칸만 고쳐 적는다). 다시 받는 자리는 보내고 난 뒤와 탭을
+  // 바꾸는 링크뿐인데, 둘 다 고른 체크가 풀리는 자리라 펴진 채로 열리면
+  // `0개 선택` 이라고 적힌 빈 막대가 자리만 먹는다.
+  function openForPick() {
+    if (fold && !fold.open && !closedByHand) fold.open = true;
+  }
+
   function boxes() {
     return Array.prototype.slice.call(table.querySelectorAll(".cs-pick"));
   }
@@ -45,8 +70,11 @@
 
   function refresh() {
     var n = picked().length;
+    // **여는 줄에 적힌다**(consulting.html 의 `<summary>`). 접힌 채로도 몇 개
+    // 골랐는지 보여야, 줄을 골라 놓고 아무것도 안 보이는 상태가 안 된다.
     countBox.textContent = n + "개 선택";
     button.disabled = n === 0;
+    if (n) openForPick();
   }
 
   table.addEventListener("change", function (e) {

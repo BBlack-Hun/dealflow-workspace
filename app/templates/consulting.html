@@ -237,10 +237,53 @@
 
   **보낼 화면의 이름은 `startup_label` 이다**(좌측 메뉴가 들고 있는 그 이름 —
   `ui.MENU`). 여기 글자로 적으면 메뉴를 고친 날 이 단추만 옛 이름으로 남는다. #}
+{#
+  **기본은 닫힘.** 이 줄은 매일 쓰는 자리가 아니다 — 표를 읽고 칸을 고치는 것이
+  이 화면의 일이고, 명단으로 보내는 것은 어쩌다 한 번이다. 늘 펴 두면 표 위가
+  그만큼 내려앉아 한 화면에 서는 줄이 준다(투자사 관리 현황이 표 위 543px 을
+  `<details>` 로 접은 그 자리다 — `contacts.html` 의 `sheet-fold` 주석).
+
+  **접는 관용구는 이 저장소에 이미 있다** — `<details class="sheet-fold">`.
+  여닫이 하나 때문에 JS 를 새로 붙이지 않는다(`_ref_new.html` 이 같은 말을
+  한다). 접혀도 DOM 에는 그대로 있어 브라우저 찾기와 검사가 다 본다.
+
+  ## 펼친 상태를 기억해야 하나 — **안 해도 된다. 흐름을 따라가 봤다**
+
+  고르고 보내는 동안 **화면이 다시 그려지지 않는다.**
+
+    체크 누르기   `change` 로 개수만 고쳐 적는다(`consulting_to_startup.js`)
+    검색 · 칩     줄을 `tr.hidden` 으로 감출 뿐이다(`consulting.js`)
+    머리글 필터   주소만 `history.replaceState` 로 고친다(`filters.js`) —
+                  다시 받지 않는다
+    칸 고치기     PATCH 뒤 그 칸만 고쳐 적는다
+
+  화면을 다시 받는 자리는 **보내고 난 뒤**(`reload` 또는 명단 화면으로 이동)와
+  탭·담당을 바꾸는 링크뿐이다. 앞엣것은 일이 끝난 자리이고, 뒤엣것은 고른
+  체크가 어차피 다 풀리는 자리다 — 거기서 펴진 채로 열리면 `0개 선택` 이라고
+  적힌 빈 막대가 자리만 먹는다. **기억시키지 않는 편이 맞다.**
+
+  ## 닫아 두면 못 쓰는 자리가 하나 생긴다 — 그래서 둘을 더 단다
+
+  체크 칸은 **표 안**에 있어 접어도 그대로 보인다. 그대로 두면 줄을 골라 놓고도
+  개수도 단추도 안 보이는 상태가 된다.
+
+    · 고른 개수를 **여는 줄에 적는다** — 접힌 채로도 몇 개 골랐는지 보인다
+      (`contacts.html` 의 여는 줄이 달 칸 개수를 적는 것과 같은 방식이다).
+    · **처음 하나를 고르면 저절로 펴진다**(`consulting_to_startup.js`). 사람이
+      한 번 접으면 그 뒤로는 안 건드린다 — 접어 둔 것을 자꾸 펴면 그것도
+      화면이 말을 안 듣는 것이다.
+#}
 {% if is_startup_sheet and startup_targets %}
+<details class="sheet-fold" id="cs-startup-fold">
+  {# 여는 줄에 **무엇이 열리는지와 몇 개 골랐는지**를 같이 적는다. 개수를
+     세는 자리는 `#cs-pick-count` 하나뿐이라(`consulting_to_startup.js` 가
+     그 id 를 찾는다) 여기로 옮겨 왔다 — 같은 수를 두 곳에 적으면 한쪽이
+     낡는다. #}
+  <summary>📤 {{ startup_label }} 명단으로 보내기
+    <span class="muted" id="cs-pick-count">0개 선택</span></summary>
+  <div class="sheet-fold-body">
 <div class="assign-bar" id="cs-startup-bar" data-page-label="{{ startup_label }}">
   <label class="only-picked"><input type="checkbox" id="cs-pick-all"> 전체 선택</label>
-  <span class="muted" id="cs-pick-count">0개 선택</span>
   <select id="cs-startup-target" aria-label="보낼 {{ startup_label }} 명단">
     {% for t in startup_targets %}
     <option value="{{ t.label }}">{{ t.label }} ({{ t.owner }})</option>
@@ -250,6 +293,8 @@
     {{ startup_label }} 명단으로 보내기</button>
   <span class="hint">이 표에서 빠지지 않습니다 — 기업명·대표자·연락처·이메일·기업 관리만 옮겨 적습니다.</span>
 </div>
+  </div>
+</details>
 {% endif %}
 
 {# 고른 조건을 되짚어 볼 자리. 없으면 filters.js 가 칩을 그릴 곳이 없어,
