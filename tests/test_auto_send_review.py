@@ -642,10 +642,12 @@ def test_the_message_is_the_one_the_screen_makes(db, users):
     assert item.message == deals_view.review_message(db, u1, contact)
 
 
-def test_the_test_room_still_wins(db, users, monkeypatch):
-    """시험방이 설정돼 있으면 **거기로만** 간다 — 지금 발송이 그렇다.
+def test_a_test_room_does_not_capture_the_auto_send(db, users, monkeypatch):
+    """★ 자동 발송도 시험방으로 새지 않는다 — 담당자 방 그대로다.
 
     `create_send_list` 를 그대로 지나므로 이 판단이 두 벌이 되지 않는다.
+    예전에는 여기서 시험방이 '이겼다' — 그 자리가 없어졌다는 것을 자동 발송
+    쪽에서도 못박는다(사람이 안 보고 있는 길이라 더 그렇다).
     """
     from app import config
     from app.services import auto_send
@@ -653,14 +655,16 @@ def test_the_test_room_still_wins(db, users, monkeypatch):
     monkeypatch.setattr(config, "TEST_ROOM", "테스트방")
 
     u1 = users["u1"]
-    _meeting(db, u1, _contact(db, u1, "가담당", "가나벤처스"))
+    contact = _contact(db, u1, "가담당", "가나벤처스")
+    _meeting(db, u1, contact)
     db.commit()
     _turn_on(db, u1)
 
     auto_send.run_once(db, now=MONDAY_11AM)
 
     item = _items(db, _jobs(db)[0])[0]
-    assert item.room_name == "테스트방"
+    assert item.room_name == contact.kakao_room_name
+    assert item.room_name != "테스트방"
 
 
 # --- 9. 설정 화면 -------------------------------------------------------------

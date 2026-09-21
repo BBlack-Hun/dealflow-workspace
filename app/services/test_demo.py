@@ -49,8 +49,10 @@
 ## 실제 발송 길로 샐 수 없다
 
 이 파일을 부르는 곳은 `routers/setup.py` 의 시험 잡 두 곳뿐이고, 그 잡은
-`TEST_SEND_KIND` 로만 서고 시험방(`config.TEST_ROOM`)으로만 간다. 운영에는
-시험방이 없어 그 자리 자체가 없다(`setup.test_tools_on`). 스타트업 화면은
+`TEST_SEND_KIND` 로만 서고 시험방(`config.TEST_ROOM`)으로만 간다 — 잡을 세우는
+`_queue_test_job` 이 방 이름이 정말 시험방인지 다시 본다. **그 종류가 곧
+안전선이다**: 일반 발송을 만드는 `routers/deals.py: create_send_list` 는
+시험방을 아예 읽지 않고, 이 파일을 부르지도 않는다. 스타트업 화면은
 여기를 부르지 않는다 — 요청이 0곳이면 여전히 **아무것도 만들지 않는다**
 (#131 · #135: "빈 목록을 보내면 대표는 우리가 아무것도 안 한 줄로 읽는다").
 검사가 그 둘을 못박는다(`tests/test_setup_test_tools.py`).
