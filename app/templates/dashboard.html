@@ -290,6 +290,28 @@
 
     다섯 중 넷만 있다. 어느 것이 설 수 있는지는 `dashboard.REACTION_ROWS`
     한 곳이 정하고 여기서는 돌기만 한다.
+
+    ── 왜 **달이 줄**인가 (넷 → 열둘로 늘리며 뒤집었다) ────────────────────
+    예전에는 `행 = 반응 4가지 · 열 = 달` 이었다. 달이 넷일 때는 칸이 다섯이라
+    390px 에 그냥 들어갔지만, 열둘로 늘리자 칸이 열셋이 된다. 실제로 재 보면:
+
+      1440px  표가 `max-width: 760px` 에 걸려 달 칸이 38px 로 눌리고,
+              `25년 12월` 같은 이름이 두 줄로 접힌다(머리글 +19px).
+              패널은 1,150px 인데 표는 760px 에 갇혀 오른쪽 390px 이 빈다.
+      390px   표가 646px 로 벌어져 감싸개가 가로로 굴렀다(`wrap.sw 646 >
+              cw 328`). 한 화면에 **넉 달만** 보이고, 옆으로 밀면 왼쪽의
+              `IR 요청 투자사` 이름 칸이 같이 밀려 나가 **이름 없는 숫자판**만
+              남는다. 어느 줄이 무슨 반응인지 알 길이 없어진다.
+
+    뒤집으면 칸 수가 **달 수와 무관하게 늘 다섯**이다(달 이름 + 반응 4가지).
+    달을 스물넷으로 늘려도 가로로는 한 칸도 안 넓어지고 세로로만 길어진다.
+    `.month-react` 의 `max-width: 760px` 과 「`.table-wrap` 을 안 쓴다」(#187)
+    는 판단은 **칸이 다섯일 때의 판단**이었으므로, 뒤집은 지금 둘 다 그대로
+    맞다 — 재 보니 1440px 에서 760px, 390px 에서 328px 로 굴림 없이 선다.
+
+    자료가 없는 달(개발 DB 기준 여덟 달)은 0 으로 늘어서지만, 세로로 서면
+    그건 "여기서부터 쌓이기 시작했다" 는 **시간 순 흐름**으로 읽힌다 — 가로로
+    늘어선 0 여덟 칸이 화면 폭을 다 먹던 것과 다르다.
   #}
   <section class="panel wide">
     <h2 class="panel-title">달별 반응
@@ -299,24 +321,24 @@
     <table class="month-react">
       <thead>
         <tr>
-          <th class="mr-head">반응</th>
-          {# 달 이름을 누르면 그 달의 업무 보고로 간다. **숫자에는 링크를 걸지
-             않는다** — 이 넷을 달로 걸러 주는 목록 화면이 없어서, 걸면 달과
-             상관없는 목록이 열린다. #}
-          {% for m in reaction_months %}
-          <th class="mr-num{% if m.this_month %} now{% endif %}">
-            <a href="/report?month={{ m.key }}">{{ m.label }}</a>
-          </th>
+          <th class="mr-head">달</th>
+          {% for row in reaction_rows %}
+          <th class="mr-num" title="{{ row.label }}">{{ row.label }}</th>
           {% endfor %}
         </tr>
       </thead>
       <tbody>
-        {% for row in reaction_rows %}
-        <tr>
-          <th class="mr-head" title="{{ row.label }}">{{ row.label }}</th>
-          {% for m in reaction_months %}
+        {% for m in reaction_months %}
+        <tr{% if m.this_month %} class="now"{% endif %}>
+          {# 달 이름을 누르면 그 달의 업무 보고로 간다. **숫자에는 링크를 걸지
+             않는다** — 이 넷을 달로 걸러 주는 목록 화면이 없어서, 걸면 달과
+             상관없는 목록이 열린다. #}
+          <th class="mr-head mr-month">
+            <a href="/report?month={{ m.key }}">{{ m.label }}</a>
+          </th>
+          {% for row in reaction_rows %}
           {# 0 은 흐리게 — 숫자가 있는 달이 눈에 먼저 걸려야 한다. #}
-          <td class="mr-num{% if m.this_month %} now{% endif %}{% if not m[row.key] %} zero{% endif %}">{{ m[row.key] }}</td>
+          <td class="mr-num{% if not m[row.key] %} zero{% endif %}">{{ m[row.key] }}</td>
           {% endfor %}
         </tr>
         {% endfor %}
@@ -376,14 +398,49 @@
       <span class="count-pill {% if top_requesters %}on{% endif %}"
             id="req-rank-count"><b>{{ top_requesters|length }}</b>명</span>
       <span class="top-pick">
-        {# 새로고침 없이 바꾼다 — 대시보드 전체를 다시 그리면 스크롤이
-           맨 위로 튀고, 이 목록 하나 보려고 나머지를 다 기다린다. #}
-        {% for n in top_choices %}
-        <button type="button" class="chip js-top-n {% if top_n == n %}active{% endif %}"
-                data-n="{{ n }}">{{ n }}명</button>
-        {% endfor %}
+        {#
+          **칩 여섯이 아니라 드롭다운 하나다.** 고를 값이 넷일 때는 칩이 한
+          줄에 섰지만(`.top-pick` 219 × 26px), 100단위를 더해 여섯이 되자
+          재 본 값이 이렇다:
+
+            1440px  `.top-pick` 315 × **40px** — 두 줄로 접혀 패널 제목 줄이
+                    27 → 42px 로 커졌다.
+            390px   `.top-pick` 이 **343px** 로 벌어져 패널(328px)을 넘겼다
+                    (`sw 343 > cw 328`) — `300명` 이 오른쪽에서 잘린다.
+
+          드롭다운은 고를 값이 몇이든 **한 칸**이라(390px 에서 72 × 44px) 값을
+          더 늘려도 줄이 안 밀린다. 사용자가 「드롭다운」이라고 부른 것도 이
+          자리다. 생김새는 칩 그대로다(`.chip-select` — 업무 보고의 팀원 고르기가
+          쓰던 것).
+
+          새로고침 없이 바꾼다 — 대시보드 전체를 다시 그리면 스크롤이 맨 위로
+          튀고, 이 목록 하나 보려고 나머지를 다 기다린다.
+        #}
+        <select class="chip-select js-top-n" id="top-n" aria-label="몇 명까지 볼지">
+          {% for n in top_choices %}
+          <option value="{{ n }}"{% if top_n == n %} selected{% endif %}>{{ n }}명</option>
+          {% endfor %}
+        </select>
       </span>
     </h2>
+    {#
+      **고른 수보다 적게 나왔으면 그 까닭을 말한다.**
+
+      머리글의 `N명` 칸만으로는 모자랐다. 그건 "지금 21명" 이라고만 할 뿐
+      "300 을 눌러도 21명" 이라고는 말하지 않아서, 고를 값을 300까지 늘린
+      지금은 눌러도 목록이 안 변하는 일이 흔해진다 — 운영에서는 10명이라
+      `100명`·`200명`·`300명` 셋이 전부 같은 목록을 준다. 그때 사용자가
+      의심하는 것은 자기 명단이 아니라 **이 화면**이다.
+
+      "요청한 곳이 이게 전부" 라고 적어야 그 의심이 끝난다. 다 찼을 때는
+      (`걸린 수 == 고른 수`) 숨긴다 — 더 있을지도 모르는데 "이게 전부" 라고
+      하면 그건 거짓말이다.
+    #}
+    <p class="hint req-rank-all" id="req-rank-all"
+       {% if not top_requesters or top_requesters|length >= top_n %}hidden{% endif %}>
+      IR 자료를 요청한 곳이 <b>{{ top_requesters|length }}</b>곳뿐입니다 —
+      더 늘려도 이 목록은 그대로입니다.
+    </p>
     {% if top_requesters %}
     <ol class="req-rank" id="req-rank">
       {% for r in top_requesters %}

@@ -1003,35 +1003,51 @@ a.secondary-btn { display: inline-flex; align-items: center; text-decoration: no
 
 /* 달별 반응 — 위 누적과 같은 다섯(중 넷)을 달로 갈라 놓은 표.
 
+   **줄이 달, 칸이 반응 4가지다.** 달을 넷에서 열둘로 늘리며 뒤집었다. 달을
+   칸으로 세우면 칸 수가 달 수를 따라가 열셋이 되는데, 390px 에서 표가 646px
+   로 벌어져 한 화면에 넉 달만 보이고, 옆으로 밀면 왼쪽 이름 칸이 같이 밀려
+   나가 이름 없는 숫자판만 남았다. 뒤집으면 칸 수가 **달 수와 무관하게 늘
+   다섯**이다(잰 값은 `templates/dashboard.html` 의 그 패널 주석에).
+
    왜 `.table-wrap` 을 안 쓰는가: 그 상자의 폰 규칙이 표를 760px 로 벌린다
    (`@media (max-width: 720px)`). 여기 표는 칸이 다섯뿐이라 390px 안에 그냥
    들어가는데, 그 규칙에 걸리면 가로로 밀 것도 없이 스크롤만 생긴다.
-   그래도 감싸는 상자는 둔다 — 담당 명단이 커져 달 수가 늘면 그때 밀린다.
+   **뒤집은 뒤에도 이 판단은 그대로다** — 달이 늘어도 칸은 다섯에서 안 는다.
+   그래도 감싸는 상자는 둔다(반응 종류가 늘면 그때 밀린다).
 
    글자는 13px 한 값이다(#174). 숫자만 조금 키워 눈이 먼저 닿게 한다. */
 .month-react-wrap { overflow-x: auto; }
-/* 폭을 못 박는다. `width:100%` 만 두면 1280px 화면에서 반응 이름과 숫자가
-   화면 양 끝으로 갈라져, 한 줄을 눈으로 이어 읽기가 어렵다. */
+/* 폭을 못 박는다. `width:100%` 만 두면 1280px 화면에서 달 이름과 숫자가
+   화면 양 끝으로 갈라져, 한 줄을 눈으로 이어 읽기가 어렵다.
+   칸이 다섯이라 뒤집은 뒤에도 이 값이 맞다(1440px 에서 760px, 굴림 없음). */
 .month-react { width: 100%; max-width: 760px; border-collapse: collapse;
   font-size: 13px; }
 .month-react th, .month-react td { padding: 7px 6px; border-bottom: 1px solid var(--line);
   text-align: right; font-weight: 400; }
 .month-react tbody tr:last-child th,
 .month-react tbody tr:last-child td { border-bottom: 0; }
-/* 반응 이름 칸. 제일 긴 글이 `IR 미팅 요청 투자사`(12자)라 이 폭이면 한 줄에
-   선다. 그래도 넘치면 자르고 `title` 이 전문을 든다. */
-.month-react .mr-head { text-align: left; color: var(--muted); width: 40%;
-  min-width: 118px;
+/* 달 이름 칸. `25년 12월`(7자)이 제일 길다 — 뒤집기 전 반응 이름(12자)보다
+   짧아져서 폭을 40% → 28% 로 줄였다. 남는 폭은 숫자 넷이 나눠 갖는다. */
+.month-react .mr-head { text-align: left; color: var(--muted); width: 28%;
+  min-width: 96px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .month-react thead .mr-head { color: var(--muted); font-weight: 600; }
+/* 머리글은 이제 반응 이름이라 한 줄로 안 선다 — 접히게 두고 `title` 이
+   전문을 든다. 숫자 칸과 달리 고정폭 숫자가 아니다.
+   `keep-all` 이 없으면 390px 에서 `기업` 이 `기` / `업` 으로 갈린다. */
+.month-react thead .mr-num { white-space: normal; line-height: 1.3;
+  vertical-align: bottom; word-break: keep-all; }
 .month-react .mr-num { font-variant-numeric: tabular-nums; min-width: 44px; }
 .month-react tbody .mr-num { font-size: 15px; font-weight: 700; }
-/* 이번 달은 아직 안 끝난 달이다 — 지난 달들과 같은 무게로 읽히면 안 된다. */
-.month-react .now { background: #f6f9ff; }
-.month-react thead .now a { color: var(--brand); font-weight: 700; }
-.month-react thead a { color: var(--muted); text-decoration: none; font-weight: 600; }
-.month-react thead a:hover { color: var(--brand); text-decoration: underline; }
-/* 0 은 흐리게 — 숫자가 있는 달이 눈에 먼저 걸려야 한다. */
+/* 이번 달은 아직 안 끝난 달이다 — 지난 달들과 같은 무게로 읽히면 안 된다.
+   뒤집으면서 칸 하나가 아니라 **줄 하나**가 이번 달이 됐다. */
+.month-react tbody tr.now > th, .month-react tbody tr.now > td { background: #f6f9ff; }
+.month-react tbody tr.now a { color: var(--brand); font-weight: 700; }
+.month-react tbody .mr-month a { color: var(--muted); text-decoration: none;
+  font-weight: 600; }
+.month-react tbody .mr-month a:hover { color: var(--brand); text-decoration: underline; }
+/* 0 은 흐리게 — 숫자가 있는 달이 눈에 먼저 걸려야 한다. 자료가 6월부터라
+   그 앞 여덟 달은 통째로 0 이다. 감추지 않는다(언제부터 쌓였는지가 보인다). */
 .month-react .zero { color: var(--muted); font-weight: 400; }
 
 /* 미니 막대 차트 (라이브러리 없이) */
@@ -1833,7 +1849,14 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
 .tod-pick.on { background: var(--brand); border-color: var(--brand); color: #fff; }
 
 /* 내 투자사 선호 — IR 자료를 많이 요청한 순 */
+/* 고를 값이 여섯(10~300)이라 **드롭다운 한 칸**이다. 칩 여섯으로 두면 1440px
+   에서 두 줄로 접히고(315 × 40px) 390px 에서 343px 로 패널(328px)을 넘겼다. */
 .top-pick { display: flex; gap: 3px; }
+/* 고른 수보다 적게 나왔을 때만 뜨는 줄. 머리글의 `N명` 칸은 "지금 몇 명" 만
+   말하고 "더 늘려도 같다" 는 말은 안 한다 — 300까지 고를 수 있게 된 지금은
+   그 말이 있어야 사용자가 화면을 의심하지 않는다. */
+.req-rank-all { margin: 0 0 6px; }
+.req-rank-all[hidden] { display: none; }
 /* 10명치 높이까지만 보이고 그 뒤로는 스크롤한다 — 20명을 그대로 늘어놓으면
    옆 칸(연결 진행 중인 명단)과 높이가 안 맞아 화면이 길어진다. */
 .req-rank { list-style: none; margin: 0; padding: 0;
@@ -2055,10 +2078,13 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
         `width: calc(100vw - 24px)`) — 칩이 커져도 밀릴 것이 없다. 그리고
         폰에서 한 칸을 고치는 길이 바로 이 칩을 누르는 것이다.
         390px 에서 38~76 × **24px** 이었다.
-     2) 「달별 반응」의 달 이름(`.month-react thead a`). 그 달의 업무 보고로
-        가는 **유일한 길**인데 390px 에서 20 × **15px** 이었다. 이 표는 네
-        줄짜리 요약이라(`dashboard.REACTION_ROWS`) 지킬 줄 밀도가 없다 —
-        여든 줄을 훑는 `.grid-table` 과는 다른 자리다.
+     2) 「달별 반응」의 달 이름(`.month-react .mr-month a`). 그 달의 업무
+        보고로 가는 **유일한 길**인데 390px 에서 20 × **15px** 이었다. 이
+        표는 반응 넉 칸짜리 요약이라(`dashboard.REACTION_ROWS`) 지킬 줄
+        밀도가 없다 — 여든 줄을 훑는 `.grid-table` 과는 다른 자리다.
+        표를 뒤집으면서(줄 = 달) 이 링크가 `thead` 에서 `tbody th` 로
+        옮겨 갔다. **선택자를 같이 옮겼다** — 안 옮기면 규칙만 남고 달
+        이름은 다시 15px 로 돌아간다.
 
      둘 다 `.grid-table` 머리글이 아니라서 위에서 못 박은 머리글 모양
      (가로 왼쪽 · 세로 가운데 · 줄바꿈 허용)은 건드리지 않는다. */
@@ -2067,10 +2093,10 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
      키워도 세로만 커지고 가로는 20px 그대로다. 여백을 칸에서 링크로 옮겨
      **칸이 곧 누를 자리**가 되게 한다(37×44 → 49×44). 표 폭은 그대로다 —
      옮긴 것이지 더한 것이 아니다. 숫자 칸이 오른쪽 정렬이라 링크 안에서도
-     오른쪽에 붙인다(`.month-react th` 의 `text-align: right`). */
-  .month-react thead .mr-num { padding: 0; }
-  .month-react thead .mr-num a { display: flex; min-height: 44px;
-    padding: 0 6px; align-items: center; justify-content: flex-end; }
+     왼쪽에 붙인다(`.month-react .mr-head` 의 `text-align: left`). */
+  .month-react tbody .mr-month { padding: 0; }
+  .month-react tbody .mr-month a { display: flex; min-height: 44px;
+    padding: 0 6px; align-items: center; justify-content: flex-start; }
   /* 체크박스는 44px 로 키우면 네모가 우스꽝스럽게 커진다 — 손끝에 걸릴
      만큼만 키우고, 대신 감싸는 라벨을 눌러도 되게 넉넉히 둔다. */
   input[type=checkbox], input[type=radio] { width: 20px; height: 20px; }

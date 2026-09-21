@@ -622,11 +622,16 @@ def test_달별_반응의_달_이름은_눌린다():
     """그 달의 업무 보고로 가는 **유일한 길**인데 390px 에서 20×15 였다.
 
     `th a { min-height: 0 }` 은 여든 줄을 훑는 표의 밀도를 지키려는 것이다.
-    「달별 반응」은 네 줄짜리 요약표라(`dashboard.REACTION_ROWS`) 지킬 밀도가
-    없다 — `.grid-table` 도 아니라서 머리글 모양 약속과도 상관이 없다.
+    「달별 반응」은 반응 넉 칸짜리 요약표라(`dashboard.REACTION_ROWS`) 지킬
+    밀도가 없다 — `.grid-table` 도 아니라서 머리글 모양 약속과도 상관이 없다.
+
+    **선택자가 `thead` 에서 `.mr-month` 로 바뀌었다.** 달을 넷에서 열둘로
+    늘리며 표를 뒤집어(줄 = 달), 달 이름이 머리글 칸에서 줄 머리 칸
+    (`tbody th`)으로 옮겨 갔다. 규칙이 따라가지 않으면 검사만 통과하고 달
+    이름은 다시 15px 로 돌아간다.
     """
-    selector, body = _phone_rule(".month-react thead")
-    assert selector, f"{PHONE} 에 「달별 반응」 머리글 링크 규칙이 없다"
+    selector, body = _phone_rule(".month-react tbody .mr-month")
+    assert selector, f"{PHONE} 에 「달별 반응」 달 이름 링크 규칙이 없다"
     assert re.search(r"min-height:\s*44px", body), \
         f"달 이름이 눌릴 크기가 아니다: {selector} {{{body.strip()}}}"
     # 세로만 키우면 20px 짜리 글자는 그대로다 — 칸을 통째로 눌러야 한다.
