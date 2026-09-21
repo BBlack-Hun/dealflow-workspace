@@ -4,7 +4,8 @@
 것은 일곱이다.
 
   1. **가리기** — 원래 투자사명도 **원래 심사역 이름**도 글 어디에도, 화면
-     어디에도 통째로 안 나온다. 줄에 심사역이 실리게 된 뒤로 여기서 막을 것이
+     어디에도 통째로 안 나온다. 투자사만 **꼬리말**(`…파트너스`)이 남는다 —
+     사용자가 정한 것이고, 여럿이 함께 쓰는 말이라 한 곳을 집어내지 못한다. 줄에 심사역이 실리게 된 뒤로 여기서 막을 것이
      하나 늘었다 — 가려진 값만 줄에 담긴다(`ir_kakao.Line`).
      (문서에서 한 번 막았다고 여기서 안 막으면, 새는 자리가 하나 더 생긴 것뿐이다.)
   2. **누적** — `7월 말까지` 는 7월 한 달이 아니다. 지난 달 것이 들어오고,
@@ -107,14 +108,27 @@ def test_문구에_투자사_원래_이름이_통째로_안_나온다(db, seeded
     for name in (FIRM_SHORT, FIRM_LONG, FIRM_OLD):
         assert name not in got.text, f"원래 이름이 그대로 실렸다: {name}"
     # 가린 값은 있어야 한다 — 아무것도 없으면 가린 것이 아니라 빈 것이다.
-    assert ir_mask.mask_company(FIRM_SHORT) in got.text
+    # **투자사는 `mask_firm`** 이다(꼬리말은 남는다 — `ir_mask` 참고).
+    assert ir_mask.mask_firm(FIRM_SHORT) in got.text
 
 
 def test_투자사_이름의_뒷부분도_안_나온다(db, seeded):
-    """첫 글자만 남는다 — 두 글자째부터가 어디에도 없어야 한다."""
+    """**바뀐 검사다.** 이제 드러나는 것이 하나 있다 — **꼬리말**이다.
+
+    사용자가 `파트너스` · `인베스트먼트` · `자산운용` 은 보이게 하라고 정했다.
+    그래서 검사는 "뒷부분이 통째로 안 나온다" 로 좁힌다: 꼬리말을 뺀 나머지는
+    여전히 한 글자도 나오면 안 된다. 얼마나 덜 가려지는지는 `ir_mask` 에 재어
+    적어 두었다.
+    """
     got = _msg(db, seeded)
     for name in (FIRM_SHORT, FIRM_LONG, FIRM_OLD):
         assert name[1:] not in got.text, f"이름 뒷부분이 샜다: {name[1:]}"
+        suffix = ir_mask.firm_suffix(name)
+        body = name[1:-len(suffix)] if suffix else name[1:]
+        for size in range(2, len(body) + 1):
+            for start in range(0, len(body) - size + 1):
+                assert body[start:start + size] not in got.text, \
+                    f"꼬리말이 아닌 자리가 샜다: {body[start:start + size]}"
 
 
 def test_심사역_원래_이름이_통째로_안_나온다(db, seeded):
@@ -162,7 +176,7 @@ def test_화면에도_원래_이름이_안_나온다(logged_in, db, seeded):
     assert r.status_code == 200
     for name in (FIRM_SHORT, FIRM_LONG, FIRM_OLD, PERSON):
         assert name not in r.text, f"화면이 이름을 내보냈다: {name}"
-    assert ir_mask.mask_company(FIRM_LONG) in r.text
+    assert ir_mask.mask_firm(FIRM_LONG) in r.text
     # 심사역도 **가린 채로** 화면에 있어야 한다 — 없으면 화면과 나가는 글이
     # 다른 것이고, 통째로 있으면 새는 것이다.
     assert ir_mask.mask_person(PERSON) in r.text
@@ -182,7 +196,7 @@ def test_지난_달_요청이_이번_달_문구에_들어온다(db, seeded):
     곳이 목록에서 사라진다."""
     got = _msg(db, seeded)
     assert len(got.lines) == 3, f"누적이 아니다: {[l.text for l in got.lines]}"
-    assert ir_mask.mask_company(FIRM_OLD) in got.text, "지난 달 것이 빠졌다"
+    assert ir_mask.mask_firm(FIRM_OLD) in got.text, "지난 달 것이 빠졌다"
 
 
 def test_문서는_한_달치_그대로다(db, seeded):
@@ -197,7 +211,7 @@ def test_그_달_뒤의_요청은_안_들어온다(db, seeded):
     """`말까지` 다 — 지난 달로 문구를 뽑으면 이번 달 것이 빠져야 한다."""
     got = _msg(db, seeded, month=seeded["last"])
     assert len(got.lines) == 1
-    assert ir_mask.mask_company(FIRM_SHORT) not in got.text
+    assert ir_mask.mask_firm(FIRM_SHORT) not in got.text
 
 
 def test_같은_투자사가_두_달에_걸쳐도_한_줄이다(db, seeded):
@@ -214,7 +228,7 @@ def test_같은_투자사가_두_달에_걸쳐도_한_줄이다(db, seeded):
     db.commit()
     got = _msg(db, seeded)
     assert len(got.lines) == 3, f"같은 곳이 두 줄이 됐다: {[l.text for l in got.lines]}"
-    masked = ir_mask.mask_company(FIRM_OLD)
+    masked = ir_mask.mask_firm(FIRM_OLD)
     assert got.text.count(masked) == 1
     # 먼저 온 날이 남는다 — 지난 달 22일.
     assert ir_kakao.day_label(_day(seeded["last"], 22)) in got.text
@@ -344,7 +358,9 @@ def test_직함이_빈_심사역은_이름에서_줄이_끝난다(db, seeded):
     아니라, 빈 직함은 언제든 목록에 들어온다.
     """
     got = _msg(db, seeded)
-    bare = next(ln for ln in got.lines if ln.firm == ir_mask.mask_company(FIRM_OLD))
+    # **바뀐 줄이다.** 투자사는 `mask_firm` 으로 가린다 — 꼬리말
+    # (`…인베스트먼트`)이 남으므로 `mask_company` 로는 줄을 못 찾는다.
+    bare = next(ln for ln in got.lines if ln.firm == ir_mask.mask_firm(FIRM_OLD))
     assert bare.title == ""
     assert bare.text == f"{bare.date} {bare.company} {bare.firm} {bare.person}"
     assert not bare.text.endswith(" "), "빈 직함 자리가 공백으로 남았다"
@@ -377,7 +393,7 @@ def test_같은_투자사의_두_심사역이_서로_다른_줄로_보인다(db,
     db.commit()
 
     got = _msg(db, seeded)
-    same = [ln for ln in got.lines if ln.firm == ir_mask.mask_company(FIRM_SHORT)]
+    same = [ln for ln in got.lines if ln.firm == ir_mask.mask_firm(FIRM_SHORT)]
     assert len(same) == 2, "한 투자사의 두 심사역이 한 줄로 묶였다"
     assert len({ln.text for ln in same}) == 2, "두 줄의 글자가 똑같다"
     assert PERSON_2 not in got.text, "새 심사역의 원래 이름이 샜다"
@@ -395,7 +411,7 @@ def test_같은_심사역이_여러_번_요청해도_한_줄이다(db, seeded):
     db.commit()
 
     got = _msg(db, seeded)
-    same = [ln for ln in got.lines if ln.firm == ir_mask.mask_company(FIRM_SHORT)]
+    same = [ln for ln in got.lines if ln.firm == ir_mask.mask_firm(FIRM_SHORT)]
     assert len(same) == 1, f"한 사람이 두 줄이 됐다: {[l.text for l in same]}"
     # 남는 것은 **먼저 온 날**이다.
     assert same[0].date == ir_kakao.day_label(_day(seeded["month"], 3))

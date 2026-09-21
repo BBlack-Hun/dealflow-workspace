@@ -622,7 +622,7 @@ def test_the_list_is_added_by_the_code_not_the_template(logged_in, rehearsal, db
     _job_id(_press(logged_in, REMIND, company_id=a_company.id))
     sent = _sole_item(db).message
     assert sent.startswith("머리말 한 줄뿐\n\n")
-    assert ir_mask.mask_company(THE_FIRM) in sent, "요청 목록이 안 붙었다"
+    assert ir_mask.mask_firm(THE_FIRM) in sent, "요청 목록이 안 붙었다"
 
 
 def test_the_month_and_the_companies_are_filled_by_the_code(logged_in, rehearsal,
@@ -657,7 +657,7 @@ def test_the_masked_firm_never_leaks_into_the_test_room(logged_in, rehearsal, db
     _job_id(_press(logged_in, REMIND, company_id=a_company.id))
     sent = _sole_item(db).message
     assert THE_FIRM not in sent
-    assert ir_mask.mask_company(THE_FIRM) in sent
+    assert ir_mask.mask_firm(THE_FIRM) in sent
 
 
 def test_an_empty_template_still_makes_the_message(logged_in, rehearsal, db,
@@ -1372,7 +1372,7 @@ def test_the_demo_masks_its_firms_like_the_real_one(logged_in, rehearsal, db,
     sent = _sole_item(db).message
     for firm in test_demo.FIRMS:
         assert firm not in sent
-        assert ir_mask.mask_company(firm) in sent
+        assert ir_mask.mask_firm(firm) in sent
 
 
 def test_the_startup_screen_still_makes_nothing_with_no_requests(logged_in, db,

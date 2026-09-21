@@ -76,6 +76,10 @@ CONTACT = "보기대표"
 
 #: 보기 투자사 셋. 첫 글자가 서로 다르다 — 가려진 뒤에도(`ir_mask`) 세 줄이
 #: 서로 다른 곳으로 보여야 실제 목록의 모양이 드러난다.
+#:
+#: 마지막 하나는 **꼬리말이 드러나는 이름**이다(`…인베스트먼트`). 실제 목록에는
+#: 꼬리말이 남는 줄과 안 남는 줄이 섞여 있고(`ir_mask.FIRM_SUFFIXES`), 보기
+#: 자료가 한쪽 모양만 내면 그 섞인 모양을 시험 자리에서 볼 수가 없다.
 FIRMS = ("보기벤처스", "예시캐피탈", "가상인베스트먼트")
 
 #: 요청 날짜로 쓸 일(日). 그 달 안의 서로 다른 날이면 된다 — 실물처럼 날짜가
@@ -122,7 +126,7 @@ def startup_remind(db: Session, user: Optional[User],
     """
     lines: List[ir_kakao.Line] = [
         ir_kakao.Line(date=ir_kakao.day_label(f"{month}-{day:02d}"),
-                      company=COMPANY, firm=ir_mask.mask_company(firm),
+                      company=COMPANY, firm=ir_mask.mask_firm(firm),
                       person=ir_mask.mask_person(person), title=title)
         for day, firm, person, title in zip(DAYS, FIRMS, PEOPLE, TITLES)
     ]

@@ -247,7 +247,10 @@ def monthly_requests(db: Session, month: str,
         if contact is None:
             skip(SKIP_NO_MATCH)
             return
-        row = Requester(firm=ir_mask.mask_company(contact.firm),
+        # 투자사는 **꼬리말만 드러내는 쪽**으로 가린다(`ir_mask.mask_firm`) —
+        # 사용자가 `파트너스` · `인베스트먼트` · `자산운용` 은 보이게 하라고
+        # 정했다. 얼마나 덜 가려지는지는 `ir_mask` 에 재어 적어 두었다.
+        row = Requester(firm=ir_mask.mask_firm(contact.firm),
                         person=ir_mask.mask_person(contact.name),
                         date=(date or "")[:10], source=source,
                         title=(contact.title or "").strip())
