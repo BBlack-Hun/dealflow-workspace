@@ -24,10 +24,12 @@
   var list = document.getElementById("req-rank");
   if (!list) return;
 
-  document.querySelectorAll(".js-top-n").forEach(function (btn) {
-    btn.addEventListener("click", function () {
-      var n = btn.getAttribute("data-n");
-      btn.disabled = true;
+  // 고를 값이 여섯(10~300)으로 늘면서 칩 여섯 줄이 390px 을 넘겼다.
+  // 이제 **드롭다운 한 칸**이라 누르는 것이 아니라 고르는 것이다(`change`).
+  document.querySelectorAll("select.js-top-n").forEach(function (pick) {
+    pick.addEventListener("change", function () {
+      var n = pick.value;
+      pick.disabled = true;
       fetch("/api/dashboard/top-requesters?top=" + n)
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (d) {
@@ -40,14 +42,21 @@
             pill.innerHTML = "<b>" + d.rows.length + "</b>명";
             pill.classList.toggle("on", d.rows.length > 0);
           }
-          document.querySelectorAll(".js-top-n").forEach(function (b) {
-            b.classList.toggle("active", b === btn);
-          });
+          // 고른 수보다 적게 나왔으면 그 까닭도 같이 말한다 — 운영에서는
+          // 요청한 곳이 10곳뿐이라 100·200·300 이 전부 같은 목록을 준다.
+          // 이 줄이 없으면 사용자는 자기 명단이 아니라 화면을 의심한다.
+          var all = document.getElementById("req-rank-all");
+          if (all) {
+            var short = d.rows.length > 0 && d.rows.length < Number(n);
+            all.hidden = !short;
+            var b = all.querySelector("b");
+            if (b) b.textContent = d.rows.length;
+          }
           // 주소도 맞춰 둔다 — 새로고침해도 같은 개수가 나온다
           if (history.replaceState) history.replaceState(null, "", "/?top=" + n);
         })
         .catch(function () { alert("불러오지 못했습니다."); })
-        .finally(function () { btn.disabled = false; });
+        .finally(function () { pick.disabled = false; });
     });
   });
 
