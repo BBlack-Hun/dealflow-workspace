@@ -327,10 +327,14 @@
     //                       칸**이다(`models.ConsultingCompany.kakao_joined`).
     //
     // 한 자리에서 돌린다 — 규칙이 칸마다 따로 적히면 한 벌은 반드시 낡는다.
+    //   meeting_kind        `미팅종류` — 계약 탭에만 안 선다(저 탭의
+    //                       `meeting_at` 은 `계약월` 이라는 다른 물음이다).
+    //                       칸 이름과 필터 키(`meetkind`)가 다르다.
     [["contract_received", "data-f-received"],
      ["contract_done", "data-f-done"],
      ["contract_management", "data-f-quote"],
-     ["kakao_joined", "data-f-joined"]].forEach(function (pair) {
+     ["kakao_joined", "data-f-joined"],
+     ["meeting_kind", "data-f-meetkind"]].forEach(function (pair) {
       var td = tr.querySelector('[data-field="' + pair[0] + '"]');
       if (td && tr.hasAttribute(pair[1])) {
         tr.setAttribute(pair[1], td.textContent.trim());

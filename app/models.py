@@ -1117,6 +1117,42 @@ class ConsultingCompany(TimestampMixin, Base):
     position: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)   # 시트의 NO
     region: Mapped[Optional[str]] = mapped_column(String, nullable=True)      # 지역
     meeting_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # 미팅일
+    # **어떤 자리에서 만났는가** — `화상미팅` / `회의실 미팅`. 빈칸은
+    # `아직 안 정함`이다(옆의 `contract_received` · `contract_done` ·
+    # `kakao_joined` 와 같다). 둘 중 하나로 채워 두면 앱이 아무도 확인한 적
+    # 없는 사실을 단정하는 것이 된다(0047 · 0048 · 0049 · 0065 · 0068 · 0077 이
+    # 같은 이유로 backfill 을 안 했다).
+    #
+    # ## 왜 `meeting_at` 에서 갈라 나오나
+    #
+    # 원본 시트의 머리글이 **`미팅일(화상, 회의실)`** 이다
+    # (`routers/consulting.py` 의 `FIXED_COLUMNS`). 시트는 처음부터 두 가지를
+    # 한 칸에 적으라고 했고, 실제 값이 `9/16 PM2 (화상미팅)` 처럼 날짜와 자리가
+    # 괄호로 붙어 있다. 섞여 있으면 **화상으로만 만난 기업**을 골라낼 수가
+    # 없다 — 적힌 것은 검색으로 찾아지지만 적는 꼴이 줄마다 달라
+    # (`화상`·`화상미팅`·`(화상)`) 머리글 필터에 올릴 값이 모이지 않는다.
+    # 옆 `기업 관리` 에서 `견적서 첨부 여부` 셋을 갈라낸 것과 같은 자리다.
+    #
+    # ## `Meeting.meet_mode` 와 **다른 칸이다**
+    #
+    # 저쪽은 IR 미팅 줄(`meetings`)에 붙고 값이 `in_person`/`video` 라는
+    # **열쇠**이며, 화면에 보일 때만 `대면`/`화상` 으로 옮겨진다
+    # (`services/pipeline.py` 의 `MEETING_MODES`). 이 칸은
+    # `consulting_companies` 의 컨설턴트 줄에 붙고, **화면에 보이는 말이 곧
+    # 저장되는 값**이다 — 이 표의 편집기가 칸에 보이는 글자를 그대로 보내기
+    # 때문이다(`static/js/consulting.js`). 말과 값을 갈라 두면 표가 보내는
+    # 글자가 어느 값에도 안 맞아 조용히 안 저장되는 자리가 생긴다
+    # (`routers/companies.py` 의 `CONTRACT_FROM_LABEL` 이 그 사고다).
+    #
+    # 부르는 말도 다르다. 사용자가 고른 것은 `화상미팅`·`회의실 미팅` 이고
+    # 그것이 이 시트가 쓰는 말이다(머리글의 `(화상, 회의실)`). 저쪽 말
+    # (`대면`)을 끌어다 쓰면 시트에 없던 낱말이 이 표에 선다.
+    # 두 표를 잇는 열쇠도 없다 — `kakao_joined` 주석이 같은 이야기를 한다.
+    #
+    # **어떤 판정에도 안 쓴다.** 칩·KPI 는 `기업 관리` 한 갈래만 본다
+    # (`services/consulting_status.py`).
+    meeting_kind: Mapped[Optional[str]] = mapped_column(
+        String, nullable=True)                                                 # 미팅종류
     company_name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # 기업명/계약일/무료유료/수수료
     management: Mapped[Optional[str]] = mapped_column(Text, nullable=True)    # 기업 관리
     ceo_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)    # 대표자

@@ -55,6 +55,19 @@ FIXED_COLUMNS = [
     ("NO", "position"),
     ("지역", "region"),
     ("미팅일(화상, 회의실)", "meeting_at"),
+    # 위 칸 머리글의 괄호가 **이 칸의 정체**다 — 시트가 처음부터 `미팅일` 과
+    # `화상, 회의실` 두 가지를 한 칸에 적으라고 했고, 값이 `9/16 PM2 (화상미팅)`
+    # 처럼 붙어 있었다. 자리를 갈라 세운다(사용자 요청: "미팅날짜 컬럼 옆에").
+    #
+    # **`미팅일` 의 글자는 안 지운다.** 이 저장소는 적힌 것을 고쳐 쓰지 않는다
+    # (`split_contract_line` · `CONTRACT_COLUMNS` 의 `계약월` 이 같은 자리다).
+    # 괄호를 읽어다 이 칸을 채우지도 않는다 — 아무 것도 안 적힌 줄이 더 많고,
+    # 그 줄에 무엇을 넣어도 추측이다(0078).
+    #
+    # **계약 탭에는 안 선다.** 저 탭의 같은 저장 자리(`meeting_at`)는 `계약월`
+    # 이라는 다른 물음을 받고 있어(값이 `미정`·`8`) 옆에 `미팅종류` 가 서면
+    # 영영 안 채워지는 칸이 하나 는다. 그래서 `CONTRACT_COLUMNS` 에는 안 넣는다.
+    ("미팅종류", "meeting_kind"),
     ("기업명 / 계약일 / 무료유료 / 계약금, 성과수수료 %", "company_name"),
     ("기업 관리 [ 드랍 이유 상세하게 기입 / 관리중 / 백업팀으로 전환 ]", "management"),
 ]
@@ -82,6 +95,31 @@ TAIL_COLUMNS = [
 # `견적서 첨부 여부` 로 바뀌어 이제 `O`/`X` 만 받는다(아래 `STARTUP_COLUMNS`).
 # 문장으로 적을 자리는 `기업 관리` 한 칸이다.
 CONTRACT_DONE_CHOICES = (CONTRACT_LABELS["free"], CONTRACT_LABELS["paid"])
+
+# 고르는 칸 `미팅종류` 의 보기. **여기가 이 말의 한 곳이다** — 위
+# `CONTRACT_DONE_CHOICES` 는 같은 말이 `routers/companies.py` 에 이미 있어서
+# 거기서 가져왔는데, 이 두 마디는 이 앱 어디에도 없던 말이다.
+#
+# **`services/pipeline.py` 의 `MEETING_MODES` 를 안 쓴다.** 그쪽도 "대면인가
+# 화상인가" 를 묻지만 세 가지가 다르다.
+#
+#   · **부르는 말이 다르다.** 저기는 `대면`/`화상` 이고 여기는
+#     `화상미팅`/`회의실 미팅` 이다 — 사용자가 고른 말이자 이 시트의 머리글이
+#     쓰는 말이다(`미팅일(화상, 회의실)`). 저쪽 말을 끌어오면 시트에 없던
+#     낱말이 이 표에 선다.
+#   · **담기는 꼴이 다르다.** 저기는 `in_person`/`video` 라는 **열쇠**를 담고
+#     화면에 보일 때만 옮겨 적는다. 이 표의 편집기는 칸에 보이는 글자를 그대로
+#     보내므로(`static/js/consulting.js`) 말과 값을 갈라 두면 표가 보내는
+#     글자가 어느 값에도 안 맞아 **조용히 안 저장된다**
+#     (`routers/companies.py` 의 `CONTRACT_FROM_LABEL` 이 그 사고다).
+#   · **담기는 표가 다르다.** 저기는 `meetings` 의 미팅 줄, 여기는
+#     `consulting_companies` 의 컨설턴트 줄이고 둘을 잇는 열쇠가 없다
+#     (`models.ConsultingCompany.kakao_joined` 주석이 같은 이야기를 한다).
+#
+# **빈칸이 셋째 값이다** — `아직 안 정함`. 세 번째 보기를 만들지 않는 것은
+# 사용자가 두 가지로 적어 달라고 했고, 이 표의 다른 고르는 칸들이 이미 그
+# 규칙이기 때문이다(머리글 필터가 `(비어 있음)` 으로 세워 준다).
+MEETING_KIND_CHOICES = ("화상미팅", "회의실 미팅")
 
 # `관리 스타트업` 탭에만 서는 칸들 — 전부 `기업 관리` **오른쪽**이다.
 #
@@ -738,6 +776,11 @@ def company_rows(db: Session, user: User, sheet: str = "",
             "position": c.position,
             "region": c.region or "",
             "meeting_at": c.meeting_at or "",
+            # 계약 탭에는 이 칸이 안 서지만 **늘 싣는다** — 화면이 탭마다 다른
+            # dict 를 받으면 없는 칸을 꺼내다 터지는 자리가 생긴다(`deal_pitch`
+            # · `success_fee` 와 같은 규칙이다). 빈 문자열이 곧 `아직 안 정함`
+            # 이고, 머리글 필터가 그것을 `(비어 있음)` 으로 세워 준다.
+            "meeting_kind": c.meeting_kind or "",
             "company_name": c.company_name or "",
             "management": management,
             # 머리글 필터가 보는 값. 칸에 적힌 문장 그대로가 아니라 시트가 정해
@@ -807,6 +850,12 @@ def company_rows(db: Session, user: User, sheet: str = "",
                 c.company_name, "" if contract else c.region,
                 c.management, c.ceo_name,
                 c.email, c.meeting_at, c.success_fee, c.contract_fee,
+                # **칸이 서는 탭에서만** 넣는다(아래 `deal_pitch` 와 같은
+                # 이유 — 계약 탭에는 이 칸도 머리글도 없다). 화면에서 고치면
+                # 브라우저가 `td.cell` 을 전부 이어 붙여 이 값을 다시 적으므로
+                # (`consulting.js` 의 `refreshRowFlags`), 서버가 안 넣으면
+                # 고치기 전후로 검색 결과가 달라진다.
+                "" if contract else c.meeting_kind,
                 # 칸을 고치면 브라우저가 `td.cell` 을 전부 이어 붙여 이 값을
                 # 다시 적는다(`consulting.js` 의 `refreshRowFlags`). 여기서
                 # 빼 두면 새로고침 전후로 검색 결과가 달라진다.
@@ -946,6 +995,9 @@ def consulting_page(request: Request, db: Session = Depends(get_db),
         # 여기 적으면 그 말을 고치는 날 두 화면이 갈린다
         # (`CONTRACT_DONE_CHOICES` 주석 참고).
         "contract_done_choices": ",".join(CONTRACT_DONE_CHOICES),
+        # `미팅종류` 의 보기. 위 칸과 **같은 방식**이다 — 화면에 글자를 적어
+        # 두지 않는다. 한 곳은 `MEETING_KIND_CHOICES` 다.
+        "meeting_kind_choices": ",".join(MEETING_KIND_CHOICES),
         "fixed_columns": fixed,
         "tail_columns": tail,
         "msg": msg,
@@ -993,6 +1045,9 @@ class CompanyIn(BaseModel):
     position: Optional[int] = None
     region: Optional[str] = None
     meeting_at: Optional[str] = None
+    # **여기 안 적으면 화면에서 고쳐도 조용히 안 저장된다** — pydantic 이
+    # 모르는 칸을 그냥 버리기 때문에 오류도 안 난다.
+    meeting_kind: Optional[str] = None
     company_name: Optional[str] = None
     management: Optional[str] = None
     ceo_name: Optional[str] = None
@@ -1389,7 +1444,21 @@ def import_sheet(file: UploadFile = File(...), sheet: str = Form(""),
         status_code=303)
 
 
-CONSULTING_EXPORT_HEADERS = [label for label, _ in FIXED_COLUMNS]
+# 두 탭(`관리 스타트업` · `경영본부 전달 기업`)에 **나중에 늘어난** 고정 칸.
+# 화면 차례는 `미팅일` 바로 뒤지만 **엑셀에서는 맨 뒤**다 — 이 목록의 차례는
+# 화면 차례가 아니라 **이미 내려받아 둔 파일의 차례**이고, 앞에 끼우면 그 뒤
+# 월 열이 통째로 한 칸씩 밀려 지난번 파일과 나란히 놓고 볼 수가 없다(아래
+# `CONTRACT_EXPORT_HEADERS` · `STARTUP_EXPORT_HEADERS` 가 같은 이유로 뒤에 있다).
+#
+# **여기 적힌 칸은 앞 묶음에서 빠진다.** `CONSULTING_EXPORT_HEADERS` 가
+# `FIXED_COLUMNS` 에서 뽑는데, 빼 두지 않으면 같은 칸이 머리글 두 자리에 서고
+# (실제로 그렇게 났다) 값을 손으로 세우는 아래 줄과 칸 수가 어긋나 **그 뒤
+# 값이 통째로 한 칸씩 밀린다.** 기업명 자리에 지역이 찍히는 식이다.
+FIXED_EXTRA_EXPORT = [("미팅종류", "meeting_kind")]
+_EXTRA_EXPORT_FIELDS = {field for _label, field in FIXED_EXTRA_EXPORT}
+
+CONSULTING_EXPORT_HEADERS = [label for label, field in FIXED_COLUMNS
+                             if field not in _EXTRA_EXPORT_FIELDS]
 # 계약 탭에만 값이 있는 칸. 엑셀은 탭을 가리지 않고 한 장으로 내려받으므로
 # **머리글 한 벌**에 뒤로 붙인다 — 탭마다 다른 장을 만들면 내려받은 파일에서
 # 어느 장이 무엇인지 다시 맞춰야 한다. 다른 탭 줄에서는 빈 칸이다.
@@ -1431,7 +1500,8 @@ def export_consulting(db: Session = Depends(get_db),
     headers = (CONSULTING_EXPORT_HEADERS + (["담당"] if owned_col else [])
                + [c.label for c in cols]
                + [label for label, _ in TAIL_COLUMNS] + CONTRACT_EXPORT_HEADERS
-               + STARTUP_EXPORT_HEADERS)
+               + STARTUP_EXPORT_HEADERS
+               + [label for label, _field in FIXED_EXTRA_EXPORT])
     rows = [
         [r["no"], r["region"], r["meeting_at"], r["company_name"], r["management"]]
         + ([r["owner_name"]] if owned_col else [])
@@ -1440,6 +1510,7 @@ def export_consulting(db: Session = Depends(get_db),
         + [r["success_fee"], r["contract_fee"], r["contract_received"]]
         + [r["deal_pitch"], r["contract_management"], r["contract_done"],
            r["kakao_joined"]]
+        + [r[field] for _label, field in FIXED_EXTRA_EXPORT]
         for r in company_rows(db, user)
     ]
     try:
@@ -1541,6 +1612,13 @@ def parse_rows(rows: List[List[str]]) -> dict:
         # 남아야 한다. 그 달 기록을 한 칸에 뭉쳐 덮으면 어느 달 값이 남았는지
         # 알 수 없게 된다.
         "kakao_joined": fixed("카톡", "연결"),
+        # 시트에 `미팅종류` 열이 있으면 여기로 받는다. 안 받으면 월별 리마인드
+        # 열로 딸려 들어가 같은 이름이 표에 두 번 선다(위 참고).
+        #
+        # **`미팅일` 과 안 겹친다.** `find("미팅일")` 은 `미팅일` 이 든 머리글만
+        # 집고 이쪽은 `미팅`+`종류` 둘 다 든 머리글만 집는다 — `미팅일(화상,
+        # 회의실)` 에는 `종류` 가 없고 `미팅종류` 에는 `미팅일` 이 없다.
+        "meeting_kind": fixed("미팅", "종류"),
         "ceo_name": find("대표자"),
         "phone": find("연락처"),
         "email": find("이메일"),
@@ -1618,8 +1696,8 @@ def apply_rows(db: Session, parsed: dict, user: User,
             created += 1
         else:
             updated += 1
-        for field in ("region", "meeting_at", "company_name", "management",
-                      "ceo_name", "phone", "email",
+        for field in ("region", "meeting_at", "meeting_kind", "company_name",
+                      "management", "ceo_name", "phone", "email",
                       "contract_management", "contract_done",
                       "contract_received", "kakao_joined"):
             value = item.get(field)
