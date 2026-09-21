@@ -114,7 +114,8 @@ from app.services.auth import normalize_phone  # noqa: E402
 from app.services.sourcing_link import MIN_DIGITS, digits  # noqa: E402
 # 시트를 읽는 규칙도 명단 임포터의 것을 그대로 쓴다(머리행 찾기 · 칸 짝짓기 ·
 # 달마다 늘어나는 칸). 여기서 다시 쓰면 8월 칸이 한쪽에서만 생긴다.
-from scripts.import_startup_sheet import FIELDS, NOTES, norm, parse  # noqa: E402
+from scripts.import_startup_sheet import (FIELDS, NOTES, hidden_notice,  # noqa: E402
+                                          norm, parse)
 
 # 부르는 쪽이 `--map` 으로 걸 수 있는 칸 이름들. 배치가 정한 키만 받는다 —
 # 여기서 새 이름을 지으면 값은 들어가는데 화면이 그 칸을 못 찾는다.
@@ -442,6 +443,10 @@ def main() -> int:
           f"{', '.join(parsed['columns']) or '없음'}")
     if parsed["skipped"]:
         print(f"  표 밖의 줄 {len(parsed['skipped'])}개 (번호 칸이 숫자가 아닌 줄)")
+    # 화면에 안 서는 칸으로 가는 값은 **조용히 넣지 않는다.** 글은 저쪽 임포터와
+    # 한 곳에서 나온다(`import_startup_sheet.hidden_notice`).
+    if hidden_notice(parsed):
+        print(hidden_notice(parsed))
     for who, _item, where in moves:
         print(f"    옮김: {where}  ←→ 앱 `{who.firm or ''} {who.name}`")
     for who in orphans:

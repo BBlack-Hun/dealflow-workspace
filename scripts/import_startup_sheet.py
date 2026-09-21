@@ -103,8 +103,25 @@ NOTES = [
     # 찾는 말을 `회신` 한 낱말로 줄이지 않는다 — 여기는 **포함**으로 찾아서
     # (아래 `find`) 위의 `IR 자료 회신` 머리글까지 같이 걸린다. 둘은 다른
     # 칸이다: 저쪽은 IR 자료를 보내고 받은 답, 이쪽은 문자·카톡에 온 반응이다.
+    #
+    # **이 칸은 화면에서 뺐다**(`contact_columns.STARTUP_LAYOUT` 의 ④ 자리
+    # 주석). 그래도 **여기서는 안 뺀다** — 빼면 `회신 상태` 가 위 `원본NO`
+    # 주석이 경계하는 그것이 된다. 남는 머리글이라 월별 칸으로 서고, 달에 안
+    # 매이는 값이 달 칸 자리에 서면 `VISIBLE_MONTHS` 가 1인 표에서 그 달의
+    # 기록을 접어 버리며 달이 바뀔 때마다 지난달로 밀려 내려간다.
+    #
+    # 대신 그 열이 **실제로 들어오면 적어서 알린다**(아래 `HIDDEN_NOTES`).
     ("회신 상태", "reply_status"),
 ]
+
+# 시트에서는 읽지만 **화면에는 안 서는** 칸.
+#
+# 값이 `notes` 에 들어가는데 화면 어디에도 안 보이면, 시트에 적은 사람은
+# 사라졌다고 읽고 다시 적는다 — 그때는 원래 무엇이 적혀 있었는지 알 길이 없다.
+# 값을 버리지도(위 참조) 조용히 쌓지도 않는 대신, **그 열이 있는 시트를 올릴
+# 때마다 적어서 알린다**(`hidden_notice`). 이 저장소는 조용한 것을 가장
+# 경계한다 — 화면은 멀쩡하고 아무도 눈치채지 못하는 부류다.
+HIDDEN_NOTES = {"reply_status"}
 
 
 def norm(value) -> str:
@@ -175,7 +192,7 @@ def parse(rows, is_row=None, aliases=None) -> dict:
     is_row = is_row or has_row_no
     at = find_header(rows)
     if at < 0:
-        return {"columns": [], "items": [], "skipped": []}
+        return {"columns": [], "items": [], "skipped": [], "hidden": []}
     header = [flat(c) for c in rows[at]]
 
     def find(token):
@@ -222,8 +239,26 @@ def parse(rows, is_row=None, aliases=None) -> dict:
         item["months"] = {label: norm(cells[i]) for i, label in months
                           if norm(cells[i])}
         items.append(item)
+    # 화면에 안 서는 칸으로 가는 머리글. 찾은 말이 아니라 **시트에 적힌 글**을
+    # 들고 나간다 — 알리는 글을 보는 사람은 시트를 열어 그 열을 찾는다.
+    hidden = [header[i] for key, i in notes_at.items()
+              if key in HIDDEN_NOTES and i is not None]
     return {"columns": [label for _i, label in months],
-            "items": items, "skipped": skipped}
+            "items": items, "skipped": skipped, "hidden": hidden}
+
+
+def hidden_notice(parsed: dict) -> str:
+    """화면에 안 서는 칸에 값이 들어간다는 알림. 없으면 빈 글자.
+
+    **두 임포터가 같은 글을 쓴다**(`import_new_list.py` 도 이 `parse` 를 쓴다).
+    각자 적어 두면 한쪽만 고쳐지는 날 그 임포터만 조용히 넘어간다.
+    """
+    labels = parsed.get("hidden") or []
+    if not labels:
+        return ""
+    return (f"  ⚠ 화면에 안 서는 칸 {len(labels)}개: {', '.join(labels)}\n"
+            f"      값은 들어가지만 표·수정창·엑셀 어디에도 안 보입니다"
+            f"(`contact_columns` 의 ④ 자리 주석).")
 
 
 def guide_text(rows) -> str:
@@ -286,6 +321,8 @@ def main() -> int:
     if parsed["skipped"]:
         # 조용히 버리면 몇 줄이 왜 빠졌는지 알 수 없다.
         print(f"  건너뜀 {len(parsed['skipped'])}줄 (번호가 없는 줄 = 표 아래 줄글)")
+    if hidden_notice(parsed):
+        print(hidden_notice(parsed))
     print(f"  참고 자료 `{args.guide}`: 줄글 {len(guide)}자")
     if missing:
         # **새로 만들지 않는다.** 만들면 같은 사람이 두 줄이 된다.
