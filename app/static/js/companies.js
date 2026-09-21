@@ -289,8 +289,8 @@
     var investors = data.sent_investors;
     sum.textContent = "보낸 날 " + rows.length + "회" +
       (investors === undefined || investors === null
-        ? "" : " · 투자사 " + investors + "명") +
-      " · 발송 " + sends + "건" + (last ? " · 마지막 " + last : "");
+        ? "" : " · 서로 다른 투자사 " + investors + "곳") +
+      " · 발송 " + sends + "명" + (last ? " · 마지막 " + last : "");
 
     rows.forEach(function (r) {
       var tr = document.createElement("tr");

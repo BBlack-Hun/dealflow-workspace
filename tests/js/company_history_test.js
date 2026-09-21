@@ -140,7 +140,7 @@ async function main() {
   // ── 2. 요약 한 줄은 **표에서 그대로 더한 값**이다 ──────────────────────
   //
   // 따로 세면 요약과 표가 갈린다. `보낸 날` 과 `발송` 이 나란히 있어야
-  // 180건짜리와 103건짜리가 구별된다.
+  // 180명짜리와 103명짜리가 구별된다.
   {
     const dom = build();
     run(dom, byId);
@@ -149,7 +149,7 @@ async function main() {
 
     assert.strictEqual(
       dom.sum.textContent,
-      "보낸 날 3회 · 투자사 118명 · 발송 115건 · 마지막 2026-08-19");
+      "보낸 날 3회 · 서로 다른 투자사 118곳 · 발송 115명 · 마지막 2026-08-19");
     assert.strictEqual(dom.empty.hidden, true);
   }
 
