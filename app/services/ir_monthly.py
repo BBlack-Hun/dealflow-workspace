@@ -71,12 +71,21 @@ class Requester:
 
     원래 이름은 이 자료구조에 담지 않는다. 담아 두면 화면이 실수로 그것을 그릴
     수 있고, 그 실수는 이름이 새고 나서야 발견된다.
+
+    **직함은 가리지 않는다.** `이사` · `심사역` 은 이름이 아니라 **여러 사람이
+    함께 쓰는 말**이라 한 사람을 가리키지 못한다. 가려 봐야 `이***` 이 되어
+    읽는 사람에게 주는 것만 사라지고, 가려지는 것은 없다. 가리는 것은 사람을
+    집어내는 값뿐이다(`ir_mask` 의 규칙 — 회사명과 사람 이름).
     """
 
     firm: str        # 가려진 회사명
     person: str      # 가려진 담당자 이름
     date: str        # YYYY-MM-DD (모르면 "")
     source: str      # app(이 앱에서 누름) | sheet(시트에서 옮겨 옴)
+    # 직함 **원문 그대로**. 모르면 빈 문자열 — 없는 직함을 지어내지 않는다.
+    # 표기가 자유로워(`이사` · `이사님` · `대표`) 여기서 다듬지 않는다:
+    # 다듬으면 명단에 적힌 말과 대표가 받는 글의 말이 갈린다.
+    title: str = ""
 
 
 @dataclass(frozen=True)
@@ -201,16 +210,16 @@ def monthly_requests(db: Session, month: str,
     달에 물어본 곳이 목록에서 사라지고, 대표는 그 사이에 무슨 일이 있었는지를
     매달 조각으로만 본다.
 
-    누적에서도 **같은 투자사 × 같은 기업은 한 줄**이다(아래 참고). 8월에 또
+    누적에서도 **같은 심사역 × 같은 기업은 한 줄**이다(아래 참고). 8월에 또
     물어봤다고 두 줄이 되면 `몇 곳이 요청했는가` 가 틀어진다 — 남는 것은
-    **먼저 온 날**이라, 그 투자사가 언제부터 관심을 보였는지가 남는다.
+    **먼저 온 날**이라, 그 심사역이 언제부터 관심을 보였는지가 남는다.
 
     ### 같은 요청이 두 번 세어지지 않게
 
     이 앱에서 누른 것과 시트에서 옮겨 온 것이 같은 건일 수 있다(옮겨 온 뒤에
-    앱에서도 눌렀다면). 한 달 안에서 **같은 투자사 × 같은 기업**은 한 줄로
+    앱에서도 눌렀다면). 한 달 안에서 **같은 심사역 × 같은 기업**은 한 줄로
     친다 — 문서가 세는 것은 요청 횟수가 아니라 `몇 곳이 요청했는가` 라서,
-    두 줄로 두면 `2곳` 이라고 적히지만 실제로는 한 곳이다.
+    두 줄로 두면 `2곳` 이라고 적히지만 실제로는 한 건이다.
     """
     out = MonthlyRequests(month=month, cumulative=cumulative)
     if not month:
@@ -225,7 +234,12 @@ def monthly_requests(db: Session, month: str,
     def skip(reason: str, count: int = 1) -> None:
         skips[reason] = skips.get(reason, 0) + count
 
-    # {(투자사 id, 기업 id): Requester} — 겹치면 **먼저 온 날**을 남긴다.
+    # {(심사역 id, 기업 id): Requester} — 겹치면 **먼저 온 날**을 남긴다.
+    #
+    # 묶는 자리가 투자사가 아니라 **사람**인 까닭: 같은 투자사에서 두 심사역이
+    # 물어보면 그것은 두 건이다. 투자사로 묶으면 한 건으로 줄고, 한 사람이
+    # 목록에서 통째로 사라진다. 카톡 글이 줄마다 심사역까지 적게 된 지금은
+    # 그 사람이 **보이지 않는 채로** 빠지는 셈이라 더 그렇다.
     picked: Dict[Tuple[int, int], Requester] = {}
 
     def add(contact: Optional[VcContact], company_id: int,
@@ -235,7 +249,8 @@ def monthly_requests(db: Session, month: str,
             return
         row = Requester(firm=ir_mask.mask_company(contact.firm),
                         person=ir_mask.mask_person(contact.name),
-                        date=(date or "")[:10], source=source)
+                        date=(date or "")[:10], source=source,
+                        title=(contact.title or "").strip())
         key = (contact.id, company_id)
         old = picked.get(key)
         if old is None or (row.date and (not old.date or row.date < old.date)):

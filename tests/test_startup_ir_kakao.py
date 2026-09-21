@@ -3,13 +3,16 @@
 옆의 문서(#131)와 짓는 자리가 다르므로 막을 것도 겹치지 않는다. 여기서 막는
 것은 일곱이다.
 
-  1. **가리기** — 원래 투자사명이 글 어디에도, 화면 어디에도 통째로 안 나온다.
+  1. **가리기** — 원래 투자사명도 **원래 심사역 이름**도 글 어디에도, 화면
+     어디에도 통째로 안 나온다. 줄에 심사역이 실리게 된 뒤로 여기서 막을 것이
+     하나 늘었다 — 가려진 값만 줄에 담긴다(`ir_kakao.Line`).
      (문서에서 한 번 막았다고 여기서 안 막으면, 새는 자리가 하나 더 생긴 것뿐이다.)
   2. **누적** — `7월 말까지` 는 7월 한 달이 아니다. 지난 달 것이 들어오고,
      그 뒤 달 것은 안 들어온다.
   3. 계약을 마친 기업만.
   4. 요청이 0곳이면 **글을 짓지 않는다**(#131 과 같은 결).
-  5. 날짜 꼴이 `5/22` — 앞에 0 이 없다.
+  5. 날짜 꼴이 `5/22` — 앞에 0 이 없다. 그리고 **모르는 자리는 지어내지 않고
+     통째로 뺀다**(날짜도, 직함도).
   6. 기업이 여럿일 때 머리말과 줄이 갈린다.
   7. 길어지면 여러 통으로 나뉘고, 인사말은 **첫 통에만** 붙는다.
 
@@ -32,6 +35,12 @@ FIRM_SHORT = "가나벤처스"
 FIRM_LONG = "마바사아자캐피탈파트너스"
 FIRM_OLD = "다라인베스트먼트"
 PERSON = "홍길동"
+# 같은 투자사에 심사역이 둘일 때를 보려고 **이름을 따로** 하나 더 둔다.
+PERSON_2 = "강감찬"
+# 직함은 가리지 않는다 — 이름이 아니라서 가릴 것이 없다(`ir_monthly.Requester`).
+# 셋째는 **일부러 비운다**: 명단에 직함이 안 적힌 심사역이 실제로 있다.
+TITLE_SHORT = "심사역"
+TITLE_LONG = "이사"
 COMPANY_A = "샘플에이"
 COMPANY_B = "샘플비"
 COMPANY_OFF = "샘플씨"          # 계약 안 한 기업
@@ -59,8 +68,10 @@ def seeded(db, users):
     off = IrCompany(name=COMPANY_OFF, contract_status="none")
     db.add_all([a, b, off])
 
-    short = VcContact(user_id=1, name=PERSON, firm=FIRM_SHORT)
-    long_ = VcContact(user_id=1, name=PERSON, firm=FIRM_LONG)
+    short = VcContact(user_id=1, name=PERSON, firm=FIRM_SHORT, title=TITLE_SHORT)
+    long_ = VcContact(user_id=1, name=PERSON, firm=FIRM_LONG, title=TITLE_LONG)
+    # **직함이 비어 있는 심사역.** 명단에 안 적힌 분이 실제로 있어서, 줄이 그때
+    # 어떻게 끝나는지가 이 자료로 검사된다.
     old = VcContact(user_id=1, name=PERSON, firm=FIRM_OLD)
     db.add_all([short, long_, old])
     db.flush()
@@ -106,11 +117,44 @@ def test_투자사_이름의_뒷부분도_안_나온다(db, seeded):
         assert name[1:] not in got.text, f"이름 뒷부분이 샜다: {name[1:]}"
 
 
-def test_담당자_이름은_아예_안_실린다(db, seeded):
-    """실물에 투자사만 적혀 있다. 사람 이름은 새는 자리를 하나 더 만든다."""
+def test_심사역_원래_이름이_통째로_안_나온다(db, seeded):
+    """**바뀐 검사다.** 예전에는 사람 이름이 줄에 아예 안 실렸다(투자사만 적었다).
+
+    사용자가 줄에 `심사역 성함`·`직책`을 더해 달라고 정했다 — 대표가 어느
+    투자사인지만 알고 누가 물어봤는지를 모르면 다음 연락을 준비할 수 없어서다.
+    그래서 **안 싣는다**는 규칙은 없어졌지만, 막는 것은 오히려 늘었다:
+    실리는 것은 **가려진 값뿐**이고 원래 이름은 글에도 자료구조에도 없다.
+    """
     got = _msg(db, seeded)
-    assert PERSON not in got.text
-    assert ir_mask.mask_person(PERSON) not in got.text
+    assert PERSON not in got.text, "원래 심사역 이름이 그대로 실렸다"
+    # 가린 값은 있어야 한다 — 없으면 가린 것이 아니라 빈 것이다.
+    assert ir_mask.mask_person(PERSON) in got.text
+
+
+def test_심사역_이름의_뒷부분도_안_나온다(db, seeded):
+    """첫 글자만 남는다 — 두 글자째부터가 어디에도 없어야 한다(투자사와 같다)."""
+    got = _msg(db, seeded)
+    assert PERSON[1:] not in got.text, f"이름 뒷부분이 샜다: {PERSON[1:]}"
+
+
+def test_원래_이름은_자료구조에도_안_담긴다(db, seeded):
+    """글자만 보는 것으로는 모자라다 — 화면이 `line.person` 을 그리는 날
+    자료구조에 원래 이름이 들어 있으면 그대로 새기 때문이다.
+
+    `Line` 이 들고 있는 것은 **가려진 값**이어야 한다(`ir_kakao.Line` 의 규칙).
+    """
+    got = _msg(db, seeded)
+    for line in got.lines:
+        assert PERSON not in line.person, "줄이 원래 이름을 들고 있다"
+        assert line.person == ir_mask.mask_person(PERSON)
+        for name in (FIRM_SHORT, FIRM_LONG, FIRM_OLD):
+            assert name not in line.firm
+    # 재료 쪽도 같다 — 여기서 새면 문서 화면도 같이 샌다.
+    from app.services import ir_monthly
+
+    for row in ir_monthly.monthly_requests(db, seeded["month"],
+                                           cumulative=True).of(seeded["a"].id):
+        assert PERSON not in row.person
 
 
 def test_화면에도_원래_이름이_안_나온다(logged_in, db, seeded):
@@ -119,6 +163,9 @@ def test_화면에도_원래_이름이_안_나온다(logged_in, db, seeded):
     for name in (FIRM_SHORT, FIRM_LONG, FIRM_OLD, PERSON):
         assert name not in r.text, f"화면이 이름을 내보냈다: {name}"
     assert ir_mask.mask_company(FIRM_LONG) in r.text
+    # 심사역도 **가린 채로** 화면에 있어야 한다 — 없으면 화면과 나가는 글이
+    # 다른 것이고, 통째로 있으면 새는 것이다.
+    assert ir_mask.mask_person(PERSON) in r.text
 
 
 def test_가리기를_이_파일이_직접_하지_않는다():
@@ -270,11 +317,97 @@ def test_머리말_세_줄이_실물_그대로다(db, seeded):
     assert head[3] == "", "머리말과 목록 사이에 빈 줄이 없다"
 
 
-def test_줄은_날짜_기업_투자사_차례다(db, seeded):
+def test_줄은_날짜_기업_투자사_심사역_직함_차례다(db, seeded):
+    """**바뀐 검사다.** 예전 차례는 `날짜 · 기업 · 투자사` 셋이었다.
+
+    사용자가 적어 준 모양이 `{{일자}} {{회사명}} {{마스킹한 투자사}}
+    {{마스킹한 심사역 성함}} {{직책}}` 이라 뒤에 둘이 붙었다. 차례를 여기에
+    박아 두는 까닭은, 순서가 바뀌면 대표가 **투자사와 사람을 맞바꿔** 읽기
+    때문이다 — 둘 다 `X***` 꼴이라 글만 보고는 가려낼 수가 없다.
+    """
     got = _msg(db, seeded)
-    line = got.lines[0]
-    assert line.text == f"{line.date} {line.company} {line.firm}"
+    line = next(ln for ln in got.lines if ln.title)
+    assert line.text == (f"{line.date} {line.company} {line.firm} "
+                         f"{line.person} {line.title}")
     assert line.company == COMPANY_A
+
+
+def test_직함이_빈_심사역은_이름에서_줄이_끝난다(db, seeded):
+    """**직함을 지어내지 않는다.**
+
+    `담당` 같은 기본말을 넣으면 줄은 가지런해지지만, 그 말은 **우리가 만든
+    것**이고 대표는 명단에 그렇게 적힌 줄로 읽는다. 날짜를 모를 때 그 자리를
+    비우는 것과 같은 규칙이다 — 모르는 것은 적지 않는다.
+
+    개발 자료 실측(2026-09): IR 을 요청한 심사역은 전부 직함이 적혀 있었고,
+    명단 전체로는 **다섯에 하나쯤**이 비어 있다. 지금 안 보인다고 없는 길이
+    아니라, 빈 직함은 언제든 목록에 들어온다.
+    """
+    got = _msg(db, seeded)
+    bare = next(ln for ln in got.lines if ln.firm == ir_mask.mask_company(FIRM_OLD))
+    assert bare.title == ""
+    assert bare.text == f"{bare.date} {bare.company} {bare.firm} {bare.person}"
+    assert not bare.text.endswith(" "), "빈 직함 자리가 공백으로 남았다"
+    assert "  " not in bare.text, "줄 가운데가 두 칸 벌어졌다"
+    assert "담당" not in got.text, "없는 직함을 지어냈다"
+
+
+def test_직함은_명단에_적힌_그대로다(db, seeded):
+    """가리지도, 다듬지도 않는다. `이사` 와 `이사님` 이 명단에 섞여 있는데
+    여기서 하나로 맞추면 앱이 보여 주는 말과 대표가 받는 말이 갈린다."""
+    got = _msg(db, seeded)
+    assert f" {TITLE_SHORT}" in got.text and f" {TITLE_LONG}" in got.text
+    assert ir_mask.mask_person(TITLE_SHORT) not in got.text, "직함을 가렸다"
+
+
+def test_같은_투자사의_두_심사역이_서로_다른_줄로_보인다(db, seeded):
+    """묶는 자리는 투자사가 아니라 **사람**이다(`ir_monthly`).
+
+    예전에는 두 줄의 글자가 똑같았다(`5/3 샘플에이 가***` 두 번) — 대표가 보기에
+    같은 줄이 두 번 적힌 고장이었다. 심사역이 붙은 지금은 두 줄이 갈린다.
+    """
+    from app.models import IrRequest, VcContact
+
+    mate = VcContact(user_id=1, name=PERSON_2, firm=FIRM_SHORT, title=TITLE_LONG)
+    db.add(mate)
+    db.flush()
+    db.add(IrRequest(user_id=1, contact_id=mate.id, company_id=seeded["a"].id,
+                     company_name=COMPANY_A,
+                     requested_at=_day(seeded["month"], 3)))
+    db.commit()
+
+    got = _msg(db, seeded)
+    same = [ln for ln in got.lines if ln.firm == ir_mask.mask_company(FIRM_SHORT)]
+    assert len(same) == 2, "한 투자사의 두 심사역이 한 줄로 묶였다"
+    assert len({ln.text for ln in same}) == 2, "두 줄의 글자가 똑같다"
+    assert PERSON_2 not in got.text, "새 심사역의 원래 이름이 샜다"
+
+
+def test_같은_심사역이_여러_번_요청해도_한_줄이다(db, seeded):
+    """이름이 붙어도 묶는 규칙은 그대로다 — 한 사람이 두 번 물어봤다고 두 줄이
+    되면 대표는 두 사람이 물어본 줄로 읽는다."""
+    from app.models import IrRequest, VcContact
+
+    short = db.query(VcContact).filter_by(firm=FIRM_SHORT).one()
+    db.add(IrRequest(user_id=1, contact_id=short.id, company_id=seeded["a"].id,
+                     company_name=COMPANY_A,
+                     requested_at=_day(seeded["month"], 27)))
+    db.commit()
+
+    got = _msg(db, seeded)
+    same = [ln for ln in got.lines if ln.firm == ir_mask.mask_company(FIRM_SHORT)]
+    assert len(same) == 1, f"한 사람이 두 줄이 됐다: {[l.text for l in same]}"
+    # 남는 것은 **먼저 온 날**이다.
+    assert same[0].date == ir_kakao.day_label(_day(seeded["month"], 3))
+
+
+def test_이름_직함이_붙어_글이_길어진다(db, seeded):
+    """줄마다 글자가 늘면 한 통이던 글이 두 통이 될 수 있다(`pack`).
+    늘어난다는 사실 자체를 박아 둔다 — 통 수는 글자 수로 정해진다."""
+    got = _msg(db, seeded)
+    bare = sum(len(f"{ln.date} {ln.company} {ln.firm}".strip())
+               for ln in got.lines)
+    assert sum(len(ln.text) for ln in got.lines) > bare
 
 
 def test_줄이_날짜_순으로_선다(db, seeded):
