@@ -1155,6 +1155,48 @@ class ConsultingCompany(TimestampMixin, Base):
         String, nullable=True)                                                 # 미팅종류
     company_name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # 기업명/계약일/무료유료/수수료
     management: Mapped[Optional[str]] = mapped_column(Text, nullable=True)    # 기업 관리
+    # `기업 관리` 칸에서 **갈라져 나온 상세 내용**. 긴 글이라 `Text` 다
+    # (`deal_pitch` · `notes` 와 같다). 줄바꿈도 적힌 그대로 남는다.
+    #
+    # ## 무엇이 갈라져 나왔나 — 시트 머리글이 이미 둘을 부르고 있었다
+    #
+    # 원본 머리글이 **`기업 관리 [ 드랍 이유 상세하게 기입 / 관리중 /
+    # 백업팀으로 전환 ]`** 이다. 한 칸에 **상태**(관리중 · 드랍 · 백업팀 전환)
+    # 와 **그 이유를 상세하게 적은 글**을 같이 적으라고 했고, 실제 값이
+    # `드랍 : 몇 차례 연락했으나 …` 처럼 `상태 : 상세` 꼴로 적혀 있다.
+    #
+    # 섞여 있으면 잃는 것이 있다. 이 칸의 값으로 칩·KPI·머리글 필터가 갈래를
+    # 세는데(`services/consulting_status.py` 가 `관리`·`드랍`·`백업팀` 이라는
+    # **낱말**을 찾는다), 상세 글이 길어질수록 그 낱말이 우연히 들어가 엉뚱한
+    # 갈래에 걸린다 — `deal_pitch` 를 이 칸에서 갈라낼 때 이미 적어 둔 이유다.
+    #
+    # 그래서 **상태는 `management` 에 남고 상세만 이 칸으로 온다.** 옮기는 것은
+    # 이주가 아니라 손으로 돌리는 스크립트다
+    # (`scripts/split_consulting_management.py` — 운영 자료를 건드리는 일이라
+    # 사람이 확인하고 돌린다). 0079 는 **칸만** 세운다.
+    #
+    # **가르는 자리는 `:` 하나뿐이다.** 시트를 적은 사람이 스스로 찍어 둔
+    # 구분자라 추측이 아니다. 구분자가 없는 줄은 어디까지가 상태인지 아무도
+    # 정한 적이 없으므로 **통째로 `management` 에 남는다** — 빈칸에서 갈라
+    # 넣으면 앱이 아무도 쓴 적 없는 경계를 지어내는 것이 된다.
+    #
+    # ## `deal_pitch` 와 다른 칸이다
+    #
+    # 저기는 **투자사에게 이 기업을 어떻게 소개할지** 적는 말이고, 여기는
+    # **이 기업이 지금 어떤 상태인지 그 이유**다(드랍이면 왜 드랍인가).
+    # 묻는 것이 다르고 적는 사람의 목적이 다르다.
+    #
+    # ## 어떤 판정에도 안 쓴다
+    #
+    # 칩·KPI·머리글 필터는 `management` 한 칸만 본다. 이 칸이 판정에 끼면
+    # 갈라낸 보람이 없다 — 상세 글의 낱말이 다시 갈래를 흔든다. **담기만
+    # 한다**(`deal_pitch` 와 같다).
+    #
+    # `관리 스타트업` · `경영본부 전달 기업` 두 탭에 선다. 계약 탭의 같은 저장
+    # 자리(`management`)는 `계약여부`(`무료`/`유료`)라는 다른 물음이라 갈라낼
+    # 상세가 없다(`routers/consulting.py` 의 `CONTRACT_COLUMNS`).
+    management_detail: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True)                                                   # 기업 내용
     ceo_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)    # 대표자
     phone: Mapped[Optional[str]] = mapped_column(String, nullable=True)       # 연락처
     email: Mapped[Optional[str]] = mapped_column(String, nullable=True)       # 이메일

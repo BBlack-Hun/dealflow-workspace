@@ -393,6 +393,25 @@
         <th style="width:120px" data-filters="meetkind:미팅종류">미팅종류<div class="th-filters"></div></th>
         <th style="width:150px">기업명</th>
         <th style="width:220px" data-filters="mgmt:기업 관리">기업 관리<div class="th-filters"></div></th>
+        {# **`기업 관리` 에서 갈라져 나온 상세.** 바로 왼쪽 머리글의 원본이
+           `기업 관리 [ 드랍 이유 상세하게 기입 / 관리중 / 백업팀으로 전환 ]`
+           이라, 한 칸에 **상태**와 **그 이유**가 같이 적혀 있었다
+           (`드랍 : 몇 차례 …`). 사용자 요청으로 그 뒷부분을 이 칸으로 옮긴다.
+
+           **필터를 안 세운다.** 값이 자유 문장이라 줄마다 다르고, 고를 것이
+           모이지 않는다 — 같은 표의 `딜 소개문구`·`미팅일` 을 안 거는 것과
+           같은 이유다. 대신 툴바의 검색이 이 값을 본다
+           (`routers/consulting.py` 의 `search`). 필터를 세우지 않았으므로
+           행에도 `data-f-*` 를 안 싣는다 — 실으면 아무 머리글도 안 보는 죽은
+           속성이 된다(`tests/test_filter_columns.py` 의 2번).
+
+           **왼쪽 `기업 관리` 의 필터는 그대로다.** 갈래를 세는 것은 여전히 그
+           칸 하나이고(`services/consulting_status.py`), 이 칸이 판정에 끼면
+           갈라낸 보람이 없다 — 상세 글의 낱말이 다시 갈래를 흔든다.
+
+           폭은 옆 `딜 소개문구`(240px)와 같다. 둘 다 문단이 들어오는 칸이라
+           좁으면 접힌 두어 줄에 아무것도 안 남는다. #}
+        <th style="width:240px">기업 내용</th>
         {# **견적서 첨부 여부 → 계약완료여부 → 계약서 수신완료여부.** 컨설턴트가
            기업 하나를 붙들고 가는 흐름의 세 마디다(견적서를 보냈나 → 계약이
            끝났나 → 서류는 왔나). 지금까지는 옆 `기업 관리` 에 한 문장으로 섞여
@@ -630,6 +649,14 @@
             data-choices="{{ meeting_kind_choices }}">{{ r.meeting_kind }}</td>
         <td class="cell strong" data-field="company_name">{{ r.company_name }}</td>
         <td class="cell multi" data-field="management" data-filter-key="mgmt">{{ r.management }}</td>
+        {# `multi` — 이 표에서 **긴 글 칸이 쓰는 표시**다(바로 왼쪽 `기업 관리`
+           와 아래 `딜 소개문구` 가 같다). 누르면 textarea 가 열려 엔터로 줄을
+           나눌 수 있고, 표에서는 높이로 접는다.
+
+           `data-filter-key` 를 안 준다 — 필터를 안 세운 칸이라 같이 고칠 행
+           값이 없다. 고친 글은 `refreshRowFlags` 가 `td.cell` 을 이어 붙일 때
+           `data-search` 에 그대로 들어가므로 검색은 그 자리에서 따라간다. #}
+        <td class="cell multi" data-field="management_detail">{{ r.management_detail }}</td>
         {# 머리글과 **같은 차례로** 갈라 둔다 — 어긋나면 그 뒤 칸이 통째로
            밀린다. 세 칸이 서는 조건도 머리글과 같은 `is_startup_sheet` 다. #}
         {% if is_startup_sheet %}
@@ -718,16 +745,17 @@
       {% else %}
       {# 칸 수는 탭마다 다르다 —
          계약 탭     = NO + 6 + 월 열 + 삭제                          = 8 + 월
-         경영본부 탭 = NO + 5 + 월 열 + 대표자·연락처·이메일 + 삭제    = 10 + 월
+         경영본부 탭 = NO + 6 + 월 열 + 대표자·연락처·이메일 + 삭제    = 11 + 월
          스타트업 탭 = 위에 다섯 칸 더(견적서 첨부 여부 · 계약완료여부 ·
                        계약서 수신완료여부 · 카톡 연결 여부 ·
-                       딜 소개문구)                                    = 15 + 월
+                       딜 소개문구)                                    = 16 + 월
 
-         경영본부 탭의 `5` 는 지역 · 미팅일 · **미팅종류** · 기업명 · 기업 관리
-         다. 계약 탭이 두 칸 적은 것은 `월` 칸을 뺐고(예전에는 경영본부 탭과
-         우연히 같았다) `미팅종류` 가 그 탭에는 안 서기 때문이다 — 저 탭의
-         `meeting_at` 은 `계약월` 이라는 다른 물음을 받고 있어 옆에 미팅 방식을
-         세울 자리가 아니다(`routers/consulting.py` 의 `FIXED_COLUMNS`).
+         경영본부 탭의 `6` 은 지역 · 미팅일 · **미팅종류** · 기업명 · 기업 관리 ·
+         **기업 내용** 이다. 계약 탭이 세 칸 적은 것은 `월` 칸을 뺐고(예전에는
+         경영본부 탭과 우연히 같았다) 새 두 칸이 그 탭에는 안 서기 때문이다 —
+         저 탭의 `meeting_at` 은 `계약월`, `management` 는 `계약여부` 라는 다른
+         물음을 받고 있어 미팅 방식도 상세 내용도 세울 자리가 아니다
+         (`routers/consulting.py` 의 `FIXED_COLUMNS`).
 
          `담당` 칸도 서면 하나 더 든다 — 셋 다 안 세면 빈 표 안내 줄이 짧아 표
          오른쪽에 빈 칸이 남는다.
@@ -738,7 +766,7 @@
       <tr><td class="muted"
           colspan="{{ 9 + columns|length + (1 if can_pick_owner else 0)
                         - (1 if is_contract_sheet else 0)
-                        + (0 if is_contract_sheet else 1)
+                        + (0 if is_contract_sheet else 2)
                         + (5 if is_startup_sheet else 0)
                         + (1 if is_startup_sheet and startup_targets else 0) }}">
         {#

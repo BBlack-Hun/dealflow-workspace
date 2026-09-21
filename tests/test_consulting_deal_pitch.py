@@ -227,7 +227,7 @@ def test_다른_두_탭에는_칸도_값도_안_선다(allowed, db, users):
     # 있다 — 이 검사가 지키는 것은 **`딜 소개문구` 가 스타트업 탭에만 선다**는
     # 것이지 머리글 전체가 영영 안 바뀐다는 것이 아니다.
     assert _heads(_open(allowed, HANDOVER)) == [
-        "NO", "담당", "지역", "미팅일", "미팅종류", "기업명", "기업 관리",
+        "NO", "담당", "지역", "미팅일", "미팅종류", "기업명", "기업 관리", "기업 내용",
         "대표자", "연락처", "이메일", ""]
 
 
@@ -253,11 +253,14 @@ def test_스타트업_탭에서만_서는_칸들_끝에_선다(allowed, db, user
     # 세 마디 뒤 그대로다. 그 다음에 `카톡 연결 여부` 가 한 칸 더 서면서
     # 이 칸은 **더 이상 묶음의 맨 뒤가 아니다**
     # (`tests/test_consulting_kakao_joined.py` 가 맨 뒤를 지킨다).
-    assert heads[heads.index("기업 관리") + 4] == "딜 소개문구", heads
+    # **기준점이 `기업 관리` 에서 `기업 내용` 으로 옮겨 갔다** — 그 칸이
+    # `기업 관리` 바로 오른쪽에 새로 서면서 이 묶음의 앞자리가 그쪽이 됐다
+    # (`tests/test_consulting_management_detail.py`).
+    assert heads[heads.index("기업 내용") + 4] == "딜 소개문구", heads
     assert heads[heads.index("딜 소개문구") + 1] == "카톡 연결 여부", heads
     # 머리글과 칸이 같은 차례인가 — 이름은 다르지만 자리가 같아야 한다.
-    assert fields.index("deal_pitch") - fields.index("management") \
-        == heads.index("딜 소개문구") - heads.index("기업 관리"), (heads, fields)
+    assert fields.index("deal_pitch") - fields.index("management_detail") \
+        == heads.index("딜 소개문구") - heads.index("기업 내용"), (heads, fields)
     assert fields[fields.index("deal_pitch") + 1] == "kakao_joined", fields
 
 

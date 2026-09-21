@@ -271,13 +271,19 @@ def test_기업_관리_바로_뒤에_차례대로_선다(allowed, db, users):
          contract_done="무료계약완료", contract_received="O")
     body = _open(allowed, STARTUP)
     heads = _heads(body)
-    at = heads.index("기업 관리")
+    # **기준점이 `기업 관리` 에서 `기업 내용` 으로 옮겨 갔다.** 그 칸이 `기업
+    # 관리` 바로 오른쪽에 새로 서면서(`tests/test_consulting_management_detail.py`)
+    # 이 묶음의 앞자리가 그쪽이 됐다. 지키는 것은 그대로다 — **세 마디가 모든
+    # 탭이 함께 쓰는 칸 묶음 바로 뒤에 차례대로 선다**는 것.
+    at = heads.index("기업 내용")
+    assert heads[at - 1] == "기업 관리", heads
     # 세 마디 뒤로 `딜 소개문구` · `카톡 연결 여부` 가 차례로 선다(카톡 칸의
     # 자리는 사용자가 정했다 — `tests/test_consulting_kakao_joined.py`).
     assert heads[at + 1:at + 6] == [label for label, _f, _k in COLUMNS] \
         + ["딜 소개문구", "카톡 연결 여부"], heads
     fields = _fields(body)
-    at = fields.index("management")
+    at = fields.index("management_detail")
+    assert fields[at - 1] == "management", fields
     assert fields[at + 1:at + 6] == [field for _l, field, _k in COLUMNS] \
         + ["deal_pitch", "kakao_joined"], fields
 

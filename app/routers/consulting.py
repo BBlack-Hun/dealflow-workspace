@@ -70,6 +70,23 @@ FIXED_COLUMNS = [
     ("미팅종류", "meeting_kind"),
     ("기업명 / 계약일 / 무료유료 / 계약금, 성과수수료 %", "company_name"),
     ("기업 관리 [ 드랍 이유 상세하게 기입 / 관리중 / 백업팀으로 전환 ]", "management"),
+    # 바로 왼쪽 머리글의 **`드랍 이유 상세하게 기입`** 이 이 칸의 정체다
+    # (사용자 요청: "기업관리 컬럼의 내용을 분리해서 기업 내용 컬럼을 신설").
+    # 시트가 한 칸에 **상태**(관리중 · 드랍 · 백업팀 전환)와 **그 이유**를 같이
+    # 적으라고 했고, 값이 `드랍 : 몇 차례 …` 처럼 `상태 : 상세` 꼴로 적혀 있다.
+    #
+    # 섞여 있으면 **칩·KPI·머리글 필터가 흔들린다** — 그 셋이 이 칸의 낱말로
+    # 갈래를 세는데(`services/consulting_status.py`), 상세 글이 길어질수록
+    # `관리`·`드랍` 이 우연히 들어가 엉뚱한 갈래에 걸린다. `딜 소개문구` 를
+    # 이 칸에서 갈라낼 때 이미 적어 둔 이유다.
+    #
+    # **값을 옮기는 것은 여기가 아니다.** 칸만 서고(0079), 옮기는 일은 사람이
+    # 확인하고 돌리는 스크립트가 한다
+    # (`scripts/split_consulting_management.py`).
+    #
+    # **계약 탭에는 안 선다.** 저 탭의 같은 저장 자리(`management`)는
+    # `계약여부`(`무료`/`유료`)라는 다른 물음이라 갈라낼 상세가 없다.
+    ("기업 내용", "management_detail"),
 ]
 TAIL_COLUMNS = [
     ("대표자", "ceo_name"),
@@ -783,6 +800,13 @@ def company_rows(db: Session, user: User, sheet: str = "",
             "meeting_kind": c.meeting_kind or "",
             "company_name": c.company_name or "",
             "management": management,
+            # `기업 관리` 에서 갈라져 나온 상세. 계약 탭에는 이 칸이 안 서지만
+            # **늘 싣는다** — 화면이 탭마다 다른 dict 를 받으면 없는 칸을
+            # 꺼내다 터지는 자리가 생긴다(`deal_pitch` 와 같은 규칙이다).
+            #
+            # **`mgmt`·`managed`·`dropped` 는 이 값을 안 본다.** 갈라낸 보람이
+            # 거기 있다 — 상세 글의 낱말이 다시 갈래를 흔들면 안 된다.
+            "management_detail": c.management_detail or "",
             # 머리글 필터가 보는 값. 칸에 적힌 문장 그대로가 아니라 시트가 정해
             # 둔 세 마디로 추린다. 계약 탭만 예외다.
             "mgmt": status.tag_value(management, contract=contract),
@@ -849,6 +873,12 @@ def company_rows(db: Session, user: User, sheet: str = "",
                 # 결과가 달라진다 — 아래 `deal_pitch` 와 같은 규칙이다.
                 c.company_name, "" if contract else c.region,
                 c.management, c.ceo_name,
+                # 갈라져 나온 상세도 **찾을 수 있어야 한다** — 갈라내기 전에는
+                # `c.management` 에 들어 있어 검색에 걸리던 글이다. 여기서 빼면
+                # 이 커밋 뒤에 "찾던 기업이 검색에 안 나온다" 가 된다.
+                #
+                # **칸이 서는 탭에서만** 넣는다(아래 `deal_pitch` 와 같은 이유).
+                "" if contract else c.management_detail,
                 c.email, c.meeting_at, c.success_fee, c.contract_fee,
                 # **칸이 서는 탭에서만** 넣는다(아래 `deal_pitch` 와 같은
                 # 이유 — 계약 탭에는 이 칸도 머리글도 없다). 화면에서 고치면
@@ -1050,6 +1080,10 @@ class CompanyIn(BaseModel):
     meeting_kind: Optional[str] = None
     company_name: Optional[str] = None
     management: Optional[str] = None
+    # `기업 관리` 에서 갈라져 나온 상세. **긴 글이라 줄바꿈이 그대로 들어온다**
+    # — `_assign` 이 앞뒤 공백만 떼므로 가운데 줄바꿈은 살아서 저장된다
+    # (`deal_pitch` 와 같다). 여기 안 적으면 화면에서 고쳐도 조용히 안 저장된다.
+    management_detail: Optional[str] = None
     ceo_name: Optional[str] = None
     phone: Optional[str] = None
     email: Optional[str] = None
@@ -1454,7 +1488,7 @@ def import_sheet(file: UploadFile = File(...), sheet: str = Form(""),
 # `FIXED_COLUMNS` 에서 뽑는데, 빼 두지 않으면 같은 칸이 머리글 두 자리에 서고
 # (실제로 그렇게 났다) 값을 손으로 세우는 아래 줄과 칸 수가 어긋나 **그 뒤
 # 값이 통째로 한 칸씩 밀린다.** 기업명 자리에 지역이 찍히는 식이다.
-FIXED_EXTRA_EXPORT = [("미팅종류", "meeting_kind")]
+FIXED_EXTRA_EXPORT = [("미팅종류", "meeting_kind"), ("기업 내용", "management_detail")]
 _EXTRA_EXPORT_FIELDS = {field for _label, field in FIXED_EXTRA_EXPORT}
 
 CONSULTING_EXPORT_HEADERS = [label for label, field in FIXED_COLUMNS
@@ -1582,6 +1616,14 @@ def parse_rows(rows: List[List[str]]) -> dict:
         "meeting_at": find("미팅일"),
         "company_name": find("기업명"),
         "management": find("기업 관리"),
+        # 시트에 `기업 내용` 열이 있으면 여기로 받는다. 안 받으면 월별 리마인드
+        # 열로 딸려 들어가 같은 이름이 표에 두 번 선다(아래 `note_cols`).
+        #
+        # **위 `기업 관리` 와 안 겹친다.** 저쪽은 `기업 관리` 가 든 머리글만
+        # 집고 이쪽은 `기업`+`내용` 둘 다 든 머리글만 집는다 —
+        # `기업 관리 [ 드랍 이유 상세하게 기입 … ]` 에는 `내용` 이 없다.
+        # 달이 적힌 이름(`9월 리마인드 내용`)은 `fixed` 가 이미 건너뛴다.
+        "management_detail": fixed("기업", "내용"),
         # 원본 시트에도 이 세 칸이 있을 수 있다. 여기서 안 받으면 **월별
         # 리마인드 열로 딸려 들어간다** — 아래 `note_cols` 가 못 알아본 열을
         # 전부 월 열로 삼기 때문이다. 그러면 같은 이름이 표에 두 번 서고
@@ -1697,7 +1739,7 @@ def apply_rows(db: Session, parsed: dict, user: User,
         else:
             updated += 1
         for field in ("region", "meeting_at", "meeting_kind", "company_name",
-                      "management", "ceo_name", "phone", "email",
+                      "management", "management_detail", "ceo_name", "phone", "email",
                       "contract_management", "contract_done",
                       "contract_received", "kakao_joined"):
             value = item.get(field)
