@@ -44,18 +44,22 @@ OTHER = "샘플 투자사 20"
 # 계약서 전달했는지 / 그래서 계약하셨는지 이 순서로 흐름이 읽혀야".
 #
 #   누구인가 → 투자유치를 하는가 → 우리와 하는가
-#   → 견적서 → 계약 → 계약서 수신 → (월별) 문자·통화·카톡방
+#   → 견적서 → 계약 → 계약서 수신 → 언제 고쳤나 → (월별) 문자·통화·카톡방
 #
 # 월별 칸보다 **앞**이어야 하는 것은 둘 다 같은 이유다: 뒤에 두면 달이 쌓일수록
 # 가로로 밀어야 닿는 자리로 물러나고, 달에 매이지 않는 값이 달 칸 사이에 서면
 # 달이 바뀔 때 지난달 것으로 접힌다(`contact_columns.STARTUP_LAYOUT` 주석).
 #
-# `계약서 수신여부` 와 월별 묶음 **사이에 `회신 상태` 가 있었다.** 사용자 요청으로
-# 뺐다 — 그 칸이 표·수정창·필터·엑셀 어디에도 없고 값은 안 지워졌다는 것은
-# `tests/test_startup_reply_status_removed.py` 가 따로 잰다.
+# `계약서 수신여부` 와 월별 묶음 **사이**는 두 번 바뀐 자리다. `회신 상태` 가
+# 서 있다가 사용자 요청으로 빠졌고(`tests/test_startup_reply_status_removed.py`),
+# 같은 요청으로 `수정한 날짜` 가 들어왔다(`tests/test_startup_updated_at.py`).
 HEAD = ["NO", "기업명", "성함", "연락처", "이메일",
         "투자유치 상태", "당사 협업 상태",
-        "견적서 첨부여부", "계약여부", "계약서 수신여부"]
+        "견적서 첨부여부", "계약여부", "계약서 수신여부",
+        # 사용자가 말한 자리 — **월별 리마인드 앞쪽**. 월별 묶음이 `head` 와
+        # `tail` 사이에 통째로 서므로 `head` 의 맨 끝이 곧 그 자리다.
+        # 앱이 적는 값이라 눌러 고칠 수 없다(`tests/test_startup_updated_at.py`).
+        "수정한 날짜"]
 
 # **이번 달**로 만든다. 월별 칸은 이제 화면을 열 때 저절로 생기므로
 # (`app/services/monthly_columns.py`), 지난달 이름으로 밑자리를 깔면 검사가
@@ -67,12 +71,19 @@ def _month(offset: int = 0) -> int:
     return (clock.today().month - 1 + offset) % 12 + 1
 
 
+# **저장된** 칸 이름이다(`ContactColumn.label` · 시트 머리글 그대로).
 MONTHS = [f"{_month()}월 리마인드 문자", f"{_month()}월 리마인드 TEL",
           f"{_month()}월 카톡 연결"]
-# `카톡 연결 여부` 는 **월별 칸 뒤**다. 사용자가 `IR 자료 회신 여부` 바로
-# 앞이라고 한 자리이고, 그 자리가 마침 `tail` 의 맨 앞이라 달 칸 묶음을
-# 쪼개지 않는다(`contact_columns.STARTUP_LAYOUT` 의 그 칸 주석).
-TAIL = ["카톡 연결 여부", "IR 자료 회신 여부",
+# **화면에 서는** 이름 — 저장된 이름 + 배치가 정한 꼬리말
+# (`Layout.month_label_suffix`). 둘을 갈라 두는 이유는 저장된 이름을 안 고치기
+# 때문이다: 시트를 다시 올릴 때 임포터가 그 글자로 칸을 찾는다
+# (`tests/test_startup_month_memo.py` 가 그 경계를 잰다).
+MONTH_SUFFIX = "(내용 기입)"
+MONTH_HEADS = [f"{label}{MONTH_SUFFIX}" for label in MONTHS]
+# `카톡 연결 여부` 는 **월별 칸 뒤**다. 사용자가 `IR 자료 수신 여부`(그때
+# 이름은 `회신`) 바로 앞이라고 한 자리이고, 그 자리가 마침 `tail` 의 맨
+# 앞이라 달 칸 묶음을 쪼개지 않는다(`contact_columns.STARTUP_LAYOUT` 의 그 칸 주석).
+TAIL = ["카톡 연결 여부", "IR 자료 수신 여부",
         "메모 ( 통화내용 /  카톡내용  /  카톡답신내용)"]
 
 
@@ -189,7 +200,7 @@ def test_이_명단의_머리글은_원본_시트와_같다(sheets):
     """
     got = _thead(sheets.get(_url(LIST)).text)
     # 마지막 칸은 [수정] 단추 자리라 이름이 없다.
-    want = [_same(t) for t in HEAD + MONTHS + TAIL]
+    want = [_same(t) for t in HEAD + MONTH_HEADS + TAIL]
     assert got[:-1] == want, (
         f"머리글이 시트와 다릅니다:\n  시트 {want}\n  화면 {got[:-1]}")
 
@@ -202,7 +213,7 @@ def test_다른_명단의_머리글은_한_칸도_안_바뀐다(sheets):
     got = _thead(sheets.get(_url(OTHER)).text)
     assert "이름" in got and "회사" in got and "명함 등록일" in got
     # 스타트업 명단에서만 쓰는 칸이 넘어오면 안 된다.
-    for name in ("기업명", "성함", "IR 자료 회신 여부") + tuple(MONTHS):
+    for name in ("기업명", "성함", "IR 자료 수신 여부") + tuple(MONTH_HEADS):
         assert name not in got, f"투자사 표에 `{name}` 이 끼어들었습니다"
 
 
@@ -238,10 +249,10 @@ def test_칸을_하나_늘려도_머리글과_데이터_칸이_함께_늘어난�
     html = sheets.get(_url(LIST)).text
     heads = _thead(html)
     assert len(heads) == before + 1
-    assert label in heads
+    assert label + MONTH_SUFFIX in heads
     # 새 칸은 **맨 앞**이다 — 시트에서도 최근 달이 왼쪽이고, 지금 챙겨야 할
     # 달이 먼저 보여야 한다.
-    assert heads.index(label) < heads.index(MONTHS[0])
+    assert heads.index(label + MONTH_SUFFIX) < heads.index(MONTH_HEADS[0])
     for row in _rows(html):
         assert len(re.findall(r"<td\b", row)) == len(heads)
 
@@ -320,11 +331,11 @@ def test_맨_앞의_옛_칸이_이번_달_칸을_밀어내지_않는다(sheets, 
     db.commit()
 
     heads = _thead(sheets.get(_url(LIST)).text)
-    for label in MONTHS:
+    for label in MONTH_HEADS:
         assert _same(label) in heads, (
             f"이번 달 칸이 표에서 접혔습니다: {label}\n  화면 {heads}")
     # 지난 달은 지금까지 그대로 접힌다 — 표를 넓히라고 고친 것이 아니다.
-    assert f"{_month(-1)}월 리마인드 문자" not in heads
+    assert f"{_month(-1)}월 리마인드 문자{MONTH_SUFFIX}" not in heads
 
 
 def test_머리글은_필터_단추까지_한_줄에_들어간다(sheets):
@@ -436,7 +447,7 @@ def test_계약여부_앞뒤에_견적서와_계약서_칸이_선다(sheets):
     want = ["견적서 첨부여부", "계약여부", "계약서 수신여부"]
     at = head.index("견적서 첨부여부")
     assert head[at:at + 3] == want, head
-    assert head.index("계약서 수신여부") < head.index(MONTHS[0]), head
+    assert head.index("계약서 수신여부") < head.index(MONTH_HEADS[0]), head
 
 
 def test_칸이_일의_흐름대로_선다(sheets):
@@ -468,15 +479,18 @@ def test_칸이_일의_흐름대로_선다(sheets):
         "칸 차례가 일의 흐름과 다릅니다:\n"
         f"  흐름 {flow}\n  화면 {head}")
     # 달에 매이는 칸(문자·통화·카톡방)은 전부 그 뒤다.
-    assert head.index("계약서 수신여부") < head.index(MONTHS[0]), head
-    # 계약서 수신여부 바로 뒤가 월별 묶음이어야 둘이 이어서 읽힌다.
-    assert head[head.index("계약서 수신여부") + 1] == MONTHS[0], head
+    assert head.index("계약서 수신여부") < head.index(MONTH_HEADS[0]), head
+    # 계약서 수신여부 바로 뒤는 **`수정한 날짜`** 이고, 그다음이 월별 묶음이다
+    # — 사용자가 그 칸을 "월별 리마인드 앞쪽" 에 달라고 했다. 둘은 이어서
+    # 읽힌다("어디까지 왔나 → 그 기록이 최근인가 → 그 달에 무엇을 했나").
+    assert head[head.index("계약서 수신여부") + 1] == "수정한 날짜", head
+    assert head[head.index("수정한 날짜") + 1] == MONTH_HEADS[0], head
 
 
 def test_두_칸은_O_와_X_중에서_고른다(sheets, db):
     """새로 타이핑하면 `o`·`△`·`완료` 로 갈려 **세는 것이 달라진다.**
 
-    `IR 자료 회신 여부` 와 같은 결이다 — 값이 둘뿐인 칸은 골라 넣게 한다.
+    `IR 자료 수신 여부` 와 같은 결이다 — 값이 둘뿐인 칸은 골라 넣게 한다.
     골라서 저장되고 되읽히는지까지 본다(한 곳만 빠져도 증상이 조용하다).
     """
     from app.models import VcContact
@@ -500,11 +514,12 @@ def test_두_칸은_O_와_X_중에서_고른다(sheets, db):
     assert got["invoice_received"] == "X"
 
 
-def test_카톡_연결_여부는_IR_회신_바로_앞에_서고_저장_자리를_새로_만들지_않는다(
+def test_카톡_연결_여부는_IR_수신_바로_앞에_서고_저장_자리를_새로_만들지_않는다(
         sheets, db):
     """**`VcContact.kakao_joined` 를 그대로 보이고 고치는 칸**이다.
 
-    사용자가 말한 자리는 `IR 자료 회신 여부` 바로 앞이고, 그 자리가 마침
+    사용자가 말한 자리는 `IR 자료 수신 여부`(그때 이름은 `회신`) 바로 앞이고,
+    그 자리가 마침
     `tail` 의 맨 앞이라 달 칸 묶음(`table_columns`)을 쪼개지 않는다.
 
     여기서 못 박는 것은 **저장 자리**다. `source="note"` 로 새 키를 파면 같은
@@ -523,9 +538,9 @@ def test_카톡_연결_여부는_IR_회신_바로_앞에_서고_저장_자리를
     assert column.in_table is True
 
     head = _thead(sheets.get(_url(LIST)).text)
-    # 달 칸 묶음 **뒤**, `IR 자료 회신 여부` **바로 앞**.
-    assert head.index(MONTHS[-1]) < head.index("카톡 연결 여부"), head
-    assert head[head.index("카톡 연결 여부") + 1] == "IR 자료 회신 여부", head
+    # 달 칸 묶음 **뒤**, `IR 자료 수신 여부` **바로 앞**.
+    assert head.index(MONTH_HEADS[-1]) < head.index("카톡 연결 여부"), head
+    assert head[head.index("카톡 연결 여부") + 1] == "IR 자료 수신 여부", head
 
     body = sheets.get(_url(LIST)).text
     # 고르는 칸으로 그려지고 보기가 붙는다. `data-note` 는 **없어야** 한다 —
@@ -655,7 +670,7 @@ def test_숨긴_칸은_표와_수정창에서_빠지고_값은_남는다(sheets,
 
     assert _hide(sheets, column.id).status_code == 303
     html = sheets.get(_url(LIST)).text
-    assert MONTHS[0] not in _thead(html), _thead(html)
+    assert MONTH_HEADS[0] not in _thead(html), _thead(html)
     assert f'data-note="{key}"' not in html, "수정창에도 서면 안 된다"
     # **값은 그대로다.** 지운 것이 아니다.
     db.expire_all()
@@ -673,7 +688,7 @@ def test_숨김을_되돌리면_칸도_값도_그대로_돌아온다(sheets, db)
     _hide(sheets, column.id)
     _hide(sheets, column.id)
     html = sheets.get(_url(LIST)).text
-    assert _thead(html)[:-1] == [_same(t) for t in HEAD + MONTHS + TAIL]
+    assert _thead(html)[:-1] == [_same(t) for t in HEAD + MONTH_HEADS + TAIL]
     body = _rows(html)[0]
     assert ">O<" in body, "되돌렸는데 값이 안 보입니다"
 
@@ -696,13 +711,13 @@ def test_숨긴_칸은_엑셀에서도_빠진다(sheets, db):
         ws = openpyxl.load_workbook(io.BytesIO(res.content)).active
         return list(next(ws.iter_rows(values_only=True)))
 
-    assert MONTHS[0] in _head()
+    assert MONTH_HEADS[0] in _head()
     column = db.query(ContactColumn).filter(
         ContactColumn.sheet == LIST, ContactColumn.label == MONTHS[0]).one()
     _hide(sheets, column.id)
     assert MONTHS[0] not in _head(), "숨긴 칸이 파일에는 남아 있습니다"
     _hide(sheets, column.id)
-    assert MONTHS[0] in _head(), "숨김을 되돌렸는데 파일에 안 돌아왔습니다"
+    assert MONTH_HEADS[0] in _head(), "숨김을 되돌렸는데 파일에 안 돌아왔습니다"
 
 
 # ── 3. 감춘 명단 — 세는 곳을 전수로 훑는다 ──────────────────────────────────
@@ -1096,27 +1111,38 @@ def test_자유롭게_적는_칸에는_필터가_안_선다(sheets, db):
     assert not got.get(_same(TAIL[-1])), "메모 칸에 필터가 섰습니다"
 
 
-def test_칸을_새로_더해도_필터가_따라_붙는다(sheets, db):
-    """**다음 달 칸에는 아무도 필터를 안 단다** — 그러니 저절로 붙어야 한다.
+def test_칸을_새로_더해도_그_칸은_메모_칸이다(sheets, db):
+    """**다음 달 칸에는 아무도 손으로 무엇을 안 붙인다** — 그러니 저절로 맞아야 한다.
 
-    이 표는 달마다 칸이 세 개씩 늘고, 화면의 [칸 추가] 로도 는다. 그 칸들은
-    `O`/`X` 를 적는 자리라 필터가 가장 잘 듣는 칸인데, 손으로 다는 구조면
-    다는 것을 잊은 달만 조용히 빠진다.
+    이 표는 달마다 칸이 세 개씩 늘고, 화면의 [칸 추가] 로도 는다. 한동안 그
+    칸들이 `O`/`X` 고르는 칸이라 필터가 따라 붙는지를 여기서 봤는데, 사용자가
+    **여러 줄 메모**로 되돌렸다. 이제 여기서 보는 것은 반대다:
+
+      · 새로 선 칸도 메모 칸인가(`data-type="long"` · 고를 거리 없음)
+      · **필터가 안 붙는가** — 선언도, 행이 싣는 값도 둘 다 없어야 한다.
+        한쪽만 남으면 늘 빈 목록인 필터이거나 아무도 안 보는 죽은 속성이다
+        (`tests/test_filter_columns.py` 가 그 어긋남을 잡는다).
+      · 머리글에 **꼬리말이 붙는가** — 붙이는 자리가 한 곳이라(`month_label`)
+        새 칸에도 그대로 붙어야 한다.
     """
+    from app.services import contact_columns as cc
+
     label = f"{_month()}월 리마인드 카톡"
     sheets.post("/api/contacts/columns", data={"sheet": LIST, "label": label},
                 follow_redirects=False)
 
     html = sheets.get(_url(LIST)).text
-    keys = _thead_filters(html).get(label)
-    assert keys, f"새로 더한 칸(`{label}`)에 필터가 안 섰습니다"
-    # 선언만으로는 안 된다 — **행이 그 값을 실어야** 필터가 볼 것이 생긴다.
-    # (값은 `<tr>` 태그의 속성이라 줄 안쪽이 아니라 여는 태그에서 찾는다.)
-    opens = re.findall(r'<tr class="data-row[^"]*"([^>]*)>', html)
-    assert opens, "표에 줄이 하나도 없습니다 — 검사가 볼 것이 없습니다"
-    for attrs in opens:
-        assert f'data-f-{keys[0]}=' in attrs, (
-            f"새 칸의 값을 행이 안 싣습니다 — `{label}` 필터는 늘 빈 목록입니다")
+    assert _same(label + MONTH_SUFFIX) in _thead(html), (
+        f"새로 더한 칸(`{label}`)의 머리글에 꼬리말이 안 붙었습니다")
+    assert not _thead_filters(html).get(_same(label + MONTH_SUFFIX)), (
+        f"새로 더한 칸(`{label}`)에 필터가 섰습니다 — 줄마다 다른 글입니다")
+
+    column = next(c for c in cc.month_columns(db, LIST) if c.label == label)
+    key = cc.note_key(column.id)
+    assert f'data-field="{key}" data-note data-type="long"' in html, (
+        f"새로 더한 칸(`{label}`)이 여러 줄 메모로 안 섰습니다")
+    assert f"data-f-{key}=" not in html, (
+        f"행이 `{label}` 값을 아직 싣습니다 — 아무도 안 보는 죽은 속성입니다")
 
 
 def test_투자사_딜공유_명단의_월별_칸에는_필터가_안_선다(sheets, db, users):

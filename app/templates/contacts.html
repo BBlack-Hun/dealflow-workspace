@@ -907,6 +907,25 @@
                     if loop.index0 < layout.sticky else '' %}
         {% if c.source == 'row_no' %}
         <td class="rowno num muted js-detail{{ sc }}" title="활동 이력 보기"></td>
+        {% elif c.source == 'stamp' %}
+        {#
+          **눌러 고치는 칸이 아니다** — `class="cell"` 도 `data-field` 도 안
+          준다. 앱이 적는 값이라 사람이 고치면 "언제 고쳤나" 가 곧 거짓이 된다.
+          둘 중 하나만 빠뜨려도 안 된다: `inline_edit.js` 는 `.cell[data-field]`
+          둘을 **함께** 찾으므로, 지금 이 칸은 눌러도 아무 일이 없다.
+          (`app/services/contact_columns.py` 의 그 칸 주석 · #200 이 IR 기업
+           현황에서 한 것과 같다.)
+
+          `num` 을 안 준다 — 오른쪽으로 미는 칸이 아니다. 자릿수를 맞춰 읽는
+          **수**에 붙는 표시이고(`NO`), 시각은 자릿수가 늘 같아 맞출 것이 없다.
+          이 표의 다른 값들과 같은 자리에서 시작해야 세로로 훑을 때 눈이 선다.
+
+          한 번도 안 고친 줄은 **만든 시각**이 그대로 들어 있다. 옅게 적고
+          짚어서 그렇다고 말해 준다 — 지우면 "못 읽었다" 와 구분이 안 된다.
+        #}
+        <td class="updated-at{{ sc }}{% if r.updated_never %} muted{% endif %}"
+            title="{% if r.updated_never %}만든 뒤로 아직 고친 적이 없습니다 — 만든 시각입니다{% else %}마지막으로 고친 시각{% endif %}"
+        >{{ r[c.key] }}</td>
         {% elif c.source == 'note' %}
         {#
           `data-note` = 이 값은 담당자 칸이 아니라 **그 명단에만 있는 칸**이다.

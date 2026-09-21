@@ -15,8 +15,11 @@
 // 4. 값은 **`notes` 묶음으로** 나간다(`data-note`) — 이 칸들은 그 명단에만
 //    있는 칸이라 담당자 모델의 칸이 아니다. 묶음이 빠지면 서버가 200 을
 //    주면서 아무것도 안 넣는다.
-// 5. 칸마다 **자기 보기**를 뜬다. 통화 결과 칸에 문자 발송 보기가 뜨면
-//    `통화 완료` 와 `발송 완료` 가 한 목록에 섞여 세지 못한다.
+// 5. 칸마다 **자기 보기**를 뜬다. 계약여부 칸에 투자유치 보기가 뜨면
+//    두 목록이 한 칸에 섞여 무엇을 고른 것인지 세지 못한다.
+//
+// **달마다 늘어나는 칸은 여기서 안 본다.** 그 셋(문자·TEL·카톡 연결)은 고르는
+// 칸이 아니라 여러 줄 메모다 — `tests/js/startup_month_memo_test.js` 가 잰다.
 //
 // 값은 전부 지어낸 것이다 — 저장소가 공개다.
 "use strict";
@@ -33,16 +36,16 @@ const SRC = fs.readFileSync(
 // 제안서에 적힌 보기. **여기 다시 적는다** — 앱에서 읽어 오면 앱이 바뀔 때
 // 검사도 같이 바뀌어 아무것도 못 막는다. (파이썬 쪽은
 // `tests/test_startup_status_choices.py` 가 같은 목록으로 잰다.)
-const SEND = ["미발송", "발송 예정", "발송 완료", "발송 실패", "발송 제외"];
-const CALL = ["미시도", "통화 예정", "통화 완료", "부재중",
-              "통화 중 / 재시도 필요", "재통화 요청", "연락처 오류", "통화 거절"];
+const FUNDING = ["미확인", "투자유치 준비 중", "투자유치 진행 중",
+                 "투자유치 일시 보류", "투자유치 완료", "현재 투자유치 계획 없음"];
+const CONTRACT = ["유료계약완료", "무료계약완료", "계약검토중", "미계약"];
 const COLLAB = ["확인 전", "협업 논의 중", "당사 통한 진행 희망", "자체 진행 예정",
                 "타사 통한 진행 중", "당사 협업 보류", "당사 협업 의사 없음", "협업 종료"];
 
 // 표 두 줄. 2번 줄에 **목록에 없는 옛 글**이 남아 있다 — 원본 시트에 실제로
 // 그런 식으로 적혀 있었다(한 칸에 결과와 할 일과 사람이 섞인다).
 const JOINED = ["O", "X"];
-const OLD_SEND = "7/30 문자 및 명함 발송";
+const OLD_FUNDING = "라운드 준비 중이라고 하심";
 const OLD_COLLAB = "당분간 자체 진행 예정";
 
 function cell(field, choices, text) {
@@ -67,22 +70,22 @@ function fieldCell(field, choices, text) {
 }
 
 function build() {
-  const send1 = cell("c12", SEND, "");
-  const call1 = cell("c13", CALL, "");
+  const fund1 = cell("funding_status", FUNDING, "");
+  const contract1 = cell("contract", CONTRACT, "");
   const collab1 = cell("collab_status", COLLAB, "");
   const joined1 = fieldCell("kakao_joined", JOINED, "");
   // 옛 글이 남아 있는 줄.
-  const send2 = cell("c12", SEND, OLD_SEND);
+  const fund2 = cell("funding_status", FUNDING, OLD_FUNDING);
   const collab2 = cell("collab_status", COLLAB, OLD_COLLAB);
 
   const plain = D.el("td", { class: "who" });        // 바깥
   const rows = [
     D.el("tr", { "data-id": "11" }, [
-      D.el("td", {}, [send1]), D.el("td", {}, [call1]),
+      D.el("td", {}, [fund1]), D.el("td", {}, [contract1]),
       D.el("td", {}, [collab1]), D.el("td", {}, [joined1]), plain
     ]),
     D.el("tr", { "data-id": "12" }, [
-      D.el("td", {}, [send2]), D.el("td", {}, [cell("c13", CALL, "")]),
+      D.el("td", {}, [fund2]), D.el("td", {}, [cell("contract", CONTRACT, "")]),
       D.el("td", {}, [collab2])
     ])
   ];
@@ -90,7 +93,7 @@ function build() {
     { id: "contacts-table", "data-inline-url": "/api/contacts" },
     [D.el("tbody", {}, rows)]);
   return { root: D.el("div", {}, [table]),
-           send1: send1, call1: call1, collab1: collab1,
+           fund1: fund1, contract1: contract1, collab1: collab1,
            joined1: joined1, plain: plain };
 }
 
@@ -140,16 +143,16 @@ async function main() {
   {
     const dom = build();
     const t = run(dom);
-    t.press(dom.call1);
+    t.press(dom.contract1);
     assert.ok(t.pop(), "칸을 눌렀는데 편집창이 안 떴다");
     const chips = t.chips();
-    CALL.forEach(function (v) {
+    CONTRACT.forEach(function (v) {
       assert.ok(chips.indexOf(v) >= 0,
-        "통화 결과의 보기가 안 뜬다: " + v + "\n  뜬 것 " + JSON.stringify(chips));
+        "계약여부의 보기가 안 뜬다: " + v + "\n  뜬 것 " + JSON.stringify(chips));
     });
     // **차례도 그대로다** — 일이 진행되는 순서라 가나다순으로 다시 세우면
     // 목록에서 지금 자리를 짚을 수가 없다.
-    assert.deepStrictEqual(chips.slice(0, CALL.length), CALL,
+    assert.deepStrictEqual(chips.slice(0, CONTRACT.length), CONTRACT,
       "보기의 차례가 제안서와 다르다");
   }
 
@@ -161,36 +164,36 @@ async function main() {
   {
     const dom = build();
     const t = run(dom);
-    t.press(dom.send1);
+    t.press(dom.fund1);
     const chips = t.chips();
-    assert.ok(chips.indexOf(OLD_SEND) >= 0,
+    assert.ok(chips.indexOf(OLD_FUNDING) >= 0,
       "다른 줄의 옛 값이 고를 거리에 안 뜬다 ★ 옛 값이 화면에서 사라진다\n" +
       "  뜬 것 " + JSON.stringify(chips));
-    SEND.forEach(function (v) {
+    FUNDING.forEach(function (v) {
       assert.ok(chips.indexOf(v) >= 0, "정해 둔 보기가 밀려났다: " + v);
     });
 
     t.press(dom.collab1);
     assert.ok(t.chips().indexOf(OLD_COLLAB) >= 0,
-      "달에 매이지 않는 칸에서도 옛 값이 안 뜬다: " + OLD_COLLAB);
+      "옆 칸에서도 옛 값이 안 뜬다: " + OLD_COLLAB);
   }
 
   // ── 3. 칸마다 **자기 보기**가 뜬다 ─────────────────────────────────────
   //
-  // 월별 칸 셋은 열쇠가 달라(`c12`·`c13`) 다른 칸의 값을 모아 오지 않는다.
-  // 섞이면 `통화 완료` 와 `발송 완료` 가 한 목록에 서서 세지 못한다.
+  // 칸마다 열쇠가 달라(`funding_status`·`contract`) 다른 칸의 값을 모아
+  // 오지 않는다. 섞이면 두 목록이 한 칸에 서서 세지 못한다.
   {
     const dom = build();
     const t = run(dom);
-    t.press(dom.call1);
+    t.press(dom.contract1);
     const chips = t.chips();
-    SEND.forEach(function (v) {
-      if (CALL.indexOf(v) >= 0) return;
+    FUNDING.forEach(function (v) {
+      if (CONTRACT.indexOf(v) >= 0) return;
       assert.ok(chips.indexOf(v) < 0,
-        "통화 결과 칸에 문자 발송 보기가 섞였다: " + v);
+        "계약여부 칸에 투자유치 보기가 섞였다: " + v);
     });
-    assert.ok(chips.indexOf(OLD_SEND) < 0,
-      "통화 결과 칸에 문자 칸의 옛 값이 섞였다: " + OLD_SEND);
+    assert.ok(chips.indexOf(OLD_FUNDING) < 0,
+      "계약여부 칸에 투자유치 칸의 옛 값이 섞였다: " + OLD_FUNDING);
   }
 
   // ── 4. 목록에 없는 말을 **그냥 쳐도 저장된다** ─────────────────────────
@@ -215,13 +218,13 @@ async function main() {
   {
     const dom = build();
     const t = run(dom);
-    t.press(dom.send1);
-    t.pop().querySelectorAll(".cell-pop-choice")[SEND.indexOf("발송 완료")]
+    t.press(dom.fund1);
+    t.pop().querySelectorAll(".cell-pop-choice")[FUNDING.indexOf("투자유치 진행 중")]
       .fire("mousedown");
     await flush();
     assert.strictEqual(t.sent.length, 1, "보기를 골랐는데 저장이 안 나갔다");
     assert.strictEqual(t.sent[0].url, "/api/contacts/11");
-    assert.deepStrictEqual(t.sent[0].body, { notes: { c12: "발송 완료" } },
+    assert.deepStrictEqual(t.sent[0].body, { notes: { funding_status: "투자유치 진행 중" } },
       "값이 `notes` 묶음으로 안 나갔다 ★ 서버가 200 을 주면서 아무것도 안 넣는다");
   }
 

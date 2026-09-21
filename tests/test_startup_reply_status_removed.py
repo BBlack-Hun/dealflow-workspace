@@ -264,9 +264,8 @@ def test_보기_목록은_남기되_어느_칸도_안_쓴다():
         for column in list(layout.head) + list(layout.tail) + list(layout.extra):
             assert column.choices != cc.REPLY_CHOICES, \
                 f"`{column.label}` 이 아직 그 보기를 씁니다"
-        for _needle, choices in layout.month_picks:
-            assert choices != cc.REPLY_CHOICES, \
-                "월별 칸이 그 보기를 씁니다 — 달에 안 매이는 값이었다"
+        assert layout.month_choices != cc.REPLY_CHOICES, \
+            "월별 칸이 그 보기를 씁니다 — 달에 안 매이는 값이었다"
 
 
 # ── 4. 남은 칸은 안 밀린다 ──────────────────────────────────────────────────
@@ -278,6 +277,10 @@ def test_남은_칸은_차례도_폭도_그대로고_표만_그만큼_좁아진�
     손으로 맞출 데가 없다 — 그래도 실제로 그만큼만 줄었는지 여기서 잰다.
     `app.css` 의 `#contacts-table { min-width }` 는 **투자사 표 것**이라
     이 표를 따라 줄지 않는다(그래서 안 건드렸다).
+
+    (뒤에 `수정한 날짜` 칸이 들어오며 표는 다시 넓어졌다. 여기서 잼는 것은
+     **폭이 늘 칸 폭의 합과 같은가**이지 그 합이 얼마인가가 아니다 — 그래서
+     이 검사는 칸이 들고 날 때마다 고쳐 적을 숫자가 없다.)
     """
     from app.services import contact_columns as cc
 
@@ -285,8 +288,12 @@ def test_남은_칸은_차례도_폭도_그대로고_표만_그만큼_좁아진�
     columns = cc.table_columns(cc.STARTUP_LAYOUT, months)
     labels = [c.label for c in columns]
 
-    # 계약 세 칸 **바로 뒤**가 월별 묶음이다(그 사이에 뺀 칸이 서 있었다).
-    assert labels[labels.index(BEFORE) + 1] == MONTHS[0], labels
+    # 계약 세 칸 **바로 뒤**가 `수정한 날짜` 이고 그다음이 월별 묶음이다.
+    # (그 사이에 뺀 칸이 서 있었고, 그 자리에 사용자가 `수정한 날짜` 를
+    #  달라고 했다 — `tests/test_startup_updated_at.py`.)
+    after = labels[labels.index(BEFORE) + 1:]
+    assert after[:2] == ["수정한 날짜",
+                         cc.month_label(cc.STARTUP_LAYOUT, MONTHS[0])], labels
 
     html = sheets.get(_url()).text
     got = re.search(r'id="contacts-table"[^>]*min-width:(\d+)px', html, re.S)
