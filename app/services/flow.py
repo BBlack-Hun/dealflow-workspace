@@ -25,13 +25,21 @@ def counts(db: Session, user: User, today: Optional[date] = None) -> dict:
     rows = cadence.sequence_rows(db, user.id, today)
     active = [r for r in rows if r["status"] == "active" and r["due"]]
     due = [r for r in active if r["due"] <= today.isoformat()]
+    # 전화는 **보내는 것이 아니다** — 리마인드 수에서 갈라 낸다. 한 수에 섞으면
+    # 점프바의 `리마인드 3` 을 눌러 갔는데 보낼 것은 두 건뿐인 일이 생긴다.
+    # 가르는 기준은 리마인드 구역과 **같은 곳**이다(`routers/followups.py`).
+    calls = [r for r in active if r["next_stage"] == cadence.STAGE_CALL]
+    call_due = [r for r in calls if r["due"] <= today.isoformat()]
 
     items = pipeline.today_items(db, user, today)
     meetings = pipeline.meeting_rows(db, user)
 
     return {
-        "due": len(due),
-        "upcoming": len(active) - len(due),
+        "due": len(due) - len(call_due),
+        "upcoming": (len(active) - len(due)) - (len(calls) - len(call_due)),
+        # 오늘까지 걸어야 할 전화 · 아직 날이 안 온 전화
+        "call_due": len(call_due),
+        "call_open": len(calls) - len(call_due),
         "ir_open": len(items["open_requests"]),
         "ir_overdue": len(items["overdue_requests"]),
         # 오늘 약속 — 미팅 탭에서 손이 가는 것

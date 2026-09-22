@@ -1283,6 +1283,65 @@
     <button type="button" class="danger-btn" id="co-delete">삭제</button>
     {% endif %}
   </div>
+
+  {#
+    ── 강제 삭제 ────────────────────────────────────────────────────────────
+
+    **평소에는 없다.** [삭제] 를 눌러 막혔을 때만 `companies.js` 가 이 상자를
+    연다. 단추를 늘 세워 두지 않는 까닭이 셋이다.
+
+      · 이력이 없는 기업은 평범한 [삭제] 로 지워진다 — 강제가 필요 없다.
+      · 바닥 줄에 위험한 단추를 **둘** 세우면 둘 다 잘못 눌린다. [삭제] 는
+        이미 [저장] 에서 멀리 떼어 둔 자리인데(`.detail-foot .danger-btn` 의
+        `margin-left:auto`), 그 옆에 하나를 더 붙이면 그 거리가 뜻이 없어진다.
+      · 이 길로 오려면 **먼저 평범한 [삭제] 를 눌러 무엇이 걸렸는지 읽어야**
+        한다. 그 한 걸음이 곧 확인이다(투자사 명단의 여러 줄 지우기가 감춘 줄만
+        건드리는 것과 같은 결 — 한 번 더 보는 자리를 앞에 둔다).
+
+    상자 안의 단추는 **기업명을 글자 그대로 적기 전에는 눌리지 않는다.**
+    서버도 같은 것을 다시 본다(`routers/companies.py` 의 `ForceDeleteIn`) —
+    화면에만 두면 주소를 직접 두드리는 길이 남는다.
+  #}
+  {% if can_delete %}
+  <div class="force-del" id="co-force" hidden>
+    <h3>강제 삭제</h3>
+    {# 무엇이 같이 지워지는지 **숫자로**. `companies.js` 가 채운다. #}
+    <ul class="force-del-plan" id="co-force-plan"></ul>
+    <p class="warn-box">
+      이 기업은 <b>IR 기업 현황과 스타트업DB 두 탭에서 함께</b> 사라집니다 —
+      두 탭은 같은 기업 줄의 두 가지 보기입니다.
+    </p>
+    {#
+      **되돌리는 길을 정확히 적는다.** 사용자는 `어차피 백업하고 있으니 복구
+      가능` 이라고 했는데, 백업 되돌리기는 지운 기업 하나만 되살리는 일이
+      아니다 — DB 를 통째로 그 시점으로 되돌린다(`services/backup.py` ·
+      `/team/restore` 의 확인 화면이 그날 이후 차이를 표로 보여 준다).
+      그 사실을 여기 안 적으면 사람은 되돌릴 수 있다고 믿고 누른다.
+    #}
+    <p class="warn-box">
+      <b>되돌리기</b> — 이 줄 하나만 되살리는 길은 없습니다.
+      <a href="/team/restore">데이터 되돌리기</a> 의 백업은
+      <b>DB 전체를 그날로 되돌리는 일</b>이라, 그 뒤에 팀이 한 다른 작업도
+      함께 사라집니다. 누가 언제 무엇을 지웠는지는
+      <a href="/team/edit-log">수정 로그</a> 에 남습니다.
+    </p>
+    {# 적는 칸과 단추는 **상자 바닥에 붙여 둔다**(`.force-del-act` 의 `sticky`).
+       위의 숫자와 안내는 좁은 폭에서 여섯 줄이 넘어 굴려야 하는데, 굴리는
+       동안 단추가 화면 밖으로 나가면 사람은 상자가 고장 난 줄 안다 —
+       390px 에서 실제로 2px 모자랐다(재 봤다). #}
+    <div class="force-del-act">
+      <label class="field">
+        <span>지우려면 기업명을 그대로 적어 주세요</span>
+        <input type="text" id="co-force-name" autocomplete="off"
+               placeholder="기업명">
+      </label>
+      <div class="force-del-foot">
+        <button type="button" class="secondary-btn" id="co-force-cancel">그만두기</button>
+        <button type="button" class="danger-btn" id="co-force-go" disabled>강제 삭제</button>
+      </div>
+    </div>
+  </div>
+  {% endif %}
 </aside>
 {% endblock %}
 

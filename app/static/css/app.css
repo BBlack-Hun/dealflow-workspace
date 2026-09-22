@@ -518,6 +518,28 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
 .table-wrap.wide .grid-table { border-left: 0; }
 /* 줄에 걸린 색이 고정 칸에서 끊기면 **그 줄이 두 줄처럼 보인다.** */
 .table-wrap.wide .grid-table tbody tr:hover > td.stick { background: #f8faff; }
+
+/* ── 업무 보고 · 연간 리포트의 첫 열 고정 ──────────────────────────────────
+   칸이 열넷이다(항목 + 열두 달 + 합계). 좁은 화면에서는 가로로 밀어야 하는데,
+   그때 항목 이름이 따라 나가면 **어느 줄을 보고 있는지 알 수 없다** — 위
+   `첫 열 고정` 이 투자사 관리 현황에서 이미 들은 말과 같은 것이다.
+
+   **`.table-wrap.wide` 를 쓰지 않는다.** 그쪽은 키를 화면에 맞춰 자르고
+   (`max-height`) 폰에서 표를 `min-width: 2030px` 로 벌리는데, 둘 다 스타트업DB
+   같은 **아주 넓고 긴** 표를 위한 것이다. 이 표는 줄이 열셋뿐이라 잘릴 일이
+   없고, 2030px 로 벌리면 달 칸 하나가 150px 이 되어 밀 거리만 길어진다.
+   그래서 고정만 여기서 따로 건다 — 감싸개는 보통 `.table-wrap` 이다.
+
+   표 하나에만 걸리게 `#year-report` 로 묶는다(`:has(#review-table)` 과 같은
+   방식) — 다른 표의 고정 규칙과 섞이지 않는다. */
+#year-report th.stick, #year-report td.stick {
+  position: sticky; left: 0; z-index: 2; background: var(--panel); }
+#year-report thead th.stick { z-index: 4; }
+#year-report tbody tr:hover > td.stick { background: #f8faff; }
+/* 고정 칸과 밑을 지나가는 글자 사이에 금을 하나 긋는다 — 없으면 밀 때 숫자가
+   항목 이름에 그대로 얹혀 읽힌다. 왼쪽 테두리를 안 세우는 까닭은 위와 같다. */
+#year-report .stick-lead { box-shadow: 1px 0 0 var(--line); }
+.table-wrap:has(#year-report) .grid-table { border-left: 0; }
 .table-wrap.wide .grid-table tbody tr.row-hidden > td.stick {
   background: repeating-linear-gradient(
     45deg, var(--panel), var(--panel) 6px, #f4f6f9 6px, #f4f6f9 12px); }
@@ -703,6 +725,12 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
 .cell-main, .cell-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cell-main { font-weight: 600; }
 .cell-sub { font-size: 11.5px; margin-top: 2px; }
+/* 수정 로그의 `무엇이` 칸만 **줄을 접는다.** 위 한 줄 자르기는 표에서 값이
+   칸을 밀어내지 않게 하는 것인데, 이 표의 그 칸은 값 자체가 읽을 거리다 —
+   `함께 움직인 것`(기업 강제 삭제가 남기는 한 줄)이 `…` 뒤로 사라지면,
+   그때 무엇이 몇 건 끊겼는지 물을 자리가 없어진다. */
+.log-table td .cell-sub { white-space: normal; overflow: visible;
+  text-overflow: clip; }
 .cell-sub.row-actions { display: flex; gap: 10px; }
 .memo { font-weight: 400; }
 .chan { font-size: 14px; letter-spacing: 2px; }
@@ -1281,6 +1309,37 @@ td.rowno, .rowno { text-align: right; font-variant-numeric: tabular-nums; font-s
    눌려 한 글자도 안 보인다 — 제 줄을 준다. 빈 동안은 자리를 안 먹는다. */
 .detail-foot .hint { flex: 1 0 100%; margin: 0; }
 .detail-foot .hint:empty { display: none; }
+
+/* 강제 삭제 상자(`companies.html` 의 `#co-force`). **[삭제] 를 눌러 막혔을
+   때만** 선다 — 평소에는 화면에 없다.
+
+   바닥 줄 **아래**에 둔다. 위 `.detail-foot .danger-btn` 이 [저장] 에서 멀리
+   떼어 놓은 그 거리를, 위험한 단추를 하나 더 붙여 없애지 않기 위해서다.
+   `flex: 0 0 auto` 로 눌리지 않게 하고, 내용이 길면 이 상자 안에서 굴린다 —
+   좁은 폭(390px)에서 읽을 줄이 대여섯이라 상자째 밀려 나가면 [강제 삭제]
+   단추가 화면 밖으로 간다. */
+.force-del { flex: 0 0 auto; padding: 12px 16px; background: #fff5f5;
+  border-top: 2px solid #f3b4b4; max-height: 52vh; overflow-y: auto; }
+.force-del h3 { margin: 0 0 8px; font-size: 14px; color: var(--red); }
+.force-del-plan { margin: 0 0 4px; padding-left: 18px; font-size: 12px;
+  line-height: 1.6; color: var(--ink); }
+.force-del-plan li { margin-bottom: 4px; }
+.force-del .warn-box { margin: 8px 0; }
+/* 적는 칸 + 단추. **상자 바닥에 붙는다** — 위의 안내가 길어 굴리게 되는
+   좁은 폭에서도 늘 보인다(390px 에서 재 봤다). */
+.force-del-act { position: sticky; bottom: 0; background: #fff5f5;
+  padding-top: 8px; box-shadow: 0 -8px 8px -8px rgba(0,0,0,.12); }
+.force-del .field { display: block; margin: 0; }
+.force-del .field span { display: block; font-size: 12px; color: var(--gray);
+  margin-bottom: 4px; }
+.force-del .field input { width: 100%; box-sizing: border-box; padding: 8px;
+  border: 1px solid var(--line); border-radius: 8px; font-size: 13px; }
+/* [그만두기] 를 왼쪽, [강제 삭제] 를 오른쪽 끝에. 바닥 줄과 같은 방법이다. */
+.force-del-foot { display: flex; gap: 8px; align-items: center;
+  margin: 10px 0 0; padding-bottom: 2px; }
+.force-del-foot .danger-btn { margin-left: auto; }
+/* 이름을 다 적기 전에는 눌러도 아무 일이 없다 — 그렇게 **보여야** 한다. */
+.force-del-foot .danger-btn[disabled] { opacity: .45; cursor: not-allowed; }
 .form-grid input[type=number] { text-align: right; font-variant-numeric: tabular-nums; }
 
 /* 합치기 전 값 — `사업분야`(스타트업DB) · `기업 한줄 소개`(IR 기업 현황)를 한

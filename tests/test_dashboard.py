@@ -1403,3 +1403,32 @@ def test_the_link_only_carries_that_state(client, db, users):
     assert str(ok.id) in href
     assert str(bad.id) not in href.split("contacts=")[1].split(",")
 
+
+
+def test_달별_반응_안내문은_한_번만_선다():
+    """같은 안내문이 두 번 적히지 않는다.
+
+    #226 이 이 자리를 가로로 눕히면서 안내문 묶음이 **닫는 `</section>` 까지
+    통째로 복제**됐다. 화면에는 같은 문장이 두 번 떴고, 짝이 안 맞는 `</section>`
+    이 하나 더 생겨 그 아래 패널들이 원래 자리를 벗어났다.
+
+    눈으로만 보면 "글이 두 번 보인다" 로만 읽혀 태그가 어긋난 것은 안 드러난다.
+    그래서 **글자 수와 태그 짝**을 함께 센다.
+
+    ## Jinja 주석(`{# … #}`)은 빼고 센다
+
+    이 파일은 판단 근거를 주석에 길게 적는다. 그래서 화면에 뜨는 문장과 **똑같은
+    말이 바로 위 주석에도** 있다(`달 이름을 누르면 …`). 주석까지 세면 복제가
+    없는데도 붉게 뜨고, 그걸 맞추려고 주석을 지우면 근거가 사라진다 —
+    이 저장소가 지키려는 것과 정반대가 된다.
+    """
+    import re
+    from pathlib import Path
+
+    raw = Path("app/templates/dashboard.html").read_text(encoding="utf-8")
+    html = re.sub(r"\{#.*?#\}", "", raw, flags=re.S)   # 화면에 안 뜨는 주석은 뺀다
+
+    assert html.count("달로 가르지 않았습니다") == 1
+    assert html.count("달 이름을 누르면") == 1
+    # 짝이 어긋나면 아래 패널들이 이 구역 안으로 빨려 들어간다.
+    assert html.count("<section") == html.count("</section>")

@@ -28,7 +28,8 @@ from ..clock import stamp_text
 from ..db import get_db
 from ..deps import NotAdmin, admin_only, get_current_user, templates
 from ..models import IrCompany, OneLinerBackup, User
-from ..services import amount, auth as auth_svc, deal_history, email_domains
+from ..services import (amount, auth as auth_svc, deal_history, edit_log,
+                        email_domains)
 from ..services.one_liner import (
     AUTO, apply_one_liner, bulk_rows, compose_one_liner, one_liner_status, origin,
 )
@@ -1056,6 +1057,270 @@ def bulk_one_liner_undo(db: Session = Depends(get_db),
             "restored_rows": back, **_bulk_state(db)}
 
 
+# ── 기업을 지운다 — 딸린 것을 어떻게 하나 ──────────────────────────────────
+#
+# **이 한 자리에서 정한다.** `IrCompany` 줄을 가리키는 표가 여섯이고, 어느
+# 표를 어떻게 할지를 길마다 따로 적으면 반드시 한쪽이 낡는다 — 투자사 명단이
+# 같은 물음을 같은 방식으로 풀어 두었다(`routers/contacts.py` 의
+# `CASCADING_LINKS` · `BLOCKING_LINKS`). 표가 하나 늘면
+# `tests/test_company_force_delete.py` 의 표 훑기가 걸린다.
+#
+# 세 갈래를 다 견주었다.
+#
+#   ㉠ **같이 지운다** — 깨끗하다. 그런데 `발송 이력` · `IR 요청` · `미팅` 은
+#      "우리가 이 기업으로 몇 번 움직였나" 의 근거이고, 그 줄이 사라지면 지난
+#      주간·월간 보고의 수가 **소급해서** 바뀐다(`services/report.py` 가 그
+#      표들을 그대로 센다). 게다가 `send_items` 는 `SendJob.total` 이 세어 둔
+#      수와 짝이라, 줄만 빼면 진행 화면이 `12건 중 11건` 처럼 영영 안 맞는
+#      회차가 된다.
+#   ㉡ **남긴다(연결만 끊는다)** — 줄은 그대로 두고 기업 번호만 비운다.
+#      세 표가 다 **제 줄에 이름이나 방 제목을 들고 있어서**
+#      (`ir_requests.company_name` · `meetings.company_name` ·
+#      `send_items.room_name`) 기업이 없어져도 무엇에 대한 줄인지가 남는다.
+#      보고의 수도 안 바뀐다. 화면도 안 깨진다 — 기업을 따라가 이름을 읽는
+#      자리가 `SendItem.recipient_name` 하나인데 거기는 `None` 을 이미 다루고
+#      (진행 화면의 `esc()`), 나머지는 전부 `company_name` 글자를 읽는다.
+#   ㉢ **걸려 있으면 못 지우게 막는다** — 가장 안전하지만 사용자가 요청한
+#      `강제 삭제` 가 아니게 된다. 그 길은 평범한 [삭제] 가 이미 한다
+#      (아래 `delete_company`) — 두 길을 나란히 두는 것이 이번 답이다.
+#
+# **㉡ 을 고르되, ㉡ 이 불가능한 표는 ㉠ 으로 간다.** 가르는 기준은 하나다 —
+# **그 줄이 기업 번호 말고 제 이름을 들고 있는가.**
+#
+# 줄 하나는 `(열쇠, 모델 이름, 칸 이름, 화면에 적을 이름, 어떻게 할까)` 다.
+# 모델을 글자로 적어 두는 것은 `models` 를 이 파일 머리에서 통째로 끌어오지
+# 않기 위해서다(지금도 삭제 길이 함수 안에서 늦게 불러온다).
+
+#: 줄은 남기고 **기업 연결만 끊는다**(`= NULL`).
+DETACH = "detach"
+#: **줄째 함께 지운다.** 기업 번호가 줄의 열쇠 자체라 비울 수가 없고
+#: (`deal_batch_companies` · `deal_queue_companies` 는 복합 기본키), 기업을
+#: 빼고 나면 줄에 남는 뜻도 없다.
+CASCADE = "cascade"
+#: **묻지 않고 치운다.** 사람이 보는 자료가 아니라 되돌리기용 버퍼라
+#: (`edit_log.UNWATCHED` 도 같은 이유로 안 본다) 평범한 [삭제] 도 이건 막지
+#: 않는다 — 임시 버퍼 하나 때문에 기업이 영영 안 지워지면 안 된다.
+SWEEP = "sweep"
+
+COMPANY_LINKS = (
+    ("sends", "SendItem", "ir_company_id", "발송 이력", DETACH),
+    ("ir_requests", "IrRequest", "company_id", "IR 요청", DETACH),
+    ("meetings", "Meeting", "company_id", "미팅", DETACH),
+    ("batches", "DealBatchCompany", "company_id", "발송 회차에 실린 줄", CASCADE),
+    ("queued", "DealQueueCompany", "company_id", "예약에 실린 줄", CASCADE),
+    ("backups", "OneLinerBackup", "company_id", "한 줄 소개 되돌리기 버퍼", SWEEP),
+)
+
+#: 평범한 [삭제] 가 **막아야 하는** 갈래. `SWEEP` 은 막지 않는다.
+BLOCKING_MODES = (DETACH, CASCADE)
+
+
+def _company_links():
+    """`COMPANY_LINKS` 를 실제 모델·칸으로 푼 것."""
+    from .. import models
+
+    return [(key, getattr(models, model_name),
+             getattr(getattr(models, model_name), field), label, mode)
+            for key, model_name, field, label, mode in COMPANY_LINKS]
+
+
+def delete_plan(db: Session, company: IrCompany) -> dict:
+    """이 기업을 지우면 **무엇이 몇 건** 움직이는가.
+
+    세기만 한다 — 아무 것도 건드리지 않는다. 화면이 먼저 이것을 불러 사람에게
+    숫자로 보여 주고, 사람이 기업명을 손으로 적은 뒤에야 지운다.
+
+    **막는 길과 지우는 길이 같은 함수를 읽는다.** 평범한 [삭제] 도 이 수를
+    보고 막으므로, 화면에 `0건` 이라고 떠 있는데 서버가 막는 일이 없다.
+    """
+    import json as _json
+
+    from sqlalchemy import func
+
+    from ..models import ContactActivity
+    from ..services import deal_queue
+
+    counts = {}
+    for key, model, column, _label, _mode in _company_links():
+        counts[key] = int(db.execute(
+            select(func.count()).select_from(model)
+            .where(column == company.id)).scalar_one())
+
+    # **아직 안 나간 예약**은 따로 센다. 위 `queued` 에는 취소한 예약까지
+    # 들어 있는데, 살아 있는 예약에서 기업이 빠지는 것은 전혀 다른 일이다 —
+    # 세 곳으로 세워 둔 회차가 말없이 두 곳이 되어 나간다.
+    live = (1 if counts["queued"] and company.id in deal_queue.used_company_ids(db)
+            else 0)
+
+    # 시트에서 옮겨 온 **이름으로만 붙는** 발송 이력. 외래키가 없어 지워지지도
+    # 끊기지도 않지만, 기업 줄이 없어지면 그 이름이 `이력에만 있고 기업 목록에
+    # 없는 이름` 쪽으로 옮겨 앉는다(`services/deal_history.py` 의 `unmatched`
+    # · IR 기업 현황 수정창 아래에 그 수가 뜬다). 화면이 말해 주지 않으면 그
+    # 수가 왜 하나 늘었는지 물을 자리가 없다.
+    # 이름 맞추는 규칙은 **새로 짓지 않는다** — `deal_history._key` 한 곳이다
+    # ((주)·띄어쓰기를 다듬는다). 여기서 따로 맞추면 세어 보여 준 수와 실제로
+    # 옮겨 앉는 수가 갈린다.
+    #
+    # 칸 하나만 읽는다. 줄을 통째로 끌어오면 그 표가 이 앱에서 가장 큰 표라
+    # (한 회차에 수십 줄) 확인창 한 번에 쓸데없이 무거워진다.
+    name_key = deal_history._key(company.name)
+    by_name = 0
+    if name_key:
+        for raw in db.execute(
+            select(ContactActivity.company_names)
+            .where(ContactActivity.kind == deal_history.ACTIVITY_KIND,
+                   ContactActivity.company_names.isnot(None))
+        ).scalars().all():
+            try:
+                names = _json.loads(raw or "[]")
+            except (TypeError, ValueError):
+                names = []
+            if any(deal_history._key(n) == name_key for n in names):
+                by_name += 1
+
+    return {
+        "id": company.id,
+        "name": company.name or "",
+        "counts": counts,
+        "labels": {key: label for key, _m, _c, label, _mode in _company_links()},
+        #: 연결만 끊는 것 / 줄째 지우는 것의 합. 화면이 두 문장으로 나눠 적는다.
+        "detached": sum(n for key, n in counts.items()
+                        if _mode_of(key) == DETACH),
+        "removed": sum(n for key, n in counts.items()
+                       if _mode_of(key) == CASCADE),
+        "live_queue": live,
+        "by_name": by_name,
+    }
+
+
+def _mode_of(key: str) -> str:
+    for k, _m, _f, _label, mode in COMPANY_LINKS:
+        if k == key:
+            return mode
+    return ""
+
+
+def _plan_blocks(plan: dict) -> List[str]:
+    """평범한 [삭제] 를 **막아야 하는 이유** — `발송 이력 12건 · 미팅 1건`.
+
+    갈래 이름만 늘어놓으면 사람은 무엇이 얼마나 걸렸는지 모른 채 "그냥 안
+    되는구나" 로 끝낸다(`contacts._blocking_sentence` 와 같은 판단).
+    강제 삭제는 이 목록을 무시한다 — 그것이 `강제` 의 뜻이다.
+    """
+    return [f"{label} {plan['counts'][key]}건"
+            for key, _model, _column, label, mode in _company_links()
+            if mode in BLOCKING_MODES and plan["counts"][key]]
+
+
+def _log_summary(plan: dict) -> str:
+    """수정 로그 한 칸에 실을 **사람이 읽는 한 줄**."""
+    parts = []
+    for key, _m, _c, label, mode in _company_links():
+        n = plan["counts"][key]
+        if n:
+            parts.append(f"{label} {n}건 "
+                         + ("연결 끊음" if mode == DETACH else "지움"))
+    if plan["live_queue"]:
+        parts.append("대기 중인 예약에서 빠짐")
+    return " · ".join(parts) or "딸린 줄 없음"
+
+
+@router.get("/api/companies/{company_id}/delete-plan")
+def company_delete_plan(company_id: int, db: Session = Depends(get_db),
+                        user: User = Depends(get_current_user)):
+    """지우기 전에 **무엇이 몇 건 움직이는지** 세어만 본다 — 관리자만.
+
+    화면은 [삭제] 를 누르면 먼저 이것을 부른다. 숫자를 못 보여 주면 사람은
+    무엇이 딸려 나가는지 **누르고 나서** 알게 된다.
+
+    권한을 먼저 본다 — 삭제 길들과 같은 자리·같은 이유다(없는 번호에 404 를
+    먼저 주면 번호만 바꿔 가며 어느 기업이 있는지 알아낼 수 있다).
+    """
+    admin_only(user)
+    company = db.get(IrCompany, company_id)
+    if company is None:
+        raise HTTPException(status_code=404, detail="기업을 찾을 수 없습니다")
+    plan = delete_plan(db, company)
+    plan["blocks"] = _plan_blocks(plan)
+    return plan
+
+
+class ForceDeleteIn(BaseModel):
+    #: **기업명을 글자 그대로** 적어야 지운다. 확인창의 [확인] 은 손이
+    #: 미끄러지면 그대로 눌리지만, 이름은 그 기업을 보고 있지 않으면 적을 수가
+    #: 없다. 화면에만 두면 주소를 직접 두드리는 길이 남으므로 **서버가 본다**
+    #: (투자사 명단의 여러 줄 지우기가 `confirm` 을 서버에서 다시 보는 것과
+    #: 같은 자리 · 같은 이유다).
+    confirm_name: str = ""
+
+
+@router.post("/api/companies/{company_id}/force-delete")
+def force_delete_company(company_id: int, body: ForceDeleteIn,
+                         db: Session = Depends(get_db),
+                         user: User = Depends(get_current_user)):
+    """**강제 삭제** — 이력이 붙어 있어도 지운다. 관리자만.
+
+    평범한 [삭제](`delete_company`)는 이력이 붙으면 막는다. 이 길은 그것을
+    무시하고 지운다 — 사용자가 `어차피 백업하고 있으니 복구 가능` 을 근거로
+    요청한 길이다(`app/services/backup.py` — 하루 한 번 뜬다).
+
+    **그 말은 반만 맞다.** 백업 되돌리기는 `DB 전체를 그 시점으로 되돌리는
+    일`이라(`/team/restore` · `services/backup.py`) 그사이의 다른 작업도 같이
+    사라진다. 지운 기업 하나만 되살리는 길은 없다. 그 사실을 화면이 적는다
+    (`companies.html` 의 강제 삭제 상자) — 적어 두지 않으면 사람은 되돌릴 수
+    있다고 믿고 누른다.
+
+    **누가 지울 수 있나 — 관리자만.** 이 저장소는 `한 번 누르면 팀 전체의
+    기록이 사라지는` 조작만 관리자로 좁힌다(`consulting.may_edit_column` ·
+    `can_bulk_one_liner`). 이건 정확히 그런 조작이다: 기업 한 줄이 두 탭
+    (IR 기업 현황 · 스타트업DB)에서 함께 사라지고, 딜소개 회차에 실렸던 줄이
+    지워져 지난 업무 보고의 기업 목록이 바뀐다. 판정은 `deps.admin_only`
+    하나이고 평범한 [삭제] 와 같다 — 여기 `role != "admin"` 을 새로 적으면
+    단추를 보일지 정하는 쪽(`can_delete_company`)과 갈린다.
+
+    **권한을 먼저 본다** — 없는 번호에 404 를 먼저 주면 권한 없는 사람이
+    번호만 바꿔 가며 어느 기업이 있는지 알아낼 수 있다.
+
+    딸린 것을 어떻게 하는지는 위 `COMPANY_LINKS` 한 자리가 정한다. 여기서
+    표 이름을 손으로 적지 않는다.
+    """
+    admin_only(user)
+    company = db.get(IrCompany, company_id)
+    if company is None:
+        raise HTTPException(status_code=404, detail="기업을 찾을 수 없습니다")
+
+    # 이름을 글자 그대로 본다. 앞뒤 공백만 봐 준다 — 화면에서 긁어 붙이면
+    # 공백이 딸려 온다.
+    typed = (body.confirm_name or "").strip()
+    if typed != (company.name or "").strip():
+        raise HTTPException(
+            status_code=400,
+            detail="기업명이 다릅니다 — 지울 기업의 이름을 그대로 적어 주세요.")
+
+    plan = delete_plan(db, company)
+
+    # **줄마다 건드린다** — `db.execute(update(...))` · `.delete()` 로 한꺼번에
+    # 치우면 flush 를 지나지 않아 수정 로그가 통째로 빈다(`services/edit_log.py`
+    # 머리글의 '한계'). `ir_requests` · `meetings` 는 지켜보는 표라, 남의 줄을
+    # 건드린 것이 로그에 남아야 한다.
+    for _key, model, column, _label, mode in _company_links():
+        for row in db.execute(select(model).where(column == company.id)).scalars():
+            if mode == DETACH:
+                setattr(row, column.key, None)
+            else:
+                db.delete(row)
+
+    # **무엇이 함께 움직였는지 한 줄로 로그에 싣는다.** 기업 줄이 사라진 것
+    # 자체는 세션 이벤트가 저절로 남기지만(표 `ir_companies` · 줄 이름 · 남는
+    # 칸의 값), 딸린 것이 몇 건이었는지는 그 줄에 안 적힌다 — 나중에 "그때
+    # 발송 이력이 몇 건 끊겼나" 를 물을 자리가 여기 말고 없다.
+    edit_log.also("ir_companies", "force_delete", _log_summary(plan))
+
+    db.delete(company)
+    db.commit()
+    return {"deleted": company_id, "plan": plan}
+
+
 @router.delete("/api/companies/{company_id}")
 def delete_company(company_id: int, db: Session = Depends(get_db),
                    user: User = Depends(get_current_user)):
@@ -1111,6 +1376,31 @@ def delete_company(company_id: int, db: Session = Depends(get_db),
     # 기업이 영영 안 지워지면 안 되고(예약 줄을 지우는 단추는 없다), 그 막이는
     # 외래키가 하는 것이라 화면에는 이유 없는 서버 오류로만 뜬다.
     deal_queue.release_company(db, company_id)
+    # 한 줄 소개 되돌리기 버퍼도 같이 치운다(`SWEEP`). 사람이 보는 자료가
+    # 아니라 [전체 자동조합] 이 남겨 둔 임시 값이고, 되돌리기는 없는 기업을
+    # 이미 건너뛴다(`bulk_one_liner_undo`).
+    for _key, model, column, _label, mode in _company_links():
+        if mode != SWEEP:
+            continue
+        for row in db.execute(select(model).where(column == company_id)).scalars():
+            db.delete(row)
+    db.flush()
+
+    # **나머지 딸린 것도 여기서 막는다.** 예전에는 안 봤다 — `ir_requests` ·
+    # `meetings` · `send_items` 가 붙은 기업은 아래 `db.delete()` 에서 외래키에
+    # 걸려 **이유 없는 500** 이 났다. 화면에는 `삭제 실패` 만 떠서 왜 안
+    # 지워지는지 알 길이 없었다. 무엇이 몇 건인지 말하고, **다음에 뭘 하면
+    # 되는지**까지 적는다(`contacts.BLOCKED_NEXT_STEP` 와 같은 결).
+    why = _plan_blocks(delete_plan(db, company))
+    if why:
+        raise HTTPException(
+            status_code=400,
+            detail=f"'{company.name}' 에는 {' · '.join(why)}이 붙어 있어 "
+                   "그냥은 지울 수 없습니다 — 지우면 그 기록이 어느 기업의 "
+                   "것이었는지 알 수 없게 됩니다. 계약여부를 '딜소개 불가' 로 "
+                   "두면 발송 목록에서 빠집니다. 그래도 지워야 하면 "
+                   "[강제 삭제] 를 쓰세요.",
+        )
     db.delete(company)
     db.commit()
     return {"deleted": company_id}
