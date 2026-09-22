@@ -31,6 +31,11 @@ FIXED_NOW = "2026-09-01T09:00:00+09:00"
 
 # 내보내도 되는 투자사 칸. **이 목록은 검사가 직접 들고 있다**(위 설명 참고).
 CONTACT_COLUMNS_ALLOWED_OUT = {
+    # `group_name` 은 **일부러** 나간다 — 사람이 손으로 묶어 둔 갈래이고, 딜
+    # 소개를 실제로 보낼 때 대상을 묶는 값이다(`deal_queue.targets`). 나머지
+    # 칸이 시트에서 딸려 온 자유 문장인 것과 다르고, 그 셋이 비어 있는 줄에도
+    # 이 값은 적혀 있는 경우가 많다. 이름이 아니라 갈래라 나가도 된다.
+    "group_name",
     "sectors", "round_size", "stages",
     "sourcing_note", "memo", "tips_note", "interest_level",
 }
@@ -143,7 +148,8 @@ def _brief(db, user):
 
 def test_an_investor_goes_out_as_a_number_and_their_preferences(db, users):
     """맞추는 데 필요한 것만 — 번호 · 선호분야 · 라운드 · 단계 · 메모 · 관심도."""
-    row = _contact(db, users["u1"].id, sectors="AI,헬스케어",
+    row = _contact(db, users["u1"].id, group_name="Pre IPO",
+                   sectors="AI,헬스케어",
                    round_size="건당 30억~100억", stages="Seed,SeriesA",
                    sourcing_note="전화완료", memo="후속 검토 중",
                    tips_note="팁스 운영사", interest_level="높음")
@@ -151,6 +157,9 @@ def test_an_investor_goes_out_as_a_number_and_their_preferences(db, users):
     got = _brief(db, users["u1"])["investors"]
     assert got == [{
         "id": f"V-{row.id}",
+        # 사람이 손으로 묶어 둔 갈래. **적힌 글자 그대로** 나간다 — 앱이
+        # 거르는 값과 한 글자라도 다르면 답을 받고도 보낼 수가 없다.
+        "group_name": "Pre IPO",
         "sectors": "AI,헬스케어",
         "round_size": "건당 30억~100억",
         "stages": "Seed,SeriesA",
@@ -852,7 +861,10 @@ def test_the_keys_that_go_out_are_exactly_these(db, users):
     위 표식 검사는 **값**이 새는 것을 잡고, 이것은 **칸**이 느는 것을 잡는다.
     값이 우연히 안 겹치는 칸(숫자·참거짓)이 붙어도 여기서 걸린다.
     """
-    who = _contact(db, users["u1"].id, sectors="AI", round_size="30억",
+    from app.services import llm_brief
+
+    who = _contact(db, users["u1"].id, group_name="A", sectors="AI",
+                   round_size="30억",
                    stages="Seed", sourcing_note="메모", memo="메모",
                    tips_note="메모", interest_level="높음")
     what = _company(db, summary="요약", funding_total="5", raise_target="30",
@@ -864,9 +876,11 @@ def test_the_keys_that_go_out_are_exactly_these(db, users):
     # `sector_names` 는 **분야 이름뿐**이다 — 수요를 세는 쪽이 쓸 눈금이고,
     # 세는 일은 앱이 하지 않는다(`llm_brief.sector_names` 설명 참고).
     assert set(out) == {"generated_at", "scope", "amount_unit", "note",
-                        "prompt", "investors", "companies", "sector_names"}
+                        "prompt", "investors", "companies", "sector_names",
+                        # 그룹 갈래·인원. 이름은 한 곳에서만 짓는다.
+                        llm_brief.GROUPS_KEY}
     assert set(out["investors"][0]) == {
-        "id", "sectors", "round_size", "stages",
+        "id", "group_name", "sectors", "round_size", "stages",
         "sourcing_note", "memo", "tips_note", "interest_level",
         "sent_before", "sent_before_unmatched"}
     # **`name` 이 없다** — 기업도 번호로만 나간다.
@@ -886,7 +900,8 @@ def test_the_answer_that_actually_leaves_the_server_has_no_names_in_it(db, users
     who = _contact(db, users["u1"].id, name="홍길동", firm="가나벤처스",
                    phone="010-0000-0001", email="hong@example.invalid",
                    kakao_room_name="가나벤처스 Deal 공유", title="심사역",
-                   group_name="가나그룹", assignee_name="김담당", sectors="AI")
+                   group_name="Series B 이상", assignee_name="김담당",
+                   sectors="AI")
     # 기업 이름도 **한 글자도** 나가면 안 된다. 이미 보낸 회차가 있어도
     # 이력에는 번호만 실린다.
     what = _company(db, name="가상바이오", contact_name="김대표",
@@ -896,11 +911,15 @@ def test_the_answer_that_actually_leaves_the_server_has_no_names_in_it(db, users
 
     body = logged_in.get("/api/llm-brief.json").text
     for secret in ("홍길동", "가나벤처스", "010-0000-0001", "hong@example.invalid",
-                   "가나벤처스 Deal 공유", "심사역", "가나그룹", "김담당",
+                   "가나벤처스 Deal 공유", "심사역", "김담당",
                    "가상바이오", "김대표", "ceo@example.invalid"):
         assert secret not in body, f"내보낸 자료에 `{secret}` 이 들어 있습니다"
     # 검사가 헛돌지 않았는지 — 그 기업이 실제로 이력에 실렸어야 한다.
     assert f'"C-{what.id}"' in body
+    # **그룹은 가리지 않는다.** 위 목록에서 빠진 것이 실수가 아니라는 것을
+    # 여기서 못 박는다 — 사람 이름이 아니라 갈래이고, 이 이름으로 답이 돌아와야
+    # 앱에서 그 갈래에 그대로 보낼 수 있다.
+    assert "Series B 이상" in body
 
 
 # ── 누가 받는가 ─────────────────────────────────────────────────────────────
@@ -1344,6 +1363,166 @@ def test_only_deal_intro_records_count_as_history(db, users):
     db.commit()
 
     assert _brief(db, users["u1"])["investors"][0]["sent_before"] == []
+
+
+# ── 그룹 ────────────────────────────────────────────────────────────────────
+#
+# 그룹은 **사람이 손으로 묶어 둔 갈래**이고, 딜 소개를 실제로 보낼 때 대상을
+# 묶는 값이다(`deal_queue.targets` → `sheet_owner.in_group`). 그래서 자료에
+# 실리는 것도, 답이 그 이름으로 돌아오는 것도 뜻이 있다.
+
+
+def test_the_group_goes_out_with_each_investor(db, users):
+    """그룹은 **분야·단계·규모가 비어 있는 자리를 메운다.**
+
+    실측한 한 명단 117줄에서 `sectors` 21 · `round_size` 41 · `stages` 18 인데
+    `group_name` 은 71이었다. 셋 다 빈 줄에도 그룹은 적혀 있는 경우가 많고,
+    그때 그 줄에 대해 아는 것은 그룹뿐이다 — 안 실으면 그 사람은 자료 안에서
+    아무 말도 안 하는 줄이 된다.
+    """
+    row = _contact(db, users["u1"].id, group_name="Series C 이상")
+
+    got = _brief(db, users["u1"])["investors"][0]
+    assert got["group_name"] == "Series C 이상"
+
+
+def test_the_group_goes_out_exactly_as_written(db, users):
+    """**모아 부르지 않는다** — `E그룹` 을 `E` 로 고치면 답을 받고도 못 보낸다.
+
+    앱이 그룹으로 사람을 고르는 자(`sheet_owner.group_of`)는 앞뒤 공백만 뗀다.
+    자료가 다른 글자로 나가면 LLM 이 그 이름으로 답해 와도 그 갈래로 묶인
+    사람이 앱에는 없다.
+    """
+    from app.services import sheet_owner
+
+    row = _contact(db, users["u1"].id, group_name="E그룹")
+
+    got = _brief(db, users["u1"])["investors"][0]
+    assert got["group_name"] == "E그룹"
+    assert got["group_name"] == sheet_owner.group_of(row)
+
+
+def test_an_investor_with_no_group_simply_has_no_group_column(db, users):
+    """빈 그룹을 `정보 없음` 으로 지어 적지 않는다 — 다른 빈 칸과 같은 규칙이다.
+
+    대신 **몇 명이 그런지는 갈래 표가 적는다**(아래 검사) — 조용히 사라지면
+    읽는 쪽이 인원 합이 안 맞는 것을 알 길이 없다.
+    """
+    _contact(db, users["u1"].id, sectors="AI")
+
+    assert "group_name" not in _brief(db, users["u1"])["investors"][0]
+
+
+def test_the_data_carries_the_groups_and_how_many_are_in_each(db, users):
+    """자리를 나누는 비례는 **인원**이다. 세는 일을 읽는 쪽에 떠넘기지 않는다.
+
+    114줄을 세게 하면 틀리고, **틀린 비례로 나눈 답은 겉보기에 멀쩡하다.**
+    """
+    from app.services import llm_brief
+
+    _contact(db, users["u1"].id, group_name="A")
+    _contact(db, users["u1"].id, group_name="A")
+    _contact(db, users["u1"].id, group_name="Pre IPO")
+
+    got = _brief(db, users["u1"])[llm_brief.GROUPS_KEY]
+    assert got == [{"name": "A", "count": 2}, {"name": "Pre IPO", "count": 1}]
+
+
+def test_the_ungrouped_are_counted_too_so_the_numbers_add_up(db, users):
+    """안 묶인 사람도 갈래 표에 적는다 — 빼면 인원 합이 투자사 수와 안 맞는다.
+
+    부르는 말은 **화면의 칩이 쓰는 그 말**이어야 한다(`sheet_owner.EMPTY_GROUP`).
+    자료가 다른 말로 적으면 답을 보고 화면에서 그 갈래를 찾을 수 없다.
+    """
+    from app.services import llm_brief, sheet_owner
+
+    _contact(db, users["u1"].id, group_name="A")
+    _contact(db, users["u1"].id)
+    _contact(db, users["u1"].id, group_name="   ")
+
+    out = _brief(db, users["u1"])
+    rows = out[llm_brief.GROUPS_KEY]
+    assert rows[-1] == {"name": sheet_owner.EMPTY_GROUP, "count": 2}
+    assert sum(g["count"] for g in rows) == len(out["investors"])
+
+
+def test_the_group_count_is_the_one_the_deal_screen_uses(db, users):
+    """세는 자를 **여기서 다시 짓지 않는다** — 화면·발송이 쓰는 그 함수다.
+
+    두 벌로 세면 자료의 인원과 딜 제안 관리의 그룹 칩이 갈리고, 갈린 수로 나눈
+    자리는 보낼 때 안 맞는다(투자사 수가 117명·123명으로 갈렸던 그 사고다).
+    """
+    from app.services import llm_brief, sheet_owner
+
+    _contact(db, users["u1"].id, group_name="A")
+    _contact(db, users["u1"].id, group_name="B")
+    _contact(db, users["u1"].id)
+
+    rows = llm_brief.investor_rows(db, users["u1"])
+    assert _brief(db, users["u1"])[llm_brief.GROUPS_KEY] == [
+        {"name": g["label"], "count": g["count"]}
+        for g in sheet_owner.group_rows(rows)]
+
+
+def test_the_groups_only_count_who_is_actually_in_the_data(db, users):
+    """**담기지 않은 사람 몫으로 자리를 나누면 그 자리는 아무에게도 안 간다.**
+
+    방이 확인되지 않은 줄은 자료에 안 담긴다(`investor_rows`). 갈래 표도 같은
+    모집단이어야 한다.
+    """
+    from app.services import llm_brief
+
+    _contact(db, users["u1"].id, group_name="A")
+    _contact(db, users["u1"].id, group_name="A", room_verified="unverified")
+
+    out = _brief(db, users["u1"])
+    assert out[llm_brief.GROUPS_KEY] == [{"name": "A", "count": 1}]
+    assert len(out["investors"]) == 1
+
+
+def test_the_note_says_how_to_read_a_group(db, users):
+    """읽는 법이 없으면 그룹은 그냥 한 칸으로 보이고 그대로 지나간다."""
+    from app.services import llm_brief
+
+    got = _brief(db, users["u1"])["note"]
+    assert "group_name" in got
+    assert llm_brief.GROUPS_KEY in got
+    # 안 묶인 사람을 부르는 말이 화면과 같아야 한다.
+    assert llm_brief.sheet_owner.EMPTY_GROUP in got
+    # 모아 부르지 말라는 못 — 이게 빠지면 `E그룹` 이 `E` 로 돌아온다.
+    assert "그대로" in got
+
+
+def test_the_prompt_uses_the_group_without_going_back_to_pairing(db, users):
+    """그룹을 반영하되 **한 벌은 하나로 둔다.**
+
+    그룹마다 따로 고르라고 시키면 예전의 "투자사마다 8곳" 으로 되돌아간다 —
+    114곳이면 912 짝을 만들라고 시켜 놓고 아무것도 안 쓰는 그 자리다.
+    """
+    from app.services import llm_brief
+
+    got = _brief(db, users["u1"])["prompt"]
+    assert "group_name" in got
+    assert llm_brief.GROUPS_KEY in got
+    # 한 벌이라는 말이 그대로 남아 있어야 한다.
+    assert "한 벌" in got
+    # 뜻을 지어내지 말라는 못 — `A` 를 무슨 뜻으로 읽고 자리를 나누면 그 답은
+    # 겉보기에 멀쩡하다.
+    assert "지어내지" in got
+
+
+def test_the_groups_key_is_written_in_exactly_one_place(db, users):
+    """칸 이름을 세 곳(읽는 법·시킬 말·자료)에 손으로 적으면 두 곳이 낡는다."""
+    from app.services import llm_brief
+
+    llm_brief.GROUPS_KEY = "갈래표시험"
+    try:
+        out = _brief(db, users["u1"])
+        assert "갈래표시험" in out
+        assert "갈래표시험" in out["note"]
+        assert "갈래표시험" in out["prompt"]
+    finally:
+        llm_brief.GROUPS_KEY = "groups"
 
 
 # ── 시킬 말 ────────────────────────────────────────────────────────────────
