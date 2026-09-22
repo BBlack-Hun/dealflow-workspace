@@ -210,6 +210,111 @@ def test_그룹을_비워_두는_갈래는_없다():
         assert pg.decide(row).group
 
 
+# ── 분야도 라운드도 아닌 축 ─────────────────────────────────────────────────
+#
+# 사람이 예전 그룹 칸에 스스로 달아 둔 딱지 셋(`보류` · `대형` · `지역 한정`).
+# 그대로 두면 전부 `공통` 에 섞이는데, **특이사항이 없는 것이 결코 아니다.**
+
+
+def test_보류는_분야와_라운드보다_먼저_본다():
+    """**이 파일에서 두 번째로 중요한 검사다.**
+
+    실측 다섯 줄 중 **셋**은 선호 칸에 단계 말이 함께 적혀 있다
+    (`후기 6/16` · `Series C 6/18` · `후기 단계`). 분야·라운드를 먼저 돌리면
+    그 셋이 `Series C 이상` 으로 들어가고, 그 그룹으로 딜을 보낼 때마다
+    **"비상장 투자 계획 없음" 이라고 적어 둔 분께 딜이 함께 나간다** — 안 묶는
+    것보다 나쁘다.
+    """
+    for kw in ({"round_size": "후기 6/16"},
+               {"round_size": "Series C 6/18", "stages": "SeriesC"},
+               {"sectors": "후기 단계"},
+               {"sectors": "딥테크"}):
+        row = Fake(memo=moved("보류 | 비상장 투자 계획 없음"), **kw)
+        assert pg.decide(row).group == pg.HOLD, kw
+        assert pg.decide(row).why == pg.BY_LABEL, kw
+
+
+def test_대형과_지역_한정은_분야_라운드_뒤에_본다():
+    """안 보낸다는 뜻이 아니라 **조건이 있다**는 뜻이다. 사용자가 나누기로 한
+    축은 분야와 라운드이므로, 그 둘로 읽히면 그쪽이 더 구체적이다.
+    """
+    assert pg.decide(Fake(memo=moved("대형 | 100억~1000억"))).group == pg.BIG
+    # 분야가 읽히면 분야가 이긴다.
+    row = Fake(sectors="딥테크", memo=moved("대형 | 100억~1000억"))
+    assert pg.decide(row).group == "딥테크·제조"
+    # 라운드가 읽히면 라운드가 이긴다.
+    row = Fake(round_size="Series C 이상", memo=moved("지역 한정 | 비수도권"))
+    assert pg.decide(row).group == pg.LATE
+
+
+def test_딱지는_맨_앞만_본다():
+    """글 아무 데서나 낱말을 찾으면 `보류 해제` 같은 말까지 걸린다.
+
+    실측으로 세 딱지 모두 **맨 앞에서만** 나오고 글 가운데서 나오는 줄은 하나도
+    없어, 좁게 보아 잃는 것이 없다.
+    """
+    assert pg.decide(Fake(memo=moved("후기 | 보류 검토"))).group != pg.HOLD
+    assert pg.lead_label("보류 | 출자기관") == "보류"
+    assert pg.lead_label("") == ""
+
+
+def test_딱지_안의_가운뎃점은_구분_기호가_아니다():
+    """`환경·에너지` · `M&A·로보틱스` 처럼 **딱지 안에서** 쓰인다 — 그것까지
+    구분 기호로 보면 딱지가 반토막 난다. 가르는 기호는 `|` 뿐이다."""
+    assert pg.lead_label("환경·에너지 | 폐플라스틱") == "환경에너지"
+
+
+def test_지역_한정은_띄어쓰기가_달라도_한_딱지다():
+    """모양을 지우는 자는 그룹 이름을 알아보는 자와 **같다**(`group_name.squash`)."""
+    for text in ("지역 한정 | 비수도권", "지역한정 | 비수도권"):
+        assert pg.decide(Fake(memo=moved(text))).group == pg.REGION, text
+
+
+def test_대형_둘은_한_그룹이다():
+    """세부가 달라도(`매출·투자유치 규모 큰 곳` / `100억~1000억 | M&A·볼트온`)
+    사람이 스스로 **같은 딱지**를 달았다. 앱이 그 판단을 쪼갤 근거가 없고,
+    세부는 메모에 그대로 실려 나간다(`llm_brief` 가 메모를 함께 내보낸다).
+    """
+    a = pg.decide(Fake(memo=moved("대형 | 매출·투자유치 규모 큰 곳")))
+    b = pg.decide(Fake(memo=moved("대형 | 100억~1000억 | M&A·볼트온")))
+    assert a.group == b.group == pg.BIG
+
+
+def test_신기술금융본부는_공통으로_간다():
+    """부서 이름일 뿐 선호가 아니다 — 사용자가 든 딱지는 셋뿐이다."""
+    got = pg.decide(Fake(memo=moved("신기술금융본부")))
+    assert got.group == pg.COMMON
+    assert got.why == pg.BY_NONE
+
+
+def test_보류라는_이름만으로는_발송이_안_막힌다():
+    """**이름은 앱의 어느 발송 판정도 지나지 않는다.**
+
+    막는 값은 `VcContact.status` 의 `검토중단` 하나다. 이 검사는 그 사실을
+    글로만 적어 두지 않고 **코드로 못 박는다** — 언젠가 누가 그룹 이름으로
+    막으려 들면 여기가 먼저 말해 준다.
+    """
+    from app.models import VcContact
+    from app.services import sheet_owner
+
+    row = VcContact(user_id=1, name="가상", group_name=pg.HOLD,
+                    connect_stage="connected", status="active")
+    assert sheet_owner.can_send_to(row) is True     # 그룹 이름은 안 막는다
+    row.status = sheet_owner.STATUS_PAUSED
+    assert sheet_owner.can_send_to(row) is False    # 막는 것은 이 값이다
+
+
+def test_이름에_뜻이_보인다():
+    """이 값이 딜 소개를 맞추는 LLM 에게 그대로 나간다 — 이름만 읽고 무슨
+    조건인지 알 수 있어야 한다. `보류` 만으로는 무엇을 멈춘 것인지 모른다."""
+    assert "딜 소개" in pg.HOLD and "보류" in pg.HOLD
+    assert "대형" in pg.BIG
+    assert "지역" in pg.REGION
+    # 쉼표가 들면 화면의 보기 목록이 한 값을 둘로 쪼갠다(`group_name.CHOICES`).
+    for name in pg.OUTPUTS:
+        assert "," not in name, name
+
+
 # ── ④ 넣는 스크립트 ─────────────────────────────────────────────────────────
 
 def _seed(path: Path):
@@ -219,7 +324,7 @@ def _seed(path: Path):
         con.execute(
             "CREATE TABLE vc_contacts (id INTEGER PRIMARY KEY, group_name TEXT,"
             " sectors TEXT, round_size TEXT, stages TEXT, memo TEXT,"
-            " source_sheet TEXT, is_hidden INTEGER DEFAULT 0)")
+            " source_sheet TEXT, is_hidden INTEGER DEFAULT 0, status TEXT)")
         rows = [
             # id, group, sectors, round, stages, memo, sheet, hidden
             (1, "A", None, None, None, None, SHEET, 0),            # → 공통
@@ -227,13 +332,22 @@ def _seed(path: Path):
             (3, "A", None, "Series C 이상", None, None, SHEET, 0),  # → Series C 이상
             (4, None, None, None, None, moved("초기 | Pre-seed"), SHEET, 0),
             (5, None, None, None, None, moved("보류 | 출자기관"), SHEET, 0),
+            # 선호 칸에 단계 말이 함께 있어도 `보류` 가 이겨야 한다.
+            (8, None, None, "Series C 6/18", "SeriesC",
+             moved("보류 | 메자닌 중심"), SHEET, 0),
+            (9, None, None, None, None, moved("대형 | 100억~1000억"), SHEET, 0),
+            (10, None, None, None, None,
+             moved("지역 한정 | 비수도권 3년 미만"), SHEET, 0),
+            (11, None, None, None, None, moved("신기술금융본부"), SHEET, 0),
             # 감춘 줄 — 건드리면 안 된다
             (6, "C", "딥테크", None, None, None, SHEET, 1),
             # 남의 명단 — 건드리면 안 된다
             (7, "E그룹", "딥테크", None, None, None, OTHER_SHEET, 0),
         ]
         con.executemany(
-            "INSERT INTO vc_contacts VALUES (?,?,?,?,?,?,?,?)", rows)
+            "INSERT INTO vc_contacts (id, group_name, sectors, round_size,"
+            " stages, memo, source_sheet, is_hidden) VALUES (?,?,?,?,?,?,?,?)",
+            rows)
         con.commit()
     finally:
         con.close()
@@ -274,18 +388,43 @@ def test_미리보기가_그룹별_인원과_바뀌는_줄을_센다(fake_db):
     text = _run(fake_db)
     assert "그룹별 인원" in text
     # 감춘 줄 하나와 남의 명단 하나가 빠져 다섯 줄만 남는다.
-    assert "손볼 줄 5개" in text
+    assert "손볼 줄 9개" in text
     assert "감춰서 뺀 줄 1개" in text
-    assert "바뀌는 줄 5개" in text
+    assert "바뀌는 줄 9개" in text
 
 
 def test_적어_둔_글은_있는데_안_읽힌_줄을_따로_보여_준다(fake_db):
-    """`보류 | 출자기관` 은 **특이사항이 없는 것이 아니다.** 지금 규칙은 이것을
-    `공통` 으로 보내므로, 그대로 두면 안 보겠다고 적어 둔 분께 딜이 간다.
-    매기지는 않되 **세어서 보여 준다** — 조용히 섞으면 정할 기회가 없다.
+    """새로 뜨는 줄이 있으면 그것이 **다음에 갈래를 하나 더 세울 자리**다.
+
+    씨앗에서 그런 줄은 `신기술금융본부` 하나다 — 나머지 딱지 셋은 이제 제
+    갈래를 갖는다.
     """
     text = _run(fake_db)
     assert "눈으로 볼 줄 1개" in text
+
+
+def test_보류로_간_줄이_정말_안_나가는지_세어_준다(fake_db):
+    """**이름만으로는 안 막힌다**는 사실을 미리보기가 말해야 한다.
+
+    막는 값은 상태 칸의 `검토중단` 하나인데, 씨앗의 두 줄은 상태가 비어 있다.
+    """
+    text = _run(fake_db)
+    assert pg.HOLD in text
+    assert "발송이 안 막힌다" in text
+    assert "검토중단" in text
+
+
+def test_스크립트가_상태_칸을_건드리지_않는다(fake_db):
+    """세어서 보여 줄 뿐이다 — 상태를 대신 바꾸면 그 줄이 화면에서 사라진다.
+    사람이 정할 일이다."""
+    saved = fake_db.parent / "b.json"
+    _run(fake_db, "--apply", "--save-baseline", str(saved))
+    con = sqlite3.connect(str(fake_db))
+    try:
+        got = dict(con.execute("SELECT id, status FROM vc_contacts"))
+    finally:
+        con.close()
+    assert set(got.values()) == {None}
 
 
 def test_감춘_줄과_남의_명단은_건드리지_않는다(fake_db):
@@ -303,6 +442,12 @@ def test_이미_값이_있어도_덮는다(fake_db):
     assert got[2] == "딥테크·제조"
     assert got[3] == pg.LATE
     assert got[4] == pg.EARLY
+    assert got[5] == pg.HOLD
+    # 선호 칸에 `Series C` 가 있어도 `보류` 가 이긴다.
+    assert got[8] == pg.HOLD
+    assert got[9] == pg.BIG
+    assert got[10] == pg.REGION
+    assert got[11] == pg.COMMON
 
 
 def test_되돌릴_파일_없이는_덮지_않는다(fake_db):
@@ -345,11 +490,15 @@ def test_몇_번을_돌려도_같은_자리에_선다(fake_db):
 
 
 def test_미리보기는_값을_안_찍는다(fake_db):
-    """이 칸에는 투자사 이야기가 섞여 있다. 기본은 모양(길이)뿐이다."""
+    """이 칸에는 투자사 이야기가 섞여 있다. 기본은 모양(길이)뿐이다.
+
+    값이 실제로 찍힐 수 있는 자리는 **눈으로 볼 줄**(③)이다 — 거기에만 사람이
+    적어 둔 글이 통째로 실린다.
+    """
     text = _run(fake_db)
-    assert "출자기관" not in text
+    assert "신기술금융본부" not in text
     assert "딥테크 6/16" not in text
-    assert "출자기관" in _run(fake_db, "--show-values")
+    assert "신기술금융본부" in _run(fake_db, "--show-values")
 
 
 def test_명단을_안_적으면_아무것도_안_한다(fake_db):

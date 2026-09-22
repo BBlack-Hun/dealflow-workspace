@@ -68,6 +68,16 @@
 `_fill_if_empty` 로만 넣으므로, 값이 있는 칸은 시트가 `A` 라고 해도 안 밀어낸다.
 다만 **시트와 앱이 다른 말을 하게 된다** — 시트 쪽 `그룹` 열은 사람이 손봐야 한다.
 
+## **`딜 소개 보류` 는 이름일 뿐 발송을 막지 않는다**
+
+갈래 중 하나가 `딜 소개 보류` 다(`pref_group.HOLD`). 그런데 **그룹 이름은 앱의
+어느 발송 판정도 지나지 않는다.** 실제로 막는 값은 `VcContact.status` 의
+`검토중단` 하나다(`sheet_owner.is_paused` → `can_send_to` → `recipients`).
+
+그래서 미리보기가 **그 그룹인데 아직 `검토중단` 이 아닌 줄이 몇인지** 늘 찍는다
+(②번 칸). 세어서 보여 줄 뿐 **상태를 바꾸지는 않는다** — 사용자가 시킨 것은
+갈래를 세우는 데까지고, 상태를 대신 바꾸면 그 줄이 화면 목록에서 통째로 사라진다.
+
 ## 이름을 찍지 않는다
 
 이 칸에는 투자사 이야기가 섞여 있다. 미리보기는 **id 와 값의 모양**(길이 ·
@@ -96,7 +106,12 @@ TABLE = "vc_contacts"
 
 #: 읽어 오는 칸. `decide()` 가 보는 것(`pref_group.PREF_FIELDS` + `memo`)에
 #: 그룹과 id 를 더한 것이다.
-COLUMNS = ("id", "group_name", "sectors", "round_size", "stages", "memo")
+#:
+#: **`status` 는 판정이 안 쓴다.** 미리보기가 `딜 소개 보류` 로 간 줄이 실제로
+#: 발송에서 빠지는지(`검토중단` 인지) 세어 보여 주려고 함께 읽는다 —
+#: 아래 `print_hold` 참고.
+COLUMNS = ("id", "group_name", "sectors", "round_size", "stages", "memo",
+           "status")
 
 
 class Row:
@@ -120,12 +135,14 @@ class Item:
     눈으로 보여 주려고**서다(`print_watch`).
     """
 
-    def __init__(self, row_id, decision, before, after, note):
+    def __init__(self, row_id, decision, before, after, note, status=None):
         self.id = row_id
         self.decision = decision
         self.before = before
         self.after = after
         self.note = note
+        # 판정에는 안 쓴다 — `print_hold` 가 발송이 실제로 막히는지 볼 때만.
+        self.status = status
 
     @property
     def changes(self) -> bool:
@@ -182,7 +199,7 @@ def plan(con: sqlite3.Connection, sheet: str, include_hidden: bool):
         out.append(Item(row.id, decision,
                         {"group_name": row.group_name},
                         {"group_name": decision.group},
-                        pg.moved_text(row.memo)))
+                        pg.moved_text(row.memo), row.status))
     return out, hidden
 
 
@@ -218,6 +235,7 @@ def print_summary(rows, hidden: int, sheet: str) -> None:
     print("   무엇을 보고 매겼나")
     for key, label in ((pg.BY_SECTOR, "선호 투자분야를 읽음"),
                        (pg.BY_ROUND, "라운드·투자단계를 읽음"),
+                       (pg.BY_LABEL, "사람이 달아 둔 딱지를 그대로 읽음"),
                        (pg.BY_NONE, f"아무것도 안 읽힘 → `{pg.COMMON}`")):
         print("     " + pad(label, 34) + pad(str(why.get(key, 0)), 6, right=True))
     print()
@@ -235,24 +253,69 @@ def print_summary(rows, hidden: int, sheet: str) -> None:
         print()
 
 
+def print_hold(rows) -> None:
+    """**`딜 소개 보류` 로 간 줄이 정말 안 나가는가.**
+
+    안 나간다 — 라고 말할 수 없다. 그룹 이름은 앱의 어느 판정도 지나지 않는다.
+    딜 소개가 나가는 길이 둘인데 **둘 다 그룹으로 막지 않는다**:
+
+      · 예약(`deal_queue.targets`)은 그룹으로 거르지만, 그것은 **사람이 그
+        그룹을 골랐을 때만** 그 그룹으로 간다는 뜻이다. 고르지 않으면 안 가는
+        것이지 코드가 막는 것이 아니다.
+      · 직접 고르기(`routers/deals._load_recipients`)는 화면에서 체크한 id 만
+        본다. 그룹 거르개를 안 걸고 [전체선택]을 누르면 **이 그룹도 함께
+        체크된다.**
+
+    앱에서 실제로 막는 값은 `VcContact.status` 의 `검토중단` 하나다
+    (`sheet_owner.is_paused` → `can_send_to` → `recipients`). 그래서 이
+    그룹으로 가는데 아직 `검토중단` 이 아닌 줄을 **세어서 보여 준다.**
+
+    **여기서 상태를 바꾸지 않는다.** 사용자가 시킨 것은 갈래를 세우는 데까지고,
+    상태를 대신 바꾸면 그 줄이 화면 목록에서 통째로 사라진다 — 사람이 보고
+    정할 일이다.
+    """
+    from app.services import pref_group as pg
+
+    PAUSED = "paused"       # `sheet_owner.STATUS_PAUSED` 와 같은 값
+    hold = [it for it in rows if it.after["group_name"] == pg.HOLD]
+    if not hold:
+        return
+    open_rows = [it for it in hold if (it.status or "") != PAUSED]
+    print(f"② `{pg.HOLD}` {len(hold)}개 — **이름만으로는 발송이 안 막힌다**")
+    print("   앱에서 막는 값은 상태 칸의 `검토중단` 하나다"
+          " (`sheet_owner.is_paused` → `can_send_to`).")
+    print(f"   그런데 이 {len(hold)}개 중 아직 `검토중단` 이 아닌 줄이 "
+          f"**{len(open_rows)}개**다 — 지금 그대로면 딜 소개가 나간다.")
+    if open_rows:
+        print("   " + pad("id", 6, right=True) + "  상태")
+        for it in open_rows:
+            print("   " + pad(str(it.id), 6, right=True) + "  "
+                  + (it.status or "(빈값)"))
+    print("   ※ 상태를 바꾸는 것은 이 스크립트가 하지 않는다. 사람이 정할 일이다.")
+    print()
+
+
 def print_watch(rows, show_values: bool) -> None:
     """**눈으로 봐야 하는 줄** — 예전 그룹 칸에 적어 둔 글이 있는데 아무것도
     안 읽혀 `공통` 으로 가는 줄.
 
-    실측에 `보류 | 비상장 투자 계획 없음` · `보류 | 이미 딜 소개 받는 중` ·
-    `대형 | 100억~1000억` · `지역 한정 | 비수도권 3년 미만` 같은 줄이 있다.
-    **분야도 라운드도 아니지만 특이사항이 없는 것은 결코 아니다** — 지금 규칙은
-    이들을 `공통` 으로 보내므로, 그대로 두면 "비상장 투자 계획 없음" 이라고
-    적어 둔 분께 매주 딜 소개가 간다.
+    사람이 무언가를 적어 두었다는 것은 **특이사항이 있다는 뜻**인데, 규칙이
+    그것을 못 읽었다는 말이다. 그대로 `공통` 에 섞이면 왜 섞였는지 아무도
+    모른다.
 
-    그래서 **매기지는 않고 세어서 보여 준다.** 어떻게 할지는 사람이 정할 일이고,
-    조용히 `공통` 에 섞어 두면 정할 기회 자체가 없다.
+    한때 여기에 `보류` · `대형` · `지역 한정` 이 들어 있었고, 사용자가 그
+    셋을 보고 **따로 갈래를 세우기로 정했다**(`pref_group.HOLD_LABELS` ·
+    `AXIS_LABELS`). 이 칸이 하는 일이 바로 그것이다 — 매기지 않고 세어서
+    보여 주면 사람이 보고 정한다. 조용히 섞어 두면 정할 기회 자체가 없다.
+
+    그래서 이 칸은 **비어 가는 것이 정상**이다. 새로 뜨는 줄이 있으면 그것이
+    다음에 갈래를 하나 더 세울 자리다.
     """
     from app.services import pref_group as pg
 
     watch = [it for it in rows
              if it.decision.why == pg.BY_NONE and it.note]
-    print(f"② 눈으로 볼 줄 {len(watch)}개 — 그룹 칸에 적어 둔 글은 있는데 "
+    print(f"③ 눈으로 볼 줄 {len(watch)}개 — 그룹 칸에 적어 둔 글은 있는데 "
           f"분야·라운드가 안 읽혀 `{pg.COMMON}` 으로 가는 줄")
     if not watch:
         print("   없다.")
@@ -276,7 +339,7 @@ def print_rows(rows, limit: int, show_values: bool) -> None:
     자리를 다 먹어, 정작 눈으로 봐야 할 작은 갈래가 한 줄도 안 보인다.
     """
     moved = [it for it in rows if it.changes]
-    print(f"③ 바뀌는 줄 {len(moved)}개"
+    print(f"④ 바뀌는 줄 {len(moved)}개"
           + ("" if show_values else " — 읽은 글은 모양(길이)으로만 찍는다"
                                    " (`--show-values` 로 값을 본다)"))
     print("   " + pad("id", 6, right=True) + "  " + pad("지금", 14)
@@ -440,6 +503,7 @@ def main() -> int:
             return 2
 
         print_summary(rows, hidden, args.sheet)
+        print_hold(rows)
         print_watch(rows, args.show_values)
         print_rows(rows, args.limit, args.show_values)
 
