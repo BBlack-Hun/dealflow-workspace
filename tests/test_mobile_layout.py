@@ -625,18 +625,47 @@ def test_달별_반응의_달_이름은_눌린다():
     「달별 반응」은 반응 넉 칸짜리 요약표라(`dashboard.REACTION_ROWS`) 지킬
     밀도가 없다 — `.grid-table` 도 아니라서 머리글 모양 약속과도 상관이 없다.
 
-    **선택자가 `thead` 에서 `.mr-month` 로 바뀌었다.** 달을 넷에서 열둘로
-    늘리며 표를 뒤집어(줄 = 달), 달 이름이 머리글 칸에서 줄 머리 칸
-    (`tbody th`)으로 옮겨 갔다. 규칙이 따라가지 않으면 검사만 통과하고 달
-    이름은 다시 15px 로 돌아간다.
+    **이 링크는 표를 뒤집을 때마다 자리를 옮긴다.** 달을 넷에서 열둘로 늘리며
+    뒤집었을 때 `thead` → `tbody th` 로 갔고, 달을 가로로 눕히면서 다시
+    `thead` 로 돌아왔다. 규칙이 따라가지 않으면 검사만 통과하고 달 이름은
+    다시 15px 로 돌아간다 — 그래서 **`thead` 를 못 박는다.**
     """
-    selector, body = _phone_rule(".month-react tbody .mr-month")
+    selector, body = _phone_rule(".month-react thead .mr-month")
     assert selector, f"{PHONE} 에 「달별 반응」 달 이름 링크 규칙이 없다"
     assert re.search(r"min-height:\s*44px", body), \
         f"달 이름이 눌릴 크기가 아니다: {selector} {{{body.strip()}}}"
     # 세로만 키우면 20px 짜리 글자는 그대로다 — 칸을 통째로 눌러야 한다.
     assert re.search(r"display:\s*flex", body), \
         "링크가 칸을 다 쓰지 않는다 — 세로만 커지고 누를 가로 폭은 20px 그대로다"
+
+
+def test_달별_반응의_반응_이름_칸은_가로로_밀어도_제자리다():
+    """달이 가로로 누우면서 칸이 열셋이 됐다 — 폰에서는 밀어야 다 본다.
+
+    예전에 `칸 = 달` 을 `줄 = 달` 로 뒤집은 이유가 이것이었다: 밀면 왼쪽
+    반응 이름 칸이 같이 밀려 나가 **이름 없는 숫자판**만 남았다. 다시
+    눕히면서 그 칸을 붙박이로 만들었으므로(`position: sticky; left: 0`),
+    **그 두 줄이 빠지면 같은 고장이 그대로 돌아온다.**
+
+    투자사 관리 현황·스타트업DB 의 기업명 칸과 같은 관용구다
+    (`.table-wrap.wide .stick-lead`).
+    """
+    rules = [(selector, body) for selector, body in _rules(_css())
+             if ".month-react .mr-head" in selector]
+    assert rules, "`.month-react .mr-head` 규칙이 없다"
+    body = " ".join(b for _, b in rules)
+    assert re.search(r"position:\s*sticky", body), \
+        "반응 이름 칸이 붙박이가 아니다 — 가로로 밀면 이름 없는 숫자판만 남는다"
+    assert re.search(r"left:\s*0", body), \
+        "`left` 가 없으면 `sticky` 는 가로로 아무것도 안 붙잡는다"
+    # 고정 칸은 다른 칸 **위에** 그려진다 — 바탕이 비치면 글자가 겹쳐 보인다.
+    assert re.search(r"background:", body), \
+        "붙박이 칸에 바탕색이 없다 — 밑을 지나가는 숫자가 이름에 비친다"
+
+    # 미는 자리는 표 제 감싸개뿐이다. 이게 없으면 표 폭이 페이지를 통째로 민다.
+    wrap = [b for selector, b in _rules(_css()) if ".month-react-wrap" in selector]
+    assert wrap and re.search(r"overflow-x:\s*auto", " ".join(wrap)), \
+        "`.month-react-wrap` 이 가로 스크롤을 안 받는다 — 페이지 본문이 밀린다"
 
 
 def test_되살린_둘이_표_밀도와_머리글_모양을_안_건드린다():
