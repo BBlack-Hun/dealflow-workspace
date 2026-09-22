@@ -983,6 +983,77 @@ def recent_months(today: Optional[date] = None, count: int = 24) -> List[tuple]:
     return out
 
 
+#: 연간 리포트가 **항목마다 한 줄**로 적는 것 — (열쇠, 이름, 빛깔).
+#:
+#: ★ **화면과 엑셀이 이 한 줄을 같이 읽는다.** 두 곳에 각자 늘어놓으면 항목이
+#: 하나 늘 때 한쪽만 늘고, 그때 두 문서의 숫자가 갈린다 — 이 저장소가
+#: 되풀이해 겪은 탈이다.
+#:
+#: 차례는 **일이 일어나는 차례**다(회차 → 반응 → 미팅 → 전화). 월간 보고의
+#: 판 차례와 같아서, 한 해와 한 달을 나란히 놓고 볼 수 있다.
+#:
+#: 빛깔은 `bad`(안 나간 것·지난 것) · `warn`(아직 안 한 것) 둘뿐이다 —
+#: 화면과 엑셀이 같은 값을 받아 제 방식으로 그린다.
+YEARLY_ITEMS = (
+    ("send_rounds", "발송 회차", ""),
+    ("send_sent", "보낸 건수", ""),
+    ("send_left", "안 나감", "bad"),
+    ("total", "잡은 미팅", ""),
+    ("done", "진행한 미팅", ""),
+    ("followup_done", "결과 물어봄", ""),
+    ("followup_open", "아직 안 물어봄", "warn"),
+    ("followup_late", "그중 날짜 지남", "bad"),
+    ("ir_requested", "IR 요청", ""),
+    ("ir_delivered", "전달함", ""),
+    ("ir_open", "안 보낸 요청", "warn"),
+    ("call_done", "전화함", ""),
+    ("call_open", "전화 요청 안 함", "warn"),
+)
+
+
+def yearly_items(months: List[dict], totals: Dict[str, int]) -> List[dict]:
+    """연간 리포트의 줄들 — **항목마다 하나, 달마다 한 칸.**
+
+    ## 무엇을 빼는가 — **항목**이지 **달**이 아니다
+
+    사용자가 말한 것은 "각 항목마다 **내용 있는거 기준으로** 월별로 나눠서
+    기록" 이다. 열두 달 × 열세 항목을 다 늘어놓으면 169칸 가운데 대부분이 빈
+    칸이라 읽을 수가 없다.
+
+    그래서 **한 해 내내 0 인 항목은 줄째로 뺀다.** 그 항목은 올해 아예 없던
+    일이고, 빈 줄이 하나 서 있다고 그 사실이 더 잘 보이지도 않는다.
+
+    **달은 열둘을 다 둔다.** 값이 없는 달을 빼면 *아무 일도 없던 달이 있었다*
+    는 사실이 통째로 사라진다 — 8월이 비어 있는 것과 8월이 목록에 없는 것은
+    다른 말이고, 한 해를 훑는 사람이 보려는 것에 앞엣것이 들어 있다. 달 칸이
+    빠지면 옆 달과 나란히 놓고 견줄 수도 없다(그게 이 표의 전부다).
+
+    합계가 0 인 항목만 빼므로, **어느 달에든 값이 하나라도 있으면 그 줄은
+    선다** — 그 항목의 나머지 빈 달은 빈칸으로 남아 '그 달에는 없었다'를
+    말한다.
+
+    ## 왜 달이 칸이고 항목이 줄인가
+
+    달을 줄로 세우면 한 항목의 한 해 흐름을 읽으려고 열두 줄을 세로로 훑어야
+    한다. 이 보고에서 보려는 것이 바로 그 흐름이라(`올해 몇 건이나 했나`),
+    항목을 줄로 두고 달을 옆으로 편다. 좁은 화면에서 어느 줄인지 잃지 않게
+    맨 앞 칸을 붙박이로 둔다(`templates/report.html`).
+    """
+    out = []
+    for key, label, level in YEARLY_ITEMS:
+        if not totals.get(key):
+            continue
+        out.append({
+            "key": key,
+            "label": label,
+            "level": level,
+            # 달 차례 그대로 — 열두 칸. 값이 0 인 달은 화면·파일이 빈칸으로 둔다.
+            "cells": [m[key] for m in months],
+            "total": totals[key],
+        })
+    return out
+
+
 def yearly(db: Session, year: int, user: Optional[User] = None,
            today: Optional[date] = None) -> dict:
     """한 해치 보고 — 달마다 한 줄.
@@ -994,10 +1065,14 @@ def yearly(db: Session, year: int, user: Optional[User] = None,
     되는데, 그게 바로 이 보고가 없애려는 일이다.
     """
     today = today or date.today()
+    # 더하는 값들. **한 줄이 한 달에만 걸리는 것**만 여기 둔다 — 시퀀스 하나는
+    # 걸 날(`call_open`)이든 건 날(`call_done`)이든 달 하나에만 들어가므로
+    # 열두 달을 더한 값이 한 해의 수가 된다.
     months, totals = [], {"total": 0, "done": 0, "followup_done": 0,
                           "followup_open": 0, "followup_late": 0,
                           "ir_requested": 0, "ir_delivered": 0, "ir_open": 0,
-                          "send_rounds": 0, "send_sent": 0, "send_left": 0}
+                          "send_rounds": 0, "send_sent": 0, "send_left": 0,
+                          "call_open": 0, "call_done": 0}
     # **달마다 한 번만 센다.** 예전에는 요약을 한 바퀴 돌고 미팅 결과를 세려고
     # 또 한 바퀴를 돌아 `monthly()` 가 열두 달에 스물네 번 불렸다 — 같은 달을
     # 두 번 세는 것이라 값이 갈릴 일은 없었지만, 한 해를 그리는 데 드는 질의가
@@ -1019,6 +1094,13 @@ def yearly(db: Session, year: int, user: Optional[User] = None,
         "year": year,
         "months": months,
         "totals": totals,
+        # 항목마다 한 줄, 달마다 한 칸. **화면과 엑셀이 이 한 벌을 같이 읽는다** —
+        # 두 곳에서 따로 추리면 언젠가 두 문서의 줄이 갈린다.
+        #
+        # 이름이 `items` 가 아닌 것은, 이 dict 가 화면 ctx 에 통째로 부어지기
+        # 때문이다(`ctx.update(report.yearly(...))`) — 흔한 이름은 다른 값을
+        # 조용히 덮는다.
+        "report_items": yearly_items(months, totals),
         "outcomes": sorted(outcome_counts.items(), key=lambda t: -t[1]),
     }
 

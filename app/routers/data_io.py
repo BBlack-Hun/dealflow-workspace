@@ -846,15 +846,14 @@ def report_workbook(data: dict, *, team_wide: bool, who: str,
 def _yearly_sheet(sheet, data):
     """연간 — 화면(`/report?span=year`)을 위에서 아래로 그대로.
 
-    **달마다 시트를 나누지 않는다.** 나눌 것이 없다 — 연간 보고가 들고 있는
-    것은 달마다 **한 줄짜리 요약**(`report.yearly` 의 `months`)뿐이고, 회차
-    목록도 미팅 줄도 반응 표도 거기엔 없다. 열두 시트를 만들면 그 스물넷은
-    전부 한 줄만 든 빈 장이 되고, 한 해를 견주려던 사람은 시트를 열두 번
-    옮겨 다니며 손으로 더하게 된다 — 그게 바로 이 보고가 없애려던 일이다.
+    **한 장이다. 달마다 시트를 나누지 않는다.** 나눌 것이 없다 — 연간 보고가
+    들고 있는 것은 달마다 한 칸짜리 수뿐이고, 회차 목록도 미팅 줄도 반응 표도
+    거기엔 없다. 열두 시트를 만들면 그 전부가 몇 줄만 든 빈 장이 되고, 한 해를
+    견주려던 사람은 시트를 열두 번 옮겨 다니며 손으로 더하게 된다 — 그게 바로
+    이 보고가 없애려던 일이다.
 
-    그래서 **열두 달을 한 장에 세로로** 세운다. 화면의 표와 칸도 차례도 같다.
-    달을 나란히 두는 것이 이 보고의 전부라, 한 화면에서 위아래로 훑을 수 있어야
-    한다.
+    **항목마다 한 줄, 달마다 한 칸.** 화면의 표와 줄도 칸도 차례도 같다 —
+    줄을 여기서 추리지 않고 화면이 쓰는 `report_items` 를 그대로 받는다.
 
     한 달치를 자세히 보려면 **그 달 파일을 받으면 된다** — 같은 주소에서
     `month` 를 주면 회차·미팅·반응 세 장이 그대로 나온다(아래 `export_report`).
@@ -873,27 +872,30 @@ def _yearly_sheet(sheet, data):
     sheet.row(values, nums=set(range(len(values))))
 
     sheet.blank()
-    sheet.band(f"{data['year']}년 · 달별")
-    # 화면 표의 칸 차례 그대로 — 발송이 먼저다(회차가 돌고 나서 반응·미팅이
-    # 생긴다). '안 나감' 을 붙여 두지 않으면 중단된 회차가 보낸 건수에 묻힌다.
-    headers = ["달", "발송 회차", "보낸 건수", "안 나감", "잡은 미팅", "진행",
-               "결과 물어봄", "아직 안 물어봄", "IR 요청", "전달함", "안 보낸 요청"]
-    nums = set(range(1, len(headers)))
-    sheet.head(headers)
-    for m in data["months"]:
-        sheet.row(
-            [m["label"], m["send_rounds"], m["send_sent"], m["send_left"],
-             m["total"], m["done"], m["followup_done"], m["followup_open"],
-             m["ir_requested"], m["ir_delivered"], m["ir_open"]],
-            # 안 나간 건이 있는 달은 눈에 걸려야 한다 — 월간 시트의 회차 줄과
-            # 같은 빛깔이다(`_sends_sheet`). 인쇄해서 보는 문서라 더 그렇다.
-            level="bad" if m["send_left"] else "", nums=nums)
-    sheet.row(["합계", totals["send_rounds"], totals["send_sent"],
-               totals["send_left"], totals["total"], totals["done"],
-               totals["followup_done"], totals["followup_open"],
-               totals["ir_requested"], totals["ir_delivered"],
-               totals["ir_open"]],
-              level="warn" if totals["send_left"] else "", nums=nums)
+    sheet.band(f"{data['year']}년 리포트")
+    # ★ **줄은 화면에서 그대로 받는다**(`report.yearly` 의 `report_items`).
+    # 항목 이름도, 어느 항목을 뺄지도 거기서 정해졌다 — 여기서 다시 추리면
+    # 화면에는 있는 줄이 파일에는 없는 일이 생긴다(이 저장소의 `buckets` 가
+    # 같은 이유로 그렇게 되어 있다).
+    #
+    # **한 해 내내 빈 항목은 이미 빠져 있고, 달은 열둘이 그대로 있다.** 값이
+    # 없는 달을 빼면 *아무 일도 없던 달이 있었다*는 사실이 사라진다.
+    if data["report_items"]:
+        headers = ["항목"] + [m["label"] for m in data["months"]] + ["합계"]
+        nums = set(range(1, len(headers)))
+        sheet.head(headers)
+        for item in data["report_items"]:
+            # 값이 없는 달은 **빈칸**이다 — `0` 을 깔면 열두 칸이 0 으로 차서
+            # 값이 있는 달이 눈에 안 띈다. 화면이 그렇게 그리므로 파일도 같다.
+            sheet.row([item["label"]] + [c or "" for c in item["cells"]]
+                      + [item["total"]],
+                      # 안 나간 것·지난 것은 눈에 걸려야 한다 — 빛깔도 화면과
+                      # 같은 값을 받아 쓴다. 인쇄해서 보는 문서라 더 그렇다.
+                      level=item["level"], nums=nums)
+    else:
+        # **빈 해에도 장은 선다.** 여기서 돌아서면 아래 `미팅 결과` 까지 빠져,
+        # 파일을 받은 사람은 무엇이 없어서 빈 것인지 알 수 없다.
+        sheet.note("이 해에는 기록된 것이 없습니다.")
 
     sheet.blank()
     sheet.band(f"{data['year']}년 미팅 결과")
@@ -922,10 +924,12 @@ def yearly_report_workbook(data: dict, *, who: str, today: date) -> bytes:
 
     ws = wb.active
     ws.title = f"{year} 연간"
-    sheet = _ReportSheet(ws, [10, 12, 12, 11, 12, 10, 13, 15, 11, 11, 14], 11)
+    # 항목 이름 한 칸 + 열두 달 + 합계 = 14. 달 칸은 두 자리 수가 대부분이라
+    # 좁게 두고, 항목 이름에만 자리를 준다(`아직 안 물어봄` 이 제일 길다).
+    sheet = _ReportSheet(ws, [20] + [7] * 12 + [9], 14)
     sheet.title(f"{year}년 업무 보고 · 연간",
-                f"{who} · {today.isoformat()} 뽑음 · 달마다 한 줄입니다 — "
-                f"한 달치 회차·미팅·반응은 그 달 파일에 있습니다.")
+                f"{who} · {today.isoformat()} 뽑음 · 항목마다 한 줄 · 달마다 한 칸 "
+                f"— 한 달치 회차·미팅·반응은 그 달 파일에 있습니다.")
     sheet.blank()
     _yearly_sheet(sheet, data)
 
