@@ -373,6 +373,10 @@ def test_tab_counts_come_from_one_place(client, db, users):
     for path in ("/followups", "/ir"):
         assert client.get(path).status_code == 200, path
     assert set(expected) == {"due", "upcoming", "ir_open", "ir_overdue",
+                             # 전화 요청은 **보내는 것이 아니라서** 리마인드 수와
+                             # 갈라 센다 — 한 수에 섞으면 점프바의 `리마인드 3` 을
+                             # 눌러 갔는데 보낼 것은 두 건뿐인 일이 생긴다.
+                             "call_due", "call_open",
                              "meeting_todo", "meeting_open",
                              "review_due", "review_open"}
 
@@ -381,15 +385,21 @@ def test_the_jump_bar_follows_the_working_order(client, db, users):
     """순서가 곧 일하는 순서여야 다음에 뭘 눌러야 할지 헤매지 않는다.
 
         딜 소개 → IR 자료 요청 → (반응 없음) 리마인드
+               → (그래도 없음) 미팅을 청하고 사흘 뒤 전화 요청
                → (반응 있음) 미팅 → 미팅 후기
+
+    **전화 요청은 리마인드와 미팅 사이다.** 미팅 요청 카톡을 보내고 답이 없을 때
+    거는 것이라 그 자리가 맞다 — 미팅 뒤로 밀면 미팅이 잡히지도 않은 건이 미팅
+    다음 칸에 서게 된다.
     """
     import re
 
     client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
     body = client.get("/ir").text
     block = body[body.index("jump-bar"):]
-    hrefs = re.findall(r'href="(#\w+)"', block[:1400])
-    assert hrefs[:4] == ["#requests", "#remind", "#meetings", "#reviews"], hrefs
+    hrefs = re.findall(r'href="(#\w+)"', block[:1800])
+    assert hrefs[:5] == ["#requests", "#remind", "#calls",
+                         "#meetings", "#reviews"], hrefs
 
 
 def test_review_count_excludes_already_asked(db, users):

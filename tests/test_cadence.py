@@ -249,7 +249,86 @@ def test_remind_success_schedules_the_meeting_from_day1(db, seed):
     assert 11 <= gap <= 16              # 딜소개일 + 11~14 (+ 주말 보정)
 
 
-def test_meeting_success_finishes_the_sequence(db, seed):
+def test_meeting_success_books_the_phone_call(db, seed):
+    """미팅 요청이 나가면 **사흘 뒤 전화**가 잡힌다 — 거기서 끝나지 않는다.
+
+    예전에는 미팅 요청이 나가는 순간 흐름이 `완료` 로 닫혔다. 그런데 답이
+    없으면 전화로 다시 청하는 일이 실제로 남아 있었고, 그 일은 앱 어디에도
+    안 잡혀 있었다.
+    """
+    from app.services import cadence
+
+    item, job = _send(db, seed["contact_id"], seed["user_id"])
+    cadence.start_or_advance(db, item, job)
+    item2, job2 = _send(db, seed["contact_id"], seed["user_id"], stage=2)
+    cadence.start_or_advance(db, item2, job2)
+
+    asked = date(2026, 9, 14)       # 월요일 — 사흘 뒤가 목요일이라 주말이 안 낀다
+    item3, job3 = _send(db, seed["contact_id"], seed["user_id"], stage=3,
+                        sent_on=asked)
+    seq = cadence.start_or_advance(db, item3, job3)
+    db.commit()
+
+    assert seq.status == "active", "미팅 요청으로 흐름이 닫히면 안 된다"
+    assert seq.next_stage == cadence.STAGE_CALL
+    # **미팅 요청을 보낸 날 기준 사흘.** 딜소개일에서 세면 미팅 요청이 늦게
+    # 나간 건은 보내기도 전에 전화할 날이 지나 있다.
+    assert seq.next_due_date == "2026-09-17"
+    assert seq.next_due_date == (asked + timedelta(days=3)).isoformat()
+
+
+def test_the_phone_call_is_never_booked_on_a_weekend(db, seed):
+    """**전화만 주말에 잡히면 안 된다.**
+
+    사흘을 그냥 더하면 수요일에 나간 미팅 요청의 전화가 토요일에 잡히고,
+    월요일 아침에는 이미 `이틀 지남` 으로 떠 있다. 주말 보정은 다른 단계와
+    **같은 한 곳**을 지난다(`cadence.next_business_day`).
+    """
+    from app.services import cadence
+
+    item, job = _send(db, seed["contact_id"], seed["user_id"])
+    cadence.start_or_advance(db, item, job)
+    item2, job2 = _send(db, seed["contact_id"], seed["user_id"], stage=2)
+    cadence.start_or_advance(db, item2, job2)
+
+    asked = date(2026, 9, 16)       # 수요일 — 그냥 더하면 9/19 토요일
+    item3, job3 = _send(db, seed["contact_id"], seed["user_id"], stage=3,
+                        sent_on=asked)
+    seq = cadence.start_or_advance(db, item3, job3)
+    db.commit()
+
+    due = date.fromisoformat(seq.next_due_date)
+    assert due.weekday() < 5, f"주말에 전화가 잡혔다: {due}"
+    assert seq.next_due_date == "2026-09-21", "토요일이면 다음 월요일로 민다"
+
+
+def test_the_phone_call_is_three_days_flat(db, seed):
+    """**사흘은 고정이다** — 앞 단계들처럼 범위를 벌려 무작위로 고르지 않는다.
+
+    범위를 두는 까닭은 한꺼번에 나가는 티를 없애려는 것인데(카톡 수십 통),
+    전화는 앱이 보내지 않는다. 사람이 하루에 몇 통 거는 일이라 몰릴 것이 없고,
+    사용자가 말한 것도 "3일 후" 하나다.
+
+    **그래도 박아 두지는 않았다** — 다른 단계와 같은 `schedule_rules` 줄이라
+    관리자가 화면에서 늘릴 수 있다.
+    """
+    from app.services import cadence
+
+    rule = cadence.DEFAULT_RULES["call"]
+    assert rule["offset_min_days"] == rule["offset_max_days"] == 3
+    assert rule["skip_weekend"] == 1, "주말은 건너뛴다"
+    assert rule["kind"] == "offset_days", "다른 단계와 같은 모양이어야 화면이 그린다"
+
+    # 무작위 씨앗을 바꿔 가며 물어도 늘 같은 날이다.
+    base = date(2026, 9, 14)            # 월요일
+    got = {cadence.follow_up_date(db, base, cadence.STAGE_CALL,
+                                  random.Random(seed_)).isoformat()
+           for seed_ in range(20)}
+    assert got == {"2026-09-17"}, f"날짜가 흔들린다: {got}"
+
+
+def test_the_phone_call_finishes_the_sequence(db, seed):
+    """전화까지 걸고 나면 더 할 것이 없다 — 거기서 닫힌다."""
     from app.services import cadence
 
     item, job = _send(db, seed["contact_id"], seed["user_id"])
@@ -260,7 +339,13 @@ def test_meeting_success_finishes_the_sequence(db, seed):
     seq = cadence.start_or_advance(db, item3, job3)
     db.commit()
 
+    # 앱이 대신 걸 수 없다 — 사람이 걸고 나서 적는다.
+    seq = cadence.mark_called(db, seq)
+    db.commit()
+
     assert seq.status == "done"
+    assert seq.stage == cadence.STAGE_CALL
+    assert seq.next_stage is None
     assert seq.next_due_date is None
 
 

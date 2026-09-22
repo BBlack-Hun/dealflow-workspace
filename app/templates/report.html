@@ -40,13 +40,27 @@
     {#
       이 화면을 **카톡 업무보고 대신** 쓴다. 그러려면 화면에서 읽은 것을 다시
       옮겨 적지 않고 파일 하나로 넘길 수 있어야 한다 — 여기 링크가 지금 보고
-      있는 달·범위를 그대로 엑셀로 준다(주소의 `month`·`scope`·`member` 를
-      그대로 넘기므로 화면과 같은 숫자가 나온다).
+      있는 달·해·범위를 그대로 엑셀로 준다(주소의 `month`·`span`·`year`·
+      `scope`·`member` 를 그대로 넘기므로 화면과 같은 숫자가 나온다).
 
-      연간 보기에는 안 단다. 연간은 달마다 한 줄인 요약이라 회차·미팅 상세가
-      없는데, 같은 단추가 달마다 다른 것을 주면 무엇을 받은 것인지 알 수 없다.
+      **연간에도 단다.** 예전에는 "연간은 달마다 한 줄인 요약이라 회차·미팅
+      상세가 없는데, 같은 단추가 달마다 다른 것을 주면 무엇을 받은 것인지 알
+      수 없다" 는 까닭으로 빼 두었다. 그런데 한 해치를 파일로 넘겨야 하는 일이
+      그대로 남아서, 사람이 열두 달을 하나씩 받아 손으로 합치고 있었다 — 그게
+      이 보고가 없애려던 바로 그 일이다.
+
+      까닭이던 것은 **말로도, 모양으로도 푼다.** 단추 이름이 지금 보기를 말하고
+      (`엑셀 리포트 (연간)`), 파일 이름도 갈리고(`업무보고_2026년.xlsx` ↔
+      `업무보고_2026-09.xlsx`), 파일 첫 줄이 무엇이 든 장인지 적어 준다
+      (`routers/data_io.yearly_report_workbook`). 무엇보다 **아래 화면 표와 파일
+      표가 같은 줄·같은 칸**이라(`report.yearly_items`), 받은 것이 방금 보던
+      그것이다.
     #}
-    {% if not yearly_view %}
+    {% if yearly_view %}
+    <a class="secondary-btn"
+       href="/api/export/report.xlsx?span=year&year={{ selected_year }}{% if scope %}&scope={{ scope }}{% endif %}{% if viewing and members %}&member={{ viewing.id }}{% endif %}"
+       download>엑셀 리포트 (연간)</a>
+    {% else %}
     <a class="secondary-btn"
        href="/api/export/report.xlsx?month={{ selected }}{% if scope %}&scope={{ scope }}{% endif %}{% if viewing and members %}&member={{ viewing.id }}{% endif %}"
        download>엑셀 리포트</a>
@@ -103,59 +117,64 @@
     <span class="kpi-sub">전달 {{ totals.ir_delivered }}건</span></div>
 </div>
 
+{#
+  ── 연간 리포트 — **항목마다 한 줄, 달마다 한 칸** ─────────────────────────
+
+  사용자가 말한 것은 "각 항목마다 내용 있는거 기준으로 월별로 나눠서 기록" 이다.
+
+  **달이 칸이고 항목이 줄이다.** 달을 줄로 세우면 한 항목의 한 해 흐름을
+  읽으려고 열두 줄을 세로로 훑어야 한다 — 이 보고에서 보려는 것이 바로 그
+  흐름이라(`올해 몇 건이나 했나`), 항목을 줄로 두고 달을 옆으로 편다.
+
+  **한 해 내내 빈 항목은 줄째로 뺀다**(`report.yearly_items`). 열두 달 ×
+  열세 항목을 다 늘어놓으면 대부분이 빈 칸이라 읽을 수가 없다. **달은 열둘을
+  다 둔다** — 값이 없는 달을 빼면 *아무 일도 없던 달이 있었다*는 사실이 통째로
+  사라지고, 옆 달과 나란히 놓고 견줄 수도 없다.
+
+  **추리는 자리는 서비스 한 곳이다** — 엑셀 보고도 같은 `report_items` 를 받아
+  적는다(`routers/data_io._yearly_sheet`). 화면에서 여기 조건을 또 적으면
+  언젠가 두 문서의 줄이 갈린다.
+
+  **맨 앞 칸은 붙박이다**(`stick stick-lead`). 칸이 열넷이라 좁은 화면에서는
+  가로로 밀어야 하는데, 그때 항목 이름이 따라 나가면 어느 줄을 보고 있는지
+  알 수 없다 — 이 저장소가 투자사 관리 현황에서 이미 같은 말을 들은 자리다.
+#}
 <section class="panel">
-  <h2 class="panel-title">{{ year }}년 · 달별
-    <span class="hint">달을 누르면 그 달 보고로 갑니다</span>
+  <h2 class="panel-title">{{ year }}년 리포트
+    <span class="hint">달을 누르면 그 달 보고로 갑니다 · 한 해 내내 없던 항목은 빼고 적습니다</span>
   </h2>
+  {% if report_items %}
   <div class="table-wrap">
-    <table class="grid-table compact">
+    <table class="grid-table compact" id="year-report">
       <thead><tr>
-        <th style="width:72px">달</th>
-        {# 발송이 먼저다 — 회차가 돌고 나서 반응·미팅이 생긴다.
-           '안 나감' 을 같이 두지 않으면 중단된 회차가 보낸 건수에 묻힌다. #}
-        <th class="num" style="width:80px">발송 회차</th>
-        <th class="num" style="width:88px">보낸 건수</th>
-        <th class="num" style="width:80px">안 나감</th>
-        <th class="num" style="width:88px">잡은 미팅</th>
-        <th class="num" style="width:88px">진행</th>
-        <th class="num" style="width:96px">결과 물어봄</th>
-        <th class="num" style="width:104px">아직 안 물어봄</th>
-        <th class="num" style="width:96px">IR 요청</th>
-        <th class="num" style="width:88px">전달함</th>
-        <th class="num" style="width:96px">안 보낸 요청</th>
+        <th class="stick stick-lead" style="width:132px">항목</th>
+        {% for m in months %}
+        <th class="num" style="width:62px">
+          <a href="/report?month={{ year }}-{{ '%02d'|format(m.month) }}{% if scope %}&scope={{ scope }}{% endif %}{% if viewing and members %}&member={{ viewing.id }}{% endif %}">{{ m.label }}</a>
+        </th>
+        {% endfor %}
+        <th class="num" style="width:72px">합계</th>
       </tr></thead>
       <tbody>
-        {% for m in months %}
-        <tr class="{% if not (m.total or m.ir_requested or m.send_rounds) %}muted{% endif %}">
-          <td><a href="/report?month={{ year }}-{{ '%02d'|format(m.month) }}{% if scope %}&scope={{ scope }}{% endif %}">{{ m.label }}</a></td>
-          <td class="num">{{ m.send_rounds or '' }}</td>
-          <td class="num">{{ m.send_sent or '' }}</td>
-          <td class="num">{% if m.send_left %}<span class="tag bad">{{ m.send_left }}</span>{% endif %}</td>
-          <td class="num">{{ m.total or '' }}</td>
-          <td class="num">{{ m.done or '' }}</td>
-          <td class="num">{{ m.followup_done or '' }}</td>
-          <td class="num {% if m.followup_late %}bad{% endif %}">{{ m.followup_open or '' }}</td>
-          <td class="num">{{ m.ir_requested or '' }}</td>
-          <td class="num">{{ m.ir_delivered or '' }}</td>
-          <td class="num {% if m.ir_open %}warn{% endif %}">{{ m.ir_open or '' }}</td>
+        {% for it in report_items %}
+        <tr>
+          <td class="stick stick-lead">{{ it.label }}</td>
+          {# 값이 없는 달은 **빈칸**이다 — `0` 을 깔면 열두 칸이 0 으로 차서
+             값이 있는 달이 눈에 안 띈다. 달 칸 자체는 그대로 서 있으므로
+             '그 달에는 없었다' 는 그 빈칸이 말한다. #}
+          {% for c in it.cells %}
+          <td class="num {% if c and it.level %}{{ it.level }}{% endif %}">{{ c or '' }}</td>
+          {% endfor %}
+          <td class="num"><b>{{ it.total }}</b></td>
         </tr>
         {% endfor %}
       </tbody>
-      <tfoot><tr>
-        <th>합계</th>
-        <th class="num">{{ totals.send_rounds }}</th>
-        <th class="num">{{ totals.send_sent }}</th>
-        <th class="num">{{ totals.send_left }}</th>
-        <th class="num">{{ totals.total }}</th>
-        <th class="num">{{ totals.done }}</th>
-        <th class="num">{{ totals.followup_done }}</th>
-        <th class="num">{{ totals.followup_open }}</th>
-        <th class="num">{{ totals.ir_requested }}</th>
-        <th class="num">{{ totals.ir_delivered }}</th>
-        <th class="num">{{ totals.ir_open }}</th>
-      </tr></tfoot>
     </table>
   </div>
+  {% else %}
+  <p class="muted">{{ year }}년에는 기록된 것이 없습니다.
+    <a href="/deals">딜 제안 관리</a>에서 회차를 보내면 여기 쌓입니다.</p>
+  {% endif %}
 </section>
 
 {% if outcomes %}
@@ -402,9 +421,37 @@
         <b class="{% if ir_meeting_ask_overdue %}warn{% endif %}">{{ ir_meeting_ask_missing }}명
           <span class="hint">({% if ir_meeting_ask_rows_note %}{{ ir_meeting_ask_rows_note }} · {% endif %}{{ ir_meeting_ask_days }}일 지남 {{ ir_meeting_ask_overdue }}명)</span>
         </b></li>
+      {#
+        **미팅 요청 후 전화.** 미팅 요청 카톡을 보내고 사흘이 지나도록 답이
+        없으면 전화로 다시 청한다(`services/cadence.STAGE_CALL`).
+
+        위 `IR 미팅완료 리마인드 TEL 투자사` 와 **다른 전화다** — 그쪽은 미팅이
+        끝나고 열흘 뒤 결과를 묻는 것이다. 이름이 그 둘을 갈라야 한다.
+
+        **여기서 세지 않는다.** 딜 진행 관리의 `전화 요청` 구역과 같은 줄을 보고
+        (`report._call_rows`), 수는 서버가 낸 것을 그대로 띄운다 — 두 화면이
+        각자 세면 한쪽에만 뜨는 사람이 생긴다. `사흘` 도 박아 두지 않는다
+        (`call_days` — 관리자가 `/ir#rules` 에서 늘릴 수 있다).
+      #}
+      <li><span>전화 요청 안 함</span>
+        <b class="{% if call_overdue %}warn{% endif %}">{{ call_open }}명
+          <span class="hint">({{ call_days }}일 지남 {{ call_overdue }}명 · 전화함 {{ call_done }}명)</span>
+        </b></li>
     </ul>
+    {#
+      아래 두 안내는 **누구인지**로 보낸다 — 숫자만 있으면 업무 보고를 보다가
+      딜 진행 관리로 건너가 다시 찾아야 한다.
+    #}
     {% if ir_open %}
     <p class="hint warn">아직 안 보낸 요청이 있습니다 — <a href="/ir">딜 진행 관리</a></p>
+    {% endif %}
+    {% if call_open %}
+    {# 숫자만 있으면 **누구인지** 알 수 없다 — 아래 갈래가 줄마다 말해 준다. #}
+    <p class="hint {% if call_overdue %}warn{% endif %}">
+      {% if call_overdue %}전화할 날이 지난 곳이 {{ call_overdue }}명 있습니다 —
+      {% endif %}누구인지는 <a href="#reactions">아래 <b>미팅 요청 후 전화 투자사</b></a>
+      표에 줄마다 적혀 있습니다. <b>전화는 직접</b> 거시고, 걸고 나면
+      <a href="/ir#calls">딜 진행 관리</a> 에서 [전화함] 을 눌러 주세요.</p>
     {% endif %}
     {% if ir_meeting_ask_missing %}
     {# 숫자만 있으면 **누구인지** 알 수 없어, 업무 보고를 보다가 딜 진행 관리로
