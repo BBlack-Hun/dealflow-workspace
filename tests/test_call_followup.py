@@ -339,7 +339,8 @@ def test_the_report_tells_the_two_calls_apart(waiting_call, db, users):
 
 def test_the_report_screen_shows_it(waiting_call, logged):
     body = logged.get("/report?month=2026-09").text
-    assert "미팅 요청 후 전화 안 함" in body
+    # 판 안의 차례가 곧 흐름이다 — 바로 윗줄 `미팅 요청 안 보냄` 과 같은 결.
+    assert "전화 요청 안 함" in body
     assert "미팅 요청 후 전화 투자사" in body
     assert "홍길동" in body
     # 걸고 나서 어디서 적는지 알려 준다
