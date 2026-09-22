@@ -1504,13 +1504,21 @@ class ScheduleRule(TimestampMixin, Base):
 
 
 class SendSequence(TimestampMixin, Base):
-    """담당자 한 명의 후속 흐름 — 딜소개 → 리마인드 → 미팅 요청.
+    """담당자 한 명의 후속 흐름 — 딜소개 → 리마인드 → 미팅 요청 → 전화 요청.
 
     딜소개가 **성공한 뒤에만** 시작한다. 발송 목록을 만든 시점에 시작하면
     실패한 건까지 후속이 예약되어, 받은 적 없는 사람에게 "지난번 공유드린" 이 나간다.
 
     답이 오면 멈춘다(`responded`). IR 요청이나 미팅이 잡혔는데도 리마인드가
-    계속 나가는 것이 이 기능에서 가장 나쁜 실패다.
+    계속 나가는 것이 이 기능에서 가장 나쁜 실패다. **마지막 전화 단계도 그
+    규칙을 지난다** — 답이 온 상대에게 전화할 곳 목록이 뜨면 안 된다.
+
+    마지막 단계만 앱이 못 한다. 카톡 셋은 발송기가 보내지만 **전화는 사람이
+    건다** — 그래서 그 단계는 저절로 올라가지 않고 화면의 [전화함] 이 올린다
+    (`services/cadence.mark_called`).
+
+    **단계 값이 늘어도 판은 그대로다.** `stage`·`next_stage` 는 제약 없는
+    정수 칸이라 값 하나를 더 쓰는 데 옮길 판이 없다.
     """
 
     __tablename__ = "send_sequences"
@@ -1519,13 +1527,14 @@ class SendSequence(TimestampMixin, Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     contact_id: Mapped[int] = mapped_column(ForeignKey("vc_contacts.id"))
     batch_id: Mapped[Optional[int]] = mapped_column(ForeignKey("deal_batches.id"), nullable=True)
-    # 지금까지 보낸 마지막 단계 (1 딜소개 · 2 리마인드 · 3 미팅요청)
+    # 지금까지 끝낸 마지막 단계
+    # (1 딜소개 · 2 리마인드 · 3 미팅요청 · 4 전화요청 — `services/cadence.STAGE_*`)
     stage: Mapped[int] = mapped_column(Integer, default=1)
     # active(예약됨) | responded(답 옴) | stopped(사람이 중단) | done(끝까지 보냄)
     status: Mapped[str] = mapped_column(String, default="active")
     day1_sent_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     last_sent_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    next_stage: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)   # 2 | 3
+    next_stage: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)   # 2 | 3 | 4
     next_due_date: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # YYYY-MM-DD
     stopped_reason: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 

@@ -657,6 +657,10 @@ WRITE_ROUTES = {
     ("POST", "/followups/{sequence_id}/responded"): MACHINE,
     ("POST", "/followups/{sequence_id}/stop"): MACHINE,
     ("POST", "/followups/{sequence_id}/resume"): MACHINE,
+    # 미팅 요청 사흘 뒤 **전화를 걸었다**고 적는 자리. 옆의 [답 옴]·[중단] 과
+    # 같은 표를 **고치기만** 하고(`send_sequences` 한 줄의 단계·상태), 남의
+    # 줄은 애초에 못 집는다(`followups._owned`) — 그 셋과 같은 칸에 둔다.
+    ("POST", "/followups/{sequence_id}/called"): MACHINE,
     ("POST", "/deals/startup-ir/send"): MACHINE,
     ("POST", "/api/llm-brief/resolve"): MACHINE,
     ("POST", "/api/import/contacts/sheets"): MACHINE,
