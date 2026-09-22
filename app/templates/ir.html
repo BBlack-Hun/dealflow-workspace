@@ -682,7 +682,34 @@
         <tr>
           <td class="muted">{{ m.scheduled_at }}
             {% if m.scheduled_time %}<b>{{ m.scheduled_time }}</b>{% endif %}</td>
-          <td>{{ m.name }} <span class="muted">{{ m.firm }}</span></td>
+          {#
+            투자사명을 누르면 **딜 제안 관리의 `미팅 후기`** 로 넘어간다 —
+            그 담당자가 골라진 채로 열린다. 위 [전달한 자료] 표의 이름이 여는
+            길과 **같은 주소**이고 방식(`mode`)만 다르다
+            (`/deals?mode=meeting&contacts=…` ↔ `/deals?mode=review&contacts=…`).
+
+            후기를 물으려면 화면을 옮겨 담당자를 목록에서 다시 찾아 골라야 했다.
+            물어볼 사람이 이 표에 이미 줄로 서 있는데 그 줄에서 갈 길이 없었다.
+
+            **원래 가던 곳을 빼앗지 않는다.** 이 칸은 지금까지 링크가 아니라 그냥
+            글자였다(위 [전달한 자료] 의 이름과 달랐다) — 가던 곳이 없으므로
+            없어질 길도 없다. 옆 [2차 미팅 잡기] 도 그대로다.
+
+            **누르는 것으로는 아무것도 안 나간다.** 넘어간 화면에서 문구를 보고
+            [발송] 을 눌러야 나간다 — 이 저장소가 발송 앞에 사람을 세우는 그 자리다.
+
+            문구는 `meeting_review` 갈래이고 짓는 자리는 이미 있다
+            (`routers/deals.FOLLOW_UP_MODES[MODE_REVIEW]`). 여기서 새로 짓지 않는다.
+
+            **취소된 미팅에는 안 건다.** 있지도 않았던 미팅의 후기를 물을 수는
+            없다 — 옆 [2차 미팅 잡기] 가 취소 건을 빼는 것과 같은 까닭이다.
+            그때는 지금까지처럼 글자로 둔다.
+          #}
+          <td>{% if m.status != 'canceled' %}<a class="req-link"
+                 href="/deals?mode=review&contacts={{ m.contact_id }}"
+                 title="이 투자사에 미팅 후기를 묻는 카톡 보내기 — 담당자가 골라진 채로 열립니다"
+                >{{ m.name }} <span class="muted">{{ m.firm }}</span></a>
+            {% else %}{{ m.name }} <span class="muted">{{ m.firm }}</span>{% endif %}</td>
           <td class="muted">{{ m.kind_label }}</td>
           {#
             어느 기업 미팅이었는지. 값은 미팅에 적어 둔 기업 이름(`Meeting.company_name`)
