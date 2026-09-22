@@ -483,3 +483,129 @@ def test_the_band_names_the_groups_it_shows(logged, db, users):
     grid = _grid(_book(_download(logged))["2026-08 발송"])
     assert _find(grid, "8월 발송  ·  딜 소개 / 미팅 요청 · 미팅 후기 / 딜 소싱") \
         is not None
+
+
+# --- 5. 연간도 파일로 받는다 -----------------------------------------------------
+#
+# 연간 보기에는 오랫동안 [엑셀 리포트] 가 없었다. 까닭은 "연간은 달마다 한 줄인
+# 요약이라 회차·미팅 상세가 없는데, 같은 단추가 달마다 다른 것을 주면 무엇을
+# 받은 것인지 알 수 없다" 였다. 그런데 한 해치를 파일로 넘겨야 하는 일은 그대로
+# 남아서, 사람이 열두 달을 하나씩 받아 손으로 합치고 있었다 — 그게 이 보고가
+# 없애려던 바로 그 일이다.
+#
+# 무엇을 받았는지 모를 자리는 **말로** 없앤다(단추 이름 · 파일 이름 · 첫 줄).
+
+def _download_year(client, year=2026, **params):
+    query = "&".join([f"span=year&year={year}"]
+                     + [f"{k}={v}" for k, v in params.items()])
+    return client.get(f"/api/export/report.xlsx?{query}")
+
+
+def test_the_year_comes_down_as_one_sheet_of_twelve_months(logged, db, users):
+    """**열두 달이 한 장에 세로로.** 달마다 시트를 나누지 않는다.
+
+    연간 보고가 들고 있는 것은 달마다 한 줄짜리 요약뿐이라, 열두 시트를 만들면
+    그 전부가 한 줄만 든 빈 장이 된다 — 한 해를 견주려던 사람이 시트를 열두 번
+    옮겨 다니며 손으로 더하게 된다.
+    """
+    _round(db, users, title="3월 회차", when=date(2026, 3, 11), sent=40)
+    _round(db, users, title="8월 회차", when=date(2026, 8, 27),
+           sent=18, canceled=98, status="canceled")
+
+    wb = _book(_download_year(logged))
+    assert wb.sheetnames == ["2026 연간"], "한 장이다 — 달마다 나누지 않는다"
+
+    grid = _grid(wb["2026 연간"])
+    flat = [str(c) for row in grid for c in row]
+    assert "2026년 업무 보고 · 연간" in flat
+    # 달마다 한 줄이라는 것을 파일 스스로 말해야 한다
+    assert any("달마다 한 줄입니다" in c for c in flat), \
+        "무엇을 받은 것인지 파일이 말해야 한다"
+
+    # 열두 달이 빠짐없이 — 빈 달도 자리를 지켜야 흐름이 보인다
+    for mon in range(1, 13):
+        assert _find(grid, f"{mon}월") is not None, f"{mon}월 줄이 없습니다"
+
+    # 달 | 발송 회차 | 보낸 건수 | 안 나감 | …
+    assert list(_find(grid, "3월")[:4]) == ["3월", 1, 40, 0]
+    assert list(_find(grid, "8월")[:4]) == ["8월", 1, 18, 98], \
+        "완료는 18건 — 대상 116명이 아니다"
+
+
+def test_the_year_file_matches_the_year_screen(logged, db, users):
+    """**화면 숫자 == 파일 숫자.** 두 곳에서 따로 세면 반드시 갈라진다."""
+    from app.services import report
+
+    _round(db, users, title="3월 회차", when=date(2026, 3, 11), sent=40)
+    _round(db, users, title="8월 회차", when=date(2026, 8, 27),
+           sent=18, canceled=98, status="canceled")
+
+    seen = report.yearly(db, 2026, users["u1"], today=date.today())
+    grid = _grid(_book(_download_year(logged))["2026 연간"])
+
+    total = _find(grid, "합계")
+    assert total is not None, "합계 줄이 없습니다"
+    assert list(total[1:5]) == [seen["totals"]["send_rounds"],
+                               seen["totals"]["send_sent"],
+                               seen["totals"]["send_left"],
+                               seen["totals"]["total"]]
+
+    # 요약(KPI)도 화면 맨 위와 같은 칸·같은 차례여야 한다
+    labels = _find(grid, "보낸 건수")
+    assert labels is not None
+    values = grid[grid.index(labels) + 1]
+    assert values[0] == seen["totals"]["send_sent"]
+    assert values[1] == seen["totals"]["send_rounds"]
+
+
+def test_the_year_file_is_named_by_the_year(logged, db, users):
+    """파일 이름이 달치와 갈려야 한다 — 받은 것이 무엇인지는 이름부터 말한다."""
+    from urllib.parse import unquote
+
+    got = unquote(_download_year(logged).headers["content-disposition"])
+    assert "업무보고_2026년.xlsx" in got
+    # 달치는 그대로 달 이름이다 — 한 해치와 한 달치가 한 폴더에서 갈려야 한다
+    assert "업무보고_2026-08.xlsx" in unquote(
+        _download(logged).headers["content-disposition"])
+
+
+def test_the_year_button_is_on_the_year_screen(logged, db, users):
+    """화면에 단추가 있어야 쓰인다. **연간 보기에만** 연간 단추가 선다."""
+    year_body = logged.get("/report?span=year&year=2026").text
+    assert "/api/export/report.xlsx?span=year&year=2026" in year_body
+    assert "엑셀 리포트 (연간)" in year_body, \
+        "무엇을 받는지 단추 이름이 말해야 한다"
+
+    # 월간 보기에는 달치 단추만. (`연간` 은 보기를 바꾸는 탭이라 늘 있다.)
+    month_body = logged.get("/report?month=2026-08").text
+    assert "/api/export/report.xlsx?month=2026-08" in month_body
+    assert "엑셀 리포트 (연간)" not in month_body
+    assert "/api/export/report.xlsx?span=year" not in month_body
+
+
+def test_the_year_file_follows_the_same_scope_as_the_month(logged, db, users):
+    """범위(`scope`·`member`) 판정은 달치와 **같은 한 곳**이다.
+
+    연간을 딴 주소로 두었으면 이 판정이 두 벌이 되어, 같은 [팀 전체] 를 눌러도
+    달치와 연간이 다른 사람 것을 낼 수 있었다.
+    """
+    import inspect
+
+    from app.routers import data_io
+
+    src = inspect.getsource(data_io.export_report)
+    assert src.count("report_svc.scope_for(") == 1, "범위 판정은 한 번만 지난다"
+    # 관리자가 아니면 팀 전체를 못 본다 — 달치와 같은 규칙이다
+    assert _download_year(logged, scope="team").status_code == 200
+
+
+def test_a_broken_year_falls_back_to_this_year(logged, db, users):
+    """`?year=` 가 이상해도 파일은 나와야 한다 — `parse_month` 와 같은 결이다."""
+    from app.services import report
+
+    assert report.parse_year("", date(2026, 5, 2)) == 2026
+    assert report.parse_year("abc", date(2026, 5, 2)) == 2026
+    assert report.parse_year("2024", date(2026, 5, 2)) == 2024
+
+    wb = _book(logged.get("/api/export/report.xlsx?span=year&year=zzz"))
+    assert wb.sheetnames == [f"{date.today().year} 연간"]

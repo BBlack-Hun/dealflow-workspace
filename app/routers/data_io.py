@@ -843,23 +843,128 @@ def report_workbook(data: dict, *, team_wide: bool, who: str,
     return buf.getvalue()
 
 
+def _yearly_sheet(sheet, data):
+    """연간 — 화면(`/report?span=year`)을 위에서 아래로 그대로.
+
+    **달마다 시트를 나누지 않는다.** 나눌 것이 없다 — 연간 보고가 들고 있는
+    것은 달마다 **한 줄짜리 요약**(`report.yearly` 의 `months`)뿐이고, 회차
+    목록도 미팅 줄도 반응 표도 거기엔 없다. 열두 시트를 만들면 그 스물넷은
+    전부 한 줄만 든 빈 장이 되고, 한 해를 견주려던 사람은 시트를 열두 번
+    옮겨 다니며 손으로 더하게 된다 — 그게 바로 이 보고가 없애려던 일이다.
+
+    그래서 **열두 달을 한 장에 세로로** 세운다. 화면의 표와 칸도 차례도 같다.
+    달을 나란히 두는 것이 이 보고의 전부라, 한 화면에서 위아래로 훑을 수 있어야
+    한다.
+
+    한 달치를 자세히 보려면 **그 달 파일을 받으면 된다** — 같은 주소에서
+    `month` 를 주면 회차·미팅·반응 세 장이 그대로 나온다(아래 `export_report`).
+    """
+    totals = data["totals"]
+    sheet.band("요약")
+    # 화면 맨 위 KPI 줄과 **같은 칸·같은 차례**다(`_kpi`). 한 해와 한 달이 다른
+    # 칸을 세우면 둘을 나란히 놓고 볼 수가 없다.
+    labels = ["보낸 건수", "발송 회차", "안 나감", "잡은 미팅", "진행한 미팅",
+              "결과 물어봄", "아직 안 물어봄", "IR 요청", "IR 전달"]
+    values = [totals["send_sent"], totals["send_rounds"], totals["send_left"],
+              totals["total"], totals["done"], totals["followup_done"],
+              totals["followup_open"], totals["ir_requested"],
+              totals["ir_delivered"]]
+    sheet.head(labels)
+    sheet.row(values, nums=set(range(len(values))))
+
+    sheet.blank()
+    sheet.band(f"{data['year']}년 · 달별")
+    # 화면 표의 칸 차례 그대로 — 발송이 먼저다(회차가 돌고 나서 반응·미팅이
+    # 생긴다). '안 나감' 을 붙여 두지 않으면 중단된 회차가 보낸 건수에 묻힌다.
+    headers = ["달", "발송 회차", "보낸 건수", "안 나감", "잡은 미팅", "진행",
+               "결과 물어봄", "아직 안 물어봄", "IR 요청", "전달함", "안 보낸 요청"]
+    nums = set(range(1, len(headers)))
+    sheet.head(headers)
+    for m in data["months"]:
+        sheet.row(
+            [m["label"], m["send_rounds"], m["send_sent"], m["send_left"],
+             m["total"], m["done"], m["followup_done"], m["followup_open"],
+             m["ir_requested"], m["ir_delivered"], m["ir_open"]],
+            # 안 나간 건이 있는 달은 눈에 걸려야 한다 — 월간 시트의 회차 줄과
+            # 같은 빛깔이다(`_sends_sheet`). 인쇄해서 보는 문서라 더 그렇다.
+            level="bad" if m["send_left"] else "", nums=nums)
+    sheet.row(["합계", totals["send_rounds"], totals["send_sent"],
+               totals["send_left"], totals["total"], totals["done"],
+               totals["followup_done"], totals["followup_open"],
+               totals["ir_requested"], totals["ir_delivered"],
+               totals["ir_open"]],
+              level="warn" if totals["send_left"] else "", nums=nums)
+
+    sheet.blank()
+    sheet.band(f"{data['year']}년 미팅 결과")
+    sheet.stats(data["outcomes"] or [("완료된 미팅이 없습니다.", "")])
+
+
+def yearly_report_workbook(data: dict, *, who: str, today: date) -> bytes:
+    """업무 보고 한 해치 → 리포트 엑셀 바이트.
+
+    `data` 는 화면이 쓰는 것과 **같은 dict**(`report.yearly`)다 — 월간 파일과
+    같은 약속이다. 여기서 다시 세지 않으므로 화면과 파일의 숫자가 갈릴 자리가
+    없다.
+
+    **시트가 하나다.** 왜 열둘이 아닌지는 위 `_yearly_sheet` 에 적어 두었다.
+    """
+    try:
+        import openpyxl
+    except ImportError:  # pragma: no cover - 배포 이미지에는 항상 있다
+        raise HTTPException(status_code=500,
+                            detail="엑셀 쓰기 모듈(openpyxl)이 설치되지 않았습니다.")
+
+    year = data["year"]
+    wb = openpyxl.Workbook()
+    # 되올리기 방지 표식 — 월간 파일·다른 내려받기와 같다.
+    wb.properties.keywords = sp.EXPORT_MARK
+
+    ws = wb.active
+    ws.title = f"{year} 연간"
+    sheet = _ReportSheet(ws, [10, 12, 12, 11, 12, 10, 13, 15, 11, 11, 14], 11)
+    sheet.title(f"{year}년 업무 보고 · 연간",
+                f"{who} · {today.isoformat()} 뽑음 · 달마다 한 줄입니다 — "
+                f"한 달치 회차·미팅·반응은 그 달 파일에 있습니다.")
+    sheet.blank()
+    _yearly_sheet(sheet, data)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    wb.close()
+    return buf.getvalue()
+
+
 @router.get("/api/export/report.xlsx")
 def export_report(month: str = "", scope: str = "", member: int = 0,
+                  span: str = "month", year: str = "",
                   db: Session = Depends(get_db),
                   user: User = Depends(get_current_user)):
     """업무 보고 화면 그대로 → 엑셀 리포트.
 
-    주소의 `month`·`scope`·`member` 는 화면과 같은 것을 읽는다
-    (`report.parse_month`·`report.scope_for`). 같은 주소에서 화면과 파일이 다른
-    달·다른 범위를 내면 안 된다.
+    주소의 `month`·`scope`·`member`·`span`·`year` 는 화면과 같은 것을 읽는다
+    (`report.parse_month`·`report.parse_year`·`report.scope_for`). 같은 주소에서
+    화면과 파일이 다른 달·다른 해·다른 범위를 내면 안 된다.
+
+    **주소 하나다.** 연간을 딴 주소로 두면 범위(`scope`·`member`)를 읽는 판정이
+    두 벌이 되고, 화면의 [엑셀 리포트] 단추도 보기에 따라 다른 곳을 가리키게
+    된다 — 가르는 것은 화면과 **같은 `span`** 하나뿐이다.
     """
     today = date.today()
-    year, mon = report_svc.parse_month(month, today)
     who, team_wide, viewing = report_svc.scope_for(db, user, scope, member)
-    data = report_svc.monthly(db, year, mon, who, today)
-    content = report_workbook(
-        data, team_wide=team_wide,
-        who=("팀 전체" if team_wide else f"{viewing.name} 담당"), today=today)
+    whose = "팀 전체" if team_wide else f"{viewing.name} 담당"
+
+    if span == "year":
+        year_ = report_svc.parse_year(year, today)
+        content = yearly_report_workbook(
+            report_svc.yearly(db, year_, who, today), who=whose, today=today)
+        return Response(content=content, media_type=sp.XLSX_MEDIA_TYPE,
+                        headers=sp.content_disposition(
+                            f"업무보고_{year_}년.xlsx"))
+
+    year_, mon = report_svc.parse_month(month, today)
+    data = report_svc.monthly(db, year_, mon, who, today)
+    content = report_workbook(data, team_wide=team_wide, who=whose, today=today)
     return Response(content=content, media_type=sp.XLSX_MEDIA_TYPE,
                     headers=sp.content_disposition(
-                        f"업무보고_{year}-{mon:02d}.xlsx"))
+                        f"업무보고_{year_}-{mon:02d}.xlsx"))

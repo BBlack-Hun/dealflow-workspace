@@ -843,6 +843,22 @@ def parse_month(month: str, today: Optional[date] = None) -> tuple:
     return year, mon
 
 
+def parse_year(year: str, today: Optional[date] = None) -> int:
+    """`"2026"` → 2026. 못 읽으면 올해.
+
+    `parse_month` 와 같은 까닭이다 — 연간 보고도 화면(`/report?span=year&year=…`)과
+    **엑셀 내려받기가 같은 주소를 읽어야** 한다. 두 곳에서 따로 해석하면
+    `?year=26` 같은 값에서 갈리고, 그러면 화면과 엑셀이 다른 해를 보여 준다.
+    """
+    today = today or date.today()
+    if year:
+        try:
+            return int(year)
+        except (ValueError, TypeError):
+            pass
+    return today.year
+
+
 def scope_for(db: Session, user: User, scope: str = "", member: int = 0) -> tuple:
     """이 보고를 **누구 것으로** 볼 것인가 → `(who, team_wide, viewing)`.
 
@@ -894,6 +910,11 @@ def yearly(db: Session, year: int, user: Optional[User] = None,
                           "followup_open": 0, "followup_late": 0,
                           "ir_requested": 0, "ir_delivered": 0, "ir_open": 0,
                           "send_rounds": 0, "send_sent": 0, "send_left": 0}
+    # **달마다 한 번만 센다.** 예전에는 요약을 한 바퀴 돌고 미팅 결과를 세려고
+    # 또 한 바퀴를 돌아 `monthly()` 가 열두 달에 스물네 번 불렸다 — 같은 달을
+    # 두 번 세는 것이라 값이 갈릴 일은 없었지만, 한 해를 그리는 데 드는 질의가
+    # 그냥 두 배였다. 엑셀 내려받기가 같은 길을 지나면서 더 눈에 띈다.
+    outcome_counts: Dict[str, int] = {}
     for mon in range(1, 13):
         got = monthly(db, year, mon, user, today)
         months.append({
@@ -903,10 +924,7 @@ def yearly(db: Session, year: int, user: Optional[User] = None,
         })
         for k in totals:
             totals[k] += got[k]
-
-    outcome_counts: Dict[str, int] = {}
-    for mon in range(1, 13):
-        for label, n in monthly(db, year, mon, user, today)["outcomes"]:
+        for label, n in got["outcomes"]:
             outcome_counts[label] = outcome_counts.get(label, 0) + n
 
     return {
