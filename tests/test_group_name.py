@@ -53,9 +53,16 @@ def test_A부터_F까지는_그대로_통과한다():
         assert gn.decide(one).group == one
 
 
-def test_사용자가_쓰는_이름_여덟도_그대로_통과한다():
-    """운영에서 50줄이 이 여덟을 쓰고 있다. **사용자가 일부러 넣은 값**이라
-    통과시켜야 한다 — 안 그러면 다음 업로드·정리에서 메모로 쓸려 간다."""
+def test_사용자가_쓰는_이름들도_그대로_통과한다():
+    """**사용자가 일부러 넣은 값**이라 통과시켜야 한다 — 안 그러면 다음
+    업로드·정리에서 메모로 쓸려 간다.
+
+    처음엔 여덟이었고, 한 명단을 선호로 다시 묶으면서 다섯이 늘었다
+    (`공통` · `딥테크·제조` · `ESG·푸드·애그테크` · `Seed~Pre-A` ·
+    `Series A~B`). 수를 여기 적지 않는다 — 목록이 늘 때마다 검사 이름만
+    낡는다. `services/pref_group` 이 내놓는 이름이 전부 여기 있는지는
+    `tests/test_pref_group.py` 가 따로 못 박는다.
+    """
     for name in gn.NAMED:
         assert gn.decide(name).action == gn.KEEP, name
         assert gn.decide(name).group == name, name
