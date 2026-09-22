@@ -146,6 +146,58 @@
   // ── 칸에서 바로 고치기 ─────────────────────────────────────
   var editing = null;
 
+  // **값이 든 자리.** 칸에 따라 `td` 자체이기도 하고 그 안의 `.cell-main`
+  // 이기도 하다.
+  //
+  // `수정한 날짜` 를 값 아래 잔글씨로 단 칸(`딜 소개문구` · `카톡 연결 여부` ·
+  // 월별 리마인드)은 값과 날짜가 **한 `td` 안에** 같이 있다. 거기서 `td` 의
+  // 글자를 그대로 읽으면 **날짜까지 값으로 딸려 들어가** 그대로 저장된다 —
+  // 한 번 고치면 값 뒤에 날짜가 붙고, 다음에 고치면 날짜가 두 개 붙는다.
+  //
+  // 읽는 자리와 쓰는 자리가 **같은 함수 하나**를 지나야 한다. 한 곳만 고치면
+  // 읽을 때는 값만 읽고 쓸 때는 잔글씨를 덮어써서 날짜가 사라진다.
+  function valueBox(cell) {
+    return cell.querySelector(".cell-main") || cell;
+  }
+
+  // 값 아래 잔글씨 상자. 없으면 만든다 — 서버는 **날짜가 있을 때만** 세운다
+  // (344줄짜리 표에서 빈 상자를 늘 세우면 모든 줄의 키가 한 줄만큼 오른다).
+  // 처음 고치는 칸에는 그래서 상자가 없고, 그 자리를 여기서 만든다.
+  function stampBox(cell) {
+    var box = cell.querySelector(".cell-sub");
+    if (box) return box;
+    box = document.createElement("div");
+    box.className = "cell-sub muted";
+    // 화면과 **같은 말**이다(consulting.html 의 `stamped` 매크로) — 잔글씨만
+    // 보고는 이것이 그 칸의 날짜인지 줄 전체의 날짜인지 알 수 없다.
+    box.title = "이 칸을 마지막으로 고친 시각";
+    cell.appendChild(box);
+    return box;
+  }
+
+  // 이 칸의 **수정한 날짜 열쇠.** 서버가 쓰는 것과 같은 꼴이다
+  // (`routers/consulting.py` 의 `note_stamp_key`). 월별 리마인드는 석 달치가
+  // `notes` 한 칸에 들어 있어서 열 id 로 갈라 찍는다.
+  function stampKey(cell) {
+    var noteId = cell.getAttribute("data-note");
+    return noteId ? "note:" + noteId : cell.getAttribute("data-field");
+  }
+
+  // 고친 시각을 **그 자리에서** 바꾼다. 새로고침해야 날짜가 따라오면, 방금
+  // 고친 칸 밑에 옛 날짜가 그대로 적혀 있어 화면이 거짓말을 한다
+  // (IR 기업 현황·스타트업 명단이 같은 이유로 같은 일을 한다 —
+  //  `companies.js` · `contacts.js` 의 `수정한 날짜`).
+  //
+  // **꼴을 여기서 만들지 않는다.** 서버가 `clock.stamp_text` 한 곳을 지나
+  // 보내 준 글자를 그대로 적는다 — 여기서 다시 자르면 같은 값이 두 꼴로 보인다.
+  function showStamp(cell, stamps) {
+    if (!stamps) return;
+    var at = stamps[stampKey(cell)];
+    // 날짜를 보여 주는 칸이 아니면(서버가 안 실어 준다) 상자를 만들지 않는다.
+    if (!at) return;
+    stampBox(cell).textContent = at;
+  }
+
   table.addEventListener("click", function (e) {
     var cell = e.target.closest("td.cell");
     if (!cell || cell === editing) return;
@@ -161,14 +213,20 @@
   function startEdit(cell) {
     if (editing) finishEdit();
     editing = cell;
-    var before = cell.textContent.trim();
+    // **값만** 읽는다 — 잔글씨(`수정한 날짜`)가 같은 칸에 있다(`valueBox`).
+    var box = valueBox(cell);
+    var before = box.textContent.trim();
     var multi = cell.classList.contains("multi");
     var input = document.createElement(multi ? "textarea" : "input");
     input.className = "cell-input";
     input.value = before;
     if (multi) input.rows = Math.min(6, Math.max(2, before.split("\n").length + 1));
-    cell.textContent = "";
-    cell.appendChild(input);
+    // 값 상자만 비운다. `cell` 을 통째로 비우면 잔글씨가 같이 사라져, 고치다
+    // 취소(Escape)한 칸에서 날짜만 조용히 없어진다.
+    box.textContent = "";
+    box.appendChild(input);
+    // 고르는 칩은 **칸에** 붙인다 — 값 상자 안에 넣으면 저장할 때 같이 지워질
+    // 자리이고, 잔글씨 아래에 서는 편이 값을 안 가린다.
     addChoices(cell, input, before);
     input.focus();
     input.setSelectionRange(input.value.length, input.value.length);
@@ -187,7 +245,11 @@
       if (editing !== cell) return;
       editing = null;
       var after = input.value.trim();
-      cell.textContent = after;
+      box.textContent = after;
+      // 고르는 칩은 편집이 끝나면 치운다 — 예전에는 `cell.textContent = …` 이
+      // 칸을 통째로 비우면서 같이 사라졌는데, 이제 값 상자만 비우므로 남는다.
+      var chips = cell.querySelector(".cell-pop-choices");
+      if (chips) cell.removeChild(chips);
       if (after === before) return;
       save(cell, after, before);
     }
@@ -256,8 +318,15 @@
       .then(function (r) {
         cell.classList.remove("saving");
         if (!r.ok) throw new Error();
+        // 응답 본문이 없거나 깨져도 저장은 된 것이다 — 날짜만 못 바꾼다.
+        return r.json().catch(function () { return {}; });
+      })
+      .then(function (data) {
         cell.classList.add("saved");
         setTimeout(function () { cell.classList.remove("saved"); }, 900);
+        // **고친 시각을 그 자리에서.** 서버가 보내 준 글자를 그대로 적는다
+        // (꼴을 정하는 자리는 `app/clock.py` 의 `stamp_text` 한 곳이다).
+        showStamp(cell, data && data.stamps);
         refreshRowFlags(tr);
         // 플래그만 고치고 끝내면 **화면은 옛 조건 그대로**다. `드랍` 만 보는
         // 중에 한 곳을 `관리 중` 으로 바꾸면 이제 드랍이 아닌데도 목록에
@@ -269,7 +338,10 @@
       .catch(function () {
         cell.classList.remove("saving");
         cell.classList.add("save-failed");
-        cell.textContent = before;      // 저장 못 했으면 화면도 되돌린다
+        // 저장 못 했으면 화면도 되돌린다. **값 상자만** 되돌린다 — 칸을
+        // 통째로 덮으면 잔글씨(`수정한 날짜`)가 같이 지워져, 실패했는데
+        // 그 칸의 날짜만 사라진 화면이 된다.
+        valueBox(cell).textContent = before;
         alert("저장하지 못했습니다. 잠시 후 다시 시도하세요.");
       });
   }
@@ -300,14 +372,19 @@
   // 줄에 붙는 표시는 전부 칸의 내용에서 나온다 — 고치면 다 같이 따라가야 한다.
   // 칩도 KPI 도 머리글 필터도 **여기서 적은 값만** 본다.
   function refreshRowFlags(tr) {
+    // **값만 읽는다** — 잔글씨(`수정한 날짜`)가 같은 칸에 있는 칸들이 있어서,
+    // `td` 의 글자를 그대로 읽으면 갈래·검색·`연락 기록 없음` 이 전부 날짜를
+    // 값으로 센다(`valueBox`). `기업 관리` 에는 잔글씨가 없지만 규칙을 칸마다
+    // 갈라 두면 한 벌은 반드시 낡는다.
     var mgmt = tr.querySelector('[data-field="management"]');
-    tr.setAttribute("data-f-mgmt", managementTags(mgmt ? mgmt.textContent : ""));
+    tr.setAttribute("data-f-mgmt",
+                    managementTags(mgmt ? valueBox(mgmt).textContent : ""));
     // **행이 이미 그 값을 싣고 있을 때만** 다시 적는다 — 계약 탭에는 `월`
     // 머리글이 없어 이 값도 안 실려 있는데, 여기서 새로 만들면 아무도 안 보는
     // 죽은 속성이 생긴다(아래 고르는 칸들과 같은 규칙이다).
     var region = tr.querySelector('[data-field="region"]');
     if (region && tr.hasAttribute("data-f-region")) {
-      tr.setAttribute("data-f-region", region.textContent.trim());
+      tr.setAttribute("data-f-region", valueBox(region).textContent.trim());
     }
     // 탭마다 서는 고르는 칸들. **행이 이미 그 값을 싣고 있을 때만** 다시
     // 적는다 — 없는 속성을 여기서 새로 만들면 그 칸이 없는 탭에 아무도 안 보는
@@ -327,19 +404,26 @@
     //                       칸**이다(`models.ConsultingCompany.kakao_joined`).
     //
     // 한 자리에서 돌린다 — 규칙이 칸마다 따로 적히면 한 벌은 반드시 낡는다.
+    //   meeting_kind        `미팅종류` — 계약 탭에만 안 선다(저 탭의
+    //                       `meeting_at` 은 `계약월` 이라는 다른 물음이다).
+    //                       칸 이름과 필터 키(`meetkind`)가 다르다.
     [["contract_received", "data-f-received"],
      ["contract_done", "data-f-done"],
      ["contract_management", "data-f-quote"],
-     ["kakao_joined", "data-f-joined"]].forEach(function (pair) {
+     ["kakao_joined", "data-f-joined"],
+     ["meeting_kind", "data-f-meetkind"]].forEach(function (pair) {
       var td = tr.querySelector('[data-field="' + pair[0] + '"]');
       if (td && tr.hasAttribute(pair[1])) {
-        tr.setAttribute(pair[1], td.textContent.trim());
+        tr.setAttribute(pair[1], valueBox(td).textContent.trim());
       }
     });
     // **적힌 것이 있는가**는 앞뒤 공백을 뗀 뒤에 본다. 서버도 같은 규칙이다
     // (`consulting_status.contacted`) — 예전에는 서버가 공백만 든 칸을 기록으로
     // 세서, 그런 줄이 아무 칸이나 고치는 순간 `연락 기록 없음` 으로 넘어갔다.
-    function filled(td) { return td.textContent.trim().length > 0; }
+    // **날짜는 기록이 아니다.** 잔글씨까지 세면 달 칸을 채웠다가 도로 비운 줄이
+    // 날짜만 남아 `연락했다` 로 걸린다 — `연락 기록 없음` 칩과 위 KPI 가 같이
+    // 틀어진다. 값 상자만 본다.
+    function filled(td) { return valueBox(td).textContent.trim().length > 0; }
     // **접어 둔 달의 기록도 기록이다.** 여기서 볼 수 있는 것은 펴 둔 달의 칸뿐이라,
     // 이 줄이 없으면 접힌 달에만 기록이 있는 줄이 칸을 고치는 순간 `연락 기록 없음`
     // 으로 뒤집힌다 — 화면에 안 보이는 사실이라 고친 사람은 이유를 알 수 없다.
@@ -359,7 +443,10 @@
     }
     var parts = [];
     Array.prototype.forEach.call(tr.querySelectorAll("td.cell"), function (td) {
-      parts.push(td.textContent);
+      // 날짜는 검색 재료가 아니다 — 서버도 `data-search` 에 안 넣는다
+      // (`routers/consulting.py` 의 `search`). 여기서 넣으면 고치기 전후로
+      // 검색 결과가 달라진다.
+      parts.push(valueBox(td).textContent);
     });
     tr.setAttribute("data-search", parts.join(" ").toLowerCase());
   }
@@ -392,7 +479,8 @@
   table.addEventListener("click", function (e) {
     if (!e.target.classList.contains("js-cs-del")) return;
     var tr = e.target.closest("tr");
-    var name = tr.querySelector('[data-field="company_name"]').textContent.trim();
+    var name = valueBox(
+      tr.querySelector('[data-field="company_name"]')).textContent.trim();
     if (!confirm("'" + name + "' 줄을 삭제할까요?")) return;
     fetch("/api/consulting/" + tr.getAttribute("data-id"), { method: "DELETE" })
       .then(function (r) {

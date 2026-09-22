@@ -1,5 +1,38 @@
 {% extends "base.html" %}
 
+{#
+  **값 아래 잔글씨로 `수정한 날짜`.** 이 표가 값과 곁말을 한 칸에 세우는
+  관용구는 `cell-main`/`cell-sub` 하나다(`app.css` · `report.html` ·
+  `todo.html` · `sourcing.html` 이 같은 이름을 쓴다).
+
+  ## 왜 칸을 따로 안 세우나
+
+  사용자가 부른 칸이 셋인데 그중 `당월 리마인드` 가 **석 달치**라, 날짜 칸을
+  세우면 한 번에 다섯 개가 는다. 이 표는 이미 2,900px 이라 한 화면에 안
+  들어가고, 달이 바뀔 때마다 날짜 칸이 하나씩 더 늘어야 한다 — 월별 리마인드를
+  칸이 아니라 JSON 으로 둔 이유와 같다.
+
+  ## 값이 `.cell-main` 안으로 들어간다 — **편집기가 그것만 읽는다**
+
+  이 표는 칸을 눌러 그 자리에서 고치는데(`consulting.js` 의 `startEdit`),
+  전에는 `td` 의 글자를 통째로 읽었다. 잔글씨를 같은 `td` 에 두면 **날짜까지
+  값으로 딸려 들어가** 저장된다. 그래서 값을 `.cell-main` 으로 감싸고, 편집기는
+  그 상자 하나만 읽고 쓴다(`valueBox`).
+
+  ## 빈 날짜는 `<div>` 자체를 안 세운다
+
+  344줄짜리 표라, 빈 잔글씨 상자를 늘 세우면 **모든 줄의 키가 한 줄만큼**
+  올라간다(이 저장소가 넓은 표의 위아래 여백을 6→4px 로 깎아 되찾은 그
+  자리다 — `app.css`). 날짜가 생긴 뒤에는 브라우저가 그 자리에서 만든다
+  (`consulting.js` 의 `showStamp`).
+
+  `title` 을 단다 — 잔글씨만 보고는 이것이 **그 칸**의 날짜인지 줄 전체의
+  날짜인지 알 수 없다(줄 전체를 쓰면 틀린다는 것이 이 요청의 핵심이다).
+#}
+{%- macro stamped(value, at) -%}
+<div class="cell-main">{{ value }}</div>{% if at %}<div class="cell-sub muted" title="이 칸을 마지막으로 고친 시각">{{ at }}</div>{% endif %}
+{%- endmacro -%}
+
 {% block content %}
 <header class="page-head">
   <h1>{{ page_title }}</h1>
@@ -204,10 +237,53 @@
 
   **보낼 화면의 이름은 `startup_label` 이다**(좌측 메뉴가 들고 있는 그 이름 —
   `ui.MENU`). 여기 글자로 적으면 메뉴를 고친 날 이 단추만 옛 이름으로 남는다. #}
+{#
+  **기본은 닫힘.** 이 줄은 매일 쓰는 자리가 아니다 — 표를 읽고 칸을 고치는 것이
+  이 화면의 일이고, 명단으로 보내는 것은 어쩌다 한 번이다. 늘 펴 두면 표 위가
+  그만큼 내려앉아 한 화면에 서는 줄이 준다(투자사 관리 현황이 표 위 543px 을
+  `<details>` 로 접은 그 자리다 — `contacts.html` 의 `sheet-fold` 주석).
+
+  **접는 관용구는 이 저장소에 이미 있다** — `<details class="sheet-fold">`.
+  여닫이 하나 때문에 JS 를 새로 붙이지 않는다(`_ref_new.html` 이 같은 말을
+  한다). 접혀도 DOM 에는 그대로 있어 브라우저 찾기와 검사가 다 본다.
+
+  ## 펼친 상태를 기억해야 하나 — **안 해도 된다. 흐름을 따라가 봤다**
+
+  고르고 보내는 동안 **화면이 다시 그려지지 않는다.**
+
+    체크 누르기   `change` 로 개수만 고쳐 적는다(`consulting_to_startup.js`)
+    검색 · 칩     줄을 `tr.hidden` 으로 감출 뿐이다(`consulting.js`)
+    머리글 필터   주소만 `history.replaceState` 로 고친다(`filters.js`) —
+                  다시 받지 않는다
+    칸 고치기     PATCH 뒤 그 칸만 고쳐 적는다
+
+  화면을 다시 받는 자리는 **보내고 난 뒤**(`reload` 또는 명단 화면으로 이동)와
+  탭·담당을 바꾸는 링크뿐이다. 앞엣것은 일이 끝난 자리이고, 뒤엣것은 고른
+  체크가 어차피 다 풀리는 자리다 — 거기서 펴진 채로 열리면 `0개 선택` 이라고
+  적힌 빈 막대가 자리만 먹는다. **기억시키지 않는 편이 맞다.**
+
+  ## 닫아 두면 못 쓰는 자리가 하나 생긴다 — 그래서 둘을 더 단다
+
+  체크 칸은 **표 안**에 있어 접어도 그대로 보인다. 그대로 두면 줄을 골라 놓고도
+  개수도 단추도 안 보이는 상태가 된다.
+
+    · 고른 개수를 **여는 줄에 적는다** — 접힌 채로도 몇 개 골랐는지 보인다
+      (`contacts.html` 의 여는 줄이 달 칸 개수를 적는 것과 같은 방식이다).
+    · **처음 하나를 고르면 저절로 펴진다**(`consulting_to_startup.js`). 사람이
+      한 번 접으면 그 뒤로는 안 건드린다 — 접어 둔 것을 자꾸 펴면 그것도
+      화면이 말을 안 듣는 것이다.
+#}
 {% if is_startup_sheet and startup_targets %}
+<details class="sheet-fold" id="cs-startup-fold">
+  {# 여는 줄에 **무엇이 열리는지와 몇 개 골랐는지**를 같이 적는다. 개수를
+     세는 자리는 `#cs-pick-count` 하나뿐이라(`consulting_to_startup.js` 가
+     그 id 를 찾는다) 여기로 옮겨 왔다 — 같은 수를 두 곳에 적으면 한쪽이
+     낡는다. #}
+  <summary>📤 {{ startup_label }} 명단으로 보내기
+    <span class="muted" id="cs-pick-count">0개 선택</span></summary>
+  <div class="sheet-fold-body">
 <div class="assign-bar" id="cs-startup-bar" data-page-label="{{ startup_label }}">
   <label class="only-picked"><input type="checkbox" id="cs-pick-all"> 전체 선택</label>
-  <span class="muted" id="cs-pick-count">0개 선택</span>
   <select id="cs-startup-target" aria-label="보낼 {{ startup_label }} 명단">
     {% for t in startup_targets %}
     <option value="{{ t.label }}">{{ t.label }} ({{ t.owner }})</option>
@@ -217,6 +293,8 @@
     {{ startup_label }} 명단으로 보내기</button>
   <span class="hint">이 표에서 빠지지 않습니다 — 기업명·대표자·연락처·이메일·기업 관리만 옮겨 적습니다.</span>
 </div>
+  </div>
+</details>
 {% endif %}
 
 {# 고른 조건을 되짚어 볼 자리. 없으면 filters.js 가 칩을 그릴 곳이 없어,
@@ -367,8 +445,51 @@
         {% else %}
         <th style="width:88px" data-filters="region:지역">지역<div class="th-filters"></div></th>
         <th style="width:120px">미팅일</th>
+        {# **어떤 자리에서 만났는가** — 사용자 요청으로 `미팅일` 바로 오른쪽에
+           세운다. 이 칸이 갈라져 나온 자리가 바로 옆이다: 원본 시트의 머리글이
+           `미팅일(화상, 회의실)` 이라(`routers/consulting.py` 의
+           `FIXED_COLUMNS`) 두 가지가 한 칸에 적혀 있었다.
+
+           **골라 넣는다**(`data-choices`). 손으로 적게 두면 같은 뜻이
+           `화상`·`화상미팅`·`(화상)` 으로 갈려, 두 가지뿐인 칸에서 그건 곧
+           머리글 필터가 못 쓰게 된다는 뜻이다 — 옆의 `카톡 연결 여부` ·
+           `계약완료여부` 와 글자 하나까지 같은 방식이다.
+
+           **보기 글자를 여기 적지 않는다.** 한 곳은
+           `routers/consulting.py` 의 `MEETING_KIND_CHOICES` 다 —
+           `계약완료여부` 가 같은 이유로 그렇게 서 있다.
+
+           필터를 세운다. 값이 두 가지로 정해져 있어 고를 것이 모이고,
+           무엇보다 **빈칸(아직 안 정함)을 고를 수 있어야** 한다 — filters.js 가
+           빈 값을 `(비어 있음)` 으로 세워 주므로, 아직 안 정한 줄을 찾는 길이
+           그것뿐이다. 바로 왼쪽 `미팅일` 에 필터를 안 다는 것과 어긋나지
+           않는다: 저 칸은 `9/16 PM2` 처럼 줄마다 다른 자유 문장이라 고를 것이
+           없고, 이 칸은 그 자유 문장에서 **고를 수 있는 쪽만** 갈라낸 것이다.
+
+           `미팅종류 (1) ▾` 가 한 줄에 들어가야 한다 — 이름 60px
+           + th 여백 18px + 단추 여백 14px + 꼬리표 28px = 120px. #}
+        <th style="width:120px" data-filters="meetkind:미팅종류">미팅종류<div class="th-filters"></div></th>
         <th style="width:150px">기업명</th>
         <th style="width:220px" data-filters="mgmt:기업 관리">기업 관리<div class="th-filters"></div></th>
+        {# **`기업 관리` 에서 갈라져 나온 상세.** 바로 왼쪽 머리글의 원본이
+           `기업 관리 [ 드랍 이유 상세하게 기입 / 관리중 / 백업팀으로 전환 ]`
+           이라, 한 칸에 **상태**와 **그 이유**가 같이 적혀 있었다
+           (`드랍 : 몇 차례 …`). 사용자 요청으로 그 뒷부분을 이 칸으로 옮긴다.
+
+           **필터를 안 세운다.** 값이 자유 문장이라 줄마다 다르고, 고를 것이
+           모이지 않는다 — 같은 표의 `딜 소개문구`·`미팅일` 을 안 거는 것과
+           같은 이유다. 대신 툴바의 검색이 이 값을 본다
+           (`routers/consulting.py` 의 `search`). 필터를 세우지 않았으므로
+           행에도 `data-f-*` 를 안 싣는다 — 실으면 아무 머리글도 안 보는 죽은
+           속성이 된다(`tests/test_filter_columns.py` 의 2번).
+
+           **왼쪽 `기업 관리` 의 필터는 그대로다.** 갈래를 세는 것은 여전히 그
+           칸 하나이고(`services/consulting_status.py`), 이 칸이 판정에 끼면
+           갈라낸 보람이 없다 — 상세 글의 낱말이 다시 갈래를 흔든다.
+
+           폭은 옆 `딜 소개문구`(240px)와 같다. 둘 다 문단이 들어오는 칸이라
+           좁으면 접힌 두어 줄에 아무것도 안 남는다. #}
+        <th style="width:240px">기업 내용</th>
         {# **견적서 첨부 여부 → 계약완료여부 → 계약서 수신완료여부.** 컨설턴트가
            기업 하나를 붙들고 가는 흐름의 세 마디다(견적서를 보냈나 → 계약이
            끝났나 → 서류는 왔나). 지금까지는 옆 `기업 관리` 에 한 문장으로 섞여
@@ -503,6 +624,10 @@
              2번). consulting.js 의 `refreshRowFlags` 도 이미 실린 줄에만
              다시 적는다. #}
           {% if not is_contract_sheet %}data-f-region="{{ r.region }}"{% endif %}
+          {# `미팅종류` 도 계약 탭에는 머리글이 없으므로 **싣지 않는다** —
+             실으면 아무 머리글도 안 보는 죽은 속성이 된다
+             (tests/test_filter_columns.py 의 2번). 바로 위 `지역` 과 같다. #}
+          {% if not is_contract_sheet %}data-f-meetkind="{{ r.meeting_kind }}"{% endif %}
           {# 계약 탭에서만 싣는다. 다른 탭에는 이 칸도 머리글도 없어서, 늘
              실어 두면 아무도 안 보는 죽은 속성이 된다
              (tests/test_filter_columns.py 의 2번이 그것을 막는다). #}
@@ -588,8 +713,28 @@
         {% else %}
         <td class="cell" data-field="region">{{ r.region }}</td>
         <td class="cell" data-field="meeting_at">{{ r.meeting_at }}</td>
+        {# 보기를 **골라서** 넣는다 — 옆 `카톡 연결 여부` 와 글자 하나까지 같은
+           방식이다(consulting.js 의 `addChoices`). 빈칸(아직 안 정함)으로
+           되돌리는 길도 편집창에 있다.
+
+           `multi` 를 안 붙인다 — 붙이면 누를 때 textarea 가 열려 고르는 칸에
+           줄바꿈이 들어간다(`견적서 첨부 여부` 가 겪은 자리다).
+
+           칸 이름(`meeting_kind`)과 필터 키(`meetkind`)가 다르다 —
+           `data-filter-key` 가 없으면 여기서 고쳐도 행 값이 그대로라
+           **채워 넣어도 필터는 옛 목록 그대로**다. #}
+        <td class="cell" data-field="meeting_kind" data-filter-key="meetkind"
+            data-choices="{{ meeting_kind_choices }}">{{ r.meeting_kind }}</td>
         <td class="cell strong" data-field="company_name">{{ r.company_name }}</td>
         <td class="cell multi" data-field="management" data-filter-key="mgmt">{{ r.management }}</td>
+        {# `multi` — 이 표에서 **긴 글 칸이 쓰는 표시**다(바로 왼쪽 `기업 관리`
+           와 아래 `딜 소개문구` 가 같다). 누르면 textarea 가 열려 엔터로 줄을
+           나눌 수 있고, 표에서는 높이로 접는다.
+
+           `data-filter-key` 를 안 준다 — 필터를 안 세운 칸이라 같이 고칠 행
+           값이 없다. 고친 글은 `refreshRowFlags` 가 `td.cell` 을 이어 붙일 때
+           `data-search` 에 그대로 들어가므로 검색은 그 자리에서 따라간다. #}
+        <td class="cell multi" data-field="management_detail">{{ r.management_detail }}</td>
         {# 머리글과 **같은 차례로** 갈라 둔다 — 어긋나면 그 뒤 칸이 통째로
            밀린다. 세 칸이 서는 조건도 머리글과 같은 `is_startup_sheet` 다. #}
         {% if is_startup_sheet %}
@@ -641,7 +786,12 @@
            행 값이 없다. 고친 글은 `refreshRowFlags` 가 `td.cell` 을 이어 붙일
            때 `data-search` 에 그대로 들어가므로 검색은 그 자리에서 따라간다. #}
         {% if is_startup_sheet %}
-        <td class="cell multi" data-field="deal_pitch">{{ r.deal_pitch }}</td>
+        {# 값 아래 **이 칸을 마지막으로 고친 시각**(사용자 요청). 줄 전체의
+           `updated_at` 을 쓰면 **틀린다** — 카톡 칸만 고쳐도 여기 날짜가 같이
+           바뀌어 보인다. 칸마다 따로 찍는 자리는 `routers/consulting.py` 의
+           `_assign` 이고, 꼴을 정하는 자리는 `app/clock.py` 의 `stamp_text`
+           한 곳이다(위 `stamped` 매크로 주석 참고). #}
+        <td class="cell multi" data-field="deal_pitch">{{- stamped(r.deal_pitch, r.stamps.get('deal_pitch')) -}}</td>
         {# 카톡방이 연결됐는가. 바로 위 칸과 **글자 하나까지 같은 방식**이다 —
            `O`/`X` 를 골라 넣고(consulting.js 의 `addChoices`) 빈칸으로 되돌릴
            수 있다. 손으로 적게 두면 같은 뜻이 `O`·`o`·`ㅇ`·`○` 로 갈려 두
@@ -651,7 +801,7 @@
            `data-filter-key` 가 없으면 여기서 고쳐도 행 값이 그대로라
            **채워 넣어도 필터는 옛 목록 그대로**다. #}
         <td class="cell" data-field="kakao_joined" data-filter-key="joined"
-            data-choices="O,X">{{ r.kakao_joined }}</td>
+            data-choices="O,X">{{- stamped(r.kakao_joined, r.stamps.get('kakao_joined')) -}}</td>
         {% endif %}
         {% endif %}
         {% for col in columns %}
@@ -659,8 +809,13 @@
            센다. 없으면 브라우저가 어느 칸이 지난달인지 알 수 없어, 여기를
            채워도 그 숫자가 안 줄어든다(열 이름이 자유 문장이라 브라우저가
            달을 읽게 두면 규칙이 또 한 벌 생긴다). #}
+        {# **달마다 제 날짜다.** 석 달치가 서므로 날짜도 석 달치가 선다 —
+           한 개만 붙이면 9월 칸을 고쳤는데 7월 칸 밑의 날짜까지 같이 바뀐
+           것처럼 보인다. 열쇠를 만드는 자리는 `routers/consulting.py` 의
+           `note_stamp_key` 한 곳이다(여기서 `'note:' ~ col.id` 라고 적어 두면
+           앞머리를 고치는 날 이 자리만 옛 열쇠를 찾아 날짜가 조용히 빈다). #}
         <td class="cell multi" data-note="{{ col.id }}"
-            {% if counts.prev_month_shown and col.label == counts.prev_month_label %}data-prev-note="1"{% endif %}>{{ r.notes.get(col.id|string, '') }}</td>
+            {% if counts.prev_month_shown and col.label == counts.prev_month_label %}data-prev-note="1"{% endif %}>{{- stamped(r.notes.get(col.id|string, ''), r.stamps.get(note_stamp_key(col.id))) -}}</td>
         {% endfor %}
         {% if not is_contract_sheet %}
         <td class="cell" data-field="ceo_name">{{ r.ceo_name }}</td>
@@ -678,14 +833,20 @@
       {% else %}
       {# 칸 수는 탭마다 다르다 —
          계약 탭     = NO + 6 + 월 열 + 삭제                          = 8 + 월
-         경영본부 탭 = NO + 4 + 월 열 + 대표자·연락처·이메일 + 삭제    = 9 + 월
+         경영본부 탭 = NO + 6 + 월 열 + 대표자·연락처·이메일 + 삭제    = 11 + 월
          스타트업 탭 = 위에 다섯 칸 더(견적서 첨부 여부 · 계약완료여부 ·
                        계약서 수신완료여부 · 카톡 연결 여부 ·
-                       딜 소개문구)                                    = 14 + 월
+                       딜 소개문구)                                    = 16 + 월
 
-         계약 탭이 한 칸 적은 것은 `월` 칸을 뺐기 때문이다 — 예전에는 경영본부
-         탭과 우연히 같았다. `담당` 칸도 서면 하나 더 든다 — 셋 다 안 세면 빈 표
-         안내 줄이 짧아 표 오른쪽에 빈 칸이 남는다.
+         경영본부 탭의 `6` 은 지역 · 미팅일 · **미팅종류** · 기업명 · 기업 관리 ·
+         **기업 내용** 이다. 계약 탭이 세 칸 적은 것은 `월` 칸을 뺐고(예전에는
+         경영본부 탭과 우연히 같았다) 새 두 칸이 그 탭에는 안 서기 때문이다 —
+         저 탭의 `meeting_at` 은 `계약월`, `management` 는 `계약여부` 라는 다른
+         물음을 받고 있어 미팅 방식도 상세 내용도 세울 자리가 아니다
+         (`routers/consulting.py` 의 `FIXED_COLUMNS`).
+
+         `담당` 칸도 서면 하나 더 든다 — 셋 다 안 세면 빈 표 안내 줄이 짧아 표
+         오른쪽에 빈 칸이 남는다.
 
          **고르는 칸도 하나 더 든다**(스타트업 명단으로 보내는 자리). 머리글과
          **같은 조건**으로 센다 — 어긋나면 안내 줄이 한 칸 짧거나 길어져 표
@@ -693,6 +854,7 @@
       <tr><td class="muted"
           colspan="{{ 9 + columns|length + (1 if can_pick_owner else 0)
                         - (1 if is_contract_sheet else 0)
+                        + (0 if is_contract_sheet else 2)
                         + (5 if is_startup_sheet else 0)
                         + (1 if is_startup_sheet and startup_targets else 0) }}">
         {#

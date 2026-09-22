@@ -1126,12 +1126,130 @@ class ConsultingCompany(TimestampMixin, Base):
     position: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)   # 시트의 NO
     region: Mapped[Optional[str]] = mapped_column(String, nullable=True)      # 지역
     meeting_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # 미팅일
+    # **어떤 자리에서 만났는가** — `화상미팅` / `회의실 미팅`. 빈칸은
+    # `아직 안 정함`이다(옆의 `contract_received` · `contract_done` ·
+    # `kakao_joined` 와 같다). 둘 중 하나로 채워 두면 앱이 아무도 확인한 적
+    # 없는 사실을 단정하는 것이 된다(0047 · 0048 · 0049 · 0065 · 0068 · 0077 이
+    # 같은 이유로 backfill 을 안 했다).
+    #
+    # ## 왜 `meeting_at` 에서 갈라 나오나
+    #
+    # 원본 시트의 머리글이 **`미팅일(화상, 회의실)`** 이다
+    # (`routers/consulting.py` 의 `FIXED_COLUMNS`). 시트는 처음부터 두 가지를
+    # 한 칸에 적으라고 했고, 실제 값이 `9/16 PM2 (화상미팅)` 처럼 날짜와 자리가
+    # 괄호로 붙어 있다. 섞여 있으면 **화상으로만 만난 기업**을 골라낼 수가
+    # 없다 — 적힌 것은 검색으로 찾아지지만 적는 꼴이 줄마다 달라
+    # (`화상`·`화상미팅`·`(화상)`) 머리글 필터에 올릴 값이 모이지 않는다.
+    # 옆 `기업 관리` 에서 `견적서 첨부 여부` 셋을 갈라낸 것과 같은 자리다.
+    #
+    # ## `Meeting.meet_mode` 와 **다른 칸이다**
+    #
+    # 저쪽은 IR 미팅 줄(`meetings`)에 붙고 값이 `in_person`/`video` 라는
+    # **열쇠**이며, 화면에 보일 때만 `대면`/`화상` 으로 옮겨진다
+    # (`services/pipeline.py` 의 `MEETING_MODES`). 이 칸은
+    # `consulting_companies` 의 컨설턴트 줄에 붙고, **화면에 보이는 말이 곧
+    # 저장되는 값**이다 — 이 표의 편집기가 칸에 보이는 글자를 그대로 보내기
+    # 때문이다(`static/js/consulting.js`). 말과 값을 갈라 두면 표가 보내는
+    # 글자가 어느 값에도 안 맞아 조용히 안 저장되는 자리가 생긴다
+    # (`routers/companies.py` 의 `CONTRACT_FROM_LABEL` 이 그 사고다).
+    #
+    # 부르는 말도 다르다. 사용자가 고른 것은 `화상미팅`·`회의실 미팅` 이고
+    # 그것이 이 시트가 쓰는 말이다(머리글의 `(화상, 회의실)`). 저쪽 말
+    # (`대면`)을 끌어다 쓰면 시트에 없던 낱말이 이 표에 선다.
+    # 두 표를 잇는 열쇠도 없다 — `kakao_joined` 주석이 같은 이야기를 한다.
+    #
+    # **어떤 판정에도 안 쓴다.** 칩·KPI 는 `기업 관리` 한 갈래만 본다
+    # (`services/consulting_status.py`).
+    meeting_kind: Mapped[Optional[str]] = mapped_column(
+        String, nullable=True)                                                 # 미팅종류
     company_name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # 기업명/계약일/무료유료/수수료
     management: Mapped[Optional[str]] = mapped_column(Text, nullable=True)    # 기업 관리
+    # `기업 관리` 칸에서 **갈라져 나온 상세 내용**. 긴 글이라 `Text` 다
+    # (`deal_pitch` · `notes` 와 같다). 줄바꿈도 적힌 그대로 남는다.
+    #
+    # ## 무엇이 갈라져 나왔나 — 시트 머리글이 이미 둘을 부르고 있었다
+    #
+    # 원본 머리글이 **`기업 관리 [ 드랍 이유 상세하게 기입 / 관리중 /
+    # 백업팀으로 전환 ]`** 이다. 한 칸에 **상태**(관리중 · 드랍 · 백업팀 전환)
+    # 와 **그 이유를 상세하게 적은 글**을 같이 적으라고 했고, 실제 값이
+    # `드랍 : 몇 차례 연락했으나 …` 처럼 `상태 : 상세` 꼴로 적혀 있다.
+    #
+    # 섞여 있으면 잃는 것이 있다. 이 칸의 값으로 칩·KPI·머리글 필터가 갈래를
+    # 세는데(`services/consulting_status.py` 가 `관리`·`드랍`·`백업팀` 이라는
+    # **낱말**을 찾는다), 상세 글이 길어질수록 그 낱말이 우연히 들어가 엉뚱한
+    # 갈래에 걸린다 — `deal_pitch` 를 이 칸에서 갈라낼 때 이미 적어 둔 이유다.
+    #
+    # 그래서 **상태는 `management` 에 남고 상세만 이 칸으로 온다.** 옮기는 것은
+    # 이주가 아니라 손으로 돌리는 스크립트다
+    # (`scripts/split_consulting_management.py` — 운영 자료를 건드리는 일이라
+    # 사람이 확인하고 돌린다). 0079 는 **칸만** 세운다.
+    #
+    # **가르는 자리는 `:` 하나뿐이다.** 시트를 적은 사람이 스스로 찍어 둔
+    # 구분자라 추측이 아니다. 구분자가 없는 줄은 어디까지가 상태인지 아무도
+    # 정한 적이 없으므로 **통째로 `management` 에 남는다** — 빈칸에서 갈라
+    # 넣으면 앱이 아무도 쓴 적 없는 경계를 지어내는 것이 된다.
+    #
+    # ## `deal_pitch` 와 다른 칸이다
+    #
+    # 저기는 **투자사에게 이 기업을 어떻게 소개할지** 적는 말이고, 여기는
+    # **이 기업이 지금 어떤 상태인지 그 이유**다(드랍이면 왜 드랍인가).
+    # 묻는 것이 다르고 적는 사람의 목적이 다르다.
+    #
+    # ## 어떤 판정에도 안 쓴다
+    #
+    # 칩·KPI·머리글 필터는 `management` 한 칸만 본다. 이 칸이 판정에 끼면
+    # 갈라낸 보람이 없다 — 상세 글의 낱말이 다시 갈래를 흔든다. **담기만
+    # 한다**(`deal_pitch` 와 같다).
+    #
+    # `관리 스타트업` · `경영본부 전달 기업` 두 탭에 선다. 계약 탭의 같은 저장
+    # 자리(`management`)는 `계약여부`(`무료`/`유료`)라는 다른 물음이라 갈라낼
+    # 상세가 없다(`routers/consulting.py` 의 `CONTRACT_COLUMNS`).
+    management_detail: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True)                                                   # 기업 내용
     ceo_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)    # 대표자
     phone: Mapped[Optional[str]] = mapped_column(String, nullable=True)       # 연락처
     email: Mapped[Optional[str]] = mapped_column(String, nullable=True)       # 이메일
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)         # {"열id": "내용"}
+    # **칸마다 마지막으로 바뀐 시각** — `{"deal_pitch": "2026-09-21T14:30:12+09:00",
+    # "note:12": …}`. 화면의 `수정한 날짜` 잔글씨가 이 값을 읽는다.
+    #
+    # ## 왜 `updated_at` 으로 안 되나
+    #
+    # 저것은 **줄 전체**가 마지막으로 바뀐 때다. 딜 소개문구만 고쳤는데 옆
+    # `카톡 연결 여부` 칸 밑에도 같은 날짜가 뜨면, 화면이 "그때 카톡 칸을
+    # 고쳤다" 고 **거짓말**을 한다. 사용자가 부른 것은 칸마다의 날짜다
+    # (월별 리마인드는 석 달치가 각자 제 날짜를 가져야 한다).
+    #
+    # ## 왜 `edit_logs` 에서 못 끌어오나 — **두 가지가 다 막는다**
+    #
+    #   · **자기 줄을 고친 것은 아예 안 남는다.** `services/edit_log.py` 의
+    #     `_row_scope` 가 `owner_id == actor_id` 인 UPDATE 를 버린다(하루 수백
+    #     줄이 쌓이면 아무도 안 보기 때문이다). 이 표는 줄마다 담당이 붙어 있고
+    #     그 담당이 자기 줄을 고치는 화면이라, **거의 모든 편집이 안 남는다.**
+    #   · **달을 구분할 수가 없다.** 월별 리마인드 석 달치가 `notes` **한 칸**에
+    #     JSON 으로 들어 있어서, 로그에는 `notes 바뀜` 한 줄만 남는다. 어느 달을
+    #     고쳤는지는 로그 어디에도 없다.
+    #
+    # 그 둘을 고쳐 로그를 쓰게 만드는 길도 있었지만, 그러면 **보안·용량 규칙을
+    # 바꾸는 일**(자기 줄 편집까지 다 남기기)이 되고 344줄짜리 표를 그릴 때마다
+    # 로그 표를 뒤져야 한다. 값은 줄에 붙어 있는 편이 맞다 — 표를 그릴 때
+    # **조회가 한 번도 안 는다.**
+    #
+    # ## 담기는 꼴
+    #
+    # 열쇠는 모델 칸 이름(`deal_pitch`)이고, 월별 리마인드는 `note:<열 id>` 다
+    # (`routers/consulting.py` 의 `note_stamp_key`). 값은 `clock.now_iso()` 가
+    # 적는 그 글자 그대로이고, 화면 꼴로 줄이는 것은 `clock.stamp_text` 한
+    # 곳이다 — 여기서 잘라 담으면 같은 값이 두 꼴로 남는다.
+    #
+    # **바뀐 칸만** 적힌다(`_assign`). 같은 값을 다시 저장해도 날짜가 안
+    # 움직인다 — 안 그러면 칸을 눌렀다 그냥 나온 것도 `고쳤다` 가 된다.
+    #
+    # **사람이 못 고친다.** 화면에서 눌러 고칠 수 없고(`td.cell` 이 아니다)
+    # API 에도 안 실린다(`CompanyIn` 에 없다) — 고칠 수 있으면 "언제 고쳤나"
+    # 가 곧 거짓이 된다(`services/contact_columns.py` 의 `source="stamp"` 가
+    # 같은 이유로 갈래를 따로 두었다).
+    field_stamps: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # `월간 계약 업무현황표` 탭에만 값이 있는 칸들. 그 시트는 머리글 있는 표가
     # 아니라 **한 칸에 슬래시로 이어 붙인 줄**이었다:

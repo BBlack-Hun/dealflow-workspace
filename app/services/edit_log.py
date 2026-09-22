@@ -507,9 +507,15 @@ def _changes(obj, action: str) -> List[dict]:
     table = obj.__table__
     for column in table.columns:
         key = column.key
-        if key in ("created_at", "updated_at", "id"):
-            # 시각 두 칸은 저장할 때마다 저절로 바뀐다 — 남기면 모든 줄에
+        if key in ("created_at", "updated_at", "id", "field_stamps"):
+            # 시각 칸들은 저장할 때마다 저절로 바뀐다 — 남기면 모든 줄에
             # `updated_at 바뀜` 이 붙어 정작 무엇이 바뀌었는지가 묻힌다.
+            #
+            # `field_stamps` 도 같다(`ConsultingCompany` — 칸마다 마지막으로
+            # 바뀐 시각). 앱이 적는 칸이라 **사람이 고친 칸이 있으면 반드시
+            # 같이 바뀌고**, 그 안에 든 것은 이미 이 로그에 한 줄씩 남는
+            # 그 칸들의 이름과 시각이다. 남겨 봐야 `field_stamps 바뀜` 이
+            # 줄마다 하나씩 더 붙을 뿐이다.
             continue
         if action == ACTION_CREATE:
             after = getattr(obj, key, None)
