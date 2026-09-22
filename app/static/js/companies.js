@@ -458,6 +458,13 @@
     fillOptionLists();
     // 관리자가 아니면 단추 자체가 없다(companies.html 이 안 그린다).
     if (el("co-delete")) el("co-delete").hidden = !id;
+    // 강제 삭제 상자는 **창을 열 때마다 접는다.** 열어 둔 채 다른 기업으로
+    // 넘어가면, 앞 기업을 보고 연 상자가 뒤 기업 이름을 받는다.
+    if (el("co-force")) {
+      el("co-force").hidden = true;
+      el("co-force-name").value = "";
+      el("co-force-go").disabled = true;
+    }
     if (!id) {
       el("co-title").textContent = "기업 추가";
       currentName = "";
@@ -521,21 +528,123 @@
       .catch(function () { alert("저장 요청 오류"); });
   });
 
+  // ── 삭제 ──────────────────────────────────────────────────────────────
+  //
+  // 두 걸음이다. **먼저 세어 보고**(`delete-plan` — 아무 것도 안 지운다),
+  // 딸린 것이 없으면 그대로 묻고 지운다. 걸린 것이 있으면 평범한 [삭제] 는
+  // 서버가 막으므로, 무엇이 몇 건인지 숫자로 보여 주는 **강제 삭제 상자**를
+  // 연다(`companies.html` 의 `#co-force`).
+  //
+  // 세어 보는 걸음을 화면에 둔 까닭: 무엇이 딸려 나가는지 모르면 사람은
+  // 누르고 나서 알게 된다(투자사 명단의 여러 줄 지우기와 같은 판단 —
+  // `hidden_delete.js`).
+
+  function forceBox() { return el("co-force"); }
+
+  function hideForce() {
+    var box = forceBox();
+    if (!box) return;
+    box.hidden = true;
+    el("co-force-name").value = "";
+    el("co-force-go").disabled = true;
+  }
+
+  // `12건` 처럼 **숫자로** 적는다. 갈래 이름만 늘어놓으면 손댈 수 없는
+  // 이력 뭉치인지 한 건짜리인지 판단이 안 선다.
+  function planLines(plan) {
+    var lines = [];
+    var c = plan.counts || {};
+    var L = plan.labels || {};
+    var keep = [];
+    ["sends", "ir_requests", "meetings"].forEach(function (k) {
+      if (c[k]) keep.push(L[k] + " " + c[k] + "건");
+    });
+    var gone = [];
+    ["batches", "queued"].forEach(function (k) {
+      if (c[k]) gone.push(L[k] + " " + c[k] + "건");
+    });
+    if (keep.length) {
+      lines.push("<b>" + keep.join(" · ") + "</b> — 줄은 남고 <b>기업 연결만 끊깁니다</b>. " +
+                 "기업 이름·카톡방 이름은 그 줄에 그대로 남아, 지난 보고의 수는 안 바뀝니다.");
+    }
+    if (gone.length) {
+      lines.push("<b>" + gone.join(" · ") + "</b> — <b>줄째 함께 지워집니다</b>. " +
+                 "지난 업무 보고의 회차 기업 목록에서 이 기업이 빠지고, " +
+                 "IR 기업 현황의 소개 횟수·투자사 수·발송 건수도 그만큼 줄어듭니다.");
+    }
+    if (plan.live_queue) {
+      lines.push("<b>아직 안 나간 예약</b>에 들어 있습니다 — 세 곳으로 세워 둔 회차가 " +
+                 "말없이 두 곳이 되어 나갑니다. 먼저 딜 제안 관리에서 그 예약을 확인하세요.");
+    }
+    if (plan.by_name) {
+      lines.push("시트에서 옮겨 온 발송 이력 <b>" + plan.by_name + "건</b>이 이 이름으로 붙어 " +
+                 "있습니다 — 지우면 <b>이력에만 있고 기업 목록에 없는 이름</b> 쪽으로 옮겨 앉습니다.");
+    }
+    if (!lines.length) lines.push("딸려 나가는 줄은 없습니다.");
+    return lines;
+  }
+
+  function openForce(plan) {
+    var box = forceBox();
+    if (!box) { alert("강제 삭제 권한이 없습니다."); return; }
+    el("co-force-plan").innerHTML = planLines(plan).map(function (t) {
+      return "<li>" + t + "</li>";
+    }).join("");
+    box.hidden = false;
+    // **커서를 옮기지 않는다.** 이 상자는 읽으라고 여는 것이다 — 칸에 커서가
+    // 가면 숫자를 읽기 전에 이름부터 적게 되고, 그러면 세어 보여 준 뜻이
+    // 없어진다. [강제 삭제] 에 초점을 주는 것은 더 나쁘다(엔터 한 번).
+    box.scrollIntoView({ block: "nearest" });
+  }
+
   // 관리자가 아니면 단추가 아예 없다 — 있을 때만 건다.
   if (el("co-delete")) el("co-delete").addEventListener("click", function () {
     if (!current) return;
-    // **무엇을 지우는지 이름을 대고 묻는다.** 되돌릴 수 없다.
-    // 되돌릴 길(딜소개 불가)을 같이 알려 준다 — 지우는 것 말고도 발송
-    // 목록에서 빼는 방법이 있다는 것을 여기서 처음 아는 사람이 많다.
-    if (!confirm("'" + (currentName || "이 기업") + "' 을 삭제할까요? 되돌릴 수 없습니다.\n" +
-      "(딜소개를 보낸 적이 있으면 이력이 깨지므로 삭제되지 않습니다 — " +
-      "계약여부를 '딜소개 불가' 로 두면 발송 목록에서 빠집니다)")) return;
-    fetch("/api/companies/" + current, { method: "DELETE" })
+    fetch("/api/companies/" + current + "/delete-plan")
       .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
       .then(function (res) {
-        if (!res.ok) { alert(res.d.detail || "삭제 실패"); return; }
+        if (!res.ok) { alert((res.d && res.d.detail) || "삭제 전 확인에 실패했습니다"); return; }
+        var plan = res.d;
+        if ((plan.blocks || []).length) { openForce(plan); return; }
+        // **무엇을 지우는지 이름을 대고 묻는다.** 되돌릴 수 없다.
+        // 되돌릴 길(딜소개 불가)을 같이 알려 준다 — 지우는 것 말고도 발송
+        // 목록에서 빼는 방법이 있다는 것을 여기서 처음 아는 사람이 많다.
+        if (!confirm("'" + (currentName || "이 기업") + "' 을 삭제할까요? 되돌릴 수 없습니다.\n" +
+          "(딜소개를 보낸 적이 있으면 이력이 깨지므로 삭제되지 않습니다 — " +
+          "계약여부를 '딜소개 불가' 로 두면 발송 목록에서 빠집니다)")) return;
+        fetch("/api/companies/" + current, { method: "DELETE" })
+          .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+          .then(function (out) {
+            if (!out.ok) { alert(out.d.detail || "삭제 실패"); return; }
+            window.location.reload();
+          });
+      })
+      .catch(function () { alert("삭제 요청 오류"); });
+  });
+
+  if (el("co-force-cancel")) el("co-force-cancel").addEventListener("click", hideForce);
+
+  // **적은 이름이 글자까지 같을 때만** 단추가 열린다. 서버도 같은 것을 본다.
+  if (el("co-force-name")) el("co-force-name").addEventListener("input", function () {
+    var typed = el("co-force-name").value.trim();
+    el("co-force-go").disabled = !currentName || typed !== currentName.trim();
+  });
+
+  if (el("co-force-go")) el("co-force-go").addEventListener("click", function () {
+    if (!current) return;
+    var typed = el("co-force-name").value.trim();
+    if (typed !== (currentName || "").trim()) return;
+    fetch("/api/companies/" + current + "/force-delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirm_name: typed })
+    })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+      .then(function (res) {
+        if (!res.ok) { alert((res.d && res.d.detail) || "강제 삭제 실패"); return; }
         window.location.reload();
-      });
+      })
+      .catch(function () { alert("삭제 요청 오류"); });
   });
 
   apply();

@@ -433,6 +433,8 @@ FIELD_LABELS = {
     "memo": "메모", "notes": "칸 메모", "note": "메모", "body": "본문",
     "phone": "연락처", "email": "메일", "one_liner": "한 줄 소개",
     "summary": "요약", "business_desc": "사업 설명", "content_json": "내용",
+    # 줄 안에 없는 사실 — `also()` 로 얹는 칸(`routers/companies.py` 의 강제 삭제).
+    "force_delete": "함께 움직인 것",
 }
 
 
@@ -450,15 +452,54 @@ _ACTOR: ContextVar[Optional[dict]] = ContextVar("dealflow_edit_log_actor",
 
 def begin(user_id: int, method: str, path: str) -> Token:
     """이 요청 동안 남길 사람을 심는다. `app/main.py` 의 미들웨어가 부른다."""
+    # 덤 값 상자도 **요청마다 새로** 연다. 문맥변수는 요청 사이에 새지 않지만
+    # (`end` 가 되돌린다), 여기서 비워 두지 않으면 `also` 가 먼저 열어 둔
+    # 상자를 다음 요청이 물려받을 자리가 생긴다.
+    _EXTRA.set(None)
     return _ACTOR.set({"user_id": user_id, "method": method, "path": path})
 
 
 def end(token: Token) -> None:
+    _EXTRA.set(None)
     _ACTOR.reset(token)
 
 
 def actor() -> Optional[dict]:
     return _ACTOR.get()
+
+
+#: 이 요청에서 **덤으로 실을 값**. `{표 이름: [{field, before, after}, …]}`.
+#:
+#: 왜 필요한가 — 세션 이벤트는 **줄 안에 있는 것**만 안다. 기업 강제 삭제는
+#: 기업 줄 하나를 지우면서 딸린 표 여섯을 함께 움직이는데, 그 건수는 기업
+#: 줄 어디에도 안 적혀 있다. 나중에 "그때 발송 이력이 몇 건 끊겼나" 를 물을
+#: 자리가 로그 말고 없으므로, 부르는 쪽이 한 줄을 얹을 수 있게 열어 둔다.
+#:
+#: **표 이름으로만 좁힌다.** 줄 번호까지 받게 하면 아직 번호가 없는 줄
+#: (새로 만드는 줄)에는 못 얹고, 부르는 쪽이 flush 순서를 알아야 한다.
+#: 그 대신 이것을 쓰는 길은 **그 요청에서 그 표의 줄을 하나만 건드리는
+#: 길이어야 한다** — 지금 쓰는 곳이 그렇다(기업 강제 삭제).
+_EXTRA: ContextVar[Optional[Dict[str, List[dict]]]] = ContextVar(
+    "dealflow_edit_log_extra", default=None)
+
+
+def also(table_name: str, field: str, value) -> None:
+    """이 요청에서 그 표의 줄에 **한 칸을 덤으로** 싣는다.
+
+    문맥이 없으면(스케줄러 · 스크립트 · 검사) 아무 일도 안 한다 — 로그 자체가
+    그때는 안 남으므로 얹을 자리도 없다.
+    """
+    if _ACTOR.get() is None:
+        return
+    box = _EXTRA.get()
+    if box is None:
+        box = {}
+        _EXTRA.set(box)
+    # **`before` 에 담는다.** 로그 화면은 `삭제` 줄에서 `before` 만 보여 준다
+    # (`edit_log.html` — 지운 줄에 `→ (빈 값)` 을 붙여 봐야 읽는 눈만
+    # 잡아먹는다). `after` 에 담으면 그 화면에 `(빈 값)` 으로 뜬다.
+    box.setdefault(table_name, []).append(
+        {"field": field, "before": _trim(value), "after": None})
 
 
 def actor_from_request(request) -> Optional[int]:
@@ -612,6 +653,8 @@ def _collect(session: OrmSession, action: str, rows, ctx: dict) -> List[dict]:
         if not keep:
             continue
         changes = _changes(obj, action)
+        # 부르는 쪽이 얹어 둔 덤 값(`also`). 줄 안에 없는 사실을 싣는 자리다.
+        changes = changes + (_EXTRA.get() or {}).get(table, [])
         if not changes and action == ACTION_UPDATE:
             # 저장은 했지만 실제로 바뀐 칸이 없다 — 남길 것이 없다.
             # 줄을 세우거나 지운 것은 **칸이 하나도 없어도** 남긴다.
