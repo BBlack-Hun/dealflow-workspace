@@ -386,8 +386,18 @@ def test_a_month_with_no_sends_still_opens(logged, db, users):
     assert any("이 달에는 기록된 미팅이 없습니다" in c for c in meet)
     react = [str(c) for row in _grid(wb["2026-02 반응"]) for c in row]
     # 빈 달이라고 갈래가 사라지면 안 된다 — `없습니다.` 라고 서 있어야 그 달에
-    # 아무것도 없었다는 사실이 남는다. (넷인 이유는 `_buckets` 주석 참고)
-    assert react.count("없습니다.") == 4, "네 갈래가 다 서 있어야 한다"
+    # 아무것도 없었다는 사실이 남는다.
+    #
+    # **수를 여기 박아 두지 않는다.** 갈래는 화면(`report.monthly` 의 `buckets`)
+    # 에서 그대로 받아 적으므로, 갈래가 하나 늘 때마다(`미팅 요청 후 전화
+    # 투자사` 가 그랬다) 이 검사가 함께 깨지는 것은 못 박으려던 것과 다른
+    # 일이다. 못 박을 것은 **화면에 선 갈래가 파일에도 다 선다**는 쪽이다.
+    from app.services import report
+
+    data = report.monthly(db, 2026, 2, users["u1"])
+    assert react.count("없습니다.") == len(data["buckets"]), \
+        "빈 달에 갈래가 통째로 빠졌다"
+    assert len(data["buckets"]) >= 4
 
 
 def test_a_broken_month_falls_back_to_today(logged, db, users):

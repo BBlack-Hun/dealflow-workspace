@@ -390,6 +390,99 @@
 </div>
 </div>
 
+{# ── 전화 요청 ────────────────────────────────────────────────────────
+   미팅 요청 카톡을 보내고 사흘 뒤, 전화로 다시 청하는 자리.
+
+   **왜 제 구역인가.** 위 `오늘 보낼 리마인드` 는 묶음마다 [보내기] 가 달려
+   있고 누르면 그 사람들이 골라진 발송 화면으로 간다. 전화는 갈 발송 화면이
+   없다 — 앱이 대신 걸 수 없고 **사람이 건다**. 같은 묶음에 세우면 누를 수
+   없는 단추가 서거나, 눌러 봐야 보낼 문구가 없는 화면이 열린다.
+
+   그래서 점프바에도 제 갈래가 있다(`_flow_tabs.html`). 다른 갈래들처럼
+   **건수를 달고** 있어서, 내려가 보지 않아도 오늘 걸 곳이 몇 군데인지 보인다.
+
+   **줄마다 [전화함] 을 둔다.** 「체크 가능한」 이 뜻하는 것이 이것이다 — 걸고
+   나서 그 줄에서 바로 눌러 끝낸다. [보내기] 가 아니라 [전화함] 인 까닭은
+   위와 같다: 이 자리가 할 수 있는 것은 사람이 건 것을 적는 일뿐이다.
+
+   `답 옴`·`중단` 도 함께 둔다 — 전화를 걸기 전에 카톡으로 답이 오는 일이
+   흔하고, 그때 멈출 자리가 없으면 이미 답한 사람에게 전화를 건다.
+#}
+<section class="panel" id="calls">
+  <h2 class="panel-title">전화 요청
+    <span class="hint">미팅 요청을 보내고 사흘 뒤 — <b>전화는 직접</b> 거셔야 합니다</span>
+  </h2>
+  {% if calls %}
+  <div class="due-group">
+    <div class="due-head">
+      <b>오늘 걸 곳</b>
+      <span class="count-pill on"><b>{{ calls|length }}</b>명</span>
+      {% if remind_counts.call_overdue %}
+      <span class="hint warn">{{ remind_counts.call_overdue }}명은 날짜가 지났습니다</span>
+      {% endif %}
+    </div>
+    <ul class="due-list">
+      {% for r in calls %}
+      <li class="{% if r.overdue %}overdue{% endif %}">
+        <span class="due-when">
+          {% if r.overdue %}{{ -r.days_left }}일 지남{% elif r.due_today %}오늘{% else %}{{ r.due }}{% endif %}
+        </span>
+        <span class="due-who">
+          {# 이름을 누르면 **가던 곳 그대로** — 이 투자사의 IR 자료 요청을
+             적는 자리다(위 리마인드 구역의 이름과 같은 길). 전화로 "자료
+             주세요" 를 듣는 일이 흔해서, 끊고 나서 바로 적을 곳이 필요하다. #}
+          <a class="req-link" href="/ir?contact={{ r.contact_id }}"
+             title="이 투자사의 IR 자료 요청 기록하기">
+            <b>{{ r.name }}</b> {{ r.title }} <span class="muted">{{ r.firm }}</span>
+          </a>
+        </span>
+        <span class="due-from muted">미팅 요청 {{ r.last_sent }} 발송</span>
+        <span class="due-acts">
+          {# 걸고 나서 여기서 끝낸다. `답 옴`·`중단` 과 나란히 서지만 뜻이
+             다르다 — 그 둘은 흐름을 **멈추는** 것이고, 이것은 할 일을
+             **끝낸** 것이다(`routers/followups.mark_called`). #}
+          <form method="post" action="/followups/{{ r.id }}/called">
+            <button class="primary-btn inline" type="submit"
+                    title="전화를 걸었으면 눌러 두세요 — 이 건이 완료로 닫힙니다"
+                    >전화함</button>
+          </form>
+          <form method="post" action="/followups/{{ r.id }}/responded">
+            <button class="linkbtn" type="submit">답 옴</button>
+          </form>
+          <form method="post" action="/followups/{{ r.id }}/stop">
+            <button class="linkbtn danger" type="submit">중단</button>
+          </form>
+        </span>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% else %}
+  <p class="all-clear">✅ 오늘 걸 전화가 없습니다.</p>
+  {% endif %}
+
+  {% if calls_upcoming %}
+  {# 아직 날이 안 온 것. 언제 몇 군데인지 미리 보이면 그날 놀라지 않는다. #}
+  <div class="due-group">
+    <div class="due-head">
+      <b>예정</b>
+      <span class="count-pill"><b>{{ calls_upcoming|length }}</b>명</span>
+    </div>
+    <ul class="due-list">
+      {% for r in calls_upcoming %}
+      <li>
+        <span class="due-when">{{ r.due }}</span>
+        <span class="due-who">
+          <b>{{ r.name }}</b> {{ r.title }} <span class="muted">{{ r.firm }}</span>
+        </span>
+        <span class="due-from muted">미팅 요청 {{ r.last_sent }} 발송</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+</section>
+
 <!-- 미팅 -->
 <section class="panel" id="meetings">
   <h2 class="panel-title">미팅

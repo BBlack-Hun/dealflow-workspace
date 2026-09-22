@@ -31,18 +31,22 @@ from __future__ import annotations
 
 from calendar import monthrange
 from collections import Counter
-from datetime import date
+from datetime import date, timedelta
 from typing import Dict, List, Optional
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..models import (DealBatch, DealBatchCompany, IrCompany, IrRequest,
-                      Meeting, SendItem, SendJob, User, VcContact)
+                      Meeting, SendItem, SendJob, SendSequence, User, VcContact)
+# 후속 단계(`STAGE_CALL`)와 그 주기는 **캐던스가 정한 것**을 읽는다 — 보고가
+# 제 손으로 "미팅 요청 사흘 뒤" 를 세면, 주기를 바꾼 날 화면과 보고가 다른
+# 날짜를 말한다.
+from . import cadence
+from . import manual_send
 # 단계 값(`STAGE_*`)은 **문구를 짓는 쪽이 정한 것**을 그대로 읽는다.
 # 여기 숫자를 다시 적어 두면 한쪽이 바뀔 때 보고만 옛 값으로 남는다
 # (`routers/deals.py` 도 같은 곳을 `mc` 로 읽는다).
-from . import manual_send
 from . import message_composer as mc
 from .pipeline import (IR_MEETING_ASK_DAYS, MEETING_FOLLOWUP_DAYS,
                        MEETING_KINDS, NO_FOLLOWUP_OUTCOMES, OUTCOMES,
@@ -216,9 +220,15 @@ def monthly(db: Session, year: int, month: int,
         ir_stmt.order_by(IrRequest.requested_at, IrRequest.company_name)
     ).scalars().all()
 
-    # 담당자는 **미팅과 요청 양쪽**에서 모은다. 미팅 것만 불러오면 요청 줄의
-    # 이름이 `-` 로 비어, 보고를 그대로 옮겨 적을 수가 없다.
-    need = {m.contact_id for m in meetings} | {r.contact_id for r in requests}
+    # 미팅 요청을 보내 놓고 답이 없어 **전화로 다시 청할** 곳. 딜 진행 관리의
+    # `전화 요청` 구역과 같은 줄을 본다(`cadence.STAGE_CALL`) — 두 화면이 각자
+    # 세면 한쪽에만 뜨는 사람이 생긴다.
+    calls = _call_rows(db, start, end, user)
+
+    # 담당자는 **미팅·요청·전화 세 곳**에서 모은다. 미팅 것만 불러오면 다른
+    # 줄의 이름이 `-` 로 비어, 보고를 그대로 옮겨 적을 수가 없다.
+    need = ({m.contact_id for m in meetings} | {r.contact_id for r in requests}
+            | {c.contact_id for c in calls})
     contacts = {
         c.id: c for c in db.execute(
             select(VcContact).where(VcContact.id.in_(need or {0}))
@@ -329,7 +339,7 @@ def monthly(db: Session, year: int, month: int,
         # 미팅 요청을 안 보냈는지 말한다. 갈래가 다시 세지 않고 위에서 이미
         # 한 판정을 받아 쓴다(두 곳에서 세면 숫자가 갈린다).
         "buckets": _buckets(meetings, requests, contacts, owners, today,
-                            open_followup, ask),
+                            open_followup, ask, calls),
         # 그 달에 나간 회차. 카톡으로 손으로 쓰던 보고가 이것이다.
         "sends": sends,
         # 연간 보고가 달마다 더해 쓰는 값. **월간과 같은 곳에서 나와야** 두
@@ -375,6 +385,21 @@ def monthly(db: Session, year: int, month: int,
         # 화면 안내문이 "7일" 이라고 말할 때 쓰는 값 — 코드와 화면이 다른
         # 숫자를 말하면 안 된다(`followup_days` 와 같은 방식).
         "ir_meeting_ask_days": IR_MEETING_ASK_DAYS,
+        # **미팅 요청 후 전화** — 아직 안 건 곳 · 그중 날짜가 지난 곳 · 건 곳.
+        # 줄은 위 `meeting_call` 갈래가 이름과 함께 보여 주고, 여기서는 수만
+        # 낸다. **다시 세지 않는다** — 갈래와 같은 `calls` 한 벌을 본다.
+        "call_open": sum(1 for c in calls
+                         if c.next_stage == cadence.STAGE_CALL),
+        "call_overdue": sum(
+            1 for c in calls
+            if c.next_stage == cadence.STAGE_CALL and c.next_due_date
+            and c.next_due_date <= today.isoformat()),
+        "call_done": sum(1 for c in calls
+                         if c.next_stage != cadence.STAGE_CALL),
+        # 화면 안내문이 "사흘 뒤" 라고 말할 때 쓰는 값. 규칙은 DB 에 있고
+        # (`schedule_rules` 의 `call`) 관리자가 늘릴 수 있다 — 화면이 숫자를
+        # 박아 두면 늘린 날 화면만 옛말을 한다.
+        "call_days": cadence.get_rule(db, "call").get("offset_min_days"),
     }
 
 
@@ -666,6 +691,51 @@ def _sends(db: Session, start: date, end: date, user: Optional[User],
     }
 
 
+def _call_rows(db: Session, start: date, end: date,
+               user: Optional[User]) -> List[SendSequence]:
+    """그 달의 **전화 요청** 줄 — 걸어야 할 곳과 이미 건 곳.
+
+    미팅 요청 카톡을 보내고 사흘 뒤 전화로 다시 청하는 단계다
+    (`services/cadence.STAGE_CALL`). 딜 진행 관리에만 두면 업무 보고를 보며
+    일하는 사람에게는 이 일이 아예 안 보인다 — 사용자가 두 곳을 다 든 까닭이다.
+
+    **달을 가르는 기준이 둘이다.** 아직 안 건 것은 `걸 날`(`next_due_date`)로,
+    이미 건 것은 `건 날`(`last_sent_at`)로 그 달에 든다. 둘 다 "그 달에 이
+    일이 있었나" 를 말하는 날짜이고, 한 줄이 두 기준에 함께 걸릴 일은 없다 —
+    건 순간 `next_due_date` 가 비기 때문이다(`cadence.advance`).
+
+    **여기서 세지 않는다.** 단계도 예정일도 `cadence` 가 정한 것을 읽기만
+    한다 — 보고가 제 손으로 "사흘 뒤" 를 세면 주기를 바꾼 날 화면과 보고가
+    다른 날짜를 말한다.
+
+    위 `이 달의 반응` 의 `IR 미팅완료 리마인드 TEL 투자사` 와 **다른 전화다.**
+    그쪽은 미팅이 끝나고 열흘 뒤 결과를 묻는 것이고, 이쪽은 미팅을 청해 놓고
+    답이 없을 때 거는 것이다. 이름이 그 둘을 갈라야 한다.
+    """
+    lo, hi = start.isoformat(), end.isoformat()
+    waiting = select(SendSequence).where(
+        SendSequence.status == "active",
+        SendSequence.next_stage == cadence.STAGE_CALL,
+        SendSequence.next_due_date.isnot(None),
+        SendSequence.next_due_date >= lo, SendSequence.next_due_date <= hi)
+    # 건 날은 시각까지 적혀 있다(`2026-09-17T14:02:…`) — 그 달 마지막 날의
+    # 오후가 잘려 나가지 않게 끝을 하루 밀어 잡는다.
+    called = select(SendSequence).where(
+        SendSequence.stage == cadence.STAGE_CALL,
+        SendSequence.last_sent_at.isnot(None),
+        SendSequence.last_sent_at >= lo,
+        SendSequence.last_sent_at < (end + timedelta(days=1)).isoformat())
+    if user is not None:
+        waiting = waiting.where(SendSequence.user_id == user.id)
+        called = called.where(SendSequence.user_id == user.id)
+
+    rows = {r.id: r for r in db.execute(waiting).scalars().all()}
+    rows.update({r.id: r for r in db.execute(called).scalars().all()})
+    return sorted(rows.values(),
+                  key=lambda r: (r.next_due_date or (r.last_sent_at or "")[:10],
+                                 r.id))
+
+
 def _call_state(due: Optional[str], today: date) -> str:
     """언제 전화할 때인가. `예정` 만으로는 오늘 걸 곳인지 알 수 없다."""
     if not due:
@@ -752,8 +822,8 @@ def meeting_ask_count_note(missing: int, requests: int) -> tuple:
 
 
 def _buckets(meetings, requests, contacts, owners, today, open_followup,
-             ask: Dict[int, dict]) -> List[dict]:
-    """반응 네 갈래를 **그 달치로, 날짜와 함께**.
+             ask: Dict[int, dict], calls: List[SendSequence]) -> List[dict]:
+    """반응 갈래를 **그 달치로, 날짜와 함께**.
 
     숫자만 보면 "그게 누구였지" 가 이어진다. 보고에서는 이름과 날짜가
     나란히 있어야 그대로 옮겨 적을 수 있다.
@@ -823,6 +893,24 @@ def _buckets(meetings, requests, contacts, owners, today, open_followup,
          "rows": [row(m.followup_due or m.scheduled_at, m.contact_id, m.company_name,
                       _call_state(m.followup_due, today), m.user_id)
                   for m in call]},
+        # ── 미팅 요청을 보내 놓고 답이 없어 **전화로 다시 청하는** 곳 ────────
+        #
+        # 위 `IR 미팅완료 리마인드 TEL 투자사` 와 **다른 전화다.** 그쪽은 미팅이
+        # 끝나고 열흘 뒤 결과를 묻는 것이고, 이쪽은 미팅을 청해 놓고 사흘이
+        # 지나도록 답이 없을 때 거는 것이다. 한 화면에 나란히 서므로 이름이
+        # 그 둘을 갈라야 한다 — 앞에 무엇을 하고 거는 전화인지를 적는다.
+        #
+        # **기업 칸은 비운다.** 미팅 요청 카톡은 담당자당 한 통이고 딸 기업이
+        # 없다(`deals.MODES_WITH_COMPANIES` 에 미팅이 없다) — 지어 넣으면
+        # 읽는 사람은 그것을 "그 기업 건" 으로 읽는다.
+        {"key": "meeting_call", "label": "미팅 요청 후 전화 투자사",
+         "rows": [row(seq.next_due_date or (seq.last_sent_at or "")[:10],
+                      seq.contact_id, "",
+                      (f"전화함 · {(seq.last_sent_at or '')[:10]}"
+                       if seq.next_stage != cadence.STAGE_CALL
+                       else _call_state(seq.next_due_date, today)),
+                      seq.user_id)
+                  for seq in calls]},
     ]
 
 

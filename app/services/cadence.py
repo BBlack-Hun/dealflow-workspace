@@ -41,13 +41,24 @@ from ..models import (
 STAGE_DAY1 = 1
 STAGE_REMIND = 2
 STAGE_MEETING = 3
+#: 미팅 요청을 보내고 사흘 뒤 **전화로** 다시 청한다.
+#:
+#: 이 단계만 `message_composer` 에 짝이 없다 — 나가는 문구가 없기 때문이다.
+#: 앞의 셋은 앱이 카톡을 보내지만 **전화는 사람이 건다.** 그래서 값도 여기서
+#: 정한다(문구를 짓는 쪽이 모르는 단계다).
+STAGE_CALL = 4
 
 STAGE_LABELS = {
     STAGE_DAY1: "딜소개",
     STAGE_REMIND: "리마인드",
     STAGE_MEETING: "미팅 요청",
+    STAGE_CALL: "전화 요청",
 }
-# 다음 단계를 보낼 때 발송 화면에서 쓸 방식
+#: 다음 단계를 보낼 때 발송 화면에서 쓸 방식.
+#:
+#: **전화는 여기 없다.** 앱이 대신 걸 수 없으므로 갈 발송 화면이 없다 —
+#: 화면은 이 표에 값이 있는 단계에만 [보내기] 를 세우고, 전화 단계에는
+#: [전화함] 을 세운다(`templates/ir.html` 의 `전화 요청` 구역).
 STAGE_MODES = {STAGE_REMIND: "remind", STAGE_MEETING: "meeting"}
 
 STATUS_LABELS = {
@@ -67,7 +78,31 @@ DEFAULT_RULES = {
                    offset_min_days=6, offset_max_days=7, skip_weekend=1),
     "meeting": dict(label="미팅 요청", kind="offset_days",
                     offset_min_days=11, offset_max_days=14, skip_weekend=1),
+    # 미팅 요청 뒤 **사흘.** 앞 단계들처럼 범위를 벌리지 않는다(11~14 · 6~7).
+    #
+    # 범위를 두고 하루를 무작위로 고르는 까닭은 **한꺼번에 나가는 티를 없애려는
+    # 것**이다(아래 `follow_up_date`) — 같은 날 같은 시각에 수십 통이 나가면
+    # 받는 쪽에도 카카오 쪽에도 그렇게 보인다. 전화는 앱이 보내지 않는다.
+    # 사람이 하루에 몇 통 거는 일이라 몰릴 것이 없고, 사용자가 말한 것도
+    # "3일 후" 하나다. 그래서 최소·최대를 같은 값으로 둔다 — `follow_up_date`
+    # 의 `randint(3, 3)` 은 늘 3이다.
+    #
+    # **주말은 그대로 건너뛴다**(`skip_weekend=1`). 여기만 안 건너뛰면 토요일
+    # 아침에 걸 곳이 목록에 서고, 월요일에는 이미 '이틀 지남' 이 된다.
+    #
+    # 고정이되 **박아 둔 것은 아니다.** 다른 단계와 같은 `schedule_rules` 줄이라
+    # 관리자가 화면에서 늘릴 수 있다(`/ir#rules`) — 주기가 코드에 박혀 있어
+    # 바뀔 때마다 배포해야 했던 것이 이 표를 만든 까닭이다.
+    "call": dict(label="전화 요청", kind="offset_days",
+                 offset_min_days=3, offset_max_days=3, skip_weekend=1),
 }
+
+
+#: 날짜 간격 규칙이 **무엇을 기준으로 세는가.** 화면의 `발송 주기` 판이 이 말을
+#: 그대로 쓴다 — 전에는 전부 `딜소개 …일 뒤` 라고 적혀 있었는데, 전화는 딜소개가
+#: 아니라 **미팅 요청을 보낸 날**에서 센다(`advance`). 화면이 코드와 다른 말을
+#: 하면 사람은 화면을 믿고 날짜를 잘못 짚는다.
+OFFSET_BASE = {"remind": "딜소개", "meeting": "딜소개", "call": "미팅 요청"}
 
 
 # --- 규칙 -------------------------------------------------------------------
@@ -173,7 +208,8 @@ def follow_up_date(db: Session, sent_on: date, stage: int,
     범위 안에서 하루를 무작위로 고른다. 모두 같은 날 같은 시각에 나가면
     받는 쪽에서도 티가 나고, 카카오 쪽에서도 한 번에 몰린 발송으로 보인다.
     """
-    key = {STAGE_REMIND: "remind", STAGE_MEETING: "meeting"}.get(stage)
+    key = {STAGE_REMIND: "remind", STAGE_MEETING: "meeting",
+           STAGE_CALL: "call"}.get(stage)
     if key is None:
         return None
     rule = get_rule(db, key)
@@ -304,12 +340,45 @@ def advance(db: Session, *, user_id: int, contact_id: int,
         base = _as_date(seq.day1_sent_at) or sent_on
         due = follow_up_date(db, base, STAGE_MEETING, rng)
         seq.next_due_date = due.isoformat() if due else None
+    elif stage == STAGE_MEETING:
+        seq.next_stage = STAGE_CALL
+        # 전화는 **미팅 요청을 보낸 날 기준**이다 — 사용자가 말한 것이
+        # "미팅 요청 보내고 3일 후" 다. 위 미팅 요청이 딜소개일을 기준으로
+        # 잡는 것과 다른데, 그 까닭도 다르다: 미팅 요청은 회차 간격에 매인
+        # 일이라 딜소개일에서 세야 간격이 안 뒤엉키지만, 전화는 **그 카톡에
+        # 대한 답을 기다리는 사흘**이다. 딜소개일에서 세면 미팅 요청이 늦게
+        # 나간 건은 보내기도 전에 전화할 날이 지나 있다.
+        due = follow_up_date(db, sent_on, STAGE_CALL, rng)
+        seq.next_due_date = due.isoformat() if due else None
     else:
         seq.next_stage = None
         seq.next_due_date = None
         seq.status = "done"
     db.flush()
     return seq
+
+
+def mark_called(db: Session, seq: SendSequence,
+                when: Optional[str] = None,
+                rng: Optional[random.Random] = None) -> Optional[SendSequence]:
+    """**전화를 걸었다**고 적는다 — 흐름의 마지막 단계다.
+
+    앞 단계들은 앱이 보내고 나서 저절로 올라간다(`start_or_advance`). 전화는
+    앱이 대신 걸 수 없으니 사람이 눌러 줘야 하고, 그래서 화면의 단추가
+    **[보내기] 가 아니라 [전화함]** 이다(`templates/ir.html`).
+
+    **단계를 여기서 올리지 않는다.** 사다리도 다음 예정일도 `advance` 한 곳이
+    쥐고 있다 — 손으로 적는 길이 제 손으로 단계를 올리면 두 벌이 되고, 한쪽만
+    고쳐지는 날 전화로 끝낸 건만 다른 상태로 남는다(`services/manual_send.py`
+    가 같은 까닭으로 같은 함수를 지난다).
+
+    `kind` 는 딜소개 흐름 그대로다 — 전화는 **그 흐름의 한 단계**이지 다른
+    갈래가 아니다. 새 갈래를 만들면 `kind` 로 거르는 자리가 그 값을 몰라 이
+    건을 안 읽는다.
+    """
+    return advance(db, user_id=seq.user_id, contact_id=seq.contact_id,
+                   batch_id=seq.batch_id, kind="deal_intro",
+                   stage=STAGE_CALL, sent_at=when or _now_iso(), rng=rng)
 
 
 def stop(db: Session, seq: SendSequence, reason: str,
@@ -325,8 +394,12 @@ def stop(db: Session, seq: SendSequence, reason: str,
 def resume(db: Session, seq: SendSequence,
            rng: Optional[random.Random] = None) -> SendSequence:
     """중단했던 시퀀스를 다시 켠다. 다음 단계를 오늘 기준으로 다시 잡는다."""
-    next_stage = STAGE_REMIND if seq.stage <= STAGE_DAY1 else STAGE_MEETING
-    if seq.stage >= STAGE_MEETING:
+    # 사다리는 **한 줄**이다 — 여기서 단계를 손으로 세지 않는다. 미팅 요청까지
+    # 보낸 건은 그 다음이 전화 요청이고, 전화까지 한 건은 더 할 것이 없다.
+    nxt = {STAGE_DAY1: STAGE_REMIND, STAGE_REMIND: STAGE_MEETING,
+           STAGE_MEETING: STAGE_CALL}
+    next_stage = nxt.get(max(seq.stage, STAGE_DAY1))
+    if next_stage is None:
         seq.status = "done"
         seq.next_stage = None
         seq.next_due_date = None
@@ -442,6 +515,10 @@ def sequence_rows(db: Session, user_id: int,
             "batch_title": (batches.get(seq.batch_id).title
                             if seq.batch_id in batches else ""),
             "day1": (seq.day1_sent_at or "")[:10],
+            # 마지막으로 **끝낸 단계가 언제 것인가.** 전화 구역이 "미팅 요청
+            # 언제 보냈는지" 를 이 값으로 적는다 — 딜소개일(`day1`)을 적으면
+            # 사흘을 어디서부터 셌는지가 화면에서 안 맞아 보인다.
+            "last_sent": (seq.last_sent_at or "")[:10],
             "reason": seq.stopped_reason or "",
         })
     return out

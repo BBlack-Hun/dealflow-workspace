@@ -47,13 +47,35 @@ def remind_context(db: Session, user: User, today: date) -> dict:
 
     due = [r for r in rows if r["status"] == "active" and r["due"]
            and r["due"] <= today.isoformat()]
-    upcoming = [r for r in rows if r["status"] == "active" and r["due"]
-                and r["due"] > today.isoformat()]
+    later = [r for r in rows if r["status"] == "active" and r["due"]
+             and r["due"] > today.isoformat()]
     closed = [r for r in rows if r["status"] != "active"]
+
+    # ── 전화는 `오늘 보낼 리마인드` 에서 갈라 낸다 ──────────────────────────
+    #
+    # 그 구역의 묶음 머리에는 [{단계} 보내기] 가 달려 있고, 누르면 그 사람들이
+    # 골라진 발송 화면으로 간다. **전화는 갈 발송 화면이 없다** — 앱이 대신
+    # 걸 수 없고 사람이 건다. 같은 묶음에 세우면 누를 수 없는 단추가 서거나,
+    # 눌러 봐야 보낼 문구가 없는 화면이 열린다.
+    #
+    # 그래서 제 구역을 준다(`templates/ir.html` 의 `전화 요청`). 거기 줄마다
+    # 서는 것은 [보내기] 가 아니라 **[전화함]** 이다.
+    #
+    # 가르는 자리는 여기 하나다 — 화면이 제 손으로 단계를 보고 거르면, 단계가
+    # 하나 더 늘어날 때 화면만 옛 갈래로 남는다.
+    def is_call(row):
+        return row["next_stage"] == cadence.STAGE_CALL
+
+    calls = [r for r in due if is_call(r)]
+    sends = [r for r in due if not is_call(r)]
+    # 예약된 것도 같이 가른다. `예약된 리마인드` 표는 **보낼 것**을 세우는
+    # 자리이고(`_upcoming_followups.html`), 전화는 아래 제 구역에 `예정` 으로
+    # 선다 — 안 가르면 한 줄이 두 표에 나란히 서서 두 건으로 읽힌다.
+    upcoming = [r for r in later if not is_call(r)]
 
     # 오늘 보낼 것을 단계별로 묶어 둔다 — 한 번에 같은 문구로 나가야 한다.
     by_stage = {}
-    for row in due:
+    for row in sends:
         by_stage.setdefault(row["next_stage"], []).append(row)
 
     return {
@@ -63,13 +85,22 @@ def remind_context(db: Session, user: User, today: date) -> dict:
              "mode": cadence.STAGE_MODES.get(stage, ""), "rows": items}
             for stage, items in sorted(by_stage.items())
         ],
+        # 오늘까지 **걸어야 할 전화**. 지난 날짜도 들어 있다(`due` 와 같은 기준) —
+        # 놓친 전화가 목록에서 사라지면 이 단계를 둔 뜻이 없다.
+        "calls": calls,
+        # 아직 날이 안 온 전화. 언제 걸 곳이 몇 군데인지 미리 보여 준다.
+        "calls_upcoming": [r for r in later if is_call(r)],
         "upcoming": upcoming,
         "closed": closed,
         "remind_counts": {
-            "due": len(due),
-            "overdue": sum(1 for r in due if r["overdue"]),
+            # **보낼 것만 센다.** 이 수는 `오늘 보낼 리마인드` 판의 머리에
+            # 뜨는데, 전화까지 더하면 그 판에 없는 줄이 수에 섞인다.
+            "due": len(sends),
+            "overdue": sum(1 for r in sends if r["overdue"]),
             "upcoming": len(upcoming),
             "closed": len(closed),
+            "call": len(calls),
+            "call_overdue": sum(1 for r in calls if r["overdue"]),
         },
         "rules": _rule_views(db),
         "next_send": cadence.upcoming_send_dates(db, today)[0],
@@ -102,7 +133,10 @@ def _clean_dates(value: str) -> Optional[str]:
 
 def _rule_views(db: Session) -> List[dict]:
     out = []
-    for key in ("deal_cycle", "remind", "meeting"):
+    # 화면의 `발송 주기` 판에 세울 규칙들. **`cadence.DEFAULT_RULES` 에 있는
+    # 것은 여기도 있어야 한다** — 빠진 규칙은 화면에 안 보이고, 관리자가 고칠
+    # 길도 없어 코드에 박아 둔 것과 다를 바 없어진다.
+    for key in cadence.DEFAULT_RULES:
         rule = cadence.get_rule(db, key)
         if rule.get("kind") == "monthly_weekday":
             weekdays = "월화수목금토일"
@@ -111,7 +145,15 @@ def _rule_views(db: Session) -> List[dict]:
             desc = f"매월 {nth} {weekdays[wd]}요일" if wd is not None else "-"
         else:
             lo, hi = rule.get("offset_min_days"), rule.get("offset_max_days")
-            desc = f"딜소개 {lo}~{hi}일 뒤" if lo is not None else "-"
+            # **무엇을 기준으로 센 며칠인가.** 전에는 전부 `딜소개` 라고 적혀
+            # 있었는데, 전화는 미팅 요청을 보낸 날에서 센다 — 기준 말은
+            # `cadence.OFFSET_BASE` 한 곳이 쥔다.
+            #
+            # 폭이 없는 규칙(전화의 `3~3`)은 한 수로 적는다. `3~3일 뒤` 는
+            # 무엇이 흔들린다는 말로 읽히는데 흔들리는 것이 없다.
+            base = cadence.OFFSET_BASE.get(key, "딜소개")
+            span = f"{lo}일" if hi in (None, lo) else f"{lo}~{hi}일"
+            desc = f"{base} {span} 뒤" if lo is not None else "-"
         extra = rule.get("extra_dates") or ""
         if extra:
             desc += f" (추가: {extra.replace(',', ', ')})"
@@ -136,6 +178,29 @@ def mark_responded(sequence_id: int, db: Session = Depends(get_db),
     cadence.stop(db, seq, "답을 받았습니다", status="responded")
     db.commit()
     return RedirectResponse("/followups?msg=리마인드를+멈췄습니다", status_code=303)
+
+
+@router.post("/followups/{sequence_id}/called", include_in_schema=False)
+def mark_called(sequence_id: int, db: Session = Depends(get_db),
+                user: User = Depends(get_current_user)):
+    """**전화를 걸었다**고 적는다 — 흐름의 마지막 단계.
+
+    `답 옴`·`중단` 과 나란히 두지만 뜻이 다르다. 그 둘은 **흐름을 멈추는** 것이고
+    (답이 왔거나 더 안 하기로 했거나), 이것은 **할 일을 끝낸** 것이다. 같은
+    `중단` 으로 적으면 나중에 "전화까지 다 한 곳" 과 "도중에 그만둔 곳" 이
+    한 덩어리가 되어, 이 단계를 둔 뜻이 사라진다.
+
+    그래서 상태가 `완료`(`done`)다 — 사다리 끝까지 간 건에 붙는 그 값이고,
+    단계를 올리는 것도 다른 단계와 **같은 한 곳**을 지난다
+    (`cadence.mark_called` → `cadence.advance`).
+
+    **[전화 걸기] 가 아니다.** 앱이 걸 수 없으므로 이 자리가 할 수 있는 것은
+    사람이 건 것을 적는 일뿐이고, 단추 이름도 그렇게 적혀 있어야 한다.
+    """
+    seq = _owned(db, sequence_id, user)
+    cadence.mark_called(db, seq)
+    db.commit()
+    return RedirectResponse("/ir?msg=전화했다고+적었습니다#calls", status_code=303)
 
 
 @router.post("/followups/{sequence_id}/stop", include_in_schema=False)
