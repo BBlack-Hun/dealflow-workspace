@@ -45,16 +45,16 @@ NULL 로 시작한다. 화면에서는 빈칸이고 그 빈칸이 곧 `아직 �
 방식이다. 스탬프가 어긋난 DB 로 컨테이너가 뜨면 `duplicate column name` 으로
 죽고 다시 뜨는 크래시 루프가 된다.
 
-Revision ID: 0078_consulting_meeting_kind
-Revises: 0077_consulting_kakao_joined
+Revision ID: 0079_consulting_meeting_kind
+Revises: 0078_notices
 """
 from __future__ import annotations
 
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0078_consulting_meeting_kind"
-down_revision = "0077_consulting_kakao_joined"
+revision = "0079_consulting_meeting_kind"
+down_revision = "0078_notices"
 branch_labels = None
 depends_on = None
 

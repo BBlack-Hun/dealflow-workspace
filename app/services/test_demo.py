@@ -49,8 +49,10 @@
 ## 실제 발송 길로 샐 수 없다
 
 이 파일을 부르는 곳은 `routers/setup.py` 의 시험 잡 두 곳뿐이고, 그 잡은
-`TEST_SEND_KIND` 로만 서고 시험방(`config.TEST_ROOM`)으로만 간다. 운영에는
-시험방이 없어 그 자리 자체가 없다(`setup.test_tools_on`). 스타트업 화면은
+`TEST_SEND_KIND` 로만 서고 시험방(`config.TEST_ROOM`)으로만 간다 — 잡을 세우는
+`_queue_test_job` 이 방 이름이 정말 시험방인지 다시 본다. **그 종류가 곧
+안전선이다**: 일반 발송을 만드는 `routers/deals.py: create_send_list` 는
+시험방을 아예 읽지 않고, 이 파일을 부르지도 않는다. 스타트업 화면은
 여기를 부르지 않는다 — 요청이 0곳이면 여전히 **아무것도 만들지 않는다**
 (#131 · #135: "빈 목록을 보내면 대표는 우리가 아무것도 안 한 줄로 읽는다").
 검사가 그 둘을 못박는다(`tests/test_setup_test_tools.py`).
@@ -76,6 +78,10 @@ CONTACT = "보기대표"
 
 #: 보기 투자사 셋. 첫 글자가 서로 다르다 — 가려진 뒤에도(`ir_mask`) 세 줄이
 #: 서로 다른 곳으로 보여야 실제 목록의 모양이 드러난다.
+#:
+#: 마지막 하나는 **꼬리말이 드러나는 이름**이다(`…인베스트먼트`). 실제 목록에는
+#: 꼬리말이 남는 줄과 안 남는 줄이 섞여 있고(`ir_mask.FIRM_SUFFIXES`), 보기
+#: 자료가 한쪽 모양만 내면 그 섞인 모양을 시험 자리에서 볼 수가 없다.
 FIRMS = ("보기벤처스", "예시캐피탈", "가상인베스트먼트")
 
 #: 요청 날짜로 쓸 일(日). 그 달 안의 서로 다른 날이면 된다 — 실물처럼 날짜가
@@ -121,8 +127,11 @@ def startup_remind(db: Session, user: Optional[User],
     직함은 진짜와 같이 **원문 그대로** 간다(가릴 이름이 아니다).
     """
     lines: List[ir_kakao.Line] = [
+        # 기업 자리를 **비운다** — 이 글은 기업 하나짜리라 진짜 자료로 지어도
+        # 줄에서 기업명이 빠진다(`ir_kakao.compose`). 여기서만 채우면 시험
+        # 자리에서 본 모양과 대표가 받는 모양이 갈린다.
         ir_kakao.Line(date=ir_kakao.day_label(f"{month}-{day:02d}"),
-                      company=COMPANY, firm=ir_mask.mask_company(firm),
+                      company="", firm=ir_mask.mask_firm(firm),
                       person=ir_mask.mask_person(person), title=title)
         for day, firm, person, title in zip(DAYS, FIRMS, PEOPLE, TITLES)
     ]

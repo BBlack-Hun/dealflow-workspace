@@ -51,16 +51,16 @@ NULL 로 시작한다. 화면에서는 날짜가 아예 안 뜬다.
 칸이 이미 있으면 건너뛴다 — 0048 · 0049 · 0065 · 0068 · 0077 · 0078 · 0079 와
 같은 방식이다.
 
-Revision ID: 0080_consulting_field_stamps
-Revises: 0079_consulting_management_detail
+Revision ID: 0081_consulting_field_stamps
+Revises: 0080_consulting_management_detail
 """
 from __future__ import annotations
 
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0080_consulting_field_stamps"
-down_revision = "0079_consulting_management_detail"
+revision = "0081_consulting_field_stamps"
+down_revision = "0080_consulting_management_detail"
 branch_labels = None
 depends_on = None
 

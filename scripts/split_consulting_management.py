@@ -177,7 +177,7 @@ def _backup_path(given: str) -> pathlib.Path:
 def _apply(db, plan: dict, backup: pathlib.Path) -> None:
     """**백업을 먼저 쓴다.** 못 쓰면 아무 것도 안 바꾸고 멈춘다."""
     payload = {
-        "revision": "0079_consulting_management_detail",
+        "revision": "0080_consulting_management_detail",
         "at": clock.now_iso(),
         "rows": [{"id": m["id"], "management": m["management"]}
                  for m in plan["move"]],

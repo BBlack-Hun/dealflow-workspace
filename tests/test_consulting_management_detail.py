@@ -44,7 +44,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 LABEL = "기업 내용"
 FIELD = "management_detail"
-REVISION = "0079_consulting_management_detail"
+REVISION = "0080_consulting_management_detail"
 SCRIPT = ROOT / "scripts" / "split_consulting_management.py"
 
 
@@ -262,7 +262,7 @@ def test_내렸다_올리면_표가_같다(tmp_path):
         "select sql from sqlite_master where name='consulting_companies'").fetchone()[0]
     con.close()
     assert FIELD in sql
-    down = run("downgrade", "0078_consulting_meeting_kind")
+    down = run("downgrade", "0079_consulting_meeting_kind")
     assert down.returncode == 0, down.stdout + down.stderr
     con = sqlite3.connect(db_path)
     sql = con.execute(

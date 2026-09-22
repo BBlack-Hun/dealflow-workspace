@@ -9,8 +9,10 @@
 ## 무엇을 지키나
 
 1. ★ **시험방이 없으면 자리 자체가 없다** — 화면에도 없고 주소로도 안 된다.
-   운영에는 `DEALFLOW_TEST_ROOM` 이 없으니 이 자리는 **저절로 닫힌다.**
-   그것이 이 기능의 안전선이라 제일 먼저·제일 많이 본다
+   (예전에는 이것이 안전선이었다 — 운영에 시험방이 없으니 저절로 닫힌다는
+   뜻이었다. 지금 안전선을 지는 것은 **잡 종류**다: 시험방으로 가는 발송은
+   `TEST_SEND_KIND` 뿐이고, 운영에 시험방이 켜져 있어도 일반 발송은 새지
+   않는다 — `tests/test_test_room_scope.py`.)
 2. 파일 시험은 **시험방으로만** 간다 — 사람이 방을 고를 수 없다
 3. 방 이름 시험은 **아무것도 보내지 않는다** — 이미 있는 `verify_room` 길을
    그대로 빌린다(새 종류를 만들면 발송기를 갱신할 때까지 큐에 멈춘다)
@@ -75,10 +77,12 @@ def _job_id(response) -> int:
 #  ① ★ 시험방이 없으면 — 화면에도 없고 주소로도 안 된다
 # ══════════════════════════════════════════════════════════════════════════
 #
-# 운영에는 시험방 설정이 없다. 그러니 이 자리는 운영에서 **저절로** 닫혀야
-# 하고, 그것이 이 기능이 안전한 유일한 이유다. 화면만 감추면 주소로 그대로
-# 부를 수 있다 — 이 저장소가 여러 번 겪은 사고다(사이드바와 라우터가 갈려
-# 컨설턴트에게 전부 열려 있던 일, 자료 폴더 칸이 문이자 스위치였던 일).
+# 시험방 설정이 없으면 이 자리는 닫힌다. 화면만 감추면 주소로 그대로 부를 수
+# 있다 — 이 저장소가 여러 번 겪은 사고다(사이드바와 라우터가 갈려 컨설턴트에게
+# 전부 열려 있던 일, 자료 폴더 칸이 문이자 스위치였던 일).
+#
+# 이것이 **유일한** 안전 근거였던 때가 있다. 지금은 아니다 — 방 이름을 다시
+# 보는 막이가 `_queue_test_job` 에 있고, 일반 발송은 시험방을 아예 안 읽는다.
 
 def test_without_a_test_room_the_panel_is_not_drawn(logged_in, may_attach):
     """`DEALFLOW_TEST_ROOM` 이 비어 있으면(검사 기본값) 자리가 아예 없다."""
@@ -622,7 +626,7 @@ def test_the_list_is_added_by_the_code_not_the_template(logged_in, rehearsal, db
     _job_id(_press(logged_in, REMIND, company_id=a_company.id))
     sent = _sole_item(db).message
     assert sent.startswith("머리말 한 줄뿐\n\n")
-    assert ir_mask.mask_company(THE_FIRM) in sent, "요청 목록이 안 붙었다"
+    assert ir_mask.mask_firm(THE_FIRM) in sent, "요청 목록이 안 붙었다"
 
 
 def test_the_month_and_the_companies_are_filled_by_the_code(logged_in, rehearsal,
@@ -657,7 +661,7 @@ def test_the_masked_firm_never_leaks_into_the_test_room(logged_in, rehearsal, db
     _job_id(_press(logged_in, REMIND, company_id=a_company.id))
     sent = _sole_item(db).message
     assert THE_FIRM not in sent
-    assert ir_mask.mask_company(THE_FIRM) in sent
+    assert ir_mask.mask_firm(THE_FIRM) in sent
 
 
 def test_an_empty_template_still_makes_the_message(logged_in, rehearsal, db,
@@ -672,11 +676,15 @@ def test_an_empty_template_still_makes_the_message(logged_in, rehearsal, db,
 
     _job_id(_press(logged_in, REMIND, company_id=a_company.id))
     sent = _sole_item(db).message
-    assert sent.startswith(ir_kakao.HELLO)
-    assert ir_kakao.LEAD in sent
+    # **바뀐 검사다.** 보고서 모양이 되면서 맨 앞줄은 **제목**이고 인사는 그
+    # 아래다. 맺음말도 목록 아래로 내려갔다(`services/ir_kakao.py`).
+    assert sent.startswith(ir_kakao.DEFAULT_HEAD.splitlines()[0])
+    assert ir_kakao.HELLO in sent
+    assert sent.endswith(ir_kakao.DEFAULT_TAIL)
 
     html = logged_in.get(f"/startup/ir-kakao/{a_company.id}").text
-    assert "기본 머리말" in html, "문구틀이 빈 줄 모르고 지나간다"
+    # 화면 말도 바뀌었다 — 이제 문구틀이 제목까지 갖는다.
+    assert "기본 제목·머리말" in html, "문구틀이 빈 줄 모르고 지나간다"
     assert "/templates#startup_sms" in html, "고칠 자리로 가는 고리가 없다"
 
 
@@ -689,7 +697,8 @@ def test_a_whitespace_only_template_counts_as_empty(logged_in, rehearsal, db,
                            body="   \n  ", is_active=1))
     db.commit()
     _job_id(_press(logged_in, REMIND, company_id=a_company.id))
-    assert _sole_item(db).message.startswith(ir_kakao.HELLO)
+    # 맨 앞줄은 제목이다(위 검사와 같은 까닭).
+    assert ir_kakao.HELLO in _sole_item(db).message
 
 
 def test_a_company_with_no_requests_falls_back_to_demo(logged_in, rehearsal, db,
@@ -1372,7 +1381,7 @@ def test_the_demo_masks_its_firms_like_the_real_one(logged_in, rehearsal, db,
     sent = _sole_item(db).message
     for firm in test_demo.FIRMS:
         assert firm not in sent
-        assert ir_mask.mask_company(firm) in sent
+        assert ir_mask.mask_firm(firm) in sent
 
 
 def test_the_startup_screen_still_makes_nothing_with_no_requests(logged_in, db,
@@ -1564,7 +1573,9 @@ def test_what_the_test_panel_still_says(logged_in, rehearsal, may_attach,
     assert '<a href="/templates#startup_sms">' in html
     assert '<a href="/templates#meeting_review">' in html
     # 알림은 설명이 아니다 — 지우지 않았다.
-    assert "이 자리는 테스트 모드에서만 보입니다" in html
+    # **무엇이 시험방으로 가는지**가 여기서 갈린다: 이 단추들만이다.
+    assert "여기 단추가 만든 발송만" in html
+    assert "각 담당자 방으로 그대로 나갑니다" in html
     assert "아무것도 보내지 않습니다" in html
 
 

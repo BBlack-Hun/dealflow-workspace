@@ -4,14 +4,15 @@
 것은 일곱이다.
 
   1. **가리기** — 원래 투자사명도 **원래 심사역 이름**도 글 어디에도, 화면
-     어디에도 통째로 안 나온다. 줄에 심사역이 실리게 된 뒤로 여기서 막을 것이
+     어디에도 통째로 안 나온다. 투자사만 **꼬리말**(`…파트너스`)이 남는다 —
+     사용자가 정한 것이고, 여럿이 함께 쓰는 말이라 한 곳을 집어내지 못한다. 줄에 심사역이 실리게 된 뒤로 여기서 막을 것이
      하나 늘었다 — 가려진 값만 줄에 담긴다(`ir_kakao.Line`).
      (문서에서 한 번 막았다고 여기서 안 막으면, 새는 자리가 하나 더 생긴 것뿐이다.)
   2. **누적** — `7월 말까지` 는 7월 한 달이 아니다. 지난 달 것이 들어오고,
      그 뒤 달 것은 안 들어온다.
   3. 계약을 마친 기업만.
   4. 요청이 0곳이면 **글을 짓지 않는다**(#131 과 같은 결).
-  5. 날짜 꼴이 `5/22` — 앞에 0 이 없다. 그리고 **모르는 자리는 지어내지 않고
+  5. 날짜 꼴이 `05/22` — **두 자리**다. 그리고 **모르는 자리는 지어내지 않고
      통째로 뺀다**(날짜도, 직함도).
   6. 기업이 여럿일 때 머리말과 줄이 갈린다.
   7. 길어지면 여러 통으로 나뉘고, 인사말은 **첫 통에만** 붙는다.
@@ -107,14 +108,27 @@ def test_문구에_투자사_원래_이름이_통째로_안_나온다(db, seeded
     for name in (FIRM_SHORT, FIRM_LONG, FIRM_OLD):
         assert name not in got.text, f"원래 이름이 그대로 실렸다: {name}"
     # 가린 값은 있어야 한다 — 아무것도 없으면 가린 것이 아니라 빈 것이다.
-    assert ir_mask.mask_company(FIRM_SHORT) in got.text
+    # **투자사는 `mask_firm`** 이다(꼬리말은 남는다 — `ir_mask` 참고).
+    assert ir_mask.mask_firm(FIRM_SHORT) in got.text
 
 
 def test_투자사_이름의_뒷부분도_안_나온다(db, seeded):
-    """첫 글자만 남는다 — 두 글자째부터가 어디에도 없어야 한다."""
+    """**바뀐 검사다.** 이제 드러나는 것이 하나 있다 — **꼬리말**이다.
+
+    사용자가 `파트너스` · `인베스트먼트` · `자산운용` 은 보이게 하라고 정했다.
+    그래서 검사는 "뒷부분이 통째로 안 나온다" 로 좁힌다: 꼬리말을 뺀 나머지는
+    여전히 한 글자도 나오면 안 된다. 얼마나 덜 가려지는지는 `ir_mask` 에 재어
+    적어 두었다.
+    """
     got = _msg(db, seeded)
     for name in (FIRM_SHORT, FIRM_LONG, FIRM_OLD):
         assert name[1:] not in got.text, f"이름 뒷부분이 샜다: {name[1:]}"
+        suffix = ir_mask.firm_suffix(name)
+        body = name[1:-len(suffix)] if suffix else name[1:]
+        for size in range(2, len(body) + 1):
+            for start in range(0, len(body) - size + 1):
+                assert body[start:start + size] not in got.text, \
+                    f"꼬리말이 아닌 자리가 샜다: {body[start:start + size]}"
 
 
 def test_심사역_원래_이름이_통째로_안_나온다(db, seeded):
@@ -162,7 +176,7 @@ def test_화면에도_원래_이름이_안_나온다(logged_in, db, seeded):
     assert r.status_code == 200
     for name in (FIRM_SHORT, FIRM_LONG, FIRM_OLD, PERSON):
         assert name not in r.text, f"화면이 이름을 내보냈다: {name}"
-    assert ir_mask.mask_company(FIRM_LONG) in r.text
+    assert ir_mask.mask_firm(FIRM_LONG) in r.text
     # 심사역도 **가린 채로** 화면에 있어야 한다 — 없으면 화면과 나가는 글이
     # 다른 것이고, 통째로 있으면 새는 것이다.
     assert ir_mask.mask_person(PERSON) in r.text
@@ -182,7 +196,7 @@ def test_지난_달_요청이_이번_달_문구에_들어온다(db, seeded):
     곳이 목록에서 사라진다."""
     got = _msg(db, seeded)
     assert len(got.lines) == 3, f"누적이 아니다: {[l.text for l in got.lines]}"
-    assert ir_mask.mask_company(FIRM_OLD) in got.text, "지난 달 것이 빠졌다"
+    assert ir_mask.mask_firm(FIRM_OLD) in got.text, "지난 달 것이 빠졌다"
 
 
 def test_문서는_한_달치_그대로다(db, seeded):
@@ -197,7 +211,7 @@ def test_그_달_뒤의_요청은_안_들어온다(db, seeded):
     """`말까지` 다 — 지난 달로 문구를 뽑으면 이번 달 것이 빠져야 한다."""
     got = _msg(db, seeded, month=seeded["last"])
     assert len(got.lines) == 1
-    assert ir_mask.mask_company(FIRM_SHORT) not in got.text
+    assert ir_mask.mask_firm(FIRM_SHORT) not in got.text
 
 
 def test_같은_투자사가_두_달에_걸쳐도_한_줄이다(db, seeded):
@@ -214,7 +228,7 @@ def test_같은_투자사가_두_달에_걸쳐도_한_줄이다(db, seeded):
     db.commit()
     got = _msg(db, seeded)
     assert len(got.lines) == 3, f"같은 곳이 두 줄이 됐다: {[l.text for l in got.lines]}"
-    masked = ir_mask.mask_company(FIRM_OLD)
+    masked = ir_mask.mask_firm(FIRM_OLD)
     assert got.text.count(masked) == 1
     # 먼저 온 날이 남는다 — 지난 달 22일.
     assert ir_kakao.day_label(_day(seeded["last"], 22)) in got.text
@@ -287,10 +301,17 @@ def test_이_달_0곳이어도_누적이_있으면_문구는_나간다(logged_in
 
 # ── 5. 실물의 모양 ──────────────────────────────────────────────────────────
 
-def test_날짜는_앞에_0_없이_찍힌다(db, seeded):
-    """실물이 `5/22` 다. `05/22` 도 `5/2` 도 아니다."""
-    assert ir_kakao.day_label("2026-05-22") == "5/22"
-    assert ir_kakao.day_label("2026-11-02") == "11/2"
+def test_날짜는_두_자리로_찍힌다(db, seeded):
+    """**바뀐 검사다.** 예전에는 `5/22` 였다(실물이 그랬다).
+
+    사용자가 **줄이 가지런히 서게** 두 자리로 바꿔 달라고 정했다. 날짜 자리의
+    글자 수가 줄마다 다르면 그 뒷자리가 줄마다 다른 데서 시작한다.
+    """
+    assert ir_kakao.day_label("2026-05-22") == "05/22"
+    assert ir_kakao.day_label("2026-11-02") == "11/02"
+    # 모든 날짜 자리가 **같은 글자 수**다 — 그것이 이 변경의 전부다.
+    assert len({len(ir_kakao.day_label(f"2026-{m:02d}-{d:02d}"))
+                for m, d in ((1, 1), (5, 22), (11, 2), (12, 31))}) == 1
     got = _msg(db, seeded)
     assert f"{ir_kakao.day_label(_day(seeded['last'], 22))} " in got.text
 
@@ -307,14 +328,70 @@ def test_달은_7월_꼴이다():
     assert ir_kakao.month_label("아무거나") == ""
 
 
-def test_머리말_세_줄이_실물_그대로다(db, seeded):
+def test_글이_보고서_모양이다(db, seeded):
+    """**바뀐 검사다.** 예전에는 머리말 세 줄이 실물 그대로였다
+    (`안녕하세요 대표님` / `{달} 말까지 {기업들}` / 맺음말).
+
+    사용자가 모양 몇 개를 보고 **보고서 느낌**을 골랐다 — 제목 두 줄, 요약 한
+    줄, 목록을 감싸는 구분선, 그리고 **목록 아래로 내려간 맺음말**이다.
+    """
     got = _msg(db, seeded)
-    head = got.text.splitlines()
-    assert head[0] == "안녕하세요 대표님"
-    assert head[1].startswith(f"{ir_kakao.month_label(seeded['month'])} 말까지 ")
-    assert head[1].endswith(COMPANY_A)
-    assert head[2] == ir_kakao.LEAD
-    assert head[3] == "", "머리말과 목록 사이에 빈 줄이 없다"
+    lines = got.text.splitlines()
+    assert lines[0] == "[01. 월간 IR 진행 현황]"
+    assert lines[1].endswith(ir_kakao.ym_label(seeded["month"]))
+    assert lines[2] == ""
+    assert lines[3] == ir_kakao.HELLO
+    assert lines[4].startswith(COMPANY_A)
+    assert lines[5] == ""
+    assert lines[6].startswith(ir_kakao.SUMMARY_MARK), "요약 줄이 없다"
+    assert lines[7] == ir_kakao.RULE, "목록 위 구분선이 없다"
+    # 목록 → 구분선 → 맺음말.
+    assert lines[8] == got.lines[0].text
+    assert lines[-2] == ir_kakao.RULE, "목록 아래 구분선이 없다"
+    assert lines[-1] == ir_kakao.DEFAULT_TAIL
+
+
+def test_맺음말은_목록_아래에_온다(db, seeded):
+    """사용자가 고른 모양이다 — 예전에는 머리말 셋째 줄이었다."""
+    got = _msg(db, seeded)
+    assert got.text.index(got.tail) > got.text.index(got.lines[-1].text)
+
+
+def test_요약이_목록과_셈이_맞는다(db, seeded):
+    """`12곳` 이라고 적힌 글에 줄이 15개면 대표는 셈이 안 맞는다고 읽는다.
+
+    줄은 **사람마다** 하나씩 선다(`ir_monthly`). 그래서 곳과 명이 갈릴 때는
+    둘 다 적는다.
+    """
+    from app.services import ir_monthly
+
+    got = _msg(db, seeded)
+    tally = ir_monthly.monthly_requests(
+        db, seeded["month"], cumulative=True).tally_of(seeded["a"].id)
+    assert tally.people == len(got.lines), "명이 줄 수와 다르다"
+    assert got.summary.startswith(f"{ir_kakao.SUMMARY_MARK} 누적 ")
+    assert ir_kakao.count_label(tally.firms, tally.people) in got.summary
+    # 신규는 **그 달에 처음** 물어본 것이다 — 지난 달 것은 안 센다.
+    assert f"{ir_kakao.month_label(seeded['month'])} 신규 " in got.summary
+    assert tally.new_people == 2 and tally.people == 3, "신규가 누적과 같다"
+
+
+def test_요약_숫자는_문구틀이_아니라_코드가_짓는다():
+    """사람이 손으로 적은 숫자는 목록과 갈린다 — 갈린 채로 대표에게 간다."""
+    from scripts import bootstrap
+
+    for kind, body in bootstrap.TEAM_TEMPLATES:
+        if kind.startswith("startup_sms"):
+            assert "누적" not in body and ir_kakao.SUMMARY_MARK not in body
+
+
+def test_시드_문구가_코드에_적힌_것과_같다():
+    """둘이 갈리면 **문구틀을 지운 사람만** 다른 글을 받는다."""
+    from scripts import bootstrap
+
+    seeds = dict(bootstrap.TEAM_TEMPLATES)
+    assert seeds[ir_kakao.KIND] == ir_kakao.DEFAULT_HEAD
+    assert seeds[ir_kakao.TAIL_KIND] == ir_kakao.DEFAULT_TAIL
 
 
 def test_줄은_날짜_기업_투자사_심사역_직함_차례다(db, seeded):
@@ -327,9 +404,12 @@ def test_줄은_날짜_기업_투자사_심사역_직함_차례다(db, seeded):
     """
     got = _msg(db, seeded)
     line = next(ln for ln in got.lines if ln.title)
-    assert line.text == (f"{line.date} {line.company} {line.firm} "
+    # **바뀐 줄이다.** ① 기업이 하나인 글에서는 기업 자리가 빈다(그 이름은
+    # 머리말에 있다). ② 자리 사이가 **두 칸**이다 — 사용자가 고른 모양이고,
+    # 자리가 자리로 보여야 훑어 읽힌다. 직함만 이름에 한 칸으로 붙는다.
+    assert line.text == (f"{line.date}  {line.firm}  "
                          f"{line.person} {line.title}")
-    assert line.company == COMPANY_A
+    assert line.company == "", "기업이 하나인데 줄에 기업명이 또 적혔다"
 
 
 def test_직함이_빈_심사역은_이름에서_줄이_끝난다(db, seeded):
@@ -344,11 +424,15 @@ def test_직함이_빈_심사역은_이름에서_줄이_끝난다(db, seeded):
     아니라, 빈 직함은 언제든 목록에 들어온다.
     """
     got = _msg(db, seeded)
-    bare = next(ln for ln in got.lines if ln.firm == ir_mask.mask_company(FIRM_OLD))
+    # **바뀐 줄이다.** 투자사는 `mask_firm` 으로 가린다 — 꼬리말
+    # (`…인베스트먼트`)이 남으므로 `mask_company` 로는 줄을 못 찾는다.
+    bare = next(ln for ln in got.lines if ln.firm == ir_mask.mask_firm(FIRM_OLD))
     assert bare.title == ""
-    assert bare.text == f"{bare.date} {bare.company} {bare.firm} {bare.person}"
+    assert bare.text == f"{bare.date}  {bare.firm}  {bare.person}"
     assert not bare.text.endswith(" "), "빈 직함 자리가 공백으로 남았다"
-    assert "  " not in bare.text, "줄 가운데가 두 칸 벌어졌다"
+    # 자리 사이는 두 칸이다(사용자가 고른 모양) — 빈 자리가 남아 **세 칸**이
+    # 벌어지면 그것이 고장이다.
+    assert "   " not in bare.text, "빈 자리가 공백으로 남았다"
     assert "담당" not in got.text, "없는 직함을 지어냈다"
 
 
@@ -377,7 +461,7 @@ def test_같은_투자사의_두_심사역이_서로_다른_줄로_보인다(db,
     db.commit()
 
     got = _msg(db, seeded)
-    same = [ln for ln in got.lines if ln.firm == ir_mask.mask_company(FIRM_SHORT)]
+    same = [ln for ln in got.lines if ln.firm == ir_mask.mask_firm(FIRM_SHORT)]
     assert len(same) == 2, "한 투자사의 두 심사역이 한 줄로 묶였다"
     assert len({ln.text for ln in same}) == 2, "두 줄의 글자가 똑같다"
     assert PERSON_2 not in got.text, "새 심사역의 원래 이름이 샜다"
@@ -395,7 +479,7 @@ def test_같은_심사역이_여러_번_요청해도_한_줄이다(db, seeded):
     db.commit()
 
     got = _msg(db, seeded)
-    same = [ln for ln in got.lines if ln.firm == ir_mask.mask_company(FIRM_SHORT)]
+    same = [ln for ln in got.lines if ln.firm == ir_mask.mask_firm(FIRM_SHORT)]
     assert len(same) == 1, f"한 사람이 두 줄이 됐다: {[l.text for l in same]}"
     # 남는 것은 **먼저 온 날**이다.
     assert same[0].date == ir_kakao.day_label(_day(seeded["month"], 3))
@@ -430,6 +514,22 @@ def test_줄마다_어느_기업_몫인지_적힌다(db, seeded):
     assert {ln.company for ln in got.lines} == {COMPANY_A, COMPANY_B}
     for ln in got.lines:
         assert ln.company in ln.text
+
+
+def test_기업이_여럿이면_같은_투자사를_두_번_세지_않는다(db, seeded):
+    """한 투자사가 두 기업에 물어봤으면 그것은 **한 곳**이다 — 기업별로 세어
+    더하면 `곳` 이 부풀고, 부푼 수가 그대로 대표에게 간다."""
+    from app.services import ir_monthly
+
+    data = ir_monthly.monthly_requests(db, seeded["month"], cumulative=True)
+    a, b = seeded["a"].id, seeded["b"].id
+    both = data.tally_of(a, b)
+    assert both.people == len(data.of(a)) + len(data.of(b)), "명이 줄 수와 다르다"
+    assert both.firms < data.tally_of(a).firms + data.tally_of(b).firms, \
+        "두 기업에 물어본 한 곳이 두 곳으로 세어졌다"
+
+    got = ir_kakao.compose(db, None, [seeded["a"], seeded["b"]], seeded["month"])
+    assert ir_kakao.count_label(both.firms, both.people) in got.summary
 
 
 def test_화면은_기업을_묶지_않는다(logged_in, db, seeded):
@@ -477,6 +577,97 @@ def test_나눌_자리는_글자_수로_정한다():
     short = ir_kakao.pack("머리말", ["5/1 가 나***"] * 300)
     long_ = ir_kakao.pack("머리말", ["5/1 아주아주긴기업이름주식회사 나***"] * 300)
     assert len(long_) > len(short), "줄 수만 보고 잘랐다"
+
+
+# ── 7-2. 맺음말 · 옛 문구틀  ★ ──────────────────────────────────────────────
+#
+# 맺음말이 **목록 아래**로 내려갔다(사용자가 고른 보고서 모양). 문구틀에
+# `{목록}` 같은 자리를 내주지 않고 **문구를 둘로 나눠서** 그렇게 했다 —
+# 목록을 어디에 놓을지는 여전히 코드만 안다(`services/ir_kakao.py` 머리말).
+
+
+def _template(db, kind, body, user_id=None):
+    from app.models import MessageTemplate
+
+    db.add(MessageTemplate(user_id=user_id, kind=kind, name="시험", body=body,
+                           is_active=1))
+    db.commit()
+
+
+def test_맺음말_문구를_고치면_글이_바뀐다(db, seeded, users):
+    _template(db, ir_kakao.TAIL_KIND, "맺음말을 팀이 고쳤습니다.")
+    got = _msg(db, seeded, user=users["u1"])
+    assert got.text.endswith("맺음말을 팀이 고쳤습니다.")
+    assert got.tail_from_template
+
+
+def test_문구틀에_목록_자리를_내주지_않았다(db, seeded, users):
+    """`{목록}` 을 주면 같은 문구에 **안 가려진** 자리도 쓸 수 있게 된다 —
+    가리는 일이 문구를 고치는 사람 손으로 넘어간다. 맺음말을 목록 아래로
+    내리면서도 그 선은 넘지 않았다(문구를 **둘로 나눴다**).
+    """
+    _template(db, ir_kakao.KIND, f"{ir_kakao.HELLO}\n{{목록}}")
+    got = _msg(db, seeded, user=users["u1"])
+    head = got.text.split(ir_kakao.RULE)[0]
+    for line in got.lines:
+        assert line.text not in head, "문구틀 자리에 목록이 들어갔다"
+        assert got.text.count(line.text) == 1, "목록이 두 번 적혔다"
+
+    from app.routers import templates_crud
+
+    # 화면이 안내하는 자리에도 없다 — 안내에 뜨면 사람이 쓴다.
+    assert "{목록}" not in str(templates_crud.VARIABLES)
+
+
+def test_옛_문구틀의_맺음말이_목록_아래로_내려간다(db, seeded, users):
+    """운영 DB 의 `startup_sms` 에는 맺음말이 **머리말 셋째 줄**로 들어 있다.
+    그대로 두면 같은 말이 목록 위에 한 번, 아래에 또 한 번 적힌다."""
+    old_body = "\n".join([ir_kakao.HELLO,
+                          f"{ir_kakao.MONTH_TOKEN} 말까지 "
+                          f"{ir_kakao.COMPANIES_TOKEN}",
+                          ir_kakao.LEAD])
+    _template(db, ir_kakao.KIND, old_body)
+    got = _msg(db, seeded, user=users["u1"])
+    assert got.text.count(ir_kakao.LEAD) == 1, "맺음말이 두 번 적혔다"
+    assert got.text.endswith(ir_kakao.LEAD), "맺음말이 목록 아래로 안 내려갔다"
+    assert not got.tail_from_template, "내려온 줄인데 문구틀에서 온 것으로 적혔다"
+
+
+def test_팀이_고쳐_쓴_문장은_안_옮긴다(db, seeded, users):
+    """저장소가 시드로 내보냈던 문장과 **글자까지 같을 때만** 옮긴다.
+    남의 문장을 짐작해서 옮기기 시작하면 무엇이 나갈지 아무도 모른다."""
+    mine = "우리 팀이 고쳐 쓴 맺음말입니다."
+    _template(db, ir_kakao.KIND, f"{ir_kakao.HELLO}\n{mine}")
+    got = _msg(db, seeded, user=users["u1"])
+    assert got.text.splitlines()[1] == mine, "고쳐 쓴 문장을 코드가 옮겼다"
+
+
+def test_맺음말은_마지막_통에_붙고_잘리지_않는다():
+    """맺음말은 목록 아래에 오는 문장이라 첫 통에 붙으면 글이 거기서 끝난
+    것처럼 읽힌다. 그리고 **잘리면 안 된다** — 잘린 자리가 마지막 문장이다."""
+    lines = [f"05/{n % 28 + 1}  가***  홍*** 심사역" for n in range(400)]
+    tail = "맺음말 한 줄입니다."
+    parts = ir_kakao.pack("머리말", lines, tail)
+    assert len(parts) > 1
+    assert parts[-1].endswith(tail)
+    assert all(tail not in p for p in parts[:-1]), "맺음말이 가운데 통에 붙었다"
+    assert all(len(p) <= ir_kakao.LIMIT for p in parts), "한 통이 한계를 넘었다"
+
+
+def test_자리가_없으면_맺음말만_한_통으로_간다():
+    """넘치는 채로 붙이면 카톡에서 뒤가 잘려 나간다."""
+    tail = "맺음말은 길다"
+    parts = ir_kakao.pack("머리말", ["가" * 10] * 3, tail, limit=40)
+    assert parts[-1] == tail, "자리가 없는데 우겨 넣었다"
+    assert all(len(p) <= 40 for p in parts)
+
+
+def test_구분선이_목록을_감싼다(db, seeded):
+    got = _msg(db, seeded)
+    body = got.text.split(ir_kakao.RULE)
+    assert len(body) == 3, "구분선이 둘이 아니다"
+    for line in got.lines:
+        assert line.text in body[1], "줄이 구분선 밖으로 나갔다"
 
 
 # ── 8. 화면 ─────────────────────────────────────────────────────────────────

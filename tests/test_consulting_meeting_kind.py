@@ -43,7 +43,13 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 LABEL = "미팅종류"
 FIELD = "meeting_kind"
 KEY = "meetkind"                    # 머리글이 선언하는 필터 키
-REVISION = "0078_consulting_meeting_kind"
+REVISION = "0079_consulting_meeting_kind"
+#: 이 판 **바로 앞** 판. `downgrade -1` 로 적으면 "이 판이 맨 끝이다" 라는
+#: 뜻이 되어, 다음 판이 하나 붙는 날 조용히 **남의 판**을 내린다 — 옆의 같은
+#: 부류 검사가 이미 이름으로 적고 있다(`test_consulting_kakao_joined.py`
+#: 의 `BEFORE`). 이 판이 `0078_notices`(#223) 뒤로 옮겨 서면서 실제로 그
+#: 자리가 됐다.
+BEFORE = "0078_notices"
 
 
 @pytest.fixture()
@@ -394,24 +400,30 @@ def test_내렸다_올리면_표가_같다(tmp_path):
         return subprocess.run([sys.executable, "-m", "alembic", *args],
                               cwd=ROOT, env=env, capture_output=True, text=True)
 
-    assert run("upgrade", "head").returncode == 0
-    con = sqlite3.connect(db_path)
-    before = con.execute(
-        "select sql from sqlite_master where name='consulting_companies'").fetchone()[0]
+    def columns(path):
+        con = sqlite3.connect(path)
+        try:
+            sql = con.execute("select sql from sqlite_master "
+                              "where name='consulting_companies'").fetchone()[0]
+        finally:
+            con.close()
+        return {line.strip().split()[0].strip('"')
+                for line in sql.split("(", 1)[1].split(",") if line.strip()}
+
+    # **`head` 가 아니라 이 판까지만** 올린다. `head` 로 올리면 뒤에 쌓인 남의
+    # 판까지 같이 올라가, 아래 `옆 칸을 안 건드렸나` 대조가 그 판들 때문에
+    # 깨진다(`test_consulting_kakao_joined.py` 가 같은 이유로 그렇게 한다).
+    assert run("upgrade", REVISION).returncode == 0
+    before = columns(db_path)
     assert FIELD in before
-    con.close()
-    assert run("downgrade", "0077_consulting_kakao_joined").returncode == 0
-    con = sqlite3.connect(db_path)
-    mid = con.execute(
-        "select sql from sqlite_master where name='consulting_companies'").fetchone()[0]
-    assert FIELD not in mid
-    con.close()
-    assert run("upgrade", "head").returncode == 0
-    con = sqlite3.connect(db_path)
-    after = con.execute(
-        "select sql from sqlite_master where name='consulting_companies'").fetchone()[0]
-    con.close()
-    assert FIELD in after
+
+    assert run("downgrade", BEFORE).returncode == 0
+    assert FIELD not in columns(db_path), \
+        "내렸는데 칸이 남아 있다 — `downgrade` 가 제 일을 안 했다"
+    assert columns(db_path) == before - {FIELD}, "내리면서 옆 칸까지 건드렸다"
+
+    assert run("upgrade", REVISION).returncode == 0
+    assert columns(db_path) == before, "내렸다 올렸더니 표가 달라졌다"
 
 
 # --- 8. `Meeting.meet_mode` 와 다른 칸 ----------------------------------------

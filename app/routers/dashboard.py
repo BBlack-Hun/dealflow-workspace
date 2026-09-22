@@ -30,7 +30,8 @@ from ..models import (AgentDevice, ConsultingRowGrant, User, WeeklyRoutine,
                       WeeklyTask)
 from ..services import auth as auth_svc
 from ..services import dashboard as dash
-from ..services import backup, edit_log, readiness, report, today, weekly
+from ..services import (backup, edit_log, notices, readiness, report, today,
+                        weekly)
 from ..ui import base_ctx
 
 router = APIRouter(tags=["dashboard"])
@@ -370,6 +371,10 @@ def team_page(request: Request, db: Session = Depends(get_db),
     # 관리자가 매일 여는 화면에 상태를 띄운다 — 되돌리기 화면까지 들어가야
     # 보인다면, 되돌릴 일이 생기고 나서야 백업이 없다는 것을 알게 된다.
     ctx["backup"] = backup.health()
+    # 공지 판. **올리는 자리가 여기인 이유**는 이 화면이 이미 `팀 전체에
+    # 영향을 주는 것을 관리자가 정하는 자리` 이기 때문이다(계정 · 권한 ·
+    # 자동 준비 스위치). 보는 자리는 밑틀이고, 여기는 적고 내리는 자리다.
+    ctx["notice_board"] = notices.board(db)
     return templates.TemplateResponse("team.html", ctx)
 
 
@@ -706,9 +711,8 @@ def edit_member_profile(
         #
         # 그대로 두면 퇴사자 PC 에 남은 키가 계속 유효하다. 그 PC 의 에이전트는
         # 새 담당자가 만든 발송 잡을 가로채 **퇴사자 카톡으로 실제 투자사에게**
-        # 보낸다 — 이 저장소가 가장 크게 치는 사고다(오발송 막으려고
-        # `DEALFLOW_TEST_ROOM` 까지 둔다). '한 계정 = 한 PC' 도 계정 생성이
-        # 이미 못 박아 둔 원칙이다.
+        # 보낸다 — 이 저장소가 가장 크게 치는 사고다. '한 계정 = 한 PC' 도
+        # 계정 생성이 이미 못 박아 둔 원칙이다.
         #
         # 새 키를 받는 길이 화면에 있으므로 되돌릴 수 없는 처리가 아니다 —
         # 새 담당자가 로그인해 [발송 프로그램 설치]에서 다시 내려받으면

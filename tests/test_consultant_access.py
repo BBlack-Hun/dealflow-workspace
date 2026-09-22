@@ -58,6 +58,11 @@ EXPECTED_OPEN = {
     ("POST", "/logout"),
     ("GET", "/account/password"),
     ("POST", "/account/password"),
+    # 공지를 **확인했다고 적는 길.** 공지 판은 밑틀(`base.html`)에 서므로
+    # 투자컨설턴트의 화면 위에도 뜬다 — 막으면 그 계정에서는 같은 공지가
+    # 영영 안 닫힌다. 하는 일은 자기가 읽었다는 표시 하나이고, 올리고
+    # 내리는 길(`/team/notices…`)은 그대로 막혀 있다.
+    ("POST", "/notices/seen"),
     # 사이드바 배지가 5초마다 부른다(본인 기기 상태만 돌려준다).
     ("GET", "/api/agent-status"),
     ("GET", "/health"),

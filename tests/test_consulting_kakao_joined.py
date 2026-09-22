@@ -46,6 +46,9 @@ LABEL = "카톡 연결 여부"
 FIELD = "kakao_joined"
 KEY = "joined"                      # 머리글이 선언하는 필터 키
 REVISION = "0077_consulting_kakao_joined"
+#: 이 판 **바로 앞**. 내려가는 자리를 `-1` 로 두면 `이 판이 맨 끝이다` 라는
+#: 뜻이 되어, 다음 판이 붙는 날 조용히 남의 판을 내린다.
+BEFORE = "0076_manual_send_log"
 
 
 @pytest.fixture()
@@ -477,33 +480,33 @@ def _columns(db: pathlib.Path, table: str) -> set:
 def test_내렸다_올리면_표가_같다(tmp_path):
     """**운영에 올리기 전에 실제로 내렸다 올려 본다.**
 
-    이 판만 한 칸 내리고(`downgrade -1`) 다시 올려, 칸이 사라졌다가 돌아오고
-    나머지 표가 한 칸도 안 달라지는지 본다. 여기 적어 둔 값은 안 돌아온다 —
-    이 칸에서 처음 생긴 값이라 옮겨 둘 자리가 없다.
+    이 판만 한 칸 내리고 다시 올려, 칸이 사라졌다가 돌아오고 나머지 표가 한
+    칸도 안 달라지는지 본다. 여기 적어 둔 값은 안 돌아온다 — 이 칸에서 처음
+    생긴 값이라 옮겨 둘 자리가 없다.
+
+    **내려가는 자리를 이름으로 적는다.** 예전에는 `downgrade -1` 이었는데,
+    그건 `이 판이 맨 끝이다` 라는 뜻이라 **다음 판이 하나 붙는 날 조용히 남의
+    판을 내린다**(실제로 0078 이 붙자 이 검사가 그렇게 깨졌다). 옆의 같은
+    부류 검사들은 이미 이름으로 적고 있다(`tests/test_ir_auto_attach_migration.py`
+    의 `BEFORE` · `tests/test_one_liner_single_source.py` 의 `PREVIOUS`).
 
     (`tests/test_migrations.py` 는 `base` 까지 내렸다 올린다. 이 검사는 이 판
     하나를 짚는다 — 전체 되돌리기가 멎으면 어느 판 때문인지 안 보인다.)
     """
     db = tmp_path / "kakao.db"
-    up = _alembic(db, "upgrade", "head")
+    up = _alembic(db, "upgrade", REVISION)
     assert up.returncode == 0, up.stdout + up.stderr
     before = _columns(db, "consulting_companies")
     assert FIELD in before
 
-    # **`-1` 이 아니라 이 판의 바로 앞 판까지** 내린다. `-1` 은 "head 에서 한
-    # 칸" 이라, 뒤에 판이 하나라도 더 쌓이면 이 검사가 **남의 판**을 내려 보고
-    # 여기 칸이 남아 있다고 깨진다(0078 이 쌓이면서 실제로 그랬다). 이 파일이
-    # 짚는 것은 `이 판` 하나이므로 판 이름을 대고 내린다.
-    #
-    # 그 사이 판들도 같이 내려가므로 `before` 와 통째로 견주지 않는다 —
-    # **이 판이 세운 칸**만 사라졌는지 본다. 옆 칸을 건드렸는지는
-    # 마지막의 `upgrade head` 뒤 대조가 그대로 잡는다.
-    down = _alembic(db, "downgrade", "0076_manual_send_log")
+    down = _alembic(db, "downgrade", BEFORE)
     assert down.returncode == 0, down.stdout + down.stderr
     assert FIELD not in _columns(db, "consulting_companies"), \
         "내렸는데 칸이 남아 있다 — `downgrade` 가 제 일을 안 했다"
+    assert _columns(db, "consulting_companies") == before - {FIELD}, \
+        "내리면서 옆 칸까지 건드렸다"
 
-    again = _alembic(db, "upgrade", "head")
+    again = _alembic(db, "upgrade", REVISION)
     assert again.returncode == 0, again.stdout + again.stderr
     assert _columns(db, "consulting_companies") == before, \
         "내렸다 올렸더니 표가 달라졌다"

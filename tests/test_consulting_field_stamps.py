@@ -45,7 +45,7 @@ from .conftest import DEMO_PASSWORD
 
 STARTUP = "스타트업"
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-REVISION = "0080_consulting_field_stamps"
+REVISION = "0081_consulting_field_stamps"
 
 
 @pytest.fixture()
