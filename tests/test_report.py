@@ -439,9 +439,10 @@ def test_yearly_page_opens_and_links_back_to_months(client, db, users):
 
     client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
     body = client.get("/report?span=year&year=2026").text
-    # 항목마다 한 줄, 달마다 한 칸 — 리포트 모양이다(`report.yearly_items`).
-    assert "2026년 리포트" in body
-    assert 'id="year-report"' in body
+    # **월간 보고와 같은 판 차례**로 선다(`report.YEARLY_GROUPS`). 판 안은
+    # 항목마다 한 줄, 달마다 한 칸이다(`report.yearly_items`).
+    assert "2026년 미팅" in body and "2026년 발송" in body
+    assert 'class="grid-table compact year-report"' in body
     # 달을 누르면 그 달 보고로 간다 — 이 길은 그대로 살아 있어야 한다
     assert "/report?month=2026-08" in body
 
