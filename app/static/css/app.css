@@ -530,16 +530,19 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
    없고, 2030px 로 벌리면 달 칸 하나가 150px 이 되어 밀 거리만 길어진다.
    그래서 고정만 여기서 따로 건다 — 감싸개는 보통 `.table-wrap` 이다.
 
-   표 하나에만 걸리게 `#year-report` 로 묶는다(`:has(#review-table)` 과 같은
-   방식) — 다른 표의 고정 규칙과 섞이지 않는다. */
-#year-report th.stick, #year-report td.stick {
+   이 표들에만 걸리게 `.year-report` 로 묶는다 — 다른 표의 고정 규칙과 섞이지
+   않는다. **아이디가 아니라 클래스다**: 연간을 월간 보고 모양으로 바꾸면서
+   표가 판마다 하나씩 여럿이 됐다(발송 · 미팅 · IR). 아이디는 한 장에 하나여야
+   하므로 그대로 두면 둘째 표부터 고정이 안 걸린다. 칸 수(열넷)는 판으로
+   나눈 뒤에도 그대로라 고정은 여전히 필요하다. */
+.year-report th.stick, .year-report td.stick {
   position: sticky; left: 0; z-index: 2; background: var(--panel); }
-#year-report thead th.stick { z-index: 4; }
-#year-report tbody tr:hover > td.stick { background: #f8faff; }
+.year-report thead th.stick { z-index: 4; }
+.year-report tbody tr:hover > td.stick { background: #f8faff; }
 /* 고정 칸과 밑을 지나가는 글자 사이에 금을 하나 긋는다 — 없으면 밀 때 숫자가
    항목 이름에 그대로 얹혀 읽힌다. 왼쪽 테두리를 안 세우는 까닭은 위와 같다. */
-#year-report .stick-lead { box-shadow: 1px 0 0 var(--line); }
-.table-wrap:has(#year-report) .grid-table { border-left: 0; }
+.year-report .stick-lead { box-shadow: 1px 0 0 var(--line); }
+.table-wrap:has(.year-report) .grid-table { border-left: 0; }
 .table-wrap.wide .grid-table tbody tr.row-hidden > td.stick {
   background: repeating-linear-gradient(
     45deg, var(--panel), var(--panel) 6px, #f4f6f9 6px, #f4f6f9 12px); }

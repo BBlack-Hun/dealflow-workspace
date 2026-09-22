@@ -546,7 +546,7 @@ def test_the_year_comes_down_as_one_sheet(logged, db, users):
     flat = [str(c) for row in grid for c in row]
     assert "2026년 업무 보고 · 연간" in flat
     # 무엇을 받은 것인지 파일 스스로 말해야 한다
-    assert any("항목마다 한 줄" in c for c in flat)
+    assert any("판마다 항목이 줄, 달이 칸" in c for c in flat)
 
     # 열두 달이 **칸으로** 빠짐없이 — 빈 달도 자리를 지켜야 흐름이 보인다
     head = _find(grid, "항목")
@@ -649,44 +649,145 @@ def test_a_broken_year_falls_back_to_this_year(logged, db, users):
     assert wb.sheetnames == [f"{date.today().year} 연간"]
 
 
-# --- 6. 화면 연간 리포트 — **항목마다 한 줄, 달마다 한 칸** ------------------------
+# --- 6. 화면 연간 보고 — **월간 보고와 같은 모양** -------------------------------
 #
-# 엑셀만 되고 화면은 안 되면 매번 받아 봐야 한다. 사용자가 말한 것은
-# "각 항목마다 내용 있는거 기준으로 월별로 나눠서 기록" 이다.
+# 사용자가 말한 것은 "연간 업무보고도 월간 업무보고 스타일로" 다. 월간은 숫자를
+# 판으로 갈라 놓는데(`9월 발송` · `9월 미팅 총 N개사` · `미팅 결과` ·
+# `IR 자료 요청`), 연간은 항목 열셋이 이름표 없는 표 하나에 뭉쳐 있어서 발송
+# 이야기와 IR 이야기가 같은 칸에 나란히 섰다.
 #
-# 여기서 못 박는 것은 셋이다.
-#   ① **한 해 내내 빈 항목은 뺀다** — 열두 달 × 열세 항목이면 대부분이 빈 칸이다.
-#   ② **달은 열둘을 다 둔다** — 빼면 '아무 일도 없던 달이 있었다'가 사라진다.
-#   ③ **화면과 파일이 같은 자리에서 센다** — 두 곳에서 추리면 줄이 갈린다.
+# 여기서 못 박는 것은 다섯이다.
+#   ① **판 차례가 월간과 같다** — 발송 → 미팅 → 미팅 결과 → IR.
+#   ② **판 안은 여전히 항목이 줄, 달이 칸**(#227) — 달끼리 견주는 길을 안 없앤다.
+#   ③ **한 해 내내 빈 항목은 뺀다.** 다만 **줄이 다 빠진 판은 서 있는다**(월간의
+#      빈 묶음과 같다) — 판이 사라지면 '이 보고는 그걸 안 센다' 로 읽힌다.
+#   ④ **달은 열둘을 다 둔다** — 빼면 '아무 일도 없던 달이 있었다'가 사라진다.
+#   ⑤ **화면과 파일이 같은 자리에서 센다** — 판도 줄도. 두 곳에서 추리면 갈린다.
 
-def test_the_year_screen_is_items_by_month(logged, db, users):
-    """항목이 줄, 달이 칸. 한 항목의 한 해 흐름을 가로로 읽는다."""
+
+def _a_meeting(db, users, when, *, who="가상심사역"):
+    """미팅 한 건 — 이름은 **지어낸 것**이다(공개 저장소)."""
+    from app.models import Meeting, VcContact
+
+    contact = db.query(VcContact).filter_by(name=who).first()
+    if contact is None:
+        contact = VcContact(user_id=users["u1"].id, name=who, firm="가나벤처스")
+        db.add(contact)
+        db.flush()
+    db.add(Meeting(user_id=users["u1"].id, contact_id=contact.id,
+                   scheduled_at=when.isoformat(), kind="first", status="done",
+                   done_at=when.isoformat(), outcome="reviewing",
+                   followup_due=when.isoformat(), followup_done=1))
+    db.commit()
+
+
+def _an_ir_request(db, users, when, *, who="가상심사역2"):
+    """IR 자료 요청 한 건."""
+    from app.models import IrRequest, VcContact
+
+    contact = db.query(VcContact).filter_by(name=who).first()
+    if contact is None:
+        contact = VcContact(user_id=users["u1"].id, name=who, firm="마바벤처스")
+        db.add(contact)
+        db.flush()
+    db.add(IrRequest(user_id=users["u1"].id, contact_id=contact.id,
+                     company_name="샘플애그", requested_at=when.isoformat(),
+                     status="delivered"))
+    db.commit()
+
+
+def _year_tables(body):
+    """연간 화면의 달 표들 → 표마다 HTML 조각. 판마다 하나씩이다."""
+    out, at = [], 0
+    while True:
+        at = body.find("year-report", at)
+        if at < 0:
+            return out
+        out.append(body[at:body.index("</table>", at)])
+        at += 1
+
+
+def _panel_titles(body):
+    """연간 화면의 판 이름들 — 위에서 아래로."""
+    return [t.strip() for t in
+            re.findall(r'<h2 class="panel-title"><span>([^<]+)', body)]
+
+
+def _bands(ws):
+    """엑셀에서 **띠(band)** 로 선 줄들 — 화면의 판 이름과 짝이다.
+
+    **합친 칸으로 가른다.** 띠와 제목만 A~N 을 합치고, 한 줄 안내(`note`)는
+    일부러 안 합친다(합치면 긴 글이 접힌 채 첫 줄만 보인다) — 글자로 가르면
+    안내 문구가 바뀔 때마다 이 검사가 따라 흔들린다.
+    """
+    merged = {r.min_row for r in ws.merged_cells.ranges if r.min_col == 1}
+    return [str(ws.cell(row=n, column=1).value or "") for n in sorted(merged)]
+
+
+def test_the_year_is_laid_out_like_the_month(logged, db, users):
+    """**판 차례가 월간과 같다** — 발송 → 미팅 → 미팅 결과 → IR 자료 요청.
+
+    이것이 사용자가 말한 "월간 업무보고 스타일" 이다. 판 이름이 "이건 무슨
+    수인가" 를 말해 주고, 머리의 알약이 그 판의 머릿수를 든다.
+    """
+    _round(db, users, title="3월 회차", when=date(2026, 3, 11), sent=40)
+
+    body = logged.get("/report?span=year&year=2026").text
+    titles = _panel_titles(body)
+    assert titles == ["2026년 발송", "2026년 미팅", "2026년 미팅 결과",
+                      "2026년 IR 자료 요청 · 전화 요청"], \
+        f"판 차례가 월간과 다르다: {titles}"
+
+    # 판 머리의 알약 — 월간의 묶음 머리와 같은 모양이다
+    assert '<span class="count-pill on"><b>40건 완료</b></span>' in body
+
+    # 맨 윗줄(KPI)도 월간과 **같은 다섯 칸**이다 — 한 해와 한 달을 나란히 놓고
+    # 보는 화면이라 여기가 어긋나면 안 된다.
+    kpi = body[body.index("kpi-row"):body.index("</div>\n<p class=\"hint\">")]
+    labels = re.findall(r'<span class="kpi-label">([^<]+)</span>', kpi)
+    month_kpi = logged.get("/report?month=2026-03").text
+    month_kpi = month_kpi[month_kpi.index("kpi-row"):]
+    assert labels == re.findall(
+        r'<span class="kpi-label">([^<]+)</span>', month_kpi)[:5], \
+        f"KPI 칸이 월간과 다르다: {labels}"
+
+
+def test_the_panels_still_hold_items_by_month(logged, db, users):
+    """**판으로 나눠도 안은 그대로** — 항목이 줄, 달이 칸(#227).
+
+    판을 만들면서 달 칸을 걷어내면 달끼리 견주는 길이 사라진다 — 그게 저
+    표의 전부였다. 판별로 자르기만 한다.
+    """
     _round(db, users, title="3월 회차", when=date(2026, 3, 11), sent=40)
     _round(db, users, title="8월 회차", when=date(2026, 8, 27),
            sent=18, canceled=98, status="canceled")
+    # 판 셋에 다 무엇이 있어야 표가 셋이다 — 빈 판은 표 없이 선다(아래 검사).
+    _a_meeting(db, users, date(2026, 5, 6))
+    _an_ir_request(db, users, date(2026, 7, 8))
 
     body = logged.get("/report?span=year&year=2026").text
-    table = body[body.index('id="year-report"'):body.index("</table>",
-                                                           body.index('id="year-report"'))]
+    tables = _year_tables(body)
+    # 달 칸이 있는 판 셋(발송 · 미팅 · IR). `미팅 결과` 는 목록이라 표가 없다.
+    assert len(tables) == 3, f"달 표가 셋이 아니다: {len(tables)}"
 
-    # 머리글 — 항목 | 1월 … 12월 | 합계
-    heads = re.findall(r"<th[^>]*>(?:\s*<a[^>]*>)?\s*([^<]+?)\s*(?:</a>)?\s*</th>",
-                       table)
-    assert heads[0] == "항목"
-    assert [h for h in heads if h.endswith("월")] == \
-        [f"{m}월" for m in range(1, 13)], \
-        f"열두 달이 칸으로 다 서 있지 않다: {heads}"
-    assert heads[-1] == "합계"
+    for table in tables:
+        heads = re.findall(
+            r"<th[^>]*>(?:\s*<a[^>]*>)?\s*([^<]+?)\s*(?:</a>)?\s*</th>", table)
+        assert heads[0] == "항목"
+        assert [h for h in heads if h.endswith("월")] == \
+            [f"{m}월" for m in range(1, 13)], \
+            f"열두 달이 칸으로 다 서 있지 않다: {heads}"
+        assert heads[-1] == "합계"
 
     # 달을 누르면 그 달 보고로 — 이 길은 그대로 살아 있어야 한다
-    assert "/report?month=2026-03" in table
+    assert "/report?month=2026-03" in tables[0]
 
 
 def test_an_item_with_nothing_all_year_is_dropped(logged, db, users):
     """**한 해 내내 0 인 항목은 줄째로 뺀다.**
 
     "각 항목마다 **내용 있는거 기준으로**" — 빈 줄이 하나 서 있다고 그 항목이
-    올해 없었다는 사실이 더 잘 보이지도 않는다.
+    올해 없었다는 사실이 더 잘 보이지도 않는다. **판으로 나눈 뒤에도 그대로다.**
     """
     from app.services import report
 
@@ -703,8 +804,31 @@ def test_an_item_with_nothing_all_year_is_dropped(logged, db, users):
 
     # 화면도 같다
     body = logged.get("/report?span=year&year=2026").text
-    table = body[body.index('id="year-report"'):]
-    assert "보낸 건수" in table and "잡은 미팅" not in table
+    tables = " ".join(_year_tables(body))
+    assert "보낸 건수" in tables and "잡은 미팅" not in tables
+
+
+def test_an_empty_panel_still_stands(logged, db, users):
+    """**줄이 다 빠진 판은 서 있는다** — 월간의 빈 묶음과 같다.
+
+    월간 보고는 그 달에 없던 묶음도 `딜 소싱 0건 완료 · 이 달에는 없습니다` 로
+    세워 둔다. 판이 통째로 사라지면 *올해 그 일이 아예 없었다* 가 아니라
+    *이 보고는 그걸 안 센다* 로 읽힌다 — 뺄 것은 줄이지 판이 아니다.
+    """
+    _round(db, users, title="3월 회차", when=date(2026, 3, 11), sent=40)
+
+    body = logged.get("/report?span=year&year=2026").text
+    titles = _panel_titles(body)
+    assert "2026년 미팅" in titles, "미팅이 없다고 판까지 사라졌다"
+    assert body.count("2026년에는 없습니다.") == 2, \
+        "미팅·IR 두 판이 빈 채로 서서 그렇게 말해야 한다"
+    # 빈 판의 알약은 **켜지지 않는다** — 월간의 `0건` 묶음과 같은 빛깔이다
+    assert '<span class="count-pill "><b>0개사</b></span>' in body
+
+    # 파일도 같은 말을 한다
+    grid = _grid(_book(_download_year(logged))["2026 연간"])
+    flat = [str(c) for row in grid for c in row]
+    assert sum(1 for c in flat if c == "2026년에는 없습니다.") == 2
 
 
 def test_an_empty_month_keeps_its_column(logged, db, users):
@@ -729,44 +853,59 @@ def test_an_empty_month_keeps_its_column(logged, db, users):
 
 
 def test_an_empty_year_still_opens(logged, db, users):
-    """아무 일도 없던 해에도 화면과 파일이 열린다 — 거기서 깨지면 아무도 안 쓴다."""
+    """아무 일도 없던 해에도 화면과 파일이 열린다 — 거기서 깨지면 아무도 안 쓴다.
+
+    판 넷은 그대로 서고(위 검사), 그것만으로는 "고장 났나" 로 읽히므로 맨
+    아래에서 한 번 더 말해 준다.
+    """
     from app.services import report
 
     got = report.yearly(db, 2024, users["u1"], today=date(2026, 9, 22))
     assert got["report_items"] == []
+    # 판은 넷이 그대로 — 줄만 다 빠졌다
+    assert [g["key"] for g in got["report_groups"]] == \
+        ["send", "meeting", "outcomes", "ir"]
+    assert all(not g["rows"] for g in got["report_groups"])
 
     body = logged.get("/report?span=year&year=2024").text
     assert "2024년에는 기록된 것이 없습니다" in body
+    assert body.count("2024년에는 없습니다.") == 3, "달 칸이 있는 판 셋"
 
     grid = _grid(_book(_download_year(logged, year=2024))["2024 연간"])
     flat = [str(c) for row in grid for c in row]
-    assert any("이 해에는 기록된 것이 없습니다" in c for c in flat)
+    assert any("2024년에는 기록된 것이 없습니다" in c for c in flat)
     # 빈 해에도 아랫단이 빠지면 안 된다 — 무엇이 없어서 빈 것인지 알 수 없다
     assert any("미팅 결과" in c for c in flat)
 
 
 def test_the_screen_and_the_file_read_the_same_place(logged, db, users):
-    """★ **세는 자리는 한 곳이다.**
+    """★ **세는 자리는 한 곳이다 — 판도, 줄도.**
 
     화면용·엑셀용으로 따로 추리면 언젠가 두 문서의 줄이 갈린다 — 이 저장소가
-    되풀이해 겪은 탈이다.
+    되풀이해 겪은 탈이다. 판을 나누면서 그 약속이 풀리면 안 된다.
     """
     import inspect
 
     from app.routers import data_io
     from app.services import report
 
-    # 엑셀은 제 손으로 항목을 늘어놓지도, 무엇을 뺄지 다시 정하지도 않는다.
+    # 엑셀은 제 손으로 판을 늘어놓지도, 항목을 고르지도, 무엇을 뺄지 다시
+    # 정하지도 않는다.
     src = inspect.getsource(data_io._yearly_sheet)
-    assert 'data["report_items"]' in src, "엑셀이 화면의 줄을 안 받는다"
-    assert "YEARLY_ITEMS" not in src, "엑셀이 항목 목록을 따로 들고 있다"
+    assert 'data["report_groups"]' in src, "엑셀이 화면의 판을 안 받는다"
+    # 설명글에는 어디서 오는지 적어 두어야 하므로, **글 뒤 코드**만 본다.
+    code = src.split('"""')[2]
+    assert "YEARLY_ITEMS" not in code, "엑셀이 항목 목록을 따로 들고 있다"
+    assert "YEARLY_GROUPS" not in code, "엑셀이 판 목록을 따로 들고 있다"
 
-    # 항목 **이름**도 리포트 표 쪽에는 없다 — 이름이 두 벌이면 화면만 고쳐지는
-    # 날 파일이 옛말을 단 채 남는다. (맨 위 요약 줄은 월간 파일의 KPI 와 같은
-    # 칸을 세우는 딴 표라 제 이름표를 갖는다 — `_kpi` 와 짝이다.)
-    table = src.split("년 리포트", 1)[1]
-    for _key, label, _level in report.YEARLY_ITEMS:
+    # 항목·판 **이름**도 리포트 표 쪽에는 없다 — 이름이 두 벌이면 화면만
+    # 고쳐지는 날 파일이 옛말을 단 채 남는다. (맨 위 요약 줄은 월간 파일의
+    # KPI 와 같은 칸을 세우는 딴 표라 제 이름표를 갖는다 — `_kpi` 와 짝이다.)
+    table = src.split('for group in data["report_groups"]', 1)[1]
+    for _group, _key, label, _level in report.YEARLY_ITEMS:
         assert label not in table, f"엑셀이 `{label}` 을 직접 적어 두었다"
+    for _key, label, _head, _tail in report.YEARLY_GROUPS:
+        assert f"년 {label}" not in table, f"엑셀이 판 이름 `{label}` 을 지었다"
 
     _round(db, users, title="3월 회차", when=date(2026, 3, 11), sent=40)
     _round(db, users, title="8월 회차", when=date(2026, 8, 27),
@@ -786,23 +925,49 @@ def test_the_screen_and_the_file_read_the_same_place(logged, db, users):
     assert in_file[:len(wanted)] == wanted, f"파일의 줄이 다르다: {in_file}"
 
 
-def test_the_first_column_stays_put_when_you_scroll_sideways(logged, db, users):
-    """칸이 열넷이라 좁은 화면에서는 가로로 민다 — 그때 항목 이름이 따라 나가면
-    **어느 줄을 보고 있는지 알 수 없다.**
+def test_the_screen_and_the_file_stack_the_panels_the_same(logged, db, users):
+    """판 **차례**도 화면과 파일이 같다.
 
-    투자사 관리 현황에서 이미 들은 말과 같은 것이다. 붙박이 규칙은 이 표
-    하나에만 걸리게 `#year-report` 로 묶는다.
+    두 곳에 각자 늘어놓으면 판을 하나 끼울 때 한쪽만 끼워진다 — 줄에서 이미
+    한 번 정한 규칙이라 판에서 풀면 안 된다.
     """
     _round(db, users, title="3월 회차", when=date(2026, 3, 11), sent=40)
 
     body = logged.get("/report?span=year&year=2026").text
-    table = body[body.index('id="year-report"'):]
-    assert '<th class="stick stick-lead"' in table
-    assert '<td class="stick stick-lead">' in table
+    on_screen = _panel_titles(body)
+
+    ws = _book(_download_year(logged))["2026 연간"]
+    # 맨 윗줄(문서 제목)은 판이 아니다 — 그것도 칸을 합쳐 선다.
+    in_file = [b for b in _bands(ws) if b.startswith("2026년 ")
+               and not b.startswith("2026년 업무 보고")]
+    # 파일의 띠에는 알약이 뒤에 붙는다 — 이름만 떼어 견준다
+    in_file = [b.split("   ")[0] for b in in_file]
+
+    assert in_file == on_screen, f"판 차례가 갈린다: 파일 {in_file} / 화면 {on_screen}"
+
+
+def test_the_first_column_stays_put_when_you_scroll_sideways(logged, db, users):
+    """칸이 열넷이라 좁은 화면에서는 가로로 민다 — 그때 항목 이름이 따라 나가면
+    **어느 줄을 보고 있는지 알 수 없다.**
+
+    투자사 관리 현황에서 이미 들은 말과 같은 것이다. **아이디가 아니라
+    클래스로 묶는다** — 판마다 표가 하나씩이라 표가 여럿이고, 아이디는 한 장에
+    하나여야 하므로 그대로 두면 둘째 표부터 고정이 안 걸린다.
+    """
+    _round(db, users, title="3월 회차", when=date(2026, 3, 11), sent=40)
+
+    body = logged.get("/report?span=year&year=2026").text
+    assert 'id="year-report"' not in body, \
+        "표가 여럿인데 아이디로 묶여 있다 — 둘째 표부터 고정이 안 걸린다"
+    for table in _year_tables(body):
+        assert '<th class="stick stick-lead"' in table
+        assert '<td class="stick stick-lead">' in table
 
     css = (ROOT / "app" / "static" / "css" / "app.css").read_text(encoding="utf-8")
-    assert "#year-report th.stick, #year-report td.stick" in css
+    assert ".year-report th.stick, .year-report td.stick" in css
     assert "position: sticky; left: 0" in css
+    # 안 쓰게 된 규칙을 남기지 않는다 — 아이디로 묶던 옛 블록은 지웠다
+    assert "#year-report" not in css
     # 스타트업DB 용 규칙(`.table-wrap.wide`)을 끌어다 쓰지 않는다 — 그쪽은 키를
     # 잘라 내고 폰에서 표를 2030px 로 벌린다.
-    assert 'class="table-wrap">' in body[body.index("년 리포트"):]
+    assert 'class="table-wrap">' in body[body.index("2026년 발송"):]

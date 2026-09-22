@@ -852,8 +852,12 @@ def _yearly_sheet(sheet, data):
     견주려던 사람은 시트를 열두 번 옮겨 다니며 손으로 더하게 된다 — 그게 바로
     이 보고가 없애려던 일이다.
 
-    **항목마다 한 줄, 달마다 한 칸.** 화면의 표와 줄도 칸도 차례도 같다 —
-    줄을 여기서 추리지 않고 화면이 쓰는 `report_items` 를 그대로 받는다.
+    **판 차례도 월간과 같다** — 발송 → 미팅 → 미팅 결과 → IR 자료 요청. 판을
+    여기서 늘어놓지 않고 화면이 쓰는 `report_groups` 를 위에서 아래로 그대로
+    적는다(`services/report.YEARLY_GROUPS` 한 곳이 정한다).
+
+    **판 안은 항목마다 한 줄, 달마다 한 칸.** 화면의 표와 줄도 칸도 차례도
+    같다 — 줄도 여기서 추리지 않는다.
 
     한 달치를 자세히 보려면 **그 달 파일을 받으면 된다** — 같은 주소에서
     `month` 를 주면 회차·미팅·반응 세 장이 그대로 나온다(아래 `export_report`).
@@ -871,20 +875,31 @@ def _yearly_sheet(sheet, data):
     sheet.head(labels)
     sheet.row(values, nums=set(range(len(values))))
 
-    sheet.blank()
-    sheet.band(f"{data['year']}년 리포트")
-    # ★ **줄은 화면에서 그대로 받는다**(`report.yearly` 의 `report_items`).
-    # 항목 이름도, 어느 항목을 뺄지도 거기서 정해졌다 — 여기서 다시 추리면
-    # 화면에는 있는 줄이 파일에는 없는 일이 생긴다(이 저장소의 `buckets` 가
-    # 같은 이유로 그렇게 되어 있다).
+    # ★ **판도 줄도 화면에서 그대로 받는다**(`report.yearly` 의
+    # `report_groups`). 판 이름도, 판 차례도, 어느 항목을 뺄지도 거기서
+    # 정해졌다 — 여기서 다시 늘어놓으면 화면에는 있는 줄(판)이 파일에는 없는
+    # 일이 생긴다(이 저장소의 `buckets` 가 같은 이유로 그렇게 되어 있다).
     #
     # **한 해 내내 빈 항목은 이미 빠져 있고, 달은 열둘이 그대로 있다.** 값이
     # 없는 달을 빼면 *아무 일도 없던 달이 있었다*는 사실이 사라진다.
-    if data["report_items"]:
-        headers = ["항목"] + [m["label"] for m in data["months"]] + ["합계"]
-        nums = set(range(1, len(headers)))
+    headers = ["항목"] + [m["label"] for m in data["months"]] + ["합계"]
+    nums = set(range(1, len(headers)))
+    for group in data["report_groups"]:
+        sheet.blank()
+        # 화면의 판 머리 그대로 — 이름 뒤에 알약(머릿수)이 붙는다.
+        sheet.band(group["title"] + (f"   {group['pill']}" if group["pill"] else ""))
+        if group["key"] == "outcomes":
+            # 결과별 집계는 달 칸이 없다 — 화면도 이 판만 목록으로 그린다.
+            sheet.stats(group["outcomes"] or [("완료된 미팅이 없습니다.", "")])
+            continue
+        if not group["rows"]:
+            # **줄이 다 빠진 판도 선다.** 판이 통째로 사라지면 *올해 그 일이
+            # 아예 없었다* 가 아니라 *이 파일은 그걸 안 센다* 로 읽힌다.
+            # 화면의 빈 판과 같은 말이다.
+            sheet.note(f"{data['year']}년에는 없습니다.")
+            continue
         sheet.head(headers)
-        for item in data["report_items"]:
+        for item in group["rows"]:
             # 값이 없는 달은 **빈칸**이다 — `0` 을 깔면 열두 칸이 0 으로 차서
             # 값이 있는 달이 눈에 안 띈다. 화면이 그렇게 그리므로 파일도 같다.
             sheet.row([item["label"]] + [c or "" for c in item["cells"]]
@@ -892,14 +907,12 @@ def _yearly_sheet(sheet, data):
                       # 안 나간 것·지난 것은 눈에 걸려야 한다 — 빛깔도 화면과
                       # 같은 값을 받아 쓴다. 인쇄해서 보는 문서라 더 그렇다.
                       level=item["level"], nums=nums)
-    else:
-        # **빈 해에도 장은 선다.** 여기서 돌아서면 아래 `미팅 결과` 까지 빠져,
-        # 파일을 받은 사람은 무엇이 없어서 빈 것인지 알 수 없다.
-        sheet.note("이 해에는 기록된 것이 없습니다.")
 
-    sheet.blank()
-    sheet.band(f"{data['year']}년 미팅 결과")
-    sheet.stats(data["outcomes"] or [("완료된 미팅이 없습니다.", "")])
+    if not data["report_items"] and not data["outcomes"]:
+        # **아무 일도 없던 해.** 판은 위에서 다 섰지만 그것만으로는 "이 파일이
+        # 고장 났나" 로 읽힌다 — 화면이 같은 자리에서 하는 말을 그대로 적는다.
+        sheet.blank()
+        sheet.note(f"{data['year']}년에는 기록된 것이 없습니다.")
 
 
 def yearly_report_workbook(data: dict, *, who: str, today: date) -> bytes:
@@ -928,7 +941,8 @@ def yearly_report_workbook(data: dict, *, who: str, today: date) -> bytes:
     # 좁게 두고, 항목 이름에만 자리를 준다(`아직 안 물어봄` 이 제일 길다).
     sheet = _ReportSheet(ws, [20] + [7] * 12 + [9], 14)
     sheet.title(f"{year}년 업무 보고 · 연간",
-                f"{who} · {today.isoformat()} 뽑음 · 항목마다 한 줄 · 달마다 한 칸 "
+                f"{who} · {today.isoformat()} 뽑음 · 월간 보고와 같은 판 차례 · "
+                f"판마다 항목이 줄, 달이 칸 "
                 f"— 한 달치 회차·미팅·반응은 그 달 파일에 있습니다.")
     sheet.blank()
     _yearly_sheet(sheet, data)

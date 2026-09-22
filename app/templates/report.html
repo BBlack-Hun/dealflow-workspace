@@ -87,12 +87,27 @@
 
 {% if yearly_view %}
 {#
-  한 해를 달마다 한 줄로. "올해 몇 건이나 했나" 를 보려고 열두 달을 하나씩
-  눌러 보고 있었다. 각 달의 요약을 그대로 쓰므로 월간 보고와 숫자가 어긋나지
-  않는다 — 두 곳에서 따로 세면 반드시 갈라진다.
+  ── 연간 업무보고 — **월간 보고와 같은 모양** ───────────────────────────────
+
+  사용자가 말한 것은 "연간 업무보고도 월간 업무보고 스타일로" 다.
+
+  월간 보고는 숫자를 **판으로 갈라 놓는다** — `9월 발송` · `9월 미팅 총 N개사`
+  · `미팅 결과` · `IR 자료 요청`. 판 이름이 "이건 무슨 수인가" 를 말해 주고,
+  머리의 알약(`count-pill`)이 그 판의 머릿수를 든다. 연간은 그 열셋을 이름표
+  없는 표 하나에 뭉쳐 놓아서, 발송 이야기와 IR 이야기가 같은 칸에 나란히 섰다.
+
+  **판만 월간에서 가져오고, 달 열둘은 판 안의 작은 표로 둔다.** #227 이 만든
+  `항목 × 달` 표를 없애지 않는다 — 판별로 잘라 넣을 뿐이다. 그래서
+  ① 달끼리 견주는 길이 그대로 살아 있고 ② 같은 수가 두 모양으로 서지 않는다
+  (사용자가 전에 "내용이 겹친다" 고 한 자리다).
+
+  판도 차례도 **서비스 한 곳에서 온다**(`report.yearly_groups`) — 엑셀 보고가
+  같은 목록을 위에서 아래로 그대로 적는다(`routers/data_io._yearly_sheet`).
 #}
 <div class="kpi-row slim">
-  {# 발송이 맨 앞 — 한 해도 회차로 시작해서 반응·미팅으로 이어진다. #}
+  {# 월간과 **같은 다섯 칸·같은 차례**다(`아직 안 물어봄` 까지). 한 해와 한 달을
+     나란히 놓고 보는 화면이라 맨 윗줄이 어긋나면 안 된다 — 엑셀의 `요약` 줄도
+     같은 칸이다(`data_io._kpi`). #}
   <div class="kpi-card static">
     <span class="kpi-label">보낸 건수</span>
     <span class="kpi-value {% if totals.send_left %}warn{% endif %}">{{ totals.send_sent }}</span>
@@ -112,40 +127,60 @@
     <span class="kpi-value">{{ totals.followup_done }}</span>
     <span class="kpi-sub">미팅 뒤 확인 완료</span></div>
   <div class="kpi-card static">
-    <span class="kpi-label">IR 자료 요청</span>
-    <span class="kpi-value">{{ totals.ir_requested }}</span>
-    <span class="kpi-sub">전달 {{ totals.ir_delivered }}건</span></div>
+    <span class="kpi-label">아직 안 물어봄</span>
+    <span class="kpi-value {% if totals.followup_late %}bad{% elif totals.followup_open %}warn{% endif %}">{{ totals.followup_open }}</span>
+    <span class="kpi-sub">
+      {% if totals.followup_late %}그중 <b>{{ totals.followup_late }}건</b>은 날짜가 지났습니다
+      {% elif totals.followup_open %}아직 물어볼 날 전입니다
+      {% else %}다 물어봤습니다{% endif %}
+    </span></div>
 </div>
+<p class="hint">
+  <b>결과를 묻는 것</b>이 이 보고의 목적입니다 — 원본 시트에도
+  "결과확인전화가 없으면 계약을 잊어버리는 경우가 발생할 수 있습니다" 라고
+  적혀 있었습니다.
+  {# 표 읽는 법은 **한 번만** 말한다. 판마다 붙이면 같은 문장이 셋이 되어,
+     정작 판마다 다른 것(무엇을 세는 판인가)이 안 읽힌다. #}
+  판마다 <b>항목이 줄, 달이 칸</b>입니다 — 달을 누르면 그 달 보고로 가고,
+  한 해 내내 없던 항목은 빼고 적습니다.
+</p>
 
-{#
-  ── 연간 리포트 — **항목마다 한 줄, 달마다 한 칸** ─────────────────────────
-
-  사용자가 말한 것은 "각 항목마다 내용 있는거 기준으로 월별로 나눠서 기록" 이다.
-
-  **달이 칸이고 항목이 줄이다.** 달을 줄로 세우면 한 항목의 한 해 흐름을
-  읽으려고 열두 줄을 세로로 훑어야 한다 — 이 보고에서 보려는 것이 바로 그
-  흐름이라(`올해 몇 건이나 했나`), 항목을 줄로 두고 달을 옆으로 편다.
-
-  **한 해 내내 빈 항목은 줄째로 뺀다**(`report.yearly_items`). 열두 달 ×
-  열세 항목을 다 늘어놓으면 대부분이 빈 칸이라 읽을 수가 없다. **달은 열둘을
-  다 둔다** — 값이 없는 달을 빼면 *아무 일도 없던 달이 있었다*는 사실이 통째로
-  사라지고, 옆 달과 나란히 놓고 견줄 수도 없다.
-
-  **추리는 자리는 서비스 한 곳이다** — 엑셀 보고도 같은 `report_items` 를 받아
-  적는다(`routers/data_io._yearly_sheet`). 화면에서 여기 조건을 또 적으면
-  언젠가 두 문서의 줄이 갈린다.
-
-  **맨 앞 칸은 붙박이다**(`stick stick-lead`). 칸이 열넷이라 좁은 화면에서는
-  가로로 밀어야 하는데, 그때 항목 이름이 따라 나가면 어느 줄을 보고 있는지
-  알 수 없다 — 이 저장소가 투자사 관리 현황에서 이미 같은 말을 들은 자리다.
-#}
+{% for g in report_groups %}
 <section class="panel">
-  <h2 class="panel-title">{{ year }}년 리포트
-    <span class="hint">달을 누르면 그 달 보고로 갑니다 · 한 해 내내 없던 항목은 빼고 적습니다</span>
+  {# 알약은 **제목에 붙여** 둔다. `.panel-title` 이 양끝 정렬이라 따로 두면
+     제목과 오른쪽 글 사이에 혼자 가운데 떠 선다. #}
+  <h2 class="panel-title"><span>{{ g.title }}{% if g.pill %}
+      <span class="count-pill {% if g.rows or g.outcomes %}on{% endif %}"><b>{{ g.pill }}</b></span>{% endif %}</span>
   </h2>
-  {% if report_items %}
+
+  {% if g.key == 'outcomes' %}
+  {# 결과별 집계는 달 칸이 없다 — 월간의 `미팅 결과` 판과 **같은 목록 모양**. #}
+  {% if g.outcomes %}
+  <ul class="import-stats">
+    {% for label, n in g.outcomes %}<li><span>{{ label }}</span><b>{{ n }}</b></li>{% endfor %}
+  </ul>
+  {% else %}
+  <p class="muted bucket-empty">완료된 미팅이 없습니다.</p>
+  {% endif %}
+
+  {% elif g.rows %}
+  {#
+    **항목이 줄, 달이 칸**(#227 이 정한 것 그대로). 달을 줄로 세우면 한 항목의
+    한 해 흐름을 읽으려고 열두 줄을 세로로 훑어야 하는데, 이 보고에서 보려는
+    것이 바로 그 흐름이다.
+
+    **한 해 내내 0 인 항목은 줄째로 빠져 있고**(`report.yearly_items`), **달은
+    열둘이 그대로 선다** — 값이 없는 달을 빼면 *아무 일도 없던 달이 있었다* 는
+    사실이 통째로 사라진다. 판으로 나눈 뒤에도 그 규칙은 그대로다: 빠지는 것은
+    줄이고, 줄이 다 빠진 판은 아래처럼 **빈 채로 서 있는다**(월간의 빈 묶음과
+    같다).
+
+    **맨 앞 칸은 붙박이다**(`stick stick-lead`). 칸이 열넷이라 좁은 화면에서는
+    가로로 밀어야 하는데, 그때 항목 이름이 따라 나가면 어느 줄을 보고 있는지
+    알 수 없다.
+  #}
   <div class="table-wrap">
-    <table class="grid-table compact" id="year-report">
+    <table class="grid-table compact year-report">
       <thead><tr>
         <th class="stick stick-lead" style="width:132px">항목</th>
         {% for m in months %}
@@ -156,7 +191,7 @@
         <th class="num" style="width:72px">합계</th>
       </tr></thead>
       <tbody>
-        {% for it in report_items %}
+        {% for it in g['rows'] %}
         <tr>
           <td class="stick stick-lead">{{ it.label }}</td>
           {# 값이 없는 달은 **빈칸**이다 — `0` 을 깔면 열두 칸이 0 으로 차서
@@ -171,19 +206,17 @@
       </tbody>
     </table>
   </div>
+
   {% else %}
-  <p class="muted">{{ year }}년에는 기록된 것이 없습니다.
-    <a href="/deals">딜 제안 관리</a>에서 회차를 보내면 여기 쌓입니다.</p>
+  {# 줄이 다 빠진 판 — 월간의 빈 묶음과 같은 말(`이 달에는 없습니다`). #}
+  <p class="muted bucket-empty">{{ year }}년에는 없습니다.</p>
   {% endif %}
 </section>
+{% endfor %}
 
-{% if outcomes %}
-<section class="panel">
-  <h2 class="panel-title">{{ year }}년 미팅 결과</h2>
-  <ul class="import-stats">
-    {% for label, n in outcomes %}<li><span>{{ label }}</span><b>{{ n }}</b></li>{% endfor %}
-  </ul>
-</section>
+{% if not report_items and not outcomes %}
+<p class="hint">{{ year }}년에는 기록된 것이 없습니다.
+  <a href="/deals">딜 제안 관리</a>에서 회차를 보내면 여기 쌓입니다.</p>
 {% endif %}
 
 {% else %}

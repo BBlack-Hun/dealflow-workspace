@@ -995,19 +995,40 @@ def recent_months(today: Optional[date] = None, count: int = 24) -> List[tuple]:
 #: 빛깔은 `bad`(안 나간 것·지난 것) · `warn`(아직 안 한 것) 둘뿐이다 —
 #: 화면과 엑셀이 같은 값을 받아 제 방식으로 그린다.
 YEARLY_ITEMS = (
-    ("send_rounds", "발송 회차", ""),
-    ("send_sent", "보낸 건수", ""),
-    ("send_left", "안 나감", "bad"),
-    ("total", "잡은 미팅", ""),
-    ("done", "진행한 미팅", ""),
-    ("followup_done", "결과 물어봄", ""),
-    ("followup_open", "아직 안 물어봄", "warn"),
-    ("followup_late", "그중 날짜 지남", "bad"),
-    ("ir_requested", "IR 요청", ""),
-    ("ir_delivered", "전달함", ""),
-    ("ir_open", "안 보낸 요청", "warn"),
-    ("call_done", "전화함", ""),
-    ("call_open", "전화 요청 안 함", "warn"),
+    ("send", "send_rounds", "발송 회차", ""),
+    ("send", "send_sent", "보낸 건수", ""),
+    ("send", "send_left", "안 나감", "bad"),
+    ("meeting", "total", "잡은 미팅", ""),
+    ("meeting", "done", "진행한 미팅", ""),
+    ("meeting", "followup_done", "결과 물어봄", ""),
+    ("meeting", "followup_open", "아직 안 물어봄", "warn"),
+    ("meeting", "followup_late", "그중 날짜 지남", "bad"),
+    ("ir", "ir_requested", "IR 요청", ""),
+    ("ir", "ir_delivered", "전달함", ""),
+    ("ir", "ir_open", "안 보낸 요청", "warn"),
+    ("ir", "call_done", "전화함", ""),
+    ("ir", "call_open", "전화 요청 안 함", "warn"),
+)
+
+#: 연간 보고의 **판들 — 위에서 아래로.** 월간 보고와 **같은 차례**다
+#: (`templates/report.html` 의 월간 쪽: 발송 → 미팅 → 미팅 결과 → IR 자료 요청).
+#:
+#: 사용자가 "연간도 월간 업무보고 스타일로" 라고 한 것이 이것이다. 항목 열셋이
+#: 한 표에 뭉쳐 있으면 발송 이야기와 IR 이야기가 같은 칸에 섞여 서서, 월간에서
+#: 판 이름이 해 주던 "이건 무슨 수인가" 를 아무도 안 해 준다.
+#:
+#: ★ **차례도 화면과 엑셀이 이 한 줄을 같이 읽는다**(`yearly_groups`). 두 곳에
+#: 각자 늘어놓으면 판을 하나 끼울 때 한쪽만 끼워진다 — 항목 목록에서 이미 한
+#: 번 정한 규칙이다.
+#:
+#: `(열쇠, 판 이름, 머릿수로 쓸 항목, 머릿수 꼬리말)`. `미팅 결과` 는 달마다
+#: 한 칸짜리 수가 아니라 결과별 집계라 항목이 없다 — **차례에는 들어 있어야**
+#: 화면과 파일의 판 순서가 갈리지 않으므로 열쇠만 두고 항목을 비운다.
+YEARLY_GROUPS = (
+    ("send", "발송", "send_sent", "건 완료"),
+    ("meeting", "미팅", "total", "개사"),
+    ("outcomes", "미팅 결과", "", ""),
+    ("ir", "IR 자료 요청 · 전화 요청", "ir_requested", "건 요청"),
 )
 
 
@@ -1040,16 +1061,70 @@ def yearly_items(months: List[dict], totals: Dict[str, int]) -> List[dict]:
     맨 앞 칸을 붙박이로 둔다(`templates/report.html`).
     """
     out = []
-    for key, label, level in YEARLY_ITEMS:
+    for group, key, label, level in YEARLY_ITEMS:
         if not totals.get(key):
             continue
         out.append({
             "key": key,
+            # 어느 판에 서는 줄인가(`YEARLY_GROUPS`). 줄에 적어 두어야
+            # `yearly_groups` 가 이 한 벌을 나누기만 하면 된다 — 판마다 항목을
+            # 따로 늘어놓으면 목록이 두 벌이 된다.
+            "group": group,
             "label": label,
             "level": level,
             # 달 차례 그대로 — 열두 칸. 값이 0 인 달은 화면·파일이 빈칸으로 둔다.
             "cells": [m[key] for m in months],
             "total": totals[key],
+        })
+    return out
+
+
+def yearly_groups(year: int, items: List[dict], totals: Dict[str, int],
+                  outcomes: List[tuple]) -> List[dict]:
+    """연간 보고의 **판들** — 월간 보고와 같은 차례·같은 모양.
+
+    ## 왜 판으로 나누는가
+
+    월간 보고는 숫자를 **판(panel)** 으로 갈라 놓는다 — `9월 발송`,
+    `9월 미팅 총 1개사`, `미팅 결과`, `IR 자료 요청`. 판 이름이 "이건 무슨
+    수인가" 를 말해 주고, 묶음 머리의 알약(`count-pill`)이 그 판의 머릿수를
+    든다. 연간은 그 열셋을 이름표 없는 표 하나에 뭉쳐 놓아서, 발송 이야기와
+    IR 이야기가 같은 칸에 나란히 섰다.
+
+    그래서 **판만 월간에서 가져오고, 달 열둘은 그 판 안의 작은 표로 둔다.**
+    #227 이 만든 `항목 × 달` 표를 없애지 않는다 — 판별로 잘라 넣을 뿐이라
+    달끼리 견주는 길이 그대로 살아 있고, 같은 수가 두 모양으로 서지도 않는다.
+
+    ## 줄은 다시 고르지 않는다
+
+    받은 `items` 를 `group` 으로 나누기만 한다(`yearly_items` 가 이미 무엇을
+    뺄지 정했다). 여기서 또 추리면 "한 해 내내 0 인 항목은 뺀다" 가 두 곳에
+    적히고, 언젠가 한쪽만 고쳐진다.
+
+    ## 빈 판은 **서 있는다**
+
+    줄이 하나도 안 남은 판도 자리를 지킨다 — 월간 보고의 빈 묶음이 그렇다
+    (`딜 소싱 0건 완료 · 이 달에는 없습니다`). 판이 통째로 사라지면 *올해
+    그 일이 아예 없었다* 가 아니라 *이 보고는 그걸 안 센다* 로 읽힌다.
+    """
+    out = []
+    for key, label, head_key, tail in YEARLY_GROUPS:
+        rows = [i for i in items if i["group"] == key]
+        out.append({
+            "key": key,
+            # 판 이름은 **여기서 짓는다** — 화면과 파일이 각자 지으면 한쪽만
+            # 옛말로 남는다(월간의 묶음 이름이 이미 그렇게 되어 있다).
+            "title": f"{year}년 {label}",
+            # 월간의 알약과 같은 말. 머릿수가 없는 판(`미팅 결과`)은 빈 글자라
+            # 알약이 아예 안 붙는다.
+            "pill": f"{totals.get(head_key, 0)}{tail}" if head_key else "",
+            # 이름이 `items` 가 아닌 것은 **화면 쪽 함정** 때문이다: Jinja 에서
+            # `g.items` 는 dict 의 `items()` 메서드로 먼저 잡혀 늘 참이 된다 —
+            # 빈 판이 "줄이 있다" 로 읽혀 머리글만 선 표가 그려졌다. 월간 보고의
+            # 묶음도 같은 이유로 `rows` 다(`_buckets`).
+            "rows": rows,
+            # 결과별 집계는 달 칸이 없다 — 이 판만 목록으로 그린다.
+            "outcomes": outcomes if key == "outcomes" else [],
         })
     return out
 
@@ -1090,6 +1165,9 @@ def yearly(db: Session, year: int, user: Optional[User] = None,
         for label, n in got["outcomes"]:
             outcome_counts[label] = outcome_counts.get(label, 0) + n
 
+    outcomes = sorted(outcome_counts.items(), key=lambda t: -t[1])
+    items = yearly_items(months, totals)
+
     return {
         "year": year,
         "months": months,
@@ -1100,8 +1178,12 @@ def yearly(db: Session, year: int, user: Optional[User] = None,
         # 이름이 `items` 가 아닌 것은, 이 dict 가 화면 ctx 에 통째로 부어지기
         # 때문이다(`ctx.update(report.yearly(...))`) — 흔한 이름은 다른 값을
         # 조용히 덮는다.
-        "report_items": yearly_items(months, totals),
-        "outcomes": sorted(outcome_counts.items(), key=lambda t: -t[1]),
+        "report_items": items,
+        # 그 줄들을 **월간 보고와 같은 판 차례**로 나눠 담은 것
+        # (`yearly_groups`). 줄을 다시 고르지 않고 위 한 벌을 나누기만 하므로,
+        # 화면이 그리는 것도 파일이 적는 것도 같은 dict 다.
+        "report_groups": yearly_groups(year, items, totals, outcomes),
+        "outcomes": outcomes,
     }
 
 
