@@ -55,7 +55,11 @@
   <p class="hint">아직 남은 것이 없습니다. 자기 것만 고쳤다면 여기에는 아무 것도 뜨지 않습니다.</p>
   {% else %}
   <div class="table-wrap">
-    <table class="grid-table compact">
+    {# `log-table` — `무엇이` 칸의 줄을 접기 위한 이름이다(`app.css`).
+       `.cell-sub` 의 기본은 **한 줄로 자르기**라, 긴 값(`함께 움직인 것` —
+       기업 강제 삭제가 남기는 한 줄)이 `…` 뒤로 사라진다. 그 값은 나중에
+       "그때 무엇이 몇 건 끊겼나" 를 물을 **유일한 자리**다. #}
+    <table class="grid-table compact log-table">
       <thead><tr>
         <th>언제</th><th>누가</th><th>범위</th><th>화면</th><th>줄</th><th>무엇이</th>
       </tr></thead>

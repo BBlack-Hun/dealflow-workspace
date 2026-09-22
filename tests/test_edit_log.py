@@ -511,6 +511,9 @@ WRITE_ROUTES = {
     ("POST", "/api/one-liner/bulk"): WATCHED,
     ("POST", "/api/one-liner/bulk/undo"): WATCHED,
     ("DELETE", "/api/companies/{company_id}"): WATCHED,
+    # **강제 삭제.** 이력이 붙어 있어도 지운다 — 평범한 [삭제] 가 막는 것을
+    # 무시하는 길이라, 남는 로그가 더 중요하다(줄 이름 + 함께 움직인 것).
+    ("POST", "/api/companies/{company_id}/force-delete"): WATCHED,
 
     ("POST", "/ir/requests"): WATCHED,
     ("POST", "/ir/deliver-guide"): WATCHED,
@@ -732,7 +735,10 @@ def test_the_six_shared_routers_still_hold_the_forty_nine_paths(portal):
     # — 여기서 세는 것은 주소가 아니라 **그 길을 담고 있는 파일**이라
     # (`_write_routes` 가 `endpoint.__module__` 을 본다) 저 길도 여기로 온다.
     # 왜 파일과 주소가 갈라져 있는지는 그 라우트 위 주석에 있다.
-    assert counted == {"companies": 7, "ir": 12, "consulting": 9,
+    # companies 의 여덟 번째가 **기업 강제 삭제**(`/force-delete`)다. 평범한
+    # [삭제] 가 이력이 붙은 기업을 막는 것을 무시하는 길이라, 길을 따로 냈다 —
+    # 같은 주소에 깃발 하나로 붙이면 잘못 눌렀을 때 그대로 지워진다.
+    assert counted == {"companies": 8, "ir": 12, "consulting": 9,
                        "templates_crud": 5, "sourcing": 4, "contacts": 21}
 
 
