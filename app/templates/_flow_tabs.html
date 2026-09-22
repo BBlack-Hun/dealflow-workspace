@@ -4,8 +4,14 @@
       딜 소개를 보냄
         → IR 자료 요청이 오면 자료를 보낸다        [IR 자료 요청]
         → 반응이 없으면 리마인드를 보낸다           [리마인드]
+        → 그래도 없으면 미팅을 청하고,
+          사흘 뒤 전화로 다시 청한다                [전화 요청]
         → 반응이 있으면 미팅을 잡는다               [미팅]
         → 미팅이 끝나면 열흘쯤 뒤 결과를 묻는다      [미팅 후기]
+
+  **전화만 갈래가 다르다.** 앞뒤가 다 앱이 보내는 카톡인데 전화는 사람이 건다 —
+  그래서 그 구역의 단추는 [보내기] 가 아니라 [전화함] 이고, 리마인드 구역의
+  묶음에서 갈라 세운다(`routers/followups.py` 의 `remind_context`).
 
   탭이 아니라 **이동 바**다. 예전에는 탭처럼 생겼는데 넷 중 둘만 페이지를
   바꾸고 둘은 스크롤이라, 누를 때마다 무슨 일이 일어날지 예측할 수 없었다.
@@ -27,6 +33,12 @@
     리마인드
     {% if flow_counts.due %}<span class="warn">{{ flow_counts.due }}</span>
     {% else %}<span>{{ flow_counts.upcoming }}</span>{% endif %}
+  </a>
+  <i class="jump-arrow">›</i>
+  <a href="#calls">
+    전화 요청
+    {% if flow_counts.call_due %}<span class="warn">{{ flow_counts.call_due }}</span>
+    {% else %}<span>{{ flow_counts.call_open }}</span>{% endif %}
   </a>
   <i class="jump-arrow">›</i>
   <a href="#meetings">
