@@ -329,26 +329,42 @@ def test_달은_7월_꼴이다():
 
 
 def test_글이_보고서_모양이다(db, seeded):
-    """**바뀐 검사다.** 예전에는 머리말 세 줄이 실물 그대로였다
-    (`안녕하세요 대표님` / `{달} 말까지 {기업들}` / 맺음말).
+    """**또 바뀐 검사다.** 앞선 모양은 우리가 몇 개를 내놓고 사용자가 고른
+    것이었다(제목 `[01. 월간 IR 진행 현황]` + `CONTACTVC ASSET | 2026.09`,
+    요약 한 줄, 맺음말 한 줄, 덩어리 사이에 빈 줄 없음).
 
-    사용자가 모양 몇 개를 보고 **보고서 느낌**을 골랐다 — 제목 두 줄, 요약 한
-    줄, 목록을 감싸는 구분선, 그리고 **목록 아래로 내려간 맺음말**이다.
+    이번 것은 사용자가 **원하는 최종 모양을 그대로 적어 온 글자**라 고른 것보다
+    앞선다. 여기서 못박는 것은 넷이다.
+
+      1. 제목 두 줄의 **차례가 뒤집혔다** — 보내는 곳 이름이 먼저다. `01.` 과
+         `| 2026.09` 는 빠졌다(연월 토큰 자체는 `ir_kakao` 에 남아 있다 —
+         옛 문구를 쓰는 팀의 글에 `{연월}` 이 글자로 나가면 안 된다).
+      2. 인사 줄에 **마침표**가 붙고, 아래위가 빈 줄이다.
+      3. 요약이 **두 줄**이고, 요약과 구분선 사이에 **빈 줄**이 선다.
+      4. 아래 구분선과 맺음말 사이에도 **빈 줄**이 서고, 맺음말은 **세 문단**
+         이다.
     """
     got = _msg(db, seeded)
     lines = got.text.splitlines()
-    assert lines[0] == "[01. 월간 IR 진행 현황]"
-    assert lines[1].endswith(ir_kakao.ym_label(seeded["month"]))
+    assert lines[0] == "[CONTACTVC ASSET]"
+    assert lines[1] == "월간 IR 진행 현황"
     assert lines[2] == ""
     assert lines[3] == ir_kakao.HELLO
-    assert lines[4].startswith(COMPANY_A)
-    assert lines[5] == ""
-    assert lines[6].startswith(ir_kakao.SUMMARY_MARK), "요약 줄이 없다"
-    assert lines[7] == ir_kakao.RULE, "목록 위 구분선이 없다"
-    # 목록 → 구분선 → 맺음말.
-    assert lines[8] == got.lines[0].text
-    assert lines[-2] == ir_kakao.RULE, "목록 아래 구분선이 없다"
-    assert lines[-1] == ir_kakao.DEFAULT_TAIL
+    assert lines[3].endswith("."), "인사 줄에 마침표가 없다"
+    assert lines[4] == ""
+    assert lines[5].startswith(COMPANY_A), "기업 이름이 문장 가운데로 안 들어갔다"
+    assert lines[6] == ""
+    # 요약 **두 줄**. 그리고 요약과 구분선 사이에 빈 줄.
+    assert lines[7].startswith(ir_kakao.SUMMARY_MARK), "요약 첫 줄이 없다"
+    assert lines[8].startswith(ir_kakao.SUMMARY_MARK), "요약이 두 줄로 안 갈렸다"
+    assert lines[9] == "", "요약과 구분선이 붙어 있다"
+    assert lines[10] == ir_kakao.RULE, "목록 위 구분선이 없다"
+    # 목록 → 구분선 → 빈 줄 → 맺음말(세 문단).
+    assert lines[11] == got.lines[0].text
+    tail = ir_kakao.DEFAULT_TAIL.splitlines()
+    assert lines[-len(tail):] == tail
+    assert lines[-len(tail) - 1] == "", "구분선과 맺음말이 붙어 있다"
+    assert lines[-len(tail) - 2] == ir_kakao.RULE, "목록 아래 구분선이 없다"
 
 
 def test_맺음말은_목록_아래에_온다(db, seeded):
@@ -357,23 +373,27 @@ def test_맺음말은_목록_아래에_온다(db, seeded):
     assert got.text.index(got.tail) > got.text.index(got.lines[-1].text)
 
 
-def test_요약이_목록과_셈이_맞는다(db, seeded):
-    """`12곳` 이라고 적힌 글에 줄이 15개면 대표는 셈이 안 맞는다고 읽는다.
+def test_요약_두_줄이_투자사_수를_적는다(db, seeded):
+    """**바뀐 검사다.** 예전 이름은 `test_요약이_목록과_셈이_맞는다` 였고,
+    요약이 한 줄(`■ 누적 3곳 · 9월 신규 2곳`)이었다.
 
-    줄은 **사람마다** 하나씩 선다(`ir_monthly`). 그래서 곳과 명이 갈릴 때는
-    둘 다 적는다.
+    바뀐 자리가 둘이다. ① 요약이 **두 줄**로 갈리고 줄마다 제 이름표를 갖는다.
+    ② 세는 것이 **투자사 수 하나**다 — 사람 수는 안 적는다(까닭은 아래
+    `test_요약은_줄이_더_많아도_투자사_수만_적는다`).
     """
     from app.services import ir_monthly
 
     got = _msg(db, seeded)
     tally = ir_monthly.monthly_requests(
         db, seeded["month"], cumulative=True).tally_of(seeded["a"].id)
-    assert tally.people == len(got.lines), "명이 줄 수와 다르다"
-    assert got.summary.startswith(f"{ir_kakao.SUMMARY_MARK} 누적 ")
-    assert ir_kakao.count_label(tally.firms, tally.people) in got.summary
+    head, fresh = got.summary.splitlines()
+    assert head == (f"{ir_kakao.SUMMARY_MARK} 누적 IR 자료 요청 투자사 : "
+                    f"{ir_kakao.count_label(tally.firms)}")
     # 신규는 **그 달에 처음** 물어본 것이다 — 지난 달 것은 안 센다.
-    assert f"{ir_kakao.month_label(seeded['month'])} 신규 " in got.summary
-    assert tally.new_people == 2 and tally.people == 3, "신규가 누적과 같다"
+    assert fresh == (f"{ir_kakao.SUMMARY_MARK} "
+                     f"{ir_kakao.month_label(seeded['month'])} 신규 요청 : "
+                     f"{ir_kakao.count_label(tally.new_firms)}")
+    assert tally.new_firms == 2 and tally.firms == 3, "신규가 누적과 같다"
 
 
 def test_요약_숫자는_문구틀이_아니라_코드가_짓는다():
@@ -405,11 +425,14 @@ def test_줄은_날짜_기업_투자사_심사역_직함_차례다(db, seeded):
     got = _msg(db, seeded)
     line = next(ln for ln in got.lines if ln.title)
     # **바뀐 줄이다.** ① 기업이 하나인 글에서는 기업 자리가 빈다(그 이름은
-    # 머리말에 있다). ② 자리 사이가 **두 칸**이다 — 사용자가 고른 모양이고,
-    # 자리가 자리로 보여야 훑어 읽힌다. 직함만 이름에 한 칸으로 붙는다.
-    assert line.text == (f"{line.date}  {line.firm}  "
+    # 머리말에 있다). ② 자리 사이가 **한 칸**이다 — 두 칸이었는데 사용자가
+    # 최종 모양에서 한 칸으로 적어 왔다(`05/06 가***파트너스 김*** 이사`).
+    # 두 칸은 줄만 길게 만들고 정작 줄맞춤은 못 했다(카톡 글꼴은 글자폭이
+    # 일정하지 않다 — `ir_kakao.Line.text`).
+    assert line.text == (f"{line.date} {line.firm} "
                          f"{line.person} {line.title}")
     assert line.company == "", "기업이 하나인데 줄에 기업명이 또 적혔다"
+    assert "  " not in line.text, "자리 사이에 두 칸이 남아 있다"
 
 
 def test_직함이_빈_심사역은_이름에서_줄이_끝난다(db, seeded):
@@ -428,12 +451,86 @@ def test_직함이_빈_심사역은_이름에서_줄이_끝난다(db, seeded):
     # (`…인베스트먼트`)이 남으므로 `mask_company` 로는 줄을 못 찾는다.
     bare = next(ln for ln in got.lines if ln.firm == ir_mask.mask_firm(FIRM_OLD))
     assert bare.title == ""
-    assert bare.text == f"{bare.date}  {bare.firm}  {bare.person}"
+    # 자리 사이는 **한 칸**이다(위 검사와 같은 바뀜).
+    assert bare.text == f"{bare.date} {bare.firm} {bare.person}"
     assert not bare.text.endswith(" "), "빈 직함 자리가 공백으로 남았다"
-    # 자리 사이는 두 칸이다(사용자가 고른 모양) — 빈 자리가 남아 **세 칸**이
-    # 벌어지면 그것이 고장이다.
-    assert "   " not in bare.text, "빈 자리가 공백으로 남았다"
+    # 자리 사이는 이제 **한 칸**이라, 두 칸이 보이면 빈 자리가 공백으로 남은
+    # 것이다(예전 검사는 세 칸을 봤다 — 자리 사이가 두 칸이던 때다).
+    assert "  " not in bare.text, "빈 자리가 공백으로 남았다"
     assert "담당" not in got.text, "없는 직함을 지어냈다"
+
+
+def test_요약은_줄이_더_많아도_투자사_수만_적는다(db, seeded):
+    """**새 검사다 — 사용자가 정한 것이고, 고치려 들 자리라 못박는다.**  ★
+
+    목록 줄은 **사람마다** 선다(`ir_monthly` 가 투자사가 아니라 사람으로
+    묶는다). 그래서 한 투자사에서 두 분이 물어보면 `3개사` 라고 적힌 글에 줄이
+    4개 선다.
+
+    **고장이 아니다.** 예전 규칙(곳과 명이 갈리면 둘 다 적는다)과, 그것을 새
+    모양으로 옮긴 `9개사 (11명)` 은 **둘 다 지웠다** — 사용자가 "투자사 수만
+    적는다" 로 정했다. 다음 사람이 "숫자가 안 맞는다" 며 되살리지 못하게
+    여기서 막는다.
+    """
+    from app.models import ContactActivity, VcContact
+
+    # 이미 목록에 있는 투자사에 **두 번째 심사역**을 붙인다.
+    mate = VcContact(user_id=1, name=PERSON_2, firm=FIRM_SHORT, title=TITLE_LONG)
+    db.add(mate)
+    db.flush()
+    db.add(ContactActivity(contact_id=mate.id, kind="ir_request",
+                           content="IR 요청",
+                           happened_at=_day(seeded["month"], 4),
+                           company_names=json.dumps([COMPANY_A],
+                                                    ensure_ascii=False)))
+    db.commit()
+
+    got = _msg(db, seeded)
+    assert len(got.lines) == 4, "두 번째 심사역이 제 줄로 안 섰다"
+    assert got.summary.splitlines()[0].endswith("3개사"), \
+        f"투자사 수 말고 다른 것이 적혔다: {got.summary!r}"
+    # 사람 수는 **어디에도 안 적힌다.**
+    assert "명" not in got.summary and "(" not in got.summary
+    # 단위가 `곳` 에서 **`개사`** 로 바뀌었다(사용자가 적어 준 모양).
+    assert "곳" not in got.summary
+    assert ir_kakao.count_label(9) == "9개사"
+
+
+def test_기업들_토큰이_문장_가운데에서도_채워진다(db, seeded, users):
+    """**새 검사다.** 새 머리말은 `{기업들}의 …` 처럼 토큰을 **문장 가운데**에
+    둔다 — 줄 앞에만 있던 예전과 다르다.
+
+    되는 까닭은 `header` 가 글자 그대로 바꿔치기(`str.replace`)이기 때문인데,
+    그 사실이 검사로 남아 있지 않으면 누가 "토큰은 줄 앞에서만 쓴다" 는 규칙을
+    새로 만들어도 아무도 모른다. 그러면 대표에게 `{기업들}의` 가 글자 그대로
+    나간다.
+    """
+    _template(db, ir_kakao.KIND,
+              f"{ir_kakao.HELLO}\n"
+              f"가운데 {ir_kakao.COMPANIES_TOKEN}의 {ir_kakao.MONTH_TOKEN} 뒤")
+    got = _msg(db, seeded, user=users["u1"])
+    assert f"가운데 {COMPANY_A}의 {ir_kakao.month_label(seeded['month'])} 뒤" \
+        in got.text
+    assert ir_kakao.COMPANIES_TOKEN not in got.text
+    # 조사는 문구에 적힌 것이 그대로 나간다 — 코드가 골라 주지 않는다.
+    assert f"{COMPANY_A}의" in got.text
+
+
+def test_연월_토큰은_안_쓰여도_채워진다(db, seeded, users):
+    """**새 검사다.** 새 기본 머리말에는 `{연월}` 자리가 없다(제목이 두 줄로
+    바뀌면서 `2026.09` 가 빠졌다). 그래도 **치환은 남긴다.**
+
+    운영 DB 에는 `{연월}` 이 적힌 옛 머리말이 그대로 저장돼 있고(시드는 없을
+    때만 넣는다), 치환을 지우면 그 팀의 대표에게 `{연월}` 이라는 글자가 그대로
+    나간다. 안 쓰는 토큰이 남는 값은 설명 한 줄이고, 지우는 값은 나가는 글이다.
+    """
+    assert ir_kakao.YEARMONTH_TOKEN not in ir_kakao.DEFAULT_HEAD, \
+        "기본 머리말이 아직 연월을 쓴다"
+    _template(db, ir_kakao.KIND,
+              f"{ir_kakao.HELLO}\n보내는곳 | {ir_kakao.YEARMONTH_TOKEN}")
+    got = _msg(db, seeded, user=users["u1"])
+    assert f"보내는곳 | {ir_kakao.ym_label(seeded['month'])}" in got.text
+    assert ir_kakao.YEARMONTH_TOKEN not in got.text, "토큰이 글자 그대로 나갔다"
 
 
 def test_직함은_명단에_적힌_그대로다(db, seeded):
@@ -442,6 +539,32 @@ def test_직함은_명단에_적힌_그대로다(db, seeded):
     got = _msg(db, seeded)
     assert f" {TITLE_SHORT}" in got.text and f" {TITLE_LONG}" in got.text
     assert ir_mask.mask_person(TITLE_SHORT) not in got.text, "직함을 가렸다"
+
+
+def test_직함의_덧말이_원문_그대로_나간다(db, seeded):
+    """**새 검사다.** 사용자가 적어 준 보기에 `이사 / 한국공인회계사 / MBA`
+    처럼 빗금으로 이어 적은 직함이 있었다.
+
+    이 줄은 손댈 것이 없었다 — 직함은 처음부터 **원문 그대로** 나간다. 그런데
+    이 저장소에는 직함을 다듬는 자리가 따로 있어서(`message_composer` 의
+    `primary_title` 은 빗금 앞의 하나만 부른다), 언젠가 그것을 여기에도 끼워
+    넣기 쉽다. 그러면 대표가 받는 명단에서 자격이 소리 없이 사라진다.
+    """
+    from app.models import ContactActivity, VcContact
+
+    long_title = "이사 / 한국공인회계사 / MBA"
+    c = VcContact(user_id=1, name="남궁성", firm="아자차벤처스", title=long_title)
+    db.add(c)
+    db.flush()
+    db.add(ContactActivity(contact_id=c.id, kind="ir_request", content="IR 요청",
+                           happened_at=_day(seeded["month"], 9),
+                           company_names=json.dumps([COMPANY_A],
+                                                    ensure_ascii=False)))
+    db.commit()
+    got = _msg(db, seeded)
+    line = next(ln for ln in got.lines if ln.title == long_title)
+    assert line.text.endswith(f" {line.person} {long_title}")
+    assert long_title in got.text
 
 
 def test_같은_투자사의_두_심사역이_서로_다른_줄로_보인다(db, seeded):
@@ -529,7 +652,7 @@ def test_기업이_여럿이면_같은_투자사를_두_번_세지_않는다(db,
         "두 기업에 물어본 한 곳이 두 곳으로 세어졌다"
 
     got = ir_kakao.compose(db, None, [seeded["a"], seeded["b"]], seeded["month"])
-    assert ir_kakao.count_label(both.firms, both.people) in got.summary
+    assert ir_kakao.count_label(both.firms) in got.summary
 
 
 def test_화면은_기업을_묶지_않는다(logged_in, db, seeded):
