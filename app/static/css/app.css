@@ -1014,6 +1014,19 @@ a.secondary-btn { display: inline-flex; align-items: center; text-decoration: no
   font-variant-numeric: tabular-nums; font-weight: 600; color: var(--muted);
   min-width: 56px;
 }
+/* 갈래 머리. 딜 소개가 **그룹마다 따로** 나가므로 답도 갈래로 온다 —
+   한 덩어리로 그리면 사람이 그것을 다시 갈래로 갈라야 한다. 갈래마다 몇 곳인지
+   함께 적는다: 개수가 갈래마다 다른 것이 정상이라(맞는 것만 고른다), 그 수가
+   보여야 "왜 이 갈래만 2곳이지" 를 바로 짚는다. */
+.llm-found-group {
+  margin-top: 10px; font-size: 13px; font-weight: 600;
+  padding-bottom: 2px; border-bottom: 1px solid var(--line);
+}
+.llm-found-group:first-child { margin-top: 0; }
+.llm-found-group .count { font-weight: 400; color: var(--muted); }
+/* 한 곳도 못 고른 갈래도 **줄을 남긴다** — 빠뜨린 것인지 없는 것인지
+   구별되어야 한다. */
+.llm-found-none { font-size: 13px; color: var(--muted); }
 
 /* ══ 대시보드 ═══════════════════════════════════════════════════════════ */
 

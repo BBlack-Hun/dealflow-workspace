@@ -1425,7 +1425,9 @@ def test_the_data_carries_the_groups_and_how_many_are_in_each(db, users):
     _contact(db, users["u1"].id, group_name="Pre IPO")
 
     got = _brief(db, users["u1"])[llm_brief.GROUPS_KEY]
-    assert got == [{"name": "A", "count": 2}, {"name": "Pre IPO", "count": 1}]
+    assert got == [
+        {"name": "A", "count": 2, llm_brief.SENDABLE_KEY: 2},
+        {"name": "Pre IPO", "count": 1, llm_brief.SENDABLE_KEY: 1}]
 
 
 def test_the_ungrouped_are_counted_too_so_the_numbers_add_up(db, users):
@@ -1442,7 +1444,8 @@ def test_the_ungrouped_are_counted_too_so_the_numbers_add_up(db, users):
 
     out = _brief(db, users["u1"])
     rows = out[llm_brief.GROUPS_KEY]
-    assert rows[-1] == {"name": sheet_owner.EMPTY_GROUP, "count": 2}
+    assert rows[-1] == {"name": sheet_owner.EMPTY_GROUP, "count": 2,
+                        llm_brief.SENDABLE_KEY: 2}
     assert sum(g["count"] for g in rows) == len(out["investors"])
 
 
@@ -1459,9 +1462,9 @@ def test_the_group_count_is_the_one_the_deal_screen_uses(db, users):
     _contact(db, users["u1"].id)
 
     rows = llm_brief.investor_rows(db, users["u1"])
-    assert _brief(db, users["u1"])[llm_brief.GROUPS_KEY] == [
-        {"name": g["label"], "count": g["count"]}
-        for g in sheet_owner.group_rows(rows)]
+    assert [(g["name"], g["count"])
+            for g in _brief(db, users["u1"])[llm_brief.GROUPS_KEY]] == [
+        (g["label"], g["count"]) for g in sheet_owner.group_rows(rows)]
 
 
 def test_the_groups_only_count_who_is_actually_in_the_data(db, users):
@@ -1476,7 +1479,8 @@ def test_the_groups_only_count_who_is_actually_in_the_data(db, users):
     _contact(db, users["u1"].id, group_name="A", room_verified="unverified")
 
     out = _brief(db, users["u1"])
-    assert out[llm_brief.GROUPS_KEY] == [{"name": "A", "count": 1}]
+    assert out[llm_brief.GROUPS_KEY] == [
+        {"name": "A", "count": 1, llm_brief.SENDABLE_KEY: 1}]
     assert len(out["investors"]) == 1
 
 
@@ -1493,20 +1497,21 @@ def test_the_note_says_how_to_read_a_group(db, users):
     assert "그대로" in got
 
 
-def test_the_prompt_uses_the_group_without_going_back_to_pairing(db, users):
-    """그룹을 반영하되 **한 벌은 하나로 둔다.**
+def test_the_prompt_picks_per_group_because_sending_is_per_group(db, users):
+    """**발송 단위가 곧 고르는 단위다.**
 
-    그룹마다 따로 고르라고 시키면 예전의 "투자사마다 8곳" 으로 되돌아간다 —
-    114곳이면 912 짝을 만들라고 시켜 놓고 아무것도 안 쓰는 그 자리다.
+    사용자가 그룹별로 따로 발송하기로 정했다. 그러면 한 벌을 먼저 정하고 "이 중
+    어느 것이 이 갈래에 맞는지" 를 덧붙이게 하는 것은 손해다 — 그 갈래에 딱
+    맞는데 한 벌에 못 든 기업은 보일 기회조차 없다.
     """
     from app.services import llm_brief
 
     got = _brief(db, users["u1"])["prompt"]
     assert "group_name" in got
     assert llm_brief.GROUPS_KEY in got
-    # 한 벌이라는 말이 그대로 남아 있어야 한다.
-    assert "한 벌" in got
-    # 뜻을 지어내지 말라는 못 — `A` 를 무슨 뜻으로 읽고 자리를 나누면 그 답은
+    # 갈래마다 한 벌 — 전원에게 보낼 한 벌이 아니다.
+    assert "갈래마다" in got
+    # 뜻을 지어내지 말라는 못 — `A` 를 무슨 뜻으로 읽고 고르면 그 답은
     # 겉보기에 멀쩡하다.
     assert "지어내지" in got
 
@@ -1523,6 +1528,313 @@ def test_the_groups_key_is_written_in_exactly_one_place(db, users):
         assert "갈래표시험" in out["prompt"]
     finally:
         llm_brief.GROUPS_KEY = "groups"
+
+
+# ── 보낼 수 있는 갈래인가 ──────────────────────────────────────────────────
+#
+# 딜 소개를 멈춰 둔 분(`검토중단`)만 모인 갈래가 실제로 있다. 그 갈래에 기업을
+# 뽑으면 **뽑은 것이 갈 데가 없다.** 갈래 이름으로 거르지 않고 **보낼 수 있는
+# 인원이 0인지**로 가른다 — 이름은 사람이 바꾸고, 바뀌면 그 문장만 옛말이 된다.
+
+
+def test_a_group_nobody_can_be_sent_to_says_so_with_a_zero(db, users):
+    """`count` 는 그대로 두고 `SENDABLE_KEY` 만 0이 된다.
+
+    **줄을 지우지 않는다.** 앱이 갈래를 통째로 감추면 사람은 그 갈래가 왜 없는지
+    알 길이 없다 — 세어서 밝히고, 건너뛸지는 시킬 말이 정한다.
+    """
+    from app.services import llm_brief, sheet_owner
+
+    _contact(db, users["u1"].id, group_name="보류시험",
+             status=sheet_owner.STATUS_PAUSED)
+    _contact(db, users["u1"].id, group_name="보류시험",
+             status=sheet_owner.STATUS_PAUSED)
+    _contact(db, users["u1"].id, group_name="살아있음시험")
+
+    out = _brief(db, users["u1"])
+    got = {g["name"]: g for g in out[llm_brief.GROUPS_KEY]}
+    assert got["보류시험"]["count"] == 2
+    assert got["보류시험"][llm_brief.SENDABLE_KEY] == 0
+    assert got["살아있음시험"][llm_brief.SENDABLE_KEY] == 1
+    # 멈춰 둔 분도 **자료에는 그대로 담긴다** — 적어 둔 분야·단계는 여전히
+    # 사실이고, 한 갈래에 섞여 있는 경우가 있다.
+    assert len(out["investors"]) == 3
+
+
+def test_a_paused_person_only_drops_out_of_the_sendable_count(db, users):
+    """한 갈래에 멈춘 분과 안 멈춘 분이 **섞여 있는** 경우가 실제로 있다.
+
+    그 갈래는 건너뛰면 안 된다 — 보낼 분이 남아 있다.
+    """
+    from app.services import llm_brief, sheet_owner
+
+    _contact(db, users["u1"].id, group_name="섞임시험")
+    _contact(db, users["u1"].id, group_name="섞임시험",
+             status=sheet_owner.STATUS_PAUSED)
+
+    got = _brief(db, users["u1"])[llm_brief.GROUPS_KEY][0]
+    assert got == {"name": "섞임시험", "count": 2, llm_brief.SENDABLE_KEY: 1}
+
+
+def test_the_sendable_count_is_the_one_the_send_screen_uses(db, users):
+    """판정을 **여기서 새로 적지 않는다** — 딜 제안 관리가 대상을 고르는 그것이다.
+
+    `can_send_to` 는 문이 둘이다(연결이 끝났는가 · 멈춰 두지 않았는가). 여기에
+    `status != paused` 라고 다시 적으면 문이 하나 늘 때 이 줄만 낡는다.
+    """
+    from app.services import llm_brief, sheet_owner
+
+    _contact(db, users["u1"].id, group_name="A")
+    _contact(db, users["u1"].id, group_name="A",
+             status=sheet_owner.STATUS_PAUSED)
+    _contact(db, users["u1"].id, group_name="B")
+
+    rows = llm_brief.investor_rows(db, users["u1"])
+    want = {}
+    for c in rows:
+        if sheet_owner.can_send_to(c):
+            want[sheet_owner.group_of(c)] = want.get(sheet_owner.group_of(c), 0) + 1
+    assert {g["name"]: g[llm_brief.SENDABLE_KEY]
+            for g in llm_brief.groups(db, users["u1"])} == want
+
+
+def test_the_note_says_what_the_sendable_count_means(db, users):
+    """이 말이 없으면 읽는 쪽이 `count` 만 보고 멈춰 둔 갈래에도 기업을 뽑는다."""
+    from app.services import llm_brief, sheet_owner
+
+    got = _brief(db, users["u1"])["note"]
+    assert llm_brief.SENDABLE_KEY in got
+    # 부르는 말은 화면이 그 상태를 부르는 말과 같아야 한다.
+    assert sheet_owner.STATUS_LABELS[sheet_owner.STATUS_PAUSED] in got
+
+
+def test_the_prompt_skips_a_group_by_the_number_not_by_its_name(db, users):
+    """**갈래 이름을 시킬 말에 적어 두지 않는다.**
+
+    "`딜 소개 보류` 갈래를 빼라" 고 이름으로 적으면, 사람이 그 이름을 바꾸는 날
+    이 문장만 옛말이 되고 같은 뜻의 다른 이름이 생기면 안 걸린다.
+    """
+    from app.services import llm_brief
+
+    got = _brief(db, users["u1"])["prompt"]
+    assert llm_brief.SENDABLE_KEY in got and "건너뛰" in got
+    assert "보류" not in got
+
+
+def test_the_sendable_key_is_written_in_exactly_one_place(db, users):
+    """칸 이름을 읽는 법·시킬 말·자료 셋에 손으로 적으면 두 곳이 낡는다."""
+    from app.services import llm_brief
+
+    llm_brief.SENDABLE_KEY = "보낼수있는인원시험"
+    try:
+        out = _brief(db, users["u1"])
+        assert "보낼수있는인원시험" in out["note"]
+        assert "보낼수있는인원시험" in out["prompt"]
+        _contact(db, users["u1"].id, group_name="A")
+        assert "보낼수있는인원시험" in _brief(db, users["u1"])[
+            llm_brief.GROUPS_KEY][0]
+    finally:
+        llm_brief.SENDABLE_KEY = "sendable"
+
+
+# ── 많아야 여덟, 맞는 것만 ─────────────────────────────────────────────────
+#
+# 사용자가 정한 것이다 — "기업이 8개가 안 되는 경우라면 보낼 수 있는 기업만이라도
+# 리스트업해서 보낼 수 있음." 수를 채우려고 안 맞는 곳을 끼워 넣으면 받는 분이
+# 다음부터 안 본다.
+
+
+def test_the_prompt_says_the_number_is_a_ceiling_not_a_quota(db, users):
+    """**"8곳을 고르라" 가 아니라 "많아야 8곳, 맞는 것만" 이어야 한다.**"""
+    from app.services.llm_brief import PICK_COUNT
+
+    got = _brief(db, users["u1"])["prompt"]
+    assert f"많아야 기업 {PICK_COUNT}곳" in got
+    assert f"{PICK_COUNT}곳은 채워야 하는 수가 아니라" in got
+    assert "끼워 넣지 마세요" in got
+
+
+def test_the_prompt_says_what_to_answer_when_nothing_fits(db, users):
+    """0곳이어도 된다 — 다만 **줄은 남겨야** 빠뜨린 것과 구별된다."""
+    from app.services.llm_brief import EMPTY_PICK_ANSWER
+
+    got = _brief(db, users["u1"])["prompt"]
+    assert EMPTY_PICK_ANSWER in got
+    assert "억지로 만들지" in got
+    assert "0곳" in got
+
+
+def test_the_prompt_lets_one_company_land_in_several_groups(db, users):
+    """겹침을 막으면 **어느 갈래를 먼저 채우느냐로 답이 달라진다.**
+
+    나중 갈래는 남은 것 중에서 고르느라 더 안 맞는 곳을 받는다. 한 사람은 한
+    갈래에만 속하므로(`sheet_owner.group_of` 가 한 값이다) 같은 기업을 두 번
+    받는 일도 없다.
+    """
+    got = _brief(db, users["u1"])["prompt"]
+    assert "겹쳐 나와도 됩니다" in got
+
+
+def test_the_answer_example_carries_the_group_and_how_many(db, users):
+    """답이 **어느 갈래의 몫인지**를 싣고 와야 사람이 그대로 발송으로 옮긴다.
+
+    개수까지 적게 하는 것은 갈래마다 수가 다른 것이 정상이기 때문이다 —
+    그 수가 보여야 "왜 이 갈래만 2곳이지" 를 바로 짚는다.
+    """
+    from app.services.llm_brief import ANSWER_EXAMPLE, COMPANY_PREFIX
+
+    assert ":" in ANSWER_EXAMPLE
+    assert "곳" in ANSWER_EXAMPLE
+    assert f"{COMPANY_PREFIX}-" in ANSWER_EXAMPLE
+    assert ANSWER_EXAMPLE in _brief(db, users["u1"])["prompt"]
+
+
+# ── 갈래별로 온 답을 가른다 ────────────────────────────────────────────────
+#
+# 답도 갈래마다 한 줄씩 온다. 번호만 훑어 한 덩어리로 돌려주면 사람이 그것을
+# 다시 갈래로 갈라야 하고, 갈래가 아홉이면 아홉 번이다.
+
+
+def _picks(text, names):
+    from app.services import llm_brief
+
+    return llm_brief.parse_group_refs(text, names)
+
+
+def test_an_answer_written_per_group_is_split_per_group():
+    assert _picks("공통 (2곳): C-7, C-12\nSeed (1곳): C-30",
+                  ["공통", "Seed"]) == [
+        {"name": "공통", "companies": [7, 12]},
+        {"name": "Seed", "companies": [30]}]
+
+
+def test_a_bulleted_or_bolded_group_line_is_still_a_group_line():
+    """사람이 붙여 넣는 답은 목록 모양으로 오는 일이 흔하다."""
+    for written in ("- 공통: C-7", "* **공통**: C-7", "1. 공통 (1곳): C-7",
+                    "## 공통：C-7"):
+        assert _picks(written, ["공통"]) == [
+            {"name": "공통", "companies": [7]}], written
+
+
+def test_the_longest_group_name_wins():
+    """`Series C` 가 먼저 걸리면 `Series C 이상` 은 영영 안 잡힌다."""
+    got = _picks("Series C 이상: C-7", ["Series C", "Series C 이상"])
+    assert got == [{"name": "Series C 이상", "companies": [7]}]
+
+
+def test_a_one_letter_group_does_not_swallow_an_ordinary_line():
+    """한 글자 갈래(`A`·`B`·`E`)가 실제로 있다 — `AI 분야:` 를 잡으면 안 된다."""
+    assert _picks("AI 분야: C-7", ["A"]) == []
+
+
+def test_a_heading_that_is_not_a_group_is_not_invented():
+    """답에 적힌 소제목(`후보`·`제외`)을 갈래로 읽으면 화면에 없는 갈래가 뜬다."""
+    assert _picks("후보: C-7", ["공통"]) == []
+
+
+def test_numbers_before_the_first_group_line_belong_to_no_group():
+    """첫머리 요약에 섞인 번호를 첫 갈래에 붙이면, 그 갈래가 고르지도 않은
+    기업을 받는다."""
+    got = _picks("모두 12곳을 골랐습니다(C-9 제외).\n공통: C-7", ["공통"])
+    assert got == [{"name": "공통", "companies": [7]}]
+
+
+def test_the_same_company_may_appear_in_two_groups():
+    """겹쳐도 된다고 시킨 것이 시킬 말이다 — 읽는 쪽이 지우면 안 된다."""
+    got = _picks("공통: C-7\n딥테크: C-7", ["공통", "딥테크"])
+    assert got == [{"name": "공통", "companies": [7]},
+                   {"name": "딥테크", "companies": [7]}]
+
+
+def test_the_same_group_written_twice_is_one_group():
+    got = _picks("공통: C-7\n공통: C-7, C-12", ["공통"])
+    assert got == [{"name": "공통", "companies": [7, 12]}]
+
+
+def test_a_group_with_nothing_that_fits_keeps_its_line(db, users):
+    """0곳도 **줄이 남아야** 빠뜨린 것과 구별된다."""
+    from app.services.llm_brief import EMPTY_PICK_ANSWER
+
+    got = _picks(f"공통: C-7\nSeed (0곳): {EMPTY_PICK_ANSWER}",
+                 ["공통", "Seed"])
+    assert got == [{"name": "공통", "companies": [7]},
+                   {"name": "Seed", "companies": []}]
+
+
+def test_an_investor_number_on_a_group_line_is_not_a_pick():
+    """갈래가 고른 것은 **기업**이다. 투자사 번호가 섞여 와도 그 자리에 안 든다."""
+    got = _picks("공통: V-31 님 몫으로 C-7", ["공통"])
+    assert got == [{"name": "공통", "companies": [7]}]
+
+
+def test_the_lines_under_a_group_line_belong_to_that_group():
+    """고른 까닭을 아래 줄에 적는 일이 흔하다 — 그 줄의 번호도 그 갈래 것이다."""
+    got = _picks("공통 (2곳):\n  - C-7 매출이 기준을 넘습니다\n  - C-12\n"
+                 "Seed (1곳): C-30", ["공통", "Seed"])
+    assert got == [{"name": "공통", "companies": [7, 12]},
+                   {"name": "Seed", "companies": [30]}]
+
+
+def test_the_group_names_come_from_the_data_not_from_the_answer(db, users):
+    """되돌릴 때 쓰는 갈래 이름은 **자료에 실어 보낸 그 이름들**이다."""
+    from app.services import llm_brief
+
+    _contact(db, users["u1"].id, group_name="E그룹")
+    what = _company(db, name="가상바이오")
+
+    got = llm_brief.resolve(db, users["u1"],
+                            f"E그룹 (1곳): C-{what.id}\n후보: C-{what.id}")
+    assert [g["name"] for g in got[llm_brief.GROUPS_KEY]] == ["E그룹"]
+
+
+def test_the_resolved_answer_says_which_group_each_company_is_for(db, users):
+    """이 길이 없으면 사람이 아홉 갈래를 손으로 다시 갈라야 한다."""
+    from app.services import llm_brief
+
+    _contact(db, users["u1"].id, group_name="공통")
+    _contact(db, users["u1"].id, group_name="Seed")
+    one = _company(db, name="가상바이오")
+    two = _company(db, name="가상소재")
+
+    got = llm_brief.resolve(
+        db, users["u1"],
+        f"공통 (2곳): C-{one.id}, C-{two.id}\nSeed (1곳): C-{one.id}")
+    assert got[llm_brief.GROUPS_KEY] == [
+        {"name": "공통", "companies": [
+            {"id": f"C-{one.id}", "found": True, "name": "가상바이오",
+             "href": f"/companies?q=%EA%B0%80%EC%83%81%EB%B0%94%EC%9D%B4%EC%98%A4"},
+            {"id": f"C-{two.id}", "found": True, "name": "가상소재",
+             "href": got["companies"][1]["href"]}]},
+        {"name": "Seed", "companies": [
+            {"id": f"C-{one.id}", "found": True, "name": "가상바이오",
+             "href": got["companies"][0]["href"]}]}]
+    # 전체 목록은 **그대로 남는다** — 갈래 머리가 없는 답도 읽혀야 한다.
+    assert [c["id"] for c in got["companies"]] == [f"C-{one.id}", f"C-{two.id}"]
+
+
+def test_an_answer_without_group_lines_still_resolves(db, users):
+    """갈래 머리가 없는 답(옛 모양)도 그대로 읽혀야 한다."""
+    from app.services import llm_brief
+
+    _contact(db, users["u1"].id, group_name="공통")
+    what = _company(db, name="가상바이오")
+
+    got = llm_brief.resolve(db, users["u1"], f"C-{what.id} 를 추천합니다")
+    assert got[llm_brief.GROUPS_KEY] == []
+    assert got["companies"][0]["name"] == "가상바이오"
+
+
+def test_a_number_in_a_group_line_that_is_not_in_the_data_is_still_shown(db,
+                                                                        users):
+    """조용히 빠지면 다섯을 넣고 셋만 뜬 것을 눈치채지 못한다 — 갈래 안도 같다."""
+    from app.services import llm_brief
+
+    _contact(db, users["u1"].id, group_name="공통")
+
+    got = llm_brief.resolve(db, users["u1"], "공통 (1곳): C-9999")
+    assert got[llm_brief.GROUPS_KEY] == [
+        {"name": "공통", "companies": [
+            {"id": "C-9999", "found": False, "name": "", "href": ""}]}]
 
 
 # ── 시킬 말 ────────────────────────────────────────────────────────────────
@@ -1559,37 +1871,33 @@ def test_the_number_to_pick_is_written_in_exactly_one_place(db, users):
     assert "5곳" in after and "8곳" not in after
 
 
-def test_the_prompt_asks_for_one_set_for_everyone_not_one_per_investor(db, users):
+def test_the_prompt_is_not_per_investor_and_not_one_set_for_everyone(db, users):
     """**시킬 말이 실제 운영과 같은 것을 시켜야 한다.**
 
-    한동안 "투자사마다 기업 8곳" 을 시켰다. 실제로는 이번 주 8개사를 정해
-    **그 한 벌을 전원에게** 보낸다 — 투자사 114곳이면 912 짝을 만들라고 시켜
-    놓고 그중 아무것도 쓰지 않는 셈이었고, 사람이 받은 답을 손으로 한 벌로
-    다시 추려야 했다.
+    이 자리가 두 번 틀렸다. ① "투자사마다 기업 8곳" — 114곳이면 912 짝이고
+    그중 아무것도 쓰이지 않았다. ② "이번 주 8개사를 전원에게" — 그때는 맞았지만
+    사용자가 **그룹별로 따로 발송**하기로 전제를 바꿨다. 둘 다 남아 있으면 안
+    된다 — 남으면 다음 사람이 읽고 되돌린다.
     """
     from app.services.llm_brief import PICK_COUNT
 
     got = _brief(db, users["u1"])["prompt"]
-    assert "한 벌" in got and "전원" in got
-    # 옛 지시가 남아 있으면 안 된다 — 이 한 줄이 곧 912 짝을 만들라는 말이다.
     assert f"투자사마다 기업 {PICK_COUNT}곳" not in got
-    assert f"{PICK_COUNT}곳 한 벌" in got
+    assert f"{PICK_COUNT}곳 한 벌" not in got
+    assert "전원에게 보낼" not in got
 
 
-def test_the_prompt_asks_to_split_the_set_by_what_investors_asked_for(db, users):
-    """한 벌을 **수요 분포에 맞게** 나누라고 시키는가.
+def test_the_prompt_reads_the_free_text_of_the_group_members(db, users):
+    """갈래가 무엇을 원하는지는 **속한 분들이 적어 둔 말**에서 나온다.
 
-    사람이 실제로 그렇게 뽑아 봤고 그 방식이 통했다 — 투자사가 적어 둔 말에서
-    분야 수요를 세고, 자리를 그 비례로 나눈다.
+    갈래 이름만 읽으라고 하면 `A`·`B` 처럼 글자뿐인 갈래에서 아무것도 못 읽는다.
     """
-    from app.services.llm_brief import PICK_COUNT
-
     got = _brief(db, users["u1"])["prompt"]
-    assert "수요" in got and "비례" in got
-    assert f"{PICK_COUNT}자리" in got
     # 무엇을 읽고 세는지가 적혀 있어야 한다.
     for field in ("sectors", "stages", "round_size", "memo"):
         assert field in got, field
+    # 한 갈래 안에서도 많이 청한 쪽에 자리를 더 준다.
+    assert "많이 청한" in got
 
 
 def test_the_prompt_makes_the_counting_use_the_names_that_are_in_the_data(db,
@@ -1730,8 +2038,11 @@ def test_a_bare_number_is_not_read_as_a_reference(db, users):
     _contact(db, users["u1"].id)
     _company(db)
 
+    from app.services import llm_brief
+
     got = _resolve(db, users["u1"], "1번 투자사에게 30억 규모로 3곳을 2026년에")
-    assert got == {"investors": [], "companies": []}
+    assert got == {"investors": [], "companies": [],
+                   llm_brief.GROUPS_KEY: []}
 
 
 def test_the_same_number_twice_is_listed_once(db, users):

@@ -217,6 +217,81 @@ async function main() {
     assert.strictEqual(rows[2].children[1].textContent, "가상바이오");
     assert.ok(rows[2].children[1].href.indexOf("/companies?q=") === 0);
   }
+  // ── ③ 갈래별로 온 답은 **갈래로 그린다** ────────────────────────────────
+  //
+  // 딜 소개가 그룹 단위로 나가면서 답도 갈래마다 한 줄씩 온다. 한 덩어리로
+  // 그리면 사람이 그것을 다시 갈래로 갈라야 하고, 갈래가 아홉이면 아홉 번이다.
+  {
+    const app = run();
+    app.fetch.resolveAnswer = {
+      investors: [],
+      companies: [
+        { id: "C-7", found: true, name: "가상바이오", href: "/companies?q=1" },
+        { id: "C-12", found: true, name: "가상소재", href: "/companies?q=2" },
+        { id: "C-30", found: true, name: "가상물류", href: "/companies?q=3" }
+      ],
+      // 갈래마다 **몇 곳인지가 그대로 보여야** 한다 — 개수가 갈래마다 다른 것이
+      // 정상이라(맞는 것만 고른다), 그 수가 없으면 "왜 이 갈래만 2곳이지" 를
+      // 짚을 수 없다. 같은 기업이 두 갈래에 겹쳐 나오는 것도 정상이다.
+      groups: [
+        { name: "공통", companies: [
+          { id: "C-7", found: true, name: "가상바이오", href: "/companies?q=1" },
+          { id: "C-12", found: true, name: "가상소재", href: "/companies?q=2" }] },
+        { name: "딥테크", companies: [
+          { id: "C-7", found: true, name: "가상바이오", href: "/companies?q=1" }] },
+        // 하나도 못 고른 갈래도 **줄이 남는다** — 빠뜨린 것과 구별되어야 한다.
+        { name: "Seed", companies: [] }
+      ]
+    };
+    app.nodes["llm-answer"].value = "공통 (2곳): C-7, C-12";
+    app.nodes["llm-resolve"].fire("click");
+    await settle();
+
+    const kids = app.nodes["llm-found"].children;
+    const heads = kids.filter(function (n) {
+      return n.classList.contains("llm-found-group");
+    });
+    assert.strictEqual(heads.length, 4,
+      "갈래 셋 + 갈래가 안 적힌 번호 하나");
+    assert.ok(heads[0].textContent.indexOf("공통") >= 0, heads[0].textContent);
+    assert.ok(heads[0].children[0].textContent.indexOf("2곳") >= 0,
+      heads[0].children[0].textContent);
+    assert.ok(heads[1].textContent.indexOf("딥테크") >= 0);
+    assert.ok(heads[2].children[0].textContent.indexOf("0곳") >= 0,
+      heads[2].children[0].textContent);
+    // 0곳인 갈래는 "고른 곳이 없습니다" 한 줄을 남긴다.
+    assert.ok(kids.some(function (n) {
+      return n.classList.contains("llm-found-none");
+    }), "0곳인 갈래도 줄이 남아야 한다");
+    // 갈래에 안 붙은 번호(C-30)는 **버리지 않고** 따로 모아 그린다.
+    assert.ok(heads[3].textContent.indexOf("갈래가 안 적힌") >= 0,
+      heads[3].textContent);
+    const refs = kids.filter(function (n) {
+      return n.classList.contains("llm-found-row");
+    }).map(function (n) { return n.children[0].textContent; });
+    assert.deepStrictEqual(refs, ["C-7", "C-12", "C-7", "C-30"],
+      "겹치는 기업은 두 갈래에 다 그리고, 갈래에 안 붙은 것은 끝에 한 번만");
+    assert.ok(app.nodes["llm-found-state"].textContent.indexOf("갈래 3개") >= 0,
+      app.nodes["llm-found-state"].textContent);
+  }
+  {
+    // 갈래 머리가 없는 답(옛 모양)이면 **예전처럼** 한 덩어리로 그린다.
+    const app = run();
+    app.fetch.resolveAnswer = {
+      investors: [],
+      companies: [{ id: "C-7", found: true, name: "가상바이오", href: "/c" }],
+      groups: []
+    };
+    app.nodes["llm-answer"].value = "C-7";
+    app.nodes["llm-resolve"].fire("click");
+    await settle();
+    const kids = app.nodes["llm-found"].children;
+    assert.strictEqual(kids.length, 1);
+    assert.ok(kids[0].classList.contains("llm-found-row"));
+    assert.ok(app.nodes["llm-found-state"].textContent.indexOf("갈래") < 0,
+      "갈래가 없으면 갈래 수를 말하지 않는다");
+  }
+
   {
     // 번호가 하나도 없으면 **왜 없는지** 말해 준다. 맨숫자는 일부러 안 읽기
     // 때문에, 그것을 모르면 붙여 넣기가 잘못된 줄 안다.
