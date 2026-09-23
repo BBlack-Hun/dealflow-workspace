@@ -154,7 +154,13 @@ CONTACT_HEADERS = [
     "채널", "카톡방", "방 확인", "초대", "관심도",
     "라운드 규모", "선호 단계", "선호 분야",
     "휴대폰", "전자 메일 주소", "근무처 전화", "근무처 팩스", "근무지 주소", "명함 등록일",
-    "마지막 딜소개", "회차 메모", "IR 요청(최근)", "미팅(최근)",
+    # `마지막 딜소개`·`회차 메모` 는 **딜소개만** 본다. `마지막 일` 은 그 뒤에
+    # 온 IR 요청·전달·미팅까지 함께 보고 회차명으로 적는다(`09/16 (9월 3주차)
+    # 딜소개`) — 같은 값이 아니라서 둘 다 나간다. 화면 표가 쓰는 그 줄 하나를
+    # 그대로 싣는다(`services/last_activity`). 일이 없는 줄은 **빈 칸**이다 —
+    # 화면이 적는 `—` 는 보라고 넣은 표시이고, 파일에서는 그게 값이 되어
+    # 걸러 보거나 세는 자리에 끼어든다.
+    "마지막 딜소개", "회차 메모", "마지막 일", "IR 요청(최근)", "미팅(최근)",
     "IR 요청(누적)", "미팅(누적)", "상태", "메모",
 ]
 
@@ -232,7 +238,7 @@ def _contact_row(r: dict) -> list:
             r["round_size"], ", ".join(r["stages"]), ", ".join(r["sectors"]),
             r["phone"], r["email"], r["office_phone"], r["office_fax"],
             r["address"], r["card_registered_at"],
-            r["last_deal"] or "", r["last_deal_note"],
+            r["last_deal"] or "", r["last_deal_note"], r["last_act_text"],
             r["ir_recent"], r["meet_recent"], r["ir_total"], r["meet_total"],
             r["status_label"], r["memo"]]
 
