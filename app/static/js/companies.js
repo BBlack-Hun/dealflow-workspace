@@ -40,7 +40,14 @@
     // 23·24·25년은 한줄 소개 자동 조합의 재료다(services/one_liner.py).
     "revenue_2022", "revenue_2023", "revenue_2024", "revenue_2025",
     "revenue_recent", "funding_total", "raise_target", "pre_value",
-    "competitiveness", "funding_status", "ir_file_name",
+    "competitiveness",
+    // `funding_status`(투자 현황)를 **뺐다.** 창에서 칸을 없앴으므로
+    // 여기서도 빠져야 한다 — 남겨 두면 창에 없는 칸을 저장 요청에
+    // 실으려다 `el("f-funding_status")` 가 없어 매번 건너뛰는, 아무도
+    // 안 읽는 이름만 남는다(tests/js/company_edit_fields_test.js 가 창과
+    // 이 목록이 갈린 것을 잡는다). **값은 DB 에 그대로 있다** — 왜
+    // 뺐는지는 `companies.html` 의 `그 밖` 묶음 머리 주석에 있다.
+    "ir_file_name",
     // 무료 IR 미팅 제공일 — **글자다**(`9월 중` 같은 말이 들어온다).
     "contract_status", "contract_received", "meeting_offered_at", "contract_month",
     "summary_status", "note"];

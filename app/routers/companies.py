@@ -344,7 +344,12 @@ def search_text(c: IrCompany) -> str:
         # (`one_liner`)는 IR 기업 현황에, `기업 한줄 소개`(`business_desc`)는
         # 스타트업DB 에 선다. **둘 다 싣는다**: 검색은 탭을 가리지 않으므로
         # 한쪽만 실으면 눈앞에 보이는 글자를 쳤는데 아무 줄도 안 걸린다.
-        c.one_liner, c.business_desc, c.funding_status, c.competitiveness,
+        # `funding_status`(투자 현황)는 **안 싣는다.** 화면에서 뺀 칸이라
+        # (`companies.html` 의 `그 밖` 묶음 머리 주석) 그 글자로 줄이 걸리면
+        # 왜 걸렸는지 화면 어디에도 안 보인다 — 짚을 데 없는 검색 결과가 된다.
+        # 잃는 것도 없다: 값 281줄 중 258줄은 바로 위 두 칸과 글자까지 같은
+        # 사본이고, 나머지 19줄은 `메모`(`note`)로 옮겨 두었다.
+        c.one_liner, c.business_desc, c.competitiveness,
     ]
     return " ".join(filter(None, parts)).lower()
 
@@ -526,7 +531,10 @@ def company_rows(db: Session, tab: str = "", sent=None) -> List[dict]:
             "sent_total": seen[c.id].sends,
             "last_sent": seen[c.id].last_sent,
             "competitiveness": c.competitiveness or "",
-            "funding_status": c.funding_status or "",
+            # `funding_status`(투자 현황)는 **안 싣는다** — 표도 창도 이 칸을
+            # 안 그린다. 이 한 벌이 표 · `GET /api/companies` · [수정] 창을
+            # 함께 먹이므로(`get_company`), 여기 남겨 두면 화면에 없는 칸이
+            # 세 응답에 계속 실려 나간다. 값은 DB 에 그대로 있다.
             "ir_file_name": c.ir_file_name or "",
             # 자료 링크 유무가 곧 'IR 요청이 오면 바로 보낼 수 있는가' 다.
             "has_ir": bool((c.ir_file_name or "").strip()),
@@ -762,7 +770,15 @@ class CompanyIn(BaseModel):
     business_desc: Optional[str] = None
     top_deal_kind: Optional[str] = None
     assignee_name: Optional[str] = None
-    funding_status: Optional[str] = None
+    # `funding_status`(투자 현황)는 **안 받는다** — 화면에서 뺀 칸이라 새로
+    # 쓸 자리가 없다. 받아 두면 보이지도 고치지도 못하는 값이 계속 쌓인다.
+    #
+    # **400 으로 막지는 않는다.** 모르는 칸은 pydantic 이 그냥 버리는데, 이
+    # 창은 **모든 칸을 한 번에** 보내므로 낡은 화면이 남아 있는 잠깐 동안
+    # 그 창이 보내는 값은 *방금 읽은 그 값* 이다 — 버리나 넣으나 결과가 같다.
+    # 여기서 400 을 내면 그 무해한 한 번이 "저장 실패" 가 된다.
+    # (`contract_status` 는 반대로 막는다. 거기는 모르는 값을 넣으면 줄의 뜻이
+    #  바뀌어 발송 목록이 달라지기 때문이다 — 버려도 되는 값이 아니다.)
     ir_file_name: Optional[str] = None
     contract_status: Optional[str] = None
     contract_received: Optional[str] = None

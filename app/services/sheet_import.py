@@ -1401,7 +1401,17 @@ def apply_sheet_b(db: Session, parsed: SheetBParse, dry_run: bool = False) -> Im
         _fill_if_empty(company, "contact_phone", pc.contact_phone)
         _fill_if_empty(company, "contact_email", pc.contact_email)
         # 상태 칸은 새 시트가 최신 판단
-        _set_if_value(company, "funding_status", pc.funding_status)
+        # ── `funding_status`(투자 현황)는 **더 이상 안 넣는다** ────────────────
+        # 그 칸은 화면에서 뺐다(`templates/companies.html` 의 `그 밖` 묶음 머리
+        # 주석). 그런데 여기는 `_set_if_value` 라 **덮어쓴다** — 시트를 한 번
+        # 올리는 것만으로, 화면에서 뺀 뒤에도 읽을 수 있게 남겨 둔 281줄이
+        # 시트 값으로 갈아치워진다. 아무도 못 보는 칸이 조용히 덮이는 것이라
+        # 덮인 줄도 모른다.
+        #
+        # **읽는 것까지 그만두지는 않았다**(위 `cols["funding"]` · `pc.
+        # funding_status`). 그 열은 시트에 그대로 있고, 나중에 "시트에는 뭐라고
+        # 적혀 있나" 를 물을 때 파싱까지 없으면 다시 만들어야 한다. 여기서
+        # 끊는 것은 **DB 에 쓰는 한 줄**뿐이다.
         _set_if_value(company, "contract_month", pc.contract_month)
         # 계약·핵심 여부는 시트가 최신 판단이므로 덮어쓴다(빈 칸 = '아니오'가 맞는 칸들).
         company.contract_status = pc.contract_status
