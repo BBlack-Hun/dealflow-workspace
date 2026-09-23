@@ -260,7 +260,10 @@ WATCHED: Dict[str, Watch] = {
         why="IR 기업. `owner_user_id` 칸이 있기는 하지만 **아무 조회도 그 칸으로 "
             "좁히지 않고**(`company_rows` 는 `user` 를 받지도 않는다) 손으로 세운 줄에만 "
             "채워진다 — 시트에서 넘어온 줄은 전부 비어 있다(`services/pipeline.py`). "
-            "화면이 이미 '누구나 어느 기업이든 고친다' 로 움직이므로 공용이 맞다."),
+            "화면이 이미 '누구나 어느 기업이든 고친다' 로 움직이므로 공용이 맞다. "
+            "**지우는 것도 같은 결이다** — 관리자뿐 아니라 팀원도 기업을 지운다"
+            "(`routers/companies.can_delete_company`). 지울 수 있는 사람이 늘어난 "
+            "만큼 이 줄이 '누가 지웠나' 를 답하는 유일한 자리다."),
     "contact_activities": Watch(
         owner=None, href="/contacts", label=_activity_label,
         only=("source", SOURCE_MANUAL),
