@@ -34,8 +34,8 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import get_current_user, may_manage_team_contacts
 from ..models import IrCompany, SendItem, SendJob, User, VcContact
-from ..services import (amount, report as report_svc, sheet_import, sheet_owner,
-                        spreadsheet as sp)
+from ..services import (amount, import_diff, report as report_svc, sheet_import,
+                        sheet_owner, spreadsheet as sp)
 from .contacts import contact_rows
 
 # 경로를 /api/import, /api/export 로 따로 둔다.
@@ -65,6 +65,12 @@ def _read_upload(file: UploadFile, sheet: Optional[str]) -> tuple:
     if not rows:
         raise HTTPException(status_code=400, detail="시트에 내용이 없습니다.")
     return rows, names
+
+
+#: 미리보기에 실어 보내는 **다른 칸**의 수. 넘으면 수만 적는다 — 이 값이
+#: 없으면 900줄짜리 명단에서 응답이 몇 MB 가 되어 화면이 멈춘다.
+#: 건너뛴 행 목록(50)과 같은 자리의 판단이다.
+DIFF_ROWS = 200
 
 
 @router.post("/api/import/contacts")
@@ -105,6 +111,13 @@ def import_contacts(
         "updated": report.updated,
         "activities_created": report.activities_created,
         "activities_existing": report.activities_existing,
+        # **시트 값과 앱 값이 다른데 안 덮은 칸.** 이 화면이 답해야 하는 물음이
+        # 바로 이것이다 — "드린 내용이 왜 그대로 반영이 안 되나".
+        # 값 자체는 `as_rows` 가 갈래를 보고 싣거나 뺀다(메모는 길이만).
+        "diffs_total": len(report.diffs),
+        "diffs": import_diff.as_rows(report.diffs[:DIFF_ROWS]),
+        # 시트에서 없어진 활동 줄. **세기만 한다** — 지우지 않는다.
+        "activities_stale": report.activities_stale,
         "notes": report.notes,
         "skipped": [{"row": s.row_no, "reason": s.reason, "preview": s.preview}
                     for s in report.skipped[:50]],

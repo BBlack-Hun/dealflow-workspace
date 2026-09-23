@@ -92,6 +92,38 @@ docker exec dealflow-public-web-1 python scripts/import_sheets.py \
 - 내려받은 표를 그대로 되올리면 막는다 — 내보내기의 `IR 요청(누적)` 류 컬럼을
   임포트 파서가 월별 활동으로 읽어 이력이 뻥튀기되기 때문이다.
 
+### 시트를 고쳐 보냈는데 화면이 그대로일 때
+
+임포트는 **빈 칸만 채운다.** 앱에 이미 값이 있으면 시트 값을 얹지 않는다 —
+화면에서 다듬어 둔 값이 시트 한 장에 날아가지 않게 하려는 규칙이고, 그 규칙은
+그대로다. 그동안 빠져 있던 것은 **그 사실을 말해 주지 않았다**는 쪽이다.
+
+이제 미리보기가 **시트 값과 앱 값이 다른 칸**을 목록으로 보여 준다 —
+몇 칸이 다른지, 어느 줄의 어느 칸인지, `지금 값 → 시트 값` 이 나란히.
+화면 업로드는 여기까지다(**덮지 않는다**). 덮는 것은 되돌릴 파일을 먼저
+요구하는 스크립트가 맡는다.
+
+```bash
+# ① 무엇이 다른지 본다 (기본이 미리보기)
+docker exec dealflow-public-web-1 python scripts/import_investor_list.py 파일.xlsx \
+  --sheet "명단" --owner 01000000000 --mode fill --tab "탭"
+
+# ② 되돌릴 파일을 뜨고 월별 칸만 덮는다 (`all` = 명함·연락처까지 · `418:note:c31` = 고른 칸만)
+docker exec dealflow-public-web-1 python scripts/import_investor_list.py 파일.xlsx \
+  … --mode fill --overwrite months --save-baseline /tmp/imp.json --apply
+
+# ③ 되돌린다
+docker exec dealflow-public-web-1 python scripts/import_investor_list.py 파일.xlsx \
+  … --mode fill --restore /tmp/imp.json --apply
+```
+
+- **메모 · 이름 · 투자사명 · 카톡방 이름은 어느 말로도 안 덮인다.** 앱에서
+  사람이 쥐는 칸이거나 줄을 찾는 열쇠다(판정 한 곳: `app/services/import_diff.py`).
+- **활동 이력은 시트에 없어져도 지우지 않는다.** 그 표에는 손으로 적은 줄과
+  발송이 만든 줄이 함께 산다 — 몇 건이 없어졌는지 세어서 알리기만 한다.
+- 한 판은 `팀 현황 → 수정 로그` 에 **한 줄**로 남는다(언제 · 누구 명단 ·
+  어느 시트 · 몇 줄 · 채운 칸 · 덮은 칸 · 안 덮은 칸).
+
 표가 있는 화면에는 **엑셀 내려받기**가 있다 (`내 투자사` · `딜 기업 DB` · `발송 진행`).
 머리행 고정 + 자동 필터가 걸린 채로 나온다.
 

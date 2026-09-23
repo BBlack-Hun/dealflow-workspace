@@ -52,13 +52,26 @@ consulting 8 · templates_crud 5 · sourcing 4 · contacts 14). 49곳에 로그 
 **GET 은 아예 지나지 않는다.** 미들웨어가 쓰기 메서드에서만 문맥을 심으므로,
 읽기 중에 무엇이 저장되더라도(마지막 접속 시각 같은 것) 로그에 남지 않는다.
 
-한 번에 여러 줄이 바뀌는 일
---------------------------
-시트 가져오기(`/api/import/contacts`)처럼 한 번에 수백 줄을 갈아 끼우는 길은
-줄마다 한 줄씩 남는다. 잡음처럼 보이지만 **일부러 그렇게 둔다** — 가져오기가
-남의 명단을 통째로 덮어쓰는 일이 이 앱에서 가장 크게 어긋날 수 있는 자리이고,
-"몇 시에 누가 무엇을 덮었나" 를 줄 단위로 못 보면 되돌릴 것을 고를 수가 없다.
-화면에서 화면·범위로 걸러 보는 칸이 있는 이유가 이것이다.
+시트 가져오기는 **한 판에 한 줄**이다 (`log_import`)
+----------------------------------------------------
+가져오기(`/api/import/contacts` · `scripts/import_investor_list.py`)는 위
+얼개를 지나지 않는다. 스크립트에는 요청 문맥이 없어 애초에 아무 것도 안 남고,
+화면 업로드는 문맥이 있어도 거의 안 남는다 — 담당자 줄은 대개 **올린 사람
+자신의 담당**이라 `_row_scope` 가 걸러 내고, 가져오기가 만드는 활동 줄은
+`source="import"` 라 `WATCHED["contact_activities"].only` 가 걸러 낸다.
+실제로 운영에서 1,360줄이 들어간 날 `edit_logs` 는 그 일에 대해 0건이었다.
+앱 안에서 **언제 누가 넣었는지 볼 길이 없었다.**
+
+그래서 가져오기만은 **부르는 쪽이 한 줄을 적는다**(`log_import`). 줄마다
+남기지 않는 이유는 이 파일 머리글에 이미 있다 — 하루에 수백 줄이 쌓이면
+아무도 안 본다. 1,360줄이 그대로 로그가 되면 그날의 다른 변경이 통째로
+묻히고, 되돌릴 것을 고르기는커녕 로그를 열 이유가 없어진다.
+
+한 줄에 무엇을 싣나 — **되짚을 수 있는 만큼.** 언제 · 누가 · 어느 명단 ·
+어느 시트 · 몇 줄 · 무엇이 몇 칸 바뀌었나(채움 · 덮어씀 · 다른데 안 덮음) ·
+활동 줄 몇 건. 줄 단위로 되돌릴 값은 여기 싣지 않는다 — 그것은 가져오기가
+뜨는 되돌리기 파일(`--save-baseline`)과 그날 백업(`/team/restore`)의 몫이고,
+로그가 자료를 두 벌로 들고 있을 이유가 없다.
 
 로그를 못 남기면 저장도 안 된다
 -------------------------------
@@ -95,13 +108,17 @@ WRITE_METHODS = frozenset({"POST", "PATCH", "PUT", "DELETE"})
 
 SCOPE_OTHERS = "others"   # 남의 것
 SCOPE_SHARED = "shared"   # 공용
-#: 자기 것 — **지운 것만** 이 범위로 남는다(아래 `_row_scope` 참고).
-#: 고친 것은 자기 것이면 남기지 않는다. 그 규칙은 그대로다.
+#: 자기 것 — **지운 것과 한 판에 통째로 갈아 끼운 것**만 이 범위로 남는다
+#: (아래 `_row_scope` · `log_import`). 손으로 고친 것은 자기 것이면 남기지
+#: 않는다. 그 규칙은 그대로다.
 SCOPE_MINE = "mine"
 
 ACTION_CREATE = "create"
 ACTION_UPDATE = "update"
 ACTION_DELETE = "delete"
+#: 시트 한 장을 넣은 **한 판**. 줄 하나가 아니라 명단 한 장에 일어난 일이라
+#: 위 셋과 다른 말을 쓴다(`log_import`).
+ACTION_IMPORT = "import"
 
 #: 값 하나를 로그에 남길 때의 길이 상한. 넘으면 잘리고 `…` 이 붙는다.
 #: 허용 목록에 있는 칸은 원래 짧지만, 누가 긴 글을 그 칸에 넣기 시작해도
@@ -438,6 +455,12 @@ FIELD_LABELS = {
     "summary": "요약", "business_desc": "사업 설명", "content_json": "내용",
     # 줄 안에 없는 사실 — `also()` 로 얹는 칸(`routers/companies.py` 의 강제 삭제).
     "force_delete": "함께 움직인 것",
+    # 시트 한 판(`log_import`). 표의 칸이 아니라 **그 판에 일어난 일**이라
+    # 줄 안에서 읽어 올 수가 없다 — 부르는 쪽이 세어서 넘긴다.
+    "import_source": "시트", "import_mode": "모드", "import_rows": "줄",
+    "import_created": "새로 만든 줄", "import_filled": "빈 칸을 채움",
+    "import_overwritten": "덮어씀", "import_kept": "다른데 안 덮음",
+    "import_activities": "활동 줄 추가", "import_stale": "시트에 없어진 활동 줄",
 }
 
 
@@ -738,6 +761,78 @@ def install() -> None:
     event.listen(OrmSession, "before_flush", _before_flush)
     event.listen(OrmSession, "after_flush", _after_flush)
     _INSTALLED = True
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 4-2. 시트 한 판 — **부르는 쪽이 적는 유일한 자리**
+# ─────────────────────────────────────────────────────────────────────────────
+
+#: 한 판에 실을 셈들. **차례가 곧 화면에 보이는 차례**다 — 먼저 궁금한 것부터
+#: 둔다(어느 시트를 어떻게 넣었나 → 몇 줄에 닿았나 → 무엇이 몇 칸 바뀌었나).
+#: 0 인 것은 싣지 않는다. `덮어씀 0 · 다른데 안 덮음 0` 이 줄마다 붙으면
+#: 정작 봐야 할 수가 묻힌다.
+IMPORT_COUNTS = ("import_rows", "import_created", "import_filled",
+                 "import_overwritten", "import_kept", "import_activities",
+                 "import_stale")
+
+
+def log_import(db, *, actor_user_id: int, sheet_label: str,
+               sheet_row_id: int = 0, owner_user_id: Optional[int] = None,
+               source: str = "", mode: str = "", path: str = "",
+               method: str = "", counts: Optional[Dict[str, int]] = None) -> None:
+    """시트 한 판을 **한 줄로** 남긴다.
+
+    이 파일에서 부르는 쪽이 직접 적는 곳은 여기뿐이다. 세션 이벤트가 못 보는
+    일이라 그렇다 — 가져오기는 요청 문맥이 없거나(스크립트), 있어도 걸러진다
+    (자기 담당분 · `source="import"` 활동 줄). 까닭은 머리글에 적었다.
+
+    **`EditLog` 객체를 만들지 않는다.** 만들면 그것이 다시 `before_flush` 를
+    지나 로그가 로그를 남긴다(`_after_flush` 와 같은 이유로 표에 바로 넣는다).
+
+    **미리보기에서는 부르지 않는다.** DB 에 닿지 않은 일을 로그가 일어난 일로
+    적으면, 그 로그를 보고 되돌릴 것을 찾는 사람이 없는 변경을 쫓게 된다.
+    부르는 쪽이 `--apply` 인 줄에서만 부른다.
+    """
+    from ..models import EditLog
+
+    counts = counts or {}
+    if owner_user_id is None:
+        scope = SCOPE_SHARED
+    elif owner_user_id == actor_user_id:
+        # **자기 명단이라도 남긴다.** `_row_scope` 가 지운 줄을 남기는 것과
+        # 같은 까닭이다 — 한 판은 화면 어디에도 안 남는다. 명단을 열어 봐야
+        # 지금 값이 보일 뿐, 그 값이 언제 어느 시트에서 왔는지는 물을 자리가
+        # 여기밖에 없다.
+        scope = SCOPE_MINE
+    else:
+        scope = SCOPE_OTHERS
+
+    changes = [{"field": "import_source", "before": None,
+                "after": _trim(source or sheet_label)}]
+    if mode:
+        changes.append({"field": "import_mode", "before": None,
+                        "after": _trim(mode)})
+    for name in IMPORT_COUNTS:
+        value = counts.get(name) or 0
+        if value:
+            changes.append({"field": name, "before": None, "after": value})
+
+    db.execute(EditLog.__table__.insert(), [{
+        "at": now_iso(),
+        "actor_user_id": actor_user_id,
+        "target_user_id": owner_user_id,
+        "scope": scope,
+        "action": ACTION_IMPORT,
+        # **명단 한 장에 일어난 일이다.** `vc_contacts` 로 적으면 줄 번호가
+        # 가리킬 곳이 없다(한 판은 한 줄이 아니다).
+        "table_name": "sheet_owners",
+        "row_id": int(sheet_row_id or 0),
+        "screen": _screen("/contacts"),
+        "row_label": _trim(sheet_label) or "",
+        "method": method,
+        "path": path,
+        "changes_json": json.dumps(changes, ensure_ascii=False),
+    }])
 
 
 # ─────────────────────────────────────────────────────────────────────────────

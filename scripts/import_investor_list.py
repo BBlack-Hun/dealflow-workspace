@@ -73,6 +73,8 @@
     얹는 일이라, 덮으면 사람이 앱에서 고쳐 둔 값이 시트 한 장에 지워진다.
     그리고 빈 칸만 채우면 **몇 번을 돌려도 두 번째부터는 0칸**이라, 두 번
     돌았는지 아닌지를 결과로 알 수 있다.
+    다만 **안 얹고 지나간 칸은 세어서 보여 준다**(아래 `--overwrite`) —
+    안 덮는 것과 말을 안 해 주는 것은 다른 일이다.
   · **칸도 만들지 않는다.** 명함을 찾으러 곁다리 탭을 붙이면 그 탭의 살림 칸
     (`사유`·`전화 여부`)이 남는 머리글로 읽혀 **달 칸으로 선다.** 줄을 안
     만드는 모드가 칸은 만드는 것이 앞뒤가 안 맞기도 하다. 못 세운 칸은 적어서
@@ -98,10 +100,48 @@
         --tab "탭1" --tab "탭2" --sheet "명단 이름" --owner 01000000000 --mode create
     python scripts/import_investor_list.py 파일.xlsx … --mode create --apply
     python scripts/import_investor_list.py 파일.xlsx … --mode fill --apply
+
+## 시트와 **다른 칸**을 보여 준다 (채우기가 안 얹고 지나간 자리)
+
+채우기는 빈 칸에만 얹는다. 그래서 고객이 시트를 고쳐 다시 보내도 이미 글이
+있는 칸은 그대로다 — **그 사실이 어디에도 안 떴다.** 고객사가 "드리는 내용이
+왜 그대로 엑셀에 반영이 안 되나" 라고 물은 자리가 정확히 여기다.
+
+이제 미리보기가 `지금 값 → 시트 값` 을 나란히 편다. 무엇이 몇 칸 다른지,
+어느 줄의 어느 칸인지가 보인다. **기본은 그대로 안 덮는다** — 보고 사람이
+정한다. 갈래와 판정은 `app/services/import_diff` 한 곳이고, 화면 업로드
+(`services/sheet_import`)도 같은 자를 쓴다.
+
+## 보고 나서 덮는 길 (`--overwrite`)
+
+    --overwrite months        월별 칸만 — 고객이 고쳐 보내는 칸이 이것이다
+    --overwrite all           덮을 수 있는 칸 전부(월별 + 명함·분류)
+    --overwrite 418:note:c31,502:phone   미리보기가 찍어 준 말을 베껴 **고른 것만**
+    --overwrite @/tmp/picks.txt     그 말을 파일에 모아 두고
+
+메모 · 이름 · 투자사명 · 카톡방 이름은 **어느 말로도 안 덮인다**(까닭은
+`import_diff` 머리글). `--overwrite` 를 `--apply` 와 함께 줄 때는
+`--save-baseline` 이 있어야 한다 — 되돌릴 파일 없이 덮지 않는다.
+
+    # ① 무엇이 다른지 본다 (기본이 미리보기다)
+    python scripts/import_investor_list.py 파일.xlsx … --mode fill
+    # ② 되돌릴 파일을 뜨고 월별 칸을 덮는다
+    python scripts/import_investor_list.py 파일.xlsx … --mode fill \
+        --overwrite months --save-baseline /tmp/imp.json --apply
+    # ③ 되돌린다
+    python scripts/import_investor_list.py 파일.xlsx … --mode fill \
+        --restore /tmp/imp.json --apply
+
+## 한 판은 **수정 로그에 한 줄**로 남는다
+
+`--apply` 로 돌린 판은 `/team/edit-log` 에 한 줄 남는다 — 언제 · 누구 명단 ·
+어느 시트 · 몇 줄 · 채운 칸 · 덮은 칸 · 다른데 안 덮은 칸. 줄마다 남기면
+1,360줄이 되어 아무도 안 본다(`services/edit_log.log_import`).
 """
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from pathlib import Path
@@ -113,7 +153,8 @@ from sqlalchemy import select  # noqa: E402
 from app.db import SessionLocal  # noqa: E402
 from app.models import ContactColumn, SheetOwner, User, VcContact  # noqa: E402
 from app.services import contact_columns as cc  # noqa: E402
-from app.services import firm_type, invest_stage, sheet_import  # noqa: E402
+from app.services import edit_log, firm_type, import_diff  # noqa: E402
+from app.services import invest_stage, sheet_import  # noqa: E402
 from app.services import sheet_owner  # noqa: E402
 from app.services import spreadsheet as sp  # noqa: E402
 from app.services.auth import normalize_phone  # noqa: E402
@@ -581,11 +622,18 @@ def existing_columns(db, sheet: str) -> dict:
         .order_by(ContactColumn.position, ContactColumn.id)).scalars()}
 
 
-def fill_plan(contact, item, columns) -> tuple:
-    """채우기가 이 줄에 **무엇을 얹을지** 미리 정한다.
+def fill_plan(contact, item, columns, labels=None) -> tuple:
+    """채우기가 이 줄에 **무엇을 얹을지** · **무엇이 다른지** 미리 정한다.
 
-    `(얹을 것, 못 세운 달 칸 이름들)`. 얹을 것은 `[(칸, 값)]` 이고 칸 이름은
-    앱의 칸 이름(`phone`) 또는 `note:키` 다.
+    `(얹을 것, 다른 칸, 못 세운 달 칸 이름들)`. 얹을 것은 `[(칸, 값)]` 이고
+    칸 이름은 앱의 칸 이름(`phone`) 또는 `note:키` 다. 다른 칸은
+    `import_diff.Diff` 로, **앱에 값이 있는데 시트 값이 다른** 칸들이다.
+
+    ## 얹는 것과 다른 것을 **한 번에 센다**
+
+    같은 칸을 두 번 훑지 않는다. 훑는 자리가 둘이면 한쪽만 고쳐지는 날
+    "채운다고 한 칸" 과 "다르다고 한 칸" 이 갈리고, 그러면 미리보기가 어느
+    쪽도 못 믿을 수가 된다(아래 `fill_values` 와 같은 까닭이다).
 
     ## 빈 칸에만 얹는다
 
@@ -602,11 +650,21 @@ def fill_plan(contact, item, columns) -> tuple:
     시트를 고치거나 화면에서 칸을 세운다.
     """
     todo, unknown = [], []
-    for field, value in item["fields"].items():
-        if not getattr(contact, field, ""):
-            todo.append((field, value))
+    # **다름은 얹을 것과 같은 자리에서 센다.** 따로 한 번 더 훑으면 두 벌이
+    # 되고, 한쪽만 고쳐지는 날 "채운다고 한 칸" 과 "다르다고 한 칸" 이 갈린다.
+    now, want = {}, {}
     values = cc.load_notes(contact.notes)
+
+    def seen(key: str, mine: str, theirs: str) -> None:
+        now[key], want[key] = mine, theirs
+
+    for field, value in item["fields"].items():
+        mine = getattr(contact, field, "") or ""
+        seen(field, mine, value)
+        if not mine:
+            todo.append((field, value))
     for key, value in item["notes"].items():
+        seen(f"note:{key}", values.get(key, ""), value)
         if not values.get(key):
             todo.append((f"note:{key}", value))
     for label, text in item["months"].items():
@@ -614,9 +672,14 @@ def fill_plan(contact, item, columns) -> tuple:
         if column is None:
             unknown.append(label)
             continue
-        if not values.get(cc.note_key(column.id)):
-            todo.append((f"note:{cc.note_key(column.id)}", text))
-    return todo, unknown
+        key = cc.note_key(column.id)
+        seen(f"note:{key}", values.get(key, ""), text)
+        if not values.get(key):
+            todo.append((f"note:{key}", text))
+    # 덮을 수 있는 칸인지는 **여기서 정하지 않는다** — `services/import_diff`
+    # 가 한 곳에서 정한다(화면 업로드도 같은 자를 쓴다).
+    diffs = import_diff.compare(contact.id or 0, now, want, labels)
+    return todo, diffs, unknown
 
 
 def fill_values(contact, todo) -> None:
@@ -635,6 +698,70 @@ def fill_values(contact, todo) -> None:
     contact.notes = cc.dump_notes(values)
 
 
+def save_baseline(path: Path, picked) -> int:
+    """되돌리기 파일. 덮는 칸의 **전·후**를 줄 id 와 함께 그대로 적는다.
+
+    `clean_group_name.py` 와 같은 모양이다. 다른 것은 이쪽이 **칸 단위**라는
+    것뿐이다 — 한 줄에서 월별 칸 하나만 덮는 일이 보통이라, 줄을 통째로
+    떠 두면 되돌릴 때 안 건드린 칸까지 옛 값으로 되돌아간다.
+
+    **값이 그대로 들어 있다**(되돌리려면 그래야 한다). 공개 저장소 안에 두지
+    말고 저장소 밖(`/tmp`)에 두어라.
+    """
+    data = [{"id": d.row_id, "key": d.key, "label": d.label,
+             "before": d.before, "after": d.after} for d in picked]
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2),
+                    encoding="utf-8")
+    return len(data)
+
+
+def restore(db, path: Path) -> int:
+    """떠 둔 파일의 `before` 를 그대로 다시 적는다 — **원상 복구**.
+
+    시트를 다시 읽지 않는다. 그날의 시트가 없어져도 되돌릴 수 있어야 한다.
+    """
+    data = json.loads(path.read_text(encoding="utf-8"))
+    done = 0
+    for item in data:
+        contact = db.get(VcContact, item["id"])
+        if contact is None:
+            # 줄이 그 사이에 지워졌다. 되살리는 것은 이 명령의 일이 아니다
+            # (그 줄은 `수정 로그` 와 그날 백업이 답한다).
+            continue
+        fill_values(contact, [(item["key"], item["before"])])
+        done += 1
+    db.commit()
+    return done
+
+
+def log_run(db, args, owner, *, counts) -> None:
+    """이 판을 **수정 로그 한 줄**로 남긴다.
+
+    줄마다 남기지 않는다. 운영에서 한 판에 1,360줄이 들어간 적이 있고, 그것이
+    그대로 로그가 되면 그날의 다른 변경이 통째로 묻힌다 — 까닭과 싣는 것은
+    `app/services/edit_log.log_import` 한 곳에 적혀 있다.
+
+    **누가 돌렸나는 `--owner` 계정으로 적는다.** 스크립트에는 로그인이 없어
+    물어볼 자리가 없고, 이 명령은 그 사람의 명단에 그 사람의 시트를 넣는
+    일이다. 사람을 비워 두면(`actor_user_id` 는 필수 칸이다) 줄 자체가 설 수
+    없고, 없는 줄은 "언제 누가 넣었나" 에 아무 것도 답하지 못한다.
+    """
+    row = db.execute(
+        select(SheetOwner).where(SheetOwner.label == args.sheet)
+    ).scalars().first()
+    tabs = ", ".join(str(t) for t in (args.tab or ["(첫 탭)"]))
+    edit_log.log_import(
+        db, actor_user_id=owner.id, sheet_label=args.sheet,
+        sheet_row_id=getattr(row, "id", 0) or 0,
+        owner_user_id=getattr(row, "user_id", None),
+        # **어느 시트를 넣었나.** 파일 이름과 탭 이름이 있어야 다음 달에
+        # "그 값이 어느 시트에서 왔나" 를 되짚을 수 있다.
+        source=f"{Path(args.path).name} · {tabs}",
+        mode=args.mode + (f" --overwrite {args.overwrite}"
+                          if args.overwrite else ""),
+        method="CLI", path="scripts/import_investor_list.py", counts=counts)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="투자사 딜공유 명단 만들기 / 채우기")
     ap.add_argument("path")
@@ -647,14 +774,63 @@ def main() -> int:
                          "채우기에서는 담당을 바꾸지 않고 확인만 한다")
     # 기본값을 두지 않는다 — 위 설명 참고. `import_new_list.py` 와 같은 말이다.
     ap.add_argument("--mode", required=True, choices=["create", "fill"],
-                    help="create=없는 줄을 만든다 · fill=있는 줄의 빈 칸만 채운다")
+                    help="create=없는 줄을 만든다 · fill=있는 줄의 빈 칸만 채운다"
+                         "(다른 칸은 보여만 준다 — 덮으려면 `--overwrite`)")
     ap.add_argument("--tab", action="append", default=[],
                     help="엑셀 파일 안의 탭 이름. 여러 번 적으면 **한 명단으로 합친다** "
                          "(먼저 적은 탭의 값이 이긴다)")
     ap.add_argument("--rulings", default=None,
                     help="겹치는 사람의 배정표 (번호,명단 이름)")
     ap.add_argument("--apply", action="store_true", help="실제로 저장")
+    # ── 보고 나서 덮는 길 ────────────────────────────────────────────────
+    #
+    # **기본은 빈 말이다** — 아무 것도 안 덮는다. 기본을 덮기로 바꾸면 이
+    # 스크립트를 쓰던 다른 일이 조용히 망가진다.
+    ap.add_argument("--overwrite", default="",
+                    help="다른 칸을 덮는다: `months`(월별 칸) · `all`(덮을 수 "
+                         "있는 칸 전부) · 미리보기가 찍어 준 `418:note:c31` 을 쉼표로 "
+                         "이은 것 · `@파일`. 기본은 **안 덮는다**")
+    ap.add_argument("--save-baseline", default="",
+                    help="덮기 전 `(줄 id, 칸, 전, 후)` 를 이 파일로 떠 둔다. "
+                         "`--overwrite --apply` 에는 반드시 있어야 한다")
+    ap.add_argument("--restore", default="",
+                    help="떠 둔 파일로 **원상 복구**한다 (`--apply` 와 함께)")
+    ap.add_argument("--diff-limit", type=int, default=40,
+                    help="다른 칸을 몇 개까지 펼까 (0 = 전부)")
     args = ap.parse_args()
+
+    # 되돌리기는 **읽을 시트가 필요 없다.** 시트를 다시 읽게 하면 그날의 시트가
+    # 없어졌을 때 되돌릴 수가 없다 — 되돌릴 값은 떠 둔 파일에 다 들어 있다.
+    if args.restore:
+        if not args.apply:
+            print("되돌리기도 DB 에 쓰는 일이다. `--apply` 를 함께 줘라.",
+                  file=sys.stderr)
+            return 2
+        db = SessionLocal()
+        try:
+            count = restore(db, Path(args.restore))
+        finally:
+            db.close()
+        print(f"되돌렸다: {count}칸 ← {args.restore}")
+        return 0
+
+    try:
+        picks = import_diff.parse_picks(args.overwrite)
+    except (ValueError, OSError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    if picks and args.mode != "fill":
+        # 만들기는 이미 시트 값으로 덮는다(`apply_values`). 거기에 또 덮으라는
+        # 말을 받으면 무엇이 무엇을 덮었는지 아무도 모르게 된다.
+        print("`--overwrite` 는 채우기(`--mode fill`)에서만 쓴다 — 만들기는 "
+              "이미 시트 값으로 덮는다.", file=sys.stderr)
+        return 2
+    if picks and args.apply and not args.save_baseline:
+        # 되돌릴 파일 없이 덮으면 되돌릴 길이 없다. 막는다
+        # (`scripts/clean_group_name.py` 와 같은 자리·같은 규칙).
+        print("`--overwrite --apply` 에는 `--save-baseline` 이 있어야 한다 "
+              "(되돌릴 파일 없이 덮지 않는다).", file=sys.stderr)
+        return 2
 
     rulings = load_rulings(args.rulings) if args.rulings else {}
     data = Path(args.path).read_bytes()
@@ -693,7 +869,18 @@ def main() -> int:
     # 채우기는 **있는 칸에만** 얹는다. 미리보기 단계에서 읽으므로 여기서도
     # 이번 달 칸을 만들어 넣는 `cc.month_columns` 는 부르지 않는다.
     # (만들기는 아래 저장 단계에서 없는 칸을 세우므로 여기서 읽을 것이 없다.)
-    columns = existing_columns(db, args.sheet) if args.mode == "fill" else {}
+    # **만들기에서도 읽는다.** 만들기는 이 칸들을 시트 값으로 덮으므로
+    # (`apply_values`), 무엇이 덮이는지 미리보기가 보여 줘야 한다.
+    # `existing_columns` 는 칸을 만들지 않으므로 미리보기가 미리보기로 남는다.
+    columns = existing_columns(db, args.sheet)
+    # 칸 이름은 **시트가 부르는 말** 그대로다. 스크립트에 따로 적어 두면 시트와
+    # 글자가 갈려 결과를 나란히 놓고 대조할 수가 없다. 달 칸은 시트 머리글이
+    # 곧 그 칸의 이름이라 명단 쪽에서 되찾는다.
+    #
+    # **미리 만든다** — 다른 칸을 셀 때(`fill_plan`) 이미 필요하다.
+    names = dict(parsed["labels"])
+    names.update({f"note:{cc.note_key(col.id)}": label
+                  for label, col in columns.items()})
 
     fills, moves, creates = [], [], []
     skips, seen = {}, set()
@@ -701,6 +888,9 @@ def main() -> int:
     # 채우기: 줄마다 얹을 것 · 칸마다 몇 번 얹는지 · 못 세운 달 칸.
     plans, per_column, unseen_columns = {}, {}, {}
     taken_rows = {}
+    # **시트 값과 앱 값이 다른 칸.** 채우기가 안 얹고 지나가는 자리다 —
+    # 고객사가 "드린 내용이 왜 반영이 안 되나" 라고 물은 바로 그 칸.
+    diffs = []
 
     def skip(reason, note):
         skips.setdefault(reason, []).append(note)
@@ -744,12 +934,20 @@ def main() -> int:
                 continue
             taken_rows[found.id] = where
             if args.mode == "fill":
-                todo, unknown = fill_plan(found, item, columns)
+                todo, row_diffs, unknown = fill_plan(found, item, columns, names)
                 plans[found.id] = (found, todo, where)
+                diffs.extend(row_diffs)
                 for field, _value in todo:
                     per_column[field] = per_column.get(field, 0) + 1
                 for label in unknown:
                     unseen_columns[label] = unseen_columns.get(label, 0) + 1
+            else:
+                # 만들기는 이 줄을 시트 값으로 **덮는다**(`apply_values`).
+                # 무엇이 덮이는지 미리 보여 준다 — 덮는 것은 맞지만 무엇이
+                # 덮이는지 모르고 덮는 것은 맞지 않다.
+                _todo, row_diffs, _unknown = fill_plan(found, item, columns,
+                                                       names)
+                diffs.extend(row_diffs)
             fills.append((found, item, where))
         elif found is not None:
             if args.mode == "fill":
@@ -805,12 +1003,6 @@ def main() -> int:
         # 아니라 칸 수다 — 줄은 이미 다 서 있고, 달라지는 것은 그 안이다.
         cells = sum(len(todo) for _c, todo, _w in plans.values())
         touched = sum(1 for _c, todo, _w in plans.values() if todo)
-        # 칸 이름은 **시트가 부르는 말** 그대로다. 스크립트에 따로 적어 두면
-        # 시트와 글자가 갈려 결과를 나란히 놓고 대조할 수가 없다.
-        # 달 칸은 시트 머리글이 곧 그 칸의 이름이라 명단 쪽에서 되찾는다.
-        names = dict(parsed["labels"])
-        names.update({f"note:{cc.note_key(col.id)}": label
-                      for label, col in columns.items()})
         print(f"\n  채울 칸 {cells}개 · 그중 줄 {touched}개"
               f"  (빈 칸에만 얹습니다 — 두 번 돌리면 0칸입니다)")
         for field, count in sorted(per_column.items(), key=lambda kv: -kv[1]):
@@ -865,6 +1057,30 @@ def main() -> int:
             print(f"\n  탭 `{tab}` 에서 못 읽은 줄 {len(one['skipped'])}개")
             for note in one["skipped"]:
                 print(f"       {note}")
+    # ── 시트와 **다른 칸** ──────────────────────────────────────────────
+    #
+    # 고객사가 물은 자리다 — "드리는 내용이 왜 그대로 엑셀이 반영이 안 되나".
+    # 채우기는 빈 칸에만 얹으므로 이미 글이 있는 칸은 그대로 지나간다. 그
+    # 사실이 어디에도 안 뜨는 것이 문제였지, 안 덮는 것 자체가 문제는 아니다.
+    picked = [d for d in diffs if picks.wants(d)]
+    if diffs:
+        if args.mode == "create":
+            head = (f"\n  시트와 다른 칸 {len(diffs)}개 · 줄 "
+                    f"{len({d.row_id for d in diffs})}개 — 만들기는 시트 값으로 "
+                    f"**덮습니다**(명단이 그 시트에서 나온 것이라 그것이 맞습니다).")
+        elif picked:
+            head = (f"\n  시트와 다른 칸 {len(diffs)}개 · 줄 "
+                    f"{len({d.row_id for d in diffs})}개 — 그중 **{len(picked)}칸을 "
+                    f"덮습니다**(`--overwrite {args.overwrite}`).")
+        else:
+            head = (f"\n  시트와 다른 칸 {len(diffs)}개 · 줄 "
+                    f"{len({d.row_id for d in diffs})}개 — **안 덮습니다.** "
+                    f"덮으려면 `--overwrite months` · `--overwrite all` · 또는 "
+                    f"아래 `줄id:칸` 을 골라 `--overwrite` 에 주세요.")
+        for line in import_diff.lines(diffs, limit=(args.diff_limit or 10 ** 9),
+                                      head=head):
+            print(line)
+
     if skips:
         # **조용히 버리지 않는다.** 몇 줄이 왜 빠졌는지 모르면 나중에 그 줄이
         # 없다는 것조차 알 수 없다.
@@ -892,6 +1108,12 @@ def main() -> int:
         # `set_sheet_layout.py` 가 정하는 값이라, 명함을 채우려고 부른 명령이
         # 표 모양을 되돌리면 안 된다(투자사 명함 표로 맞춰 둔 명단이 이 한 줄에
         # 딜공유 표로 돌아가던 자리다).
+        #
+        # **되돌릴 파일을 먼저 뜬다.** 덮고 나서 뜨면 뜬 값이 이미 덮인 값이다.
+        if args.save_baseline:
+            saved = save_baseline(Path(args.save_baseline), picked)
+            print(f"\n되돌리기 파일을 떠 두었다: {args.save_baseline} ({saved}칸)")
+            print("   ※ 값이 그대로 들어 있다. 저장소 밖에 두어라.")
         cells = 0
         for contact, todo, _where in plans.values():
             if not todo:
@@ -900,9 +1122,28 @@ def main() -> int:
                 continue
             fill_values(contact, todo)
             cells += len(todo)
+        # 고른 것만 덮는다. **얹는 자리는 채우기와 같다**(`fill_values`) —
+        # 따로 쓰면 월별 칸과 앱의 칸을 가르는 규칙이 두 벌이 된다.
+        by_row = {}
+        for diff in picked:
+            by_row.setdefault(diff.row_id, []).append((diff.key, diff.after))
+        for row_id, pairs in by_row.items():
+            contact = db.get(VcContact, row_id)
+            if contact is not None:
+                fill_values(contact, pairs)
+        log_run(db, args, owner,
+                counts={"import_rows": len(plans),
+                        "import_filled": cells,
+                        "import_overwritten": len(picked),
+                        "import_kept": len(diffs) - len(picked)})
         db.commit()
         print(f"\n채운 줄 {sum(1 for _c, t, _w in plans.values() if t)} "
-              f"· 채운 칸 {cells}개 · 새로 만든 줄 0 · 새로 세운 칸 0")
+              f"· 채운 칸 {cells}개 · 덮은 칸 {len(picked)}개 "
+              f"· 안 덮은 다른 칸 {len(diffs) - len(picked)}개 "
+              f"· 새로 만든 줄 0 · 새로 세운 칸 0")
+        if picked:
+            print(f"   되돌리려면: python {Path(__file__).name} … "
+                  f"--restore {args.save_baseline} --apply")
         db.close()
         return 0
 
@@ -947,6 +1188,11 @@ def main() -> int:
         db.add(contact)
         apply_values(contact, item, columns)
 
+    log_run(db, args, owner,
+            counts={"import_rows": len(fills) + len(moves) + len(creates)
+                                   + len(orphans),
+                    "import_created": len(creates),
+                    "import_overwritten": len(diffs)})
     db.commit()
     print(f"\n새로 만든 줄 {len(creates)} · 옮긴 줄 {len(moves) + len(orphans)} "
           f"· 채운 줄 {len(fills)} · 칸 {len(parsed['columns'])}개")
