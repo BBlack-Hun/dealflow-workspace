@@ -34,7 +34,7 @@ from sqlalchemy.orm import Session
 
 from ..models import ContactActivity, IrCompany, User, VcContact
 from . import (amount, company_names as cnames, firm_type, group_name as gn,
-               invest_stage as ist, sheet_owner)
+               invest_stage as ist, meeting_kind as mk, sheet_owner)
 from .room_name import DEFAULT_SUFFIX, build_room_name, normalize_space, split_name_title
 
 # 활동 종류 (DATA_MODEL §2.6)
@@ -42,8 +42,17 @@ KIND_DEAL_INTRO = "deal_intro"
 KIND_IR_REQUEST = "ir_request"
 KIND_MEETING = "meeting"
 
+#: 미팅 갈래 — **이름도 판정도 `services/meeting_kind` 한 곳**이다.
+#: 여기 다시 적으면 이미 들어온 줄을 가르는 스크립트와 갈린다.
+KIND_MEETING_REQUEST = mk.REQUEST
+KIND_MEETING_SET = mk.SET
+KIND_MEETING_DONE = mk.DONE
+
 # 헤더 텍스트 → 활동 종류. '1차 딜소개'가 'IR'을 포함하는 경우는 없지만 순서를 고정해
 # 가장 구체적인 것부터 본다.
+#
+# **미팅은 갈래가 넷이라 여기 말을 적지 않는다.** `미팅` 글자가 있는지만 보고
+# 어느 갈래인지는 `services/meeting_kind` 에게 묻는다(아래 `detect_kind`).
 _KIND_KEYWORDS: Sequence[Tuple[str, Tuple[str, ...]]] = (
     (KIND_DEAL_INTRO, ("딜소개", "딜 소개")),
     (KIND_IR_REQUEST, ("ir",)),
@@ -131,10 +140,35 @@ def _column_context(rows: Sequence[Sequence[str]], header_idx: int, col: int) ->
     return " ".join(p for p in parts if p)
 
 
-def detect_kind(text: str) -> Optional[str]:
+def _column_head(rows: Sequence[Sequence[str]], header_idx: int, col: int) -> str:
+    """머리글만 = (헤더 위 1행 + 헤더행). **자료 행을 안 넣는다.**
+
+    위 `_column_context` 는 헤더 아래 1행까지 넣는다 — 병합된 달 라벨을
+    따라가려는 것이라 그 자체는 맞다. 다만 그 아래 1행은 보통 **첫 담당자의
+    값**이고, 거기 적힌 `8/20 미팅완료` 같은 글이 칸 전체의 갈래를 정해
+    버리면 나머지 담당자의 줄까지 통째로 틀어진다.
+    """
+    parts = []
+    for r in (header_idx - 1, header_idx):
+        if 0 <= r < len(rows):
+            parts.append(_cell(rows[r], col))
+    return " ".join(p for p in parts if p)
+
+
+def detect_kind(text: str, head: Optional[str] = None) -> Optional[str]:
+    """헤더 문맥 → 활동 종류. 미팅이면 **갈래까지** 가른다.
+
+    `head` 는 헤더 줄만 모은 글자다(`text` 는 헤더 아래 첫 **자료 행**까지
+    이어 붙인 문맥이라 사람이 적은 값이 섞여 있다). 미팅 갈래는 `head` 로만
+    정한다 — 첫 줄에 적힌 `8/20 미팅완료` 하나가 그 칸 전체를 '완료' 로
+    바꿔 버리면 안 된다. 머리글이 갈래를 안 들고 있으면 `meeting` 으로 두고,
+    칸마다 그 칸의 내용이 정한다(`parse_activity_cell`).
+    """
     low = text.lower()
     for kind, keywords in _KIND_KEYWORDS:
         if any(k in low for k in keywords):
+            if kind == KIND_MEETING:
+                return mk.of_header(head if head is not None else text) or KIND_MEETING
             return kind
     return None
 
@@ -145,6 +179,9 @@ class ActivityColumn:
     month: Optional[str]   # '2026-08'
     kind: str
     header: str
+    #: 헤더 줄만(달 라벨 + 머리글). `header` 와 달리 **자료 행이 안 섞인다** —
+    #: 미팅 갈래를 정할 때 이것을 본다(위 `detect_kind`).
+    head: str = ""
 
 
 def detect_activity_columns(rows: Sequence[Sequence[str]], header_idx: int,
@@ -169,6 +206,7 @@ def detect_activity_columns(rows: Sequence[Sequence[str]], header_idx: int,
         context = _column_context(rows, header_idx, col)
         if not context:
             continue
+        head = _column_head(rows, header_idx, col)
         m = _MONTH_RE.search(context)
         if m:
             month_no = int(m.group(1))
@@ -185,10 +223,11 @@ def detect_activity_columns(rows: Sequence[Sequence[str]], header_idx: int,
                     current_year -= 1      # 1월 → 12월 (오른쪽이 이전)
             prev_no = month_no
             current_month = f"{current_year:04d}-{month_no:02d}"
-        kind = detect_kind(context)
+        kind = detect_kind(context, head)
         if kind is None:
             continue
-        out.append(ActivityColumn(col=col, month=current_month, kind=kind, header=context))
+        out.append(ActivityColumn(col=col, month=current_month, kind=kind,
+                                  header=context, head=head))
     return out
 
 
@@ -207,7 +246,7 @@ class ParsedActivity:
 
 
 def parse_activity_cell(text: str, month: Optional[str], kind: str,
-                        year: int) -> List[ParsedActivity]:
+                        year: int, head: str = "") -> List[ParsedActivity]:
     """한 칸에 줄바꿈으로 누적된 **여러 회차**를 회차별 레코드로 분해한다.
 
         8/4(화) 핵심 딜 8개사
@@ -242,6 +281,11 @@ def parse_activity_cell(text: str, month: Optional[str], kind: str,
         entry.companies, entry.company_count = parse_company_list(entry.content)
         if entry.weekday is None and entry.happened_at:
             entry.weekday = weekday_of(entry.happened_at)
+        # 미팅은 **칸마다** 갈래가 다를 수 있다. 머리글이 두 갈래를 함께 이고
+        # 있거나(`미팅확정/미팅완료`) 묻는 말이면(`미팅 진행 여부`) 답은 이
+        # 칸 안에 있다. 판정은 `services/meeting_kind` 한 곳이다.
+        if kind in mk.ALL:
+            entry.kind = mk.refine(kind, entry.content)
     return entries
 
 
@@ -696,7 +740,8 @@ def parse_sheet_a(rows: Sequence[Sequence[str]], year: int) -> SheetAParse:
             if not cell_text:
                 continue
             contact.activities.extend(
-                parse_activity_cell(cell_text, acol.month, acol.kind, year)
+                parse_activity_cell(cell_text, acol.month, acol.kind, year,
+                                    head=acol.head)
             )
         out.contacts.append(contact)
 

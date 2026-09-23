@@ -1,4 +1,4 @@
-"""IR 기업현황 — 계약여부가 실제로 걸리는가 · 삭제는 관리자만인가.
+"""IR 기업현황 — 계약여부가 실제로 걸리는가 · 삭제는 누가 하는가.
 
 세 가지 증상이 **한 뿌리**에서 나왔다.
 
@@ -74,6 +74,7 @@ def portal(db, users, people):
         "admin": sign_in("01000000091"),
         "member": sign_in("01000000001"),      # conftest 의 u1 — 일반 팀원
         "consultant": sign_in("01000000092"),
+        "anon": TestClient(app),               # 로그인하지 않은 요청
     }
 
 
@@ -382,26 +383,58 @@ def test_being_thin_is_not_the_same_as_being_blocked(logged_in, db, company):
     assert str(company.id) in _pickable_company_ids(logged_in.get("/deals").text)
 
 
-# ── ⑥ 삭제 — 관리자만 ───────────────────────────────────────────────────────
+# ── ⑥ 삭제 — 로그인한 관리자·팀원 ───────────────────────────────────────────
+#
+# **바뀐 자리다.** 0229 에서는 `삭제는 관리자만` 이었다(기업 한 줄이 두 탭에서
+# 함께 사라지고 회차 줄이 지워져 지난 업무 보고가 바뀐다는 근거). 사용자가 그
+# 판단을 뒤집었다 — *"팀원 권한으로도 IR 기업현황 메뉴의 스타트업 db 리스트를
+# 강제삭제 할 수 있게 해줘"*. 강제 삭제는 **평범한 [삭제] 를 눌러 막혀야**
+# 열리는 길이라(`static/js/companies.js`), 두 길의 권한을 갈라 두면 팀원은
+# 강제 삭제 상자에 닿을 수가 없다 — 그래서 이 길도 함께 넓혔다.
+#
+# 넓어진 것은 **권한 하나**다. 투자컨설턴트와 로그인 안 한 요청은 그대로
+# 막히고, 아래 ⑦ 의 막이(이미 보낸 회차 · 예약)도 그대로다.
 
-def test_only_an_admin_can_delete(portal, db, company):
-    """팀원·컨설턴트는 막히고, **대상이 실제로 남아 있어야** 한다.
-    상태 코드만 보면 403 을 주고도 지워 버리는 경우를 못 잡는다."""
-    for role in ("member", "consultant"):
-        r = portal[role].delete(f"/api/companies/{company.id}")
-        assert r.status_code == 403, f"{role} 이 {r.status_code} 를 받았다"
-        assert _still_there(db, company.id), f"{role} 을 막았다는데 지워졌다"
+def test_a_member_can_delete_but_an_outsider_cannot(portal, db, company):
+    """**바뀐 검사다**(`test_only_an_admin_can_delete` 였다).
 
+    컨설턴트는 `/api/companies` 가 허용 목록에 없어 미들웨어가 끊고
+    (`deps.CONSULTANT_PATHS`), 로그인 안 한 요청은 `Depends(get_current_user)`
+    에서 끊긴다. **대상이 실제로 남아 있어야** 한다 — 상태 코드만 보면 403 을
+    주고도 지워 버리는 경우를 못 잡는다.
+    """
+    assert portal["consultant"].delete(
+        f"/api/companies/{company.id}").status_code == 403
+    assert _still_there(db, company.id), "컨설턴트를 막았다는데 지워졌다"
+
+    assert portal["anon"].delete(
+        f"/api/companies/{company.id}").status_code in (401, 403)
+    assert _still_there(db, company.id), "로그인도 안 했는데 지워졌다"
+
+    # 팀원이 지운다 — 사용자가 뒤집은 그 자리다.
+    assert portal["member"].delete(f"/api/companies/{company.id}").status_code == 200
+    assert not _still_there(db, company.id)
+
+
+def test_an_admin_can_still_delete(portal, db, company):
+    """넓히면서 원래 되던 쪽을 떨어뜨리지 않았는지."""
     assert portal["admin"].delete(f"/api/companies/{company.id}").status_code == 200
     assert not _still_there(db, company.id)
 
 
-def test_the_button_is_only_drawn_for_an_admin(portal):
-    """눌러도 안 되는 단추가 보이면 고장으로 읽힌다.
-    **보이는 사람과 지울 수 있는 사람이 같아야 한다** — 판정이 갈리면
-    보이는데 막히거나, 안 보이는데 주소로는 되는 상태가 된다."""
+def test_the_button_is_drawn_for_a_member_too(portal):
+    """**바뀐 검사다**(`test_the_button_is_only_drawn_for_an_admin` 였다).
+
+    눌러도 안 되는 단추가 보이면 고장으로 읽히고, 안 보이는데 주소로는 되면
+    그건 구멍이다. **보이는 사람과 지울 수 있는 사람이 같아야 한다** —
+    화면과 라우터가 `can_delete_company` 한 곳을 함께 지난다.
+    """
     assert 'id="co-delete"' in portal["admin"].get("/companies").text
-    assert 'id="co-delete"' not in portal["member"].get("/companies").text
+    assert 'id="co-delete"' in portal["member"].get("/companies").text
+    # 컨설턴트는 이 화면 자체가 안 열린다 — 단추를 셀 일도 없다.
+    # (화면 요청은 자기 화면으로 되돌려 보내고 스크립트에는 403 —
+    #  `deps.consultant_block_response`. 어느 쪽이든 **200 이 아니다.**)
+    assert portal["consultant"].get("/companies").status_code in (303, 403)
 
 
 def test_the_confirm_names_what_it_deletes(portal):
@@ -418,11 +451,17 @@ def test_the_confirm_names_what_it_deletes(portal):
     assert "딜소개 불가" in confirm.group(1)
 
 
-def test_a_missing_company_does_not_leak_to_a_non_admin(portal, db):
+def test_a_missing_company_does_not_leak_to_an_outsider(portal, db):
     """권한을 먼저 본다 — 없는 번호에 404 를 주면 번호만 바꿔 가며
-    어느 기업이 있는지 알아낼 수 있다."""
-    assert portal["member"].delete("/api/companies/999999").status_code == 403
+    어느 기업이 있는지 알아낼 수 있다.
+
+    **바뀐 검사다.** 팀원이 지울 수 있게 되었으니 팀원도 404 쪽에 선다.
+    막힌 쪽 자리는 투자컨설턴트와 로그인 안 한 요청이 대신 지킨다.
+    """
+    assert portal["consultant"].delete("/api/companies/999999").status_code == 403
+    assert portal["anon"].delete("/api/companies/999999").status_code in (401, 403)
     assert portal["admin"].delete("/api/companies/999999").status_code == 404
+    assert portal["member"].delete("/api/companies/999999").status_code == 404
 
 
 # ── ⑦ 딜소개 이력이 붙은 기업 ───────────────────────────────────────────────

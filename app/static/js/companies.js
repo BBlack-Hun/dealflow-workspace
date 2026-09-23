@@ -456,7 +456,7 @@
     current = id;
     modal.open();
     fillOptionLists();
-    // 관리자가 아니면 단추 자체가 없다(companies.html 이 안 그린다).
+    // 지울 수 없는 사람에게는 단추 자체가 없다(companies.html 이 안 그린다).
     if (el("co-delete")) el("co-delete").hidden = !id;
     // 강제 삭제 상자는 **창을 열 때마다 접는다.** 열어 둔 채 다른 기업으로
     // 넘어가면, 앞 기업을 보고 연 상자가 뒤 기업 이름을 받는다.
@@ -597,7 +597,9 @@
     box.scrollIntoView({ block: "nearest" });
   }
 
-  // 관리자가 아니면 단추가 아예 없다 — 있을 때만 건다.
+  // 지울 수 없는 사람에게는 단추가 아예 없다 — 있을 때만 건다.
+  // (관리자·팀원이 가진다. 판정은 `routers/companies.py` 의
+  //  `can_delete_company` 한 곳이고, 화면은 `can_delete` 로 그것을 읽는다.)
   if (el("co-delete")) el("co-delete").addEventListener("click", function () {
     if (!current) return;
     fetch("/api/companies/" + current + "/delete-plan")

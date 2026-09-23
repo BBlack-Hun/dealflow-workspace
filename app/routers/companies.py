@@ -154,16 +154,70 @@ def can_bulk_one_liner(user: User) -> bool:
     return _is_admin(user)
 
 
-def can_delete_company(user: User) -> bool:
-    """이 사람에게 [삭제] 를 보여도 되는가 — **판정은 `deps.admin_only` 하나**다.
+# 기업을 지울 권한이 없는 사람에게 돌려주는 사유. 라우터 셋이 같은 글을
+# 쓴다 — 세 곳에 각자 적으면 하나는 낡는다.
+DELETE_DENIED = "기업을 삭제할 권한이 없습니다"
 
-    화면과 라우터가 각자 `role == "admin"` 을 들고 있으면 반드시 한쪽이 낡는다.
-    이 저장소가 반복해 당한 유형이다(팀 전체가 뜨는데 눌러 고치면 404 나던
-    담당자 줄, `막힘` 이라 떠 있는데 실제로는 열려 있던 컨설턴트 줄). 같은
-    함수를 부르므로 **단추가 보이는 사람은 반드시 지울 수 있고, 안 보이는
-    사람은 주소를 직접 쳐도 막힌다.**
+
+def can_delete_company(user: User) -> bool:
+    """이 사람에게 [삭제]·[강제 삭제] 를 보여도 되는가 — **관리자와 팀원**이다.
+
+    **판정은 이 함수 하나뿐이다.** 화면(`companies.html` 의 `can_delete`)과
+    라우터 셋(`company_delete_plan` · `force_delete_company` ·
+    `delete_company`)이 전부 여기를 지난다. 각자 `role` 을 들고 있으면 반드시
+    한쪽이 낡는다 — 이 저장소가 반복해 당한 유형이다(팀 전체가 뜨는데 눌러
+    고치면 404 나던 담당자 줄, `막힘` 이라 떠 있는데 실제로는 열려 있던
+    컨설턴트 줄). 같은 함수를 지나므로 **단추가 보이는 사람은 반드시 지울 수
+    있고, 안 보이는 사람은 주소를 직접 쳐도 막힌다.**
+
+    **예전에는 관리자만이었다(0229). 사용자가 그 판단을 뒤집었다** —
+    *"팀원 권한으로도 IR 기업현황 메뉴의 스타트업 db 리스트를 강제삭제 할 수
+    있게 해줘"*. 그때 적어 둔 근거는 `기업 한 줄이 두 탭에서 함께 사라지고
+    회차 줄이 지워져 지난 업무 보고가 바뀐다, 저장소가 관리자로 좁히는 그
+    부류다` 였다. **그 근거 자체가 틀렸던 것이 아니라, 사용자가 그 위험을
+    알고 팀원에게 맡기기로 한 것이다.** 되돌리지 마라 — 되돌리려면 사용자에게
+    다시 물어야 한다.
+
+    **막이는 그대로다.** 넓힌 것은 권한 하나뿐이고 위험을 낮춘 것이 아니다 —
+    기업명을 글자 그대로 적어야 열리는 것도, 무엇이 몇 건 움직이는지 먼저
+    세어 보여 주는 것도(`delete-plan`), 되돌리는 길의 한계를 적어 두는 것도
+    그대로다. 지울 수 있는 사람이 늘었으니 **`edit_log` 가 오히려 더 중요해
+    진다** — 기업 표는 주인 없는 공용이라(`services/edit_log.py` 의
+    `ir_companies` Watch) 누가 지우든 똑같이 남는다.
+
+    **자기 것만이 아니라 남의 것도 지운다 — 기업에 주인이 없기 때문이다.**
+    `IrCompany.owner_user_id` 칸이 있기는 하다. 그런데 **아무 조회도 그 칸으로
+    좁히지 않고**(`company_rows` 는 `user` 를 받지도 않는다) 손으로 세운 줄에만
+    채워진다 — 시트에서 넘어온 줄은 전부 비어 있다(`services/pipeline.py` 의
+    `_company_assignees` 가 같은 사실을 적어 둔다: 운영 344곳이 전부 비어
+    있다). 그 칸으로 좁히면 **팀원은 자기가 손으로 세운 몇 줄 말고는 아무것도
+    못 지운다** — 사용자가 든 `스타트업 db 리스트` 가 바로 그 시트에서 넘어온
+    줄들이라, 요청을 들어주지 않는 것과 같아진다. 화면이 이미 `누구나 어느
+    기업이든 고친다` 로 움직이므로(`services/edit_log.py` 의 `ir_companies`
+    Watch — `주인이 없는 공용 자료`) 지우는 것도 같은 결로 둔다.
+
+    **투자컨설턴트는 빠진다.** 빼려고 따로 막은 것이 아니라 `/companies` ·
+    `/api/companies` 가 애초에 그 계정에게 안 열린다(`deps.CONSULTANT_PATHS`
+    — 허용 목록에 없는 것은 화면이든 API 든 미들웨어가 끊는다). 그래서 여기서
+    컨설턴트를 만날 일이 없지만, 판정을 `True` 한 글자로 두면 언젠가 허용
+    목록이 늘었을 때 조용히 같이 열린다. **역할로 한 번 더 못 박아 둔다.**
+
+    **여전히 로그인한 사람만이다** — 라우터는 `Depends(get_current_user)` 를
+    지나고, 로그인 안 한 요청은 거기서 끊긴다(`deps.NotAuthenticated`).
+    이 함수는 그 뒤에 선다.
     """
-    return _is_admin(user)
+    return user.role != "consultant"
+
+
+def require_delete_company(user: User) -> None:
+    """지울 수 없는 사람이면 끊는다 — 판정은 위 한 곳을 읽는다.
+
+    `admin_only` 를 그대로 부르지 않는 까닭: 이 길만 넓어졌고 다른
+    관리자 전용 길(`can_bulk_one_liner` · 팀 현황 …)은 그대로다. 여기서
+    `admin_only` 를 부르면 그 둘을 다시 묶게 된다.
+    """
+    if not can_delete_company(user):
+        raise HTTPException(status_code=403, detail=DELETE_DENIED)
 
 # 소개 문구에 들어가는 칸. (모델 속성, 화면 이름)
 REQUIRED_FIELDS = [
@@ -1228,15 +1282,17 @@ def _log_summary(plan: dict) -> str:
 @router.get("/api/companies/{company_id}/delete-plan")
 def company_delete_plan(company_id: int, db: Session = Depends(get_db),
                         user: User = Depends(get_current_user)):
-    """지우기 전에 **무엇이 몇 건 움직이는지** 세어만 본다 — 관리자만.
+    """지우기 전에 **무엇이 몇 건 움직이는지** 세어만 본다 — 지울 수 있는 사람만.
 
     화면은 [삭제] 를 누르면 먼저 이것을 부른다. 숫자를 못 보여 주면 사람은
     무엇이 딸려 나가는지 **누르고 나서** 알게 된다.
 
     권한을 먼저 본다 — 삭제 길들과 같은 자리·같은 이유다(없는 번호에 404 를
-    먼저 주면 번호만 바꿔 가며 어느 기업이 있는지 알아낼 수 있다).
+    먼저 주면 번호만 바꿔 가며 어느 기업이 있는지 알아낼 수 있다). 판정은
+    `can_delete_company` 하나이고, **지금은 관리자와 팀원**이다. 여기 역할을
+    새로 적으면 단추를 보일지 정하는 쪽과 갈린다.
     """
-    admin_only(user)
+    require_delete_company(user)
     company = db.get(IrCompany, company_id)
     if company is None:
         raise HTTPException(status_code=404, detail="기업을 찾을 수 없습니다")
@@ -1258,7 +1314,7 @@ class ForceDeleteIn(BaseModel):
 def force_delete_company(company_id: int, body: ForceDeleteIn,
                          db: Session = Depends(get_db),
                          user: User = Depends(get_current_user)):
-    """**강제 삭제** — 이력이 붙어 있어도 지운다. 관리자만.
+    """**강제 삭제** — 이력이 붙어 있어도 지운다. 관리자와 팀원.
 
     평범한 [삭제](`delete_company`)는 이력이 붙으면 막는다. 이 길은 그것을
     무시하고 지운다 — 사용자가 `어차피 백업하고 있으니 복구 가능` 을 근거로
@@ -1270,13 +1326,23 @@ def force_delete_company(company_id: int, body: ForceDeleteIn,
     (`companies.html` 의 강제 삭제 상자) — 적어 두지 않으면 사람은 되돌릴 수
     있다고 믿고 누른다.
 
-    **누가 지울 수 있나 — 관리자만.** 이 저장소는 `한 번 누르면 팀 전체의
-    기록이 사라지는` 조작만 관리자로 좁힌다(`consulting.may_edit_column` ·
-    `can_bulk_one_liner`). 이건 정확히 그런 조작이다: 기업 한 줄이 두 탭
-    (IR 기업 현황 · 스타트업DB)에서 함께 사라지고, 딜소개 회차에 실렸던 줄이
-    지워져 지난 업무 보고의 기업 목록이 바뀐다. 판정은 `deps.admin_only`
-    하나이고 평범한 [삭제] 와 같다 — 여기 `role != "admin"` 을 새로 적으면
-    단추를 보일지 정하는 쪽(`can_delete_company`)과 갈린다.
+    **누가 지울 수 있나 — 관리자와 팀원.** 처음 만들 때(0229)는 관리자만
+    이었다. 이 저장소가 `한 번 누르면 팀 전체의 기록이 사라지는` 조작을
+    관리자로 좁혀 왔고(`consulting.may_edit_column` · `can_bulk_one_liner`),
+    이것이 정확히 그런 조작이기 때문이다: 기업 한 줄이 두 탭(IR 기업 현황 ·
+    스타트업DB)에서 함께 사라지고, 딜소개 회차에 실렸던 줄이 지워져 지난 업무
+    보고의 기업 목록이 바뀐다.
+
+    **사용자가 그 판단을 뒤집었다** — *"팀원 권한으로도 IR 기업현황 메뉴의
+    스타트업 db 리스트를 강제삭제 할 수 있게 해줘"*. 위험이 없어진 것이
+    아니라, 그 위험을 알고 팀원에게 맡기기로 한 것이다. **되돌리지 마라** —
+    되돌리려면 사용자에게 다시 물어야 한다. 판정은 `can_delete_company`
+    하나이고 평범한 [삭제] · `delete-plan` 과 같다 — 여기 역할을 새로 적으면
+    단추를 보일지 정하는 쪽과 갈린다.
+
+    **막이는 그대로 둔다.** 넓어진 것은 권한 하나뿐이다 — 이름을 손으로
+    적어야 하는 것도, 먼저 세어 보여 주는 것도 그대로다. 대신 지울 수 있는
+    사람이 늘어 `edit_log` 가 실제로 쓰이게 된다(아래 `edit_log.also`).
 
     **권한을 먼저 본다** — 없는 번호에 404 를 먼저 주면 권한 없는 사람이
     번호만 바꿔 가며 어느 기업이 있는지 알아낼 수 있다.
@@ -1284,7 +1350,7 @@ def force_delete_company(company_id: int, body: ForceDeleteIn,
     딸린 것을 어떻게 하는지는 위 `COMPANY_LINKS` 한 자리가 정한다. 여기서
     표 이름을 손으로 적지 않는다.
     """
-    admin_only(user)
+    require_delete_company(user)
     company = db.get(IrCompany, company_id)
     if company is None:
         raise HTTPException(status_code=404, detail="기업을 찾을 수 없습니다")
@@ -1324,11 +1390,14 @@ def force_delete_company(company_id: int, body: ForceDeleteIn,
 @router.delete("/api/companies/{company_id}")
 def delete_company(company_id: int, db: Session = Depends(get_db),
                    user: User = Depends(get_current_user)):
-    """기업 삭제 — **관리자만**. 이미 보낸 회차에 들어간 기업은 지우지 않는다.
+    """기업 삭제 — **관리자와 팀원**. 이미 보낸 회차에 들어간 기업은 지우지 않는다.
 
-    판정은 `deps.admin_only` 하나를 그대로 쓴다(`can_delete_company` 가 화면
-    쪽에서 같은 함수를 읽는다). 여기 `role != "admin"` 을 새로 적으면 단추를
-    보일지 정하는 쪽과 갈린다.
+    판정은 `can_delete_company` 하나를 그대로 쓴다(화면의 `can_delete` 도 같은
+    함수를 읽는다). 여기 역할을 새로 적으면 단추를 보일지 정하는 쪽과 갈린다.
+
+    **강제 삭제와 같은 문을 쓴다.** 이 길로 와서 막혀야 [강제 삭제] 상자가
+    열리므로(`static/js/companies.js`), 두 길의 권한이 갈리면 팀원은 강제
+    삭제 상자에 닿을 수가 없다.
 
     **권한을 먼저 본다.** 없는 번호에 404 를 먼저 주면, 권한 없는 사람이 번호만
     바꿔 가며 어느 기업이 있는지 알아낼 수 있다.
@@ -1336,7 +1405,7 @@ def delete_company(company_id: int, db: Session = Depends(get_db),
     from ..models import DealBatchCompany
     from ..services import deal_queue
 
-    admin_only(user)
+    require_delete_company(user)
     company = db.get(IrCompany, company_id)
     if company is None:
         raise HTTPException(status_code=404, detail="기업을 찾을 수 없습니다")
@@ -1344,7 +1413,7 @@ def delete_company(company_id: int, db: Session = Depends(get_db),
         select(DealBatchCompany).where(DealBatchCompany.company_id == company_id)
     ).scalars().first()
     if used:
-        # **이력이 붙은 기업은 관리자여도 지우지 않는다.** 회차는 "그날 누구에게
+        # **이력이 붙은 기업은 이 길로는 누구도 못 지운다.** 회차는 "그날 누구에게
         # 무엇을 보냈는가" 의 기록이고, 기업을 지우면 그 회차가 무엇을 보낸
         # 회차였는지 알 수 없게 된다 — 업무 보고가 그 줄을 읽는다.
         #

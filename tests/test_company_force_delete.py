@@ -7,7 +7,12 @@
 알고 **강제 삭제**를 요청했고, 근거로 일일 백업을 들었다. 자료가 정말로
 없어지는 길이라, 잠가야 하는 것이 일곱이다.
 
-1. **관리자만.** 한 번 누르면 팀 전체의 기록이 움직인다.
+1. **로그인한 관리자·팀원만.** 처음에는 관리자만이었다(0229) — 한 번 누르면
+   팀 전체의 기록이 움직이기 때문이다. **사용자가 그 판단을 뒤집었다**
+   (*"팀원 권한으로도 … 강제삭제 할 수 있게 해줘"*). 위험이 없어진 것이
+   아니라 그 위험을 알고 팀원에게 맡긴 것이라, 아래 2~7 의 막이는 **그대로**
+   이고 로그인 안 한 사람은 **여전히 막힌다.** 투자컨설턴트는 `/companies`
+   자체를 못 연다(`deps.CONSULTANT_PATHS`).
 2. **기업명을 글자 그대로 적기 전에는 안 지워진다 — 서버가 본다.**
    화면에만 두면 주소를 직접 두드리는 길이 남는다.
 3. **무엇이 몇 건 움직이는지 먼저 세어 준다**(`delete-plan` 은 아무 것도
@@ -37,20 +42,29 @@ ROOT = Path(__file__).resolve().parent.parent
 
 @pytest.fixture()
 def people(db, users):
-    """관리자 하나. conftest 의 두 계정은 둘 다 일반 팀원이다."""
+    """관리자 · 투자컨설턴트. conftest 의 두 계정은 둘 다 일반 팀원이다."""
     from app.models import User
     from app.services import auth as auth_svc
 
-    row = User(id=91, name="관리자시험", phone="01000000091", role="admin",
-               password_hash=auth_svc.hash_password(DEMO_PASSWORD))
-    db.add(row)
+    pw = auth_svc.hash_password(DEMO_PASSWORD)
+    rows = [
+        User(id=91, name="관리자시험", phone="01000000091", role="admin",
+             password_hash=pw),
+        User(id=92, name="컨설턴트시험", phone="01000000092", role="consultant",
+             password_hash=pw),
+    ]
+    db.add_all(rows)
     db.commit()
-    return row
+    return {"admin": rows[0], "consultant": rows[1]}
 
 
 @pytest.fixture()
 def portal(db, users, people):
-    """역할별로 **따로** 로그인한 클라이언트(한 클라이언트로 갈아타면 쿠키가 덮인다)."""
+    """역할별로 **따로** 로그인한 클라이언트(한 클라이언트로 갈아타면 쿠키가 덮인다).
+
+    `anon` 은 **로그인하지 않은** 클라이언트다 — 권한을 넓혔어도 문 밖은
+    여전히 문 밖이라는 것을 볼 자리가 있어야 한다.
+    """
     from fastapi.testclient import TestClient
 
     from app.main import create_app
@@ -62,7 +76,8 @@ def portal(db, users, people):
         client.post("/login", data={"phone": phone, "password": DEMO_PASSWORD})
         return client
 
-    return {"admin": sign_in("01000000091"), "member": sign_in("01000000001")}
+    return {"admin": sign_in("01000000091"), "member": sign_in("01000000001"),
+            "consultant": sign_in("01000000092"), "anon": TestClient(app)}
 
 
 @pytest.fixture()
@@ -139,26 +154,75 @@ def _alive(db, company_id: int) -> bool:
     return db.get(IrCompany, company_id) is not None
 
 
-# ── ① 관리자만 ──────────────────────────────────────────────────────────────
+# ── ① 누가 지울 수 있나 — 로그인한 관리자·팀원 ──────────────────────────────
 
-def test_팀원은_세어_볼_수도_강제로_지울_수도_없다(portal, db, plain):
-    """**단추가 보이는 사람과 지울 수 있는 사람이 같아야 한다.**
+def test_팀원도_세어_보고_강제로_지운다(portal, db, plain):
+    """**바뀐 검사다.** 0229 에서는 `팀원은 세어 볼 수도 강제로 지울 수도 없다`
+    였고 팀원에게 403 을 못 박아 두었다.
 
-    화면은 `can_delete`(→ `deps.admin_only`)로 가리는데, 라우터가 제 판정을
-    새로 지으면 안 보이는데 주소로는 되는 상태가 된다.
+    사용자가 그 판단을 뒤집었다 — *"팀원 권한으로도 IR 기업현황 메뉴의
+    스타트업 db 리스트를 강제삭제 할 수 있게 해줘"*. 그래서 **같은 자리에서
+    반대를 못 박는다**: 팀원이 세어 볼 수 있고, 실제로 지워져야 한다.
+
+    **단추가 보이는 사람과 지울 수 있는 사람이 같아야 한다.** 화면은
+    `can_delete` 로 가리고 라우터는 같은 `can_delete_company` 를 지난다 —
+    라우터가 제 판정을 새로 지으면 안 보이는데 주소로는 되는 상태가 된다.
     """
-    assert _plan(portal["member"], plain.id).status_code == 403
-    assert _force(portal["member"], plain.id, plain.name).status_code == 403
+    assert _plan(portal["member"], plain.id).status_code == 200
+    assert _force(portal["member"], plain.id, plain.name).status_code == 200
+    assert not _alive(db, plain.id)
+
+
+def test_팀원도_이력이_붙은_기업을_강제로_지운다(portal, db, linked):
+    """권한만 넓혔지 하는 일은 같다 — 딸린 줄 처리도 관리자와 똑같다."""
+    assert _force(portal["member"], linked.id, linked.name).status_code == 200
+    assert not _alive(db, linked.id)
+
+
+def test_로그인하지_않으면_여전히_막힌다(portal, db, plain):
+    """권한을 넓혔어도 **문 밖은 문 밖이다.** 라우터가
+    `Depends(get_current_user)` 를 지나므로 쿠키 없는 요청은 거기서 끊긴다.
+
+    화면 요청이 아니라 스크립트 요청이라 401 로 답한다(`deps.NotAuthenticated`
+    핸들러). 어느 쪽이든 **200 이 아니고 기업이 남아 있어야** 한다.
+    """
+    for r in (_plan(portal["anon"], plain.id),
+              _force(portal["anon"], plain.id, plain.name)):
+        assert r.status_code in (401, 403), f"{r.status_code} 를 받았다"
+    assert _alive(db, plain.id)
+    assert portal["anon"].delete(f"/api/companies/{plain.id}").status_code in (401, 403)
+    assert _alive(db, plain.id)
+
+
+def test_투자컨설턴트는_이_화면_자체를_못_연다(portal, db, plain):
+    """**빼려고 따로 막은 것이 아니다.** `/companies` · `/api/companies` 가
+    허용 목록(`deps.CONSULTANT_PATHS`)에 없어 미들웨어가 라우터 앞에서 끊는다
+    — 그래서 `can_delete_company` 는 이 요청을 아예 만나지 않는다.
+
+    사용자가 든 것은 `팀원` 하나였고, 이 계정은 이야기에서 빠진다.
+    """
+    # 화면 요청은 자기 화면으로 되돌려 보내고, 스크립트에는 403 을 준다
+    # (`deps.consultant_block_response`). 어느 쪽이든 **200 이 아니다.**
+    assert portal["consultant"].get("/companies").status_code in (303, 403)
+    assert _plan(portal["consultant"], plain.id).status_code == 403
+    assert _force(portal["consultant"], plain.id, plain.name).status_code == 403
     assert _alive(db, plain.id)
 
 
 def test_없는_번호는_권한을_먼저_본다(portal, db):
     """권한 없는 사람에게 404 를 주면 번호만 바꿔 가며 어느 기업이 있는지
-    알아낼 수 있다 — 평범한 [삭제] 와 같은 차례다."""
-    assert _plan(portal["member"], 999999).status_code == 403
-    assert _force(portal["member"], 999999, "무엇이든").status_code == 403
-    assert _plan(portal["admin"], 999999).status_code == 404
-    assert _force(portal["admin"], 999999, "무엇이든").status_code == 404
+    알아낼 수 있다 — 평범한 [삭제] 와 같은 차례다.
+
+    **바뀐 검사다.** 팀원이 지울 수 있게 되었으니 팀원도 404 쪽에 선다.
+    막힌 쪽 자리는 투자컨설턴트와 로그인 안 한 요청이 대신 지킨다.
+    """
+    assert _plan(portal["consultant"], 999999).status_code == 403
+    assert _force(portal["consultant"], 999999, "무엇이든").status_code == 403
+    assert _plan(portal["anon"], 999999).status_code in (401, 403)
+    assert _force(portal["anon"], 999999, "무엇이든").status_code in (401, 403)
+    for role in ("admin", "member"):
+        assert _plan(portal[role], 999999).status_code == 404
+        assert _force(portal[role], 999999, "무엇이든").status_code == 404
 
 
 # ── ② 이름을 손으로 적어야 지워진다 — **서버가 본다** ───────────────────────
@@ -381,6 +445,36 @@ def test_지운_것이_수정_로그에_남는다(portal, db, linked):
     assert "발송 회차에 실린 줄 1건 지움" in changes
 
 
+def test_팀원이_지워도_똑같이_남는다(portal, db, linked):
+    """**지울 수 있는 사람이 늘면 `누가 지웠나` 가 실제로 쓰이게 된다.**
+    관리자 하나만 지울 때는 물을 일이 드물었지만, 이제는 로그가 유일한 답이다.
+
+    기업 표는 **주인 없는 공용**이라(`services/edit_log.py` 의 `ir_companies`
+    Watch — `owner_user_id` 칸이 있지만 아무 조회도 그 칸으로 안 좁힌다) 지운
+    사람의 역할과 무관하게 남는다. 위 관리자 검사와 **같은 것을 같은 수만큼**
+    본다 — 하나라도 빠지면 팀원이 지운 건만 추적이 안 되는 상태가 된다.
+    """
+    from app.models import EditLog
+
+    assert _force(portal["member"], linked.id, linked.name).status_code == 200
+    db.expire_all()
+
+    rows = db.query(EditLog).filter(EditLog.table_name == "ir_companies").all()
+    assert len(rows) == 1, "팀원이 지웠는데 로그가 한 줄도 없다"
+    row = rows[0]
+    assert row.action == "delete"
+    assert row.actor_user_id == 1, "지운 팀원이 누구인지가 없다"
+    assert row.row_label == "샘플마바에너지"
+    assert "force-delete" in row.path
+    assert row.at
+
+    changes = row.changes_json
+    assert "샘플마바에너지" in changes and "에너지" in changes
+    assert "force_delete" in changes
+    assert "발송 이력 1건 연결 끊음" in changes
+    assert "발송 회차에 실린 줄 1건 지움" in changes
+
+
 def test_수정_로그_화면이_함께_움직인_것을_그려_준다(portal, db, linked):
     """로그에 담기만 하고 화면이 못 그리면 없는 것과 같다.
 
@@ -468,11 +562,22 @@ def test_화면이_두_탭과_백업_되돌리기를_적는다(portal):
     assert "/team/edit-log" in html, "수정 로그로 가는 길이 없다"
 
 
-def test_팀원_화면에는_강제_삭제_상자가_아예_없다(portal):
-    """눌러도 안 되는 단추가 보이면 고장으로 읽힌다 — [삭제] 와 같은 판정."""
+def test_팀원_화면에도_강제_삭제_상자가_있다(portal):
+    """**바뀐 검사다.** 0229 에서는 `팀원 화면에는 강제 삭제 상자가 아예 없다`
+    였다. 사용자가 팀원에게도 열어 달라고 했으므로 반대를 못 박는다.
+
+    강제 삭제 상자는 [삭제] 를 눌러 막혔을 때만 열린다 — 그래서 **[삭제]
+    단추가 없으면 팀원은 강제 삭제에 닿을 길이 없다.** 둘을 함께 본다.
+
+    안내 문구도 관리자 화면과 **같은 것**이 떠야 한다 — 되돌릴 수 없다는
+    사실을 팀원이 오히려 더 봐야 한다.
+    """
     html = portal["member"].get("/companies").text
-    assert 'id="co-force"' not in html
-    assert 'id="co-delete"' not in html
+    assert 'id="co-force"' in html
+    assert 'id="co-delete"' in html
+    assert 'id="co-force-name"' in html, "기업명을 적는 칸이 없다"
+    assert "DB 전체를 그날로 되돌리는 일" in html, "되돌리기의 한계가 안 적혀 있다"
+    assert "/team/edit-log" in html, "수정 로그로 가는 길이 없다"
 
 
 @pytest.mark.skipif(shutil.which("node") is None,

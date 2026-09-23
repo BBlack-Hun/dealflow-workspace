@@ -136,7 +136,13 @@ weekly_stats   (퇴사 삭제 후에도 남는 익명화 집계)
 | id | INTEGER PK | |
 | contact_id | FK vc_contacts | |
 | month | TEXT NULL | `2026-06` (시트 A 6/7/8월 컬럼 임포트분) |
-| kind | TEXT | `deal_intro`(1차 딜소개) \| `ir_request` \| `meeting` \| `memo` |
+| kind | TEXT | `deal_intro`(1차 딜소개) \| `ir_request` \| `meeting_request`(미팅 요청 — **안 만났다**) \| `meeting_set`(미팅 확정 — 날짜만 잡혔다) \| `meeting_done`(미팅 완료 — 만났다) \| `meeting`(아직 안 가른 옛 줄) \| `memo` \| `ir_delivery` \| `meeting_ask` |
+
+> **미팅은 한 칸이 아니다.** 시트 머리글에 `미팅` 글자만 있으면 전부 `meeting` 으로 눌려,
+> **청하기만 한 줄**이 화면의 `1차 미팅` 과 엑셀의 `미팅(누적)` 에 들어갔다. 갈래를 정하는
+> 말도 판정도 `app/services/meeting_kind.py` **한 곳**이다 — 시트를 읽어 넣는 쪽과 이미
+> 들어온 줄을 가르는 스크립트(`scripts/resplit_meeting_kind.py`)가 같은 함수를 지난다.
+> 옛 값 `meeting` 은 그 스크립트를 돌리기 전까지 **지금 뜻 그대로**다.
 | content | TEXT | 예: "1차 딜소개 06.12 · 딜 3개", "IR 요청: 샘플애그, 샘플메디" |
 | happened_at | TEXT NULL | 날짜 식별 가능 시 |
 | source | TEXT | `import`(시트) \| `system`(발송·IR·미팅 자동 기록) |

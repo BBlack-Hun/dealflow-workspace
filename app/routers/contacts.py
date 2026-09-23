@@ -26,8 +26,8 @@ from ..db import get_db
 from ..deps import can_open, get_current_user, may_manage_team_contacts
 from ..models import (ContactActivity, ContactColumn, IrCompany, IrRequest,
                       Meeting, SendItem, SendJob, SendSequence, User, VcContact)
-from ..services import (contact_columns, deal_stage, firm_type, room_name,
-                        sheet_import, sheet_owner)
+from ..services import (contact_columns, deal_stage, firm_type, meeting_kind,
+                        room_name, sheet_import, sheet_owner)
 from ..services.room_name import DEFAULT_SUFFIX, build_room_name
 
 router = APIRouter(prefix="/api/contacts", tags=["contacts"])
@@ -174,10 +174,18 @@ def contact_rows(db: Session, user: User, team_wide: bool = False,
 
         ir_recent = sum(1 for a in acts if a.kind == "ir_request"
                         and (_activity_date(a) or "") >= cutoff)
-        meet_recent = sum(1 for a in acts if a.kind == "meeting"
+        # **미팅으로 세는 것은 실제로 만난 줄뿐**이다(`meeting_kind.MET`).
+        # 예전에는 `미팅` 글자가 든 머리글에서 온 줄을 전부 셌다 — 미팅을
+        # 청하기만 한 줄이 `미팅(누적)` 에 들어가, 만난 적 없는 담당자가
+        # 엑셀에도 화면에도 미팅한 사람으로 나갔다(고객사가 짚은 자리).
+        #
+        # 세는 갈래를 여기 적지 않는 이유: 화면 표와 엑셀이 **이 함수 하나**를
+        # 쓰고(`routers/data_io._contact_row`), 그 갈래를 아는 곳은
+        # `services/meeting_kind` 한 곳이다.
+        meet_recent = sum(1 for a in acts if a.kind in meeting_kind.MET
                           and (_activity_date(a) or "") >= cutoff)
         ir_total = sum(1 for a in acts if a.kind == "ir_request")
-        meet_total = sum(1 for a in acts if a.kind == "meeting")
+        meet_total = sum(1 for a in acts if a.kind in meeting_kind.MET)
 
         room_state = c.room_verified if c.kakao_room_name else "not_found"
         room_class, room_label = ROOM_BADGES.get(room_state, ROOM_BADGES["unverified"])
