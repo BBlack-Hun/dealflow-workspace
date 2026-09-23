@@ -510,7 +510,7 @@ def test_the_data_says_how_to_read_a_band(db, users):
 # 자료만 보고는 판단할 수가 없다. 아래 검사들이 잠그는 것은 그 구멍이고,
 # **정확한 금액은 여전히 안 나간다**는 것까지 함께 잠근다.
 
-#: 기업구분 칸이 실제로 적어 두는 모양. 매출 기준이 **누적투자금 조건과 한 줄에**
+#: 투자라운드 칸이 실제로 적어 두는 모양(2026-09 까지 이름은 `기업구분`). 매출 기준이 **누적투자금 조건과 한 줄에**
 #: 있어서, `5억미만` 만 찾으면 누적투자금 쪽을 매출로 읽는다.
 SEED_SERIES = "Angel, Seed (누적투자금 0, 년매출액 3억미만)"
 PRE_A_SERIES = "Pre A, Bridge (누적투자금 5억미만, 년매출액 10억이상)"
@@ -541,9 +541,9 @@ def test_the_line_is_read_from_both_the_series_column_and_the_recent_number(db,
     """같은 사실이 두 칸에 적혀 있다 — **하나라도 넘으면 `예`.**"""
     from app.services.llm_brief import OVER_NO, OVER_YES
 
-    # 기업구분만으로 넘는다(최근매출은 비어 있다).
+    # 투자라운드만으로 넘는다(최근매출은 비어 있다).
     assert _over(db, users, series=PRE_A_SERIES, revenue_recent=None) == OVER_YES
-    # 최근매출만으로 넘는다(기업구분에는 매출 기준이 없다).
+    # 최근매출만으로 넘는다(투자라운드에는 매출 기준이 없다).
     assert _over(db, users, series="Series A", revenue_recent="7") == OVER_YES
     # 둘이 어긋나면 넘는 쪽이 이긴다 — 넘는다는 근거가 한 곳에라도 있으면 된다.
     assert _over(db, users, series=SEED_SERIES, revenue_recent="7") == OVER_YES
@@ -566,7 +566,7 @@ def test_unknown_is_never_folded_into_no(db, users):
     # 기준선을 **걸치는** 구간. 아래만 보고 `아니오` 라 적으면 모르는 것을
     # 뭉개는 것이 된다 — 실제로 넘을 수도 있다.
     assert _over(db, users, series=None, revenue_recent="3~10억") == OVER_UNKNOWN
-    # 기업구분이 걸치는 조건을 적어 둔 경우도 같다.
+    # 투자라운드이 걸치는 조건을 적어 둔 경우도 같다.
     assert _over(db, users, series="Series X (년매출액 10억미만)",
                  revenue_recent=None) == OVER_UNKNOWN
 

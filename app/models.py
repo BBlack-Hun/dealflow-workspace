@@ -461,6 +461,28 @@ class IrCompany(TimestampMixin, Base):
     contract_received: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     contract_month: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     is_top_deal: Mapped[int] = mapped_column(Integer, default=0)
+    # ── `투자 현황` — **화면에서 뺀 칸이다. 값은 여기 그대로 있다.** ──────────
+    #
+    # 사용자가 IR 기업 현황 구조를 다시 그리면서 `투자현황 -> 삭제` 라고 적었다.
+    # 그런데 이 칸에는 운영 281줄에 값이 들어 있어서, 판(migration)으로 떨구면
+    # 그 값이 사라진다. 그래서 **칸은 화면에서만 빼고 열은 남겼다** — 이
+    # 저장소가 `회신 상태` 를 뺄 때 세운 방식 그대로다.
+    #
+    # 빼기 전에 옮길 것을 먼저 옮겼다. 이 칸에만 있고 다른 칸에는 없던 글
+    # 19줄은 `note`(메모)로 옮겼다. 나머지 258줄은 `one_liner`·`business_desc`
+    # 와 글자까지 같은 사본이라 화면에서 읽을 곳이 그대로 남아 있다.
+    #
+    # **지금 이 값을 읽을 수 있는 자리는 엑셀 내려받기 하나뿐이다**
+    # (`routers/data_io.py` 의 `COMPANY_HEADERS`). 거기서까지 빼면 DB 를 직접
+    # 여는 것 말고는 읽을 길이 없어진다.
+    #
+    # **새로 쓰이지 않는다.** [수정] 창 · 표 · 저장 길(`CompanyIn`) · 응답
+    # (`company_rows`) · 검색(`search_text`) · 시트 가져오기(`apply_sheet_b`)
+    # 에서 전부 뺐다. 어디를 뺐는지는 한 곳에 적혀 있다 —
+    # `tests/test_company_funding_status_removed.py`.
+    #
+    # ★ 이름이 같은 **다른 칸**이 있다: `VcContact.notes["funding_status"]`
+    #   (스타트업 명단의 `투자유치 상태`). 그쪽은 그대로 쓰인다 — 남남이다.
     funding_status: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     # 기업 쪽 연락 담당자(시트 '스타트업' 명단의 성함/연락처/이메일).
@@ -587,7 +609,8 @@ class IrCompany(TimestampMixin, Base):
     def introducible(self) -> bool:
         """딜소개 문구를 만들 수 있는가 (= 발송 대상에 띄울 수 있는가).
 
-        조건은 **실제 문구에 들어가는 것**만 본다. 시리즈(기업구분)는 문구에
+        조건은 **실제 문구에 들어가는 것**만 본다. 시리즈(화면 이름 `투자라운드`,
+        2026-09 까지 `기업구분`)는 문구에
         쓰이지 않는다 — 예전엔 이걸 필수로 걸어두어 실데이터 297개 중
         소개 가능이 0개가 됐다.
 

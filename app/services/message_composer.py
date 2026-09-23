@@ -129,7 +129,7 @@ def auto_company_summary(company: CompanyView) -> str:
     아무것도 안 내는 쪽도 "기본은 사용자 정의" 와 결이 맞지만, 그러면 **빈 줄이
     그대로 투자사에게 나갈 자리**가 남는다.
 
-    소개 대상에 서는 조건(`models.IrCompany.introducible`)은 `사업분야 대분류
+    소개 대상에 서는 조건(`models.IrCompany.introducible`)은 `대분류
     **또는** 딜 소개 문구` + 금액 하나다 — 문구가 비어도 분야만 있으면 선다.
     `/deals` 의 `내용 부족` 딱지도 그 판정을 그대로 쓰고
     (`routers/pages.py` 의 `blocked_reasons`), 이유를 적는 쪽
