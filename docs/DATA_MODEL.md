@@ -92,13 +92,15 @@ weekly_stats   (퇴사 삭제 후에도 남는 익명화 집계)
 
 구글시트 B [IR 기업현황] 헤더(`NO, 기업명, 사업분야 대분류, 소분류, 기업구분(시리즈), 한줄 소개, 담당자, IR deck유무, 계약여부, 계약 월 기입, 핵심/TOP Deal, 투자유치상태, 비고`)를 계승 + 서비스 필드 추가.
 
+> **이 표의 이름은 「시트 머리글」이다 — 화면 이름과 다를 수 있다.** 2026-09 에 화면 이름 넷이 바뀌었다(`사업분야 대분류`→`대분류` · `기업구분`→`투자라운드` · `대표자`→`대표자명` · `기보, 신보, 중진공`→`정책자금`). 시트는 그대로이고, 가져오기가 **옛 머리글과 새 머리글을 모두** 읽는다(`services/sheet_import.py` · `scripts/import_company_sheets.py`). 옛 이름을 지우면 다음 업로드가 조용히 깨진다.
+
 | 필드 | 타입 | 시트 B 원천 | 설명 |
 |---|---|---|---|
 | id | INTEGER PK | NO | |
 | name | TEXT | 기업명 | |
-| sector_major | TEXT | 사업분야 대분류 | |
+| sector_major | TEXT | 사업분야 대분류 | **화면 이름은 `대분류`**(2026-09 변경) |
 | sector_minor | TEXT NULL | 소분류 | |
-| series | TEXT | 기업구분(시리즈) | Seed/A/B/Pre-IPO 등 |
+| series | TEXT | 기업구분(시리즈) | Seed/A/B/Pre-IPO 등 · **화면 이름은 `투자라운드`**(2026-09 변경) |
 | one_liner | TEXT NULL | 한줄 소개 | 예: "B2B 농산물 선도거래 'Presell'" |
 | owner_user_id | FK users NULL | 담당자 | RBAC: 편집=관리자+담당자 |
 | ir_drive_url | TEXT NULL | IR deck유무 → 링크로 승격 | **IR 자료 구글 드라이브 링크** (있으면 deck 보유로 간주) |

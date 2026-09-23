@@ -422,7 +422,7 @@
     // 표를 읽는 쪽이 스스로 다시 읽는 편이 빠뜨릴 자리가 없다.
     //
     // 저장 직후가 아니라 **한 박자 뒤**에 읽는다. 같은 이벤트를 듣고 행을
-    // 다듬는 화면이 있어서다(기업구분을 짧은 이름으로 되돌려 적는 등) —
+    // 다듬는 화면이 있어서다(투자라운드를 짧은 이름으로 되돌려 적는 등) —
     // 그 정리보다 먼저 읽으면 같은 값이 목록에 두 벌로 생긴다.
     table.addEventListener("inline-saved", function () {
       if (global && global.setTimeout) global.setTimeout(refresh, 0);
