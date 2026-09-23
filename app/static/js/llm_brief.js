@@ -116,7 +116,15 @@
       .catch(function () { foundState.textContent = "찾지 못했습니다."; });
   });
 
+  // 답은 **갈래마다 한 줄씩** 온다(서버의 시킬 말이 그 모양을 시킨다). 그래서
+  // 여기도 갈래로 그린다 — 한 덩어리로 그리면 사람이 답을 다시 갈래로 갈라야
+  // 하고, 갈래가 아홉이면 아홉 번이다.
+  //
+  // **갈래를 여기서 읽지 않는다.** 어느 번호가 어느 갈래의 몫인지는 서버가
+  // 갈라서 보낸다(`services/llm_brief.parse_group_refs`) — 화면이 따로 읽으면
+  // 앱이 아는 갈래 이름과 갈리고, 갈린 이름으로는 발송으로 옮길 수가 없다.
   function draw(data) {
+    var groups = data.groups || [];
     var rows = data.investors.concat(data.companies);
     if (!rows.length) {
       // 번호가 하나도 없으면 **왜 없는지** 말해 준다. 맨숫자는 일부러 안 읽기
@@ -130,31 +138,72 @@
     // 좁아진 뒤로(내 담당 + 카톡방 확인됨), 못 찾는 번호는 대개 LLM 이 자료에
     // 없는 번호를 지어낸 것이다 — "내 담당이 아니다" 만으로는 그것을 모른다.
     foundState.textContent = rows.length + "개 번호"
+      + (groups.length ? " · 갈래 " + groups.length + "개" : "")
       + (missing ? " · " + missing + "개는 이 자료에 없는 번호입니다" : "");
 
-    rows.forEach(function (row) {
-      var item = document.createElement("div");
-      item.classList.add("llm-found-row");
-      // 못 찾은 번호는 흐리게 남긴다 — 지우면 다섯을 넣고 셋만 뜬 것을 모른다.
-      if (!row.found) item.classList.add("missing");
-      var tag = document.createElement("span");
-      tag.classList.add("llm-ref");
-      tag.textContent = row.id;
-      item.appendChild(tag);
-
-      if (row.found) {
-        var link = document.createElement("a");
-        link.href = row.href;
-        link.textContent = row.name + (row.firm ? " · " + row.firm : "");
-        item.appendChild(link);
-      } else {
-        var note = document.createElement("span");
-        note.classList.add("muted");
-        note.textContent = "이 자료에 담기지 않은 번호입니다 — "
-          + "내 담당이 아니거나 카톡방이 확인되지 않은 곳입니다";
-        item.appendChild(note);
+    // 갈래에 붙은 번호는 갈래 아래에만 그린다 — 아래 '갈래가 안 적힌' 자리에
+    // 또 나오면 같은 기업이 두 번 뽑힌 것처럼 보인다.
+    var placed = {};
+    groups.forEach(function (group) {
+      var head = document.createElement("div");
+      head.classList.add("llm-found-group");
+      head.textContent = group.name + " ";
+      var count = document.createElement("span");
+      count.classList.add("count");
+      count.textContent = "· " + group.companies.length + "곳";
+      head.appendChild(count);
+      found.appendChild(head);
+      if (!group.companies.length) {
+        // 한 곳도 못 고른 갈래도 **줄을 남긴다** — 답에 그 갈래가 있었다는
+        // 사실이 지워지면, 빠뜨린 것인지 맞는 곳이 없던 것인지 알 수 없다.
+        var none = document.createElement("div");
+        none.classList.add("llm-found-none");
+        none.textContent = "고른 곳이 없습니다";
+        found.appendChild(none);
+        return;
       }
-      found.appendChild(item);
+      group.companies.forEach(function (row) {
+        placed[row.id] = true;
+        found.appendChild(rowNode(row));
+      });
     });
+
+    // 갈래에 안 붙은 번호 — 투자사 번호와, 갈래 머리보다 앞에 적힌 기업 번호다.
+    // **버리지 않는다**: 조용히 빠지면 다섯을 넣고 셋만 뜬 것을 눈치채지 못한다.
+    var rest = data.investors.concat(data.companies.filter(function (row) {
+      return !placed[row.id];
+    }));
+    if (rest.length && groups.length) {
+      var head = document.createElement("div");
+      head.classList.add("llm-found-group");
+      head.textContent = "갈래가 안 적힌 번호";
+      found.appendChild(head);
+    }
+    rest.forEach(function (row) { found.appendChild(rowNode(row)); });
+  }
+
+  function rowNode(row) {
+    var item = document.createElement("div");
+    item.classList.add("llm-found-row");
+    // 못 찾은 번호는 흐리게 남긴다 — 지우면 다섯을 넣고 셋만 뜬 것을 모른다.
+    if (!row.found) item.classList.add("missing");
+    var tag = document.createElement("span");
+    tag.classList.add("llm-ref");
+    tag.textContent = row.id;
+    item.appendChild(tag);
+
+    if (row.found) {
+      var link = document.createElement("a");
+      link.href = row.href;
+      link.textContent = row.name + (row.firm ? " · " + row.firm : "");
+      item.appendChild(link);
+    } else {
+      var note = document.createElement("span");
+      note.classList.add("muted");
+      note.textContent = "이 자료에 담기지 않은 번호입니다 — "
+        + "내 담당이 아니거나 카톡방이 확인되지 않은 곳입니다";
+      item.appendChild(note);
+    }
+    return item;
   }
 })();
