@@ -50,6 +50,10 @@ from sqlalchemy.orm import Session
 
 from ..models import (SEND_KINDS, ContactActivity, IrRequest, Meeting,
                       SendItem, SendJob)
+#: 미팅 갈래의 **이름**은 여기서 정하지 않는다(`services/meeting_kind` 한 곳).
+#: 그 갈래가 사다리의 **어느 칸**인지만 아래 `ACTIVITY_STAGE` 가 정한다 —
+#: 사다리를 쥔 것은 이 모듈이다.
+from . import meeting_kind as mk
 #: 무엇을 '보냈다' 로 세는가 — **판정을 여기서 새로 적지 않는다.**
 #: `deal_history` 가 이미 그 값을 들고 있고(`llm_brief.SENT_STATUS` 와 같은
 #: 값·같은 이유), 그 두 곳과 이 곳이 세는 것이 갈리면 표의 단계와 이력이 서로
@@ -122,6 +126,34 @@ SENT_STAGE: Dict[str, Optional[str]] = {
 }
 
 
+#: **시트에서 옮겨 온 기록 한 줄이 올려 주는 칸**(`ContactActivity.kind`).
+#:
+#: 미팅이 넷으로 갈려 있다. 예전에는 `미팅` 글자만 있으면 전부 한 값이라
+#: **미팅을 청하기만 한 줄도 `1차 미팅` 으로 섰다** — 고객사가 "그분들은
+#: 실제로 미팅하신 상태가 아닙니다" 라고 짚은 것이 이 자리다.
+#:
+#:   · `meeting_request` — 청했을 뿐 **안 만났다**. 그래서 미팅 칸이 아니라
+#:     `INTRO` 다. 이 앱이 미팅 요청 카톡을 보냈을 때 올리는 칸과 **같다**
+#:     (위 `SENT_STAGE` 의 `deal_intro` 설명 — 미팅 요청·리마인드도 "딜소개를
+#:     보낸 뒤" 의 일이라 `INTRO` 밑으로 안 내려간다). 같은 사실을 두 길로
+#:     받았는데 칸이 다르면, 시트에서 온 사람과 앱에서 보낸 사람이 같은 일을
+#:     하고도 다른 단계에 선다.
+#:   · `meeting_set` — 날짜가 잡혔다. `Meeting` 줄의 `planned` 와 같은 뜻이라
+#:     같은 칸(`MEET_1`)이다(`_from_meeting`).
+#:   · `meeting_done` — 만났다. `Meeting.status == "done"` 과 같은 칸이다.
+#:   · `meeting` — **아직 안 가른 옛 줄**(`services/meeting_kind` 참고).
+#:     가르기 전까지 **지금 뜻 그대로** `MEET_1` 이다. 여기서 먼저 낮추면
+#:     진짜로 미팅한 사람들이 스크립트를 돌리기도 전에 화면에서 빠진다.
+ACTIVITY_STAGE: Dict[str, str] = {
+    "deal_intro": INTRO,
+    "ir_request": IR_ASKED,
+    mk.REQUEST: INTRO,
+    mk.SET: MEET_1,
+    mk.DONE: MEET_DONE,
+    mk.LEGACY: MEET_1,
+}
+
+
 def label(key: str) -> str:
     return LABELS.get(key, LABELS[NONE])
 
@@ -159,12 +191,9 @@ def of_many(db: Session, contact_ids: Iterable[int]) -> Dict[int, str]:
         .where(ContactActivity.contact_id.in_(ids))
     ).all()
     for contact_id, kind in activities:
-        if kind == "deal_intro":
-            raise_to(contact_id, INTRO)
-        elif kind == "ir_request":
-            raise_to(contact_id, IR_ASKED)
-        elif kind == "meeting":
-            raise_to(contact_id, MEET_1)
+        key = ACTIVITY_STAGE.get(kind)
+        if key:
+            raise_to(contact_id, key)
 
     # ② 이 도구에서 쌓인 기록
     for contact_id, status in db.execute(

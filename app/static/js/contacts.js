@@ -18,7 +18,12 @@
     "connect_stage"];
   var CHECKS = ["channel_kakao", "channel_email"];
   var KIND_KO = {
-    deal_intro: "딜소개", ir_request: "IR 요청", meeting: "미팅",
+    deal_intro: "딜소개", ir_request: "IR 요청",
+    // 시트에서 옮겨 온 미팅은 **갈래가 넷**이다
+    // (`app/services/meeting_kind.py` — 이름도 판정도 그 한 곳이다).
+    // `meeting` 은 아직 안 가른 옛 줄이라 그냥 `미팅` 이라고만 적는다.
+    meeting: "미팅", meeting_request: "미팅 요청",
+    meeting_set: "미팅 확정", meeting_done: "미팅 완료",
     // 자료를 보낸 뒤의 미팅 요청을 **사람이 카톡에서 직접 보내고 표시한** 줄
     // (`services/pipeline.MEETING_ASK_KIND`). 여기 없으면 이력에 코드값
     // `meeting_ask` 가 그대로 찍힌다.

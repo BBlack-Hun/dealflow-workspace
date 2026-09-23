@@ -108,7 +108,9 @@ def test_activity_columns_extend_when_a_new_month_is_added():
     assert [(c.month, c.kind) for c in cols][-3:] == [
         ("2026-09", si.KIND_DEAL_INTRO),
         ("2026-09", si.KIND_IR_REQUEST),
-        ("2026-09", si.KIND_MEETING),
+        # 머리글이 `미팅 요청` 이라고 적어 두었으면 **청한 칸**이다 — 만난
+        # 칸과 한 값으로 뭉치지 않는다(`services/meeting_kind`).
+        ("2026-09", si.KIND_MEETING_REQUEST),
     ]
 
 
@@ -258,7 +260,11 @@ def test_apply_sheet_a_creates_contacts_activities_and_room_names(db, users):
     # 8월: 딜소개 3회차 + IR 1 + 미팅 1, 7월 딜소개 1, 6월 딜소개 1 = 7건
     assert len(acts) == 7
     assert {a.month for a in acts} == {"2026-08", "2026-07", "2026-06"}
-    assert {a.kind for a in acts} == {"deal_intro", "ir_request", "meeting"}
+    # 미팅 칸의 머리글이 `미팅 요청` 이라 **청한 줄**로 들어간다. 예전에는
+    # `미팅` 글자만 보고 전부 `meeting` 한 값이었고, 그래서 청하기만 한
+    # 담당자가 화면에서 `1차 미팅` 으로 섰다(`services/meeting_kind`).
+    assert {a.kind for a in acts} == {"deal_intro", "ir_request",
+                                      "meeting_request"}
     assert all(a.source == "import" for a in acts)
 
 
