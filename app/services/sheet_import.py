@@ -831,9 +831,23 @@ def parse_sheet_b(rows: Sequence[Sequence[str]], year: int) -> SheetBParse:
         deck_col = find_column(header, ["ir"], exclude=["기업"])
     cols = {
         "name": find_column(header, ["기업명"]),
+        # ── ★ 화면 이름이 바뀌어도 **옛 시트 머리글을 계속 읽는다** ──────────
+        # 화면에서는 `사업분야 대분류` → `대분류`, `기업구분` → `투자라운드` 로
+        # 바꿨다(`templates/companies.html` 머리 주석). 그런데 **여기가 보는
+        # 것은 화면 이름이 아니라 고객사 시트의 머리글**이고, 그 시트는 여전히
+        # 옛 이름이다. 화면을 따라 여기까지 바꾸면 다음 업로드에서 그 열을
+        # 못 찾아 값이 통째로 안 들어간다 — 오류도 안 나고 조용히 빈다.
+        #
+        # 그래서 **옛 이름을 먼저, 새 이름을 뒤에** 둔다. 옛 이름을 지우지 마라.
+        #
+        # `sector_major` 는 손댈 것이 없었다 — `find_column` 이 **포함**으로
+        # 찾으므로 `대분류` 한 낱말이 `사업분야 대분류` 와 `대분류` 를 둘 다
+        # 잡는다(`소분류` 에는 `대분류` 가 안 들어 있어 헷갈리지도 않는다).
         "sector_major": find_column(header, ["대분류"]),
         "sector_minor": find_column(header, ["소분류"]),
-        "series": first_column(header, ["기업구분"], ["시리즈"]),
+        # `기업구분` 은 `투자라운드` 를 못 잡는다 — 글자가 겹치지 않는다.
+        # 그래서 둘을 나란히 적는다(`시리즈` 는 예전부터 받던 다른 표기다).
+        "series": first_column(header, ["기업구분"], ["시리즈"], ["투자라운드"]),
         "one_liner": first_column(header, ["한줄"], ["한 줄"]),
         "owner": find_column(header, ["담당자"]),
         "deck": deck_col,

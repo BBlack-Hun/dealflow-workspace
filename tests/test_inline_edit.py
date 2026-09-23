@@ -441,14 +441,19 @@ def test_the_excel_keeps_a_range_a_range(logged_in, db):
 def test_two_tabs_match_the_sheet(logged_in, company):
     """시트를 쓰던 사람이 같은 자리에서 같은 것을 찾을 수 있어야 한다."""
     status = logged_in.get("/companies").text
-    for col in ("사업분야 대분류", "소분류", "기업구분", "한줄 소개",
+    # **이름 넷이 바뀌었다**(2026-09, 사용자 요청) — 시트 머리글이 아니라
+    # **화면 머리글**을 재는 자리라 같이 바꾼다. 시트 쪽은 옛 이름 그대로고,
+    # 가져오기가 그 옛 머리글을 계속 읽는다(`services/sheet_import.py` ·
+    # `scripts/import_company_sheets.py`). 바꾼 자리 전부는
+    # tests/test_company_column_renames.py 에 있다.
+    for col in ("대분류", "소분류", "투자라운드", "한줄 소개",
                 "담당자", "계약여부", "핵심/TOP Deal"):
         assert col in status, f"IR 기업현황 탭에 '{col}' 이 없다"
 
     db_tab = logged_in.get("/companies?tab=db").text
-    for col in ("대표자", "연락처", "이메일", "22년 매출", "25년 매출",
+    for col in ("대표자명", "연락처", "이메일", "22년 매출", "25년 매출",
                 "누적투자금액", "투자유치희망금액", "Pre Value",
-                "특이사항 (장점)", "설립년도", "기보, 신보, 중진공"):
+                "특이사항 (장점)", "설립년도", "정책자금"):
         assert col in db_tab, f"스타트업DB 탭에 '{col}' 이 없다"
 
 

@@ -218,7 +218,7 @@ def test_only_the_padding_around_the_written_intro_is_trimmed():
 def test_a_company_can_be_introducible_with_no_written_intro():
     """**비었을 때 조합을 남겨 둔 이유.** 문구가 비어도 소개 대상에 설 수 있다.
 
-    `IrCompany.introducible` 은 `사업분야 대분류 **또는** 딜 소개 문구` + 금액
+    `IrCompany.introducible` 은 `대분류 **또는** 딜 소개 문구` + 금액
     하나를 본다 — 문구 칸은 필수가 아니다. `/deals` 의 `내용 부족` 딱지도 그
     판정을 그대로 쓰고, 이유를 적는 `REQUIRED_FIELDS` 에는 이 칸이 아예 없다.
     즉 **문구가 비었다고 알려 주는 화면이 없다.**

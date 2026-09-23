@@ -1,4 +1,5 @@
-// `사업분야 대분류`·`소분류` 는 **이미 쓰는 값에서 고르거나, 그냥 친다.**
+// `대분류`·`소분류` 는 **이미 쓰는 값에서 고르거나, 그냥 친다.**
+// (`대분류` 는 2026-09 까지 `사업분야 대분류` 였다 — 칸은 `sector_major` 그대로다.)
 // (node tests/js/company_field_options_test.js)
 //
 // ── 여기서 잠그는 것 ────────────────────────────────────────────────────
@@ -103,7 +104,9 @@ function cell(field, filterKey, text) {
 
 // 화면 그대로의 뼈대: 머리글에 필터, 줄에 `data-f-*`, 칸에 눌러 고치는 `pick`.
 function build(rows) {
-  const majorTh = D.el("th", { "data-filters": "sector:사업분야 대분류" },
+  // 필터 **열쇠**(`sector`)가 쓰이는 자리다 — 이름은 단추 글자일 뿐이라
+  // 2026-09 에 `사업분야 대분류` → `대분류` 로 바뀌어도 걸리는 것이 없다.
+  const majorTh = D.el("th", { "data-filters": "sector:대분류" },
     [D.el("div", { class: "th-filters" })]);
   const minorTh = D.el("th", { "data-filters": "minor:소분류" },
     [D.el("div", { class: "th-filters" })]);

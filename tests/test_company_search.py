@@ -144,7 +144,9 @@ def test_the_search_box_says_what_it_searches():
 
     placeholder = re.search(r'placeholder="([^"]*)"', attrs)
     assert placeholder, "자리표시 글자가 없다"
-    for word in ("기업명", "대표자", "연락처", "이메일"):
+    # `대표자` 는 2026-09 에 `대표자명` 이 됐다(사용자 요청 — 칸은
+    # `contact_name` 그대로다). 자리표시에 실제로 적힌 말로 잰다.
+    for word in ("기업명", "대표자명", "연락처", "이메일"):
         assert word in placeholder.group(1), f"검색되는데 자리표시에 {word} 가 없다"
 
     # 자리표시에 다 못 적는 것(번호 모양·분야·소개)은 `title` 이 받는다.

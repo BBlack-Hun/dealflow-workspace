@@ -46,11 +46,30 @@ from app.routers.companies import contract_key, top_deal_kind  # noqa: E402
 # 함께 받고, 예전 값(`yes`·`no`)과 지금 값(`paid`)도 그대로 통과시킨다 —
 # 손으로 적어 둔 표가 하던 일을 모두 한다.
 
+# ── ★ 첫 칸은 **시트 머리글**이다 — 화면 이름이 아니다 ──────────────────────
+#
+# 아래 `load()` 가 `label in name` 으로 **고객사 시트의 머리글**을 찾는다.
+# 화면 이름은 2026-09 에 넷이 바뀌었지만(`사업분야 대분류`→`대분류` ·
+# `기업구분`→`투자라운드` · `대표자`→`대표자명` · `기보, 신보, 중진공`→`정책자금`),
+# **시트는 여전히 옛 머리글이다.** 화면을 따라 여기까지 바꾸면 다음 업로드에서
+# 그 열을 못 찾아 값이 안 들어간다 — `! '…' 칸이 시트에 없습니다` 한 줄만 찍히고
+# 넘어간다.
+#
+# 그래서 첫 칸에 **여러 표기를 함께** 적을 수 있게 했다(글자 하나 또는 묶음).
+# 먼저 맞는 것이 이긴다. **옛 이름을 지우지 마라.**
+#
+# 한 낱말로 둘 다 잡히는 칸은 묶음으로 안 적는다:
+#   · `대표자`  → `대표자` · `대표자명` 을 다 잡는다(앞이 짧아서 포함된다)
+#   · `대분류`  → `사업분야 대분류` · `대분류` 를 다 잡는다(`소분류` 와는 안 겹친다)
+# 나머지 둘은 글자가 아예 안 겹쳐서 묶음이 필요하다:
+#   · `기업구분` ↔ `투자라운드`
+#   · `기보`     ↔ `정책자금`
+
 # IR 기업현황(진행관리) 탭 — 시트 컬럼 → 모델 칸
 STATUS_COLUMNS = [
-    ("사업분야 대분류", "sector_major"),
+    ("대분류", "sector_major"),
     ("소분류", "sector_minor"),
-    ("기업구분", "series"),
+    (("기업구분", "투자라운드"), "series"),
     ("한줄 소개", "one_liner"),
     ("담당자", "assignee_name"),
     # `미팅제공일자` 는 `계약여부` **앞**이다 — 화면과 같은 차례로 적어 둔다.
@@ -75,7 +94,7 @@ COLUMNS = [
     ("25년 매출", "revenue_2025"),
     ("특이사항", "competitiveness"),
     ("설립년도", "founded_year"),
-    ("기보", "guarantee"),
+    (("기보", "정책자금"), "guarantee"),
 ]
 
 
@@ -104,9 +123,13 @@ def load(ws, columns, by_name, args, create=False):
     head = {text(ws.cell(1, c).value): c for c in range(1, ws.max_column + 1)}
     where = {}
     for label, field in columns:
-        col = next((c for name, c in head.items() if label in name), None)
+        # 첫 칸은 글자 하나일 수도, 여러 표기의 묶음일 수도 있다(위 주석).
+        # **먼저 적은 것이 이긴다** — 옛 시트 머리글을 앞에 둔 이유다.
+        wanted = (label,) if isinstance(label, str) else tuple(label)
+        col = next((c for w in wanted
+                    for name, c in head.items() if w in name), None)
         if col is None:
-            print(f"  ! '{label}' 칸이 시트에 없습니다 — 건너뜁니다")
+            print(f"  ! '{' / '.join(wanted)}' 칸이 시트에 없습니다 — 건너뜁니다")
             continue
         where[label] = (col, field)
 
