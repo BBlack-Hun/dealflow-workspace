@@ -104,12 +104,42 @@
       li("새로 생김", d.created + "명") +
       li("갱신", d.updated + "명") +
       li("활동 이력", d.activities_created + "건 추가 (중복 " + d.activities_existing + "건 건너뜀)") +
+      li("시트와 다른 칸", (d.diffs_total || 0) + "칸 (안 덮었습니다)") +
       li("건너뛴 행", d.skipped_total + "행") +
       "</ul></div>";
 
     if ((d.notes || []).length) {
       html += '<ul class="import-notes">' +
         d.notes.map(function (n) { return "<li>" + esc(n) + "</li>"; }).join("") + "</ul>";
+    }
+    // 시트 값과 앱 값이 **다른 칸**. 이 업로드가 안 덮고 지나간 자리다 —
+    // 고객이 "드린 내용이 왜 반영이 안 되나" 를 묻던 그 칸이라, 접힌 채로도
+    // 몇 칸인지는 여는 줄에 적힌다.
+    //
+    // **지금 값과 시트 값을 나란히 둔다.** 둘 중 하나만 보이면 사람이
+    // 판단할 수가 없다. 메모처럼 사람이 쥐는 칸은 서버가 값을 안 싣고
+    // 길이만 보내므로(`import_diff.as_rows`) 여기서도 길이만 그린다.
+    if ((d.diffs || []).length) {
+      html += '<details class="import-skipped" open><summary>시트와 다른 칸 ' +
+        (d.diffs_total || 0) + "개 보기 — 이 업로드는 <b>안 덮었습니다</b></summary>" +
+        "<table class=\"mini-table\"><tr><th>줄</th><th>칸</th>" +
+        "<th>지금 값</th><th>시트 값</th></tr>" +
+        d.diffs.map(function (x) {
+          var now = x.before === undefined ? x.before_len + "자" : x.before;
+          var sheet = x.after === undefined ? x.after_len + "자" : x.after;
+          return "<tr><td>" + esc(x.token) + "</td><td>" + esc(x.label) +
+            (x.can_overwrite ? "" : " <i>(안 덮음)</i>") +
+            "</td><td>" + esc(now) + "</td><td>" + esc(sheet) + "</td></tr>";
+        }).join("") + "</table>" +
+        "<p class=\"hint\">덮어야 한다면 되돌릴 파일을 먼저 뜨는 " +
+        "<code>scripts/import_investor_list.py --overwrite</code> 를 씁니다. " +
+        "<b>줄</b> 칸의 말(<code>418:note:c31</code>)을 그대로 베껴 고른 칸만 덮을 수 있습니다." +
+        "</p></details>";
+    }
+    if (d.activities_stale) {
+      html += '<p class="import-notes">시트에서 없어진 활동 줄 ' +
+        d.activities_stale + "건 — <b>지우지 않습니다.</b> 이 표에는 손으로 적은 줄과 " +
+        "발송이 만든 줄이 함께 삽니다.</p>";
     }
     if ((d.skipped || []).length) {
       html += '<details class="import-skipped"><summary>건너뛴 행 ' +

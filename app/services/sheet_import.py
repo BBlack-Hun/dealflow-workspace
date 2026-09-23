@@ -33,8 +33,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..models import ContactActivity, IrCompany, User, VcContact
-from . import (amount, company_names as cnames, firm_type, group_name as gn,
-               invest_stage as ist, meeting_kind as mk, sheet_owner)
+from . import (amount, company_names as cnames, edit_log, firm_type,
+               group_name as gn, import_diff, invest_stage as ist,
+               meeting_kind as mk, sheet_owner)
 from .room_name import DEFAULT_SUFFIX, build_room_name, normalize_space, split_name_title
 
 # 활동 종류 (DATA_MODEL §2.6)
@@ -967,10 +968,19 @@ def _is_top(text: str) -> bool:
 class ImportReport:
     created: int = 0
     updated: int = 0
+    filled: int = 0
     activities_created: int = 0
     activities_existing: int = 0
     skipped: List[SkippedRow] = field(default_factory=list)
     notes: List[str] = field(default_factory=list)
+    #: **시트 값과 앱 값이 다른데 안 얹고 지나간 칸.** 이 길은 빈 칸만 채우므로
+    #: (`_fill_if_empty`) 그런 칸이 늘 생기는데, 그동안 그 사실이 어디에도 안
+    #: 떠서 고객이 고쳐 보내고 또 고쳐 보냈다. 판정은 `services/import_diff`
+    #: 한 곳이다 — 스크립트 쪽 임포트와 같은 자를 쓴다.
+    diffs: List[import_diff.Diff] = field(default_factory=list)
+    #: 이 시트가 다루는 달 안에서 **시트에 없어진** 활동 줄. 세기만 한다 —
+    #: 지우는 길은 만들지 않았다(까닭은 `services/import_diff` 머리글).
+    activities_stale: int = 0
 
     def as_text(self, title: str) -> str:
         lines = [
@@ -980,6 +990,7 @@ class ImportReport:
         ]
         for note in self.notes:
             lines.append(f"  - {note}")
+        lines += import_diff.lines(self.diffs)
         for s in self.skipped:
             lines.append(f"  · {s.row_no}행 스킵 ({s.reason}): {s.preview}")
         return "\n".join(lines)
@@ -1010,6 +1021,26 @@ def _fill_if_empty(obj, attr: str, value) -> bool:
     return True
 
 
+#: 시트와 나란히 놓고 볼 칸 — **`_fill_if_empty` 가 건드리는 칸 그대로**다.
+#: 빈 칸만 채우는 칸이 곧 '이미 값이 있으면 안 얹고 지나가는 칸' 이라,
+#: 다름이 생길 수 있는 자리가 정확히 여기다. 이 목록이 저 호출과 갈리면
+#: 실제로는 안 얹고 지나갔는데 목록에는 안 뜨는 칸이 생긴다.
+#:
+#: 덮어도 되는 칸인지는 **여기서 정하지 않는다** — `services/import_diff` 가
+#: 한 곳에서 정한다(스크립트 쪽 임포트와 같은 자를 써야 한다).
+_DIFF_FIELDS = ("title", "round_size", "stages", "memo", "phone",
+                "office_phone", "address", "department", "email", "sectors",
+                "group_name")
+
+#: 화면에 읽을 이름. 이 길은 머리글을 칸마다 들고 있지 않아(파서가 값만
+#: 넘긴다) 앱의 이름을 쓴다 — 없으면 칸 이름이 그대로 나온다.
+_DIFF_LABELS = {"title": "직함", "round_size": "라운드 사이즈",
+                "stages": "선호 투자단계", "memo": "메모", "phone": "연락처",
+                "office_phone": "유선전화", "address": "주소",
+                "department": "부서", "email": "메일", "sectors": "선호 투자분야",
+                "group_name": "그룹"}
+
+
 def apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
                   room_suffix: str = DEFAULT_SUFFIX, dry_run: bool = False,
                   source_label: Optional[str] = None) -> ImportReport:
@@ -1021,11 +1052,22 @@ def apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
 
     매칭 키가 (이름, 투자사)뿐인 이유: 같은 사람이 여러 명단 시트에 나뉘어 있고 시트마다
     담당자 표기가 비거나 다르다. 소유자를 키에 넣으면 시트 수만큼 중복 인물이 생긴다.
+
+    ## 다른 칸은 **보여만 준다 — 이 길에는 덮는 단추를 달지 않는다**
+
+    시트 값이 앱 값과 다른데 안 얹고 지나간 칸을 세어 리포트에 싣는다
+    (`report.diffs` · 판정은 `services/import_diff` 한 곳). 덮는 길은 여기
+    없다. 이 길은 **팀원 누구나 파일 하나를 끌어다 놓으면 도는 길**이고,
+    되돌릴 것이 그날 백업(`/team/restore`)뿐이다 — 되돌릴 파일을 손에 쥐지
+    않은 자리에 남의 명단을 통째로 덮는 단추를 달면, 잘못 누른 한 번을
+    되짚을 수가 없다. 덮는 일은 `--save-baseline` 을 먼저 요구하는
+    `scripts/import_investor_list.py --overwrite` 가 맡는다.
     """
     report = ImportReport(skipped=list(parsed.skipped),
                           notes=list(getattr(parsed, 'notes', [])))
     # 명단(시트)을 등록한다. 담당은 **처음 정해진 것을 유지**한다 —
     # 시트를 한 번 올린 것만으로 남의 명단 담당이 넘어오면 안 된다.
+    sheet_row = None
     if source_label:
         written = next((pc.owner_name for pc in parsed.contacts
                         if looks_like_person(pc.owner_name)), None)
@@ -1035,6 +1077,7 @@ def apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
             # 담당자 칸이 없는 시트는 올린 사람 것으로 본다(딜소개현황이 그렇다).
             owner.user_id = user_id
         db.flush()
+        sheet_row = owner
     months = sorted({c.month for c in parsed.activity_columns if c.month})
     report.notes.append(
         f"활동 컬럼 {len(parsed.activity_columns)}개 인식"
@@ -1082,20 +1125,27 @@ def apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
             if owner_id:
                 contact.user_id = owner_id
 
+        # **고치기 전 값을 먼저 떠 둔다.** 아래 `_fill_if_empty` 가 빈 칸을
+        # 채우고 나면 '원래 비어 있었는지' 를 알 수 없게 된다 — 채운 칸은
+        # 다름이 아니고, 이미 값이 있던 칸만 다름이다.
+        was = {name: (getattr(contact, name, "") or "") for name in _DIFF_FIELDS}
+
         # 상태 칸: 새 시트가 최신 판단 → 덮어쓴다
         _set_if_value(contact, "invited_status", pc.invited_status)
         _set_if_value(contact, "interest_level", pc.interest_level)
         _set_if_value(contact, "kakao_joined", pc.kakao_joined)
         # 프로필·연락처: 시트마다 조각이 나뉘어 있다 → 비어 있을 때만 채운다(병합)
-        _fill_if_empty(contact, "title", pc.title)
-        _fill_if_empty(contact, "round_size", pc.round_size or pc.profile_raw)
-        _fill_if_empty(contact, "stages", pc.stages)
-        _fill_if_empty(contact, "memo", pc.memo)
-        _fill_if_empty(contact, "phone", pc.phone)
-        _fill_if_empty(contact, "office_phone", pc.office_phone)
-        _fill_if_empty(contact, "address", pc.address)
-        _fill_if_empty(contact, "department", pc.department)
-        _fill_if_empty(contact, "email", pc.email)
+        report.filled += sum([
+            _fill_if_empty(contact, "title", pc.title),
+            _fill_if_empty(contact, "round_size", pc.round_size or pc.profile_raw),
+            _fill_if_empty(contact, "stages", pc.stages),
+            _fill_if_empty(contact, "memo", pc.memo),
+            _fill_if_empty(contact, "phone", pc.phone),
+            _fill_if_empty(contact, "office_phone", pc.office_phone),
+            _fill_if_empty(contact, "address", pc.address),
+            _fill_if_empty(contact, "department", pc.department),
+            _fill_if_empty(contact, "email", pc.email),
+        ])
         if pc.email:
             # 메일 주소가 있으면 메일 채널로도 보낼 수 있다.
             contact.channel_email = 1
@@ -1189,6 +1239,24 @@ def apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
                                                       suffix=room_suffix)
         db.flush()
 
+        # ── 시트와 앱이 **다른 칸** ──────────────────────────────────────
+        #
+        # 안 얹고 지나간 칸을 여기서 세어 둔다. 고객이 겪은 일이 바로 이것이다
+        # — 고쳐 보낸 값이 화면에 안 뜨는데 그 사실이 어디에도 안 떴다.
+        # **세기만 한다.** 이 길에서 덮는 길은 열지 않는다(까닭은 이 파일의
+        # `apply_sheet_a` 설명과 `services/import_diff` 머리글).
+        wanted = {"title": pc.title, "round_size": pc.round_size or pc.profile_raw,
+                  "stages": pc.stages, "memo": pc.memo, "phone": pc.phone,
+                  "office_phone": pc.office_phone, "address": pc.address,
+                  "department": pc.department, "email": pc.email,
+                  "sectors": ",".join(pc.sectors) if pc.sectors else ""}
+        if decision.action in (gn.KEEP, gn.FIX):
+            # 그룹 칸은 `decide` 가 다듬은 뒤의 값이 시트 값이다 — 원문을
+            # 그대로 견주면 `b그룹` 과 `B` 가 늘 다름으로 뜬다.
+            wanted["group_name"] = decision.group or ""
+        report.diffs.extend(
+            import_diff.compare(contact.id, was, wanted, _DIFF_LABELS))
+
         for act in pc.activities:
             if not act.content:
                 continue
@@ -1212,6 +1280,18 @@ def apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
                 raw_text=act.raw_text, source="import",
             ))
             report.activities_created += 1
+
+        # **시트에서 없어진 활동 줄.** 지우지 않고 센다 — 이 표에는 사람이
+        # 손으로 적은 줄과 발송이 만든 줄이 함께 살아서, 시트에 없다고 지우면
+        # 그것까지 날아간다(`services/import_diff.stale_activities`).
+        months_here = {a.month for a in pc.activities if a.month}
+        if months_here:
+            wanted_acts = {(a.kind, a.month, a.content) for a in pc.activities
+                           if a.content}
+            report.activities_stale += len(import_diff.stale_activities(
+                db.execute(select(ContactActivity).where(
+                    ContactActivity.contact_id == contact.id)).scalars().all(),
+                wanted_acts, months_here))
 
     # 그룹 칸을 거른 결과. **몇 줄을 어디로 옮겼는지 적는다** — 값이 화면에서
     # 사라졌는데 어디로 갔는지 알 수 없는 것이 이 칸에서 가장 나쁜 결과다.
@@ -1243,10 +1323,45 @@ def apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
     if no_owner_rows:
         report.notes.append(f"담당자 칸이 빈 행 {no_owner_rows}건 → 폴백 user_id={user_id}")
 
+    # **다른 칸**과 **없어진 활동 줄**은 리포트 맨 앞에 적는다. 둘 다
+    # "시트를 고쳐 보냈는데 화면이 그대로다" 를 푸는 자리라, 스킵 목록 뒤로
+    # 밀리면 정작 봐야 할 사람이 못 본다.
+    if report.diffs:
+        counted = import_diff.summary(report.diffs)
+        report.notes.insert(0, (
+            f"시트 값과 **다른 칸 {len(report.diffs)}개** — 이 길은 빈 칸만 "
+            f"채우므로 **안 덮었습니다**(월별·명함 칸 "
+            f"{counted[import_diff.MONTHS] + counted[import_diff.CARD]}개 · "
+            f"사람이 쥐는 칸 {counted[import_diff.HELD]}개). 덮어야 한다면 "
+            f"`scripts/import_investor_list.py --overwrite` 로 되돌릴 파일을 "
+            f"뜨고 덮습니다."))
+    if report.activities_stale:
+        report.notes.insert(0, (
+            f"시트에서 없어진 활동 줄 {report.activities_stale}건 — "
+            f"**지우지 않습니다.** 이 표에는 손으로 적은 줄과 발송이 만든 "
+            f"줄이 함께 삽니다(지우려면 `scripts/drop_shifted_activities.py`)."))
+
     if dry_run:
         db.rollback()
-    else:
-        db.commit()
+        return report
+
+    # **한 판에 한 줄.** 줄마다 남기면 1,360줄이 되어 아무도 안 본다 —
+    # 까닭과 싣는 것은 `services/edit_log.log_import`.
+    # 미리보기에서는 부르지 않는다(위에서 이미 돌아갔다).
+    if source_label:
+        edit_log.log_import(
+            db, actor_user_id=user_id, sheet_label=source_label,
+            sheet_row_id=getattr(sheet_row, "id", 0) or 0,
+            owner_user_id=getattr(sheet_row, "user_id", None),
+            source=source_label, mode="업로드", method="POST",
+            path="/api/import/contacts",
+            counts={"import_rows": report.created + report.updated,
+                    "import_created": report.created,
+                    "import_filled": report.filled,
+                    "import_kept": len(report.diffs),
+                    "import_activities": report.activities_created,
+                    "import_stale": report.activities_stale})
+    db.commit()
     return report
 
 
