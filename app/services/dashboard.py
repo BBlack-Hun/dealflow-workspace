@@ -23,7 +23,8 @@ from sqlalchemy.orm import Session
 
 from .. import clock
 from . import (auto_send, cadence, followup_sms, ir_monthly, mailer,
-               manual_send, pipeline, report, sheet_owner, startup_send)
+               manual_send, meeting_kind as mk, pipeline, report, sheet_owner,
+               startup_send)
 from .. import deps, version
 from ..models import (
     SEND_KINDS,
@@ -315,7 +316,11 @@ def _reaction_summary(db: Session, contact_ids: List[int],
                ContactActivity.company_names,
                ContactActivity.happened_at, ContactActivity.month)
         .where(ContactActivity.contact_id.in_(contact_ids),
-               ContactActivity.kind.in_(("ir_request", "meeting"))))
+               # 미팅은 갈래가 넷이다(요청·확정·완료·아직 안 가른 줄).
+               # 이 줄이 세는 `IR 미팅 요청 투자사` 는 **청했든 만났든**
+               # 말이 오간 투자사라 넷을 다 본다(`REACTION_ROWS` 의 글자
+               # 그대로다). 갈래 목록은 `services/meeting_kind` 한 곳이다.
+               ContactActivity.kind.in_(("ir_request",) + mk.ALL)))
     ir_stmt = (select(IrRequest.contact_id, IrRequest.company_name)
                .where(IrRequest.contact_id.in_(contact_ids)))
     meet_stmt = select(Meeting).where(Meeting.contact_id.in_(contact_ids))
@@ -1003,7 +1008,9 @@ def admin_dashboard(db: Session, today: Optional[date] = None) -> dict:
             # 합친 수만 보이면 되짚을 길이 없다.
             "sent_month_manual": manual_by_user.get(u.id, 0),
             "ir": acts.get("ir_request", 0),
-            "meeting": acts.get("meeting", 0),
+            # 최근 활동의 `미팅` — 갈래 넷을 합친다(`meeting_kind.ALL`).
+            # 한 갈래만 세면 시트 머리글이 다른 명단만 조용히 0 이 된다.
+            "meeting": sum(acts.get(k, 0) for k in mk.ALL),
             "agent": _agent_label(device),
             "agent_ok": bool(device and device.last_poll_at),
             "agent_version": (device.agent_version if device else "") or "",

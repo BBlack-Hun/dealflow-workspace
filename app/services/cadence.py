@@ -36,6 +36,7 @@ from ..models import (
     SendSequence,
     VcContact,
 )
+from . import meeting_kind as mk
 
 # 단계. message_composer 의 STAGE_* 와 같은 값을 쓴다.
 STAGE_DAY1 = 1
@@ -565,7 +566,9 @@ def has_reaction_since(db: Session, contact_id: int, since: Optional[str]) -> bo
     return bool(db.execute(
         select(ContactActivity.id).where(
             ContactActivity.contact_id == contact_id,
-            ContactActivity.kind.in_(("ir_request", "meeting")),
+            # 미팅은 갈래가 넷이다 — **청한 것도 반응**이라 넷을 다 본다
+            # (갈래 목록은 `services/meeting_kind` 한 곳).
+            ContactActivity.kind.in_(("ir_request",) + mk.ALL),
             ContactActivity.happened_at.isnot(None),
             ContactActivity.happened_at >= cutoff,
         ).limit(1)
