@@ -283,7 +283,8 @@ def test_the_screen_and_the_excel_read_one_function():
                 invited_status="", interest_level="", round_size="",
                 stages=[], sectors=[], phone="", email="", office_phone="",
                 office_fax="", address="", card_registered_at="",
-                last_deal="", last_deal_note="", ir_recent=1, ir_total=2,
+                last_deal="", last_deal_note="", last_act_text="",
+                ir_recent=1, ir_total=2,
                 status_label="", memo="")
     line = _contact_row(fake)
     assert line.count(3) == 1 and line.count(7) == 1, \
