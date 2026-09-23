@@ -26,8 +26,8 @@ from ..db import get_db
 from ..deps import can_open, get_current_user, may_manage_team_contacts
 from ..models import (ContactActivity, ContactColumn, IrCompany, IrRequest,
                       Meeting, SendItem, SendJob, SendSequence, User, VcContact)
-from ..services import (contact_columns, deal_stage, firm_type, meeting_kind,
-                        room_name, sheet_import, sheet_owner)
+from ..services import (contact_columns, deal_stage, firm_type, last_activity,
+                        meeting_kind, room_name, sheet_import, sheet_owner)
 from ..services.room_name import DEFAULT_SUFFIX, build_room_name
 
 router = APIRouter(prefix="/api/contacts", tags=["contacts"])
@@ -157,6 +157,11 @@ def contact_rows(db: Session, user: User, team_wide: bool = False,
 
     # 진행 단계는 행마다 묻지 않고 한 번에 구한다 — 300명이면 질의가 1,200번 나간다.
     stages_by_contact = deal_stage.of_many(db, [c.id for c in contacts])
+    # 마지막 일도 같은 이유로 한 번에. **단계와 다른 질문에 답하는 값**이다 —
+    # 단계는 어디까지 갔나(사다리 꼭대기), 이쪽은 마지막으로 무엇을 했나.
+    # 세는 자리는 `services/last_activity` 한 곳이고, 엑셀도 여기서 나온 줄을
+    # 그대로 쓴다(`routers/data_io._contact_row`).
+    last_acts = last_activity.of_many(db, [c.id for c in contacts])
 
     rows = []
     for c in contacts:
@@ -199,6 +204,8 @@ def contact_rows(db: Session, user: User, team_wide: bool = False,
         # 실어야 눌러 왔을 때 수가 맞는다. **말을 여기 다시 적지 않는다.**
         send_state = dashboard_room_state(c)
         send_label, send_class = dashboard.ROOM_LABELS[send_state]
+
+        last_act = last_acts.get(c.id)
 
         rows.append({
             "id": c.id,
@@ -255,6 +262,20 @@ def contact_rows(db: Session, user: User, team_wide: bool = False,
             "last_deal_note": last_deal_note or "",
             "last_deal_full": (last_round.content if last_round else ""),
             "recency": _recency_bucket(last_deal, today),
+            # ── 마지막 일 ──────────────────────────────────────────────
+            # `last_deal` 계열과 **다른 값**이다. 저쪽은 딜소개만 보고,
+            # 이쪽은 IR 요청·전달·미팅까지 함께 본다 — 칸 이름이 `마지막 일`
+            # 이라 딜소개만 보면 IR 을 요청한 그 다음 날에도 지난달 딜소개를
+            # 보여 주게 된다(화면이 낡은 값을 말하는 것, 지금 고치는 그 버그다).
+            # 날짜 그대로. `last_deal` 과 같은 결이라 정렬·집계가 붙을 자리다.
+            "last_act": (last_act.day if last_act else ""),
+            # 화면 칸과 엑셀 한 칸이 **이 값 하나**를 쓴다 —
+            # `09/16 (9월 3주차) 딜소개`. 회차명을 만드는 곳은
+            # `cadence.batch_title` 하나다(주차는 1~7일이 1주차,
+            # `sheet_import.week_of_month`).
+            "last_act_text": (last_act.text if last_act else ""),
+            # 말풍선. 마지막 일이 그 딜소개면 회차 내용까지 붙는다.
+            "last_act_full": _last_act_full(last_act, last_deal, last_deal_note),
             "ir_recent": ir_recent,
             "meet_recent": meet_recent,
             "ir_total": ir_total,
@@ -285,6 +306,19 @@ def contact_rows(db: Session, user: User, team_wide: bool = False,
             "updated_never": stamp_text(c.updated_at) == stamp_text(c.created_at),
         })
     return rows
+
+
+def _last_act_full(last_act, last_deal: Optional[str], note: str) -> str:
+    """말풍선에 띄울 긴 말. 마지막 일이 **그 딜소개**면 회차 내용을 덧붙인다.
+
+    회차 내용(`7개사 · …`)은 칸에 넣기에는 길고, 넣으면 IR·미팅 줄에는 붙일
+    것이 없어 칸 폭만 비워 둔다. 대신 말풍선에서 한 번에 보여 준다.
+    """
+    if last_act is None:
+        return ""
+    if last_act.kind == last_activity.DEAL and last_act.day == last_deal and note:
+        return f"{last_act.text} · {note}"
+    return last_act.text
 
 
 def _date_label(last_deal: Optional[str], round_: Optional[ContactActivity]) -> str:
