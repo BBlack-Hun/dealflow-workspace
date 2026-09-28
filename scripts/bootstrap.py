@@ -34,6 +34,7 @@ from app.models import (  # noqa: E402
     VcContact,
 )
 from app.services import auth as auth_svc  # noqa: E402
+from app.services import sheet_owner  # noqa: E402
 from app.services.room_name import build_room_name  # noqa: E402
 
 # 실제 운영 중인 딜소개 스크립트 형식을 기본값으로 사용한다.
@@ -174,7 +175,7 @@ def _get_or_create(db, model, defaults=None, **filters):
 
 def bootstrap(db) -> dict:
     """어떤 환경에서도 필요한 최소한 — 팀 기본 문구 + 관리자 계정 + 발송 주기."""
-    made = {"templates": 0, "users": 0, "rules": 0}
+    made = {"templates": 0, "users": 0, "rules": 0, "tabs": 0}
 
     # 발송 주기는 코드가 아니라 DB 가 정한다 — 운영하며 바뀐다
     # (실제로 '매주'에서 '월 2회'로 한 번 바뀌었다).
@@ -213,6 +214,17 @@ def bootstrap(db) -> dict:
                       can_auto_attach_ir=1 if deps.auto_attach_default_for("admin") else 0),
     )
     made["users"] += int(created)
+
+    # 첫 관리자의 **개인 탭**도 함께 세운다. 새로 깐 서버에서 그 계정으로
+    # 로그인하면 투자사 관리 현황·스타트업이 빈 화면이고, 줄을 넣을 자리조차
+    # 없었다. 무슨 탭을 몇 개 만들지는 여기 적지 않고 한 곳에서 정한다 —
+    # 계정을 만드는 자리가 셋이라(팀 현황의 [계정 만들기] ·
+    # `scripts/add_user.py` · 여기) 각자 들고 있으면 그중 하나만 낡는다.
+    #
+    # **이미 있으면 아무 일도 안 한다.** 이 스크립트는 컨테이너가 뜰 때마다
+    # 돌고, 운영 DB 에는 이미 탭이 서 있다(`ensure_member_tabs` 는 그 사람이
+    # 그 화면의 탭을 하나라도 가졌으면 넘어간다).
+    made["tabs"] = len(sheet_owner.ensure_member_tabs(db, _admin))
     return made
 
 

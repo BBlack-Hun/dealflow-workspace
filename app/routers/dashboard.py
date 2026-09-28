@@ -30,6 +30,7 @@ from ..models import (AgentDevice, ConsultingRowGrant, User, WeeklyRoutine,
                       WeeklyTask)
 from ..services import auth as auth_svc
 from ..services import dashboard as dash
+from ..services import sheet_owner
 from ..services import (backup, edit_log, notices, readiness, report, today,
                         weekly)
 from ..ui import base_ctx
@@ -641,9 +642,17 @@ def create_member(
     db.flush()
     db.add(AgentDevice(user_id=member.id, token=f"agt_{secrets.token_hex(16)}",
                        hostname="", agent_version=""))
+    # 그 사람의 **개인 탭도 함께 세운다.** 계정만 만들면 로그인해도 투자사 관리
+    # 현황·스타트업이 빈 화면이고, 줄을 넣을 자리조차 없다 — 실제로 탭이 하나도
+    # 없는 계정이 생겼고 관리자가 손으로 세워야 했다. 무슨 탭을 몇 개 만들지는
+    # 여기 적지 않고 한 곳에서 정한다(`services/sheet_owner.ensure_member_tabs`) —
+    # 계정을 만드는 자리가 셋이라(여기 · `scripts/bootstrap.py` ·
+    # `scripts/add_user.py`) 각자 들고 있으면 그중 하나만 낡는다.
+    tabs = sheet_owner.ensure_member_tabs(db, member)
     db.commit()
+    note = f"+탭+{len(tabs)}개를+함께+만들었습니다" if tabs else ""
     return RedirectResponse(
-        f"/team?msg={member.name}+계정을+만들었습니다.+초기+비밀번호는+팀+공통값입니다",
+        f"/team?msg={member.name}+계정을+만들었습니다.+초기+비밀번호는+팀+공통값입니다{note}",
         status_code=303)
 
 
@@ -705,6 +714,30 @@ def edit_member_profile(
     member.name = name.strip() or normalized
     member.phone = normalized
 
+    # **탭 이름은 따라가지 않는다.** 이름이 탭에 들어 있지만(`전체 딜소개현황 ·
+    # ○○○`) 여기서 같이 바꾸지 않는다.
+    #
+    # 명단 이름은 곧 **열쇠**다 — `SheetOwner.label` 하나가 아니라 그 이름을
+    # 문자열로 담고 있는 네 곳으로 산다(`VcContact.source_sheet` ·
+    # `ContactColumn.sheet` · `MonthlyColumnRun.scope`, `services/
+    # sheet_owner.py` 의 「명단 이름 바꾸기」). 넷을 함께 옮기는 길은 이미
+    # 있지만(`sheet_owner.rename`), 그것을 **이 라우터에 얹으면 안 된다**:
+    #
+    #   · 이 라우터가 하는 일은 **계정을 사람에게서 사람에게 물려주는** 것이다.
+    #     퇴사자의 명단을 새 담당자 이름으로 바꿔 버리면, 그 명단이 원래 누구
+    #     것이었는지가 자료에서 사라진다 — 발송 이력·달 칸은 옛 담당자가 한
+    #     일인데 이름만 새 사람이 된다. 담당을 넘기는 자리는 따로 있다
+    #     (`routers/contacts.py` 의 `assign_sheet` · 줄 단위 이관).
+    #   · 이름이 겹치면 `rename` 이 거절한다(`RenameError`). 오타를 고치려고
+    #     누른 [저장]이 그 자리에서 실패하면, 관리자는 무엇이 안 된 것인지
+    #     (이름인지 번호인지 탭인지) 알 수 없다.
+    #   · 한 사람이 같은 화면의 탭을 둘 이상 가진 경우가 이미 있어, 어느 탭을
+    #     따라가게 할지 코드가 정할 수 없다. 이름으로 골라내면 그것이 바로
+    #     `SheetOwner.layout` 주석이 없애려던 「이름으로 가르기」다.
+    #
+    # 탭 이름을 고치는 길은 화면에 이미 있다(투자사 관리 현황의 탭 [이름 저장]
+    # → `/api/contacts/sheets/rename`, 넷을 한 번에 옮긴다). **사람이 보고
+    # 고르는 편이 맞다** — 물려준 계정의 탭 이름을 바꿀지 말지는 그때그때 다르다.
     note = "+이름을+바꿨습니다"
     if phone_changed:
         # **발송 프로그램 연결키(토큰)를 새로 발급한다.**
@@ -779,8 +812,18 @@ def change_member_role(
     if picked is None:
         return RedirectResponse("/team?msg=알+수+없는+권한입니다", status_code=303)
     member.role = picked
+    # 권한이 바뀌면 **볼 수 있는 화면이 바뀐다.** 컨설턴트로 잘못 만들어진
+    # 계정을 팀원으로 고치는 것이 이 라우터가 생긴 이유인데, 그때까지 그 계정에는
+    # 투자사 관리 현황·스타트업 탭이 없다(컨설턴트는 그 화면을 못 열어서 만들지
+    # 않는다 — `sheet_owner.tab_specs`). 여기서 세워 주지 않으면 권한만 고쳐
+    # 놓고 빈 화면을 보게 된다. **이미 있는 탭은 건드리지 않는다**(같은 함수를
+    # 몇 번 불러도 같은 자리에 선다) — 거꾸로 팀원을 컨설턴트로 내려도 탭을
+    # 지우지 않는다. 그 탭에는 줄과 달 칸이 붙어 있어 지우면 되돌릴 수 없고,
+    # 컨설턴트 계정에서는 안 보일 뿐이다.
+    tabs = sheet_owner.ensure_member_tabs(db, member)
     db.commit()
-    return RedirectResponse(f"/team?msg={member.name}+님의+권한을+바꿨습니다",
+    note = f"+탭+{len(tabs)}개를+함께+세웠습니다" if tabs else ""
+    return RedirectResponse(f"/team?msg={member.name}+님의+권한을+바꿨습니다{note}",
                             status_code=303)
 
 

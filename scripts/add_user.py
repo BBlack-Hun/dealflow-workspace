@@ -28,6 +28,7 @@ from app import config, deps  # noqa: E402
 from app.db import SessionLocal  # noqa: E402
 from app.models import AgentDevice, User, VcContact  # noqa: E402
 from app.services import auth as auth_svc  # noqa: E402
+from app.services import sheet_owner  # noqa: E402
 
 
 def list_users(db) -> None:
@@ -73,9 +74,20 @@ def add_user(db, name: str, phone: str, role: str) -> User:
 
     token = f"agt_{secrets.token_hex(16)}"
     db.add(AgentDevice(user_id=user.id, token=token, hostname="", agent_version=""))
+    # 그 사람의 **개인 탭도 함께 세운다.** 무슨 탭을 몇 개 만들지는 여기 적지
+    # 않고 한 곳에서 정한다 — 계정을 만드는 자리가 셋이라(팀 현황의 [계정
+    # 만들기] · `bootstrap.py` · 여기) 각자 들고 있으면 그중 하나만 낡고, 그
+    # 자리로 만든 계정만 조용히 탭 없이 나온다. `deps.consulting_default_for`
+    # 를 한 함수에서 읽는 것과 같은 이유다.
+    tabs = sheet_owner.ensure_member_tabs(db, user)
     db.commit()
 
     print(f"계정 생성: id={user.id} {name} / {normalized} ({role})")
+    if tabs:
+        print(f"  탭 {len(tabs)}개: " + " · ".join(f"{t.label} ({t.layout})"
+                                                  for t in tabs))
+    else:
+        print("  탭: 새로 만든 것 없음 (이미 있거나, 그 화면을 못 여는 권한이다)")
     print(f"  초기 비밀번호: {config.INITIAL_PASSWORD}  (첫 로그인 후 변경 요구)")
     print(f"  에이전트 토큰: {token}")
     print("  → 이 사용자로 로그인해 /setup 에서 에이전트를 내려받게 하세요.")
