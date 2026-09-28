@@ -339,7 +339,11 @@ def list_page(
     # **이 화면에 사는 명단만** 탭으로 세운다. 무엇이 여기 사는지는 그 명단의
     # 배치가 정한다(`SheetOwner.layout` → `Layout.page`) — 거르는 조건은
     # `sheet_owner.sheet_rows` 한 곳에 있어서 두 화면이 같이 움직인다.
-    tabs = sheet_owner.sheet_rows(db, contacts, page=page.page)
+    # 줄이 아직 없는 명단도 그 담당자에게는 서야 한다 — 새 팀원의 탭은 처음엔
+    # 비어 있고, 탭이 없으면 줄을 넣을 자리도 없다(`sheet_rows` 의 `empty_for`).
+    tabs = sheet_owner.sheet_rows(
+        db, contacts, page=page.page,
+        empty_for=sheet_owner.tab_owner_ids(db, user, team_wide=team_wide))
 
     # 아무 것도 고르지 않았으면 **내가 담당인 명단**을 먼저 연다.
     # 전체(333명)를 먼저 보여주면 매번 자기 명단을 다시 골라야 한다.

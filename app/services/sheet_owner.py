@@ -19,6 +19,7 @@
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Set
 
 from sqlalchemy import select
@@ -845,13 +846,248 @@ def page_href(db: Session, label: str) -> str:
     return f"/{page_of(db, label)}"
 
 
+# ── 팀원 한 사람의 **개인 탭** ───────────────────────────────────────────────
+#
+# 계정을 만들면 그 사람의 탭도 함께 서야 한다. 지금까지는 계정만 만들고(계정을
+# 만드는 자리가 셋이다 — `routers/dashboard.py` 의 [계정 만들기] ·
+# `scripts/bootstrap.py` · `scripts/add_user.py`) 탭은 시트를 올릴 때나
+# 관리자가 손으로 세웠다. 그래서 **계정은 있는데 탭이 하나도 없는 사람**이
+# 생겼고, 그 계정으로 들어가면 투자사 관리 현황도 스타트업도 빈 화면이다 —
+# 줄을 새로 넣을 자리조차 없다(`may_add_row` 는 명단이 있어야 판정한다).
+#
+# **만드는 자리를 여기 하나로 둔다.** 셋이 각자 "무슨 탭을 몇 개 만들지" 를
+# 들고 있으면 그중 하나만 낡는다 — `deps.consulting_default_for` 를 한 함수로
+# 빼 둔 것과 같은 이유고, 이 저장소는 그 사고를 이미 여러 번 겪었다.
+#
+# **개인 탭은 둘뿐이다.** 사람마다 한 벌씩 서는 것은 이 `SheetOwner` 하나이고,
+# 그것이 뜨는 화면이 둘이다(`contact_columns.page_of`). 나머지 탭은 사람 단위가
+# 아니다 — 투자컨설턴트 현황의 탭 셋은 **팀 공용**이고(`services/
+# consulting_sheets.py` 의 「탭은 팀 공용이다」), 참고 자료는 화면 단위
+# (`RefSheet.page`), 딜 소싱은 찾는 갈래 단위다(`SourcingContact.bucket`).
+
+
+#: 새 탭 이름의 가운뎃점. **새로 만드는 것은 이 한 가지 모양뿐이다.**
+#:
+#: 지금 이름이 섞여 있다 — 하이픈으로 붙인 옛 이름과 가운뎃점으로 띄운 이름이
+#: 함께 있다. 새로 만드는 쪽을 가운뎃점으로 맞춘다: 명단 이름에는 인원 수가
+#: 괄호로 붙기도 해서(`… (71명 연결)`) 사람 이름이 어디서 시작하는지 눈으로
+#: 갈라야 하고, 띄어 쓴 쪽이 읽기 쉽다. 스타트업 탭 넷이 이미 이 모양이다.
+#:
+#: **옛 이름은 고치지 않는다.** 이름이 곧 열쇠라 네 곳에 문자열로 박혀 있다
+#: (위 「명단 이름 바꾸기」 참고). 보기를 맞추려고 쓰고 있는 명단의 이름을
+#: 옮기는 것은, 얻는 것(가운뎃점)보다 잃는 것(그 명단의 줄·달 칸·달 표시가
+#: 어긋날 위험)이 크다. 이름을 바꾸는 길은 화면에 이미 있다(탭의 [이름 저장]).
+NAME_SEP = " · "
+
+
+@dataclass(frozen=True)
+class TabSpec:
+    """새로 세울 개인 탭 한 벌 — **배치와 숨김이 짝으로** 적힌다.
+
+    둘을 따로 두면 안 된다. `layout` 만 적고 `is_hidden` 을 빠뜨리면 스타트업
+    탭의 기업들이 **투자사로 세어지고 딜 소개 발송 대상에 섞인다**
+    (`is_hidden` → `hidden_labels` → `is_investor` · `is_deal_list`). 거꾸로
+    투자사 탭에 숨김을 달면 그 탭 사람들이 투자사 수에서도, 발송 대상에서도
+    통째로 빠진다 — 화면은 멀쩡하고 아무도 눈치채지 못한다.
+
+    **이름 앞머리는 여기 적지 않는다**(아래 `prefix`).
+    """
+
+    layout: str       # `SheetOwner.layout` — 어느 표로 보여 줄까(= 어느 화면인가)
+    is_hidden: int    # `SheetOwner.is_hidden` — 투자사로 세는가
+
+    @property
+    def page(self) -> str:
+        """이 탭이 사는 화면. **여기서 정하지 않고 물어본다** — 배치가 정한다."""
+        from . import contact_columns
+
+        return contact_columns.page_of(self.layout)
+
+    @property
+    def prefix(self) -> str:
+        """탭 이름의 앞머리 — **그 탭이 사는 화면의 이름**을 그대로 쓴다.
+
+        명단 이름을 코드에 적지 않는다. 지금 쓰는 이름을 여기 글자로 옮겨 오면
+        (`전체 딜소개현황…`) 그것이 바로 이 저장소가 없애 온 「이름을 코드가
+        아는」 상태이고, 검사 하나가 그것을 막고 있다
+        (`tests/test_startup_tab.py` 의 `test_명단_이름이_코드에_박혀_있지_않다`).
+        화면 이름은 이미 한 곳에 있다(`ui.MENU` → `ui.screen_label`) — 거기서
+        가져오면 화면 이름을 고치는 날 새 탭 이름도 같이 움직인다.
+
+        스타트업 화면은 이름이 그대로 `스타트업` 이라, 이미 서 있는 탭 넷과
+        **같은 모양**이 된다(`스타트업 · ○○○`).
+        """
+        from ..ui import screen_label
+
+        # 메뉴에 없는 화면이면(있을 수 없지만) 배치 이름이라도 쓴다 — 앞머리가
+        # 비면 탭 이름이 ` · ○○○` 로 서서 무엇의 명단인지 알 수 없다.
+        return screen_label(f"/{self.page}") or self.layout
+
+
+def member_tabs() -> List[TabSpec]:
+    """개인 탭 한 벌 — **화면마다 하나씩.**
+
+    함수로 두는 것은 `TabSpec.layout` 의 값을 `contact_columns` 에서 가져오기
+    때문이다(모듈을 읽는 시점에 부르면 순환 임포트가 된다). 값을 여기 글자로
+    또 적으면 배치 이름이 바뀌는 날 이쪽만 낡는다.
+
+    **투자사 탭은 숨기지 않고, 스타트업 탭은 숨긴다.** 이미 서 있는 탭들이
+    그렇게 서 있고(운영의 스타트업 탭 일곱은 모두 숨김), 뜻도 그것이 맞다 —
+    스타트업 화면의 줄은 딜을 받는 쪽이 아니라 우리가 챙기는 쪽이라 투자사로
+    세면 안 된다(`is_investor` 설명 참고).
+    """
+    from . import contact_columns
+
+    return [
+        TabSpec(contact_columns.INVESTOR, 0),
+        TabSpec(contact_columns.STARTUP, 1),
+    ]
+
+
+def tab_specs(user: User) -> List[TabSpec]:
+    """이 계정에 개인 탭을 세울 화면들. **역할 목록을 여기 적지 않는다.**
+
+    묻는 것은 하나다 — **그 화면을 열 수 있는 계정인가**(`deps.can_open`).
+    투자컨설턴트에게 열린 주소는 `deps.CONSULTANT_PATHS` 가 전부이고 거기에
+    `/contacts` 도 `/startup` 도 없다. 그 계정에 탭을 만들면 **아무도 못 보는
+    탭**이 생긴다(운영에 이미 그런 탭이 있다 — 컨설턴트 계정의 스타트업 탭
+    둘, 둘 다 0줄이다). 컨설턴트가 쓰는 탭은 투자컨설턴트 현황의 팀 공용 탭
+    셋이고 그쪽은 화면을 열 때 알아서 선다(`consulting_sheets.ensure`).
+
+    `role in (...)` 를 여기 적으면 역할이 하나 늘거나 허용 목록이 바뀌는 날
+    이쪽만 낡는다 — 좌측 메뉴 목록과 라우터 목록이 갈려 컨설턴트에게 화면이
+    다 열려 있던 사고가 정확히 그것이었다. 권한 표를 그대로 읽으면 같이 움직인다.
+    """
+    from ..deps import can_open
+
+    return [spec for spec in member_tabs() if can_open(user, f"/{spec.page}")]
+
+
+def member_name(user: User) -> str:
+    """탭 이름에 적을 팀원 이름.
+
+    이름이 비어 있는 계정은 **번호로 적는다.** 계정을 만들 때 이름이 비면
+    로그인 ID(휴대폰번호)가 이름으로 들어가는데, 그 값을 탭 이름에 실으면
+    화면과 내려받는 파일 이름에 번호가 그대로 나온다.
+    """
+    name = (user.name or "").strip()
+    if not name or name == (user.phone or "").strip():
+        return f"계정 {user.id}"
+    return name
+
+
+def tab_label(db: Session, user: User, spec: TabSpec) -> str:
+    """이 사람의 이 탭을 **무엇이라 부를까.** 못 지으면 빈 글자.
+
+    **이미 쓰고 있는 이름을 절대 집지 않는다.** 집으면 `ensure` 가 그 줄을
+    돌려주고(할당을 덮지 않는다), 우리는 남의 명단에 배치와 숨김을 적게 된다 —
+    그 명단의 줄이 통째로 다른 화면으로 옮겨 가거나 투자사 수에서 빠진다.
+    이름은 `SheetOwner` 줄이 없어도 쓰일 수 있어서(`직접 추가`, 손으로 넣은
+    줄, 달 칸만 남은 이름) 판정은 `label_in_use` 한 곳을 지난다.
+
+    이름이 겹치면 **계정 번호를 붙여 가른다**(동명이인 · 이미 그 이름의 명단이
+    있는 경우). 그것도 겹치면 빈 글자를 돌려준다 — 부르는 쪽이 만들지 않고
+    넘어간다. 조용히 남의 탭을 건드리는 것보다 탭 하나가 안 서는 편이 낫다.
+    """
+    base = f"{spec.prefix}{NAME_SEP}{member_name(user)}"
+    for candidate in (base, f"{base}({user.id})"):
+        label = normalize_label(candidate)
+        if label and not label_in_use(db, label):
+            return label
+    return ""
+
+
+def owned_pages(db: Session, user: User) -> Set[str]:
+    """이 사람이 **이미 탭을 가진 화면들.**
+
+    이름으로 세지 않고 **화면으로** 센다. 한 사람이 같은 화면의 명단을 둘 이상
+    가진 경우가 이미 있고(운영에 투자사 탭 둘을 가진 계정이 있다), 투자사
+    화면에는 배치가 둘이다(`investor` · `investor_monthly`) — 배치 이름으로
+    세면 달 칸이 있는 투자사 탭을 가진 사람에게 탭을 하나 더 만든다.
+    """
+    from . import contact_columns
+
+    return {contact_columns.page_of(row.layout)
+            for row in settings_map(db).values() if row.user_id == user.id}
+
+
+def missing_member_tabs(db: Session, user: User) -> List[dict]:
+    """이 사람에게 **없는 개인 탭의 계획** — DB 를 읽기만 한다.
+
+    만드는 쪽(`ensure_member_tabs`)과 미리보기 스크립트
+    (`scripts/fill_member_tabs.py`)가 **같은 계획 하나**를 지난다. 미리 본 것과
+    실제로 만들어지는 것이 갈리면 미리보기가 아무 뜻이 없다.
+
+    이름을 못 지은 탭은 `label` 이 빈 글자로 실린다 — 빼 버리면 미리보기에서
+    조용히 사라져 왜 안 만들어졌는지 알 수 없다.
+    """
+    have = owned_pages(db, user)
+    return [{"page": spec.page, "layout": spec.layout,
+             "is_hidden": spec.is_hidden, "label": tab_label(db, user, spec)}
+            for spec in tab_specs(user) if spec.page not in have]
+
+
+def ensure_member_tabs(db: Session, user: User) -> List[SheetOwner]:
+    """이 팀원의 개인 탭이 있는지 보고 **없는 것만 만든다.** 새로 만든 줄만 돌려준다.
+
+    **이미 있는 탭은 건드리지 않는다.** 그 사람이 이 화면의 탭을 하나라도 갖고
+    있으면 넘어간다 — 시트를 올려 만든 탭도, 관리자가 이름을 고친 탭도 그
+    사람의 탭이다. 여기서 또 만들면 같은 화면에 빈 탭이 하나 더 서고, 어느
+    쪽에 줄을 넣어야 하는지 쓰는 사람이 알 수 없다.
+
+    **몇 번을 불러도 같은 자리에 선다.** 계정을 만드는 세 자리가 이 함수를
+    부르고(`routers/dashboard.py` · `scripts/bootstrap.py` ·
+    `scripts/add_user.py`), 권한을 바꾸는 자리도 부른다 — 컨설턴트로 잘못
+    만들어진 계정을 팀원으로 고치면 그때 탭이 선다(그 전까지는 볼 화면이
+    없어서 탭을 만들 이유도 없었다).
+
+    **커밋하지 않는다.** 계정을 만드는 일과 한 덩어리라 부르는 쪽이 함께
+    커밋해야 한다 — 여기서 커밋하면 계정 만들기가 뒤에서 실패해도 탭만 남는다.
+    """
+    made = []
+    for plan in missing_member_tabs(db, user):
+        if not plan["label"]:
+            continue
+        row = ensure(db, plan["label"], user_id=user.id)
+        # 배치와 숨김은 `ensure` 가 모른다. **방금 만든 줄에만 적는다** —
+        # 위 `tab_label` 이 쓰이지 않는 이름만 고르므로 여기 오는 줄은 새 줄이다.
+        row.layout = plan["layout"]
+        row.is_hidden = plan["is_hidden"]
+        made.append(row)
+    db.flush()
+    return made
+
+
+def tab_owner_ids(db: Session, user: User, *, team_wide: bool) -> Set[int]:
+    """**줄이 아직 없어도 탭을 세울** 담당자들.
+
+    빈 탭을 누구에게 보여 줄지는 `managed` 가 줄을 누구 것까지 가져오는지와
+    같은 기준이다 — 관리자는 팀 전체, 그 외에는 본인 것. 두 기준이 갈리면
+    탭은 서 있는데 그 탭의 줄은 못 보는(또는 그 반대의) 화면이 된다.
+    """
+    if team_wide:
+        return {u.id for u in db.execute(select(User)).scalars().all()}
+    return {user.id}
+
+
 def sheet_rows(db: Session, contacts: List[VcContact],
-               page: Optional[str] = None) -> List[dict]:
+               page: Optional[str] = None,
+               empty_for: Optional[Set[int]] = None) -> List[dict]:
     """명단 목록 + 담당 + 인원. 화면의 탭과 관리 표에 함께 쓴다.
 
     `page` 를 주면 **그 화면에 사는 명단만** 남긴다(위 `page_of` 참고).
     거르는 자리를 화면마다 두지 않고 여기 하나에 둔다 — 두 화면이 각자 걸러
     두면 한쪽만 고쳐지는 날 같은 명단이 양쪽에 다 뜬다.
+
+    `empty_for` 는 **줄이 아직 없어도 탭을 세울 담당자들**이다(`tab_owner_ids`).
+    탭은 원래 *지금 보이는 사람들*을 세어 만들었다 — 그래서 **줄이 하나도 없는
+    명단은 어느 화면에도 안 떴다.** 새 팀원의 탭을 만들어 줘도(`ensure_member_tabs`)
+    그 사람이 로그인하면 빈 화면이고, 줄을 넣을 자리조차 없다(`may_add_row` 는
+    명단이 있어야 판정한다). 운영에도 그렇게 서 있는 0줄 명단이 셋 있다.
+
+    **안 주면 지금까지와 똑같다.** 빈 탭을 세우는 것은 *그 사람의 화면*에서만
+    뜻이 있는 일이라(남의 빈 명단은 볼 이유가 없다), 내려받기처럼 명단 이름만
+    가려내는 자리(`routers/data_io.py`)는 주지 않는다.
     """
     from . import contact_columns
 
@@ -872,8 +1108,16 @@ def sheet_rows(db: Session, contacts: List[VcContact],
             if c.connect_stage == "connected":
                 connected[label] = connected.get(label, 0) + 1
 
+    # 줄에서 모은 이름 + **담당자가 있는 빈 명단.** 둘을 합쳐야 새로 만든
+    # 탭이 첫 줄을 넣기 전에도 화면에 선다(위 `empty_for` 설명 참고).
+    labels = set(total)
+    if empty_for:
+        labels |= {label for label, row in settings.items()
+                   if row.user_id in empty_for}
+
     out = []
-    for label in sorted(total, key=lambda k: (-connected.get(k, 0), -total[k], k)):
+    for label in sorted(labels,
+                        key=lambda k: (-connected.get(k, 0), -total.get(k, 0), k)):
         row = settings.get(label)
         uid = row.user_id if row else None
         layout = (row.layout if row and row.layout else "investor")
@@ -885,7 +1129,7 @@ def sheet_rows(db: Session, contacts: List[VcContact],
             "count": shown.get(label, 0),
             # 감춘 줄이 몇인지 탭에서 드러나야 한다. 안 드러나면 시트에서
             # 그랬듯 "없는 기업" 으로 읽힌다.
-            "hidden_rows": total[label] - shown.get(label, 0),
+            "hidden_rows": total.get(label, 0) - shown.get(label, 0),
             "connected": connected.get(label, 0),
             "owner_id": uid,
             "owner": names.get(uid, "") if uid else "",
