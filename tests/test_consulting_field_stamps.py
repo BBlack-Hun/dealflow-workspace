@@ -78,6 +78,30 @@ def _stamps(db, row_id) -> dict:
     return json.loads(db.get(ConsultingCompany, row_id).field_stamps or "{}")
 
 
+def _visible_months():
+    """화면이 보여 주는 **최근 석 달**. 오늘에서 센다.
+
+    달 숫자를 박아 두면 달이 넘어가는 날 검사가 깨진다 — 실제로 2026-10-01 에
+    `7·8·9월` 을 박아 둔 이 검사가 빨개졌다(7월이 창 밖으로 밀려 잔글씨가
+    다섯이 아니라 넷이 됐다). 고친 것이 없는데 빨개지는 검사는 아무도 안
+    믿게 되고, 그 사이 진짜 고장도 같이 묻힌다.
+
+    몇 달치인지는 **저장소에 하나뿐인 그 값**을 읽는다 — 여기 `3` 을 적으면
+    화면이 넷을 보여 주기로 바뀌는 날 이 검사만 낡는다.
+    """
+    from app.services.monthly_columns import VISIBLE_MONTHS
+    from app import clock
+
+    today = clock.today()
+    out, y, m = [], today.year, today.month
+    for _ in range(VISIBLE_MONTHS):
+        out.append(m)
+        m -= 1
+        if m == 0:
+            m, y = 12, y - 1
+    return list(reversed(out))     # 옛 달부터
+
+
 def _column(db, label="9월 마지막주 리마인드 톡 or TEL"):
     from app.models import ConsultingColumn
 
@@ -118,15 +142,16 @@ def test_달마다_제_날짜다(allowed, db, users):
     고쳤는데 7월 칸 밑의 날짜까지 바뀐 것처럼 보인다."""
     from app.routers.consulting import note_stamp_key
 
-    jul, aug, sep = (_column(db, f"{m}월 마지막주 리마인드 톡 or TEL")
-                     for m in (7, 8, 9))
+    # 달을 박지 않는다 — `_visible_months()` 설명 참고.
+    old, mid, new = (_column(db, f"{m}월 마지막주 리마인드 톡 or TEL")
+                     for m in _visible_months())
     row = _row(db, users["u1"].id, sheet=STARTUP, position=1, company_name="샘플다")
-    allowed.patch(f"/api/consulting/{row.id}", json={"notes": {str(jul.id): "7월"}})
-    allowed.patch(f"/api/consulting/{row.id}", json={"notes": {str(sep.id): "9월"}})
+    allowed.patch(f"/api/consulting/{row.id}", json={"notes": {str(old.id): "옛달"}})
+    allowed.patch(f"/api/consulting/{row.id}", json={"notes": {str(new.id): "새달"}})
     got = _stamps(db, row.id)
-    assert note_stamp_key(jul.id) in got
-    assert note_stamp_key(sep.id) in got
-    assert note_stamp_key(aug.id) not in got, "안 고친 달에 날짜가 붙었습니다"
+    assert note_stamp_key(old.id) in got
+    assert note_stamp_key(new.id) in got
+    assert note_stamp_key(mid.id) not in got, "안 고친 달에 날짜가 붙었습니다"
 
 
 def test_화면에_세_칸_모두_잔글씨가_선다(allowed, db, users):
@@ -134,7 +159,8 @@ def test_화면에_세_칸_모두_잔글씨가_선다(allowed, db, users):
     조용히 날짜가 없는 표가 된다."""
     from app.routers.consulting import note_stamp_key
 
-    cols = [_column(db, f"{m}월 마지막주 리마인드 톡 or TEL") for m in (7, 8, 9)]
+    cols = [_column(db, f"{m}월 마지막주 리마인드 톡 or TEL")
+            for m in _visible_months()]
     row = _row(db, users["u1"].id, sheet=STARTUP, position=1, company_name="샘플라")
     allowed.patch(f"/api/consulting/{row.id}", json={"deal_pitch": "한 줄"})
     allowed.patch(f"/api/consulting/{row.id}", json={"kakao_joined": "O"})
