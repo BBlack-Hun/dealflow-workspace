@@ -46,6 +46,31 @@ automation constants — ROADMAP 공통 원칙 2).
 그 회차의 자료 전달이 통째로 실패한다(문구까지 안 나간다). 팀 PC 에서 확인할
 때만 `DEALFLOW_WIN_FILE_SEND=1` 로 켜고, 확인이 끝나면 `selectors.yaml` 의
 `file_send.verified` 를 참으로 바꿔 저장소에 못박는다.
+
+──────────────────────────────────────────────────────────────────────────────
+방 검색 (`discover_rooms` · `verify_room`) — ⚠ **컨트롤 경로는 실기 확인 전이다**
+──────────────────────────────────────────────────────────────────────────────
+
+방 제목은 **우리가 만들어 맞출 수 없다**(접미사·담당자 이름이 방마다 다르다).
+그래서 이름+직함으로 검색해 **실제 제목을 읽어 온다** — mac 이 먼저 그렇게
+했고(`kakao_mac.discover_rooms`), 이쪽도 **같은 모양으로 답한다**. 서버는 둘을
+구분하지 않고 같은 칸으로 받는다(`agent/main.py: report_item(candidates=...)`).
+
+  ① 포커스 확인 → ② Ctrl+F → ③ 클립보드 + Ctrl+V → ④ 검색어 되읽기
+  → ⑤ **검색어가 든 줄이 나타날 때까지** 기다려 결과 줄의 글자만 읽기 → ⑥ 걸러내기
+
+**방을 열지 않는다.** 글자만 읽으므로 부작용이 없다.
+
+읽는 자리(`_result_rows`)의 컨트롤 경로는 전부 `selectors.yaml: room_search` 에
+있고 **추측이다** — Windows 카톡의 검색 결과 목록을 UIA 로 본 사람이 없다.
+틀리면 **후보 0건**으로 답하고 넘어간다. 거짓 후보를 지어내지 않는다.
+
+판정(`verify_room`)과 후보(`discover_rooms`)는 **다른 자리**다. 후보는 '검색어가
+든 줄' 을 넉넉히 모으고, 판정은 **제목이 글자까지 같은 줄만** 센다. 그 판단은
+창과 떨어진 순수 함수라(`verdict_from_titles` · `filter_room_titles`) 이 기계에서
+그대로 시험한다.
+
+확인 절차는 `docs/WINDOWS_TEST.md` 의 "I. 방 검색 실기 확인" 에 있다.
 """
 from __future__ import annotations
 
@@ -88,6 +113,25 @@ FILE_SEND_DEFAULTS = {
 #: 실기 확인 전에도 **한 번만** 켜 볼 수 있는 자리. 팀 PC 에서 셋팅할 때 쓴다.
 #: 창 하나에만 사는 값이라 다음에 켜면 다시 꺼져 있다 — 그것이 맞다.
 FILE_SEND_ENV = "DEALFLOW_WIN_FILE_SEND"
+
+# ── 방 검색의 모양 — ⚠ 컨트롤 경로는 **추측**이다 ─────────────────────────
+#
+# `selectors.yaml: room_search` 가 덮어쓴다. 코드에 글자로 박지 않는 이유는
+# 카톡이 바뀌면 이 파일이 아니라 그 파일만 고쳐야 하기 때문이다
+# (ROADMAP 공통 원칙 2). 여기 값은 그 파일이 없을 때의 바닥값이다.
+#
+# 틀리면 **후보 0건**이다. 지어내지 않는다 — 그것이 이 자리의 규칙이다.
+ROOM_SEARCH_DEFAULTS = {
+    "list_control_types": ["List", "Tree", "DataGrid", "Table"],
+    "list_auto_id": "",
+    "item_control_types": ["ListItem", "TreeItem", "DataItem"],
+    # 빈 값이면 줄 이름(Name)을 그대로 제목으로 쓴다.
+    "item_text_control_type": "Text",
+    "max_rows": 60,
+    # 빈 값이면 검색어 되읽기를 하지 않는다.
+    "input_control_type": "Edit",
+    "paste_hotkey": ["ctrl", "v"],
+}
 
 
 def is_supported() -> bool:
@@ -230,33 +274,225 @@ class KakaoDesktopSender(Sender):
             log.warning("포커스 미확보: 현재 포그라운드=%r, 기대=%r", fg, want)
         return False
 
+    # ── 방 검색 ─────────────────────────────────────────────────────────────
+    #
+    # ★ `discover_rooms` 와 `verify_room` 이 **같은 이 자리**(`_search_titles`)를
+    #   쓴다. 파일 첨부에서 `_open_room_verified` 를 둘이 함께 쓰는 것과 같은
+    #   이유다 — 검색하는 길이 둘로 갈리면 한쪽만 고쳐질 때 판정이 갈린다.
+    #
+    # ★★ 그래도 **판정은 나눠져 있다.** 후보 목록(`discover_rooms`)은 사람에게
+    #    보여 주려고 넉넉히 모으고, 판정(`verify_room`)은 **제목이 글자까지 같은
+    #    줄만** 센다. 후보가 늘었다고 판정이 느슨해지지 않는다
+    #    (`agent/sender/base.py` 의 "never guess").
+
+    @property
+    def room_search_conf(self) -> dict:
+        """방 검색 컨트롤 경로. `selectors.yaml: room_search` 가 바닥값을 덮는다."""
+        conf = dict(ROOM_SEARCH_DEFAULTS)
+        conf.update((self.sel or {}).get("room_search") or {})
+        return conf
+
+    def discover_rooms(self, query: str, marker: str = "") -> List[str]:
+        """검색어로 카톡방을 찾아 **실제 방 제목 목록**을 돌려준다.
+
+        mac 쪽(`kakao_mac.discover_rooms`)과 **같은 모양으로 답한다** — 서버는
+        둘을 구분하지 않고 같은 칸(`report_item(..., candidates=...)`)으로 받는다.
+
+        방 이름을 우리가 만들어 맞추는 것은 불가능하다는 게 실기에서 드러났다
+        (같은 캠페인 방인데도 접미사·담당자 이름이 방마다 다르다). 그래서
+        이름+직함으로 검색해 **실제 제목을 읽어온다.**
+
+        marker 가 주어지면 그 글자가 든 방만 남긴다.
+
+        **방을 열지 않는다** — 검색 결과 줄의 글자만 읽으므로 빠르고 부작용이 없다.
+
+        ★ 못 하면 **빈 목록**이다. 카톡이 검색을 안 보여 주거나 컨트롤을 못 찾거나
+          포커스를 못 잡으면 0건으로 답하고 넘어간다. **거짓 후보를 지어내지
+          않는다** — 화면은 후보가 0건이어도 초안·직접 적기로 돌아간다
+          (`app/services/room_match.py`).
+        """
+        if not (query or "").strip():
+            return []
+        conf = self.room_search_conf
+        titles = None
+        try:
+            win = self._kakao_window()
+            # ★ 포커스가 확인되지 않으면 키 입력을 하지 않는다. 방 이름이 브라우저
+            #   등 엉뚱한 창으로 들어간 적이 있다(실기).
+            if not self._focus_verified(win):
+                log.warning("discover_rooms: 카톡 포커스 실패 — 후보 0건 query=%r", query)
+                return []
+            titles = self._search_titles(win, query, conf)
+        except Exception:  # noqa: BLE001
+            log.exception("discover_rooms 실패 — 후보 0건 query=%r", query)
+            return []
+        if titles is None:
+            return []
+        return filter_room_titles(titles, query, marker=marker,
+                                  max_rows=_max_rows(conf))
+
     def verify_room(self, room_name: str) -> str:
         """Search only; count EXACT-title matches. 1=verified, 0=not_found, >=2=ambiguous.
 
-        TODO(win): confirm search-result list control path in selectors.yaml on real Kakao.
+        **전송하지 않는다.** 검색 결과 줄의 제목만 읽고 센다.
+
+        ⚠ 예전에는 이 자리가 **무조건 `"verified"` 를 돌려주는 자리 채우기**였다
+          (화면을 읽을 길이 없었다). 그래서 Windows PC 의 [방 연결 확인]은
+          **모든 방을 확인됨으로 올렸다** — 틀린 방 이름까지. 그 말은 발송 당일
+          `send_text` 의 제목 대조에서야 드러났다. 지금은 **센다.**
+
+        못 읽으면 `not_found` 다. 모르는 것을 `verified` 로 올리지 않는다 —
+        mac 도 검색이 실패하면 `not_found` 로 답한다.
         """
+        if not (room_name or "").strip():
+            return "not_found"
+        titles = None
         try:
             win = self._kakao_window()
             if not self._focus_verified(win):
-                log.warning("verify_room: 카톡 포커스 실패")
+                log.warning("verify_room: 카톡 포커스 실패 room=%r", room_name)
                 return "not_found"
-            self._pyautogui.hotkey(*self.sel.get("search_hotkey", ["ctrl", "f"]))
-            time.sleep(self._t("after_search_hotkey", 0.4))
-            self._pyperclip.copy(room_name)
-            self._pyautogui.hotkey("ctrl", "v")
-            time.sleep(self._t("after_query_paste", 0.8))
-            # TODO(win): read result rows and count exact title matches via selectors.yaml.
-            # Placeholder returns 'verified' — MUST be replaced with real counting in 1.10.
-            log.warning("verify_room not yet verified on hardware; returning 'verified' placeholder")
-            return "verified"
-        except Exception as exc:  # noqa: BLE001
-            log.exception("verify_room error")
+            titles = self._search_titles(win, room_name, self.room_search_conf)
+        except Exception:  # noqa: BLE001
+            log.exception("verify_room 실패 room=%r", room_name)
             return "not_found"
+        if titles is None:
+            log.warning("verify_room: 검색 결과를 읽지 못했습니다(확인됨으로 올리지 "
+                        "않습니다) room=%r", room_name)
+            return "not_found"
+        return verdict_from_titles(titles, room_name)
+
+    def _close_search(self) -> None:
+        """검색창을 닫는다. 다음 검색이 직전 글자 위에 겹치지 않게.
+
+        ⚠ **검색창을 연 뒤에만** 부른다. 포커스를 못 잡은 채로 Esc 를 누르면 그
+          키가 그 순간 포커스를 가진 **다른 앱**으로 간다 — 키를 누르지 않는다는
+          원칙은 Esc 에도 걸린다.
+        """
+        try:
+            self._pyautogui.press("esc")
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _search_titles(self, win, query: str, conf: dict) -> Optional[List[str]]:
+        """검색칸에 `query` 를 넣고 **결과 줄의 제목들**을 읽는다.
+
+        돌려주는 값:
+          · 제목 목록 — 읽었다(0줄일 수도 있다. 없는 사람은 정말 없다)
+          · `None`    — **못 읽었다.** 0건과 구분한다. 부르는 쪽이 이것을 보고
+                        '확인됨' 으로 올리지 않는다.
+
+        ⚠ 카톡 검색 결과는 **한 박자 늦게** 반영된다. 바로 읽으면 직전 검색의
+          결과가 잡힌다(mac 에서 '가나' 를 검색했는데 '다라' 방이 나왔다 →
+          엉뚱한 방이 저장될 수 있었다). 그래서 **검색어의 첫 낱말이 든 줄이
+          나타날 때까지** 기다렸다가 읽는다. mac 과 같은 길이다.
+        """
+        needle = needle_of(query)
+        max_rows = _max_rows(conf)
+
+        # 1) 검색창 열기. ★ 여기서부터만 Esc 로 닫는다 — 열지도 않은 채 Esc 를
+        #    누르면 그 키가 다른 앱으로 간다.
+        self._pyautogui.hotkey(*self.sel.get("search_hotkey", ["ctrl", "f"]))
+        try:
+            time.sleep(self._t("after_search_hotkey", 0.4))
+
+            # 2) 검색어 — 클립보드 + Ctrl+V. 한글은 키 입력으로 못 보낸다.
+            self._pyperclip.copy(query)
+            self._pyautogui.hotkey(*(conf.get("paste_hotkey") or ["ctrl", "v"]))
+            time.sleep(self._t("after_query_paste", 0.8))
+
+            # 3) 검색어가 **진짜 그 칸에** 들어갔는지 되읽는다.
+            typed = self._search_input_text(win, conf)
+            if typed is not None and _norm_title(typed) != _norm_title(query):
+                log.warning("검색어가 검색칸에 들어가지 않았습니다(읽은 값=%r, "
+                            "넣은 값=%r) — 후보를 읽지 않습니다", typed, query)
+                return None
+
+            # 4) 결과가 갱신될 때까지 기다리며 읽는다.
+            deadline = time.monotonic() + self._t("room_search_wait", 2.0)
+            titles: Optional[List[str]] = None
+            while True:
+                rows = self._result_rows(win, conf)
+                if rows is not None:
+                    titles = [row_title(r,
+                                        conf.get("item_text_control_type", "Text"))
+                              for r in rows[:max_rows]]
+                    if needle and any(nfc(needle) in nfc(t) for t in titles):
+                        return titles
+                if time.monotonic() >= deadline:
+                    break
+                time.sleep(self._t("room_search_poll", 0.15))
+
+            if titles is None:
+                log.warning("검색 결과 목록을 읽지 못했습니다 — 후보 0건 query=%r "
+                            "(`selectors.yaml: room_search` 의 컨트롤 경로를 "
+                            "확인하세요)", query)
+                return None
+            # 읽기는 읽었는데 검색어가 든 줄이 끝내 없었다 — **없는 것으로 본다.**
+            log.info("검색 결과에 %r 가 든 줄이 없습니다 (%d줄 읽음) query=%r",
+                     needle, len(titles), query)
+            return titles
         finally:
+            self._close_search()
+
+    def _search_input_text(self, win, conf: dict) -> Optional[str]:
+        """검색칸에 실제로 들어간 글자. **못 읽으면 None**(= 판단 불가).
+
+        None 은 '비었다' 가 아니다. 카톡 빌드마다 컨트롤이 달라 못 읽을 수 있고,
+        그것까지 실패로 보면 멀쩡한 PC 에서 후보가 영영 0건이 된다
+        (`_input_text` 와 같은 판단). 대신 ④ 의 '검색어가 든 줄을 기다리는 것' 이
+        같은 일을 한다.
+
+        ★ 실기에서 엉뚱한 칸을 집으면 `selectors.yaml` 의
+          `room_search.input_control_type` 을 비워 이 되읽기를 끈다.
+        """
+        ctype = (conf.get("input_control_type") or "").strip()
+        if not ctype:
+            return None
+        try:
+            boxes = win.descendants(control_type=ctype)
+        except Exception:  # noqa: BLE001
+            return None
+        for box in boxes:
+            value = ""
             try:
-                self._pyautogui.press("esc")
+                value = (box.get_value() or "").strip()
             except Exception:  # noqa: BLE001
-                pass
+                value = _text_of(box)
+            if value:
+                return value
+        return None
+
+    def _result_rows(self, win, conf: dict) -> Optional[list]:
+        """검색 결과 **줄 컨트롤들**. 못 찾으면 None(= 못 읽었다).
+
+        목록 컨트롤을 `list_control_types` 차례로 찾아보고, **줄이 든 첫 번째**
+        것을 쓴다. 셀렉터가 비어 있으면 아무것도 뒤지지 않는다 — 빈 본으로
+        창을 뒤지면 엉뚱한 컨트롤이 잡힌다(`_confirm_snapshot` 과 같은 판단).
+        """
+        containers = list(conf.get("list_control_types") or [])
+        items = list(conf.get("item_control_types") or [])
+        if not containers or not items:
+            log.warning("room_search 셀렉터가 비어 검색 결과를 찾지 않습니다")
+            return None
+        want_id = (conf.get("list_auto_id") or "").strip()
+        for ctype in containers:
+            try:
+                found = win.descendants(control_type=ctype)
+            except Exception:  # noqa: BLE001
+                return None
+            for container in found:
+                if want_id and _auto_id(container) != want_id:
+                    continue
+                rows: list = []
+                for itype in items:
+                    try:
+                        rows.extend(container.descendants(control_type=itype))
+                    except Exception:  # noqa: BLE001
+                        return None
+                if rows:
+                    return rows
+        return None
 
     def _open_room_verified(self, room_name: str):
         """방을 찾아 열고 **창 제목이 정확히 일치하는지** 확인한다.
@@ -673,6 +909,123 @@ class KakaoDesktopSender(Sender):
             return base64.b64encode(buf.getvalue()).decode("ascii")
         except Exception:  # noqa: BLE001
             return None
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  방 검색의 판단 — **창과 떨어져 있어 이 기계에서 그대로 시험한다**
+#
+#  Windows 카톡이 이 기계에 없으니 창을 읽는 자리(`_result_rows` ·
+#  `_search_titles`)는 실기 전까지 추측이다. 그래서 **읽은 것을 보고 무엇을
+#  후보로 세우고 무엇을 확인됨으로 올릴지** 정하는 자리를 따로 떼어 두었다.
+#  그 판단은 추측이어서는 안 된다.
+#  (mac 의 `kakao_mac._exact_row` · `discover_rooms` 의 걸러내기와 같은 결)
+# ══════════════════════════════════════════════════════════════════════════
+
+def _norm_title(text: str) -> str:
+    """제목 비교용. **연속 공백만** 줄이고 한글 자모를 합친 형태로 맞춘다.
+
+    그 밖의 보정은 하지 않는다 — 한 글자만 달라도 다른 방이다(mac 의 `_norm`).
+
+    자모를 합치는 것(NFC)은 느슨해지는 것이 아니다. 눈에 같은 글자가 디스크·UIA
+    에서 두 형태로 오는 것을 한 형태로 맞추는 것뿐이고, **다른 글자를 같게
+    만들지 않는다**(`base.nfc` 의 NFKC 경고 참고).
+    """
+    return " ".join(nfc(text or "").split())
+
+
+def needle_of(query: str) -> str:
+    """검색어에서 **제목에 반드시 들어 있어야 할 조각**. mac 과 같은 규칙 — 첫 낱말.
+
+    왜 필요한가: 카톡 검색은 방 제목뿐 아니라 **참여자 이름으로도** 걸리고,
+    결과가 한 박자 늦게 반영돼 직전 검색의 목록이 잡히기도 한다. 이름 조각이
+    든 줄만 인정하면 둘 다 걸러진다.
+    """
+    parts = (query or "").split()
+    return parts[0] if parts else (query or "").strip()
+
+
+def filter_room_titles(titles, query: str, marker: str = "",
+                       max_rows: int = 60) -> List[str]:
+    """읽어 온 줄 글자에서 **후보로 세울 방 제목**만 남긴다 (mac 과 같은 규칙).
+
+    ① 앞 `max_rows` 줄만 본다 — 검색이 안 먹어 전체 대화목록이 잡혀도 끊는다
+    ② 빈 줄은 버린다
+    ③ **검색어의 첫 낱말이 든 줄만** 남긴다 (`needle_of` 참고)
+    ④ marker 가 있으면 그 글자가 든 줄만 남긴다
+
+    ⚠ **같은 제목이 둘 나오면 둘 다 남긴다.** 겹친 것을 하나로 접으면
+      `process_verify_job` 이 `len(found) == 1` 을 보고 `verified` 로 올려
+      **같은 이름의 방이 여러 개인 것을 하나로 단정**한다. 그것이 곧 짐작이다.
+    """
+    needle = needle_of(query)
+    if not needle:
+        return []
+    want = nfc(needle)
+    mark = nfc(marker) if marker else ""
+    out: List[str] = []
+    for raw in list(titles or [])[:max(0, int(max_rows))]:
+        title = (raw or "").strip()
+        if not title:
+            continue
+        shown = nfc(title)
+        if want not in shown:
+            continue
+        if mark and mark not in shown:
+            continue
+        out.append(title)
+    return out
+
+
+def verdict_from_titles(titles, room_name: str) -> str:
+    """읽어 온 줄 글자로 `verified | not_found | ambiguous` 를 **센다.**
+
+    ★ 여기는 **글자까지 정확히 같은 줄만** 센다. 후보 목록(`filter_room_titles`)
+      이 '든 글자' 로 넉넉히 모으는 것과 **다른 자리**다. 후보가 많아져도 이
+      판정은 느슨해지지 않는다.
+
+    같은 제목이 둘 이상이면 `ambiguous` — 고르지 않는다. 어느 쪽인지 모르는데
+    아무거나 고르면 남의 대화방으로 간다.
+    """
+    want = _norm_title(room_name)
+    if not want:
+        return "not_found"
+    hits = [t for t in (titles or []) if _norm_title(t) == want]
+    if len(hits) > 1:
+        return "ambiguous"
+    return "verified" if hits else "not_found"
+
+
+def row_title(row, text_control_type: str = "Text") -> str:
+    """검색 결과 **한 줄에서 방 제목**을 읽는다. 못 읽으면 빈 값.
+
+    줄의 **첫 글자 조각**을 제목으로 본다 — mac 도 각 줄의 첫 static text 를
+    읽는다(그 뒤 조각은 마지막 메시지·시각이다).
+
+    `text_control_type` 이 비면 글자 조각을 찾지 않고 **줄 이름(Name)** 을 쓴다.
+    실기에서 줄 이름 자체가 제목이면 `selectors.yaml` 에서 그렇게 바꾼다.
+    """
+    ctype = (text_control_type or "").strip()
+    if ctype:
+        for text in _control_texts(row, ctype):
+            if text:
+                return text
+    return _text_of(row)
+
+
+def _auto_id(control) -> str:
+    try:
+        return (control.automation_id() or "").strip()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _max_rows(conf: dict) -> int:
+    """살펴볼 줄 수 상한. 값이 깨져 있으면 바닥값으로 돌아간다."""
+    try:
+        value = int(conf.get("max_rows") or 0)
+    except (TypeError, ValueError):
+        value = 0
+    return value if value > 0 else int(ROOM_SEARCH_DEFAULTS["max_rows"])
 
 
 # ══════════════════════════════════════════════════════════════════════════
