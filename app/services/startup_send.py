@@ -53,7 +53,7 @@ from typing import List, Optional
 from sqlalchemy.orm import Session
 
 from ..models import AutoSendSetting, IrCompany, User
-from . import auto_send, ir_monthly
+from . import auto_send, ir_monthly, room_match
 
 #: 이 발송의 종류. `auto_send_settings.kind` 이자 발송 잡의 종류
 #: (`models.STARTUP_SEND_KIND`)다. **같은 것을 가리키므로 글자도 같다** —
@@ -190,6 +190,16 @@ def rows(db: Session, month: str) -> dict:
             "count": row["total_count"],
             "sendable": not reason,
             "reason": reason,
+            # 그 방 제목을 카톡에서 확인했는가 — **보여 주기만 한다.**
+            #
+            # `sendable` 에 넣지 않는다. 보낼 수 있는지는 위 두 가지(방 이름이
+            # 있는가 · 실을 줄이 있는가)로 갈리고, 이 값은 거기에 끼지 않는다.
+            # 끼우면 찾기가 한 번 실패한 달에 월간 발송이 통째로 서는데, 그
+            # 까닭은 "방 이름이 틀렸다" 가 아니라 "카톡을 못 뒤졌다"(PC 가 꺼져
+            # 있었다 · 검색이 한 박자 늦었다)다 — 보낼 수 있었던 것까지 못
+            # 보내게 된다(`app/version.py` 의 '막지는 않는다' 와 같은 결).
+            # 투자사 쪽도 `unverified` 를 막지 않는다(`routers/deals.py: room_ok`).
+            "verified": (company.room_verified or room_match.UNVERIFIED) == "verified",
         })
     return {
         "month": month,
@@ -198,6 +208,10 @@ def rows(db: Session, month: str) -> dict:
         # **방 이름이 없어 못 보내는 기업 수.** 화면이 이 수를 따로 적는다 —
         # `보낼 수 있는 곳 3` 만 보이면 나머지가 왜 빠졌는지 물을 자리가 없다.
         "no_room_count": sum(1 for r in out if r["reason"] == NO_ROOM),
+        # **확인된 방이 몇 곳인가.** `보낼 수 있는 곳` 과 나란히 적는다 — 보낼
+        # 수 있는 것과 카톡에 그 방이 있다고 확인된 것은 다른 사실이고, 앞만
+        # 보이면 아직 아무도 확인하지 않은 이름으로 회차를 세우게 된다.
+        "verified_count": sum(1 for r in out if r["verified"]),
         "no_lines_count": sum(1 for r in out if r["reason"] == NO_LINES),
         # 어느 기업 몫인지 몰라 어디에도 못 붙인 요청. 스타트업 화면이 이미
         # 적고 있는 값이고, 여기서도 보여야 한다 — 이 화면에서 보내는 사람은
