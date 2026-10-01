@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+{#
+  대표 카톡방 **맞추기** — 계약 기업 전부가 한 판에 서는 표.
+
+  왜 보내는 표(`startup_send.html`)와 갈라 두었는지, 왜 새 잡 종류를 만들지
+  않았는지는 `routers/startup_send.py` 의 맞추기 자리에 적혀 있다.
+
+  이 화면이 **하지 않는 것** 둘을 여기 적어 둔다.
+    · 방 제목을 **고르지 않는다.** 후보를 세워 주기만 하고 누르는 것은 사람이다
+      (`services/room_match.py` 머리말 — 후보가 하나뿐이어도 서버는 안 넣는다).
+    · 방 제목을 **지어내지 않는다.** 초안은 초안이라고 적혀 있고, 초안인 채로
+      저장되면 발송기가 그 방을 못 찾는다.
+#}
+{% block title %}대표 카톡방 맞추기 · CONTACTVC ASSET{% endblock %}
+{% block content %}
+
+<header class="page-head">
+  <h1>대표 카톡방 맞추기</h1>
+  <p class="muted">
+    계약을 마친 <b>{{ total }}곳</b>의 <b>대표 카톡방 제목</b>을 한 판에 맞춥니다 —
+    이 칸이 비어 있으면 <b>{{ label }}</b>에서 그 기업을 고를 수 없습니다.
+  </p>
+  {#
+    **글자까지 같아야 한다**는 말이 화면에 없으면, 사람은 기억해서 적는다.
+    기억해 적은 이름은 띄어쓰기가 달라지고, 그러면 발송기가 방을 못 찾는다.
+  #}
+  <p class="hint">
+    ✋ 방 제목은 <b>카톡에 보이는 글자 그대로</b>여야 합니다 — 한 글자만 달라도
+    발송기가 방을 찾지 못합니다. <b>[카톡에서 방 찾기]</b> 로 가져온 후보를
+    누르는 것이 가장 안전합니다(카톡에 있는 제목을 그대로 가져옵니다).
+  </p>
+</header>
+
+{% if msg %}
+<p class="flash">{{ msg }}</p>
+{% endif %}
+
+<div class="toolbar">
+  <div class="quick-chips">
+    <a class="chip" href="/deals/startup-ir">← {{ label }}</a>
+    <a class="chip" href="/companies">IR 기업 현황</a>
+  </div>
+  <div class="toolbar-right">
+    {#
+      **한 통도 나가지 않는다.** 발송기는 이 잡에서 방을 열지도 문구를 보내지도
+      않고 검색만 한다 — 그 말이 단추 옆에 있어야 사람이 누를 수 있다.
+    #}
+    <form method="post" action="/deals/startup-ir/rooms/search">
+      <button type="submit" class="secondary-btn">
+        카톡에서 방 찾기 ({{ no_room }}곳)
+      </button>
+    </form>
+  </div>
+</div>
+
+<p class="hint">
+  <b>[카톡에서 방 찾기]</b> 는 <b>방 제목이 비어 있는 {{ no_room }}곳</b>만
+  회사명으로 검색합니다 — 한 통도 보내지 않고 <b>방 제목만 읽어 옵니다</b>.
+  이미 맞춰 둔 곳은 건드리지 않습니다(사람이 옮겨 적은 글자를 기계가 덮지
+  않습니다). 발송 프로그램이 붙어 있는 PC 의 카톡을 뒤지므로, 그 PC 가 켜져
+  있어야 합니다.
+  {#
+    **되는 자리가 한정돼 있다는 것을 숨기지 않는다.** 숨기면 후보가 0건으로
+    돌아왔을 때 "카톡에 방이 없다" 로 읽고 사람이 엉뚱한 데를 뒤진다.
+  #}
+  <br>후보를 읽어 오는 것은 <b>macOS 발송기</b>만 할 수 있습니다 — Windows PC
+  에서는 후보가 0건으로 돌아옵니다. 그때는 아래 칸에 <b>카톡에서 복사해</b>
+  붙여 넣으세요(초안은 참고용입니다).
+</p>
+
+{#
+  **무엇이 모자란지를 머리에 적는다.** 표를 끝까지 훑지 않아도 보이도록.
+  `한 번도 안 찾아본 곳` 과 `찾았는데 후보가 없던 곳` 을 가른다 — 앞은 단추를
+  누르면 되고, 뒤는 카톡을 사람이 들여다봐야 한다.
+#}
+{% if no_room %}
+<p class="warn-box">
+  ⚠ <b>{{ no_room }}곳</b>이 아직 <b>{{ no_room_label }}</b>입니다.
+  {% if never_searched %}그중 <b>{{ never_searched }}곳</b>은 아직 한 번도 찾아보지
+  않았습니다 — 위 <b>[카톡에서 방 찾기]</b> 를 먼저 눌러 보세요.{% endif %}
+</p>
+{% endif %}
+
+<form method="post" action="/deals/startup-ir/rooms" id="room-match">
+  <div class="table-wrap">
+    <table class="grid-table">
+      <thead>
+        <tr>
+          <th>기업</th>
+          <th>대표</th>
+          <th>대표 카톡방 제목 — 카톡에 보이는 글자 그대로</th>
+          <th>확인</th>
+        </tr>
+      </thead>
+      <tbody>
+        {#
+          **한 줄도 빼지 않는다.** 이미 맞춰진 기업도, 후보가 하나도 없는 기업도
+          남는다 — 빼면 "계약 기업인데 왜 이 표에 없지" 를 화면에서 물을 수가
+          없다(`services/startup_send.rows` 의 그 규칙 그대로).
+        #}
+        {% for row in rows %}
+        <tr{% if not row.room %} class="ir-row-off"{% endif %}>
+          <td>
+            {#
+              **기업 번호와 방 제목 칸이 같은 순서로 나간다**(짝지은 두 목록).
+              왜 칸 이름에 번호를 섞지 않는지는 `save_rooms` 에 적혀 있다.
+            #}
+            <input type="hidden" name="company_ids" value="{{ row.company.id }}">
+            {{ row.company.name }}
+          </td>
+          <td>{{ row.company.contact_name or '' }}</td>
+          <td>
+            <input type="text" class="room-input" name="rooms"
+                   value="{{ row.room }}"
+                   placeholder="카톡에 보이는 방 제목을 그대로">
+            <div class="room-picks">
+              {#
+                **카톡에서 가져온 진짜 제목.** 누르면 위 칸에 그대로 들어간다.
+                회사명이 든 후보를 먼저·도드라지게 세운다 — 사용자가 짚어 준
+                「회사명이 무조건 들어가 있음」이 고를 때의 근거다.
+                회사명이 안 든 후보도 **지우지 않는다**: 우리가 아는 이름이
+                방을 만들 때 쓴 이름과 다를 수 있어, 지우면 맞는 방이 사라진다.
+              #}
+              {% for c in row.candidates if c.has_name %}
+              <button type="button" class="chip room-pick named"
+                      data-room="{{ c.room }}"
+                      title="카톡에서 찾은 방 제목입니다 — 맞는지 보고 누르세요">{{ c.room }}</button>
+              {% endfor %}
+              {% for c in row.candidates if not c.has_name %}
+              <button type="button" class="chip room-pick"
+                      data-room="{{ c.room }}"
+                      title="카톡에서 찾았지만 제목에 회사명이 안 보입니다 — 정말 이 방인지 보고 누르세요">{{ c.room }}<span class="muted"> · 회사명 없음</span></button>
+              {% endfor %}
+              {#
+                **초안은 초안이라고 적는다.** 규칙으로 지어 본 글자라 카톡에
+                그런 제목의 방이 있다는 근거가 없다 — 그대로 저장하면 발송기가
+                방을 못 찾는다(`services/room_match.draft`).
+              #}
+              {% if row.draft and row.draft != row.room %}
+              <button type="button" class="chip room-pick draft"
+                      data-room="{{ row.draft }}"
+                      title="규칙으로 지어 본 초안입니다 — 카톡에 이런 제목의 방이 있다는 근거는 없습니다. 카톡을 보고 고쳐 주세요.">초안 {{ row.draft }}</button>
+              {% endif %}
+            </div>
+            {% if row.searched_at and not row.candidates %}
+            <p class="hint">
+              회사명 <b>{{ row.query }}</b> 로 찾았지만 카톡에 걸린 방이
+              없었습니다 — 카톡에서 직접 찾아 제목을 옮겨 적어 주세요.
+            </p>
+            {% elif not row.searched_at %}
+            <p class="hint">아직 찾아보지 않았습니다 (검색어 <b>{{ row.query }}</b>).</p>
+            {% endif %}
+          </td>
+          <td>
+            {% if not row.room %}
+            <span class="room-badge muted">{{ no_room_label }}</span>
+            {% elif row.state == 'verified' %}
+            <span class="room-badge ok">{{ row.state_label }}</span>
+            {% else %}
+            <span class="room-badge muted">{{ row.state_label }}</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+        {% if not rows %}
+        <tr><td colspan="4" class="muted">계약을 마친 기업이 없습니다.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+
+  {#
+    **한 번에 저장한다.** 수십 곳을 한 판에 다루는 것이 이 화면의 전부라
+    (지금까지 막혀 있던 까닭이 기업마다 창을 하나씩 여는 것이었다), 줄마다
+    따로 누르게 하면 그 문제가 그대로 남는다.
+  #}
+  <button type="submit" class="primary-btn">{{ total }}줄 저장</button>
+  <p class="hint">
+    바뀐 줄만 들어갑니다. 글자를 고친 줄은 <b>확인</b> 표시가
+    <b>확인 안 됨</b> 으로 되돌아갑니다 — 확인은 <b>그때 그 글자</b>에 대한
+    것이라, 글자를 고치면 확인한 적이 없는 것입니다.
+    <br>이 표는 <b>보낼 곳을 정하는 자리가 아닙니다</b> — 회차는
+    <a href="/deals/startup-ir">{{ label }}</a>에서 세웁니다.
+  </p>
+</form>
+
+<script src="{{ asset('js/startup_room.js') }}" defer></script>
+
+{% endblock %}

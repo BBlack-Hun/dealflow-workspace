@@ -29,7 +29,7 @@ from ..db import get_db
 from ..deps import NotAdmin, admin_only, get_current_user, templates
 from ..models import IrCompany, OneLinerBackup, User
 from ..services import (amount, auth as auth_svc, deal_history, edit_log,
-                        email_domains)
+                        email_domains, room_match)
 from ..services.one_liner import (
     AUTO, apply_one_liner, bulk_rows, compose_one_liner, one_liner_status, origin,
 )
@@ -826,6 +826,12 @@ def _assign(company: IrCompany, body: CompanyIn) -> None:
                            f"{value!r} — {' · '.join(RECEIVED_CHOICES)} 중에서 "
                            "고르거나, 아직 안 정했으면 비워 두세요")
             company.contract_received = key
+        elif field == "kakao_room_name":
+            # **방 이름을 적는 자리는 한 곳이다**(`services/room_match.set_room`).
+            # 맞추기 화면(`/deals/startup-ir/rooms`)도 같은 함수를 지난다 —
+            # 여기서 따로 적으면 한쪽만 확인 표시를 지우게 되고, 그러면 창에서
+            # 방 이름을 고친 기업이 `확인됨` 배지를 그대로 달고 있다.
+            room_match.set_room(company, value)
         elif field == "name":
             if value and value.strip():
                 company.name = value.strip()

@@ -513,6 +513,52 @@ class IrCompany(TimestampMixin, Base):
     # 줄을 `방 이름 없음` 으로 드러내 고르지 못하게 하고(`startup_send.rows`),
     # 주소로 억지로 넣어도 목록을 만드는 자리가 거절한다.
     kakao_room_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # 그 방 제목을 **카톡에서 확인했는가.** unverified | verified | ambiguous | not_found
+    #
+    # `VcContact.room_verified`(172줄 옆)와 **같은 모양·같은 값**이다. 투자사
+    # 담당자 쪽에만 있던 칸인데, 기업 쪽도 같은 것을 물어야 할 자리가 생겼다 —
+    # 위 칸에 적힌 글자가 **카톡에 실제로 있는 방 제목**인지 아닌지를 적어 둘
+    # 데가 없었다.
+    #
+    # ## 발송을 막는 칸이 아니다  ★
+    #
+    # 이 값이 `verified` 가 아니어도 **보낼 수 있다**. 막으면 찾기가 한 번
+    # 실패한 달에 월간 발송이 통째로 서고, 그 까닭은 "방 이름이 틀렸다" 가
+    # 아니라 "카톡을 못 뒤졌다"(PC 가 꺼져 있었다·검색이 한 박자 늦었다)다.
+    # 보낼 수 있는지는 **방 이름이 적혀 있는가** 하나로 갈린다
+    # (`services/startup_send.rows`) — 이 칸은 **화면에 드러내는 표시**다.
+    # 투자사 쪽도 `unverified` 를 막지 않는다(`routers/deals.py` 의 `room_ok`).
+    #
+    # **`server_default` 까지 둔다**(`VcContact.room_verified` 에는 없는 것이다).
+    # `default=` 는 ORM 이 줄을 만들 때만 걸려서, **ORM 을 지나지 않는 INSERT**
+    # 가 `NOT NULL constraint failed` 로 터진다 — 이 표는 그런 길이 여럿이다
+    # (옛 판을 흉내 내는 검사 · 자료를 밀어 넣는 스크립트). 판(0082)도 같은
+    # 값을 넣으므로 새 DB 와 이미 있는 DB 의 모양이 갈리지 않는다.
+    room_verified: Mapped[str] = mapped_column(String, default="unverified",
+                                               server_default="unverified")
+    # **카톡에서 회사명으로 찾아 나온 방 제목들**(JSON). 사람이 고를 후보다.
+    #
+    #     {"at": "2026-10-01T12:00:00+09:00", "query": "샘플가", "rooms": ["…", "…"]}
+    #
+    # ## 왜 담아 두나
+    #
+    # 방 제목은 **규칙으로 지어낼 수 없다.** 사용자가 든 실제 모양이
+    # `대표자 대표 회사명 , 팀원 직함` 인데 띄어쓰기가 제각각이고
+    # (`회사 명` / `회사명`), 꼬리의 우리 팀원을 채울 칸이 이 표에 없다
+    # (`assignee_name` 은 이관 이력 메모다 — `A -> B` · 날짜 접두가 섞여 있다).
+    # 그래서 **카톡에 있는 제목을 그대로 가져와 사람이 고르는** 길뿐이다.
+    #
+    # 가져오는 길은 이미 있다 — 방 확인 잡(`verify_room`)이 카톡을 검색해
+    # 제목 목록을 올린다(`agent/main.py: process_verify_job` 의 `candidates`).
+    # 지금까지 서버가 그 목록을 버리고 있었고, 이 칸이 그것을 받는 자리다.
+    #
+    # ## 여기 든 값은 **아직 방 이름이 아니다**  ★
+    #
+    # 후보는 후보다. 고르는 것은 사람이고(`/deals/startup-ir/rooms`), 고른
+    # 뒤에야 위 `kakao_room_name` 에 들어간다. 서버가 하나뿐인 후보를 혼자
+    # 집어넣지 않는다 — 회사명이 든 방이 꼭 대표 방인 것은 아니다(그 회사
+    # 이름이 들어간 다른 방일 수 있다). 짐작해서 넣으면 엉뚱한 방으로 간다.
+    room_candidates: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     # Amounts in 백만원 (millions of KRW); displayed in 억 (÷100).
     # 연도별 매출. 시트가 22~25년을 따로 들고 있다 — 한 해만 남기면 성장 추세가
     # 사라진다("작년 대비" 가 딜소개에서 자주 쓰인다).

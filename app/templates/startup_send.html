@@ -45,6 +45,11 @@
       {% endfor %}
     </select>
     <a class="chip" href="/startup/ir-report?month={{ selected }}">스타트업 현황·문서</a>
+    {#
+      방 제목을 채우는 자리. 보내는 표에 고치는 칸을 끼우지 않고 길만 낸다 —
+      왜 갈라 두었는지는 `routers/startup_send.py` 의 맞추기 자리에 있다.
+    #}
+    <a class="chip" href="/deals/startup-ir/rooms">대표 카톡방 맞추기</a>
   </div>
 </div>
 
@@ -57,9 +62,17 @@
 <p class="warn-box">
   ⚠ <b>{{ no_room_count }}곳</b>은 <b>{{ no_room_label }}</b>이라 보낼 수 없습니다 —
   아래 표에 그대로 남아 있습니다(조용히 빠지지 않습니다).
-  <a href="/companies">IR 기업 현황</a>에서 그 기업의 [수정] 을 열어
-  <b>대표 카톡방</b> 칸에 <b>카톡에 보이는 방 제목을 글자까지 그대로</b>
-  적어 주세요 — 한 글자만 달라도 발송기가 방을 찾지 못합니다.
+  {#
+    **기업마다 창을 하나씩 여는 길을 더는 권하지 않는다.** 지금까지 이 안내는
+    `IR 기업 현황` 의 [수정] 을 가리켰는데, 그 창은 한 기업씩 여는 자리라
+    수십 곳이 비어 있을 때 쓸 수 없었다 — 그래서 한 곳도 안 채워졌다.
+    맞추기 표는 **계약 기업 전부가 한 판에** 서고, 카톡에서 찾아온 후보를
+    눌러서 넣는다.
+  #}
+  <a href="/deals/startup-ir/rooms">대표 카톡방 맞추기</a>에서
+  <b>한 판에</b> 채울 수 있습니다 — 카톡에서 <b>회사명으로 찾아온 방 제목</b>을
+  눌러서 넣으세요. 손으로 적을 때는 <b>카톡에 보이는 글자 그대로</b>여야
+  합니다(한 글자만 달라도 발송기가 방을 찾지 못합니다).
 </p>
 {% endif %}
 
@@ -107,6 +120,16 @@
               발송은 되돌릴 수 없다.
             #}
             {% if row.room %}{{ row.room }}
+            {#
+              **확인했는지를 줄에 적는다 — 막지는 않는다.** 이 배지가 없으면
+              아무도 확인하지 않은 이름으로 회차를 세우고도 그것을 알 수 없다.
+              `보냄` 칸을 끄지는 않는다: 찾기가 실패한 달에 발송이 통째로
+              서면, 보낼 수 있었던 것까지 못 보낸다
+              (`services/startup_send.rows` 의 `verified` 설명).
+            #}
+            {% if not row.verified %}
+            <span class="room-badge muted" title="카톡에서 이 제목의 방을 확인한 적이 없습니다 — [대표 카톡방 맞추기] 에서 확인할 수 있습니다. 보내는 것을 막지는 않습니다.">확인 안 됨</span>
+            {% endif %}
             {% else %}<span class="status-badge warn">{{ no_room_label }}</span>
             {% endif %}
           </td>
@@ -143,6 +166,16 @@
     {{ sendable_count }}곳 대기 목록 만들기
   </button>
   <p class="hint">
+    {#
+      **보낼 수 있는 곳과 확인된 곳은 다른 사실이다.** 앞만 적으면 아직 아무도
+      확인하지 않은 이름으로 회차를 세우고도 그것을 모른다 — 막지는 않으므로
+      (`services/startup_send.rows` 의 `verified`) 적어서 드러낸다.
+    #}
+    {% if sendable_count %}
+    그중 <b>{{ verified_count }}곳</b>은 카톡에서 방 제목을 <b>확인했습니다</b> —
+    나머지는 확인 안 된 이름입니다(<a href="/deals/startup-ir/rooms">맞추기</a>에서
+    확인할 수 있습니다. 보내는 것을 막지는 않습니다).<br>
+    {% endif %}
     누르면 <b>{{ sendable_count }}곳</b>짜리 회차가 <b>대기(draft)</b> 로 섭니다.
     발송 프로그램은 <b>대기 회차를 집어가지 않습니다</b> — 진행 화면에서
     <b>[발송 시작]</b> 을 눌러야 나갑니다.

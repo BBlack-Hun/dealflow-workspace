@@ -190,10 +190,35 @@ def poll(
                  # 이름만으로 재검색할 수 있게 함께 준다. 동명이인은 회사로 가린다.
                  "name": i.contact.name,
                  "firm": i.contact.firm or ""}
-                if job.kind == "verify_room" and i.contact is not None else {})}
+                if job.kind == VERIFY_KIND and i.contact is not None else {}),
+             # 받는 쪽이 **스타트업 기업**인 방 확인 잡. 검색어가 다르다 —
+             # **회사명 하나**다(`services/room_match.search_query`). 규칙은
+             # 그 파일 한 곳이고 여기서 다시 적지 않는다.
+             #
+             # `firm` 을 **일부러 안 보낸다.** 발송기는 결과가 둘 이상이면
+             # `firm` 으로 걸러 하나로 줄이고, 줄여서 하나가 되면 **나머지
+             # 후보를 버린 채** 보고한다(`agent/main.py: process_verify_job`).
+             # 여기서 필요한 것은 사람이 고를 **후보 전부**다 — 서버가 미리
+             # 줄이면 맞는 방이 화면에 서지도 못한다.
+             **(_company_search(i.ir_company)
+                if job.kind == VERIFY_KIND and i.ir_company is not None else {})}
             for i in pending_items
         ],
     }
+
+
+def _company_search(company) -> dict:
+    """기업 줄로 세운 방 확인 건에 실어 보내는 검색어.
+
+    `query` 로 못 찾으면 발송기가 `name` 으로 한 번 더 찾는다 — 그 두 번째가
+    **더 짧은 글자**여야 띄어쓰기가 다른 방(`회사 명` ↔ `회사명`)을 찾는다
+    (`room_match.search_seed`). 회사명이 한 토막이면 두 값이 같아지고, 그때
+    발송기는 두 번째 검색을 건너뛴다.
+    """
+    from ..services import room_match
+
+    return {"query": room_match.search_query(company),
+            "name": room_match.search_seed(company)}
 
 
 class ItemResult(BaseModel):
@@ -263,6 +288,10 @@ def _apply_verify_result(item: SendItem, body: ItemResult) -> None:
     # 판정을 못 받았으면 '확인됨'으로 올리지 않는다 — 모르면 미확인 쪽이 안전하다.
     verdict = body.verify_result if body.verify_result in VERIFY_VERDICTS else "not_found"
 
+    if item.ir_company is not None:
+        _apply_company_candidates(item, body, verdict)
+        return
+
     contact = item.contact
     if contact is not None:
         contact.room_verified = verdict
@@ -279,6 +308,66 @@ def _apply_verify_result(item: SendItem, body: ItemResult) -> None:
     item.error = None if verdict == "verified" else (
         body.error or VERIFY_ERRORS.get(verdict, verdict)
     )
+
+
+def _apply_company_candidates(item: SendItem, body: ItemResult,
+                              verdict: str) -> None:
+    """받는 쪽이 **스타트업 기업**인 방 확인 — 찾아낸 제목들을 **후보로** 담는다.
+
+    ## 바로 위 담당자 쪽과 **갈리는 한 가지**  ★★
+
+    담당자 쪽은 결과가 하나뿐이면 그 제목을 `kakao_room_name` 에 **넣는다**.
+    여기서는 **안 넣는다.**
+
+    갈리는 까닭은 들고 있는 근거가 다르기 때문이다. 담당자 쪽은 사람이 이미
+    적어 둔 방 이름을 **대조**하는 길이라, 그 이름으로 검색해 나온 방 하나는
+    같은 방일 근거가 있다. 여기는 적어 둔 것이 아무것도 없는 상태에서
+    **회사명으로 처음 찾는** 길이다 — 그 회사 이름이 든 방이 꼭 대표와의
+    방인 것은 아니고(그 회사 얘기를 하는 다른 방일 수 있다), 카톡 검색은
+    참여자 이름에도 걸린다. 근거 없이 넣으면 **엉뚱한 방으로 간다** —
+    이 저장소가 가장 경계하는 사고다(`agent/sender/base.py` 의 never guess).
+
+    그래서 **고르는 것은 사람**이다(`/deals/startup-ir/rooms`).
+
+    ## 왜 `candidates` 를 쓰나
+
+    발송기가 이미 보내고 있다(`agent/main.py` 의 `report_item(..., candidates=
+    found or None)`). 서버가 받아 놓고 버리고 있었을 뿐이다 — 그 목록을 담는
+    것만으로 **발송기를 고치지 않고** 진짜 방 제목을 얻는다.
+
+    `found_room` 도 후보로 함께 담는다. 결과가 하나뿐일 때 발송기가 그 한 개를
+    `found_room` 으로 따로 알려 주는데, `candidates` 에도 같은 값이 들어 있다
+    — 들어 있지 않은 낡은 발송기가 붙었을 때를 위해 둘 다 본다.
+
+    ## 줄의 성공·실패는 **담당자 쪽과 같은 규칙**이다
+
+    `verified` 만 `sent`, 나머지는 사유가 보이게 `failed` 로 둔다. 진행 화면이
+    그 사유를 그대로 적어서, 후보를 못 찾은 기업이 실패 목록에 남는다 —
+    조용히 성공으로 닫으면 사람이 찾아본 줄 알고 넘어간다.
+    """
+    from ..services import room_match
+
+    company = item.ir_company
+    rooms = [str(r) for r in (body.candidates or []) if str(r).strip()]
+    if body.found_room and body.found_room.strip() not in rooms:
+        rooms.insert(0, body.found_room.strip())
+
+    room_match.save_candidates(company, rooms, at=now_iso(),
+                               query=room_match.search_query(company))
+    # **`kakao_room_name` 도 `room_verified` 도 안 건드린다.** 담은 것은 후보일
+    # 뿐이고, 고른 것이 아니다 — 고르면 `room_match.set_room` 이 적는다.
+    item.status = "sent" if verdict == "verified" else "failed"
+    item.sent_at = now_iso() if verdict == "verified" else None
+    if verdict == "verified":
+        item.error = None
+    elif rooms:
+        # 후보를 찾았는데 하나가 아니라 `ambiguous` 가 된 경우다. 그대로
+        # `같은 이름의 방이 여러 개입니다 (카톡에서 방 이름을 고유하게 바꾸세요)`
+        # 를 적으면 **안 해도 되는 일을 시킨다** — 여기서는 여러 개가 정상이고,
+        # 고르면 끝이다.
+        item.error = f"후보 {len(rooms)}개 — 맞추기 화면에서 고르세요"
+    else:
+        item.error = body.error or VERIFY_ERRORS.get(verdict, verdict)
 
 
 def _save_screenshot(item_id: int, b64: str) -> Optional[str]:

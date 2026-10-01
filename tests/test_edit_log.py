@@ -609,6 +609,12 @@ WRITE_ROUTES = {
     ("POST", "/team/notices/{notice_id}/on"): WATCHED,
     ("POST", "/team/startup-send"): WATCHED,
 
+    # 대표 카톡방 맞추기 [저장] — **공용 표(`ir_companies`)의 방 이름**을
+    # 수십 줄 한꺼번에 바꾼다. 이 앱에서 오발송에 가장 가까운 칸이라
+    # (`edit_log` 의 `kakao_room_name` 주석), 한 판에 바꾸는 길이면 더욱
+    # 누가 언제 무엇으로 바꿨는지가 남아야 한다.
+    ("POST", "/deals/startup-ir/rooms"): WATCHED,
+
     # 시트 가져오기 — 남의 명단까지 통째로 갈아 끼운다.
     ("POST", "/api/import/contacts"): WATCHED,
     # 발송 날짜 규칙은 팀 전체의 일정이다.
@@ -662,6 +668,10 @@ WRITE_ROUTES = {
     # 줄은 애초에 못 집는다(`followups._owned`) — 그 셋과 같은 칸에 둔다.
     ("POST", "/followups/{sequence_id}/called"): MACHINE,
     ("POST", "/deals/startup-ir/send"): MACHINE,
+    # 카톡에서 방 제목 후보를 찾아 오는 잡을 세운다. 세우는 것 말고는
+    # 아무것도 고치지 않고, 결과를 적는 것은 발송기 쪽 길이다
+    # (`/api/agent/items/{item_id}/result` — 바로 위 기계 칸에 있다).
+    ("POST", "/deals/startup-ir/rooms/search"): MACHINE,
     ("POST", "/api/llm-brief/resolve"): MACHINE,
     ("POST", "/api/import/contacts/sheets"): MACHINE,
     # 자료 전체를 파일째 갈아 끼운다 — ORM 을 지나지 않는다.
