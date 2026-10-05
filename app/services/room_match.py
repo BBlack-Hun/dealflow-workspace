@@ -77,6 +77,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import List, Optional
 
 from sqlalchemy.orm import Session
@@ -117,7 +118,13 @@ def key(name: Optional[str]) -> str:
     「**회사명이 무조건 들어가 있음**」을 띄어쓰기 차이에도 견딜 수 있게
     확인하는 것(`회사 명` ↔ `(주)회사명`).
     """
-    return normalize_company_name(name or "").replace(" ", "").lower()
+    return normalize_company_name(strip_notes(name)).replace(" ", "").lower()
+
+
+def strip_notes(name: Optional[str]) -> str:
+    """`[딜소개 불가]` 같은 **대괄호 꼬리표**를 뗀다. 카톡 방 제목에는 없는 글자라
+    검색어에 남으면 카톡 검색이 0건이 되고, 견줄 때도 회사명이 없는 방이 된다."""
+    return re.sub(r"\[[^\]]*\]", " ", name or "")
 
 
 def has_company_name(room: Optional[str], company_name: Optional[str]) -> bool:
@@ -156,7 +163,7 @@ def draft(company: IrCompany) -> str:
     **이 값은 어디에도 저장되지 않는다.** 화면이 보여 주고, 사람이 그것으로
     하겠다고 눌렀을 때만 `kakao_room_name` 에 들어간다.
     """
-    name = normalize_space(normalize_company_name(company.name or ""))
+    name = normalize_space(normalize_company_name(strip_notes(company.name)))
     if not name:
         return ""
     ceo = normalize_space(company.contact_name or "")
@@ -178,7 +185,7 @@ def search_query(company: IrCompany) -> str:
     법인 표기를 뗀다 — 카톡 검색은 글자가 든 방을 찾으므로 `(주)` 가 붙은
     검색어는 그것이 든 방만 찾는다.
     """
-    return normalize_space(normalize_company_name(company.name or ""))
+    return normalize_space(normalize_company_name(strip_notes(company.name)))
 
 
 def search_seed(company: IrCompany) -> str:

@@ -131,7 +131,16 @@ ROOM_SEARCH_DEFAULTS = {
     # 빈 값이면 검색어 되읽기를 하지 않는다.
     "input_control_type": "Edit",
     "paste_hotkey": ["ctrl", "v"],
+    # 목록을 못 읽으면 **맨 위 결과 방을 열어** 그 창 제목을 읽는다.
+    "open_top_fallback": True,
+    # 맨 위 결과를 여는 키. 실기에서 Enter 가 첫 줄을 안 열면 ["down", "enter"].
+    "open_top_keys": ["enter"],
 }
+
+#: 줄을 못 읽었을 때 한 번만 떠 두는 카톡 창 구조. 셀렉터를 고칠 때 본다.
+UIA_MAIN_DUMP_FILE = "kakao_uia_dump.txt"
+#: 맨 위 방을 처음 열었을 때 한 번만 떠 두는 채팅창 구조(단톡·1:1 가르기용).
+UIA_CHAT_DUMP_FILE = "kakao_uia_chat_dump.txt"
 
 
 def is_supported() -> bool:
@@ -339,7 +348,14 @@ class KakaoDesktopSender(Sender):
 
         marker 가 주어지면 그 글자가 든 방만 남긴다.
 
-        **방을 열지 않는다** — 검색 결과 줄의 글자만 읽으므로 빠르고 부작용이 없다.
+        먼저 **방을 열지 않고** 검색 결과 줄의 글자만 읽는다.
+
+        ★ 그 줄을 못 읽거나(Windows 카톡은 목록을 자체 컨트롤로 그려 UIA 로 안
+          보일 수 있다 — 실기 0.11.1 에서 모든 회사가 0건) 읽은 줄에 맞는 것이
+          없으면, **맨 위 결과 방을 열어 그 창 제목을 읽는다**
+          (`_open_top_room_title`). 읽은 제목에 검색어(회사명)가 들어 있을
+          때만 후보 하나로 돌려준다. 그 창에는 **아무것도 입력하지 않고** 바로
+          닫는다. 끄려면 `selectors.yaml: room_search.open_top_fallback: false`.
 
         ★ 못 하면 **빈 목록**이다. 카톡이 검색을 안 보여 주거나 컨트롤을 못 찾거나
           포커스를 못 잡으면 0건으로 답하고 넘어간다. **거짓 후보를 지어내지
@@ -348,8 +364,9 @@ class KakaoDesktopSender(Sender):
         """
         if not (query or "").strip():
             return []
+        # `[딜소개 불가]` 같은 꼬리표는 카톡 방 제목에 없다 — 넣으면 검색이 0건이 된다.
+        query = strip_annotations(query) or query.strip()
         conf = self.room_search_conf
-        titles = None
         try:
             win = self._kakao_window()
             # ★ 포커스가 확인되지 않으면 키 입력을 하지 않는다. 방 이름이 브라우저
@@ -357,14 +374,29 @@ class KakaoDesktopSender(Sender):
             if not self._focus_verified(win):
                 log.warning("discover_rooms: 카톡 포커스 실패 — 후보 0건 query=%r", query)
                 return []
-            titles = self._search_titles(win, query, conf)
+            fallback = bool(conf.get("open_top_fallback", True))
+            titles = self._search_titles(win, query, conf, keep_open=fallback)
+            # ↑ keep_open 이면 검색창이 **열린 채** 돌아온다. 아래에서 반드시 닫는다.
+            found: List[str] = []
+            opened = False
+            try:
+                if titles is not None:
+                    found = filter_room_titles(titles, query, marker=marker,
+                                               max_rows=_max_rows(conf))
+                state = getattr(self, "_last_search_state", "unread")
+                if fallback and not found and state != "typed_mismatch":
+                    # ★ 목록을 못 읽었거나 읽은 줄에 맞는 것이 없다 — **맨 위 방을
+                    #   열어 창 제목을 읽는다.** 검색칸에 남의 글자가 있던 경우
+                    #   (typed_mismatch)는 열지 않는다 — 보이는 목록이 남의 결과다.
+                    opened = True
+                    found = self._open_top_room_title(win, query, marker, conf)
+            finally:
+                if fallback and not opened:
+                    self._close_search()
+            return found
         except Exception:  # noqa: BLE001
             log.exception("discover_rooms 실패 — 후보 0건 query=%r", query)
             return []
-        if titles is None:
-            return []
-        return filter_room_titles(titles, query, marker=marker,
-                                  max_rows=_max_rows(conf))
 
     def verify_room(self, room_name: str) -> str:
         """Search only; count EXACT-title matches. 1=verified, 0=not_found, >=2=ambiguous.
@@ -409,7 +441,233 @@ class KakaoDesktopSender(Sender):
         except Exception:  # noqa: BLE001
             pass
 
-    def _search_titles(self, win, query: str, conf: dict) -> Optional[List[str]]:
+    # ── 맨 위 방 열어 제목 읽기 ──────────────────────────────────────────────
+    #
+    # 검색 결과 목록을 UIA 로 못 읽는 PC 를 위한 길이다. 목록은 못 읽어도
+    # **창 제목은 읽힌다**(`GetWindowText`) — 방을 열면 그 채팅창의 제목이 곧
+    # 실제 방 제목이다.
+    #
+    # ★ 지키는 것
+    #   · 채팅창에는 **아무것도 입력하지 않는다.** 누르는 키는 여는 키(Enter)와
+    #     닫는 Esc 뿐이고, Esc 도 그 창이 앞에 있음을 확인한 뒤에만 누른다.
+    #   · **새로 뜬 창만** 본다. 열기 전·후 창 목록을 견줘 새로 보이게 된 카톡
+    #     창 하나만 고른다(`pick_new_window`). 원래 열려 있던 창은 건드리지 않는다.
+    #   · 제목에 회사명이 없으면 **버린다**(`title_has_company`). 새 창이 안 뜨면
+    #     0건이다 — 지어내지 않는다.
+
+    def _top_windows(self) -> Optional[dict]:
+        """보이는 최상위 창들 `{hwnd: (제목, pid)}`. pywin32 가 없으면 None."""
+        try:
+            import win32gui  # type: ignore
+            import win32process  # type: ignore
+        except Exception:  # noqa: BLE001
+            return None
+        out: dict = {}
+
+        def _collect(hwnd, _):
+            try:
+                if not win32gui.IsWindowVisible(hwnd):
+                    return True
+                title = win32gui.GetWindowText(hwnd) or ""
+                pid = win32process.GetWindowThreadProcessId(hwnd)[1]
+                out[hwnd] = (title, pid)
+            except Exception:  # noqa: BLE001 — 그 사이 창이 사라졌다
+                pass
+            return True
+
+        try:
+            win32gui.EnumWindows(_collect, None)
+        except Exception:  # noqa: BLE001
+            return None
+        return out
+
+    def _foreground_hwnd(self) -> int:
+        try:
+            import win32gui  # type: ignore
+
+            return int(win32gui.GetForegroundWindow() or 0)
+        except Exception:  # noqa: BLE001
+            return 0
+
+    def _window_pid(self, win) -> int:
+        try:
+            import win32process  # type: ignore
+
+            return int(win32process.GetWindowThreadProcessId(win.handle)[1])
+        except Exception:  # noqa: BLE001
+            return 0
+
+    def _is_window_visible(self, hwnd) -> bool:
+        try:
+            import win32gui  # type: ignore
+
+            return bool(win32gui.IsWindow(hwnd) and win32gui.IsWindowVisible(hwnd))
+        except Exception:  # noqa: BLE001
+            return False
+
+    def _ensure_visible(self, win) -> None:
+        """검색창이 이미 닫혀 있었으면 Esc 가 카톡 메인 창을 숨길 수 있다 —
+        그러면 다음 회사부터 포커스를 못 잡아 전부 0건이 된다. 숨었으면 다시 띄운다."""
+        try:
+            import win32con  # type: ignore
+            import win32gui  # type: ignore
+
+            hwnd = win.handle
+            if hwnd and not win32gui.IsWindowVisible(hwnd):
+                log.info("카톡 메인 창이 숨어 다시 띄웁니다")
+                win32gui.ShowWindow(hwnd, win32con.SW_SHOW)
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _post_close(self, hwnd) -> None:
+        try:
+            import win32con  # type: ignore
+            import win32gui  # type: ignore
+
+            win32gui.PostMessage(hwnd, win32con.WM_CLOSE, 0, 0)
+        except Exception:  # noqa: BLE001
+            log.debug("WM_CLOSE 실패 hwnd=%s", hwnd)
+
+    def _open_top_room_title(self, win, query: str, marker: str,
+                             conf: dict) -> List[str]:
+        """검색 결과 **맨 위 방을 열어** 창 제목을 읽고, 닫고, 검색창도 닫는다.
+
+        부르기 전: 검색어가 든 검색창이 **열려 있다**(`_search_titles(keep_open=True)`).
+        돌려주는 값: 회사명이 든 제목이면 `[제목]`, 아니면 `[]`.
+        """
+        main_title = self.sel.get("main_window_title_kw", "카카오톡")
+        refocus_ok = True
+        pressed = refocused = False
+        try:
+            before = self._top_windows()
+            if before is None:
+                log.info("맨 위 방 열기: 창 목록을 읽을 수 없어 건너뜁니다 query=%r",
+                         query)
+                return []
+            pressed = True
+            for key in (conf.get("open_top_keys") or ["enter"]):
+                self._pyautogui.press(key)
+
+            pid = self._window_pid(win)
+            deadline = time.monotonic() + self._t("open_top_wait", 1.5)
+            picked = None
+            while True:
+                after = self._top_windows() or {}
+                picked = pick_new_window(before, after, pid=pid,
+                                         foreground=self._foreground_hwnd(),
+                                         exclude_titles=(main_title,))
+                if picked is not None or time.monotonic() >= deadline:
+                    break
+                time.sleep(self._t("room_search_poll", 0.15))
+
+            if picked is None:
+                log.info("맨 위 방 열기: 새 채팅창이 뜨지 않았습니다 — 후보 0건 "
+                         "query=%r", query)
+                return []
+
+            hwnd, title = picked
+            try:
+                self._dump_chat_once(hwnd)
+            finally:
+                self._close_chat_window(hwnd, title)
+                refocused = True
+                refocus_ok = self._focus_verified(win)
+
+            if not title_has_company(title, query):
+                log.info("맨 위 방 제목에 검색어가 없어 버립니다: %r (query=%r)",
+                         title, query)
+                return []
+            if marker and nfc(marker) not in nfc(title):
+                log.info("맨 위 방 제목에 표식 %r 가 없어 버립니다: %r",
+                         marker, title)
+                return []
+            log.info("맨 위 방 제목을 후보로: %r (query=%r)", title, query)
+            return [title]
+        finally:
+            # 검색창 닫기 — ★ 카톡 메인 창이 앞에 있을 때만 Esc 를 누른다.
+            #   키를 누른 뒤에는 무엇이 앞에 왔는지 모르니 다시 확인한다.
+            if pressed and not refocused:
+                refocus_ok = self._focus_verified(win)
+            if refocus_ok:
+                self._close_search()
+                self._ensure_visible(win)
+            else:
+                log.warning("맨 위 방을 닫은 뒤 카톡 포커스를 못 잡아 검색창을 "
+                            "닫지 않았습니다(키 입력 안 함)")
+
+    def _close_chat_window(self, hwnd, title: str) -> None:
+        """방금 연 채팅창 **하나만** 닫는다. 앞에 있으면 Esc, 아니면 WM_CLOSE."""
+        if (self._foreground_hwnd() == hwnd
+                and self._foreground_title() == title):
+            try:
+                self._pyautogui.press("esc")
+            except Exception:  # noqa: BLE001
+                pass
+            time.sleep(self._t("after_close_chat", 0.3))
+        if self._is_window_visible(hwnd):
+            # Esc 가 안 먹었거나 앞에 없었다 — 키 대신 그 창에만 닫으라고 보낸다.
+            self._post_close(hwnd)
+            time.sleep(self._t("after_close_chat", 0.3))
+
+    # ── 진단: UIA 구조 떠 두기 (처음 한 번만) ────────────────────────────────
+
+    def _dump_path(self, filename: str) -> Optional[str]:
+        """진단 파일 자리. 로그 폴더를 모르면 None — 아무 데나 쓰지 않는다."""
+        base = self.screenshot_dir
+        if not base:
+            return None
+        try:
+            os.makedirs(base, exist_ok=True)
+        except Exception:  # noqa: BLE001
+            pass
+        return os.path.join(base, filename)
+
+    def _write_dump(self, root, filename: str, what: str):
+        """UIA 구조를 파일로. 쓰면 그 항목들, 못 쓰면 None. 진단이라 터지지 않는다."""
+        try:
+            if hasattr(root, "wrapper_object"):
+                root = root.wrapper_object()
+            path = self._dump_path(filename)
+            if path is None:
+                return None
+            entries = uia_tree_entries(root)
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write("\n".join(format_uia_entries(entries)) + "\n")
+            log.info("%s UIA 구조를 저장했습니다: %s (%d줄)", what, path,
+                     len(entries))
+            return entries
+        except Exception as exc:  # noqa: BLE001
+            log.info("%s UIA 구조 저장 실패: %s", what, exc)
+            return None
+
+    def _dump_uia_once(self, win, flag: str, filename: str) -> None:
+        if getattr(self, flag, False):
+            return
+        setattr(self, flag, True)
+        self._write_dump(win, filename, "카톡 메인 창")
+
+    def _dump_chat_once(self, hwnd) -> None:
+        """처음 연 채팅창의 구조를 떠 두고, 제목 옆 인원 수를 **짐작만** 해 본다.
+
+        인원 수는 로그에만 남긴다 — 아직 아무 판단에도 쓰지 않고 서버로도
+        보내지 않는다(단톡·1:1 가르기를 나중에 붙일 때 볼 근거다).
+        """
+        if getattr(self, "_chat_dumped", False) or self._desktop is None:
+            return
+        self._chat_dumped = True
+        try:
+            chat = self._desktop.window(handle=hwnd)
+        except Exception as exc:  # noqa: BLE001
+            log.info("채팅창 UIA 를 잡지 못했습니다: %s", exc)
+            return
+        entries = self._write_dump(chat, UIA_CHAT_DUMP_FILE, "채팅창")
+        if entries:
+            count = guess_member_count(entries)
+            if count is not None:
+                log.info("방 인원 추정: %d", count)
+
+    def _search_titles(self, win, query: str, conf: dict,
+                       keep_open: bool = False) -> Optional[List[str]]:
         """검색칸에 `query` 를 넣고 **결과 줄의 제목들**을 읽는다.
 
         돌려주는 값:
@@ -421,54 +679,80 @@ class KakaoDesktopSender(Sender):
           결과가 잡힌다(mac 에서 '가나' 를 검색했는데 '다라' 방이 나왔다 →
           엉뚱한 방이 저장될 수 있었다). 그래서 **검색어의 첫 낱말이 든 줄이
           나타날 때까지** 기다렸다가 읽는다. mac 과 같은 길이다.
-        """
-        needle = needle_of(query)
-        max_rows = _max_rows(conf)
 
+        `keep_open` 이 참이면 **다 읽은 뒤 검색창을 닫지 않는다** — 부르는 쪽
+        (`discover_rooms` 의 맨 위 방 열기)이 그 검색 결과 위에서 이어 가고, 닫는
+        것도 그쪽이 맡는다. 도중에 터지면 그래도 닫는다.
+
+        어떻게 끝났는지는 `self._last_search_state` 에 남긴다:
+          · `"read"`           — 줄을 읽었다
+          · `"unread"`         — 줄을 못 읽었다(None)
+          · `"typed_mismatch"` — 검색칸에 다른 글자가 들어 있었다(None).
+                                 이때 보이는 목록은 **남의 결과**라 맨 위 방을
+                                 열면 안 된다.
+        """
+        self._last_search_state = "unread"
         # 1) 검색창 열기. ★ 여기서부터만 Esc 로 닫는다 — 열지도 않은 채 Esc 를
         #    누르면 그 키가 다른 앱으로 간다.
         self._pyautogui.hotkey(*self.sel.get("search_hotkey", ["ctrl", "f"]))
         try:
-            time.sleep(self._t("after_search_hotkey", 0.4))
-
-            # 2) 검색어 — 클립보드 + Ctrl+V. 한글은 키 입력으로 못 보낸다.
-            self._pyperclip.copy(query)
-            self._pyautogui.hotkey(*(conf.get("paste_hotkey") or ["ctrl", "v"]))
-            time.sleep(self._t("after_query_paste", 0.8))
-
-            # 3) 검색어가 **진짜 그 칸에** 들어갔는지 되읽는다.
-            typed = self._search_input_text(win, conf)
-            if typed is not None and _norm_title(typed) != _norm_title(query):
-                log.warning("검색어가 검색칸에 들어가지 않았습니다(읽은 값=%r, "
-                            "넣은 값=%r) — 후보를 읽지 않습니다", typed, query)
-                return None
-
-            # 4) 결과가 갱신될 때까지 기다리며 읽는다.
-            deadline = time.monotonic() + self._t("room_search_wait", 2.0)
-            titles: Optional[List[str]] = None
-            while True:
-                rows = self._result_rows(win, conf)
-                if rows is not None:
-                    titles = [row_title(r,
-                                        conf.get("item_text_control_type", "Text"))
-                              for r in rows[:max_rows]]
-                    if needle and any(nfc(needle) in nfc(t) for t in titles):
-                        return titles
-                if time.monotonic() >= deadline:
-                    break
-                time.sleep(self._t("room_search_poll", 0.15))
-
-            if titles is None:
-                log.warning("검색 결과 목록을 읽지 못했습니다 — 후보 0건 query=%r "
-                            "(`selectors.yaml: room_search` 의 컨트롤 경로를 "
-                            "확인하세요)", query)
-                return None
-            # 읽기는 읽었는데 검색어가 든 줄이 끝내 없었다 — **없는 것으로 본다.**
-            log.info("검색 결과에 %r 가 든 줄이 없습니다 (%d줄 읽음) query=%r",
-                     needle, len(titles), query)
-            return titles
-        finally:
+            titles = self._read_search(win, query, conf)
+        except BaseException:
             self._close_search()
+            raise
+        if not keep_open:
+            self._close_search()
+        return titles
+
+    def _read_search(self, win, query: str, conf: dict) -> Optional[List[str]]:
+        """`_search_titles` 의 ②~④ — 검색창이 **열린 뒤** 글자를 넣고 줄을 읽는다."""
+        needle = needle_of(query)
+        max_rows = _max_rows(conf)
+        time.sleep(self._t("after_search_hotkey", 0.4))
+
+        # 2) 검색어 — 클립보드 + Ctrl+V. 한글은 키 입력으로 못 보낸다.
+        self._pyperclip.copy(query)
+        self._pyautogui.hotkey(*(conf.get("paste_hotkey") or ["ctrl", "v"]))
+        time.sleep(self._t("after_query_paste", 0.8))
+
+        # 3) 검색어가 **진짜 그 칸에** 들어갔는지 되읽는다.
+        typed = self._search_input_text(win, conf)
+        if typed is not None and _norm_title(typed) != _norm_title(query):
+            log.warning("검색어가 검색칸에 들어가지 않았습니다(읽은 값=%r, "
+                        "넣은 값=%r) — 후보를 읽지 않습니다", typed, query)
+            self._last_search_state = "typed_mismatch"
+            return None
+
+        # 4) 결과가 갱신될 때까지 기다리며 읽는다.
+        deadline = time.monotonic() + self._t("room_search_wait", 2.0)
+        titles: Optional[List[str]] = None
+        while True:
+            rows = self._result_rows(win, conf)
+            if rows is not None:
+                titles = [row_title(r,
+                                    conf.get("item_text_control_type", "Text"))
+                          for r in rows[:max_rows]]
+                if needle and any(nfc(needle) in nfc(t) for t in titles):
+                    self._last_search_state = "read"
+                    return titles
+            if time.monotonic() >= deadline:
+                break
+            time.sleep(self._t("room_search_poll", 0.15))
+
+        if titles is None or not any((t or "").strip() for t in titles):
+            # 줄을 못 찾았거나, 찾았어도 글자를 하나도 못 읽었다 — 셀렉터가
+            # 틀렸다는 뜻이다. 처음 한 번만 창 구조를 파일로 떠 둔다.
+            self._dump_uia_once(win, "_uia_dumped", UIA_MAIN_DUMP_FILE)
+        if titles is None:
+            log.warning("검색 결과 목록을 읽지 못했습니다 — 후보 0건 query=%r "
+                        "(`selectors.yaml: room_search` 의 컨트롤 경로를 "
+                        "확인하세요)", query)
+            return None
+        self._last_search_state = "read"
+        # 읽기는 읽었는데 검색어가 든 줄이 끝내 없었다 — **없는 것으로 본다.**
+        log.info("검색 결과에 %r 가 든 줄이 없습니다 (%d줄 읽음) query=%r",
+                 needle, len(titles), query)
+        return titles
 
     def _search_input_text(self, win, conf: dict) -> Optional[str]:
         """검색칸에 실제로 들어간 글자. **못 읽으면 None**(= 판단 불가).
@@ -1020,6 +1304,160 @@ def filter_room_titles(titles, query: str, marker: str = "",
             continue
         out.append(title)
     return out
+
+
+_ANNOTATION_RE = re.compile(r"\[[^\]]*\]")
+_CORP_MARKS = ("(주)", "㈜", "주식회사")
+
+
+def strip_annotations(text: str) -> str:
+    """`[딜소개 불가]` 같은 대괄호 꼬리표를 떼고 공백을 정리한다."""
+    return " ".join(_ANNOTATION_RE.sub(" ", nfc(text or "")).split())
+
+
+def company_key(text: str, *, strip_notes: bool = False) -> str:
+    """회사명 견주기용 열쇠. NFC → (꼬리표 떼기) → 법인 표기·공백 제거 → 소문자.
+
+    `(주)가나다 전자` 와 `가나다전자` 이 같은 열쇠가 된다. 방 제목은
+    띄어쓰기가 제각각이고 법인 표기가 붙기도 한다(실기).
+    """
+    t = nfc(text or "")
+    if strip_notes:
+        t = _ANNOTATION_RE.sub("", t)
+    for mark in _CORP_MARKS:
+        t = t.replace(mark, "")
+    return "".join(t.split()).lower()
+
+
+def title_has_company(title: str, query: str) -> bool:
+    """맨 위 방 제목에 **검색어(회사명)가 통째로 들어 있는가.**
+
+    검색어 쪽만 꼬리표(`[딜소개 불가]`)를 뗀다 — 방 제목의 대괄호는 방 이름의
+    일부일 수 있다. 열쇠가 두 글자 미만이면 아무 방에나 걸리므로 받지 않는다.
+    """
+    want = company_key(query, strip_notes=True)
+    if len(want) < 2:
+        return False
+    return want in company_key(title)
+
+
+def pick_new_window(before: dict, after: dict, *, pid: int = 0,
+                    foreground: int = 0, exclude_titles=()) -> Optional[tuple]:
+    """열기 전·후 창 목록(`{hwnd: (제목, pid)}`)을 견줘 **새로 뜬 채팅창 하나.**
+
+    · 전에 없던(또는 안 보이던) 창만 본다 — 원래 열려 있던 창은 고르지 않는다
+    · 제목이 빈 창, 메인 창 제목(`exclude_titles`)과 같은 창은 뺀다
+    · `pid` 가 주어지면 **카톡 프로세스의 창만** 본다
+    · 여럿이면 지금 앞에 있는 창(`foreground`)을 고르고, 그것도 아니면
+      **고르지 않는다**(None) — 어느 것인지 모르는데 아무거나 고르지 않는다
+    돌려주는 값: `(hwnd, 제목)` 또는 None.
+    """
+    skip = {nfc(t).strip() for t in exclude_titles if t}
+    fresh = []
+    for hwnd, info in (after or {}).items():
+        if hwnd in (before or {}):
+            continue
+        if isinstance(info, (tuple, list)):
+            title, wpid = (list(info) + ["", 0])[:2]
+        else:
+            title, wpid = info, 0
+        title = (title or "").strip()
+        if not title or nfc(title) in skip:
+            continue
+        if pid and wpid and wpid != pid:
+            continue
+        fresh.append((hwnd, title))
+    if not fresh:
+        return None
+    for hwnd, title in fresh:
+        if foreground and hwnd == foreground:
+            return (hwnd, title)
+    return fresh[0] if len(fresh) == 1 else None
+
+
+def _uia_info(ctrl) -> dict:
+    """UIA 컨트롤 하나의 이름표. pywinauto 의 `element_info` 를 먼저 본다."""
+    info = getattr(ctrl, "element_info", None)
+    src = info if info is not None else ctrl
+
+    def _get(attr):
+        try:
+            value = getattr(src, attr, "")
+            value = value() if callable(value) else value
+            return "" if value is None else str(value)
+        except Exception:  # noqa: BLE001
+            return ""
+
+    top = None
+    try:
+        rect = getattr(src, "rectangle", None)
+        rect = rect() if callable(rect) else rect
+        if rect is not None:
+            top = int(rect.top)
+    except Exception:  # noqa: BLE001
+        top = None
+    return {"control_type": _get("control_type"), "class_name": _get("class_name"),
+            "name": _get("name"), "automation_id": _get("automation_id"),
+            "top": top}
+
+
+def uia_tree_entries(root, max_depth: int = 12, max_nodes: int = 400) -> List[dict]:
+    """UIA 구조를 위에서부터 훑어 항목 목록으로. 깊이·개수 상한에서 끊는다."""
+    out: List[dict] = []
+
+    def _walk(node, depth):
+        if len(out) >= max_nodes:
+            return
+        entry = _uia_info(node)
+        entry["depth"] = depth
+        out.append(entry)
+        if depth >= max_depth:
+            return
+        try:
+            kids = list(node.children())
+        except Exception:  # noqa: BLE001
+            kids = []
+        for kid in kids:
+            if len(out) >= max_nodes:
+                return
+            _walk(kid, depth + 1)
+
+    _walk(root, 0)
+    return out
+
+
+def format_uia_entries(entries) -> List[str]:
+    return [
+        "{}{} class={!r} name={!r} id={!r}".format(
+            "  " * int(e.get("depth") or 0), e.get("control_type") or "?",
+            e.get("class_name") or "", e.get("name") or "",
+            e.get("automation_id") or "")
+        for e in entries or []
+    ]
+
+
+def guess_member_count(entries, near_top_px: int = 120,
+                       first_n: int = 40) -> Optional[int]:
+    """채팅창 제목 옆 **인원 수 짐작.** 숫자만 든 Text 가 창 위쪽에 있으면 그 값.
+
+    ⚠ 짐작이다 — 로그에만 쓴다. 위치를 읽을 수 있으면 창 꼭대기에서
+      `near_top_px` 안쪽만, 못 읽으면 앞쪽 `first_n` 항목만 본다.
+    """
+    entries = list(entries or [])
+    if not entries:
+        return None
+    win_top = entries[0].get("top")
+    for e in entries[:first_n] if win_top is None else entries:
+        if (e.get("control_type") or "") != "Text":
+            continue
+        name = (e.get("name") or "").strip()
+        if not name.isdigit() or not (0 < int(name) < 10000):
+            continue
+        top = e.get("top")
+        if win_top is not None and top is not None and top - win_top > near_top_px:
+            continue
+        return int(name)
+    return None
 
 
 def verdict_from_titles(titles, room_name: str) -> str:
