@@ -184,10 +184,45 @@ class KakaoDesktopSender(Sender):
         return float(self.sel.get("timings", {}).get(key, default))
 
     def _kakao_window(self):
+        """카톡 **메인 창 하나**를 고른다.
+
+        ⚠ `Desktop.window(title_re="카카오톡.*")` 로 바로 잡으면 안 된다.
+          Windows 카카오톡은 제목이 '카카오톡' 으로 시작하는 **숨은 보조 창**을
+          여러 개 띄워 두고, pywinauto 는 그걸 보고 `ElementAmbiguousError`
+          ("There are 3 elements that match") 를 던진다(실기, 0.11.0). 그래서
+          방 검색·발송이 **한 번도** 돌지 못했다.
+
+        목록(`windows()`)으로 받아 `pick_kakao_window` 로 하나를 고르고, 고른 창은
+        **핸들로** 다시 잡아 돌려준다 — 부르는 쪽이 지금까지처럼
+        `WindowSpecification` 을 받게 해 동작을 그대로 둔다.
+        """
         title_re = self.sel.get("main_window_title_re", "카카오톡.*")
-        win = self._desktop.window(title_re=title_re)
-        win.wait("exists ready", timeout=self._t("window_wait", 5.0))
-        return win
+        exact = self.sel.get("main_window_title_kw", "카카오톡")
+        deadline = time.monotonic() + self._t("window_wait", 5.0)
+        while True:
+            try:
+                candidates = list(self._desktop.windows(title_re=title_re))
+            except Exception as exc:  # noqa: BLE001
+                log.debug("카톡 창 목록을 읽지 못했습니다(재시도): %s", exc)
+                candidates = []
+            chosen = pick_kakao_window(candidates, exact)
+            if chosen is not None:
+                try:
+                    handle = chosen.handle
+                except Exception:  # noqa: BLE001 — 그 사이 창이 사라졌다
+                    handle = None
+                if handle:
+                    key = (handle, len(candidates))
+                    if getattr(self, "_kakao_window_logged", None) != key:
+                        self._kakao_window_logged = key
+                        log.info("카톡 창 선택: %r handle=%s (후보 %d개)",
+                                 _text_of(chosen), handle, len(candidates))
+                    return self._desktop.window(handle=handle)
+            if time.monotonic() >= deadline:
+                break
+            time.sleep(0.25)
+        raise RuntimeError(
+            "카카오톡 창을 찾지 못했습니다 — 카톡이 켜져 있고 로그인돼 있는지 확인")
 
     # --- 포커스 ---
     def _foreground_title(self) -> str:
@@ -825,7 +860,18 @@ class KakaoDesktopSender(Sender):
         """
         try:
             title_re = self.file_send_conf.get("confirm_title_re") or ""
-            dialog = self._desktop.window(title_re=title_re)
+            if not title_re:
+                return False
+            # ★ `window(title_re=...)` 로 잡지 않는다 — 같은 제목의 숨은 창이 있으면
+            #   `ElementAmbiguousError` 가 난다(메인 창에서 실기로 겪었다).
+            #   `_confirm_snapshot` 과 같은 기준: **보이는 것이 딱 하나**일 때만.
+            dialogs = [w for w in self._desktop.windows(title_re=title_re)
+                       if _visible(w)]
+            if len(dialogs) != 1:
+                log.warning("확인 창이 %d개 보여 %r 단추를 누르지 않습니다",
+                            len(dialogs), name)
+                return False
+            dialog = dialogs[0]
             for button in dialog.descendants(control_type="Button"):
                 if _norm_button(_text_of(button)) == _norm_button(name):
                     button.click_input()
@@ -1054,6 +1100,47 @@ def file_send_enabled(selectors: Optional[dict] = None) -> bool:
     conf = dict(FILE_SEND_DEFAULTS)
     conf.update((selectors or {}).get("file_send") or {})
     return bool(conf.get("verified"))
+
+
+def _rect_area(window) -> int:
+    try:
+        rect = window.rectangle()
+        return max(0, int(rect.width())) * max(0, int(rect.height()))
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+def pick_kakao_window(candidates, exact_title: str = "카카오톡"):
+    """제목이 '카카오톡…' 인 창들 중 **메인 창 하나**를 고른다. 없으면 None.
+
+    Windows 카카오톡은 같은 제목으로 시작하는 숨은 보조 창을 여럿 띄운다.
+    고르는 순서(결정적이다 — 같은 화면이면 늘 같은 창):
+
+      1) **보이는 창**만 본다. 최소화된 메인 창도 Windows 에서는 '보이는' 창이다
+         (`IsWindowVisible`) — 최소화했다고 놓치지 않는다
+      2) 그중 제목이 **정확히** `exact_title`('카카오톡') 인 창. 열린 채팅창
+         ('카카오톡 - 방이름' 따위)보다 메인 창이 먼저다
+      3) 그다음 **넓이가 큰** 창
+      4) 보이는 창이 하나도 없으면 제목이 정확히 같은 창, 그것도 없으면 첫 창
+
+    창 하나하나를 묻는 자리는 모두 감싼다 — 묻는 사이 창이 사라질 수 있다.
+    """
+    rows = []
+    for order, win in enumerate(candidates or []):
+        title = _text_of(win)
+        rows.append((win, _visible(win), title == exact_title, _rect_area(win),
+                     order))
+    if not rows:
+        return None
+    visible = [r for r in rows if r[1]]
+    if visible:
+        # 정확한 제목 먼저, 넓이 큰 것 먼저, 같으면 목록 순서.
+        visible.sort(key=lambda r: (not r[2], -r[3], r[4]))
+        return visible[0][0]
+    for r in rows:
+        if r[2]:
+            return r[0]
+    return rows[0][0]
 
 
 def _visible(window) -> bool:
