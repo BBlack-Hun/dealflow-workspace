@@ -95,6 +95,9 @@ class OpenWin(FakeWin):
     def _window_pid(self, win):
         return PID
 
+    def _hwnd_pid(self, hwnd):
+        return self.windows.get(hwnd, ("", 0))[1]
+
     def _is_window_visible(self, hwnd):
         return hwnd in self.windows
 

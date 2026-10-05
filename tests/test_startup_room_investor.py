@@ -19,7 +19,7 @@
     ⑤ 발송기는 기업 줄의 맨 위 방 열기에서 투자사 방을 버린다 — 담당자 쪽
        확인에서는 안 버린다(찾는 방이 곧 투자사 방이다)
     ⑥ Windows 검색칸을 **비우고** 붙인다 — 카톡이 직전 검색어를 남겨 두어
-       회사명이 이어 붙었다(실기)
+       회사명이 이어 붙었다(실기). Ctrl+A 는 쓰지 않는다(0.11.4)
 
 이름·회사명은 **전부 지어낸 값**이다 — 저장소가 공개다.
 """
@@ -223,10 +223,14 @@ def test_looks_like_investor_room():
 # ── ⑥ 검색칸을 비우고 붙인다 ───────────────────────────────────────────────
 
 class StickyKakao(FakeKakao):
-    """검색칸에 **직전 검색어가 남는** 카톡(실기). 붙이면 이어 붙는다."""
+    """검색칸에 **직전 검색어가 남는** 카톡(실기). 붙이면 이어 붙는다.
 
-    def __init__(self, index, *, leftover="", stubborn=0, **kw_):
-        super().__init__(index, **kw_)
+    UIA 로는 못 비우는 칸이다(기본) — 키로 지우는 길을 본다. UIA 로 비우는
+    길은 `test_win_search_no_ctrl_a.py` 가 본다.
+    """
+
+    def __init__(self, index, *, leftover="", stubborn=0, uia_clear=False, **kw_):
+        super().__init__(index, uia_clear=uia_clear, **kw_)
         self.text = leftover
         self.stubborn = stubborn      # 처음 몇 번은 지우기가 안 먹는다
 
@@ -238,7 +242,7 @@ class StickyWin(FakeWin):
 
         def hotkey(*keys):
             original(*keys)
-            if keys == ("ctrl", "a"):
+            if keys == ("shift", "home"):
                 state["all"] = True
             elif keys == ("backspace",) and state["all"]:
                 state["all"] = False
@@ -267,7 +271,8 @@ def test_검색칸을_비운_뒤에_붙인다():
     keys = sender._pyautogui.keys
     f = keys.index(("ctrl", "f"))
     v = keys.index(("ctrl", "v"))
-    assert keys[f + 1:v] == [("ctrl", "a"), ("backspace",)], keys
+    assert keys[f + 1:v] == [("end",), ("shift", "home"), ("backspace",)], keys
+    assert ("ctrl", "a") not in keys       # Ctrl+A = 카톡 '친구 추가'(0.11.4)
 
 
 def test_비우기를_끄면_이어_붙은_글자로는_검색하지_않는다():
@@ -317,7 +322,8 @@ def test_재시도_전에_포커스를_못_잡으면_키를_더_누르지_않는
 def test_clear_keys_는_selectors_에_있다():
     from tests.test_win_discover_rooms import SELECTORS
 
-    assert SELECTORS["room_search"]["clear_keys"] == [["ctrl", "a"], ["backspace"]]
-    assert kw.clear_chords({"clear_keys": ["esc", ["ctrl", "a"]]}) == [
-        ("esc",), ("ctrl", "a")]
+    assert SELECTORS["room_search"]["clear_keys"] == [
+        ["end"], ["shift", "home"], ["backspace"]]
+    assert kw.clear_chords({"clear_keys": ["esc", ["shift", "home"]]}) == [
+        ("esc",), ("shift", "home")]
     assert kw.clear_chords({"clear_keys": []}) == []
