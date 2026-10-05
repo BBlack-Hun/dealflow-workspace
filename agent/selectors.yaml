@@ -32,6 +32,8 @@ timings:
   # 방 검색 — 아래 room_search 참고
   room_search_wait: 2.0     # 검색어가 든 줄이 나타나기를 기다리는 시간
   room_search_poll: 0.15    # 그 사이 다시 읽어 보는 간격
+  open_top_wait: 1.5        # 맨 위 방을 연 뒤 새 채팅창이 뜨기를 기다리는 시간
+  after_close_chat: 0.3     # 그 채팅창을 닫은 뒤
 
 # TODO(win, 1.10): 채팅창 제목 라벨 경로를 실기에서 파악해 아래에 추가하고
 # kakao_windows.py의 정확 일치 검증에 연결.
@@ -79,6 +81,17 @@ room_search:
   input_control_type: "Edit"
 
   paste_hotkey: ["ctrl", "v"]
+
+  # ── 목록을 못 읽을 때: 맨 위 방을 열어 창 제목을 읽는다 (0.11.2) ──
+  #   실기(0.11.1)에서 위 목록 경로로는 줄을 하나도 못 읽었다(모든 회사 0건).
+  #   그래서 검색어를 넣은 채로 아래 키를 눌러 **맨 위 결과 방을 열고**, 새로 뜬
+  #   채팅창의 제목(GetWindowText)을 읽은 뒤 바로 닫는다. 채팅창에는 아무것도
+  #   입력하지 않는다. 제목에 회사명이 없으면 버린다.
+  #   처음 못 읽은 때 agent_logs/kakao_uia_dump.txt, 처음 연 채팅창은
+  #   agent_logs/kakao_uia_chat_dump.txt 에 UIA 구조가 남는다 — 위 경로를 고칠 근거.
+  open_top_fallback: true
+  #   ★ Enter 가 첫 줄을 안 열면 ["down", "enter"] 로 바꾼다.
+  open_top_keys: ["enter"]
 
 # ══════════════════════════════════════════════════════════════════════════
 #  파일 첨부 — ⚠⚠ **여기 값은 전부 추측이다.** 실기에서 확인하고 고칠 것.

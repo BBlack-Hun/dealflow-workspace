@@ -184,7 +184,7 @@ class FakeWin(kw.KakaoDesktopSender):
         return self.focus_ok
 
     # --- 흉내: Ctrl+V 가 검색칸에 글자를 넣는다 ---
-    def _search_titles(self, win, query, conf):
+    def _search_titles(self, win, query, conf, keep_open=False):
         # 붙여넣기 흉내를 끼워 넣고 진짜 자리를 그대로 부른다.
         original_hotkey = self._pyautogui.hotkey
 
@@ -195,7 +195,7 @@ class FakeWin(kw.KakaoDesktopSender):
 
         self._pyautogui.hotkey = hotkey
         try:
-            return super()._search_titles(win, query, conf)
+            return super()._search_titles(win, query, conf, keep_open=keep_open)
         finally:
             self._pyautogui.hotkey = original_hotkey
 
