@@ -133,7 +133,13 @@ ROOM_SEARCH_DEFAULTS = {
     "paste_hotkey": ["ctrl", "v"],
     # 검색창을 연 뒤 붙여넣기 **전에** 누르는 키 묶음들. 카톡은 검색칸에 직전
     # 검색어를 남겨 두어, 지우지 않고 붙이면 회사명이 이어 붙는다(실기 0.11.2).
-    "clear_keys": [["ctrl", "a"], ["backspace"]],
+    # 먼저 UIA 로 검색칸을 비워 보고(`_clear_by_uia`), 안 되면 이 키를 누른다.
+    # ⚠⚠ **Ctrl+A 는 쓰지 않는다.** Windows 카톡 메인 창에서 Ctrl+A 는 '친구
+    #     추가' 단축키다 — 0.11.3 이 이걸 눌러 친구 추가 창을 띄우고 회사명을
+    #     **그 창에** 붙여 넣었다(실기). 검색이 통째로 안 됐다. 그래서 편집칸
+    #     안에서만 뜻이 있는 End → Shift+Home → Backspace 로 지운다.
+    #     설정에 Ctrl+A 가 들어 있어도 `clear_chords` 가 건너뛴다.
+    "clear_keys": [["end"], ["shift", "home"], ["backspace"]],
     # 목록을 못 읽으면 **맨 위 결과 방을 열어** 그 창 제목을 읽는다.
     "open_top_fallback": True,
     # 맨 위 결과를 여는 키. 실기에서 Enter 가 첫 줄을 안 열면 ["down", "enter"].
@@ -394,7 +400,10 @@ class KakaoDesktopSender(Sender):
                     found = filter_room_titles(titles, query, marker=marker,
                                                max_rows=_max_rows(conf))
                 state = getattr(self, "_last_search_state", "unread")
-                if fallback and not found and state != "typed_mismatch":
+                if state == "foreground_lost":
+                    # ★ 메인 창이 앞에 없다 — Enter·Esc 모두 누르지 않는다.
+                    opened = True
+                elif fallback and not found and state != "typed_mismatch":
                     # ★ 목록을 못 읽었거나 읽은 줄에 맞는 것이 없다 — **맨 위 방을
                     #   열어 창 제목을 읽는다.** 검색칸에 남의 글자가 있던 경우
                     #   (typed_mismatch)는 열지 않는다 — 보이는 목록이 남의 결과다.
@@ -705,6 +714,9 @@ class KakaoDesktopSender(Sender):
           · `"typed_mismatch"` — 검색칸에 다른 글자가 들어 있었다(None).
                                  이때 보이는 목록은 **남의 결과**라 맨 위 방을
                                  열면 안 된다.
+          · `"foreground_lost"` — 붙이기 전에 메인 창이 아닌 창이 앞에
+                                 떴다(None). 붙이지 않았고, 검색창 Esc 도 맨 위
+                                 방 열기도 하지 않는다(`_put_query`).
         """
         self._last_search_state = "unread"
         # 1) 검색창 열기. ★ 여기서부터만 Esc 로 닫는다 — 열지도 않은 채 Esc 를
@@ -715,6 +727,10 @@ class KakaoDesktopSender(Sender):
         except BaseException:
             self._close_search()
             raise
+        if self._last_search_state == "foreground_lost":
+            # ★ 카톡 메인 창이 앞에 없다 — Esc 를 누르면 그 키가 **앞에 있는 창**
+            #   으로 간다. 닫을 것은 `_put_query` 가 이미 따져 닫았다.
+            return None
         if not keep_open:
             self._close_search()
         return titles
@@ -728,7 +744,8 @@ class KakaoDesktopSender(Sender):
         # 2) 검색어 — **칸을 비우고** 클립보드 + Ctrl+V. 한글은 키 입력으로 못
         #    보낸다. ★ 카톡은 검색칸에 직전 검색어를 남겨 둔다 — 안 비우면
         #    `가나다` 뒤에 `라마바` 가 붙어 `가나다라마바` 로 검색된다(실기 0.11.2).
-        self._put_query(query, conf)
+        if not self._put_query(win, query, conf):
+            return None
 
         # 3) 검색어가 **진짜 그 칸에** 들어갔는지 되읽는다. 다르면 **한 번 더**
         #    비우고 붙인다. 그래도 다르면 남의 글자로 검색하지 않고 접는다.
@@ -738,7 +755,8 @@ class KakaoDesktopSender(Sender):
                         "— 비우고 한 번 더 넣습니다", typed, query)
             # ★ 키를 더 누르기 전에 카톡 창이 앞에 있는지 다시 확인한다.
             if self._focus_verified(win):
-                self._put_query(query, conf)
+                if not self._put_query(win, query, conf):
+                    return None
                 typed = self._search_input_text(win, conf)
             if typed is not None and _norm_title(typed) != _norm_title(query):
                 log.warning("검색어가 검색칸에 들어가지 않았습니다(읽은 값=%r, "
@@ -777,17 +795,117 @@ class KakaoDesktopSender(Sender):
                  needle, len(titles), query)
         return titles
 
-    def _put_query(self, query: str, conf: dict) -> None:
-        """검색칸을 **비우고**(`room_search.clear_keys`) 검색어를 붙여 넣는다.
+    def _put_query(self, win, query: str, conf: dict) -> bool:
+        """검색칸을 **비우고** 검색어를 붙여 넣는다. 못 붙였으면 False.
+
+        비우는 길(차례로):
+          ① UIA — 검색칸(`room_search.input_control_type`)의 글자를 직접 지우고
+             비었는지 되읽는다(`_clear_by_uia`). 키를 하나도 안 누른다.
+          ② ① 이 안 되면 `room_search.clear_keys`(기본 End → Shift+Home →
+             Backspace). ⚠ **Ctrl+A 는 누르지 않는다** — 카톡 메인 창에서
+             Ctrl+A 는 '친구 추가' 다(실기 0.11.3). `clear_chords` 가 걸러 낸다.
+
+        붙이기 **전에** 카톡 메인 창이 아직 앞에 있는지 본다
+        (`_foreground_is_main`). 다른 창(친구 추가 창 등)이 앞에 떴으면 **붙이지
+        않고** False — 회사명이 엉뚱한 창에 들어간다.
 
         ★ 부르는 쪽이 카톡 창 포커스를 확인한 뒤에만 부른다 — 다른 키와 같은
           규칙이다(`_focus_verified`). 모든 키 묶음은 `hotkey` 하나로 누른다.
         """
-        for chord in clear_chords(conf):
-            self._pyautogui.hotkey(*chord)
+        if not self._clear_by_uia(win, conf):
+            for chord in clear_chords(conf):
+                self._pyautogui.hotkey(*chord)
+        if not self._foreground_is_main(win):
+            self._abort_foreign_foreground(win)
+            self._last_search_state = "foreground_lost"
+            return False
         self._pyperclip.copy(query)
         self._pyautogui.hotkey(*(conf.get("paste_hotkey") or ["ctrl", "v"]))
         time.sleep(self._t("after_query_paste", 0.8))
+        return True
+
+    def _clear_by_uia(self, win, conf: dict) -> bool:
+        """검색칸을 **UIA 로** 비운다. 비웠다고 되읽혔을 때만 True.
+
+        글자가 든 편집칸(`input_control_type`)만 지운다 — 빈 칸은 건드리지
+        않는다. 지울 칸이 없거나(못 읽음·이미 빔), 지웠는데 글자가 남으면
+        False 이고 부르는 쪽이 키(`clear_keys`)로 지운다. 빈 칸에서 End ·
+        Shift+Home · Backspace 는 아무 일도 하지 않는다.
+        """
+        ctype = (conf.get("input_control_type") or "").strip()
+        if not ctype:
+            return False
+        try:
+            boxes = win.descendants(control_type=ctype)
+        except Exception:  # noqa: BLE001
+            return False
+        filled = [b for b in boxes if _box_value(b)]
+        if not filled:
+            return False
+        for box in filled:
+            for name in ("set_edit_text", "set_text"):
+                setter = getattr(box, name, None)
+                if setter is None:
+                    continue
+                try:
+                    setter("")
+                    break
+                except Exception as exc:  # noqa: BLE001
+                    log.debug("검색칸 %s 실패: %s", name, exc)
+        # 지운 뒤 **다시** 읽는다 — 지웠다는 말만 믿지 않는다.
+        try:
+            boxes = win.descendants(control_type=ctype)
+        except Exception:  # noqa: BLE001
+            return False
+        if any(_box_value(b) for b in boxes):
+            log.info("검색칸을 UIA 로 못 비웠습니다 — 키로 지웁니다")
+            return False
+        return True
+
+    def _foreground_is_main(self, win) -> bool:
+        """지금 앞에 있는 창이 **카톡 메인 창**인가.
+
+        핸들을 둘 다 알면 핸들로 견준다. 모르면 제목이 메인 창 제목과
+        **글자까지 같은지** 본다 — '친구 추가' 같은 카톡의 다른 창도 카톡
+        프로세스라 프로세스로는 못 가른다. 모르면(빈 제목) 아니라고 본다.
+        """
+        fg = self._foreground_hwnd()
+        try:
+            main = int(getattr(win, "handle", 0) or 0)
+        except Exception:  # noqa: BLE001
+            main = 0
+        if fg and main:
+            return fg == main
+        want = self.sel.get("main_window_title_kw", "카카오톡")
+        return self._foreground_title() == want
+
+    def _abort_foreign_foreground(self, win) -> None:
+        """검색 도중 앞에 뜬 **다른 창**을 처리한다. 붙여넣기는 이미 접었다.
+
+        Esc 는 그 창이 **카톡 프로세스의 창이고 메인 창이 아닐 때만** 누른다
+        (예: Ctrl+A 로 뜬 '친구 추가' 창). 다른 앱이 앞에 있으면 아무 키도
+        누르지 않는다 — Esc 가 그 앱으로 간다.
+        """
+        fg = self._foreground_hwnd()
+        title = self._foreground_title()
+        want = self.sel.get("main_window_title_kw", "카카오톡")
+        main_pid = self._window_pid(win)
+        fg_pid = self._hwnd_pid(fg) if fg else 0
+        if fg and title != want and main_pid and fg_pid == main_pid:
+            log.warning("검색 중 카톡의 다른 창(%r)이 앞에 떴습니다 — 붙여 넣지 "
+                        "않고 Esc 로 닫습니다", title)
+            self._close_search()
+        else:
+            log.warning("검색 중 카톡 메인 창이 앞에 없습니다(앞 창=%r) — 붙여 "
+                        "넣지 않고 키를 더 누르지 않습니다", title)
+
+    def _hwnd_pid(self, hwnd) -> int:
+        try:
+            import win32process  # type: ignore
+
+            return int(win32process.GetWindowThreadProcessId(hwnd)[1])
+        except Exception:  # noqa: BLE001
+            return 0
 
     def _search_input_text(self, win, conf: dict) -> Optional[str]:
         """검색칸에 실제로 들어간 글자. **못 읽으면 None**(= 판단 불가).
@@ -1390,10 +1508,24 @@ def looks_like_investor_room(title: str, query: str) -> bool:
     return False
 
 
+#: 카톡 메인 창에서 **다른 일을 하는** 키 묶음. 검색칸 비우기에 쓰면 안 된다.
+#: Ctrl+A = '친구 추가'(실기 0.11.3 — 친구 추가 창에 회사명이 들어갔다).
+_CTRL_KEYS = {"ctrl", "control", "ctrlleft", "ctrlright"}
+
+
+def _is_forbidden_chord(keys: tuple) -> bool:
+    low = {k.strip().lower() for k in keys}
+    return "a" in low and bool(low & _CTRL_KEYS)
+
+
 def clear_chords(conf: dict) -> List[tuple]:
     """`room_search.clear_keys` 를 키 묶음 목록으로. 글자 하나면 묶음 하나로 본다.
 
     빈 목록(`[]`)이면 아무것도 안 누른다 — 끄는 길이다.
+
+    ⚠ **Ctrl+A 가 든 묶음은 건너뛴다**(경고 남김). 카톡 메인 창에서 Ctrl+A 는
+      '친구 추가' 단축키라 검색칸이 아니라 친구 추가 창이 뜬다(실기 0.11.3).
+      예전 selectors.yaml 이 남아 있어도 누르지 않게 여기서 막는다.
     """
     raw = conf.get("clear_keys")
     if raw is None:
@@ -1403,9 +1535,22 @@ def clear_chords(conf: dict) -> List[tuple]:
         if isinstance(chord, str):
             chord = [chord]
         keys = tuple(str(k) for k in chord if str(k).strip())
-        if keys:
-            out.append(keys)
+        if not keys:
+            continue
+        if _is_forbidden_chord(keys):
+            log.warning("clear_keys 의 %r 는 누르지 않습니다 — 카톡에서 Ctrl+A 는 "
+                        "'친구 추가' 입니다", "+".join(keys))
+            continue
+        out.append(keys)
     return out
+
+
+def _box_value(box) -> str:
+    """편집칸의 글자(ValuePattern). 못 읽으면 "" — 이름(라벨)은 글자로 안 친다."""
+    try:
+        return (box.get_value() or "").strip()
+    except Exception:  # noqa: BLE001
+        return ""
 
 
 def title_has_company(title: str, query: str) -> bool:

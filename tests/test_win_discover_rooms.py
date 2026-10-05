@@ -85,6 +85,19 @@ def result_row(title, *, last_message="어제 보낸 글", blank=False):
     return Ctrl("ListItem", name="", children=texts)
 
 
+class EditCtrl(Ctrl):
+    """검색칸. `on_set` 이 있으면 UIA 로 글자를 바꿀 수 있다(`set_edit_text`)."""
+
+    def __init__(self, *a, on_set=None, **kw_):
+        super().__init__(*a, **kw_)
+        self.on_set = on_set
+
+    def set_edit_text(self, text):
+        if self.on_set is None:
+            raise RuntimeError("ValuePattern.SetValue 를 거절했다")
+        self.on_set(text)
+
+
 class FakeKakao(Ctrl):
     """검색어에 따라 결과가 바뀌는 가짜 카톡 메인 창.
 
@@ -95,8 +108,10 @@ class FakeKakao(Ctrl):
 
     def __init__(self, index, *, stale=None, stale_reads=0, no_list=False,
                  list_boom=False, blank_rows=False, edit_value=None,
-                 row_name_is_title=False):
+                 row_name_is_title=False, uia_clear=True):
         super().__init__("Window", name="카카오톡")
+        self.uia_clear = uia_clear        # 검색칸을 UIA 로 비울 수 있는가
+        self.uia_sets = 0
         self.index = index
         self.text = ""
         self.stale = stale or []
@@ -108,6 +123,10 @@ class FakeKakao(Ctrl):
         self.edit_value = edit_value      # None 이면 검색칸에 넣은 글자가 읽힌다
         self.row_name_is_title = row_name_is_title
 
+    def _uia_set(self, text):
+        self.uia_sets += 1
+        self.text = text
+
     def _titles(self):
         self.reads += 1
         if self.reads <= self.stale_reads:
@@ -116,7 +135,8 @@ class FakeKakao(Ctrl):
 
     def descendants(self, control_type=None):
         value = self.text if self.edit_value is None else self.edit_value
-        kids = [Ctrl("Edit", name="검색", value=value)]
+        kids = [EditCtrl("Edit", name="검색", value=value,
+                         on_set=self._uia_set if self.uia_clear else None)]
         if not self.no_list:
             if self.row_name_is_title:
                 rows = [Ctrl("ListItem", name=t) for t in self._titles()]
@@ -182,6 +202,13 @@ class FakeWin(kw.KakaoDesktopSender):
     def _focus_verified(self, win, expect_title=None):
         self.focus_calls += 1
         return self.focus_ok
+
+    # 검색 중 앞에 있는 창 — 기본은 카톡 메인 창 그대로다.
+    def _foreground_hwnd(self):
+        return 0
+
+    def _foreground_title(self):
+        return "카카오톡"
 
     # --- 흉내: Ctrl+V 가 검색칸에 글자를 넣는다 ---
     def _search_titles(self, win, query, conf, keep_open=False):
