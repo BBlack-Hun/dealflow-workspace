@@ -1,9 +1,24 @@
 # Windows 발송 에이전트 전용 의존성 (KakaoDesktopSender).
 # 이 파일은 Windows PC에서만 설치합니다. 웹/도커 이미지는 requirements.txt만 사용하므로
 # pywinauto/pywin32가 리눅스 빌드를 깨뜨리지 않습니다 (TECH_SPEC §9).
-requests==2.32.3
-pyyaml==6.0.2
-pywinauto==0.6.9
-pywin32==308
-pyperclip==1.9.0
-pyautogui==0.9.54
+#
+# ## 판을 `==` 로 박지 않는다 — **바닥만 정한다**
+#
+# 이 파일은 서버가 아니라 **팀원 PC** 에 깔린다. 그 PC 의 파이썬 판은 우리가
+# 고르지 못한다 — python.org 에서 그날 받은 최신 판이 깔린다.
+#
+# 2026-10 에 실제로 막혔다: `pywin32==308` 로 박아 두었는데 새 파이썬(3.14)용
+# 설치본은 311 부터만 있어서 `No matching distribution found for pywin32==308`
+# 로 설치가 통째로 멈췄다. 같은 날 `pyyaml==6.0.2` 도 그 판용 설치본이 없어
+# 소스 빌드로 넘어가고 있었다(컴파일러가 없는 PC 면 거기서 또 멈춘다).
+#
+# macOS 쪽(`requirements-agent-mac.txt`)은 같은 일을 먼저 겪고 `>=` 로 바꿔
+# 두었다. 두 파일이 다른 규칙을 쓸 까닭이 없다.
+#
+# 바닥값은 **실기로 확인한 판**이다 — 그보다 낮으면 동작을 보장 못 한다.
+requests>=2.32.3
+pyyaml>=6.0.2
+pywinauto>=0.6.9
+pywin32>=308
+pyperclip>=1.9.0
+pyautogui>=0.9.54

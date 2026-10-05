@@ -18,6 +18,11 @@ if errorlevel 1 (
   exit /b 1
 )
 
+REM Show which Python is installed. Install failures are usually a version
+REM mismatch, so a screenshot of this window should reveal the version.
+for /f "delims=" %%v in ('python --version 2^>^&1') do echo       using %%v
+echo.
+
 echo [1/2] creating virtual environment...
 if not exist ".venv-agent" (
   python -m venv .venv-agent
