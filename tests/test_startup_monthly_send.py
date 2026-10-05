@@ -242,6 +242,64 @@ def test_누르기_전에_몇_곳_어느_방인지_보인다(db, seeded, client)
     assert "1곳 대기 목록 만들기" in body, "몇 곳인지가 단추에 없다"
 
 
+def test_딜_제안_관리_링크에_이번_달_대상_수가_적힌다(db, seeded, client):
+    """눌러 보기 전에는 이번 달 몇 곳에 나가는지 알 길이 없었다.
+
+    **링크의 수는 표가 세는 함수와 같은 함수에서 온다**(`sendable_ids`) —
+    거르기를 한 벌 더 적으면 버튼의 수와 표의 수가 갈린다. 그래서 수를 박지
+    않고 그 함수의 결과와 견준다.
+    """
+    from app.services import startup_send
+
+    _turn_on(db, user_id=1)
+    month = startup_send.default_month()
+    want = len(startup_send.sendable_ids(db, month))
+    assert want == 1, "검사 자료가 바뀌었다 — 보낼 수 있는 곳은 샘플에이 하나다"
+
+    body = _login(client).get("/deals").text
+    assert f"{startup_send.LABEL} · {want}곳" in body, "링크에 대상 수가 없다"
+    # 링크는 그 수를 센 달을 그대로 연다.
+    assert f'href="/deals/startup-ir?month={month}"' in body
+    # 그 표의 단추도 같은 수를 적는다.
+    page = client.get(f"/deals/startup-ir?month={month}").text
+    assert f"{want}곳 대기 목록 만들기" in page
+
+
+def test_방_이름을_채우면_링크의_수도_따라_는다(db, seeded, client):
+    """수는 **지금 세어 본 값**이다 — 방 이름을 채운 뒤 다시 열면 늘어 있다."""
+    from app.services import startup_send
+
+    _turn_on(db, user_id=1)
+    seeded["noroom"].kakao_room_name = f"{COMPANY_NOROOM} 대표님"
+    db.commit()
+
+    want = len(startup_send.sendable_ids(db, startup_send.default_month()))
+    assert want == 2
+    assert f"{startup_send.LABEL} · {want}곳" in _login(client).get("/deals").text
+
+
+def test_표_머리에_대상_내역이_한_줄로_적힌다(db, seeded, client):
+    """표를 끝까지 훑지 않아도 몇 곳에 가고 나머지가 왜 빠졌는지 보여야 한다.
+    수는 전부 `startup_send.rows` 가 센 값이다."""
+    import re
+
+    from app.services import startup_send
+
+    _turn_on(db, user_id=1)
+    month = startup_send.default_month()
+    got = startup_send.rows(db, month)
+    page = _login(client).get(f"/deals/startup-ir?month={month}").text
+    line = page.split('data-testid="startup-send-summary"', 1)[1].split("</p>", 1)[0]
+    text = re.sub(r"<[^>]+>|\s+", " ", line)
+    text = re.sub(r"\s+", " ", text)
+
+    assert f"계약 기업 {len(got['rows'])}곳" in text
+    assert f"보낼 수 있음 {got['sendable_count']}곳" in text
+    assert f"방 확인 {got['verified_count']}곳" in text
+    assert f"{startup_send.NO_ROOM} {got['no_room_count']}곳" in text
+    assert f"요청 없음 {got['no_lines_count']}곳" in text
+
+
 # ── 3. 방 이름이 빈 기업은 조용히 빠지지 않는다  ★ ──────────────────────────
 
 def test_방_이름이_없는_기업이_화면에_드러난다(db, seeded, client):

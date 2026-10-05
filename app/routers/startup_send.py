@@ -84,7 +84,7 @@ def _month(value: str) -> str:
     (`create_send_list` 가 달이 없으면 거절한다) — 글에 `7월 말까지` 라고
     적혀 나가는 자리라, 짐작이 틀리면 그 거짓말이 그대로 대표에게 간다.
     """
-    return value if ir_monthly.is_month(value) else ir_monthly.this_month()
+    return value if ir_monthly.is_month(value) else startup_send.default_month()
 
 
 @router.get("/deals/startup-ir", response_class=HTMLResponse)

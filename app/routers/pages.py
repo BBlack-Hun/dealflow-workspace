@@ -162,6 +162,8 @@ def deals_page(
                else cadence.default_batch_title(db, label=label))
         for mode, label in MODE_TITLES.items()
     }
+    startup_send_on = startup_send.may_send(db, user)
+    startup_send_month = startup_send.default_month()
     ctx.update({
         "companies": companies,
         "default_batch_title": batch_titles[MODE_DEAL],
@@ -208,8 +210,16 @@ def deals_page(
         # 판정은 라우터를 막는 것과 같은 함수를 지난다
         # (`services/startup_send.may_send`) — 목록을 따로 두었더니 메뉴는
         # 걸러졌는데 주소를 직접 치면 열리던 자리가 이 저장소에 있었다.
-        "startup_send_on": startup_send.may_send(db, user),
+        "startup_send_on": startup_send_on,
         "startup_send_label": startup_send.LABEL,
+        # 그 링크에 적는 **이번 달 대상 수.** 링크가 여는 표와 [대기 목록
+        # 만들기] 를 막는 자리가 읽는 **같은 함수**에서 센다
+        # (`startup_send.sendable_ids`) — 여기서 거르기를 한 벌 더 적으면 버튼의
+        # 수와 표의 수가 갈린다. 달도 표가 여는 달과 같은 자리에서 온다.
+        # 메뉴가 안 보이는 계정에서는 세지 않는다(그 계정에는 없는 자리다).
+        "startup_send_month": startup_send_month,
+        "startup_send_count": (len(startup_send.sendable_ids(db, startup_send_month))
+                               if startup_send_on else 0),
         # 예약 발송으로 고를 수 있는 시각의 폭. **서버가 정한 값을 화면에
         # 실어 준다** — 화면에 숫자를 적어 두면 서버와 두 벌이 되어, 막는 자리와
         # 안내하는 자리가 다른 말을 하는 날이 온다(`services/scheduled_send.py`).
