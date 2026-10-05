@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 from pathlib import Path
 from typing import Optional
 
@@ -28,6 +29,8 @@ from ..db import get_db
 from ..services import cadence, pipeline
 from ..deps import get_agent_device, may_auto_attach, now_iso
 from ..models import AgentDevice, SendItem, SendJob, User
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/agent", tags=["agent"])
 
@@ -218,7 +221,12 @@ def _company_search(company) -> dict:
     from ..services import room_match
 
     return {"query": room_match.search_query(company),
-            "name": room_match.search_seed(company)}
+            "name": room_match.search_seed(company),
+            # 받는 쪽이 **기업**이라는 표시. 발송기(0.11.3~)가 이것을 보고 맨 위
+            # 방 열기에서 투자사 방을 버린다(`kakao_windows.looks_like_investor_room`).
+            # 담당자 쪽 확인에는 안 붙는다 — 그쪽은 찾는 방이 곧 투자사 방이다.
+            # 낡은 발송기는 모르는 칸이라 그냥 지나친다.
+            "target": "company"}
 
 
 class ItemResult(BaseModel):
@@ -352,8 +360,23 @@ def _apply_company_candidates(item: SendItem, body: ItemResult,
     if body.found_room and body.found_room.strip() not in rooms:
         rooms.insert(0, body.found_room.strip())
 
+    # ★ **투자사 방은 후보로 담지 않는다.** 회사명이 짧으면 투자사 방 제목에도
+    #   그 글자가 들어 있다(`room_match.INVESTOR_ROOM_MARKERS` 머리말) — 사람이
+    #   그것을 고르면 월간 IR 이 투자사 방으로 간다. 발송기 판과 상관없이
+    #   서버가 막는다.
+    from sqlalchemy.orm import object_session
+
+    rooms, dropped = room_match.drop_investor_rooms(
+        rooms, company.name, room_match.investor_rooms(object_session(company)))
+    if dropped:
+        log.info("스타트업 방 후보에서 투자사 방 %d개를 뺐습니다 company_id=%s",
+                 len(dropped), company.id)
     room_match.save_candidates(company, rooms, at=now_iso(),
-                               query=room_match.search_query(company))
+                               query=room_match.search_query(company),
+                               dropped=len(dropped))
+    if verdict == "verified" and not rooms:
+        # 하나 찾았는데 그것이 투자사 방이었다 — 찾은 것이 없는 것과 같다.
+        verdict = "not_found"
     # **`kakao_room_name` 도 `room_verified` 도 안 건드린다.** 담은 것은 후보일
     # 뿐이고, 고른 것이 아니다 — 고르면 `room_match.set_room` 이 적는다.
     item.status = "sent" if verdict == "verified" else "failed"
@@ -366,6 +389,9 @@ def _apply_company_candidates(item: SendItem, body: ItemResult,
         # 를 적으면 **안 해도 되는 일을 시킨다** — 여기서는 여러 개가 정상이고,
         # 고르면 끝이다.
         item.error = f"후보 {len(rooms)}개 — 맞추기 화면에서 고르세요"
+    elif dropped:
+        item.error = (f"투자사 방 {len(dropped)}개만 걸렸습니다 — 카톡에서 대표와의 "
+                      "방을 직접 찾아 적어 주세요")
     else:
         item.error = body.error or VERIFY_ERRORS.get(verdict, verdict)
 

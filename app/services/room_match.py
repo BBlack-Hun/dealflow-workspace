@@ -77,12 +77,16 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
-from typing import List, Optional
+import unicodedata
+from dataclasses import dataclass, field
+from typing import Iterable, List, Optional, Set, Tuple
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..models import IrCompany
+from ..models import IrCompany, VcContact
 from .ir_monthly import contracted
 from .room_name import normalize_space
 from .sheet_import import normalize_company_name
@@ -105,6 +109,27 @@ STATE_LABELS = {
 #: 투자사 방 이름을 짓는 자리고, 넓히면 예전에 만든 방과 새로 만드는 방
 #: 이름이 갈린다.
 CEO_TITLE = "대표"
+
+log = logging.getLogger(__name__)
+
+#: **투자사 방에만 붙는 글자.** 이 글자가 든 제목은 스타트업 방 후보에서 뺀다.
+#:
+#: 실제로 난 일(0.11.2): 회사명이 짧은 기업(`(주)두글자`)을 검색하자 카톡 맨
+#: 위에 **투자사 방**(`…<두글자>인베스트먼트 … 이사님 … Asset deal 공유`)이
+#: 떴고, 회사명이 그 안에 글자로 들어 있어 후보로 담겼다. 사람이 그것을 누르면
+#: 그 기업의 월간 IR 메일이 **투자사 방으로 간다.** 회사명이 짧을수록 「제목에
+#: 회사명이 들어 있다」 는 근거가 약해진다.
+#:
+#: ★ 발송기에 **같은 목록**이 한 벌 더 있다(`agent/sender/kakao_windows.
+#:   INVESTOR_ROOM_MARKERS`) — 발송기 zip 에는 `app/` 이 안 들어가서 가져다 쓸
+#:   수 없다. 두 벌이 갈리면 `tests/test_startup_room_investor.py` 가 잡는다.
+#:   **고칠 때는 둘 다 고친다.**
+INVESTOR_ROOM_MARKERS = ("인베스트먼트", "벤처스", "캐피탈", "자산운용",
+                         "파트너스", "Asset deal")
+
+#: 투자사 이름으로 가를 때 이보다 짧은 이름은 안 쓴다. 두 글자짜리 투자사
+#: 이름은 아무 방 제목에나 들어 있다 — 그것으로 빼면 맞는 방이 사라진다.
+MIN_FIRM_KEY = 3
 
 
 # ── 견주기 ──────────────────────────────────────────────────────────────────
@@ -209,10 +234,84 @@ def search_seed(company: IrCompany) -> str:
     return max(parts, key=len)
 
 
+# ── 투자사 방 걸러내기 ──────────────────────────────────────────────────────
+
+def _flat(text: Optional[str]) -> str:
+    """NFC → 공백 전부 제거 → 소문자. 방 제목을 **글자 그대로** 견주는 열쇠."""
+    return "".join(unicodedata.normalize("NFC", text or "").split()).lower()
+
+
+@dataclass
+class InvestorRooms:
+    """우리가 아는 **투자사 쪽 방**의 열쇠들. 한 번 읽어 여러 기업에 쓴다."""
+    rooms: Set[str] = field(default_factory=set)   # `_flat(kakao_room_name)`
+    firms: Set[str] = field(default_factory=set)   # `key(firm)` (짧은 것은 뺀다)
+
+
+def investor_rooms(db: Optional[Session]) -> InvestorRooms:
+    """투자사 담당자 명단(`vc_contacts`)에 적힌 방 이름·투자사 이름을 모은다.
+
+    숨긴 줄도 넣는다 — 숨긴 담당자의 방도 **투자사 방**인 것은 같다.
+    """
+    out = InvestorRooms()
+    if db is None:
+        return out
+    for room, firm in db.execute(
+            select(VcContact.kakao_room_name, VcContact.firm)).all():
+        if room and room.strip():
+            out.rooms.add(_flat(room))
+        firm_key = key(firm)
+        if len(firm_key) >= MIN_FIRM_KEY:
+            out.firms.add(firm_key)
+    return out
+
+
+def investor_reason(room: Optional[str], company_name: Optional[str],
+                    known: InvestorRooms) -> str:
+    """이 제목이 **투자사 방**으로 보이면 그 까닭, 아니면 빈 글자.
+
+    셋 중 하나면 투자사 방이다:
+
+      ① 투자사 담당자 명단에 **그 방 이름이 그대로** 적혀 있다
+      ② 제목에 **아는 투자사 이름**이 들어 있다
+      ③ 제목에 **투자사 표식**(`INVESTOR_ROOM_MARKERS`)이 들어 있다
+
+    ★ ②·③ 은 **그 글자가 기업 이름에도 들어 있으면 안 본다.** 기업 이름이
+      `가나다파트너스` 면 그 기업의 진짜 방에도 `파트너스` 가 든다 — 그것까지
+      빼면 맞는 방이 사라진다. 대표와의 방(`<대표>대표님<회사명> , <팀원>`)
+      에는 투자사 이름도 표식도 없으니 남는다.
+    """
+    flat = _flat(room)
+    if not flat:
+        return ""
+    if flat in known.rooms:
+        return "투자사 담당자 방"
+    company = key(company_name)
+    title = key(room)
+    for firm in known.firms:
+        if firm in title and firm not in company:
+            return f"투자사 이름({firm})"
+    for marker in INVESTOR_ROOM_MARKERS:
+        mark = _flat(marker)
+        if mark in flat and mark not in company:
+            return f"투자사 표식({marker})"
+    return ""
+
+
+def drop_investor_rooms(rooms: Iterable[str], company_name: Optional[str],
+                        known: InvestorRooms) -> Tuple[List[str], List[str]]:
+    """후보에서 투자사 방을 뺀다. `(남은 것, 뺀 것)`."""
+    kept: List[str] = []
+    dropped: List[str] = []
+    for room in rooms or []:
+        (dropped if investor_reason(room, company_name, known) else kept).append(room)
+    return kept, dropped
+
+
 # ── 후보 담아 두기 ──────────────────────────────────────────────────────────
 
 def save_candidates(company: IrCompany, rooms, *, at: str,
-                    query: str = "") -> None:
+                    query: str = "", dropped: int = 0) -> None:
     """카톡에서 찾아낸 제목들을 담는다. **`kakao_room_name` 은 안 건드린다.**
 
     담는 모양은 `{"at": …, "query": …, "rooms": [...]}` 다. 언제·무엇으로
@@ -224,8 +323,11 @@ def save_candidates(company: IrCompany, rooms, *, at: str,
         text = normalize_space(str(room))
         if text and text not in clean:
             clean.append(text)
+    # `dropped` — 투자사 방이라 **빼고 담은** 수. 화면이 "후보 0건" 을 "카톡에
+    # 없다" 로 읽지 않게 남겨 둔다(`drop_investor_rooms`).
     company.room_candidates = json.dumps(
-        {"at": at, "query": query, "rooms": clean}, ensure_ascii=False)
+        {"at": at, "query": query, "rooms": clean, "dropped": int(dropped or 0)},
+        ensure_ascii=False)
 
 
 def candidates(company: IrCompany) -> dict:
@@ -234,19 +336,25 @@ def candidates(company: IrCompany) -> dict:
     글자가 깨져 있어도 **터지지 않는다** — 이 값으로 열리는 것은 고르는
     화면이고, 거기서 500 이 나면 방 이름을 채울 길이 통째로 막힌다.
     """
+    empty = {"at": "", "query": "", "rooms": [], "dropped": 0}
     raw = (company.room_candidates or "").strip()
     if not raw:
-        return {"at": "", "query": "", "rooms": []}
+        return dict(empty)
     try:
         data = json.loads(raw)
     except (TypeError, ValueError):
-        return {"at": "", "query": "", "rooms": []}
+        return dict(empty)
     if not isinstance(data, dict):
-        return {"at": "", "query": "", "rooms": []}
+        return dict(empty)
     rooms = [str(r) for r in (data.get("rooms") or []) if str(r).strip()]
+    try:
+        dropped = int(data.get("dropped") or 0)
+    except (TypeError, ValueError):
+        dropped = 0
     return {"at": str(data.get("at") or ""),
             "query": str(data.get("query") or ""),
-            "rooms": rooms}
+            "rooms": rooms,
+            "dropped": dropped}
 
 
 # ── 방 이름 적기 ────────────────────────────────────────────────────────────
@@ -302,11 +410,16 @@ def rows(db: Session) -> dict:
     물을 수가 없다. 대신 줄마다 **무엇이 모자란지**를 적는다.
     """
     out = []
+    known = investor_rooms(db)
     for company in contracted(db):
         found = candidates(company)
         room = (company.kakao_room_name or "").strip()
+        # ★ **이미 담겨 있는** 후보도 여기서 한 번 더 거른다. 거르기가 생기기
+        #   전(0.11.2)에 담긴 투자사 방이 운영에 남아 있다 — 데이터를 고치지
+        #   않고 화면에서 감춘다. 담을 때와 **같은 함수**를 지난다.
+        shown, hidden = drop_investor_rooms(found["rooms"], company.name, known)
         picks = [{"room": r, "has_name": has_company_name(r, company.name)}
-                 for r in found["rooms"]]
+                 for r in shown]
         out.append({
             "company": company,
             "room": room,
@@ -322,6 +435,8 @@ def rows(db: Session) -> dict:
             # 담아 둔 후보 중 **그 회사 이름이 든 것**이 몇 개인가. 화면이
             # 이 수로 `볼 만한 후보` 와 `회사명이 안 든 후보` 를 갈라 적는다.
             "named_count": sum(1 for p in picks if p["has_name"]),
+            # 투자사 방이라 **뺀** 후보 수(담을 때 뺀 것 + 지금 감춘 것).
+            "investor_hidden": found["dropped"] + len(hidden),
         })
     return {
         "rows": out,

@@ -493,13 +493,17 @@ def process_verify_job(client: AgentClient, sender, job: dict, cfg: dict):
         try:
             # 방 이름은 생성으로 맞출 수 없다 → 이름+직함으로 **검색해 실제 제목을 찾는다**.
             found = []
+            # 받는 쪽이 **스타트업 기업**이면 서버가 `target: company` 를 붙인다.
+            # 그때만 넘긴다 — 담당자 쪽 확인은 찾는 방이 곧 투자사 방이다.
+            extra = {"company": True} if item.get("target") == "company" else {}
             if hasattr(sender, "discover_rooms"):
-                found = sender.discover_rooms(query, marker=marker)
+                found = sender.discover_rooms(query, marker=marker, **extra)
                 # 직함이 시트와 다를 수 있다(예: 시트 '제너럴파트너님' ↔ 방 '심사역님').
                 # 이름만으로 한 번 더 찾아본다.
                 name_only = (item.get("name") or "").strip()
                 if not found and name_only and name_only != query:
-                    found = sender.discover_rooms(name_only, marker=marker)
+                    found = sender.discover_rooms(name_only, marker=marker,
+                                                  **extra)
                 # 동명이인이면 회사명으로 가린다(방 제목에 회사가 들어가는 경우).
                 firm = (item.get("firm") or "").strip()
                 if len(found) > 1 and firm:

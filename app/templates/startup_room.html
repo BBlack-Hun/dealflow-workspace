@@ -143,6 +143,14 @@
                       title="규칙으로 지어 본 초안입니다 — 카톡에 이런 제목의 방이 있다는 근거는 없습니다. 카톡을 보고 고쳐 주세요.">초안 {{ row.draft }}</button>
               {% endif %}
             </div>
+            {#
+              투자사 방(인베스트먼트·벤처스 …)은 후보에서 **뺐다** — 회사명이 짧으면
+              투자사 방 제목에도 그 글자가 들어 있다(`room_match.investor_reason`).
+              뺐다는 사실은 적는다: 안 적으면 0건을 "카톡에 없다" 로 읽는다.
+            #}
+            {% if row.investor_hidden %}
+            <p class="hint">투자사 방 {{ row.investor_hidden }}개는 후보에서 뺐습니다.</p>
+            {% endif %}
             {% if row.searched_at and not row.candidates %}
             <p class="hint">
               회사명 <b>{{ row.query }}</b> 로 찾았지만 카톡에 걸린 방이
