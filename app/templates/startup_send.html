@@ -32,6 +32,19 @@
   </p>
 </header>
 
+{#
+  **머리에 수를 한 줄로 적는다.** 표를 끝까지 훑지 않아도 이 달에 몇 곳에
+  나가고, 나머지가 왜 빠졌는지 보이도록. 수는 전부 `startup_send.rows` 가 센
+  값이다 — 여기서 다시 세면 표와 단추와 이 줄이 갈린다.
+#}
+<p class="muted" data-testid="startup-send-summary">
+  <b>{{ selected }}</b> 계약 기업 <b>{{ rows|length }}곳</b>
+  · 보낼 수 있음 <b>{{ sendable_count }}곳</b>
+  · 방 확인 <b>{{ verified_count }}곳</b>
+  {% if no_room_count %}· {{ no_room_label }} <b>{{ no_room_count }}곳</b>{% endif %}
+  {% if no_lines_count %}· 요청 없음 <b>{{ no_lines_count }}곳</b>{% endif %}
+</p>
+
 {% if msg %}
 <p class="warn-box">⚠ {{ msg }}</p>
 {% endif %}

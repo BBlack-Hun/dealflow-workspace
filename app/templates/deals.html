@@ -58,7 +58,14 @@
 {% if startup_send_on %}
 <div class="toolbar">
   <div class="quick-chips">
-    <a class="chip" href="/deals/startup-ir">{{ startup_send_label }} →</a>
+    {#
+      **이번 달 보낼 수 있는 곳 수를 링크에 적는다.** 눌러 보기 전에는 이번 달
+      몇 곳에 나가는지 알 길이 없었다. 수는 표의 [N곳 대기 목록 만들기] 와
+      같은 함수에서 오고(`startup_send.sendable_ids`), 링크는 그 수를 센
+      달을 그대로 연다.
+    #}
+    <a class="chip" href="/deals/startup-ir?month={{ startup_send_month }}"
+       title="{{ startup_send_month }} 기준 — 카톡방 이름이 있고 실을 줄이 있는 기업">{{ startup_send_label }} · {{ startup_send_count }}곳 →</a>
   </div>
 </div>
 {% endif %}

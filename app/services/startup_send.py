@@ -147,6 +147,16 @@ def months(db: Session) -> List[str]:
     return ir_monthly.month_options(db)
 
 
+def default_month() -> str:
+    """달을 고르지 않고 열었을 때의 달 — **이번 달**이다.
+
+    딜 제안 관리의 링크에 적는 수와 그 링크가 여는 표가 **같은 달**을 읽어야
+    한다. 두 자리가 각자 `이번 달` 을 정하면, 달이 바뀌는 날 버튼은 지난달
+    수를 적고 표는 이번 달을 여는 날이 온다.
+    """
+    return ir_monthly.this_month()
+
+
 def room_of(company: IrCompany) -> str:
     """이 기업 대표와의 카톡방 제목. 없으면 빈 문자열.
 
