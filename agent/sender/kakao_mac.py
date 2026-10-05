@@ -497,7 +497,8 @@ class KakaoMacSender(Sender):
 
     # --- Sender 인터페이스 ---------------------------------------------------
 
-    def discover_rooms(self, query: str, marker: str = "") -> List[str]:
+    def discover_rooms(self, query: str, marker: str = "",
+                       company: bool = False) -> List[str]:
         """검색어로 카톡방을 찾아 **실제 방 제목 목록**을 돌려준다.
 
         방 이름을 우리가 만들어 맞추는 건 불가능하다는 게 실기에서 드러났다:
@@ -509,6 +510,10 @@ class KakaoMacSender(Sender):
         대화방(1:1 등)을 걸러내고 딜소개 방만 고르기 위함이다.
 
         방을 열지 않는다 — 검색 결과 행의 텍스트만 읽으므로 빠르고 부작용이 없다.
+
+        `company` 는 Windows 쪽과 **모양을 맞추려고만** 받는다(그쪽은 맨 위 방
+        열기에서 투자사 방을 버린다). 여기서는 목록을 그대로 올리고, 투자사
+        방은 서버가 거른다(`app/services/room_match.drop_investor_rooms`).
         """
         if not query.strip():
             return []

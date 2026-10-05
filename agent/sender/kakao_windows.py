@@ -131,6 +131,9 @@ ROOM_SEARCH_DEFAULTS = {
     # 빈 값이면 검색어 되읽기를 하지 않는다.
     "input_control_type": "Edit",
     "paste_hotkey": ["ctrl", "v"],
+    # 검색창을 연 뒤 붙여넣기 **전에** 누르는 키 묶음들. 카톡은 검색칸에 직전
+    # 검색어를 남겨 두어, 지우지 않고 붙이면 회사명이 이어 붙는다(실기 0.11.2).
+    "clear_keys": [["ctrl", "a"], ["backspace"]],
     # 목록을 못 읽으면 **맨 위 결과 방을 열어** 그 창 제목을 읽는다.
     "open_top_fallback": True,
     # 맨 위 결과를 여는 키. 실기에서 Enter 가 첫 줄을 안 열면 ["down", "enter"].
@@ -336,7 +339,8 @@ class KakaoDesktopSender(Sender):
         conf.update((self.sel or {}).get("room_search") or {})
         return conf
 
-    def discover_rooms(self, query: str, marker: str = "") -> List[str]:
+    def discover_rooms(self, query: str, marker: str = "",
+                       company: bool = False) -> List[str]:
         """검색어로 카톡방을 찾아 **실제 방 제목 목록**을 돌려준다.
 
         mac 쪽(`kakao_mac.discover_rooms`)과 **같은 모양으로 답한다** — 서버는
@@ -356,6 +360,12 @@ class KakaoDesktopSender(Sender):
           (`_open_top_room_title`). 읽은 제목에 검색어(회사명)가 들어 있을
           때만 후보 하나로 돌려준다. 그 창에는 **아무것도 입력하지 않고** 바로
           닫는다. 끄려면 `selectors.yaml: room_search.open_top_fallback: false`.
+
+        ★ `company` 가 참이면(받는 쪽이 **스타트업 기업** — 서버가 잡에
+          `target: company` 로 알려 준다) 맨 위 방 제목에 **투자사 표식**
+          (`INVESTOR_ROOM_MARKERS`)이 들어 있으면 버린다. 회사명이 짧으면 투자사
+          방 제목에도 그 글자가 들어 있다(실기 0.11.2). 담당자 쪽 확인에서는
+          찾는 방이 곧 투자사 방이라 안 버린다.
 
         ★ 못 하면 **빈 목록**이다. 카톡이 검색을 안 보여 주거나 컨트롤을 못 찾거나
           포커스를 못 잡으면 0건으로 답하고 넘어간다. **거짓 후보를 지어내지
@@ -389,7 +399,8 @@ class KakaoDesktopSender(Sender):
                     #   열어 창 제목을 읽는다.** 검색칸에 남의 글자가 있던 경우
                     #   (typed_mismatch)는 열지 않는다 — 보이는 목록이 남의 결과다.
                     opened = True
-                    found = self._open_top_room_title(win, query, marker, conf)
+                    found = self._open_top_room_title(win, query, marker, conf,
+                                                      company=company)
             finally:
                 if fallback and not opened:
                     self._close_search()
@@ -529,7 +540,7 @@ class KakaoDesktopSender(Sender):
             log.debug("WM_CLOSE 실패 hwnd=%s", hwnd)
 
     def _open_top_room_title(self, win, query: str, marker: str,
-                             conf: dict) -> List[str]:
+                             conf: dict, company: bool = False) -> List[str]:
         """검색 결과 **맨 위 방을 열어** 창 제목을 읽고, 닫고, 검색창도 닫는다.
 
         부르기 전: 검색어가 든 검색창이 **열려 있다**(`_search_titles(keep_open=True)`).
@@ -575,6 +586,10 @@ class KakaoDesktopSender(Sender):
 
             if not title_has_company(title, query):
                 log.info("맨 위 방 제목에 검색어가 없어 버립니다: %r (query=%r)",
+                         title, query)
+                return []
+            if company and looks_like_investor_room(title, query):
+                log.info("맨 위 방이 투자사 방으로 보여 버립니다: %r (query=%r)",
                          title, query)
                 return []
             if marker and nfc(marker) not in nfc(title):
@@ -710,18 +725,26 @@ class KakaoDesktopSender(Sender):
         max_rows = _max_rows(conf)
         time.sleep(self._t("after_search_hotkey", 0.4))
 
-        # 2) 검색어 — 클립보드 + Ctrl+V. 한글은 키 입력으로 못 보낸다.
-        self._pyperclip.copy(query)
-        self._pyautogui.hotkey(*(conf.get("paste_hotkey") or ["ctrl", "v"]))
-        time.sleep(self._t("after_query_paste", 0.8))
+        # 2) 검색어 — **칸을 비우고** 클립보드 + Ctrl+V. 한글은 키 입력으로 못
+        #    보낸다. ★ 카톡은 검색칸에 직전 검색어를 남겨 둔다 — 안 비우면
+        #    `가나다` 뒤에 `라마바` 가 붙어 `가나다라마바` 로 검색된다(실기 0.11.2).
+        self._put_query(query, conf)
 
-        # 3) 검색어가 **진짜 그 칸에** 들어갔는지 되읽는다.
+        # 3) 검색어가 **진짜 그 칸에** 들어갔는지 되읽는다. 다르면 **한 번 더**
+        #    비우고 붙인다. 그래도 다르면 남의 글자로 검색하지 않고 접는다.
         typed = self._search_input_text(win, conf)
         if typed is not None and _norm_title(typed) != _norm_title(query):
-            log.warning("검색어가 검색칸에 들어가지 않았습니다(읽은 값=%r, "
-                        "넣은 값=%r) — 후보를 읽지 않습니다", typed, query)
-            self._last_search_state = "typed_mismatch"
-            return None
+            log.warning("검색칸 글자가 검색어와 다릅니다(읽은 값=%r, 넣은 값=%r) "
+                        "— 비우고 한 번 더 넣습니다", typed, query)
+            # ★ 키를 더 누르기 전에 카톡 창이 앞에 있는지 다시 확인한다.
+            if self._focus_verified(win):
+                self._put_query(query, conf)
+                typed = self._search_input_text(win, conf)
+            if typed is not None and _norm_title(typed) != _norm_title(query):
+                log.warning("검색어가 검색칸에 들어가지 않았습니다(읽은 값=%r, "
+                            "넣은 값=%r) — 후보를 읽지 않습니다", typed, query)
+                self._last_search_state = "typed_mismatch"
+                return None
 
         # 4) 결과가 갱신될 때까지 기다리며 읽는다.
         deadline = time.monotonic() + self._t("room_search_wait", 2.0)
@@ -753,6 +776,18 @@ class KakaoDesktopSender(Sender):
         log.info("검색 결과에 %r 가 든 줄이 없습니다 (%d줄 읽음) query=%r",
                  needle, len(titles), query)
         return titles
+
+    def _put_query(self, query: str, conf: dict) -> None:
+        """검색칸을 **비우고**(`room_search.clear_keys`) 검색어를 붙여 넣는다.
+
+        ★ 부르는 쪽이 카톡 창 포커스를 확인한 뒤에만 부른다 — 다른 키와 같은
+          규칙이다(`_focus_verified`). 모든 키 묶음은 `hotkey` 하나로 누른다.
+        """
+        for chord in clear_chords(conf):
+            self._pyautogui.hotkey(*chord)
+        self._pyperclip.copy(query)
+        self._pyautogui.hotkey(*(conf.get("paste_hotkey") or ["ctrl", "v"]))
+        time.sleep(self._t("after_query_paste", 0.8))
 
     def _search_input_text(self, win, conf: dict) -> Optional[str]:
         """검색칸에 실제로 들어간 글자. **못 읽으면 None**(= 판단 불가).
@@ -1327,6 +1362,50 @@ def company_key(text: str, *, strip_notes: bool = False) -> str:
     for mark in _CORP_MARKS:
         t = t.replace(mark, "")
     return "".join(t.split()).lower()
+
+
+#: **투자사 방에만 붙는 글자.** 스타트업 기업의 맨 위 방 제목에 이것이 들어
+#: 있으면 후보로 올리지 않는다(`looks_like_investor_room`).
+#:
+#: ★ 서버에 **같은 목록**이 있다(`app/services/room_match.INVESTOR_ROOM_MARKERS`).
+#:   발송기 zip 에 `app/` 이 안 들어가 가져다 쓸 수 없어 한 벌 더 둔다 — 두
+#:   벌이 갈리면 `tests/test_startup_room_investor.py` 가 잡는다. 서버가 어차피
+#:   한 번 더 거르므로 여기는 덧댄 막이다.
+INVESTOR_ROOM_MARKERS = ("인베스트먼트", "벤처스", "캐피탈", "자산운용",
+                         "파트너스", "Asset deal")
+
+
+def looks_like_investor_room(title: str, query: str) -> bool:
+    """맨 위 방 제목이 **투자사 방**으로 보이는가.
+
+    표식이 **회사명에도** 들어 있으면 그 표식은 안 본다 — 회사 이름이
+    `가나다파트너스` 면 그 회사의 진짜 방에도 `파트너스` 가 든다.
+    """
+    flat = company_key(title)
+    company = company_key(query, strip_notes=True)
+    for marker in INVESTOR_ROOM_MARKERS:
+        mark = company_key(marker)
+        if mark and mark in flat and mark not in company:
+            return True
+    return False
+
+
+def clear_chords(conf: dict) -> List[tuple]:
+    """`room_search.clear_keys` 를 키 묶음 목록으로. 글자 하나면 묶음 하나로 본다.
+
+    빈 목록(`[]`)이면 아무것도 안 누른다 — 끄는 길이다.
+    """
+    raw = conf.get("clear_keys")
+    if raw is None:
+        raw = ROOM_SEARCH_DEFAULTS["clear_keys"]
+    out: List[tuple] = []
+    for chord in raw or []:
+        if isinstance(chord, str):
+            chord = [chord]
+        keys = tuple(str(k) for k in chord if str(k).strip())
+        if keys:
+            out.append(keys)
+    return out
 
 
 def title_has_company(title: str, query: str) -> bool:
