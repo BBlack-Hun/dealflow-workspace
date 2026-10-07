@@ -11,6 +11,8 @@
   var fileInput = document.getElementById("import-file");
   var sheetSel = document.getElementById("import-sheet");
   var yearInput = document.getElementById("import-year");
+  // 다른 팀원 명단에 있는 분을 옮길지 따로 만들지. 바꾸면 미리보기를 다시 봐야 한다.
+  var keepOther = document.getElementById("import-keep-other");
   var previewBtn = document.getElementById("import-preview");
   var applyBtn = document.getElementById("import-apply");
   var result = document.getElementById("import-result");
@@ -46,8 +48,8 @@
       .catch(function () { /* CSV 등 시트 개념이 없으면 그냥 첫 시트로 간다 */ });
   });
 
-  [sheetSel, yearInput].forEach(function (el) {
-    el.addEventListener("change", resetPreview);
+  [sheetSel, yearInput, keepOther].forEach(function (el) {
+    if (el) el.addEventListener("change", resetPreview);
   });
 
   function resetPreview() {
@@ -65,6 +67,7 @@
     fd.append("sheet", sheetSel.value || "");
     fd.append("year", yearInput.value || "0");
     fd.append("dry_run", dryRun ? "true" : "false");
+    fd.append("keep_other_owner", keepOther && keepOther.checked ? "true" : "false");
 
     previewBtn.disabled = true;
     applyBtn.disabled = true;
@@ -103,6 +106,11 @@
       li("읽은 담당자", d.parsed_contacts + "명") +
       li("새로 생김", d.created + "명") +
       li("갱신", d.updated + "명") +
+      (d.overlap_total
+        ? li("다른 팀원과 겹침", d.overlap_total + "명 → " +
+             (d.keep_other_owner ? "따로 만듦 " + d.overlap_kept + "명 (원래 줄 그대로)"
+                                 : "옮김 " + d.overlap_moved + "명 (원래 팀원 명단에서 빠짐)"))
+        : "") +
       li("활동 이력", d.activities_created + "건 추가 (중복 " + d.activities_existing + "건 건너뜀)") +
       li("시트와 다른 칸", (d.diffs_total || 0) + "칸 (안 덮었습니다)") +
       li("건너뛴 행", d.skipped_total + "행") +
@@ -141,6 +149,17 @@
         d.activities_stale + "건 — <b>지우지 않습니다.</b> 이 표에는 손으로 적은 줄과 " +
         "발송이 만든 줄이 함께 삽니다.</p>";
     }
+    // 겹친 분을 이름으로 — 원래 팀원에게 물어볼 수 있어야 한다.
+    if ((d.overlaps || []).length) {
+      html += '<details class="import-skipped" open><summary>다른 팀원과 겹친 분 ' +
+        d.overlap_total + "명 — " +
+        (d.keep_other_owner ? "이 담당자 몫으로 <b>따로 만듭니다</b>"
+                            : "이 담당자에게 <b>옮깁니다</b>") +
+        "</summary><table class=\"mini-table\"><tr><th>이름</th><th>투자사</th><th>지금 담당</th></tr>" +
+        d.overlaps.map(function (o) {
+          return "<tr><td>" + esc(o.name) + "</td><td>" + esc(o.firm) + "</td><td>" + esc(o.owner) + "</td></tr>";
+        }).join("") + "</table></details>";
+    }
     if ((d.skipped || []).length) {
       html += '<details class="import-skipped"><summary>건너뛴 행 ' +
         d.skipped_total + "개 보기</summary><table class=\"mini-table\"><tr><th>행</th><th>사유</th><th>내용</th></tr>" +
@@ -164,7 +183,10 @@
   previewBtn.addEventListener("click", function () { send(true); });
   applyBtn.addEventListener("click", function () {
     if (!previewed) return;
-    if (!confirm("미리보기 결과대로 반영합니다.\n같은 이름+투자사인 담당자는 덮어씁니다. 계속할까요?")) return;
+    var how = keepOther && keepOther.checked
+      ? "다른 팀원에게 이미 있는 분은 옮기지 않고 따로 만듭니다."
+      : "다른 팀원에게 이미 있는 분은 시트의 담당자에게 옮깁니다.";
+    if (!confirm("미리보기 결과대로 반영합니다.\n같은 이름+투자사인 담당자는 빈 칸을 채웁니다.\n" + how + " 계속할까요?")) return;
     send(false);
   });
 })();

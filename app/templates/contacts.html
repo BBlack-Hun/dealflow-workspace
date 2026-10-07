@@ -459,6 +459,13 @@
       <span>기준 연도</span>
       <input type="number" id="import-year" min="2020" max="2100" placeholder="올해">
     </label>
+    {# 다른 팀원 명단에 이미 있는 분을 어떻게 할지. **꺼 두면 예전처럼 옮긴다**
+       — 새 팀원 시트를 넣을 때 그 동작에 기대 왔다. 같은 분을 두 팀원이 각자
+       맡을 때(이관받은 명단)만 켠다. #}
+    <label class="inline-field" title="꺼 두면 시트의 담당자에게 옮깁니다(원래 팀원 명단에서 빠집니다)">
+      <input type="checkbox" id="import-keep-other">
+      <span>다른 팀원에게 이미 있는 사람은 옮기지 않고 이 담당자 몫으로 따로 만들기</span>
+    </label>
     <button type="button" class="secondary-btn" id="import-preview">미리보기</button>
     <button type="button" class="primary-btn inline" id="import-apply" disabled>반영하기</button>
   </div>

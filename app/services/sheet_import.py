@@ -995,6 +995,15 @@ class ImportReport:
     #: 이 시트가 다루는 달 안에서 **시트에 없어진** 활동 줄. 세기만 한다 —
     #: 지우는 길은 만들지 않았다(까닭은 `services/import_diff` 머리글).
     activities_stale: int = 0
+    #: **다른 팀원 명단에 이미 있던 사람**(이름+투자사가 같고 소유자가 다르다).
+    #: 업로드 선택(`keep_other_owner`)에 따라 이 담당자 몫으로 **따로 만들었거나**
+    #: (`overlap_kept`) 예전처럼 이 담당자에게 **옮겼다**(`overlap_moved`).
+    #: 어느 쪽이든 미리보기에서 수가 보여야 한다 — 소유가 넘어가는 것을
+    #: [반영] 뒤에 알면 늦다.
+    overlap_kept: int = 0
+    overlap_moved: int = 0
+    #: 겹친 사람 목록 — `(이름, 투자사, 지금 담당 팀원)`. 화면이 몇 줄 보여 준다.
+    overlaps: List[tuple] = field(default_factory=list)
 
     def as_text(self, title: str) -> str:
         lines = [
@@ -1057,7 +1066,8 @@ _DIFF_LABELS = {"title": "직함", "round_size": "라운드 사이즈",
 
 def apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
                   room_suffix: str = DEFAULT_SUFFIX, dry_run: bool = False,
-                  source_label: Optional[str] = None) -> ImportReport:
+                  source_label: Optional[str] = None,
+                  keep_other_owner: bool = False) -> ImportReport:
     """담당자 upsert (이름+투자사 기준) + 활동 이력 정규화 적재.
 
     소유자(user_id)는 시트의 **담당자 컬럼**이 정한다. 한 시트에 여러 팀원의 담당분이
@@ -1076,6 +1086,20 @@ def apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
     않은 자리에 남의 명단을 통째로 덮는 단추를 달면, 잘못 누른 한 번을
     되짚을 수가 없다. 덮는 일은 `--save-baseline` 을 먼저 요구하는
     `scripts/import_investor_list.py --overwrite` 가 맡는다.
+
+    ## 다른 팀원 명단에 이미 있는 사람 — `keep_other_owner`
+
+    기본(`False`)은 **예전 그대로 옮긴다** — 시트의 담당자 칸이 지목한 팀원에게
+    소유가 넘어간다. 팀원 계정을 새로 만들고 그 사람 시트를 넣을 때 이 동작에
+    기대 왔다(2026-09-01 에 다섯 명이 새 팀원에게 그렇게 넘어갔다).
+
+    `True` 면 **안 옮기고 이 담당자 몫으로 따로 만든다.** 원래 주인의 줄은 한
+    칸도 안 건드린다(소유·방 이름·단계·`source_sheet` 그대로). 같은 분을 두
+    팀원이 각자 맡는 경우다 — 이관받은 명단처럼.
+
+    어느 쪽이든 **이 담당자 몫이 이미 있으면 그 줄을 갱신한다.** 같은 파일을
+    다시 올려도 사본이 또 생기지 않는다. 같은 분이 두 줄이 되면 같은 딜이 두
+    번 나갈 수 있어, 발송 목록을 만드는 쪽이 막는다(`services/twin_send`).
     """
     report = ImportReport(skipped=list(parsed.skipped),
                           notes=list(getattr(parsed, 'notes', [])))
@@ -1123,21 +1147,49 @@ def apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
         else:
             no_owner_rows += 1
 
-        contact = db.execute(
-            select(VcContact).where(VcContact.name == pc.name, VcContact.firm == pc.firm)
-        ).scalars().first()
-
+        # **이 담당자 몫을 먼저 찾는다.** 같은 분이 두 팀원 몫으로 나뉘어 있으면
+        # (`keep_other_owner` 로 만든 사본) 이름+투자사만으로 찾을 때 남의 줄이
+        # 먼저 걸려 그쪽을 옮기거나 고치게 된다 — 다시 올릴 때마다 사본이 늘거나
+        # 원래 주인의 줄이 넘어간다.
+        contact = None
+        if owner_id:
+            contact = db.execute(
+                select(VcContact).where(VcContact.name == pc.name,
+                                        VcContact.firm == pc.firm,
+                                        VcContact.user_id == owner_id)
+                .order_by(VcContact.id)
+            ).scalars().first()
         if contact is None:
+            contact = db.execute(
+                select(VcContact).where(VcContact.name == pc.name, VcContact.firm == pc.firm)
+                .order_by(VcContact.id)
+            ).scalars().first()
+        # 여기까지 와서 걸린 줄의 주인이 시트가 지목한 팀원과 다르면 **다른 팀원
+        # 명단에 이미 있는 분**이다.
+        other = (contact is not None and owner_id is not None
+                 and contact.user_id != owner_id)
+        if other:
+            holder = db.get(User, contact.user_id)
+            report.overlaps.append((pc.name, pc.firm or "",
+                                    getattr(holder, "name", "") or ""))
+
+        if contact is None or (other and keep_other_owner):
+            # 사본은 **빈 줄에서 시작한다** — 원래 주인이 다듬은 방 이름·메모를
+            # 베끼지 않는다. 그 방은 그 팀원의 카톡에 있는 방이다.
             contact = VcContact(user_id=owner_id or user_id, name=pc.name, firm=pc.firm,
                                 status="active")
             db.add(contact)
             report.created += 1
+            if other:
+                report.overlap_kept += 1
         else:
             report.updated += 1
             # 소유자는 시트가 **명시적으로 지목했을 때만** 옮긴다. 담당자 칸이 빈 시트를
             # 나중에 임포트했다고 해서 이미 정해진 담당을 폴백 사용자로 뺏으면 안 된다.
             if owner_id:
                 contact.user_id = owner_id
+            if other:
+                report.overlap_moved += 1
 
         # **고치기 전 값을 먼저 떠 둔다.** 아래 `_fill_if_empty` 가 빈 칸을
         # 채우고 나면 '원래 비어 있었는지' 를 알 수 없게 된다 — 채운 칸은
@@ -1329,6 +1381,17 @@ def apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
             f"뜻이 뒤집혀 안 넣음 {stage_actions[ist.NEGATED]}행 "
             "(라운드 사이즈 원문은 그대로 둡니다)"
         )
+    if report.overlaps:
+        # **누구를 어떻게 했는지 이름으로 적는다** — 수만 보고는 원래 주인에게
+        # 물어볼 수가 없다. 길어지면 앞의 몇 명만.
+        shown = ", ".join(f"{n}({f}·{h or '?'})" for n, f, h in report.overlaps[:10])
+        more = f" 외 {len(report.overlaps) - 10}명" if len(report.overlaps) > 10 else ""
+        how = ("이 담당자 몫으로 **따로 만듦** — 원래 팀원의 줄은 그대로"
+               if keep_other_owner else
+               "이 담당자에게 **옮김** — 원래 팀원 명단에서 빠집니다")
+        report.notes.insert(0, (
+            f"다른 팀원 명단과 겹침 {len(report.overlaps)}명 → {how}: "
+            f"{shown}{more}"))
     if unmatched_owners:
         detail = ", ".join(f"{n}({c}명)" for n, c in sorted(unmatched_owners.items()))
         report.notes.append(

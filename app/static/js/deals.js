@@ -1035,6 +1035,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
           go(true);
           return;
         }
+        tellSkipped(d.skipped);
         window.location.href = "/jobs/" + d.job_id;
       });
     }
@@ -1104,9 +1105,19 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
       .then(function (res) {
         if (!res.ok) { alert("발송 목록 생성 실패: " + (res.d.detail || "")); sendBtn.disabled = false; return; }
+        tellSkipped(res.d.skipped);
         window.location.href = "/jobs/" + res.d.job_id;
       })
       .catch(function () { alert("발송 요청 오류"); sendBtn.disabled = false; });
+  }
+
+  // 다른 팀원 몫으로 이미 나가 **목록에서 뺀 분**. 조용히 빼지 않는다 — 몇 명에게
+  // 나갔는지 사람이 알아야 한다(이유는 서버가 짓는다: `services/twin_send`).
+  function tellSkipped(list) {
+    if (!list || !list.length) return;
+    alert("목록에서 뺀 분 " + list.length + "명:\n" + list.map(function (x) {
+      return "· " + x.name + " — " + x.reason;
+    }).join("\n"));
   }
 
   function escapeHtml(s) {
