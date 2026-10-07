@@ -19,7 +19,8 @@ from sqlalchemy.orm import Session
 
 from .. import clock
 from ..models import User
-from . import auto_send, cadence, pipeline, readiness, scheduled_send
+from . import (auto_send, cadence, pipeline, readiness, scheduled_send,
+               startup_monthly)
 
 # 줄 하나 = 오늘 할 일 하나.
 #   kind  : 화면에서 묶어 보여줄 종류
@@ -102,6 +103,13 @@ def build(db: Session, user: User, today: Optional[date] = None) -> dict:
             ("예약 시각이 지났습니다" if booked["state"] == "expired"
              else "예약해 둔 발송"),
             booked["sentence"], f"/jobs/{booked['job_id']}", booked["count"]))
+
+    # 스타트업 월간 **자동 예약을 못 세운 달.** 선 목록은 바로 위 예약으로
+    # 뜨지만, 못 선 것은 아무 데도 안 뜨면 그 달이 조용히 빠진다.
+    for missed in startup_monthly.today_items(db, user):
+        items.append(_item(
+            "send", "urgent", "스타트업 월간 자동 발송을 세우지 못했습니다",
+            missed["error"], "/deals/startup-ir"))
 
     # 3) 오늘 보낼 리마인드
     cadence.sweep_reactions(db, user.id)

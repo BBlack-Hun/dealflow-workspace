@@ -639,9 +639,9 @@
   {# 스타트업 월간 발송 — **누가 보낼 수 있는가** 한 가지만 정하는 판.
 
      옆의 미팅 후기 판과 담는 표가 같다(`auto_send_settings`, 종류마다 한 줄).
-     다른 것은 **때맞춰 저절로 서지 않는다**는 점이다 — 달마다 한 번 사람이
-     화면에서 보고 고르는 일이라, 시각·하루 상한 칸이 없다
-     (`services/startup_send.py` 머리말).
+     다른 것은 30분 실이 아니라 **매월 자동 예약**이라는 점이다 — 켜 두면
+     매월 30일(2월은 말일) 아침에 목록이 서고 정한 시각에 나가도록 예약이
+     걸린다(`services/startup_monthly.py`). 그 시각까지 사람이 보고 뺄 수 있다.
 
      여기서 켠다고 카톡이 나가지 않는다. 켜지는 것은 **그 계정의 딜 제안 관리에
      메뉴 하나**이고, 나가는 것은 그 사람이 대기 목록을 세운 뒤 [발송 시작] 을
@@ -683,8 +683,44 @@
             {{ m.name }} · {{ m.agent }}</option>
           {% endfor %}
         </select></label>
+      <label class="field inline-field"><span>매월 자동 발송</span>
+        <select name="monthly" data-testid="startup-monthly-toggle">
+          <option value="">꺼짐</option>
+          <option value="on" {% if startup_send.monthly.enabled %}selected{% endif %}>켜짐</option>
+        </select></label>
+      <label class="field inline-field"><span>보낼 시각 (매월 {{ startup_send.monthly.day }}일)</span>
+        <input type="time" name="monthly_time" data-testid="startup-monthly-time"
+               value="{{ startup_send.monthly.time }}"
+               min="{{ '%02d'|format(startup_send.monthly.earliest) }}:00"
+               max="{{ '%02d'|format(startup_send.monthly.latest - 1) }}:59" step="600"></label>
       <button class="secondary-btn" type="submit">저장</button>
     </form>
+
+    {% set mon = startup_send.monthly %}
+    {% if mon.on %}
+    <p class="hint ok" data-testid="startup-monthly-next">
+      🗓 다음 자동 발송: <b>{{ mon.next_label }}</b> · 지금 기준 <b>{{ mon.next_count }}곳</b>
+    </p>
+    {% if mon.this_month %}
+      {% if mon.this_month.status == 'ready' %}
+      <p class="hint">이번 달 목록이 섰습니다 —
+        <a class="linkbtn" href="/jobs/{{ mon.this_month.job_id }}">목록 보기 · 빼기 · 취소</a></p>
+      {% elif mon.this_month.status == 'exists' %}
+      <p class="hint">{{ mon.this_month.error }}
+        {% if mon.this_month.job_id %}<a class="linkbtn" href="/jobs/{{ mon.this_month.job_id }}">회차 보기</a>{% endif %}</p>
+      {% elif mon.this_month.error %}
+      <p class="hint warn">⚠️ 이번 달 자동 발송을 세우지 못했습니다 — {{ mon.this_month.error }}</p>
+      {% endif %}
+    {% endif %}
+    {% endif %}
+    <p class="hint">
+      <b>매월 자동 발송</b>을 켜 두면 매월 <b>{{ mon.day }}일</b>(2월은 말일) 아침
+      {{ '%02d'|format(mon.prepare_hour) }}시 이후에 그 달 보낼 수 있는 기업 전부로 대기 목록이 서고,
+      정한 시각(기본 17:00, {{ '%02d'|format(mon.earliest) }}:00~{{ '%02d'|format(mon.latest) }}:00 안)에
+      나가도록 예약이 걸립니다. 그 시각까지 <b>오늘 할 일</b>과 진행 화면에 서 있어
+      보고 빼거나 취소할 수 있습니다. 그 달 회차가 이미 있으면 세우지 않습니다.
+      <b>그 시각에 보내는 계정 PC 의 발송 프로그램이 켜져 있어야</b> 나갑니다.
+    </p>
 
     <p class="hint">
       달마다 한 번, 그 달 <b>말까지 IR 자료를 요청한 투자사 목록</b>(가려서)을
