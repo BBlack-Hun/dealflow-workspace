@@ -79,6 +79,9 @@ def import_contacts(
     sheet: str = Form(""),
     year: int = Form(0),
     dry_run: bool = Form(True),
+    # 다른 팀원 명단에 이미 있는 분을 **옮기지 않고** 이 담당자 몫으로 따로
+    # 만든다. 기본은 꺼짐 — 예전처럼 옮긴다(`sheet_import.apply_sheet_a`).
+    keep_other_owner: bool = Form(False),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -97,6 +100,7 @@ def import_contacts(
     report = sheet_import.apply_sheet_a(
         db, parsed, user_id=user.id, dry_run=dry_run,
         source_label=(sheet or file.filename or "업로드"),
+        keep_other_owner=keep_other_owner,
     )
     if dry_run:
         db.rollback()   # 미리보기가 DB 를 건드리고 끝나면 안 된다
@@ -111,6 +115,14 @@ def import_contacts(
         "updated": report.updated,
         "activities_created": report.activities_created,
         "activities_existing": report.activities_existing,
+        # 다른 팀원 명단과 겹친 분 — **[반영] 전에** 보여야 한다. 옮기면 원래
+        # 팀원 명단에서 빠지고, 따로 만들면 같은 분이 두 줄이 된다.
+        "keep_other_owner": keep_other_owner,
+        "overlap_total": len(report.overlaps),
+        "overlap_kept": report.overlap_kept,
+        "overlap_moved": report.overlap_moved,
+        "overlaps": [{"name": n, "firm": f, "owner": h}
+                     for n, f, h in report.overlaps[:50]],
         # **시트 값과 앱 값이 다른데 안 덮은 칸.** 이 화면이 답해야 하는 물음이
         # 바로 이것이다 — "드린 내용이 왜 그대로 반영이 안 되나".
         # 값 자체는 `as_rows` 가 갈래를 보고 싣거나 뺀다(메모는 길이만).

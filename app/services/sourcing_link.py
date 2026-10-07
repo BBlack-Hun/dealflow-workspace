@@ -32,6 +32,11 @@ def _by_phone(contacts: List[VcContact]) -> Dict[str, VcContact]:
     """번호 → 담당자. 번호가 겹치면 **아예 빼 버린다.**
 
     같은 번호가 둘이면 어느 쪽 방인지 알 수 없다. 하나를 골라 두면 반은 틀린다.
+
+    같은 분이 **두 팀원 몫으로** 한 줄씩 있는 것은 겹침이 아니다(투자사 관리 현황
+    업로드의 `따로 만들기` — `sheet_import.apply_sheet_a`). 그때는 이어 줄 방이
+    갈리지 않으면(한쪽만 방이 있거나 두 방 이름이 같으면) 방이 있는 줄을 쓴다.
+    방 이름이 서로 다르면 여전히 어느 쪽인지 모르므로 뺀다.
     """
     seen: Dict[str, VcContact] = {}
     clashed = set()
@@ -40,11 +45,31 @@ def _by_phone(contacts: List[VcContact]) -> Dict[str, VcContact]:
         if len(key) < MIN_DIGITS:
             continue
         if key in seen:
+            prev = seen[key]
+            if _same_room(prev, c):
+                # 방이 있는 쪽을 남긴다 — 이어 주는 것이 방이다.
+                if not (prev.kakao_room_name or "").strip():
+                    seen[key] = c
+                continue
             clashed.add(key)
         seen[key] = c
     for key in clashed:
         seen.pop(key, None)
     return seen
+
+
+def _key(text: Optional[str]) -> str:
+    return re.sub(r"\s+", "", text or "").lower()
+
+
+def _same_room(a: VcContact, b: VcContact) -> bool:
+    """같은 분의 두 팀원 몫인데 이어 줄 방이 갈리지 않는가."""
+    if a.user_id == b.user_id:
+        return False      # 한 팀원 명단 안의 겹침은 예전처럼 겹침이다
+    if (_key(a.name), _key(a.firm)) != (_key(b.name), _key(b.firm)):
+        return False
+    ra, rb = _key(a.kakao_room_name), _key(b.kakao_room_name)
+    return not ra or not rb or ra == rb
 
 
 def linked_rooms(db: Session, sourcing) -> Dict[int, dict]:

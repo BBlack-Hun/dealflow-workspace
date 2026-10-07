@@ -31,7 +31,7 @@ from ..services import message_composer as mc
 from ..services import (deal_numbers, deal_queue, ir_attach, ir_kakao,
                         ir_monthly, manual_send, scheduled_send, sheet_owner,
                         sourcing_link, sourcing_msg, startup_send,
-                        template_pick)
+                        template_pick, twin_send)
 from ..services.message_composer import MAX_COMPANIES_PER_SEND
 
 router = APIRouter(prefix="/api/deals", tags=["deals"])
@@ -584,6 +584,10 @@ def preview(
     # 투자사 관리 현황에서 연결해 둔 방이 있으면 미리보기에도 그 방이 떠야 한다 —
     # 화면에는 '방 미등록' 인데 실제로는 나가면, 어디로 갈지 모른 채 누르게 된다.
     linked = sourcing_link.linked_rooms(db, recipients) if sourcing else {}
+    # 다른 팀원 몫의 같은 분께 이번 주 같은 기업이 이미 나갔으면 **발송 목록에서
+    # 빠진다**(`services/twin_send`). 빠질 분을 미리보기에서 먼저 알린다.
+    twin_block = (twin_send.blocked(db, recipients, [c.id for c in companies])
+                  if req.mode == MODE_DEAL and not sample else {})
     for contact in recipients:
         result = _compose_for_contact(db, user, contact, companies,
                                       req.opening_template_id, req.closing_template_id,
@@ -637,7 +641,9 @@ def preview(
             "parts": list(result.parts),
             "char_count": result.char_count,
             "too_long": result.too_long,
-            "warnings": result.warnings + fit.warnings + thin_warnings,
+            "warnings": (result.warnings + fit.warnings + thin_warnings
+                         + ([twin_block[contact.id]] if contact.id in twin_block
+                            else [])),
             # 소싱 대상은 다른 표에 있다 — 같은 번호의 투자사 담당자 이력을
             # 제 것으로 읽으면 안 된다.
             "has_history": False if (sourcing or sample) else _has_history(db, contact.id),
@@ -802,6 +808,27 @@ def create_send_list(
                 status_code=400,
                 detail=f"'{contact.name}' 카톡방 이름 미등록 — 발송 대상에서 제외하세요",
             )
+
+    # ── 다른 팀원 몫의 같은 분 ─────────────────────────────────────────────
+    #
+    # 같은 분이 두 팀원 명단에 한 줄씩 있으면(업로드의 `따로 만들기`) 각자의
+    # 회차에 같은 분이 들어가 같은 기업 소개가 두 번 나간다. 이번 주 다른 팀원
+    # 몫으로 같은 기업이 이미 나갔거나 나갈 예정이면 **이 목록에서 뺀다** —
+    # 멈추지 않는 까닭과 무엇을 같은 분으로 보는지는 `services/twin_send`.
+    # 뺀 분과 이유는 응답에 실어 화면이 띄운다(조용히 빼지 않는다).
+    skipped_twins = []
+    if req.mode == MODE_DEAL:
+        twin_block = twin_send.blocked(db, contacts, [c.id for c in companies])
+        if twin_block:
+            skipped_twins = [{"contact_id": c.id, "name": c.name,
+                              "reason": twin_block[c.id]}
+                             for c in contacts if c.id in twin_block]
+            contacts = [c for c in contacts if c.id not in twin_block]
+            if not contacts:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"'{skipped_twins[0]['name']}' "
+                           f"{skipped_twins[0]['reason']}")
 
     # ── 언제 내보낼까 ──────────────────────────────────────────────────────
     #
@@ -970,7 +997,9 @@ def create_send_list(
             "status": job.status, "channel": req.channel,
             # 예약을 걸었으면 **언제 몇 명에게 나가는지** 한 줄로 돌려준다.
             # 문장을 서버가 만든다 — 화면이 따로 지으면 두 벌이 된다.
-            "scheduled": scheduled_send.describe(job)}
+            "scheduled": scheduled_send.describe(job),
+            # 다른 팀원 몫으로 이미 나가 **이번 목록에서 뺀 분**과 그 이유.
+            "skipped": skipped_twins}
 
 
 # ── 예약 큐 ─────────────────────────────────────────────────────────────────
@@ -1111,7 +1140,7 @@ def start_queue_item(
     item.started_at = now_iso()
     db.commit()
     return {"ok": True, "job_id": result["job_id"], "total": result["total"],
-            "status": item.status}
+            "status": item.status, "skipped": result.get("skipped", [])}
 
 
 @router.post("/queue/{item_id}/cancel")
