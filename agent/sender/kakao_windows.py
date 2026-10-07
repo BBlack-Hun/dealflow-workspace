@@ -993,12 +993,19 @@ class KakaoDesktopSender(Sender):
                 "발송 중에는 다른 창을 클릭하지 마세요.",
             )
 
-        # 2) search
+        # 2) search — ★ **칸을 비우고** 붙인다(`_put_room_query`).
+        #
+        #    예전에는 Ctrl+F 뒤에 바로 붙였다. 카톡은 검색칸에 **직전 검색어를
+        #    남겨 두어** 앞 방 이름 뒤에 이번 방 이름이 이어 붙었고, 그 글자로는
+        #    방이 안 나와 `room_mismatch` 로 떨어졌다. 실패 뒤의 Esc 가 검색칸을
+        #    비워 그다음 건은 성공했다 — 그래서 **한 건 걸러 한 건**만 나갔다
+        #    (실기 0.11.4, 회차 하나에서 76건이 성공·실패를 번갈았다). 성공한 건은
+        #    Esc 가 채팅창만 닫아 검색칸의 글자가 그대로 남는다.
         self._pyautogui.hotkey(*self.sel.get("search_hotkey", ["ctrl", "f"]))
         time.sleep(self._t("after_search_hotkey", 0.4))
-        self._pyperclip.copy(room_name)
-        self._pyautogui.hotkey("ctrl", "v")
-        time.sleep(self._t("after_query_paste", 0.8))
+        bad = self._put_room_query(win, room_name)
+        if bad is not None:
+            return None, bad
 
         # 3) open top result
         self._pyautogui.press("enter")
@@ -1011,6 +1018,48 @@ class KakaoDesktopSender(Sender):
             return None, self._fail(
                 room_name, "room_mismatch: 열린 방 제목이 정확히 일치하지 않음")
         return chat, None
+
+    def _put_room_query(self, win, room_name: str) -> Optional[SendResult]:
+        """발송할 방 이름을 검색칸에 **비우고** 넣는다. 못 넣었으면 실패를 돌려준다.
+
+        방 검색(`_read_search`)과 **같은 자리**(`_put_query`)로 비운다 — UIA 로
+        먼저, 안 되면 End → Shift+Home → Backspace. Ctrl+A 는 누르지 않는다.
+
+        넣은 뒤 검색칸을 되읽어 **남의 글자가 섞였으면** 한 번 더 비우고 넣고,
+        그래도 섞여 있으면 **Enter 를 누르지 않는다.** 엉뚱한 글자로 연 방은
+        어차피 제목 대조에서 막히지만, 막힌 이유가 '방 이름이 틀렸다' 로
+        보여 사람이 멀쩡한 방 이름을 고치러 간다.
+
+        되읽은 글자가 넣은 글자의 **앞부분**이면 통과시킨다 — 카톡이 긴 글자를
+        잘라 보여 주는 빌드가 있을 수 있고, 그때 막으면 모든 건이 안 나간다.
+        직전 검색어가 남은 경우(`앞 방 이름` + `이번 방 이름`)는 앞부분이 아니라
+        여기서 걸린다. 못 읽으면(None) 판단하지 않는다(`_search_input_text`).
+        """
+        conf = self.room_search_conf
+        lost = self._fail(
+            room_name,
+            "focus_failed: 검색 중 카카오톡 메인 창이 앞에서 사라졌습니다(전송 안 함). "
+            "발송 중에는 다른 창을 클릭하지 마세요.")
+        if not self._put_query(win, room_name, conf):
+            return lost
+        typed = self._search_input_text(win, conf)
+        if query_was_typed(typed, room_name):
+            return None
+        log.warning("검색칸 글자가 방 이름과 다릅니다(읽은 값=%r, 넣은 값=%r) — "
+                    "비우고 한 번 더 넣습니다", typed, room_name)
+        if not self._focus_verified(win):
+            # 포커스를 잃었다 — Esc 도 누르지 않는다(다른 앱으로 간다).
+            return lost
+        if not self._put_query(win, room_name, conf):
+            return lost
+        typed = self._search_input_text(win, conf)
+        if query_was_typed(typed, room_name):
+            return None
+        self._close_search()
+        return self._fail(
+            room_name,
+            "search_not_cleared: 카톡 검색칸에 다른 글자가 남아 방을 열지 "
+            f"않았습니다(전송 안 함, 읽은 값={typed!r})")
 
     def send_text(self, room_name: str, text: str) -> SendResult:
         """Open the room by exact name and send `text` (drive links are plain text).
@@ -1403,6 +1452,23 @@ class KakaoDesktopSender(Sender):
 #  그 판단은 추측이어서는 안 된다.
 #  (mac 의 `kakao_mac._exact_row` · `discover_rooms` 의 걸러내기와 같은 결)
 # ══════════════════════════════════════════════════════════════════════════
+
+def query_was_typed(typed: Optional[str], query: str) -> bool:
+    """검색칸에서 되읽은 글자가 **우리가 넣은 글자**인가.
+
+    - 못 읽었다(None) → 참. 판단 불가를 실패로 보면 멀쩡한 PC 에서 아무것도
+      안 나간다(`_search_input_text`).
+    - 같다 → 참.
+    - 넣은 글자의 **앞부분**이다 → 참(긴 글자를 잘라 보여 주는 경우).
+    - 그 밖(직전 검색어가 앞에 붙은 경우 등) → 거짓.
+    """
+    if typed is None:
+        return True
+    got, want = _norm_title(typed), _norm_title(query)
+    if not got:
+        return False
+    return got == want or want.startswith(got)
+
 
 def _norm_title(text: str) -> str:
     """제목 비교용. **연속 공백만** 줄이고 한글 자모를 합친 형태로 맞춘다.
