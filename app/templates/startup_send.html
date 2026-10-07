@@ -169,6 +169,16 @@
       {# 손으로 적으면 이력이 갈라진다 — 기본값은 `cadence` 가 만든다. #}
       <input type="text" name="title" value="{{ default_title }}">
     </label>
+    {#
+      **보낼 시각(선택).** 비워 두면 지금까지와 같다 — 진행 화면에서 [발송 시작]
+      을 눌러야 나간다. 고르면 그 시각에 저절로 나가는 예약이 함께 걸린다.
+      딜 제안 발송과 **같은 예약**이고(`services/scheduled_send.py`), 되는
+      시각인지는 서버가 본다 — 이 칸은 시간대를 좁혀 주지 못한다.
+    #}
+    <label class="field" data-testid="startup-send-schedule">
+      <span>보낼 시각 (선택)</span>
+      <input type="datetime-local" name="scheduled_at">
+    </label>
   </div>
 
   {#
@@ -191,7 +201,10 @@
     {% endif %}
     누르면 <b>{{ sendable_count }}곳</b>짜리 회차가 <b>대기(draft)</b> 로 섭니다.
     발송 프로그램은 <b>대기 회차를 집어가지 않습니다</b> — 진행 화면에서
-    <b>[발송 시작]</b> 을 눌러야 나갑니다.
+    <b>[발송 시작]</b> 을 눌러야 나갑니다.<br>
+    <b>보낼 시각</b>을 고르면 그 시각에 <b>저절로</b> 나갑니다
+    ({{ '%02d' % send_earliest_hour }}:00~{{ '%02d' % send_latest_hour }}:00 안에서만 —
+    받는 분들의 업무시간입니다). 시각은 진행 화면에서 바꾸거나 취소할 수 있습니다.
     {% if no_lines_count %}
     <br>({{ no_lines_count }}곳은 {{ selected }} 말까지 요청한 투자사가 없어
     보낼 글이 없습니다 — 빈 목록을 보내면 대표는 우리가 아무것도 안 한 줄로 읽습니다.)
