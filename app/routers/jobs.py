@@ -21,6 +21,18 @@ def _job_or_404(db: Session, job_id: int, user: User) -> SendJob:
     return job
 
 
+def _sendable_or_404(db: Session, job: SendJob) -> None:
+    """스타트업 월간 발송은 **정해진 한 계정만** 내보낸다.
+
+    회차를 세울 때 막았어도(`deals.create_send_list`) 그 뒤에 설정이 다른 계정으로
+    바뀔 수 있다. [발송 시작] · [예약] 이 그 회차를 다시 살리는 자리라 여기서도
+    본다 — 판정은 예약을 푸는 쪽과 **같은 함수**다(`scheduled_send.held_back`).
+    없는 것처럼 답한다(404) — 까닭은 `routers/startup_send.py` 머리말.
+    """
+    if scheduled_send.held_back(db, job):
+        raise HTTPException(status_code=404, detail="없는 자리입니다")
+
+
 def _viewable_job_or_404(db: Session, job_id: int, user: User) -> SendJob:
     """조회는 관리자에게도 열어 둔다. 재시도·취소 같은 **조작**은
     `_job_or_404` 를 그대로 쓴다 — 관리자가 실수로 남의 회차를 건드리면 안 된다."""
@@ -210,6 +222,7 @@ def start_draft(job_id: int, background: BackgroundTasks,
     것이 그 셋의 규칙이다 — 발송은 되돌릴 수 없다.
     """
     job = _job_or_404(db, job_id, user)
+    _sendable_or_404(db, job)
     if job.status != "draft":
         raise HTTPException(status_code=400,
                             detail="이미 시작된 회차입니다")
@@ -311,6 +324,7 @@ def schedule_job(job_id: int, req: ScheduleRequest,
     회차가 55~114명이라 그 한 번이 새벽에 투자사 카톡방을 여는 값이다.
     """
     job = _job_or_404(db, job_id, user)
+    _sendable_or_404(db, job)
     if not scheduled_send.can_schedule(job):
         raise HTTPException(status_code=400,
                             detail="이미 시작된 회차입니다 — 예약할 수 없습니다")

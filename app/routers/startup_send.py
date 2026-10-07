@@ -57,7 +57,8 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import get_current_user, templates
 from ..models import IrCompany, SendItem, SendJob, User
-from ..services import cadence, ir_monthly, room_match, startup_send
+from ..services import (cadence, ir_monthly, room_match, scheduled_send,
+                        startup_send)
 from ..ui import base_ctx
 # 방 확인 잡의 종류는 **한 곳에만 적는다**(`agent_api.VERIFY_KIND`). 여기에
 # 글자를 한 벌 더 두면 잡은 서는데 발송기가 집어가지 않는 날이 온다 —
@@ -118,6 +119,10 @@ def startup_ir_page(
         # 딜 제안 관리 화면과 같은 자리에서 가져온다(`cadence`).
         "default_title": cadence.default_batch_title(
             db, label=f"{startup_send.LABEL} {selected}"),
+        # 보낼 시각을 고를 수 있는 폭(09~19시). **예약이 정한 그 값이다** —
+        # 여기 숫자를 적으면 화면과 서버가 두 벌이 된다(`scheduled_send`).
+        "send_earliest_hour": scheduled_send.EARLIEST_HOUR,
+        "send_latest_hour": scheduled_send.LATEST_HOUR,
     })
     return templates.TemplateResponse("startup_send.html", ctx)
 
@@ -128,6 +133,7 @@ def make_draft(
     company_ids: List[int] = Form(default=[]),
     month: str = Form(""),
     title: str = Form(""),
+    scheduled_at: str = Form(""),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -137,6 +143,15 @@ def make_draft(
     만들고 나서 상태를 고치는 방법도 있지만, 만드는 것과 고치는 것 사이에
     발송기가 폴링하면 **사람이 누르기 전에 나간다** — 세울 때 정해야 그 틈이
     없어서 `draft=True` 를 넘긴다(`deals.SendRequest.draft`).
+
+    ## 보낼 시각을 **함께** 고를 수 있다
+
+    `scheduled_at` 이 있으면 그 시각에 저절로 나가는 예약이 함께 걸린다. 딜 제안
+    발송 화면이 쓰는 **그 예약**이다(`services/scheduled_send.py`) — 같은 값을
+    `create_send_list` 에 넘길 뿐이고, 09~19시 판정도 거기 한 곳이 한다. 목록을
+    세우고 나서 진행 화면에서 따로 거는 두 걸음으로 나누지 않는 까닭은
+    `deals.SendRequest.scheduled_at` 에 있다. 비어 있으면 지금까지와 같다 —
+    진행 화면에서 [발송 시작] 을 누르거나, 거기서 시각을 고른다.
 
     ## 거절은 조용하지 않다
 
@@ -163,7 +178,8 @@ def make_draft(
         made = create_send_list(
             SendRequest(contact_ids=company_ids, mode=MODE_STARTUP,
                         month=month, draft=True,
-                        title=(title or "").strip() or None),
+                        title=(title or "").strip() or None,
+                        scheduled_at=(scheduled_at or "").strip()),
             background, db=db, user=user)
     except HTTPException as exc:
         # `create_send_list` 가 말하고 멈춘 사유를 그대로 옮긴다. 여기서 다시

@@ -60,7 +60,7 @@ from sqlalchemy.orm import Session
 
 from .. import clock
 from ..db import SessionLocal
-from ..models import SendJob
+from ..models import STARTUP_SEND_KIND, SendJob, User
 from . import auto_send
 
 log = logging.getLogger(__name__)
@@ -200,6 +200,35 @@ def pending_count(job: SendJob) -> int:
     return sum(1 for i in job.items if i.status == "pending")
 
 
+def unit(job: SendJob) -> str:
+    """받는 쪽을 세는 말. 스타트업 월간 발송은 **기업 대표방**이라 `곳` 이다.
+
+    딜소개는 투자사 담당자 한 사람씩이라 `명` 이고, 스타트업 월간 발송은 한 줄이
+    기업 하나다(`routers/startup_send.py`) — 그 화면의 단추도 `N곳` 이라고
+    적는다. 같은 회차를 두 화면이 다른 말로 세면 사람이 둘을 다른 수로 읽는다.
+    """
+    return "곳" if job.kind == STARTUP_SEND_KIND else "명"
+
+
+def held_back(db: Session, job: SendJob) -> str:
+    """시각이 됐어도 **풀면 안 되는 까닭.** 없으면 빈 글자.
+
+    스타트업 월간 발송은 **정해진 한 계정만** 보낼 수 있다
+    (`services/startup_send.may_send`). 예약을 걸 때 그 계정이었어도 시각이 되기
+    전에 설정이 다른 계정으로 바뀔 수 있다 — 그러면 그 회차는 **더 이상 보낼 수
+    없는 사람의 것**이다. 거는 자리만 막고 푸는 자리를 안 막으면, 막힌 계정의
+    회차가 예약 하나로 뒷문을 지나 나간다. 판정은 메뉴·화면·[발송 시작] 과
+    **같은 함수**를 읽는다.
+    """
+    if job.kind != STARTUP_SEND_KIND:
+        return ""
+    from . import startup_send
+
+    if not startup_send.may_send(db, db.get(User, job.user_id)):
+        return f"{startup_send.LABEL}을 보낼 수 있는 계정이 아닙니다"
+    return ""
+
+
 def sentence(job: SendJob, now: Optional[datetime] = None) -> str:
     """`9/10(목) 14:00 에 55명에게 나갑니다` — 사람이 읽는 한 줄.
 
@@ -212,7 +241,8 @@ def sentence(job: SendJob, now: Optional[datetime] = None) -> str:
     at = scheduled_at(job)
     if at is None:
         return ""
-    who = f"{pending_count(job)}명에게"
+    # `55명에게` · `12곳에` — 사람은 `에게`, 기업 대표방은 `에`.
+    who = f"{pending_count(job)}{unit(job)}" + ("에게" if unit(job) == "명" else "에")
     now_state = state(job, now)
     if now_state == STATE_EXPIRED:
         return (f"예약 시각이 지났습니다 ({label(at)} · {who}) — "
@@ -239,6 +269,8 @@ def describe(job: SendJob, now: Optional[datetime] = None) -> dict:
         "state": state(job, now),
         "sentence": sentence(job, now),
         "count": pending_count(job) if at else 0,
+        # 수를 세는 말(`명`/`곳`). [발송 시작] 단추도 이 말로 센다.
+        "unit": unit(job),
         "earliest": EARLIEST_HOUR,
         "latest": LATEST_HOUR,
     }
@@ -332,6 +364,13 @@ def release(db: Session, job: SendJob, now: Optional[datetime] = None) -> bool:
 
     now = _aware(now or clock.now())
     if state(job, now) != STATE_DUE:
+        return False
+    # **푸는 순간에 다시 본다.** 걸 때 됐던 계정이 지금도 되는지는 따로다
+    # (`held_back`). 자리를 잡기 전에 보아야 — 막힌 회차가 `released_at` 을 단 채
+    # 서 있으면 화면이 "걸어 두었던 예약" 이라고 거짓말을 한다.
+    why = held_back(db, job)
+    if why:
+        log.warning("예약 회차 %s 를 풀지 않습니다 — %s", job.id, why)
         return False
     if not _claim(db, job, now):
         return False

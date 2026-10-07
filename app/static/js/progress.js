@@ -54,8 +54,12 @@
       startBtn.hidden = !(draft && waiting > 0);
       // **몇 명에게 나가는지 누르기 전에** 보여야 한다 — 발송은 되돌릴 수 없다.
       // 취소분 재발송·이어 보내기가 같은 이유로 단추에 수를 적는다.
-      startBtn.textContent = "발송 시작 (" + waiting + "명)";
+      // 세는 말은 서버가 정한다 — 스타트업 월간 발송은 기업 대표방이라 `곳` 이다
+      // (`scheduled_send.unit`). 여기서 종류를 보고 고르면 두 벌이 된다.
+      var unit = (d.scheduled && d.scheduled.unit) || "명";
+      startBtn.textContent = "발송 시작 (" + waiting + unit + ")";
       startBtn.dataset.count = waiting;
+      startBtn.dataset.unit = unit;
     }
     var draftNote = document.getElementById("draft-note");
     if (draftNote) draftNote.hidden = !draft;
@@ -271,7 +275,7 @@
     // 되돌릴 수 없는 일이라 누르기 전에 한 번 더 묻는다. 화면에 보인 수를 그대로
     // 쓴다 — 여기서 다시 세면 단추와 확인창이 다른 수를 말할 수 있다.
     if (!confirm((booked ? "예약(" + booked + ")을 기다리지 않고 지금 보냅니다.\n" : "")
-                 + n + "명에게 지금 보냅니다.\n보낸 뒤에는 되돌릴 수 없습니다. 계속할까요?")) return;
+                 + n + (startClickBtn.dataset.unit === "곳" ? "곳에" : "명에게") + " 지금 보냅니다.\n보낸 뒤에는 되돌릴 수 없습니다. 계속할까요?")) return;
     fetch("/api/jobs/" + jobId + "/start", { method: "POST" })
       .then(function (r) { return r.json(); })
       .then(function () { if (!timer) timer = setInterval(poll, 2000); poll(); });
