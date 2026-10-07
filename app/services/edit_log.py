@@ -466,7 +466,13 @@ FIELD_LABELS = {
     "tab_deleted_contacts": "함께 지운 투자사",
     "tab_kept_contacts": "다른 탭에 남은 투자사(탭 표시만 뺌)",
     "tab_deleted_activities": "함께 지운 활동 이력",
+    "tab_deleted_sends": "함께 지운 발송 기록",
+    "tab_deleted_sequences": "함께 지운 후속 발송",
+    "tab_deleted_ir_requests": "함께 지운 IR 요청",
+    "tab_deleted_meetings": "함께 지운 미팅",
+    "tab_canceled_jobs": "비어서 취소한 발송 회차",
     "tab_deleted_columns": "함께 지운 달 칸",
+    "tab_snapshot": "지우기 직전 백업",
 }
 
 
@@ -843,13 +849,17 @@ def log_import(db, *, actor_user_id: int, sheet_label: str,
 
 #: 탭 지우기 한 번에 실을 셈들. 차례가 곧 화면에 보이는 차례다.
 TAB_DELETE_COUNTS = ("tab_deleted_contacts", "tab_kept_contacts",
-                     "tab_deleted_activities", "tab_deleted_columns")
+                     "tab_deleted_activities", "tab_deleted_sends",
+                     "tab_deleted_sequences", "tab_deleted_ir_requests",
+                     "tab_deleted_meetings", "tab_canceled_jobs",
+                     "tab_deleted_columns")
 
 
 def log_tab_delete(db, *, actor_user_id: int, label: str,
                    sheet_row_id: int = 0, owner_user_id: Optional[int] = None,
                    path: str = "", method: str = "", href: str = "/contacts",
-                   counts: Optional[Dict[str, int]] = None) -> None:
+                   counts: Optional[Dict[str, int]] = None,
+                   snapshot: str = "") -> None:
     """명단(탭) 하나를 지운 일을 **한 줄로** 남긴다 — 누가 · 어느 탭 · 몇 명.
 
     `log_import` 와 같은 자리 · 같은 방식이다. 탭 하나를 지우면 설정 줄 하나에
@@ -876,6 +886,10 @@ def log_tab_delete(db, *, actor_user_id: int, label: str,
         value = counts.get(name) or 0
         if value:
             changes.append({"field": name, "before": value, "after": None})
+    if snapshot:
+        # 지우기 직전에 뜬 백업 파일 — 잘못 지웠으면 [되돌리기] 에서 이 이름을 고른다.
+        changes.append({"field": "tab_snapshot", "before": _trim(snapshot),
+                        "after": None})
 
     db.execute(EditLog.__table__.insert(), [{
         "at": now_iso(),

@@ -359,21 +359,21 @@ def test_막는_목록에_표를_하나_더하면_두_길_다_막힌다(team, db
     assert _names(db) == ["가담당", "나담당", "마담당"]
 
 
-def test_판정_함수를_부르는_자리가_셋뿐이다(team, rows):
-    """`_blocking_reasons` 를 부르는 자리가 **딱 그 셋**인지 글자로도 본다.
+def test_판정_함수를_부르는_자리가_둘뿐이다(team, rows):
+    """`_blocking_reasons` 를 부르는 자리가 **딱 그 둘**인지 글자로도 본다.
 
-    한 줄 지우기 · 여러 줄 지우기 · 관리자의 탭 지우기(`delete_list_sheet` —
-    그 탭에만 있는 투자사를 함께 지운다. 막는 판정은 `tests/test_tab_delete.py`
-    가 본다). 네 번째 자리가 생기면 사유 문장과 상태 번호가 또 갈린다. 새로
-    생기는 길은 여기서 걸린다.
+    한 줄 지우기 · 여러 줄 지우기. 관리자의 탭 지우기(`delete_list_sheet`)는
+    사용자가 정한 대로 이력째 지우므로 이 판정을 **부르지 않는다**
+    (`TAB_PURGE_LINKS` — `tests/test_tab_delete.py` 가 본다). 세 번째 자리가
+    생기면 사유 문장과 상태 번호가 또 갈린다. 새로 생기는 길은 여기서 걸린다.
     """
     import re
     from pathlib import Path
 
     src = Path(__file__).resolve().parents[1] / "app" / "routers" / "contacts.py"
     text = src.read_text(encoding="utf-8")
-    # 정의 한 줄 + 부르는 세 자리 = 넷.
+    # 정의 한 줄 + 부르는 두 자리 = 셋.
     hits = re.findall(r"_blocking_reasons\(", text)
-    assert len(hits) == 4, (
-        f"`_blocking_reasons` 를 부르는 자리가 셋이 아닙니다({len(hits) - 1}곳) — "
+    assert len(hits) == 3, (
+        f"`_blocking_reasons` 를 부르는 자리가 둘이 아닙니다({len(hits) - 1}곳) — "
         "판정이 흩어지면 사유 문장과 상태 번호가 갈립니다")

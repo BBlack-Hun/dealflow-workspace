@@ -21,6 +21,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from .. import clock
 from ..clock import stamp_text
 from ..db import get_db
 from ..deps import can_open, get_current_user, may_manage_team_contacts
@@ -1438,14 +1439,36 @@ def bulk_delete_contacts(body: BulkDeleteIn, db: Session = Depends(get_db),
 #   ② 사람이 수를 보고 [확인] 을 누르면 `confirm: true` 로 다시 부른다.
 # 확인을 화면에만 두면 주소를 직접 부르는 길로 탭 하나가 사람째 사라진다.
 #
-# **사람을 지우는 판정은 담당자 줄 지우기와 같은 자리다**(`CASCADING_LINKS` ·
-# `_blocking_reasons`). 활동 이력은 함께 지우고, 발송 기록 · 후속 발송 · IR 요청
-# · 미팅이 걸린 사람이 이 탭에만 있으면 **통째로 막는다** — 그 이력은 지난 보고의
-# 수라서 사라지면 안 되고, 그 사람만 빼고 지우면 탭은 사라졌는데 그 사람은 어느
-# 탭에도 없는 줄로 남는다. 막을 때 누가 왜 걸렸는지 세어 보여 준다.
+# 이력이 걸린 사람도 **함께 지운다** — 한 줄 지우기와 다른 점
+# ------------------------------------------------------------
+# 한 줄 · 여러 줄 지우기는 발송 기록 · 후속 발송 · IR 요청 · 미팅이 걸리면
+# 막는다(`_blocking_reasons`). 탭 지우기도 처음엔 같은 판정을 썼는데, 사용자가
+# 정했다 — "이미 이력도 전부 고려를 하고 삭제를 하는 것이기 때문에 그대로
+# 삭제하면 됨". 탭을 통째로 지우는 사람은 그 탭의 이력까지 정리하려는 것이다.
+#
+# 그래서 이 길만 `TAB_PURGE_LINKS`(위 두 목록을 합친 것)를 **전부 함께 지운다.**
+# 가리키는 줄만 남기면 고아 자료가 되므로 남김없이 지운다. 대신 세 겹을 두었다.
+#   · 미리 세어 보여 준다 — 사람 · 활동 이력 · 발송 기록 · IR 요청 · 미팅이 몇
+#     건이고, 지난 보고 · 대시보드 숫자가 줄어든다는 말까지.
+#   · **지금 나가는 중인 회차**에 그 사람이 있으면 막는다(`_tab_live_jobs`).
+#     발송기가 들고 있는 건을 서버에서 지우면 결과를 돌려줄 곳이 사라진다.
+#   · 지우기 **직전에 DB 를 통째로 뜬다**(`_snapshot_before_tab_delete`).
+#     뜨지 못하면 지우지 않는다. 잘못 지웠으면 [되돌리기] 화면에 그 지점이 선다.
 #
 # **관리자만.** 그 탭을 맡은 팀원의 명단 · 대시보드 · 발송 대상이 통째로
 # 바뀐다 — 명단 담당 지정 · 숨김과 같은 권한이다(`assign_sheet`).
+
+#: 탭 지우기가 **함께 지우는** 것 — 담당자 줄을 가리키는 표 전부.
+#: 두 목록을 합친 것이라 표가 늘어 한쪽에 들어가면 여기도 저절로 따라온다.
+#: 발송 기록을 맨 앞에 둔다 — 지운 뒤 회차 수를 다시 셀 때 그것만 본다.
+TAB_PURGE_LINKS = (
+    tuple(link for link in BLOCKING_LINKS if link[0] == "sends")
+    + tuple(link for link in CASCADING_LINKS + BLOCKING_LINKS
+            if link[0] != "sends"))
+
+#: 아직 발송기가 들고 있을 수 있는 회차 상태. `queued` 는 곧 집어 가고,
+#: `running`·`paused` 는 이미 집어 갔다(`agent_api.poll` · 일시정지).
+TAB_LIVE_JOB_STATUSES = ("queued", "running", "paused")
 
 
 class SheetDeleteIn(BaseModel):
@@ -1454,13 +1477,94 @@ class SheetDeleteIn(BaseModel):
     confirm: bool = False
 
 
+def _tab_live_jobs(db: Session, ids: List[int]) -> List[dict]:
+    """지울 사람이 실린 **지금 나가는 중인** 회차. 있으면 탭 지우기를 막는다.
+
+    회차가 끝났거나(`done` …) 아직 안 내보낸 것(`draft` — 예약 대기 포함)은
+    괜찮다. 발송기가 손에 쥔 적이 없으니 건을 지워도 헷갈릴 쪽이 없다.
+    회차 상태가 어떻든 건 하나가 `sending` 이면 그것도 막는다 — 발송기가 그
+    건의 결과를 돌려줄 참이다.
+    """
+    if not ids:
+        return []
+    rows = db.execute(
+        select(SendJob.id, SendJob.kind, SendJob.status,
+               func.count(SendItem.id))
+        .join(SendItem, SendItem.job_id == SendJob.id)
+        .where(SendItem.contact_id.in_(ids),
+               (SendJob.status.in_(TAB_LIVE_JOB_STATUSES))
+               | (SendItem.status == "sending"))
+        .group_by(SendJob.id, SendJob.kind, SendJob.status)
+        .order_by(SendJob.id)).all()
+    return [{"job_id": int(jid), "kind": kind or "", "status": status or "",
+             "items": int(n)} for jid, kind, status, n in rows]
+
+
+def _tab_slug(label: str) -> str:
+    """파일 이름에 넣을 탭 이름 — 글자 · 숫자 · 한글만 남기고 나머지는 `-`."""
+    import re
+
+    slug = re.sub(r"[^0-9A-Za-z가-힣]+", "-", label or "").strip("-")
+    return slug[:40] or "tab"
+
+
+def _snapshot_before_tab_delete(label: str) -> str:
+    """지우기 **직전에** DB 를 통째로 뜬다. 만든 파일 이름을 돌려준다.
+
+    일일 백업 · 되돌리기 직전 백업과 같은 방법 · 같은 자리다
+    (`services/backup.snapshot` — sqlite 백업 API, 데이터 폴더). 그래서
+    관리자의 [되돌리기] 화면에 그대로 한 지점으로 선다.
+
+    실패하면 `BackupError` 등을 그대로 던진다 — 부르는 쪽이 지우기를 멈춘다.
+    """
+    from ..services import backup
+
+    stamp = clock.now().strftime("%Y%m%d-%H%M%S")
+    dst = backup.backup_dir() / (
+        f"{backup.BEFORE_TAB_DELETE_PREFIX}{_tab_slug(label)}-{stamp}.db")
+    with backup._LOCK:
+        backup.snapshot(dst)
+    return dst.name
+
+
+def _recount_jobs(db: Session, job_ids: List[int]) -> int:
+    """건을 지운 회차의 수를 남은 건으로 다시 센다. 비어 버린 `draft` 는 취소.
+
+    회차 줄은 지우지 않는다 — 그룹 예약 · 자동 발송 기록이 회차 번호를
+    가리키고(`DealQueueItem.job_id` · `AutoSendRun.job_id`), 다른 사람 건이
+    섞인 회차는 그대로 살아 있어야 한다. 수는 발송기 결과를 받을 때와 같은
+    방식(건에서 다시 센다 — `agent_api`)으로 맞춘다.
+
+    아직 안 내보낸(`draft`) 회차가 텅 비면 `canceled` 로 둔다. 그대로 두면
+    예약 시각에 빈 회차가 풀려 발송기 큐에 선다. 돌려주는 값은 취소한 회차 수.
+    """
+    canceled = 0
+    for job_id in sorted(set(job_ids)):
+        job = db.get(SendJob, job_id)
+        if job is None:
+            continue
+        counted = dict(db.execute(
+            select(SendItem.status, func.count(SendItem.id))
+            .where(SendItem.job_id == job_id)
+            .group_by(SendItem.status)).all())
+        job.total = sum(counted.values())
+        job.sent = int(counted.get("sent", 0))
+        job.failed = int(counted.get("failed", 0))
+        if job.total == 0 and job.status == "draft":
+            job.status = "canceled"
+            job.finished_at = clock.now_iso()
+            canceled += 1
+    return canceled
+
+
 @router.post("/sheets/delete", include_in_schema=False)
 def delete_list_sheet(body: SheetDeleteIn, db: Session = Depends(get_db),
                       user: User = Depends(get_current_user)):
-    """명단(탭) 하나와 **그 탭에만 있는 투자사**를 지운다(관리자).
+    """명단(탭) 하나와 **그 탭에만 있는 투자사**를 이력째 지운다(관리자).
 
     `confirm` 없이 부르면 세기만 한다 — `plan` 에 이 탭에만 있는 사람 수 ·
-    다른 탭에도 있어 남는 사람 수 · 함께 사라지는 활동 이력 수 · 막는 사람.
+    다른 탭에도 있어 남는 사람 수 · 함께 사라지는 활동 이력 · 발송 기록 ·
+    후속 발송 · IR 요청 · 미팅 수, 그리고 막는 회차(`live_jobs`).
     """
     from ..deps import admin_only
     from ..models import SheetOwner
@@ -1476,41 +1580,56 @@ def delete_list_sheet(body: SheetDeleteIn, db: Session = Depends(get_db),
 
     only, shared = sheet_owner.tab_members(db, label)
     ids = [c.id for c in only]
-    cascading = _linked_counts(db, ids, CASCADING_LINKS)
-    reasons = _blocking_reasons(db, ids)
-    blocked = [{"id": c.id, "name": c.name or "", "firm": c.firm or "",
-                "why": _blocking_sentence(reasons[c.id])}
-               for c in only if c.id in reasons]
+    linked = _linked_counts(db, ids, TAB_PURGE_LINKS)
+    live = _tab_live_jobs(db, ids)
     plan = {
         "label": label,
         "only": len(only),
         "shared": len(shared),
-        "blocked": blocked,
+        "live_jobs": live,
+        # 예전 화면이 읽던 자리 — 이제 이력은 막지 않으므로 늘 비어 있다.
+        "blocked": [],
     }
-    for key, _model, _label in CASCADING_LINKS:
-        plan[key] = sum(cascading[key].values())
+    for key, _model, _label in TAB_PURGE_LINKS:
+        plan[key] = sum(linked[key].values())
 
     if not body.confirm:
         return {"ok": False, "confirmed": False, "plan": plan}
 
-    if blocked:
+    if live:
+        jobs = ", ".join(f"#{j['job_id']}({j['status']} · {j['items']}건)"
+                         for j in live)
         raise HTTPException(
             status_code=409,
-            detail=(f"이 탭에만 있는 투자사 {len(blocked)}명에게 발송 기록·IR "
-                    "요청·미팅이 걸려 있어 탭을 지우지 않았습니다. "
-                    + BLOCKED_NEXT_STEP_TAB))
+            detail=(f"지울 투자사가 지금 나가는 중인 발송 회차 {jobs} 에 실려 "
+                    "있어 탭을 지우지 않았습니다. 발송이 끝나거나 그 회차를 "
+                    "취소한 뒤 다시 눌러 주세요."))
+
+    # ★ 지우기 직전 백업. 못 뜨면 지우지 않는다 — 되돌릴 곳 없이 이력째
+    # 지우는 일은 하지 않는다.
+    try:
+        snap = _snapshot_before_tab_delete(label)
+    except Exception as exc:  # noqa: BLE001 — 어떤 실패든 지우기를 멈춘다
+        raise HTTPException(
+            status_code=500,
+            detail=f"지우기 전 백업을 만들지 못해 탭을 지우지 않았습니다: {exc}")
 
     # 지운 뒤에는 배치도 주인도 없어 알 수 없다 — **먼저** 읽어 둔다.
     back = _back(db, label)
     row = db.execute(select(SheetOwner).where(SheetOwner.label == label)) \
         .scalars().first()
     row_id, owner_id = (row.id, row.user_id) if row is not None else (0, None)
+    touched_jobs = [int(j) for j in db.execute(
+        select(SendItem.job_id).where(SendItem.contact_id.in_(ids))
+        .distinct()).scalars().all()] if ids else []
 
-    # 사람 지우기 — `delete_contact` 와 같은 순서다. 딸린 것부터 치우고 줄마다
+    # 딸린 것부터 치우고(외래키가 켜져 있어 순서가 틀리면 막힌다) 사람은 줄마다
     # `db.delete()` 로 지운다(flush 를 지나야 줄마다 수정 로그에 남는다).
-    for _key, model, _label in CASCADING_LINKS:
-        db.query(model).filter(
-            model.contact_id.in_(ids)).delete(synchronize_session=False)
+    if ids:
+        for _key, model, _label in TAB_PURGE_LINKS:
+            db.query(model).filter(
+                model.contact_id.in_(ids)).delete(synchronize_session=False)
+    canceled = _recount_jobs(db, touched_jobs)
     for contact in only:
         db.delete(contact)
     columns = sheet_owner.drop_label(db, label, shared)
@@ -1519,21 +1638,20 @@ def delete_list_sheet(body: SheetDeleteIn, db: Session = Depends(get_db),
     edit_log.log_tab_delete(
         db, actor_user_id=user.id, label=label, sheet_row_id=row_id,
         owner_user_id=owner_id, path=ctx.get("path", ""),
-        method=ctx.get("method", ""), href=back,
+        method=ctx.get("method", ""), href=back, snapshot=snap,
         counts={"tab_deleted_contacts": len(only),
                 "tab_kept_contacts": len(shared),
                 "tab_deleted_activities": plan.get("activities", 0),
+                "tab_deleted_sends": plan.get("sends", 0),
+                "tab_deleted_sequences": plan.get("sequences", 0),
+                "tab_deleted_ir_requests": plan.get("ir_requests", 0),
+                "tab_deleted_meetings": plan.get("meetings", 0),
+                "tab_canceled_jobs": canceled,
                 "tab_deleted_columns": columns})
     db.commit()
     return {"ok": True, "confirmed": True, "plan": plan,
-            "deleted": len(only), "kept": len(shared), "back": back}
-
-
-#: 탭 지우기가 막혔을 때 다음 걸음. 한 줄 지우기의 `BLOCKED_NEXT_STEP` 과 같은
-#: 까닭이다 — 막기만 하고 길을 안 알려 주면 사람이 막다른 길에 선다.
-BLOCKED_NEXT_STEP_TAB = ("이력이 사라지면 지난 주간·월간 보고의 수가 바뀝니다. "
-                         "그 사람들을 [수정] 창의 이관으로 다른 명단에 옮긴 뒤 "
-                         "다시 지워 주세요.")
+            "deleted": len(only), "kept": len(shared), "back": back,
+            "snapshot": snap, "canceled_jobs": canceled}
 
 
 def _assign(contact: VcContact, body: ContactIn) -> str:

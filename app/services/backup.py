@@ -49,6 +49,10 @@ from .. import clock, config
 DAILY_PREFIX = "daily-"
 PREDEPLOY_PREFIX = "predeploy-"
 BEFORE_RESTORE_PREFIX = "before-restore-"
+# 관리자의 [탭 삭제] 직전에 뜨는 백업(`routers/contacts._snapshot_before_tab_delete`).
+# 탭 삭제는 그 탭에만 있는 투자사를 **이력째** 지운다 — 잘못 지웠을 때 돌아올
+# 곳이다. `daily-` 가 아니므로 정리 대상이 아니다.
+BEFORE_TAB_DELETE_PREFIX = "snapshot-before-tab-delete-"
 
 # 되돌리기 직전에 뜨는 백업. **이것이 있어야 잘못 되돌렸을 때 돌아올 곳이 있다.**
 # `daily-` 가 아니므로 정리 대상이 아니다 — 되돌린 날의 원래 상태는 7일 규칙과
@@ -291,6 +295,7 @@ KIND_LABELS = {
     DAILY_PREFIX: "일일 자동",
     PREDEPLOY_PREFIX: "배포 직전",
     BEFORE_RESTORE_PREFIX: "되돌리기 직전",
+    BEFORE_TAB_DELETE_PREFIX: "탭 삭제 직전",
 }
 
 
