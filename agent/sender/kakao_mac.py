@@ -54,6 +54,22 @@ GOTO_KEY_CODE = 5          # 자판의 `g` 자리
 OPEN_PANEL_ID = "open-panel"
 OPEN_BUTTON_ID = "OKButton"
 OPEN_BUTTON_NAME = "열기"
+# `열기` 단추를 알아보는 **다른 모양들** (0.11.6).
+#   실기(10/7)에서 열기 패널은 떴는데(`open-panel`) 시트 바로 아래 단추 중에
+#   `OKButton`/`열기` 가 없어 매번 `open_button_not_found` 로 끝났다. 단추가 한
+#   겹 안쪽(그룹 안)에 들어가 있거나, 앱이 단추 글자를 바꿔 달 수 있다(NSOpenPanel
+#   의 `prompt`). 그래서 세 겹까지 훑고, 이름은 **앞부분**으로 본다.
+#   설정(`config.yaml: kakao_mac`)의 `open_button_ids` · `open_button_names` 로
+#   바꿀 수 있다 — 코드를 고치지 않고 실기 모양에 맞춘다.
+OPEN_BUTTON_IDS = (OPEN_BUTTON_ID,)
+OPEN_BUTTON_NAMES = (OPEN_BUTTON_NAME, "Open", "선택", "Choose")
+# 단추를 끝내 못 찾을 때 대신 누르는 Return(기본 단추). 키 코드 36.
+RETURN_KEY_CODE = 36
+# 패널 구조를 떠 둘 때의 한도. `entire contents` 는 카톡 AX 를 먹통으로 만든다
+# (`_click_file_button` 참고) — 겹수와 개수를 묶어 둔다.
+DUMP_DEPTH = 3
+DUMP_MAX_NODES = 120
+DUMP_MAX_CHARS = 3500
 
 
 def is_supported() -> bool:
@@ -190,6 +206,16 @@ class KakaoMacSender(Sender):
         # `열기` 를 다시 누르기까지의 간격 (아래 `_open_until_confirm`).
         self.t_open_retry = float(cfg.get("file_open_retry_sec", 0.6))
         self.t_sent = float(cfg.get("file_sent_timeout", 8.0))
+        # `열기` 단추 알아보기 (위 OPEN_BUTTON_IDS 참고)
+        self.open_button_ids = tuple(
+            str(x) for x in (cfg.get("open_button_ids") or OPEN_BUTTON_IDS))
+        self.open_button_names = tuple(
+            str(x) for x in (cfg.get("open_button_names") or OPEN_BUTTON_NAMES))
+        # 단추를 못 찾으면 Return 을 **한 번만** 대신 누른다 (아래 `_open_by_return`).
+        self.open_by_return = bool(cfg.get("file_open_by_return", True))
+        # '폴더로 이동' 시트가 Enter 뒤에도 남아 있으면 이만큼 기다렸다가 한 번 더
+        # Enter 를 친다(입력칸 값이 경로와 같을 때만).
+        self.t_goto_settle = float(cfg.get("file_goto_settle_sec", 1.0))
         # IR 자료 뿌리는 PC 마다 다르다 → 설정으로 받는다(agent/config.yaml 의
         # `ir_root`, 또는 환경변수 DEALFLOW_IR_ROOT).
         self.ir_root_setting = str(cfg.get("ir_root", "") or "")
@@ -801,6 +827,9 @@ class KakaoMacSender(Sender):
             f'  set sh to sheet 1 of w\n'
             f'  set acc to acc & "PRESENT\\n"\n'
             f'  try\n'
+            f'    if exists sheet 1 of sh then set acc to acc & "SUBSHEET\\n"\n'
+            f'  end try\n'
+            f'  try\n'
             f'    set acc to acc & "IDENT\\t" & '
             f'(value of attribute "AXIdentifier" of sh) & "\\n"\n'
             f'  end try\n'
@@ -966,39 +995,240 @@ class KakaoMacSender(Sender):
         log.warning("경로를 입력칸에 넣지 못했습니다: %r (읽은 값=%r)", path, got)
         return False
 
+    def _sheet_ref(self, room_name: str) -> str:
+        return f'(sheet 1 of (first window whose name is "{_esc(room_name)}"))'
+
+    @staticmethod
+    def _as_list(values) -> str:
+        return "{" + ", ".join(f'"{_esc(v)}"' for v in values) + "}"
+
     def _click_open_button(self, room_name: str) -> bool:
-        """열기 패널의 `열기`(OKButton)를 누른다."""
+        """열기 패널의 `열기` 단추를 찾아 누른다.
+
+        ★ **세 겹까지** 훑는다(시트 → 그 자식 → 손자). 10/7 실기에서 패널은
+          `open-panel` 로 알아봤는데 시트 **바로 아래** 단추에 `OKButton`/`열기`
+          가 없어 8초 내내 '못 찾음' 이었다. `entire contents` 는 쓰지 않는다 —
+          카톡 AX 가 먹통이 된다.
+        ★ 식별자(`AXIdentifier`)가 `open_button_ids` 에 있거나, 이름이
+          `open_button_names` 중 하나로 **시작하면** 열기 단추로 본다
+          (`열기`, `열기…`, `Open` 처럼 판·언어마다 다르다).
+        ★ '폴더로 이동' 시트(패널 안의 시트) 안은 뒤지지 않는다.
+        ★ **확인 시트에서는 누르지 않는다** — 시트에 `N개 전송` 단추가 있으면
+          손을 뗀다. 관문을 건너뛰는 일이 없어야 한다.
+        """
         raw = _osa(
             f'tell application "System Events" to tell process "{APP}"\n'
             f'  try\n'
-            f'    set sh to (sheet 1 of (first window whose name is '
-            f'"{_esc(room_name)}"))\n'
+            f'    set sh to {self._sheet_ref(room_name)}\n'
             f'  on error\n'
             f'    return "none"\n'
             f'  end try\n'
-            f'  set target to missing value\n'
-            f'  repeat with btnEl in (buttons of sh)\n'
+            f'  repeat with b0 in (buttons of sh)\n'
             f'    try\n'
-            f'      if (value of attribute "AXIdentifier" of btnEl) is '
-            f'"{OPEN_BUTTON_ID}" then\n'
-            f'        set target to btnEl\n'
-            f'        exit repeat\n'
-            f'      end if\n'
+            f'      if (name of b0 as text) ends with "개 전송" then return "confirm"\n'
             f'    end try\n'
             f'  end repeat\n'
-            f'  if target is missing value then\n'
+            f'  set idList to {self._as_list(self.open_button_ids)}\n'
+            f'  set nameList to {self._as_list(self.open_button_names)}\n'
+            f'  set boxes to {{sh}}\n'
+            f'  try\n'
+            f'    repeat with e1 in (UI elements of sh)\n'
+            f'      set r1 to ""\n'
+            f'      try\n'
+            f'        set r1 to (role of e1) as text\n'
+            f'      end try\n'
+            f'      if r1 is not "AXSheet" and r1 is not "AXButton" then\n'
+            f'        set end of boxes to (contents of e1)\n'
+            f'        try\n'
+            f'          repeat with e2 in (UI elements of e1)\n'
+            f'            set r2 to ""\n'
+            f'            try\n'
+            f'              set r2 to (role of e2) as text\n'
+            f'            end try\n'
+            f'            if r2 is not "AXSheet" and r2 is not "AXButton" then '
+            f'set end of boxes to (contents of e2)\n'
+            f'          end repeat\n'
+            f'        end try\n'
+            f'      end if\n'
+            f'    end repeat\n'
+            f'  end try\n'
+            f'  set target to missing value\n'
+            f'  set picked to ""\n'
+            f'  repeat with box in boxes\n'
             f'    try\n'
-            f'      set target to (first button of sh whose name is "{OPEN_BUTTON_NAME}")\n'
+            f'      repeat with btnEl in (buttons of (contents of box))\n'
+            f'        set bid to ""\n'
+            f'        set bname to ""\n'
+            f'        try\n'
+            f'          set bid to (value of attribute "AXIdentifier" of btnEl) as text\n'
+            f'        end try\n'
+            f'        try\n'
+            f'          set bname to (name of btnEl) as text\n'
+            f'        end try\n'
+            f'        if idList contains bid then set target to (contents of btnEl)\n'
+            f'        if target is missing value then\n'
+            f'          repeat with pfx in nameList\n'
+            f'            if bname starts with (pfx as text) then set target to (contents of btnEl)\n'
+            f'          end repeat\n'
+            f'        end if\n'
+            f'        if target is not missing value then\n'
+            f'          set picked to bname & "\\t" & bid\n'
+            f'          exit repeat\n'
+            f'        end if\n'
+            f'      end repeat\n'
             f'    end try\n'
-            f'  end if\n'
+            f'    if target is not missing value then exit repeat\n'
+            f'  end repeat\n'
             f'  if target is missing value then return "none"\n'
             f'  click target\n'
-            f'  return "clicked"\n'
+            f'  return "clicked\\t" & picked\n'
             f'end tell'
         )
-        return raw.strip() == "clicked"
+        out = raw.strip()
+        if out.startswith("clicked"):
+            log.debug("열기 단추를 눌렀습니다: %r", out)
+            return True
+        return False
 
-    def _open_until_confirm(self, room_name: str) -> Optional[str]:
+    def _open_by_return(self, room_name: str) -> bool:
+        """`열기` 단추를 못 찾을 때 **Return(기본 단추)** 을 대신 누른다.
+
+        열기 패널의 기본 단추가 `열기` 라 Return 이 같은 일을 한다. 대신 엉뚱한
+        곳에 키가 가지 않도록 **한 번의 AppleScript 안에서** 다 확인하고 친다:
+          · 맨 앞 앱이 카카오톡이다 (다른 앱에 키를 치지 않는다)
+          · 맨 앞 창이 **그 방** 이고, 거기 시트가 떠 있다
+          · 그 시트가 확인 시트가 아니다(`N개 전송` 단추가 없다) — 확인 시트에서
+            Return 은 곧 전송이라 관문을 건너뛴다
+          · '폴더로 이동' 시트가 닫혀 있다
+        """
+        raw = _osa(
+            f'tell application "System Events"\n'
+            f'  set fp to ""\n'
+            f'  try\n'
+            f'    set fp to name of (first process whose frontmost is true)\n'
+            f'  end try\n'
+            f'  if fp is not "{APP}" then return "not_front_app"\n'
+            f'  tell process "{APP}"\n'
+            f'    try\n'
+            f'      if (name of front window) is not "{_esc(room_name)}" then '
+            f'return "not_front_room"\n'
+            f'      set sh to {self._sheet_ref(room_name)}\n'
+            f'    on error\n'
+            f'      return "no_sheet"\n'
+            f'    end try\n'
+            f'    if exists sheet 1 of sh then return "subsheet"\n'
+            f'    repeat with b0 in (buttons of sh)\n'
+            f'      try\n'
+            f'        if (name of b0 as text) ends with "개 전송" then return "confirm"\n'
+            f'      end try\n'
+            f'    end repeat\n'
+            f'  end tell\n'
+            f'  key code {RETURN_KEY_CODE}\n'
+            f'  return "pressed"\n'
+            f'end tell'
+        )
+        out = raw.strip()
+        if out != "pressed":
+            log.info("열기 대신 Return 을 누르지 않았습니다: %s", out)
+        return out == "pressed"
+
+    def _goto_again(self, room_name: str, path: str) -> bool:
+        """'폴더로 이동' 시트가 Enter 뒤에도 남아 있을 때 한 번 더 Enter.
+
+        입력칸 값이 **그 경로 그대로일 때만** 친다. 아니면 손대지 않는다.
+        """
+        if self._goto_field_do(room_name) != path:
+            return False
+        if not self._front_is_room(room_name):
+            return False
+        self._press_enter()
+        return True
+
+    def _front_is_room(self, room_name: str) -> bool:
+        """맨 앞 앱이 카카오톡이고 맨 앞 창이 그 방인가."""
+        try:
+            raw = _osa(
+                f'tell application "System Events"\n'
+                f'  if name of (first process whose frontmost is true) is not "{APP}" '
+                f'then return "no"\n'
+                f'  tell process "{APP}"\n'
+                f'    if (name of front window) is "{_esc(room_name)}" then return "yes"\n'
+                f'  end tell\n'
+                f'  return "no"\n'
+                f'end tell'
+            )
+        except Exception:  # noqa: BLE001
+            return False
+        return raw.strip() == "yes"
+
+    def _dump_sheet_tree(self, room_name: str) -> str:
+        """시트 구조를 **겹수·개수를 묶어** 한 줄로 떠 둔다 (진단용).
+
+        단추를 못 찾았을 때 다음에 실제 모양을 보고 고치려고 남긴다. 한 줄로
+        남기는 까닭: 실패 보고에 실리는 로그 끝 40줄(`collect_diagnostics`)
+        안에 통째로 들어가게.
+        """
+        try:
+            raw = _osa(
+                f'tell application "System Events" to tell process "{APP}"\n'
+                f'  try\n'
+                f'    set sh to {self._sheet_ref(room_name)}\n'
+                f'  on error\n'
+                f'    return "NOSHEET"\n'
+                f'  end try\n'
+                f'  set acc to ""\n'
+                f'  set n to 0\n'
+                f'  set lvl to {{{{sh, 0}}}}\n'
+                f'  repeat while (count of lvl) > 0 and n < {DUMP_MAX_NODES}\n'
+                f'    set pair to item 1 of lvl\n'
+                f'    set lvl to rest of lvl\n'
+                f'    set el to item 1 of pair\n'
+                f'    set d to item 2 of pair\n'
+                f'    set n to n + 1\n'
+                f'    set r to ""\n'
+                f'    set sr to ""\n'
+                f'    set ident to ""\n'
+                f'    set nm to ""\n'
+                f'    set en to ""\n'
+                f'    try\n'
+                f'      set r to (role of el) as text\n'
+                f'    end try\n'
+                f'    try\n'
+                f'      set sr to (subrole of el) as text\n'
+                f'    end try\n'
+                f'    try\n'
+                f'      set ident to (value of attribute "AXIdentifier" of el) as text\n'
+                f'    end try\n'
+                f'    try\n'
+                f'      set nm to (name of el) as text\n'
+                f'    end try\n'
+                f'    try\n'
+                f'      set en to (enabled of el) as text\n'
+                f'    end try\n'
+                f'    set acc to acc & d & ":" & r & "/" & sr & "#" & ident & "[" & nm '
+                f'& "]" & en & " | "\n'
+                f'    if d < {DUMP_DEPTH} then\n'
+                f'      try\n'
+                f'        repeat with ch in (UI elements of el)\n'
+                f'          set end of lvl to {{contents of ch, d + 1}}\n'
+                f'        end repeat\n'
+                f'      end try\n'
+                f'    end if\n'
+                f'  end repeat\n'
+                f'  return acc\n'
+                f'end tell',
+                timeout=20,
+            )
+        except Exception as exc:  # noqa: BLE001
+            return f"(dump 실패: {exc})"
+        return " ".join((raw or "").split())[:DUMP_MAX_CHARS]
+
+    def _log_panel_dump(self, room_name: str, why: str) -> None:
+        log.warning("[kakao_mac] %s — 열기 패널 구조(depth≤%d): %s",
+                    why, DUMP_DEPTH, self._dump_sheet_tree(room_name))
+
+    def _open_until_confirm(self, room_name: str,
+                            path: Optional[str] = None) -> Optional[str]:
         """`열기` 를 눌러 "파일 전송" 확인 시트를 띄운다. 실패 사유(없으면 None).
 
         ★ **뜰 때까지 다시 누른다.** 열기 패널이 경로를 훑고 그 파일을 고르기
@@ -1010,9 +1240,21 @@ class KakaoMacSender(Sender):
 
           다시 눌러도 두 번 나가지 않는다. 확인 시트가 떠 있으면 애초에 누르지
           않고, 실제로 내보내는 것은 관문을 지난 뒤의 `N개 전송` 이다.
+
+        ★ (0.11.6) '폴더로 이동' 시트가 아직 떠 있으면 `열기` 를 누르지 않고
+          기다린다. 오래 남으면 입력칸이 경로 그대로일 때만 Enter 를 한 번 더.
+        ★ (0.11.6) 단추를 끝내 못 찾으면 **Return 을 한 번만** 대신 누른다
+          (`_open_by_return` — 맨 앞이 그 방의 열기 패널일 때만). 한 번만인
+          까닭: 앞서 친 Return 으로 확인 시트가 막 뜨는 찰나에 또 치면 그것이
+          `N개 전송` 이 되어 관문을 건너뛴다.
+        ★ 그래도 실패하면 패널 구조를 로그에 떠 둔다(`_dump_sheet_tree`).
         """
         found_button = False
-        deadline = time.time() + self.t_confirm
+        returned = False
+        goto_again = False
+        subsheet_seen = False
+        start = time.time()
+        deadline = start + self.t_confirm
         while True:
             snapshot = self._sheet_snapshot(room_name)
             if _is_confirm_sheet(snapshot):
@@ -1020,13 +1262,32 @@ class KakaoMacSender(Sender):
             if not snapshot.get("present"):
                 # 패널이 사라졌다. 무엇이 열렸는지 모르는 상태로 더 누르지 않는다.
                 return "open_panel_gone: 파일 열기 창이 사라졌습니다 (전송 안 함)"
-            if self._click_open_button(room_name):
+            waited = time.time() - start
+            if snapshot.get("subsheet"):
+                subsheet_seen = True
+                if path and not goto_again and waited >= self.t_goto_settle:
+                    goto_again = True
+                    if self._goto_again(room_name, path):
+                        log.info("'폴더로 이동' 창이 남아 있어 Enter 를 한 번 더 쳤습니다")
+            elif self._click_open_button(room_name):
                 found_button = True
+            elif (self.open_by_return and not returned and not found_button
+                  and waited >= self.t_open_retry):
+                if self._open_by_return(room_name):
+                    returned = True
+                    log.info("열기 단추를 못 찾아 Return 으로 열었습니다 room=%r",
+                             room_name)
             if time.time() >= deadline:
                 break
             time.sleep(self.t_open_retry)
-        if not found_button:
-            return ("open_button_not_found: 열기 단추를 찾지 못했습니다 (전송 안 함)")
+        if not found_button and not returned:
+            self._log_panel_dump(room_name, "open_button_not_found")
+            if subsheet_seen and self._sheet_snapshot(room_name).get("subsheet"):
+                return ("goto_sheet_stuck: '폴더로 이동' 창이 닫히지 않아 열기를 "
+                        "누르지 못했습니다 (전송 안 함)")
+            return ("open_button_not_found: 열기 단추를 찾지 못했습니다 (전송 안 함)"
+                    " — 패널 구조를 진단 로그에 남겼습니다")
+        self._log_panel_dump(room_name, "confirm_sheet_not_shown")
         return ("confirm_sheet_not_shown: 파일 전송 확인 창이 뜨지 "
                 "않았습니다 (전송 안 함)")
 
@@ -1145,7 +1406,7 @@ class KakaoMacSender(Sender):
         if _wait_until(lambda: _is_confirm_sheet(self._sheet_snapshot(room_name)),
                        timeout=self.t_confirm_quick) is None:
             # ⑥ `열기` → "파일 전송" 확인 시트. 안 뜨면 **아무것도 보내지 않는다.**
-            reason = self._open_until_confirm(room_name)
+            reason = self._open_until_confirm(room_name, str(path))
             if reason:
                 self._dismiss_sheet(room_name)
                 return SendResult(ok=False, error=reason)
@@ -1201,7 +1462,7 @@ def parse_sheet_snapshot(raw: str) -> dict:
     잡히면 "개수 단추가 여러 개" 로 잘못 읽힌다.
     """
     snapshot = {"front_title": "", "present": False, "identifier": "",
-                "buttons": [], "texts": [], "rows": None}
+                "subsheet": False, "buttons": [], "texts": [], "rows": None}
     for line in (raw or "").splitlines():
         key, _, value = line.partition("\t")
         key, value = key.strip(), value.strip()
@@ -1209,6 +1470,8 @@ def parse_sheet_snapshot(raw: str) -> dict:
             snapshot["front_title"] = value
         elif key == "PRESENT":
             snapshot["present"] = True
+        elif key == "SUBSHEET":
+            snapshot["subsheet"] = True
         elif key == "IDENT":
             snapshot["identifier"] = value
         elif key == "BTN":
@@ -1225,12 +1488,29 @@ def parse_sheet_snapshot(raw: str) -> dict:
     return snapshot
 
 
+def is_open_button(*, name: str = "", identifier: str = "",
+                   ids=OPEN_BUTTON_IDS, names=OPEN_BUTTON_NAMES) -> bool:
+    """이 단추가 열기 패널의 `열기` 인가 (AppleScript 쪽 판단과 같은 규칙).
+
+    식별자가 맞거나, 이름이 알려진 이름 중 하나로 **시작하면** 그렇다고 본다.
+    `N개 전송` 은 확인 시트의 단추라 어떤 경우에도 아니다.
+    """
+    name = (name or "").strip()
+    if COUNT_BUTTON_RE.match(name):
+        return False
+    if identifier and identifier in ids:
+        return True
+    return any(name.startswith(n) for n in names if n)
+
+
 def _is_open_panel(snapshot: dict) -> bool:
     """지금 떠 있는 시트가 **파일 열기 패널**인가."""
     if not snapshot.get("present"):
         return False
+    if _is_confirm_sheet(snapshot):
+        return False
     return (snapshot.get("identifier") == OPEN_PANEL_ID
-            or OPEN_BUTTON_NAME in snapshot.get("buttons", []))
+            or any(is_open_button(name=b) for b in snapshot.get("buttons", [])))
 
 
 def _is_confirm_sheet(snapshot: dict) -> bool:

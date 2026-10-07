@@ -1014,10 +1014,37 @@ class KakaoDesktopSender(Sender):
         # 4) EXACT title verification (mis-send guard)
         chat = self._opened_chat_window(room_name)
         if chat is None:
+            # ★ (0.11.6) **실제로 열린 방 제목**을 실패 문구에 붙인다. 방은 찾아
+            #   열렸는데(사람 눈에는 "방은 찾는데 붙여 넣지를 못한다") 서버에 적힌
+            #   방 이름이 실제 제목과 달라 관문이 막는 경우가 대부분이다 — 실기에서
+            #   서버 쪽 이름 뒤에 참여자 이름이 덧붙어 있었다. 무엇으로 고칠지
+            #   사람이 바로 보도록 닫기 **전에** 읽는다. 카톡 창일 때만 적는다.
+            opened = self._opened_title_hint(win, room_name)
             self._safe_close()
-            return None, self._fail(
-                room_name, "room_mismatch: 열린 방 제목이 정확히 일치하지 않음")
+            error = "room_mismatch: 열린 방 제목이 정확히 일치하지 않음"
+            if opened:
+                error += (f" — 실제로 열린 방: {opened!r}. 방 이름을 이 제목과 "
+                          f"똑같이 고치면 나갑니다 (전송 안 함)")
+            return None, self._fail(room_name, error)
         return chat, None
+
+    def _opened_title_hint(self, win, room_name: str) -> str:
+        """방 제목이 어긋났을 때 **앞에 떠 있는 카톡 창의 제목** (없으면 "").
+
+        카톡 프로세스의 창이 아니거나, 메인 창(`카카오톡`)이거나, 기대한 제목과
+        같으면 비운다 — 엉뚱한 앱 제목을 "열린 방" 이라고 알려 주지 않는다.
+        """
+        try:
+            title = (self._foreground_title() or "").strip()
+            if not title or title == room_name or title.startswith("카카오톡"):
+                return ""
+            main_pid = self._window_pid(win)
+            fg_pid = self._hwnd_pid(self._foreground_hwnd())
+            if not main_pid or fg_pid != main_pid:
+                return ""
+            return title[:200]
+        except Exception:  # noqa: BLE001
+            return ""
 
     def _put_room_query(self, win, room_name: str) -> Optional[SendResult]:
         """발송할 방 이름을 검색칸에 **비우고** 넣는다. 못 넣었으면 실패를 돌려준다.

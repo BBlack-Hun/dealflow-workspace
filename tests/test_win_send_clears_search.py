@@ -200,3 +200,45 @@ def test_send_file_도_같은_자리를_거친다():
     src = inspect.getsource(kw.KakaoDesktopSender._open_room_verified)
     assert "_put_room_query" in src
     assert 'hotkey("ctrl", "v")' not in src
+
+
+# ── ⑤ (0.11.6) 제목이 어긋나면 **실제로 열린 방 제목**을 알려 준다 ─────────
+
+class OpensLongerTitle(SendWin):
+    """검색하면 방은 열리는데, 그 방의 실제 제목이 서버 이름과 다르다."""
+
+    actual = "가나다 대표님 라마 456, 바사"
+
+    def __init__(self, kakao, *, same_process=True, **kw):
+        super().__init__(kakao, **kw)
+        self.same_process = same_process
+
+    def _foreground_title(self):
+        # Enter 로 방을 연 **뒤에만** 그 방 창이 앞에 온다. 그 전엔 메인 창.
+        return self.actual if "enter" in self._pyautogui.keys else "카카오톡"
+
+    def _window_pid(self, win):
+        return 4242
+
+    def _hwnd_pid(self, hwnd):
+        return 4242 if self.same_process else 7
+
+    def _opened_chat_window(self, room_name):
+        return None
+
+
+def test_어긋난_방은_실제_제목을_알려주고_아무것도_안_보낸다():
+    sender = OpensLongerTitle(FakeKakao({}))
+    r = sender.send_text("가나다 대표님 라마 456, 바사, 아자차 본부", "안녕하세요")
+    assert not r.ok
+    assert r.error.startswith("room_mismatch:")
+    assert "가나다 대표님 라마 456, 바사" in r.error
+    assert sender.delivered == []
+
+
+def test_다른_앱_창_제목은_열린_방으로_알려주지_않는다():
+    sender = OpensLongerTitle(FakeKakao({}), same_process=False)
+    r = sender.send_text("가나다 대표님 라마 456, 바사, 아자차 본부", "안녕하세요")
+    assert not r.ok and r.error.startswith("room_mismatch:")
+    assert "실제로 열린 방" not in r.error
+    assert sender.delivered == []
