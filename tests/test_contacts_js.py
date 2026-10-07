@@ -16,6 +16,7 @@ OPEN_TEST = Path(__file__).resolve().parent / "js" / "contacts_open_test.js"
 TRANSFER_TEST = Path(__file__).resolve().parent / "js" / "contact_transfer_test.js"
 SORT_TEST = Path(__file__).resolve().parent / "js" / "contacts_sort_test.js"
 DELETE_TEST = Path(__file__).resolve().parent / "js" / "hidden_delete_test.js"
+TAB_DELETE_TEST = Path(__file__).resolve().parent / "js" / "tab_delete_test.js"
 ROW_DELETE_TEST = (Path(__file__).resolve().parent / "js"
                    / "contact_delete_reason_test.js")
 
@@ -187,6 +188,25 @@ def test_명단마다_다른_필수_칸을_화면이_실제로_지키는가():
     """
     result = subprocess.run(
         [shutil.which("node"), str(ADD_ROW_TEST)], capture_output=True,
+        text=True, timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치 — 브라우저 로직 테스트 생략")
+def test_탭_삭제가_수를_보여_주고_확인을_받는가():
+    """관리자의 [탭 삭제] — 그 탭에만 있는 투자사까지 사라지는 **되돌릴 수 없는
+    조작**이라 화면 쪽 잠금을 잰다.
+
+    서버 쪽(누가 지울 수 있나 · 무엇이 지워지고 남나 · 로그)은
+    `tests/test_tab_delete.py` 가 본다. 여기서는 세어 보는 부름이 `confirm:
+    false` 로 나가는지, 확인창이 지워질 사람 · 남을 사람 · 활동 이력 수를 말하는지,
+    [취소] · 막힌 사람이 있을 때 한 건도 안 나가는지를 본다.
+
+    로컬에서는 `node tests/js/tab_delete_test.js` 로도 돈다.
+    """
+    result = subprocess.run(
+        [shutil.which("node"), str(TAB_DELETE_TEST)], capture_output=True,
         text=True, timeout=60,
     )
     assert result.returncode == 0, result.stdout + result.stderr

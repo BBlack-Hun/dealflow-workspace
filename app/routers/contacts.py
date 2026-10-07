@@ -1427,6 +1427,115 @@ def bulk_delete_contacts(body: BulkDeleteIn, db: Session = Depends(get_db),
     return {"ok": True, "confirmed": True, "deleted": len(rows), "plan": plan}
 
 
+# ── 명단(탭) 지우기 — 관리자 ────────────────────────────────────────────────
+#
+# 탭 하나를 지우면서 **그 탭에만 있는 투자사도 함께 지운다.** 다른 탭에도 있는
+# 사람은 남기고 이 탭 표시만 뺀다. 무엇을 치우는지는 `sheet_owner` 의
+# 「명단(탭) 지우기」 설명에 있다.
+#
+# 걸음은 [선택 삭제] 와 같다(`bulk_delete_contacts` · `js/tab_delete.js`).
+#   ① `confirm` 없이 불러 **세어 본다** — 아무 것도 지우지 않는다.
+#   ② 사람이 수를 보고 [확인] 을 누르면 `confirm: true` 로 다시 부른다.
+# 확인을 화면에만 두면 주소를 직접 부르는 길로 탭 하나가 사람째 사라진다.
+#
+# **사람을 지우는 판정은 담당자 줄 지우기와 같은 자리다**(`CASCADING_LINKS` ·
+# `_blocking_reasons`). 활동 이력은 함께 지우고, 발송 기록 · 후속 발송 · IR 요청
+# · 미팅이 걸린 사람이 이 탭에만 있으면 **통째로 막는다** — 그 이력은 지난 보고의
+# 수라서 사라지면 안 되고, 그 사람만 빼고 지우면 탭은 사라졌는데 그 사람은 어느
+# 탭에도 없는 줄로 남는다. 막을 때 누가 왜 걸렸는지 세어 보여 준다.
+#
+# **관리자만.** 그 탭을 맡은 팀원의 명단 · 대시보드 · 발송 대상이 통째로
+# 바뀐다 — 명단 담당 지정 · 숨김과 같은 권한이다(`assign_sheet`).
+
+
+class SheetDeleteIn(BaseModel):
+    label: str = ""
+    #: 확인 없이는 아무 것도 안 지운다(위 ①②).
+    confirm: bool = False
+
+
+@router.post("/sheets/delete", include_in_schema=False)
+def delete_list_sheet(body: SheetDeleteIn, db: Session = Depends(get_db),
+                      user: User = Depends(get_current_user)):
+    """명단(탭) 하나와 **그 탭에만 있는 투자사**를 지운다(관리자).
+
+    `confirm` 없이 부르면 세기만 한다 — `plan` 에 이 탭에만 있는 사람 수 ·
+    다른 탭에도 있어 남는 사람 수 · 함께 사라지는 활동 이력 수 · 막는 사람.
+    """
+    from ..deps import admin_only
+    from ..models import SheetOwner
+    from ..services import edit_log
+
+    admin_only(user)
+    label = _sheet_or_400(db, body.label)
+    if label == sheet_owner.MANUAL_SHEET:
+        # 명단이 아니라 **명단이 없는 줄**을 모아 보여 주는 자리다
+        # (`labels_of`). 지울 이름이 줄에 적혀 있지 않아 지워도 다시 선다.
+        raise HTTPException(status_code=400,
+                            detail=f"'{label}' 은 명단이 아니라 지울 수 없습니다")
+
+    only, shared = sheet_owner.tab_members(db, label)
+    ids = [c.id for c in only]
+    cascading = _linked_counts(db, ids, CASCADING_LINKS)
+    reasons = _blocking_reasons(db, ids)
+    blocked = [{"id": c.id, "name": c.name or "", "firm": c.firm or "",
+                "why": _blocking_sentence(reasons[c.id])}
+               for c in only if c.id in reasons]
+    plan = {
+        "label": label,
+        "only": len(only),
+        "shared": len(shared),
+        "blocked": blocked,
+    }
+    for key, _model, _label in CASCADING_LINKS:
+        plan[key] = sum(cascading[key].values())
+
+    if not body.confirm:
+        return {"ok": False, "confirmed": False, "plan": plan}
+
+    if blocked:
+        raise HTTPException(
+            status_code=409,
+            detail=(f"이 탭에만 있는 투자사 {len(blocked)}명에게 발송 기록·IR "
+                    "요청·미팅이 걸려 있어 탭을 지우지 않았습니다. "
+                    + BLOCKED_NEXT_STEP_TAB))
+
+    # 지운 뒤에는 배치도 주인도 없어 알 수 없다 — **먼저** 읽어 둔다.
+    back = _back(db, label)
+    row = db.execute(select(SheetOwner).where(SheetOwner.label == label)) \
+        .scalars().first()
+    row_id, owner_id = (row.id, row.user_id) if row is not None else (0, None)
+
+    # 사람 지우기 — `delete_contact` 와 같은 순서다. 딸린 것부터 치우고 줄마다
+    # `db.delete()` 로 지운다(flush 를 지나야 줄마다 수정 로그에 남는다).
+    for _key, model, _label in CASCADING_LINKS:
+        db.query(model).filter(
+            model.contact_id.in_(ids)).delete(synchronize_session=False)
+    for contact in only:
+        db.delete(contact)
+    columns = sheet_owner.drop_label(db, label, shared)
+
+    ctx = edit_log.actor() or {}
+    edit_log.log_tab_delete(
+        db, actor_user_id=user.id, label=label, sheet_row_id=row_id,
+        owner_user_id=owner_id, path=ctx.get("path", ""),
+        method=ctx.get("method", ""), href=back,
+        counts={"tab_deleted_contacts": len(only),
+                "tab_kept_contacts": len(shared),
+                "tab_deleted_activities": plan.get("activities", 0),
+                "tab_deleted_columns": columns})
+    db.commit()
+    return {"ok": True, "confirmed": True, "plan": plan,
+            "deleted": len(only), "kept": len(shared), "back": back}
+
+
+#: 탭 지우기가 막혔을 때 다음 걸음. 한 줄 지우기의 `BLOCKED_NEXT_STEP` 과 같은
+#: 까닭이다 — 막기만 하고 길을 안 알려 주면 사람이 막다른 길에 선다.
+BLOCKED_NEXT_STEP_TAB = ("이력이 사라지면 지난 주간·월간 보고의 수가 바뀝니다. "
+                         "그 사람들을 [수정] 창의 이관으로 다른 명단에 옮긴 뒤 "
+                         "다시 지워 주세요.")
+
+
 def _assign(contact: VcContact, body: ContactIn) -> str:
     """None 은 '변경 없음'. 빈 문자열은 '지움'으로 취급한다(부분 수정 PATCH 의미).
 
