@@ -21,6 +21,7 @@ import platform
 import random
 import socket
 import sys
+import tempfile
 import time
 from collections import namedtuple
 from pathlib import Path
@@ -374,6 +375,95 @@ def report_stopped(client: AgentClient, job_id: int, gate: Gate, remaining: int)
         client.report_job(job_id, "canceled" if gate.reason == "canceled" else "paused")
     except Exception as exc:  # noqa: BLE001
         log.warning("중단 보고 실패 (job %s): %s", job_id, exc)
+
+
+# ── 한 PC 에 발송기 둘 ─────────────────────────────────────────────────────
+#
+# 같은 PC 에서 **계정이 다른 발송기 둘**이 함께 도는 것이 실제로 있었다(같은
+# 컴퓨터 이름으로 두 계정이 동시에 폴링). 둘은 서버에서는 다른 기기라 잡을 각자
+# 집어가지만, 화면의 카카오톡은 **하나**다. 둘이 동시에 보내면 한쪽이 연 방에
+# 다른 쪽 문구가 붙을 수 있다 — 제목 대조가 대부분 막아도, 키 입력이 섞이는
+# 순간까지 막는 장치는 없다.
+#
+# 그래서 **잡을 집기 전에** 이 PC 의 잠금을 잡는다. 못 잡으면(다른 발송기가
+# 보내는 중) 이번 폴링을 건너뛴다 — 잡을 집지 않으니 서버에서 큐에 그대로
+# 서 있다가, 앞의 발송이 끝나면 이어 나간다. 잠금은 OS 가 프로세스와 함께
+# 풀어 주므로(창을 닫거나 죽어도) 남아서 막히는 일이 없다.
+UI_LOCK_NAME = "dealflow-agent-kakao.lock"
+
+
+class UiLock:
+    """이 PC 의 카톡 화면을 **한 발송기만** 쓰게 하는 잠금(잡 단위)."""
+
+    def __init__(self, path=None):
+        self.path = Path(path) if path else Path(tempfile.gettempdir()) / UI_LOCK_NAME
+        self._fh = None
+
+    def acquire(self) -> bool:
+        """잡았으면 True. 다른 발송기가 쥐고 있으면 기다리지 않고 False.
+
+        잠금 파일을 못 여는 등 **잠금 자체가 안 되는** PC 에서는 True 다 —
+        잠금이 없던 예전과 같게 돈다(발송기가 하나뿐인 PC 가 대부분이다).
+        """
+        if self._fh is not None:
+            return True
+        try:
+            fh = open(self.path, "a+b")
+        except OSError as exc:
+            log.debug("발송 잠금 파일을 열지 못했습니다(잠금 없이 진행): %s", exc)
+            return True
+        try:
+            if os.name == "nt":
+                import msvcrt
+
+                fh.seek(0)
+                msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            fh.close()
+            return False
+        self._fh = fh
+        return True
+
+    def release(self) -> None:
+        fh, self._fh = self._fh, None
+        if fh is None:
+            return
+        try:
+            if os.name == "nt":
+                import msvcrt
+
+                fh.seek(0)
+                msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+        except OSError:
+            pass
+        finally:
+            fh.close()
+
+
+def poll_and_process(client: "AgentClient", sender, cfg: dict, ui_lock: "UiLock") -> str:
+    """잠금을 잡고 → 폴링하고 → 받은 잡을 처리한다.
+
+    돌려주는 값: ``"busy"`` (이 PC 의 다른 발송기가 보내는 중 — 폴링 안 함),
+    ``"idle"`` (받을 잡이 없음), ``"done"`` (잡 하나를 처리함).
+    """
+    if not ui_lock.acquire():
+        return "busy"
+    try:
+        job = client.poll()
+        if not job:
+            return "idle"
+        process_job(client, sender, job, cfg)
+        return "done"
+    finally:
+        ui_lock.release()
 
 
 def process_job(client: AgentClient, sender, job: dict, cfg: dict):
@@ -786,6 +876,8 @@ def main(argv=None):
     snapshot["preflight"] = notes
     client.report_diagnostics(snapshot)
 
+    ui_lock = UiLock()
+    busy_logged = False
     while True:
         try:
             now = time.time()
@@ -795,10 +887,16 @@ def main(argv=None):
                              getattr(sender, "ir_root_setting", ""))
                 last_heartbeat = now
 
-            job = client.poll()
-            if job:
-                process_job(client, sender, job, cfg)
+            outcome = poll_and_process(client, sender, cfg, ui_lock)
+            if outcome == "busy":
+                if not busy_logged:
+                    log.warning("이 PC 의 다른 발송기 창이 카톡으로 보내는 중입니다 — "
+                                "끝날 때까지 잡을 받지 않고 기다립니다. 발송기 창이 "
+                                "둘 열려 있다면 하나를 닫으세요")
+                    busy_logged = True
             else:
+                busy_logged = False
+            if outcome != "done":
                 time.sleep(float(cfg["poll_interval_sec"]))
         except requests.RequestException as exc:
             log.warning("server unreachable (%s); retrying...", exc)
