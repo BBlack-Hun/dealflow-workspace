@@ -819,10 +819,10 @@ def rename(db: Session, before: str, after: str) -> Optional[SheetOwner]:
 #     조각 단위로 뺀다(`rename` 과 같은 방식 — 통째로 고치면 다른 명단 이름까지
 #     뭉개진다).
 #
-# 사람을 지우는 판정(활동 이력은 함께 · 발송 기록 등이 걸리면 막는다)은 **여기
-# 적지 않는다.** 담당자 줄 지우기와 같은 자리(`routers/contacts.py` 의
-# `CASCADING_LINKS` · `_blocking_reasons`)를 지난다 — 지우는 길이 셋이 되어도
-# 판정은 하나다.
+# 사람과 함께 무엇을 지우는지는 **여기 적지 않는다.** `routers/contacts.py` 의
+# `TAB_PURGE_LINKS` 가 정한다 — 담당자 줄 지우기의 두 목록(`CASCADING_LINKS` ·
+# `BLOCKING_LINKS`)을 합친 것이라, 탭 지우기는 **이력이 있어도 이력째** 지운다
+# (사용자가 정했다). 지우기 직전 백업도 그쪽이 뜬다.
 #
 # 개인 탭은 계정을 만들거나 권한을 바꿀 때 **없으면 다시 선다**
 # (`ensure_member_tabs`). 지운 탭이 그 사람의 그 화면 유일한 탭이었다면, 다음에

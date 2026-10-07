@@ -7,8 +7,9 @@
  *
  *   · 확인 전에 서버에 묻는 부름이 `confirm: false` 인가 — 참으로 가면
  *     세어 보기가 곧 삭제가 된다.
- *   · 확인창이 **몇 명이 지워지고 몇 명이 남는지 · 활동 이력 몇 건**을 말하는가.
- *   · [취소] · 막힌 사람이 있을 때 **한 건도 안 나가는가.**
+ *   · 확인창이 **몇 명이 지워지고 몇 명이 남는지 · 함께 지워지는 이력(활동 ·
+ *     발송 기록 · IR 요청 · 미팅) 몇 건**과 지난 보고 숫자가 준다는 말을 하는가.
+ *   · [취소] · 나가는 중인 회차가 막을 때 **한 건도 안 나가는가.**
  *
  * 규칙을 옮겨 적지 않는다 — 진짜 `tab_delete.js` 를 vm 으로 돌린다.
  * 이름은 전부 지어낸 것이다(공개 저장소).
@@ -59,7 +60,8 @@ const tick = () => new Promise((r) => setImmediate(r));
 
 function plan(over) {
   return Object.assign({ label: LABEL, only: 3, shared: 2, activities: 7,
-                         blocked: [] }, over || {});
+                         sends: 5, sequences: 1, ir_requests: 2, meetings: 1,
+                         live_jobs: [], blocked: [] }, over || {});
 }
 
 (async function () {
@@ -68,7 +70,8 @@ function plan(over) {
     const t = run([
       { d: { ok: false, confirmed: false, plan: plan() } },
       { d: { ok: true, confirmed: true, plan: plan(), deleted: 3, kept: 2,
-             back: "/contacts" } }
+             back: "/contacts",
+             snapshot: "snapshot-before-tab-delete-x-20261007-120000.db" } }
     ]);
     t.btn.fire("click");
     await tick(); await tick(); await tick();
@@ -82,9 +85,14 @@ function plan(over) {
     assert.strictEqual(t.asked.length, 1, "확인창을 안 띄웠다");
     const q = t.asked[0];
     assert.ok(/되돌릴 수 없/.test(q), "되돌릴 수 없다는 말이 없다: " + q);
-    assert.ok(/이 탭에만 있는 투자사 3명/.test(q), "지워지는 사람 수가 없다: " + q);
-    assert.ok(/다른 탭에도 있는 2명/.test(q), "남는 사람 수가 없다: " + q);
+    assert.ok(/함께 지워지는 투자사 3명/.test(q), "지워지는 사람 수가 없다: " + q);
+    assert.ok(/남는 2명/.test(q), "남는 사람 수가 없다: " + q);
     assert.ok(/활동 이력 7건/.test(q), "함께 지워지는 활동 이력 수가 없다: " + q);
+    assert.ok(/발송 기록 5건/.test(q), "함께 지워지는 발송 기록 수가 없다: " + q);
+    assert.ok(/IR 요청 2건/.test(q), "함께 지워지는 IR 요청 수가 없다: " + q);
+    assert.ok(/미팅 1건/.test(q), "함께 지워지는 미팅 수가 없다: " + q);
+    assert.ok(/지난 보고·대시보드 숫자가 줄어듭니다/.test(q),
+      "지난 보고 숫자가 바뀐다는 경고가 없다: " + q);
 
     assert.strictEqual(t.calls[1].body.confirm, true);
     assert.strictEqual(t.calls[1].body.label, LABEL);
@@ -92,6 +100,8 @@ function plan(over) {
       "지운 뒤 그 화면으로 돌아가지 않는다: " + t.win.location.href);
     assert.ok(!/sheet=/.test(t.win.location.href),
       "지운 탭을 다시 열려고 한다 — 없는 탭이다");
+    assert.ok(/snapshot-before-tab-delete/.test(decodeURIComponent(t.win.location.href)),
+      "지우기 직전 백업 파일 이름을 안 알려 준다");
   }
 
   // ── 2) ★ [취소]를 누르면 한 건도 안 나간다 ───────────────────────────────
@@ -107,21 +117,30 @@ function plan(over) {
     assert.strictEqual(t.btn.disabled, false, "취소한 뒤 단추가 잠긴 채로 남았다");
   }
 
-  // ── 3) 막는 사람이 있으면 누가 왜인지 말하고 멈춘다 ─────────────────────
+  // ── 3) 이력이 걸린 사람이 있어도 막지 않는다(사용자 결정) ────────────────
   {
     const t = run([{ d: { ok: false, confirmed: false,
-                          plan: plan({ blocked: [{ id: 11, name: "홍길동",
-                                                   firm: "가나다벤처스",
-                                                   why: "발송 기록 2건" }] }) } }]);
+                          plan: plan({ blocked: [] }) } }], { cancel: true });
+    t.btn.fire("click");
+    await tick(); await tick();
+    assert.strictEqual(t.alerted.length, 0, "이력이 있다고 막았다");
+    assert.strictEqual(t.asked.length, 1, "확인창을 안 띄웠다");
+  }
+
+  // ── 3-1) 나가는 중인 회차가 있으면 어느 회차인지 말하고 멈춘다 ───────────
+  {
+    const t = run([{ d: { ok: false, confirmed: false,
+                          plan: plan({ live_jobs: [{ job_id: 42, kind: "deal_intro",
+                                                     status: "running",
+                                                     items: 2 }] }) } }]);
     t.btn.fire("click");
     await tick(); await tick();
 
-    assert.strictEqual(t.calls.length, 1, "막혔는데 삭제가 나갔다");
+    assert.strictEqual(t.calls.length, 1, "나가는 중인데 삭제가 나갔다");
     assert.strictEqual(t.asked.length, 0, "막혔는데 확인창을 띄웠다");
     assert.strictEqual(t.alerted.length, 1, "왜 막혔는지 말하지 않는다");
-    assert.ok(/홍길동/.test(t.alerted[0]) && /발송 기록 2건/.test(t.alerted[0]),
-      "누가 무엇 때문에 막혔는지 안 적혀 있다: " + t.alerted[0]);
-    assert.ok(/이관/.test(t.alerted[0]), "다음 걸음을 안 알려 준다");
+    assert.ok(/#42/.test(t.alerted[0]) && /running/.test(t.alerted[0]),
+      "어느 회차 때문에 막혔는지 안 적혀 있다: " + t.alerted[0]);
   }
 
   // ── 4) 서버가 거절하면 그 말을 그대로 보여 준다(403 등) ───────────────────

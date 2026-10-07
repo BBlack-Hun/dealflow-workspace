@@ -9,8 +9,11 @@
    있는 사람 · 남는 사람 · 함께 사라지는 활동 이력.
 3. **이 탭에만 있는 사람은 지워지고, 다른 탭에도 있는 사람은 남는다**(이 탭
    이름만 빠진다). 이름이 비슷한 다른 탭(`… 2`)은 건드리지 않는다.
-4. **딸린 것이 담당자 줄 지우기와 같이 된다.** 활동 이력은 함께 사라지고,
-   발송 기록 등이 걸린 사람이 이 탭에만 있으면 통째로 막는다.
+4. **이 탭에만 있는 사람은 이력째 지운다**(사용자 결정 — 한 줄 지우기와
+   다르다). 활동 이력 · 발송 기록 · 후속 발송 · IR 요청 · 미팅이 남김없이
+   사라지고 고아가 남지 않는다. 다만 **지금 나가는 중인 회차**에 실린 사람이
+   있으면 막고 그 회차를 말한다.
+4-1. **지우기 직전에 DB 를 뜬다.** 못 뜨면 지우지 않는다.
 5. **탭이 다시 서지 않는다.** 설정 줄 · 달 칸 · 달 표시까지 치운다.
 6. **수정 로그에 누가 · 어느 탭 · 몇 명이 남는다.**
 
@@ -28,6 +31,17 @@ from .conftest import DEMO_PASSWORD
 TAB = "가나다벤처스 시험 탭"
 OTHER = "투자사 풀 시험"
 LOOKALIKE = "가나다벤처스 시험 탭 2"
+
+
+@pytest.fixture(autouse=True)
+def snap_dir(tmp_path, monkeypatch):
+    """지우기 직전 백업이 떨어질 자리 — 검사마다 빈 폴더."""
+    from app.services import backup
+
+    where = tmp_path / "snaps"
+    where.mkdir()
+    monkeypatch.setattr(backup, "backup_dir", lambda: where)
+    return where
 
 
 @pytest.fixture()
@@ -208,28 +222,175 @@ def test_이_탭에만_있는_사람은_지우고_겹친_사람은_탭_표시만
         "지운 탭이 화면에 다시 섰습니다")
 
 
-def test_이력이_걸린_사람이_이_탭에만_있으면_통째로_막는다(boss, db, rows):
-    from app.models import SendItem, SendJob, SheetOwner
+def _history(db, rows, job_status="done", item_status="sent"):
+    """가담당 · 나담당(이 탭에만)과 라담당(다른 탭)에 이력을 하나씩 건다.
 
-    job = SendJob(user_id=1, kind="deal_intro", status="done")
+    한 회차에 가담당 건과 라담당 건이 함께 실린다 — 회차는 남고 수만 줄어야 한다.
+    """
+    from app.models import IrRequest, Meeting, SendItem, SendJob, SendSequence
+
+    job = SendJob(user_id=1, kind="deal_intro", status=job_status, total=2, sent=2)
+    db.add(job)
+    db.flush()
+    db.add_all([
+        SendItem(job_id=job.id, contact_id=rows["가담당"].id,
+                 room_name="가담당 방", message="", status=item_status),
+        SendItem(job_id=job.id, contact_id=rows["라담당"].id,
+                 room_name="라담당 방", message="", status="sent"),
+        SendSequence(user_id=1, contact_id=rows["가담당"].id),
+        IrRequest(user_id=1, contact_id=rows["가담당"].id,
+                  company_name="시험기업", requested_at="2026-08-20"),
+        IrRequest(user_id=1, contact_id=rows["나담당"].id,
+                  company_name="시험기업", requested_at="2026-08-21"),
+        Meeting(user_id=1, contact_id=rows["나담당"].id,
+                scheduled_at="2026-08-28"),
+        Meeting(user_id=1, contact_id=rows["라담당"].id,
+                scheduled_at="2026-08-29"),
+    ])
+    db.commit()
+    return job
+
+
+#: 담당자 줄을 가리키는 표 전부 — 하나라도 빠지면 고아를 못 잡는다.
+LINKED_TABLES = ("contact_activities", "send_items", "send_sequences",
+                 "ir_requests", "meetings")
+
+
+def test_가리키는_표를_빠짐없이_지운다():
+    """`vc_contacts` 를 가리키는 표가 늘면 탭 지우기 목록에도 들어가야 한다."""
+    from app.db import Base
+    from app.routers.contacts import TAB_PURGE_LINKS
+
+    pointing = {t.name for t in Base.metadata.sorted_tables
+                for fk in t.foreign_keys if fk.column.table.name == "vc_contacts"}
+    purged = {model.__tablename__ for _k, model, _l in TAB_PURGE_LINKS}
+    assert pointing == purged == set(LINKED_TABLES), (
+        f"탭 지우기가 안 지우는 표가 있습니다: {pointing - purged}")
+
+
+def test_이력이_걸린_사람도_이력째_지우고_고아를_남기지_않는다(boss, db, rows):
+    from sqlalchemy import text
+
+    from app.models import SendJob
+
+    job = _history(db, rows)
+
+    plan = _delete(boss).json()["plan"]
+    assert plan["blocked"] == [] and plan["live_jobs"] == [], "이력 때문에 막았습니다"
+    assert (plan["only"], plan["shared"]) == (2, 1)
+    assert (plan["activities"], plan["sends"], plan["sequences"],
+            plan["ir_requests"], plan["meetings"]) == (2, 1, 1, 2, 1), plan
+
+    r = _delete(boss, confirm=True)
+    assert r.status_code == 200, r.text
+    assert _names(db) == ["다담당", "라담당", "마담당"]
+
+    # 고아가 없다 — 가리키는 표마다 없는 사람을 가리키는 줄이 0.
+    for table in LINKED_TABLES:
+        n = db.execute(text(
+            f"SELECT COUNT(*) FROM {table} WHERE contact_id IS NOT NULL "
+            "AND contact_id NOT IN (SELECT id FROM vc_contacts)")).scalar()
+        assert n == 0, f"{table} 에 고아 {n}줄이 남았습니다"
+    assert db.execute(text("PRAGMA foreign_key_check")).all() == []
+
+    # 남은 사람 것은 그대로.
+    keep = rows["라담당"].id
+    for table, want in (("send_items", 1), ("meetings", 1)):
+        n = db.execute(text(f"SELECT COUNT(*) FROM {table} WHERE contact_id=:c"),
+                       {"c": keep}).scalar()
+        assert n == want, f"남은 사람의 {table} 까지 지웠습니다"
+
+    # 회차는 남고 수만 남은 건으로 맞춘다.
+    db.expire_all()
+    left = db.get(SendJob, job.id)
+    assert left is not None and left.status == "done"
+    assert (left.total, left.sent, left.failed) == (1, 1, 0)
+
+
+def test_비어_버린_대기_회차는_취소로_둔다(boss, db, rows):
+    from app.models import SendItem, SendJob
+
+    job = SendJob(user_id=1, kind="deal_intro", status="draft", total=1,
+                  scheduled_at="2026-12-01T09:00:00+09:00")
     db.add(job)
     db.flush()
     db.add(SendItem(job_id=job.id, contact_id=rows["가담당"].id,
-                    room_name="가담당 방", message="", status="sent"))
+                    room_name="가담당 방", message="", status="pending"))
     db.commit()
 
-    plan = _delete(boss).json()["plan"]
-    assert [b["name"] for b in plan["blocked"]] == ["가담당"]
-    assert "발송 기록 1건" in plan["blocked"][0]["why"]
+    r = _delete(boss, confirm=True)
+    assert r.status_code == 200, r.text
+    assert r.json()["canceled_jobs"] == 1
+    db.expire_all()
+    left = db.get(SendJob, job.id)
+    assert (left.status, left.total) == ("canceled", 0), (
+        "빈 예약 회차가 그대로 남아 예약 시각에 풀립니다")
+
+
+@pytest.mark.parametrize("job_status,item_status", [
+    ("queued", "pending"), ("running", "pending"), ("paused", "pending"),
+    ("done", "sending"),
+])
+def test_나가는_중인_회차에_실린_사람이_있으면_막는다(boss, db, rows, snap_dir,
+                                         job_status, item_status):
+    from app.models import SheetOwner
+
+    job = _history(db, rows, job_status=job_status, item_status=item_status)
+
+    live = _delete(boss).json()["plan"]["live_jobs"]
+    assert [j["job_id"] for j in live] == [job.id]
 
     r = _delete(boss, confirm=True)
-    assert r.status_code == 409, "발송 이력이 걸린 사람을 지웠습니다"
+    assert r.status_code == 409, "나가는 중인 회차의 사람을 지웠습니다"
+    assert f"#{job.id}" in r.json()["detail"], "어느 회차인지 말하지 않습니다"
     assert len(_names(db)) == 5, "막았는데 일부가 지워졌습니다"
+    assert db.query(SheetOwner).filter(SheetOwner.label == TAB).count() == 1
+    assert list(snap_dir.iterdir()) == [], "막았는데 백업을 떴습니다"
+
+
+def test_지우기_직전에_백업을_뜨고_이름을_알려_준다(boss, db, rows, snap_dir):
+    import sqlite3
+
+    _history(db, rows)
+    r = _delete(boss, confirm=True)
+    assert r.status_code == 200, r.text
+    name = r.json()["snapshot"]
+    assert name.startswith("snapshot-before-tab-delete-") and name.endswith(".db")
+    files = [p.name for p in snap_dir.iterdir()]
+    assert files == [name], files
+
+    # 지우기 **전** 상태가 담겨 있다 — 다섯 사람 · 지운 이력까지.
+    conn = sqlite3.connect(snap_dir / name)
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM vc_contacts").fetchone()[0] == 5
+        assert conn.execute("SELECT COUNT(*) FROM ir_requests").fetchone()[0] == 2
+    finally:
+        conn.close()
+
+    from app.services import backup
+
+    assert backup._kind_of(name) == "탭 삭제 직전"
+
+
+def test_백업을_못_뜨면_지우지_않는다(boss, db, rows, monkeypatch):
+    from app.models import SheetOwner
+    from app.services import backup
+
+    _history(db, rows)
+
+    def broken(dst, src=None, timeout=30.0):
+        raise backup.BackupError("디스크가 가득 찼습니다")
+
+    monkeypatch.setattr(backup, "snapshot", broken)
+    r = _delete(boss, confirm=True)
+    assert r.status_code == 500
+    assert "백업" in r.json()["detail"]
+    assert len(_names(db)) == 5, "백업 없이 지웠습니다"
     assert db.query(SheetOwner).filter(SheetOwner.label == TAB).count() == 1
 
 
-def test_다른_탭에도_있는_사람의_이력은_막지_않는다(boss, db, rows):
-    """겹친 사람은 지우지 않으므로 그 사람의 이력은 탭 지우기를 막지 않는다."""
+def test_다른_탭에도_있는_사람의_이력은_그대로_둔다(boss, db, rows):
+    """겹친 사람은 지우지 않으므로 그 사람의 이력도 세지 않고 지우지 않는다."""
     from app.models import SendItem, SendJob
 
     job = SendJob(user_id=1, kind="deal_intro", status="done")
@@ -239,9 +400,11 @@ def test_다른_탭에도_있는_사람의_이력은_막지_않는다(boss, db, 
                     room_name="다담당 방", message="", status="sent"))
     db.commit()
 
-    assert _delete(boss).json()["plan"]["blocked"] == []
+    assert _delete(boss).json()["plan"]["sends"] == 0, (
+        "남는 사람의 발송 기록까지 지울 것으로 셉니다")
     assert _delete(boss, confirm=True).status_code == 200
     assert "다담당" in _names(db)
+    assert db.query(SendItem).count() == 1, "남는 사람의 발송 기록을 지웠습니다"
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -251,7 +414,9 @@ def test_다른_탭에도_있는_사람의_이력은_막지_않는다(boss, db, 
 def test_수정_로그에_누가_어느_탭_몇_명이_남는다(boss, db, rows, admin):
     from app.models import EditLog
 
-    assert _delete(boss, confirm=True).status_code == 200
+    _history(db, rows)
+    r = _delete(boss, confirm=True)
+    assert r.status_code == 200
     db.expire_all()
     logs = db.query(EditLog).filter(EditLog.table_name == "sheet_owners").all()
     assert len(logs) == 1, f"탭 지우기가 한 줄로 남지 않았습니다: {len(logs)}"
@@ -265,6 +430,11 @@ def test_수정_로그에_누가_어느_탭_몇_명이_남는다(boss, db, rows,
     assert got["tab_kept_contacts"] == 1
     assert got["tab_deleted_activities"] == 2
     assert got["tab_deleted_columns"] == 1
+    assert got["tab_deleted_sends"] == 1
+    assert got["tab_deleted_sequences"] == 1
+    assert got["tab_deleted_ir_requests"] == 2
+    assert got["tab_deleted_meetings"] == 1
+    assert got["tab_snapshot"] == r.json()["snapshot"]
 
     # 사람은 줄마다 따로 남는다(담당자 줄 지우기와 같다).
     gone = db.query(EditLog).filter(EditLog.table_name == "vc_contacts",
