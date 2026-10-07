@@ -803,6 +803,79 @@ def rename(db: Session, before: str, after: str) -> Optional[SheetOwner]:
     return row
 
 
+# ── 명단(탭) 지우기 ─────────────────────────────────────────────────────────
+#
+# 이름을 바꿀 때와 같은 네 곳(위 「명단 이름 바꾸기」)을 **같이 치운다.** 설정
+# 줄만 지우면 사람들의 `source_sheet` 에 이름이 남아 **탭이 그대로 다시 선다**
+# — 탭은 줄에 적힌 이름에서 세워지기 때문이다(`sheet_rows`). 달 칸만 남으면
+# 같은 이름으로 탭을 다시 만들 때 옛 칸이 되살아난다(`label_in_use` 도 그 칸을
+# 보고 그 이름을 못 쓰게 막는다).
+#
+# 사람은 둘로 갈린다(`tab_members`).
+#
+#   · **이 탭에만 있는 사람** — 함께 지운다. 탭을 지우고 그 사람만 남기면 어느
+#     탭에도 안 뜨는 줄(이름 없는 `직접 추가`)이 된다.
+#   · **다른 탭에도 있는 사람** — 남긴다. 이 탭 이름만 `source_sheet` 에서
+#     조각 단위로 뺀다(`rename` 과 같은 방식 — 통째로 고치면 다른 명단 이름까지
+#     뭉개진다).
+#
+# 사람을 지우는 판정(활동 이력은 함께 · 발송 기록 등이 걸리면 막는다)은 **여기
+# 적지 않는다.** 담당자 줄 지우기와 같은 자리(`routers/contacts.py` 의
+# `CASCADING_LINKS` · `_blocking_reasons`)를 지난다 — 지우는 길이 셋이 되어도
+# 판정은 하나다.
+#
+# 개인 탭은 계정을 만들거나 권한을 바꿀 때 **없으면 다시 선다**
+# (`ensure_member_tabs`). 지운 탭이 그 사람의 그 화면 유일한 탭이었다면, 다음에
+# 그 사람의 권한을 바꾸거나 `scripts/fill_member_tabs.py` 를 돌릴 때 **빈 탭이
+# 새 이름으로 하나 선다.** 화면을 열 때마다 서는 것은 아니다 — 그 두 자리
+# 말고는 부르는 곳이 없다.
+
+
+def tab_members(db: Session, label: str):
+    """`(이 탭에만 있는 사람, 다른 탭에도 있는 사람)`. 감춘 줄도 센다.
+
+    감춘 줄도 그 탭의 줄이다(`sheet_rows` 의 `hidden_rows`) — 빼고 세면 탭을
+    지운 뒤에 감춘 줄만 이름이 남아 탭이 되살아난다.
+    """
+    only: List[VcContact] = []
+    shared: List[VcContact] = []
+    for contact in db.execute(select(VcContact)).scalars():
+        parts = labels_of(contact.source_sheet)
+        if label not in parts:
+            continue
+        if all(p == label for p in parts):
+            only.append(contact)
+        else:
+            shared.append(contact)
+    return only, shared
+
+
+def drop_label(db: Session, label: str, shared: List[VcContact]) -> int:
+    """탭 하나를 지운다 — **사람은 지우지 않는다.** 지운 달 칸 수를 돌려준다.
+
+    `shared`(다른 탭에도 있는 사람)에서는 이 이름만 빼고, 달 칸 · 달 표시 ·
+    설정 줄을 지운다. 이 탭에만 있던 사람은 부르는 쪽이 먼저 지운다(위 설명).
+
+    설정 줄과 달 칸은 **한 번에** 지운다(줄마다 `db.delete` 하지 않는다) —
+    부르는 쪽이 탭 하나에 일어난 일을 수정 로그에 한 줄로 남긴다
+    (`edit_log.log_tab_delete`). 달 칸 열몇 개가 줄마다 따로 남으면 정작 탭을
+    지웠다는 한 줄이 묻힌다.
+    """
+    for contact in shared:
+        parts = [p for p in labels_of(contact.source_sheet) if p != label]
+        contact.source_sheet = ",".join(parts)
+    columns = db.query(ContactColumn).filter(
+        ContactColumn.sheet == label).delete(synchronize_session=False)
+    # 달 표시는 **투자사 관리 현황 몫만** 지운다 — `rename` 과 같은 이유다.
+    db.query(MonthlyColumnRun).filter(
+        MonthlyColumnRun.target == CONTACT,
+        MonthlyColumnRun.scope == label).delete(synchronize_session=False)
+    db.query(SheetOwner).filter(
+        SheetOwner.label == label).delete(synchronize_session=False)
+    db.flush()
+    return int(columns or 0)
+
+
 def settings_map(db: Session) -> Dict[str, SheetOwner]:
     """{명단 이름: 그 명단의 설정 줄}. 배치·숨김을 한 번에 읽으려고."""
     return {row.label: row
@@ -1148,6 +1221,9 @@ def sheet_rows(db: Session, contacts: List[VcContact],
             # 사람이 정한 값인가, 할당 여부에서 따라온 기본값인가. 화면이
             # "정해 두지 않았습니다" 를 구분해 말할 수 있어야 한다.
             "deal_list_set": bool(row is not None and row.is_deal_list is not None),
+            # 명단이 아니라 **명단 없는 줄**을 모은 자리인가(`labels_of`).
+            # 그 이름은 줄에 적혀 있지 않아 지울 수 없다 — [탭 삭제] 를 안 세운다.
+            "is_manual": label == MANUAL_SHEET,
         })
     return out
 

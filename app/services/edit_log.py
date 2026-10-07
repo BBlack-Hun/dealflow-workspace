@@ -461,6 +461,12 @@ FIELD_LABELS = {
     "import_created": "새로 만든 줄", "import_filled": "빈 칸을 채움",
     "import_overwritten": "덮어씀", "import_kept": "다른데 안 덮음",
     "import_activities": "활동 줄 추가", "import_stale": "시트에 없어진 활동 줄",
+    # 명단(탭) 지우기 한 번(`log_tab_delete`). 위 한 판과 같은 이유로 부르는
+    # 쪽이 세어서 넘긴다.
+    "tab_deleted_contacts": "함께 지운 투자사",
+    "tab_kept_contacts": "다른 탭에 남은 투자사(탭 표시만 뺌)",
+    "tab_deleted_activities": "함께 지운 활동 이력",
+    "tab_deleted_columns": "함께 지운 달 칸",
 }
 
 
@@ -829,6 +835,60 @@ def log_import(db, *, actor_user_id: int, sheet_label: str,
         "row_id": int(sheet_row_id or 0),
         "screen": _screen("/contacts"),
         "row_label": _trim(sheet_label) or "",
+        "method": method,
+        "path": path,
+        "changes_json": json.dumps(changes, ensure_ascii=False),
+    }])
+
+
+#: 탭 지우기 한 번에 실을 셈들. 차례가 곧 화면에 보이는 차례다.
+TAB_DELETE_COUNTS = ("tab_deleted_contacts", "tab_kept_contacts",
+                     "tab_deleted_activities", "tab_deleted_columns")
+
+
+def log_tab_delete(db, *, actor_user_id: int, label: str,
+                   sheet_row_id: int = 0, owner_user_id: Optional[int] = None,
+                   path: str = "", method: str = "", href: str = "/contacts",
+                   counts: Optional[Dict[str, int]] = None) -> None:
+    """명단(탭) 하나를 지운 일을 **한 줄로** 남긴다 — 누가 · 어느 탭 · 몇 명.
+
+    `log_import` 와 같은 자리 · 같은 방식이다. 탭 하나를 지우면 설정 줄 하나에
+    사람 여럿 · 활동 이력 · 달 칸이 함께 움직이는데, 그 건수는 어느 줄에도 안
+    적혀 있다. 사람은 줄마다 따로 남는다(`db.delete` → `_row_scope` 의 삭제)
+    — 여기는 **그 일 전체**를 한 줄로 묶어 "그 탭에서 몇 명이 사라졌나" 를
+    물을 자리다.
+
+    값은 `before` 에 담는다(`also` 와 같은 이유 — 로그 화면은 `삭제` 줄에서
+    `before` 만 보여 준다). 0 인 것은 싣지 않는다.
+    """
+    from ..models import EditLog
+
+    counts = counts or {}
+    if owner_user_id is None:
+        scope = SCOPE_SHARED
+    elif owner_user_id == actor_user_id:
+        scope = SCOPE_MINE
+    else:
+        scope = SCOPE_OTHERS
+
+    changes = [{"field": "label", "before": _trim(label), "after": None}]
+    for name in TAB_DELETE_COUNTS:
+        value = counts.get(name) or 0
+        if value:
+            changes.append({"field": name, "before": value, "after": None})
+
+    db.execute(EditLog.__table__.insert(), [{
+        "at": now_iso(),
+        "actor_user_id": actor_user_id,
+        "target_user_id": owner_user_id,
+        "scope": scope,
+        "action": ACTION_DELETE,
+        "table_name": "sheet_owners",
+        "row_id": int(sheet_row_id or 0),
+        # 탭이 사는 화면(투자사 관리 현황 · 스타트업). 부르는 쪽이 탭을
+        # 지우기 **전에** 읽어 넘긴다 — 지운 뒤에는 배치가 없어 알 수 없다.
+        "screen": _screen(href),
+        "row_label": _trim(label) or "",
         "method": method,
         "path": path,
         "changes_json": json.dumps(changes, ensure_ascii=False),

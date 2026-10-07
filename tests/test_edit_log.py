@@ -583,6 +583,9 @@ WRITE_ROUTES = {
     # 감춘 줄을 골라 한꺼번에 지운다. **줄마다 한 줄씩** 남는다
     # (`confirm` 없이 부르면 세어 보기만 하고 아무 것도 안 지운다).
     ("POST", "/api/contacts/bulk-delete"): WATCHED,
+    # 관리자의 [탭 삭제]. 탭 하나가 **한 줄**(`edit_log.log_tab_delete` — 누가 ·
+    # 어느 탭 · 몇 명)로 남고, 함께 지운 사람은 줄마다 따로 남는다.
+    ("POST", "/api/contacts/sheets/delete"): WATCHED,
     ("POST", "/ref-sheets/new"): WATCHED,
     ("PATCH", "/api/ref-sheets/{sheet_id}/cell"): WATCHED,
     ("PATCH", "/api/ref-sheets/{sheet_id}/column"): WATCHED,
@@ -741,8 +744,9 @@ def test_the_six_shared_routers_still_hold_the_forty_nine_paths(portal):
     for (_m, _p), mod in _write_routes(portal["app"]).items():
         if mod in SHARED_ROUTERS:
             counted[mod] = counted.get(mod, 0) + 1
-    # contacts 는 명단 라우터 15 + 참고 자료 6 이다(참고 자료는 주소에 접두가
-    # 없어 파일만 같이 쓴다). 15번째가 감춘 줄 한꺼번에 지우기(`/bulk-delete`)다.
+    # contacts 는 명단 라우터 16 + 참고 자료 6 이다(참고 자료는 주소에 접두가
+    # 없어 파일만 같이 쓴다). 15번째가 감춘 줄 한꺼번에 지우기(`/bulk-delete`),
+    # 16번째가 관리자의 탭 지우기(`/sheets/delete`)다.
     # ir 의 12번째는 미팅 요청을 손으로 보냈다고 적는 자리다.
     #
     # **`consulting` 의 아홉 번째는 주소가 `/api/contacts/from-consulting` 이다**
@@ -753,7 +757,7 @@ def test_the_six_shared_routers_still_hold_the_forty_nine_paths(portal):
     # [삭제] 가 이력이 붙은 기업을 막는 것을 무시하는 길이라, 길을 따로 냈다 —
     # 같은 주소에 깃발 하나로 붙이면 잘못 눌렀을 때 그대로 지워진다.
     assert counted == {"companies": 8, "ir": 12, "consulting": 9,
-                       "templates_crud": 5, "sourcing": 4, "contacts": 21}
+                       "templates_crud": 5, "sourcing": 4, "contacts": 22}
 
 
 def test_every_table_is_either_watched_or_explained(db):
