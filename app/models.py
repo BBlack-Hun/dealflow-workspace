@@ -2079,6 +2079,18 @@ class AutoSendSetting(TimestampMixin, Base):
     #: 깨어나므로 회당 상한만 두면 하루 총량이 잡히지 않는다
     #: (까닭은 `auto_send.run_once`).
     max_per_day: Mapped[int] = mapped_column(Integer, default=10)
+    #: **매월 자동 예약** — 스타트업 월간 발송(`startup_ir`) 줄만 쓴다.
+    #:
+    #: 켜 두면 매월 30일(30일이 없는 2월은 말일) 아침에 그 달 대기 목록이
+    #: 저절로 서고, `monthly_time` 에 나가도록 예약이 걸린다
+    #: (`services/startup_monthly.py`). 세워진 목록은 진행 화면·오늘 할 일에
+    #: 서 있어 그 시각 전에 보고 빼거나 취소할 수 있다. 기본은 꺼짐.
+    monthly_auto: Mapped[int] = mapped_column(Integer, default=0,
+                                              server_default="0")
+    #: 그날 몇 시에 나가는가(`HH:MM`, 지역 시각). 고를 수 있는 폭은 예약과
+    #: 같다(`scheduled_send.EARLIEST_HOUR`~`LATEST_HOUR`).
+    monthly_time: Mapped[str] = mapped_column(String, default="17:00",
+                                              server_default="17:00")
 
 
 class AutoSendRun(TimestampMixin, Base):

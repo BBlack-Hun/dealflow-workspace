@@ -7,7 +7,8 @@ from fastapi.staticfiles import StaticFiles
 
 from . import config, deps
 from .deps import NoConsulting, NotAdmin, NotAuthenticated
-from .services import auto_send, backup, edit_log, followup_sms, scheduled_send
+from .services import (auto_send, backup, edit_log, followup_sms, scheduled_send,
+                       startup_monthly)
 from .routers import auth as auth_router
 from .routers import templates_crud
 from .routers import setup as setup_router
@@ -48,6 +49,11 @@ def create_app() -> FastAPI:
     # 않은 상태가 생긴다 — 예약해 놓고 잊는 것이 이 기능에서 가장 흔한 사고인데,
     # 그 위에 '켜 두는 것을 잊는' 사고를 하나 더 얹는 셈이다.
     scheduled_send.start_scheduler()
+
+    # 스타트업 월간 발송의 **매월 자동 예약**. 켜 둔 달의 30일(2월은 말일)
+    # 아침에 대기 목록을 세우고 정한 시각에 나가도록 예약만 건다 — 푸는 것은
+    # 바로 위 예약 발송이다(`services/startup_monthly.py`). 꺼 두면 아무 일도 없다.
+    startup_monthly.start_scheduler()
 
     # 수정 로그의 세션 이벤트를 건다. 여기서 한 번 걸면 **앞으로 생기는
     # 라우터까지** 저절로 지난다 — 라우터마다 로그 호출을 붙이는 방식이었다면

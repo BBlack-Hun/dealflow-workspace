@@ -30,6 +30,27 @@
     ✋ 이 화면은 <b>대기 목록을 세우는 데까지</b>입니다 — 누른 뒤 진행 화면에서
     <b>[발송 시작]</b> 을 눌러야 실제로 나갑니다.
   </p>
+  {# 매월 자동 예약 — 켜고 시각을 바꾸는 자리는 팀 현황이다(관리자).
+     문장과 날짜는 `services/startup_monthly.status` 가 정한다. #}
+  {% if monthly.on %}
+  <p class="hint ok" data-testid="startup-monthly-next">
+    🗓 매월 자동 발송 켜짐 — 다음 자동 발송: <b>{{ monthly.next_label }}</b>
+    · 지금 기준 <b>{{ monthly.next_count }}곳</b>.
+    그날 아침 목록이 서고 그 시각에 나갑니다(그 전에 진행 화면에서 빼거나 취소할 수 있습니다).
+    <b>그 시각에 이 PC 의 발송 프로그램이 켜져 있어야 합니다.</b>
+    {% if monthly.this_month and monthly.this_month.job_id %}
+    <a class="linkbtn" href="/jobs/{{ monthly.this_month.job_id }}">이번 달 회차 보기</a>
+    {% endif %}
+  </p>
+  {% if monthly.this_month and monthly.this_month.status in ('empty', 'failed') %}
+  <p class="hint warn">⚠️ 이번 달 자동 발송을 세우지 못했습니다 — {{ monthly.this_month.error }}</p>
+  {% endif %}
+  {% else %}
+  <p class="hint" data-testid="startup-monthly-off">
+    매월 자동 발송은 꺼져 있습니다 — 팀 현황의 {{ label }} 판에서 켜면
+    매월 {{ monthly.day }}일(2월은 말일) {{ monthly.time }}에 저절로 예약됩니다.
+  </p>
+  {% endif %}
 </header>
 
 {#

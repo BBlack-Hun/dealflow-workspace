@@ -1097,10 +1097,16 @@ def save_auto_send(
 def save_startup_send(
     enabled: str = Form(""),
     user_id: int = Form(0),
+    monthly: str = Form(""),
+    monthly_time: str = Form(""),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """**스타트업 월간 발송을 누가 쓸 수 있는가** — 그 한 가지를 정하는 자리.
+    """**스타트업 월간 발송을 누가 쓸 수 있는가** — 그리고 **매월 자동 예약**.
+
+    `monthly`/`monthly_time` 은 매월 30일(2월은 말일) 자동 예약을 켜고 시각을
+    정한다(`services/startup_monthly.py`). 폼에 그 칸이 없으면(옛 화면)
+    시각은 그대로 두고 자동은 끈다 — 모르는 채로 켜 두지 않는다.
 
     ## 왜 팀 현황인가
 
@@ -1134,16 +1140,25 @@ def save_startup_send(
         return RedirectResponse(
             "/team?msg=이+메뉴를+켜려면+보내는+계정을+고르세요", status_code=303)
 
-    setting = startup_send.save(db, enabled=want_on,
-                                user_id=member.id if member else None)
+    from ..services import startup_monthly
+
+    try:
+        setting = startup_send.save(db, enabled=want_on,
+                                    user_id=member.id if member else None,
+                                    monthly=monthly == "on",
+                                    monthly_time=(monthly_time.strip() or None))
+    except ValueError as exc:
+        return RedirectResponse(f"/team?msg={quote(str(exc))}", status_code=303)
     label = startup_send.LABEL
     if not startup_send.is_on(setting):
         return RedirectResponse(
             f"/team?msg={quote(label)}+메뉴를+껐습니다+—+아무+계정에도+보이지+않습니다",
             status_code=303)
-    return RedirectResponse(
-        f"/team?msg={quote(label)}+메뉴+켜짐+—+{quote(member.name)}+계정에만+보입니다",
-        status_code=303)
+    note = f"{quote(label)}+메뉴+켜짐+—+{quote(member.name)}+계정에만+보입니다"
+    monthly_state = startup_monthly.status(db)
+    if monthly_state["on"]:
+        note += quote(f" · 매월 자동 발송 켜짐 — 다음 {monthly_state['next_label']}")
+    return RedirectResponse(f"/team?msg={note}", status_code=303)
 
 
 @router.post("/team/members/{member_id}/reset-password", include_in_schema=False)

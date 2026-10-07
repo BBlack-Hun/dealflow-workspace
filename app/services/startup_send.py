@@ -35,7 +35,7 @@
 `services/auto_send.py` 의 `load`/`save` 를 그대로 부른다. 같은 표를 두 벌의
 코드가 만지기 시작하면 한쪽만 고쳐지는 날이 온다.
 
-### 다만 **때맞춰 저절로 서지는 않는다**
+### `auto_send` 의 30분 실에는 넣지 않는다
 
 `auto_send.KINDS` 에 이 종류를 넣지 않는다. 넣으면 30분마다 깨어나는 실이 이
 종류의 목록도 세우기 시작하는데, 이것은 **달마다 한 번 사람이 보는 일**이다 —
@@ -45,6 +45,13 @@
 
 **켜져 있다는 것은 "그 계정이 이 메뉴를 쓸 수 있다" 는 뜻일 뿐이고, 나가는 것은
 사람이 진행 화면에서 [발송 시작] 을 누른 뒤다.**
+
+### 매월 자동 예약은 따로 켠다 (`services/startup_monthly.py`)
+
+같은 줄의 `monthly_auto` 를 켜 두면 **매월 30일(2월은 말일) 아침**에 그 달
+대기 목록이 [N곳 대기 목록 만들기] 와 같은 길로 서고, 정한 시각(기본 17:00)에
+나가도록 예약이 걸린다. 사람이 보는 자리는 그대로 남는다 — 목록은 그 시각까지
+진행 화면과 오늘 할 일에 서 있고, 거기서 빼거나 취소할 수 있다.
 """
 from __future__ import annotations
 
@@ -109,17 +116,34 @@ def may_send(db: Session, user: Optional[User]) -> bool:
     return is_on(row) and row.user_id == user.id
 
 
-def save(db: Session, *, enabled: bool, user_id: Optional[int]) -> AutoSendSetting:
+def save(db: Session, *, enabled: bool, user_id: Optional[int],
+         monthly: Optional[bool] = None,
+         monthly_time: Optional[str] = None) -> AutoSendSetting:
     """설정을 저장한다. **쓰는 자리도 `auto_send.save` 하나다.**
 
     시각·하루 상한은 이 종류가 쓰지 않는다(머리말 참고). 그래도 그 함수를
     부르는 것은, 같은 표를 만지는 코드를 둘로 나누지 않기 위해서다 — 값은
     표의 기본값 그대로 들어간다.
+
+    매월 자동 예약 두 칸(`monthly`, `monthly_time`)은 **넘긴 것만** 바꾼다 —
+    `None` 이면 그대로 둔다. 시각은 `startup_monthly.parse_time` 이 거르고,
+    못 쓰는 값이면 `ValueError` 다(아무것도 저장하지 않는다).
     """
-    return auto_send.save(db, KIND, enabled=enabled, user_id=user_id,
-                          from_hour=auto_send.DEFAULT_FROM_HOUR,
-                          until_hour=auto_send.DEFAULT_UNTIL_HOUR,
-                          max_per_day=auto_send.DEFAULT_MAX_PER_DAY)
+    from . import startup_monthly
+
+    clean_time = (startup_monthly.parse_time(monthly_time)
+                  if monthly_time is not None else None)
+    row = auto_send.save(db, KIND, enabled=enabled, user_id=user_id,
+                         from_hour=auto_send.DEFAULT_FROM_HOUR,
+                         until_hour=auto_send.DEFAULT_UNTIL_HOUR,
+                         max_per_day=auto_send.DEFAULT_MAX_PER_DAY)
+    if monthly is not None:
+        row.monthly_auto = 1 if monthly else 0
+    if clean_time is not None:
+        row.monthly_time = clean_time
+    if monthly is not None or clean_time is not None:
+        db.commit()
+    return row
 
 
 def status(db: Session) -> dict:
@@ -128,6 +152,8 @@ def status(db: Session) -> dict:
     화면은 판정하지 않고 이 값을 읽는다. 같은 판단이 두 곳에 적히면 표에는
     `켜짐` 이라고 떠 있는데 메뉴는 안 보이는 상태가 생긴다.
     """
+    from . import startup_monthly
+
     row = setting(db)
     sender = db.get(User, row.user_id) if row and row.user_id else None
     return {
@@ -137,6 +163,8 @@ def status(db: Session) -> dict:
         "enabled": bool(row and row.enabled),
         "sender_id": row.user_id if row else None,
         "sender": sender.name if sender else "",
+        # 매월 자동 예약 — 다음이 언제인지까지 서비스가 정한다(화면은 읽기만).
+        "monthly": startup_monthly.status(db),
     }
 
 
