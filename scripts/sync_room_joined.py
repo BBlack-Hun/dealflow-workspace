@@ -30,6 +30,14 @@
 `확인됨` 이 아닌 줄은 건드리지 않는다. 참여여부가 `O` 인데 방 확인이 안 된 줄은
 규칙 3 그대로다 — 방이 있다는 것은 PC 발송기만 확인할 수 있다.
 
+## 두 화면 — 투자사 관리 현황 · 스타트업
+
+좌측 [스타트업] 화면의 줄도 **같은 표**(`vc_contacts`)다. 그 화면의 `카톡 연결
+여부` 가 곧 `kakao_joined` 이고(`contact_columns.STARTUP_LAYOUT`), 규칙도 같은
+`room_joined` 를 지난다. 그래서 따로 고치는 길은 없고, 요약만 **화면별로**
+갈라 찍는다. 어느 화면 줄인지는 명단의 배치가 정한다(`contact_columns.page_of`
+— 화면이 명단을 고르는 그 판정이다).
+
 ## 찍는 것
 
 **수만 찍는다.** 이 표에는 실명이 있다. 어느 줄인지 봐야 하면 `--ids` 로 줄
@@ -46,6 +54,7 @@ import os
 import sqlite3
 import sys
 from collections import Counter
+from dataclasses import dataclass
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -66,6 +75,21 @@ LABELS = {
     OTHER: "다른 말 — 안 바꿈",
 }
 ORDER = (FILL, CONFLICT, STAGE_OUT, OK, OTHER)
+
+#: 화면 이름 — 요약을 가르는 말. 열쇠는 `contact_columns.PAGE_*` 다.
+SCREENS = {"contacts": "투자사 관리 현황", "startup": "스타트업"}
+
+
+@dataclass(frozen=True)
+class Row:
+    """`확인됨` 인 줄 하나. **이름은 담지 않는다** — 찍을 일이 없다."""
+
+    id: int
+    kind: str
+    stage: str
+    hidden: int
+    joined: object
+    screen: str
 
 
 def open_db(path: Path, write: bool) -> sqlite3.Connection:
@@ -93,43 +117,90 @@ def classify(joined, stage) -> str:
     return STAGE_OUT
 
 
+def screens_by_label(con: sqlite3.Connection) -> dict:
+    """명단 이름 → 그 명단이 서는 화면. 판정은 `contact_columns.page_of` 하나다."""
+    from app.services import contact_columns
+
+    return {label: contact_columns.page_of(layout)
+            for label, layout in con.execute("SELECT label, layout FROM sheet_owners")}
+
+
+def screen_of(source_sheet, screens: dict) -> str:
+    """줄 하나가 서는 화면. 명단 하나라도 스타트업 화면이면 스타트업이다."""
+    from app.services import contact_columns, sheet_owner
+
+    pages = {screens.get(label, contact_columns.PAGE_CONTACTS)
+             for label in sheet_owner.labels_of(source_sheet)}
+    if contact_columns.PAGE_STARTUP in pages:
+        return contact_columns.PAGE_STARTUP
+    return contact_columns.PAGE_CONTACTS
+
+
 def plan(con: sqlite3.Connection) -> list:
-    """`확인됨` 인 줄마다 `(id, 갈래, 연결 단계, 감춤, 참여여부)`. 읽기만 한다."""
+    """`확인됨` 인 줄마다 `Row`. 읽기만 한다."""
     from app.services import room_joined
 
+    screens = screens_by_label(con)
     out = []
-    for row_id, joined, stage, hidden in con.execute(
-            f"SELECT id, kakao_joined, connect_stage, COALESCE(is_hidden, 0) "
-            f"FROM {TABLE} WHERE room_verified = ? ORDER BY id",
+    for row_id, joined, stage, hidden, sheet in con.execute(
+            f"SELECT id, kakao_joined, connect_stage, COALESCE(is_hidden, 0), "
+            f"source_sheet FROM {TABLE} WHERE room_verified = ? ORDER BY id",
             (room_joined.VERIFIED,)):
-        out.append((row_id, classify(joined, stage), stage or "", int(hidden or 0),
-                    joined))
+        out.append(Row(row_id, classify(joined, stage), stage or "",
+                       int(hidden or 0), joined, screen_of(sheet, screens)))
     return out
 
 
 def summarize(rows: list) -> Counter:
     counts: Counter = Counter()
-    for _row_id, kind, stage, hidden, _joined in rows:
-        counts[kind] += 1
-        counts[(kind, "hidden" if hidden else "shown")] += 1
-        counts[(kind, stage)] += 1
+    for row in rows:
+        counts[row.kind] += 1
+        counts[(row.kind, "hidden" if row.hidden else "shown")] += 1
+        counts[(row.kind, row.stage)] += 1
+        counts[(row.kind, row.screen)] += 1
+        counts[("screen", row.screen)] += 1
     return counts
 
 
 def print_summary(rows: list, show_ids: bool) -> None:
     counts = summarize(rows)
-    print(f"`확인됨` 인 줄 {len(rows)}줄")
+    by_screen = " · ".join(f"{name} {counts[('screen', key)]}"
+                           for key, name in SCREENS.items())
+    print(f"`확인됨` 인 줄 {len(rows)}줄  ({by_screen})")
     for kind in ORDER:
         if not counts[kind]:
             continue
-        stages = sorted({stage for _i, k, stage, _h, _j in rows if k == kind})
+        stages = sorted({row.stage for row in rows if row.kind == kind})
         by_stage = " · ".join(f"{s or '(없음)'} {counts[(kind, s)]}" for s in stages)
+        screens = " · ".join(f"{name} {counts[(kind, key)]}"
+                             for key, name in SCREENS.items())
         print(f"   {LABELS[kind]:<40} {counts[kind]:>4}줄  "
               f"(보이는 줄 {counts[(kind, 'shown')]} · 감춘 줄 {counts[(kind, 'hidden')]}"
-              f" | 단계: {by_stage})")
+              f" | 단계: {by_stage} | 화면: {screens})")
         if show_ids and kind != OK:
-            ids = [str(i) for i, k, _s, _h, _j in rows if k == kind]
+            ids = [str(row.id) for row in rows if row.kind == kind]
             print(f"      id: {', '.join(ids)}")
+    print()
+
+
+def print_screens(con: sqlite3.Connection) -> None:
+    """참고 — 화면마다 `참여여부` 가 어떻게 차 있나(`확인됨` 이 아닌 줄까지). 수만."""
+    from app.services import room_joined, sheet_import as si
+
+    screens = screens_by_label(con)
+    counts: Counter = Counter()
+    for joined, verified, sheet in con.execute(
+            f"SELECT kakao_joined, room_verified, source_sheet FROM {TABLE}"):
+        key = screen_of(sheet, screens)
+        counts[(key, "all")] += 1
+        counts[(key, si.joined_state(joined))] += 1
+        if verified == room_joined.VERIFIED:
+            counts[(key, "verified")] += 1
+    print("참고 — 화면별 줄 수 (`확인됨` 이 아닌 줄까지, 아무것도 안 바꾼다)")
+    for key, name in SCREENS.items():
+        print(f"   {name:<12} 전체 {counts[(key, 'all')]} · 확인됨 {counts[(key, 'verified')]}"
+              f" · 참여 표시 {counts[(key, si.JOINED_YES)]} · X {counts[(key, si.JOINED_NO)]}"
+              f" · 빈칸 {counts[(key, si.JOINED_EMPTY)]} · 다른 말 {counts[(key, si.JOINED_OTHER)]}")
     print()
 
 
@@ -138,13 +209,13 @@ def apply_plan(con: sqlite3.Connection, rows: list) -> int:
     from app.services import room_joined
 
     changed = 0
-    for row_id, kind, _stage, _hidden, _joined in rows:
-        if kind != FILL:
+    for row in rows:
+        if row.kind != FILL:
             continue
         cur = con.execute(
             f"UPDATE {TABLE} SET kakao_joined = ? WHERE id = ? "
             "AND room_verified = ? AND TRIM(COALESCE(kakao_joined, '')) = ''",
-            (room_joined.JOINED_MARK, row_id, room_joined.VERIFIED))
+            (room_joined.JOINED_MARK, row.id, room_joined.VERIFIED))
         changed += cur.rowcount
     con.commit()
     return changed
@@ -152,8 +223,7 @@ def apply_plan(con: sqlite3.Connection, rows: list) -> int:
 
 def save_baseline(path: Path, rows: list) -> int:
     """되돌리기 파일. 채우는 줄의 번호와 **채우기 전 값**만 적는다(이름은 없다)."""
-    data = [{"id": row_id, "before": joined}
-            for row_id, kind, _s, _h, joined in rows if kind == FILL]
+    data = [{"id": row.id, "before": row.joined} for row in rows if row.kind == FILL]
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     return len(data)
 
@@ -237,6 +307,7 @@ def main(argv=None) -> int:
                                  else "아니다 — 미리보기"))
         print()
         print_summary(rows, args.ids)
+        print_screens(con)
 
         if args.save_baseline:
             saved = save_baseline(Path(args.save_baseline), rows)

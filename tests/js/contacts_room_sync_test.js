@@ -125,4 +125,30 @@ function saved(dom, cell, value, data) {
   assert.strictEqual(dom.joined.textContent, "O");
 }
 
+// --- 4) 좌측 [스타트업] 화면 — `카톡방` 칸이 없는 표 -------------------------
+//
+// 같은 `contacts.js` 가 그 화면도 맡는다. 그 표에는 `카톡방` 칸이 없고
+// `카톡 연결 여부` 만 선다 — 응답에 `send_*` 가 실려 와도 죽지 않고, 거르는
+// 값만 맞춘다(죽으면 그 아래 손들 — 정렬·수정한 날짜 — 까지 같이 안 돈다).
+{
+  const joined = D.el("td", { class: "cell", "data-field": "kakao_joined",
+                              "data-type": "pick" });
+  joined.textContent = "O";
+  const memo = D.el("div", { class: "cell clamp2", "data-field": "memo" });
+  const row = D.el("tr", { class: "data-row", "data-id": "9", "data-f-joined": "O" },
+                   [joined, D.el("td", {}, [memo])]);
+  const table = D.el("table", { id: "contacts-table" },
+                     [D.el("thead"), D.el("tbody", {}, [row])]);
+  const dom = { root: D.el("div", {}, [table]), table: table, row: row };
+  run(dom);
+  saved(dom, memo, "통화함", {
+    ok: true, kakao_joined: "X", send_state: "no_channel",
+    send_label: "채널 불가 투자사", send_class: "muted"
+  });
+  assert.strictEqual(joined.textContent, "X");
+  assert.strictEqual(row.getAttribute("data-f-joined"), "X");
+  assert.strictEqual(row.hasAttribute("data-f-room"), false,
+    "없던 거를 값을 새로 세우면 선언 없는 죽은 속성이 된다");
+}
+
 console.log("contacts_room_sync_test: ok");

@@ -422,3 +422,70 @@ def test_스크립트와_살아_있는_길이_같은_판정을_탄다(db, users)
         live = room_joined.joined_after_verified(joined, stage)
         assert (tool.classify(joined, stage) == tool.FILL) == (
             live is not None and si.joined_state(joined) == si.JOINED_EMPTY), (joined, stage)
+
+
+# ── 좌측 [스타트업] 화면 — **같은 표, 같은 규칙** ───────────────────────────
+#
+# 사용자 요청: "그 스타트업 메뉴에도 카톡 동기화 하는거 추가하자".
+#
+# 그 화면의 줄은 투자사 관리 현황과 **같은 표**(`VcContact`)이고, 그 화면의
+# `카톡 연결 여부` 칸이 곧 `kakao_joined` 다(`contact_columns.STARTUP_LAYOUT`).
+# 고치는 길도 같다(`PATCH /api/contacts/{id}` · 같은 `contacts.js`). 그래서
+# 규칙을 한 벌 더 만들지 않는다 — 대신 **그 화면의 줄에서도** 규칙이 실제로
+# 지나가는지를 여기서 본다. 언젠가 스타트업 화면이 제 길을 따로 파면 여기서 걸린다.
+
+STARTUP_LIST = "샘플 스타트업(9)"
+
+
+@pytest.fixture()
+def startup_row(db, users):
+    from app.models import SheetOwner
+    from app.services import contact_columns as cc
+
+    db.add(SheetOwner(label=STARTUP_LIST, user_id=1, layout=cc.STARTUP, is_hidden=1))
+    db.commit()
+    row = _contact(db, joined="O", verified="verified", firm="가나다벤처스")
+    row.source_sheet = STARTUP_LIST
+    db.commit()
+    return row
+
+
+def test_스타트업_화면의_카톡_연결_여부가_참여여부_그_칸이다(logged_in, db, startup_row):
+    """두 화면이 같은 칸을 고친다는 전제가 깨지면 이 검사들이 엉뚱한 칸을 본다."""
+    from urllib.parse import quote
+
+    from app.services import contact_columns as cc
+
+    col = next(c for c in cc.STARTUP_LAYOUT.tail if c.label == "카톡 연결 여부")
+    assert (col.key, col.source) == ("kakao_joined", "field")
+    html = logged_in.get(f"/{cc.page_of(cc.STARTUP)}?sheet={quote(STARTUP_LIST)}").text
+    assert 'data-inline-url="/api/contacts"' in html
+    assert 'data-field="kakao_joined"' in html
+
+
+def test_스타트업_줄도_X_로_바꾸면_확인됨이_풀린다(logged_in, db, startup_row):
+    r = logged_in.patch(f"/api/contacts/{startup_row.id}", json={"kakao_joined": "X"})
+    assert r.status_code == 200
+    assert r.json()["room_verified"] == "unverified"
+    assert r.json()["kakao_joined"] == "X"
+    assert _fresh(db, startup_row.id).room_verified == "unverified"
+
+
+def test_스타트업_줄도_확인됨이면_연결_여부가_O_가_된다(logged_in, db, startup_row):
+    startup_row.kakao_joined = None
+    startup_row.room_verified = "unverified"
+    db.commit()
+    _verify(logged_in, db, startup_row, "verified")
+    row = _fresh(db, startup_row.id)
+    assert (row.room_verified, row.kakao_joined) == ("verified", "O")
+
+
+def test_정리_스크립트가_스타트업_화면을_따로_센다(db, startup_row):
+    """좌측 [스타트업] 화면의 줄도 같이 채우되, 요약은 화면별로 갈라 찍는다."""
+    startup_row.kakao_joined = None
+    db.commit()
+    _contact(db, joined=None, verified="verified", firm="가나다벤처스2")
+    text = _run()
+    assert "`확인됨` 인 줄 2줄  (투자사 관리 현황 1 · 스타트업 1)" in text
+    assert "화면: 투자사 관리 현황 1 · 스타트업 1" in text
+    assert re.search(r"스타트업\s+전체 1 · 확인됨 1 · 참여 표시 0 · X 0 · 빈칸 1", text), text
