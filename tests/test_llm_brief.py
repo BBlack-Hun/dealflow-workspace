@@ -18,6 +18,7 @@ import json
 import re
 import shutil
 import subprocess
+from datetime import date
 from html import escape
 from pathlib import Path
 
@@ -28,6 +29,9 @@ from .conftest import DEMO_PASSWORD
 
 # 날짜가 바뀌어도 안 깨지게 못 박는다.
 FIXED_NOW = "2026-09-01T09:00:00+09:00"
+# 어느 날 보낼 몫인지도 못 박는다 — 뽑을 개수가 주차로 갈리므로(1·3주차 8곳,
+# 2·4주차 4곳) 오늘에 맡기면 검사가 도는 날에 따라 시킬 말의 수가 바뀐다.
+FIXED_DAY = date.fromisoformat(FIXED_NOW[:10])
 
 # 내보내도 되는 투자사 칸. **이 목록은 검사가 직접 들고 있다**(위 설명 참고).
 CONTACT_COLUMNS_ALLOWED_OUT = {
@@ -141,7 +145,7 @@ def _sheet_sent(db, contact, names, *, when="2026-08-13"):
 def _brief(db, user):
     from app.services import llm_brief
 
-    return llm_brief.brief(db, user, now=FIXED_NOW)
+    return llm_brief.brief(db, user, now=FIXED_NOW, day=FIXED_DAY)
 
 
 # ── 무엇이 나가는가 ─────────────────────────────────────────────────────────
@@ -445,7 +449,7 @@ def test_the_band_edges_are_written_in_exactly_one_place(db, users):
     """경계를 화면·자료·검사가 각자 들고 있으면 반드시 갈린다.
 
     값을 바꿔 보고 **나가는 자료와 읽는 법 설명이 둘 다** 따라오는지 본다
-    (`PICK_COUNT` 와 같은 방식이다).
+    (`PICK_BY_WEEK` 와 같은 방식이다).
     """
     from app.services import llm_brief
 
@@ -474,7 +478,7 @@ def test_the_screen_does_not_write_the_edges_down_again(logged_in):
     """화면은 **구간으로 나간다는 사실만** 말한다 — 숫자는 자료가 들고 있다.
 
     구간 표를 화면에도 적어 두면 경계를 고치는 날 그 문장만 옛말이 되고,
-    사람은 화면을 믿는다. `PICK_COUNT` · 시킬 말과 같은 자리다.
+    사람은 화면을 믿는다. `PICK_BY_WEEK` · 시킬 말과 같은 자리다.
     """
     from app.services.llm_brief import ZERO_BAND, amount_bands
 
@@ -586,7 +590,7 @@ def test_the_contract_line_is_written_in_exactly_one_place(db, users):
     """기준선을 코드·설명문·시킬 말이 각자 들고 있으면 반드시 갈린다.
 
     값을 바꿔 보고 **나가는 판정과 읽는 법 설명이 둘 다** 따라오는지 본다
-    (`AMOUNT_EDGES` · `PICK_COUNT` 와 같은 방식이다).
+    (`AMOUNT_EDGES` · `PICK_BY_WEEK` 와 같은 방식이다).
     """
     from app.services import llm_brief
 
@@ -878,7 +882,10 @@ def test_the_keys_that_go_out_are_exactly_these(db, users):
     assert set(out) == {"generated_at", "scope", "amount_unit", "note",
                         "prompt", "investors", "companies", "sector_names",
                         # 그룹 갈래·인원. 이름은 한 곳에서만 짓는다.
-                        llm_brief.GROUPS_KEY}
+                        llm_brief.GROUPS_KEY,
+                        # 이번 몫이 몇 주차라 몇 곳까지인지 — 날짜·숫자뿐이다.
+                        "pick"}
+    assert set(out["pick"]) == {"date", "week", "limit", "text", "rule"}
     assert set(out["investors"][0]) == {
         "id", "group_name", "sectors", "round_size", "stages",
         "sourcing_note", "memo", "tips_note", "interest_level",
@@ -1645,13 +1652,22 @@ def test_the_sendable_key_is_written_in_exactly_one_place(db, users):
 
 
 def test_the_prompt_says_the_number_is_a_ceiling_not_a_quota(db, users):
-    """**"8곳을 고르라" 가 아니라 "많아야 8곳, 맞는 것만" 이어야 한다.**"""
-    from app.services.llm_brief import PICK_COUNT
+    """**"8곳을 고르라" 가 아니라 "많아야 8곳, 맞는 것만" 이어야 한다.**
 
+    사용자가 정한 것이다 — *"뽑는 개수가 너무 저조하거나 소개할 딜이 부족한
+    경우에는 1개씩 나가도 괜찮음."* 그래서 **1곳만 골라도 된다**는 말과, 수를
+    채우려고 안 맞는 곳을 넣지 말라는 말이 둘 다 있어야 한다.
+    """
+    from app.services.llm_brief import pick_count
+
+    limit = pick_count(FIXED_DAY)
     got = _brief(db, users["u1"])["prompt"]
-    assert f"많아야 기업 {PICK_COUNT}곳" in got
-    assert f"{PICK_COUNT}곳은 채워야 하는 수가 아니라" in got
-    assert "끼워 넣지 마세요" in got
+    assert f"많아야 기업 {limit}곳" in got
+    assert f"{limit}곳은 채워야 하는 수가 아니라" in got
+    assert "맞는 기업이 적으면 1곳만 골라도 됩니다" in got
+    assert "수를 채우려고 안 맞는 곳을 넣지 마세요" in got
+    # 0곳도 된다 — 다만 그때는 줄을 남긴다(아래 검사).
+    assert "0곳이어도 됩니다" in got
 
 
 def test_the_prompt_says_what_to_answer_when_nothing_fits(db, users):
@@ -1844,31 +1860,185 @@ def test_the_prompt_says_to_exclude_what_was_sent_and_to_answer_in_numbers(db,
     """사용자가 청한 세 가지가 다 들어 있어야 한다 —
     이미 보낸 것 빼기 · 성향 보기 · 몇 곳을 고를지, 그리고 **번호로 답하기.**
     """
-    from app.services.llm_brief import ANSWER_EXAMPLE, PICK_COUNT
+    from app.services.llm_brief import ANSWER_EXAMPLE, pick_count
 
     got = _brief(db, users["u1"])["prompt"]
     assert "sent_before" in got and "빼" in got
     for preference in ("sectors", "stages", "round_size", "memo"):
         assert preference in got, preference
-    assert f"{PICK_COUNT}곳" in got
+    assert f"{pick_count(FIXED_DAY)}곳" in got
     # 번호로 답해 달라는 요구가 없으면 [번호 → 이름 찾기] 가 못 읽는다.
     assert "번호로" in got
     assert ANSWER_EXAMPLE in got
 
 
-def test_the_number_to_pick_is_written_in_exactly_one_place(db, users):
-    """`8` 을 여기저기 적어 두면 한 곳만 고쳐진다 — 값을 바꿔 보고 따라오는지 본다."""
+def test_the_number_to_pick_is_written_in_exactly_one_place(db, users,
+                                                           monkeypatch):
+    """`8`·`4` 를 여기저기 적어 두면 한 곳만 고쳐진다 — 표를 바꿔 보고
+    시킬 말과 화면 문장이 따라오는지 본다."""
     from app.services import llm_brief
 
-    before = llm_brief.prompt()
+    before = llm_brief.prompt(FIXED_DAY)
     assert "8곳" in before
 
-    llm_brief.PICK_COUNT = 5
-    try:
-        after = llm_brief.prompt()
-    finally:
-        llm_brief.PICK_COUNT = 8
-    assert "5곳" in after and "8곳" not in after
+    monkeypatch.setattr(llm_brief, "PICK_BY_WEEK",
+                        {week: 5 for week in llm_brief.PICK_BY_WEEK})
+    after = llm_brief.prompt(FIXED_DAY)
+    assert "5곳" in after
+    assert "8곳" not in after and "4곳" not in after
+    plan = llm_brief.pick_plan(FIXED_DAY)
+    assert plan["limit"] == 5 and "5곳" in plan["text"]
+    assert "8곳" not in plan["rule"] and "4곳" not in plan["rule"]
+
+
+# ── 주차마다 몇 곳까지 ─────────────────────────────────────────────────────
+#
+# 사용자가 정한 것이다 — "1주 3주차는 8개 기준이고 2,4 주차는 4개를 뽑을 예정.
+# 그러나 뽑는 개수가 너무 저조하거나 소개할 딜이 부족한 경우에는 1개씩 나가도
+# 괜찮음." 5주차(29~31일)는 사용자가 정하지 않아 4곳으로 두었다(가정 —
+# `llm_brief.PICK_BY_WEEK` 설명).
+
+
+@pytest.mark.parametrize("day, week, limit", [
+    (1, 1, 8), (7, 1, 8),
+    (8, 2, 4), (14, 2, 4),
+    (15, 3, 8), (21, 3, 8),
+    (22, 4, 4), (28, 4, 4),
+    (29, 5, 4), (31, 5, 4),
+])
+def test_the_limit_follows_the_week_of_the_month(day, week, limit):
+    """경계(7/8 · 14/15 · 21/22 · 28/29)와 달의 끝(31일)을 하나씩 본다."""
+    from app.services import llm_brief
+
+    when = date(2026, 10, day)
+    assert llm_brief.pick_week(when) == week
+    assert llm_brief.pick_count(when) == limit
+
+
+def test_the_week_is_counted_by_the_one_rule_the_repo_already_has():
+    """주차를 여기서 따로 세면 회차명(`9월 3주차`)과 같은 날이 갈린다."""
+    from app.services import llm_brief, sheet_import
+
+    for month, last in ((2, 28), (10, 31), (11, 30)):
+        for day in range(1, last + 1):
+            when = date(2026, month, day)
+            assert llm_brief.pick_week(when) == \
+                sheet_import.week_of_month(when.isoformat()), when
+
+
+def test_the_limit_defaults_to_today(monkeypatch):
+    """날을 안 주면 **앱의 오늘**(`clock.today`)이다 — `date.today()` 가 아니다."""
+    from app import clock
+    from app.services import llm_brief
+
+    monkeypatch.setattr(clock, "today", lambda: date(2026, 10, 8))
+    assert llm_brief.pick_count() == 4
+    monkeypatch.setattr(clock, "today", lambda: date(2026, 10, 15))
+    assert llm_brief.pick_count() == 8
+
+
+def test_the_prompt_carries_the_number_for_that_week():
+    """시킬 말 첫 줄이 **몇 월 몇 주차 몫인지**와 그 주의 상한을 적는다."""
+    from app.services import llm_brief
+
+    third = llm_brief.prompt(date(2026, 10, 15))
+    assert "10월 3주차" in third
+    assert "많아야 기업 8곳" in third
+
+    second = llm_brief.prompt(date(2026, 10, 8))
+    assert "10월 2주차" in second
+    assert "많아야 기업 4곳" in second
+    assert "많아야 기업 8곳" not in second
+    assert "많아야 4곳입니다" in second
+    # 주차 표 전체도 함께 싣는다 — 왜 이 수인지 붙여 넣은 글만 보고 알게.
+    assert "1·3주차 8곳 · 2·4·5주차 4곳" in second
+
+
+def test_the_data_follows_a_frozen_today(db, users, monkeypatch):
+    """날을 안 주고 꺼낸 자료는 **오늘의 몫**이다 — 시킬 말과 `pick` 이 같은 수다."""
+    from app import clock
+    from app.services import llm_brief
+
+    monkeypatch.setattr(clock, "today", lambda: date(2026, 10, 8))
+    out = llm_brief.brief(db, users["u1"], now=FIXED_NOW)
+    assert out["pick"] == {
+        "date": "2026-10-08", "week": 2, "limit": 4,
+        "text": "이번 주는 2주차 — 그룹마다 많아야 4곳",
+        "rule": "1·3주차 8곳 · 2·4·5주차 4곳"}
+    assert "많아야 기업 4곳" in out["prompt"]
+
+
+def test_another_days_share_says_which_day_it_is(monkeypatch):
+    """다음 주 몫을 꾸리는데 "이번 주" 라고 적으면 어느 주 수인지 헷갈린다."""
+    from app import clock
+    from app.services import llm_brief
+
+    monkeypatch.setattr(clock, "today", lambda: date(2026, 10, 9))
+    assert llm_brief.pick_plan()["text"] == "이번 주는 2주차 — 그룹마다 많아야 4곳"
+    # 같은 주차 칸이면 다른 날이어도 "이번 주" 다.
+    assert llm_brief.pick_plan(date(2026, 10, 14))["text"].startswith("이번 주는")
+    assert llm_brief.pick_plan(date(2026, 10, 15))["text"] == \
+        "10월 15일은 3주차 — 그룹마다 많아야 8곳"
+    # 다음 달 1주차도 "이번 주" 가 아니다.
+    assert llm_brief.pick_plan(date(2026, 11, 2))["text"] == \
+        "11월 2일은 1주차 — 그룹마다 많아야 8곳"
+
+
+def test_the_address_takes_the_day_to_send(logged_in, monkeypatch):
+    """`?for=` 로 **보낼 날의 몫**을 받는다 — 자료는 대개 보내는 날보다 먼저 꾸린다."""
+    from app import clock
+
+    monkeypatch.setattr(clock, "today", lambda: date(2026, 10, 7))   # 1주차
+    third = logged_in.get("/api/llm-brief.json?for=2026-10-15")
+    assert third.status_code == 200
+    assert third.json()["pick"]["limit"] == 8
+    assert "많아야 기업 8곳" in third.json()["prompt"]
+
+    second = logged_in.get("/api/llm-brief.json?for=2026-10-08").json()
+    assert second["pick"]["limit"] == 4
+    assert second["pick"]["date"] == "2026-10-08"
+    assert "많아야 기업 4곳" in second["prompt"]
+
+    # 안 주면(빈 값이어도) 오늘이다.
+    for url in ("/api/llm-brief.json", "/api/llm-brief.json?for="):
+        today = logged_in.get(url)
+        assert today.status_code == 200, url
+        assert today.json()["pick"]["date"] == "2026-10-07", url
+        assert today.json()["pick"]["limit"] == 8, url
+
+
+@pytest.mark.parametrize("bad", ["2026-13-01", "2026-02-30", "abc", "20261015",
+                                 "2026-10-15T09:00", "10/15"])
+def test_a_wrong_day_is_refused_not_read_as_today(logged_in, bad):
+    """**틀린 날짜는 400 이다.** 조용히 오늘로 읽으면 사람은 그 날 몫을 받았다고
+    믿고 다른 수를 들고 간다."""
+    got = logged_in.get("/api/llm-brief.json", params={"for": bad})
+    assert got.status_code == 400, bad
+    assert "YYYY-MM-DD" in got.text
+
+
+def test_the_screen_says_this_weeks_limit(logged_in, monkeypatch):
+    """화면이 **이번 몫의 주차·개수**를 말하고, '보낼 날' 칸이 오늘로 서 있다.
+
+    문장은 서버가 짓는다(`pick_plan`) — 템플릿이 주차를 세면 두 벌이 된다.
+    """
+    from app import clock
+
+    monkeypatch.setattr(clock, "today", lambda: date(2026, 10, 15))
+    body = logged_in.get("/deals").text
+    assert "이번 주는 3주차 — 그룹마다 많아야 8곳" in body
+    assert 'id="llm-for" value="2026-10-15"' in body
+    assert "1·3주차 8곳 · 2·4·5주차 4곳" in body
+    assert "1곳만 골라도 됩니다" in body
+
+    monkeypatch.setattr(clock, "today", lambda: date(2026, 10, 22))
+    assert "이번 주는 4주차 — 그룹마다 많아야 4곳" in logged_in.get("/deals").text
+
+    # 템플릿에는 그 숫자가 없다 — 표를 고치는 날 화면만 옛말을 하지 않게.
+    src = (Path(__file__).resolve().parent.parent / "app" / "templates"
+           / "deals.html").read_text(encoding="utf-8")
+    assert "주차 8곳" not in src and "많아야 8곳" not in src
+    assert "주차 4곳" not in src and "많아야 4곳" not in src
 
 
 def test_the_prompt_is_not_per_investor_and_not_one_set_for_everyone(db, users):
@@ -1879,11 +2049,12 @@ def test_the_prompt_is_not_per_investor_and_not_one_set_for_everyone(db, users):
     사용자가 **그룹별로 따로 발송**하기로 전제를 바꿨다. 둘 다 남아 있으면 안
     된다 — 남으면 다음 사람이 읽고 되돌린다.
     """
-    from app.services.llm_brief import PICK_COUNT
+    from app.services.llm_brief import PICK_BY_WEEK
 
     got = _brief(db, users["u1"])["prompt"]
-    assert f"투자사마다 기업 {PICK_COUNT}곳" not in got
-    assert f"{PICK_COUNT}곳 한 벌" not in got
+    for limit in set(PICK_BY_WEEK.values()):
+        assert f"투자사마다 기업 {limit}곳" not in got
+        assert f"{limit}곳 한 벌" not in got
     assert "전원에게 보낼" not in got
 
 

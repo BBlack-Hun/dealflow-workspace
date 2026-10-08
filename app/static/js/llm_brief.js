@@ -17,10 +17,21 @@
   var resolve = document.getElementById("llm-resolve");
   var found = document.getElementById("llm-found");
   var foundState = document.getElementById("llm-found-state");
+  // '보낼 날' 칸과 이번 몫의 개수 줄(`이번 주는 3주차 — 그룹마다 많아야 8곳`).
+  var dayInput = document.getElementById("llm-for");
+  var pick = document.getElementById("llm-pick");
 
   // 자료를 꺼내는 주소는 **내려받기 링크에서 읽는다.** 여기에 주소를 또 적으면
   // 주소가 바뀔 때 링크만 고쳐지고 [화면에서 보기] 는 옛 주소를 부른다.
-  var BRIEF_URL = (download && download.getAttribute("href")) || "/api/llm-brief.json";
+  //
+  // **누를 때마다 읽는다.** '보낼 날' 을 바꾸면 링크에 `?for=` 가 붙는데,
+  // 처음 한 번만 읽어 두면 [화면에서 보기] 는 옛 날짜의 자료를 보여 주고
+  // [자료 내려받기] 는 새 날짜를 받는다 — 보고 확인한 것과 받는 것이 갈린다.
+  function briefUrl() {
+    return (download && download.getAttribute("href")) || "/api/llm-brief.json";
+  }
+  // 날짜를 붙이기 전 주소. 날을 바꿀 때마다 여기에 `for` 하나만 새로 붙인다.
+  var BASE_URL = briefUrl();
 
   toggle.addEventListener("click", function () {
     var open = body.hidden;
@@ -31,16 +42,37 @@
 
   // --- 자료 꺼내 보기 -------------------------------------------------------
 
-  show.addEventListener("click", function () {
+  show.addEventListener("click", function () { load(true); });
+
+  // `render` — 꺼낸 자료를 화면에 그릴지. 날만 바꿨고 자료를 아직 안 펼쳤으면
+  // 개수 줄만 바꾼다(펼쳐 둔 상태면 다시 그린다 — 안 그러면 [복사] 가 옛 날짜의
+  // 시킬 말을 담는다).
+  //
+  // **마지막에 부른 것만 그린다**(`seq`). 날을 잇달아 바꾸면 앞 요청이 늦게
+  // 돌아와 뒤 날짜의 줄을 덮을 수 있다 — 칸에는 15일이 서 있는데 줄은 8일 몫.
+  var seq = 0;
+  var PICK_PENDING = "세는 중…";
+  function load(render) {
+    var mine = ++seq;
     state.textContent = "꺼내는 중…";
-    fetch(BRIEF_URL)
+    fetch(briefUrl())
       .then(function (r) {
         if (!r.ok) throw new Error(r.status);
         return r.text();
       })
       .then(function (text) {
+        if (mine !== seq) return;
         var data = null;
         try { data = JSON.parse(text); } catch (e) { data = null; }
+        // 개수 줄은 **서버가 지은 문장 그대로**다(`llm_brief.pick_plan`). 화면이
+        // 주차를 다시 세면 회차명과 같은 날이 다른 주차로 갈린다.
+        if (pick && data && data.pick && data.pick.text) {
+          pick.textContent = data.pick.text;
+        }
+        if (!render) {
+          state.textContent = "";
+          return;
+        }
         // **시킬 말 + 자료를 한 덩어리로.** LLM 창에 그대로 붙여 넣으면 되게.
         //
         // 시킬 말은 여기서 짓지 않는다 — 서버가 자료에 실어 보낸 `prompt` 를
@@ -60,8 +92,33 @@
              + data.companies.length + "곳 · " + data.scope)
           : "";
       })
-      .catch(function () { state.textContent = "자료를 꺼내지 못했습니다."; });
-  });
+      .catch(function () {
+        if (mine !== seq) return;
+        state.textContent = "자료를 꺼내지 못했습니다.";
+        // 개수 줄을 옛 날짜 문장으로 두지 않는다 — 칸의 날과 줄의 수가 갈린다.
+        if (pick && pick.textContent === PICK_PENDING) {
+          pick.textContent = "개수를 받지 못했습니다";
+        }
+      });
+  }
+
+  // --- 보낼 날 --------------------------------------------------------------
+  //
+  // 뽑을 개수가 그 달의 주차로 갈린다(1·3주차가 많고 2·4주차가 적다). 자료는
+  // 대개 보내는 날보다 먼저 꾸리므로, 보낼 날을 골라 그 날의 몫을 받는다.
+  // **주소만 바꾼다** — 몇 주차·몇 곳인지는 서버가 그 날로 지어 보낸다.
+  if (dayInput) {
+    dayInput.addEventListener("change", function () {
+      var day = (dayInput.value || "").trim();
+      var url = BASE_URL;
+      if (day) {
+        url += (url.indexOf("?") >= 0 ? "&" : "?") + "for=" + encodeURIComponent(day);
+      }
+      if (download) download.setAttribute("href", url);
+      if (pick) pick.textContent = PICK_PENDING;
+      load(!out.hidden);
+    });
+  }
 
   // 시킬 말이 없으면(옛 서버) 자료만 담는다 — 붙여 넣을 것이 아예 없는 것보다
   // 낫고, 그때는 사람이 직접 시킬 말을 적으면 된다.

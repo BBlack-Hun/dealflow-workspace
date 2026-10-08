@@ -997,6 +997,9 @@ a.secondary-btn { display: inline-flex; align-items: center; text-decoration: no
    매주 한 번 쓰는 자리라 기본은 접혀 있다(펴 두면 매일 쓰는 ①②③ 이 밀린다). */
 .llm-panel { margin-bottom: 16px; }
 .llm-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 10px 0; }
+/* 이번 몫이 몇 곳까지인지 — '보낼 날' 칸과 한 줄에 둔다(바꾸면 그 줄이 바로 바뀐다). */
+.llm-pick-line { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.llm-pick-line b { color: var(--ink); }
 /* 내보내기 전에 **눈으로 훑는** 자리다. 이름이 섞여 나가는 것이 이 기능의
    제일 큰 위험이라, 길어도 접지 않고 스스로 스크롤되게 둔다. */
 .llm-out {

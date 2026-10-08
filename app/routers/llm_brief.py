@@ -19,8 +19,9 @@
 from __future__ import annotations
 
 import json
+from typing import Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -34,7 +35,8 @@ router = APIRouter(tags=["llm-brief"])
 
 
 @router.get("/api/llm-brief.json")
-def brief_json(db: Session = Depends(get_db),
+def brief_json(for_day: Optional[str] = Query(None, alias="for"),
+               db: Session = Depends(get_db),
                user: User = Depends(get_current_user)) -> Response:
     """맞추는 데 쓸 자료 — 투자사는 번호로, IR 기업은 이름으로.
 
@@ -42,8 +44,23 @@ def brief_json(db: Session = Depends(get_db),
     앱 밖으로 나가는 것이라 **내보내기 전에 사람이 눈으로 훑어** 이름이
     섞이지 않았는지 확인할 수 있어야 한다. 그 확인이 이 기능에서 가장
     중요한 동작이므로 읽기 쉬운 쪽을 고른다.
+
+    `?for=2026-10-15` — **어느 날 보낼 몫인지.** 뽑을 개수가 그 달의 주차로
+    갈린다(1·3주차 8곳, 2·4주차 4곳 — `services/llm_brief.pick_count`). 자료는
+    대개 보내는 날보다 먼저 꾸리므로 그 날을 받는다. 안 주면 오늘이다.
+
+    **틀린 날짜는 400 이다 — 오늘로 바꿔 주지 않는다.** 다른 주의 수를 받으려고
+    준 값을 조용히 오늘로 읽으면, 사람은 그 주 몫을 받았다고 믿고 다른 수를
+    들고 간다(`llm_brief.parse_day`).
     """
-    body = json.dumps(llm_brief.brief(db, user), ensure_ascii=False, indent=2)
+    try:
+        day = llm_brief.parse_day(for_day)
+    except ValueError:
+        raise HTTPException(status_code=400,
+                            detail="for 는 2026-10-15 처럼 날짜(YYYY-MM-DD)로 "
+                                   "적어 주세요")
+    body = json.dumps(llm_brief.brief(db, user, day=day), ensure_ascii=False,
+                      indent=2)
     return Response(content=body, media_type="application/json; charset=utf-8")
 
 
