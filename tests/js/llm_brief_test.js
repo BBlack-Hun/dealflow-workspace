@@ -10,6 +10,10 @@
 //   ③ [복사] 가 **시킬 말 + 자료**를 한 덩어리로 담는가, 그리고 그것이
 //      **화면에 보이는 것과 같은가**. [화면에서 보기] 는 내보내기 전에 눈으로
 //      훑는 자리라, 보이는 것과 나가는 것이 다르면 그 확인이 거짓말이 된다.
+//   ④ '보낼 날' 을 바꾸면 **그 날의 몫**을 받는가. 뽑을 개수가 그 달의 주차로
+//      갈리므로(1·3주차 8곳, 2·4주차 4곳) 미리 꾸리는 자료는 보낼 날을 실어야
+//      한다. 주차는 서버가 센다 — 화면은 주소에 `for` 를 붙이고 받은 문장을
+//      보여 줄 뿐이다.
 //
 // 둘 다 브라우저 안에서 일어나는 일이라 `<script>` 태그가 그려지는지만 보는
 // 검사로는 못 잡는다. 그래서 파일을 vm 으로 **그대로 실행**한다.
@@ -41,8 +45,20 @@ const BRIEF = {
   companies: [{ id: "C-7", sector_major: "바이오", revenue_recent: "1000~5000",
                 pre_value: "10000+", introducible: true, revenue_over: "예" }],
   // 수요를 셀 때 쓸 **분야 이름**. 세는 일은 LLM 이 하고, 앱은 눈금만 싣는다.
-  sector_names: ["바이오"]
+  sector_names: ["바이오"],
+  // 이번 몫이 몇 주차라 몇 곳까지인지 — **서버가 지은 문장**이다.
+  pick: { date: "2026-09-01", week: 1, limit: 8,
+          text: "이번 주는 1주차 — 그룹마다 많아야 8곳",
+          rule: "1·3주차 8곳 · 2·4·5주차 4곳" }
 };
+
+// `?for=2026-09-08` 로 부르면 서버가 돌려줄 법한 자료(2주차 몫).
+const BRIEF_WEEK2 = Object.assign({}, BRIEF, {
+  prompt: "가상 지시문 2주차\n\n── 자료 ──",
+  pick: { date: "2026-09-08", week: 2, limit: 4,
+          text: "9월 8일은 2주차 — 그룹마다 많아야 4곳",
+          rule: "1·3주차 8곳 · 2·4·5주차 4곳" }
+});
 
 function build() {
   const nodes = {};
@@ -64,6 +80,8 @@ function build() {
   add("button", "llm-resolve");
   add("span", "llm-found-state");
   add("div", "llm-found");
+  add("input", "llm-for", { type: "date", value: "2026-09-01" });
+  add("b", "llm-pick").textContent = BRIEF.pick.text;
   return { root: root, nodes: nodes };
 }
 
@@ -75,15 +93,27 @@ function run(setup, options) {
   options = options || {};
 
   const calls = [];
+  // `options.manual` 이면 응답을 **손으로 하나씩 돌려준다**(`pending`) — 앞
+  // 요청이 늦게 돌아오는 순서를 흉내 내려는 것이다.
+  const pending = [];
+  const manual = !!options.manual;
   function fetchStub(url, options) {
     calls.push({ url: url, options: options || {} });
+    // `for=2026-09-08` 이면 2주차 몫, 날짜가 이상하면 서버처럼 400 이다.
+    const brief = url.indexOf("for=2026-09-08") >= 0 ? BRIEF_WEEK2 : BRIEF;
+    const bad = url.indexOf("for=") >= 0 && !/for=\d{4}-\d{2}-\d{2}/.test(url);
     const body = url.indexOf("resolve") >= 0
       ? JSON.stringify(fetchStub.resolveAnswer)
-      : JSON.stringify(BRIEF, null, 2);
-    return Promise.resolve({
-      ok: true,
+      : JSON.stringify(brief, null, 2);
+    const answer = {
+      ok: !bad,
+      status: bad ? 400 : 200,
       text: function () { return Promise.resolve(body); },
       json: function () { return Promise.resolve(JSON.parse(body)); }
+    };
+    if (!manual) return Promise.resolve(answer);
+    return new Promise(function (done) {
+      pending.push(function () { done(answer); });
     });
   }
   fetchStub.resolveAnswer = { investors: [], companies: [] };
@@ -112,7 +142,7 @@ function run(setup, options) {
   vm.runInContext(src, context, { filename: "llm_brief.js" });
 
   return { dom: dom, nodes: dom.nodes, calls: calls, fetch: fetchStub,
-           picked: picked };
+           picked: picked, pending: pending };
 }
 
 // 프라미스 사슬이 끝날 때까지 기다린다.
@@ -169,6 +199,100 @@ async function main() {
     await settle();
     assert.deepStrictEqual(app.calls[0].url, "/api/llm-brief.json?scope=team",
       "스크립트가 주소를 따로 적어 두면 링크만 고쳐졌을 때 둘이 갈린다");
+  }
+
+  // ── ④ 보낼 날을 바꾸면 그 날의 몫을 받는다 ──────────────────────────────
+  {
+    // 날을 바꾸면 **내려받기 링크에 `for` 가 붙고**, 개수 줄은 서버가 그 날로
+    // 지은 문장으로 바뀐다. 자료를 아직 안 펼쳤으면 펼치지 않는다.
+    const app = run();
+    app.nodes["llm-for"].value = "2026-09-08";
+    app.nodes["llm-for"].fire("change");
+    assert.strictEqual(app.nodes["llm-pick"].textContent, "세는 중…",
+      "받기 전에는 옛 날짜의 수를 그대로 두지 않는다");
+    await settle();
+    assert.strictEqual(app.nodes["llm-download"].getAttribute("href"),
+      "/api/llm-brief.json?for=2026-09-08");
+    assert.deepStrictEqual(app.calls.map(function (c) { return c.url; }),
+      ["/api/llm-brief.json?for=2026-09-08"]);
+    assert.strictEqual(app.nodes["llm-pick"].textContent,
+      "9월 8일은 2주차 — 그룹마다 많아야 4곳",
+      "개수 줄은 서버가 지은 문장 그대로여야 한다 — 화면이 주차를 세면 두 벌이 된다");
+    assert.strictEqual(app.nodes["llm-out"].hidden, true,
+      "날만 바꿨으면 자료를 펼치지 않는다");
+    assert.strictEqual(app.nodes["llm-state"].textContent, "");
+
+    // [화면에서 보기] 는 **바뀐 주소**를 부른다 — 처음 읽어 둔 주소를 쓰면
+    // 보는 것(오늘 몫)과 받는 것(그 날 몫)이 갈린다.
+    app.nodes["llm-show"].fire("click");
+    await settle();
+    assert.strictEqual(app.calls[1].url, "/api/llm-brief.json?for=2026-09-08");
+    assert.ok(app.nodes["llm-out"].textContent.indexOf(BRIEF_WEEK2.prompt) === 0,
+      app.nodes["llm-out"].textContent.slice(0, 60));
+
+    // 날을 비우면 오늘(주소에 `for` 없음)로 돌아간다.
+    app.nodes["llm-for"].value = "";
+    app.nodes["llm-for"].fire("change");
+    await settle();
+    assert.strictEqual(app.nodes["llm-download"].getAttribute("href"),
+      "/api/llm-brief.json");
+    assert.strictEqual(app.nodes["llm-pick"].textContent, BRIEF.pick.text);
+  }
+  {
+    // 이미 펼쳐 둔 자료는 **다시 그린다** — 안 그러면 [복사] 가 옛 날짜의
+    // 시킬 말을 담는다.
+    const copied = [];
+    const app = run(null, { navigator: { clipboard: { writeText: function (t) {
+      copied.push(t);
+      return Promise.resolve();
+    } } } });
+    app.nodes["llm-show"].fire("click");
+    await settle();
+    assert.ok(app.nodes["llm-out"].textContent.indexOf(BRIEF.prompt) === 0);
+    app.nodes["llm-for"].value = "2026-09-08";
+    app.nodes["llm-for"].fire("change");
+    await settle();
+    assert.ok(app.nodes["llm-out"].textContent.indexOf(BRIEF_WEEK2.prompt) === 0,
+      "펼쳐 둔 자료가 바뀐 날의 시킬 말로 다시 그려져야 한다");
+    app.nodes["llm-copy"].fire("click");
+    await settle();
+    assert.ok(copied[0].indexOf(BRIEF_WEEK2.prompt) === 0);
+  }
+  {
+    // 링크에 다른 조건이 이미 붙어 있으면 `&for=` 로 잇는다.
+    const app = run(function (dom) {
+      dom.nodes["llm-download"].setAttribute("href", "/api/llm-brief.json?scope=team");
+    });
+    app.nodes["llm-for"].value = "2026-09-08";
+    app.nodes["llm-for"].fire("change");
+    await settle();
+    assert.strictEqual(app.calls[0].url,
+      "/api/llm-brief.json?scope=team&for=2026-09-08");
+  }
+  {
+    // 서버가 날짜를 거절하면(400) 개수 줄을 **옛 문장으로 두지 않는다** —
+    // 칸의 날과 줄의 수가 갈린다.
+    const app = run();
+    app.nodes["llm-for"].value = "2026/09/08";
+    app.nodes["llm-for"].fire("change");
+    await settle();
+    assert.strictEqual(app.nodes["llm-pick"].textContent, "개수를 받지 못했습니다");
+    assert.ok(app.nodes["llm-state"].textContent.indexOf("못했습니다") >= 0);
+  }
+  {
+    // 날을 잇달아 바꿔 **앞 요청이 늦게 돌아와도** 마지막 날의 줄이 남는다.
+    const app = run(null, { manual: true });
+    app.nodes["llm-for"].value = "2026-09-08";
+    app.nodes["llm-for"].fire("change");
+    app.nodes["llm-for"].value = "2026-09-01";
+    app.nodes["llm-for"].fire("change");
+    assert.strictEqual(app.pending.length, 2);
+    app.pending[1]();          // 뒤 요청(1일)이 먼저 돌아오고
+    await settle();
+    app.pending[0]();          // 앞 요청(8일)이 늦게 돌아온다
+    await settle();
+    assert.strictEqual(app.nodes["llm-pick"].textContent, BRIEF.pick.text,
+      "늦게 온 앞 요청이 마지막 날의 줄을 덮으면 안 된다");
   }
 
   // ── ② 번호를 이름으로 ────────────────────────────────────────────────────
