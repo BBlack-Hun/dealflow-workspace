@@ -152,10 +152,17 @@ function refresh(rows, rowData, keys) {
 // --- contacts.js 가 저장 뒤 필터를 다시 읽는가 ------------------------------
 {
   const src = read("contacts.js");
-  const at = src.indexOf('addEventListener("inline-saved"');
+  const mark = 'addEventListener("inline-saved"';
+  let at = src.indexOf(mark);
   assert.ok(at > 0, "저장을 알아채지 못하면 필터는 영영 옛 값이다");
-  assert.ok(/filters\.refresh\(\)/.test(src.slice(at, at + 300)),
-            "저장 뒤 filters.refresh() 를 부르지 않는다");
+  // 저장을 듣는 손은 **여럿**이다(옆 칸을 고쳐 그리는 손 · 필터를 다시 읽는
+  // 손 · 정렬 · 수정한 날짜). 그중 하나가 필터를 다시 읽으면 된다.
+  let refreshes = false;
+  while (at >= 0 && !refreshes) {
+    refreshes = /filters\.refresh\(\)/.test(src.slice(at, at + 300));
+    at = src.indexOf(mark, at + 1);
+  }
+  assert.ok(refreshes, "저장 뒤 filters.refresh() 를 부르지 않는다");
 }
 
 console.log("filters_refresh_test: 통과");

@@ -28,7 +28,8 @@ from ..deps import can_open, get_current_user, may_manage_team_contacts
 from ..models import (ContactActivity, ContactColumn, IrCompany, IrRequest,
                       Meeting, SendItem, SendJob, SendSequence, User, VcContact)
 from ..services import (contact_columns, deal_stage, firm_type, last_activity,
-                        meeting_kind, room_name, sheet_import, sheet_owner)
+                        meeting_kind, room_joined, room_name, sheet_import,
+                        sheet_owner)
 from ..services.room_name import DEFAULT_SUFFIX, build_room_name
 
 router = APIRouter(prefix="/api/contacts", tags=["contacts"])
@@ -46,6 +47,26 @@ ROOM_BADGES = {
 # 이 값 하나를 보고 발송에서 빼므로, 이름만 여기 따로 두면 말이 바뀌는 날
 # 화면과 발송이 서로 다른 것을 가리킨다.
 STATUS_LABELS = sheet_owner.STATUS_LABELS
+
+
+def _room_cell(c: VcContact) -> Dict[str, str]:
+    """표의 `카톡방` 칸에 서는 값 — 갈래 · 글자 · 색.
+
+    **표를 그릴 때와 칸 하나를 고친 뒤의 응답이 같은 이것을 쓴다.** 참여여부를
+    `X` 로 고치면 `확인됨` 이 풀리는데(`services/room_joined`), 응답에 이 칸이
+    안 실려 오면 화면은 새로고침 전까지 옛 `확인됨` 을 그대로 보여 준다 — 두
+    칸을 맞춘 것이 화면에서는 안 맞은 것처럼 보인다.
+
+    갈래는 **발송 준비 관점**이다(`dashboard._room_state`). 대시보드가 그
+    갈래로 세고 그 갈래로 링크를 걸므로, 표도 같은 갈래를 실어야 눌러 왔을 때
+    수가 맞는다. **말을 여기 다시 적지 않는다.**
+    """
+    # services → routers 는 없는 방향이라 순환이 아니다(`contact_rows` 와 같다).
+    from ..services import dashboard
+
+    state = dashboard._room_state(c)
+    label, css = dashboard.ROOM_LABELS[state]
+    return {"send_state": state, "send_label": label, "send_class": css}
 
 
 # ── 조회 모델 (SSR 표 + 상세 패널 공용) ─────────────────────────────────────
@@ -118,10 +139,8 @@ def contact_rows(db: Session, user: User, team_wide: bool = False,
     # `sheet_owner.managed()` 를 지난다(그쪽은 명단·연결 두 문을 더 얹는다).
     #
     # 방 상태 갈래도 마찬가지다. 대시보드가 `_room_state` 로 세고 그 갈래로
-    # 링크를 거는데 표가 다른 갈래를 실으면, 눌러 온 화면의 줄 수가 안 맞는다.
-    # (services → routers 는 없는 방향이라 순환이 아니다)
-    from ..services import dashboard
-    from ..services.dashboard import _room_state as dashboard_room_state
+    # 링크를 거는데 표가 다른 갈래를 실으면, 눌러 온 화면의 줄 수가 안 맞는다
+    # — 줄마다 `_room_cell` 이 그 갈래를 꺼낸다.
 
     contacts = sheet_owner.managed(db, user, team_wide=team_wide,
                                    include_hidden=include_hidden)
@@ -201,10 +220,8 @@ def contact_rows(db: Session, user: User, team_wide: bool = False,
         # (`dashboard._room_state`). 위의 `room_label` 과 갈래가 다르다 —
         # 저쪽은 방 이름을 찾았는지만 보고, 이쪽은 채널이 카톡인지까지 본다
         # (메일 채널·채널 불가 투자사는 방이 없어도 '미등록' 이 아니다).
-        # 대시보드가 그 갈래로 세고 그 갈래로 링크를 걸므로, 표도 같은 갈래를
-        # 실어야 눌러 왔을 때 수가 맞는다. **말을 여기 다시 적지 않는다.**
-        send_state = dashboard_room_state(c)
-        send_label, send_class = dashboard.ROOM_LABELS[send_state]
+        # 칸 하나를 고친 뒤의 응답도 같은 것을 싣는다(`_room_cell`).
+        room_cell = _room_cell(c)
 
         last_act = last_acts.get(c.id)
 
@@ -236,9 +253,9 @@ def contact_rows(db: Session, user: User, team_wide: bool = False,
             "room_class": room_class,
             "room_label": room_label,
             # 대시보드의 `방 미등록 6` · `채널 불가 투자사 6` 에서 눌러 오는 자리.
-            "send_state": send_state,
-            "send_label": send_label,
-            "send_class": send_class,
+            "send_state": room_cell["send_state"],
+            "send_label": room_cell["send_label"],
+            "send_class": room_cell["send_class"],
             "invited_status": c.invited_status or "",
             "stages": _split_csv(c.stages),
             "sectors": _split_csv(c.sectors),
@@ -494,7 +511,8 @@ def verify_rooms(
     conflicts = [c.name for c in targets if c.id in unclear]
     for contact in targets:
         if contact.id in unclear:
-            contact.room_verified = "ambiguous"
+            # 방 확인 값을 적는 자리는 한 곳이다(`services/room_joined`).
+            room_joined.set_verdict(contact, room_joined.AMBIGUOUS)
     targets = [c for c in targets if c.id not in unclear]
 
     if not targets:
@@ -1145,18 +1163,26 @@ def update_contact(
     user: User = Depends(get_current_user),
 ):
     contact = _owned(db, contact_id, user)
-    before_room = contact.kakao_room_name
+    was = room_joined.before(contact)
     if (body.name or "").strip():
         contact.name = body.name.strip()
     note = _assign(contact, body)
-    if contact.kakao_room_name != before_room:
-        # 방 이름이 바뀌면 이전 확인 결과는 더 이상 근거가 아니다.
-        contact.room_verified = "unverified"
+    # 방 이름이 바뀌면 이전 확인 결과는 더 이상 근거가 아니고, 참여여부를
+    # `X` 로 바꾸거나 `방 나감` 으로 고르면 `확인됨` 이 풀린다 — 규칙은
+    # `services/room_joined` 한 곳에 있다.
+    room_joined.after_edit(contact, was)
     db.commit()
     # `connect_note` 는 **서버가 저 혼자 바꾼 것**을 화면이 사람에게 전할 자리다.
     # 없으면 응답에 넣지 않는다 — 늘 있는 값이면 화면이 읽지 않게 된다.
+    #
+    # **서로 따라 움직이는 두 칸을 함께 싣는다** — `카톡방`(`send_*`)과
+    # `카톡방 참여여부`. 표에서 칸 하나를 고치면 화면은 다시 받지 않고 그 칸만
+    # 고쳐 그리므로(`inline_edit.js`), 서버가 따라 바꾼 옆 칸은 응답이 알려 줘야
+    # 그 자리에서 바뀐다(`static/js/contacts.js` 의 `inline-saved`).
     out = {"ok": True, "room_verified": contact.room_verified,
            "connect_stage": contact.connect_stage,
+           "kakao_joined": contact.kakao_joined or "",
+           **_room_cell(contact),
            # **고친 시각을 응답에 싣는다.** 스타트업 표의 `수정한 날짜` 칸이
            # 이것으로 그 자리에서 바뀐다 — 새로고침해야 보이면, 방금 고친 것이
            # 실제로 저장됐는지를 그 칸으로 알 수 없다(그 칸의 쓸모가 곧

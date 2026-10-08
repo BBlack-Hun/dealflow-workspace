@@ -40,7 +40,7 @@ from app.models import (  # noqa: E402
     User,
     VcContact,
 )
-from app.services import readiness  # noqa: E402
+from app.services import readiness, room_joined  # noqa: E402
 
 # 리허설용 이름. 실데이터와 절대 겹치지 않게 접두어를 붙인다.
 MARK = "[리허설]"
@@ -98,7 +98,9 @@ def setup(db, user: User) -> None:
     contact.connect_stage = "connected"
     # 실제 방으로 나가지 않게 테스트 방 이름을 그대로 쓴다.
     contact.kakao_room_name = room
-    contact.room_verified = "verified"
+    # 방 확인 값은 한 자리에서 적는다 — `카톡방 참여여부` 도 거기서 함께
+    # 맞춰진다(`app/services/room_joined`).
+    room_joined.set_verdict(contact, room_joined.VERIFIED)
 
     for name, sector, one_liner, revenue in COMPANIES:
         company = db.execute(

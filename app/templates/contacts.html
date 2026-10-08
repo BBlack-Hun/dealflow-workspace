@@ -845,8 +845,12 @@
         <td class="muted">{{ r.channel_label }}</td>
         {# 대시보드의 방 상태 타일에서 눌러 오면 이 칸으로 걸러진다.
            고칠 수 있는 칸이 아니다 — 방 상태는 [방 연결 확인]이 정하는 결과라
-           손으로 적을 값이 아니다(방 이름은 [수정] 창에서 고친다). #}
-        <td class="ellipsis" title="{{ r.send_label }}">
+           손으로 적을 값이 아니다(방 이름은 [수정] 창에서 고친다).
+
+           `room-cell` — 옆 `카톡방 참여여부` 를 `X` 로 고치면 `확인됨` 이 풀린다
+           (`services/room_joined`). 그 응답으로 이 칸을 **그 자리에서** 고쳐
+           그리는 손잡이다(`contacts.js` 의 `syncRoomCells`). #}
+        <td class="ellipsis room-cell" title="{{ r.send_label }}">
           <span class="room-badge {{ r.send_class }}">{{ r.send_label }}</span></td>
         <td><button type="button" class="linkbtn js-detail">수정</button></td>
       </tr>

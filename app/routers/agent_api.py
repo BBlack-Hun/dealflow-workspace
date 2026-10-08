@@ -26,7 +26,7 @@ from sqlalchemy.orm import Session
 
 from .. import config
 from ..db import get_db
-from ..services import cadence, pipeline
+from ..services import cadence, pipeline, room_joined
 from ..deps import get_agent_device, may_auto_attach, now_iso
 from ..models import AgentDevice, SendItem, SendJob, User
 
@@ -302,7 +302,9 @@ def _apply_verify_result(item: SendItem, body: ItemResult) -> None:
 
     contact = item.contact
     if contact is not None:
-        contact.room_verified = verdict
+        # 결과를 적는 자리는 **한 곳**이다 — `카톡방 참여여부` 도 거기서 함께
+        # 맞춘다(확인됨이면 `O`. 못 찾았으면 참여여부는 그대로).
+        room_joined.set_verdict(contact, verdict)
         # ★ 검색으로 찾아낸 실제 방 제목을 저장한다.
         # 방 이름은 우리가 만들어 맞출 수 없다(접미사·담당자명이 방마다 다름).
         # 확인 잡이 사실상 '방 이름 알아내기'이므로 결과를 반영해야 발송이 된다.

@@ -154,7 +154,7 @@ from app.db import SessionLocal  # noqa: E402
 from app.models import ContactColumn, SheetOwner, User, VcContact  # noqa: E402
 from app.services import contact_columns as cc  # noqa: E402
 from app.services import edit_log, firm_type, import_diff  # noqa: E402
-from app.services import invest_stage, sheet_import  # noqa: E402
+from app.services import invest_stage, room_joined, sheet_import  # noqa: E402
 from app.services import sheet_owner  # noqa: E402
 from app.services import spreadsheet as sp  # noqa: E402
 from app.services.auth import normalize_phone  # noqa: E402
@@ -557,6 +557,9 @@ def apply_values(contact, item, columns) -> None:
     비어 있는 칸이 앱에서 고쳐 둔 값을 지우는 일이 없다 — 그래서 몇 번을 다시
     돌려도 결과가 같다.
     """
+    # 방 확인 ↔ 참여여부는 화면·시트 업로드와 **같은 규칙**으로 맞춘다
+    # (`app/services/room_joined`). 고치기 전을 떠 두고 맨 끝에서 맞춘다.
+    was = room_joined.before(contact)
     for field, value in item["fields"].items():
         setattr(contact, field, value)
     # 시트에 단계 칸이 없으니(위 `_columns_of` 참고) 라운드 칸에 섞여 들어온
@@ -607,6 +610,7 @@ def apply_values(contact, item, columns) -> None:
                                      contact.department, contact.title)
         if code != "unknown":
             contact.firm_type = code
+    room_joined.after_edit(contact, was)
 
 
 def existing_columns(db, sheet: str) -> dict:
@@ -689,6 +693,7 @@ def fill_values(contact, todo) -> None:
     판단을 지나야** 미리보기가 미리보기 구실을 한다. 세어 본 칸 수와 실제로
     들어간 칸 수가 다르면 어느 쪽도 믿을 수 없다.
     """
+    was = room_joined.before(contact)
     values = cc.load_notes(contact.notes)
     for key, value in todo:
         if key.startswith("note:"):
@@ -696,6 +701,8 @@ def fill_values(contact, todo) -> None:
         else:
             setattr(contact, key, value)
     contact.notes = cc.dump_notes(values)
+    # 참여여부를 `X` 로 덮었으면 `확인됨` 을 푼다 — 화면과 같은 규칙이다.
+    room_joined.after_edit(contact, was)
 
 
 def save_baseline(path: Path, picked) -> int:
