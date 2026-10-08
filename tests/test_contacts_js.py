@@ -210,3 +210,22 @@ def test_탭_삭제가_수를_보여_주고_확인을_받는가():
         text=True, timeout=60,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+ROOM_SYNC_TEST = Path(__file__).resolve().parent / "js" / "contacts_room_sync_test.js"
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치 — 브라우저 로직 테스트 생략")
+def test_참여여부를_고치면_카톡방_칸이_그_자리에서_바뀌는가():
+    """`카톡방 참여여부` 를 `X` 로 고치면 서버가 `확인됨` 을 푼다
+    (`services/room_joined`). 표에서 칸 하나를 고치는 길은 다시 받지 않으므로,
+    응답이 실어 온 `카톡방` 칸을 화면이 고쳐 그려야 한다 — 필터가 다시 읽기
+    **전에**(서버 쪽은 `tests/test_room_joined.py`).
+
+    로컬에서는 `node tests/js/contacts_room_sync_test.js` 로도 돈다.
+    """
+    result = subprocess.run(
+        [shutil.which("node"), str(ROOM_SYNC_TEST)], capture_output=True,
+        text=True, timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr

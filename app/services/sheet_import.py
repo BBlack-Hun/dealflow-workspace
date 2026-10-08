@@ -452,12 +452,54 @@ def connect_stage(kakao_joined: str, memo: str, has_room: bool = False,
     return STAGE_NOT_STARTED
 
 
+#: 참여·완료를 뜻하는 한 글자 표시들(소문자로 맞춘 뒤 견준다).
+_YES_MARKS = ("o", "y", "yes", "ok", "v", "√", "○", "●")
+#: 참여하지 않음을 뜻하는 표시들.
+_NO_MARKS = ("x", "×", "✕", "✗", "n", "no")
+#: 표시 뒤에 붙은 말을 떼는 자리 — `○, DAY` · `X, IRDAY` 의 쉼표.
+_HEAD_SPLIT = re.compile(r"[,/·\s]+")
+
+
+def _head(value: str) -> str:
+    """칸의 **맨 앞 표시**. `○, DAY, SUMMIT` → `○`."""
+    return _HEAD_SPLIT.split(value, 1)[0]
+
+
 def is_invited(value: str) -> bool:
-    """'초대완료여부' 칸이 완료를 뜻하는가 (표기가 시트마다 제각각)."""
+    """'초대완료여부' 칸이 완료를 뜻하는가 (표기가 시트마다 제각각).
+
+    `○, DAY` 처럼 **표시 뒤에 행사 이름을 붙여 둔 칸**도 완료다 — 맨 앞
+    표시만 본다. 예전에는 칸 전체를 보기 목록과 견줘서 그 줄들이 참여로
+    안 읽혔다(운영에 `○, DAY` · `○, DAY, SUMMIT` 이 실제로 있다).
+    """
     v = norm(value).lower()
     if not v:
         return False
-    return ("완료" in v) or ("완" == v) or v in ("o", "y", "yes", "ok", "v", "√", "○", "●")
+    return ("완료" in v) or ("완" == v) or v in _YES_MARKS or _head(v) in _YES_MARKS
+
+
+# `카톡방 참여여부` 칸이 무엇을 말하는가 — 넷 중 하나다.
+JOINED_YES = "yes"        # O · ○ · ● · `○, DAY` · 완료 …
+JOINED_NO = "no"          # X · `X, IRDAY` · `참여안함` · `방 나감` …
+JOINED_EMPTY = "empty"    # 비어 있다 — 아직 아무도 안 적었다
+JOINED_OTHER = "other"    # 사람이 적은 다른 말 — 앱이 뜻을 정하지 않는다
+
+
+def joined_state(value: Optional[str]) -> str:
+    """`카톡방 참여여부` 의 뜻. **참여로 읽는 판정은 `is_invited` 하나**다.
+
+    여기서 따로 `O`·`○` 를 적으면 시트를 읽어 연결 단계를 정하는 쪽
+    (`connect_stage`)과 방 확인을 맞추는 쪽(`services/room_joined`)이 서로
+    다른 값을 참여로 읽게 된다 — 이 저장소가 반복해 당한 부류다.
+    """
+    v = norm(value).lower()
+    if not v:
+        return JOINED_EMPTY
+    if is_invited(v):
+        return JOINED_YES
+    if _head(v) in _NO_MARKS or any(m in v for m in _LEFT_MARKS + _DECLINE_MARKS):
+        return JOINED_NO
+    return JOINED_OTHER
 
 
 
@@ -1101,6 +1143,9 @@ def apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
     다시 올려도 사본이 또 생기지 않는다. 같은 분이 두 줄이 되면 같은 딜이 두
     번 나갈 수 있어, 발송 목록을 만드는 쪽이 막는다(`services/twin_send`).
     """
+    # `room_joined` 이 이 파일의 판정(`joined_state`)을 읽으므로 함수 안에서 부른다.
+    from . import room_joined
+
     report = ImportReport(skipped=list(parsed.skipped),
                           notes=list(getattr(parsed, 'notes', [])))
     # 명단(시트)을 등록한다. 담당은 **처음 정해진 것을 유지**한다 —
@@ -1195,6 +1240,9 @@ def apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
         # 채우고 나면 '원래 비어 있었는지' 를 알 수 없게 된다 — 채운 칸은
         # 다름이 아니고, 이미 값이 있던 칸만 다름이다.
         was = {name: (getattr(contact, name, "") or "") for name in _DIFF_FIELDS}
+        # 방 확인 ↔ 참여여부를 맞추려면 **고치기 전** 세 값이 있어야 한다
+        # (아래 `room_joined.after_edit`).
+        was_room = room_joined.before(contact)
 
         # 상태 칸: 새 시트가 최신 판단 → 덮어쓴다
         _set_if_value(contact, "invited_status", pc.invited_status)
@@ -1303,6 +1351,10 @@ def apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
         if contact.connect_stage == STAGE_CONNECTED and not contact.kakao_room_name:
             contact.kakao_room_name = build_room_name(pc.name, contact.title, pc.firm,
                                                       suffix=room_suffix)
+        # 시트가 참여여부를 `X` 로 바꿨거나 단계가 `방 나감` 이 됐으면 `확인됨` 을
+        # 푼다. 화면에서 고칠 때와 **같은 규칙**이다(`services/room_joined`) —
+        # 여기만 빠지면 시트를 올릴 때마다 두 칸이 다시 갈린다.
+        room_joined.after_edit(contact, was_room)
         db.flush()
 
         # ── 시트와 앱이 **다른 칸** ──────────────────────────────────────

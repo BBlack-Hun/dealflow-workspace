@@ -65,10 +65,12 @@
   // 받는다. 그 까닭은 그대로다 — **표에 선 값 중에 서버가 만드는 것이 있다.**
   // 최근 딜소개·반응 같은 집계, 방 상태(`room-badge`), 연결 상태, 그리고
   // 서버가 저 혼자 바꾸는 값(방 이름을 지우면 따라 바뀌는 연결 상태 ·
-  // `room_verified` 가 `unverified` 로 돌아가는 것 — `routers/contacts.py` 의
-  // `update_contact`). 저장 응답에는 그것들이 안 실려 오므로, 화면에서 그 줄만
-  // 고쳐 그리면 **서버가 바꾼 값이 옛것으로 남는다.** 그래서 되그리기를
-  // 없애지 않았다. 그 값들이 맞게 보이는 유일한 길이 다시 받는 것이다.
+  // `room_verified` 가 `unverified` 로 돌아가는 것 — `services/room_joined`).
+  // 저장 응답에는 그것들이 다 실려 오지 않으므로, 화면에서 그 줄만 고쳐
+  // 그리면 **서버가 바꾼 값이 옛것으로 남는다.** 그래서 되그리기를 없애지
+  // 않았다. 그 값들이 맞게 보이는 유일한 길이 다시 받는 것이다.
+  // (표에서 칸 하나를 고치는 길은 다시 받지 않는다 — 거기서 따라 바뀌는
+  // `카톡방` 칸은 응답이 실어 와서 `syncRoomCells` 가 고쳐 그린다.)
   //
   // 없앤 것은 **자리 잃음**이다. 여든 줄짜리 명단의 예순째 줄을 고칠 때마다
   // 표가 (0,0) 으로 돌아가서, 고칠 때마다 그 줄을 처음부터 다시 찾아야 했다.
@@ -504,6 +506,44 @@
       table.classList.toggle("dense", density.checked);
     });
   }
+
+  // ── 서버가 따라 바꾼 **옆 칸** 을 그 자리에서 고쳐 그린다 ─────────────
+  //
+  // `카톡방`(확인됨) 과 `카톡방 참여여부` 는 서로 따라 움직인다 — 참여여부를
+  // `X` 로 고치면 `확인됨` 이 풀린다(`services/room_joined`). 표에서 칸 하나를
+  // 고치는 길은 화면을 다시 받지 않으므로(`inline_edit.js`), 응답이 실어 온
+  // 두 칸을 여기서 고쳐 그리지 않으면 새로고침 전까지 **옛 `확인됨` 이 그대로**
+  // 서 있다 — 맞춘 것이 화면에서는 안 맞은 것처럼 보인다.
+  //
+  // 행에 실린 거를 값(`data-f-room` · `data-f-joined`)도 함께 고친다. 안 고치면
+  // 칸은 `미확인` 인데 `확인됨` 으로 거르면 그 줄이 걸린다.
+  //
+  // **필터를 다시 읽는 손보다 먼저 건다**(바로 아래). 이벤트 손은 건 차례대로
+  // 불리므로, 뒤에 걸면 필터가 옛 값으로 목록을 만든 다음에 값이 바뀐다.
+  function syncRoomCells(e) {
+    var detail = (e && e.detail) || {};
+    var data = detail.data || {};
+    var row = detail.row;
+    if (!row) return;
+    if ("send_label" in data) {
+      var cell = row.querySelector("td.room-cell");
+      var badge = cell && cell.querySelector(".room-badge");
+      if (badge) {
+        badge.className = "room-badge " + (data.send_class || "");
+        badge.textContent = data.send_label;
+        cell.setAttribute("title", data.send_label);
+      }
+      if (row.hasAttribute("data-f-room")) row.setAttribute("data-f-room", data.send_label);
+    }
+    if ("kakao_joined" in data) {
+      var joined = row.querySelector('.cell[data-field="kakao_joined"]');
+      // 방금 사람이 고친 칸이면 손대지 않는다 — 그 칸은 `inline_edit.js` 가 이미
+      // 그렸고, 여기서 또 그리면 고치던 자리와 다투게 된다.
+      if (joined && joined !== detail.cell) joined.textContent = data.kakao_joined;
+      if (row.hasAttribute("data-f-joined")) row.setAttribute("data-f-joined", data.kakao_joined);
+    }
+  }
+  if (table) table.addEventListener("inline-saved", syncRoomCells);
 
   if (window.DealflowFilters && table) {
     // 검색은 컬럼 필터와 **AND** 로 묶는다 — 둘이 서로 tr.hidden 을 덮어쓰면
