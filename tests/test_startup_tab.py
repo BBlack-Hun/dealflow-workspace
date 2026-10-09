@@ -779,10 +779,11 @@ def test_감춘_명단_사람은_어느_화면의_투자사_수에도_안_들어
     # 그 화면에서 **그 명단 줄에 보내는 자리**도 자기 화면이다 — 각자 맡은
     # 스타트업에 안내 카톡을 고르는 곳이라 그 줄이 서야 한다
     # (`ListPage.msg_href`). 어느 주소인지 여기 적지 않고 화면의 값을 읽는다.
+    # 그 줄의 **보낼 방을 맞추는 자리**(`ListPage.rooms_href` — 방 매칭)도 같다.
     from app.routers.pages import CONTACTS_PAGE, STARTUP_PAGE
 
-    own = {home} | {p.msg_href for p in (CONTACTS_PAGE, STARTUP_PAGE)
-                    if p.href == home and p.msg_href}
+    own = {home} | {href for p in (CONTACTS_PAGE, STARTUP_PAGE) if p.href == home
+                    for href in (p.msg_href, p.rooms_href) if href}
     leaked = []
     for path, html in _screens(sheets).items():
         if path in own:

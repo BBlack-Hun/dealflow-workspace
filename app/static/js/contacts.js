@@ -441,6 +441,27 @@
       .catch(function () { alert("확인 요청 오류"); });
   }
 
+  // [방 후보 찾기] — 회사명으로 카톡을 뒤져 **후보만** 모은다. 어느 줄을 찾을지는
+  // 서버가 고른다(내 줄 중 방이 확인 안 된 곳 — `startup_room_pick.targets`).
+  // 여기서는 지금 보고 있는 줄을 보낼 뿐이다.
+  function searchRooms(ids, label) {
+    if (!ids.length) { alert("찾을 줄이 없습니다."); return; }
+    if (!confirm(label + " " + ids.length + "줄 중 카톡방이 확인 안 된 내 줄을 회사명으로 " +
+      "카톡에서 찾습니다.\n카카오톡이 켜져 있어야 하며, 찾는 중에는 PC 조작을 멈춰주세요.\n" +
+      "(문구는 전송하지 않습니다 · 찾은 방은 [방 매칭] 에서 골라 확정합니다)")) return;
+    fetch("/api/startup-rooms/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contact_ids: ids })
+    })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+      .then(function (res) {
+        if (!res.ok) { alert(res.d.detail || "찾기 요청 실패"); return; }
+        window.location.href = res.d.href || ("/jobs/" + res.d.job_id);
+      })
+      .catch(function () { alert("찾기 요청 오류"); });
+  }
+
   // ── 이벤트 ────────────────────────────────────────────────────────────────
   if (table) {
     table.addEventListener("click", function (e) {
@@ -484,6 +505,12 @@
   });
   on("verify-btn", "click", function () {
     verify(visibleIds(), "현재 목록의");
+  });
+  on("room-search-one-btn", "click", function () {
+    if (current) searchRooms([current], "선택한");
+  });
+  on("room-search-btn", "click", function () {
+    searchRooms(visibleIds(), "현재 목록");
   });
   on("add-btn", "click", function () {
     // 고치던 줄을 두고 새 줄로 넘어가는 것도 폼을 갈아 끼우는 일이다 —

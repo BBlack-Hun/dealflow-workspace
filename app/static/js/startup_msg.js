@@ -195,6 +195,24 @@
         .catch(function () { setError("방 제목 저장 오류"); });
     });
   }
+  // [방 후보 찾기] — 방 제목을 모르는 줄을 회사명으로 찾는다. 어느 줄을 찾을지는
+  // **서버가 고른다**(`startup_room_pick.targets` — 이 칸에 접힌 줄들이다).
+  var roomSearchBtn = document.getElementById("msg-room-search-btn");
+  if (roomSearchBtn) {
+    roomSearchBtn.addEventListener("click", function () {
+      var n = parseInt(roomSearchBtn.getAttribute("data-count") || "0", 10) || 0;
+      if (!n) return;
+      if (!window.confirm(n + "곳을 회사명으로 카톡에서 찾습니다.\n" +
+          "카카오톡이 켜져 있어야 하며, 찾는 중에는 PC 조작을 멈춰주세요.\n" +
+          "(문구는 전송하지 않습니다 · 찾은 방은 [방 매칭] 에서 골라 확정합니다)")) return;
+      post("/api/startup-rooms/search", {})
+        .then(function (res) {
+          if (!res.ok) { setError(res.d.detail || "찾기 요청 실패"); return; }
+          window.location.href = res.d.href || ("/jobs/" + res.d.job_id);
+        })
+        .catch(function () { setError("찾기 요청 오류"); });
+    });
+  }
   var verifyBtn = document.getElementById("msg-verify-btn");
   if (verifyBtn) {
     verifyBtn.addEventListener("click", function () {

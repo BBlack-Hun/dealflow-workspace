@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from .. import clock
 from ..db import get_db
 from ..deps import get_current_user, may_manage_team_contacts, templates
-from ..models import STARTUP_MSG_KIND, IrCompany, SendJob, User
+from ..models import ROOM_SEARCH_TOPIC, STARTUP_MSG_KIND, IrCompany, SendJob, User
 from ..services import (cadence, contact_columns, deal_history, deal_queue,
                         deal_stage, email_domains, group_name, ir_attach,
                         llm_brief, mailer, manual_send, ref_panel,
@@ -301,6 +301,11 @@ class ListPage:
     # 이 화면의 줄에 **고른 문구를 보내는 자리**. 없는 화면에는 단추가 서지 않는다.
     msg_href: str = ""
     msg_label: str = ""
+    # 이 화면의 줄을 **회사명으로 카톡에서 찾아 후보를 고르는 자리**
+    # (`routers/startup_outreach.py` 의 방 매칭). 있으면 툴바에 [방 후보 찾기] ·
+    # [방 매칭] 이, 수정창에 [이 방 후보 찾기] 가 선다. 투자사 화면에는 없다 —
+    # 그쪽 방 이름은 규칙으로 짓고 [방 연결 확인] 으로 대조한다.
+    rooms_href: str = ""
 
     @property
     def href(self) -> str:
@@ -325,7 +330,10 @@ STARTUP_PAGE = ListPage(key="startup", page=contact_columns.PAGE_STARTUP,
                         # 단추도 함께 선다.
                         room_check=True,
                         msg_href="/startup/msg",
-                        msg_label="안내 카톡 보내기")
+                        msg_label="안내 카톡 보내기",
+                        # 보낼 방을 회사명으로 카톡에서 찾아 고른다 — 이 명단
+                        # 줄에는 방 이름이 거의 없다(`services/startup_room_pick.py`).
+                        rooms_href="/startup/rooms")
 
 
 def list_page(
@@ -648,9 +656,15 @@ def job_page(
     # 스타트업 안내 카톡 회차는 [스타트업] 안에서 세운 것이다 — 메뉴도 거기
     # 켜지고, `새 발송` 도 그 화면으로 돌아간다(딜 제안 관리가 아니다).
     outreach = can_view and job.kind == STARTUP_MSG_KIND
+    # 스타트업 명단 줄의 카톡방 **후보 찾기**도 [스타트업] 안에서 세운 것이다.
+    # 찾은 제목은 후보로만 담기므로, 끝나면 갈 곳은 [방 매칭] 화면이다.
+    room_search = verify and job.topic == ROOM_SEARCH_TOPIC
     ctx = _base_ctx(request, db, user,
-                    "vc" if verify else STARTUP_PAGE.key if outreach else "deal")
+                    STARTUP_PAGE.key if (outreach or room_search)
+                    else "vc" if verify else "deal")
     ctx.update({"job_id": job_id, "job_exists": can_view, "verify": verify,
+                "room_search": room_search,
+                "rooms_href": STARTUP_PAGE.rooms_href,
                 "again_href": (f"{STARTUP_PAGE.msg_href}?topic={job.topic or ''}"
                                if outreach else "/deals"),
                 "readonly": can_view and job.user_id != user.id})

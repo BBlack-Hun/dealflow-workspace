@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{#
+  스타트업 카톡방 **매칭** — 내가 맡은 스타트업마다 카톡에서 찾은 후보를 골라
+  확정하거나, 직접 적는다.
+
+  무엇을 왜 그렇게 하는지는 `services/startup_room_pick.py` 머리말에 있다.
+  월간 발송의 대표 카톡방 맞추기(`startup_room.html`)와 **다른 표**다 — 저쪽은
+  IR 기업 현황의 기업 줄, 이쪽은 좌측 [스타트업] 명단의 내 줄이다.
+
+  이 화면이 **하지 않는 것** 둘:
+    · 방을 **고르지 않는다.** 후보가 하나뿐이어도 서버는 안 넣는다 — 누르는
+      것은 사람이다(`room_match` 머리말).
+    · 줄마다 무엇을 할 수 있는지 **판정하지 않는다** — 서버가 상태와 후보를
+      실어 보낸다(`startup_room_pick.rows`). 확정도 서버가 한 번 더 본다
+      (`startup_room_pick.confirm` — 후보에 없는 글자는 안 받는다).
+#}
+{% block title %}스타트업 카톡방 매칭 · CONTACTVC ASSET{% endblock %}
+{% block content %}
+
+<header class="page-head">
+  <h1>스타트업 카톡방 매칭</h1>
+  <p class="muted">
+    내가 맡은 스타트업(좌측 <a href="{{ startup_href }}">스타트업</a> 명단의 <b>내 줄</b>
+    {{ total }}곳)의 <b>대표 카톡방</b>을 맞춥니다 — 여기서 확정한 방으로
+    <a href="{{ msg_href }}">{{ msg_label }}</a>이 나갑니다.
+  </p>
+  {#
+    **두 길의 차이**가 화면에 없으면 사람은 직접 적고 끝난 줄 안다 — 그 줄은
+    `확인 안 됨` 이라 안내 카톡에서 고를 수 없다.
+  #}
+  <p class="hint">
+    ✋ <b>[방 후보 찾기]</b> 가 회사명으로 카톡을 뒤져 방 제목을 가져옵니다. 맞는 방에서
+    <b>[이 방으로 확정]</b> 을 누르면 카톡에서 읽어 온 제목 그대로 <b>확인됨</b> 이 되고
+    바로 보낼 수 있습니다. 후보가 없으면 카톡에서 방 제목을 복사해 <b>직접 적기</b> 에
+    붙여 넣으세요 — 직접 적은 이름은 <b>[방 연결 확인]</b> 을 거쳐야 보냅니다.
+  </p>
+</header>
+
+{% if msg %}<p class="flash">{{ msg }}</p>{% endif %}
+
+{# **무엇이 남았는지를 머리에 적는다.** `한 번도 안 찾아본 곳` 과 `찾았는데
+   후보가 없던 곳` 을 가른다 — 앞은 단추를 누르면 되고, 뒤는 카톡을 사람이
+   들여다봐야 한다. #}
+<p class="muted" data-testid="room-pick-summary">
+  확정됨 <b>{{ confirmed }}곳</b>
+  · 후보 있음 <b>{{ with_picks }}곳</b>
+  · 후보 없음 <b>{{ no_picks }}곳</b>
+  · 아직 안 찾아봄 <b>{{ never }}곳</b>
+  {% if excluded %}· 딜소개 불가 · 검토중단 <b>{{ excluded }}곳</b>은 안내 카톡이 언제나 빼는 곳이라 이 표에 없습니다{% endif %}
+</p>
+
+<div class="toolbar">
+  <div class="quick-chips">
+    <a class="chip" href="{{ startup_href }}">← 스타트업</a>
+    <a class="chip" href="{{ msg_href }}">{{ msg_label }}</a>
+  </div>
+  <div class="toolbar-right">
+    {# 방 이름은 적혀 있는데 확인 전인 줄 — 투자사 화면과 **같은 길**이다
+       (`/api/contacts/verify-rooms`). #}
+    <button type="button" class="secondary-btn" id="room-verify-btn"
+            data-ids="{{ verify_ids|join(',') }}"{% if not verify_ids %} disabled{% endif %}>
+      방 연결 확인 ({{ verify_ids|length }}곳)</button>
+    {# **한 통도 나가지 않는다.** 그 말이 단추 옆에 있어야 사람이 누를 수 있다. #}
+    <button type="button" class="primary-btn inline" id="room-search-btn"
+            data-count="{{ search_count }}"{% if not search_count %} disabled{% endif %}>
+      방 후보 찾기 ({{ search_count }}곳)</button>
+  </div>
+</div>
+<p class="hint">
+  <b>[방 후보 찾기]</b> 는 카톡방이 <b>확인 안 된 {{ search_count }}곳</b>을 회사명으로
+  검색합니다 — 한 통도 보내지 않고 <b>방 제목만 읽어 옵니다</b>. 이미 확정된 곳은 건드리지
+  않습니다. 발송 프로그램이 켜진 <b>내 PC 의 카톡</b>을 뒤지므로 그 PC 가 켜져 있어야
+  합니다. 투자사 방(인베스트먼트 · 벤처스 …)은 후보에서 뺍니다.
+</p>
+<p class="hint error" id="room-pick-error" role="alert"></p>
+
+<div class="table-wrap">
+  <table class="grid-table" id="room-pick-table">
+    <thead>
+      <tr>
+        <th>회사명</th>
+        <th>대표</th>
+        <th>카톡에서 찾은 방 제목</th>
+        <th>직접 적기 — 카톡에 보이는 글자 그대로</th>
+        <th>상태</th>
+      </tr>
+    </thead>
+    <tbody>
+      {#
+        **한 줄도 빼지 않는다**(제외 줄은 위에 수만 적었다). 확정된 줄도, 후보가
+        없는 줄도 남는다 — 빼면 "방금 확정한 곳이 어디 갔지" 를 물을 수가 없다.
+      #}
+      {% for r in rows %}
+      <tr class="room-pick-row" data-id="{{ r.id }}" data-state="{{ r.state }}">
+        <td>{{ r.firm or '—' }}</td>
+        <td>{{ r.name or '—' }}</td>
+        <td>
+          {% if r.picks %}
+          <ul class="room-cands">
+            {#
+              **카톡에서 가져온 진짜 제목.** 회사명이 든 후보를 도드라지게 —
+              사용자가 짚어 준 「회사명이 무조건 들어가 있음」이 고를 때의
+              근거다. 회사명이 안 든 후보도 **지우지 않는다**: 명단의 회사명이
+              방을 만들 때 쓴 이름과 다를 수 있다.
+            #}
+            {% for p in r.picks %}
+            <li class="room-cand{% if p.has_name %} named{% endif %}">
+              <span class="room-cand-title">{{ p.room }}</span>
+              {% if not p.has_name %}<span class="muted">· 회사명 없음</span>{% endif %}
+              {% if p.current and r.state == 'confirmed' %}
+              <span class="room-badge ok">✓ 이 방으로 확정됨</span>
+              {% elif p.same %}
+              {# 같은 제목이 여럿이면 그 글자로는 어느 방인지 가를 수 없다
+                 (`startup_room_pick.confirm` 이 받지 않는다). #}
+              <span class="room-badge warn">같은 제목의 방이 여럿 — 확정 불가</span>
+              {% else %}
+              <button type="button" class="linkbtn room-confirm"
+                      data-id="{{ r.id }}" data-room="{{ p.room }}">이 방으로 확정</button>
+              {% endif %}
+            </li>
+            {% endfor %}
+          </ul>
+          {% endif %}
+          {% if r.investor_hidden %}
+          <p class="hint">투자사 방 {{ r.investor_hidden }}개는 후보에서 뺐습니다.</p>
+          {% endif %}
+          {% if r.state == 'confirmed' and not r.picks %}
+          <p class="hint">카톡에서 확인된 방입니다 — 안내 카톡이 이 방으로 나갑니다.</p>
+          {% elif r.searched_at and not r.picks %}
+          <p class="hint">
+            회사명 <b>{{ r.query }}</b> 로 찾았지만 걸린 방이 없었습니다 — 카톡에서 직접
+            찾아 제목을 옮겨 적어 주세요.
+          </p>
+          {% elif not r.query and r.state != 'confirmed' %}
+          {# 회사명이 빈 줄은 무엇으로 찾을지가 없다 — 성함으로 찾으면 그 이름이 든
+             다른 방이 걸린다(`room_match.company_name`). #}
+          <p class="hint">회사명이 비어 있어 찾을 수 없습니다 — 카톡에서 방 제목을 복사해 직접 적어 주세요.</p>
+          {% elif not r.searched_at and r.state != 'confirmed' %}
+          <p class="hint">아직 찾아보지 않았습니다 (검색어 <b>{{ r.query }}</b>).</p>
+          {% endif %}
+        </td>
+        <td>
+          <input type="text" class="room-input room-direct" data-id="{{ r.id }}"
+                 value="{{ r.room }}" placeholder="카톡 방 제목 그대로"
+                 aria-label="{{ r.firm }} 카톡방 제목">
+          <button type="button" class="linkbtn room-direct-save" data-id="{{ r.id }}">저장</button>
+          {% if r.room and r.state != 'confirmed' %}
+          <p class="hint">적어 둔 이름 — <b>{{ r.room_label }}</b>. [방 연결 확인] 을 거쳐야 보냅니다.</p>
+          {% endif %}
+        </td>
+        <td>
+          <span class="room-badge {% if r.state == 'confirmed' %}ok{% else %}muted{% endif %}">{{ r.state_label }}</span>
+        </td>
+      </tr>
+      {% endfor %}
+      {% if not rows %}
+      <tr><td colspan="5" class="muted">내 스타트업 줄이 없습니다 — 좌측 <a href="{{ startup_href }}">스타트업</a> 명단의 내 탭에 줄을 넣으면 여기 섭니다.</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script src="{{ asset('js/startup_room_pick.js') }}"></script>
+{% endblock %}

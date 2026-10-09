@@ -28,7 +28,7 @@ from .. import config
 from ..db import get_db
 from ..services import cadence, pipeline, room_joined
 from ..deps import get_agent_device, may_auto_attach, now_iso
-from ..models import AgentDevice, SendItem, SendJob, User
+from ..models import ROOM_SEARCH_TOPIC, AgentDevice, SendItem, SendJob, User
 
 log = logging.getLogger(__name__)
 
@@ -186,32 +186,62 @@ def poll(
              # 파일이 실린 잡은 붙일 줄 아는 발송기에만 내준다(위 `can_attach`) —
              # 여기까지 왔다는 것은 그 발송기라는 뜻이다.
              **({"files": json.loads(i.files_json)} if i.files_json else {}),
-             # 방 확인 잡에만 검색어(이름+직함)를 함께 준다. message 는 빈 채로 두어
-             # 구버전 에이전트가 이 잡을 발송으로 오해해도 보낼 내용이 없게 한다.
-             **({"query": f"{i.contact.name} {i.contact.title or ''}".strip(),
-                 # 직함이 시트와 실제 방에서 다른 경우가 있어(이직·표기 차이)
-                 # 이름만으로 재검색할 수 있게 함께 준다. 동명이인은 회사로 가린다.
-                 "name": i.contact.name,
-                 "firm": i.contact.firm or ""}
-                if job.kind == VERIFY_KIND and i.contact is not None else {}),
-             # 받는 쪽이 **스타트업 기업**인 방 확인 잡. 검색어가 다르다 —
-             # **회사명 하나**다(`services/room_match.search_query`). 규칙은
-             # 그 파일 한 곳이고 여기서 다시 적지 않는다.
-             #
-             # `firm` 을 **일부러 안 보낸다.** 발송기는 결과가 둘 이상이면
-             # `firm` 으로 걸러 하나로 줄이고, 줄여서 하나가 되면 **나머지
-             # 후보를 버린 채** 보고한다(`agent/main.py: process_verify_job`).
-             # 여기서 필요한 것은 사람이 고를 **후보 전부**다 — 서버가 미리
-             # 줄이면 맞는 방이 화면에 서지도 못한다.
-             **(_company_search(i.ir_company)
-                if job.kind == VERIFY_KIND and i.ir_company is not None else {})}
+             # 방 확인 잡에만 검색어를 함께 준다(`_verify_search`). message 는 빈
+             # 채로 두어 구버전 에이전트가 이 잡을 발송으로 오해해도 보낼 내용이
+             # 없게 한다.
+             **(_verify_search(job, i) if job.kind == VERIFY_KIND else {})}
             for i in pending_items
         ],
     }
 
 
+def _company_row(job: SendJob, item: SendItem):
+    """이 방 확인 건이 **회사명으로 후보를 찾는** 건이면 그 줄, 아니면 `None`.
+
+    둘이다 — 월간 발송의 기업 줄(`IrCompany`)과, 후보 찾기 잡
+    (`ROOM_SEARCH_TOPIC`)에 실린 **스타트업 명단 줄**(`VcContact`). 둘 다 같은
+    길을 탄다: 회사명으로 찾고(`_company_search`), 찾은 제목은 후보로만 담는다
+    (`_apply_company_candidates`).
+
+    **내주는 자리(`poll`)와 결과를 받는 자리(`_apply_verify_result`)가 이 한
+    함수를 지난다.** 둘이 따로 가르면 회사명으로 찾아 놓고 결과는 담당자 쪽
+    규칙(하나면 방 이름으로 넣기)으로 받는 날이 온다 — 그것이 곧 짐작이다.
+
+    `ROOM_SEARCH_TOPIC` 이 없는 담당자 줄 확인(투자사 · [방 연결 확인])은
+    여기 걸리지 않는다 — 지금까지와 같다.
+    """
+    if item.ir_company is not None:
+        return item.ir_company
+    if item.contact is not None and job is not None and job.topic == ROOM_SEARCH_TOPIC:
+        return item.contact
+    return None
+
+
+def _verify_search(job: SendJob, item: SendItem) -> dict:
+    """방 확인 건에 실어 보내는 검색어."""
+    company = _company_row(job, item)
+    if company is not None:
+        # 받는 쪽이 **스타트업**인 방 확인. 검색어가 다르다 — **회사명 하나**다
+        # (`services/room_match.search_query`). 규칙은 그 파일 한 곳이고 여기서
+        # 다시 적지 않는다.
+        #
+        # `firm` 을 **일부러 안 보낸다.** 발송기는 결과가 둘 이상이면 `firm` 으로
+        # 걸러 하나로 줄이고, 줄여서 하나가 되면 **나머지 후보를 버린 채**
+        # 보고한다(`agent/main.py: process_verify_job`). 여기서 필요한 것은 사람이
+        # 고를 **후보 전부**다 — 서버가 미리 줄이면 맞는 방이 화면에 서지도 못한다.
+        return _company_search(company)
+    if item.contact is not None:
+        # 담당자 쪽 확인 — 검색어는 이름+직함.
+        return {"query": f"{item.contact.name} {item.contact.title or ''}".strip(),
+                # 직함이 시트와 실제 방에서 다른 경우가 있어(이직·표기 차이)
+                # 이름만으로 재검색할 수 있게 함께 준다. 동명이인은 회사로 가린다.
+                "name": item.contact.name,
+                "firm": item.contact.firm or ""}
+    return {}
+
+
 def _company_search(company) -> dict:
-    """기업 줄로 세운 방 확인 건에 실어 보내는 검색어.
+    """회사명으로 찾는 방 확인 건(`_company_row`)에 실어 보내는 검색어.
 
     `query` 로 못 찾으면 발송기가 `name` 으로 한 번 더 찾는다 — 그 두 번째가
     **더 짧은 글자**여야 띄어쓰기가 다른 방(`회사 명` ↔ `회사명`)을 찾는다
@@ -226,6 +256,10 @@ def _company_search(company) -> dict:
             # 방 열기에서 투자사 방을 버린다(`kakao_windows.looks_like_investor_room`).
             # 담당자 쪽 확인에는 안 붙는다 — 그쪽은 찾는 방이 곧 투자사 방이다.
             # 낡은 발송기는 모르는 칸이라 그냥 지나친다.
+            #
+            # 발송기는 이 칸과 `query` 만 본다 — 줄이 기업 표의 것인지 명단의
+            # 것인지는 모른다(알 필요가 없다). 그래서 스타트업 명단 줄의 후보
+            # 찾기도 **발송기를 고치지 않고** 같은 길을 탄다.
             "target": "company"}
 
 
@@ -296,8 +330,10 @@ def _apply_verify_result(item: SendItem, body: ItemResult) -> None:
     # 판정을 못 받았으면 '확인됨'으로 올리지 않는다 — 모르면 미확인 쪽이 안전하다.
     verdict = body.verify_result if body.verify_result in VERIFY_VERDICTS else "not_found"
 
-    if item.ir_company is not None:
-        _apply_company_candidates(item, body, verdict)
+    # 회사명으로 찾은 건은 **후보로만** 담는다 — 내줄 때와 같은 판정이다.
+    company = _company_row(item.job, item)
+    if company is not None:
+        _apply_company_candidates(item, company, body, verdict)
         return
 
     contact = item.contact
@@ -320,9 +356,12 @@ def _apply_verify_result(item: SendItem, body: ItemResult) -> None:
     )
 
 
-def _apply_company_candidates(item: SendItem, body: ItemResult,
+def _apply_company_candidates(item: SendItem, company, body: ItemResult,
                               verdict: str) -> None:
-    """받는 쪽이 **스타트업 기업**인 방 확인 — 찾아낸 제목들을 **후보로** 담는다.
+    """받는 쪽이 **스타트업**인 방 확인 — 찾아낸 제목들을 **후보로** 담는다.
+
+    `company` 는 기업 줄(`IrCompany`)이거나 후보 찾기 잡의 스타트업 명단 줄
+    (`VcContact`)이다(`_company_row`). 둘 다 같은 규칙을 탄다.
 
     ## 바로 위 담당자 쪽과 **갈리는 한 가지**  ★★
 
@@ -337,7 +376,9 @@ def _apply_company_candidates(item: SendItem, body: ItemResult,
     참여자 이름에도 걸린다. 근거 없이 넣으면 **엉뚱한 방으로 간다** —
     이 저장소가 가장 경계하는 사고다(`agent/sender/base.py` 의 never guess).
 
-    그래서 **고르는 것은 사람**이다(`/deals/startup-ir/rooms`).
+    그래서 **고르는 것은 사람**이다(`/deals/startup-ir/rooms` · 명단 줄은
+    `/startup/rooms`). 명단 줄도 마찬가지로 `room_verified` 를 안 건드린다 —
+    `카톡방 참여여부` 도 그대로다(`services/room_joined` 를 지나지 않는다).
 
     ## 왜 `candidates` 를 쓰나
 
@@ -357,7 +398,6 @@ def _apply_company_candidates(item: SendItem, body: ItemResult,
     """
     from ..services import room_match
 
-    company = item.ir_company
     rooms = [str(r) for r in (body.candidates or []) if str(r).strip()]
     if body.found_room and body.found_room.strip() not in rooms:
         rooms.insert(0, body.found_room.strip())
@@ -369,10 +409,11 @@ def _apply_company_candidates(item: SendItem, body: ItemResult,
     from sqlalchemy.orm import object_session
 
     rooms, dropped = room_match.drop_investor_rooms(
-        rooms, company.name, room_match.investor_rooms(object_session(company)))
+        rooms, room_match.company_name(company),
+        room_match.investor_rooms(object_session(company)))
     if dropped:
-        log.info("스타트업 방 후보에서 투자사 방 %d개를 뺐습니다 company_id=%s",
-                 len(dropped), company.id)
+        log.info("스타트업 방 후보에서 투자사 방 %d개를 뺐습니다 %s id=%s",
+                 len(dropped), type(company).__name__, company.id)
     room_match.save_candidates(company, rooms, at=now_iso(),
                                query=room_match.search_query(company),
                                dropped=len(dropped))
@@ -380,7 +421,8 @@ def _apply_company_candidates(item: SendItem, body: ItemResult,
         # 하나 찾았는데 그것이 투자사 방이었다 — 찾은 것이 없는 것과 같다.
         verdict = "not_found"
     # **`kakao_room_name` 도 `room_verified` 도 안 건드린다.** 담은 것은 후보일
-    # 뿐이고, 고른 것이 아니다 — 고르면 `room_match.set_room` 이 적는다.
+    # 뿐이고, 고른 것이 아니다 — 고르면 `room_match.set_room`(기업 줄) ·
+    # `startup_room_pick.confirm`(명단 줄)이 적는다.
     item.status = "sent" if verdict == "verified" else "failed"
     item.sent_at = now_iso() if verdict == "verified" else None
     if verdict == "verified":
@@ -390,12 +432,19 @@ def _apply_company_candidates(item: SendItem, body: ItemResult,
         # `같은 이름의 방이 여러 개입니다 (카톡에서 방 이름을 고유하게 바꾸세요)`
         # 를 적으면 **안 해도 되는 일을 시킨다** — 여기서는 여러 개가 정상이고,
         # 고르면 끝이다.
-        item.error = f"후보 {len(rooms)}개 — 맞추기 화면에서 고르세요"
+        item.error = f"후보 {len(rooms)}개 — {_pick_screen(company)}에서 고르세요"
     elif dropped:
         item.error = (f"투자사 방 {len(dropped)}개만 걸렸습니다 — 카톡에서 대표와의 "
                       "방을 직접 찾아 적어 주세요")
     else:
         item.error = body.error or VERIFY_ERRORS.get(verdict, verdict)
+
+
+def _pick_screen(company) -> str:
+    """후보를 고르는 화면 이름 — 진행 화면의 사유에 적는다."""
+    from ..models import IrCompany
+
+    return "맞추기 화면" if isinstance(company, IrCompany) else "방 매칭 화면"
 
 
 def _save_screenshot(item_id: int, b64: str) -> Optional[str]:
