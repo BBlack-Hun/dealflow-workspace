@@ -73,6 +73,17 @@
 이름을 대조하는 길**이라 사정이 다르다 — 찾은 제목이 적어 둔 것과 같은 방일
 근거가 있다. 여기는 적어 둔 것이 아무것도 없는 상태에서 **처음 알아내는**
 길이다. 근거가 없으니 사람이 고른다.
+
+## 받는 줄은 두 표다 — 같은 규칙을 지난다
+
+  · `IrCompany` — 월간 발송의 계약 기업(`/deals/startup-ir/rooms`).
+  · `VcContact` 중 **좌측 [스타트업] 명단의 줄** — 각자 맡은 스타트업
+    (`/startup/rooms`, `services/startup_room_pick.py`). 안내 카톡이 이 방으로
+    나간다.
+
+검색어 · 투자사 방 거르기 · 후보를 담는 모양은 **이 파일 하나**다. 두 표에서
+회사명이 든 칸 이름만 다르다(`company_name`) — `VcContact.name` 은 대표
+성함이라, 그 칸을 회사명으로 읽으면 사람 이름으로 카톡을 뒤진다.
 """
 from __future__ import annotations
 
@@ -168,6 +179,20 @@ def has_company_name(room: Optional[str], company_name: Optional[str]) -> bool:
     return bool(want) and want in key(room)
 
 
+def company_name(row) -> str:
+    """이 줄의 **회사명** — `IrCompany.name` 이거나 `VcContact.firm`.
+
+    스타트업 명단 줄(`VcContact`)에서 `name` 은 **대표 성함**이다
+    (`contact_columns.STARTUP_LAYOUT`). 두 표를 받는 함수가 `row.name` 을
+    읽으면 명단 줄에서는 사람 이름으로 카톡을 뒤지고, 그 이름이 든 다른 방
+    (투자사 방 · 단체방)이 후보로 선다. 그래서 회사명을 읽는 자리를 여기 하나로
+    둔다.
+    """
+    if isinstance(row, VcContact):
+        return row.firm or ""
+    return getattr(row, "name", "") or ""
+
+
 # ── 초안 ────────────────────────────────────────────────────────────────────
 
 def draft(company: IrCompany) -> str:
@@ -199,8 +224,11 @@ def draft(company: IrCompany) -> str:
     return f"{ceo} {CEO_TITLE} {name}"
 
 
-def search_query(company: IrCompany) -> str:
+def search_query(company) -> str:
     """카톡 검색창에 넣을 글자. **회사명 하나다.**
+
+    `IrCompany` 와 스타트업 명단 줄(`VcContact`) 둘 다 받는다 — 회사명이 든
+    칸은 `company_name` 이 고른다.
 
     사용자가 정한 길이 그대로다 — *"먼저 회사명으로 검색 후 리스트에서
     매칭되는 거 찾으면 될 듯"*. 대표자명을 섞지 않는다: 방 제목에 무조건 든
@@ -210,10 +238,10 @@ def search_query(company: IrCompany) -> str:
     법인 표기를 뗀다 — 카톡 검색은 글자가 든 방을 찾으므로 `(주)` 가 붙은
     검색어는 그것이 든 방만 찾는다.
     """
-    return normalize_space(normalize_company_name(strip_notes(company.name)))
+    return normalize_space(normalize_company_name(strip_notes(company_name(company))))
 
 
-def search_seed(company: IrCompany) -> str:
+def search_seed(company) -> str:
     """검색어로 아무것도 못 찾았을 때 **한 번 더 넣어 볼 더 짧은 글자.**
 
     발송기가 이미 그렇게 움직인다 — 검색어로 0건이면 `item["name"]` 으로 한
@@ -252,12 +280,23 @@ def investor_rooms(db: Optional[Session]) -> InvestorRooms:
     """투자사 담당자 명단(`vc_contacts`)에 적힌 방 이름·투자사 이름을 모은다.
 
     숨긴 줄도 넣는다 — 숨긴 담당자의 방도 **투자사 방**인 것은 같다.
+
+    ★ **투자사로 세지 않는 명단의 줄은 뺀다**(`sheet_owner.on_investor_list`).
+      좌측 [스타트업] 명단이 그 명단이고, 같은 표(`vc_contacts`)에 산다. 그
+      줄의 방은 **대표와의 방**이고 `firm` 은 **스타트업 회사명**이다 — 넣으면
+      확정해 둔 대표 방이 `투자사 담당자 방` 으로 읽혀 그 회사의 진짜 방이
+      후보에서 사라진다(월간 발송 쪽 맞추기에서도, 명단 줄 쪽 맞추기에서도).
     """
+    from . import sheet_owner
+
     out = InvestorRooms()
     if db is None:
         return out
-    for room, firm in db.execute(
-            select(VcContact.kakao_room_name, VcContact.firm)).all():
+    hidden = sheet_owner.hidden_labels(db)
+    for row in db.execute(select(VcContact)).scalars().all():
+        if not sheet_owner.on_investor_list(row, hidden):
+            continue
+        room, firm = row.kakao_room_name, row.firm
         if room and room.strip():
             out.rooms.add(_flat(room))
         firm_key = key(firm)
@@ -310,33 +349,55 @@ def drop_investor_rooms(rooms: Iterable[str], company_name: Optional[str],
 
 # ── 후보 담아 두기 ──────────────────────────────────────────────────────────
 
-def save_candidates(company: IrCompany, rooms, *, at: str,
+def save_candidates(company, rooms, *, at: str,
                     query: str = "", dropped: int = 0) -> None:
     """카톡에서 찾아낸 제목들을 담는다. **`kakao_room_name` 은 안 건드린다.**
+
+    `IrCompany` 와 스타트업 명단 줄(`VcContact`) 둘 다 받는다 — 둘 다
+    `room_candidates` 칸에 같은 모양으로 담는다.
 
     담는 모양은 `{"at": …, "query": …, "rooms": [...]}` 다. 언제·무엇으로
     찾은 것인지가 없으면 화면이 `후보 없음` 을 두 가지로 읽을 수 없다 —
     아직 안 찾아본 것과 찾았는데 없던 것은 해야 할 일이 정반대다.
+
+    **앞뒤 공백만 뗀다.** 가운데 공백을 줄이지 않는다 — 후보는 눌러서 그대로
+    방 이름이 되는 글자고(`set_room` · `startup_room_pick.confirm`), 방
+    제목은 카톡에 보이는 글자 그대로여야 발송기가 찾는다. 두 칸 띄운 방을 한
+    칸으로 줄여 담으면 고른 순간 못 찾는 이름이 된다.
+
+    ## 같은 제목이 둘 이상이면 `same` 에 적는다
+
+    단추는 하나만 세운다(같은 단추가 둘 서면 사람은 둘이 다른 방인 줄 안다).
+    대신 **겹쳤다는 사실**은 남긴다 — 같은 제목의 방이 여럿이면 그 제목으로는
+    어느 방인지 가를 수 없다(방 확인의 `ambiguous`). 그런 제목은 눌러서
+    `확인됨` 으로 확정할 수 없다(`startup_room_pick.confirm`).
     """
     clean: List[str] = []
+    same: List[str] = []
     for room in rooms or []:
-        text = normalize_space(str(room))
-        if text and text not in clean:
-            clean.append(text)
+        text = str(room).strip()
+        if not text:
+            continue
+        if text in clean:
+            if text not in same:
+                same.append(text)
+            continue
+        clean.append(text)
     # `dropped` — 투자사 방이라 **빼고 담은** 수. 화면이 "후보 0건" 을 "카톡에
     # 없다" 로 읽지 않게 남겨 둔다(`drop_investor_rooms`).
     company.room_candidates = json.dumps(
-        {"at": at, "query": query, "rooms": clean, "dropped": int(dropped or 0)},
+        {"at": at, "query": query, "rooms": clean, "dropped": int(dropped or 0),
+         "same": same},
         ensure_ascii=False)
 
 
-def candidates(company: IrCompany) -> dict:
+def candidates(company) -> dict:
     """담아 둔 후보. 한 번도 안 찾아봤으면 `{"at": "", "rooms": []}`.
 
     글자가 깨져 있어도 **터지지 않는다** — 이 값으로 열리는 것은 고르는
     화면이고, 거기서 500 이 나면 방 이름을 채울 길이 통째로 막힌다.
     """
-    empty = {"at": "", "query": "", "rooms": [], "dropped": 0}
+    empty = {"at": "", "query": "", "rooms": [], "dropped": 0, "same": []}
     raw = (company.room_candidates or "").strip()
     if not raw:
         return dict(empty)
@@ -354,7 +415,10 @@ def candidates(company: IrCompany) -> dict:
     return {"at": str(data.get("at") or ""),
             "query": str(data.get("query") or ""),
             "rooms": rooms,
-            "dropped": dropped}
+            "dropped": dropped,
+            # 같은 제목이 둘 이상 걸린 것(`save_candidates`). 예전에 담긴 줄에는
+            # 없다 — 없으면 빈 목록이다.
+            "same": [str(r) for r in (data.get("same") or []) if str(r).strip()]}
 
 
 # ── 방 이름 적기 ────────────────────────────────────────────────────────────

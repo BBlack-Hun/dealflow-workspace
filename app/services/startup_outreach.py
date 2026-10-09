@@ -300,6 +300,16 @@ def _verdict(contact: VcContact):
     return "", ""
 
 
+def group_of(contact: VcContact) -> str:
+    """못 보내는 갈래 — `excluded` · `no_room`, 보낼 수 있으면 빈 글자.
+
+    [방 매칭](`services/startup_room_pick.py`)이 **어느 줄의 방을 찾을지**를
+    이것으로 가른다 — 이 화면이 `방 확인 전` 으로 접어 두는 줄과 거기서 찾는
+    줄이 같아야, 찾아서 확정한 줄이 곧바로 이 화면의 고를 수 있는 줄로 올라온다.
+    """
+    return _verdict(contact)[0]
+
+
 def refusal(contact: VcContact) -> str:
     """이 줄에 **보내면 안 되는** 까닭. 보낼 수 있으면 빈 글자.
 

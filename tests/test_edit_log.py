@@ -643,6 +643,10 @@ WRITE_ROUTES = {
     # 공지를 **내가 확인했다**는 표시. 늘 자기 줄이고(`notice_reads.user_id`),
     # 남기면 사람 수 × 공지 수만큼 쌓여 로그가 `누가 공지를 닫았다` 로 덮인다.
     ("POST", "/notices/seen"): SELF,
+    # 스타트업 카톡방 매칭의 [이 방으로 확정] — **내 스타트업 줄만** 받는다
+    # (`startup_room_pick.mine` — 남의 줄은 404). 방 이름·확인 값이 바뀌는
+    # 칸은 `vc_contacts` 라 표 쪽 규칙(남의 것이면 남긴다)이 그대로 걸린다.
+    ("POST", "/api/startup-rooms/{contact_id}/confirm"): SELF,
 
     # ── 기계 기록 ───────────────────────────────────────────────────────────
     ("POST", "/logout"): MACHINE,
@@ -679,6 +683,9 @@ WRITE_ROUTES = {
     # 아무것도 고치지 않고, 결과를 적는 것은 발송기 쪽 길이다
     # (`/api/agent/items/{item_id}/result` — 바로 위 기계 칸에 있다).
     ("POST", "/deals/startup-ir/rooms/search"): MACHINE,
+    # 스타트업 명단 줄의 [방 후보 찾기] — 위와 같다. 방 확인 잡을 세우기만
+    # 하고, 찾은 제목은 발송기 쪽 길이 **후보로만** 담는다.
+    ("POST", "/api/startup-rooms/search"): MACHINE,
     ("POST", "/api/llm-brief/resolve"): MACHINE,
     ("POST", "/api/import/contacts/sheets"): MACHINE,
     # 자료 전체를 파일째 갈아 끼운다 — ORM 을 지나지 않는다.

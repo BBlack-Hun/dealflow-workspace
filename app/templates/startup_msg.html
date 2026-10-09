@@ -181,10 +181,18 @@
   <summary>방 확인 전 {{ counts.no_room }}곳 — 카톡에서 확인된 방에만 보냅니다</summary>
   <div class="sheet-fold-body">
     <p class="hint">
-      방 제목을 <b>카톡에 보이는 그대로</b> 적고 [저장] → <b>[방 연결 확인]</b> 을
-      누르면 발송 프로그램이 카톡에서 그 방을 찾아 봅니다(문구는 보내지 않습니다).
-      찾으면 <b>확인됨</b> 이 되고 위 표로 올라옵니다.
+      방 제목을 모르면 <b>[방 후보 찾기]</b> — 발송 프로그램이 <b>회사명으로</b> 카톡을
+      뒤져 방 제목을 가져오고, <a href="{{ rooms_href }}">방 매칭</a> 화면에서 맞는 방을
+      눌러 확정하면 <b>확인됨</b> 이 되어 위 표로 올라옵니다.
+      방 제목을 알면 <b>카톡에 보이는 그대로</b> 적고 [저장] → <b>[방 연결 확인]</b>.
+      (둘 다 문구는 보내지 않습니다)
     </p>
+    {# 찾을 곳 수는 **누르면 세우는 잡의 크기와 같은 함수**로 센다
+       (`startup_room_pick.targets` — `routers/startup_outreach.outreach_page`). #}
+    <button type="button" class="secondary-btn" id="msg-room-search-btn"
+            data-count="{{ search_count }}"{% if not search_count %} disabled{% endif %}>
+      방 후보 찾기 ({{ search_count }}곳)</button>
+    <a class="linkbtn" href="{{ rooms_href }}">방 매칭 화면</a>
     <button type="button" class="secondary-btn" id="msg-verify-btn"
             data-ids="{{ verify_ids|join(',') }}"{% if not verify_ids %} disabled{% endif %}>
       방 연결 확인 ({{ verify_ids|length }}곳)</button>

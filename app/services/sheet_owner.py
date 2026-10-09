@@ -92,6 +92,21 @@ def is_investor(contact: VcContact, hidden: Set[str]) -> bool:
     """
     if contact.is_hidden:
         return False
+    return on_investor_list(contact, hidden)
+
+
+def on_investor_list(contact: VcContact, hidden: Set[str]) -> bool:
+    """**명단으로 보아** 투자사인가 — 줄 단위 감춤(`is_hidden`)은 안 본다.
+
+    `is_investor` 의 명단 쪽 절반이다. 따로 부르는 자리는 **투자사 방을
+    알아보는** 자리 하나다(`room_match.investor_rooms`) — 줄을 감췄어도 그
+    사람의 방이 투자사 방인 것은 같아서, 거기서는 감춘 줄도 넣어야 한다.
+    판정 자체를 두 벌 적지 않으려고 이렇게 나눴다.
+
+    좌측 [스타트업] 명단은 투자사로 세지 않는 명단이라 여기서 빠진다 — 그
+    줄의 카톡방(대표와의 방)이 투자사 방으로 읽히면, 그 회사의 진짜 방이
+    후보에서 사라진다.
+    """
     return any(label not in hidden for label in labels_of(contact.source_sheet))
 
 

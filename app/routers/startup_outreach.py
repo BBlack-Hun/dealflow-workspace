@@ -33,10 +33,17 @@
 딜소개처럼 **각자**다. 화면이 세우는 줄도, 목록을 만드는 자리가 받는 줄도
 `startup_outreach.my_rows`(내 줄만) 하나를 지난다. 관리자도 자기 줄만이다 —
 회차는 그 사람의 것으로 서고 그 사람 PC 의 발송기만 집어간다.
+
+## 보낼 방 맞추기 — [방 후보 찾기] · [방 매칭] (`/startup/rooms`)
+
+안내 카톡은 **확인된 방**에만 나가는데 명단 줄에는 방 이름이 거의 없다.
+회사명으로 카톡을 뒤져 후보를 모으고(방 확인 잡 그대로 — 발송기를 안
+고친다), 사람이 골라 확정한다. 무엇을 왜 그렇게 하는지는
+`services/startup_room_pick.py` 머리말에 있다.
 """
 from __future__ import annotations
 
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
@@ -45,10 +52,14 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..deps import get_current_user, templates
-from ..models import User, VcContact
-from ..services import cadence, scheduled_send, startup_outreach
+from ..models import ROOM_SEARCH_TOPIC, SendItem, SendJob, User, VcContact
+from ..services import (cadence, scheduled_send, startup_outreach,
+                        startup_room_pick)
 from ..ui import base_ctx
 from ..version import VERSION
+# 방 확인 잡의 종류는 **한 곳에만 적는다**(`agent_api.VERIFY_KIND`) — 월간
+# 발송의 맞추기(`routers/startup_send.py`)가 같은 이유로 거기서 가져온다.
+from .agent_api import VERIFY_KIND
 from .pages import STARTUP_PAGE
 
 router = APIRouter(tags=["startup-outreach"])
@@ -59,6 +70,9 @@ ACTIVE = STARTUP_PAGE.key
 #: 이 화면의 주소 — [스타트업] 화면의 단추가 가리키는 **그 값**이다
 #: (`ListPage.msg_href`). 두 곳에 적으면 단추가 없는 자리로 데려간다.
 HREF = STARTUP_PAGE.msg_href
+
+#: [방 매칭] 화면의 주소 — 같은 이유로 `ListPage.rooms_href` 에서 읽는다.
+ROOMS_HREF = STARTUP_PAGE.rooms_href
 
 
 def _topic(value: str) -> startup_outreach.Topic:
@@ -102,6 +116,10 @@ def outreach_page(
         # 밝혀 잡이 큐에 서서 기다린다(`agent/main.py: STARTUP_MSG_KIND`).
         "agent_needs": VERSION,
         "startup_href": STARTUP_PAGE.href,
+        # `방 확인 전` 칸의 [방 후보 찾기] — 누르면 세우는 잡의 크기와 **같은
+        # 함수**로 센다(`startup_room_pick.targets`).
+        "rooms_href": ROOMS_HREF,
+        "search_count": len(startup_room_pick.targets(db, user)),
     })
     return templates.TemplateResponse("startup_msg.html", ctx)
 
@@ -207,3 +225,122 @@ def make_draft(body: SendIn, background: BackgroundTasks,
         background, db=db, user=user)
     return {**made, "href": f"/jobs/{made['job_id']}"}
 
+
+
+# ── 보낼 방 맞추기 — [방 후보 찾기] · [방 매칭] ────────────────────────────
+
+
+@router.get(ROOMS_HREF, response_class=HTMLResponse)
+def rooms_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    msg: str = "",
+):
+    """[방 매칭] — 내 스타트업 줄마다 카톡에서 찾은 후보 · 확정 · 직접 적기.
+
+    **고르는 것은 사람이다.** 서버는 후보를 세워 주기만 한다 — 하나뿐인 후보도
+    방 이름에 넣지 않는 까닭은 `services/room_match.py` 머리말에 있다.
+    """
+    ctx = base_ctx(request, db, user, ACTIVE)
+    ctx.update(startup_room_pick.rows(db, user))
+    ctx.update({
+        "msg": msg,
+        "startup_href": STARTUP_PAGE.href,
+        "msg_href": HREF,
+        "msg_label": startup_outreach.LABEL,
+    })
+    return templates.TemplateResponse("startup_room_pick.html", ctx)
+
+
+class RoomSearchIn(BaseModel):
+    # 비어 있으면(None) **찾을 수 있는 내 줄 전부**다. 스타트업 화면은 보이는
+    # 줄을, 수정창은 그 한 줄을 보낸다.
+    contact_ids: Optional[List[int]] = None
+
+
+@router.post("/api/startup-rooms/search")
+def search_rooms(body: RoomSearchIn, db: Session = Depends(get_db),
+                 user: User = Depends(get_current_user)):
+    """[방 후보 찾기] — 회사명으로 카톡을 뒤져 후보를 모아 오는 잡을 세운다.
+
+    ## 새 잡 종류를 만들지 않는다  ★★
+
+    이미 있는 **방 확인 잡**(`verify_room`)이다. 발송기가 이미 집어가는
+    종류라 판을 올리지 않아도 팀원 PC 의 발송기가 그대로 처리한다. 다른 것은
+    `topic` 하나다(`ROOM_SEARCH_TOPIC`) — 서버가 그것을 보고 이 잡의 줄을
+    **회사명으로** 내주고(`target: company` — 발송기가 맨 위 방 열기에서 투자사
+    방을 버린다), 결과를 **후보로만** 담는다(`agent_api._company_row`).
+
+    ## 한 통도 나가지 않는다 · 방 이름도 안 바뀐다
+
+    발송기는 이 잡에서 검색만 한다. `message=""` 는 아주 낡은 발송기가 이 잡을
+    발송으로 오해해도 보낼 것이 없게 하는 안전장치다(`contacts.verify_rooms`
+    와 같다). `room_name=""` 은 **모르는 값을 지어 넣지 않는** 것이다 — 적어
+    둔 이름을 넣으면 발송기가 후보를 못 찾았을 때 그 이름으로 대조해 보고,
+    결과가 이 길에서는 버려진다(대조는 [방 연결 확인] 의 일이다).
+
+    ## `queued` 로 세운다
+
+    아무것도 안 나가고 읽기만 하므로 한 번 더 누르게 할 까닭이 없다(월간 발송
+    맞추기의 [카톡에서 방 찾기] 와 같다).
+    """
+    ids = None if body.contact_ids is None else list(dict.fromkeys(body.contact_ids))
+    targets = startup_room_pick.targets(db, user, ids)
+    if not targets:
+        raise HTTPException(
+            status_code=400,
+            detail=("찾을 곳이 없습니다 — 내 스타트업 줄 중 카톡방이 확인 안 된 곳만 "
+                    "회사명으로 찾습니다(이미 확정된 곳 · 남의 줄 · 딜소개 불가 · "
+                    "검토중단 · 회사명이 빈 줄은 빠집니다)"))
+
+    job = SendJob(user_id=user.id, kind=VERIFY_KIND, topic=ROOM_SEARCH_TOPIC,
+                  status="queued", total=len(targets), sent=0, failed=0)
+    db.add(job)
+    db.flush()
+    for contact in targets:
+        db.add(SendItem(job_id=job.id, contact_id=contact.id,
+                        room_name="", message="", status="pending"))
+    db.commit()
+    return {"job_id": job.id, "total": len(targets),
+            # 고른 줄 중 **빠진 수**. 세어 주지 않으면 몇 곳이 왜 안 들어갔는지
+            # 모른다(이미 확정된 줄이 대부분이다).
+            "skipped": (len(ids) - len(targets)) if ids is not None else 0,
+            "href": f"/jobs/{job.id}"}
+
+
+class ConfirmIn(BaseModel):
+    room: str = ""
+
+
+@router.post("/api/startup-rooms/{contact_id}/confirm")
+def confirm_room(contact_id: int, body: ConfirmIn,
+                 db: Session = Depends(get_db),
+                 user: User = Depends(get_current_user)):
+    """[이 방으로 확정] — 카톡에서 찾아 온 후보 하나를 그 줄의 방으로 정한다.
+
+    방 이름 = 그 제목, `확인됨`, `카톡 연결 여부` = `O`(`room_joined` 의 규칙).
+    그 순간 안내 카톡에서 고를 수 있는 줄이 된다 — 고를 수 있는지는
+    `startup_outreach.refusal` 이 정하고, 그 판정은 확인된 방만 본다.
+
+    **내 줄만**이다(`startup_room_pick.mine` — 화면에 서는 줄과 같은 판정).
+    남의 줄이면 있는지도 흘리지 않는다(404).
+    """
+    contact = startup_room_pick.mine(db, user, contact_id)
+    if contact is None:
+        raise HTTPException(status_code=404, detail="내 스타트업 줄이 아닙니다")
+    try:
+        startup_room_pick.confirm(db, contact, body.room)
+    except startup_room_pick.NotPickable as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    db.commit()
+    state = startup_outreach.room_state(contact)
+    return {"ok": True, "id": contact.id,
+            "room": contact.kakao_room_name or "",
+            "room_verified": contact.room_verified,
+            "kakao_joined": contact.kakao_joined or "",
+            "room_label": startup_outreach.ROOM_LABELS.get(state, state),
+            # 안내 카톡이 이 방을 받는가 — 그 화면과 같은 판정이다. `방 나감` ·
+            # `참여 안 함` 으로 적힌 줄은 확인을 달지 않아서(`room_joined.
+            # set_verdict`) 여기서 거짓이 되고, 화면이 그 까닭을 사람에게 전한다.
+            "room_ready": startup_outreach.room_ready(contact)}

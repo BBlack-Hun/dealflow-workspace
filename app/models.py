@@ -172,6 +172,22 @@ class VcContact(TimestampMixin, Base):
     kakao_room_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     # unverified | verified | ambiguous | not_found
     room_verified: Mapped[str] = mapped_column(String, default="unverified")
+    # **카톡에서 회사명으로 찾아 나온 방 제목들**(JSON) — 좌측 [스타트업] 명단
+    # 줄에만 찬다. 모양·읽고 쓰는 함수는 `IrCompany.room_candidates` 와 같다
+    # (`services/room_match.save_candidates` · `candidates`).
+    #
+    # 스타트업 명단 줄의 카톡방은 **이름 규칙으로 지을 수 없다**(`대표 대표님회사 ,
+    # 팀원` 꼴인데 띄어쓰기가 제각각이다 — `room_match` 머리말). 그래서 [방 후보
+    # 찾기] 가 회사명으로 카톡을 뒤져 제목들을 여기 담고, 사람이 [방 매칭]
+    # 화면에서 골라 확정한다(`services/startup_room_pick.py`).
+    #
+    # ## 여기 든 값은 **아직 방 이름이 아니다**  ★
+    #
+    # 후보가 하나뿐이어도 위 `kakao_room_name` 에 저절로 들어가지 않는다 — 회사명이
+    # 든 방이 꼭 그 대표와의 방인 것은 아니다. 투자사 줄은 이 칸을 쓰지 않는다
+    # (그쪽은 적어 둔 방 이름을 대조하는 길이라 결과 하나를 그대로 넣는다 —
+    # `routers/agent_api._apply_verify_result`).
+    room_candidates: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     stages: Mapped[Optional[str]] = mapped_column(String, nullable=True)   # CSV: Seed,SeriesA
     sectors: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # CSV: AI,헬스케어
     status: Mapped[str] = mapped_column(String, default="active")  # active | no_response | paused
@@ -861,7 +877,10 @@ class SendJob(TimestampMixin, Base):
     #: 종류는 큐에 그대로 선다).
     #:
     #: 회차명(`DealBatch.title`)에서 읽지 않는다 — 사람이 고쳐 쓰는 칸이다.
-    #: 나머지 잡 종류에서는 비어 있다.
+    #:
+    #: 방 확인 잡(`verify_room`)에서는 **무엇을 하러 선 잡인가**를 담는다 —
+    #: `ROOM_SEARCH_TOPIC` 이면 스타트업 명단 줄의 카톡방 **후보 찾기**다
+    #: (아래 그 값의 설명). 나머지 잡 종류에서는 비어 있다.
     topic: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
     items: Mapped[list["SendItem"]] = relationship(
@@ -934,6 +953,20 @@ STARTUP_MSG_KIND = "startup_msg"
 #: 받는 쪽이 **스타트업 한 곳**인 발송 잡 — 세는 말이 `곳` 이다
 #: (`services/scheduled_send.unit`).
 STARTUP_JOB_KINDS = (STARTUP_SEND_KIND, STARTUP_MSG_KIND)
+
+#: 스타트업 명단 줄의 카톡방 **후보 찾기** — 방 확인 잡(`verify_room`)의
+#: `SendJob.topic` 에 이 값이 들면, 그 잡의 줄(`VcContact`)은 **회사명으로**
+#: 찾고(`room_match.search_query`), 찾은 제목은 **후보로만** 담는다
+#: (`VcContact.room_candidates` — 방 이름도 확인 표시도 안 건드린다).
+#:
+#: **새 잡 종류를 만들지 않는다.** 종류가 늘면 그 종류를 모르는 발송기가 잡을
+#: 집어가지 않아 큐에 그대로 선다(`app/version.py` 의 0.9.0 · 0.10.0). 발송기는
+#: 줄마다 실린 `query` · `target` 만 보고 움직이므로(`agent/main.py:
+#: process_verify_job`), 어느 표의 줄인지는 서버만 알면 된다.
+#:
+#: 이 값이 없는 담당자 줄 방 확인(투자사 · [방 연결 확인])은 지금까지와 같다 —
+#: 이름+직함으로 대조하고, 결과가 하나면 그 제목을 방 이름으로 넣는다.
+ROOM_SEARCH_TOPIC = "room_search"
 
 
 class SendItem(TimestampMixin, Base):
@@ -1015,9 +1048,11 @@ class SendItem(TimestampMixin, Base):
         명단에서 줄을 알아보는 이름은 성함이 아니라 **기업명**이다(성함이 빈
         줄이 흔하다 — `contact_columns.STARTUP_LAYOUT.required`). 그래서
         `기업명 · 성함` 으로 적는다 — 성함만 적으면 진행 화면이 빈 줄로 선다.
+        같은 명단 줄의 카톡방 **후보 찾기**(`ROOM_SEARCH_TOPIC`)도 같다.
         """
         if (self.contact is not None and self.job is not None
-                and self.job.kind == STARTUP_MSG_KIND):
+                and (self.job.kind == STARTUP_MSG_KIND
+                     or self.job.topic == ROOM_SEARCH_TOPIC)):
             parts = [p for p in ((self.contact.firm or "").strip(),
                                  (self.contact.name or "").strip()) if p]
             return " · ".join(parts) or None

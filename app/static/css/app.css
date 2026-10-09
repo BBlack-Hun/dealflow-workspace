@@ -2796,3 +2796,14 @@ a.guard-go:hover { background: #1e4fd0; text-decoration: none; }
 .msg-preview-item pre { white-space: pre-wrap; font: inherit; font-size: 13px; margin: 4px 0 0; }
 .plain-list { margin: 4px 0; padding-left: 18px; font-size: 12px; }
 #msg-noroom-table .room-input { width: 260px; }
+
+/* ── 스타트업 카톡방 매칭(`startup_room_pick.html`) ───────────────────────
+   줄마다 **카톡에서 찾은 제목들**이 [이 방으로 확정] 단추와 함께 선다. 제목은
+   길고(`대표 대표님회사 , 팀원 직함`) 띄어쓰기 하나가 방을 가르는 자리라,
+   자르지 않고 감싸서 통째로 보이게 둔다. */
+.room-cands { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.room-cand { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+.room-cand-title { word-break: break-all; }
+/* 회사명이 든 후보를 먼저 보이게(`startup_room.html` 의 `.room-pick.named` 와 같은 뜻). */
+.room-cand.named .room-cand-title { color: var(--brand); font-weight: 600; }
+#room-pick-table .room-input { width: 240px; min-width: 180px; }
