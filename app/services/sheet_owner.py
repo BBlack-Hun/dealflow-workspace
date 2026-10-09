@@ -882,10 +882,15 @@ def settings_map(db: Session) -> Dict[str, SheetOwner]:
             for row in db.execute(select(SheetOwner)).scalars().all()}
 
 
+def _layout_key(row: Optional[SheetOwner]) -> str:
+    """설정 줄의 배치. 정해 두지 않았으면 투자사 명함이다 — 판정은 여기 하나다
+    (`layout_of` · `sheet_rows` · `page_labels` 가 함께 읽는다)."""
+    return row.layout if row and row.layout else "investor"
+
+
 def layout_of(db: Session, label: str) -> str:
     """이 명단을 어떤 표로 보여 줄까. 정해 두지 않았으면 투자사 명함이다."""
-    row = settings_map(db).get(label)
-    return (row.layout if row and row.layout else "investor")
+    return _layout_key(settings_map(db).get(label))
 
 
 # ── 명단이 사는 화면 ────────────────────────────────────────────────────────
@@ -906,6 +911,49 @@ def page_of(db: Session, label: str) -> str:
     from . import contact_columns
 
     return contact_columns.page_of(layout_of(db, label))
+
+
+def page_labels(db: Session, page: str) -> Set[str]:
+    """**이 화면에 사는** 명단 이름들.
+
+    탭을 거르는 판정(`sheet_rows(page=…)`)과 **같은 값**을 읽는다 — 배치
+    (`SheetOwner.layout`) → 화면(`contact_columns.page_of`). 이름으로 고르지
+    않는다(위 머리말). 설정 줄이 없는 이름(`직접 추가`)은 투자사 명함 배치라
+    투자사 화면에 산다.
+    """
+    from . import contact_columns
+
+    return {label for label, row in settings_map(db).items()
+            if contact_columns.page_of(_layout_key(row)) == page}
+
+
+def on_page(contact: VcContact, labels: Set[str]) -> bool:
+    """이 줄이 그 화면의 명단 중 하나에 올라 있는가(`page_labels`)."""
+    return any(label in labels for label in labels_of(contact.source_sheet))
+
+
+def room_checkable(db: Session, contacts: List[VcContact]) -> List[VcContact]:
+    """[방 연결 확인] 을 걸 수 있는 줄 — **투자사** 와 **스타트업 명단의 줄**.
+
+    투자사로 세지 않는 명단(`is_hidden`)은 방을 확인할 까닭이 없다고 보고
+    통째로 뺐었다(`routers/contacts.verify_rooms`). 그런데 좌측 [스타트업]
+    명단도 그 숨긴 명단이고, 거기 줄에도 이제 **카톡이 나간다** — 각자 맡은
+    스타트업에 보내는 안내 카톡(`services/startup_outreach.py`). 보낼 방을
+    확인할 길이 있어야 한다.
+
+    **스타트업 줄을 확인해도 투자사가 되지 않는다.** 딜소개 발송 대상·투자사
+    수·대시보드는 전부 `is_investor`/`is_deal_list` 를 지나고, 그 판정은 명단의
+    숨김을 본다 — 방 확인 결과(`room_verified`)나 연결 단계와 상관이 없다.
+
+    줄 단위로 감춘 줄은 어느 쪽이든 뺀다(`is_investor` 와 같은 규칙).
+    """
+    from .contact_columns import PAGE_STARTUP
+
+    hidden = hidden_labels(db)
+    startup = page_labels(db, PAGE_STARTUP)
+    return [c for c in contacts
+            if not c.is_hidden
+            and (is_investor(c, hidden) or on_page(c, startup))]
 
 
 def page_href(db: Session, label: str) -> str:
@@ -1036,6 +1084,20 @@ def tab_specs(user: User) -> List[TabSpec]:
     return [spec for spec in member_tabs() if can_open(user, f"/{spec.page}")]
 
 
+def real_name(user: User) -> str:
+    """이 계정의 **사람 이름**. 이름이 없으면 빈 글자.
+
+    계정을 만들 때 이름이 비면 로그인 ID(휴대폰번호)가 이름으로 들어간다 —
+    그것은 이름이 아니다. 탭 이름(`member_name`)과 스타트업 안내 카톡의
+    `{보내는사람}`(`services/startup_outreach.sender_name`)이 같은 판정을 읽는다.
+    둘이 따로 정하면 한쪽에만 전화번호가 실린다.
+    """
+    name = (user.name or "").strip()
+    if not name or name == (user.phone or "").strip():
+        return ""
+    return name
+
+
 def member_name(user: User) -> str:
     """탭 이름에 적을 팀원 이름.
 
@@ -1043,10 +1105,7 @@ def member_name(user: User) -> str:
     로그인 ID(휴대폰번호)가 이름으로 들어가는데, 그 값을 탭 이름에 실으면
     화면과 내려받는 파일 이름에 번호가 그대로 나온다.
     """
-    name = (user.name or "").strip()
-    if not name or name == (user.phone or "").strip():
-        return f"계정 {user.id}"
-    return name
+    return real_name(user) or f"계정 {user.id}"
 
 
 def tab_label(db: Session, user: User, spec: TabSpec) -> str:
@@ -1193,7 +1252,7 @@ def sheet_rows(db: Session, contacts: List[VcContact],
                         key=lambda k: (-connected.get(k, 0), -total.get(k, 0), k)):
         row = settings.get(label)
         uid = row.user_id if row else None
-        layout = (row.layout if row and row.layout else "investor")
+        layout = _layout_key(row)
         if page is not None and contact_columns.page_of(layout) != page:
             continue
         out.append({

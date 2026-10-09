@@ -485,7 +485,12 @@ def verify_rooms(
         query = query.where(VcContact.id.in_(req.contact_ids))
     # 투자사로 세지 않는 명단·감춘 줄은 방을 확인할 이유가 없다. 확인해 두면
     # `연결 완료` 가 붙고, 그 순간 딜소개 발송 대상 목록에 함께 뜬다.
-    contacts = sheet_owner.investors(
+    #
+    # **단, 좌측 [스타트업] 명단의 줄은 확인한다** — 거기에도 이제 각자 안내
+    # 카톡을 보낸다(`services/startup_outreach.py`). 그 명단은 숨긴 명단이라
+    # 확인해도 딜소개 대상·투자사 수에는 안 들어간다. 무엇을 넣는지는
+    # `sheet_owner.room_checkable` 한 곳이 정한다.
+    contacts = sheet_owner.room_checkable(
         db, db.execute(query.order_by(VcContact.id)).scalars().all())
 
     # 메일 채널로만 관리하는 담당자는 카톡방이 없는 게 정상이라 확인 대상이 아니다.
@@ -1145,8 +1150,18 @@ def _send_view(item: SendItem, job: SendJob, names: List[str],
 
 
 def _send_summary(item: SendItem, job: SendJob) -> str:
-    """실패했을 때만 뜻이 있는 줄. 성공한 건은 기업 목록이 본문이다."""
-    label = {"deal_intro": "딜소개", "ir_delivery": "IR 전달"}.get(job.kind, job.kind)
+    """실패했을 때만 뜻이 있는 줄. 성공한 건은 기업 목록이 본문이다.
+
+    스타트업 안내 카톡은 실을 기업 목록이 없다 — **무슨 문구였는지**가 본문이다
+    (`안내 카톡 · 견적서 공유 안내`). 이름은 그 문구를 고르는 자리와 같은 곳에서
+    가져온다(`startup_outreach.history_label`).
+    """
+    from ..services import startup_outreach
+
+    if job.kind == startup_outreach.KIND:
+        label = startup_outreach.history_label(job.topic)
+    else:
+        label = {"deal_intro": "딜소개", "ir_delivery": "IR 전달"}.get(job.kind, job.kind)
     if item.status == "sent":
         return label
     state = {"failed": "실패", "pending": "대기",

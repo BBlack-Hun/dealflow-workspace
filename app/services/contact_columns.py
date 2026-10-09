@@ -882,6 +882,17 @@ STARTUP_LAYOUT = Layout(
         Column("담당 이력", "owner_history", 0, source="note",
                kind="long", in_table=False,
                hint="7/21 김담당 -> 8/19 이담당"),
+        # **안내 카톡을 보낼 방**(`VcContact.kakao_room_name` 그 칸 자체 —
+        # 투자사 표의 `카톡방` 과 같은 칸이다). 이 명단에도 이제 카톡이 나간다
+        # (좌측 [스타트업] → [안내 카톡 보내기] — `services/startup_outreach.py`).
+        # 그동안 이 배치에는 방 이름을 적을 자리가 **화면 어디에도** 없었다.
+        #
+        # 표가 아니라 수정창에 둔다 — 매달 보는 칸이 아니다(옆 칸들과 같은
+        # 이유). 적고 나서 수정창의 [이 방만 확인] · 툴바의 [방 연결 확인] 으로
+        # 카톡에 그 방이 있는지 확인한다 — **확인된 방에만** 나간다.
+        # 글자를 고치면 확인은 풀린다(`services/room_joined.after_edit`).
+        Column("카톡방 이름", "kakao_room_name", 0, in_table=False,
+               hint="카톡에 보이는 방 제목 그대로 — 한 글자만 달라도 못 찾습니다"),
     ],
 )
 

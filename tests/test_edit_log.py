@@ -671,6 +671,10 @@ WRITE_ROUTES = {
     # 줄은 애초에 못 집는다(`followups._owned`) — 그 셋과 같은 칸에 둔다.
     ("POST", "/followups/{sequence_id}/called"): MACHINE,
     ("POST", "/deals/startup-ir/send"): MACHINE,
+    # 스타트업 안내 카톡 — 미리보기는 아무것도 안 고치고, 대기 목록은
+    # `/api/deals/send` 와 같은 함수로 발송 잡만 세운다(바로 위 둘과 같은 칸).
+    ("POST", "/api/startup-msg/preview"): MACHINE,
+    ("POST", "/api/startup-msg/send"): MACHINE,
     # 카톡에서 방 제목 후보를 찾아 오는 잡을 세운다. 세우는 것 말고는
     # 아무것도 고치지 않고, 결과를 적는 것은 발송기 쪽 길이다
     # (`/api/agent/items/{item_id}/result` — 바로 위 기계 칸에 있다).

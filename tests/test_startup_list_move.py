@@ -333,12 +333,18 @@ def test_새_화면에는_투자사_조작이_없다(lists):
     같은 줄에 적혀 있었다 — `만드는 줄도 투자사 명함이다`. 그 이유가 맞았기
     때문에, 단추를 세우면서 **만드는 길부터 고쳤다**: 이제 무엇이 반드시
     있어야 하는지도 · 어느 명단에 들어가는지도 · 담당이 누구인지도 명단이
-    정한다(`routers/contacts.py` 의 `create_contact`). 남은 셋의 이유는 아직
+    정한다(`routers/contacts.py` 의 `create_contact`). 남은 둘의 이유는 아직
     살아 있어 그대로 둔다. 새 단추가 제대로 서는지는
     `tests/test_startup_add_row.py` 가 잰다.
+
+    **[방 연결 확인] 도 이 목록에서 빠졌다.** 이 명단에도 이제 카톡이 나간다 —
+    각자 맡은 스타트업에 보내는 안내 카톡(`services/startup_outreach.py`)은
+    **확인된 방**에만 나가서, 확인하는 단추가 이 화면에 있어야 한다. 서버도
+    이 명단 줄을 받는다(`sheet_owner.room_checkable` — 그래도 투자사로는 안
+    센다). 단추가 제대로 서는지는 `tests/test_startup_outreach.py` 가 잰다.
     """
     body = lists.get(_pages()["startup"]).text
-    for what in ('id="verify-btn"', 'id="import-btn"', 'class="funnel"'):
+    for what in ('id="import-btn"', 'class="funnel"'):
         assert what not in body, f"스타트업 화면에 투자사 조작(`{what}`)이 있습니다"
     # 투자사 화면에서는 그대로 있어야 한다 — 감추다 같이 지우면 안 된다.
     vc = lists.get(_pages()["contacts"]).text

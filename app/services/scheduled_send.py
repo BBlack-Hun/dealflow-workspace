@@ -60,7 +60,7 @@ from sqlalchemy.orm import Session
 
 from .. import clock
 from ..db import SessionLocal
-from ..models import STARTUP_SEND_KIND, SendJob, User
+from ..models import STARTUP_JOB_KINDS, STARTUP_SEND_KIND, SendJob, User
 from . import auto_send
 
 log = logging.getLogger(__name__)
@@ -206,8 +206,11 @@ def unit(job: SendJob) -> str:
     딜소개는 투자사 담당자 한 사람씩이라 `명` 이고, 스타트업 월간 발송은 한 줄이
     기업 하나다(`routers/startup_send.py`) — 그 화면의 단추도 `N곳` 이라고
     적는다. 같은 회차를 두 화면이 다른 말로 세면 사람이 둘을 다른 수로 읽는다.
+
+    스타트업 안내 카톡도 `곳` 이다 — 그 명단에서 줄 하나는 기업 하나다
+    (`STARTUP_JOB_KINDS`).
     """
-    return "곳" if job.kind == STARTUP_SEND_KIND else "명"
+    return "곳" if job.kind in STARTUP_JOB_KINDS else "명"
 
 
 def held_back(db: Session, job: SendJob) -> str:
