@@ -414,6 +414,9 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
   min-width: 30px; }
 .density-toggle { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 4px; }
 .primary-btn.inline { width: auto; margin: 0; padding: 8px 14px; font-size: 13px; }
+/* 링크로 선 작은 단추(스타트업 화면의 [안내 카톡 보내기]) — `a.secondary-btn`
+   과 같은 처리. `<a>` 는 인라인이라 그대로 두면 밑줄이 서고 높이가 어긋난다. */
+a.primary-btn.inline { display: inline-flex; align-items: center; text-decoration: none; }
 
 .chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; min-height: 0; }
 .filter-chip { font-size: 12px; padding: 4px 10px; border-radius: 999px; cursor: pointer;
@@ -2784,3 +2787,12 @@ a.guard-go:hover { background: #1e4fd0; text-decoration: none; }
      `min-width` 가 정한다. */
   .room-input { min-width: 180px; }
 }
+
+/* ── 스타트업 안내 카톡(`startup_msg.html`) ─────────────────────────────── */
+.msg-body-field textarea { width: 100%; font: inherit; font-size: 13px; line-height: 1.6; }
+.days-input { width: 64px; }
+.msg-actions { display: flex; gap: 8px; align-items: center; margin: 4px 0 6px; }
+.msg-preview-item { border-top: 1px solid var(--line); padding: 8px 0; }
+.msg-preview-item pre { white-space: pre-wrap; font: inherit; font-size: 13px; margin: 4px 0 0; }
+.plain-list { margin: 4px 0; padding-left: 18px; font-size: 12px; }
+#msg-noroom-table .room-input { width: 260px; }

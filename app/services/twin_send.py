@@ -57,8 +57,13 @@ def _key(text) -> str:
     return re.sub(r"\s+", "", str(text or "")).lower()
 
 
-def _twins(db: Session, contact: VcContact) -> List[VcContact]:
-    """다른 팀원 몫의 **같은 분**."""
+def twins(db: Session, contact: VcContact) -> List[VcContact]:
+    """다른 팀원 몫의 **같은 분**.
+
+    스타트업 안내 카톡도 이 판정을 읽는다(`services/startup_outreach.py`) —
+    같은 스타트업이 두 팀원 명단에 한 줄씩 있으면, 한 사람이 보낸 문구를
+    다른 사람이 또 보내지 않게. 무엇을 같은 분으로 보는지를 두 벌로 적지 않는다.
+    """
     room = (contact.kakao_room_name or "").strip()
     conds = [VcContact.name == contact.name]
     if room:
@@ -82,15 +87,15 @@ def blocked(db: Session, contacts: Iterable[VcContact],
     since = (clock.today() - timedelta(days=WINDOW_DAYS - 1)).isoformat()
     out: Dict[int, str] = {}
     for contact in contacts:
-        twins = {t.id: t for t in _twins(db, contact)}
-        if not twins:
+        twins_of = {t.id: t for t in twins(db, contact)}
+        if not twins_of:
             continue
         hits = db.execute(
             select(SendItem.contact_id, SendItem.created_at,
                    DealBatchCompany.company_id)
             .join(SendJob, SendJob.id == SendItem.job_id)
             .join(DealBatchCompany, DealBatchCompany.batch_id == SendJob.batch_id)
-            .where(SendItem.contact_id.in_(list(twins)),
+            .where(SendItem.contact_id.in_(list(twins_of)),
                    SendJob.kind == "deal_intro",
                    SendJob.status != "canceled",
                    SendItem.status.in_(LIVE_ITEM),
@@ -99,7 +104,7 @@ def blocked(db: Session, contacts: Iterable[VcContact],
         ).all()
         if not hits:
             continue
-        twin = twins[hits[0][0]]
+        twin = twins_of[hits[0][0]]
         owner = db.get(User, twin.user_id)
         names = sorted({db.get(IrCompany, h[2]).name for h in hits
                         if db.get(IrCompany, h[2]) is not None})

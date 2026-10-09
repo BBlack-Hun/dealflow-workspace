@@ -14,7 +14,7 @@ from .routers import templates_crud
 from .routers import setup as setup_router
 from .routers import (agent_api, companies, consulting, contacts, dashboard,
                       data_io, deals, followups, ir, jobs, llm_brief, notices,
-                      pages, sourcing, startup, startup_send)
+                      pages, sourcing, startup, startup_outreach, startup_send)
 
 
 def create_app() -> FastAPI:
@@ -83,6 +83,7 @@ def create_app() -> FastAPI:
     app.include_router(ir.router)
     app.include_router(sourcing.router)
     app.include_router(startup.router)
+    app.include_router(startup_outreach.router)
     app.include_router(startup_send.router)
     app.include_router(llm_brief.router)
     # 공지. [확인] 은 **모든 화면**에서 눌리므로(판이 밑틀에 선다) 화면

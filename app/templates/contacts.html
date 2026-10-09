@@ -409,7 +409,19 @@
     #}
     {% if page.investors %}
     <button type="button" class="secondary-btn" id="import-btn">현황 업로드</button>
+    {% endif %}
+    {#
+      [방 연결 확인] 은 **투자사 화면만의 것이 아니게 됐다** — 스타트업 명단에도
+      이제 각자 안내 카톡을 보내고(`ListPage.msg_href`), 그 방도 확인해야
+      보낸다. 어느 화면에 서는지는 `ListPage.room_check` 가, 어느 줄을 받아
+      주는지는 서버가 정한다(`sheet_owner.room_checkable`).
+    #}
+    {% if page.room_check %}
     <button type="button" class="secondary-btn" id="verify-btn">방 연결 확인</button>
+    {% endif %}
+    {% if page.msg_href %}
+    <a class="primary-btn inline" id="msg-btn"
+       href="{{ page.msg_href }}">{{ page.msg_label }}</a>
     {% endif %}
     {#
       [줄 추가] 는 **여기 셋 중 혼자 빠져 나왔다.**
@@ -1493,10 +1505,11 @@
     <button type="button" class="secondary-btn" id="hide-btn"
             title="표에서 안 보이게 합니다. 줄은 지워지지 않고, 위의 [함께 보기]로 되돌립니다.">
       이 줄 감추기</button>
-    {# 카톡방 확인은 **딜소개를 보낼 방**을 찾는 일이다. 투자사를 다루지 않는
-       화면에는 수정창에 방 이름 칸조차 없어(`panel_columns`), 세워 두면 무엇을
-       확인하는 단추인지 알 수 없다. #}
-    {% if page.investors %}
+    {# 카톡방 확인은 **보낼 방**을 찾는 일이다 — 투자사 화면은 딜소개, 스타트업
+       화면은 안내 카톡. 방을 확인할 일이 없는 화면에는 세우지 않는다
+       (`ListPage.room_check` — 툴바의 [방 연결 확인] 과 같은 값). 스타트업
+       배치의 수정창에도 이제 방 이름 칸이 있다(`STARTUP_LAYOUT.extra`). #}
+    {% if page.room_check %}
     <button type="button" class="secondary-btn" id="verify-one-btn">이 방만 확인</button>
     {% endif %}
     {# **[저장] 옆에 두지 않는다.** 고친 값은 다시 고치면 되지만 지운 줄은

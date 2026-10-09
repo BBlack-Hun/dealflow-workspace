@@ -47,7 +47,9 @@
   {% if verify %}
   <a href="/contacts" class="linkbtn">내 투자사로</a>
   {% else %}
-  <a href="/deals" class="linkbtn">새 발송</a>
+  {# 이 회차를 세운 자리로 돌아간다 — 딜 제안 관리 또는 스타트업 안내 카톡
+     (`routers/pages.job_page` 의 `again_href`). #}
+  <a href="{{ again_href or '/deals' }}" class="linkbtn">새 발송</a>
   {% endif %}
 </div>
 

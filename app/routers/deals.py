@@ -15,6 +15,7 @@ from ..db import get_db
 from ..deps import get_current_user, now_iso
 from ..models import (
     SEND_KINDS,
+    STARTUP_MSG_KIND,
     STARTUP_SEND_KIND,
     DealBatch,
     DealBatchCompany,
@@ -30,8 +31,8 @@ from ..services import mail_sender, mailer, matcher
 from ..services import message_composer as mc
 from ..services import (deal_numbers, deal_queue, ir_attach, ir_kakao,
                         ir_monthly, manual_send, scheduled_send, sheet_owner,
-                        sourcing_link, sourcing_msg, startup_send,
-                        template_pick, twin_send)
+                        sourcing_link, sourcing_msg, startup_outreach,
+                        startup_send, template_pick, twin_send)
 from ..services.message_composer import MAX_COMPANIES_PER_SEND
 
 router = APIRouter(prefix="/api/deals", tags=["deals"])
@@ -112,6 +113,15 @@ MODE_SOURCING = "sourcing"
 #     (머리말 문구틀은 `ir_kakao.KIND` 가 안다).
 #   · **정해진 한 계정만** 쓸 수 있다(`services/startup_send.may_send`).
 MODE_STARTUP = "startup"
+# 스타트업 안내 카톡 — 각자 맡은 스타트업(좌측 [스타트업] 명단의 **내 줄**)에
+# 고른 문구 하나(투자유치 문의 · 견적서 안내 · 무료 투자유치 제안)를 보낸다.
+#
+# 월간 발송(`MODE_STARTUP`)과 다른 점:
+#   · 받는 줄이 명단의 줄(`VcContact`)이다 — 기업 표가 아니다.
+#   · 딜소개처럼 **각자** 자기 줄에 보낸다(정해진 한 계정이 아니다).
+#   · 문구는 화면이 고른 문구틀(`req.topic`)과 사람이 고친 본문(`req.body`)을
+#     `services/startup_outreach.render` 가 줄마다 채운다.
+MODE_STARTUP_MSG = "startup_msg"
 
 # 딜소개 말고는 전부 **기업 목록 없이 문구만** 나간다.
 # 이미 목록을 받은 사람에게 같은 목록을 다시 밀어 넣는 것은 후속이 아니라 재발송이다.
@@ -167,6 +177,7 @@ MODE_TITLES = {
     MODE_REVIEW: "미팅 후기",
     MODE_SOURCING: "딜 소싱 제안",
     MODE_STARTUP: "스타트업 월간 발송",
+    MODE_STARTUP_MSG: startup_outreach.LABEL,
 }
 MODE_TITLES[MODE_DEAL] = "딜 소개"
 
@@ -433,6 +444,10 @@ def _load_recipients(db: Session, user: User, mode: str, ids: List[int]) -> List
     딜 소싱만 다른 표(`sourcing_contacts`)에서 온다. 소싱 명단은 스타트업
     관리처럼 **팀 공용**이라 담당자로 거르지 않는다 — 명단 자체가 하나다.
     """
+    if mode == MODE_STARTUP_MSG:
+        # **내 스타트업 줄**만. 고르는 규칙은 `startup_outreach.my_rows` 한
+        # 곳이다 — 화면이 세우는 줄과 여기서 받는 줄이 같은 함수를 지난다.
+        return startup_outreach.load(db, user, ids)
     if mode == MODE_STARTUP:
         # 받는 줄이 **기업**이다. 고를 수 있는 기업을 정하는 자리는
         # `ir_monthly.contracted` 하나다 — 문서·보고·카톡 세 화면이 이미 그
@@ -519,6 +534,15 @@ class SendRequest(BaseModel):
     # 시각이 안 되는 값이었을 때 **아무도 안 볼 회차**만 남는다. 만들 때
     # 정해야 그 틈이 없다(`draft` 가 같은 이유로 여기 있다).
     scheduled_at: str = ""
+    # ── 스타트업 안내 카톡에서만 쓴다(`MODE_STARTUP_MSG`) ──
+    # 어느 문구인가 — `startup_outreach.TOPICS` 의 `key`. 회차에 그대로 남아
+    # "이 문구를 언제 받았나" 가 이것을 읽는다(`SendJob.topic`).
+    topic: str = ""
+    # 사람이 화면에서 고친 **문구틀**(채움말 `{대표명}` 등이 든 채). 비어 있으면
+    # 그 사람이 고른 문구틀 그대로다. 줄마다 채우는 것은 서버다
+    # (`startup_outreach.render`) — 화면이 채운 글을 받으면 미리보기와 나가는
+    # 글을 채우는 규칙이 두 벌이 된다.
+    body: str = ""
 
 
 def _override_map(req: SendRequest, contact_ids: set) -> dict:
@@ -564,6 +588,11 @@ def preview(
             raise HTTPException(status_code=404, detail="없는 자리입니다")
         raise HTTPException(status_code=400,
                             detail=f"{startup_send.LABEL} 화면에서 보세요")
+    # 안내 카톡도 같은 까닭으로 여기서 안 짓는다 — 짓는 자리는
+    # `startup_outreach.render` 하나이고, 보는 화면은 `/startup/msg` 다.
+    if req.mode == MODE_STARTUP_MSG:
+        raise HTTPException(status_code=400,
+                            detail=f"{startup_outreach.LABEL} 화면에서 보세요")
     if (not sample and req.mode in MODES_WITH_COMPANIES
             and not (1 <= len(req.company_ids) <= MAX_COMPANIES_PER_SEND)):
         raise HTTPException(
@@ -730,6 +759,26 @@ def create_send_list(
             raise HTTPException(status_code=400,
                                 detail="스타트업 월간 발송은 카톡으로만 나갑니다")
 
+    # ── 스타트업 안내 카톡 — 문구가 무엇인지 **먼저** 정한다 ────────────────
+    #
+    # 모르는 문구(`topic`)면 다른 문구로 짐작해 보내지 않는다. 회차에 남는
+    # 표시가 틀리면 "이 문구를 언제 받았나" 가 통째로 틀린다.
+    msg_body = ""
+    if req.mode == MODE_STARTUP_MSG:
+        topic = startup_outreach.topic_of(req.topic)
+        if topic is None:
+            raise HTTPException(status_code=400, detail="보낼 문구를 고르세요")
+        if req.channel == "email":
+            raise HTTPException(status_code=400,
+                                detail=f"{startup_outreach.LABEL}은 카톡으로만 나갑니다")
+        msg_body = ((req.body or "").strip()
+                    or startup_outreach.template_body(db, user, topic))
+        if not msg_body.strip():
+            raise HTTPException(status_code=400,
+                                detail="문구가 비어 있습니다 — 내용을 확인하세요")
+        if len(msg_body) > startup_outreach.MAX_CHARS:
+            raise HTTPException(status_code=400, detail="문구가 너무 깁니다")
+
     by_email = req.channel == "email"
     if by_email and not mailer.is_configured():
         raise HTTPException(
@@ -773,6 +822,18 @@ def create_send_list(
     if missing:
         raise HTTPException(status_code=404,
                             detail=f"담당자 {sorted(missing)[0]} 없음")
+    # 안내 카톡은 **확인된 방**에만, `딜소개 불가`·`검토중단` 은 빼고 나간다.
+    # 화면이 고를 수 없게 한 것과 **같은 함수**를 지난다(`startup_outreach.
+    # refusal`) — 오래된 탭의 체크나 손으로 만든 요청도 여기서 걸린다.
+    # 조용히 빼지 않고 말하고 멈춘다(아래 방 이름 확인과 같은 방식).
+    if req.mode == MODE_STARTUP_MSG:
+        for contact in contacts:
+            why = startup_outreach.refusal(contact)
+            if why:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(f"'{startup_outreach.who(contact)}' {why} — "
+                            "발송 대상에서 제외하세요"))
     # 화면에서 뺀 사람은 **보내지도 않는다.** 오래된 탭에 남아 있던 체크나 손으로
     # 만든 요청으로도 id 는 들어올 수 있고, 나간 뒤에는 되돌릴 수가 없다.
     #
@@ -868,6 +929,7 @@ def create_send_list(
         # 투자사가 아니라 스타트업 대표라, 딜소개 실적에 섞이면 안 된다
         # (까닭은 `models.STARTUP_SEND_KIND`).
         kind=(STARTUP_SEND_KIND if req.mode == MODE_STARTUP
+              else STARTUP_MSG_KIND if req.mode == MODE_STARTUP_MSG
               else "ir_delivery" if req.mode == MODE_IR
               else "sourcing_intro" if sourcing else "deal_intro"),
         batch_id=batch.id,
@@ -879,6 +941,8 @@ def create_send_list(
         # `services/scheduled_send.py` 이고, 푸는 길은 [발송 시작] 과 같다.
         scheduled_at=(scheduled.isoformat(timespec="seconds") if scheduled
                       else None),
+        # 안내 카톡은 **무슨 문구였는지** 남긴다(`SendJob.topic`).
+        topic=(req.topic.strip() if req.mode == MODE_STARTUP_MSG else None),
     )
     db.add(job)
     db.flush()
@@ -920,6 +984,10 @@ def create_send_list(
                     detail=(f"'{contact.name}' {req.month} 말까지 요청한 투자사가 "
                             "없습니다 — 발송 대상에서 제외하세요"))
             text, parts = composed.text, list(composed.parts)
+        elif req.mode == MODE_STARTUP_MSG:
+            # 채우는 자리는 `startup_outreach.render` **하나다** — 화면의
+            # 미리보기가 같은 함수를 지난다. 한 통이다(나눠 보낼 것이 없다).
+            text, parts = startup_outreach.render(msg_body, contact, user), []
         else:
             composed = _compose_for_contact(db, user, contact, companies,
                                             req.opening_template_id,

@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import get_current_user, templates as jinja
 from ..models import MessageTemplate, User
-from ..services import template_pick
+from ..services import startup_outreach, template_pick
 from ..ui import base_ctx
 # 합쳐진 문구는 발송 화면이 쓰는 그 길로 만든다 — 여기서 다시 합치면 두 벌이
 # 되고, 두 벌은 반드시 어긋난다.
@@ -66,6 +66,13 @@ KINDS = [
      "위 문구의 **목록 아래**에 붙는 한 줄 — 요약 숫자와 목록은 앱이 짓습니다"),
     ("startup_call", "기업 리마인드 — 전화", "문자 뒤 통화할 때"),
     ("mail_subject", "홍보메일 제목", "메일 발송에 쓸 제목 후보"),
+    # 스타트업 안내 카톡 셋 — 종류·이름은 `startup_outreach.TOPICS` 한 곳에서
+    # 온다(발송 화면이 고르는 목록과 같은 목록이다).
+    *[(t.key, f"스타트업 안내 — {t.label}",
+       "좌측 [스타트업] → [안내 카톡 보내기] 에서 고르는 문구 — "
+       + " · ".join(token for token, _ in startup_outreach.PLACEHOLDERS)
+       + " 은 앱이 채웁니다(성함이 비면 그 자리를 빼고 보냅니다)")
+      for t in startup_outreach.TOPICS],
 ]
 KIND_LABELS = {k: label for k, label, _ in KINDS}
 KIND_DESCS = {k: desc for k, _, desc in KINDS}

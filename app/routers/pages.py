@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from .. import clock
 from ..db import get_db
 from ..deps import get_current_user, may_manage_team_contacts, templates
-from ..models import IrCompany, SendJob, User
+from ..models import STARTUP_MSG_KIND, IrCompany, SendJob, User
 from ..services import (cadence, contact_columns, deal_history, deal_queue,
                         deal_stage, email_domains, group_name, ir_attach,
                         llm_brief, mailer, manual_send, ref_panel,
@@ -292,6 +292,15 @@ class ListPage:
     # 조용히 단추가 빈다. 두 화면의 **차이는 이 dataclass 에 전부** 적힌다.
     doc_href: str = ""
     doc_label: str = ""
+    # 이 화면의 줄에 [방 연결 확인] 을 걸 수 있는가 — 툴바의 단추와 수정창의
+    # [이 방만 확인]. 투자사 화면은 딜소개를 보낼 방이라, 스타트업 화면은 안내
+    # 카톡을 보낼 방이라 확인한다. 어느 줄을 받아 주는지는 서버가 정한다
+    # (`sheet_owner.room_checkable`) — 단추만 서고 서버가 거절하면 눌러도
+    # 아무 일이 없는 단추가 된다.
+    room_check: bool = False
+    # 이 화면의 줄에 **고른 문구를 보내는 자리**. 없는 화면에는 단추가 서지 않는다.
+    msg_href: str = ""
+    msg_label: str = ""
 
     @property
     def href(self) -> str:
@@ -300,7 +309,8 @@ class ListPage:
 
 CONTACTS_PAGE = ListPage(key="vc", page=contact_columns.PAGE_CONTACTS,
                          investors=True, row_label="담당자",
-                         default_layout=contact_columns.DEFAULT)
+                         default_layout=contact_columns.DEFAULT,
+                         room_check=True)
 STARTUP_PAGE = ListPage(key="startup", page=contact_columns.PAGE_STARTUP,
                         investors=False, row_label="기업",
                         default_layout=contact_columns.STARTUP,
@@ -308,7 +318,14 @@ STARTUP_PAGE = ListPage(key="startup", page=contact_columns.PAGE_STARTUP,
                         # 업무 보고가 아니다 — 그 화면은 팀원 단위로 잘리는데
                         # 이 문서는 스타트업 **한 곳** 단위다.
                         doc_href="/startup/ir-report",
-                        doc_label="IR 요청 문서")
+                        doc_label="IR 요청 문서",
+                        # 각자 맡은 스타트업에 안내 카톡(투자유치 문의 · 견적서
+                        # 안내 · 무료 투자유치 제안)을 보낸다
+                        # (`routers/startup_outreach.py`). 보낼 방을 확인하는
+                        # 단추도 함께 선다.
+                        room_check=True,
+                        msg_href="/startup/msg",
+                        msg_label="안내 카톡 보내기")
 
 
 def list_page(
@@ -628,8 +645,14 @@ def job_page(
     # 여전히 본인 것만 허용한다(jobs.py 의 _job_or_404).
     can_view = job is not None and (job.user_id == user.id or user.role == "admin")
     verify = can_view and job.kind == "verify_room"
-    ctx = _base_ctx(request, db, user, "vc" if verify else "deal")
+    # 스타트업 안내 카톡 회차는 [스타트업] 안에서 세운 것이다 — 메뉴도 거기
+    # 켜지고, `새 발송` 도 그 화면으로 돌아간다(딜 제안 관리가 아니다).
+    outreach = can_view and job.kind == STARTUP_MSG_KIND
+    ctx = _base_ctx(request, db, user,
+                    "vc" if verify else STARTUP_PAGE.key if outreach else "deal")
     ctx.update({"job_id": job_id, "job_exists": can_view, "verify": verify,
+                "again_href": (f"{STARTUP_PAGE.msg_href}?topic={job.topic or ''}"
+                               if outreach else "/deals"),
                 "readonly": can_view and job.user_id != user.id})
     return templates.TemplateResponse("progress.html", ctx)
 

@@ -776,9 +776,16 @@ def test_감춘_명단_사람은_어느_화면의_투자사_수에도_안_들어
     # 지우기가 아니다). 어느 화면인지 여기 적지 않는다 — 명단의 배치가 정하는
     # 값을 그대로 읽으므로, 명단이 화면을 옮겨도 이 검사가 따라간다.
     home = _home(LIST)
+    # 그 화면에서 **그 명단 줄에 보내는 자리**도 자기 화면이다 — 각자 맡은
+    # 스타트업에 안내 카톡을 고르는 곳이라 그 줄이 서야 한다
+    # (`ListPage.msg_href`). 어느 주소인지 여기 적지 않고 화면의 값을 읽는다.
+    from app.routers.pages import CONTACTS_PAGE, STARTUP_PAGE
+
+    own = {home} | {p.msg_href for p in (CONTACTS_PAGE, STARTUP_PAGE)
+                    if p.href == home and p.msg_href}
     leaked = []
     for path, html in _screens(sheets).items():
-        if path == home:
+        if path in own:
             continue
         for name in hidden_names:
             if name in html:

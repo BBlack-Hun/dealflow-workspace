@@ -34,7 +34,7 @@ from app.models import (  # noqa: E402
     VcContact,
 )
 from app.services import auth as auth_svc  # noqa: E402
-from app.services import sheet_owner  # noqa: E402
+from app.services import sheet_owner, startup_outreach  # noqa: E402
 from app.services.room_name import build_room_name  # noqa: E402
 
 # 실제 운영 중인 딜소개 스크립트 형식을 기본값으로 사용한다.
@@ -88,6 +88,11 @@ TEAM_TEMPLATES = [
     ("startup_call", "안녕하세요 대표님.\n이전에 IR 미팅으로 뵈었던 ○○○ ASSET 입니다.\n최근 투자사 몇 곳에서 신규 스타트업 검토 요청이 있어 연락드렸습니다."),
     ("mail_subject", "[투자 매칭] 성장 단계 스타트업 프로그램 안내"),
 ]
+# 스타트업 안내 카톡 문구 셋(투자유치 문의 · 견적서 안내 · 무료 투자유치 제안).
+# **글은 여기 적지 않는다** — 문구틀이 없을 때 나가는 글과 같은 값이어야 해서
+# 그 파일 한 곳에 있다(`app/services/startup_outreach.TOPICS`). 두 곳에 적으면
+# 새로 깐 서버와 문구틀을 지운 사람이 서로 다른 글을 받는다.
+TEAM_TEMPLATES += startup_outreach.TEAM_DEFAULTS
 
 # 관리자 계정. 실제 팀원 계정은 관리자가 scripts/add_user.py 로 만든다.
 ADMIN_PHONE = "01099998888"

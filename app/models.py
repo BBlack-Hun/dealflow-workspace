@@ -849,6 +849,21 @@ class SendJob(TimestampMixin, Base):
     #: 회차를 `queued` 로 되돌려 **같은 사람에게 두 번** 나갈 수 있다.
     released_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
+    #: **무슨 문구로 나간 회차인가** — 스타트업 안내 카톡(`STARTUP_MSG_KIND`)만
+    #: 채운다. 값은 그 문구의 종류(`message_templates.kind` — 예:
+    #: `startup_msg_quote`)이고, 고를 수 있는 것은
+    #: `services/startup_outreach.TOPICS` 한 곳이 정한다.
+    #:
+    #: 잡 종류 하나(`startup_msg`)에 문구가 셋이라(투자유치 문의 · 견적서 안내 ·
+    #: 무료 투자유치 제안) 종류만으로는 "이 기업이 **이 문구**를 언제 받았나" 를
+    #: 알 수 없다. 문구마다 잡 종류를 따로 두지 않는 까닭: 종류가 늘 때마다
+    #: 발송기를 다시 받아야 한다(`agent/main.py: SUPPORTED_KINDS` — 모르는
+    #: 종류는 큐에 그대로 선다).
+    #:
+    #: 회차명(`DealBatch.title`)에서 읽지 않는다 — 사람이 고쳐 쓰는 칸이다.
+    #: 나머지 잡 종류에서는 비어 있다.
+    topic: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
     items: Mapped[list["SendItem"]] = relationship(
         back_populates="job", cascade="all, delete-orphan", order_by="SendItem.id"
     )
@@ -898,6 +913,27 @@ TEST_SEND_KIND = "test_send"
 #: **거기 없으면 잡을 집어가지 않아 큐에 그대로 멈춘다** — 딜 소싱 제안이
 #: 실제로 그렇게 멈춘 적이 있다.
 STARTUP_SEND_KIND = "startup_ir"
+
+#: 스타트업 **안내 카톡** — 각 팀원이 자기가 맡은 스타트업(좌측 [스타트업]
+#: 명단의 내 줄)에 보내는 안내 문구(투자유치 진행 문의 · 견적서 공유 안내 ·
+#: 무료 투자유치 제안). 무슨 문구였는지는 `SendJob.topic` 이 담는다.
+#:
+#: **월간 발송(`startup_ir`)과 종류를 나눈다.** 매월 자동 예약은 그 달에
+#: `startup_ir` 회차가 이미 있으면 그 달을 건너뛴다(`services/startup_monthly.
+#: month_job`). 같은 종류를 쓰면 안내 카톡 한 번에 그 달 월간 발송이 조용히
+#: 빠진다. 받는 줄도 다르다 — 저쪽은 기업 표(`IrCompany`), 이쪽은 명단의 줄
+#: (`VcContact`)이고, 저쪽은 정해진 한 계정만 보내지만 이쪽은 딜소개처럼
+#: **각자** 보낸다.
+#:
+#: **`SEND_KINDS` 에 넣지 않는다** — 받는 쪽이 투자사가 아니다(바로 위와 같은
+#: 이유). 발송 프로그램 쪽에도 같은 값이 있다(`agent/main.py:
+#: STARTUP_MSG_KIND`) — 그 값을 모르는 낡은 발송기에는 서버가 이 잡을 내주지
+#: 않는다(`routers/agent_api.poll` 은 발송기가 밝힌 종류만 준다).
+STARTUP_MSG_KIND = "startup_msg"
+
+#: 받는 쪽이 **스타트업 한 곳**인 발송 잡 — 세는 말이 `곳` 이다
+#: (`services/scheduled_send.unit`).
+STARTUP_JOB_KINDS = (STARTUP_SEND_KIND, STARTUP_MSG_KIND)
 
 
 class SendItem(TimestampMixin, Base):
@@ -974,7 +1010,17 @@ class SendItem(TimestampMixin, Base):
         이름을 대신 내놓지 않는다 — 그 이름이 정말 대표인지 말해 주는 칸이
         없고(`services/ir_kakao.contact_of`), 진행 화면에 사람 이름이 뜨면
         그것이 확인된 사실로 읽힌다.
+
+        스타트업 **안내 카톡**은 받는 줄이 명단의 줄(`VcContact`)인데, 그
+        명단에서 줄을 알아보는 이름은 성함이 아니라 **기업명**이다(성함이 빈
+        줄이 흔하다 — `contact_columns.STARTUP_LAYOUT.required`). 그래서
+        `기업명 · 성함` 으로 적는다 — 성함만 적으면 진행 화면이 빈 줄로 선다.
         """
+        if (self.contact is not None and self.job is not None
+                and self.job.kind == STARTUP_MSG_KIND):
+            parts = [p for p in ((self.contact.firm or "").strip(),
+                                 (self.contact.name or "").strip()) if p]
+            return " · ".join(parts) or None
         who = self.contact or self.sourcing_contact or self.ir_company
         return who.name if who else None
 

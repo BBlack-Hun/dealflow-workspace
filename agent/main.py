@@ -58,7 +58,17 @@ TEST_KIND = "test_send"
 # 발송 이력·통계에 섞이면 안 되기 때문이다(`app/models.py: STARTUP_SEND_KIND`).
 # 시험 잡과 같은 사정이라 여기서도 `SEND_KINDS` 밖에 따로 둔다.
 STARTUP_KIND = "startup_ir"
-SUPPORTED_KINDS = SEND_KINDS + (VERIFY_KIND, TEST_KIND, STARTUP_KIND)
+# 스타트업 안내 카톡 — 각자 맡은 스타트업 대표 방으로 고른 문구 한 통
+# (투자유치 문의 · 견적서 안내 · 무료 투자유치 제안). 처리는 월간 발송과
+# **똑같다**(방 하나에 문구 한 통, 파일 없음). 종류를 나눈 것은 서버 쪽 사정이다
+# (`app/models.py: STARTUP_MSG_KIND` — 월간 자동 예약이 종류로 그 달 회차를
+# 찾는다). 이 줄이 없는 낡은 발송기에는 서버가 이 잡을 내주지 않는다 — 잡은
+# 큐에 서서 기다리다가 새 발송기가 붙으면 나간다.
+STARTUP_MSG_KIND = "startup_msg"
+#: 방 하나에 문구 한 통 — 발송 잡과 **똑같이** 처리하는 종류들(통계·이력에서만
+#: 서버가 갈라 센다).
+TEXT_KINDS = (TEST_KIND, STARTUP_KIND, STARTUP_MSG_KIND)
+SUPPORTED_KINDS = SEND_KINDS + (VERIFY_KIND,) + TEXT_KINDS
 
 DEFAULT_CONFIG = {
     "server_url": "http://127.0.0.1:8000",
@@ -478,9 +488,10 @@ def process_job(client: AgentClient, sender, job: dict, cfg: dict):
     # 시험 잡은 **발송 잡과 똑같이** 처리한다. 파일 먼저 문구 나중이라는 차례도,
     # 사람 흉내 간격도, [중단] 확인도 그대로여야 시험이 시험 구실을 한다 —
     # 다르게 처리하면 여기서 되는 것이 실전에서 안 될 수 있다.
-    # 스타트업 월간 발송도 여기서 갈리지 않는다 — 방 하나에 문구 한 통이라
-    # 발송 잡과 처리가 같다. 종류를 가르는 것은 **통계와 이력**의 사정이다.
-    if kind not in SEND_KINDS and kind not in (TEST_KIND, STARTUP_KIND):
+    # 스타트업 월간 발송·안내 카톡도 여기서 갈리지 않는다 — 방 하나에 문구
+    # 한 통이라 발송 잡과 처리가 같다. 종류를 가르는 것은 **통계와 이력**의
+    # 사정이다(`TEXT_KINDS`).
+    if kind not in SEND_KINDS and kind not in TEXT_KINDS:
         log.error("모르는 잡 종류 %r — 전송하지 않고 실패 처리합니다", kind)
         for item in job.get("items", []):
             client.report_item(item["id"], "failed",
