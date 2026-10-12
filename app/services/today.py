@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from .. import clock
 from ..models import User
 from . import (auto_send, cadence, pipeline, readiness, scheduled_send,
-               startup_monthly)
+               send_guard, startup_monthly)
 
 # 줄 하나 = 오늘 할 일 하나.
 #   kind  : 화면에서 묶어 보여줄 종류
@@ -100,9 +100,18 @@ def build(db: Session, user: User, today: Optional[date] = None) -> dict:
     for booked in scheduled_send.standing_for(db, user, _at(today)):
         items.append(_item(
             "send", booked["level"],
-            ("예약 시각이 지났습니다" if booked["state"] == "expired"
+            ("예약 시각을 놓쳤습니다" if booked["state"] == "expired"
              else "예약해 둔 발송"),
             booked["sentence"], f"/jobs/{booked['job_id']}", booked["count"]))
+
+    # **자동 회차의 사고** — 실패가 있는 채로 끝났거나(주인·관리자), 예약
+    # 시각을 놓쳤다(관리자 — 주인에게는 바로 위 예약 줄이 이미 선다).
+    # 자동화는 사람이 안 보는 사이에 돌기 때문에, 여기 안 뜨면 아무도 모른다.
+    # 판정은 `services/send_guard.alerts_for` 한 곳이다.
+    for alert in send_guard.alerts_for(db, user, today, _at(today)):
+        items.append(_item(
+            "send", "urgent", alert["title"], alert["detail"],
+            f"/jobs/{alert['job_id']}", alert["count"]))
 
     # 스타트업 월간 **자동 예약을 못 세운 달.** 선 목록은 바로 위 예약으로
     # 뜨지만, 못 선 것은 아무 데도 안 뜨면 그 달이 조용히 빠진다.

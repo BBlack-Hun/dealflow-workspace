@@ -93,6 +93,12 @@
    그 둘을 구분하지 못하면 사람이 [중단] 을 누르거나 회차를 다시 만든다. #}
 <div class="warn-box" id="standing-note" hidden></div>
 
+{# **발송 안전장치** — 보내는 시간(09~19시)과 이 계정의 오늘 남은 한도
+   (`services/send_guard.py`). 큐에 서 있는데 안 나가는 까닭이 시간·한도이면
+   그것을 말한다 — 발송기가 꺼진 것과 구분되지 않으면 사람이 회차를 다시 만든다.
+   문장은 서버가 만들고 progress.js 는 그대로 넣는다. #}
+<p class="hint muted" id="guard-note" hidden></p>
+
 {% if room_search %}
 {# 후보 찾기는 **방 이름을 바꾸지 않는다** — 찾은 제목은 후보로만 담긴다
    (`services/startup_room_pick.py`). 이 말이 없으면 `확인됨` 숫자를 보고 방이

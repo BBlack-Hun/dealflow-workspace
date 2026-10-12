@@ -9,7 +9,7 @@ from ..clock import now_iso
 from ..db import get_db
 from ..deps import agent_status, get_current_user
 from ..models import SendItem, SendJob, User
-from ..services import mail_sender, scheduled_send
+from ..services import mail_sender, scheduled_send, send_guard
 
 router = APIRouter(prefix="/api", tags=["jobs"])
 
@@ -75,6 +75,10 @@ def job_status(job_id: int, db: Session = Depends(get_db), user: User = Depends(
         # 그 회차 **주인의** 기기를 본다(보고 있는 사람이 아니라) — 관리자가
         # 남의 회차를 열어 봐도 실제로 그 잡을 집어갈 기기는 주인 것이다.
         "agent": agent_status(db, job.user_id),
+        # **발송 안전장치** — 보내는 시간(09~19시)과 그 계정의 오늘 남은 한도.
+        # 큐에 서 있는데 안 나가는 까닭이 시간·한도이면 그것을 말한다
+        # (`services/send_guard.describe`). 판정과 문장은 서버가 만든다.
+        "guard": send_guard.describe(db, job),
         "items": [
             {
                 "id": i.id,
@@ -125,6 +129,9 @@ def _requeue(db: Session, job: SendJob, items: list[SendItem],
     # 메일 쪽 `_finish()` 도 `canceled` 잡은 건드리지 않아 화면이 멈춘 것처럼 보인다.
     job.status = "queued"
     job.finished_at = None
+    # 자동 회차 알림의 자물쇠를 연다 — 다시 살린 뒤의 결과는 새로 알릴 일이다
+    # (`services/send_guard.notify`).
+    job.alerted_at = None
     db.commit()
 
     if any(i.channel == "email" for i in items):

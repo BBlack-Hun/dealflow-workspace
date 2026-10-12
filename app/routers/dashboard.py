@@ -1093,6 +1093,55 @@ def save_auto_send(
     return RedirectResponse(f"/team?msg={note}", status_code=303)
 
 
+@router.post("/team/send-caps", include_in_schema=False)
+async def save_send_caps(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """**계정마다 하루 발송 상한**을 정한다 — 발송 안전장치 판의 [저장].
+
+    폼은 `cap_<계정번호>` 칸을 계정마다 하나씩 보낸다. 폼에 없는 계정은
+    건드리지 않는다(그 사이 생긴 계정을 기본값이 아닌 값으로 덮지 않게).
+
+    ## 값은 여기서 판정하지 않는다
+
+    폭(1~1000)으로 자르는 것은 `send_guard.clamp_daily_cap` 한 곳이다 — 화면의
+    `min`/`max` 와 라우터가 각자 자르면 언젠가 한쪽만 고쳐진다. 지키는 것도
+    서버다: 발송기가 잡을 집어갈 때 그날 나간 수를 세어 남은 만큼만 내준다
+    (`routers/agent_api.poll`).
+
+    문은 옆칸들과 같다(`admin_only`).
+    """
+    admin_only(user)
+    from urllib.parse import quote
+
+    from ..services import send_guard
+
+    form = await request.form()
+    changed = []
+    for key, raw in form.items():
+        if not key.startswith("cap_"):
+            continue
+        try:
+            member = db.get(User, int(key[4:]))
+        except ValueError:
+            continue
+        if member is None:
+            continue
+        cap = send_guard.clamp_daily_cap(raw)
+        if member.daily_send_cap != cap:
+            member.daily_send_cap = cap
+            changed.append(f"{member.name} {cap}건")
+    db.commit()
+    if not changed:
+        return RedirectResponse("/team?msg=바뀐+하루+상한이+없습니다",
+                                status_code=303)
+    return RedirectResponse(
+        f"/team?msg={quote('하루 발송 상한을 바꿨습니다 — ' + ', '.join(changed))}",
+        status_code=303)
+
+
 @router.post("/team/startup-send", include_in_schema=False)
 def save_startup_send(
     enabled: str = Form(""),

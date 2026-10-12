@@ -26,7 +26,7 @@ SCHEDULE_TEST = Path(__file__).resolve().parent / "js" / "progress_schedule_test
 #: `progress.js` 가 찾는 자리들. 하나라도 없으면 그 코드는 조용히 아무 일도
 #: 하지 않고, 예약은 걸 수도 볼 수도 없게 된다.
 IDS = ("schedule-box", "schedule-note", "schedule-at", "schedule-btn",
-       "unschedule-btn", "schedule-hint", "standing-note")
+       "unschedule-btn", "schedule-hint", "standing-note", "guard-note")
 
 
 @pytest.mark.skipif(shutil.which("node") is None,

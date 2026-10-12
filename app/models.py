@@ -63,6 +63,15 @@ class User(TimestampMixin, Base):
     # 이 칸이 꺼져 있으면 `agent_devices.ir_root` 를 **읽지 않는다.** 지우지는
     # 않는다 — 다시 켜면 넣어 둔 폴더가 그대로 되돌아와야 한다.
     can_auto_attach_ir: Mapped[int] = mapped_column(Integer, default=0)
+    # **이 계정으로 하루에 몇 통까지 보내나**(0086). 문구가 받는 사람에게 가는
+    # 잡 전부를 합친 수다 — 발송기가 잡을 집어갈 때 서버가 그날 나간 수를 세어
+    # 남은 만큼만 내준다(`services/send_guard.py`). 발송기의 `job_cap` 은 **잡
+    # 하나**의 상한이라 하루 총량을 막지 못한다.
+    #
+    # 옆의 두 칸처럼 관리자가 팀 현황에서 계정마다 정한다. 기본값은
+    # `send_guard.DEFAULT_DAILY_CAP` 과 같은 수다.
+    daily_send_cap: Mapped[int] = mapped_column(Integer, default=200,
+                                                server_default="200")
 
 
 class Session(TimestampMixin, Base):
@@ -882,6 +891,13 @@ class SendJob(TimestampMixin, Base):
     #: `ROOM_SEARCH_TOPIC` 이면 스타트업 명단 줄의 카톡방 **후보 찾기**다
     #: (아래 그 값의 설명). 나머지 잡 종류에서는 비어 있다.
     topic: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+    #: **자동 회차의 사고를 관리자에게 알린 시각**(0086) — 실패로 끝났거나
+    #: 예약 시각을 놓쳤을 때(`services/send_guard.notify`). 한 회차로 메일이
+    #: 두 번 가지 않게 하는 자물쇠다: 이 칸이 빈 줄만 원자적으로 집는다.
+    #: 사람이 회차를 다시 살리면(`routers/jobs._requeue`) 비워진다 — 그다음
+    #: 결과는 새로 알릴 일이다.
+    alerted_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
     items: Mapped[list["SendItem"]] = relationship(
         back_populates="job", cascade="all, delete-orphan", order_by="SendItem.id"

@@ -70,6 +70,7 @@ function buildDom() {
       el("p", { id: "schedule-hint" })
     ]),
     el("div", { class: "warn-box", id: "standing-note" }),
+    el("p", { class: "hint muted", id: "guard-note" }),
     el("tbody", { id: "log-body" })
   ]);
   return { document: dom_.makeDocument(root), root: root };
@@ -170,10 +171,10 @@ function run(data, opts) {
   // 지나 버린 예약. **저절로 안 나간다** — 사람이 누를 수 있어야 한다.
   const s = run(payload({ scheduled: booking({
     state: "expired",
-    sentence: "예약 시각이 지났습니다 (3/12(목) 14:00 · 55명에게) — 저절로 "
+    sentence: "예약 시각을 놓쳤습니다 (3/12(목) 14:00 · 55명에게) — 저절로 "
       + "나가지 않습니다. 보내려면 [발송 시작] 을 누르세요" }) }));
 
-  assert.ok(s.id("schedule-note").textContent.indexOf("예약 시각이 지났습니다") >= 0,
+  assert.ok(s.id("schedule-note").textContent.indexOf("예약 시각을 놓쳤습니다") >= 0,
     "지난 예약은 지났다고 말해야 한다 — 조용히 기다리는 것처럼 보이면 안 된다");
   assert.strictEqual(s.id("start-btn").hidden, false,
     "지나 버린 예약도 사람이 누르면 나간다 — 단추가 사라지면 보낼 길이 없다");
@@ -292,6 +293,39 @@ function run(data, opts) {
 
   assert.strictEqual(s.id("schedule-at").value, "2099-03-12T16:30",
     "2초마다 값이 되돌아가면 시각을 아예 못 고친다");
+})();
+
+// ── ⑦ 발송 안전장치 — 시간·하루 한도 (`services/send_guard.describe`) ─────────
+
+(function theDailyAllowanceIsShown() {
+  // 문장은 **서버가 만든 것 그대로**다 — 화면이 세면 두 벌이 된다.
+  const s = run(payload({ status: "queued", guard: {
+    gated: true, held: false, remaining: 120, cap: 200,
+    sentence: "오늘 남은 발송 한도 120/200건" } }));
+  assert.strictEqual(s.id("guard-note").hidden, false,
+    "진행 화면에 오늘 남은 한도가 보여야 한다");
+  assert.strictEqual(s.id("guard-note").textContent, "오늘 남은 발송 한도 120/200건");
+  assert.notStrictEqual(s.id("guard-note").className, "warn-box",
+    "걸린 것이 없으면 경고로 띄우지 않는다");
+})();
+
+(function aHeldJobSaysWhy() {
+  // 큐에 서 있는데 시간 밖이다 — **막힌 것이 아니라 시간을 기다리는 것**이다.
+  const said = "지금은 보내는 시간(09:00~19:00)이 아닙니다 — 큐에 서서 기다리다 "
+    + "09:00 에 나갑니다 · 오늘 남은 발송 한도 200/200건";
+  const s = run(payload({ status: "queued", guard: {
+    gated: true, held: true, remaining: 200, cap: 200, sentence: said } }));
+  assert.strictEqual(s.id("guard-note").hidden, false);
+  assert.strictEqual(s.id("guard-note").textContent, said);
+  assert.strictEqual(s.id("guard-note").className, "warn-box",
+    "시간·한도에 걸려 서 있으면 경고로 띄운다");
+})();
+
+(function aRoomCheckSaysNothingAboutAllowance() {
+  // 방 확인처럼 아무것도 안 보내는 잡에는 한도를 말할 까닭이 없다.
+  const s = run(payload({ status: "queued", guard: {
+    gated: false, held: false, sentence: "" } }));
+  assert.strictEqual(s.id("guard-note").hidden, true);
 })();
 
 console.log("ok");
