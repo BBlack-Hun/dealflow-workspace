@@ -143,11 +143,20 @@ class Watch:
     새로 지으면 화면의 권한과 로그의 판정이 갈린다.
     """
 
-    __slots__ = ("owner", "href", "label", "why", "only")
+    __slots__ = ("owner", "href", "label", "why", "only", "others_only")
 
     def __init__(self, *, owner: Optional[str], href, label: Callable[[Any], str],
-                 why: str, only: Optional[tuple] = None) -> None:
+                 why: str, only: Optional[tuple] = None,
+                 others_only: bool = False) -> None:
         self.owner = owner
+        #: **남의 줄일 때만** 남긴다 — 자기 줄은 지운 것도 안 남긴다.
+        #:
+        #: 보통은 지운 것은 자기 것이라도 남긴다(`_row_scope`). 그것은 지운 줄이
+        #: 발송 대상·공용 자료라서 "그거 어디 갔지" 를 물을 자리가 여기밖에 없기
+        #: 때문이다. **개인 할 일**(주간업무)은 다르다 — 사람마다 하루에 몇 줄씩
+        #: 적고 지우는 메모라, 자기 것까지 남기면 로그가 할 일 정리로 덮인다.
+        #: 남기려는 것은 하나뿐이다: **관리자가 팀원의 할 일을 대신 고쳤다.**
+        self.others_only = others_only
         #: 이 줄을 보는 화면의 주소. 줄마다 다르면 함수로 준다(참고 자료).
         self.href = href
         #: 그 줄이 무엇인가 — 사람이 읽을 이름.
@@ -266,6 +275,18 @@ WATCHED: Dict[str, Watch] = {
             "(`_row_scope`) — 지운 줄은 화면 어디에도 없어 무엇이 있었는지 물을 "
             "자리가 여기밖에 없다. 주인은 줄의 주인이고(`user_id`), 그 칸이 곧 "
             "[다시 켜기]·[지우기]가 보는 칸이다(`routers/followups._owned`)."),
+    "weekly_tasks": Watch(
+        owner="user_id", href="/todo",
+        label=_attr("title"), others_only=True,
+        why="주간업무 할 일 — 개인 화면이지만 **관리자가 팀원 것을 대신 고칠 수 있다**"
+            "(`/todo?member=`). 그 일만 남긴다: 자기 할 일을 적고 지우는 것은 하루에도 "
+            "몇 줄씩이라 남기면 로그가 덮인다(`Watch.others_only`). 남의 줄을 고치면 "
+            "`누가` 가 관리자, `누구 것` 이 그 팀원으로 적힌다."),
+    "weekly_routines": Watch(
+        owner="user_id", href="/todo",
+        label=_attr("title"), others_only=True,
+        why="주간업무 반복 규칙 — 바로 위 `weekly_tasks` 와 같은 까닭. 지우는 것은 "
+            "줄을 내리는 것(`is_active=0`)이라 `고침` 으로 남는다."),
     "users": Watch(
         owner="id", href="/team", label=_attr("name"),
         why="계정. 남의 권한·투자현황·비밀번호를 바꾸는 것은 공용 화면(팀 현황)에서 "
@@ -344,8 +365,6 @@ UNWATCHED: Dict[str, str] = {
     "send_jobs": "발송 작업. 보낸 기록이다.",
     "send_items": "발송 한 건. 보낸 기록이다(문구가 통째로 들어 있기도 하다).",
     "monthly_column_runs": "이달 열을 이미 세웠다는 표시. 사람이 보는 자료가 아니다.",
-    "weekly_routines": "주간 업무 되풀이 — 계정마다의 개인 화면이다.",
-    "weekly_tasks": "주간 업무 할 일 — 개인 화면이다.",
     "weekly_routine_runs": "주간 업무를 이번 주에 이미 세웠다는 표시.",
     "sms_notices": "문자 알림 발송 기록.",
     "one_liner_backups": "한 줄 소개 되돌리기용 버퍼. 되돌릴 값을 담아 두는 자리이고, "
@@ -648,6 +667,9 @@ def _row_scope(obj, watch: Watch, actor_id: int, action: str):
     if owner_id is None:
         # 주인이 아직 없는 줄(배정 전 명단 · 배정 전 컨설팅 줄)은 공용으로 본다.
         return True, SCOPE_SHARED, None
+    if owner_id == actor_id and watch.others_only:
+        # 개인 할 일 — 자기 것은 지운 것도 남기지 않는다(`Watch.others_only`).
+        return False, "", owner_id
     if owner_id == actor_id:
         # **지운 것은 자기 것이라도 남긴다.**
         #
