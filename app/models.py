@@ -291,6 +291,22 @@ class ContactActivity(TimestampMixin, Base):
     #: 되돌린 뜻이 없다.
     undone_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
+    #: 이 줄을 적으면서 **후속 시퀀스에 한 일** — JSON
+    #: `{"id": 시퀀스 번호, "before": 그 전 모습 | null, "after": 그 뒤 모습}`.
+    #: 손으로 적은 줄(`services/manual_send.record`)만 채우고, 시퀀스를 안
+    #: 건드렸으면 비어 있다. `before` 가 `null` 이면 이 줄이 시퀀스를 **새로
+    #: 세웠다**는 뜻이다.
+    #:
+    #: 왜 칸이 필요한가: 적을 때 `cadence.advance` 가 이미 서 있던 시퀀스의
+    #: 딜소개일·단계·다음 예정일을 **덮어쓴다.** 덮어쓴 뒤에는 그 전 값이 어디에도
+    #: 없어서, 되돌릴 때 기존 칸만으로는 "이 줄이 세운 것인가 · 그 전에는
+    #: 어땠나" 를 가를 수 없다(시각 칸은 초까지라 같은 초에 적힌 두 줄을 못
+    #: 가른다). 되돌려도 리마인드가 그대로 남아 **받은 적 없는 사람에게
+    #: "지난번 공유드린…"** 이 나가던 것이 이 칸을 만든 까닭이다.
+    #:
+    #: 읽고 쓰는 자리는 `services/manual_send.py` 하나다.
+    sequence_trace: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
     contact: Mapped["VcContact"] = relationship()
 
     @property

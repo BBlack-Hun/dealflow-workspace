@@ -864,6 +864,8 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
 .tl-item.tl-meeting_done .tl-kind { color: var(--green); }
 .tl-body { word-break: break-all; }
 .tl-src { font-size: 10px; color: var(--muted); background: #f1f3f5; border-radius: 4px; padding: 1px 5px; }
+/* 손으로 적은 줄의 [되돌리기] — `시트` 표와 같은 넷째 칸에 선다(둘이 한 줄에 같이 설 일은 없다). */
+.tl-undo { padding: 0; white-space: nowrap; font-size: 11px; }
 .tl-month { font-size: 12px; font-weight: 800; color: var(--muted); margin: 14px 0 4px;
             padding-bottom: 3px; border-bottom: 2px solid var(--line); }
 .tl-month:first-child { margin-top: 0; }

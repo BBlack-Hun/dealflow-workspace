@@ -28,8 +28,8 @@ from ..deps import can_open, get_current_user, may_manage_team_contacts
 from ..models import (ContactActivity, ContactColumn, IrCompany, IrRequest,
                       Meeting, SendItem, SendJob, SendSequence, User, VcContact)
 from ..services import (contact_columns, deal_stage, firm_type, last_activity,
-                        meeting_kind, room_joined, room_name, sheet_import,
-                        sheet_owner)
+                        manual_send, meeting_kind, room_joined, room_name,
+                        sheet_import, sheet_owner)
 from ..services.room_name import DEFAULT_SUFFIX, build_room_name
 
 router = APIRouter(prefix="/api/contacts", tags=["contacts"])
@@ -1096,6 +1096,14 @@ def _activity_view(act: ContactActivity, known: Dict[str, str]) -> dict:
             for name in companies
         ],
         "raw_text": act.raw_text,
+        # 손으로 적은 줄이면 **이 자리에서 그 한 줄을 되돌린다.** 사람은 잘못
+        # 적은 것을 담당자 이력을 보다가 알아챈다 — 딜 제안 관리의 묶음 목록으로
+        # 건너가 80줄 묶음을 찾아 통째로 되돌리게 하면 안 된다. 되돌리는 길은
+        # 묶음 되돌리기와 같은 것이다(`/api/deals/manual-sends/{batch_key}/undo`
+        # 에 `contact_id`) — 그래서 묶음 표시를 함께 싣는다. 세울지 말지는
+        # `manual_send.undoable` 한 곳이 정한다.
+        "batch_key": act.batch_key or "",
+        "undoable": manual_send.undoable(act),
     }
 
 

@@ -1363,33 +1363,44 @@ def create_manual_send(body: ManualSendIn, db: Session = Depends(get_db),
 
 class ManualUndoIn(BaseModel):
     confirm: bool = False
+    #: **그 판 안의 이 담당자 줄만** 되돌린다. 비우면 묶음째다.
+    #:
+    #: 80명을 적은 판에서 한 사람만 잘못 넣은 일이 흔하다 — 묶음째 되돌리고
+    #: 79명을 다시 적게 하면 안 된다. 담당자 상세의 활동 이력도 이 값을 실어
+    #: 같은 길로 한 줄을 되돌린다(`static/js/contacts.js`). 길이 하나라 권한
+    #: 판정도 하나다.
+    contact_id: Optional[int] = None
 
 
 @router.post("/manual-sends/{batch_key}/undo")
 def undo_manual_send(batch_key: str, body: ManualUndoIn,
                      db: Session = Depends(get_db),
                      user: User = Depends(get_current_user)):
-    """잘못 적은 판을 **묶음째** 되돌린다. 지우지 않고 숨긴다.
+    """잘못 적은 판을 **묶음째**(또는 그 안의 한 사람만) 되돌린다.
 
-    숨긴 줄은 읽는 자리 어디에서도 안 읽힌다(`models._hide_undone_activities`).
+    줄은 지우지 않고 숨긴다 — 숨긴 줄은 읽는 자리 어디에서도 안
+    읽힌다(`models._hide_undone_activities`). 그 줄이 세운 리마인드도 함께
+    거둔다(`manual_send.undo` — 다른 길이 세운 시퀀스는 안 건드린다).
 
     권한은 적을 때와 **같은 `_owned`** 다 — 남의 담당자 줄이 한 줄이라도
     섞여 있으면 한 줄도 안 숨긴다. 관리자가 팀원을 대신 적어 준 판을 그
     팀원이 되돌리지 못하는 것은 맞다: 되돌리는 것도 적는 것과 같은 무게다.
+    한 사람 되돌리기도 같다 — 그 사람이 내 담당이 아니면 404 다.
     """
-    rows = manual_send.rows_of(db, batch_key)
+    rows = manual_send.rows_of(db, batch_key, contact_id=body.contact_id)
     if not rows:
-        raise HTTPException(status_code=404, detail="그 판을 찾을 수 없습니다")
+        raise HTTPException(
+            status_code=404,
+            detail=("그 판에 그 담당자 줄이 없습니다" if body.contact_id is not None
+                    else "그 판을 찾을 수 없습니다"))
     # 한 줄이라도 남의 것이면 여기서 끝난다 — 아직 아무 것도 안 숨겼다.
     _manual_targets(db, user, [row.contact_id for row in rows])
 
-    plan = {"rows": len(rows),
-            "kind": rows[0].kind,
-            "kind_label": manual_send.KIND_LABELS.get(rows[0].kind, rows[0].kind),
-            "day": rows[0].happened_at or ""}
+    plan = manual_send.undo_plan(db, rows)
     if not body.confirm:
         return {"ok": False, "confirmed": False, "undone": 0, "plan": plan}
 
-    n = manual_send.undo(db, rows)
+    done = manual_send.undo(db, rows)
     db.commit()
-    return {"ok": True, "confirmed": True, "undone": n, "plan": plan}
+    return {"ok": True, "confirmed": True, "undone": done.rows,
+            "sequences": done.sequences, "note": done.note(), "plan": plan}
