@@ -37,11 +37,11 @@ function th(key, label) {
   return cell;
 }
 
-function build() {
+function build(rows) {
   const head = D.el("thead", {}, [D.el("tr", {}, [
     th("category", "항목"), th(null, "세부업무"), th("due", "일시"), th("status", "상태")
   ])]);
-  const body = D.el("tbody", {}, ROWS.map(function (r) {
+  const body = D.el("tbody", {}, (rows || ROWS).map(function (r) {
     return D.el("tr", {
       "data-id": r.id, "data-s-category": r.category,
       "data-s-due": r.due, "data-s-status": r.status
@@ -232,6 +232,48 @@ const CATEGORY = 0, DUE = 1, STATUS = 2;   // th[data-sort] 순서
   const note = dom.body.children[dom.body.children.length - 1];
   assert.strictEqual(note.getAttribute("id"), "empty-note",
     "`data-s-*` 가 없는 안내 줄이 정렬에 끌려 들어갔다");
+}
+
+// --- 10) 여러 줄 항목도 같은 값끼리 붙어 선다 --------------------------------
+//
+// 항목 칸도 여러 줄이 됐다(todo.html 의 `td.cell.multi`). 세울 값은 줄에 적힌
+// `data-s-category` 이고 거기에 **줄바꿈까지 그대로** 실린다 — 서버가 한 줄로
+// 접어 주지 않는다. 그래서 지킬 것은 셋이다.
+//   · 똑같이 나눠 적은 항목끼리는 붙어 서고, 그 안에서는 처음 차례를 지킨다.
+//   · 첫 줄만 같은 항목(`메일` 과 `메일\n- 홍보`)은 **다른 묶음**이다 — 섞이면
+//     나눠 적은 줄이 한 줄 항목 사이에 끼어 묶음이 깨진다.
+//   · 내림차순에서도 묶음은 그대로다(뒤집히는 것은 묶음의 차례뿐이다).
+// 묶음 **사이**의 차례는 못 박지 않는다 — 줄바꿈·기호와 글자 사이의 차례는
+// `localeCompare` 를 돌리는 엔진의 사전이 정한다(위 3번과 같은 이유).
+{
+  const MULTI = [
+    { id: "1", category: "메일\n- 홍보", due: "2026-08-07", status: "0" },
+    { id: "2", category: "메일", due: "2026-08-08", status: "0" },
+    { id: "3", category: "IR", due: "2026-08-09", status: "1" },
+    { id: "4", category: "메일\n- 홍보", due: "2026-08-10", status: "1" },
+    { id: "5", category: "메일", due: "", status: "2" }
+  ];
+
+  function groupsHold(order, label) {
+    const at = order.split(",");
+    assert.strictEqual(at.indexOf("1") + 1, at.indexOf("4"),
+      label + " — 똑같이 나눠 적은 항목(1·4)이 붙어 서지 않았거나 처음 차례가 무너졌다: " + order);
+    assert.strictEqual(at.indexOf("2") + 1, at.indexOf("5"),
+      label + " — 한 줄 항목(2·5)이 붙어 서지 않았다(여러 줄 항목이 끼어들었다): " + order);
+  }
+
+  const dom = build(MULTI);
+  // 줄바꿈이 세울 값에 그대로 실려 있는가 — 여기서 잘려 있으면 아래 검사는
+  // 한 줄 값끼리 세우는 것을 볼 뿐이다.
+  assert.strictEqual(dom.body.children[0].getAttribute("data-s-category"), "메일\n- 홍보");
+  run(dom);
+  button(dom, CATEGORY).fire("click");
+  groupsHold(ids(dom), "항목 오름차순");
+  button(dom, CATEGORY).fire("click");
+  groupsHold(ids(dom), "항목 내림차순");
+  button(dom, CATEGORY).fire("click");
+  assert.strictEqual(ids(dom), "1,2,3,4,5",
+    "정렬을 끄면 여러 줄 항목이 섞인 표도 서버가 그려 준 차례로 돌아와야 한다");
 }
 
 console.log("table_sort_test: 통과");
