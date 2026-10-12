@@ -775,3 +775,201 @@ def test_the_line_breaks_survive_into_the_weekly_row(client, db, users):
 
     assert task.title == MULTI_TITLE, "주간 항목으로 옮겨 가면서 줄이 뭉개졌습니다"
     assert "- 회신 확인" in _task_table(body)
+
+
+# --- 항목의 줄바꿈 -----------------------------------------------------------
+#
+# 요청: 주간 업무·반복 업무의 **항목** 칸도 세부업무처럼 여러 줄로 보이고
+# 고쳐지게. 세부업무가 먼저 지나간 길(위 묶음)을 그대로 따른다 — 적는 칸
+# (`<textarea>`), 표의 칸(`td.cell.multi`), 담기는 값(앞뒤 공백만 턴다)을 다 본다.
+# 한쪽만 보면 칸만 바꿔 놓고 다른 데서 한 줄로 뭉개지는 것을 못 본다.
+#
+# 담는 쪽은 처음부터 여러 줄을 받았다 — 두 표의 `category` 가 길이 없는
+# `String` 이다(0016). 그래서 이주는 없고, 이미 한 줄로 적힌 항목은 그대로다.
+
+MULTI_CATEGORY = "메일\n- 홍보"
+
+
+def test_both_forms_take_a_multiline_category(client, users):
+    """두 추가 폼의 항목이 `<textarea>` 여야 한다 — 세부업무 칸과 같은 모양.
+
+    한 줄짜리 입력이면 줄바꿈을 칠 수가 없다. 표에서는 나눌 수 있는 항목을
+    적을 때만 못 나누는, 세부업무가 겪었던 그 상태가 된다.
+    """
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    body = client.get("/todo").text
+
+    for name, form in (("주간 업무", _task_form(body)), ("반복 업무", _routine_form(body))):
+        assert '<textarea name="category" rows="2"' in form, f"{name} 폼의 항목이 한 줄 칸입니다"
+        assert '<input type="text" name="category"' not in form
+        # 엔터로 추가되지 않게 막는 표시는 그대로다 — 한 줄 칸(일시·요일)이
+        # 아직 남아 있다(`weekly_tasks.js`).
+        assert "data-no-enter-submit" in form
+
+
+def test_both_tables_edit_the_category_on_several_lines(client, db, users):
+    """표에서 **고칠 때도** 여러 줄이다 — 두 표 다.
+
+    `multi` 가 없으면 칸을 한 번 눌러 고치는 순간 한 줄짜리 입력이 열려
+    나눠 적은 줄이 하나로 합쳐진다. 고치려던 사람이 지우는 셈이다.
+    """
+    from app.models import WeeklyRoutine, WeeklyTask
+    from app.services import weekly
+
+    start = weekly.week_start()
+    db.add(WeeklyTask(user_id=users["u1"].id, week_start=start.isoformat(),
+                      category=MULTI_CATEGORY, title="여러 줄 항목 줄"))
+    db.add(WeeklyRoutine(user_id=users["u1"].id, category=MULTI_CATEGORY,
+                         title="여러 줄 항목 규칙", weekdays="0"))
+    db.commit()
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    body = client.get("/todo").text
+
+    for name, table in (("주간 업무", _task_table(body)), ("반복 업무", _routine_table(body))):
+        assert '<td class="cell multi" data-field="category">' in table, \
+            f"{name} 표의 항목 칸이 한 줄 칸입니다"
+        assert '<td class="cell" data-field="category">' not in table
+        # 줄이 나뉜 채로 그려진다(`td.cell` 이 `white-space: pre-wrap`).
+        assert f'data-field="category">{MULTI_CATEGORY}</td>' in table
+
+
+def test_one_line_categories_look_the_same_as_before(client, db, users):
+    """이미 한 줄로 적힌 항목은 **글자 그대로** 선다.
+
+    칸 표시만 바뀌었지 값은 손대지 않는다 — 기본 반복 업무(`메일`·`IR` …)가
+    전부 한 줄이고, 그 규칙이 만든 이번 주 줄도 그렇다.
+    """
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    body = client.get("/todo").text           # 처음 여는 사람 — 기본 규칙이 깔린다
+
+    assert '<td class="cell multi" data-field="category">IR</td>' in _routine_table(body)
+    assert '<td class="cell multi" data-field="category">IR</td>' in _task_table(body)
+    assert 'data-s-category="IR"' in _task_table(body)
+
+
+def test_a_new_task_keeps_the_category_line_breaks(client, db, users):
+    """폼으로 보낸 여러 줄 항목이 그대로 담긴다. 세부업무와 **같은 규칙** —
+    앞뒤 공백만 털고 가운데 줄바꿈은 둔다. 비우면 예전처럼 빈칸(`None`)."""
+    from app.models import WeeklyTask
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    client.post("/todo/tasks", data={"category": "  " + MULTI_CATEGORY + "\n ",
+                                     "title": "여러 줄 항목으로 추가"})
+    client.post("/todo/tasks", data={"category": " \n ", "title": "항목 없이 추가"})
+
+    assert db.query(WeeklyTask).filter_by(
+        title="여러 줄 항목으로 추가").one().category == MULTI_CATEGORY
+    assert db.query(WeeklyTask).filter_by(title="항목 없이 추가").one().category is None
+
+
+def test_a_new_routine_keeps_the_category_line_breaks(client, db, users):
+    """반복 업무도 같다. 비우면 예전처럼 `기타` — 그 규칙은 그대로 둔다."""
+    from app.models import WeeklyRoutine
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    client.post("/todo/routines", data={"category": "  " + MULTI_CATEGORY + "  ",
+                                        "title": "여러 줄 항목 규칙", "weekdays": "0"})
+    client.post("/todo/routines", data={"category": "\n", "title": "항목 없는 규칙",
+                                        "weekdays": "0"})
+
+    assert db.query(WeeklyRoutine).filter_by(
+        title="여러 줄 항목 규칙").one().category == MULTI_CATEGORY
+    assert db.query(WeeklyRoutine).filter_by(title="항목 없는 규칙").one().category == "기타"
+
+
+def test_inline_edit_keeps_the_category_line_breaks(client, db, users):
+    """표에서 고쳐 보낸 여러 줄 항목도 그대로 담긴다 — 두 표의 `PATCH` 다."""
+    from app.models import WeeklyRoutine, WeeklyTask
+    from app.services import weekly
+
+    task = WeeklyTask(user_id=users["u1"].id, week_start=weekly.week_start().isoformat(),
+                      category="메일", title="고칠 줄")
+    routine = WeeklyRoutine(user_id=users["u1"].id, category="메일",
+                            title="고칠 규칙", weekdays="0")
+    db.add_all([task, routine])
+    db.commit()
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    assert client.patch(f"/api/todo/tasks/{task.id}",
+                        json={"category": MULTI_CATEGORY + "\n"}).status_code == 200
+    assert client.patch(f"/api/todo/routines/{routine.id}",
+                        json={"category": MULTI_CATEGORY}).status_code == 200
+
+    db.refresh(task)
+    db.refresh(routine)
+    assert task.category == MULTI_CATEGORY
+    assert routine.category == MULTI_CATEGORY
+
+
+def test_the_category_line_breaks_survive_into_the_weekly_row(client, db, users):
+    """반복 → 주간으로 넘어갈 때도 항목의 줄이 살아 있다(`fill_week`).
+
+    사람이 실제로 보는 것은 위쪽 주간 업무 표다. 거기서 한 줄로 잘리면 규칙에
+    나눠 적어 둔 보람이 없다.
+    """
+    from app.models import WeeklyRoutine, WeeklyTask
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    client.post("/todo/routines", data={"category": MULTI_CATEGORY,
+                                        "title": "여러 줄 항목 규칙", "weekdays": "0"})
+    routine = db.query(WeeklyRoutine).filter_by(title="여러 줄 항목 규칙").one()
+
+    body = client.get("/todo").text            # 이 화면이 `fill_week` 를 돌린다
+    task = db.query(WeeklyTask).filter_by(routine_id=routine.id).one()
+
+    assert task.category == MULTI_CATEGORY, "주간 항목으로 옮겨 가면서 항목 줄이 뭉개졌습니다"
+    assert f'data-field="category">{MULTI_CATEGORY}</td>' in _task_table(body)
+
+
+def test_the_sort_value_carries_the_whole_multiline_category(client, db, users):
+    """항목으로 세울 값(`data-s-category`)에 **줄바꿈까지** 실린다.
+
+    세우고 묶는 일은 브라우저가 한다(`table_sort.js` — 같은 값끼리 붙어 서는
+    것은 `tests/js/table_sort_test.js` 10번이 본다). 여기서는 그 값이 **잘리지
+    않고** 실리는가를 본다. 첫 줄만 실리면 `메일` 과 `메일\\n- 홍보` 가 한 묶음
+    으로 섞이고, 나눠 적은 항목 둘이 서로 다른 값이 되면 붙어 서지 않는다.
+    """
+    from app.models import WeeklyTask
+    from app.services import weekly
+
+    start = weekly.week_start().isoformat()
+    db.add_all([
+        WeeklyTask(user_id=users["u1"].id, week_start=start, category=MULTI_CATEGORY,
+                   title="묶음 하나"),
+        WeeklyTask(user_id=users["u1"].id, week_start=start, category="메일",
+                   title="한 줄 항목"),
+        WeeklyTask(user_id=users["u1"].id, week_start=start, category=MULTI_CATEGORY,
+                   title="묶음 둘"),
+    ])
+    db.commit()
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    table = _task_table(client.get("/todo").text)
+
+    assert table.count(f'data-s-category="{MULTI_CATEGORY}"') == 2, \
+        "여러 줄 항목의 세울 값이 잘렸거나 줄마다 달라졌습니다"
+    assert 'data-s-category="메일"' in table, "한 줄 항목의 세울 값이 바뀌었습니다"
+    assert 'data-sort="category"' in table, "항목 머리글의 정렬이 빠졌습니다"
+
+
+def test_the_category_column_is_a_little_wider_in_both_tables(client, db, users):
+    """항목 칸을 조금 넓혔다(110·100 → 140px) — **두 표가 같은 값**이다.
+
+    반복 업무의 항목이 그대로 주간 업무의 항목이 되므로(`fill_week`) 두 표에서
+    같은 글자가 다른 자리에서 꺾이면 안 된다. 더 넓히지는 않는다 — 이 표에서
+    길게 읽는 칸은 세부업무다(todo.html 머리글 설명).
+    """
+    import re
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    body = client.get("/todo").text            # 기본 규칙이 깔려 반복 업무 표가 선다
+
+    widths = {}
+    for name, table in (("주간 업무", _task_table(body)), ("반복 업무", _routine_table(body))):
+        m = re.search(r'<th style="width:(\d+)px"[^>]*>항목</th>', table)
+        assert m, f"{name} 표의 항목 머리글을 못 찾았습니다"
+        widths[name] = int(m.group(1))
+
+    assert widths["주간 업무"] == widths["반복 업무"], widths
+    assert widths["주간 업무"] > 110, "항목 칸이 예전 폭 그대로입니다"

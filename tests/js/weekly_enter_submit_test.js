@@ -7,6 +7,11 @@
 // 막는 김에 **막으면 안 되는 것**이 있다 — 여러 줄 칸의 줄바꿈과, 키보드로
 // 누르는 [추가] 단추다. 그 둘이 이 검사의 절반이다.
 //
+// 그 뒤 **항목도 여러 줄 칸**이 됐다(todo.html). 그래서 이 검사의 폼도 화면과
+// 같은 모양으로 세운다 — 항목·세부업무는 textarea, 한 줄 칸으로 남은 것은
+// 주간 업무 폼의 일시(날짜 칸)와 반복 업무 폼의 요일 체크상자다. 폼 모양을
+// 옛날 그대로 두면, 검사는 화면에 더는 없는 칸(한 줄짜리 항목)을 지킨다.
+//
 // 규칙을 옮겨 적으면 두 벌이 되어 어긋나도 모른다. 그래서 파일을 그대로
 // 돌린다(weekly_status_test.js 와 같은 방식).
 "use strict";
@@ -25,7 +30,7 @@ function build(guard) {
   if (guard) attrs["data-no-enter-submit"] = "";
 
   const parts = {
-    category: D.el("input", { type: "text", name: "category" }),
+    category: D.el("textarea", { name: "category", rows: "2" }),
     title: D.el("textarea", { name: "title", rows: "2" }),
     weekday: D.el("input", { type: "checkbox", name: "weekdays", value: "0" }),
     when: D.el("select", { name: "time_of_day" }),
@@ -34,6 +39,26 @@ function build(guard) {
   const form = D.el("form", attrs, [
     parts.category, parts.title, parts.weekday, parts.when, parts.add
   ]);
+  parts.form = form;
+  parts.root = D.el("div", {}, [form]);
+  return parts;
+}
+
+// --- 주간 업무 추가 폼 한 벌 -------------------------------------------------
+//
+// 이쪽에 남은 한 줄 칸은 **일시(날짜 칸)** 하나다. 브라우저는 날짜 칸의 엔터로도
+// 폼을 보낸다 — 항목이 여러 줄 칸이 된 뒤로 이 폼의 막기가 지키는 자리가 여기다.
+function buildTask(guard) {
+  const attrs = { method: "post", action: "/todo/tasks", class: "rule-form" };
+  if (guard) attrs["data-no-enter-submit"] = "";
+
+  const parts = {
+    category: D.el("textarea", { name: "category", rows: "2" }),
+    title: D.el("textarea", { name: "title", rows: "2" }),
+    due: D.el("input", { type: "date", name: "due_date" }),
+    add: D.el("button", { type: "submit", class: "secondary-btn" })
+  };
+  const form = D.el("form", attrs, [parts.category, parts.title, parts.due, parts.add]);
   parts.form = form;
   parts.root = D.el("div", {}, [form]);
   return parts;
@@ -60,12 +85,27 @@ function press(el, key, extra) {
   return stopped;
 }
 
-// 1) 한 줄 칸(항목)의 엔터는 막힌다 — 여기서 폼이 나가던 자리다.
+// 1) 한 줄 칸의 엔터는 막힌다 — 여기서 폼이 나가던 자리다. 예전에는 항목이
+//    그 칸이었고, 지금은 주간 업무 폼의 일시(날짜 칸)가 남아 있다.
 {
-  const dom = build(true);
+  const dom = buildTask(true);
   run(dom);
-  assert.ok(press(dom.category, "Enter"),
-    "항목 칸에서 친 엔터가 그대로 폼을 보냅니다 — 적다 만 규칙이 들어갑니다");
+  assert.ok(press(dom.due, "Enter"),
+    "일시 칸에서 친 엔터가 그대로 폼을 보냅니다 — 적다 만 업무가 들어갑니다");
+}
+
+// 1-1) **항목 칸의 엔터는 줄바꿈이다** — 두 폼 다. 항목도 여러 줄 칸이 됐는데
+//      여기서 막으면 표에서는 나눌 수 있는 항목을 적을 때만 못 나눈다.
+{
+  const routine = build(true);
+  run(routine);
+  assert.ok(!press(routine.category, "Enter"),
+    "반복 업무 폼의 항목 칸 엔터를 막으면 항목에 줄바꿈을 넣을 수가 없습니다");
+
+  const task = buildTask(true);
+  run(task);
+  assert.ok(!press(task.category, "Enter"),
+    "주간 업무 폼의 항목 칸 엔터를 막으면 항목에 줄바꿈을 넣을 수가 없습니다");
 }
 
 // 2) 여러 줄 칸의 엔터는 **막으면 안 된다.** 막으면 줄바꿈을 못 넣는다 —
@@ -102,21 +142,23 @@ function press(el, key, extra) {
 // 5) **한글을 조합하는 중의 엔터는 비켜선다.** 그 엔터는 만들던 글자를 굳히는
 //    것이라 입력기가 먹는다. 여기서 가로채면 조합이 깨진다 — 적는 말이 죄다
 //    한글이라 그 자리가 곧 일상이다.
+//    (막히는 한 줄 칸에서 본다 — 여러 줄 칸은 조합이 아니어도 안 막히므로
+//    거기서 보면 이 비켜서기가 사라져도 검사가 통과한다.)
 {
-  const dom = build(true);
+  const dom = buildTask(true);
   run(dom);
-  assert.ok(!press(dom.category, "Enter", { isComposing: true }),
+  assert.ok(!press(dom.due, "Enter", { isComposing: true }),
     "조합 중의 엔터까지 가로채면 만들던 글자가 깨집니다");
-  assert.ok(!press(dom.category, "Enter", { keyCode: 229 }),
+  assert.ok(!press(dom.due, "Enter", { keyCode: 229 }),
     "옛 브라우저의 조합 중 엔터(keyCode 229)도 같은 자리입니다");
 }
 
 // 6) 표시를 안 단 폼은 건드리지 않는다 — 이 화면의 다른 폼(가져오기·삭제)은
 //    단추 하나짜리라 엔터로 보내도 될 일이고, 여기서 다 막으면 그것까지 죽는다.
 {
-  const dom = build(false);
+  const dom = buildTask(false);
   run(dom);
-  assert.ok(!press(dom.category, "Enter"),
+  assert.ok(!press(dom.due, "Enter"),
     "표시를 안 단 폼까지 막았습니다 — 막을 곳은 폼이 고른다");
 }
 
