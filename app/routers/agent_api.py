@@ -24,9 +24,10 @@ from pydantic import BaseModel
 from sqlalchemy import and_, exists, select, text
 from sqlalchemy.orm import Session
 
-from .. import config
+from .. import clock, config
 from ..db import get_db
-from ..services import cadence, pipeline, room_joined
+from ..services import (cadence, pipeline, room_joined, scheduled_send,
+                        send_guard)
 from ..deps import get_agent_device, may_auto_attach, now_iso
 from ..models import ROOM_SEARCH_TOPIC, AgentDevice, SendItem, SendJob, User
 
@@ -107,6 +108,22 @@ def poll(
     """
     _touch_device(db, device)
 
+    # ★ **발송 안전장치** — 시간(09~19시) · 계정마다 하루 상한
+    #   (`services/send_guard.py`). 걸리면 문구 잡을 **큐에 그대로 둔 채**
+    #   내주지 않는다. 방 확인 잡은 아무것도 보내지 않으므로 그대로 나간다.
+    #
+    #   그 앞에, 예약으로 풀렸는데 발송기가 못 집어간 채 시각을 넘긴 회차를
+    #   지나 버린 예약으로 되돌린다(`scheduled_send.expire_missed`) — 예약 실이
+    #   멎어 있어도 **내주는 자리에서** 한 번 더 걸러진다. 그대로 두면 저녁
+    #   9시에 켜진 PC 가 오후 2시 예약을 그 자리에서 보낸다.
+    now = clock.now()
+    scheduled_send.expire_missed(db, now, user_id=device.user_id)
+    guard = send_guard.gate(db, db.get(User, device.user_id), now)
+    wanted = [k for k in _requested_kinds(kinds) if k not in guard.blocked]
+    if not wanted:
+        db.commit()
+        return Response(status_code=204)
+
     # ★ 자료 파일이 실린 잡은 **파일을 붙일 줄 아는 발송기에만** 내준다.
     #
     # `kinds` 와 **같은 이유·같은 방식**이다. 이 칸을 모르는 구버전 발송기는
@@ -124,7 +141,7 @@ def poll(
     query = (
         select(SendJob.id)
         .where(SendJob.status == "queued", SendJob.user_id == device.user_id,
-               SendJob.kind.in_(_requested_kinds(kinds)))
+               SendJob.kind.in_(wanted))
     )
     if not can_attach:
         query = query.where(~exists().where(and_(SendItem.job_id == SendJob.id,
@@ -170,6 +187,13 @@ def poll(
     # 빠지지 않는다.
     if cap and cap > 0:
         pending_items = pending_items[:cap]
+
+    # ★ **하루 상한은 서버가 센다** — `cap` 은 잡 하나의 상한일 뿐이다
+    #   (`services/send_guard.py` 머리말). 오늘 남은 만큼만 내준다. 다 못 내준
+    #   건은 대기로 남고, 발송기가 회분을 끝냈다고 알리면 `_settle` 이 잡을
+    #   다시 큐로 돌린다 — 다음 날 시간이 되면 거기서 이어 나간다.
+    if job.kind in send_guard.GATED_KINDS:
+        pending_items = pending_items[:guard.left]
 
     return {
         "job_id": job.id,
@@ -628,6 +652,11 @@ def job_status_update(
     job.sent = sum(1 for i in job.items if i.status == "sent")
     job.failed = sum(1 for i in job.items if i.status == "failed")
     db.commit()
+    if settled == "done_with_errors":
+        # **자동 회차**가 실패를 안고 끝났다 — 관리자에게 알린다. 사람이 세운
+        # 회차는 그 사람이 진행 화면을 보고 있으므로 아무것도 안 한다
+        # (판정은 `send_guard.notify` 안에 있다).
+        send_guard.notify(db, job, send_guard.REASON_FAILED)
     # `pending` 은 왜 안 끝났는지 에이전트 로그에서 바로 보이라고 함께 준다.
     return {"ok": True, "status": job.status, "pending": len(_agent_items(job))}
 

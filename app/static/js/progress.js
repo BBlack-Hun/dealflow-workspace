@@ -65,6 +65,7 @@
     if (draftNote) draftNote.hidden = !draft;
     renderSchedule(d, draft);
     renderStanding(d);
+    renderGuard(d);
     // 아직 안 보낸 회차를 [중단] 할 일은 없다 — 중단할 것이 없다.
     var cancelBtn2 = document.getElementById("cancel-btn");
     if (cancelBtn2) cancelBtn2.hidden = draft;
@@ -150,7 +151,7 @@
     var setBtn = document.getElementById("schedule-btn");
     if (setBtn) setBtn.textContent = booked ? "시각 변경" : "예약";
     var offBtn = document.getElementById("unschedule-btn");
-    // 지나 버린 예약도 뗄 수 있어야 한다 — 안 그러면 `예약 시각이 지났습니다`
+    // 지나 버린 예약도 뗄 수 있어야 한다 — 안 그러면 `예약 시각을 놓쳤습니다`
     // 가 회차 화면에 영영 붙어 있는다.
     if (offBtn) offBtn.hidden = (s.state === "none");
 
@@ -172,6 +173,20 @@
         + "이 회차는 큐에 그대로 서서 기다립니다(막힌 것이 아닙니다). "
         + "그 PC 에서 발송 프로그램을 켜면 이어서 나갑니다.";
     }
+  }
+
+  // 발송 안전장치 — 보내는 시간(09~19시)과 이 계정의 오늘 남은 한도.
+  // **판정도 문장도 서버가 만든다**(`services/send_guard.describe`). 시간·한도에
+  // 걸려 서 있는 회차(`held`)는 경고로 띄운다 — 발송기가 꺼진 것과 다른 까닭이다.
+  function renderGuard(d) {
+    var el = document.getElementById("guard-note");
+    if (!el) return;
+    var g = d.guard || {};
+    var show = !!(g.gated && g.sentence);
+    el.hidden = !show;
+    if (!show) return;
+    el.textContent = g.sentence;
+    el.className = g.held ? "warn-box" : "hint muted";
   }
 
   function scheduleFailed(res) {

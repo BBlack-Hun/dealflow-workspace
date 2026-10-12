@@ -45,6 +45,23 @@ DEMO_TOKEN = "agt_test_token_user1"
 OTHER_TOKEN = "agt_test_token_user2"
 
 
+@pytest.fixture(autouse=True)
+def _send_window_open(request, monkeypatch):
+    """**발송 시간 관문(09~19시)을 검사 중에는 열어 둔다.**
+
+    `poll` 은 지금 시각이 09~19시 밖이면 문구 잡을 내주지 않는다
+    (`services/send_guard.py`). 실제 시계로 재면 **밤에만 깨지는 검사**가
+    수백 개 생긴다 — 발송기 폴링을 쓰는 검사가 그만큼 많다. 그래서 관문 하나만
+    늘 열어 두고, 관문 자체를 보는 검사는 `@pytest.mark.send_window` 를 달아
+    진짜 판정을 쓴다(시각은 그 검사가 `now=` 로 못박는다).
+    """
+    if request.node.get_closest_marker("send_window"):
+        return
+    from app.services import send_guard
+
+    monkeypatch.setattr(send_guard, "window_open", lambda now=None: True)
+
+
 @pytest.fixture()
 def db():
     """매 테스트마다 빈 스키마. (SQLite 파일 하나라 drop/create 가 가장 단순하고 빠르다)"""

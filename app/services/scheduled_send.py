@@ -44,7 +44,7 @@
 
 서버가 멈춰 있었거나 한참 뒤에 깨어난 경우다. 몇 시간 늦게 조용히 나가는 것이
 더 위험하다 — 받는 쪽에서는 한밤중에 오는 것으로 보인다. 그래서 `EXPIRE_MINUTES`
-가 지나면 풀지 않고 서 있고, 화면이 `예약 시각이 지났습니다` 라고 적는다.
+가 지나면 풀지 않고 서 있고, 화면이 `예약 시각을 놓쳤습니다` 라고 적는다.
 사람이 [발송 시작] 을 누르면 그때 나간다.
 """
 from __future__ import annotations
@@ -248,8 +248,10 @@ def sentence(job: SendJob, now: Optional[datetime] = None) -> str:
     who = f"{pending_count(job)}{unit(job)}" + ("에게" if unit(job) == "명" else "에")
     now_state = state(job, now)
     if now_state == STATE_EXPIRED:
-        return (f"예약 시각이 지났습니다 ({label(at)} · {who}) — "
-                "저절로 나가지 않습니다. 보내려면 [발송 시작] 을 누르세요")
+        # 못 풀린 채 지난 것도, 풀렸는데 발송기가 못 집어간 것(`expire_missed`)도
+        # 같은 문장이다 — 사람이 할 일이 같다.
+        return (f"예약 시각을 놓쳤습니다 ({label(at)} · {who}) — "
+                "저절로 나가지 않습니다. 다시 예약하거나 [발송 시작] 을 누르세요")
     if now_state == STATE_DUE:
         return f"{label(at)} · {who} 곧 나갑니다"
     if now_state == STATE_RELEASED:
@@ -389,6 +391,98 @@ def release(db: Session, job: SendJob, now: Optional[datetime] = None) -> bool:
     return True
 
 
+# --- 풀렸는데 못 나간 것 ------------------------------------------------------
+
+def released_on_schedule(job: SendJob) -> bool:
+    """이 회차가 **예약 시각이 되어 풀린 것**인가.
+
+    `released_at` 은 예약이 풀릴 때(`_claim`)도, 사람이 예약 회차를 먼저
+    [발송 시작] 할 때(`jobs.start_draft`)도 찍힌다. 둘을 가르는 것은 **그
+    시각이 어디에 떨어졌나**다 — 예약이 푸는 것은 언제나 정한 시각과
+    `deadline` 사이다(`state()` 가 `STATE_DUE` 인 동안만 푼다). 그보다 앞이면
+    사람이 기다리지 않고 누른 것이고, 뒤면 지난 예약을 사람이 누른 것이다.
+    """
+    at = scheduled_at(job)
+    if at is None or not job.released_at:
+        return False
+    try:
+        released = _aware(datetime.fromisoformat(job.released_at))
+    except ValueError:
+        return False
+    return at <= released < deadline(at)
+
+
+def missed(job: SendJob, now: Optional[datetime] = None) -> bool:
+    """**예약으로 풀렸는데 발송기가 집어가지 못한 채** 포기할 때를 넘겼는가.
+
+    풀린 회차는 `queued` 로 서서 발송기를 기다린다. 그 시각에 PC 가 꺼져 있으면
+    켜지는 순간 나간다 — 저녁 9시에 켜지면 저녁 9시에. 지나 버린 예약을 저절로
+    풀지 않는 것(`STATE_EXPIRED`)과 **같은 까닭으로** 이것도 저절로 나가면 안
+    된다. 기준도 같다: 정한 시각 + `EXPIRE_MINUTES`(그날 `LATEST_HOUR` 를 넘지
+    않음, `deadline`).
+
+    발송기가 한 번이라도 물어 간 회차(`started_at`)는 여기 들지 않는다 — 이미
+    나가기 시작했고, 남은 것은 하루 상한·시간에 걸려 이어 나가는 중이다
+    (`services/send_guard.py`).
+    """
+    if job.status != "queued" or job.started_at:
+        return False
+    if not released_on_schedule(job):
+        return False
+    now = _aware(now or clock.now())
+    return now >= deadline(scheduled_at(job))
+
+
+def expire_missed(db: Session, now: Optional[datetime] = None,
+                  user_id: Optional[int] = None) -> list:
+    """시각을 놓친 회차를 **지나 버린 예약**으로 되돌린다. 되돌린 회차 번호들.
+
+    `draft` 로 내리고 `released_at` 을 비운다 — 그러면 이 회차는 처음부터 못
+    풀린 지난 예약과 똑같아진다(`state()` 가 `STATE_EXPIRED`). 화면도 오늘 할
+    일도 이미 그 상태를 말할 줄 안다: "예약 시각을 놓쳤습니다 — 다시 예약하거나
+    [발송 시작]". 새 상태를 만들지 않는 까닭이 그것이다 — 하나 더 만들면 그
+    상태를 모르는 화면이 한 곳은 반드시 생긴다.
+
+    다시 풀리지 않는다: `deadline` 을 넘긴 예약은 `STATE_DUE` 로 돌아오지 않는다.
+    사람이 [발송 시작] 을 누르면 `released_at` 이 그 시각(지난 뒤)으로 찍혀
+    `released_on_schedule` 이 거짓이 되므로, 그 회차는 여기 다시 걸리지 않는다.
+
+    **원자적으로** 내린다 — 발송기가 같은 순간 물어 가면(`agent_api.poll` 의
+    선점) 그쪽이 이긴다: `status='queued' AND started_at IS NULL` 인 줄만 바꾼다.
+
+    두 자리가 부른다: 예약 실(30초마다)과 `poll`(내주기 직전). 실이 죽어 있어도
+    내주는 자리에서 한 번 더 걸러지게.
+    """
+    from sqlalchemy import text
+
+    from . import send_guard
+
+    now = _aware(now or clock.now())
+    query = select(SendJob).where(SendJob.status == "queued",
+                                  SendJob.scheduled_at.isnot(None),
+                                  SendJob.released_at.isnot(None),
+                                  SendJob.started_at.is_(None))
+    if user_id is not None:
+        query = query.where(SendJob.user_id == user_id)
+    out = []
+    for job in db.execute(query.order_by(SendJob.id)).scalars().all():
+        if not missed(job, now):
+            continue
+        done = db.execute(
+            text("UPDATE send_jobs SET status='draft', released_at=NULL "
+                 "WHERE id=:id AND status='queued' AND started_at IS NULL"),
+            {"id": job.id})
+        db.commit()
+        if done.rowcount == 0:
+            continue
+        db.refresh(job)
+        log.warning("예약 회차 %s 가 시각을 놓쳤습니다(예약 %s) — 저절로 나가지 "
+                    "않게 되돌립니다", job.id, job.scheduled_at)
+        out.append(job.id)
+        send_guard.notify(db, job, send_guard.REASON_MISSED)
+    return out
+
+
 def due_jobs(db: Session, now: Optional[datetime] = None) -> list:
     """지금 풀 때가 된 회차들. **`state()` 한 곳으로 가린다.**
 
@@ -480,6 +574,9 @@ def start_scheduler() -> None:
             db = SessionLocal()
             try:
                 run_once(db)
+                # 풀렸는데 발송기가 못 집어간 채 시각을 넘긴 것 — 발송기가
+                # 늦게 켜져도 저절로 안 나가게 되돌린다(`expire_missed`).
+                expire_missed(db)
             except Exception:  # noqa: BLE001 - 실이 죽으면 예약이 조용히 멎는다
                 log.exception("예약 발송을 살피다 실패했습니다")
             finally:

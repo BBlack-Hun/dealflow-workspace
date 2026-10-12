@@ -536,6 +536,47 @@
     </p>
   </section>
 
+  {# **발송 안전장치** — 보내는 시간과 계정마다 하루 상한.
+
+     자동화가 사람 확인 없이 돌기 시작하면, 사람이 눈으로 막아 주던 것을 서버가
+     막아야 한다. 막는 자리는 발송기가 잡을 집어가는 순간 하나다
+     (`routers/agent_api.poll` · `services/send_guard.py`) — 여기는 그 숫자를
+     보고 고치는 자리다. 시간은 고칠 수 없다(예약을 고를 수 있는 폭과 같은 값). #}
+  <section class="panel" data-testid="send-guard-panel">
+    <h2 class="panel-title">발송 안전장치</h2>
+    <ul class="import-stats">
+      <li><span>보내는 시간</span><b>매일 {{ send_guard.window }}</b></li>
+      <li><span>하루 상한 기본값</span><b>계정마다 {{ send_guard.default_cap }}건</b></li>
+    </ul>
+    <form method="post" action="/team/send-caps" class="rule-form">
+      <table class="grid-table compact">
+        <thead><tr><th>계정</th><th class="num" style="width:90px">오늘 보냄</th>
+          <th class="num" style="width:120px">하루 상한</th></tr></thead>
+        <tbody>
+        {% for row in send_guard.rows %}
+        <tr>
+          <td>{{ row.name }}</td>
+          <td class="num">{{ row.sent_today }}</td>
+          <td class="num"><input type="number" name="cap_{{ row.id }}"
+              min="{{ send_guard.min_cap }}" max="{{ send_guard.max_cap }}"
+              value="{{ row.cap }}" style="width:80px"></td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      <button class="secondary-btn" type="submit">상한 저장</button>
+    </form>
+    <p class="hint">
+      카톡으로 문구가 나가는 잡(딜소개 · IR 자료 · 소싱 · 스타트업 발송)은
+      <b>{{ send_guard.window }}</b> 밖에는 발송 프로그램에 넘어가지 않습니다 —
+      큐에 서 있다가 다음 날 {{ '%02d'|format(send_guard.earliest) }}:00 에 나갑니다.
+      하루 상한에 닿은 계정도 남은 건이 다음 날 이어 나갑니다.
+      방 확인과 시험 발송은 막지 않습니다(아무것도 보내지 않거나, 우리 시험방으로만 갑니다).
+      예약 시각에서 한 시간이 지나도록 발송 프로그램이 못 집어간 예약은 저절로 나가지 않고
+      <b>예약 시각을 놓쳤습니다</b> 로 섭니다.
+    </p>
+  </section>
+
   {# 미팅 후기 **발송 대기 목록 자동 준비**.
 
      메일·문자와 나란히 서는 자리다 — 서버가 때맞춰 알아서 하는 것들이 한 화면에

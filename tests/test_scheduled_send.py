@@ -12,7 +12,7 @@
    (`routers/jobs.py: _requeue`).
 3. **지나 버린 예약은 저절로 안 나간다.** 서버가 멈춰 있었거나 한참 뒤에
    깨어난 경우다. 몇 시간 늦게 조용히 나가면 받는 쪽에는 한밤중에 오는 것으로
-   보인다. 화면이 `예약 시각이 지났습니다` 라고 말하고, 사람이 누르면 그때 나간다.
+   보인다. 화면이 `예약 시각을 놓쳤습니다` 라고 말하고, 사람이 누르면 그때 나간다.
 4. **09~19시 밖은 서버가 거절한다.** 화면 고르개만 좁혀 두면 주소로 폼을
    흉내 내는 순간 뚫린다.
 5. **아직 안 나간 것은 취소하거나 시각을 바꿀 수 있고, 나간 것에는 안 된다.**
@@ -185,7 +185,8 @@ def test_a_missed_hour_never_goes_out_on_its_own(client, db, seed):
 
     assert scheduled_send.state(job, LONG_AFTER) == scheduled_send.STATE_EXPIRED
     said = scheduled_send.sentence(job, LONG_AFTER)
-    assert "예약 시각이 지났습니다" in said and "2명에게" in said
+    assert "예약 시각을 놓쳤습니다" in said and "2명에게" in said
+    assert "다시 예약하거나" in said
 
 
 def test_a_missed_booking_still_goes_out_if_a_person_presses(client, db, seed):

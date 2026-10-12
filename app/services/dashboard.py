@@ -23,8 +23,8 @@ from sqlalchemy.orm import Session
 
 from .. import clock
 from . import (auto_send, cadence, followup_sms, ir_monthly, mailer,
-               manual_send, meeting_kind as mk, pipeline, report, sheet_owner,
-               startup_send)
+               manual_send, meeting_kind as mk, pipeline, report, send_guard,
+               sheet_owner, startup_send)
 from .. import deps, version
 from ..models import (
     SEND_KINDS,
@@ -1085,6 +1085,10 @@ def admin_dashboard(db: Session, today: Optional[date] = None) -> dict:
         # 옆의 자동 준비와 같은 표를 쓰지만 때맞춰 저절로 서지는 않는다
         # (`services/startup_send.py` 머리말).
         "startup_send": startup_send.status(db),
+        # **발송 안전장치** — 보내는 시간(09~19시)과 계정마다 하루 상한.
+        # 자동화가 사람 확인 없이 돌 때 서버가 대신 막는 자리다
+        # (`services/send_guard.py`). 상한은 여기서 계정마다 고친다.
+        "send_guard": send_guard.status(db, today),
         "warnings": _admin_warnings(rows, unassigned),
         "recent_batches": recent_batches(db, limit=8),
     }
