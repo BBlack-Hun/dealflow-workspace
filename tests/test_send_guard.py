@@ -35,14 +35,16 @@ from .conftest import DEMO_PASSWORD, DEMO_TOKEN, OTHER_TOKEN, auth
 
 #: 2099-03-12 는 목요일이다. 실제 오늘이 언제든 이 날이 '지금' 일 수 없다.
 DAY = (2099, 3, 12)
-AT_ISO = "2099-03-12T14:00:00+09:00"
 
 
 def _at(hour, minute=0, day=DAY):
+    """그날 그 시각 — **이 프로세스의 시간대**로. 예약 시각을 `+09:00` 으로
+    박아 두면 시간대가 UTC 인 곳(CI)에서 예약과 '지금' 이 아홉 시간 어긋난다."""
     return datetime(*day, hour, minute).astimezone()
 
 
 ON_TIME = _at(14, 0)
+AT_ISO = ON_TIME.isoformat(timespec="seconds")
 #: 정한 시각으로부터 90분 — `EXPIRE_MINUTES`(60) 를 넘겼다.
 LONG_AFTER = _at(15, 30)
 
