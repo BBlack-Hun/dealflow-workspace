@@ -81,11 +81,13 @@ def portal(db, users, people):
 
 @pytest.fixture()
 def groundwork(db, users):
-    """FK 가 가리킬 앞줄 — 미팅·IR 요청은 담당자와 기업이 있어야 선다."""
-    from app.models import IrCompany, VcContact
+    """FK 가 가리킬 앞줄 — 미팅·IR 요청은 담당자와 기업이 있어야 선다.
+    딜 소싱의 `딜 받음` 표시(`sourcing_receipts`)는 소싱 명단 줄이 있어야 선다."""
+    from app.models import IrCompany, SourcingContact, VcContact
 
     db.add_all([VcContact(user_id=users["u2"].id, name="앞줄담당", firm="가나벤처스"),
-                IrCompany(name="앞줄기업")])
+                IrCompany(name="앞줄기업"),
+                SourcingContact(bucket="앞줄갈래", name="앞줄심사역")])
     db.commit()
 
 
@@ -565,6 +567,11 @@ WRITE_ROUTES = {
     ("POST", "/api/sourcing"): WATCHED,
     ("PATCH", "/api/sourcing/{row_id}"): WATCHED,
     ("DELETE", "/api/sourcing/{row_id}"): WATCHED,
+    # 딜 소싱 — 이 달 `딜 받음` 은 공용 명단의 표시(`edit_log.WATCHED["sourcing_receipts"]`).
+    # [지금 메일 확인] 은 같은 표시를 세운다 — 따로 띄운 실이 적으므로 요청 문맥이
+    # 없어 로그는 안 남는다(기계 기록).
+    ("POST", "/sourcing/{row_id}/received"): WATCHED,
+    ("POST", "/sourcing/mail-check"): WATCHED,
 
     ("POST", "/api/contacts/verify-rooms"): WATCHED,
     ("POST", "/api/contacts/assign"): WATCHED,
@@ -613,6 +620,8 @@ WRITE_ROUTES = {
     ("POST", "/team/notices/{notice_id}/off"): WATCHED,
     ("POST", "/team/notices/{notice_id}/on"): WATCHED,
     ("POST", "/team/startup-send"): WATCHED,
+    # 딜 소싱 메일 확인이 읽을 편지함(`sourcing_mail_settings`) — 비밀번호는 `바뀜` 으로만.
+    ("POST", "/team/sourcing-mail"): WATCHED,
 
     # 대표 카톡방 맞추기 [저장] — **공용 표(`ir_companies`)의 방 이름**을
     # 수십 줄 한꺼번에 바꾼다. 이 앱에서 오발송에 가장 가까운 칸이라
@@ -769,8 +778,10 @@ def test_the_six_shared_routers_still_hold_the_forty_nine_paths(portal):
     # companies 의 여덟 번째가 **기업 강제 삭제**(`/force-delete`)다. 평범한
     # [삭제] 가 이력이 붙은 기업을 막는 것을 무시하는 길이라, 길을 따로 냈다 —
     # 같은 주소에 깃발 하나로 붙이면 잘못 눌렀을 때 그대로 지워진다.
+    # sourcing 의 5 · 6번째는 이 달 `딜 받음` 단추와 [지금 메일 확인]이다
+    # (`services/sourcing_receipts.py` · `services/sourcing_mail.py`).
     assert counted == {"companies": 8, "ir": 12, "consulting": 9,
-                       "templates_crud": 5, "sourcing": 4, "contacts": 22}
+                       "templates_crud": 5, "sourcing": 6, "contacts": 22}
 
 
 def test_every_table_is_either_watched_or_explained(db):

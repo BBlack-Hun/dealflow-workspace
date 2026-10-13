@@ -24,7 +24,8 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import get_current_user, templates
 from ..models import SendItem, SourcingContact, User
-from ..services import sourcing_buckets, sourcing_link
+from ..services import (sourcing_buckets, sourcing_link, sourcing_mail,
+                        sourcing_receipts)
 from ..ui import base_ctx
 
 router = APIRouter(tags=["sourcing"])
@@ -157,7 +158,22 @@ def sourcing_page(request: Request, db: Session = Depends(get_db),
     ctx = base_ctx(request, db, user, active="sourcing")
     # 투자사 관리 현황에서 이미 방을 연결해 둔 사람이면 다시 적을 이유가 없다.
     linked = sourcing_link.linked_rooms(db, rows)
+    # 이 달 `딜 받음` — 사람이 누르거나 메일 확인이 저절로 세운다
+    # (`services/sourcing_receipts.py` · `services/sourcing_mail.py`).
+    month = sourcing_receipts.month_of()
+    receipts = sourcing_receipts.receipts(db, month)
     ctx.update({
+        "month": month,
+        "month_label": f"{int(month[5:])}월",
+        "received": set(receipts),
+        # 메일로 선 표시는 `(메일 10/15)` 로 — 어느 메일로 섰는지.
+        "mail_marks": {cid: {"day": sourcing_mail.day_stamp(r.mail_at),
+                             "subject": r.mail_subject or ""}
+                       for cid, r in receipts.items()
+                       if r.source == sourcing_receipts.SOURCE_MAIL},
+        # 머리 줄 — `메일 확인: 마지막 10/15 18:00 · 이번 달 메일로 받은 분 N명 · …`.
+        "mail_check": sourcing_mail.page_status(db),
+        "is_admin": user.role == "admin",
         "linked_rooms": linked,
         "tabs": tabs,
         "selected": selected,
@@ -322,6 +338,59 @@ def delete_row(row_id: int, db: Session = Depends(get_db),
                    "카톡방 이름을 비워주세요(방이 없으면 발송이 거부됩니다).",
         )
 
+    # 그 줄의 달마다 `딜 받음` 표시 · 본 메일도 함께 — 가리킬 곳이 없는 줄을 남기지 않는다.
+    sourcing_receipts.delete_for(db, [row_id])
     db.delete(row)
     db.commit()
     return {"deleted": row_id}
+
+
+# ── 이 달 딜 받음 · 메일 확인 ────────────────────────────────────────────────
+
+def _back(tab: str, msg: str = "") -> RedirectResponse:
+    url = f"/sourcing?tab={quote(tab or 'all')}"
+    if msg:
+        url += f"&msg={quote(msg)}"
+    return RedirectResponse(url, status_code=303)
+
+
+@router.post("/sourcing/{row_id}/received", include_in_schema=False)
+def toggle_received(row_id: int, month: str = Form(""), on: str = Form(""),
+                    tab: str = Form(""), db: Session = Depends(get_db),
+                    user: User = Depends(get_current_user)):
+    """**이 달 딜 받음** 표시를 켜고 끈다.
+
+    이 화면을 볼 수 있는 사람이면 누른다(명단을 고치는 권한과 같다). 달은
+    화면이 보낸 달을 쓴다 — 자정을 넘겨 눌러도 사람이 본 달에 적힌다. 메일로
+    선 표시도 여기서 거둘 수 있다(같은 메일로는 다시 서지 않는다).
+    """
+    row = db.get(SourcingContact, row_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="찾을 수 없습니다")
+    if not re.fullmatch(r"\d{4}-\d{2}", month or ""):
+        month = sourcing_receipts.month_of()
+    if on == "1":
+        sourcing_receipts.mark(db, row.id, month, user_id=user.id)
+    else:
+        sourcing_receipts.unmark(db, row.id, month)
+    db.commit()
+    return _back(tab)
+
+
+@router.post("/sourcing/mail-check", include_in_schema=False)
+def mail_check_now(tab: str = Form(""), db: Session = Depends(get_db),
+                   user: User = Depends(get_current_user)):
+    """[지금 메일 확인] — 받은 편지함의 머리글을 읽어 메일로 딜을 보낸 사람을 `딜 받음`.
+
+    관리자만 — 회사 메일함에 서버가 접속하는 자리다. 요청을 붙잡지 않게 따로 띄운
+    실에서 돌고, 결과는 이 화면의 머리 줄에 선다(`services/sourcing_mail.py`).
+    """
+    from ..deps import admin_only
+
+    admin_only(user)
+    settings = sourcing_mail.load_settings(db)
+    if not settings.active:
+        return _back(tab, settings.off_text)
+    if sourcing_mail.start_manual(db, user) is None:
+        return _back(tab, "메일 확인이 이미 돌고 있습니다 — 잠시 뒤 새로고침하세요")
+    return _back(tab, "메일 확인을 시작했습니다 — 잠시 뒤 이 화면 위쪽에 결과가 섭니다")
