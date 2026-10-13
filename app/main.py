@@ -12,6 +12,7 @@ from .services import (auto_send, automation_runner, backup, edit_log,
 from .routers import auth as auth_router
 from .routers import templates_crud
 from .routers import setup as setup_router
+from .routers import automations as automations_router
 from .routers import (agent_api, companies, consulting, contacts, dashboard,
                       data_io, deals, followups, ir, jobs, llm_brief, notices,
                       pages, sourcing, startup, startup_outreach, startup_send)
@@ -94,6 +95,7 @@ def create_app() -> FastAPI:
     # 공지. [확인] 은 **모든 화면**에서 눌리므로(판이 밑틀에 선다) 화면
     # 라우터가 아니라 여기 따로 선다 — 왜 그런지는 `routers/notices.py`.
     app.include_router(notices.router)
+    app.include_router(automations_router.router)
     # /setup, /download 는 pages 의 캐치올(/{placeholder}) 보다 먼저 등록해야 가려지지 않는다.
     # `/startup` 도 마찬가지다 — 뒤에 두면 캐치올이 먼저 잡아 `준비 중` 안내만 뜬다.
     app.include_router(auth_router.router)

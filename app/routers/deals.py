@@ -206,6 +206,7 @@ def _compose_for_contact(
     closing_template_id: Optional[int] = None,
     mode: str = MODE_DEAL,
     include_opening: Optional[bool] = None,
+    closing_override: Optional[str] = None,
 ) -> mc.ComposeResult:
     # 인사말 기본값은 방식마다 다르다. 후속 문구는 이미 대화가 오간 방에 한 줄
     # 덧붙이는 것이라 인사를 다시 붙이지 않는 편이 자연스럽다. 화면에서 켜고 끌 수 있다.
@@ -236,6 +237,10 @@ def _compose_for_contact(
     # 화면에서 고른 문구가 있으면 그것을 우선한다.
     opening_body = _template_body_by_id(db, user, opening_template_id) or opening_body
     closing_body = _template_body_by_id(db, user, closing_template_id) or closing_body
+    # 자동화가 **같은 틀에 다른 안내문**을 끼울 때(미팅 요청 두 번째 —
+    # `meeting_ask_message`). 인사말 · 단계 · 조립 규칙은 그대로 탄다.
+    if closing_override:
+        closing_body = closing_override
 
     who = _to_contact_view(contact)
     if mode == MODE_SOURCING and not (who.title or "").strip():
@@ -436,6 +441,30 @@ def review_message(db: Session, user: User, contact) -> str:
     보여 준 것과 실제로 나가는 것이 인사말 한 덩어리만큼 어긋난다.
     """
     return _compose_for_contact(db, user, contact, [], mode=MODE_REVIEW).text
+
+
+#: 미팅 요청 **두 번째**의 안내문 종류 — 첫 번째(`closing_meeting`)에 답이 없을
+#: 때 사흘 뒤 조금 다른 말로 다시 묻는다(`services/automations/meeting_request.py`).
+#: 같은 글을 두 번 보내면 받는 쪽에서는 잘못 간 것으로 읽는다.
+MEETING_ASK_AGAIN_KIND = "closing_meeting_again"
+MEETING_ASK_AGAIN_FALLBACK = (
+    "지난번 미팅 일정 관련하여 다시 한번 여쭙습니다.\n"
+    "이번주 또는 다음주 중 20~30분 정도 편하신 시간 말씀 주시면 맞추어 뵙겠습니다.")
+
+
+def meeting_ask_message(db: Session, user: User, contact, again: bool = False) -> str:
+    """IR 자료를 받은 담당자에게 나갈 **미팅 요청** 문구 전문.
+
+    첫 번째는 발송 화면의 미팅 요청 탭과 **같은 길**이다(`MODE_MEETING` —
+    `closing_meeting`). 두 번째는 같은 틀(인사말 + 안내문, 단계 3)에 안내문만
+    `closing_meeting_again` 으로 바꾼다 — 조립 규칙을 다시 적지 않는다.
+    """
+    if not again:
+        return _compose_for_contact(db, user, contact, [], mode=MODE_MEETING).text
+    body = _template_body(db, user.id, MEETING_ASK_AGAIN_KIND,
+                          MEETING_ASK_AGAIN_FALLBACK)
+    return _compose_for_contact(db, user, contact, [], mode=MODE_MEETING,
+                                closing_override=body).text
 
 
 def _load_recipients(db: Session, user: User, mode: str, ids: List[int]) -> List:

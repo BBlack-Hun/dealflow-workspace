@@ -5,3 +5,4 @@
 """
 
 from . import meeting_review  # noqa: F401,E402  A7 미팅 후 검토결과 문의
+from . import meeting_request  # noqa: F401,E402  A2 미팅 요청 2회

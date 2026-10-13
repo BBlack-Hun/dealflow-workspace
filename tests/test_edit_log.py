@@ -623,6 +623,10 @@ WRITE_ROUTES = {
     ("POST", "/team/sender-rooms/check"): MACHINE,
     ("POST", "/team/sender-rooms/{contact_id}/confirm"): WATCHED,
     ("POST", "/team/sender-rooms/{contact_id}/clear"): WATCHED,
+    # [답 옴] — 담당자 이력(`contact_activities`)에 한 줄. 자기 담당자에게
+    # 누른다(관리자는 팀 전체) — 이력 표는 보지 않는 표다.
+    ("POST", "/automations/meeting-request/{contact_id}/replied"): MACHINE,
+    ("POST", "/automations/meeting-request/{contact_id}/replied/undo"): MACHINE,
 
     # 대표 카톡방 맞추기 [저장] — **공용 표(`ir_companies`)의 방 이름**을
     # 수십 줄 한꺼번에 바꾼다. 이 앱에서 오발송에 가장 가까운 칸이라
