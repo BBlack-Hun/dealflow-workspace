@@ -319,6 +319,10 @@ WATCHED: Dict[str, Watch] = {
         why="2단계 자동화 스위치. 팀 현황에서 관리자가 켜고 끄는 팀 공용 자리이고, "
             "시험 모드를 끄는 순간 **진짜 상대에게** 나가기 시작한다 — 누가 언제 "
             "껐는지 물을 자리가 여기뿐이다."),
+    "sender_rooms": Watch(
+        owner=None, href="/team", label=_attr("room_name"),
+        why="보내는 계정 카톡 기준 방 제목. 자동화가 이 제목으로 보낸다 — 잘못 "
+            "확정하면 자동화가 엉뚱한 방으로 간다. 관리자가 고르는 공용 자리다."),
     "schedule_rules": Watch(
         owner=None, href="/followups", label=_attr("label"),
         why="발송 일정 규칙. 팀 전체의 날짜를 정하는 자리라 공용이다."),
@@ -421,6 +425,8 @@ VALUE_FIELDS = frozenset({
     # 2단계 자동화의 시험 모드와 시험방(`services/automation.py`) — 시험 모드가
     # 꺼지면 진짜 방으로 나가고, 시험방이 틀리면 시험 글이 엉뚱한 방에 간다.
     "test_mode", "test_room",
+    # 보내는 계정 카톡 기준 방 제목(`sender_rooms`) — 이 제목으로 자동화가 나간다.
+    "room_name", "verified",
 
     # **어느 방으로 나가나.** 이 앱에서 오발송에 가장 가까운 칸이라 값을 남긴다.
     "kakao_room_name",

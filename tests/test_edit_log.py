@@ -618,6 +618,11 @@ WRITE_ROUTES = {
     ("POST", "/team/automations/{key}"): WATCHED,
     # [시험방 확인] — 시험방으로 한 통 세울 뿐이다(발송 기록).
     ("POST", "/team/automations/{key}/check"): MACHINE,
+    # 보내는 계정 카톡 기준 방 제목 — 확인 걸기는 방 확인 잡(기계 기록),
+    # 확정·거두기는 공용 자리(`edit_log.WATCHED["sender_rooms"]`).
+    ("POST", "/team/sender-rooms/check"): MACHINE,
+    ("POST", "/team/sender-rooms/{contact_id}/confirm"): WATCHED,
+    ("POST", "/team/sender-rooms/{contact_id}/clear"): WATCHED,
 
     # 대표 카톡방 맞추기 [저장] — **공용 표(`ir_companies`)의 방 이름**을
     # 수십 줄 한꺼번에 바꾼다. 이 앱에서 오발송에 가장 가까운 칸이라

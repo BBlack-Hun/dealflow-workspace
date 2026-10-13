@@ -2500,3 +2500,47 @@ class AutomationSend(TimestampMixin, Base):
                                                                nullable=True)
     #: 한 통에 실린 기업(채널방). 한 통에 셋이면 줄도 셋이다.
     company_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
+
+#: 방 확인 잡(`verify_room`)의 `SendJob.topic` — **보내는 계정 카톡 기준의 방
+#: 제목**을 찾는 확인이다(`services/sender_rooms.py`). 이 값이면 그 잡의 줄
+#: (`VcContact`)은 담당자 주인의 방 제목으로 찾고, 찾은 제목은 그 줄이 아니라
+#: `sender_rooms` 에 담긴다 — 담당자 주인의 방 이름도 확인 표시도 안 건드린다.
+SENDER_ROOM_TOPIC = "sender_room"
+
+
+class SenderRoom(TimestampMixin, Base):
+    """**보내는 계정의 카톡에서 이 담당자 방의 제목.**
+
+    카톡 단톡방 제목은 **사람마다 따로 바꿀 수 있다.** 담당 팀원이 적어 둔 방
+    이름(`VcContact.kakao_room_name`)은 그 팀원 카톡의 제목이고, 같은 방이라도
+    자동화를 보내는 계정(모든 방에 들어가 있는 한 계정)의 카톡에서는 다른
+    제목일 수 있다. 발송기는 제목으로 방을 찾으므로, 그 계정 카톡 기준 제목이
+    따로 있어야 한다.
+
+    - 확인 잡이 담당자 주인의 제목으로 찾아 **똑같은 제목이 정확히 하나**면
+      저절로 넣는다(`verified=1`).
+    - 제목이 다르거나 여럿이면 **후보만** 담고(`candidates`) 사람이 고른다.
+    - 자동화가 방을 고를 때: 확인된 제목이 있으면 그것, 없으면 주인의 제목
+      (`sender_rooms.room_for`).
+
+    **아무것도 보내지 않는다** — 확인 잡은 방 제목만 읽는다.
+    """
+
+    __tablename__ = "sender_rooms"
+    __table_args__ = (
+        UniqueConstraint("sender_user_id", "contact_id",
+                         name="uq_sender_rooms_pair"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    sender_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    contact_id: Mapped[int] = mapped_column(ForeignKey("vc_contacts.id"))
+    #: 보내는 계정 카톡에서의 방 제목(확정된 것). 비어 있으면 주인의 제목을 쓴다.
+    room_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: 1 이면 `room_name` 이 그 계정 카톡에서 확인된 제목이다.
+    verified: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    #: 확인 잡이 찾아 온 제목들(JSON 배열) — 사람이 고를 후보.
+    candidates: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    #: 마지막으로 찾아본 시각. 비어 있으면 아직 안 찾아봤다.
+    checked_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)

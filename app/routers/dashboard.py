@@ -1288,6 +1288,111 @@ def check_automation_room(
         status_code=303)
 
 
+# ── 보내는 계정 카톡 기준 방 제목 (`services/sender_rooms.py`) ────────────────
+
+def _room_senders(db: Session) -> list:
+    """방 제목을 맞출 **보내는 계정들** — 기본 보내는 계정과 자동화마다 고른 계정."""
+    from ..services import automation
+
+    seen, out = set(), []
+    ids = [automation.default_sender_id(db)] + [
+        automation.sender_id(db, automation.load(db, k.key)) for k in automation.KINDS]
+    for uid in ids:
+        member = db.get(User, uid) if uid else None
+        if member is not None and automation.may_send(member) and member.id not in seen:
+            seen.add(member.id)
+            out.append(member)
+    return out
+
+
+def _room_sender_or_404(db: Session, sender_id: int) -> User:
+    for member in _room_senders(db):
+        if member.id == sender_id:
+            return member
+    raise HTTPException(status_code=404, detail="자동화를 보내는 계정이 아닙니다")
+
+
+@router.get("/team/sender-rooms", response_class=HTMLResponse, include_in_schema=False)
+def sender_rooms_page(request: Request, db: Session = Depends(get_db),
+                      user: User = Depends(get_current_user),
+                      sender: int = 0, msg: str = ""):
+    """**보내는 계정 카톡 기준 방 제목** — 확인 걸기 · 후보 고르기(관리자)."""
+    admin_only(user)
+    from ..services import sender_rooms
+
+    senders = _room_senders(db)
+    if not senders:
+        return RedirectResponse(
+            "/team?msg=자동화를+보내는+계정이+정해지지+않았습니다#automations",
+            status_code=303)
+    chosen = next((s for s in senders if s.id == sender), senders[0])
+    ctx = base_ctx(request, db, user, active="admin")
+    ctx.update({"board": sender_rooms.board(db, chosen), "senders": senders,
+                "msg": msg})
+    return templates.TemplateResponse("sender_rooms.html", ctx)
+
+
+@router.post("/team/sender-rooms/check", include_in_schema=False)
+def sender_rooms_check(sender_id: int = Form(0), db: Session = Depends(get_db),
+                       user: User = Depends(get_current_user)):
+    """[보내는 계정 PC 로 전체 방 확인] — 방 확인 잡을 **그 계정 것으로** 세운다.
+
+    아무것도 보내지 않는다(방 확인 잡). 그 계정 PC 의 발송기만 집어간다.
+    """
+    admin_only(user)
+    from urllib.parse import quote
+
+    from ..services import sender_rooms
+
+    member = _room_sender_or_404(db, sender_id)
+    job = sender_rooms.queue_check(db, member)
+    if job is None:
+        note = "확인할 담당자가 없습니다"
+    else:
+        note = (f"{member.name} 님 PC 로 방 {job.total}곳 확인을 걸었습니다 "
+                f"(회차 #{job.id}) — 그 PC 의 발송 프로그램이 켜져 있어야 합니다")
+    return RedirectResponse(f"/team/sender-rooms?sender={member.id}&msg={quote(note)}",
+                            status_code=303)
+
+
+@router.post("/team/sender-rooms/{contact_id}/confirm", include_in_schema=False)
+def sender_rooms_confirm(contact_id: int, sender_id: int = Form(0),
+                         room: str = Form(""), db: Session = Depends(get_db),
+                         user: User = Depends(get_current_user)):
+    """[이 방으로 확정] — 후보 제목을 그 계정 카톡의 제목으로."""
+    admin_only(user)
+    from urllib.parse import quote
+
+    from ..services import sender_rooms
+
+    member = _room_sender_or_404(db, sender_id)
+    try:
+        sender_rooms.confirm(db, member.id, contact_id, room)
+        note = "확정했습니다 — 자동화가 이 제목으로 보냅니다"
+    except sender_rooms.NotPickable as exc:
+        db.rollback()
+        note = str(exc)
+    return RedirectResponse(f"/team/sender-rooms?sender={member.id}&msg={quote(note)}",
+                            status_code=303)
+
+
+@router.post("/team/sender-rooms/{contact_id}/clear", include_in_schema=False)
+def sender_rooms_clear(contact_id: int, sender_id: int = Form(0),
+                       db: Session = Depends(get_db),
+                       user: User = Depends(get_current_user)):
+    """확정 거두기 — 다시 담당 팀원의 제목으로 보낸다."""
+    admin_only(user)
+    from urllib.parse import quote
+
+    from ..services import sender_rooms
+
+    member = _room_sender_or_404(db, sender_id)
+    sender_rooms.clear(db, member.id, contact_id)
+    return RedirectResponse(
+        f"/team/sender-rooms?sender={member.id}&msg={quote('확정을 거뒀습니다')}",
+        status_code=303)
+
+
 @router.post("/team/members/{member_id}/reset-password", include_in_schema=False)
 def reset_member_password(
     member_id: int,

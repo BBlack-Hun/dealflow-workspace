@@ -26,7 +26,8 @@ from ..clock import stamp_text
 from ..db import get_db
 from ..deps import can_open, get_current_user, may_manage_team_contacts
 from ..models import (ContactActivity, ContactColumn, IrCompany, IrRequest,
-                      Meeting, SendItem, SendJob, SendSequence, User, VcContact)
+                      Meeting, SendItem, SendJob, SenderRoom, SendSequence, User,
+                      VcContact)
 from ..services import (contact_columns, deal_stage, firm_type, last_activity,
                         meeting_kind, room_joined, room_name, sheet_import,
                         sheet_owner)
@@ -1270,6 +1271,9 @@ def update_contact(
 #: **함께 지우는** 것. `(응답 키, 표, 사람이 읽을 이름)`.
 CASCADING_LINKS = (
     ("activities", ContactActivity, "활동 이력"),
+    # 보내는 계정 카톡에서의 이 담당자 방 제목(`services/sender_rooms.py`).
+    # 담당자 줄이 없어지면 가리킬 곳이 없는 확인 기록이다 — 함께 지운다.
+    ("sender_rooms", SenderRoom, "보내는 계정 방 제목"),
 )
 
 #: 걸려 있으면 **못 지우는** 것들. 같은 모양이다.
