@@ -8,3 +8,4 @@ from . import meeting_review  # noqa: F401,E402  A7 미팅 후 검토결과 문�
 from . import meeting_request  # noqa: F401,E402  A2 미팅 요청 2회
 from . import sourcing_remind  # noqa: F401,E402  A1 소싱 리마인드
 from . import channel_top  # noqa: F401,E402  A3 채널방 TOP·핵심 딜
+from . import startup_monthly  # noqa: F401,E402  A5 스타트업 월간 발송 순환

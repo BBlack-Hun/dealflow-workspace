@@ -245,6 +245,10 @@ def run_once(db: Session, now: Optional[datetime] = None) -> dict:
     row = _setting(db)
     if not is_on(row):
         return {"status": "off"}
+    if handed_over(db):
+        # 2단계 자동화(스타트업 월간 발송 순환)가 **실제 모드로** 켜져 있다 —
+        # 날짜·문구를 돌리는 그쪽이 세운다(`services/automations/startup_monthly.py`).
+        return {"status": "handed_over"}
     today = now.date()
     if today != run_day(today.year, today.month):
         return {"status": "not_today"}
@@ -297,6 +301,15 @@ def run_once(db: Session, now: Optional[datetime] = None) -> dict:
         "count": len(ids)}
 
 
+def handed_over(db: Session) -> bool:
+    """2단계 자동화(스타트업 월간 발송 순환)가 실제 모드로 켜져 이 30일 자동이
+    물러났는가. 시험 모드인 동안에는 물러나지 않는다 — 시험이 운영의 월간
+    발송을 멈추면 안 된다."""
+    from .automations import startup_monthly as a5
+
+    return a5.owns_monthly(db)
+
+
 # ── 화면 ────────────────────────────────────────────────────────────────────
 
 def _sendable_count(db: Session, month: str) -> int:
@@ -325,8 +338,10 @@ def status(db: Session, now: Optional[datetime] = None) -> dict:
         "next_label": "",
         "next_count": 0,
         "this_month": None,
+        # 2단계 자동화가 맡았으면 화면이 그 사실을 적는다(30일 자동은 쉰다).
+        "handed_over": handed_over(db),
     }
-    if not on:
+    if not on or out["handed_over"]:
         return out
     nxt = next_run(row, now)
     out["next_label"] = label(nxt)

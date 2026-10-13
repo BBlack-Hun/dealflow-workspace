@@ -240,6 +240,59 @@ DEFAULT_TAIL = "\n".join([
     "CONTACTVC ASSET",
 ])
 
+#: ── 순환 문구 — 스타트업 월간 자동화가 달마다 돌려 쓴다 ──────────────────
+#:
+#: 같은 대표가 매달 **글자 하나 안 다른** 글을 받으면 자동으로 찍어 보내는 것으로
+#: 읽힌다. 스타트업 월간 자동화(`services/automations/startup_monthly.py`)는
+#: 달마다 머리말·맺음말을 **최대 셋** 중에서 돌려 쓴다 — 1번이 지금의
+#: `startup_sms` · `startup_sms_tail` 이고, 2·3번이 아래 종류다.
+#:
+#: **자료(요약 숫자 · 요청 투자사 목록)와 모양은 같다.** 바뀌는 것은 인사와
+#: 맺음 문장뿐이다. 아래 글은 **초안**이다 — 문구 화면(딜 제안 문구)에서
+#: 고친다. 시드도 같은 글이다(`scripts/bootstrap.py`).
+VARIANT_KINDS = {
+    2: ("startup_sms_v2", "startup_sms_tail_v2"),
+    3: ("startup_sms_v3", "startup_sms_tail_v3"),
+}
+VARIANT_HEADS = {
+    2: "\n".join([
+        "[CONTACTVC ASSET]",
+        "월간 IR 진행 현황",
+        "",
+        "안녕하세요 대표님, 한 달 동안 잘 지내셨는지요.",
+        "",
+        f"{COMPANIES_TOKEN}의 {MONTH_TOKEN} 말 기준 IR 진행 현황을 정리하여 전달드립니다.",
+    ]),
+    3: "\n".join([
+        "[CONTACTVC ASSET]",
+        "월간 IR 진행 현황",
+        "",
+        "안녕하세요 대표님.",
+        "이번 달 IR 진행 상황 공유드립니다.",
+        "",
+        f"{COMPANIES_TOKEN}의 {MONTH_TOKEN} 말 기준 현황입니다.",
+    ]),
+}
+VARIANT_TAILS = {
+    2: "\n".join([
+        "위 투자사들에 IR 자료 전달을 마쳤고, 현재 투자 검토가 진행되고 있습니다.",
+        "",
+        "IR 미팅 요청이 들어오는 투자사가 생기면 바로 연락드리겠습니다.",
+        "",
+        "감사합니다.",
+        "CONTACTVC ASSET",
+    ]),
+    3: "\n".join([
+        "위 투자사에서 전달드린 IR 자료를 검토하고 있습니다.",
+        "",
+        "미팅 요청 등 진행 사항이 생기면 별도로 말씀드리겠습니다.",
+        "궁금하신 점은 편하게 연락 주세요.",
+        "",
+        "감사합니다.",
+        "CONTACTVC ASSET",
+    ]),
+}
+
 #: 한 통이 이보다 길면 나눈다. **새 숫자를 짓지 않는다** —
 #: 이 저장소가 이미 카톡 한 통의 한계로 쓰는 값이다(`message_composer`).
 LIMIT = mc.MESSAGE_WARN_CHARS
@@ -441,17 +494,23 @@ def day_label(date: str) -> str:
     return f"{int(bits[1]):02d}/{int(bits[2][:2]):02d}"
 
 
-def head_body(db: Session, user: Optional[User]) -> tuple:
+def head_body(db: Session, user: Optional[User], variant: int = 1) -> tuple:
     """머리말의 **원문**과 그것이 문구틀에서 왔는지. `(글, 문구틀인가)`.
 
     무엇을 쓸지(고른 것 > 내 것 > 팀 것)는 `template_pick` 이 정한다 — 딜소개·
     딜 소싱과 같은 곳을 읽어야 같은 사람이 화면마다 다른 문구를 받지 않는다.
 
     비어 있으면 `DEFAULT_HEAD` 다. 막지 않는 까닭은 이 파일 머리말에 있다.
+
+    `variant` 2·3 은 월간 자동화의 순환 문구다(`VARIANT_KINDS`). 1 은 지금까지와
+    같다.
     """
-    found = template_pick.pick(db, user.id, KIND) if user is not None else None
+    kind, default = KIND, DEFAULT_HEAD
+    if variant in VARIANT_KINDS:
+        kind, default = VARIANT_KINDS[variant][0], VARIANT_HEADS[variant]
+    found = template_pick.pick(db, user.id, kind) if user is not None else None
     body = ((found.body if found else "") or "").strip()
-    return (body, True) if body else (DEFAULT_HEAD, False)
+    return (body, True) if body else (default, False)
 
 
 def split_lead(body: str) -> tuple:
@@ -471,17 +530,21 @@ def split_lead(body: str) -> tuple:
     return "\n".join(kept).strip(), moved
 
 
-def tail_body(db: Session, user: Optional[User], moved: str = "") -> tuple:
+def tail_body(db: Session, user: Optional[User], moved: str = "",
+              variant: int = 1) -> tuple:
     """맺음말과 그것이 문구틀에서 왔는지. `(글, 문구틀인가)`.
 
     차례는 **문구틀 > 옛 머리말에서 내려온 줄 > 코드에 적힌 것**이다. 가운데가
-    있는 까닭은 `split_lead` 에 있다.
+    있는 까닭은 `split_lead` 에 있다. `variant` 는 `head_body` 와 같다.
     """
-    found = template_pick.pick(db, user.id, TAIL_KIND) if user is not None else None
+    kind, default = TAIL_KIND, DEFAULT_TAIL
+    if variant in VARIANT_KINDS:
+        kind, default = VARIANT_KINDS[variant][1], VARIANT_TAILS[variant]
+    found = template_pick.pick(db, user.id, kind) if user is not None else None
     body = ((found.body if found else "") or "").strip()
     if body:
         return body, True
-    return (moved or DEFAULT_TAIL), False
+    return (moved or default), False
 
 
 def contact_of(company: Optional[IrCompany]) -> mc.ContactView:
@@ -600,7 +663,8 @@ def assemble(db: Session, user: Optional[User], month: str,
              contact: Optional[mc.ContactView] = None,
              skipped: Optional[Sequence] = None, skipped_count: int = 0,
              prefix: str = "",
-             tally: Optional[ir_monthly.Tally] = None) -> KakaoMessage:
+             tally: Optional[ir_monthly.Tally] = None,
+             variant: int = 1) -> KakaoMessage:
     """줄이 다 모인 뒤 — 머리말을 얹고 통을 나눠 **글 한 통으로 묶는다.**
 
     ## 왜 `compose` 에서 떼어 냈나
@@ -639,13 +703,13 @@ def assemble(db: Session, user: Optional[User], month: str,
     둔 까닭은 통 나누기다: 아래 빈 줄은 맺음말이 마지막 통에 **들어가는지 재는**
     셈에 걸려 있어서, 그 셈을 하는 자리에 있어야 한다.
     """
-    body, from_template = head_body(db, user)
+    body, from_template = head_body(db, user, variant)
     body, moved = split_lead(body)
     head = header(month, companies, body, contact)
     if prefix:
         head = f"{prefix}\n{head}"
     summary = summary_line(month, tally if tally is not None else tally_of(lines))
-    tail, tail_from_template = tail_body(db, user, moved)
+    tail, tail_from_template = tail_body(db, user, moved, variant)
     block = "\n\n".join(bit for bit in (head, summary) if bit)
     parts = pack(f"{block}\n\n{RULE}", [ln.text for ln in lines] + [RULE], tail)
     return KakaoMessage(
@@ -669,7 +733,7 @@ def assemble(db: Session, user: Optional[User], month: str,
 
 
 def compose(db: Session, user: Optional[User], companies: Sequence[IrCompany],
-            month: str) -> Optional[KakaoMessage]:
+            month: str, variant: int = 1) -> Optional[KakaoMessage]:
     """이 기업(들)에 대해 **그 달 말까지 쌓인** 요청을 글 한 통으로.
 
     **기업 리마인드 문구를 짓는 자리는 여기 하나다.** 스타트업 화면도
@@ -738,11 +802,12 @@ def compose(db: Session, user: Optional[User], companies: Sequence[IrCompany],
     return assemble(db, user, month, [names[c.id] for c in companies], lines,
                     contact_of(companies[0] if companies else None),
                     data.skipped, data.skipped_count,
-                    tally=data.tally_of(*(c.id for c in companies)))
+                    tally=data.tally_of(*(c.id for c in companies)),
+                    variant=variant)
 
 
 def for_company(db: Session, user: Optional[User], company_id: int,
-                month: str) -> Optional[KakaoMessage]:
+                month: str, variant: int = 1) -> Optional[KakaoMessage]:
     """기업 하나짜리 글. 계약을 안 마친/없는 기업이면 `None`.
 
     계약 여부는 **여기서 다시 적지 않는다** — 문서와 같은 목록
@@ -753,4 +818,4 @@ def for_company(db: Session, user: Optional[User], company_id: int,
                    None)
     if company is None:
         return None
-    return compose(db, user, [company], month)
+    return compose(db, user, [company], month, variant)

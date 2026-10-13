@@ -34,7 +34,7 @@ from app.models import (  # noqa: E402
     VcContact,
 )
 from app.services import auth as auth_svc  # noqa: E402
-from app.services import sheet_owner, startup_outreach  # noqa: E402
+from app.services import ir_kakao, sheet_owner, startup_outreach  # noqa: E402
 from app.services.room_name import build_room_name  # noqa: E402
 
 # 실제 운영 중인 딜소개 스크립트 형식을 기본값으로 사용한다.
@@ -100,6 +100,14 @@ TEAM_TEMPLATES = [
 # 그 파일 한 곳에 있다(`app/services/startup_outreach.TOPICS`). 두 곳에 적으면
 # 새로 깐 서버와 문구틀을 지운 사람이 서로 다른 글을 받는다.
 TEAM_TEMPLATES += startup_outreach.TEAM_DEFAULTS
+# 스타트업 월간 자동화의 **순환 문구 2·3번**(초안). 글은 `ir_kakao` 한 곳에
+# 있다 — 문구틀을 지운 사람과 새로 깐 서버가 같은 글을 받게.
+TEAM_TEMPLATES += [
+    (kind, text)
+    for n, (head_kind, tail_kind) in sorted(ir_kakao.VARIANT_KINDS.items())
+    for kind, text in ((head_kind, ir_kakao.VARIANT_HEADS[n]),
+                       (tail_kind, ir_kakao.VARIANT_TAILS[n]))
+]
 
 # 관리자 계정. 실제 팀원 계정은 관리자가 scripts/add_user.py 로 만든다.
 ADMIN_PHONE = "01099998888"

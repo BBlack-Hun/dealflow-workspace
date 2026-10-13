@@ -846,7 +846,13 @@
     </form>
 
     {% set mon = startup_send.monthly %}
-    {% if mon.on %}
+    {% if mon.handed_over %}
+    <p class="hint ok">
+      ↪ 매월 자동 발송은 위 <a class="linkbtn" href="#automations">자동화 (2단계)</a> 의
+      <b>스타트업 월간 발송</b>이 맡고 있습니다(날짜·문구 순환, 실제 모드) — 30일 자동은 쉽니다.
+    </p>
+    {% endif %}
+    {% if mon.on and not mon.handed_over %}
     <p class="hint ok" data-testid="startup-monthly-next">
       🗓 다음 자동 발송: <b>{{ mon.next_label }}</b> · 지금 기준 <b>{{ mon.next_count }}곳</b>
     </p>

@@ -117,6 +117,9 @@ class Batch:
     #: 한 통마다 회차를 따로 세워 **분 단위로 띄울** 폭(최소, 최대 분). 채널방처럼
     #: 여러 방에 같은 글이 몰려 나가지 않게 할 때.
     spacing: Optional[Tuple[int, int]] = None
+    #: 회차명. 비면 `<자동화> 자동 <시각>`. 회차명으로 무엇을 가리는 자리가
+    #: 있을 때(스타트업 월간 — 회차명의 `YYYY-MM` 이 그 달 회차다) 채운다.
+    title: str = ""
 
 
 @dataclass(frozen=True)
@@ -426,7 +429,8 @@ def run_once(db: Session, key: str, now: Optional[datetime] = None) -> dict:
         return {"status": STATUS_EMPTY, "skipped": batch.skipped}
 
     label = automation.BY_KEY[key].label
-    title = f"{label} 자동{' (시험)' if test else ''} {scheduled_send.label(at)}"
+    title = (batch.title + (" (시험)" if test else "") if batch.title
+             else f"{label} 자동{' (시험)' if test else ''} {scheduled_send.label(at)}")
     offsets = _offsets(batch, plan.period, key, len(fresh))
     groups = ([[o] for o in fresh] if batch.spacing else [fresh])
     try:
