@@ -24,8 +24,8 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import get_current_user, templates
 from ..models import SendItem, SourcingContact, User
-from ..services import (sourcing_buckets, sourcing_link, sourcing_receipts,
-                        sourcing_rooms)
+from ..services import (sourcing_buckets, sourcing_link, sourcing_mail,
+                        sourcing_receipts, sourcing_rooms)
 from ..ui import base_ctx
 
 router = APIRouter(tags=["sourcing"])
@@ -161,10 +161,18 @@ def sourcing_page(request: Request, db: Session = Depends(get_db),
     # 이 달 `딜 받음` — 소싱 리마인드가 안 받은 사람에게만 나간다
     # (`services/sourcing_receipts.py`).
     month = sourcing_receipts.month_of()
+    receipts = sourcing_receipts.receipts(db, month)
     ctx.update({
         "month": month,
         "month_label": f"{int(month[5:])}월",
-        "received": sourcing_receipts.received_ids(db, month),
+        "received": set(receipts),
+        # 메일로 선 표시는 `메일 10/15` 로 — 어느 메일로 섰는지(`services/sourcing_mail.py`).
+        "mail_marks": {cid: {"day": sourcing_mail.day_stamp(r.mail_at),
+                             "subject": r.mail_subject or ""}
+                       for cid, r in receipts.items()
+                       if r.source == sourcing_receipts.SOURCE_MAIL},
+        # 머리 줄 — `메일 확인: 마지막 10/15 18:00 · 이번 달 메일로 받은 분 N명 · …`.
+        "mail_check": sourcing_mail.page_status(db),
         # [방 후보 찾기] 가 담아 온 후보(`services/sourcing_rooms.py`).
         "room_picks": {r.id: sourcing_rooms.picks(r) for r in rows
                        if r.room_candidates},
@@ -394,6 +402,24 @@ def search_rooms(tab: str = Form(""), db: Session = Depends(get_db),
         return _back(tab, "찾을 줄이 없습니다 — 방 이름이 다 있습니다")
     return _back(tab, f"{sender.name} 님 PC 로 {job.total}명의 방을 찾습니다(회차 #{job.id}) "
                       "— 그 PC 의 발송 프로그램이 켜져 있어야 합니다")
+
+
+@router.post("/sourcing/mail-check", include_in_schema=False)
+def mail_check_now(tab: str = Form(""), db: Session = Depends(get_db),
+                   user: User = Depends(get_current_user)):
+    """[지금 메일 확인] — 받은 편지함의 머리글을 읽어 메일로 딜을 보낸 사람을 `딜 받음`.
+
+    관리자만 — 회사 메일함에 서버가 접속하는 자리다. 요청을 붙잡지 않게 따로 띄운
+    실에서 돌고, 결과는 이 화면의 머리 줄에 선다(`services/sourcing_mail.py`).
+    """
+    from ..deps import admin_only
+
+    admin_only(user)
+    if not sourcing_mail.is_configured():
+        return _back(tab, sourcing_mail.OFF_TEXT)
+    if sourcing_mail.start_manual(db, user) is None:
+        return _back(tab, "메일 확인이 이미 돌고 있습니다 — 잠시 뒤 새로고침하세요")
+    return _back(tab, "메일 확인을 시작했습니다 — 잠시 뒤 이 화면 위쪽에 결과가 섭니다")
 
 
 @router.post("/sourcing/{row_id}/room-confirm", include_in_schema=False)

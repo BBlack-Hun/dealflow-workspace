@@ -29,6 +29,11 @@ services:
       DEALFLOW_SMTP_FROM: "${DEALFLOW_SMTP_FROM:-}"
       DEALFLOW_SMTP_TLS: "${DEALFLOW_SMTP_TLS:-1}"
       DEALFLOW_SMTP_SSL: "${DEALFLOW_SMTP_SSL:-}"
+      # 딜 소싱 메일 확인(POP3 over SSL, 머리글만 읽는다). 비어 있으면 '메일 확인 꺼짐'.
+      DEALFLOW_POP3_HOST: "${DEALFLOW_POP3_HOST:-}"
+      DEALFLOW_POP3_PORT: "${DEALFLOW_POP3_PORT:-995}"
+      DEALFLOW_POP3_USER: "${DEALFLOW_POP3_USER:-}"
+      DEALFLOW_POP3_PASSWORD: "${DEALFLOW_POP3_PASSWORD:-}"
       # 결과 문의 문자 알림(팀원에게만). 비어 있으면 알림 실이 아예 뜨지 않는다.
       DEALFLOW_SMS_API_KEY: "${DEALFLOW_SMS_API_KEY:-}"
       DEALFLOW_SMS_API_SECRET: "${DEALFLOW_SMS_API_SECRET:-}"

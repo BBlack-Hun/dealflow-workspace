@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from . import config, deps
 from .deps import NoConsulting, NotAdmin, NotAuthenticated
 from .services import (auto_send, automation_runner, backup, edit_log,
-                       followup_sms, scheduled_send, startup_monthly)
+                       followup_sms, scheduled_send, sourcing_mail, startup_monthly)
 from .routers import auth as auth_router
 from .routers import templates_crud
 from .routers import setup as setup_router
@@ -60,6 +60,12 @@ def create_app() -> FastAPI:
     # 정한 시각에 나가도록 예약을 건다(`services/automation_runner.py`). 켠
     # 자동화가 없으면 깨어나도 곧바로 돌아온다. 푸는 것은 바로 위 예약 발송이다.
     automation_runner.start_scheduler()
+
+    # **딜 소싱 메일 확인** — 5분마다 깨어나 15일 · 말일 18:00 과 소싱 리마인드
+    # 30분 전에 회사 받은 편지함(POP3)의 머리글을 읽어 메일로 딜을 보낸 사람을
+    # `딜 받음` 으로 세운다(`services/sourcing_mail.py`). 설정(DEALFLOW_POP3_*)이
+    # 없으면 실이 뜨지 않는다.
+    sourcing_mail.start_scheduler()
 
     # 수정 로그의 세션 이벤트를 건다. 여기서 한 번 걸면 **앞으로 생기는
     # 라우터까지** 저절로 지난다 — 라우터마다 로그 호출을 붙이는 방식이었다면

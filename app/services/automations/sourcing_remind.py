@@ -8,9 +8,10 @@
 ## 무엇을 보고 고르나
 
   · 갈래 — 자동화 판에서 고친다(여러 줄이면 여러 갈래).
-  · `딜 받음` — 딜 소싱 화면의 줄마다 그 달 표시(`sourcing_receipts`). 지금은
-    사람이 누른다. 메일로 저절로 적는 길은 열어만 두었다
-    (`sourcing_receipts.record_from_mail`).
+  · `딜 받음` — 딜 소싱 화면의 줄마다 그 달 표시(`sourcing_receipts`). 사람이
+    누르거나, 메일 확인(`services/sourcing_mail.py`)이 받은 편지함의 머리글을
+    읽어 저절로 세운다 — **보내는 날 그 시각 30분 전**에도 한 번 본다. 그 확인이
+    실패해도 리마인드는 그대로 나간다(까닭은 그 파일 머리말).
   · 방 — 그 줄의 방 이름, 없으면 투자사 명단에서 휴대폰 번호로 이어진 방
     (`sourcing_link` — 그 방은 보내는 계정 카톡 기준 제목으로 고른다).
     방이 없는 줄은 뺀다 — 딜 소싱 화면의 [방 후보 찾기] 로 채운다.
@@ -177,6 +178,27 @@ def still_ok(db: Session, rec: AutomationSend) -> str:
     return ""
 
 
+def describe(db: Session, row: Optional[Automation]) -> str:
+    """판에 덧붙이는 한 줄 — 보내기 전에 받은 편지함을 보는가."""
+    from datetime import timedelta
+
+    from ... import clock
+    from .. import sourcing_mail
+
+    if not sourcing_mail.is_configured():
+        return (f"{sourcing_mail.OFF_TEXT} — 메일로 딜을 보낸 분은 딜 소싱 화면에서 "
+                "`딜 받음` 을 눌러야 빠집니다")
+    values = runner.values(row, automation.SOURCING_REMIND)
+    try:
+        at = runner.at_on(clock.today(), values["time"])
+    except ValueError:
+        return ""
+    pre = at - timedelta(minutes=sourcing_mail.PRE_REMIND_LEAD_MIN)
+    return (f"메일 확인: 보내는 날 {pre:%H:%M} 에 받은 편지함을 먼저 봅니다 — "
+            "이 달 메일로 딜을 보낸 분은 빠집니다")
+
+
 runner.register(runner.Spec(
     key=automation.SOURCING_REMIND, kind="sourcing_intro", plan=plan,
-    collect=collect, still_ok=still_ok, fields=FIELDS, check=_check))
+    collect=collect, still_ok=still_ok, fields=FIELDS, check=_check,
+    describe=describe))

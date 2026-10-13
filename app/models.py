@@ -1150,9 +1150,11 @@ class SourcingReceipt(TimestampMixin, Base):
     아직 안 준 사람에게만 나가므로, 받은 사람을 적어 둘 자리가 있어야 한다.
     달마다 한 줄 — `(사람, 달)` 이 열쇠다.
 
-    지금은 사람이 화면에서 누른다(`source="manual"`). 딜은 메일로 오므로 나중에
-    받은 편지함을 읽어 저절로 적을 수 있게 길을 열어 두었다
-    (`sourcing_receipts.record_from_mail` — `source="mail"`).
+    사람이 화면에서 누르거나(`source="manual"`), 회사 받은 편지함(POP3)의
+    머리글을 읽어 보낸 주소가 명단에 있으면 저절로 선다(`source="mail"` —
+    `services/sourcing_mail.py` → `sourcing_receipts.record_from_mail`).
+    메일로 선 줄은 **어느 메일로** 섰는지(날짜 · 제목 · Message-ID)를 들고
+    있다 — 본문은 어디에도 담지 않는다.
     """
 
     __tablename__ = "sourcing_receipts"
@@ -1166,9 +1168,88 @@ class SourcingReceipt(TimestampMixin, Base):
         ForeignKey("sourcing_contacts.id"))
     #: `YYYY-MM`.
     month: Mapped[str] = mapped_column(String)
-    #: manual(화면에서 누름) | mail(받은 편지함에서 — 아직 안 만든 길).
+    #: manual(화면에서 누름) | mail(받은 편지함에서 저절로).
     source: Mapped[str] = mapped_column(String, default="manual")
     #: 누가 눌렀나(메일로 적힌 줄은 비어 있다).
+    user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"),
+                                                   nullable=True)
+    #: 메일로 섰으면 그 메일의 날짜(`2026-10-15T18:00:00+09:00`, 이 프로세스
+    #: 시간대). 화면이 `메일 10/15` 로 적는다.
+    mail_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: 그 메일의 제목 — **잘라서**(`sourcing_mail.SUBJECT_MAX`). 화면의 풍선말.
+    mail_subject: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: 그 메일의 Message-ID.
+    mail_message_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+
+class SourcingMailSeen(TimestampMixin, Base):
+    """**이 메일은 이 사람 것으로 이미 보았다** — 메일 확인이 같은 메일로 두 번 서지 않게.
+
+    `딜 받음` 은 `(사람, 달)` 에 한 줄이라 같은 메일을 열 번 읽어도 줄은
+    하나다. 이 표가 따로 있는 까닭은 **사람이 거둔 표시**다. 딜이 아닌 메일
+    (미팅 감사 인사 등)로 선 표시를 사람이 거두면, 다음 확인이 같은 메일을 또
+    읽고 또 세운다 — 사람이 이길 수 없는 싸움이다. 그래서 본 메일은
+    Message-ID 로 남기고 다시 세우지 않는다. **새 메일**이 오면 다시 선다.
+
+    본문은 없다. 머리글 중 Message-ID 와 날짜만.
+    """
+
+    __tablename__ = "sourcing_mail_seen"
+    __table_args__ = (
+        UniqueConstraint("message_id", "sourcing_contact_id",
+                         name="uq_sourcing_mail_seen_message"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    message_id: Mapped[str] = mapped_column(String)
+    sourcing_contact_id: Mapped[int] = mapped_column(
+        ForeignKey("sourcing_contacts.id"))
+    #: `YYYY-MM` — 그 메일이 센 달.
+    month: Mapped[str] = mapped_column(String)
+    mail_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+
+class SourcingMailCheck(TimestampMixin, Base):
+    """**받은 편지함을 한 번 훑었다** — 딜 소싱 메일 확인 한 회.
+
+    정해진 회차(15일 · 말일 18:00, 소싱 리마인드 30분 전)는 `run_key`
+    (`2026-10-15:mid`)에 유일 색인이 걸려 **하루 한 회차는 한 번**이다
+    (`auto_send_runs` 가 자리를 먼저 잡는 것과 같은 방식). 관리자가 누른
+    [지금 메일 확인] 은 `run_key` 가 비어 있다 — 누를 때마다 한 줄.
+
+    화면(딜 소싱 머리 줄)과 오늘 할 일이 이 표를 읽는다. 실패 사유(`error`)는
+    사람이 읽는 말이다 — 비밀번호·서버 응답 원문은 담지 않는다.
+    """
+
+    __tablename__ = "sourcing_mail_checks"
+    __table_args__ = (
+        UniqueConstraint("run_key", name="uq_sourcing_mail_checks_run_key"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    #: 정해진 회차의 열쇠(`YYYY-MM-DD:<slot>`). 손으로 누른 회는 비어 있다.
+    run_key: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: mid(15일) | end(말일) | pre_remind(리마인드 전) | manual(지금 메일 확인)
+    slot: Mapped[str] = mapped_column(String)
+    #: 돈 날 `YYYY-MM-DD`.
+    day: Mapped[str] = mapped_column(String)
+    #: 본 달 `YYYY-MM`.
+    month: Mapped[str] = mapped_column(String)
+    #: running | ok | failed
+    status: Mapped[str] = mapped_column(String, default="running")
+    started_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    finished_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: 머리글을 읽은 메일 수.
+    scanned: Mapped[int] = mapped_column(Integer, default=0)
+    #: 그중 이 달 · 명단의 주소에서 온 메일 수.
+    matched: Mapped[int] = mapped_column(Integer, default=0)
+    #: 이번에 새로 `딜 받음` 이 선 줄 수.
+    marked: Mapped[int] = mapped_column(Integer, default=0)
+    #: 새로 선 사람들(`홍길동(가나다벤처스), …`) — 오늘 할 일 한 줄에 싣는다.
+    detail: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    #: 실패 사유(사람이 읽는 말).
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    #: [지금 메일 확인] 을 누른 사람.
     user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"),
                                                    nullable=True)
 

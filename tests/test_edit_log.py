@@ -635,6 +635,9 @@ WRITE_ROUTES = {
     ("POST", "/sourcing/{row_id}/received"): WATCHED,
     ("POST", "/sourcing/{row_id}/room-confirm"): WATCHED,
     ("POST", "/sourcing/rooms/search"): WATCHED,
+    # [지금 메일 확인] — 받은 편지함을 읽어 `딜 받음` 을 세운다(공용 명단의 표시).
+    # 따로 띄운 실이 적으므로 요청 문맥이 없어 로그는 안 남는다(기계 기록).
+    ("POST", "/sourcing/mail-check"): WATCHED,
 
     # 대표 카톡방 맞추기 [저장] — **공용 표(`ir_companies`)의 방 이름**을
     # 수십 줄 한꺼번에 바꾼다. 이 앱에서 오발송에 가장 가까운 칸이라
@@ -793,9 +796,10 @@ def test_the_six_shared_routers_still_hold_the_forty_nine_paths(portal):
     # 같은 주소에 깃발 하나로 붙이면 잘못 눌렀을 때 그대로 지워진다.
     # sourcing 의 5~7번째는 소싱 리마인드 자동화가 연 셋이다 — 이 달 `딜 받음`
     # · 카톡방 후보 확정 · [방 후보 찾기](`services/sourcing_receipts.py` ·
-    # `services/sourcing_rooms.py`).
+    # `services/sourcing_rooms.py`). 8번째는 [지금 메일 확인]
+    # (`services/sourcing_mail.py`).
     assert counted == {"companies": 8, "ir": 12, "consulting": 9,
-                       "templates_crud": 5, "sourcing": 7, "contacts": 22}
+                       "templates_crud": 5, "sourcing": 8, "contacts": 22}
 
 
 def test_every_table_is_either_watched_or_explained(db):
