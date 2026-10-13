@@ -1207,7 +1207,7 @@ class SourcingMailSeen(TimestampMixin, Base):
 class SourcingMailCheck(TimestampMixin, Base):
     """**받은 편지함을 한 번 훑었다** — 딜 소싱 메일 확인 한 회.
 
-    정해진 회차(15일 · 말일 18:00)는 `run_key`(`2026-10-15:mid`)에 유일 색인이
+    정해진 회차(매일 18:00)는 `run_key`(`2026-10-15:daily`)에 유일 색인이
     걸려 **하루 한 회차는 한 번**이다(`auto_send_runs` 가 자리를 먼저 잡는 것과
     같은 방식). 관리자가 누른 [지금 메일 확인] · 팀 현황의 [연결 시험] 은
     `run_key` 가 비어 있다 — 누를 때마다 한 줄.
@@ -1224,8 +1224,8 @@ class SourcingMailCheck(TimestampMixin, Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     #: 정해진 회차의 열쇠(`YYYY-MM-DD:<slot>`). 손으로 누른 회는 비어 있다.
     run_key: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    #: mid(15일) | end(말일) | pre_remind(리마인드 전) | manual(지금 메일 확인)
-    #: | test(연결 시험)
+    #: daily(매일) | pre_remind(리마인드 전) | manual(지금 메일 확인) | test(연결 시험)
+    #: — 처음에 돌던 mid(15일) · end(말일) 줄도 남아 있을 수 있다.
     slot: Mapped[str] = mapped_column(String)
     #: 돈 날 `YYYY-MM-DD`.
     day: Mapped[str] = mapped_column(String)

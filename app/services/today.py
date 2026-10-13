@@ -113,9 +113,9 @@ def build(db: Session, user: User, today: Optional[date] = None) -> dict:
             "send", "urgent", alert["title"], alert["detail"],
             f"/jobs/{alert['job_id']}", alert["count"]))
 
-    # **딜 소싱 메일 확인** — 관리자에게. 정해진 회차(15일 · 말일 18:00)의 결과
-    # (오늘 · 어제)와, 마지막 확인이 실패했으면 고칠 때까지 그 사유
-    # (`services/sourcing_mail.py`).
+    # **딜 소싱 메일 확인** — 관리자에게. 매일 18:00 회차가 **새로 딜 받음을
+    # 세웠을 때만** 그 결과(오늘 · 어제), 그리고 마지막 확인이 실패했으면 고칠
+    # 때까지 그 사유. 아무도 새로 안 선 날은 안 선다(`services/sourcing_mail.py`).
     for line in sourcing_mail.today_items(db, user, _at(today)):
         items.append(_item("sourcing", line["level"], line["title"], line["detail"],
                            line["href"], line.get("count")))
