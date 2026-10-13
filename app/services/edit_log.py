@@ -297,6 +297,14 @@ WATCHED: Dict[str, Watch] = {
     "sourcing_contacts": Watch(
         owner=None, href="/sourcing", label=_attr("name"),
         why="딜 소싱 명단. 주인 칸이 없고 로그인한 사람이면 누구나 고친다."),
+    "sourcing_receipts": Watch(
+        owner=None, href="/sourcing", label=_attr("month"),
+        why="딜 소싱 명단의 달마다 `딜 받음` 표시. 사람이 누르거나 메일 확인이 "
+            "세운다 — 잘못 눌리면 누가 이 달 딜을 줬는지가 틀린다."),
+    "sourcing_mail_settings": Watch(
+        owner=None, href="/team", label=_attr("host"),
+        why="딜 소싱 메일 확인이 읽을 편지함(관리자). 비밀번호 칸은 이름에 "
+            "`password` 가 들어 있어 값 없이 `바뀜` 으로만 남는다."),
     "consulting_sheets": Watch(
         owner=None, href="/consulting", label=_attr("label"),
         why="투자컨설턴트 화면의 탭. `탭은 사람마다가 아니라 팀 공용이다`(models)."),
@@ -351,6 +359,11 @@ UNWATCHED: Dict[str, str] = {
     "one_liner_backups": "한 줄 소개 되돌리기용 버퍼. 되돌릴 값을 담아 두는 자리이고, "
                          "무엇이 바뀌었는지는 `ir_companies` 쪽에 이미 남는다.",
     "auto_send_runs": "자동 준비가 오늘 몇 건 돌았나. 기계 기록이다.",
+    "sourcing_mail_checks": "딜 소싱 메일 확인이 받은 편지함을 언제 훑었나(회차 · 건수 · "
+                            "실패 사유). 기계 기록이다 — 그 결과로 선 `딜 받음` 은 "
+                            "`sourcing_receipts` 에 있다.",
+    "sourcing_mail_seen": "메일 확인이 이미 본 메일(Message-ID × 사람). 같은 메일로 두 번 "
+                          "세우지 않으려는 기계 기록이다.",
     "notice_reads": "공지를 확인했다는 표시. 자기가 읽었다고 적는 줄이라 늘 자기 것이고"
                     "(남길 일이 아니다), 사람 수 × 공지 수만큼 쌓인다 — 남기면 로그가 "
                     "`누가 공지를 닫았다` 로 덮여 `누가 무엇을 고쳤나` 가 안 보인다. "
@@ -449,6 +462,7 @@ FIELD_LABELS = {
     "can_view_consulting": "투자현황", "can_auto_attach_ir": "자료 자동 첨부",
     "daily_send_cap": "하루 발송 상한",
     "must_change_password": "비밀번호 변경 필요", "password_hash": "비밀번호",
+    "password_enc": "비밀번호", "host": "메일 서버", "username": "계정",
     "series": "라운드", "sector_major": "분야", "sector_minor": "세부 분야",
     "stages": "투자 단계", "interest_level": "관심도", "invited_status": "초대",
     "contract_status": "계약 상태", "funding_status": "투자 상태",
