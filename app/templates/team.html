@@ -608,6 +608,21 @@
           {% if not a.enabled %}<span class="tag">꺼짐</span>
           {% elif a.test_mode %}<span class="tag warn">시험 모드</span>
           {% else %}<span class="tag ok">실제 발송</span>{% endif %}
+          {% if a.ready is defined and not a.ready %}
+          <div class="cell-sub">아직 연결 전</div>
+          {% elif a.enabled and a.next_label %}
+          <div class="cell-sub">다음 {{ a.next_label }}</div>
+          {% endif %}
+          {% if a.today %}
+          <div class="cell-sub">
+            {% if a.today.status == 'ready' and a.today.job_id %}
+            오늘 <a class="linkbtn" href="/jobs/{{ a.today.job_id }}">회차 보기</a>
+            {% elif a.today.status == 'empty' %}<span class="warn">오늘 0곳</span>
+            {% elif a.today.status == 'failed' %}<span class="warn">오늘 못 세움</span>
+            {% endif %}
+            {% if a.today.error %}<span title="{{ a.today.error }}">ⓘ</span>{% endif %}
+          </div>
+          {% endif %}
         </td>
         <td>
           <form method="post" action="/team/automations/{{ a.key }}" class="rule-form">

@@ -1092,10 +1092,21 @@ def admin_dashboard(db: Session, today: Optional[date] = None) -> dict:
         # **2단계 자동화** — 사람 확인 없이 나가는 다섯. 켜짐/꺼짐 · 보내는
         # 계정 · 시험 모드 · 시험방(`services/automation.py`). 기본은 전부
         # 꺼짐이고 시험 모드다.
-        "automations": automation.status(db),
+        "automations": _automations(db),
         "warnings": _admin_warnings(rows, unassigned),
         "recent_batches": recent_batches(db, limit=8),
     }
+
+
+def _automations(db: Session) -> dict:
+    """자동화 판 — 스위치(`automation.status`)에 **다음 회차 · 오늘 회차**를 붙인다
+    (`automation_runner.status_of`). 화면은 판정하지 않는다."""
+    from . import automation_runner
+
+    state = automation.status(db)
+    for row in state["rows"]:
+        row.update(automation_runner.status_of(db, row["key"]))
+    return state
 
 
 def _agent_label(device: Optional[AgentDevice]) -> str:

@@ -297,6 +297,8 @@ class Out:
     #: 자동화 안에서 이 한 통을 가리키는 열쇠(예: `meeting:12`). 두 번 안
     #: 보내는 판정에 쓴다 — 회차는 그것을 모른다.
     ref: str = ""
+    #: 이 한 통에 실린 기업들(채널방). 기업마다 '보냈다' 줄이 선다.
+    company_ids: List[int] = field(default_factory=list)
     #: 세운 뒤 채워진다 — 이 한 통이 된 발송 건.
     item_id: Optional[int] = None
 

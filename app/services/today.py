@@ -19,8 +19,8 @@ from sqlalchemy.orm import Session
 
 from .. import clock
 from ..models import User
-from . import (auto_send, cadence, pipeline, readiness, scheduled_send,
-               send_guard, startup_monthly)
+from . import (auto_send, automation_runner, cadence, pipeline, readiness,
+               scheduled_send, send_guard, startup_monthly)
 
 # 줄 하나 = 오늘 할 일 하나.
 #   kind  : 화면에서 묶어 보여줄 종류
@@ -112,6 +112,12 @@ def build(db: Session, user: User, today: Optional[date] = None) -> dict:
         items.append(_item(
             "send", "urgent", alert["title"], alert["detail"],
             f"/jobs/{alert['job_id']}", alert["count"]))
+
+    # **2단계 자동화** — 못 세운 회차(0건 · 실패), 관리자에게는 오늘 선 회차,
+    # 자동화가 따로 세우는 줄(내일 나갈 곳 등). 판정은 `automation_runner` 한 곳.
+    for line in automation_runner.today_items(db, user, _at(today)):
+        items.append(_item("send", line["level"], line["title"], line["detail"],
+                           line["href"], line.get("count")))
 
     # 스타트업 월간 **자동 예약을 못 세운 달.** 선 목록은 바로 위 예약으로
     # 뜨지만, 못 선 것은 아무 데도 안 뜨면 그 달이 조용히 빠진다.

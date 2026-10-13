@@ -2449,3 +2449,54 @@ class Automation(TimestampMixin, Base):
     #: 자동화마다 다른 값(며칠 뒤 · 몇 시 · 그룹 · 채널방 목록 …) — JSON.
     #: 무엇이 들어가는지는 그 자동화의 모듈이 안다(`DEFAULTS`).
     params: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
+class AutomationSend(TimestampMixin, Base):
+    """**자동화가 이 대상에게 보냈다**는 표시 — 한 대상에 한 줄, 영구히 남는다.
+
+    `AutoSendRun` 은 **회차**(자동화 × 날·주·달)를 두 번 세우지 않게 하는 줄이다.
+    이 표는 그 안의 **대상**을 두 번 보내지 않게 한다 — 미팅 하나에 문의 한 번,
+    IR 전달 하나에 미팅 요청 두 번, 기업 하나에 90일에 한 번 채널방.
+
+    ## 열쇠 — `(automation, ref, test)`
+
+    `ref` 는 자동화가 정한다(`meeting:12` · `ask:34:2026-10-01:1` …). `test` 가
+    열쇠에 들어가는 까닭: **시험 모드로 보낸 것이 실제 발송을 막으면 안 된다.**
+    시험을 마치고 끄는 순간 그 대상들이 진짜로 나가야 한다.
+
+    ## 실제로 나갔는가는 여기 없다
+
+    `AutoSendRun` 과 같은 까닭이다 — 나갔는지는 `send_items` 가 안다(`item_id`).
+    채널방 기록(기업마다 마지막으로 채널에 나간 날)도 그 건이 `sent` 인 줄만
+    센다.
+    """
+
+    __tablename__ = "automation_sends"
+    __table_args__ = (
+        UniqueConstraint("automation", "ref", "test",
+                         name="uq_automation_sends_ref"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    #: 어느 자동화인가(`services/automation.KINDS` 의 열쇠).
+    automation: Mapped[str] = mapped_column(String)
+    #: 그 자동화 안에서 이 대상을 가리키는 열쇠.
+    ref: Mapped[str] = mapped_column(String)
+    #: 시험 모드로 보낸 것인가. 시험방으로 갔고 받는 줄을 안 가리킨다.
+    test: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    #: 어느 회차의 자리에서 섰나(`auto_send_runs`).
+    run_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("auto_send_runs.id"), nullable=True)
+    job_id: Mapped[Optional[int]] = mapped_column(ForeignKey("send_jobs.id"),
+                                                  nullable=True)
+    item_id: Mapped[Optional[int]] = mapped_column(ForeignKey("send_items.id"),
+                                                   nullable=True)
+    #: **원래 받을 방** — 시험 모드에서도 진짜 방이 남는다(나간 곳은 시험방).
+    room: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: 받는 줄. 시험 모드에서도 여기는 찬다 — 회차의 발송 건은 안 가리키지만
+    #: 무엇을 위한 한 통이었는지는 남아야 한다.
+    contact_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    sourcing_contact_id: Mapped[Optional[int]] = mapped_column(Integer,
+                                                               nullable=True)
+    #: 한 통에 실린 기업(채널방). 한 통에 셋이면 줄도 셋이다.
+    company_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)

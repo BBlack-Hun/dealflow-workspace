@@ -252,14 +252,22 @@ def auto_job_ids(db: Session, job_ids=None) -> set:
     `exists`(이 달 회차가 이미 있어 세우지 않았다)는 빼고 센다 — 그 줄은 사람이
     세운 회차를 가리킬 뿐이다(`startup_monthly.STATUS_EXISTS`).
     """
+    from ..models import AutomationSend
+
     query = select(AutoSendRun.job_id).where(AutoSendRun.job_id.isnot(None),
                                              AutoSendRun.status != "exists")
+    # 2단계 자동화는 한 회차 자리에서 회차를 **여럿** 세울 수 있다(채널방마다
+    # 몇 분씩 띄워 따로 — `automation_runner`). 자리 줄에는 첫 회차만 적히므로
+    # 나머지는 대상 줄(`automation_sends.job_id`)에서 읽는다.
+    extra = select(AutomationSend.job_id).where(AutomationSend.job_id.isnot(None))
     if job_ids is not None:
         ids = list(job_ids)
         if not ids:
             return set()
         query = query.where(AutoSendRun.job_id.in_(ids))
-    return set(db.execute(query).scalars().all())
+        extra = extra.where(AutomationSend.job_id.in_(ids))
+    return (set(db.execute(query).scalars().all())
+            | set(db.execute(extra).scalars().all()))
 
 
 def is_auto(db: Session, job: SendJob) -> bool:
