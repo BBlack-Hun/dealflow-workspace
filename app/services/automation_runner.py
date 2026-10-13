@@ -154,6 +154,8 @@ class Spec:
     fields: Tuple[Field, ...] = ()
     #: 칸들을 넘어선 검사(예: 두 날짜의 차례). 못 받을 값이면 `ValueError`.
     check: Optional[Callable[[dict], None]] = None
+    #: 팀 현황 판에 덧붙일 한 줄(예: 채널방 최근 발송). 빈 글자면 안 적는다.
+    describe: Optional[Callable[[Session, Optional[Automation]], str]] = None
 
 
 REGISTRY: Dict[str, Spec] = {}
@@ -542,6 +544,11 @@ def status_of(db: Session, key: str, now: Optional[datetime] = None) -> dict:
              "value": ("\n".join(current[f.name]) if f.kind == "lines"
                        else current[f.name])}
             for f in spec.fields]
+    if spec is not None and spec.describe is not None:
+        try:
+            out["describe"] = spec.describe(db, row)
+        except Exception:  # noqa: BLE001 - 덧붙이는 한 줄 때문에 판이 죽으면 안 된다
+            log.exception("자동화 %s 의 설명 줄을 못 만들었습니다", key)
     if row is None or key not in REGISTRY:
         return out
     plan = next_plan(db, row, now)

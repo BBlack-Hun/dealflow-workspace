@@ -185,7 +185,9 @@ def clean_room(raw: Optional[str]) -> str:
 
 
 def real_rooms(db: Session) -> set:
-    """**진짜 상대**의 방 이름들 — 투자사 명단 · 딜 소싱 명단 · 기업 대표방."""
+    """**진짜 상대**의 방 이름들 — 투자사 명단 · 딜 소싱 명단 · 기업 대표방 ·
+    자동화가 보내는 방 목록(채널방처럼 받는 줄 없이 방 이름만 적어 둔 것 —
+    자동화 값의 `rooms`)."""
     names = set()
     for column in (VcContact.kakao_room_name, SourcingContact.kakao_room_name,
                    IrCompany.kakao_room_name):
@@ -193,6 +195,10 @@ def real_rooms(db: Session) -> set:
             text = (value or "").strip()
             if text:
                 names.add(text)
+    for row in db.execute(select(Automation)).scalars().all():
+        rooms = params(row).get("rooms")
+        if isinstance(rooms, list):
+            names |= {str(r).strip() for r in rooms if str(r).strip()}
     return names
 
 

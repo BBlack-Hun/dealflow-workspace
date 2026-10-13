@@ -613,6 +613,7 @@
           {% elif a.enabled and a.next_label %}
           <div class="cell-sub">다음 {{ a.next_label }}</div>
           {% endif %}
+          {% if a.describe %}<div class="cell-sub">{{ a.describe }}</div>{% endif %}
           {% if a.today %}
           <div class="cell-sub">
             {% if a.today.status == 'ready' and a.today.job_id %}
