@@ -314,6 +314,11 @@ WATCHED: Dict[str, Watch] = {
     "auto_send_settings": Watch(
         owner=None, href="/team", label=_attr("kind"),
         why="자동 준비 설정. 팀 현황에서 관리자가 켜고 끄는 팀 공용 스위치다."),
+    "automations": Watch(
+        owner=None, href="/team", label=_attr("key"),
+        why="2단계 자동화 스위치. 팀 현황에서 관리자가 켜고 끄는 팀 공용 자리이고, "
+            "시험 모드를 끄는 순간 **진짜 상대에게** 나가기 시작한다 — 누가 언제 "
+            "껐는지 물을 자리가 여기뿐이다."),
     "schedule_rules": Watch(
         owner=None, href="/followups", label=_attr("label"),
         why="발송 일정 규칙. 팀 전체의 날짜를 정하는 자리라 공용이다."),
@@ -411,6 +416,9 @@ VALUE_FIELDS = frozenset({
     # 계정마다 하루 발송 상한(`services/send_guard.py`) — 잘못 낮추면 그 계정의
     # 발송이 조용히 다음 날로 밀린다. 숫자 하나라 값을 남긴다.
     "daily_send_cap",
+    # 2단계 자동화의 시험 모드와 시험방(`services/automation.py`) — 시험 모드가
+    # 꺼지면 진짜 방으로 나가고, 시험방이 틀리면 시험 글이 엉뚱한 방에 간다.
+    "test_mode", "test_room",
 
     # **어느 방으로 나가나.** 이 앱에서 오발송에 가장 가까운 칸이라 값을 남긴다.
     "kakao_room_name",

@@ -613,6 +613,11 @@ WRITE_ROUTES = {
     ("POST", "/team/notices/{notice_id}/off"): WATCHED,
     ("POST", "/team/notices/{notice_id}/on"): WATCHED,
     ("POST", "/team/startup-send"): WATCHED,
+    # 2단계 자동화 스위치 — 시험 모드를 끄면 진짜 상대에게 나가기 시작한다
+    # (`edit_log.WATCHED["automations"]`).
+    ("POST", "/team/automations/{key}"): WATCHED,
+    # [시험방 확인] — 시험방으로 한 통 세울 뿐이다(발송 기록).
+    ("POST", "/team/automations/{key}/check"): MACHINE,
 
     # 대표 카톡방 맞추기 [저장] — **공용 표(`ir_companies`)의 방 이름**을
     # 수십 줄 한꺼번에 바꾼다. 이 앱에서 오발송에 가장 가까운 칸이라

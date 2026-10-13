@@ -2396,3 +2396,56 @@ class NoticeRead(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     #: 언제 확인했나. 관리자 화면에서 `몇 명이 봤나` 를 세는 근거다.
     at: Mapped[str] = mapped_column(String, default=_now_iso)
+
+
+class Automation(TimestampMixin, Base):
+    """**자동화 하나의 스위치** — 켜짐/꺼짐 · 보내는 계정 · 시험 모드 · 시험방.
+
+    2단계 자동화(미팅 후 문의 · 미팅 요청 · 소싱 리마인드 · 채널방 · 스타트업
+    월간)는 **사람 확인 없이** 나간다. 그래서 켜기 전에 시험할 길이 있어야 하고,
+    시험이 실제 상대에게 새어 나가면 안 된다. 그 둘을 한 줄에 담는다.
+
+    ## 시험 모드 (`test_mode`)  ★ 기본은 켜짐
+
+    시험 모드에서는 자동화가 보낼 **모든 한 통**이 원래 방이 아니라 이 줄의
+    시험방(`test_room`)으로 간다. 글 맨 앞에 `[시험] 원래 받을 방: …` 이 붙어
+    시험하는 사람이 **어디로 갈 뻔했는지**를 본다(`services/automation.route`).
+    회차는 `test_send` 종류로 선다 — 이 종류는 실적·후속·이력 어디에도 안
+    잡힌다(`models.TEST_SEND_KIND`). 새 시험 장치를 만들지 않고 그 종류를
+    그대로 쓴다.
+
+    ## 왜 `auto_send_settings` 에 칸을 더하지 않았나
+
+    그 표의 `meeting_review` 줄은 **사람이 [발송 시작] 을 누르는** 대기 목록
+    준비이고, 운영에서 이미 켜져 있다. 같은 줄을 쓰면 이 판이 배포되는 순간
+    "누르면 나간다" 가 "저절로 나간다" 로 바뀐다. 새 자동화는 **전부 꺼진 채로**
+    시작해야 해서 따로 둔다.
+
+    ## 보내는 계정 (`user_id`)
+
+    비어 있으면 **기본 보내는 계정**이다(`automation.default_sender_id` —
+    스타트업 월간 발송을 보내는 그 계정). 회차가 그 계정 것으로 서므로 그
+    계정 PC 의 발송기만 집어간다(`routers/agent_api.poll` 은 회차 주인의 기기
+    토큰에만 내준다). 다른 팀원의 발송은 이 줄과 아무 상관이 없다.
+    """
+
+    __tablename__ = "automations"
+    __table_args__ = (
+        UniqueConstraint("key", name="uq_automations_key"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    #: 어느 자동화인가 — `services/automation.KEYS` 가 아는 값만 온다.
+    key: Mapped[str] = mapped_column(String)
+    #: **기본은 꺼짐.** 줄이 없는 것도 꺼짐이다.
+    enabled: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    #: 보내는 계정. 비어 있으면 기본 보내는 계정.
+    user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"),
+                                                   nullable=True)
+    #: **기본은 켜짐.** 끄는 순간부터 진짜 방으로 나간다.
+    test_mode: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    #: 시험 모드에서 모든 한 통이 가는 방(보내는 계정 카톡의 방 제목).
+    test_room: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: 자동화마다 다른 값(며칠 뒤 · 몇 시 · 그룹 · 채널방 목록 …) — JSON.
+    #: 무엇이 들어가는지는 그 자동화의 모듈이 안다(`DEFAULTS`).
+    params: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

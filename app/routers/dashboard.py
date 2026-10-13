@@ -1210,6 +1210,84 @@ def save_startup_send(
     return RedirectResponse(f"/team?msg={note}", status_code=303)
 
 
+@router.post("/team/automations/{key}", include_in_schema=False)
+def save_automation(
+    key: str,
+    enabled: str = Form(""),
+    user_id: int = Form(0),
+    test_mode: str = Form(""),
+    test_mode_shown: str = Form(""),
+    test_room: str = Form(""),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """**2단계 자동화 한 줄** — 켜짐/꺼짐 · 보내는 계정 · 시험 모드 · 시험방.
+
+    문은 옆 판들과 같다(`admin_only`). 값을 가리는 것은 `automation.save` 한
+    곳이다 — 시험방이 진짜 상대의 방이면 받지 않고, 시험 모드로 켜면서 시험방이
+    비어 있으면 받지 않는다.
+
+    **시험 모드 칸은 체크 상자다** — 안 보내면 꺼짐이다. 그래서 폼에는 늘
+    `test_mode_shown=1` 이 함께 오고, 그 칸이 없는 요청(옛 화면 · 손으로 만든
+    요청)은 시험 모드를 **켠 채로** 둔다. 모르는 채로 진짜 방을 열지 않는다.
+    """
+    admin_only(user)
+    from urllib.parse import quote
+
+    from ..services import automation
+
+    if key not in automation.BY_KEY:
+        raise HTTPException(status_code=404, detail="그런 자동화는 없습니다")
+    label = automation.BY_KEY[key].label
+    try:
+        row = automation.save(db, key, enabled=enabled == "on",
+                              user_id=user_id or None,
+                              test_mode=(test_mode == "on"
+                                         or test_mode_shown != "1"),
+                              test_room=test_room)
+    except ValueError as exc:
+        db.rollback()
+        return RedirectResponse(f"/team?msg={quote(label + ' — ' + str(exc))}#automations",
+                                status_code=303)
+    if not row.enabled:
+        note = f"{label} 자동화를 껐습니다"
+    elif row.test_mode:
+        note = f"{label} 자동화 켜짐 — 시험 모드: 모든 글이 '{row.test_room}' 으로 갑니다"
+    else:
+        note = f"{label} 자동화 켜짐 — 실제 방으로 나갑니다"
+    return RedirectResponse(f"/team?msg={quote(note)}#automations", status_code=303)
+
+
+@router.post("/team/automations/{key}/check", include_in_schema=False)
+def check_automation_room(
+    key: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """[시험방 확인] — 보내는 계정 PC 로 시험방에 **한 통**.
+
+    자동화를 켜기 전에 시험방 이름이 그 계정 카톡에서 정말 열리는지, 그 PC 의
+    발송기가 집어가는지를 본다. 가는 곳은 시험방 하나뿐이다
+    (`automation.queue_check`).
+    """
+    admin_only(user)
+    from urllib.parse import quote
+
+    from ..services import automation
+
+    if key not in automation.BY_KEY:
+        raise HTTPException(status_code=404, detail="그런 자동화는 없습니다")
+    try:
+        job = automation.queue_check(db, key)
+    except ValueError as exc:
+        db.rollback()
+        return RedirectResponse(f"/team?msg={quote(str(exc))}#automations",
+                                status_code=303)
+    return RedirectResponse(
+        f"/team?msg={quote(f'시험방 확인 한 통을 세웠습니다 (회차 #{job.id})')}#automations",
+        status_code=303)
+
+
 @router.post("/team/members/{member_id}/reset-password", include_in_schema=False)
 def reset_member_password(
     member_id: int,

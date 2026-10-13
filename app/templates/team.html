@@ -579,6 +579,77 @@
     </p>
   </section>
 
+  {# **2단계 자동화** — 사람 확인 없이 나가는 다섯(`services/automation.py`).
+
+     자동화마다 한 줄: 켜짐/꺼짐 · 보내는 계정 · 시험 모드 · 시험방. 기본은 전부
+     꺼짐이고 **시험 모드**다 — 시험 모드에서는 모든 글이 시험방 하나로 가고 글 맨
+     앞에 `[시험] 원래 받을 방: …` 이 붙는다. 실적·후속·이력에는 안 잡힌다.
+
+     회차는 보내는 계정 것으로 서서 **그 계정 PC 의 발송기만** 집어간다. 다른
+     팀원의 발송은 이 판과 상관이 없다. #}
+  <section class="panel" id="automations" data-testid="automation-panel">
+    <h2 class="panel-title">자동화 (2단계)</h2>
+    <p class="hint">
+      켜 두면 <b>사람 확인 없이</b> 정한 날·시각에 나갑니다. 기본 보내는 계정:
+      <b>{{ automations.default_sender or '— 정해지지 않음 —' }}</b>
+      (스타트업 월간 발송 계정).
+      <b>시험 모드</b>에서는 모든 글이 시험방 한 곳으로 가고, 글 맨 앞에
+      <code>[시험] 원래 받을 방: …</code> 이 붙습니다 — 실제 상대에게는 아무것도 가지 않습니다.
+    </p>
+    <div class="table-wrap">
+    <table class="grid-table compact">
+      <thead><tr><th>자동화</th><th style="width:90px">상태</th>
+        <th>설정</th></tr></thead>
+      <tbody>
+      {% for a in automations.rows %}
+      <tr data-automation="{{ a.key }}">
+        <td><b>{{ a.label }}</b><div class="cell-sub">{{ a.summary }}</div></td>
+        <td>
+          {% if not a.enabled %}<span class="tag">꺼짐</span>
+          {% elif a.test_mode %}<span class="tag warn">시험 모드</span>
+          {% else %}<span class="tag ok">실제 발송</span>{% endif %}
+        </td>
+        <td>
+          <form method="post" action="/team/automations/{{ a.key }}" class="rule-form">
+            <input type="hidden" name="test_mode_shown" value="1">
+            <label class="field inline-field"><span>켜기</span>
+              <select name="enabled">
+                <option value="">꺼짐</option>
+                <option value="on" {% if a.enabled %}selected{% endif %}>켜짐</option>
+              </select></label>
+            <label class="field inline-field"><span>보내는 계정</span>
+              <select name="user_id">
+                <option value="0">기본{% if automations.default_sender %} ({{ automations.default_sender }}){% endif %}</option>
+                {% for m in members if m.sends_deals and m.active %}
+                <option value="{{ m.id }}" {% if m.id == a.user_id %}selected{% endif %}>
+                  {{ m.name }} · {{ m.agent }}</option>
+                {% endfor %}
+              </select></label>
+            <label class="field inline-field"><span>시험 모드</span>
+              <input type="checkbox" name="test_mode" value="on" {% if a.test_mode %}checked{% endif %}></label>
+            <label class="field inline-field"><span>시험방 이름</span>
+              <input type="text" name="test_room" value="{{ a.test_room }}"
+                     placeholder="보내는 계정 카톡의 시험방 제목" maxlength="120"></label>
+            <button class="secondary-btn" type="submit">저장</button>
+          </form>
+          {% if a.test_room %}
+          <form method="post" action="/team/automations/{{ a.key }}/check" class="inline-form">
+            <button class="linkbtn" type="submit">시험방으로 확인 한 통</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    <p class="hint">
+      시험방에는 실제 상대(투자사·소싱 명단·기업)의 방 이름을 넣을 수 없습니다.
+      시험 모드를 끄는 순간부터 <b>실제 방으로</b> 나갑니다 — 보내는 시간(09~19시)과
+      계정 하루 상한은 위 <b>발송 안전장치</b>가 그대로 지킵니다.
+    </p>
+  </section>
+
   {# 미팅 후기 **발송 대기 목록 자동 준비**.
 
      메일·문자와 나란히 서는 자리다 — 서버가 때맞춰 알아서 하는 것들이 한 화면에
