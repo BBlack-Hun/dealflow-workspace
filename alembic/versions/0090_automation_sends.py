@@ -15,16 +15,16 @@
 표가 사라진다 — 그러면 같은 대상에게 다시 보낼 수 있게 된다. 되돌리기 전에
 자동화를 전부 끄는 것이 순서다.
 
-Revision ID: 0089_automation_sends
-Revises: 0088_automations
+Revision ID: 0090_automation_sends
+Revises: 0089_automations
 """
 from __future__ import annotations
 
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0089_automation_sends"
-down_revision = "0088_automations"
+revision = "0090_automation_sends"
+down_revision = "0089_automations"
 branch_labels = None
 depends_on = None
 
