@@ -12,9 +12,11 @@
 6. 오래된 메일이 30통 연달아 나오면 멈춘다(차례가 조금 섞여도 계속 본다).
 7. 설정이 없으면 꺼짐 — 아무것도 안 한다.
 8. 로그인 거부 · 연결 실패 — 사유가 화면과 관리자 오늘 할 일에, 비밀번호는 어디에도.
-9. 회차 — 15일 · 말일(2월 포함) 18:00. (날, 회차)마다 한 번. 리마인드 전 회차는
-   고리(`register_remind_source`)만 — 달면 30분 전에 서고, 실패하면 "리마인드는
-   그대로 나갑니다".
+9. 회차 — **매일** 18:00(말일 · 1일 · 2월 · 해 바뀜도). (날, 회차)마다 한 번.
+   리마인드 전 회차는 고리(`register_remind_source`)만 — 달면 30분 전에 서고,
+   실패하면 "리마인드는 그대로 나갑니다". 오늘 할 일 · 요약 메일은 **새로 딜
+   받음이 섰거나 실패했을 때만** — 변화 없는 날은 조용하다. 같은 사유의 실패
+   메일은 날마다 다시 보내지 않는다.
 10. [지금 메일 확인] 은 관리자만. 이 달 `딜 받음` 단추(손으로).
 11. 팀 현황 판 — 비밀번호는 잠가서만 담고(열쇠가 없으면 거절), 화면 · 로그 · 수정
     로그 어디에도 안 나간다. 판이 먼저, 비면 환경변수. [연결 시험]. 관리자만.
@@ -465,17 +467,32 @@ def _slots(db, day):
             for s in sourcing_mail.slots_on(db, day)]
 
 
-def test_slots_mid_and_last_day_including_february(db, users):
-    assert _slots(db, date(2026, 10, 15)) == [("mid", "18:00", None)]
-    assert _slots(db, date(2026, 10, 31)) == [("end", "18:00", None)]
-    assert _slots(db, date(2026, 10, 30)) == []
-    assert _slots(db, date(2026, 2, 15)) == [("mid", "18:00", None)]
-    assert _slots(db, date(2026, 2, 28)) == [("end", "18:00", None)]       # 평년
-    assert _slots(db, date(2028, 2, 28)) == []                              # 윤년은 29일
-    assert _slots(db, date(2028, 2, 29)) == [("end", "18:00", None)]
-    assert _slots(db, date(2026, 4, 30)) == [("end", "18:00", None)]
-    # 리마인드가 아직 없으니 리마인드 전 회차도 없다.
-    assert _slots(db, date(2026, 10, 14)) == []
+@pytest.mark.parametrize("day", [
+    date(2026, 10, 1), date(2026, 10, 14), date(2026, 10, 15), date(2026, 10, 30),
+    date(2026, 10, 31), date(2026, 11, 1), date(2026, 4, 30),
+    date(2026, 2, 28), date(2026, 3, 1),                    # 평년 2월 말일 · 다음 날
+    date(2028, 2, 28), date(2028, 2, 29),                   # 윤년
+    date(2026, 12, 31), date(2027, 1, 1),                   # 해 바뀜
+])
+def test_a_daily_slot_every_day_including_month_boundaries(db, users, day):
+    # 리마인드가 아직 없으니 리마인드 전 회차는 없다 — 매일 회차 하나뿐.
+    assert _slots(db, day) == [("daily", "18:00", None)]
+
+
+def test_next_slot_is_at_most_a_day_away_across_months(db, users, configured):
+    from app.services import sourcing_mail
+
+    def nxt(*when):
+        slot = sourcing_mail.next_slot(db, _aware(datetime(*when)))
+        return slot.key, slot.at.strftime("%Y-%m-%d %H:%M")
+
+    assert nxt(2026, 10, 15, 17, 0) == ("daily", "2026-10-15 18:00")
+    assert nxt(2026, 10, 15, 18, 0) == ("daily", "2026-10-16 18:00")
+    assert nxt(2026, 10, 31, 18, 30) == ("daily", "2026-11-01 18:00")
+    assert nxt(2026, 2, 28, 19, 0) == ("daily", "2026-03-01 18:00")
+    assert nxt(2026, 12, 31, 23, 59) == ("daily", "2027-01-01 18:00")
+    status = sourcing_mail.page_status(db, _aware(datetime(2026, 10, 31, 18, 30)))
+    assert status["next_label"] == "11/1 18:00 (매일 회차)"
 
 
 @pytest.fixture()
@@ -496,19 +513,21 @@ def test_pre_remind_slot_comes_from_the_hook(db, users, remind_hook):
     from app.services import sourcing_mail
 
     assert len(sourcing_mail.REMIND_SOURCES) == 1
-    assert _slots(db, date(2026, 10, 14)) == [("pre_remind", "10:30", "11:00")]
-    assert _slots(db, date(2026, 10, 21)) == []
+    assert _slots(db, date(2026, 10, 14)) == [("pre_remind", "10:30", "11:00"),
+                                              ("daily", "18:00", None)]
+    assert _slots(db, date(2026, 10, 21)) == [("daily", "18:00", None)]
 
     def due(h, m):
         return [s.key for s in sourcing_mail.due(db, _aware(datetime(2026, 10, 14, h, m)))]
 
     assert due(10, 29) == [] and due(10, 31) == ["pre_remind"]
     assert due(11, 0) == []                                         # 리마인드가 나간 뒤
+    assert due(18, 1) == ["daily"]
     nxt = sourcing_mail.next_slot(db, _aware(datetime(2026, 10, 14, 9, 0)))
     assert (nxt.key, nxt.at.hour, nxt.at.minute) == ("pre_remind", 10, 30)
 
 
-def test_a_broken_hook_does_not_stop_the_regular_slots(db, users):
+def test_a_broken_hook_does_not_stop_the_daily_slot(db, users):
     from app.services import sourcing_mail
 
     def broken(db, day):
@@ -516,25 +535,63 @@ def test_a_broken_hook_does_not_stop_the_regular_slots(db, users):
 
     sourcing_mail.register_remind_source(broken)
     try:
-        assert _slots(db, date(2026, 10, 15)) == [("mid", "18:00", None)]
+        assert _slots(db, date(2026, 10, 15)) == [("daily", "18:00", None)]
     finally:
         sourcing_mail.REMIND_SOURCES.remove(broken)
 
 
-def test_tick_runs_each_slot_once(db, people, box, configured, mailed):
+def test_tick_runs_once_a_day(db, people, box, configured, mailed):
     from app.models import SourcingMailCheck
     from app.services import sourcing_mail
 
+    def tick(*when):
+        return sourcing_mail.tick(db, _aware(datetime(*when)))
+
     box.add("hong@example.com", datetime(2026, 10, 3, 9, 0))
-    assert sourcing_mail.tick(db, _aware(datetime(2026, 10, 15, 17, 59))) == []
-    done = sourcing_mail.tick(db, _aware(datetime(2026, 10, 15, 18, 3)))
-    assert [r.run_key for r in done] == ["2026-10-15:mid"]
-    assert sourcing_mail.tick(db, _aware(datetime(2026, 10, 15, 18, 8))) == []
-    assert sourcing_mail.tick(db, _aware(datetime(2026, 10, 15, 23, 0))) == []
+    assert tick(2026, 10, 15, 17, 59) == []
+    done = tick(2026, 10, 15, 18, 3)
+    assert [r.run_key for r in done] == ["2026-10-15:daily"]
+    assert (done[0].slot, done[0].day, done[0].month, done[0].marked) == (
+        "daily", "2026-10-15", "2026-10", 2)
+    assert tick(2026, 10, 15, 18, 8) == [] and tick(2026, 10, 15, 23, 59) == []
+    assert tick(2026, 10, 16, 0, 5) == []                  # 다음 날도 18시 전에는 안 돈다
     assert len(box.connections) == 1
-    assert len(db.execute(select(SourcingMailCheck)).scalars().all()) == 1
-    # 요약 메일 한 통(설정이 있으면 관리자에게).
+
+    again = tick(2026, 10, 16, 18, 1)
+    assert [r.run_key for r in again] == ["2026-10-16:daily"]
+    assert again[0].marked == 0                             # 같은 메일로는 한 번만
+    assert tick(2026, 10, 16, 18, 6) == []
+    assert len(box.connections) == 2
+    assert len(db.execute(select(SourcingMailCheck)).scalars().all()) == 2
+    # 요약 메일은 새로 선 날 한 통만 — 변화 없는 10/16 은 안 보낸다.
     assert len(mailed) == 1 and "새로 딜 받음 2명" in mailed[0][0]
+
+
+def test_a_claimed_day_is_never_run_twice(db, people, box, configured, mailed):
+    """다른 실(또는 다시 뜬 서버)이 오늘 자리를 이미 잡았으면 돌지 않는다."""
+    from app.services import sourcing_mail
+
+    now = _aware(datetime(2026, 10, 15, 18, 3))
+    assert sourcing_mail._claim(db, sourcing_mail.SLOT_DAILY, now) is not None
+    assert sourcing_mail._claim(db, sourcing_mail.SLOT_DAILY,
+                                now + timedelta(hours=3)) is None
+    assert sourcing_mail.tick(db, now + timedelta(minutes=10)) == []
+    assert box.connections == [] and mailed == []
+
+
+def test_daily_runs_across_the_month_end(db, people, box, configured, mailed):
+    from app.services import sourcing_mail
+
+    box.add("hong@example.com", datetime(2026, 10, 3, 9, 0))
+    # 서버가 18시에 멈춰 있었다 — 그날 안에 늦게라도 돈다.
+    (last,) = sourcing_mail.tick(db, _aware(datetime(2026, 10, 31, 21, 40)))
+    assert (last.run_key, last.month, last.marked) == ("2026-10-31:daily", "2026-10", 2)
+    box.add("kim@corp.example.com", datetime(2026, 11, 1, 9, 0))
+    (first,) = sourcing_mail.tick(db, _aware(datetime(2026, 11, 1, 18, 0)))
+    assert (first.run_key, first.month, first.marked) == ("2026-11-01:daily", "2026-11", 1)
+    # 새 달 회차는 새 달 메일만 — 10월 메일로 11월 표시를 세우지 않는다.
+    assert set(_receipts(db, "2026-11")) == {people["kim"].id}
+    assert set(_receipts(db, "2026-10")) == {people["hong"].id, people["hong2"].id}
 
 
 def test_pre_remind_failure_says_the_reminder_still_goes(db, people, box, configured,
@@ -550,22 +607,92 @@ def test_pre_remind_failure_says_the_reminder_still_goes(db, people, box, config
     assert "실패" in mailed[0][0] and "리마인드는 그대로 나갑니다" in mailed[0][1]
 
 
-def test_scheduled_result_stands_in_admin_today_until_next_day(db, people, box,
-                                                               configured, mailed):
+def _member(db):
+    from app.models import User
+
+    return db.get(User, 1)
+
+
+def test_today_stays_quiet_on_days_with_nothing_new(db, people, box, configured, mailed):
     from app.services import sourcing_mail
+
+    for day in (15, 16, 17):
+        (row,) = sourcing_mail.tick(db, _aware(datetime(2026, 10, day, 18, 3)))
+        assert (row.status, row.marked) == (sourcing_mail.STATUS_OK, 0)
+    for when in (datetime(2026, 10, 17, 18, 30), datetime(2026, 10, 18, 9, 0)):
+        assert sourcing_mail.today_items(db, _admin(db), _aware(when)) == []
+    assert mailed == []
+
+
+def test_new_marks_stand_in_admin_today_until_next_day(db, people, box, configured,
+                                                       mailed):
+    from app.services import sourcing_mail
+
+    def items(*when, user=None):
+        return sourcing_mail.today_items(db, user or _admin(db), _aware(datetime(*when)))
 
     box.add("hong@example.com", datetime(2026, 10, 3, 9, 0))
     sourcing_mail.tick(db, _aware(datetime(2026, 10, 15, 18, 3)))
-    for when in (datetime(2026, 10, 15, 18, 30), datetime(2026, 10, 16, 9, 0)):
-        (item,) = sourcing_mail.today_items(db, _admin(db), _aware(when))
-        assert item["title"] == "메일 확인 · 10/15 18:03 (15일 회차)"
-        assert "새로 딜 받음 2명" in item["detail"]
+    for when in ((2026, 10, 15, 18, 30), (2026, 10, 16, 9, 0)):
+        (item,) = items(*when)
+        assert (item["level"], item["title"], item["count"]) == (
+            "info", "메일 확인 · 새로 딜 받음 2명", 2)
+        assert item["detail"].startswith("10/15 18:03 (매일 회차) — 홍길동(가나다벤처스)")
         assert "이번 달 메일로 받은 분 2명" in item["detail"]
+    # 10/16 회차는 새로 선 분이 없다 — 줄을 더하지 않는다(10/15 것만 남는다).
+    sourcing_mail.tick(db, _aware(datetime(2026, 10, 16, 18, 3)))
+    (item,) = items(2026, 10, 16, 18, 30)
+    assert item["detail"].startswith("10/15 18:03")
+    assert items(2026, 10, 17, 9, 0) == []
+    assert items(2026, 10, 15, 18, 30, user=_member(db)) == []     # 팀원에게는 안 선다
+    assert len(mailed) == 1
+
+
+def test_daily_failure_is_one_line_and_one_mail_until_it_changes(db, people, box,
+                                                                 configured, mailed):
+    from app.services import sourcing_mail
+
+    def tick(day):
+        (row,) = sourcing_mail.tick(db, _aware(datetime(2026, 10, day, 18, 3)))
+        return row
+
+    box.bad_login = True
+    for day in (15, 16, 17):
+        assert tick(day).status == sourcing_mail.STATUS_FAILED
+    items = sourcing_mail.today_items(db, _admin(db), _aware(datetime(2026, 10, 17, 18, 30)))
+    assert [i["level"] for i in items] == ["urgent"]                 # 사흘 실패해도 한 줄
+    assert items[0]["title"] == "메일 확인 실패: " + sourcing_mail.ERR_LOGIN
+    assert items[0]["detail"].startswith("10/17 18:03 매일 회차")
+    assert len(mailed) == 1 and "실패" in mailed[0][0]               # 메일도 처음 한 번만
+    assert "다시 보내지 않습니다" in mailed[0][1]
+
+    box.bad_login, box.refuse = False, True                           # 사유가 바뀌면 다시
+    tick(18)
+    assert len(mailed) == 2 and sourcing_mail.ERR_CONNECT in mailed[1][0]
+
+    box.refuse = False                                                # 고쳤다
+    assert tick(19).status == sourcing_mail.STATUS_OK
     assert sourcing_mail.today_items(db, _admin(db),
-                                     _aware(datetime(2026, 10, 17, 9, 0))) == []
-    from app.models import User
-    assert sourcing_mail.today_items(db, db.get(User, 1),
-                                     _aware(datetime(2026, 10, 15, 18, 30))) == []
+                                     _aware(datetime(2026, 10, 19, 18, 30))) == []
+    assert len(mailed) == 2
+    box.bad_login = True                                              # 고친 뒤 또 실패하면 다시
+    tick(20)
+    assert len(mailed) == 3
+
+
+def test_old_mid_and_end_rows_still_render(db, people, configured):
+    from app.models import SourcingMailCheck
+    from app.services import sourcing_mail
+
+    for slot, marked in (("mid", 1), ("end", 0)):
+        db.add(SourcingMailCheck(
+            run_key=f"2026-10-15:{slot}", slot=slot, day="2026-10-15", month="2026-10",
+            status="ok", started_at="2026-10-15T18:03:00+09:00", scanned=5,
+            matched=marked, marked=marked, detail="홍길동(가나다벤처스)" if marked else None))
+    db.commit()
+    (item,) = sourcing_mail.today_items(db, _admin(db), _aware(datetime(2026, 10, 16, 9, 0)))
+    assert item["title"] == "메일 확인 · 새로 딜 받음 1명"
+    assert item["detail"].startswith("10/15 18:03 (15일 회차)")
 
 
 # ── 11. [지금 메일 확인] ─────────────────────────────────────────────────────
