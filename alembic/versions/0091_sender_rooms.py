@@ -14,16 +14,16 @@
 표가 사라진다. 자동화는 담당 팀원이 적어 둔 제목으로 돌아간다 — 그 칸은 이
 표가 건드린 적이 없다.
 
-Revision ID: 0090_sender_rooms
-Revises: 0089_automation_sends
+Revision ID: 0091_sender_rooms
+Revises: 0090_automation_sends
 """
 from __future__ import annotations
 
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0090_sender_rooms"
-down_revision = "0089_automation_sends"
+revision = "0091_sender_rooms"
+down_revision = "0090_automation_sends"
 branch_labels = None
 depends_on = None
 
