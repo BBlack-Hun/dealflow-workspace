@@ -18,12 +18,14 @@ from ..services import (cadence, contact_columns, deal_history, deal_queue,
                         deal_stage, email_domains, group_name, ir_attach,
                         llm_brief, mailer, manual_send, ref_panel,
                         scheduled_send, sheet_import, sheet_owner,
-                        sourcing_link, startup_send)
+                        sourcing_link, sourcing_receipts, startup_send)
 from ..ui import MENU, base_ctx as _base_ctx
 from .companies import BLOCKED_CONTRACT
 from .companies import blocked_reason as company_blocked_reason
 from .contacts import contact_rows
-from .deals import MODE_DEAL, MODE_TITLES
+from .deals import MODE_DEAL, MODE_TITLES, TOPIC_TITLES
+from .sourcing import assignee_chips as sourcing_assignee_chips
+from .sourcing import assignee_of as sourcing_assignee_of
 from .sourcing import buckets as sourcing_bucket_rows
 from .sourcing import rows_of as sourcing_rows
 
@@ -128,13 +130,17 @@ def deals_page(
                         for b in sourcing_bucket_rows(db)]
     # 담당(우리 쪽 심사역)도 거를 수 있어야 한다 — 39명을 통째로 훑는 것과
     # 내 담당 14명만 보는 것은 다른 일이다. 많은 순으로 둔다.
-    counted: dict = {}
-    for c in sourcing_contacts:
-        who = (c.assignee_name or "").strip()
-        if who:
-            counted[who] = counted.get(who, 0) + 1
-    sourcing_assignees = [{"name": k, "count": v} for k, v in
-                          sorted(counted.items(), key=lambda kv: (-kv[1], kv[0]))]
+    #
+    # **칸 글자가 아니라 지금 맡은 사람**이다(`sourcing.assignee_of`). 칸에는
+    # 넘긴 이력이 쌓여(`가담당 > 10/13 나담당`) 글자 그대로 세면 넘겨받은 사람의
+    # 칩에 그 줄이 안 잡혔다. 칩과 카드 값(`data-assignee`)이 같은 함수를 지난다 —
+    # 딜 소싱 메뉴의 [담당자] 필터도 같은 함수다.
+    sourcing_assignees = sourcing_assignee_chips(sourcing_contacts)
+    sourcing_assignee = {c.id: sourcing_assignee_of(c) for c in sourcing_contacts}
+    # 이 달 `딜 받음` — 딜 소싱 제안의 [월간 리마인드] 가 기본으로 뺀다.
+    # 화면을 연 뒤에 바뀐 것은 탭을 열 때 다시 읽는다(`/api/sourcing/state`).
+    sourcing_month = sourcing_receipts.month_of()
+    sourcing_received = sourcing_receipts.received_ids(db, sourcing_month)
     # 투자사 관리 현황에서 연결해 둔 방이 있으면 여기서도 '연결됨' 이어야 한다 —
     # 목록에는 '미등록' 인데 미리보기에는 방이 뜨면 어느 쪽을 믿을지 알 수 없다.
     sourcing_linked = sourcing_link.linked_rooms(db, sourcing_contacts)
@@ -162,6 +168,13 @@ def deals_page(
                else cadence.default_batch_title(db, label=label))
         for mode, label in MODE_TITLES.items()
     }
+    # 한 탭 안에서 고르는 문구(딜 소싱 제안의 월간 리마인드)도 제 이름을 단다 —
+    # 처음 안내와 같은 이름이면 발송 이력에서 무엇을 보낸 회차인지 안 갈린다.
+    # 열쇠는 문구 종류(`sourcing_remind`)다(`deals.js` 의 `titleKey`).
+    batch_titles.update({
+        topic: cadence.default_batch_title(db, label=label)
+        for topic, label in TOPIC_TITLES.items()
+    })
     startup_send_on = startup_send.may_send(db, user)
     startup_send_month = startup_send.default_month()
     ctx.update({
@@ -188,6 +201,9 @@ def deals_page(
         "sourcing_contacts": sourcing_contacts,
         "sourcing_buckets": sourcing_buckets,
         "sourcing_assignees": sourcing_assignees,
+        "sourcing_assignee": sourcing_assignee,
+        "sourcing_received": sourcing_received,
+        "sourcing_month_label": f"{int(sourcing_month[5:])}월",
         "sourcing_linked": sourcing_linked,
         "no_reaction_ids": no_reaction_ids,
         # 메일 채널은 설정이 있어야 고를 수 있다.

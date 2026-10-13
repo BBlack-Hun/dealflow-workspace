@@ -87,19 +87,27 @@ function blockedBlock() {
 // 딜 소싱 명단. **투자사 담당자와 다른 표라 그룹 칸이 아예 없다** — 그 대신
 // 갈래(`data-bucket`)가 같은 일을 한다. 두 목록이 서로 섞이지 않는지 보려면
 // 이쪽에도 고를 것이 있어야 한다.
+//
+// 넷째 · 다섯째 값은 **지금 담당**(`data-assignee` — 서버가 `가 > 10/13 나` 에서
+// 집어낸 값)과 **이 달 딜 받음**(`data-received`)이다. 딜 받음인 사람이 하나
+// 있어야 월간 리마인드가 그 사람을 빼는지 볼 수 있다.
 const SOURCING = [
-  [101, "가소싱", "시리즈 A 이상 딜소싱 참여 심사역"],
-  [102, "나소싱", "M&A 찾는 투자사"]
+  [101, "가소싱", "시리즈 A 이상 딜소싱 참여 심사역", "가담당", false],
+  [102, "나소싱", "M&A 찾는 투자사", "나담당", false],
+  [103, "다소싱", "시리즈 A 이상 딜소싱 참여 심사역", "가담당", true]
 ];
 
-function sourcingCard(id, name, bucket) {
+function sourcingCard(id, name, bucket, assignee, received) {
   const cb = el("input", {
     id: "scb-" + id, class: "contact-cb", value: String(id), "data-name": name
   });
+  const tag = el("span", { class: "tag soft received-tag" });
+  tag.hidden = !received;
   return el("label", {
-    class: "pick-card", "data-bucket": bucket, "data-assignee": "",
+    class: "pick-card", "data-bucket": bucket, "data-assignee": assignee || "",
+    "data-received": received ? "1" : "0",
     "data-search": (name + " " + bucket).toLowerCase()
-  }, [cb]);
+  }, [cb, tag]);
 }
 
 // ① 소개할 기업 목록. **화면에 그려진 차례**가 곧 고르는 차례가 아니다 —
@@ -183,7 +191,9 @@ function buildDom(people) {
   const cards = roster.map(function (p) { return contactCard(p[0], p[1], p[2], p[3]); });
   const contactList = el("div", { id: "contact-list", class: "card-list" }, cards);
   const blocked = blockedBlock();
-  const sourcingCards = SOURCING.map(function (s) { return sourcingCard(s[0], s[1], s[2]); });
+  const sourcingCards = SOURCING.map(function (s) {
+    return sourcingCard(s[0], s[1], s[2], s[3], s[4]);
+  });
   const sourcingList = el("div", { id: "sourcing-list", class: "card-list" }, sourcingCards);
   const companyCards = COMPANIES.map(function (c) { return companyCard(c[0], c[1]); });
   const companyList = el("div", { id: "company-list", class: "card-list" }, companyCards);
@@ -214,8 +224,28 @@ function buildDom(people) {
       return el("button", { class: "chip", "data-value": b });
     }));
   const bucketBar = el("div", { id: "bucket-filter" }, bucketChips);
+  // 담당 칩 — 서버가 지금 담당마다 하나씩 세우고(`sourcing.assignee_chips`),
+  // 탭을 열 때 다시 읽어 다시 세운다. `data-count` 는 바뀌었는지 견주는 값이다.
+  const counted = {};
+  SOURCING.forEach(function (s) { if (s[3]) counted[s[3]] = (counted[s[3]] || 0) + 1; });
+  const assigneeChips = [el("button", { class: "chip active", "data-value": "" })]
+    .concat(Object.keys(counted).map(function (a) {
+      return el("button", { class: "chip", "data-value": a, "data-count": String(counted[a]) });
+    }));
+  const assigneeBar = el("div", { id: "assignee-filter" }, assigneeChips);
+  // [보낼 문구] — 처음 안내 / 월간 리마인드(`deals.html` 의 `#sourcing-topic`).
+  const topicBar = el("div", { id: "sourcing-topic" }, [
+    el("button", { class: "chip active", "data-value": "sourcing_intro" }),
+    el("button", { class: "chip", "data-value": "sourcing_remind" })
+  ]);
+  // `이번 달 딜 받음 N명 제외` 와 [이번 달 딜 받음 포함].
+  const receivedNote = el("div", { id: "received-note" }, [
+    el("span", { id: "received-count" }),
+    el("input", { id: "include-received", type: "checkbox" })
+  ]);
+  receivedNote.hidden = true;
   const sourcingBox = el("div", { id: "sourcing-filters", class: "pick-filters" },
-                         [bucketBar]);
+                         [topicBar, receivedNote, bucketBar, assigneeBar]);
 
   const simple = ["company-pill", "contact-pill", "contact-summary", "ss-companies",
                   "ss-contacts", "ss-note", "preview-tabs", "preview-area",
@@ -349,7 +379,9 @@ function run(people, opts) {
 // `templates` 를 주면 문구 목록(GET `/api/templates`)도 **풀리는 답**으로
 // 돌려준다. 안 주면 지금까지와 같다(안 풀리는 약속) — 대부분의 검사는 문구
 // 목록과 무관하고, 거기까지 답을 지어 주면 검사마다 문구를 한 벌씩 들게 된다.
-function fakeFetch(replies, templates) {
+// `gets` 는 GET 주소 → 돌려줄 값이다(`/api/sourcing/state` 처럼 화면이 다시
+// 읽는 자리). 안 주면 지금까지와 같다(안 풀리는 약속).
+function fakeFetch(replies, templates, gets) {
   const calls = [];
   // `.then()` 이 또 약속을 돌려주면 **펴 준다**(진짜 Promise 처럼). deals.js 가
   // `r.json().then(...)` 을 바깥 `.then` 에서 돌려주는데, 안 펴 주면 다음
@@ -372,6 +404,10 @@ function fakeFetch(replies, templates) {
       if (templates && String(url).indexOf("/api/templates") === 0) {
         return settled({ ok: true,
                          json: function () { return settled({ templates: templates }); } });
+      }
+      if (gets && Object.prototype.hasOwnProperty.call(gets, String(url))) {
+        const got = typeof gets[url] === "function" ? gets[url]() : gets[url];
+        return settled({ ok: true, json: function () { return settled(got); } });
       }
       return { then: function () { return this; }, catch: function () { return this; } };
     }
