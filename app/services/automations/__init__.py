@@ -6,3 +6,4 @@
 
 from . import meeting_review  # noqa: F401,E402  A7 미팅 후 검토결과 문의
 from . import meeting_request  # noqa: F401,E402  A2 미팅 요청 2회
+from . import sourcing_remind  # noqa: F401,E402  A1 소싱 리마인드

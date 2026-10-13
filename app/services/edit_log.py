@@ -323,6 +323,10 @@ WATCHED: Dict[str, Watch] = {
         owner=None, href="/team", label=_attr("room_name"),
         why="보내는 계정 카톡 기준 방 제목. 자동화가 이 제목으로 보낸다 — 잘못 "
             "확정하면 자동화가 엉뚱한 방으로 간다. 관리자가 고르는 공용 자리다."),
+    "sourcing_receipts": Watch(
+        owner=None, href="/sourcing", label=_attr("month"),
+        why="딜 소싱 명단의 달마다 `딜 받음` 표시. 소싱 리마인드가 이것을 보고 "
+            "보낼지 뺄지 정한다 — 잘못 눌리면 리마인드가 빠지거나 다시 간다."),
     "schedule_rules": Watch(
         owner=None, href="/followups", label=_attr("label"),
         why="발송 일정 규칙. 팀 전체의 날짜를 정하는 자리라 공용이다."),

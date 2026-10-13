@@ -81,11 +81,13 @@ def portal(db, users, people):
 
 @pytest.fixture()
 def groundwork(db, users):
-    """FK 가 가리킬 앞줄 — 미팅·IR 요청은 담당자와 기업이 있어야 선다."""
-    from app.models import IrCompany, VcContact
+    """FK 가 가리킬 앞줄 — 미팅·IR 요청은 담당자와 기업이 있어야 선다.
+    딜 소싱의 `딜 받음` 표시(`sourcing_receipts`)는 소싱 명단 줄이 있어야 선다."""
+    from app.models import IrCompany, SourcingContact, VcContact
 
     db.add_all([VcContact(user_id=users["u2"].id, name="앞줄담당", firm="가나벤처스"),
-                IrCompany(name="앞줄기업")])
+                IrCompany(name="앞줄기업"),
+                SourcingContact(bucket="앞줄갈래", name="앞줄심사역")])
     db.commit()
 
 
@@ -627,6 +629,12 @@ WRITE_ROUTES = {
     # 누른다(관리자는 팀 전체) — 이력 표는 보지 않는 표다.
     ("POST", "/automations/meeting-request/{contact_id}/replied"): MACHINE,
     ("POST", "/automations/meeting-request/{contact_id}/replied/undo"): MACHINE,
+    # 딜 소싱 — 이 달 딜 받음 · 카톡방 후보 확정은 공용 명단을 고친다
+    # (`edit_log.WATCHED["sourcing_receipts"]` · `sourcing_contacts`).
+    # 후보 찾기는 방 확인 잡을 세울 뿐이다(기계 기록).
+    ("POST", "/sourcing/{row_id}/received"): WATCHED,
+    ("POST", "/sourcing/{row_id}/room-confirm"): WATCHED,
+    ("POST", "/sourcing/rooms/search"): WATCHED,
 
     # 대표 카톡방 맞추기 [저장] — **공용 표(`ir_companies`)의 방 이름**을
     # 수십 줄 한꺼번에 바꾼다. 이 앱에서 오발송에 가장 가까운 칸이라
@@ -783,8 +791,11 @@ def test_the_six_shared_routers_still_hold_the_forty_nine_paths(portal):
     # companies 의 여덟 번째가 **기업 강제 삭제**(`/force-delete`)다. 평범한
     # [삭제] 가 이력이 붙은 기업을 막는 것을 무시하는 길이라, 길을 따로 냈다 —
     # 같은 주소에 깃발 하나로 붙이면 잘못 눌렀을 때 그대로 지워진다.
+    # sourcing 의 5~7번째는 소싱 리마인드 자동화가 연 셋이다 — 이 달 `딜 받음`
+    # · 카톡방 후보 확정 · [방 후보 찾기](`services/sourcing_receipts.py` ·
+    # `services/sourcing_rooms.py`).
     assert counted == {"companies": 8, "ir": 12, "consulting": 9,
-                       "templates_crud": 5, "sourcing": 4, "contacts": 22}
+                       "templates_crud": 5, "sourcing": 7, "contacts": 22}
 
 
 def test_every_table_is_either_watched_or_explained(db):

@@ -49,6 +49,16 @@
            autocomplete="off">
     {# 전화로 한 명 승낙받고 바로 적을 곳이 없어서, 메모지에 적어 뒀다가
        나중에 시트에 옮겨야 했다. 지금 보고 있는 갈래에 바로 넣는다. #}
+    {# [방 후보 찾기] — 관리자. 소싱 리마인드를 보내는 계정 PC 의 카톡에서
+       방이 없는 줄을 찾는다. 한 통도 보내지 않는다. #}
+    {% if is_admin %}
+    <form method="post" action="/sourcing/rooms/search" class="inline-form">
+      <input type="hidden" name="tab" value="{{ selected or 'all' }}">
+      <button type="submit" class="secondary-btn"{% if not room_search_count %} disabled{% endif %}
+              title="방 이름이 없는 줄을 보내는 계정 PC 의 카톡에서 찾아 후보로 담습니다 — 아무것도 보내지 않습니다">
+        방 후보 찾기 ({{ room_search_count }}명)</button>
+    </form>
+    {% endif %}
     {% if selected %}
     <button type="button" class="primary-btn inline" id="sourcing-add"
             data-bucket="{{ selected }}">{{ selected }}에 추가</button>
@@ -106,6 +116,19 @@
             <button type="button" class="linkbtn danger js-sourcing-del"
                     title="이 사람을 이 갈래의 명단에서 뺍니다">삭제</button>
           </div>
+          {# **이 달 딜 받음** — 소싱 리마인드가 받은 사람을 뺀다
+             (`services/sourcing_receipts.py`). 칸을 하나 더 세우지 않는다 —
+             머리글·칸 수가 `COLUMNS` 와 1:1 이어야 표가 밀리지 않는다(위 주석). #}
+          {% set got = r.id in received %}
+          <form method="post" action="/sourcing/{{ r.id }}/received" class="inline-form"
+                data-testid="sourcing-received">
+            <input type="hidden" name="month" value="{{ month }}">
+            <input type="hidden" name="tab" value="{{ selected or 'all' }}">
+            <input type="hidden" name="on" value="{{ '0' if got else '1' }}">
+            <button type="submit" class="linkbtn{% if got %} ok{% endif %}"
+                    title="{{ month_label }}에 이 사람에게서 딜을 받았으면 누르세요 — 소싱 리마인드가 빠집니다">
+              {% if got %}☑{% else %}☐{% endif %} {{ month_label }} 딜 받음</button>
+          </form>
         </td>
         <td class="cell" data-field="assignee_name" data-type="pick">{{ r.assignee_name or '' }}</td>
         <td class="cell" data-field="phone">{{ r.phone or '' }}</td>
@@ -132,6 +155,29 @@
             🔗 {{ link.room[:22] }}{% if link.room|length > 22 %}…{% endif %}
             <span class="tag soft">투자사 명단</span>
           </div>
+          {% endif %}
+          {# [방 후보 찾기] 가 카톡에서 찾아 온 제목 — **아직 방 이름이 아니다.**
+             눌러 확정해야 방 이름이 된다(`services/sourcing_rooms.py`). #}
+          {% set picks = room_picks.get(r.id) %}
+          {% if picks and not r.kakao_room_name %}
+          <ul class="room-cands">
+            {% for p in picks.rooms %}
+            <li class="room-cand">
+              <span class="room-cand-title">{{ p }}</span>
+              {% if p in picks.same %}
+              <span class="room-badge warn">같은 제목 여럿</span>
+              {% else %}
+              <form method="post" action="/sourcing/{{ r.id }}/room-confirm" class="inline-form">
+                <input type="hidden" name="room" value="{{ p }}">
+                <input type="hidden" name="tab" value="{{ selected or 'all' }}">
+                <button class="linkbtn" type="submit">이 방으로 확정</button>
+              </form>
+              {% endif %}
+            </li>
+            {% endfor %}
+          </ul>
+          {% elif picks and picks.at and not r.kakao_room_name %}
+          <div class="cell-sub muted">카톡에서 못 찾았습니다</div>
           {% endif %}
         </td>
       </tr>

@@ -1135,6 +1135,42 @@ class SourcingContact(TimestampMixin, Base):
     # 여기도 자기 카톡방을 가진다.
     kakao_room_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     room_verified: Mapped[str] = mapped_column(String, default="unverified")
+    #: **카톡에서 찾아 온 방 제목들**(JSON) — 딜 소싱 화면의 [방 후보 찾기]가
+    #: 담는다(`services/sourcing_rooms.py`). 모양과 읽고 쓰는 함수는
+    #: `VcContact.room_candidates` 와 같다(`room_match.save_candidates` ·
+    #: `candidates`). **아직 방 이름이 아니다** — 사람이 골라 확정해야 위
+    #: `kakao_room_name` 이 된다.
+    room_candidates: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
+class SourcingReceipt(TimestampMixin, Base):
+    """**이 달 이 사람에게서 딜을 받았다** — 딜 소싱 화면의 `딜 받음` 표시.
+
+    소싱 리마인드(`services/automations/sourcing_remind.py`)가 이 달 딜을
+    아직 안 준 사람에게만 나가므로, 받은 사람을 적어 둘 자리가 있어야 한다.
+    달마다 한 줄 — `(사람, 달)` 이 열쇠다.
+
+    지금은 사람이 화면에서 누른다(`source="manual"`). 딜은 메일로 오므로 나중에
+    받은 편지함을 읽어 저절로 적을 수 있게 길을 열어 두었다
+    (`sourcing_receipts.record_from_mail` — `source="mail"`).
+    """
+
+    __tablename__ = "sourcing_receipts"
+    __table_args__ = (
+        UniqueConstraint("sourcing_contact_id", "month",
+                         name="uq_sourcing_receipts_month"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    sourcing_contact_id: Mapped[int] = mapped_column(
+        ForeignKey("sourcing_contacts.id"))
+    #: `YYYY-MM`.
+    month: Mapped[str] = mapped_column(String)
+    #: manual(화면에서 누름) | mail(받은 편지함에서 — 아직 안 만든 길).
+    source: Mapped[str] = mapped_column(String, default="manual")
+    #: 누가 눌렀나(메일로 적힌 줄은 비어 있다).
+    user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"),
+                                                   nullable=True)
 
 
 class RefSheet(TimestampMixin, Base):
@@ -2544,3 +2580,9 @@ class SenderRoom(TimestampMixin, Base):
     candidates: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     #: 마지막으로 찾아본 시각. 비어 있으면 아직 안 찾아봤다.
     checked_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+
+#: 방 확인 잡(`verify_room`)의 `SendJob.topic` — **딜 소싱 명단** 줄의 카톡방
+#: 후보 찾기(`services/sourcing_rooms.py`). 그 잡의 줄은 `sourcing_contact_id`
+#: 를 가리키고, 찾은 제목은 그 줄의 `room_candidates` 에 **후보로만** 담는다.
+SOURCING_ROOM_TOPIC = "sourcing_room"

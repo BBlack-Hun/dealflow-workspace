@@ -24,7 +24,8 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import get_current_user, templates
 from ..models import SendItem, SourcingContact, User
-from ..services import sourcing_buckets, sourcing_link
+from ..services import (sourcing_buckets, sourcing_link, sourcing_receipts,
+                        sourcing_rooms)
 from ..ui import base_ctx
 
 router = APIRouter(tags=["sourcing"])
@@ -157,7 +158,19 @@ def sourcing_page(request: Request, db: Session = Depends(get_db),
     ctx = base_ctx(request, db, user, active="sourcing")
     # 투자사 관리 현황에서 이미 방을 연결해 둔 사람이면 다시 적을 이유가 없다.
     linked = sourcing_link.linked_rooms(db, rows)
+    # 이 달 `딜 받음` — 소싱 리마인드가 안 받은 사람에게만 나간다
+    # (`services/sourcing_receipts.py`).
+    month = sourcing_receipts.month_of()
     ctx.update({
+        "month": month,
+        "month_label": f"{int(month[5:])}월",
+        "received": sourcing_receipts.received_ids(db, month),
+        # [방 후보 찾기] 가 담아 온 후보(`services/sourcing_rooms.py`).
+        "room_picks": {r.id: sourcing_rooms.picks(r) for r in rows
+                       if r.room_candidates},
+        "room_search_count": (len(sourcing_rooms.targets(db, selected))
+                              if user.role == "admin" else 0),
+        "is_admin": user.role == "admin",
         "linked_rooms": linked,
         "tabs": tabs,
         "selected": selected,
@@ -322,6 +335,79 @@ def delete_row(row_id: int, db: Session = Depends(get_db),
                    "카톡방 이름을 비워주세요(방이 없으면 발송이 거부됩니다).",
         )
 
+    # 그 줄의 달마다 `딜 받음` 표시도 함께 — 가리킬 곳이 없는 줄을 남기지 않는다.
+    sourcing_receipts.delete_for(db, [row_id])
     db.delete(row)
     db.commit()
     return {"deleted": row_id}
+
+
+# ── 이 달 딜 받음 · 카톡방 후보 ───────────────────────────────────────────────
+
+def _back(tab: str, msg: str = "") -> RedirectResponse:
+    url = f"/sourcing?tab={quote(tab or 'all')}"
+    if msg:
+        url += f"&msg={quote(msg)}"
+    return RedirectResponse(url, status_code=303)
+
+
+@router.post("/sourcing/{row_id}/received", include_in_schema=False)
+def toggle_received(row_id: int, month: str = Form(""), on: str = Form(""),
+                    tab: str = Form(""), db: Session = Depends(get_db),
+                    user: User = Depends(get_current_user)):
+    """**이 달 딜 받음** 표시를 켜고 끈다 — 소싱 리마인드가 이 사람을 뺀다.
+
+    이 화면을 볼 수 있는 사람이면 누른다(명단을 고치는 권한과 같다). 달은
+    화면이 보낸 달을 쓴다 — 자정을 넘겨 눌러도 사람이 본 달에 적힌다.
+    """
+    row = db.get(SourcingContact, row_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="찾을 수 없습니다")
+    if not re.fullmatch(r"\d{4}-\d{2}", month or ""):
+        month = sourcing_receipts.month_of()
+    if on == "1":
+        sourcing_receipts.mark(db, row.id, month, user_id=user.id)
+    else:
+        sourcing_receipts.unmark(db, row.id, month)
+    db.commit()
+    return _back(tab)
+
+
+@router.post("/sourcing/rooms/search", include_in_schema=False)
+def search_rooms(tab: str = Form(""), db: Session = Depends(get_db),
+                 user: User = Depends(get_current_user)):
+    """[방 후보 찾기] — 방이 없는 줄을 **소싱 리마인드 보내는 계정 PC** 로 찾는다.
+
+    관리자만 — 남의 PC(보내는 계정)에 일을 거는 자리다. 아무것도 보내지 않는다
+    (방 확인 잡). 찾은 제목은 후보로만 담긴다(`services/sourcing_rooms.py`).
+    """
+    from ..deps import admin_only
+    from ..services import automation
+
+    admin_only(user)
+    bucket = "" if tab == "all" else tab
+    sender = automation.sender(db, automation.load(db, automation.SOURCING_REMIND))
+    if sender is None:
+        return _back(tab, "보내는 계정이 정해지지 않았습니다 — 팀 현황 자동화 판에서 고르세요")
+    job = sourcing_rooms.queue_search(db, sender, bucket)
+    if job is None:
+        return _back(tab, "찾을 줄이 없습니다 — 방 이름이 다 있습니다")
+    return _back(tab, f"{sender.name} 님 PC 로 {job.total}명의 방을 찾습니다(회차 #{job.id}) "
+                      "— 그 PC 의 발송 프로그램이 켜져 있어야 합니다")
+
+
+@router.post("/sourcing/{row_id}/room-confirm", include_in_schema=False)
+def confirm_room(row_id: int, room: str = Form(""), tab: str = Form(""),
+                 db: Session = Depends(get_db),
+                 user: User = Depends(get_current_user)):
+    """[이 방으로 확정] — 카톡에서 찾은 후보를 방 이름으로."""
+    row = db.get(SourcingContact, row_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="찾을 수 없습니다")
+    try:
+        sourcing_rooms.confirm(row, room)
+    except sourcing_rooms.NotPickable as exc:
+        db.rollback()
+        return _back(tab, str(exc))
+    db.commit()
+    return _back(tab, f"{row.name} — 방을 확정했습니다")
