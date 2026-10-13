@@ -392,9 +392,14 @@ class CheckError(Exception):
 
 
 def _redact(value, settings: Settings) -> str:
+    """로그에 실을 서버 응답 — 혹시 비밀번호가 섞여 있으면 `[비밀번호]` 로 바꾼다.
+
+    (사람 · 회사 이름을 가리는 별표 규칙은 `ir_mask` 한 곳이다 — 여기는 다른 일이라
+    별표를 쓰지 않는다.)
+    """
     text = str(value)
     if settings.password:
-        text = text.replace(settings.password, "***")
+        text = text.replace(settings.password, "[비밀번호]")
     return text[:200]
 
 
