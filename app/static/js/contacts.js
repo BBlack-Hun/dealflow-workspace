@@ -279,6 +279,8 @@
         if (!d.contact) { setMsg("담당자를 불러오지 못했습니다", true); return; }
         current = d.contact.id;
         fillForm(d.contact);
+        // IR 기업 연결 표시 — 그 칸이 있는 화면만(`ir_link_badge.js`).
+        if (window.IrLinkBadge) window.IrLinkBadge.show(d.ir_link || null);
         renderTimeline(d.timeline || []);
         openPanel(d.contact.name + " " + (d.contact.title || "") + " · " + (d.contact.firm || ""));
         setMsg("");
@@ -521,6 +523,8 @@
     // 보기도 안 골라진 채로 서서, 새로 넣는 사람마다 값이 제각각이 된다.
     // 그 칸이 없는 명단에서는 `fillForm` 이 건너뛴다(스타트업 표에는 없다).
     fillForm({ status: "active", channel_kakao: 1, connect_stage: "not_started" });
+    // 아직 없는 줄에는 이을 것이 없다.
+    if (window.IrLinkBadge) window.IrLinkBadge.show(null);
     if (el("f-channel_kakao")) el("f-channel_kakao").checked = true;
     // 창 제목도 안내도 **서버가 준 말**이다. 여기 적어 두면 스타트업 화면에서
     // 기업을 넣는데 창에는 `담당자 추가` 라고 뜬다.

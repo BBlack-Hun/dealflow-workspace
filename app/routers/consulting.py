@@ -984,6 +984,17 @@ def company_rows(db: Session, user: User, sheet: str = "",
     return out
 
 
+def _ir_badges(db: Session, ids: List[int]) -> Dict[int, dict]:
+    """줄마다 IR 기업 연결 표시 — `services/ir_link.badges` 가 한 번에 센다."""
+    from ..services import ir_link   # 머리에 두면 불러오는 차례가 꼬일 수 있다
+
+    if not ids:
+        return {}
+    found = db.execute(select(ConsultingCompany)
+                       .where(ConsultingCompany.id.in_(ids))).scalars().all()
+    return ir_link.badges(db, found)
+
+
 @router.get("/consulting", response_class=HTMLResponse, include_in_schema=False)
 def consulting_page(request: Request, db: Session = Depends(get_db),
                     user: User = Depends(get_current_user), msg: str = "",
@@ -1103,6 +1114,12 @@ def consulting_page(request: Request, db: Session = Depends(get_db),
         "meeting_kind_choices": ",".join(MEETING_KIND_CHOICES),
         "fixed_columns": fixed,
         "tail_columns": tail,
+        # **이 줄이 IR 기업 현황의 어느 기업인가** — `기업명` 칸 밑 잔글씨
+        # (`IR 기업: ○○` / `연결 안 됨 → 연결하기`). 잇는 화면(`/ir-link`)을
+        # 열 수 있는 사람에게만 선다 — 투자컨설턴트(역할)에게는 IR 기업 현황이
+        # 닫혀 있어 눌러도 갈 데가 없다(`deps.can_open`).
+        "ir_badges": (_ir_badges(db, [r["id"] for r in rows])
+                      if can_open(user, "/ir-link") else {}),
         "msg": msg,
         "counts": {
             "total": len(rows),

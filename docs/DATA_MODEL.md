@@ -85,6 +85,7 @@ weekly_stats   (퇴사 삭제 후에도 남는 익명화 집계)
 | sectors | TEXT | 섹터 태그 CSV: `AI,헬스케어` |
 | status | TEXT | `active`(활발) \| `no_response`(반응없음) \| `paused`(검토중단) |
 | memo | TEXT | |
+| ir_company_id | FK ir_companies NULL | 좌측 [스타트업] 명단 줄이 **IR 기업 현황의 어느 기업인가**. 사람이 `/ir-link` 에서 잇는다(이름으로 후보만 세우고 저절로 안 잇는다). `consulting_companies.ir_company_id` 도 같은 칸 · 같은 규칙. 읽는 자리는 `services/ir_link.company_for` 하나 |
 
 파생값(저장 안 함, 조회 시 집계): 최근 딜소개(마지막 sent send_item), 반응(최근 90일 ir_requests/meetings 수).
 

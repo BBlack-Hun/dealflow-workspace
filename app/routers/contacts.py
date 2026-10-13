@@ -1006,6 +1006,10 @@ def get_contact(
             "notes": contact_columns.load_notes(contact.notes),
             "is_hidden": 1 if contact.is_hidden else 0,
         },
+        # **이 줄이 IR 기업 현황의 어느 기업인가**(`services/ir_link.py`).
+        # 수정창이 `IR 기업: ○○ (연결됨)` / `연결 안 됨 → 연결하기` 로 세운다 —
+        # 그 칸은 스타트업 화면에만 있다(`ListPage.ir_link_href`).
+        "ir_link": _ir_link_badge(db, contact),
         # 한 줄기로 모은다: 시트에서 옮겨 온 월별 기록 + 발송 이력 +
         # **이 도구에서 만든 IR 요청·미팅**.
         #
@@ -1023,6 +1027,14 @@ def get_contact(
             reverse=True,
         ),
     }
+
+
+def _ir_link_badge(db: Session, contact: VcContact) -> dict:
+    # 함수 안에서 불러온다 — `ir_link` 가 `startup_handoff` 를 거쳐 이 파일이
+    # 쓰는 서비스들을 다시 부른다(머리에 두면 불러오는 차례가 꼬일 수 있다).
+    from ..services import ir_link
+
+    return ir_link.badge_for(db, contact)
 
 
 def _pipeline_views(db: Session, contact_id: int) -> List[dict]:

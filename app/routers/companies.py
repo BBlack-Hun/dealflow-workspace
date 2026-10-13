@@ -1182,6 +1182,14 @@ COMPANY_LINKS = (
     ("sends", "SendItem", "ir_company_id", "발송 이력", DETACH),
     ("ir_requests", "IrRequest", "company_id", "IR 요청", DETACH),
     ("meetings", "Meeting", "company_id", "미팅", DETACH),
+    # 사람이 이어 둔 **같은 기업의 다른 줄**(`services/ir_link.py`). 그 줄은
+    # 제 기업명(`firm` · `company_name`)을 들고 있어 끊어도 무엇의 줄인지
+    # 남는다 — ㉡. 평범한 [삭제] 를 막는 갈래이기도 하다: 사람이 잇는 수고를
+    # 들인 연결이 기업과 함께 말없이 사라지면, 그 줄은 `연결 안 됨` 으로
+    # 돌아가 있는데 아무도 까닭을 모른다.
+    ("startup_links", "VcContact", "ir_company_id", "스타트업 명단 연결", DETACH),
+    ("consulting_links", "ConsultingCompany", "ir_company_id",
+     "투자컨설턴트 연결", DETACH),
     ("batches", "DealBatchCompany", "company_id", "발송 회차에 실린 줄", CASCADE),
     ("queued", "DealQueueCompany", "company_id", "예약에 실린 줄", CASCADE),
     ("backups", "OneLinerBackup", "company_id", "한 줄 소개 되돌리기 버퍼", SWEEP),

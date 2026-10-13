@@ -563,7 +563,7 @@
     var c = plan.counts || {};
     var L = plan.labels || {};
     var keep = [];
-    ["sends", "ir_requests", "meetings"].forEach(function (k) {
+    ["sends", "ir_requests", "meetings", "startup_links", "consulting_links"].forEach(function (k) {
       if (c[k]) keep.push(L[k] + " " + c[k] + "건");
     });
     var gone = [];

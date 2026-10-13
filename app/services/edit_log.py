@@ -415,6 +415,11 @@ VALUE_FIELDS = frozenset({
     # **어느 방으로 나가나.** 이 앱에서 오발송에 가장 가까운 칸이라 값을 남긴다.
     "kakao_room_name",
 
+    # **어느 IR 기업에 이어 두었나**(`services/ir_link.py`). 번호로 남고, 로그
+    # 화면이 그 번호를 기업 이름으로 바꿔 보여 준다(`recent`). 잇고 푼 것은
+    # 자기 줄이라도 남는다 — 아래 `ALWAYS_FIELDS`.
+    "ir_company_id",
+
     # 언제.
     "requested_at", "delivered_at", "scheduled_at", "scheduled_time",
     "done_at", "followup_due", "followup_at", "meeting_offered_at",
@@ -477,7 +482,19 @@ FIELD_LABELS = {
     "tab_canceled_jobs": "비어서 취소한 발송 회차",
     "tab_deleted_columns": "함께 지운 달 칸",
     "tab_snapshot": "지우기 직전 백업",
+    "ir_company_id": "IR 기업 연결",
 }
+
+#: **자기 줄이라도 남기는 칸.** 보통은 자기 것을 고친 것은 안 남긴다(머리글 —
+#: 하루 수백 줄이 쌓여 아무도 안 본다). 이 칸은 다르다.
+#:
+#: `ir_company_id` 는 줄이 **세 화면이 함께 보는 기업 하나**를 가리키게 하는
+#: 칸이다(`services/ir_link.py`). 이어 두면 그 줄이 IR 기업 현황의 기업과 한
+#: 몸으로 읽히고, 나중에 값이 그 연결을 따라 오간다 — 잘못 이으면 남의 화면
+#: 값이 엉뚱한 기업으로 간다. 줄의 주인이 잇는 것이 보통이라(자기 명단), 자기
+#: 것이라고 빼면 이 로그가 비어 "누가 이 기업에 이었나" 를 물을 곳이 없다.
+#: 한 번에 수십 줄을 잇는 단추(`후보가 하나인 줄 일괄 연결`)가 있어 더 그렇다.
+ALWAYS_FIELDS = frozenset({"ir_company_id"})
 
 
 def field_label(name: str) -> str:
@@ -666,6 +683,13 @@ def _row_scope(obj, watch: Watch, actor_id: int, action: str):
     return True, SCOPE_OTHERS, owner_id
 
 
+def _touches_always(obj) -> bool:
+    """이 줄에서 `ALWAYS_FIELDS` 중 하나가 바뀌었는가."""
+    columns = obj.__table__.c
+    return any(name in columns and get_history(obj, name).has_changes()
+               for name in ALWAYS_FIELDS)
+
+
 def _href(watch: Watch, obj) -> str:
     return watch.href(obj) if callable(watch.href) else watch.href
 
@@ -692,6 +716,9 @@ def _collect(session: OrmSession, action: str, rows, ctx: dict) -> List[dict]:
                 obj, include_collections=False):
             continue
         keep, scope, owner_id = _row_scope(obj, watch, ctx["user_id"], action)
+        if not keep and action == ACTION_UPDATE and _touches_always(obj):
+            # 자기 줄인데 `ALWAYS_FIELDS` 를 건드렸다 — 남긴다(그 주석 참고).
+            keep, scope = True, SCOPE_MINE
         if not keep:
             continue
         changes = _changes(obj, action)
@@ -938,7 +965,8 @@ RETENTION_MONTHS = 13
 PAGE_SIZE = 200
 
 
-def _one_change(item: dict, names: dict) -> dict:
+def _one_change(item: dict, names: dict,
+                companies: Optional[dict] = None) -> dict:
     """화면이 그대로 그릴 수 있게 한 줄로 편다."""
     field = item.get("field", "")
     out = {"label": field_label(field), "value_kept": "changed" not in item}
@@ -951,6 +979,9 @@ def _one_change(item: dict, names: dict) -> dict:
         # 담당 칸은 번호로 남아 있다 — 번호를 보여 주면 아무도 못 읽는다.
         if field in ("user_id", "owner_user_id", "actor_user_id"):
             return names.get(int(value), f"#{value}")
+        # 이어 둔 IR 기업도 번호로 남아 있다. 지운 기업이면 번호만 남는다.
+        if field == "ir_company_id" and companies is not None:
+            return companies.get(int(value), f"#{value}")
         return str(value)
 
     out["before"] = shown(item.get("before"))
@@ -977,6 +1008,14 @@ def recent(db, *, scope: str = "", screen: str = "", limit: int = PAGE_SIZE):
         stmt = stmt.where(EditLog.screen == screen)
     rows = list(db.execute(stmt.limit(limit)).scalars().all())
 
+    # IR 기업 이름은 **그 칸이 실린 줄이 있을 때만** 떠 온다 — 로그 대부분은
+    # 그 칸과 상관없다.
+    companies = None
+    if any('"ir_company_id"' in (row.changes_json or "") for row in rows):
+        from ..models import IrCompany
+
+        companies = {c.id: c.name for c in db.execute(select(IrCompany)).scalars().all()}
+
     out = []
     for row in rows:
         try:
@@ -993,7 +1032,7 @@ def recent(db, *, scope: str = "", screen: str = "", limit: int = PAGE_SIZE):
             "screen": row.screen or row.table_name,
             "row_label": row.row_label or f"{row.table_name} {row.row_id}",
             "path": row.path or "",
-            "changes": [_one_change(c, names) for c in changes],
+            "changes": [_one_change(c, names, companies) for c in changes],
         })
     return out
 

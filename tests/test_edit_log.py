@@ -555,6 +555,13 @@ WRITE_ROUTES = {
     #  의 INSERT 가 저절로 로그에 남는다).
     ("POST", "/api/contacts/from-consulting"): WATCHED,
 
+    # IR 기업 연결 — 스타트업 명단 줄 · 투자컨설턴트 줄을 IR 기업에 잇고 푼다
+    # (`routers/ir_link.py`). 줄마다 ORM 으로 고치므로 저절로 남고, **자기 줄을
+    # 이은 것도 남는다**(`edit_log.ALWAYS_FIELDS`).
+    ("POST", "/ir-link/link"): WATCHED,
+    ("POST", "/ir-link/unlink"): WATCHED,
+    ("POST", "/ir-link/bulk"): WATCHED,
+
     ("POST", "/templates/choose"): WATCHED,
     ("POST", "/templates/copy"): WATCHED,
     ("POST", "/templates/new"): WATCHED,

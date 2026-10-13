@@ -306,6 +306,10 @@ class ListPage:
     # [방 매칭] 이, 수정창에 [이 방 후보 찾기] 가 선다. 투자사 화면에는 없다 —
     # 그쪽 방 이름은 규칙으로 짓고 [방 연결 확인] 으로 대조한다.
     rooms_href: str = ""
+    # 이 화면의 줄을 **IR 기업 현황의 기업에 잇는 자리**(`routers/ir_link.py`).
+    # 있으면 툴바에 [IR 기업 연결] 이, 수정창에 `IR 기업: ○○ (연결됨)` 표시가
+    # 선다. 투자사 화면에는 없다 — 그쪽 `firm` 은 투자사라 IR 기업이 아니다.
+    ir_link_href: str = ""
 
     @property
     def href(self) -> str:
@@ -333,7 +337,9 @@ STARTUP_PAGE = ListPage(key="startup", page=contact_columns.PAGE_STARTUP,
                         msg_label="안내 카톡 보내기",
                         # 보낼 방을 회사명으로 카톡에서 찾아 고른다 — 이 명단
                         # 줄에는 방 이름이 거의 없다(`services/startup_room_pick.py`).
-                        rooms_href="/startup/rooms")
+                        rooms_href="/startup/rooms",
+                        # 명단 줄을 IR 기업 현황의 기업에 잇는다 — 사람이 고른다.
+                        ir_link_href="/ir-link?tab=startup")
 
 
 def list_page(
