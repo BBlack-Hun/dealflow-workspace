@@ -120,6 +120,26 @@ class Batch:
 
 
 @dataclass(frozen=True)
+class Field:
+    """자동화마다 다른 값 하나 — 팀 현황 판에 칸 하나로 선다.
+
+    `kind` 가 받는 모양을 정한다. 값을 가리는 것은 `clean_params` 한 곳이다.
+      int   — 정수(`low`~`high`)
+      time  — `HH:MM`, 보내는 시간(09~19시) 안
+      text  — 한 줄 글
+      lines — 여러 줄(한 줄에 하나) → 목록
+    """
+
+    name: str
+    label: str
+    kind: str
+    default: object
+    low: int = 0
+    high: int = 0
+    hint: str = ""
+
+
+@dataclass(frozen=True)
 class Spec:
     key: str
     #: 실제 모드에서 회차의 종류(`deal_intro` · `sourcing_intro` …).
@@ -130,6 +150,10 @@ class Spec:
     still_ok: Optional[Callable[[Session, AutomationSend], str]] = None
     #: 이 자동화가 오늘 할 일에 따로 세울 줄(예: 내일 나갈 곳). `today.py` 모양.
     notes: Optional[Callable[[Session, User, Automation, datetime], List[dict]]] = None
+    #: 팀 현황 판에서 고치는 값들(며칠 뒤 · 몇 시 …). 기본값이 곧 동작이다.
+    fields: Tuple[Field, ...] = ()
+    #: 칸들을 넘어선 검사(예: 두 날짜의 차례). 못 받을 값이면 `ValueError`.
+    check: Optional[Callable[[dict], None]] = None
 
 
 REGISTRY: Dict[str, Spec] = {}
@@ -146,6 +170,101 @@ def register(spec: Spec) -> Spec:
 def _load_all() -> None:
     """자동화 모듈들을 읽어 틀에 달리게 한다(각 모듈이 읽힐 때 `register`)."""
     from . import automations  # noqa: F401
+
+
+# ── 자동화마다 다른 값 ────────────────────────────────────────────────────────
+
+def parse_time(raw) -> str:
+    """`HH:MM` 으로 다듬는다. 보내는 시간(09~19시) 밖이면 `ValueError`.
+
+    고르는 폭은 예약과 같다 — 저장 자리에서 자른다(`startup_monthly.parse_time`
+    와 같은 규칙을 그대로 부른다).
+    """
+    from . import startup_monthly
+
+    return startup_monthly.parse_time(str(raw or ""))
+
+
+def _clean_one(field_: Field, raw):
+    if field_.kind == "int":
+        try:
+            number = int(str(raw).strip())
+        except (TypeError, ValueError):
+            raise ValueError(f"{field_.label} — 숫자를 넣으세요") from None
+        if not (field_.low <= number <= field_.high):
+            raise ValueError(f"{field_.label} — {field_.low}~{field_.high} 사이로 넣으세요")
+        return number
+    if field_.kind == "time":
+        try:
+            return parse_time(raw)
+        except ValueError as exc:
+            raise ValueError(f"{field_.label} — {exc}") from None
+    if field_.kind == "lines":
+        if isinstance(raw, (list, tuple)):
+            items = [str(v).strip() for v in raw]
+        else:
+            items = [line.strip() for line in str(raw or "").splitlines()]
+        return [v for v in items if v]
+    return str(raw or "").strip()
+
+
+def values(row: Optional[Automation], key: str) -> dict:
+    """이 자동화가 지금 쓰는 값 — 저장된 값, 없거나 못 읽으면 기본값."""
+    _load_all()
+    spec = REGISTRY.get(key)
+    stored = automation.params(row)
+    out = {}
+    for field_ in (spec.fields if spec else ()):
+        if field_.name in stored:
+            try:
+                out[field_.name] = _clean_one(field_, stored[field_.name])
+                continue
+            except ValueError:
+                log.warning("자동화 %s 의 %s 값이 맞지 않아 기본값을 씁니다",
+                            key, field_.name)
+        out[field_.name] = field_.default
+    return out
+
+
+def clean_params(key: str, raw: dict) -> dict:
+    """화면에서 온 값들을 가린다. **못 받을 값이면 `ValueError`** — 까닭이 화면에 간다.
+
+    폼에 없는 칸은 기본값이다. 화면만 막으면 주소로 폼을 흉내 내는 순간 뚫린다
+    — 저장 자리에서 자른다(`auto_send.save` 와 같은 까닭).
+    """
+    _load_all()
+    spec = REGISTRY.get(key)
+    if spec is None:
+        return {}
+    out = {}
+    for field_ in spec.fields:
+        out[field_.name] = (_clean_one(field_, raw[field_.name])
+                            if field_.name in raw else field_.default)
+    if spec.check is not None:
+        spec.check(out)
+    return out
+
+
+def save_params(db: Session, key: str, raw: dict) -> dict:
+    """값을 저장한다(줄이 없으면 꺼짐 · 시험 모드로 선다). 커밋까지 한다."""
+    cleaned = clean_params(key, raw)
+    row = automation.load(db, key)
+    if row is None:
+        row = Automation(key=key, enabled=0, test_mode=1)
+        db.add(row)
+    automation.set_params(row, cleaned)
+    db.commit()
+    return cleaned
+
+
+def at_on(day: date, hhmm: str) -> datetime:
+    """그날 그 시각(이 프로세스 시간대)."""
+    hour, minute = (int(part) for part in parse_time(hhmm).split(":"))
+    return datetime(day.year, day.month, day.day, hour, minute).astimezone()
+
+
+def day_key(day: date) -> int:
+    return day.year * 10000 + day.month * 100 + day.day
 
 
 # ── 회차 자리 ────────────────────────────────────────────────────────────────
@@ -412,7 +531,17 @@ def status_of(db: Session, key: str, now: Optional[datetime] = None) -> dict:
     _load_all()
     now = scheduled_send._aware(now or clock.now())
     row = automation.load(db, key)
-    out = {"ready": key in REGISTRY, "next_label": "", "today": None}
+    out = {"ready": key in REGISTRY, "next_label": "", "today": None,
+           "fields": []}
+    spec = REGISTRY.get(key)
+    if spec is not None:
+        current = values(row, key)
+        out["fields"] = [
+            {"name": f.name, "label": f.label, "kind": f.kind, "hint": f.hint,
+             "low": f.low, "high": f.high,
+             "value": ("\n".join(current[f.name]) if f.kind == "lines"
+                       else current[f.name])}
+            for f in spec.fields]
     if row is None or key not in REGISTRY:
         return out
     plan = next_plan(db, row, now)

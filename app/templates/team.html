@@ -645,6 +645,20 @@
             <label class="field inline-field"><span>시험방 이름</span>
               <input type="text" name="test_room" value="{{ a.test_room }}"
                      placeholder="보내는 계정 카톡의 시험방 제목" maxlength="120"></label>
+            {% for f in a.fields %}
+            <label class="field inline-field"{% if f.hint %} title="{{ f.hint }}"{% endif %}><span>{{ f.label }}</span>
+              {% if f.kind == 'lines' %}
+              <textarea name="p_{{ f.name }}" rows="3" cols="28">{{ f.value }}</textarea>
+              {% elif f.kind == 'int' %}
+              <input type="number" name="p_{{ f.name }}" value="{{ f.value }}"
+                     min="{{ f.low }}" max="{{ f.high }}" style="width:70px">
+              {% elif f.kind == 'time' %}
+              <input type="time" name="p_{{ f.name }}" value="{{ f.value }}" step="600">
+              {% else %}
+              <input type="text" name="p_{{ f.name }}" value="{{ f.value }}">
+              {% endif %}
+            </label>
+            {% endfor %}
             <button class="secondary-btn" type="submit">저장</button>
           </form>
           {% if a.test_room %}

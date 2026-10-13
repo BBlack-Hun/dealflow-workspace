@@ -1211,8 +1211,9 @@ def save_startup_send(
 
 
 @router.post("/team/automations/{key}", include_in_schema=False)
-def save_automation(
+async def save_automation(
     key: str,
+    request: Request,
     enabled: str = Form(""),
     user_id: int = Form(0),
     test_mode: str = Form(""),
@@ -1239,7 +1240,15 @@ def save_automation(
     if key not in automation.BY_KEY:
         raise HTTPException(status_code=404, detail="그런 자동화는 없습니다")
     label = automation.BY_KEY[key].label
+    # 자동화마다 다른 값(`p_<이름>` 칸) — 며칠 뒤 · 몇 시 · 그룹 · 채널방 목록.
+    # 칸이 하나도 안 오면(옛 화면) 저장된 값을 그대로 둔다.
+    form = await request.form()
+    raw = {k[2:]: v for k, v in form.items() if k.startswith("p_")}
     try:
+        if raw:
+            from ..services import automation_runner
+
+            automation_runner.save_params(db, key, raw)
         row = automation.save(db, key, enabled=enabled == "on",
                               user_id=user_id or None,
                               test_mode=(test_mode == "on"
