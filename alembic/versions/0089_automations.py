@@ -3,12 +3,17 @@
 `automations` — 자동화마다 한 줄: 켜짐/꺼짐 · 보내는 계정 · 시험 모드 ·
 시험방 · 자동화마다 다른 값(JSON). 무엇을 왜 이렇게 담는지는 `models.Automation`.
 
-## 번호가 0088 인 까닭
+## 판 순서 — 머지 차례 #268 → #273 → 이 판
 
-같은 때에 열린 다른 PR 이 `0087_activity_sequence_trace` 를 쓴다. 이 판은
-`0086_send_guard` 위에 선다 — 둘 중 나중에 들어가는 쪽이 `down_revision` 을
-앞의 것으로 고쳐 머리를 하나로 맞춘다(`tests/test_migrations.py` 가 머리가
-둘이면 멈춘다).
+같은 때에 열린 두 판이 같은 부모(`0086_send_guard`)를 둔다 —
+`0087_activity_sequence_trace`(#268) · `0088_ir_company_link`(#273). 그래서 이
+판은 번호를 0089 로 두고, 이 브랜치에서는 `0086_send_guard` 위에 선다(혼자서
+검사가 돌게). 머지는 **#268 → #273 → 이 판** 차례이고, 넣을 때 두 줄을 잇는다.
+
+  · #273 의 `down_revision` → `0087_activity_sequence_trace` (#273 머리말에 적힌 대로)
+  · 이 판의 `down_revision` → `0088_ir_company_link`
+
+잇지 않으면 머리가 여럿이 되어 부팅에서 멎는다(`tests/test_migrations.py` 가 잡는다).
 
 ## 기본은 전부 꺼짐 · 시험 모드 켜짐
 
@@ -26,7 +31,7 @@
 표가 사라진다. 잃는 것은 자동화 설정뿐이다 — 나간 발송은 `send_jobs` ·
 `send_items` 에 그대로 있다.
 
-Revision ID: 0088_automations
+Revision ID: 0089_automations
 Revises: 0086_send_guard
 """
 from __future__ import annotations
@@ -34,7 +39,7 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0088_automations"
+revision = "0089_automations"
 down_revision = "0086_send_guard"
 branch_labels = None
 depends_on = None
