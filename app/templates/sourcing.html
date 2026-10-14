@@ -23,7 +23,7 @@
 {% if msg %}<p class="flash">{{ msg }}</p>{% endif %}
 
 {# **메일 확인** — 회사 받은 편지함의 머리글을 읽어 메일로 이 달 딜을 보낸 사람을
-   저절로 `딜 받음` 으로 세운다(`services/sourcing_mail.py`). 15일 · 말일 18:00 에
+   저절로 `딜 받음` 으로 세운다(`services/sourcing_mail.py`). 매일 18:00 에
    돈다. 편지함은 팀 현황 › 딜 소싱 메일 확인(관리자)에서 넣는다. #}
 <div class="mail-check" data-testid="sourcing-mail-check">
   {% if not mail_check.on %}

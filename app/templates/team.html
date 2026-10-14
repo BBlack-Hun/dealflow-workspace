@@ -509,7 +509,7 @@
       <a class="linkbtn" href="/sourcing?tab=all">딜 소싱</a></h2>
     {% set sm = sourcing_mail %}
     {% if sm.active %}
-    <p class="hint ok">✅ 켜짐: 15일 · 말일 18:00 에 받은 편지함을 봅니다
+    <p class="hint ok">✅ 켜짐: 매일 18:00 에 받은 편지함을 봅니다
       ({% if sm.in_use == 'panel' %}이 판의 설정{% else %}서버 환경변수{% endif %}).
       {% if sm.status and sm.status.last_label %}마지막 확인 {{ sm.status.last_label }}.{% endif %}
       {% if sm.status and sm.status.next_label %}다음 {{ sm.status.next_label }}.{% endif %}</p>
@@ -553,6 +553,7 @@
     <p class="hint">
       메일 서비스 관리 화면에서 그 계정의 <b>POP3 사용</b>을 허용해 두어야 합니다(IMAP 은 닫혀 있어도 됩니다).
       메일은 <b>읽기만</b> 합니다. 머리글(보낸 사람 · 날짜 · 제목)만 보고, 본문을 받거나 지우지 않습니다.
+      매일 확인하지만 관리자 오늘 할 일 · 알림 메일에는 <b>새로 딜 받은 분이 있거나 확인이 실패했을 때만</b> 섭니다.
       [지금 메일 확인] 단추는 딜 소싱 화면 위쪽에 있습니다.
     </p>
   </section>
