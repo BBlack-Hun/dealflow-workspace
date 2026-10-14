@@ -852,6 +852,7 @@
       <label class="pick-card" data-bucket="{{ c.bucket }}"
              data-assignee="{{ sourcing_assignee.get(c.id, '') }}"
              data-received="{{ '1' if c.id in sourcing_received else '0' }}"
+             data-out="0"
              data-room="{{ c.kakao_room_name or (link and link.room) or '' }}"
              data-search="{{ (c.name ~ ' ' ~ (c.title or '') ~ ' ' ~ (c.firm or '') ~ ' ' ~ (c.bucket or '') ~ ' ' ~ (c.sectors or '') ~ ' ' ~ (c.kakao_room_name or ''))|lower }}">
         <input type="checkbox" class="contact-cb" value="{{ c.id }}" data-name="{{ c.name }}">
@@ -860,7 +861,10 @@
           <div class="pick-sub muted">{{ c.firm or '' }}</div>
           {# 갈래가 곧 문구다 — 무엇이 나갈지 고르는 자리에서 보여야 한다. #}
           <div class="pick-tags"><span class="tag">{{ c.bucket }}</span>
-            <span class="tag soft received-tag"{% if c.id not in sourcing_received %} hidden{% endif %}>{{ sourcing_month_label }} 딜 받음</span></div>
+            <span class="tag soft received-tag"{% if c.id not in sourcing_received %} hidden{% endif %}>{{ sourcing_month_label }} 딜 받음</span>
+            {# 화면을 연 뒤에 `불참여` 가 된 분 — 명단을 다시 읽을 때 선다(`deals.js`).
+               처음부터 불참여인 분은 이 목록에 아예 없다(`sourcing.sendable_rows`). #}
+            <span class="tag warn out-tag" hidden>딜 소싱 불참여</span></div>
           {# 투자사 관리 현황에서 연결해 둔 방이 있으면 그것도 '연결됨' 이다.
              목록에는 '미등록' 인데 미리보기에는 방이 뜨면 어느 쪽을 믿을지
              알 수 없다. #}

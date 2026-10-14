@@ -409,6 +409,12 @@ VALUE_FIELDS = frozenset({
     "name", "label", "title", "firm", "company_name", "ceo_name",
     "department", "kind", "variant",
 
+    # **딜 소싱의 어느 줄이 투자사 관리 현황의 어느 줄과 이어졌나 · 참여하나.**
+    # 투자사 관리 현황의 `Series A 딜 소싱` 칸(O/X)이 이 둘에서 나온다
+    # (`services/sourcing_sync.py`) — 잘못 이어지면 남의 방으로 딜 소싱 제안이
+    # 나가고, 잘못 `불참여` 가 되면 그 분만 조용히 빠진다.
+    "vc_contact_id", "participation",
+
     # 어디까지 왔나.
     "status", "connect_stage", "stages", "invited_status", "interest_level",
     "contract_status", "funding_status", "summary_status", "outcome",
@@ -468,6 +474,7 @@ FIELD_LABELS = {
     "contract_status": "계약 상태", "funding_status": "투자 상태",
     "outcome": "결과", "meet_mode": "미팅 방식", "kind": "종류",
     "enabled": "켜짐", "firm_type": "기관 유형", "variant": "갈래",
+    "vc_contact_id": "투자사 관리 현황 연결", "participation": "참여",
     "memo": "메모", "notes": "칸 메모", "note": "메모", "body": "본문",
     "phone": "연락처", "email": "메일", "one_liner": "한 줄 소개",
     "summary": "요약", "business_desc": "사업 설명", "content_json": "내용",

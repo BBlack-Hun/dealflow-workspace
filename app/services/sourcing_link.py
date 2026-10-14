@@ -84,14 +84,21 @@ def linked_rooms(db: Session, sourcing) -> Dict[int, dict]:
     contacts = sheet_owner.investors(
         db, db.execute(select(VcContact)).scalars().all())
     by_phone = _by_phone(contacts)
+    by_id = {c.id: c for c in contacts}
 
     out: Dict[int, dict] = {}
     for s in sourcing:
         if (getattr(s, "kakao_room_name", "") or "").strip():
             continue
+        # **사람이 이어 둔 줄이 먼저다**(`SourcingContact.vc_contact_id` —
+        # `services/sourcing_sync.py`). 투자사 관리 현황에서 O 를 넣어 만든 줄은
+        # 방 이름을 비워 두므로 여기서 그 투자사 줄의 방을 받는다. 이어 둔 줄이
+        # 없을 때만 번호로 찾는다(예전 그대로).
+        match = by_id.get(getattr(s, "vc_contact_id", None) or 0)
         # 기본 문구 미리보기의 **가상 대상**에는 번호가 없다. 실제 사람만
         # 이으면 되므로 없는 것은 그냥 건너뛴다 — 없다고 터질 자리가 아니다.
-        match = by_phone.get(digits(getattr(s, "phone", None)))
+        if match is None:
+            match = by_phone.get(digits(getattr(s, "phone", None)))
         if match is None or not (match.kakao_room_name or "").strip():
             continue
         out[s.id] = {

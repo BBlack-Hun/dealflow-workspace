@@ -46,9 +46,13 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   var includeReceived = false;
   function isRemind() { return mode === "sourcing" && sourcingTopic === REMIND; }
   // 이 카드는 지금 **보낼 수 없는** 사람인가 — 리마인드에서 이 달 딜 받음이고,
-  // 포함을 켜지 않았다.
+  // 포함을 켜지 않았다. 또는 화면을 연 뒤에 딜 소싱 `불참여` 가 되었다
+  // (`data-out` — 명단을 다시 읽을 때 선다). 불참여는 처음 안내도 리마인드도
+  // 안 나간다 — 켜는 칸이 없다(서버도 막는다: `routers/deals.py` 의 `OUT_NOTE`).
   function isExcluded(card) {
-    return !!card && isRemind() && !includeReceived &&
+    if (!card) return false;
+    if (card.getAttribute("data-out") === "1") return true;
+    return isRemind() && !includeReceived &&
       card.getAttribute("data-received") === "1";
   }
   // 요약줄·확인창이 부르는 이름. 리마인드를 `딜 소싱 제안` 이라고 적으면 무엇을
@@ -442,10 +446,16 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       if (!row) return;
       var who = row.assignee || "";
       var got = row.received ? "1" : "0";
+      // 그 사이 `불참여` 가 된 분(딜 소싱 화면 · 투자사 관리 현황의 X).
+      var out = row.out ? "1" : "0";
       if (card.getAttribute("data-assignee") !== who ||
-          card.getAttribute("data-received") !== got) changed = true;
+          card.getAttribute("data-received") !== got ||
+          (card.getAttribute("data-out") || "0") !== out) changed = true;
       card.setAttribute("data-assignee", who);
       card.setAttribute("data-received", got);
+      card.setAttribute("data-out", out);
+      var outTag = card.querySelector(".out-tag");
+      if (outTag) outTag.hidden = !row.out;
       var tag = card.querySelector(".received-tag");
       if (tag) {
         tag.hidden = !row.received;

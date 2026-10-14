@@ -32,6 +32,7 @@ from ..services import message_composer as mc
 from ..services import (deal_numbers, deal_queue, ir_attach, ir_kakao,
                         ir_monthly, manual_send, scheduled_send, sheet_owner,
                         sourcing_link, sourcing_msg, sourcing_receipts,
+                        sourcing_sync,
                         startup_outreach, startup_send, template_pick,
                         twin_send)
 from ..services.message_composer import MAX_COMPANIES_PER_SEND
@@ -203,6 +204,10 @@ TOPIC_TITLES = {sourcing_msg.REMIND_KIND: "딜 소싱 리마인드"}
 #: 월간 리마인드에서 **이 달 딜 받음** 인 분을 가리키는 말 — 미리보기 경고와
 #: 발송 목록에서 뺀 이유가 같은 글자를 쓴다.
 RECEIVED_NOTE = "이번 달 딜 받음"
+#: 딜 소싱에 **불참여** 인 분 — 미리보기 경고와 발송을 막는 말이 같은 글자다.
+#: `불참여` 는 딜 소싱 화면의 `참여` 칸이나 투자사 관리 현황의 `Series A 딜 소싱`
+#: 칸(X)에서 선다(`services/sourcing_sync.py`).
+OUT_NOTE = "딜 소싱 불참여"
 #: 문구 화면(`/templates`)이 그 탭 아래에 구간을 하나 더 세울 때 읽는다.
 MODE_TOPIC_KINDS = {MODE_SOURCING: ((sourcing_msg.REMIND_KIND, "월간 리마인드"),)}
 
@@ -510,6 +515,9 @@ def _load_recipients(db: Session, user: User, mode: str, ids: List[int]) -> List
         # 발송만 나가는 날이 온다.
         rows = [c for c in ir_monthly.contracted(db) if c.id in set(ids)]
     elif mode == MODE_SOURCING:
+        # `불참여` 인 분도 여기서는 싣는다 — 빼 버리면 발송이 `담당자 N 없음`
+        # 으로 막혀 **왜** 인지 모른다. 미리보기는 경고로, 발송은 이름을 대고
+        # 막는다(`OUT_NOTE` — `create_send_list`).
         rows = db.execute(
             select(SourcingContact).where(SourcingContact.id.in_(ids))
         ).scalars().all()
@@ -745,7 +753,9 @@ def preview(
             "warnings": (result.warnings + fit.warnings + thin_warnings
                          + ([twin_block[contact.id]] if contact.id in twin_block
                             else [])
-                         + ([RECEIVED_NOTE] if contact.id in received else [])),
+                         + ([RECEIVED_NOTE] if contact.id in received else [])
+                         + ([OUT_NOTE] if sourcing and not sample
+                            and not sourcing_sync.takes_part(contact) else [])),
             # 소싱 대상은 다른 표에 있다 — 같은 번호의 투자사 담당자 이력을
             # 제 것으로 읽으면 안 된다.
             "has_history": False if (sourcing or sample) else _has_history(db, contact.id),
@@ -899,6 +909,20 @@ def create_send_list(
     if missing:
         raise HTTPException(status_code=404,
                             detail=f"담당자 {sorted(missing)[0]} 없음")
+    # ── `불참여` 인 분께는 딜 소싱 제안이 안 나간다(처음 안내 · 월간 리마인드) ──
+    #
+    # 화면은 그 카드를 싣지 않고(`sourcing.sendable_rows`), 화면을 연 뒤에
+    # 불참여가 된 카드는 고를 수 없게 한다(`deals.js` 의 `data-out`). 그래도
+    # 들어오면(오래된 탭 · 손으로 만든 요청) **이름을 대고 막는다** — 조용히
+    # 빼면 몇 명에게 나갔는지 화면과 실제가 갈린다.
+    if sourcing:
+        out = [c for c in contacts if not sourcing_sync.takes_part(c)]
+        if out:
+            raise HTTPException(
+                status_code=400,
+                detail=(f"'{out[0].name}' {OUT_NOTE} — 발송 대상에서 빼세요(딜 소싱 "
+                        "화면이나 투자사 관리 현황의 `Series A 딜 소싱` 칸에서 "
+                        "참여로 바꾸면 다시 받습니다)"))
     # ── 월간 리마인드는 **이 달 딜 받음** 인 분을 뺀다 ───────────────────────
     #
     # 화면이 이미 빼 두지만(기본값) 여기서 한 번 더 본다 — 화면을 연 뒤에 메일

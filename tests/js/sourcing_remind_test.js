@@ -220,4 +220,35 @@ function checkedSourcing(dom) {
     "고르던 담당이 사라졌는데 [전체]로 안 돌아갔다");
 }
 
-console.log("ok - 딜 소싱 [보낼 문구] · 이 달 딜 받음 제외 · 명단 다시 읽기");
+// --- ⑤ 화면을 연 뒤에 `불참여` 가 된 분 — 처음 안내도 리마인드도 못 고른다 ----
+//
+// 딜 소싱 화면의 `참여` 칸이나 투자사 관리 현황의 `Series A 딜 소싱` 칸에서 X 로
+// 두면 다시 읽을 때 `out` 이 선다(`/api/sourcing/state`). 리마인드의 `딜 받음`
+// 과 달리 **켜는 칸이 없다** — 서버도 그 분께는 보내지 않는다(`OUT_NOTE`).
+{
+  const state = {
+    rows: SOURCING.map(function (s) {
+      return { id: s[0], assignee: s[3], received: s[4], out: s[0] === 101 };
+    }),
+    assignees: [{ name: "가담당", count: 1 }, { name: "나담당", count: 1 }]
+  };
+  const gets = {};
+  gets[STATE_URL] = state;
+  const t = setup(gets);
+  const gone = card(t.dom, "가소싱");
+  assert.strictEqual(gone.getAttribute("data-out"), "1", "다시 읽은 불참여가 카드에 안 섰다");
+  assert.strictEqual(gone.hidden, true, "불참여인 분이 처음 안내 목록에 그대로 보인다");
+  selectAll(t.dom);
+  assert.deepStrictEqual(checkedSourcing(t.dom), ["나소싱", "다소싱"],
+                         "[전체선택] 이 불참여인 분까지 골랐다");
+  assert.deepStrictEqual(previews(t.fetch).pop().body.contact_ids.slice().sort(), [102, 103]);
+
+  pickTopic(t.dom, "sourcing_remind");
+  const include = t.dom.document.getElementById("include-received");
+  include.checked = true;
+  include.fire("change");
+  assert.strictEqual(gone.hidden, true, "딜 받음 포함을 켰더니 불참여인 분이 돌아왔다");
+  assert.strictEqual(box(t.dom, "가소싱").checked, false);
+}
+
+console.log("ok - 딜 소싱 [보낼 문구] · 이 달 딜 받음 제외 · 명단 다시 읽기 · 불참여 제외");

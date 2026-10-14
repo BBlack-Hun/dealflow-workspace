@@ -387,6 +387,26 @@ def including_undone(db):
 event.listen(OrmSession, "do_orm_execute", _hide_undone_activities)
 
 
+def _sync_sourcing_links(session, flush_context, instances) -> None:
+    """딜 소싱 ↔ 투자사 관리 현황 — 이어진 두 줄의 같은 칸을 **함께** 고친다.
+
+    무엇을 하는지는 `services/sourcing_sync.before_flush` 에 있다. 여기서 거는
+    까닭은 바로 위 `_hide_undone_activities` 와 같다 — 이 모듈을 부르지 않고는
+    두 표를 쓸 수 없으니, 검사 · 가져오기 스크립트 · 화면 어느 길로 고쳐도
+    빠뜨릴 수 없다. 함수 안에서 불러 오는 것은 서비스가 이 모듈을 불러 쓰기
+    때문이다(맨 위에서 부르면 서로를 기다린다).
+    """
+    from .services import sourcing_sync
+
+    sourcing_sync.before_flush(session)
+
+
+# **수정 로그(`edit_log`)보다 먼저** 걸린다 — 그쪽은 `create_app()` 에서 걸린다.
+# 여기서 따라 고친 칸이 그 로그의 `before_flush` 에 함께 읽혀야 남의 줄을
+# 따라 고친 것까지 로그에 남는다.
+event.listen(OrmSession, "before_flush", _sync_sourcing_links)
+
+
 class IrCompany(TimestampMixin, Base):
     __tablename__ = "ir_companies"
 
@@ -1135,6 +1155,29 @@ class SourcingContact(TimestampMixin, Base):
     # 여기도 자기 카톡방을 가진다.
     kakao_room_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     room_verified: Mapped[str] = mapped_column(String, default="unverified")
+
+    # ── 투자사 관리 현황과 잇기 (`services/sourcing_sync.py`) ─────────────
+    #
+    # **이 줄이 투자사 관리 현황의 어느 줄과 같은 사람인가.** 잇는 것은
+    # `시리즈 A 이상 딜 소싱 참여 심사역` 갈래(`sourcing_sync.SYNC_BUCKET`)의
+    # 줄뿐이다 — 투자사 관리 현황의 `Series A 딜 소싱` 칸(O/X)이 이 줄을 보고
+    # 선다. 그 칸은 **따로 저장하지 않는다**: 이어진 줄이 있고 아래
+    # `participation` 이 `참여` 면 O, `불참여` 면 X, 이어진 줄이 없으면 빈칸.
+    # 두 화면이 같은 칸 하나를 읽으므로 한쪽에서 고치면 다른 쪽도 그대로다.
+    #
+    # 한 투자사 줄에는 많아야 한 줄만 이어진다(유일 색인). 투자사 줄을 지우면
+    # 이 칸만 비우고 소싱 줄은 남긴다(`sourcing_sync.detach`) — 리마인드 ·
+    # `딜 받음` 이력이 이 줄에 달려 있다.
+    vc_contact_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("vc_contacts.id"), nullable=True)
+    #: `참여` | `불참여`. 불참여인 분은 딜 소싱 제안(처음 안내 · 월간 리마인드)
+    #: 대상에서 빠진다. **줄을 지우지 않는다** — 다시 참여하면 그 이력 그대로 돌아온다.
+    participation: Mapped[str] = mapped_column(String, default="참여",
+                                               server_default="참여")
+
+    __table_args__ = (
+        Index("uq_sourcing_contacts_vc_contact", "vc_contact_id", unique=True),
+    )
 
 
 class SourcingReceipt(TimestampMixin, Base):
