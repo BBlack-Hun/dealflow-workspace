@@ -32,6 +32,9 @@ from ..ui import base_ctx
 router = APIRouter(tags=["sourcing"])
 
 # 표 컬럼 — 원본 시트 순서 그대로. 쓰던 사람이 같은 자리에서 같은 것을 찾는다.
+# 앱이 만든 `참여` 칸만 예외로 **이름 바로 뒤**에 둔다 — 표가 화면보다 넓어
+# 맨 오른쪽에 두면 가로로 끝까지 밀어야 보였다. 불참여인 분은 제안에서
+# 빠지므로, 이름과 나란히 한눈에 보여야 한다.
 #
 # 네 번째 값은 **머리글에 필터를 세울 칸인가**. 여기 한 곳에서만 정한다 —
 # 전에는 템플릿이 `field in ('assignee_name', 'sectors', 'round_size')` 라는 같은
@@ -52,6 +55,11 @@ router = APIRouter(tags=["sourcing"])
 COLUMNS = [
     ("requested_at", "참여 요청일", "124px", True),
     ("name", "이름", "96px", False),
+    # ── 앱이 만든 칸. 원본 시트에는 없다 ──
+    # `참여` · `불참여` 두 값이라 거른다. 불참여인 분은 딜 소싱 제안(처음 안내 ·
+    # 월간 리마인드)에서 빠진다. 시리즈 A 갈래의 줄은 투자사 관리 현황의
+    # `Series A 딜 소싱` 칸(O/X)이 **이 값 그대로**다(`services/sourcing_sync.py`).
+    ("participation", "참여", "84px", True),
     ("assignee_name", "담당자", "100px", True),
     ("phone", "휴대폰", "116px", False),
     ("title", "직함", "88px", True),
@@ -63,11 +71,6 @@ COLUMNS = [
     # 여기서 딜 소싱 제안을 보낸다 — 방 이름이 없으면 보낼 길이 없다.
     # 발송 화면(딜 제안 관리)에서 고를 수 있으려면 이 칸이 먼저 차야 한다.
     ("kakao_room_name", "카톡방 이름", "170px", False),
-    # ── 여기부터는 앱이 만든 칸. 원본 시트에는 없다 ──
-    # `참여` · `불참여` 두 값이라 거른다. 불참여인 분은 딜 소싱 제안(처음 안내 ·
-    # 월간 리마인드)에서 빠진다. 시리즈 A 갈래의 줄은 투자사 관리 현황의
-    # `Series A 딜 소싱` 칸(O/X)이 **이 값 그대로**다(`services/sourcing_sync.py`).
-    ("participation", "참여", "84px", True),
 ]
 
 
