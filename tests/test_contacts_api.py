@@ -654,7 +654,7 @@ def test_the_detail_panel_can_read_and_write_every_table_column():
     # 네 곳 중 둘이 다른 길을 지나므로 그 길이 실제로 있는지를 본다.
     if '"sourcing_join": sourcing_sync.marks_for(db, [contact.id])' in py:
         detail.add("sourcing_join")
-    if "sourcing = _sourcing_mark(db, contact, body)" in py:
+    if "sourcing = _sourcing_mark(db, contact, body, user)" in py:
         saved.add("sourcing_join")
 
     assert not table - panel, f"창에 칸이 없다: {sorted(table - panel)}"

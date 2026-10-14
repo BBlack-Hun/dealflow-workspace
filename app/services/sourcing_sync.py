@@ -60,16 +60,22 @@ addresses_of`), 딜 소싱 표 · 엑셀. 읽는 쪽을 다 고치면 하나는 
 사람이 적은 것이라 어느 쪽이 맞는지 코드가 모른다 — 딜 소싱 화면의 연결 표시가
 `다른 칸` 으로 알려 주고, 어느 쪽에서든 한 번 고치면 그때부터 같아진다.
 
-**카톡방은 따라 고치지 않는다.** 소싱 줄의 방 이름은 비워 두면 이어진 투자사
-줄의 방을 쓴다(`sourcing_link.room_for`) — 그래서 새 줄을 만들 때도 방 이름을
-베끼지 않는다. 베껴 두면 투자사 쪽 방이 바뀌어도 옛 방으로 나간다.
+## 잇지 않는 것 — 카톡방 · 담당 · 권한  ★
 
-## 누가 고칠 수 있나
+사용자가 짚었다 — "딜소싱에 있다는건 다른 사람 담당자라도 카톡방에 초대
+되어있다는 뜻이므로, 투자사 관리 현황이랑은 다르게 생각해야함". 딜 소싱 줄은
+**보내는 사람 카톡의 딜 소싱 방**에 있는 분이고, 투자사 줄을 누가 맡았는지와
+따로 관리한다.
 
-투자사 관리 현황 쪽은 그 줄을 고칠 수 있는 사람(담당 · 관리자 —
-`routers/contacts._owned`)이다. 딜 소싱 쪽은 원래 로그인한 누구나 고치는 공용
-표인데, **이어진 줄의 같은 칸 · 참여 여부 · 삭제**는 그 투자사 줄을 고칠 수 있는
-사람만이다(`may_edit`) — 그 값이 남의 투자사 줄로 그대로 넘어가기 때문이다.
+  · **카톡방** — 잇지도, 베끼지도, 이어받지도 않는다. 이 갈래 줄은 자기 방
+    이름이 없으면 `방 없음` 이고(`sourcing_link.linked_rooms`), 딜 소싱 화면의
+    [방 후보 찾기]로 보내는 사람 카톡에서 찾아 확정한다(`sourcing_rooms`).
+  · **담당** — 따라 고치지 않는다. O 로 새 줄을 만들 때만 **O 를 넣은 사람**을
+    담당으로 적는다(`create_row`) — 그 뒤로는 딜 소싱에서 따로 관리한다.
+  · **권한** — 투자사 칸(O/X)은 그 투자사 줄을 고칠 수 있는 사람(담당 · 관리자
+    — `routers/contacts._owned`)이다. 딜 소싱 쪽은 지금까지처럼 로그인한 누구나
+    고친다(이어진 줄이어도 같다). 이어진 줄의 같은 칸을 딜 소싱에서 고치면 남의
+    투자사 줄로도 넘어가는데, 그 일은 수정 로그에 `남의 것` 으로 남는다(`edit_log`).
 """
 from __future__ import annotations
 
@@ -280,15 +286,24 @@ def link(row: SourcingContact, contact: VcContact) -> None:
             setattr(row, field, theirs)
 
 
-def owner_name(db: Session, contact: VcContact) -> str:
-    """새 소싱 줄의 담당자 — 그 투자사 줄을 맡은 팀원의 이름."""
+def assignee_for(db: Session, contact: VcContact, user: Optional[User]) -> str:
+    """새 소싱 줄의 담당 — **O 를 넣은 사람**. 이름이 없으면 그 투자사 줄의 주인.
+
+    투자사 줄의 주인을 그대로 옮기지 않는 까닭은 모듈 머리말(★)에 있다 — 딜
+    소싱은 투자사 줄을 누가 맡았는지와 따로 관리한다. 넣은 사람이 그 분을 딜
+    소싱 방에 둔 사람이라고 보는 것이 가장 덜 틀린다. 그 뒤로는 따라 고치지 않는다.
+    """
+    name = sheet_owner.real_name(user) if user is not None else ""
+    if name:
+        return name
     owner = db.get(User, contact.user_id) if contact.user_id else None
     return sheet_owner.real_name(owner) if owner is not None else ""
 
 
-def create_row(db: Session, contact: VcContact, participation: str = JOINED
-               ) -> SourcingContact:
-    """그 갈래 맨 아래에 새 줄. 카톡방은 **비워 둔다**(모듈 머리말 — `room_for`)."""
+def create_row(db: Session, contact: VcContact, participation: str = JOINED,
+               user: Optional[User] = None) -> SourcingContact:
+    """그 갈래 맨 아래에 새 줄. 카톡방은 **비워 둔다** — 보내는 사람 카톡에서
+    [방 후보 찾기]로 찾는다(모듈 머리말 ★)."""
     last = db.execute(
         select(func.max(SourcingContact.position))
         .where(SourcingContact.bucket == SYNC_BUCKET)
@@ -300,7 +315,7 @@ def create_row(db: Session, contact: VcContact, participation: str = JOINED
         firm=_text(contact.firm) or None,
         phone=_text(contact.phone) or None,
         email=_text(contact.email) or None,
-        assignee_name=owner_name(db, contact) or None,
+        assignee_name=assignee_for(db, contact, user) or None,
         # 참여하신 날 — 이 명단은 참여 요청일 최신순이라 방금 넣은 분이 맨 위다.
         requested_at=clock.today().isoformat(),
         room_verified="unverified",
@@ -311,7 +326,8 @@ def create_row(db: Session, contact: VcContact, participation: str = JOINED
     return row
 
 
-def set_mark(db: Session, contact: VcContact, value: Optional[str]) -> dict:
+def set_mark(db: Session, contact: VcContact, value: Optional[str],
+             user: Optional[User] = None) -> dict:
     """투자사 관리 현황의 `Series A 딜 소싱` 칸을 고친다.
 
     돌려주는 것: `{"mark": 지금 칸 값, "message": 화면에 띄울 한 줄}`.
@@ -341,8 +357,9 @@ def set_mark(db: Session, contact: VcContact, value: Optional[str]) -> dict:
                 f"딜 소싱 › {SYNC_BUCKET} 에 없는 분이라 X 로 둘 줄이 없습니다 — "
                 "빈칸이 '딜 소싱에 없음' 입니다.")
         else:
-            row = create_row(db, contact, JOINED)
-            message = f"딜 소싱 › {SYNC_BUCKET} 에 새로 넣었습니다."
+            row = create_row(db, contact, JOINED, user)
+            message = (f"딜 소싱 › {SYNC_BUCKET} 에 새로 넣었습니다 — 카톡방은 딜 소싱 "
+                       "화면의 [방 후보 찾기]로 보내는 분 카톡에서 찾아 확정하세요.")
             others = other_buckets(db, contact)
             if others:
                 message += (f" 다른 갈래({', '.join(others)})에도 있는 분이라 그 줄은 "
@@ -383,26 +400,12 @@ def auto_link(db: Session, row: SourcingContact) -> Optional[VcContact]:
     return contact
 
 
-# ── 권한 · 화면 ─────────────────────────────────────────────────────────────
+# ── 화면 ────────────────────────────────────────────────────────────────────
 
 def contact_of(db: Session, row: SourcingContact) -> Optional[VcContact]:
     if not row.vc_contact_id or not is_synced(row):
         return None
     return db.get(VcContact, row.vc_contact_id)
-
-
-def may_edit(db: Session, row: SourcingContact, user: User) -> bool:
-    """이어진 줄의 같은 칸 · 참여 · 삭제를 이 사람이 고쳐도 되는가.
-
-    그 투자사 줄을 고칠 수 있는 사람과 **같은 판정**이다
-    (`deps.may_manage_team_contacts` — `routers/contacts._owned` 도 그것을 읽는다).
-    """
-    from ..deps import may_manage_team_contacts   # deps → services 는 순환이 아니다
-
-    contact = contact_of(db, row)
-    if contact is None:
-        return True
-    return contact.user_id == user.id or may_manage_team_contacts(user)
 
 
 def badges(db: Session, rows: Iterable[SourcingContact]) -> Dict[int, dict]:

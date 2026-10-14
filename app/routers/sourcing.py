@@ -25,7 +25,7 @@ from ..db import get_db
 from ..deps import get_current_user, templates
 from ..models import SendItem, SourcingContact, User
 from ..services import (sourcing_buckets, sourcing_link, sourcing_mail,
-                        sourcing_receipts, sourcing_sync)
+                        sourcing_receipts, sourcing_rooms, sourcing_sync)
 from ..services.pipeline import current_assignee
 from ..ui import base_ctx
 
@@ -250,6 +250,14 @@ def sourcing_page(request: Request, db: Session = Depends(get_db),
         # 투자사 관리 현황의 줄과 **이어진** 줄 — `🔗 투자사 관리 현황: ○○ 명단`.
         # 시리즈 A 갈래만 이어진다(`sourcing_sync.SYNC_BUCKET`).
         "vc_links": sourcing_sync.badges(db, rows),
+        # **보낼 방이 없는 줄** — 자기 방 이름도 이어받을 방도 없다
+        # (`sourcing_rooms.needs_room` — 발송이 방을 고르는 규칙과 같다).
+        # 그 줄에 `방 없음` 과 [방 후보 찾기] 가 선다.
+        "no_room": {r.id for r in sourcing_rooms.needs_room(db, rows)},
+        # [방 후보 찾기] 단추에 적을 수 — 누르면 세우는 잡의 크기와 같은 함수다.
+        "room_search_count": len(sourcing_rooms.targets(db, selected)),
+        # [방 후보 찾기] 가 담아 온 후보 · 상태(`services/sourcing_rooms.py`).
+        "room_picks": {r.id: sourcing_rooms.picks(r) for r in rows},
         "tabs": tabs,
         "selected": selected,
         "columns": COLUMNS,
@@ -370,22 +378,6 @@ def _linked_msg(db: Session, row: SourcingContact) -> str:
             f"그쪽 `{sourcing_sync.COLUMN_LABEL}` 칸이 O/X 로 같이 보입니다.")
 
 
-def _guard_link(db: Session, row: SourcingContact, user: User) -> None:
-    """이어진 줄의 같은 칸 · 참여 · 삭제는 **그 투자사 줄을 고칠 수 있는 사람만**.
-
-    그 값이 남의 투자사 줄로 그대로 넘어간다(`sourcing_sync.may_edit`). 이어지지
-    않은 줄은 지금까지처럼 로그인한 누구나 고친다.
-    """
-    if sourcing_sync.may_edit(db, row, user):
-        return
-    badge = sourcing_sync.badges(db, [row]).get(row.id) or {}
-    raise HTTPException(
-        status_code=403,
-        detail=(f"투자사 관리 현황의 '{badge.get('sheet', '')}' 명단 줄과 이어진 분이라 "
-                "그 명단의 담당자나 관리자만 고칠 수 있습니다 "
-                "(이름 · 직함 · 회사 · 휴대폰 · 이메일 · 참여 · 삭제)."))
-
-
 @router.patch("/api/sourcing/{row_id}")
 def update_row(row_id: int, body: SourcingIn, db: Session = Depends(get_db),
                user: User = Depends(get_current_user)):
@@ -397,12 +389,10 @@ def update_row(row_id: int, body: SourcingIn, db: Session = Depends(get_db),
             if v is not None}
     if "participation" in data:
         data["participation"] = _participation(data["participation"])
-    # 이어진 줄의 같은 칸 · 참여를 **실제로 바꾸는** 요청이면 권한을 본다 —
-    # 같은 값을 다시 보낸 것은 아무 것도 넘어가지 않는다.
-    guarded = sourcing_sync.SHARED_FIELDS + ("participation",)
-    if any(field in guarded and (value or "").strip() != (getattr(row, field) or "")
-           for field, value in data.items()):
-        _guard_link(db, row, user)
+    # **권한은 지금까지 그대로 — 로그인한 누구나**(이 표는 팀 공용이다). 투자사
+    # 관리 현황과 이어진 줄이어도 같다: 딜 소싱에 든 분은 보내는 사람 카톡의
+    # 딜 소싱 방에 있는 분이라, 투자사 줄을 누가 맡았는지와 따로 관리한다
+    # (사용자 원문 — "투자사 관리 현황이랑은 다르게 생각해야함").
     phone_before = sourcing_sync.digits(row.phone)
     for field, value in data.items():
         # 이름은 비울 수 없다 — 누구인지 모르는 줄이 남는다.
@@ -451,16 +441,12 @@ def delete_row(row_id: int, db: Session = Depends(get_db),
     투자컨설턴트는 이 주소에 닿기 전에 끊긴다 — 역할 판정은 `app/main.py`
     미들웨어 한 곳에서만 한다(`deps.CONSULTANT_PATHS` 에 소싱이 없다).
 
-    **예외 하나 — 투자사 관리 현황과 이어진 줄**(시리즈 A 갈래 ·
-    `sourcing_sync`)은 그 투자사 줄을 고칠 수 있는 사람만 뺀다. 빼면 그쪽
-    `Series A 딜 소싱` 칸이 빈칸이 되기 때문이다(`_guard_link`).
+    투자사 관리 현황과 이어진 줄(시리즈 A 갈래)도 같다 — 빼면 그쪽
+    `Series A 딜 소싱` 칸이 빈칸이 될 뿐이고, 투자사 줄은 그대로다.
     """
     row = db.get(SourcingContact, row_id)
     if row is None:
         raise HTTPException(status_code=404, detail="찾을 수 없습니다")
-    # 투자사 관리 현황과 이어진 줄을 빼면 그쪽 `Series A 딜 소싱` 칸이 빈칸이
-    # 된다 — 그 투자사 줄을 고칠 수 있는 사람만(`_guard_link`).
-    _guard_link(db, row, user)
 
     # 딸린 것: 이 사람에게 보낸 발송 이력(`send_items.sourcing_contact_id`).
     #
@@ -545,3 +531,51 @@ def mail_check_now(tab: str = Form(""), db: Session = Depends(get_db),
     if sourcing_mail.start_manual(db, user) is None:
         return _back(tab, "메일 확인이 이미 돌고 있습니다 — 잠시 뒤 새로고침하세요")
     return _back(tab, "메일 확인을 시작했습니다 — 잠시 뒤 이 화면 위쪽에 결과가 섭니다")
+
+
+# ── 카톡방 후보 찾기 · 확정 ────────────────────────────────────────────────
+
+def _ids(raw: str) -> Optional[List[int]]:
+    """`3,5,8` → `[3, 5, 8]`. 비면 `None`(= 그 갈래의 방 없는 줄 전부)."""
+    out = [int(x) for x in re.findall(r"\d+", raw or "")]
+    return out or None
+
+
+@router.post("/sourcing/rooms/search", include_in_schema=False)
+def search_rooms(tab: str = Form(""), ids: str = Form(""),
+                 db: Session = Depends(get_db),
+                 user: User = Depends(get_current_user)):
+    """[방 후보 찾기] — 방이 없는 줄을 **누른 사람 PC 의 카톡**에서 찾는다.
+
+    잡은 누른 사람 계정에 선다(`sourcing_rooms.queue_search`) — 그 사람 PC 의
+    발송기가 그 사람 카톡에서 찾고, 찾은 제목은 후보로만 담긴다. 보내는 사람이
+    눌러야 그 사람 카톡의 방 제목이 나온다. **아무것도 보내지 않는다**(방 확인 잡).
+
+    이 화면을 볼 수 있는 누구나 누른다 — 자기 PC 에 거는 일이다.
+    """
+    bucket = "" if tab in ("", "all") else tab
+    rows = sourcing_rooms.targets(db, bucket, _ids(ids))
+    job = sourcing_rooms.queue_search(db, user, rows)
+    if job is None:
+        return _back(tab, "찾을 줄이 없습니다 — 방 이름이 다 있습니다")
+    db.commit()
+    return _back(tab, f"{user.name} 님 PC 의 카톡에서 {job.total}명의 방을 찾습니다"
+                      f"(회차 #{job.id}) — 그 PC 의 발송 프로그램이 켜져 있어야 합니다. "
+                      "끝나면 이 화면을 새로고침해 후보를 고르세요")
+
+
+@router.post("/sourcing/{row_id}/room-confirm", include_in_schema=False)
+def confirm_room(row_id: int, room: str = Form(""), tab: str = Form(""),
+                 db: Session = Depends(get_db),
+                 user: User = Depends(get_current_user)):
+    """[이 방으로 확정] — 카톡에서 찾은 후보를 이 줄의 방 이름으로(`확인됨`)."""
+    row = db.get(SourcingContact, row_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="찾을 수 없습니다")
+    try:
+        sourcing_rooms.confirm(row, room)
+    except sourcing_rooms.NotPickable as exc:
+        db.rollback()
+        return _back(tab, str(exc))
+    db.commit()
+    return _back(tab, f"{row.name} — 방을 확정했습니다: {row.kakao_room_name}")

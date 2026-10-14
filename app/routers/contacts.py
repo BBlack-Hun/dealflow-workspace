@@ -954,7 +954,7 @@ def create_contact(
     # 추가 창에서 `Series A 딜 소싱` 을 O 로 골랐으면 — 고치는 길과 같은 함수다.
     # 잇는 줄이 이 줄 번호를 가리켜야 하므로 먼저 번호를 받는다.
     db.flush()
-    sourcing = _sourcing_mark(db, contact, body)
+    sourcing = _sourcing_mark(db, contact, body, user)
     db.commit()
     out = {"id": contact.id, "kakao_room_name": contact.kakao_room_name}
     if sourcing.get("message"):
@@ -1210,7 +1210,7 @@ def update_contact(
     # `Series A 딜 소싱` — 이 줄을 고칠 수 있는 사람(`_owned`)이 곧 그 칸을
     # 고칠 수 있는 사람이다. 위의 칸들을 먼저 적은 뒤에 부른다: 새 소싱 줄을
     # 만들 때 방금 고친 이름 · 번호로 만들어야 한다.
-    sourcing = _sourcing_mark(db, contact, body)
+    sourcing = _sourcing_mark(db, contact, body, user)
     db.commit()
     # `connect_note` 는 **서버가 저 혼자 바꾼 것**을 화면이 사람에게 전할 자리다.
     # 없으면 응답에 넣지 않는다 — 늘 있는 값이면 화면이 읽지 않게 된다.
@@ -1239,7 +1239,8 @@ def update_contact(
     return out
 
 
-def _sourcing_mark(db: Session, contact: VcContact, body: ContactIn) -> dict:
+def _sourcing_mark(db: Session, contact: VcContact, body: ContactIn,
+                   user: User) -> dict:
     """`Series A 딜 소싱` 칸을 고친 요청이면 딜 소싱 줄을 잇거나 만든다.
 
     못 하는 까닭(`SyncError`)은 **400 으로 그대로 말한다** — 조용히 넘기면
@@ -1248,7 +1249,7 @@ def _sourcing_mark(db: Session, contact: VcContact, body: ContactIn) -> dict:
     if body.sourcing_join is None:
         return {}
     try:
-        return sourcing_sync.set_mark(db, contact, body.sourcing_join)
+        return sourcing_sync.set_mark(db, contact, body.sourcing_join, user)
     except sourcing_sync.SyncError as exc:
         db.rollback()
         raise HTTPException(status_code=400, detail=str(exc)) from exc

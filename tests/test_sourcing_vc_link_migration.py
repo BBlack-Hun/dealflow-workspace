@@ -26,7 +26,7 @@ NOW = "2026-10-14T00:00:00+09:00"
 
 def _old_shape(con) -> None:
     cols = [r[1] for r in con.execute('PRAGMA table_info("sourcing_contacts")')
-            if r[1] not in ("vc_contact_id", "participation")]
+            if r[1] not in ("vc_contact_id", "participation", "room_candidates")]
     keep = ", ".join(cols)
     con.execute("DROP INDEX IF EXISTS uq_sourcing_contacts_vc_contact")
     con.execute(f"CREATE TABLE sc_old AS SELECT {keep} FROM sourcing_contacts")
@@ -112,6 +112,13 @@ def test_only_the_sure_ones_are_linked(old_db):
         assert rows[sid][0] is None, sid
     # 있던 줄은 모두 `참여` 로 시작한다
     assert {part for _cid, part in rows.values()} == {"참여"}
+    # [방 후보 찾기] 가 담을 칸도 선다(`services/sourcing_rooms.py`)
+    con = sqlite3.connect(old_db)
+    try:
+        cols = {r[1] for r in con.execute('PRAGMA table_info("sourcing_contacts")')}
+    finally:
+        con.close()
+    assert "room_candidates" in cols
 
 
 def test_only_blank_fields_are_filled(old_db):
@@ -178,7 +185,7 @@ def test_it_comes_down_and_goes_back_up(old_db):
         cols = {r[1] for r in con.execute('PRAGMA table_info("sourcing_contacts")')}
     finally:
         con.close()
-    assert not {"vc_contact_id", "participation"} & cols
+    assert not {"vc_contact_id", "participation", "room_candidates"} & cols
     up = _alembic(old_db, "upgrade", "head")
     assert up.returncode == 0, up.stdout + up.stderr
     assert _rows(old_db)[101] == (11, "참여")

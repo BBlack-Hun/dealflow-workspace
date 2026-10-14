@@ -1003,6 +1003,11 @@ STARTUP_JOB_KINDS = (STARTUP_SEND_KIND, STARTUP_MSG_KIND)
 #: 이 값이 없는 담당자 줄 방 확인(투자사 · [방 연결 확인])은 지금까지와 같다 —
 #: 이름+직함으로 대조하고, 결과가 하나면 그 제목을 방 이름으로 넣는다.
 ROOM_SEARCH_TOPIC = "room_search"
+#: 방 확인 잡(`verify_room`)의 `SendJob.topic` — **딜 소싱 명단** 줄의 카톡방
+#: 후보 찾기(`services/sourcing_rooms.py`). 그 잡의 줄은 `sourcing_contact_id`
+#: 를 가리키고, 찾은 제목은 그 줄의 `room_candidates` 에 **후보로만** 담는다.
+#: 잡은 [방 후보 찾기] 를 누른 사람 계정에 선다 — 그 사람 PC 카톡에서 찾는다.
+SOURCING_ROOM_TOPIC = "sourcing_room"
 
 
 class SendItem(TimestampMixin, Base):
@@ -1155,6 +1160,13 @@ class SourcingContact(TimestampMixin, Base):
     # 여기도 자기 카톡방을 가진다.
     kakao_room_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     room_verified: Mapped[str] = mapped_column(String, default="unverified")
+    #: **보내는 사람 카톡에서 찾아 온 방 제목들**(JSON) — 딜 소싱 화면의
+    #: [방 후보 찾기]가 담는다(`services/sourcing_rooms.py`). 모양과 읽고 쓰는
+    #: 함수는 `VcContact.room_candidates` 와 같다(`room_match.save_candidates` ·
+    #: `candidates`). **아직 방 이름이 아니다** — 사람이 골라 확정해야 위
+    #: `kakao_room_name` 이 된다. (열린 PR #277 이 같은 이름 · 같은 모양으로
+    #: 만들려던 칸이다 — 그 이주는 있는지 보고 만든다.)
+    room_candidates: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # ── 투자사 관리 현황과 잇기 (`services/sourcing_sync.py`) ─────────────
     #
@@ -1164,6 +1176,10 @@ class SourcingContact(TimestampMixin, Base):
     # 선다. 그 칸은 **따로 저장하지 않는다**: 이어진 줄이 있고 아래
     # `participation` 이 `참여` 면 O, `불참여` 면 X, 이어진 줄이 없으면 빈칸.
     # 두 화면이 같은 칸 하나를 읽으므로 한쪽에서 고치면 다른 쪽도 그대로다.
+    #
+    # **카톡방은 잇지 않는다.** 소싱 줄의 방은 보내는 사람 카톡의 **딜 소싱
+    # 방**이고, 투자사 줄의 방은 그 담당 팀원의 딜소개 방이다 — 다른 방이다.
+    # 이 갈래 줄은 자기 방 이름이 없으면 보내지 않는다(`sourcing_link.linked_rooms`).
     #
     # 한 투자사 줄에는 많아야 한 줄만 이어진다(유일 색인). 투자사 줄을 지우면
     # 이 칸만 비우고 소싱 줄은 남긴다(`sourcing_sync.detach`) — 리마인드 ·

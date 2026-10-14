@@ -4,6 +4,10 @@
   투자사 관리 현황의 `Series A 딜 소싱` 칸(O/X/빈칸)이 이것을 보고 선다
   (`services/sourcing_sync.py`). 한 투자사 줄에 많아야 한 줄(유일 색인).
 - `participation` — `참여`(기본) | `불참여`. 불참여인 분은 딜 소싱 제안에서 빠진다.
+- `room_candidates` — 딜 소싱 화면의 [방 후보 찾기]가 보내는 사람 카톡에서 찾아 온
+  방 제목들(JSON, `services/sourcing_rooms.py`). 열린 PR #277 의
+  `0092_sourcing_receipts` 가 같은 칸을 만들려 한다 — 두 판 모두 있는지 보고
+  더하므로 어느 쪽이 먼저 들어가도 한 번만 생긴다.
 
 ## 처음 한 번 잇기 — 확실한 것만
 
@@ -40,7 +44,8 @@
 
 ## 되돌리기
 
-두 칸과 색인이 사라진다 — 잃는 것은 잇기와 `불참여` 표시다.
+세 칸과 색인이 사라진다 — 잃는 것은 잇기 · `불참여` 표시 · 방 후보 목록이다
+(확정한 방 이름은 `kakao_room_name` 에 남는다).
 
 Revision ID: 0093_sourcing_vc_link
 Revises: 0087_sourcing_mail
@@ -134,6 +139,9 @@ def upgrade() -> None:
         op.add_column("sourcing_contacts",
                       sa.Column("participation", sa.String(), nullable=False,
                                 server_default="참여"))
+    if "room_candidates" not in have:
+        op.add_column("sourcing_contacts",
+                      sa.Column("room_candidates", sa.Text(), nullable=True))
     if INDEX not in _indexes("sourcing_contacts"):
         op.create_index(INDEX, "sourcing_contacts", ["vc_contact_id"], unique=True)
 
@@ -160,5 +168,7 @@ def downgrade() -> None:
     with op.batch_alter_table("sourcing_contacts") as batch:
         if "participation" in have:
             batch.drop_column("participation")
+        if "room_candidates" in have:
+            batch.drop_column("room_candidates")
         if "vc_contact_id" in have:
             batch.drop_column("vc_contact_id")

@@ -16,8 +16,9 @@
 
 <p class="hint">
   보내는 것은 <a href="/deals">딜 제안 관리</a>의 <b>[딜 소싱 제안]</b> 탭에서 합니다.
-  <b>카톡방 이름</b>이 비어 있으면 그 사람은 발송 대상으로 고를 수 없습니다 —
-  보낼 방이 없기 때문입니다.
+  <b>카톡방 이름</b>이 비어 있으면 그 사람에게는 나가지 않습니다 — 보낼 방이 없기
+  때문입니다. 방은 <b>보내는 분 카톡의 딜 소싱 방</b>입니다 — 보낼 PC 에서
+  <b>[방 후보 찾기]</b> 를 누르면 그 카톡에서 찾아 후보를 담고, 후보를 눌러 확정합니다.
 </p>
 
 {% if msg %}<p class="flash">{{ msg }}</p>{% endif %}
@@ -78,6 +79,16 @@
         지금 메일 확인</button>
     </form>
     {% endif %}
+    {# [방 후보 찾기] — 이 갈래(전체 탭이면 전체)에서 방이 없는 분을 **누른 사람
+       PC 의 카톡**에서 찾는다(`services/sourcing_rooms.py`). 아무것도 보내지
+       않는다. 찾은 제목은 후보로만 담기고, 각 줄의 카톡방 칸에서 골라 확정한다. #}
+    <form method="post" action="/sourcing/rooms/search" class="inline-form"
+          data-testid="sourcing-room-search">
+      <input type="hidden" name="tab" value="{{ selected or 'all' }}">
+      <button type="submit" class="secondary-btn"{% if not room_search_count %} disabled{% endif %}
+              title="방이 없는 {{ room_search_count }}명을 내 PC 의 카톡에서 찾습니다 — 메시지는 보내지 않습니다">
+        방 후보 찾기 ({{ room_search_count }}명)</button>
+    </form>
     {# 전화로 한 명 승낙받고 바로 적을 곳이 없어서, 메모지에 적어 뒀다가
        나중에 시트에 옮겨야 했다. 지금 보고 있는 갈래에 바로 넣는다. #}
     {% if selected %}
@@ -197,6 +208,36 @@
           <div class="cell-sub muted" title="{{ link.room }}">
             🔗 {{ link.room[:22] }}{% if link.room|length > 22 %}…{% endif %}
             <span class="tag soft">투자사 명단</span>
+          </div>
+          {% endif %}
+          {# **방 없음** — 이 분에게는 딜 소싱 제안이 나가지 않는다(발송이 빼고
+             이유를 띄운다). 시리즈 A 갈래는 투자사 딜소개 방을 이어받지 않는다 —
+             보내는 분 카톡의 딜 소싱 방을 찾아 확정해야 한다(`sourcing_rooms`). #}
+          {% set pick = room_picks.get(r.id) %}
+          {% if r.id in no_room %}
+          <div class="cell-sub" data-testid="sourcing-no-room">
+            <span class="room-badge warn">방 없음</span>
+            <span class="muted">{{ pick.state_label }}</span>
+            <form method="post" action="/sourcing/rooms/search" class="inline-form">
+              <input type="hidden" name="tab" value="{{ selected or 'all' }}">
+              <input type="hidden" name="ids" value="{{ r.id }}">
+              <button type="submit" class="linkbtn"
+                      title="이 분의 방을 내 PC 의 카톡에서 찾습니다 — 메시지는 보내지 않습니다">방 후보 찾기</button>
+            </form>
+          </div>
+          {% endif %}
+          {% if pick and pick.rooms and pick.state != 'confirmed' %}
+          <div class="cell-sub" data-testid="sourcing-room-picks">
+            {% for p in pick.rooms %}
+            <form method="post" action="/sourcing/{{ r.id }}/room-confirm" class="inline-form">
+              <input type="hidden" name="tab" value="{{ selected or 'all' }}">
+              <input type="hidden" name="room" value="{{ p.room }}">
+              <button type="submit" class="linkbtn{% if p.current %} ok{% endif %}"
+                      {% if p.same %}disabled title="카톡에 같은 제목의 방이 여럿입니다 — 방 이름을 고유하게 바꾼 뒤 직접 적어 주세요"
+                      {% else %}title="이 방으로 확정 — 이 분의 딜 소싱 방이 이 제목이 됩니다"{% endif %}>
+                💬 {{ p.room }} — 이 방으로 확정</button>
+            </form>
+            {% endfor %}
           </div>
           {% endif %}
         </td>

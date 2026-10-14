@@ -13,8 +13,11 @@
      딱 한 줄일 때만).
   ⑥ 이어진 두 줄의 이름 · 직함 · 회사 · 휴대폰 · 메일은 어느 쪽에서 고쳐도 같이.
   ⑦ 불참여인 분께는 딜 소싱 제안(처음 안내 · 월간 리마인드)이 안 나간다.
-  ⑧ 권한 — 그 투자사 줄을 고칠 수 있는 사람만(담당 · 관리자). 수정 로그가 남는다.
+  ⑧ 권한 — 투자사 칸은 그 투자사 줄 담당 · 관리자. 딜 소싱 쪽은 이어진 줄이어도
+     누구나(딜 소싱은 투자사 담당과 따로 관리한다). 수정 로그가 남는다.
   ⑨ 투자사 줄을 지워도 소싱 줄은 남고 연결만 끊긴다. 시리즈 A 갈래는 이름을 못 바꾼다.
+  ⑩ 카톡방 — 시리즈 A 갈래는 투자사 딜소개 방을 이어받지 않는다. 방이 없으면
+     빼고 보내고, [방 후보 찾기]로 누른 사람 PC 카톡에서 찾아 확정한다.
 
 이름 · 회사 · 번호는 전부 가상값이다(공개 저장소).
 """
@@ -26,7 +29,7 @@ from pathlib import Path
 
 import pytest
 
-from .conftest import DEMO_PASSWORD
+from .conftest import DEMO_PASSWORD, DEMO_TOKEN, OTHER_TOKEN, auth
 
 SYNC = "시리즈 A 이상 딜 소싱 참여 심사역"
 MNA = "M&A 찾는 투자사"
@@ -124,15 +127,26 @@ def test_O_makes_a_new_row_when_nobody_matches(board, db, users):
     assert column(board, contact.id) == "O"
 
 
-def test_the_new_row_borrows_the_investor_room(board, db, users):
-    """방 이름을 베끼지 않는다 — 비어 있으면 이어진 투자사 줄의 방으로 나간다."""
+def test_the_new_row_does_not_borrow_the_investor_room(board, db, users):
+    """방 이름을 베끼지도 이어받지도 않는다 — 투자사 줄의 방은 그 담당 팀원의
+    **딜소개 방**이고, 딜 소싱 방은 보내는 사람 카톡에 따로 있다."""
     from app.services import sourcing_link
 
     contact = vc(db, users)
     mark(board, contact.id, "O")
     [row] = sync_rows(db)
-    linked = sourcing_link.linked_rooms(db, [row])
-    assert sourcing_link.room_for(row, linked) == "홍길동 방"
+    assert not row.kakao_room_name
+    assert sourcing_link.linked_rooms(db, [row]) == {}
+    assert sourcing_link.room_for(row, {}) == ""
+
+
+def test_the_marker_becomes_the_sourcing_assignee(board, db, users, admin):
+    """새 줄의 담당은 O 를 넣은 사람 — 투자사 줄 주인을 옮기지 않는다."""
+    contact = vc(db, users)                       # u1 의 줄
+    login(board, "01070000001")                   # 관리자가 O
+    assert mark(board, contact.id, "O").status_code == 200
+    [row] = sync_rows(db)
+    assert row.assignee_name == "관리자시험"
 
 
 def test_O_links_the_row_with_the_same_phone(board, db, users):
@@ -493,29 +507,39 @@ def test_someone_elses_investor_row_is_not_theirs_to_mark(board, db, users):
     assert sync_rows(db) == []
 
 
-def test_a_linked_row_is_guarded_on_the_sourcing_side(board, db, users, admin):
-    contact = vc(db, users)
+def test_anyone_can_manage_a_linked_sourcing_row(board, db, users):
+    """딜 소싱은 투자사 줄을 누가 맡았는지와 **따로** 관리한다 — 이어진 줄이어도
+    딜 소싱 쪽은 지금까지처럼 누구나 고친다. 같은 칸은 남의 투자사 줄로도
+    넘어가고, 그 일은 수정 로그에 `남의 것` 으로 남는다."""
+    import json
+
+    from app.models import EditLog, VcContact
+
+    contact = vc(db, users)                       # u1 의 줄
     mark(board, contact.id, "O")
     [row] = sync_rows(db)
 
-    login(board, "01000000002")
-    # 같은 칸 · 참여 · 삭제는 막는다 — 남의 투자사 줄로 넘어간다
-    for body in ({"participation": "불참여"}, {"phone": "010-0000-1111"},
-                 {"name": "다른이름"}):
-        r = board.patch(f"/api/sourcing/{row.id}", json=body)
-        assert r.status_code == 403, (body, r.text)
-    assert board.delete(f"/api/sourcing/{row.id}").status_code == 403
-    # 같은 값을 다시 보내는 것 · 같은 칸이 아닌 것은 지금까지처럼 누구나
-    assert board.patch(f"/api/sourcing/{row.id}",
-                       json={"memo": "통화함", "name": "홍길동"}).status_code == 200
+    login(board, "01000000002")                   # u2
+    r = board.patch(f"/api/sourcing/{row.id}",
+                    json={"participation": "불참여", "title": "파트너"})
+    assert r.status_code == 200, r.text
+    db.expire_all()
+    assert db.get(VcContact, contact.id).title == "파트너"
+    log = db.query(EditLog).filter_by(table_name="vc_contacts",
+                                      row_id=contact.id).one()
+    assert (log.scope, log.actor_user_id, log.target_user_id) == ("others", 2, 1)
+    assert {"field": "title", "before": "심사역", "after": "파트너"} in json.loads(
+        log.changes_json)
 
-    # 관리자는 팀 전체의 투자사 줄을 고친다 — 이어진 줄도 같다
-    login(board, "01070000001")
-    assert board.patch(f"/api/sourcing/{row.id}",
-                       json={"participation": "불참여"}).status_code == 200
-    assert mark(board, contact.id, "O").status_code == 200
-    [row] = sync_rows(db)
-    assert row.participation == "참여"
+    # 투자사 칸은 여전히 그 줄 담당 · 관리자만 — u2 에게는 없는 줄이다
+    assert mark(board, contact.id, "O").status_code == 404
+    login(board, "01000000001")
+    assert column(board, contact.id) == "X"
+
+    login(board, "01000000002")
+    assert board.delete(f"/api/sourcing/{row.id}").status_code == 200
+    login(board, "01000000001")
+    assert column(board, contact.id) == ""
 
 
 def test_link_create_and_participation_are_logged(board, db, users):
@@ -584,3 +608,131 @@ def test_the_cell_is_redrawn_from_the_server_value():
     result = subprocess.run([shutil.which("node"), str(JOIN_JS)],
                             capture_output=True, text=True, timeout=60)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+# ── ⑩ 카톡방 — 이어받지 않는다 · 방 후보 찾기 ──────────────────────────────
+
+def test_series_a_rows_never_send_into_the_investor_room(board, db, users):
+    """번호가 맞는 투자사 줄에 방이 있어도 시리즈 A 갈래는 그 방으로 안 나간다 —
+    빼고 이유를 말한다. 미리보기도 `방 없음` 이다."""
+    from app.models import SendItem
+
+    vc(db, users, phone="010-1234-5678")          # 방 '홍길동 방' 이 있다
+    no_room = sc(db)                              # 시리즈 A · 방 없음
+    has_room = sc(db, name="김철수", phone="010-2222-3333",
+                  kakao_room_name="김철수 딜소싱방")
+
+    preview = board.post("/api/deals/preview",
+                         json={"contact_ids": [no_room.id], "mode": "sourcing"}).json()
+    p = preview["previews"][0]
+    assert p["room_name"] == ""
+    assert "방 후보 찾기" in p["room_warning"]
+
+    r = board.post("/api/deals/send", json={"contact_ids": [no_room.id, has_room.id],
+                                            "mode": "sourcing"})
+    assert r.status_code == 200, r.text
+    skipped = r.json()["skipped"]
+    assert [s["contact_id"] for s in skipped] == [no_room.id]
+    assert "카톡방 없음" in skipped[0]["reason"]
+    items = db.query(SendItem).filter_by(job_id=r.json()["job_id"]).all()
+    assert [(i.sourcing_contact_id, i.room_name) for i in items] == [
+        (has_room.id, "김철수 딜소싱방")]
+
+    r = board.post("/api/deals/send", json={"contact_ids": [no_room.id],
+                                            "mode": "sourcing"})
+    assert r.status_code == 400
+    assert "카톡방" in r.json()["detail"]
+
+
+def test_other_buckets_keep_borrowing_as_before(board, db, users):
+    """다른 갈래는 예전 그대로 — 번호가 맞는 투자사 줄의 방을 이어받는다."""
+    from app.services import sourcing_link
+
+    vc(db, users, phone="010-1234-5678")
+    other = sc(db, bucket=MNA)
+    assert sourcing_link.linked_rooms(db, [other])[other.id]["room"] == "홍길동 방"
+
+
+def _poll(client, token=DEMO_TOKEN):
+    import agent.main as agent_main
+
+    res = client.get("/api/agent/poll", params={"kinds": ",".join(agent_main.SUPPORTED_KINDS)},
+                     headers=auth(token))
+    assert res.status_code in (200, 204), res.text
+    return res.json() if res.status_code == 200 else {}
+
+
+def test_room_search_runs_on_the_pressers_pc_and_only_collects_candidates(board, db, users):
+    from app.models import SOURCING_ROOM_TOPIC, SendJob, SourcingContact
+
+    a = sc(db, name="홍길동", title="심사역")
+    sc(db, name="김철수", phone="010-2222-3333", kakao_room_name="김철수 방")  # 방 있음
+    other = sc(db, name="박영희", phone="010-3333-4444", bucket=MNA)
+    vc(db, users, name="박영희", phone="010-3333-4444")   # 다른 갈래는 이어받아 방 있음
+
+    page = board.get(f"/sourcing?tab={SYNC}").text
+    assert "방 후보 찾기 (1명)" in page
+    assert 'data-testid="sourcing-no-room"' in page
+
+    login(board, "01000000002")                   # 누른 사람 = u2 → u2 PC
+    r = board.post("/sourcing/rooms/search", data={"tab": SYNC},
+                   follow_redirects=False)
+    assert r.status_code == 303
+    db.expire_all()
+    [job] = db.query(SendJob).all()
+    assert (job.user_id, job.kind, job.topic, job.total) == (
+        2, "verify_room", SOURCING_ROOM_TOPIC, 1)
+    assert [i.sourcing_contact_id for i in job.items] == [a.id]
+    assert all(i.message == "" for i in job.items)
+    assert other.id not in [i.sourcing_contact_id for i in job.items]
+
+    # u1 의 발송기는 이 잡을 못 집는다 — u2 의 것이다
+    assert _poll(board, DEMO_TOKEN).get("job_id") != job.id
+    got = _poll(board, OTHER_TOKEN)
+    assert got["job_id"] == job.id
+    [item] = got["items"]
+    assert item["query"] == "홍길동 심사역"
+    assert item["name"] == "홍길동" and item["firm"] == "가나다벤처스"
+    assert "target" not in item                     # 투자사 방을 버리면 안 된다
+
+    res = board.post(f"/api/agent/items/{item['id']}/result", headers=auth(OTHER_TOKEN),
+                     json={"status": "failed", "verify_result": "ambiguous",
+                           "candidates": ["홍길동 심사역 딜소싱", "홍길동 이사님 딜소개"]})
+    assert res.status_code == 200, res.text
+    db.expire_all()
+    row = db.get(SourcingContact, a.id)
+    assert not row.kakao_room_name                  # 후보일 뿐 — 방 이름은 그대로
+    assert "홍길동 심사역 딜소싱" in (row.room_candidates or "")
+
+    page = board.get(f"/sourcing?tab={SYNC}").text
+    assert "후보 2개" in page
+    assert "홍길동 심사역 딜소싱 — 이 방으로 확정" in page
+
+    r = board.post(f"/sourcing/{a.id}/room-confirm",
+                   data={"room": "홍길동 심사역 딜소싱", "tab": SYNC},
+                   follow_redirects=False)
+    assert r.status_code == 303
+    db.expire_all()
+    row = db.get(SourcingContact, a.id)
+    assert (row.kakao_room_name, row.room_verified) == ("홍길동 심사역 딜소싱", "verified")
+    assert "방 후보 찾기 (0명)" in board.get(f"/sourcing?tab={SYNC}").text
+
+
+def test_only_a_found_candidate_can_be_confirmed(board, db, users):
+    from app.models import SourcingContact
+
+    row = sc(db)
+    r = board.post(f"/sourcing/{row.id}/room-confirm",
+                   data={"room": "아무 방", "tab": SYNC}, follow_redirects=False)
+    assert "msg=" in r.headers["location"]
+    db.expire_all()
+    assert not db.get(SourcingContact, row.id).kakao_room_name
+
+
+def test_nothing_to_search_queues_nothing(board, db, users):
+    from app.models import SendJob
+
+    sc(db, kakao_room_name="홍길동 방")
+    r = board.post("/sourcing/rooms/search", data={"tab": SYNC}, follow_redirects=False)
+    assert "msg=" in r.headers["location"]
+    assert db.query(SendJob).count() == 0
