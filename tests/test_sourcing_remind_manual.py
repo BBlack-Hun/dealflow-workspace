@@ -326,13 +326,16 @@ def test_renaming_a_bucket_takes_the_remind_along(people, client, db):
     from app.models import MessageTemplate
     from app.services import sourcing_buckets
 
-    db.add(MessageTemplate(user_id=None, kind="sourcing_remind", name=SERIES_A,
+    # 시리즈 A 갈래는 이름을 못 바꾼다 — 투자사 관리 현황과 이어진 갈래다
+    # (`sourcing_sync.SYNC_BUCKET` · `tests/test_sourcing_vc_sync.py`). 그래서
+    # 옮겨 가는지는 M&A 갈래로 본다.
+    db.add(MessageTemplate(user_id=None, kind="sourcing_remind", name=MNA,
                            is_active=1, body="리마인드"))
     db.commit()
-    sourcing_buckets.rename(db, SERIES_A, "시리즈 A 이상 참여 심사역")
+    sourcing_buckets.rename(db, MNA, "M&A 찾는 투자사 (2026)")
     db.commit()
     row = db.query(MessageTemplate).filter_by(kind="sourcing_remind").one()
-    assert row.name == "시리즈 A 이상 참여 심사역"
+    assert row.name == "M&A 찾는 투자사 (2026)"
 
 
 # ── ⑤ 심는 글 ───────────────────────────────────────────────────────────────

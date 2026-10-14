@@ -131,9 +131,17 @@ def address_book(db: Session) -> Dict[str, List[int]]:
 
 
 def without_address(db: Session) -> int:
-    """메일 주소가 한 칸에도 없는 줄 수 — 메일 확인이 찾을 수 없는 사람."""
+    """메일 주소가 한 칸에도 없는 줄 수 — 메일 확인이 찾을 수 없는 사람.
+
+    `불참여` 인 분은 세지 않는다 — 이 수는 '주소를 채워 넣을 분' 이라는 할 일인데,
+    딜 소싱에서 빠진 분의 주소를 찾을 일은 없다(`sourcing_sync.takes_part`).
+    그분이 메일로 딜을 보내면 `딜 받음` 은 그대로 선다 — 있었던 일이다.
+    """
+    from . import sourcing_sync      # noqa: PLC0415 — 모델을 함께 쓰는 이웃이다
+
     rows = db.execute(select(SourcingContact)).scalars().all()
-    return sum(1 for row in rows if not addresses_of(row))
+    return sum(1 for row in rows
+               if not addresses_of(row) and sourcing_sync.takes_part(row))
 
 
 def mail_count(db: Session, month: str) -> int:

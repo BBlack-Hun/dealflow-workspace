@@ -32,6 +32,7 @@ from ..services import message_composer as mc
 from ..services import (deal_numbers, deal_queue, ir_attach, ir_kakao,
                         ir_monthly, manual_send, scheduled_send, sheet_owner,
                         sourcing_link, sourcing_msg, sourcing_receipts,
+                        sourcing_sync,
                         startup_outreach, startup_send, template_pick,
                         twin_send)
 from ..services.message_composer import MAX_COMPANIES_PER_SEND
@@ -203,6 +204,14 @@ TOPIC_TITLES = {sourcing_msg.REMIND_KIND: "딜 소싱 리마인드"}
 #: 월간 리마인드에서 **이 달 딜 받음** 인 분을 가리키는 말 — 미리보기 경고와
 #: 발송 목록에서 뺀 이유가 같은 글자를 쓴다.
 RECEIVED_NOTE = "이번 달 딜 받음"
+#: 딜 소싱에 **불참여** 인 분 — 미리보기 경고와 발송을 막는 말이 같은 글자다.
+#: `불참여` 는 딜 소싱 화면의 `참여` 칸이나 투자사 관리 현황의 `Series A 딜 소싱`
+#: 칸(X)에서 선다(`services/sourcing_sync.py`).
+OUT_NOTE = "딜 소싱 불참여"
+#: 딜 소싱 줄에 **보낼 방이 없다** — 미리보기 경고와 발송 목록에서 뺀 이유.
+#: 시리즈 A 갈래는 투자사 방을 이어받지 않으므로(`sourcing_link.linked_rooms`)
+#: 자기 방 이름이 없으면 여기 걸린다 — 딜 소싱 화면의 [방 후보 찾기]로 채운다.
+NO_ROOM_NOTE = "딜 소싱 카톡방 없음 — 딜 소싱 화면의 [방 후보 찾기]로 보내는 분 카톡에서 찾아 확정하세요"
 #: 문구 화면(`/templates`)이 그 탭 아래에 구간을 하나 더 세울 때 읽는다.
 MODE_TOPIC_KINDS = {MODE_SOURCING: ((sourcing_msg.REMIND_KIND, "월간 리마인드"),)}
 
@@ -510,6 +519,9 @@ def _load_recipients(db: Session, user: User, mode: str, ids: List[int]) -> List
         # 발송만 나가는 날이 온다.
         rows = [c for c in ir_monthly.contracted(db) if c.id in set(ids)]
     elif mode == MODE_SOURCING:
+        # `불참여` 인 분도 여기서는 싣는다 — 빼 버리면 발송이 `담당자 N 없음`
+        # 으로 막혀 **왜** 인지 모른다. 미리보기는 경고로, 발송은 이름을 대고
+        # 막는다(`OUT_NOTE` — `create_send_list`).
         rows = db.execute(
             select(SourcingContact).where(SourcingContact.id.in_(ids))
         ).scalars().all()
@@ -735,7 +747,8 @@ def preview(
                           if room and not (contact.kakao_room_name or "").strip()
                           else ""),
             "room_verified": contact.room_verified,
-            "room_warning": None if (sample or room) else "카톡방 이름 미등록",
+            "room_warning": (None if (sample or room) else
+                             NO_ROOM_NOTE if sourcing else "카톡방 이름 미등록"),
             "message": result.text,
             # 몇 통으로 나가는지 화면에서 보여야 한다. 자료 전달은 링크 방식을
             # 폐기한 뒤로 한 통이라 여기가 비지만, 나눠 보내는 길 자체는 남는다.
@@ -745,7 +758,9 @@ def preview(
             "warnings": (result.warnings + fit.warnings + thin_warnings
                          + ([twin_block[contact.id]] if contact.id in twin_block
                             else [])
-                         + ([RECEIVED_NOTE] if contact.id in received else [])),
+                         + ([RECEIVED_NOTE] if contact.id in received else [])
+                         + ([OUT_NOTE] if sourcing and not sample
+                            and not sourcing_sync.takes_part(contact) else [])),
             # 소싱 대상은 다른 표에 있다 — 같은 번호의 투자사 담당자 이력을
             # 제 것으로 읽으면 안 된다.
             "has_history": False if (sourcing or sample) else _has_history(db, contact.id),
@@ -899,6 +914,35 @@ def create_send_list(
     if missing:
         raise HTTPException(status_code=404,
                             detail=f"담당자 {sorted(missing)[0]} 없음")
+    # ── 딜 소싱: `불참여` · **방 없음** 은 빼고 보낸다(처음 안내 · 월간 리마인드) ──
+    #
+    # 불참여 — 화면은 그 카드를 싣지 않고(`sourcing.sendable_rows`), 화면을 연
+    # 뒤에 불참여가 된 카드는 고를 수 없게 한다(`deals.js` 의 `data-out`).
+    # 방 없음 — 시리즈 A 갈래는 투자사 딜소개 방을 이어받지 않는다
+    # (`sourcing_link.linked_rooms`). 그 방으로 보내는 대신 **빼고 이유를 말한다.**
+    #
+    # 멈추지 않고 빼는 까닭: 한 회차에 스무 명을 고르는데 방이 아직 없는 한두
+    # 명 때문에 통째로 막히면 나머지도 못 나간다. 조용히 빼지 않는다 — 뺀 분과
+    # 이유를 응답에 싣고 화면이 띄운다(아래 `skipped_twins` 와 같은 자리).
+    skipped_sourcing = []
+    if sourcing:
+        for contact in contacts:
+            if not sourcing_sync.takes_part(contact):
+                why = OUT_NOTE + " — 뺐습니다"
+            elif not _room_of(contact, linked):
+                why = NO_ROOM_NOTE
+            else:
+                continue
+            skipped_sourcing.append({"contact_id": contact.id, "name": contact.name,
+                                     "reason": why})
+        gone = {s["contact_id"] for s in skipped_sourcing}
+        contacts = [c for c in contacts if c.id not in gone]
+        if not contacts:
+            raise HTTPException(
+                status_code=400,
+                detail=(f"'{skipped_sourcing[0]['name']}' "
+                        f"{skipped_sourcing[0]['reason']} — 고른 분 모두 보낼 수 "
+                        "없습니다"))
     # ── 월간 리마인드는 **이 달 딜 받음** 인 분을 뺀다 ───────────────────────
     #
     # 화면이 이미 빼 두지만(기본값) 여기서 한 번 더 본다 — 화면을 연 뒤에 메일
@@ -1172,7 +1216,7 @@ def create_send_list(
             "scheduled": scheduled_send.describe(job),
             # 다른 팀원 몫으로 이미 나가 **이번 목록에서 뺀 분**과 그 이유.
             # 딜 소싱 월간 리마인드에서 이 달 `딜 받음` 이라 뺀 분도 같은 자리다.
-            "skipped": skipped_twins + skipped_received}
+            "skipped": skipped_twins + skipped_received + skipped_sourcing}
 
 
 # ── 예약 큐 ─────────────────────────────────────────────────────────────────
