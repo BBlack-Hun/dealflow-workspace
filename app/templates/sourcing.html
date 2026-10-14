@@ -184,6 +184,11 @@
           </div>
           {% endif %}
         </td>
+        {# 불참여인 분은 딜 소싱 제안(처음 안내 · 월간 리마인드)에서 빠진다. 줄은
+           그대로 둔다 — 다시 참여하시면 이력 그대로 돌아온다. **이름 바로 뒤**
+           — 칸 차례는 `COLUMNS`(routers/sourcing.py)와 같아야 한다. #}
+        <td class="cell{% if r.participation == '불참여' %} muted{% endif %}" data-field="participation"
+            data-type="pick" data-choices="참여,불참여">{{ r.participation or '참여' }}</td>
         <td class="cell" data-field="assignee_name" data-type="pick">{{ r.assignee_name or '' }}</td>
         <td class="cell" data-field="phone">{{ r.phone or '' }}</td>
         <td class="cell" data-field="title" data-type="pick">{{ r.title or '' }}</td>
@@ -241,10 +246,6 @@
           </div>
           {% endif %}
         </td>
-        {# 불참여인 분은 딜 소싱 제안(처음 안내 · 월간 리마인드)에서 빠진다. 줄은
-           그대로 둔다 — 다시 참여하시면 이력 그대로 돌아온다. #}
-        <td class="cell{% if r.participation == '불참여' %} muted{% endif %}" data-field="participation"
-            data-type="pick" data-choices="참여,불참여">{{ r.participation or '참여' }}</td>
       </tr>
       {% endfor %}
     </tbody>
