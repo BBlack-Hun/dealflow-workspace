@@ -335,6 +335,39 @@ def test_the_table_has_the_column_and_its_filter(board, db, users):
     assert 'id="f-sourcing_join"' in body
 
 
+def test_the_column_sits_right_after_the_sheet_sourcing_column(board, db, users):
+    """`Series A 딜 소싱` 은 시트 칸 `딜소싱 참여 투자사` **바로 뒤**다(요청).
+
+    머리글은 손으로 적고 행 칸도 손으로 적는다 — 한쪽만 옮기면 머리글 밑에 남의
+    값이 선다. 그래서 머리글 · 행 · 수정창 세 곳의 차례를 같이 본다.
+    """
+    import re
+
+    contact = vc(db, users)
+    mark(board, contact.id, "O")
+    body = board.get(f"/contacts?sheet={SHEET}").text
+
+    head = body[body.index("<thead>"):body.index("</thead>")]
+    labels = [re.sub(r"<[^>]+>", "", x).strip()
+              for x in re.findall(r"<th[\s>].*?</th>", head, re.S)]
+    at = labels.index("딜소싱 참여 투자사")
+    assert labels[at + 1] == "Series A 딜 소싱", labels
+    assert labels.count("Series A 딜 소싱") == 1
+
+    rows = body[body.index("<tbody>"):body.index("</tbody>")]
+    first_row = rows[:rows.index("</tr>")]
+    fields = re.findall(r'data-field="(\w+)"', first_row)
+    assert fields[fields.index("sourcing_note") + 1] == "sourcing_join", fields
+
+    # 머리글 칸 수 == 행 칸 수 — 옮기다 하나가 빠지거나 겹치면 여기서 걸린다.
+    assert (len(re.findall(r"<th[\s>]", head))
+            == len(re.findall(r"<td[\s>]", first_row)))
+
+    # 수정창도 같은 차례 — `딜소싱 참여 투자사` 바로 다음 입력칸
+    panel = re.findall(r'id="f-(\w+)"', body)
+    assert panel[panel.index("sourcing_note") + 1] == "sourcing_join", panel
+
+
 # ── ④ 두 화면이 같은 칸 ─────────────────────────────────────────────────────
 
 def test_changing_participation_on_sourcing_moves_the_investor_column(board, db, users):
