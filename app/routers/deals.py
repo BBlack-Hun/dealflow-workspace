@@ -31,8 +31,9 @@ from ..services import mail_sender, mailer, matcher
 from ..services import message_composer as mc
 from ..services import (deal_numbers, deal_queue, ir_attach, ir_kakao,
                         ir_monthly, manual_send, scheduled_send, sheet_owner,
-                        sourcing_link, sourcing_msg, startup_outreach,
-                        startup_send, template_pick, twin_send)
+                        sourcing_link, sourcing_msg, sourcing_receipts,
+                        startup_outreach, startup_send, template_pick,
+                        twin_send)
 from ..services.message_composer import MAX_COMPANIES_PER_SEND
 
 router = APIRouter(prefix="/api/deals", tags=["deals"])
@@ -82,14 +83,22 @@ def _has_history(db: Session, contact_id: int) -> bool:
     ).scalar()
 
 
-def _template_body_by_id(db: Session, user: User, template_id: Optional[int]) -> Optional[str]:
-    """발송 화면에서 고른 문구. 남의 개인 문구는 쓸 수 없다."""
+def _template_body_by_id(db: Session, user: User, template_id: Optional[int],
+                         kind: Optional[str] = None) -> Optional[str]:
+    """발송 화면에서 고른 문구. 남의 개인 문구는 쓸 수 없다.
+
+    `kind` 를 주면 **그 종류의 문구만** 받는다. 딜 소싱 제안은 한 탭에서 문구
+    종류를 둘 중에 고르는데(처음 안내 · 월간 리마인드), 옛 고르개에 남은 처음
+    안내 번호가 리마인드 회차에 실려 오면 이미 참여한 분께 참여 방법이 나간다.
+    """
     if not template_id:
         return None
     t = db.get(MessageTemplate, template_id)
     if t is None:
         return None
     if t.user_id is not None and t.user_id != user.id:
+        return None
+    if kind and t.kind != kind:
         return None
     return t.body
 
@@ -181,6 +190,37 @@ MODE_TITLES = {
 }
 MODE_TITLES[MODE_DEAL] = "딜 소개"
 
+#: 한 탭 안에서 [보낼 문구]로 고르는 **또 하나의 문구 종류**와 그 이름.
+#:
+#: 지금은 딜 소싱 제안의 **월간 리마인드** 하나다 — 받는 사람(딜 소싱 명단)도
+#: 보내는 길(미리보기 · 발송 목록 · 예약 · 발송 상한)도 처음 안내와 같고 글만
+#: 다르다. 그래서 탭을 새로 내지 않고 그 탭 안에서 고른다. 잡 종류도
+#: `sourcing_intro` 그대로다(발송 프로그램이 아는 종류) — 무슨 글이었는지는
+#: `SendJob.topic` 이 담는다.
+#:
+#: 이 이름은 회차명(`09/09 (딜 소싱 리마인드)`)과 문구 화면의 구간 이름에 쓰인다.
+TOPIC_TITLES = {sourcing_msg.REMIND_KIND: "딜 소싱 리마인드"}
+#: 월간 리마인드에서 **이 달 딜 받음** 인 분을 가리키는 말 — 미리보기 경고와
+#: 발송 목록에서 뺀 이유가 같은 글자를 쓴다.
+RECEIVED_NOTE = "이번 달 딜 받음"
+#: 문구 화면(`/templates`)이 그 탭 아래에 구간을 하나 더 세울 때 읽는다.
+MODE_TOPIC_KINDS = {MODE_SOURCING: ((sourcing_msg.REMIND_KIND, "월간 리마인드"),)}
+
+
+def _sourcing_topic(mode: str, raw: Optional[str]) -> str:
+    """딜 소싱 제안의 [보낼 문구] — `sourcing_intro` 또는 `sourcing_remind`.
+
+    다른 방식은 빈 글자다(그쪽의 `topic` 은 스타트업 안내 카톡이 쓰는 다른 값).
+    모르는 값은 **처음 안내로 짐작하지 않고 멈춘다**(`sourcing_msg.topic_of`).
+    """
+    if mode != MODE_SOURCING:
+        return ""
+    topic = sourcing_msg.topic_of(raw)
+    if topic is None:
+        raise HTTPException(status_code=400,
+                            detail="보낼 문구를 고르세요 — 참여 안내(처음) 또는 월간 리마인드")
+    return topic
+
 # IR 자료 전달은 기업을 고른다(무엇을 보내는지 알아야 한다).
 # 나머지 후속 문구는 기업과 무관하다.
 MODES_WITH_COMPANIES = {MODE_DEAL, MODE_IR}
@@ -206,6 +246,7 @@ def _compose_for_contact(
     closing_template_id: Optional[int] = None,
     mode: str = MODE_DEAL,
     include_opening: Optional[bool] = None,
+    topic: str = "",
 ) -> mc.ComposeResult:
     # 인사말 기본값은 방식마다 다르다. 후속 문구는 이미 대화가 오간 방에 한 줄
     # 덧붙이는 것이라 인사를 다시 붙이지 않는 편이 자연스럽다. 화면에서 켜고 끌 수 있다.
@@ -221,7 +262,13 @@ def _compose_for_contact(
         "안녕하세요, {담당자명} {직함}\n우리브이씨 ASSET입니다.",
     )
     follow_up = FOLLOW_UP_MODES.get(mode)
-    if mode == MODE_SOURCING:
+    remind = mode == MODE_SOURCING and topic == sourcing_msg.REMIND_KIND
+    if remind:
+        # 월간 리마인드 — 같은 틀(인사말 + 본문, 빈 직함은 갈래 호칭)에 본문만
+        # 리마인드 문구다. 고르는 차례도 처음 안내와 같다(갈래 문구 > 갈래 없는
+        # 문구 > 뼈대), `{월}` 은 이 달로 채워 온다.
+        closing_body = sourcing_msg.remind_body_for(db, user, getattr(contact, "bucket", ""))
+    elif mode == MODE_SOURCING:
         # 갈래(bucket)가 문구를 정한다 — '대표님/5개사' 를 개인 참여 심사역께
         # 보내면 문구 자체가 어긋난다.
         closing_body = sourcing_msg.body_for(db, user, getattr(contact, "bucket", ""))
@@ -235,7 +282,14 @@ def _compose_for_contact(
         )
     # 화면에서 고른 문구가 있으면 그것을 우선한다.
     opening_body = _template_body_by_id(db, user, opening_template_id) or opening_body
-    closing_body = _template_body_by_id(db, user, closing_template_id) or closing_body
+    # 딜 소싱은 고른 문구가 **지금 고른 종류**(처음 안내 / 리마인드)일 때만 받는다.
+    closing_body = _template_body_by_id(
+        db, user, closing_template_id,
+        kind=(topic or sourcing_msg.KIND) if mode == MODE_SOURCING else None,
+    ) or closing_body
+    if remind:
+        # 화면에서 고른 저장 문구에도 `{월}` 이 있을 수 있다 — 같은 손으로 채운다.
+        closing_body = sourcing_msg.fill_month(closing_body)
 
     who = _to_contact_view(contact)
     if mode == MODE_SOURCING and not (who.title or "").strip():
@@ -387,7 +441,8 @@ def _sample_bucket(db: Session) -> str:
     return row.bucket if row else ""
 
 
-def sample_message(db: Session, user: User, mode: str, bucket: str = "") -> str:
+def sample_message(db: Session, user: User, mode: str, bucket: str = "",
+                   topic: str = "") -> str:
     """받는 사람을 고르기 전, 이 방식으로 나갈 문구 전문(인사말 + 본문).
 
     문구 화면이 조각(인사말 / 안내문)만 보여 줘서 **정작 무엇이 나가는지**
@@ -399,7 +454,7 @@ def sample_message(db: Session, user: User, mode: str, bucket: str = "") -> str:
     `pick_opening_kind` 가 늘 '첫 연락'을 고른다. 화면에도 그렇게 적는다.
     """
     who = _SampleRecipient(bucket if mode == MODE_SOURCING else "")
-    return _compose_for_contact(db, user, who, [], mode=mode).text
+    return _compose_for_contact(db, user, who, [], mode=mode, topic=topic).text
 
 
 def review_message(db: Session, user: User, contact) -> str:
@@ -487,6 +542,9 @@ class PreviewRequest(BaseModel):
     # 이 값이 없으면 늘 첫 갈래가 떠서, M&A 를 눌러도 시리즈 A 문구가 보였다.
     # 사람을 고른 뒤에는 그 사람의 갈래가 이기므로 여기서만 쓰인다.
     bucket: str = ""
+    # 딜 소싱 제안의 [보낼 문구] — 비면 처음 안내, `sourcing_remind` 면 월간
+    # 리마인드(`sourcing_msg.TOPICS`). 다른 방식은 읽지 않는다.
+    topic: str = ""
 
 
 class MessageOverride(BaseModel):
@@ -543,6 +601,12 @@ class SendRequest(BaseModel):
     # (`startup_outreach.render`) — 화면이 채운 글을 받으면 미리보기와 나가는
     # 글을 채우는 규칙이 두 벌이 된다.
     body: str = ""
+    # ── 딜 소싱 제안에서만 쓴다(`MODE_SOURCING`) ──
+    # `topic` 이 `sourcing_remind`(월간 리마인드)일 때 **이 달 `딜 받음`** 인
+    # 분(`sourcing_receipts`)을 **함께 보낼지**. 기본은 뺀다 — 이미 이 달 딜을
+    # 보내 주신 분께 "이번 달 딜 부탁드립니다" 가 가면 안 읽은 사람으로 보인다.
+    # 화면의 [이번 달 딜 받음 포함] 이 이 값이다.
+    include_received: bool = False
 
 
 def _override_map(req: SendRequest, contact_ids: set) -> dict:
@@ -602,6 +666,13 @@ def preview(
     companies = _load_companies(db, req.company_ids) if req.mode in MODES_WITH_COMPANIES else []
     previews = []
     sourcing = req.mode == MODE_SOURCING
+    # 딜 소싱 제안의 [보낼 문구] — 처음 안내 / 월간 리마인드.
+    topic = _sourcing_topic(req.mode, req.topic)
+    remind = topic == sourcing_msg.REMIND_KIND
+    # 리마인드인데 **이 달 딜 받음** 인 분을 일부러 넣었으면 미리보기에서 한 번
+    # 더 말한다 — 화면은 기본으로 빼 두므로, 여기 걸리는 분은 사람이 켜서 넣은 것이다.
+    received = (sourcing_receipts.received_ids(db, sourcing_receipts.month_of())
+                if remind and not sample else set())
     # 자료를 **발송기가 붙이는가**. 미리보기와 발송 목록 만들기가 같은 판단을
     # 읽어야 한다 — 화면은 "손으로 붙이세요" 인데 파일이 함께 나가면(또는 그
     # 반대면) 사람은 자료를 두 번 보내거나 한 번도 안 보낸다.
@@ -621,7 +692,8 @@ def preview(
         result = _compose_for_contact(db, user, contact, companies,
                                       req.opening_template_id, req.closing_template_id,
                                       mode=req.mode,
-                                      include_opening=req.include_opening)
+                                      include_opening=req.include_opening,
+                                      topic=topic)
         room = _room_of(contact, linked)
         room_ok = bool(room) and contact.room_verified in ("verified", "unverified")
         if sample:
@@ -672,7 +744,8 @@ def preview(
             "too_long": result.too_long,
             "warnings": (result.warnings + fit.warnings + thin_warnings
                          + ([twin_block[contact.id]] if contact.id in twin_block
-                            else [])),
+                            else [])
+                         + ([RECEIVED_NOTE] if contact.id in received else [])),
             # 소싱 대상은 다른 표에 있다 — 같은 번호의 투자사 담당자 이력을
             # 제 것으로 읽으면 안 된다.
             "has_history": False if (sourcing or sample) else _has_history(db, contact.id),
@@ -779,6 +852,10 @@ def create_send_list(
         if len(msg_body) > startup_outreach.MAX_CHARS:
             raise HTTPException(status_code=400, detail="문구가 너무 깁니다")
 
+    # 딜 소싱 제안의 [보낼 문구]. 모르는 값이면 **여기서 멈춘다** — 아무것도
+    # 만들기 전이다.
+    sourcing_topic = _sourcing_topic(req.mode, req.topic)
+
     by_email = req.channel == "email"
     if by_email and not mailer.is_configured():
         raise HTTPException(
@@ -822,6 +899,26 @@ def create_send_list(
     if missing:
         raise HTTPException(status_code=404,
                             detail=f"담당자 {sorted(missing)[0]} 없음")
+    # ── 월간 리마인드는 **이 달 딜 받음** 인 분을 뺀다 ───────────────────────
+    #
+    # 화면이 이미 빼 두지만(기본값) 여기서 한 번 더 본다 — 화면을 연 뒤에 메일
+    # 확인이 `딜 받음` 을 세웠거나(`sourcing_mail`) 다른 사람이 눌렀을 수 있다.
+    # 조용히 빼지 않고 **뺀 분과 이유를 돌려준다**(다른 팀원 몫을 빼는 아래
+    # `skipped_twins` 와 같은 자리로 — 화면이 같은 알림을 띄운다).
+    # 사람이 [이번 달 딜 받음 포함] 을 켰으면(`include_received`) 그대로 둔다.
+    skipped_received = []
+    if sourcing_topic == sourcing_msg.REMIND_KIND and not req.include_received:
+        got = sourcing_receipts.received_ids(db, sourcing_receipts.month_of())
+        skipped_received = [{"contact_id": c.id, "name": c.name,
+                             "reason": RECEIVED_NOTE + " — 리마인드에서 뺐습니다"}
+                            for c in contacts if c.id in got]
+        contacts = [c for c in contacts if c.id not in got]
+        if not contacts:
+            raise HTTPException(
+                status_code=400,
+                detail=(f"'{skipped_received[0]['name']}' {RECEIVED_NOTE} — 고른 분이 "
+                        "모두 이번 달 딜을 보내 주셨습니다(그래도 보내려면 "
+                        "[이번 달 딜 받음 포함]을 켜세요)"))
     # 안내 카톡은 **확인된 방**에만, `딜소개 불가`·`검토중단` 은 빼고 나간다.
     # 화면이 고를 수 없게 한 것과 **같은 함수**를 지난다(`startup_outreach.
     # refusal`) — 오래된 탭의 체크나 손으로 만든 요청도 여기서 걸린다.
@@ -909,7 +1006,8 @@ def create_send_list(
     # Batch + companies
     batch = DealBatch(
         user_id=user.id,
-        title=req.title or MODE_TITLES.get(req.mode, "딜소개 회차"),
+        title=(req.title or TOPIC_TITLES.get(sourcing_topic)
+               or MODE_TITLES.get(req.mode, "딜소개 회차")),
         sent_date=now_iso()[:10],
         cycle_type="adhoc",
     )
@@ -942,7 +1040,12 @@ def create_send_list(
         scheduled_at=(scheduled.isoformat(timespec="seconds") if scheduled
                       else None),
         # 안내 카톡은 **무슨 문구였는지** 남긴다(`SendJob.topic`).
-        topic=(req.topic.strip() if req.mode == MODE_STARTUP_MSG else None),
+        # 딜 소싱 월간 리마인드도 남긴다 — 잡 종류는 처음 안내와 같은
+        # `sourcing_intro` 라(발송 프로그램이 아는 종류), 무슨 글이었는지는 이
+        # 칸으로만 갈린다. 처음 안내는 지금까지처럼 비워 둔다.
+        topic=(req.topic.strip() if req.mode == MODE_STARTUP_MSG
+               else sourcing_msg.REMIND_KIND
+               if sourcing_topic == sourcing_msg.REMIND_KIND else None),
     )
     db.add(job)
     db.flush()
@@ -993,7 +1096,8 @@ def create_send_list(
                                             req.opening_template_id,
                                             req.closing_template_id,
                                             mode=req.mode,
-                                            include_opening=req.include_opening)
+                                            include_opening=req.include_opening,
+                                            topic=sourcing_topic)
             text, parts = composed.text, list(composed.parts)
         if by_email:
             # **제목에 `[테스트]` 를 붙이지 않는다.** 붙이던 까닭은 카톡이 전부
@@ -1067,7 +1171,8 @@ def create_send_list(
             # 문장을 서버가 만든다 — 화면이 따로 지으면 두 벌이 된다.
             "scheduled": scheduled_send.describe(job),
             # 다른 팀원 몫으로 이미 나가 **이번 목록에서 뺀 분**과 그 이유.
-            "skipped": skipped_twins}
+            # 딜 소싱 월간 리마인드에서 이 달 `딜 받음` 이라 뺀 분도 같은 자리다.
+            "skipped": skipped_twins + skipped_received}
 
 
 # ── 예약 큐 ─────────────────────────────────────────────────────────────────

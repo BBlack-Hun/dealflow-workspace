@@ -45,6 +45,12 @@ KINDS = [
     # 갈래마다 하나씩이다 — 호칭·전달 개수·찾는 범위가 다르다.
     # 문구 이름에 갈래를 적어 두면 그 갈래에 쓰인다(`sourcing_msg.body_for`).
     ("sourcing_intro", "딜 소싱 제안", "갈래(시리즈 A 이상 · 투자사 대표 · 개인 참여 …)마다 하나씩"),
+    # 이미 참여한 분께 이 달 딜을 청하는 글 — 딜 소싱 제안 탭의 [보낼 문구 ›
+    # 월간 리마인드]. 처음 안내처럼 갈래마다 하나씩(이름 = 갈래), 인사말 아래에
+    # 붙는다. 종류 이름은 자동 리마인드(#277)와 같다 — 같은 저장 문구를 읽는다.
+    ("sourcing_remind", "딜 소싱 리마인드",
+     "딜 소싱 제안 탭에서 [월간 리마인드]를 고르면 나가는 글 — 갈래마다 하나씩, "
+     "인사말 아래에 붙습니다 · {월} 은 이 달 숫자로 채워집니다"),
     ("connect_call", "연결 — 전화 응대", "카톡방 연결 전 첫 통화"),
     ("connect_sms", "연결 — 부재중 문자", "전화를 못 받으셨을 때 보내는 문자"),
     ("connect_reinvite", "연결 — 방 나가신 분", "카톡방을 나간 담당자에게 다시 연락할 때"),
@@ -84,6 +90,7 @@ VARIABLES = [
     ("{직함}", "심사역님 (없으면 자동으로 '님')"),
     ("{투자사}", "가나벤처스"),
     ("{개수}", "선택한 기업 수"),
+    ("{월}", "10 — 이 달 숫자 (딜 소싱 리마인드에서만)"),
 ]
 
 
@@ -128,7 +135,7 @@ def _slots(kind: str, of_kind: List[MessageTemplate]) -> List[str]:
 
 
 def _slot_view(db: Session, user: User, kind: str, variant: str,
-               of_slot: List[MessageTemplate], mode: str) -> dict:
+               of_slot: List[MessageTemplate], mode: str, topic: str = "") -> dict:
     """한 자리의 화면 재료 — 고를 것들 · 지금 고른 것 · 합쳐진 미리보기.
 
     고를 것이 하나뿐이면 선택기를 만들지 않는다. 고를 것이 없는데 라디오
@@ -161,7 +168,8 @@ def _slot_view(db: Session, user: User, kind: str, variant: str,
         "rows": [{"t": t, "editable": _editable(t, user),
                   "chosen": t.id == picked} for t in of_slot],
         # 실제로 나가는 문구 — 인사말과 본문을 합친 전문.
-        "preview": (deals_view.sample_message(db, user, mode, bucket=variant)
+        "preview": (deals_view.sample_message(db, user, mode, bucket=variant,
+                                              topic=topic)
                     if mode else ""),
         # 인사말이 붙는지는 발송 쪽 판단을 그대로 쓴다. 여기서 따로 정하면
         # 보여 준 문구와 나가는 문구가 인사말 한 덩어리만큼 어긋난다.
@@ -174,7 +182,7 @@ def _slot_view(db: Session, user: User, kind: str, variant: str,
 
 
 def _section(db: Session, user: User, rows: List[MessageTemplate],
-             kind: str, title: str, tab: str, mode: str) -> dict:
+             kind: str, title: str, tab: str, mode: str, topic: str = "") -> dict:
     """화면의 한 구간. 딜 제안 관리의 탭 하나 또는 '그 밖의 문구' 한 종류."""
     label, desc = KIND_LABELS.get(kind, kind), KIND_DESCS.get(kind, "")
     # 키 이름을 'items' 로 두면 Jinja 에서 dict.items 메서드가 잡힌다(실제로 500 발생).
@@ -182,7 +190,7 @@ def _section(db: Session, user: User, rows: List[MessageTemplate],
     by_slot = {}
     for t in of_kind:
         by_slot.setdefault(template_pick.variant_of(kind, t.name), []).append(t)
-    slots = [_slot_view(db, user, kind, variant, by_slot.get(variant, []), mode)
+    slots = [_slot_view(db, user, kind, variant, by_slot.get(variant, []), mode, topic)
              for variant in _slots(kind, of_kind)]
     return {"kind": kind, "title": title, "tab": tab, "mode": mode,
             "label": label, "desc": desc, "slots": slots,
@@ -203,15 +211,23 @@ def templates_page(request: Request, db: Session = Depends(get_db),
     # 구간은 **딜 제안 관리의 탭**을 따른다. 문구가 열다섯 종류로 나열돼 있으면
     # 어느 것을 고쳐야 그 탭이 바뀌는지 알 수 없었다. 탭 순서도 발송 화면과
     # 같아야 한다 — 두 화면의 순서가 다르면 같은 것을 찾는 데 매번 헤맨다.
-    from .deals import MODE_TEMPLATE_KIND, MODE_TITLES  # noqa: PLC0415
+    from .deals import (MODE_TEMPLATE_KIND, MODE_TITLES,  # noqa: PLC0415
+                        MODE_TOPIC_KINDS)
 
-    tabs = [_section(db, user, rows, kind, MODE_TITLES.get(mode, ""),
-                     MODE_TITLES.get(mode, ""), mode)
-            for mode, kind in MODE_TEMPLATE_KIND.items()]
+    tabs = []
+    for mode, kind in MODE_TEMPLATE_KIND.items():
+        tab = MODE_TITLES.get(mode, "")
+        tabs.append(_section(db, user, rows, kind, tab, tab, mode))
+        # 한 탭 안에서 [보낼 문구]로 고르는 또 하나의 글(딜 소싱 제안의 월간
+        # 리마인드) — 그 탭 바로 아래에 선다. 미리보기도 그 글로 짓는다.
+        for topic_kind, label in MODE_TOPIC_KINDS.get(mode, ()):
+            tabs.append(_section(db, user, rows, topic_kind, f"{tab} — {label}",
+                                 tab, mode, topic=topic_kind))
 
     # 탭에 걸리지 않은 종류들 — 인사말·연결·기업 리마인드·메일 제목. 발송
     # 화면의 탭에서 직접 고르는 것은 아니지만 쓰이는 곳이 있다.
-    tabbed = set(MODE_TEMPLATE_KIND.values())
+    tabbed = set(MODE_TEMPLATE_KIND.values()) | {
+        k for pairs in MODE_TOPIC_KINDS.values() for k, _label in pairs}
     others = [_section(db, user, rows, kind, label, "", "")
               for kind, label, _desc in KINDS if kind not in tabbed]
 

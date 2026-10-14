@@ -26,6 +26,7 @@ from ..deps import get_current_user, templates
 from ..models import SendItem, SourcingContact, User
 from ..services import (sourcing_buckets, sourcing_link, sourcing_mail,
                         sourcing_receipts)
+from ..services.pipeline import current_assignee
 from ..ui import base_ctx
 
 router = APIRouter(tags=["sourcing"])
@@ -145,6 +146,57 @@ def rows_of(db: Session, bucket: str = "") -> List[SourcingContact]:
     return dated + undated
 
 
+# ── 담당 — 두 화면의 [담당] 필터가 읽는 값 ─────────────────────────────────
+#
+# `담당자` 칸에는 넘긴 이력이 쌓인다(`가담당 > 10/13 나담당` · `가 > 나 > 다` ·
+# `백업팀 > 나담당`). 그 글자를 통째로 필터 값으로 쓰면 **넘겨받은 사람의 칩에
+# 그 줄이 안 잡히고** 이력 글자가 칩 하나로 따로 선다 — 딜 소싱에서 담당을
+# 바꿔도 딜 제안 관리의 [담당] 필터가 그대로인 것처럼 보였다.
+#
+# 지금 맡은 사람을 읽는 규칙은 **저장소에 하나**다(`pipeline.current_assignee`
+# — 캘린더 제목의 담당자도 같은 함수를 지난다). 여기서 따로 자르면 화면마다
+# 다른 사람이 담당으로 선다. 칸에 적힌 글자는 그대로 둔다 — 이력은 그 칸에서
+# 관리하는 것이다.
+
+def assignee_of(row: SourcingContact) -> str:
+    """이 줄을 **지금** 맡은 사람. 미덥지 않으면 빈 글자(지어내지 않는다)."""
+    return current_assignee(row.assignee_name)
+
+
+def assignee_chips(rows: List[SourcingContact]) -> List[dict]:
+    """[담당] 필터의 칩 — 지금 맡은 사람마다 몇 명인지, 많은 순.
+
+    딜 제안 관리(`routers/pages.py`)와 아래 상태 API 가 함께 쓴다 — 화면을 그릴
+    때와 다시 읽을 때 칩이 같은 규칙으로 서야 한다.
+    """
+    counted: dict = {}
+    for row in rows:
+        who = assignee_of(row)
+        if who:
+            counted[who] = counted.get(who, 0) + 1
+    return [{"name": k, "count": v}
+            for k, v in sorted(counted.items(), key=lambda kv: (-kv[1], kv[0]))]
+
+
+@router.get("/api/sourcing/state")
+def sourcing_state(db: Session = Depends(get_db),
+                   user: User = Depends(get_current_user)):
+    """딜 소싱 명단의 **지금** 담당 · 이 달 `딜 받음` — 딜 제안 관리가 다시 읽는다.
+
+    딜 제안 관리는 화면을 그릴 때 명단을 한 번 싣는다. 그 화면을 열어 둔 채
+    딜 소싱 메뉴에서 담당을 바꾸거나 `딜 받음` 을 누르면(메일 확인이 세우기도
+    한다) 열어 둔 화면은 옛 값을 들고 있다 — [딜 소싱 제안] 탭을 열 때와 창으로
+    돌아올 때 이것을 다시 읽어 칩과 카드를 고친다(`deals.js`).
+    """
+    rows = rows_of(db)
+    month = sourcing_receipts.month_of()
+    got = sourcing_receipts.received_ids(db, month)
+    return {"month": month, "month_label": f"{int(month[5:])}월",
+            "rows": [{"id": r.id, "assignee": assignee_of(r),
+                      "received": r.id in got} for r in rows],
+            "assignees": assignee_chips(rows)}
+
+
 @router.get("/sourcing", response_class=HTMLResponse, include_in_schema=False)
 def sourcing_page(request: Request, db: Session = Depends(get_db),
                   user: User = Depends(get_current_user), tab: str = "",
@@ -179,6 +231,9 @@ def sourcing_page(request: Request, db: Session = Depends(get_db),
         "selected": selected,
         "columns": COLUMNS,
         "rows": rows,
+        # [담당자] 필터가 거르는 값 — 칸에 적힌 글자가 아니라 **지금 맡은 사람**
+        # (`assignee_of`). 딜 제안 관리의 [담당] 칩과 같은 값이다.
+        "assignees": {r.id: assignee_of(r) for r in rows},
         "total": sum(t["count"] for t in tabs),
         # 이름을 못 바꾼 까닭. 조용히 되돌아오면 왜 그대로인지 알 수 없다.
         "msg": msg,
@@ -282,7 +337,9 @@ def update_row(row_id: int, body: SourcingIn, db: Session = Depends(get_db),
             row.room_verified = "unverified"
         setattr(row, field, value.strip() or None)
     db.commit()
-    return {"ok": True}
+    # 고친 줄의 **지금 담당** — 화면이 [담당자] 필터 값을 이것으로 고쳐 적는다
+    # (`sourcing.html`). 화면이 글자를 다시 자르면 규칙이 두 벌이 된다.
+    return {"ok": True, "assignee": assignee_of(row)}
 
 
 @router.delete("/api/sourcing/{row_id}")

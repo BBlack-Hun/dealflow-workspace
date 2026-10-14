@@ -115,10 +115,14 @@
          그 칸의 필터 목록에 나타난다 — 이름이 다르면 `data-filter-key` 가 필요하다.
          구분자(`data-filter-sep`)는 어느 칸에도 주지 않는다. `투자분야` 는 들은
          말 그대로라 `유통(직영,가맹점)` 처럼 괄호 안에 쉼표가 있어, 쉼표로 나누면
-         없는 값 두 개가 생긴다. #}
+         없는 값 두 개가 생긴다.
+         **담당자만은 칸 글자가 아니라 지금 맡은 사람**이다(`assignees` —
+         `가담당 > 10/13 나담당` 이면 `나담당`). 딜 제안 관리의 [담당] 칩과 같은
+         값이라야 두 화면이 같은 사람을 고른다. 고친 뒤에는 서버가 돌려준 값으로
+         다시 적는다(아래 `inline-saved`). #}
       <tr data-id="{{ r.id }}"
           data-search="{{ (r.name ~ ' ' ~ (r.firm or '') ~ ' ' ~ (r.memo or '') ~ ' ' ~ (r.title or ''))|lower }}"
-          {% for field, label, width, filterable in columns if filterable %}data-f-{{ field }}="{{ r|attr(field) or '' }}" {% endfor %}>
+          {% for field, label, width, filterable in columns if filterable %}data-f-{{ field }}="{{ (assignees.get(r.id) if field == 'assignee_name' else r|attr(field)) or '' }}" {% endfor %}>
         <td class="rowno muted"></td>
         <td class="cell" data-field="requested_at">{{ r.requested_at or '' }}</td>
         {# 넣는 길만 있고 빼는 길이 없었다. 지우는 단추는 **이름 바로 밑**에
@@ -253,6 +257,17 @@
           alert(err.message || "삭제하지 못했습니다.");
           btn.disabled = false;
         });
+    });
+
+    // 담당자를 고치면 [담당자] 필터 값은 **서버가 읽은 지금 담당**으로 —
+    // 칸 편집기는 적은 글자 그대로(`가담당 > 10/13 나담당`)를 행에 적는데, 그러면
+    // 넘겨받은 사람의 필터에 이 줄이 안 잡힌다. 필터가 다시 읽는 것은 한 박자
+    // 뒤라(filters.js 의 `inline-saved`) 여기서 먼저 고쳐 둔다.
+    table.addEventListener("inline-saved", function (e) {
+      var d = (e && e.detail) || {};
+      if (!d.row || !d.cell || !d.data || d.data.assignee === undefined) return;
+      if (d.cell.getAttribute("data-field") !== "assignee_name") return;
+      d.row.setAttribute("data-f-assignee_name", d.data.assignee || "");
     });
 
     var box = document.getElementById("sourcing-search");

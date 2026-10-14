@@ -30,6 +30,30 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   var FOLLOW_UP = { ask: "선호 분야 묻기", remind: "리마인드", meeting: "미팅 요청",
                     review: "미팅 후기", ir: "IR 자료 전달",
                     sourcing: "딜 소싱 제안" };
+  // ── 딜 소싱 제안의 [보낼 문구] ─────────────────────────────────────────
+  //
+  // 처음 참여 안내(`sourcing_intro`) / 월간 리마인드(`sourcing_remind`). 받는
+  // 명단과 보내는 길은 같고 **글만 다르다** — 서버가 이 값을 받아 글을 고른다
+  // (`routers/deals.py` 의 `_sourcing_topic`). 잡 종류는 둘 다 같다.
+  //
+  // 리마인드는 **이 달 딜 받음**(`data-received="1"`)인 분을 기본으로 뺀다 —
+  // 이미 이 달 딜을 보내 주신 분께 "이번 달 딜 부탁드립니다" 가 가면 안 읽은
+  // 사람으로 보인다. [이번 달 딜 받음 포함] 을 켜면 넣는다. 서버도 같은 판단을
+  // 한 번 더 한다(`include_received`) — 화면을 연 뒤에 바뀐 표시가 있다.
+  var INTRO = "sourcing_intro";
+  var REMIND = "sourcing_remind";
+  var sourcingTopic = INTRO;
+  var includeReceived = false;
+  function isRemind() { return mode === "sourcing" && sourcingTopic === REMIND; }
+  // 이 카드는 지금 **보낼 수 없는** 사람인가 — 리마인드에서 이 달 딜 받음이고,
+  // 포함을 켜지 않았다.
+  function isExcluded(card) {
+    return !!card && isRemind() && !includeReceived &&
+      card.getAttribute("data-received") === "1";
+  }
+  // 요약줄·확인창이 부르는 이름. 리마인드를 `딜 소싱 제안` 이라고 적으면 무엇을
+  // 보내는지 마지막 확인창에서도 안 갈린다.
+  function modeLabel() { return isRemind() ? "딜 소싱 리마인드" : FOLLOW_UP[mode]; }
   // IR 자료 전달은 기업을 고른다(무엇을 보내는지 알아야 한다).
   // 나머지 후속 문구는 기업과 무관하다.
   var NEEDS_COMPANIES = { deal: true, ir: true };
@@ -52,9 +76,12 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   // **우리가 채워 넣은 값**. 사람이 손으로 고쳤는지 가리는 유일한 기준이다 —
   // 지금 칸이 이것과 다르면 사람이 쓴 이름이므로 덮어쓰지 않는다.
   var filledTitle = titleBox ? titleBox.value : "";
+  // 열쇠는 방식이고, 딜 소싱 리마인드만 문구 종류다(서버가 `sourcing_remind`
+  // 이름표도 함께 실어 준다 — `pages.py` 의 `TOPIC_TITLES`).
+  function titleKey() { return isRemind() ? REMIND : mode; }
   function syncBatchTitle() {
     if (!titleBox) return;
-    var next = MODE_TITLES[mode];
+    var next = MODE_TITLES[titleKey()] || MODE_TITLES[mode];
     if (!next) return;                       // 서버가 모르는 방식 — 그대로 둔다
     if (titleBox.value.trim() !== filledTitle.trim()) return;   // 사람이 고친 이름
     titleBox.value = next;
@@ -155,7 +182,11 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     });
   }
   function selectedContactIds() {
-    return contactCbs().filter(function (c) { return c.checked; }).map(function (c) { return parseInt(c.value, 10); });
+    // 리마인드에서 뺀 사람은 체크가 남아 있어도 **보내지 않는다**(아래 `dropExcluded`
+    // 가 체크를 끄지만, 끄는 길을 하나라도 놓치면 여기서 걸린다).
+    return contactCbs().filter(function (c) {
+      return c.checked && !isExcluded(c.closest(".pick-card"));
+    }).map(function (c) { return parseInt(c.value, 10); });
   }
 
 
@@ -212,6 +243,9 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     var q = (box.value || "").trim().toLowerCase();
     var pickedOnly = onlyPicked && onlyPicked.checked;
     var shown = 0, total = 0, outside = 0;
+    // 지금 조건(검색 · 갈래 · 담당) 안에서 이 달 딜 받음인 사람 — 리마인드의
+    // `이번 달 딜 받음 N명 제외` 가 이 수다.
+    var receivedInView = 0;
 
     var list = activeList();
     (list ? list.querySelectorAll(".pick-card") : []).forEach(function (card) {
@@ -224,19 +258,25 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       var inAssignee = !assigneeFilter ||
         card.getAttribute("data-assignee") === assigneeFilter;
       var inGroup = matchesGroup(card);
+      // 리마인드에서 뺀 사람은 **조건에도 안 맞고 보이지도 않는다** — 고른 채였어도
+      // (`dropExcluded` 가 체크를 끈다). [전체선택]도 그래서 안 닿는다.
+      var excluded = isExcluded(card);
+      if (mode === "sourcing" && hit && inBucket && inAssignee &&
+          card.getAttribute("data-received") === "1") receivedInView += 1;
       total += 1;
       // **조건에 맞는가(match)와 화면에 보이는가(visible)는 다르다.**
       // 고른 사람은 조건에서 벗어나도 계속 보인다(몇 명 골랐는지 알아야 한다).
       // 그래서 `보이는 것 = 조건에 맞는 것` 이라고 읽으면, 그룹으로 추려 놓고
       // [전체선택]을 눌렀을 때 **아까 고른 다른 그룹 사람까지 함께 켜진다** —
       // 실제 투자사에게 문구가 나가는 자리라 그 차이를 여기서 갈라 적어 둔다.
-      var matched = hit && inBucket && inAssignee && inGroup;
-      var visible = picked || (matched && !pickedOnly);
+      var matched = hit && inBucket && inAssignee && inGroup && !excluded;
+      var visible = (picked && !excluded) || (matched && !pickedOnly);
       card.setAttribute("data-match", matched ? "1" : "0");
       card.hidden = !visible;
       if (visible) shown += 1;
-      if (picked && !matched) outside += 1;
+      if (picked && !matched && !excluded) outside += 1;
     });
+    syncReceivedNote(receivedInView);
 
     if (note) {
       if (q || pickedOnly || bucketFilter || assigneeFilter || groupFilter) {
@@ -306,6 +346,152 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
                              schedulePreview);
   var assigneeBar = bindFilter("assignee-filter", function (v) { assigneeFilter = v; });
   bindFilter("group-filter", function (v) { groupFilter = v; });
+
+  // [보낼 문구] — 누르면 글이 바뀐다. 문구 고르개(종류가 다르다) · 회차명 ·
+  // 미리보기가 따라오고, 리마인드면 이 달 딜 받음인 분이 빠진다.
+  var topicBar = document.getElementById("sourcing-topic");
+  function markTopicChip() {
+    if (topicBar) topicBar.querySelectorAll(".chip").forEach(function (c) {
+      c.classList.toggle("active", c.getAttribute("data-value") === sourcingTopic);
+    });
+  }
+  function pickTopic(value) {
+    sourcingTopic = value === REMIND ? REMIND : INTRO;
+    markTopicChip();
+    // 처음 안내용으로 고쳐 둔 글이 리마인드에 얹히면 엉뚱한 말이 나간다
+    // (방식을 바꿀 때와 같은 까닭 — `setMode`).
+    savedEdits = {};
+    dropExcluded();
+    syncBatchTitle();
+    renderTemplates();
+    updateCounts();          // 목록 거르기 · 미리보기가 여기서 따라온다
+  }
+  if (topicBar) topicBar.addEventListener("click", function (e) {
+    var chip = e.target.closest(".chip");
+    if (chip) pickTopic(chip.getAttribute("data-value"));
+  });
+
+  var includeBox = document.getElementById("include-received");
+  if (includeBox) includeBox.addEventListener("change", function () {
+    includeReceived = !!includeBox.checked;
+    dropExcluded();
+    updateCounts();
+  });
+
+  // 뺀 사람의 체크를 끈다. 숨기기만 하면 [전체해제] 를 눌러도 안 보이는 체크가
+  // 남아 요약줄이 그 사람을 계속 센다.
+  function dropExcluded() {
+    var box = document.getElementById("sourcing-list");
+    if (!box) return;
+    box.querySelectorAll(".pick-card").forEach(function (card) {
+      if (!isExcluded(card)) return;
+      var cb = card.querySelector(".contact-cb");
+      if (cb) cb.checked = false;
+    });
+  }
+
+  // `이번 달 딜 받음 N명 제외` — 몇 명을 뺐는지 말한다. 조용히 빼면 왜 사람이
+  // 적은지 모른다. 포함을 켰으면 그 사람들이 들어간다고 말한다.
+  function syncReceivedNote(count) {
+    var note = document.getElementById("received-note");
+    if (!note) return;
+    note.hidden = !isRemind();
+    var text = document.getElementById("received-count");
+    if (!text || note.hidden) return;
+    text.textContent = includeReceived
+      ? "이번 달 딜 받음 " + count + "명 포함 — 이미 이 달 딜을 보내 주신 분께도 나갑니다"
+      : "이번 달 딜 받음 " + count + "명 제외";
+  }
+
+  function resetSourcingTopic() {
+    sourcingTopic = INTRO;
+    includeReceived = false;
+    if (includeBox) includeBox.checked = false;
+    markTopicChip();
+  }
+
+  // ── 딜 소싱 명단을 **다시 읽는다** — 담당 · 이 달 딜 받음 ──────────────────
+  //
+  // 이 화면은 그릴 때 명단을 한 번 싣는다. 열어 둔 채 딜 소싱 메뉴에서 담당을
+  // 바꾸거나 `딜 받음` 을 누르면(메일 확인이 세우기도 한다) 칩과 카드가 옛
+  // 값이다 — [딜 소싱 제안] 탭을 열 때와 이 창으로 돌아올 때 서버에서 다시
+  // 읽는다(`/api/sourcing/state`). 담당을 자르는 규칙(`가 > 10/13 나` → `나`)은
+  // 서버 한 곳에 있다 — 여기서 다시 자르지 않는다.
+  var stateSeq = 0;
+  function refreshSourcingState() {
+    if (mode !== "sourcing") return;
+    var seq = ++stateSeq;
+    fetch("/api/sourcing/state", { headers: { "Accept": "application/json" } })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+      .then(function (res) {
+        if (seq !== stateSeq || !res.ok) return;   // 늦게 온 옛 답은 버린다
+        applySourcingState(res.d || {});
+      })
+      .catch(function () { /* 못 읽어도 화면을 그린 때의 값으로 고를 수 있다 */ });
+  }
+
+  function applySourcingState(d) {
+    var byId = {};
+    (d.rows || []).forEach(function (r) { byId[String(r.id)] = r; });
+    var changed = false;
+    var box = document.getElementById("sourcing-list");
+    (box ? box.querySelectorAll(".pick-card") : []).forEach(function (card) {
+      var cb = card.querySelector(".contact-cb");
+      var row = cb && byId[String(cb.value)];
+      // 그 사이 지워진 줄은 그린 때 그대로 둔다 — 발송은 서버가 다시 본다.
+      if (!row) return;
+      var who = row.assignee || "";
+      var got = row.received ? "1" : "0";
+      if (card.getAttribute("data-assignee") !== who ||
+          card.getAttribute("data-received") !== got) changed = true;
+      card.setAttribute("data-assignee", who);
+      card.setAttribute("data-received", got);
+      var tag = card.querySelector(".received-tag");
+      if (tag) {
+        tag.hidden = !row.received;
+        if (d.month_label) tag.textContent = d.month_label + " 딜 받음";
+      }
+    });
+    if (rebuildAssigneeChips(d.assignees || [])) changed = true;
+    if (!changed) return;      // 그대로면 미리보기를 또 부르지 않는다
+    dropExcluded();
+    updateCounts();
+  }
+
+  // [담당] 칩을 서버가 센 대로 다시 세운다. 고르던 담당이 아직 있으면 그대로,
+  // 없어졌으면 [전체]로 — 없는 칩이 켜진 채면 왜 아무도 안 보이는지 모른다.
+  function rebuildAssigneeChips(list) {
+    if (!assigneeBar) return false;
+    var chips = Array.prototype.slice.call(assigneeBar.querySelectorAll(".chip")).slice(1);
+    var sig = function (name, count) { return name + "\u0000" + count; };
+    var before = chips.map(function (c) {
+      return sig(c.getAttribute("data-value") || "", c.getAttribute("data-count") || "");
+    }).join("\u0001");
+    var after = list.map(function (a) { return sig(a.name, String(a.count)); }).join("\u0001");
+    if (before === after) return false;
+    chips.forEach(function (c) { assigneeBar.removeChild(c); });
+    list.forEach(function (a) {
+      var b = document.createElement("button");
+      b.setAttribute("type", "button");
+      b.className = "chip";
+      b.setAttribute("data-value", a.name);
+      b.setAttribute("data-count", String(a.count));
+      b.innerHTML = escapeHtml(a.name) + " <b>" + Number(a.count) + "</b>";
+      assigneeBar.appendChild(b);
+    });
+    var still = list.some(function (a) { return a.name === assigneeFilter; });
+    if (!still) assigneeFilter = "";
+    assigneeBar.querySelectorAll(".chip").forEach(function (c) {
+      c.classList.toggle("active", (c.getAttribute("data-value") || "") === assigneeFilter);
+    });
+    return true;
+  }
+
+  function refreshWhenBack() {
+    if (mode === "sourcing" && !document.hidden) refreshSourcingState();
+  }
+  document.addEventListener("visibilitychange", refreshWhenBack);
+  if (window.addEventListener) window.addEventListener("focus", refreshWhenBack);
 
   function resetGroupFilter() {
     groupFilter = "";
@@ -434,7 +620,9 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
                        meeting: "closing_meeting", review: "meeting_review",
                        deal: "closing_day1", ir: "ir_delivery",
                        sourcing: "sourcing_intro" };
-    fill("tpl-closing", byKind[kindByMode[mode]] || [],
+    // 딜 소싱은 [보낼 문구]가 종류를 정한다(처음 안내 / 월간 리마인드).
+    var closingKind = mode === "sourcing" ? sourcingTopic : kindByMode[mode];
+    fill("tpl-closing", byKind[closingKind] || [],
          CLOSING_DEFAULT[mode] || "기본 안내문");
     fillSubjects(byKind["mail_subject"] || []);
   }
@@ -546,7 +734,11 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       include_opening: greet ? greet.checked : true,
       // 딜 소싱은 갈래마다 문구가 다르다. 아직 아무도 안 골랐을 때
       // 어느 갈래를 보여 줄지는 **누른 칩**이 정한다.
-      bucket: bucketFilter || ""
+      bucket: bucketFilter || "",
+      // 딜 소싱 제안의 [보낼 문구] · 리마인드에 이 달 딜 받음을 넣을지.
+      // 다른 방식은 빈 값이다(서버가 그 방식에서는 읽지 않는다).
+      topic: mode === "sourcing" ? sourcingTopic : "",
+      include_received: isRemind() && includeReceived
     };
   }
 
@@ -592,7 +784,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     ssContacts.textContent = nt;
     schedulePreview();
     ssNote.textContent = askMode
-      ? FOLLOW_UP[mode] + " — 기업 목록 없이 문구만 나갑니다"
+      ? modeLabel() + " — 기업 목록 없이 문구만 나갑니다"
       : (mode === "ir" ? irSummaryNote()
                        : (nc > MAX_COMPANIES ? "기업은 최대 " + MAX_COMPANIES + "개까지" : ""));
     if (mode === "ir") renderIrLinks();
@@ -675,6 +867,9 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   // ── 보내는 방식 전환 ───────────────────────────────────────
   function setMode(next) {
     mode = next;
+    // [보낼 문구]는 탭을 바꾸면 처음 안내로 돌아간다 — 필터와 같은 까닭(켜 둔 채
+    // 다른 탭에 갔다 오면 왜 사람이 적은지 모른다). 회차명보다 먼저 되돌린다.
+    resetSourcingTopic();
     syncBatchTitle();
     var askMode = !needsCompanies();
     document.querySelectorAll(".mode-tab").forEach(function (b) {
@@ -705,6 +900,8 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       // 필터를 켜 둔 채 다른 탭으로 갔다 오면, 왜 사람이 적은지 모른다.
       resetSourcingFilters();
     }
+    // 탭을 열 때마다 명단의 담당 · 딜 받음을 다시 읽는다(위 `refreshSourcingState`).
+    if (sourcingMode) refreshSourcingState();
     // 그룹은 투자사 담당자 목록에만 있다. **필터 줄을 감출 때는 조건도 함께
     // 푼다** — 켜져 있는데 보이지 않는 필터가 제일 나쁘다(왜 사람이 적은지
     // 알 길이 없고, [전체선택]이 무엇에 걸리는지도 알 수 없다).
@@ -1078,7 +1275,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     var via = currentChannel() === "email" ? "이메일로 " : "";
     var what = mode === "ir"
       ? cids.length + "개 기업 IR 자료 전달"
-      : (isFollowUp() ? FOLLOW_UP[mode] + " 문구 (기업 목록 없음)"
+      : (isFollowUp() ? modeLabel() + " 문구 (기업 목록 없음)"
                       : cids.length + "개 기업 딜소개");
     var lastCheck = currentChannel() === "email"
       ? "\n받는 주소를 최종 확인하셨나요?"
@@ -1246,6 +1443,8 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     if (wanted && document.querySelector('.mode-tab[data-mode="' + wanted + '"]')) {
       setMode(wanted);
     }
+    // `?mode=sourcing&topic=sourcing_remind` — 월간 리마인드로 바로 연다.
+    if (wanted === "sourcing" && params.get("topic") === REMIND) pickTopic(REMIND);
     var warns = [];
     // 넘겨받은 담당자가 **이 목록에 없을 수 있다.** 이 화면의 대상은 `내
     // 담당` 보다 좁다 — 딜 소개 명단에 있고 카톡방 연결까지 끝난 사람만

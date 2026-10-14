@@ -11,6 +11,10 @@
     message_templates.name   (kind=sourcing_intro)  그 갈래로 나갈 문구
     template_choices.variant (kind=sourcing_intro)  그 갈래에 골라 둔 문구
 
+문구 둘(처음 안내 `sourcing_intro` · 월간 리마인드 `sourcing_remind`)이 다
+갈래 이름을 열쇠로 쓴다 — 어느 종류인지는 `template_pick.NAME_IS_A_BUCKET`
+한 곳이 안다(`KINDS`). 리마인드만 두고 가면 새 이름 갈래의 리마인드는 뼈대로 나간다.
+
 한 곳만 고치면 갈래가 **둘로 갈린다.** 사람은 새 이름 아래 있는데 문구는 옛
 이름에 남아, 화면에는 갈래가 있는데 정작 발송은 뼈대 문구로 나간다 — 갈래마다
 호칭·개수·범위가 다르니(`sourcing_msg`) 그건 결례가 되는 문구다.
@@ -33,7 +37,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..models import MessageTemplate, SourcingContact, TemplateChoice
-from . import sourcing_msg
+from . import sourcing_msg, template_pick
+
+#: 갈래 이름을 열쇠로 쓰는 문구 종류 — 처음 안내 · 월간 리마인드.
+KINDS = tuple(sorted(template_pick.NAME_IS_A_BUCKET))
 
 #: 갈래 이름 길이 한도. 명단 이름(`sheet_owner`)과 같은 값이다.
 MAX_LABEL = 80
@@ -76,13 +83,13 @@ def label_in_use(db: Session, label: str, ignore: Optional[str] = None) -> bool:
         return True
     if db.execute(
         select(MessageTemplate.id)
-        .where(MessageTemplate.kind == sourcing_msg.KIND,
+        .where(MessageTemplate.kind.in_(KINDS),
                MessageTemplate.name == label).limit(1)
     ).first():
         return True
     return bool(db.execute(
         select(TemplateChoice.id)
-        .where(TemplateChoice.kind == sourcing_msg.KIND,
+        .where(TemplateChoice.kind.in_(KINDS),
                TemplateChoice.variant == label).limit(1)
     ).first())
 
@@ -110,12 +117,12 @@ def rename(db: Session, before: str, after: str) -> int:
     # 문구와 '골라 둔 것' 도 같은 글자로 이어져 있다. 두고 가면 새 이름 갈래는
     # 문구가 없는 갈래가 되어, 뼈대 문구로 나간다.
     for tpl in db.execute(
-        select(MessageTemplate).where(MessageTemplate.kind == sourcing_msg.KIND,
+        select(MessageTemplate).where(MessageTemplate.kind.in_(KINDS),
                                       MessageTemplate.name == before)
     ).scalars():
         tpl.name = after
     for choice in db.execute(
-        select(TemplateChoice).where(TemplateChoice.kind == sourcing_msg.KIND,
+        select(TemplateChoice).where(TemplateChoice.kind.in_(KINDS),
                                      TemplateChoice.variant == before)
     ).scalars():
         choice.variant = after
