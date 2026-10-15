@@ -17,15 +17,19 @@ from ..models import ROOM_SEARCH_TOPIC, STARTUP_MSG_KIND, IrCompany, SendJob, Us
 from ..services import (cadence, contact_columns, deal_history, deal_queue,
                         deal_stage, email_domains, group_name, ir_attach,
                         llm_brief, mailer, manual_send, ref_panel,
-                        scheduled_send, sheet_import, sheet_owner,
-                        sourcing_link, startup_send)
+                        scheduled_send, series_a_share, sheet_import,
+                        sheet_owner, sourcing_link, sourcing_receipts,
+                        startup_send)
 from ..ui import MENU, base_ctx as _base_ctx
 from .companies import BLOCKED_CONTRACT
 from .companies import blocked_reason as company_blocked_reason
 from .contacts import contact_rows
-from .deals import MODE_DEAL, MODE_TITLES
+from .deals import MODE_DEAL, MODE_TITLES, TOPIC_TITLES
+from .series_a import pick_rows as series_a_pick_rows
+from .sourcing import assignee_chips as sourcing_assignee_chips
+from .sourcing import assignee_of as sourcing_assignee_of
 from .sourcing import buckets as sourcing_bucket_rows
-from .sourcing import rows_of as sourcing_rows
+from .sourcing import sendable_rows as sourcing_rows
 
 router = APIRouter(tags=["pages"])
 
@@ -116,6 +120,10 @@ def deals_page(
     # 차례는 [딜 소싱] 화면과 **같은 함수**를 지난다(참여 요청일 최신순 —
     # `routers/sourcing.py` 의 `rows_of`). 여기가 질의를 따로 들고 있었는데,
     # 같은 명단을 두 화면이 각자 세우면 한쪽만 고쳐지는 날 순서가 갈린다.
+    #
+    # **`불참여` 인 분은 처음부터 안 싣는다**(`sourcing.sendable_rows`) — 딜 소싱
+    # 화면이나 투자사 관리 현황의 `Series A 딜 소싱` 칸에서 X 로 둔 분이다.
+    # 발송 길도 같은 판정으로 한 번 더 거른다(`deals._load_recipients`).
     sourcing_contacts = sourcing_rows(db)
     # 갈래는 곧 문구다. 이름을 검색창에 쳐서 찾게 하면 갈래가 몇 개인지도
     # 모른 채 골라야 하므로, 누를 수 있는 필터로 내놓는다. 순서는 좌측
@@ -124,17 +132,26 @@ def deals_page(
     # **명단을 훑어 세지 않는다.** 명단이 요청일 순이 된 뒤로는 줄을 훑으면
     # 갈래 차례가 그날 누가 참여를 수락했느냐를 따라 흔들린다 — 갈래 차례를
     # 정하는 곳(`buckets`, `position` 기준)을 그대로 쓴다.
-    sourcing_buckets = [{"name": b["key"], "count": b["count"]}
-                        for b in sourcing_bucket_rows(db)]
+    # 갈래마다의 수는 **이 목록에서** 센다 — 불참여를 뺀 목록과 칩 수가
+    # 어긋나면 `M&A 9` 를 눌렀는데 카드가 8장이다.
+    per_bucket: dict = {}
+    for row in sourcing_contacts:
+        per_bucket[row.bucket] = per_bucket.get(row.bucket, 0) + 1
+    sourcing_buckets = [{"name": b["key"], "count": per_bucket[b["key"]]}
+                        for b in sourcing_bucket_rows(db) if per_bucket.get(b["key"])]
     # 담당(우리 쪽 심사역)도 거를 수 있어야 한다 — 39명을 통째로 훑는 것과
     # 내 담당 14명만 보는 것은 다른 일이다. 많은 순으로 둔다.
-    counted: dict = {}
-    for c in sourcing_contacts:
-        who = (c.assignee_name or "").strip()
-        if who:
-            counted[who] = counted.get(who, 0) + 1
-    sourcing_assignees = [{"name": k, "count": v} for k, v in
-                          sorted(counted.items(), key=lambda kv: (-kv[1], kv[0]))]
+    #
+    # **칸 글자가 아니라 지금 맡은 사람**이다(`sourcing.assignee_of`). 칸에는
+    # 넘긴 이력이 쌓여(`가담당 > 10/13 나담당`) 글자 그대로 세면 넘겨받은 사람의
+    # 칩에 그 줄이 안 잡혔다. 칩과 카드 값(`data-assignee`)이 같은 함수를 지난다 —
+    # 딜 소싱 메뉴의 [담당자] 필터도 같은 함수다.
+    sourcing_assignees = sourcing_assignee_chips(sourcing_contacts)
+    sourcing_assignee = {c.id: sourcing_assignee_of(c) for c in sourcing_contacts}
+    # 이 달 `딜 받음` — 딜 소싱 제안의 [월간 리마인드] 가 기본으로 뺀다.
+    # 화면을 연 뒤에 바뀐 것은 탭을 열 때 다시 읽는다(`/api/sourcing/state`).
+    sourcing_month = sourcing_receipts.month_of()
+    sourcing_received = sourcing_receipts.received_ids(db, sourcing_month)
     # 투자사 관리 현황에서 연결해 둔 방이 있으면 여기서도 '연결됨' 이어야 한다 —
     # 목록에는 '미등록' 인데 미리보기에는 방이 뜨면 어느 쪽을 믿을지 알 수 없다.
     sourcing_linked = sourcing_link.linked_rooms(db, sourcing_contacts)
@@ -162,6 +179,13 @@ def deals_page(
                else cadence.default_batch_title(db, label=label))
         for mode, label in MODE_TITLES.items()
     }
+    # 한 탭 안에서 고르는 문구(딜 소싱 제안의 월간 리마인드)도 제 이름을 단다 —
+    # 처음 안내와 같은 이름이면 발송 이력에서 무엇을 보낸 회차인지 안 갈린다.
+    # 열쇠는 문구 종류(`sourcing_remind`)다(`deals.js` 의 `titleKey`).
+    batch_titles.update({
+        topic: cadence.default_batch_title(db, label=label)
+        for topic, label in TOPIC_TITLES.items()
+    })
     startup_send_on = startup_send.may_send(db, user)
     startup_send_month = startup_send.default_month()
     ctx.update({
@@ -188,7 +212,18 @@ def deals_page(
         "sourcing_contacts": sourcing_contacts,
         "sourcing_buckets": sourcing_buckets,
         "sourcing_assignees": sourcing_assignees,
+        "sourcing_assignee": sourcing_assignee,
+        "sourcing_received": sourcing_received,
+        "sourcing_month_label": f"{int(sourcing_month[5:])}월",
         "sourcing_linked": sourcing_linked,
+        # ── 딜 소싱 제안 › [Series A 딜 공유] ──
+        # 기업 고르개(IR 기업 현황 › `Series A 이상 기업` 탭의 줄 — 같은 차례) ·
+        # 이 글을 받는 하나뿐인 갈래(`series_a_share.BUCKET` — 다른 갈래 카드는
+        # 이 글에서 고를 수 없다).
+        "series_a_rows": series_a_pick_rows(db),
+        "share_bucket": series_a_share.BUCKET,
+        "share_topic": series_a_share.KIND,
+        "share_label": series_a_share.LABEL,
         "no_reaction_ids": no_reaction_ids,
         # 메일 채널은 설정이 있어야 고를 수 있다.
         # 고를 수 있는데 나가지 않는 것이 제일 나쁘다.
@@ -306,6 +341,10 @@ class ListPage:
     # [방 매칭] 이, 수정창에 [이 방 후보 찾기] 가 선다. 투자사 화면에는 없다 —
     # 그쪽 방 이름은 규칙으로 짓고 [방 연결 확인] 으로 대조한다.
     rooms_href: str = ""
+    # 이 화면의 줄을 **IR 기업 현황의 기업에 잇는 자리**(`routers/ir_link.py`).
+    # 있으면 툴바에 [IR 기업 연결] 이, 수정창에 `IR 기업: ○○ (연결됨)` 표시가
+    # 선다. 투자사 화면에는 없다 — 그쪽 `firm` 은 투자사라 IR 기업이 아니다.
+    ir_link_href: str = ""
 
     @property
     def href(self) -> str:
@@ -333,7 +372,9 @@ STARTUP_PAGE = ListPage(key="startup", page=contact_columns.PAGE_STARTUP,
                         msg_label="안내 카톡 보내기",
                         # 보낼 방을 회사명으로 카톡에서 찾아 고른다 — 이 명단
                         # 줄에는 방 이름이 거의 없다(`services/startup_room_pick.py`).
-                        rooms_href="/startup/rooms")
+                        rooms_href="/startup/rooms",
+                        # 명단 줄을 IR 기업 현황의 기업에 잇는다 — 사람이 고른다.
+                        ir_link_href="/ir-link?tab=startup")
 
 
 def list_page(

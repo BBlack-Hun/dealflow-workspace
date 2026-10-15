@@ -1,0 +1,224 @@
+// IR 기업 현황 메뉴의 `Series A 이상 기업` 탭 — 브라우저 쪽.
+// (node tests/js/series_a_test.js)
+//
+// 규칙을 여기 옮겨 적으면 두 벌이 되어 어긋나도 모르므로 **파일 셋을 그대로
+// 돌린다**(filters.js · table_sort.js · series_a.js — 화면이 부르는 차례 그대로).
+//
+//   ① 처음 열면 줄 번호가 보이는 것 기준 1,2,3… 이다.
+//   ② 검색 · 머리글 필터가 AND 로 걸리고, 번호를 다시 매긴다.
+//   ③ `수신 일자` 머리글을 눌러 세우고, 세운 뒤에도 번호를 다시 매긴다.
+//   ④ 저장 뒤 **서버만 아는 값**(투자라운드의 짧은 꼴 · IR 딱지)을 응답에서 받아 적는다.
+//   ⑤ [삭제] 는 이름을 대고 묻고, 아니라면 아무것도 안 보낸다.
+//
+// 기업명은 전부 지어낸 것이다 — 저장소가 공개다.
+"use strict";
+const assert = require("assert");
+const fs = require("fs");
+const path = require("path");
+const vm = require("vm");
+
+const D = require("./_dom.js");
+
+const SRC = path.join(__dirname, "..", "..", "app", "static", "js");
+const read = (name) => fs.readFileSync(path.join(SRC, name), "utf8");
+
+// 서버가 그려 주는 차례 그대로(수신 일자 최신순 — `routers/series_a.sort_rows`).
+const ROWS = [
+  { id: "1", name: "가온샘플", day: "2026-08-25", type: "딜 소싱 네트워크",
+    series: "Series B", short: "Series B", ir: "" },
+  { id: "2", name: "샘플메디", day: "2026-07-01", type: "후속 투자 연계",
+    series: "Series A (누적투자금 10억이상)", short: "Series A", ir: "" },
+  { id: "3", name: "나루샘플", day: "", type: "딜 소싱 네트워크",
+    series: "", short: "", ir: "" }
+];
+
+function th(attrs, label) {
+  const cell = D.el("th", attrs || {});
+  cell.textContent = label;
+  return cell;
+}
+
+// 화면(`app/templates/companies_series_a.html`)이 그리는 만큼만 세운다.
+function build() {
+  const head = D.el("thead", {}, [D.el("tr", {}, [
+    th({ class: "num stick stick-a" }, "NO"),
+    th({ class: "stick stick-b" }, "기업명"),
+    th({ "data-sort": "received_at" }, "수신 일자"),
+    th({ "data-filters": "type:Type" }, "Type"),
+    th({ "data-filters": "series:투자라운드" }, "투자라운드"),
+    th({}, "")
+  ])]);
+  const body = D.el("tbody", {}, ROWS.map(function (r) {
+    const name = D.el("b", { class: "cell", "data-field": "name" });
+    name.textContent = r.name;
+    const link = D.el("a", { class: "room-badge ok ir-link",
+                             href: "/companies?q=" + encodeURIComponent(r.ir) });
+    link.hidden = !r.ir;
+    const day = D.el("td", { class: "cell", "data-field": "received_at", "data-type": "date" });
+    day.textContent = r.day;
+    const type = D.el("td", { class: "cell", "data-field": "deal_type", "data-type": "pick",
+                              "data-filter-key": "type" });
+    type.textContent = r.type;
+    const series = D.el("div", { class: "cell clamp2", "data-field": "series",
+                                 "data-type": "pick", "data-filter-key": "series",
+                                 "data-value": r.series });
+    series.textContent = r.short;
+    const del = D.el("button", { class: "linkbtn js-sa-delete" });
+    return D.el("tr", {
+      "data-id": r.id,
+      "data-search": (r.name + " " + r.type).toLowerCase(),
+      "data-f-type": r.type,
+      "data-f-series": r.short,
+      "data-s-received_at": r.day
+    }, [D.el("td", { class: "rowno muted stick stick-a" }),
+        D.el("td", { class: "co-name stick stick-b" }, [name, link]),
+        day, type, D.el("td", { title: r.series }, [series]), D.el("td", {}, [del])]);
+  }));
+  const table = D.el("table", { id: "sa-table", "data-inline-url": "/api/series-a-companies" },
+                     [head, body]);
+  const search = D.el("input", { id: "sa-search" });
+  const root = D.el("div", {}, [
+    search, D.el("button", { id: "sa-add" }),
+    D.el("div", { class: "chip-row", "data-filter-chips": "" }),
+    D.el("p", { id: "sa-note" }), table
+  ]);
+  return { root: root, table: table, body: body, search: search,
+           heads: D.queryAll(table, "th") };
+}
+
+function run(dom, search, answer) {
+  D.resetHandlers();
+  const document = D.makeDocument(dom.root);
+  const calls = [];
+  const asked = [];
+  const win = {
+    location: { pathname: "/companies", search: search || "", reload: function () {} },
+    history: {
+      replaceState: function (a, b, url) {
+        const at = String(url).indexOf("?");
+        win.location.search = at < 0 ? "" : String(url).slice(at);
+      }
+    }
+  };
+  const sandbox = {
+    document: document, console: console,
+    alert: function () {},
+    confirm: function (text) { asked.push(text); return !!answer; },
+    prompt: function () { return ""; },
+    setTimeout: setTimeout,
+    encodeURIComponent: encodeURIComponent,
+    CustomEvent: function (type, init) { this.type = type; this.detail = init && init.detail; },
+    fetch: function (url, init) {
+      calls.push({ url: url, method: init && init.method });
+      return Promise.resolve({ ok: true, json: function () { return Promise.resolve({}); } });
+    }
+  };
+  sandbox.window = win;
+  Object.assign(win, sandbox);
+  vm.createContext(sandbox);
+  ["filters.js", "table_sort.js", "series_a.js"].forEach(function (name) {
+    vm.runInContext(read(name), sandbox, { filename: name });
+  });
+  return { calls: calls, asked: asked, win: win };
+}
+
+const ids = (dom) => dom.body.children.map((tr) => tr.getAttribute("data-id")).join(",");
+const shown = (dom) => dom.body.children.filter((tr) => !tr.hidden)
+  .map((tr) => tr.getAttribute("data-id")).join(",");
+const numbers = (dom) => dom.body.children
+  .map((tr) => tr.querySelector(".rowno").textContent).join(",");
+const note = (dom) => dom.root.querySelector("#sa-note");
+
+// --- ① 처음 ---------------------------------------------------------------
+{
+  const dom = build();
+  run(dom);
+  assert.strictEqual(ids(dom), "1,2,3", "서버가 그려 준 차례(최신순)가 아니다");
+  assert.strictEqual(numbers(dom), "1,2,3", "줄 번호가 안 매겨졌다");
+  assert.strictEqual(note(dom).hidden, true, "다 보이는데 `n / m 건` 이 떠 있다");
+}
+
+// --- ② 검색 · 필터 ----------------------------------------------------------
+{
+  const dom = build();
+  run(dom);
+  dom.search.value = "샘플메디";
+  dom.search.fire("input");
+  assert.strictEqual(shown(dom), "2", "검색이 안 걸렸다");
+  assert.strictEqual(numbers(dom), ",1,", "보이는 줄만 번호가 매겨져야 한다");
+  assert.strictEqual(note(dom).textContent, "1 / 3건 표시 중");
+}
+{
+  // 주소에 걸어 둔 필터(`?type=…`)로 열면 그 조건으로 선다 — 옆 탭과 같은 계약.
+  const dom = build();
+  run(dom, "?type=" + encodeURIComponent("딜 소싱 네트워크"));
+  assert.strictEqual(shown(dom), "1,3", "머리글 필터가 안 걸렸다");
+  assert.strictEqual(numbers(dom), "1,,2");
+  // 필터 위에 검색을 얹으면 AND 다.
+  dom.search.value = "나루";
+  dom.search.fire("input");
+  assert.strictEqual(shown(dom), "3", "검색과 필터가 서로를 지웠다");
+}
+
+// --- ③ 수신 일자로 세우기 ----------------------------------------------------
+{
+  const dom = build();
+  run(dom);
+  const btn = dom.heads[2].querySelector("button");
+  assert.ok(btn, "`수신 일자` 머리글이 단추로 서지 않았다");
+  btn.fire("click");
+  // 오름차순 — 날짜 없는 줄은 방향과 상관없이 끝.
+  assert.strictEqual(ids(dom), "2,1,3", "오래된 것부터가 아니다(빈 날짜는 끝)");
+  assert.strictEqual(numbers(dom), "1,2,3", "세운 뒤 번호를 다시 매기지 않았다");
+  btn.fire("click");
+  assert.strictEqual(ids(dom), "1,2,3", "내림차순에서 빈 날짜가 끝이 아니다");
+}
+
+// --- ④ 저장 뒤처리 -----------------------------------------------------------
+{
+  const dom = build();
+  run(dom);
+  const row = dom.body.children[0];
+  const cell = row.querySelector('[data-field="series"]');
+  // inline_edit.js 는 고른 글자(전체)를 칸에 적어 둔 채 알린다.
+  cell.textContent = "Series C (누적투자금 50억 이상)";
+  dom.table.dispatchEvent(new (function (type, init) {
+    this.type = type; this.detail = init.detail;
+  })("inline-saved", { detail: { row: row, cell: cell, value: cell.textContent, data: {
+    id: 1, name: "가온샘플", received_at: "2026-08-25", received_sort: "2026-08-25",
+    series: "Series C (누적투자금 50억 이상)", series_short: "Series C", ir_name: ""
+  } } }));
+  assert.strictEqual(cell.textContent, "Series C", "칸이 짧은 꼴로 돌아오지 않았다");
+  assert.strictEqual(cell.getAttribute("data-value"), "Series C (누적투자금 50억 이상)");
+  assert.strictEqual(row.getAttribute("data-f-series"), "Series C",
+    "필터 값이 짧은 꼴이 아니면 옆 줄의 `Series C` 와 두 벌로 갈린다");
+
+  // 이름을 고쳐 IR 기업 현황의 기업과 맞으면 딱지가 선다.
+  const name = row.querySelector('[data-field="name"]');
+  dom.table.dispatchEvent(new (function (type, init) {
+    this.type = type; this.detail = init.detail;
+  })("inline-saved", { detail: { row: row, cell: name, value: "샘플애그", data: {
+    id: 1, name: "샘플애그", received_at: "2026-08-25", received_sort: "2026-08-25",
+    series: "", series_short: "", ir_name: "샘플애그"
+  } } }));
+  const link = row.querySelector(".ir-link");
+  assert.strictEqual(link.hidden, false, "IR 기업 현황에도 있는 기업인데 딱지가 안 섰다");
+  assert.strictEqual(link.getAttribute("href"), "/companies?q=" + encodeURIComponent("샘플애그"));
+}
+
+// --- ⑤ 삭제 --------------------------------------------------------------
+{
+  const dom = build();
+  const got = run(dom, "", false);
+  dom.body.children[1].querySelector(".js-sa-delete").fire("click");
+  assert.ok(/샘플메디/.test(got.asked[0] || ""), "무엇을 지우는지 이름으로 묻지 않는다");
+  assert.strictEqual(got.calls.length, 0, "아니라고 했는데 지우는 요청이 나갔다");
+}
+{
+  const dom = build();
+  const got = run(dom, "", true);
+  dom.body.children[1].querySelector(".js-sa-delete").fire("click");
+  assert.deepStrictEqual(got.calls[0], { url: "/api/series-a-companies/2", method: "DELETE" });
+}
+
+console.log("series_a_test: 모두 통과");

@@ -159,6 +159,9 @@ class Spec:
     check: Optional[Callable[[dict], None]] = None
     #: 팀 현황 판에 덧붙일 한 줄(예: 채널방 최근 발송). 빈 글자면 안 적는다.
     describe: Optional[Callable[[Session, Optional[Automation]], str]] = None
+    #: 실제 모드 회차의 `SendJob.topic` — 같은 종류 안에서 **무슨 글이었나**
+    #: (예: 딜 소싱 `sourcing_remind`). 손으로 보낸 회차와 같은 이름으로 남는다.
+    topic: Optional[str] = None
 
 
 REGISTRY: Dict[str, Spec] = {}
@@ -441,7 +444,7 @@ def run_once(db: Session, key: str, now: Optional[datetime] = None) -> dict:
             job = automation.build_job(
                 db, sender=who, kind=spec.kind, title=title, outs=outs,
                 scheduled_at=when.isoformat(timespec="seconds"),
-                test_room=test_room)
+                test_room=test_room, topic=spec.topic)
             for out in outs:
                 for rec in _rows_for(key, test, claim, job, out):
                     db.add(rec)
@@ -630,6 +633,10 @@ def start_scheduler() -> None:
     global _SCHEDULER
     if _SCHEDULER is not None and _SCHEDULER.is_alive():
         return
+    # 자동화 모듈을 **지금** 읽어 둔다. 읽힐 때 다른 실에 고리를 다는 모듈이
+    # 있다(소싱 리마인드 → 메일 확인의 `리마인드 전 회차`). 첫 회차(5분 뒤)까지
+    # 미루면 그사이 화면 · 메일 확인이 고리 없는 판을 본다.
+    _load_all()
 
     def loop() -> None:
         while True:

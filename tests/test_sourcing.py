@@ -100,6 +100,27 @@ def test_every_column_has_a_cell(seeded):
     fields = set(re.findall(r'data-field="(\w+)"', first_row))
     assert fields == {f for f, _label, _w, _filt in COLUMNS}, fields
 
+    # 칸 수만 맞고 **차례**가 다르면 머리글 밑에 남의 값이 선다 — 칸을 옮길 때
+    # 머리글(`COLUMNS`)과 행(손으로 적은 `<td>`) 중 한쪽만 옮기면 그렇게 된다.
+    order = re.findall(r'data-field="(\w+)"', first_row)
+    assert order == [f for f, _label, _w, _filt in COLUMNS], order
+
+
+def test_participation_sits_right_after_the_name(seeded):
+    """`참여` 는 **이름 바로 뒤** — 맨 오른쪽이면 가로로 끝까지 밀어야 보였다."""
+    import re
+
+    body = seeded.get("/sourcing").text
+    head = body[body.index("<thead>"):body.index("</thead>")]
+    labels = [re.sub(r"<[^>]+>", "", x).strip()
+              for x in re.findall(r"<th[\s>].*?</th>", head, re.S)]
+    assert labels[1:4] == ["참여 요청일", "이름", "참여"], labels
+
+    first_row = body[body.index("<tbody>"):body.index("</tbody>")]
+    first_row = first_row[:first_row.index("</tr>")]
+    order = re.findall(r'data-field="(\w+)"', first_row)
+    assert order.index("participation") == order.index("name") + 1, order
+
 
 def test_the_room_name_is_editable(seeded, db):
     """여기서 방 이름을 못 넣으면 딜 소싱 제안을 아예 보낼 수 없다."""

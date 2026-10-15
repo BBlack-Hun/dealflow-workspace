@@ -1,4 +1,9 @@
-"""딜 소싱 명단 ↔ 투자사 관리 현황 잇기.
+"""딜 소싱 명단 ↔ 투자사 관리 현황 잇기 — **카톡방 이어받기**.
+
+**`시리즈 A 이상 딜 소싱 참여 심사역` 갈래는 이어받지 않는다**(`linked_rooms`
+안의 ★ 주석). 그 갈래의 방은 보내는 사람 카톡의 딜 소싱 방이라, 자기 방 이름이
+없으면 딜 소싱 화면의 [방 후보 찾기]로 채운다(`services/sourcing_rooms.py`).
+아래는 나머지 갈래의 이야기다.
 
 같은 사람이 두 표에 있다. 투자사 관리 현황에서 이미 카톡방까지 연결해 둔
 사람이면, 딜 소싱에서 방 이름을 **다시 적을 이유가 없다** — 손으로 옮겨
@@ -84,10 +89,26 @@ def linked_rooms(db: Session, sourcing) -> Dict[int, dict]:
     contacts = sheet_owner.investors(
         db, db.execute(select(VcContact)).scalars().all())
     by_phone = _by_phone(contacts)
+    # 이어받지 않는 갈래 — 아래 ★ 주석.
+    from .sourcing_sync import SYNC_BUCKET  # noqa: PLC0415 — 그쪽이 이 파일을 부른다
 
     out: Dict[int, dict] = {}
     for s in sourcing:
         if (getattr(s, "kakao_room_name", "") or "").strip():
+            continue
+        # ★ **시리즈 A 갈래는 투자사 방을 이어받지 않는다.**
+        #
+        # 사용자가 짚었다 — "딜소싱에 있다는건 다른 사람 담당자라도 카톡방에
+        # 초대 되어있다는 뜻". 그 갈래 사람의 방은 **보내는 사람 카톡의 딜 소싱
+        # 방**이고, 번호로 찾은 투자사 줄의 방은 그 줄을 맡은 팀원의 **딜소개
+        # 방**이다. 이어받으면 소싱 리마인드가 남의 딜소개 방(또는 보내는 사람
+        # 카톡에 없는 제목)으로 간다. 그 갈래는 자기 방 이름이 없으면 **방 없음**
+        # 이고, 딜 소싱 화면의 [방 후보 찾기]로 채운다(`services/sourcing_rooms.py`).
+        #
+        # 다른 갈래는 **예전 그대로 둔다** — 사용자가 짚은 갈래가 아니고, 그
+        # 갈래들은 지금(운영) 자기 방이 한 줄도 없어 이어받기가 유일한 길이다.
+        # 같은 이유로 막을지는 사용자가 정할 일이다(PR #284 본문).
+        if (getattr(s, "bucket", "") or "") == SYNC_BUCKET:
             continue
         # 기본 문구 미리보기의 **가상 대상**에는 번호가 없다. 실제 사람만
         # 이으면 되므로 없는 것은 그냥 건너뛴다 — 없다고 터질 자리가 아니다.
