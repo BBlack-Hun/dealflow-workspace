@@ -507,15 +507,30 @@
 
       `data-sent-to` — 이 기업을 이미 받은 심사역 번호들(대기 · 보낸 것 —
       `services/series_a_share.py`). 화면이 지금 고른 받는 분과 견주어 카드의
-      `이미 받은 분 N명` 을 세고, 고른 기업을 모두 받은 분을 받는 사람에서 뺀다.
+      `이미 받은 분 N명` 을 세고, 보낼 기업이 안 남는 분을 받는 사람에서 뺀다.
+      `data-own-by` — **이 딜을 공유해 준** 심사역 번호들(`series_a_share.
+      own_by_company`). 그 분께는 이 기업이 늘 빠진다 — 카드의 `본인 공유 N명 제외`.
+
+      **사람당 보낼 기업 수**(`#sa-per-person`, 기본 2) — 사람마다 본인 공유 ·
+      이미 받은 기업을 빼고 고른 차례 **앞에서부터** 이만큼 간다
+      (`series_a_share.plan` — 서버가 미리보기 · 발송에서 같은 함수로 고른다).
     #}
     <div id="series-a-picker" hidden data-testid="series-a-picker">
       <p class="hint">
         <b>Series A 이상 기업</b>(IR 기업 현황 › Series A 이상 기업 탭)에서 소개할 기업을
-        고르세요 — 고른 차례대로 <code>[기업1]</code> <code>[기업2]</code> … 로 나가고,
-        기업마다 <b>기업명 · 분야 · 투자라운드 · 소개</b>(딜소개 문구, 없으면 상세 내용 첫 문장)가
-        한 덩어리입니다. <b>이미 받은 분 N명</b>은 지금 고른 받는 분 중 이 기업을 이미 받은 분입니다.
+        고르세요 — 기업마다 <b>기업명 · 분야 · 투자라운드 · 소개</b>(딜소개 문구, 없으면 상세
+        내용 첫 문장)가 한 덩어리로 <code>[기업1]</code> <code>[기업2]</code> … 번호를 달고 나갑니다.
+        <b>본인 공유 N명 제외</b>는 지금 고른 받는 분 중 이 딜을 공유해 준 분(그 분께는 늘
+        빠집니다), <b>이미 받은 분 N명</b>은 이 기업을 이미 받은 분입니다.
       </p>
+      <div class="filter-line" id="sa-per-person-line">
+        <label class="only-picked" for="sa-per-person">사람당 보낼 기업 수
+          <input type="number" id="sa-per-person" class="sa-per-person"
+                 min="1" max="{{ share_per_person_max }}" step="1"
+                 value="{{ share_per_person }}" inputmode="numeric"
+                 aria-label="사람당 보낼 기업 수">개</label>
+        <span class="hint" id="sa-per-person-hint">{{ share_per_person_hint }}</span>
+      </div>
       <div class="picker-search">
         <input type="search" id="sa-pick-search"
                placeholder="기업명 · 분야 · 투자라운드 · Type · 수신 일자 검색 ({{ series_a_rows|length }}개)"
@@ -530,6 +545,7 @@
       <div class="card-list" id="series-a-list">
         {% for r in series_a_rows %}
         <label class="pick-card" data-sent-to="{{ r.sent_to|join(',') }}"
+               data-own-by="{{ r.own_by|join(',') }}"
                data-search="{{ (r.name ~ ' ' ~ r.sector_major ~ ' ' ~ r.sector_minor ~ ' ' ~ r.series ~ ' ' ~ r.deal_type ~ ' ' ~ r.received_at ~ ' ' ~ r.pitch)|lower }}">
           <input type="checkbox" class="sa-cb" value="{{ r.id }}" data-name="{{ r.name }}">
           <div class="pick-body">
@@ -538,6 +554,8 @@
               {% if r.deal_type %}<span class="tag soft">{{ r.deal_type }}</span>{% endif %}
               {# 지금 고른 받는 분 중 이미 받은 분 — `deals.js` 가 센다. #}
               <span class="tag warn sa-got" hidden></span>
+              {# 지금 고른 받는 분 중 **이 딜을 공유해 준** 분 — 그 분께는 늘 빠진다. #}
+              <span class="tag warn sa-own" hidden></span>
               {% if r.sent_to %}<span class="tag soft" title="Series A 딜 공유로 이 기업을 받은 심사역 — 대기 · 보낸 것">공유 {{ r.sent_to|length }}명</span>{% endif %}
             </div>
             <div class="pick-sub muted">[{{ r.sector_major or '-' }}{% if r.sector_minor %} / {{ r.sector_minor }}{% endif %}] · 수신 {{ r.received_at or '-' }}</div>
@@ -721,10 +739,11 @@
           이번 달 딜 받음 포함</label>
       </div>
       {#
-        Series A 딜 공유 — **이미 이 기업들을 받은 분 제외**(기본 켬). 고른 기업을
-        모두 받은 분은 이번 목록에서 빠지고, 일부만 받은 분은 받은 기업을 빼고
-        나간다(서버도 같은 판단 — `routers/deals.create_send_list`). 끄면 고른
-        기업 그대로 다 간다(`include_shared`).
+        Series A 딜 공유 — **이미 이 기업들을 받은 분 제외**(기본 켬). 이미 받은
+        기업은 그 분 문구에서 빠지고, 빼고 나니 보낼 기업이 없는 분은 이번 목록에서
+        빠진다(서버도 같은 판단 — `routers/deals.create_send_list`). 끄면 이미 받은
+        기업도 다시 간다(`include_shared`). **본인이 공유한 기업은 이 칸과 상관없이
+        늘 빠진다**(`series_a_share.is_own`).
       #}
       <div class="filter-line" id="shared-note" hidden>
         <label class="only-picked"><input type="checkbox" id="exclude-shared" checked>

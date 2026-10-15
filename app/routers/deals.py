@@ -252,6 +252,15 @@ def _check_series_a_count(ids: List[int]) -> None:
             status_code=400,
             detail=f"Series A 이상 기업을 1~{MAX_COMPANIES_PER_SEND}개 선택하세요")
 
+
+def _check_per_person(n: int) -> None:
+    """사람당 보낼 기업 수 — 1~10. 화면 고르개를 좁혀 두어도 주소로는 무엇이든 온다."""
+    lo, hi = series_a_share.PER_PERSON_MIN, series_a_share.PER_PERSON_MAX
+    if not (lo <= n <= hi):
+        raise HTTPException(status_code=400,
+                            detail=f"사람당 보낼 기업 수는 {lo}~{hi}개로 정하세요")
+
+
 # IR 자료 전달은 기업을 고른다(무엇을 보내는지 알아야 한다).
 # 나머지 후속 문구는 기업과 무관하다.
 MODES_WITH_COMPANIES = {MODE_DEAL, MODE_IR}
@@ -279,6 +288,7 @@ def _compose_for_contact(
     include_opening: Optional[bool] = None,
     topic: str = "",
     series_a: Optional[list] = None,
+    series_a_empty: str = "",
 ) -> mc.ComposeResult:
     # 인사말 기본값은 방식마다 다르다. 후속 문구는 이미 대화가 오간 방에 한 줄
     # 덧붙이는 것이라 인사를 다시 붙이지 않는 편이 자연스럽다. 화면에서 켜고 끌 수 있다.
@@ -355,8 +365,10 @@ def _compose_for_contact(
     if share:
         # 기업 덩어리는 **치환을 안 지나게** 다 지은 뒤에 끼운다(존칭 다듬기가
         # 상세 내용의 띄어쓰기를 건드리지 않게). 고른 기업이 없으면(기본 문구)
-        # 자리 안내가 선다.
-        result = series_a_share.fill(result, series_a_share.blocks(series_a or []))
+        # 자리 안내가 선다. 실제 받는 분인데 보낼 기업이 하나도 안 남았으면
+        # (본인 공유 · 이미 받음) 그 까닭이 선다(`series_a_empty`).
+        result = series_a_share.fill(
+            result, series_a_share.blocks(series_a or []) or series_a_empty)
     return result
 
 
@@ -602,7 +614,11 @@ class PreviewRequest(BaseModel):
     series_a_ids: List[int] = []
     # 이미 받은 기업도 **다시 보낼지**. 기본은 그 분 문구에서 뺀다(다 받은 분은
     # 목록에서 빠진다) — 화면의 [이미 이 기업들을 받은 분 제외]를 끈 것이 참이다.
+    # **본인이 공유한 기업은 이 값과 상관없이 늘 뺀다**(`series_a_share.is_own`).
     include_shared: bool = False
+    # 사람당 보낼 기업 수(1~10, 기본 2). 사람마다 본인 공유 · 이미 받은 기업을
+    # 빼고 **고른 차례 앞에서부터** 이만큼 간다(`series_a_share.plan`).
+    per_person: int = series_a_share.PER_PERSON_DEFAULT
 
 
 class MessageOverride(BaseModel):
@@ -666,9 +682,10 @@ class SendRequest(BaseModel):
     # 화면의 [이번 달 딜 받음 포함] 이 이 값이다.
     include_received: bool = False
     # `topic` 이 `sourcing_deal_share`(Series A 딜 공유)일 때 — 위 미리보기 요청의
-    # 같은 이름 칸과 같다(고른 기업 · 이미 받은 기업도 다시 보낼지).
+    # 같은 이름 칸과 같다(고른 기업 · 이미 받은 기업도 다시 보낼지 · 사람당 몇 개).
     series_a_ids: List[int] = []
     include_shared: bool = False
+    per_person: int = series_a_share.PER_PERSON_DEFAULT
 
 
 def _override_map(req: SendRequest, contact_ids: set) -> dict:
@@ -734,6 +751,8 @@ def preview(
     # Series A 딜 공유 — 고른 기업이 1~10개여야 사람마다 글이 선다(딜 소개와
     # 같은 한도). 아무도 안 골랐을 때의 기본 문구는 기업 없이도 보인다.
     share = topic == sourcing_msg.SHARE_KIND
+    if share:
+        _check_per_person(req.per_person)
     if share and not sample:
         _check_series_a_count(req.series_a_ids)
     series_rows = _load_series_a(db, req.series_a_ids) if share else []
@@ -764,25 +783,28 @@ def preview(
                   company_ids=[r.id for r in series_rows])
               if share and not sample else {})
     for contact in recipients:
-        # 이 분께 실을 기업 · 이 분만의 경고 — 발송 목록 만들기와 같은 판단이다.
-        per_series, share_warns = series_rows, []
-        if share and not sample:
+        # 이 분께 실을 기업 · 이 분만의 경고 — 발송 목록 만들기와 **같은 함수**
+        # (`series_a_share.plan`)다: 본인이 공유한 기업(늘) · 이미 받은 기업(제외를
+        # 켰을 때)을 빼고 고른 차례 앞에서부터 사람당 N개.
+        # 기본 문구(아무도 안 골랐을 때)는 사람이 없으니 앞에서부터 N개만 보인다.
+        per_series, share_warns, share_view = series_rows, [], None
+        if share and sample:
+            per_series = series_rows[:req.per_person]
+        elif share:
             if not series_a_share.is_share_bucket(getattr(contact, "bucket", "")):
                 share_warns.append(series_a_share.NOT_BUCKET_NOTE)
-            fresh, old = series_a_share.split(contact.id, series_rows, shared)
-            if old and req.include_shared:
-                share_warns.append(f"이미 받은 기업 {len(old)}곳도 다시 보냅니다: "
-                                   + ", ".join(c.name for c in old))
-            elif old and fresh:
-                per_series = fresh
-                share_warns.append(series_a_share.partial_note(old))
-            elif old:
-                share_warns.append(series_a_share.ALL_SHARED_NOTE)
+            share_plan = series_a_share.plan(contact, series_rows, shared,
+                                             req.per_person, req.include_shared)
+            per_series = share_plan.send
+            share_warns.extend(series_a_share.plan_notes(share_plan, req.per_person))
+            share_view = series_a_share.plan_view(share_plan)
         result = _compose_for_contact(db, user, contact, companies,
                                       req.opening_template_id, req.closing_template_id,
                                       mode=req.mode,
                                       include_opening=req.include_opening,
-                                      topic=topic, series_a=per_series)
+                                      topic=topic, series_a=per_series,
+                                      series_a_empty=(series_a_share.NOTHING_SLOT
+                                                      if share and not sample else ""))
         room = _room_of(contact, linked)
         room_ok = bool(room) and contact.room_verified in ("verified", "unverified")
         if sample:
@@ -844,6 +866,9 @@ def preview(
             "has_history": False if (sourcing or sample) else _has_history(db, contact.id),
             # 이 문구는 아직 아무에게도 가지 않는다.
             "sample": sample,
+            # Series A 딜 공유 — 이 분께 **나가는 기업**과 **뺀 기업(까닭)**. 화면이
+            # 미리보기 위에 두 줄로 그린다(`deals.js` 의 `sharePlanHtml`). 다른 글은 없다.
+            "series_a": share_view,
             # IR 자료 전달에 딸려 갈 자료. **번호와 파일 이름**이 함께 간다.
             #
             # **번호**(#112) — 자료를 붙이는 차례다. 그 번호는 담당자마다 다르고
@@ -952,6 +977,7 @@ def create_send_list(
     share = sourcing_topic == sourcing_msg.SHARE_KIND
     if share:
         _check_series_a_count(req.series_a_ids)
+        _check_per_person(req.per_person)
     series_rows = _load_series_a(db, req.series_a_ids) if share else []
 
     by_email = req.channel == "email"
@@ -1050,32 +1076,36 @@ def create_send_list(
                 detail=(f"'{skipped_received[0]['name']}' {RECEIVED_NOTE} — 고른 분이 "
                         "모두 이번 달 딜을 보내 주셨습니다(그래도 보내려면 "
                         "[이번 달 딜 받음 포함]을 켜세요)"))
-    # ── Series A 딜 공유 — **이미 받은 기업은 그 분 문구에서 뺀다** ──────────
+    # ── Series A 딜 공유 — **사람마다 앞에서부터 N개** ──────────────────────
     #
-    # 고른 기업을 모두 받은 분은 목록에서 빠진다(조용히 빼지 않는다 — 뺀 분과
-    # 이유를 돌려준다). 일부만 받은 분은 안 받은 기업만 실린다. 화면의 [이미 이
-    # 기업들을 받은 분 제외]를 끄면(`include_shared`) 고른 기업 그대로 다 간다.
+    # 고른 차례에서 ① 그 분이 **공유해 준** 기업(늘 — `series_a_share.is_own`)
+    # ② **이미 받은** 기업(화면의 [이미 이 기업들을 받은 분 제외]를 켰을 때 —
+    # 끄면 `include_shared`)을 빼고 앞에서부터 `per_person` 개(기본 2)가 간다.
+    # 모자라면 남은 만큼, 하나도 안 남은 분은 목록에서 빠진다(조용히 빼지 않는다 —
+    # 뺀 분과 이유를 돌려준다). 미리보기와 **같은 함수**(`series_a_share.plan`)다.
     # 받았는지는 발송 건의 상태로 센다(대기 · 보내는 중 · 보냄 — `series_a_share`).
     share_plan: dict = {}
     skipped_shared = []
     if share:
-        got = ({} if req.include_shared else series_a_share.companies_by_contact(
+        got = series_a_share.companies_by_contact(
             db, contact_ids=[c.id for c in contacts],
-            company_ids=[r.id for r in series_rows]))
+            company_ids=[r.id for r in series_rows])
         for contact in contacts:
-            fresh, _old = series_a_share.split(contact.id, series_rows, got)
-            if fresh:
-                share_plan[contact.id] = fresh
+            picked = series_a_share.plan(contact, series_rows, got, req.per_person,
+                                         req.include_shared).send
+            if picked:
+                share_plan[contact.id] = picked
             else:
                 skipped_shared.append({"contact_id": contact.id, "name": contact.name,
-                                       "reason": series_a_share.ALL_SHARED_NOTE})
+                                       "reason": series_a_share.NOTHING_LEFT_NOTE})
         contacts = [c for c in contacts if c.id in share_plan]
         if not contacts:
             raise HTTPException(
                 status_code=400,
-                detail=(f"'{skipped_shared[0]['name']}' — 고른 분 모두 고른 기업을 이미 "
-                        "받았습니다(그래도 보내려면 [이미 이 기업들을 받은 분 제외]를 "
-                        "끄세요)"))
+                detail=(f"'{skipped_shared[0]['name']}' "
+                        f"{series_a_share.NOTHING_LEFT_NOTE} — 고른 분 모두 보낼 기업이 "
+                        "없습니다(다른 기업을 더 고르거나, 이미 받은 기업도 보내려면 "
+                        "[이미 이 기업들을 받은 분 제외]를 끄세요)"))
     # 안내 카톡은 **확인된 방**에만, `딜소개 불가`·`검토중단` 은 빼고 나간다.
     # 화면이 고를 수 없게 한 것과 **같은 함수**를 지난다(`startup_outreach.
     # refusal`) — 오래된 탭의 체크나 손으로 만든 요청도 여기서 걸린다.

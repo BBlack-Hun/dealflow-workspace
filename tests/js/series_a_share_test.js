@@ -7,9 +7,14 @@
 //   ② 고른 차례가 곧 번호다 — 미리보기 · 발송이 `series_a_ids` 를 고른 차례로
 //      싣고, IR 기업 칸(`company_ids`)은 비운다
 //   ③ 고르개 카드마다 `이미 받은 분 N명` — 지금 고른 받는 분 중 그 기업을 받은 분
-//   ④ [이미 이 기업들을 받은 분 제외](기본 켬) — 고른 기업을 **모두** 받은 분은
+//   ④ [이미 이 기업들을 받은 분 제외](기본 켬) — 보낼 기업이 안 남는 분은
 //      체크를 남긴 채 보내지 않고(흐리게 · 딱지), 일부만 받은 분은 그대로 보낸다
 //      (서버가 받은 기업을 뺀다). 끄면 `include_shared` 가 실린다
+//   ⑦ 본인이 공유한 딜 — 고르개 카드의 `본인 공유 N명 제외`, 받는 분 딱지,
+//      제외를 꺼도 본인 공유는 빠진다(본인 공유만 남으면 그 분은 빠진다)
+//   ⑧ 사람당 보낼 기업 수 — 기본 2 · 안내 글 · 바꾸면 `per_person` · 딱지가 따라온다,
+//      빈 값 · 범위 밖은 되돌려 적는다
+//   ⑨ 미리보기 위 `보내는 기업` · `뺀 기업(까닭)` 줄 — 서버가 지은 그대로
 //   ⑤ 딜 소싱 화면의 [Series A 딜 소개] 링크(`?mode=sourcing&topic=…&contacts=…`)로
 //      열면 그 분들이 골라져 있다 — 투자사 담당자 목록에는 안 켜진다
 //   ⑥ 다른 글로 돌아가면 IR 기업 목록이 다시 선다
@@ -98,6 +103,7 @@ function selectAll(dom) { dom.document.getElementById("select-all-contacts").fir
   assert.deepStrictEqual(body.series_a_ids, []);
   assert.strictEqual(body.bucket, deals_.SHARE_BUCKET, "기본 문구가 이 갈래 문구가 아니다");
   assert.strictEqual(body.include_shared, false, "제외가 기본으로 켜져 있어야 한다");
+  assert.strictEqual(body.per_person, 2, "사람당 기본 2개가 아니다");
 }
 
 // --- ② 고른 차례가 곧 번호 · ③ `이미 받은 분 N명` --------------------------------
@@ -127,8 +133,9 @@ function selectAll(dom) { dom.document.getElementById("select-all-contacts").fir
   assert.deepStrictEqual(lastPreview(t.fetch).body.contact_ids, [101]);
   const tag = sCard(t.dom, "가소싱").querySelector(".share-tag");
   assert.strictEqual(tag.hidden, false);
-  assert.ok(/1곳 이미 받음 — 그 기업은 빼고 보냅니다/.test(tag.textContent), tag.textContent);
-  assert.ok(/일부 받은 분 1명/.test(t.dom.document.getElementById("shared-count").textContent));
+  assert.strictEqual(tag.textContent, "이미 받은 1곳 빼고 — 1곳 보냅니다");
+  assert.ok(/이미 받은 분 1명은 받은 기업을 빼고/.test(
+    t.dom.document.getElementById("shared-count").textContent));
 }
 
 // --- ④ 고른 기업을 모두 받은 분 — 체크를 남긴 채 안 보낸다 ------------------------
@@ -148,9 +155,10 @@ function selectAll(dom) { dom.document.getElementById("select-all-contacts").fir
                          "이미 다 받은 분께 또 보낸다");
   assert.strictEqual(t.dom.document.getElementById("send-btn").disabled, true,
                      "보낼 분이 없는데 발송 단추가 눌린다");
-  assert.ok(/모두 받은 분 2명 제외/.test(
+  assert.ok(/보낼 기업 없는 분 2명 제외/.test(
     t.dom.document.getElementById("shared-count").textContent));
-  assert.ok(/모두 이미 받음/.test(sCard(t.dom, "다소싱").querySelector(".share-tag").textContent));
+  assert.strictEqual(sCard(t.dom, "다소싱").querySelector(".share-tag").textContent,
+                     "보낼 기업 없음 (본인 공유/이미 받음) — 이번엔 빠집니다");
   assert.strictEqual(saCard(t.dom, "다샘플푸드").querySelector(".sa-got").textContent,
                      "이미 받은 분 2명");
 
@@ -173,7 +181,8 @@ function selectAll(dom) { dom.document.getElementById("select-all-contacts").fir
   const body = lastPreview(t.fetch).body;
   assert.strictEqual(body.include_shared, true);
   assert.deepStrictEqual(body.contact_ids.slice().sort(), [101, 103]);
-  assert.ok(/그대로 다시 보냅니다/.test(t.dom.document.getElementById("shared-count").textContent));
+  assert.ok(/이미 받은 분 2명에게도 받은 기업을 다시/.test(
+    t.dom.document.getElementById("shared-count").textContent));
 
   // 발송 — 고른 기업 · 글 · 받는 분이 그대로 실린다.
   t.dom.document.getElementById("send-btn").fire("click");
@@ -183,7 +192,8 @@ function selectAll(dom) { dom.document.getElementById("select-all-contacts").fir
   assert.deepStrictEqual(sent.body.series_a_ids, [303, 302]);
   assert.deepStrictEqual(sent.body.company_ids, []);
   assert.strictEqual(sent.body.include_shared, true);
-  assert.ok(/Series A 딜 공유 — 2개 기업/.test(confirms.pop()),
+  assert.strictEqual(sent.body.per_person, 2);
+  assert.ok(/Series A 딜 공유 — 2개 기업 중 사람마다 2개씩/.test(confirms.pop()),
             "확인창이 무엇을 보내는지 말하지 않는다");
 }
 
@@ -224,6 +234,151 @@ function selectAll(dom) { dom.document.getElementById("select-all-contacts").fir
   assert.strictEqual(t.dom.seriesAPicker.hidden, true);
   pickMode(t.dom, "sourcing");
   assert.strictEqual(lastPreview(t.fetch).body.topic, "sourcing_intro");
+}
+
+// --- ⑦ 본인이 공유한 딜 -----------------------------------------------------------
+{
+  const t = setup();
+  pickMode(t.dom, "sourcing");
+  pickTopic(t.dom, SHARE);
+  // 아직 받는 분이 없다 — `본인 공유` 딱지는 없다.
+  assert.strictEqual(saCard(t.dom, "라샘플헬스").querySelector(".sa-own").hidden, true);
+  selectAll(t.dom);                                   // 가소싱(101) · 다소싱(103)
+  // 고르기 전에도 센다 — 고를지 정하는 자리다.
+  const own304 = saCard(t.dom, "라샘플헬스").querySelector(".sa-own");
+  assert.strictEqual(own304.hidden, false, "이 딜을 공유해 준 분이 골라졌는데 말하지 않는다");
+  assert.strictEqual(own304.textContent, "본인 공유 1명 제외");
+  assert.strictEqual(saCard(t.dom, "마샘플에너지").querySelector(".sa-own").textContent,
+                     "본인 공유 1명 제외");
+  assert.strictEqual(saCard(t.dom, "나샘플로보").querySelector(".sa-own").hidden, true);
+
+  // 넷을 고른다 — 사람마다 본인 공유를 빼고 앞에서부터 2개.
+  ["라샘플헬스", "마샘플에너지", "나샘플로보", "바샘플소재"].forEach(function (n) {
+    toggleSeriesA(t.dom, n);
+  });
+  const body = lastPreview(t.fetch).body;
+  assert.deepStrictEqual(body.series_a_ids, [304, 305, 302, 306]);
+  assert.deepStrictEqual(body.contact_ids.slice().sort(), [101, 103],
+                         "본인 공유가 하나 든 분은 그대로 보낸다");
+  assert.strictEqual(sCard(t.dom, "가소싱").querySelector(".share-tag").textContent,
+                     "본인 공유 1곳 빼고 — 2곳 보냅니다");
+  assert.strictEqual(sCard(t.dom, "다소싱").querySelector(".share-tag").textContent,
+                     "본인 공유 1곳 빼고 — 2곳 보냅니다");
+  assert.strictEqual(t.dom.document.getElementById("shared-count").textContent,
+                     "본인 공유 딜이 든 분 2명은 그 기업을 빼고 — 사람마다 앞에서부터 2개씩 보냅니다");
+}
+{
+  // 본인 공유만 고르면 그 분은 빠진다 — 제외를 꺼도(그 칸은 이미 받은 기업만 다룬다).
+  const t = setup();
+  pickMode(t.dom, "sourcing");
+  pickTopic(t.dom, SHARE);
+  selectAll(t.dom);
+  toggleSeriesA(t.dom, "마샘플에너지");               // 305 — 가소싱(101)이 공유
+  assert.deepStrictEqual(lastPreview(t.fetch).body.contact_ids, [103],
+                         "자기가 공유한 딜을 그 분께 다시 보낸다");
+  assert.ok(sCard(t.dom, "가소싱").classList.contains("share-covered"));
+  assert.strictEqual(sBox(t.dom, "가소싱").checked, true, "체크는 남긴다");
+  const box = t.dom.document.getElementById("exclude-shared");
+  box.checked = false;
+  box.fire("change");
+  assert.deepStrictEqual(lastPreview(t.fetch).body.contact_ids, [103],
+                         "제외를 껐다고 본인 공유 딜이 그 분께 간다");
+  // 본인 공유 + 이미 받음 — 제외를 켜면 남는 게 없고, 끄면 이미 받은 것은 다시 간다.
+  box.checked = true;
+  box.fire("change");
+  toggleSeriesA(t.dom, "가샘플바이오");               // 301 — 가소싱이 이미 받음
+  assert.deepStrictEqual(lastPreview(t.fetch).body.contact_ids, [103]);
+  assert.strictEqual(sCard(t.dom, "가소싱").querySelector(".share-tag").textContent,
+                     "보낼 기업 없음 (본인 공유/이미 받음) — 이번엔 빠집니다");
+  box.checked = false;
+  box.fire("change");
+  assert.deepStrictEqual(lastPreview(t.fetch).body.contact_ids.slice().sort(), [101, 103]);
+  assert.strictEqual(sCard(t.dom, "가소싱").querySelector(".share-tag").textContent,
+                     "본인 공유 1곳 빼고 · 이미 받은 1곳도 다시 — 1곳 보냅니다");
+}
+
+// --- ⑧ 사람당 보낼 기업 수 --------------------------------------------------------
+{
+  const confirms = [];
+  const t = setup({ confirm: function (m) { confirms.push(m); return true; } });
+  pickMode(t.dom, "sourcing");
+  pickTopic(t.dom, SHARE);
+  const box = t.dom.document.getElementById("sa-per-person");
+  const hint = t.dom.document.getElementById("sa-per-person-hint");
+  toggleSourcing(t.dom, "가소싱");
+  ["나샘플로보", "바샘플소재", "가샘플바이오", "라샘플헬스"].forEach(function (n) {
+    toggleSeriesA(t.dom, n);
+  });
+  // 가소싱은 301 을 이미 받았다 — 남는 셋 중 앞의 둘.
+  assert.strictEqual(sCard(t.dom, "가소싱").querySelector(".share-tag").textContent,
+                     "이미 받은 1곳 빼고 — 2곳 보냅니다");
+  assert.ok(/앞에서부터 2개씩 나갑니다/.test(t.dom.document.getElementById("ss-note").textContent));
+
+  box.value = "3";
+  box.fire("input");
+  assert.strictEqual(lastPreview(t.fetch).body.per_person, 3);
+  assert.strictEqual(hint.textContent,
+                     "기업을 3~6개 고르면 사람마다 본인 공유·이미 받은 기업을 빼고 앞에서부터 3개씩 나갑니다.");
+  assert.strictEqual(sCard(t.dom, "가소싱").querySelector(".share-tag").textContent,
+                     "이미 받은 1곳 빼고 — 3곳 보냅니다");
+
+  // 남는 것보다 크면 남은 만큼만 — 그래도 보낸다.
+  box.value = "5";
+  box.fire("change");
+  assert.strictEqual(sCard(t.dom, "가소싱").querySelector(".share-tag").textContent,
+                     "이미 받은 1곳 빼고 — 3곳 보냅니다");
+  assert.deepStrictEqual(lastPreview(t.fetch).body.contact_ids, [101]);
+
+  // 빈 값 · 범위 밖 — 손을 떼면 읽은 값으로 되돌려 적는다(서버는 1~10 밖이면 멈춘다).
+  box.value = "";
+  box.fire("change");
+  assert.strictEqual(box.value, "2");
+  assert.strictEqual(lastPreview(t.fetch).body.per_person, 2);
+  box.value = "99";
+  box.fire("change");
+  assert.strictEqual(box.value, "10");
+  assert.strictEqual(hint.textContent,
+                     "기업을 10개 고르면 사람마다 본인 공유·이미 받은 기업을 빼고 앞에서부터 10개씩 나갑니다.");
+  box.value = "2";
+  box.fire("change");
+
+  t.dom.document.getElementById("send-btn").fire("click");
+  const sent = calls(t.fetch, "/api/deals/send").pop();
+  assert.strictEqual(sent.body.per_person, 2);
+  assert.deepStrictEqual(sent.body.series_a_ids, [302, 306, 301, 304], "고른 차례가 아니다");
+  assert.ok(/4개 기업 중 사람마다 2개씩/.test(confirms.pop()));
+}
+
+// --- ⑨ 미리보기 위 `보내는 기업` · `뺀 기업` ----------------------------------------
+{
+  const plan = {
+    send: [{ id: 302, name: "나샘플로보", label: "[기업1]" },
+           { id: 306, name: "바샘플소재", label: "[기업2]" }],
+    dropped: [{ id: 305, name: "마샘플에너지", reason: "본인이 공유한 딜" },
+              { id: 301, name: "가샘플바이오", reason: "이미 받음" },
+              { id: 304, name: "라샘플헬스", reason: "사람당 2개 — 이번엔 안 보냄" }]
+  };
+  const fetch = fakeFetch([deals_.previewReply([
+    { contact_id: 101, name: "가소싱", title: "", message: "글", warnings: [],
+      series_a: plan },
+    { contact_id: 103, name: "다소싱", title: "", message: "글", warnings: [],
+      series_a: { send: [], dropped: [{ id: 304, name: "라샘플헬스",
+                                        reason: "본인이 공유한 딜" }] } }
+  ])]);
+  const dom = run(null, { fetch: fetch });
+  pickMode(dom, "sourcing");
+  pickTopic(dom, SHARE);
+  dom.document.getElementById("refresh-preview").fire("click");
+  const area = dom.document.getElementById("preview-area").innerHTML;
+  assert.ok(/data-testid="sa-plan"/.test(area), "보내는 기업 · 뺀 기업 줄이 없다");
+  assert.ok(area.indexOf("<b>보내는 기업</b> [기업1] 나샘플로보 · [기업2] 바샘플소재") >= 0, area);
+  assert.ok(area.indexOf('<span class="sa-drop own">마샘플에너지 — 본인이 공유한 딜</span>') >= 0,
+            "본인이 공유한 딜이라 뺀 것을 말하지 않는다");
+  assert.ok(area.indexOf("가샘플바이오 — 이미 받음") >= 0);
+  assert.ok(area.indexOf("라샘플헬스 — 사람당 2개 — 이번엔 안 보냄") >= 0);
+  deals_.pickPreviewTab(dom, 1);
+  const second = dom.document.getElementById("preview-area").innerHTML;
+  assert.ok(/보내는 기업<\/b> <span class="sa-drop own">없음/.test(second), second);
 }
 
 console.log("series_a_share_test: ok");

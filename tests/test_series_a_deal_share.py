@@ -156,7 +156,8 @@ def test_the_page_carries_who_already_got_each_company(world, client, db):
 # ── ② 글 ────────────────────────────────────────────────────────────────────
 
 def test_the_message_is_greeting_text_and_one_block_per_company(world, client):
-    got = _preview(client, _ids(world, "a", "b"), _ids(world, "robo", "bio", "food", kind="c"))
+    got = _preview(client, _ids(world, "a", "b"), _ids(world, "robo", "bio", "food", kind="c"),
+                   per_person=3)
     a = got["가심사"]["message"]
     assert a.startswith("안녕하세요, 가심사 심사역님"), a
     # 빈 직함은 갈래 호칭(처음 안내와 같은 규칙)
@@ -304,9 +305,9 @@ def test_already_received_companies_are_dropped_per_person(world, client, db):
 
     # 이제 둘 다 둘 다 받았다 — 고른 분 모두 빠지면 아무것도 안 만든다
     r = _send(client, _ids(world, "a", "b"), [bio, robo])
-    assert r.status_code == 400 and "이미 받았습니다" in r.json()["detail"]
+    assert r.status_code == 400 and "보낼 기업 없음" in r.json()["detail"]
     got = _preview(client, _ids(world, "a"), [bio])
-    assert any("모두 이미 받은" in w for w in got["가심사"]["warnings"])
+    assert any("보낼 기업 없음 (본인 공유/이미 받음)" in w for w in got["가심사"]["warnings"])
 
     # 한 분만 다 받았으면 그 분만 빼고 이유를 돌려준다
     food = world["c"]["food"].id
@@ -378,21 +379,50 @@ def test_deleting_a_company_takes_its_share_records_along(world, client, db):
 def test_the_sourcing_screen_has_the_button_and_the_row_note(world, client, db):
     _send(client, _ids(world, "a"), _ids(world, "bio", "robo", kind="c"))
     page = client.get(f"/sourcing?tab={quote(SERIES_A)}").text
-    btn = re.search(r'<a [^>]*id="sourcing-share-btn"[^>]*>', page)
+    btn = re.search(r'<a [^>]*id="sourcing-share-btn"[^>]*>([^<]*)</a>', page)
     assert btn, "시리즈 A 탭에 [Series A 딜 소개] 단추가 없다"
-    assert f"/deals?mode=sourcing&amp;topic={SHARE}" in btn.group(0)
-    assert "Series A 딜 소개" in page
-    # 지금 보이는 참여 분을 `contacts=` 로 싣는다(불참여는 뺀다)
+    assert f'data-base="/deals?mode=sourcing&amp;topic={SHARE}"' in btn.group(0)
+    # 처음에는 아무도 안 골랐다 — 잠긴 채, 주소 없이(보이는 줄 전부로 대신하지 않는다).
+    assert btn.group(1) == "Series A 딜 소개 (선택 0명)"
+    assert 'aria-disabled="true"' in btn.group(0) and " href=" not in btn.group(0)
+    assert "왼쪽 체크박스로 받을 분을 고르세요" in page
+    # 체크한 참여 분을 `contacts=` 로 싣는다(불참여는 빼고 몇 명인지 말한다)
     assert 'shareBtn.setAttribute("href"' in page and '"&contacts="' in page
-    assert '"불참여") return;' in page
+    assert '=== "불참여") { out += 1; return; }' in page
 
     note = re.findall(r'data-testid="sourcing-share-note"\s*title="([^"]*)">([^<]*)<', page)
     assert note == [("샘플로보틱스 · 샘플바이오", "Series A 딜 공유 2건")], note
 
-    # 다른 갈래 탭에는 단추가 없다
+    # 다른 갈래 탭에는 단추도 고르는 칸도 없다
     other = client.get(f"/sourcing?tab={quote(MNA)}").text
     assert re.search(r'class="sheet-tab active"\s+href="/sourcing\?tab=M%26A', other)
     assert 'id="sourcing-share-btn"' not in other
+    assert 'id="sourcing-check-all"' not in other and 'class="js-sourcing-pick"' not in other
+
+
+def test_the_series_a_tab_has_a_pick_column_before_no(world, client):
+    """체크박스 칸은 맨 왼쪽(`NO` 앞) — 그 뒤 차례(참여 요청일 · 이름 · 참여)는 그대로."""
+    from app.routers.sourcing import COLUMNS
+
+    page = client.get(f"/sourcing?tab={quote(SERIES_A)}").text
+    head = page[page.index("<thead>"):page.index("</thead>")]
+    ths = re.findall(r"<th[\s>].*?</th>", head, re.S)
+    assert len(ths) == len(COLUMNS) + 2
+    assert 'id="sourcing-check-all"' in ths[0] and 'type="checkbox"' in ths[0]
+    labels = [re.sub(r"<[^>]+>", "", x).strip() for x in ths]
+    assert labels[:5] == ["", "NO", "참여 요청일", "이름", "참여"], labels
+
+    body = page[page.index("<tbody>"):page.index("</tbody>")]
+    rows = re.findall(r"<tr data-id=\"(\d+)\".*?</tr>", body, re.S)
+    first = body[:body.index("</tr>")]
+    tds = re.findall(r"<td[\s>]", first)
+    assert len(tds) == len(COLUMNS) + 2, "머리글과 칸 수가 어긋났다 — 표가 한 칸 밀린다"
+    cells = re.findall(r"<td[^>]*>", first)
+    assert 'class="pick-col"' in cells[0] and "rowno" in cells[1]
+    picks = re.findall(r'class="js-sourcing-pick" value="(\d+)"', body)
+    assert picks == rows, "줄마다 고르는 칸이 있어야 한다(같은 번호로)"
+    order = re.findall(r'data-field="(\w+)"', first)
+    assert order == [f for f, _label, _w, _filt in COLUMNS], order
 
 
 # ── ⑥ 문구 ──────────────────────────────────────────────────────────────────

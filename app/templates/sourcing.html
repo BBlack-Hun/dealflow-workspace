@@ -91,16 +91,18 @@
     </form>
     {# **[Series A 딜 소개]** — 이 갈래 심사역께 IR 기업 현황 › `Series A 이상
        기업` 탭의 받은 딜을 소개한다. 누르면 딜 제안 관리 › 딜 소싱 제안이
-       [보낼 문구 › Series A 딜 공유]로 열리고, **이 표에 지금 보이는(머리글
-       필터 · 검색으로 거른) 참여 분**이 받는 사람으로 미리 골라져 있다. 이 표에는
-       체크박스를 두지 않는다 — 고르는 자리는 딜 제안 관리의 카드 목록 하나다
-       (거기서 빼고 더하고, 이미 받은 분도 거기서 뺀다). 이 갈래에서만 선다
+       [보낼 문구 › Series A 딜 공유]로 열리고, **이 표에서 체크한 참여 분**이
+       받는 사람으로 미리 골라져 있다(`?contacts=…`). 받는 분은 표 맨 왼쪽
+       체크박스로 고른다(머리글 체크 = 지금 보이는 줄 모두). **아무도 안
+       골랐으면 단추가 잠긴다** — 보이는 줄 전부로 슬쩍 대신하지 않는다. 체크한
+       불참여 분은 싣지 않고 몇 명 뺐는지 옆에 적는다. 이 갈래에서만 선다
        (`series_a_share.BUCKET`). #}
-    {% if selected == share_bucket %}
+    {% if picking %}
     <a class="primary-btn inline" id="sourcing-share-btn" data-testid="sourcing-share-btn"
-       href="/deals?mode=sourcing&amp;topic={{ share_topic }}"
+       aria-disabled="true"
        data-base="/deals?mode=sourcing&amp;topic={{ share_topic }}"
-       title="지금 표에 보이는 참여 분을 받는 사람으로 골라 딜 제안 관리에서 엽니다 — 거기서 Series A 이상 기업을 고르고 미리보기 뒤 보냅니다">Series A 딜 소개</a>
+       title="표에서 체크한 참여 분을 받는 사람으로 골라 딜 제안 관리에서 엽니다 — 거기서 Series A 이상 기업을 고르고 미리보기 뒤 보냅니다">Series A 딜 소개 (선택 0명)</a>
+    <span class="hint" id="sourcing-share-hint" data-testid="sourcing-share-hint">왼쪽 체크박스로 받을 분을 고르세요</span>
     {% endif %}
     {# 전화로 한 명 승낙받고 바로 적을 곳이 없어서, 메모지에 적어 뒀다가
        나중에 시트에 옮겨야 했다. 지금 보고 있는 갈래에 바로 넣는다. #}
@@ -116,10 +118,18 @@
 <div class="chip-row" data-filter-chips></div>
 
 {% if rows %}
+{# 맨 왼쪽 체크박스 칸 — [Series A 딜 소개]로 넘길 분을 고른다. 그 단추가 서는
+   갈래(`share_bucket`)에서만 선다 — 다른 탭에는 고른 것을 쓸 곳이 없다.
+   **머리글 · 칸 수가 `COLUMNS` 와 1:1** 이라는 약속(아래 행 주석)은 그대로다 —
+   이 칸은 `NO` 처럼 `COLUMNS` 밖의 머리 칸이고 `NO` 앞에 선다. #}
 <div class="table-wrap wide">
   <table class="grid-table" id="sourcing-table" data-inline-url="/api/sourcing">
     <thead>
       <tr>
+        {% if picking %}
+        <th class="pick-col" style="width:32px"><input type="checkbox" id="sourcing-check-all"
+            aria-label="지금 보이는 줄 모두 고르기" title="지금 보이는(걸러진) 줄을 모두 고르거나 풉니다"></th>
+        {% endif %}
         <th class="num" style="width:34px">NO</th>
         {# 어느 칸에 필터를 세울지는 `COLUMNS` 한 곳에서만 정한다 — 머리글과 행이
            같은 목록을 돌아야 선언(`data-filters`)과 값(`data-f-*`)이 어긋날 수
@@ -147,6 +157,10 @@
       <tr data-id="{{ r.id }}"
           data-search="{{ (r.name ~ ' ' ~ (r.firm or '') ~ ' ' ~ (r.memo or '') ~ ' ' ~ (r.title or ''))|lower }}"
           {% for field, label, width, filterable in columns if filterable %}data-f-{{ field }}="{{ (assignees.get(r.id) if field == 'assignee_name' else r|attr(field)) or '' }}" {% endfor %}>
+        {% if picking %}
+        <td class="pick-col"><input type="checkbox" class="js-sourcing-pick" value="{{ r.id }}"
+            aria-label="{{ r.name }} 고르기"></td>
+        {% endif %}
         <td class="rowno muted"></td>
         <td class="cell" data-field="requested_at">{{ r.requested_at or '' }}</td>
         {# 넣는 길만 있고 빼는 길이 없었다. 지우는 단추는 **이름 바로 밑**에
@@ -377,9 +391,12 @@
     if (box) box.addEventListener("input", function () { api && api.apply(); });
 
     // NO 는 **보이는 것** 기준으로 1부터 — 걸러낸 뒤 몇 명인지 세기 위해서다.
+    // 걸러져 **안 보이게 된 줄의 체크는 푼다** — 안 보이는 분께 나가면 안 된다.
     function renumber() {
       var n = 0;
       table.querySelectorAll("tbody tr").forEach(function (tr) {
+        var pick = tr.querySelector(".js-sourcing-pick");
+        if (pick && tr.hidden) pick.checked = false;
         var cell = tr.querySelector(".rowno");
         if (!cell) return;
         cell.textContent = tr.hidden ? "" : ++n;
@@ -387,28 +404,75 @@
       syncShareLink();
     }
 
-    // [Series A 딜 소개] — **지금 보이는 참여 분**을 받는 사람으로 싣는다
-    // (`?contacts=…`). 걸러 둔 그대로 넘어가야 담당 · 투자분야로 좁혀 본 사람이
-    // 그 사람들에게 보낸다. 불참여 분은 싣지 않는다 — 딜 제안 관리에도 안 뜨고
-    // 발송도 막힌다. 실제로 고르는 것은 그 화면의 카드다(거기서 빼고 더한다).
+    // [Series A 딜 소개] — **체크한 참여 분**을 받는 사람으로 싣는다
+    // (`?contacts=…`). 아무도 안 골랐으면 단추를 잠근다 — 보이는 줄 전부로
+    // 슬쩍 대신하면 고른 줄 알고 누른 사람이 갈래 전원을 받는 화면을 연다.
+    // 체크한 불참여 분은 싣지 않는다(딜 제안 관리에도 안 뜨고 발송도 막힌다) —
+    // 조용히 빼지 않고 몇 명 뺐는지 옆에 적는다.
     var shareBtn = document.getElementById("sourcing-share-btn");
-    function shareIds() {
-      var ids = [];
-      table.querySelectorAll("tbody tr").forEach(function (tr) {
-        if (tr.hidden) return;
-        if ((tr.getAttribute("data-f-participation") || "참여") === "불참여") return;
+    var shareHint = document.getElementById("sourcing-share-hint");
+    var checkAll = document.getElementById("sourcing-check-all");
+    function pickBoxes() {
+      return Array.prototype.slice.call(table.querySelectorAll("tbody .js-sourcing-pick"));
+    }
+    function visiblePicks() {
+      return pickBoxes().filter(function (cb) {
+        var tr = cb.closest("tr");
+        return tr && !tr.hidden;
+      });
+    }
+    function picked() {
+      var ids = [], out = 0;
+      visiblePicks().forEach(function (cb) {
+        if (!cb.checked) return;
+        var tr = cb.closest("tr");
+        if ((tr.getAttribute("data-f-participation") || "참여") === "불참여") { out += 1; return; }
         var id = tr.getAttribute("data-id");
         if (id) ids.push(id);
       });
-      return ids;
+      return { ids: ids, out: out };
+    }
+    function syncCheckAll() {
+      if (!checkAll) return;
+      var vis = visiblePicks();
+      var on = vis.filter(function (cb) { return cb.checked; }).length;
+      checkAll.checked = vis.length > 0 && on === vis.length;
+      checkAll.indeterminate = on > 0 && on < vis.length;
     }
     function syncShareLink() {
+      syncCheckAll();
       if (!shareBtn) return;
-      var ids = shareIds();
+      var got = picked();
       var base = shareBtn.getAttribute("data-base") || "/deals";
-      shareBtn.setAttribute("href", ids.length ? base + "&contacts=" + ids.join(",") : base);
-      shareBtn.textContent = "Series A 딜 소개 (" + ids.length + "명)";
+      shareBtn.textContent = "Series A 딜 소개 (선택 " + got.ids.length + "명)";
+      if (got.ids.length) {
+        shareBtn.setAttribute("href", base + "&contacts=" + got.ids.join(","));
+        shareBtn.removeAttribute("aria-disabled");
+      } else {
+        // `href` 가 없는 `<a>` 는 눌리지 않는다(아래에서 한 번 더 막는다).
+        shareBtn.removeAttribute("href");
+        shareBtn.setAttribute("aria-disabled", "true");
+      }
+      if (shareHint) {
+        var notes = [];
+        if (!got.ids.length) notes.push("왼쪽 체크박스로 받을 분을 고르세요");
+        if (got.out) notes.push("체크한 불참여 " + got.out + "명은 빼고 엽니다");
+        shareHint.textContent = notes.join(" · ");
+        shareHint.hidden = !notes.length;
+      }
     }
+    if (shareBtn) shareBtn.addEventListener("click", function (e) {
+      if (shareBtn.getAttribute("aria-disabled") === "true") e.preventDefault();
+    });
+    if (checkAll) checkAll.addEventListener("change", function () {
+      var on = !!checkAll.checked;
+      visiblePicks().forEach(function (cb) { cb.checked = on; });
+      syncShareLink();
+    });
+    table.addEventListener("change", function (e) {
+      var cb = e.target;
+      if (cb && cb.classList && cb.classList.contains("js-sourcing-pick")) syncShareLink();
+    });
     renumber();
   })();
 </script>
