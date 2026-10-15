@@ -315,6 +315,16 @@ def copy_template(
         status_code=303)
 
 
+def _clean_body(body: str) -> str:
+    """저장할 문구 — 줄바꿈을 `\n` 하나로 맞추고 앞뒤 공백을 뗀다.
+
+    브라우저는 여러 줄 칸(`textarea`)을 `\r\n` 으로 보낸다. 그대로 두면 빈 줄로
+    문단을 찾는 자리(Series A 딜 공유의 `series_a_share.slot`)가 문단을 못 찾고,
+    카톡에도 `\r` 이 실린다. 문구 종류와 상관없이 저장할 때 한 번 맞춘다.
+    """
+    return (body or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+
+
 @router.post("/templates/new", include_in_schema=False)
 def create_template(
     kind: str = Form(...),
@@ -328,7 +338,7 @@ def create_template(
     if not body.strip():
         return RedirectResponse("/templates?msg=내용을+입력하세요", status_code=303)
     db.add(MessageTemplate(user_id=user.id, kind=kind,
-                           name=(name.strip() or None), body=body.strip(), is_active=1))
+                           name=(name.strip() or None), body=_clean_body(body), is_active=1))
     db.commit()
     return RedirectResponse("/templates?msg=문구를+추가했습니다", status_code=303)
 
@@ -347,7 +357,7 @@ def edit_template(
     if not _editable(t, user):
         raise HTTPException(status_code=403, detail="이 문구를 수정할 권한이 없습니다")
     t.name = name.strip() or None
-    t.body = body.strip()
+    t.body = _clean_body(body)
     db.commit()
     return RedirectResponse("/templates?msg=문구를+수정했습니다", status_code=303)
 

@@ -143,14 +143,20 @@ def test_the_tab_offers_the_share_topic_and_a_company_picker(world, client):
     assert "(Series A 딜 공유)" in titles[SHARE], titles
 
 
-def test_the_page_carries_who_already_got_each_company(world, client, db):
+def test_the_picker_reads_who_already_got_each_company(world, client, db):
+    """누가 이미 받았나는 /deals 를 그릴 때 세지 않고, 고를 때 JSON 으로 읽는다
+    (`routers/series_a.share_state` — `deals.js` 가 카드에 채운다)."""
     _send(client, _ids(world, "a"), _ids(world, "bio", kind="c"))
     body = client.get("/deals").text
     card = re.search(r'<label class="pick-card" data-sent-to="([^"]*)"[^>]*>\s*'
                      r'<input type="checkbox" class="sa-cb" value="(\d+)"', body)
     assert card and card.group(2) == str(world["c"]["bio"].id)
-    assert card.group(1) == str(world["p"]["a"].id)
-    assert "공유 1명" in body
+    assert card.group(1) == "", "그릴 때 세지 않는다 — 고를 때 읽는다"
+    assert 'class="tag soft sa-count" hidden' in body
+    state = client.get("/api/series-a-share/state").json()
+    got = {row["id"]: row["sent_to"] for row in state["companies"]}
+    assert got[world["c"]["bio"].id] == [world["p"]["a"].id]
+    assert got[world["c"]["robo"].id] == []
 
 
 # ── ② 글 ────────────────────────────────────────────────────────────────────
@@ -335,14 +341,26 @@ def test_a_canceled_round_does_not_count(world, client, db):
     assert _send(client, _ids(world, "a"), [bio]).status_code == 200
 
 
-def test_an_edited_message_still_records_the_companies(world, client, db):
+def test_an_edited_message_records_the_companies_it_still_carries(world, client, db):
+    """고친 글로 보내도 기록은 **그 글에 든 기업**이다(`series_a_share.companies_in`).
+
+    덩어리 첫 줄(`[기업1] 기업명`)을 남겨 두고 고쳤으면 그 기업을 적고, 덩어리째
+    지웠으면 안 적는다 — 글에 없는 기업을 '받음' 으로 적으면 그 분은 영영 못 받는다
+    (PR #287 리뷰).
+    """
     from app.models import SeriesAShare
 
     a = world["p"]["a"].id
     r = _send(client, [a], _ids(world, "robo", kind="c"),
-              overrides=[{"contact_id": a, "message": "직접 고친 문구"}])
+              overrides=[{"contact_id": a,
+                          "message": "직접 고친 문구\n\n[기업1] 샘플로보틱스\n · 소개: 고쳐 씀"}])
     assert r.status_code == 200
     assert db.query(SeriesAShare).filter_by(sourcing_contact_id=a).count() == 1
+    b = world["p"]["b"].id
+    r = _send(client, [b], _ids(world, "robo", kind="c"),
+              overrides=[{"contact_id": b, "message": "직접 고친 문구"}])
+    assert r.status_code == 200
+    assert db.query(SeriesAShare).filter_by(sourcing_contact_id=b).count() == 0
 
 
 # ── ⑤ 보이는 곳 ─────────────────────────────────────────────────────────────

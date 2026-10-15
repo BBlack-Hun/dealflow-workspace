@@ -10,7 +10,8 @@
 //   ② 단추 글자는 `Series A 딜 소개 (선택 N명)` — 체크한 참여 분 수
 //   ③ 체크한 불참여 분은 싣지 않고 몇 명 뺐는지 옆에 적는다
 //   ④ 머리글 체크 = 지금 보이는 줄 모두(걸러진 줄은 안 켠다) · 다시 누르면 푼다
-//   ⑤ 필터 · 검색으로 **안 보이게 된 줄의 체크는 풀린다** — 다시 보여도 안 켜진다
+//   ⑤ 필터 · 검색으로 **숨은 줄의 체크는 남는다** — '검색 → 체크 → 다음 검색' 으로
+//      여러 명을 고른다. 단추는 체크한 분 전부를 세고, 숨은 분이 있으면 그렇다고 적는다
 //
 // 화면 스크립트는 `sourcing.html` 안에 있다 — 그 글을 그대로 읽어 돌린다(Jinja
 // 꺾쇠만 걷는다). 이름 · 번호는 가상값이다(공개 저장소).
@@ -153,29 +154,36 @@ function locked(btn) { return btn.getAttribute("aria-disabled") === "true"; }
   assert.strictEqual(t.btn.textContent, "Series A 딜 소개 (선택 0명)");
 }
 
-// --- ⑤ 필터로 안 보이게 된 줄의 체크는 풀린다 -----------------------------------
+// --- ⑤ 검색 · 필터로 숨은 줄의 체크는 남는다 ------------------------------------
 {
   const rows = [row(11, "참여"), row(12, "참여"), row(13, "참여")];
   const t = setup(rows);
   pick(rows[0]);
-  pick(rows[1]);
-  assert.strictEqual(t.btn.getAttribute("href"), BASE + "&contacts=11,12");
-
-  // 필터가 12 를 숨겼다 — 남은 줄의 체크는 그대로, 숨은 줄의 체크는 풀린다.
-  rows[1].hidden = true;
+  // 다음 검색 — 12 만 보인다. 11 의 체크는 남아야 한다.
+  rows[0].hidden = true;
+  rows[2].hidden = true;
   t.refilter();
   assert.strictEqual(rows[0].querySelector(".js-sourcing-pick").checked, true,
-                     "필터를 바꿨다고 보이는 줄의 고른 것까지 풀렸다");
-  assert.strictEqual(rows[1].querySelector(".js-sourcing-pick").checked, false,
-                     "안 보이는 줄의 체크가 남았다 — 안 보이는 분께 나간다");
-  assert.strictEqual(t.btn.getAttribute("href"), BASE + "&contacts=11");
-  assert.strictEqual(t.btn.textContent, "Series A 딜 소개 (선택 1명)");
-
-  // 다시 보여도 저절로 켜지지 않는다.
-  rows[1].hidden = false;
-  t.refilter();
+                     "검색을 바꿨다고 앞서 고른 분의 체크가 풀렸다");
+  pick(rows[1]);
+  assert.strictEqual(t.btn.getAttribute("href"), BASE + "&contacts=11,12",
+                     "숨은 줄에서 고른 분이 빠졌다");
+  assert.strictEqual(t.btn.textContent, "Series A 딜 소개 (선택 2명 · 일부 숨김)");
+  assert.strictEqual(t.hint.hidden, false);
+  assert.ok(/체크한 1명은 지금 검색 · 필터에 가려 있습니다/.test(t.hint.textContent),
+            t.hint.textContent);
+  // 머리글 체크는 **보이는 줄만** — 숨은 11 은 건드리지 않는다
+  assert.strictEqual(t.all.checked, true);
+  clickAll(t, false);
   assert.strictEqual(rows[1].querySelector(".js-sourcing-pick").checked, false);
+  assert.strictEqual(rows[0].querySelector(".js-sourcing-pick").checked, true);
   assert.strictEqual(t.btn.getAttribute("href"), BASE + "&contacts=11");
+
+  // 다 보이게 되면 `일부 숨김` 이 사라진다
+  rows.forEach(function (r) { r.hidden = false; });
+  t.refilter();
+  assert.strictEqual(t.btn.textContent, "Series A 딜 소개 (선택 1명)");
+  assert.strictEqual(t.hint.hidden, true);
   assert.strictEqual(t.all.indeterminate, true);
 }
 

@@ -407,6 +407,26 @@ def _sync_sourcing_links(session, flush_context, instances) -> None:
 event.listen(OrmSession, "before_flush", _sync_sourcing_links)
 
 
+def _forget_series_a_sharers(session, flush_context, instances) -> None:
+    """지워지는 딜 소싱 줄을 **확정한 공유 심사역**으로 가리키던 칸을 비운다.
+
+    `SeriesACompany.shared_by_contact_id` 는 딜 소싱 줄을 번호로 가리킨다. 비우지
+    않고 지우면 테스트 DB(외래키가 선다)에서는 막히고, 운영 DB(ALTER 로 붙여
+    외래키가 없다)에서는 없는 번호가 남는다 — SQLite 는 맨 끝 번호를 다시 쓰므로
+    나중에 넣은 다른 분이 그 딜의 '본인' 이 될 수 있다. 위와 같은 까닭으로
+    여기서 건다(어느 길로 지워도 빠뜨릴 수 없다).
+    """
+    from .services import series_a_share
+
+    gone = [o.id for o in session.deleted
+            if isinstance(o, SourcingContact) and o.id]
+    if gone:
+        series_a_share.forget_sharers(session, gone)
+
+
+event.listen(OrmSession, "before_flush", _forget_series_a_sharers)
+
+
 class IrCompany(TimestampMixin, Base):
     __tablename__ = "ir_companies"
 
@@ -785,6 +805,20 @@ class SeriesACompany(TimestampMixin, Base):
     assignee_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     #: 공유 심사역 — 딜을 넘겨 준 투자사 쪽 사람(`홍길동 이사` 처럼 직함까지).
     shared_by: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: **확정한 공유 심사역** — 딜 소싱 명단(`sourcing_contacts`)의 그 분 줄.
+    #:
+    #: `shared_by` 는 사람이 시트에 적은 자유 글자라, Series A 딜 공유가 "이 딜을
+    #: 넘겨 준 분께는 이 딜을 빼고 보낸다" 를 정할 때 이름 · 회사를 맞춰 짐작한다
+    #: (`services/series_a_share.is_own`). 짐작이 틀리는 줄(이직 · 영문 회사명 ·
+    #: 동명이인)은 탭의 `공유 심사역` 칸에서 사람이 [이 분으로 확정]을 누른다 —
+    #: **값이 있으면 짐작하지 않고 이 번호만 본다.** 비어 있으면 지금처럼 짐작한다.
+    #:
+    #: `shared_by` 글자를 다른 사람으로 고치면 비운다(`routers/series_a._assign`) —
+    #: 옛 사람이 확정된 채 남으면 새로 적은 분께 자기 딜이 간다. 그 소싱 줄을 지우면
+    #: 이 칸도 비운다(`series_a_share.forget_sharers` — 세션 이벤트).
+    #: 운영 DB 에는 ALTER 로 붙여 외래키가 없다(`0101_series_a_shared_by`).
+    shared_by_contact_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("sourcing_contacts.id"), nullable=True)
     #: 회사 — 딜을 넘겨 준 투자사. 기업명이 아니다.
     source_firm: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     #: 기업명 — 받은 딜의 기업.

@@ -18,12 +18,13 @@
 그 일이다. 비워 두면 다음 가져오기가 예전 열쇠 `(기업명, 수신 일자)` 로 한 번 맞춰
 그 시트 줄의 열쇠를 적는다(그 열쇠로 맞는 줄이 하나일 때만 — 서비스 머리말).
 
-## 이 판의 번호 — 머지 차례에 따라 다시 이어야 한다
+## 이 판의 번호
 
-지금 `main` 의 머리는 `0095_series_a_shares` 다. 열려 있는 PR 이 0096 ~ 0100 을,
-같은 때 고치는 Series A 딜 공유 PR 이 0101 을 쓸 수 있어 겹치지 않게 0102 를
-쓴다. **먼저 들어간 판이 있으면 `down_revision` 을 그 판으로 바꿔** 머리가
-하나가 되게 맞춘다(`alembic heads` 가 하나여야 한다).
+`0101_series_a_shared_by`(#287/#288 리뷰 수정 — Series A 딜 공유 확정 공유 심사역)
+바로 뒤다. 그 PR 이 먼저 들어가고 이 PR 이 뒤따른다. 열려 있는 기능 PR 들이
+0096 ~ 0100 을 쓰고 있어 겹치지 않게 0102 를 쓴다 — 이 판이 먼저 들어가면 그쪽
+0096 의 `down_revision` 을 이 판으로 옮겨 머리가 하나가 되게 맞춘다(`alembic
+heads` 가 하나여야 한다 — `tests/test_migrations.py`).
 
 ## 빈 DB 에서는 아무 일도 하지 않는다
 
@@ -36,7 +37,7 @@
 돌아오고, 다음 가져오기가 예전 열쇠로 다시 맞춘다.
 
 Revision ID: 0102_series_a_import_key
-Revises: 0095_series_a_shares
+Revises: 0101_series_a_shared_by
 """
 from __future__ import annotations
 
@@ -44,7 +45,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "0102_series_a_import_key"
-down_revision = "0095_series_a_shares"
+down_revision = "0101_series_a_shared_by"
 branch_labels = None
 depends_on = None
 

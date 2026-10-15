@@ -106,8 +106,62 @@
       link.hidden = !data.ir_name;
       link.setAttribute("href", "/companies?q=" + encodeURIComponent(data.ir_name || ""));
     }
+    // `공유 심사역` 을 고치면 후보가 바뀌고, 다른 사람으로 고쳤으면 확정도 풀린다
+    // (`routers/series_a._assign`) — 응답대로 다시 그린다.
+    if (data.sharer) renderSharer(row.querySelector(".sa-sharer"), data.sharer);
     // 세울 값을 다시 읽는다 — 위에서 고쳐 적은 뒤라 한 박자 뒤에.
     if (sort) window.setTimeout(sort.refresh, 0);
+  });
+
+  // ── 공유 심사역 확정 ──────────────────────────────────────────────────
+  //
+  // `공유 심사역` 은 사람이 시트에 적은 글자라 Series A 딜 공유가 "이 딜을 넘겨 준
+  // 분께는 빼고 보낸다" 를 이름 · 회사로 짐작한다(`series_a_share.is_own`). 칸 아래에
+  // 딜 소싱 명단에서 이름이 같은 분을 후보로 띄우고, [이 분으로 확정]을 누르면 그
+  // 뒤로는 그 분만 본다. 무엇을 띄울지는 서버가 정해 실어 준다(`data-sharer` —
+  // `series_a_share.sharer_views`) — 이름을 맞추는 규칙을 여기 또 적지 않는다.
+  //
+  // 글자는 `textContent` 로만 넣는다 — 이름 · 회사는 시트에서 온 말이다.
+  function el(tag, cls, text) {
+    var node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+
+  function renderSharer(box, info) {
+    if (!box) return;
+    info = info || {};
+    box.innerHTML = "";
+    var confirmed = info.confirmed;
+    var cands = info.candidates || [];
+    if (confirmed) {
+      box.appendChild(el("span", "tag ok sa-sharer-name", "확정 · " + confirmed.label));
+      var clear = el("button", "linkbtn js-sharer-clear", "해제");
+      clear.setAttribute("type", "button");
+      clear.setAttribute("title", "확정을 풀고 다시 이름 · 회사로 짐작합니다");
+      box.appendChild(clear);
+    } else {
+      cands.forEach(function (c) {
+        box.appendChild(el("span", "tag soft sa-sharer-name",
+                           c.label + (c.auto ? " · 이름 · 회사 같음" : " · 이름만 같음")));
+        var pick = el("button", "linkbtn js-sharer-pick", "이 분으로 확정");
+        pick.setAttribute("type", "button");
+        pick.setAttribute("data-contact", String(c.id));
+        pick.setAttribute("title", "Series A 딜 공유에서 이 분께만 이 딜을 뺍니다");
+        box.appendChild(pick);
+      });
+    }
+    box.hidden = !confirmed && !cands.length;
+  }
+
+  rows().forEach(function (tr) {
+    var box = tr.querySelector(".sa-sharer");
+    if (!box) return;
+    var info = null;
+    try { info = JSON.parse(box.getAttribute("data-sharer") || "null"); }
+    catch (e) { info = null; }
+    renderSharer(box, info);
   });
 
   // ── 더하기 · 지우기 ───────────────────────────────────────────────────
@@ -135,6 +189,22 @@
 
   // 무엇을 지우는지 **이름으로** 묻는다 — "이 줄" 만으로는 어느 줄을 눌렀는지
   // 확신할 수 없다(옆 탭의 [삭제] 와 같은 이유).
+  // [이 분으로 확정] · [해제] — 서버가 돌려준 대로 다시 그린다.
+  table.addEventListener("click", function (e) {
+    var btn = e.target.closest(".js-sharer-pick") || e.target.closest(".js-sharer-clear");
+    if (!btn) return;
+    var tr = btn.closest("tr");
+    var box = tr && tr.querySelector(".sa-sharer");
+    var raw = btn.getAttribute("data-contact");
+    var id = raw ? parseInt(raw, 10) : null;
+    send("PUT", "/api/series-a-companies/" + tr.getAttribute("data-id") + "/sharer",
+         { contact_id: id })
+      .then(function (res) {
+        if (!res.ok) { alert(res.d.detail || "확정하지 못했습니다"); return; }
+        renderSharer(box, res.d.sharer);
+      }).catch(function () { alert("확정 요청 오류"); });
+  });
+
   table.addEventListener("click", function (e) {
     var btn = e.target.closest(".js-sa-delete");
     if (!btn) return;

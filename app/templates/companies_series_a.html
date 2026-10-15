@@ -131,8 +131,18 @@
             data-filter-key="type">{{ r.deal_type }}</td>
         <td class="cell" data-field="assignee_name" data-type="pick"
             data-filter-key="assignee">{{ r.assignee_name }}</td>
-        <td class="cell" data-field="shared_by" data-type="pick"
-            data-filter-key="sharer">{{ r.shared_by }}</td>
+        {# 칸 아래 — 이 글자를 딜 소싱 명단의 **그 분 줄로 확정**하는 자리.
+           Series A 딜 공유는 "이 딜을 넘겨 준 분께는 이 딜을 빼고 보낸다" 를 이름 ·
+           회사 짐작으로 정하는데(`series_a_share.is_own`), 틀리는 줄은 여기서
+           [이 분으로 확정]을 누른다 — 확정하면 그 분만 본다. 이름이 같은 분을
+           후보로 띄우고(`series_a_share.sharer_views`), 그리는 것은 `series_a.js` 다
+           (`data-sharer`). 후보가 없으면 숨는다. #}
+        <td>
+          <div class="cell" data-field="shared_by" data-type="pick"
+               data-filter-key="sharer">{{ r.shared_by }}</div>
+          <div class="cell-sub sa-sharer" data-testid="sa-sharer"
+               data-sharer='{{ r.sharer|tojson }}' hidden></div>
+        </td>
         <td class="cell" data-field="source_firm" data-type="pick"
             data-filter-key="firm">{{ r.source_firm }}</td>
         <td title="{{ r.sector_major }}">
@@ -173,6 +183,8 @@
   {% if in_ir %}<b>IR 현황</b> 딱지는 IR 기업 현황에도 있는 기업({{ in_ir }}곳)입니다.{% endif %}
   <b>공유한 심사역</b>은 <a href="/deals?mode=sourcing&amp;topic=sourcing_deal_share">딜 제안 관리 › 딜 소싱 제안 › Series A 딜 공유</a>로
   이 기업을 보낸 시리즈 A 딜 소싱 심사역 수입니다(대기 · 보낸 것만 셉니다 — 칸에 마우스를 올리면 누구인지 보입니다).
+  <b>공유 심사역</b> 아래 후보는 딜 소싱 명단에서 이름이 같은 분입니다 — 그 딜을 넘겨 준 분께는 Series A 딜 공유에서
+  이 딜이 빠지므로, 맞는 분을 <b>[이 분으로 확정]</b>하면 이름 · 회사로 짐작하지 않고 그 분만 뺍니다.
 </p>
 {% endblock %}
 

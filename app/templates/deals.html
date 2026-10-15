@@ -510,6 +510,9 @@
       `이미 받은 분 N명` 을 세고, 보낼 기업이 안 남는 분을 받는 사람에서 뺀다.
       `data-own-by` — **이 딜을 공유해 준** 심사역 번호들(`series_a_share.
       own_by_company`). 그 분께는 이 기업이 늘 빠진다 — 카드의 `본인 공유 N명 제외`.
+      **둘 다 빈 채로 그린다** — 이 화면을 열 때마다 세지 않고, 이 글을 고를 때 ·
+      창으로 돌아올 때 `deals.js` 가 `/api/series-a-share/state` 로 읽어 채운다
+      (`routers/series_a.pick_rows` 머리말). `공유 N명`(`.sa-count`)도 그때 선다.
 
       **사람당 보낼 기업 수**(`#sa-per-person`, 기본 2) — 사람마다 본인 공유 ·
       이미 받은 기업을 빼고 고른 차례 **앞에서부터** 이만큼 간다
@@ -544,8 +547,7 @@
       </div>
       <div class="card-list" id="series-a-list">
         {% for r in series_a_rows %}
-        <label class="pick-card" data-sent-to="{{ r.sent_to|join(',') }}"
-               data-own-by="{{ r.own_by|join(',') }}"
+        <label class="pick-card" data-sent-to="" data-own-by=""
                data-search="{{ (r.name ~ ' ' ~ r.sector_major ~ ' ' ~ r.sector_minor ~ ' ' ~ r.series ~ ' ' ~ r.deal_type ~ ' ' ~ r.received_at ~ ' ' ~ r.pitch)|lower }}">
           <input type="checkbox" class="sa-cb" value="{{ r.id }}" data-name="{{ r.name }}">
           <div class="pick-body">
@@ -556,7 +558,8 @@
               <span class="tag warn sa-got" hidden></span>
               {# 지금 고른 받는 분 중 **이 딜을 공유해 준** 분 — 그 분께는 늘 빠진다. #}
               <span class="tag warn sa-own" hidden></span>
-              {% if r.sent_to %}<span class="tag soft" title="Series A 딜 공유로 이 기업을 받은 심사역 — 대기 · 보낸 것">공유 {{ r.sent_to|length }}명</span>{% endif %}
+              {# 이 기업을 받은 심사역 수 — 고를 때 서버에서 읽어 `deals.js` 가 적는다. #}
+              <span class="tag soft sa-count" hidden title="Series A 딜 공유로 이 기업을 받은 심사역 — 대기 · 보낸 것"></span>
             </div>
             <div class="pick-sub muted">[{{ r.sector_major or '-' }}{% if r.sector_minor %} / {{ r.sector_minor }}{% endif %}] · 수신 {{ r.received_at or '-' }}</div>
             {% if r.pitch %}<div class="pick-sub muted" title="{{ r.pitch }}">{{ r.pitch }}</div>{% endif %}

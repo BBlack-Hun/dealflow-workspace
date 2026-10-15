@@ -18,12 +18,14 @@ from __future__ import annotations
 
 import re
 import shutil
+import sqlite3
 import subprocess
 from pathlib import Path
 
 import pytest
 
 from .conftest import DEMO_PASSWORD
+from .test_migrations import _alembic
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -609,6 +611,46 @@ def test_저장소에_시트_주소가_없다():
                  ROOT / "app" / "services" / "series_a_import.py"):
         text = path.read_text("utf-8")
         assert "docs.google.com" not in text and "spreadsheets/d/" not in text
+
+
+# ── 판(0102) ────────────────────────────────────────────────────────────────
+
+def _columns(db) -> set:
+    con = sqlite3.connect(db)
+    try:
+        return {r[1] for r in con.execute('PRAGMA table_info("series_a_companies")')}
+    finally:
+        con.close()
+
+
+def test_가져오기_열쇠_판은_0101_뒤에_칸을_더하고_되돌리면_뺀다(tmp_path):
+    """0102 는 0101(확정한 공유 심사역) 바로 뒤 — 올리면 칸이 서고, 0101 로
+    내리면 이 칸만 빠진다(0101 의 칸은 그대로)."""
+    db = tmp_path / "m.db"
+    done = _alembic(db, "upgrade", "0101_series_a_shared_by")
+    assert done.returncode == 0, done.stdout + done.stderr
+    con = sqlite3.connect(db)
+    try:
+        # 운영 DB 는 이 칸이 없는 표에서 출발한다(0001 의 create_all 은 이미 칸이 있다)
+        cols = [r[1] for r in con.execute('PRAGMA table_info("series_a_companies")')
+                if r[1] != "import_key"]
+        keep = ", ".join(cols)
+        con.execute(f"CREATE TABLE sa_old AS SELECT {keep} FROM series_a_companies")
+        con.execute("DROP TABLE series_a_companies")
+        con.execute("ALTER TABLE sa_old RENAME TO series_a_companies")
+        con.commit()
+    finally:
+        con.close()
+    assert "import_key" not in _columns(db)
+
+    done = _alembic(db, "upgrade", "0102_series_a_import_key")
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert {"import_key", "shared_by_contact_id"} <= _columns(db)
+
+    done = _alembic(db, "downgrade", "0101_series_a_shared_by")
+    assert done.returncode == 0, done.stdout + done.stderr
+    cols = _columns(db)
+    assert "import_key" not in cols and "shared_by_contact_id" in cols
 
 
 # ── ④ 브라우저 ──────────────────────────────────────────────────────────────
