@@ -154,16 +154,9 @@
   넣으면 IR 기업 현황의 같은 항목이 저절로 따라온다 — 맞춰 주는 코드가 따로
   없다. 두 벌로 두면 반드시 어긋난다.
 #}
-<nav class="sheet-tabs co-tabs">
-  {# 건수는 화면을 열 때마다 센다 — 시트처럼 탭 이름에 박아 두면(`스타트업(16)`
-     인데 실제 70행) 금세 거짓말이 된다. #}
-  <a class="sheet-tab {% if co_tab != 'db' %}active{% endif %}" href="/companies">
-    IR 기업 현황 <span title="등록된 기업">{{ counts.total }}</span>
-  </a>
-  <a class="sheet-tab {% if co_tab == 'db' %}active{% endif %}" href="/companies?tab=db">
-    스타트업DB <span title="기업정보가 채워진 기업">{{ counts.with_info }}</span>
-  </a>
-</nav>
+{# 탭 줄은 세 탭이 **한 조각**을 같이 쓴다 — 세 번째 탭(`Series A 이상 기업`)은
+   다른 화면 파일이라, 여기 적어 두면 두 벌이 되어 한쪽만 고쳐진다. #}
+{% include "_company_tabs.html" %}
 
 {# ── 표의 기본 차례를 **말로** 적는다 ──────────────────────────────────────
    두 탭 다 **수신일 최신순**이다(`routers/companies.py` 의 `sort_by_received`

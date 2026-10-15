@@ -29,7 +29,8 @@ from ..db import get_db
 from ..services import (cadence, pipeline, room_joined, scheduled_send,
                         send_guard)
 from ..deps import get_agent_device, may_auto_attach, now_iso
-from ..models import ROOM_SEARCH_TOPIC, AgentDevice, SendItem, SendJob, User
+from ..models import (ROOM_SEARCH_TOPIC, SOURCING_ROOM_TOPIC, AgentDevice,
+                      SendItem, SendJob, User)
 
 log = logging.getLogger(__name__)
 
@@ -243,6 +244,13 @@ def _company_row(job: SendJob, item: SendItem):
 
 def _verify_search(job: SendJob, item: SendItem) -> dict:
     """방 확인 건에 실어 보내는 검색어."""
+    if (job is not None and job.topic == SOURCING_ROOM_TOPIC
+            and item.sourcing_contact is not None):
+        # 딜 소싱 명단 줄의 카톡방 후보 찾기(`services/sourcing_rooms.py`) —
+        # 이름+직함, 못 찾으면 이름, 여럿이면 회사로. `target` 은 안 붙인다.
+        from ..services import sourcing_rooms
+
+        return sourcing_rooms.search_terms(item.sourcing_contact)
     company = _company_row(job, item)
     if company is not None:
         # 받는 쪽이 **스타트업**인 방 확인. 검색어가 다르다 — **회사명 하나**다
@@ -353,6 +361,14 @@ def _apply_verify_result(item: SendItem, body: ItemResult) -> None:
     """
     # 판정을 못 받았으면 '확인됨'으로 올리지 않는다 — 모르면 미확인 쪽이 안전하다.
     verdict = body.verify_result if body.verify_result in VERIFY_VERDICTS else "not_found"
+
+    # 딜 소싱 명단 줄 — 찾은 제목은 **후보로만**(`services/sourcing_rooms.py`).
+    # 방 이름 · 확인 표시는 사람이 [이 방으로 확정] 을 눌러야 선다.
+    if item.job is not None and item.job.topic == SOURCING_ROOM_TOPIC:
+        from ..services import sourcing_rooms
+
+        sourcing_rooms.apply_result(item, body)
+        return
 
     # 회사명으로 찾은 건은 **후보로만** 담는다 — 내줄 때와 같은 판정이다.
     company = _company_row(item.job, item)

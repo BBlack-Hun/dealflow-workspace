@@ -94,6 +94,12 @@ TEAM_TEMPLATES = [
 # 새로 깐 서버와 문구틀을 지운 사람이 서로 다른 글을 받는다.
 TEAM_TEMPLATES += startup_outreach.TEAM_DEFAULTS
 
+# 딜 소싱 **월간 리마인드**(`sourcing_remind`)는 위 목록에 넣지 않는다 — 처음
+# 안내처럼 **문구 이름이 곧 갈래**라(`template_pick.NAME_IS_A_BUCKET`) 이름 없는
+# 한 줄로는 어느 갈래에도 안 붙는다. 시리즈 A 이상 갈래마다 한 줄씩 심는다
+# (`seed_sourcing_remind`). 명단이 아직 비었으면 운영의 갈래 이름으로 심는다.
+SOURCING_REMIND_BUCKET = "시리즈 A 이상 딜 소싱 참여 심사역"
+
 # 관리자 계정. 실제 팀원 계정은 관리자가 scripts/add_user.py 로 만든다.
 ADMIN_PHONE = "01099998888"
 ADMIN_NAME = "관리자"
@@ -206,6 +212,8 @@ def bootstrap(db) -> dict:
         if exists is None:
             db.add(MessageTemplate(user_id=None, kind=kind, body=body, is_active=1))
             made["templates"] += 1
+    made["templates"] += seed_sourcing_remind(db)
+    made["templates"] += seed_series_a_share(db)
 
     # 투자현황은 이제 **계정마다** 켜고 끈다(0054). 첫 관리자가 꺼진 채로
     # 만들어지면 새로 깐 서버에서 그 화면을 아무도 못 연다 — 켜 줄 사람도
@@ -233,6 +241,67 @@ def bootstrap(db) -> dict:
     # 그 화면의 탭을 하나라도 가졌으면 넘어간다).
     made["tabs"] = len(sheet_owner.ensure_member_tabs(db, _admin))
     return made
+
+
+def seed_sourcing_remind(db) -> int:
+    """딜 소싱 월간 리마인드 팀 기본 문구 — 시리즈 A 이상 갈래마다 하나.
+
+    글은 `sourcing_msg.remind_default_body` 그대로다(문구틀이 없을 때 나가는 글과
+    같은 값 — 두 곳에 적으면 새로 깐 서버와 문구틀을 지운 사람이 다른 글을
+    받는다). **메일 주소는 없다**(공개 저장소) — 운영자가 문구 화면에서 `메일`
+    뒤에 실제 주소를 적는다.
+
+    **이미 있으면 건드리지 않는다.** 이 스크립트는 컨테이너가 뜰 때마다 돌고,
+    운영자가 고쳐 둔 글(주소를 넣은 것)을 덮으면 안 된다. 갈래 이름을 바꾸면
+    문구도 함께 옮겨지므로(`sourcing_buckets.rename`) 새 이름으로 또 심지 않는다.
+    """
+    from app.services import sourcing_buckets, sourcing_msg  # noqa: PLC0415
+
+    buckets = ([b for b in sourcing_buckets.names(db) if sourcing_msg.is_series_a(b)]
+               or [SOURCING_REMIND_BUCKET])
+    made = 0
+    for bucket in buckets:
+        exists = db.execute(
+            select(MessageTemplate.id).where(
+                MessageTemplate.user_id.is_(None),
+                MessageTemplate.kind == sourcing_msg.REMIND_KIND,
+                MessageTemplate.name == bucket).limit(1)
+        ).first()
+        if exists is None:
+            db.add(MessageTemplate(user_id=None, kind=sourcing_msg.REMIND_KIND,
+                                   name=bucket, is_active=1,
+                                   body=sourcing_msg.remind_default_body(bucket)))
+            made += 1
+    return made
+
+
+def seed_series_a_share(db) -> int:
+    """Series A 딜 공유 팀 기본 문구 — `시리즈 A 이상 딜 소싱 참여 심사역` 갈래에 하나.
+
+    글은 `series_a_share.default_body` 그대로다(문구틀이 없을 때 나가는 글과 같은
+    값 — 두 곳에 적으면 새로 깐 서버와 문구틀을 지운 사람이 다른 글을 받는다).
+    `{기업 목록}` 자리에 고른 기업이 들어간다. **메일 주소 · 실명은 없다**(공개 저장소).
+
+    받는 갈래가 **하나뿐**이다(`series_a_share.BUCKET` — 투자사 관리 현황과 이어진,
+    이름을 바꿀 수 없는 갈래). 그래서 명단을 훑지 않고 그 이름으로 심는다.
+
+    **이미 있으면 건드리지 않는다** — 운영자가 문구 화면에서 고친 글을 다음 배포가
+    덮으면 안 된다(`seed_sourcing_remind` 와 같은 규칙).
+    """
+    from app.services import series_a_share  # noqa: PLC0415
+
+    exists = db.execute(
+        select(MessageTemplate.id).where(
+            MessageTemplate.user_id.is_(None),
+            MessageTemplate.kind == series_a_share.KIND,
+            MessageTemplate.name == series_a_share.BUCKET).limit(1)
+    ).first()
+    if exists is not None:
+        return 0
+    db.add(MessageTemplate(user_id=None, kind=series_a_share.KIND,
+                           name=series_a_share.BUCKET, is_active=1,
+                           body=series_a_share.default_body()))
+    return 1
 
 
 def seed_demo(db) -> dict:

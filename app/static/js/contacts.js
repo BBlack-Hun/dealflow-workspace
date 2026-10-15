@@ -9,6 +9,9 @@
     // 표에는 있는데 이 목록에 없으면 **상세 창에서 적을 수가 없다** —
     // 칸을 그려 놔도 값이 안 채워지고 저장도 안 된다.
     "kakao_joined", "sourcing_note", "tips_note",
+    // `Series A 딜 소싱`(O/X) — 이 줄에 저장되지 않고 딜 소싱 줄을 잇거나
+    // 만든다(`services/sourcing_sync.py`). 빈칸은 '바꾸지 않음' 이다.
+    "sourcing_join",
     "assignee_name", "department", "office_phone", "office_fax",
     "address", "card_registered_at", "interest_level",
     // 연결 상태. `<select>` 라 값 읽기·쓰기는 다른 칸과 같다.
@@ -324,6 +327,9 @@
         // `지금 연결 중` 으로 계속 뜨는 이유를 아무도 알 수 없었다.
         // 새로고침이 뒤따르므로 화면에 적어 두면 그대로 지나간다 — 멈춰 세운다.
         if (res.d.connect_note) alert(res.d.connect_note);
+        // `Series A 딜 소싱` 을 O 로 두어 딜 소싱에 새 줄이 생겼거나 있던 줄과
+        // 이어졌으면 그렇게 됐다고 말한다 — 다른 메뉴에서 일어난 일이다.
+        if (res.d.sourcing_msg) alert(res.d.sourcing_msg);
         // 표의 집계값(최근 딜소개·반응)은 서버에서 만든다 → 다시 받는 것이
         // 가장 정확하다. **표가 서 있던 자리는 들고 간다**(위 `reload`).
         reload();
@@ -571,6 +577,18 @@
       // 그렸고, 여기서 또 그리면 고치던 자리와 다투게 된다.
       if (joined && joined !== detail.cell) joined.textContent = data.kakao_joined;
       if (row.hasAttribute("data-f-joined")) row.setAttribute("data-f-joined", data.kakao_joined);
+    }
+    // `Series A 딜 소싱` 은 **방금 고친 칸이어도 서버 값으로 다시 그린다.**
+    // 저장된 글자가 아니라 이어진 딜 소싱 줄에서 읽은 값이라(`o` → `O`),
+    // 적힌 그대로 두면 칸과 필터가 서버와 다른 말을 한다. 딜 소싱 쪽에서 일어난
+    // 일(새 줄 · 이어짐)은 칸의 풍선말로 남긴다.
+    if ("sourcing_join" in data) {
+      var sourcing = row.querySelector('.cell[data-field="sourcing_join"]');
+      if (sourcing) {
+        sourcing.textContent = data.sourcing_join;
+        if (data.sourcing_msg) sourcing.setAttribute("title", data.sourcing_msg);
+      }
+      if (row.hasAttribute("data-f-sourcing")) row.setAttribute("data-f-sourcing", data.sourcing_join);
     }
   }
   if (table) table.addEventListener("inline-saved", syncRoomCells);
