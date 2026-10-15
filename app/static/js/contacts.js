@@ -11,6 +11,7 @@
     "kakao_joined", "sourcing_note", "tips_note",
     // `Series A 딜 소싱`(O/X) — 이 줄에 저장되지 않고 딜 소싱 줄을 잇거나
     // 만든다(`services/sourcing_sync.py`). 빈칸은 '바꾸지 않음' 이다.
+    // 고칠 때는 **사람이 이 칸을 바꿨을 때만** 보낸다(`save` 의 `openedJoin`).
     "sourcing_join",
     "assignee_name", "department", "office_phone", "office_fax",
     "address", "card_registered_at", "interest_level",
@@ -40,6 +41,11 @@
   var table = document.getElementById("contacts-table");
   var msg = document.getElementById("detail-msg");
   var current = null;   // null = 새 담당자 추가 모드
+  // 창을 열 때 읽은 `Series A 딜 소싱` 값. 이 칸은 저장할 때마다 딜 소싱 줄을
+  // 잇거나 참여/불참여를 바꾸므로(`set_mark`), 안 바꿨는데 다시 보내면 창을 연
+  // 사이 딜 소싱에서 일어난 일(불참여로 바꿈 · 줄 삭제 · 저절로 이어짐)을
+  // 되돌리거나 400 으로 다른 칸 수정까지 버린다(PR #284 리뷰).
+  var openedJoin = null;
   var filters = null;
 
   function esc(s) {
@@ -188,6 +194,7 @@
 
   function fillForm(c) {
     FIELDS.forEach(function (f) { if (el("f-" + f)) el("f-" + f).value = c[f] || ""; });
+    openedJoin = el("f-sourcing_join") ? el("f-sourcing_join").value.trim() : null;
     // 명단이 정한 칸만 그려지므로 없는 칸이 있다 — 없으면 건너뛴다.
     // 여기서 그냥 두면 스타트업 명단을 열자마자 창이 통째로 안 채워진다.
     CHECKS.forEach(function (f) { if (el("f-" + f)) el("f-" + f).checked = !!c[f]; });
@@ -312,6 +319,11 @@
       // 밀려나 방금 보던 화면 어느 탭에도 안 뜬다 — 넣어 놓고도 안 들어간
       // 줄 안다(`routers/contacts.py` 의 `ContactIn.sheet`).
       if (ADD && ADD.sheet) body.sheet = ADD.sheet;
+    }
+    // `Series A 딜 소싱` 은 **바꿨을 때만** 싣는다(위 `openedJoin`). 다른 칸은
+    // 그대로 다 보낸다 — 줄에 저장되는 값이라 다시 적어도 같은 값이다.
+    if (current && "sourcing_join" in body && body.sourcing_join === openedJoin) {
+      delete body.sourcing_join;
     }
     var url = current ? "/api/contacts/" + current : "/api/contacts";
     fetch(url, {

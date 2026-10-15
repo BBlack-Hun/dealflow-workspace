@@ -258,6 +258,9 @@
           <div class="cell-sub" data-testid="sourcing-no-room">
             <span class="room-badge warn">방 없음</span>
             <span class="muted">{{ pick.state_label }}</span>
+            {# 마지막 찾기가 발송기 오류로 끝났다 — 후보는 그 전 것 그대로다. #}
+            {% if pick.error %}<span class="muted" data-testid="sourcing-room-error"
+                  title="{{ pick.error }}">· 지난 찾기 오류</span>{% endif %}
             <form method="post" action="/sourcing/rooms/search" class="inline-form">
               <input type="hidden" name="tab" value="{{ selected or 'all' }}">
               <input type="hidden" name="ids" value="{{ r.id }}">

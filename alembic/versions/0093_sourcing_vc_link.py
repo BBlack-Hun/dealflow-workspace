@@ -44,8 +44,12 @@
 
 ## 되돌리기
 
-세 칸과 색인이 사라진다 — 잃는 것은 잇기 · `불참여` 표시 · 방 후보 목록이다
-(확정한 방 이름은 `kakao_room_name` 에 남는다).
+두 칸(`vc_contact_id` · `participation`)과 색인이 사라진다 — 잃는 것은 잇기 ·
+`불참여` 표시다. **`room_candidates` 는 남긴다.** 위에 적었듯 이 칸은 #277 의
+`0092_sourcing_receipts` 가 먼저 만들었을 수 있고(그때 이 판은 칸을 만들지
+않는다), 내릴 때는 이 판이 만든 칸인지 알 길이 없다. 지우면 그 판으로 내려간
+앱이 읽는 칸이 사라진다(PR #284 리뷰). 남겨 두어도 해가 없다 — 다시 올리면
+있는지 보고 건너뛴다.
 
 Revision ID: 0093_sourcing_vc_link
 Revises: 0087_sourcing_mail
@@ -168,7 +172,6 @@ def downgrade() -> None:
     with op.batch_alter_table("sourcing_contacts") as batch:
         if "participation" in have:
             batch.drop_column("participation")
-        if "room_candidates" in have:
-            batch.drop_column("room_candidates")
+        # `room_candidates` 는 지우지 않는다 — 머리말 `되돌리기`.
         if "vc_contact_id" in have:
             batch.drop_column("vc_contact_id")
