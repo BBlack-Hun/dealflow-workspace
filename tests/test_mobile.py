@@ -16,7 +16,7 @@ from .conftest import DEMO_PASSWORD
 
 CSS = pathlib.Path("app/static/css/app.css")
 PAGES = ["/", "/todo", "/deals", "/companies", "/companies?tab=db",
-         "/contacts", "/ir", "/templates", "/report", "/setup"]
+         "/companies?tab=series-a", "/contacts", "/ir", "/templates", "/report", "/setup"]
 
 
 @pytest.fixture()

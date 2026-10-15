@@ -31,7 +31,9 @@ const BATCH_TITLES = {
   meeting: "09/09 (미팅 요청)",
   review: "09/09 (미팅 후기)",
   ask: "09/09 (선호 분야 묻기)",
-  sourcing: "09/09 (딜 소싱 제안)"
+  sourcing: "09/09 (딜 소싱 제안)",
+  // 한 탭 안에서 고르는 글은 **문구 종류**가 열쇠다(`pages.py` 의 `TOPIC_TITLES`).
+  sourcing_deal_share: "09/09 (Series A 딜 공유)"
 };
 
 const PEOPLE = [
@@ -87,19 +89,56 @@ function blockedBlock() {
 // 딜 소싱 명단. **투자사 담당자와 다른 표라 그룹 칸이 아예 없다** — 그 대신
 // 갈래(`data-bucket`)가 같은 일을 한다. 두 목록이 서로 섞이지 않는지 보려면
 // 이쪽에도 고를 것이 있어야 한다.
+//
+// 넷째 · 다섯째 값은 **지금 담당**(`data-assignee` — 서버가 `가 > 10/13 나` 에서
+// 집어낸 값)과 **이 달 딜 받음**(`data-received`)이다. 딜 받음인 사람이 하나
+// 있어야 월간 리마인드가 그 사람을 빼는지 볼 수 있다.
 const SOURCING = [
-  [101, "가소싱", "시리즈 A 이상 딜소싱 참여 심사역"],
-  [102, "나소싱", "M&A 찾는 투자사"]
+  [101, "가소싱", "시리즈 A 이상 딜소싱 참여 심사역", "가담당", false],
+  [102, "나소싱", "M&A 찾는 투자사", "나담당", false],
+  [103, "다소싱", "시리즈 A 이상 딜소싱 참여 심사역", "가담당", true]
 ];
 
-function sourcingCard(id, name, bucket) {
+function sourcingCard(id, name, bucket, assignee, received) {
   const cb = el("input", {
     id: "scb-" + id, class: "contact-cb", value: String(id), "data-name": name
   });
+  const tag = el("span", { class: "tag soft received-tag" });
+  tag.hidden = !received;
+  // Series A 딜 공유에서 `고른 기업 중 N곳 이미 받음` 을 적는 자리(`deals.html`).
+  const shareTag = el("span", { class: "tag warn share-tag" });
+  shareTag.hidden = true;
   return el("label", {
-    class: "pick-card", "data-bucket": bucket, "data-assignee": "",
+    class: "pick-card", "data-bucket": bucket, "data-assignee": assignee || "",
+    "data-received": received ? "1" : "0",
     "data-search": (name + " " + bucket).toLowerCase()
-  }, [cb]);
+  }, [cb, tag, shareTag]);
+}
+
+// Series A 딜 공유의 **기업 고르개**(`#series-a-list`) — IR 기업 현황 ›
+// `Series A 이상 기업` 탭의 줄. 셋째 값은 그 기업을 **이미 받은** 딜 소싱 명단
+// 번호들(`data-sent-to` — 서버가 대기 · 보낸 것만 센다).
+//   301 — 가소싱(101)이 받았다
+//   302 — 아무도 안 받았다
+//   303 — 가소싱(101) · 다소싱(103) 둘 다 받았다
+const SERIES_A = [
+  [301, "가샘플바이오", "101"],
+  [302, "나샘플로보", ""],
+  [303, "다샘플푸드", "101,103"]
+];
+// 이 글을 받는 **하나뿐인** 갈래 — 서버가 칩에 실어 준다(`series_a_share.BUCKET`).
+const SHARE_BUCKET = SOURCING[0][2];
+
+function seriesACard(id, name, sentTo) {
+  const cb = el("input", {
+    id: "sacb-" + id, class: "sa-cb", value: String(id), "data-name": name
+  });
+  const got = el("span", { class: "tag warn sa-got" });
+  got.hidden = true;
+  return el("label", {
+    class: "pick-card", "data-sent-to": sentTo,
+    "data-search": name.toLowerCase()
+  }, [cb, el("div", { class: "pick-body" }, [el("div", { class: "pick-name" }, [got])])]);
 }
 
 // ① 소개할 기업 목록. **화면에 그려진 차례**가 곧 고르는 차례가 아니다 —
@@ -183,11 +222,27 @@ function buildDom(people) {
   const cards = roster.map(function (p) { return contactCard(p[0], p[1], p[2], p[3]); });
   const contactList = el("div", { id: "contact-list", class: "card-list" }, cards);
   const blocked = blockedBlock();
-  const sourcingCards = SOURCING.map(function (s) { return sourcingCard(s[0], s[1], s[2]); });
+  const sourcingCards = SOURCING.map(function (s) {
+    return sourcingCard(s[0], s[1], s[2], s[3], s[4]);
+  });
   const sourcingList = el("div", { id: "sourcing-list", class: "card-list" }, sourcingCards);
   const companyCards = COMPANIES.map(function (c) { return companyCard(c[0], c[1]); });
   const companyList = el("div", { id: "company-list", class: "card-list" }, companyCards);
-  const companyPanel = el("section", { class: "panel" }, [companyList]);
+  // IR 기업 검색 줄 — Series A 딜 공유에서는 고르개째 감춘다(`syncCompanyPanel`).
+  const companySearchRow = el("div", { id: "company-picker-search", class: "picker-search" });
+  // Series A 딜 공유의 기업 고르개 — 같은 ① 칸 안에 숨어 있다가 그 글을 고르면 선다.
+  const seriesACards = SERIES_A.map(function (r) { return seriesACard(r[0], r[1], r[2]); });
+  const seriesAList = el("div", { id: "series-a-list", class: "card-list" }, seriesACards);
+  const seriesAPicker = el("div", { id: "series-a-picker" }, [
+    el("input", { id: "sa-pick-search", type: "search" }),
+    el("input", { id: "sa-only-picked", type: "checkbox" }),
+    el("input", { id: "sa-only-fresh", type: "checkbox" }),
+    seriesAList,
+    el("p", { id: "sa-filter-note", class: "hint" })
+  ]);
+  seriesAPicker.hidden = true;
+  const companyPanel = el("section", { class: "panel" },
+                          [companySearchRow, companyList, seriesAPicker]);
 
   // 그룹 칩은 명단에 실제로 있는 그룹만큼 선다(서버의 `sheet_owner.group_rows`).
   const groups = [];
@@ -214,8 +269,37 @@ function buildDom(people) {
       return el("button", { class: "chip", "data-value": b });
     }));
   const bucketBar = el("div", { id: "bucket-filter" }, bucketChips);
+  // 담당 칩 — 서버가 지금 담당마다 하나씩 세우고(`sourcing.assignee_chips`),
+  // 탭을 열 때 다시 읽어 다시 세운다. `data-count` 는 바뀌었는지 견주는 값이다.
+  const counted = {};
+  SOURCING.forEach(function (s) { if (s[3]) counted[s[3]] = (counted[s[3]] || 0) + 1; });
+  const assigneeChips = [el("button", { class: "chip active", "data-value": "" })]
+    .concat(Object.keys(counted).map(function (a) {
+      return el("button", { class: "chip", "data-value": a, "data-count": String(counted[a]) });
+    }));
+  const assigneeBar = el("div", { id: "assignee-filter" }, assigneeChips);
+  // [보낼 문구] — 처음 안내 / 월간 리마인드(`deals.html` 의 `#sourcing-topic`).
+  const topicBar = el("div", { id: "sourcing-topic" }, [
+    el("button", { class: "chip active", "data-value": "sourcing_intro" }),
+    el("button", { class: "chip", "data-value": "sourcing_remind" }),
+    el("button", { class: "chip", "data-value": "sourcing_deal_share",
+                   "data-bucket": SHARE_BUCKET })
+  ]);
+  // `이번 달 딜 받음 N명 제외` 와 [이번 달 딜 받음 포함].
+  const receivedNote = el("div", { id: "received-note" }, [
+    el("span", { id: "received-count" }),
+    el("input", { id: "include-received", type: "checkbox" })
+  ]);
+  receivedNote.hidden = true;
+  // Series A 딜 공유 — [이미 이 기업들을 받은 분 제외](기본 켬)와 그 수.
+  const excludeShared = el("input", { id: "exclude-shared", type: "checkbox" });
+  excludeShared.checked = true;
+  const sharedNote = el("div", { id: "shared-note" }, [
+    excludeShared, el("span", { id: "shared-count" })
+  ]);
+  sharedNote.hidden = true;
   const sourcingBox = el("div", { id: "sourcing-filters", class: "pick-filters" },
-                         [bucketBar]);
+                         [topicBar, receivedNote, sharedNote, bucketBar, assigneeBar]);
 
   const simple = ["company-pill", "contact-pill", "contact-summary", "ss-companies",
                   "ss-contacts", "ss-note", "preview-tabs", "preview-area",
@@ -273,6 +357,7 @@ function buildDom(people) {
     blocked.querySelectorAll(".contact-cb"));
   return { root: root, document: dom_.makeDocument(root), cards: cards,
            sourcingCards: sourcingCards, companyCards: companyCards,
+           seriesACards: seriesACards, seriesAPicker: seriesAPicker,
            // deals.js 가 `#company-list` 에서 거슬러 올라가 잡는 바로 그 칸
            // (`.closest(".panel")`). 방식에 따라 여기에 표시가 붙는다 —
            // `dimmed`(문구만 보낼 때) · `no-pick-badge`(자료 전달).
@@ -349,7 +434,9 @@ function run(people, opts) {
 // `templates` 를 주면 문구 목록(GET `/api/templates`)도 **풀리는 답**으로
 // 돌려준다. 안 주면 지금까지와 같다(안 풀리는 약속) — 대부분의 검사는 문구
 // 목록과 무관하고, 거기까지 답을 지어 주면 검사마다 문구를 한 벌씩 들게 된다.
-function fakeFetch(replies, templates) {
+// `gets` 는 GET 주소 → 돌려줄 값이다(`/api/sourcing/state` 처럼 화면이 다시
+// 읽는 자리). 안 주면 지금까지와 같다(안 풀리는 약속).
+function fakeFetch(replies, templates, gets) {
   const calls = [];
   // `.then()` 이 또 약속을 돌려주면 **펴 준다**(진짜 Promise 처럼). deals.js 가
   // `r.json().then(...)` 을 바깥 `.then` 에서 돌려주는데, 안 펴 주면 다음
@@ -372,6 +459,10 @@ function fakeFetch(replies, templates) {
       if (templates && String(url).indexOf("/api/templates") === 0) {
         return settled({ ok: true,
                          json: function () { return settled({ templates: templates }); } });
+      }
+      if (gets && Object.prototype.hasOwnProperty.call(gets, String(url))) {
+        const got = typeof gets[url] === "function" ? gets[url]() : gets[url];
+        return settled({ ok: true, json: function () { return settled(got); } });
       }
       return { then: function () { return this; }, catch: function () { return this; } };
     }
@@ -461,6 +552,7 @@ function clickClearAll(dom) { dom.document.getElementById("clear-all-contacts").
 
 module.exports = { EMPTY_GROUP: EMPTY_GROUP, PEOPLE: PEOPLE, SOURCING: SOURCING,
                    COMPANIES: COMPANIES, BATCH_TITLES: BATCH_TITLES,
+                   SERIES_A: SERIES_A, SHARE_BUCKET: SHARE_BUCKET,
                    fakeFetch: fakeFetch, companyBox: companyBox,
                    toggleCompany: toggleCompany, pickNumbers: pickNumbers,
                    buildDom: buildDom, queueRow: queueRow,

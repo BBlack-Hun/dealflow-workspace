@@ -281,6 +281,13 @@ WATCHED: Dict[str, Watch] = {
             "**지우는 것도 같은 결이다** — 관리자뿐 아니라 팀원도 기업을 지운다"
             "(`routers/companies.can_delete_company`). 지울 수 있는 사람이 늘어난 "
             "만큼 이 줄이 '누가 지웠나' 를 답하는 유일한 자리다."),
+    "series_a_companies": Watch(
+        owner=None, href="/companies", label=_attr("name"),
+        why="IR 기업 현황 메뉴의 `Series A 이상 기업` 탭 — 딜 소싱으로 받은 딜. "
+            "주인 칸이 없고 옆 두 탭(`ir_companies`)과 같이 **누구나 고치고**, "
+            "지우는 사람도 같은 판정이다(`routers/companies.can_delete_company`). "
+            "시트에서 넘어온 줄을 손으로 고치는 자리라, 누가 언제 무엇을 바꿨는지가 "
+            "여기 말고 남는 곳이 없다."),
     "contact_activities": Watch(
         owner=None, href="/contacts", label=_activity_label,
         only=("source", SOURCE_MANUAL),
@@ -297,6 +304,14 @@ WATCHED: Dict[str, Watch] = {
     "sourcing_contacts": Watch(
         owner=None, href="/sourcing", label=_attr("name"),
         why="딜 소싱 명단. 주인 칸이 없고 로그인한 사람이면 누구나 고친다."),
+    "sourcing_receipts": Watch(
+        owner=None, href="/sourcing", label=_attr("month"),
+        why="딜 소싱 명단의 달마다 `딜 받음` 표시. 사람이 누르거나 메일 확인이 "
+            "세운다 — 잘못 눌리면 누가 이 달 딜을 줬는지가 틀린다."),
+    "sourcing_mail_settings": Watch(
+        owner=None, href="/team", label=_attr("host"),
+        why="딜 소싱 메일 확인이 읽을 편지함(관리자). 비밀번호 칸은 이름에 "
+            "`password` 가 들어 있어 값 없이 `바뀜` 으로만 남는다."),
     "consulting_sheets": Watch(
         owner=None, href="/consulting", label=_attr("label"),
         why="투자컨설턴트 화면의 탭. `탭은 사람마다가 아니라 팀 공용이다`(models)."),
@@ -343,6 +358,9 @@ UNWATCHED: Dict[str, str] = {
     "deal_queue_companies": "발송 대기에 실린 기업. 위와 같다.",
     "send_jobs": "발송 작업. 보낸 기록이다.",
     "send_items": "발송 한 건. 보낸 기록이다(문구가 통째로 들어 있기도 하다).",
+    "series_a_shares": "Series A 딜 공유로 어느 심사역에게 어느 기업을 보냈나 — 발송 "
+                       "목록을 만들 때 기계가 발송 건마다 적는 보낸 기록이다"
+                       "(`send_items` 와 같은 결). 사람이 고치는 길이 없다.",
     "monthly_column_runs": "이달 열을 이미 세웠다는 표시. 사람이 보는 자료가 아니다.",
     "weekly_routines": "주간 업무 되풀이 — 계정마다의 개인 화면이다.",
     "weekly_tasks": "주간 업무 할 일 — 개인 화면이다.",
@@ -351,6 +369,11 @@ UNWATCHED: Dict[str, str] = {
     "one_liner_backups": "한 줄 소개 되돌리기용 버퍼. 되돌릴 값을 담아 두는 자리이고, "
                          "무엇이 바뀌었는지는 `ir_companies` 쪽에 이미 남는다.",
     "auto_send_runs": "자동 준비가 오늘 몇 건 돌았나. 기계 기록이다.",
+    "sourcing_mail_checks": "딜 소싱 메일 확인이 받은 편지함을 언제 훑었나(회차 · 건수 · "
+                            "실패 사유). 기계 기록이다 — 그 결과로 선 `딜 받음` 은 "
+                            "`sourcing_receipts` 에 있다.",
+    "sourcing_mail_seen": "메일 확인이 이미 본 메일(Message-ID × 사람). 같은 메일로 두 번 "
+                          "세우지 않으려는 기계 기록이다.",
     "notice_reads": "공지를 확인했다는 표시. 자기가 읽었다고 적는 줄이라 늘 자기 것이고"
                     "(남길 일이 아니다), 사람 수 × 공지 수만큼 쌓인다 — 남기면 로그가 "
                     "`누가 공지를 닫았다` 로 덮여 `누가 무엇을 고쳤나` 가 안 보인다. "
@@ -395,6 +418,15 @@ VALUE_FIELDS = frozenset({
     # (명단 이름 · 갈래 이름 · 탭 이름).
     "name", "label", "title", "firm", "company_name", "ceo_name",
     "department", "kind", "variant",
+    # `Series A 이상 기업` 탭 — 딜을 **누가 · 어느 투자사가 · 어떤 길로** 넘겨
+    # 주었나. 짧고 고르는 값이라(`firm` · `assignee_name` 과 같은 결) 값을 남긴다.
+    "shared_by", "source_firm", "deal_type",
+
+    # **딜 소싱의 어느 줄이 투자사 관리 현황의 어느 줄과 이어졌나 · 참여하나.**
+    # 투자사 관리 현황의 `Series A 딜 소싱` 칸(O/X)이 이 둘에서 나온다
+    # (`services/sourcing_sync.py`) — 잘못 이어지면 남의 방으로 딜 소싱 제안이
+    # 나가고, 잘못 `불참여` 가 되면 그 분만 조용히 빠진다.
+    "vc_contact_id", "participation",
 
     # 어디까지 왔나.
     "status", "connect_stage", "stages", "invited_status", "interest_level",
@@ -454,11 +486,16 @@ FIELD_LABELS = {
     "can_view_consulting": "투자현황", "can_auto_attach_ir": "자료 자동 첨부",
     "daily_send_cap": "하루 발송 상한",
     "must_change_password": "비밀번호 변경 필요", "password_hash": "비밀번호",
+    "password_enc": "비밀번호", "host": "메일 서버", "username": "계정",
     "series": "라운드", "sector_major": "분야", "sector_minor": "세부 분야",
     "stages": "투자 단계", "interest_level": "관심도", "invited_status": "초대",
     "contract_status": "계약 상태", "funding_status": "투자 상태",
     "outcome": "결과", "meet_mode": "미팅 방식", "kind": "종류",
     "enabled": "켜짐", "firm_type": "기관 유형", "variant": "갈래",
+    "vc_contact_id": "투자사 관리 현황 연결", "participation": "참여",
+    # `Series A 이상 기업` 탭 — 시트 머리글 그대로.
+    "shared_by": "공유 심사역", "source_firm": "회사", "deal_type": "Type",
+    "detail": "상세 내용", "deal_pitch": "딜소개 문구",
     "memo": "메모", "notes": "칸 메모", "note": "메모", "body": "본문",
     "phone": "연락처", "email": "메일", "one_liner": "한 줄 소개",
     "summary": "요약", "business_desc": "사업 설명", "content_json": "내용",

@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from .. import clock
 from ..models import User
 from . import (auto_send, cadence, pipeline, readiness, scheduled_send,
-               send_guard, startup_monthly)
+               send_guard, sourcing_mail, startup_monthly)
 
 # 줄 하나 = 오늘 할 일 하나.
 #   kind  : 화면에서 묶어 보여줄 종류
@@ -112,6 +112,13 @@ def build(db: Session, user: User, today: Optional[date] = None) -> dict:
         items.append(_item(
             "send", "urgent", alert["title"], alert["detail"],
             f"/jobs/{alert['job_id']}", alert["count"]))
+
+    # **딜 소싱 메일 확인** — 관리자에게. 매일 18:00 회차가 **새로 딜 받음을
+    # 세웠을 때만** 그 결과(오늘 · 어제), 그리고 마지막 확인이 실패했으면 고칠
+    # 때까지 그 사유. 아무도 새로 안 선 날은 안 선다(`services/sourcing_mail.py`).
+    for line in sourcing_mail.today_items(db, user, _at(today)):
+        items.append(_item("sourcing", line["level"], line["title"], line["detail"],
+                           line["href"], line.get("count")))
 
     # 스타트업 월간 **자동 예약을 못 세운 달.** 선 목록은 바로 위 예약으로
     # 뜨지만, 못 선 것은 아무 데도 안 뜨면 그 달이 조용히 빠진다.

@@ -166,7 +166,10 @@ a:hover { text-decoration: underline; }
 
    안 고른 카드도 같은 크기의 빈 자리를 남긴다(`attr()` 이 빈 글자를 준다) —
    고를 때마다 줄이 들썩이면 어디를 눌렀는지 놓친다. */
-#company-list .pick-card::before {
+/* Series A 딜 공유의 기업 고르개(`#series-a-list`)도 같다 — 고른 차례가 곧
+   문구의 `[기업1]` 이다(`services/series_a_share.blocks`). */
+#company-list .pick-card::before,
+#series-a-list .pick-card::before {
   content: attr(data-pick-order);
   /* 체크박스와 **같은 줄 한가운데**다(위 `.pick-card` 참고) — 번호가 체크박스
      위나 아래로 어긋나면 어느 카드의 번호인지 헷갈린다. */
@@ -175,7 +178,8 @@ a:hover { text-decoration: underline; }
   display: inline-flex; align-items: center; justify-content: center;
   font-size: 11.5px; font-weight: 700; line-height: 1; border-radius: 999px;
 }
-#company-list .pick-card[data-pick-order]::before {
+#company-list .pick-card[data-pick-order]::before,
+#series-a-list .pick-card[data-pick-order]::before {
   background: var(--brand); color: #fff;
 }
 /* IR 자료 전달 탭에서는 **고른 차례가 번호가 아니다.** 그때의 번호는 딜 소개에서
@@ -642,7 +646,10 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
     사다리의 꼭대기라 내려가지 않아서, 딜소개가 다시 나가도 `IR 자료 요청` 에
     머물러 있는 것이 헷갈린다는 이야기가 있었다. 폭은 브라우저에서 잰 값이다
     — contacts.html 의 그 머리글 주석에 잰 값이 적혀 있다) */
-#contacts-table { min-width: 3286px; }
+/* (3,286 → 3,442 : `Series A 딜 소싱` 칸(156px)을 앱이 만든 칸 맨 앞에 세웠다 —
+    딜 소싱의 시리즈 A 갈래와 이어진 O/X 칸. contacts.html 의 그 머리글 주석.
+    뒤에 `딜소싱 참여 투자사` 바로 뒤로 옮겼다 — 자리만 바뀌어 합은 그대로) */
+#contacts-table { min-width: 3442px; }
 /* 팀 현황도 같은 방식이다 — 폭은 th 에서 잡고 여기서는 표가 줄지 않게만 막는다.
    `table-layout: fixed` 는 폭을 안 준 칸을 **똑같이** 나눠 주는데, 이 표는 칸마다
    필요한 자리가 전혀 다르다. 마지막 동작 칸(단추 셋)이 1,920px 에서도 148px 밖에
@@ -864,6 +871,8 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
 .tl-item.tl-meeting_done .tl-kind { color: var(--green); }
 .tl-body { word-break: break-all; }
 .tl-src { font-size: 10px; color: var(--muted); background: #f1f3f5; border-radius: 4px; padding: 1px 5px; }
+/* 손으로 적은 줄의 [되돌리기] — `시트` 표와 같은 넷째 칸에 선다(둘이 한 줄에 같이 설 일은 없다). */
+.tl-undo { padding: 0; white-space: nowrap; font-size: 11px; }
 .tl-month { font-size: 12px; font-weight: 800; color: var(--muted); margin: 14px 0 4px;
             padding-bottom: 3px; border-bottom: 2px solid var(--line); }
 .tl-month:first-child { margin-top: 0; }
@@ -941,8 +950,12 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
 }
 .only-picked { display: flex; align-items: center; gap: 5px;
                font-size: 12.5px; color: var(--muted, #6b7280); white-space: nowrap; }
-#company-list { max-height: 340px; overflow-y: auto; }
-#company-filter-note { margin-top: 4px; }
+#company-list, #series-a-list { max-height: 340px; overflow-y: auto; }
+#company-filter-note, #sa-filter-note { margin-top: 4px; }
+/* Series A 딜 공유 — 고른 기업을 모두 받아 **이번에 빠지는** 받는 분 카드. 고른
+   채 남아 있어(고른 사람은 언제나 보인다) 흐리게만 둔다 — 발송 · 미리보기 대상에는
+   안 들어간다(`deals.js` 의 `isShareCovered`). */
+.pick-card.share-covered { opacity: .55; }
 
 
 /* ── 문구 선택기 (발송 화면) ───────────────────────────────── */

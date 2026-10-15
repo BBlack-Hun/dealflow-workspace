@@ -188,7 +188,10 @@ function posts(fetch) {
     { batch_key: "ms-9", kind_label: "딜 소개", day: TODAY, rows: 80,
       company_count: 8, undone: 0, is_undone: false },
     { batch_key: "ms-8", kind_label: "딜 소개", day: LONG_AGO, rows: 12,
-      company_count: 0, undone: 12, is_undone: true }
+      company_count: 0, undone: 12, is_undone: true },
+    // 담당자 상세에서 한 사람만 되돌린 판 — **반쯤** 되돌려져 있다.
+    { batch_key: "ms-7", kind_label: "딜 소개", day: LONG_AGO, rows: 3,
+      company_count: 0, undone: 1, is_undone: false }
   ] };
   // 목록은 GET 이라 가짜 서버의 POST 갈래를 안 지난다 — 여기서만 따로 받는다.
   const undoCalls = [];
@@ -221,11 +224,20 @@ function posts(fetch) {
   box.fire("toggle");
 
   const list = el(dom, "manual-batch-list");
-  assert.strictEqual(list.children.length, 2, "적은 판 목록이 안 그려졌다");
+  assert.strictEqual(list.children.length, 3, "적은 판 목록이 안 그려졌다");
   // **되돌린 판도 남는다** — 사라지면 되돌렸는지 안 적었는지를 알 수 없다.
   assert.ok(list.children[1].classList.contains("undone"));
   assert.strictEqual(list.children[1].querySelector("button"), null,
     "이미 되돌린 판에 [되돌리기] 가 또 서 있다");
+
+  // 반쯤 되돌린 판은 **몇 줄이 이미 빠졌는지** 말하고, 남은 줄을 되돌릴 단추가
+  // 그대로 선다 — 줄 수가 확인창과 목록에서 달라 헷갈리지 않게.
+  const half = list.children[2];
+  assert.ok(!half.classList.contains("undone"), "반쯤 되돌린 판이 다 되돌린 판처럼 그려졌다");
+  assert.ok(half.children.some(function (c) {
+    return String(c.textContent).indexOf("3줄 중 1줄 되돌림") >= 0;
+  }), "반쯤 되돌린 판이 몇 줄 빠졌는지 말하지 않는다");
+  assert.ok(half.querySelector("button"), "반쯤 되돌린 판에 남은 줄을 되돌릴 단추가 없다");
 
   list.children[0].querySelector("button").fire("click");
   assert.strictEqual(undoCalls.length, 2, "되돌리기가 한 걸음으로 끝났다");

@@ -303,6 +303,22 @@ class ContactActivity(TimestampMixin, Base):
     #: 되돌린 뜻이 없다.
     undone_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
+    #: 이 줄을 적으면서 **후속 시퀀스에 한 일** — JSON
+    #: `{"id": 시퀀스 번호, "before": 그 전 모습 | null, "after": 그 뒤 모습}`.
+    #: 손으로 적은 줄(`services/manual_send.record`)만 채우고, 시퀀스를 안
+    #: 건드렸으면 비어 있다. `before` 가 `null` 이면 이 줄이 시퀀스를 **새로
+    #: 세웠다**는 뜻이다.
+    #:
+    #: 왜 칸이 필요한가: 적을 때 `cadence.advance` 가 이미 서 있던 시퀀스의
+    #: 딜소개일·단계·다음 예정일을 **덮어쓴다.** 덮어쓴 뒤에는 그 전 값이 어디에도
+    #: 없어서, 되돌릴 때 기존 칸만으로는 "이 줄이 세운 것인가 · 그 전에는
+    #: 어땠나" 를 가를 수 없다(시각 칸은 초까지라 같은 초에 적힌 두 줄을 못
+    #: 가른다). 되돌려도 리마인드가 그대로 남아 **받은 적 없는 사람에게
+    #: "지난번 공유드린…"** 이 나가던 것이 이 칸을 만든 까닭이다.
+    #:
+    #: 읽고 쓰는 자리는 `services/manual_send.py` 하나다.
+    sequence_trace: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
     contact: Mapped["VcContact"] = relationship()
 
     @property
@@ -397,6 +413,26 @@ def including_undone(db):
 # (검사 · 백업 · 가져오기 스크립트)에서만 되돌린 줄이 새어 나온다 — 이 표를
 # 쓰려면 이 모듈을 불러야 하므로, 여기서 거는 것이 가장 빠뜨릴 수 없는 자리다.
 event.listen(OrmSession, "do_orm_execute", _hide_undone_activities)
+
+
+def _sync_sourcing_links(session, flush_context, instances) -> None:
+    """딜 소싱 ↔ 투자사 관리 현황 — 이어진 두 줄의 같은 칸을 **함께** 고친다.
+
+    무엇을 하는지는 `services/sourcing_sync.before_flush` 에 있다. 여기서 거는
+    까닭은 바로 위 `_hide_undone_activities` 와 같다 — 이 모듈을 부르지 않고는
+    두 표를 쓸 수 없으니, 검사 · 가져오기 스크립트 · 화면 어느 길로 고쳐도
+    빠뜨릴 수 없다. 함수 안에서 불러 오는 것은 서비스가 이 모듈을 불러 쓰기
+    때문이다(맨 위에서 부르면 서로를 기다린다).
+    """
+    from .services import sourcing_sync
+
+    sourcing_sync.before_flush(session)
+
+
+# **수정 로그(`edit_log`)보다 먼저** 걸린다 — 그쪽은 `create_app()` 에서 걸린다.
+# 여기서 따라 고친 칸이 그 로그의 `before_flush` 에 함께 읽혀야 남의 줄을
+# 따라 고친 것까지 로그에 남는다.
+event.listen(OrmSession, "before_flush", _sync_sourcing_links)
 
 
 class IrCompany(TimestampMixin, Base):
@@ -741,6 +777,114 @@ class IrCompany(TimestampMixin, Base):
         return has_text and has_number
 
 
+class SeriesACompany(TimestampMixin, Base):
+    """IR 기업 현황 메뉴의 `Series A 이상 기업` 탭 — **받은 딜 한 건이 한 줄**.
+
+    시트 `Series A 이상 기업` 을 옮긴 표다. 한 줄은 "언제(`received_at`) 어느
+    투자사(`source_firm`)의 누가(`shared_by`) 어떤 길로(`deal_type` — 딜 소싱
+    네트워크 · 후속 투자 연계) 이 기업을 넘겨 주었고, 우리 쪽 누가 맡았나
+    (`assignee_name`)" 다.
+
+    ## `ir_companies` 와 왜 따로인가
+
+    `IrCompany` 는 **우리가 투자사에 소개하는 기업**이고, 이 표는 **딜 소싱으로
+    받은 딜**이다. 받은 날 · 넘겨 준 투자사 · 공유 심사역 · Type 은 `ir_companies`
+    에 칸 자체가 없고, 처음 들일 때 기업명을 `deal_history._key` 로 맞춰 보니
+    대부분이 IR 기업 현황에 없는 기업이었다(개발 자료 11곳 중 2곳만 있다). 한
+    표에 섞으면 소개 목록(`/deals`)에 받기만 한 기업이 뜨고, 받은 날마다 줄이
+    서야 하는 이 표의 모양도 못 담는다.
+
+    **같은 기업이 IR 기업 현황에도 있으면 이름으로 그때그때 잇는다**
+    (`routers/series_a.py` 의 `IR 현황` 딱지). 값을 이 표로 옮겨 적지 않는다 —
+    옮기면 두 벌이 되어 한쪽만 고쳐진다.
+
+    ## 칸
+
+    금액이 없다 — 시트에 없는 칸은 만들지 않는다. 글자는 **적힌 그대로**다
+    (`series` 는 `Series A (누적투자금 10억이상, …)` 처럼 길게 오고, 표에서만
+    괄호 앞을 보인다 — IR 기업 현황의 `투자라운드` 와 같다).
+    """
+
+    __tablename__ = "series_a_companies"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    #: 수신 일자 — `YYYY-MM-DD` 글자. 표가 이 칸으로 최신순이다.
+    received_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: Type — 딜이 들어온 길(`딜 소싱 네트워크` · `후속 투자 연계`).
+    deal_type: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: 담당팀원 — 우리 팀에서 이 딜을 맡은 사람.
+    assignee_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: 공유 심사역 — 딜을 넘겨 준 투자사 쪽 사람(`홍길동 이사` 처럼 직함까지).
+    shared_by: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: 회사 — 딜을 넘겨 준 투자사. 기업명이 아니다.
+    source_firm: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: 기업명 — 받은 딜의 기업.
+    name: Mapped[str] = mapped_column(String)
+    #: 대분류(시트 머리글 `사업분야 대분류`) · 소분류.
+    sector_major: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    sector_minor: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: 투자라운드(시트 머리글 `기업구분`) — 적힌 그대로.
+    series: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: 상세 내용 — 여러 줄 글(천 자가 넘는 줄도 있다).
+    detail: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    #: 딜소개 문구. IR 기업 현황의 `딜 소개 문구`(`IrCompany.one_liner`)와
+    #: **다른 표의 다른 값**이다. 딜 제안 관리 › 딜 소싱 제안의 [Series A 딜 공유]
+    #: 가 기업 덩어리의 `소개` 로 이 문구를 쓴다(비면 `상세 내용` 앞부분 —
+    #: `services/series_a_share.pitch_of`).
+    deal_pitch: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
+class SeriesAShare(TimestampMixin, Base):
+    """**이 기업을 이 심사역에게 Series A 딜 공유로 보냈다** — 한 줄이 (기업 × 사람 × 발송 건).
+
+    딜 제안 관리 › 딜 소싱 제안의 [보낼 문구 › Series A 딜 공유]가 발송 목록을
+    만들 때 적는다(`routers/deals.create_send_list` → `services/series_a_share.record`).
+    받는 사람은 딜 소싱 명단(`sourcing_contacts`)의 `시리즈 A 이상 딜 소싱 참여
+    심사역` 갈래 줄이고, 기업은 `Series A 이상 기업` 탭의 줄(`series_a_companies`)이다.
+
+    ## 왜 표를 새로 세우나
+
+    딜 소개의 발송 기록(`deal_batch_companies`)은 **`ir_companies` 를 가리킨다**
+    (외래키). 이 탭의 기업은 다른 표라 거기에 담을 수 없고, 받는 사람도 투자사
+    담당자가 아니라 딜 소싱 명단이다.
+
+    ## 무엇을 "받았다" 로 세나 — 발송 건의 상태를 따라간다
+
+    줄은 발송 건(`send_item_id`)에 매여 있고, **그 건이 살아 있을 때만** 받은
+    것으로 센다 — 대기 · 보내는 중 · 보냄(`series_a_share.LIVE_ITEM`). 회차를
+    [중단]해 `canceled` 가 되거나 `failed` 로 끝나면 저절로 안 센다. 줄을 지우거나
+    고치지 않아도 되는 까닭이 그것이다 — 상태는 발송 건 한 곳에 있다
+    (`services/twin_send.py` 가 같은 규칙으로 센다).
+
+    이 수가 쓰이는 곳: 딜 제안 관리의 기업 고르개 `이미 받은 분 N명`, 받는 사람
+    목록의 `이미 이 기업들을 받은 분 제외`, `Series A 이상 기업` 탭의 `공유한
+    심사역`, 딜 소싱 줄의 `Series A 딜 공유 N건`.
+    """
+
+    __tablename__ = "series_a_shares"
+    __table_args__ = (
+        Index("ix_series_a_shares_company", "series_a_company_id"),
+        Index("ix_series_a_shares_contact", "sourcing_contact_id"),
+        # 같은 발송 건에 같은 기업은 한 번 — 같은 회차를 두 번 적지 않는다.
+        Index("uq_series_a_shares_item_company", "send_item_id",
+              "series_a_company_id", unique=True),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    series_a_company_id: Mapped[int] = mapped_column(
+        ForeignKey("series_a_companies.id"))
+    sourcing_contact_id: Mapped[int] = mapped_column(
+        ForeignKey("sourcing_contacts.id"))
+    #: 이 기업이 실린 발송 건. 받았는지는 이 건의 상태가 정한다(머리말).
+    send_item_id: Mapped[int] = mapped_column(ForeignKey("send_items.id"))
+    #: 문구에 실린 차례(`[기업1]` 의 1). 사람마다 받은 기업이 다를 수 있어
+    #: (이미 받은 기업은 그 분 문구에서 뺀다) 건마다 적는다.
+    position: Mapped[int] = mapped_column(Integer, default=1)
+    #: 누가 보냈나(발송 목록을 만든 사람).
+    user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"),
+                                                   nullable=True)
+
+
 class DealBatch(TimestampMixin, Base):
     __tablename__ = "deal_batches"
 
@@ -998,6 +1142,11 @@ STARTUP_JOB_KINDS = (STARTUP_SEND_KIND, STARTUP_MSG_KIND)
 #: 이 값이 없는 담당자 줄 방 확인(투자사 · [방 연결 확인])은 지금까지와 같다 —
 #: 이름+직함으로 대조하고, 결과가 하나면 그 제목을 방 이름으로 넣는다.
 ROOM_SEARCH_TOPIC = "room_search"
+#: 방 확인 잡(`verify_room`)의 `SendJob.topic` — **딜 소싱 명단** 줄의 카톡방
+#: 후보 찾기(`services/sourcing_rooms.py`). 그 잡의 줄은 `sourcing_contact_id`
+#: 를 가리키고, 찾은 제목은 그 줄의 `room_candidates` 에 **후보로만** 담는다.
+#: 잡은 [방 후보 찾기] 를 누른 사람 계정에 선다 — 그 사람 PC 카톡에서 찾는다.
+SOURCING_ROOM_TOPIC = "sourcing_room"
 
 
 class SendItem(TimestampMixin, Base):
@@ -1150,6 +1299,179 @@ class SourcingContact(TimestampMixin, Base):
     # 여기도 자기 카톡방을 가진다.
     kakao_room_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     room_verified: Mapped[str] = mapped_column(String, default="unverified")
+    #: **보내는 사람 카톡에서 찾아 온 방 제목들**(JSON) — 딜 소싱 화면의
+    #: [방 후보 찾기]가 담는다(`services/sourcing_rooms.py`). 모양과 읽고 쓰는
+    #: 함수는 `VcContact.room_candidates` 와 같다(`room_match.save_candidates` ·
+    #: `candidates`). **아직 방 이름이 아니다** — 사람이 골라 확정해야 위
+    #: `kakao_room_name` 이 된다. (열린 PR #277 이 같은 이름 · 같은 모양으로
+    #: 만들려던 칸이다 — 그 이주는 있는지 보고 만든다.)
+    room_candidates: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # ── 투자사 관리 현황과 잇기 (`services/sourcing_sync.py`) ─────────────
+    #
+    # **이 줄이 투자사 관리 현황의 어느 줄과 같은 사람인가.** 잇는 것은
+    # `시리즈 A 이상 딜 소싱 참여 심사역` 갈래(`sourcing_sync.SYNC_BUCKET`)의
+    # 줄뿐이다 — 투자사 관리 현황의 `Series A 딜 소싱` 칸(O/X)이 이 줄을 보고
+    # 선다. 그 칸은 **따로 저장하지 않는다**: 이어진 줄이 있고 아래
+    # `participation` 이 `참여` 면 O, `불참여` 면 X, 이어진 줄이 없으면 빈칸.
+    # 두 화면이 같은 칸 하나를 읽으므로 한쪽에서 고치면 다른 쪽도 그대로다.
+    #
+    # **카톡방은 잇지 않는다.** 소싱 줄의 방은 보내는 사람 카톡의 **딜 소싱
+    # 방**이고, 투자사 줄의 방은 그 담당 팀원의 딜소개 방이다 — 다른 방이다.
+    # 이 갈래 줄은 자기 방 이름이 없으면 보내지 않는다(`sourcing_link.linked_rooms`).
+    #
+    # 한 투자사 줄에는 많아야 한 줄만 이어진다(유일 색인). 투자사 줄을 지우면
+    # 이 칸만 비우고 소싱 줄은 남긴다(`sourcing_sync.detach`) — 리마인드 ·
+    # `딜 받음` 이력이 이 줄에 달려 있다.
+    vc_contact_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("vc_contacts.id"), nullable=True)
+    #: `참여` | `불참여`. 불참여인 분은 딜 소싱 제안(처음 안내 · 월간 리마인드)
+    #: 대상에서 빠진다. **줄을 지우지 않는다** — 다시 참여하면 그 이력 그대로 돌아온다.
+    participation: Mapped[str] = mapped_column(String, default="참여",
+                                               server_default="참여")
+
+    __table_args__ = (
+        Index("uq_sourcing_contacts_vc_contact", "vc_contact_id", unique=True),
+    )
+
+
+class SourcingReceipt(TimestampMixin, Base):
+    """**이 달 이 사람에게서 딜을 받았다** — 딜 소싱 화면의 `딜 받음` 표시.
+
+    달마다 한 줄 — `(사람, 달)` 이 열쇠다. 사람이 화면에서 누르거나
+    (`source="manual"`), 회사 받은 편지함(POP3)의 머리글을 읽어 보낸 주소가
+    명단에 있으면 저절로 선다(`source="mail"` — `services/sourcing_mail.py` →
+    `sourcing_receipts.record_from_mail`). 메일로 선 줄은 **어느 메일로**
+    섰는지(날짜 · 제목 · Message-ID)를 들고 있다 — 본문은 어디에도 없다.
+
+    소싱 리마인드 자동화(#277, 아직 안 들어옴)가 이 표를 보고 이 달 딜을 **안
+    준** 사람에게만 보낸다. 그 PR 이 같은 이름 · 같은 칸으로 이 표를 만들려 했으므로,
+    여기서 먼저 세운 뒤 그 PR 은 제 사본을 빼고 이 표를 쓴다(그 이주는 `if` 로
+    있는지 보고 만들어 겹쳐도 깨지지 않는다).
+    """
+
+    __tablename__ = "sourcing_receipts"
+    __table_args__ = (
+        UniqueConstraint("sourcing_contact_id", "month",
+                         name="uq_sourcing_receipts_month"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    sourcing_contact_id: Mapped[int] = mapped_column(
+        ForeignKey("sourcing_contacts.id"))
+    #: `YYYY-MM`.
+    month: Mapped[str] = mapped_column(String)
+    #: manual(화면에서 누름) | mail(받은 편지함에서 저절로).
+    source: Mapped[str] = mapped_column(String, default="manual")
+    #: 누가 눌렀나(메일로 적힌 줄은 비어 있다).
+    user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"),
+                                                   nullable=True)
+    #: 메일로 섰으면 그 메일의 날짜(`2026-10-15T18:00:00+09:00`, 이 프로세스
+    #: 시간대). 화면이 `메일 10/15` 로 적는다.
+    mail_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: 그 메일의 제목 — **잘라서**(`sourcing_mail.SUBJECT_MAX`). 화면의 풍선말.
+    mail_subject: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: 그 메일의 Message-ID.
+    mail_message_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+
+class SourcingMailSeen(TimestampMixin, Base):
+    """**이 메일은 이 사람 것으로 이미 보았다** — 메일 확인이 같은 메일로 두 번 서지 않게.
+
+    `딜 받음` 은 `(사람, 달)` 에 한 줄이라 같은 메일을 열 번 읽어도 줄은
+    하나다. 이 표가 따로 있는 까닭은 **사람이 거둔 표시**다. 딜이 아닌 메일
+    (미팅 감사 인사 등)로 선 표시를 사람이 거두면, 다음 확인이 같은 메일을 또
+    읽고 또 세운다 — 사람이 이길 수 없는 싸움이다. 그래서 본 메일은
+    Message-ID 로 남기고 다시 세우지 않는다. **새 메일**이 오면 다시 선다.
+
+    본문은 없다. 머리글 중 Message-ID 와 날짜만.
+    """
+
+    __tablename__ = "sourcing_mail_seen"
+    __table_args__ = (
+        UniqueConstraint("message_id", "sourcing_contact_id",
+                         name="uq_sourcing_mail_seen_message"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    message_id: Mapped[str] = mapped_column(String)
+    sourcing_contact_id: Mapped[int] = mapped_column(
+        ForeignKey("sourcing_contacts.id"))
+    #: `YYYY-MM` — 그 메일이 센 달.
+    month: Mapped[str] = mapped_column(String)
+    mail_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+
+class SourcingMailCheck(TimestampMixin, Base):
+    """**받은 편지함을 한 번 훑었다** — 딜 소싱 메일 확인 한 회.
+
+    정해진 회차(매일 18:00)는 `run_key`(`2026-10-15:daily`)에 유일 색인이
+    걸려 **하루 한 회차는 한 번**이다(`auto_send_runs` 가 자리를 먼저 잡는 것과
+    같은 방식). 관리자가 누른 [지금 메일 확인] · 팀 현황의 [연결 시험] 은
+    `run_key` 가 비어 있다 — 누를 때마다 한 줄.
+
+    화면(딜 소싱 머리 줄 · 팀 현황 판)과 오늘 할 일이 이 표를 읽는다. 실패
+    사유(`error`)는 사람이 읽는 말이다 — 비밀번호 · 서버 응답 원문은 담지 않는다.
+    """
+
+    __tablename__ = "sourcing_mail_checks"
+    __table_args__ = (
+        UniqueConstraint("run_key", name="uq_sourcing_mail_checks_run_key"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    #: 정해진 회차의 열쇠(`YYYY-MM-DD:<slot>`). 손으로 누른 회는 비어 있다.
+    run_key: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: daily(매일) | pre_remind(리마인드 전) | manual(지금 메일 확인) | test(연결 시험)
+    #: — 처음에 돌던 mid(15일) · end(말일) 줄도 남아 있을 수 있다.
+    slot: Mapped[str] = mapped_column(String)
+    #: 돈 날 `YYYY-MM-DD`.
+    day: Mapped[str] = mapped_column(String)
+    #: 본 달 `YYYY-MM`.
+    month: Mapped[str] = mapped_column(String)
+    #: running | ok | failed
+    status: Mapped[str] = mapped_column(String, default="running")
+    started_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    finished_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: 머리글을 읽은 메일 수(연결 시험이면 편지함의 메일 수).
+    scanned: Mapped[int] = mapped_column(Integer, default=0)
+    #: 그중 이 달 · 명단의 주소에서 온 메일 수.
+    matched: Mapped[int] = mapped_column(Integer, default=0)
+    #: 이번에 새로 `딜 받음` 이 선 줄 수.
+    marked: Mapped[int] = mapped_column(Integer, default=0)
+    #: 새로 선 사람들(`홍길동(가나다벤처스), …`) — 오늘 할 일 한 줄에 싣는다.
+    detail: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    #: 실패 사유(사람이 읽는 말).
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    #: [지금 메일 확인] · [연결 시험] 을 누른 사람.
+    user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"),
+                                                   nullable=True)
+
+
+class SourcingMailSetting(TimestampMixin, Base):
+    """**딜 소싱 메일 확인이 읽을 편지함** — 팀 현황 판에서 관리자가 넣는다. 한 줄.
+
+    비어 있으면(줄이 없거나 서버 · 계정 · 비밀번호가 다 비면) 서버 환경변수
+    `DEALFLOW_POP3_*` 를 쓴다(`services/sourcing_mail.load_settings`).
+
+    **비밀번호는 암호화해서만** 담는다(`password_enc` — `services/secret_box.py`,
+    서버 `.env` 의 비밀값에서 뽑은 열쇠). 화면에 되돌려 그리지 않고, 수정
+    로그에는 `바뀜` 으로만 남는다(칸 이름에 `password` 가 들어 있어 값 허용
+    목록에 오를 수 없다 — `edit_log.SECRET_HINTS`).
+    """
+
+    __tablename__ = "sourcing_mail_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    #: POP3 서버 이름(`pop3.example.com`). 주소 앞의 `pop3://` 같은 것은 없다.
+    host: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    port: Mapped[int] = mapped_column(Integer, default=995)
+    #: 로그인 계정(대개 메일 주소).
+    username: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: 암호화한 비밀번호(Fernet 토큰). 평문은 어디에도 없다.
+    password_enc: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    #: 켜짐(1) · 꺼짐(0). 꺼 두면 값이 있어도 아무것도 안 한다.
+    enabled: Mapped[int] = mapped_column(Integer, default=1)
 
 
 class RefSheet(TimestampMixin, Base):

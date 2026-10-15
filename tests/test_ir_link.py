@@ -8,7 +8,7 @@
 3. 누가 잇는가 — 그 줄이 사는 화면의 문 그대로(관리자 · 줄의 주인).
 4. 일괄 연결은 **후보가 정확히 하나인 줄만**, 확인 화면에 보인 짝 그대로.
 5. 잇고 푼 것은 수정 로그에 남는다 — 자기 줄이어도.
-6. 판(0088)이 오르내린다.
+6. 판(0097)이 오르내린다.
 7. 화면이 뜬다 — 연결 화면 · 수정창 표시 · 투자컨설턴트 `기업명` 칸 표시.
 
 이름은 전부 지어낸 것이다 — 저장소가 공개다.
@@ -466,10 +466,10 @@ def test_이어진_IR_기업은_평범한_삭제가_막고_강제_삭제는_연�
     assert _fresh(db, stage["cons"]["theirs"]).ir_company_id is None
 
 
-# ── 7. 판(0088)이 오르내린다 ────────────────────────────────────────────────
+# ── 7. 판(0097)이 오르내린다 ────────────────────────────────────────────────
 
-REVISION = "0088_ir_company_link"
-PARENT = "0086_send_guard"
+REVISION = "0097_ir_company_link"
+PARENT = "0096_activity_sequence_trace"
 
 
 def _alembic(db_path: Path, *args: str) -> subprocess.CompletedProcess:

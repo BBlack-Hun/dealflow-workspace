@@ -24,10 +24,10 @@
 
 ## 판 순서
 
-origin/main 의 머리(`0086_send_guard`) 위에 얹었다. 열려 있는 다른 판
-(`0087_activity_sequence_trace`, #268)이 먼저 들어가면 이 판의
-`down_revision` 을 그 판으로 한 줄 바꾼다 — 같은 부모를 둘이 가리키면 머리가
-둘이 되어 부팅에서 멎는다(`tests/test_migrations.py` 가 잡는다).
+처음에는 `0086_send_guard` 위의 `0088` 이었다. main 이 0087~0095 를 먼저 썼고
+열려 있는 손 기록 되돌리기 판(`0096_activity_sequence_trace`, #268)이 그 위에
+서서, 이 판은 그 다음(`0097`)에 선다 — 이 판은 #268 위에 쌓였다. 같은 부모를
+둘이 가리키면 머리가 둘이 되어 부팅에서 멎는다(`tests/test_migrations.py` 가 잡는다).
 
 ## 되돌리기
 
@@ -40,8 +40,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0088_ir_company_link"
-down_revision = "0086_send_guard"
+revision = "0097_ir_company_link"
+down_revision = "0096_activity_sequence_trace"
 branch_labels = None
 depends_on = None
 

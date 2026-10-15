@@ -26,10 +26,11 @@ from ..clock import stamp_text
 from ..db import get_db
 from ..deps import can_open, get_current_user, may_manage_team_contacts
 from ..models import (ContactActivity, ContactColumn, IrCompany, IrRequest,
-                      Meeting, SendItem, SendJob, SendSequence, User, VcContact)
+                      Meeting, SendItem, SendJob, SendSequence, SourcingContact,
+                      User, VcContact)
 from ..services import (contact_columns, deal_stage, firm_type, last_activity,
-                        meeting_kind, room_joined, room_name, sheet_import,
-                        sheet_owner)
+                        manual_send, meeting_kind, room_joined, room_name,
+                        sheet_import, sheet_owner, sourcing_sync)
 from ..services.room_name import DEFAULT_SUFFIX, build_room_name
 
 router = APIRouter(prefix="/api/contacts", tags=["contacts"])
@@ -182,6 +183,10 @@ def contact_rows(db: Session, user: User, team_wide: bool = False,
     # 세는 자리는 `services/last_activity` 한 곳이고, 엑셀도 여기서 나온 줄을
     # 그대로 쓴다(`routers/data_io._contact_row`).
     last_acts = last_activity.of_many(db, [c.id for c in contacts])
+    # `Series A 딜 소싱` 칸 — **저장된 값이 아니라 이어진 소싱 줄**에서 읽는다
+    # (`services/sourcing_sync.py`). 딜 소싱 화면에서 참여를 바꾸면 여기도
+    # 그대로다. 줄마다 묻지 않고 한 번에.
+    sourcing_marks = sourcing_sync.marks_for(db, ids)
 
     rows = []
     for c in contacts:
@@ -270,6 +275,8 @@ def contact_rows(db: Session, user: User, team_wide: bool = False,
             "sourcing_note": c.sourcing_note or "",
             "tips_note": c.tips_note or "",
             "kakao_joined": c.kakao_joined or "",
+            # O(참여) · X(불참여) · 빈칸(딜 소싱 시리즈 A 갈래에 없음).
+            "sourcing_join": sourcing_marks.get(c.id, ""),
             # 이 명단에만 있는 칸들(스타트업 명단의 `사업분야 대분류` 등)과
             # 달마다 늘어나는 칸의 값. 화면은 배치가 정해 준 키로 꺼내 쓴다.
             "notes": contact_columns.load_notes(c.notes),
@@ -447,6 +454,11 @@ class ContactIn(BaseModel):
     notes: Optional[Dict[str, str]] = None
     # 이 줄만 표에서 감출까(1) 다시 보일까(0).
     is_hidden: Optional[int] = None
+    # `Series A 딜 소싱` 칸 — `O` · `X` · 빈칸. **이 줄에 저장되지 않는다** —
+    # 딜 소싱의 시리즈 A 갈래 줄을 잇거나 만들고 그 줄의 참여를 고친다
+    # (`services/sourcing_sync.set_mark`). 빈칸은 '바꾸지 않음' 이다(이어진
+    # 줄이 있으면 막는다 — 빠지는 것은 X).
+    sourcing_join: Optional[str] = None
     # **새 줄을 어느 명단에 넣을까.** 만들 때만 읽는다(`create_contact`).
     #
     # 화면이 지금 보고 있는 탭을 그대로 보낸다. 안 보내면 그 줄은 `직접 추가`
@@ -939,8 +951,15 @@ def create_contact(
         contact.kakao_room_name = build_room_name(contact.name, contact.title,
                                                   contact.firm, suffix=DEFAULT_SUFFIX)
     db.add(contact)
+    # 추가 창에서 `Series A 딜 소싱` 을 O 로 골랐으면 — 고치는 길과 같은 함수다.
+    # 잇는 줄이 이 줄 번호를 가리켜야 하므로 먼저 번호를 받는다.
+    db.flush()
+    sourcing = _sourcing_mark(db, contact, body, user)
     db.commit()
-    return {"id": contact.id, "kakao_room_name": contact.kakao_room_name}
+    out = {"id": contact.id, "kakao_room_name": contact.kakao_room_name}
+    if sourcing.get("message"):
+        out["sourcing_msg"] = sourcing["message"]
+    return out
 
 
 @router.get("/{contact_id}")
@@ -992,6 +1011,8 @@ def get_contact(
             # 저장은 되는데 **다시 열면 비어 있었다** — 여기서 안 돌려주면
             # 창이 채울 값이 없어, 고쳐 놓고도 안 들어간 줄 안다.
             "kakao_joined": contact.kakao_joined or "",
+            # 저장된 칸이 아니라 이어진 딜 소싱 줄에서 읽는다(`sourcing_sync`).
+            "sourcing_join": sourcing_sync.marks_for(db, [contact.id]).get(contact.id, ""),
             "sourcing_note": contact.sourcing_note or "",
             "tips_note": contact.tips_note or "",
             "assignee_name": contact.assignee_name or "",
@@ -1108,6 +1129,14 @@ def _activity_view(act: ContactActivity, known: Dict[str, str]) -> dict:
             for name in companies
         ],
         "raw_text": act.raw_text,
+        # 손으로 적은 줄이면 **이 자리에서 그 한 줄을 되돌린다.** 사람은 잘못
+        # 적은 것을 담당자 이력을 보다가 알아챈다 — 딜 제안 관리의 묶음 목록으로
+        # 건너가 80줄 묶음을 찾아 통째로 되돌리게 하면 안 된다. 되돌리는 길은
+        # 묶음 되돌리기와 같은 것이다(`/api/deals/manual-sends/{batch_key}/undo`
+        # 에 `contact_id`) — 그래서 묶음 표시를 함께 싣는다. 세울지 말지는
+        # `manual_send.undoable` 한 곳이 정한다.
+        "batch_key": act.batch_key or "",
+        "undoable": manual_send.undoable(act),
     }
 
 
@@ -1198,6 +1227,10 @@ def update_contact(
     # `X` 로 바꾸거나 `방 나감` 으로 고르면 `확인됨` 이 풀린다 — 규칙은
     # `services/room_joined` 한 곳에 있다.
     room_joined.after_edit(contact, was)
+    # `Series A 딜 소싱` — 이 줄을 고칠 수 있는 사람(`_owned`)이 곧 그 칸을
+    # 고칠 수 있는 사람이다. 위의 칸들을 먼저 적은 뒤에 부른다: 새 소싱 줄을
+    # 만들 때 방금 고친 이름 · 번호로 만들어야 한다.
+    sourcing = _sourcing_mark(db, contact, body, user)
     db.commit()
     # `connect_note` 는 **서버가 저 혼자 바꾼 것**을 화면이 사람에게 전할 자리다.
     # 없으면 응답에 넣지 않는다 — 늘 있는 값이면 화면이 읽지 않게 된다.
@@ -1215,10 +1248,31 @@ def update_contact(
            # 실제로 저장됐는지를 그 칸으로 알 수 없다(그 칸의 쓸모가 곧
            # 그것이다). `db.commit()` **뒤**에 읽는다: commit 이 속성을
            # 만료시키므로 여기서 읽으면 DB 에 적힌 새 값이 온다.
-           "updated_at": stamp_text(contact.updated_at)}
+           "updated_at": stamp_text(contact.updated_at),
+           # 표 칸은 **서버가 읽은 값**으로 다시 그린다(`o` → `O`) — 화면이
+           # 적힌 글자를 그대로 두면 필터와 칸이 다른 말을 한다(`contacts.js`).
+           "sourcing_join": sourcing_sync.marks_for(db, [contact.id]).get(contact.id, "")}
     if note:
         out["connect_note"] = note
+    if sourcing.get("message"):
+        out["sourcing_msg"] = sourcing["message"]
     return out
+
+
+def _sourcing_mark(db: Session, contact: VcContact, body: ContactIn,
+                   user: User) -> dict:
+    """`Series A 딜 소싱` 칸을 고친 요청이면 딜 소싱 줄을 잇거나 만든다.
+
+    못 하는 까닭(`SyncError`)은 **400 으로 그대로 말한다** — 조용히 넘기면
+    화면은 O 가 선 줄 아는데 딜 소싱에는 아무도 안 들어간다.
+    """
+    if body.sourcing_join is None:
+        return {}
+    try:
+        return sourcing_sync.set_mark(db, contact, body.sourcing_join, user)
+    except sourcing_sync.SyncError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 # ── 담당자 줄 지우기 — 한 줄 · 여러 줄 ─────────────────────────────────────
@@ -1290,6 +1344,18 @@ BLOCKING_LINKS = (
     ("sequences", SendSequence, "후속 발송"),
     ("ir_requests", IrRequest, "IR 요청"),
     ("meetings", Meeting, "미팅"),
+)
+
+#: 걸려 있어도 막지도 함께 지우지도 않고 **연결만 끊는** 것.
+#:
+#: 딜 소싱의 시리즈 A 갈래 줄(`SourcingContact.vc_contact_id`)이다. 그 줄은
+#: 투자사 관리 현황과 **따로 사는 사람 명단**이라 투자사 줄이 사라져도 딜 소싱
+#: 제안 · 리마인드 · `딜 받음` 이력은 그대로 남아야 하고, 그렇다고 투자사 줄
+#: 정리를 막을 까닭도 없다. 끊는 것은 세션 flush 한 자리가 한다
+#: (`sourcing_sync.detach` — 한 줄 · 여러 줄 · 탭 지우기가 모두 `db.delete()`
+#: 를 지나므로 길마다 적을 것이 없다).
+DETACHING_LINKS = (
+    ("sourcing", SourcingContact, "딜 소싱 연결"),
 )
 
 # 두 목록을 **표 하나도 빠짐없이** 채우는지는 검사가 본다
