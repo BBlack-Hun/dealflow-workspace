@@ -37,7 +37,7 @@ from sqlalchemy.orm import Session
 from ..clock import today
 from ..db import get_db
 from ..deps import get_current_user, templates
-from ..models import IrCompany, SeriesACompany, User
+from ..models import IrCompany, SeriesACompany, SourcingContact, User
 from ..services import deal_history, series_a_share
 from ..services.series_a_import import day_text
 from ..ui import base_ctx
@@ -90,7 +90,8 @@ def ir_names(db: Session) -> Dict[str, str]:
 
 
 def row_dict(c: SeriesACompany, known: Dict[str, str],
-             people: Optional[Dict[int, List[str]]] = None) -> dict:
+             people: Optional[Dict[int, List[str]]] = None,
+             sharer: Optional[dict] = None) -> dict:
     ir_name = known.get(deal_history._key(c.name), "")
     # **Series A 딜 공유로 이 기업을 받은 심사역** — 딜 제안 관리 › 딜 소싱 제안의
     # [Series A 딜 공유]가 적은 기록(`services/series_a_share.py`). 대기 · 보내는
@@ -116,6 +117,9 @@ def row_dict(c: SeriesACompany, known: Dict[str, str],
         "ir_name": ir_name,
         "shared_count": len(shared),
         "shared_names": shared,
+        # `공유 심사역` 칸 아래 — 확정한 분 · 이름이 같은 후보(`series_a_share.
+        # sharer_views`). 화면(`series_a.js`)이 이 값으로 [이 분으로 확정]/[해제]를 그린다.
+        "sharer": sharer or {"confirmed": None, "candidates": []},
         "search": search_text(c),
     }
 
@@ -133,36 +137,50 @@ def sort_rows(rows: List[dict]) -> List[dict]:
 def table_rows(db: Session) -> List[dict]:
     known = ir_names(db)
     people = series_a_share.shared_people(db)
-    rows = [row_dict(c, known, people)
-            for c in db.execute(select(SeriesACompany)).scalars().all()]
+    companies = db.execute(select(SeriesACompany)).scalars().all()
+    sharers = series_a_share.sharer_views(db, companies)
+    rows = [row_dict(c, known, people, sharers.get(c.id)) for c in companies]
     return sort_rows(rows)
 
 
 def pick_rows(db: Session) -> List[dict]:
     """딜 제안 관리 › 딜 소싱 제안 › [Series A 딜 공유]의 **기업 고르개** 줄.
 
-    이 탭과 같은 줄 · 같은 차례(수신 일자 최신순 — `sort_rows`)에 둘을 더한다.
-      · `pitch` — 기업 덩어리에 실릴 `소개`(`series_a_share.pitch_of`). 고를 때
-        무엇이 나갈지 보인다.
-      · `sent_to` — 이 기업을 이미 받은 심사역 번호들(대기 · 보낸 것). 화면이
-        지금 고른 받는 분과 견주어 `이미 받은 분 N명` 을 세고, 고른 기업을 다
-        받은 분을 뺀다(`deals.js`).
-      · `own_by` — **이 딜을 공유해 준** 시리즈 A 갈래 심사역 번호들
-        (`series_a_share.own_by_company`). 그 분께는 이 기업이 늘 빠진다 — 화면이
-        지금 고른 받는 분과 견주어 `본인 공유 N명 제외` 를 센다.
+    이 탭과 같은 줄 · 같은 차례(수신 일자 최신순 — `sort_rows`)에 `pitch`(기업
+    덩어리에 실릴 `소개` — `series_a_share.pitch_of`)를 더한다. 고를 때 무엇이
+    나갈지 보인다.
+
+    **누가 이미 받았나 · 누가 공유해 준 딜인가는 여기서 세지 않는다.** /deals 는
+    딜 소개 · 후속 문구에도 열리는 화면이라, 열 때마다 기록 전체와 딜 소싱 명단
+    전체를 견주면 쓰지도 않을 셈에 화면이 느려진다. 화면이 [Series A 딜 공유]를
+    고를 때 · 창으로 돌아올 때 `share_state` 를 읽는다(`deals.js`). 화면에 이 값이
+    없거나 낡아도 보내는 것은 틀리지 않는다 — 미리보기와 발송이 서버에서 다시
+    센다(`series_a_share.plan`). IR 기업 현황 이름(`IR 현황` 딱지)도 고르개는 안
+    쓰므로 읽지 않는다.
     """
-    known = ir_names(db)
+    rows = []
+    for c in db.execute(select(SeriesACompany)).scalars().all():
+        data = row_dict(c, {})
+        data["pitch"] = series_a_share.pitch_of(c)
+        rows.append(data)
+    return sort_rows(rows)
+
+
+@router.get("/api/series-a-share/state")
+def share_state(db: Session = Depends(get_db),
+                user: User = Depends(get_current_user)):
+    """고르개 카드마다 — `sent_to`(이 기업을 이미 받은 심사역 번호들: 대기 · 보낸 것)와
+    `own_by`(**이 딜을 공유해 준** 시리즈 A 갈래 심사역 번호들).
+
+    화면이 지금 고른 받는 분과 견주어 `이미 받은 분 N명` · `본인 공유 N명 제외` 를
+    세고, 보낼 기업이 안 남는 분을 받는 사람에서 뺀다(`deals.js`). 고를 때 · 창으로
+    돌아올 때 읽는다(`pick_rows` 머리말).
+    """
     sent = series_a_share.contacts_by_company(db)
     companies = db.execute(select(SeriesACompany)).scalars().all()
     own = series_a_share.own_by_company(db, companies)
-    rows = []
-    for c in companies:
-        data = row_dict(c, known)
-        data["pitch"] = series_a_share.pitch_of(c)
-        data["sent_to"] = sorted(sent.get(c.id, ()))
-        data["own_by"] = own.get(c.id, [])
-        rows.append(data)
-    return sort_rows(rows)
+    return {"companies": [{"id": c.id, "sent_to": sorted(sent.get(c.id, ())),
+                           "own_by": own.get(c.id, [])} for c in companies]}
 
 
 def count(db: Session) -> int:
@@ -210,6 +228,11 @@ class SeriesAIn(BaseModel):
 def _assign(row: SeriesACompany, body: SeriesAIn) -> None:
     for field, value in body.model_dump(exclude_unset=True).items():
         text = (value or "").strip()
+        if field == "shared_by" and text != (row.shared_by or "").strip():
+            # 공유 심사역을 **다른 글자로** 고쳤다 — 확정해 둔 분을 푼다. 옛 분이
+            # 확정된 채 남으면 새로 적은 분께 자기 딜이 나간다. 같은 글자로 다시
+            # 저장한 것은 그대로 둔다.
+            row.shared_by_contact_id = None
         if field == "name":
             # 기업명은 비울 수 없다 — 빈 이름의 줄은 무엇에 대한 줄인지 모른다.
             if text:
@@ -228,9 +251,9 @@ def _result(row: SeriesACompany, db: Session) -> dict:
     `투자라운드` 의 짧은 꼴 · 세울 날짜 · IR 현황 딱지는 서버 규칙에서 나온다.
     화면에 같은 규칙을 또 적으면 두 벌이 되어 한쪽만 고쳐진다.
     """
-    data = row_dict(row, ir_names(db))
+    data = row_dict(row, ir_names(db), sharer=series_a_share.sharer_view(db, row))
     return {key: data[key] for key in ("id", "name", "received_at", "received_sort",
-                                       "series", "series_short", "ir_name")}
+                                       "series", "series_short", "ir_name", "sharer")}
 
 
 @router.post("/api/series-a-companies")
@@ -257,6 +280,36 @@ def update_row(row_id: int, body: SeriesAIn, db: Session = Depends(get_db),
     _assign(row, body)
     db.commit()
     return _result(row, db)
+
+
+class SharerIn(BaseModel):
+    """확정할 딜 소싱 줄 번호 — 비우면(`null`) 확정을 푼다."""
+
+    contact_id: Optional[int] = None
+
+
+@router.put("/api/series-a-companies/{row_id}/sharer")
+def set_sharer(row_id: int, body: SharerIn, db: Session = Depends(get_db),
+               user: User = Depends(get_current_user)):
+    """`공유 심사역` 을 딜 소싱 명단의 **그 분 줄로 확정**한다 — [이 분으로 확정] · [해제].
+
+    확정한 줄은 Series A 딜 공유가 이름 · 회사로 짐작하지 않고 그 분께만 이 딜을
+    뺀다(`series_a_share.is_own`). 받는 갈래(`series_a_share.BUCKET`)의 분만 고를 수
+    있다 — 다른 갈래 분은 이 글을 받지 않으니 확정해도 뺄 사람이 없다. 권한은 칸
+    고치기와 같다(로그인한 사람 — 이 탭은 팀 공용).
+    """
+    row = db.get(SeriesACompany, row_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="줄을 찾을 수 없습니다")
+    if body.contact_id is not None:
+        person = db.get(SourcingContact, body.contact_id)
+        if person is None or not series_a_share.is_share_bucket(person.bucket):
+            raise HTTPException(
+                status_code=400,
+                detail=f"'{series_a_share.BUCKET}' 갈래의 딜 소싱 심사역만 확정할 수 있습니다")
+    row.shared_by_contact_id = body.contact_id
+    db.commit()
+    return {"id": row.id, "sharer": series_a_share.sharer_view(db, row)}
 
 
 @router.delete("/api/series-a-companies/{row_id}")

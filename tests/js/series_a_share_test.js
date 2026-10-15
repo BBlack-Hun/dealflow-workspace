@@ -381,4 +381,212 @@ function selectAll(dom) { dom.document.getElementById("select-all-contacts").fir
   assert.ok(/보내는 기업<\/b> <span class="sa-drop own">없음/.test(second), second);
 }
 
+// ── PR #287 · #288 리뷰 ──────────────────────────────────────────────────────
+
+// 미리보기 서버 — 요청마다 **받은 것을 그대로 적은 글**을 돌려준다(고친 글이
+// 버려졌는지 · 무엇으로 다시 지었는지 보려고).
+function previewServer(url, body) {
+  if (url !== "/api/deals/preview") return { ok: true, d: { job_id: 1, skipped: [] } };
+  return deals_.previewReply((body.contact_ids || []).map(function (id) {
+    return { contact_id: id, name: "n" + id, title: "", warnings: [],
+             message: "글 " + (body.series_a_ids || []).join(",") + " / " + body.per_person +
+                      " / " + body.include_shared };
+  }));
+}
+function edit(dom, text) {
+  const ta = dom.document.getElementById("bubble-edit");
+  assert.ok(ta, "미리보기 글 칸이 없다");
+  ta.value = text;
+  ta.fire("input");
+}
+function warnText(dom) { return dom.document.getElementById("send-warnings").innerHTML; }
+function sendOverrides(dom, fetch) {
+  dom.document.getElementById("send-btn").fire("click");
+  const sent = calls(fetch, "/api/deals/send").pop();
+  assert.ok(sent, "발송 요청이 안 나갔다");
+  return sent.body.overrides;
+}
+function yes() { return true; }
+
+// --- ⑩ 고친 글은 기업 · 사람당 N · 제외 칸이 바뀌면 버린다(그리고 말한다) -------
+{
+  const fetch = fakeFetch(previewServer);
+  const dom = run(null, { fetch: fetch, setTimeout: now, confirm: yes });
+  pickMode(dom, "sourcing");
+  pickTopic(dom, SHARE);
+  toggleSourcing(dom, "가소싱");
+  toggleSeriesA(dom, "나샘플로보");
+  edit(dom, "고친 글");
+  // 받는 분을 더 고르는 것은 상관없다 — 그 분 글은 남의 선택과 무관하다
+  toggleSourcing(dom, "다소싱");
+  assert.deepStrictEqual(sendOverrides(dom, fetch), [{ contact_id: 101, message: "고친 글" }]);
+
+  // 기업을 바꾸면 고친 글의 기업 덩어리와 실제로 고른 기업이 갈린다 — 버린다
+  toggleSeriesA(dom, "바샘플소재");
+  assert.ok(/고쳐 둔 문구 1건을 버렸습니다/.test(warnText(dom)), warnText(dom));
+  assert.strictEqual(dom.document.getElementById("bubble-edit").value, "글 302,306 / 2 / false");
+  assert.deepStrictEqual(sendOverrides(dom, fetch), [], "기업을 바꿨는데 예전에 고친 글이 나간다");
+
+  // 사람당 N 을 바꿔도
+  edit(dom, "또 고친 글");
+  const per = dom.document.getElementById("sa-per-person");
+  per.value = "3";
+  per.fire("input");
+  assert.deepStrictEqual(sendOverrides(dom, fetch), [], "사람당 개수를 바꿨는데 고친 글이 나간다");
+  assert.ok(/버렸습니다/.test(warnText(dom)));
+  // 같은 값으로 손을 떼는 것은 바꾼 것이 아니다
+  edit(dom, "세 번째 고친 글");
+  per.fire("change");
+  assert.deepStrictEqual(sendOverrides(dom, fetch),
+                         [{ contact_id: 101, message: "세 번째 고친 글" }]);
+  // [이미 이 기업들을 받은 분 제외]를 바꿔도
+  const ex = dom.document.getElementById("exclude-shared");
+  ex.checked = false;
+  ex.fire("change");
+  assert.deepStrictEqual(sendOverrides(dom, fetch), [], "제외 칸을 바꿨는데 고친 글이 나간다");
+}
+{
+  // 미리보기가 아직 안 왔을 때(손이 멈추길 기다리는 0.4초) 눌러도 고친 글은 안 나간다
+  const timers = [];
+  const fetch = fakeFetch(previewServer);
+  const dom = run(null, { fetch: fetch, confirm: yes,
+                          setTimeout: function (fn) { timers.push(fn); return timers.length; } });
+  const flush = function () { while (timers.length) timers.shift()(); };
+  pickMode(dom, "sourcing");
+  pickTopic(dom, SHARE);
+  toggleSourcing(dom, "가소싱");
+  toggleSeriesA(dom, "나샘플로보");
+  flush();
+  edit(dom, "고친 글");
+  toggleSeriesA(dom, "바샘플소재");
+  // 보이는 칸도 곧바로 원래 글로 — 고친 글이 떠 있는데 안 나가면 헷갈린다
+  assert.strictEqual(dom.document.getElementById("bubble-edit").value, "글 302 / 2 / false");
+  assert.deepStrictEqual(sendOverrides(dom, fetch), [],
+                         "다시 그리기 전의 옛 미리보기에서 고친 글을 집어 보냈다");
+}
+
+// --- ⑪ [전체해제] — 고른 분이 모두 '보낼 기업 없음' 이어도 눌린다 -------------------
+{
+  const t = setup();
+  pickMode(t.dom, "sourcing");
+  pickTopic(t.dom, SHARE);
+  selectAll(t.dom);
+  toggleSeriesA(t.dom, "다샘플푸드");                 // 303 — 둘 다 이미 받았다
+  const clear = t.dom.document.getElementById("clear-all-contacts");
+  assert.deepStrictEqual(lastPreview(t.fetch).body.contact_ids, []);
+  assert.strictEqual(clear.disabled, false, "체크가 남아 있는데 [전체해제]가 꺼졌다");
+  clear.fire("click");
+  assert.strictEqual(sBox(t.dom, "가소싱").checked, false);
+  assert.strictEqual(sBox(t.dom, "다소싱").checked, false);
+  assert.strictEqual(clear.disabled, true);
+}
+
+// --- ⑫ '다시 보냅니다' 의 N 은 고른 분만 ------------------------------------------
+{
+  const t = setup();
+  pickMode(t.dom, "sourcing");
+  pickTopic(t.dom, SHARE);
+  const ex = t.dom.document.getElementById("exclude-shared");
+  ex.checked = false;
+  ex.fire("change");
+  toggleSourcing(t.dom, "가소싱");                    // 다소싱(103)도 303 을 받았지만 안 골랐다
+  toggleSeriesA(t.dom, "다샘플푸드");
+  const note = t.dom.document.getElementById("shared-count").textContent;
+  assert.ok(/이미 받은 분 1명에게도 받은 기업을 다시/.test(note), note);
+}
+
+// --- ⑬ 사람당 N 바깥의 이미 받은 기업은 '다시 보냄' 에 안 든다 -----------------------
+{
+  const t = setup();
+  pickMode(t.dom, "sourcing");
+  pickTopic(t.dom, SHARE);
+  const per = t.dom.document.getElementById("sa-per-person");
+  per.value = "1";
+  per.fire("change");
+  const ex = t.dom.document.getElementById("exclude-shared");
+  ex.checked = false;
+  ex.fire("change");
+  toggleSourcing(t.dom, "가소싱");
+  toggleSeriesA(t.dom, "나샘플로보");                 // 302 — [기업1]
+  toggleSeriesA(t.dom, "다샘플푸드");                 // 303 — 가소싱이 받았지만 1개 바깥
+  const tag = sCard(t.dom, "가소싱").querySelector(".share-tag");
+  assert.ok(tag.hidden || !/다시/.test(tag.textContent), tag.textContent);
+  const note = t.dom.document.getElementById("shared-count").textContent;
+  assert.ok(!/다시/.test(note), note);
+  // 2개로 늘리면 303 이 들어온다 — 그때는 다시 간다고 말한다
+  per.value = "2";
+  per.fire("change");
+  assert.strictEqual(tag.textContent, "이미 받은 1곳도 다시 — 2곳 보냅니다");
+  assert.ok(/이미 받은 분 1명에게도/.test(
+    t.dom.document.getElementById("shared-count").textContent));
+}
+
+// --- ⑭ 새로고침 뒤 칸 값과 안내가 같다 ---------------------------------------------
+{
+  const fetch = fakeFetch([]);
+  const dom = run(null, { fetch: fetch, setTimeout: now, prepare: function (d) {
+    d.document.getElementById("sa-per-person").value = "3";   // 브라우저가 되살린 값
+  } });
+  assert.strictEqual(dom.document.getElementById("sa-per-person-hint").textContent,
+                     "기업을 3~6개 고르면 사람마다 본인 공유·이미 받은 기업을 빼고 앞에서부터 3개씩 나갑니다.");
+}
+
+// --- ⑮ 잠깐 [Series A 딜 공유]를 눌렀다 돌아가면 다른 갈래 체크가 돌아온다 ------------
+{
+  const t = setup();
+  pickMode(t.dom, "sourcing");
+  selectAll(t.dom);                                   // 처음 안내 — 셋 다
+  pickTopic(t.dom, SHARE);
+  assert.strictEqual(sBox(t.dom, "나소싱").checked, false);
+  pickTopic(t.dom, "sourcing_intro");
+  assert.strictEqual(sBox(t.dom, "나소싱").checked, true, "다른 갈래 분 체크가 사라졌다");
+  assert.deepStrictEqual(lastPreview(t.fetch).body.contact_ids.slice().sort(), [101, 102, 103]);
+
+  // 다른 탭에 갔다 와도(처음 안내로 돌아온다) 같다
+  pickTopic(t.dom, SHARE);
+  pickMode(t.dom, "deal");
+  pickMode(t.dom, "sourcing");
+  assert.strictEqual(sBox(t.dom, "나소싱").checked, true, "탭을 옮겼더니 다른 갈래 체크가 사라졌다");
+
+  // Series A 딜 공유에서 [전체해제]를 눌렀으면 돌아와도 비어 있다(사람이 다 푼 것이다)
+  pickTopic(t.dom, SHARE);
+  t.dom.document.getElementById("clear-all-contacts").fire("click");
+  pickTopic(t.dom, "sourcing_intro");
+  assert.strictEqual(sBox(t.dom, "나소싱").checked, false);
+}
+
+// --- ⑯ 이미 받은 분 · 본인 공유는 고를 때 서버에서 읽고, 창으로 돌아오면 다시 읽는다 ---
+{
+  let state = { companies: [{ id: 302, sent_to: [101], own_by: [] },
+                            { id: 301, sent_to: [], own_by: [103] }] };
+  const fetch = fakeFetch([], null, { "/api/series-a-share/state": function () { return state; } });
+  const dom = run(null, { fetch: fetch, setTimeout: now });
+  pickMode(dom, "sourcing");
+  assert.strictEqual(calls(fetch, "/api/series-a-share/state").length, 0,
+                     "Series A 딜 공유를 고르기 전에 읽었다");
+  pickTopic(dom, SHARE);
+  assert.strictEqual(calls(fetch, "/api/series-a-share/state").length, 1);
+  toggleSourcing(dom, "가소싱");
+  toggleSourcing(dom, "다소싱");
+  toggleSeriesA(dom, "나샘플로보");                   // 302
+  assert.strictEqual(saCard(dom, "나샘플로보").querySelector(".sa-got").textContent,
+                     "이미 받은 분 1명");
+  const count = saCard(dom, "나샘플로보").querySelector(".sa-count");
+  assert.strictEqual(count.hidden, false);
+  assert.strictEqual(count.textContent, "공유 1명");
+  // 그린 때의 값(301 을 가소싱이 받음)은 서버가 읽어 준 값으로 바뀐다
+  assert.strictEqual(saCard(dom, "가샘플바이오").querySelector(".sa-got").hidden, true);
+  assert.strictEqual(saCard(dom, "가샘플바이오").querySelector(".sa-own").textContent,
+                     "본인 공유 1명 제외");
+  assert.deepStrictEqual(lastPreview(fetch).body.contact_ids, [103]);
+
+  // 창으로 돌아오면 다시 읽는다 — 그 사이 회차를 [중단]해 302 를 안 받은 것이 됐다
+  state = { companies: [{ id: 302, sent_to: [], own_by: [] }] };
+  dom.root.fire("visibilitychange");
+  assert.strictEqual(calls(fetch, "/api/series-a-share/state").length, 2);
+  assert.strictEqual(saCard(dom, "나샘플로보").querySelector(".sa-got").hidden, true);
+  assert.strictEqual(count.hidden, true);
+  assert.deepStrictEqual(lastPreview(fetch).body.contact_ids.slice().sort(), [101, 103]);
+}
+
 console.log("series_a_share_test: ok");

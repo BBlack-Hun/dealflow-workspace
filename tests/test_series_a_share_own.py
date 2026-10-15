@@ -13,7 +13,7 @@
      (`보낼 기업 없음 (본인 공유/이미 받음)`)
   ③ 기록은 실제로 나간 기업만
   ④ 미리보기 — 나가는 기업 · 뺀 기업과 까닭(`본인이 공유한 딜`)
-  ⑤ 화면 — 고르개 카드의 `data-own-by` · 사람당 칸(기본 2) · 안내 글
+  ⑤ 화면 — 고르개가 읽는 `own_by`(`/api/series-a-share/state`) · 사람당 칸(기본 2) · 안내 글
 
 이름 · 회사 · 기업은 전부 가상값이다(공개 저장소).
 """
@@ -322,19 +322,21 @@ def test_per_person_outside_one_to_ten_is_refused(world, client, n):
     assert r.status_code == 400 and "1~10" in r.json()["detail"]
 
 
-def test_the_picker_carries_who_shared_each_deal_and_the_count_box(world, client):
+def test_the_picker_reads_who_shared_each_deal_and_has_the_count_box(world, client):
     body = client.get("/deals").text
     picker = body[body.index('id="series-a-picker"'):]
     picker = picker[:picker.index('id="sa-filter-note"')]
-    cards = dict((int(cid), own) for own, cid in re.findall(
-        r'data-own-by="([^"]*)"[^>]*>\s*<input type="checkbox" class="sa-cb" value="(\d+)"',
-        picker))
+    # 누가 공유해 준 딜인가는 그릴 때 세지 않는다 — 고를 때 JSON 으로 읽는다
+    # (`routers/series_a.share_state`).
+    assert set(re.findall(r'data-own-by="([^"]*)"', picker)) == {""}
+    state = client.get("/api/series-a-share/state").json()
+    cards = {row["id"]: row["own_by"] for row in state["companies"]}
     p, c = world["p"], world["c"]
-    assert cards[c["c1"].id] == str(p["a"].id)
-    assert cards[c["c2"].id] == str(p["b"].id)
-    assert cards[c["c3"].id] == "", "동명이인(회사 다름)을 본인으로 셌다"
-    assert cards[c["c4"].id] == str(p["c"].id)
-    assert cards[c["c5"].id] == ""
+    assert cards[c["c1"].id] == [p["a"].id]
+    assert cards[c["c2"].id] == [p["b"].id]
+    assert cards[c["c3"].id] == [], "동명이인(회사 다름)을 본인으로 셌다"
+    assert cards[c["c4"].id] == [p["c"].id]
+    assert cards[c["c5"].id] == []
     assert picker.count('class="tag warn sa-own" hidden') == 5
 
     box = re.search(r'<input type="number" id="sa-per-person"[^>]*>', picker).group(0)

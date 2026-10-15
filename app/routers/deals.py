@@ -341,6 +341,11 @@ def _compose_for_contact(
     if share:
         # `{기업 목록}` 자리를 표시로(없으면 첫 문단 뒤). 고른 저장 문구도 같은 손.
         closing_body = series_a_share.slot(closing_body)
+        # `{개수}` 는 **이 분께 나가는 기업 수**다. 딜 소싱은 후속 문구 단계라
+        # composer 가 0 으로 채운다(`compose_message` 의 `count`) — 그 전에 채운다.
+        count = str(len(series_a or []))
+        opening_body = opening_body.replace("{개수}", count)
+        closing_body = closing_body.replace("{개수}", count)
 
     who = _to_contact_view(contact)
     if mode == MODE_SOURCING and not (who.title or "").strip():
@@ -372,7 +377,8 @@ def _compose_for_contact(
     return result
 
 
-def _mail_subject(req, contact, companies: List[IrCompany]) -> str:
+def _mail_subject(req, contact, companies: List[IrCompany],
+                  count: Optional[int] = None) -> str:
     """메일 한 통의 제목 — **적은 제목 → 회차명 → "딜 소개"** 그대로다.
 
     ## 비었을 때의 차례는 손대지 않는다
@@ -397,12 +403,14 @@ def _mail_subject(req, contact, companies: List[IrCompany]) -> str:
 
     `{개수}` 가 세는 수는 본문과 같아야 한다. 본문은 딜 소개일 때만 기업을
     세고 후속 문구는 0 이다(`message_composer.compose_message` 의 `count`).
-    제목만 다른 수를 말하면 열어 보기 전에 이미 어긋난다.
+    제목만 다른 수를 말하면 열어 보기 전에 이미 어긋난다. Series A 딜 공유는
+    후속 문구 단계지만 기업이 실린다 — 그 분 글에 든 기업 수를 `count` 로 받는다.
     """
     typed = (req.subject or "").strip()
     if not typed:
         return req.title or "딜 소개"
-    count = 0 if req.mode in FOLLOW_UP_MODES else len(companies)
+    if count is None:
+        count = 0 if req.mode in FOLLOW_UP_MODES else len(companies)
     return mc.render_template(typed, _to_contact_view(contact),
                               company_count=count)
 
@@ -1254,10 +1262,16 @@ def create_send_list(
         ir_order = ([c for _no, c in deal_numbers.numbered_companies(
             db, contact.id, companies)] if req.mode == MODE_IR else companies)
         attach_files = ir_attach.file_names(ir_order) if attach_on else []
+        # Series A 딜 공유 — 이 분 글에 실리는 기업(아래에서 기록한다).
+        shared_now = share_plan.get(contact.id) if share else None
         if contact.id in overrides:
             # 사람이 고친 문구가 최우선. 고친 것은 통째로 한 통이다 —
             # 어디서 끊을지는 고친 사람만 안다.
             text, parts = overrides[contact.id], []
+            # 고친 글은 그때 고른 기업으로 지은 것이다 — 지금 고른 것과 다를 수
+            # 있다. 기록은 **나간 글에 실제로 든 기업**을 따른다(`companies_in`).
+            if share:
+                shared_now = series_a_share.companies_in(text, series_rows)
         elif req.mode == MODE_STARTUP:
             # ── 글을 짓는 자리는 `ir_kakao` **하나다** ★ ──────────────────
             #
@@ -1299,7 +1313,8 @@ def create_send_list(
             # 없다 — 남겨 두면 **투자사 메일함에 `[테스트]` 가 꽂힌다.**
             target = (contact.email or "").strip()
             message = text
-            subject = _mail_subject(req, contact, companies)
+            subject = _mail_subject(req, contact, companies,
+                                    count=(len(shared_now) if share else None))
         else:
             # 담당자의 방 그대로. 시험방은 이 길을 지나지 않는다(위 머리말).
             target = _room_of(contact, linked)
@@ -1334,10 +1349,10 @@ def create_send_list(
         #
         # 발송 건마다 한 줄씩(`series_a_share.record`). 받았는지는 이 건의 상태가
         # 정하므로(대기 · 보내는 중 · 보냄) 회차를 [중단]하면 저절로 안 센다.
-        # 사람이 문구를 고쳐 보냈어도(`overrides`) 고른 기업은 같다.
-        if share:
+        # 사람이 문구를 고쳐 보냈으면(`overrides`) 그 글에 든 기업만 적는다(위).
+        if share and shared_now:
             db.flush()
-            series_a_share.record(db, item, contact.id, share_plan[contact.id], user)
+            series_a_share.record(db, item, contact.id, shared_now, user)
         # ── 자료 전달은 **담당자 이력에도 한 줄** ────────────────────────
         #
         # 자료 전달은 나중에 "이 사람에게 언제 어느 기업 자료를 보냈나" 로

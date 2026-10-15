@@ -144,11 +144,15 @@ function seriesACard(id, name, sentTo, ownBy) {
   got.hidden = true;
   const own = el("span", { class: "tag warn sa-own" });
   own.hidden = true;
+  // `공유 N명` — 이 기업을 받은 분 수. 화면이 고를 때 서버에서 다시 읽어 적는다
+  // (`/api/series-a-share/state`).
+  const count = el("span", { class: "tag soft sa-count" });
+  count.hidden = true;
   return el("label", {
     class: "pick-card", "data-sent-to": sentTo, "data-own-by": ownBy || "",
     "data-search": name.toLowerCase()
   }, [cb, el("div", { class: "pick-body" },
-             [el("div", { class: "pick-name" }, [got, own])])]);
+             [el("div", { class: "pick-name" }, [got, own, count])])]);
 }
 
 // ① 소개할 기업 목록. **화면에 그려진 차례**가 곧 고르는 차례가 아니다 —
@@ -407,6 +411,9 @@ function run(people, opts) {
 
   opts = opts || {};
   const dom = buildDom(people);
+  // 스크립트가 돌기 **전에** 화면을 손볼 자리 — 새로고침한 브라우저가 칸 값을
+  // 되살려 둔 모양(`#sa-per-person` 이 3)을 흉내 낼 때 쓴다.
+  if (opts.prepare) opts.prepare(dom);
   // `reload` 는 예약 큐가 줄을 다시 그리려고 부른다(대상 수는 서버가 센 값이라
   // 화면이 흉내 내면 붙인 순간 낡는다). 몇 번 불렸는지 세어 둔다.
   const win = { location: { search: opts.search || "", href: "", reloads: 0,
@@ -483,7 +490,10 @@ function fakeFetch(replies, templates, gets) {
       }
       return { then: function () { return this; }, catch: function () { return this; } };
     }
-    const reply = replies.length ? replies.shift() : { ok: true, d: {} };
+    // `replies` 가 함수면 **요청마다 지어 답한다**(보낸 것을 보고) — 몇 번
+    // 불릴지 미리 셀 수 없는 검사(고르는 대로 미리보기가 따라온다)가 쓴다.
+    const reply = typeof replies === "function" ? replies(String(url), body)
+      : (replies.length ? replies.shift() : { ok: true, d: {} });
     return settled({
       ok: reply.ok !== false,
       json: function () { return settled(reply.d); }

@@ -394,12 +394,12 @@
     if (box) box.addEventListener("input", function () { api && api.apply(); });
 
     // NO 는 **보이는 것** 기준으로 1부터 — 걸러낸 뒤 몇 명인지 세기 위해서다.
-    // 걸러져 **안 보이게 된 줄의 체크는 푼다** — 안 보이는 분께 나가면 안 된다.
+    // 걸러져 안 보이게 된 줄의 체크는 **그대로 둔다** — '검색 → 체크 → 다음 검색'
+    // 으로 여러 명을 고르는 자리다. 숨은 분도 실린다는 것은 단추와 옆 말이 알린다
+    // (`syncShareLink` — `일부 숨김`).
     function renumber() {
       var n = 0;
       table.querySelectorAll("tbody tr").forEach(function (tr) {
-        var pick = tr.querySelector(".js-sourcing-pick");
-        if (pick && tr.hidden) pick.checked = false;
         var cell = tr.querySelector(".rowno");
         if (!cell) return;
         cell.textContent = tr.hidden ? "" : ++n;
@@ -411,7 +411,9 @@
     // (`?contacts=…`). 아무도 안 골랐으면 단추를 잠근다 — 보이는 줄 전부로
     // 슬쩍 대신하면 고른 줄 알고 누른 사람이 갈래 전원을 받는 화면을 연다.
     // 체크한 불참여 분은 싣지 않는다(딜 제안 관리에도 안 뜨고 발송도 막힌다) —
-    // 조용히 빼지 않고 몇 명 뺐는지 옆에 적는다.
+    // 조용히 빼지 않고 몇 명 뺐는지 옆에 적는다. 검색 · 필터로 **숨은 줄의 체크도
+    // 싣는다** — 그렇다고 단추(`일부 숨김`)와 옆 말에 적는다. 머리글 체크는 지금
+    // 보이는 줄만 켜고 끈다.
     var shareBtn = document.getElementById("sourcing-share-btn");
     var shareHint = document.getElementById("sourcing-share-hint");
     var checkAll = document.getElementById("sourcing-check-all");
@@ -425,15 +427,18 @@
       });
     }
     function picked() {
-      var ids = [], out = 0;
-      visiblePicks().forEach(function (cb) {
+      var ids = [], out = 0, hidden = 0;
+      pickBoxes().forEach(function (cb) {
         if (!cb.checked) return;
         var tr = cb.closest("tr");
+        if (!tr) return;
         if ((tr.getAttribute("data-f-participation") || "참여") === "불참여") { out += 1; return; }
         var id = tr.getAttribute("data-id");
-        if (id) ids.push(id);
+        if (!id) return;
+        ids.push(id);
+        if (tr.hidden) hidden += 1;
       });
-      return { ids: ids, out: out };
+      return { ids: ids, out: out, hidden: hidden };
     }
     function syncCheckAll() {
       if (!checkAll) return;
@@ -447,7 +452,8 @@
       if (!shareBtn) return;
       var got = picked();
       var base = shareBtn.getAttribute("data-base") || "/deals";
-      shareBtn.textContent = "Series A 딜 소개 (선택 " + got.ids.length + "명)";
+      shareBtn.textContent = "Series A 딜 소개 (선택 " + got.ids.length + "명" +
+        (got.hidden ? " · 일부 숨김" : "") + ")";
       if (got.ids.length) {
         shareBtn.setAttribute("href", base + "&contacts=" + got.ids.join(","));
         shareBtn.removeAttribute("aria-disabled");
@@ -459,6 +465,7 @@
       if (shareHint) {
         var notes = [];
         if (!got.ids.length) notes.push("왼쪽 체크박스로 받을 분을 고르세요");
+        if (got.hidden) notes.push("체크한 " + got.hidden + "명은 지금 검색 · 필터에 가려 있습니다 — 함께 엽니다");
         if (got.out) notes.push("체크한 불참여 " + got.out + "명은 빼고 엽니다");
         shareHint.textContent = notes.join(" · ");
         shareHint.hidden = !notes.length;
