@@ -137,13 +137,14 @@ def test_no_hand_nudged_offset_comes_back():
 def test_the_whole_card_stays_the_tap_target():
     """카드는 `<label>` 통째로 누르는 자리다 — 체크박스를 세우느라 줄이지 않는다.
 
-    셋 다 본다(기업 · 담당자 · 소싱). 체크박스가 라벨 **바로 밑**에 있어야
+    넷 다 본다(기업 · Series A 이상 기업 · 담당자 · 소싱). 체크박스가 라벨 **바로 밑**에 있어야
     위 CSS 선택자(`.pick-card > input`)가 닿고, 라벨 밖으로 나가면 네모만
     누르는 자리가 된다.
     """
     html = DEALS.read_text(encoding="utf-8")
     cards = re.findall(r'<label class="pick-card[^>]*>(.*?)</label>', html, flags=re.S)
-    assert len(cards) == 3, f"고르는 카드가 3 벌이 아니다({len(cards)} 벌) — 새 목록도 함께 봐야 한다"
+    # 넷째가 딜 소싱 제안 › [Series A 딜 공유]의 기업 고르개(`#series-a-list`)다.
+    assert len(cards) == 4, f"고르는 카드가 4 벌이 아니다({len(cards)} 벌) — 새 목록도 함께 봐야 한다"
     for body in cards:
         # 라벨 → (주석) → 체크박스 → `.pick-body`. 사이에 다른 상자가 끼면
         # `.pick-card > input` 이 닿지 않는다.

@@ -366,7 +366,8 @@ def test_담당자_줄을_가리키는_표는_전부_어느_쪽인지_정해져_
     from app.routers import contacts as router
 
     decided = {m for _k, m, _l in
-               router.CASCADING_LINKS + router.BLOCKING_LINKS}
+               router.CASCADING_LINKS + router.BLOCKING_LINKS
+               + router.DETACHING_LINKS}
     missing = []
     for mapper in Base.registry.mappers:
         model = mapper.class_
@@ -379,8 +380,9 @@ def test_담당자_줄을_가리키는_표는_전부_어느_쪽인지_정해져_
 
     assert not missing, (
         "담당자 줄을 가리키는데 지울 때 어떻게 할지 정해 두지 않은 표가 "
-        "있습니다. app/routers/contacts.py 의 CASCADING_LINKS(함께 지운다) 나 "
-        "BLOCKING_LINKS(걸려 있으면 막는다) 중 하나에 적어 주세요:\n"
+        "있습니다. app/routers/contacts.py 의 CASCADING_LINKS(함께 지운다) · "
+        "BLOCKING_LINKS(걸려 있으면 막는다) · DETACHING_LINKS(연결만 끊는다) "
+        "중 하나에 적어 주세요:\n"
         + "\n".join(sorted(set(missing))))
 
 

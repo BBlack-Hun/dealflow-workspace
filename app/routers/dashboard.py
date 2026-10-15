@@ -455,6 +455,10 @@ def team_page(request: Request, db: Session = Depends(get_db),
     # 영향을 주는 것을 관리자가 정하는 자리` 이기 때문이다(계정 · 권한 ·
     # 자동 준비 스위치). 보는 자리는 밑틀이고, 여기는 적고 내리는 자리다.
     ctx["notice_board"] = notices.board(db)
+    # 딜 소싱 메일 확인이 읽을 편지함 — **비밀번호는 싣지 않는다**(있는지만).
+    from ..services import sourcing_mail
+
+    ctx["sourcing_mail"] = sourcing_mail.panel(db)
     return templates.TemplateResponse("team.html", ctx)
 
 
@@ -679,6 +683,52 @@ def test_mail(to: str = Form(""), db: Session = Depends(get_db),
     target = (to or "").strip() or mailer.load_settings().from_address
     result = mailer.send_test(target)
     return RedirectResponse(f"/team?msg={quote(result['detail'])}", status_code=303)
+
+
+@router.post("/team/sourcing-mail", include_in_schema=False)
+def save_sourcing_mail(
+    action: str = Form("save"),
+    host: str = Form(""),
+    port: str = Form("995"),
+    username: str = Form(""),
+    password: str = Form(""),
+    enabled: str = Form(""),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """**딜 소싱 메일 확인** 판 — [저장] · [저장하고 연결 시험] · [비우기].
+
+    관리자만. 비밀번호 칸이 비어 있으면 있던 비밀번호를 그대로 둔다(화면은
+    비밀번호를 되돌려 그리지 않는다). 새 비밀번호는 잠가서만 담는다 — 잠글
+    열쇠가 서버에 없으면 **아무것도 저장하지 않고** 그 까닭을 띄운다
+    (`services/secret_box.py`). 결과 문장에도 비밀번호는 실리지 않는다.
+    """
+    admin_only(user)
+    from urllib.parse import quote
+
+    from ..services import secret_box, sourcing_mail
+
+    def back(text: str) -> RedirectResponse:
+        return RedirectResponse(f"/team?msg={quote(text)}#sourcing-mail",
+                                status_code=303)
+
+    if action == "clear":
+        sourcing_mail.clear_settings(db)
+        return back("딜 소싱 메일 확인 판을 비웠습니다 — 서버 환경변수(DEALFLOW_POP3_*)가 "
+                    "있으면 그것을 씁니다")
+    try:
+        sourcing_mail.save_settings(db, host=host, port=port, username=username,
+                                    password=password, enabled=enabled == "1")
+    except secret_box.NoSecret as exc:
+        db.rollback()
+        return back(str(exc))
+    except ValueError as exc:
+        db.rollback()
+        return back(f"저장하지 않았습니다 — {exc}")
+    if action != "test":
+        return back("딜 소싱 메일 확인 설정을 저장했습니다")
+    row = sourcing_mail.check_connection(db, user)
+    return back(sourcing_mail.connection_text(row))
 
 
 @router.post("/team/members", include_in_schema=False)

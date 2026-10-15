@@ -27,7 +27,12 @@ from ..models import MessageTemplate, TemplateChoice
 #: 문구다(`services/sourcing_msg.py`). 그래서 갈래끼리는 서로 겨루지 않고
 #: 갈래 **안에서만** 고른다. 나머지 종류의 이름('기본 인사' · '연말 인사')은
 #: 사람이 알아보려고 붙인 것이라 한 자리를 놓고 함께 겨룬다.
-NAME_IS_A_BUCKET = {"sourcing_intro"}
+#:
+#: 딜 소싱 **월간 리마인드**(`sourcing_remind`)도 같다 — 첫 줄이 갈래를 부른다
+#: (`Series A 이상 딜 네트워크…`). 자동 리마인드(#277)가 같은 저장 문구를 읽는다.
+#: **Series A 딜 공유**(`sourcing_deal_share`)도 같다 — 시리즈 A 갈래에만 나가는
+#: 글이라 그 갈래 이름을 단다(`services/series_a_share.py`).
+NAME_IS_A_BUCKET = {"sourcing_intro", "sourcing_remind", "sourcing_deal_share"}
 
 
 def variant_of(kind: str, name: Optional[str]) -> str:

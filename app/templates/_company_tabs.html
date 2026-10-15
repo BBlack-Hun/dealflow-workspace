@@ -1,0 +1,22 @@
+{#
+  IR 기업 현황 메뉴의 탭 줄 — 세 탭이 **이 한 조각**을 같이 쓴다
+  (`companies.html` · `companies_series_a.html`).
+
+  앞의 둘은 **같은 기업 레코드의 두 가지 보기**이고(`ir_companies`), 셋째는
+  **다른 표**다(`series_a_companies` — 딜 소싱으로 받은 딜). 주소는 셋 다
+  `/companies` 다(`?tab=`).
+
+  건수는 화면을 열 때마다 센다 — 시트처럼 탭 이름에 박아 두면(`스타트업(16)`
+  인데 실제 70행) 금세 거짓말이 된다. 세는 자리는 `companies.tab_counts` 하나다.
+#}
+<nav class="sheet-tabs co-tabs">
+  <a class="sheet-tab {% if co_tab == 'status' %}active{% endif %}" href="/companies">
+    IR 기업 현황 <span title="등록된 기업">{{ counts.total }}</span>
+  </a>
+  <a class="sheet-tab {% if co_tab == 'db' %}active{% endif %}" href="/companies?tab=db">
+    스타트업DB <span title="기업정보가 채워진 기업">{{ counts.with_info }}</span>
+  </a>
+  <a class="sheet-tab {% if co_tab == 'series-a' %}active{% endif %}" href="/companies?tab=series-a">
+    Series A 이상 기업 <span title="딜 소싱으로 받은 딜">{{ counts.series_a }}</span>
+  </a>
+</nav>
