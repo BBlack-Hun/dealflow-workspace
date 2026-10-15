@@ -14,15 +14,37 @@
 옛 이름이라, 화면을 따라 여기서 옛 이름을 빼면 **다음 가져오기에서 그 칸이
 조용히 빈다**(`scripts/import_company_sheets.py` 가 같은 이유로 둘을 같이 받는다).
 
-## 한 줄을 무엇으로 알아보나 — `(기업명, 수신 일자)`
+## 한 줄을 무엇으로 알아보나 — 가져오기 열쇠(`import_key`)
 
-한 줄은 **받은 딜 한 건**이다. 같은 기업이 다른 날 또 들어오면 다른 줄이다
-(후속 투자 연계로 다시 오는 일이 있다). 기업명은 `deal_history._key` 로 맞춘다
-— (주)·띄어쓰기 차이로 같은 딜이 두 줄이 되지 않게. 이 규칙은 **새로 짓지
-않는다**: 기업 이름을 맞추는 자리가 저장소에 그 하나다.
+한 줄은 **받은 딜 한 건**(언제 · 어느 투자사의 누가 넘겨 주었나)이다. 그래서
+열쇠는 시트 줄의 **(기업명, 수신 일자, 공유 심사역, 회사)** 다(`import_key`).
+같은 기업이 다른 날 또 들어오면 다른 줄이고(후속 투자 연계로 다시 오는 일이
+있다), **같은 날이라도 넘겨 준 곳이 다르면 다른 줄이다** — 열쇠가
+`(기업명, 수신 일자)` 뿐이던 때는 둘째 딜이 겹친 줄로 버려졌다.
+
+기업명 · 회사는 `deal_history._key` 로 맞춘다 — (주)·띄어쓰기 차이로 같은 딜이
+두 줄이 되지 않게. 이 규칙은 **새로 짓지 않는다**: 기업 이름을 맞추는 자리가
+저장소에 그 하나다. 공유 심사역은 띄어쓰기만 지운다.
+
+**열쇠는 가져온 그때의 시트 값이고, 줄의 `import_key` 칸에 적어 둔다.** 앱에서
+기업명 · 수신 일자를 고쳐도 다시 셈하지 않는다 — 고칠 때마다 열쇠가 바뀌면
+다음 가져오기에서 같은 딜이 새 줄로 또 선다.
 
 시트의 `NO` 는 열쇠로 쓰지 않는다 — 원본에 번호가 빈 줄이 있고, 사람이 줄을
 끼워 넣으면 번호가 밀린다.
+
+## 열쇠가 없는 줄 — 앱에서 더한 줄 · 열쇠 칸이 생기기 전에 들어온 줄
+
+그런 줄은 예전 열쇠 `(기업명, 수신 일자)` 로 **한 번** 맞추고, 맞으면 그 시트
+줄의 열쇠를 적는다(`linked`). 그 뒤로는 열쇠로 맞는다. 고르는 차례:
+
+  1. 열쇠가 적힌 줄 중 같은 열쇠.
+  2. 열쇠가 없는 줄 중 **지금 값으로 셈한 열쇠까지 같은** 줄 — 같은
+     `(기업명, 수신 일자)` 의 시트 줄이 둘이어도 제 짝을 먼저 가져간다.
+  3. 남은 시트 줄은 `(기업명, 수신 일자)` 로 — **열쇠 없는 줄도 하나, 그 줄을
+     바라는 시트 줄도 하나일 때만.** 어느 쪽이든 둘 이상이면 고르지 않고 건너뛰어
+     수를 알린다(`ambiguous`). 아무거나 고르면 남의 딜에 값을 채우고, 새로
+     만들면 같은 딜이 두 줄이 된다 — 사람이 앱에서 정리한 뒤 다시 돌리면 된다.
 
 ## 몇 번을 다시 돌려도 결과가 같다
 
@@ -39,6 +61,7 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 import re
 from dataclasses import dataclass, field
 from datetime import date, datetime
@@ -196,8 +219,23 @@ def read_rows(path: Path, sheet: Optional[str] = None) -> List[List]:
 
 
 def row_key(name: Optional[str], received_at: Optional[str]) -> Tuple[str, str]:
-    """한 줄을 알아보는 열쇠 — `(기업명, 수신 일자)`(머리말)."""
+    """예전 열쇠 — `(기업명, 수신 일자)`. 열쇠가 없는 줄을 맞출 때만 쓴다(머리말)."""
     return name_key(name), (received_at or "").strip()
+
+
+def import_key(values) -> str:
+    """가져오기 열쇠 — 시트 줄의 `(기업명, 수신 일자, 공유 심사역, 회사)`(머리말).
+
+    `values` 는 넣을 값(`parse` 의 한 줄) 또는 표의 줄이다. 칸에 그대로 적을
+    글자라 JSON 배열로 만든다 — 사람이 DB 를 열어 봐도 무엇의 열쇠인지 읽힌다.
+    """
+    get = values.get if isinstance(values, dict) else (
+        lambda attr: getattr(values, attr, None))
+    parts = [name_key(get("name")),
+             day_text(get("received_at") or ""),
+             re.sub(r"\s+", "", get("shared_by") or "").lower(),
+             name_key(get("source_firm"))]
+    return json.dumps(parts, ensure_ascii=False)
 
 
 @dataclass
@@ -215,27 +253,77 @@ class Result:
     kept: int = 0
     #: 시트 안에서 열쇠가 겹쳐 건너뛴 줄.
     duplicates: int = 0
+    #: 열쇠가 없던 줄(앱에서 더한 줄 · 예전에 들어온 줄)을 맞춰 열쇠를 적은 수.
+    linked: int = 0
+    #: 열쇠 없는 줄 중 어느 것인지 몰라 건너뛴 시트 줄(머리말 3).
+    ambiguous: int = 0
 
 
 def upsert(db: Session, records: Iterable[dict], overwrite: bool = False) -> Result:
-    """넣을 값들을 표에 맞춘다. **커밋하지 않는다** — 부르는 쪽이 정한다."""
-    existing: Dict[Tuple[str, str], SeriesACompany] = {}
+    """넣을 값들을 표에 맞춘다. **커밋하지 않는다** — 부르는 쪽이 정한다.
+
+    맞추는 차례는 머리말에 있다 — 열쇠 → 열쇠 없는 줄의 지금 값 열쇠 →
+    `(기업명, 수신 일자)`(양쪽 다 하나일 때만).
+    """
+    keyed: Dict[str, SeriesACompany] = {}
+    loose: List[SeriesACompany] = []          # 열쇠가 없는 줄
     for row in db.execute(select(SeriesACompany)
                           .order_by(SeriesACompany.id)).scalars():
-        existing.setdefault(row_key(row.name, row.received_at), row)
+        if row.import_key:
+            keyed.setdefault(row.import_key, row)
+        else:
+            loose.append(row)
+
+    # 열쇠 없는 줄의 **지금 값**으로 셈한 열쇠 — 한 번만 셈한다.
+    now_key = {id(row): import_key(row) for row in loose}
 
     result = Result()
     seen = set()
+    matched: List[Tuple[dict, str, Optional[SeriesACompany]]] = []
+    later: List[Tuple[dict, str]] = []
     for values in records:
-        key = row_key(values.get("name"), values.get("received_at"))
+        key = import_key(values)
         if key in seen:
             result.duplicates += 1
             continue
         seen.add(key)
-
-        row = existing.get(key)
+        row = keyed.get(key)
         if row is None:
-            db.add(SeriesACompany(**{k: (v or None) for k, v in values.items()}))
+            # 열쇠 없는 줄 중 **지금 값까지 같은** 줄 — 같은 (기업명, 수신 일자) 의
+            # 시트 줄이 둘이어도 제 짝을 먼저 가져간다(시트 차례와 상관없이).
+            row = next((r for r in loose if now_key[id(r)] == key), None)
+            if row is None:
+                later.append((values, key))
+                continue
+            loose.remove(row)
+            row.import_key = key
+            result.linked += 1
+        matched.append((values, key, row))
+
+    # 남은 시트 줄 — 예전 열쇠로, **양쪽 다 하나일 때만** 맞춘다.
+    wanted: Dict[Tuple[str, str], int] = {}
+    for values, _key in later:
+        old = row_key(values.get("name"), values.get("received_at"))
+        wanted[old] = wanted.get(old, 0) + 1
+    for values, key in later:
+        old = row_key(values.get("name"), values.get("received_at"))
+        hits = [r for r in loose if row_key(r.name, r.received_at) == old]
+        if not hits:
+            matched.append((values, key, None))
+            continue
+        if len(hits) > 1 or wanted[old] > 1:
+            result.ambiguous += 1
+            continue
+        row = hits[0]
+        loose.remove(row)
+        row.import_key = key
+        result.linked += 1
+        matched.append((values, key, row))
+
+    for values, key, row in matched:
+        if row is None:
+            fields = {k: (v or None) for k, v in values.items()}
+            db.add(SeriesACompany(import_key=key, **fields))
             result.created += 1
             continue
 

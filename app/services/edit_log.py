@@ -490,6 +490,12 @@ FIELD_LABELS = {
     "vc_contact_id": "투자사 관리 현황 연결", "participation": "참여",
     # `Series A 이상 기업` 탭 — 시트 머리글 그대로.
     "shared_by": "공유 심사역", "source_firm": "회사", "deal_type": "Type",
+    # 받은 날 — `Series A 이상 기업` 탭의 `수신 일자` · 스타트업DB 의 `수신일`.
+    # 이름표는 표를 가리지 않는 한 벌이라 두 탭에 다 맞는 이름을 단다. 같은
+    # 까닭으로 `name`(이름) · `series`(라운드) · `assignee_name`(담당자 이름)도
+    # 이 탭만의 이름(기업명 · 투자라운드 · 담당팀원)으로 바꾸지 않는다 — 바꾸면
+    # 다른 표의 로그가 틀린 이름을 단다.
+    "received_at": "수신일",
     "detail": "상세 내용", "deal_pitch": "딜소개 문구",
     "memo": "메모", "notes": "칸 메모", "note": "메모", "body": "본문",
     "phone": "연락처", "email": "메일", "one_liner": "한 줄 소개",

@@ -252,8 +252,13 @@ def _result(row: SeriesACompany, db: Session) -> dict:
     화면에 같은 규칙을 또 적으면 두 벌이 되어 한쪽만 고쳐진다.
     """
     data = row_dict(row, ir_names(db), sharer=series_a_share.sharer_view(db, row))
-    return {key: data[key] for key in ("id", "name", "received_at", "received_sort",
-                                       "series", "series_short", "ir_name", "sharer")}
+    # 고친 칸은 **서버가 저장한 값**으로 다시 그리고(`series_a.js`), 검색 글자도
+    # 갈아 끼운다 — 표에서 고치는 칸은 전부 돌려준다.
+    return {key: data[key] for key in (
+        "id", "name", "received_at", "deal_type", "assignee_name", "shared_by",
+        "source_firm", "sector_major", "sector_minor", "series", "detail",
+        "deal_pitch", "received_sort", "series_short", "ir_name", "search",
+        "sharer")}
 
 
 @router.post("/api/series-a-companies")

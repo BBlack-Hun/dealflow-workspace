@@ -56,7 +56,18 @@
   }
 
   // 눌린 칸의 다음 차례. **오름 → 내림 → 끔.** 다른 칸을 누르면 오름부터.
-  function nextState(state, key) {
+  //
+  // `base` 는 **서버가 그려 준 차례가 곧 어느 칸의 어느 방향인가**다
+  // (`<th data-sort-default="desc">` — 아래 `init`). 그 칸은 `끔` 이 곧 그 방향이라
+  // 기본 ↔ 거꾸로 둘만 돈다. 오름 → 내림 → 끔 으로 돌리면 첫 클릭이 거꾸로가
+  // 아니라 **안 세운 칸처럼** 오름부터 시작해 뜻밖이고, 내림과 끔이 같은 차례라
+  // 한 번은 눌러도 아무 일이 없다.
+  function nextState(state, key, base) {
+    if (base && base.key === key) {
+      var dir = !state ? base.dir : (state.key === key ? state.dir : null);
+      if (dir === base.dir) return { key: key, dir: dir === ASC ? DESC : ASC };
+      return null;                           // 거꾸로 · 다른 칸 → 기본 차례
+    }
     if (!state || state.key !== key) return { key: key, dir: ASC };
     if (state.dir === ASC) return { key: key, dir: DESC };
     return null;
@@ -107,9 +118,16 @@
     if (!table) return null;
 
     var defs = [];
+    // **서버가 그려 준 차례가 이미 이 칸으로 서 있다** — `data-sort-default="desc"`
+    // (또는 `asc`). 머리글이 처음부터 `▼` 로 서고, 첫 클릭은 거꾸로다(`nextState`).
+    // 안 적으면 그 칸도 `↕`(안 세움)로 보여, 최신순 표의 첫 클릭이 오래된 순이 된다.
+    var base = null;
     Array.prototype.forEach.call(table.querySelectorAll("th[data-sort]"), function (th) {
       var key = (th.getAttribute("data-sort") || "").trim();
-      if (key) defs.push({ key: key, label: (th.textContent || "").trim(), th: th });
+      if (!key) return;
+      defs.push({ key: key, label: (th.textContent || "").trim(), th: th });
+      var dflt = (th.getAttribute("data-sort-default") || "").trim();
+      if (!base && (dflt === ASC || dflt === DESC)) base = { key: key, dir: dflt };
     });
     if (!defs.length) return null;
 
@@ -152,8 +170,11 @@
         // 차례대로 한 바퀴 돌면 그 차례가 된다.
         body.insertBefore(rows[at], tail);
       });
+      // 안 세웠으면(`끔`) 서버가 그려 준 차례다 — 그 차례가 어느 칸 어느 방향인지
+      // 알면(`base`) 그 칸에 그대로 표시한다.
+      var shown = state || base;
       defs.forEach(function (def) {
-        var dir = state && state.key === def.key ? state.dir : null;
+        var dir = shown && shown.key === def.key ? shown.dir : null;
         // 지금 무엇으로 세워져 있는지 화면에도, 읽어 주는 기계에도 보여야 한다.
         def.th.setAttribute("aria-sort",
           dir === ASC ? "ascending" : dir === DESC ? "descending" : "none");
@@ -162,9 +183,12 @@
         // 흐리기가 달라야 하고, 붙여 두는 공백도 CSS 가 줄바꿈 없는 것으로
         // 넣는다 — 보통 공백이면 폭이 조금만 모자랄 때 `일시` / `▲` 로 갈린다.
         def.btn.setAttribute("data-mark", MARK[dir || "off"]);
+        // 풍선말은 **누르면 무엇이 되나**다. 기본 차례가 있는 표에서 `끔` 은 그
+        // 차례로 돌아가는 것이라 그렇게 말한다.
+        var next = nextState(state, def.key, base);
         def.btn.setAttribute("title", def.label + (
-          !dir ? " 오름차순으로 정렬" :
-          dir === ASC ? " 내림차순으로 정렬" : " 정렬 끄기"));
+          !next ? (base ? " 기본 차례로" : " 정렬 끄기") :
+          next.dir === ASC ? " 오름차순으로 정렬" : " 내림차순으로 정렬"));
       });
       syncUrl();
       keepLinks();
@@ -223,7 +247,7 @@
       btn.className = "sort-btn";
       btn.textContent = def.label;
       btn.onclick = function () {
-        state = nextState(state, def.key);
+        state = nextState(state, def.key, base);
         apply();
       };
       def.btn = btn;

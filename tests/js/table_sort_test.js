@@ -276,4 +276,34 @@ const CATEGORY = 0, DUE = 1, STATUS = 2;   // th[data-sort] 순서
     "정렬을 끄면 여러 줄 항목이 섞인 표도 서버가 그려 준 차례로 돌아와야 한다");
 }
 
+// --- 11) 서버 차례가 이미 어느 칸으로 서 있으면(`data-sort-default`) ----------
+//
+// 받은 날 최신순으로 그려 주는 표(`Series A 이상 기업`)는 그 칸이 처음부터 `▼`
+// 다. 표시가 `↕` 이면 첫 클릭이 오래된 순인 것이 뜻밖이고, 오름 → 내림 → 끔 으로
+// 돌면 내림과 끔이 같은 차례라 한 번은 눌러도 아무 일이 없다. 그 칸은 **기본 ↔
+// 거꾸로** 둘만 돈다. 다른 칸의 `끔` 은 그 기본 차례로 돌아가는 것이다.
+{
+  const { nextState } = (function () {
+    const box = { window: {} };
+    vm.createContext(box);
+    vm.runInContext(src, box, { filename: "table_sort.js" });
+    return box.window.DealflowSort;
+  })();
+  const base = { key: "due", dir: "desc" };
+  const S = (s) => JSON.stringify(s);
+  assert.strictEqual(S(nextState(null, "due", base)), S({ key: "due", dir: "asc" }),
+    "기본 차례(내림)에서 첫 클릭은 거꾸로(오름)여야 한다");
+  assert.strictEqual(nextState({ key: "due", dir: "asc" }, "due", base), null,
+    "거꾸로에서 다시 누르면 기본 차례로 돌아와야 한다");
+  assert.strictEqual(S(nextState({ key: "due", dir: "desc" }, "due", base)),
+    S({ key: "due", dir: "asc" }), "주소에 적힌 기본 방향에서도 다음은 거꾸로다");
+  assert.strictEqual(nextState({ key: "status", dir: "asc" }, "due", base), null,
+    "다른 칸으로 세웠다가 기본 칸을 누르면 기본 차례로 돌아와야 한다");
+  // 기본이 아닌 칸은 예전 그대로 — 오름 → 내림 → 끔.
+  assert.strictEqual(S(nextState(null, "status", base)), S({ key: "status", dir: "asc" }));
+  assert.strictEqual(nextState({ key: "status", dir: "desc" }, "status", base), null);
+  // `base` 를 안 주면(이 속성을 안 단 표) 아무것도 바뀌지 않는다.
+  assert.strictEqual(S(nextState(null, "due")), S({ key: "due", dir: "asc" }));
+}
+
 console.log("table_sort_test: 통과");

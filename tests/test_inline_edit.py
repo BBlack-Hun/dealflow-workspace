@@ -723,6 +723,27 @@ def test_키보드로_칸과_줄_사이를_넘어가는가():
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+DATE_TEST = pathlib.Path(__file__).resolve().parent / "js" / "inline_edit_date_test.js"
+
+
+@pytest.mark.skipif(shutil.which("node") is None,
+                    reason="node 미설치 — 브라우저 로직 테스트 생략")
+def test_날짜_칸을_스치기만_해서는_값이_안_지워진다():
+    """`날짜 미정` 이 든 날짜 칸을 눌렀다 나가기만 해도 **빈 값이 저장됐다.**
+
+    브라우저의 `<input type="date">` 는 날짜가 아닌 글자를 빈 값으로 바꿔 담는다.
+    그런 칸은 글자 칸으로 열고, 날짜 입력은 사람이 손댄 경우만 저장한다
+    (`Series A 이상 기업` 탭 `수신 일자` · 스타트업DB `수신일`).
+
+    로컬에서는 `node tests/js/inline_edit_date_test.js` 로도 돈다.
+    """
+    result = subprocess.run(
+        [shutil.which("node"), str(DATE_TEST)], capture_output=True, text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_초점이_간_칸이_보이게_CSS_가_표시하는가():
     """초점 표시가 없으면 키로 옮겨 다닐 때 **어디에 서 있는지 알 수 없다.**
 

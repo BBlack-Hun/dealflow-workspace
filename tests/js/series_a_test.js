@@ -43,7 +43,7 @@ function build() {
   const head = D.el("thead", {}, [D.el("tr", {}, [
     th({ class: "num stick stick-a" }, "NO"),
     th({ class: "stick stick-b" }, "기업명"),
-    th({ "data-sort": "received_at" }, "수신 일자"),
+    th({ "data-sort": "received_at", "data-sort-default": "desc" }, "수신 일자"),
     th({ "data-filters": "type:Type" }, "Type"),
     th({ "data-filters": "series:투자라운드" }, "투자라운드"),
     th({}, "")
@@ -166,12 +166,31 @@ const note = (dom) => dom.root.querySelector("#sa-note");
   run(dom);
   const btn = dom.heads[2].querySelector("button");
   assert.ok(btn, "`수신 일자` 머리글이 단추로 서지 않았다");
+  // 처음부터 이 칸 최신순이다(서버가 그렇게 그려 준다) — 머리글도 **그렇다고**
+  // 말해야 한다. `↕`(안 세움)로 두면 첫 클릭이 오래된 순이 되는 것이 뜻밖이다.
+  assert.strictEqual(dom.heads[2].getAttribute("aria-sort"), "descending",
+    "처음 차례가 수신 일자 최신순인데 머리글이 안 세운 칸으로 보인다");
+  assert.strictEqual(btn.getAttribute("data-mark"), "▼");
   btn.fire("click");
   // 오름차순 — 날짜 없는 줄은 방향과 상관없이 끝.
   assert.strictEqual(ids(dom), "2,1,3", "오래된 것부터가 아니다(빈 날짜는 끝)");
   assert.strictEqual(numbers(dom), "1,2,3", "세운 뒤 번호를 다시 매기지 않았다");
+  assert.strictEqual(dom.heads[2].getAttribute("aria-sort"), "ascending");
   btn.fire("click");
+  // 다시 누르면 처음 차례(최신순)로 — 같은 최신순을 두 번 거치지 않는다.
   assert.strictEqual(ids(dom), "1,2,3", "내림차순에서 빈 날짜가 끝이 아니다");
+  assert.strictEqual(dom.heads[2].getAttribute("aria-sort"), "descending");
+  btn.fire("click");
+  assert.strictEqual(ids(dom), "2,1,3", "세 번째 클릭이 다시 오래된 순이 아니다");
+}
+{
+  // 다른 칸으로 세웠다가 이 칸을 누르면 **처음 차례(최신순)** 로 돌아온다.
+  const dom = build();
+  const got = run(dom, "?sort=received_at");
+  assert.strictEqual(ids(dom), "2,1,3", "주소에 남긴 오름차순으로 안 섰다");
+  dom.heads[2].querySelector("button").fire("click");
+  assert.strictEqual(ids(dom), "1,2,3");
+  assert.strictEqual(got.win.location.search, "", "처음 차례인데 주소에 정렬이 남았다");
 }
 
 // --- ④ 저장 뒤처리 -----------------------------------------------------------
@@ -204,6 +223,63 @@ const note = (dom) => dom.root.querySelector("#sa-note");
   const link = row.querySelector(".ir-link");
   assert.strictEqual(link.hidden, false, "IR 기업 현황에도 있는 기업인데 딱지가 안 섰다");
   assert.strictEqual(link.getAttribute("href"), "/companies?q=" + encodeURIComponent("샘플애그"));
+}
+
+// --- ④-2 칸은 **서버가 저장한 값**으로 다시 그린다 ---------------------------
+//
+// 기업명을 비우고 저장하면 서버는 비우지 않고 옛 이름을 돌려준다
+// (`routers/series_a._assign`). inline_edit.js 는 적힌 그대로(빈 칸)를 칸에 둔 채
+// 알리므로, 응답으로 다시 그리지 않으면 **화면만 빈 이름**으로 남는다.
+function saved(dom, row, cell, value, data) {
+  dom.table.dispatchEvent(new (function (type, init) {
+    this.type = type; this.detail = init.detail;
+  })("inline-saved", { detail: { row: row, cell: cell, value: value, data: data } }));
+}
+{
+  const dom = build();
+  run(dom);
+  const row = dom.body.children[0];
+  const name = row.querySelector('[data-field="name"]');
+  name.textContent = "";                         // inline_edit.js 가 적어 둔 빈 이름
+  saved(dom, row, name, "", {
+    id: 1, name: "가온샘플", received_at: "2026-08-25", received_sort: "2026-08-25",
+    series: "Series B", series_short: "Series B", ir_name: "",
+    search: "가온샘플 2026-08-25 딜 소싱 네트워크 series b"
+  });
+  assert.strictEqual(name.textContent, "가온샘플",
+    "서버가 빈 이름을 받지 않았는데 화면에는 빈 칸이 남았다");
+
+  // 다른 글자 칸도 서버가 다듬은 값으로 선다(앞뒤 공백 등).
+  const type = row.querySelector('[data-field="deal_type"]');
+  type.textContent = "  후속 투자 연계 ";
+  saved(dom, row, type, "  후속 투자 연계 ", {
+    id: 1, name: "가온샘플", deal_type: "후속 투자 연계", received_at: "2026-08-25",
+    received_sort: "2026-08-25", series: "Series B", series_short: "Series B",
+    ir_name: "", search: "가온샘플 2026-08-25 후속 투자 연계 series b"
+  });
+  assert.strictEqual(type.textContent, "후속 투자 연계");
+  assert.strictEqual(row.getAttribute("data-f-type"), "후속 투자 연계",
+    "필터 값이 서버가 저장한 값과 다르다");
+}
+
+// --- ④-3 고친 값이 **새로고침 없이** 검색에 걸린다 ----------------------------
+{
+  const dom = build();
+  run(dom);
+  const row = dom.body.children[1];
+  const name = row.querySelector('[data-field="name"]');
+  name.textContent = "샘플바이오";
+  saved(dom, row, name, "샘플바이오", {
+    id: 2, name: "샘플바이오", received_at: "2026-07-01", received_sort: "2026-07-01",
+    series: "Series A (누적투자금 10억이상)", series_short: "Series A", ir_name: "",
+    search: "샘플바이오 2026-07-01 후속 투자 연계 series a (누적투자금 10억이상)"
+  });
+  dom.search.value = "샘플바이오";
+  dom.search.fire("input");
+  assert.strictEqual(shown(dom), "2", "고친 이름이 검색에 안 걸린다(새로고침 전)");
+  dom.search.value = "샘플메디";
+  dom.search.fire("input");
+  assert.strictEqual(shown(dom), "", "옛 이름이 아직 검색에 걸린다");
 }
 
 // --- ⑤ 삭제 --------------------------------------------------------------
