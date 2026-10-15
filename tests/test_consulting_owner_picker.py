@@ -117,7 +117,10 @@ def _kpi(html: str, key: str) -> int:
 
 def _rows(html: str) -> list:
     body = html.split("<tbody>", 1)[1]
-    return re.findall(r'data-field="company_name"[^>]*>([^<]*)<', body)
+    # 값은 칸에 바로 서거나, IR 기업 연결 표시가 붙으면 `.cell-main` 안에 선다
+    # (`consulting.html` 의 `ir_named`).
+    return re.findall(r'data-field="company_name"[^>]*>(?:<div class="cell-main">)?([^<]*)<',
+                      body)
 
 
 # --- 1. 이름은 줄에서 나온다 ---------------------------------------------------

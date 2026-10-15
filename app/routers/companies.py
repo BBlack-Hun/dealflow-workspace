@@ -590,10 +590,46 @@ def company_rows(db: Session, tab: str = "", sent=None) -> List[dict]:
     return sort_for_tab(rows, tab)
 
 
+def tab_counts(db: Session) -> dict:
+    """탭 이름 옆의 수 셋 — **세 탭이 다 같은 함수를 읽는다.**
+
+    탭 줄은 세 화면(IR 기업 현황 · 스타트업DB · Series A 이상 기업)에 똑같이
+    서므로(`_company_tabs.html`), 화면마다 따로 세면 탭을 옮길 때 숫자가
+    바뀐다. 기업 줄을 다 그리지 않고(`company_rows` 는 발송 이력까지 훑는다)
+    칸 셋만 읽어 센다.
+
+    `with_info` — 스타트업DB 탭에 볼 것이 있는 기업. 대표자·연락처 같은
+    기초자료가 하나라도 들어온 곳이다. 전체와 나란히 놓으면 얼마나 채웠는지
+    보인다. **뱃지가 세는 것과 탭을 열었을 때 보이는 것이 같아야 한다.**
+    0051 이 이 자리에 `one_liner` 을 세워 그것을 셌는데, 0058 이 그 칸을 옆
+    탭(`딜 소개 문구`)으로 돌려보내고 이 탭에는 재료인 `business_desc`
+    (머리글 `기업 한줄 소개`)를 세웠다 — 세는 칸도 함께 따라간다.
+
+    `series_a` — `Series A 이상 기업` 탭의 줄 수(받은 딜 수). 다른 표다
+    (`models.SeriesACompany`).
+    """
+    from . import series_a
+
+    total = with_info = 0
+    for ceo, phone, desc in db.execute(select(
+            IrCompany.contact_name, IrCompany.contact_phone, IrCompany.business_desc)):
+        total += 1
+        if ceo or phone or desc:
+            with_info += 1
+    return {"total": total, "with_info": with_info, "series_a": series_a.count(db)}
+
+
 @router.get("/companies", response_class=HTMLResponse, include_in_schema=False)
 def companies_page(request: Request, db: Session = Depends(get_db),
                    user: User = Depends(get_current_user), msg: str = "", q: str = "",
                    tab: str = ""):
+    # **세 번째 탭은 다른 표다**(`models.SeriesACompany` — 딜 소싱으로 받은 딜).
+    # 주소만 같이 쓰고 그리는 것은 그쪽 라우터가 한다. 아래 두 탭의 판단(발송
+    # 이력 훑기 · 소개 가능 · 계약)이 그 표에는 하나도 안 맞는다.
+    from . import series_a
+
+    if tab == series_a.TAB:
+        return series_a.render_page(request, db, user, msg=msg, q=q)
     # 시트의 하단 탭 두 개. 같은 레코드를 다르게 보는 것뿐이라, 한쪽에서
     # 고치면 다른 쪽이 저절로 따라온다 — 맞춰 주는 코드가 없어야 안 어긋난다.
     # 다른 것은 **차례 하나**다(`sort_for_tab`).
@@ -610,20 +646,12 @@ def companies_page(request: Request, db: Session = Depends(get_db),
         "msg": msg,
         "q": q,          # 발송 화면에서 '기업 정보 채우기' 로 넘어온 경우 그 기업을 바로 띄운다
         "counts": {
-            "total": len(rows),
+            # 탭 이름 옆의 수 셋(`total` · `with_info` · `series_a`). 세 탭이
+            # 같은 함수를 읽는다 — 무엇을 세는지는 `tab_counts` 에 있다.
+            **tab_counts(db),
             "introducible": sum(1 for r in rows if r["introducible"]),
             "blocked": sum(1 for r in rows if not r["introducible"]),
             "with_ir": sum(1 for r in rows if r["has_ir"]),
-            # 스타트업DB 탭에 볼 것이 있는 기업 — 대표자·연락처 같은 기초자료가
-            # 하나라도 들어온 곳. 전체와 나란히 놓으면 얼마나 채웠는지 보인다.
-            # **뱃지가 세는 것과 탭을 열었을 때 보이는 것이 같아야 한다.**
-            # 0051 이 이 자리에 `one_liner` 을 세워 그것을 셌는데, 0058 이
-            # 그 칸을 옆 탭(`딜 소개 문구`)으로 돌려보내고 이 탭에는
-            # 재료인 `business_desc`(머리글 `기업 한줄 소개`)를 세웠다 —
-            # 세는 칸도 함께 따라간다.
-            "with_info": sum(1 for r in rows
-                             if r["contact_name"] or r["contact_phone"]
-                             or r["business_desc"]),
             # 사업분야가 빈 곳. 이 숫자가 없으면 '비어 있음' 으로 걸러 보기
             # 전에는 몇 곳이 남았는지 알 길이 없어, 다 채운 뒤에도 계속 확인하게 된다.
             #
@@ -1182,6 +1210,14 @@ COMPANY_LINKS = (
     ("sends", "SendItem", "ir_company_id", "발송 이력", DETACH),
     ("ir_requests", "IrRequest", "company_id", "IR 요청", DETACH),
     ("meetings", "Meeting", "company_id", "미팅", DETACH),
+    # 사람이 이어 둔 **같은 기업의 다른 줄**(`services/ir_link.py`). 그 줄은
+    # 제 기업명(`firm` · `company_name`)을 들고 있어 끊어도 무엇의 줄인지
+    # 남는다 — ㉡. 평범한 [삭제] 를 막는 갈래이기도 하다: 사람이 잇는 수고를
+    # 들인 연결이 기업과 함께 말없이 사라지면, 그 줄은 `연결 안 됨` 으로
+    # 돌아가 있는데 아무도 까닭을 모른다.
+    ("startup_links", "VcContact", "ir_company_id", "스타트업 명단 연결", DETACH),
+    ("consulting_links", "ConsultingCompany", "ir_company_id",
+     "투자컨설턴트 연결", DETACH),
     ("batches", "DealBatchCompany", "company_id", "발송 회차에 실린 줄", CASCADE),
     ("queued", "DealQueueCompany", "company_id", "예약에 실린 줄", CASCADE),
     ("backups", "OneLinerBackup", "company_id", "한 줄 소개 되돌리기 버퍼", SWEEP),

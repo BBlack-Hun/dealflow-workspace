@@ -16,11 +16,32 @@
 
 <p class="hint">
   보내는 것은 <a href="/deals">딜 제안 관리</a>의 <b>[딜 소싱 제안]</b> 탭에서 합니다.
-  <b>카톡방 이름</b>이 비어 있으면 그 사람은 발송 대상으로 고를 수 없습니다 —
-  보낼 방이 없기 때문입니다.
+  <b>카톡방 이름</b>이 비어 있으면 그 사람에게는 나가지 않습니다 — 보낼 방이 없기
+  때문입니다. 방은 <b>보내는 분 카톡의 딜 소싱 방</b>입니다 — 보낼 PC 에서
+  <b>[방 후보 찾기]</b> 를 누르면 그 카톡에서 찾아 후보를 담고, 후보를 눌러 확정합니다.
 </p>
 
 {% if msg %}<p class="flash">{{ msg }}</p>{% endif %}
+
+{# **메일 확인** — 회사 받은 편지함의 머리글을 읽어 메일로 이 달 딜을 보낸 사람을
+   저절로 `딜 받음` 으로 세운다(`services/sourcing_mail.py`). 매일 18:00 에
+   돈다. 편지함은 팀 현황 › 딜 소싱 메일 확인(관리자)에서 넣는다. #}
+<div class="mail-check" data-testid="sourcing-mail-check">
+  {% if not mail_check.on %}
+  <p class="hint">{{ mail_check.off_text }}{% if is_admin %} — <a href="/team#sourcing-mail">팀 현황 › 딜 소싱 메일 확인</a>에서 편지함을 넣으세요{% endif %}</p>
+  {% else %}
+  <p class="hint">
+    메일 확인: {% if mail_check.running %}<b>확인 중…</b>{% elif mail_check.last_label %}마지막 {{ mail_check.last_label }}{% else %}아직 안 함{% endif %}
+    · 이번 달 메일로 받은 분 <b>{{ mail_check.mail_count }}명</b>
+    · 메일 주소 없는 분 {{ mail_check.no_address }}명
+    {% if mail_check.next_label %}<span class="muted">· 다음 {{ mail_check.next_label }}</span>{% endif %}
+  </p>
+  {% if mail_check.failed %}
+  <p class="warn-text" data-testid="sourcing-mail-failed">{{ mail_check.failed }}
+    <span class="muted">({{ mail_check.failed_label }})</span></p>
+  {% endif %}
+  {% endif %}
+</div>
 
 <nav class="sheet-tabs">
   {% for t in tabs %}
@@ -47,6 +68,40 @@
   <div class="toolbar-right">
     <input type="search" id="sourcing-search" placeholder="이름 · 회사 · 메모 검색"
            autocomplete="off">
+    {# [지금 메일 확인] — 관리자. 받은 편지함의 머리글만 읽는다(지우지도, 본문을
+       받지도 않는다). 결과는 위 머리 줄에 선다. #}
+    {% if is_admin %}
+    <form method="post" action="/sourcing/mail-check" class="inline-form">
+      <input type="hidden" name="tab" value="{{ selected or 'all' }}">
+      <button type="submit" class="secondary-btn"
+              {% if not mail_check.on or mail_check.running %} disabled{% endif %}
+              title="{% if mail_check.on %}회사 받은 편지함에서 이 달 메일을 보낸 분을 찾아 딜 받음으로 표시합니다 — 메일은 읽기만 합니다{% else %}{{ mail_check.off_text }}{% endif %}">
+        지금 메일 확인</button>
+    </form>
+    {% endif %}
+    {# [방 후보 찾기] — 이 갈래(전체 탭이면 전체)에서 방이 없는 분을 **누른 사람
+       PC 의 카톡**에서 찾는다(`services/sourcing_rooms.py`). 아무것도 보내지
+       않는다. 찾은 제목은 후보로만 담기고, 각 줄의 카톡방 칸에서 골라 확정한다. #}
+    <form method="post" action="/sourcing/rooms/search" class="inline-form"
+          data-testid="sourcing-room-search">
+      <input type="hidden" name="tab" value="{{ selected or 'all' }}">
+      <button type="submit" class="secondary-btn"{% if not room_search_count %} disabled{% endif %}
+              title="방이 없는 {{ room_search_count }}명을 내 PC 의 카톡에서 찾습니다 — 메시지는 보내지 않습니다">
+        방 후보 찾기 ({{ room_search_count }}명)</button>
+    </form>
+    {# **[Series A 딜 소개]** — 이 갈래 심사역께 IR 기업 현황 › `Series A 이상
+       기업` 탭의 받은 딜을 소개한다. 누르면 딜 제안 관리 › 딜 소싱 제안이
+       [보낼 문구 › Series A 딜 공유]로 열리고, **이 표에 지금 보이는(머리글
+       필터 · 검색으로 거른) 참여 분**이 받는 사람으로 미리 골라져 있다. 이 표에는
+       체크박스를 두지 않는다 — 고르는 자리는 딜 제안 관리의 카드 목록 하나다
+       (거기서 빼고 더하고, 이미 받은 분도 거기서 뺀다). 이 갈래에서만 선다
+       (`series_a_share.BUCKET`). #}
+    {% if selected == share_bucket %}
+    <a class="primary-btn inline" id="sourcing-share-btn" data-testid="sourcing-share-btn"
+       href="/deals?mode=sourcing&amp;topic={{ share_topic }}"
+       data-base="/deals?mode=sourcing&amp;topic={{ share_topic }}"
+       title="지금 표에 보이는 참여 분을 받는 사람으로 골라 딜 제안 관리에서 엽니다 — 거기서 Series A 이상 기업을 고르고 미리보기 뒤 보냅니다">Series A 딜 소개</a>
+    {% endif %}
     {# 전화로 한 명 승낙받고 바로 적을 곳이 없어서, 메모지에 적어 뒀다가
        나중에 시트에 옮겨야 했다. 지금 보고 있는 갈래에 바로 넣는다. #}
     {% if selected %}
@@ -84,10 +139,14 @@
          그 칸의 필터 목록에 나타난다 — 이름이 다르면 `data-filter-key` 가 필요하다.
          구분자(`data-filter-sep`)는 어느 칸에도 주지 않는다. `투자분야` 는 들은
          말 그대로라 `유통(직영,가맹점)` 처럼 괄호 안에 쉼표가 있어, 쉼표로 나누면
-         없는 값 두 개가 생긴다. #}
+         없는 값 두 개가 생긴다.
+         **담당자만은 칸 글자가 아니라 지금 맡은 사람**이다(`assignees` —
+         `가담당 > 10/13 나담당` 이면 `나담당`). 딜 제안 관리의 [담당] 칩과 같은
+         값이라야 두 화면이 같은 사람을 고른다. 고친 뒤에는 서버가 돌려준 값으로
+         다시 적는다(아래 `inline-saved`). #}
       <tr data-id="{{ r.id }}"
           data-search="{{ (r.name ~ ' ' ~ (r.firm or '') ~ ' ' ~ (r.memo or '') ~ ' ' ~ (r.title or ''))|lower }}"
-          {% for field, label, width, filterable in columns if filterable %}data-f-{{ field }}="{{ r|attr(field) or '' }}" {% endfor %}>
+          {% for field, label, width, filterable in columns if filterable %}data-f-{{ field }}="{{ (assignees.get(r.id) if field == 'assignee_name' else r|attr(field)) or '' }}" {% endfor %}>
         <td class="rowno muted"></td>
         <td class="cell" data-field="requested_at">{{ r.requested_at or '' }}</td>
         {# 넣는 길만 있고 빼는 길이 없었다. 지우는 단추는 **이름 바로 밑**에
@@ -106,7 +165,51 @@
             <button type="button" class="linkbtn danger js-sourcing-del"
                     title="이 사람을 이 갈래의 명단에서 뺍니다">삭제</button>
           </div>
+          {# **이 달 딜 받음** — 사람이 누르거나 메일 확인이 저절로 세운다
+             (`services/sourcing_receipts.py`). 칸을 하나 더 세우지 않는다 —
+             머리글·칸 수가 `COLUMNS` 와 1:1 이어야 표가 밀리지 않는다(위 주석).
+             메일로 선 표시는 `(메일 10/15)`, 손으로 누른 것은 `(직접)`. 메일
+             표시도 눌러 거둘 수 있고, 같은 메일로는 다시 서지 않는다. #}
+          {% set got = r.id in received %}
+          {% set by_mail = mail_marks.get(r.id) %}
+          <form method="post" action="/sourcing/{{ r.id }}/received" class="inline-form"
+                data-testid="sourcing-received">
+            <input type="hidden" name="month" value="{{ month }}">
+            <input type="hidden" name="tab" value="{{ selected or 'all' }}">
+            <input type="hidden" name="on" value="{{ '0' if got else '1' }}">
+            <button type="submit" class="linkbtn{% if got %} ok{% endif %}"
+                    title="{% if by_mail %}메일 {{ by_mail.day }}{% if by_mail.subject %} 「{{ by_mail.subject }}」{% endif %}로 저절로 표시됨 — 누르면 거둡니다(같은 메일로는 다시 서지 않습니다){% else %}{{ month_label }}에 이 사람에게서 딜을 받았으면 누르세요{% endif %}">
+              {% if got %}{{ month_label }} 딜 받음 ✓{% else %}☐ {{ month_label }} 딜 받음{% endif %}</button>
+            {% if by_mail %}<span class="muted" data-testid="sourcing-received-mail">(메일 {{ by_mail.day }})</span>{% elif got %}<span class="muted" data-testid="sourcing-received-manual">(직접)</span>{% endif %}
+          </form>
+          {# **Series A 딜 공유로 받은 기업** — 딜 제안 관리 › 딜 소싱 제안의
+             [Series A 딜 공유]가 적은 기록(대기 · 보낸 것만 — `series_a_share`).
+             칸을 하나 더 세우지 않는다(위 주석 — 머리글 · 칸 수가 `COLUMNS` 와 1:1). #}
+          {% set got_share = shared.get(r.id) %}
+          {% if got_share %}
+          <div class="cell-sub muted" data-testid="sourcing-share-note"
+               title="{{ got_share|join(' · ') }}">Series A 딜 공유 {{ got_share|length }}건</div>
+          {% endif %}
+          {# **투자사 관리 현황과 이어진 줄** — 그쪽 `Series A 딜 소싱` 칸(O/X)이 이
+             줄의 `참여` 를 그대로 읽는다(`services/sourcing_sync.py`). 시리즈 A
+             갈래 줄만 이어진다. 이름 · 직함 · 회사 · 휴대폰 · 이메일은 어느 쪽에서
+             고쳐도 두 줄이 같이 바뀐다 — 이을 때 이미 달랐던 칸은 `다른 칸` 으로
+             알린다(어느 쪽이 맞는지 앱이 모른다). #}
+          {% set vc = vc_links.get(r.id) %}
+          {% if vc %}
+          <div class="cell-sub" data-testid="sourcing-vc-link">
+            <a class="tag soft" href="{{ vc.href }}"
+               title="이름 · 직함 · 회사 · 휴대폰 · 이메일은 두 화면이 같이 바뀝니다">🔗 투자사 관리 현황: {{ vc.sheet }} 명단</a>
+            {% if vc.diff %}<span class="muted" data-testid="sourcing-vc-diff"
+                  title="이을 때 이미 달랐던 칸입니다 — 어느 쪽에서든 한 번 고치면 같아집니다">다른 칸: {{ vc.diff|join(' · ') }}</span>{% endif %}
+          </div>
+          {% endif %}
         </td>
+        {# 불참여인 분은 딜 소싱 제안(처음 안내 · 월간 리마인드)에서 빠진다. 줄은
+           그대로 둔다 — 다시 참여하시면 이력 그대로 돌아온다. **이름 바로 뒤**
+           — 칸 차례는 `COLUMNS`(routers/sourcing.py)와 같아야 한다. #}
+        <td class="cell{% if r.participation == '불참여' %} muted{% endif %}" data-field="participation"
+            data-type="pick" data-choices="참여,불참여">{{ r.participation or '참여' }}</td>
         <td class="cell" data-field="assignee_name" data-type="pick">{{ r.assignee_name or '' }}</td>
         <td class="cell" data-field="phone">{{ r.phone or '' }}</td>
         <td class="cell" data-field="title" data-type="pick">{{ r.title or '' }}</td>
@@ -133,6 +236,36 @@
             <span class="tag soft">투자사 명단</span>
           </div>
           {% endif %}
+          {# **방 없음** — 이 분에게는 딜 소싱 제안이 나가지 않는다(발송이 빼고
+             이유를 띄운다). 시리즈 A 갈래는 투자사 딜소개 방을 이어받지 않는다 —
+             보내는 분 카톡의 딜 소싱 방을 찾아 확정해야 한다(`sourcing_rooms`). #}
+          {% set pick = room_picks.get(r.id) %}
+          {% if r.id in no_room %}
+          <div class="cell-sub" data-testid="sourcing-no-room">
+            <span class="room-badge warn">방 없음</span>
+            <span class="muted">{{ pick.state_label }}</span>
+            <form method="post" action="/sourcing/rooms/search" class="inline-form">
+              <input type="hidden" name="tab" value="{{ selected or 'all' }}">
+              <input type="hidden" name="ids" value="{{ r.id }}">
+              <button type="submit" class="linkbtn"
+                      title="이 분의 방을 내 PC 의 카톡에서 찾습니다 — 메시지는 보내지 않습니다">방 후보 찾기</button>
+            </form>
+          </div>
+          {% endif %}
+          {% if pick and pick.rooms and pick.state != 'confirmed' %}
+          <div class="cell-sub" data-testid="sourcing-room-picks">
+            {% for p in pick.rooms %}
+            <form method="post" action="/sourcing/{{ r.id }}/room-confirm" class="inline-form">
+              <input type="hidden" name="tab" value="{{ selected or 'all' }}">
+              <input type="hidden" name="room" value="{{ p.room }}">
+              <button type="submit" class="linkbtn{% if p.current %} ok{% endif %}"
+                      {% if p.same %}disabled title="카톡에 같은 제목의 방이 여럿입니다 — 방 이름을 고유하게 바꾼 뒤 직접 적어 주세요"
+                      {% else %}title="이 방으로 확정 — 이 분의 딜 소싱 방이 이 제목이 됩니다"{% endif %}>
+                💬 {{ p.room }} — 이 방으로 확정</button>
+            </form>
+            {% endfor %}
+          </div>
+          {% endif %}
         </td>
       </tr>
       {% endfor %}
@@ -151,6 +284,10 @@
 <script src="{{ asset('js/inline_edit.js') }}"></script>
 <script src="{{ asset('js/filters.js') }}"></script>
 <script>
+  // 메일 확인이 도는 중이면 잠시 뒤 다시 그린다 — 결과가 머리 줄에 선다.
+  {% if mail_check.on and mail_check.running %}
+  setTimeout(function () { location.reload(); }, 8000);
+  {% endif %}
   (function () {
     var table = document.getElementById("sourcing-table");
     if (!table) return;
@@ -169,6 +306,10 @@
         body: JSON.stringify({ name: name })
       }).then(function (r) {
         if (!r.ok) return r.json().then(function (d) { throw new Error(d.detail || "추가 실패"); });
+        return r.json().catch(function () { return {}; });
+      }).then(function (d) {
+        // 투자사 관리 현황의 같은 분(번호가 딱 한 줄 맞는 분)과 이어졌으면 말한다.
+        if (d && d.linked_msg) alert(d.linked_msg);
         // 새 줄은 맨 아래에 붙는다 — 다시 그려야 보인다.
         location.reload();
       }).catch(function (e) {
@@ -203,6 +344,27 @@
         });
     });
 
+    // 담당자를 고치면 [담당자] 필터 값은 **서버가 읽은 지금 담당**으로 —
+    // 칸 편집기는 적은 글자 그대로(`가담당 > 10/13 나담당`)를 행에 적는데, 그러면
+    // 넘겨받은 사람의 필터에 이 줄이 안 잡힌다. 필터가 다시 읽는 것은 한 박자
+    // 뒤라(filters.js 의 `inline-saved`) 여기서 먼저 고쳐 둔다.
+    table.addEventListener("inline-saved", function (e) {
+      var d = (e && e.detail) || {};
+      if (!d.row || !d.cell || !d.data) return;
+      // 투자사 관리 현황의 같은 분과 **새로 이어졌으면**(번호를 고쳐 맞았다) 말한다 —
+      // 그쪽 `Series A 딜 소싱` 칸이 곧바로 O 가 된다.
+      if (d.data.linked_msg) alert(d.data.linked_msg);
+      var field = d.cell.getAttribute("data-field");
+      // `참여` 는 서버가 읽은 값으로 다시 적는다(`O` 를 적어도 `참여` 로 선다).
+      if (field === "participation" && d.data.participation) {
+        d.cell.textContent = d.data.participation;
+        d.cell.classList.toggle("muted", d.data.participation === "불참여");
+        d.row.setAttribute("data-f-participation", d.data.participation);
+      }
+      if (d.data.assignee === undefined || field !== "assignee_name") return;
+      d.row.setAttribute("data-f-assignee_name", d.data.assignee || "");
+    });
+
     var box = document.getElementById("sourcing-search");
     var api = window.DealflowFilters.init({
       table: "#sourcing-table",
@@ -222,6 +384,30 @@
         if (!cell) return;
         cell.textContent = tr.hidden ? "" : ++n;
       });
+      syncShareLink();
+    }
+
+    // [Series A 딜 소개] — **지금 보이는 참여 분**을 받는 사람으로 싣는다
+    // (`?contacts=…`). 걸러 둔 그대로 넘어가야 담당 · 투자분야로 좁혀 본 사람이
+    // 그 사람들에게 보낸다. 불참여 분은 싣지 않는다 — 딜 제안 관리에도 안 뜨고
+    // 발송도 막힌다. 실제로 고르는 것은 그 화면의 카드다(거기서 빼고 더한다).
+    var shareBtn = document.getElementById("sourcing-share-btn");
+    function shareIds() {
+      var ids = [];
+      table.querySelectorAll("tbody tr").forEach(function (tr) {
+        if (tr.hidden) return;
+        if ((tr.getAttribute("data-f-participation") || "참여") === "불참여") return;
+        var id = tr.getAttribute("data-id");
+        if (id) ids.push(id);
+      });
+      return ids;
+    }
+    function syncShareLink() {
+      if (!shareBtn) return;
+      var ids = shareIds();
+      var base = shareBtn.getAttribute("data-base") || "/deals";
+      shareBtn.setAttribute("href", ids.length ? base + "&contacts=" + ids.join(",") : base);
+      shareBtn.textContent = "Series A 딜 소개 (" + ids.length + "명)";
     }
     renumber();
   })();

@@ -480,6 +480,7 @@ TABLE_LABELS = {
     "users": "계정",
     "vc_contacts": "투자사 담당자",
     "ir_companies": "IR 기업",
+    "series_a_companies": "Series A 이상 기업(받은 딜)",
     "sourcing_contacts": "딜 소싱 명단",
     "message_templates": "딜 제안 문구",
     "send_jobs": "발송 회차",
