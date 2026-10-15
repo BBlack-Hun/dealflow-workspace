@@ -1037,6 +1037,9 @@ def create_send_list(
     # 뒤에 불참여가 된 카드는 고를 수 없게 한다(`deals.js` 의 `data-out`).
     # 방 없음 — 시리즈 A 갈래는 투자사 딜소개 방을 이어받지 않는다
     # (`sourcing_link.linked_rooms`). 그 방으로 보내는 대신 **빼고 이유를 말한다.**
+    # **카톡으로 보낼 때만**이다 — 메일은 방이 아니라 주소로 나간다(주소가
+    # 없으면 아래 `mail_sender.address_problem` 이 막는다). 불참여 · 갈래는
+    # 채널과 상관없이 뺀다(PR #284 리뷰).
     #
     # 멈추지 않고 빼는 까닭: 한 회차에 스무 명을 고르는데 방이 아직 없는 한두
     # 명 때문에 통째로 막히면 나머지도 못 나간다. 조용히 빼지 않는다 — 뺀 분과
@@ -1050,7 +1053,7 @@ def create_send_list(
                 # Series A 딜 공유는 시리즈 A 갈래 심사역께만 — 다른 갈래의 분은
                 # 이 글을 받을 자리가 아니다(화면도 그 카드를 고를 수 없게 한다).
                 why = series_a_share.NOT_BUCKET_NOTE
-            elif not _room_of(contact, linked):
+            elif not by_email and not _room_of(contact, linked):
                 why = NO_ROOM_NOTE
             else:
                 continue
