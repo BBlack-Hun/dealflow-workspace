@@ -229,3 +229,24 @@ def test_참여여부를_고치면_카톡방_칸이_그_자리에서_바뀌는�
         text=True, timeout=60,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+MANUAL_UNDO_TEST = Path(__file__).resolve().parent / "js" / "contact_manual_undo_test.js"
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치 — 브라우저 로직 테스트 생략")
+def test_활동_이력에서_손으로_적은_한_줄을_되돌리는가():
+    """담당자 상세의 활동 이력에서 **손으로 적은 한 줄**을 되돌린다.
+
+    단추가 손으로 적은 줄에만 서는지, 두 걸음(`confirm: false` → `true`)인지,
+    **그 담당자만** 실리는지(`contact_id` — 묶음째 가면 같은 날 함께 적은 사람이
+    다 사라진다), 되돌린 뒤 창을 닫으면 표를 다시 받는지를 본다. 서버 쪽은
+    `tests/test_manual_send.py` 의 `test_the_detail_history_undoes_its_one_line`.
+
+    로컬에서는 `node tests/js/contact_manual_undo_test.js` 로도 돈다.
+    """
+    result = subprocess.run(
+        [shutil.which("node"), str(MANUAL_UNDO_TEST)], capture_output=True,
+        text=True, timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr

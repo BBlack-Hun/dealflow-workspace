@@ -81,11 +81,13 @@ def portal(db, users, people):
 
 @pytest.fixture()
 def groundwork(db, users):
-    """FK 가 가리킬 앞줄 — 미팅·IR 요청은 담당자와 기업이 있어야 선다."""
-    from app.models import IrCompany, VcContact
+    """FK 가 가리킬 앞줄 — 미팅·IR 요청은 담당자와 기업이 있어야 선다.
+    딜 소싱의 `딜 받음` 표시(`sourcing_receipts`)는 소싱 명단 줄이 있어야 선다."""
+    from app.models import IrCompany, SourcingContact, VcContact
 
     db.add_all([VcContact(user_id=users["u2"].id, name="앞줄담당", firm="가나벤처스"),
-                IrCompany(name="앞줄기업")])
+                IrCompany(name="앞줄기업"),
+                SourcingContact(bucket="앞줄갈래", name="앞줄심사역")])
     db.commit()
 
 
@@ -514,6 +516,11 @@ WRITE_ROUTES = {
     # **강제 삭제.** 이력이 붙어 있어도 지운다 — 평범한 [삭제] 가 막는 것을
     # 무시하는 길이라, 남는 로그가 더 중요하다(줄 이름 + 함께 움직인 것).
     ("POST", "/api/companies/{company_id}/force-delete"): WATCHED,
+    # IR 기업 현황 메뉴의 셋째 탭 `Series A 이상 기업` — 다른 표
+    # (`series_a_companies`)라 라우터 파일도 따로다(`routers/series_a.py`).
+    ("POST", "/api/series-a-companies"): WATCHED,
+    ("PATCH", "/api/series-a-companies/{row_id}"): WATCHED,
+    ("DELETE", "/api/series-a-companies/{row_id}"): WATCHED,
 
     ("POST", "/ir/requests"): WATCHED,
     ("POST", "/ir/deliver-guide"): WATCHED,
@@ -555,6 +562,13 @@ WRITE_ROUTES = {
     #  의 INSERT 가 저절로 로그에 남는다).
     ("POST", "/api/contacts/from-consulting"): WATCHED,
 
+    # IR 기업 연결 — 스타트업 명단 줄 · 투자컨설턴트 줄을 IR 기업에 잇고 푼다
+    # (`routers/ir_link.py`). 줄마다 ORM 으로 고치므로 저절로 남고, **자기 줄을
+    # 이은 것도 남는다**(`edit_log.ALWAYS_FIELDS`).
+    ("POST", "/ir-link/link"): WATCHED,
+    ("POST", "/ir-link/unlink"): WATCHED,
+    ("POST", "/ir-link/bulk"): WATCHED,
+
     ("POST", "/templates/choose"): WATCHED,
     ("POST", "/templates/copy"): WATCHED,
     ("POST", "/templates/new"): WATCHED,
@@ -565,6 +579,15 @@ WRITE_ROUTES = {
     ("POST", "/api/sourcing"): WATCHED,
     ("PATCH", "/api/sourcing/{row_id}"): WATCHED,
     ("DELETE", "/api/sourcing/{row_id}"): WATCHED,
+    # 딜 소싱 — 이 달 `딜 받음` 은 공용 명단의 표시(`edit_log.WATCHED["sourcing_receipts"]`).
+    # [지금 메일 확인] 은 같은 표시를 세운다 — 따로 띄운 실이 적으므로 요청 문맥이
+    # 없어 로그는 안 남는다(기계 기록).
+    ("POST", "/sourcing/{row_id}/received"): WATCHED,
+    ("POST", "/sourcing/mail-check"): WATCHED,
+    # 딜 소싱 카톡방 — [방 후보 찾기](누른 사람 계정에 방 확인 잡) · [이 방으로
+    # 확정](공용 명단 줄의 방 이름). `services/sourcing_rooms.py`.
+    ("POST", "/sourcing/rooms/search"): WATCHED,
+    ("POST", "/sourcing/{row_id}/room-confirm"): WATCHED,
 
     ("POST", "/api/contacts/verify-rooms"): WATCHED,
     ("POST", "/api/contacts/assign"): WATCHED,
@@ -618,6 +641,8 @@ WRITE_ROUTES = {
     ("POST", "/team/automations/{key}"): WATCHED,
     # [시험방 확인] — 시험방으로 한 통 세울 뿐이다(발송 기록).
     ("POST", "/team/automations/{key}/check"): MACHINE,
+    # 딜 소싱 메일 확인이 읽을 편지함(`sourcing_mail_settings`) — 비밀번호는 `바뀜` 으로만.
+    ("POST", "/team/sourcing-mail"): WATCHED,
 
     # 대표 카톡방 맞추기 [저장] — **공용 표(`ir_companies`)의 방 이름**을
     # 수십 줄 한꺼번에 바꾼다. 이 앱에서 오발송에 가장 가까운 칸이라
@@ -707,7 +732,7 @@ WRITE_ROUTES = {
 #: 공용·타인 화면을 맡은 라우터. 여기 있는 파일의 쓰기 라우트는 **전부**
 #: `WATCHED` 여야 한다 — 목록에 손으로 적는 갈래를 실제와 묶어 두는 자리다.
 SHARED_ROUTERS = ("companies", "ir", "consulting", "templates_crud",
-                  "sourcing", "contacts")
+                  "sourcing", "contacts", "series_a")
 
 
 def _write_routes(app):
@@ -774,8 +799,15 @@ def test_the_six_shared_routers_still_hold_the_forty_nine_paths(portal):
     # companies 의 여덟 번째가 **기업 강제 삭제**(`/force-delete`)다. 평범한
     # [삭제] 가 이력이 붙은 기업을 막는 것을 무시하는 길이라, 길을 따로 냈다 —
     # 같은 주소에 깃발 하나로 붙이면 잘못 눌렀을 때 그대로 지워진다.
+    # sourcing 의 5 · 6번째는 이 달 `딜 받음` 단추와 [지금 메일 확인]이다
+    # (`services/sourcing_receipts.py` · `services/sourcing_mail.py`).
+    # 7 · 8번째는 카톡방 [방 후보 찾기] · [이 방으로 확정]이다
+    # (`services/sourcing_rooms.py`).
+    # series_a 의 셋은 IR 기업 현황 메뉴의 `Series A 이상 기업` 탭을 더하기 ·
+    # 고치기 · 지우기다(`routers/series_a.py`). 옆 두 탭과 같은 공용 화면이다.
     assert counted == {"companies": 8, "ir": 12, "consulting": 9,
-                       "templates_crud": 5, "sourcing": 4, "contacts": 22}
+                       "templates_crud": 5, "sourcing": 8, "contacts": 22,
+                       "series_a": 3}
 
 
 def test_every_table_is_either_watched_or_explained(db):

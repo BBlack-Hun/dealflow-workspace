@@ -5,15 +5,12 @@
 
 ## 판 순서 — 머지 차례 #268 → #273 → 이 판
 
-같은 때에 열린 두 판이 같은 부모(`0086_send_guard`)를 둔다 —
-`0087_activity_sequence_trace`(#268) · `0088_ir_company_link`(#273). 그래서 이
-판은 번호를 0089 로 두고, 이 브랜치에서는 `0086_send_guard` 위에 선다(혼자서
-검사가 돌게). 머지는 **#268 → #273 → 이 판** 차례이고, 넣을 때 두 줄을 잇는다.
+처음에는 `0086_send_guard` 위의 `0089` 였다. main 이 0087~0095 를 먼저 썼고,
+열린 판 둘이 그 위에 줄을 섰다 — `0096_activity_sequence_trace`(#268) →
+`0097_ir_company_link`(#273). 이 판은 그 다음(`0098`)이고 #273 위에 쌓였다.
 
-  · #273 의 `down_revision` → `0087_activity_sequence_trace` (#273 머리말에 적힌 대로)
-  · 이 판의 `down_revision` → `0088_ir_company_link`
-
-잇지 않으면 머리가 여럿이 되어 부팅에서 멎는다(`tests/test_migrations.py` 가 잡는다).
+같은 부모를 둘이 가리키면 머리가 여럿이 되어 부팅에서 멎는다
+(`tests/test_migrations.py` 가 잡는다).
 
 ## 기본은 전부 꺼짐 · 시험 모드 켜짐
 
@@ -31,16 +28,16 @@
 표가 사라진다. 잃는 것은 자동화 설정뿐이다 — 나간 발송은 `send_jobs` ·
 `send_items` 에 그대로 있다.
 
-Revision ID: 0089_automations
-Revises: 0086_send_guard
+Revision ID: 0098_automations
+Revises: 0097_ir_company_link
 """
 from __future__ import annotations
 
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0089_automations"
-down_revision = "0086_send_guard"
+revision = "0098_automations"
+down_revision = "0097_ir_company_link"
 branch_labels = None
 depends_on = None
 

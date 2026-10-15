@@ -20,6 +20,9 @@
 7. **`source="manual"` 인 줄만 수정 로그에 남는다** — 가져오기·발송이 만든
    줄까지 남기면 하루 수천 줄이 쌓여 아무도 안 본다.
 8. 확인 없이 부르면 **세기만** 한다.
+9. **되돌리면 그 기록이 잡은 리마인드도 거둔다** — 그 기록이 세운 것은 멈추고,
+   덮어쓴 것은 그 전 모습으로 돌려놓는다. 실제 발송·다른 기록이 세운 시퀀스는
+   안 건드린다. 묶음 안의 **한 사람만** 되돌릴 수도 있다(담당자 상세의 이력).
 
 이름·회사는 전부 지어낸 것이다(공개 저장소).
 """
@@ -359,6 +362,276 @@ def test_someone_elses_batch_cannot_be_undone(db, client, rows, users):
 
     assert db.query(ContactActivity).filter(
         ContactActivity.undone_at.isnot(None)).count() == 0
+
+
+# ── ④-2 되돌리면 그 기록이 잡은 리마인드도 거둔다 ──────────────────────────
+#
+# 전에는 되돌리기가 줄만 숨기고 시퀀스는 그대로 두어, 되돌린 딜 소개의
+# 리마인드가 `오늘 할 일` 에 남아 **받은 적 없는 사람에게** "지난번 공유드린…"
+# 이 나갈 수 있었다.
+
+def _undo(client, key, **body):
+    body.setdefault("confirm", True)
+    return client.post(f"/api/deals/manual-sends/{key}/undo", json=body)
+
+
+def _seqs(db, contact_id):
+    from app.models import SendSequence
+
+    db.expire_all()
+    return (db.query(SendSequence)
+            .filter(SendSequence.contact_id == contact_id)
+            .order_by(SendSequence.id).all())
+
+
+def _app_send(db, contact, day=LONG_AGO):
+    """**앱이 실제로 보낸** 딜 소개가 세운 시퀀스 — 다른 길이 만든 것. 그 모습을 돌려준다."""
+    from app.services import cadence
+
+    seq = cadence.advance(db, user_id=contact.user_id, contact_id=contact.id,
+                          batch_id=None, kind="deal_intro", stage=1,
+                          sent_at=f"{day}T09:00:00+09:00")
+    db.commit()
+    return cadence.snapshot(seq)
+
+
+@pytest.fixture()
+def ticking(monkeypatch):
+    """적고 되돌리는 시각을 **한 초씩** 민다.
+
+    시각 칸은 초까지라(`clock.now_iso`) 같은 초에 두 판을 적으면 두 번째 판이
+    시퀀스를 덮어써도 모습이 같아 보인다. 사슬을 잇는 길(`_splice`)을 반드시
+    지나게 하려고 시각을 갈라 둔다.
+    """
+    import itertools
+
+    ticks = itertools.count(1)
+    monkeypatch.setattr(manual_send, "now_iso",
+                        lambda: f"{TODAY}T09:{next(ticks):02d}:00+09:00")
+
+
+def test_undo_stops_the_reminder_the_record_started(db, me, rows, users):
+    """★ 이 판의 까닭 — 되돌린 딜 소개의 리마인드가 **남지 않는다.**"""
+    from app.services import cadence
+
+    contact = rows["가담당"]
+    key = _post(me, [contact.id]).json()["batch_key"]
+    [seq] = _seqs(db, contact.id)
+    assert seq.status == "active" and seq.next_due_date
+
+    # 확인창이 **미리** 말한다 — 리마인드를 거두는지가 사람이 물을 첫 질문이다.
+    plan = _undo(me, key, confirm=False).json()
+    assert plan["plan"]["sequences"] == 1
+    assert _seqs(db, contact.id)[0].status == "active", "확인 전인데 시퀀스가 멈췄다"
+
+    got = _undo(me, key).json()
+    assert got["undone"] == 1 and got["sequences"] == 1
+    assert "리마인드 1건" in got["note"]
+
+    [seq] = _seqs(db, contact.id)
+    assert seq.status == "stopped", "되돌렸는데 리마인드가 그대로 살아 있다"
+    assert seq.next_due_date is None and seq.next_stage is None
+    # 후속 관리 표에 **왜 멈췄는지**가 선다 — 없으면 [다시 켜기] 로 되살린다.
+    assert seq.stopped_reason == manual_send.UNDO_REASON
+    # 오늘 할 일에 아무리 먼 날에도 안 뜬다.
+    later = date.today() + timedelta(days=60)
+    assert cadence.due_sequences(db, users["u1"].id, today=later) == []
+
+
+def test_undo_puts_back_a_reminder_it_overwrote(db, me, rows):
+    """앱이 보낸 딜 소개의 리마인드를 오늘 기록이 **덮어썼다면**, 되돌리면
+    원래 딜소개일·다음 예정일로 돌아간다 — 멈추면 그 리마인드까지 사라진다."""
+    from app.services import cadence
+
+    contact = rows["가담당"]
+    before = _app_send(db, contact)
+    key = _post(me, [contact.id]).json()["batch_key"]
+    [seq] = _seqs(db, contact.id)
+    assert seq.day1_sent_at[:10] == TODAY, "오늘 기록이 시퀀스를 다시 잡지 않았다"
+
+    assert _undo(me, key).json()["sequences"] == 1
+    [seq] = _seqs(db, contact.id)
+    assert cadence.snapshot(seq) == before, "덮어쓰기 전 모습으로 안 돌아갔다"
+
+
+def test_undo_leaves_other_sequences_alone(db, me, rows):
+    """실제 발송·뒤에 일어난 일이 만든 시퀀스는 **안 건드린다.**"""
+    from app.services import cadence
+
+    a, b, c = rows["가담당"], rows["나담당"], rows["다담당"]
+    # 판에 없는 사람 — 앱이 보낸 시퀀스가 돌고 있다.
+    untouched = _app_send(db, b)
+    key = _post(me, [a.id, c.id]).json()["batch_key"]
+
+    # 기록 뒤에 앱이 가담당에게 리마인드를 **실제로 보냈다.** 그 시퀀스는 이제
+    # 그 발송의 것이다 — 되돌리면 실제로 나간 리마인드를 지우게 된다.
+    cadence.advance(db, user_id=a.user_id, contact_id=a.id, batch_id=None,
+                    kind="deal_intro", stage=cadence.STAGE_REMIND,
+                    sent_at=f"{TODAY}T18:00:00+09:00")
+    db.commit()
+    moved = cadence.snapshot(_seqs(db, a.id)[0])
+
+    got = _undo(me, key).json()
+    assert got["undone"] == 2
+    assert got["sequences"] == 1, "다담당 것 하나만 거둬야 한다"
+
+    assert cadence.snapshot(_seqs(db, b.id)[0]) == untouched, \
+        "판에 없는 사람의 시퀀스가 바뀌었다"
+    assert cadence.snapshot(_seqs(db, a.id)[0]) == moved, \
+        "기록 뒤에 실제로 나간 리마인드의 시퀀스를 되돌렸다"
+    assert _seqs(db, c.id)[0].status == "stopped"
+
+
+def test_a_past_day_record_never_touches_a_sequence(db, me, rows):
+    """지난 날짜는 리마인드를 안 세웠으므로(`sets_reminder`) 되돌려도 거둘 것이 없다."""
+    from app.services import cadence
+
+    contact = rows["가담당"]
+    before = _app_send(db, contact)
+    key = _post(me, [contact.id], day=LONG_AGO).json()["batch_key"]
+    assert _undo(me, key).json()["sequences"] == 0
+    assert cadence.snapshot(_seqs(db, contact.id)[0]) == before
+
+
+def test_undoing_a_meeting_ask_or_ir_delivery_puts_the_sequence_back(db, me, rows):
+    """딜 소개만이 아니다 — 미팅 요청은 단계를 올리고, IR 자료는 시퀀스를
+    멈춘다(`cadence.advance`). 잘못 적은 것을 되돌리면 둘 다 그 전으로 간다."""
+    from app.services import cadence
+
+    asked, delivered = rows["가담당"], rows["나담당"]
+    asked_before = _app_send(db, asked)
+    delivered_before = _app_send(db, delivered)
+
+    k1 = _post(me, [asked.id], kind=manual_send.MEETING_ASK).json()["batch_key"]
+    k2 = _post(me, [delivered.id], kind=manual_send.IR_DELIVERY,
+               companies=[rows["companies"][0].id]).json()["batch_key"]
+    assert _seqs(db, asked.id)[0].stage == cadence.STAGE_MEETING
+    assert _seqs(db, delivered.id)[0].status == "responded"
+
+    _undo(me, k1)
+    _undo(me, k2)
+    assert cadence.snapshot(_seqs(db, asked.id)[0]) == asked_before
+    assert cadence.snapshot(_seqs(db, delivered.id)[0]) == delivered_before
+
+
+@pytest.mark.parametrize("order", ["older_first", "newer_first"])
+def test_two_records_on_one_sequence_undo_in_either_order(db, me, rows, ticking,
+                                                          order):
+    """같은 사람에게 같은 날 두 판(`8개사` 다음 `5개사`). 뒤 판이 앞 판의 시퀀스를
+    덮어쓴다. **어느 차례로 되돌려도** 리마인드가 남지 않아야 한다.
+
+    앞 판을 먼저 되돌리면 시퀀스는 뒤 판의 모습이라 손대지 않는다 — 그런데 뒤
+    판이 돌아갈 자리(`before`)가 앞 판의 모습 그대로면, 뒤 판을 되돌릴 때 이미
+    되돌린 앞 판의 리마인드가 되살아난다. 그 고리를 잇는지 본다(`_splice`).
+    """
+    import json
+
+    from app.models import ContactActivity
+
+    contact = rows["가담당"]
+    first = _post(me, [contact.id], count=8).json()["batch_key"]
+    second = _post(me, [contact.id], count=5).json()["batch_key"]
+    assert len(_seqs(db, contact.id)) == 1, "뒤 판이 시퀀스를 새로 세웠다"
+    act = db.query(ContactActivity).filter(
+        ContactActivity.batch_key == second).one()
+    assert json.loads(act.sequence_trace)["before"] is not None, \
+        "뒤 판이 덮어쓴 흔적이 없다 — 이 검사가 사슬을 안 지난다"
+
+    keys = [first, second] if order == "older_first" else [second, first]
+    for key in keys:
+        assert _undo(me, key).status_code == 200
+
+    [seq] = _seqs(db, contact.id)
+    assert seq.status == "stopped", f"{order}: 두 판을 다 되돌렸는데 리마인드가 남았다"
+    assert seq.next_due_date is None
+
+
+def test_one_person_can_be_undone_alone(db, me, rows):
+    """80명 판에서 **한 사람만** 잘못 넣은 일이 흔하다 — 79명을 다시 적게 하면 안 된다."""
+    a, b, c = rows["가담당"], rows["나담당"], rows["다담당"]
+    key = _post(me, [a.id, b.id, c.id]).json()["batch_key"]
+
+    plan = _undo(me, key, contact_id=a.id, confirm=False).json()["plan"]
+    assert plan["rows"] == 1 and plan["sequences"] == 1
+
+    got = _undo(me, key, contact_id=a.id).json()
+    assert got["undone"] == 1 and got["sequences"] == 1
+
+    assert _acts(db, a.id) == [], "그 사람 줄이 안 숨었다"
+    assert len(_acts(db, b.id)) == 1 and len(_acts(db, c.id)) == 1, \
+        "같은 판의 다른 사람 줄까지 숨었다"
+    assert _seqs(db, a.id)[0].status == "stopped"
+    assert _seqs(db, b.id)[0].status == "active"
+    assert _seqs(db, c.id)[0].status == "active"
+
+    # 묶음 목록은 **반쯤 되돌린 판**으로 선다 — 남은 줄을 되돌릴 단추가 남는다.
+    listed = me.get("/api/deals/manual-sends").json()["batches"]
+    half = next(x for x in listed if x["batch_key"] == key)
+    assert (half["rows"], half["undone"], half["is_undone"]) == (3, 1, False)
+
+    # 남은 줄은 묶음째 — 이미 되돌린 줄은 또 세지 않는다.
+    rest = _undo(me, key).json()
+    assert rest["undone"] == 2 and rest["sequences"] == 2
+
+
+def test_the_detail_history_undoes_its_one_line(db, me, rows):
+    """담당자 상세의 활동 이력에서 **그 한 줄**을 되돌린다.
+
+    이력 줄이 묶음 표시를 싣고(`_activity_view`), 화면은 그것으로 묶음
+    되돌리기 길에 `contact_id` 를 실어 부른다(`static/js/contacts.js`).
+    """
+    from app.models import ContactActivity
+
+    a, b = rows["가담당"], rows["나담당"]
+    # 시트에서 온 줄 — 되돌리는 길이 없다(다시 올리면 또 들어온다).
+    db.add(ContactActivity(contact_id=a.id, kind="deal_intro", source="import",
+                           content="시트 줄", happened_at=LONG_AGO,
+                           month=LONG_AGO[:7]))
+    db.commit()
+    key = _post(me, [a.id, b.id],
+                companies=[x.id for x in rows["companies"]]).json()["batch_key"]
+
+    timeline = me.get(f"/api/contacts/{a.id}").json()["timeline"]
+    lines = [t for t in timeline if t.get("undoable")]
+    assert len(lines) == 1, "손으로 적은 줄에만 [되돌리기] 가 서야 한다"
+    assert lines[0]["batch_key"] == key and lines[0]["source"] == "manual"
+    assert not next(t for t in timeline if t.get("source") == "import")["undoable"]
+
+    got = _undo(me, lines[0]["batch_key"], contact_id=a.id)
+    assert got.status_code == 200 and got.json()["undone"] == 1
+
+    timeline = me.get(f"/api/contacts/{a.id}").json()["timeline"]
+    assert not [t for t in timeline if t.get("source") == "manual"]
+    assert [t for t in timeline if t.get("source") == "import"], \
+        "시트 줄까지 사라졌다"
+    other = me.get(f"/api/contacts/{b.id}").json()["timeline"]
+    assert [t for t in other if t.get("undoable")], \
+        "같은 판의 다른 담당자 줄까지 되돌아갔다"
+    assert _seqs(db, a.id)[0].status == "stopped"
+    assert _seqs(db, b.id)[0].status == "active"
+
+
+def test_someone_else_cannot_undo_one_person(db, client, rows):
+    """한 사람 되돌리기도 **같은 `_owned`** 다 — 남의 담당이면 404, 아무것도 안 바뀐다."""
+    a, b, mine = rows["가담당"], rows["나담당"], rows["라담당"]
+    client.post("/login", data={"phone": "01000000001",
+                                "password": DEMO_PASSWORD})
+    key = _post(client, [a.id, b.id]).json()["batch_key"]
+
+    client.post("/login", data={"phone": "01000000002",
+                                "password": DEMO_PASSWORD})
+    assert _undo(client, key, contact_id=a.id, confirm=False).status_code == 404
+    assert _undo(client, key, contact_id=a.id).status_code == 404
+    # 자기 담당을 실어 와도 그 판에 없는 줄이면 없는 것이다.
+    assert _undo(client, key, contact_id=mine.id).status_code == 404
+    # 남의 담당자 상세는 열리지도 않는다 — 단추가 설 자리가 없다.
+    assert client.get(f"/api/contacts/{a.id}").status_code == 404
+
+    from app.models import ContactActivity
+
+    assert db.query(ContactActivity).filter(
+        ContactActivity.undone_at.isnot(None)).count() == 0
+    assert _seqs(db, a.id)[0].status == "active", "남이 내 리마인드를 거뒀다"
 
 
 # ── ⑤ 남의 줄이 섞이면 한 줄도 안 적힌다 ────────────────────────────────────

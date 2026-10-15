@@ -168,8 +168,9 @@ def screens(client, db, users):
     from datetime import date, timedelta
 
     from app.models import (ConsultingColumn, ConsultingCompany, ContactColumn,
-                            IrCompany, Meeting, SheetOwner, SourcingContact,
-                            VcContact, WeeklyRoutine, WeeklyTask)
+                            IrCompany, Meeting, SeriesACompany, SheetOwner,
+                            SourcingContact, VcContact, WeeklyRoutine,
+                            WeeklyTask)
     from app.services.consulting_sheets import CONTRACT, by_kind, default_label
     from app.services import contact_columns as cc
     from app.services import weekly
@@ -195,6 +196,15 @@ def screens(client, db, users):
         # 괄호 안에 섞여 있어서 쉼표로 나누면 없는 값 두 개가 생긴다 —
         # 그래서 이 칸에는 구분자를 주지 않는다. 아래 검사가 그 규칙을
         # 헷갈려 걸지 않는지도 이 값으로 함께 본다.
+        # IR 기업 현황 메뉴의 셋째 탭 — 다른 표(`series_a_companies`)라 줄이
+        # 따로 있어야 그려진다. `투자라운드` 는 길게 적혀 오고 칸 · 필터에는
+        # 괄호 앞만 선다(옆 탭과 같다).
+        SeriesACompany(name="샘플애그", received_at="2026-07-01",
+                       deal_type="딜 소싱 네트워크", assignee_name="강민준",
+                       shared_by="박영희 이사", source_firm="마바캐피탈",
+                       sector_major="애그테크", sector_minor="스마트팜",
+                       series="Series A (누적투자금 10억이상)",
+                       detail="스마트팜 관제 · 후속 라운드 준비"),
         SourcingContact(bucket="시리즈 A 이상", position=0, name="박영희",
                         title="심사역", firm="마바캐피탈", assignee_name="강민준",
                         sectors="소비재 유통(직영,가맹점) 인수 검토",
@@ -270,6 +280,7 @@ def screens(client, db, users):
         "스타트업(IR 요청 문서)": client.get("/startup/ir-report").text,
         "IR 기업현황": client.get("/companies").text,
         "스타트업DB": client.get("/companies?tab=db").text,
+        "Series A 이상 기업": client.get("/companies?tab=series-a").text,
         "딜 소싱": client.get("/sourcing").text,
         # 이 화면만 공통 편집기(`data-inline-url`)를 안 써서 아래 7번 스윕에는
         # 안 들어온다. 그래도 머리글 필터는 같은 부품이라 1~5 번은 똑같이 받는다.
