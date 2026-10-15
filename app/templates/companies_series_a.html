@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+
+{#
+  IR 기업 현황 메뉴의 셋째 탭 — `Series A 이상 기업`.
+
+  시트 `Series A 이상 기업` 을 옮긴 표다. **한 줄은 딜 소싱으로 받은 딜 한 건**
+  이고(`models.SeriesACompany`), 옆 두 탭(`ir_companies`)과 다른 표다. 그래서
+  화면 파일도 따로다 — 옆 두 탭의 [수정] 창 · 소개 가능 판정 · 계약 칸이 이
+  표에는 하나도 안 맞는다. 같이 쓰는 것은 탭 줄(`_company_tabs.html`)과 표
+  부품 넷(`inline_edit.js` · `filters.js` · `table_sort.js` + 이 화면의
+  `series_a.js`)이다.
+
+  ## 칸 이름
+
+  시트 머리글 그대로다. 둘만 다르다 — `사업분야 대분류` → `대분류`,
+  `기업구분` → `투자라운드`. **옆 두 탭이 사용자 요청으로 그렇게 바꿨고**
+  (`companies.html` 머리 주석), 같은 메뉴에서 같은 칸을 탭마다 다르게 부르면
+  같은 칸인지 알 수 없다. 가져오기는 옛 머리글을 그대로 읽는다
+  (`services/series_a_import.py` 의 `HEADERS`).
+
+  ## 차례 — `기업명` 이 `NO` 바로 뒤
+
+  시트에서는 `기업명` 이 일곱째 칸이다. 왼쪽 두 칸을 가로로 고정하는 규칙
+  (`NO` 와 그 표의 주인공 이름 — IR 기업 현황 · 투자사 명단과 같다)을 지키려면
+  이름이 `NO` 옆에 와야 한다. 일곱 칸을 다 고정하면 고정 폭이 700px 을 넘어
+  정작 밀어서 볼 자리가 없다. 나머지는 시트 차례 그대로다.
+#}
+{% block content %}
+<header class="page-head">
+  <h1>{{ page_title }}</h1>
+  <p class="muted">
+    딜 소싱 네트워크로 <b>받은 딜</b>을 받은 날 최신순으로 봅니다 — 한 줄이 받은 딜 한 건입니다.
+    <b>팀 전체가 함께 쓰는 표</b>라 고치면 팀 모두에게 반영됩니다.
+  </p>
+</header>
+
+{% if msg %}<p class="flash">{{ msg }}</p>{% endif %}
+
+<div class="toolbar">
+  <div class="toolbar-right">
+    <input type="search" id="sa-search" placeholder="기업명 · 회사 · 심사역 · 내용"
+           title="기업명 · 회사 · 공유 심사역 · 담당팀원 · 분야 · 투자라운드 · 상세 내용 · 딜소개 문구로 찾습니다."
+           value="{{ q }}" autocomplete="off">
+    <button type="button" class="primary-btn inline" id="sa-add">기업 추가</button>
+  </div>
+</div>
+
+{% include "_company_tabs.html" %}
+
+<div class="chip-row" data-filter-chips></div>
+<p class="hint" id="sa-note" hidden></p>
+
+{# 표 폭은 넓은 표 공통 값(`.table-wrap.wide .grid-table` 의 min-width)을 그대로
+   쓴다. 폭을 안 준 칸이 `상세 내용` 하나라 남는 자리를 그 칸이 가져간다 — 이
+   표에서 글이 가장 긴 칸이다. #}
+<div class="table-wrap wide">
+  {# ── 왼쪽 두 칸(`NO` · `기업명`)은 가로로 밀어도 제자리 ──────────────────
+     IR 기업 현황과 같은 규칙 · 같은 CSS 다(`app.css` 의 `.stick-a` · `.stick-b`).
+     `--stick-b` 는 `NO` 의 폭이고, 머리글의 `width:` 와 같은 값(`no_w`)을 읽는다 —
+     두 군데에 적으면 한쪽만 고쳐지는 날 고정 칸이 반 칸씩 어긋난다. #}
+  {% set no_w = 36 %}
+  <table class="grid-table" data-inline-url="/api/series-a-companies" id="sa-table"
+         style="--stick-a:0px; --stick-b:{{ no_w }}px">
+    <thead>
+      <tr>
+        <th class="num stick stick-a" style="width:{{ no_w }}px">NO</th>
+        <th class="stick stick-b" style="width:200px">기업명</th>
+        {# **앱이 만든 칸** — 시트에는 없다. Series A 딜 공유(딜 제안 관리 › 딜 소싱
+           제안)로 이 기업을 받은 딜 소싱 심사역 수다(`services/series_a_share.py`
+           — 대기 · 보내는 중 · 보냄만 센다). 옆 `공유 심사역`(이 딜을 **우리에게**
+           넘겨 준 분)과 반대 방향이라, 이름 바로 뒤에 두고 풍선말에 누구인지 적는다
+           (딜 소싱 표가 앱이 만든 `참여` 칸을 이름 뒤에 두는 것과 같은 자리). #}
+        <th style="width:104px" title="Series A 딜 공유로 이 기업을 보낸 딜 소싱 심사역 수 — 대기 · 보낸 것만 셉니다">공유한 심사역</th>
+        {# 이 표를 여는 물음이 "최근에 무엇이 들어왔나" 라 처음부터 이 칸 최신순이다
+           (`routers/series_a.sort_rows`). 머리글을 누르면 브라우저에서 다시 세운다. #}
+        <th style="width:100px" data-sort="received_at"
+            title="딜을 받은 날 · 눌러서 수정">수신 일자</th>
+        {# 필터가 하나뿐인 칸은 이름 자리에 단추(`Type (1) ▾`)가 선다 — 폭은
+           **고른 뒤의 단추**에 맞춘다(옆 두 탭과 같은 셈: 단추 + th 여백 18px
+           + 단추 여백 14px). 값이 단추보다 넓은 칸은 값에 맞췄다. #}
+        <th style="width:130px" data-filters="type:Type">Type<div class="th-filters"></div></th>
+        <th style="width:110px" data-filters="assignee:담당팀원">담당팀원<div class="th-filters"></div></th>
+        <th style="width:124px" data-filters="sharer:공유 심사역">공유 심사역<div class="th-filters"></div></th>
+        {# 딜을 넘겨 준 **투자사**다 — 기업명이 아니다. #}
+        <th style="width:140px" data-filters="firm:회사" title="딜을 넘겨 준 투자사">회사<div class="th-filters"></div></th>
+        {# 필터 열쇠는 옆 탭과 같다(`sector` · `minor` · `series`) — 같은 칸을
+           같은 주소(`?sector=…`)로 거른다. #}
+        <th style="width:140px" data-filters="sector:대분류">대분류<div class="th-filters"></div></th>
+        <th style="width:150px" data-filters="minor:소분류">소분류<div class="th-filters"></div></th>
+        <th style="width:120px" data-filters="series:투자라운드">투자라운드<div class="th-filters"></div></th>
+        <th title="두 줄까지 보입니다 · 눌러서 수정">상세 내용</th>
+        <th style="width:280px" title="두 줄까지 보입니다 · 눌러서 수정">딜소개 문구</th>
+        <th style="width:52px"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      {# 필터 값은 **칸에 보이는 그대로**다. `투자라운드` 만 짧은 꼴(괄호 앞)이다 —
+         칸에도 짧은 꼴이 보이고, 옆 탭의 `투자라운드` 필터와 같은 값으로 모인다. #}
+      <tr data-id="{{ r.id }}" data-search="{{ r.search }}"
+          data-f-type="{{ r.deal_type }}"
+          data-f-assignee="{{ r.assignee_name }}"
+          data-f-sharer="{{ r.shared_by }}"
+          data-f-firm="{{ r.source_firm }}"
+          data-f-sector="{{ r.sector_major }}"
+          data-f-minor="{{ r.sector_minor }}"
+          data-f-series="{{ r.series_short }}"
+          {# 세울 값 — 날짜로 적힌 것만(`received_sort_key`). 날짜가 아닌 줄은 빈
+             값이라 방향과 상관없이 늘 끝에 선다(`table_sort.js`). #}
+          data-s-received_at="{{ r.received_sort }}"
+          data-shared="{{ r.shared_count }}">
+        <td class="rowno muted stick stick-a"></td>
+        <td class="co-name stick stick-b">
+          <b class="cell" data-field="name">{{ r.name }}</b>
+          {# IR 기업 현황에도 있는 기업 — 이름으로 맞춘다(`deal_history._key`).
+             값을 옮겨 오지 않고 그 탭으로 **잇기만** 한다(두 벌이 되지 않게).
+             이름을 고치면 `series_a.js` 가 응답을 보고 다시 세운다. #}
+          <a class="room-badge ok ir-link" {% if not r.ir_name %}hidden{% endif %}
+             href="/companies?q={{ r.ir_name|urlencode }}"
+             title="IR 기업 현황에도 있는 기업입니다 — 눌러서 그 탭에서 봅니다">IR 현황</a>
+        </td>
+        <td class="sa-shared" data-testid="sa-shared"
+            title="{% if r.shared_count %}{{ r.shared_names|join(' · ') }}{% else %}아직 아무에게도 공유하지 않았습니다{% endif %}">
+          {% if r.shared_count %}<span class="tag soft">{{ r.shared_count }}명</span>{% endif %}
+        </td>
+        <td class="cell" data-field="received_at" data-type="date">{{ r.received_at }}</td>
+        <td class="cell" data-field="deal_type" data-type="pick"
+            data-filter-key="type">{{ r.deal_type }}</td>
+        <td class="cell" data-field="assignee_name" data-type="pick"
+            data-filter-key="assignee">{{ r.assignee_name }}</td>
+        <td class="cell" data-field="shared_by" data-type="pick"
+            data-filter-key="sharer">{{ r.shared_by }}</td>
+        <td class="cell" data-field="source_firm" data-type="pick"
+            data-filter-key="firm">{{ r.source_firm }}</td>
+        <td title="{{ r.sector_major }}">
+          <div class="cell clamp2" data-field="sector_major" data-type="pick"
+               data-filter-key="sector">{{ r.sector_major }}</div>
+        </td>
+        <td title="{{ r.sector_minor }}">
+          <div class="cell clamp2" data-field="sector_minor" data-type="pick"
+               data-filter-key="minor">{{ r.sector_minor }}</div>
+        </td>
+        {# 칸에는 짧은 꼴, 고칠 때는 **적힌 전체**(`data-value`)가 뜬다 — 옆 탭의
+           `투자라운드` 와 같다. 저장 뒤 짧은 꼴은 응답이 준다(`series_a.js`). #}
+        <td title="{{ r.series }}">
+          <div class="cell clamp2" data-field="series" data-type="pick"
+               data-filter-key="series" data-value="{{ r.series }}">{{ r.series_short }}</div>
+        </td>
+        <td title="{{ r.detail }}">
+          <div class="cell clamp2" data-field="detail" data-type="long">{{ r.detail }}</div>
+        </td>
+        <td title="{{ r.deal_pitch }}">
+          <div class="cell clamp2" data-field="deal_pitch" data-type="long">{{ r.deal_pitch }}</div>
+        </td>
+        <td>
+          {# 지우는 판정은 옆 두 탭과 같은 함수다(`companies.can_delete_company`). #}
+          {% if can_delete %}
+          <button type="button" class="linkbtn js-sa-delete">삭제</button>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="14" class="muted">아직 받은 딜이 없습니다. [기업 추가]로 넣거나 시트를 가져오세요.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="hint">
+  머리글을 눌러 정렬하고, 머리글의 ▾ 로 거릅니다. 칸을 눌러 바로 고칩니다.
+  {% if in_ir %}<b>IR 현황</b> 딱지는 IR 기업 현황에도 있는 기업({{ in_ir }}곳)입니다.{% endif %}
+  <b>공유한 심사역</b>은 <a href="/deals?mode=sourcing&amp;topic=sourcing_deal_share">딜 제안 관리 › 딜 소싱 제안 › Series A 딜 공유</a>로
+  이 기업을 보낸 시리즈 A 딜 소싱 심사역 수입니다(대기 · 보낸 것만 셉니다 — 칸에 마우스를 올리면 누구인지 보입니다).
+</p>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ asset('js/inline_edit.js') }}"></script>
+<script src="{{ asset('js/filters.js') }}"></script>
+{# 머리글 정렬 부품 — **series_a.js 보다 먼저**. 표를 세우고 `NO` 를 다시 매기는
+   일이 series_a.js 안에 있어서, 뒤에 오면 `window.DealflowSort` 가 아직 없다. #}
+<script src="{{ asset('js/table_sort.js') }}"></script>
+<script src="{{ asset('js/series_a.js') }}"></script>
+{% endblock %}

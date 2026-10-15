@@ -30,6 +30,9 @@
    세울지 가르는 자리이고, 화면이 미리 하는 말도 같은 곳에서 나온다.
 3. **같은 것을 두 번 적었나** (`existing`) — `ir_attach` · `pipeline` 도
    이 함수를 지난다.
+
+그리고 **되돌릴 때 시퀀스를 어떻게 되짚나**(`_release`) — 적을 때 남긴 흔적
+(`ContactActivity.sequence_trace`)을 읽는 자리도 여기 하나다.
 """
 from __future__ import annotations
 
@@ -42,7 +45,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..clock import now_iso, today as _today
-from ..models import (SOURCE_MANUAL, ContactActivity, VcContact,
+from ..models import (SOURCE_MANUAL, ContactActivity, SendSequence, VcContact,
                       including_undone)
 from . import cadence
 from . import message_composer as mc
@@ -275,32 +278,70 @@ def record(db: Session, contacts: Sequence[VcContact], kind: str, day: str,
                     company_count=None if names else count):
             duplicated += 1
             continue
+
+        # 시퀀스를 **먼저** 움직이고 줄을 나중에 넣는다 — 시퀀스에 무엇을
+        # 했는지(`trace`)를 줄에 담아 **한 번에** 넣으려는 것이다. 줄을 먼저
+        # 넣고 나중에 고치면 수정 로그에 `추가` 와 `수정` 이 한 줄씩 쌓인다
+        # (`edit_log.WATCHED["contact_activities"]`). `advance` 는 활동 줄을
+        # 읽지 않으므로 차례를 바꿔도 판정은 그대로다.
+        trace = None
+        if will_remind:
+            seq, trace = _advance(db, contact, send_kind, stage, rng)
+            if seq is not None:
+                reminded += 1
+
         db.add(ContactActivity(
             contact_id=contact.id, kind=kind, source=SOURCE_MANUAL,
             content=_content(kind, names, count),
             happened_at=day, month=day[:7],
             company_names=_payload(names) if names else None,
             company_count=count,
-            batch_key=batch_key))
+            batch_key=batch_key,
+            sequence_trace=trace))
         added += 1
-
-        if not will_remind:
-            continue
-        # **리마인드를 세우는 판정은 `cadence.advance` 한 곳이다.** 단계
-        # 사다리도 다음 예정일 계산도 여기서 다시 하지 않는다 — 두 벌이 되면
-        # 손으로 보낸 사람의 후속만 다른 날짜로 잡히고, 그 어긋남은 몇 달 뒤에
-        # 드러난다.
-        #
-        # 시퀀스의 주인은 **그 담당자를 맡은 사람**이다(적은 사람이 아니다).
-        # 관리자가 남의 줄을 대신 적어 줘도 후속은 담당자에게 떠야 한다.
-        if cadence.advance(db, user_id=contact.user_id, contact_id=contact.id,
-                           batch_id=None, kind=send_kind, stage=stage,
-                           sent_at=now_iso(), rng=rng) is not None:
-            reminded += 1
 
     db.flush()
     return Result(batch_key=batch_key, added=added, duplicated=duplicated,
                   reminded=reminded, day=day, kind=kind)
+
+
+def _advance(db: Session, contact: VcContact, send_kind: str,
+             stage: Optional[int], rng=None):
+    """리마인드를 세우고 **세우면서 한 일**을 함께 돌려준다 — `(시퀀스, 흔적)`.
+
+    **리마인드를 세우는 판정은 `cadence.advance` 한 곳이다.** 단계 사다리도
+    다음 예정일 계산도 여기서 다시 하지 않는다 — 두 벌이 되면 손으로 보낸
+    사람의 후속만 다른 날짜로 잡히고, 그 어긋남은 몇 달 뒤에 드러난다.
+
+    시퀀스의 주인은 **그 담당자를 맡은 사람**이다(적은 사람이 아니다).
+    관리자가 남의 줄을 대신 적어 줘도 후속은 담당자에게 떠야 한다.
+
+    ## 왜 흔적을 남기나
+
+    `advance` 는 이미 서 있던 시퀀스를 **덮어쓴다**(딜소개일을 오늘로 다시
+    잡고, 미팅 요청이면 단계를 올리고, IR 자료면 멈춘다). 덮어쓴 뒤에는 그 전
+    모습이 어디에도 없어서, 이 줄을 되돌릴 때 시퀀스를 어디로 돌려놓을지 알
+    길이 없다. 그래서 **부르기 전 모습**을 떠 두었다가 줄에 함께 적는다.
+    전 모습을 뜨는 줄은 `advance` 가 읽는 바로 그 줄이다(`cadence.latest`).
+    """
+    before_seq = cadence.latest(db, contact.id)
+    before = cadence.snapshot(before_seq)
+    seq = cadence.advance(db, user_id=contact.user_id, contact_id=contact.id,
+                          batch_id=None, kind=send_kind, stage=stage,
+                          sent_at=now_iso(), rng=rng)
+    if seq is None:
+        return None, None
+    after = cadence.snapshot(seq)
+    if before_seq is None or seq.id != before_seq.id:
+        # **새로 세웠다.** 되돌리면 멈춘다 — 그 전에는 이 사람에게 돌던
+        # 후속이 없었다(있었다면 멈춘 것이고, 그 줄은 여기서 안 건드렸다).
+        before = None
+    elif after == before:
+        # 읽기만 하고 아무것도 안 바꿨다(멈춘 시퀀스에 미팅 요청을 적은 것
+        # 같은 때). 되돌릴 것이 없으니 흔적도 없다.
+        return seq, None
+    return seq, json.dumps({"id": seq.id, "before": before, "after": after},
+                           ensure_ascii=False)
 
 
 #: 줄에 적히는 글. 이력 화면이 기업 이름을 못 찾았을 때 대신 보여 주는 값이라
@@ -319,36 +360,198 @@ def _content(kind: str, names: Sequence[str], count: Optional[int]) -> str:
 # ④ 되돌리기 — 지우지 않고 숨긴다
 # ─────────────────────────────────────────────────────────────────────────────
 
-def rows_of(db: Session, batch_key: str) -> List[ContactActivity]:
-    """그 판으로 들어온 (아직 되돌리지 않은) 줄들."""
+def rows_of(db: Session, batch_key: str,
+            contact_id: Optional[int] = None) -> List[ContactActivity]:
+    """그 판으로 들어온 (아직 되돌리지 않은) 줄들.
+
+    `contact_id` 를 주면 **그 판 안의 그 담당자 줄만** — 한 사람 되돌리기다.
+    80명을 적은 판에서 한 사람만 잘못 넣은 일이 흔해서, 묶음째 되돌리고 79명을
+    다시 적게 하면 안 된다. 담당자 상세의 활동 이력도 이 길로 한 줄을 되돌린다
+    (`static/js/contacts.js`) — 같은 줄을 고르는 조회가 두 벌이 되지 않는다.
+    """
     if not batch_key:
         return []
-    return list(db.execute(
-        select(ContactActivity)
-        .where(ContactActivity.batch_key == batch_key)
-        .order_by(ContactActivity.id)
-    ).scalars().all())
+    stmt = (select(ContactActivity)
+            .where(ContactActivity.batch_key == batch_key))
+    if contact_id is not None:
+        stmt = stmt.where(ContactActivity.contact_id == contact_id)
+    return list(db.execute(stmt.order_by(ContactActivity.id)).scalars().all())
 
 
-def undo(db: Session, rows: Sequence[ContactActivity]) -> int:
-    """그 줄들을 **숨긴다.** 지우지 않는다. 커밋은 부르는 쪽이 한다.
+def undoable(act: ContactActivity) -> bool:
+    """이 줄을 **화면에서 되돌릴 수 있나** — 손으로 적은 판의 줄만.
 
-    숨긴 줄은 읽는 자리 어디에서도 안 읽힌다 — 거르는 자리는
-    `models._hide_undone_activities` 한 곳이다.
+    시트에서 옮겨 온 줄·앱이 적은 줄은 되돌리는 길이 없다. 그 줄들은 들어온
+    길(시트 다시 올리기 · 발송 기록)이 따로 있어, 여기서 숨기면 다음 가져오기
+    때 같은 줄이 또 들어오거나 발송 기록과 이력이 어긋난다.
 
-    **후속 시퀀스는 여기서 안 건드린다.** 되돌린 줄이 안 읽히면
-    `cadence.sweep_reactions` 가 리마인드 구역을 열 때 훑어 정리한다 —
-    활동이 여러 길로 들어오니 길목마다 훅을 달지 않는다는 그쪽 판단 그대로다.
+    담당자 상세의 활동 이력이 [되돌리기] 를 세울지 이것으로 정한다
+    (`routers/contacts._activity_view`). 권한은 여기서 보지 않는다 — 그 화면을
+    연 것 자체가 `_owned` 를 지난 것이고, 되돌리는 요청도 같은 판정을 지난다.
+    """
+    return (act.source == SOURCE_MANUAL and bool(act.batch_key)
+            and not act.undone_at)
+
+
+#: 되돌린 기록이 **새로 세웠던** 시퀀스를 멈출 때 남기는 까닭. 후속 관리 표의
+#: `중단` 줄에 그대로 선다 — 왜 멈췄는지 안 적혀 있으면 사람이 [다시 켜기] 를
+#: 눌러 받은 적 없는 사람에게 리마인드를 되살린다.
+UNDO_REASON = "손으로 적은 기록을 되돌렸습니다"
+
+
+class Undone:
+    """되돌린 결과 — `3줄 되돌림 · 리마인드 2건 거둠` 을 화면이 만들 재료다."""
+
+    __slots__ = ("rows", "sequences")
+
+    def __init__(self, *, rows: int, sequences: int) -> None:
+        self.rows = rows
+        self.sequences = sequences
+
+    def note(self) -> str:
+        """★ 사람이 읽는 한 줄을 짓는 자리도 여기 하나다 — 두 화면이 그대로 띄운다."""
+        text = f"{self.rows}줄을 되돌렸습니다"
+        if self.sequences:
+            text += f" · 리마인드 {self.sequences}건을 거뒀습니다"
+        return text
+
+
+def undo_plan(db: Session, rows: Sequence[ContactActivity]) -> dict:
+    """되돌리기 전에 **세어만 본다.** 한 줄도 안 바꾼다.
+
+    리마인드를 몇 건 함께 거두는지도 미리 말한다 — 그게 이 되돌리기의 절반이다.
+    세는 판정은 실제로 거두는 자리와 같은 함수다(`_release(dry=True)`).
+    """
+    first = rows[0] if rows else None
+    return {
+        "rows": len(rows),
+        "kind": first.kind if first else "",
+        "kind_label": KIND_LABELS.get(first.kind, first.kind) if first else "",
+        "day": (first.happened_at or "") if first else "",
+        "sequences": sum(1 for row in rows if _release(db, row, dry=True)),
+    }
+
+
+def undo(db: Session, rows: Sequence[ContactActivity]) -> Undone:
+    """그 줄들을 **숨기고**, 그 줄이 세운 리마인드를 거둔다. 커밋은 부르는 쪽이 한다.
+
+    줄은 지우지 않는다. 숨긴 줄은 읽는 자리 어디에서도 안 읽힌다 — 거르는
+    자리는 `models._hide_undone_activities` 한 곳이다.
+
+    ## 시퀀스도 되짚는다
+
+    전에는 여기서 시퀀스를 안 건드렸다. 줄만 숨기면 `cadence.sweep_reactions`
+    가 정리할 줄 알았지만, 그쪽은 **반응(IR 요청·미팅)이 생긴 것만** 멈춘다 —
+    되돌린 딜 소개가 세운 리마인드는 그대로 남아 받은 적 없는 사람에게
+    "지난번 공유드린…" 이 나갈 수 있었다.
+
+    그래서 **이 줄이 시퀀스에 한 일만** 되짚는다(`_release`). 실제 발송이나
+    다른 기록이 세운 시퀀스는 안 건드린다.
     """
     when = now_iso()
-    n = 0
+    n = released = 0
     for row in rows:
         if row.undone_at:
             continue
         row.undone_at = when
         n += 1
+        if _release(db, row):
+            released += 1
     db.flush()
-    return n
+    return Undone(rows=n, sequences=released)
+
+
+def _trace_of(row: ContactActivity) -> Optional[dict]:
+    """줄에 적힌 흔적. 없거나 못 읽으면 `None` — **되짚지 않는다.**
+
+    못 읽는 흔적으로 짐작해 시퀀스를 고치면 남의 후속을 망가뜨린다. 그러면
+    줄만 숨고 시퀀스는 그대로인 이 판 전 동작으로 돌아갈 뿐이다.
+    """
+    if not row.sequence_trace:
+        return None
+    try:
+        data = json.loads(row.sequence_trace)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(data, dict) or not isinstance(data.get("id"), int):
+        return None
+    return data
+
+
+def _release(db: Session, row: ContactActivity, dry: bool = False) -> bool:
+    """이 줄이 시퀀스에 한 일을 되짚는다. 시퀀스를 고쳤으면(고칠 것이면) 참.
+
+    ★ 되짚는 판정은 여기 하나다 — `undo` 와 `undo_plan` 이 함께 지난다.
+
+    ## 언제 고치나 — 시퀀스가 **이 줄이 두고 간 모습 그대로**일 때만
+
+    지금 모습이 적어 둔 `after` 와 같으면 그 뒤로 아무도 안 건드린 것이다.
+    그때만 되짚는다.
+
+    · `before` 가 없으면 이 줄이 **새로 세운** 시퀀스다 → 멈춘다
+      (`stopped` — 사람이 멈춘 것과 같은 갈래다. 지우지 않는다: 후속 관리 표에
+      `중단 · 손으로 적은 기록을 되돌렸습니다` 로 남아야 왜 멈췄는지 안다).
+    · 있으면 그 전에 서 있던 시퀀스를 **덮어쓴** 것이다 → 그 모습으로 되돌린다
+      (실제 발송이 세운 리마인드를 오늘 딜 소개가 덮었다면 원래 날짜로 돌아간다).
+
+    ## 그 뒤에 무엇이 움직였으면 손대지 않는다
+
+    앱이 리마인드를 실제로 보냈거나, 답이 와서 멈췄거나, 사람이 [다시 켜기] 를
+    눌렀다면 시퀀스는 이미 **다른 일의 것**이다. 그걸 되돌리면 실제로 나간
+    리마인드나 사람이 내린 판단을 지운다 — 그래서 그대로 둔다.
+
+    다만 그 뒤에 움직인 것이 **손으로 적은 다른 줄**이면 고리를 잇는다
+    (`_splice`). 안 이으면 A 를 먼저 되돌리고 B 를 나중에 되돌렸을 때, B 가
+    A 의 모습(= 되돌린 딜 소개의 리마인드)을 되살린다.
+    """
+    trace = _trace_of(row)
+    if trace is None:
+        return False
+    seq = db.get(SendSequence, trace["id"])
+    if seq is None:
+        # 사람이 후속 관리에서 지웠다 — 되짚을 것이 없다.
+        return False
+    if cadence.snapshot(seq) != trace.get("after"):
+        if not dry:
+            _splice(db, row, trace)
+        return False
+    if dry:
+        return True
+    before = trace.get("before")
+    if before is None:
+        cadence.stop(db, seq, UNDO_REASON, status="stopped")
+    else:
+        cadence.restore(db, seq, before)
+    return True
+
+
+def _splice(db: Session, row: ContactActivity, trace: dict) -> None:
+    """뒤에 적힌 줄이 이 줄의 `after` 를 `before` 로 들고 있으면 그것을 이 줄의
+    `before` 로 바꾼다 — 사슬에서 이 줄을 빼는 것이다.
+
+    같은 사람에게 같은 날 두 판을 적는 일이 있다(`8개사` 다음 `5개사`, 딜 소개
+    다음 IR 자료). 뒤 줄 B 가 앞 줄 A 의 시퀀스를 덮어쓰면 B 의 `before` 는
+    A 의 `after` 다. A 를 먼저 되돌릴 때 시퀀스는 B 의 모습이라 손대지 않는데,
+    B 의 `before` 를 그대로 두면 나중에 B 를 되돌릴 때 **이미 되돌린 A 의
+    리마인드가 되살아난다.** 그래서 B 가 돌아갈 자리를 A 가 오기 전으로 옮긴다.
+
+    되돌린 줄은 조회에 안 걸리므로(`models._hide_undone_activities`) 이미
+    되돌린 줄의 흔적은 고치지 않는다.
+    """
+    later = db.execute(
+        select(ContactActivity).where(
+            ContactActivity.contact_id == row.contact_id,
+            ContactActivity.id > row.id,
+            ContactActivity.sequence_trace.isnot(None))
+        .order_by(ContactActivity.id)
+    ).scalars().all()
+    for other in later:
+        theirs = _trace_of(other)
+        if (theirs is None or theirs["id"] != trace["id"]
+                or theirs.get("before") != trace.get("after")):
+            continue
+        theirs["before"] = trace.get("before")
+        other.sequence_trace = json.dumps(theirs, ensure_ascii=False)
 
 
 def batches(db: Session, contact_ids: Sequence[int],
@@ -391,9 +594,10 @@ def batches(db: Session, contact_ids: Sequence[int],
         if row.undone_at:
             got["undone"] += 1
     for got in out.values():
-        # 한 판이 반쯤 되돌려지는 길은 없다(묶음째 숨긴다). 그래도 세어서
-        # 말한다 — 줄이 따로 지워졌거나 옛 자료가 섞였을 때 화면이 거짓말을
-        # 하지 않아야 한다.
+        # 한 판이 **반쯤 되돌려질 수 있다** — 한 사람 되돌리기(`rows_of` 의
+        # `contact_id`)가 그 길이다. 다 되돌린 판만 `되돌림` 이고, 반쯤이면
+        # 남은 줄을 되돌릴 단추가 그대로 서야 한다(화면은 `undone` 을 읽어
+        # `3줄 중 1줄 되돌림` 으로 말한다 — `static/js/manual_send.js`).
         got["is_undone"] = got["undone"] >= got["rows"]
     return list(out.values())
 

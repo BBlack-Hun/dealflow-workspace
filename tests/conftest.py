@@ -32,6 +32,12 @@ for _name in ("HOST", "PORT", "USER", "PASSWORD", "FROM", "TLS", "SSL"):
 #      않고, 발송 코드는 그 앞에서 멈춘다. 검사는 가짜 발송기만 쓴다.
 for _name in ("API_KEY", "API_SECRET", "FROM"):
     os.environ[f"DEALFLOW_SMS_{_name}"] = ""
+# 딜 소싱 메일 확인(POP3)도 비운다 — 켜진 환경에서 돌리면 진짜 편지함에 붙고,
+# '설정이 없으면 꺼짐' 검사가 그 환경 때문에 실패한다. 비밀값도 비운다 — 잠그는
+# 검사는 그 검사가 스스로 넣는다.
+for _name in ("HOST", "PORT", "USER", "PASSWORD"):
+    os.environ[f"DEALFLOW_POP3_{_name}"] = ""
+os.environ["DEALFLOW_SECRET_KEY"] = ""
 os.environ["DEALFLOW_DOMAIN"] = ""
 
 import pytest  # noqa: E402

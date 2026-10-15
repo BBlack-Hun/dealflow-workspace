@@ -9,6 +9,9 @@
     // 표에는 있는데 이 목록에 없으면 **상세 창에서 적을 수가 없다** —
     // 칸을 그려 놔도 값이 안 채워지고 저장도 안 된다.
     "kakao_joined", "sourcing_note", "tips_note",
+    // `Series A 딜 소싱`(O/X) — 이 줄에 저장되지 않고 딜 소싱 줄을 잇거나
+    // 만든다(`services/sourcing_sync.py`). 빈칸은 '바꾸지 않음' 이다.
+    "sourcing_join",
     "assignee_name", "department", "office_phone", "office_fax",
     "address", "card_registered_at", "interest_level",
     // 연결 상태. `<select>` 라 값 읽기·쓰기는 다른 칸과 같다.
@@ -149,8 +152,18 @@
     closers: ["#detail-close"],
     // 저장할 때 보내는 것과 **같은 것**을 읽는다. 화면 글자를 따로 긁어 모으면
     // 저장에는 가는데 기준선에는 없는 칸이 생겨 안 고쳐도 묻는 창이 된다.
-    snapshot: function () { return JSON.stringify(readForm()); }
+    snapshot: function () { return JSON.stringify(readForm()); },
+    // 활동 이력에서 한 줄을 되돌렸으면 **닫을 때 표를 다시 받는다.** 표의
+    // `최근 딜소개`·진행 단계는 서버가 그 줄을 읽어 만든 값이라 옛것으로
+    // 남는다(위 `reload` 의 까닭 그대로). 되돌린 즉시 다시 받지 않는 것은
+    // 창이 닫혀 버려 줄이 빠진 것을 사람이 못 보기 때문이다.
+    onClose: function () {
+      if (!timelineChanged) return;
+      timelineChanged = false;
+      reload();
+    }
   });
+  var timelineChanged = false;
 
   // 다른 줄로 넘어갈 때 묻는 말. 닫을 때와 하는 일이 달라 문구도 다르다 —
   // "닫을까요" 라고 물어 놓고 다른 줄을 여는 창이면 무엇을 누른 건지 모른다.
@@ -238,6 +251,11 @@
         '<span class="tl-kind">' + esc(KIND_KO[t.kind] || t.kind) + "</span>" +
         '<span class="tl-body">' + bodyHtml(t) + "</span>" +
         (t.source === "import" ? '<span class="tl-src">시트</span>' : "") +
+        // 손으로 적은 줄만 되돌릴 수 있다 — 세울지는 서버가 정한다
+        // (`manual_send.undoable`). 여기서 `source === "manual"` 을 다시 보면
+        // 판정이 두 벌이 된다.
+        (t.undoable ? '<button type="button" class="linkbtn tl-undo" data-batch="' +
+          esc(t.batch_key) + '">되돌리기</button>' : "") +
         "</li>";
     });
     list.innerHTML = html;
@@ -279,12 +297,84 @@
         if (!d.contact) { setMsg("담당자를 불러오지 못했습니다", true); return; }
         current = d.contact.id;
         fillForm(d.contact);
+        // IR 기업 연결 표시 — 그 칸이 있는 화면만(`ir_link_badge.js`).
+        if (window.IrLinkBadge) window.IrLinkBadge.show(d.ir_link || null);
         renderTimeline(d.timeline || []);
         openPanel(d.contact.name + " " + (d.contact.title || "") + " · " + (d.contact.firm || ""));
         setMsg("");
       })
       .catch(function () { setMsg("조회 오류", true); });
   }
+
+  // ── 활동 이력에서 **손으로 적은 한 줄** 되돌리기 ──────────────────────
+  //
+  // 사람은 잘못 적은 것을 담당자 이력을 보다가 알아챈다. 딜 제안 관리의
+  // 묶음 목록으로 건너가 80줄 묶음을 찾아 통째로 되돌리게 하면, 맞게 적은
+  // 79명까지 다시 적어야 한다.
+  //
+  // **길은 묶음 되돌리기와 같다**(`/api/deals/manual-sends/{묶음}/undo` 에
+  // `contact_id`) — 권한도 확인창 두 걸음도 그쪽과 하나다. 리마인드를 함께
+  // 거두는지도 서버가 세어 준다(`plan.sequences`).
+  //
+  // 단추는 `innerHTML` 로 그려지므로 목록에 한 번만 붙여 둔다.
+  function postJson(url, body) {
+    return fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    }).then(function (r) {
+      return r.json().then(function (d) { return { ok: r.ok, d: d || {} }; });
+    });
+  }
+
+  function refreshTimeline(id) {
+    return fetch("/api/contacts/" + id)
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        // 그 사이 다른 줄을 열었으면 덮지 않는다.
+        if (current === id) renderTimeline((d && d.timeline) || []);
+      });
+  }
+
+  function undoLine(btn) {
+    var id = current;
+    if (!id) return;
+    var url = "/api/deals/manual-sends/" +
+      encodeURIComponent(btn.getAttribute("data-batch") || "") + "/undo";
+    btn.disabled = true;
+    postJson(url, { contact_id: id, confirm: false }).then(function (res) {
+      if (!res.ok) {
+        alert(res.d.detail || "되돌릴 수 없습니다");
+        btn.disabled = false;
+        return;
+      }
+      var plan = res.d.plan || {};
+      if (!confirm((plan.kind_label || "") + " · " + (plan.day || "") +
+          " 로 손으로 적은 이 담당자 줄을 되돌립니다.\n\n" +
+          "지우지 않고 숨깁니다 — 보고·진행 단계·이력 어디에서도 안 읽힙니다." +
+          (plan.sequences ? "\n이 기록이 잡은 리마인드도 함께 거둡니다." : "") +
+          "\n같은 날 함께 적은 다른 담당자 줄은 그대로 둡니다.\n\n되돌릴까요?")) {
+        btn.disabled = false;
+        return;
+      }
+      postJson(url, { contact_id: id, confirm: true }).then(function (out) {
+        if (!out.ok) {
+          alert(out.d.detail || "되돌리기 실패");
+          btn.disabled = false;
+          return;
+        }
+        timelineChanged = true;
+        setMsg(out.d.note || "되돌렸습니다");
+        refreshTimeline(id);
+      }).catch(function () { alert("되돌리기 요청 오류"); btn.disabled = false; });
+    }).catch(function () { alert("되돌리기 요청 오류"); btn.disabled = false; });
+  }
+
+  on("timeline", "click", function (e) {
+    var t = e && e.target;
+    var btn = t && t.closest ? t.closest(".tl-undo") : null;
+    if (btn && !btn.disabled) undoLine(btn);
+  });
 
   // ── 줄 하나를 **새로** 넣을 때 필요한 것 ────────────────────────────────
   //
@@ -324,6 +414,9 @@
         // `지금 연결 중` 으로 계속 뜨는 이유를 아무도 알 수 없었다.
         // 새로고침이 뒤따르므로 화면에 적어 두면 그대로 지나간다 — 멈춰 세운다.
         if (res.d.connect_note) alert(res.d.connect_note);
+        // `Series A 딜 소싱` 을 O 로 두어 딜 소싱에 새 줄이 생겼거나 있던 줄과
+        // 이어졌으면 그렇게 됐다고 말한다 — 다른 메뉴에서 일어난 일이다.
+        if (res.d.sourcing_msg) alert(res.d.sourcing_msg);
         // 표의 집계값(최근 딜소개·반응)은 서버에서 만든다 → 다시 받는 것이
         // 가장 정확하다. **표가 서 있던 자리는 들고 간다**(위 `reload`).
         reload();
@@ -521,6 +614,8 @@
     // 보기도 안 골라진 채로 서서, 새로 넣는 사람마다 값이 제각각이 된다.
     // 그 칸이 없는 명단에서는 `fillForm` 이 건너뛴다(스타트업 표에는 없다).
     fillForm({ status: "active", channel_kakao: 1, connect_stage: "not_started" });
+    // 아직 없는 줄에는 이을 것이 없다.
+    if (window.IrLinkBadge) window.IrLinkBadge.show(null);
     if (el("f-channel_kakao")) el("f-channel_kakao").checked = true;
     // 창 제목도 안내도 **서버가 준 말**이다. 여기 적어 두면 스타트업 화면에서
     // 기업을 넣는데 창에는 `담당자 추가` 라고 뜬다.
@@ -571,6 +666,18 @@
       // 그렸고, 여기서 또 그리면 고치던 자리와 다투게 된다.
       if (joined && joined !== detail.cell) joined.textContent = data.kakao_joined;
       if (row.hasAttribute("data-f-joined")) row.setAttribute("data-f-joined", data.kakao_joined);
+    }
+    // `Series A 딜 소싱` 은 **방금 고친 칸이어도 서버 값으로 다시 그린다.**
+    // 저장된 글자가 아니라 이어진 딜 소싱 줄에서 읽은 값이라(`o` → `O`),
+    // 적힌 그대로 두면 칸과 필터가 서버와 다른 말을 한다. 딜 소싱 쪽에서 일어난
+    // 일(새 줄 · 이어짐)은 칸의 풍선말로 남긴다.
+    if ("sourcing_join" in data) {
+      var sourcing = row.querySelector('.cell[data-field="sourcing_join"]');
+      if (sourcing) {
+        sourcing.textContent = data.sourcing_join;
+        if (data.sourcing_msg) sourcing.setAttribute("title", data.sourcing_msg);
+      }
+      if (row.hasAttribute("data-f-sourcing")) row.setAttribute("data-f-sourcing", data.sourcing_join);
     }
   }
   if (table) table.addEventListener("inline-saved", syncRoomCells);
