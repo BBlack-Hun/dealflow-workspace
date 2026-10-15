@@ -251,6 +251,57 @@ def _as_date(value: Optional[str]) -> Optional[date]:
         return None
 
 
+def latest(db: Session, contact_id: int) -> Optional[SendSequence]:
+    """그 담당자의 **지금 시퀀스** — 맨 나중에 선 줄.
+
+    `advance` 가 단계를 올릴 때 읽는 바로 그 줄이다. 손으로 적는 길
+    (`manual_send.record`)이 `advance` 를 부르기 **전에** 이 줄의 모습을 적어
+    두는데, 둘이 다른 줄을 읽으면 적어 둔 '이전 모습'이 엉뚱한 줄의 것이 된다 —
+    그래서 고르는 조회를 여기 하나로 둔다.
+    """
+    return db.execute(
+        select(SendSequence).where(SendSequence.contact_id == contact_id)
+        .order_by(SendSequence.id.desc()).limit(1)
+    ).scalars().first()
+
+
+#: 시퀀스의 **모습**을 이루는 칸 — 무엇을 언제 보낼지가 이 칸들로 정해진다.
+#:
+#: 손으로 적은 기록을 되돌릴 때(`manual_send.undo`) 이 칸들을 적어 둔 그대로
+#: 되돌린다. 주인(`user_id`)·담당자(`contact_id`)는 넣지 않는다 — `advance` 가
+#: 그 둘을 안 바꾸고, 되돌리기가 그 둘을 건드릴 까닭도 없다.
+#:
+#: **칸이 늘면 여기에도 넣는다.** 빠진 칸은 되돌릴 때 기록 뒤의 값으로 남는다 —
+#: 예를 들어 다음 예정일만 옛날로 돌아가고 단계는 그대로인 시퀀스가 생긴다.
+STATE_FIELDS = ("batch_id", "stage", "status", "day1_sent_at", "last_sent_at",
+                "next_stage", "next_due_date", "stopped_reason")
+
+
+def snapshot(seq: Optional[SendSequence]) -> Optional[dict]:
+    """시퀀스의 지금 모습. 시퀀스가 없으면 `None`.
+
+    글자로 옮겨 적을 수 있는 값만 담는다(번호·글자·`None`) — 부르는 쪽이 JSON
+    으로 활동 줄에 남긴다(`ContactActivity.sequence_trace`).
+    """
+    if seq is None:
+        return None
+    return {name: getattr(seq, name) for name in STATE_FIELDS}
+
+
+def restore(db: Session, seq: SendSequence, state: dict) -> SendSequence:
+    """`snapshot` 으로 적어 둔 모습으로 **그대로** 되돌린다.
+
+    단계 사다리를 여기서 다시 계산하지 않는다 — 되돌리는 것은 '그때 어땠나' 를
+    도로 놓는 일이지 새로 판단하는 일이 아니다. 다음 예정일도 적어 둔 날 그대로다:
+    그 날이 이미 지났으면 화면에 `밀림` 으로 서는 것이 맞다(기록을 적기 전에도
+    그렇게 서 있었다).
+    """
+    for name in STATE_FIELDS:
+        setattr(seq, name, state.get(name))
+    db.flush()
+    return seq
+
+
 def start_or_advance(db: Session, item: SendItem, job: SendJob,
                      rng: Optional[random.Random] = None) -> Optional[SendSequence]:
     """**앱이 보낸 건**이 성공했을 때 부른다.
@@ -296,10 +347,7 @@ def advance(db: Session, *, user_id: int, contact_id: int,
     `kind` 는 `SendJob.kind` 의 말이고 `stage` 는 `SendItem.stage` 의 말이다 —
     부르는 쪽이 자기 말로 바꾸지 않는다(`manual_send.AS_SEND` 가 옮긴다).
     """
-    seq = db.execute(
-        select(SendSequence).where(SendSequence.contact_id == contact_id)
-        .order_by(SendSequence.id.desc()).limit(1)
-    ).scalars().first()
+    seq = latest(db, contact_id)
 
     stage = stage or STAGE_DAY1
     sent_on = _as_date(sent_at) or _today()

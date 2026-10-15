@@ -73,11 +73,14 @@ const BASE = (function () {
   return out;
 })();
 
-/** 선택자 하나의 선언 덩어리. 같은 선택자가 여럿이면 뒤엣것이 이긴다. */
+/** 선택자 하나의 선언 덩어리. 같은 선택자가 여럿이면 뒤엣것이 이긴다.
+    **묶어 적은 규칙**(`#company-list …::before, #series-a-list …::before { … }`)의
+    맨 앞 선택자도 찾는다 — 같은 배지를 두 고르개가 함께 쓰려고 묶었다. */
 function rule(selector, where) {
   const text = where || BASE;
   const re = new RegExp(
-    "(?:^|[};])\\s*" + selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*\\{([^{}]*)\\}",
+    "(?:^|[};])\\s*" + selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") +
+    "\\s*(?:,[^{};]*)?\\{([^{}]*)\\}",
     "g");
   let m, last = null;
   while ((m = re.exec(text))) last = m[1];

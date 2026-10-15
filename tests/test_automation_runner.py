@@ -237,7 +237,9 @@ def test_spacing_splits_jobs_minutes_apart(db, users, fake):
 
 # ── 7·8. 풀리는 순간 ─────────────────────────────────────────────────────────
 
-def test_release_prunes_and_only_the_sender_device_gets_it(client, db, users, fake):
+def test_release_prunes_and_only_the_sender_device_gets_it(client, db, users, fake,
+                                                          monkeypatch):
+    from app import clock
     from app.services import scheduled_send
 
     _turn_on(db, users)
@@ -252,6 +254,11 @@ def test_release_prunes_and_only_the_sender_device_gets_it(client, db, users, fa
     assert statuses[0][0] == "canceled" and "결과를 적었습니다" in statuses[0][1]
     assert statuses[1][0] == "pending"
 
+    # 풀린 직후에 받으러 온다. 시계를 그 자리에 둔다 — 실제 시계로 받으면
+    # 예약 시각(10/14 14:00)이 지난 날에는 `expire_missed` 가 회차를 되돌려
+    # 아무도 못 받는다(날짜가 지나면 깨지는 시험이 된다).
+    monkeypatch.setattr(clock, "now",
+                        lambda: _aware(datetime(2026, 10, 14, 14, 0, 30)))
     kinds = {"kinds": "deal_intro,ir_delivery,sourcing_intro,test_send"}
     assert client.get("/api/agent/poll", params=kinds,
                       headers=auth(DEMO_TOKEN)).status_code == 204
