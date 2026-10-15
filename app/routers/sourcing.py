@@ -276,6 +276,9 @@ def sourcing_page(request: Request, db: Session = Depends(get_db),
         # 하나뿐이다(투자사 관리 현황과 이어진 갈래).
         "share_bucket": series_a_share.BUCKET,
         "share_topic": series_a_share.KIND,
+        # 그 탭에서만 표 맨 왼쪽에 **고르는 체크박스 칸**이 선다 — 단추가 체크한
+        # 참여 분만 싣는다(`sourcing.html`). 다른 탭에는 고른 것을 쓸 곳이 없다.
+        "picking": selected == series_a_share.BUCKET,
         "total": sum(t["count"] for t in tabs),
         # 이름을 못 바꾼 까닭. 조용히 되돌아오면 왜 그대로인지 알 수 없다.
         "msg": msg,

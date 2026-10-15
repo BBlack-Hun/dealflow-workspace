@@ -35,11 +35,28 @@ NAME_IS_A_BUCKET`)이고, 고르는 차례도 같다: 갈래 문구 > 갈래 없
 이번 목록에서 빠진다(조용히 빼지 않는다: 미리보기 경고 · 발송 응답의 `skipped`).
 화면의 [이미 이 기업들을 받은 분 제외]를 끄면(`include_shared`) 그대로 다 보낸다.
 
+## 사람마다 몇 곳 — 본인이 공유한 딜은 빼고 앞에서부터 N개
+
+딜 소싱 네트워크로 받은 딜은 **그 딜을 넘겨 준 심사역 본인**도 이 갈래에 있다.
+자기가 준 딜을 되받으면 결례라, 그 분께는 **늘** 뺀다(켜고 끄는 칸이 없다 —
+`is_own`). 그리고 한 사람에게는 **사람당 N개**(기본 2 — `PER_PERSON_DEFAULT`)만
+간다. 그래서 화면에서 기업을 3~4개 고르면 사람마다 ① 본인이 공유한 기업 ②
+이미 받은 기업(제외를 켰을 때)을 빼고 **고른 차례 앞에서부터 N개**가 나간다
+(`plan`). 모자라면 남은 만큼(1개도 간다), 하나도 안 남으면 그 분은 빠진다
+(`NOTHING_LEFT_NOTE`). 기록(`record`)은 **실제로 나간 기업만** 적는다.
+
+본인인지는 `공유 심사역`(`홍길동 이사` 처럼 직함까지 적힌 자유 글자)과 받는
+분의 이름을 직함 · 존칭 · 띄어쓰기를 떼고 견주고(`person_keys`), **회사가 양쪽에
+다 있으면 회사도 같아야 한다**(`firm_key` — `deal_history._key` 와 같은 손).
+한쪽 회사가 비었으면 이름만으로 본다. 이름은 같은데 회사가 다르면 동명이인이다 —
+본인으로 보지 않는다.
+
 이름 · 회사 · 기업은 전부 화면에서 오는 값이다 — 여기에 적힌 실명은 없다(공개 저장소).
 """
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from sqlalchemy import select
@@ -47,7 +64,7 @@ from sqlalchemy.orm import Session
 
 from ..models import (SendItem, SendJob, SeriesACompany, SeriesAShare,
                       SourcingContact, User)
-from . import deal_numbers, sourcing_msg
+from . import deal_history, deal_numbers, room_name, sourcing_msg
 from . import message_composer as mc
 from .sourcing_sync import SYNC_BUCKET
 
@@ -80,8 +97,24 @@ SAMPLE_SLOT = "(고른 기업이 이 자리에 기업마다 한 덩어리씩 들
 
 #: 받는 분이 이 갈래가 아닐 때 — 미리보기 경고 · 발송에서 뺀 이유.
 NOT_BUCKET_NOTE = f"{LABEL}는 '{BUCKET}' 갈래에만 보냅니다 — 뺐습니다"
-#: 고른 기업을 이미 다 받은 분 — 미리보기 경고 · 발송에서 뺀 이유.
-ALL_SHARED_NOTE = "고른 기업을 모두 이미 받은 분입니다 — 이번 목록에서 뺐습니다"
+#: 본인이 공유한 기업 · 이미 받은 기업을 빼고 나니 **보낼 기업이 하나도 없는** 분 —
+#: 미리보기 경고 · 발송에서 뺀 이유(`skipped`).
+NOTHING_LEFT_NOTE = "보낼 기업 없음 (본인 공유/이미 받음)"
+
+#: 사람당 보낼 기업 수 — 기본 · 범위. **화면 기본값과 같아야 한다**
+#: (`deals.html` 의 `#sa-per-person`). 위 끝은 한 번에 고를 수 있는 기업 수와 같다.
+PER_PERSON_DEFAULT = 2
+PER_PERSON_MIN = 1
+PER_PERSON_MAX = mc.MAX_COMPANIES_PER_SEND
+
+#: 기업을 그 분 문구에서 뺀 까닭 — 미리보기의 `뺀 기업` 줄에 그대로 선다.
+OWN_REASON = "본인이 공유한 딜"
+GOT_REASON = "이미 받음"
+
+#: 받는 분이 실제로 있는데 보낼 기업이 없을 때 기업 자리에 서는 말(미리보기만 —
+#: 그 분은 발송 목록에서 빠진다). 기본 문구의 `SAMPLE_SLOT` 이 서면 무엇이 나갈지
+#: 아직 모르는 글처럼 읽힌다.
+NOTHING_SLOT = f"({NOTHING_LEFT_NOTE} — 이 분은 이번 목록에서 빠집니다)"
 
 # 글을 다 짓고 나서 기업 덩어리를 끼우는 표시. 인사말 · 문구가 지나는 치환
 # (`message_composer.render_template` — `{직함}` · 존칭 다듬기)을 **기업 글은
@@ -324,19 +357,211 @@ def shared_companies(db: Session, contact_ids: Iterable[int]) -> Dict[int, List[
             for contact_id, got in by_contact.items()}
 
 
-def split(contact_id: int, companies: Sequence[SeriesACompany],
-          got: Dict[int, Set[int]]) -> Tuple[List[SeriesACompany], List[SeriesACompany]]:
-    """(아직 안 받은 기업, 이미 받은 기업) — 고른 차례는 그대로."""
-    have = got.get(contact_id, set())
-    fresh = [c for c in companies if c.id not in have]
-    old = [c for c in companies if c.id in have]
-    return fresh, old
+def _names(rows: Sequence[SeriesACompany]) -> str:
+    return ", ".join((c.name or "").strip() for c in rows)
 
 
 def partial_note(old: Sequence[SeriesACompany]) -> str:
     """일부를 이미 받은 분 — 미리보기 경고."""
-    names = ", ".join((c.name or "").strip() for c in old)
-    return f"이미 받은 기업 {len(old)}곳은 이 분 문구에서 뺐습니다: {names}"
+    return f"이미 받은 기업 {len(old)}곳은 이 분 문구에서 뺐습니다: {_names(old)}"
+
+
+def own_note(own: Sequence[SeriesACompany]) -> str:
+    """본인이 공유한 기업이 고른 것에 든 분 — 미리보기 경고."""
+    return f"{OWN_REASON} {len(own)}곳은 이 분 문구에서 뺐습니다: {_names(own)}"
+
+
+def resend_note(old: Sequence[SeriesACompany]) -> str:
+    """제외를 끄고 이미 받은 기업을 다시 보내는 분 — 미리보기 경고."""
+    return f"이미 받은 기업 {len(old)}곳도 다시 보냅니다: {_names(old)}"
+
+
+def per_person_hint(per_person: int = PER_PERSON_DEFAULT) -> str:
+    """고르개 옆 안내 — 몇 개를 고르면 사람마다 몇 개가 가는지.
+
+    고를 개수는 `N ~ 2N`(10개 한도)로 권한다 — 본인 공유 · 이미 받은 기업을 빼고도
+    대개 N개가 남는 폭이다. **화면도 같은 식으로 고쳐 쓴다**(`deals.js` 의
+    `perPersonHint`) — 칸을 바꾸면 이 글도 따라 바뀐다.
+    """
+    top = min(per_person * 2, PER_PERSON_MAX)
+    span = f"{per_person}~{top}" if top > per_person else f"{per_person}"
+    return (f"기업을 {span}개 고르면 사람마다 본인 공유·이미 받은 기업을 빼고 "
+            f"앞에서부터 {per_person}개씩 나갑니다.")
+
+
+def over_reason(per_person: int) -> str:
+    """앞의 N개가 다 차서 이 분께는 이번에 안 가는 기업 — `뺀 기업` 줄의 까닭."""
+    return f"사람당 {per_person}개 — 이번엔 안 보냄"
+
+
+def short_note(per_person: int, sent: int) -> str:
+    """남은 기업이 N개보다 적어 그만큼만 가는 분 — 미리보기 경고(그래도 보낸다)."""
+    return f"사람당 {per_person}개 중 {sent}개만 나갑니다 — 본인 공유 · 이미 받은 기업을 빼니 모자랍니다"
+
+
+# ── 본인이 공유한 딜 ────────────────────────────────────────────────────────
+#
+# `공유 심사역` 칸은 사람이 시트에 손으로 적은 글자다 — `홍길동 이사` ·
+# `홍길동 이사님` · `홍길동이사` · `홍길동 이사(가나벤처스)` 처럼 온다. 딜 소싱 명단의
+# 이름 칸에도 직함이 섞여 있다(`message_composer.name_carries_title`). 그래서 양쪽
+# 모두 같은 손으로 직함 · 존칭 · 괄호 · 띄어쓰기를 떼고 견준다.
+
+#: 이름 **뒤에 붙어 온** 직함 — 띄어 쓴 낱말은 `room_name.looks_like_title` 이
+#: 가리고(방 이름 어휘 + 아래 낱말), 붙여 쓴 것은 이 목록의 꼬리를 뗀다.
+#: 방 이름 어휘를 넓히지 않으려고(`room_name.looks_like_title` 머리말) 여기서만 더한다.
+_EXTRA_TITLES = mc._GREETING_TITLE_WORDS + ("대표이사", "씨")
+_GLUED_TITLES = tuple(sorted(set(room_name._TITLE_WORDS + _EXTRA_TITLES),
+                             key=len, reverse=True))
+#: 한 칸에 여럿이 적힌 경우(`가 이사, 나 팀장`)를 사람마다 가른다. `/` 는 가르지
+#: 않는다 — `이사/변호사` 처럼 한 사람의 겸직을 잇는 데 쓴다.
+_PEOPLE_SPLIT = re.compile(r"[,;&\n·ㆍ]|\s및\s")
+_BRACKETS = re.compile(r"\([^)]*\)|\[[^\]]*\]|（[^）]*）")
+
+
+def _is_title(token: str) -> bool:
+    head = token.split("/")[0].strip()
+    if not head.rstrip("님"):
+        return True                    # `님` 하나만 떨어져 있다
+    return room_name.looks_like_title(head, _EXTRA_TITLES)
+
+
+def person_key(raw: Optional[str]) -> str:
+    """사람 한 명의 견줄 이름 — 직함 · 존칭 · 괄호 · 띄어쓰기를 뗀다. 못 짓으면 빈 글자.
+
+    `홍길동 이사님` · `홍길동이사` · `홍길동 (가나벤처스)` → `홍길동`. 붙여 쓴 직함은
+    **두 글자 이상 남을 때만** 뗀다 — `김이사` 를 `김` 으로 자르면 아무나와 맞는다.
+    """
+    text = room_name.normalize_space(_BRACKETS.sub(" ", raw or ""))
+    if not text:
+        return ""
+    tokens = text.split(" ")
+    while len(tokens) > 1 and _is_title(tokens[-1]):
+        tokens.pop()
+    key = "".join(tokens).rstrip("님")
+    # `홍길동상무이사` 처럼 둘이 붙어 오기도 한다 — 더 뗄 것이 없을 때까지.
+    while True:
+        hit = next((t for t in _GLUED_TITLES
+                    if key.endswith(t) and len(key) - len(t) >= 2), None)
+        if hit is None:
+            break
+        key = key[:-len(hit)]
+    return key.lower()
+
+
+def person_keys(raw: Optional[str]) -> Set[str]:
+    """`공유 심사역` 칸의 사람들 — 한 칸에 둘이 적혀 있으면 둘 다."""
+    keys = {person_key(part) for part in _PEOPLE_SPLIT.split(raw or "")}
+    # 직함만 떨어져 남은 조각(`… , 이사`)은 사람이 아니다.
+    return {k for k in keys if k and not _is_title(k)}
+
+
+def firm_key(raw: Optional[str]) -> str:
+    """견줄 회사 이름 — `(주)` · 띄어쓰기 · 대소문자(`deal_history._key` 와 같은 손)."""
+    return deal_history._key(raw)
+
+
+def is_own(row: SeriesACompany, contact) -> bool:
+    """이 기업은 **이 분이 공유해 준 딜**인가.
+
+    이름(`person_keys` ↔ 받는 분 이름)이 같아야 하고, **회사가 양쪽에 다 있으면**
+    회사도 같아야 한다. 한쪽 회사가 비었으면(대개 줄의 `회사` 칸이 비었다) 이름만으로
+    본다 — 견줄 것이 없을 뿐 어긋난 것은 아니다. 이름이 같아도 회사가 다르면
+    동명이인으로 보고 **본인으로 보지 않는다.**
+    """
+    who = person_key(getattr(contact, "name", ""))
+    if not who or who not in person_keys(row.shared_by):
+        return False
+    row_firm = firm_key(row.source_firm)
+    their_firm = firm_key(getattr(contact, "firm", ""))
+    if not row_firm or not their_firm:
+        return True
+    return row_firm == their_firm
+
+
+def own_by_company(db: Session, rows: Sequence[SeriesACompany]) -> Dict[int, List[int]]:
+    """기업 → **그 딜을 공유해 준** 이 갈래 심사역 번호들. 고르개의 `본인 공유 N명 제외`.
+
+    갈래의 줄 전부(불참여도)를 본다 — 화면이 지금 고른 받는 분과 견준다.
+    """
+    people = db.execute(select(SourcingContact).where(
+        SourcingContact.bucket == BUCKET)).scalars().all()
+    out: Dict[int, List[int]] = {}
+    for row in rows:
+        if not person_keys(row.shared_by):
+            continue
+        ids = sorted(p.id for p in people if is_own(row, p))
+        if ids:
+            out[row.id] = ids
+    return out
+
+
+# ── 사람마다 무엇을 보내나 ───────────────────────────────────────────────────
+
+@dataclass
+class Plan:
+    """한 분께 나갈 기업 · 뺀 기업(까닭과 함께) — 고른 차례 그대로."""
+
+    send: List[SeriesACompany] = field(default_factory=list)
+    #: (기업, 까닭) — `OWN_REASON` · `GOT_REASON` · `over_reason(N)`.
+    dropped: List[Tuple[SeriesACompany, str]] = field(default_factory=list)
+    #: 이미 받았는데 제외를 꺼서 다시 가는 기업(`send` 의 일부).
+    resent: List[SeriesACompany] = field(default_factory=list)
+
+    def dropped_for(self, reason: str) -> List[SeriesACompany]:
+        return [c for c, why in self.dropped if why == reason]
+
+
+def plan(contact, companies: Sequence[SeriesACompany], got: Dict[int, Set[int]],
+         per_person: int, include_shared: bool = False) -> Plan:
+    """**이 분께 나갈 기업** — 고른 차례에서 ① 본인이 공유한 기업(늘) ② 이미 받은
+    기업(제외를 켰을 때)을 빼고 앞에서부터 `per_person` 개.
+
+    미리보기와 발송 목록 만들기가 **이 함수 하나**를 지난다 — 둘이 따로 고르면
+    미리보기에서 본 기업과 나가는 기업이 갈린다.
+    """
+    have = got.get(contact.id, set())
+    out = Plan()
+    for company in companies:
+        if is_own(company, contact):
+            out.dropped.append((company, OWN_REASON))
+        elif company.id in have and not include_shared:
+            out.dropped.append((company, GOT_REASON))
+        elif len(out.send) >= per_person:
+            out.dropped.append((company, over_reason(per_person)))
+        else:
+            out.send.append(company)
+            if company.id in have:
+                out.resent.append(company)
+    return out
+
+
+def plan_notes(p: Plan, per_person: int) -> List[str]:
+    """미리보기 경고 — 무엇을 왜 뺐는지. 조용히 빼지 않는다."""
+    notes = []
+    own = p.dropped_for(OWN_REASON)
+    if own:
+        notes.append(own_note(own))
+    got = p.dropped_for(GOT_REASON)
+    if got:
+        notes.append(partial_note(got))
+    if p.resent:
+        notes.append(resend_note(p.resent))
+    if not p.send:
+        notes.append(NOTHING_LEFT_NOTE + " — 이번 목록에서 뺐습니다")
+    elif len(p.send) < per_person and (own or got):
+        notes.append(short_note(per_person, len(p.send)))
+    return notes
+
+
+def plan_view(p: Plan) -> dict:
+    """미리보기 응답에 싣는 모양 — 화면이 `보내는 기업` · `뺀 기업` 줄을 그린다."""
+    return {
+        "send": [{"id": c.id, "name": (c.name or "").strip(),
+                  "label": deal_numbers.label(no)}
+                 for no, c in deal_numbers.numbered(list(p.send))],
+        "dropped": [{"id": c.id, "name": (c.name or "").strip(), "reason": why}
+                    for c, why in p.dropped],
+    }
 
 
 def record(db: Session, item: SendItem, contact_id: int,

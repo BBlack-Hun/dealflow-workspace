@@ -147,14 +147,20 @@ def pick_rows(db: Session) -> List[dict]:
       · `sent_to` — 이 기업을 이미 받은 심사역 번호들(대기 · 보낸 것). 화면이
         지금 고른 받는 분과 견주어 `이미 받은 분 N명` 을 세고, 고른 기업을 다
         받은 분을 뺀다(`deals.js`).
+      · `own_by` — **이 딜을 공유해 준** 시리즈 A 갈래 심사역 번호들
+        (`series_a_share.own_by_company`). 그 분께는 이 기업이 늘 빠진다 — 화면이
+        지금 고른 받는 분과 견주어 `본인 공유 N명 제외` 를 센다.
     """
     known = ir_names(db)
     sent = series_a_share.contacts_by_company(db)
+    companies = db.execute(select(SeriesACompany)).scalars().all()
+    own = series_a_share.own_by_company(db, companies)
     rows = []
-    for c in db.execute(select(SeriesACompany)).scalars().all():
+    for c in companies:
         data = row_dict(c, known)
         data["pitch"] = series_a_share.pitch_of(c)
         data["sent_to"] = sorted(sent.get(c.id, ()))
+        data["own_by"] = own.get(c.id, [])
         rows.append(data)
     return sort_rows(rows)
 

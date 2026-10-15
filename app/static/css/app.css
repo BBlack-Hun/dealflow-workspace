@@ -954,6 +954,16 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
    채 남아 있어(고른 사람은 언제나 보인다) 흐리게만 둔다 — 발송 · 미리보기 대상에는
    안 들어간다(`deals.js` 의 `isShareCovered`). */
 .pick-card.share-covered { opacity: .55; }
+/* 사람당 보낼 기업 수 — 고르개 위 한 줄(칸 · 안내). 좁은 화면에서는 안내가 아래로 내린다. */
+#sa-per-person-line { margin: 6px 0 2px; gap: 10px; }
+.sa-per-person { width: 56px; padding: 4px 6px; border: 1px solid var(--line, #e5e7eb);
+                 border-radius: 6px; font-size: 13px; text-align: right; }
+/* 미리보기 위 — 이 분께 나가는 기업 · 뺀 기업(까닭). 본인 공유는 도드라지게. */
+.sa-plan { margin: 6px 0 8px; padding: 8px 10px; border: 1px solid var(--line, #e5e7eb);
+           border-radius: 8px; font-size: 12.5px; line-height: 1.6; background: #fafafa; }
+.sa-plan b { margin-right: 4px; }
+.sa-drop { color: var(--muted, #6b7280); }
+.sa-drop.own { color: #b45309; font-weight: 600; }
 
 
 /* ── 문구 선택기 (발송 화면) ───────────────────────────────── */
@@ -2818,3 +2828,12 @@ a.guard-go:hover { background: #1e4fd0; text-decoration: none; }
 /* 회사명이 든 후보를 먼저 보이게(`startup_room.html` 의 `.room-pick.named` 와 같은 뜻). */
 .room-cand.named .room-cand-title { color: var(--brand); font-weight: 600; }
 #room-pick-table .room-input { width: 240px; min-width: 180px; }
+
+/* ── 딜 소싱 › 시리즈 A 갈래 — 맨 왼쪽 고르는 칸 ──────────────────────────
+   [Series A 딜 소개]로 넘길 분을 고른다(`sourcing.html`). 체크박스만 서는 좁은
+   칸이라 가운데에 둔다. 안 고르면 그 단추가 잠긴다 — `<a>` 라 `:disabled` 가
+   없어 `aria-disabled` 로 잠근 모양을 낸다(눌림은 화면 스크립트가 막는다). */
+.grid-table th.pick-col, .grid-table td.pick-col { text-align: center; padding-left: 4px;
+  padding-right: 4px; }
+.grid-table td.pick-col input, .grid-table th.pick-col input { margin: 2px 0 0; cursor: pointer; }
+a.primary-btn[aria-disabled="true"] { background: #b8c4d8; cursor: not-allowed; }

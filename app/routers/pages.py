@@ -224,6 +224,11 @@ def deals_page(
         "share_bucket": series_a_share.BUCKET,
         "share_topic": series_a_share.KIND,
         "share_label": series_a_share.LABEL,
+        # 사람당 보낼 기업 수(기본 · 한도)와 그 옆 안내 — 화면이 칸을 바꾸면 같은
+        # 식으로 고쳐 쓴다(`deals.js` 의 `perPersonHint`).
+        "share_per_person": series_a_share.PER_PERSON_DEFAULT,
+        "share_per_person_max": series_a_share.PER_PERSON_MAX,
+        "share_per_person_hint": series_a_share.per_person_hint(),
         "no_reaction_ids": no_reaction_ids,
         # 메일 채널은 설정이 있어야 고를 수 있다.
         # 고를 수 있는데 나가지 않는 것이 제일 나쁘다.

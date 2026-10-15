@@ -117,28 +117,38 @@ function sourcingCard(id, name, bucket, assignee, received) {
 
 // Series A 딜 공유의 **기업 고르개**(`#series-a-list`) — IR 기업 현황 ›
 // `Series A 이상 기업` 탭의 줄. 셋째 값은 그 기업을 **이미 받은** 딜 소싱 명단
-// 번호들(`data-sent-to` — 서버가 대기 · 보낸 것만 센다).
+// 번호들(`data-sent-to` — 서버가 대기 · 보낸 것만 센다), 넷째 값은 **그 딜을
+// 공유해 준** 분 번호들(`data-own-by` — `series_a_share.own_by_company`).
 //   301 — 가소싱(101)이 받았다
 //   302 — 아무도 안 받았다
 //   303 — 가소싱(101) · 다소싱(103) 둘 다 받았다
+//   304 — 다소싱(103)이 공유해 준 딜
+//   305 — 가소싱(101)이 공유해 준 딜
+//   306 — 아무도 안 받았다
 const SERIES_A = [
-  [301, "가샘플바이오", "101"],
-  [302, "나샘플로보", ""],
-  [303, "다샘플푸드", "101,103"]
+  [301, "가샘플바이오", "101", ""],
+  [302, "나샘플로보", "", ""],
+  [303, "다샘플푸드", "101,103", ""],
+  [304, "라샘플헬스", "", "103"],
+  [305, "마샘플에너지", "", "101"],
+  [306, "바샘플소재", "", ""]
 ];
 // 이 글을 받는 **하나뿐인** 갈래 — 서버가 칩에 실어 준다(`series_a_share.BUCKET`).
 const SHARE_BUCKET = SOURCING[0][2];
 
-function seriesACard(id, name, sentTo) {
+function seriesACard(id, name, sentTo, ownBy) {
   const cb = el("input", {
     id: "sacb-" + id, class: "sa-cb", value: String(id), "data-name": name
   });
   const got = el("span", { class: "tag warn sa-got" });
   got.hidden = true;
+  const own = el("span", { class: "tag warn sa-own" });
+  own.hidden = true;
   return el("label", {
-    class: "pick-card", "data-sent-to": sentTo,
+    class: "pick-card", "data-sent-to": sentTo, "data-own-by": ownBy || "",
     "data-search": name.toLowerCase()
-  }, [cb, el("div", { class: "pick-body" }, [el("div", { class: "pick-name" }, [got])])]);
+  }, [cb, el("div", { class: "pick-body" },
+             [el("div", { class: "pick-name" }, [got, own])])]);
 }
 
 // ① 소개할 기업 목록. **화면에 그려진 차례**가 곧 고르는 차례가 아니다 —
@@ -231,9 +241,16 @@ function buildDom(people) {
   // IR 기업 검색 줄 — Series A 딜 공유에서는 고르개째 감춘다(`syncCompanyPanel`).
   const companySearchRow = el("div", { id: "company-picker-search", class: "picker-search" });
   // Series A 딜 공유의 기업 고르개 — 같은 ① 칸 안에 숨어 있다가 그 글을 고르면 선다.
-  const seriesACards = SERIES_A.map(function (r) { return seriesACard(r[0], r[1], r[2]); });
+  const seriesACards = SERIES_A.map(function (r) {
+    return seriesACard(r[0], r[1], r[2], r[3]);
+  });
   const seriesAList = el("div", { id: "series-a-list", class: "card-list" }, seriesACards);
+  // 사람당 보낼 기업 수 — **진짜 입력칸**(값 · `max` 를 읽는다). 기본 2(`pages.py`).
+  const perPerson = el("input", { id: "sa-per-person", type: "number", min: "1", max: "10",
+                                  value: "2" });
+  const perPersonHint = el("span", { id: "sa-per-person-hint", class: "hint" });
   const seriesAPicker = el("div", { id: "series-a-picker" }, [
+    perPerson, perPersonHint,
     el("input", { id: "sa-pick-search", type: "search" }),
     el("input", { id: "sa-only-picked", type: "checkbox" }),
     el("input", { id: "sa-only-fresh", type: "checkbox" }),

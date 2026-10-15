@@ -56,10 +56,18 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   // 받은 분**은 [이미 이 기업들을 받은 분 제외](기본 켬)로 빠진다 — 고른 채로
   // 두되(고른 사람은 언제나 보인다) 흐리게 하고 보내지 않는다. 일부만 받은 분은
   // 서버가 받은 기업을 빼고 짓는다. 끄면 `include_shared` 가 실려 다 보낸다.
+  //
+  // **본인이 공유한 딜**(`data-own-by`)은 그 분께 늘 빠진다(켜고 끄는 칸이 없다).
+  // 그리고 사람마다 **사람당 N개**(`#sa-per-person`, 기본 2)만 간다 — 본인 공유 ·
+  // 이미 받은 기업을 빼고 고른 차례 앞에서부터. 무엇을 보낼지는 서버가 정한다
+  // (`series_a_share.plan`); 여기서는 **보낼 기업이 하나도 안 남는 분**을 빼고
+  // (`isShareCovered`) 몇 곳이 빠지는지 말한다.
   var SHARE = "sourcing_deal_share";
   var shareChip = document.querySelector('#sourcing-topic .chip[data-value="' + SHARE + '"]');
   var SHARE_BUCKET = (shareChip && shareChip.getAttribute("data-bucket")) || "";
   var SHARE_LABEL = "Series A 딜 공유";
+  // 미리보기 `뺀 기업` 줄에서 본인 공유를 도드라지게 — 서버의 `OWN_REASON` 글자.
+  var OWN_REASON = "본인이 공유한 딜";
   var excludeShared = true;
   var sourcingTopic = INTRO;
   var includeReceived = false;
@@ -85,14 +93,40 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   // 것만 센다)를 한 번 읽어 둔다. 이 화면을 연 뒤에 나간 것은 서버가 발송 때
   // 한 번 더 본다(`create_send_list` — 이미 받은 기업은 빼고, 다 받은 분은 뺀다).
   var SENT_TO = {};
+  // 기업 → **그 딜을 공유해 준** 심사역 번호들(`data-own-by` — 서버가 이름 ·
+  // 회사로 맞춘다: `series_a_share.own_by_company`).
+  var OWN_BY = {};
+  function idSet(raw) {
+    var set = {};
+    (raw || "").split(",").forEach(function (v) { v = v.trim(); if (v) set[v] = true; });
+    return set;
+  }
   Array.prototype.slice.call(document.querySelectorAll("#series-a-list .sa-cb"))
     .forEach(function (cb) {
       var card = cb.closest(".pick-card");
-      var raw = (card && card.getAttribute("data-sent-to")) || "";
-      var set = {};
-      raw.split(",").forEach(function (v) { v = v.trim(); if (v) set[v] = true; });
-      SENT_TO[cb.value] = set;
+      SENT_TO[cb.value] = idSet(card && card.getAttribute("data-sent-to"));
+      OWN_BY[cb.value] = idSet(card && card.getAttribute("data-own-by"));
     });
+  // ── 사람당 보낼 기업 수 ─────────────────────────────────────────────────
+  // 서버 기본값 · 한도와 같다(`series_a_share.PER_PERSON_DEFAULT` · `_MAX`).
+  // 칸이 비거나 엉뚱한 값이면 기본값으로 읽는다 — 서버는 1~10 밖이면 멈춘다.
+  var PER_PERSON_DEFAULT = 2;
+  var perPersonBox = document.getElementById("sa-per-person");
+  var PER_PERSON_MAX = (perPersonBox && parseInt(perPersonBox.getAttribute("max"), 10))
+    || MAX_COMPANIES;
+  function readPerPerson() {
+    var n = parseInt(perPersonBox ? perPersonBox.value : "", 10);
+    if (!(n >= 1)) n = PER_PERSON_DEFAULT;
+    return Math.min(n, PER_PERSON_MAX);
+  }
+  var perPerson = readPerPerson();
+  // 고르개 옆 안내 — 서버가 처음 그린 글(`series_a_share.per_person_hint`)과 같은 식.
+  function perPersonHint(n) {
+    var top = Math.min(n * 2, PER_PERSON_MAX);
+    var span = top > n ? n + "~" + top : String(n);
+    return "기업을 " + span + "개 고르면 사람마다 본인 공유·이미 받은 기업을 빼고 " +
+      "앞에서부터 " + n + "개씩 나갑니다.";
+  }
   // 지금 고른 Series A 기업 번호(차례는 상관없다 — 견주기만 한다).
   function pickedSeriesA() {
     if (!isShare()) return [];
@@ -103,16 +137,28 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     var cb = card && card.querySelector(".contact-cb");
     return cb ? String(cb.value) : "";
   }
-  // 이 분이 고른 기업 중 몇 곳을 이미 받았나.
-  function sharedCount(card, picks) {
+  // 이 분께 고른 기업 중 — 본인이 공유한 곳(`own`, 늘 뺀다) · 이미 받은 곳
+  // (`got`, 제외를 켰을 때 뺀다) · 남는 곳(`left`) · 실제로 갈 곳(`send` — 사람당 N개).
+  // 서버의 `series_a_share.plan` 과 같은 셈이다(본인 공유가 이미 받음보다 먼저).
+  function shareCounts(card, picks) {
     var id = cardId(card);
-    return picks.filter(function (p) { return (SENT_TO[p] || {})[id]; }).length;
+    var out = { own: 0, got: 0, left: 0, send: 0 };
+    picks.forEach(function (p) {
+      if ((OWN_BY[p] || {})[id]) { out.own += 1; return; }
+      if ((SENT_TO[p] || {})[id]) {
+        out.got += 1;
+        if (excludeShared) return;
+      }
+      out.left += 1;
+    });
+    out.send = Math.min(out.left, perPerson);
+    return out;
   }
-  // 고른 기업을 **모두** 이미 받아 이번에 빠지는 분인가(제외를 켰을 때만).
+  // 본인 공유 · 이미 받은 기업을 빼고 나니 **보낼 기업이 없어** 이번에 빠지는 분인가.
   function isShareCovered(card, picks) {
-    if (!isShare() || !excludeShared || !card) return false;
+    if (!isShare() || !card) return false;
     picks = picks || pickedSeriesA();
-    return picks.length > 0 && sharedCount(card, picks) === picks.length;
+    return picks.length > 0 && shareCounts(card, picks).left === 0;
   }
   // 요약줄·확인창이 부르는 이름. 리마인드를 `딜 소싱 제안` 이라고 적으면 무엇을
   // 보내는지 마지막 확인창에서도 안 갈린다.
@@ -338,6 +384,14 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
         tag.hidden = !got;
         tag.textContent = got ? "이미 받은 분 " + got + "명" : "";
       }
+      // 지금 고른 받는 분 중 **이 딜을 공유해 준** 분 — 그 분께는 늘 빠진다.
+      var ownBy = OWN_BY[cb.value] || {};
+      var own = who.filter(function (id) { return ownBy[id]; }).length;
+      var ownTag = card.querySelector(".sa-own");
+      if (ownTag) {
+        ownTag.hidden = !own;
+        ownTag.textContent = own ? "본인 공유 " + own + "명 제외" : "";
+      }
     });
     if (note) {
       note.hidden = !(q || pickedOnly || freshOnly);
@@ -381,9 +435,10 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     // `이번 달 딜 받음 N명 제외` 가 이 수다.
     var receivedInView = 0;
 
-    // Series A 딜 공유 — 고른 기업을 다 받은 분(`covered`) · 일부 받은 분 수.
+    // Series A 딜 공유 — 보낼 기업이 안 남는 분(`covered`) · 본인 공유가 든 분 ·
+    // 이미 받은 기업이 든 분 수.
     var picks = pickedSeriesA();
-    var coveredInView = 0, partialInView = 0, sharedInView = 0;
+    var coveredInView = 0, ownInView = 0, gotInView = 0;
 
     var list = activeList();
     (list ? list.querySelectorAll(".pick-card") : []).forEach(function (card) {
@@ -401,16 +456,19 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       var excluded = isExcluded(card);
       if (mode === "sourcing" && hit && inBucket && inAssignee &&
           card.getAttribute("data-received") === "1") receivedInView += 1;
-      // 고른 기업을 모두 받아 이번에 빠지는 분 — **조건에 안 맞는 것으로 친다**
-      // ([전체선택]이 안 켠다). 이미 고른 채면 그대로 보이되 흐리다(보내지 않는다).
-      var nShared = (isShare() && !excluded && picks.length) ? sharedCount(card, picks) : 0;
+      // 본인 공유 · 이미 받은 기업을 빼니 보낼 기업이 없어 이번에 빠지는 분 —
+      // **조건에 안 맞는 것으로 친다**([전체선택]이 안 켠다). 이미 고른 채면
+      // 그대로 보이되 흐리다(보내지 않는다).
+      var counts = (isShare() && !excluded && picks.length) ? shareCounts(card, picks) : null;
       var covered = !excluded && isShareCovered(card, picks);
-      if (isShare() && !excluded && hit && inBucket && inAssignee && nShared) {
-        sharedInView += 1;
-        if (nShared === picks.length) coveredInView += 1;
-        else partialInView += 1;
+      if (counts && hit && inBucket && inAssignee) {
+        if (covered) coveredInView += 1;
+        else {
+          if (counts.own) ownInView += 1;
+          if (counts.got) gotInView += 1;
+        }
       }
-      syncShareTag(card, nShared, picks.length, covered);
+      syncShareTag(card, counts, covered);
       card.classList.toggle("share-covered", covered);
       total += 1;
       // **조건에 맞는가(match)와 화면에 보이는가(visible)는 다르다.**
@@ -426,7 +484,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       if (picked && !matched && !excluded && !covered) outside += 1;
     });
     syncReceivedNote(receivedInView);
-    syncSharedNote(coveredInView, partialInView, sharedInView);
+    syncSharedNote(coveredInView, ownInView, gotInView);
 
     if (note) {
       if (q || pickedOnly || bucketFilter || assigneeFilter || groupFilter) {
@@ -555,34 +613,47 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       : "이번 달 딜 받음 " + count + "명 제외";
   }
 
-  // 카드의 `고른 기업 중 N곳 이미 받음` 딱지(Series A 딜 공유에서만).
-  function syncShareTag(card, n, of, covered) {
+  // 받는 분 카드의 딱지(Series A 딜 공유에서만) — 고른 기업 중 무엇이 빠지고
+  // 몇 곳이 가는지. 본인 공유 · 이미 받은 곳이 없으면 안 선다(모두 앞에서부터 N개).
+  function syncShareTag(card, counts, covered) {
     var tag = card.querySelector(".share-tag");
     if (!tag) return;
-    tag.hidden = !(isShare() && n);
+    tag.hidden = !(isShare() && counts && (counts.own || counts.got));
     if (tag.hidden) { tag.textContent = ""; return; }
-    tag.textContent = covered
-      ? "고른 기업 모두 이미 받음 — 이번엔 빠집니다"
-      : "고른 기업 중 " + n + "곳 이미 받음" +
-        (excludeShared ? " — 그 기업은 빼고 보냅니다" : " — 다시 보냅니다");
+    if (covered) {
+      tag.textContent = "보낼 기업 없음 (본인 공유/이미 받음) — 이번엔 빠집니다";
+      return;
+    }
+    var parts = [];
+    if (counts.own) parts.push("본인 공유 " + counts.own + "곳 빼고");
+    if (counts.got) {
+      parts.push(excludeShared ? "이미 받은 " + counts.got + "곳 빼고"
+                               : "이미 받은 " + counts.got + "곳도 다시");
+    }
+    tag.textContent = parts.join(" · ") + " — " + counts.send + "곳 보냅니다";
   }
 
   // `이미 이 기업들을 받은 분 제외` 줄 — 몇 명이 빠지고 몇 명이 덜 받는지 말한다.
   // 조용히 빼면 왜 사람이 적은지 모른다(이 달 딜 받음 줄과 같은 이유).
-  function syncSharedNote(covered, partial, shared) {
+  function syncSharedNote(covered, own, got) {
     var note = document.getElementById("shared-note");
     if (!note) return;
     note.hidden = !isShare();
     var text = document.getElementById("shared-count");
     if (!text || note.hidden) return;
     if (!pickedSeriesA().length) {
-      text.textContent = "기업을 고르면 이미 받은 분을 셉니다";
-    } else if (excludeShared) {
-      text.textContent = "고른 기업을 모두 받은 분 " + covered + "명 제외" +
-        (partial ? " · 일부 받은 분 " + partial + "명은 받은 기업을 빼고 보냅니다" : "");
-    } else {
-      text.textContent = "이미 받은 분 " + shared + "명에게도 고른 기업을 그대로 다시 보냅니다";
+      text.textContent = "기업을 고르면 본인 공유 · 이미 받은 분을 셉니다";
+      return;
     }
+    var parts = [];
+    if (covered) parts.push("보낼 기업 없는 분 " + covered + "명 제외");
+    if (own) parts.push("본인 공유 딜이 든 분 " + own + "명은 그 기업을 빼고");
+    if (got) {
+      parts.push(excludeShared ? "이미 받은 분 " + got + "명은 받은 기업을 빼고"
+                               : "이미 받은 분 " + got + "명에게도 받은 기업을 다시");
+    }
+    text.textContent = (parts.length ? parts.join(" · ") + " — " : "") +
+      "사람마다 앞에서부터 " + perPerson + "개씩 보냅니다";
   }
 
   var excludeBox = document.getElementById("exclude-shared");
@@ -590,6 +661,20 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     excludeShared = !!excludeBox.checked;
     updateCounts();
   });
+
+  // 사람당 보낼 기업 수 — 바꾸면 안내 · 딱지 · 미리보기가 따라온다. 칸을 비우거나
+  // 범위 밖 값을 넣으면 손을 뗄 때(`change`) 읽은 값으로 되돌려 적는다.
+  function syncPerPerson(fix) {
+    perPerson = readPerPerson();
+    if (fix && perPersonBox) perPersonBox.value = String(perPerson);
+    var hint = document.getElementById("sa-per-person-hint");
+    if (hint) hint.textContent = perPersonHint(perPerson);
+    updateCounts();
+  }
+  if (perPersonBox) {
+    perPersonBox.addEventListener("input", function () { syncPerPerson(false); });
+    perPersonBox.addEventListener("change", function () { syncPerPerson(true); });
+  }
 
   function resetSourcingTopic() {
     sourcingTopic = INTRO;
@@ -937,8 +1022,10 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       // 다른 방식은 빈 값이다(서버가 그 방식에서는 읽지 않는다).
       topic: mode === "sourcing" ? sourcingTopic : "",
       include_received: isRemind() && includeReceived,
-      // Series A 딜 공유 — 이미 받은 기업도 다시 보낼지([… 받은 분 제외]를 끈 것).
-      include_shared: isShare() && !excludeShared
+      // Series A 딜 공유 — 이미 받은 기업도 다시 보낼지([… 받은 분 제외]를 끈 것) ·
+      // 사람당 몇 개(서버가 1~10 밖이면 멈춘다).
+      include_shared: isShare() && !excludeShared,
+      per_person: perPerson
     };
   }
 
@@ -994,7 +1081,8 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       ? modeLabel() + " — 기업 목록 없이 문구만 나갑니다"
       : (mode === "ir" ? irSummaryNote()
                        : (nc > MAX_COMPANIES ? "기업은 최대 " + MAX_COMPANIES + "개까지"
-                          : (isShare() ? SHARE_LABEL + " — 고른 기업이 기업마다 한 덩어리로 들어갑니다"
+                          : (isShare() ? SHARE_LABEL + " — 사람마다 본인 공유·이미 받은 기업을 빼고 " +
+                                         "앞에서부터 " + perPerson + "개씩 나갑니다"
                                        : "")));
     if (mode === "ir") renderIrLinks();
 
@@ -1203,6 +1291,24 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   // (`ir_attach_list.js` — 클립보드가 없는 화면에서 어떻게 물러서는지도 거기 있다).
   function copyMessage(ta, btn) { window.IrAttach.copyText(ta, btn); }
 
+  // Series A 딜 공유 — 이 분께 **나가는 기업**과 **뺀 기업(까닭)**. 서버가 지은
+  // 그대로 적는다(`series_a_share.plan_view`) — 까닭 글자를 여기서 짓지 않는다.
+  function sharePlanHtml(p) {
+    var plan = p.series_a;
+    if (!plan) return "";
+    var send = (plan.send || []).map(function (c) {
+      return escapeHtml(c.label + " " + c.name);
+    }).join(" · ");
+    var dropped = (plan.dropped || []).map(function (c) {
+      return '<span class="sa-drop' + (c.reason === OWN_REASON ? " own" : "") + '">' +
+        escapeHtml(c.name) + " — " + escapeHtml(c.reason) + "</span>";
+    }).join(" · ");
+    return '<div class="sa-plan" data-testid="sa-plan">' +
+      '<div><b>보내는 기업</b> ' +
+      (send || '<span class="sa-drop own">없음 — 이번 목록에서 빠집니다</span>') + "</div>" +
+      (dropped ? '<div><b>뺀 기업</b> ' + dropped + "</div>" : "") + "</div>";
+  }
+
   function renderPreview(idx) {
     var p = lastPreviews[idx];
     if (!p) { previewArea.innerHTML = '<p class="muted">미리보기 없음</p>'; return; }
@@ -1226,6 +1332,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
         ' <span class="edited-flag" id="edited-flag" hidden>· 수정함</span></div>';
     previewArea.innerHTML =
       meta +
+      sharePlanHtml(p) +
       splitNotice(p) +
       '<textarea class="bubble-edit" id="bubble-edit" spellcheck="false"></textarea>' +
       '<div class="charcount" id="charcount"></div>' +
@@ -1485,7 +1592,8 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     var via = currentChannel() === "email" ? "이메일로 " : "";
     var what = mode === "ir"
       ? cids.length + "개 기업 IR 자료 전달"
-      : (isShare() ? SHARE_LABEL + " — " + cids.length + "개 기업"
+      : (isShare() ? SHARE_LABEL + " — " + cids.length + "개 기업 중 사람마다 " +
+                     perPerson + "개씩 (본인 공유 · 이미 받은 기업 빼고)"
          : (isFollowUp() ? modeLabel() + " 문구 (기업 목록 없음)"
                          : cids.length + "개 기업 딜소개"));
     var lastCheck = currentChannel() === "email"
