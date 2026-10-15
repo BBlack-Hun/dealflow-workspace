@@ -29,7 +29,13 @@ NAME_IS_A_BUCKET`)이고, 고르는 차례도 같다: 갈래 문구 > 갈래 없
 발송 목록을 만들 때 발송 건마다 `(기업, 사람)` 을 적는다(`record` →
 `models.SeriesAShare`). **받았는지는 그 발송 건의 상태가 정한다** — 대기 · 보내는
 중 · 보냄만 센다(`LIVE_ITEM`, `twin_send` 와 같은 규칙). 회차를 [중단]하면
-저절로 안 센다.
+저절로 안 센다. **아직 내보내지 않은(draft) 회차**의 대기 건은 만든 지 7일
+안에만 센다(`DRAFT_WINDOW_DAYS`) — 예약 시각을 놓쳐 서 있거나 버려진 목록이
+그 분을 영영 '받은 분' 으로 막지 않게(`_live_pairs`).
+
+사람이 미리보기에서 **고친 글**로 보내면 기록은 그 글에 실제로 든 기업만이다
+(`companies_in` — `[기업N] 기업명` 줄). 고른 기업과 고친 글이 갈려도 나간 글과
+기록이 같다.
 
 이미 받은 기업은 기본으로 **그 분 문구에서 뺀다** — 고른 기업을 모두 받은 분은
 이번 목록에서 빠진다(조용히 빼지 않는다: 미리보기 경고 · 발송 응답의 `skipped`).
@@ -46,10 +52,14 @@ NAME_IS_A_BUCKET`)이고, 고르는 차례도 같다: 갈래 문구 > 갈래 없
 (`NOTHING_LEFT_NOTE`). 기록(`record`)은 **실제로 나간 기업만** 적는다.
 
 본인인지는 `공유 심사역`(`홍길동 이사` 처럼 직함까지 적힌 자유 글자)과 받는
-분의 이름을 직함 · 존칭 · 띄어쓰기를 떼고 견주고(`person_keys`), **회사가 양쪽에
-다 있으면 회사도 같아야 한다**(`firm_key` — `deal_history._key` 와 같은 손).
-한쪽 회사가 비었으면 이름만으로 본다. 이름은 같은데 회사가 다르면 동명이인이다 —
-본인으로 보지 않는다.
+분의 이름을 직함 · 존칭 · 회사 이름 · 띄어쓰기를 떼고 견주고(`person_keys`),
+**회사가 양쪽에 다 있으면 회사도 같아야 한다**(`firm_canon` — 한영 · 약칭 표기를
+맞춘 뒤 같거나 한쪽이 다른 쪽의 앞부분). 한쪽 회사가 비었으면 이름만으로 본다.
+이름은 같은데 회사가 분명히 다르면 동명이인이다 — 본인으로 보지 않는다.
+
+짐작이 틀리는 줄은 탭의 `공유 심사역` 칸에서 사람이 딜 소싱 명단의 그 분으로
+**확정**한다(`SeriesACompany.shared_by_contact_id`). 확정한 줄은 짐작하지 않고 그
+번호만 본다.
 
 이름 · 회사 · 기업은 전부 화면에서 오는 값이다 — 여기에 적힌 실명은 없다(공개 저장소).
 """
@@ -57,14 +67,17 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from datetime import timedelta
 from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import set_committed_value
 
+from .. import clock
 from ..models import (SendItem, SendJob, SeriesACompany, SeriesAShare,
                       SourcingContact, User)
-from . import deal_history, deal_numbers, room_name, sourcing_msg
+from . import deal_history, deal_numbers, room_name, sourcing_msg, twin_send
 from . import message_composer as mc
 from .sourcing_sync import SYNC_BUCKET
 
@@ -90,6 +103,17 @@ PITCH_MAX = 120
 #: 받은 것으로 세는 발송 건 상태 — 나갔거나 · 나가는 중이거나 · 나갈 예정.
 #: (`services/twin_send.LIVE_ITEM` 과 같은 규칙: 실패 · 취소는 안 센다)
 LIVE_ITEM = ("pending", "sending", "sent")
+
+#: **아직 내보내지 않은(draft) 회차**의 대기 건을 받은 것으로 세는 날 수 — 오늘을
+#: 넣어 이만큼(`twin_send.WINDOW_DAYS` 와 같은 폭).
+#:
+#: 목록을 만들어 두고 [발송 시작] · 예약 시각을 기다리는 동안 또 목록을 만들면
+#: 같은 기업이 두 번 나간다 — 그래서 막 만든 draft 는 센다. 그런데 예약 시각을
+#: 놓쳐 draft 로 돌아갔거나(`scheduled_send.expire_missed`) 아무도 안 누른 채 버려진
+#: 목록까지 기한 없이 세면, 그 분은 **한 번도 못 받았는데** 다음 공유에서 계속
+#: 빠진다. 일주일이 지나도 서 있는 draft 는 버려진 것으로 본다. 나중에 누가 그
+#: 회차를 내보내면(`queued`) 그때부터 다시 센다 — 상태를 따라가는 규칙 그대로다.
+DRAFT_WINDOW_DAYS = twin_send.WINDOW_DAYS
 
 #: 기업을 아직 안 골랐을 때(기본 문구 미리보기 · 문구 화면) 기업 자리에 서는 말.
 #: 가짜 기업을 지어 넣지 않는다 — 진짜로 나갈 기업처럼 읽힌다.
@@ -162,8 +186,19 @@ def short_series(value: Optional[str]) -> str:
     return _short(value)
 
 
-_BULLET = re.compile(r"^\s*(?:[-•·*▶▪◦]|\d+[.)])\s*")
+#: 머리 글머리표 — `-` · `•` · `1.` · `2)`. 번호 꼴은 **뒤에 띄어쓰기가 올 때만**
+#: 글머리표다 — `3.5억 …` 의 `3.` 을 떼면 `5억` 이 나간다.
+_BULLET = re.compile(r"^\s*(?:[-•·*▶▪◦]|\d+[.)](?=\s))\s*")
 _SENTENCE = re.compile(r"^(.+?[.!?。])(?=\s|$)")
+
+
+def _lf(text: Optional[str]) -> str:
+    """줄바꿈을 `\n` 하나로 — 문구 화면에서 저장한 글은 `\r\n` 으로 올 수 있다.
+
+    `\r\n` 이 남으면 빈 줄(`\n\n`)로 문단을 찾는 자리(`slot`)가 문단을 못 찾아 기업
+    덩어리가 맨 끝에 붙고, 카톡에도 `\r` 이 그대로 실린다.
+    """
+    return (text or "").replace("\r\n", "\n").replace("\r", "\n")
 
 
 def _flat(text: Optional[str]) -> str:
@@ -193,7 +228,7 @@ def pitch_of(row: SeriesACompany) -> str:
     상세 내용은 천 자가 넘는 여러 줄 글이 있어 그대로 실으면 카톡 한 통이
     넘친다 — 한 줄로 펴고(`_flat`) 첫 문장, 그것도 길면 `PITCH_MAX` 자에서 끊는다.
     """
-    typed = re.sub(r"\n\s*\n+", "\n", (row.deal_pitch or "").strip())
+    typed = re.sub(r"\n\s*\n+", "\n", _lf(row.deal_pitch).strip())
     if typed:
         return typed
     flat = _flat(row.detail)
@@ -237,7 +272,7 @@ def slot(template_body: str) -> str:
     자리가 여럿이면 첫 자리에만 넣고 나머지는 지운다 — 같은 목록이 두 번 나가면
     결례다. 문구가 한 문단뿐이면 그 뒤에 붙인다.
     """
-    body = (template_body or "").strip()
+    body = _lf(template_body).strip()
     hits = [(body.find(t), t) for t in _TOKENS if t in body]
     if hits:
         _at, token = min(hits)
@@ -253,7 +288,7 @@ def slot(template_body: str) -> str:
 
 def fill(result: mc.ComposeResult, companies_text: str) -> mc.ComposeResult:
     """지은 글의 표시 자리에 기업 덩어리를 넣고, 글자 수 · 길이 경고를 다시 센다."""
-    text = result.text.replace(_SLOT, companies_text or SAMPLE_SLOT)
+    text = _lf(result.text).replace(_SLOT, _lf(companies_text) or SAMPLE_SLOT)
     text = re.sub(r"\n{3,}", "\n\n", text).strip() + "\n"
     count = len(text)
     too_long = count > mc.MESSAGE_WARN_CHARS
@@ -293,11 +328,16 @@ def load(db: Session, ids: Iterable[int]) -> List[SeriesACompany]:
 
 def _live_pairs(db: Session, company_ids: Optional[Iterable[int]] = None,
                 contact_ids: Optional[Iterable[int]] = None) -> Set[Tuple[int, int]]:
-    """`(기업, 사람)` — **살아 있는 발송 건**에 실린 것만(머리말 `기록`)."""
+    """`(기업, 사람)` — **살아 있는 발송 건**에 실린 것만(머리말 `기록`).
+
+    draft 회차의 건은 만든 지 `DRAFT_WINDOW_DAYS` 안의 것만 센다(그 상수 설명).
+    """
+    since = (clock.today() - timedelta(days=DRAFT_WINDOW_DAYS - 1)).isoformat()
     stmt = (select(SeriesAShare.series_a_company_id, SeriesAShare.sourcing_contact_id)
             .join(SendItem, SendItem.id == SeriesAShare.send_item_id)
             .join(SendJob, SendJob.id == SendItem.job_id)
-            .where(SendItem.status.in_(LIVE_ITEM), SendJob.status != "canceled"))
+            .where(SendItem.status.in_(LIVE_ITEM), SendJob.status != "canceled",
+                   or_(SendJob.status != "draft", SendItem.created_at >= since)))
     if company_ids is not None:
         stmt = stmt.where(SeriesAShare.series_a_company_id.in_(list(company_ids)))
     if contact_ids is not None:
@@ -402,57 +442,64 @@ def short_note(per_person: int, sent: int) -> str:
 # ── 본인이 공유한 딜 ────────────────────────────────────────────────────────
 #
 # `공유 심사역` 칸은 사람이 시트에 손으로 적은 글자다 — `홍길동 이사` ·
-# `홍길동 이사님` · `홍길동이사` · `홍길동 이사(가나벤처스)` 처럼 온다. 딜 소싱 명단의
-# 이름 칸에도 직함이 섞여 있다(`message_composer.name_carries_title`). 그래서 양쪽
-# 모두 같은 손으로 직함 · 존칭 · 괄호 · 띄어쓰기를 떼고 견준다.
+# `홍길동 이사님` · `홍길동이사` · `홍길동 이사(가나벤처스)` 뿐 아니라
+# `가나벤처스 홍길동 이사`(회사명 이름 직함) · `이사 홍길동`(직함 이름) ·
+# `홍길동 CEO`(영문 직함) · `홍길동 대표 겸 파트너`(겸직) · `홍길동 이사/김철수 팀장`
+# (여럿)으로도 온다. 딜 소싱 명단의 이름 칸에도 직함이 섞여 있다
+# (`message_composer.name_carries_title`). 그래서 양쪽 모두 같은 손으로 직함 ·
+# 존칭 · 괄호 · 회사 이름 · 띄어쓰기를 떼고 견준다.
+#
+# 짐작이 틀리는 줄은 사람이 탭에서 확정한다(`SeriesACompany.shared_by_contact_id`) —
+# 확정한 줄은 여기 짐작을 지나지 않는다(`is_own`).
 
-#: 이름 **뒤에 붙어 온** 직함 — 띄어 쓴 낱말은 `room_name.looks_like_title` 이
+#: 이름 **앞뒤에 붙어 온** 한글 직함 — 띄어 쓴 낱말은 `room_name.looks_like_title` 이
 #: 가리고(방 이름 어휘 + 아래 낱말), 붙여 쓴 것은 이 목록의 꼬리를 뗀다.
 #: 방 이름 어휘를 넓히지 않으려고(`room_name.looks_like_title` 머리말) 여기서만 더한다.
-_EXTRA_TITLES = mc._GREETING_TITLE_WORDS + ("대표이사", "씨")
+_EXTRA_TITLES = mc._GREETING_TITLE_WORDS + (
+    "대표이사", "씨", "공동대표", "대표파트너", "매니징파트너", "제너럴파트너",
+    "벤처파트너", "투자심사역", "그룹장", "디렉터", "프린시펄", "어소시에이트",
+    "애널리스트", "상무이사", "전무이사")
 _GLUED_TITLES = tuple(sorted(set(room_name._TITLE_WORDS + _EXTRA_TITLES),
                              key=len, reverse=True))
-#: 한 칸에 여럿이 적힌 경우(`가 이사, 나 팀장`)를 사람마다 가른다. `/` 는 가르지
-#: 않는다 — `이사/변호사` 처럼 한 사람의 겸직을 잇는 데 쓴다.
-_PEOPLE_SPLIT = re.compile(r"[,;&\n·ㆍ]|\s및\s")
+#: 영문 직함 — 소문자로, 띄어 쓴 **낱말 하나하나**로 견준다(`Managing Director` 는
+#: 두 낱말 다 이 목록에 있다). `Partners` 는 직함이 아니라 회사 꼬리다(`_FIRM_TAILS`).
+_EN_TITLES = frozenset((
+    "ceo", "cfo", "cto", "coo", "cio", "cso", "cmo", "cpo",
+    "vp", "svp", "evp", "avp", "md", "gp", "partner", "managing", "general",
+    "director", "principal", "associate", "analyst", "manager", "head",
+    "president", "vice", "senior", "junior", "chief", "officer", "executive",
+    "founder", "co-founder", "cofounder", "chairman", "lead", "investor",
+    "mr", "ms", "mrs", "dr"))
+#: 붙여 쓴 영문 직함(`홍길동CEO`) — 두 글자 이상인 것만, 긴 것부터.
+_GLUED_EN = tuple(sorted((t for t in _EN_TITLES if len(t) >= 2), key=len, reverse=True))
+_HANGUL = re.compile(r"[가-힣]")
+#: 겸직을 잇는 말 — `대표 겸 파트너` · `대표겸파트너`.
+_JOIN = "겸"
+#: 한 칸에 여럿이 적힌 경우(`가 이사, 나 팀장` · `가 이사/나 팀장`)를 사람마다 가른다.
+#: `/` 로도 가른다 — 한 사람의 겸직(`이사/변호사`)은 갈라도 뒤 조각이 직함뿐이라
+#: 사람으로 안 센다(`person_keys`).
+_PEOPLE_SPLIT = re.compile(r"[,，;&\n·ㆍ/、+]|\s및\s|\sand\s", re.I)
 _BRACKETS = re.compile(r"\([^)]*\)|\[[^\]]*\]|（[^）]*）")
 
-
-def _is_title(token: str) -> bool:
-    head = token.split("/")[0].strip()
-    if not head.rstrip("님"):
-        return True                    # `님` 하나만 떨어져 있다
-    return room_name.looks_like_title(head, _EXTRA_TITLES)
-
-
-def person_key(raw: Optional[str]) -> str:
-    """사람 한 명의 견줄 이름 — 직함 · 존칭 · 괄호 · 띄어쓰기를 뗀다. 못 짓으면 빈 글자.
-
-    `홍길동 이사님` · `홍길동이사` · `홍길동 (가나벤처스)` → `홍길동`. 붙여 쓴 직함은
-    **두 글자 이상 남을 때만** 뗀다 — `김이사` 를 `김` 으로 자르면 아무나와 맞는다.
-    """
-    text = room_name.normalize_space(_BRACKETS.sub(" ", raw or ""))
-    if not text:
-        return ""
-    tokens = text.split(" ")
-    while len(tokens) > 1 and _is_title(tokens[-1]):
-        tokens.pop()
-    key = "".join(tokens).rstrip("님")
-    # `홍길동상무이사` 처럼 둘이 붙어 오기도 한다 — 더 뗄 것이 없을 때까지.
-    while True:
-        hit = next((t for t in _GLUED_TITLES
-                    if key.endswith(t) and len(key) - len(t) >= 2), None)
-        if hit is None:
-            break
-        key = key[:-len(hit)]
-    return key.lower()
-
-
-def person_keys(raw: Optional[str]) -> Set[str]:
-    """`공유 심사역` 칸의 사람들 — 한 칸에 둘이 적혀 있으면 둘 다."""
-    keys = {person_key(part) for part in _PEOPLE_SPLIT.split(raw or "")}
-    # 직함만 떨어져 남은 조각(`… , 이사`)은 사람이 아니다.
-    return {k for k in keys if k and not _is_title(k)}
+#: 회사 이름의 한영 · 다른 표기를 한 가지로(`firm_canon`). 긴 것부터 바꾼다 —
+#: `investments` 를 `invest` 보다 먼저.
+_FIRM_WORDS = (
+    ("assetmanagement", "자산운용"),
+    ("investments", "인베스트"), ("investment", "인베스트"), ("인베스트먼트", "인베스트"),
+    ("invest", "인베스트"),
+    ("partners", "파트너스"), ("파트너즈", "파트너스"),
+    ("자산운용사", "자산운용"), ("자산운영", "자산운용"),
+    ("ventures", "벤처스"), ("venture", "벤처"), ("벤쳐", "벤처"),
+    ("capital", "캐피탈"), ("캐피털", "캐피탈"),
+)
+#: 회사 이름의 꼬리(맞춘 뒤의 글자). 이것으로 끝나는 낱말은 사람 이름이 아니라
+#: 회사 이름이다 — `가나벤처스 홍길동 이사` 의 `가나벤처스`.
+#:
+#: 가리기의 꼬리말 목록(`ir_mask.FIRM_SUFFIXES` — 투자사 이름에서 **드러낼** 꼬리)과
+#: 하는 일이 다르다. 그쪽은 가린 뒤에도 보일 말만 담고(`벤처스` · `캐피탈` 은 일부러
+#: 뺐다), 여기는 공유 심사역 칸에서 **회사 낱말을 알아보는** 말을 담는다.
+_FIRM_TAILS = ("벤처스", "벤처캐피탈", "벤처투자", "인베스트", "파트너스", "캐피탈",
+                  "자산운용", "투자", "홀딩스", "증권", "액셀러레이터", "엑셀러레이터")
 
 
 def firm_key(raw: Optional[str]) -> str:
@@ -460,39 +507,277 @@ def firm_key(raw: Optional[str]) -> str:
     return deal_history._key(raw)
 
 
+def firm_canon(raw: Optional[str]) -> str:
+    """`firm_key` 에 **한영 · 다른 표기**까지 맞춘 것.
+
+    `가나 Investment` · `가나인베스트먼트` → `가나인베스트`, `가나 Partners` →
+    `가나파트너스`, `가나AM` · `가나 Asset Management` → `가나자산운용`.
+    `AM` 은 한글 바로 뒤에 붙었을 때만 자산운용으로 읽는다(영문 이름 속 `am` 을
+    바꾸지 않게).
+    """
+    key = firm_key(raw)
+    for src, dst in _FIRM_WORDS:
+        key = key.replace(src, dst)
+    if key.endswith("am") and len(key) > 2 and _HANGUL.match(key[-3]):
+        key = key[:-2] + "자산운용"
+    return key
+
+
+def _firms_agree(a: str, b: str) -> bool:
+    """맞춘 회사 이름 둘(`firm_canon`)이 같은 회사인가 — 같거나, **한쪽이 다른 쪽의
+    앞부분**이다(`가나` ↔ `가나벤처스` 같은 약칭). 앞부분은 두 글자 이상이어야 한다.
+
+    꼬리만 다른 같은 머리(`가나벤처스` ↔ `가나캐피탈`)는 다른 회사로 본다 — 같은
+    이름의 다른 분일 수 있다. 같은 분이면 사람이 탭에서 확정한다.
+    """
+    if a == b:
+        return True
+    short, long_ = sorted((a, b), key=len)
+    return len(short) >= 2 and long_.startswith(short)
+
+
+def _firms_match(a: str, b: str) -> bool:
+    """한쪽이 비었으면 견줄 것이 없을 뿐 어긋난 것이 아니다(머리말)."""
+    return not a or not b or _firms_agree(a, b)
+
+
+def _one_title(word: str) -> bool:
+    w = word.strip()
+    if not w.rstrip("님"):
+        return True                    # `님` 하나만 떨어져 있다
+    if room_name.looks_like_title(w, _EXTRA_TITLES):
+        return True
+    return w.rstrip("님").lower().rstrip(".") in _EN_TITLES
+
+
+def _is_title(token: str) -> bool:
+    """이 낱말이 직함인가 — `이사` · `이사님` · `CEO` · `이사/변호사` · `대표겸파트너` · `겸`."""
+    head = token.split("/")[0].strip()
+    if head == _JOIN or _one_title(head):
+        return True
+    pieces = head.split(_JOIN)
+    return len(pieces) > 1 and all(p and _one_title(p) for p in pieces)
+
+
+def _firm_suffix_only(token: str) -> bool:
+    """회사 꼬리만 떨어져 있다 — `가나 Ventures` 의 `Ventures`."""
+    return firm_canon(token) in _FIRM_TAILS
+
+
+def _is_firm_word(token: str, firm: str) -> bool:
+    """이 낱말이 회사 이름인가 — 회사 꼬리로 끝나거나(`가나벤처스`), 그 줄의 회사와
+    맞는다(`가나` ↔ 줄의 회사 `가나벤처스`). `firm` 은 맞춘 회사 이름(`firm_canon`)."""
+    canon = firm_canon(token)
+    if len(canon) < 2:
+        return False
+    if firm and _firms_agree(canon, firm):
+        return True
+    return any(canon.endswith(sfx) for sfx in _FIRM_TAILS)
+
+
+def _merge_firm_tails(tokens: List[str]) -> List[str]:
+    """`가나 Ventures 홍길동` → `가나Ventures 홍길동` — 회사 꼬리를 앞 낱말에 붙인다.
+
+    붙이고 나서 사람 이름으로 남는 낱말이 없으면(`홍길동 Partners`) 붙이지 않는다 —
+    이름을 회사로 삼켜 버린다.
+    """
+    out: List[str] = []
+    for tok in tokens:
+        if out and _firm_suffix_only(tok) and not _is_title(out[-1]):
+            out[-1] = out[-1] + tok
+        else:
+            out.append(tok)
+    return out if len(out) > 1 else tokens
+
+
+def _strip_glued(key: str) -> str:
+    """붙여 쓴 직함을 꼬리부터 뗀다 — `홍길동상무이사` · `홍길동대표겸파트너` · `홍길동CEO`.
+
+    **두 글자 이상 남을 때만** 뗀다 — `김이사` 를 `김` 으로 자르면 아무나와 맞는다.
+    영문 직함은 한글 바로 뒤에 붙었을 때만 뗀다(영문 이름을 자르지 않게).
+    """
+    while True:
+        hit = next((t for t in _GLUED_TITLES
+                    if key.endswith(t) and len(key) - len(t) >= 2), None)
+        if hit is None:
+            low = key.lower()
+            hit = next((t for t in _GLUED_EN
+                        if low.endswith(t) and len(key) - len(t) >= 2
+                        and _HANGUL.match(key[-len(t) - 1])), None)
+        if hit is None:
+            return key
+        key = key[:-len(hit)]
+        # `…대표겸` — 앞이 직함으로 끝나면 `겸` 도 직함을 잇는 말이다
+        if key.endswith(_JOIN) and any(key[:-1].endswith(t) for t in _GLUED_TITLES):
+            key = key[:-1]
+
+
+def person_key(raw: Optional[str], firm: Optional[str] = None) -> str:
+    """사람 한 명의 견줄 이름 — 직함 · 존칭 · 괄호 · 회사 이름 · 띄어쓰기를 뗀다.
+    못 지으면 빈 글자.
+
+    `홍길동 이사님` · `홍길동이사` · `홍길동 (가나벤처스)` · `가나벤처스 홍길동 이사` ·
+    `이사 홍길동` · `홍길동 CEO` · `홍길동 대표 겸 파트너` → `홍길동`. `firm` 을 주면
+    (그 줄의 회사) 회사 꼬리가 없는 약칭(`가나 홍길동`)도 회사로 보고 뗀다.
+
+    앞뒤 낱말은 **사람 이름이 하나 남을 때까지만** 뗀다.
+    """
+    text = room_name.normalize_space(_BRACKETS.sub(" ", raw or ""))
+    if not text:
+        return ""
+    canon = firm_canon(firm)
+    tokens = _merge_firm_tails(text.split(" "))
+
+    def junk(tok: str) -> bool:
+        return _is_title(tok) or _is_firm_word(tok, canon)
+
+    while len(tokens) > 1 and junk(tokens[-1]):
+        tokens.pop()
+    while len(tokens) > 1 and junk(tokens[0]):
+        tokens.pop(0)
+    key = _strip_glued("".join(tokens).rstrip("님"))
+    return key.lower()
+
+
+def person_keys(raw: Optional[str], firm: Optional[str] = None) -> Set[str]:
+    """`공유 심사역` 칸의 사람들 — 한 칸에 여럿이 적혀 있으면 모두."""
+    keys = {person_key(part, firm) for part in _PEOPLE_SPLIT.split(raw or "")}
+    # 직함만 떨어져 남은 조각(`… , 이사` · `이사/변호사` 의 `변호사`)은 사람이 아니다.
+    return {k for k in keys if k and not _is_title(k)}
+
+
+def _row_sig(row: SeriesACompany) -> Tuple[Set[str], str]:
+    """줄 쪽 견줄 것 — (공유 심사역 이름들, 맞춘 회사 이름)."""
+    return person_keys(row.shared_by, row.source_firm), firm_canon(row.source_firm)
+
+
+def _contact_sig(contact) -> Tuple[str, str]:
+    """받는 분 쪽 견줄 것 — (이름, 맞춘 회사 이름)."""
+    return (person_key(getattr(contact, "name", "")),
+            firm_canon(getattr(contact, "firm", "")))
+
+
+def _confirmed(row) -> Optional[int]:
+    return getattr(row, "shared_by_contact_id", None)
+
+
 def is_own(row: SeriesACompany, contact) -> bool:
     """이 기업은 **이 분이 공유해 준 딜**인가.
 
-    이름(`person_keys` ↔ 받는 분 이름)이 같아야 하고, **회사가 양쪽에 다 있으면**
-    회사도 같아야 한다. 한쪽 회사가 비었으면(대개 줄의 `회사` 칸이 비었다) 이름만으로
-    본다 — 견줄 것이 없을 뿐 어긋난 것은 아니다. 이름이 같아도 회사가 다르면
-    동명이인으로 보고 **본인으로 보지 않는다.**
+    사람이 확정한 줄(`shared_by_contact_id`)은 **그 번호만** 본다. 아니면 이름
+    (`person_keys` ↔ 받는 분 이름)이 같아야 하고, **회사가 양쪽에 다 있으면** 회사도
+    맞아야 한다(`firm_canon` · `_firms_agree`). 한쪽 회사가 비었으면(대개 줄의 `회사`
+    칸이 비었다) 이름만으로 본다 — 견줄 것이 없을 뿐 어긋난 것은 아니다. 이름이
+    같아도 회사가 분명히 다르면 동명이인으로 보고 **본인으로 보지 않는다.**
     """
-    who = person_key(getattr(contact, "name", ""))
-    if not who or who not in person_keys(row.shared_by):
-        return False
-    row_firm = firm_key(row.source_firm)
-    their_firm = firm_key(getattr(contact, "firm", ""))
-    if not row_firm or not their_firm:
-        return True
-    return row_firm == their_firm
+    confirmed = _confirmed(row)
+    if confirmed is not None:
+        return getattr(contact, "id", None) == confirmed
+    keys, firm = _row_sig(row)
+    who, their = _contact_sig(contact)
+    return bool(who) and who in keys and _firms_match(firm, their)
+
+
+def _bucket_people(db: Session) -> List[SourcingContact]:
+    return db.execute(select(SourcingContact).where(
+        SourcingContact.bucket == BUCKET)).scalars().all()
+
+
+def _name_index(people: Iterable) -> Dict[str, List[Tuple[object, str]]]:
+    """이름 → [(사람, 맞춘 회사)] — 사람마다 **한 번만** 이름을 푼다."""
+    out: Dict[str, List[Tuple[object, str]]] = {}
+    for p in people:
+        who, firm = _contact_sig(p)
+        if who:
+            out.setdefault(who, []).append((p, firm))
+    return out
 
 
 def own_by_company(db: Session, rows: Sequence[SeriesACompany]) -> Dict[int, List[int]]:
     """기업 → **그 딜을 공유해 준** 이 갈래 심사역 번호들. 고르개의 `본인 공유 N명 제외`.
 
-    갈래의 줄 전부(불참여도)를 본다 — 화면이 지금 고른 받는 분과 견준다.
+    갈래의 줄 전부(불참여도)를 본다 — 화면이 지금 고른 받는 분과 견준다. 사람 이름은
+    한 번씩만 풀어 이름으로 찾는다(`_name_index`) — (기업 × 사람)마다 이름을 다시
+    풀면 줄이 늘수록 /deals 가 느려진다. 결과는 `is_own` 과 같다.
     """
-    people = db.execute(select(SourcingContact).where(
-        SourcingContact.bucket == BUCKET)).scalars().all()
+    people = _bucket_people(db)
+    index = _name_index(people)
+    ids_in_bucket = {p.id for p in people}
     out: Dict[int, List[int]] = {}
     for row in rows:
-        if not person_keys(row.shared_by):
+        confirmed = _confirmed(row)
+        if confirmed is not None:
+            if confirmed in ids_in_bucket:
+                out[row.id] = [confirmed]
             continue
-        ids = sorted(p.id for p in people if is_own(row, p))
+        keys, firm = _row_sig(row)
+        ids = sorted({p.id for key in keys for p, their in index.get(key, ())
+                      if _firms_match(firm, their)})
         if ids:
             out[row.id] = ids
     return out
+
+
+def _person_label(p) -> str:
+    """`홍길동 이사 (가나벤처스)` — 탭의 `공유 심사역` 칸 아래 후보 · 확정 줄."""
+    who = " ".join(x for x in ((p.name or "").strip(), (p.title or "").strip()) if x)
+    firm = (p.firm or "").strip()
+    return f"{who} ({firm})" if firm else who
+
+
+def sharer_views(db: Session, rows: Sequence[SeriesACompany]) -> Dict[int, dict]:
+    """줄 → `공유 심사역` 칸 아래에 띄울 것 — 확정한 분 · 이름이 같은 후보들.
+
+    `candidates[].auto` 는 지금 짐작(`is_own`)이 이 분을 본인으로 보는가 — 이름과
+    회사가 다 맞는다. 이름만 같고 회사가 다르면 거짓이다(그래도 후보로 띄운다 —
+    이직했거나 회사 표기가 크게 다를 수 있다).
+    """
+    people = _bucket_people(db)
+    index = _name_index(people)
+    by_id = {p.id: p for p in people}
+    out: Dict[int, dict] = {}
+    for row in rows:
+        confirmed = None
+        cid = _confirmed(row)
+        if cid is not None:
+            p = by_id.get(cid) or db.get(SourcingContact, cid)
+            confirmed = {"id": cid, "label": _person_label(p) if p else f"#{cid}"}
+        keys, firm = _row_sig(row)
+        seen: Set[int] = set()
+        cands = []
+        for key in sorted(keys):
+            for p, their in index.get(key, ()):
+                if p.id in seen:
+                    continue
+                seen.add(p.id)
+                cands.append({"id": p.id, "label": _person_label(p),
+                              "auto": _firms_match(firm, their)})
+        cands.sort(key=lambda c: (not c["auto"], c["label"]))
+        out[row.id] = {"confirmed": confirmed, "candidates": cands}
+    return out
+
+
+def sharer_view(db: Session, row: SeriesACompany) -> dict:
+    return sharer_views(db, [row])[row.id]
+
+
+def forget_sharers(session: Session, contact_ids: List[int]) -> None:
+    """지워지는 딜 소싱 줄을 **확정한 공유 심사역**으로 가리키던 칸을 비운다.
+
+    `models._forget_series_a_sharers` 가 flush 직전에 부른다. ORM 으로 고치지 않고
+    바로 적는다 — 같은 flush 안에서 줄을 고치고 소싱 줄을 지우면 어느 쪽이 먼저
+    나갈지 SQLAlchemy 가 몰라 외래키에 막힐 수 있다(`sourcing_sync.detach` 와 같은
+    까닭). 세션에 올라와 있는 줄은 값만 맞춘다.
+    """
+    ids = [i for i in contact_ids if i]
+    if not ids:
+        return
+    table = SeriesACompany.__table__
+    session.execute(table.update().where(table.c.shared_by_contact_id.in_(ids))
+                    .values(shared_by_contact_id=None))
+    for obj in list(session.identity_map.values()):
+        if isinstance(obj, SeriesACompany) and obj.shared_by_contact_id in ids:
+            set_committed_value(obj, "shared_by_contact_id", None)
 
 
 # ── 사람마다 무엇을 보내나 ───────────────────────────────────────────────────
@@ -562,6 +847,40 @@ def plan_view(p: Plan) -> dict:
         "dropped": [{"id": c.id, "name": (c.name or "").strip(), "reason": why}
                     for c, why in p.dropped],
     }
+
+
+#: 기업 덩어리의 첫 줄 — `[기업2] 샘플바이오`(`block`). 번호 꼴은 `deal_numbers.
+#: parse_label` 이 읽는 그 모양이다(사람이 띄어 써도 받는다).
+_HEADER = re.compile(r"^[ \t]*(\[[^\]\n]*\])[ \t]*(\S[^\n]*?)[ \t]*$", re.M)
+
+
+def _name_key(name: Optional[str]) -> str:
+    return re.sub(r"\s+", " ", (name or "").strip())
+
+
+def companies_in(text: Optional[str],
+                 candidates: Sequence[SeriesACompany]) -> List[SeriesACompany]:
+    """나간 글에 **실제로 든** 기업 — `[기업N] 기업명` 줄로 찾는다(글에 나온 차례).
+
+    사람이 미리보기에서 고친 글(`overrides`)로 보낼 때 기록이 이것을 따른다. 고친
+    글은 그 시점의 고른 기업으로 지어진 것이라, 기업을 바꾼 뒤 예전에 고친 글이
+    되살아나 나가면 지금 고른 기업(`plan`)과 글이 갈린다 — 그대로 적으면 글에 없는
+    기업을 '받음' 으로 적어 그 분은 그 기업을 영영 못 받는다. 덩어리를 지웠으면
+    그 기업은 안 적는다. 견주는 것은 `candidates`(이번에 고른 기업)의 이름이다.
+    """
+    by_name: Dict[str, SeriesACompany] = {}
+    for c in candidates:
+        by_name.setdefault(_name_key(c.name), c)
+    out: List[SeriesACompany] = []
+    seen: Set[int] = set()
+    for m in _HEADER.finditer(_lf(text)):
+        if deal_numbers.parse_label(m.group(1)) is None:
+            continue
+        hit = by_name.get(_name_key(m.group(2)))
+        if hit is not None and hit.id not in seen:
+            seen.add(hit.id)
+            out.append(hit)
+    return out
 
 
 def record(db: Session, item: SendItem, contact_id: int,
