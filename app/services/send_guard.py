@@ -326,6 +326,16 @@ def _dispatch(func, *args) -> None:
                      name="auto-job-alert").start()
 
 
+def mail_admins(subject: str, body: str) -> None:
+    """관리자에게 짧은 메일 한 통 — 자동 회차 알림과 **같은 곳, 같은 길**.
+
+    받는 곳은 `alert_recipients`, 보내는 것은 따로 띄운 실이다. 메일 설정이
+    없으면 아무것도 안 한다. 딜 소싱 메일 확인의 요약(`sourcing_mail.announce`)
+    이 쓴다.
+    """
+    _dispatch(_send_alert_mail, subject, body)
+
+
 def notify(db: Session, job: SendJob, reason: str) -> bool:
     """자동 회차가 실패로 끝났거나 시각을 놓쳤다 — **관리자에게 메일 한 통.**
 
