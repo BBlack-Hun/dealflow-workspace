@@ -23,12 +23,14 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..deps import get_current_user, templates
-from ..models import SendItem, SourcingContact, User
+from ..models import SendItem, SendJob, SourcingContact, User
 from ..services import (series_a_share, sourcing_buckets, sourcing_link,
                         sourcing_mail, sourcing_receipts, sourcing_rooms,
                         sourcing_sync)
 from ..services.pipeline import current_assignee
 from ..ui import base_ctx
+# 방 확인 잡의 종류는 **한 곳에만 적는다**(`agent_api.VERIFY_KIND`).
+from .agent_api import VERIFY_KIND
 
 router = APIRouter(tags=["sourcing"])
 
@@ -477,9 +479,17 @@ def delete_row(row_id: int, db: Session = Depends(get_db),
     # `AgentDevice` 때문에 막혔던 것과 같은 자리이고, IR 기업현황도 같은
     # 이유로 같은 답을 냈다(`routers/companies.py` 의 `delete_company`).
     # 잘못 넣은 줄은 아직 아무에게도 안 보낸 줄이라 이 문에 걸리지 않는다.
+    #
+    # **방 찾기 건은 세지 않는다**(`verify_room` — [방 후보 찾기]). 아무것도
+    # 보내지 않은 건이라 '보낸 이력' 이 아니다 — 세면 잘못 넣은 줄에서 방 찾기를
+    # 한 번 누른 것만으로 지울 길이 없어진다(PR #284 리뷰). 투자사 줄의 발송
+    # 이력도 같은 이유로 그 잡을 뺀다(`routers/contacts.get_contact`). 그 건은
+    # 지울 때 함께 치운다(`sourcing_rooms.forget`).
     sent = db.execute(
         select(func.count()).select_from(SendItem)
-        .where(SendItem.sourcing_contact_id == row_id)
+        .join(SendJob, SendJob.id == SendItem.job_id)
+        .where(SendItem.sourcing_contact_id == row_id,
+               SendJob.kind != VERIFY_KIND)
     ).scalar_one()
     if sent:
         raise HTTPException(
@@ -491,6 +501,7 @@ def delete_row(row_id: int, db: Session = Depends(get_db),
 
     # 그 줄의 달마다 `딜 받음` 표시 · 본 메일도 함께 — 가리킬 곳이 없는 줄을 남기지 않는다.
     sourcing_receipts.delete_for(db, [row_id])
+    sourcing_rooms.forget(db, row_id)
     db.delete(row)
     db.commit()
     return {"deleted": row_id}

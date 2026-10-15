@@ -185,7 +185,11 @@ def test_it_comes_down_and_goes_back_up(old_db):
         cols = {r[1] for r in con.execute('PRAGMA table_info("sourcing_contacts")')}
     finally:
         con.close()
-    assert not {"vc_contact_id", "participation", "room_candidates"} & cols
+    assert not {"vc_contact_id", "participation"} & cols
+    # `room_candidates` 는 **남긴다** — 열린 PR #277 의 0092 가 같은 칸을 먼저
+    # 만들었을 수 있고(이 판은 그때 칸을 안 만든다), 그 판에서 읽는 칸이다.
+    # 이 판이 만든 칸인지 내릴 때는 알 수 없으니 지우지 않는 쪽이 안전하다.
+    assert "room_candidates" in cols
     up = _alembic(old_db, "upgrade", "head")
     assert up.returncode == 0, up.stdout + up.stderr
     assert _rows(old_db)[101] == (11, "참여")

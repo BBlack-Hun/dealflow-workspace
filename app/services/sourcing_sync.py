@@ -60,6 +60,14 @@ addresses_of`), 딜 소싱 표 · 엑셀. 읽는 쪽을 다 고치면 하나는 
 사람이 적은 것이라 어느 쪽이 맞는지 코드가 모른다 — 딜 소싱 화면의 연결 표시가
 `다른 칸` 으로 알려 주고, 어느 쪽에서든 한 번 고치면 그때부터 같아진다.
 
+**빈 값은 넘어가지 않는다.** 따라 고치는 것은 **빈칸이 아닌 값으로 고친 칸**
+뿐이다(`_changed` · `_copy`). None · `""` · 공백은 모두 같은 '빈칸' 이라, 수정창이
+비어 있던 칸(None)을 `""` 로 다시 적는 것은 고친 것이 아니다 — 수정창은 칸을
+전부 보낸다(`contacts.js` 의 `readForm`). 그것을 고친 것으로 읽으면 메모 한 줄
+저장에 이어진 소싱 줄의 메일 · 직함이 지워지고, 메일 확인(`sourcing_receipts.
+addresses_of`)이 그분을 못 찾는다(PR #284 리뷰). 한쪽에서 일부러 비워도 다른
+쪽은 그대로 둔다 — 비운 칸은 `다른 칸` 으로 보이고, 지우는 것은 각 표에서 한다.
+
 ## 잇지 않는 것 — 카톡방 · 담당 · 권한  ★
 
 사용자가 짚었다 — "딜소싱에 있다는건 다른 사람 담당자라도 카톡방에 초대
@@ -85,7 +93,7 @@ from urllib.parse import quote
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
-from sqlalchemy.orm.attributes import get_history, set_committed_value
+from sqlalchemy.orm.attributes import get_history
 
 from .. import clock
 from ..models import SourcingContact, User, VcContact
@@ -102,8 +110,6 @@ COLUMN_LABEL = "Series A 딜 소싱"
 
 JOINED = "참여"
 LEFT = "불참여"
-#: 딜 소싱 화면의 보기 차례.
-PARTICIPATION = (JOINED, LEFT)
 
 MARK_JOINED = "O"
 MARK_LEFT = "X"
@@ -176,7 +182,16 @@ def _key(text: Optional[str]) -> str:
 
 
 def _text(value) -> str:
+    """None · `""` · 공백은 모두 `""` — 같은 '빈칸' 이다."""
     return (value or "").strip() if isinstance(value, str) or value is None else str(value)
+
+
+def same_value(field: str, a, b) -> bool:
+    """두 표의 같은 칸이 같은 값인가. 휴대폰은 **숫자만** 본다 —
+    `010-1234-5678` 과 `01012345678` 은 같은 번호다(잇는 규칙도 숫자로 맞춘다)."""
+    if field == "phone":
+        return digits(_text(a)) == digits(_text(b))
+    return _text(a) == _text(b)
 
 
 def linked_rows(db: Session, contact_ids: Iterable[int]) -> Dict[int, SourcingContact]:
@@ -402,12 +417,6 @@ def auto_link(db: Session, row: SourcingContact) -> Optional[VcContact]:
 
 # ── 화면 ────────────────────────────────────────────────────────────────────
 
-def contact_of(db: Session, row: SourcingContact) -> Optional[VcContact]:
-    if not row.vc_contact_id or not is_synced(row):
-        return None
-    return db.get(VcContact, row.vc_contact_id)
-
-
 def badges(db: Session, rows: Iterable[SourcingContact]) -> Dict[int, dict]:
     """딜 소싱 표의 연결 표시 — `투자사 관리 현황: ○○ 명단`.
 
@@ -434,7 +443,8 @@ def badges(db: Session, rows: Iterable[SourcingContact]) -> Dict[int, dict]:
             "sheet": sheet,
             "href": f"{sheet_owner.page_href(db, sheet)}?sheet={quote(sheet)}",
             "diff": [SHARED_LABELS[f] for f in SHARED_FIELDS
-                     if _text(getattr(row, f, None)) != _text(getattr(contact, f, None))],
+                     if not same_value(f, getattr(row, f, None),
+                                       getattr(contact, f, None))],
         }
     return out
 
@@ -442,37 +452,67 @@ def badges(db: Session, rows: Iterable[SourcingContact]) -> Dict[int, dict]:
 # ── 따라 고치기 · 끊기 — 세션 flush 한 자리 ─────────────────────────────────
 
 def _changed(obj) -> List[str]:
-    """이번 flush 에서 **값이 실제로 바뀐** 같은 칸. 같은 값을 다시 적은 것은 빠진다."""
-    return [f for f in SHARED_FIELDS if get_history(obj, f).added]
+    """이번 flush 에서 **빈칸 아닌 값으로 실제로 바뀐** 같은 칸.
+
+    빠지는 것: 같은 값을 다시 적은 것, None ↔ `""` ↔ 공백처럼 빈칸끼리 바뀐 것
+    (수정창이 빈 칸을 `""` 로 다시 적는다), 비운 것(빈 값은 넘어가지 않는다 —
+    모듈 머리말).
+    """
+    out = []
+    for field in SHARED_FIELDS:
+        history = get_history(obj, field)
+        if not history.added:
+            continue
+        after = _text(history.added[0])
+        before = _text(history.deleted[0]) if history.deleted else ""
+        if after and after != before:
+            out.append(field)
+    return out
 
 
 def _copy(src, dst, field: str) -> bool:
     value = _text(getattr(src, field, None))
-    if field == "name" and not value:
-        return False        # 이름은 비울 수 없다 — 두 표 다 이름 없는 줄을 두지 않는다
+    if not value:
+        # 빈 값은 다른 쪽을 지우지 않는다(모듈 머리말). 이름은 원래 비울 수 없다.
+        return False
     if value == _text(getattr(dst, field, None)):
         return False
-    setattr(dst, field, value or None)
+    setattr(dst, field, value)
     return True
 
 
 def detach(session: Session, contact_ids: List[int]) -> None:
     """지워지는 투자사 줄을 가리키던 소싱 줄의 연결만 끊는다 — 줄은 남긴다.
 
-    ORM 으로 고치지 않고 **바로 적는다.** 같은 flush 안에서 소싱 줄을 고치고
-    투자사 줄을 지우면, 둘 사이에 관계(`relationship`)가 없어 어느 쪽이 먼저
-    나갈지 SQLAlchemy 가 모른다 — 지우기가 먼저 나가면 외래키에 막힌다. 여기서
-    먼저 적어 두면 차례를 탈 일이 없다. 세션에 올라와 있는 소싱 줄은 값만 맞춘다.
+    DB 에는 **먼저 바로 적는다**(Core UPDATE). 같은 flush 안에서 소싱 줄을
+    고치고 투자사 줄을 지우면, 둘 사이에 관계(`relationship`)가 없어 어느 쪽이
+    먼저 나갈지 SQLAlchemy 가 모른다 — 지우기가 먼저 나가면 외래키에 막힌다.
+    여기서 먼저 적어 두면 차례를 탈 일이 없다.
+
+    그다음 그 소싱 줄들을 세션에 올려 **ORM 으로도 같은 값**(None)을 적는다 —
+    수정 로그(`edit_log`)는 flush 의 바뀐 줄만 읽으므로, 그래야 '끊김' 이
+    `vc_contact_id: 번호 → 빈칸` 으로 남는다(PR #284 리뷰 — 잇기 · 만들기는
+    남는데 끊기만 빠졌다). 이 ORM UPDATE 는 이미 NULL 인 칸에 NULL 을 다시
+    적으므로 지우기보다 늦게 나가도 외래키에 걸리지 않는다. 이 훅은 수정 로그의
+    `before_flush` 보다 먼저 걸린다(`models._sync_sourcing_links`).
     """
     ids = [i for i in contact_ids if i]
     if not ids:
         return
+    with session.no_autoflush:
+        rows = list(session.execute(
+            select(SourcingContact).where(SourcingContact.vc_contact_id.in_(ids))
+        ).scalars().all())
+    # 세션에서 이번 flush 에 막 이어 둔 줄(아직 DB 에 안 적힌 값)도 함께.
+    rows += [obj for obj in list(session.identity_map.values())
+             if isinstance(obj, SourcingContact) and obj.vc_contact_id in ids
+             and obj not in rows]
     table = SourcingContact.__table__
     session.execute(table.update().where(table.c.vc_contact_id.in_(ids))
                     .values(vc_contact_id=None))
-    for obj in list(session.identity_map.values()):
-        if isinstance(obj, SourcingContact) and obj.vc_contact_id in ids:
-            set_committed_value(obj, "vc_contact_id", None)
+    for obj in rows:
+        if obj not in session.deleted:
+            obj.vc_contact_id = None
 
 
 def before_flush(session: Session) -> None:

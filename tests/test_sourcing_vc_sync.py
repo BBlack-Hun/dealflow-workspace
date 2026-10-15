@@ -69,9 +69,10 @@ def vc(db, users, name="홍길동", phone="010-1234-5678", firm="가나다벤처
        title="심사역", email="hong@example.com", who="u1", sheet=SHEET, **kw):
     from app.models import VcContact
 
+    kw.setdefault("kakao_room_name", f"{name} 방")
     row = VcContact(user_id=users[who].id, name=name, firm=firm, title=title,
                     phone=phone, email=email, source_sheet=sheet,
-                    kakao_room_name=f"{name} 방", room_verified="verified",
+                    room_verified="verified",
                     connect_stage="connected", channel_kakao=1, **kw)
     db.add(row)
     db.commit()
@@ -725,7 +726,8 @@ def test_room_search_runs_on_the_pressers_pc_and_only_collects_candidates(board,
     assert got["job_id"] == job.id
     [item] = got["items"]
     assert item["query"] == "홍길동 심사역"
-    assert item["name"] == "홍길동" and item["firm"] == "가나다벤처스"
+    assert item["name"] == "홍길동"
+    assert not item.get("firm")                     # 회사로 줄이면 딜소개 방만 남는다
     assert "target" not in item                     # 투자사 방을 버리면 안 된다
 
     res = board.post(f"/api/agent/items/{item['id']}/result", headers=auth(OTHER_TOKEN),
@@ -769,3 +771,251 @@ def test_nothing_to_search_queues_nothing(board, db, users):
     r = board.post("/sourcing/rooms/search", data={"tab": SYNC}, follow_redirects=False)
     assert "msg=" in r.headers["location"]
     assert db.query(SendJob).count() == 0
+
+
+# ── PR #284 리뷰에서 짚인 것 ────────────────────────────────────────────────
+#
+# 리뷰 댓글마다 한 묶음. 이름 · 번호 · 방 제목은 전부 가상값이다(공개 저장소).
+
+def _join(client, contact_id, **fields):
+    """수정창 [저장] 이 보내는 모양 — 칸 **전부**를 보낸다(빈 칸은 `""`)."""
+    body = {f: "" for f in ("name", "title", "firm", "phone", "email", "memo")}
+    body.update(fields)
+    return client.patch(f"/api/contacts/{contact_id}", json=body)
+
+
+def test_saving_the_edit_panel_does_not_wipe_the_linked_sourcing_row(board, db, users):
+    """투자사 쪽이 비어 있는(None) 칸을 수정창이 `""` 로 다시 적어도, 이어진 딜
+    소싱 줄의 값은 그대로다 — None 과 `""` 는 같은 '빈칸' 이다."""
+    contact = vc(db, users, title=None, email=None)
+    sc(db, title="수석심사역", email="hong@example.com")
+    mark(board, contact.id, "O")                  # 번호로 이어진다 — 소싱 값은 그대로
+
+    r = _join(board, contact.id, name="홍길동", firm="가나다벤처스",
+              phone="010-1234-5678", memo="통화함")
+    assert r.status_code == 200, r.text
+    [row] = sync_rows(db)
+    assert (row.title, row.email) == ("수석심사역", "hong@example.com")
+
+
+def test_an_empty_value_never_flows_to_the_other_side(board, db, users):
+    """한쪽에서 비워도 다른 쪽은 안 지운다 — 고친 값(빈칸 아닌 것)만 넘어간다."""
+    from app.models import VcContact
+
+    contact = vc(db, users)
+    mark(board, contact.id, "O")
+    [row] = sync_rows(db)
+
+    assert board.patch(f"/api/contacts/{contact.id}",
+                       json={"email": "  ", "title": ""}).status_code == 200
+    [row] = sync_rows(db)
+    assert (row.title, row.email) == ("심사역", "hong@example.com")
+
+    assert board.patch(f"/api/sourcing/{row.id}",
+                       json={"firm": "", "phone": ""}).status_code == 200
+    db.expire_all()
+    back = db.get(VcContact, contact.id)
+    assert (back.firm, back.phone) == ("가나다벤처스", "010-1234-5678")
+
+    # 빈칸이 아닌 값은 예전처럼 넘어간다
+    assert board.patch(f"/api/contacts/{contact.id}",
+                       json={"title": "이사"}).status_code == 200
+    [row] = sync_rows(db)
+    assert row.title == "이사"
+
+
+@pytest.fixture()
+def mail_on(monkeypatch):
+    monkeypatch.setenv("DEALFLOW_SMTP_HOST", "smtp.example.com")
+    monkeypatch.setenv("DEALFLOW_SMTP_PORT", "465")
+    monkeypatch.setenv("DEALFLOW_SMTP_USER", "deal@example.com")
+    monkeypatch.setenv("DEALFLOW_SMTP_FROM", "deal@example.com")
+    monkeypatch.setenv("DEALFLOW_SMTP_PASSWORD", "secret")
+
+
+def test_an_email_send_does_not_need_a_kakao_room(board, db, users, mail_on, monkeypatch):
+    """`방 없음` 으로 빼는 것은 **카톡**일 때만 — 메일은 주소로 나간다."""
+    from app.models import SendItem
+    from app.services import mail_sender
+
+    monkeypatch.setattr(mail_sender, "send_job", lambda *a, **k: None)
+    no_room = sc(db, email="hong@example.com")    # 시리즈 A · 방 없음 · 메일 있음
+    r = board.post("/api/deals/send", json={"contact_ids": [no_room.id],
+                                            "mode": "sourcing", "channel": "email"})
+    assert r.status_code == 200, r.text
+    assert not r.json().get("skipped")
+    [item] = db.query(SendItem).filter_by(job_id=r.json()["job_id"]).all()
+    assert (item.sourcing_contact_id, item.channel, item.room_name) == (
+        no_room.id, "email", "hong@example.com")
+
+    # 불참여는 채널과 상관없이 뺀다
+    left = sc(db, name="김철수", phone="010-2222-3333", email="kim@example.com",
+              participation="불참여")
+    r = board.post("/api/deals/send", json={"contact_ids": [left.id],
+                                            "mode": "sourcing", "channel": "email"})
+    assert r.status_code == 400
+    assert "불참여" in r.json()["detail"]
+
+
+def _search(client, row_id, token=OTHER_TOKEN, login_phone="01000000002"):
+    """[방 후보 찾기] 를 누르고 그 PC 의 발송기가 잡을 집어 간다 → 실린 건 하나."""
+    login(client, login_phone)
+    r = client.post("/sourcing/rooms/search", data={"tab": SYNC, "ids": str(row_id)},
+                    follow_redirects=False)
+    assert r.status_code == 303
+    got = _poll(client, token)
+    [item] = got["items"]
+    return item
+
+
+def _report(client, item, token=OTHER_TOKEN, **body):
+    res = client.post(f"/api/agent/items/{item['id']}/result", headers=auth(token),
+                      json={"status": "failed", **body})
+    assert res.status_code == 200, res.text
+
+
+def test_room_search_sends_no_firm_and_drops_the_deal_intro_room(board, db, users):
+    """회사를 실어 보내면 발송기가 회사 이름이 든 방(= 투자사 딜소개 방) 하나로
+    줄여 버린다. 회사는 안 보내고, 그분의 딜소개 방 제목은 후보에서 뺀다 —
+    이어진 투자사 줄의 방 · 번호가 같은 다른 팀원 명단 줄의 방 둘 다."""
+    from app.models import SourcingContact
+
+    contact = vc(db, users, kakao_room_name="홍길동 심사역 가나다벤처스")
+    vc(db, users, who="u2", sheet=SHEET, kakao_room_name="홍길동 이사님 딜소개")
+    mark(board, contact.id, "O")
+    [row] = sync_rows(db)
+
+    item = _search(board, row.id)
+    assert item["query"] == "홍길동 심사역" and item["name"] == "홍길동"
+    assert not item.get("firm"), "회사를 실으면 발송기가 딜소개 방 하나로 줄인다"
+
+    _report(board, item, verify_result="ambiguous",
+            candidates=["홍길동 심사역 가나다벤처스", "딜소싱 홍길동 심사역",
+                        "홍길동 이사님 딜소개"])
+    db.expire_all()
+    from app.services import room_match
+
+    found = room_match.candidates(db.get(SourcingContact, row.id))
+    assert found["rooms"] == ["딜소싱 홍길동 심사역"]
+
+
+def test_a_deal_intro_room_cannot_be_confirmed_as_the_sourcing_room(board, db, users):
+    """예전에 담긴 후보에 딜소개 방이 남아 있어도 확정은 막는다."""
+    from app.models import SourcingContact
+    from app.services import room_match
+
+    contact = vc(db, users, kakao_room_name="홍길동 심사역 가나다벤처스")
+    mark(board, contact.id, "O")
+    [row] = sync_rows(db)
+    room_match.save_candidates(row, ["홍길동 심사역 가나다벤처스", "딜소싱 홍길동"],
+                               at="2026-10-14T10:00:00+09:00")
+    db.commit()
+
+    r = board.post(f"/sourcing/{row.id}/room-confirm",
+                   data={"room": "홍길동 심사역 가나다벤처스", "tab": SYNC},
+                   follow_redirects=False)
+    assert "msg=" in r.headers["location"]
+    db.expire_all()
+    assert not db.get(SourcingContact, row.id).kakao_room_name
+
+
+def test_a_room_search_does_not_block_deleting_the_row(board, db, users):
+    """방 찾기는 아무것도 보내지 않는다 — 그 건이 `보낸 이력` 으로 세여 줄을
+    못 지우게 하면 안 된다. 지우면 그 줄을 가리키던 방 찾기 건도 치운다."""
+    from app.models import SendItem, SendJob, SourcingContact
+
+    rid = sc(db).id
+    item = _search(board, rid)
+    _report(board, item, verify_result="not_found")
+    job_id = db.get(SendItem, item["id"]).job_id
+
+    r = board.delete(f"/api/sourcing/{rid}")
+    assert r.status_code == 200, r.text
+    db.expire_all()
+    assert db.get(SourcingContact, rid) is None
+    assert db.query(SendItem).filter_by(sourcing_contact_id=rid).count() == 0
+    job = db.get(SendJob, job_id)
+    assert (job.total, job.sent, job.failed) == (0, 0, 0)
+
+
+def test_a_failed_search_keeps_the_candidates_found_before(board, db, users):
+    """발송기 오류로 끝난 찾기는 담아 둔 후보를 지우지 않는다 — 오류만 남긴다.
+    찾아봤는데 없던 것(오류 없음)은 예전처럼 `후보 없음` 이다."""
+    from app.models import SendItem, SourcingContact
+    from app.services import sourcing_rooms
+
+    row = sc(db)
+    _report(board, _search(board, row.id), verify_result="ambiguous",
+            candidates=["딜소싱 홍길동", "홍길동 딜소싱방"])
+    item = _search(board, row.id)
+    _report(board, item, error="verify error: 카톡 창을 못 찾았습니다",
+            verify_result="not_found")
+    db.expire_all()
+    pick = sourcing_rooms.picks(db.get(SourcingContact, row.id))
+    assert [p["room"] for p in pick["rooms"]] == ["딜소싱 홍길동", "홍길동 딜소싱방"]
+    assert pick["state"] == "picks"
+    assert "카톡 창" in pick["error"]
+    assert "카톡 창" in db.get(SendItem, item["id"]).error
+
+    # 오류 없이 못 찾은 것은 찾아본 결과다 — 후보 없음
+    _report(board, _search(board, row.id), verify_result="not_found")
+    db.expire_all()
+    pick = sourcing_rooms.picks(db.get(SourcingContact, row.id))
+    assert (pick["state"], pick["rooms"], pick["error"]) == ("no_picks", [], "")
+
+
+def test_the_phone_written_differently_is_not_a_different_field(board, db, users):
+    from app.services import sourcing_sync
+
+    contact = vc(db, users, phone="010-1234-5678")
+    sc(db, phone="01012345678")
+    mark(board, contact.id, "O")
+    [row] = sync_rows(db)
+    assert row.vc_contact_id == contact.id
+    assert "휴대폰" not in sourcing_sync.badges(db, [row])[row.id]["diff"]
+
+
+def test_people_who_left_need_no_room(board, db, users):
+    """불참여인 분은 받을 일이 없다 — `방 없음` 도, 방 찾기 대상도 아니다."""
+    from app.services import sourcing_rooms
+
+    stays = sc(db)
+    left = sc(db, name="김철수", phone="010-2222-3333", participation="불참여")
+    assert [r.id for r in sourcing_rooms.needs_room(db, [stays, left])] == [stays.id]
+    assert [r.id for r in sourcing_rooms.targets(db, SYNC)] == [stays.id]
+    assert sourcing_rooms.targets(db, SYNC, [left.id]) == []
+    assert "방 후보 찾기 (1명)" in board.get(f"/sourcing?tab={SYNC}").text
+
+
+def test_deleting_the_investor_row_logs_the_unlink(board, db, users):
+    """투자사 줄을 지워 연결이 끊긴 것도 수정 로그에 남는다 — `vc_contact_id`."""
+    import json
+
+    from app.models import EditLog
+
+    contact = vc(db, users)
+    mark(board, contact.id, "O")
+    [row] = sync_rows(db)
+    cid, rid = contact.id, row.id
+    db.expunge_all()                              # 요청 세션에 소싱 줄이 안 올라와 있다
+
+    assert board.delete(f"/api/contacts/{cid}").status_code == 200
+    logs = db.query(EditLog).filter_by(table_name="sourcing_contacts",
+                                       row_id=rid, action="update").all()
+    changes = [c for log in logs for c in json.loads(log.changes_json)]
+    assert {"field": "vc_contact_id", "before": cid, "after": None} in changes
+
+
+SAVE_JS = Path(__file__).resolve().parent / "js" / "contacts_sourcing_join_save_test.js"
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치 — 브라우저 로직 테스트 생략")
+def test_the_edit_panel_sends_the_column_only_when_it_was_changed():
+    """수정창이 열 때 읽은 O/X 를 저장할 때마다 다시 보내면, 그 사이 딜 소싱에서
+    바뀐 참여를 되돌리거나 지운 줄을 되살린다 — 고쳤을 때만 보낸다.
+
+    로컬에서는 `node tests/js/contacts_sourcing_join_save_test.js` 로도 돈다.
+    """
+    result = subprocess.run([shutil.which("node"), str(SAVE_JS)],
+                            capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stdout + result.stderr
