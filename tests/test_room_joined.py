@@ -271,6 +271,7 @@ ALLOWED_WRITERS = {
     "app/services/room_joined.py": "규칙이 사는 자리",
     "app/services/room_match.py": "스타트업 기업(`IrCompany`)의 방 — 다른 표다",
     "app/routers/sourcing.py": "딜 소싱 명단(`SourcingContact`) — 다른 표다",
+    "app/services/sourcing_rooms.py": "딜 소싱 명단(`SourcingContact`)의 후보 확정 — 다른 표다",
 }
 
 

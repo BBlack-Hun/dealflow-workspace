@@ -29,6 +29,15 @@ services:
       DEALFLOW_SMTP_FROM: "${DEALFLOW_SMTP_FROM:-}"
       DEALFLOW_SMTP_TLS: "${DEALFLOW_SMTP_TLS:-1}"
       DEALFLOW_SMTP_SSL: "${DEALFLOW_SMTP_SSL:-}"
+      # 딜 소싱 메일 확인(POP3 over SSL, 머리글만 읽는다). 팀 현황 판에서 넣는 것이
+      # 먼저고, 판이 비면 이 값. 둘 다 비면 '메일 확인 꺼짐'.
+      DEALFLOW_POP3_HOST: "${DEALFLOW_POP3_HOST:-}"
+      DEALFLOW_POP3_PORT: "${DEALFLOW_POP3_PORT:-995}"
+      DEALFLOW_POP3_USER: "${DEALFLOW_POP3_USER:-}"
+      DEALFLOW_POP3_PASSWORD: "${DEALFLOW_POP3_PASSWORD:-}"
+      # 팀 현황 판의 비밀번호를 잠그는 열쇠의 바탕값(app/services/secret_box.py).
+      # 로컬은 에이전트 토큰이 저장소 기본값이라 이 값이 없으면 판에 비밀번호를 못 넣는다.
+      DEALFLOW_SECRET_KEY: "${DEALFLOW_SECRET_KEY:-}"
       # 결과 문의 문자 알림(팀원에게만). 비어 있으면 알림 실이 아예 뜨지 않는다.
       DEALFLOW_SMS_API_KEY: "${DEALFLOW_SMS_API_KEY:-}"
       DEALFLOW_SMS_API_SECRET: "${DEALFLOW_SMS_API_SECRET:-}"

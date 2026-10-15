@@ -1,0 +1,215 @@
+{% extends "base.html" %}
+{#
+  IR 기업 연결 — 스타트업 명단 줄 · 투자컨설턴트 줄을 IR 기업 현황의 기업에
+  **사람이** 잇는 자리.
+
+  무엇을 왜 그렇게 하는지는 `services/ir_link.py` 머리말에, 누구의 줄이 서는지는
+  `routers/ir_link.py` 머리말에 있다. 이 화면이 **하지 않는 것** 둘:
+
+    · 저절로 잇지 않는다. 후보가 하나여도 [이 기업으로 연결] 을 누르는 것은
+      사람이고, 일괄 연결도 확인 화면을 한 번 거친다(`ir_link_bulk.html`).
+    · 줄마다 무엇을 할 수 있는지 판정하지 않는다 — 서버가 상태와 후보를 실어
+      보낸다(`routers/ir_link.row_view`). 누른 뒤에도 서버가 같은 문을 지난다.
+
+  단추는 전부 **폼**이다. 누르면 서버가 잇고 이 화면의 그 줄로 돌아온다
+  (`#row-번호`) — 150줄짜리 표에서 맨 위로 튀어 올라가지 않게.
+#}
+{% block title %}IR 기업 연결 · CONTACTVC ASSET{% endblock %}
+
+{%- macro meta(c) -%}
+<span class="ir-meta">수신일 <b>{{ c.received_at or '—' }}</b> · 담당자 <b>{{ c.assignee or '—' }}</b> · 계약 <b>{{ c.contract }}</b></span>
+{%- endmacro -%}
+
+{%- macro link_form(row_id, c, label='이 기업으로 연결') -%}
+<form method="post" action="/ir-link/link" class="inline-form">
+  <input type="hidden" name="tab" value="{{ kind }}">
+  <input type="hidden" name="row_id" value="{{ row_id }}">
+  <input type="hidden" name="company_id" value="{{ c.id }}">
+  <input type="hidden" name="show" value="{{ show }}">
+  <button type="submit" class="linkbtn ir-link-btn">{{ label }}</button>
+</form>
+{%- endmacro -%}
+
+{%- macro company_line(c) -%}
+<a href="{{ c.href }}" class="ir-cand-name">{{ c.name }}</a>
+{{ meta(c) }}
+{% if c.dup %}<span class="room-badge warn" title="IR 기업 현황에 비교용 이름이 같은 기업이 또 있습니다">같은 이름 여럿</span>{% endif %}
+{%- endmacro -%}
+
+{% block content %}
+<header class="page-head">
+  <h1>IR 기업 연결</h1>
+  <p class="muted">
+    같은 기업이 <b>스타트업 명단</b> · <b>투자컨설턴트</b> · <b>IR 기업 현황</b>에 따로 적혀
+    있습니다. 여기서 각 줄을 <a href="/companies">IR 기업 현황</a>의 기업 하나에 잇습니다.
+  </p>
+  <p class="hint">
+    ✋ 이름이 같은 IR 기업을 <b>후보</b>로 보여 줄 뿐 <b>저절로 잇지 않습니다</b> — 맞는 기업에서
+    <b>[이 기업으로 연결]</b> 을 누르세요. 후보가 없으면 <b>직접 찾기</b> 로 고릅니다.
+    이어도 미팅일·담당자·연매출 같은 값은 아직 서로 오가지 않습니다.
+  </p>
+</header>
+
+{% if msg %}<p class="flash">{{ msg }}</p>{% endif %}
+
+<nav class="sheet-tabs" id="ir-link-tabs">
+  {% for t in tabs %}
+  <a class="sheet-tab {% if t.key == kind %}active{% endif %}" href="/ir-link?tab={{ t.key }}">
+    {{ t.label }} <span>{{ t.count }}</span>
+  </a>
+  {% endfor %}
+</nav>
+
+{# **무엇이 남았는지를 머리에 적는다.** 일괄 연결이 받는 것은 `후보 하나` 뿐이라
+   그 수를 따로 세운다 — `후보 여럿` 은 사람이 골라야 하는 줄이다. #}
+<p class="muted" data-testid="ir-link-summary">
+  {{ kind_label }} <b>{{ totals.total }}줄</b>
+  — 연결됨 <b>{{ totals.linked }}</b>
+  · 후보 하나 <b>{{ totals.single }}</b>
+  · 후보 여럿 <b>{{ totals.multi }}</b>
+  · 후보 없음 <b>{{ totals.none }}</b>
+</p>
+{% if dup_groups %}
+<p class="hint">
+  IR 기업 현황에 비교용 이름이 같은 기업이 <b>{{ dup_groups }}묶음</b> 있습니다 — 그 이름은 후보를
+  하나로 세우지 않고 일괄 연결에서도 뺍니다. 둘 중 어느 쪽인지 골라 주세요.
+</p>
+{% endif %}
+
+<div class="toolbar">
+  <div class="quick-chips" id="ir-link-chips">
+    <a class="chip {% if not show %}active{% endif %}" href="/ir-link?tab={{ kind }}">전체 <b>{{ totals.total }}</b></a>
+    <a class="chip {% if show == 'linked' %}active{% endif %}" href="/ir-link?tab={{ kind }}&show=linked">연결됨 <b>{{ totals.linked }}</b></a>
+    <a class="chip {% if show == 'cand' %}active{% endif %}" href="/ir-link?tab={{ kind }}&show=cand">후보 있음 <b>{{ totals.candidate }}</b></a>
+    <a class="chip {% if show == 'none' %}active{% endif %}" href="/ir-link?tab={{ kind }}&show=none">후보 없음 <b>{{ totals.none }}</b></a>
+  </div>
+  <div class="toolbar-right">
+    <a class="secondary-btn" href="{{ home_href }}">← {{ kind_label }}</a>
+    {# 누르면 **바로 잇지 않는다** — 몇 줄이 어디에 붙는지 보여 주는 확인 화면으로 간다. #}
+    {% if totals.single %}
+    <a class="primary-btn inline" id="ir-link-bulk" href="/ir-link/bulk?tab={{ kind }}">
+      후보가 하나인 줄 일괄 연결 ({{ totals.single }}줄)</a>
+    {% else %}
+    <span class="secondary-btn" id="ir-link-bulk" aria-disabled="true"
+          title="후보가 정확히 하나인 줄이 없습니다">후보가 하나인 줄 일괄 연결 (0줄)</span>
+    {% endif %}
+  </div>
+</div>
+
+{% if focus_missing %}
+<p class="hint error" role="alert">
+  그 줄을 찾을 수 없습니다 — 내가 고칠 수 있는 줄이 아니거나 지워졌습니다.
+  <a href="{{ back }}">목록으로</a>
+</p>
+{% endif %}
+
+{% if focus %}
+{# ── 줄 하나를 펴 놓고 직접 찾기 ────────────────────────────────────────
+   수정창의 [연결하기] · 목록의 [직접 찾기] 가 여기로 온다. #}
+<section class="panel ir-link-focus" id="ir-link-focus">
+  <h2 class="panel-title">‘{{ focus.name or '(기업명 없음)' }}’ — IR 기업 직접 찾기</h2>
+  <form method="get" action="/ir-link" class="ir-link-search">
+    <input type="hidden" name="tab" value="{{ kind }}">
+    <input type="hidden" name="row" value="{{ focus.id }}">
+    <input type="search" name="q" value="{{ query }}" placeholder="IR 기업 이름으로 찾기"
+           aria-label="IR 기업 이름으로 찾기" id="ir-link-q">
+    <button type="submit" class="secondary-btn">찾기</button>
+    <a class="linkbtn" href="{{ back }}">← 목록으로</a>
+  </form>
+  {% if results %}
+  <ul class="ir-cands" id="ir-link-results">
+    {% for c in results %}
+    <li class="ir-cand{% if focus.linked and focus.linked.id == c.id %} current{% endif %}">
+      {{ company_line(c) }}
+      {% if c.links %}<span class="room-badge muted">이어진 줄 {{ c.links }}개</span>{% endif %}
+      {% if focus.linked and focus.linked.id == c.id %}
+      <span class="room-badge ok">✓ 이 기업에 이어져 있음</span>
+      {% else %}
+      {{ link_form(focus.id, c, '이 기업으로 연결' if not focus.linked else '이 기업으로 바꾸기') }}
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% if results|length >= search_limit %}
+  <p class="hint">{{ search_limit }}곳까지만 보입니다 — 더 쳐서 좁혀 주세요.</p>
+  {% endif %}
+  {% elif query %}
+  <p class="hint">‘{{ query }}’ 이(가) 든 IR 기업이 없습니다. 이름을 줄여 다시 찾거나,
+    <a href="/companies">IR 기업 현황</a>에 기업을 먼저 넣어 주세요.</p>
+  {% endif %}
+</section>
+{% endif %}
+
+<div class="table-wrap">
+  <table class="grid-table" id="ir-link-table">
+    <thead>
+      <tr>
+        <th>기업명</th>
+        <th>{{ '명단' if kind == 'startup' else '탭' }}</th>
+        <th>담당</th>
+        <th>상태</th>
+        <th>IR 기업 현황</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr id="row-{{ r.id }}" class="ir-link-row" data-id="{{ r.id }}" data-state="{{ r.state }}">
+        <td class="strong">{{ r.name or '(기업명 없음)' }}{% if r.hidden %} <span class="muted">· 감춘 줄</span>{% endif %}</td>
+        <td class="muted">{{ r.where }}</td>
+        <td class="muted">{{ r.owner }}</td>
+        <td>
+          <span class="room-badge {% if r.state == 'linked' %}ok{% elif r.state == 'multi' %}warn{% else %}muted{% endif %}">{{ r.state_label }}</span>
+        </td>
+        <td>
+          {% if r.linked %}
+          {% set c = r.linked %}
+          <div class="ir-cand current">
+            {{ company_line(c) }}
+            {# 한 IR 기업에 여러 줄이 이어져도 막지 않는다 — 대신 몇 줄인지 적는다. #}
+            {% if c.links > 1 %}<span class="room-badge warn" title="스타트업 명단과 투자컨설턴트를 합친 수입니다">이 기업에 이어진 줄 {{ c.links }}개</span>{% endif %}
+            <form method="post" action="/ir-link/unlink" class="inline-form ir-unlink-form">
+              <input type="hidden" name="tab" value="{{ kind }}">
+              <input type="hidden" name="row_id" value="{{ r.id }}">
+              <input type="hidden" name="show" value="{{ show }}">
+              {% if focus %}<input type="hidden" name="focus" value="{{ r.id }}">{% endif %}
+              <button type="submit" class="linkbtn ir-unlink-btn"
+                      data-name="{{ r.name }}" data-company="{{ c.name }}">연결 해제</button>
+            </form>
+          </div>
+          {% else %}
+          {% if r.candidates %}
+          <ul class="ir-cands">
+            {% for c in r.candidates %}
+            <li class="ir-cand">
+              {{ company_line(c) }}
+              {% if c.links %}<span class="room-badge muted">이미 이어진 줄 {{ c.links }}개</span>{% endif %}
+              {{ link_form(r.id, c) }}
+            </li>
+            {% endfor %}
+          </ul>
+          {% if r.state == 'multi' %}
+          <p class="hint">이름이 같은 IR 기업이 {{ r.candidates|length }}곳입니다 — 맞는 쪽을 골라 주세요(일괄 연결에서 빠집니다).</p>
+          {% endif %}
+          {% else %}
+          <p class="hint">이름이 같은 IR 기업이 없습니다.</p>
+          {% endif %}
+          {% endif %}
+          {% if not focus %}
+          <a class="linkbtn ir-find" href="/ir-link?tab={{ kind }}&row={{ r.id }}">
+            {{- '다른 기업으로 바꾸기' if r.linked else '직접 찾기' -}}</a>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+      {% if not rows and not focus_missing %}
+      <tr><td colspan="5" class="muted">
+        {% if show %}이 조건에 맞는 줄이 없습니다.{% else %}내가 고칠 수 있는 {{ kind_label }} 줄이 없습니다.{% endif %}
+      </td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ asset('js/ir_link.js') }}"></script>
+{% endblock %}

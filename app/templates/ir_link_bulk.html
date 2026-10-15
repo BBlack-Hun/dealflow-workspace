@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{#
+  [후보가 하나인 줄 일괄 연결] 의 **확인 단계.**
+
+  누르자마자 잇지 않는다. 몇 줄이 어느 IR 기업에 붙는지를 여기서 먼저 보이고,
+  사람이 빼고 싶은 줄은 체크를 풀고 누른다. 서버는 받은 짝을 **지금 다시 세어 본
+  짝과 견주어** 같은 것만 잇는다(`routers/ir_link.bulk_link`) — 이 화면을 띄워
+  둔 사이에 누가 그 줄을 이었거나 후보가 둘이 되었으면 건너뛰고 수를 알린다.
+#}
+{% block title %}IR 기업 일괄 연결 · CONTACTVC ASSET{% endblock %}
+{% block content %}
+<header class="page-head">
+  <h1>후보가 하나인 줄 일괄 연결</h1>
+  <p class="muted">
+    {{ kind_label }}에서 이름이 같은 IR 기업이 <b>정확히 하나</b>인 줄입니다. 아래 짝대로 잇습니다
+    — 빼고 싶은 줄은 체크를 푸세요. 후보가 여럿이거나 없는 줄은 여기 서지 않습니다.
+  </p>
+</header>
+
+{% if pairs %}
+<form method="post" action="/ir-link/bulk" id="ir-link-bulk-form">
+  <input type="hidden" name="tab" value="{{ kind }}">
+  <p class="flash" data-testid="ir-link-bulk-count">
+    <b><span id="ir-link-bulk-n">{{ pairs|length }}</span>줄</b>을 잇습니다.
+  </p>
+  <div class="table-wrap">
+    <table class="grid-table" id="ir-link-bulk-table">
+      <thead>
+        <tr><th></th><th>기업명</th><th>{{ '명단' if kind == 'startup' else '탭' }}</th><th>담당</th><th>→ IR 기업 현황</th></tr>
+      </thead>
+      <tbody>
+        {% for p in pairs %}
+        <tr>
+          <td><input type="checkbox" class="ir-bulk-pick" name="pair" value="{{ p.token }}" checked
+                     aria-label="{{ p.name }} 잇기"></td>
+          <td class="strong">{{ p.name }}</td>
+          <td class="muted">{{ p.where }}</td>
+          <td class="muted">{{ p.owner }}</td>
+          <td>{{ p.company }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="toolbar">
+    <div class="toolbar-right">
+      <a class="secondary-btn" href="{{ back }}">취소</a>
+      <button type="submit" class="primary-btn inline" id="ir-link-bulk-go">
+        <span class="ir-bulk-label">{{ pairs|length }}줄 연결</span></button>
+    </div>
+  </div>
+</form>
+{% else %}
+<p class="hint">일괄로 이을 줄이 없습니다 — 후보가 정확히 하나인, 아직 안 이은 줄이 없습니다.</p>
+<p><a class="secondary-btn" href="{{ back }}">← IR 기업 연결</a></p>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script src="{{ asset('js/ir_link.js') }}"></script>
+{% endblock %}
