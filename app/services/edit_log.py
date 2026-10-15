@@ -281,6 +281,13 @@ WATCHED: Dict[str, Watch] = {
             "**지우는 것도 같은 결이다** — 관리자뿐 아니라 팀원도 기업을 지운다"
             "(`routers/companies.can_delete_company`). 지울 수 있는 사람이 늘어난 "
             "만큼 이 줄이 '누가 지웠나' 를 답하는 유일한 자리다."),
+    "series_a_companies": Watch(
+        owner=None, href="/companies", label=_attr("name"),
+        why="IR 기업 현황 메뉴의 `Series A 이상 기업` 탭 — 딜 소싱으로 받은 딜. "
+            "주인 칸이 없고 옆 두 탭(`ir_companies`)과 같이 **누구나 고치고**, "
+            "지우는 사람도 같은 판정이다(`routers/companies.can_delete_company`). "
+            "시트에서 넘어온 줄을 손으로 고치는 자리라, 누가 언제 무엇을 바꿨는지가 "
+            "여기 말고 남는 곳이 없다."),
     "contact_activities": Watch(
         owner=None, href="/contacts", label=_activity_label,
         only=("source", SOURCE_MANUAL),
@@ -297,6 +304,14 @@ WATCHED: Dict[str, Watch] = {
     "sourcing_contacts": Watch(
         owner=None, href="/sourcing", label=_attr("name"),
         why="딜 소싱 명단. 주인 칸이 없고 로그인한 사람이면 누구나 고친다."),
+    "sourcing_receipts": Watch(
+        owner=None, href="/sourcing", label=_attr("month"),
+        why="딜 소싱 명단의 달마다 `딜 받음` 표시. 사람이 누르거나 메일 확인이 "
+            "세운다 — 잘못 눌리면 누가 이 달 딜을 줬는지가 틀린다."),
+    "sourcing_mail_settings": Watch(
+        owner=None, href="/team", label=_attr("host"),
+        why="딜 소싱 메일 확인이 읽을 편지함(관리자). 비밀번호 칸은 이름에 "
+            "`password` 가 들어 있어 값 없이 `바뀜` 으로만 남는다."),
     "consulting_sheets": Watch(
         owner=None, href="/consulting", label=_attr("label"),
         why="투자컨설턴트 화면의 탭. `탭은 사람마다가 아니라 팀 공용이다`(models)."),
@@ -323,10 +338,6 @@ WATCHED: Dict[str, Watch] = {
         owner=None, href="/team", label=_attr("room_name"),
         why="보내는 계정 카톡 기준 방 제목. 자동화가 이 제목으로 보낸다 — 잘못 "
             "확정하면 자동화가 엉뚱한 방으로 간다. 관리자가 고르는 공용 자리다."),
-    "sourcing_receipts": Watch(
-        owner=None, href="/sourcing", label=_attr("month"),
-        why="딜 소싱 명단의 달마다 `딜 받음` 표시. 소싱 리마인드가 이것을 보고 "
-            "보낼지 뺄지 정한다 — 잘못 눌리면 리마인드가 빠지거나 다시 간다."),
     "schedule_rules": Watch(
         owner=None, href="/followups", label=_attr("label"),
         why="발송 일정 규칙. 팀 전체의 날짜를 정하는 자리라 공용이다."),
@@ -356,6 +367,9 @@ UNWATCHED: Dict[str, str] = {
     "deal_queue_companies": "발송 대기에 실린 기업. 위와 같다.",
     "send_jobs": "발송 작업. 보낸 기록이다.",
     "send_items": "발송 한 건. 보낸 기록이다(문구가 통째로 들어 있기도 하다).",
+    "series_a_shares": "Series A 딜 공유로 어느 심사역에게 어느 기업을 보냈나 — 발송 "
+                       "목록을 만들 때 기계가 발송 건마다 적는 보낸 기록이다"
+                       "(`send_items` 와 같은 결). 사람이 고치는 길이 없다.",
     "monthly_column_runs": "이달 열을 이미 세웠다는 표시. 사람이 보는 자료가 아니다.",
     "weekly_routines": "주간 업무 되풀이 — 계정마다의 개인 화면이다.",
     "weekly_tasks": "주간 업무 할 일 — 개인 화면이다.",
@@ -366,6 +380,11 @@ UNWATCHED: Dict[str, str] = {
     "auto_send_runs": "자동 준비가 오늘 몇 건 돌았나. 기계 기록이다.",
     "automation_sends": "2단계 자동화가 이 대상에게 보냈다는 표시. 자동화가 적는 "
                         "기계 기록이고, 나간 글은 `send_items` 에 있다.",
+    "sourcing_mail_checks": "딜 소싱 메일 확인이 받은 편지함을 언제 훑었나(회차 · 건수 · "
+                            "실패 사유). 기계 기록이다 — 그 결과로 선 `딜 받음` 은 "
+                            "`sourcing_receipts` 에 있다.",
+    "sourcing_mail_seen": "메일 확인이 이미 본 메일(Message-ID × 사람). 같은 메일로 두 번 "
+                          "세우지 않으려는 기계 기록이다.",
     "notice_reads": "공지를 확인했다는 표시. 자기가 읽었다고 적는 줄이라 늘 자기 것이고"
                     "(남길 일이 아니다), 사람 수 × 공지 수만큼 쌓인다 — 남기면 로그가 "
                     "`누가 공지를 닫았다` 로 덮여 `누가 무엇을 고쳤나` 가 안 보인다. "
@@ -410,6 +429,15 @@ VALUE_FIELDS = frozenset({
     # (명단 이름 · 갈래 이름 · 탭 이름).
     "name", "label", "title", "firm", "company_name", "ceo_name",
     "department", "kind", "variant",
+    # `Series A 이상 기업` 탭 — 딜을 **누가 · 어느 투자사가 · 어떤 길로** 넘겨
+    # 주었나. 짧고 고르는 값이라(`firm` · `assignee_name` 과 같은 결) 값을 남긴다.
+    "shared_by", "source_firm", "deal_type",
+
+    # **딜 소싱의 어느 줄이 투자사 관리 현황의 어느 줄과 이어졌나 · 참여하나.**
+    # 투자사 관리 현황의 `Series A 딜 소싱` 칸(O/X)이 이 둘에서 나온다
+    # (`services/sourcing_sync.py`) — 잘못 이어지면 남의 방으로 딜 소싱 제안이
+    # 나가고, 잘못 `불참여` 가 되면 그 분만 조용히 빠진다.
+    "vc_contact_id", "participation",
 
     # 어디까지 왔나.
     "status", "connect_stage", "stages", "invited_status", "interest_level",
@@ -434,6 +462,11 @@ VALUE_FIELDS = frozenset({
 
     # **어느 방으로 나가나.** 이 앱에서 오발송에 가장 가까운 칸이라 값을 남긴다.
     "kakao_room_name",
+
+    # **어느 IR 기업에 이어 두었나**(`services/ir_link.py`). 번호로 남고, 로그
+    # 화면이 그 번호를 기업 이름으로 바꿔 보여 준다(`recent`). 잇고 푼 것은
+    # 자기 줄이라도 남는다 — 아래 `ALWAYS_FIELDS`.
+    "ir_company_id",
 
     # 언제.
     "requested_at", "delivered_at", "scheduled_at", "scheduled_time",
@@ -469,11 +502,16 @@ FIELD_LABELS = {
     "can_view_consulting": "투자현황", "can_auto_attach_ir": "자료 자동 첨부",
     "daily_send_cap": "하루 발송 상한",
     "must_change_password": "비밀번호 변경 필요", "password_hash": "비밀번호",
+    "password_enc": "비밀번호", "host": "메일 서버", "username": "계정",
     "series": "라운드", "sector_major": "분야", "sector_minor": "세부 분야",
     "stages": "투자 단계", "interest_level": "관심도", "invited_status": "초대",
     "contract_status": "계약 상태", "funding_status": "투자 상태",
     "outcome": "결과", "meet_mode": "미팅 방식", "kind": "종류",
     "enabled": "켜짐", "firm_type": "기관 유형", "variant": "갈래",
+    "vc_contact_id": "투자사 관리 현황 연결", "participation": "참여",
+    # `Series A 이상 기업` 탭 — 시트 머리글 그대로.
+    "shared_by": "공유 심사역", "source_firm": "회사", "deal_type": "Type",
+    "detail": "상세 내용", "deal_pitch": "딜소개 문구",
     "memo": "메모", "notes": "칸 메모", "note": "메모", "body": "본문",
     "phone": "연락처", "email": "메일", "one_liner": "한 줄 소개",
     "summary": "요약", "business_desc": "사업 설명", "content_json": "내용",
@@ -497,7 +535,19 @@ FIELD_LABELS = {
     "tab_canceled_jobs": "비어서 취소한 발송 회차",
     "tab_deleted_columns": "함께 지운 달 칸",
     "tab_snapshot": "지우기 직전 백업",
+    "ir_company_id": "IR 기업 연결",
 }
+
+#: **자기 줄이라도 남기는 칸.** 보통은 자기 것을 고친 것은 안 남긴다(머리글 —
+#: 하루 수백 줄이 쌓여 아무도 안 본다). 이 칸은 다르다.
+#:
+#: `ir_company_id` 는 줄이 **세 화면이 함께 보는 기업 하나**를 가리키게 하는
+#: 칸이다(`services/ir_link.py`). 이어 두면 그 줄이 IR 기업 현황의 기업과 한
+#: 몸으로 읽히고, 나중에 값이 그 연결을 따라 오간다 — 잘못 이으면 남의 화면
+#: 값이 엉뚱한 기업으로 간다. 줄의 주인이 잇는 것이 보통이라(자기 명단), 자기
+#: 것이라고 빼면 이 로그가 비어 "누가 이 기업에 이었나" 를 물을 곳이 없다.
+#: 한 번에 수십 줄을 잇는 단추(`후보가 하나인 줄 일괄 연결`)가 있어 더 그렇다.
+ALWAYS_FIELDS = frozenset({"ir_company_id"})
 
 
 def field_label(name: str) -> str:
@@ -686,6 +736,13 @@ def _row_scope(obj, watch: Watch, actor_id: int, action: str):
     return True, SCOPE_OTHERS, owner_id
 
 
+def _touches_always(obj) -> bool:
+    """이 줄에서 `ALWAYS_FIELDS` 중 하나가 바뀌었는가."""
+    columns = obj.__table__.c
+    return any(name in columns and get_history(obj, name).has_changes()
+               for name in ALWAYS_FIELDS)
+
+
 def _href(watch: Watch, obj) -> str:
     return watch.href(obj) if callable(watch.href) else watch.href
 
@@ -712,6 +769,9 @@ def _collect(session: OrmSession, action: str, rows, ctx: dict) -> List[dict]:
                 obj, include_collections=False):
             continue
         keep, scope, owner_id = _row_scope(obj, watch, ctx["user_id"], action)
+        if not keep and action == ACTION_UPDATE and _touches_always(obj):
+            # 자기 줄인데 `ALWAYS_FIELDS` 를 건드렸다 — 남긴다(그 주석 참고).
+            keep, scope = True, SCOPE_MINE
         if not keep:
             continue
         changes = _changes(obj, action)
@@ -958,7 +1018,8 @@ RETENTION_MONTHS = 13
 PAGE_SIZE = 200
 
 
-def _one_change(item: dict, names: dict) -> dict:
+def _one_change(item: dict, names: dict,
+                companies: Optional[dict] = None) -> dict:
     """화면이 그대로 그릴 수 있게 한 줄로 편다."""
     field = item.get("field", "")
     out = {"label": field_label(field), "value_kept": "changed" not in item}
@@ -971,6 +1032,9 @@ def _one_change(item: dict, names: dict) -> dict:
         # 담당 칸은 번호로 남아 있다 — 번호를 보여 주면 아무도 못 읽는다.
         if field in ("user_id", "owner_user_id", "actor_user_id"):
             return names.get(int(value), f"#{value}")
+        # 이어 둔 IR 기업도 번호로 남아 있다. 지운 기업이면 번호만 남는다.
+        if field == "ir_company_id" and companies is not None:
+            return companies.get(int(value), f"#{value}")
         return str(value)
 
     out["before"] = shown(item.get("before"))
@@ -997,6 +1061,14 @@ def recent(db, *, scope: str = "", screen: str = "", limit: int = PAGE_SIZE):
         stmt = stmt.where(EditLog.screen == screen)
     rows = list(db.execute(stmt.limit(limit)).scalars().all())
 
+    # IR 기업 이름은 **그 칸이 실린 줄이 있을 때만** 떠 온다 — 로그 대부분은
+    # 그 칸과 상관없다.
+    companies = None
+    if any('"ir_company_id"' in (row.changes_json or "") for row in rows):
+        from ..models import IrCompany
+
+        companies = {c.id: c.name for c in db.execute(select(IrCompany)).scalars().all()}
+
     out = []
     for row in rows:
         try:
@@ -1013,7 +1085,7 @@ def recent(db, *, scope: str = "", screen: str = "", limit: int = PAGE_SIZE):
             "screen": row.screen or row.table_name,
             "row_label": row.row_label or f"{row.table_name} {row.row_id}",
             "path": row.path or "",
-            "changes": [_one_change(c, names) for c in changes],
+            "changes": [_one_change(c, names, companies) for c in changes],
         })
     return out
 

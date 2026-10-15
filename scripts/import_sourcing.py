@@ -21,6 +21,7 @@ from sqlalchemy import delete, select  # noqa: E402
 
 from app.db import SessionLocal  # noqa: E402
 from app.models import SourcingContact  # noqa: E402
+from app.services import sourcing_sync  # noqa: E402
 
 # 시트 컬럼(포함으로 찾는다) → 모델 칸
 COLUMNS = [
@@ -98,6 +99,7 @@ def main() -> None:
         db.execute(delete(SourcingContact).where(SourcingContact.bucket == bucket))
 
         n = 0
+        new_rows = []
         for r in range(hr + 1, ws.max_row + 1):
             name = text(ws.cell(r, where["name"]).value)
             if not name:
@@ -112,9 +114,18 @@ def main() -> None:
                 if value:
                     setattr(row, field, value)
             db.add(row)
+            new_rows.append(row)
             n += 1
         made += n
         print(f"  {bucket:36} {n:3}명")
+        # 갈아 끼우면 투자사 관리 현황과의 잇기(`Series A 딜 소싱` 칸)와 `불참여`
+        # 표시가 옛 줄과 함께 사라진다. 잇기는 화면에서 넣을 때와 **같은 규칙**
+        # (`sourcing_sync.auto_link` — 번호가 양쪽에 딱 한 줄씩)으로 다시 잇는다.
+        # 불참여는 시트에 칸이 없어 되살릴 수 없다 — 다시 X 로 두어야 한다.
+        if bucket == sourcing_sync.SYNC_BUCKET:
+            db.flush()
+            relinked = sum(1 for row in new_rows if sourcing_sync.auto_link(db, row))
+            print(f"  {'':36} 투자사 관리 현황과 다시 이음 {relinked}명")
 
     print(f"\n합계 {made}명")
     if args.apply:

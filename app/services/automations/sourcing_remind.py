@@ -1,63 +1,68 @@
 """A1 · **소싱 리마인드** — 이 달 딜을 아직 안 준 심사역에게 한 달에 두 번.
 
 딜 소싱 명단(좌측 [딜 소싱])의 정한 갈래(기본 `시리즈 A 이상 딜 소싱 참여
-심사역`) 사람 중 **이 달 `딜 받음` 이 안 눌린** 사람에게, 기본 **2주차 ·
-3주차 수요일 11:00** 에 리마인드 문구(`sourcing_remind` — 딜 제안 문구에서
-고친다)가 나간다. 보내는 계정(자동화 판의 그 계정) 카톡에서.
+심사역`) 사람 중 **이 달 `딜 받음` 이 아닌** 사람에게, 기본 **2주차 ·
+3주차 수요일 11:00** 에 월간 리마인드가 나간다. 보내는 계정(자동화 판의 그
+계정) 카톡에서.
+
+**손으로 보내는 월간 리마인드(딜 소싱 제안 › [보낼 문구 › 월간 리마인드])를
+그대로 자동으로 돌린 것이다.** 고르는 사람 · 빼는 사람 · 글 · 방이 그 길과
+같은 부품을 지난다 — 둘이 다른 규칙을 들면 같은 심사역이 손으로 받을 때와
+자동으로 받을 때 다른 글을 받는다.
 
 ## 무엇을 보고 고르나
 
   · 갈래 — 자동화 판에서 고친다(여러 줄이면 여러 갈래).
-  · `딜 받음` — 딜 소싱 화면의 줄마다 그 달 표시(`sourcing_receipts`). 지금은
-    사람이 누른다. 메일로 저절로 적는 길은 열어만 두었다
-    (`sourcing_receipts.record_from_mail`).
+  · `불참여` — 뺀다(`sourcing_sync.takes_part` — 손으로 보낼 때와 같은 판정).
+  · `딜 받음` — 그 달 표시(`sourcing_receipts`). 사람이 누르거나, 회사 받은
+    편지함(POP3) 확인이 저절로 세운다(`services/sourcing_mail.py`). 리마인드가
+    나가는 날에는 **30분 전에 메일을 한 번 더 본다** — 아래 `remind_at` 을
+    메일 확인의 고리(`sourcing_mail.register_remind_source`)에 단다.
   · 방 — 그 줄의 방 이름, 없으면 투자사 명단에서 휴대폰 번호로 이어진 방
-    (`sourcing_link` — 그 방은 보내는 계정 카톡 기준 제목으로 고른다).
-    방이 없는 줄은 뺀다 — 딜 소싱 화면의 [방 후보 찾기] 로 채운다.
+    (`sourcing_link.linked_rooms` — **시리즈 A 갈래는 이어받지 않는다**, 그
+    갈래는 자기 방이 없으면 방 없음). 이어진 방은 보내는 계정 카톡 기준
+    제목으로 고른다(`sender_rooms.room_for`). 방이 없는 줄은 뺀다 — 딜 소싱
+    화면의 [방 후보 찾기](`services/sourcing_rooms.py`)로 채운다.
+
+## 글
+
+손으로 보낼 때와 같은 글이다 — 딜 소싱 제안과 같은 틀(인사말 + 안내문, 빈
+직함은 갈래 호칭)에 안내문이 **월간 리마인드** 문구(`sourcing_remind`, 딜
+제안 문구에서 고친다 · 갈래 문구 > 갈래 없는 문구 > 코드 뼈대 —
+`sourcing_msg.remind_body_for`). `{월}` 은 **보내는 날의 달**로 채운다.
+
+회차는 `topic=sourcing_remind` 로 선다 — 손으로 보낸 리마인드와 같은 이름
+(`딜 소싱 리마인드`)으로 발송 기록에 남는다.
 
 ## 주차
 
 `1~7일이 1주차` — 이 저장소가 주차를 세는 규칙 하나(`sheet_import.week_of_month`).
 `2주차 수요일` 은 8~14일 사이의 수요일이다.
 
-## 아침에 세운 뒤 `딜 받음` 을 누르면
+## 아침에 세운 뒤 `딜 받음` 이 서면
 
-11시에 풀리는 순간 그 사람은 빠진다(`still_ok`).
+11시에 풀리는 순간 그 사람은 빠진다(`still_ok`). 그사이 `불참여` 가 됐거나
+줄이 지워졌어도 빠진다.
 """
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from typing import List, Optional
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ...models import Automation, AutomationSend, SourcingContact, User, VcContact
-from .. import automation, sender_rooms, sourcing_link, sourcing_receipts
+from .. import (automation, sender_rooms, sourcing_link, sourcing_mail,
+                sourcing_msg, sourcing_receipts, sourcing_sync)
 from .. import automation_runner as runner
 from .. import message_composer as mc
 
-#: 문구 종류 — 딜 제안 문구 화면에서 고친다(`routers/templates_crud.KINDS`).
-KIND = "sourcing_remind"
+#: 문구 종류 — 손으로 보내는 월간 리마인드와 **같은 종류**다(딜 제안 문구에서 고친다).
+KIND = sourcing_msg.REMIND_KIND
 
-#: 문구틀이 없을 때 나가는 글. **글자까지 `scripts/bootstrap.py` 의 시드와 같다.**
-#: 딜 소싱 제안(`sourcing_msg.default_body`)과 같은 결 — 무엇을 왜 달라는지,
-#: 어떻게 쓰이는지, 이미 보냈으면 넘겨도 된다는 말.
-DEFAULT_BODY = "\n".join([
-    "Deal Sourcing 네트워크 관련하여 이번 달 딜 공유 요청드립니다.",
-    "",
-    "이번 달 검토하신 딜 중 투자 방향이나 Fit 차이로 제외된 딜이 있으시면",
-    "편하실 때 전달 부탁드립니다.",
-    "",
-    " . 전달 주신 딜은 취합하여 월초 통합 공유드립니다",
-    " . 클로즈드 방식으로 운영되고 있습니다",
-    "",
-    "이미 전달 주셨다면 이 메시지는 넘겨 주셔도 됩니다.",
-    "감사합니다.",
-])
-
-#: 기본 갈래 — 운영의 갈래 이름(시트 탭 이름) 그대로.
-DEFAULT_GROUPS = ["시리즈 A 이상 딜 소싱 참여 심사역"]
+#: 기본 갈래 — 투자사 관리 현황과 잇는 그 갈래(운영의 시트 탭 이름 그대로).
+DEFAULT_GROUPS = [sourcing_sync.SYNC_BUCKET]
 
 _WEEKDAYS = "월화수목금토일"
 
@@ -114,17 +119,33 @@ def plan(db: Session, row: Automation, day: date) -> Optional[runner.Plan]:
                        at=runner.at_on(day, values["time"]))
 
 
-def message(db: Session, sender: User, contact) -> str:
-    """리마인드 전문 — 딜 소싱 제안과 **같은 틀**(인사말 + 안내문, 호칭은 갈래로)
-    에 안내문만 리마인드 문구로 바꾼다(`deals._compose_for_contact`)."""
-    from ...routers import deals as deals_view
-    from .. import template_pick
+def remind_at(db: Session, day: date) -> Optional[datetime]:
+    """그날 리마인드가 나갈 시각 — **켜 둔 날만.** 메일 확인이 이 시각 30분
+    전에 한 번 더 받은 편지함을 본다(`sourcing_mail.slots_on`). 그 확인이
+    실패해도 리마인드는 그대로 나간다(그쪽 머리말 — fail-open)."""
+    row = automation.load(db, automation.SOURCING_REMIND)
+    if not automation.is_on(row):
+        return None
+    planned = plan(db, row, day)
+    return planned.at if planned is not None else None
 
-    picked = template_pick.pick(db, sender.id, KIND)
-    body = picked.body if picked else DEFAULT_BODY
+
+sourcing_mail.register_remind_source(remind_at)
+
+
+def message(db: Session, sender: User, contact: SourcingContact,
+            day: Optional[date] = None) -> str:
+    """리마인드 전문 — 손으로 보내는 월간 리마인드와 **같은 길**
+    (`deals._compose_for_contact`, `topic=sourcing_remind`). `{월}` 만 보내는
+    날의 달로 채워 넣는다(아침에 세운 글이 그날 나간다 — 달이 갈릴 일은 없지만
+    시계를 두 번 읽지 않는다)."""
+    from ...routers import deals as deals_view
+
+    body = sourcing_msg.remind_body_for(db, sender, getattr(contact, "bucket", ""),
+                                        day)
     return deals_view._compose_for_contact(
         db, sender, contact, [], mode=deals_view.MODE_SOURCING,
-        closing_override=body).text
+        topic=KIND, closing_override=body).text
 
 
 def _room(db: Session, sender: User, contact: SourcingContact, linked: dict) -> str:
@@ -141,7 +162,8 @@ def _room(db: Session, sender: User, contact: SourcingContact, linked: dict) -> 
 def collect(db: Session, row: Automation, sender: User,
             plan_: runner.Plan) -> runner.Batch:
     values = runner.values(row, automation.SOURCING_REMIND)
-    month = sourcing_receipts.month_of(plan_.at.date())
+    day = plan_.at.date()
+    month = sourcing_receipts.month_of(day)
     nth = plan_.period % 10
     people = db.execute(
         select(SourcingContact).where(SourcingContact.bucket.in_(values["groups"]))
@@ -149,9 +171,13 @@ def collect(db: Session, row: Automation, sender: User,
     ).scalars().all()
     got = sourcing_receipts.received_ids(db, month)
     linked = sourcing_link.linked_rooms(db, people)
-    batch = runner.Batch(note="리마인드 보낼 심사역이 없습니다(모두 딜 받음이거나 방이 없음)")
+    batch = runner.Batch(note="리마인드 보낼 심사역이 없습니다"
+                              "(모두 딜 받음 · 불참여이거나 방이 없음)")
     for person in people:
         who = f"{person.name}({person.firm or '-'})"
+        if not sourcing_sync.takes_part(person):
+            batch.skipped.append(f"{who} — {sourcing_sync.LEFT}")
+            continue
         if person.id in got:
             batch.skipped.append(f"{who} — 이번 달 딜 받음")
             continue
@@ -160,23 +186,30 @@ def collect(db: Session, row: Automation, sender: User,
             batch.skipped.append(f"{who} — 방 이름 없음")
             continue
         batch.outs.append(automation.Out(
-            room=room, message=message(db, sender, person),
-            sourcing_contact_id=person.id, stage=mc.STAGE_REMIND,
+            room=room, message=message(db, sender, person, day),
+            sourcing_contact_id=person.id, stage=mc.STAGE_DAY1,
             ref=f"remind:{person.id}:{month}:{nth}"))
     return batch
 
 
 def still_ok(db: Session, rec: AutomationSend) -> str:
-    """풀리기 직전 — 그사이 `딜 받음` 을 눌렀으면 뺀다."""
+    """풀리기 직전 — 그사이 `딜 받음` 이 섰거나(메일 확인 · 사람) `불참여` 가
+    됐거나 줄이 지워졌으면 뺀다."""
     try:
         _, contact_id, month, _nth = rec.ref.split(":")
+        contact_id = int(contact_id)
     except ValueError:
         return ""
-    if sourcing_receipts.is_received(db, int(contact_id), month):
+    if sourcing_receipts.is_received(db, contact_id, month):
         return "이번 달 딜 받음"
+    person = db.get(SourcingContact, contact_id)
+    if person is None:
+        return "딜 소싱 명단에서 지워짐"
+    if not sourcing_sync.takes_part(person):
+        return sourcing_sync.LEFT
     return ""
 
 
 runner.register(runner.Spec(
-    key=automation.SOURCING_REMIND, kind="sourcing_intro", plan=plan,
+    key=automation.SOURCING_REMIND, kind="sourcing_intro", topic=KIND, plan=plan,
     collect=collect, still_ok=still_ok, fields=FIELDS, check=_check))

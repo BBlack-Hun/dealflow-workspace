@@ -8,14 +8,17 @@ from fastapi.staticfiles import StaticFiles
 from . import config, deps
 from .deps import NoConsulting, NotAdmin, NotAuthenticated
 from .services import (auto_send, automation_runner, backup, edit_log,
-                       followup_sms, scheduled_send, startup_monthly)
+                       followup_sms, scheduled_send, sourcing_mail,
+                       startup_monthly)
 from .routers import auth as auth_router
 from .routers import templates_crud
 from .routers import setup as setup_router
 from .routers import automations as automations_router
 from .routers import (agent_api, companies, consulting, contacts, dashboard,
                       data_io, deals, followups, ir, jobs, llm_brief, notices,
-                      pages, sourcing, startup, startup_outreach, startup_send)
+                      pages, series_a, sourcing, startup, startup_outreach,
+                      startup_send)
+from .routers import ir_link as ir_link_router
 
 
 def create_app() -> FastAPI:
@@ -61,6 +64,13 @@ def create_app() -> FastAPI:
     # 자동화가 없으면 깨어나도 곧바로 돌아온다. 푸는 것은 바로 위 예약 발송이다.
     automation_runner.start_scheduler()
 
+    # **딜 소싱 메일 확인** — 5분마다 깨어나 매일 18:00 에 회사 받은
+    # 편지함(POP3)의 머리글을 읽어 메일로 딜을 보낸 사람을 `딜 받음` 으로 세운다
+    # (`services/sourcing_mail.py`). 편지함은 팀 현황 판(없으면 DEALFLOW_POP3_*)
+    # 에서 오고, 없으면 깨어나도 곧바로 돌아온다 — 판에서 넣는 순간 돌게 실은
+    # 늘 띄운다.
+    sourcing_mail.start_scheduler()
+
     # 수정 로그의 세션 이벤트를 건다. 여기서 한 번 걸면 **앞으로 생기는
     # 라우터까지** 저절로 지난다 — 라우터마다 로그 호출을 붙이는 방식이었다면
     # 새 길이 생길 때마다 붙이는 것을 잊는다(왜 이 자리인지는
@@ -83,6 +93,9 @@ def create_app() -> FastAPI:
     app.include_router(agent_api.router)
     app.include_router(data_io.router)
     app.include_router(companies.router)
+    # IR 기업 현황 메뉴의 `Series A 이상 기업` 탭이 고치는 길(`/api/series-a-companies`).
+    # 화면 자체는 `companies` 의 `/companies?tab=series-a` 가 그린다.
+    app.include_router(series_a.router)
     app.include_router(dashboard.router)
     app.include_router(consulting.router)
     app.include_router(followups.router)
@@ -91,6 +104,9 @@ def create_app() -> FastAPI:
     app.include_router(startup.router)
     app.include_router(startup_outreach.router)
     app.include_router(startup_send.router)
+    # IR 기업 연결(`/ir-link`). `pages.router` 의 `/{placeholder}` 보다 **먼저**
+    # 붙어야 한다 — 뒤에 붙으면 그 자리가 `준비 중` 화면으로 가로챈다.
+    app.include_router(ir_link_router.router)
     app.include_router(llm_brief.router)
     # 공지. [확인] 은 **모든 화면**에서 눌리므로(판이 밑틀에 선다) 화면
     # 라우터가 아니라 여기 따로 선다 — 왜 그런지는 `routers/notices.py`.
