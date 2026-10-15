@@ -516,6 +516,11 @@ WRITE_ROUTES = {
     # **강제 삭제.** 이력이 붙어 있어도 지운다 — 평범한 [삭제] 가 막는 것을
     # 무시하는 길이라, 남는 로그가 더 중요하다(줄 이름 + 함께 움직인 것).
     ("POST", "/api/companies/{company_id}/force-delete"): WATCHED,
+    # IR 기업 현황 메뉴의 셋째 탭 `Series A 이상 기업` — 다른 표
+    # (`series_a_companies`)라 라우터 파일도 따로다(`routers/series_a.py`).
+    ("POST", "/api/series-a-companies"): WATCHED,
+    ("PATCH", "/api/series-a-companies/{row_id}"): WATCHED,
+    ("DELETE", "/api/series-a-companies/{row_id}"): WATCHED,
 
     ("POST", "/ir/requests"): WATCHED,
     ("POST", "/ir/deliver-guide"): WATCHED,
@@ -715,7 +720,7 @@ WRITE_ROUTES = {
 #: 공용·타인 화면을 맡은 라우터. 여기 있는 파일의 쓰기 라우트는 **전부**
 #: `WATCHED` 여야 한다 — 목록에 손으로 적는 갈래를 실제와 묶어 두는 자리다.
 SHARED_ROUTERS = ("companies", "ir", "consulting", "templates_crud",
-                  "sourcing", "contacts")
+                  "sourcing", "contacts", "series_a")
 
 
 def _write_routes(app):
@@ -786,8 +791,11 @@ def test_the_six_shared_routers_still_hold_the_forty_nine_paths(portal):
     # (`services/sourcing_receipts.py` · `services/sourcing_mail.py`).
     # 7 · 8번째는 카톡방 [방 후보 찾기] · [이 방으로 확정]이다
     # (`services/sourcing_rooms.py`).
+    # series_a 의 셋은 IR 기업 현황 메뉴의 `Series A 이상 기업` 탭을 더하기 ·
+    # 고치기 · 지우기다(`routers/series_a.py`). 옆 두 탭과 같은 공용 화면이다.
     assert counted == {"companies": 8, "ir": 12, "consulting": 9,
-                       "templates_crud": 5, "sourcing": 8, "contacts": 22}
+                       "templates_crud": 5, "sourcing": 8, "contacts": 22,
+                       "series_a": 3}
 
 
 def test_every_table_is_either_watched_or_explained(db):
