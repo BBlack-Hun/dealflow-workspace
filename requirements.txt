@@ -18,3 +18,6 @@ httpx==0.28.1
 python-multipart==0.0.20
 # 투자사 현황 업로드 / 표 엑셀 내려받기 (순수 파이썬 — 컴파일러 불필요)
 openpyxl==3.1.5
+# 딜 소싱 메일 확인 — 팀 현황에서 넣은 POP3 비밀번호를 DB 에 **암호화해서** 둔다
+# (Fernet · app/services/secret_box.py). 리눅스 arm64/x86 모두 바퀴(wheel)가 있다.
+cryptography==43.0.3

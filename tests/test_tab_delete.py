@@ -259,13 +259,16 @@ LINKED_TABLES = ("contact_activities", "send_items", "send_sequences",
 def test_가리키는_표를_빠짐없이_지운다():
     """`vc_contacts` 를 가리키는 표가 늘면 탭 지우기 목록에도 들어가야 한다."""
     from app.db import Base
-    from app.routers.contacts import TAB_PURGE_LINKS
+    from app.routers.contacts import DETACHING_LINKS, TAB_PURGE_LINKS
 
     pointing = {t.name for t in Base.metadata.sorted_tables
                 for fk in t.foreign_keys if fk.column.table.name == "vc_contacts"}
+    # 연결만 끊는 표(딜 소싱 줄 — `sourcing_sync.detach`)는 지우지 않는다.
+    # 그 표의 줄은 투자사 줄이 사라져도 딜 소싱 명단으로 남아야 한다.
+    detached = {model.__tablename__ for _k, model, _l in DETACHING_LINKS}
     purged = {model.__tablename__ for _k, model, _l in TAB_PURGE_LINKS}
-    assert pointing == purged == set(LINKED_TABLES), (
-        f"탭 지우기가 안 지우는 표가 있습니다: {pointing - purged}")
+    assert pointing - detached == purged == set(LINKED_TABLES), (
+        f"탭 지우기가 안 지우는 표가 있습니다: {pointing - detached - purged}")
 
 
 def test_이력이_걸린_사람도_이력째_지우고_고아를_남기지_않는다(boss, db, rows):

@@ -27,18 +27,19 @@
 
 ## 번호
 
-0086 은 발송 안전장치(`0086_send_guard`)가 먼저 썼다 — 그 판 위에 선다.
+0087~0095 는 딜 소싱 메일·투자사 연결·Series A 표(`0095_series_a_shares`)가 먼저
+썼다 — 그 판 위에 선다(처음에는 0087 이었다).
 
-Revision ID: 0087_activity_sequence_trace
-Revises: 0086_send_guard
+Revision ID: 0096_activity_sequence_trace
+Revises: 0095_series_a_shares
 """
 from __future__ import annotations
 
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0087_activity_sequence_trace"
-down_revision = "0086_send_guard"
+revision = "0096_activity_sequence_trace"
+down_revision = "0095_series_a_shares"
 branch_labels = None
 depends_on = None
 
