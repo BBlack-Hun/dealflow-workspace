@@ -7,7 +7,9 @@
 무엇을 열쇠로 맞추는지 · 몇 번 돌려도 같은 결과인 까닭은
 `app/services/series_a_import.py` 머리말에 있다. 짧게:
 
-  · `(기업명, 수신 일자)` 로 한 줄을 알아본다 — 기업명은 (주)·띄어쓰기를 다듬어 견준다.
+  · `(기업명, 수신 일자, 공유 심사역, 회사)` 로 한 줄을 알아본다 — 가져온 그때의
+    값을 줄에 적어 두고(`import_key`) 그것으로 맞춘다. 앱에서 기업명 · 수신 일자를
+    고쳐도 같은 줄이다. 기업명 · 회사는 (주)·띄어쓰기를 다듬어 견준다.
   · 새 줄은 만들고, 있던 줄은 **앱에서 빈 칸만** 채운다(`--overwrite` 로만 덮는다).
   · 시트의 빈 칸 · 시트에서 사라진 줄은 앱에서 아무것도 지우지 않는다.
 
@@ -25,7 +27,10 @@ from __future__ import annotations
 
 import argparse
 import sys
+import zipfile
 from pathlib import Path
+
+from openpyxl.utils.exceptions import InvalidFileException
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -46,6 +51,12 @@ def main(argv=None) -> int:
     try:
         rows = svc.read_rows(Path(args.path), args.sheet)
         parsed = svc.parse(rows)
+    except (InvalidFileException, zipfile.BadZipFile) as err:
+        # 깨진 xlsx(zip 이 아니다) · openpyxl 이 못 읽는 형식(.xls 등). 그대로
+        # 두면 traceback 이 화면을 덮어 무엇이 문제인지 안 보인다.
+        print(f"읽지 못했습니다: 엑셀(.xlsx) 파일이 아니거나 깨졌습니다 ({err}) — "
+              "시트에서 CSV 나 xlsx 로 다시 내려받아 주세요")
+        return 1
     except (OSError, ValueError) as err:
         print(f"읽지 못했습니다: {err}")
         return 2
@@ -63,9 +74,16 @@ def main(argv=None) -> int:
               f"그대로 {result.unchanged}")
         if result.kept:
             print(f"앱 값과 달라 그대로 둔 칸 {result.kept}개 — 덮으려면 --overwrite")
+        if result.linked:
+            print(f"열쇠가 없던 줄(앱에서 더한 줄 · 예전에 들어온 줄)을 맞춰 열쇠를 적은 줄 "
+                  f"{result.linked}개")
         if result.duplicates:
-            print(f"시트 안에서 (기업명, 수신 일자)가 겹친 줄 {result.duplicates}개 — "
-                  "앞 줄만 썼습니다")
+            print(f"시트 안에서 (기업명, 수신 일자, 공유 심사역, 회사)가 겹친 줄 "
+                  f"{result.duplicates}개 — 앞 줄만 썼습니다")
+        if result.ambiguous:
+            print(f"어느 줄인지 몰라 건너뛴 시트 줄 {result.ambiguous}개 — 앱에 같은 "
+                  "(기업명, 수신 일자)의 열쇠 없는 줄이 둘 이상이거나, 그 줄을 바라는 "
+                  "시트 줄이 둘 이상입니다. 앱에서 겹친 줄을 정리한 뒤 다시 돌리세요")
         if args.dry_run:
             db.rollback()
             print("→ 미리보기입니다(저장 안 함). 넣으려면 --dry-run 을 빼세요.")

@@ -1264,3 +1264,12 @@ def test_a_new_or_deleted_row_only_carries_the_fields_worth_keeping(db, users):
     assert gone.action == "delete"
     assert _changed(gone)["name"] == ("나담당", None)
     assert "memo" not in _changed(gone)
+
+
+def test_수신일_칸은_화면에서_읽을_이름으로_남는다():
+    """수정 로그 화면에 `received_at` 이 날것으로 떴다(`Series A 이상 기업` 탭의
+    `수신 일자` · 스타트업DB 의 `수신일`). 칸 이름표(`FIELD_LABELS`)는 표를 가리지
+    않는 한 벌이라, 두 탭에 다 맞는 이름을 단다."""
+    from app.services import edit_log as svc
+
+    assert svc.field_label("received_at") == "수신일"

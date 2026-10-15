@@ -7,8 +7,9 @@
      (`NO` · `기업명`)이 고정이고, 고르는 칸에 머리글 필터가 선다.
   ② 고치기 · 더하기 · 지우기 — 옆 두 탭과 **같은 판정**(지우기는
      `can_delete_company`, 투자컨설턴트는 화면부터 막힌다).
-  ③ 가져오기 — 시트 머리글로 칸을 찾고, `(기업명, 수신 일자)` 로 한 줄을
-     알아보며, 몇 번을 돌려도 결과가 같다.
+  ③ 가져오기 — 시트 머리글로 칸을 찾고, 가져온 그때의 `(기업명, 수신 일자,
+     공유 심사역, 회사)`(`import_key`)로 한 줄을 알아보며, 몇 번을 돌려도
+     결과가 같다.
   ④ 브라우저 — 검색 · 필터 · 정렬 · 줄 번호 · 저장 뒤처리(node).
 
 값은 전부 지어낸 것이다 — 저장소가 공개다.
@@ -119,6 +120,14 @@ def test_수신_일자_최신순이고_날짜_없는_줄은_맨_아래(logged_in
     assert names == ["가온샘플", "샘플메디", "(주)샘플애그", "나루샘플"], names
 
 
+def test_수신_일자_머리글은_처음부터_최신순으로_서_있다(logged_in, rows):
+    """처음 차례가 수신 일자 최신순이다 — 머리글도 그렇다고 말해야 첫 클릭이
+    뜻밖의 오래된 순이 되지 않는다(`table_sort.js` 가 `data-sort-default` 를 읽는다)."""
+    html = logged_in.get("/companies?tab=series-a").text
+    head = re.search(r'<th[^>]*data-sort="received_at"[^>]*>', html).group(0)
+    assert 'data-sort-default="desc"' in head, head
+
+
 def test_왼쪽_두_칸이_가로로_고정이다(logged_in, rows):
     """IR 기업 현황과 **같은 규칙 · 같은 CSS**(`.stick-a` · `.stick-b`)."""
     html = logged_in.get("/companies?tab=series-a").text
@@ -203,6 +212,23 @@ def test_고치면_서버만_아는_값을_돌려준다(logged_in, rows):
     assert data["received_at"] == "2026-09-03" and data["received_sort"] == "2026-09-03"
     # 기업명은 비울 수 없다.
     assert data["name"] == "샘플메디"
+
+
+def test_고친_칸은_서버가_저장한_값과_검색_글자를_돌려준다(logged_in, rows):
+    """화면은 응답으로 칸을 다시 그리고(`series_a.js`) 검색 글자도 바꾼다.
+
+    응답에 고친 칸이 없으면 서버가 받지 않은 값(빈 기업명)이 화면에만 남고,
+    검색 글자가 없으면 고친 값이 새로고침 전까지 검색에 안 걸린다.
+    """
+    rid = _row_id(rows, "샘플메디")
+    data = logged_in.patch(f"/api/series-a-companies/{rid}",
+                           json={"source_firm": "  마바캐피탈 ", "name": ""}).json()
+    assert data["name"] == "샘플메디", "빈 이름을 받지 않았으면 옛 이름을 돌려줘야 한다"
+    assert data["source_firm"] == "마바캐피탈"
+    for field in ("deal_type", "assignee_name", "shared_by", "sector_major",
+                  "sector_minor", "detail", "deal_pitch"):
+        assert field in data, field
+    assert "마바캐피탈" in data["search"] and "다라인베스트" not in data["search"]
 
 
 def test_이름을_고치면_IR_딱지도_다시_선다(logged_in, rows):
@@ -374,6 +400,147 @@ def test_같은_기업이_다른_날_또_오면_다른_줄이다(db):
     assert result.created == 4 and result.duplicates == 1
 
 
+def _deal(day, sharer, firm, name="샘플애그"):
+    """시트 한 줄 — `SHEET_HEAD` 차례."""
+    return ["", day, "딜 소싱 네트워크", "강민준", sharer, firm, name,
+            "", "", "", "", ""]
+
+
+def test_같은_날_같은_기업이라도_넘겨_준_곳이_다르면_다른_딜이다(db):
+    """열쇠가 `(기업명, 수신 일자)` 뿐이면 두 번째 딜이 겹친 줄로 **버려졌다.**
+
+    같은 날 두 투자사에게서 같은 기업을 받는 일이 있다. 한 줄은 받은 딜 한
+    건이라, 넘겨 준 사람 · 회사까지 같아야 같은 줄이다(`import_key`).
+    """
+    from app.models import SeriesACompany
+    from app.services import series_a_import as svc
+
+    sheet = [SHEET_HEAD,
+             _deal("2026-07-01", "박영희 이사", "가나벤처스"),
+             _deal("2026-07-01", "김철수 수석", "다라인베스트")]
+    result = svc.upsert(db, svc.parse(sheet).records)
+    db.commit()
+    assert (result.created, result.duplicates) == (2, 0), result
+    assert db.query(SeriesACompany).count() == 2
+
+    again = svc.upsert(db, svc.parse(sheet).records)
+    db.commit()
+    assert (again.created, again.unchanged) == (0, 2), again
+    assert db.query(SeriesACompany).count() == 2
+
+
+def test_열쇠는_띄어쓰기_법인_표기가_달라도_같다():
+    from app.services import series_a_import as svc
+
+    a = svc.import_key({"name": "(주)샘플애그", "received_at": "2026-07-01",
+                        "shared_by": "박영희 이사", "source_firm": "가나벤처스"})
+    b = svc.import_key({"name": "샘플 애그", "received_at": "2026-07-01",
+                        "shared_by": "박영희이사", "source_firm": "(주)가나벤처스 "})
+    assert a == b
+    c = svc.import_key({"name": "샘플애그", "received_at": "2026-07-01",
+                        "shared_by": "김철수 수석", "source_firm": "가나벤처스"})
+    assert a != c
+
+
+def test_앱에서_기업명과_수신_일자를_고쳐도_다시_가져오면_같은_줄이다(logged_in, db):
+    """열쇠는 **가져온 그때의 시트 값**이다 — 앱에서 고쳐도 다시 셈하지 않는다.
+
+    고칠 때마다 열쇠가 바뀌면 다음 가져오기에서 같은 딜이 **새 줄로 또** 선다.
+    """
+    from app.models import SeriesACompany
+    from app.services import series_a_import as svc
+
+    svc.upsert(db, svc.parse(_sheet_rows()).records)
+    db.commit()
+    medi = next(r for r in db.query(SeriesACompany).all() if "샘플메디" in r.name)
+    key = medi.import_key
+    assert key, "가져온 줄에 열쇠가 안 적혔다"
+
+    res = logged_in.patch(f"/api/series-a-companies/{medi.id}",
+                          json={"name": "샘플메디플러스", "received_at": "2026-08-26"})
+    assert res.status_code == 200, res.text
+    db.expire_all()
+    assert db.get(SeriesACompany, medi.id).import_key == key, "고쳤더니 열쇠가 바뀌었다"
+
+    again = svc.upsert(db, svc.parse(_sheet_rows()).records)
+    db.commit()
+    assert again.created == 0, "앱에서 고친 딜이 다시 가져오기에서 새 줄로 섰다"
+    assert db.query(SeriesACompany).count() == 3
+    medi = db.get(SeriesACompany, medi.id)
+    assert (medi.name, medi.received_at) == ("샘플메디플러스", "2026-08-26"), \
+        "앱에서 고친 값을 덮었다"
+    assert again.kept == 2
+
+
+def test_열쇠가_없던_옛_줄은_한_번_맞춰_열쇠를_적는다(db):
+    """`import_key` 칸이 생기기 전에 들어온 줄 · 앱에서 더한 줄은 열쇠가 없다.
+
+    그런 줄은 예전 열쇠 `(기업명, 수신 일자)` 로 맞추고, 맞으면 열쇠를 적는다 —
+    그 뒤로는 앱에서 이름을 고쳐도 열쇠로 맞는다.
+    """
+    from app.models import SeriesACompany
+    from app.services import series_a_import as svc
+
+    old = SeriesACompany(name="샘플애그", received_at="2026-07-01")
+    db.add(old)
+    db.commit()
+    result = svc.upsert(db, svc.parse(_sheet_rows()).records)
+    db.commit()
+    assert (result.created, result.linked) == (2, 1), result
+    db.refresh(old)
+    assert old.import_key and old.shared_by == "박영희 이사", "빈 칸을 안 채웠다"
+
+    old.name = "샘플애그테크"
+    db.commit()
+    again = svc.upsert(db, svc.parse(_sheet_rows()).records)
+    db.commit()
+    assert (again.created, again.linked) == (0, 0), again
+    assert db.query(SeriesACompany).count() == 3
+
+
+def test_옛_줄은_넘겨_준_곳까지_같은_시트_줄이_먼저_가져간다(db):
+    """옛 줄 하나에 같은 `(기업명, 수신 일자)` 의 시트 줄이 둘이면, **넘겨 준
+    곳까지 같은 줄**이 그 옛 줄이다 — 시트 차례로 먼저 온 줄이 아니다."""
+    from app.models import SeriesACompany
+    from app.services import series_a_import as svc
+
+    old = SeriesACompany(name="샘플애그", received_at="2026-07-01",
+                         shared_by="김철수 수석", source_firm="다라인베스트")
+    db.add(old)
+    db.commit()
+    sheet = [SHEET_HEAD,
+             _deal("2026-07-01", "박영희 이사", "가나벤처스"),
+             _deal("2026-07-01", "김철수 수석", "다라인베스트")]
+    result = svc.upsert(db, svc.parse(sheet).records)
+    db.commit()
+    assert (result.created, result.linked) == (1, 1), result
+    db.refresh(old)
+    assert old.import_key == svc.import_key(svc.parse(sheet).records[1])
+    rows = db.query(SeriesACompany).all()
+    assert sorted(r.source_firm for r in rows) == ["가나벤처스", "다라인베스트"]
+
+
+def test_옛_줄이_어느_것인지_모르면_건너뛰고_알린다(db, tmp_path, capsys):
+    """같은 `(기업명, 수신 일자)` 의 옛 줄이 둘인데 시트 줄과 딱 맞는 것이 없으면
+    고르지 않는다 — 아무거나 고르면 남의 딜에 값을 채우고, 새로 만들면 겹친다."""
+    from app.models import SeriesACompany
+    from app.services import series_a_import as svc
+    from scripts import import_series_a as script
+
+    db.add_all([SeriesACompany(name="샘플페이", received_at="2026-01-01"),
+                SeriesACompany(name="샘플페이", received_at="2026-01-01",
+                               detail="앱에서 더한 줄")])
+    db.commit()
+    result = svc.upsert(db, svc.parse(_sheet_rows()).records)
+    db.rollback()
+    assert (result.created, result.ambiguous) == (2, 1), result
+
+    path = _write_csv(tmp_path / "sheet.csv", _sheet_rows())
+    assert script.main([str(path), "--dry-run"]) == 0
+    out = capsys.readouterr().out
+    assert "어느 줄인지 몰라 건너뛴 시트 줄 1개" in out, out
+
+
 def test_스크립트는_파일을_받고_dry_run_은_저장하지_않는다(db, tmp_path, capsys):
     from app.models import SeriesACompany
     from scripts import import_series_a as script
@@ -394,6 +561,20 @@ def test_스크립트는_파일을_받고_dry_run_은_저장하지_않는다(db,
     assert script.main([str(path)]) == 0
     db.expire_all()
     assert db.query(SeriesACompany).count() == 3, "다시 돌렸더니 줄이 늘었습니다"
+
+
+@pytest.mark.parametrize("name, content", [
+    ("broken.xlsx", b"this is not a zip"),        # 깨진 xlsx(zip 이 아니다)
+    ("old.xls", b"\xd0\xcf\x11\xe0 old excel"),     # openpyxl 이 못 읽는 옛 형식
+])
+def test_스크립트는_못_읽는_파일에_traceback_대신_한_줄로_알린다(tmp_path, capsys, name, content):
+    from scripts import import_series_a as script
+
+    path = tmp_path / name
+    path.write_bytes(content)
+    assert script.main([str(path)]) == 1
+    out = capsys.readouterr().out
+    assert "읽지 못했습니다" in out, out
 
 
 def test_xlsx_는_이_시트로_보이는_탭을_고른다(tmp_path):
