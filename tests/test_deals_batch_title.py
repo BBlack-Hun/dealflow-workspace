@@ -141,10 +141,16 @@ def test_screen_carries_a_title_for_every_mode(logged, db, monkeypatch):
     from app import clock
     from app.routers.deals import MODE_DEAL
 
+    from app.routers.deals import TOPIC_TITLES
+
     monkeypatch.setattr(clock, "today", lambda: OFF_WEEK)
     titles = _screen_titles(logged)
 
-    assert set(titles) == set(_titles())
+    # 탭마다 하나 + 탭 안에서 고르는 글마다 하나(딜 소싱 제안의 월간 리마인드 —
+    # 처음 안내와 같은 이름이면 이력에서 무엇을 보낸 회차인지 안 갈린다).
+    assert set(titles) == set(_titles()) | set(TOPIC_TITLES)
+    for topic, label in TOPIC_TITLES.items():
+        assert titles[topic] == f"09/10 ({label})", topic
     assert titles[MODE_DEAL] == "09/16 (9월 3주차)"
     for mode, label in _titles().items():
         if mode == MODE_DEAL:

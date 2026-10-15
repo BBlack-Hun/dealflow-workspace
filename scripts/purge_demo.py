@@ -24,11 +24,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from sqlalchemy import delete, or_, select  # noqa: E402
+from sqlalchemy import delete, or_, select, update  # noqa: E402
 
 from app.db import SessionLocal  # noqa: E402
+from app.services import sourcing_sync  # noqa: E402
 from app.models import (  # noqa: E402
     AgentDevice,
+    ConsultingCompany,
     ContactActivity,
     DealBatch,
     DealBatchCompany,
@@ -117,9 +119,17 @@ def purge(db, *, keep_history: bool = False, apply: bool = False) -> dict:
 
     if contact_ids:
         db.execute(delete(ContactActivity).where(ContactActivity.contact_id.in_(contact_ids)))
+        # 딜 소싱 줄이 이 담당자를 가리키면 연결만 끊는다(줄은 남는다) — 한꺼번에
+        # 지우기는 flush 를 지나지 않아 앱이 대신 끊어 주지 못한다.
+        sourcing_sync.detach(db, contact_ids)
         db.execute(delete(VcContact).where(VcContact.id.in_(contact_ids)))
     if company_ids:
         db.execute(delete(DealBatchCompany).where(DealBatchCompany.company_id.in_(company_ids)))
+        # 사람이 이어 둔 연결(`services/ir_link.py`)은 **끊기만** 한다 — 줄은
+        # 남는다. 안 끊으면 외래키가 기업 줄을 못 지우게 막는다.
+        for model in (VcContact, ConsultingCompany):
+            db.execute(update(model).where(model.ir_company_id.in_(company_ids))
+                       .values(ir_company_id=None))
         db.execute(delete(IrCompany).where(IrCompany.id.in_(company_ids)))
     if user_ids:
         # 가상 사용자에게 딸린 담당자·활동까지 정리해야 화면에 유령이 남지 않는다.
@@ -129,6 +139,7 @@ def purge(db, *, keep_history: bool = False, apply: bool = False) -> dict:
         if left:
             db.execute(delete(ContactActivity).where(ContactActivity.contact_id.in_(left)))
             db.execute(delete(SendItem).where(SendItem.contact_id.in_(left)))
+            sourcing_sync.detach(db, left)
             db.execute(delete(VcContact).where(VcContact.id.in_(left)))
         db.execute(delete(AgentDevice).where(AgentDevice.user_id.in_(user_ids)))
         db.execute(delete(SessionRow).where(SessionRow.user_id.in_(user_ids)))
