@@ -14,7 +14,8 @@ from .routers import templates_crud
 from .routers import setup as setup_router
 from .routers import (agent_api, companies, consulting, contacts, dashboard,
                       data_io, deals, followups, ir, jobs, llm_brief, notices,
-                      pages, sourcing, startup, startup_outreach, startup_send)
+                      pages, series_a, sourcing, startup, startup_outreach,
+                      startup_send)
 
 
 def create_app() -> FastAPI:
@@ -84,6 +85,9 @@ def create_app() -> FastAPI:
     app.include_router(agent_api.router)
     app.include_router(data_io.router)
     app.include_router(companies.router)
+    # IR 기업 현황 메뉴의 `Series A 이상 기업` 탭이 고치는 길(`/api/series-a-companies`).
+    # 화면 자체는 `companies` 의 `/companies?tab=series-a` 가 그린다.
+    app.include_router(series_a.router)
     app.include_router(dashboard.router)
     app.include_router(consulting.router)
     app.include_router(followups.router)

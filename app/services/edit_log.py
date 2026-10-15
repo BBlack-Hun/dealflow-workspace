@@ -281,6 +281,13 @@ WATCHED: Dict[str, Watch] = {
             "**지우는 것도 같은 결이다** — 관리자뿐 아니라 팀원도 기업을 지운다"
             "(`routers/companies.can_delete_company`). 지울 수 있는 사람이 늘어난 "
             "만큼 이 줄이 '누가 지웠나' 를 답하는 유일한 자리다."),
+    "series_a_companies": Watch(
+        owner=None, href="/companies", label=_attr("name"),
+        why="IR 기업 현황 메뉴의 `Series A 이상 기업` 탭 — 딜 소싱으로 받은 딜. "
+            "주인 칸이 없고 옆 두 탭(`ir_companies`)과 같이 **누구나 고치고**, "
+            "지우는 사람도 같은 판정이다(`routers/companies.can_delete_company`). "
+            "시트에서 넘어온 줄을 손으로 고치는 자리라, 누가 언제 무엇을 바꿨는지가 "
+            "여기 말고 남는 곳이 없다."),
     "contact_activities": Watch(
         owner=None, href="/contacts", label=_activity_label,
         only=("source", SOURCE_MANUAL),
@@ -408,6 +415,9 @@ VALUE_FIELDS = frozenset({
     # (명단 이름 · 갈래 이름 · 탭 이름).
     "name", "label", "title", "firm", "company_name", "ceo_name",
     "department", "kind", "variant",
+    # `Series A 이상 기업` 탭 — 딜을 **누가 · 어느 투자사가 · 어떤 길로** 넘겨
+    # 주었나. 짧고 고르는 값이라(`firm` · `assignee_name` 과 같은 결) 값을 남긴다.
+    "shared_by", "source_firm", "deal_type",
 
     # **딜 소싱의 어느 줄이 투자사 관리 현황의 어느 줄과 이어졌나 · 참여하나.**
     # 투자사 관리 현황의 `Series A 딜 소싱` 칸(O/X)이 이 둘에서 나온다
@@ -475,6 +485,9 @@ FIELD_LABELS = {
     "outcome": "결과", "meet_mode": "미팅 방식", "kind": "종류",
     "enabled": "켜짐", "firm_type": "기관 유형", "variant": "갈래",
     "vc_contact_id": "투자사 관리 현황 연결", "participation": "참여",
+    # `Series A 이상 기업` 탭 — 시트 머리글 그대로.
+    "shared_by": "공유 심사역", "source_firm": "회사", "deal_type": "Type",
+    "detail": "상세 내용", "deal_pitch": "딜소개 문구",
     "memo": "메모", "notes": "칸 메모", "note": "메모", "body": "본문",
     "phone": "연락처", "email": "메일", "one_liner": "한 줄 소개",
     "summary": "요약", "business_desc": "사업 설명", "content_json": "내용",

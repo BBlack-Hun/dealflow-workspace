@@ -746,6 +746,61 @@ class IrCompany(TimestampMixin, Base):
         return has_text and has_number
 
 
+class SeriesACompany(TimestampMixin, Base):
+    """IR 기업 현황 메뉴의 `Series A 이상 기업` 탭 — **받은 딜 한 건이 한 줄**.
+
+    시트 `Series A 이상 기업` 을 옮긴 표다. 한 줄은 "언제(`received_at`) 어느
+    투자사(`source_firm`)의 누가(`shared_by`) 어떤 길로(`deal_type` — 딜 소싱
+    네트워크 · 후속 투자 연계) 이 기업을 넘겨 주었고, 우리 쪽 누가 맡았나
+    (`assignee_name`)" 다.
+
+    ## `ir_companies` 와 왜 따로인가
+
+    `IrCompany` 는 **우리가 투자사에 소개하는 기업**이고, 이 표는 **딜 소싱으로
+    받은 딜**이다. 받은 날 · 넘겨 준 투자사 · 공유 심사역 · Type 은 `ir_companies`
+    에 칸 자체가 없고, 처음 들일 때 기업명을 `deal_history._key` 로 맞춰 보니
+    대부분이 IR 기업 현황에 없는 기업이었다(개발 자료 11곳 중 2곳만 있다). 한
+    표에 섞으면 소개 목록(`/deals`)에 받기만 한 기업이 뜨고, 받은 날마다 줄이
+    서야 하는 이 표의 모양도 못 담는다.
+
+    **같은 기업이 IR 기업 현황에도 있으면 이름으로 그때그때 잇는다**
+    (`routers/series_a.py` 의 `IR 현황` 딱지). 값을 이 표로 옮겨 적지 않는다 —
+    옮기면 두 벌이 되어 한쪽만 고쳐진다.
+
+    ## 칸
+
+    금액이 없다 — 시트에 없는 칸은 만들지 않는다. 글자는 **적힌 그대로**다
+    (`series` 는 `Series A (누적투자금 10억이상, …)` 처럼 길게 오고, 표에서만
+    괄호 앞을 보인다 — IR 기업 현황의 `투자라운드` 와 같다).
+    """
+
+    __tablename__ = "series_a_companies"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    #: 수신 일자 — `YYYY-MM-DD` 글자. 표가 이 칸으로 최신순이다.
+    received_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: Type — 딜이 들어온 길(`딜 소싱 네트워크` · `후속 투자 연계`).
+    deal_type: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: 담당팀원 — 우리 팀에서 이 딜을 맡은 사람.
+    assignee_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: 공유 심사역 — 딜을 넘겨 준 투자사 쪽 사람(`홍길동 이사` 처럼 직함까지).
+    shared_by: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: 회사 — 딜을 넘겨 준 투자사. 기업명이 아니다.
+    source_firm: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: 기업명 — 받은 딜의 기업.
+    name: Mapped[str] = mapped_column(String)
+    #: 대분류(시트 머리글 `사업분야 대분류`) · 소분류.
+    sector_major: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    sector_minor: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: 투자라운드(시트 머리글 `기업구분`) — 적힌 그대로.
+    series: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: 상세 내용 — 여러 줄 글(천 자가 넘는 줄도 있다).
+    detail: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    #: 딜소개 문구. IR 기업 현황의 `딜 소개 문구`(`IrCompany.one_liner`)와
+    #: **다른 표의 다른 값**이다 — 이 문구로 발송하는 길은 아직 없다.
+    deal_pitch: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
 class DealBatch(TimestampMixin, Base):
     __tablename__ = "deal_batches"
 
