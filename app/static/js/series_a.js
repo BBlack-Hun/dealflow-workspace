@@ -133,7 +133,14 @@
     var tr = btn.closest("tr");
     var nameCell = tr.querySelector('[data-field="name"]');
     var name = nameCell ? nameCell.textContent.trim() : "";
-    if (!window.confirm("'" + name + "' 줄을 지웁니다. 되돌릴 수 없습니다.")) return;
+    // Series A 딜 공유 기록이 이 줄을 가리키면 **함께 지워진다**(서버 —
+    // `series_a_share.delete_for_company`). 몇 명 몫인지 확인창에서 말한다.
+    var shared = parseInt(tr.getAttribute("data-shared") || "0", 10) || 0;
+    var also = shared
+      ? "\n이 기업을 받은 심사역 " + shared + "명의 Series A 딜 공유 기록도 함께 지워집니다" +
+        "(이미 나간 문구는 발송 이력에 남습니다)."
+      : "";
+    if (!window.confirm("'" + name + "' 줄을 지웁니다. 되돌릴 수 없습니다." + also)) return;
     send("DELETE", "/api/series-a-companies/" + tr.getAttribute("data-id"))
       .then(function (res) {
         if (!res.ok) { alert(res.d.detail || "지우지 못했습니다"); return; }

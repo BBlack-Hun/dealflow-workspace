@@ -17,13 +17,15 @@ from ..models import ROOM_SEARCH_TOPIC, STARTUP_MSG_KIND, IrCompany, SendJob, Us
 from ..services import (cadence, contact_columns, deal_history, deal_queue,
                         deal_stage, email_domains, group_name, ir_attach,
                         llm_brief, mailer, manual_send, ref_panel,
-                        scheduled_send, sheet_import, sheet_owner,
-                        sourcing_link, sourcing_receipts, startup_send)
+                        scheduled_send, series_a_share, sheet_import,
+                        sheet_owner, sourcing_link, sourcing_receipts,
+                        startup_send)
 from ..ui import MENU, base_ctx as _base_ctx
 from .companies import BLOCKED_CONTRACT
 from .companies import blocked_reason as company_blocked_reason
 from .contacts import contact_rows
 from .deals import MODE_DEAL, MODE_TITLES, TOPIC_TITLES
+from .series_a import pick_rows as series_a_pick_rows
 from .sourcing import assignee_chips as sourcing_assignee_chips
 from .sourcing import assignee_of as sourcing_assignee_of
 from .sourcing import buckets as sourcing_bucket_rows
@@ -214,6 +216,14 @@ def deals_page(
         "sourcing_received": sourcing_received,
         "sourcing_month_label": f"{int(sourcing_month[5:])}월",
         "sourcing_linked": sourcing_linked,
+        # ── 딜 소싱 제안 › [Series A 딜 공유] ──
+        # 기업 고르개(IR 기업 현황 › `Series A 이상 기업` 탭의 줄 — 같은 차례) ·
+        # 이 글을 받는 하나뿐인 갈래(`series_a_share.BUCKET` — 다른 갈래 카드는
+        # 이 글에서 고를 수 없다).
+        "series_a_rows": series_a_pick_rows(db),
+        "share_bucket": series_a_share.BUCKET,
+        "share_topic": series_a_share.KIND,
+        "share_label": series_a_share.LABEL,
         "no_reaction_ids": no_reaction_ids,
         # 메일 채널은 설정이 있어야 고를 수 있다.
         # 고를 수 있는데 나가지 않는 것이 제일 나쁘다.

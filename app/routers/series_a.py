@@ -38,7 +38,7 @@ from ..clock import today
 from ..db import get_db
 from ..deps import get_current_user, templates
 from ..models import IrCompany, SeriesACompany, User
-from ..services import deal_history
+from ..services import deal_history, series_a_share
 from ..services.series_a_import import day_text
 from ..ui import base_ctx
 
@@ -89,8 +89,13 @@ def ir_names(db: Session) -> Dict[str, str]:
     return out
 
 
-def row_dict(c: SeriesACompany, known: Dict[str, str]) -> dict:
+def row_dict(c: SeriesACompany, known: Dict[str, str],
+             people: Optional[Dict[int, List[str]]] = None) -> dict:
     ir_name = known.get(deal_history._key(c.name), "")
+    # **Series A 딜 공유로 이 기업을 받은 심사역** — 딜 제안 관리 › 딜 소싱 제안의
+    # [Series A 딜 공유]가 적은 기록(`services/series_a_share.py`). 대기 · 보내는
+    # 중 · 보냄만 센다(중단 · 실패한 건은 안 센다).
+    shared = (people or {}).get(c.id, [])
     return {
         "id": c.id,
         "name": c.name or "",
@@ -109,6 +114,8 @@ def row_dict(c: SeriesACompany, known: Dict[str, str]) -> dict:
         # IR 기업 현황에 같은 기업이 있으면 그 탭에 적힌 이름 — 딱지가 그 이름으로
         # 그 탭을 연다(`/companies?q=…` 가 검색칸을 채운다).
         "ir_name": ir_name,
+        "shared_count": len(shared),
+        "shared_names": shared,
         "search": search_text(c),
     }
 
@@ -125,8 +132,30 @@ def sort_rows(rows: List[dict]) -> List[dict]:
 
 def table_rows(db: Session) -> List[dict]:
     known = ir_names(db)
-    rows = [row_dict(c, known)
+    people = series_a_share.shared_people(db)
+    rows = [row_dict(c, known, people)
             for c in db.execute(select(SeriesACompany)).scalars().all()]
+    return sort_rows(rows)
+
+
+def pick_rows(db: Session) -> List[dict]:
+    """딜 제안 관리 › 딜 소싱 제안 › [Series A 딜 공유]의 **기업 고르개** 줄.
+
+    이 탭과 같은 줄 · 같은 차례(수신 일자 최신순 — `sort_rows`)에 둘을 더한다.
+      · `pitch` — 기업 덩어리에 실릴 `소개`(`series_a_share.pitch_of`). 고를 때
+        무엇이 나갈지 보인다.
+      · `sent_to` — 이 기업을 이미 받은 심사역 번호들(대기 · 보낸 것). 화면이
+        지금 고른 받는 분과 견주어 `이미 받은 분 N명` 을 세고, 고른 기업을 다
+        받은 분을 뺀다(`deals.js`).
+    """
+    known = ir_names(db)
+    sent = series_a_share.contacts_by_company(db)
+    rows = []
+    for c in db.execute(select(SeriesACompany)).scalars().all():
+        data = row_dict(c, known)
+        data["pitch"] = series_a_share.pitch_of(c)
+        data["sent_to"] = sorted(sent.get(c.id, ()))
+        rows.append(data)
     return sort_rows(rows)
 
 
@@ -231,7 +260,10 @@ def delete_row(row_id: int, db: Session = Depends(get_db),
 
     권한을 먼저 본다 — 없는 번호에 404 를 먼저 주면 번호만 바꿔 가며 어느 줄이
     있는지 알아낼 수 있다(`companies.delete_company` 와 같은 자리 · 같은 이유).
-    딸린 표가 없어 막을 것이 없다 — 이 줄을 가리키는 표가 아직 없다.
+    이 줄을 가리키는 표는 Series A 딜 공유 기록(`series_a_shares`) 하나다 —
+    막지 않고 **함께 지운다**(`series_a_share.delete_for_company`). 나간 문구는
+    발송 건에 그대로 남고, 화면의 확인창이 몇 명의 기록이 함께 지워지는지 말한다
+    (`series_a.js`).
     """
     from .companies import require_delete_company
 
@@ -239,6 +271,7 @@ def delete_row(row_id: int, db: Session = Depends(get_db),
     row = db.get(SeriesACompany, row_id)
     if row is None:
         raise HTTPException(status_code=404, detail="줄을 찾을 수 없습니다")
+    series_a_share.delete_for_company(db, row_id)
     db.delete(row)
     db.commit()
     return {"deleted": row_id}

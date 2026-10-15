@@ -2,7 +2,13 @@ var MAX_COMPANIES = 10;   // 서버 MAX_COMPANIES_PER_SEND 와 동일하게 유�
 var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
 // 딜소개 보내기 — selection, preview, send-list creation (FEATURE_SPEC §5).
 (function () {
-  var companyCbs = function () { return Array.prototype.slice.call(document.querySelectorAll(".company-cb")); };
+  // 고르는 기업 상자. **Series A 딜 공유**(딜 소싱 제안의 셋째 글)를 고르면
+  // ① 칸이 `Series A 이상 기업` 고르개(`#series-a-list`)로 바뀌고, 고른 차례 ·
+  // 번호 배지 · 10개 한도가 그 상자를 그대로 따른다 — 셈을 한 벌 더 두지 않는다.
+  var companyCbs = function () {
+    return Array.prototype.slice.call(document.querySelectorAll(
+      isShare() ? "#series-a-list .sa-cb" : ".company-cb"));
+  };
   // 대상 목록이 두 개다(투자사 담당자 / 딜 소싱 명단). **지금 보이는 쪽만**
   // 센다 — 숨은 목록에 체크가 남아 있는데 그것까지 보내면, 화면에 없는
   // 사람에게 나간다.
@@ -42,9 +48,23 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   // 한 번 더 한다(`include_received`) — 화면을 연 뒤에 바뀐 표시가 있다.
   var INTRO = "sourcing_intro";
   var REMIND = "sourcing_remind";
+  // ── Series A 딜 공유 ───────────────────────────────────────────────────
+  //
+  // 셋째 글 — 시리즈 A 갈래 심사역께 `Series A 이상 기업` 탭의 받은 딜을 소개한다
+  // (`services/series_a_share.py`). 받는 갈래가 **하나뿐**이라 다른 갈래 카드는
+  // 고를 수 없다(`data-bucket` — 서버가 칩에 실어 준다). 고른 기업을 **모두 이미
+  // 받은 분**은 [이미 이 기업들을 받은 분 제외](기본 켬)로 빠진다 — 고른 채로
+  // 두되(고른 사람은 언제나 보인다) 흐리게 하고 보내지 않는다. 일부만 받은 분은
+  // 서버가 받은 기업을 빼고 짓는다. 끄면 `include_shared` 가 실려 다 보낸다.
+  var SHARE = "sourcing_deal_share";
+  var shareChip = document.querySelector('#sourcing-topic .chip[data-value="' + SHARE + '"]');
+  var SHARE_BUCKET = (shareChip && shareChip.getAttribute("data-bucket")) || "";
+  var SHARE_LABEL = "Series A 딜 공유";
+  var excludeShared = true;
   var sourcingTopic = INTRO;
   var includeReceived = false;
   function isRemind() { return mode === "sourcing" && sourcingTopic === REMIND; }
+  function isShare() { return mode === "sourcing" && sourcingTopic === SHARE; }
   // 이 카드는 지금 **보낼 수 없는** 사람인가 — 리마인드에서 이 달 딜 받음이고,
   // 포함을 켜지 않았다. 또는 화면을 연 뒤에 딜 소싱 `불참여` 가 되었다
   // (`data-out` — 명단을 다시 읽을 때 선다). 불참여는 처음 안내도 리마인드도
@@ -52,17 +72,59 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   function isExcluded(card) {
     if (!card) return false;
     if (card.getAttribute("data-out") === "1") return true;
+    // Series A 딜 공유는 그 갈래 분께만 — 다른 갈래 카드는 고를 자리가 아니다
+    // (서버도 뺀다: `series_a_share.NOT_BUCKET_NOTE`).
+    if (isShare() && (card.getAttribute("data-bucket") || "") !== SHARE_BUCKET) return true;
     return isRemind() && !includeReceived &&
       card.getAttribute("data-received") === "1";
   }
+
+  // ── Series A 딜 공유 — 누가 무엇을 이미 받았나 ──────────────────────────
+  //
+  // 기업 카드의 `data-sent-to`(그 기업을 받은 심사역 번호들 — 서버가 대기 · 보낸
+  // 것만 센다)를 한 번 읽어 둔다. 이 화면을 연 뒤에 나간 것은 서버가 발송 때
+  // 한 번 더 본다(`create_send_list` — 이미 받은 기업은 빼고, 다 받은 분은 뺀다).
+  var SENT_TO = {};
+  Array.prototype.slice.call(document.querySelectorAll("#series-a-list .sa-cb"))
+    .forEach(function (cb) {
+      var card = cb.closest(".pick-card");
+      var raw = (card && card.getAttribute("data-sent-to")) || "";
+      var set = {};
+      raw.split(",").forEach(function (v) { v = v.trim(); if (v) set[v] = true; });
+      SENT_TO[cb.value] = set;
+    });
+  // 지금 고른 Series A 기업 번호(차례는 상관없다 — 견주기만 한다).
+  function pickedSeriesA() {
+    if (!isShare()) return [];
+    return companyCbs().filter(function (c) { return c.checked; })
+      .map(function (c) { return c.value; });
+  }
+  function cardId(card) {
+    var cb = card && card.querySelector(".contact-cb");
+    return cb ? String(cb.value) : "";
+  }
+  // 이 분이 고른 기업 중 몇 곳을 이미 받았나.
+  function sharedCount(card, picks) {
+    var id = cardId(card);
+    return picks.filter(function (p) { return (SENT_TO[p] || {})[id]; }).length;
+  }
+  // 고른 기업을 **모두** 이미 받아 이번에 빠지는 분인가(제외를 켰을 때만).
+  function isShareCovered(card, picks) {
+    if (!isShare() || !excludeShared || !card) return false;
+    picks = picks || pickedSeriesA();
+    return picks.length > 0 && sharedCount(card, picks) === picks.length;
+  }
   // 요약줄·확인창이 부르는 이름. 리마인드를 `딜 소싱 제안` 이라고 적으면 무엇을
   // 보내는지 마지막 확인창에서도 안 갈린다.
-  function modeLabel() { return isRemind() ? "딜 소싱 리마인드" : FOLLOW_UP[mode]; }
+  function modeLabel() {
+    return isRemind() ? "딜 소싱 리마인드" : (isShare() ? SHARE_LABEL : FOLLOW_UP[mode]);
+  }
   // IR 자료 전달은 기업을 고른다(무엇을 보내는지 알아야 한다).
   // 나머지 후속 문구는 기업과 무관하다.
   var NEEDS_COMPANIES = { deal: true, ir: true };
   function isFollowUp() { return !!FOLLOW_UP[mode]; }
-  function needsCompanies() { return !!NEEDS_COMPANIES[mode]; }
+  // Series A 딜 공유도 기업을 고른다(그 고르개 — `#series-a-list`).
+  function needsCompanies() { return !!NEEDS_COMPANIES[mode] || isShare(); }
   // 회차명 — **방식마다 다르다.** 정규 발송(딜 소개)만 주차를 달고
   // (`09/16 (9월 3주차)`), 나머지는 주차 대신 무엇을 보내는지가 들어간다
   // (`09/09 (리마인드)`). 서버가 방식마다 한 벌씩 만들어 `data-titles` 에
@@ -82,7 +144,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   var filledTitle = titleBox ? titleBox.value : "";
   // 열쇠는 방식이고, 딜 소싱 리마인드만 문구 종류다(서버가 `sourcing_remind`
   // 이름표도 함께 실어 준다 — `pages.py` 의 `TOPIC_TITLES`).
-  function titleKey() { return isRemind() ? REMIND : mode; }
+  function titleKey() { return isRemind() ? REMIND : (isShare() ? SHARE : mode); }
   function syncBatchTitle() {
     if (!titleBox) return;
     var next = MODE_TITLES[titleKey()] || MODE_TITLES[mode];
@@ -181,16 +243,24 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   // **읽으면서 번호를 다시 매긴다.** 읽는 자리와 번호를 붙이는 자리를 떼어
   // 놓으면, 한쪽만 불린 길에서 화면의 번호와 나가는 차례가 갈린다.
   function selectedCompanyIds() {
+    var box = isShare() ? ".sa-cb" : ".company-cb";
     return renumberPicks().map(function (card) {
-      return parseInt(card.querySelector(".company-cb").value, 10);
+      return parseInt(card.querySelector(box).value, 10);
     });
   }
   function selectedContactIds() {
-    // 리마인드에서 뺀 사람은 체크가 남아 있어도 **보내지 않는다**(아래 `dropExcluded`
-    // 가 체크를 끄지만, 끄는 길을 하나라도 놓치면 여기서 걸린다).
+    return sendableBoxes().map(function (c) { return parseInt(c.value, 10); });
+  }
+  // **보낼** 체크 — 리마인드에서 뺀 사람은 체크가 남아 있어도 보내지 않는다
+  // (`dropExcluded` 가 체크를 끄지만, 끄는 길을 하나라도 놓치면 여기서 걸린다).
+  // Series A 딜 공유에서 고른 기업을 다 받은 분은 체크를 **남긴 채** 뺀다 —
+  // 기업을 바꾸면 다시 들어와야 하기 때문이다.
+  function sendableBoxes() {
+    var picks = pickedSeriesA();
     return contactCbs().filter(function (c) {
-      return c.checked && !isExcluded(c.closest(".pick-card"));
-    }).map(function (c) { return parseInt(c.value, 10); });
+      var card = c.closest(".pick-card");
+      return c.checked && !isExcluded(card) && !isShareCovered(card, picks);
+    });
   }
 
 
@@ -199,6 +269,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   // 검색으로 좁히되, **선택한 항목은 검색어와 무관하게 항상 보이게** 한다
   // (검색어를 바꾸다 이미 고른 기업이 사라지면 몇 개 골랐는지 알 수 없다).
   function applyCompanyFilter() {
+    if (isShare()) { applySeriesAFilter(); return; }
     var box = document.getElementById("company-search");
     var onlyPicked = document.getElementById("only-picked");
     var note = document.getElementById("company-filter-note");
@@ -234,6 +305,65 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   }
 
 
+  // ── Series A 이상 기업 고르개(Series A 딜 공유) ─────────────────────────
+  // IR 기업 검색과 같은 규칙: **고른 기업은 검색어와 무관하게 늘 보인다.**
+  // 카드마다 `이미 받은 분 N명` — 지금 고른 받는 분 중 이 기업을 받은 분 수.
+  // 받는 분을 바꾸면 따라 바뀐다(`updateCounts` 가 부른다).
+  function applySeriesAFilter() {
+    var box = document.getElementById("sa-pick-search");
+    var onlyPicked = document.getElementById("sa-only-picked");
+    var onlyFresh = document.getElementById("sa-only-fresh");
+    var note = document.getElementById("sa-filter-note");
+    var q = ((box && box.value) || "").trim().toLowerCase();
+    var pickedOnly = !!(onlyPicked && onlyPicked.checked);
+    var freshOnly = !!(onlyFresh && onlyFresh.checked);
+    // 지금 고른 받는 분(갈래 밖 · 불참여로 빠진 분은 안 센다).
+    var who = contactCbs().filter(function (c) {
+      return c.checked && !isExcluded(c.closest(".pick-card"));
+    }).map(function (c) { return String(c.value); });
+    var shown = 0, total = 0;
+    document.querySelectorAll("#series-a-list .pick-card").forEach(function (card) {
+      var cb = card.querySelector(".sa-cb");
+      if (!cb) return;
+      var sent = SENT_TO[cb.value] || {};
+      var hit = !q || (card.getAttribute("data-search") || "").indexOf(q) !== -1;
+      var fresh = !Object.keys(sent).length;
+      var visible = cb.checked || (hit && !pickedOnly && (!freshOnly || fresh));
+      card.hidden = !visible;
+      total += 1;
+      if (visible) shown += 1;
+      var got = who.filter(function (id) { return sent[id]; }).length;
+      var tag = card.querySelector(".sa-got");
+      if (tag) {
+        tag.hidden = !got;
+        tag.textContent = got ? "이미 받은 분 " + got + "명" : "";
+      }
+    });
+    if (note) {
+      note.hidden = !(q || pickedOnly || freshOnly);
+      note.textContent = note.hidden ? "" : shown + " / " + total + "개 표시 중" +
+        (q ? " (검색: " + box.value.trim() + ")" : "");
+    }
+  }
+
+  // ① 칸을 지금 글에 맞춘다 — Series A 딜 공유면 그 고르개, 아니면 IR 기업 목록.
+  // 문구만 나가는 글이면 흐리게(`dimmed`), 자료 전달이면 번호 배지를 비운다.
+  var saPicker = document.getElementById("series-a-picker");
+  function syncCompanyPanel() {
+    var share = isShare();
+    companyPanel.classList.toggle("dimmed", !needsCompanies());
+    // 자료 전달에서는 고른 차례가 번호가 아니다 — 배지를 비운다(위 설명 참고).
+    companyPanel.classList.toggle("no-pick-badge", mode === "ir");
+    if (saPicker) saPicker.hidden = !share;
+    ["company-list", "company-picker-search", "company-filter-note"].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el && share) el.hidden = true;
+      else if (el && id !== "company-filter-note") el.hidden = false;
+    });
+    var hint = document.getElementById("company-hint");
+    if (hint) hint.hidden = share || mode === "ir";
+  }
+
   // ── 담당자 검색 ───────────────────────────────────────────
   // 116명 중에서 몇 명을 골라야 한다. 기업 검색과 같은 규칙을 쓴다:
   // **선택한 담당자는 검색어와 무관하게 항상 보인다** — 검색어를 바꾸다
@@ -251,6 +381,10 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     // `이번 달 딜 받음 N명 제외` 가 이 수다.
     var receivedInView = 0;
 
+    // Series A 딜 공유 — 고른 기업을 다 받은 분(`covered`) · 일부 받은 분 수.
+    var picks = pickedSeriesA();
+    var coveredInView = 0, partialInView = 0, sharedInView = 0;
+
     var list = activeList();
     (list ? list.querySelectorAll(".pick-card") : []).forEach(function (card) {
       var cb = card.querySelector(".contact-cb");
@@ -267,20 +401,32 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       var excluded = isExcluded(card);
       if (mode === "sourcing" && hit && inBucket && inAssignee &&
           card.getAttribute("data-received") === "1") receivedInView += 1;
+      // 고른 기업을 모두 받아 이번에 빠지는 분 — **조건에 안 맞는 것으로 친다**
+      // ([전체선택]이 안 켠다). 이미 고른 채면 그대로 보이되 흐리다(보내지 않는다).
+      var nShared = (isShare() && !excluded && picks.length) ? sharedCount(card, picks) : 0;
+      var covered = !excluded && isShareCovered(card, picks);
+      if (isShare() && !excluded && hit && inBucket && inAssignee && nShared) {
+        sharedInView += 1;
+        if (nShared === picks.length) coveredInView += 1;
+        else partialInView += 1;
+      }
+      syncShareTag(card, nShared, picks.length, covered);
+      card.classList.toggle("share-covered", covered);
       total += 1;
       // **조건에 맞는가(match)와 화면에 보이는가(visible)는 다르다.**
       // 고른 사람은 조건에서 벗어나도 계속 보인다(몇 명 골랐는지 알아야 한다).
       // 그래서 `보이는 것 = 조건에 맞는 것` 이라고 읽으면, 그룹으로 추려 놓고
       // [전체선택]을 눌렀을 때 **아까 고른 다른 그룹 사람까지 함께 켜진다** —
       // 실제 투자사에게 문구가 나가는 자리라 그 차이를 여기서 갈라 적어 둔다.
-      var matched = hit && inBucket && inAssignee && inGroup && !excluded;
+      var matched = hit && inBucket && inAssignee && inGroup && !excluded && !covered;
       var visible = (picked && !excluded) || (matched && !pickedOnly);
       card.setAttribute("data-match", matched ? "1" : "0");
       card.hidden = !visible;
       if (visible) shown += 1;
-      if (picked && !matched && !excluded) outside += 1;
+      if (picked && !matched && !excluded && !covered) outside += 1;
     });
     syncReceivedNote(receivedInView);
+    syncSharedNote(coveredInView, partialInView, sharedInView);
 
     if (note) {
       if (q || pickedOnly || bucketFilter || assigneeFilter || groupFilter) {
@@ -360,8 +506,10 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     });
   }
   function pickTopic(value) {
-    sourcingTopic = value === REMIND ? REMIND : INTRO;
+    sourcingTopic = value === REMIND ? REMIND : (value === SHARE ? SHARE : INTRO);
     markTopicChip();
+    // Series A 딜 공유면 ① 칸이 그 기업 고르개로 바뀐다.
+    syncCompanyPanel();
     // 처음 안내용으로 고쳐 둔 글이 리마인드에 얹히면 엉뚱한 말이 나간다
     // (방식을 바꿀 때와 같은 까닭 — `setMode`).
     savedEdits = {};
@@ -407,10 +555,49 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       : "이번 달 딜 받음 " + count + "명 제외";
   }
 
+  // 카드의 `고른 기업 중 N곳 이미 받음` 딱지(Series A 딜 공유에서만).
+  function syncShareTag(card, n, of, covered) {
+    var tag = card.querySelector(".share-tag");
+    if (!tag) return;
+    tag.hidden = !(isShare() && n);
+    if (tag.hidden) { tag.textContent = ""; return; }
+    tag.textContent = covered
+      ? "고른 기업 모두 이미 받음 — 이번엔 빠집니다"
+      : "고른 기업 중 " + n + "곳 이미 받음" +
+        (excludeShared ? " — 그 기업은 빼고 보냅니다" : " — 다시 보냅니다");
+  }
+
+  // `이미 이 기업들을 받은 분 제외` 줄 — 몇 명이 빠지고 몇 명이 덜 받는지 말한다.
+  // 조용히 빼면 왜 사람이 적은지 모른다(이 달 딜 받음 줄과 같은 이유).
+  function syncSharedNote(covered, partial, shared) {
+    var note = document.getElementById("shared-note");
+    if (!note) return;
+    note.hidden = !isShare();
+    var text = document.getElementById("shared-count");
+    if (!text || note.hidden) return;
+    if (!pickedSeriesA().length) {
+      text.textContent = "기업을 고르면 이미 받은 분을 셉니다";
+    } else if (excludeShared) {
+      text.textContent = "고른 기업을 모두 받은 분 " + covered + "명 제외" +
+        (partial ? " · 일부 받은 분 " + partial + "명은 받은 기업을 빼고 보냅니다" : "");
+    } else {
+      text.textContent = "이미 받은 분 " + shared + "명에게도 고른 기업을 그대로 다시 보냅니다";
+    }
+  }
+
+  var excludeBox = document.getElementById("exclude-shared");
+  if (excludeBox) excludeBox.addEventListener("change", function () {
+    excludeShared = !!excludeBox.checked;
+    updateCounts();
+  });
+
   function resetSourcingTopic() {
     sourcingTopic = INTRO;
     includeReceived = false;
     if (includeBox) includeBox.checked = false;
+    // 제외는 **켠 채로** 되돌린다 — 기본이 켬이다.
+    excludeShared = true;
+    if (excludeBox) excludeBox.checked = true;
     markTopicChip();
   }
 
@@ -744,12 +931,22 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       include_opening: greet ? greet.checked : true,
       // 딜 소싱은 갈래마다 문구가 다르다. 아직 아무도 안 골랐을 때
       // 어느 갈래를 보여 줄지는 **누른 칩**이 정한다.
-      bucket: bucketFilter || "",
+      // Series A 딜 공유는 받는 갈래가 하나뿐이라 그 갈래 문구다.
+      bucket: isShare() ? SHARE_BUCKET : (bucketFilter || ""),
       // 딜 소싱 제안의 [보낼 문구] · 리마인드에 이 달 딜 받음을 넣을지.
       // 다른 방식은 빈 값이다(서버가 그 방식에서는 읽지 않는다).
       topic: mode === "sourcing" ? sourcingTopic : "",
-      include_received: isRemind() && includeReceived
+      include_received: isRemind() && includeReceived,
+      // Series A 딜 공유 — 이미 받은 기업도 다시 보낼지([… 받은 분 제외]를 끈 것).
+      include_shared: isShare() && !excludeShared
     };
+  }
+
+  // 고른 기업을 서버가 받는 칸으로 — IR 기업(`company_ids`)과 Series A 이상
+  // 기업(`series_a_ids`)은 다른 표라 칸도 다르다. 미리보기와 발송이 같은 손을 지난다.
+  function pickedPayload(cids, tids) {
+    return { company_ids: isShare() ? [] : cids, contact_ids: tids,
+             series_a_ids: isShare() ? cids : [] };
   }
 
   // 인사말을 끄면 인사말 문구를 고르는 칸은 의미가 없다.
@@ -796,12 +993,15 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     ssNote.textContent = askMode
       ? modeLabel() + " — 기업 목록 없이 문구만 나갑니다"
       : (mode === "ir" ? irSummaryNote()
-                       : (nc > MAX_COMPANIES ? "기업은 최대 " + MAX_COMPANIES + "개까지" : ""));
+                       : (nc > MAX_COMPANIES ? "기업은 최대 " + MAX_COMPANIES + "개까지"
+                          : (isShare() ? SHARE_LABEL + " — 고른 기업이 기업마다 한 덩어리로 들어갑니다"
+                                       : "")));
     if (mode === "ir") renderIrLinks();
 
     syncBucketMixNote();
     // 고른 사람 이름을 보여준다 — 숫자만으로는 누구를 넣었는지 알 수 없다.
-    var picked = contactCbs().filter(function (c) { return c.checked; });
+    // **보낼 사람만** 적는다 — 고른 기업을 다 받아 빠지는 분은 옆 알약 수에도 없다.
+    var picked = sendableBoxes();
     var names = picked.map(function (c) { return c.getAttribute("data-name"); });
     if (names.length) {
       contactSummary.hidden = false;
@@ -885,9 +1085,8 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     document.querySelectorAll(".mode-tab").forEach(function (b) {
       b.classList.toggle("active", b.getAttribute("data-mode") === mode);
     });
-    companyPanel.classList.toggle("dimmed", askMode);
-    // 자료 전달에서는 고른 차례가 번호가 아니다 — 배지를 비운다(위 설명 참고).
-    companyPanel.classList.toggle("no-pick-badge", mode === "ir");
+    // 흐리게 · 번호 배지 · 어느 기업 고르개를 세울지 — 한 손(`syncCompanyPanel`).
+    syncCompanyPanel();
     // 대상 목록 자체를 바꾼다 — 소싱은 받는 사람이 다른 명단에 있다.
     var sourcingMode = mode === "sourcing";
     var contactBox = document.getElementById("contact-list");
@@ -966,7 +1165,8 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     updateCounts();   // 여기서 미리보기가 따라온다
   }
 
-  ["company-search", "only-picked", "hide-recent"].forEach(function (id) {
+  ["company-search", "only-picked", "hide-recent",
+   "sa-pick-search", "sa-only-picked", "sa-only-fresh"].forEach(function (id) {
     var el = document.getElementById(id);
     if (el) el.addEventListener("input", applyCompanyFilter);
     if (el) el.addEventListener("change", applyCompanyFilter);
@@ -1115,7 +1315,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     fetch("/api/deals/preview", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(Object.assign({ company_ids: cids, contact_ids: tids }, selectedTemplateIds()))
+      body: JSON.stringify(Object.assign(pickedPayload(cids, tids), selectedTemplateIds()))
     })
       .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
       .then(function (res) {
@@ -1285,8 +1485,9 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     var via = currentChannel() === "email" ? "이메일로 " : "";
     var what = mode === "ir"
       ? cids.length + "개 기업 IR 자료 전달"
-      : (isFollowUp() ? modeLabel() + " 문구 (기업 목록 없음)"
-                      : cids.length + "개 기업 딜소개");
+      : (isShare() ? SHARE_LABEL + " — " + cids.length + "개 기업"
+         : (isFollowUp() ? modeLabel() + " 문구 (기업 목록 없음)"
+                         : cids.length + "개 기업 딜소개"));
     var lastCheck = currentChannel() === "email"
       ? "\n받는 주소를 최종 확인하셨나요?"
       : "\n방 이름을 최종 확인하셨나요?";
@@ -1303,7 +1504,8 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(Object.assign(
-        { company_ids: cids, contact_ids: tids, title: title,
+        pickedPayload(cids, tids),
+        { title: title,
           overrides: editedOverrides(), channel: currentChannel(),
           scheduled_at: at,
           subject: (document.getElementById("mail-subject") || {}).value || null },
@@ -1334,7 +1536,8 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   }
 
   document.addEventListener("change", function (e) {
-    if (e.target.classList.contains("company-cb") || e.target.classList.contains("contact-cb")) updateCounts();
+    var cls = e.target.classList;
+    if (cls.contains("company-cb") || cls.contains("contact-cb") || cls.contains("sa-cb")) updateCounts();
   });
   document.getElementById("refresh-preview").addEventListener("click", refreshPreview);
   document.getElementById("send-btn").addEventListener("click", send);
@@ -1447,15 +1650,50 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       return hit;
     }
 
-    var gotWho = check(contactCbs(), params.get("contacts"));
+    // 딜 소싱으로 여는 링크의 `contacts` 는 **딜 소싱 명단** 번호다 — 투자사
+    // 담당자 목록에 대고 켜면 번호만 같은 엉뚱한 담당자가 켜진 채 남는다(다른
+    // 탭으로 옮기는 순간 그 사람에게 나갈 수 있다). 그래서 방식을 바꾼 뒤에 켠다.
+    var toSourcing = wanted === "sourcing";
+    var gotWho = toSourcing ? 0 : check(contactCbs(), params.get("contacts"));
     var picked = check(companyCbs(), params.get("companies"), true);
 
     if (wanted && document.querySelector('.mode-tab[data-mode="' + wanted + '"]')) {
       setMode(wanted);
     }
     // `?mode=sourcing&topic=sourcing_remind` — 월간 리마인드로 바로 연다.
-    if (wanted === "sourcing" && params.get("topic") === REMIND) pickTopic(REMIND);
+    // `?mode=sourcing&topic=sourcing_deal_share` — Series A 딜 공유(딜 소싱 화면의
+    // [Series A 딜 소개]가 여는 주소다).
+    var topicParam = params.get("topic");
+    if (toSourcing && (topicParam === REMIND || topicParam === SHARE)) pickTopic(topicParam);
+    // 딜 소싱 명단 · Series A 이상 기업을 미리 켠다(`contacts` · `series_a`).
+    // 받는 갈래가 아니거나 불참여인 분은 켜지 않는다(`dropExcluded`) — 몇 명이
+    // 그랬는지는 아래에서 말한다.
+    var askedSourcing = 0, keptSourcing = 0, askedSeries = 0, gotSeries = 0;
+    if (toSourcing && mode === "sourcing") {
+      check(contactCbs(), params.get("contacts"));
+      dropExcluded();
+      keptSourcing = contactCbs().filter(function (c) { return c.checked; }).length;
+      askedSourcing = (params.get("contacts") || "").split(",")
+        .map(function (v) { return v.trim(); }).filter(Boolean)
+        .filter(function (v, i, a) { return a.indexOf(v) === i; }).length;
+      if (isShare()) {
+        askedSeries = (params.get("series_a") || "").split(",")
+          .map(function (v) { return v.trim(); }).filter(Boolean)
+          .filter(function (v, i, a) { return a.indexOf(v) === i; }).length;
+        gotSeries = check(companyCbs(), params.get("series_a"), true);
+      }
+    }
     var warns = [];
+    if (askedSourcing && keptSourcing < askedSourcing) {
+      warns.push("딜 소싱 대상 " + (askedSourcing - keptSourcing) + "명은 고르지 " +
+        "않았습니다 — 불참여이거나 명단에서 빠졌거나" +
+        (isShare() ? ", 이 글을 받는 갈래(" + SHARE_BUCKET + ")가 아닌 분입니다."
+                   : " 지금 고를 수 없는 분입니다."));
+    }
+    if (askedSeries && gotSeries < askedSeries) {
+      warns.push("Series A 이상 기업 " + (askedSeries - gotSeries) + "개를 목록에서 " +
+        "찾지 못했습니다 — IR 기업 현황 › Series A 이상 기업 탭에서 확인하세요.");
+    }
     // 넘겨받은 담당자가 **이 목록에 없을 수 있다.** 이 화면의 대상은 `내
     // 담당` 보다 좁다 — 딜 소개 명단에 있고 카톡방 연결까지 끝난 사람만
     // 선다(`sheet_owner.recipients`). 담당이 넘어간 뒤의 IR 요청 줄에서

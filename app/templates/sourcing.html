@@ -89,6 +89,19 @@
               title="방이 없는 {{ room_search_count }}명을 내 PC 의 카톡에서 찾습니다 — 메시지는 보내지 않습니다">
         방 후보 찾기 ({{ room_search_count }}명)</button>
     </form>
+    {# **[Series A 딜 소개]** — 이 갈래 심사역께 IR 기업 현황 › `Series A 이상
+       기업` 탭의 받은 딜을 소개한다. 누르면 딜 제안 관리 › 딜 소싱 제안이
+       [보낼 문구 › Series A 딜 공유]로 열리고, **이 표에 지금 보이는(머리글
+       필터 · 검색으로 거른) 참여 분**이 받는 사람으로 미리 골라져 있다. 이 표에는
+       체크박스를 두지 않는다 — 고르는 자리는 딜 제안 관리의 카드 목록 하나다
+       (거기서 빼고 더하고, 이미 받은 분도 거기서 뺀다). 이 갈래에서만 선다
+       (`series_a_share.BUCKET`). #}
+    {% if selected == share_bucket %}
+    <a class="primary-btn inline" id="sourcing-share-btn" data-testid="sourcing-share-btn"
+       href="/deals?mode=sourcing&amp;topic={{ share_topic }}"
+       data-base="/deals?mode=sourcing&amp;topic={{ share_topic }}"
+       title="지금 표에 보이는 참여 분을 받는 사람으로 골라 딜 제안 관리에서 엽니다 — 거기서 Series A 이상 기업을 고르고 미리보기 뒤 보냅니다">Series A 딜 소개</a>
+    {% endif %}
     {# 전화로 한 명 승낙받고 바로 적을 곳이 없어서, 메모지에 적어 뒀다가
        나중에 시트에 옮겨야 했다. 지금 보고 있는 갈래에 바로 넣는다. #}
     {% if selected %}
@@ -169,6 +182,14 @@
               {% if got %}{{ month_label }} 딜 받음 ✓{% else %}☐ {{ month_label }} 딜 받음{% endif %}</button>
             {% if by_mail %}<span class="muted" data-testid="sourcing-received-mail">(메일 {{ by_mail.day }})</span>{% elif got %}<span class="muted" data-testid="sourcing-received-manual">(직접)</span>{% endif %}
           </form>
+          {# **Series A 딜 공유로 받은 기업** — 딜 제안 관리 › 딜 소싱 제안의
+             [Series A 딜 공유]가 적은 기록(대기 · 보낸 것만 — `series_a_share`).
+             칸을 하나 더 세우지 않는다(위 주석 — 머리글 · 칸 수가 `COLUMNS` 와 1:1). #}
+          {% set got_share = shared.get(r.id) %}
+          {% if got_share %}
+          <div class="cell-sub muted" data-testid="sourcing-share-note"
+               title="{{ got_share|join(' · ') }}">Series A 딜 공유 {{ got_share|length }}건</div>
+          {% endif %}
           {# **투자사 관리 현황과 이어진 줄** — 그쪽 `Series A 딜 소싱` 칸(O/X)이 이
              줄의 `참여` 를 그대로 읽는다(`services/sourcing_sync.py`). 시리즈 A
              갈래 줄만 이어진다. 이름 · 직함 · 회사 · 휴대폰 · 이메일은 어느 쪽에서
@@ -363,6 +384,30 @@
         if (!cell) return;
         cell.textContent = tr.hidden ? "" : ++n;
       });
+      syncShareLink();
+    }
+
+    // [Series A 딜 소개] — **지금 보이는 참여 분**을 받는 사람으로 싣는다
+    // (`?contacts=…`). 걸러 둔 그대로 넘어가야 담당 · 투자분야로 좁혀 본 사람이
+    // 그 사람들에게 보낸다. 불참여 분은 싣지 않는다 — 딜 제안 관리에도 안 뜨고
+    // 발송도 막힌다. 실제로 고르는 것은 그 화면의 카드다(거기서 빼고 더한다).
+    var shareBtn = document.getElementById("sourcing-share-btn");
+    function shareIds() {
+      var ids = [];
+      table.querySelectorAll("tbody tr").forEach(function (tr) {
+        if (tr.hidden) return;
+        if ((tr.getAttribute("data-f-participation") || "참여") === "불참여") return;
+        var id = tr.getAttribute("data-id");
+        if (id) ids.push(id);
+      });
+      return ids;
+    }
+    function syncShareLink() {
+      if (!shareBtn) return;
+      var ids = shareIds();
+      var base = shareBtn.getAttribute("data-base") || "/deals";
+      shareBtn.setAttribute("href", ids.length ? base + "&contacts=" + ids.join(",") : base);
+      shareBtn.textContent = "Series A 딜 소개 (" + ids.length + "명)";
     }
     renumber();
   })();
