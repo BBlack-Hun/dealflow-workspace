@@ -358,6 +358,9 @@ UNWATCHED: Dict[str, str] = {
     "deal_queue_companies": "발송 대기에 실린 기업. 위와 같다.",
     "send_jobs": "발송 작업. 보낸 기록이다.",
     "send_items": "발송 한 건. 보낸 기록이다(문구가 통째로 들어 있기도 하다).",
+    "series_a_shares": "Series A 딜 공유로 어느 심사역에게 어느 기업을 보냈나 — 발송 "
+                       "목록을 만들 때 기계가 발송 건마다 적는 보낸 기록이다"
+                       "(`send_items` 와 같은 결). 사람이 고치는 길이 없다.",
     "monthly_column_runs": "이달 열을 이미 세웠다는 표시. 사람이 보는 자료가 아니다.",
     "weekly_routines": "주간 업무 되풀이 — 계정마다의 개인 화면이다.",
     "weekly_tasks": "주간 업무 할 일 — 개인 화면이다.",

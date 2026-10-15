@@ -30,9 +30,9 @@ from ..models import (
 from ..services import mail_sender, mailer, matcher
 from ..services import message_composer as mc
 from ..services import (deal_numbers, deal_queue, ir_attach, ir_kakao,
-                        ir_monthly, manual_send, scheduled_send, sheet_owner,
-                        sourcing_link, sourcing_msg, sourcing_receipts,
-                        sourcing_sync,
+                        ir_monthly, manual_send, scheduled_send, series_a_share,
+                        sheet_owner, sourcing_link, sourcing_msg,
+                        sourcing_receipts, sourcing_sync,
                         startup_outreach, startup_send, template_pick,
                         twin_send)
 from ..services.message_composer import MAX_COMPANIES_PER_SEND
@@ -200,7 +200,12 @@ MODE_TITLES[MODE_DEAL] = "딜 소개"
 #: `SendJob.topic` 이 담는다.
 #:
 #: 이 이름은 회차명(`09/09 (딜 소싱 리마인드)`)과 문구 화면의 구간 이름에 쓰인다.
-TOPIC_TITLES = {sourcing_msg.REMIND_KIND: "딜 소싱 리마인드"}
+#:
+#: **Series A 딜 공유**도 같은 탭 안의 셋째 글이다 — 받는 사람은 시리즈 A 갈래
+#: 심사역뿐이고, 글에 `Series A 이상 기업` 탭의 기업이 덩어리째 들어간다
+#: (`services/series_a_share.py`). 보내는 길은 위 둘과 같다.
+TOPIC_TITLES = {sourcing_msg.REMIND_KIND: "딜 소싱 리마인드",
+                sourcing_msg.SHARE_KIND: series_a_share.LABEL}
 #: 월간 리마인드에서 **이 달 딜 받음** 인 분을 가리키는 말 — 미리보기 경고와
 #: 발송 목록에서 뺀 이유가 같은 글자를 쓴다.
 RECEIVED_NOTE = "이번 달 딜 받음"
@@ -213,11 +218,12 @@ OUT_NOTE = "딜 소싱 불참여"
 #: 자기 방 이름이 없으면 여기 걸린다 — 딜 소싱 화면의 [방 후보 찾기]로 채운다.
 NO_ROOM_NOTE = "딜 소싱 카톡방 없음 — 딜 소싱 화면의 [방 후보 찾기]로 보내는 분 카톡에서 찾아 확정하세요"
 #: 문구 화면(`/templates`)이 그 탭 아래에 구간을 하나 더 세울 때 읽는다.
-MODE_TOPIC_KINDS = {MODE_SOURCING: ((sourcing_msg.REMIND_KIND, "월간 리마인드"),)}
+MODE_TOPIC_KINDS = {MODE_SOURCING: ((sourcing_msg.REMIND_KIND, "월간 리마인드"),
+                                    (sourcing_msg.SHARE_KIND, series_a_share.LABEL))}
 
 
 def _sourcing_topic(mode: str, raw: Optional[str]) -> str:
-    """딜 소싱 제안의 [보낼 문구] — `sourcing_intro` 또는 `sourcing_remind`.
+    """딜 소싱 제안의 [보낼 문구] — `sourcing_intro` · `sourcing_remind` · `sourcing_deal_share`.
 
     다른 방식은 빈 글자다(그쪽의 `topic` 은 스타트업 안내 카톡이 쓰는 다른 값).
     모르는 값은 **처음 안내로 짐작하지 않고 멈춘다**(`sourcing_msg.topic_of`).
@@ -227,8 +233,24 @@ def _sourcing_topic(mode: str, raw: Optional[str]) -> str:
     topic = sourcing_msg.topic_of(raw)
     if topic is None:
         raise HTTPException(status_code=400,
-                            detail="보낼 문구를 고르세요 — 참여 안내(처음) 또는 월간 리마인드")
+                            detail="보낼 문구를 고르세요 — 참여 안내(처음) · 월간 리마인드 · "
+                                   f"{series_a_share.LABEL}")
     return topic
+
+
+def _load_series_a(db: Session, ids: List[int]) -> list:
+    """Series A 딜 공유에 실을 기업 — 고른 차례 그대로, 없는 번호는 404."""
+    try:
+        return series_a_share.load(db, ids)
+    except series_a_share.MissingCompany as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from None
+
+
+def _check_series_a_count(ids: List[int]) -> None:
+    if not (1 <= len(set(ids)) <= MAX_COMPANIES_PER_SEND):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Series A 이상 기업을 1~{MAX_COMPANIES_PER_SEND}개 선택하세요")
 
 # IR 자료 전달은 기업을 고른다(무엇을 보내는지 알아야 한다).
 # 나머지 후속 문구는 기업과 무관하다.
@@ -256,6 +278,7 @@ def _compose_for_contact(
     mode: str = MODE_DEAL,
     include_opening: Optional[bool] = None,
     topic: str = "",
+    series_a: Optional[list] = None,
 ) -> mc.ComposeResult:
     # 인사말 기본값은 방식마다 다르다. 후속 문구는 이미 대화가 오간 방에 한 줄
     # 덧붙이는 것이라 인사를 다시 붙이지 않는 편이 자연스럽다. 화면에서 켜고 끌 수 있다.
@@ -272,7 +295,13 @@ def _compose_for_contact(
     )
     follow_up = FOLLOW_UP_MODES.get(mode)
     remind = mode == MODE_SOURCING and topic == sourcing_msg.REMIND_KIND
-    if remind:
+    share = mode == MODE_SOURCING and topic == sourcing_msg.SHARE_KIND
+    if share:
+        # Series A 딜 공유 — 같은 틀(인사말 + 본문)에 본문이 공유 문구다. 고르는
+        # 차례도 같다(갈래 문구 > 갈래 없는 문구 > 뼈대). 기업 덩어리는 글을 다
+        # 지은 뒤에 끼운다(아래 `series_a_share.fill`).
+        closing_body = series_a_share.body_for(db, user, getattr(contact, "bucket", ""))
+    elif remind:
         # 월간 리마인드 — 같은 틀(인사말 + 본문, 빈 직함은 갈래 호칭)에 본문만
         # 리마인드 문구다. 고르는 차례도 처음 안내와 같다(갈래 문구 > 갈래 없는
         # 문구 > 뼈대), `{월}` 은 이 달로 채워 온다.
@@ -299,13 +328,16 @@ def _compose_for_contact(
     if remind:
         # 화면에서 고른 저장 문구에도 `{월}` 이 있을 수 있다 — 같은 손으로 채운다.
         closing_body = sourcing_msg.fill_month(closing_body)
+    if share:
+        # `{기업 목록}` 자리를 표시로(없으면 첫 문단 뒤). 고른 저장 문구도 같은 손.
+        closing_body = series_a_share.slot(closing_body)
 
     who = _to_contact_view(contact)
     if mode == MODE_SOURCING and not (who.title or "").strip():
         # 직함이 빈 줄이 있다. 그대로 두면 '안녕하세요, 홍길동' 으로 나간다.
         who.title = sourcing_msg.honorific(getattr(contact, "bucket", ""))
 
-    return mc.compose_message(
+    result = mc.compose_message(
         opening_body,
         closing_body,
         who,
@@ -320,6 +352,12 @@ def _compose_for_contact(
         # `file_links` · `link_blocks` 를 넘기지 않는다 — 자료 전달은 이제
         # **한 통**이다. 링크가 빠졌으니 먼저 던질 것도 없다.
     )
+    if share:
+        # 기업 덩어리는 **치환을 안 지나게** 다 지은 뒤에 끼운다(존칭 다듬기가
+        # 상세 내용의 띄어쓰기를 건드리지 않게). 고른 기업이 없으면(기본 문구)
+        # 자리 안내가 선다.
+        result = series_a_share.fill(result, series_a_share.blocks(series_a or []))
+    return result
 
 
 def _mail_subject(req, contact, companies: List[IrCompany]) -> str:
@@ -555,8 +593,16 @@ class PreviewRequest(BaseModel):
     # 사람을 고른 뒤에는 그 사람의 갈래가 이기므로 여기서만 쓰인다.
     bucket: str = ""
     # 딜 소싱 제안의 [보낼 문구] — 비면 처음 안내, `sourcing_remind` 면 월간
-    # 리마인드(`sourcing_msg.TOPICS`). 다른 방식은 읽지 않는다.
+    # 리마인드, `sourcing_deal_share` 면 Series A 딜 공유(`sourcing_msg.TOPICS`).
+    # 다른 방식은 읽지 않는다.
     topic: str = ""
+    # ── Series A 딜 공유에서만 쓴다 ──
+    # 고른 `Series A 이상 기업`(`series_a_companies.id`) — **고른 차례가 곧
+    # 문구의 번호**다(`[기업1]`). `company_ids`(IR 기업 현황)와 다른 표라 따로 받는다.
+    series_a_ids: List[int] = []
+    # 이미 받은 기업도 **다시 보낼지**. 기본은 그 분 문구에서 뺀다(다 받은 분은
+    # 목록에서 빠진다) — 화면의 [이미 이 기업들을 받은 분 제외]를 끈 것이 참이다.
+    include_shared: bool = False
 
 
 class MessageOverride(BaseModel):
@@ -619,6 +665,10 @@ class SendRequest(BaseModel):
     # 보내 주신 분께 "이번 달 딜 부탁드립니다" 가 가면 안 읽은 사람으로 보인다.
     # 화면의 [이번 달 딜 받음 포함] 이 이 값이다.
     include_received: bool = False
+    # `topic` 이 `sourcing_deal_share`(Series A 딜 공유)일 때 — 위 미리보기 요청의
+    # 같은 이름 칸과 같다(고른 기업 · 이미 받은 기업도 다시 보낼지).
+    series_a_ids: List[int] = []
+    include_shared: bool = False
 
 
 def _override_map(req: SendRequest, contact_ids: set) -> dict:
@@ -678,9 +728,15 @@ def preview(
     companies = _load_companies(db, req.company_ids) if req.mode in MODES_WITH_COMPANIES else []
     previews = []
     sourcing = req.mode == MODE_SOURCING
-    # 딜 소싱 제안의 [보낼 문구] — 처음 안내 / 월간 리마인드.
+    # 딜 소싱 제안의 [보낼 문구] — 처음 안내 / 월간 리마인드 / Series A 딜 공유.
     topic = _sourcing_topic(req.mode, req.topic)
     remind = topic == sourcing_msg.REMIND_KIND
+    # Series A 딜 공유 — 고른 기업이 1~10개여야 사람마다 글이 선다(딜 소개와
+    # 같은 한도). 아무도 안 골랐을 때의 기본 문구는 기업 없이도 보인다.
+    share = topic == sourcing_msg.SHARE_KIND
+    if share and not sample:
+        _check_series_a_count(req.series_a_ids)
+    series_rows = _load_series_a(db, req.series_a_ids) if share else []
     # 리마인드인데 **이 달 딜 받음** 인 분을 일부러 넣었으면 미리보기에서 한 번
     # 더 말한다 — 화면은 기본으로 빼 두므로, 여기 걸리는 분은 사람이 켜서 넣은 것이다.
     received = (sourcing_receipts.received_ids(db, sourcing_receipts.month_of())
@@ -690,7 +746,9 @@ def preview(
     # 반대면) 사람은 자료를 두 번 보내거나 한 번도 안 보낸다.
     attach_on = req.mode == MODE_IR and ir_attach.auto_attach_enabled(db, user)
     # 화면이 고른 갈래를 먼저 쓴다. 없을 때만 첫 갈래로 돌아간다.
-    sample_bucket = (req.bucket or "").strip() or _sample_bucket(db)
+    # Series A 딜 공유는 받는 갈래가 하나뿐이라 그 갈래 문구다.
+    sample_bucket = (series_a_share.BUCKET if share
+                     else (req.bucket or "").strip() or _sample_bucket(db))
     recipients = ([_SampleRecipient(sample_bucket if sourcing else "")]
                   if sample else _load_recipients(db, user, req.mode, req.contact_ids))
     # 투자사 관리 현황에서 연결해 둔 방이 있으면 미리보기에도 그 방이 떠야 한다 —
@@ -700,12 +758,31 @@ def preview(
     # 빠진다**(`services/twin_send`). 빠질 분을 미리보기에서 먼저 알린다.
     twin_block = (twin_send.blocked(db, recipients, [c.id for c in companies])
                   if req.mode == MODE_DEAL and not sample else {})
+    # Series A 딜 공유 — 고른 분들이 **이미 받은** 기업(대기 · 보내는 중 · 보냄).
+    shared = (series_a_share.companies_by_contact(
+                  db, contact_ids=[c.id for c in recipients],
+                  company_ids=[r.id for r in series_rows])
+              if share and not sample else {})
     for contact in recipients:
+        # 이 분께 실을 기업 · 이 분만의 경고 — 발송 목록 만들기와 같은 판단이다.
+        per_series, share_warns = series_rows, []
+        if share and not sample:
+            if not series_a_share.is_share_bucket(getattr(contact, "bucket", "")):
+                share_warns.append(series_a_share.NOT_BUCKET_NOTE)
+            fresh, old = series_a_share.split(contact.id, series_rows, shared)
+            if old and req.include_shared:
+                share_warns.append(f"이미 받은 기업 {len(old)}곳도 다시 보냅니다: "
+                                   + ", ".join(c.name for c in old))
+            elif old and fresh:
+                per_series = fresh
+                share_warns.append(series_a_share.partial_note(old))
+            elif old:
+                share_warns.append(series_a_share.ALL_SHARED_NOTE)
         result = _compose_for_contact(db, user, contact, companies,
                                       req.opening_template_id, req.closing_template_id,
                                       mode=req.mode,
                                       include_opening=req.include_opening,
-                                      topic=topic)
+                                      topic=topic, series_a=per_series)
         room = _room_of(contact, linked)
         room_ok = bool(room) and contact.room_verified in ("verified", "unverified")
         if sample:
@@ -759,6 +836,7 @@ def preview(
                          + ([twin_block[contact.id]] if contact.id in twin_block
                             else [])
                          + ([RECEIVED_NOTE] if contact.id in received else [])
+                         + share_warns
                          + ([OUT_NOTE] if sourcing and not sample
                             and not sourcing_sync.takes_part(contact) else [])),
             # 소싱 대상은 다른 표에 있다 — 같은 번호의 투자사 담당자 이력을
@@ -870,6 +948,11 @@ def create_send_list(
     # 딜 소싱 제안의 [보낼 문구]. 모르는 값이면 **여기서 멈춘다** — 아무것도
     # 만들기 전이다.
     sourcing_topic = _sourcing_topic(req.mode, req.topic)
+    # Series A 딜 공유 — 고른 기업도 아무것도 만들기 **전에** 본다(수 · 없는 번호).
+    share = sourcing_topic == sourcing_msg.SHARE_KIND
+    if share:
+        _check_series_a_count(req.series_a_ids)
+    series_rows = _load_series_a(db, req.series_a_ids) if share else []
 
     by_email = req.channel == "email"
     if by_email and not mailer.is_configured():
@@ -929,6 +1012,10 @@ def create_send_list(
         for contact in contacts:
             if not sourcing_sync.takes_part(contact):
                 why = OUT_NOTE + " — 뺐습니다"
+            elif share and not series_a_share.is_share_bucket(contact.bucket):
+                # Series A 딜 공유는 시리즈 A 갈래 심사역께만 — 다른 갈래의 분은
+                # 이 글을 받을 자리가 아니다(화면도 그 카드를 고를 수 없게 한다).
+                why = series_a_share.NOT_BUCKET_NOTE
             elif not _room_of(contact, linked):
                 why = NO_ROOM_NOTE
             else:
@@ -963,6 +1050,32 @@ def create_send_list(
                 detail=(f"'{skipped_received[0]['name']}' {RECEIVED_NOTE} — 고른 분이 "
                         "모두 이번 달 딜을 보내 주셨습니다(그래도 보내려면 "
                         "[이번 달 딜 받음 포함]을 켜세요)"))
+    # ── Series A 딜 공유 — **이미 받은 기업은 그 분 문구에서 뺀다** ──────────
+    #
+    # 고른 기업을 모두 받은 분은 목록에서 빠진다(조용히 빼지 않는다 — 뺀 분과
+    # 이유를 돌려준다). 일부만 받은 분은 안 받은 기업만 실린다. 화면의 [이미 이
+    # 기업들을 받은 분 제외]를 끄면(`include_shared`) 고른 기업 그대로 다 간다.
+    # 받았는지는 발송 건의 상태로 센다(대기 · 보내는 중 · 보냄 — `series_a_share`).
+    share_plan: dict = {}
+    skipped_shared = []
+    if share:
+        got = ({} if req.include_shared else series_a_share.companies_by_contact(
+            db, contact_ids=[c.id for c in contacts],
+            company_ids=[r.id for r in series_rows]))
+        for contact in contacts:
+            fresh, _old = series_a_share.split(contact.id, series_rows, got)
+            if fresh:
+                share_plan[contact.id] = fresh
+            else:
+                skipped_shared.append({"contact_id": contact.id, "name": contact.name,
+                                       "reason": series_a_share.ALL_SHARED_NOTE})
+        contacts = [c for c in contacts if c.id in share_plan]
+        if not contacts:
+            raise HTTPException(
+                status_code=400,
+                detail=(f"'{skipped_shared[0]['name']}' — 고른 분 모두 고른 기업을 이미 "
+                        "받았습니다(그래도 보내려면 [이미 이 기업들을 받은 분 제외]를 "
+                        "끄세요)"))
     # 안내 카톡은 **확인된 방**에만, `딜소개 불가`·`검토중단` 은 빼고 나간다.
     # 화면이 고를 수 없게 한 것과 **같은 함수**를 지난다(`startup_outreach.
     # refusal`) — 오래된 탭의 체크나 손으로 만든 요청도 여기서 걸린다.
@@ -1087,9 +1200,11 @@ def create_send_list(
         # 딜 소싱 월간 리마인드도 남긴다 — 잡 종류는 처음 안내와 같은
         # `sourcing_intro` 라(발송 프로그램이 아는 종류), 무슨 글이었는지는 이
         # 칸으로만 갈린다. 처음 안내는 지금까지처럼 비워 둔다.
+        # Series A 딜 공유도 같은 자리에 남는다(`sourcing_deal_share`).
         topic=(req.topic.strip() if req.mode == MODE_STARTUP_MSG
-               else sourcing_msg.REMIND_KIND
-               if sourcing_topic == sourcing_msg.REMIND_KIND else None),
+               else sourcing_topic
+               if sourcing_topic in (sourcing_msg.REMIND_KIND,
+                                     sourcing_msg.SHARE_KIND) else None),
     )
     db.add(job)
     db.flush()
@@ -1141,7 +1256,8 @@ def create_send_list(
                                             req.closing_template_id,
                                             mode=req.mode,
                                             include_opening=req.include_opening,
-                                            topic=sourcing_topic)
+                                            topic=sourcing_topic,
+                                            series_a=share_plan.get(contact.id))
             text, parts = composed.text, list(composed.parts)
         if by_email:
             # **제목에 `[테스트]` 를 붙이지 않는다.** 붙이던 까닭은 카톡이 전부
@@ -1158,7 +1274,7 @@ def create_send_list(
             subject = None
 
         startup = req.mode == MODE_STARTUP
-        db.add(SendItem(
+        item = SendItem(
             job_id=job.id,
             # 받는 줄이 세 표에 나뉜다 — **셋 중 하나만** 채운다.
             # 투자사 담당자 / 딜 소싱 명단 / 스타트업 기업.
@@ -1179,7 +1295,16 @@ def create_send_list(
             files_json=(json.dumps(attach_files, ensure_ascii=False)
                         if attach_files else None),
             status="pending",
-        ))
+        )
+        db.add(item)
+        # ── Series A 딜 공유는 **누구에게 어느 기업이 실렸나**를 적는다 ────────
+        #
+        # 발송 건마다 한 줄씩(`series_a_share.record`). 받았는지는 이 건의 상태가
+        # 정하므로(대기 · 보내는 중 · 보냄) 회차를 [중단]하면 저절로 안 센다.
+        # 사람이 문구를 고쳐 보냈어도(`overrides`) 고른 기업은 같다.
+        if share:
+            db.flush()
+            series_a_share.record(db, item, contact.id, share_plan[contact.id], user)
         # ── 자료 전달은 **담당자 이력에도 한 줄** ────────────────────────
         #
         # 자료 전달은 나중에 "이 사람에게 언제 어느 기업 자료를 보냈나" 로
@@ -1216,7 +1341,9 @@ def create_send_list(
             "scheduled": scheduled_send.describe(job),
             # 다른 팀원 몫으로 이미 나가 **이번 목록에서 뺀 분**과 그 이유.
             # 딜 소싱 월간 리마인드에서 이 달 `딜 받음` 이라 뺀 분도 같은 자리다.
-            "skipped": skipped_twins + skipped_received + skipped_sourcing}
+            # Series A 딜 공유에서 고른 기업을 이미 다 받아 뺀 분도 같은 자리다.
+            "skipped": (skipped_twins + skipped_received + skipped_sourcing
+                        + skipped_shared)}
 
 
 # ── 예약 큐 ─────────────────────────────────────────────────────────────────

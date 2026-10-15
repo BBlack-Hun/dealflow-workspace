@@ -24,8 +24,9 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import get_current_user, templates
 from ..models import SendItem, SourcingContact, User
-from ..services import (sourcing_buckets, sourcing_link, sourcing_mail,
-                        sourcing_receipts, sourcing_rooms, sourcing_sync)
+from ..services import (series_a_share, sourcing_buckets, sourcing_link,
+                        sourcing_mail, sourcing_receipts, sourcing_rooms,
+                        sourcing_sync)
 from ..services.pipeline import current_assignee
 from ..ui import base_ctx
 
@@ -268,6 +269,13 @@ def sourcing_page(request: Request, db: Session = Depends(get_db),
         # [담당자] 필터가 거르는 값 — 칸에 적힌 글자가 아니라 **지금 맡은 사람**
         # (`assignee_of`). 딜 제안 관리의 [담당] 칩과 같은 값이다.
         "assignees": {r.id: assignee_of(r) for r in rows},
+        # ── Series A 딜 공유 (`services/series_a_share.py`) ──
+        # 줄마다 받은 기업 이름 — `Series A 딜 공유 N건` 과 그 풍선말.
+        "shared": series_a_share.shared_companies(db, [r.id for r in rows]),
+        # [Series A 딜 소개] 단추는 이 갈래 탭에만 선다 — 이 글을 받는 갈래가
+        # 하나뿐이다(투자사 관리 현황과 이어진 갈래).
+        "share_bucket": series_a_share.BUCKET,
+        "share_topic": series_a_share.KIND,
         "total": sum(t["count"] for t in tabs),
         # 이름을 못 바꾼 까닭. 조용히 되돌아오면 왜 그대로인지 알 수 없다.
         "msg": msg,

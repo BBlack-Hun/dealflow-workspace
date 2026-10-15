@@ -797,8 +797,61 @@ class SeriesACompany(TimestampMixin, Base):
     #: 상세 내용 — 여러 줄 글(천 자가 넘는 줄도 있다).
     detail: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     #: 딜소개 문구. IR 기업 현황의 `딜 소개 문구`(`IrCompany.one_liner`)와
-    #: **다른 표의 다른 값**이다 — 이 문구로 발송하는 길은 아직 없다.
+    #: **다른 표의 다른 값**이다. 딜 제안 관리 › 딜 소싱 제안의 [Series A 딜 공유]
+    #: 가 기업 덩어리의 `소개` 로 이 문구를 쓴다(비면 `상세 내용` 앞부분 —
+    #: `services/series_a_share.pitch_of`).
     deal_pitch: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
+class SeriesAShare(TimestampMixin, Base):
+    """**이 기업을 이 심사역에게 Series A 딜 공유로 보냈다** — 한 줄이 (기업 × 사람 × 발송 건).
+
+    딜 제안 관리 › 딜 소싱 제안의 [보낼 문구 › Series A 딜 공유]가 발송 목록을
+    만들 때 적는다(`routers/deals.create_send_list` → `services/series_a_share.record`).
+    받는 사람은 딜 소싱 명단(`sourcing_contacts`)의 `시리즈 A 이상 딜 소싱 참여
+    심사역` 갈래 줄이고, 기업은 `Series A 이상 기업` 탭의 줄(`series_a_companies`)이다.
+
+    ## 왜 표를 새로 세우나
+
+    딜 소개의 발송 기록(`deal_batch_companies`)은 **`ir_companies` 를 가리킨다**
+    (외래키). 이 탭의 기업은 다른 표라 거기에 담을 수 없고, 받는 사람도 투자사
+    담당자가 아니라 딜 소싱 명단이다.
+
+    ## 무엇을 "받았다" 로 세나 — 발송 건의 상태를 따라간다
+
+    줄은 발송 건(`send_item_id`)에 매여 있고, **그 건이 살아 있을 때만** 받은
+    것으로 센다 — 대기 · 보내는 중 · 보냄(`series_a_share.LIVE_ITEM`). 회차를
+    [중단]해 `canceled` 가 되거나 `failed` 로 끝나면 저절로 안 센다. 줄을 지우거나
+    고치지 않아도 되는 까닭이 그것이다 — 상태는 발송 건 한 곳에 있다
+    (`services/twin_send.py` 가 같은 규칙으로 센다).
+
+    이 수가 쓰이는 곳: 딜 제안 관리의 기업 고르개 `이미 받은 분 N명`, 받는 사람
+    목록의 `이미 이 기업들을 받은 분 제외`, `Series A 이상 기업` 탭의 `공유한
+    심사역`, 딜 소싱 줄의 `Series A 딜 공유 N건`.
+    """
+
+    __tablename__ = "series_a_shares"
+    __table_args__ = (
+        Index("ix_series_a_shares_company", "series_a_company_id"),
+        Index("ix_series_a_shares_contact", "sourcing_contact_id"),
+        # 같은 발송 건에 같은 기업은 한 번 — 같은 회차를 두 번 적지 않는다.
+        Index("uq_series_a_shares_item_company", "send_item_id",
+              "series_a_company_id", unique=True),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    series_a_company_id: Mapped[int] = mapped_column(
+        ForeignKey("series_a_companies.id"))
+    sourcing_contact_id: Mapped[int] = mapped_column(
+        ForeignKey("sourcing_contacts.id"))
+    #: 이 기업이 실린 발송 건. 받았는지는 이 건의 상태가 정한다(머리말).
+    send_item_id: Mapped[int] = mapped_column(ForeignKey("send_items.id"))
+    #: 문구에 실린 차례(`[기업1]` 의 1). 사람마다 받은 기업이 다를 수 있어
+    #: (이미 받은 기업은 그 분 문구에서 뺀다) 건마다 적는다.
+    position: Mapped[int] = mapped_column(Integer, default=1)
+    #: 누가 보냈나(발송 목록을 만든 사람).
+    user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"),
+                                                   nullable=True)
 
 
 class DealBatch(TimestampMixin, Base):

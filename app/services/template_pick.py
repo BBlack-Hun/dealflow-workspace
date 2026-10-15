@@ -30,7 +30,9 @@ from ..models import MessageTemplate, TemplateChoice
 #:
 #: 딜 소싱 **월간 리마인드**(`sourcing_remind`)도 같다 — 첫 줄이 갈래를 부른다
 #: (`Series A 이상 딜 네트워크…`). 자동 리마인드(#277)가 같은 저장 문구를 읽는다.
-NAME_IS_A_BUCKET = {"sourcing_intro", "sourcing_remind"}
+#: **Series A 딜 공유**(`sourcing_deal_share`)도 같다 — 시리즈 A 갈래에만 나가는
+#: 글이라 그 갈래 이름을 단다(`services/series_a_share.py`).
+NAME_IS_A_BUCKET = {"sourcing_intro", "sourcing_remind", "sourcing_deal_share"}
 
 
 def variant_of(kind: str, name: Optional[str]) -> str:
