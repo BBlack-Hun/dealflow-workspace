@@ -52,7 +52,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import select
@@ -61,12 +61,15 @@ from sqlalchemy.orm import Session
 from .. import clock
 from ..db import SessionLocal
 from ..models import STARTUP_JOB_KINDS, STARTUP_SEND_KIND, SendJob, User
-from . import auto_send
+from . import auto_send, send_window
 
 log = logging.getLogger(__name__)
 
 #: **고를 수 있는 시각의 폭.** `auto_send` 가 정한 그 값이다 — 여기에 숫자를
 #: 다시 적으면 한쪽만 고쳐지는 날이 온다.
+#:
+#: 운영의 폭을 적어 둔 것이다. 판정은 `send_window` 함수가 한다 — 테스트
+#: 서버에서 그 폭을 끄는 스위치가 있어서다(그 모듈 머리말).
 EARLIEST_HOUR = auto_send.EARLIEST_HOUR
 LATEST_HOUR = auto_send.LATEST_HOUR
 
@@ -133,9 +136,9 @@ def check(at: datetime, now: Optional[datetime] = None) -> datetime:
     now = _aware(now or clock.now())
     if at <= now:
         raise ValueError("이미 지난 시각입니다 — 지금 보내려면 [발송 시작] 을 누르세요")
-    if not (EARLIEST_HOUR <= at.hour < LATEST_HOUR):
+    if not send_window.contains(at):
         raise ValueError(
-            f"예약은 {EARLIEST_HOUR:02d}:00~{LATEST_HOUR:02d}:00 안에서만 "
+            f"예약은 {send_window.label()} 안에서만 "
             "고를 수 있습니다 — 받는 분들의 업무시간입니다")
     return at
 
@@ -145,10 +148,9 @@ def deadline(at: datetime) -> datetime:
 
     그날 `LATEST_HOUR` 를 넘기지 않는다. 18:40 예약이 19:40 에 풀리면 그것은
     고를 수도 없던 시각이다 — 막아 둔 창을 뒷문으로 넘는 셈이 된다.
+    (그날의 끝은 `send_window.until_close` 가 정한다 — 테스트 서버에서 껐으면 자르지 않는다.)
     """
-    at = _aware(at)
-    edge = at.replace(hour=LATEST_HOUR, minute=0, second=0, microsecond=0)
-    return min(at + timedelta(minutes=EXPIRE_MINUTES), edge)
+    return send_window.until_close(_aware(at), EXPIRE_MINUTES)
 
 
 def label(at: datetime) -> str:
@@ -276,8 +278,8 @@ def describe(job: SendJob, now: Optional[datetime] = None) -> dict:
         "count": pending_count(job) if at else 0,
         # 수를 세는 말(`명`/`곳`). [발송 시작] 단추도 이 말로 센다.
         "unit": unit(job),
-        "earliest": EARLIEST_HOUR,
-        "latest": LATEST_HOUR,
+        "earliest": send_window.earliest(),
+        "latest": send_window.latest(),
     }
 
 
@@ -524,8 +526,7 @@ def expire_missed(db: Session, now: Optional[datetime] = None,
 
         floor = automation_runner.release_floor(db, job, now)
         if floor is not None:
-            edge = floor.replace(hour=LATEST_HOUR, minute=0, second=0, microsecond=0)
-            if now < min(floor + timedelta(minutes=EXPIRE_MINUTES), edge):
+            if now < send_window.until_close(floor, EXPIRE_MINUTES):
                 continue
         done = db.execute(
             text("UPDATE send_jobs SET status='draft', released_at=NULL "

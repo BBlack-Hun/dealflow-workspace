@@ -85,12 +85,14 @@ from .. import clock
 from ..db import SessionLocal
 from ..models import (AutoSendRun, Automation, AutomationSend, SendItem,
                       SendJob, User)
-from . import automation, scheduled_send
+from . import automation, scheduled_send, send_window
 
 log = logging.getLogger(__name__)
 
 #: 그날 몇 시부터 회차를 세우나. 사람이 출근해 오늘 할 일에서 보고 나가기
 #: 전에 빼거나 [중단] 할 틈이 남게 아침에 세운다(`startup_monthly` 와 같은 값).
+#: 판정은 `send_window.prepare_hour(PREPARE_HOUR)` — 테스트 서버에서 보내는 시간을
+#: 껐으면 0시부터 세운다(00:30 회차를 08시에 세우면 이미 지난 뒤다).
 PREPARE_HOUR = 8
 
 #: 얼마나 자주 깨어나 보나. 하루 한 번 서는 일이라 촘촘할 까닭이 없다.
@@ -626,7 +628,7 @@ def run_once(db: Session, key: str, now: Optional[datetime] = None) -> dict:
     plan = spec.plan(db, row, today)
     if plan is None:
         return {"status": "not_today"}
-    if now.hour < PREPARE_HOUR:
+    if now.hour < send_window.prepare_hour(PREPARE_HOUR):
         return {"status": "too_early"}
     at = scheduled_send._aware(plan.at)
     if now >= at:

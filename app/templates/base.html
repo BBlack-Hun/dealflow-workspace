@@ -46,6 +46,14 @@
       </div>
     </aside>
     <main class="content">
+      {# 테스트 서버에서 보내는 시간(09:00~19:00) 제한을 껐다는 표시. 관리자에게만 —
+         운영에서는 켜지지 않는다(`services/send_window.py`). #}
+      {% if user and user.role == 'admin' and send_window_off() %}
+      <div class="test-banner" data-testid="send-window-off-banner">
+        🧪 <b>{{ send_window_banner }}</b> — 보내는 시간이 00:00~24:00 입니다.
+        하루 상한·중복 방지·간격·시험 모드는 그대로입니다.
+      </div>
+      {% endif %}
       {# 시험방이 켜져 있다는 사실은 **모든 화면**에 적는다 — 발송 화면도
          포함이다. 띠가 `/setup` 에만 있으면, 발송을 누르는 사람은 시험방이
          켜져 있는 줄도 모른 채 누른다. 적는 내용이 예전과 반대라는 데 유의:

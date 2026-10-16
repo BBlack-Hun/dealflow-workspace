@@ -679,10 +679,10 @@
           {% endfor %}
         </select></label>
       <label class="field inline-field" title="이 안에서만 자동 회차가 섭니다 — 발송 안전장치({{ automations.team.guard_start }}~{{ automations.team.guard_end }}) 안쪽만"><span>자동 발송 가능 시간대</span>
-        <input type="time" name="window_start" value="{{ automations.team.window_start }}" step="600"
-               min="{{ automations.team.guard_start }}" max="{{ automations.team.guard_end }}">
-        ~ <input type="time" name="window_end" value="{{ automations.team.window_end }}" step="600"
-               min="{{ automations.team.guard_start }}" max="{{ automations.team.guard_end }}"></label>
+        <input type="time" name="window_start" value="{{ automations.team.window_start }}" step="{{ automations.team.time_step }}"
+               min="{{ automations.team.guard_start }}" max="{{ automations.team.guard_end_input }}">
+        ~ <input type="time" name="window_end" value="{{ automations.team.window_end_input }}" step="{{ automations.team.time_step }}"
+               min="{{ automations.team.guard_start }}" max="{{ automations.team.guard_end_input }}"></label>
       <label class="field inline-field" title="업무용 PC 라 비워 둘 때(예: 점심 12:00~13:00). 그 안에 떨어진 회차는 끝나는 분으로 밀립니다. 안 쓰면 둘 다 비우세요"><span>피할 시간</span>
         <input type="time" name="avoid_start" value="{{ automations.team.avoid_start }}" step="600">
         ~ <input type="time" name="avoid_end" value="{{ automations.team.avoid_end }}" step="600"></label>

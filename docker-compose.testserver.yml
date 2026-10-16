@@ -1,0 +1,32 @@
+# 테스트 서버(로컬 http://localhost:8889) 전용 덧붙임 — 보내는 시간(09:00~19:00) 제한을 끈다.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.testserver.yml up -d --no-build web
+#
+# 사용자가 정했다: "운영서버는 발송제한이 있어야하지만 테스트서버는 없어도 됨".
+# 테스트 서버의 자동화는 시험 모드라 본인 '나와의 채팅' 시험방으로만 가므로, 밤에
+# 시험해도 받는 사람이 없다.
+#
+# 끄는 것은 **시간 폭 하나**다(00:00~24:00 이 된다 — `app/services/send_window.py`).
+# 하루 상한 · 같은 분 하루 최대 · 회차 사이 간격 · 건 사이 간격 · 중복 방지 ·
+# 시험 모드는 그대로다. 켜져 있으면 시작 로그에 경고가 남고, 관리자 화면 머리에
+# "테스트 서버 — 발송 시간 제한 꺼짐" 띠가 선다.
+#
+# ## 왜 따로 된 파일인가
+#
+# - `docker-compose.yml` 에 넣으면 `docker compose run web -m pytest` 가 이 값을
+#   물려받아 검사가 '끈 상태' 로 돈다. `docker-compose.override.yml` 은 compose 가
+#   **저절로** 읽어서 같은 일이 생긴다 — 그래서 둘 다 쓰지 않는다.
+#   (`tests/conftest.py` 도 이 값을 지운다. 두 겹으로 막는다.)
+# - 운영(`deploy/docker-compose.prod.yml`) · `.env` · `.env.example` 에는 **절대 적지
+#   않는다.** 운영(`DEALFLOW_ENV=production`)에 이 값이 있으면 앱이 뜨지 않는다
+#   (`app/config.py: production_problems`). 검사가 운영 compose 에 이 값이 없는지
+#   못박는다(`tests/test_send_window_switch.py`).
+#
+# 되돌리려면(제한을 다시 켜려면) 이 파일 없이 다시 띄운다:
+#
+#   docker compose up -d --no-build web
+
+services:
+  web:
+    environment:
+      DEALFLOW_TEST_SERVER_NO_SEND_WINDOW: "1"

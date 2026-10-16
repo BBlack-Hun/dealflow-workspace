@@ -56,7 +56,7 @@ from .. import clock
 from ..db import SessionLocal
 from ..models import (STARTUP_SEND_KIND, AutoSendRun, DealBatch, SendItem, SendJob,
                       User)
-from . import scheduled_send
+from . import scheduled_send, send_window
 
 log = logging.getLogger(__name__)
 
@@ -67,7 +67,9 @@ DAY = 30
 DEFAULT_TIME = "17:00"
 
 #: 그날 몇 시부터 목록을 세우나. 사람이 출근해 오늘 할 일에서 볼 수 있게
-#: 아침에 세운다 — 나가는 시각까지 고칠 틈이 남는다.
+#: 아침에 세운다 — 나가는 시각까지 고칠 틈이 남는다. 판정은
+#: `send_window.prepare_hour(PREPARE_HOUR)` 로 한다(테스트 서버에서 보내는 시간을
+#: 껐으면 0시부터).
 PREPARE_HOUR = 8
 
 #: 얼마나 자주 깨어나 보나. 하루 한 번 서는 일이라 촘촘할 까닭이 없다.
@@ -105,11 +107,9 @@ def parse_time(raw: Optional[str]) -> str:
     if not m:
         raise ValueError("자동 발송 시각을 읽을 수 없습니다 — 17:00 처럼 적으세요")
     hour, minute = int(m.group(1)), int(m.group(2))
-    if minute > 59 or not (scheduled_send.EARLIEST_HOUR <= hour
-                           < scheduled_send.LATEST_HOUR):
+    if minute > 59 or not send_window.contains_hour(hour):
         raise ValueError(
-            f"자동 발송 시각은 {scheduled_send.EARLIEST_HOUR:02d}:00~"
-            f"{scheduled_send.LATEST_HOUR:02d}:00 안에서만 고를 수 있습니다")
+            f"자동 발송 시각은 {send_window.label()} 안에서만 고를 수 있습니다")
     return f"{hour:02d}:{minute:02d}"
 
 
@@ -262,7 +262,7 @@ def run_once(db: Session, now: Optional[datetime] = None) -> dict:
     today = now.date()
     if today != run_day(today.year, today.month):
         return {"status": "not_today"}
-    if now.hour < PREPARE_HOUR:
+    if now.hour < send_window.prepare_hour(PREPARE_HOUR):
         return {"status": "too_early"}
     at = at_on(today, row)
     if now >= at:
@@ -347,9 +347,9 @@ def status(db: Session, now: Optional[datetime] = None) -> dict:
         "enabled": bool(row and getattr(row, "monthly_auto", 0)),
         "time": f"{hour:02d}:{minute:02d}",
         "day": DAY,
-        "prepare_hour": PREPARE_HOUR,
-        "earliest": scheduled_send.EARLIEST_HOUR,
-        "latest": scheduled_send.LATEST_HOUR,
+        "prepare_hour": send_window.prepare_hour(PREPARE_HOUR),
+        "earliest": send_window.earliest(),
+        "latest": send_window.latest(),
         "next_label": "",
         "next_count": 0,
         "this_month": None,
