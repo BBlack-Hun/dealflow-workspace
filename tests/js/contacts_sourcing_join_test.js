@@ -6,6 +6,9 @@
 // 돌려주는데, 화면이 적힌 글자를 그대로 두면 칸과 필터가 서버와 다른 말을 한다.
 // 다른 칸을 고친 응답에도 이 값이 실려 오면 그대로 맞춘다.
 //
+// 바로 옆 `딜 소싱 참여 요청일`(읽기만 — #28)도 같은 응답(`sourcing_requested_at`)으로
+// 다시 그린다. O 로 새 줄이 생기거나 이어지면 그 줄의 날짜가 선다.
+//
 // 이름은 지어낸 값이다 — 저장소가 공개다.
 "use strict";
 const assert = require("assert");
@@ -23,14 +26,17 @@ function build() {
   const sourcing = D.el("td", { class: "cell", "data-field": "sourcing_join",
                                 "data-type": "pick", "data-choices": "O,X",
                                 "data-filter-key": "sourcing" });
+  const requested = D.el("td", { class: "sourcing-requested", title: "" });
   const memo = D.el("div", { class: "cell clamp2", "data-field": "memo" });
   const row = D.el("tr", {
-    class: "data-row", "data-id": "7", "data-name": "홍길동", "data-f-sourcing": ""
-  }, [D.el("td", { class: "rowno" }), sourcing, D.el("td", {}, [memo])]);
+    class: "data-row", "data-id": "7", "data-name": "홍길동", "data-f-sourcing": "",
+    "data-f-sourcing_date": ""
+  }, [D.el("td", { class: "rowno" }), sourcing, requested, D.el("td", {}, [memo])]);
   const table = D.el("table", { id: "contacts-table" },
                      [D.el("thead"), D.el("tbody", {}, [row])]);
   const root = D.el("div", {}, [D.el("div", {}, [table])]);
-  return { root: root, table: table, row: row, sourcing: sourcing, memo: memo };
+  return { root: root, table: table, row: row, sourcing: sourcing, memo: memo,
+           requested: requested };
 }
 
 function run(dom) {
@@ -106,6 +112,21 @@ function saved(dom, cell, value, data) {
   saved(dom, dom.memo, "x", { ok: true });
   assert.strictEqual(dom.sourcing.textContent, "O");
   assert.strictEqual(dom.row.getAttribute("data-f-sourcing"), "O");
+}
+
+// --- 4) `딜 소싱 참여 요청일` — 응답의 값으로 칸 · 풍선말 · 거를 값 ----------------
+{
+  const dom = build();
+  run(dom);
+  saved(dom, dom.sourcing, "O", { ok: true, sourcing_join: "O",
+                                  sourcing_requested_at: "2026-10-16" });
+  assert.strictEqual(dom.requested.textContent, "2026-10-16");
+  assert.strictEqual(dom.requested.getAttribute("title"), "2026-10-16");
+  assert.strictEqual(dom.row.getAttribute("data-f-sourcing_date"), "2026-10-16");
+
+  // 그 값이 없는 응답은 날짜를 안 건드린다
+  saved(dom, dom.memo, "x", { ok: true });
+  assert.strictEqual(dom.requested.textContent, "2026-10-16");
 }
 
 console.log("contacts_sourcing_join_test: ok");

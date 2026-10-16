@@ -255,11 +255,11 @@ def sourcing_page(request: Request, db: Session = Depends(get_db),
         "linked_rooms": linked,
         # 투자사 관리 현황의 줄과 **이어진** 줄 — `🔗 투자사 관리 현황: ○○ 명단`.
         # 시리즈 A 갈래만 이어진다(`sourcing_sync.SYNC_BUCKET`).
+        # 풍선말(어느 칸이 같이 바뀌는지)도 여기 실려 온다(`badges` 의 `title`).
         "vc_links": sourcing_sync.badges(db, rows),
-        # 연결 표시의 풍선말 — **어느 칸이 같이 바뀌는지**. 화면에 칸 이름을
-        # 적어 두면 칸이 늘 때(#17 투자분야 · 라운드 사이즈) 말만 옛것으로 남는다.
-        "vc_shared": " · ".join(sourcing_sync.SHARED_LABELS[f]
-                                for f in sourcing_sync.SHARED_FIELDS),
+        # 저절로 못 이은 시리즈 A 줄의 **후보** — [이 분으로 확정](#28).
+        # 이름 · 번호가 둘 다 같아야 저절로 잇고, 나머지는 사람이 고른다.
+        "vc_picks": sourcing_sync.link_candidates(db, rows),
         # **보낼 방이 없는 줄** — 자기 방 이름도 이어받을 방도 없다
         # (`sourcing_rooms.needs_room` — 발송이 방을 고르는 규칙과 같다).
         # 그 줄에 `방 없음` 과 [방 후보 찾기] 가 선다.
@@ -373,8 +373,9 @@ def add_row(body: SourcingIn, bucket: str = "",
             setattr(row, field, value.strip() or None)
     row.participation = _participation(body.participation or sourcing_sync.JOINED)
     db.add(row)
-    # 시리즈 A 갈래에 넣은 분이 투자사 관리 현황에 **번호가 딱 한 줄** 맞으면
-    # 그 줄과 잇는다 — 그쪽 `Series A 딜 소싱` 칸이 곧바로 O 가 된다.
+    # 시리즈 A 갈래에 넣은 분이 투자사 관리 현황에 **이름 · 번호가 둘 다 같은
+    # 줄이 딱 하나**면 그 줄과 잇는다 — 그쪽 `Series A 딜 소싱` 칸이 곧바로 O 가
+    # 된다. 아니면 후보로 뜬다(`sourcing_sync.link_candidates`).
     contact = sourcing_sync.auto_link(db, row)
     db.commit()
     out = {"id": row.id, "bucket": target}
@@ -413,7 +414,7 @@ def update_row(row_id: int, body: SourcingIn, db: Session = Depends(get_db),
     # 관리 현황과 이어진 줄이어도 같다: 딜 소싱에 든 분은 보내는 사람 카톡의
     # 딜 소싱 방에 있는 분이라, 투자사 줄을 누가 맡았는지와 따로 관리한다
     # (사용자 원문 — "투자사 관리 현황이랑은 다르게 생각해야함").
-    phone_before = sourcing_sync.digits(row.phone)
+    key_before = sourcing_sync.link_key(row)
     for field, value in data.items():
         # 이름은 비울 수 없다 — 누구인지 모르는 줄이 남는다.
         if field == "name" and not value.strip():
@@ -422,11 +423,13 @@ def update_row(row_id: int, body: SourcingIn, db: Session = Depends(get_db),
             # 이름이 바뀌었으면 예전 확인 결과는 다른 방 이야기다.
             row.room_verified = "unverified"
         setattr(row, field, value.strip() or None)
-    # 번호를 고쳐 투자사 관리 현황의 줄과 맞게 됐으면 잇는다(`add_row` 와 같다).
-    # 이미 이어진 줄은 번호가 바뀌어도 잇기를 그대로 둔다 — 고친 번호는 이어진
-    # 투자사 줄에도 그대로 넘어간다(`sourcing_sync.before_flush`).
+    # 이름 · 번호를 고쳐 투자사 관리 현황의 줄과 맞게 됐으면 잇는다(`add_row` 와
+    # 같다 — 둘 다 같아야 하므로 이름을 고쳐도 다시 본다). 이미 이어진 줄은
+    # 번호가 바뀌어도 잇기를 그대로 둔다 — 고친 번호는 이어진 투자사 줄에도
+    # 그대로 넘어간다(`sourcing_sync.before_flush`).
     contact = None
-    if sourcing_sync.digits(row.phone) != phone_before:
+    relink = sourcing_sync.link_key(row) != key_before
+    if relink:
         contact = sourcing_sync.auto_link(db, row)
     db.commit()
     # 고친 줄의 **지금 담당** — 화면이 [담당자] 필터 값을 이것으로 고쳐 적는다
@@ -436,7 +439,58 @@ def update_row(row_id: int, body: SourcingIn, db: Session = Depends(get_db),
            "participation": sourcing_sync.participation_of(row)}
     if contact is not None:
         out["linked_msg"] = _linked_msg(db, row)
+    if relink and sourcing_sync.is_synced(row):
+        # 이름 · 번호가 바뀌면 후보도 바뀐다 — 이어졌으면 연결 표시, 아니면 새
+        # 후보로 그 자리를 다시 그린다(`sourcing_vc_link.js`).
+        out.update(_vc_view(db, row))
     return out
+
+
+# ── 투자사 관리 현황과 사람이 확정해 잇기 (#28) ─────────────────────────────
+
+def _vc_view(db: Session, row: SourcingContact) -> dict:
+    """줄 이름 아래 투자사 관리 현황 자리 — 화면(`sourcing_vc_link.js`)이 그린다.
+
+    이어졌으면 연결 표시(`vc_link` — 서버가 그리는 것과 같은 `badges` 값)와 이 줄의
+    같은 칸 값(`fields` — 이으면서 빈 칸이 채워졌을 수 있다), 아니면 후보(`vc_picks`).
+    """
+    badge = sourcing_sync.badges(db, [row]).get(row.id)
+    if badge is None:
+        return {"vc_picks": sourcing_sync.link_candidates(db, [row]).get(row.id, [])}
+    return {"vc_link": badge,
+            "fields": {f: getattr(row, f, None) or "" for f in sourcing_sync.SHARED_FIELDS}}
+
+
+class LinkIn(BaseModel):
+    """고른 투자사 관리 현황 줄 번호."""
+
+    contact_id: Optional[int] = None
+
+
+@router.post("/api/sourcing/{row_id}/link")
+def confirm_vc_link(row_id: int, body: LinkIn, db: Session = Depends(get_db),
+                    user: User = Depends(get_current_user)):
+    """[이 분으로 확정] — 저절로 못 이은 시리즈 A 줄을 사람이 고른 투자사 줄과 잇는다.
+
+    이름 · 번호가 둘 다 같은 줄이 딱 하나일 때만 저절로 잇는다(`sourcing_sync.
+    auto_link`). 나머지는 후보를 보고 사람이 고른다 — 고른 줄이 **지금 다시 센
+    후보** 안에 있어야 잇는다(`sourcing_sync.confirm_link`). 잇고 나면 그쪽
+    `Series A 딜 소싱` 칸이 이 줄의 참여(O/X)로 선다. 잇는 것은 소싱 줄의
+    `vc_contact_id` 라 수정 로그에 남는다(`edit_log.VALUE_FIELDS`).
+
+    권한은 이 표를 고치는 것과 같다 — 로그인한 누구나(`update_row` 주석: 딜 소싱은
+    팀 공용이고, 투자사 줄을 누가 맡았는지와 따로 관리한다).
+    """
+    row = db.get(SourcingContact, row_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="찾을 수 없습니다")
+    try:
+        sourcing_sync.confirm_link(db, row, body.contact_id)
+    except sourcing_sync.SyncError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    db.commit()
+    return {"id": row.id, **_vc_view(db, row)}
 
 
 @router.delete("/api/sourcing/{row_id}")

@@ -611,8 +611,8 @@
         {#
           시트의 칸을 **이름·순서 그대로** 세운다. 앱이 만든 칸(그룹 · 진행
           단계 · 채널)은 뒤로 뺀다 — 시트 부분이 앞에서 끊기지 않아야 눈으로
-          대조할 수 있다. 예외는 `Series A 딜 소싱` 하나 — 같은 주제의 시트 칸
-          `딜소싱 참여 투자사` 바로 뒤에 선다(그 자리 주석 참고).
+          대조할 수 있다. 예외는 `Series A 딜 소싱` · `딜 소싱 참여 요청일` 둘 —
+          같은 주제의 시트 칸 `딜소싱 참여 투자사` 바로 뒤에 선다(그 자리 주석 참고).
 
           `담당자` 는 한동안 뺐다가(요청) **다시 세웠다** — 대시보드의
           `연결 담당` 이 이 칸으로 눌러 들어오는데, 선언한 머리글이 없으면
@@ -731,6 +731,28 @@
 
            폭은 필터 단추(`Series A 딜 소싱 (1) ▾` = 149px)에 여유 7px. #}
         <th style="width:156px" data-filters="sourcing:Series A 딜 소싱">Series A 딜 소싱<div class="th-filters"></div></th>
+        {# **딜 소싱 참여 요청일** — 위 `Series A 딜 소싱` 칸과 같은 이어진 소싱 줄의
+           `참여 요청일` 을 **적힌 글자 그대로** 보여 준다(#28 · `sourcing_sync.
+           requested_of`). 이어진 줄이 없으면 빈칸. 앱이 만든 칸이고 **읽기만** 한다 —
+           이 줄에 저장되는 값이 아니라 `.cell` 도 `data-field` 도 없다(눌러 고치는
+           `inline_edit.js` 가 안 잡는다). 고치는 곳은 딜 소싱 화면이다.
+
+           이름은 딜 소싱 표의 머리글(`참여 요청일`)에 **어디의** 날짜인지를 붙였다.
+           `참여 요청일` 만 적으면 필터 칩 · 다른 칸 사이에서 바로 옆 `카톡방
+           참여여부` 의 날짜로도 읽힌다 — `Series A 딜 소싱` 에 `Series A` 를 단 것과
+           같은 까닭이다. 자리는 `Series A 딜 소싱` 바로 뒤 — 같은 줄에서 오는 두 값이다.
+
+           **필터를 건다.** 딜 소싱 표가 같은 칸에 거는 까닭 그대로다(`routers/sourcing.
+           COLUMNS` — 참여 요청일은 고를 만한 값 몇 가지로 모인다). 이 표에서는 이어진
+           줄(시리즈 A 갈래 · 운영 스무 줄 남짓)만 값이 있어 더 적다.
+           **정렬은 안 단다** — 표기가 섞여 있어(`2026/05/21` · `2026-07-01 00:00:00`)
+           글자로 세우면 틀린다(`routers/sourcing.requested_on` 머리 주석).
+           엑셀(`routers/data_io.CONTACT_HEADERS`)에도 안 싣는다 — `Series A 딜 소싱`
+           칸도 거기 없다. 두 칸을 함께 실을지는 따로 정할 일이다.
+
+           폭은 필터 단추(`딜 소싱 참여 요청일 (1) ▾` ≈ 163px — 옆 칸 단추들을
+           잰 값에서 글자 수로 셈)에 여유 7px. #}
+        <th style="width:170px" data-filters="sourcing_date:딜 소싱 참여 요청일">딜 소싱 참여 요청일<div class="th-filters"></div></th>
         <th style="width:134px" data-filters="sector:선호 투자분야">선호 투자분야<div class="th-filters"></div></th>
         {# 필터 키는 **이 칸이 보여 주는 값**을 가리켜야 한다. 여기는 `round_size`
            인데 키가 `stage`(선호 단계) 였다 — 값이 0개인 다른 칸을 보고 있어서
@@ -759,8 +781,8 @@
         <th style="width:190px">근무지 주소 번지</th>
         <th style="width:92px">명함 등록일</th>
         {# ── 여기부터는 앱이 만든 칸. 시트에는 없다 ──
-           (`Series A 딜 소싱` 만은 앞쪽 `딜소싱 참여 투자사` 바로 뒤에 선다 —
-            그 자리 주석 참고) #}
+           (`Series A 딜 소싱` · `딜 소싱 참여 요청일` 만은 앞쪽 `딜소싱 참여
+            투자사` 바로 뒤에 선다 — 그 자리 주석 참고) #}
         <th style="width:88px" data-filters="group:그룹">그룹<div class="th-filters"></div></th>
         {# 필터가 둘이다. `연결 상태`(미착수 → 진행 중 → 연결 완료 / 참여 안 함)는
            카톡방까지 들어오게 하는 **앞 단계**라 표에 따로 칸을 두지 않았는데,
@@ -839,6 +861,7 @@
           data-f-interest="{{ r.interest_level }}"
           data-f-joined="{{ r.kakao_joined }}"
           data-f-sourcing="{{ r.sourcing_join }}"
+          data-f-sourcing_date="{{ r.sourcing_requested_at }}"
           data-search="{{ (r.name ~ ' ' ~ (r.firm or '') ~ ' ' ~ (r.title or '') ~ ' ' ~ (r.department or ''))|lower }}"
           data-f-round="{{ r.round_size }}"
           data-f-sector="{{ r.sectors|join('|') }}"
@@ -885,6 +908,10 @@
            다시 그린다(`contacts.js` — `o` 를 적어도 `O` 로 선다). #}
         <td class="cell" data-field="sourcing_join" data-type="pick"
             data-choices="O,X" data-filter-key="sourcing">{{ r.sourcing_join }}</td>
+        {# `딜 소싱 참여 요청일` — 읽기만(위 머리글 주석). 저장 뒤에는 응답의
+           `sourcing_requested_at` 으로 다시 그린다(`contacts.js` — O 로 새 줄이 생기면
+           그날이 선다). #}
+        <td class="sourcing-requested" title="{{ r.sourcing_requested_at }}">{{ r.sourcing_requested_at }}</td>
         <td title="{{ r.sectors|join(', ') }}">
           <div class="cell clamp2" data-field="sectors" data-type="long"
                data-filter-key="sector" data-filter-sep=",">{{ r.sectors|join(', ') }}</div>

@@ -9,8 +9,9 @@
   ② X — `불참여` 로 둘 뿐 지우지 않는다. 빈칸은 바꾸지 않음(이어진 분은 막는다).
   ③ 칸은 이어진 줄에서 그린다 — 다른 갈래는 안 본다. 머리글 필터가 선다.
   ④ 두 화면이 같은 칸을 본다 — 딜 소싱에서 참여를 바꾸면 투자사 쪽이 X/O.
-  ⑤ 딜 소싱에서 넣거나 번호를 고치면 투자사 쪽 같은 분과 저절로 잇는다(번호가
-     딱 한 줄일 때만).
+  ⑤ 딜 소싱에서 넣거나 이름 · 번호를 고치면 투자사 쪽 같은 분과 저절로 잇는다
+     (번호가 딱 한 줄에 맞고 그 줄의 이름도 같을 때만 — #28. 나머지는 사람이
+     확정한다 — `tests/test_sourcing_link_confirm.py`).
   ⑥ 이어진 두 줄의 이름 · 직함 · 회사 · 휴대폰 · 메일 · 투자분야(선호 투자분야) ·
      라운드 사이즈는 어느 쪽에서 고쳐도 같이. 메모는 따로(#17).
   ⑦ 불참여인 분께는 딜 소싱 제안(처음 안내 · 월간 리마인드)이 안 나간다.
@@ -406,7 +407,9 @@ def test_a_bad_participation_word_is_refused(board, db, users):
 
 # ── ⑤ 딜 소싱 쪽에서 넣으면 저절로 잇는다 ───────────────────────────────────
 
-def test_adding_on_sourcing_links_by_phone(board, db, users):
+def test_adding_on_sourcing_links_by_name_and_phone(board, db, users):
+    # #28 — 이름도 같아야 한다(여기서는 둘 다 `홍길동`). 번호만 맞는 경우는
+    # `test_sourcing_link_confirm.py` 가 본다(잇지 않고 후보).
     contact = vc(db, users, phone="010-5555-6666")
     r = board.post(f"/api/sourcing?bucket={SYNC}",
                    json={"name": "홍길동", "phone": "01055556666"})
@@ -426,6 +429,8 @@ def test_adding_to_another_bucket_links_nothing(board, db, users):
 
 
 def test_an_ambiguous_phone_links_nobody(board, db, users):
+    # 이름까지 맞는 줄은 하나(`홍길동`)여도 번호가 두 줄에 맞으면 잇지 않는다(#28 —
+    # 어느 줄인지는 사람이 확정한다).
     vc(db, users, name="홍길동", firm="가나다벤처스")
     vc(db, users, name="김서연", firm="라마바투자")      # 같은 번호가 둘
     board.post(f"/api/sourcing?bucket={SYNC}",
@@ -436,7 +441,7 @@ def test_an_ambiguous_phone_links_nobody(board, db, users):
 
 def test_fixing_the_phone_on_sourcing_links_it(board, db, users):
     contact = vc(db, users, phone="010-7777-8888")
-    row = sc(db, phone="010-0000-0000")
+    row = sc(db, phone="010-0000-0000")             # 이름은 둘 다 `홍길동` (#28)
     r = board.patch(f"/api/sourcing/{row.id}", json={"phone": "010-7777-8888"})
     assert r.status_code == 200, r.text
     assert r.json().get("linked_msg")

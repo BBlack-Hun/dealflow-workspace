@@ -591,6 +591,9 @@ WRITE_ROUTES = {
     # 확정](공용 명단 줄의 방 이름). `services/sourcing_rooms.py`.
     ("POST", "/sourcing/rooms/search"): WATCHED,
     ("POST", "/sourcing/{row_id}/room-confirm"): WATCHED,
+    # 딜 소싱 › 시리즈 A 줄을 투자사 관리 현황 줄과 [이 분으로 확정](#28) — 공용 명단
+    # 줄의 `vc_contact_id`(`edit_log.VALUE_FIELDS`). `services/sourcing_sync.confirm_link`.
+    ("POST", "/api/sourcing/{row_id}/link"): WATCHED,
 
     ("POST", "/api/contacts/verify-rooms"): WATCHED,
     ("POST", "/api/contacts/assign"): WATCHED,
@@ -820,13 +823,14 @@ def test_the_six_shared_routers_still_hold_the_forty_nine_paths(portal):
     # sourcing 의 5 · 6번째는 이 달 `딜 받음` 단추와 [지금 메일 확인]이다
     # (`services/sourcing_receipts.py` · `services/sourcing_mail.py`).
     # 7 · 8번째는 카톡방 [방 후보 찾기] · [이 방으로 확정]이다
-    # (`services/sourcing_rooms.py`).
+    # (`services/sourcing_rooms.py`). 9번째는 투자사 관리 현황 줄과 [이 분으로
+    # 확정](#28 — `services/sourcing_sync.confirm_link`)이다.
     # series_a 의 셋은 IR 기업 현황 메뉴의 `Series A 이상 딜 소싱` 탭을 더하기 ·
     # 고치기 · 지우기다(`routers/series_a.py`). 옆 두 탭과 같은 공용 화면이다.
     # 넷째는 `공유 심사역` 확정 · 해제(`/sharer` — Series A 딜 공유에서 이 딜을
     # 넘겨 준 분을 짐작하지 않고 정해 둔다).
     assert counted == {"companies": 8, "ir": 12, "consulting": 9,
-                       "templates_crud": 5, "sourcing": 8, "contacts": 22,
+                       "templates_crud": 5, "sourcing": 9, "contacts": 22,
                        "series_a": 4}
 
 
