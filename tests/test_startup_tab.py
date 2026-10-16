@@ -53,7 +53,11 @@ OTHER = "샘플 투자사 20"
 # `계약서 수신여부` 와 월별 묶음 **사이**는 두 번 바뀐 자리다. `회신 상태` 가
 # 서 있다가 사용자 요청으로 빠졌고(`tests/test_startup_reply_status_removed.py`),
 # 같은 요청으로 `수정한 날짜` 가 들어왔다(`tests/test_startup_updated_at.py`).
-HEAD = ["NO", "기업명", "성함", "연락처", "이메일",
+HEAD = ["NO", "기업명",
+        # "이 기업이 무엇인가" — 걸러 보려고 수정창에서 표로 올렸다. IR 기업
+        # 현황 표와 같은 차례다(`tests/test_startup_filter_columns.py`).
+        "사업분야 대분류", "소분류", "기업구분", "IR Deck 유무",
+        "성함", "연락처", "이메일",
         # 사용자가 자리를 못 박았다 — 「이메일 컬럼 오른쪽」
         # (`tests/test_startup_ir_meeting_date.py`). 아래 흐름 묶음 **앞**이라
         # ①②→계약 세 칸의 상대 차례는 그대로다.
