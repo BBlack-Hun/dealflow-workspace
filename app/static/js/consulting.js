@@ -209,9 +209,54 @@
     // 바뀌고 글자까지 쳐진 뒤에 저장만 실패한다 — 쓴 것이 그대로 사라진다.
     // 어느 줄이 그런지는 서버가 `data-readonly` 로 실어 준다. 판정을 브라우저가
     // 다시 하면(`역할 === "consultant"` 따위) 규칙이 두 벌이 된다.
-    if (cell.closest("tr").hasAttribute("data-readonly")) return;
+    //
+    // **막되 말없이 막지 않는다.** 눌러도 아무 일이 없으면 고장으로 읽힌다 —
+    // "컬럼을 추가했는데 내용 기입이 안 된다" 가 그 말이었다(새 월 칸은 모든
+    // 줄에 서지만, 고칠 수 있는 것은 여전히 맡은 줄뿐이다). 표 아래 안내 한 줄은
+    // 줄이 많은 탭에서 화면 밖이라 안 읽힌다. 그래서 **누른 자리에** 왜 안
+    // 열리는지 띄운다. 글자는 서버가 그 줄에 실어 준 것을 옮긴다
+    // (`data-readonly-why` — 누구 줄인지는 서버가 안다).
+    var tr = cell.closest("tr");
+    if (tr.hasAttribute("data-readonly")) { explainReadonly(cell, tr); return; }
+    hideReadonly();
     startEdit(cell);
   });
+
+  // ── 고칠 수 없는 칸을 눌렀을 때의 말풍선 ──────────────────────
+  //
+  // 한 장만 만들어 돌려 쓴다. 칸 밑에 붙고, 몇 초 뒤 또는 다른 칸을 누르면
+  // 사라진다 — 읽을 것이 한 줄뿐이라 닫기 단추를 따로 세우지 않는다.
+  // 위치는 화면 기준(`position: fixed`)이라 표가 안에서 굴러도 칸을 따라
+  // 다시 잴 필요가 없다(굴리면 그냥 닫는다).
+  var readonlyPop = null;
+  // 몇 번째로 띄운 것인가. 연달아 누르면 앞서 건 시계가 **새 말풍선을** 닫지
+  // 않게 번호로 가린다(시계를 끄는 대신 — 이 표를 돌리는 검사 자리에는
+  // `clearTimeout` 이 없다).
+  var readonlySeq = 0;
+  function explainReadonly(cell, tr) {
+    if (!readonlyPop) {
+      readonlyPop = document.createElement("div");
+      readonlyPop.className = "readonly-pop";
+      readonlyPop.setAttribute("role", "status");
+      document.body.appendChild(readonlyPop);
+    }
+    readonlyPop.textContent = tr.getAttribute("data-readonly-why")
+      || "볼 수만 있는 줄입니다 — 고칠 일이 있으면 담당자나 관리자에게 요청하세요.";
+    readonlyPop.hidden = false;
+    var box = cell.getBoundingClientRect();
+    var room = (window.innerWidth || 0) - 360;
+    readonlyPop.style.top = Math.round(box.bottom + 4) + "px";
+    readonlyPop.style.left = Math.round(Math.max(8, room > 8 ? Math.min(box.left, room) : box.left)) + "px";
+    var mine = ++readonlySeq;
+    setTimeout(function () { if (mine === readonlySeq) hideReadonly(); }, 4000);
+  }
+  function hideReadonly() {
+    if (readonlyPop) readonlyPop.hidden = true;
+  }
+  // 표나 페이지가 구르면 말풍선이 칸에서 떨어져 엉뚱한 줄을 가리킨다.
+  // `scroll` 은 위로 안 올라오므로 **잡는 쪽(capture)** 으로 듣는다 — 그래야
+  // 표 상자가 안에서 구르는 것까지 한 곳에서 듣는다.
+  if (window.addEventListener) window.addEventListener("scroll", hideReadonly, true);
 
   function startEdit(cell) {
     if (editing) finishEdit();
@@ -224,6 +269,19 @@
     input.className = "cell-input";
     input.value = before;
     if (multi) input.rows = Math.min(6, Math.max(2, before.split("\n").length + 1));
+    // 여러 줄 칸은 **쓰는 만큼 자란다.** 여섯 줄에 묶어 두면 딜 소개문구 같은
+    // 문단이 칸 안에서만 굴러 어디를 고치는지 안 보인다(참고 표 칸과 같은
+    // 처리 — ref_edit.js 의 `grow`). 표 상자가 화면 높이로 잘려 있어도
+    // 그 상자가 굴러 주므로 입력칸 안에서 따로 구를 일이 없다.
+    function grow() {
+      if (!multi) return;
+      input.style.height = "auto";
+      // 그림이 없는 자리(검사)에서는 `scrollHeight` 가 없다 — 그때는 줄 수
+      // (`rows`)대로 둔다. `NaNpx` 를 적으면 브라우저가 통째로 버린다.
+      var h = input.scrollHeight;
+      if (typeof h === "number" && h > 0) input.style.height = (h + 2) + "px";
+    }
+    input.addEventListener("input", grow);
     // 값 상자만 비운다. `cell` 을 통째로 비우면 잔글씨가 같이 사라져, 고치다
     // 취소(Escape)한 칸에서 날짜만 조용히 없어진다.
     box.textContent = "";
@@ -231,11 +289,16 @@
     // 고르는 칩은 **칸에** 붙인다 — 값 상자 안에 넣으면 저장할 때 같이 지워질
     // 자리이고, 잔글씨 아래에 서는 편이 값을 안 가린다.
     addChoices(cell, input, before);
+    grow();
     input.focus();
     input.setSelectionRange(input.value.length, input.value.length);
 
     input.addEventListener("blur", finishEdit);
     input.addEventListener("keydown", function (e) {
+      // **한글을 조합하는 중에는 비켜선다.** 입력기가 글자를 굳히려고 친 엔터를
+      // 가로채면 만들던 글자째 칸이 닫힌다(inline_edit.js · ref_edit.js 와 같은
+      // 막음 — `keyCode 229` 는 옛 브라우저의 같은 말).
+      if (e.isComposing || e.keyCode === 229) return;
       if (e.key === "Escape") { input.value = before; input.blur(); }
       // 여러 줄 칸에서는 엔터가 줄바꿈이어야 한다. 저장은 Ctrl/Cmd+Enter.
       if (e.key === "Enter" && (!multi || e.metaKey || e.ctrlKey)) {

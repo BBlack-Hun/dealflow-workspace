@@ -39,26 +39,77 @@
     };
   }
 
+  // ## 칸은 **여러 줄**이다 — 엔터는 줄바꿈, 저장은 Ctrl/Cmd+Enter
+  //
+  // 이 표에 들어오는 것은 딜소개 스크립트처럼 **문단**이다. 예전에는 한 줄
+  // 높이(`rows = 1`)로 열리고 엔터가 곧 저장이었다. 그래서 긴 스크립트를 붙여
+  // 넣으면 한 줄만 보였고(헤드리스 크롬 실측: 쉰 줄 950px 이 29px 칸 안),
+  // 줄을 나누려고 엔터를 치는 순간 칸이 닫히며 저장됐다 — "스크롤이 안
+  // 내려가고 내용 기입이 안 된다" 는 말이 그것이다.
+  //
+  // 키는 이 앱의 **다른 여러 줄 칸과 같다**(투자컨설턴트 현황의 `multi` 칸 —
+  // consulting.js · 공통 편집기 inline_edit.js 의 긴 글 칸). 같은 일을 하는
+  // 칸이 화면마다 다른 키를 쓰면 한쪽에서 익힌 손이 다른 쪽에서 글을 날린다.
+  //
+  // **머리글은 한 줄이다.** 칸 이름에 줄바꿈이 들어갈 일이 없고, 들어가면
+  // 머리행만 두 줄로 부푼다. 그래서 머리글은 엔터가 곧 저장이다 — 투자컨설턴트
+  // 현황에서 `multi` 가 아닌 칸이 그런 것과 같은 갈래다. 같은 손잡이·같은
+  // 입력칸을 지나고 **엔터의 뜻만** 다르다.
   function start(cell) {
     if (editing) return;
     editing = cell;
     var before = cell.textContent.trim();
+    var multi = !cell.classList.contains("ref-head");
 
     var input = document.createElement("textarea");
     input.className = "cell-input";
-    input.rows = 1;
+    input.rows = multi ? 3 : 1;
     input.value = before;
 
     // 빠져나갈 길을 먼저 만든다 — focus 가 던지면 blur 가 안 붙어 칸에 갇힌다.
     input.addEventListener("blur", finish);
     input.addEventListener("keydown", function (e) {
-      if (e.key === "Escape") { input.value = before; input.blur(); }
-      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); input.blur(); }
+      // **한글을 조합하는 중에는 비켜선다.** 입력기가 글자를 굳히려고 친
+      // 엔터를 여기서 가로채면 만들던 글자째 칸이 닫힌다(inline_edit.js 와
+      // 같은 막음이다 — `keyCode 229` 는 옛 브라우저의 같은 말).
+      if (e.isComposing || e.keyCode === 229) return;
+      if (e.key === "Escape") {
+        e.preventDefault();
+        input.value = before;
+        input.blur();
+        return;
+      }
+      if (e.key === "Enter" && (!multi || e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        input.blur();
+      }
     });
+    // **쓰는 만큼 칸이 자란다.** 높이를 못 박아 두면 긴 글이 칸 안에서만
+    // 굴러 어디를 고치는지 안 보인다. 상한을 두지 않는다 — 표가 화면 높이로
+    // 잘리지 않으므로(_ref_panel.html 의 감싸개 주석) 페이지가 그대로 굴러간다.
+    input.addEventListener("input", grow);
 
     cell.textContent = "";
     cell.appendChild(input);
+    // 무엇을 누르면 저장되는지 **칸 밑에 적는다.** 엔터가 줄바꿈이 된 것을
+    // 모르면 저장하려고 엔터를 치다 줄만 늘어난다.
+    var hint = document.createElement("div");
+    hint.className = "cell-pop-hint";
+    hint.textContent = multi ? "Enter 줄바꿈 · ⌘/Ctrl+Enter 저장 · Esc 취소"
+                             : "Enter 저장 · Esc 취소";
+    cell.appendChild(hint);
+    grow();
     try { input.focus(); } catch (err) { /* 포커스 실패해도 갇히지 않는다 */ }
+
+    // 머리글도 같이 자란다 — 한 줄짜리라도 이름이 칸보다 길면 접혀 두 줄이
+    // 되는데, 높이가 한 줄에 묶여 있으면 접힌 뒤가 안 보인다.
+    function grow() {
+      input.style.height = "auto";
+      // 그림이 없는 자리(검사)에서는 `scrollHeight` 가 없다 — 숫자가 아니면
+      // 높이를 건드리지 않는다(`NaNpx` 를 적으면 브라우저가 통째로 버린다).
+      var h = input.scrollHeight;
+      if (typeof h === "number" && h > 0) input.style.height = (h + 2) + "px";
+    }
 
     function finish() {
       var after = input.value.trim();

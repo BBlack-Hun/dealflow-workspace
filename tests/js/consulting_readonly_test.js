@@ -40,7 +40,11 @@ function row(id, opts) {
     "data-contacted-folded": "0",
     "data-contacted-prev": "0"
   };
-  if (opts.readonly) attrs["data-readonly"] = "1";
+  if (opts.readonly) {
+    attrs["data-readonly"] = "1";
+    // 왜 안 열리는지 — 서버가 그 줄에 실어 준다(consulting.html).
+    attrs["data-readonly-why"] = "다른사람 담당 줄은 볼 수만 있습니다 — 고칠 일이 있으면 담당자나 관리자에게 요청하세요.";
+  }
   return D.el("tr", attrs, [mgmt, note]);
 }
 
@@ -126,6 +130,56 @@ function click(tr) {
     "편집이 안 시작됐는데 칸의 글자가 지워졌습니다");
   await new Promise(function (r) { setTimeout(r, 0); });
   assert.strictEqual(sent.length, 1, "남의 줄에서 저장 요청이 나갔습니다");
+
+  // --- 그런데 **말없이** 막지는 않는다 -------------------------------------
+  // 눌러도 아무 일이 없으면 고장으로 읽힌다(#13 — 월 칸을 새로 세운 뒤 남의
+  // 줄을 눌러 본 사람이 "내용 기입이 안 된다" 고 했다). 누른 자리에 왜 안
+  // 열리는지 뜬다. 글자는 서버가 줄에 실어 준 그대로다.
+  const pop = dom.root.querySelector(".readonly-pop");
+  assert.ok(pop, "남의 줄을 눌렀는데 왜 안 열리는지 아무 말이 없습니다");
+  assert.strictEqual(pop.hidden, false, "말풍선을 만들고 감춰 두었습니다");
+  assert.ok(pop.textContent.indexOf("다른사람 담당 줄은 볼 수만 있습니다") === 0,
+    "서버가 실어 준 이유가 아닌 말이 떴습니다: " + pop.textContent);
+  assert.ok(/px$/.test(pop.style.top) && !/NaN/.test(pop.style.left),
+    "말풍선 자리를 못 잡았습니다: " + pop.style.top + " / " + pop.style.left);
+
+  // 내 줄을 누르면 말풍선은 걷히고 편집이 열린다.
+  const again = click(dom.rows[0]);
+  assert.ok(again.opened, "말풍선이 뜬 뒤로 내 줄 편집이 안 열립니다");
+  assert.strictEqual(pop.hidden, true, "내 줄을 고치는데 남의 줄 말풍선이 그대로 떠 있습니다");
+
+  // 두 번 눌러도 말풍선은 **한 장**이다 — 누를 때마다 쌓이면 화면에 남는다.
+  click(dom.rows[1]);
+  click(dom.rows[1]);
+  assert.strictEqual(dom.root.querySelectorAll(".readonly-pop").length, 1,
+    "남의 줄을 누를 때마다 말풍선이 쌓입니다");
+
+  // --- 여러 줄 칸은 쓰는 만큼 자란다 ----------------------------------------
+  // 여섯 줄에 묶여 있으면 딜 소개문구 같은 문단이 칸 안에서만 굴러 어디를
+  // 고치는지 안 보인다(참고 표 칸과 같은 처리).
+  {
+    const dom2 = build();
+    run(dom2);
+    const opened = click(dom2.rows[0]);
+    const area = opened.cell.querySelector(".cell-input");
+    assert.ok(area, "내 줄의 여러 줄 칸이 안 열립니다");
+    area.scrollHeight = 600;
+    area.fire("input");
+    assert.strictEqual(area.style.height, "602px",
+      "글이 늘었는데 입력칸이 안 자랍니다: " + area.style.height);
+  }
+
+  // --- 한글을 조합하는 중의 Enter 는 저장으로 읽지 않는다 ---------------------
+  {
+    const dom3 = build();
+    const sent3 = run(dom3);
+    const opened = click(dom3.rows[0]);
+    const area = opened.cell.querySelector(".cell-input");
+    area.value = "관리 중 · 통화";
+    area.fire("keydown", { key: "Enter", ctrlKey: true, isComposing: true });
+    await new Promise(function (r) { setTimeout(r, 0); });
+    assert.strictEqual(sent3.length, 0, "조합 중인 Enter 로 저장이 나갔습니다");
+  }
 
   console.log("consulting_readonly_test OK");
 })().catch(function (e) { console.error(e); process.exit(1); });
