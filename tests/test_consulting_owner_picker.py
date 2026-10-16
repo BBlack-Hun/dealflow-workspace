@@ -304,6 +304,58 @@ def test_the_read_only_rule_is_written_where_the_rows_are(stage, sign_in):
     assert "맡지 않은 담당자의 줄은 볼 수만 있습니다" not in mine_only
 
 
+def _row_tag(html: str, company: str) -> str:
+    """`company` 가 든 줄의 여는 `<tr …>` 태그."""
+    for chunk in html.split("<tr ")[1:]:
+        if company in chunk:
+            return chunk.split(">", 1)[0]
+    raise AssertionError(f"{company} 줄이 표에 없다")
+
+
+def test_a_read_only_row_carries_why_it_does_not_open(stage, sign_in):
+    """고칠 수 없는 칸을 누르면 **왜 안 열리는지** 그 자리에 뜬다(#13).
+
+    월 칸을 새로 세우면 모든 줄에 칸이 서지만 고칠 수 있는 것은 여전히 맡은
+    줄뿐이다. 눌러도 아무 일이 없으면 "내용 기입이 안 된다" 로 읽힌다. 표 아래
+    안내 한 줄은 줄이 많은 탭에서 화면 밖이라, 누른 칸 옆에 띄울 말을 서버가
+    **그 줄에** 실어 준다(누구 줄인지는 서버가 안다 — consulting.js 는 옮기기만).
+    """
+    body = sign_in("member").get(f"/consulting?sheet={STARTUP}").text
+    theirs = _row_tag(body, "샘플라")
+    assert 'data-readonly="1"' in theirs
+    assert 'data-readonly-why="컨설갑 담당 줄은 볼 수만 있습니다' in theirs, theirs
+    assert "담당자나 관리자에게 요청하세요" in theirs
+    # 주인 없는 줄은 **누구에게 물을지**가 다르다 — 관리자가 담당을 정할 일이다.
+    orphan = _row_tag(body, "샘플바")
+    assert 'data-readonly-why="담당이 정해지지 않은 줄은 볼 수만 있습니다' in orphan, orphan
+    # 내 줄에는 실을 것이 없다 — 눌러서 그대로 열린다.
+    mine = _row_tag(body, "샘플가")
+    assert "data-readonly" not in mine
+
+
+def test_the_read_only_hint_does_not_hang_on_the_owner_column(stage, sign_in):
+    """표 아래 안내는 **`editable` 하나만** 보고 선다 — `담당` 칸이 서는지와 무관하다.
+
+    예전에는 `can_pick_owner and …` 였다. 줄이 읽기 전용인지는 `may_edit_row`
+    가 정하는데, 안내만 다른 조건을 하나 더 들고 있으면 그 둘이 갈리는 날
+    눌러도 안 열리는 칸이 아무 설명 없이 남는다. 같은 판정을 읽는지 템플릿을 본다.
+    """
+    from pathlib import Path
+
+    text = (Path(__file__).resolve().parents[1] / "app" / "templates"
+            / "consulting.html").read_text(encoding="utf-8")
+    hint = text.split("맡지 않은 담당자의 줄은 볼 수만 있습니다", 1)[0]
+    cond = hint.rsplit("{% if", 1)[1].split("%}", 1)[0]
+    assert "rejectattr('editable')" in cond, cond
+    assert "can_pick_owner" not in cond, (
+        "표 아래 안내가 `담당` 칸이 서는 화면에서만 뜬다 — 읽기 전용 줄이 있는데 "
+        "안내가 없는 화면이 생긴다: " + cond)
+    # 컨설턴트 화면(자기 줄만 본다)에는 고칠 수 없는 줄이 없어 안내도 없다.
+    body = sign_in("first").get(f"/consulting?sheet={STARTUP}").text
+    assert "맡지 않은 담당자의 줄은 볼 수만 있습니다" not in body
+    assert "data-readonly-why" not in body
+
+
 # --- 6. 담당을 갈라도 **월 칸은 한 벌**이다 -------------------------------------
 #
 # 여기가 55줄을 나누기 전에 손봐야 했던 자리다. 칸이 사람마다이던 동안에는
