@@ -93,7 +93,7 @@ def create_app() -> FastAPI:
     app.include_router(agent_api.router)
     app.include_router(data_io.router)
     app.include_router(companies.router)
-    # IR 기업 현황 메뉴의 `Series A 이상 기업` 탭이 고치는 길(`/api/series-a-companies`).
+    # IR 기업 현황 메뉴의 `Series A 이상 딜 소싱` 탭이 고치는 길(`/api/series-a-companies`).
     # 화면 자체는 `companies` 의 `/companies?tab=series-a` 가 그린다.
     app.include_router(series_a.router)
     app.include_router(dashboard.router)

@@ -624,7 +624,7 @@ def company_rows(db: Session, sent=None) -> List[dict]:
 def tab_counts(db: Session) -> dict:
     """탭 이름 옆의 수 셋 — **세 탭이 다 같은 함수를 읽는다.**
 
-    탭 줄은 세 화면(IR 기업 현황 · 스타트업DB · Series A 이상 기업)에 똑같이
+    탭 줄은 세 화면(IR 기업 현황 · 스타트업DB · Series A 이상 딜 소싱)에 똑같이
     서므로(`_company_tabs.html`), 화면마다 따로 세면 탭을 옮길 때 숫자가
     바뀐다. 기업 줄을 다 그리지 않고(`company_rows` 는 발송 이력까지 훑는다)
     칸 셋만 읽어 센다.
@@ -636,7 +636,7 @@ def tab_counts(db: Session) -> dict:
     탭(`딜 소개 문구`)으로 돌려보내고 이 탭에는 재료인 `business_desc`
     (머리글 `기업 한줄 소개`)를 세웠다 — 세는 칸도 함께 따라간다.
 
-    `series_a` — `Series A 이상 기업` 탭의 줄 수(받은 딜 수). 다른 표다
+    `series_a` — `Series A 이상 딜 소싱` 탭의 줄 수(받은 딜 수). 다른 표다
     (`models.SeriesACompany`).
     """
     from . import series_a

@@ -280,7 +280,7 @@ def screens(client, db, users):
         "스타트업(IR 요청 문서)": client.get("/startup/ir-report").text,
         "IR 기업현황": client.get("/companies").text,
         "스타트업DB": client.get("/companies?tab=db").text,
-        "Series A 이상 기업": client.get("/companies?tab=series-a").text,
+        "Series A 이상 딜 소싱": client.get("/companies?tab=series-a").text,
         "딜 소싱": client.get("/sourcing").text,
         # 이 화면만 공통 편집기(`data-inline-url`)를 안 써서 아래 7번 스윕에는
         # 안 들어온다. 그래도 머리글 필터는 같은 부품이라 1~5 번은 똑같이 받는다.

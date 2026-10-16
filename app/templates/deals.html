@@ -502,7 +502,7 @@
       ── Series A 딜 공유의 기업 고르개 ──────────────────────────────────────
       딜 소싱 제안 탭에서 [보낼 문구 › {{ share_label }}]를 고르면 위 IR 기업 목록
       대신 이것이 선다(`deals.js` 의 `syncCompanyPanel`). 줄은 IR 기업 현황 ›
-      `Series A 이상 기업` 탭의 줄이고 차례도 그 탭과 같다(수신 일자 최신순 —
+      `Series A 이상 딜 소싱` 탭의 줄이고 차례도 그 탭과 같다(수신 일자 최신순 —
       `routers/series_a.pick_rows`). **고른 차례가 곧 문구의 번호**(`[기업1]`)다.
 
       `data-sent-to` — 이 기업을 이미 받은 심사역 번호들(대기 · 보낸 것 —
@@ -520,7 +520,7 @@
     #}
     <div id="series-a-picker" hidden data-testid="series-a-picker">
       <p class="hint">
-        <b>Series A 이상 기업</b>(IR 기업 현황 › Series A 이상 기업 탭)에서 소개할 기업을
+        <b>Series A 이상 딜 소싱</b>(IR 기업 현황 › Series A 이상 딜 소싱 탭)에서 소개할 기업을
         고르세요 — 기업마다 <b>기업명 · 분야 · 투자라운드 · 소개</b>(딜소개 문구, 없으면 상세
         내용 첫 문장)가 한 덩어리로 <code>[기업1]</code> <code>[기업2]</code> … 번호를 달고 나갑니다.
         <b>본인 공유 N명 제외</b>는 지금 고른 받는 분 중 이 딜을 공유해 준 분(그 분께는 늘
@@ -537,7 +537,7 @@
       <div class="picker-search">
         <input type="search" id="sa-pick-search"
                placeholder="기업명 · 분야 · 투자라운드 · Type · 수신 일자 검색 ({{ series_a_rows|length }}개)"
-               autocomplete="off" aria-label="Series A 이상 기업 검색">
+               autocomplete="off" aria-label="Series A 이상 딜 소싱 기업 검색">
         <label class="only-picked">
           <input type="checkbox" id="sa-only-picked"> 선택한 것만
         </label>
@@ -566,7 +566,7 @@
           </div>
         </label>
         {% else %}
-        <p class="muted">Series A 이상 기업이 없습니다 — <a href="/companies?tab=series-a">IR 기업 현황 › Series A 이상 기업</a> 탭에서 먼저 넣으세요.</p>
+        <p class="muted">Series A 이상 딜 소싱에 받은 기업이 없습니다 — <a href="/companies?tab=series-a">IR 기업 현황 › Series A 이상 딜 소싱</a> 탭에서 먼저 넣으세요.</p>
         {% endfor %}
       </div>
       <p class="hint" id="sa-filter-note" hidden></p>
@@ -723,7 +723,7 @@
         <span class="filter-label">보낼 문구</span>
         <button type="button" class="chip active" data-value="sourcing_intro">참여 안내 (처음)</button>
         <button type="button" class="chip" data-value="sourcing_remind">월간 리마인드</button>
-        {# 시리즈 A 갈래 심사역께 `Series A 이상 기업` 탭의 받은 딜을 소개한다 —
+        {# 시리즈 A 갈래 심사역께 `Series A 이상 딜 소싱` 탭의 받은 딜을 소개한다 —
            ① 칸이 그 기업 고르개로 바뀌고, 다른 갈래 카드는 고를 수 없다
            (`data-bucket` — `services/series_a_share.BUCKET`). 글은 문구 화면의
            `딜 소싱 제안 — {{ share_label }}` 에서 고친다(`{{ share_topic }}`). #}

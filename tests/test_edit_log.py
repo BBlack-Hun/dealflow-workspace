@@ -516,7 +516,7 @@ WRITE_ROUTES = {
     # **강제 삭제.** 이력이 붙어 있어도 지운다 — 평범한 [삭제] 가 막는 것을
     # 무시하는 길이라, 남는 로그가 더 중요하다(줄 이름 + 함께 움직인 것).
     ("POST", "/api/companies/{company_id}/force-delete"): WATCHED,
-    # IR 기업 현황 메뉴의 셋째 탭 `Series A 이상 기업` — 다른 표
+    # IR 기업 현황 메뉴의 셋째 탭 `Series A 이상 딜 소싱` — 다른 표
     # (`series_a_companies`)라 라우터 파일도 따로다(`routers/series_a.py`).
     ("POST", "/api/series-a-companies"): WATCHED,
     ("PATCH", "/api/series-a-companies/{row_id}"): WATCHED,
@@ -821,7 +821,7 @@ def test_the_six_shared_routers_still_hold_the_forty_nine_paths(portal):
     # (`services/sourcing_receipts.py` · `services/sourcing_mail.py`).
     # 7 · 8번째는 카톡방 [방 후보 찾기] · [이 방으로 확정]이다
     # (`services/sourcing_rooms.py`).
-    # series_a 의 셋은 IR 기업 현황 메뉴의 `Series A 이상 기업` 탭을 더하기 ·
+    # series_a 의 셋은 IR 기업 현황 메뉴의 `Series A 이상 딜 소싱` 탭을 더하기 ·
     # 고치기 · 지우기다(`routers/series_a.py`). 옆 두 탭과 같은 공용 화면이다.
     # 넷째는 `공유 심사역` 확정 · 해제(`/sharer` — Series A 딜 공유에서 이 딜을
     # 넘겨 준 분을 짐작하지 않고 정해 둔다).
@@ -1299,7 +1299,7 @@ def test_a_new_or_deleted_row_only_carries_the_fields_worth_keeping(db, users):
 
 
 def test_수신일_칸은_화면에서_읽을_이름으로_남는다():
-    """수정 로그 화면에 `received_at` 이 날것으로 떴다(`Series A 이상 기업` 탭의
+    """수정 로그 화면에 `received_at` 이 날것으로 떴다(`Series A 이상 딜 소싱` 탭의
     `수신 일자` · 스타트업DB 의 `수신일`). 칸 이름표(`FIELD_LABELS`)는 표를 가리지
     않는 한 벌이라, 두 탭에 다 맞는 이름을 단다."""
     from app.services import edit_log as svc

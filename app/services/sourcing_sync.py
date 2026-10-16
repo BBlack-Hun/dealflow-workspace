@@ -43,8 +43,18 @@
 
 ## 이어진 두 줄의 같은 칸 — **고치면 따라 고친다** (`before_flush`)
 
-이름 · 직함 · 회사 · 휴대폰 · 메일(`SHARED_FIELDS`)은 두 표에 다 있다. 이어진
-뒤에 한쪽에서 고치면 다른 쪽에도 같은 값을 적는다.
+이름 · 직함 · 회사 · 휴대폰 · 메일 · 투자분야 · 라운드 사이즈(`SHARED_FIELDS`)는
+두 표에 다 있다. 이어진 뒤에 한쪽에서 고치면 다른 쪽에도 같은 값을 적는다.
+
+투자분야는 딜 소싱 표의 `투자분야` 와 투자사 관리 현황의 `선호 투자분야` 가
+**같은 칸**이다(둘 다 `sectors`). 라운드 사이즈도 두 표에서 같은 이름이다(#17 —
+"두 메뉴의 컬럼이 같으면 어느 쪽에 넣어도 다른 쪽에 자동으로"). 값은 적힌
+**글자 그대로** 옮긴다 — 투자사 쪽은 쉼표로 나눠 읽고 딜 소싱 쪽은 글 칸이라,
+여기서 고쳐 쓰면 사람이 적은 글이 다른 표에서 바뀌어 보인다.
+
+**메모는 잇지 않는다.** 두 표에 다 `memo` 가 있지만 담는 것이 다르다 — 투자사
+쪽은 그 담당의 통화 · 카톡 내용, 딜 소싱 쪽은 딜 소싱 방의 이야기다(사용자가
+정했다). 메모를 따라 고치면 한쪽에 적은 이야기가 남의 표 칸을 덮는다.
 
 **왜 '쓸 때 따라 고친다' 인가 — '읽을 때 한쪽에서 가져온다' 가 아니라.**
 소싱 줄의 이름 · 회사 · 메일을 읽는 곳이 많다 — 딜 소싱 제안 문구
@@ -116,10 +126,14 @@ MARK_LEFT = "X"
 MARKS = {JOINED: MARK_JOINED, LEFT: MARK_LEFT}
 
 #: 두 표에 다 있는 칸 — 이어진 뒤에는 한쪽을 고치면 다른 쪽도 같이 고친다.
-SHARED_FIELDS = ("name", "title", "firm", "phone", "email")
-#: 화면에 부를 이름. 딜 소싱 표의 머리글과 같은 말이다.
+#: 두 모델에서 **이름이 같은 칸**만 둔다(`getattr` 한 번으로 양쪽을 읽는다).
+#: `memo` 는 일부러 뺐다(모듈 머리말 — 담는 이야기가 다르다).
+SHARED_FIELDS = ("name", "title", "firm", "phone", "email", "sectors", "round_size")
+#: 화면에 부를 이름. 딜 소싱 표의 머리글과 같은 말이다(투자분야는 투자사 관리
+#: 현황에서 `선호 투자분야` 라 부른다 — 같은 칸이다).
 SHARED_LABELS = {"name": "이름", "title": "직함", "firm": "회사",
-                 "phone": "휴대폰", "email": "이메일"}
+                 "phone": "휴대폰", "email": "이메일",
+                 "sectors": "투자분야", "round_size": "라운드 사이즈"}
 
 #: 휴대폰으로 인정할 최소 자릿수 — 방을 잇는 규칙과 **같은 값**이다.
 MIN_DIGITS = sourcing_link.MIN_DIGITS
@@ -186,11 +200,21 @@ def _text(value) -> str:
     return (value or "").strip() if isinstance(value, str) or value is None else str(value)
 
 
+def _sector_words(value) -> List[str]:
+    """투자분야를 낱말로 — 투자사 관리 현황이 읽는 그대로 쉼표로 나눈다
+    (`routers/contacts._split_csv`)."""
+    return [w.strip() for w in _text(value).split(",") if w.strip()]
+
+
 def same_value(field: str, a, b) -> bool:
     """두 표의 같은 칸이 같은 값인가. 휴대폰은 **숫자만** 본다 —
-    `010-1234-5678` 과 `01012345678` 은 같은 번호다(잇는 규칙도 숫자로 맞춘다)."""
+    `010-1234-5678` 과 `01012345678` 은 같은 번호다(잇는 규칙도 숫자로 맞춘다).
+    투자분야는 **쉼표 뒤 띄어쓰기**만 다른 것을 같게 본다 — `AI,헬스케어` 와
+    `AI, 헬스케어` 는 투자사 관리 현황에서 같은 두 분야로 읽힌다."""
     if field == "phone":
         return digits(_text(a)) == digits(_text(b))
+    if field == "sectors":
+        return _sector_words(a) == _sector_words(b)
     return _text(a) == _text(b)
 
 
@@ -330,6 +354,10 @@ def create_row(db: Session, contact: VcContact, participation: str = JOINED,
         firm=_text(contact.firm) or None,
         phone=_text(contact.phone) or None,
         email=_text(contact.email) or None,
+        # 같은 칸(`SHARED_FIELDS`)은 새 줄에도 실어 둔다 — 안 실으면 이을 때는
+        # 채워지는 칸이 만들 때만 비어, 어느 길로 들어왔느냐에 따라 줄이 다르다.
+        sectors=_text(contact.sectors) or None,
+        round_size=_text(contact.round_size) or None,
         assignee_name=assignee_for(db, contact, user) or None,
         # 참여하신 날 — 이 명단은 참여 요청일 최신순이라 방금 넣은 분이 맨 위다.
         requested_at=clock.today().isoformat(),

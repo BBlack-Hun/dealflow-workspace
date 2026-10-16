@@ -137,7 +137,7 @@ def test_no_hand_nudged_offset_comes_back():
 def test_the_whole_card_stays_the_tap_target():
     """카드는 `<label>` 통째로 누르는 자리다 — 체크박스를 세우느라 줄이지 않는다.
 
-    넷 다 본다(기업 · Series A 이상 기업 · 담당자 · 소싱). 체크박스가 라벨 **바로 밑**에 있어야
+    넷 다 본다(기업 · Series A 이상 딜 소싱 · 담당자 · 소싱). 체크박스가 라벨 **바로 밑**에 있어야
     위 CSS 선택자(`.pick-card > input`)가 닿고, 라벨 밖으로 나가면 네모만
     누르는 자리가 된다.
     """

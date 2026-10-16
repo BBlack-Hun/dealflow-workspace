@@ -217,7 +217,7 @@ def deals_page(
         "sourcing_month_label": f"{int(sourcing_month[5:])}월",
         "sourcing_linked": sourcing_linked,
         # ── 딜 소싱 제안 › [Series A 딜 공유] ──
-        # 기업 고르개(IR 기업 현황 › `Series A 이상 기업` 탭의 줄 — 같은 차례) ·
+        # 기업 고르개(IR 기업 현황 › `Series A 이상 딜 소싱` 탭의 줄 — 같은 차례) ·
         # 이 글을 받는 하나뿐인 갈래(`series_a_share.BUCKET` — 다른 갈래 카드는
         # 이 글에서 고를 수 없다).
         "series_a_rows": series_a_pick_rows(db),
@@ -394,6 +394,7 @@ def list_page(
     months: str = "",
     hidden: int = 0,
     msg: str = "",
+    q: str = "",
 ):
     """명단 화면을 그린다 — 투자사 관리 현황과 스타트업 화면이 같이 쓴다.
 
@@ -430,6 +431,7 @@ def list_page(
     tabs = sheet_owner.sheet_rows(
         db, contacts, page=page.page,
         empty_for=sheet_owner.tab_owner_ids(db, user, team_wide=team_wide))
+    page_keys = {t["key"] for t in tabs}
 
     # 아무 것도 고르지 않았으면 **내가 담당인 명단**을 먼저 연다.
     # 전체(333명)를 먼저 보여주면 매번 자기 명단을 다시 골라야 한다.
@@ -439,10 +441,18 @@ def list_page(
     # 현황을 열자마자 투자사가 아닌 명단이 떠 있으면 그것이 내 담당 투자사인
     # 줄 읽는다. 눌러서 들어가는 길은 그대로 있다.
     #
-    # **투자사를 다루지 않는 화면에는 `전체` 가 없다.** 거기 `전체` 는 투자사
-    # 전체를 뜻하는데(아래 `total_count`), 그 화면의 명단은 투자사로 세지 않아
-    # 언제나 0명이 뜬다 — 명단이 사라진 것처럼 보인다. 대신 늘 탭 하나를 연다.
-    if sheet == "all" and page.investors:
+    # **투자사를 다루지 않는 화면(스타트업)은 고르지 않았을 때 늘 탭 하나를
+    # 연다.** 투자사 화면처럼 `전체` 로 떨어뜨리지 않는다 — 매일 보는 것은 내
+    # 명단이고, 여러 명단을 섞은 표에는 달 칸이 안 선다(아래 `list_view`).
+    #
+    # 그 화면에도 `전체` 는 **일부러 누르면** 열린다(#22). 다만 뜻이 다르다 —
+    # 투자사 전체가 아니라(그 화면의 명단은 투자사로 세지 않아 늘 0명이다)
+    # **이 화면의 명단 전부**다. 누가 어느 명단까지 보는지는 탭을 세운 그 판정
+    # (`managed` 의 `team_wide`)을 그대로 지난다: 팀원은 자기 명단 전부,
+    # 관리자는 팀 전체 — 투자사 관리 현황의 `전체` 와 같은 범위다. 명단이 하나도
+    # 없으면 모을 것이 없어 지금처럼 빈 화면이다.
+    all_view = sheet == "all" and (page.investors or bool(tabs))
+    if all_view:
         selected = ""
     elif any(t["key"] == sheet for t in tabs):
         selected = sheet
@@ -466,6 +476,11 @@ def list_page(
         rows = [r for r in all_rows
                 if not r["is_hidden"]
                 and any(s not in hidden_sheets for s in r["sheets"])]
+    elif all_view:
+        # 스타트업의 `전체` — **이 화면 탭에 선 명단**의 줄 전부. 남의 화면
+        # (투자사 명단) 줄은 끌어오지 않는다. 한 줄이 두 명단에 있어도 한 번만
+        # 선다(줄이 곧 기업 하나다). 감춘 줄은 탭과 같이 아래에서 뺀다.
+        rows = [r for r in all_rows if any(s in page_keys for s in r["sheets"])]
     else:
         # 이 화면에 명단이 하나도 없다. 남의 화면 줄을 끌어오지 않는다 —
         # 여기 뜬 줄은 여기서 고칠 수 있어야 하는데, 탭이 없으면 어느 명단의
@@ -502,6 +517,17 @@ def list_page(
         contact_columns.month_columns(db, selected) if selected else [])
     shown_months, folded_months = contact_columns.split_months(
         all_months, show_all=(months == "all"))
+    # 표에 세울 칸. 명단 하나면 그 명단의 배치 + 달 칸이고, 스타트업의 `전체`
+    # (여러 명단을 한 표로)면 **고정 칸 + `명단`** 이다 — 달 칸은 명단마다
+    # 달라 한 표에 못 세운다(`contact_columns.all_view_columns`). 머리글 필터
+    # 선언과 행이 싣는 값도 **이 목록 하나**에서 나온다(아래 `header_filters`).
+    list_view = all_view and not page.investors
+    if list_view:
+        table_cols = contact_columns.all_view_columns(layout)
+        for r in rows:
+            r["list_label"] = " · ".join(s for s in r["sheets"] if s in page_keys)
+    else:
+        table_cols = contact_columns.table_columns(layout, shown_months)
 
     # 참고 시트 — 스크립트·가이드처럼 매번 구글 시트를 열어 보던 자료.
     # 지울 수 있게 두었으므로 살아 있는 것만 가져온다. 질의는
@@ -575,10 +601,28 @@ def list_page(
         # 대시보드와 다른 수가 나온다(예전에 117명 · 123명으로 갈렸다).
         # `전체` 탭에 적히는 수도 **딜 제안 관리와 같은 판정**을 지난다 —
         # 여기서 조건을 손으로 다시 적어 두면 두 화면이 또 갈린다.
-        "total_count": len(sheet_owner.managed(db, user, team_wide=team_wide)),
+        #
+        # 스타트업의 `전체` 는 투자사가 아니라 **이 화면 명단의 줄 수**다 — 탭과
+        # 같이 감춘 줄은 뺀다(탭 숫자를 더한 것과 다를 수 있다: 두 명단에 같이
+        # 있는 줄은 한 번만 센다).
+        "total_count": (len(sheet_owner.managed(db, user, team_wide=team_wide))
+                        if page.investors else
+                        sum(1 for r in all_rows
+                            if not r["is_hidden"]
+                            and any(s in page_keys for s in r["sheets"]))),
+        # 명단을 안 고르고 **여러 명단을 한 표로** 보는 중인가(스타트업 `전체`).
+        "list_view": list_view,
+        # 링크가 실어 보낼 `sheet` — `전체` 를 보고 있으면 `all` 이다. 빈 값을
+        # 실으면 다음 화면이 `내 명단` 을 열어, 감춘 줄 [함께 보기] 를 누른 것뿐인데
+        # 보던 `전체` 에서 튕겨 나간다.
+        "sheet_q": selected or ("all" if all_view else ""),
+        # 주소로 받은 검색어(`?q=`). 탭에서 친 검색어를 **`전체` 로 들고 가는**
+        # 자리다 — 검색은 그려진 줄만 거르므로, 다른 명단의 기업은 `전체` 에서
+        # 찾아야 한다(`contacts.js` 의 [전체 명단에서 찾기]).
+        "search_q": (q or "").strip(),
         # ── 명단이 정한 표 배치 ──
         "layout": layout,
-        "table_columns": contact_columns.table_columns(layout, shown_months),
+        "table_columns": table_cols,
         # ── 머리글 필터 ──
         #
         # 어느 칸을 거를 수 있는지는 **배치가 정한다**(`Column.filterable`).
@@ -589,8 +633,8 @@ def list_page(
         # 선언(`header_filters`)과 행이 싣는 값(`filter_columns`)은 **같은
         # 판정 하나**에서 나온다. 둘을 따로 적으면 한쪽만 고쳐지는 날 필터가
         # 말없이 빈 목록을 준다(`tests/test_filter_columns.py`).
-        "header_filters": contact_columns.header_filters(layout, shown_months),
-        "filter_columns": contact_columns.filter_columns(layout, shown_months),
+        "header_filters": contact_columns.header_filters_of(table_cols),
+        "filter_columns": contact_columns.filters_of(table_cols),
         "panel_columns": contact_columns.panel_columns(layout, all_months),
         "month_columns": shown_months,
         # **접었다는 것을 사람이 알아야 한다** — 그냥 안 보이면 지워진 줄 안다.
@@ -680,10 +724,11 @@ def contacts_page(
     months: str = "",
     hidden: int = 0,
     msg: str = "",
+    q: str = "",
 ):
     """내 투자사 (FEATURE_SPEC §3). 표는 SSR, 필터는 브라우저에서 즉시 반응."""
     return list_page(request, db, user, CONTACTS_PAGE, sheet=sheet, ref=ref,
-                     contact=contact, months=months, hidden=hidden, msg=msg)
+                     contact=contact, months=months, hidden=hidden, msg=msg, q=q)
 
 
 @router.get("/jobs/{job_id}", response_class=HTMLResponse)

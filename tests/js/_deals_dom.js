@@ -116,7 +116,7 @@ function sourcingCard(id, name, bucket, assignee, received) {
 }
 
 // Series A 딜 공유의 **기업 고르개**(`#series-a-list`) — IR 기업 현황 ›
-// `Series A 이상 기업` 탭의 줄. 셋째 값은 그 기업을 **이미 받은** 딜 소싱 명단
+// `Series A 이상 딜 소싱` 탭의 줄. 셋째 값은 그 기업을 **이미 받은** 딜 소싱 명단
 // 번호들(`data-sent-to` — 서버가 대기 · 보낸 것만 센다), 넷째 값은 **그 딜을
 // 공유해 준** 분 번호들(`data-own-by` — `series_a_share.own_by_company`).
 //   301 — 가소싱(101)이 받았다

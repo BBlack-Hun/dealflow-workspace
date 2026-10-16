@@ -2,7 +2,7 @@
 // (node tests/js/series_a_share_test.js)
 //
 // 여기서 못 박는 것.
-//   ① [Series A 딜 공유] 를 누르면 ① 칸이 `Series A 이상 기업` 고르개로 바뀌고
+//   ① [Series A 딜 공유] 를 누르면 ① 칸이 `Series A 이상 딜 소싱` 고르개로 바뀌고
 //      (IR 기업 목록은 숨는다), 다른 갈래 카드는 빠진다(숨고 체크가 꺼진다)
 //   ② 고른 차례가 곧 번호다 — 미리보기 · 발송이 `series_a_ids` 를 고른 차례로
 //      싣고, IR 기업 칸(`company_ids`)은 비운다
@@ -71,7 +71,7 @@ function calls(fetch, url) { return fetch.calls.filter(function (c) { return c.u
 function lastPreview(fetch) { return calls(fetch, "/api/deals/preview").pop(); }
 function selectAll(dom) { dom.document.getElementById("select-all-contacts").fire("click"); }
 
-// --- ① 글을 고르면 ① 칸이 Series A 이상 기업 고르개로 -------------------------
+// --- ① 글을 고르면 ① 칸이 Series A 이상 딜 소싱 고르개로 -------------------------
 {
   const t = setup();
   pickMode(t.dom, "sourcing");
@@ -79,7 +79,7 @@ function selectAll(dom) { dom.document.getElementById("select-all-contacts").fir
   assert.strictEqual(t.dom.seriesAPicker.hidden, true, "처음에는 IR 기업 목록이어야 한다");
   pickTopic(t.dom, SHARE);
 
-  assert.strictEqual(t.dom.seriesAPicker.hidden, false, "Series A 이상 기업 고르개가 안 섰다");
+  assert.strictEqual(t.dom.seriesAPicker.hidden, false, "Series A 이상 딜 소싱 고르개가 안 섰다");
   assert.strictEqual(t.dom.document.getElementById("company-list").hidden, true,
                      "IR 기업 목록이 그대로 떠 있다 — 어느 목록에서 고르는지 헷갈린다");
   assert.strictEqual(t.dom.document.getElementById("company-picker-search").hidden, true);
@@ -210,7 +210,7 @@ function selectAll(dom) { dom.document.getElementById("select-all-contacts").fir
   assert.strictEqual(saCard(t.dom, "다샘플푸드").querySelector(".sa-cb").checked, true);
   const warn = t.dom.document.getElementById("send-warnings").innerHTML;
   assert.ok(/딜 소싱 대상 2명은 고르지 않았습니다/.test(warn), warn);
-  assert.ok(/Series A 이상 기업 1개를 목록에서 찾지 못했습니다/.test(warn), warn);
+  assert.ok(/Series A 이상 딜 소싱 기업 1개를 목록에서 찾지 못했습니다/.test(warn), warn);
 }
 
 // --- ⑥ 다른 글로 돌아가면 IR 기업 목록 ------------------------------------------

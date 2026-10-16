@@ -40,7 +40,7 @@ KIND = "sourcing_intro"
 #: 저장 문구를 읽는다 — 손으로 보내는 것과 저절로 나가는 것이 한 문구다.
 REMIND_KIND = "sourcing_remind"
 
-#: **Series A 딜 공유** — 시리즈 A 갈래 심사역께 `Series A 이상 기업` 탭의 받은
+#: **Series A 딜 공유** — 시리즈 A 갈래 심사역께 `Series A 이상 딜 소싱` 탭의 받은
 #: 딜을 소개하는 글. 글을 짓고 누가 무엇을 받았는지 적는 일은
 #: `services/series_a_share.py` 가 한다(이름도 거기서 이 값을 쓴다). 여기 두는
 #: 까닭은 [보낼 문구] 고르개(`TOPICS` · `topic_of`)가 이 파일에 있어서다 — 그

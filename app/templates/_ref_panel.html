@@ -31,8 +31,25 @@
   {# 보기만 되던 자료다. 쓰면서 다듬는 것이라, 고치려고 구글 시트를 따로
      열어야 하면 화면 안으로 들여온 뜻이 없다. #}
   <p class="hint">머리글과 칸을 눌러 바로 고칩니다.</p>
-  <div class="table-wrap wide">
-    <table class="grid-table compact" id="ref-table" data-ref-id="{{ ref.id }}">
+  {#
+    **넓은 표의 감싸개(`.wide`)를 쓰지 않는다.**
+
+    그쪽은 스타트업DB 처럼 칸이 스무 개 넘고 여든 줄인 명단 표를 위한 것이라
+    표를 2,030px 로 벌리고(`.table-wrap.wide .grid-table`) 키를 화면 높이로
+    자른다(`max-height`). 이 표는 칸이 서넛이고 칸 하나에 **문단**이 든다 —
+    그 둘을 받으면 딜소개 스크립트 한 칸이 화면 안의 작은 상자에서 따로
+    구르고(페이지 스크롤과 표 스크롤이 두 겹), 칸 세 개가 2,030px 로 벌어져
+    가로로도 밀어야 했다. 헤드리스 크롬 실측(1440×900): 쉰 줄 스크립트를
+    넣으면 표 상자 563px 안에 1,050px 이 갇혔다.
+
+    그래서 보통 감싸개로 두고 표는 **제 키대로** 선다 — 페이지가 그대로
+    굴러간다. 칸이 많은 표가 짜부라지지 않게 칸마다 최소 폭만 준다
+    (`--ref-cols`, app.css 의 `#ref-table`). 감싸개 이름을 새로 짓지 않는
+    까닭은 tests/test_table_scroll_fit.py 에 있다.
+  #}
+  <div class="table-wrap">
+    <table class="grid-table compact" id="ref-table" data-ref-id="{{ ref.id }}"
+           style="--ref-cols: {{ ref_content.columns|length or 1 }}">
       {#
         머리글도 **칸과 똑같이** 눌러서 고친다 — 같은 `ref-cell`, 같은 손잡이
         (`js/ref_edit.js`). 표를 화면에서 세울 수 있게 되면서 머리글이

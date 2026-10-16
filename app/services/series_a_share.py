@@ -3,7 +3,7 @@
 딜 제안 관리 › 딜 소싱 제안 탭의 [보낼 문구 › Series A 딜 공유]가 이 글을 짓는다.
 받는 사람은 딜 소싱 명단의 `시리즈 A 이상 딜 소싱 참여 심사역` 갈래
 (`sourcing_sync.SYNC_BUCKET`)에서 `참여` 인 분이고, 소개하는 기업은 IR 기업 현황
-메뉴의 `Series A 이상 기업` 탭(`series_a_companies`)의 줄이다.
+메뉴의 `Series A 이상 딜 소싱` 탭(`series_a_companies`)의 줄이다.
 
 ## 보내는 길은 새로 만들지 않는다
 
@@ -319,7 +319,7 @@ def load(db: Session, ids: Iterable[int]) -> List[SeriesACompany]:
         seen.add(cid)
         row = db.get(SeriesACompany, cid)
         if row is None:
-            raise MissingCompany(f"Series A 이상 기업 {cid} 없음")
+            raise MissingCompany(f"Series A 이상 딜 소싱 기업 {cid} 없음")
         out.append(row)
     return out
 
@@ -894,7 +894,7 @@ def record(db: Session, item: SendItem, contact_id: int,
 
 
 def delete_for_company(db: Session, company_id: int) -> int:
-    """`Series A 이상 기업` 줄을 지울 때 그 기업의 공유 기록도 — 가리킬 곳 없는 줄을 남기지 않는다.
+    """`Series A 이상 딜 소싱` 탭의 줄을 지울 때 그 기업의 공유 기록도 — 가리킬 곳 없는 줄을 남기지 않는다.
 
     나간 문구 자체는 발송 건(`send_items.message`)에 그대로 남는다.
     """
