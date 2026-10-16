@@ -83,29 +83,77 @@ def top_requesters_api(db: Session = Depends(get_db),
     return {"rows": top_requesters(db, ids, limit=top_n)}
 
 
+def _todo_owner(db: Session, user: User, member: int) -> User:
+    """**누구의** 주간업무인가. 비었거나 나 자신이면 나다.
+
+    관리자는 팀원 한 사람을 골라 그 사람의 주간업무를 보고 **대신 고칠** 수
+    있다(`/todo?member=<id>`) — 주간 보고(`/report?member=`)가 팀원 한 사람을
+    고르는 것과 같은 모양이다. 관리자가 아니면 남의 것은 **403** 이다: 개인
+    화면이라 숨길 것은 없어도, 고치는 길이 열리면 안 된다.
+
+    **이 자리를 모든 쓰기가 지난다**(추가 · 가져오기 · 반복 업무 추가) — 화면을
+    여는 것과 고치는 것이 같은 판정을 읽어야 한쪽만 열리는 일이 없다. 줄 번호로
+    고치는 길(`_owned_task` · `_owned_routine`)도 같은 규칙이다.
+
+    누가 고쳤는지는 수정 로그가 남긴다(`edit_log.WATCHED["weekly_tasks"]`) —
+    관리자가 남의 줄을 고치면 그 관리자가 `누가` 로 적힌다.
+    """
+    if not member or member == user.id:
+        return user
+    if user.role != "admin":
+        raise HTTPException(status_code=403,
+                            detail="다른 팀원의 주간업무는 관리자만 볼 수 있습니다")
+    picked = db.get(User, member)
+    if picked is None:
+        raise HTTPException(status_code=404, detail="팀원을 찾을 수 없습니다")
+    return picked
+
+
 @router.get("/todo", response_class=HTMLResponse, include_in_schema=False)
 def todo_page(request: Request, db: Session = Depends(get_db),
               user: User = Depends(get_current_user), week: str = "",
-              moved: int = 0):
+              moved: int = 0, member: int = 0):
     """주간 업무 — 손으로 적는 체크리스트 + 시스템이 아는 일 + 회차 준비 점검.
 
     셋을 한 화면에 둔다. 예전엔 '오늘 할 일'과 '회차 준비 점검'이 따로 있었는데,
     아침에 두 군데를 열어야 했다.
+
+    ## 관리자가 팀원 것을 볼 때 (`?member=`)
+
+    주간업무 표와 반복 업무만 그 사람 것으로 바뀐다. **시스템이 챙기는 일 ·
+    회차 준비 점검은 그리지 않는다** — 둘은 그 사람의 발송·리마인드를 읽는
+    자리이고, 여는 것만으로 리마인드 정리(`cadence.sweep_reactions`)가 돈다.
+    남의 화면을 보는 동안 그 사람의 발송 쪽 상태를 건드리는 길을 아예 두지
+    않는다. 발송을 시작하는 단추는 이 화면 어디에도 없다.
     """
     from datetime import date as _date
+
+    owner = _todo_owner(db, user, member)
+    other = owner.id != user.id
 
     today_ = _date.today()
     start = weekly.week_start(_as_week(week) or today_)
 
-    weekly.ensure_routines(db, user)
+    weekly.ensure_routines(db, owner)
     # 오늘을 넘겨 준다 — 이미 끝난 주는 채우지 않는다(weekly.fill_week 머리말).
-    weekly.fill_week(db, user, start, today_)
+    weekly.fill_week(db, owner, start, today_)
 
-    rows = weekly.task_rows(db, user, start, today_)
+    rows = weekly.task_rows(db, owner, start, today_)
     ctx = base_ctx(request, db, user, active="check")
-    ctx.update(today.build(db, user))          # 시스템이 아는 일 (읽기 전용)
-    ctx.update(readiness.report(db, user))     # 회차 준비 점검 (합침)
+    if not other:
+        ctx.update(today.build(db, user))          # 시스템이 아는 일 (읽기 전용)
+        ctx.update(readiness.report(db, user))     # 회차 준비 점검 (합침)
     ctx.update({
+        # 누구의 주간업무인가. 남의 것이면 화면이 머리에 띠를 두르고, 폼마다
+        # 이 번호를 실어 보낸다(`_todo_owner`).
+        "owner": owner,
+        "viewing_other": other,
+        "member_id": owner.id if other else 0,
+        # 관리자에게만 — 팀원 고르개. 정지된 계정은 뺀다(고칠 주간업무가 없다).
+        "members": ([{"id": u.id, "name": u.name} for u in
+                     db.execute(select(User).where(User.is_active == 1)
+                                .order_by(User.id)).scalars().all()]
+                    if user.role == "admin" else []),
         "tasks": rows,
         "summary": weekly.summary(rows),
         "week_start": start,
@@ -114,12 +162,12 @@ def todo_page(request: Request, db: Session = Depends(get_db),
         "next_week": (start + timedelta(days=7)).isoformat(),
         "this_week": weekly.week_start(today_).isoformat(),
         "is_this_week": start == weekly.week_start(today_),
-        "carry": weekly.carry_over_candidates(db, user, start),
+        "carry": weekly.carry_over_candidates(db, owner, start),
         "statuses": weekly.STATUS_LABELS,
         "weekday_names": weekly.WEEKDAYS,
         # 채우는 쪽(`fill_week`)과 **같은 목록**이어야 한다 — 따로 뽑으면
         # 내려 둔 규칙이 표에는 그대로 서 있고 새 항목만 안 생긴다.
-        "routines": weekly.active_routines(db, user),
+        "routines": weekly.active_routines(db, owner),
         "weekday_label": weekly.weekday_label,
         "nth_label": weekly.nth_label,
         "today_iso": today_.isoformat(),
@@ -145,33 +193,48 @@ def _todo_url(week: str = "", **extra) -> str:
     폼에서 온 값을 그대로 이어 붙이지 않는다 — 주소에 실려 온 글자가 그대로
     링크가 되면 안 된다. 한 번 날짜로 읽어 그 주 월요일로 되돌린 값만 쓴다.
     읽히지 않으면 주 없이 `/todo` — 그러면 이번 주가 열린다.
+
+    `member` 는 숫자로만 받는다(`_todo_owner` 를 지난 계정 번호) — 관리자가
+    팀원 것을 고친 뒤 **그 팀원 화면으로** 돌아가야 한다. 안 그러면 고친 줄이
+    눈앞에서 사라져 저장이 안 된 것처럼 보인다.
     """
     parts = []
     start = _as_week(week)
     if start is not None:
         parts.append(f"week={weekly.week_start(start)}")
-    parts += [f"{k}={v}" for k, v in extra.items() if v]
+    parts += [f"{k}={int(v) if k == 'member' else v}"
+              for k, v in extra.items() if v]
     return "/todo?" + "&".join(parts) if parts else "/todo"
+
+
+def _back_member(owner: User, user: User) -> int:
+    """되돌아갈 주소에 실을 팀원 번호 — 내 것이면 0(주소에 안 싣는다)."""
+    return owner.id if owner.id != user.id else 0
 
 
 # --- 주간 업무 고치기 --------------------------------------------------------
 
+def _may_touch(row_user_id: int, user: User) -> bool:
+    """이 줄을 고칠 수 있는가 — 내 줄이거나, 관리자다(`_todo_owner` 와 같은 규칙)."""
+    return row_user_id == user.id or user.role == "admin"
+
+
 def _owned_task(db: Session, task_id: int, user: User) -> WeeklyTask:
     row = db.get(WeeklyTask, task_id)
-    if row is None or row.user_id != user.id:
+    if row is None or not _may_touch(row.user_id, user):
         raise HTTPException(status_code=404, detail="업무를 찾을 수 없습니다")
     return row
 
 
 def _owned_routine(db: Session, routine_id: int, user: User) -> WeeklyRoutine:
-    """남의 것도, 이미 내려 둔 것도 아니어야 한다.
+    """남의 것(관리자가 아니면)도, 이미 내려 둔 것도 아니어야 한다.
 
     내려 둔 규칙(`is_active=0`)은 화면에서 사라졌으므로 없는 것과 같다 —
     주소를 알고 있어도 다시 고쳐지면 안 된다. 확인이 한 곳에 있어야 고치기와
     지우기 중 한쪽만 빠지는 일이 없다.
     """
     row = db.get(WeeklyRoutine, routine_id)
-    if row is None or row.user_id != user.id or row.is_active != 1:
+    if row is None or not _may_touch(row.user_id, user) or row.is_active != 1:
         raise HTTPException(status_code=404, detail="반복 업무를 찾을 수 없습니다")
     return row
 
@@ -179,23 +242,28 @@ def _owned_routine(db: Session, routine_id: int, user: User) -> WeeklyRoutine:
 @router.post("/todo/tasks", include_in_schema=False)
 def add_task(category: str = Form(""), title: str = Form(...),
              due_date: str = Form(""), week: str = Form(""),
+             member: int = Form(0),
              db: Session = Depends(get_db),
              user: User = Depends(get_current_user)):
     from datetime import date as _date
 
+    owner = _todo_owner(db, user, member)
+    back = _back_member(owner, user)
     start = weekly.week_start(_as_week(week) or _date.today())
     if not title.strip():
-        return RedirectResponse(_todo_url(start.isoformat()), status_code=303)
+        return RedirectResponse(_todo_url(start.isoformat(), member=back),
+                                status_code=303)
     last = db.execute(
-        select(WeeklyTask.position).where(WeeklyTask.user_id == user.id,
+        select(WeeklyTask.position).where(WeeklyTask.user_id == owner.id,
                                           WeeklyTask.week_start == start.isoformat())
         .order_by(WeeklyTask.position.desc()).limit(1)
     ).scalar() or 0
-    db.add(WeeklyTask(user_id=user.id, week_start=start.isoformat(),
+    db.add(WeeklyTask(user_id=owner.id, week_start=start.isoformat(),
                       category=category.strip() or None, title=title.strip(),
                       due_date=(due_date.strip() or None), position=last + 1))
     db.commit()
-    return RedirectResponse(_todo_url(start.isoformat()), status_code=303)
+    return RedirectResponse(_todo_url(start.isoformat(), member=back),
+                            status_code=303)
 
 
 class TaskPatch(BaseModel):
@@ -227,26 +295,33 @@ def patch_task(task_id: int, body: TaskPatch, db: Session = Depends(get_db),
 def delete_task(task_id: int, week: str = Form(""),
                 db: Session = Depends(get_db),
                 user: User = Depends(get_current_user)):
-    db.delete(_owned_task(db, task_id, user))
+    task = _owned_task(db, task_id, user)
+    back = task.user_id if task.user_id != user.id else 0
+    db.delete(task)
     db.commit()
-    return RedirectResponse(_todo_url(week), status_code=303)
+    return RedirectResponse(_todo_url(week, member=back), status_code=303)
 
 
 @router.post("/todo/carry-over", include_in_schema=False)
-def carry_over(week: str = Form(""), db: Session = Depends(get_db),
+def carry_over(week: str = Form(""), member: int = Form(0),
+               db: Session = Depends(get_db),
                user: User = Depends(get_current_user)):
     """지난 주 미완료를 이번 주로. 그냥 두면 지난 주 화면에 묻혀 잊힌다."""
     from datetime import date as _date
 
+    owner = _todo_owner(db, user, member)
     start = weekly.week_start(_as_week(week) or _date.today())
-    moved = weekly.carry_over(db, user, start)
-    return RedirectResponse(_todo_url(start.isoformat(), moved=moved), status_code=303)
+    moved = weekly.carry_over(db, owner, start)
+    return RedirectResponse(_todo_url(start.isoformat(), moved=moved,
+                                      member=_back_member(owner, user)),
+                            status_code=303)
 
 
 @router.post("/todo/routines", include_in_schema=False)
 def add_routine(category: str = Form(""), title: str = Form(...),
                 weekdays: List[str] = Form([]), nth_weeks: List[str] = Form([]),
                 time_of_day: str = Form(""), week: str = Form(""),
+                member: int = Form(0),
                 db: Session = Depends(get_db),
                 user: User = Depends(get_current_user)):
     """반복 업무 규칙을 만든다.
@@ -262,17 +337,19 @@ def add_routine(category: str = Form(""), title: str = Form(...),
     이 칸이 생기기 전의 규칙 수백 개가 그 상태로 남아 있다 — 같은 뜻을 두 가지
     글자로 적어 두면 나중에 어느 쪽만 보는 코드가 생긴다.
     """
+    owner = _todo_owner(db, user, member)
     if title.strip():
         weeks = ",".join(str(n) for n in
                          weekly.parse_nth_weeks(",".join(nth_weeks)))
-        db.add(WeeklyRoutine(user_id=user.id, category=category.strip() or "기타",
+        db.add(WeeklyRoutine(user_id=owner.id, category=category.strip() or "기타",
                              title=title.strip(),
                              weekdays=",".join(str(d) for d in
                                                weekly.parse_weekdays(",".join(weekdays))),
                              nth_weeks=weeks or None,
                              time_of_day=time_of_day if time_of_day in ("am", "pm") else None))
         db.commit()
-    return RedirectResponse(_todo_url(week), status_code=303)
+    return RedirectResponse(_todo_url(week, member=_back_member(owner, user)),
+                            status_code=303)
 
 
 class RoutineIn(BaseModel):
@@ -310,8 +387,10 @@ def delete_routine(routine_id: int, week: str = Form(""),
                    user: User = Depends(get_current_user)):
     # 줄을 지우지 않고 내린다 — 딸린 항목이 외래키로 붙들고 있고(500 의 원인),
     # 통째로 사라지면 기본 규칙이 다시 깔린다(weekly.delete_routine 머리말).
-    weekly.delete_routine(db, _owned_routine(db, routine_id, user))
-    return RedirectResponse(_todo_url(week), status_code=303)
+    row = _owned_routine(db, routine_id, user)
+    back = row.user_id if row.user_id != user.id else 0
+    weekly.delete_routine(db, row)
+    return RedirectResponse(_todo_url(week, member=back), status_code=303)
 
 
 @router.get("/readiness", include_in_schema=False)
@@ -1258,6 +1337,260 @@ def save_startup_send(
     if monthly_state["on"]:
         note += quote(f" · 매월 자동 발송 켜짐 — 다음 {monthly_state['next_label']}")
     return RedirectResponse(f"/team?msg={note}", status_code=303)
+
+
+@router.post("/team/automation-team", include_in_schema=False)
+def save_automation_team(
+    user_id: int = Form(0),
+    window_start: str = Form(""),
+    window_end: str = Form(""),
+    avoid_start: str = Form(""),
+    avoid_end: str = Form(""),
+    per_contact_daily: str = Form(""),
+    job_gap_min: str = Form(""),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """**자동화 팀 공통** — 자동 발송 계정 · 가능 시간대 · 피할 시간 · 같은 분 하루
+    최대 · 자동 회차 사이 최소 간격(`automation.save_team`).
+
+    값을 가리는 것은 저장 자리 한 곳이다 — 시간대는 발송 안전장치(09~19시)
+    안이어야 하고, 피할 시간은 그 시간대 안이어야 한다.
+    """
+    admin_only(user)
+    from urllib.parse import quote
+
+    from ..services import automation
+
+    try:
+        saved = automation.save_team(db, user_id=user_id or None, values={
+            "window_start": window_start, "window_end": window_end,
+            "avoid_start": avoid_start, "avoid_end": avoid_end,
+            "per_contact_daily": per_contact_daily or automation.DEFAULT_PER_CONTACT_DAILY,
+            "job_gap_min": job_gap_min or automation.DEFAULT_JOB_GAP_MIN})
+    except ValueError as exc:
+        db.rollback()
+        return RedirectResponse(f"/team?msg={quote('자동화 팀 공통 — ' + str(exc))}#automations",
+                                status_code=303)
+    # 자동 발송 계정이 바뀌었으면 옛 계정 PC 로 서 있던 자동 회차를 거둔다.
+    from ..services import automation_runner
+
+    stopped = sum(automation_runner.stop_jobs(db, kind.key) for kind in automation.KINDS)
+    who = db.get(User, automation.default_sender_id(db))
+    note = (f"자동화 팀 공통 설정을 저장했습니다 — 자동 발송 계정 {who.name if who else '없음'}"
+            f" · 시간대 {saved.window_label}"
+            + (f" · 피할 시간 {saved.avoid_label}" if saved.avoid_label else "")
+            + f" · 같은 분 하루 {saved.per_contact_daily}통 · 회차 사이 {saved.job_gap_min}분"
+            + (f" · 옛 계정으로 서 있던 회차 {stopped}개를 거뒀습니다" if stopped else ""))
+    return RedirectResponse(f"/team?msg={quote(note)}#automations", status_code=303)
+
+
+@router.post("/team/automations/{key}", include_in_schema=False)
+async def save_automation(
+    key: str,
+    request: Request,
+    enabled: str = Form(""),
+    user_id: int = Form(0),
+    test_mode: str = Form(""),
+    test_mode_shown: str = Form(""),
+    test_room: str = Form(""),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """**2단계 자동화 한 줄** — 켜짐/꺼짐 · 보내는 계정 · 시험 모드 · 시험방.
+
+    문은 옆 판들과 같다(`admin_only`). 값을 가리는 것은 `automation.save` 한
+    곳이다 — 시험방이 진짜 상대의 방이면 받지 않고, 시험 모드로 켜면서 시험방이
+    비어 있으면 받지 않는다.
+
+    **시험 모드 칸은 체크 상자다** — 안 보내면 꺼짐이다. 그래서 폼에는 늘
+    `test_mode_shown=1` 이 함께 오고, 그 칸이 없는 요청(옛 화면 · 손으로 만든
+    요청)은 시험 모드를 **켠 채로** 둔다. 모르는 채로 진짜 방을 열지 않는다.
+    """
+    admin_only(user)
+    from urllib.parse import quote
+
+    from ..services import automation
+
+    if key not in automation.BY_KEY:
+        raise HTTPException(status_code=404, detail="그런 자동화는 없습니다")
+    label = automation.BY_KEY[key].label
+    # 자동화마다 다른 값(`p_<이름>` 칸) — 며칠 뒤 · 몇 시 · 그룹 · 채널방 목록.
+    # 칸이 하나도 안 오면(옛 화면) 저장된 값을 그대로 둔다.
+    from ..services import automation_runner
+
+    form = await request.form()
+    raw = {k[2:]: v for k, v in form.items() if k.startswith("p_")}
+    off = enabled != "on"
+    stopped = 0
+    if off:
+        # **끄기는 늘 된다** — 다른 칸을 가리기 전에, 검사 없이 먼저 끄고 커밋한다.
+        # 다른 칸이 잘못돼 저장이 넘어져도 꺼진 것은 남는다. 아침에 세운 회차 ·
+        # 큐에 선 회차도 바로 거둔다.
+        automation.turn_off(db, key)
+        stopped += automation_runner.stop_jobs(db, key)
+    try:
+        # 나머지는 **다 가린 뒤 한 번에** 저장한다(반쪽 저장 없음).
+        row, flipped = automation_runner.save_settings(
+            db, key, raw or None, enabled=not off, user_id=user_id or None,
+            test_mode=(test_mode == "on" or test_mode_shown != "1"),
+            test_room=test_room)
+    except ValueError as exc:
+        db.rollback()
+        if off:
+            note = (f"{label} 자동화를 껐습니다"
+                    + (f" · 서 있던 회차 {stopped}개를 거뒀습니다" if stopped else "")
+                    + f" — 다른 칸은 저장하지 못해 이전 값 그대로입니다: {exc}")
+        else:
+            note = f"{label} — {exc}"
+        return RedirectResponse(f"/team?msg={quote(note)}#automations",
+                                status_code=303)
+    # 시험 ↔ 실제를 바꿨으면 옛 모드로 서 있던 회차는 `save_settings` 가 거뒀다.
+    stopped += flipped
+    if not row.enabled:
+        note = f"{label} 자동화를 껐습니다"
+    elif row.test_mode:
+        note = f"{label} 자동화 켜짐 — 시험 모드: 모든 글이 '{row.test_room}' 으로 갑니다"
+    else:
+        note = f"{label} 자동화 켜짐 — 실제 방으로 나갑니다"
+    if stopped:
+        note += f" · 서 있던 회차 {stopped}개를 거뒀습니다(나가지 않습니다)"
+    return RedirectResponse(f"/team?msg={quote(note)}#automations", status_code=303)
+
+
+@router.post("/team/automations/{key}/check", include_in_schema=False)
+def check_automation_room(
+    key: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """[시험방 확인] — 보내는 계정 PC 로 시험방에 **한 통**.
+
+    자동화를 켜기 전에 시험방 이름이 그 계정 카톡에서 정말 열리는지, 그 PC 의
+    발송기가 집어가는지를 본다. 가는 곳은 시험방 하나뿐이다
+    (`automation.queue_check`).
+    """
+    admin_only(user)
+    from urllib.parse import quote
+
+    from ..services import automation
+
+    if key not in automation.BY_KEY:
+        raise HTTPException(status_code=404, detail="그런 자동화는 없습니다")
+    try:
+        job = automation.queue_check(db, key)
+    except ValueError as exc:
+        db.rollback()
+        return RedirectResponse(f"/team?msg={quote(str(exc))}#automations",
+                                status_code=303)
+    return RedirectResponse(
+        f"/team?msg={quote(f'시험방 확인 한 통을 세웠습니다 (회차 #{job.id})')}#automations",
+        status_code=303)
+
+
+# ── 보내는 계정 카톡 기준 방 제목 (`services/sender_rooms.py`) ────────────────
+
+def _room_senders(db: Session) -> list:
+    """방 제목을 맞출 **보내는 계정들** — 기본 보내는 계정과 자동화마다 고른 계정."""
+    from ..services import automation
+
+    seen, out = set(), []
+    ids = [automation.default_sender_id(db)] + [
+        automation.sender_id(db, automation.load(db, k.key)) for k in automation.KINDS]
+    for uid in ids:
+        member = db.get(User, uid) if uid else None
+        if member is not None and automation.may_send(member) and member.id not in seen:
+            seen.add(member.id)
+            out.append(member)
+    return out
+
+
+def _room_sender_or_404(db: Session, sender_id: int) -> User:
+    for member in _room_senders(db):
+        if member.id == sender_id:
+            return member
+    raise HTTPException(status_code=404, detail="자동화를 보내는 계정이 아닙니다")
+
+
+@router.get("/team/sender-rooms", response_class=HTMLResponse, include_in_schema=False)
+def sender_rooms_page(request: Request, db: Session = Depends(get_db),
+                      user: User = Depends(get_current_user),
+                      sender: int = 0, msg: str = ""):
+    """**보내는 계정 카톡 기준 방 제목** — 확인 걸기 · 후보 고르기(관리자)."""
+    admin_only(user)
+    from ..services import sender_rooms
+
+    senders = _room_senders(db)
+    if not senders:
+        return RedirectResponse(
+            "/team?msg=자동화를+보내는+계정이+정해지지+않았습니다#automations",
+            status_code=303)
+    chosen = next((s for s in senders if s.id == sender), senders[0])
+    ctx = base_ctx(request, db, user, active="admin")
+    ctx.update({"board": sender_rooms.board(db, chosen), "senders": senders,
+                "msg": msg})
+    return templates.TemplateResponse("sender_rooms.html", ctx)
+
+
+@router.post("/team/sender-rooms/check", include_in_schema=False)
+def sender_rooms_check(sender_id: int = Form(0), db: Session = Depends(get_db),
+                       user: User = Depends(get_current_user)):
+    """[보내는 계정 PC 로 전체 방 확인] — 방 확인 잡을 **그 계정 것으로** 세운다.
+
+    아무것도 보내지 않는다(방 확인 잡). 그 계정 PC 의 발송기만 집어간다.
+    """
+    admin_only(user)
+    from urllib.parse import quote
+
+    from ..services import sender_rooms
+
+    member = _room_sender_or_404(db, sender_id)
+    job = sender_rooms.queue_check(db, member)
+    if job is None:
+        note = "확인할 담당자가 없습니다"
+    else:
+        note = (f"{member.name} 님 PC 로 방 {job.total}곳 확인을 걸었습니다 "
+                f"(회차 #{job.id}) — 그 PC 의 발송 프로그램이 켜져 있어야 합니다")
+    return RedirectResponse(f"/team/sender-rooms?sender={member.id}&msg={quote(note)}",
+                            status_code=303)
+
+
+@router.post("/team/sender-rooms/{contact_id}/confirm", include_in_schema=False)
+def sender_rooms_confirm(contact_id: int, sender_id: int = Form(0),
+                         room: str = Form(""), db: Session = Depends(get_db),
+                         user: User = Depends(get_current_user)):
+    """[이 방으로 확정] — 후보 제목을 그 계정 카톡의 제목으로."""
+    admin_only(user)
+    from urllib.parse import quote
+
+    from ..services import sender_rooms
+
+    member = _room_sender_or_404(db, sender_id)
+    try:
+        sender_rooms.confirm(db, member.id, contact_id, room)
+        note = "확정했습니다 — 자동화가 이 제목으로 보냅니다"
+    except sender_rooms.NotPickable as exc:
+        db.rollback()
+        note = str(exc)
+    return RedirectResponse(f"/team/sender-rooms?sender={member.id}&msg={quote(note)}",
+                            status_code=303)
+
+
+@router.post("/team/sender-rooms/{contact_id}/clear", include_in_schema=False)
+def sender_rooms_clear(contact_id: int, sender_id: int = Form(0),
+                       db: Session = Depends(get_db),
+                       user: User = Depends(get_current_user)):
+    """확정 거두기 — 다시 담당 팀원의 제목으로 보낸다."""
+    admin_only(user)
+    from urllib.parse import quote
+
+    from ..services import sender_rooms
+
+    member = _room_sender_or_404(db, sender_id)
+    sender_rooms.clear(db, member.id, contact_id)
+    return RedirectResponse(
+        f"/team/sender-rooms?sender={member.id}&msg={quote('확정을 거뒀습니다')}",
+        status_code=303)
 
 
 @router.post("/team/members/{member_id}/reset-password", include_in_schema=False)

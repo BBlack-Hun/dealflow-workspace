@@ -34,7 +34,7 @@ from app.models import (  # noqa: E402
     VcContact,
 )
 from app.services import auth as auth_svc  # noqa: E402
-from app.services import sheet_owner, startup_outreach  # noqa: E402
+from app.services import ir_kakao, sheet_owner, startup_outreach  # noqa: E402
 from app.services.room_name import build_room_name  # noqa: E402
 
 # 실제 운영 중인 딜소개 스크립트 형식을 기본값으로 사용한다.
@@ -51,6 +51,10 @@ TEAM_TEMPLATES = [
     ("closing_day1", "핵심 딜 {개수}개사 간단히 공유드립니다.\n관심 가시는 기업 있으시면 IR Deck 공유드리겠습니다."),
     ("closing_remind", "지난번 공유드린 기업들 검토 중 궁금하신 점 있으시면 말씀 부탁드립니다."),
     ("closing_meeting", "다음주 또는 다다음주 20~30분 정도 간단히 미팅 가능하실지요?"),
+    # 미팅 요청 자동화의 **두 번째** — 첫 번째에 답이 없을 때 조금 다른 말로.
+    # 글자까지 `routers/deals.MEETING_ASK_AGAIN_FALLBACK` 과 같아야 한다(문구틀을
+    # 지운 사람과 새로 깐 서버가 같은 글을 받게).
+    ("closing_meeting_again", "지난번 미팅 일정 관련하여 다시 한번 여쭙습니다.\n이번주 또는 다음주 중 20~30분 정도 편하신 시간 말씀 주시면 맞추어 뵙겠습니다."),
     # 딜소개를 보냈는데 반응이 없을 때, 기업 목록 없이 이 문구만 보낸다.
     # 목록을 또 밀어 넣기보다 무엇을 보고 싶은지 되묻는 편이 답이 온다.
     ("ask_preference", "선호하는 기업분야 말씀해주시면 맞추어 딜 공유해드리겠습니다."),
@@ -93,6 +97,14 @@ TEAM_TEMPLATES = [
 # 그 파일 한 곳에 있다(`app/services/startup_outreach.TOPICS`). 두 곳에 적으면
 # 새로 깐 서버와 문구틀을 지운 사람이 서로 다른 글을 받는다.
 TEAM_TEMPLATES += startup_outreach.TEAM_DEFAULTS
+# 스타트업 월간 자동화의 **순환 문구 2·3번**(초안). 글은 `ir_kakao` 한 곳에
+# 있다 — 문구틀을 지운 사람과 새로 깐 서버가 같은 글을 받게.
+TEAM_TEMPLATES += [
+    (kind, text)
+    for n, (head_kind, tail_kind) in sorted(ir_kakao.VARIANT_KINDS.items())
+    for kind, text in ((head_kind, ir_kakao.VARIANT_HEADS[n]),
+                       (tail_kind, ir_kakao.VARIANT_TAILS[n]))
+]
 
 # 딜 소싱 **월간 리마인드**(`sourcing_remind`)는 위 목록에 넣지 않는다 — 처음
 # 안내처럼 **문구 이름이 곧 갈래**라(`template_pick.NAME_IS_A_BUCKET`) 이름 없는

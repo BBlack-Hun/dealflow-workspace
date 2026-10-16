@@ -24,12 +24,17 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from sqlalchemy import delete, or_, select  # noqa: E402
+from sqlalchemy import delete, or_, select, update  # noqa: E402
 
 from app.db import SessionLocal  # noqa: E402
 from app.services import sourcing_sync  # noqa: E402
 from app.models import (  # noqa: E402
     AgentDevice,
+    Automation,
+    AutomationSend,
+    AutoSendRun,
+    SenderRoom,
+    ConsultingCompany,
     ContactActivity,
     DealBatch,
     DealBatchCompany,
@@ -82,6 +87,12 @@ def _demo_companies(db):
     ).scalars().all()
 
 
+def _detach_items(db, item_ids) -> None:
+    """지울 발송 건을 가리키는 2단계 자동화 '보냈다' 줄에서 건만 뗀다(줄은 남긴다)."""
+    db.execute(update(AutomationSend).where(AutomationSend.item_id.in_(item_ids))
+               .values(item_id=None))
+
+
 def purge(db, *, keep_history: bool = False, apply: bool = False) -> dict:
     counts = {}
 
@@ -107,23 +118,38 @@ def purge(db, *, keep_history: bool = False, apply: bool = False) -> dict:
     assert ADMIN_PHONE not in {u.phone for u in users}, "관리자 계정은 지우지 않는다"
 
     # 발송 이력 — 자식(send_items, deal_batch_companies)부터 지운다.
+    #
+    # 2단계 자동화의 '보냈다' 줄(`automation_sends`)과 회차 자리(`auto_send_runs`)
+    # 는 발송 건 · 회차를 가리킨다(외래키). **줄은 지우지 않고 가리킴만 뗀다** —
+    # 줄이 사라지면 그 대상이 보낸 적 없는 것으로 보여 다시 실릴 수 있다. 떼어 낸
+    # 줄은 중복 막기가 '보낸 것' 으로 센다(`automation_runner.sent_refs`).
     if not keep_history:
+        db.execute(update(AutomationSend).values(item_id=None, job_id=None))
+        db.execute(update(AutoSendRun).values(job_id=None))
         db.execute(delete(SendItem))
         db.execute(delete(SendJob))
         db.execute(delete(DealBatchCompany))
         db.execute(delete(DealBatch))
     elif contact_ids:
         # 이력을 남기더라도 지워질 담당자를 가리키는 건은 함께 지운다(고아 방지).
+        _detach_items(db, select(SendItem.id).where(SendItem.contact_id.in_(contact_ids)))
         db.execute(delete(SendItem).where(SendItem.contact_id.in_(contact_ids)))
 
     if contact_ids:
         db.execute(delete(ContactActivity).where(ContactActivity.contact_id.in_(contact_ids)))
+        # 보내는 계정 카톡 기준 방 제목 — 담당자 줄을 가리킨다(외래키).
+        db.execute(delete(SenderRoom).where(SenderRoom.contact_id.in_(contact_ids)))
         # 딜 소싱 줄이 이 담당자를 가리키면 연결만 끊는다(줄은 남는다) — 한꺼번에
         # 지우기는 flush 를 지나지 않아 앱이 대신 끊어 주지 못한다.
         sourcing_sync.detach(db, contact_ids)
         db.execute(delete(VcContact).where(VcContact.id.in_(contact_ids)))
     if company_ids:
         db.execute(delete(DealBatchCompany).where(DealBatchCompany.company_id.in_(company_ids)))
+        # 사람이 이어 둔 연결(`services/ir_link.py`)은 **끊기만** 한다 — 줄은
+        # 남는다. 안 끊으면 외래키가 기업 줄을 못 지우게 막는다.
+        for model in (VcContact, ConsultingCompany):
+            db.execute(update(model).where(model.ir_company_id.in_(company_ids))
+                       .values(ir_company_id=None))
         db.execute(delete(IrCompany).where(IrCompany.id.in_(company_ids)))
     if user_ids:
         # 가상 사용자에게 딸린 담당자·활동까지 정리해야 화면에 유령이 남지 않는다.
@@ -132,11 +158,29 @@ def purge(db, *, keep_history: bool = False, apply: bool = False) -> dict:
         ).scalars().all()
         if left:
             db.execute(delete(ContactActivity).where(ContactActivity.contact_id.in_(left)))
+            _detach_items(db, select(SendItem.id).where(SendItem.contact_id.in_(left)))
             db.execute(delete(SendItem).where(SendItem.contact_id.in_(left)))
+            db.execute(delete(SenderRoom).where(SenderRoom.contact_id.in_(left)))
             sourcing_sync.detach(db, left)
             db.execute(delete(VcContact).where(VcContact.id.in_(left)))
         db.execute(delete(AgentDevice).where(AgentDevice.user_id.in_(user_ids)))
         db.execute(delete(SessionRow).where(SessionRow.user_id.in_(user_ids)))
+        # 2단계 자동화 — 가상 계정이 보내는 계정이었거나(`automations.user_id`) 그
+        # 계정 카톡의 방 제목(`sender_rooms`) · 그 계정 회차를 가리키는 줄.
+        db.execute(update(Automation).where(Automation.user_id.in_(user_ids))
+                   .values(user_id=None))
+        db.execute(delete(SenderRoom).where(SenderRoom.sender_user_id.in_(user_ids)))
+        jobs = select(SendJob.id).where(SendJob.user_id.in_(user_ids))
+        _detach_items(db, select(SendItem.id).where(SendItem.job_id.in_(jobs)))
+        db.execute(update(AutomationSend).where(AutomationSend.job_id.in_(jobs))
+                   .values(job_id=None))
+        db.execute(update(AutoSendRun).where(AutoSendRun.job_id.in_(jobs))
+                   .values(job_id=None))
+        runs = select(AutoSendRun.id).where(AutoSendRun.user_id.in_(user_ids))
+        db.execute(update(AutomationSend).where(AutomationSend.run_id.in_(runs))
+                   .values(run_id=None))
+        db.execute(delete(AutoSendRun).where(AutoSendRun.user_id.in_(user_ids)))
+        db.execute(delete(SendItem).where(SendItem.job_id.in_(jobs)))
         db.execute(delete(SendJob).where(SendJob.user_id.in_(user_ids)))
         # 주간 업무 — **만든 표시 → 줄 → 규칙** 차례다. 셋 다 `users.id` 를
         # 가리키고, 앞의 둘은 규칙까지 가리킨다(SQLite 는 `foreign_keys=ON`).

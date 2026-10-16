@@ -579,7 +579,19 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
     그 칸이 150 → 130px 로 줄었다(`clock.stamp_text`). **내릴 때도 든 만큼만**
     내린다 — 표 폭을 그대로 두면 줄어든 20px 을 `%` 칸들이 비율대로 나눠
     가져가, 초를 뺐는데 기업명 칸이 넓어지는 엉뚱한 일이 된다.) */
-#co-table { min-width: 2516px; }
+/* (2,516 → 2,612 : `수신일` 칸(96px)이 `기업명` 뒤에 들었다 — 표의 기본 차례가
+    수신일 최신순이 되면서, 그 차례의 까닭이 보이게 세운 칸이다
+    (`routers/companies.py` 의 `sort_by_received`). **든 만큼만** 올린다 —
+    지금까지와 같은 셈이다. 안 올리면 폭을 안 준 `딜 소개 문구` 가 그 96px 을
+    통째로 내어 준다(344 → 248px).
+    **그래도 39px 은 내어 준다**(344 → 305px). 표가 96px 넓어지면 `%` 칸
+    넷(41%)이 그 41% 인 39px 을 비율대로 가져가기 때문이다 — 위 2,536 → 2,516
+    에서 거꾸로 겪은 그 셈이다. `딜 소개 문구` 를 344px 그대로 지키려면 163px 을
+    올려야 하는데, 그러면 새 칸 하나 때문에 `기업명`·분야 둘·`투자라운드` 가
+    67px 넓어진다. 지금까지 칸을 더할 때마다 써 온 셈(든 만큼)을 따른다 —
+    그 칸은 두 줄(`clamp2`)에서 잘릴 뿐 글자가 사라지지는 않는다(전체는
+    `title`). 줄어든 것이 거슬리면 이 값을 163px 쪽으로 올리면 된다.) */
+#co-table { min-width: 2612px; }
 /* 표의 `소개 횟수` — 회차 수와 사람 수를 **위아래로** 세운다(사용자 요청,
    「세로 좌측 정렬」). 둘을 함께 두는 까닭은 `services/deal_history.py`
    머리글에 있다(회차 수만 보면 180명짜리와 103명짜리가 똑같이 `6회` 로 읽힌다).
@@ -871,6 +883,8 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
 .tl-item.tl-meeting_done .tl-kind { color: var(--green); }
 .tl-body { word-break: break-all; }
 .tl-src { font-size: 10px; color: var(--muted); background: #f1f3f5; border-radius: 4px; padding: 1px 5px; }
+/* 손으로 적은 줄의 [되돌리기] — `시트` 표와 같은 넷째 칸에 선다(둘이 한 줄에 같이 설 일은 없다). */
+.tl-undo { padding: 0; white-space: nowrap; font-size: 11px; }
 .tl-month { font-size: 12px; font-weight: 800; color: var(--muted); margin: 14px 0 4px;
             padding-bottom: 3px; border-bottom: 2px solid var(--line); }
 .tl-month:first-child { margin-top: 0; }
@@ -2823,6 +2837,27 @@ a.guard-go:hover { background: #1e4fd0; text-decoration: none; }
 .msg-preview-item pre { white-space: pre-wrap; font: inherit; font-size: 13px; margin: 4px 0 0; }
 .plain-list { margin: 4px 0; padding-left: 18px; font-size: 12px; }
 #msg-noroom-table .room-input { width: 260px; }
+
+/* ── IR 기업 연결(`ir_link.html`) ─────────────────────────────────────────
+   줄마다 **후보 IR 기업**이 수신일 · 담당자 · 계약과 함께 서고, 그 옆에
+   [이 기업으로 연결] 이 붙는다. 이름이 길어도 자르지 않는다 — 비슷한 이름
+   둘을 가르는 것이 이 화면의 일이다. */
+.ir-cands { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.ir-cand { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+.ir-cand-name { font-weight: 600; word-break: break-all; }
+.ir-cand.current .ir-cand-name { color: var(--green); }
+.ir-meta { font-size: 12px; color: var(--muted); }
+.ir-meta b { color: var(--ink); font-weight: 600; }
+.ir-find { display: inline-block; margin-top: 4px; }
+.ir-link-search { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 6px 0 10px; }
+.ir-link-search input[type=search] { min-width: 0; flex: 1 1 220px; max-width: 360px;
+  padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; color: var(--ink); }
+.ir-link-focus { margin-bottom: 12px; }
+#ir-link-table td { vertical-align: top; }
+#ir-link-table td.strong, #ir-link-bulk-table td.strong { font-weight: 600; }
+/* 스타트업 명단 수정창 · 투자컨설턴트 `기업명` 칸 밑의 작은 표시. */
+.ir-link-badge { font-size: 12px; margin: 0 0 8px; }
+.ir-link-sub { font-size: 11px; font-weight: 400; margin-top: 2px; }
 
 /* ── 스타트업 카톡방 매칭(`startup_room_pick.html`) ───────────────────────
    줄마다 **카톡에서 찾은 제목들**이 [이 방으로 확정] 단추와 함께 선다. 제목은

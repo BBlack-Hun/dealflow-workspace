@@ -99,6 +99,25 @@
    문장은 서버가 만들고 progress.js 는 그대로 넣는다. #}
 <p class="hint muted" id="guard-note" hidden></p>
 
+{# **2단계 자동화 회차** — 사람 확인 없이 선 회차라, 누가 왜 빠졌는지가 여기
+   말고는 안 보인다(`automation_runner.job_notes`). 세울 때 뺀 것(중복 방지 ·
+   조건)과 풀 때 뺀 것(표의 `자동 제외`)을 함께 센다. #}
+{% if automation %}
+<div class="hint" data-testid="automation-note">
+  자동화 <b>{{ automation.label }}</b> 회차
+  {% if automation.gap %} · 건 사이 간격 <b>{{ automation.gap }}</b>{% endif %}
+  {% if automation.failed %}
+  <div class="warn" data-testid="automation-failed-note">실패 {{ automation.failed }}건 — {{ automation.failed_note }}</div>
+  {% endif %}
+  {% if automation.count %}
+  · 뺀 곳 <b>{{ automation.count }}</b>{% if automation.dup %}(중복 방지 {{ automation.dup }}){% endif %}
+  <details><summary>뺀 까닭 보기</summary>
+    <ul>{% for line in automation.lines %}<li>{{ line }}</li>{% endfor %}</ul>
+  </details>
+  {% endif %}
+</div>
+{% endif %}
+
 {% if room_search %}
 {# 후보 찾기는 **방 이름을 바꾸지 않는다** — 찾은 제목은 후보로만 담긴다
    (`services/startup_room_pick.py`). 이 말이 없으면 `확인됨` 숫자를 보고 방이

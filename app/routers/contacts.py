@@ -18,19 +18,19 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Form, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from .. import clock
 from ..clock import stamp_text
 from ..db import get_db
 from ..deps import can_open, get_current_user, may_manage_team_contacts
-from ..models import (ContactActivity, ContactColumn, IrCompany, IrRequest,
-                      Meeting, SendItem, SendJob, SendSequence, SourcingContact,
-                      User, VcContact)
+from ..models import (AutomationSend, ContactActivity, ContactColumn, IrCompany, IrRequest,
+                      Meeting, SendItem, SendJob, SenderRoom, SendSequence,
+                      SourcingContact, User, VcContact)
 from ..services import (contact_columns, deal_stage, firm_type, last_activity,
-                        meeting_kind, room_joined, room_name, sheet_import,
-                        sheet_owner, sourcing_sync)
+                        manual_send, meeting_kind, room_joined, room_name,
+                        sheet_import, sheet_owner, sourcing_sync)
 from ..services.room_name import DEFAULT_SUFFIX, build_room_name
 
 router = APIRouter(prefix="/api/contacts", tags=["contacts"])
@@ -1027,6 +1027,10 @@ def get_contact(
             "notes": contact_columns.load_notes(contact.notes),
             "is_hidden": 1 if contact.is_hidden else 0,
         },
+        # **이 줄이 IR 기업 현황의 어느 기업인가**(`services/ir_link.py`).
+        # 수정창이 `IR 기업: ○○ (연결됨)` / `연결 안 됨 → 연결하기` 로 세운다 —
+        # 그 칸은 스타트업 화면에만 있다(`ListPage.ir_link_href`).
+        "ir_link": _ir_link_badge(db, contact),
         # 한 줄기로 모은다: 시트에서 옮겨 온 월별 기록 + 발송 이력 +
         # **이 도구에서 만든 IR 요청·미팅**.
         #
@@ -1044,6 +1048,14 @@ def get_contact(
             reverse=True,
         ),
     }
+
+
+def _ir_link_badge(db: Session, contact: VcContact) -> dict:
+    # 함수 안에서 불러온다 — `ir_link` 가 `startup_handoff` 를 거쳐 이 파일이
+    # 쓰는 서비스들을 다시 부른다(머리에 두면 불러오는 차례가 꼬일 수 있다).
+    from ..services import ir_link
+
+    return ir_link.badge_for(db, contact)
 
 
 def _pipeline_views(db: Session, contact_id: int) -> List[dict]:
@@ -1117,6 +1129,14 @@ def _activity_view(act: ContactActivity, known: Dict[str, str]) -> dict:
             for name in companies
         ],
         "raw_text": act.raw_text,
+        # 손으로 적은 줄이면 **이 자리에서 그 한 줄을 되돌린다.** 사람은 잘못
+        # 적은 것을 담당자 이력을 보다가 알아챈다 — 딜 제안 관리의 묶음 목록으로
+        # 건너가 80줄 묶음을 찾아 통째로 되돌리게 하면 안 된다. 되돌리는 길은
+        # 묶음 되돌리기와 같은 것이다(`/api/deals/manual-sends/{batch_key}/undo`
+        # 에 `contact_id`) — 그래서 묶음 표시를 함께 싣는다. 세울지 말지는
+        # `manual_send.undoable` 한 곳이 정한다.
+        "batch_key": act.batch_key or "",
+        "undoable": manual_send.undoable(act),
     }
 
 
@@ -1316,6 +1336,9 @@ def _sourcing_mark(db: Session, contact: VcContact, body: ContactIn,
 #: **함께 지우는** 것. `(응답 키, 표, 사람이 읽을 이름)`.
 CASCADING_LINKS = (
     ("activities", ContactActivity, "활동 이력"),
+    # 보내는 계정 카톡에서의 이 담당자 방 제목(`services/sender_rooms.py`).
+    # 담당자 줄이 없어지면 가리킬 곳이 없는 확인 기록이다 — 함께 지운다.
+    ("sender_rooms", SenderRoom, "보내는 계정 방 제목"),
 )
 
 #: 걸려 있으면 **못 지우는** 것들. 같은 모양이다.
@@ -1725,6 +1748,16 @@ def delete_list_sheet(body: SheetDeleteIn, db: Session = Depends(get_db),
     # 딸린 것부터 치우고(외래키가 켜져 있어 순서가 틀리면 막힌다) 사람은 줄마다
     # `db.delete()` 로 지운다(flush 를 지나야 줄마다 수정 로그에 남는다).
     if ids:
+        # 2단계 자동화의 '보냈다' 줄(`automation_sends.item_id`)이 지울 발송 건을
+        # 가리킨다 — **줄은 남기고 건만 떼어 낸다.** 줄을 지우면 그 대상이
+        # 보낸 적 없는 것으로 보여 다시 실릴 수 있고(같은 투자사가 다른 명단에도
+        # 있으면 그 방으로), 떼어 낸 줄은 중복 막기가 '보낸 것' 으로 센다
+        # (`automation_dedup.ledger` · `automation_runner.sent_refs`).
+        db.execute(
+            update(AutomationSend)
+            .where(AutomationSend.item_id.in_(
+                select(SendItem.id).where(SendItem.contact_id.in_(ids))))
+            .values(item_id=None))
         for _key, model, _label in TAB_PURGE_LINKS:
             db.query(model).filter(
                 model.contact_id.in_(ids)).delete(synchronize_session=False)

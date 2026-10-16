@@ -253,7 +253,7 @@ def _history(db, rows, job_status="done", item_status="sent"):
 
 #: 담당자 줄을 가리키는 표 전부 — 하나라도 빠지면 고아를 못 잡는다.
 LINKED_TABLES = ("contact_activities", "send_items", "send_sequences",
-                 "ir_requests", "meetings")
+                 "ir_requests", "meetings", "sender_rooms")
 
 
 def test_가리키는_표를_빠짐없이_지운다():
@@ -443,3 +443,35 @@ def test_수정_로그에_누가_어느_탭_몇_명이_남는다(boss, db, rows,
     gone = db.query(EditLog).filter(EditLog.table_name == "vc_contacts",
                                     EditLog.action == "delete").count()
     assert gone == 2
+
+
+def test_자동화가_보낸_건이_걸려도_지워지고_보냈다_줄은_남는다(boss, db, rows):
+    """2단계 자동화의 '보냈다' 줄(`automation_sends.item_id`)이 지울 발송 건을
+    가리켜도 탭 지우기가 외래키에 막히지 않는다(500 이었다). 줄은 남기고 건만
+    떼어 낸다 — 다시 보낼 대상으로 보이지 않게(`automation_runner.sent_refs`)."""
+    from app.models import AutomationSend, SendItem, SendJob
+    from app.services import automation_runner as runner
+
+    job = SendJob(user_id=1, kind="deal_intro", status="done", total=1, sent=1,
+                  scheduled_at="2026-10-14T14:00:00+09:00")
+    db.add(job)
+    db.flush()
+    item = SendItem(job_id=job.id, contact_id=rows["가담당"].id, room_name="가담당 방",
+                    message="미팅 후기", status="sent",
+                    sent_at="2026-10-14T14:00:30+09:00")
+    db.add(item)
+    db.flush()
+    db.add(AutomationSend(automation="meeting_review", ref="meeting:1", test=0,
+                          job_id=job.id, item_id=item.id, room="가담당 방",
+                          contact_id=rows["가담당"].id))
+    db.commit()
+
+    r = _delete(boss, confirm=True)
+    assert r.status_code == 200, r.text
+    db.expire_all()
+    rec = db.query(AutomationSend).one()
+    assert rec.item_id is None and rec.job_id == job.id
+    assert runner.sent_refs(db, "meeting_review", False, ["meeting:1"]) == {"meeting:1"}
+    from sqlalchemy import text
+
+    assert db.execute(text("PRAGMA foreign_key_check")).all() == []

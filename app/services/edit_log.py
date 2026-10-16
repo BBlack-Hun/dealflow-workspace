@@ -143,11 +143,20 @@ class Watch:
     새로 지으면 화면의 권한과 로그의 판정이 갈린다.
     """
 
-    __slots__ = ("owner", "href", "label", "why", "only")
+    __slots__ = ("owner", "href", "label", "why", "only", "others_only")
 
     def __init__(self, *, owner: Optional[str], href, label: Callable[[Any], str],
-                 why: str, only: Optional[tuple] = None) -> None:
+                 why: str, only: Optional[tuple] = None,
+                 others_only: bool = False) -> None:
         self.owner = owner
+        #: **남의 줄일 때만** 남긴다 — 자기 줄은 지운 것도 안 남긴다.
+        #:
+        #: 보통은 지운 것은 자기 것이라도 남긴다(`_row_scope`). 그것은 지운 줄이
+        #: 발송 대상·공용 자료라서 "그거 어디 갔지" 를 물을 자리가 여기밖에 없기
+        #: 때문이다. **개인 할 일**(주간업무)은 다르다 — 사람마다 하루에 몇 줄씩
+        #: 적고 지우는 메모라, 자기 것까지 남기면 로그가 할 일 정리로 덮인다.
+        #: 남기려는 것은 하나뿐이다: **관리자가 팀원의 할 일을 대신 고쳤다.**
+        self.others_only = others_only
         #: 이 줄을 보는 화면의 주소. 줄마다 다르면 함수로 준다(참고 자료).
         self.href = href
         #: 그 줄이 무엇인가 — 사람이 읽을 이름.
@@ -266,6 +275,18 @@ WATCHED: Dict[str, Watch] = {
             "(`_row_scope`) — 지운 줄은 화면 어디에도 없어 무엇이 있었는지 물을 "
             "자리가 여기밖에 없다. 주인은 줄의 주인이고(`user_id`), 그 칸이 곧 "
             "[다시 켜기]·[지우기]가 보는 칸이다(`routers/followups._owned`)."),
+    "weekly_tasks": Watch(
+        owner="user_id", href="/todo",
+        label=_attr("title"), others_only=True,
+        why="주간업무 할 일 — 개인 화면이지만 **관리자가 팀원 것을 대신 고칠 수 있다**"
+            "(`/todo?member=`). 그 일만 남긴다: 자기 할 일을 적고 지우는 것은 하루에도 "
+            "몇 줄씩이라 남기면 로그가 덮인다(`Watch.others_only`). 남의 줄을 고치면 "
+            "`누가` 가 관리자, `누구 것` 이 그 팀원으로 적힌다."),
+    "weekly_routines": Watch(
+        owner="user_id", href="/todo",
+        label=_attr("title"), others_only=True,
+        why="주간업무 반복 규칙 — 바로 위 `weekly_tasks` 와 같은 까닭. 지우는 것은 "
+            "줄을 내리는 것(`is_active=0`)이라 `고침` 으로 남는다."),
     "users": Watch(
         owner="id", href="/team", label=_attr("name"),
         why="계정. 남의 권한·투자현황·비밀번호를 바꾸는 것은 공용 화면(팀 현황)에서 "
@@ -329,6 +350,15 @@ WATCHED: Dict[str, Watch] = {
     "auto_send_settings": Watch(
         owner=None, href="/team", label=_attr("kind"),
         why="자동 준비 설정. 팀 현황에서 관리자가 켜고 끄는 팀 공용 스위치다."),
+    "automations": Watch(
+        owner=None, href="/team", label=_attr("key"),
+        why="2단계 자동화 스위치. 팀 현황에서 관리자가 켜고 끄는 팀 공용 자리이고, "
+            "시험 모드를 끄는 순간 **진짜 상대에게** 나가기 시작한다 — 누가 언제 "
+            "껐는지 물을 자리가 여기뿐이다."),
+    "sender_rooms": Watch(
+        owner=None, href="/team", label=_attr("room_name"),
+        why="보내는 계정 카톡 기준 방 제목. 자동화가 이 제목으로 보낸다 — 잘못 "
+            "확정하면 자동화가 엉뚱한 방으로 간다. 관리자가 고르는 공용 자리다."),
     "schedule_rules": Watch(
         owner=None, href="/followups", label=_attr("label"),
         why="발송 일정 규칙. 팀 전체의 날짜를 정하는 자리라 공용이다."),
@@ -362,13 +392,13 @@ UNWATCHED: Dict[str, str] = {
                        "목록을 만들 때 기계가 발송 건마다 적는 보낸 기록이다"
                        "(`send_items` 와 같은 결). 사람이 고치는 길이 없다.",
     "monthly_column_runs": "이달 열을 이미 세웠다는 표시. 사람이 보는 자료가 아니다.",
-    "weekly_routines": "주간 업무 되풀이 — 계정마다의 개인 화면이다.",
-    "weekly_tasks": "주간 업무 할 일 — 개인 화면이다.",
     "weekly_routine_runs": "주간 업무를 이번 주에 이미 세웠다는 표시.",
     "sms_notices": "문자 알림 발송 기록.",
     "one_liner_backups": "한 줄 소개 되돌리기용 버퍼. 되돌릴 값을 담아 두는 자리이고, "
                          "무엇이 바뀌었는지는 `ir_companies` 쪽에 이미 남는다.",
     "auto_send_runs": "자동 준비가 오늘 몇 건 돌았나. 기계 기록이다.",
+    "automation_sends": "2단계 자동화가 이 대상에게 보냈다는 표시. 자동화가 적는 "
+                        "기계 기록이고, 나간 글은 `send_items` 에 있다.",
     "sourcing_mail_checks": "딜 소싱 메일 확인이 받은 편지함을 언제 훑었나(회차 · 건수 · "
                             "실패 사유). 기계 기록이다 — 그 결과로 선 `딜 받음` 은 "
                             "`sourcing_receipts` 에 있다.",
@@ -443,9 +473,19 @@ VALUE_FIELDS = frozenset({
     # 계정마다 하루 발송 상한(`services/send_guard.py`) — 잘못 낮추면 그 계정의
     # 발송이 조용히 다음 날로 밀린다. 숫자 하나라 값을 남긴다.
     "daily_send_cap",
+    # 2단계 자동화의 시험 모드와 시험방(`services/automation.py`) — 시험 모드가
+    # 꺼지면 진짜 방으로 나가고, 시험방이 틀리면 시험 글이 엉뚱한 방에 간다.
+    "test_mode", "test_room",
+    # 보내는 계정 카톡 기준 방 제목(`sender_rooms`) — 이 제목으로 자동화가 나간다.
+    "room_name", "verified",
 
     # **어느 방으로 나가나.** 이 앱에서 오발송에 가장 가까운 칸이라 값을 남긴다.
     "kakao_room_name",
+
+    # **어느 IR 기업에 이어 두었나**(`services/ir_link.py`). 번호로 남고, 로그
+    # 화면이 그 번호를 기업 이름으로 바꿔 보여 준다(`recent`). 잇고 푼 것은
+    # 자기 줄이라도 남는다 — 아래 `ALWAYS_FIELDS`.
+    "ir_company_id",
 
     # 언제.
     "requested_at", "delivered_at", "scheduled_at", "scheduled_time",
@@ -520,7 +560,19 @@ FIELD_LABELS = {
     "tab_canceled_jobs": "비어서 취소한 발송 회차",
     "tab_deleted_columns": "함께 지운 달 칸",
     "tab_snapshot": "지우기 직전 백업",
+    "ir_company_id": "IR 기업 연결",
 }
+
+#: **자기 줄이라도 남기는 칸.** 보통은 자기 것을 고친 것은 안 남긴다(머리글 —
+#: 하루 수백 줄이 쌓여 아무도 안 본다). 이 칸은 다르다.
+#:
+#: `ir_company_id` 는 줄이 **세 화면이 함께 보는 기업 하나**를 가리키게 하는
+#: 칸이다(`services/ir_link.py`). 이어 두면 그 줄이 IR 기업 현황의 기업과 한
+#: 몸으로 읽히고, 나중에 값이 그 연결을 따라 오간다 — 잘못 이으면 남의 화면
+#: 값이 엉뚱한 기업으로 간다. 줄의 주인이 잇는 것이 보통이라(자기 명단), 자기
+#: 것이라고 빼면 이 로그가 비어 "누가 이 기업에 이었나" 를 물을 곳이 없다.
+#: 한 번에 수십 줄을 잇는 단추(`후보가 하나인 줄 일괄 연결`)가 있어 더 그렇다.
+ALWAYS_FIELDS = frozenset({"ir_company_id"})
 
 
 def field_label(name: str) -> str:
@@ -691,6 +743,9 @@ def _row_scope(obj, watch: Watch, actor_id: int, action: str):
     if owner_id is None:
         # 주인이 아직 없는 줄(배정 전 명단 · 배정 전 컨설팅 줄)은 공용으로 본다.
         return True, SCOPE_SHARED, None
+    if owner_id == actor_id and watch.others_only:
+        # 개인 할 일 — 자기 것은 지운 것도 남기지 않는다(`Watch.others_only`).
+        return False, "", owner_id
     if owner_id == actor_id:
         # **지운 것은 자기 것이라도 남긴다.**
         #
@@ -707,6 +762,13 @@ def _row_scope(obj, watch: Watch, actor_id: int, action: str):
             return True, SCOPE_MINE, owner_id
         return False, "", owner_id
     return True, SCOPE_OTHERS, owner_id
+
+
+def _touches_always(obj) -> bool:
+    """이 줄에서 `ALWAYS_FIELDS` 중 하나가 바뀌었는가."""
+    columns = obj.__table__.c
+    return any(name in columns and get_history(obj, name).has_changes()
+               for name in ALWAYS_FIELDS)
 
 
 def _href(watch: Watch, obj) -> str:
@@ -735,6 +797,9 @@ def _collect(session: OrmSession, action: str, rows, ctx: dict) -> List[dict]:
                 obj, include_collections=False):
             continue
         keep, scope, owner_id = _row_scope(obj, watch, ctx["user_id"], action)
+        if not keep and action == ACTION_UPDATE and _touches_always(obj):
+            # 자기 줄인데 `ALWAYS_FIELDS` 를 건드렸다 — 남긴다(그 주석 참고).
+            keep, scope = True, SCOPE_MINE
         if not keep:
             continue
         changes = _changes(obj, action)
@@ -981,7 +1046,8 @@ RETENTION_MONTHS = 13
 PAGE_SIZE = 200
 
 
-def _one_change(item: dict, names: dict) -> dict:
+def _one_change(item: dict, names: dict,
+                companies: Optional[dict] = None) -> dict:
     """화면이 그대로 그릴 수 있게 한 줄로 편다."""
     field = item.get("field", "")
     out = {"label": field_label(field), "value_kept": "changed" not in item}
@@ -994,6 +1060,9 @@ def _one_change(item: dict, names: dict) -> dict:
         # 담당 칸은 번호로 남아 있다 — 번호를 보여 주면 아무도 못 읽는다.
         if field in ("user_id", "owner_user_id", "actor_user_id"):
             return names.get(int(value), f"#{value}")
+        # 이어 둔 IR 기업도 번호로 남아 있다. 지운 기업이면 번호만 남는다.
+        if field == "ir_company_id" and companies is not None:
+            return companies.get(int(value), f"#{value}")
         return str(value)
 
     out["before"] = shown(item.get("before"))
@@ -1020,6 +1089,14 @@ def recent(db, *, scope: str = "", screen: str = "", limit: int = PAGE_SIZE):
         stmt = stmt.where(EditLog.screen == screen)
     rows = list(db.execute(stmt.limit(limit)).scalars().all())
 
+    # IR 기업 이름은 **그 칸이 실린 줄이 있을 때만** 떠 온다 — 로그 대부분은
+    # 그 칸과 상관없다.
+    companies = None
+    if any('"ir_company_id"' in (row.changes_json or "") for row in rows):
+        from ..models import IrCompany
+
+        companies = {c.id: c.name for c in db.execute(select(IrCompany)).scalars().all()}
+
     out = []
     for row in rows:
         try:
@@ -1036,7 +1113,7 @@ def recent(db, *, scope: str = "", screen: str = "", limit: int = PAGE_SIZE):
             "screen": row.screen or row.table_name,
             "row_label": row.row_label or f"{row.table_name} {row.row_id}",
             "path": row.path or "",
-            "changes": [_one_change(c, names) for c in changes],
+            "changes": [_one_change(c, names, companies) for c in changes],
         })
     return out
 

@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{#
+  미팅 요청 나갈 곳 — 답이 온 곳은 [답 옴].
+
+  미팅 요청 자동화(`services/automations/meeting_request.py`)는 IR 자료 전달
+  7일 · 10일 뒤에 미팅을 청한다. 카톡으로 온 답을 앱은 모르므로 사람이 여기서
+  알린다. **스크립트가 없다** — 평범한 폼이다.
+#}
+
+{% block content %}
+<header class="page-head">
+  <h1>미팅 요청 나갈 곳</h1>
+  <p class="muted">
+    IR 자료를 받은 투자사에 <b>7일 · 10일 뒤 14:00</b> 미팅 요청이 자동으로 나갑니다.
+    답이 이미 온 곳은 <b>[답 옴]</b> 을 눌러 주세요 — 그 담당자에게는 더 나가지 않습니다.
+    미팅이 기록되거나 IR 요청이 새로 들어와도 저절로 멈춥니다.
+    {% if not on %}<br><b>지금은 자동화가 꺼져 있습니다</b> — 아래는 켜졌다면 나갈 곳입니다.
+    {% elif test %}<br><b>시험 모드</b>입니다 — 실제 상대가 아니라 시험방으로 갑니다.{% endif %}
+  </p>
+</header>
+
+{% if msg %}<p class="flash">{{ msg }}</p>{% endif %}
+
+{% for title, rows in [("오늘 나갈 곳", today_rows), (next_label ~ " 나갈 곳", next_rows)] %}
+<section class="panel">
+  <h2 class="panel-title">{{ title }} <span class="muted">{{ rows|length }}곳</span></h2>
+  {% if rows %}
+  <div class="table-wrap">
+  <table class="grid-table compact" data-testid="meeting-request-rows">
+    <thead><tr><th>담당</th><th>담당자</th><th>자료 전달일</th><th>차수</th><th></th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+    <tr data-contact="{{ r.contact_id }}">
+      <td>{{ r.owner }}</td>
+      <td>{{ r.name }}<div class="cell-sub">{{ r.firm }}</div></td>
+      <td>{{ r.anchor }}</td>
+      <td>{% if r.round == 1 %}첫 번째{% else %}두 번째{% endif %} · {{ r.due }}</td>
+      <td>
+        <form method="post" action="/automations/meeting-request/{{ r.contact_id }}/replied" class="inline-form">
+          <button class="secondary-btn" type="submit">답 옴</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="hint">없습니다.</p>
+  {% endif %}
+</section>
+{% endfor %}
+{% endblock %}

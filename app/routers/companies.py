@@ -354,7 +354,7 @@ def search_text(c: IrCompany) -> str:
     return " ".join(filter(None, parts)).lower()
 
 
-# 스타트업DB 탭의 차례를 정하는 `수신일` 이 **날짜로 적혀 있는가**.
+# 두 탭의 차례를 정하는 `수신일` 이 **날짜로 적혀 있는가**(`sort_by_received`).
 #
 # 실데이터 281곳 중 267곳이 `2025-01-07` 이고 14곳이 `날짜 미정` 이다. 이 칸은
 # 글자라 그냥 내림차순으로 세우면 `날짜 미정` 이 맨 위로 올라온다(`날` 이 숫자
@@ -380,9 +380,9 @@ def meeting_sort_key(text: str | None) -> str:
 
     그래서 **날짜로 적힌 것만 세운다.** 날짜가 안 보이는 글자는 빈 값으로
     내보내고, 빈 값은 `table_sort.js` 가 방향과 상관없이 늘 끝에 둔다
-    (`order` 의 '빈 값은 뒤집는 곱셈 밖') — `sort_for_tab` 이 `수신일` 에서
+    (`order` 의 '빈 값은 뒤집는 곱셈 밖') — `sort_by_received` 가 `수신일` 에서
     정한 규칙과 같은 자리다: 날짜 없는 줄은 맨 아래, 그 안에서는 서버가
-    그려 준 차례(이 탭은 이름순) 그대로.
+    그려 준 차례(수신일 최신순) 그대로.
 
     ``search`` 다(``match`` 가 아니다). `확정: 2026-09-15` 처럼 앞에 말이
     붙어 있어도 그 날짜로 자리를 잡는 편이, 통째로 '날짜 없음' 으로 밀어
@@ -394,13 +394,44 @@ def meeting_sort_key(text: str | None) -> str:
     return found.group(0) if found else ""
 
 
-def sort_for_tab(rows: List[dict], tab: str) -> List[dict]:
-    """탭이 정하는 차례. **판단은 여기 한 곳**이다.
+def sort_by_received(rows: List[dict]) -> List[dict]:
+    """표의 차례 — **수신일 최신순.** 두 탭이 이 한 규칙을 함께 쓴다.
 
-    - `IR 기업 현황` — 이름순 그대로. 이 탭에는 `수신일` 칸 자체가 없어서
-      차례를 바꾸면 왜 그 순서인지 화면에서 알 길이 없다.
-    - `스타트업DB` — **수신일 최신순.** 이 탭은 홍보메일 답장이 들어온 순서로
-      읽는 자리라, 방금 들어온 곳이 맨 위에 있어야 한다.
+    판단은 여기 한 곳이다. 표(두 탭) · `GET /api/companies` · [수정] 창이 모두
+    `company_rows` 한 벌을 먹으므로, 거기서 이것을 한 번 부르면 끝난다.
+
+    ## 왜 두 탭이 같은 차례인가 (사용자 요청)
+
+    예전에는 갈라져 있었다 — `스타트업DB` 만 수신일 최신순이고 `IR 기업 현황`
+    은 이름순 그대로였다. 그때의 까닭은 "그 탭에는 `수신일` 칸 자체가 없어서
+    차례를 바꾸면 왜 그 순서인지 화면에서 알 길이 없다" 였다.
+
+    그런데 사용자가 원한 것은 IR 기업 현황도 **새로 들어온 곳이 맨 위**인
+    차례였다(「등록일 최신순」). 그래서 까닭을 피하지 않고 **없앤다** —
+    그 탭에도 `수신일` 칸을 세우고(`companies.html`), 표 위에 기본 차례를
+    한 줄로 적는다. 칸이 보이면 차례가 왜 그런지가 화면에서 바로 읽힌다.
+
+    **규칙은 두 벌로 만들지 않는다.** 탭마다 따로 두면 `날짜 미정` 을 어디에
+    두느냐 같은 판단이 한쪽에서만 고쳐지는 날이 온다. 한 함수를 두 탭이
+    부르는 것이 아니라, 아예 탭을 묻지 않는다 — 차례가 탭에 따라 달라질
+    자리가 남아 있지 않게 한다.
+
+    ## '등록일' 을 `수신일`(`received_at`)로 읽었다
+
+    사용자 말은 「등록일」이었다. 기업 레코드에서 사람이 보고 적는 '들어온
+    날' 은 `수신일`(홍보메일 답장을 받은 날 — 시트의 맨 앞 칸) 하나다.
+    만든 시각(`created_at`)도 있지만 **화면 어디에도 안 보이는 값**이라,
+    그것으로 세우면 다시 "왜 이 순서인지 알 길이 없다" 로 돌아간다.
+
+    ## 이름순은 화면이 한다 — `?sort=name`
+
+    기업명 머리글을 누르면(또는 주소에 `?sort=name`) 이름순으로 바뀐다.
+    서버는 그것을 **모른다**: 머리글 정렬은 이미 `table_sort.js` 가 `?sort=`
+    로 하고 있고(`수정한 날짜`·`소개 횟수`), 서버도 같은 이름의 값으로 차례를
+    바꾸면 두 손이 한 주소를 서로 다르게 읽는다 — 정렬을 '끄면' 돌아갈 자리가
+    이름순이 되어 버린다. 끄면 언제나 여기서 세운 차례(수신일 최신순)로 온다.
+
+    ## 날짜 없는 줄
 
     날짜가 없는 줄(`날짜 미정` 13곳 · 빈 곳 62곳)은 **맨 아래**로 보내고 그
     안에서는 이름순으로 둔다. 위로 올리면 '최신순' 이라는 말이 거짓이 되고,
@@ -410,8 +441,6 @@ def sort_for_tab(rows: List[dict], tab: str) -> List[dict]:
     다시 세우면 같은 날짜 안에서는 이름순이 그대로 남는다. 한 번에 넣으려면
     날짜만 뒤집는 키를 지어내야 하는데, 그 키는 읽어서 뜻을 알 수 없다.
     """
-    if tab != "db":
-        return rows
     dated: List[dict] = []
     undated: List[dict] = []
     for row in rows:
@@ -445,7 +474,7 @@ def history_rows(hist) -> List[dict]:
     } for r in hist.rounds]
 
 
-def company_rows(db: Session, tab: str = "", sent=None) -> List[dict]:
+def company_rows(db: Session, sent=None) -> List[dict]:
     """표 한 벌. `sent` 는 `deal_history.scan()` 결과 — 안 주면 여기서 훑는다.
 
     부르는 쪽이 이미 훑어 두었으면 그것을 그대로 받는다. 한 요청 안에서 두 번
@@ -585,9 +614,11 @@ def company_rows(db: Session, tab: str = "", sent=None) -> List[dict]:
         }
         for c in companies
     ]
-    # 차례는 탭이 정한다. **한 곳에서만** 정한다 — 화면 쪽에서 한 번 더 세우면
-    # 두 판단이 갈리고, 어느 쪽이 지금 보이는 차례인지 알 수 없게 된다.
-    return sort_for_tab(rows, tab)
+    # 차례는 **한 곳에서만** 정한다(`sort_by_received`) — 두 탭이 같은 차례다.
+    # 화면 쪽에서 한 번 더 세우면 두 판단이 갈리고, 어느 쪽이 지금 보이는
+    # 차례인지 알 수 없게 된다. (머리글을 눌러 세우는 것은 사람이 고른 차례라
+    # 다르다 — 끄면 이 차례로 돌아온다. `table_sort.js` 의 `order`.)
+    return sort_by_received(rows)
 
 
 def tab_counts(db: Session) -> dict:
@@ -632,13 +663,15 @@ def companies_page(request: Request, db: Session = Depends(get_db),
         return series_a.render_page(request, db, user, msg=msg, q=q)
     # 시트의 하단 탭 두 개. 같은 레코드를 다르게 보는 것뿐이라, 한쪽에서
     # 고치면 다른 쪽이 저절로 따라온다 — 맞춰 주는 코드가 없어야 안 어긋난다.
-    # 다른 것은 **차례 하나**다(`sort_for_tab`).
+    # **차례도 같다**(수신일 최신순, `sort_by_received`). 예전에는 차례 하나가
+    # 탭마다 달랐는데, 두 벌이던 그 판단을 하나로 합쳤다 — 그래서 탭은 이제
+    # 어느 칸들을 그리느냐만 정한다(`companies.html`).
     co_tab = "db" if tab == "db" else "status"
     # **훑기는 한 번이다.** 표의 `소개 횟수` 도, 창이 띄우는 `소개 이력` 도,
     # 아래 `막히는 것` 두 줄도 전부 이 하나에서 나온다
     # (`services/deal_history.py` 머리글).
     sent = deal_history.scan(db)
-    rows = company_rows(db, co_tab, sent=sent)
+    rows = company_rows(db, sent=sent)
     ctx = base_ctx(request, db, user, active="su")
     ctx.update({
         "rows": rows,
@@ -1210,6 +1243,14 @@ COMPANY_LINKS = (
     ("sends", "SendItem", "ir_company_id", "발송 이력", DETACH),
     ("ir_requests", "IrRequest", "company_id", "IR 요청", DETACH),
     ("meetings", "Meeting", "company_id", "미팅", DETACH),
+    # 사람이 이어 둔 **같은 기업의 다른 줄**(`services/ir_link.py`). 그 줄은
+    # 제 기업명(`firm` · `company_name`)을 들고 있어 끊어도 무엇의 줄인지
+    # 남는다 — ㉡. 평범한 [삭제] 를 막는 갈래이기도 하다: 사람이 잇는 수고를
+    # 들인 연결이 기업과 함께 말없이 사라지면, 그 줄은 `연결 안 됨` 으로
+    # 돌아가 있는데 아무도 까닭을 모른다.
+    ("startup_links", "VcContact", "ir_company_id", "스타트업 명단 연결", DETACH),
+    ("consulting_links", "ConsultingCompany", "ir_company_id",
+     "투자컨설턴트 연결", DETACH),
     ("batches", "DealBatchCompany", "company_id", "발송 회차에 실린 줄", CASCADE),
     ("queued", "DealQueueCompany", "company_id", "예약에 실린 줄", CASCADE),
     ("backups", "OneLinerBackup", "company_id", "한 줄 소개 되돌리기 버퍼", SWEEP),

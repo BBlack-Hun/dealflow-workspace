@@ -10,7 +10,9 @@ Env overrides (used by docker-compose): DEALFLOW_SERVER_URL, DEALFLOW_AGENT_TOKE
 DEALFLOW_SENDER, DEALFLOW_MOCK_FAIL_RATE, DEALFLOW_POLL_INTERVAL.
 
 All send-rate numbers (delays, per-job cap) come from config.yaml — never hardcoded
-(ROADMAP 공통 원칙 2).
+(ROADMAP 공통 원칙 2). 예외 하나: 2단계 자동화 회차는 서버가 건 사이 간격을 잡에
+실어 보낸다(`delay_min_sec`/`delay_max_sec` — `job_delay`). 그 잡에서만 그 값을
+쓰고, 사람이 누른 회차는 config.yaml 값 그대로다.
 """
 from __future__ import annotations
 
@@ -211,10 +213,15 @@ class AgentClient:
         # 밝히면 그쪽은 **파일 잡을 받아 놓고 첫 파일에서 실패**하고, 사람은 왜
         # 계속 실패하는지 알 길이 없다. 아예 안 받는 편이 낫다 — 잡은 큐에 남아
         # 있다가 파일을 붙일 줄 아는 발송기가 붙는 날 그대로 나간다.
+        #
+        # 판 번호(`version`)도 함께 밝힌다. 서버는 **건 사이 간격을 지키는 판**
+        # (0.11.8~)에만 자동 회차를 내준다 — 박동(`heartbeat`)으로도 알리지만,
+        # 내주는 자리에서 바로 보이게 한 번 더 싣는다.
         r = self.session.get(f"{self.base}/api/agent/poll",
                              params={"kinds": ",".join(SUPPORTED_KINDS),
                                      "cap": self.job_cap,
-                                     "files": 1 if self.sender_can_send_files else 0},
+                                     "files": 1 if self.sender_can_send_files else 0,
+                                     "version": self.version},
                              timeout=15)
         if r.status_code == 204:
             return None
@@ -476,6 +483,36 @@ def poll_and_process(client: "AgentClient", sender, cfg: dict, ui_lock: "UiLock"
         ui_lock.release()
 
 
+#: 잡이 실어 온 간격을 받아들이는 폭(초). 서버가 고칠 수 있는 폭과 같다
+#: (`app/services/automation_runner.ITEM_GAP_*`). 벗어난 값은 **안 믿고** 제
+#: 설정을 쓴다 — 잘못 실린 0 이 몰아 보내기가 되면 안 된다.
+JOB_DELAY_RANGE = (1.0, 900.0)
+
+
+def job_delay(job: dict, cfg: dict) -> tuple:
+    """이 잡의 **건 사이 간격**(초) — 잡이 실어 왔으면 그것, 없으면 제 설정.
+
+    2단계 자동화 회차는 서버가 간격을 정해 보낸다(`delay_min_sec` ·
+    `delay_max_sec`, 기본 20~60초). 사람이 누른 회차에는 그 칸이 없어 지금처럼
+    `config.yaml` 의 값(기본 3~7초)을 쓴다. 이 칸을 모르는 낡은 발송기(0.11.7
+    까지)에는 서버가 자동 회차를 아예 안 내준다(`app/version.py`).
+    """
+    low = float(cfg["delay_min_sec"])
+    high = float(cfg["delay_max_sec"])
+    try:
+        got_low = float(job["delay_min_sec"])
+        got_high = float(job["delay_max_sec"])
+    except (KeyError, TypeError, ValueError):
+        return low, high
+    lo_ok, hi_ok = JOB_DELAY_RANGE
+    if not (lo_ok <= got_low <= got_high <= hi_ok):
+        log.warning("잡 %s 의 간격 %r~%r 이 맞지 않아 설정값(%s~%s초)을 씁니다",
+                    job.get("job_id"), job.get("delay_min_sec"),
+                    job.get("delay_max_sec"), low, high)
+        return low, high
+    return got_low, got_high
+
+
 def process_job(client: AgentClient, sender, job: dict, cfg: dict):
     """잡 종류로 갈린다 — 발송 잡만 문구를 전송한다.
 
@@ -511,7 +548,8 @@ def process_job(client: AgentClient, sender, job: dict, cfg: dict):
                     job_id, len(items), cap, cap)
         items = items[:cap]
 
-    log.info("processing job %s (%d items)", job_id, len(items))
+    low, high = job_delay(job, cfg)
+    log.info("processing job %s (%d items, gap %.0f~%.0fs)", job_id, len(items), low, high)
     any_fail = False
     attempted = False   # 첫 건 앞에는 쉬지 않는다
     for i, item in enumerate(items, start=1):
@@ -519,7 +557,7 @@ def process_job(client: AgentClient, sender, job: dict, cfg: dict):
         # 쉬는 동안 사용자가 [중단]을 누를 수 있어서, 쉬기 전에 물어보면
         # 최대 delay_max_sec 만큼 낡은 답으로 보내게 된다.
         if attempted:
-            time.sleep(random.uniform(float(cfg["delay_min_sec"]), float(cfg["delay_max_sec"])))
+            time.sleep(random.uniform(low, high))
 
         gate = check_before_send(client, job_id, cfg)
         if not gate.go:

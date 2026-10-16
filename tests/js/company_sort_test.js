@@ -2,6 +2,9 @@
 //
 // 사용자 요청: 「수정한 날짜 기준 정렬」. 범위는 **날짜·숫자 칸 전부**로 정해져,
 // 이 탭에서는 셋이 선다 — `수정한 날짜`·`소개 횟수`·`미팅제공일자`.
+// (뒤에 `기업명`(이름순)이 넷째로 붙었다 — 기본 차례가 수신일 최신순이 되면서다.
+//  그 동작은 `company_received_order_test.js` 가 본다. 여기서는 ⑨ 에서 단추가
+//  서는지만 본다.)
 //
 // 세우는 일 자체는 주간 업무·투자사 명단이 쓰던 부품 그대로다(`table_sort.js`).
 // 그래서 여기서 다시 보는 것은 **그 부품이 이 표에 제대로 물렸는가**와, 이 표에만
@@ -32,8 +35,11 @@ const D = require("./_dom.js");
 const SRC = path.join(__dirname, "..", "..", "app", "static", "js");
 const read = (name) => fs.readFileSync(path.join(SRC, name), "utf8");
 
-// **서버가 그려 주는 차례 그대로** 넣는다(이 탭은 이름순 — `sort_for_tab`).
+// **서버가 그려 주는 차례 그대로** 넣는다(수신일 최신순 — `sort_by_received`).
 // 정렬을 끄면 이 차례로 돌아와야 하고, 같은 값끼리도 이 차례가 남아야 한다.
+// 수신일은 이 검사가 보는 것이 아니라 줄에 싣지 않았다 — 아래 다섯 줄이 이미
+// 그 차례로 서 있다고 보면 된다(수신일순 자체와 `기업명` 이름순은
+// `company_received_order_test.js` 가 따로 본다).
 //
 //   id 1 가온샘플  09-16 19:44:43   2회   2026-09-15
 //   id 2 나루샘플  09-01 08:00:00  10회   (빈 칸)        ← 두 자리 수 · 빈 날짜
@@ -63,9 +69,9 @@ function th(attrs, label) {
 function build() {
   const head = D.el("thead", {}, [D.el("tr", {}, [
     th({ class: "num stick stick-a" }, "NO"),
-    // 글자 칸이다 — **정렬을 일부러 안 붙인다**(가나다순은 쓸모가 적고,
-    // 가로로 고정된 칸이다). 아래 ⑨ 가 그것을 못 박는다.
-    th({ class: "stick stick-b" }, "기업명"),
+    // 글자 칸 가운데 **이것 하나만** 정렬이 붙는다(`name`) — 기본 차례가
+    // 수신일 최신순이 되면서 이름순은 골라야 보이는 차례가 됐다. 아래 ⑨.
+    th({ class: "stick stick-b", "data-sort": "name" }, "기업명"),
     th({ "data-sort": "updated" }, "수정한 날짜"),
     // 같은 표에 필터도 붙어 있다 — 정렬이 그것을 풀지 않는지 봐야 한다.
     th({ "data-filters": "assignee:담당자" }, "담당자"),
@@ -94,6 +100,7 @@ function build() {
       "data-id": r.id,
       "data-search": (r.name + " " + r.assignee).toLowerCase(),
       "data-f-assignee": r.assignee,
+      "data-s-name": r.name,
       "data-s-updated": r.updated,
       "data-s-sent": String(r.sent),
       "data-s-meeting": r.meetingSort
@@ -204,7 +211,7 @@ function button(dom, key) { return dom.heads[AT[key]].querySelector("button"); }
 
   btn.fire("click");
   assert.strictEqual(ids(dom), "1,2,3,4,5",
-    "정렬을 끄면 서버가 그려 준 차례(이름순)로 돌아와야 한다");
+    "정렬을 끄면 서버가 그려 준 차례(수신일 최신순)로 돌아와야 한다");
   assert.strictEqual(dom.heads[AT.updated].getAttribute("aria-sort"), "none");
 }
 
@@ -239,7 +246,7 @@ function button(dom, key) { return dom.heads[AT[key]].querySelector("button"); }
   assert.ok(at.indexOf("1") + 1 === at.indexOf("4"),
     "같은 2회인 두 줄이 붙어 서지 않았다 — 회차로 세우지 않은 것이다");
   assert.ok(at.indexOf("1") < at.indexOf("4"),
-    "같은 회차끼리 처음 차례(이름순 1 → 4)가 무너졌다");
+    "같은 회차끼리 처음 차례(서버가 그린 1 → 4)가 무너졌다");
 }
 
 // --- ④ 미팅제공일자 — 날짜가 아닌 글자는 **방향과 상관없이 늘 끝** ----------
@@ -260,7 +267,7 @@ function button(dom, key) { return dom.heads[AT[key]].querySelector("button"); }
   assert.strictEqual(ids(dom), "4,1,5,2,3",
     "늦은 날짜부터가 아니다 — 날짜 없는 둘이 방향을 따라 맨 위로 올라왔다");
   assert.strictEqual(ids(dom).split(",").slice(-2).join(","), "2,3",
-    "날짜 없는 줄끼리도 처음 차례(이름순)가 남아야 한다");
+    "날짜 없는 줄끼리도 처음 차례(서버가 그린 차례)가 남아야 한다");
 }
 
 // --- ⑤ 세우면 **NO 를 다시 매긴다** -----------------------------------------
@@ -320,18 +327,21 @@ function button(dom, key) { return dom.heads[AT[key]].querySelector("button"); }
   assert.strictEqual(numbers(dom), "1,2,3,4,5", "그때도 NO 는 위에서부터다");
 }
 
-// --- ⑨ 글자 칸에는 **안 붙는다** --------------------------------------------
+// --- ⑨ 글자 칸에는 **안 붙는다** — `기업명` 하나만 빼고 ---------------------
 //
 // 이 표의 머리글 폭은 전부 "필터를 건 뒤의 머리글" 에 맞춘 최소값이라, 정렬
 // 꼬리표까지 더하면 두 줄로 접힌다. 그리고 `NO` 는 보이는 것 기준 번호라
 // 그것으로 세울 것이 없다.
+//
+// `기업명` 은 필터가 없는 넓은 칸이고, 기본 차례가 수신일 최신순이 된 뒤로는
+// 이름순으로 돌아갈 유일한 길이다 — 단추가 **서야** 한다.
 {
   const dom = build();
   run(dom);
   assert.strictEqual(dom.heads[0].querySelector("button"), null,
     "`NO` 에 정렬 단추가 섰다 — 차례가 곧 번호라 세울 것이 없는 칸이다");
-  assert.strictEqual(dom.heads[1].querySelector("button"), null,
-    "`기업명` 에 정렬 단추가 섰다 — 글자 칸은 이번 범위가 아니다");
+  assert.ok(dom.heads[1].querySelector("button.sort-btn"),
+    "`기업명` 에 정렬 단추가 없다 — 이름순으로 돌아갈 길이 없다");
   assert.ok(dom.heads[3].querySelector(".filter-btn"),
     "`담당자` 의 필터 단추가 없어졌다");
   assert.strictEqual(dom.heads[3].querySelector("button.sort-btn"), null,

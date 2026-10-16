@@ -184,7 +184,8 @@ def gate(db: Session, user: Optional[User],
     return Gate(blocked=GATED_KINDS if left <= 0 else (), left=left)
 
 
-def describe(db: Session, job: SendJob, now: Optional[datetime] = None) -> dict:
+def describe(db: Session, job: SendJob, now: Optional[datetime] = None,
+             hold: Optional[str] = None) -> dict:
     """진행 화면이 읽는 한 덩이 — 이 회차가 지금 왜 안 나가는지까지.
 
     **화면은 판정하지 않는다.** 문장도 여기서 만든다(`scheduled_send.describe`
@@ -210,10 +211,20 @@ def describe(db: Session, job: SendJob, now: Optional[datetime] = None) -> dict:
         elif waiting and left <= 0:
             sentence = (f"오늘 발송 한도({cap}건)를 다 썼습니다 — 남은 건은 "
                         f"내일 {EARLIEST_HOUR:02d}:00 에 이어 나갑니다")
+    held = bool(gated and waiting and (not is_open or left <= 0))
+    # **2단계 자동화 회차**는 한 겹 더 — 발송기 판(건 사이 간격)과 자동 회차
+    # 사이 간격(`automation_runner.held_jobs`). 시험 회차(`test_send`)도 여기에
+    # 걸리므로 `gated` 와 따로 본다.
+    if waiting and not held:
+        if hold is None:
+            from . import automation_runner
+
+            hold = automation_runner.hold_reason(db, job, now)
+        if hold:
+            sentence, held, gated = hold, True, True
     return {"gated": gated, "open": is_open, "window": window_label(),
             "cap": cap, "sent_today": used, "remaining": left,
-            "held": bool(gated and waiting and (not is_open or left <= 0)),
-            "sentence": sentence}
+            "held": held, "sentence": sentence}
 
 
 def status(db: Session, today: Optional[date] = None) -> dict:
@@ -252,14 +263,22 @@ def auto_job_ids(db: Session, job_ids=None) -> set:
     `exists`(이 달 회차가 이미 있어 세우지 않았다)는 빼고 센다 — 그 줄은 사람이
     세운 회차를 가리킬 뿐이다(`startup_monthly.STATUS_EXISTS`).
     """
+    from ..models import AutomationSend
+
     query = select(AutoSendRun.job_id).where(AutoSendRun.job_id.isnot(None),
                                              AutoSendRun.status != "exists")
+    # 2단계 자동화는 한 회차 자리에서 회차를 **여럿** 세울 수 있다(채널방마다
+    # 몇 분씩 띄워 따로 — `automation_runner`). 자리 줄에는 첫 회차만 적히므로
+    # 나머지는 대상 줄(`automation_sends.job_id`)에서 읽는다.
+    extra = select(AutomationSend.job_id).where(AutomationSend.job_id.isnot(None))
     if job_ids is not None:
         ids = list(job_ids)
         if not ids:
             return set()
         query = query.where(AutoSendRun.job_id.in_(ids))
-    return set(db.execute(query).scalars().all())
+        extra = extra.where(AutomationSend.job_id.in_(ids))
+    return (set(db.execute(query).scalars().all())
+            | set(db.execute(extra).scalars().all()))
 
 
 def is_auto(db: Session, job: SendJob) -> bool:

@@ -79,3 +79,52 @@ def test_purging_leaves_other_peoples_weekly_work_alone(db, users):
     purge(db, apply=True)
 
     assert db.query(WeeklyTask).filter_by(user_id=users["u1"].id).count() == 1
+
+
+def test_purging_survives_the_automation_tables(db, users):
+    """2단계 자동화 표(`automation_sends` · `sender_rooms` · `automations.user_id`)가
+    지울 발송 건 · 회차 · 담당자 · 계정을 가리켜도 외래키에 막히지 않는다. '보냈다'
+    줄은 지우지 않고 가리킴만 뗀다 — 다시 보낼 대상으로 보이지 않게."""
+    from sqlalchemy import text
+
+    from app.models import (Automation, AutomationSend, AutoSendRun, SendItem,
+                            SendJob, SenderRoom, VcContact)
+    from app.services import automation_runner as runner
+    from scripts.bootstrap import DEMO_CONTACTS
+    from scripts.purge_demo import purge
+
+    user = _demo_user(db)
+    demo = DEMO_CONTACTS[0]
+    contact = VcContact(user_id=user.id, name=demo["name"], firm=demo["firm"],
+                        kakao_room_name="데모 방")
+    db.add(contact)
+    db.flush()
+    job = SendJob(user_id=user.id, kind="deal_intro", status="done", total=1, sent=1)
+    db.add(job)
+    db.flush()
+    item = SendItem(job_id=job.id, contact_id=contact.id, room_name="데모 방",
+                    message="안녕하세요", status="sent")
+    db.add(item)
+    db.flush()
+    run = AutoSendRun(kind="auto:meeting_review", ref_id=20261014, user_id=user.id,
+                      day="2026-10-14", status="ready", job_id=job.id)
+    db.add(run)
+    db.flush()
+    db.add_all([
+        AutomationSend(automation="meeting_review", ref="meeting:9", test=0,
+                       run_id=run.id, job_id=job.id, item_id=item.id,
+                       room="데모 방", contact_id=contact.id),
+        SenderRoom(sender_user_id=user.id, contact_id=contact.id, room_name="데모 방"),
+        Automation(key="meeting_review", enabled=0, test_mode=1, user_id=user.id),
+    ])
+    db.commit()
+
+    purge(db, apply=True)
+
+    db.expire_all()
+    assert db.execute(text("PRAGMA foreign_key_check")).all() == []
+    rec = db.query(AutomationSend).one()
+    assert (rec.item_id, rec.job_id) == (None, None)
+    assert runner.sent_refs(db, "meeting_review", False, ["meeting:9"]) == {"meeting:9"}
+    assert db.query(SenderRoom).count() == 0
+    assert db.query(Automation).one().user_id is None
