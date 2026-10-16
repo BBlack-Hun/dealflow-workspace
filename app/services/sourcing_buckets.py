@@ -11,6 +11,10 @@
     message_templates.name   (kind=sourcing_intro)  그 갈래로 나갈 문구
     template_choices.variant (kind=sourcing_intro)  그 갈래에 골라 둔 문구
 
+(하나 더 — `template_apply_backups.variant` 는 그 갈래에 [모든 팀원에게 적용] 한
+것을 되돌릴 버퍼다. 사람이 보는 자료는 아니지만 두고 가면 새 이름 갈래에서
+[되돌리기] 가 사라지고, 옛 이름으로 되돌리면 선택을 못 찾아 전부 건너뛴다.)
+
 문구 둘(처음 안내 `sourcing_intro` · 월간 리마인드 `sourcing_remind`)이 다
 갈래 이름을 열쇠로 쓴다 — 어느 종류인지는 `template_pick.NAME_IS_A_BUCKET`
 한 곳이 안다(`KINDS`). 리마인드만 두고 가면 새 이름 갈래의 리마인드는 뼈대로 나간다.
@@ -36,7 +40,8 @@ from typing import List, Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..models import MessageTemplate, SourcingContact, TemplateChoice
+from ..models import (MessageTemplate, SourcingContact, TemplateApplyBackup,
+                      TemplateChoice)
 from . import sourcing_msg, template_pick
 
 #: 갈래 이름을 열쇠로 쓰는 문구 종류 — 처음 안내 · 월간 리마인드.
@@ -135,6 +140,11 @@ def rename(db: Session, before: str, after: str) -> int:
                                      TemplateChoice.variant == before)
     ).scalars():
         choice.variant = after
+    for backup in db.execute(
+        select(TemplateApplyBackup).where(TemplateApplyBackup.kind.in_(KINDS),
+                                          TemplateApplyBackup.variant == before)
+    ).scalars():
+        backup.variant = after
     db.flush()
     return moved
 
