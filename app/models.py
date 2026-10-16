@@ -230,6 +230,18 @@ class VcContact(TimestampMixin, Base):
     #
     # 감춘 줄은 발송 대상에서도 빠진다. 안 보이는 사람에게 문구가 나가면 안 된다.
     is_hidden: Mapped[int] = mapped_column(Integer, default=0)
+    # **이 줄이 IR 기업 현황의 어느 기업인가** — 좌측 [스타트업] 명단 줄에만
+    # 찬다(그 배치는 `firm` 이 기업명이다). 비어 있으면 `아직 안 이었다` 다.
+    #
+    # **사람이 잇는다.** 이름으로 후보를 세워 주기만 하고 저절로 넣지 않는다
+    # (`/ir-link` · `services/ir_link.py` 머리말). 같은 이름의 IR 기업이 둘인
+    # 경우가 실제로 있고, 이름이 같다고 같은 기업인 것도 아니다.
+    #
+    # 한 IR 기업에 여러 줄이 이어질 수 있다(두 팀원의 명단에 같은 기업이 선다).
+    # 값은 아직 오가지 않는다 — 읽는 자리는 `ir_link.company_for` 하나다.
+    # 투자컨설턴트 쪽 같은 칸은 `ConsultingCompany.ir_company_id`.
+    ir_company_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("ir_companies.id"), nullable=True)
 
 
 class ContactActivity(TimestampMixin, Base):
@@ -290,6 +302,22 @@ class ContactActivity(TimestampMixin, Base):
     #: 열네 군데라 각자 걸러 두면 한 곳이 빠지고, 한 곳이라도 계속 읽으면
     #: 되돌린 뜻이 없다.
     undone_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+    #: 이 줄을 적으면서 **후속 시퀀스에 한 일** — JSON
+    #: `{"id": 시퀀스 번호, "before": 그 전 모습 | null, "after": 그 뒤 모습}`.
+    #: 손으로 적은 줄(`services/manual_send.record`)만 채우고, 시퀀스를 안
+    #: 건드렸으면 비어 있다. `before` 가 `null` 이면 이 줄이 시퀀스를 **새로
+    #: 세웠다**는 뜻이다.
+    #:
+    #: 왜 칸이 필요한가: 적을 때 `cadence.advance` 가 이미 서 있던 시퀀스의
+    #: 딜소개일·단계·다음 예정일을 **덮어쓴다.** 덮어쓴 뒤에는 그 전 값이 어디에도
+    #: 없어서, 되돌릴 때 기존 칸만으로는 "이 줄이 세운 것인가 · 그 전에는
+    #: 어땠나" 를 가를 수 없다(시각 칸은 초까지라 같은 초에 적힌 두 줄을 못
+    #: 가른다). 되돌려도 리마인드가 그대로 남아 **받은 적 없는 사람에게
+    #: "지난번 공유드린…"** 이 나가던 것이 이 칸을 만든 까닭이다.
+    #:
+    #: 읽고 쓰는 자리는 `services/manual_send.py` 하나다.
+    sequence_trace: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     contact: Mapped["VcContact"] = relationship()
 
@@ -507,19 +535,22 @@ class IrCompany(TimestampMixin, Base):
     # **셋은 값을 주고받지 않는다.** 한 곳에 `O` 를 넣어도 나머지 둘은 계속
     # 비어 있다. 세 화면이 같은 기업을 함께 보고 있다고 읽으면 안 된다.
     #
-    # **합치려면 칸을 지우는 게 아니라 기업 목록부터 맞춰야 한다.** 세 표
-    # 사이에는 외래키가 없고(`ir_companies` · `consulting_companies` ·
-    # `vc_contacts` 는 `users` 만 가리킨다), 기업명으로 맞춰 봐도
-    # `스타트업` 명단과 `투자컨설턴트` 가 **겹치지 않는다**(2026-09-09 에 개발
-    # 자료로 세었을 때 0곳). 센 값이라 자료가 늘면 달라지지만, 애초에 이어 주는
-    # 열쇠가 없다는 사실은 그대로다 — 서로 다른 기업 무리를 본다. 목록을
-    # 잇지 않은 채 칸만 하나로 모으면 값이 옮겨지는 것이 아니라 갈 곳이
+    # **합치려면 칸을 지우는 게 아니라 기업 목록부터 맞춰야 한다.** 기업명으로
+    # 맞춰 봐도 `스타트업` 명단과 `투자컨설턴트` 가 **겹치지 않는다**
+    # (2026-09-09 에 개발 자료로 세었을 때 0곳) — 서로 다른 기업 무리를 본다.
+    # 목록을 잇지 않은 채 칸만 하나로 모으면 값이 옮겨지는 것이 아니라 갈 곳이
     # 없어 사라진다.
     #
-    # 언젠가 잇는다면 **`IrCompany` 가 공통 축**이다. 나머지 둘은 서로 닿지
-    # 않고, `VcContact` 는 사람 줄 · `ConsultingCompany` 는 시트 줄이라
+    # **이제 잇는 칸은 있다 — `IrCompany` 가 공통 축이다.** 나머지 둘은 서로
+    # 닿지 않고, `VcContact` 는 사람 줄 · `ConsultingCompany` 는 시트 줄이라
     # (`sheet` 칸) 한 기업이 여러 번 실린다 — 기업 하나에 줄 하나인 것은 이
-    # 표뿐이다.
+    # 표뿐이다. 그래서 둘 다 **이 표를** 가리킨다(`VcContact.ir_company_id` ·
+    # `ConsultingCompany.ir_company_id` — 사람이 `/ir-link` 에서 잇는다).
+    # 서로를 가리키는 칸은 없다.
+    #
+    # **이어도 값은 아직 오가지 않는다.** 잇는 칸이 생긴 것과 세 칸이 하나가
+    # 되는 것은 다른 일이다 — 이은 줄에서 무엇을 어느 쪽으로 옮길지는 따로
+    # 정한다(읽는 자리는 `services/ir_link.company_for` 하나).
     #
     # 주석은 낡는다. 셋이 여전히 서로 다른 자리라는 사실 쪽은 시험이 지킨다
     # (`tests/test_contract_received_xref.py`).
@@ -1904,8 +1935,9 @@ class ConsultingCompany(TimestampMixin, Base):
     #     (`O`/`X`)과 같은 것으로 읽고 한쪽을 지우면 그 달 기록이 사라진다.
     #   · **이 칸** — `투자컨설턴트` 표의 컨설턴트 줄에만 산다.
     #
-    # **왜 안 이었나.** `consulting_companies` 와 `vc_contacts` 사이에는
-    # 외래키가 없고(둘 다 `users` 만 가리킨다) 기업명으로 맞춰도 겹치지
+    # **왜 안 이었나.** `consulting_companies` 와 `vc_contacts` 는 서로를
+    # 가리키지 않고(둘 다 `users` 와, 사람이 이어 둔 `ir_companies` 만
+    # 가리킨다 — `ir_company_id`) 기업명으로 맞춰도 겹치지
     # 않는다 — 어느 쪽도 이름에 유일성이 없고, `VcContact` 는 사람 줄이라
     # 한 기업에 여러 줄이 실린다. 세는 방법과 근거는
     # `IrCompany.contract_received` 의 주석에 한 벌로 적혀 있다(같은 세 표
@@ -1927,6 +1959,14 @@ class ConsultingCompany(TimestampMixin, Base):
     # 나누기 **전의 한 줄**. 지우지 않는다 — 나눈 결과가 틀렸을 때 여기서 다시
     # 나눌 수 있어야 하고, 원본 시트와 글자 그대로 대조할 수 있어야 한다.
     source_line: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # **이 줄이 IR 기업 현황의 어느 기업인가.** `VcContact.ir_company_id` 와
+    # 같은 칸 · 같은 규칙이다(사람이 `/ir-link` 에서 잇는다 — 이름은
+    # `startup_handoff.company_name_of` 로 꺼내 후보만 세운다).
+    #
+    # 이 표는 시트 줄이라 한 기업이 탭마다 한 줄씩 실린다(`sheet`) — 그래서
+    # 한 IR 기업에 여러 줄이 이어지는 것이 정상이다.
+    ir_company_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("ir_companies.id"), nullable=True)
 
 
 class ConsultingRowGrant(TimestampMixin, Base):
@@ -2742,3 +2782,151 @@ class NoticeRead(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     #: 언제 확인했나. 관리자 화면에서 `몇 명이 봤나` 를 세는 근거다.
     at: Mapped[str] = mapped_column(String, default=_now_iso)
+
+
+class Automation(TimestampMixin, Base):
+    """**자동화 하나의 스위치** — 켜짐/꺼짐 · 보내는 계정 · 시험 모드 · 시험방.
+
+    2단계 자동화(미팅 후 문의 · 미팅 요청 · 소싱 리마인드 · 채널방 · 스타트업
+    월간)는 **사람 확인 없이** 나간다. 그래서 켜기 전에 시험할 길이 있어야 하고,
+    시험이 실제 상대에게 새어 나가면 안 된다. 그 둘을 한 줄에 담는다.
+
+    ## 시험 모드 (`test_mode`)  ★ 기본은 켜짐
+
+    시험 모드에서는 자동화가 보낼 **모든 한 통**이 원래 방이 아니라 이 줄의
+    시험방(`test_room`)으로 간다. 글 맨 앞에 `[시험] 원래 받을 방: …` 이 붙어
+    시험하는 사람이 **어디로 갈 뻔했는지**를 본다(`services/automation.route`).
+    회차는 `test_send` 종류로 선다 — 이 종류는 실적·후속·이력 어디에도 안
+    잡힌다(`models.TEST_SEND_KIND`). 새 시험 장치를 만들지 않고 그 종류를
+    그대로 쓴다.
+
+    ## 왜 `auto_send_settings` 에 칸을 더하지 않았나
+
+    그 표의 `meeting_review` 줄은 **사람이 [발송 시작] 을 누르는** 대기 목록
+    준비이고, 운영에서 이미 켜져 있다. 같은 줄을 쓰면 이 판이 배포되는 순간
+    "누르면 나간다" 가 "저절로 나간다" 로 바뀐다. 새 자동화는 **전부 꺼진 채로**
+    시작해야 해서 따로 둔다.
+
+    ## 보내는 계정 (`user_id`)
+
+    비어 있으면 **기본 보내는 계정**이다(`automation.default_sender_id` —
+    스타트업 월간 발송을 보내는 그 계정). 회차가 그 계정 것으로 서므로 그
+    계정 PC 의 발송기만 집어간다(`routers/agent_api.poll` 은 회차 주인의 기기
+    토큰에만 내준다). 다른 팀원의 발송은 이 줄과 아무 상관이 없다.
+    """
+
+    __tablename__ = "automations"
+    __table_args__ = (
+        UniqueConstraint("key", name="uq_automations_key"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    #: 어느 자동화인가 — `services/automation.KEYS` 가 아는 값만 온다.
+    key: Mapped[str] = mapped_column(String)
+    #: **기본은 꺼짐.** 줄이 없는 것도 꺼짐이다.
+    enabled: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    #: 보내는 계정. 비어 있으면 기본 보내는 계정.
+    user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"),
+                                                   nullable=True)
+    #: **기본은 켜짐.** 끄는 순간부터 진짜 방으로 나간다.
+    test_mode: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    #: 시험 모드에서 모든 한 통이 가는 방(보내는 계정 카톡의 방 제목).
+    test_room: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: 자동화마다 다른 값(며칠 뒤 · 몇 시 · 그룹 · 채널방 목록 …) — JSON.
+    #: 무엇이 들어가는지는 그 자동화의 모듈이 안다(`DEFAULTS`).
+    params: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
+class AutomationSend(TimestampMixin, Base):
+    """**자동화가 이 대상에게 보냈다**는 표시 — 한 대상에 한 줄, 영구히 남는다.
+
+    `AutoSendRun` 은 **회차**(자동화 × 날·주·달)를 두 번 세우지 않게 하는 줄이다.
+    이 표는 그 안의 **대상**을 두 번 보내지 않게 한다 — 미팅 하나에 문의 한 번,
+    IR 전달 하나에 미팅 요청 두 번, 기업 하나에 90일에 한 번 채널방.
+
+    ## 열쇠 — `(automation, ref, test)`
+
+    `ref` 는 자동화가 정한다(`meeting:12` · `ask:34:2026-10-01:1` …). `test` 가
+    열쇠에 들어가는 까닭: **시험 모드로 보낸 것이 실제 발송을 막으면 안 된다.**
+    시험을 마치고 끄는 순간 그 대상들이 진짜로 나가야 한다.
+
+    ## 실제로 나갔는가는 여기 없다
+
+    `AutoSendRun` 과 같은 까닭이다 — 나갔는지는 `send_items` 가 안다(`item_id`).
+    채널방 기록(기업마다 마지막으로 채널에 나간 날)도 그 건이 `sent` 인 줄만
+    센다.
+    """
+
+    __tablename__ = "automation_sends"
+    __table_args__ = (
+        UniqueConstraint("automation", "ref", "test",
+                         name="uq_automation_sends_ref"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    #: 어느 자동화인가(`services/automation.KINDS` 의 열쇠).
+    automation: Mapped[str] = mapped_column(String)
+    #: 그 자동화 안에서 이 대상을 가리키는 열쇠.
+    ref: Mapped[str] = mapped_column(String)
+    #: 시험 모드로 보낸 것인가. 시험방으로 갔고 받는 줄을 안 가리킨다.
+    test: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    #: 어느 회차의 자리에서 섰나(`auto_send_runs`).
+    run_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("auto_send_runs.id"), nullable=True)
+    job_id: Mapped[Optional[int]] = mapped_column(ForeignKey("send_jobs.id"),
+                                                  nullable=True)
+    item_id: Mapped[Optional[int]] = mapped_column(ForeignKey("send_items.id"),
+                                                   nullable=True)
+    #: **원래 받을 방** — 시험 모드에서도 진짜 방이 남는다(나간 곳은 시험방).
+    room: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: 받는 줄. 시험 모드에서도 여기는 찬다 — 회차의 발송 건은 안 가리키지만
+    #: 무엇을 위한 한 통이었는지는 남아야 한다.
+    contact_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    sourcing_contact_id: Mapped[Optional[int]] = mapped_column(Integer,
+                                                               nullable=True)
+    #: 한 통에 실린 기업(채널방). 한 통에 셋이면 줄도 셋이다.
+    company_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
+
+#: 방 확인 잡(`verify_room`)의 `SendJob.topic` — **보내는 계정 카톡 기준의 방
+#: 제목**을 찾는 확인이다(`services/sender_rooms.py`). 이 값이면 그 잡의 줄
+#: (`VcContact`)은 담당자 주인의 방 제목으로 찾고, 찾은 제목은 그 줄이 아니라
+#: `sender_rooms` 에 담긴다 — 담당자 주인의 방 이름도 확인 표시도 안 건드린다.
+SENDER_ROOM_TOPIC = "sender_room"
+
+
+class SenderRoom(TimestampMixin, Base):
+    """**보내는 계정의 카톡에서 이 담당자 방의 제목.**
+
+    카톡 단톡방 제목은 **사람마다 따로 바꿀 수 있다.** 담당 팀원이 적어 둔 방
+    이름(`VcContact.kakao_room_name`)은 그 팀원 카톡의 제목이고, 같은 방이라도
+    자동화를 보내는 계정(모든 방에 들어가 있는 한 계정)의 카톡에서는 다른
+    제목일 수 있다. 발송기는 제목으로 방을 찾으므로, 그 계정 카톡 기준 제목이
+    따로 있어야 한다.
+
+    - 확인 잡이 담당자 주인의 제목으로 찾아 **똑같은 제목이 정확히 하나**면
+      저절로 넣는다(`verified=1`).
+    - 제목이 다르거나 여럿이면 **후보만** 담고(`candidates`) 사람이 고른다.
+    - 자동화가 방을 고를 때: 확인된 제목이 있으면 그것, 없으면 주인의 제목
+      (`sender_rooms.room_for`).
+
+    **아무것도 보내지 않는다** — 확인 잡은 방 제목만 읽는다.
+    """
+
+    __tablename__ = "sender_rooms"
+    __table_args__ = (
+        UniqueConstraint("sender_user_id", "contact_id",
+                         name="uq_sender_rooms_pair"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    sender_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    contact_id: Mapped[int] = mapped_column(ForeignKey("vc_contacts.id"))
+    #: 보내는 계정 카톡에서의 방 제목(확정된 것). 비어 있으면 주인의 제목을 쓴다.
+    room_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: 1 이면 `room_name` 이 그 계정 카톡에서 확인된 제목이다.
+    verified: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    #: 확인 잡이 찾아 온 제목들(JSON 배열) — 사람이 고를 후보.
+    candidates: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    #: 마지막으로 찾아본 시각. 비어 있으면 아직 안 찾아봤다.
+    checked_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)

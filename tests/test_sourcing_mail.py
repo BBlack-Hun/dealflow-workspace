@@ -512,7 +512,9 @@ def remind_hook():
 def test_pre_remind_slot_comes_from_the_hook(db, users, remind_hook):
     from app.services import sourcing_mail
 
-    assert len(sourcing_mail.REMIND_SOURCES) == 1
+    # 두 번 달아도 하나. 소싱 리마인드 자동화(A1)가 읽혔으면 그 고리도 함께
+    # 달려 있다 — 꺼져 있어 시각을 안 내므로 아래 회차는 그대로다.
+    assert sourcing_mail.REMIND_SOURCES.count(remind_hook) == 1
     assert _slots(db, date(2026, 10, 14)) == [("pre_remind", "10:30", "11:00"),
                                               ("daily", "18:00", None)]
     assert _slots(db, date(2026, 10, 21)) == [("daily", "18:00", None)]

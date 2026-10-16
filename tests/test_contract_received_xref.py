@@ -11,10 +11,11 @@
     `딜 진행 관리`       `IrCompany.contract_received`
 
 **이 시험은 합치는 것을 막지 않는다.** 합치는 것이 틀렸다는 뜻이 아니라,
-세 표 사이에 외래키가 없고, `스타트업`↔`투자컨설턴트` 는 기업명으로 맞춰도
-겹치지 않아서(2026-09-09 개발 자료 기준 0곳) **칸을 모으기 전에 기업 목록부터
-이어야 한다**는 것이다. 이 시험이 보는 것은 센 숫자가 아니라 구조다.
-합치는 일을 진짜로 한다면 이 시험도 그때 같이 고쳐 쓴다.
+`스타트업`↔`투자컨설턴트` 는 기업명으로 맞춰도 겹치지 않아서(2026-09-09 개발
+자료 기준 0곳) **칸을 모으기 전에 기업 목록부터 이어야 한다**는 것이다. 그
+잇는 길이 이제 생겼다 — 두 표가 사람이 고른 `IrCompany` 를 가리킨다
+(`ir_company_id` · `/ir-link`). 값은 아직 오가지 않는다. 이 시험이 보는 것은
+센 숫자가 아니라 구조다. 합치는 일을 진짜로 한다면 이 시험도 그때 같이 고쳐 쓴다.
 """
 from __future__ import annotations
 
@@ -59,23 +60,36 @@ def test_투자컨설턴트와_IR_기업_현황은_각자_제_contract_received�
     assert consulting.nullable and ir.nullable
 
 
-def test_세_표는_서로를_가리키는_외래키가_없다():
-    """**칸을 모으기 전에 기업 목록부터 이어야 한다**는 근거다.
+def test_세_표를_잇는_길은_IrCompany_를_축으로_한_칸_둘뿐이다():
+    """**기업 목록부터 잇는다** — 그 길이 이제 있다(`services/ir_link.py`).
 
-    세 표 어디에도 서로를 가리키는 외래키가 없다. 이어 주는 것이 없는 채로
-    칸만 하나로 줄이면 값이 옮겨지는 것이 아니라 갈 곳이 없어 사라진다.
+    잇는 칸은 둘이고 둘 다 `IrCompany` 를 가리킨다(`ir_company_id`). 기업
+    하나에 줄 하나인 표가 그것뿐이라 공통 축이 된다. 나머지 두 표는 **서로를**
+    가리키지 않고, `IrCompany` 는 둘 중 어느 쪽도 가리키지 않는다.
+
+    이 모양이 바뀌면(스타트업 ↔ 투자컨설턴트를 바로 잇는 칸 · 반대 방향 칸)
+    `IrCompany.contract_received` 의 주석을 다시 써라 — 거기에 세 자리가 어떻게
+    이어지는지 한 벌로 적혀 있다.
+
+    **이어도 세 칸의 값은 오가지 않는다** — 값을 맞추는 일은 아직 없고, 할 때는
+    `ir_link.company_for` 하나로 이은 기업을 읽는다.
     """
     tables = {VcContact.__tablename__, ConsultingCompany.__tablename__,
               IrCompany.__tablename__}
 
-    for model in (VcContact, ConsultingCompany, IrCompany):
-        others = tables - {model.__tablename__}
-        pointed = {fk.column.table.name
-                   for fk in model.__table__.foreign_keys}
-        assert not (pointed & others), \
-            f"{model.__tablename__} 이 {pointed & others} 를 가리키게 되었다 — " \
-            "세 자리를 잇는 길이 생긴 것이라면 " \
-            "`IrCompany.contract_received` 의 주석을 다시 써라"
+    def pointed(model) -> dict:
+        return {fk.parent.name: fk.column.table.name
+                for fk in model.__table__.foreign_keys
+                if fk.column.table.name in tables}
+
+    assert pointed(VcContact) == {"ir_company_id": IrCompany.__tablename__}
+    assert pointed(ConsultingCompany) == {"ir_company_id": IrCompany.__tablename__}
+    assert pointed(IrCompany) == {}, \
+        "IrCompany 가 다른 두 표를 가리키게 되었다 — 축이 바뀐 것이라면 " \
+        "`IrCompany.contract_received` 의 주석을 다시 써라"
+    # 비어 있어도 된다 — 아직 안 이은 줄이 대부분이다.
+    assert VcContact.__table__.c["ir_company_id"].nullable
+    assert ConsultingCompany.__table__.c["ir_company_id"].nullable
 
 
 def test_한_기업이_여러_줄로_실리는_쪽과_한_줄인_쪽이_갈린다():

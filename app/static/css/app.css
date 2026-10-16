@@ -883,6 +883,8 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
 .tl-item.tl-meeting_done .tl-kind { color: var(--green); }
 .tl-body { word-break: break-all; }
 .tl-src { font-size: 10px; color: var(--muted); background: #f1f3f5; border-radius: 4px; padding: 1px 5px; }
+/* 손으로 적은 줄의 [되돌리기] — `시트` 표와 같은 넷째 칸에 선다(둘이 한 줄에 같이 설 일은 없다). */
+.tl-undo { padding: 0; white-space: nowrap; font-size: 11px; }
 .tl-month { font-size: 12px; font-weight: 800; color: var(--muted); margin: 14px 0 4px;
             padding-bottom: 3px; border-bottom: 2px solid var(--line); }
 .tl-month:first-child { margin-top: 0; }
@@ -2835,6 +2837,27 @@ a.guard-go:hover { background: #1e4fd0; text-decoration: none; }
 .msg-preview-item pre { white-space: pre-wrap; font: inherit; font-size: 13px; margin: 4px 0 0; }
 .plain-list { margin: 4px 0; padding-left: 18px; font-size: 12px; }
 #msg-noroom-table .room-input { width: 260px; }
+
+/* ── IR 기업 연결(`ir_link.html`) ─────────────────────────────────────────
+   줄마다 **후보 IR 기업**이 수신일 · 담당자 · 계약과 함께 서고, 그 옆에
+   [이 기업으로 연결] 이 붙는다. 이름이 길어도 자르지 않는다 — 비슷한 이름
+   둘을 가르는 것이 이 화면의 일이다. */
+.ir-cands { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.ir-cand { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+.ir-cand-name { font-weight: 600; word-break: break-all; }
+.ir-cand.current .ir-cand-name { color: var(--green); }
+.ir-meta { font-size: 12px; color: var(--muted); }
+.ir-meta b { color: var(--ink); font-weight: 600; }
+.ir-find { display: inline-block; margin-top: 4px; }
+.ir-link-search { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 6px 0 10px; }
+.ir-link-search input[type=search] { min-width: 0; flex: 1 1 220px; max-width: 360px;
+  padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; color: var(--ink); }
+.ir-link-focus { margin-bottom: 12px; }
+#ir-link-table td { vertical-align: top; }
+#ir-link-table td.strong, #ir-link-bulk-table td.strong { font-weight: 600; }
+/* 스타트업 명단 수정창 · 투자컨설턴트 `기업명` 칸 밑의 작은 표시. */
+.ir-link-badge { font-size: 12px; margin: 0 0 8px; }
+.ir-link-sub { font-size: 11px; font-weight: 400; margin-top: 2px; }
 
 /* ── 스타트업 카톡방 매칭(`startup_room_pick.html`) ───────────────────────
    줄마다 **카톡에서 찾은 제목들**이 [이 방으로 확정] 단추와 함께 선다. 제목은

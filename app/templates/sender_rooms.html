@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+
+{#
+  보내는 계정 카톡 기준 **방 제목** — 관리자만.
+
+  무엇을 왜 그렇게 하는지는 `services/sender_rooms.py` 머리말에 있다. 짧게:
+  단톡방 제목은 사람마다 따로 바꿀 수 있어서, 담당 팀원이 적어 둔 제목과
+  자동화를 보내는 계정 카톡의 제목이 다를 수 있다. 여기서 그 계정 기준 제목을
+  확인하고 고른다. **아무것도 보내지 않는다.**
+
+  **스크립트가 없다.** 고르는 것도 평범한 폼이다(팀 현황과 같은 판단).
+#}
+
+{% block content %}
+<header class="page-head">
+  <h1>보내는 계정 기준 방 제목</h1>
+  <p class="muted">
+    자동화는 <b>{{ board.sender }}</b> 님 카톡에서 나갑니다. 단톡방 제목은 사람마다 따로
+    바꿀 수 있어서, 담당 팀원이 적어 둔 제목과 <b>{{ board.sender }}</b> 님 카톡의 제목이
+    다를 수 있습니다. 여기서 확인된 제목이 있으면 자동화는 그 제목으로, 없으면 담당 팀원의
+    제목으로 보냅니다. <b>한 통도 보내지 않습니다</b> — 방 제목만 읽어 옵니다.
+    <a class="linkbtn" href="/team#automations">팀 현황으로</a>
+  </p>
+</header>
+
+{% if msg %}<p class="flash">{{ msg }}</p>{% endif %}
+
+<section class="panel">
+  {% if senders|length > 1 %}
+  <div class="filter-line">
+    <span class="filter-label">보내는 계정</span>
+    {% for s in senders %}
+    <a class="chip {% if s.id == board.sender_id %}active{% endif %}"
+       href="/team/sender-rooms?sender={{ s.id }}">{{ s.name }}</a>
+    {% endfor %}
+  </div>
+  {% endif %}
+  <p class="muted" data-testid="sender-room-summary">
+    대상 <b>{{ board.total }}명</b>
+    · 확인됨 <b>{{ board.counts.confirmed }}</b>
+    · 골라야 함 <b>{{ board.counts.picks }}</b>
+    · 못 찾음 <b>{{ board.counts.not_found }}</b>
+    · 아직 안 찾아봄 <b>{{ board.counts.never }}</b>
+  </p>
+  <form method="post" action="/team/sender-rooms/check" class="inline-form">
+    <input type="hidden" name="sender_id" value="{{ board.sender_id }}">
+    <button class="primary-btn inline" type="submit"{% if not board.total %} disabled{% endif %}>
+      {{ board.sender }} PC로 전체 방 확인 ({{ board.total }}명)</button>
+  </form>
+  <p class="hint">
+    팀원 전원의 <b>보낼 수 있는 투자사 담당자</b>(연결 끝 · 검토중단 아님 · 방 이름 있음)를
+    <b>{{ board.sender }}</b> 님 PC 의 발송 프로그램이 카톡에서 찾아봅니다 — 그 PC 가 켜져 있어야
+    합니다. 담당 팀원의 제목과 <b>똑같은 방이 하나</b> 있으면 저절로 확인됨이 되고, 제목이 다르거나
+    여럿이면 아래에서 고릅니다. 담당 팀원의 방 이름은 바뀌지 않습니다.
+  </p>
+</section>
+
+<div class="table-wrap">
+  <table class="grid-table" data-testid="sender-room-table">
+    <thead>
+      <tr><th>담당</th><th>담당자</th><th>담당 팀원의 방 제목</th>
+        <th>{{ board.sender }} 님 카톡에서 찾은 제목</th><th>상태</th></tr>
+    </thead>
+    <tbody>
+    {% for r in board.rows %}
+    <tr data-contact="{{ r.contact_id }}" data-state="{{ r.state }}">
+      <td>{{ r.owner }}</td>
+      <td>{{ r.name }}<div class="cell-sub">{{ r.firm }}</div></td>
+      <td>{{ r.own_room }}</td>
+      <td>
+        {% if r.picks %}
+        <ul class="room-cands">
+          {% for p in r.picks %}
+          <li class="room-cand">
+            <span class="room-cand-title">{{ p.room }}</span>
+            {% if p.current %}
+            <span class="room-badge ok">✓ 이 제목으로 보냄</span>
+            {% elif p.same %}
+            <span class="room-badge warn">같은 제목의 방이 여럿 — 확정 불가</span>
+            {% else %}
+            <form method="post" action="/team/sender-rooms/{{ r.contact_id }}/confirm" class="inline-form">
+              <input type="hidden" name="sender_id" value="{{ board.sender_id }}">
+              <input type="hidden" name="room" value="{{ p.room }}">
+              <button class="linkbtn" type="submit">이 방으로 확정</button>
+            </form>
+            {% endif %}
+          </li>
+          {% endfor %}
+        </ul>
+        {% elif r.state == 'not_found' %}
+        <p class="hint">못 찾았습니다 — {{ board.sender }} 님 카톡에서 이 방이 있는지 확인해 주세요.</p>
+        {% endif %}
+        {% if r.state == 'confirmed' %}
+        <form method="post" action="/team/sender-rooms/{{ r.contact_id }}/clear" class="inline-form">
+          <input type="hidden" name="sender_id" value="{{ board.sender_id }}">
+          <button class="linkbtn" type="submit">확정 거두기</button>
+        </form>
+        {% endif %}
+      </td>
+      <td>{{ r.state_label }}{% if r.checked_at %}<div class="cell-sub">{{ r.checked_at }}</div>{% endif %}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

@@ -380,6 +380,21 @@ def release(db: Session, job: SendJob, now: Optional[datetime] = None) -> bool:
     if not _claim(db, job, now):
         return False
 
+    # **자동화 회차는 풀기 직전에 한 번 더 본다** — 아침에 세운 뒤 결과를
+    # 적었거나 미팅이 취소됐으면 그 건은 뺀다(`automation_runner.prune`).
+    # 자동화 회차가 아니면 아무것도 안 한다.
+    from . import automation_runner
+
+    had = sum(1 for i in job.items if i.status == "pending")
+    if had and automation_runner.prune(db, job) == 0:
+        # 전부 빠졌다 — 보낼 것이 없는 회차를 `취소` 로 닫는다. 남겨 두면
+        # 화면이 "걸어 두었던 예약" 이라고만 적고 왜 안 나갔는지 말하지 않는다.
+        job.status = "canceled"
+        job.finished_at = now.isoformat(timespec="seconds")
+        db.commit()
+        log.info("예약 회차 %s — 자동 제외로 보낼 건이 남지 않아 닫습니다", job.id)
+        return False
+
     pending = [i for i in job.items if i.status == "pending"]
     if not pending:
         # 보낼 것이 없는 회차. 자리는 잡은 채로 둔다 — 다시 들여다보지 않게.

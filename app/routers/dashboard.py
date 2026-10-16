@@ -1339,6 +1339,198 @@ def save_startup_send(
     return RedirectResponse(f"/team?msg={note}", status_code=303)
 
 
+@router.post("/team/automations/{key}", include_in_schema=False)
+async def save_automation(
+    key: str,
+    request: Request,
+    enabled: str = Form(""),
+    user_id: int = Form(0),
+    test_mode: str = Form(""),
+    test_mode_shown: str = Form(""),
+    test_room: str = Form(""),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """**2단계 자동화 한 줄** — 켜짐/꺼짐 · 보내는 계정 · 시험 모드 · 시험방.
+
+    문은 옆 판들과 같다(`admin_only`). 값을 가리는 것은 `automation.save` 한
+    곳이다 — 시험방이 진짜 상대의 방이면 받지 않고, 시험 모드로 켜면서 시험방이
+    비어 있으면 받지 않는다.
+
+    **시험 모드 칸은 체크 상자다** — 안 보내면 꺼짐이다. 그래서 폼에는 늘
+    `test_mode_shown=1` 이 함께 오고, 그 칸이 없는 요청(옛 화면 · 손으로 만든
+    요청)은 시험 모드를 **켠 채로** 둔다. 모르는 채로 진짜 방을 열지 않는다.
+    """
+    admin_only(user)
+    from urllib.parse import quote
+
+    from ..services import automation
+
+    if key not in automation.BY_KEY:
+        raise HTTPException(status_code=404, detail="그런 자동화는 없습니다")
+    label = automation.BY_KEY[key].label
+    # 자동화마다 다른 값(`p_<이름>` 칸) — 며칠 뒤 · 몇 시 · 그룹 · 채널방 목록.
+    # 칸이 하나도 안 오면(옛 화면) 저장된 값을 그대로 둔다.
+    form = await request.form()
+    raw = {k[2:]: v for k, v in form.items() if k.startswith("p_")}
+    try:
+        if raw:
+            from ..services import automation_runner
+
+            automation_runner.save_params(db, key, raw)
+        row = automation.save(db, key, enabled=enabled == "on",
+                              user_id=user_id or None,
+                              test_mode=(test_mode == "on"
+                                         or test_mode_shown != "1"),
+                              test_room=test_room)
+    except ValueError as exc:
+        db.rollback()
+        return RedirectResponse(f"/team?msg={quote(label + ' — ' + str(exc))}#automations",
+                                status_code=303)
+    if not row.enabled:
+        note = f"{label} 자동화를 껐습니다"
+    elif row.test_mode:
+        note = f"{label} 자동화 켜짐 — 시험 모드: 모든 글이 '{row.test_room}' 으로 갑니다"
+    else:
+        note = f"{label} 자동화 켜짐 — 실제 방으로 나갑니다"
+    return RedirectResponse(f"/team?msg={quote(note)}#automations", status_code=303)
+
+
+@router.post("/team/automations/{key}/check", include_in_schema=False)
+def check_automation_room(
+    key: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """[시험방 확인] — 보내는 계정 PC 로 시험방에 **한 통**.
+
+    자동화를 켜기 전에 시험방 이름이 그 계정 카톡에서 정말 열리는지, 그 PC 의
+    발송기가 집어가는지를 본다. 가는 곳은 시험방 하나뿐이다
+    (`automation.queue_check`).
+    """
+    admin_only(user)
+    from urllib.parse import quote
+
+    from ..services import automation
+
+    if key not in automation.BY_KEY:
+        raise HTTPException(status_code=404, detail="그런 자동화는 없습니다")
+    try:
+        job = automation.queue_check(db, key)
+    except ValueError as exc:
+        db.rollback()
+        return RedirectResponse(f"/team?msg={quote(str(exc))}#automations",
+                                status_code=303)
+    return RedirectResponse(
+        f"/team?msg={quote(f'시험방 확인 한 통을 세웠습니다 (회차 #{job.id})')}#automations",
+        status_code=303)
+
+
+# ── 보내는 계정 카톡 기준 방 제목 (`services/sender_rooms.py`) ────────────────
+
+def _room_senders(db: Session) -> list:
+    """방 제목을 맞출 **보내는 계정들** — 기본 보내는 계정과 자동화마다 고른 계정."""
+    from ..services import automation
+
+    seen, out = set(), []
+    ids = [automation.default_sender_id(db)] + [
+        automation.sender_id(db, automation.load(db, k.key)) for k in automation.KINDS]
+    for uid in ids:
+        member = db.get(User, uid) if uid else None
+        if member is not None and automation.may_send(member) and member.id not in seen:
+            seen.add(member.id)
+            out.append(member)
+    return out
+
+
+def _room_sender_or_404(db: Session, sender_id: int) -> User:
+    for member in _room_senders(db):
+        if member.id == sender_id:
+            return member
+    raise HTTPException(status_code=404, detail="자동화를 보내는 계정이 아닙니다")
+
+
+@router.get("/team/sender-rooms", response_class=HTMLResponse, include_in_schema=False)
+def sender_rooms_page(request: Request, db: Session = Depends(get_db),
+                      user: User = Depends(get_current_user),
+                      sender: int = 0, msg: str = ""):
+    """**보내는 계정 카톡 기준 방 제목** — 확인 걸기 · 후보 고르기(관리자)."""
+    admin_only(user)
+    from ..services import sender_rooms
+
+    senders = _room_senders(db)
+    if not senders:
+        return RedirectResponse(
+            "/team?msg=자동화를+보내는+계정이+정해지지+않았습니다#automations",
+            status_code=303)
+    chosen = next((s for s in senders if s.id == sender), senders[0])
+    ctx = base_ctx(request, db, user, active="admin")
+    ctx.update({"board": sender_rooms.board(db, chosen), "senders": senders,
+                "msg": msg})
+    return templates.TemplateResponse("sender_rooms.html", ctx)
+
+
+@router.post("/team/sender-rooms/check", include_in_schema=False)
+def sender_rooms_check(sender_id: int = Form(0), db: Session = Depends(get_db),
+                       user: User = Depends(get_current_user)):
+    """[보내는 계정 PC 로 전체 방 확인] — 방 확인 잡을 **그 계정 것으로** 세운다.
+
+    아무것도 보내지 않는다(방 확인 잡). 그 계정 PC 의 발송기만 집어간다.
+    """
+    admin_only(user)
+    from urllib.parse import quote
+
+    from ..services import sender_rooms
+
+    member = _room_sender_or_404(db, sender_id)
+    job = sender_rooms.queue_check(db, member)
+    if job is None:
+        note = "확인할 담당자가 없습니다"
+    else:
+        note = (f"{member.name} 님 PC 로 방 {job.total}곳 확인을 걸었습니다 "
+                f"(회차 #{job.id}) — 그 PC 의 발송 프로그램이 켜져 있어야 합니다")
+    return RedirectResponse(f"/team/sender-rooms?sender={member.id}&msg={quote(note)}",
+                            status_code=303)
+
+
+@router.post("/team/sender-rooms/{contact_id}/confirm", include_in_schema=False)
+def sender_rooms_confirm(contact_id: int, sender_id: int = Form(0),
+                         room: str = Form(""), db: Session = Depends(get_db),
+                         user: User = Depends(get_current_user)):
+    """[이 방으로 확정] — 후보 제목을 그 계정 카톡의 제목으로."""
+    admin_only(user)
+    from urllib.parse import quote
+
+    from ..services import sender_rooms
+
+    member = _room_sender_or_404(db, sender_id)
+    try:
+        sender_rooms.confirm(db, member.id, contact_id, room)
+        note = "확정했습니다 — 자동화가 이 제목으로 보냅니다"
+    except sender_rooms.NotPickable as exc:
+        db.rollback()
+        note = str(exc)
+    return RedirectResponse(f"/team/sender-rooms?sender={member.id}&msg={quote(note)}",
+                            status_code=303)
+
+
+@router.post("/team/sender-rooms/{contact_id}/clear", include_in_schema=False)
+def sender_rooms_clear(contact_id: int, sender_id: int = Form(0),
+                       db: Session = Depends(get_db),
+                       user: User = Depends(get_current_user)):
+    """확정 거두기 — 다시 담당 팀원의 제목으로 보낸다."""
+    admin_only(user)
+    from urllib.parse import quote
+
+    from ..services import sender_rooms
+
+    member = _room_sender_or_404(db, sender_id)
+    sender_rooms.clear(db, member.id, contact_id)
+    return RedirectResponse(
+        f"/team/sender-rooms?sender={member.id}&msg={quote('확정을 거뒀습니다')}",
+        status_code=303)
+
+
 @router.post("/team/members/{member_id}/reset-password", include_in_schema=False)
 def reset_member_password(
     member_id: int,

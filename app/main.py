@@ -7,15 +7,18 @@ from fastapi.staticfiles import StaticFiles
 
 from . import config, deps
 from .deps import NoConsulting, NotAdmin, NotAuthenticated
-from .services import (auto_send, backup, edit_log, followup_sms, scheduled_send,
-                       sourcing_mail, startup_monthly)
+from .services import (auto_send, automation_runner, backup, edit_log,
+                       followup_sms, scheduled_send, sourcing_mail,
+                       startup_monthly)
 from .routers import auth as auth_router
 from .routers import templates_crud
 from .routers import setup as setup_router
+from .routers import automations as automations_router
 from .routers import (agent_api, companies, consulting, contacts, dashboard,
                       data_io, deals, followups, ir, jobs, llm_brief, notices,
                       pages, series_a, sourcing, startup, startup_outreach,
                       startup_send)
+from .routers import ir_link as ir_link_router
 
 
 def create_app() -> FastAPI:
@@ -55,6 +58,11 @@ def create_app() -> FastAPI:
     # 아침에 대기 목록을 세우고 정한 시각에 나가도록 예약만 건다 — 푸는 것은
     # 바로 위 예약 발송이다(`services/startup_monthly.py`). 꺼 두면 아무 일도 없다.
     startup_monthly.start_scheduler()
+
+    # **2단계 자동화** — 5분마다 깨어나 그날 세울 회차가 있으면 아침에 세우고
+    # 정한 시각에 나가도록 예약을 건다(`services/automation_runner.py`). 켠
+    # 자동화가 없으면 깨어나도 곧바로 돌아온다. 푸는 것은 바로 위 예약 발송이다.
+    automation_runner.start_scheduler()
 
     # **딜 소싱 메일 확인** — 5분마다 깨어나 매일 18:00 에 회사 받은
     # 편지함(POP3)의 머리글을 읽어 메일로 딜을 보낸 사람을 `딜 받음` 으로 세운다
@@ -96,10 +104,14 @@ def create_app() -> FastAPI:
     app.include_router(startup.router)
     app.include_router(startup_outreach.router)
     app.include_router(startup_send.router)
+    # IR 기업 연결(`/ir-link`). `pages.router` 의 `/{placeholder}` 보다 **먼저**
+    # 붙어야 한다 — 뒤에 붙으면 그 자리가 `준비 중` 화면으로 가로챈다.
+    app.include_router(ir_link_router.router)
     app.include_router(llm_brief.router)
     # 공지. [확인] 은 **모든 화면**에서 눌리므로(판이 밑틀에 선다) 화면
     # 라우터가 아니라 여기 따로 선다 — 왜 그런지는 `routers/notices.py`.
     app.include_router(notices.router)
+    app.include_router(automations_router.router)
     # /setup, /download 는 pages 의 캐치올(/{placeholder}) 보다 먼저 등록해야 가려지지 않는다.
     # `/startup` 도 마찬가지다 — 뒤에 두면 캐치올이 먼저 잡아 `준비 중` 안내만 뜬다.
     app.include_router(auth_router.router)

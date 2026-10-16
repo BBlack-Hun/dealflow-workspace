@@ -29,8 +29,8 @@ from ..db import get_db
 from ..services import (cadence, pipeline, room_joined, scheduled_send,
                         send_guard)
 from ..deps import get_agent_device, may_auto_attach, now_iso
-from ..models import (ROOM_SEARCH_TOPIC, SOURCING_ROOM_TOPIC, AgentDevice,
-                      SendItem, SendJob, User)
+from ..models import (ROOM_SEARCH_TOPIC, SENDER_ROOM_TOPIC, SOURCING_ROOM_TOPIC,
+                      AgentDevice, SendItem, SendJob, User)
 
 log = logging.getLogger(__name__)
 
@@ -244,6 +244,13 @@ def _company_row(job: SendJob, item: SendItem):
 
 def _verify_search(job: SendJob, item: SendItem) -> dict:
     """방 확인 건에 실어 보내는 검색어."""
+    if (job is not None and job.topic == SENDER_ROOM_TOPIC
+            and item.contact is not None):
+        # **보내는 계정 카톡 기준 제목** 찾기 — 담당자 주인의 방 제목으로 먼저,
+        # 없으면 이름으로(`services/sender_rooms.search_terms`).
+        from ..services import sender_rooms
+
+        return sender_rooms.search_terms(item.contact)
     if (job is not None and job.topic == SOURCING_ROOM_TOPIC
             and item.sourcing_contact is not None):
         # 딜 소싱 명단 줄의 카톡방 후보 찾기(`services/sourcing_rooms.py`) —
@@ -361,6 +368,17 @@ def _apply_verify_result(item: SendItem, body: ItemResult) -> None:
     """
     # 판정을 못 받았으면 '확인됨'으로 올리지 않는다 — 모르면 미확인 쪽이 안전하다.
     verdict = body.verify_result if body.verify_result in VERIFY_VERDICTS else "not_found"
+
+    # **보내는 계정 카톡 기준 제목** 확인 — 찾은 제목은 `sender_rooms` 에만 담는다.
+    # 담당 팀원의 방 이름 · 확인 표시 · 참여여부는 건드리지 않는다(그 팀원
+    # 카톡에서는 그 이름이 맞다 — `services/sender_rooms.py` 머리말).
+    if item.job is not None and item.job.topic == SENDER_ROOM_TOPIC:
+        from sqlalchemy.orm import object_session
+
+        from ..services import sender_rooms
+
+        sender_rooms.apply_result(object_session(item), item, body, verdict)
+        return
 
     # 딜 소싱 명단 줄 — 찾은 제목은 **후보로만**(`services/sourcing_rooms.py`).
     # 방 이름 · 확인 표시는 사람이 [이 방으로 확정] 을 눌러야 선다.

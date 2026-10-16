@@ -253,7 +253,7 @@ def _history(db, rows, job_status="done", item_status="sent"):
 
 #: 담당자 줄을 가리키는 표 전부 — 하나라도 빠지면 고아를 못 잡는다.
 LINKED_TABLES = ("contact_activities", "send_items", "send_sequences",
-                 "ir_requests", "meetings")
+                 "ir_requests", "meetings", "sender_rooms")
 
 
 def test_가리키는_표를_빠짐없이_지운다():

@@ -199,6 +199,9 @@
   }
 
   table.addEventListener("click", function (e) {
+    // `기업명` 칸 밑의 IR 기업 연결 표시는 **링크**다 — 누르면 그리로 가야지
+    // 칸이 입력칸으로 바뀌면 안 된다(consulting.html 의 `ir_named`).
+    if (e.target.closest(".ir-link-sub")) return;
     var cell = e.target.closest("td.cell");
     if (!cell || cell === editing) return;
     // 남의 담당 줄은 **볼 수만** 있다. 서버가 이미 404 로 막지만

@@ -206,10 +206,20 @@
         tag.textContent = "되돌림";
         line.appendChild(tag);
       } else {
+        // **반쯤 되돌린 판**이 있다 — 담당자 상세의 활동 이력에서 한 사람만
+        // 되돌릴 수 있다(`manual_send.rows_of` 의 `contact_id`). 몇 줄이
+        // 이미 빠졌는지 말하지 않으면 [되돌리기] 를 눌렀을 때 확인창의 줄 수가
+        // 목록의 줄 수와 달라 무엇이 되돌아가는지 헷갈린다.
+        if (b.undone) {
+          var part = document.createElement("span");
+          part.className = "tag";
+          part.textContent = b.rows + "줄 중 " + b.undone + "줄 되돌림";
+          line.appendChild(part);
+        }
         var btn = document.createElement("button");
         btn.type = "button";
         btn.className = "linkbtn";
-        btn.textContent = "되돌리기";
+        btn.textContent = b.undone ? "남은 줄 되돌리기" : "되돌리기";
         btn.addEventListener("click", function () { undo(b, btn); });
         line.appendChild(btn);
       }
@@ -223,15 +233,22 @@
     post(url, { confirm: false }).then(function (res) {
       if (!res.ok) { alert((res.d && res.d.detail) || "되돌릴 수 없습니다"); btn.disabled = false; return; }
       var plan = res.d.plan || {};
+      // 리마인드를 함께 거두는지도 **미리** 말한다 — 서버가 세어 준 수다
+      // (`manual_send.undo_plan`). 되돌린 뒤에도 리마인드가 남던 것이 이
+      // 되돌리기를 고친 까닭이라, 거두는지 안 거두는지가 사람이 물을 첫 질문이다.
       if (!confirm(plan.kind_label + " · " + plan.day + " 로 적은 " + plan.rows +
                    "줄을 되돌립니다.\n\n지우지 않고 숨깁니다 — 보고·진행 단계·" +
-                   "이력 어디에서도 안 읽힙니다.\n\n되돌릴까요?")) {
+                   "이력 어디에서도 안 읽힙니다." +
+                   (plan.sequences ? "\n이 기록이 잡은 리마인드 " + plan.sequences +
+                                     "건도 함께 거둡니다." : "") +
+                   "\n\n되돌릴까요?")) {
         btn.disabled = false;
         return;
       }
       post(url, { confirm: true }).then(function (out) {
         if (!out.ok) { alert((out.d && out.d.detail) || "되돌리기 실패"); btn.disabled = false; return; }
-        say(out.d.undone + "줄을 되돌렸습니다.", "ok");
+        // 글은 서버가 짓는다(`manual_send.Undone.note`) — 담당자 상세도 같은 글을 띄운다.
+        say(out.d.note || (out.d.undone + "줄을 되돌렸습니다"), "ok");
         loadBatches(true);
       }).catch(function () { alert("되돌리기 요청 오류"); btn.disabled = false; });
     }).catch(function () { alert("되돌리기 요청 오류"); btn.disabled = false; });

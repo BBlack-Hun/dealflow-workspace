@@ -286,6 +286,7 @@ def _compose_for_contact(
     closing_template_id: Optional[int] = None,
     mode: str = MODE_DEAL,
     include_opening: Optional[bool] = None,
+    closing_override: Optional[str] = None,
     topic: str = "",
     series_a: Optional[list] = None,
     series_a_empty: str = "",
@@ -346,6 +347,10 @@ def _compose_for_contact(
         count = str(len(series_a or []))
         opening_body = opening_body.replace("{개수}", count)
         closing_body = closing_body.replace("{개수}", count)
+    # 자동화가 **같은 틀에 다른 안내문**을 끼울 때(미팅 요청 두 번째 —
+    # `meeting_ask_message`). 인사말 · 단계 · 조립 규칙은 그대로 탄다.
+    if closing_override:
+        closing_body = closing_override
 
     who = _to_contact_view(contact)
     if mode == MODE_SOURCING and not (who.title or "").strip():
@@ -558,6 +563,30 @@ def review_message(db: Session, user: User, contact) -> str:
     보여 준 것과 실제로 나가는 것이 인사말 한 덩어리만큼 어긋난다.
     """
     return _compose_for_contact(db, user, contact, [], mode=MODE_REVIEW).text
+
+
+#: 미팅 요청 **두 번째**의 안내문 종류 — 첫 번째(`closing_meeting`)에 답이 없을
+#: 때 사흘 뒤 조금 다른 말로 다시 묻는다(`services/automations/meeting_request.py`).
+#: 같은 글을 두 번 보내면 받는 쪽에서는 잘못 간 것으로 읽는다.
+MEETING_ASK_AGAIN_KIND = "closing_meeting_again"
+MEETING_ASK_AGAIN_FALLBACK = (
+    "지난번 미팅 일정 관련하여 다시 한번 여쭙습니다.\n"
+    "이번주 또는 다음주 중 20~30분 정도 편하신 시간 말씀 주시면 맞추어 뵙겠습니다.")
+
+
+def meeting_ask_message(db: Session, user: User, contact, again: bool = False) -> str:
+    """IR 자료를 받은 담당자에게 나갈 **미팅 요청** 문구 전문.
+
+    첫 번째는 발송 화면의 미팅 요청 탭과 **같은 길**이다(`MODE_MEETING` —
+    `closing_meeting`). 두 번째는 같은 틀(인사말 + 안내문, 단계 3)에 안내문만
+    `closing_meeting_again` 으로 바꾼다 — 조립 규칙을 다시 적지 않는다.
+    """
+    if not again:
+        return _compose_for_contact(db, user, contact, [], mode=MODE_MEETING).text
+    body = _template_body(db, user.id, MEETING_ASK_AGAIN_KIND,
+                          MEETING_ASK_AGAIN_FALLBACK)
+    return _compose_for_contact(db, user, contact, [], mode=MODE_MEETING,
+                                closing_override=body).text
 
 
 def _load_recipients(db: Session, user: User, mode: str, ids: List[int]) -> List:
@@ -1687,33 +1716,44 @@ def create_manual_send(body: ManualSendIn, db: Session = Depends(get_db),
 
 class ManualUndoIn(BaseModel):
     confirm: bool = False
+    #: **그 판 안의 이 담당자 줄만** 되돌린다. 비우면 묶음째다.
+    #:
+    #: 80명을 적은 판에서 한 사람만 잘못 넣은 일이 흔하다 — 묶음째 되돌리고
+    #: 79명을 다시 적게 하면 안 된다. 담당자 상세의 활동 이력도 이 값을 실어
+    #: 같은 길로 한 줄을 되돌린다(`static/js/contacts.js`). 길이 하나라 권한
+    #: 판정도 하나다.
+    contact_id: Optional[int] = None
 
 
 @router.post("/manual-sends/{batch_key}/undo")
 def undo_manual_send(batch_key: str, body: ManualUndoIn,
                      db: Session = Depends(get_db),
                      user: User = Depends(get_current_user)):
-    """잘못 적은 판을 **묶음째** 되돌린다. 지우지 않고 숨긴다.
+    """잘못 적은 판을 **묶음째**(또는 그 안의 한 사람만) 되돌린다.
 
-    숨긴 줄은 읽는 자리 어디에서도 안 읽힌다(`models._hide_undone_activities`).
+    줄은 지우지 않고 숨긴다 — 숨긴 줄은 읽는 자리 어디에서도 안
+    읽힌다(`models._hide_undone_activities`). 그 줄이 세운 리마인드도 함께
+    거둔다(`manual_send.undo` — 다른 길이 세운 시퀀스는 안 건드린다).
 
     권한은 적을 때와 **같은 `_owned`** 다 — 남의 담당자 줄이 한 줄이라도
     섞여 있으면 한 줄도 안 숨긴다. 관리자가 팀원을 대신 적어 준 판을 그
     팀원이 되돌리지 못하는 것은 맞다: 되돌리는 것도 적는 것과 같은 무게다.
+    한 사람 되돌리기도 같다 — 그 사람이 내 담당이 아니면 404 다.
     """
-    rows = manual_send.rows_of(db, batch_key)
+    rows = manual_send.rows_of(db, batch_key, contact_id=body.contact_id)
     if not rows:
-        raise HTTPException(status_code=404, detail="그 판을 찾을 수 없습니다")
+        raise HTTPException(
+            status_code=404,
+            detail=("그 판에 그 담당자 줄이 없습니다" if body.contact_id is not None
+                    else "그 판을 찾을 수 없습니다"))
     # 한 줄이라도 남의 것이면 여기서 끝난다 — 아직 아무 것도 안 숨겼다.
     _manual_targets(db, user, [row.contact_id for row in rows])
 
-    plan = {"rows": len(rows),
-            "kind": rows[0].kind,
-            "kind_label": manual_send.KIND_LABELS.get(rows[0].kind, rows[0].kind),
-            "day": rows[0].happened_at or ""}
+    plan = manual_send.undo_plan(db, rows)
     if not body.confirm:
         return {"ok": False, "confirmed": False, "undone": 0, "plan": plan}
 
-    n = manual_send.undo(db, rows)
+    done = manual_send.undo(db, rows)
     db.commit()
-    return {"ok": True, "confirmed": True, "undone": n, "plan": plan}
+    return {"ok": True, "confirmed": True, "undone": done.rows,
+            "sequences": done.sequences, "note": done.note(), "plan": plan}

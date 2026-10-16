@@ -565,6 +565,13 @@ WRITE_ROUTES = {
     #  의 INSERT 가 저절로 로그에 남는다).
     ("POST", "/api/contacts/from-consulting"): WATCHED,
 
+    # IR 기업 연결 — 스타트업 명단 줄 · 투자컨설턴트 줄을 IR 기업에 잇고 푼다
+    # (`routers/ir_link.py`). 줄마다 ORM 으로 고치므로 저절로 남고, **자기 줄을
+    # 이은 것도 남는다**(`edit_log.ALWAYS_FIELDS`).
+    ("POST", "/ir-link/link"): WATCHED,
+    ("POST", "/ir-link/unlink"): WATCHED,
+    ("POST", "/ir-link/bulk"): WATCHED,
+
     ("POST", "/templates/choose"): WATCHED,
     ("POST", "/templates/copy"): WATCHED,
     ("POST", "/templates/new"): WATCHED,
@@ -632,6 +639,20 @@ WRITE_ROUTES = {
     ("POST", "/team/notices/{notice_id}/off"): WATCHED,
     ("POST", "/team/notices/{notice_id}/on"): WATCHED,
     ("POST", "/team/startup-send"): WATCHED,
+    # 2단계 자동화 스위치 — 시험 모드를 끄면 진짜 상대에게 나가기 시작한다
+    # (`edit_log.WATCHED["automations"]`).
+    ("POST", "/team/automations/{key}"): WATCHED,
+    # [시험방 확인] — 시험방으로 한 통 세울 뿐이다(발송 기록).
+    ("POST", "/team/automations/{key}/check"): MACHINE,
+    # 보내는 계정 카톡 기준 방 제목 — 확인 걸기는 방 확인 잡(기계 기록),
+    # 확정·거두기는 공용 자리(`edit_log.WATCHED["sender_rooms"]`).
+    ("POST", "/team/sender-rooms/check"): MACHINE,
+    ("POST", "/team/sender-rooms/{contact_id}/confirm"): WATCHED,
+    ("POST", "/team/sender-rooms/{contact_id}/clear"): WATCHED,
+    # [답 옴] — 담당자 이력(`contact_activities`)에 한 줄. 자기 담당자에게
+    # 누른다(관리자는 팀 전체) — 이력 표는 보지 않는 표다.
+    ("POST", "/automations/meeting-request/{contact_id}/replied"): MACHINE,
+    ("POST", "/automations/meeting-request/{contact_id}/replied/undo"): MACHINE,
     # 딜 소싱 메일 확인이 읽을 편지함(`sourcing_mail_settings`) — 비밀번호는 `바뀜` 으로만.
     ("POST", "/team/sourcing-mail"): WATCHED,
 

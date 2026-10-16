@@ -279,10 +279,21 @@ def _review_targets(db: Session, sender: User) -> List[Target]:
         ).scalars().all())
     }
 
+    # 미팅 후 문의 자동화가 **실제로** 이미 물은 미팅은 뺀다 — 같은 투자사에
+    # 두 번 묻지 않는다(시험으로 보낸 것은 시험방에만 갔으므로 안 뺀다).
+    from ..models import AutomationSend
+
+    asked = {ref for ref in db.execute(
+        select(AutomationSend.ref).where(AutomationSend.automation == KIND_REVIEW,
+                                         AutomationSend.test == 0)
+    ).scalars().all()}
+
     out = []
     for row in rows:
         contact = contacts.get(row["contact_id"])
         if contact is None or sheet_owner.is_paused(contact):
+            continue
+        if f"meeting:{row['id']}" in asked:
             continue
         if not (contact.kakao_room_name or "").strip():
             continue
@@ -336,6 +347,13 @@ def run_once(db: Session, *, kind: str = KIND_REVIEW,
         result["skipped"] = "목록을 세우는 시간대가 아님"
         return result
 
+    if kind == KIND_REVIEW and _automation_owns_review(db):
+        # 2단계 자동화(미팅 후 검토결과 문의)가 **실제 방으로** 켜져 있으면 그쪽이
+        # 묻는다 — 사람 확인 없이, 팀원 전원의 미팅을. 여기서 또 세우면 같은
+        # 투자사에 두 번 간다(`services/automations/meeting_review.py`).
+        result["skipped"] = "자동화(미팅 후 검토결과 문의)가 맡고 있음"
+        return result
+
     day = now.date().isoformat()
     left = remaining_today(db, kind, day, setting)
     if left <= 0:
@@ -360,6 +378,15 @@ def run_once(db: Session, *, kind: str = KIND_REVIEW,
         db, kind, sender, [by_ref[c.ref_id].contact for c in claims], claims)
     result["created"] = len(claims) if result["job_id"] else 0
     return result
+
+
+def _automation_owns_review(db: Session) -> bool:
+    """미팅 후 문의 자동화가 **실제 모드로** 켜져 있는가. 시험 모드는 시험방으로만
+    가므로 이 목록을 막지 않는다."""
+    from . import automation
+
+    row = automation.load(db, automation.MEETING_REVIEW)
+    return automation.is_on(row) and not automation.is_test(row)
 
 
 def remaining_today(db: Session, kind: str, day: str,
