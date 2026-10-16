@@ -23,8 +23,8 @@ import openpyxl  # noqa: E402
 from sqlalchemy import select  # noqa: E402
 
 from app.db import SessionLocal  # noqa: E402
-from app.models import MessageTemplate, SourcingContact  # noqa: E402
-from app.services import sourcing_msg  # noqa: E402
+from app.models import MessageTemplate  # noqa: E402
+from app.services import sourcing_buckets, sourcing_msg  # noqa: E402
 
 # 이 말이 들어 있는 칸이 참여 안내문이다.
 MARKER = "Deal Sourcing 네트워크 참여"
@@ -72,7 +72,7 @@ def clean(raw: str) -> str:
 def match_bucket(sheet_name: str, buckets: list) -> str:
     """시트 탭 이름 ↔ DB 갈래 이름. 공백·표기가 조금씩 다르다."""
     def key(s: str) -> str:
-        return re.sub(r"\s+", "", s or "").lower()
+        return sourcing_buckets.key(s).lower()
 
     want = key(sheet_name)
     for b in buckets:
@@ -93,8 +93,9 @@ def main() -> int:
 
     wb = openpyxl.load_workbook(args.path)
     db = SessionLocal()
-    buckets = [b for (b,) in db.execute(
-        select(SourcingContact.bucket).distinct()).all()]
+    # 띄어쓰기만 다른 글자는 한 갈래(딜 소싱 화면의 탭 하나)라 이름 하나로 본다 —
+    # 글자마다 문구를 넣으면 한 자리에 팀 문구가 둘이 되어 아무것도 안 집힌다.
+    buckets = [g["label"] for g in sourcing_buckets.groups(db)]
     if not buckets:
         print("딜 소싱 명단이 비어 있습니다 — import_sourcing.py 를 먼저 돌리세요.")
         return 1
@@ -130,12 +131,12 @@ def main() -> int:
 
     for bucket, body in found:
         # 팀 기본 문구(user_id NULL)로 넣는다 — 갈래마다 하나씩.
-        row = db.execute(
+        row = next((t for t in db.execute(
             select(MessageTemplate).where(
                 MessageTemplate.user_id.is_(None),
-                MessageTemplate.kind == sourcing_msg.KIND,
-                MessageTemplate.name == bucket)
-        ).scalars().first()
+                MessageTemplate.kind == sourcing_msg.KIND)
+            .order_by(MessageTemplate.id)
+        ).scalars().all() if sourcing_buckets.same(t.name, bucket)), None)
         if row is None:
             db.add(MessageTemplate(user_id=None, kind=sourcing_msg.KIND,
                                    name=bucket, body=body, is_active=1))

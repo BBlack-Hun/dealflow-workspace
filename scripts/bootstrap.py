@@ -266,20 +266,24 @@ def seed_sourcing_remind(db) -> int:
     **이미 있으면 건드리지 않는다.** 이 스크립트는 컨테이너가 뜰 때마다 돌고,
     운영자가 고쳐 둔 글(주소를 넣은 것)을 덮으면 안 된다. 갈래 이름을 바꾸면
     문구도 함께 옮겨지므로(`sourcing_buckets.rename`) 새 이름으로 또 심지 않는다.
+
+    **띄어쓰기만 다른 이름은 한 갈래다**(`sourcing_buckets.groups`) — 그 이름의
+    문구가 이미 있으면 심지 않는다. 한 자리에 팀 문구가 둘이면 아무것도 안
+    집혀(`template_pick.pick`) 운영자가 고친 글 대신 뼈대가 나간다.
     """
     from app.services import sourcing_buckets, sourcing_msg  # noqa: PLC0415
 
-    buckets = ([b for b in sourcing_buckets.names(db) if sourcing_msg.is_series_a(b)]
+    buckets = ([g["label"] for g in sourcing_buckets.groups(db)
+                if sourcing_msg.is_series_a(g["label"])]
                or [SOURCING_REMIND_BUCKET])
     made = 0
     for bucket in buckets:
-        exists = db.execute(
-            select(MessageTemplate.id).where(
+        names = db.execute(
+            select(MessageTemplate.name).where(
                 MessageTemplate.user_id.is_(None),
-                MessageTemplate.kind == sourcing_msg.REMIND_KIND,
-                MessageTemplate.name == bucket).limit(1)
-        ).first()
-        if exists is None:
+                MessageTemplate.kind == sourcing_msg.REMIND_KIND)
+        ).scalars().all()
+        if not any(sourcing_buckets.same(name, bucket) for name in names):
             db.add(MessageTemplate(user_id=None, kind=sourcing_msg.REMIND_KIND,
                                    name=bucket, is_active=1,
                                    body=sourcing_msg.remind_default_body(bucket)))
@@ -298,17 +302,17 @@ def seed_series_a_share(db) -> int:
     이름을 바꿀 수 없는 갈래). 그래서 명단을 훑지 않고 그 이름으로 심는다.
 
     **이미 있으면 건드리지 않는다** — 운영자가 문구 화면에서 고친 글을 다음 배포가
-    덮으면 안 된다(`seed_sourcing_remind` 와 같은 규칙).
+    덮으면 안 된다(`seed_sourcing_remind` 와 같은 규칙). 띄어쓰기만 다른 이름의
+    문구도 있는 것이다(`sourcing_buckets.same`).
     """
-    from app.services import series_a_share  # noqa: PLC0415
+    from app.services import series_a_share, sourcing_buckets  # noqa: PLC0415
 
-    exists = db.execute(
-        select(MessageTemplate.id).where(
+    names = db.execute(
+        select(MessageTemplate.name).where(
             MessageTemplate.user_id.is_(None),
-            MessageTemplate.kind == series_a_share.KIND,
-            MessageTemplate.name == series_a_share.BUCKET).limit(1)
-    ).first()
-    if exists is not None:
+            MessageTemplate.kind == series_a_share.KIND)
+    ).scalars().all()
+    if any(sourcing_buckets.same(name, series_a_share.BUCKET) for name in names):
         return 0
     db.add(MessageTemplate(user_id=None, kind=series_a_share.KIND,
                            name=series_a_share.BUCKET, is_active=1,

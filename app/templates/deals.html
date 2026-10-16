@@ -936,22 +936,24 @@
     <div class="card-list" id="sourcing-list" hidden>
       {% for c in sourcing_contacts %}
       {% set link = sourcing_linked.get(c.id) %}
+      {# 갈래는 탭과 같은 이름 — 띄어쓰기만 다른 저장 글자도 한 갈래다(`pages.py`). #}
+      {% set bucket = sourcing_bucket_of.get(c.bucket, c.bucket) %}
       {# `data-assignee` 는 칸 글자가 아니라 **지금 맡은 사람**이다
          (`sourcing.assignee_of` — `가담당 > 10/13 나담당` 이면 `나담당`).
          위 [담당] 칩과 같은 함수에서 나와야 눌렀을 때 같은 사람이 걸린다.
          `data-received` 는 이 달 `딜 받음` — 월간 리마인드가 기본으로 뺀다. #}
-      <label class="pick-card" data-bucket="{{ c.bucket }}"
+      <label class="pick-card" data-bucket="{{ bucket }}"
              data-assignee="{{ sourcing_assignee.get(c.id, '') }}"
              data-received="{{ '1' if c.id in sourcing_received else '0' }}"
              data-out="0"
              data-room="{{ c.kakao_room_name or (link and link.room) or '' }}"
-             data-search="{{ (c.name ~ ' ' ~ (c.title or '') ~ ' ' ~ (c.firm or '') ~ ' ' ~ (c.bucket or '') ~ ' ' ~ (c.sectors or '') ~ ' ' ~ (c.kakao_room_name or ''))|lower }}">
+             data-search="{{ (c.name ~ ' ' ~ (c.title or '') ~ ' ' ~ (c.firm or '') ~ ' ' ~ (bucket or '') ~ ' ' ~ (c.sectors or '') ~ ' ' ~ (c.kakao_room_name or ''))|lower }}">
         <input type="checkbox" class="contact-cb" value="{{ c.id }}" data-name="{{ c.name }}">
         <div class="pick-body">
           <div class="pick-name">{{ c.name }} <span class="muted">{{ c.title or '' }}</span></div>
           <div class="pick-sub muted">{{ c.firm or '' }}</div>
           {# 갈래가 곧 문구다 — 무엇이 나갈지 고르는 자리에서 보여야 한다. #}
-          <div class="pick-tags"><span class="tag">{{ c.bucket }}</span>
+          <div class="pick-tags"><span class="tag">{{ bucket }}</span>
             <span class="tag soft received-tag"{% if c.id not in sourcing_received %} hidden{% endif %}>{{ sourcing_month_label }} 딜 받음</span>
             {# 화면을 연 뒤에 `불참여` 가 된 분 — 명단을 다시 읽을 때 선다(`deals.js`).
                처음부터 불참여인 분은 이 목록에 아예 없다(`sourcing.sendable_rows`). #}

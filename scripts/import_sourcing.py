@@ -21,7 +21,7 @@ from sqlalchemy import delete, select  # noqa: E402
 
 from app.db import SessionLocal  # noqa: E402
 from app.models import SourcingContact  # noqa: E402
-from app.services import sourcing_sync  # noqa: E402
+from app.services import sourcing_buckets, sourcing_sync  # noqa: E402
 
 # 시트 컬럼(포함으로 찾는다) → 모델 칸
 COLUMNS = [
@@ -96,7 +96,12 @@ def main() -> None:
             continue
 
         # 갈래를 통째로 갈아 끼운다 — 맞춰 넣으면 지워진 사람이 남는다.
-        db.execute(delete(SourcingContact).where(SourcingContact.bucket == bucket))
+        # 띄어쓰기만 다른 글자로 저장된 줄도 그 갈래다(딜 소싱 화면의 탭 하나) —
+        # 그 줄들을 다 갈아 끼우고, **저장돼 있던 글자**로 다시 넣는다. 탭 이름의
+        # 글자로 넣으면 문구 · 골라 둔 것이 달고 있는 글자와 갈린다.
+        stored = sourcing_buckets.variants(db, bucket)
+        bucket = sourcing_buckets.label_of(db, bucket)
+        db.execute(delete(SourcingContact).where(SourcingContact.bucket.in_(stored)))
 
         n = 0
         new_rows = []
@@ -122,7 +127,7 @@ def main() -> None:
         # 표시가 옛 줄과 함께 사라진다. 잇기는 화면에서 넣을 때와 **같은 규칙**
         # (`sourcing_sync.auto_link` — 번호가 양쪽에 딱 한 줄씩)으로 다시 잇는다.
         # 불참여는 시트에 칸이 없어 되살릴 수 없다 — 다시 X 로 두어야 한다.
-        if bucket == sourcing_sync.SYNC_BUCKET:
+        if sourcing_buckets.same(bucket, sourcing_sync.SYNC_BUCKET):
             db.flush()
             relinked = sum(1 for row in new_rows if sourcing_sync.auto_link(db, row))
             print(f"  {'':36} 투자사 관리 현황과 다시 이음 {relinked}명")

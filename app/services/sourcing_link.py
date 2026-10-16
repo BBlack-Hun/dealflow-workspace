@@ -90,7 +90,7 @@ def linked_rooms(db: Session, sourcing) -> Dict[int, dict]:
         db, db.execute(select(VcContact)).scalars().all())
     by_phone = _by_phone(contacts)
     # 이어받지 않는 갈래 — 아래 ★ 주석.
-    from .sourcing_sync import SYNC_BUCKET  # noqa: PLC0415 — 그쪽이 이 파일을 부른다
+    from .sourcing_sync import is_synced  # noqa: PLC0415 — 그쪽이 이 파일을 부른다
 
     out: Dict[int, dict] = {}
     for s in sourcing:
@@ -108,7 +108,7 @@ def linked_rooms(db: Session, sourcing) -> Dict[int, dict]:
         # 다른 갈래는 **예전 그대로 둔다** — 사용자가 짚은 갈래가 아니고, 그
         # 갈래들은 지금(운영) 자기 방이 한 줄도 없어 이어받기가 유일한 길이다.
         # 같은 이유로 막을지는 사용자가 정할 일이다(PR #284 본문).
-        if (getattr(s, "bucket", "") or "") == SYNC_BUCKET:
+        if is_synced(s):
             continue
         # 기본 문구 미리보기의 **가상 대상**에는 번호가 없다. 실제 사람만
         # 이으면 되므로 없는 것은 그냥 건너뛴다 — 없다고 터질 자리가 아니다.

@@ -107,11 +107,13 @@ from sqlalchemy.orm.attributes import get_history
 
 from .. import clock
 from ..models import SourcingContact, User, VcContact
-from . import sheet_owner, sourcing_link
+from . import sheet_owner, sourcing_buckets, sourcing_link
 
 #: 투자사 관리 현황과 잇는 **하나뿐인** 갈래. 원본 시트의 탭 이름 그대로다
 #: (운영 21줄 · 2026-10). 이 이름은 딜 소싱 화면에서 바꿀 수 없다
 #: (`sourcing_buckets.rename`) — 바꾸면 이 글자와 갈려 잇기가 통째로 끊긴다.
+#: 견줄 때는 **띄어쓰기를 빼고** 본다(`sourcing_buckets.same`) — 저장된 줄이
+#: `딜소싱` 처럼 띄어쓰기만 달라도 이 갈래다. 새 줄은 저장된 글자로 적는다(`create_row`).
 SYNC_BUCKET = "시리즈 A 이상 딜 소싱 참여 심사역"
 
 #: 투자사 관리 현황의 칸 이름. 어느 갈래와 이어지는지가 이름에 드러나야 한다 —
@@ -183,8 +185,8 @@ def mark_of(row: Optional[SourcingContact]) -> str:
 
 
 def is_synced(row) -> bool:
-    """이 소싱 줄이 투자사 관리 현황과 이어지는 갈래의 줄인가."""
-    return (getattr(row, "bucket", "") or "") == SYNC_BUCKET
+    """이 소싱 줄이 투자사 관리 현황과 이어지는 갈래의 줄인가(띄어쓰기는 안 본다)."""
+    return sourcing_buckets.same(getattr(row, "bucket", ""), SYNC_BUCKET)
 
 
 def digits(phone: Optional[str]) -> str:
@@ -224,10 +226,9 @@ def linked_rows(db: Session, contact_ids: Iterable[int]) -> Dict[int, SourcingCo
     if not ids:
         return {}
     rows = db.execute(
-        select(SourcingContact).where(SourcingContact.vc_contact_id.in_(ids),
-                                      SourcingContact.bucket == SYNC_BUCKET)
+        select(SourcingContact).where(SourcingContact.vc_contact_id.in_(ids))
     ).scalars().all()
-    return {r.vc_contact_id: r for r in rows}
+    return {r.vc_contact_id: r for r in rows if is_synced(r)}
 
 
 def marks_for(db: Session, contact_ids: Iterable[int]) -> Dict[int, str]:
@@ -240,10 +241,9 @@ def linked_row(db: Session, contact: VcContact) -> Optional[SourcingContact]:
 
 
 def _sync_rows(db: Session) -> List[SourcingContact]:
-    return list(db.execute(
-        select(SourcingContact).where(SourcingContact.bucket == SYNC_BUCKET)
-        .order_by(SourcingContact.id)
-    ).scalars().all())
+    return [r for r in db.execute(
+        select(SourcingContact).order_by(SourcingContact.id)
+    ).scalars().all() if is_synced(r)]
 
 
 # ── 같은 사람 찾기 ──────────────────────────────────────────────────────────
@@ -302,9 +302,9 @@ def other_buckets(db: Session, contact: VcContact) -> List[str]:
     out: List[str] = []
     for bucket, raw in db.execute(
         select(SourcingContact.bucket, SourcingContact.phone)
-        .where(SourcingContact.bucket != SYNC_BUCKET)
     ).all():
-        if digits(raw) == phone and bucket not in out:
+        if (digits(raw) == phone and not sourcing_buckets.same(bucket, SYNC_BUCKET)
+                and not any(sourcing_buckets.same(bucket, b) for b in out)):
             out.append(bucket)
     return out
 
@@ -342,13 +342,17 @@ def assignee_for(db: Session, contact: VcContact, user: Optional[User]) -> str:
 def create_row(db: Session, contact: VcContact, participation: str = JOINED,
                user: Optional[User] = None) -> SourcingContact:
     """그 갈래 맨 아래에 새 줄. 카톡방은 **비워 둔다** — 보내는 사람 카톡에서
-    [방 후보 찾기]로 찾는다(모듈 머리말 ★)."""
+    [방 후보 찾기]로 찾는다(모듈 머리말 ★).
+
+    갈래 글자는 **저장된 그대로** 쓴다(`sourcing_buckets.label_of`) — 줄들이
+    `딜소싱` 으로 들어 있는데 코드의 글자로 만들면 딜 소싱 화면에 탭이 둘 선다.
+    """
     last = db.execute(
         select(func.max(SourcingContact.position))
-        .where(SourcingContact.bucket == SYNC_BUCKET)
+        .where(SourcingContact.bucket.in_(sourcing_buckets.variants(db, SYNC_BUCKET)))
     ).scalar() or 0
     row = SourcingContact(
-        bucket=SYNC_BUCKET, position=last + 1,
+        bucket=sourcing_buckets.label_of(db, SYNC_BUCKET), position=last + 1,
         name=_text(contact.name) or "(이름 없음)",
         title=_text(contact.title) or None,
         firm=_text(contact.firm) or None,
@@ -569,11 +573,10 @@ def before_flush(session: Session) -> None:
         with session.no_autoflush:
             linked = session.execute(
                 select(SourcingContact).where(
-                    SourcingContact.vc_contact_id.in_(list(contacts)),
-                    SourcingContact.bucket == SYNC_BUCKET)
+                    SourcingContact.vc_contact_id.in_(list(contacts)))
             ).scalars().all()
         for row in linked:
-            if row in session.deleted:
+            if row in session.deleted or not is_synced(row):
                 continue
             obj, changed = contacts[row.vc_contact_id]
             for field in changed:

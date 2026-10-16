@@ -377,14 +377,17 @@ def test_the_seeded_text_has_no_email_address(db, users):
     assert "deal@example.com" in db.query(MessageTemplate).filter_by(
         kind="sourcing_remind").one().body
 
-    # 명단에 시리즈 A 갈래가 있으면 **그 이름**으로 심는다(문구 이름 = 갈래)
+    # 명단에 시리즈 A 갈래가 있으면 **그 이름**으로 심는다(문구 이름 = 갈래).
+    # 띄어쓰기만 다른 이름(`딜소싱`)은 이미 심은 갈래라 또 심지 않는다 — 한 자리에
+    # 팀 문구가 둘이면 아무것도 안 집힌다(`tests/test_sourcing_bucket_whitespace.py`).
     db.add_all([SourcingContact(bucket="시리즈 A 이상 딜소싱 참여 심사역", name="가"),
+                SourcingContact(bucket="시리즈 A 이상 개인 참여 심사역", name="다"),
                 SourcingContact(bucket=MNA, name="나")])
     db.commit()
     assert seed_sourcing_remind(db) == 1
     db.commit()
     names = {r.name for r in db.query(MessageTemplate).filter_by(kind="sourcing_remind")}
-    assert "시리즈 A 이상 딜소싱 참여 심사역" in names and MNA not in names
+    assert names == {SOURCING_REMIND_BUCKET, "시리즈 A 이상 개인 참여 심사역"}
 
 
 def test_bootstrap_seeds_it(db, users):

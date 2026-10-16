@@ -77,7 +77,8 @@ from sqlalchemy.orm.attributes import set_committed_value
 from .. import clock
 from ..models import (SendItem, SendJob, SeriesACompany, SeriesAShare,
                       SourcingContact, User)
-from . import deal_history, deal_numbers, room_name, sourcing_msg, twin_send
+from . import (deal_history, deal_numbers, room_name, sourcing_buckets, sourcing_msg,
+               twin_send)
 from . import message_composer as mc
 from .sourcing_sync import SYNC_BUCKET
 
@@ -89,7 +90,8 @@ KIND = sourcing_msg.SHARE_KIND
 LABEL = "Series A 딜 공유"
 
 #: 이 글을 받는 **하나뿐인** 갈래 — 투자사 관리 현황과 이어진 그 갈래다.
-#: 이름을 바꿀 수 없는 갈래라(`sourcing_buckets.rename`) 글자로 견준다.
+#: 이름을 바꿀 수 없는 갈래라(`sourcing_buckets.rename`) 이 글자로 견준다 —
+#: 띄어쓰기만 다른 저장 글자도 이 갈래다(`is_share_bucket`).
 BUCKET = SYNC_BUCKET
 
 #: 문구 속 기업 자리. 딜 소개 · 자료 전달의 `{기업목록}`(붙여 쓴 것)도 같은
@@ -176,7 +178,7 @@ def body_for(db: Session, user: User, bucket: str) -> str:
 
 
 def is_share_bucket(bucket: Optional[str]) -> bool:
-    return (bucket or "") == BUCKET
+    return sourcing_buckets.same(bucket, BUCKET)
 
 
 def short_series(value: Optional[str]) -> str:
@@ -680,7 +682,7 @@ def is_own(row: SeriesACompany, contact) -> bool:
 
 def _bucket_people(db: Session) -> List[SourcingContact]:
     return db.execute(select(SourcingContact).where(
-        SourcingContact.bucket == BUCKET)).scalars().all()
+        SourcingContact.bucket.in_(sourcing_buckets.variants(db, BUCKET)))).scalars().all()
 
 
 def _name_index(people: Iterable) -> Dict[str, List[Tuple[object, str]]]:
