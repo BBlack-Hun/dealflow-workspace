@@ -651,17 +651,20 @@ WRITE_ROUTES = {
     # 같은 표를 **고치기만** 해서 자기 줄이면 안 남는다 — 그래서 아래 기계 쪽에
     # 그대로 둔다.
     ("POST", "/followups/{sequence_id}/delete"): WATCHED,
+    # 주간업무 — 개인 화면이지만 **관리자가 팀원 것을 대신 고칠 수 있다**
+    # (`/todo?member=`). 남의 줄을 고친 것만 남는다(`Watch.others_only`) —
+    # 자기 할 일은 지운 것도 안 남는다.
+    ("POST", "/todo/tasks"): WATCHED,
+    ("PATCH", "/api/todo/tasks/{task_id}"): WATCHED,
+    ("POST", "/todo/tasks/{task_id}/delete"): WATCHED,
+    ("POST", "/todo/routines"): WATCHED,
+    ("PATCH", "/api/todo/routines/{routine_id}"): WATCHED,
+    ("POST", "/todo/routines/{routine_id}/delete"): WATCHED,
+    ("POST", "/todo/carry-over"): WATCHED,
 
     # ── 자기 것만 ───────────────────────────────────────────────────────────
     ("POST", "/login"): SELF,
     ("POST", "/account/password"): SELF,
-    ("POST", "/todo/tasks"): SELF,
-    ("PATCH", "/api/todo/tasks/{task_id}"): SELF,
-    ("POST", "/todo/tasks/{task_id}/delete"): SELF,
-    ("POST", "/todo/routines"): SELF,
-    ("PATCH", "/api/todo/routines/{routine_id}"): SELF,
-    ("POST", "/todo/routines/{routine_id}/delete"): SELF,
-    ("POST", "/todo/carry-over"): SELF,
     ("POST", "/setup/ir-root"): SELF,
     # 공지를 **내가 확인했다**는 표시. 늘 자기 줄이고(`notice_reads.user_id`),
     # 남기면 사람 수 × 공지 수만큼 쌓여 로그가 `누가 공지를 닫았다` 로 덮인다.

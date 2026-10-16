@@ -83,29 +83,77 @@ def top_requesters_api(db: Session = Depends(get_db),
     return {"rows": top_requesters(db, ids, limit=top_n)}
 
 
+def _todo_owner(db: Session, user: User, member: int) -> User:
+    """**누구의** 주간업무인가. 비었거나 나 자신이면 나다.
+
+    관리자는 팀원 한 사람을 골라 그 사람의 주간업무를 보고 **대신 고칠** 수
+    있다(`/todo?member=<id>`) — 주간 보고(`/report?member=`)가 팀원 한 사람을
+    고르는 것과 같은 모양이다. 관리자가 아니면 남의 것은 **403** 이다: 개인
+    화면이라 숨길 것은 없어도, 고치는 길이 열리면 안 된다.
+
+    **이 자리를 모든 쓰기가 지난다**(추가 · 가져오기 · 반복 업무 추가) — 화면을
+    여는 것과 고치는 것이 같은 판정을 읽어야 한쪽만 열리는 일이 없다. 줄 번호로
+    고치는 길(`_owned_task` · `_owned_routine`)도 같은 규칙이다.
+
+    누가 고쳤는지는 수정 로그가 남긴다(`edit_log.WATCHED["weekly_tasks"]`) —
+    관리자가 남의 줄을 고치면 그 관리자가 `누가` 로 적힌다.
+    """
+    if not member or member == user.id:
+        return user
+    if user.role != "admin":
+        raise HTTPException(status_code=403,
+                            detail="다른 팀원의 주간업무는 관리자만 볼 수 있습니다")
+    picked = db.get(User, member)
+    if picked is None:
+        raise HTTPException(status_code=404, detail="팀원을 찾을 수 없습니다")
+    return picked
+
+
 @router.get("/todo", response_class=HTMLResponse, include_in_schema=False)
 def todo_page(request: Request, db: Session = Depends(get_db),
               user: User = Depends(get_current_user), week: str = "",
-              moved: int = 0):
+              moved: int = 0, member: int = 0):
     """주간 업무 — 손으로 적는 체크리스트 + 시스템이 아는 일 + 회차 준비 점검.
 
     셋을 한 화면에 둔다. 예전엔 '오늘 할 일'과 '회차 준비 점검'이 따로 있었는데,
     아침에 두 군데를 열어야 했다.
+
+    ## 관리자가 팀원 것을 볼 때 (`?member=`)
+
+    주간업무 표와 반복 업무만 그 사람 것으로 바뀐다. **시스템이 챙기는 일 ·
+    회차 준비 점검은 그리지 않는다** — 둘은 그 사람의 발송·리마인드를 읽는
+    자리이고, 여는 것만으로 리마인드 정리(`cadence.sweep_reactions`)가 돈다.
+    남의 화면을 보는 동안 그 사람의 발송 쪽 상태를 건드리는 길을 아예 두지
+    않는다. 발송을 시작하는 단추는 이 화면 어디에도 없다.
     """
     from datetime import date as _date
+
+    owner = _todo_owner(db, user, member)
+    other = owner.id != user.id
 
     today_ = _date.today()
     start = weekly.week_start(_as_week(week) or today_)
 
-    weekly.ensure_routines(db, user)
+    weekly.ensure_routines(db, owner)
     # 오늘을 넘겨 준다 — 이미 끝난 주는 채우지 않는다(weekly.fill_week 머리말).
-    weekly.fill_week(db, user, start, today_)
+    weekly.fill_week(db, owner, start, today_)
 
-    rows = weekly.task_rows(db, user, start, today_)
+    rows = weekly.task_rows(db, owner, start, today_)
     ctx = base_ctx(request, db, user, active="check")
-    ctx.update(today.build(db, user))          # 시스템이 아는 일 (읽기 전용)
-    ctx.update(readiness.report(db, user))     # 회차 준비 점검 (합침)
+    if not other:
+        ctx.update(today.build(db, user))          # 시스템이 아는 일 (읽기 전용)
+        ctx.update(readiness.report(db, user))     # 회차 준비 점검 (합침)
     ctx.update({
+        # 누구의 주간업무인가. 남의 것이면 화면이 머리에 띠를 두르고, 폼마다
+        # 이 번호를 실어 보낸다(`_todo_owner`).
+        "owner": owner,
+        "viewing_other": other,
+        "member_id": owner.id if other else 0,
+        # 관리자에게만 — 팀원 고르개. 정지된 계정은 뺀다(고칠 주간업무가 없다).
+        "members": ([{"id": u.id, "name": u.name} for u in
+                     db.execute(select(User).where(User.is_active == 1)
+                                .order_by(User.id)).scalars().all()]
+                    if user.role == "admin" else []),
         "tasks": rows,
         "summary": weekly.summary(rows),
         "week_start": start,
@@ -114,12 +162,12 @@ def todo_page(request: Request, db: Session = Depends(get_db),
         "next_week": (start + timedelta(days=7)).isoformat(),
         "this_week": weekly.week_start(today_).isoformat(),
         "is_this_week": start == weekly.week_start(today_),
-        "carry": weekly.carry_over_candidates(db, user, start),
+        "carry": weekly.carry_over_candidates(db, owner, start),
         "statuses": weekly.STATUS_LABELS,
         "weekday_names": weekly.WEEKDAYS,
         # 채우는 쪽(`fill_week`)과 **같은 목록**이어야 한다 — 따로 뽑으면
         # 내려 둔 규칙이 표에는 그대로 서 있고 새 항목만 안 생긴다.
-        "routines": weekly.active_routines(db, user),
+        "routines": weekly.active_routines(db, owner),
         "weekday_label": weekly.weekday_label,
         "nth_label": weekly.nth_label,
         "today_iso": today_.isoformat(),
@@ -145,33 +193,48 @@ def _todo_url(week: str = "", **extra) -> str:
     폼에서 온 값을 그대로 이어 붙이지 않는다 — 주소에 실려 온 글자가 그대로
     링크가 되면 안 된다. 한 번 날짜로 읽어 그 주 월요일로 되돌린 값만 쓴다.
     읽히지 않으면 주 없이 `/todo` — 그러면 이번 주가 열린다.
+
+    `member` 는 숫자로만 받는다(`_todo_owner` 를 지난 계정 번호) — 관리자가
+    팀원 것을 고친 뒤 **그 팀원 화면으로** 돌아가야 한다. 안 그러면 고친 줄이
+    눈앞에서 사라져 저장이 안 된 것처럼 보인다.
     """
     parts = []
     start = _as_week(week)
     if start is not None:
         parts.append(f"week={weekly.week_start(start)}")
-    parts += [f"{k}={v}" for k, v in extra.items() if v]
+    parts += [f"{k}={int(v) if k == 'member' else v}"
+              for k, v in extra.items() if v]
     return "/todo?" + "&".join(parts) if parts else "/todo"
+
+
+def _back_member(owner: User, user: User) -> int:
+    """되돌아갈 주소에 실을 팀원 번호 — 내 것이면 0(주소에 안 싣는다)."""
+    return owner.id if owner.id != user.id else 0
 
 
 # --- 주간 업무 고치기 --------------------------------------------------------
 
+def _may_touch(row_user_id: int, user: User) -> bool:
+    """이 줄을 고칠 수 있는가 — 내 줄이거나, 관리자다(`_todo_owner` 와 같은 규칙)."""
+    return row_user_id == user.id or user.role == "admin"
+
+
 def _owned_task(db: Session, task_id: int, user: User) -> WeeklyTask:
     row = db.get(WeeklyTask, task_id)
-    if row is None or row.user_id != user.id:
+    if row is None or not _may_touch(row.user_id, user):
         raise HTTPException(status_code=404, detail="업무를 찾을 수 없습니다")
     return row
 
 
 def _owned_routine(db: Session, routine_id: int, user: User) -> WeeklyRoutine:
-    """남의 것도, 이미 내려 둔 것도 아니어야 한다.
+    """남의 것(관리자가 아니면)도, 이미 내려 둔 것도 아니어야 한다.
 
     내려 둔 규칙(`is_active=0`)은 화면에서 사라졌으므로 없는 것과 같다 —
     주소를 알고 있어도 다시 고쳐지면 안 된다. 확인이 한 곳에 있어야 고치기와
     지우기 중 한쪽만 빠지는 일이 없다.
     """
     row = db.get(WeeklyRoutine, routine_id)
-    if row is None or row.user_id != user.id or row.is_active != 1:
+    if row is None or not _may_touch(row.user_id, user) or row.is_active != 1:
         raise HTTPException(status_code=404, detail="반복 업무를 찾을 수 없습니다")
     return row
 
@@ -179,23 +242,28 @@ def _owned_routine(db: Session, routine_id: int, user: User) -> WeeklyRoutine:
 @router.post("/todo/tasks", include_in_schema=False)
 def add_task(category: str = Form(""), title: str = Form(...),
              due_date: str = Form(""), week: str = Form(""),
+             member: int = Form(0),
              db: Session = Depends(get_db),
              user: User = Depends(get_current_user)):
     from datetime import date as _date
 
+    owner = _todo_owner(db, user, member)
+    back = _back_member(owner, user)
     start = weekly.week_start(_as_week(week) or _date.today())
     if not title.strip():
-        return RedirectResponse(_todo_url(start.isoformat()), status_code=303)
+        return RedirectResponse(_todo_url(start.isoformat(), member=back),
+                                status_code=303)
     last = db.execute(
-        select(WeeklyTask.position).where(WeeklyTask.user_id == user.id,
+        select(WeeklyTask.position).where(WeeklyTask.user_id == owner.id,
                                           WeeklyTask.week_start == start.isoformat())
         .order_by(WeeklyTask.position.desc()).limit(1)
     ).scalar() or 0
-    db.add(WeeklyTask(user_id=user.id, week_start=start.isoformat(),
+    db.add(WeeklyTask(user_id=owner.id, week_start=start.isoformat(),
                       category=category.strip() or None, title=title.strip(),
                       due_date=(due_date.strip() or None), position=last + 1))
     db.commit()
-    return RedirectResponse(_todo_url(start.isoformat()), status_code=303)
+    return RedirectResponse(_todo_url(start.isoformat(), member=back),
+                            status_code=303)
 
 
 class TaskPatch(BaseModel):
@@ -227,26 +295,33 @@ def patch_task(task_id: int, body: TaskPatch, db: Session = Depends(get_db),
 def delete_task(task_id: int, week: str = Form(""),
                 db: Session = Depends(get_db),
                 user: User = Depends(get_current_user)):
-    db.delete(_owned_task(db, task_id, user))
+    task = _owned_task(db, task_id, user)
+    back = task.user_id if task.user_id != user.id else 0
+    db.delete(task)
     db.commit()
-    return RedirectResponse(_todo_url(week), status_code=303)
+    return RedirectResponse(_todo_url(week, member=back), status_code=303)
 
 
 @router.post("/todo/carry-over", include_in_schema=False)
-def carry_over(week: str = Form(""), db: Session = Depends(get_db),
+def carry_over(week: str = Form(""), member: int = Form(0),
+               db: Session = Depends(get_db),
                user: User = Depends(get_current_user)):
     """지난 주 미완료를 이번 주로. 그냥 두면 지난 주 화면에 묻혀 잊힌다."""
     from datetime import date as _date
 
+    owner = _todo_owner(db, user, member)
     start = weekly.week_start(_as_week(week) or _date.today())
-    moved = weekly.carry_over(db, user, start)
-    return RedirectResponse(_todo_url(start.isoformat(), moved=moved), status_code=303)
+    moved = weekly.carry_over(db, owner, start)
+    return RedirectResponse(_todo_url(start.isoformat(), moved=moved,
+                                      member=_back_member(owner, user)),
+                            status_code=303)
 
 
 @router.post("/todo/routines", include_in_schema=False)
 def add_routine(category: str = Form(""), title: str = Form(...),
                 weekdays: List[str] = Form([]), nth_weeks: List[str] = Form([]),
                 time_of_day: str = Form(""), week: str = Form(""),
+                member: int = Form(0),
                 db: Session = Depends(get_db),
                 user: User = Depends(get_current_user)):
     """반복 업무 규칙을 만든다.
@@ -262,17 +337,19 @@ def add_routine(category: str = Form(""), title: str = Form(...),
     이 칸이 생기기 전의 규칙 수백 개가 그 상태로 남아 있다 — 같은 뜻을 두 가지
     글자로 적어 두면 나중에 어느 쪽만 보는 코드가 생긴다.
     """
+    owner = _todo_owner(db, user, member)
     if title.strip():
         weeks = ",".join(str(n) for n in
                          weekly.parse_nth_weeks(",".join(nth_weeks)))
-        db.add(WeeklyRoutine(user_id=user.id, category=category.strip() or "기타",
+        db.add(WeeklyRoutine(user_id=owner.id, category=category.strip() or "기타",
                              title=title.strip(),
                              weekdays=",".join(str(d) for d in
                                                weekly.parse_weekdays(",".join(weekdays))),
                              nth_weeks=weeks or None,
                              time_of_day=time_of_day if time_of_day in ("am", "pm") else None))
         db.commit()
-    return RedirectResponse(_todo_url(week), status_code=303)
+    return RedirectResponse(_todo_url(week, member=_back_member(owner, user)),
+                            status_code=303)
 
 
 class RoutineIn(BaseModel):
@@ -310,8 +387,10 @@ def delete_routine(routine_id: int, week: str = Form(""),
                    user: User = Depends(get_current_user)):
     # 줄을 지우지 않고 내린다 — 딸린 항목이 외래키로 붙들고 있고(500 의 원인),
     # 통째로 사라지면 기본 규칙이 다시 깔린다(weekly.delete_routine 머리말).
-    weekly.delete_routine(db, _owned_routine(db, routine_id, user))
-    return RedirectResponse(_todo_url(week), status_code=303)
+    row = _owned_routine(db, routine_id, user)
+    back = row.user_id if row.user_id != user.id else 0
+    weekly.delete_routine(db, row)
+    return RedirectResponse(_todo_url(week, member=back), status_code=303)
 
 
 @router.get("/readiness", include_in_schema=False)
