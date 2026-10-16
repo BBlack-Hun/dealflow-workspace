@@ -1345,6 +1345,34 @@ def table_columns(layout: Layout, months: List[ContactColumn]) -> List[Column]:
             + [c for c in layout.tail if c.in_table])
 
 
+# 여러 명단을 **한 표로** 볼 때만 서는 칸 — 그 줄이 어느 명단의 줄인가(#22).
+#
+# 스타트업 화면의 `전체` 는 팀원이면 자기 명단 전부, 관리자면 팀 전체 명단을
+# 한 표에 세운다. 같은 기업명이 두 명단에 있을 수 있고, 관리자 화면에서는
+# 누구 명단인지가 곧 누구에게 물을지다 — 이 칸이 없으면 줄을 열어 봐야 안다.
+#
+# `source="list"` 는 **고치는 칸이 아니다**(`stamp` 와 같은 결 — 표에서
+# `class="cell"` 도 `data-field` 도 안 받는다). 명단을 옮기는 것은 이관이라
+# 수정창의 [이관] 이 하는 일이고, 칸을 눌러 이름을 고칠 일이 아니다.
+# `pick` 이라 머리글 필터는 선다 — `전체` 에서 명단 몇 개만 골라 보는 자리다.
+LIST_COLUMN = Column("명단", "list_label", 150, source="list", kind="pick")
+
+
+def all_view_columns(layout: Layout) -> List[Column]:
+    """여러 명단을 한 표로 볼 때의 칸 — **고정 칸 + `명단`**.
+
+    달마다 늘어나는 칸은 **명단마다 다르다**(`ContactColumn.sheet`). 한 표에
+    다 세우면 명단 수 × 달 수만큼 칸이 늘고 대부분이 빈 칸이다. 그래서 고정
+    칸만 세우고, 달 칸은 그 명단 탭에서 본다(값은 그대로 있다).
+
+    `명단` 은 고정 칸(`Layout.sticky` — `NO`·`기업명`) **바로 뒤**에 선다.
+    가로로 밀어도 어느 기업인지는 보이고, 어느 명단인지는 한 칸만 밀면 닿는다.
+    """
+    fixed = table_columns(layout, [])
+    at = min(layout.sticky, len(fixed))
+    return fixed[:at] + [LIST_COLUMN] + fixed[at:]
+
+
 def panel_columns(layout: Layout, months: List[ContactColumn]) -> List[Column]:
     """수정창에 세울 칸 — 표에 있는 것 + 표에서 뺀 것.
 
@@ -1375,7 +1403,22 @@ def filter_columns(layout: Layout, months: List[ContactColumn]) -> List[Column]:
     싣고 선언이 없으면 아무도 안 보는 죽은 속성이 된다. 두 쪽이 **같은 목록
     하나**에서 나와야 어긋날 자리가 없다(`tests/test_filter_columns.py`).
     """
-    return [c for c in table_columns(layout, months) if c.filterable]
+    return filters_of(table_columns(layout, months))
+
+
+def filters_of(columns: List[Column]) -> List[Column]:
+    """칸 목록에서 **거를 수 있는 칸**만 — 위 `filter_columns` 의 몸통.
+
+    표 칸을 배치에서 바로 뽑지 않는 자리(스타트업 `전체` — `all_view_columns`)
+    도 같은 판정을 지나게 따로 둔다. 거기서 조건을 다시 적으면 머리글 선언과
+    행이 싣는 값이 그 화면에서만 갈린다.
+    """
+    return [c for c in columns if c.filterable]
+
+
+def header_filters_of(columns: List[Column]) -> Dict[str, str]:
+    """칸 목록 → 머리글의 `data-filters` 값. 위 `header_filters` 의 몸통."""
+    return {c.key: f"{c.key}:{c.label}" for c in filters_of(columns)}
 
 
 def header_filters(layout: Layout,
@@ -1388,8 +1431,7 @@ def header_filters(layout: Layout,
     그래서 표에 안 서는 칸은 이 기전으로 거를 수가 없다 — 거르려면 그 칸을
     표에 세워야 한다(`Column.in_table`).
     """
-    return {c.key: f"{c.key}:{c.label}"
-            for c in filter_columns(layout, months)}
+    return header_filters_of(table_columns(layout, months))
 
 
 def note_keys(layout: Layout, months: List[ContactColumn]) -> List[str]:
