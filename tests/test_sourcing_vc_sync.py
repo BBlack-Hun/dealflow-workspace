@@ -11,7 +11,8 @@
   ④ 두 화면이 같은 칸을 본다 — 딜 소싱에서 참여를 바꾸면 투자사 쪽이 X/O.
   ⑤ 딜 소싱에서 넣거나 번호를 고치면 투자사 쪽 같은 분과 저절로 잇는다(번호가
      딱 한 줄일 때만).
-  ⑥ 이어진 두 줄의 이름 · 직함 · 회사 · 휴대폰 · 메일은 어느 쪽에서 고쳐도 같이.
+  ⑥ 이어진 두 줄의 이름 · 직함 · 회사 · 휴대폰 · 메일 · 투자분야(선호 투자분야) ·
+     라운드 사이즈는 어느 쪽에서 고쳐도 같이. 메모는 따로(#17).
   ⑦ 불참여인 분께는 딜 소싱 제안(처음 안내 · 월간 리마인드)이 안 나간다.
   ⑧ 권한 — 투자사 칸은 그 투자사 줄 담당 · 관리자. 딜 소싱 쪽은 이어진 줄이어도
      누구나(딜 소싱은 투자사 담당과 따로 관리한다). 수정 로그가 남는다.
@@ -1019,3 +1020,160 @@ def test_the_edit_panel_sends_the_column_only_when_it_was_changed():
     result = subprocess.run([shutil.which("node"), str(SAVE_JS)],
                             capture_output=True, text=True, timeout=60)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+# ── ⑥ 더하기 — 투자분야 · 라운드 사이즈(#17) ─────────────────────────────────
+#
+# "두 메뉴의 컬럼이 같으면 어느 쪽에 넣어도 다른 쪽에 자동으로." 딜 소싱의
+# `투자분야` 와 투자사 관리 현황의 `선호 투자분야` 는 같은 칸(`sectors`)이고,
+# `라운드 사이즈` 도 같다. 범위는 지금 잇는 그대로 — 시리즈 A 갈래의 이어진 줄.
+# **메모는 잇지 않는다**(담는 이야기가 다르다).
+
+def test_investor_sectors_and_round_size_flow_to_sourcing(board, db, users):
+    contact = vc(db, users)
+    mark(board, contact.id, "O")
+
+    r = board.patch(f"/api/contacts/{contact.id}",
+                    json={"sectors": "AI,헬스케어", "round_size": "10~50억",
+                          "memo": "투자사 쪽 통화 메모"})
+    assert r.status_code == 200, r.text
+    [row] = sync_rows(db)
+    assert (row.sectors, row.round_size) == ("AI,헬스케어", "10~50억")
+    assert row.memo is None, "메모는 따라가면 안 된다"
+
+
+def test_sourcing_sectors_and_round_size_flow_to_the_investor(board, db, users):
+    from app.models import VcContact
+
+    contact = vc(db, users, memo="원래 메모")
+    mark(board, contact.id, "O")
+    [row] = sync_rows(db)
+
+    r = board.patch(f"/api/sourcing/{row.id}",
+                    json={"sectors": "바이오, 딥테크", "round_size": "Series A 30억",
+                          "memo": "딜 소싱 방 이야기"})
+    assert r.status_code == 200, r.text
+    db.expire_all()
+    back = db.get(VcContact, contact.id)
+    assert (back.sectors, back.round_size) == ("바이오, 딥테크", "Series A 30억")
+    assert back.memo == "원래 메모", "딜 소싱 메모가 투자사 메모를 덮었다"
+
+
+def test_a_new_row_made_by_O_carries_sectors_and_round_size(board, db, users):
+    contact = vc(db, users, sectors="AI", round_size="5억 이하")
+    mark(board, contact.id, "O")
+    [row] = sync_rows(db)
+    assert (row.sectors, row.round_size) == ("AI", "5억 이하")
+
+
+def test_linking_fills_only_empty_sectors_and_flags_a_difference(board, db, users):
+    """이을 때는 **빈 칸만** 채운다 — 이미 다르게 적힌 값은 `다른 칸` 으로 알린다."""
+    contact = vc(db, users, sectors="AI", round_size="10억")
+    sc(db, sectors="핀테크")                     # 번호로 이어진다 · 라운드는 비어 있다
+    mark(board, contact.id, "O")
+    [row] = sync_rows(db)
+    assert row.sectors == "핀테크" and row.round_size == "10억"
+    body = board.get(f"/sourcing?tab={SYNC}").text
+    assert "다른 칸: 투자분야" in body
+
+
+def test_comma_spacing_alone_is_not_a_different_field(board, db, users):
+    """`AI,헬스케어` 와 `AI, 헬스케어` 는 투자사 관리 현황에서 같은 두 분야다."""
+    import re
+
+    contact = vc(db, users, sectors="AI,헬스케어")
+    sc(db, sectors="AI, 헬스케어")
+    mark(board, contact.id, "O")
+    body = board.get(f"/sourcing?tab={SYNC}").text
+    diff = re.search(r'data-testid="sourcing-vc-diff"[^>]*>([^<]*)<', body)
+    assert diff is None or "투자분야" not in diff.group(1), diff and diff.group(1)
+
+
+def test_an_empty_sectors_or_round_size_never_wipes_the_other_side(board, db, users):
+    from app.models import VcContact
+
+    contact = vc(db, users, sectors="AI", round_size="10억")
+    mark(board, contact.id, "O")
+    [row] = sync_rows(db)
+    assert board.patch(f"/api/sourcing/{row.id}",
+                       json={"sectors": "", "round_size": " "}).status_code == 200
+    db.expire_all()
+    back = db.get(VcContact, contact.id)
+    assert (back.sectors, back.round_size) == ("AI", "10억")
+
+
+def test_other_buckets_do_not_sync_sectors(board, db, users):
+    """범위는 지금 잇는 그대로 — 시리즈 A 갈래가 아닌 줄은 번호가 같아도 안 따라간다."""
+    from app.models import VcContact
+
+    contact = vc(db, users, sectors="AI")
+    row = sc(db, bucket=MNA)
+    board.patch(f"/api/sourcing/{row.id}", json={"sectors": "M&A 전 분야"})
+    db.expire_all()
+    assert db.get(VcContact, contact.id).sectors == "AI"
+
+
+def test_the_flowed_sectors_are_in_the_edit_log_on_both_tables(board, db, users):
+    """따라 고친 쪽도 수정 로그 규칙 그대로 남는다 — 같은 flush 에서 적으므로
+    로그 훅(`edit_log`)이 본다. 우회하는 길이 없다.
+
+    로그는 **남의 것과 공용**만 남긴다(`edit_log` 머리말). 그래서:
+      · 내 투자사 줄을 고치면 — 내 줄은 안 남고, 따라 바뀐 딜 소싱 줄(공용)은 남는다.
+      · 다른 팀원이 딜 소싱에서 고치면 — 딜 소싱 줄도, 따라 바뀐 **남의 투자사
+        줄**도 남는다(누가 내 명단 값을 바꿨는지가 거기 보인다).
+    """
+    import json
+
+    from app.models import EditLog
+
+    def fields_since(mark_id):
+        return {(log.table_name, log.row_id): {c["field"] for c in json.loads(log.changes_json)}
+                for log in db.query(EditLog).filter(EditLog.id > mark_id).all()}
+
+    def last_id():
+        return db.query(EditLog.id).order_by(EditLog.id.desc()).limit(1).scalar() or 0
+
+    contact = vc(db, users)
+    mark(board, contact.id, "O")
+    [row] = sync_rows(db)
+
+    at = last_id()
+    assert board.patch(f"/api/contacts/{contact.id}",
+                       json={"sectors": "AI", "round_size": "10억"}).status_code == 200
+    got = fields_since(at)
+    assert {"sectors", "round_size"} <= got.get(("sourcing_contacts", row.id), set()), got
+    assert ("vc_contacts", contact.id) not in got     # 내 줄은 남기지 않는다
+
+    login(board, "01000000002")
+    at = last_id()
+    assert board.patch(f"/api/sourcing/{row.id}",
+                       json={"sectors": "바이오", "round_size": "30억"}).status_code == 200
+    got = fields_since(at)
+    assert {"sectors", "round_size"} <= got.get(("sourcing_contacts", row.id), set()), got
+    assert {"sectors", "round_size"} <= got.get(("vc_contacts", contact.id), set()), got
+
+
+def test_syncing_sectors_leaves_the_room_columns_to_room_joined(board, db, users):
+    """같은 칸을 따라 고쳐도 카톡방 두 칸(`room_verified` · `kakao_joined`)은 안
+    건드린다 — 그 둘을 적는 자리는 `room_joined` 하나다(`tests/test_room_joined.py`)."""
+    from app.models import VcContact
+    from app.services import sourcing_sync
+
+    assert not {"room_verified", "kakao_joined", "kakao_room_name"} & set(
+        sourcing_sync.SHARED_FIELDS)
+    contact = vc(db, users, kakao_joined="O")
+    mark(board, contact.id, "O")
+    [row] = sync_rows(db)
+    board.patch(f"/api/sourcing/{row.id}", json={"sectors": "AI", "round_size": "10억"})
+    db.expire_all()
+    back = db.get(VcContact, contact.id)
+    assert (back.room_verified, back.kakao_joined, back.kakao_room_name) == (
+        "verified", "O", "홍길동 방")
+
+
+def test_the_link_badge_names_every_shared_field(board, db, users):
+    contact = vc(db, users)
+    mark(board, contact.id, "O")
+    body = board.get(f"/sourcing?tab={SYNC}").text
+    assert ("두 화면이 같이 바뀌는 칸: 이름 · 직함 · 회사 · 휴대폰 · 이메일 · 투자분야 · "
+            "라운드 사이즈 (메모는 따로)") in body
