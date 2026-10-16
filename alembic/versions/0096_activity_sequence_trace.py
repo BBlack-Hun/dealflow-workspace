@@ -28,10 +28,13 @@
 ## 번호
 
 0087~0095 는 딜 소싱 메일·투자사 연결·Series A 표(`0095_series_a_shares`)가 먼저
-썼다 — 그 판 위에 선다(처음에는 0087 이었다).
+썼다 — 그 판 위에 선다(처음에는 0087 이었다). 그 뒤 Series A 리뷰 수정
+(`0101_series_a_shared_by` · `0102_series_a_import_key`)이 먼저 운영에 나가,
+릴리스에서 이 판을 0102 뒤로 옮겨 머리를 하나로 맞춘다
+(0102 → 0096 → 0097 → 0098 → 0099 → 0100).
 
 Revision ID: 0096_activity_sequence_trace
-Revises: 0095_series_a_shares
+Revises: 0102_series_a_import_key
 """
 from __future__ import annotations
 
@@ -39,7 +42,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "0096_activity_sequence_trace"
-down_revision = "0095_series_a_shares"
+down_revision = "0102_series_a_import_key"
 branch_labels = None
 depends_on = None
 
