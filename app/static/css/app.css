@@ -819,7 +819,7 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
                           border-radius: 4px; }
 /* 필터 창. 머리글 칸에 붙어 떠 칸 폭을 따르는데, 칸이 대개 더 좁아 `min-width` 가 곧 폭이다.
    200px 일 때는 머리 줄(제목 · [모두 선택] · [해제])이 안 들어가 셋이 같이 접혔다
-   (`딜 소싱 참여 요청 / 일` · `모두 선 / 택` · `해 / 제`). 270px 이면 투자사 관리 현황의
+   (`모두 선 / 택` · `해 / 제`). 270px 이면 투자사 관리 현황의
    `라운드 사이즈(투자운영금액)` 까지 한 줄에 든다. 더 긴 이름은 제목만 접힌다(아래). */
 .filter-panel { position: absolute; z-index: 30; top: 100%; left: 6px; min-width: 270px; max-width: 280px;
                 background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 8px;
