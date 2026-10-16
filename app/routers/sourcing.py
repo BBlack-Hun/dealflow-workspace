@@ -256,6 +256,10 @@ def sourcing_page(request: Request, db: Session = Depends(get_db),
         # 투자사 관리 현황의 줄과 **이어진** 줄 — `🔗 투자사 관리 현황: ○○ 명단`.
         # 시리즈 A 갈래만 이어진다(`sourcing_sync.SYNC_BUCKET`).
         "vc_links": sourcing_sync.badges(db, rows),
+        # 연결 표시의 풍선말 — **어느 칸이 같이 바뀌는지**. 화면에 칸 이름을
+        # 적어 두면 칸이 늘 때(#17 투자분야 · 라운드 사이즈) 말만 옛것으로 남는다.
+        "vc_shared": " · ".join(sourcing_sync.SHARED_LABELS[f]
+                                for f in sourcing_sync.SHARED_FIELDS),
         # **보낼 방이 없는 줄** — 자기 방 이름도 이어받을 방도 없다
         # (`sourcing_rooms.needs_room` — 발송이 방을 고르는 규칙과 같다).
         # 그 줄에 `방 없음` 과 [방 후보 찾기] 가 선다.
