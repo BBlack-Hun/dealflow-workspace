@@ -103,12 +103,13 @@ def buckets(db: Session) -> List[dict]:
     그 차례는 날짜와 아무 상관이 없다 — 갈래를 요청일로 세우면 누가 어느 날
     참여를 수락했느냐에 따라 왼쪽 탭이 매일 자리를 바꾼다. 명단 안에서 무엇이
     위로 오는지(아래 `rows_of`)와 **갈래가 늘어선 차례는 다른 판단**이다.
+
+    **띄어쓰기만 다른 글자는 탭 하나다**(`sourcing_buckets.groups`) — 수는 합친
+    것, 이름은 그 갈래가 쓰는 글자. `variants` 는 그 탭에 묶인 저장 글자들이다.
     """
-    rows = db.execute(
-        select(SourcingContact.bucket, func.count(), func.min(SourcingContact.position))
-        .group_by(SourcingContact.bucket)
-    ).all()
-    out = [{"key": b, "label": b, "count": n, "pos": pos or 0} for b, n, pos in rows]
+    out = [{"key": g["label"], "label": g["label"], "count": g["count"],
+            "pos": g["pos"], "variants": g["variants"]}
+           for g in sourcing_buckets.groups(db)]
     return sorted(out, key=lambda x: (x["pos"], x["label"]))
 
 
@@ -166,7 +167,9 @@ def rows_of(db: Session, bucket: str = "") -> List[SourcingContact]:
     """
     stmt = select(SourcingContact).order_by(SourcingContact.position, SourcingContact.id)
     if bucket:
-        stmt = stmt.where(SourcingContact.bucket == bucket)
+        # 탭 하나에 묶인 글자 전부(띄어쓰기만 다른 것 — `buckets`).
+        stmt = stmt.where(
+            SourcingContact.bucket.in_(sourcing_buckets.variants(db, bucket)))
     dated: List[SourcingContact] = []
     undated: List[SourcingContact] = []
     for row in db.execute(stmt).scalars().all():
@@ -247,8 +250,11 @@ def sourcing_page(request: Request, db: Session = Depends(get_db),
                   msg: str = ""):
     tabs = buckets(db)
     # 아무 것도 고르지 않았으면 첫 갈래를 연다. 전체를 먼저 보여주면 갈래가
-    # 나뉜 뜻이 사라진다.
-    selected = tab if any(t["key"] == tab for t in tabs) else (
+    # 나뉜 뜻이 사라진다. 띄어쓰기만 다른 글자로 와도 그 탭이다(예전 주소 ·
+    # 코드의 글자).
+    opened = next((t["key"] for t in tabs
+                   if tab and sourcing_buckets.same(t["key"], tab)), None)
+    selected = opened if opened is not None else (
         tabs[0]["key"] if tabs and tab != "all" else "")
     rows = rows_of(db, selected)
     ctx = base_ctx(request, db, user, active="sourcing")
@@ -306,7 +312,7 @@ def sourcing_page(request: Request, db: Session = Depends(get_db),
         "share_topic": series_a_share.KIND,
         # 그 탭에서만 표 맨 왼쪽에 **고르는 체크박스 칸**이 선다 — 단추가 체크한
         # 참여 분만 싣는다(`sourcing.html`). 다른 탭에는 고른 것을 쓸 곳이 없다.
-        "picking": selected == series_a_share.BUCKET,
+        "picking": series_a_share.is_share_bucket(selected),
         "total": sum(t["count"] for t in tabs),
         # 이름을 못 바꾼 까닭. 조용히 되돌아오면 왜 그대로인지 알 수 없다.
         "msg": msg,
@@ -389,11 +395,14 @@ def add_row(body: SourcingIn, bucket: str = "",
     target = (bucket or "").strip()
     if not target:
         raise HTTPException(status_code=400, detail="갈래를 고르세요")
+    # 그 갈래가 **쓰고 있는 글자**로 적는다 — 띄어쓰기만 다른 글자로 넣으면 저장된
+    # 글자는 그대로인데 줄마다 글자가 갈린다(`sourcing_buckets.label_of`).
+    target = sourcing_buckets.label_of(db, target)
 
     # 새 줄은 그 갈래의 맨 아래로. 시트의 번호를 사람이 매번 세지 않아도 되게.
     last = db.execute(
         select(func.max(SourcingContact.position))
-        .where(SourcingContact.bucket == target)
+        .where(SourcingContact.bucket.in_(sourcing_buckets.variants(db, target)))
     ).scalar() or 0
     row = SourcingContact(bucket=target, position=last + 1, name=name)
     for field, value in body.model_dump(exclude_unset=True).items():

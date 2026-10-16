@@ -42,6 +42,15 @@ def variant_of(kind: str, name: Optional[str]) -> str:
     return (name or "").strip()
 
 
+def same_slot(kind: str, a: Optional[str], b: Optional[str]) -> bool:
+    """두 이름이 **같은 자리**인가. 갈래 자리는 띄어쓰기만 달라도 같다 — 한 갈래가
+    `딜소싱` · `딜 소싱` 두 글자로 저장돼 있어도 탭은 하나고(`sourcing_buckets.key`),
+    그 탭의 어느 줄이든 같은 문구를 받아야 한다."""
+    from .sourcing_buckets import same   # noqa: PLC0415 — 그쪽이 이 파일을 부른다
+
+    return same(variant_of(kind, a), variant_of(kind, b))
+
+
 def candidates(db: Session, user_id: int, kind: str,
                variant: str = "") -> List[MessageTemplate]:
     """이 사람이 이 자리에 쓸 수 있는 문구들 — 팀 기본 + 내 것, 살아 있는 것만.
@@ -61,19 +70,32 @@ def candidates(db: Session, user_id: int, kind: str,
     if kind in NAME_IS_A_BUCKET:
         # 갈래가 정해졌으면 그 갈래만, 갈래가 없으면 이름 없는 문구만.
         # 여기서 이름을 안 보면 '대표님·5개사' 문구가 개인 참여 심사역께 간다.
-        stmt = stmt.where(MessageTemplate.name == variant if variant
-                          else MessageTemplate.name.is_(None))
+        # 갈래는 띄어쓰기만 달라도 같은 자리다(`same_slot`) — 견주기는 여기서 한다.
+        if not variant:
+            stmt = stmt.where(MessageTemplate.name.is_(None))
+        else:
+            return [t for t in db.execute(stmt).scalars().all()
+                    if same_slot(kind, t.name, variant)]
     return list(db.execute(stmt).scalars().all())
+
+
+def _choice(db: Session, user_id: int, kind: str,
+            variant: str = "") -> Optional[TemplateChoice]:
+    """이 사람이 이 자리에 골라 둔 것. 띄어쓰기만 다른 갈래 글자에 하나씩 남아
+    있으면 **먼저 것**이다 — 읽기(`chosen_id`)와 고쳐 쓰기(`set_choice`)가 같은
+    줄을 본다."""
+    rows = db.execute(
+        select(TemplateChoice)
+        .where(TemplateChoice.user_id == user_id, TemplateChoice.kind == kind)
+        .order_by(TemplateChoice.id)
+    ).scalars().all()
+    return next((c for c in rows if same_slot(kind, c.variant, variant)), None)
 
 
 def chosen_id(db: Session, user_id: int, kind: str, variant: str = "") -> Optional[int]:
     """이 사람이 이 자리에 골라 둔 문구 번호(고르지 않았으면 None)."""
-    return db.execute(
-        select(TemplateChoice.template_id)
-        .where(TemplateChoice.user_id == user_id,
-               TemplateChoice.kind == kind,
-               TemplateChoice.variant == variant_of(kind, variant))
-    ).scalars().first()
+    row = _choice(db, user_id, kind, variant)
+    return row.template_id if row is not None else None
 
 
 def pick(db: Session, user_id: int, kind: str,
@@ -118,12 +140,7 @@ def set_choice(db: Session, user_id: int, kind: str, template_id: int,
                variant: str = "") -> None:
     """이 자리에 쓸 문구를 정한다. 한 자리에 하나뿐이라 있으면 갈아 끼운다."""
     variant = variant_of(kind, variant)
-    row = db.execute(
-        select(TemplateChoice)
-        .where(TemplateChoice.user_id == user_id,
-               TemplateChoice.kind == kind,
-               TemplateChoice.variant == variant)
-    ).scalars().first()
+    row = _choice(db, user_id, kind, variant)
     if row is None:
         db.add(TemplateChoice(user_id=user_id, kind=kind, variant=variant,
                               template_id=template_id))
@@ -133,12 +150,12 @@ def set_choice(db: Session, user_id: int, kind: str, template_id: int,
 
 def clear_choice(db: Session, user_id: int, kind: str, variant: str = "") -> None:
     """선택을 지운다 — 다시 기본 규칙(내 것 > 팀 것)으로 돌아간다."""
-    db.execute(
-        delete(TemplateChoice)
-        .where(TemplateChoice.user_id == user_id,
-               TemplateChoice.kind == kind,
-               TemplateChoice.variant == variant_of(kind, variant))
-    )
+    for row in db.execute(
+        select(TemplateChoice)
+        .where(TemplateChoice.user_id == user_id, TemplateChoice.kind == kind)
+    ).scalars().all():
+        if same_slot(kind, row.variant, variant):
+            db.delete(row)
 
 
 def forget_template(db: Session, template_id: int) -> None:

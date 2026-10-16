@@ -186,8 +186,14 @@ def _slots(kind: str, of_kind: List[MessageTemplate]) -> List[str]:
         return [""]
     # 문구가 하나도 없어도 자리 하나는 남긴다 — 그래야 "지금은 무엇이
     # 나가는가"(코드에 적힌 뼈대)를 볼 수 있고, 새로 만들 자리도 생긴다.
-    return list(dict.fromkeys(template_pick.variant_of(kind, t.name)
-                              for t in of_kind)) or [""]
+    # 띄어쓰기만 다른 갈래 이름은 **한 자리**다(`template_pick.same_slot`) — 처음
+    # 나온 이름으로 부른다.
+    slots: List[str] = []
+    for t in of_kind:
+        variant = template_pick.variant_of(kind, t.name)
+        if not any(template_pick.same_slot(kind, variant, seen) for seen in slots):
+            slots.append(variant)
+    return slots or [""]
 
 
 def _apply_view(db: Session, user: User, t: MessageTemplate) -> Optional[dict]:
@@ -300,10 +306,10 @@ def _section(db: Session, user: User, rows: List[MessageTemplate],
     label, desc = KIND_LABELS.get(kind, kind), _desc(db, kind)
     # 키 이름을 'items' 로 두면 Jinja 에서 dict.items 메서드가 잡힌다(실제로 500 발생).
     of_kind = [t for t in rows if t.kind == kind]
-    by_slot = {}
-    for t in of_kind:
-        by_slot.setdefault(template_pick.variant_of(kind, t.name), []).append(t)
-    slots = [_slot_view(db, user, kind, variant, by_slot.get(variant, []), mode, topic)
+    slots = [_slot_view(db, user, kind, variant,
+                        [t for t in of_kind
+                         if template_pick.same_slot(kind, t.name, variant)],
+                        mode, topic)
              for variant in _slots(kind, of_kind)]
     return {"kind": kind, "title": title, "tab": tab, "mode": mode,
             "label": label, "desc": desc, "slots": slots,

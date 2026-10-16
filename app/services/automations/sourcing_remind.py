@@ -53,8 +53,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ...models import Automation, AutomationSend, SourcingContact, User, VcContact
-from .. import (automation, sender_rooms, sourcing_link, sourcing_mail,
-                sourcing_msg, sourcing_receipts, sourcing_sync)
+from .. import (automation, sender_rooms, sourcing_buckets, sourcing_link,
+                sourcing_mail, sourcing_msg, sourcing_receipts, sourcing_sync)
 from .. import automation_runner as runner
 from .. import message_composer as mc
 
@@ -159,8 +159,11 @@ def collect(db: Session, row: Automation, sender: User,
     day = plan_.at.date()
     month = sourcing_receipts.month_of(day)
     nth = plan_.period % 10
+    # 적어 둔 갈래 이름과 띄어쓰기만 다른 글자의 줄도 그 갈래다 — 딜 소싱 화면의
+    # 탭 하나(`sourcing_buckets.variants`).
     people = db.execute(
-        select(SourcingContact).where(SourcingContact.bucket.in_(values["groups"]))
+        select(SourcingContact).where(SourcingContact.bucket.in_(
+            sourcing_buckets.variants(db, *values["groups"])))
         .order_by(SourcingContact.position, SourcingContact.id)
     ).scalars().all()
     got = sourcing_receipts.received_ids(db, month)

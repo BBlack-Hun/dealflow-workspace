@@ -134,11 +134,18 @@ def deals_page(
     # 정하는 곳(`buckets`, `position` 기준)을 그대로 쓴다.
     # 갈래마다의 수는 **이 목록에서** 센다 — 불참여를 뺀 목록과 칩 수가
     # 어긋나면 `M&A 9` 를 눌렀는데 카드가 8장이다.
+    #
+    # 띄어쓰기만 다른 글자는 **한 갈래**다 — 탭과 같은 이름(`key`)으로 센다.
+    # 카드의 `data-bucket` 도 이 이름이라(`sourcing_bucket_of`) 칩 · Series A 딜
+    # 공유가 글자로 견줘도(`deals.js`) 다른 글자의 분이 빠지지 않는다.
+    bucket_tabs = sourcing_bucket_rows(db)
+    sourcing_bucket_of = {v: b["key"] for b in bucket_tabs for v in b["variants"]}
     per_bucket: dict = {}
     for row in sourcing_contacts:
-        per_bucket[row.bucket] = per_bucket.get(row.bucket, 0) + 1
+        name = sourcing_bucket_of.get(row.bucket, row.bucket)
+        per_bucket[name] = per_bucket.get(name, 0) + 1
     sourcing_buckets = [{"name": b["key"], "count": per_bucket[b["key"]]}
-                        for b in sourcing_bucket_rows(db) if per_bucket.get(b["key"])]
+                        for b in bucket_tabs if per_bucket.get(b["key"])]
     # 담당(우리 쪽 심사역)도 거를 수 있어야 한다 — 39명을 통째로 훑는 것과
     # 내 담당 14명만 보는 것은 다른 일이다. 많은 순으로 둔다.
     #
@@ -211,6 +218,7 @@ def deals_page(
         "queue_empty_label": deal_queue.EMPTY_GROUP_LABEL,
         "sourcing_contacts": sourcing_contacts,
         "sourcing_buckets": sourcing_buckets,
+        "sourcing_bucket_of": sourcing_bucket_of,
         "sourcing_assignees": sourcing_assignees,
         "sourcing_assignee": sourcing_assignee,
         "sourcing_received": sourcing_received,
@@ -221,7 +229,9 @@ def deals_page(
         # 이 글을 받는 하나뿐인 갈래(`series_a_share.BUCKET` — 다른 갈래 카드는
         # 이 글에서 고를 수 없다).
         "series_a_rows": series_a_pick_rows(db),
-        "share_bucket": series_a_share.BUCKET,
+        "share_bucket": next((b["key"] for b in bucket_tabs
+                              if series_a_share.is_share_bucket(b["key"])),
+                             series_a_share.BUCKET),
         "share_topic": series_a_share.KIND,
         "share_label": series_a_share.LABEL,
         # 사람당 보낼 기업 수(기본 · 한도)와 그 옆 안내 — 화면이 칸을 바꾸면 같은
