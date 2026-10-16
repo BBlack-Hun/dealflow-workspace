@@ -205,11 +205,38 @@
       var multi = cell.classList.contains("multi");
       var input = document.createElement(multi ? "textarea" : "input");
       input.className = "cell-input";
+      // ── 날짜 칸이 **담지 못하는 글자**는 글자 칸으로 연다 ──────────────
+      //
+      // 브라우저의 날짜 입력(`type="date"`)은 날짜가 아닌 값을 **빈 글자로 바꿔**
+      // 담는다. `날짜 미정` 이 든 칸을 날짜 입력으로 열면 빈 칸으로 보이고, 눌렀다
+      // 나가기만 해도 `빈 값 ≠ 날짜 미정` 이라 **빈 값이 저장됐다** — 사람이 적은
+      // 사실이 칸을 스치기만 해도 지워졌다(Series A 탭 `수신 일자` · 스타트업DB
+      // `수신일`). 그런 칸은 글자 칸으로 열어 적힌 그대로 보이고 고치게 한다.
+      //
+      // 미리 가리고(`isDay`), 넣어 본 뒤에도 한 번 더 본다 — 날짜 모양이어도
+      // 브라우저가 못 담는 값이 있다(숫자 칸도 같은 일을 겪는다).
+      var asText = type === "date" && before !== "" && !isDay(before);
       if (!multi) {
-        input.type = type === "date" ? "date" : (type === "number" ? "number" : "text");
+        input.type = type === "date" && !asText ? "date"
+          : (type === "number" ? "number" : "text");
       }
       input.value = before;
+      if (!multi && input.value !== before) {
+        input.type = "text";
+        input.value = before;
+      }
+      if (!multi && type === "date" && input.type !== "date") {
+        input.placeholder = "YYYY-MM-DD";
+      }
       if (multi) input.rows = Math.min(6, Math.max(2, before.split("\n").length + 1));
+
+      // **사람이 손댔는가.** 날짜 입력은 사람 손 없이도 값이 빌 수 있다(덜 적힌
+      // 날짜를 브라우저가 빈 값으로 돌려준다). 그 빈 값을 "고쳤다" 로 읽으면 날짜가
+      // 조용히 지워진다 — 날짜 입력은 입력 알림이 한 번이라도 온 경우만 저장한다.
+      var touched = false;
+      function mark() { touched = true; }
+      input.addEventListener("input", mark);
+      input.addEventListener("change", mark);
 
       cell.textContent = "";
       cell.appendChild(input);
@@ -264,7 +291,9 @@
       function finish() {
         if (editing !== cell) return;
         editing = null;
-        var after = input.value.trim();
+        // 견주는 것은 **칸에 적혀 있던 원래 값**(`before`)이다. 날짜 입력이 사람
+        // 손 없이 비었으면 고친 것이 없다 — 원래 값으로 돌려 그린다(위 `touched`).
+        var after = input.type === "date" && !touched ? before : input.value.trim();
         cell.textContent = type === "number" ? withCommas(after) : after;
         if (after !== before) save(cell, after, before, type);
       }
@@ -785,6 +814,16 @@
   // 늘어도 안 터진다).
   var SELECTABLE = { "": true, text: true, search: true, url: true, tel: true,
                      password: true };
+
+  // 날짜 입력이 담을 수 있는 값인가 — `YYYY-MM-DD` 이고 **있는 날**이어야 한다
+  // (`2026-02-30` 은 모양이 맞아도 날짜 입력이 빈 값으로 바꾼다).
+  function isDay(text) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+    if (!m) return false;
+    var y = +m[1], mo = +m[2], d = +m[3];
+    var at = new Date(Date.UTC(y, mo - 1, d));
+    return at.getUTCFullYear() === y && at.getUTCMonth() === mo - 1 && at.getUTCDate() === d;
+  }
 
   function putCaretAtEnd(input, multi, type) {
     if (!input.setSelectionRange) return;

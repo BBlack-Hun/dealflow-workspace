@@ -835,6 +835,12 @@ class SeriesACompany(TimestampMixin, Base):
     #: 가 기업 덩어리의 `소개` 로 이 문구를 쓴다(비면 `상세 내용` 앞부분 —
     #: `services/series_a_share.pitch_of`).
     deal_pitch: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    #: 가져오기 열쇠 — **가져온 그때의 시트 줄**(기업명 · 수신 일자 · 공유 심사역 ·
+    #: 회사를 다듬은 값, `services/series_a_import.import_key`). 다시 가져올 때 이
+    #: 값으로 같은 딜을 알아본다. **앱에서 고쳐도 다시 셈하지 않는다** — 고칠 때마다
+    #: 바뀌면 다음 가져오기에서 같은 딜이 새 줄로 또 선다. 앱에서 더한 줄 · 이 칸이
+    #: 생기기 전에 들어온 줄은 비어 있고, 다음 가져오기가 맞춰 채운다.
+    import_key: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
 
 class SeriesAShare(TimestampMixin, Base):

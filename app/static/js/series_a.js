@@ -71,9 +71,13 @@
   // ── 저장 뒤처리 ──────────────────────────────────────────────────────
   //
   // 응답(`routers/series_a._result`)이 주는 값으로 **화면이 다시 만들 수 없는
-  // 것**만 고쳐 적는다. 규칙을 여기 또 적으면 서버와 두 벌이 된다.
+  // 것**을 고쳐 적는다. 규칙을 여기 또 적으면 서버와 두 벌이 된다.
+  //   · 고친 칸 — **서버가 저장한 값**으로 다시 그린다. 서버가 받지 않은 값도
+  //     있다(기업명은 비울 수 없어 옛 이름이 돌아온다). 적힌 그대로 두면 화면만
+  //     빈 이름으로 남는다. 필터 값도 같은 값으로 맞춘다.
   //   · `투자라운드` — 칸에는 괄호 앞(`series_short`), 필터도 그 값.
   //   · `수신 일자` — 세울 값(`received_sort`). 날짜 모양도 서버가 맞춘다.
+  //   · 검색 글자(`data-search`) — 안 고치면 고친 값이 새로고침 전까지 안 걸린다.
   //   · `IR 현황` 딱지 — 기업명을 고치면 맞는 기업이 달라진다.
   table.addEventListener("inline-saved", function (e) {
     var data = e.detail.data || {};
@@ -87,10 +91,14 @@
       cell.setAttribute("data-value", data.series || "");
       if (cell.parentNode) cell.parentNode.title = data.series || "";
       row.setAttribute("data-f-series", data.series_short || "");
+    } else if (field && field in data) {
+      cell.textContent = data[field] || "";
+      var fkey = cell.getAttribute("data-filter-key");
+      if (fkey && row.hasAttribute("data-f-" + fkey)) {
+        row.setAttribute("data-f-" + fkey, data[field] || "");
+      }
     }
-    if (field === "received_at") {
-      cell.textContent = data.received_at || "";
-    }
+    if ("search" in data) row.setAttribute("data-search", data.search || "");
     row.setAttribute("data-s-received_at", data.received_sort || "");
 
     var link = row.querySelector(".ir-link");
