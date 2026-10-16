@@ -139,6 +139,15 @@
             {% if filterable %}data-filters="{{ field }}:{{ label }}"{% endif %}>
           {{ label }}{% if filterable %}<div class="th-filters"></div>{% endif %}
         </th>
+        {# **월간 리마인드 이력**(#14) — `COLUMNS` 밖의 읽기 전용 칸 셋. 자리는
+           라우터가 정한다(`REMIND_AFTER` — `참여` 바로 뒤). 거르지 않는다 —
+           시각은 줄마다 달라 고를 값이 없다. #}
+        {% if field == remind_after %}
+        {% for m in remind_months %}
+        <th class="remind-col" style="width:124px" title="{{ m.title }}"
+            data-testid="sourcing-remind-head">{{ m.label }}</th>
+        {% endfor %}
+        {% endif %}
         {% endfor %}
       </tr>
     </thead>
@@ -225,6 +234,20 @@
            — 칸 차례는 `COLUMNS`(routers/sourcing.py)와 같아야 한다. #}
         <td class="cell{% if r.participation == '불참여' %} muted{% endif %}" data-field="participation"
             data-type="pick" data-choices="참여,불참여">{{ r.participation or '참여' }}</td>
+
+        {# **월간 리마인드 이력**(#14) — 머리글이 `참여` 뒤에 끼워 세운 달 칸과 같은
+           자리 · 같은 수(`remind_months`). 그 달 이 분께 나간 리마인드를 보낸
+           차례대로 한 줄씩 — `10/2 14:05 자동`(`services/sourcing_remind_log.py`).
+           `.cell` · `data-field` 가 없다 — 보낸 기록이라 눌러 고칠 것이 아니다. #}
+        {% set remind_row = reminds.get(r.id, {}) %}
+        {% for m in remind_months %}
+        <td class="remind-col" data-testid="sourcing-remind" data-month="{{ m.key }}">
+          {%- for s in remind_row.get(m.key, []) %}
+          <div class="remind-sent">{{ s.when }} <span class="muted">{{ s.how }}</span></div>
+          {%- endfor %}
+        </td>
+        {% endfor %}
+
         <td class="cell" data-field="assignee_name" data-type="pick">{{ r.assignee_name or '' }}</td>
         <td class="cell" data-field="phone">{{ r.phone or '' }}</td>
         <td class="cell" data-field="title" data-type="pick">{{ r.title or '' }}</td>
