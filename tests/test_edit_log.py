@@ -642,6 +642,9 @@ WRITE_ROUTES = {
     # 2단계 자동화 스위치 — 시험 모드를 끄면 진짜 상대에게 나가기 시작한다
     # (`edit_log.WATCHED["automations"]`).
     ("POST", "/team/automations/{key}"): WATCHED,
+    # 자동화 팀 공통(자동 발송 계정 · 시간대 · 중복 · 회차 간격) — 같은 표의
+    # 예약된 한 줄(`automation.TEAM_KEY`)이라 같은 자리에 남는다.
+    ("POST", "/team/automation-team"): WATCHED,
     # [시험방 확인] — 시험방으로 한 통 세울 뿐이다(발송 기록).
     ("POST", "/team/automations/{key}/check"): MACHINE,
     # 보내는 계정 카톡 기준 방 제목 — 확인 걸기는 방 확인 잡(기계 기록),

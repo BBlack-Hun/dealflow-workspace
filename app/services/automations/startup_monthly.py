@@ -162,6 +162,12 @@ def owns_monthly(db: Session) -> bool:
     return automation.is_on(row) and not automation.is_test(row)
 
 
+def times(values: dict) -> List[str]:
+    """보낼 시각들 — 순환 줄마다의 시각(팀 시간대 안인지 저장 자리에서 본다)."""
+    return [hhmm for _day, hhmm in parse_slots(values["slots"])]
+
+
 runner.register(runner.Spec(
     key=automation.STARTUP_MONTHLY, kind=STARTUP_SEND_KIND, plan=plan,
-    collect=collect, fields=FIELDS, check=_check, describe=describe))
+    collect=collect, fields=FIELDS, check=_check, describe=describe,
+    times=times))

@@ -210,6 +210,17 @@ def still_ok(db: Session, rec: AutomationSend) -> str:
     return ""
 
 
+def manual(db: Session, _values: dict, _contact_id: Optional[int],
+           sourcing_id: Optional[int], day: date) -> str:
+    """그 달 사람이 손으로 월간 리마인드를 보낸 분은 뺀다
+    (`automation_dedup.manual_sourcing_remind`)."""
+    from .. import automation_dedup
+
+    return automation_dedup.manual_sourcing_remind(
+        db, sourcing_id, sourcing_receipts.month_of(day))
+
+
 runner.register(runner.Spec(
     key=automation.SOURCING_REMIND, kind="sourcing_intro", topic=KIND, plan=plan,
-    collect=collect, still_ok=still_ok, fields=FIELDS, check=_check))
+    collect=collect, still_ok=still_ok, fields=FIELDS, check=_check,
+    manual=manual))

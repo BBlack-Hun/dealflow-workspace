@@ -98,6 +98,7 @@ def poll(
     kinds: Optional[str] = None,
     cap: Optional[int] = None,
     files: int = 0,
+    version: Optional[str] = None,
     db: Session = Depends(get_db),
     device: AgentDevice = Depends(get_agent_device),
 ):
@@ -106,8 +107,9 @@ def poll(
     `kinds` (CSV) = 이 에이전트가 처리할 수 있는 잡 종류. 생략하면 발송 잡만 준다.
     `cap` = 이 에이전트가 한 번에 처리할 건수 상한(계정 보호). 아래 참고.
     `files` = 자료 파일을 붙여 보낼 수 있는가. 아래 참고.
+    `version` = 발송기 판 번호(0.11.8~). 자동 회차를 내줄지 가른다. 아래 참고.
     """
-    _touch_device(db, device)
+    _touch_device(db, device, version=(version or "").strip()[:20] or None)
 
     # ★ **발송 안전장치** — 시간(09~19시) · 계정마다 하루 상한
     #   (`services/send_guard.py`). 걸리면 문구 잡을 **큐에 그대로 둔 채**
@@ -138,12 +140,22 @@ def poll(
     # (`/setup` 에서 다시 내려받으면 그다음 폴링에 그대로 이어 나간다).
     can_attach = bool(files)
 
+    # ★ **2단계 자동화 회차** — 건 사이 간격을 지키는 발송기(0.11.8~)에만,
+    #   다른 자동 회차가 끝난 뒤 팀의 `자동 회차 사이 최소 간격` 이 지나서
+    #   내준다(`automation_runner.held_jobs`). 못 내주는 회차는 큐에 그대로 선다
+    #   — 사람이 누른 회차는 이 판정과 상관없이 그대로 나간다.
+    from ..services import automation_runner
+
+    held = automation_runner.held_jobs(db, device.user_id, device.agent_version, now)
+
     # Find a candidate queued job owned by this agent's user.
     query = (
         select(SendJob.id)
         .where(SendJob.status == "queued", SendJob.user_id == device.user_id,
                SendJob.kind.in_(wanted))
     )
+    if held:
+        query = query.where(SendJob.id.notin_(list(held)))
     if not can_attach:
         query = query.where(~exists().where(and_(SendItem.job_id == SendJob.id,
                                                  SendItem.files_json.isnot(None))))
@@ -196,9 +208,15 @@ def poll(
     if job.kind in send_guard.GATED_KINDS:
         pending_items = pending_items[:guard.left]
 
+    # ★ **자동 회차의 건 사이 간격**은 서버가 정해 싣는다(자동화 판의 `건 사이
+    #   간격`). 발송기는 이 잡에서만 제 설정(3~7초) 대신 이 폭으로 쉰다
+    #   (`agent/main.job_delay`). 사람이 누른 회차에는 싣지 않는다.
+    delay = automation_runner.job_delay(db, job)
+
     return {
         "job_id": job.id,
         "kind": job.kind,
+        **({"delay_min_sec": delay[0], "delay_max_sec": delay[1]} if delay else {}),
         "items": [
             {"id": i.id, "room_name": i.room_name, "message": i.message, "stage": i.stage,
              # 여러 통으로 나눠 보낼 때의 순서. 이 칸을 모르는 예전 발송

@@ -210,10 +210,19 @@ def describe(db: Session, job: SendJob, now: Optional[datetime] = None) -> dict:
         elif waiting and left <= 0:
             sentence = (f"오늘 발송 한도({cap}건)를 다 썼습니다 — 남은 건은 "
                         f"내일 {EARLIEST_HOUR:02d}:00 에 이어 나갑니다")
+    held = bool(gated and waiting and (not is_open or left <= 0))
+    # **2단계 자동화 회차**는 한 겹 더 — 발송기 판(건 사이 간격)과 자동 회차
+    # 사이 간격(`automation_runner.held_jobs`). 시험 회차(`test_send`)도 여기에
+    # 걸리므로 `gated` 와 따로 본다.
+    if waiting and not held:
+        from . import automation_runner
+
+        hold = automation_runner.hold_reason(db, job, now)
+        if hold:
+            sentence, held, gated = hold, True, True
     return {"gated": gated, "open": is_open, "window": window_label(),
             "cap": cap, "sent_today": used, "remaining": left,
-            "held": bool(gated and waiting and (not is_open or left <= 0)),
-            "sentence": sentence}
+            "held": held, "sentence": sentence}
 
 
 def status(db: Session, today: Optional[date] = None) -> dict:

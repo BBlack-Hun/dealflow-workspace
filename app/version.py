@@ -22,6 +22,18 @@ PC 에서 `NameError` 로 터졌는데, 받은 쪽에서는 그게 낡은 것인
 적히는 것만** 바뀐 것은 잔 자리만 올린다 — 그래도 올리기는 한다. 안 올리면
 서버에 올라온 번호로는 새로 받은 것과 예전 것을 구분할 수 없다.
 
+    0.11.8 **자동 회차는 건 사이 간격을 서버가 정한다.** 2단계 자동화(미팅 후
+           문의 · 미팅 요청 · 소싱 리마인드 · 채널방 · 스타트업 월간)의 회차를
+           내줄 때 서버가 `delay_min_sec`/`delay_max_sec`(자동화 판의 `건 사이
+           간격`, 기본 20~60초)를 잡에 실어 보내고, 발송기는 **그 잡에서만**
+           제 설정(3~7초) 대신 그 값을 쉰다(`agent/main.py: process_job`). 사람이
+           누른 회차는 지금과 같다. 폴링 때 판 번호도 함께 밝힌다(`version=`).
+           ★ 이 판보다 낡은 발송기에는 **자동 회차를 내주지 않는다**
+           (`AUTOMATION_AGENT_VERSION` · `routers/agent_api.poll`) — 낡은
+           발송기는 그 칸을 모르고 3~7초로 몰아 보내기 때문이다. 자동 발송
+           계정 PC 의 발송기를 이 판으로 갱신해야 자동 회차가 나간다(안 하면
+           회차가 큐에 서 있다가 예약 시각을 놓쳤다고 알린다). 사람이 누른
+           회차 · 방 확인 · 시험방 확인 한 통은 판과 상관없이 그대로 나간다
     0.11.7 **스타트업 안내 카톡 잡**(`startup_msg`)을 집어간다. 각자 맡은
            스타트업(좌측 [스타트업] 명단의 내 줄)에 고른 문구 한 통(투자유치
            진행 문의 · 견적서 공유 안내 · 무료 투자유치 제안)을 보내는 잡이고,
@@ -126,7 +138,7 @@ PC 에서 `NameError` 로 터졌는데, 받은 쪽에서는 그게 낡은 것인
 """
 from __future__ import annotations
 
-VERSION = "0.11.7"
+VERSION = "0.11.8"
 
 # 이 버전보다 낡은 발송 프로그램은 화면에서 '갱신 필요' 로 표시한다.
 #
@@ -149,6 +161,14 @@ VERSION = "0.11.7"
 MIN_AGENT_VERSION = "0.5.0"
 
 
+# 2단계 자동화 회차를 내줄 수 있는 가장 낡은 발송기. 이 판부터 잡에 실린 **건
+# 사이 간격**(`delay_min_sec`/`delay_max_sec`)을 지킨다 — 그 아래는 그 칸을
+# 모르고 제 설정(3~7초)으로 몰아 보낸다. `MIN_AGENT_VERSION` 과 달리 이쪽은
+# **막는다**: 사람 확인 없이 나가는 발송에서 간격은 지켜져야 하는 약속이고,
+# 막아도 사람이 누른 회차는 그대로 나간다(자동 회차만 큐에 선다).
+AUTOMATION_AGENT_VERSION = "0.11.8"
+
+
 def as_tuple(value: str) -> tuple:
     """`"0.2.0"` → `(0, 2, 0)`. 비교하려고. 못 읽는 값은 (0,) 로 둔다 —
     모르는 버전은 낡은 것으로 보는 편이 안전하다."""
@@ -166,3 +186,13 @@ def agent_is_old(reported: str | None) -> bool:
     if not reported:
         return True
     return as_tuple(reported) < as_tuple(MIN_AGENT_VERSION)
+
+
+def agent_handles_automation(reported: str | None) -> bool:
+    """이 발송기에 2단계 자동화 회차를 내줘도 되는가 — 건 사이 간격을 지키는 판.
+
+    판을 모르면(안 알렸으면) **아니오**다 — 모르는 것은 낡은 것으로 본다.
+    """
+    if not reported:
+        return False
+    return as_tuple(reported) >= as_tuple(AUTOMATION_AGENT_VERSION)

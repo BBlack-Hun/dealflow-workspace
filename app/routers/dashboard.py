@@ -1339,6 +1339,47 @@ def save_startup_send(
     return RedirectResponse(f"/team?msg={note}", status_code=303)
 
 
+@router.post("/team/automation-team", include_in_schema=False)
+def save_automation_team(
+    user_id: int = Form(0),
+    window_start: str = Form(""),
+    window_end: str = Form(""),
+    avoid_start: str = Form(""),
+    avoid_end: str = Form(""),
+    per_contact_daily: str = Form(""),
+    job_gap_min: str = Form(""),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """**자동화 팀 공통** — 자동 발송 계정 · 가능 시간대 · 피할 시간 · 같은 분 하루
+    최대 · 자동 회차 사이 최소 간격(`automation.save_team`).
+
+    값을 가리는 것은 저장 자리 한 곳이다 — 시간대는 발송 안전장치(09~19시)
+    안이어야 하고, 피할 시간은 그 시간대 안이어야 한다.
+    """
+    admin_only(user)
+    from urllib.parse import quote
+
+    from ..services import automation
+
+    try:
+        saved = automation.save_team(db, user_id=user_id or None, values={
+            "window_start": window_start, "window_end": window_end,
+            "avoid_start": avoid_start, "avoid_end": avoid_end,
+            "per_contact_daily": per_contact_daily or automation.DEFAULT_PER_CONTACT_DAILY,
+            "job_gap_min": job_gap_min or automation.DEFAULT_JOB_GAP_MIN})
+    except ValueError as exc:
+        db.rollback()
+        return RedirectResponse(f"/team?msg={quote('자동화 팀 공통 — ' + str(exc))}#automations",
+                                status_code=303)
+    who = db.get(User, automation.default_sender_id(db))
+    note = (f"자동화 팀 공통 설정을 저장했습니다 — 자동 발송 계정 {who.name if who else '없음'}"
+            f" · 시간대 {saved.window_label}"
+            + (f" · 피할 시간 {saved.avoid_label}" if saved.avoid_label else "")
+            + f" · 같은 분 하루 {saved.per_contact_daily}통 · 회차 사이 {saved.job_gap_min}분")
+    return RedirectResponse(f"/team?msg={quote(note)}#automations", status_code=303)
+
+
 @router.post("/team/automations/{key}", include_in_schema=False)
 async def save_automation(
     key: str,

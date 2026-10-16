@@ -5,11 +5,15 @@
 한 곳에 둔다.
 
 1. **켜짐/꺼짐** — 팀 현황의 `자동화` 판(관리자). 기본은 꺼짐이다.
-2. **누구 카톡에서 나가나** — 자동화마다 보내는 계정 하나. 비워 두면 기본
-   보내는 계정(`default_sender_id`)이다. 회차가 그 계정 것으로 서므로 **그
-   계정 PC 의 발송기만** 집어간다 — `routers/agent_api.poll` 은 회차 주인의
-   기기 토큰에만 잡을 내준다(사용자 1명 = 기기 1대, `AgentDevice.user_id` 가
-   유일). 다른 팀원의 발송(딜소개 등)은 이 파일을 지나지 않는다.
+2. **누구 카톡에서 나가나** — 팀에 하나인 **자동 발송 계정**(자동화 판의 팀
+   공통 칸, 안 골랐으면 스타트업 월간 발송 계정 — `default_sender_id`). 모든
+   투자사 방에 들어가 있는 업무용 PC 한 대다. 자동화마다 바꿀 수는 있지만
+   다르면 판이 경고한다(`status` 의 `sender_warning`). 회차가 그 계정 것으로
+   서므로 **그 계정 PC 의 발송기만** 집어간다 — `routers/agent_api.poll` 은
+   회차 주인의 기기 토큰에만 잡을 내준다(사용자 1명 = 기기 1대,
+   `AgentDevice.user_id` 가 유일). 다른 팀원의 발송(딜소개 등)은 이 파일을
+   지나지 않는다. 팀 공통 칸에는 그 밖에 가능 시간대 · 피할 시간 · 같은 분
+   하루 최대 · 자동 회차 사이 간격이 있다(`Team`).
 3. **시험 모드** — 기본은 켜짐. 켜져 있으면 자동화가 보낼 모든 한 통이 원래
    방 대신 **시험방**으로 간다(`route`).
 
@@ -136,15 +140,186 @@ def is_test(row: Optional[Automation]) -> bool:
     return True if row is None else bool(row.test_mode)
 
 
-def default_sender_id(db: Session) -> Optional[int]:
-    """기본 보내는 계정 — **스타트업 월간 발송을 보내는 그 계정.**
+# ── 팀 공통 설정 (자동 발송 계정 · 시간대 · 피할 시간 · 중복 · 회차 간격) ─────────
+#
+# 자동 발송은 **한 사람의 업무용 PC**(모든 투자사 방에 들어가 있는 계정)에서
+# 나간다. 그래서 자동화마다 따로가 아니라 **팀에 하나**인 값들이 있다:
+#
+#   · 자동 발송 계정 — 다섯 자동화의 기본 보내는 계정(자동화마다 바꿀 수는 있다)
+#   · 자동 발송 가능 시간대 — 이 안에서만 자동 회차가 선다(발송 안전장치
+#     09~19시 안쪽만 고른다)
+#   · 피할 시간 — 업무용 PC 라 점심 등 비워 둘 때. 그 안에 떨어진 회차는 끝나는
+#     분으로 밀린다
+#   · 같은 분 하루 최대 자동 발송 수(기본 1) — 다른 자동화끼리도 센다
+#   · 자동 회차 사이 최소 간격(분) — 두 자동화 회차가 붙어 나가지 않게
+#
+# 새 표를 만들지 않고 `automations` 표에 **예약된 열쇠 한 줄**(`TEAM_KEY`)로 둔다
+# — 칸 모양(보내는 계정 `user_id` + 값 `params`)이 똑같고, 수정 로그도 같은
+# 자리(`edit_log.WATCHED["automations"]`)에 남는다. `KINDS` 에 없는 열쇠라
+# 자동화 한 줄로 저장되는 길(`save`)은 이 줄을 못 건드린다.
 
-    자동화는 모든 팀원의 투자사 방에 들어가 있는 계정 하나에서 나간다. 그
-    계정이 누구인지 코드에 적지 않는다(저장소가 공개다). 이미 그 한 계정을
-    고르는 자리가 있다 — 스타트업 월간 발송(`auto_send_settings` 의 `startup_ir`
-    줄)이 **정해진 한 PC 의 카톡**에서만 나가도록 관리자가 고른 계정이다.
-    거기가 비면 미팅 후기 자동 준비 계정, 그것도 없으면 `None`(화면에서 골라야
-    한다).
+TEAM_KEY = "_team"
+
+DEFAULT_WINDOW = ("09:00", "19:00")
+#: 같은 분(담당자 · 딜 소싱 명단 한 줄)에게 하루에 나가는 자동 발송의 최대 수.
+DEFAULT_PER_CONTACT_DAILY = 1
+MAX_PER_CONTACT_DAILY = 5
+#: 다른 자동화 회차 사이 최소 간격(분).
+DEFAULT_JOB_GAP_MIN = 10
+MAX_JOB_GAP_MIN = 120
+
+
+def _minutes(raw) -> int:
+    """`HH:MM` → 그날 0시부터의 분. 못 읽으면 `ValueError`."""
+    import re
+
+    found = re.fullmatch(r"(\d{1,2}):(\d{2})", str(raw or "").strip())
+    if not found:
+        raise ValueError(f"'{raw}' — 09:00 처럼 시각을 적으세요")
+    hour, minute = int(found.group(1)), int(found.group(2))
+    if minute > 59 or hour > 24 or (hour == 24 and minute):
+        raise ValueError(f"'{raw}' — 시각을 읽을 수 없습니다")
+    return hour * 60 + minute
+
+
+def hhmm(minutes: int) -> str:
+    return f"{minutes // 60:02d}:{minutes % 60:02d}"
+
+
+def guard_window() -> tuple:
+    """발송 안전장치가 허락하는 폭(분) — 팀 시간대는 이 안이어야 한다."""
+    from . import scheduled_send
+
+    return scheduled_send.EARLIEST_HOUR * 60, scheduled_send.LATEST_HOUR * 60
+
+
+@dataclass(frozen=True)
+class Team:
+    """팀 공통 설정 한 덩이. 저장값이 없거나 망가졌으면 기본값이다."""
+
+    sender_id: Optional[int] = None
+    window_start: str = DEFAULT_WINDOW[0]
+    window_end: str = DEFAULT_WINDOW[1]
+    avoid_start: str = ""
+    avoid_end: str = ""
+    per_contact_daily: int = DEFAULT_PER_CONTACT_DAILY
+    job_gap_min: int = DEFAULT_JOB_GAP_MIN
+
+    @property
+    def window_label(self) -> str:
+        return f"{self.window_start}~{self.window_end}"
+
+    @property
+    def avoid_label(self) -> str:
+        return f"{self.avoid_start}~{self.avoid_end}" if self.avoid_start else ""
+
+    def contains(self, value: str) -> bool:
+        """`HH:MM` 이 시간대 안인가(끝 시각은 안 든다)."""
+        try:
+            at = _minutes(value)
+        except ValueError:
+            return False
+        return _minutes(self.window_start) <= at < _minutes(self.window_end)
+
+    def fit(self, when):
+        """이 시각을 **보낼 수 있는 첫 분**으로 옮긴다. 그날 안에 못 넣으면 `None`.
+
+        시간대 시작보다 이르면 시작으로, 피할 시간 안이면 그 끝으로 민다 —
+        **앞당기지는 않는다**(정한 시각보다 먼저 나가면 사람이 빼거나 [중단] 할
+        틈이 줄어든다). 시간대 끝을 넘으면 그날은 못 나간다.
+        """
+        from datetime import timedelta
+
+        base = when.replace(second=0, microsecond=0)
+        if base < when:
+            base += timedelta(minutes=1)
+        at = base.hour * 60 + base.minute
+        at = max(at, _minutes(self.window_start))
+        if self.avoid_start:
+            a0, a1 = _minutes(self.avoid_start), _minutes(self.avoid_end)
+            if a0 <= at < a1:
+                at = a1
+        if at >= _minutes(self.window_end):
+            return None
+        return base.replace(hour=at // 60, minute=at % 60)
+
+
+def _team_row(db: Session) -> Optional[Automation]:
+    return load(db, TEAM_KEY)
+
+
+def clean_team(values: dict) -> dict:
+    """팀 공통 값을 가린다. **못 받을 값이면 `ValueError`** — 까닭이 화면에 간다.
+
+    화면만 막으면 주소로 폼을 흉내 내는 순간 뚫린다 — 저장 자리에서 자른다.
+    """
+    low, high = guard_window()
+    start = _minutes(values.get("window_start") or DEFAULT_WINDOW[0])
+    end = _minutes(values.get("window_end") or DEFAULT_WINDOW[1])
+    if not (low <= start < end <= high):
+        raise ValueError(f"자동 발송 가능 시간대는 {hhmm(low)}~{hhmm(high)} 안에서 "
+                         "시작이 끝보다 앞이어야 합니다(발송 안전장치의 보내는 시간)")
+    a0_raw = str(values.get("avoid_start") or "").strip()
+    a1_raw = str(values.get("avoid_end") or "").strip()
+    avoid = ("", "")
+    if a0_raw or a1_raw:
+        if not (a0_raw and a1_raw):
+            raise ValueError("피할 시간은 시작과 끝을 함께 넣으세요(안 쓰면 둘 다 비우세요)")
+        a0, a1 = _minutes(a0_raw), _minutes(a1_raw)
+        if not (start <= a0 < a1 <= end):
+            raise ValueError("피할 시간은 자동 발송 가능 시간대 안에서 시작이 끝보다 앞이어야 합니다")
+        if a0 == start and a1 == end:
+            raise ValueError("피할 시간이 시간대 전체입니다 — 자동 발송이 하나도 못 나갑니다")
+        avoid = (hhmm(a0), hhmm(a1))
+    try:
+        per = int(str(values.get("per_contact_daily", DEFAULT_PER_CONTACT_DAILY)).strip())
+        gap = int(str(values.get("job_gap_min", DEFAULT_JOB_GAP_MIN)).strip())
+    except ValueError:
+        raise ValueError("숫자 칸에 숫자를 넣으세요") from None
+    if not 1 <= per <= MAX_PER_CONTACT_DAILY:
+        raise ValueError(f"같은 분 하루 최대 자동 발송은 1~{MAX_PER_CONTACT_DAILY} 사이로 넣으세요")
+    if not 0 <= gap <= MAX_JOB_GAP_MIN:
+        raise ValueError(f"자동 회차 사이 최소 간격은 0~{MAX_JOB_GAP_MIN}분 사이로 넣으세요")
+    return {"window_start": hhmm(start), "window_end": hhmm(end),
+            "avoid_start": avoid[0], "avoid_end": avoid[1],
+            "per_contact_daily": per, "job_gap_min": gap}
+
+
+def team(db: Session) -> Team:
+    """팀 공통 설정. 저장값이 망가졌으면 **기본값**으로 돈다(화면을 죽이지 않는다)."""
+    row = _team_row(db)
+    stored = params(row)
+    try:
+        cleaned = clean_team(stored) if stored else {}
+    except ValueError:
+        log.warning("자동화 팀 공통 값이 맞지 않아 기본값을 씁니다")
+        cleaned = {}
+    return Team(sender_id=row.user_id if row is not None and row.user_id else None,
+                **cleaned)
+
+
+def save_team(db: Session, *, user_id: Optional[int], values: dict) -> Team:
+    """팀 공통 설정을 저장한다. 못 받을 값이면 `ValueError`. 커밋까지 한다."""
+    cleaned = clean_team(values)
+    member = db.get(User, user_id) if user_id else None
+    if user_id and not may_send(member):
+        raise ValueError("자동 발송 계정은 딜소개를 보내는 살아 있는 계정이어야 합니다")
+    row = _team_row(db)
+    if row is None:
+        row = Automation(key=TEAM_KEY, enabled=0, test_mode=1)
+        db.add(row)
+    row.user_id = member.id if member else None
+    set_params(row, cleaned)
+    db.commit()
+    return team(db)
+
+
+def startup_sender_id(db: Session) -> Optional[int]:
+    """**스타트업 월간 발송을 보내는 그 계정**(없으면 미팅 후기 자동 준비 계정).
+
+    자동 발송 계정을 따로 안 골랐을 때의 기본값이다. 이미 그 한 계정을 고르는
+    자리가 있다 — 스타트업 월간 발송(`auto_send_settings` 의 `startup_ir` 줄)이
+    **정해진 한 PC 의 카톡**에서만 나가도록 관리자가 고른 계정이다.
     """
     for kind in ("startup_ir", "meeting_review"):
         row = db.execute(
@@ -153,6 +328,20 @@ def default_sender_id(db: Session) -> Optional[int]:
         if row is not None and row.user_id:
             return row.user_id
     return None
+
+
+def default_sender_id(db: Session) -> Optional[int]:
+    """기본 보내는 계정 — 팀 현황 자동화 판의 **자동 발송 계정**.
+
+    자동화는 모든 팀원의 투자사 방에 들어가 있는 계정 하나(업무용 PC)에서
+    나간다. 그 계정이 누구인지 코드에 적지 않는다(저장소가 공개다). 자동화
+    판에서 고른 계정이 먼저고, 안 골랐으면 **스타트업 월간 발송 계정**
+    (`startup_sender_id`), 그것도 없으면 `None`(화면에서 골라야 한다).
+    """
+    row = _team_row(db)
+    if row is not None and row.user_id:
+        return row.user_id
+    return startup_sender_id(db)
 
 
 def sender_id(db: Session, row: Optional[Automation]) -> Optional[int]:
@@ -307,6 +496,9 @@ class Out:
     company_ids: List[int] = field(default_factory=list)
     #: 세운 뒤 채워진다 — 이 한 통이 된 발송 건.
     item_id: Optional[int] = None
+    #: 이 한 통만 **다른 시각**에 나갈 때(예: 미팅 요청 두 번째의 시각). 비면
+    #: 그 회차의 시각(`Plan.at`). 시각이 다른 한 통은 회차가 따로 선다.
+    at: Optional[object] = None
 
 
 def build_job(db: Session, *, sender: User, kind: str, title: str,
@@ -390,14 +582,43 @@ def queue_check(db: Session, key: str) -> SendJob:
 
 # ── 화면 ────────────────────────────────────────────────────────────────────
 
+def agent_state(db: Session, user_id: Optional[int]) -> dict:
+    """이 계정 PC 의 발송기가 **자동 회차를 받을 수 있는 판**인가.
+
+    자동 회차는 건 사이 간격(`delay_min_sec`/`delay_max_sec`)을 잡에 실어
+    보낸다. 그 칸을 모르는 낡은 발송기는 제 설정(3~7초)으로 몰아 보내므로
+    서버가 자동 회차를 **내주지 않는다**(`routers/agent_api.poll`). 판정은
+    `version.agent_handles_automation` 한 곳이다.
+    """
+    from .. import version
+    from ..models import AgentDevice
+
+    device = db.execute(
+        select(AgentDevice).where(AgentDevice.user_id == user_id)
+    ).scalars().first() if user_id else None
+    reported = (device.agent_version or "") if device is not None else ""
+    return {"version": reported,
+            "ok": version.agent_handles_automation(reported),
+            "need": version.AUTOMATION_AGENT_VERSION,
+            "connected": bool(device is not None and device.last_poll_at)}
+
+
 def status(db: Session) -> dict:
     """팀 현황 `자동화` 판이 읽는 한 덩이. **화면은 판정하지 않는다.**"""
+    team_ = team(db)
     default_id = default_sender_id(db)
     default_user = db.get(User, default_id) if default_id else None
+    startup_id = startup_sender_id(db)
+    startup_user = db.get(User, startup_id) if startup_id else None
     rows = []
     for kind in KINDS:
         row = load(db, kind.key)
         who = sender(db, row)
+        own = row.user_id if row and row.user_id else 0
+        # 자동화마다 계정을 바꿀 수는 있다. 다만 **자동 발송 계정과 다르면**
+        # 그 계정 PC 에서 나간다 — 업무용 PC 한 대에서 나가기로 했으니 판이
+        # 크게 적는다.
+        differs = bool(own and default_id and own != default_id)
         rows.append({
             "key": kind.key,
             "label": kind.label,
@@ -405,10 +626,31 @@ def status(db: Session) -> dict:
             "enabled": is_on(row),
             "test_mode": is_test(row),
             "test_room": (row.test_room or "") if row else "",
-            "user_id": row.user_id if row and row.user_id else 0,
+            "user_id": own,
             "sender": who.name if who else "",
+            "sender_differs": differs,
+            "sender_warning": (f"자동 발송 계정({default_user.name if default_user else '-'})과 "
+                               f"다른 계정({who.name if who else '-'}) PC 에서 나갑니다"
+                               if differs else ""),
             "params": params(row),
         })
+    agent = agent_state(db, default_id)
     return {"rows": rows,
             "default_sender": default_user.name if default_user else "",
-            "default_sender_id": default_id or 0}
+            "default_sender_id": default_id or 0,
+            # 자동 발송 계정을 따로 골랐나(0 이면 스타트업 월간 발송 계정을 따른다).
+            "team_sender_id": team_.sender_id or 0,
+            "startup_sender": startup_user.name if startup_user else "",
+            "team": {"window_start": team_.window_start,
+                     "window_end": team_.window_end,
+                     "avoid_start": team_.avoid_start,
+                     "avoid_end": team_.avoid_end,
+                     "window_label": team_.window_label,
+                     "avoid_label": team_.avoid_label,
+                     "per_contact_daily": team_.per_contact_daily,
+                     "job_gap_min": team_.job_gap_min,
+                     "max_per_contact_daily": MAX_PER_CONTACT_DAILY,
+                     "max_job_gap_min": MAX_JOB_GAP_MIN,
+                     "guard_start": hhmm(guard_window()[0]),
+                     "guard_end": hhmm(guard_window()[1])},
+            "agent": agent}

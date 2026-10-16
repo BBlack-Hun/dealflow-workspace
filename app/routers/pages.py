@@ -714,6 +714,11 @@ def job_page(
                 "again_href": (f"{STARTUP_PAGE.msg_href}?topic={job.topic or ''}"
                                if outreach else "/deals"),
                 "readonly": can_view and job.user_id != user.id})
+    if can_view:
+        # **2단계 자동화 회차**면 무엇을 왜 뺐나(중복 방지 · 조건)와 건 사이 간격.
+        from ..services import automation_runner
+
+        ctx["automation"] = automation_runner.job_notes(db, job)
     return templates.TemplateResponse("progress.html", ctx)
 
 

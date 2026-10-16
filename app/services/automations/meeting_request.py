@@ -64,7 +64,11 @@ FIELDS = (
                  hint="IR 자료를 전달한 날에서 — 그날이 주말이면 다음 평일"),
     runner.Field("second_days", "두 번째(며칠 뒤)", "int", 10, low=2, high=45,
                  hint="첫 번째에 답이 없을 때 — 조금 다른 말로"),
-    runner.Field("time", "보낼 시각", "time", "14:00"),
+    runner.Field("time", "첫 번째 보낼 시각", "time", "14:00"),
+    runner.Field("second_time", "두 번째 보낼 시각", "time", "14:00",
+                 hint="첫 번째와 다른 시각이면 두 번째는 그 시각에 따로 선다"),
+    runner.Field("manual_days", "손 발송 뒤 쉬는 날(일)", "int", 7, low=0, high=60,
+                 hint="이 날수 안에 사람이 미팅 요청·후기를 보낸 분께는 안 묻는다(0 이면 안 본다)"),
 )
 
 
@@ -254,18 +258,25 @@ def due_on(db: Session, row: Optional[Automation], day: date,
 # ── 틀에 다는 것 ─────────────────────────────────────────────────────────────
 
 def plan(db: Session, row: Automation, day: date) -> Optional[runner.Plan]:
+    """평일마다 한 번. 회차의 시각은 두 시각 중 **이른 쪽**이다 — 두 번째가 다른
+    시각이면 그 한 통들은 그 시각의 회차로 따로 선다(`automation.Out.at`)."""
     if cadence.next_business_day(day) != day:
         return None
     values = runner.values(row, automation.MEETING_REQUEST)
-    return runner.Plan(period=runner.day_key(day),
-                       at=runner.at_on(day, values["time"]))
+    first = runner.at_on(day, values["time"])
+    second = runner.at_on(day, values["second_time"])
+    return runner.Plan(period=runner.day_key(day), at=min(first, second))
 
 
 def collect(db: Session, row: Automation, sender: User,
             plan_: runner.Plan) -> runner.Batch:
     from ...routers import deals as deals_view
 
-    asks, skipped = due_on(db, row, plan_.at.date(), automation.is_test(row))
+    day = plan_.at.date()
+    values = runner.values(row, automation.MEETING_REQUEST)
+    times = {1: runner.at_on(day, values["time"]),
+             2: runner.at_on(day, values["second_time"])}
+    asks, skipped = due_on(db, row, day, automation.is_test(row))
     rooms = sender_rooms.rooms_for(db, sender.id, [a.contact for a in asks])
     batch = runner.Batch(skipped=skipped, note="미팅 요청 나갈 곳이 없습니다")
     for ask in asks:
@@ -273,8 +284,21 @@ def collect(db: Session, row: Automation, sender: User,
             room=rooms.get(ask.contact.id) or ask.contact.kakao_room_name,
             message=deals_view.meeting_ask_message(db, sender, ask.contact,
                                                    again=ask.round == 2),
-            contact_id=ask.contact.id, stage=mc.STAGE_MEETING, ref=ask.ref))
+            contact_id=ask.contact.id, stage=mc.STAGE_MEETING, ref=ask.ref,
+            at=times[ask.round]))
     return batch
+
+
+def manual(db: Session, values: dict, contact_id: Optional[int],
+           _sourcing_id: Optional[int], day: date) -> str:
+    """사람이 `manual_days` 일 안에 미팅 요청·후기를 보냈으면 안 묻는다
+    (`automation_dedup.manual_meeting` — 자동화가 보낸 첫 번째는 안 센다)."""
+    from .. import automation_dedup
+
+    days = int(values.get("manual_days") or 0)
+    if days <= 0:
+        return ""
+    return automation_dedup.manual_meeting(db, contact_id, day - timedelta(days=days))
 
 
 def still_ok(db: Session, rec: AutomationSend) -> str:
@@ -312,4 +336,4 @@ def notes(db: Session, user: User, row: Automation, now: datetime) -> List[dict]
 runner.register(runner.Spec(
     key=automation.MEETING_REQUEST, kind="deal_intro", plan=plan,
     collect=collect, still_ok=still_ok, notes=notes, fields=FIELDS,
-    check=_check))
+    check=_check, manual=manual))

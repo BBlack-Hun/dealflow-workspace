@@ -386,7 +386,7 @@ def release(db: Session, job: SendJob, now: Optional[datetime] = None) -> bool:
     from . import automation_runner
 
     had = sum(1 for i in job.items if i.status == "pending")
-    if had and automation_runner.prune(db, job) == 0:
+    if had and automation_runner.prune(db, job, now) == 0:
         # 전부 빠졌다 — 보낼 것이 없는 회차를 `취소` 로 닫는다. 남겨 두면
         # 화면이 "걸어 두었던 예약" 이라고만 적고 왜 안 나갔는지 말하지 않는다.
         job.status = "canceled"

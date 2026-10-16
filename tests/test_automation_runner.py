@@ -79,9 +79,16 @@ def fake(db, users):
         runner.REGISTRY.update(saved)
 
 
-def _turn_on(db, users, *, test=True):
+def _turn_on(db, users, *, test=True, agent="current"):
+    """켠다. 보내는 계정(u2) PC 의 발송기는 **지금 판**으로 둔다 — 건 사이 간격을
+    모르는 낡은 판에는 자동 회차가 안 내려간다(`automation_runner.held_jobs`)."""
+    from app import version
+    from app.models import AgentDevice
     from app.services import automation
 
+    device = db.query(AgentDevice).filter_by(user_id=users["u2"].id).first()
+    device.agent_version = version.VERSION if agent == "current" else agent
+    db.commit()
     return automation.save(db, automation.MEETING_REVIEW, enabled=True,
                            user_id=users["u2"].id, test_mode=test,
                            test_room=TEST_ROOM)

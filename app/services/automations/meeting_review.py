@@ -58,6 +58,8 @@ FIELDS = (
     runner.Field("days", "며칠 뒤", "int", 2, low=1, high=14,
                  hint="미팅을 완료로 적은 날에서 며칠 뒤에 묻나 — 그날이 주말이면 다음 평일"),
     runner.Field("time", "보낼 시각", "time", "14:00"),
+    runner.Field("manual_days", "손 발송 뒤 쉬는 날(일)", "int", 7, low=0, high=60,
+                 hint="이 날수 안에 사람이 미팅 요청·후기를 보낸 분께는 안 묻는다(0 이면 안 본다)"),
 )
 
 
@@ -194,6 +196,18 @@ def still_ok(db: Session, rec: AutomationSend) -> str:
     return why_not(db, meeting, contact, others)
 
 
+def manual(db: Session, values: dict, contact_id: Optional[int],
+           _sourcing_id: Optional[int], day: date) -> str:
+    """사람이 `manual_days` 일 안에 미팅 요청·후기를 보냈으면 안 묻는다
+    (`automation_dedup.manual_meeting`)."""
+    from .. import automation_dedup
+
+    days = int(values.get("manual_days") or 0)
+    if days <= 0:
+        return ""
+    return automation_dedup.manual_meeting(db, contact_id, day - timedelta(days=days))
+
+
 runner.register(runner.Spec(
     key=automation.MEETING_REVIEW, kind="deal_intro", plan=plan,
-    collect=collect, still_ok=still_ok, fields=FIELDS))
+    collect=collect, still_ok=still_ok, fields=FIELDS, manual=manual))
