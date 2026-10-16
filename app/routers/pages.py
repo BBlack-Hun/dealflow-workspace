@@ -610,6 +610,13 @@ def list_page(
                         sum(1 for r in all_rows
                             if not r["is_hidden"]
                             and any(s in page_keys for s in r["sheets"]))),
+        # 팀원 화면의 `전체` 에 **함께 적는** 팀 전체 투자사 수(#29). 팀원의
+        # `전체` 는 자기 명단이라(위 `total_count`) 팀 전체 인원을 볼 자리가
+        # 없었다 — 사용자는 거기서 팀 전체 수를 기대했다. 표의 줄은 그대로다.
+        # 관리자는 위 수가 이미 팀 전체라 따로 적지 않는다(`None`). 판정은
+        # 관리자가 보는 수와 같은 몸통이다(`sheet_owner.team_total`).
+        "team_total": (sheet_owner.team_total(db)
+                       if page.investors and not team_wide else None),
         # 명단을 안 고르고 **여러 명단을 한 표로** 보는 중인가(스타트업 `전체`).
         "list_view": list_view,
         # 링크가 실어 보낼 `sheet` — `전체` 를 보고 있으면 `all` 이다. 빈 값을

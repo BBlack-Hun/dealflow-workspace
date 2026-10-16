@@ -205,7 +205,10 @@ def test_hidden_rows_links_stay_on_the_all_tab(world):
 def test_the_investor_all_tab_is_unchanged(world):
     html = _login("01000000001").get("/contacts?sheet=all").text
     tabs = _tabs(html)
-    assert re.search(r'class="sheet-tab active" href="/contacts\?sheet=all">\s*전체 <span>1</span>', tabs), tabs
+    # 팀원의 투자사 `전체` 는 #29 에서 `내 명단 N명 · 팀 전체 M명` 이 됐다 — 그
+    # 밖(달 칸 · 명단 칸 · 내려받기)은 그대로다.
+    assert re.search(r'class="sheet-tab active" href="/contacts\?sheet=all"[^>]*>\s*'
+                     r'전체 <span[^>]*>내 명단 1명 · 팀 전체 1명</span>', tabs), tabs
     assert "list-view-line" not in html and "data-f-list_label" not in html
     assert "엑셀 내려받기" in html
     assert "샘플가기업" not in html

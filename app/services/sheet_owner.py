@@ -255,11 +255,42 @@ def managed(db: Session, user: User, *, team_wide: bool = False,
     """
     from ..deps import may_manage_team_contacts   # deps → services 는 순환이 아니다
 
+    whole = team_wide and may_manage_team_contacts(user)
+    return _managed_rows(db, None if whole else user.id,
+                         include_hidden=include_hidden)
+
+
+def _managed_rows(db: Session, user_id: Optional[int], *,
+                  include_hidden: bool = False) -> List[VcContact]:
+    """`managed` 의 몸통 — `user_id` 가 `None` 이면 팀 전체.
+
+    권한은 여기서 보지 않는다. 부르는 쪽이 둘뿐이다: 권한을 본 `managed` 와,
+    **수만** 내놓는 `team_total`.
+    """
     stmt = select(VcContact).order_by(VcContact.group_name, VcContact.name)
-    if not (team_wide and may_manage_team_contacts(user)):
-        stmt = stmt.where(VcContact.user_id == user.id)
+    if user_id is not None:
+        stmt = stmt.where(VcContact.user_id == user_id)
     rows = list(db.execute(stmt).scalars().all())
     return rows if include_hidden else investors(db, rows)
+
+
+def team_total(db: Session) -> int:
+    """팀 전체 투자사 **수** — 관리자가 `전체` 탭에서 보는 바로 그 수(#29).
+
+    팀원은 `전체` 탭을 눌러도 자기 명단만 본다(`managed` 의 `team_wide` 는
+    관리자 전용). 그래서 팀원 화면의 `전체` 숫자가 248 인데, 사용자가 기대한
+    것은 팀 전체 인원 766 이었다. 사용자가 정했다 — 팀원에게는 **둘 다**
+    적는다(`내 명단 N명 · 팀 전체 M명`), 표에 뜨는 줄은 그대로다.
+
+    **판정을 새로 적지 않는다.** 관리자의 `managed(team_wide=True)` 와 같은
+    몸통(`_managed_rows`)을 지난다 — 투자사로 세지 않는 명단 · 감춘 줄을 빼는
+    규칙(`investors`)까지 같아서, 관리자가 보는 수와 팀원이 보는 `팀 전체` 가
+    한 명도 안 갈린다.
+
+    돌려주는 것은 **수 하나**다. 줄을 돌려주면 팀원 화면이 남의 명단을 그릴
+    길이 생긴다 — 그 판정은 `managed` 의 권한 검사 한 곳에 둔다.
+    """
+    return len(_managed_rows(db, None))
 
 
 def is_connected(contact: VcContact) -> bool:

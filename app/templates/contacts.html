@@ -58,10 +58,19 @@
     이제 숫자는 화면마다 제 것을 센다(`routers/pages.py` 의 `total_count`).
     범위도 같은 판정이다: 팀원은 자기 명단 전부, 관리자는 팀 전체.
     명단이 하나도 없는 화면에는 모을 것이 없어 세우지 않는다.
+
+    **투자사 화면의 팀원에게는 두 수를 적는다**(#29) — `내 명단 N명 · 팀 전체
+    M명`. 팀원의 `전체` 는 자기 명단이라 숫자만 적으면 팀 전체 인원으로 읽힌다
+    (사용자가 그렇게 읽었다). 표의 줄은 그대로 내 명단이다. 관리자는 위 수가
+    이미 팀 전체라 지금처럼 수 하나다(`team_total` 이 `None`).
   #}
   {% if page.investors or tabs %}
-  <a class="sheet-tab {% if not selected_sheet %}active{% endif %}" href="{{ page.href }}?sheet=all"{% if not page.investors %} title="이 화면의 명단 전부 — 달 칸은 명단마다 달라 고정 칸만 보입니다"{% endif %}>
+  <a class="sheet-tab {% if not selected_sheet %}active{% endif %}" href="{{ page.href }}?sheet=all"{% if not page.investors %} title="이 화면의 명단 전부 — 달 칸은 명단마다 달라 고정 칸만 보입니다"{% elif team_total is not none %} title="표에는 내 명단이 보입니다 — 팀 전체는 인원 수만 적습니다"{% endif %}>
+    {% if team_total is not none %}
+    전체 <span data-testid="all-tab-counts">내 명단 {{ total_count }}명 · 팀 전체 {{ team_total }}명</span>
+    {% else %}
     전체 <span>{{ total_count }}</span>
+    {% endif %}
   </a>
   {% endif %}
   {% for t in tabs %}
