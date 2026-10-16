@@ -228,5 +228,5 @@ def test_panel_shows_the_fields(client, db, users, team):
 
     db.expire_all()
     assert runner.values(automation.load(db, "meeting_review"), "meeting_review") == {
-        "days": 3, "time": "13:00", "manual_days": 7,
-        "item_gap_min": 20, "item_gap_max": 60}
+        "days": 3, "time": "13:00", "decision_days": 30, "decision_time": "14:00",
+        "manual_days": 7, "item_gap_min": 20, "item_gap_max": 60}

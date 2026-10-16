@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 from typing import List, Optional
 
@@ -587,6 +588,52 @@ def meeting_ask_message(db: Session, user: User, contact, again: bool = False) -
                           MEETING_ASK_AGAIN_FALLBACK)
     return _compose_for_contact(db, user, contact, [], mode=MODE_MEETING,
                                 closing_override=body).text
+
+
+#: 미팅 후 검토결과 문의의 **두 번째** 본문 종류 — 미팅을 마친 지 한 달(기본 30일)
+#: 뒤 투자 결정을 묻는다(`services/automations/meeting_review.py`). 첫 번째(미팅
+#: 후기 `meeting_review`)는 그 미팅의 결과를 묻고, 이것은 그 뒤의 결정을 묻는다 —
+#: 같은 글을 한 달 뒤 또 보내면 받는 쪽에서는 잘못 간 것으로 읽는다.
+#:
+#: 글자까지 `scripts/bootstrap.TEAM_TEMPLATES` 의 같은 종류와 같아야 한다(문구틀을
+#: 지운 사람과 새로 깐 서버가 같은 글을 받게).
+MEETING_DECISION_KIND = "meeting_review_decision"
+MEETING_DECISION_FALLBACK = (
+    "지난번 미팅하셨던 {미팅 기업} 관련하여 다시 연락드립니다.\n"
+    "미팅 후 한 달가량 지났는데, 혹시 투자 검토 결과가 나오셨는지 여쭙고 싶습니다.\n"
+    "검토에 필요한 추가 자료가 있으시거나 한 번 더 미팅이 필요하시면 편하게 말씀 "
+    "부탁드립니다. 바로 준비하겠습니다.")
+#: 투자 결정 문의에서 **그 미팅의 기업 이름**이 들어갈 자리 `{미팅 기업}`. 띄어쓰기를
+#: 빼고 적은 `{미팅기업}` 도 같은 자리로 읽는다 — 못 읽은 자리는 글자 그대로 투자사
+#: 방에 나간다.
+_MEETING_COMPANY_RE = re.compile(r"\{미팅\s*기업\}")
+#: 미팅에 기업 이름이 비었을 때 그 자리에 들어갈 말 — 문장이 그대로 읽히게.
+MEETING_COMPANY_BLANK = "기업"
+
+
+def fill_meeting_company(text: str, company_name: Optional[str]) -> str:
+    """`{미팅 기업}` 을 그 미팅의 기업 이름으로(비었으면 `기업`) 채운다."""
+    name = (company_name or "").strip() or MEETING_COMPANY_BLANK
+    return _MEETING_COMPANY_RE.sub(lambda _m: name, text)
+
+
+def meeting_decision_message(db: Session, user: User, contact, meeting) -> str:
+    """미팅을 마친 지 한 달 뒤 그 투자사 담당자에게 나갈 **투자 결정 문의** 전문.
+
+    미팅 후기와 **같은 틀**이다(`MODE_REVIEW` — 인사말 + 본문, 단계 3). 본문만
+    `meeting_review_decision` 으로 바꾼다 — 미팅 요청 두 번째(`meeting_ask_message`)
+    와 같은 방식이라 조립 규칙을 다시 적지 않는다.
+
+    미팅 후기(`review_message`)와 달리 **미팅이 문구에 들어간다** — 한 달이 지나면
+    어느 기업 이야기인지 짚어야 해서 `{미팅 기업}` 에 그 미팅의 기업 이름이 들어간다.
+    다 지은 **뒤에** 채운다: 인사말에 적혀 있어도 그 자리가 글자 그대로 나가지 않고,
+    기업 이름이 존칭 다듬기(`_fix_honorific`)를 지나지 않는다.
+    """
+    body = _template_body(db, user.id, MEETING_DECISION_KIND,
+                          MEETING_DECISION_FALLBACK)
+    text = _compose_for_contact(db, user, contact, [], mode=MODE_REVIEW,
+                                closing_override=body).text
+    return fill_meeting_company(text, getattr(meeting, "company_name", None))
 
 
 def _load_recipients(db: Session, user: User, mode: str, ids: List[int]) -> List:
