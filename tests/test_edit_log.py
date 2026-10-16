@@ -577,6 +577,11 @@ WRITE_ROUTES = {
     ("POST", "/templates/new"): WATCHED,
     ("POST", "/templates/{template_id}/edit"): WATCHED,
     ("POST", "/templates/{template_id}/delete"): WATCHED,
+    # 관리자의 [모든 팀원에게 적용] · [되돌리기] — 남의 개인 문구를 끄고 켠다
+    # (`services/template_apply.py`). 꺼지고 켜진 것은 `message_templates` 에
+    # 줄마다 남는다.
+    ("POST", "/templates/{template_id}/apply-all"): WATCHED,
+    ("POST", "/templates/apply-all/{backup_id}/undo"): WATCHED,
 
     ("POST", "/sourcing/buckets/rename"): WATCHED,
     ("POST", "/api/sourcing"): WATCHED,
@@ -825,8 +830,10 @@ def test_the_six_shared_routers_still_hold_the_forty_nine_paths(portal):
     # 고치기 · 지우기다(`routers/series_a.py`). 옆 두 탭과 같은 공용 화면이다.
     # 넷째는 `공유 심사역` 확정 · 해제(`/sharer` — Series A 딜 공유에서 이 딜을
     # 넘겨 준 분을 짐작하지 않고 정해 둔다).
+    # templates_crud 의 6 · 7번째는 관리자의 [모든 팀원에게 적용] 과 그
+    # [되돌리기]다(`services/template_apply.py`).
     assert counted == {"companies": 8, "ir": 12, "consulting": 9,
-                       "templates_crud": 5, "sourcing": 8, "contacts": 22,
+                       "templates_crud": 7, "sourcing": 8, "contacts": 22,
                        "series_a": 4}
 
 

@@ -9,6 +9,10 @@
 팀 기본 템플릿(user_id=NULL)은 모두에게 보이고, 본인이 만든 것은 본인에게만 보인다.
 **고치는 것과 고르는 것은 다른 권한이다** — 팀 기본은 관리자만 고치지만,
 고르는 것은 각자 한다(관리자도 제 선택을 가진다).
+
+한 가지 예외가 관리자의 [모든 팀원에게 적용] 이다 — 모두가 같은 말로 나가야
+할 때 관리자가 팀 문구 하나로 각자의 선택을 한 번에 덮는다(되돌릴 수 있다).
+무엇을 덮고 어떻게 되돌리는지는 `services/template_apply.py` 한 곳에 있다.
 """
 from __future__ import annotations
 
@@ -22,9 +26,9 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..deps import get_current_user, templates as jinja
-from ..models import MessageTemplate, User
-from ..services import startup_outreach, template_pick
+from ..deps import admin_only, get_current_user, templates as jinja
+from ..models import MessageTemplate, TemplateApplyBackup, User
+from ..services import startup_outreach, template_apply, template_pick
 from ..ui import base_ctx
 # 합쳐진 문구는 발송 화면이 쓰는 그 길로 만든다 — 여기서 다시 합치면 두 벌이
 # 되고, 두 벌은 반드시 어긋난다.
@@ -186,6 +190,60 @@ def _slots(kind: str, of_kind: List[MessageTemplate]) -> List[str]:
                               for t in of_kind)) or [""]
 
 
+def _apply_view(db: Session, user: User, t: MessageTemplate) -> Optional[dict]:
+    """[모든 팀원에게 적용] 단추의 재료 — 관리자에게, 정해 둔 종류의 켜진 팀 문구에만.
+
+    확인창의 숫자는 실제 적용과 **같은 함수**(`template_apply.plan`)로 센다.
+    화면이 따로 세면 "7명이 바뀝니다" 라고 물어 놓고 9명을 바꾸는 날이 온다.
+    """
+    if user.role != "admin" or not template_apply.eligible(t):
+        return None
+    plan = template_apply.plan(db, t)
+    members, personal = len(plan.previous), len(plan.turn_off)
+    if plan.empty:
+        return {"empty": True, "members": 0, "personal": 0, "confirm": "", "hint": ""}
+    # 0 인 쪽은 말하지 않는다 — "개인 문구 0개가 꺼집니다" 는 읽는 사람이 무엇이
+    # 꺼지는지 다시 찾게 만든다.
+    if members and personal:
+        what = (f"팀원 {members}명의 선택이 이 문구로 바뀌고, "
+                f"개인 문구 {personal}개가 꺼집니다")
+        hint = f"팀원 {members}명의 선택 · 개인 문구 {personal}개가 바뀝니다"
+    elif members:
+        what = f"팀원 {members}명의 선택이 이 문구로 바뀝니다"
+        hint = f"팀원 {members}명의 선택이 바뀝니다"
+    else:
+        what = ("팀원의 선택은 이미 모두 이 문구이고, "
+                f"개인 문구 {personal}개가 꺼집니다")
+        hint = f"개인 문구 {personal}개가 꺼집니다"
+    return {"empty": False, "members": members, "personal": personal,
+            "hint": f"저장한 문구로 — {hint}",
+            "confirm": (f"{what}(되돌릴 수 있게 먼저 백업합니다).\n"
+                        "관리자 계정의 선택도 함께 바뀝니다. 적용할까요?")}
+
+
+def _last_apply(db: Session, user: User, kind: str, variant: str) -> Optional[dict]:
+    """이 자리에서 아직 되돌리지 않은 마지막 [모든 팀원에게 적용] — 관리자에게만.
+
+    언제 · 누가 · 어느 문구로 덮었는지를 단추 옆에 적는다. 그것이 안 보이면
+    [되돌리기] 가 무엇을 되돌리는지 모르고 누르게 된다.
+    """
+    if user.role != "admin" or kind not in template_apply.KINDS:
+        return None
+    backup = template_apply.latest(db, kind, variant)
+    if backup is None:
+        return None
+    who = db.get(User, backup.user_id) if backup.user_id else None
+    applied = db.get(MessageTemplate, backup.template_id)
+    members, personal = template_apply.counts(backup)
+    return {
+        "id": backup.id,
+        "at": (backup.created_at or "")[:16].replace("T", " "),
+        "who": who.name if who else "알 수 없는 사람",
+        "name": ((applied.name or "이름 없는 문구") if applied else "지워진 문구"),
+        "members": members, "personal": personal,
+    }
+
+
 def _slot_view(db: Session, user: User, kind: str, variant: str,
                of_slot: List[MessageTemplate], mode: str, topic: str = "") -> dict:
     """한 자리의 화면 재료 — 고를 것들 · 지금 고른 것 · 합쳐진 미리보기.
@@ -218,7 +276,10 @@ def _slot_view(db: Session, user: User, kind: str, variant: str,
         # 것이 나가는지 또 헷갈린다.
         "copy_from": team[0].id if (team and not mine) else None,
         "rows": [{"t": t, "editable": _editable(t, user),
-                  "chosen": t.id == picked} for t in of_slot],
+                  "chosen": t.id == picked,
+                  "apply": _apply_view(db, user, t)} for t in of_slot],
+        # 이 자리에 관리자가 [모든 팀원에게 적용] 한 것 중 아직 안 되돌린 마지막 것.
+        "last_apply": _last_apply(db, user, kind, variant),
         # 실제로 나가는 문구 — 인사말과 본문을 합친 전문.
         "preview": (deals_view.sample_message(db, user, mode, bucket=variant,
                                               topic=topic)
@@ -421,6 +482,80 @@ def delete_template(
     db.delete(t)
     db.commit()
     return RedirectResponse("/templates?msg=문구를+삭제했습니다", status_code=303)
+
+
+@router.post("/templates/{template_id}/apply-all", include_in_schema=False)
+def apply_template_to_all(
+    template_id: int,
+    name: Optional[str] = Form(None),
+    body: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """[모든 팀원에게 적용] — 이 팀 문구로 모두의 선택을 덮고 그 자리의 개인 문구를 끈다.
+
+    관리자만. 무엇을 덮고 어떻게 되돌리는지는 `services/template_apply.py` 에 있다.
+
+    단추가 [저장] 과 같은 폼 안에 있어 칸의 값이 함께 온다. **고친 채로 누르면
+    적용하지 않는다** — 적용되는 것은 저장된 문구인데, 화면에는 고친 글이 떠
+    있어 무엇이 나갔는지 어긋난다(딜 소싱은 이름이 곧 갈래라 자리까지 바뀐다).
+    """
+    admin_only(user)
+    t = db.get(MessageTemplate, template_id)
+    if t is None:
+        raise HTTPException(status_code=404, detail="문구를 찾을 수 없습니다")
+    if not template_apply.eligible(t):
+        raise HTTPException(status_code=400,
+                            detail="모든 팀원에게 적용할 수 있는 문구가 아닙니다")
+    if body is not None and (
+            _clean_body(body) != _clean_body(t.body)
+            or (name or "").strip() != (t.name or "").strip()):
+        return RedirectResponse(
+            f"/templates?msg={quote('고친 내용을 먼저 [저장]한 뒤 적용하세요')}#{t.kind}",
+            status_code=303)
+
+    plan, backup = template_apply.apply(db, t, user)
+    if backup is None:
+        return RedirectResponse(
+            f"/templates?msg={quote('바뀔 것이 없습니다 — 모두 이미 이 문구를 씁니다')}#{t.kind}",
+            status_code=303)
+    db.commit()
+    done = (f"모든 팀원에게 적용했습니다 — 선택 {len(plan.previous)}명 · "
+            f"개인 문구 {len(plan.turn_off)}개 꺼짐 (잘못 눌렀으면 [되돌리기])")
+    return RedirectResponse(f"/templates?msg={quote(done)}#{t.kind}", status_code=303)
+
+
+@router.post("/templates/apply-all/{backup_id}/undo", include_in_schema=False)
+def undo_apply_to_all(
+    backup_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """[되돌리기] — 이 자리의 **마지막** 적용을 그 전으로. 한 번만 된다.
+
+    그 사이 사람이 다시 고른 선택 · 주인이 고치거나 지운 문구는 건드리지 않고
+    몇 건인지 알린다(`template_apply.restore`).
+    """
+    admin_only(user)
+    backup = db.get(TemplateApplyBackup, backup_id)
+    if backup is None:
+        raise HTTPException(status_code=404, detail="되돌릴 적용을 찾을 수 없습니다")
+    if backup.restored_at:
+        return RedirectResponse(
+            f"/templates?msg={quote('이미 되돌린 적용입니다')}#{backup.kind}",
+            status_code=303)
+    last = template_apply.latest(db, backup.kind, backup.variant)
+    if last is None or last.id != backup.id:
+        return RedirectResponse(
+            f"/templates?msg={quote('이 자리에 더 나중에 적용한 것이 있습니다 — 그것부터 되돌려 주세요')}"
+            f"#{backup.kind}", status_code=303)
+
+    done = template_apply.restore(db, backup)
+    db.commit()
+    msg = f"되돌렸습니다 — 선택 {done.choices}명 · 개인 문구 {done.templates}개"
+    if done.skipped:
+        msg += f" (그 사이 바뀐 {done.skipped}건은 그대로 두었습니다)"
+    return RedirectResponse(f"/templates?msg={quote(msg)}#{backup.kind}", status_code=303)
 
 
 @router.get("/api/templates")

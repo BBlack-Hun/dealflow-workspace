@@ -151,6 +151,20 @@ def forget_template(db: Session, template_id: int) -> None:
     db.execute(delete(TemplateChoice).where(TemplateChoice.template_id == template_id))
 
 
+def usable(t: Optional[MessageTemplate], user_id: int, kind: str,
+           variant: str = "") -> bool:
+    """이 사람이 이 자리에 **골라 둘 수 있는** 문구인가.
+
+    있고 · 켜져 있고 · 같은 종류 · 팀 것이거나 제 것 · 같은 갈래. 죽은 선택을
+    치우는 `prune` 과, 관리자가 팀 전체의 선택을 덮고 되돌리는 자리
+    (`services/template_apply.py`)가 같은 판정을 읽는다 — 두 곳에 적으면
+    되돌리기가 `prune` 이 곧바로 치울 선택을 만들어 둘 수 있다.
+    """
+    return (t is not None and t.is_active == 1 and t.kind == kind
+            and t.user_id in (None, user_id)
+            and variant_of(t.kind, t.name) == variant)
+
+
 def prune(db: Session, user_id: int) -> int:
     """죽은 선택을 치운다 — 지워졌거나 꺼졌거나 남의 개인 문구가 된 것.
 
@@ -165,10 +179,7 @@ def prune(db: Session, user_id: int) -> int:
     dead = 0
     for choice in rows:
         t = db.get(MessageTemplate, choice.template_id)
-        alive = (t is not None and t.is_active == 1 and t.kind == choice.kind
-                 and t.user_id in (None, user_id)
-                 and variant_of(t.kind, t.name) == choice.variant)
-        if not alive:
+        if not usable(t, user_id, choice.kind, choice.variant):
             db.delete(choice)
             dead += 1
     return dead
