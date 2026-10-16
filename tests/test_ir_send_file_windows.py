@@ -106,6 +106,9 @@ class FakeWin(kw.KakaoDesktopSender):
     def _safe_close(self):
         pass
 
+    def _leave_room(self, chat, room_name):
+        pass
+
     def _fail(self, room_name, error):
         return kw.SendResult(ok=False, error=error)   # 스크린샷은 찍지 않는다
 
