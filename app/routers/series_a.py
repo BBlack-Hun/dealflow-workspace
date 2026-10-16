@@ -27,7 +27,7 @@
 from __future__ import annotations
 
 import re
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
@@ -90,13 +90,18 @@ def ir_names(db: Session) -> Dict[str, str]:
 
 
 def row_dict(c: SeriesACompany, known: Dict[str, str],
-             people: Optional[Dict[int, List[str]]] = None,
+             people: Optional[Dict[int, Set[int]]] = None,
              sharer: Optional[dict] = None) -> dict:
     ir_name = known.get(deal_history._key(c.name), "")
     # **Series A 딜 공유로 이 기업을 받은 심사역** — 딜 제안 관리 › 딜 소싱 제안의
     # [Series A 딜 공유]가 적은 기록(`services/series_a_share.py`). 대기 · 보내는
     # 중 · 보냄만 센다(중단 · 실패한 건은 안 센다).
-    shared = (people or {}).get(c.id, [])
+    #
+    # **수만** 싣는다. 표의 `공유한 심사역` 칸은 뺐고(#24 — 옆 `공유 심사역` 과
+    # 같은 뜻으로 읽혔다), 이 수를 읽는 곳은 [삭제] 확인창 하나다(`series_a.js` —
+    # "공유 기록도 함께 지워진다"). 누구인지(이름 · 회사)는 그 칸의 풍선말에만
+    # 쓰였으므로 더 읽지 않는다.
+    shared = (people or {}).get(c.id, ())
     return {
         "id": c.id,
         "name": c.name or "",
@@ -116,7 +121,6 @@ def row_dict(c: SeriesACompany, known: Dict[str, str],
         # 그 탭을 연다(`/companies?q=…` 가 검색칸을 채운다).
         "ir_name": ir_name,
         "shared_count": len(shared),
-        "shared_names": shared,
         # `공유 심사역` 칸 아래 — 확정한 분 · 이름이 같은 후보(`series_a_share.
         # sharer_views`). 화면(`series_a.js`)이 이 값으로 [이 분으로 확정]/[해제]를 그린다.
         "sharer": sharer or {"confirmed": None, "candidates": []},
@@ -136,7 +140,7 @@ def sort_rows(rows: List[dict]) -> List[dict]:
 
 def table_rows(db: Session) -> List[dict]:
     known = ir_names(db)
-    people = series_a_share.shared_people(db)
+    people = series_a_share.contacts_by_company(db)
     companies = db.execute(select(SeriesACompany)).scalars().all()
     sharers = series_a_share.sharer_views(db, companies)
     rows = [row_dict(c, known, people, sharers.get(c.id)) for c in companies]
