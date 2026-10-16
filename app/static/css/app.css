@@ -670,6 +670,17 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
    **th 폭 합계와 맞춰 둔다(현재 1,416px).** 모자라면 fixed 가 칸을 비율대로 눌러
    다시 잘린다. th 폭을 고치면 여기도 같이. */
 #team-table { min-width: 1670px; }
+/* 딜 소싱 — `참여` 뒤에 **월간 리마인드 이력** 달 칸 셋(124px × 3)이 들었다(#14,
+   `services/sourcing_remind_log.py`). 공용 규칙(.wide 2,030px)은 미팅 후기도 같이
+   쓰는 값이라 올리지 않고, 이 표만 **든 만큼만** 올린다(2,030 + 372) — 안 올리면
+   폭을 안 준 `메모` 가 그 372px 을 통째로 내어 준다(644 → 272px). 시리즈 A 갈래의
+   고르는 칸(32px)도 전과 같이 `메모` 가 내어 준다.
+   칸 폭 124px 은 가장 긴 한 줄 `10/12 14:05 수동` 을 글자 폭으로 셈한 값이다
+   (13px — 숫자 여덟 · 한글 둘 · 기호 · 빈칸 ≈ 101px + 좌우 여백 18px). 머리글
+   `12월 리마인드` 도 한 줄에 든다. 시각은 한 칸에 여러 줄이 서므로 자릿수를
+   세로로 맞춘다(`tabular-nums`). */
+#sourcing-table { min-width: 2402px; }
+#sourcing-table td.remind-col { font-variant-numeric: tabular-nums; }
 .grid-table { width: 100%; table-layout: fixed; border-collapse: collapse;
               background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
 /* 표 밀도. 8px/10px 이던 것을 6px/9px 로 — 글자 수 대비 자리가 남는 칸이

@@ -27,6 +27,7 @@ from ..models import SendItem, SendJob, SourcingContact, User
 from ..services import (series_a_share, sourcing_buckets, sourcing_link,
                         sourcing_mail, sourcing_receipts, sourcing_rooms,
                         sourcing_sync)
+from ..services import sourcing_remind_log
 from ..services.pipeline import current_assignee
 from ..ui import base_ctx
 # 방 확인 잡의 종류는 **한 곳에만 적는다**(`agent_api.VERIFY_KIND`).
@@ -75,6 +76,21 @@ COLUMNS = [
     # 발송 화면(딜 제안 관리)에서 고를 수 있으려면 이 칸이 먼저 차야 한다.
     ("kakao_room_name", "카톡방 이름", "170px", False),
 ]
+
+# ── 월간 리마인드 이력 칸(#14) — `COLUMNS` 밖의 읽기 전용 칸 ─────────────────
+# 지난 석 달(`8월 리마인드` `9월 리마인드` `10월 리마인드`) — 그 달 이 분께
+# 리마인드가 나간 시각과 `자동` · `수동`(`services/sourcing_remind_log.py`).
+#
+# `COLUMNS` 에 넣지 않는다. 그 목록은 **고칠 수 있는 칸**이라 행마다 같은 이름의
+# `data-field` 가 서고(tests/test_sourcing.py 가 지킨다), 달은 매달 바뀌어 고정된
+# 이름이 없다. 머리글은 아래 자리 뒤에 끼워 세우고, 행은 그 칸 바로 뒤에 손으로
+# 적는다(`sourcing.html`) — 고치지도 거르지도 않는다.
+#
+# 자리는 **`참여` 바로 뒤.** 이 칸은 사람마다 읽는다("이분께 이 달 리마인드가
+# 갔나") — 그래서 이름 · `딜 받음`(이름 밑) · `참여`(불참여면 리마인드에서 빠진다)
+# 와 나란히 있어야 한 눈에 읽힌다. 맨 오른쪽이면 `참여` 를 옮겨 온 까닭(가로로
+# 끝까지 밀어야 보였다)이 그대로 되풀이된다.
+REMIND_AFTER = "participation"
 
 
 def buckets(db: Session) -> List[dict]:
@@ -288,6 +304,14 @@ def sourcing_page(request: Request, db: Session = Depends(get_db),
         "total": sum(t["count"] for t in tabs),
         # 이름을 못 바꾼 까닭. 조용히 되돌아오면 왜 그대로인지 알 수 없다.
         "msg": msg,
+    })
+    # ── 월간 리마인드 이력(#14) — 지난 석 달, 표 전체에 질의 한 번 ──
+    remind_months = sourcing_remind_log.months()
+    ctx.update({
+        "remind_months": remind_months,
+        "remind_after": REMIND_AFTER,
+        "reminds": sourcing_remind_log.history(db, [r.id for r in rows],
+                                               remind_months),
     })
     return templates.TemplateResponse("sourcing.html", ctx)
 

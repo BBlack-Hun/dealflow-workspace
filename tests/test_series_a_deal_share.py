@@ -426,11 +426,13 @@ def test_the_sourcing_screen_has_the_button_and_the_row_note(world, client, db):
 def test_the_series_a_tab_has_a_pick_column_before_no(world, client):
     """체크박스 칸은 맨 왼쪽(`NO` 앞) — 그 뒤 차례(참여 요청일 · 이름 · 참여)는 그대로."""
     from app.routers.sourcing import COLUMNS
+    from app.services.sourcing_remind_log import MONTHS
 
     page = client.get(f"/sourcing?tab={quote(SERIES_A)}").text
     head = page[page.index("<thead>"):page.index("</thead>")]
     ths = re.findall(r"<th[\s>].*?</th>", head, re.S)
-    assert len(ths) == len(COLUMNS) + 2
+    # 고르는 칸 + NO + 컬럼 + 월간 리마인드 달 칸(#14)
+    assert len(ths) == len(COLUMNS) + 2 + MONTHS
     assert 'id="sourcing-check-all"' in ths[0] and 'type="checkbox"' in ths[0]
     labels = [re.sub(r"<[^>]+>", "", x).strip() for x in ths]
     assert labels[:5] == ["", "NO", "참여 요청일", "이름", "참여"], labels
@@ -439,7 +441,7 @@ def test_the_series_a_tab_has_a_pick_column_before_no(world, client):
     rows = re.findall(r"<tr data-id=\"(\d+)\".*?</tr>", body, re.S)
     first = body[:body.index("</tr>")]
     tds = re.findall(r"<td[\s>]", first)
-    assert len(tds) == len(COLUMNS) + 2, "머리글과 칸 수가 어긋났다 — 표가 한 칸 밀린다"
+    assert len(tds) == len(COLUMNS) + 2 + MONTHS, "머리글과 칸 수가 어긋났다 — 표가 한 칸 밀린다"
     cells = re.findall(r"<td[^>]*>", first)
     assert 'class="pick-col"' in cells[0] and "rowno" in cells[1]
     picks = re.findall(r'class="js-sourcing-pick" value="(\d+)"', body)

@@ -86,15 +86,17 @@ def test_every_column_has_a_cell(seeded):
     import re
 
     from app.routers.sourcing import COLUMNS
+    from app.services.sourcing_remind_log import MONTHS
 
     body = seeded.get("/sourcing").text
     head = body[body.index("<thead>"):body.index("</thead>")]
     first_row = body[body.index("<tbody>"):body.index("</tbody>")]
     first_row = first_row[:first_row.index("</tr>")]
 
-    # 머리글 = # + 컬럼 수  (`<thead>` 자체가 걸리지 않게 경계를 본다)
-    assert len(re.findall(r"<th[\s>]", head)) == len(COLUMNS) + 1
-    assert len(re.findall(r"<td[\s>]", first_row)) == len(COLUMNS) + 1
+    # 머리글 = # + 컬럼 수 + 월간 리마인드 달 칸(#14, `COLUMNS` 밖의 읽기 전용 칸)
+    # (`<thead>` 자체가 걸리지 않게 경계를 본다)
+    assert len(re.findall(r"<th[\s>]", head)) == len(COLUMNS) + 1 + MONTHS
+    assert len(re.findall(r"<td[\s>]", first_row)) == len(COLUMNS) + 1 + MONTHS
 
     # 모든 컬럼이 눌러서 고칠 수 있어야 한다
     fields = set(re.findall(r'data-field="(\w+)"', first_row))
