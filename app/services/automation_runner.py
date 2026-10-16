@@ -34,6 +34,12 @@
    내주는 자리(`held_jobs`)가 한 번 더 띄운다.
 10. **건 사이 간격** — 자동화마다(`COMMON_FIELDS`, 기본 20~60초). 내줄 때 잡에
    실린다(`job_delay`) — 그 칸을 아는 발송기(0.11.8~)에만 자동 회차가 간다.
+11. **끄면 멈춘다** — 끄거나 시험 ↔ 실제 · 보내는 계정을 바꾸면 서 있는 회차를
+   바로 거두고(`stop_jobs`), 풀 때 · 내줄 때 · 사람이 다시 낼 때도 같은 판정
+   (`stop_reason` · `screen`)을 지난다. 오늘 할 일에 거둔 사실이 선다.
+12. **안 나간 대상은 다시 실린다** — 실패 · 빠짐 · 시각을 놓친 대상은 다음
+   회차에 다시 실리고(`sent_refs` · `_retake`), 옛 건은 거둬 사람이 되살려도
+   두 번 안 간다. 받은 대상은 절대 다시 안 간다.
 
 ## 늦게 세우지 않는다
 
@@ -170,9 +176,10 @@ class Spec:
     #: (예: 딜 소싱 `sourcing_remind`). 손으로 보낸 회차와 같은 이름으로 남는다.
     topic: Optional[str] = None
     #: **사람이 손으로 같은 글을 먼저 보냈나** — 보냈으면 그 사유(빈 글자면 보낸다).
-    #: `(db, 값, 담당자 id, 딜 소싱 줄 id, 그날)`. 세울 때와 풀 때 둘 다 부른다
-    #: (`automation_dedup` 머리말).
-    manual: Optional[Callable[[Session, dict, Optional[int], Optional[int], date], str]] = None
+    #: `(db, 값, 대상, 그날)` — 대상은 `contact_id` · `sourcing_contact_id` ·
+    #: `ref` 를 가진 것(세울 때 `automation.Out`, 풀 때 `AutomationSend`).
+    #: 세울 때와 풀 때 둘 다 부른다(`automation_dedup` 머리말).
+    manual: Optional[Callable[[Session, dict, object, date], str]] = None
     #: 이 자동화의 **보낼 시각들**(`HH:MM`) — 팀 시간대 안인지 저장 자리에서 본다.
     #: 비면 `time` 칸들이다. 스타트업 월간처럼 시각이 다른 칸 안에 있을 때 채운다.
     times: Optional[Callable[[dict], List[str]]] = None
@@ -213,8 +220,22 @@ def _load_all() -> None:
 
 # ── 자동화마다 다른 값 ────────────────────────────────────────────────────────
 
+WEEKDAYS = "월화수목금토일"
+
+
+def parse_weekday(raw) -> int:
+    """요일 한 글자(`수`) → 0(월)~6(일). 못 읽으면 `ValueError` — 자동화들이 함께 쓴다."""
+    text = str(raw or "").strip()
+    if len(text) == 1 and text in WEEKDAYS:
+        return WEEKDAYS.index(text)
+    raise ValueError("요일은 월~일 중 한 글자로 넣으세요")
+
+
 def parse_time(raw) -> str:
     """`HH:MM` 으로 다듬는다. 보내는 시간(09~19시) 밖이면 `ValueError`.
+
+    (팀 시간대의 `automation._minutes` 는 19:00 끝까지 받는 **다른 규칙**이라
+    합치지 않았다 — 자동화 시각은 19:00 을 못 고르고, 시간대 끝은 19:00 이다.)
 
     고르는 폭은 예약과 같다 — 저장 자리에서 자른다(`startup_monthly.parse_time`
     와 같은 규칙을 그대로 부른다).
@@ -324,6 +345,35 @@ def save_params(db: Session, key: str, raw: dict) -> dict:
     return cleaned
 
 
+def save_settings(db: Session, key: str, raw: Optional[dict], *, enabled: bool,
+                  user_id: Optional[int], test_mode: bool,
+                  test_room: Optional[str]) -> Tuple[Automation, int]:
+    """자동화 한 줄을 **다 가린 뒤 한 번에** 저장한다 — 값(`p_*`) · 켜짐 · 보내는
+    계정 · 시험 모드 · 시험방. 못 받을 값이 하나라도 있으면 `ValueError` 이고
+    **아무것도 안 바뀐다**(값만 먼저 저장되고 스위치는 못 바뀌는 반쪽 저장이
+    없다). 저장한 뒤 그 자동화의 서 있는 회차 중 꺼졌거나 모드가 바뀐 것을
+    거둔다(`stop_jobs`). 돌려주는 것은 `(줄, 거둔 회차 수)`.
+
+    끄기는 이 함수보다 **먼저**, 검사 없이 한다(`automation.turn_off` —
+    `routers/dashboard.save_automation`). 여기서 넘어져도 끈 것은 남는다.
+    """
+    try:
+        cleaned = None
+        if raw:
+            cleaned = clean_params(key, raw)
+            check_window(db, key, cleaned)
+        row = automation.save(db, key, enabled=enabled, user_id=user_id,
+                              test_mode=test_mode, test_room=test_room,
+                              commit=False)
+        if cleaned is not None:
+            automation.set_params(row, cleaned)
+        db.commit()
+    except ValueError:
+        db.rollback()
+        raise
+    return row, stop_jobs(db, key)
+
+
 def at_on(day: date, hhmm: str) -> datetime:
     """그날 그 시각(이 프로세스 시간대)."""
     hour, minute = (int(part) for part in parse_time(hhmm).split(":"))
@@ -388,16 +438,96 @@ def _finish(db: Session, row: AutoSendRun, status: str, *,
 
 # ── 대상 자리 ────────────────────────────────────────────────────────────────
 
-def sent_refs(db: Session, key: str, test: bool, refs) -> set:
-    """이미 '보냈다' 줄이 선 `ref` 들."""
+#: 이 상태의 회차에 실린 대기 건은 **아직 나갈 수 있다**(큐 · 발송기 손 · 멈춤).
+_LIVE_JOBS = ("queued", "running", "paused")
+
+
+def still_counts(item: Optional[SendItem], job: Optional[SendJob],
+                 now: Optional[datetime] = None) -> bool:
+    """이 대상 줄이 아직 **'보냈다(또는 나가는 중)'** 인가 — 참이면 다시 보내지 않는다.
+
+    - 나갔거나(`sent`) 보내는 중(`sending`) → 참. **받은 사람에게 두 번 안 간다.**
+    - 대기(`pending`)인데 회차가 큐 · 발송기 손 · 멈춤이거나, 아직 안 풀린
+      예약(`draft`, 시각 전 · 풀릴 때) → 참. 곧 나갈 수 있다.
+    - 발송 건이 지워졌다(탭 지우기 · 데모 정리) → 참. 모르면 보낸 것으로 본다.
+    - 그 밖 — 실패 · 취소(중복 방지 · 조건으로 빠짐 · 꺼서 취소) · 예약 시각을
+      놓친 대기 · 끝난 회차에 남은 대기 → 거짓. **다음 회차에 다시 실릴 수 있다**
+      (그때 옛 건은 거둔다 — `_retake`).
+    """
+    if item is None:
+        return True
+    if item.status in ("sent", "sending"):
+        return True
+    if item.status != "pending" or job is None:
+        return item.status == "pending"
+    if job.status in _LIVE_JOBS:
+        return True
+    if job.status == "draft":
+        return scheduled_send.state(job, now) != scheduled_send.STATE_EXPIRED
+    return False
+
+
+def sent_refs(db: Session, key: str, test: bool, refs,
+              now: Optional[datetime] = None) -> set:
+    """이미 **보냈거나 나가는 중인** `ref` 들(`still_counts`).
+
+    줄이 있어도 그 건이 실패했거나 · 빠졌거나 · 시각을 놓쳤으면 여기 들지 않는다
+    — 그 대상은 다음 회차에 다시 실린다(예: 낡은 발송기 때문에 시각을 놓친 미팅
+    요청 첫 번째). 받은 사람은 여기 들어 두 번 안 받는다.
+    """
     refs = list(refs)
     if not refs:
         return set()
-    return set(db.execute(
-        select(AutomationSend.ref).where(AutomationSend.automation == key,
-                                         AutomationSend.test == (1 if test else 0),
-                                         AutomationSend.ref.in_(refs))
-    ).scalars().all())
+    rows = db.execute(
+        select(AutomationSend.ref, AutomationSend.item_id, AutomationSend.job_id)
+        .where(AutomationSend.automation == key,
+               AutomationSend.test == (1 if test else 0),
+               AutomationSend.ref.in_(refs))
+    ).all()
+    out = set()
+    for ref, item_id, job_id in rows:
+        item = db.get(SendItem, item_id) if item_id else None
+        job = db.get(SendJob, job_id) if job_id else None
+        if item_id is None and job is None:
+            out.add(ref)          # 둘 다 비었다(데모 정리) — 모르면 보낸 것으로
+            continue
+        if item_id is not None and item is None:
+            out.add(ref)
+            continue
+        if still_counts(item, job, now):
+            out.add(ref)
+    return out
+
+
+#: 다시 실려 거둔 옛 건의 사유.
+RETAKEN = "다음 회차로 다시 실림"
+
+
+def _retake(db: Session, rec: AutomationSend, run: AutoSendRun, job: SendJob,
+            out: automation.Out) -> None:
+    """이미 줄이 있는 대상을 **새 회차로 옮긴다** — 줄 하나 = 대상 하나.
+
+    `(자동화, ref, 시험)` 은 유일하다. 줄을 새로 세우지 않고 새 회차 · 새 건을
+    가리키게 고친다. 옛 건이 아직 대기면 `canceled` 로 거둔다 — 사람이 옛 회차를
+    [발송 시작] · [이어 보내기] 해도 같은 대상에게 또 가지 않게. 옛 건이 실패 ·
+    취소로 남아 있어도 [실패 재시도] · [취소분 재발송] 이 그 건을 되살리지 못한다
+    (`screen` — 줄이 가리키지 않는 자동화 건은 다시 안 보낸다).
+    """
+    old = db.get(SendItem, rec.item_id) if rec.item_id else None
+    if old is not None and old.id != out.item_id:
+        # 옛 건에 **다시 실렸다는 표시**를 단다 — 상태가 무엇이든. 줄이 새 건으로
+        # 옮겨 가면 옛 회차에는 줄이 하나도 안 남을 수 있어, 사람이 옛 건을
+        # 되살릴 때 가려낼 근거가 이 표시뿐이다(`screen`).
+        was = f" · 원래: {old.error}" if old.error else ""
+        if old.status == "pending":
+            old.status = "canceled"
+        old.error = f"{EXCLUDED} — {RETAKEN}(회차 #{job.id}){was}"[:1000]
+    rec.run_id = run.id
+    rec.job_id = job.id
+    rec.item_id = out.item_id
+    rec.room = out.room
+    rec.contact_id = out.contact_id
+    rec.sourcing_contact_id = out.sourcing_contact_id
 
 
 def _rows_for(key: str, test: bool, run: AutoSendRun, job: SendJob,
@@ -410,6 +540,21 @@ def _rows_for(key: str, test: bool, run: AutoSendRun, job: SendJob,
         return [AutomationSend(ref=f"{out.ref}:{cid}", company_id=cid, **common)
                 for cid in out.company_ids]
     return [AutomationSend(ref=out.ref, **common)]
+
+
+def _record(db: Session, key: str, test: bool, run: AutoSendRun, job: SendJob,
+            out: automation.Out) -> None:
+    """'보냈다' 줄을 세운다 — 이미 있으면(다시 실림) 그 줄을 옮긴다."""
+    for rec in _rows_for(key, test, run, job, out):
+        existing = db.execute(
+            select(AutomationSend).where(AutomationSend.automation == key,
+                                         AutomationSend.ref == rec.ref,
+                                         AutomationSend.test == rec.test)
+        ).scalars().first()
+        if existing is None:
+            db.add(rec)
+        else:
+            _retake(db, existing, run, job, out)
 
 
 # ── 하루 한 번 ───────────────────────────────────────────────────────────────
@@ -479,9 +624,9 @@ def run_once(db: Session, key: str, now: Optional[datetime] = None) -> dict:
                 error=f"대상을 모으다 실패했습니다: {exc}")
         return {"status": STATUS_FAILED}
 
-    done = sent_refs(db, key, test, [o.ref for o in batch.outs if not o.company_ids])
+    done = sent_refs(db, key, test, [o.ref for o in batch.outs if not o.company_ids], now)
     done |= {ref.rsplit(":", 1)[0] for ref in sent_refs(
-        db, key, test, [f"{o.ref}:{c}" for o in batch.outs for c in o.company_ids])}
+        db, key, test, [f"{o.ref}:{c}" for o in batch.outs for c in o.company_ids], now)}
     fresh = [o for o in batch.outs if o.ref not in done]
 
     label = automation.BY_KEY[key].label
@@ -489,8 +634,10 @@ def run_once(db: Session, key: str, now: Optional[datetime] = None) -> dict:
     # **중복 막기** — 다른 자동화 · 같은 방 · 손으로 보낸 것(`automation_dedup`).
     fresh = _dedupe(db, spec, row, key, label, team, test, today, fresh, batch.skipped)
     # **언제** — 팀 시간대 · 피할 시간 · 자동 회차 사이 간격에 맞춰 놓는다.
+    vals = values(row, key)
     placed = _place_all(db, batch, plan, key, team, who.id, today, fresh,
-                        batch.skipped) if fresh else []
+                        batch.skipped, (vals["item_gap_min"], vals["item_gap_max"])
+                        ) if fresh else []
     if not placed:
         note = batch.note or "보낼 곳이 0곳입니다"
         if batch.skipped:
@@ -511,8 +658,7 @@ def run_once(db: Session, key: str, now: Optional[datetime] = None) -> dict:
                 scheduled_at=when.isoformat(timespec="seconds"),
                 test_room=test_room, topic=spec.topic)
             for out in outs:
-                for rec in _rows_for(key, test, claim, job, out):
-                    db.add(rec)
+                _record(db, key, test, claim, job, out)
             jobs.append(job)
         db.flush()
     except (ValueError, IntegrityError) as exc:
@@ -567,7 +713,7 @@ def _dedupe(db: Session, spec: Spec, row: Automation, key: str, label: str,
         why = book.why(contact_id=out.contact_id,
                        sourcing_contact_id=out.sourcing_contact_id, room=out.room)
         if not why and spec.manual is not None:
-            why = spec.manual(db, vals, out.contact_id, out.sourcing_contact_id, day)
+            why = spec.manual(db, vals, out, day)
         if why:
             skipped.append(f"{_who(db, out)} — {why}")
             continue
@@ -578,34 +724,59 @@ def _dedupe(db: Session, spec: Spec, row: Automation, key: str, label: str,
     return kept
 
 
-def _other_auto_times(db: Session, sender_id: int, day: date) -> List[datetime]:
-    """그날 이 계정에 이미 걸린 **다른 자동 회차**의 예약 시각들(취소 빼고)."""
+#: 한 통을 보내는 데 드는 시간(초)의 어림 — 방을 찾고 붙여 넣고 확인하는 몫.
+#: 건 사이 간격과 더해 회차 하나가 얼마나 걸릴지 어림한다(`estimate`).
+SEND_SEC = 20
+#: 사람이 누른 회차 · 옛 자동 회차의 건 사이 간격 어림(발송기 기본 3~7초).
+DEFAULT_ITEM_GAP_SEC = 5
+
+
+def estimate(count: int, gap: Optional[Tuple[int, int]] = None) -> timedelta:
+    """`count` 통짜리 회차가 걸릴 시간의 어림 — 분 단위로 올린다."""
+    if count <= 0:
+        return timedelta(0)
+    mean = (sum(gap) / 2) if gap else DEFAULT_ITEM_GAP_SEC
+    seconds = count * SEND_SEC + (count - 1) * mean
+    return timedelta(minutes=-(-int(seconds) // 60))
+
+
+def _other_auto_times(db: Session, sender_id: int, day: date
+                      ) -> List[Tuple[datetime, datetime]]:
+    """그날 이 계정에 이미 걸린 **다른 자동 회차**의 `(시작, 끝 어림)`들(취소 빼고).
+
+    끝은 시작 + 그 회차가 걸릴 어림(`estimate`) — 큰 회차 바로 뒤에 다음 회차를
+    걸면 시작 시각만 띄워 봐야 앞 회차가 끝나자마자 붙는다.
+    """
     from . import send_guard
 
     start, end = day.isoformat(), (day + timedelta(days=1)).isoformat()
-    rows = db.execute(
-        select(SendJob.id, SendJob.scheduled_at)
+    jobs = db.execute(
+        select(SendJob)
         .where(SendJob.user_id == sender_id, SendJob.status != "canceled",
                SendJob.scheduled_at >= start, SendJob.scheduled_at < end)
-    ).all()
-    autos = send_guard.auto_job_ids(db, [job_id for job_id, _at in rows])
+    ).scalars().all()
+    autos = send_guard.auto_job_ids(db, [job.id for job in jobs])
     out = []
-    for job_id, raw in rows:
-        if job_id not in autos:
+    for job in jobs:
+        if job.id not in autos:
             continue
         try:
-            out.append(scheduled_send.parse(raw))
+            at = scheduled_send.parse(job.scheduled_at)
         except ValueError:
             continue
+        count = sum(1 for i in job.items if i.status in ("pending", "sending", "sent"))
+        out.append((at, at + estimate(count, job_delay(db, job))))
     return sorted(out)
 
 
-def place(team: "automation.Team", desired: datetime, others: List[datetime]
-          ) -> Optional[datetime]:
+def place(team: "automation.Team", desired: datetime,
+          others: List[Tuple[datetime, datetime]],
+          length: timedelta = timedelta(0)) -> Optional[datetime]:
     """한 회차가 나갈 시각 — 시간대 · 피할 시간 · **다른 자동 회차와의 간격**.
 
-    늘 **뒤로만** 민다(`Team.fit`). 다른 자동 회차와 `job_gap_min` 분 안쪽이면
-    그 회차 + 간격으로 민 뒤 다시 맞춘다. 그날 안에 못 넣으면 `None`.
+    늘 **뒤로만** 민다(`Team.fit`). 이 회차(`length` 만큼 걸린다)와 다른 자동
+    회차(시작~끝 어림) 사이가 `job_gap_min` 분이 안 되면 그 회차 끝 + 간격으로
+    민 뒤 다시 맞춘다. 그날 안에 못 넣으면 `None`.
     """
     gap = timedelta(minutes=team.job_gap_min)
     when = team.fit(desired)
@@ -613,26 +784,30 @@ def place(team: "automation.Team", desired: datetime, others: List[datetime]
         if when is None:
             return None
         if not gap:
-            return when
-        clash = next((other for other in others if abs(when - other) < gap), None)
+            return when           # 0 분 — 띄우지 않는다(팀이 고른 값)
+        clash = next(((o_start, o_end) for o_start, o_end in others
+                      if when < o_end + gap and when + length + gap > o_start), None)
         if clash is None:
             return when
-        when = team.fit(clash + gap)
+        when = team.fit(clash[1] + gap)
     return None
 
 
 def _place_all(db: Session, batch: Batch, plan: Plan, key: str,
                team: "automation.Team", sender_id: int, day: date,
-               outs: List[automation.Out], skipped: List[str]) -> List[tuple]:
+               outs: List[automation.Out], skipped: List[str],
+               gap: Optional[Tuple[int, int]] = None) -> List[tuple]:
     """한 통들을 회차로 묶고 **나갈 시각**을 정한다 — `[(한 통들, 시각), …]`.
 
     - 띄워 보내기(`spacing`)면 한 통마다 회차 하나(채널방).
     - 시각이 다른 한 통(`Out.at`)은 그 시각의 회차로 따로(미팅 요청 두 번째).
     - 그 밖에는 한 회차.
 
-    같은 자동화 안의 회차끼리는 정한 차례 · 폭을 지키고, **다른 자동화**의
-    회차와는 팀의 `자동 회차 사이 최소 간격` 을 둔다. 그날 시간대 안에 못 넣은
-    한 통은 뺀다(사유가 남는다 — 날마다 도는 자동화는 다음 날 줍는다).
+    같은 자동화 안의 회차끼리는 정한 차례 · **폭을 지킨다** — 앞 회차가 다른
+    자동화와의 간격 때문에 밀리면 뒤 회차도 **같은 만큼** 민다(채널방이 1분
+    간격으로 몰리지 않게). 다른 자동화의 회차와는 팀의 `자동 회차 사이 최소
+    간격` 을 둔다. 그날 시간대 안에 못 넣은 한 통은 뺀다(사유가 남는다 —
+    날마다 도는 자동화는 다음 날 줍는다).
     """
     at = scheduled_send._aware(plan.at)
     if batch.spacing:
@@ -647,16 +822,18 @@ def _place_all(db: Session, batch: Batch, plan: Plan, key: str,
         groups = sorted(((group, when) for when, group in by_at.items()),
                         key=lambda pair: pair[1])
     others = _other_auto_times(db, sender_id, day)
-    placed, prev = [], None
+    placed, prev, shift = [], None, timedelta(0)
     for group, desired in groups:
-        if prev is not None and desired <= prev:
-            desired = prev + timedelta(minutes=1)
-        when = place(team, desired, others)
+        target = desired + shift
+        if prev is not None and target <= prev:
+            target = prev + timedelta(minutes=1)
+        when = place(team, target, others, estimate(len(group), gap))
         if when is None:
             for out in group:
                 skipped.append(f"{_who(db, out)} — 자동 발송 가능 시간대"
                                f"({team.window_label}) 안에 못 넣었습니다")
             continue
+        shift = max(shift, when - desired)
         prev = when
         placed.append((group, when))
     return placed
@@ -678,61 +855,117 @@ def run_all(db: Session, now: Optional[datetime] = None) -> Dict[str, dict]:
 
 # ── 풀기 직전 ────────────────────────────────────────────────────────────────
 
-def prune(db: Session, job: SendJob, now: Optional[datetime] = None) -> int:
-    """예약이 풀리기 직전 — **더는 보낼 까닭이 없는 건을 뺀다.** 남은 대기 수.
+#: 풀 때 뺀 건의 사유 머리 — 진행 화면의 표와 오늘 할 일이 이 말로 센다.
+EXCLUDED = "자동 제외"
+#: 꺼서 · 모드가 바뀌어 거둔 건의 사유 머리.
+STOPPED = "자동화 중지"
+OFF_REASON = "자동화를 꺼서 취소"
+MODE_REASON = "시험 모드가 바뀌어 취소"
+SENDER_REASON = "보내는 계정이 바뀌어 취소"
+#: 아직 끝나지 않은 회차 — 꺼지면 거둔다.
+OPEN_JOBS = ("draft", "queued", "running", "paused")
 
-    자동화 회차가 아니면 아무것도 안 한다. 뺀 건은 `canceled` 로, 사유는
-    `error` 칸에 — 진행 화면의 표가 그대로 적는다. 두 겹으로 본다.
 
-    1. 자동화마다의 판정(`Spec.still_ok`) — 결과를 적었다 · 딜 받음 · 답 옴 …
-    2. **중복 막기**(`automation_dedup`) — 세울 때 본 것을 **풀 때 다시** 본다.
-       그사이 다른 자동 회차가 먼저 풀려 같은 분 · 같은 방에 나갔거나, 사람이
-       손으로 같은 글을 보냈으면 뺀다.
+def _job_rows(db: Session, job_id: int) -> List[AutomationSend]:
+    return db.execute(
+        select(AutomationSend).where(AutomationSend.job_id == job_id)
+        .order_by(AutomationSend.id)
+    ).scalars().all()
+
+
+def stop_reason(db: Session, job: SendJob,
+                rows: Optional[List[AutomationSend]] = None,
+                switches: Optional[Dict[str, Optional[Automation]]] = None,
+                default_sender: Optional[int] = None) -> str:
+    """이 자동화 회차를 **이제 보내면 안 되는** 까닭 — 꺼졌다 · 시험 모드가 바뀌었다.
+
+    아침에 세운 회차라도 그 자동화를 끄거나 시험 ↔ 실제를 바꾸면 그 회차는 더
+    나가지 않는다. 자동화 회차가 아니면 빈 글자.
+    """
+    rows = rows if rows is not None else _job_rows(db, job.id)
+    if not rows:
+        return ""
+    key = rows[0].automation
+    row = (switches[key] if switches is not None and key in switches
+           else automation.load(db, key))
+    if not automation.is_on(row):
+        return OFF_REASON
+    if bool(rows[0].test) != automation.is_test(row):
+        return MODE_REASON
+    # 자동 발송은 **정한 한 PC** 에서 나간다 — 보내는 계정을 바꿨으면 옛 계정
+    # PC 로 서 있던 회차는 나가지 않는다.
+    sender_id = (row.user_id if row is not None and row.user_id
+                 else default_sender if default_sender is not None
+                 else automation.default_sender_id(db))
+    if job.user_id != sender_id:
+        return SENDER_REASON
+    return ""
+
+
+def screen(db: Session, job: SendJob, items: List[SendItem],
+           now: Optional[datetime] = None) -> Dict[int, str]:
+    """자동화 회차의 이 건들을 **지금 보내면 안 되는 까닭** — `{건 번호: 사유}`.
+
+    예약이 풀릴 때(`prune`)와 사람이 다시 보낼 때([발송 시작] · [이어 보내기] ·
+    [실패 재시도] · [취소분 재발송] — `routers/jobs.py`) 같은 판정을 지난다.
+
+    1. **꺼졌거나 시험 모드가 바뀌었다** → 전부(`stop_reason`).
+    2. 그 대상이 **다른 회차로 다시 실렸다**(줄이 이 건을 안 가리킨다) → 그 건.
+    3. 자동화마다의 판정(`Spec.still_ok`) — 결과를 적었다 · 딜 받음 · 답 옴 …
+    4. **중복 막기**(`automation_dedup`) — 세울 때 본 것을 다시 본다. 그사이 다른
+       자동 회차가 먼저 나가 같은 분 · 같은 방에 갔거나, 사람이 손으로 같은 글을
+       보냈으면 뺀다.
+
+    자동화 회차가 아니면 빈 사전.
     """
     from . import automation_dedup
 
     _load_all()
     now = scheduled_send._aware(now or clock.now())
-    rows = db.execute(
-        select(AutomationSend).where(AutomationSend.job_id == job.id)
-    ).scalars().all()
+    if not items:
+        return {}
+    # 다른 회차로 다시 실린 옛 건 — 그 회차에 줄이 하나도 안 남았어도 표시로 안다.
+    out: Dict[int, str] = {
+        item.id: f"{EXCLUDED} — {RETAKEN}" for item in items
+        if RETAKEN in (item.error or "") and (item.error or "").startswith(EXCLUDED)}
+    rows = _job_rows(db, job.id)
     if not rows:
-        return sum(1 for i in job.items if i.status == "pending")
+        return out
+    why_all = stop_reason(db, job, rows)
+    if why_all:
+        return {item.id: f"{STOPPED} — {why_all}" for item in items}
     by_item: Dict[int, List[AutomationSend]] = {}
     for rec in rows:
         if rec.item_id:
             by_item.setdefault(rec.item_id, []).append(rec)
 
-    def drop(item: SendItem, why: str, key: str) -> None:
-        item.status = "canceled"
-        item.error = f"{EXCLUDED} — {why}"
-        log.info("자동화 %s — 건 %s 를 뺍니다: %s", key, item.id, why)
-
-    for item in job.items:
-        if item.status != "pending":
+    for item in items:
+        if item.id in out:
             continue
-        for rec in by_item.get(item.id, []):
+        recs = by_item.get(item.id)
+        if not recs:
+            out[item.id] = f"{EXCLUDED} — {RETAKEN}"
+            continue
+        for rec in recs:
             spec = REGISTRY.get(rec.automation)
             if spec is None or spec.still_ok is None:
                 continue
             why = spec.still_ok(db, rec)
             if why:
-                drop(item, why, rec.automation)
+                out[item.id] = f"{EXCLUDED} — {why}"
                 break
 
-    # ── 중복 막기, 풀 때 다시 ──
     at = scheduled_send.scheduled_at(job)
     day = (at or now).date()
-    test = bool(rows[0].test)
     team = automation.team(db)
-    book = automation_dedup.ledger(db, day, test, limit=team.per_contact_daily,
+    book = automation_dedup.ledger(db, day, bool(rows[0].test),
+                                   limit=team.per_contact_daily,
                                    released_only=True, exclude_jobs=[job.id])
     vals_by_key: Dict[str, dict] = {}
-    for item in sorted(job.items, key=lambda i: i.id):
-        recs = by_item.get(item.id) or []
-        if item.status != "pending" or not recs:
+    for item in sorted(items, key=lambda i: i.id):
+        if item.id in out:
             continue
-        rec = recs[0]
+        rec = by_item[item.id][0]
         why = book.why(contact_id=rec.contact_id,
                        sourcing_contact_id=rec.sourcing_contact_id, room=rec.room)
         spec = REGISTRY.get(rec.automation)
@@ -740,21 +973,64 @@ def prune(db: Session, job: SendJob, now: Optional[datetime] = None) -> int:
             if rec.automation not in vals_by_key:
                 vals_by_key[rec.automation] = values(
                     automation.load(db, rec.automation), rec.automation)
-            why = spec.manual(db, vals_by_key[rec.automation], rec.contact_id,
-                              rec.sourcing_contact_id, day)
+            why = spec.manual(db, vals_by_key[rec.automation], rec, day)
         if why:
-            drop(item, why, rec.automation)
+            out[item.id] = f"{EXCLUDED} — {why}"
             continue
         kind = automation.BY_KEY.get(rec.automation)
         book.add(contact_id=rec.contact_id,
                  sourcing_contact_id=rec.sourcing_contact_id, room=rec.room,
                  label=kind.label if kind else rec.automation)
+    return out
+
+
+def prune(db: Session, job: SendJob, now: Optional[datetime] = None) -> int:
+    """예약이 풀리기 직전 — **더는 보낼 까닭이 없는 건을 뺀다.** 남은 대기 수.
+
+    판정은 `screen` 하나다. 뺀 건은 `canceled` 로, 사유는 `error` 칸에 — 진행
+    화면의 표가 그대로 적는다. 자동화 회차가 아니면 아무것도 안 한다.
+    """
+    pending = [i for i in job.items if i.status == "pending"]
+    reasons = screen(db, job, pending, now)
+    for item in pending:
+        why = reasons.get(item.id)
+        if why:
+            item.status = "canceled"
+            item.error = why
+            log.info("자동화 회차 %s — 건 %s 를 뺍니다: %s", job.id, item.id, why)
     db.commit()
     return sum(1 for i in job.items if i.status == "pending")
 
 
-#: 풀 때 뺀 건의 사유 머리 — 진행 화면의 표와 오늘 할 일이 이 말로 센다.
-EXCLUDED = "자동 제외"
+def stop_jobs(db: Session, key: str) -> int:
+    """꺼졌거나 시험 ↔ 실제가 바뀐 자동화의 **아직 안 끝난 회차를 거둔다.** 거둔 수.
+
+    관리자가 [꺼짐] 을 저장하거나 시험 모드를 바꾸는 순간 부른다 — 아침에 세운
+    예약 · 큐에 선 회차 · 발송기가 들고 있는 회차까지. 회차는 `canceled`, 대기 ·
+    보내는 중이던 건은 `canceled` + `자동화 중지 — …`. 발송기는 한 통 보내기 전에
+    서버에 묻으므로(`agent/main.check_before_send`) 들고 있던 회차도 다음 한 통
+    전에 멈춘다. 지금 모드 · 켜짐과 맞는 회차는 건드리지 않는다.
+    """
+    job_ids = db.execute(
+        select(AutomationSend.job_id).distinct()
+        .join(SendJob, SendJob.id == AutomationSend.job_id)
+        .where(AutomationSend.automation == key, SendJob.status.in_(OPEN_JOBS))
+    ).scalars().all()
+    stopped = 0
+    for job_id in job_ids:
+        job = db.get(SendJob, job_id)
+        why = stop_reason(db, job) if job is not None else ""
+        if not why:
+            continue
+        job.status = "canceled"
+        for item in job.items:
+            if item.status in ("pending", "sending"):
+                item.status = "canceled"
+                item.error = f"{STOPPED} — {why}"
+        stopped += 1
+        log.warning("자동화 %s — 회차 %s 를 거둡니다: %s", key, job.id, why)
+    db.commit()
+    return stopped
 
 
 # ── 발송기에 내줄 때 (`routers/agent_api.poll`) ─────────────────────────────
@@ -793,12 +1069,15 @@ def held_jobs(db: Session, user_id: int, agent_version: Optional[str],
               now: Optional[datetime] = None) -> Dict[int, str]:
     """이 계정의 **큐에 선 자동 회차 중 지금 내주면 안 되는 것**과 그 까닭.
 
+    0. 그 자동화가 **꺼졌거나 시험 모드가 바뀌었다**(`stop_reason`) — 끄는 자리가
+       이미 거두지만(`stop_jobs`), 내주는 자리에서 한 번 더 막는다.
     1. 발송기가 건 사이 간격을 모르는 판이면(`version.agent_handles_automation`)
        자동 회차는 하나도 안 내준다 — 그 판은 3~7초로 몰아 보낸다.
     2. **자동 회차 사이 최소 간격** — 다른 자동화 회차가 끝난 지 그 간격이 안
        지났으면 기다린다(같은 회차 자리의 형제 회차, 예: 채널방끼리는 제 폭을
        따른다). 예약 시각을 떨어뜨려 놓아도 앞 회차가 길게 가면 끝나자마자 다음
-       회차가 붙는다 — 그래서 내주는 자리에서 한 번 더 본다.
+       회차가 붙는다 — 그래서 내주는 자리에서 한 번 더 본다. 이 기다림 때문에
+       예약 시각을 놓친 것으로 떨어지지 않는다(`release_floor`).
 
     못 내주는 회차는 **큐에 그대로 둔다**(`send_guard` 와 같은 방식).
     """
@@ -806,43 +1085,108 @@ def held_jobs(db: Session, user_id: int, agent_version: Optional[str],
 
     now = scheduled_send._aware(now or clock.now())
     queued = db.execute(
-        select(AutomationSend.job_id, AutomationSend.run_id)
+        select(AutomationSend.job_id, AutomationSend.run_id,
+               AutomationSend.automation, AutomationSend.test)
         .join(SendJob, SendJob.id == AutomationSend.job_id)
         .where(SendJob.user_id == user_id, SendJob.status == "queued")
     ).all()
     if not queued:
         return {}
-    run_of = {job_id: run_id for job_id, run_id in queued}
+    run_of: Dict[int, Optional[int]] = {}
+    held: Dict[int, str] = {}
+    switches: Dict[str, Optional[Automation]] = {}
+    for job_id, run_id, key, test in queued:
+        if job_id in run_of:
+            continue
+        run_of[job_id] = run_id
+        if key not in switches:
+            switches[key] = automation.load(db, key)
+        row = switches[key]
+        if not automation.is_on(row):
+            held[job_id] = f"{STOPPED} — {OFF_REASON}"
+        elif bool(test) != automation.is_test(row):
+            held[job_id] = f"{STOPPED} — {MODE_REASON}"
+        elif automation.sender_id(db, row) != user_id:
+            held[job_id] = f"{STOPPED} — {SENDER_REASON}"
     if not version.agent_handles_automation(agent_version):
         need = version.AUTOMATION_AGENT_VERSION
-        return {job_id: (f"발송 프로그램을 {need} 이상으로 갱신해야 자동 회차를 받습니다"
-                         f"(지금 {agent_version or '판 모름'}) — 건 사이 간격을 지키는 판")
-                for job_id in run_of}
+        for job_id in run_of:
+            held.setdefault(job_id, (f"발송 프로그램을 {need} 이상으로 갱신해야 자동 회차를 받습니다"
+                                     f"(지금 {agent_version or '판 모름'}) — 건 사이 간격을 지키는 판"))
+        return held
     team = automation.team(db)
     if team.job_gap_min <= 0:
-        return {}
+        return held
     gap = timedelta(minutes=team.job_gap_min)
-    since = (now - gap - timedelta(days=1)).date().isoformat()
+    for job_id, run_id in run_of.items():
+        if job_id in held:
+            continue
+        ended = _last_other_end(db, user_id, job_id, run_id, now - gap - timedelta(days=1))
+        if ended is not None and now - gap < ended <= now:
+            ready = ended + gap
+            held[job_id] = (f"자동 회차 사이 간격({team.job_gap_min}분) — 앞 자동 회차가 "
+                            f"{ended:%H:%M} 에 끝나 {ready:%H:%M} 이후 나갑니다")
+    return held
+
+
+def _last_other_end(db: Session, user_id: int, job_id: int, run_id: Optional[int],
+                    since: datetime) -> Optional[datetime]:
+    """이 회차와 **다른 회차 자리**의 자동 회차가 마지막으로 끝난 때(`since` 이후)."""
     finished = db.execute(
         select(SendJob.id, SendJob.finished_at, AutomationSend.run_id)
         .join(AutomationSend, AutomationSend.job_id == SendJob.id)
         .where(SendJob.user_id == user_id, SendJob.finished_at.isnot(None),
-               SendJob.finished_at >= since,
+               SendJob.finished_at >= since.date().isoformat(),
                # 다 빠져 닫힌 회차(풀 때 전부 제외)는 아무것도 안 보냈다.
                SendJob.status != "canceled")
     ).all()
-    held: Dict[int, str] = {}
-    for job_id, run_id in run_of.items():
-        for other_id, raw, other_run in finished:
-            if other_id == job_id or (run_id and other_run == run_id):
-                continue
-            ended = _parse(raw)
-            if ended is not None and now - gap < ended <= now:
-                ready = ended + gap
-                held[job_id] = (f"자동 회차 사이 간격({team.job_gap_min}분) — 앞 자동 회차가 "
-                                f"{ended:%H:%M} 에 끝나 {ready:%H:%M} 이후 나갑니다")
-                break
-    return held
+    last = None
+    for other_id, raw, other_run in finished:
+        if other_id == job_id or (run_id and other_run == run_id):
+            continue
+        ended = _parse(raw)
+        if ended is not None and (last is None or ended > last):
+            last = ended
+    return last
+
+
+def release_floor(db: Session, job: SendJob, now: Optional[datetime] = None
+                  ) -> Optional[datetime]:
+    """이 자동 회차가 **간격 때문에 기다린 끝** — 그때부터 다시 버티는 시간을 잰다.
+
+    예약은 정한 시각 + 60분(`scheduled_send.EXPIRE_MINUTES`)이 지나도록 발송기가
+    못 집어가면 '예약 시각을 놓쳤다' 로 떨어진다. 그런데 자동 회차는 **서버가
+    일부러** 세워 둘 때가 있다 — 앞 자동 회차가 아직 돌거나, 끝난 지 회차 사이
+    간격이 안 지났을 때(`held_jobs`). 그 기다림 때문에 떨어지면 안 된다. 그래서
+    그 기다림이 끝나는 때를 돌려준다:
+
+      · 다른 자동 회차가 **아직 돌고 있으면** → 지금 + 간격(끝나야 풀린다)
+      · 정한 시각 뒤에 끝났거나, 끝나고 간격이 정한 시각을 넘겼으면 → 끝 + 간격
+
+    `scheduled_send.expire_missed` 가 이 때 + 60분(그날 19시를 넘지 않음)까지
+    떨어뜨리지 않는다. 기다릴 것이 없었으면 `None` — 그때는 지금까지와 같다.
+    """
+    at = scheduled_send.scheduled_at(job)
+    rows = _job_rows(db, job.id)
+    if at is None or not rows:
+        return None
+    team = automation.team(db)
+    gap = timedelta(minutes=team.job_gap_min)
+    now = scheduled_send._aware(now or clock.now())
+    run_id = rows[0].run_id
+    running = db.execute(
+        select(SendJob.id, AutomationSend.run_id)
+        .join(AutomationSend, AutomationSend.job_id == SendJob.id)
+        .where(SendJob.user_id == job.user_id, SendJob.status == "running",
+               SendJob.id != job.id)
+    ).all()
+    if any(not (run_id and other_run == run_id) for _jid, other_run in running):
+        return now + gap
+    ended = _last_other_end(db, job.user_id, job.id, run_id, at - gap)
+    if ended is None:
+        return None
+    floor = ended + gap
+    return floor if floor > at else None
 
 
 def hold_reason(db: Session, job: SendJob, now: Optional[datetime] = None) -> str:
@@ -928,27 +1272,44 @@ def today_items(db: Session, user: User, now: Optional[datetime] = None) -> List
     - **선 회차** — 관리자에게만(보내는 계정에게는 `scheduled_send.standing_for`
       가 같은 회차를 이미 예약으로 세운다. 두 줄이면 같은 일을 두 번 하라는
       것으로 읽힌다).
+    - **뺀 곳** — 중복 방지 · 조건으로 뺀 대상과 까닭.
+    - **꺼서 · 시험 모드가 바뀌어 거둔 회차**, 그리고 꺼졌는데도 서 있는 회차 —
+      꺼진 자동화도 그날 회차가 있었으면 줄이 선다(아무것도 조용히 나가거나
+      사라지지 않게).
     - 자동화가 따로 세우는 줄(`Spec.notes`) — 예: 내일 미팅 요청 나갈 곳.
+
+    팀 전체 값(스위치 · 그날 회차 자리 · 발송기 판)은 **한 번만** 읽는다 — 이
+    함수는 오늘 할 일을 열 때마다 돈다.
     """
     _load_all()
     now = scheduled_send._aware(now or clock.now())
     admin = user.role == "admin"
+    day = now.date().isoformat()
+    switches = {row.key: row for row in db.execute(select(Automation)).scalars().all()}
+    runs_by_kind: Dict[str, List[AutoSendRun]] = {}
+    for run in db.execute(
+        select(AutoSendRun).where(AutoSendRun.day == day,
+                                  AutoSendRun.kind.like(f"{RUN_PREFIX}%"))
+        .order_by(AutoSendRun.id)
+    ).scalars().all():
+        runs_by_kind.setdefault(run.kind, []).append(run)
+    default_id = automation.default_sender_id(db)
     out: List[dict] = []
     warned: set = set()
     for key, spec in REGISTRY.items():
-        row = automation.load(db, key)
-        if not automation.is_on(row):
-            continue
+        row = switches.get(key)
+        on = automation.is_on(row)
         label = automation.BY_KEY[key].label
         test = automation.is_test(row)
-        sender_id = automation.sender_id(db, row)
+        sender_id = row.user_id if row is not None and row.user_id else default_id
         mode = " (시험 모드)" if test else ""
-        if admin or user.id == sender_id:
-            runs = db.execute(
-                select(AutoSendRun).where(AutoSendRun.kind == run_kind(key, test),
-                                          AutoSendRun.day == now.date().isoformat())
-            ).scalars().all()
-            for run in runs:
+        mine = admin or user.id == sender_id
+        if mine:
+            out.extend(_stop_lines(db, key, label, row, runs_by_kind, default_id))
+        if not on:
+            continue
+        if mine:
+            for run in runs_by_kind.get(run_kind(key, test), []):
                 if run.status in (STATUS_EMPTY, STATUS_FAILED):
                     out.append({"level": "soon" if run.status == STATUS_EMPTY else "urgent",
                                 "title": f"자동화 · {label}{mode} — 오늘은 안 나갑니다",
@@ -997,6 +1358,36 @@ def today_items(db: Session, user: User, now: Optional[datetime] = None) -> List
     return out
 
 
+def _stop_lines(db: Session, key: str, label: str, row: Optional[Automation],
+                runs_by_kind: Dict[str, List[AutoSendRun]],
+                default_id: Optional[int] = None) -> List[dict]:
+    """오늘 이 자동화의 회차 중 **거둔 것**과 **거둬야 하는데 서 있는 것**(두 모드 다)."""
+    lines: List[dict] = []
+    for test in (False, True):
+        mode = " (시험 모드)" if test else ""
+        for run in runs_by_kind.get(run_kind(key, test), []):
+            jobs = _run_jobs(db, run)
+            stopped = [j for j in jobs if any(
+                (i.error or "").startswith(STOPPED) for i in j.items)]
+            standing = [j for j in jobs if j.status in OPEN_JOBS
+                        and stop_reason(db, j, switches={key: row},
+                                        default_sender=default_id)]
+            if standing:
+                lines.append({"level": "urgent",
+                              "title": f"자동화 · {label}{mode} — 멈춘 자동화의 회차가 서 있습니다({len(standing)})",
+                              "detail": "회차 화면에서 [중단] 하세요 — 발송기에는 넘기지 않습니다",
+                              "href": f"/jobs/{standing[0].id}", "count": len(standing)})
+            if stopped:
+                reason = next(((i.error or "")[len(STOPPED):].lstrip(" —")
+                               for j in stopped for i in j.items
+                               if (i.error or "").startswith(STOPPED)), "")
+                lines.append({"level": "info",
+                              "title": f"자동화 · {label}{mode} — 오늘 회차 {len(stopped)}개를 거뒀습니다",
+                              "detail": f"{reason} — 거둔 회차는 나가지 않습니다",
+                              "href": f"/jobs/{stopped[0].id}", "count": len(stopped)})
+    return lines
+
+
 # ── 뺀 것 모아 보기 ──────────────────────────────────────────────────────────
 
 def _run_jobs(db: Session, run: AutoSendRun) -> List[SendJob]:
@@ -1035,8 +1426,12 @@ def run_notes(db: Session, run: AutoSendRun) -> dict:
     return {"count": count, "dup": dup, "lines": lines}
 
 
-def job_notes(db: Session, job: SendJob, now: Optional[datetime] = None) -> Optional[dict]:
-    """진행 화면 — 이 회차가 자동화 회차면 **무엇을 왜 뺐나** · 간격 · 지금 막힌 까닭."""
+def job_notes(db: Session, job: SendJob, now: Optional[datetime] = None,
+              hold: Optional[str] = None) -> Optional[dict]:
+    """진행 화면 — 이 회차가 자동화 회차면 **무엇을 왜 뺐나** · 간격 · 지금 막힌 까닭.
+
+    `hold` 를 넘기면 다시 세지 않는다(진행 화면은 2초마다 묻는다 — 한 번 센
+    것을 `send_guard.describe` 와 함께 쓴다)."""
     key = automation_of(db, job.id)
     if key is None:
         return None
@@ -1050,7 +1445,7 @@ def job_notes(db: Session, job: SendJob, now: Optional[datetime] = None) -> Opti
     return {"label": kind.label if kind else key, "count": notes_["count"],
             "dup": notes_["dup"], "lines": notes_["lines"][:30],
             "gap": f"{gap[0]}~{gap[1]}초" if gap else "",
-            "hold": hold_reason(db, job, now)}
+            "hold": hold if hold is not None else hold_reason(db, job, now)}
 
 
 # ── 실 ──────────────────────────────────────────────────────────────────────

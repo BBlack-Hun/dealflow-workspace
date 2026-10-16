@@ -196,16 +196,27 @@ def still_ok(db: Session, rec: AutomationSend) -> str:
     return why_not(db, meeting, contact, others)
 
 
-def manual(db: Session, values: dict, contact_id: Optional[int],
-           _sourcing_id: Optional[int], day: date) -> str:
-    """사람이 `manual_days` 일 안에 미팅 요청·후기를 보냈으면 안 묻는다
-    (`automation_dedup.manual_meeting`)."""
+def manual(db: Session, values: dict, target, day: date) -> str:
+    """**그 미팅을 마친 뒤** `manual_days` 일 안에 사람이 미팅 요청·후기를 보냈으면
+    안 묻는다(`automation_dedup.manual_meeting`).
+
+    미팅을 마치기 **전**에 보낸 글은 세지 않는다 — 그 미팅을 잡게 한 미팅 요청이
+    대개 일주일 안쪽이라, 세면 문의가 거의 늘 빠진다.
+    """
     from .. import automation_dedup
 
     days = int(values.get("manual_days") or 0)
     if days <= 0:
         return ""
-    return automation_dedup.manual_meeting(db, contact_id, day - timedelta(days=days))
+    meeting = None
+    try:
+        meeting = db.get(Meeting, int(str(target.ref).split(":", 1)[1]))
+    except (AttributeError, IndexError, ValueError):
+        meeting = None
+    after = (meeting.done_at or "") if meeting is not None else ""
+    return automation_dedup.manual_meeting(db, target.contact_id,
+                                           day - timedelta(days=days),
+                                           after=after or None)
 
 
 runner.register(runner.Spec(

@@ -56,6 +56,8 @@ def _counts(job: SendJob) -> dict:
 def job_status(job_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Polled by the progress screen every 2s."""
     job = _viewable_job_or_404(db, job_id, user)
+    # 자동 회차가 지금 왜 안 내려가나 — **한 번만** 센다(이 화면은 2초마다 묻는다).
+    hold = automation_runner.hold_reason(db, job)
     return {
         "id": job.id,
         "status": job.status,
@@ -78,10 +80,10 @@ def job_status(job_id: int, db: Session = Depends(get_db), user: User = Depends(
         # **발송 안전장치** — 보내는 시간(09~19시)과 그 계정의 오늘 남은 한도.
         # 큐에 서 있는데 안 나가는 까닭이 시간·한도이면 그것을 말한다
         # (`services/send_guard.describe`). 판정과 문장은 서버가 만든다.
-        "guard": send_guard.describe(db, job),
+        "guard": send_guard.describe(db, job, hold=hold),
         # **2단계 자동화 회차**면 — 무엇을 왜 뺐나(중복 방지 · 조건) · 건 사이
         # 간격 · 지금 안 내려가는 까닭(`automation_runner.job_notes`).
-        "automation": automation_runner.job_notes(db, job),
+        "automation": automation_runner.job_notes(db, job, hold=hold),
         "items": [
             {
                 "id": i.id,
@@ -142,6 +144,40 @@ def _requeue(db: Session, job: SendJob, items: list[SendItem],
     return {"status": job.status, "requeued": len(items)}
 
 
+def _screen_auto(db: Session, job: SendJob, items: list[SendItem]) -> list[SendItem]:
+    """**자동화 회차**를 사람이 다시 보낼 때 — 보내면 안 되는 건을 걸러낸다.
+
+    판정은 예약이 풀릴 때와 같다(`automation_runner.screen`): 그 자동화를
+    껐거나 시험 모드가 바뀌었으면 전부, 그 대상이 다른 회차로 다시 실렸거나
+    (줄이 이 건을 안 가리킨다) · 결과를 적었거나 · 오늘 같은 분 · 같은 방에
+    이미 자동 발송이 나갔거나 · 사람이 손으로 같은 글을 보냈으면 그 건을 뺀다.
+    **끄면 멈춘다** — 단추 하나로 거둔 회차를 되살려 내보낼 수 없다.
+
+    대기 건을 걸렀으면 `canceled` 로 둔다 — 대기로 남기면 회차가 큐에 서는
+    순간 발송기가 함께 집어 간다. 실패 · 취소 건은 그대로 둔다(되살리지 않을
+    뿐이다). 남는 건이 없으면 400(까닭을 담아). 자동화 회차가 아니면 그대로.
+    """
+    reasons = automation_runner.screen(db, job, items)
+    if not reasons:
+        return items
+    for item in items:
+        why = reasons.get(item.id)
+        if why and item.status == "pending":
+            item.status = "canceled"
+            item.error = why
+    kept = [i for i in items if i.id not in reasons]
+    if not kept:
+        if job.status == "draft" and not any(i.status == "pending" for i in job.items):
+            # 예약으로 서 있던 회차가 텅 비었다 — 그대로 두면 예약 시각에 빈
+            # 회차가 풀린다. 닫는다.
+            job.status = "canceled"
+        db.commit()
+        raise HTTPException(status_code=400,
+                            detail="자동화 회차 — 다시 보낼 수 없습니다: "
+                                   + next(iter(reasons.values())))
+    return kept
+
+
 @router.post("/jobs/{job_id}/retry")
 def retry_failed(job_id: int, background: BackgroundTasks,
                  db: Session = Depends(get_db),
@@ -151,6 +187,7 @@ def retry_failed(job_id: int, background: BackgroundTasks,
     failed_items = [i for i in job.items if i.status == "failed"]
     if not failed_items:
         raise HTTPException(status_code=400, detail="재시도할 실패 건이 없습니다")
+    failed_items = _screen_auto(db, job, failed_items)
     return _requeue(db, job, failed_items, background)
 
 
@@ -194,6 +231,7 @@ def resend_canceled(job_id: int, background: BackgroundTasks,
     canceled_items = [i for i in job.items if i.status == "canceled"]
     if not canceled_items:
         raise HTTPException(status_code=400, detail="재발송할 취소 건이 없습니다")
+    canceled_items = _screen_auto(db, job, canceled_items)
     return _requeue(db, job, canceled_items, background)
 
 
@@ -239,6 +277,7 @@ def start_draft(job_id: int, background: BackgroundTasks,
     pending_items = [i for i in job.items if i.status == "pending"]
     if not pending_items:
         raise HTTPException(status_code=400, detail="보낼 대기 건이 없습니다")
+    pending_items = _screen_auto(db, job, pending_items)
     # 예약이 걸린 회차를 사람이 먼저 눌렀다면 **그 예약은 여기서 끝난다.**
     # 상태가 `queued` 로 올라가는 것만으로도 예약은 못 풀리지만(`_claim` 은
     # `status='draft'` 인 줄만 집는다), 자물쇠를 함께 잠가 둔다 — 나중에 누가
@@ -291,6 +330,7 @@ def resume_pending(job_id: int, background: BackgroundTasks,
     pending_items = [i for i in job.items if i.status == "pending"]
     if not pending_items:
         raise HTTPException(status_code=400, detail="이어 보낼 대기 건이 없습니다")
+    pending_items = _screen_auto(db, job, pending_items)
     return _requeue(db, job, pending_items, background)
 
 

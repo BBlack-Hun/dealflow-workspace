@@ -184,7 +184,8 @@ def gate(db: Session, user: Optional[User],
     return Gate(blocked=GATED_KINDS if left <= 0 else (), left=left)
 
 
-def describe(db: Session, job: SendJob, now: Optional[datetime] = None) -> dict:
+def describe(db: Session, job: SendJob, now: Optional[datetime] = None,
+             hold: Optional[str] = None) -> dict:
     """진행 화면이 읽는 한 덩이 — 이 회차가 지금 왜 안 나가는지까지.
 
     **화면은 판정하지 않는다.** 문장도 여기서 만든다(`scheduled_send.describe`
@@ -215,9 +216,10 @@ def describe(db: Session, job: SendJob, now: Optional[datetime] = None) -> dict:
     # 사이 간격(`automation_runner.held_jobs`). 시험 회차(`test_send`)도 여기에
     # 걸리므로 `gated` 와 따로 본다.
     if waiting and not held:
-        from . import automation_runner
+        if hold is None:
+            from . import automation_runner
 
-        hold = automation_runner.hold_reason(db, job, now)
+            hold = automation_runner.hold_reason(db, job, now)
         if hold:
             sentence, held, gated = hold, True, True
     return {"gated": gated, "open": is_open, "window": window_label(),

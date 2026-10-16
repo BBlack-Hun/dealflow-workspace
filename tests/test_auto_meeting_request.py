@@ -3,7 +3,8 @@
 1. 자료 전달 7일 뒤(주말이면 다음 평일) 14:00 에 미팅 요청이 보내는 계정 것으로
    예약된다 — 발송 화면의 미팅 요청 탭과 같은 글.
 2. 첫 번째가 실제로 나갔고 답이 없으면 10일 뒤 조금 다른 글로 한 번 더.
-   첫 번째가 안 나갔으면 두 번째도 안 나간다.
+   첫 번째가 끝내 안 나갔으면(시각을 놓침 · 실패) 두 번째 대신 **첫 번째를
+   늦게 한 번** — 그 분이 아무것도 못 받는 일이 없게. 옛 건은 거둔다.
 3. 미팅 기록 · 새 IR 요청 · [답 옴] 이 있으면 멈춘다. 풀리기 직전에도 다시 본다.
 4. 사람이 이미 미팅 요청을 보냈으면 첫 번째는 안 나간다.
 5. 나가기 전날 오늘 할 일에 `내일 미팅 요청 나갈 곳 N` — 담당 팀원에게.
@@ -110,11 +111,17 @@ def test_second_ask_only_after_the_first_went_out(db, users, team):
     result = _run(db, SECOND_DAY)
     assert result["status"] == "ready"
     second = [i for i in _items(db) if i.id not in {x.id for x in first}]
-    assert [i.contact_id for i in second] == [team["a"].id]
+    by_contact = {i.contact_id: i for i in second}
+    assert set(by_contact) == {team["a"].id, team["b"].id}
     again = deals.meeting_ask_message(db, users["u2"], team["a"], again=True)
-    assert second[0].message == again
+    assert by_contact[team["a"].id].message == again
     assert again != first[0].message
-    assert any("첫 번째 미팅 요청이 나가지 않았습니다" in s for s in result["skipped"])
+    # b 는 첫 번째가 시각을 놓쳐 안 나갔다 — 두 번째 대신 **첫 번째를 늦게**.
+    assert by_contact[team["b"].id].message == deals.meeting_ask_message(
+        db, users["u2"], team["b"])
+    old_b = next(i for i in _items(db) if i.id in {x.id for x in first}
+                 and i.contact_id == team["b"].id)
+    assert old_b.status == "canceled" and "다시 실림" in old_b.error
 
 
 def test_reply_mark_meeting_or_new_request_stops_it(db, users, team):

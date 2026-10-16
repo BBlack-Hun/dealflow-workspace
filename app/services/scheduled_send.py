@@ -386,7 +386,19 @@ def release(db: Session, job: SendJob, now: Optional[datetime] = None) -> bool:
     from . import automation_runner
 
     had = sum(1 for i in job.items if i.status == "pending")
-    if had and automation_runner.prune(db, job, now) == 0:
+    try:
+        left = automation_runner.prune(db, job, now) if had else 0
+    except Exception as exc:  # noqa: BLE001 - 자리를 잡은 채 멈춰 서면 안 된다
+        # **자리를 잡은 뒤에 넘어졌다.** 그대로 두면 `released_at` 이 찍힌
+        # `draft` 로 영영 서 있고(다시 안 풀리고 아무도 모른다), 이 깨어남의
+        # 나머지 회차도 못 푼다. 보내지 않는 쪽으로 닫는다 — 대기 건을 실패로,
+        # 회차를 `실패 있음` 으로 두고 관리자에게 알린다(오늘 할 일 · 메일).
+        db.rollback()
+        log.exception("예약 회차 %s — 풀기 직전 확인에서 넘어졌습니다. 보내지 않고 닫습니다",
+                      job.id)
+        _fail_closed(db, job, now, f"풀기 직전 확인 중 오류로 보내지 않았습니다 — {exc}")
+        return False
+    if had and left == 0:
         # 전부 빠졌다 — 보낼 것이 없는 회차를 `취소` 로 닫는다. 남겨 두면
         # 화면이 "걸어 두었던 예약" 이라고만 적고 왜 안 나갔는지 말하지 않는다.
         job.status = "canceled"
@@ -407,6 +419,28 @@ def release(db: Session, job: SendJob, now: Optional[datetime] = None) -> bool:
 
 
 # --- 풀렸는데 못 나간 것 ------------------------------------------------------
+
+def _fail_closed(db: Session, job: SendJob, now: datetime, why: str) -> None:
+    """풀다 넘어진 회차를 **보내지 않은 채** 닫는다 — 대기 건은 `failed`, 회차는
+    `done_with_errors`. 사람이 회차 화면에서 까닭을 보고 [실패 재시도] 로 다시
+    낼 수 있다(그때 자동화 회차는 같은 확인을 다시 지난다 — `jobs._screen_auto`).
+    자동 회차면 관리자에게 알린다(`send_guard.notify`)."""
+    from . import send_guard
+
+    try:
+        db.refresh(job)
+        for item in job.items:
+            if item.status == "pending":
+                item.status = "failed"
+                item.error = why[:500]
+        job.status = "done_with_errors"
+        job.finished_at = now.isoformat(timespec="seconds")
+        db.commit()
+        send_guard.notify(db, job, send_guard.REASON_FAILED)
+    except Exception:  # noqa: BLE001 - 닫는 것마저 넘어지면 기록만 남긴다
+        db.rollback()
+        log.exception("예약 회차 %s 를 닫지 못했습니다", job.id)
+
 
 def released_on_schedule(job: SendJob) -> bool:
     """이 회차가 **예약 시각이 되어 풀린 것**인가.
@@ -483,6 +517,16 @@ def expire_missed(db: Session, now: Optional[datetime] = None,
     for job in db.execute(query.order_by(SendJob.id)).scalars().all():
         if not missed(job, now):
             continue
+        # **자동 회차가 간격 때문에 기다렸으면** 그 기다림이 끝난 때부터 다시
+        # 잰다(`automation_runner.release_floor`) — 서버가 일부러 세워 둔 것 때문에
+        # '시각을 놓쳤다' 로 떨어지지 않게. 그날 보내는 시간 끝은 넘지 않는다.
+        from . import automation_runner
+
+        floor = automation_runner.release_floor(db, job, now)
+        if floor is not None:
+            edge = floor.replace(hour=LATEST_HOUR, minute=0, second=0, microsecond=0)
+            if now < min(floor + timedelta(minutes=EXPIRE_MINUTES), edge):
+                continue
         done = db.execute(
             text("UPDATE send_jobs SET status='draft', released_at=NULL "
                  "WHERE id=:id AND status='queued' AND started_at IS NULL"),
@@ -521,7 +565,16 @@ def run_once(db: Session, now: Optional[datetime] = None) -> dict:
     아무것도 안 하고 돌아오는 것이 보통이다 — 그것이 정상 동작이다.
     """
     now = _aware(now or clock.now())
-    released = [j.id for j in due_jobs(db, now) if release(db, j, now)]
+    released = []
+    for job in due_jobs(db, now):
+        # 회차 하나가 넘어져도 나머지는 푼다 — 넘어진 회차는 `release` 가
+        # 보내지 않은 채 닫는다(`_fail_closed`).
+        try:
+            if release(db, job, now):
+                released.append(job.id)
+        except Exception:  # noqa: BLE001
+            db.rollback()
+            log.exception("예약 회차 %s 를 푸는 중 넘어졌습니다", job.id)
     return {"released": released, "count": len(released)}
 
 

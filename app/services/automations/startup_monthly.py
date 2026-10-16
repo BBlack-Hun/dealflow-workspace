@@ -157,9 +157,52 @@ def describe(db: Session, row: Optional[Automation]) -> str:
 
 
 def owns_monthly(db: Session) -> bool:
-    """이 자동화가 **실제 모드로** 켜져 있어 옛 30일 자동이 물러나야 하는가."""
+    """이 자동화가 **실제 모드로** 켜져 있는가(이 달을 맡는지는 `covers_month`)."""
     row = automation.load(db, automation.STARTUP_MONTHLY)
     return automation.is_on(row) and not automation.is_test(row)
+
+
+def covers_month(db: Session, now=None) -> bool:
+    """**이 달을** 이 자동화가 맡는가 — 옛 30일 자동이 물러나도 되는가.
+
+    실제 모드로 켜져 있고, 둘 중 하나일 때만이다.
+
+      · 이 달 날짜·시각이 **아직 앞에** 있다 — 곧 이 자동화가 세운다.
+      · 이 달 이 자동화의 회차가 **이미 섰다**(취소되지 않았거나, 취소됐어도
+        나간 곳이 있다).
+
+    켠 날이 이 달 날짜 뒤라면 그 달은 맡지 않는다 — 옛 30일 자동이 그대로 돈다
+    (안 그러면 그 달은 월간 발송이 아무것도 없다).
+    """
+    from sqlalchemy import select
+
+    from ... import clock
+    from ...models import AutoSendRun
+    from .. import scheduled_send
+
+    if not owns_monthly(db):
+        return False
+
+    now = scheduled_send._aware(now or clock.now())
+    values = runner.values(automation.load(db, automation.STARTUP_MONTHLY),
+                           automation.STARTUP_MONTHLY)
+    try:
+        when, hhmm = slot_for(values, now.year, now.month)
+        if runner.at_on(when, hhmm) > now:
+            return True
+    except ValueError:
+        pass
+    runs = db.execute(
+        select(AutoSendRun).where(
+            AutoSendRun.kind == runner.run_kind(automation.STARTUP_MONTHLY, False),
+            AutoSendRun.ref_id == now.year * 100 + now.month)
+    ).scalars().all()
+    for run in runs:
+        for job in runner._run_jobs(db, run):
+            if job.status != "canceled" or any(
+                    i.status in ("sent", "sending") for i in job.items):
+                return True
+    return False
 
 
 def times(values: dict) -> List[str]:

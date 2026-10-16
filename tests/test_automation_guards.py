@@ -83,8 +83,8 @@ def world(db, users):
                                contact_id=c.id, stage=3, ref=f"{name}:{c.id}")
                 for c in state[name]])
 
-        def manual(db, values, contact_id, sourcing_id, day):
-            return state["manual"].get(contact_id, "")
+        def manual(db, values, target, day):
+            return state["manual"].get(target.contact_id, "")
 
         return runner.Spec(key=key, kind="deal_intro", plan=plan, collect=collect,
                            manual=manual)
@@ -137,7 +137,6 @@ def test_team_defaults(db, users):
 
 def test_the_team_auto_send_account_is_the_default_sender(client, db, users, world,
                                                           monkeypatch):
-    from app import clock
     from app.services import automation
 
     # 안 골랐으면 스타트업 월간 발송 계정(u2).
@@ -271,8 +270,6 @@ def test_a_job_in_the_avoided_slot_moves_to_its_end(db, users, world):
 
 
 def test_a_second_automation_keeps_the_gap(db, users, world):
-    from app.services import automation
-
     world["A"] = [world["people"]["c1"]]
     world["B"] = [world["people"]["c2"]]
     _on(db, "meeting_review")
@@ -280,7 +277,7 @@ def test_a_second_automation_keeps_the_gap(db, users, world):
     _run(db, "meeting_review")
     _run(db, "meeting_request")
     first, second = _jobs(db)
-    assert (_hhmm(first), _hhmm(second)) == ("14:00", "14:10")
+    assert (_hhmm(first), _hhmm(second)) == ("14:00", "14:11")
 
 
 def test_no_gap_when_the_team_sets_zero(db, users, world):
@@ -540,20 +537,20 @@ def test_the_next_automation_job_waits_for_the_gap_after_the_last_one(
     _run(db, "meeting_review")
     _run(db, "meeting_request")
     first, second = _jobs(db)
-    assert (_hhmm(first), _hhmm(second)) == ("14:00", "14:10")
+    assert (_hhmm(first), _hhmm(second)) == ("14:00", "14:11")
 
     _release_at(db, monkeypatch, 14, 0)
     got = client.get("/api/agent/poll", params=KINDS, headers=auth(OTHER_TOKEN))
     assert got.json()["job_id"] == first.id
-    # 앞 회차가 길게 가서 14:08 에 끝났다 — 14:10 에 풀린 다음 회차는 14:18 까지 선다.
+    # 앞 회차가 길게 가서 14:09 에 끝났다 — 14:11 에 풀린 다음 회차는 14:19 까지 선다.
     first = _jobs(db)[0]
     first.status = "done"
-    first.finished_at = _aware(datetime(2026, 10, 14, 14, 8)).isoformat(timespec="seconds")
+    first.finished_at = _aware(datetime(2026, 10, 14, 14, 9)).isoformat(timespec="seconds")
     db.commit()
-    _release_at(db, monkeypatch, 14, 10)
+    _release_at(db, monkeypatch, 14, 11)
     assert client.get("/api/agent/poll", params=KINDS,
                       headers=auth(OTHER_TOKEN)).status_code == 204
-    monkeypatch.setattr(clock, "now", lambda: _aware(datetime(2026, 10, 14, 14, 18, 30)))
+    monkeypatch.setattr(clock, "now", lambda: _aware(datetime(2026, 10, 14, 14, 19, 30)))
     got = client.get("/api/agent/poll", params=KINDS, headers=auth(OTHER_TOKEN))
     assert got.status_code == 200 and got.json()["job_id"] == second.id
 

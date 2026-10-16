@@ -123,6 +123,20 @@ def _due(anchor: str, days: int) -> Optional[date]:
         return None
 
 
+def rounds(anchor: str, first: int, second: int) -> tuple:
+    """첫 번째 · 두 번째가 나갈 날 — **두 번째는 늘 첫 번째 다음 평일 이후**다.
+
+    주말을 다음 평일로 미루면 두 날이 같은 월요일에 겹칠 수 있다(예: 7일 뒤가
+    토요일, 8일 뒤가 일요일). 그러면 첫 번째가 설 날이 없고, 두 번째는 첫
+    번째가 안 나갔다고 빠져 **그 분은 아무것도 못 받는다.** 두 번째를 첫 번째
+    다음 평일 이후로 민다.
+    """
+    r1, r2 = _due(anchor, first), _due(anchor, second)
+    if r1 is not None and r2 is not None and r2 <= r1:
+        r2 = cadence.next_business_day(r1 + timedelta(days=1))
+    return r1, r2
+
+
 # ── 답이 왔나 ────────────────────────────────────────────────────────────────
 
 def replied_since(db: Session, contact_id: int, since: str) -> str:
@@ -198,18 +212,30 @@ def _sendable(db: Session, contact: Optional[VcContact]) -> str:
     return ""
 
 
-def _first_sent(db: Session, contact_id: int, anchor: str, test: bool) -> bool:
-    """첫 번째가 **실제로 나갔나**(이 모드로)."""
+def _first_state(db: Session, contact_id: int, anchor: str, test: bool) -> tuple:
+    """첫 번째가 어떻게 됐나(이 모드로) — `("sent", 보낸 날)` · `("live", "")`
+    (아직 나가는 중 · 곧 나감) · `("none", "")`(안 나갔다 — 실패 · 빠짐 · 시각을
+    놓침 · 아직 안 실림)."""
     rec = db.execute(
         select(AutomationSend).where(
             AutomationSend.automation == automation.MEETING_REQUEST,
             AutomationSend.ref == f"ask:{contact_id}:{anchor}:1",
             AutomationSend.test == (1 if test else 0))
     ).scalars().first()
-    if rec is None or not rec.item_id:
-        return False
-    item = db.get(SendItem, rec.item_id)
-    return bool(item and item.status == "sent")
+    if rec is None:
+        return "none", ""
+    item = db.get(SendItem, rec.item_id) if rec.item_id else None
+    if item is not None and item.status == "sent":
+        return "sent", (item.sent_at or "")[:10]
+    job = db.get(SendJob, rec.job_id) if rec.job_id else None
+    if runner.still_counts(item, job):
+        return "live", ""
+    return "none", ""
+
+
+def _first_sent(db: Session, contact_id: int, anchor: str, test: bool) -> bool:
+    """첫 번째가 **실제로 나갔나**(이 모드로)."""
+    return _first_state(db, contact_id, anchor, test)[0] == "sent"
 
 
 def due_on(db: Session, row: Optional[Automation], day: date,
@@ -230,7 +256,7 @@ def due_on(db: Session, row: Optional[Automation], day: date,
     out, skipped = [], []
     for contact_id, anchor in sorted(found.items()):
         contact = contacts.get(contact_id)
-        r1, r2 = _due(anchor, first), _due(anchor, second)
+        r1, r2 = rounds(anchor, first, second)
         if r1 is None or r2 is None:
             continue
         ask = None
@@ -242,12 +268,22 @@ def due_on(db: Session, row: Optional[Automation], day: date,
             continue
         who = f"{contact.name}({contact.firm or '-'})" if contact else f"#{contact_id}"
         why = _sendable(db, contact) or replied_since(db, contact_id, anchor)
+        if not why and ask.round == 2:
+            # 두 번째는 첫 번째가 **두 번째 날 전에** 실제로 나갔을 때만. 첫 번째가
+            # 끝내 안 나갔으면(실패 · 시각을 놓침 · 빠짐) 두 번째 대신 **첫 번째를
+            # 늦게라도** 한 번 보낸다 — 그 분이 아무것도 못 받는 일이 없게. 첫
+            # 번째가 늦게 나갔으면 두 번째는 보내지 않는다(이틀 연달아 재촉하지 않게).
+            state, sent_on = _first_state(db, contact_id, anchor, test)
+            if state == "live":
+                why = "첫 번째 미팅 요청이 아직 나가는 중입니다"
+            elif state == "sent" and sent_on >= ask.due.isoformat():
+                why = "첫 번째를 늦게 보내 두 번째는 보내지 않습니다"
+            elif state == "none":
+                ask = Ask(contact, anchor, 1, r1)
         if not why and ask.round == 1:
             state = asked.get(contact_id) or {}
             if state.get("asked") and state.get("asked_at", "") >= anchor:
                 why = "미팅 요청을 이미 보냈습니다"
-        if not why and ask.round == 2 and not _first_sent(db, contact_id, anchor, test):
-            why = "첫 번째 미팅 요청이 나가지 않았습니다"
         if why:
             skipped.append(f"{who} — {why}")
             continue
@@ -289,8 +325,7 @@ def collect(db: Session, row: Automation, sender: User,
     return batch
 
 
-def manual(db: Session, values: dict, contact_id: Optional[int],
-           _sourcing_id: Optional[int], day: date) -> str:
+def manual(db: Session, values: dict, target, day: date) -> str:
     """사람이 `manual_days` 일 안에 미팅 요청·후기를 보냈으면 안 묻는다
     (`automation_dedup.manual_meeting` — 자동화가 보낸 첫 번째는 안 센다)."""
     from .. import automation_dedup
@@ -298,7 +333,8 @@ def manual(db: Session, values: dict, contact_id: Optional[int],
     days = int(values.get("manual_days") or 0)
     if days <= 0:
         return ""
-    return automation_dedup.manual_meeting(db, contact_id, day - timedelta(days=days))
+    return automation_dedup.manual_meeting(db, target.contact_id,
+                                           day - timedelta(days=days))
 
 
 def still_ok(db: Session, rec: AutomationSend) -> str:

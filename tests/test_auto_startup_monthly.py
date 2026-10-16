@@ -5,7 +5,9 @@
 3. 그날 아침 스타트업 화면과 같은 글로 회차가 서고 그 시각 예약이 걸린다.
    회차명에 그 달이 적혀 '이 달 회차' 판정이 알아본다.
 4. 이 달 회차가 이미 있으면 세우지 않는다.
-5. 실제 모드로 켜지면 옛 30일 자동은 물러난다(시험 모드면 그대로).
+5. 실제 모드로 켜지면 옛 30일 자동은 **A5 가 맡는 달에만** 물러난다 — 이 달
+   A5 날짜가 아직 앞에 있거나 A5 가 이 달 회차를 이미 세웠을 때(시험 모드면
+   그대로). 같은 달에 둘이 함께 보내지 않는다.
 6. 보내는 계정이 스타트업 월간 발송 계정이 아니면 세우지 않는다.
 
 기업 자료는 **실제 이번 달**로 심는다(`test_startup_monthly_send.seeded`) — 그래서
@@ -134,14 +136,51 @@ def test_the_old_thirtieth_steps_aside_only_in_real_mode(db, seeded):
 
     startup_send.save(db, enabled=True, user_id=1, monthly=True,
                       monthly_time="17:00")
+    early = _aware(datetime(2026, 10, 1, 9, 0))     # 이 달 A5 날짜(10/15 11:00) 전
     _on(db, test=True)
-    assert startup_monthly.handed_over(db) is False
+    assert startup_monthly.handed_over(db, early) is False
     _on(db, test=False)
-    assert startup_monthly.handed_over(db) is True
+    assert startup_monthly.handed_over(db, early) is True
+    assert startup_monthly.status(db, early)["handed_over"] is True
+
+
+def test_the_old_thirtieth_runs_when_a5_missed_this_month(db, seeded):
+    """A5 를 실제 모드로 켠 날이 이 달 A5 날짜 뒤면 — 그 달은 A5 가 안 맡는다.
+    옛 30일 자동이 그대로 돈다(안 그러면 그 달은 월간 발송이 아예 없다)."""
+    from app.services import startup_monthly, startup_send
+
+    startup_send.save(db, enabled=True, user_id=1, monthly=True,
+                      monthly_time="17:00")
+    _on(db, test=False)
     when = startup_monthly.run_day(2026, 10)
-    assert startup_monthly.run_once(
-        db, _aware(datetime(when.year, when.month, when.day, 9, 0)))["status"] == "handed_over"
-    assert startup_monthly.status(db)["handed_over"] is True
+    late = _aware(datetime(when.year, when.month, when.day, 9, 0))
+    assert startup_monthly.handed_over(db, late) is False
+    assert startup_monthly.run_once(db, late)["status"] != "handed_over"
+
+
+def test_the_old_thirtieth_steps_aside_once_a5_has_this_months_job(db, seeded):
+    """A5 가 이 달 회차를 세웠으면(취소 안 됐거나, 취소됐어도 나간 곳이 있으면)
+    30일 자동은 물러난다 — 같은 달에 둘이 함께 보내지 않는다."""
+    from app.services import startup_monthly
+
+    _turn_on(db)
+    _on(db, test=False)
+    assert _run(db)["status"] == "ready"
+    today = date.today()            # 기업 자료가 실제 이번 달로 심겨 있다
+    when = startup_monthly.run_day(today.year, today.month)
+    late = _aware(datetime(when.year, when.month, when.day, 9, 0))  # A5 날짜 뒤
+    assert startup_monthly.handed_over(db, late) is True
+    # [중단] 됐어도 한 곳이라도 나갔으면 그 달은 보낸 달이다.
+    [job] = _jobs(db)
+    job.status = "canceled"
+    job.items[0].status = "sent"
+    db.commit()
+    assert startup_monthly.handed_over(db, late) is True
+    assert startup_monthly.month_job(db, f"{today:%Y-%m}") is not None
+    # 아무 곳도 안 나간 채 취소됐으면 — 그 달은 A5 가 안 맡은 것이다.
+    job.items[0].status = "canceled"
+    db.commit()
+    assert startup_monthly.handed_over(db, late) is False
 
 
 def test_sender_must_be_the_startup_sender(db, seeded, users):

@@ -1372,11 +1372,16 @@ def save_automation_team(
         db.rollback()
         return RedirectResponse(f"/team?msg={quote('자동화 팀 공통 — ' + str(exc))}#automations",
                                 status_code=303)
+    # 자동 발송 계정이 바뀌었으면 옛 계정 PC 로 서 있던 자동 회차를 거둔다.
+    from ..services import automation_runner
+
+    stopped = sum(automation_runner.stop_jobs(db, kind.key) for kind in automation.KINDS)
     who = db.get(User, automation.default_sender_id(db))
     note = (f"자동화 팀 공통 설정을 저장했습니다 — 자동 발송 계정 {who.name if who else '없음'}"
             f" · 시간대 {saved.window_label}"
             + (f" · 피할 시간 {saved.avoid_label}" if saved.avoid_label else "")
-            + f" · 같은 분 하루 {saved.per_contact_daily}통 · 회차 사이 {saved.job_gap_min}분")
+            + f" · 같은 분 하루 {saved.per_contact_daily}통 · 회차 사이 {saved.job_gap_min}분"
+            + (f" · 옛 계정으로 서 있던 회차 {stopped}개를 거뒀습니다" if stopped else ""))
     return RedirectResponse(f"/team?msg={quote(note)}#automations", status_code=303)
 
 
@@ -1412,28 +1417,44 @@ async def save_automation(
     label = automation.BY_KEY[key].label
     # 자동화마다 다른 값(`p_<이름>` 칸) — 며칠 뒤 · 몇 시 · 그룹 · 채널방 목록.
     # 칸이 하나도 안 오면(옛 화면) 저장된 값을 그대로 둔다.
+    from ..services import automation_runner
+
     form = await request.form()
     raw = {k[2:]: v for k, v in form.items() if k.startswith("p_")}
+    off = enabled != "on"
+    stopped = 0
+    if off:
+        # **끄기는 늘 된다** — 다른 칸을 가리기 전에, 검사 없이 먼저 끄고 커밋한다.
+        # 다른 칸이 잘못돼 저장이 넘어져도 꺼진 것은 남는다. 아침에 세운 회차 ·
+        # 큐에 선 회차도 바로 거둔다.
+        automation.turn_off(db, key)
+        stopped += automation_runner.stop_jobs(db, key)
     try:
-        if raw:
-            from ..services import automation_runner
-
-            automation_runner.save_params(db, key, raw)
-        row = automation.save(db, key, enabled=enabled == "on",
-                              user_id=user_id or None,
-                              test_mode=(test_mode == "on"
-                                         or test_mode_shown != "1"),
-                              test_room=test_room)
+        # 나머지는 **다 가린 뒤 한 번에** 저장한다(반쪽 저장 없음).
+        row, flipped = automation_runner.save_settings(
+            db, key, raw or None, enabled=not off, user_id=user_id or None,
+            test_mode=(test_mode == "on" or test_mode_shown != "1"),
+            test_room=test_room)
     except ValueError as exc:
         db.rollback()
-        return RedirectResponse(f"/team?msg={quote(label + ' — ' + str(exc))}#automations",
+        if off:
+            note = (f"{label} 자동화를 껐습니다"
+                    + (f" · 서 있던 회차 {stopped}개를 거뒀습니다" if stopped else "")
+                    + f" — 다른 칸은 저장하지 못해 이전 값 그대로입니다: {exc}")
+        else:
+            note = f"{label} — {exc}"
+        return RedirectResponse(f"/team?msg={quote(note)}#automations",
                                 status_code=303)
+    # 시험 ↔ 실제를 바꿨으면 옛 모드로 서 있던 회차는 `save_settings` 가 거뒀다.
+    stopped += flipped
     if not row.enabled:
         note = f"{label} 자동화를 껐습니다"
     elif row.test_mode:
         note = f"{label} 자동화 켜짐 — 시험 모드: 모든 글이 '{row.test_room}' 으로 갑니다"
     else:
         note = f"{label} 자동화 켜짐 — 실제 방으로 나갑니다"
+    if stopped:
+        note += f" · 서 있던 회차 {stopped}개를 거뒀습니다(나가지 않습니다)"
     return RedirectResponse(f"/team?msg={quote(note)}#automations", status_code=303)
 
 

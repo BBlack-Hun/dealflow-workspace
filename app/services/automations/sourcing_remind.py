@@ -64,14 +64,8 @@ KIND = sourcing_msg.REMIND_KIND
 #: 기본 갈래 — 투자사 관리 현황과 잇는 그 갈래(운영의 시트 탭 이름 그대로).
 DEFAULT_GROUPS = [sourcing_sync.SYNC_BUCKET]
 
-_WEEKDAYS = "월화수목금토일"
-
-
-def _weekday(raw: str) -> int:
-    text = (raw or "").strip()
-    if len(text) == 1 and text in _WEEKDAYS:
-        return _WEEKDAYS.index(text)
-    raise ValueError("요일은 월~일 중 한 글자로 넣으세요")
+#: 요일 한 글자 → 0(월)~6(일). 읽는 자리는 공통 틀 하나다(`runner.parse_weekday`).
+_weekday = runner.parse_weekday
 
 
 def _weeks(raw: str) -> List[int]:
@@ -210,14 +204,13 @@ def still_ok(db: Session, rec: AutomationSend) -> str:
     return ""
 
 
-def manual(db: Session, _values: dict, _contact_id: Optional[int],
-           sourcing_id: Optional[int], day: date) -> str:
+def manual(db: Session, _values: dict, target, day: date) -> str:
     """그 달 사람이 손으로 월간 리마인드를 보낸 분은 뺀다
     (`automation_dedup.manual_sourcing_remind`)."""
     from .. import automation_dedup
 
     return automation_dedup.manual_sourcing_remind(
-        db, sourcing_id, sourcing_receipts.month_of(day))
+        db, target.sourcing_contact_id, sourcing_receipts.month_of(day))
 
 
 runner.register(runner.Spec(

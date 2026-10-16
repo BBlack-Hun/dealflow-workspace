@@ -164,9 +164,12 @@ DEFAULT_WINDOW = ("09:00", "19:00")
 #: 같은 분(담당자 · 딜 소싱 명단 한 줄)에게 하루에 나가는 자동 발송의 최대 수.
 DEFAULT_PER_CONTACT_DAILY = 1
 MAX_PER_CONTACT_DAILY = 5
-#: 다른 자동화 회차 사이 최소 간격(분).
+#: 다른 자동화 회차 사이 최소 간격(분). 상한을 예약이 버티는 시간
+#: (`scheduled_send.EXPIRE_MINUTES` = 60분)보다 한참 아래에 둔다 — 간격 때문에
+#: 기다리는 회차가 그 기다림 때문에 '예약 시각을 놓쳤다' 로 떨어지지 않게
+#: (`automation_runner.release_floor` 가 그 기다림만큼 버티는 시간을 늘린다).
 DEFAULT_JOB_GAP_MIN = 10
-MAX_JOB_GAP_MIN = 120
+MAX_JOB_GAP_MIN = 30
 
 
 def _minutes(raw) -> int:
@@ -376,14 +379,25 @@ def clean_room(raw: Optional[str]) -> str:
 def real_rooms(db: Session) -> set:
     """**진짜 상대**의 방 이름들 — 투자사 명단 · 딜 소싱 명단 · 기업 대표방 ·
     자동화가 보내는 방 목록(채널방처럼 받는 줄 없이 방 이름만 적어 둔 것 —
-    자동화 값의 `rooms`)."""
+    자동화 값의 `rooms`) · **보내는 계정 카톡 기준 방 제목**(`sender_rooms` 의
+    확정 제목과 후보 — 시험 글이 실제로 가는 곳이 그 계정 카톡이다)."""
+    from ..models import SenderRoom
+
     names = set()
     for column in (VcContact.kakao_room_name, SourcingContact.kakao_room_name,
-                   IrCompany.kakao_room_name):
+                   IrCompany.kakao_room_name, SenderRoom.room_name):
         for value in db.execute(select(column).where(column.isnot(None))).scalars():
             text = (value or "").strip()
             if text:
                 names.add(text)
+    for raw in db.execute(select(SenderRoom.candidates)
+                          .where(SenderRoom.candidates.isnot(None))).scalars():
+        try:
+            picks = json.loads(raw or "[]")
+        except ValueError:
+            continue
+        if isinstance(picks, list):
+            names |= {str(r).strip() for r in picks if str(r).strip()}
     for row in db.execute(select(Automation)).scalars().all():
         rooms = params(row).get("rooms")
         if isinstance(rooms, list):
@@ -399,17 +413,38 @@ def test_room_problem(db: Session, room: Optional[str]) -> str:
     모드가 막으려던 바로 그 사고다. 복사해 붙이다 한 줄 어긋나는 것으로 충분히
     생긴다.
     """
+    from .automation_dedup import room_key
+
     text = clean_room(room)
     if not text:
         return "시험방 이름을 넣으세요 — 시험 모드에서는 모든 글이 그 방으로 갑니다"
-    if text in real_rooms(db):
+    # 견주는 꼴은 중복 막기의 방 견주기와 같다(띄어쓰기 · 대소문자 무시) — 막는
+    # 쪽은 넓게 잡는다.
+    if room_key(text) in {room_key(name) for name in real_rooms(db)}:
         return (f"'{text}' 은 실제 상대의 카톡방 이름입니다 — 시험방으로 쓸 수 "
                 "없습니다(나와의 채팅 등 우리 쪽 방을 넣으세요)")
     return ""
 
 
+def turn_off(db: Session, key: str) -> bool:
+    """**끈다 — 늘 된다.** 다른 칸을 하나도 가리지 않는다. 껐으면(켜져 있었으면) 참.
+
+    끄는 것은 멈추는 길이라 어떤 값 검사에도 걸리면 안 된다 — 시험방 칸이
+    잘못됐다는 까닭으로 끄기가 막혀 실제 모드가 켜진 채로 남으면 그것이 사고다.
+    커밋까지 한다. 이미 서 있는 회차를 거두는 것은 `automation_runner.stop_jobs`.
+    """
+    if key not in BY_KEY:
+        raise ValueError("그런 자동화는 없습니다")
+    row = load(db, key)
+    if row is None or not row.enabled:
+        return False
+    row.enabled = 0
+    db.commit()
+    return True
+
+
 def save(db: Session, key: str, *, enabled: bool, user_id: Optional[int],
-         test_mode: bool, test_room: Optional[str]) -> Automation:
+         test_mode: bool, test_room: Optional[str], commit: bool = True) -> Automation:
     """설정을 저장한다. **값은 여기서 한 번만 가린다** — 못 받을 값이면
     `ValueError`(까닭이 그대로 화면에 간다).
 
@@ -443,7 +478,8 @@ def save(db: Session, key: str, *, enabled: bool, user_id: Optional[int],
         if row.test_mode and not room:
             raise ValueError("시험 모드로 켜려면 시험방 이름을 넣으세요")
     row.enabled = 1 if enabled else 0
-    db.commit()
+    if commit:
+        db.commit()
     return row
 
 

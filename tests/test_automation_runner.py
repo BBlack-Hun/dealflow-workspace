@@ -174,9 +174,44 @@ def test_same_day_twice_is_one_job(db, users, fake):
 def test_a_target_is_sent_once_across_days(db, users, fake):
     _turn_on(db, users)
     _run(db, WED_9AM)
+    [job] = _jobs(db)
+    for item in job.items:
+        item.status, item.sent_at = "sent", "2026-10-14T14:00:30+09:00"
+    db.commit()
     result = _run(db, THU_9AM)
     assert result["status"] == "empty"
     assert len(_jobs(db)) == 1
+
+
+def test_a_target_whose_job_never_went_out_is_taken_again(db, users, fake):
+    """어제 회차가 예약 시각을 놓쳐 **아무것도 안 나갔으면** 오늘 다시 실린다 — 옛
+    건은 거둬 사람이 옛 회차를 눌러도 두 번 안 간다(줄은 하나 그대로)."""
+    from app.models import AutomationSend
+
+    _turn_on(db, users)
+    _run(db, WED_9AM)
+    result = _run(db, THU_9AM)
+    assert result["status"] == "ready" and result["count"] == 2
+    old, new = _jobs(db)
+    assert {i.status for i in old.items} == {"canceled"}
+    assert all("다시 실림" in i.error for i in old.items)
+    rows = db.execute(select(AutomationSend)).scalars().all()
+    assert len(rows) == 2 and {r.job_id for r in rows} == {new.id}
+
+
+def test_a_failed_target_is_taken_again_but_a_sent_one_never(db, users, fake):
+    _turn_on(db, users, test=False)
+    _run(db, WED_9AM)
+    [job] = _jobs(db)
+    first, second = sorted(job.items, key=lambda i: i.id)
+    first.status, first.sent_at = "sent", "2026-10-14T14:00:30+09:00"
+    second.status, second.error = "failed", "방을 찾지 못했습니다"
+    job.status = "done_with_errors"
+    db.commit()
+    result = _run(db, THU_9AM)
+    assert result["count"] == 1
+    new = _jobs(db)[-1]
+    assert [i.contact_id for i in new.items] == [fake["contacts"][1].id]
 
 
 def test_test_sends_do_not_block_real_ones(db, users, fake):

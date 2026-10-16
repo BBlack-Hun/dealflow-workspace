@@ -41,7 +41,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Dict, Iterable, Optional
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from ..models import AutomationSend, ContactActivity, SendItem, SendJob
@@ -51,7 +51,7 @@ LIVE_ITEMS = ("pending", "sending", "sent")
 #: 이미 나간(또는 나가는 중인) 건.
 GONE_ITEMS = ("sending", "sent")
 #: 이미 풀린 회차 — 큐에 서 있거나 발송기가 물어 갔다.
-RELEASED_JOBS = ("queued", "running")
+RELEASED_JOBS = ("queued", "running", "paused")
 
 #: 사유 앞머리. 오늘 할 일 · 진행 화면이 이 말로 중복 막기로 뺀 것을 센다.
 PREFIX = "중복 방지"
@@ -129,29 +129,37 @@ def ledger(db: Session, day: date, test: bool, *, limit: int,
     from . import automation
 
     start, end = _day_bounds(day)
+    # **발송 건이 지워진 줄**(탭 지우기 · 데모 정리가 `item_id` 를 비운다)도 센다
+    # — 회차가 취소되지 않았으면 나갔을 수 있다. 모르면 보낸 쪽으로 센다.
+    detached = and_(AutomationSend.item_id.is_(None),
+                    SendJob.status.notin_(("canceled",) + (("draft",) if released_only else ())))
+    if released_only:
+        live = or_(SendItem.status.in_(GONE_ITEMS),
+                   and_(SendItem.status == "pending", SendJob.status.in_(RELEASED_JOBS)))
+    else:
+        live = SendItem.status.in_(LIVE_ITEMS)
     query = (
-        select(AutomationSend.automation, AutomationSend.item_id,
+        select(AutomationSend.id, AutomationSend.automation, AutomationSend.item_id,
                AutomationSend.room, AutomationSend.contact_id,
                AutomationSend.sourcing_contact_id)
-        .join(SendItem, SendItem.id == AutomationSend.item_id)
-        .join(SendJob, SendJob.id == SendItem.job_id)
+        .select_from(AutomationSend)
+        .join(SendJob, SendJob.id == AutomationSend.job_id)
+        .outerjoin(SendItem, SendItem.id == AutomationSend.item_id)
         .where(AutomationSend.test == (1 if test else 0),
                SendJob.scheduled_at >= start, SendJob.scheduled_at < end,
-               SendItem.status.in_(LIVE_ITEMS))
+               or_(live, detached))
     )
-    if released_only:
-        query = query.where(or_(SendItem.status.in_(GONE_ITEMS),
-                                SendJob.status.in_(RELEASED_JOBS)))
     skip = [j for j in exclude_jobs if j]
     if skip:
         query = query.where(SendJob.id.notin_(skip))
     book = Ledger(limit=max(1, int(limit or 1)))
     seen = set()
-    for key, item_id, room, contact_id, sourcing_id in db.execute(query).all():
+    for rec_id, key, item_id, room, contact_id, sourcing_id in db.execute(query).all():
         # 채널방은 한 통에 기업마다 줄이 선다 — 한 통은 한 번만 센다.
-        if item_id in seen:
+        mark = item_id if item_id is not None else ("rec", rec_id)
+        if mark in seen:
             continue
-        seen.add(item_id)
+        seen.add(mark)
         kind = automation.BY_KEY.get(key)
         book.add(contact_id=contact_id, sourcing_contact_id=sourcing_id,
                  room=room, label=kind.label if kind else key)
@@ -170,9 +178,13 @@ def _md(when: Optional[str]) -> str:
     return f"{int(text[5:7])}/{int(text[8:10])}" if len(text) == 10 else text
 
 
-def manual_meeting(db: Session, contact_id: Optional[int], since: date) -> str:
+def manual_meeting(db: Session, contact_id: Optional[int], since: date,
+                   after: Optional[str] = None) -> str:
     """`since` 이후 사람이 이 담당자에게 **미팅 단계 글**(미팅 요청 · 미팅 후기)을
     보냈으면 그 사유. 없으면 빈 글자.
+
+    `after`(예: 미팅을 마친 날)가 있으면 **그 뒤에** 보낸 것만 센다 — 미팅 후
+    문의(A7)에서 그 미팅을 잡게 한 미팅 요청까지 세면 문의가 거의 늘 빠진다.
 
     둘을 본다: 앱이 내보낸 것(`deal_intro` 잡의 `stage=3`, 실제로 `sent`)과 손으로
     적은 미팅 요청 기록(`ContactActivity` 의 `meeting_ask`, 되돌린 줄은 안 보인다).
@@ -184,23 +196,29 @@ def manual_meeting(db: Session, contact_id: Optional[int], since: date) -> str:
 
     if not contact_id:
         return ""
-    sent = db.execute(
+    floor = since.isoformat()
+    sent_q = (
         select(func.max(SendItem.sent_at))
         .join(SendJob, SendJob.id == SendItem.job_id)
         .where(SendItem.contact_id == contact_id,
                SendItem.stage == cadence.STAGE_MEETING,
                SendItem.status == "sent",
-               SendItem.sent_at >= since.isoformat(),
-               SendItem.id.notin_(_auto_items()))
-    ).scalar()
-    if sent:
-        return f"{PREFIX} — {_md(sent)} 에 미팅 요청·후기를 손으로 보냈습니다"
-    marked = db.execute(
+               SendItem.sent_at >= floor,
+               SendItem.id.notin_(_auto_items())))
+    mark_q = (
         select(func.max(ContactActivity.happened_at))
         .where(ContactActivity.contact_id == contact_id,
                ContactActivity.kind == pipeline.MEETING_ASK_KIND,
-               ContactActivity.happened_at >= since.isoformat())
-    ).scalar()
+               ContactActivity.happened_at >= floor))
+    if after:
+        # 날짜만 적힌 값(`2026-10-12`)은 그날 0시 — 그날 보낸 것은 미팅 뒤로 본다
+        # (미팅을 마친 날 오후에 사람이 물었으면 또 묻지 않는다).
+        sent_q = sent_q.where(SendItem.sent_at > after)
+        mark_q = mark_q.where(ContactActivity.happened_at > after)
+    sent = db.execute(sent_q).scalar()
+    if sent:
+        return f"{PREFIX} — {_md(sent)} 에 미팅 요청·후기를 손으로 보냈습니다"
+    marked = db.execute(mark_q).scalar()
     if marked:
         return f"{PREFIX} — {_md(marked)} 에 미팅 요청을 보냈다고 적혀 있습니다"
     return ""

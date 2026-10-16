@@ -18,14 +18,14 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Form, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from .. import clock
 from ..clock import stamp_text
 from ..db import get_db
 from ..deps import can_open, get_current_user, may_manage_team_contacts
-from ..models import (ContactActivity, ContactColumn, IrCompany, IrRequest,
+from ..models import (AutomationSend, ContactActivity, ContactColumn, IrCompany, IrRequest,
                       Meeting, SendItem, SendJob, SenderRoom, SendSequence,
                       SourcingContact, User, VcContact)
 from ..services import (contact_columns, deal_stage, firm_type, last_activity,
@@ -1748,6 +1748,16 @@ def delete_list_sheet(body: SheetDeleteIn, db: Session = Depends(get_db),
     # 딸린 것부터 치우고(외래키가 켜져 있어 순서가 틀리면 막힌다) 사람은 줄마다
     # `db.delete()` 로 지운다(flush 를 지나야 줄마다 수정 로그에 남는다).
     if ids:
+        # 2단계 자동화의 '보냈다' 줄(`automation_sends.item_id`)이 지울 발송 건을
+        # 가리킨다 — **줄은 남기고 건만 떼어 낸다.** 줄을 지우면 그 대상이
+        # 보낸 적 없는 것으로 보여 다시 실릴 수 있고(같은 투자사가 다른 명단에도
+        # 있으면 그 방으로), 떼어 낸 줄은 중복 막기가 '보낸 것' 으로 센다
+        # (`automation_dedup.ledger` · `automation_runner.sent_refs`).
+        db.execute(
+            update(AutomationSend)
+            .where(AutomationSend.item_id.in_(
+                select(SendItem.id).where(SendItem.contact_id.in_(ids))))
+            .values(item_id=None))
         for _key, model, _label in TAB_PURGE_LINKS:
             db.query(model).filter(
                 model.contact_id.in_(ids)).delete(synchronize_session=False)

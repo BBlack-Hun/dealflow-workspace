@@ -181,6 +181,9 @@ def test_result_written_before_two_pm_drops_it(db, users, team):
 def test_once_per_meeting(db, users, team):
     _turn_on(db)
     _run(db)
+    for item in _items(db):
+        item.status, item.sent_at = "sent", "2026-10-14T14:00:30+09:00"
+    db.commit()
     assert _run(db, datetime(2026, 10, 15, 9, 0))["status"] == "empty"
     assert len(_items(db)) == 2
 

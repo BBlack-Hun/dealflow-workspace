@@ -54,7 +54,7 @@ from sqlalchemy.orm import Session
 
 from .. import clock
 from ..db import SessionLocal
-from ..models import (STARTUP_SEND_KIND, AutoSendRun, DealBatch, SendJob,
+from ..models import (STARTUP_SEND_KIND, AutoSendRun, DealBatch, SendItem, SendJob,
                       User)
 from . import scheduled_send
 
@@ -171,11 +171,21 @@ def _job_month(job: SendJob, batch_title: str) -> str:
 
 
 def month_job(db: Session, month: str) -> Optional[SendJob]:
-    """그 달치 스타트업 회차(취소되지 않은 것). 없으면 `None`."""
+    """그 달치 스타트업 회차(취소되지 않은 것 — 또는 취소됐어도 **한 곳이라도
+    나간 것**). 없으면 `None`.
+
+    30일 자동과 2단계 자동화(A5)가 같은 달에 둘 다 보내지 않게 하는 판정이다.
+    중간에 [중단] 한 회차도 이미 나간 곳이 있으면 그 달은 보낸 달이다.
+    """
+    from sqlalchemy import exists, or_
+
+    sent = exists().where(SendItem.job_id == SendJob.id,
+                          SendItem.status.in_(("sent", "sending")))
     rows = db.execute(
         select(SendJob, DealBatch.title)
         .outerjoin(DealBatch, DealBatch.id == SendJob.batch_id)
-        .where(SendJob.kind == STARTUP_SEND_KIND, SendJob.status != "canceled")
+        .where(SendJob.kind == STARTUP_SEND_KIND,
+               or_(SendJob.status != "canceled", sent))
         .order_by(SendJob.id)
     ).all()
     for job, title in rows:
@@ -245,7 +255,7 @@ def run_once(db: Session, now: Optional[datetime] = None) -> dict:
     row = _setting(db)
     if not is_on(row):
         return {"status": "off"}
-    if handed_over(db):
+    if handed_over(db, now):
         # 2단계 자동화(스타트업 월간 발송 순환)가 **실제 모드로** 켜져 있다 —
         # 날짜·문구를 돌리는 그쪽이 세운다(`services/automations/startup_monthly.py`).
         return {"status": "handed_over"}
@@ -301,13 +311,18 @@ def run_once(db: Session, now: Optional[datetime] = None) -> dict:
         "count": len(ids)}
 
 
-def handed_over(db: Session) -> bool:
-    """2단계 자동화(스타트업 월간 발송 순환)가 실제 모드로 켜져 이 30일 자동이
-    물러났는가. 시험 모드인 동안에는 물러나지 않는다 — 시험이 운영의 월간
-    발송을 멈추면 안 된다."""
+def handed_over(db: Session, now: Optional[datetime] = None) -> bool:
+    """**이 달은** 2단계 자동화(스타트업 월간 발송 순환)가 맡아 이 30일 자동이
+    물러나는가(`automations.startup_monthly.covers_month`).
+
+    A5 가 실제 모드로 켜져 있어도, 이 달 A5 의 날짜·시각이 이미 지났고 A5 가 이
+    달 보낸 것이 없으면 **물러나지 않는다** — 그러면 그 달은 월간 발송이 아예
+    없다. 시험 모드인 동안에도 물러나지 않는다(시험이 운영의 월간 발송을 멈추면
+    안 된다). 둘이 같은 달에 함께 보내는 일은 `month_job` 이 양쪽에서 막는다.
+    """
     from .automations import startup_monthly as a5
 
-    return a5.owns_monthly(db)
+    return a5.covers_month(db, now)
 
 
 # ── 화면 ────────────────────────────────────────────────────────────────────
@@ -339,7 +354,7 @@ def status(db: Session, now: Optional[datetime] = None) -> dict:
         "next_count": 0,
         "this_month": None,
         # 2단계 자동화가 맡았으면 화면이 그 사실을 적는다(30일 자동은 쉰다).
-        "handed_over": handed_over(db),
+        "handed_over": handed_over(db, now),
     }
     if not on or out["handed_over"]:
         return out

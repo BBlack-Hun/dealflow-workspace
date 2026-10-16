@@ -64,14 +64,8 @@ FOOTERS = [
     "관심 있으신 기업은 연락 주시면 자료 바로 공유드리겠습니다.",
 ]
 
-_WEEKDAYS = "월화수목금토일"
-
-
-def _weekday(raw: str) -> int:
-    text = (raw or "").strip()
-    if len(text) == 1 and text in _WEEKDAYS:
-        return _WEEKDAYS.index(text)
-    raise ValueError("요일은 월~일 중 한 글자로 넣으세요")
+#: 요일 한 글자 → 0(월)~6(일). 읽는 자리는 공통 틀 하나다(`runner.parse_weekday`).
+_weekday = runner.parse_weekday
 
 
 def _check(values: dict) -> None:
