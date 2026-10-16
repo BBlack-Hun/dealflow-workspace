@@ -106,6 +106,9 @@
 <div class="hint" data-testid="automation-note">
   자동화 <b>{{ automation.label }}</b> 회차
   {% if automation.gap %} · 건 사이 간격 <b>{{ automation.gap }}</b>{% endif %}
+  {% if automation.failed %}
+  <div class="warn" data-testid="automation-failed-note">실패 {{ automation.failed }}건 — {{ automation.failed_note }}</div>
+  {% endif %}
   {% if automation.count %}
   · 뺀 곳 <b>{{ automation.count }}</b>{% if automation.dup %}(중복 방지 {{ automation.dup }}){% endif %}
   <details><summary>뺀 까닭 보기</summary>

@@ -145,20 +145,96 @@ def test_01_a_stopped_job_cannot_be_resent_by_hand(client, db, users, world):
     assert _jobs(db)[0].status == "canceled"
 
 
-def test_03_a_retaken_targets_old_failed_item_cannot_be_retried(client, db, users, world):
-    """다음 날 다시 실린 대상의 옛 실패 건을 [실패 재시도] 로 되살려 두 번 보내지
-    못한다."""
+def test_03_a_retaken_targets_old_item_cannot_be_resent_by_hand(client, db, users, world):
+    """예약 시각을 놓쳐 다음 날 다시 실린 대상 — 옛 회차의 옛 건을 사람이
+    [취소분 재발송] 으로 되살려 두 번 보내지 못한다."""
     world["A"] = [world["people"]["c1"]]
     _on(db, "meeting_review")
     _run(db, "meeting_review")
     old = _jobs(db)[0]
-    old.items[0].status, old.items[0].error = "failed", "방을 찾지 못했습니다"
-    old.status = "done_with_errors"
-    db.commit()
     assert _run(db, "meeting_review", datetime(2026, 10, 15, 9, 0))["count"] == 1
+    db.expire_all()
+    assert "다시 실림" in _jobs(db)[0].items[0].error
     _admin(db, users, client)
-    r = client.post(f"/api/jobs/{old.id}/retry")
+    r = client.post(f"/api/jobs/{old.id}/resend-canceled")
     assert r.status_code == 400 and "다시 실림" in r.json()["detail"]
+
+
+# ── 결정 1. 발송기 손에 안 간 대상만 다시 싣는다 ─────────────────────────────
+
+def test_d1_a_failed_target_is_not_retried_but_a_person_can(client, db, users, world):
+    """발송기가 실패로 보고한 대상은 자동으로 다시 안 보낸다. 사람의 [실패 재시도]
+    는 그대로 된다(그때도 끔 · 중복 판정은 지난다)."""
+    world["A"] = [world["people"]["c1"]]
+    _on(db, "meeting_review")
+    _run(db, "meeting_review")
+    job = _jobs(db)[0]
+    job.items[0].status, job.items[0].error = "failed", "room_mismatch"
+    job.status = "done_with_errors"
+    db.commit()
+    assert _run(db, "meeting_review", datetime(2026, 10, 15, 9, 0))["status"] == "empty"
+    _admin(db, users, client)
+    page = client.get(f"/jobs/{job.id}").text
+    assert 'data-testid="automation-failed-note"' in page and "[실패 재시도]" in page
+    r = client.post(f"/api/jobs/{job.id}/retry")
+    assert r.status_code == 200 and r.json()["requeued"] == 1
+
+
+def test_d1_targets_stopped_by_turning_off_are_not_requeued_when_back_on(
+        client, db, users, world):
+    world["A"] = [world["people"]["c1"]]
+    _on(db, "meeting_review")
+    _run(db, "meeting_review")
+    _admin(db, users, client)
+    client.post("/team/automations/meeting_review",
+                data={"enabled": "", "test_mode_shown": "1"}, follow_redirects=False)
+    _on(db, "meeting_review")                     # 다음 날 다시 켬
+    result = _run(db, "meeting_review", datetime(2026, 10, 15, 9, 0))
+    assert result["status"] == "empty"
+    assert len(_jobs(db)) == 1
+
+
+def test_d1_targets_a_person_stopped_are_not_requeued(client, db, users, world):
+    world["A"] = [world["people"]["c1"]]
+    _on(db, "meeting_review")
+    _run(db, "meeting_review")
+    job = _jobs(db)[0]
+    _admin(db, users, client)
+    assert client.post(f"/api/jobs/{job.id}/cancel").status_code == 200
+    assert _run(db, "meeting_review", datetime(2026, 10, 15, 9, 0))["status"] == "empty"
+
+
+def test_d1_a_temporary_dedupe_drop_is_retried_the_next_day(db, users, world):
+    """풀 때 중복 방지로 빠진 대상(발송기 손에 안 감)은 다음 날 다시 실린다."""
+    from app.models import AutomationSend, DealBatch, SendItem, SendJob
+    from app.services import scheduled_send
+
+    c1 = world["people"]["c1"]
+    world["A"] = [c1]
+    _on(db, "meeting_review")
+    _run(db, "meeting_review")
+    batch = DealBatch(user_id=users["u2"].id, title="다른 자동화", sent_date="2026-10-14",
+                      cycle_type="auto")
+    db.add(batch)
+    db.flush()
+    other = SendJob(user_id=users["u2"].id, kind="deal_intro", batch_id=batch.id,
+                    status="done", total=1, sent=1, failed=0,
+                    scheduled_at="2026-10-14T11:00:00+09:00")
+    db.add(other)
+    db.flush()
+    item = SendItem(job_id=other.id, contact_id=c1.id, channel="kakao",
+                    room_name=c1.kakao_room_name, message="먼저", status="sent",
+                    sent_at="2026-10-14T11:00:05+09:00")
+    db.add(item)
+    db.flush()
+    db.add(AutomationSend(automation="meeting_request", ref="other:1", test=0,
+                          job_id=other.id, item_id=item.id, room=c1.kakao_room_name,
+                          contact_id=c1.id))
+    db.commit()
+    scheduled_send.run_once(db, _aware(datetime(2026, 10, 14, 14, 0, 20)))
+    assert _jobs(db)[0].items[0].error.startswith("자동 제외 — 중복 방지")
+    result = _run(db, "meeting_review", datetime(2026, 10, 15, 9, 0))
+    assert result["status"] == "ready" and result["count"] == 1
 
 
 # ── 4 · 12. 끄기는 늘 되고, 저장은 한 번에 ───────────────────────────────────

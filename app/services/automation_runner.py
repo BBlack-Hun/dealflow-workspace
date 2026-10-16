@@ -37,9 +37,11 @@
 11. **끄면 멈춘다** — 끄거나 시험 ↔ 실제 · 보내는 계정을 바꾸면 서 있는 회차를
    바로 거두고(`stop_jobs`), 풀 때 · 내줄 때 · 사람이 다시 낼 때도 같은 판정
    (`stop_reason` · `screen`)을 지난다. 오늘 할 일에 거둔 사실이 선다.
-12. **안 나간 대상은 다시 실린다** — 실패 · 빠짐 · 시각을 놓친 대상은 다음
-   회차에 다시 실리고(`sent_refs` · `_retake`), 옛 건은 거둬 사람이 되살려도
-   두 번 안 간다. 받은 대상은 절대 다시 안 간다.
+12. **발송기 손에 안 간 대상만 다시 실린다** — 예약 시각을 놓쳤거나 풀 때
+   중복 방지 · 조건으로 빠진 대상은 다음 회차에 다시 실리고(`sent_refs` ·
+   `_retake`), 옛 건은 거둬 사람이 되살려도 두 번 안 간다. 발송기가 **실패로
+   보고한** 대상 · 꺼서 거둔 대상 · 사람이 [중단] 한 대상은 자동으로 다시 안
+   보낸다(`still_counts`) — 사람이 회차 화면에서 [실패 재시도] 한다.
 
 ## 늦게 세우지 않는다
 
@@ -442,29 +444,47 @@ def _finish(db: Session, row: AutoSendRun, status: str, *,
 _LIVE_JOBS = ("queued", "running", "paused")
 
 
+#: 발송기가 실패로 보고한 대상 — 사람에게 맡긴다는 안내(오늘 할 일 · 회차 화면).
+FAILED_NOTE = "발송기가 실패로 보고한 대상은 자동으로 다시 보내지 않습니다 — 확인 후 [실패 재시도]"
+
+
 def still_counts(item: Optional[SendItem], job: Optional[SendJob],
                  now: Optional[datetime] = None) -> bool:
-    """이 대상 줄이 아직 **'보냈다(또는 나가는 중)'** 인가 — 참이면 다시 보내지 않는다.
+    """이 대상 줄을 **'보냈다(또는 다시 보내면 안 된다)'** 로 셀까 — 참이면 자동으로
+    다시 보내지 않는다. **헷갈리면 참**(덜 보내는 쪽)이다.
 
-    - 나갔거나(`sent`) 보내는 중(`sending`) → 참. **받은 사람에게 두 번 안 간다.**
-    - 대기(`pending`)인데 회차가 큐 · 발송기 손 · 멈춤이거나, 아직 안 풀린
-      예약(`draft`, 시각 전 · 풀릴 때) → 참. 곧 나갈 수 있다.
-    - 발송 건이 지워졌다(탭 지우기 · 데모 정리) → 참. 모르면 보낸 것으로 본다.
-    - 그 밖 — 실패 · 취소(중복 방지 · 조건으로 빠짐 · 꺼서 취소) · 예약 시각을
-      놓친 대기 · 끝난 회차에 남은 대기 → 거짓. **다음 회차에 다시 실릴 수 있다**
-      (그때 옛 건은 거둔다 — `_retake`).
+    자동으로 다시 실리는 것은 **발송기 손에 한 번도 안 간** 대상뿐이다.
+
+      · 예약 시각을 놓친 대기 — 풀리기 전에, 또는 풀렸는데 발송기가 못 집어가
+        지나 버린 회차(`scheduled_send` 의 `STATE_EXPIRED`) → 거짓
+      · 풀 때 중복 방지 · 조건으로 빠진 건(`자동 제외 — …`) → 거짓
+
+    그 밖은 전부 참이다.
+
+      · 나갔거나(`sent`) 보내는 중(`sending`).
+      · **발송기가 실패로 보고했다**(`failed`) — 카톡 화면 자동화는 [Enter] 를
+        누른 뒤에 실패를 보고할 수 있다(번갈아 실패하던 버그가 그랬다). 이미
+        나갔을 수 있으니 자동으로 다시 보내지 않는다. 사람이 회차 화면에서
+        확인하고 [실패 재시도] 한다(`FAILED_NOTE`).
+      · 꺼서 · 모드 · 보내는 계정이 바뀌어 거둔 건(`자동화 중지 — …`), 사람이
+        [중단] 한 건 — 취소됐다는 까닭으로 다시 실리지 않는다(보내는 중이던 건이
+        섞여 있을 수 있다).
+      · 대기인데 회차가 큐 · 발송기 손 · 멈춤이거나, 아직 안 풀린 예약.
+      · 끝난 회차에 남은 대기 · 발송 건이 지워졌다(탭 지우기 · 데모 정리) — 모르면
+        보낸 것으로 본다.
+
+    다시 실릴 때 옛 건은 거둔다(`_retake`).
     """
     if item is None:
         return True
-    if item.status in ("sent", "sending"):
-        return True
-    if item.status != "pending" or job is None:
-        return item.status == "pending"
-    if job.status in _LIVE_JOBS:
-        return True
-    if job.status == "draft":
-        return scheduled_send.state(job, now) != scheduled_send.STATE_EXPIRED
-    return False
+    if item.status == "canceled":
+        error = item.error or ""
+        return not (error.startswith(EXCLUDED) and RETAKEN not in error)
+    if item.status != "pending":
+        return True               # sent · sending · failed · 모르는 상태
+    if job is None or job.status != "draft":
+        return True               # 큐 · 발송기 손 · 멈춤 · 끝난 회차에 남은 대기
+    return scheduled_send.state(job, now) != scheduled_send.STATE_EXPIRED
 
 
 def sent_refs(db: Session, key: str, test: bool, refs,
@@ -508,10 +528,11 @@ def _retake(db: Session, rec: AutomationSend, run: AutoSendRun, job: SendJob,
     """이미 줄이 있는 대상을 **새 회차로 옮긴다** — 줄 하나 = 대상 하나.
 
     `(자동화, ref, 시험)` 은 유일하다. 줄을 새로 세우지 않고 새 회차 · 새 건을
-    가리키게 고친다. 옛 건이 아직 대기면 `canceled` 로 거둔다 — 사람이 옛 회차를
-    [발송 시작] · [이어 보내기] 해도 같은 대상에게 또 가지 않게. 옛 건이 실패 ·
-    취소로 남아 있어도 [실패 재시도] · [취소분 재발송] 이 그 건을 되살리지 못한다
-    (`screen` — 줄이 가리키지 않는 자동화 건은 다시 안 보낸다).
+    가리키게 고친다. 다시 실리는 옛 건은 **발송기 손에 안 간 것**뿐이다
+    (`still_counts` — 시각을 놓친 대기 · 풀 때 빠진 취소). 옛 건이 대기면
+    `canceled` 로 거두고, 어느 쪽이든 '다시 실림' 표시를 단다 — 사람이 옛 회차를
+    [발송 시작] · [이어 보내기] · [취소분 재발송] 해도 같은 대상에게 또 가지 않게
+    (`screen` 이 그 표시를 본다).
     """
     old = db.get(SendItem, rec.item_id) if rec.item_id else None
     if old is not None and old.id != out.item_id:
@@ -1326,6 +1347,17 @@ def today_items(db: Session, user: User, now: Optional[datetime] = None) -> List
                                     "detail": scheduled_send.sentence(job, now),
                                     "href": f"/jobs/{job.id}",
                                     "count": scheduled_send.pending_count(job)})
+                # **발송기가 실패로 보고한 건** — 자동으로 다시 안 보낸다. 사람이
+                # 확인하고 [실패 재시도] 하도록 여기 세운다(`still_counts`).
+                failed_jobs = [j for j in _run_jobs(db, run)
+                               if any(i.status == "failed" for i in j.items)]
+                if failed_jobs:
+                    failed = sum(1 for j in failed_jobs for i in j.items
+                                 if i.status == "failed")
+                    out.append({"level": "urgent",
+                                "title": f"자동화 · {label}{mode} — 실패 {failed}건",
+                                "detail": FAILED_NOTE,
+                                "href": f"/jobs/{failed_jobs[0].id}", "count": failed})
                 # **뺀 곳** — 세울 때 뺀 것(중복 방지 · 조건)과 풀 때 뺀 것. 보내는
                 # 계정과 관리자 모두에게 — 왜 그 분께 안 갔는지 물을 자리가 여기다.
                 notes_ = run_notes(db, run)
@@ -1442,8 +1474,10 @@ def job_notes(db: Session, job: SendJob, now: Optional[datetime] = None,
     notes_ = run_notes(db, run) if run is not None else {"count": 0, "dup": 0, "lines": []}
     gap = job_delay(db, job)
     kind = automation.BY_KEY.get(key)
+    failed = sum(1 for i in job.items if i.status == "failed")
     return {"label": kind.label if kind else key, "count": notes_["count"],
             "dup": notes_["dup"], "lines": notes_["lines"][:30],
+            "failed": failed, "failed_note": FAILED_NOTE if failed else "",
             "gap": f"{gap[0]}~{gap[1]}초" if gap else "",
             "hold": hold if hold is not None else hold_reason(db, job, now)}
 

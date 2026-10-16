@@ -3,8 +3,9 @@
 1. 자료 전달 7일 뒤(주말이면 다음 평일) 14:00 에 미팅 요청이 보내는 계정 것으로
    예약된다 — 발송 화면의 미팅 요청 탭과 같은 글.
 2. 첫 번째가 실제로 나갔고 답이 없으면 10일 뒤 조금 다른 글로 한 번 더.
-   첫 번째가 끝내 안 나갔으면(시각을 놓침 · 실패) 두 번째 대신 **첫 번째를
+   첫 번째가 발송기 손에 끝내 안 갔으면(시각을 놓침) 두 번째 대신 **첫 번째를
    늦게 한 번** — 그 분이 아무것도 못 받는 일이 없게. 옛 건은 거둔다.
+   첫 번째를 발송기가 **실패로 보고**했으면 둘 다 자동으로는 안 보낸다(사람 몫).
 3. 미팅 기록 · 새 IR 요청 · [답 옴] 이 있으면 멈춘다. 풀리기 직전에도 다시 본다.
 4. 사람이 이미 미팅 요청을 보냈으면 첫 번째는 안 나간다.
 5. 나가기 전날 오늘 할 일에 `내일 미팅 요청 나갈 곳 N` — 담당 팀원에게.
@@ -228,3 +229,23 @@ def test_test_mode_goes_to_the_test_room(db, users, team):
     items = _items(db)
     assert {i.room_name for i in items} == {TEST_ROOM}
     assert all(i.contact_id is None for i in items)
+
+
+def test_a_first_ask_reported_failed_is_left_to_a_person(db, users, team):
+    """첫 번째를 발송기가 실패로 보고했으면 — 이미 나갔을 수 있다. 늦은 첫 번째도
+    두 번째도 자동으로는 안 보낸다(사람이 확인하고 [실패 재시도])."""
+    _turn_on(db)
+    _run(db, FIRST_DAY)
+    first = _items(db)
+    _deliver(db, [i for i in first if i.contact_id == team["a"].id])
+    for item in first:
+        if item.contact_id == team["b"].id:
+            item.status, item.error = "failed", "room_mismatch"
+    db.commit()
+
+    result = _run(db, SECOND_DAY)
+    second = [i for i in _items(db) if i.id not in {x.id for x in first}]
+    assert [i.contact_id for i in second] == [team["a"].id]
+    assert any("실패로 보고" in s for s in result["skipped"])
+    # 그사이 날에도 첫 번째를 다시 안 싣는다.
+    assert _run(db, datetime(2026, 10, 13, 9, 0))["status"] == "empty"

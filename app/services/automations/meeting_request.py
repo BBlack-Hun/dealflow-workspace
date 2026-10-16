@@ -213,9 +213,15 @@ def _sendable(db: Session, contact: Optional[VcContact]) -> str:
 
 
 def _first_state(db: Session, contact_id: int, anchor: str, test: bool) -> tuple:
-    """첫 번째가 어떻게 됐나(이 모드로) — `("sent", 보낸 날)` · `("live", "")`
-    (아직 나가는 중 · 곧 나감) · `("none", "")`(안 나갔다 — 실패 · 빠짐 · 시각을
-    놓침 · 아직 안 실림)."""
+    """첫 번째가 어떻게 됐나(이 모드로).
+
+      · `("sent", 보낸 날)` — 나갔다
+      · `("failed", "")` — **발송기가 실패로 보고했다.** 이미 나갔을 수 있어
+        자동으로는 첫 번째도 두 번째도 다시 안 보낸다(사람이 [실패 재시도])
+      · `("live", "")` — 아직 나가는 중 · 곧 나감
+      · `("held", "")` — 멈춘 채 남았다(꺼서 거둠 · 사람이 [중단] 등) — 사람 몫
+      · `("none", "")` — 발송기 손에 안 갔다(시각을 놓침 · 풀 때 빠짐 · 아직 안 실림)
+    """
     rec = db.execute(
         select(AutomationSend).where(
             AutomationSend.automation == automation.MEETING_REQUEST,
@@ -227,10 +233,15 @@ def _first_state(db: Session, contact_id: int, anchor: str, test: bool) -> tuple
     item = db.get(SendItem, rec.item_id) if rec.item_id else None
     if item is not None and item.status == "sent":
         return "sent", (item.sent_at or "")[:10]
+    if item is not None and item.status == "failed":
+        return "failed", ""
     job = db.get(SendJob, rec.job_id) if rec.job_id else None
-    if runner.still_counts(item, job):
+    if not runner.still_counts(item, job):
+        return "none", ""
+    if (item is not None and item.status in ("pending", "sending") and job is not None
+            and job.status in ("draft", "queued", "running", "paused")):
         return "live", ""
-    return "none", ""
+    return "held", ""
 
 
 def _first_sent(db: Session, contact_id: int, anchor: str, test: bool) -> bool:
@@ -270,12 +281,19 @@ def due_on(db: Session, row: Optional[Automation], day: date,
         why = _sendable(db, contact) or replied_since(db, contact_id, anchor)
         if not why and ask.round == 2:
             # 두 번째는 첫 번째가 **두 번째 날 전에** 실제로 나갔을 때만. 첫 번째가
-            # 끝내 안 나갔으면(실패 · 시각을 놓침 · 빠짐) 두 번째 대신 **첫 번째를
-            # 늦게라도** 한 번 보낸다 — 그 분이 아무것도 못 받는 일이 없게. 첫
-            # 번째가 늦게 나갔으면 두 번째는 보내지 않는다(이틀 연달아 재촉하지 않게).
+            # 발송기 손에 끝내 안 갔으면(시각을 놓침 · 풀 때 빠짐) 두 번째 대신
+            # **첫 번째를 늦게라도** 한 번 보낸다 — 그 분이 아무것도 못 받는 일이
+            # 없게. 첫 번째를 발송기가 **실패로 보고**했으면 둘 다 자동으로는 안
+            # 보낸다(이미 나갔을 수 있다 — 사람이 판단). 첫 번째가 늦게 나갔으면
+            # 두 번째는 보내지 않는다(이틀 연달아 재촉하지 않게).
             state, sent_on = _first_state(db, contact_id, anchor, test)
             if state == "live":
                 why = "첫 번째 미팅 요청이 아직 나가는 중입니다"
+            elif state == "failed":
+                why = ("첫 번째를 발송기가 실패로 보고했습니다 — 자동으로 다시 보내지 "
+                       "않습니다(확인 후 [실패 재시도])")
+            elif state == "held":
+                why = "첫 번째가 멈춘 채 남아 있습니다 — 자동으로 다시 보내지 않습니다"
             elif state == "sent" and sent_on >= ask.due.isoformat():
                 why = "첫 번째를 늦게 보내 두 번째는 보내지 않습니다"
             elif state == "none":

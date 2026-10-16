@@ -199,7 +199,12 @@ def test_a_target_whose_job_never_went_out_is_taken_again(db, users, fake):
     assert len(rows) == 2 and {r.job_id for r in rows} == {new.id}
 
 
-def test_a_failed_target_is_taken_again_but_a_sent_one_never(db, users, fake):
+def test_a_failed_target_is_left_to_a_person_and_a_sent_one_never_repeats(db, users, fake):
+    """발송기가 **실패로 보고한** 대상은 자동으로 다시 안 보낸다 — 카톡 화면
+    자동화는 [Enter] 뒤에 실패를 보고할 수 있어 이미 나갔을 수 있다. 사람이 회차
+    화면에서 확인하고 [실패 재시도] 한다(오늘 할 일 · 회차 화면에 안내)."""
+    from app.services import automation_runner as runner
+
     _turn_on(db, users, test=False)
     _run(db, WED_9AM)
     [job] = _jobs(db)
@@ -208,10 +213,12 @@ def test_a_failed_target_is_taken_again_but_a_sent_one_never(db, users, fake):
     second.status, second.error = "failed", "방을 찾지 못했습니다"
     job.status = "done_with_errors"
     db.commit()
+    assert runner.job_notes(db, job)["failed_note"] == runner.FAILED_NOTE
+    lines = runner.today_items(db, users["u2"], _aware(datetime(2026, 10, 14, 15, 0)))
+    assert any(line["detail"] == runner.FAILED_NOTE for line in lines)
     result = _run(db, THU_9AM)
-    assert result["count"] == 1
-    new = _jobs(db)[-1]
-    assert [i.contact_id for i in new.items] == [fake["contacts"][1].id]
+    assert result["status"] == "empty"
+    assert len(_jobs(db)) == 1
 
 
 def test_test_sends_do_not_block_real_ones(db, users, fake):
