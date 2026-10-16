@@ -11,7 +11,8 @@
   ③ 받는 사람 — 시리즈 A 갈래 · 참여만. 방 없음 · 불참여 · 다른 갈래는 빼고 이유를 말한다
   ④ 기록 — 누구에게 어느 기업이 나갔나(`series_a_shares`). 이미 받은 기업은 그 분
      문구에서 빼고, 다 받은 분은 뺀다. 중단한 회차는 안 센다
-  ⑤ 보이는 곳 — `Series A 이상 딜 소싱` 탭의 `공유한 심사역` · 딜 소싱 줄의
+  ⑤ 보이는 곳 — `Series A 이상 딜 소싱` 탭 줄의 받은 분 수(`data-shared` — 칸은
+     #24 에서 뺐다) · 딜 소싱 줄의
      `Series A 딜 공유 N건` · 딜 소싱 화면의 [Series A 딜 소개]
   ⑥ 문구 — 갈래마다 하나 · 문구 화면 구간 · 심는 기본 글(메일 주소 · 실명 없음)
 
@@ -366,17 +367,21 @@ def test_an_edited_message_records_the_companies_it_still_carries(world, client,
 # ── ⑤ 보이는 곳 ─────────────────────────────────────────────────────────────
 
 def test_the_series_a_tab_counts_who_got_each_company(world, client, db):
+    """받은 분 수는 줄에 그대로 실린다(`data-shared` — [삭제] 확인창이 읽는다).
+
+    표의 `공유한 심사역` 칸은 #24 에서 뺐다(옆 `공유 심사역` 과 같은 뜻으로
+    읽혔다) — 머리글에도 줄에도 그 칸이 없어야 한다(`tests/test_series_a_drop_shared_column.py`).
+    """
     _send(client, _ids(world, "a", "b"), _ids(world, "bio", kind="c"))
     page = client.get("/companies?tab=series-a").text
     head = re.search(r'id="sa-table".*?</thead>', page, re.S).group(0)
     heads = [re.sub(r"<[^>]+>", "", h).strip()
              for h in re.findall(r"<th\b[^>]*>(.*?)</th>", head, re.S)]
-    assert heads[:3] == ["NO", "기업명", "공유한 심사역"], heads
+    assert heads[:3] == ["NO", "기업명", "수신 일자"], heads
+    assert "공유한 심사역" not in heads
     rows = re.findall(r"<tr data-id=.*?</tr>", page, re.S)
     bio = next(r for r in rows if "샘플바이오" in r)
-    cell = re.search(r'<td class="sa-shared"[^>]*title="([^"]*)"[^>]*>(.*?)</td>', bio, re.S)
-    assert "2명" in cell.group(2)
-    assert "가심사(가나벤처스)" in cell.group(1) and "나심사(다라인베스트)" in cell.group(1)
+    assert 'class="sa-shared"' not in bio
     assert 'data-shared="2"' in bio
     food = next(r for r in rows if "샘플푸드" in r)
     assert 'data-shared="0"' in food

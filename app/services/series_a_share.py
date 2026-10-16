@@ -346,7 +346,10 @@ def _live_pairs(db: Session, company_ids: Optional[Iterable[int]] = None,
 
 
 def contacts_by_company(db: Session) -> Dict[int, Set[int]]:
-    """기업 → 그 기업을 받은 심사역들. 고르개의 `이미 받은 분` · 탭의 `공유한 심사역`."""
+    """기업 → 그 기업을 받은 심사역들. 고르개의 `이미 받은 분` · 탭 [삭제] 확인창의 `N명`.
+
+    (탭의 `공유한 심사역` 칸은 #24 에서 뺐다 — 받은 분 수는 이 함수로 그대로 센다.)
+    """
     out: Dict[int, Set[int]] = {}
     for company_id, contact_id in _live_pairs(db):
         out.setdefault(company_id, set()).add(contact_id)
@@ -361,27 +364,6 @@ def companies_by_contact(db: Session,
     out: Dict[int, Set[int]] = {}
     for company_id, contact_id in _live_pairs(db, company_ids, contact_ids):
         out.setdefault(contact_id, set()).add(company_id)
-    return out
-
-
-def shared_people(db: Session) -> Dict[int, List[str]]:
-    """기업 → 받은 심사역 `이름(회사)` — 탭의 `공유한 심사역` 칸 풍선말."""
-    by_company = contacts_by_company(db)
-    ids = {cid for people in by_company.values() for cid in people}
-    if not ids:
-        return {}
-    rows = {r.id: r for r in db.execute(
-        select(SourcingContact).where(SourcingContact.id.in_(ids))).scalars()}
-    out: Dict[int, List[str]] = {}
-    for company_id, people in by_company.items():
-        names = []
-        for cid in people:
-            row = rows.get(cid)
-            if row is None:
-                continue
-            firm = (row.firm or "").strip()
-            names.append(f"{row.name}({firm})" if firm else row.name)
-        out[company_id] = sorted(names)
     return out
 
 
