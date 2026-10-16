@@ -685,7 +685,8 @@ def test_화면에_찍히는_수가_서로_어긋나지_않는다(logged_in, db,
     assert held_said - off_said == listed_said
 
     # 투자사 관리 현황의 `전체` 탭에 적힌 수와 같아야 한다(맡고 있는 사람 전체).
-    total = re.search(r'href="/contacts\?sheet=all"[^>]*>\s*전체 <span>(\d+)</span>',
+    # 팀원 화면은 `내 명단 N명 · 팀 전체 M명` 이다(#29) — 견주는 것은 내 명단 N.
+    total = re.search(r'href="/contacts\?sheet=all"[^>]*>\s*전체 <span[^>]*>내 명단 (\d+)명',
                       contacts)
     assert total, "투자사 관리 현황의 전체 수를 못 찾았다"
     assert int(total.group(1)) == held_said == len(contact_rows(db, users["u1"]))
