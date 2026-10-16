@@ -156,13 +156,14 @@
          다시 적는다(아래 `inline-saved`). #}
       <tr data-id="{{ r.id }}"
           data-search="{{ (r.name ~ ' ' ~ (r.firm or '') ~ ' ' ~ (r.memo or '') ~ ' ' ~ (r.title or ''))|lower }}"
-          {% for field, label, width, filterable in columns if filterable %}data-f-{{ field }}="{{ (assignees.get(r.id) if field == 'assignee_name' else r|attr(field)) or '' }}" {% endfor %}>
+          {% for field, label, width, filterable in columns if filterable %}data-f-{{ field }}="{{ (assignees.get(r.id) if field == 'assignee_name' else requested[r.id] if field == 'requested_at' else r|attr(field)) or '' }}" {% endfor %}>
         {% if picking %}
         <td class="pick-col"><input type="checkbox" class="js-sourcing-pick" value="{{ r.id }}"
             aria-label="{{ r.name }} 고르기"></td>
         {% endif %}
         <td class="rowno muted"></td>
-        <td class="cell" data-field="requested_at">{{ r.requested_at or '' }}</td>
+        {# 날짜만 — 시트가 붙여 온 `00:00:00` 은 뗀다(`requested` — 저장값은 그대로). #}
+        <td class="cell" data-field="requested_at">{{ requested[r.id] }}</td>
         {# 넣는 길만 있고 빼는 길이 없었다. 지우는 단추는 **이름 바로 밑**에
            둔다 — 누구를 지우는지가 손가락 위에 있어야 한 줄 밀려 누르는 일이
            없다. 이 화면에는 투자사 관리 현황·IR 기업현황 같은 수정 패널이
@@ -218,6 +219,14 @@
             {% if vc.diff %}<span class="muted" data-testid="sourcing-vc-diff"
                   title="이을 때 이미 달랐던 칸입니다 — 어느 쪽에서든 한 번 고치면 같아집니다">다른 칸: {{ vc.diff|join(' · ') }}</span>{% endif %}
           </div>
+          {# [연결 풀기] — 관리자 · 이 줄의 담당만(`routers/sourcing._may_unlink`). 두 줄 다
+             지우지 않는다. 누르는 일은 `sourcing_vc_link.js` 가 한다. #}
+          {% if vc.can_unlink %}
+          <div class="cell-sub" data-testid="sourcing-vc-unlink">
+            <button type="button" class="linkbtn danger js-vc-unlink" data-sheet="{{ vc.sheet }}"
+                    title="잘못 이은 줄이면 풉니다 — 두 줄 다 지우지 않습니다">연결 풀기</button>
+          </div>
+          {% endif %}
           {% endif %}
           {# **저절로 못 이은 줄 — [이 분으로 확정]**(#28). 이름 · 번호가 둘 다 같은
              투자사 줄이 딱 하나일 때만 저절로 잇는다. 이름만 · 번호만 같거나 번호가

@@ -10,8 +10,13 @@
      투자사로 세지 않는 명단의 줄은 후보가 아니다.
   ③ [이 분으로 확정](`POST /api/sourcing/{id}/link`) — 서버가 후보를 다시 세어 그
      안에 있을 때만 잇는다. 시리즈 A 갈래 · 안 이어진 줄만. 수정 로그에 남는다.
-  ④ 투자사 관리 현황에 `딜 소싱 참여 요청일` — 이어진 줄의 `참여 요청일` 을 적힌
-     그대로, 읽기만. `Series A 딜 소싱` 바로 뒤.
+  ④ 투자사 관리 현황에 `참여 요청일` — 이어진 줄의 `참여 요청일` 을 날짜만(시트가
+     붙여 온 `00:00:00` 같은 시각은 뗀다), 읽기만. `Series A 딜 소싱` 바로 뒤.
+     엑셀에도 두 칸이 같이 나간다.
+  ⑤ [연결 풀기](`POST /api/sourcing/{id}/unlink`) — 관리자 · 이 줄의 담당만. 두 줄
+     다 지우지 않고 잇기만 푼다. 수정 로그에 남는다(사용자 결정 2026-10-17).
+  ⑥ 시트를 다시 가져와도(`scripts/import_sourcing.py`) **사람이 확정한 잇기**는
+     이름 · 번호가 둘 다 맞지 않아도 그대로 되살린다 — 다시 후보로 뜨지 않는다.
 
 이름 · 회사 · 번호는 전부 가상값이다(공개 저장소).
 """
@@ -26,7 +31,7 @@ from pathlib import Path
 import pytest
 
 from tests.test_sourcing_vc_sync import (  # noqa: F401 - 픽스처를 함께 쓴다
-    MNA, SHEET, SYNC, board, column, login, mark, sc, sync_rows, vc)
+    MNA, SHEET, SYNC, admin, board, column, login, mark, sc, sync_rows, vc)
 
 OTHER_SHEET = "윤서아 투자사"
 
@@ -285,7 +290,7 @@ def test_confirm_is_open_to_anyone_logged_in_like_editing_the_table(board, db, u
     assert sync_rows(db)[0].vc_contact_id == contact.id
 
 
-# ── ④ 투자사 관리 현황의 `딜 소싱 참여 요청일` ──────────────────────────────
+# ── ④ 투자사 관리 현황의 `참여 요청일` ──────────────────────────────────────
 
 def _requested(client, contact_id):
     rows = client.get("/api/contacts").json()["contacts"]
@@ -301,14 +306,36 @@ def test_the_requested_date_shows_only_for_linked_rows_as_written(board, db, use
     sc(db, name="박지훈", phone="010-3333-4444", bucket=MNA,
        vc_contact_id=other_bucket.id, requested_at="2026-01-01")
 
-    assert _requested(board, linked.id) == "2026/05/21"      # 적힌 글자 그대로
+    assert _requested(board, linked.id) == "2026/05/21"      # 적힌 표기 그대로
     assert _requested(board, alone.id) == ""
     assert _requested(board, other_bucket.id) == ""
 
     body = board.get(f"/contacts?sheet={SHEET}").text
-    assert 'data-filters="sourcing_date:딜 소싱 참여 요청일"' in body
+    assert 'data-filters="sourcing_date:참여 요청일"' in body
     assert 'data-f-sourcing_date="2026/05/21"' in body
     assert '<td class="sourcing-requested" title="2026/05/21">2026/05/21</td>' in body
+
+
+def test_the_requested_date_drops_the_time_the_sheet_carried(board, db, users):
+    """시트 가져오기가 날짜 칸을 `2026-08-11 00:00:00` 처럼 시각까지 적어 두었다 —
+    두 화면 다 날짜만 보인다(저장된 글자는 그대로). 날짜가 아닌 글은 그대로."""
+    from app.services import sourcing_sync
+
+    assert sourcing_sync.requested_label("2026-08-11 00:00:00") == "2026-08-11"
+    assert sourcing_sync.requested_label(" 2026/5/2 14:30 ") == "2026/5/2"
+    assert sourcing_sync.requested_label("2026/05/21") == "2026/05/21"
+    assert sourcing_sync.requested_label("5월 초") == "5월 초"
+    assert sourcing_sync.requested_label(None) == ""
+
+    contact = vc(db, users)
+    row = sc(db, vc_contact_id=contact.id, requested_at="2026-08-11 00:00:00")
+    assert _requested(board, contact.id) == "2026-08-11"
+    page = board.get(f"/sourcing?tab={SYNC}").text
+    assert '<td class="cell" data-field="requested_at">2026-08-11</td>' in page
+    assert 'data-f-requested_at="2026-08-11"' in page
+    assert "00:00:00" not in page
+    assert sync_rows(db)[0].requested_at == "2026-08-11 00:00:00"   # 고쳐 쓰지 않는다
+    assert row.id
 
 
 def test_the_requested_date_sits_right_after_series_a_and_is_read_only(board, db, users):
@@ -322,7 +349,7 @@ def test_the_requested_date_sits_right_after_series_a_and_is_read_only(board, db
     labels = [re.sub(r"<[^>]+>", "", x).strip()
               for x in re.findall(r"<th[\s>].*?</th>", head, re.S)]
     at = labels.index("딜소싱 참여 투자사")
-    assert labels[at + 1:at + 3] == ["Series A 딜 소싱", "딜 소싱 참여 요청일"], labels
+    assert labels[at + 1:at + 3] == ["Series A 딜 소싱", "참여 요청일"], labels
 
     rows = body[body.index("<tbody>"):body.index("</tbody>")]
     first_row = rows[:rows.index("</tr>")]
@@ -357,6 +384,182 @@ def test_O_on_the_investor_side_answers_with_the_new_date(board, db, users):
     assert r.status_code == 200, r.text
     assert r.json()["sourcing_requested_at"] == clock.today().isoformat()
     assert _requested(board, contact.id) == clock.today().isoformat()
+
+
+def _xlsx_rows(content):
+    import io
+
+    import openpyxl
+
+    ws = openpyxl.load_workbook(io.BytesIO(content)).active
+    rows = [[c.value for c in r] for r in ws.iter_rows()]
+    head = next(i for i, r in enumerate(rows) if "이름" in r)
+    return rows[head], rows[head + 1:]
+
+
+def test_the_excel_carries_series_a_and_the_requested_date(board, db, users):
+    """엑셀(`전체` · 명단별)에도 `Series A 딜 소싱` · `참여 요청일` 두 칸이 화면과
+    같은 값으로 나란히 나간다."""
+    linked = vc(db, users, name="홍길동")
+    vc(db, users, name="김서연", phone="010-2222-3333")
+    sc(db, vc_contact_id=linked.id, requested_at="2026-07-01 00:00:00")
+
+    for url in ("/api/export/contacts.xlsx", f"/api/export/contacts.xlsx?sheet={SHEET}"):
+        r = board.get(url)
+        assert r.status_code == 200, (url, r.text[:200])
+        head, rows = _xlsx_rows(r.content)
+        at = head.index("Series A 딜 소싱")
+        assert head[at + 1] == "참여 요청일", (url, head)
+        got = {row[head.index("이름")]: (row[at] or "", row[at + 1] or "") for row in rows}
+        assert got == {"홍길동": ("O", "2026-07-01"), "김서연": ("", "")}, (url, got)
+
+
+# ── ⑤ [연결 풀기] ───────────────────────────────────────────────────────────
+
+def unlink(client, row_id):
+    return client.post(f"/api/sourcing/{row_id}/unlink")
+
+
+def test_unlink_frees_the_link_and_keeps_both_rows(board, db, users, admin):
+    """관리자가 푼다 — 두 줄 다 남고, 투자사 쪽 칸이 비고, 그 줄은 다시 후보로 뜬다.
+    수정 로그에 `vc_contact_id: 번호 → 빈칸` 으로 남는다."""
+    from app.models import EditLog, SourcingContact, VcContact
+
+    contact = vc(db, users, name="김서연")          # 번호만 같다 — 후보
+    row = sc(db)
+    rid, cid = row.id, contact.id
+    assert confirm(board, rid, cid).status_code == 200
+    assert column(board, cid) == "O"
+
+    login(board, admin.phone)
+    r = unlink(board, rid)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert "vc_link" not in body
+    assert [c["id"] for c in body["vc_picks"]] == [cid]       # 다시 후보로
+
+    db.expire_all()
+    assert db.get(SourcingContact, rid).vc_contact_id is None
+    assert db.get(VcContact, cid) is not None                  # 지우지 않는다
+    login(board, "01000000001")                                 # 그 투자사 줄의 담당
+    assert column(board, cid) == ""
+    logs = db.query(EditLog).filter_by(table_name="sourcing_contacts", row_id=rid,
+                                       action="update").all()
+    changes = [c for log in logs for c in json.loads(log.changes_json)]
+    assert {"field": "vc_contact_id", "before": cid, "after": None} in changes
+
+
+def test_unlink_is_for_the_admin_and_the_owner_only(board, db, users):
+    """누가 푸나 — 관리자 · 딜 소싱 `담당자` 칸의 지금 담당 · 이어진 투자사 줄의
+    담당 팀원. 그 밖의 팀원에게는 단추가 안 서고, 보내도 막힌다(403)."""
+    contact = vc(db, users, name="김서연")          # u1(강민준) 의 투자사 줄
+    row = sc(db, vc_contact_id=contact.id, assignee_name="윤서아")
+    rid = row.id
+
+    login(board, "01000000002")                    # u2 — 딜 소싱 담당
+    page = board.get(f"/sourcing?tab={SYNC}").text
+    assert "js-vc-unlink" in page
+    assert unlink(board, rid).status_code == 200
+    assert sync_rows(db)[0].vc_contact_id is None
+
+    sync_rows(db)[0].vc_contact_id = contact.id
+    db.commit()
+    login(board, "01000000001")                    # u1 — 이어진 투자사 줄의 담당
+    assert unlink(board, rid).status_code == 200
+
+    sync_rows(db)[0].vc_contact_id = contact.id
+    sync_rows(db)[0].assignee_name = "강민준 > 10/13 윤서아"     # 지금 담당은 윤서아
+    db.commit()
+    other = vc(db, users, name="박지훈", phone="010-4444-5555", who="u2")
+    sync_rows(db)[0].vc_contact_id = other.id     # u2 의 투자사 줄과 이어졌다
+    db.commit()
+    page = board.get(f"/sourcing?tab={SYNC}").text   # u1 — 담당도 주인도 아니다
+    assert "js-vc-unlink" not in page
+    r = unlink(board, rid)
+    assert r.status_code == 403
+    assert "관리자" in r.json()["detail"]
+    assert sync_rows(db)[0].vc_contact_id == other.id
+
+
+def test_unlink_refuses_rows_that_are_not_linked(board, db, users, admin):
+    login(board, admin.phone)
+    row = sc(db)
+    r = unlink(board, row.id)
+    assert r.status_code == 400
+    assert "이어진" in r.json()["detail"]
+    assert unlink(board, 999999).status_code == 404
+
+
+# ── ⑥ 시트를 다시 가져와도 사람이 확정한 잇기는 남는다 ──────────────────────
+
+def _reimport(tmp_path, monkeypatch, rows):
+    """`scripts/import_sourcing.py --apply` 를 시리즈 A 갈래 한 장짜리 파일로 돌린다."""
+    import sys
+
+    import openpyxl
+
+    from scripts import import_sourcing
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = SYNC
+    ws.append(["참여 요청일", "이름", "휴대폰", "회사"])
+    for row in rows:
+        ws.append(list(row))
+    path = tmp_path / "sourcing.xlsx"
+    wb.save(path)
+    monkeypatch.setattr(sys, "argv", ["import_sourcing.py", str(path), "--apply"])
+    import_sourcing.main()
+
+
+def test_reimport_keeps_links_a_person_confirmed(board, db, users, tmp_path, monkeypatch):
+    """확정한 줄은 이름 · 번호가 둘 다 맞지 않아도 다시 이어진다 — 후보로 다시 뜨지
+    않는다. 저절로 이어지는 줄(이름 + 번호)은 지금 규칙으로 다시 잇고, 번호만으로
+    이어져 있던 옛 줄은 지금 규칙에 안 맞으면 후보로 뜬다(사람이 확정한 적이 없다)."""
+    confirmed = vc(db, users, name="김서연", phone="010-1234-5678")   # 번호만 같다
+    auto = vc(db, users, name="박지훈", phone="010-3333-4444")
+    old = vc(db, users, name="최옛날", phone="010-5555-6666")
+    row = sc(db)                                                        # 홍길동
+    assert confirm(board, row.id, confirmed.id).status_code == 200
+    assert board.post(f"/api/sourcing?bucket={SYNC}",                  # 저절로 이어진다
+                      json={"name": "박지훈", "phone": "010-3333-4444"}).status_code == 200
+    sc(db, name="최옛줄", phone="010-5555-6666", position=3, vc_contact_id=old.id)
+    linked = {r.name: r.vc_contact_id for r in sync_rows(db)}
+    assert linked == {"홍길동": confirmed.id, "박지훈": auto.id, "최옛줄": old.id}
+
+    _reimport(tmp_path, monkeypatch, [
+        ("2026/05/21", "홍길동", "010-1234-5678", "가나다벤처스"),
+        ("2026/05/22", "박지훈", "010-3333-4444", "가나다벤처스"),
+        ("2026/05/23", "최옛줄", "010-5555-6666", "가나다벤처스")])
+
+    rows = {r.name: r for r in sync_rows(db)}
+    assert rows["홍길동"].vc_contact_id == confirmed.id
+    assert rows["박지훈"].vc_contact_id == auto.id
+    assert rows["최옛줄"].vc_contact_id is None
+    assert picks(db, rows["홍길동"]) is None                  # 후보 자리 없음 — 이어졌다
+    assert [c["id"] for c in picks(db, rows["최옛줄"])] == [old.id]
+    assert column(board, confirmed.id) == "O"
+
+    # 되살린 잇기도 사람이 확정한 것이다 — 한 번 더 가져와도 남는다.
+    _reimport(tmp_path, monkeypatch, [("2026/05/21", "홍길동", "010-1234-5678", "")])
+    [again] = sync_rows(db)
+    assert again.vc_contact_id == confirmed.id
+
+
+def test_reimport_restores_only_to_the_same_person(board, db, users, tmp_path, monkeypatch):
+    """확정해 둔 분이 시트에서 빠졌으면 잇지 않는다. 같은 이름이 둘이면 번호로 고른다."""
+    confirmed = vc(db, users, name="김서연", phone="010-1234-5678")
+    row = sc(db)                                                        # 홍길동 010-1234-5678
+    assert confirm(board, row.id, confirmed.id).status_code == 200
+
+    _reimport(tmp_path, monkeypatch, [("", "홍길동", "010-9999-0000", ""),
+                                      ("", "홍길동", "010-1234-5678", "")])
+    got = {r.phone: r.vc_contact_id for r in sync_rows(db)}
+    assert got == {"010-9999-0000": None, "010-1234-5678": confirmed.id}
+
+    _reimport(tmp_path, monkeypatch, [("", "박지훈", "010-7777-8888", "")])
+    [left] = sync_rows(db)
+    assert left.vc_contact_id is None
 
 
 # ── 화면 — 후보 · 확정 · 읽기 칸 ────────────────────────────────────────────

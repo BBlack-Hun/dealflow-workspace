@@ -135,11 +135,13 @@ def test_unreadable_and_empty_go_to_the_bottom(seeded):
 
 def test_the_written_value_is_left_alone(seeded, db):
     """표기를 통일하려고 저장된 글자를 바꾸면 사람이 적어 둔 원문이 사라진다 —
-    읽을 때만 날짜로 해석한다."""
+    읽을 때만 날짜로 해석한다. 화면은 적힌 표기 그대로이되, 시트 가져오기가 붙여 온
+    시각(`00:00:00`)만 떼고 보인다(`sourcing_sync.requested_label`)."""
     from app.models import SourcingContact
 
     shown = dates_on(seeded.get("/sourcing", params={"tab": BUCKET}).text)
-    assert "2026/05/21" in shown and "2026-08-11 00:00:00" in shown
+    assert "2026/05/21" in shown and "2026-08-11" in shown
+    assert "2026-08-11 00:00:00" not in shown
 
     stored = {r.name: r.requested_at for r in db.query(SourcingContact).all()}
     assert stored == {name: when for _pos, name, when in ROWS} | {

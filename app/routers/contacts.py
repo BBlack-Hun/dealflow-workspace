@@ -183,7 +183,7 @@ def contact_rows(db: Session, user: User, team_wide: bool = False,
     # 세는 자리는 `services/last_activity` 한 곳이고, 엑셀도 여기서 나온 줄을
     # 그대로 쓴다(`routers/data_io._contact_row`).
     last_acts = last_activity.of_many(db, [c.id for c in contacts])
-    # `Series A 딜 소싱` · `딜 소싱 참여 요청일` 두 칸 — **저장된 값이 아니라
+    # `Series A 딜 소싱` · `참여 요청일` 두 칸 — **저장된 값이 아니라
     # 이어진 소싱 줄**에서 읽는다(`services/sourcing_sync.py`). 딜 소싱 화면에서
     # 참여를 바꾸면 여기도 그대로다. 줄마다 묻지 않고 한 번에(두 칸이 질의 하나).
     sourcing_linked = sourcing_sync.linked_rows(db, ids)
@@ -277,7 +277,7 @@ def contact_rows(db: Session, user: User, team_wide: bool = False,
             "kakao_joined": c.kakao_joined or "",
             # O(참여) · X(불참여) · 빈칸(딜 소싱 시리즈 A 갈래에 없음).
             "sourcing_join": sourcing_sync.mark_of(sourcing_linked.get(c.id)),
-            # 이어진 딜 소싱 줄의 `참여 요청일` — 적힌 글자 그대로, 읽기만(#28).
+            # 이어진 딜 소싱 줄의 `참여 요청일` — 날짜만(시각은 뗀다), 읽기만(#28).
             "sourcing_requested_at": sourcing_sync.requested_of(sourcing_linked.get(c.id)),
             # 이 명단에만 있는 칸들(스타트업 명단의 `사업분야 대분류` 등)과
             # 달마다 늘어나는 칸의 값. 화면은 배치가 정해 준 키로 꺼내 쓴다.
@@ -1254,7 +1254,7 @@ def update_contact(
            "updated_at": stamp_text(contact.updated_at),
            # 표 칸은 **서버가 읽은 값**으로 다시 그린다(`o` → `O`) — 화면이
            # 적힌 글자를 그대로 두면 필터와 칸이 다른 말을 한다(`contacts.js`).
-           # O 로 새 줄이 생기거나 이어지면 `딜 소싱 참여 요청일` 도 함께 바뀐다.
+           # O 로 새 줄이 생기거나 이어지면 `참여 요청일` 도 함께 바뀐다.
            "sourcing_join": sourcing_sync.mark_of(linked),
            "sourcing_requested_at": sourcing_sync.requested_of(linked)}
     if note:

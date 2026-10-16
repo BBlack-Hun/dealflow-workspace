@@ -1409,6 +1409,13 @@ class SourcingContact(TimestampMixin, Base):
     # `딜 받음` 이력이 이 줄에 달려 있다.
     vc_contact_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("vc_contacts.id"), nullable=True)
+    #: 위 잇기를 **사람이 [이 분으로 확정]으로** 정했나(1) · 앱이 저절로 이었나(0).
+    #: 시트를 다시 가져오면(`scripts/import_sourcing.py`) 갈래를 통째로 갈아 끼워
+    #: 잇기가 사라진다 — 저절로 이은 줄은 같은 규칙으로 다시 잇지만, 사람이 확정한
+    #: 줄은 이름 · 번호가 둘 다 맞지 않아 그 규칙으로는 못 잇는다. 그 줄만 이 표시로
+    #: 기억해 되살린다(`sourcing_sync.keep_confirmed`). 잇기가 없으면 뜻이 없다 —
+    #: 이을 때마다 다시 적는다(`sourcing_sync.link`).
+    vc_link_confirmed: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     #: `참여` | `불참여`. 불참여인 분은 딜 소싱 제안(처음 안내 · 월간 리마인드)
     #: 대상에서 빠진다. **줄을 지우지 않는다** — 다시 참여하면 그 이력 그대로 돌아온다.
     participation: Mapped[str] = mapped_column(String, default="참여",

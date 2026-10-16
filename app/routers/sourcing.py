@@ -256,7 +256,11 @@ def sourcing_page(request: Request, db: Session = Depends(get_db),
         # 투자사 관리 현황의 줄과 **이어진** 줄 — `🔗 투자사 관리 현황: ○○ 명단`.
         # 시리즈 A 갈래만 이어진다(`sourcing_sync.SYNC_BUCKET`).
         # 풍선말(어느 칸이 같이 바뀌는지)도 여기 실려 온다(`badges` 의 `title`).
-        "vc_links": sourcing_sync.badges(db, rows),
+        # [연결 풀기]를 누를 수 있는지도(`can_unlink` — `_may_unlink`).
+        "vc_links": _badges(db, rows, user),
+        # `참여 요청일` 칸 · 거를 값 — 날짜 뒤에 붙은 시각을 뗀다(저장값은 그대로,
+        # `sourcing_sync.requested_label` — 투자사 관리 현황의 같은 칸도 이것이다).
+        "requested": {r.id: sourcing_sync.requested_label(r.requested_at) for r in rows},
         # 저절로 못 이은 시리즈 A 줄의 **후보** — [이 분으로 확정](#28).
         # 이름 · 번호가 둘 다 같아야 저절로 잇고, 나머지는 사람이 고른다.
         "vc_picks": sourcing_sync.link_candidates(db, rows),
@@ -442,19 +446,37 @@ def update_row(row_id: int, body: SourcingIn, db: Session = Depends(get_db),
     if relink and sourcing_sync.is_synced(row):
         # 이름 · 번호가 바뀌면 후보도 바뀐다 — 이어졌으면 연결 표시, 아니면 새
         # 후보로 그 자리를 다시 그린다(`sourcing_vc_link.js`).
-        out.update(_vc_view(db, row))
+        out.update(_vc_view(db, row, user))
     return out
 
 
 # ── 투자사 관리 현황과 사람이 확정해 잇기 (#28) ─────────────────────────────
 
-def _vc_view(db: Session, row: SourcingContact) -> dict:
+def _may_unlink(user: User, row: SourcingContact, owner_id: Optional[int]) -> bool:
+    """[연결 풀기]를 누를 수 있나 — 관리자 · 이 줄의 담당(`담당자` 칸의 지금 담당,
+    `assignee_of`) · 이어진 투자사 줄의 담당 팀원(사용자 결정 2026-10-17). 잇기
+    ([이 분으로 확정])는 표를 고치는 누구나 하지만, 푸는 것은 남이 확정해 둔 것을
+    거두는 일이라 좁힌다."""
+    name = (user.name or "").strip()
+    return user.role == "admin" or owner_id == user.id or (bool(name) and assignee_of(row) == name)
+
+
+def _badges(db: Session, rows: List[SourcingContact], user: User) -> dict:
+    """연결 표시(`sourcing_sync.badges`)에 [연결 풀기]를 누를 수 있는지를 얹는다."""
+    out = sourcing_sync.badges(db, rows)
+    for row in rows:
+        if row.id in out:
+            out[row.id]["can_unlink"] = _may_unlink(user, row, out[row.id]["owner_id"])
+    return out
+
+
+def _vc_view(db: Session, row: SourcingContact, user: User) -> dict:
     """줄 이름 아래 투자사 관리 현황 자리 — 화면(`sourcing_vc_link.js`)이 그린다.
 
     이어졌으면 연결 표시(`vc_link` — 서버가 그리는 것과 같은 `badges` 값)와 이 줄의
     같은 칸 값(`fields` — 이으면서 빈 칸이 채워졌을 수 있다), 아니면 후보(`vc_picks`).
     """
-    badge = sourcing_sync.badges(db, [row]).get(row.id)
+    badge = _badges(db, [row], user).get(row.id)
     if badge is None:
         return {"vc_picks": sourcing_sync.link_candidates(db, [row]).get(row.id, [])}
     return {"vc_link": badge,
@@ -490,7 +512,30 @@ def confirm_vc_link(row_id: int, body: LinkIn, db: Session = Depends(get_db),
         db.rollback()
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     db.commit()
-    return {"id": row.id, **_vc_view(db, row)}
+    return {"id": row.id, **_vc_view(db, row, user)}
+
+
+@router.post("/api/sourcing/{row_id}/unlink")
+def unlink_vc(row_id: int, db: Session = Depends(get_db),
+              user: User = Depends(get_current_user)):
+    """[연결 풀기] — 잘못 이은 투자사 관리 현황 줄과의 잇기를 푼다(사용자 결정
+    2026-10-17). **두 줄 다 지우지 않는다**(`sourcing_sync.unlink`) — 그쪽
+    `Series A 딜 소싱` 칸이 비고, 이 줄은 다시 후보로 뜬다. 관리자 · 이 줄의 담당만
+    (`_may_unlink`). 푸는 것도 `vc_contact_id` 라 수정 로그에 남는다."""
+    row = db.get(SourcingContact, row_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="찾을 수 없습니다")
+    badge = _badges(db, [row], user).get(row.id)
+    if badge is None:
+        raise HTTPException(status_code=400,
+                            detail="투자사 관리 현황과 이어진 줄이 아닙니다 — 새로고침해 보세요.")
+    if not badge["can_unlink"]:
+        raise HTTPException(status_code=403,
+                            detail="연결은 관리자나 이 줄의 담당(딜 소싱 담당자 · 투자사 줄 담당)만 "
+                                   "풀 수 있습니다.")
+    sourcing_sync.unlink(row)
+    db.commit()
+    return {"id": row.id, **_vc_view(db, row, user)}
 
 
 @router.delete("/api/sourcing/{row_id}")

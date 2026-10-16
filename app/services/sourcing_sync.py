@@ -56,8 +56,13 @@
 있을 때만 잇는다(화면이 보낸 번호를 그대로 믿지 않는다). 이을 때의 규칙은 저절로
 이을 때와 같다(`link` — 소싱 줄의 빈 칸만 채운다).
 
-이미 이어 둔 줄은 **풀지 않는다** — 번호로만 이어진 옛 줄(이주 `0093` · #28 전의
-`auto_link`)도 그대로다. 규칙이 바뀐 것은 앞으로 저절로 잇는 일뿐이다.
+이미 이어 둔 줄은 **저절로 풀지 않는다** — 번호로만 이어진 옛 줄(이주 `0093` · #28
+전의 `auto_link`)도 그대로다. 규칙이 바뀐 것은 앞으로 저절로 잇는 일뿐이다. 잘못
+이은 줄은 사람이 [연결 풀기]로 푼다(`unlink` — 관리자 · 그 줄의 담당, 두 줄 다
+지우지 않는다).
+
+사람이 확정한 잇기는 표시해 둔다(`vc_link_confirmed`) — 시트를 다시 가져와 갈래를
+갈아 끼워도 그 잇기는 되살린다(`confirmed_links` · `restore_confirmed`).
 
 ## 이어진 두 줄의 같은 칸 — **고치면 따라 고친다** (`before_flush`)
 
@@ -257,14 +262,24 @@ def linked_row(db: Session, contact: VcContact) -> Optional[SourcingContact]:
     return linked_rows(db, [contact.id]).get(contact.id)
 
 
-def requested_of(row: Optional[SourcingContact]) -> str:
-    """이어진 소싱 줄 → 투자사 관리 현황의 `딜 소싱 참여 요청일` 칸 값.
+#: 날짜 뒤에 붙은 시각 — 시트 가져오기가 날짜 칸을 `2026-08-11 00:00:00` 으로 적었다.
+_TIME_TAIL = re.compile(r"^(\d{4}[-/.]\d{1,2}[-/.]\d{1,2})\s+\d{1,2}:\d{2}(:\d{2})?$")
 
-    **적힌 글자 그대로**다 — 딜 소싱 화면도 그렇게 보여 준다(`routers/sourcing.
-    requested_on` 머리 주석: 표기가 섞여 있지만 원문을 고치지 않는다). 이어진
-    줄이 없으면 빈칸. 이 칸도 `Series A 딜 소싱` 처럼 **저장된 값이 아니다.**
+
+def requested_label(value: Optional[str]) -> str:
+    """`참여 요청일` 을 화면 · 엑셀에 — 적힌 표기(`2026/05/21` · `2026-07-01`)는 그대로
+    두고 **날짜 뒤의 시각만** 뗀다. 저장된 글자는 고치지 않는다(`routers/sourcing.
+    requested_on` 머리 주석). 딜 소싱 표와 투자사 관리 현황이 이 한 곳을 쓴다."""
+    text = (value or "").strip()
+    found = _TIME_TAIL.match(text)
+    return found.group(1) if found else text
+
+
+def requested_of(row: Optional[SourcingContact]) -> str:
+    """이어진 소싱 줄 → 투자사 관리 현황의 `참여 요청일` 칸 값(`requested_label`).
+    이어진 줄이 없으면 빈칸. 이 칸도 `Series A 딜 소싱` 처럼 **저장된 값이 아니다.**
     """
-    return "" if row is None else (row.requested_at or "")
+    return "" if row is None else requested_label(row.requested_at)
 
 
 def _sync_rows(db: Session) -> List[SourcingContact]:
@@ -352,14 +367,17 @@ def other_buckets(db: Session, contact: VcContact) -> List[str]:
 
 # ── 잇기 · 만들기 ───────────────────────────────────────────────────────────
 
-def link(row: SourcingContact, contact: VcContact) -> List[str]:
+def link(row: SourcingContact, contact: VcContact, confirmed: bool = False) -> List[str]:
     """두 줄을 잇는다. 소싱 줄의 **빈 칸만** 투자사 줄 값으로 채운다.
 
     이미 적힌 값은 덮지 않는다 — 둘 다 사람이 적은 값이라 어느 쪽이 맞는지
     모른다(모듈 머리말). 투자사 줄은 **건드리지 않는다**: 잇는 일은 소싱 줄
-    한 줄에만 적힌다. 돌려주는 것은 채운 칸 이름이다.
+    한 줄에만 적힌다. 돌려주는 것은 채운 칸 이름이다. `confirmed` 는 사람이
+    [이 분으로 확정]으로 정했는지 — 시트를 다시 가져올 때 되살릴 잇기다
+    (`restore_confirmed`). 이을 때마다 다시 적는다.
     """
     row.vc_contact_id = contact.id
+    row.vc_link_confirmed = 1 if confirmed else 0
     filled = []
     for field in SHARED_FIELDS:
         theirs = _text(getattr(contact, field, None))
@@ -568,7 +586,45 @@ def confirm_link(db: Session, row: SourcingContact, contact_id: Optional[int]) -
         raise SyncError(
             "이 줄의 후보가 아닙니다 — 이름이나 번호가 같고 아직 다른 딜 소싱 줄과 "
             "이어지지 않은 투자사 줄만 고를 수 있습니다. 새로고침해 후보를 다시 보세요.")
-    return link(row, contact)
+    return link(row, contact, confirmed=True)
+
+
+def unlink(row: SourcingContact) -> None:
+    """[연결 풀기] — 잘못 이은 잇기를 푼다. **두 줄 다 지우지 않는다** — 소싱 줄의
+    `vc_contact_id` 만 비운다(투자사 줄을 지울 때의 `detach` 와 같은 끝). 그쪽
+    `Series A 딜 소싱` 칸이 비고, 같은 칸을 따라 고치는 것도 멈춘다. 그 줄은 다시
+    후보로 뜬다. `db.commit()` 은 부르는 쪽이 한다."""
+    row.vc_contact_id = None
+    row.vc_link_confirmed = 0
+
+
+def confirmed_links(rows: Iterable[SourcingContact]) -> List[tuple]:
+    """사람이 확정한 잇기 — 시트를 다시 가져오기 **전에** 적어 둔다.
+    `(이름 열쇠, 번호 숫자, 투자사 줄 번호)` — 되살리는 것은 `restore_confirmed`."""
+    return [(*link_key(r), r.vc_contact_id) for r in rows
+            if r.vc_contact_id and r.vc_link_confirmed and is_synced(r)]
+
+
+def restore_confirmed(db: Session, rows: List[SourcingContact], kept: List[tuple]) -> int:
+    """다시 가져온 줄에 사람이 확정해 둔 잇기를 되살린다(사용자 결정 2026-10-17) —
+    이름 · 번호가 둘 다 안 맞아도(그래서 사람이 확정했다). 다시 후보로 띄우지 않는다.
+
+    같은 분은 이름(`_key`)으로 찾고, 같은 이름이 여럿이면 번호까지 같은 줄이다. 그분이
+    시트에서 빠졌거나, 투자사 줄이 없어졌거나, 그 줄이 이미 다른 소싱 줄과 이어졌으면
+    잇지 않는다. 저절로 잇기(`auto_link`)보다 **먼저** 부른다 — 그래야 확정해 둔 투자사
+    줄을 다른 줄이 먼저 가져가지 않는다. 돌려주는 것은 되살린 수.
+    """
+    done = 0
+    for name, phone, contact_id in kept:
+        same = [r for r in rows if _key(r.name) == name and not r.vc_contact_id]
+        if len(same) > 1:
+            same = [r for r in same if digits(r.phone) == phone]
+        contact = db.get(VcContact, contact_id)
+        if len(same) != 1 or contact is None or linked_row(db, contact) is not None:
+            continue
+        link(same[0], contact, confirmed=True)
+        done += 1
+    return done
 
 
 # ── 화면 ────────────────────────────────────────────────────────────────────
@@ -600,6 +656,9 @@ def badges(db: Session, rows: Iterable[SourcingContact]) -> Dict[int, dict]:
         sheet = _sheet_of(contact, hidden)
         out[row.id] = {
             "contact_id": contact.id,
+            # 이어진 투자사 줄의 담당 — [연결 풀기]를 누를 수 있는 사람 중 하나
+            # (`routers/sourcing._may_unlink`).
+            "owner_id": contact.user_id,
             "sheet": sheet,
             "href": f"{sheet_owner.page_href(db, sheet)}?sheet={quote(sheet)}",
             "diff": [SHARED_LABELS[f] for f in SHARED_FIELDS
