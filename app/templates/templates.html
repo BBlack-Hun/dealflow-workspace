@@ -89,7 +89,7 @@
 
 {% macro section(g) %}
 <div class="panel" id="{{ g.kind }}">
-  <h2 class="panel-title">{{ g.title }}
+  <h2 class="panel-title tpl-kind-title">{{ g.title }}
     {# 문구가 열다섯 종류인데 어느 것을 고쳐야 그 탭이 바뀌는지 알 수 없었다. #}
     {% if g.tab %}
     <span class="tag">딜 제안 관리 · {{ g.tab }} 탭</span>

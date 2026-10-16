@@ -46,8 +46,10 @@
 
 - **거절로 끝난 미팅** — 거절한 곳에 결정을 다시 묻는 것은 실례다. 결과 문의
   날을 안 잡는 결말과 같은 묶음이다(`pipeline.NO_FOLLOWUP_OUTCOMES`).
-- **다음 걸음이 잡힌 미팅** — 첫 번째와 같은 규칙(같은 담당자의 미팅이 그 뒤에
-  또 있다 — 담당자 단위라 같은 투자사 · 같은 기업의 다음 미팅을 다 덮는다).
+- **같은 기업 건으로 다음 걸음이 잡힌 미팅** — 같은 담당자와 **같은 기업** 건
+  미팅이 그 뒤에 또 있다(`_same_company`). 다른 기업 건 미팅은 이 기업의 결정을
+  묻는 데 걸리지 않는다 — 사용자가 정했다(2026-10-17). 첫 번째는 그대로 담당자
+  단위다(화면의 결과 문의 목록과 같은 규칙).
 - **미팅을 마친 뒤 사람이 미팅 단계 글을 보냈다** — 미팅을 마친 날부터 지금까지
   **전부**를 본다(`manual_days` 와 상관없이). 이미 사람이 묻고 답을 듣고 있는
   곳에 한 달 뒤 자동 문의가 끼어들면 안 된다. 자동화가 보낸 첫 번째는 세지
@@ -192,6 +194,16 @@ def _superseded(meeting: Meeting, others: List[Meeting]) -> bool:
     return any(o.id != meeting.id and (o.scheduled_at or "") > mine for o in others)
 
 
+def _same_company(a: Meeting, b: Meeting) -> bool:
+    """두 미팅이 같은 기업 건인가 — 둘 다 기업 번호가 있으면 번호로, 아니면 이름
+    (`pipeline._key` — 띄어쓰기 · 대소문자 무시)으로. 한쪽이라도 기업을 모르면 같은
+    건으로 본다 — 모르는 채 결정을 묻는 쪽이 사고다."""
+    if a.company_id and b.company_id:
+        return a.company_id == b.company_id
+    mine, theirs = pipeline._key(a.company_name), pipeline._key(b.company_name)
+    return not mine or not theirs or mine == theirs
+
+
 def _contact_problem(db: Session, contact: Optional[VcContact]) -> str:
     """이 담당자에게 지금 보내면 안 되는 까닭 — 두 회차가 같은 규칙이다."""
     if contact is None:
@@ -236,7 +248,7 @@ def why_not_decision(db: Session, meeting: Optional[Meeting],
         return "미팅이 완료 상태가 아닙니다(취소·일정 변경)"
     if (meeting.outcome or "") in pipeline.NO_FOLLOWUP_OUTCOMES:
         return "결과가 거절로 적혀 있습니다"
-    if _superseded(meeting, others):
+    if _superseded(meeting, [o for o in others if _same_company(o, meeting)]):
         return "그 뒤 미팅이 또 잡혀 있습니다"
     return _contact_problem(db, contact)
 

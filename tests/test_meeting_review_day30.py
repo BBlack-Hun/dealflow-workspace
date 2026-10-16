@@ -7,8 +7,10 @@
    나가는 일이 없다.
 3. 거절로 끝난 미팅만 뺀다 — 검토 중 · 투자 검토 · 보류 · 빈칸은 묻는다. 결과
    문의를 했다는 표시(`followup_done` · `followup_note`)는 두 번째를 막지 않는다.
-4. 같은 분의 다음 미팅이 잡혀 있으면 뺀다. 미팅을 마친 뒤 사람이 미팅 단계 글을
-   보냈으면 뺀다(쉬는 날 수와 상관없이 그 뒤 전부) — 자동으로 나간 첫 번째는 안 센다.
+4. 같은 분 · **같은 기업**의 다음 미팅이 잡혀 있으면 뺀다 — 다른 기업 건 미팅은 이
+   기업의 투자 결정 문의를 막지 않는다(사용자 결정 2026-10-17). 미팅을 마친 뒤 사람이
+   미팅 단계 글을 보냈으면 뺀다(쉬는 날 수와 상관없이 그 뒤 전부) — 자동으로 나간
+   첫 번째는 안 센다.
 5. 풀리기 직전에도 두 번째의 규칙으로 다시 본다. 첫 번째의 판정은 그대로다.
 6. 판에서 날수(0 이면 안 묻는다) · 시각을 따로 고친다. 두 번째는 첫 번째보다 뒤.
 7. 같은 분께 첫 번째 · 두 번째가 같은 날 서면 한 통만.
@@ -207,18 +209,41 @@ def test_an_earlier_result_inquiry_does_not_block_the_second(db, users, world):
     assert [i.contact_id for i in _items(db)] == [who.id]
 
 
-def test_a_later_meeting_of_the_same_contact_skips_it(db, users, world):
-    nxt = _contact(db, world, "홍길동", "가나다벤처스")
-    gone = _contact(db, world, "김철수", "라마바벤처스")
-    _meeting(db, world, nxt)
-    _meeting(db, world, nxt, done=None, status="scheduled", scheduled_at="2026-10-20",
-             company_name="샘플애그")
+def test_only_a_later_meeting_about_the_same_company_skips_it(db, users, world):
+    """같은 분과 **같은 기업** 건으로 뒤 미팅이 있으면 뺀다. 다른 기업 건 미팅은 이
+    기업의 결정을 묻는 데 걸리지 않는다. 기업 이름은 띄어쓰기를 빼고 맞추고, 뒤
+    미팅의 기업을 모르면 같은 건일 수 있어 뺀다."""
+    same = _contact(db, world, "홍길동", "가나다벤처스")
+    spaced = _contact(db, world, "이띄움", "다라벤처스")
+    unknown = _contact(db, world, "정모름", "마사벤처스")
+    other = _contact(db, world, "김철수", "라마바벤처스")
+    gone = _contact(db, world, "박취소", "바사벤처스")
+    for who, company in ((same, "샘플바이오"), (spaced, "샘플 바이오"), (unknown, None),
+                         (other, "샘플애그")):
+        _meeting(db, world, who)
+        _meeting(db, world, who, done=None, status="scheduled", scheduled_at="2026-10-20",
+                 company_name=company)
     _meeting(db, world, gone)
     # 취소된 뒤 미팅은 다음 걸음이 아니다.
     _meeting(db, world, gone, done=None, status="canceled", scheduled_at="2026-10-20")
     _turn_on(db)
     result = _run(db)
-    assert {i.contact_id for i in _items(db)} == {gone.id}
+    assert {i.contact_id for i in _items(db)} == {other.id, gone.id}
+    for name in ("홍길동", "이띄움", "정모름"):
+        assert any(name in line and "그 뒤 미팅이 또 잡혀 있습니다" in line
+                   for line in result["skipped"]), name
+
+
+def test_the_first_round_still_skips_any_later_meeting(db, users, world):
+    """첫 번째(이틀 뒤)의 규칙은 그대로 — 같은 분의 뒤 미팅이면 기업이 달라도 뺀다
+    (화면의 결과 문의 목록 `pipeline.meeting_rows` 의 `superseded` 와 같다)."""
+    who = _contact(db, world, "홍길동", "가나다벤처스")
+    _meeting(db, world, who, done=DONE2)
+    _meeting(db, world, who, done=None, status="scheduled", scheduled_at="2026-10-20",
+             company_name="샘플애그")
+    _turn_on(db)
+    result = _run(db)
+    assert result["status"] == "empty"
     assert any("홍길동" in line and "그 뒤 미팅이 또 잡혀 있습니다" in line
                for line in result["skipped"])
 
@@ -337,6 +362,11 @@ def test_still_ok_reads_each_round_by_its_own_rules(db, users, world):
     meeting.outcome = "reviewing"
     meeting.followup_done = 0
     assert a7.still_ok(db, first) == "" and a7.still_ok(db, second) == ""
+    # 다른 기업 건 뒤 미팅 — 첫 번째만 빠진다.
+    _meeting(db, world, who, done=None, status="scheduled", scheduled_at="2026-10-20",
+             company_name="샘플애그")
+    assert a7.still_ok(db, first) == "그 뒤 미팅이 또 잡혀 있습니다"
+    assert a7.still_ok(db, second) == ""
     _meeting(db, world, who, done=None, status="scheduled", scheduled_at="2026-10-20")
     assert a7.still_ok(db, first) == a7.still_ok(db, second) == "그 뒤 미팅이 또 잡혀 있습니다"
     assert a7.still_ok(db, AutomationSend(ref="meeting30:x")) == ""
@@ -613,3 +643,47 @@ def test_the_kind_is_on_the_templates_page(client, db, users):
         MessageTemplate.user_id == users["u1"].id)).scalars().one()
     assert mine.body == "{미팅 기업} 건 여쭙습니다."
     assert client.get("/templates").status_code == 200
+
+
+def _panel(page: str, kind: str) -> str:
+    """문구 화면에서 한 종류의 구간(`<div class="panel" id="종류">` 부터 다음 구간 전까지)."""
+    start = page.index(f'<div class="panel" id="{kind}">')
+    end = page.find('<div class="panel"', start + 1)
+    return page[start:end if end != -1 else len(page)]
+
+
+def test_the_templates_page_says_the_days_set_on_the_panel(client, db, users):
+    """미팅 후기 · 투자 결정 문의의 설명은 팀 현황 › 자동화의 A7 날수를 읽는다 —
+    '열흘쯤' 처럼 글에 박힌 날수가 판(첫 번째 2일)과 어긋나지 않게."""
+    import re
+    from pathlib import Path
+
+    from app.services import automation_runner as runner
+    from scripts import bootstrap
+
+    bootstrap.bootstrap(db)
+    db.commit()
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    page = client.get("/templates").text
+    review, decision = _panel(page, "meeting_review"), _panel(page, "meeting_review_decision")
+    assert "열흘" not in review
+    assert "미팅 완료 2일 뒤" in review
+    assert "미팅 완료 30일 뒤" in decision
+
+    runner.save_params(db, "meeting_review", {"days": "3", "decision_days": "45"})
+    db.commit()
+    page = client.get("/templates").text
+    assert "미팅 완료 3일 뒤" in _panel(page, "meeting_review")
+    assert "미팅 완료 45일 뒤" in _panel(page, "meeting_review_decision")
+
+    runner.save_params(db, "meeting_review", {"days": "3", "decision_days": "0"})
+    db.commit()
+    decision = _panel(client.get("/templates").text, "meeting_review_decision")
+    assert "날수가 0 이라 안 나갑니다" in decision and "미팅 완료" not in decision
+
+    # 제목은 한 줄 — 오른쪽 설명이 길면 설명 쪽이 접힌다(제목이 `… 결정 문 / 의` 로
+    # 갈리던 것).
+    assert 'class="panel-title tpl-kind-title"' in page
+    css = (Path(__file__).resolve().parent.parent / "app" / "static" / "css"
+           / "app.css").read_text(encoding="utf-8")
+    assert re.search(r"\.tpl-kind-title \.hint\s*\{[^}]*flex:\s*1 1 0", css)
