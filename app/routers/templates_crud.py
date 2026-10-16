@@ -42,7 +42,15 @@ KINDS = [
     # 미팅 요청 자동화의 **두 번째**(`services/automations/meeting_request.py`).
     ("closing_meeting_again", "안내문 — 미팅 요청 (두 번째)",
      "IR 자료 전달 7일 뒤 미팅 요청에 답이 없으면 10일 뒤 자동으로 — 첫 번째와 조금 다른 말로"),
-    ("meeting_review", "문구만 — 미팅 후기", "미팅 뒤 열흘쯤 지나 결과를 물을 때"),
+    # 미팅 후기 · 투자 결정 문의의 설명 끝에는 **며칠 뒤 나가는지**를 판의 값으로
+    # 붙인다(`_desc`) — 여기 날수를 적어 두면 판에서 고친 뒤에도 옛 말이 남는다.
+    ("meeting_review", "문구만 — 미팅 후기",
+     "미팅 뒤 결과를 물을 때 — 미팅 후 검토결과 문의 자동화의 첫 번째"),
+    # 미팅 후 검토결과 문의 자동화의 **두 번째**(`services/automations/meeting_review.py`).
+    # 미팅 후기와 같은 틀(인사말 + 본문)에 본문만 이것이다.
+    ("meeting_review_decision", "문구만 — 미팅 30일 뒤 투자 결정 문의",
+     "미팅 후 검토결과 문의 자동화의 두 번째 — 인사말 아래에 붙습니다 · "
+     "거절로 끝난 미팅에는 안 나갑니다 · {미팅 기업} 은 그 미팅의 기업 이름으로 채워집니다"),
     ("ask_preference", "문구만 — 선호 분야 묻기", "반응이 없는 담당자에게 기업 목록 없이 이 문구만"),
     ("ir_delivery", "IR 자료 전달", "PC 에서 자료를 첨부해 보낸 뒤 뒤따라 보내는 문구"),
     # 갈래마다 하나씩이다 — 호칭·전달 개수·찾는 범위가 다르다.
@@ -106,6 +114,23 @@ KINDS = [
 KIND_LABELS = {k: label for k, label, _ in KINDS}
 KIND_DESCS = {k: desc for k, _, desc in KINDS}
 
+#: 미팅 후 검토결과 문의 자동화(A7)가 쓰는 문구 → 며칠 뒤인지 적힌 판의 칸.
+A7_DAYS = {"meeting_review": "days", "meeting_review_decision": "decision_days"}
+
+
+def _desc(db: Session, kind: str) -> str:
+    """종류의 설명. A7 이 쓰는 두 문구는 **팀 현황 › 자동화 판의 날수**를 읽어
+    붙인다 — 미팅 후기에 `열흘쯤` 이 박혀 있어 첫 번째(기본 2일)와 어긋났다."""
+    desc = KIND_DESCS.get(kind, "")
+    if kind not in A7_DAYS:
+        return desc
+    from ..services import automation, automation_runner as runner
+
+    days = runner.values(automation.load(db, automation.MEETING_REVIEW),
+                         automation.MEETING_REVIEW)[A7_DAYS[kind]]
+    when = f"미팅 완료 {days}일 뒤 자동으로 나갑니다" if days else "지금은 날수가 0 이라 안 나갑니다"
+    return f"{desc} · {when}(팀 현황 › 자동화에서 고침)"
+
 # 문구에 쓸 수 있는 치환 변수 (화면 안내용)
 VARIABLES = [
     ("{기업목록}", "[기업1] 샘플애그 (IR 자료 전달에서만)"),
@@ -116,6 +141,8 @@ VARIABLES = [
     ("{월}", "10 — 이 달 숫자 (딜 소싱 리마인드에서만)"),
     ("{기업 목록}", "[기업1] 샘플바이오 · 분야 · 투자라운드 · 소개 — 고른 기업마다 한 "
                   "덩어리 (Series A 딜 공유에서만)"),
+    ("{미팅 기업}", "샘플바이오 — 그 미팅의 기업 이름, 비었으면 '기업' "
+                  "(미팅 30일 뒤 투자 결정 문의에서만)"),
 ]
 
 
@@ -209,7 +236,7 @@ def _slot_view(db: Session, user: User, kind: str, variant: str,
 def _section(db: Session, user: User, rows: List[MessageTemplate],
              kind: str, title: str, tab: str, mode: str, topic: str = "") -> dict:
     """화면의 한 구간. 딜 제안 관리의 탭 하나 또는 '그 밖의 문구' 한 종류."""
-    label, desc = KIND_LABELS.get(kind, kind), KIND_DESCS.get(kind, "")
+    label, desc = KIND_LABELS.get(kind, kind), _desc(db, kind)
     # 키 이름을 'items' 로 두면 Jinja 에서 dict.items 메서드가 잡힌다(실제로 500 발생).
     of_kind = [t for t in rows if t.kind == kind]
     by_slot = {}

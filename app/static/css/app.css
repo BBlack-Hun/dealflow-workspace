@@ -1007,6 +1007,9 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
 .tpl-new { margin-top: 8px; }
 .tpl-new summary { cursor: pointer; color: var(--brand); font-size: 13px; }
 .tpl-new input[type=text] { width: 100%; padding: 6px 8px; margin: 8px 0; border: 1px solid var(--line); border-radius: 8px; }
+/* 종류 제목은 한 줄로 — 오른쪽 설명이 길면 **설명이** 접힌다. 설명이 제 글 길이만큼
+   자리를 달라고 하면 제목이 `… 투자 결정 문 / 의` 로 갈렸다(flex 가 둘을 같이 줄인다). */
+.tpl-kind-title .hint { flex: 1 1 0; min-width: 0; margin-left: 16px; text-align: right; }
 
 
 /* ── 투자사 현황 업로드 ─────────────────────────────────────── */
