@@ -705,13 +705,40 @@
         return !q || (tr.getAttribute("data-search") || "").indexOf(q) !== -1;
       }
     });
-    if (box) box.addEventListener("input", function () { filters && filters.apply(); });
+    if (box) box.addEventListener("input", function () {
+      filters && filters.apply();
+      searchAll();
+    });
+    // 주소로 검색어를 들고 왔으면(`?q=` — 아래 [전체 명단에서 찾기]) 그 자리에서
+    // 걸러 둔다. 칸에만 적혀 있고 표가 안 걸러져 있으면, 찾은 것인지 아닌지
+    // 화면이 서로 다른 말을 한다.
+    if (box && box.value.trim() && filters) filters.apply();
     // 칸을 고치면 그 값도 필터에 나와야 한다 — 값은 있는데 필터에는 없는
     // 상태가 되면, 있는 줄 알고 골랐다가 아무것도 안 나온다.
     table.addEventListener("inline-saved", function () {
       if (filters && filters.refresh) filters.refresh();
     });
   }
+
+  // ── [전체 명단에서 찾기] ─────────────────────────────────────────────
+  //
+  // 검색은 **그려진 줄만** 거른다 — 명단 탭에서 치면 그 명단 안에서만 찾는다.
+  // 다른 명단의 기업은 `전체` 에서 찾아야 하는데, 그걸 모르면 "없는 기업" 으로
+  // 읽힌다(#22). 그래서 무언가를 치는 동안 **그 검색어를 들고 `전체` 로 가는**
+  // 링크를 세운다. 서버가 전부를 내려보내 거르는 길은 만들지 않는다 — `전체`
+  // 탭이 이미 그 표이고, 거르는 손은 이 검색 하나다(두 벌이면 한쪽이 낡는다).
+  //
+  // 링크는 서버가 `전체` 가 있는 화면 · 명단 탭에서만 세운다(`contacts.html`).
+  function searchAll() {
+    var link = document.getElementById("search-all");
+    var input = document.getElementById("vc-search");
+    if (!link || !input) return;
+    var q = (input.value || "").trim();
+    link.hidden = !q;
+    link.setAttribute("href", link.getAttribute("data-base")
+      + (q ? "&q=" + encodeURIComponent(q) : ""));
+  }
+  searchAll();
 
   // 대시보드의 '내 투자사 선호'에서 눌러 오면 그 사람 상세를 바로 연다.
   // 목록만 띄우면 333명 중에서 다시 찾아야 한다 — 무엇을 좋아하는지 보려고

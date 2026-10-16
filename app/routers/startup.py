@@ -66,6 +66,7 @@ def startup_page(
     months: str = "",
     hidden: int = 0,
     msg: str = "",
+    q: str = "",
 ):
     """스타트업 — 명단과 참고 자료.
 
@@ -73,7 +74,7 @@ def startup_page(
     그 조작만 이 화면에서 안 먹는다(달 칸 펴기·감춘 줄 함께 보기 등).
     """
     return list_page(request, db, user, STARTUP_PAGE, sheet=sheet, ref=ref,
-                     contact=contact, months=months, hidden=hidden, msg=msg)
+                     contact=contact, months=months, hidden=hidden, msg=msg, q=q)
 
 
 # ── 이번 달 귀사 IR 자료를 요청한 투자사 ─────────────────────────────────────
