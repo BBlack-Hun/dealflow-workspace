@@ -400,9 +400,14 @@ def test_표_min_width_이_칸_폭을_따라간다():
     css = CSS.read_text(encoding="utf-8")
     m = re.search(r"#co-table \{[^}]*min-width:\s*(\d+)px", css)
     assert m, "`#co-table` 의 min-width 를 못 찾았습니다"
-    assert int(m.group(1)) == 2386 + WIDTH_PX, (
+    # 이 칸 **뒤에** 따로 든 칸들. 같은 셈(든 만큼만)으로 올렸으므로 여기 더한다 —
+    # 빼고 재면 이 칸과 상관없는 일로 이 검사가 깨진다.
+    #   · `수신일` 96px — 표의 기본 차례(수신일 최신순)의 까닭을 보이려고
+    #     `기업명` 뒤에 세웠다(app.css 의 `#co-table` 주석 · test_company_tab_order.py)
+    later = 96
+    assert int(m.group(1)) == 2386 + WIDTH_PX + later, (
         f"`{COLUMN}` 은 {WIDTH_PX}px 인데 표 폭이 {m.group(1)}px 입니다 — "
-        f"{2386 + WIDTH_PX}px 여야 합니다")
+        f"{2386 + WIDTH_PX + later}px 여야 합니다")
 
 
 def test_오른쪽으로_미는_칸이_아니다():
