@@ -190,10 +190,20 @@ def hhmm(minutes: int) -> str:
 
 
 def guard_window() -> tuple:
-    """발송 안전장치가 허락하는 폭(분) — 팀 시간대는 이 안이어야 한다."""
-    from . import scheduled_send
+    """발송 안전장치가 허락하는 폭(분) — 팀 시간대는 이 안이어야 한다.
 
-    return scheduled_send.EARLIEST_HOUR * 60, scheduled_send.LATEST_HOUR * 60
+    폭은 `send_window` 한 곳에서 온다. 테스트 서버에서 껐으면 00:00~24:00 이다.
+    """
+    from . import send_window
+
+    low, high = send_window.hours()
+    return low * 60, high * 60
+
+
+def time_input(minutes: int) -> str:
+    """`<input type="time">` 에 넣을 값. 그 칸은 `24:00` 을 못 담아 `23:59` 로 적는다
+    (테스트 서버에서 시간 제한을 껐을 때만 생긴다)."""
+    return hhmm(min(minutes, 24 * 60 - 1))
 
 
 @dataclass(frozen=True)
@@ -688,5 +698,12 @@ def status(db: Session) -> dict:
                      "max_per_contact_daily": MAX_PER_CONTACT_DAILY,
                      "max_job_gap_min": MAX_JOB_GAP_MIN,
                      "guard_start": hhmm(guard_window()[0]),
-                     "guard_end": hhmm(guard_window()[1])},
+                     "guard_end": hhmm(guard_window()[1]),
+                     # 시간 칸(`<input type="time">`)에 넣는 값 — `24:00` 을
+                     # 못 담는다. 운영(09:00~19:00)에서는 위와 같은 글자다.
+                     "guard_end_input": time_input(guard_window()[1]),
+                     "window_end_input": time_input(_minutes(team_.window_end)),
+                     # 분 단위 칸. 운영은 10분(600초) 그대로이고, 테스트 서버에서
+                     # 껐을 때만 1분 — `23:59` 를 고를 수 있게.
+                     "time_step": 60 if guard_window()[1] >= 24 * 60 else 600},
             "agent": agent}

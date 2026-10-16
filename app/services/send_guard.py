@@ -66,7 +66,7 @@ from sqlalchemy.orm import Session
 from .. import clock
 from ..models import (SEND_KINDS, STARTUP_MSG_KIND, STARTUP_SEND_KIND,
                       AutoSendRun, SendItem, SendJob, User)
-from . import scheduled_send
+from . import scheduled_send, send_window
 
 log = logging.getLogger(__name__)
 
@@ -75,6 +75,7 @@ log = logging.getLogger(__name__)
 GATED_KINDS = tuple(SEND_KINDS) + (STARTUP_SEND_KIND, STARTUP_MSG_KIND)
 
 #: 보내는 시간의 폭 — 예약을 고를 수 있는 폭과 **같은 값**이다.
+#: 운영의 폭을 적어 둔 것이고, 판정은 `send_window` 가 한다(테스트 서버 스위치).
 EARLIEST_HOUR = scheduled_send.EARLIEST_HOUR
 LATEST_HOUR = scheduled_send.LATEST_HOUR
 
@@ -105,13 +106,15 @@ def window_open(now: Optional[datetime] = None) -> bool:
 
     요일은 보지 않는다. 예약이 요일을 막지 않는 것과 같다(`scheduled_send`
     머리말) — 토요일에 보내려면 사람이 그날 누르면 된다.
+
+    폭은 `send_window` 한 곳에서 온다 — 테스트 서버에서 껐으면 언제나 참이다.
     """
     now = now or clock.now()
-    return EARLIEST_HOUR <= now.hour < LATEST_HOUR
+    return send_window.contains(now)
 
 
 def window_label() -> str:
-    return f"{EARLIEST_HOUR:02d}:00~{LATEST_HOUR:02d}:00"
+    return send_window.label()
 
 
 # ── 하루 상한 ────────────────────────────────────────────────────────────────
@@ -206,11 +209,11 @@ def describe(db: Session, job: SendJob, now: Optional[datetime] = None,
         sentence = f"오늘 남은 발송 한도 {left}/{cap}건"
         if waiting and not is_open:
             sentence = (f"지금은 보내는 시간({window_label()})이 아닙니다 — "
-                        f"큐에 서서 기다리다 {EARLIEST_HOUR:02d}:00 에 나갑니다 · "
+                        f"큐에 서서 기다리다 {send_window.earliest():02d}:00 에 나갑니다 · "
                         + sentence)
         elif waiting and left <= 0:
             sentence = (f"오늘 발송 한도({cap}건)를 다 썼습니다 — 남은 건은 "
-                        f"내일 {EARLIEST_HOUR:02d}:00 에 이어 나갑니다")
+                        f"내일 {send_window.earliest():02d}:00 에 이어 나갑니다")
     held = bool(gated and waiting and (not is_open or left <= 0))
     # **2단계 자동화 회차**는 한 겹 더 — 발송기 판(건 사이 간격)과 자동 회차
     # 사이 간격(`automation_runner.held_jobs`). 시험 회차(`test_send`)도 여기에
@@ -243,8 +246,8 @@ def status(db: Session, today: Optional[date] = None) -> dict:
         used = sent_today(db, user.id, day)
         rows.append({"id": user.id, "name": user.name, "cap": cap,
                      "sent_today": used, "remaining": max(0, cap - used)})
-    return {"window": window_label(), "earliest": EARLIEST_HOUR,
-            "latest": LATEST_HOUR, "default_cap": DEFAULT_DAILY_CAP,
+    return {"window": window_label(), "earliest": send_window.earliest(),
+            "latest": send_window.latest(), "default_cap": DEFAULT_DAILY_CAP,
             "min_cap": MIN_DAILY_CAP, "max_cap": MAX_DAILY_CAP,
             "rows": rows}
 

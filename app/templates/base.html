@@ -51,6 +51,14 @@
          켜져 있는 줄도 모른 채 누른다. 적는 내용이 예전과 반대라는 데 유의:
          "모든 발송이 그리로 간다" 가 아니라 **"시험 단추만 그리로 간다"** 다.
          띠가 옛말을 하면 사람은 나간 것을 안 나간 줄로 읽는다(그 반대도). #}
+      {# 테스트 서버에서 보내는 시간(09:00~19:00) 제한을 껐다는 표시. 관리자에게만 —
+         운영에서는 켜지지 않는다(`services/send_window.py`). #}
+      {% if user and user.role == 'admin' and send_window_off() %}
+      <div class="test-banner" data-testid="send-window-off-banner">
+        🧪 <b>{{ send_window_banner }}</b> — 보내는 시간이 00:00~24:00 입니다.
+        하루 상한·중복 방지·간격·시험 모드는 그대로입니다.
+      </div>
+      {% endif %}
       {% if test_room %}
       <div class="test-banner">
         🧪 <b>시험방이 켜져 있습니다</b> — <code>{{ test_room }}</code>.

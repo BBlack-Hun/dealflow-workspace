@@ -17,7 +17,7 @@ from ..models import ROOM_SEARCH_TOPIC, STARTUP_MSG_KIND, IrCompany, SendJob, Us
 from ..services import (cadence, contact_columns, deal_history, deal_queue,
                         deal_stage, email_domains, group_name, ir_attach,
                         llm_brief, mailer, manual_send, ref_panel,
-                        scheduled_send, series_a_share, sheet_import,
+                        send_window, series_a_share, sheet_import,
                         sheet_owner, sourcing_link, sourcing_receipts,
                         startup_send)
 from ..ui import MENU, base_ctx as _base_ctx
@@ -263,8 +263,8 @@ def deals_page(
         # 예약 발송으로 고를 수 있는 시각의 폭. **서버가 정한 값을 화면에
         # 실어 준다** — 화면에 숫자를 적어 두면 서버와 두 벌이 되어, 막는 자리와
         # 안내하는 자리가 다른 말을 하는 날이 온다(`services/scheduled_send.py`).
-        "send_earliest_hour": scheduled_send.EARLIEST_HOUR,
-        "send_latest_hour": scheduled_send.LATEST_HOUR,
+        "send_earliest_hour": send_window.earliest(),
+        "send_latest_hour": send_window.latest(),
         # [LLM 에 물어보기] 자료에 **몇 곳이 담기는지**. 화면이 아무 말도 안 하던
         # 동안 관리자 계정에서는 677곳이 담기고 실제로 보낼 수 있는 곳은 114곳이라
         # 사람이 헤맸다 — 수가 갈렸다는 것을 화면에서 먼저 알아야 한다.

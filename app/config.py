@@ -31,6 +31,32 @@ SEED_DEMO = os.getenv("DEALFLOW_SEED_DEMO", "0") == "1"
 ENV = os.environ.get("DEALFLOW_ENV", "local").strip().lower()
 IS_PRODUCTION = ENV == "production"
 
+# ── 테스트 서버: 보내는 시간(09:00~19:00) 끄기 ──────────────────────────────
+# 사용자가 정했다: "운영서버는 발송제한이 있어야하지만 테스트서버는 없어도 됨".
+# 테스트 서버의 자동화는 시험 모드라 본인 '나와의 채팅' 시험방으로만 가므로,
+# 밤에 시험해도 받는 사람이 없다.
+#
+# **기본은 꺼짐(= 제한을 지킨다).** `1` 일 때만 끈다. 끄는 것은 시간 폭 하나다 —
+# 하루 상한·중복 방지·간격·시험 모드는 그대로다. 폭을 읽는 자리는
+# `app/services/send_window.py` 한 곳이다.
+#
+# 이 값은 **`docker-compose.testserver.yml` 에만** 적는다. `docker-compose.yml` ·
+# `docker-compose.override.yml` 에 적으면 `docker compose run web -m pytest` 가
+# 물려받는다. 운영 compose 와 `.env` 예시에는 절대 적지 않는다(검사가 못박는다).
+NO_SEND_WINDOW_ENV = "DEALFLOW_TEST_SERVER_NO_SEND_WINDOW"
+
+
+def send_window_off() -> bool:
+    """테스트 서버에서 보내는 시간 제한을 껐는가.
+
+    **운영이면 값이 있어도 거짓이다.** 그 전에 `assert_ready` 가 운영을 아예
+    못 뜨게 막지만(`production_problems`), 판정 자리에서도 한 번 더 막는다.
+    부를 때마다 환경변수를 다시 읽는다 — 검사에서 바꿔 끼울 수 있게.
+    """
+    if IS_PRODUCTION:
+        return False
+    return os.environ.get(NO_SEND_WINDOW_ENV, "").strip() == "1"
+
 # Demo agent token seeded into agent_devices and shared with the mock agent container.
 DEFAULT_AGENT_TOKEN = "agt_demo_token_sprint1"
 DEMO_AGENT_TOKEN = os.environ.get("DEALFLOW_AGENT_TOKEN", DEFAULT_AGENT_TOKEN)
@@ -73,6 +99,10 @@ def production_problems() -> list:
     if SEED_DEMO:
         problems.append(
             "DEALFLOW_SEED_DEMO=1 입니다 — 실데이터에 가상 기업·담당자가 섞입니다")
+    if os.environ.get(NO_SEND_WINDOW_ENV, "").strip():
+        problems.append(
+            f"{NO_SEND_WINDOW_ENV} 가 있습니다 — 테스트 서버 전용 스위치입니다"
+            "(보내는 시간 09:00~19:00 을 끈다). 운영 .env 에서 지우세요")
     return problems
 
 

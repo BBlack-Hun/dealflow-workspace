@@ -53,7 +53,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import get_current_user, templates
 from ..models import ROOM_SEARCH_TOPIC, SendItem, SendJob, User, VcContact
-from ..services import (cadence, scheduled_send, startup_outreach,
+from ..services import (cadence, send_window, startup_outreach,
                         startup_room_pick)
 from ..ui import base_ctx
 from ..version import VERSION
@@ -110,8 +110,8 @@ def outreach_page(
         "default_title": cadence.default_batch_title(
             db, label=f"{startup_outreach.LABEL} · {chosen.label}"),
         # 보낼 시각을 고를 수 있는 폭(09~19시) — **예약이 정한 그 값이다.**
-        "send_earliest_hour": scheduled_send.EARLIEST_HOUR,
-        "send_latest_hour": scheduled_send.LATEST_HOUR,
+        "send_earliest_hour": send_window.earliest(),
+        "send_latest_hour": send_window.latest(),
         # 이 회차를 집어가는 발송기 판. 낡은 발송기는 이 종류를 모른다고
         # 밝혀 잡이 큐에 서서 기다린다(`agent/main.py: STARTUP_MSG_KIND`).
         "agent_needs": VERSION,
