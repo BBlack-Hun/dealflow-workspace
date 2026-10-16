@@ -129,6 +129,14 @@
     return node;
   }
 
+  // 후보 · 확정 딱지. 칸(124px)보다 긴 이름 · 회사는 `…` 로 잘리므로
+  // (app.css `.sa-sharer-name`) 다 적은 글을 풍선말로 단다.
+  function nameTag(cls, text) {
+    var tag = el("span", cls + " sa-sharer-name", text);
+    tag.setAttribute("title", text);
+    return tag;
+  }
+
   function renderSharer(box, info) {
     if (!box) return;
     info = info || {};
@@ -136,15 +144,15 @@
     var confirmed = info.confirmed;
     var cands = info.candidates || [];
     if (confirmed) {
-      box.appendChild(el("span", "tag ok sa-sharer-name", "확정 · " + confirmed.label));
+      box.appendChild(nameTag("tag ok", "확정 · " + confirmed.label));
       var clear = el("button", "linkbtn js-sharer-clear", "해제");
       clear.setAttribute("type", "button");
       clear.setAttribute("title", "확정을 풀고 다시 이름 · 회사로 짐작합니다");
       box.appendChild(clear);
     } else {
       cands.forEach(function (c) {
-        box.appendChild(el("span", "tag soft sa-sharer-name",
-                           c.label + (c.auto ? " · 이름 · 회사 같음" : " · 이름만 같음")));
+        box.appendChild(nameTag("tag soft",
+                                c.label + (c.auto ? " · 이름 · 회사 같음" : " · 이름만 같음")));
         var pick = el("button", "linkbtn js-sharer-pick", "이 분으로 확정");
         pick.setAttribute("type", "button");
         pick.setAttribute("data-contact", String(c.id));

@@ -200,7 +200,7 @@
             <input type="hidden" name="month" value="{{ month }}">
             <input type="hidden" name="tab" value="{{ selected or 'all' }}">
             <input type="hidden" name="on" value="{{ '0' if got else '1' }}">
-            <button type="submit" class="linkbtn{% if got %} ok{% endif %}"
+            <button type="submit" class="linkbtn received-btn{% if got %} ok{% endif %}"
                     title="{% if by_mail %}메일 {{ by_mail.day }}{% if by_mail.subject %} 「{{ by_mail.subject }}」{% endif %}로 저절로 표시됨 — 누르면 거둡니다(같은 메일로는 다시 서지 않습니다){% else %}{{ month_label }}에 이 사람에게서 딜을 받았으면 누르세요{% endif %}">
               {% if got %}{{ month_label }} 딜 받음 ✓{% else %}☐ {{ month_label }} 딜 받음{% endif %}</button>
             {% if by_mail %}<span class="muted" data-testid="sourcing-received-mail">(메일 {{ by_mail.day }})</span>{% elif got %}<span class="muted" data-testid="sourcing-received-manual">(직접)</span>{% endif %}

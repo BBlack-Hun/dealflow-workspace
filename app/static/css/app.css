@@ -828,11 +828,16 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
    지웠으므로, 기본 초점 테두리가 남아 있어도 눈에 잘 안 띈다. */
 .sort-btn:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px;
                           border-radius: 4px; }
-.filter-panel { position: absolute; z-index: 30; top: 100%; left: 6px; min-width: 200px; max-width: 280px;
+/* 필터 창. 머리글 칸에 붙어 떠 칸 폭을 따르는데, 칸이 대개 더 좁아 `min-width` 가 곧 폭이다.
+   200px 일 때는 머리 줄(제목 · [모두 선택] · [해제])이 안 들어가 셋이 같이 접혔다
+   (`모두 선 / 택` · `해 / 제`). 270px 이면 투자사 관리 현황의
+   `라운드 사이즈(투자운영금액)` 까지 한 줄에 든다. 더 긴 이름은 제목만 접힌다(아래). */
+.filter-panel { position: absolute; z-index: 30; top: 100%; left: 6px; min-width: 270px; max-width: 280px;
                 background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 8px;
                 box-shadow: 0 8px 24px rgba(16,21,29,.14); }
 .filter-panel-head { display: flex; align-items: center; gap: 8px; justify-content: space-between;
                      padding-bottom: 6px; border-bottom: 1px solid var(--line); margin-bottom: 6px; }
+.filter-panel-head .linkbtn { white-space: nowrap; }
 .filter-search { width: 100%; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px;
                  margin-bottom: 6px; font-size: 12px; }
 .filter-options { max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
@@ -989,6 +994,10 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
 .sa-plan b { margin-right: 4px; }
 .sa-drop { color: var(--muted, #6b7280); }
 .sa-drop.own { color: #b45309; font-weight: 600; }
+/* 아래 `공유 심사역` 후보 · 확정 딱지 — `이름 직함 (회사) · 이름 · 회사 같음` 이라 칸(124px)
+   보다 길 때가 많다. 감싼 상자가 `.cell-sub`(넘친 것을 자른다)라 끝이 말없이 잘렸다 —
+   딱지 스스로 `…` 로 줄이고, 다 적은 글은 풍선말로 단다(`series_a.js`). */
+.sa-sharer-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* IR 기업 현황 › Series A 이상 딜 소싱 — `공유 심사역` 칸 아래 후보 · 확정(`series_a.js`).
    후보마다 [이 분으로 확정] 이 그 이름 바로 뒤에 붙고, 여럿이면 줄을 넘긴다. */
 .sa-sharer { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px;
@@ -1622,6 +1631,14 @@ td.cell.save-failed { background: #fdecec; }
 /* 규칙 이름은 칸이 아니라 줄 제목이다 — 칸 높이에 맞춰 가운데에 둔다. */
 .rule-form .rule-label { font-size: 13px; font-weight: 600; min-width: 88px;
   height: var(--ctl-h); display: flex; align-items: center; }
+/* 팀 현황 › 자동화 판. 자동화마다 설정 폼이 표의 한 칸(1440px 화면에서 210px 남짓)에
+   든다. `보내는 계정` 고르개가 가장 긴 이름(`이름 · PC 이름`)만큼 넓어져 칸 오른쪽
+   밖으로 나갔다 — 라벨을 폼 폭에서 멈추면 고르개는 라벨 폭을 따른다(세로 flex 의
+   stretch). 보낼 시각(`type=time`)은 크롬이 잡는 제 폭(114px 남짓)이 `오후 02:00` 에
+   1~2px 모자라 끝 `0` 이 잘렸다 — 조금 넉넉히 둔다. 더 넓히면 한 줄에 둘이 서던 칸
+   (`첫 번째(며칠 뒤)` 옆 보낼 시각 · 팀 공통의 `피할 시간`)이 다음 줄로 밀린다. */
+#automations .rule-form .field { max-width: 100%; }
+#automations .rule-form input[type=time] { min-width: 120px; }
 .inline-form { display: inline; }
 
 .team-banner { background: #fff8e6; border: 1px solid #f0e0c0; border-radius: 8px;
@@ -2901,6 +2918,12 @@ a.guard-go:hover { background: #1e4fd0; text-decoration: none; }
 /* 회사명이 든 후보를 먼저 보이게(`startup_room.html` 의 `.room-pick.named` 와 같은 뜻). */
 .room-cand.named .room-cand-title { color: var(--brand); font-weight: 600; }
 #room-pick-table .room-input { width: 240px; min-width: 180px; }
+
+/* ── 딜 소싱 — 이름 밑 `☐ 10월 딜 받음` 단추 ─────────────────────────────
+   한 줄로 선다. 접히면(`10월 딜 받 / 음`) 표의 줄마다 키가 한 줄씩 늘어난다.
+   이름 칸(`routers/sourcing.py` 의 `COLUMNS`)은 이 단추가 드는 폭이다 — 뒤에 붙는
+   `(메일 10/15)` · `(직접)` 은 자리가 모자라면 통째로 다음 줄로 내려간다. */
+.received-btn, .received-btn + .muted { white-space: nowrap; }
 
 /* ── 딜 소싱 › 시리즈 A 갈래 — 맨 왼쪽 고르는 칸 ──────────────────────────
    [Series A 딜 소개]로 넘길 분을 고른다(`sourcing.html`). 체크박스만 서는 좁은
