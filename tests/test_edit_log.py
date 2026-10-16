@@ -524,6 +524,10 @@ WRITE_ROUTES = {
     # `공유 심사역` 을 딜 소싱 명단의 그 분 줄로 확정 · 해제 — 같은 줄의 칸 하나
     # (`shared_by_contact_id`)를 고치는 일이라 고치기와 같은 쪽이다.
     ("PUT", "/api/series-a-companies/{row_id}/sharer"): WATCHED,
+    # 관리자의 [딜소개 문구 올리기] — 파일 한 판으로 여러 줄의 `딜소개 문구` 를
+    # 채우거나 덮는다(`services/series_a_pitch_upload.py`). 줄마다 남아야 무엇을
+    # 덮었는지 되짚는다. 주소는 올리는 길의 갈래(`/api/import/…`)에 있다.
+    ("POST", "/api/import/series-a-pitch"): WATCHED,
 
     ("POST", "/ir/requests"): WATCHED,
     ("POST", "/ir/deliver-guide"): WATCHED,
@@ -829,12 +833,13 @@ def test_the_six_shared_routers_still_hold_the_forty_nine_paths(portal):
     # series_a 의 셋은 IR 기업 현황 메뉴의 `Series A 이상 딜 소싱` 탭을 더하기 ·
     # 고치기 · 지우기다(`routers/series_a.py`). 옆 두 탭과 같은 공용 화면이다.
     # 넷째는 `공유 심사역` 확정 · 해제(`/sharer` — Series A 딜 공유에서 이 딜을
-    # 넘겨 준 분을 짐작하지 않고 정해 둔다).
+    # 넘겨 준 분을 짐작하지 않고 정해 둔다). 다섯째는 관리자의 [딜소개 문구
+    # 올리기](`/api/import/series-a-pitch` — 파일로 `딜소개 문구` 칸만 채운다).
     # templates_crud 의 6 · 7번째는 관리자의 [모든 팀원에게 적용] 과 그
     # [되돌리기]다(`services/template_apply.py`).
     assert counted == {"companies": 8, "ir": 12, "consulting": 9,
                        "templates_crud": 7, "sourcing": 8, "contacts": 22,
-                       "series_a": 4}
+                       "series_a": 5}
 
 
 def test_every_table_is_either_watched_or_explained(db):

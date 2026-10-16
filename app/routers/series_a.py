@@ -17,6 +17,8 @@
   · 보기 · 고치기 · 더하기 — 로그인한 사람(투자컨설턴트는 미들웨어가 끊는다).
   · 지우기 — `companies.can_delete_company`(관리자 · 팀원). 화면의 [삭제] 를
     보일지도 같은 함수가 정한다. 여기서 역할을 새로 적으면 한쪽만 낡는다.
+  · 딜소개 문구 올리기(파일로 `딜소개 문구` 칸 채우기) — 관리자만
+    (`can_upload_pitch` — 사용자 결정). 단추와 길이 같은 함수를 지난다.
 
 ## 차례 — 수신 일자 최신순
 
@@ -29,14 +31,15 @@ from __future__ import annotations
 import re
 from typing import Dict, List, Optional, Set
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..clock import today
 from ..db import get_db
-from ..deps import get_current_user, templates
+from ..deps import NotAdmin, get_current_user, templates
 from ..models import IrCompany, SeriesACompany, SourcingContact, User
 from ..services import deal_history, series_a_share
 from ..services.series_a_import import day_text
@@ -207,6 +210,8 @@ def render_page(request: Request, db: Session, user: User, msg: str = "", q: str
         "in_ir": sum(1 for r in rows if r["ir_name"]),
         # [삭제] 를 보일지 — 라우터가 막는 것과 **같은 판정**이다.
         "can_delete": can_delete_company(user),
+        # [딜소개 문구 올리기] 를 보일지 — 관리자만(`can_upload_pitch`).
+        "can_upload_pitch": can_upload_pitch(user),
     })
     return templates.TemplateResponse("companies_series_a.html", ctx)
 
@@ -343,3 +348,121 @@ def delete_row(row_id: int, db: Session = Depends(get_db),
     db.delete(row)
     db.commit()
     return {"deleted": row_id}
+
+
+# --- 딜소개 문구 올리기 (관리자) ---------------------------------------------
+#
+# 시트 파일로 `딜소개 문구` 칸만 채운다(`services/series_a_pitch_upload.py` 머리말).
+# 미리보기(`dry_run`) → 같은 파일을 다시 보내 반영 — `data_io.import_contacts` 와
+# 같은 짜임이고, 화면도 그 업로드 창을 따른다(`series_a_pitch.js`).
+
+def can_upload_pitch(user: User) -> bool:
+    """[딜소개 문구 올리기] 를 보여도 되는가 — **관리자만**(사용자 결정 2026-10-16).
+
+    화면(`render_page`)과 라우터(`upload_pitch`)가 **이 함수 하나**를 지난다 —
+    단추가 보이는 사람은 반드시 올릴 수 있고, 안 보이는 사람은 주소를 직접 쳐도
+    막힌다. 관리자 판정 자체는 `companies._is_admin`(→ `deps.admin_only`)이다.
+    """
+    from .companies import _is_admin
+
+    return _is_admin(user)
+
+
+def _file_tabs(filename: str, data: bytes) -> List[str]:
+    """파일의 탭 이름들 — 화면이 탭 고르개를 채운다. 못 읽으면 빈 목록."""
+    from ..services import spreadsheet as sp
+
+    try:
+        return sp.sheet_names(filename, data)
+    except sp.SpreadsheetError:
+        return []
+
+
+def _bad(detail: str, tabs: List[str]) -> JSONResponse:
+    """400 — 무엇이 문제인지와 **파일의 탭들**(`sheets`). 탭이 여럿인 워크북에서
+    이 시트로 보이는 탭을 못 고르면, 화면이 그 목록으로 고르개를 세운다."""
+    if tabs:
+        detail += " · 이 파일의 탭: " + ", ".join(tabs)
+    return JSONResponse({"detail": detail, "sheets": tabs}, status_code=400)
+
+
+@router.post("/api/import/series-a-pitch")
+def upload_pitch(
+    file: UploadFile = File(...),
+    sheet: str = Form(""),
+    # [이미 적힌 문구도 덮어쓰기]. 꺼 두면 **빈 칸만** 채운다.
+    overwrite: bool = Form(False),
+    dry_run: bool = Form(True),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """[딜소개 문구 올리기]. 기본은 미리보기 — 반영하려면 `dry_run=false`.
+
+    주소는 `/api/import/…` 다 — 올리는 길을 한 갈래에 둔다(`data_io` 머리말: 표의
+    `/{row_id}` 길과 부딪히지 않게).
+
+    **내려받은 파일 막기(`spreadsheet.is_export_file`)는 걸지 않는다.** 그 막이는
+    내보낸 투자사 표를 되올리면 활동이 부풀기 때문인데, 이 표는 내려받는 길이
+    없고 다른 표를 내보낸 파일은 머리글(`SIGNATURE`)에서 걸린다.
+    """
+    from ..services import series_a_import as sai
+    from ..services import series_a_pitch_upload as pitch
+    from ..services.import_diff import shorten
+    from .data_io import DIFF_ROWS
+
+    if not can_upload_pitch(user):
+        raise NotAdmin()
+    data = file.file.read()
+    filename = file.filename or ""
+    tabs = _file_tabs(filename, data)
+    try:
+        used, rows = sai.read_upload(filename, data, sheet or None)
+        parsed = sai.parse(rows)
+    except ValueError as exc:     # 깨진 파일 · 탭 못 고름 · 머리글 없음
+        return _bad(str(exc), tabs)
+    if sai.HEADERS[pitch.FIELD][0] in parsed.missing:
+        return _bad("`딜소개 문구` 칸이 없습니다 — `기업명` · `수신 일자` · "
+                    "`공유 심사역` 이 있는 머리글 줄에 `딜소개 문구` 칸이 있어야 합니다", tabs)
+
+    p = pitch.plan(db, parsed.records, overwrite=overwrite)
+    if dry_run:
+        db.rollback()   # 미리보기가 DB 를 건드리고 끝나면 안 된다
+    else:
+        pitch.apply(p)
+        db.commit()
+
+    # 반영 뒤 화면 위에 뜨는 한 줄(`series_a_pitch.js` 가 `msg` 로 넘긴다).
+    head = (f"바뀔 줄 {len(p.changes)}" if dry_run
+            else f"딜소개 문구 {len(p.changes)}줄을 바꿨습니다")
+    summary = (f"{head}(빈 칸 채움 {p.filled} · 덮어씀 {p.overwritten})"
+               f" · 못 맞춘 줄 {len(p.unmatched)} · 애매해서 건너뛴 줄 {len(p.ambiguous)}")
+    return {
+        "dry_run": dry_run,
+        "overwrite": overwrite,
+        "sheets": tabs,
+        "sheet_used": used,
+        "file_rows": p.records,
+        "no_name": parsed.no_name,
+        "matched": p.matched,
+        "unmatched": len(p.unmatched),
+        # 못 맞춘 줄 중 **문구가 적힌 줄** — 이 문구들이 안 들어간다.
+        "unmatched_with_pitch": sum(1 for v in p.unmatched if v.get(pitch.FIELD)),
+        "ambiguous": len(p.ambiguous),
+        "duplicates": p.duplicates,
+        "changed": len(p.changes),
+        "filled": p.filled,
+        "overwritten": p.overwritten,
+        "same": p.same,
+        "kept": p.kept,
+        "blank": p.blank,
+        # 목록은 `DIFF_ROWS` 줄까지만 싣는다 — 수는 위에 다 있다(`data_io` 와 같은 판단).
+        # 문구는 줄여 싣는다(`import_diff.shorten` — 투자사 업로드 미리보기와 같은 자).
+        "changes": [dict(pitch.ident(c.row), id=c.row.id, how=c.how,
+                         before=shorten(c.before), after=shorten(c.after))
+                    for c in p.changes[:DIFF_ROWS]],
+        "unmatched_rows": [dict(pitch.ident(v), has_pitch=bool(v.get(pitch.FIELD)))
+                           for v in p.unmatched[:DIFF_ROWS]],
+        "ambiguous_rows": [dict(pitch.ident(v), has_pitch=bool(v.get(pitch.FIELD)))
+                           for v in p.ambiguous[:DIFF_ROWS]],
+        "summary": summary,
+    }
