@@ -3,7 +3,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
 // 딜소개 보내기 — selection, preview, send-list creation (FEATURE_SPEC §5).
 (function () {
   // 고르는 기업 상자. **Series A 딜 공유**(딜 소싱 제안의 셋째 글)를 고르면
-  // ① 칸이 `Series A 이상 기업` 고르개(`#series-a-list`)로 바뀌고, 고른 차례 ·
+  // ① 칸이 `Series A 이상 딜 소싱` 고르개(`#series-a-list`)로 바뀌고, 고른 차례 ·
   // 번호 배지 · 10개 한도가 그 상자를 그대로 따른다 — 셈을 한 벌 더 두지 않는다.
   var companyCbs = function () {
     return Array.prototype.slice.call(document.querySelectorAll(
@@ -50,7 +50,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   var REMIND = "sourcing_remind";
   // ── Series A 딜 공유 ───────────────────────────────────────────────────
   //
-  // 셋째 글 — 시리즈 A 갈래 심사역께 `Series A 이상 기업` 탭의 받은 딜을 소개한다
+  // 셋째 글 — 시리즈 A 갈래 심사역께 `Series A 이상 딜 소싱` 탭의 받은 딜을 소개한다
   // (`services/series_a_share.py`). 받는 갈래가 **하나뿐**이라 다른 갈래 카드는
   // 고를 수 없다(`data-bucket` — 서버가 칩에 실어 준다). 고른 기업을 **모두 이미
   // 받은 분**은 [이미 이 기업들을 받은 분 제외](기본 켬)로 빠진다 — 고른 채로
@@ -394,7 +394,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   }
 
 
-  // ── Series A 이상 기업 고르개(Series A 딜 공유) ─────────────────────────
+  // ── Series A 이상 딜 소싱 고르개(Series A 딜 공유) ─────────────────────────
   // IR 기업 검색과 같은 규칙: **고른 기업은 검색어와 무관하게 늘 보인다.**
   // 카드마다 `이미 받은 분 N명` — 지금 고른 받는 분 중 이 기업을 받은 분 수.
   // 받는 분을 바꾸면 따라 바뀐다(`updateCounts` 가 부른다).
@@ -1892,7 +1892,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     // [Series A 딜 소개]가 여는 주소다).
     var topicParam = params.get("topic");
     if (toSourcing && (topicParam === REMIND || topicParam === SHARE)) pickTopic(topicParam);
-    // 딜 소싱 명단 · Series A 이상 기업을 미리 켠다(`contacts` · `series_a`).
+    // 딜 소싱 명단 · Series A 이상 딜 소싱 기업을 미리 켠다(`contacts` · `series_a`).
     // 받는 갈래가 아니거나 불참여인 분은 켜지 않는다(`dropExcluded`) — 몇 명이
     // 그랬는지는 아래에서 말한다.
     var askedSourcing = 0, keptSourcing = 0, askedSeries = 0, gotSeries = 0;
@@ -1918,8 +1918,8 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
                    : " 지금 고를 수 없는 분입니다."));
     }
     if (askedSeries && gotSeries < askedSeries) {
-      warns.push("Series A 이상 기업 " + (askedSeries - gotSeries) + "개를 목록에서 " +
-        "찾지 못했습니다 — IR 기업 현황 › Series A 이상 기업 탭에서 확인하세요.");
+      warns.push("Series A 이상 딜 소싱 기업 " + (askedSeries - gotSeries) + "개를 목록에서 " +
+        "찾지 못했습니다 — IR 기업 현황 › Series A 이상 딜 소싱 탭에서 확인하세요.");
     }
     // 넘겨받은 담당자가 **이 목록에 없을 수 있다.** 이 화면의 대상은 `내
     // 담당` 보다 좁다 — 딜 소개 명단에 있고 카톡방 연결까지 끝난 사람만

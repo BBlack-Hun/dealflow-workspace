@@ -1,4 +1,4 @@
-"""IR 기업 현황 메뉴의 셋째 탭 `Series A 이상 기업`.
+"""IR 기업 현황 메뉴의 셋째 탭 `Series A 이상 딜 소싱`.
 
 사용자 요청: 시트 `Series A 이상 기업` 을 기반으로 탭을 더하고, 다른 탭과 같이
 **칸 일부를 고정**하고 **필터**를 단다.
@@ -100,11 +100,11 @@ def test_탭이_열리고_세_탭이_한_줄로_선다(logged_in, rows):
     assert res.status_code == 200
     html = res.text
     tabs = re.search(r'<nav class="sheet-tabs co-tabs">.*?</nav>', html, re.S).group(0)
-    assert "IR 기업 현황" in tabs and "스타트업DB" in tabs and "Series A 이상 기업" in tabs
+    assert "IR 기업 현황" in tabs and "스타트업DB" in tabs and "Series A 이상 딜 소싱" in tabs
     active = re.findall(r'class="sheet-tab active" href="([^"]+)"', tabs)
     assert active == ["/companies?tab=series-a"], active
     # 셋째 탭의 수 = 이 표의 줄 수.
-    assert re.search(r"Series A 이상 기업 <span[^>]*>4</span>", tabs), tabs
+    assert re.search(r"Series A 이상 딜 소싱 <span[^>]*>4</span>", tabs), tabs
 
 
 @pytest.mark.parametrize("path", ["/companies", "/companies?tab=db"])
@@ -113,7 +113,7 @@ def test_옆_두_탭에도_셋째_탭이_선다(logged_in, rows, path):
     html = logged_in.get(path).text
     tabs = re.search(r'<nav class="sheet-tabs co-tabs">.*?</nav>', html, re.S).group(0)
     assert 'href="/companies?tab=series-a"' in tabs
-    assert re.search(r"Series A 이상 기업 <span[^>]*>4</span>", tabs), tabs
+    assert re.search(r"Series A 이상 딜 소싱 <span[^>]*>4</span>", tabs), tabs
     assert "IR 기업 현황 <span title=\"등록된 기업\">1</span>" in tabs
 
 

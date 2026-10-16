@@ -1,4 +1,4 @@
-"""IR 기업 현황 메뉴의 `Series A 이상 기업` 탭 — 표 그리기 · 고치기 · 더하기 · 지우기.
+"""IR 기업 현황 메뉴의 `Series A 이상 딜 소싱` 탭 — 표 그리기 · 고치기 · 더하기 · 지우기.
 
 **화면 주소는 옆 두 탭과 같다** — `/companies?tab=series-a`. 그 주소를 받는
 `companies.companies_page` 가 이리로 넘긴다(`render_page`). 같은 메뉴의 세 탭이
