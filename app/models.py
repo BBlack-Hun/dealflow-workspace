@@ -798,7 +798,7 @@ class IrCompany(TimestampMixin, Base):
 
 
 class SeriesACompany(TimestampMixin, Base):
-    """IR 기업 현황 메뉴의 `Series A 이상 기업` 탭 — **받은 딜 한 건이 한 줄**.
+    """IR 기업 현황 메뉴의 `Series A 이상 딜 소싱` 탭 — **받은 딜 한 건이 한 줄**.
 
     시트 `Series A 이상 기업` 을 옮긴 표다. 한 줄은 "언제(`received_at`) 어느
     투자사(`source_firm`)의 누가(`shared_by`) 어떤 길로(`deal_type` — 딜 소싱
@@ -880,7 +880,7 @@ class SeriesAShare(TimestampMixin, Base):
     딜 제안 관리 › 딜 소싱 제안의 [보낼 문구 › Series A 딜 공유]가 발송 목록을
     만들 때 적는다(`routers/deals.create_send_list` → `services/series_a_share.record`).
     받는 사람은 딜 소싱 명단(`sourcing_contacts`)의 `시리즈 A 이상 딜 소싱 참여
-    심사역` 갈래 줄이고, 기업은 `Series A 이상 기업` 탭의 줄(`series_a_companies`)이다.
+    심사역` 갈래 줄이고, 기업은 `Series A 이상 딜 소싱` 탭의 줄(`series_a_companies`)이다.
 
     ## 왜 표를 새로 세우나
 
@@ -897,7 +897,7 @@ class SeriesAShare(TimestampMixin, Base):
     (`services/twin_send.py` 가 같은 규칙으로 센다).
 
     이 수가 쓰이는 곳: 딜 제안 관리의 기업 고르개 `이미 받은 분 N명`, 받는 사람
-    목록의 `이미 이 기업들을 받은 분 제외`, `Series A 이상 기업` 탭의 `공유한
+    목록의 `이미 이 기업들을 받은 분 제외`, `Series A 이상 딜 소싱` 탭의 `공유한
     심사역`, 딜 소싱 줄의 `Series A 딜 공유 N건`.
     """
 

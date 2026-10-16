@@ -202,7 +202,7 @@ MODE_TITLES[MODE_DEAL] = "딜 소개"
 #: 이 이름은 회차명(`09/09 (딜 소싱 리마인드)`)과 문구 화면의 구간 이름에 쓰인다.
 #:
 #: **Series A 딜 공유**도 같은 탭 안의 셋째 글이다 — 받는 사람은 시리즈 A 갈래
-#: 심사역뿐이고, 글에 `Series A 이상 기업` 탭의 기업이 덩어리째 들어간다
+#: 심사역뿐이고, 글에 `Series A 이상 딜 소싱` 탭의 기업이 덩어리째 들어간다
 #: (`services/series_a_share.py`). 보내는 길은 위 둘과 같다.
 TOPIC_TITLES = {sourcing_msg.REMIND_KIND: "딜 소싱 리마인드",
                 sourcing_msg.SHARE_KIND: series_a_share.LABEL}
@@ -250,7 +250,7 @@ def _check_series_a_count(ids: List[int]) -> None:
     if not (1 <= len(set(ids)) <= MAX_COMPANIES_PER_SEND):
         raise HTTPException(
             status_code=400,
-            detail=f"Series A 이상 기업을 1~{MAX_COMPANIES_PER_SEND}개 선택하세요")
+            detail=f"Series A 이상 딜 소싱 기업을 1~{MAX_COMPANIES_PER_SEND}개 선택하세요")
 
 
 def _check_per_person(n: int) -> None:
@@ -646,7 +646,7 @@ class PreviewRequest(BaseModel):
     # 다른 방식은 읽지 않는다.
     topic: str = ""
     # ── Series A 딜 공유에서만 쓴다 ──
-    # 고른 `Series A 이상 기업`(`series_a_companies.id`) — **고른 차례가 곧
+    # 고른 `Series A 이상 딜 소싱` 기업(`series_a_companies.id`) — **고른 차례가 곧
     # 문구의 번호**다(`[기업1]`). `company_ids`(IR 기업 현황)와 다른 표라 따로 받는다.
     series_a_ids: List[int] = []
     # 이미 받은 기업도 **다시 보낼지**. 기본은 그 분 문구에서 뺀다(다 받은 분은

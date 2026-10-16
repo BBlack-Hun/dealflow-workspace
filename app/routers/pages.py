@@ -217,7 +217,7 @@ def deals_page(
         "sourcing_month_label": f"{int(sourcing_month[5:])}월",
         "sourcing_linked": sourcing_linked,
         # ── 딜 소싱 제안 › [Series A 딜 공유] ──
-        # 기업 고르개(IR 기업 현황 › `Series A 이상 기업` 탭의 줄 — 같은 차례) ·
+        # 기업 고르개(IR 기업 현황 › `Series A 이상 딜 소싱` 탭의 줄 — 같은 차례) ·
         # 이 글을 받는 하나뿐인 갈래(`series_a_share.BUCKET` — 다른 갈래 카드는
         # 이 글에서 고를 수 없다).
         "series_a_rows": series_a_pick_rows(db),

@@ -8,6 +8,12 @@
 
   건수는 화면을 열 때마다 센다 — 시트처럼 탭 이름에 박아 두면(`스타트업(16)`
   인데 실제 70행) 금세 거짓말이 된다. 세는 자리는 `companies.tab_counts` 하나다.
+
+  셋째 탭 이름은 `Series A 이상 딜 소싱` 이다(#23 — 예전 `Series A 이상 기업`).
+  **화면에 보이는 이름만** 바꿨다 — 표(`series_a_companies`) · 주소
+  (`?tab=series-a`)는 그대로이고, 원본 구글 시트 탭은 여전히 옛 이름이라
+  가져오기 주석의 `시트 …` 는 옛 이름을 가리킨다. 화면 문구에 옛 이름이 다시
+  들어오지 않는지는 tests/test_series_a_rename.py 가 본다.
 #}
 <nav class="sheet-tabs co-tabs">
   <a class="sheet-tab {% if co_tab == 'status' %}active{% endif %}" href="/companies">
@@ -17,6 +23,6 @@
     스타트업DB <span title="기업정보가 채워진 기업">{{ counts.with_info }}</span>
   </a>
   <a class="sheet-tab {% if co_tab == 'series-a' %}active{% endif %}" href="/companies?tab=series-a">
-    Series A 이상 기업 <span title="딜 소싱으로 받은 딜">{{ counts.series_a }}</span>
+    Series A 이상 딜 소싱 <span title="딜 소싱으로 받은 딜">{{ counts.series_a }}</span>
   </a>
 </nav>

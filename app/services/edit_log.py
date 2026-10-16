@@ -304,7 +304,7 @@ WATCHED: Dict[str, Watch] = {
             "만큼 이 줄이 '누가 지웠나' 를 답하는 유일한 자리다."),
     "series_a_companies": Watch(
         owner=None, href="/companies", label=_attr("name"),
-        why="IR 기업 현황 메뉴의 `Series A 이상 기업` 탭 — 딜 소싱으로 받은 딜. "
+        why="IR 기업 현황 메뉴의 `Series A 이상 딜 소싱` 탭 — 딜 소싱으로 받은 딜. "
             "주인 칸이 없고 옆 두 탭(`ir_companies`)과 같이 **누구나 고치고**, "
             "지우는 사람도 같은 판정이다(`routers/companies.can_delete_company`). "
             "시트에서 넘어온 줄을 손으로 고치는 자리라, 누가 언제 무엇을 바꿨는지가 "
@@ -448,7 +448,7 @@ VALUE_FIELDS = frozenset({
     # (명단 이름 · 갈래 이름 · 탭 이름).
     "name", "label", "title", "firm", "company_name", "ceo_name",
     "department", "kind", "variant",
-    # `Series A 이상 기업` 탭 — 딜을 **누가 · 어느 투자사가 · 어떤 길로** 넘겨
+    # `Series A 이상 딜 소싱` 탭 — 딜을 **누가 · 어느 투자사가 · 어떤 길로** 넘겨
     # 주었나. 짧고 고르는 값이라(`firm` · `assignee_name` 과 같은 결) 값을 남긴다.
     "shared_by", "source_firm", "deal_type",
 
@@ -528,9 +528,9 @@ FIELD_LABELS = {
     "outcome": "결과", "meet_mode": "미팅 방식", "kind": "종류",
     "enabled": "켜짐", "firm_type": "기관 유형", "variant": "갈래",
     "vc_contact_id": "투자사 관리 현황 연결", "participation": "참여",
-    # `Series A 이상 기업` 탭 — 시트 머리글 그대로.
+    # `Series A 이상 딜 소싱` 탭 — 시트 머리글 그대로.
     "shared_by": "공유 심사역", "source_firm": "회사", "deal_type": "Type",
-    # 받은 날 — `Series A 이상 기업` 탭의 `수신 일자` · 스타트업DB 의 `수신일`.
+    # 받은 날 — `Series A 이상 딜 소싱` 탭의 `수신 일자` · 스타트업DB 의 `수신일`.
     # 이름표는 표를 가리지 않는 한 벌이라 두 탭에 다 맞는 이름을 단다. 같은
     # 까닭으로 `name`(이름) · `series`(라운드) · `assignee_name`(담당자 이름)도
     # 이 탭만의 이름(기업명 · 투자라운드 · 담당팀원)으로 바꾸지 않는다 — 바꾸면
