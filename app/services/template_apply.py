@@ -104,12 +104,8 @@ def _sig(t: MessageTemplate) -> str:
 
 def _choice(db: Session, user_id: int, kind: str,
             variant: str) -> Optional[TemplateChoice]:
-    return db.execute(
-        select(TemplateChoice)
-        .where(TemplateChoice.user_id == user_id,
-               TemplateChoice.kind == kind,
-               TemplateChoice.variant == variant)
-    ).scalars().first()
+    # 갈래 자리는 띄어쓰기만 달라도 같은 자리다 — 읽기(`pick`)와 같은 줄을 본다.
+    return template_pick._choice(db, user_id, kind, variant)
 
 
 def plan(db: Session, t: MessageTemplate) -> Plan:
@@ -128,13 +124,18 @@ def plan(db: Session, t: MessageTemplate) -> Plan:
                    MessageTemplate.is_active == 1)
             .order_by(MessageTemplate.id)
         ).scalars()
-        if template_pick.variant_of(kind, p.name) == variant]
+        if template_pick.same_slot(kind, p.name, variant)]
     off_ids = {p.id for p in out.turn_off}
 
-    choices = {c.user_id: c for c in db.execute(
-        select(TemplateChoice)
-        .where(TemplateChoice.kind == kind, TemplateChoice.variant == variant)
-    ).scalars()}
+    # 사람마다 그 자리의 선택 하나 — 띄어쓰기만 다른 갈래 글자에 둘이면 읽히는
+    # 먼저 것(`template_pick._choice` 와 같다).
+    choices: dict = {}
+    for c in db.execute(
+        select(TemplateChoice).where(TemplateChoice.kind == kind)
+        .order_by(TemplateChoice.id)
+    ).scalars():
+        if template_pick.same_slot(kind, c.variant, variant):
+            choices.setdefault(c.user_id, c)
     members = {u.id for u in db.execute(
         select(User).where(User.is_active == 1)).scalars() if deps.sends_deals(u)}
     # 꺼질 개인 문구를 골라 둔 사람이 위 목록 밖에 있을 수 있다(정지된 계정).
@@ -193,13 +194,12 @@ def latest(db: Session, kind: str, variant: str) -> Optional[TemplateApplyBackup
     먼저 것의 '후' 라, 먼저 것부터 되돌리면 나중 것이 남긴 선택과 안 맞아
     전부 건너뛴다 — 쌓인 차례의 거꾸로만 된다.
     """
-    return db.execute(
+    return next((b for b in db.execute(
         select(TemplateApplyBackup)
         .where(TemplateApplyBackup.kind == kind,
-               TemplateApplyBackup.variant == variant,
                TemplateApplyBackup.restored_at.is_(None))
-        .order_by(TemplateApplyBackup.id.desc()).limit(1)
-    ).scalars().first()
+        .order_by(TemplateApplyBackup.id.desc())
+    ).scalars() if template_pick.same_slot(kind, b.variant, variant)), None)
 
 
 def counts(backup: TemplateApplyBackup) -> Tuple[int, int]:

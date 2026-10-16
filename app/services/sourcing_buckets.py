@@ -203,10 +203,10 @@ def rename(db: Session, before: str, after: str) -> int:
         kept.add((choice.user_id, choice.kind))
         choice.variant = after
     for backup in db.execute(
-        select(TemplateApplyBackup).where(TemplateApplyBackup.kind.in_(KINDS),
-                                          TemplateApplyBackup.variant == before)
+        select(TemplateApplyBackup).where(TemplateApplyBackup.kind.in_(KINDS))
     ).scalars():
-        backup.variant = after
+        if same(backup.variant, before):
+            backup.variant = after
     db.flush()
     return moved
 

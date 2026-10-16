@@ -179,7 +179,7 @@ def usable(t: Optional[MessageTemplate], user_id: int, kind: str,
     """
     return (t is not None and t.is_active == 1 and t.kind == kind
             and t.user_id in (None, user_id)
-            and variant_of(t.kind, t.name) == variant)
+            and same_slot(t.kind, t.name, variant))
 
 
 def prune(db: Session, user_id: int) -> int:

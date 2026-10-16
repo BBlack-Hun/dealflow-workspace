@@ -95,16 +95,16 @@ def main() -> None:
             print(f"  건너뜀 (이름 칸 없음): {bucket}")
             continue
 
-        # 사람이 [이 분으로 확정]한 잇기는 갈아 끼우기 **전에** 적어 둔다 — 아래에서
-        # 되살린다(`sourcing_sync.restore_confirmed`).
-        kept = sourcing_sync.confirmed_links(db.execute(
-            select(SourcingContact).where(SourcingContact.bucket == bucket)).scalars())
         # 갈래를 통째로 갈아 끼운다 — 맞춰 넣으면 지워진 사람이 남는다.
         # 띄어쓰기만 다른 글자로 저장된 줄도 그 갈래다(딜 소싱 화면의 탭 하나) —
         # 그 줄들을 다 갈아 끼우고, **저장돼 있던 글자**로 다시 넣는다. 탭 이름의
         # 글자로 넣으면 문구 · 골라 둔 것이 달고 있는 글자와 갈린다.
         stored = sourcing_buckets.variants(db, bucket)
         bucket = sourcing_buckets.label_of(db, bucket)
+        # 사람이 [이 분으로 확정]한 잇기는 갈아 끼우기 **전에** 적어 둔다 — 아래에서
+        # 되살린다(`sourcing_sync.restore_confirmed`). 묶인 글자의 줄 전부에서.
+        kept = sourcing_sync.confirmed_links(db.execute(
+            select(SourcingContact).where(SourcingContact.bucket.in_(stored))).scalars())
         db.execute(delete(SourcingContact).where(SourcingContact.bucket.in_(stored)))
 
         n = 0
