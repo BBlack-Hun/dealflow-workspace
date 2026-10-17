@@ -12,8 +12,8 @@
 
 ## 판 번호
 
-다른 브랜치가 `0106` 을 만들고 있다. 이 판은 지금의 머리(`0105`)에 붙여 두고,
-두 브랜치를 합칠 때 `down_revision` 을 `0106` 쪽으로 바꾼다(PR 본문에 적었다).
+`0106_taxonomy_owned_funds`(#319) 뒤에 붙는다. 처음에는 그때 머리(`0105`)에
+붙여 두었다가, 두 브랜치를 합치면서 머리가 하나가 되도록 `0106` 으로 바꿨다.
 
 ## 되돌리기
 
@@ -21,7 +21,7 @@
 없어진다 — 다른 표는 이 표를 가리키지 않는다.
 
 Revision ID: 0107_deal_followup
-Revises: 0105_retire_old_auto_engines
+Revises: 0106_taxonomy_owned_funds
 """
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "0107_deal_followup"
-down_revision = "0105_retire_old_auto_engines"
+down_revision = "0106_taxonomy_owned_funds"
 branch_labels = None
 depends_on = None
 
