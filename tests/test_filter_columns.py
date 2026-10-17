@@ -168,7 +168,8 @@ def screens(client, db, users):
     from datetime import date, timedelta
 
     from app.models import (ConsultingColumn, ConsultingCompany, ContactColumn,
-                            IrCompany, Meeting, SeriesACompany, SheetOwner,
+                            IrCompany, Meeting, RevenueForecast,
+                            SeriesACompany, SheetOwner,
                             SourcingContact, VcContact, WeeklyRoutine,
                             WeeklyTask)
     from app.services.consulting_sheets import CONTRACT, by_kind, default_label
@@ -267,6 +268,8 @@ def screens(client, db, users):
                    title="홍보 메일 발송", due_date=date.today().isoformat()),
         WeeklyRoutine(user_id=u1.id, category="메일", title="주간 리마인드",
                       weekdays="0,2"),
+        # 업무 보고 › 매출예상리스트(#46) — 줄이 있어야 표가 그려진다.
+        RevenueForecast(user_id=u1.id, firm="가나벤처스", company_name="샘플애그"),
     ])
     db.commit()
     client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
@@ -291,6 +294,7 @@ def screens(client, db, users):
             client.get(f"/consulting?sheet={quote(contract_sheet)}").text,
         "딜 진행 관리(미팅 후기)": client.get("/ir").text,
         "주간 업무": client.get("/todo").text,
+        "매출예상리스트": client.get("/report/forecast").text,
         # 표가 없는 화면이지만 **투자사 관리 현황으로 링크를 가장 많이 거는
         # 화면**이다(막힌 것 · 방 상태 · 연결 진행 중인 명단). 그 링크는
         # 템플릿이 아니라 파이썬(`services/dashboard.py`)이 만들어서, 파일

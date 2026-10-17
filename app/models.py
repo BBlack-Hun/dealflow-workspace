@@ -3105,3 +3105,49 @@ class DealFollowup(TimestampMixin, Base):
     memo: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     memo_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     memo_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+
+class RevenueForecast(TimestampMixin, Base):
+    """업무 보고 › `매출예상리스트` 한 줄 — **기업 하나 × 투자사 하나**(개선 과제 #46).
+
+    ## 자동 칸은 값을 베껴 두지 않는다
+
+    아래 `비면 자동` 칸 아홉은 **사람이 적은 값만** 담는다. 비어 있으면 화면이 열릴
+    때마다 원본(스타트업DB · 투자사 관리 현황 · 딜 진행 관리 미팅)에서 읽어 빨간
+    글씨로 보인다(`services/forecast.py`). 원본을 옮겨 적으면 두 벌이 되어 한쪽만
+    고쳐진다 — `SeriesACompany` 머리말과 같은 까닭이다. 원본과 글자까지 같은 값은
+    저장하지 않는다(빈칸 = 자동이 그대로 남는다).
+
+    ## 기업은 번호로, 투자사 · 심사역은 글자로 잇는다
+
+    기업(`ir_company_id`)은 같은 이름의 IR 기업이 둘인 곳이 있어 사람이 고른 것을
+    남겨야 하고, 이름을 고쳐도 끊기지 않아야 한다(미팅 · IR 요청과 같은 방식).
+    투자사 쪽은 사람 줄(`vc_contacts`)이라 시트를 다시 가져오면 줄 번호가 바뀐다 —
+    회사명 글자에서 열쇠를 그때그때 짓는다(`InvestorFirm` 머리말과 같은 까닭).
+    """
+
+    __tablename__ = "revenue_forecasts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    #: 이 줄의 담당(만든 사람). 자동 칸이 찾는 명단 · 미팅도 이 사람 것이다.
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    #: 투자사명 · 기업명 — 사람이 적은 그대로.
+    firm: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    company_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: 이은 IR 기업. 기업명을 적을 때 후보가 하나면 잇고, 여럿이면 사람이 고른다.
+    ir_company_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("ir_companies.id"), nullable=True)
+    # ── 비면 자동 ────────────────────────────────────────────────────────────
+    vc_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    vc_phone: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    ceo_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    ceo_phone: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    pre_value: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    raise_target: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    meeting_plan: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    meeting1_done: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    meeting2_done: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # ── 직접 적는 칸(원본이 없다) ────────────────────────────────────────────
+    post_value: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    ceo_share: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    result_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

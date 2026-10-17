@@ -265,6 +265,7 @@ def test_무엇이_몇_건인지_숫자로_말한다(portal, linked):
     plan = _plan(portal["admin"], linked.id).json()
     assert plan["counts"] == {"sends": 1, "ir_requests": 1, "meetings": 1,
                               "startup_links": 0, "consulting_links": 0,
+                              "forecasts": 0,
                               "batches": 1, "queued": 1, "backups": 1}
     assert plan["detached"] == 3 and plan["removed"] == 2
     # 아직 안 나간 예약에 들어 있다 — 세 곳짜리 회차가 말없이 두 곳이 된다.
