@@ -151,6 +151,13 @@ UIA_MAIN_DUMP_FILE = "kakao_uia_dump.txt"
 #: 맨 위 방을 처음 열었을 때 한 번만 떠 두는 채팅창 구조(단톡·1:1 가르기용).
 UIA_CHAT_DUMP_FILE = "kakao_uia_chat_dump.txt"
 
+#: 발송할 방을 몇 번까지 찾아 여나 — 처음 한 번 + Enter 로 아무 방도 안 열렸을 때(또는
+#: 결과 목록이 읽히는데 그 방이 없을 때) **열린 검색창을 닫고** 한 번 더(0.11.10).
+#: 실기(0.11.9)에서 같은 방을 다시 찾으면 카톡이 결과를 새로 세우지 않아 Enter 가 열 방이
+#: 없었고, 실패한 건의 Esc(열린 검색창을 닫는다) 뒤의 건은 나갔다 — 그 차례를 한 건 안에서
+#: 되풀이한다. 채팅 입력란에 키를 넣기 **전**의 일이라 다시 해도 겹쳐 나갈 것이 없다.
+OPEN_ROOM_TRIES = 2
+
 
 def is_supported() -> bool:
     return platform.system() == "Windows"
@@ -183,6 +190,9 @@ class KakaoDesktopSender(Sender):
         #   (`Sender.can_send_files`), 켜졌을 때만 이 줄이 덮어쓴다.
         #   밝히지 않으면 서버가 파일이 실린 잡을 아예 안 준다.
         self.can_send_files = file_send_enabled(self.sel)
+        # 이 발송기가 Ctrl+F 로 연 메인 창 검색창이 **아직 열려 있다고 아는가**(0.11.10 —
+        # `_close_search_box`). 모르면 거짓이다 — 닫힌 검색창에 누른 Esc 는 메인 창을 숨긴다.
+        self._search_open = False
         self._init_backends()
 
     # --- lazy Windows-only backend init ---
@@ -455,11 +465,36 @@ class KakaoDesktopSender(Sender):
         ⚠ **검색창을 연 뒤에만** 부른다. 포커스를 못 잡은 채로 Esc 를 누르면 그
           키가 그 순간 포커스를 가진 **다른 앱**으로 간다 — 키를 누르지 않는다는
           원칙은 Esc 에도 걸린다.
+
+        누른 뒤로는 검색창이 열려 있다고 **알지 않는다**(`_search_open`) — 모르는 쪽으로
+        둔다. 열린 채 남았으면 다음 건의 다시 찾기가 닫는다.
         """
+        self._search_open = False
         try:
             self._pyautogui.press("esc")
         except Exception:  # noqa: BLE001
             pass
+
+    def _close_search_box(self, win) -> bool:
+        """이 발송기가 연 메인 창 검색창이 **아직 열려 있으면** 닫는다 (0.11.10). 눌렀으면 True.
+
+        ★ 열려 있는지는 **이 발송기가 적어 둔 것**(`_search_open`)으로만 본다 — 검색칸
+          글자로는 못 가른다. 카톡은 방을 열며 검색창을 스스로 닫아도 칸의 글자를 남긴다
+          (0.11.5 실기 — 지우지 않고 붙이면 앞 방 이름에 이어 붙었다). 닫힌 검색창에
+          누른 Esc 는 **메인 창을 숨긴다** — 모르면 누르지 않는다(0.11.9 는 보낸 뒤 늘 눌렀다).
+        ★ **메인 창이 앞에 있을 때만** 누른다(`_foreground_is_main`) — 키는 앞 창으로 간다.
+
+        누른 뒤에는 **기다렸다가** 메인 창이 숨었는지 보고, 숨었으면 다시 띄운다. 숨기기는
+        Esc 뒤에 한 박자 늦게 일어나, 곧바로 보면 아직 보인다(`_ensure_visible` 이 못
+        본다). 숨었다 다시 뜬 창은 포커스가 없을 수 있다 — 누른 뒤 키를 더 누를 쪽이
+        포커스를 다시 확인한다(`_open_room_verified`).
+        """
+        if not getattr(self, "_search_open", False) or not self._foreground_is_main(win):
+            return False
+        self._close_search()
+        time.sleep(self._t("after_close_search", 0.3))
+        self._ensure_visible(win)
+        return True
 
     # ── 맨 위 방 열어 제목 읽기 ──────────────────────────────────────────────
     #
@@ -974,11 +1009,15 @@ class KakaoDesktopSender(Sender):
           갈라짐이다(문구는 막고 파일은 안 막는 상태).
 
         Sequence (TECH_SPEC §5.2):
-          1. focus Kakao main window → 그 방 채팅창이 이미 떠 있으면 닫는다
-             (`_close_same_room_windows`)
-          2. Ctrl+F → paste room_name → wait
+          1. focus Kakao main window → **앞 건이 어떻게 끝났든 같은 자리에서**: 그 방
+             채팅창이 이미 떠 있으면 닫고(`_close_same_room_windows`), 이 발송기가 열어 둔
+             채 끝난 검색창이 있으면 닫는다(`_close_search_box`)
+          2. Ctrl+F → paste room_name → wait → 결과 목록이 읽히면 그 방이 섰는지 본다
           3. Enter → open top result
           4. VERIFY **foreground** window title == room_name (exact); mismatch → close + failed
+          (0.11.10) 3 에서 아무 방도 안 열리고 메인 창이 그대로 앞이면 — 또는 2 에서 읽은
+          목록에 그 방이 없으면 — 열린 검색창을 Esc 로 닫고 2 부터 **한 번 더**
+          (`OPEN_ROOM_TRIES`). 채팅창이 열린 뒤에는 되풀이하지 않는다.
 
         돌려주는 값: `(채팅창, 실패)`. 실패가 None 이 아니면 **그대로 돌려주고
         끝낸다** — 그 뒤로는 아무 키도 누르지 않는다. 채팅창을 받았으면 다 쓴 뒤
@@ -996,50 +1035,163 @@ class KakaoDesktopSender(Sender):
                 "발송 중에는 다른 창을 클릭하지 마세요.",
             )
 
+        # 1) ★ (0.11.10) 앞 건이 어떻게 끝났든 **같은 자리에서** 시작한다. 0.11.9 는
+        #    성공한 건의 출구(`_leave_room`)에서만 정리해, room_mismatch · 파일 한 개 실패 ·
+        #    예외로 끝난 건 뒤에는 남은 검색창 · 채팅창 위에서 시작했다. Esc 를 눌렀으면
+        #    (메인 창이 숨었다 다시 떴을 수 있다) 키를 더 누르기 전에 포커스를 다시 본다.
         self._close_same_room_windows(win, room_name)
+        if self._close_search_box(win) and not self._focus_verified(win):
+            return None, self._fail(
+                room_name,
+                "focus_failed: 남은 검색창을 닫은 뒤 카카오톡 창을 다시 앞으로 가져오지 "
+                f"못했습니다(전송 안 함, {self._focus_cause(win)})")
 
-        # 2) search — ★ **칸을 비우고** 붙인다(`_put_room_query`).
-        #
-        #    예전에는 Ctrl+F 뒤에 바로 붙였다. 카톡은 검색칸에 **직전 검색어를
-        #    남겨 두어** 앞 방 이름 뒤에 이번 방 이름이 이어 붙었고, 그 글자로는
-        #    방이 안 나와 `room_mismatch` 로 떨어졌다. 실패 뒤의 Esc 가 검색칸을
-        #    비워 그다음 건은 성공했다 — 그래서 **한 건 걸러 한 건**만 나갔다
-        #    (실기 0.11.4, 회차 하나에서 76건이 성공·실패를 번갈았다). 성공한 건은
-        #    Esc 가 채팅창만 닫아 검색칸의 글자가 그대로 남는다.
-        self._pyautogui.hotkey(*self.sel.get("search_hotkey", ["ctrl", "f"]))
-        time.sleep(self._t("after_search_hotkey", 0.4))
-        bad = self._put_room_query(win, room_name)
-        if bad is not None:
-            return None, bad
+        results = "목록 못 읽음"
+        tries = 0
+        for tries in range(1, OPEN_ROOM_TRIES + 1):
+            last = tries == OPEN_ROOM_TRIES
+            # 2) search — ★ **칸을 비우고** 붙인다(`_put_room_query`).
+            #
+            #    예전에는 Ctrl+F 뒤에 바로 붙였다. 카톡은 검색칸에 **직전 검색어를
+            #    남겨 두어** 앞 방 이름 뒤에 이번 방 이름이 이어 붙었고, 그 글자로는
+            #    방이 안 나와 `room_mismatch` 로 떨어졌다(실기 0.11.4). 비워도 **같은 방**
+            #    이면 카톡이 결과를 새로 세우지 않는다 — 아래 다시 찾기가 맡는다(0.11.10).
+            self._pyautogui.hotkey(*self.sel.get("search_hotkey", ["ctrl", "f"]))
+            self._search_open = True
+            time.sleep(self._t("after_search_hotkey", 0.4))
+            bad = self._put_room_query(win, room_name)
+            if bad is not None:
+                return None, bad
 
-        # 3) open top result
-        self._pyautogui.press("enter")
-        time.sleep(self._t("after_open_room", 0.8))
+            # 2-1) (0.11.10) 결과 목록에 그 방이 섰는가 — 읽히면 설 때까지 기다리고, 무엇이
+            #      보였는지 남긴다. 읽히는데 끝내 없으면 Enter 전에 한 번 더 찾는다. 못
+            #      읽으면(실기 PC — 0.11.1) 그대로 Enter 하고 아래 다시 찾기에 맡긴다.
+            #      목록을 읽는 자리는 추측이라(`room_search`) **막는 데는 쓰지 않는다** —
+            #      막는 것은 늘 4) 의 앞 창 제목 대조다.
+            found, results = self._room_in_results(win, room_name)
+            if found is False and not last:
+                log.warning("검색 결과에 그 방이 없습니다(%s) — 검색창을 닫고 한 번 더 "
+                            "찾습니다 room=%r", results, room_name)
+                if not self._search_again(win):
+                    break
+                continue
 
-        # 4) EXACT title verification (mis-send guard)
-        chat = self._opened_chat_window(room_name, win)
-        if chat is None:
-            # ★ (0.11.6) **실제로 열린 방 제목**을 실패 문구에 붙인다. 방은 찾아
-            #   열렸는데(사람 눈에는 "방은 찾는데 붙여 넣지를 못한다") 서버에 적힌
-            #   방 이름이 실제 제목과 달라 관문이 막는 경우가 대부분이다 — 실기에서
-            #   서버 쪽 이름 뒤에 참여자 이름이 덧붙어 있었다. 무엇으로 고칠지
-            #   사람이 바로 보도록 닫기 **전에** 읽는다. 카톡 창일 때만 적는다.
-            opened = self._opened_title_hint(win, room_name)
-            # ★ (0.11.9) 그 밖이면 **그때 앞에 있던 창 제목**을 적는다. 0.11.8 의
-            #   번갈아 실패는 문구가 제목 없이 와서, 방이 안 열린 것인지(앞 창이
-            #   `카카오톡`) 다른 창이 앞을 가로챈 것인지 가를 수 없었다.
-            seen = _clip(self._foreground_title())
-            self._safe_close()
-            error = "room_mismatch: 열린 방 제목이 정확히 일치하지 않음"
-            if opened:
-                error += (f" — 실제로 열린 방: {opened!r}. 방 이름을 이 제목과 "
-                          f"똑같이 고치면 나갑니다 (전송 안 함)")
-            elif seen:
-                error += f" (전송 안 함, 앞 창: {seen!r})"
-            else:
-                error += " (전송 안 함, 앞 창 제목을 읽지 못함)"
-            return None, self._fail(room_name, error)
-        return chat, None
+            # 3) open top result — ★ Enter 도 **메인 창이 앞일 때만** 누른다. 결과 목록을
+            #    기다리는 사이(2-1) 다른 창이 앞을 가로챌 수 있다 — 그러면 그 창으로 간다.
+            if not self._foreground_is_main(win):
+                return None, self._fail(
+                    room_name,
+                    "focus_failed: 검색 중 카카오톡 메인 창이 앞에서 사라졌습니다(전송 안 함). "
+                    "발송 중에는 다른 창을 클릭하지 마세요.")
+            self._pyautogui.press("enter")
+            time.sleep(self._t("after_open_room", 0.8))
+
+            # 4) EXACT title verification (mis-send guard)
+            chat = self._opened_chat_window(room_name, win)
+            if chat is not None:
+                # 방을 열면 카톡이 검색창을 **스스로 닫는다**(0.11.9 실기 — 보낸 뒤의 Esc 가
+                # 닫힌 검색창에 떨어져 아무것도 안 지웠다). 열려 있다고 알지 않는다.
+                self._search_open = False
+                return chat, None
+            if not self._foreground_is_main(win):
+                # 다른 방(카톡 채팅창)이든 다른 앱이든 무엇이 앞에 왔다 — 되풀이하지 않는다.
+                # 검색창이 어떤지 모른다(모르는 쪽으로 둔다 — `_close_search_box`).
+                self._search_open = False
+                break
+            if last:
+                break
+            # 아무 방도 안 열렸고 메인 창이 그대로 앞이다 — 실기(0.11.9)에서 같은 방을 연달아
+            # 보낼 때 본 그 모양이다. 열린 검색창을 닫고(검색 상태가 지워진다) 다시 찾는다.
+            log.warning("Enter 로 방이 열리지 않았습니다(검색 결과: %s) — 검색창을 닫고 "
+                        "한 번 더 찾습니다 room=%r", results, room_name)
+            if not self._search_again(win):
+                break
+
+        # ★ (0.11.6) **실제로 열린 방 제목**을 실패 문구에 붙인다. 방은 찾아
+        #   열렸는데(사람 눈에는 "방은 찾는데 붙여 넣지를 못한다") 서버에 적힌
+        #   방 이름이 실제 제목과 달라 관문이 막는 경우가 대부분이다 — 실기에서
+        #   서버 쪽 이름 뒤에 참여자 이름이 덧붙어 있었다. 무엇으로 고칠지
+        #   사람이 바로 보도록 닫기 **전에** 읽는다. 카톡 창일 때만 적는다.
+        opened = self._opened_title_hint(win, room_name)
+        # ★ (0.11.9) 그 밖이면 **그때 앞에 있던 창 제목**을 적는다. 0.11.8 의
+        #   번갈아 실패는 문구가 제목 없이 와서, 방이 안 열린 것인지(앞 창이
+        #   `카카오톡`) 다른 창이 앞을 가로챈 것인지 가를 수 없었다.
+        seen = _clip(self._foreground_title())
+        self._close_wrong_room(win)
+        error = "room_mismatch: 열린 방 제목이 정확히 일치하지 않음"
+        if opened:
+            error += (f" — 실제로 열린 방: {opened!r}. 방 이름을 이 제목과 "
+                      f"똑같이 고치면 나갑니다 (전송 안 함)")
+        elif seen:
+            error += f" (전송 안 함, 앞 창: {seen!r})"
+        else:
+            error += " (전송 안 함, 앞 창 제목을 읽지 못함)"
+        # (0.11.10) 그때 결과 목록에 무엇이 있었는지 · 다시 찾았는지 — 다음 실기 실패가
+        #   무엇을 보았는지 말하게.
+        error += f" · 검색 결과: {results}"
+        if tries > 1:
+            error += " · 다시 찾아도 안 열림"
+        return None, self._fail(room_name, error)
+
+    def _search_again(self, win) -> bool:
+        """다시 찾기 전 — 열린 검색창을 Esc 로 닫고(`_close_search_box`) 메인 창 포커스를
+        다시 잡는다. 둘 중 하나라도 안 되면 False — 키를 더 누르지 않는다."""
+        return self._close_search_box(win) and self._focus_verified(win)
+
+    def _room_in_results(self, win, room_name: str):
+        """방을 열기 전 검색 결과 목록 — `(그 방이 섰나, 적어 둘 한 줄)` (0.11.10).
+
+        섰나: `True` · `False`(읽었는데 제목이 글자까지 같은 줄이 없다) · `None`(목록을
+        못 읽었다 — 0줄일 수도 있다). 읽히면 그 방 줄이 설 때까지 `room_search_wait` 만큼
+        기다린다 — 결과는 한 박자 늦게 선다(`_search_titles` 머리말). **처음부터 못 읽으면
+        기다리지 않는다** — 목록을 못 읽는 PC 에서 건마다 시간을 버리지 않게.
+
+        적어 둘 한 줄은 로그와 room_mismatch 문구에 붙는다 — `3줄, 맨 위 '…'`.
+        """
+        conf = self.room_search_conf
+        want = _norm_title(room_name)
+        ctype = conf.get("item_text_control_type", "Text")
+        deadline = time.monotonic() + self._t("room_search_wait", 2.0)
+        titles: Optional[List[str]] = None
+        found = False
+        while True:
+            rows = self._result_rows(win, conf)
+            if rows is not None:
+                titles = [row_title(r, ctype) for r in rows[:_max_rows(conf)]]
+                found = any(_norm_title(t) == want for t in titles)
+            if found or titles is None or time.monotonic() >= deadline:
+                break
+            time.sleep(self._t("room_search_poll", 0.15))
+        if titles is None:
+            log.info("방 열기 전 검색 결과: 목록 못 읽음 room=%r", room_name)
+            return None, "목록 못 읽음"
+        note = (f"{len(titles)}줄, 맨 위 {_clip(titles[0])!r}" if titles else "0줄")
+        log.info("방 열기 전 검색 결과: %s room=%r", note, room_name)
+        return found, note
+
+    def _close_wrong_room(self, win) -> None:
+        """제목이 어긋난 채 끝날 때 — **카톡 창에만** 손댄다 (0.11.10).
+
+        0.11.9 까지는 앞에 무엇이 있든 Esc 를 눌렀다(`_safe_close`) — 그사이 다른 앱이
+        앞을 가로챘으면 그 Esc 가 그 앱으로 갔다.
+
+          · 앞 창이 카톡의 **채팅창**(다른 방이 열렸다) — 그 창 하나만 닫는다
+            (`_close_chat_window` — 앞에 있으면 Esc, 아니면 WM_CLOSE)
+          · 앞 창이 **메인 창**(아무 방도 안 열렸다) — 열어 둔 검색창만 닫는다
+            (`_close_search_box` — 열려 있다고 알 때만)
+          · 그 밖(다른 앱 · 모름 · `카카오톡` 으로 시작하는 카톡의 다른 창) — **아무 키도
+            누르지 않는다.** 남은 것은 다음 건이 시작할 때 정리한다
+        """
+        if self._foreground_is_main(win):
+            self._close_search_box(win)
+            return
+        hwnd = self._foreground_hwnd()
+        pid = self._window_pid(win)
+        title = self._hwnd_title(hwnd) if hwnd else ""
+        main_title = self.sel.get("main_window_title_kw", "카카오톡")
+        if (hwnd and pid and self._hwnd_pid(hwnd) == pid and title.strip()
+                and not title.startswith(main_title)):
+            self._close_chat_window(hwnd, title)
 
     def _focus_cause(self, win) -> str:
         """focus_failed 의 까닭 한 토막 (0.11.9). 실패 문구만 보고 무엇이 막았는지
@@ -1084,22 +1236,20 @@ class KakaoDesktopSender(Sender):
             time.sleep(self._t("after_close_chat", 0.3))
 
     def _leave_room(self, chat, room_name: str) -> None:
-        """다 쓴 방에서 나온다 — 채팅창을 닫고 **메인 창 검색창까지** 닫는다.
+        """다 쓴 방에서 나온다 — 채팅창을 닫는다. 메인 창 검색창은 **열려 있을 때만** 닫는다.
 
-        ★ (0.11.9) 예전에는 Esc 한 번(`_safe_close`)이었다. 그 Esc 는 채팅창만
-          닫아 메인 창 검색창이 **그 방 이름이 든 채 열려** 남았다. 실패한 건의
-          Esc 는 앞에 메인 창이 있어 **검색창을** 닫았다. 그래서 성공 뒤의 건과
-          실패 뒤의 건이 다른 자리에서 시작했다. 0.11.5 가 남은 글자를 지우게
-          고쳤지만, 같은 방으로 다시 보내면 지우고 넣은 글자가 남아 있던 글자와
-          같아 카톡이 결과를 새로 세우지 않았고, Enter 가 열 방이 없어
-          `room_mismatch` 로 떨어졌다 — 같은 방으로 보내면 한 건 걸러 실패(시험
-          서버 0.11.8, 시험방 하나로 보낸 회차가 성공·실패를 번갈았다).
-          이제 어느 건이든 **검색창이 닫힌 자리**에서 시작한다. 방 검색의 맨 위 방
-          열기(`_open_top_room_title`)가 이미 이렇게 닫는다.
+        ★ (0.11.10) 0.11.9 는 채팅창을 닫은 뒤 메인 창에 Esc 를 늘 눌러 검색창까지 닫았다
+          — 같은 방으로 연달아 보내면 한 건 걸러 실패하던 것(시험 서버 0.11.8)을 그것으로
+          고쳤다고 봤다. 실기(0.11.9, 10/17)에서 그래도 번갈았다: 카톡은 방을 열며 검색창을
+          **스스로 닫고**, 그 Esc 는 닫힌 검색창에 떨어져 검색 상태를 못 지웠다. 닫힌
+          검색창에 누른 Esc 는 메인 창을 숨기기까지 한다(늦게 — `_close_search_box`).
+          같은 방 다시 찾기는 이제 `_open_room_verified` 가 맡는다(Enter 로 안 열리면 열린
+          검색창을 닫고 한 번 더). 여기서는 이 발송기가 열어 둔 줄 **아는** 검색창만 닫는다
+          — 방을 열었으면 그런 검색창은 없다.
 
-        닫는 차례: 그 채팅창 **하나만** 닫고(`_close_chat_window` — 앞에 있으면
-        Esc, 아니면 WM_CLOSE) → 메인 창이 앞에 왔는지 **확인한 뒤에만** Esc 로
-        검색창을 닫는다. 확인이 안 되면 키를 누르지 않는다.
+        닫는 차례: 그 채팅창 **하나만** 닫고(`_close_chat_window` — 앞에 있으면 Esc,
+        아니면 WM_CLOSE) → 열린 검색창이 있다고 알면 메인 창이 앞일 때만 Esc
+        (`_close_search_box`). 확인이 안 되면 키를 누르지 않는다.
 
         보낸 **뒤**의 정리라 여기서 무엇이 실패해도 결과를 바꾸지 않는다 —
         이미 나간 것을 실패로 적으면 다시 보내 겹친다.
@@ -1113,13 +1263,7 @@ class KakaoDesktopSender(Sender):
                 self._close_chat_window(hwnd, room_name)
             else:
                 self._safe_close()
-            win = self._kakao_window()
-            if self._focus_verified(win):
-                self._close_search()
-                self._ensure_visible(win)
-            else:
-                log.warning("방을 닫은 뒤 카톡 포커스를 못 잡아 검색창을 닫지 "
-                            "않았습니다(키 입력 안 함) room=%r", room_name)
+            self._close_search_box(self._kakao_window())
         except Exception:  # noqa: BLE001
             log.exception("방에서 나오다 실패했습니다(결과는 그대로) room=%r", room_name)
 
@@ -1223,7 +1367,8 @@ class KakaoDesktopSender(Sender):
                     "send_not_confirmed: 전송 후에도 입력창에 본문이 남아 있습니다",
                 )
 
-            # 7) 채팅창과 검색창을 닫는다 — 다음 건이 늘 같은 자리에서 시작한다
+            # 7) 채팅창을 닫는다(열린 검색창이 있다고 알면 그것도) — 다음 건은 시작할
+            #    때 한 번 더 같은 자리로 맞춘다(`_open_room_verified` 의 1)
             self._leave_room(chat, room_name)
             return SendResult(ok=True)
         except Exception as exc:  # noqa: BLE001

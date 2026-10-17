@@ -136,8 +136,12 @@ def test_연달아_보내도_한_건도_안_빠진다(uia_clear):
     assert [room for room, _ in sender.delivered] == ROOMS
 
 
-def test_예전처럼_안_비우면_번갈아_실패한다():
-    """이 흉내가 실제 증상을 재현하는지 — 비우기를 빼면 성공·실패가 번갈아야 한다."""
+def test_예전처럼_안_비우면_번갈아_실패한다(monkeypatch):
+    """이 흉내가 실제 증상을 재현하는지 — 비우기를 빼면 성공·실패가 번갈아야 한다.
+
+    0.11.10 부터는 Enter 로 방이 안 열리면 검색창을 닫고 한 번 더 찾아(`OPEN_ROOM_TRIES`)
+    이것만 빼서는 재현되지 않는다 — 다시 찾기도 끈다."""
+    monkeypatch.setattr(kw, "OPEN_ROOM_TRIES", 1)
     kakao = FakeKakao({})
     sender = SendWin(kakao)
 

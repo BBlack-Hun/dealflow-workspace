@@ -34,6 +34,7 @@ timings:
   room_search_poll: 0.15    # 그 사이 다시 읽어 보는 간격
   open_top_wait: 1.5        # 맨 위 방을 연 뒤 새 채팅창이 뜨기를 기다리는 시간
   after_close_chat: 0.3     # 그 채팅창을 닫은 뒤
+  after_close_search: 0.3   # 메인 창 검색창을 Esc 로 닫은 뒤 — 메인 창이 숨었는지 보기 전에 (0.11.10)
 
 # TODO(win, 1.10): 채팅창 제목 라벨 경로를 실기에서 파악해 아래에 추가하고
 # kakao_windows.py의 정확 일치 검증에 연결.

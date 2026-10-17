@@ -623,7 +623,7 @@ def test_the_agent_tells_its_version_when_it_polls():
 
 
 def test_the_automation_agent_version_is_where_the_gap_began():
-    """건 사이 간격을 지키기 시작한 판(0.11.8)이 바닥이다. 그 뒤 판(0.11.9 —
+    """건 사이 간격을 지키기 시작한 판(0.11.8)이 바닥이다. 그 뒤 판(0.11.9 · 0.11.10 —
     같은 방 연달아 보내기)은 간격과 상관이 없어 바닥을 올리지 않는다 — 올리면
     0.11.8 PC 의 자동 회차가 통째로 선다."""
     from app import version
