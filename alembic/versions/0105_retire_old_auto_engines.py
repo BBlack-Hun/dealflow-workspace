@@ -7,12 +7,13 @@
 1. **A5(`automations.key = 'startup_monthly'`)** — 옛 `startup_ir` 설정이 있으면
    그 계정을 보내는 계정으로 적는다(A5 는 메뉴의 계정으로만 나간다 —
    `automation.startup_menu_sender`).
-   - 줄이 없으면 세운다: **꺼짐 · 시험 모드 · 월말 순환**(`26 11:00 / 30 13:00 /
-     28 14:00`) · 문구 3개. 켜는 것은 사람이다 — 11월이 A5 의 첫 달이고, 켤 때까지
-     매월 자동 발송은 없다(10월은 이미 회차가 있다).
+   - 줄이 없고 옛 설정이 있으면 세운다: **꺼짐 · 시험 모드 · 월말 순환**(`26 11:00 /
+     30 13:00 / 28 14:00`) · 문구 3개. 켜는 것은 사람이다 — 11월이 A5 의 첫 달이고,
+     켤 때까지 매월 자동 발송은 없다(10월은 이미 회차가 있다).
    - 줄이 있으면 켜짐 · 시험 모드는 그대로 두고, 저장된 순환이 **옛 기본값**
-     (`15 11:00 / 20 13:00 / 16 14:00`)일 때만 월말로 바꾼다 — 사람이 고친 순환은
-     둔다. 글이 `{달} 말 기준` 이라 옛 기본값으로는 월중에 월말 현황이 나간다.
+     (`15 11:00 / 20 13:00 / 16 14:00`)일 때만 월말로 바꾼다(옛 설정이 없어도) —
+     사람이 고친 순환은 둔다. 글이 `{달} 말 기준` 이라 옛 기본값으로는 월중에 월말
+     현황이 나간다.
 2. **옛 30일 자동** — `startup_ir` 줄의 `monthly_auto` 를 0 으로. 읽는 코드는 이미
    없지만, 옛 이미지로 되돌린 날 그 자동이 A5 와 나란히 다시 서지 않게 한다
    (덜 보내는 쪽). 메뉴 켜짐 · 계정은 그대로다.
@@ -87,32 +88,33 @@ def upgrade() -> None:
     review_uid = senders.get("meeting_review")
     now = _now()
 
-    # ① A5 — 옛 스타트업 설정이 있을 때만(없으면 줄 없음 = 꺼짐 · 기본값).
-    if "startup_ir" in senders:
-        a5 = bind.execute(sa.text(
-            "SELECT id, user_id, params FROM automations WHERE key = :k"),
-            {"k": A5_KEY}).first()
-        if a5 is None:
+    # ① A5 — 줄이 없으면 옛 스타트업 설정이 있을 때만 세운다(없으면 줄 없음 =
+    # 꺼짐 · 기본값). 줄이 있으면 설정이 없어도 옛 기본 순환은 월말로 맞춘다.
+    a5 = bind.execute(sa.text(
+        "SELECT id, user_id, params FROM automations WHERE key = :k"),
+        {"k": A5_KEY}).first()
+    if a5 is None:
+        if "startup_ir" in senders:
             bind.execute(sa.text(
                 "INSERT INTO automations (key, enabled, user_id, test_mode, test_room, "
                 "params, created_at, updated_at) VALUES (:k, 0, :u, 1, NULL, :p, :n, :n)"),
                 {"k": A5_KEY, "u": startup_uid, "n": now,
                  "p": json.dumps({"slots": SLOTS, "variants": VARIANTS},
                                  ensure_ascii=False, sort_keys=True)})
-        else:
-            params = _params(a5.params)
-            changed = {}
-            if params is not None and params.get("slots") == OLD_SLOTS:
-                params["slots"] = SLOTS
-                changed["p"] = json.dumps(params, ensure_ascii=False, sort_keys=True)
-            if startup_uid and a5.user_id != startup_uid:
-                changed["u"] = startup_uid
-            if changed:
-                sets = ", ".join(
-                    [s for s, k in (("params = :p", "p"), ("user_id = :u", "u"))
-                     if k in changed] + ["updated_at = :n"])
-                bind.execute(sa.text(f"UPDATE automations SET {sets} WHERE id = :id"),
-                             {**changed, "n": now, "id": a5.id})
+    else:
+        params = _params(a5.params)
+        changed = {}
+        if params is not None and params.get("slots") == OLD_SLOTS:
+            params["slots"] = SLOTS
+            changed["p"] = json.dumps(params, ensure_ascii=False, sort_keys=True)
+        if startup_uid and a5.user_id != startup_uid:
+            changed["u"] = startup_uid
+        if changed:
+            sets = ", ".join(
+                [s for s, k in (("params = :p", "p"), ("user_id = :u", "u"))
+                 if k in changed] + ["updated_at = :n"])
+            bind.execute(sa.text(f"UPDATE automations SET {sets} WHERE id = :id"),
+                         {**changed, "n": now, "id": a5.id})
 
     # ② 옛 30일 자동은 내린다.
     bind.execute(sa.text(

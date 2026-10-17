@@ -123,6 +123,17 @@ def test_an_existing_a5_row_is_aligned_not_switched(old_db):
                       "item_gap_min": 30, "item_gap_max": 90}
 
 
+def test_old_default_slots_move_to_month_end_even_without_the_startup_setting(old_db):
+    """스타트업 설정 줄이 없어도(새로 깐 서버 · 테스트 서버) 저장된 옛 기본 순환은
+    월말로 — 계정은 건드리지 않는다(맞출 메뉴 계정이 없다)."""
+    _automation(old_db, "startup_monthly", user_id=None, params=json.dumps(
+        {"slots": ["15 11:00", "20 13:00", "16 14:00"], "variants": 3}))
+    _up(old_db)
+    enabled, uid, test_mode, params = _rows(old_db)["automations"]["startup_monthly"]
+    assert (enabled, uid, test_mode) == (0, None, 1)
+    assert params["slots"] == SLOTS
+
+
 def test_custom_slots_are_kept(old_db):
     _setting(old_db, "startup_ir", 8)
     _automation(old_db, "startup_monthly", user_id=8,
