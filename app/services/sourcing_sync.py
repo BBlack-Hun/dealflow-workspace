@@ -33,9 +33,13 @@ O 는 **"이 갈래에 들어 있다"** 이지 "딜을 받겠다고 했다" 가 
 
     참여                     딜 소싱 제안(참여 안내 · 월간 리마인드 · Series A 딜 공유)을 받는다
     불참여                   안 받는다 — 투자사 관리 현황 칸은 X
-    딜 소싱 참여 제안 대기중 안 받는다 — O 로 막 넣은 분. 아직 제안 전이다
-    참여 의사를 물어보는 중  안 받는다 — 갈래에는 있다(O). 동의하시면 `참여` 로 바꾼다
-    그 밖의 글(사람이 적음)  안 받는다 — `물어보는 중` 과 같게 본다(`11월에 다시 연락` 같은 메모)
+    딜 소싱 참여 제안 대기중 참여 안내(처음)만 받는다 — O 로 막 넣은 분. 나가면 `물어보는 중` 으로
+    참여 의사를 물어보는 중  참여 안내(처음)만 받는다(다시 보내기) — 동의하시면 `참여` 로 바꾼다
+    그 밖의 글(사람이 적음)  참여 안내도 안 받는다 — 뜻을 모른다(`11월에 다시 연락` 같은 메모)
+
+참여 안내(처음)만 `can_get_invite` 를 본다 — 아직 참여하지 않은 분께 참여를 청하는
+글이라서다. 그 안내가 `제안 대기중` 인 분께 나가면 그 줄은 저절로 `물어보는 중` 이
+된다(`mark_invited`). 나머지 글은 모두 `takes_part` 다.
 
 `takes_part` 가 그 한 자리다. 예전에는 "불참여가 아니면 받는다" 였는데, 그러면
 값을 하나 더 들이는 순간 그 값이 `참여` 와 똑같이 딜을 받는다 — 아직 동의하지
@@ -162,7 +166,7 @@ from sqlalchemy.orm.attributes import get_history
 
 from .. import clock
 from ..models import SourcingContact, User, VcContact
-from . import sheet_owner, sourcing_buckets, sourcing_link
+from . import edit_log, sheet_owner, sourcing_buckets, sourcing_link
 
 #: 투자사 관리 현황과 잇는 **하나뿐인** 갈래. 원본 시트의 탭 이름 그대로다
 #: (운영 21줄 · 2026-10). 이 이름은 딜 소싱 화면에서 바꿀 수 없다
@@ -245,7 +249,7 @@ def kind_of(value) -> str:
 
 
 def takes_part(row) -> bool:
-    """딜 소싱 제안(참여 안내 · 월간 리마인드 · Series A 딜 공유)을 받는 사람인가.
+    """딜 소싱 제안(월간 리마인드 · Series A 딜 공유)을 받는 사람인가. 참여 안내는 `can_get_invite`.
 
     **정확히 `참여` 일 때만** 받는다(모듈 머리말 — 허용 목록). `불참여` ·
     `참여 의사를 물어보는 중` · 사람이 적은 문구는 모두 안 받는다. 손으로 보내는 길
@@ -253,6 +257,42 @@ def takes_part(row) -> bool:
     리마인드(`services/automations/sourcing_remind.py`)가 이 한 자리를 본다.
     """
     return participation_of(row) == JOINED
+
+
+#: 참여 안내(처음)를 받는 값 — 제안 대기중 · 물어보는 중(다시 보내기) · 참여. 불참여와
+#: 사람이 적은 문구는 안 보낸다(문구는 뜻을 모른다). 다른 글은 `takes_part` 그대로다.
+INVITE_OK = (JOINED, OFFER_PENDING, ASKING)
+#: 참여 안내 회차의 잡 종류(`routers/deals.py`). 리마인드 · Series A 딜 공유도 같은
+#: 종류라 `SendJob.topic` 이 빈 것만 참여 안내다. 시험 발송은 `test_send` 라 안 걸린다.
+INVITE_JOB_KIND = "sourcing_intro"
+
+
+def can_get_invite(row) -> bool:
+    """참여 안내(처음)를 받는 사람인가 — `INVITE_OK`. 손으로 보내는 참여 안내 길만 본다."""
+    return participation_of(row) in INVITE_OK
+
+
+def mark_invited(db: Session, item, path: str = "") -> None:
+    """참여 안내가 `제안 대기중` 인 분께 **나간 뒤** 그 줄을 `물어보는 중` 으로.
+
+    발송 성공을 적는 자리(카톡 `agent_api.item_result` · 메일 `mail_sender`)가 부른다.
+    다른 값(참여 · 불참여 · 문구 · 이미 물어보는 중)은 건드리지 않는다. 수정 로그는
+    회차를 만든 사람 이름으로 남긴다 — 이 길에는 요청 문맥이 없다(`edit_log.begin`).
+    """
+    job = item.job
+    if (job is None or job.kind != INVITE_JOB_KIND or job.topic
+            or item.sourcing_contact_id is None):
+        return
+    row = db.get(SourcingContact, item.sourcing_contact_id)
+    if row is None or participation_of(row) != OFFER_PENDING:
+        return
+    db.flush()       # 앞서 바뀐 것(발송 건 상태)은 로그 밖에서 먼저 내보낸다
+    token = edit_log.begin(job.user_id, "POST", path)
+    try:
+        row.participation = ASKING
+        db.flush()
+    finally:
+        edit_log.end(token)
 
 
 def is_left(row) -> bool:

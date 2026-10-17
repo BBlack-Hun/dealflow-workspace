@@ -74,13 +74,14 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   function isRemind() { return mode === "sourcing" && sourcingTopic === REMIND; }
   function isShare() { return mode === "sourcing" && sourcingTopic === SHARE; }
   // 이 카드는 지금 **보낼 수 없는** 사람인가 — 리마인드에서 이 달 딜 받음이고,
-  // 포함을 켜지 않았다. 또는 화면을 연 뒤에 딜 소싱 `참여` 가 아닌 값(불참여 ·
-  // 참여 의사를 물어보는 중 · 사람이 적은 문구)이 되었다(`data-out` — 명단을 다시
-  // 읽을 때 선다). 그런 분께는 어떤 글도 안 나간다 — 켜는 칸이 없다(서버도 막는다:
-  // `routers/deals.py` 의 `_not_taking_part`).
+  // 포함을 켜지 않았다. 또는 화면을 연 뒤에 불참여 · 사람이 적은 문구가 되었다
+  // (`data-out` — 명단을 다시 읽을 때 선다). 그런 분께는 어떤 글도 안 나간다 — 켜는
+  // 칸이 없다(서버도 막는다: `routers/deals.py` 의 `_not_taking_part`).
   function isExcluded(card) {
     if (!card) return false;
     if (card.getAttribute("data-out") === "1") return true;
+    // 제안 대기중 · 물어보는 중 — 참여 안내(처음)만 받는다(`sourcing_sync.can_get_invite`).
+    if (card.getAttribute("data-invite-only") === "1" && sourcingTopic !== INTRO) return true;
     // Series A 딜 공유는 그 갈래 분께만 — 다른 갈래 카드는 고를 자리가 아니다
     // (서버도 뺀다: `series_a_share.NOT_BUCKET_NOTE`).
     if (isShare() && (card.getAttribute("data-bucket") || "") !== SHARE_BUCKET) return true;
@@ -623,10 +624,10 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   // 나올 때 되살린다. 그 글에서 [전체해제]를 눌렀으면 사람이 다 푼 것이라 버린다.
   var parkedChecks = [];
   function parkOtherBuckets() {
+    // 그 글이 막는 체크 — 다른 갈래 · 참여 안내만 받는 분(`isExcluded`). 불참여는 버린다.
     parkedChecks = contactCbs().filter(function (c) {
       var card = c.closest(".pick-card");
-      return c.checked && card && card.getAttribute("data-out") !== "1" &&
-        (card.getAttribute("data-bucket") || "") !== SHARE_BUCKET;
+      return c.checked && card && card.getAttribute("data-out") !== "1" && isExcluded(card);
     });
   }
   function restoreParked() {
@@ -828,16 +829,21 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       // 그 사이 받지 않는 분이 된 줄 — 불참여(딜 소싱 화면 · 투자사 관리 현황의 X)
       // 또는 참여 확인 전(물어보는 중 · 문구). 딱지 글자는 서버가 짓는다(`out_label`).
       var out = row.out ? "1" : "0";
+      // 참여 안내(처음)만 받는 줄 — 제안 대기중 · 물어보는 중.
+      var inviteOnly = row.invite_only ? "1" : "0";
       if (card.getAttribute("data-assignee") !== who ||
           card.getAttribute("data-received") !== got ||
-          (card.getAttribute("data-out") || "0") !== out) changed = true;
+          (card.getAttribute("data-out") || "0") !== out ||
+          (card.getAttribute("data-invite-only") || "0") !== inviteOnly) changed = true;
       card.setAttribute("data-assignee", who);
       card.setAttribute("data-received", got);
       card.setAttribute("data-out", out);
+      card.setAttribute("data-invite-only", inviteOnly);
       var outTag = card.querySelector(".out-tag");
+      var tagged = row.out || row.invite_only;
       if (outTag) {
-        outTag.hidden = !row.out;
-        if (row.out && row.out_label) outTag.textContent = row.out_label;
+        outTag.hidden = !tagged;
+        if (tagged && row.out_label) outTag.textContent = row.out_label;
       }
       var tag = card.querySelector(".received-tag");
       if (tag) {
