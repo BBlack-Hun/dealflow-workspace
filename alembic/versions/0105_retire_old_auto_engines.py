@@ -14,12 +14,16 @@
      (`15 11:00 / 20 13:00 / 16 14:00`)일 때만 월말로 바꾼다(옛 설정이 없어도) —
      사람이 고친 순환은 둔다. 글이 `{달} 말 기준` 이라 옛 기본값으로는 월중에 월말
      현황이 나간다.
+   - 단, **메뉴가 꺼졌거나 없으면 켜진 A5 도 끈다** — 앱의 규칙(메뉴 꺼짐 ⇒ A5
+     꺼짐, `automation.follow_startup_menu`)을 이주가 깨지 않게.
 2. **옛 30일 자동** — `startup_ir` 줄의 `monthly_auto` 를 0 으로. 읽는 코드는 이미
    없지만, 옛 이미지로 되돌린 날 그 자동이 A5 와 나란히 다시 서지 않게 한다
    (덜 보내는 쪽). 메뉴 켜짐 · 계정은 그대로다.
-3. **팀 공통 자동 발송 계정(`_team`)** — 비어 있으면 옛 `meeting_review` 설정의
-   계정을 넣는다(줄이 없으면 꺼짐 · 시험 모드로 세운다). 차 있으면 그대로.
-   미팅 후기를 이제 A7 이 그 계정 PC 에서 묻는다.
+3. **팀 공통 자동 발송 계정(`_team`)** — 비어 있고 **옛 `startup_ir` 설정에도 계정이
+   없을 때만** 옛 `meeting_review` 설정의 계정을 넣는다(줄이 없으면 꺼짐 · 시험
+   모드로 세운다). 옛 기본 계정의 차례가 스타트업 → 미팅 후기였다 — 스타트업
+   계정이 있는데 미팅 후기 계정을 박으면 기본이 바뀌고 그대로 굳는다. 그때는 비운
+   채 두어 지금처럼 메뉴의 계정을 따른다(PR #315 리뷰). 차 있으면 그대로.
 
 **지우는 자료는 없다** — `auto_send_settings` · `auto_send_runs` 의 줄은 이력으로
 남는다.
@@ -81,17 +85,20 @@ def upgrade() -> None:
     tables = set(sa.inspect(bind).get_table_names())
     if not {"automations", "auto_send_settings"} <= tables:
         return
-    senders = {kind: uid for kind, uid in bind.execute(sa.text(
-        "SELECT kind, user_id FROM auto_send_settings "
+    settings = {kind: (uid, enabled) for kind, uid, enabled in bind.execute(sa.text(
+        "SELECT kind, user_id, enabled FROM auto_send_settings "
         "WHERE kind IN ('startup_ir', 'meeting_review')"))}
+    senders = {kind: uid for kind, (uid, _on) in settings.items()}
     startup_uid = senders.get("startup_ir")
     review_uid = senders.get("meeting_review")
+    # 메뉴가 켜져 있나 — `startup_send.is_on` 과 같은 판정(켜짐 · 계정 둘 다).
+    menu_on = bool(startup_uid and settings.get("startup_ir", (None, 0))[1])
     now = _now()
 
     # ① A5 — 줄이 없으면 옛 스타트업 설정이 있을 때만 세운다(없으면 줄 없음 =
     # 꺼짐 · 기본값). 줄이 있으면 설정이 없어도 옛 기본 순환은 월말로 맞춘다.
     a5 = bind.execute(sa.text(
-        "SELECT id, user_id, params FROM automations WHERE key = :k"),
+        "SELECT id, user_id, params, enabled FROM automations WHERE key = :k"),
         {"k": A5_KEY}).first()
     if a5 is None:
         if "startup_ir" in senders:
@@ -109,9 +116,12 @@ def upgrade() -> None:
             changed["p"] = json.dumps(params, ensure_ascii=False, sort_keys=True)
         if startup_uid and a5.user_id != startup_uid:
             changed["u"] = startup_uid
+        if a5.enabled and not menu_on:
+            changed["e"] = 0
         if changed:
             sets = ", ".join(
-                [s for s, k in (("params = :p", "p"), ("user_id = :u", "u"))
+                [s for s, k in (("params = :p", "p"), ("user_id = :u", "u"),
+                                ("enabled = :e", "e"))
                  if k in changed] + ["updated_at = :n"])
             bind.execute(sa.text(f"UPDATE automations SET {sets} WHERE id = :id"),
                          {**changed, "n": now, "id": a5.id})
@@ -121,8 +131,9 @@ def upgrade() -> None:
         "UPDATE auto_send_settings SET monthly_auto = 0, updated_at = :n "
         "WHERE kind = 'startup_ir' AND monthly_auto != 0"), {"n": now})
 
-    # ③ 팀 공통 자동 발송 계정 — 비어 있을 때만 옛 미팅 후기 계정으로.
-    if review_uid:
+    # ③ 팀 공통 자동 발송 계정 — 비어 있고 스타트업 계정도 없을 때만 옛 미팅 후기
+    # 계정으로(옛 기본 계정 차례). 스타트업 계정이 있으면 비운 채 메뉴를 따른다.
+    if review_uid and not startup_uid:
         team = bind.execute(sa.text(
             "SELECT id, user_id FROM automations WHERE key = :k"),
             {"k": TEAM_KEY}).first()

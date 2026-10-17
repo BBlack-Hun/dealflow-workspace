@@ -8,8 +8,11 @@
 
 - 스타트업 월간 — 옛 `startup_ir` 설정으로 A5 줄을 세운다: **꺼짐 · 시험 모드 ·
   월말 순환 · 보내는 계정 = 옛 설정의 계정.** 옛 30일 자동(`monthly_auto`)은 0.
-- 미팅 후기 — 팀 공통(`_team`)의 자동 발송 계정이 비어 있으면 옛 `meeting_review`
-  설정의 계정을 넣는다. 차 있으면 그대로.
+- 미팅 후기 — 팀 공통(`_team`)의 자동 발송 계정이 비어 있고 **옛 스타트업 설정에도
+  계정이 없을 때만** 옛 `meeting_review` 설정의 계정을 넣는다. 옛 기본 계정은
+  스타트업 → 미팅 후기 차례였다 — 스타트업 계정이 있으면 팀 칸은 비운 채 메뉴를
+  따른다(PR #315 리뷰). 차 있으면 그대로.
+- 메뉴가 꺼졌거나 없으면 이미 켜진 A5 줄도 끈다(메뉴 꺼짐 ⇒ A5 꺼짐).
 - 지우는 자료는 없다(설정 줄 · 이력 그대로).
 """
 from __future__ import annotations
@@ -35,11 +38,11 @@ def _exec(db, sql, *args):
         con.close()
 
 
-def _setting(db, kind, user_id, monthly_auto=0):
+def _setting(db, kind, user_id, monthly_auto=0, enabled=1):
     _exec(db, "INSERT INTO auto_send_settings (kind, enabled, user_id, from_hour, "
               "until_hour, max_per_day, monthly_auto, monthly_time, created_at, "
-              "updated_at) VALUES (?, 1, ?, 10, 17, 10, ?, '17:00', ?, ?)",
-          kind, user_id, monthly_auto, NOW, NOW)
+              "updated_at) VALUES (?, ?, ?, 10, 17, 10, ?, '17:00', ?, ?)",
+          kind, enabled, user_id, monthly_auto, NOW, NOW)
 
 
 def _automation(db, key, user_id=None, params=None, enabled=0):
@@ -86,7 +89,9 @@ def test_production_shape_moves_into_switched_off_rows(old_db):
     enabled, uid, test_mode, params = got["automations"]["startup_monthly"]
     assert (enabled, uid, test_mode) == (0, 8, 1)          # 꺼짐 · 시험 모드 · 그 계정
     assert params["slots"] == SLOTS and params["variants"] == 3
-    assert got["automations"]["_team"][1] == 8               # 비어 있던 팀 계정
+    # 팀 계정은 비운 채 둔다 — 옛 기본 계정이 스타트업 계정(8)이었고, 비어 있으면
+    # 지금도 메뉴의 계정을 따른다. 미팅 후기 계정을 박으면 기본이 그 계정으로 굳는다.
+    assert got["automations"]["_team"][1] is None
     # 옛 30일 자동은 내리고, 메뉴 켜짐 · 계정은 그대로다. 지운 줄은 없다.
     assert got["settings"]["startup_ir"] == (1, 8, 0, "17:00")
     assert got["settings"]["meeting_review"][:2] == (1, 8)
@@ -107,6 +112,37 @@ def test_no_team_row_gets_one_when_meeting_review_had_a_sender(old_db):
     _up(old_db)
     enabled, uid, test_mode, _params = _rows(old_db)["automations"]["_team"]
     assert (enabled, uid, test_mode) == (0, 8, 1)
+
+
+def test_the_review_sender_moves_only_when_the_startup_sender_is_empty(old_db):
+    """옛 기본 계정 차례(스타트업 → 미팅 후기) 그대로 — 스타트업 계정이 있으면 팀 칸은
+    비운 채(메뉴를 따른다), 스타트업 줄에 계정이 없을 때만 미팅 후기 계정을 넣는다."""
+    _setting(old_db, "startup_ir", 5)
+    _setting(old_db, "meeting_review", 8)
+    _automation(old_db, "_team")
+    _up(old_db)
+    assert _rows(old_db)["automations"]["_team"][1] is None
+
+
+def test_the_review_sender_moves_when_the_startup_row_has_no_sender(old_db):
+    _setting(old_db, "startup_ir", None, enabled=0)
+    _setting(old_db, "meeting_review", 8)
+    _automation(old_db, "_team")
+    _up(old_db)
+    assert _rows(old_db)["automations"]["_team"][1] == 8
+
+
+@pytest.mark.parametrize("menu", ["off", "missing"])
+def test_an_enabled_a5_row_is_switched_off_when_the_menu_is_off(old_db, menu):
+    """메뉴 꺼짐 ⇒ A5 꺼짐(앱의 규칙) — 이주가 켜진 A5 를 메뉴 없이 남기지 않는다."""
+    if menu == "off":
+        _setting(old_db, "startup_ir", 8, enabled=0)
+    _automation(old_db, "startup_monthly", user_id=8, enabled=1,
+                params=json.dumps({"slots": ["27 10:00"], "variants": 1}))
+    _up(old_db)
+    enabled, uid, _tm, params = _rows(old_db)["automations"]["startup_monthly"]
+    assert enabled == 0
+    assert params["slots"] == ["27 10:00"]          # 순환 · 계정은 그대로
 
 
 def test_an_existing_a5_row_is_aligned_not_switched(old_db):
