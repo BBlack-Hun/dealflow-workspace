@@ -88,13 +88,14 @@ N통(`automation_dedup` 장부, 기본 1)이 막고, 첫 번째가 먼저 실린
 """
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ...models import AutoSendRun, Automation, AutomationSend, Meeting, User, VcContact
+from ...models import (AutoSendRun, Automation, AutomationSend, Meeting, SendItem,
+                       User, VcContact)
 from .. import automation, cadence, pipeline, sender_rooms, sheet_owner
 from .. import automation_runner as runner
 from .. import message_composer as mc
@@ -395,7 +396,130 @@ def summary(values: dict) -> str:
             "투자 결정 문의(거절이면 안 물음)")
 
 
+# ── 사람 쪽 알림이 읽는 것 — A7 이 이미 물었나 (#31) ───────────────────────
+
+def _asked_days(db: Session, meeting_ids) -> Dict[int, str]:
+    """A7 이 **실제로 물은** 미팅 → 마지막으로 물은 날(`YYYY-MM-DD`, 모르면 빈 글자).
+
+    '물었다' 는 **그 한 통이 투자사 방에 나간 것**이다 — 첫 번째(`meeting:`)든
+    두 번째(`meeting30:`)든. 줄(`automation_sends`)은 아침에 회차를 세울 때 서므로
+    줄만 보면 안 된다: 14시 전에 [중단] 했거나 · 빠졌거나 · 발송기가 실패로 보고한
+    한 통은 안 물은 것이다. 시험 모드(시험방으로 간 것)도 안 센다.
+    """
+    wanted = {i for i in meeting_ids if i}
+    if not wanted:
+        return {}
+    rows = db.execute(
+        select(AutomationSend.ref, SendItem.sent_at)
+        .join(SendItem, SendItem.id == AutomationSend.item_id)
+        .where(AutomationSend.automation == automation.MEETING_REVIEW,
+               AutomationSend.test == 0, AutomationSend.ref.like(f"{REVIEW_REF}%"),
+               SendItem.status == "sent")
+    ).all()
+    out: Dict[int, str] = {}
+    for ref, sent_at in rows:
+        _head, meeting_id = _parse_ref(ref)
+        if meeting_id in wanted:
+            out[meeting_id] = max(out.get(meeting_id, ""), (sent_at or "")[:10])
+    return out
+
+
+def _md(day: str) -> str:
+    """`2026-10-14` → `10/14`. 못 읽으면 빈 글자."""
+    try:
+        when = date.fromisoformat(day)
+    except ValueError:
+        return ""
+    return f"{when.month}/{when.day}"
+
+
+def asked_on(db: Session, meeting_ids) -> Dict[int, str]:
+    """A7 이 물은 미팅 → 물은 날(`10/14`). 사람 쪽 결과 문의 자리(`/ir` · 오늘 할 일 ·
+    결과 문의 문자)가 '물어보세요' 대신 '자동 문의함 M/D' 를 적는 근거다
+    (`pipeline.meeting_rows` 의 `auto_asked`). **결과를 적었다는 표시
+    (`followup_done`)는 켜지 않는다** — 들은 답은 사람이 적는다(사용자 결정 2026-10-17)."""
+    return {mid: _md(day) for mid, day in _asked_days(db, meeting_ids).items()}
+
+
+def asked_contacts(db: Session, contact_ids) -> Dict[int, str]:
+    """이 담당자들 중 **A7 이 묻고 아직 답을 안 적은** 미팅이 있는 분 → 물은 날.
+
+    발송 화면의 미팅 후기 탭이 미리보기에 경고로 단다 — 같은 투자사에 사람이 같은
+    글을 또 보내지 않게.
+    """
+    ids = [i for i in contact_ids if i]
+    if not ids:
+        return {}
+    meetings = db.execute(
+        select(Meeting.id, Meeting.contact_id)
+        .where(Meeting.contact_id.in_(ids), Meeting.status == "done",
+               Meeting.followup_done == 0)
+    ).all()
+    days = _asked_days(db, [mid for mid, _cid in meetings])
+    latest: Dict[int, str] = {}
+    for mid, cid in meetings:
+        if mid in days:
+            latest[cid] = max(latest.get(cid, ""), days[mid])
+    return {cid: _md(day) for cid, day in latest.items()}
+
+
+#: 전환 전 밀린 결과 문의 줄 — 오늘 할 일에 수 한 줄.
+BACKLOG_TITLE = "자동화 전환 전 밀린 결과 문의 {count}건 — 손으로 확인"
+
+
+def backlog(db: Session, row: Optional[Automation], today: date) -> List[dict]:
+    """**전환 전 밀린 결과 문의** — A7 이 실제 모드로 돌기 전에 물을 차례가 지나,
+    앞으로도 A7 이 줍지 않을 미팅(팀 전체) `[(담당 팀원, 화면의 줄), …]`.
+
+    A7 은 물을 날이 사흘 넘게 지난 미팅을 줍지 않는다(`LOOKBACK_DAYS` — 켜는 날
+    밀린 것이 한꺼번에 나가지 않게, 사용자 결정 5). 그래서 실제 모드의 **첫 회차
+    자리**(`auto_send_runs` 의 `auto:meeting_review`) 날짜에서 사흘 앞보다 먼저
+    첫 번째를 물을 날이 온 미팅은 영영 자동으로 안 물린다 — 그것만 센다. 실제
+    모드로 아직 한 번도 안 돌았으면 빈 목록이다(아직 전환 전이다).
+
+    무엇이 '물어볼 미팅' 인지는 화면과 **같은 판정**이다(`pipeline.today_items` 의
+    `due_followups` — A7 이 물은 미팅은 이미 빠져 있다).
+    """
+    if not automation.is_on(row) or automation.is_test(row):
+        return []
+    first = db.execute(
+        select(func.min(AutoSendRun.day))
+        .where(AutoSendRun.kind == runner.run_kind(automation.MEETING_REVIEW, False))
+    ).scalar()
+    if not first:
+        return []
+    cutoff = date.fromisoformat(first) - timedelta(days=LOOKBACK_DAYS)
+    days = runner.values(row, automation.MEETING_REVIEW)["days"]
+    out = []
+    for user in db.execute(select(User).where(User.is_active == 1)
+                           .order_by(User.id)).scalars().all():
+        for item in pipeline.today_items(db, user, today)["due_followups"]:
+            when = _due(db.get(Meeting, item["id"]), days)
+            if when is None or when < cutoff:
+                out.append((user, item))
+    return out
+
+
+def notes(db: Session, user: User, row: Optional[Automation], now: datetime) -> List[dict]:
+    """오늘 할 일 — **전환 전 밀린 결과 문의** 수 한 줄. 관리자 · 보내는 계정에게만
+    (담당 팀원에게는 제 미팅이 `미팅 결과 문의` 로 이미 선다). 저절로 보내지 않는다."""
+    if user.role != "admin" and user.id != automation.sender_id(db, row):
+        return []
+    rows = backlog(db, row, now.date())
+    if not rows:
+        return []
+    per: Dict[str, int] = {}
+    for owner, _item in rows:
+        per[owner.name] = per.get(owner.name, 0) + 1
+    who = " · ".join(f"{name} {count}" for name, count in per.items())
+    return [{"level": "info", "title": BACKLOG_TITLE.format(count=len(rows)),
+             "detail": (f"{who} — 미팅 후 검토결과 문의 자동화는 사흘 넘게 지난 미팅을 "
+                        "줍지 않습니다(한꺼번에 나가지 않게). 담당 팀원이 손으로 묻고 "
+                        "결과를 적으면 사라집니다"),
+             "href": "/ir#meetings", "count": len(rows)}]
+
+
 runner.register(runner.Spec(
     key=automation.MEETING_REVIEW, kind="deal_intro", plan=plan,
     collect=collect, still_ok=still_ok, fields=FIELDS, check=_check, manual=manual,
-    summary=summary))
+    summary=summary, notes=notes))

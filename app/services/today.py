@@ -80,6 +80,15 @@ def build(db: Session, user: User, today: Optional[date] = None) -> dict:
             ", ".join(m["name"] for m in ir["due_followups"][:3]),
             "/ir", len(ir["due_followups"])))
 
+    # **자동화(A7)가 이미 물은 미팅**(#31) — 또 묻지 말고 들은 답만 적는다.
+    # 위 `미팅 결과 문의` 에서는 빠져 있다(`pipeline.today_items`).
+    if ir["asked_followups"]:
+        items.append(_item(
+            "meeting", "soon", "자동 문의한 미팅 — 들은 답 적기",
+            ", ".join(f"{m['name']} 자동 문의함 {m['auto_asked_on']}".rstrip()
+                      for m in ir["asked_followups"][:3]),
+            "/ir#meetings", len(ir["asked_followups"])))
+
     # **걷기 전에 세워 둔 옛 `미팅 후기 자동` 목록**(#31 — 결과 문의는 이제 A7
     # 하나다). 예약 시각 없는 `draft` 라 **저절로 안 나간다** — 사람이 보내거나
     # 취소할 때까지 여기 선다(`services/auto_send.waiting_for`). 관리자에게는 팀

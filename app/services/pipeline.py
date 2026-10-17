@@ -494,6 +494,12 @@ def meeting_rows(db: Session, user: User) -> List[dict]:
     contacts = _contact_map(db, [r.contact_id for r in rows])
     calendars = _calendar_groups(db, rows, contacts, user)
     today = date.today()
+    # **A7 이 이미 물은 미팅**(#31) — 사람 쪽 결과 문의 자리가 '물어보세요' 대신
+    # '자동 문의함 M/D' 를 적는다. 무엇을 '물었다' 로 보는지는 A7 한 곳이다
+    # (나간 한 통만 · 시험방은 안 셈 — `automations.meeting_review.asked_on`).
+    from .automations import meeting_review as a7
+
+    asked = a7.asked_on(db, [r.id for r in rows if r.status == "done"])
 
     # 담당자별 **가장 나중 미팅 날짜**. 2차 미팅을 이미 잡았다면 1차에
     # "그 뒤 어떻게 되셨나요" 를 물을 이유가 없다 — 이미 이어졌다.
@@ -564,6 +570,10 @@ def meeting_rows(db: Session, user: User) -> List[dict]:
                 and (row.outcome or "") not in NO_FOLLOWUP_OUTCOMES
                 and not superseded
                 and due is not None and due <= today),
+            # A7 이 그 투자사 방에 이미 물었다 — 사람은 묻지 말고 **들은 답만** 적는다.
+            # `followup_done` 은 그대로다(답은 사람이 적는다).
+            "auto_asked": row.id in asked,
+            "auto_asked_on": asked.get(row.id, ""),
         })
     return out
 
@@ -708,7 +718,14 @@ def today_items(db: Session, user: User, today: Optional[date] = None) -> dict:
         "upcoming_meetings": [m for m in meetings
                               if m["status"] == "scheduled"
                               and m["scheduled_at"] > today.isoformat()],
-        "due_followups": [m for m in meetings if m["followup_due_now"]],
+        # 물을 때가 된 결과 문의 — **A7 이 이미 물은 것은 뺀다**(#31). 이 목록이
+        # 화면(`/ir`)의 '물어볼 때' · 오늘 할 일의 `미팅 결과 문의` · 결과 문의
+        # 문자(`followup_sms`) · 대시보드 수가 함께 읽는 '사람이 물어볼 것' 이다.
+        "due_followups": [m for m in meetings
+                          if m["followup_due_now"] and not m["auto_asked"]],
+        # A7 이 물었고 들은 답을 아직 안 적은 것 — '자동 문의함 M/D' + 답 적는 칸만.
+        "asked_followups": [m for m in meetings
+                            if m["followup_due_now"] and m["auto_asked"]],
     }
 
 
