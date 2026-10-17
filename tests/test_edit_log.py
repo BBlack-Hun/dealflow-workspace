@@ -680,6 +680,18 @@ WRITE_ROUTES = {
 
     # 시트 가져오기 — 남의 명단까지 통째로 갈아 끼운다.
     ("POST", "/api/import/contacts"): WATCHED,
+    # 소유 펀드(회사 단위 · #1) 엑셀 넣기 — 관리자가 팀 전체 회사의 값을 한 판에
+    # 바꾼다. 회사 표(`investor_firms`)는 공용이라 회사마다 남는다.
+    ("POST", "/api/import/owned-funds"): WATCHED,
+    # 분야 기준 목록(#2 · #30, 관리자) — 목록 한 줄을 고치면 그 말을 쓰는 IR 기업
+    # 현황 값과 투자사 선호분야 값이 함께 바뀐다. 셋 다 보는 표(공용 · 남의 것)다.
+    ("POST", "/api/taxonomy/terms"): WATCHED,
+    ("POST", "/api/taxonomy/terms/{term_id}/{op}"): WATCHED,
+    ("POST", "/api/taxonomy/ir-cleanup"): WATCHED,
+    ("POST", "/api/taxonomy/pref-sectors"): WATCHED,
+    # 이름 바꾸기 · 합치기 · 옮기기의 **미리보기** — 몇 줄이 바뀌는지 세기만 한다.
+    # POST 인 것은 새 이름 · 합칠 곳을 몸에 실어 보내서다. 아무것도 안 쓴다.
+    ("POST", "/api/taxonomy/terms/{term_id}/preview/{op}"): SELF,
     # 발송 날짜 규칙은 팀 전체의 일정이다.
     ("POST", "/followups/rules/{key}"): WATCHED,
     # `IR 요청 투자사` 표에서 줄 하나 지우기. 자기 줄만 지울 수 있지만

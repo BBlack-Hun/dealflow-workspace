@@ -172,7 +172,10 @@ def test_long_text_gets_the_floating_editor(logged_in, company, contact):
     assert 'data-field="one_liner" data-type="long"' in companies
 
     contacts = logged_in.get("/contacts").text
-    assert 'data-field="sectors" data-type="long"' in contacts
+    assert 'data-field="round_size" data-type="long"' in contacts
+    # `선호 투자분야` 는 이제 **분야 기준 목록에서 고르는** 떠 있는 창이다(#2 ·
+    # `sector_picker.js`) — 같은 창(`popover`)을 쓰고 안에 목록이 선다.
+    assert 'data-field="sectors" data-type="sectors"' in contacts
 
     js = (pathlib.Path("app/static/js/inline_edit.js")).read_text(encoding="utf-8")
     assert "startLong" in js

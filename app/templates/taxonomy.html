@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+
+{#
+  분야 기준 목록 — 관리자만(#2 · #30).
+
+  탭 셋이다. 고르는 것은 평범한 링크(`?tab=`)다 — 탭 하나가 화면 하나라, 미리보기를
+  띄워 둔 채 다른 탭을 눌러도 그 미리보기를 잃는 것 말고는 일어나는 일이 없다.
+
+    기준 목록              대분류 → 소분류. 추가 · 이름 바꾸기 · 순서 · 숨김 · 합치기 · 옮기기
+    IR 기업현황 정리       목록에 맞추면 바뀌는 기업 — 미리보기 → 고른 것만 반영
+    투자사 선호분야 재분류  선호분야 글을 목록의 말 + 메모로 — 미리보기 → 반영
+
+  값이 바뀌는 고침은 **먼저 몇 줄이 바뀌는지 묻고** 반영한다(`taxonomy.js`).
+#}
+
+{% block content %}
+<header class="page-head">
+  <h1>{{ page_title }}</h1>
+  <p class="muted">
+    분야 기준 단어는 <b>IR 기업현황의 대분류·소분류</b>입니다. 투자사의 선호 투자분야도
+    이 목록에서 고릅니다. 이름을 바꾸거나 합치면 그 말을 쓰는 <b>IR 기업현황 값과 투자사
+    선호분야 값도 함께</b> 바뀝니다 — 바꾸기 전에 몇 줄이 바뀌는지 먼저 보여 드립니다.
+    줄은 지우지 않고 숨깁니다.
+  </p>
+</header>
+
+<nav class="sheet-tabs">
+  <a class="sheet-tab {% if tab == 'list' %}active{% endif %}" href="/taxonomy">기준 목록</a>
+  <a class="sheet-tab {% if tab == 'ir' %}active{% endif %}" href="/taxonomy?tab=ir">IR 기업현황 정리</a>
+  <a class="sheet-tab {% if tab == 'pref' %}active{% endif %}" href="/taxonomy?tab=pref">투자사 선호분야 재분류</a>
+</nav>
+
+<p class="flash" id="tx-msg" hidden></p>
+
+{% if tab == 'list' %}
+<section class="panel">
+  <h2 class="panel-title">대분류 → 소분류
+    <button type="button" class="secondary-btn" id="tx-add-major">대분류 추가</button>
+  </h2>
+  <p class="hint">
+    <b>합치기</b>는 같은 단계끼리만 합니다(대분류↔대분류, 소분류↔소분류). 합친 이름은
+    숨긴 채 <code>→ 합친 곳</code> 으로 남아, 정리할 때 옛 이름을 기준 이름으로 바꾸는 데 쓰입니다.
+    <b>옮기기</b>는 소분류를 다른 대분류 아래로 보냅니다 — 그 소분류 때문에 옛 대분류에
+    서 있던 IR 기업도 따라갑니다.
+  </p>
+  {# 목록은 화면이 그린다(`taxonomy.js`) — 고친 뒤 서버가 돌려준 목록으로 그 자리에서
+     다시 그리려면 그리는 손이 하나여야 한다. #}
+  <div class="tx-tree" id="tx-tree" data-tree='{{ tree|tojson }}'></div>
+</section>
+
+{% elif tab == 'ir' %}
+<section class="panel">
+  <h2 class="panel-title">IR 기업현황 정리</h2>
+  <p class="hint">
+    오탈자·옛 이름(<code>신약개</code> → <code>신약개발</code>, 대분류 <code>뷰티</code> →
+    <code>커머스·라이프스타일</code>), 철자, 소분류가 목록에서 다른 대분류 아래 있는 기업
+    (<code>첨단소재</code> → 딥테크·제조 …)을 목록대로 맞춥니다. <b>대분류가 빈 기업</b>에는
+    소분류와 한 줄 소개로 <b>제안</b>을 붙입니다 — 제안은 미리 골라 두지 않습니다.
+    고른 것만 반영하고, 원래 값은 백업 칸에 처음 한 번만 남습니다.
+    대분류 {% for m in cleanup_only %}<code>{{ m }}</code>{% endfor %} 는 시험용으로 보여
+    바꾸지 않고 <b>정리 대상</b>으로만 띄웁니다. 라운드는 건드리지 않습니다.
+  </p>
+  <div class="tx-actions">
+    <button type="button" class="secondary-btn" id="ir-preview">미리보기</button>
+    <button type="button" class="linkbtn" id="ir-all" hidden>모두 고르기</button>
+    <button type="button" class="linkbtn" id="ir-none" hidden>모두 풀기</button>
+    <button type="button" class="primary-btn inline" id="ir-apply" disabled>고른 것 반영</button>
+  </div>
+  <div id="ir-result" class="tx-result"></div>
+</section>
+
+{% else %}
+<section class="panel">
+  <h2 class="panel-title">투자사 선호분야 재분류</h2>
+  <p class="hint">
+    선호 투자분야 글을 조각으로 나눠 <b>목록의 말</b>로 바꿉니다. 그룹 표시(<code>B</code>)·메모·날짜·
+    단계 말(<code>Seed Pre A</code>)이 든 줄은 <b>메모로 옮깁니다</b>
+    (기존 메모 뒤에 <code>[선호분야 칸에서 옮김] …</code>). 못 맞춘 조각은 선호분야 칸에
+    그대로 남고 따로 보여 드립니다. 빈 칸과 라운드 사이즈는 건드리지 않습니다.
+    원래 글은 백업 칸에 처음 한 번만 남습니다.
+  </p>
+  <div class="tx-actions">
+    <button type="button" class="secondary-btn" id="pref-preview">미리보기</button>
+    <button type="button" class="linkbtn" id="pref-all" hidden>모두 고르기</button>
+    <button type="button" class="linkbtn" id="pref-none" hidden>모두 풀기</button>
+    <button type="button" class="secondary-btn" id="pref-apply-picked" disabled>고른 것 반영</button>
+    <button type="button" class="primary-btn inline" id="pref-apply-all" disabled>전체 반영</button>
+  </div>
+  <div id="pref-result" class="tx-result"></div>
+</section>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ asset('js/taxonomy.js') }}"></script>
+{% endblock %}

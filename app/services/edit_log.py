@@ -362,6 +362,16 @@ WATCHED: Dict[str, Watch] = {
     "schedule_rules": Watch(
         owner=None, href="/followups", label=_attr("label"),
         why="발송 일정 규칙. 팀 전체의 날짜를 정하는 자리라 공용이다."),
+    "sector_terms": Watch(
+        owner=None, href="/taxonomy", label=_attr("name"),
+        why="분야 기준 목록(#2). 관리자가 이름을 바꾸거나 합치면 그 말을 쓰는 IR "
+            "기업 현황 값과 투자사 선호분야 값이 함께 바뀐다 — 바뀐 값은 그 표들에 "
+            "줄마다 남고, 목록이 언제 누구 손에 바뀌었는지는 여기 남는다."),
+    "investor_firms": Watch(
+        owner=None, href="/contacts", label=_attr("display_name"),
+        why="투자사 회사 단위 값(`소유 펀드` · #1). 주인 칸이 없다 — 팀원이 자기 줄에서 "
+            "고쳐도 **같은 회사의 남의 줄**에 같은 값이 서므로, 누가 언제 바꿨는지가 "
+            "여기 말고는 안 남는다. 엑셀로 한꺼번에 넣은 것도 회사마다 남는다."),
     "notices": Watch(
         owner=None, href="/team", label=_attr("title"),
         why="공지. 팀 현황에서 관리자가 올리고 내리는 **팀 전원의 화면에 뜨는 글**이라 "
@@ -487,6 +497,15 @@ VALUE_FIELDS = frozenset({
     # **어느 방으로 나가나.** 이 앱에서 오발송에 가장 가까운 칸이라 값을 남긴다.
     "kakao_room_name",
 
+    # **분야 기준 목록**(`sector_terms`) — 어느 대분류 아래인가 · 어디로 합쳤나.
+    # 번호지만 짧고, 잘못 옮기면 그 소분류를 쓰는 기업의 대분류가 따라 움직인다.
+    "parent_id", "merged_into_id",
+    # **투자사 회사 단위 값**(`investor_firms` · #1) — 회사 이름과 소유 펀드.
+    # 한 줄에서 고쳐도 같은 회사의 남의 줄에 그대로 서는 값이라, 전→후가 안
+    # 보이면 "누가 우리 회사 펀드를 바꿨나" 에 답할 수 없다. 펀드 이름 몇 개라
+    # 짧고, 사람 · 연락처가 아니다(길면 `VALUE_MAX` 에서 잘린다).
+    "display_name", "owned_funds",
+
     # **어느 IR 기업에 이어 두었나**(`services/ir_link.py`). 번호로 남고, 로그
     # 화면이 그 번호를 기업 이름으로 바꿔 보여 준다(`recent`). 잇고 푼 것은
     # 자기 줄이라도 남는다 — 아래 `ALWAYS_FIELDS`.
@@ -545,6 +564,9 @@ FIELD_LABELS = {
     "memo": "메모", "notes": "칸 메모", "note": "메모", "body": "본문",
     "phone": "연락처", "email": "메일", "one_liner": "한 줄 소개",
     "summary": "요약", "business_desc": "사업 설명", "content_json": "내용",
+    # 분야 기준 목록 · 회사 단위 값(#2 · #30 · #1).
+    "parent_id": "대분류", "merged_into_id": "합친 곳", "sectors": "선호 투자분야",
+    "owned_funds": "소유 펀드", "display_name": "회사",
     # 줄 안에 없는 사실 — `also()` 로 얹는 칸(`routers/companies.py` 의 강제 삭제).
     "force_delete": "함께 움직인 것",
     # 시트 한 판(`log_import`). 표의 칸이 아니라 **그 판에 일어난 일**이라

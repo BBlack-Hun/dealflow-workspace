@@ -19,7 +19,7 @@ from ..services import (cadence, contact_columns, deal_history, deal_queue,
                         llm_brief, mailer, manual_send, ref_panel,
                         send_window, series_a_share, sheet_import,
                         sheet_owner, sourcing_link, sourcing_receipts,
-                        startup_send)
+                        startup_send, taxonomy)
 from ..ui import MENU, base_ctx as _base_ctx
 from .companies import BLOCKED_CONTRACT
 from .companies import blocked_reason as company_blocked_reason
@@ -726,6 +726,10 @@ def list_page(
         # 배치에 따라 그룹 칸이 표에 안 서는 명단이 있어서, 표에서 모으면 그
         # 명단에서 연 수정창만 보기가 비어 버린다.
         "group_choices": group_name.options(r["group_name"] for r in rows),
+        # `선호 투자분야` 를 **고를 거리** — 관리자가 정한 분야 기준 목록(#2).
+        # 표 칸과 수정창이 이 한 벌을 읽는다(`sector_picker.js`). 숨긴 줄은 안
+        # 실린다 — 고르는 자리에 숨긴 이름이 서면 숨긴 뜻이 없다.
+        "sector_tree": taxonomy.picker_tree(db),
     })
     return templates.TemplateResponse("contacts.html", ctx)
 

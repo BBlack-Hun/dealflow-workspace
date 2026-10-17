@@ -18,6 +18,7 @@ from .routers import (agent_api, companies, consulting, contacts, dashboard,
                       pages, series_a, sourcing, startup, startup_outreach,
                       startup_send)
 from .routers import ir_link as ir_link_router
+from .routers import taxonomy as taxonomy_router
 
 
 def create_app() -> FastAPI:
@@ -100,6 +101,9 @@ def create_app() -> FastAPI:
     # IR 기업 연결(`/ir-link`). `pages.router` 의 `/{placeholder}` 보다 **먼저**
     # 붙어야 한다 — 뒤에 붙으면 그 자리가 `준비 중` 화면으로 가로챈다.
     app.include_router(ir_link_router.router)
+    # 관리자 메뉴 `분야 기준 목록`(`/taxonomy`). 위 `/ir-link` 와 같은 까닭으로
+    # `pages.router` 의 캐치올보다 먼저 붙는다.
+    app.include_router(taxonomy_router.router)
     app.include_router(llm_brief.router)
     # 공지. [확인] 은 **모든 화면**에서 눌리므로(판이 밑틀에 선다) 화면
     # 라우터가 아니라 여기 따로 선다 — 왜 그런지는 `routers/notices.py`.

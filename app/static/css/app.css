@@ -663,7 +663,9 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
     뒤에 `딜소싱 참여 투자사` 바로 뒤로 옮겼다 — 자리만 바뀌어 합은 그대로) */
 /* (3,442 → 3,566 : `참여 요청일` 칸(124px)을 `Series A 딜 소싱` 바로 뒤에
     세웠다 — 이어진 딜 소싱 줄의 참여 요청일, 읽기만. contacts.html 의 그 머리글 주석) */
-#contacts-table { min-width: 3566px; }
+/* (3,566 → 3,726 : `소유 펀드` 칸(160px)을 `라운드 사이즈` 바로 오른쪽에 세웠다 —
+    회사 단위 값(#1). contacts.html 의 그 머리글 주석) */
+#contacts-table { min-width: 3726px; }
 /* 팀 현황도 같은 방식이다 — 폭은 th 에서 잡고 여기서는 표가 줄지 않게만 막는다.
    `table-layout: fixed` 는 폭을 안 준 칸을 **똑같이** 나눠 주는데, 이 표는 칸마다
    필요한 자리가 전혀 다르다. 마지막 동작 칸(단추 셋)이 1,920px 에서도 148px 밖에
@@ -2957,3 +2959,39 @@ a.guard-go:hover { background: #1e4fd0; text-decoration: none; }
   padding-right: 4px; }
 .grid-table td.pick-col input, .grid-table th.pick-col input { margin: 2px 0 0; cursor: pointer; }
 a.primary-btn[aria-disabled="true"] { background: #b8c4d8; cursor: not-allowed; }
+
+/* ── 선호 투자분야 고르기(#2 · `sector_picker.js`) ────────────────────────
+   대분류 한 줄 + 그 아래 소분류들을 한 묶음으로 세운다. 대분류 칸은 **그 분야
+   전체**를 고르는 칸이라 굵게 둔다. 목록 밖 옛 값은 맨 위에 주황 테두리로 —
+   끄면 빠진다는 것이 눈에 먼저 들어와야 한다. 표의 떠 있는 창(`.sector-pop`)은
+   목록이 길어 기본 높이(132px)보다 넉넉히 펼친다. */
+.sector-pick { display: flex; flex-direction: column; gap: 6px; }
+.sector-pick-group { display: flex; flex-wrap: wrap; gap: 2px 10px; padding: 4px 0;
+                     border-top: 1px solid var(--line); }
+.sector-pick-group:first-child { border-top: 0; }
+.sector-pick-group.outside { border: 1px solid #fed7aa; border-radius: 6px; padding: 4px 6px; }
+.sector-pick-head { width: 100%; font-size: 11px; color: var(--amber); }
+.sector-pick-item { font-size: 12px; white-space: nowrap; cursor: pointer; }
+.sector-pick-item.major { width: 100%; font-weight: 700; }
+.cell-pop-choices.sector-pop { display: block; max-height: 260px; }
+.sector-pick-toggle { margin-top: 4px; }
+input[data-sector-picker] + .sector-pick-toggle + div { margin-top: 6px; max-height: 280px;
+  overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
+
+/* ── 분야 기준 목록(관리자 · `taxonomy.html`) ──────────────────────────── */
+.tx-tree { display: flex; flex-direction: column; gap: 10px; }
+.tx-major { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+.tx-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+.tx-minors { list-style: none; margin: 6px 0 0 14px; padding: 0;
+             display: flex; flex-direction: column; gap: 2px; }
+.tx-minors .tx-row { font-size: 13px; }
+.tx-acts { display: inline-flex; flex-wrap: wrap; gap: 0 6px; margin-left: auto; font-size: 12px; }
+.tx-off { opacity: .55; }
+.tx-pick { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px;
+           padding: 6px 8px; background: #f7f9fc; border-radius: 6px; font-size: 13px; }
+.tx-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0; }
+.tx-result { margin-top: 10px; }
+.tx-sub { margin: 14px 0 4px; font-size: 13px; }
+.tx-table td { vertical-align: top; }
+.tx-table td.tx-pre { white-space: pre-wrap; word-break: break-word; max-width: 320px; }
+.tx-suggest td { background: #fffbeb; }
