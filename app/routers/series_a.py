@@ -368,16 +368,6 @@ def can_upload_pitch(user: User) -> bool:
     return _is_admin(user)
 
 
-def _file_tabs(filename: str, data: bytes) -> List[str]:
-    """파일의 탭 이름들 — 화면이 탭 고르개를 채운다. 못 읽으면 빈 목록."""
-    from ..services import spreadsheet as sp
-
-    try:
-        return sp.sheet_names(filename, data)
-    except sp.SpreadsheetError:
-        return []
-
-
 def _bad(detail: str, tabs: List[str]) -> JSONResponse:
     """400 — 무엇이 문제인지와 **파일의 탭들**(`sheets`). 탭이 여럿인 워크북에서
     이 시트로 보이는 탭을 못 고르면, 화면이 그 목록으로 고르개를 세운다."""
@@ -407,6 +397,7 @@ def upload_pitch(
     """
     from ..services import series_a_import as sai
     from ..services import series_a_pitch_upload as pitch
+    from ..services import spreadsheet as sp
     from ..services.import_diff import shorten
     from .data_io import DIFF_ROWS
 
@@ -414,15 +405,30 @@ def upload_pitch(
         raise NotAdmin()
     data = file.file.read()
     filename = file.filename or ""
-    tabs = _file_tabs(filename, data)
+    # 크기 상한 · 형식을 **먼저** 보고(`read_tabs`) 워크북은 한 번만 연다 — 탭 고르개에
+    # 실을 탭 이름도 여기서 읽는다. 탭 이름을 따로 읽으면 상한을 보기 전에 한 번 더
+    # 열었다(PR #311 리뷰).
     try:
-        used, rows = sai.read_upload(filename, data, sheet or None)
+        book = sp.read_tabs(filename, data)
+    except sp.SpreadsheetError as exc:   # 큰 파일 · 빈 파일 · 형식 · 깨진 파일
+        return _bad(str(exc), [])
+    tabs = [title for title, _rows in book] if filename.lower().endswith(
+        sp.EXCEL_SUFFIXES) else []
+    try:
+        used, rows = sai.pick_upload(filename, book, sheet or None)
         parsed = sai.parse(rows)
-    except ValueError as exc:     # 깨진 파일 · 탭 못 고름 · 머리글 없음
+    except ValueError as exc:     # 탭 못 고름 · 머리글 없음
         return _bad(str(exc), tabs)
-    if sai.HEADERS[pitch.FIELD][0] in parsed.missing:
-        return _bad("`딜소개 문구` 칸이 없습니다 — `기업명` · `수신 일자` · "
-                    "`공유 심사역` 이 있는 머리글 줄에 `딜소개 문구` 칸이 있어야 합니다", tabs)
+    # 줄을 맞추는 열쇠(기업명 · 수신 일자 · 공유 심사역 · **회사**)와 바꿀 칸이 다
+    # 있어야 한다. `회사` 가 없으면 열쇠가 하나도 안 맞아 문구가 통째로 '못 맞춘 줄' 로
+    # 빠진다 — 조용히 끝내지 않고 막는다(PR #311 리뷰). 열쇠를 줄여 맞추는 길은 고르지
+    # 않았다: 같은 기업 · 같은 날 · 같은 심사역이 두 회사에서 오면 엉뚱한 줄을 덮는다.
+    missing = [sai.HEADERS[a][0] for a in (*pitch.IDENT, pitch.FIELD)
+               if sai.HEADERS[a][0] in parsed.missing]
+    if missing:
+        return _bad(" · ".join(f"`{m}`" for m in missing) + " 칸이 없습니다 — 머리글 줄에 "
+                    "줄을 맞추는 `기업명` · `수신 일자` · `공유 심사역` · `회사`(시트 "
+                    "가져오기와 같은 열쇠)와 `딜소개 문구` 칸이 있어야 합니다", tabs)
 
     p = pitch.plan(db, parsed.records, overwrite=overwrite)
     if dry_run:

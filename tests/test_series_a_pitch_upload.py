@@ -405,6 +405,50 @@ def test_딜소개_문구_칸이_없으면_400(portal, table, db):
     assert _snapshot(db) == before
 
 
+@pytest.mark.parametrize("firm_head", [None, "투자사"])
+def test_회사_칸이_없으면_400_줄을_맞추는_칸이다(portal, table, db, firm_head):
+    """줄은 가져오기 열쇠(기업명 · 수신 일자 · 공유 심사역 · **회사**)로 맞춘다. `회사` 칸
+    없이 올리면 열쇠가 하나도 안 맞아 문구가 통째로 안 들어간다 — 조용히 '못 맞춘 줄'
+    로 끝내지 않고 칸이 없다고 막는다. `투자사` 라는 옛 머리글은 같은 칸이다."""
+    before = _snapshot(db)
+    at = HEAD.index("회사")
+    if firm_head is None:
+        head = HEAD[:at] + HEAD[at + 1:]
+        line = _line("2026-07-01", "박영희 이사", "가나벤처스", "샘플애그", "애그 새 문구")
+        sheet = [head, line[:at] + line[at + 1:]]
+        res = _post(portal["admin"], _csv(sheet), dry_run=False)
+        assert res.status_code == 400
+        assert "`회사`" in res.json()["detail"], res.json()
+        assert _snapshot(db) == before
+        return
+    head = HEAD[:at] + [firm_head] + HEAD[at + 1:]
+    sheet = [head, _line("2026-07-01", "박영희 이사", "가나벤처스", "샘플애그", "애그 새 문구")]
+    res = _post(portal["admin"], _csv(sheet), dry_run=False)
+    assert res.status_code == 200, res.text
+    assert _pitches(db)[table["agri"]] == "애그 새 문구"
+
+
+def test_큰_파일은_열어_보기_전에_막고_워크북은_한_번만_연다(portal, table, monkeypatch):
+    """10MB 상한은 파일을 **열기 전에** 본다 — 탭 이름을 읽으려고 먼저 열면 상한이
+    지키려던 메모리를 이미 쓴다. 상한 안의 파일도 워크북은 한 번만 연다."""
+    from app.services import spreadsheet as sp
+
+    opened = []
+    real = sp._load_workbook
+    monkeypatch.setattr(sp, "_load_workbook", lambda data: opened.append(1) or real(data))
+
+    res = _post(portal["admin"], b"x" * (sp.MAX_UPLOAD_BYTES + 1), name="big.xlsx")
+    assert res.status_code == 400
+    assert "MB" in res.json()["detail"]
+    assert opened == []
+
+    data = _xlsx([("IR 기업 현황", [["NO", "기업명"]]), ("Series A 이상 기업", _sheet())])
+    res = _post(portal["admin"], data, name="book.xlsx")
+    assert res.status_code == 200, res.text
+    assert res.json()["sheets"] == ["IR 기업 현황", "Series A 이상 기업"]
+    assert opened == [1]
+
+
 def test_머리글_줄이_없으면_400(portal, table):
     res = _post(portal["admin"], _csv([["기업명", "딜소개 문구"], ["샘플애그", "문구"]]))
     assert res.status_code == 400

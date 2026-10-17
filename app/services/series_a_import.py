@@ -245,7 +245,16 @@ def read_upload(filename: str, data: bytes,
     """
     from . import spreadsheet as sp
 
-    tabs = sp.read_tabs(filename, data)
+    return pick_upload(filename, sp.read_tabs(filename, data), sheet)
+
+
+def pick_upload(filename: str, tabs: Sequence[Tuple[str, List[List]]],
+                sheet: Optional[str] = None) -> Tuple[str, List[List]]:
+    """`read_upload` 의 뒷반 — **이미 읽은** 탭들(`spreadsheet.read_tabs`)에서 읽을 탭
+    하나. 화면(`routers/series_a.upload_pitch`)이 탭 이름을 알리려고 연 워크북을 다시
+    열지 않게 떼어 두었다. CSV 는 탭이 하나다."""
+    from . import spreadsheet as sp
+
     if not filename.lower().endswith(sp.EXCEL_SUFFIXES):
         return tabs[0]
     return pick_tab(tabs, sheet, ask="[탭]에서 골라 주세요")
