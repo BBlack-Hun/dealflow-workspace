@@ -2599,7 +2599,8 @@ class AutoSendSetting(TimestampMixin, Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    #: 무엇을 자동으로 보내는가. `services/auto_send.py: KINDS` 가 아는 값만 온다.
+    #: 어느 설정인가 — `startup_ir`(스타트업 월간 발송 메뉴 · `services/startup_send`)
+    #: 와 옛 `meeting_review`(#31 에서 걷은 결과 문의 대기 목록 — 이력으로 남는다).
     kind: Mapped[str] = mapped_column(String)
     #: **기본은 꺼짐.** 줄이 아예 없는 것도 꺼짐이다.
     enabled: Mapped[int] = mapped_column(Integer, default=0)
@@ -2614,9 +2615,8 @@ class AutoSendSetting(TimestampMixin, Base):
     #: (`auto_send.EARLIEST_HOUR`~`LATEST_HOUR`).
     from_hour: Mapped[int] = mapped_column(Integer, default=10)
     until_hour: Mapped[int] = mapped_column(Integer, default=17)
-    #: **하루에 몇 건까지 세우는가.** 회당이 아니라 하루다 — 실이 30분마다
-    #: 깨어나므로 회당 상한만 두면 하루 총량이 잡히지 않는다
-    #: (까닭은 `auto_send.run_once`).
+    #: **하루에 몇 건까지 세우는가.** 회당이 아니라 하루다 — 옛 결과 문의 대기
+    #: 목록의 실이 30분마다 깨어났다(#31 에서 걷어 지금은 읽는 코드가 없다).
     max_per_day: Mapped[int] = mapped_column(Integer, default=10)
     #: **옛 매월 30일 자동 예약**의 두 칸 — 스타트업 월간 발송(`startup_ir`) 줄만
     #: 썼다. #31 에서 그 자동을 걷어 **읽는 코드가 없다**(매월은 2단계 자동화 A5
@@ -2673,7 +2673,8 @@ class AutoSendRun(TimestampMixin, Base):
     __tablename__ = "auto_send_runs"
     __table_args__ = (
         UniqueConstraint("kind", "ref_id", name="uq_auto_send_runs_kind_ref"),
-        # 하루 상한을 셀 때마다 이 두 칸으로 훑는다(`auto_send.remaining_today`).
+        # 그날의 회차 자리를 이 두 칸으로 훑는다(`automation_runner.today_items` ·
+        # `status_of`).
         Index("ix_auto_send_runs_kind_day", "kind", "day"),
     )
 

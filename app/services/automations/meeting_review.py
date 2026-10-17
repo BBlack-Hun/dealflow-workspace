@@ -98,6 +98,7 @@ from ...models import (AutoSendRun, Automation, AutomationSend, Meeting, SendIte
                        SendJob, User, VcContact)
 from .. import automation, cadence, pipeline, sender_rooms, sheet_owner
 from .. import automation_runner as runner
+from ..automation_dedup import _md
 from .. import message_composer as mc
 
 #: 결과를 아직 모를 때의 결말 — 첫 번째는 이때만 묻는다. 빈칸도 같다.
@@ -440,15 +441,6 @@ def _asked_days(db: Session, meeting_ids) -> Dict[int, str]:
             if meeting_id is not None:
                 out[meeting_id] = max(out.get(meeting_id, ""), (sent_at or "")[:10])
     return out
-
-
-def _md(day: str) -> str:
-    """`2026-10-14` → `10/14`. 못 읽으면 빈 글자."""
-    try:
-        when = date.fromisoformat(day)
-    except ValueError:
-        return ""
-    return f"{when.month}/{when.day}"
 
 
 def asked_on(db: Session, meeting_ids) -> Dict[int, str]:
