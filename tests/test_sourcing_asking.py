@@ -10,8 +10,8 @@
   ① 받는 것은 **정확히 `참여`** 뿐 — 불참여 · 물어보는 중 · 사람이 적은 문구는 안 받는다.
      O/X 칸은 `불참여` 만 X, 나머지는 O(갈래에 있음).
   ② 값 검사 — 세 값은 같은 뜻의 말을 맞춰 적고, 그 밖의 글은 그대로(40자 · 제어문자 금지).
-  ③ O — 새 줄은 `물어보는 중`, `불참여` 였던 줄도 `물어보는 중`(다시 묻는다), 참여 ·
-     물어보는 중 · 문구는 덮지 않는다. 새 줄의 담당은 넘길 수 있다(스크립트용).
+  ③ O — 새 줄은 `딜 소싱 참여 제안 대기중`, `불참여` 였던 줄도 `제안 대기중`(다시
+     묻는다), 참여 · 제안 대기중 · 물어보는 중 · 문구는 덮지 않는다. 새 줄의 담당은 넘길 수 있다(스크립트용).
   ④ 발송 — 딜 제안 관리 목록 · 참여 안내 · 월간 리마인드 · Series A 딜 공유 · 메일
      채널 · A1 소싱 리마인드(collect · still_ok)가 모두 같은 판정으로 뺀다.
   ⑤ 화면 — 딜 소싱 칸은 주황 딱지 · 보기 세 값 · 직접 적기. 딜 제안 관리에 뺀 수.
@@ -36,6 +36,7 @@ from tests.test_sourcing_vc_sync import (  # noqa: F401 - 픽스처를 함께 �
     SHEET, SYNC, board, column, mail_on, mark, sc, sync_rows, vc)
 
 ASKING = "참여 의사를 물어보는 중"
+OFFER = "딜 소싱 참여 제안 대기중"     # O 로 새 줄이 생길 때의 기본값
 CUSTOM = "11월 재연락"
 
 
@@ -52,6 +53,7 @@ class _Row:
     (None, True, "joined", "O"),           # 빈 칸은 칸의 기본값(`참여`)
     ("불참여", False, "left", "X"),
     (ASKING, False, "pending", "O"),
+    (OFFER, False, "pending", "O"),
     (CUSTOM, False, "pending", "O"),
 ])
 def test_only_exact_joined_takes_part(value, takes, kind, mark_):
@@ -71,6 +73,7 @@ def test_only_exact_joined_takes_part(value, takes, kind, mark_):
     ("불참여", "불참여"), ("X", "불참여"), ("×", "불참여"),
     (ASKING, ASKING), ("물어보는 중", ASKING), ("물어보는중", ASKING),
     ("참여의사를 물어보는 중", ASKING),
+    (OFFER, OFFER), ("제안 대기", OFFER), ("제안대기중", OFFER), ("참여 제안 대기중", OFFER),
     ("  " + CUSTOM + "  ", CUSTOM),           # 앞뒤 공백만 뗀다
     ("가" * 40, "가" * 40),                   # 40자까지
 ])
@@ -124,7 +127,7 @@ def test_adding_on_the_sourcing_screen_takes_a_custom_phrase(board, db, users):
 
 # ── ③ O 의 규칙 ─────────────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("before", ["참여", ASKING, CUSTOM])
+@pytest.mark.parametrize("before", ["참여", OFFER, ASKING, CUSTOM])
 def test_O_does_not_overwrite_joined_asking_or_custom(board, db, users, before):
     contact = vc(db, users)
     sc(db, vc_contact_id=contact.id, participation=before)
@@ -143,7 +146,7 @@ def test_O_on_a_left_row_asks_again_and_X_leaves(board, db, users):
 
     assert mark(board, contact.id, "O").status_code == 200
     [row] = sync_rows(db)
-    assert row.participation == ASKING
+    assert row.participation == OFFER
     assert column(board, contact.id) == "O"
 
     assert mark(board, contact.id, "X").status_code == 200
@@ -166,11 +169,11 @@ def test_set_mark_takes_an_assignee_and_a_participation_for_new_rows(db, users):
     [row] = sync_rows(db)
     assert (row.assignee_name, row.participation) == ("담당가", "참여")
 
-    # 기본값 — 담당은 O 를 넣은 사람(없으면 투자사 줄 주인), 참여는 물어보는 중
+    # 기본값 — 담당은 O 를 넣은 사람(없으면 투자사 줄 주인), 참여는 제안 대기중
     other = vc(db, users, name="이영희", phone="010-3333-4444")
     got = sourcing_sync.set_mark(db, other, "O", None)
     db.commit()
-    assert got["participation"] == ASKING
+    assert got["participation"] == OFFER
     assert sync_rows(db)[-1].assignee_name == users["u1"].name
 
     # 같은 사람이 이미 갈래에 있으면 잇기만 — 담당은 넘겨도 안 바뀐다
@@ -208,7 +211,7 @@ def test_pending_people_are_not_offered_and_not_sent(board, db, users):
     # 뺀 수를 목록 위에 적는다 — 확인 전과 불참여를 나눠서
     held = deals[deals.index('id="sourcing-held"'):]
     held = held[:held.index("</p>")]
-    assert "참여 확인 전(물어보는 중 등) <b>2</b>명" in held
+    assert "참여 확인 전(제안 대기·물어보는 중 등) <b>2</b>명" in held
     assert "불참여 <b>1</b>명" in held
 
     for topic in ("sourcing_intro", "sourcing_remind"):
@@ -230,6 +233,24 @@ def test_pending_people_are_not_offered_and_not_sent(board, db, users):
     preview = board.post("/api/deals/preview", json={
         "contact_ids": [rows["asking"].id], "mode": "sourcing"}).json()
     assert any("참여 확인 전" in w for w in preview["previews"][0]["warnings"])
+
+
+def test_offer_pending_people_are_not_offered_and_not_sent(board, db, users):
+    """O 로 막 넣은 분(`딜 소싱 참여 제안 대기중`) — 목록에도 없고 보내도 빠진다."""
+    joined = sc(db, name="참여심사", phone="010-1000-0001", kakao_room_name="참여 방")
+    offer = sc(db, name="대기심사", phone="010-1000-0006", kakao_room_name="대기 방",
+               participation=OFFER)
+
+    deals = board.get("/deals").text
+    listing = deals[deals.index('id="sourcing-list"'):]
+    assert f'value="{offer.id}"' not in listing
+    for topic in ("sourcing_intro", "sourcing_remind"):
+        r = board.post("/api/deals/send", json={"contact_ids": [joined.id, offer.id],
+                                                "mode": "sourcing", "topic": topic})
+        assert r.status_code == 200, r.text
+        assert r.json()["total"] == 1
+        reasons = {s["name"]: s["reason"] for s in r.json()["skipped"]}
+        assert f"참여 확인 전({OFFER})" in reasons["대기심사"]
 
 
 def test_state_marks_pending_people_out_with_their_own_label(board, db, users):
@@ -316,7 +337,7 @@ def test_the_sourcing_cell_shows_pending_differently(board, db, users):
     tr, td = cell(rows["asking"])
     assert 'data-part-kind="pending"' in tr
     assert "part-pending" in td and ASKING in td
-    assert f'data-choices="참여,불참여,{ASKING}"' in td
+    assert f'data-choices="참여,불참여,{OFFER},{ASKING}"' in td
     tr, td = cell(rows["custom"])
     assert 'data-part-kind="pending"' in tr and "part-pending" in td
     tr, td = cell(rows["left"])
@@ -424,7 +445,7 @@ def test_the_script_applies_through_set_mark(db, users, marks_world, tmp_path, c
     assert "저장했습니다" in out and "이 분으로 확정" in out
     rows = {r.vc_contact_id: r for r in sync_rows(db) if r.vc_contact_id}
     new = rows[marks_world["new"].id]
-    assert (new.participation, new.assignee_name) == (ASKING, "담당가")
+    assert (new.participation, new.assignee_name) == (OFFER, "담당가")
     # 이미 이어진 분은 그대로 — 담당도 참여도
     joined = rows[marks_world["joined"].id]
     assert (joined.participation, joined.assignee_name) == ("참여", "원래담당")
@@ -443,7 +464,7 @@ def test_the_script_can_ask_again_and_refuses_bad_values(db, users, marks_world,
     assert apply_sourcing_marks.main(["--ids-file", str(path), "--revive-left",
                                       "--apply"]) == 0
     rows = {r.vc_contact_id: r for r in sync_rows(db) if r.vc_contact_id}
-    assert rows[marks_world["left"].id].participation == ASKING
+    assert rows[marks_world["left"].id].participation == OFFER
 
     assert apply_sourcing_marks.main(["--ids-file", str(path),
                                       "--participation", "줄\n바꿈"]) == 2

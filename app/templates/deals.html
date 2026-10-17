@@ -761,7 +761,7 @@
       #}
       {% if sourcing_held.pending or sourcing_held.left %}
       <p class="hint" id="sourcing-held" data-testid="sourcing-held">
-        {%- if sourcing_held.pending %}참여 확인 전(물어보는 중 등) <b>{{ sourcing_held.pending }}</b>명{% endif -%}
+        {%- if sourcing_held.pending %}참여 확인 전(제안 대기·물어보는 중 등) <b>{{ sourcing_held.pending }}</b>명{% endif -%}
         {%- if sourcing_held.pending and sourcing_held.left %} · {% endif -%}
         {%- if sourcing_held.left %}불참여 <b>{{ sourcing_held.left }}</b>명{% endif %}은
         이 목록에서 뺐습니다 — 동의하시면 <a href="/sourcing">딜 소싱</a> 화면의 참여
