@@ -19,8 +19,8 @@ from sqlalchemy.orm import Session
 
 from .. import clock
 from ..models import User
-from . import (auto_send, automation_runner, cadence, pipeline, readiness,
-               scheduled_send, send_guard, sourcing_mail)
+from . import (auto_send, automation_runner, cadence, call_flags, pipeline,
+               readiness, scheduled_send, send_guard, sourcing_mail)
 
 # 줄 하나 = 오늘 할 일 하나.
 #   kind  : 화면에서 묶어 보여줄 종류
@@ -66,6 +66,19 @@ def build(db: Session, user: User, today: Optional[date] = None) -> dict:
             ", ".join(f"{r['name']}({r['company_name']})"
                       for r in ir["open_requests"][:3]),
             "/ir", len(ir["open_requests"])))
+
+    # 1-1) **답 없음 · 전화 필요**(10/17 회의 #37) — 리마인드 카톡을 보냈는데 답이
+    # 없어서 팀원·담당자가 표시해 둔 곳. 그 투자사를 맡은 사람에게 선다(관리자가
+    # 대신 켜도 맡은 사람에게 간다). 표시를 끄면 여기서 빠진다 — 따로 지울 것이
+    # 없다. 세는 자리는 딜 진행 관리 `전화 요청` 구역과 같은 한 벌이다.
+    calls = call_flags.needed_for(db, user)
+    if calls:
+        items.append(_item(
+            "call", "urgent", "전화 필요 — 리마인드에 답 없음",
+            ", ".join(f"{c['name']}({c['firm']})" if c["firm"] else c["name"]
+                      for c in calls[:3])
+            + (" 외" if len(calls) > 3 else ""),
+            "/ir#calls", len(calls)))
 
     # 2) 오늘 약속
     for meeting in ir["today_meetings"]:

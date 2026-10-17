@@ -38,6 +38,7 @@ from app.models import (  # noqa: E402
     ContactActivity,
     DealBatch,
     DealBatchCompany,
+    DealFollowup,
     IrCompany,
     SendItem,
     SendJob,
@@ -139,6 +140,8 @@ def purge(db, *, keep_history: bool = False, apply: bool = False) -> dict:
         db.execute(delete(ContactActivity).where(ContactActivity.contact_id.in_(contact_ids)))
         # 보내는 계정 카톡 기준 방 제목 — 담당자 줄을 가리킨다(외래키).
         db.execute(delete(SenderRoom).where(SenderRoom.contact_id.in_(contact_ids)))
+        # 리마인드 뒤 `전화 필요` 표시 · 메모 — 담당자 줄을 가리킨다(외래키).
+        db.execute(delete(DealFollowup).where(DealFollowup.contact_id.in_(contact_ids)))
         # 딜 소싱 줄이 이 담당자를 가리키면 연결만 끊는다(줄은 남는다) — 한꺼번에
         # 지우기는 flush 를 지나지 않아 앱이 대신 끊어 주지 못한다.
         sourcing_sync.detach(db, contact_ids)
@@ -161,6 +164,7 @@ def purge(db, *, keep_history: bool = False, apply: bool = False) -> dict:
             _detach_items(db, select(SendItem.id).where(SendItem.contact_id.in_(left)))
             db.execute(delete(SendItem).where(SendItem.contact_id.in_(left)))
             db.execute(delete(SenderRoom).where(SenderRoom.contact_id.in_(left)))
+            db.execute(delete(DealFollowup).where(DealFollowup.contact_id.in_(left)))
             sourcing_sync.detach(db, left)
             db.execute(delete(VcContact).where(VcContact.id.in_(left)))
         db.execute(delete(AgentDevice).where(AgentDevice.user_id.in_(user_ids)))
@@ -170,6 +174,12 @@ def purge(db, *, keep_history: bool = False, apply: bool = False) -> dict:
         db.execute(update(Automation).where(Automation.user_id.in_(user_ids))
                    .values(user_id=None))
         db.execute(delete(SenderRoom).where(SenderRoom.sender_user_id.in_(user_ids)))
+        # 가상 계정이 남의 줄에 `전화 필요` 를 켜거나 메모했으면 **누가** 칸만 뗀다
+        # (표시 · 메모는 그 담당자 줄의 것이라 남는다).
+        db.execute(update(DealFollowup).where(DealFollowup.call_by.in_(user_ids))
+                   .values(call_by=None))
+        db.execute(update(DealFollowup).where(DealFollowup.memo_by.in_(user_ids))
+                   .values(memo_by=None))
         jobs = select(SendJob.id).where(SendJob.user_id.in_(user_ids))
         _detach_items(db, select(SendItem.id).where(SendItem.job_id.in_(jobs)))
         db.execute(update(AutomationSend).where(AutomationSend.job_id.in_(jobs))

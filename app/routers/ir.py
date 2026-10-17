@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import get_current_user, now_iso, templates
 from ..models import IrCompany, IrRequest, Meeting, User, VcContact
-from ..services import cadence, flow, ir_attach, pipeline, sheet_owner
+from ..services import call_flags, cadence, flow, ir_attach, pipeline, sheet_owner
 from . import followups
 from .companies import BLOCKED_CONTRACT, contract_key
 from ..ui import base_ctx
@@ -172,6 +172,23 @@ def ir_page(request: Request, db: Session = Depends(get_db),
         "kinds": pipeline.MEETING_KINDS,
         "meet_modes": pipeline.MEETING_MODES,
         "followup_days": pipeline.MEETING_FOLLOWUP_DAYS,
+        # ── 화면 말 (10/17 회의 #35~#44) — 짓는 자리는 `pipeline.LABEL_*` 한 곳.
+        "labels": {
+            "delivered": pipeline.LABEL_DELIVERED,
+            "asked": pipeline.LABEL_ASKED,
+            "not_asked": pipeline.LABEL_NOT_ASKED,
+            "book": pipeline.LABEL_BOOK_MEETING,
+            "mark_asked": pipeline.LABEL_MARK_ASKED,
+            "requested": pipeline.LABEL_REQUESTED,
+        },
+        # ── 답 없음 · 전화 필요 (#37) ─────────────────────────────────────
+        # 사람 → 표시·메모. 켜졌거나 메모가 있는 사람만 든다. 줄마다 붙일지는
+        # 템플릿의 `call_flag` 매크로가 **그 줄에서 리마인드가 나갔는가**로 가른다.
+        "call_flags": call_flags.views(db),
+        "call_flag_label": call_flags.LABEL,
+        # 이 사람이 걸어야 할 전화 — `전화 요청` 구역 맨 위 묶음. 오늘 할 일과
+        # 같은 한 벌이다(`call_flags.needed_for`).
+        "call_needed_rows": call_flags.needed_for(db, user),
         "today": today.isoformat(),
         "msg": msg,
     })
@@ -297,7 +314,9 @@ def deliver_request(request_id: int, db: Session = Depends(get_db),
                     user: User = Depends(get_current_user)):
     pipeline.deliver(db, _owned_request(db, request_id, user))
     db.commit()
-    return RedirectResponse("/ir?msg=전달 완료로 표시했습니다", status_code=303)
+    return RedirectResponse(
+        f"/ir?msg={quote(pipeline.LABEL_DELIVERED + '로 표시했습니다')}",
+        status_code=303)
 
 
 @router.post("/ir/requests/{request_id}/drop", include_in_schema=False)
@@ -333,8 +352,73 @@ def mark_meeting_asked(contact_id: int, db: Session = Depends(get_db),
     contact = _owned_contact(db, contact_id, user)
     pipeline.record_meeting_ask(db, contact.id)
     db.commit()
-    return RedirectResponse("/ir?msg=미팅 요청을 보냈다고 표시했습니다",
-                            status_code=303)
+    # 단추 이름이 `IR 자료 검토 요청 보냄` 이 됐다(10/17 회의 #43). 누르면 그
+    # 담당자 줄들이 `회의실 미팅 톡 요청 보냄 완료` 로 바뀐다 — 둘 다 말해 준다.
+    msg = (f"{pipeline.LABEL_MARK_ASKED}으로 표시했습니다 — "
+           f"{pipeline.LABEL_ASKED}")
+    return RedirectResponse(f"/ir?msg={quote(msg)}", status_code=303)
+
+
+# --- 답 없음 · 전화 필요 (10/17 회의 #37) ------------------------------------
+#
+# 리마인드 카톡을 보낸 뒤 답이 없으면 팀원·담당자가 켜고, 메모를 남긴다. 판정과
+# 저장은 `services/call_flags.py` 한 곳이고, 여기서는 권한과 돌아갈 자리만 본다.
+
+#: 누르고 **돌아갈 구역.** 폼이 실어 온 글자를 그대로 주소에 붙이지 않는다 —
+#: 아는 구역 이름만 받고, 모르면 `전화 요청` 구역으로 간다.
+CALL_FLAG_BACK = ("remind", "calls", "delivered", "meetings", "reviews")
+
+
+def _flag_contact(db: Session, contact_id: int, user: User) -> VcContact:
+    """표시·메모를 고칠 사람. 고칠 수 없는 계정에는 **없는 사람**으로 답한다."""
+    contact = db.get(VcContact, contact_id)
+    if contact is None or not call_flags.may_edit(db, user, contact):
+        raise HTTPException(status_code=404, detail="담당자를 찾을 수 없습니다")
+    return contact
+
+
+def _flag_back(back: str, msg: str) -> RedirectResponse:
+    anchor = back if back in CALL_FLAG_BACK else "calls"
+    return RedirectResponse(f"/ir?msg={quote(msg)}#{anchor}", status_code=303)
+
+
+@router.post("/ir/contacts/{contact_id}/call-needed", include_in_schema=False)
+def set_call_needed(contact_id: int, on: int = Form(1), back: str = Form(""),
+                    db: Session = Depends(get_db),
+                    user: User = Depends(get_current_user)):
+    """`답 없음 · 전화 필요` 를 켜고 끈다. 누가 언제 했는지 줄에 남는다.
+
+    **켜는 것은 리마인드가 나간 사람에게만** — 화면도 그런 줄에만 단추를 세운다.
+    끄는 것은 언제나 된다(남은 표시를 치울 길은 늘 있어야 한다).
+    """
+    contact = _flag_contact(db, contact_id, user)
+    if on and not call_flags.reminded(db, contact.id):
+        raise HTTPException(status_code=400,
+                            detail="리마인드 카톡이 나간 뒤에 표시할 수 있습니다")
+    call_flags.set_call(db, contact.id, bool(on), user)
+    db.commit()
+    return _flag_back(back, f"{call_flags.LABEL}로 표시했습니다" if on
+                      else "전화 필요 표시를 껐습니다")
+
+
+@router.post("/ir/contacts/{contact_id}/call-memo", include_in_schema=False)
+def set_call_memo(contact_id: int, memo: str = Form(""), back: str = Form(""),
+                  db: Session = Depends(get_db),
+                  user: User = Depends(get_current_user)):
+    """메모를 적는다(비우면 지운다). 누가 언제 적었는지 줄에 남는다.
+
+    새로 적는 것은 켜는 것과 같은 조건이다 — 리마인드가 나갔거나, 이미 표시·
+    메모가 있는 사람. 지우는 것은 언제나 된다.
+    """
+    contact = _flag_contact(db, contact_id, user)
+    if ((memo or "").strip() and not call_flags.views(db, [contact.id])
+            and not call_flags.reminded(db, contact.id)):
+        raise HTTPException(status_code=400,
+                            detail="리마인드 카톡이 나간 뒤에 메모할 수 있습니다")
+    call_flags.set_memo(db, contact.id, memo, user)
+    db.commit()
+    return _flag_back(back, "메모를 저장했습니다" if (memo or "").strip()
+                      else "메모를 지웠습니다")
 
 
 # --- 미팅 ------------------------------------------------------------------

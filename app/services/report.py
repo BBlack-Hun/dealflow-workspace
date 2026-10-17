@@ -48,9 +48,11 @@ from . import manual_send
 # 여기 숫자를 다시 적어 두면 한쪽이 바뀔 때 보고만 옛 값으로 남는다
 # (`routers/deals.py` 도 같은 곳을 `mc` 로 읽는다).
 from . import message_composer as mc
-from .pipeline import (IR_MEETING_ASK_DAYS, MEETING_FOLLOWUP_DAYS,
-                       MEETING_KINDS, NO_FOLLOWUP_OUTCOMES, OUTCOMES,
-                       REQUEST_STATUS, meeting_ask_state)
+from .pipeline import (IR_MEETING_ASK_DAYS, LABEL_DELIVERED, LABEL_REQUESTED,
+                       MEETING_FOLLOWUP_DAYS, MEETING_KINDS,
+                       NO_FOLLOWUP_OUTCOMES, OUTCOMES, REQUEST_STATUS,
+                       meeting_ask_state)
+from .pipeline import meeting_ask_note as _pipeline_meeting_ask_note
 from .weekly import WEEKDAYS
 
 WEEK_NAMES = ["첫주", "둘째주", "셋째주", "넷째주", "다섯째주", "여섯째주"]
@@ -762,14 +764,14 @@ def meeting_ask_note(state: Optional[dict]) -> tuple:
     돌려주는 것은 `(글, 빛깔)`. 빛깔은 `ok`(보냄) · `bad`(지남) ·
     `warn`(아직 안 보냈지만 기한은 남음) 셋이다. 안 보낸 것을 전부 빨강으로
     두면 오늘 할 일과 아직 여유 있는 것이 구별되지 않는다.
+
+    **글은 `pipeline.meeting_ask_note` 가 짓는다**(10/17 회의 #36·#39) — `/ir` 의
+    「전달한 자료」 표도 같은 글을 쓰게 되면서 짓는 자리를 그쪽으로 옮겼다.
+    예전 글은 `미팅 요청 안 보냄 · {기한}일 지남`(지난 건 — 며칠째든 늘 기한의 수) /
+    `· 2026-09-17까지`(안 지난 건)였고, 이제는 둘 다 **지난 날 그대로**
+    (`회의실 미팅 톡 요청 미완료 · 12일`)다.
     """
-    if not state:
-        return "", ""
-    if state["asked"]:
-        return f"미팅 요청 보냄 · {state['asked_at']}", "ok"
-    if state["overdue"]:
-        return f"미팅 요청 안 보냄 · {IR_MEETING_ASK_DAYS}일 지남", "bad"
-    return f"미팅 요청 안 보냄 · {state['due']}까지", "warn"
+    return _pipeline_meeting_ask_note(state)
 
 
 def meeting_ask_count_note(missing: int, requests: int) -> tuple:
@@ -1003,8 +1005,9 @@ YEARLY_ITEMS = (
     ("meeting", "followup_done", "결과 물어봄", ""),
     ("meeting", "followup_open", "아직 안 물어봄", "warn"),
     ("meeting", "followup_late", "그중 날짜 지남", "bad"),
-    ("ir", "ir_requested", "IR 요청", ""),
-    ("ir", "ir_delivered", "전달함", ""),
+    # 이름은 월간 보고의 `IR 자료 요청` 판과 같은 말이다(`pipeline.LABEL_*`).
+    ("ir", "ir_requested", LABEL_REQUESTED, ""),
+    ("ir", "ir_delivered", LABEL_DELIVERED, ""),
     ("ir", "ir_open", "안 보낸 요청", "warn"),
     ("ir", "call_done", "전화함", ""),
     ("ir", "call_open", "전화 요청 안 함", "warn"),
@@ -1153,8 +1156,13 @@ def yearly(db: Session, year: int, user: Optional[User] = None,
     # 두 번 세는 것이라 값이 갈릴 일은 없었지만, 한 해를 그리는 데 드는 질의가
     # 그냥 두 배였다. 엑셀 내려받기가 같은 길을 지나면서 더 눈에 띈다.
     outcome_counts: Dict[str, int] = {}
+    # 달마다 **월간 보고 한 벌 그대로** 남겨 둔다(10/17 회의 #38 — "연간도 월간
+    # 스타일로"). 화면이 이것을 열두 번 이어 그린다(`templates/_report_month.html`
+    # — 월간 보기와 **같은 조각**). 위에서 세는 김에 받은 것이라 질의는 안 는다.
+    month_reports: List[dict] = []
     for mon in range(1, 13):
         got = monthly(db, year, mon, user, today)
+        month_reports.append({**got, "empty": is_empty_month(got)})
         months.append({
             "month": mon,
             "label": f"{mon}월",
@@ -1184,7 +1192,28 @@ def yearly(db: Session, year: int, user: Optional[User] = None,
         # 화면이 그리는 것도 파일이 적는 것도 같은 dict 다.
         "report_groups": yearly_groups(year, items, totals, outcomes),
         "outcomes": outcomes,
+        # 1월 → 12월, 달마다 **월간 보고와 같은 dict**(`monthly`). 화면의 연간
+        # 보기가 이것을 월간과 같은 모양(카드 · 발송 · 미팅 · 결과 · IR · 반응)
+        # 으로 열두 번 이어 그린다. `empty` 인 달은 머리 한 줄로 접는다.
+        "month_reports": month_reports,
     }
+
+
+def is_empty_month(data: dict) -> bool:
+    """이 달 보고에 **적힌 것이 하나도 없는가** — 연간 보기에서 접어 둘 달.
+
+    올해 남은 달(11·12월)까지 월간 판 다섯 개를 빈 채로 펼치면 정작 일이 있던
+    달이 그 아래 묻힌다. 그래서 아무것도 없는 달은 `N월 — 기록 없음` 한 줄만
+    세운다(달 자체는 빠지지 않는다 — 비어 있었다는 것도 보고의 내용이다).
+
+    판단은 월간 dict 의 **수**로만 한다 — 회차 · 미팅 · IR 요청 · 전화 요청 ·
+    반응 갈래의 줄. 하나라도 있으면 펼친다.
+    """
+    if data.get("send_rounds") or data.get("total") or data.get("ir_requested"):
+        return False
+    if data.get("call_open") or data.get("call_done"):
+        return False
+    return not any(b.get("rows") for b in data.get("buckets") or [])
 
 
 def selectable_years(today: Optional[date] = None, back: int = 3) -> List[int]:

@@ -377,6 +377,9 @@ def test_tab_counts_come_from_one_place(client, db, users):
                              # 갈라 센다 — 한 수에 섞으면 점프바의 `리마인드 3` 을
                              # 눌러 갔는데 보낼 것은 두 건뿐인 일이 생긴다.
                              "call_due", "call_open",
+                             # 리마인드 뒤 `답 없음 · 전화 필요` 로 표시해 둔 곳
+                             # (10/17 회의 #37) — 같은 `전화 요청` 구역에 선다.
+                             "call_flagged",
                              "meeting_todo", "meeting_open",
                              "review_due", "review_open"}
 

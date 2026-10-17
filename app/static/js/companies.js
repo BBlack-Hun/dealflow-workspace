@@ -114,6 +114,29 @@
 
   search.addEventListener("input", apply);
 
+  // ── 지금 화면 내려받기 (10/17 회의 #42) ─────────────────────────────────
+  // **서버가 같은 조건으로 다시 뽑는다** — 화면 글을 긁지 않는다
+  // (`services/company_view.py`). 머리글 필터(`filters.js`)와 정렬
+  // (`table_sort.js`)은 이미 주소에 있으니 그대로 넘기고, 주소에 안 남는
+  // 검색창 글자만 `q=` 로 붙인다. 누르는 **그 순간**의 조건이라 눌러 놓고
+  // 필터를 바꿔도 다음 누를 때 다시 짓는다.
+  var viewLink = document.getElementById("co-export-view");
+  if (viewLink) {
+    viewLink.addEventListener("click", function () {
+      var here = String((window.location && window.location.search) || "")
+        .replace(/^\?/, "");
+      var parts = here ? here.split("&").filter(function (pair) {
+        // 주소에 남아 있던 옛 `q=`(발송 화면에서 넘어온 값)는 버린다 —
+        // 지금 검색창에 든 글자가 화면을 거르는 값이다.
+        return pair && pair.indexOf("q=") !== 0;
+      }) : [];
+      var q = (search.value || "").trim();
+      if (q) parts.push("q=" + encodeURIComponent(q));
+      viewLink.href = "/api/export/companies-view.xlsx" +
+        (parts.length ? "?" + parts.join("&") : "");
+    });
+  }
+
   if (window.DealflowFilters) {
     filters = window.DealflowFilters.init({
       table: "#co-table",

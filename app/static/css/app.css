@@ -1628,6 +1628,29 @@ td.cell.save-failed { background: #fdecec; }
 .due-list li.overdue .due-when { color: var(--red); font-weight: 600; }
 .due-from { font-size: 12px; }
 .due-acts { display: flex; gap: 8px; }
+/* ── 답 없음 · 전화 필요 (10/17 회의 #37 · `_call_flag.html`) ────────────────
+   리마인드가 나간 줄에 붙는 배지 · 단추 · 메모 한 줄. 표 칸 안(`td`)에도,
+   리마인드 목록의 격자 줄(`.due-list li`)에도 선다 — 칸 안에서는 **div 에만**
+   flex 를 건다(td 에 걸면 표 레이아웃이 깨진다 — 위 `td.row-acts` 주석). */
+.call-flag { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px;
+  margin-top: 4px; font-size: 12px; white-space: normal; }
+.call-flag form { display: inline; margin: 0; }
+.call-flag .tag { margin-left: 0; }
+.call-flag .call-flag-who { font-size: 11px; }
+/* 격자 줄에서는 **줄 아래 한 줄을 통째로** 쓴다 — 네 칸(날짜·이름·무엇·단추)
+   사이에 끼우면 단추 칸이 밀려난다. 이름 칸 밑에서 시작해 어느 줄의 것인지
+   보이게 날짜 칸만큼 들인다. */
+.due-list li > .call-flag { grid-column: 1 / -1; margin-top: 0; padding-left: 94px; }
+/* 메모 — 접힌 채로는 적힌 메모 한 줄(넘치면 …), 열면 입력칸. */
+.call-flag-memo { min-width: 0; max-width: 100%; }
+.call-flag-memo summary { display: inline-block; max-width: min(320px, 100%); overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom;
+  cursor: pointer; list-style: none; }
+.call-flag-memo summary::-webkit-details-marker { display: none; }
+.call-flag-memo[open] { flex-basis: 100%; }
+.call-flag-memo form { display: flex; gap: 6px; align-items: center; margin-top: 4px; }
+.call-flag-memo input[type="text"] { flex: 1; min-width: 0; max-width: 360px;
+  padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; font-size: 12px; }
 .followup-strip { border-left: 4px solid var(--brand); }
 /* ── 한 줄 입력 폼(주간 업무·반복 업무·규칙 추가) ──────────────────────
    라벨이 붙은 칸과 안 붙은 버튼을 같은 줄에 세우는 자리다.
@@ -1840,7 +1863,8 @@ td.row-acts > a + form { margin-left: 8px; }
    `완료` 와 링크가 서로 붙어 한 낱말처럼 읽힌다. */
 td.row-acts > form + a { margin-left: 8px; }
 /* ── 「전달한 자료」 표(`/ir`) ────────────────────────────────────────────
-   줄마다 단추가 셋이다 — `미팅 잡기` · `보냈음으로 표시` · `삭제`.
+   줄마다 단추가 셋이다 — `회의실 미팅 잡기` · `IR 자료 검토 요청 보냄` · `삭제`
+   (10/17 회의 전 이름은 `미팅 잡기` · `보냈음으로 표시`).
 
    **`td.row-acts` 의 `white-space: nowrap` 은 모자란 폭을 말없이 삼킨다.**
    위의 `.row-acts { flex-wrap: wrap }` 은 여기서 아무 일도 하지 않는다 —
@@ -1848,7 +1872,7 @@ td.row-acts > form + a { margin-left: 8px; }
    단추 줄이 칸보다 넓어지면 접히는 대신 칸 밖으로 흘러 잘렸다(120px 칸에
    207px 가 들어가 `삭제` 가 통째로 안 보였다).
 
-   칸을 넓혀 놓았지만(`ir.html` 의 216px) 이 표에서는 **접히게도 둔다** —
+   칸을 넓혀 놓았지만(`ir.html` 의 284px) 이 표에서는 **접히게도 둔다** —
    글자 크기 설정이나 문구가 조금만 달라져도 다시 소리 없이 잘리는 자리다.
    잘려 안 보이는 단추보다 두 줄이 낫다. 단추 하나가 가운데서 끊기지는
    않게 낱개에는 `nowrap` 을 남긴다. */
@@ -1856,10 +1880,11 @@ td.row-acts > form + a { margin-left: 8px; }
 #delivered-table td.row-acts .linkbtn { white-space: nowrap; }
 /* 폭이 모자라면 칸을 짜부라뜨리지 말고 **표 안에서 가로로 굴린다**(`.table-wrap`
    이 받는다). 상태·단추가 고정폭이라, 판이 좁아지면 남는 폭을 담당자·기업이
-   전부 뒤집어써서 이름이 한 글자씩 끊긴다. 값은 고정폭 셋(96+168+216=480)에
-   담당자·기업 140px 씩을 더한 것이다. 폰 규칙의 760px 과 같은 값이라 좁은
-   화면에서 굴리는 폭도 그대로다. */
-.table-wrap #delivered-table { min-width: 760px; }
+   전부 뒤집어써서 이름이 한 글자씩 끊긴다. 값은 고정폭 셋에 담당자·기업
+   몫을 더한 것이다 — 예전 96+168+216=480 에 140px 씩(= 760px, 폰 규칙과 같은
+   값)이었고, 10/17 회의(#36·#41·#43)에서 말이 길어져 상태·단추 칸이
+   236·284px 이 되면서 96+236+284=616 에 132px 씩 = 880px 이다. */
+.table-wrap #delivered-table { min-width: 880px; }
 
 /* 계정 넘기기 줄(팀 현황). 한 줄을 통째로 쓰는 칸이라 펴진 것이 눈에 띄어야
    위 줄과 헷갈리지 않는다. `.member-form` 이 안쪽에서 테두리·여백을 준다. */
@@ -2208,7 +2233,19 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
 .jump-bar a span.warn { background: #f6c344; color: #4a3400; font-weight: 700; }
 .jump-arrow { color: var(--line); }
 /* 이동 바에서 눌러 내려온 구역이 화면 위에 딱 붙지 않게 */
-#requests, #remind, #meetings, #reviews { scroll-margin-top: 14px; }
+#requests, #remind, #meetings, #reviews, #calls, #delivered { scroll-margin-top: 14px; }
+
+/* ── 연간 업무 보고 — 달 하나 = 월간 보고 한 벌 (10/17 회의 #38) ───────────
+   달마다 월간 판 다섯 개가 이어지므로 **달과 달 사이**가 눈에 띄어야 한다 —
+   판 사이(`.panel` 의 여백)와 같은 간격이면 어디서 다음 달이 시작하는지 안
+   보인다. 굵은 선 하나와 판 제목보다 큰 달 머리로 가른다. */
+.year-month, #year-total { margin-top: 28px; padding-top: 14px;
+  border-top: 2px solid var(--line); scroll-margin-top: 14px; }
+.year-month-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  margin: 0 0 10px; font-size: 18px; }
+.year-month-head .hint { font-weight: 400; }
+/* 아무것도 없던 달은 바로가기에서 흐리게 — 눌러도 한 줄뿐이다. */
+.jump-bar.year-months a.empty { opacity: .45; }
 
 /* 참고 시트 탭 — 명단 탭과 성격이 달라 구분선 뒤에 둔다. */
 .tab-divider { color: var(--line); padding: 0 4px; align-self: center; }
@@ -2368,6 +2405,8 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
      `minmax(0, 1fr)` 인 이유는 이 블록 맨 위에 적어 두었다 — `1fr` 은 속
      내용의 최소폭 아래로 안 줄어든다. */
   .due-list li { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  /* 칸이 하나가 되면 들여쓸 날짜 칸도 없다(`.call-flag` 는 위 규칙에서 94px 을 들인다). */
+  .due-list li > .call-flag { padding-left: 0; }
   /* 칸이 하나가 되면 단추 줄만 왼쪽에 몰려 어느 줄의 것인지 흐려진다 —
      날짜·이름 아래에서 오른쪽으로 붙여 줄의 끝을 표시한다. */
   .due-list li .due-acts { justify-content: flex-end; flex-wrap: wrap; }

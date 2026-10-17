@@ -35,9 +35,12 @@
     {% else %}<span>{{ flow_counts.upcoming }}</span>{% endif %}
   </a>
   <i class="jump-arrow">›</i>
+  {# 급한 수에는 `답 없음 · 전화 필요` 로 표시해 둔 곳도 더한다(10/17 회의 #37) —
+     같은 구역 맨 위 묶음이 그것이다. #}
   <a href="#calls">
     전화 요청
-    {% if flow_counts.call_due %}<span class="warn">{{ flow_counts.call_due }}</span>
+    {% set call_warn = flow_counts.call_due + (flow_counts.call_flagged or 0) %}
+    {% if call_warn %}<span class="warn">{{ call_warn }}</span>
     {% else %}<span>{{ flow_counts.call_open }}</span>{% endif %}
   </a>
   <i class="jump-arrow">›</i>

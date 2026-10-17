@@ -15,7 +15,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from ..models import User
-from . import cadence, pipeline
+from . import cadence, call_flags, pipeline
 
 
 def counts(db: Session, user: User, today: Optional[date] = None) -> dict:
@@ -40,6 +40,10 @@ def counts(db: Session, user: User, today: Optional[date] = None) -> dict:
         # 오늘까지 걸어야 할 전화 · 아직 날이 안 온 전화
         "call_due": len(call_due),
         "call_open": len(calls) - len(call_due),
+        # 리마인드 뒤 팀원·담당자가 `답 없음 · 전화 필요` 를 켜 둔 곳(10/17 회의
+        # #37). 같은 `전화 요청` 구역 맨 위에 선다 — 세는 것은 그 묶음과 같은
+        # 한 벌이다(`call_flags.needed_for`).
+        "call_flagged": len(call_flags.needed_for(db, user)),
         "ir_open": len(items["open_requests"]),
         "ir_overdue": len(items["overdue_requests"]),
         # 오늘 약속 — 미팅 탭에서 손이 가는 것

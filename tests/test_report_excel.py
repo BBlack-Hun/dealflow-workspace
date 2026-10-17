@@ -799,7 +799,7 @@ def test_an_item_with_nothing_all_year_is_dropped(logged, db, users):
     assert "보낸 건수" in labels and "발송 회차" in labels
     # 미팅도 IR 요청도 없는 해다 — 그 줄들은 서지 않는다
     assert "잡은 미팅" not in labels
-    assert "IR 요청" not in labels
+    assert "IR 자료 요청 받음" not in labels
     assert "안 나감" not in labels, "중단된 회차가 없는데 줄이 섰다"
 
     # 화면도 같다

@@ -474,7 +474,8 @@ def test_ir_판의_안_보낸_건은_무엇이_안_나갔는지_말한다(client
     from app.routers import data_io
     import inspect
 
-    page = (__import__("pathlib").Path("app/templates/report.html")).read_text(encoding="utf-8")
+    # 월간 몸통은 연간 보기와 같이 쓰는 조각으로 옮겼다(10/17 회의 #38).
+    page = (__import__("pathlib").Path("app/templates/_report_month.html")).read_text(encoding="utf-8")
     assert "IR 자료 아직 안 보냄" in page
     # 화면의 IR 판에 맨 `아직 안 보냄` 이 남아 있으면 안 된다.
     assert "<span>아직 안 보냄</span>" not in page

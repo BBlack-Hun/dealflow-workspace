@@ -25,7 +25,8 @@ from .. import clock
 from ..clock import stamp_text
 from ..db import get_db
 from ..deps import can_open, get_current_user, may_manage_team_contacts
-from ..models import (AutomationSend, ContactActivity, ContactColumn, IrCompany, IrRequest,
+from ..models import (AutomationSend, ContactActivity, ContactColumn, DealFollowup,
+                      IrCompany, IrRequest,
                       Meeting, SendItem, SendJob, SenderRoom, SendSequence,
                       SourcingContact, User, VcContact)
 from ..services import (contact_columns, deal_stage, firm_type, last_activity,
@@ -1074,9 +1075,13 @@ def _pipeline_views(db: Session, contact_id: int) -> List[dict]:
         select(IrRequest).where(IrRequest.contact_id == contact_id)
     ).scalars().all():
         date_ = (row.requested_at or "")[:10]
+        # 상태 말이 `IR 자료 요청 받음` · `IR 자료 전달 완료` 로 길어졌다(10/17
+        # 회의). 그 말이 이미 `IR 자료` 로 시작하면 앞머리를 또 붙이지 않는다 —
+        # `IR 자료 요청 · IR 자료 요청 받음` 은 같은 말을 두 번 하는 줄이다.
+        state = REQUEST_STATUS.get(row.status, row.status)
         out.append({
             "date": date_, "month": None, "kind": "ir_request",
-            "content": f"IR 자료 요청 · {REQUEST_STATUS.get(row.status, row.status)}",
+            "content": state if state.startswith("IR 자료") else f"IR 자료 요청 · {state}",
             "source": "system",
             "companies": [{"name": row.company_name or "", "known": bool(row.company_id)}]
                          if row.company_name else [],
@@ -1344,6 +1349,11 @@ CASCADING_LINKS = (
     # 보내는 계정 카톡에서의 이 담당자 방 제목(`services/sender_rooms.py`).
     # 담당자 줄이 없어지면 가리킬 곳이 없는 확인 기록이다 — 함께 지운다.
     ("sender_rooms", SenderRoom, "보내는 계정 방 제목"),
+    # 리마인드 뒤 `답 없음 · 전화 필요` 표시와 메모(`models.DealFollowup`).
+    # 그 사람에 대한 할 일 표시라 담당자 줄이 없어지면 가리킬 곳이 없다 — 함께
+    # 지운다. (표시가 설 수 있는 사람은 리마인드가 나간 사람이라 대개 발송
+    # 기록이 먼저 지우기를 막는다.)
+    ("call_flags", DealFollowup, "전화 필요 표시"),
 )
 
 #: 걸려 있으면 **못 지우는** 것들. 같은 모양이다.

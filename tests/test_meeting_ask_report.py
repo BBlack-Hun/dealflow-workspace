@@ -44,12 +44,19 @@ from .conftest import DEMO_PASSWORD
 CSS = Path("app/static/css/app.css")
 IR_HTML = Path("app/templates/ir.html")
 REPORT_HTML = Path("app/templates/report.html")
+REPORT_MONTH_HTML = Path("app/templates/_report_month.html")
 
 #: 헤드리스 크롬에서 잰 값 — 이 칸이 실제로 요구하는 폭(px).
 #: `/ir` 에서 `미팅 요청 보냄 · 2026-09-10` 이 147px, 단추 셋이 207px 였다.
 #: 업무 보고에는 한 갈래가 더 있어서(`미팅 요청 안 보냄 · 2026-09-17까지`)
 #: 170px 이 필요하다 — `/ir` 은 그 글을 안 쓴다.
-NEEDS = {"상태": 147, "단추": 207, "보고 상태": 170}
+#:
+#: 10/17 회의(#36·#41·#43)에서 말이 길어져 **다시 쟀다**(같은 CSS·글꼴을 띄운
+#: 헤드리스 크롬의 `scrollWidth`, 옛 글로 147→151 · 207→208 이 나와 자가 맞다).
+#:   상태       `회의실 미팅 톡 요청 보냄 완료 · 2026-09-10`          220px
+#:   단추       `회의실 미팅 잡기`·`IR 자료 검토 요청 보냄`·`삭제`     273px
+#:   보고 상태  (상태와 같은 글)                                     220px
+NEEDS = {"상태": 220, "단추": 273, "보고 상태": 220}
 
 
 @pytest.fixture()
@@ -218,7 +225,7 @@ def test_보냈음으로_표시가_먹는다(db, users, logged):
 
     body = logged.get("/ir").text
     assert "7일 지남" not in body
-    assert "미팅 요청 보냄 · " in body
+    assert "회의실 미팅 톡 요청 보냄 완료 · " in body
 
 
 def test_삭제가_먹는다(db, users, logged):
@@ -278,7 +285,7 @@ def test_업무_보고에_누가_안_보냈는지_적힌다(db, users, logged):
     rows = _bucket_rows(html, "IR 요청 투자사")
     assert len(rows) == 1, rows
     assert "가담당" in rows[0] and "가나벤처스" in rows[0]
-    assert "미팅 요청 안 보냄" in rows[0], "누구 줄인지 알 수 없다"
+    assert "회의실 미팅 톡 요청 미완료" in rows[0], "누구 줄인지 알 수 없다"
     assert "overdue-row" in rows[0], "지난 줄이 눈에 안 걸린다"
 
 
@@ -290,7 +297,7 @@ def test_보낸_담당자에게는_보냄과_날짜가_적힌다(db, users, logg
 
     rows = _bucket_rows(_report(logged, when), "IR 요청 투자사")
     asked_at = (when + timedelta(days=1)).isoformat()
-    assert f"미팅 요청 보냄 · {asked_at}" in rows[0]
+    assert f"회의실 미팅 톡 요청 보냄 완료 · {asked_at}" in rows[0]
     assert "overdue-row" not in rows[0]
 
 
@@ -306,7 +313,7 @@ def test_아직_안_보낸_요청_줄에는_안_붙는다(db, users, logged):
     db.commit()
 
     rows = _bucket_rows(_report(logged, when), "IR 요청 투자사")
-    assert "미팅 요청" not in rows[0], rows[0]
+    assert "회의실 미팅 톡 요청" not in rows[0], rows[0]
 
 
 def test_담당자_하나가_여러_건_받으면_줄마다_같은_표시가_붙는다(db, users, logged):
@@ -322,8 +329,8 @@ def test_담당자_하나가_여러_건_받으면_줄마다_같은_표시가_붙
     html = _report(logged, when)
     rows = _bucket_rows(html, "IR 요청 투자사")
     assert len(rows) == 3
-    assert all("미팅 요청 안 보냄" in r for r in rows)
-    assert _n(html, r"미팅 요청 안 보냄</span> ?<b[^>]*>(\d+)명") == 1, \
+    assert all("회의실 미팅 톡 요청 미완료" in r for r in rows)
+    assert _n(html, r"회의실 미팅 톡 요청 미완료</span> ?<b[^>]*>(\d+)명") == 1, \
         "담당자 수(1명)가 아니라 줄 수로 세고 있다"
 
 
@@ -362,8 +369,8 @@ def test_업무_보고_숫자와_ir_숫자가_같다(db, users, logged):
     ir = logged.get("/ir").text
     report = _report(logged, when)
 
-    assert _n(ir, r"미팅 요청 안 보냄 (\d+)명") == \
-        _n(report, r"미팅 요청 안 보냄</span> ?<b[^>]*>(\d+)명")
+    assert _n(ir, r"회의실 미팅 톡 요청 미완료 (\d+)명") == \
+        _n(report, r"회의실 미팅 톡 요청 미완료</span> ?<b[^>]*>(\d+)명")
     assert _n(ir, r"일 지남 (\d+)명\s*\)") == \
         _n(report, r"일 지남 (\d+)명\s*\)")
 
@@ -385,8 +392,8 @@ def test_보고_줄에_뜨는_사람과_센_사람이_같다(db, users, logged):
     html = _report(logged, when)
     rows = _bucket_rows(html, "IR 요청 투자사")
     who = {n for n in ("가담당", "나담당", "다담당")
-           for r in rows if n in r and "미팅 요청 안 보냄" in r}
-    assert len(who) == _n(html, r"미팅 요청 안 보냄</span> ?<b[^>]*>(\d+)명")
+           for r in rows if n in r and "회의실 미팅 톡 요청 미완료" in r}
+    assert len(who) == _n(html, r"회의실 미팅 톡 요청 미완료</span> ?<b[^>]*>(\d+)명")
     assert len(rows) == 5, "줄 수와 사람 수가 같으면 이 검사가 아무것도 안 지킨다"
 
 
@@ -433,10 +440,10 @@ def test_엑셀에도_같은_말이_실린다(db, users, logged):
     cells = _cells(_reactions_sheet(logged, when))
     joined = "\n".join(cells)
     asked_at = (when + timedelta(days=1)).isoformat()
-    assert "미팅 요청 안 보냄" in joined
-    assert f"미팅 요청 보냄 · {asked_at}" in joined
+    assert "회의실 미팅 톡 요청 미완료" in joined
+    assert f"회의실 미팅 톡 요청 보냄 완료 · {asked_at}" in joined
     # 상태와 미팅 요청이 **한 칸**에 있다(칸을 새로 만들지 않았다).
-    assert any("전달함" in c and "미팅 요청" in c for c in cells)
+    assert any("IR 자료 전달 완료" in c and "회의실 미팅 톡 요청" in c for c in cells)
 
 
 def test_화면_글자와_엑셀_글자가_한_자도_안_다르다(db, users, logged):
@@ -487,8 +494,8 @@ def test_지난달_자료에_이번_달_미팅_요청이면_지난달_보고에_
 
     html = _report(logged, last)
     rows = _bucket_rows(html, "IR 요청 투자사")
-    assert f"미팅 요청 보냄 · {asked.isoformat()}" in rows[0]
-    assert _n(html, r"미팅 요청 안 보냄</span> ?<b[^>]*>(\d+)명") == 0
+    assert f"회의실 미팅 톡 요청 보냄 완료 · {asked.isoformat()}" in rows[0]
+    assert _n(html, r"회의실 미팅 톡 요청 미완료</span> ?<b[^>]*>(\d+)명") == 0
     assert "overdue-row" not in rows[0]
 
 
@@ -503,8 +510,8 @@ def test_달을_자르지_않는다는_것이_숫자와_줄에_똑같이_적용�
 
     html = _report(logged, last)
     rows = _bucket_rows(html, "IR 요청 투자사")
-    marked = [r for r in rows if "미팅 요청 안 보냄" in r]
-    assert len(marked) == _n(html, r"미팅 요청 안 보냄</span> ?<b[^>]*>(\d+)명") == 1
+    marked = [r for r in rows if "회의실 미팅 톡 요청 미완료" in r]
+    assert len(marked) == _n(html, r"회의실 미팅 톡 요청 미완료</span> ?<b[^>]*>(\d+)명") == 1
     assert "가담당" in marked[0]
 
 
@@ -516,7 +523,7 @@ def test_그_달에_받은_수는_안_변한다(db, users, logged):
     _meeting_send(db, users, contact, when=date.today().replace(day=1))
 
     html = re.sub(r"\s+", " ", _report(logged, last))
-    assert re.search(r"요청받음</span> ?<b[^>]*> ?1 ?</b>", html), html[:200]
+    assert re.search(r"IR 자료 요청 받음</span> ?<b[^>]*> ?1 ?</b>", html), html[:200]
 
 
 # --- 안내문이 그리로 보낸다 ---------------------------------------------------
@@ -533,9 +540,13 @@ def test_보고_안내문이_어디를_보라고_말한다(db, users, logged):
 
 
 def test_보고_표의_상태_칸도_넉넉하다():
-    """`/ir` 에서 끊겼던 것과 **같은 글**이 여기에도 실린다."""
-    html = REPORT_HTML.read_text(encoding="utf-8")
-    start = html.index("이 달의 반응")
+    """`/ir` 에서 끊겼던 것과 **같은 글**이 여기에도 실린다.
+
+    표는 월간 몸통 조각에 있다(`_report_month.html` — 10/17 회의 #38 부터 월간과
+    연간이 같은 조각을 쓴다).
+    """
+    html = REPORT_MONTH_HTML.read_text(encoding="utf-8")
+    start = html.index('id="reactions')
     head = html[start:html.index("</thead>", start)]
     widths = [_width(a) for a in re.findall(r"<th(\s[^>]*)?>", head)]
     status = [w for w in widths if w]
@@ -563,7 +574,7 @@ def test_보고_표의_상태_칸도_넉넉하다():
 def _ask_li(html: str) -> str:
     """`미팅 요청 안 보냄` 줄을 공백 하나로 눌러서."""
     flat = re.sub(r"\s+", " ", html)
-    hit = re.search(r"미팅 요청 안 보냄</span>.{0,220}?</b>", flat)
+    hit = re.search(r"회의실 미팅 톡 요청 미완료</span>.{0,220}?</b>", flat)
     assert hit, "판의 `미팅 요청 안 보냄` 줄을 못 찾았다"
     return hit.group(0)
 
@@ -588,7 +599,7 @@ def test_사람_수와_건수가_다르면_판이_둘_다_말한다(db, users, l
     when = _four_of_five(db, users)
     html = _report(logged, when)
 
-    assert _n(html, r"미팅 요청 안 보냄</span> ?<b[^>]*>(\d+)명") == 4
+    assert _n(html, r"회의실 미팅 톡 요청 미완료</span> ?<b[^>]*>(\d+)명") == 4
     assert len(_bucket_rows(html, "IR 요청 투자사")) == 5, "표는 요청 줄마다 선다"
     # 숫자를 바꾸지 않았다 — 판 옆에 건수를 **덧붙였을** 뿐이다.
     assert "요청 5건" in _ask_li(html), _ask_li(html)
@@ -607,7 +618,7 @@ def test_사람_수와_건수가_같으면_괄호가_안_붙는다(db, users, lo
         _delivered(db, users, _contact(db, users, name), company, when=when)
 
     html = _report(logged, when)
-    assert _n(html, r"미팅 요청 안 보냄</span> ?<b[^>]*>(\d+)명") == 2
+    assert _n(html, r"회의실 미팅 톡 요청 미완료</span> ?<b[^>]*>(\d+)명") == 2
     assert "요청 2건" not in _ask_li(html), _ask_li(html)
     assert "담당자당 한 통" not in html, "설명할 것이 없는데 설명이 붙었다"
 
@@ -663,7 +674,7 @@ def test_엑셀이_명과_건을_나란히_싣는다(db, users, logged):
     ws = _meetings_sheet(logged, when)
     pairs = {str(r[0].value): r[1].value for r in ws.iter_rows(max_col=2)
              if r[0].value}
-    assert pairs.get("미팅 요청 안 보냄(명)") == 4
+    assert pairs.get("회의실 미팅 톡 요청 미완료(명)") == 4
     assert pairs.get("그 담당자가 받은 자료 요청(건)") == 5
 
 
@@ -673,7 +684,7 @@ def test_엑셀도_같을_때는_그_줄을_안_싣는다(db, users, logged):
         _delivered(db, users, _contact(db, users, name), company, when=when)
 
     cells = _cells(_meetings_sheet(logged, when))
-    assert "미팅 요청 안 보냄(명)" in cells
+    assert "회의실 미팅 톡 요청 미완료(명)" in cells
     assert "그 담당자가 받은 자료 요청(건)" not in cells
 
 
