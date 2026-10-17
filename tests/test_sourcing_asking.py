@@ -338,6 +338,8 @@ def test_the_sourcing_cell_shows_pending_differently(board, db, users):
     assert 'data-part-kind="pending"' in tr
     assert "part-pending" in td and ASKING in td
     assert f'data-choices="참여,불참여,{OFFER},{ASKING}"' in td
+    # 숫자키로 고르지 않는다 — "11월 재연락" 의 첫 `1` 이 '참여' 를 저장했다.
+    assert "data-no-keys" in td
     tr, td = cell(rows["custom"])
     assert 'data-part-kind="pending"' in tr and "part-pending" in td
     tr, td = cell(rows["left"])

@@ -263,7 +263,7 @@
            **이름 바로 뒤** — 칸 차례는 `COLUMNS`(routers/sourcing.py)와 같아야 한다. #}
         {% set pk = part_kind[r.id] %}
         <td class="cell{% if pk == 'left' %} muted{% elif pk == 'pending' %} part-pending{% endif %}" data-field="participation"
-            data-type="pick" data-choices="{{ participation_choices }}"
+            data-type="pick" data-choices="{{ participation_choices }}" data-no-keys
             {% if pk == 'pending' %}title="참여 확인 전 — 딜 소싱 제안이 나가지 않습니다. 동의하시면 '참여' 로 바꾸세요"{% endif %}>{{ r.participation or '참여' }}</td>
 
         {# **월간 리마인드 이력**(#14) — 머리글이 `참여` 뒤에 끼워 세운 달 칸과 같은
