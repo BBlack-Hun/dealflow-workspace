@@ -1,5 +1,5 @@
 // IR 기업 현황 [지금 화면 내려받기] — 누르는 순간 **지금 조건**을 주소에 싣는다.
-// (node tests/js/company_export_view_test.js · 10/17 회의 #42)
+// (node tests/js/company_export_view_test.js · 10/17 회의 #43)
 //
 // 서버가 같은 조건으로 다시 뽑는다(`services/company_view.py`). 화면이 할 일은
 // 조건을 빠짐없이 넘기는 것 하나다.

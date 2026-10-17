@@ -352,7 +352,7 @@ def mark_meeting_asked(contact_id: int, db: Session = Depends(get_db),
     contact = _owned_contact(db, contact_id, user)
     pipeline.record_meeting_ask(db, contact.id)
     db.commit()
-    # 단추 이름이 `IR 자료 검토 요청 보냄` 이 됐다(10/17 회의 #43). 누르면 그
+    # 단추 이름이 `IR 자료 검토 요청 보냄` 이 됐다(10/17 회의 #42). 누르면 그
     # 담당자 줄들이 `회의실 미팅 톡 요청 보냄 완료` 로 바뀐다 — 둘 다 말해 준다.
     msg = (f"{pipeline.LABEL_MARK_ASKED}으로 표시했습니다 — "
            f"{pipeline.LABEL_ASKED}")

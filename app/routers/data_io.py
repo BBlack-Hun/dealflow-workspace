@@ -464,7 +464,7 @@ def export_companies(db: Session = Depends(get_db),
 def export_companies_view(request: Request, q: str = "", sort: str = "",
                           db: Session = Depends(get_db),
                           user: User = Depends(get_current_user)):
-    """IR 기업 현황 탭 → **지금 화면 그대로** 엑셀(10/17 회의 #42).
+    """IR 기업 현황 탭 → **지금 화면 그대로** 엑셀(10/17 회의 #43).
 
     위 `엑셀 내려받기`(전체)는 그대로 두고 따로 선다. 화면에서 걸어 둔 머리글
     필터(주소의 `?sector=…` 등) · 검색(`q`) · 정렬(`sort`)을 **서버가 같은 규칙으로
