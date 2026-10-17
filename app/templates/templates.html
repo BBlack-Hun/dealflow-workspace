@@ -70,6 +70,9 @@
       {% if row.t.user_id is none %}<span class="tag">팀 기본</span>
       {% else %}<span class="tag">내 문구</span>{% endif %}
       {% if row.chosen %}<span class="tag">내가 고른 문구</span>{% endif %}
+      {# 꺼진 문구도 목록에는 남는다(관리자의 [모든 팀원에게 적용] 이 개인 문구를
+         끈다). 표시가 없으면 내 문구가 왜 안 나가는지 알 수 없다. #}
+      {% if row.t.is_active != 1 %}<span class="tag warn">꺼진 문구 — 발송에 쓰이지 않습니다</span>{% endif %}
     </div>
     <textarea name="body" rows="3" {% if not row.editable %}disabled{% endif %}>{{ row.t.body }}</textarea>
     {% if row.editable %}
@@ -77,6 +80,17 @@
       <button class="btn" type="submit">저장</button>
       <button class="btn danger" type="submit" formaction="/templates/{{ row.t.id }}/delete"
               onclick="return confirm('이 문구를 삭제할까요?')">삭제</button>
+      {% if row.apply %}
+      {# 관리자에게만, 정해 둔 종류의 팀 문구에만 온다(`template_apply.KINDS`).
+         확인창의 숫자는 실제 적용과 같은 함수로 센 것이다. #}
+      {% if row.apply.empty %}
+      <span class="hint">모든 팀원이 이미 이 문구를 씁니다</span>
+      {% else %}
+      <button class="btn" type="submit" formaction="/templates/{{ row.t.id }}/apply-all"
+              onclick='return confirm({{ row.apply.confirm|tojson }})'>모든 팀원에게 적용</button>
+      <span class="hint">{{ row.apply.hint }}</span>
+      {% endif %}
+      {% endif %}
     </div>
     {% else %}
     {# 팀 기본은 모두가 함께 쓰는 것이라 관리자만 고친다. 각자 고쳐 쓰고
@@ -85,11 +99,22 @@
     {% endif %}
   </form>
   {% endfor %}
+
+  {% if s.last_apply %}
+  {% set a = s.last_apply %}
+  {# 무엇을 되돌리는지 보이지 않으면 [되돌리기] 를 모르고 누르게 된다. #}
+  <form method="post" action="/templates/apply-all/{{ a.id }}/undo" class="tpl-actions">
+    <span class="hint">{{ a.at }} · {{ a.who }} 님이 ‘{{ a.name }}’ 문구를 모든 팀원에게
+      적용했습니다 — 선택 {{ a.members }}명 · 개인 문구 {{ a.personal }}개</span>
+    <button class="btn" type="submit"
+            onclick="return confirm('적용하기 전으로 되돌릴까요? 그 사이 다시 고른 선택과 고친 문구는 그대로 둡니다.')">되돌리기</button>
+  </form>
+  {% endif %}
 {% endmacro %}
 
 {% macro section(g) %}
 <div class="panel" id="{{ g.kind }}">
-  <h2 class="panel-title">{{ g.title }}
+  <h2 class="panel-title tpl-kind-title">{{ g.title }}
     {# 문구가 열다섯 종류인데 어느 것을 고쳐야 그 탭이 바뀌는지 알 수 없었다. #}
     {% if g.tab %}
     <span class="tag">딜 제안 관리 · {{ g.tab }} 탭</span>

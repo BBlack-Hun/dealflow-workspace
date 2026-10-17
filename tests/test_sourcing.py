@@ -86,15 +86,17 @@ def test_every_column_has_a_cell(seeded):
     import re
 
     from app.routers.sourcing import COLUMNS
+    from app.services.sourcing_remind_log import MONTHS
 
     body = seeded.get("/sourcing").text
     head = body[body.index("<thead>"):body.index("</thead>")]
     first_row = body[body.index("<tbody>"):body.index("</tbody>")]
     first_row = first_row[:first_row.index("</tr>")]
 
-    # 머리글 = # + 컬럼 수  (`<thead>` 자체가 걸리지 않게 경계를 본다)
-    assert len(re.findall(r"<th[\s>]", head)) == len(COLUMNS) + 1
-    assert len(re.findall(r"<td[\s>]", first_row)) == len(COLUMNS) + 1
+    # 머리글 = # + 컬럼 수 + 월간 리마인드 달 칸(#14, `COLUMNS` 밖의 읽기 전용 칸)
+    # (`<thead>` 자체가 걸리지 않게 경계를 본다)
+    assert len(re.findall(r"<th[\s>]", head)) == len(COLUMNS) + 1 + MONTHS
+    assert len(re.findall(r"<td[\s>]", first_row)) == len(COLUMNS) + 1 + MONTHS
 
     # 모든 컬럼이 눌러서 고칠 수 있어야 한다
     fields = set(re.findall(r'data-field="(\w+)"', first_row))
@@ -441,11 +443,13 @@ def test_sourcing_sends_do_not_start_the_follow_up_ladder(seeded, db):
 
 
 def test_the_importer_replaces_a_bucket_wholesale(db, users):
-    """맞춰 넣으면 시트에서 지운 사람이 앱에 남는다."""
+    """맞춰 넣으면 시트에서 지운 사람이 앱에 남는다. 띄어쓰기만 다른 글자의 줄도
+    그 갈래라 함께 갈아 끼운다(`tests/test_sourcing_bucket_whitespace.py`)."""
     import pathlib
 
     src = pathlib.Path("scripts/import_sourcing.py").read_text(encoding="utf-8")
-    assert "delete(SourcingContact).where(SourcingContact.bucket == bucket)" in src
+    assert "delete(SourcingContact).where(SourcingContact.bucket.in_(stored))" in src
+    assert "stored = sourcing_buckets.variants(db, bucket)" in src
 
 # --- 투자사 명단에서 방 이어받기 ---------------------------------------------
 #

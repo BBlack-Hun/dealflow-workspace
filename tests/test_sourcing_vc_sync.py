@@ -4,13 +4,15 @@
 딜 소싱 `시리즈 A 이상 딜 소싱 참여 심사역` 갈래의 **이어진 줄**에서 읽는다
 (`services/sourcing_sync.py`). 여기서 못 박는 것.
 
-  ① O — 이어진 줄이 없으면 그 갈래에서 같은 분을 찾아 잇고(번호 → 이름+회사),
-     그래도 없으면 새 줄을 만든다. 다른 갈래의 줄은 건드리지 않는다.
+  ① O — 이어진 줄이 없으면 그 갈래에서 같은 분을 찾아 잇고(이름 + 번호가 둘 다
+     같을 때만 — #28. 번호나 이름 · 회사만 같으면 잇지도 새로 만들지도 않고 딜 소싱
+     화면의 후보로 넘긴다), 아무도 없으면 새 줄을 만든다. 다른 갈래의 줄은 건드리지 않는다.
   ② X — `불참여` 로 둘 뿐 지우지 않는다. 빈칸은 바꾸지 않음(이어진 분은 막는다).
   ③ 칸은 이어진 줄에서 그린다 — 다른 갈래는 안 본다. 머리글 필터가 선다.
   ④ 두 화면이 같은 칸을 본다 — 딜 소싱에서 참여를 바꾸면 투자사 쪽이 X/O.
-  ⑤ 딜 소싱에서 넣거나 번호를 고치면 투자사 쪽 같은 분과 저절로 잇는다(번호가
-     딱 한 줄일 때만).
+  ⑤ 딜 소싱에서 넣거나 이름 · 번호를 고치면 투자사 쪽 같은 분과 저절로 잇는다
+     (번호가 딱 한 줄에 맞고 그 줄의 이름도 같을 때만 — #28. 나머지는 사람이
+     확정한다 — `tests/test_sourcing_link_confirm.py`).
   ⑥ 이어진 두 줄의 이름 · 직함 · 회사 · 휴대폰 · 메일 · 투자분야(선호 투자분야) ·
      라운드 사이즈는 어느 쪽에서 고쳐도 같이. 메모는 따로(#17).
   ⑦ 불참여인 분께는 딜 소싱 제안(처음 안내 · 월간 리마인드)이 안 나간다.
@@ -168,13 +170,37 @@ def test_O_links_the_row_with_the_same_phone(board, db, users):
     assert row.email == "hong@example.com"           # 빈 칸만 채운다
 
 
-def test_O_links_by_name_and_firm_when_there_is_no_phone(board, db, users):
+def _refused_as_candidate(board, db, contact, existing, value="O"):
+    """O/X 가 그 줄과 **잇지도, 새 줄을 만들지도 않고** 막혔다 — 딜 소싱 화면의 그 줄에
+    이 투자사 줄이 후보로 떠, 사람이 [이 분으로 확정]으로 잇는다(#28)."""
+    from app.services import sourcing_sync
+
+    r = mark(board, contact.id, value)
+    assert r.status_code == 400, r.text
+    assert "이 분으로 확정" in r.json()["detail"]
+    [row] = sync_rows(db)
+    assert (row.id, row.vc_contact_id) == (existing.id, None)
+    assert column(board, contact.id) == ""
+    picks = sourcing_sync.link_candidates(db, [row])[row.id]
+    assert [c["id"] for c in picks] == [contact.id]
+
+
+def test_O_does_not_link_by_name_and_firm_alone(board, db, users):
+    """번호가 없어 이름 · 회사만 같다 — 저절로 잇는 규칙(이름 + 번호, #28)에 안 맞는다.
+    예전에는 여기서 이었다."""
     contact = vc(db, users)
     existing = sc(db, phone=None, firm="가나다 벤처스")   # 띄어쓰기만 다르다
+    _refused_as_candidate(board, db, contact, existing)
 
-    assert mark(board, contact.id, "O").status_code == 200
-    [row] = sync_rows(db)
-    assert row.id == existing.id and row.vc_contact_id == contact.id
+
+@pytest.mark.parametrize("value", ["O", "X"])
+def test_O_does_not_link_a_phone_match_with_another_name(board, db, users, value):
+    """번호만 같고 이름이 다르다 — 딜 소싱 줄의 이름(`홍길둥`)이나 번호를 잘못 적은 줄이다.
+    예전에는 번호만으로 이어 남의 투자사 줄과 조용히 이어질 수 있었다(#28 의 규칙을
+    투자사 쪽 O/X 가 비켜 갔다)."""
+    contact = vc(db, users, name="홍길동", phone="010-1234-5678")
+    existing = sc(db, name="홍길둥", phone="010-1234-5678")
+    _refused_as_candidate(board, db, contact, existing, value)
 
 
 def test_a_name_match_with_another_phone_is_someone_else(board, db, users):
@@ -406,7 +432,9 @@ def test_a_bad_participation_word_is_refused(board, db, users):
 
 # ── ⑤ 딜 소싱 쪽에서 넣으면 저절로 잇는다 ───────────────────────────────────
 
-def test_adding_on_sourcing_links_by_phone(board, db, users):
+def test_adding_on_sourcing_links_by_name_and_phone(board, db, users):
+    # #28 — 이름도 같아야 한다(여기서는 둘 다 `홍길동`). 번호만 맞는 경우는
+    # `test_sourcing_link_confirm.py` 가 본다(잇지 않고 후보).
     contact = vc(db, users, phone="010-5555-6666")
     r = board.post(f"/api/sourcing?bucket={SYNC}",
                    json={"name": "홍길동", "phone": "01055556666"})
@@ -426,6 +454,8 @@ def test_adding_to_another_bucket_links_nothing(board, db, users):
 
 
 def test_an_ambiguous_phone_links_nobody(board, db, users):
+    # 이름까지 맞는 줄은 하나(`홍길동`)여도 번호가 두 줄에 맞으면 잇지 않는다(#28 —
+    # 어느 줄인지는 사람이 확정한다).
     vc(db, users, name="홍길동", firm="가나다벤처스")
     vc(db, users, name="김서연", firm="라마바투자")      # 같은 번호가 둘
     board.post(f"/api/sourcing?bucket={SYNC}",
@@ -436,7 +466,7 @@ def test_an_ambiguous_phone_links_nobody(board, db, users):
 
 def test_fixing_the_phone_on_sourcing_links_it(board, db, users):
     contact = vc(db, users, phone="010-7777-8888")
-    row = sc(db, phone="010-0000-0000")
+    row = sc(db, phone="010-0000-0000")             # 이름은 둘 다 `홍길동` (#28)
     r = board.patch(f"/api/sourcing/{row.id}", json={"phone": "010-7777-8888"})
     assert r.status_code == 200, r.text
     assert r.json().get("linked_msg")

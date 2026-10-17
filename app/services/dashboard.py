@@ -166,8 +166,13 @@ def _room_href(state: str, ids: List[int], sheet: str = "all") -> Optional[str]:
     return room_href(state, sheet)
 
 
-# '내 투자사 선호' 를 몇 명까지 볼지. 50명이 기본이다 — 10명만 보면 그 아래에
-# 누가 있는지 몰라서 매번 눌러 늘려야 했다.
+# '내 투자사 선호' 를 몇 명까지 볼지. **300명이 기본이다**(#26 — 사용자가
+# 정했다, 2026-10-16). 처음에는 10명이었는데 그 아래에 누가 있는지 몰라 매번
+# 눌러 늘려야 해서 50명으로 올렸고, 그래도 늘려 보는 일이 남아 끝(300)까지
+# 올렸다. 드롭다운은 그대로 둔다 — 줄여 보고 싶은 사람이 고른다.
+#
+# **목록에 오르는 사람은 바뀌지 않는다** — 여전히 IR 자료를 달라고 한 투자사만
+# 선다(`top_requesters`). 기본을 올려도 그 수보다 길어지지 않는다(아래 말).
 # **화면(`/`)과 대시보드(`/dashboard`) 두 곳이 같은 값을 써야 한다** —
 # 예전에는 각자 10 을 박아 두어 한쪽만 고쳐졌다.
 #
@@ -182,7 +187,7 @@ def _room_href(state: str, ids: List[int], sheet: str = "all") -> Optional[str]:
 # 안 된다 — 머리글의 `N명` 칸(`req-rank-count`)과 그 아래 안내 줄
 # (`req-rank-all`)이 그 일을 한다. 둘 다 건드리지 마라.
 TOP_CHOICES = [10, 30, 50, 100, 200, 300]
-TOP_DEFAULT = 50
+TOP_DEFAULT = 300
 
 
 def clamp_top(top: int) -> int:

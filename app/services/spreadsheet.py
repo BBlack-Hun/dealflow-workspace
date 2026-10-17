@@ -13,7 +13,7 @@ from __future__ import annotations
 import csv
 import io
 from datetime import date, datetime
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 # 업로드 상한. 팀 시트는 수백 행이라 이보다 훨씬 작다. 큰 파일로 메모리를 먹는 것을 막는다.
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
@@ -53,6 +53,33 @@ def read_rows(filename: str, data: bytes, sheet: Optional[str] = None) -> List[L
 
     엑셀은 시트를 고를 수 있고(없으면 첫 시트), CSV 는 시트 개념이 없다.
     """
+    _check_upload(filename, data)
+    if _is_excel(filename):
+        return _read_excel(data, sheet)
+    return _read_csv(data)
+
+
+def read_tabs(filename: str, data: bytes) -> List[Tuple[str, List[List[str]]]]:
+    """업로드 파일 → **탭마다** `(탭 이름, 문자열 2차원 배열)`. CSV 는 이름이 빈 탭 하나.
+
+    어느 탭을 읽을지 **내용을 보고** 고르는 자리가 쓴다(`series_a_import.
+    read_upload` — 머리글이 맞는 탭 하나). 탭마다 `read_rows` 를 부르면 그때마다
+    워크북을 처음부터 다시 연다. 크기 · 빈 파일 · 형식 검사는 `read_rows` 와 같다.
+    """
+    _check_upload(filename, data)
+    if not _is_excel(filename):
+        return [("", _read_csv(data))]
+    wb = _load_workbook(data)
+    try:
+        return [(ws.title, [[_cell_to_text(c) for c in row]
+                            for row in ws.iter_rows(values_only=True)])
+                for ws in wb.worksheets]
+    finally:
+        wb.close()
+
+
+def _check_upload(filename: str, data: bytes) -> None:
+    """올린 파일을 읽기 전에 — 크기 상한 · 빈 파일 · 받는 형식(.xlsx · .csv)."""
     if len(data) > MAX_UPLOAD_BYTES:
         raise SpreadsheetError(
             f"파일이 너무 큽니다 ({len(data) // 1024 // 1024}MB). "
@@ -60,14 +87,10 @@ def read_rows(filename: str, data: bytes, sheet: Optional[str] = None) -> List[L
         )
     if not data:
         raise SpreadsheetError("빈 파일입니다.")
-
-    if _is_excel(filename):
-        return _read_excel(data, sheet)
-    if filename.lower().endswith(CSV_SUFFIXES):
-        return _read_csv(data)
-    raise SpreadsheetError(
-        f"읽을 수 없는 형식입니다: {filename}. .xlsx 또는 .csv 로 올려주세요."
-    )
+    if not (_is_excel(filename) or filename.lower().endswith(CSV_SUFFIXES)):
+        raise SpreadsheetError(
+            f"읽을 수 없는 형식입니다: {filename}. .xlsx 또는 .csv 로 올려주세요."
+        )
 
 
 def _is_excel(filename: str) -> bool:

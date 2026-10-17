@@ -3,6 +3,10 @@
 부르는 쪽은 `scripts/import_series_a.py` 하나다(검사도 여기를 부른다). 시트
 주소는 어디에도 적지 않는다 — **내려받은 파일 경로**(CSV · xlsx)를 받는다.
 
+화면의 [딜소개 문구 올리기](`services/series_a_pitch_upload.py`)도 이 파일의
+읽기(`read_upload` · `parse`) · 맞추기(`match`) · 칸 판정(`cell_plan`)을 그대로
+쓴다 — 줄을 만들지 않고 `딜소개 문구` 칸만 바꾸는 것만 다르다.
+
 ## 칸은 **머리글 이름**으로 찾는다
 
 자리로 짐작하지 않는다. 시트는 사람이 계속 쓰는 문서라 칸이 늘면 자리가
@@ -36,7 +40,7 @@
 ## 열쇠가 없는 줄 — 앱에서 더한 줄 · 열쇠 칸이 생기기 전에 들어온 줄
 
 그런 줄은 예전 열쇠 `(기업명, 수신 일자)` 로 **한 번** 맞추고, 맞으면 그 시트
-줄의 열쇠를 적는다(`linked`). 그 뒤로는 열쇠로 맞는다. 고르는 차례:
+줄의 열쇠를 적는다(`linked`). 그 뒤로는 열쇠로 맞는다. 고르는 차례(`match`):
 
   1. 열쇠가 적힌 줄 중 같은 열쇠.
   2. 열쇠가 없는 줄 중 **지금 값으로 셈한 열쇠까지 같은** 줄 — 같은
@@ -199,23 +203,61 @@ def read_rows(path: Path, sheet: Optional[str] = None) -> List[List]:
 
     book = openpyxl.load_workbook(path, read_only=True, data_only=True)
     try:
-        if sheet:
-            if sheet not in book.sheetnames:
-                raise ValueError(f"`{sheet}` 탭이 없습니다 — 있는 탭: "
-                                 + ", ".join(book.sheetnames))
-            return [list(r) for r in book[sheet].iter_rows(values_only=True)]
-        hits = []
-        for ws in book.worksheets:
-            rows = [list(r) for r in ws.iter_rows(values_only=True)]
-            if find_header(rows) is not None:
-                hits.append((ws.title, rows))
-        if len(hits) != 1:
-            names = ", ".join(t for t, _r in hits) or "없음"
-            raise ValueError("이 시트로 보이는 탭이 하나가 아닙니다"
-                             f"(찾은 탭: {names}) — --sheet 로 골라 주세요")
-        return hits[0][1]
+        tabs = [(ws.title, [list(r) for r in ws.iter_rows(values_only=True)])
+                for ws in book.worksheets]
     finally:
         book.close()
+    return pick_tab(tabs, sheet)[1]
+
+
+def pick_tab(tabs: Sequence[Tuple[str, List[List]]], sheet: Optional[str] = None,
+             ask: str = "--sheet 로 골라 주세요") -> Tuple[str, List[List]]:
+    """워크북의 탭들(`[(탭 이름, 줄들), …]`) 중 읽을 탭 하나 — `(탭 이름, 줄들)`.
+
+    고른 탭(`sheet`)이 있으면 그 탭, 없으면 **이 시트로 보이는 탭이 꼭 하나일
+    때만** 그 탭이다(`read_rows` 머리말). 파일을 경로로 받는 가져오기와 화면에서
+    올리는 딜소개 문구 올리기(`read_upload`)가 이 규칙 하나를 지난다 — 둘이 각자
+    고르면 같은 워크북이 두 길에서 다른 탭으로 읽힌다. `ask` 는 어떻게 고르라고
+    말할지다(스크립트는 `--sheet`, 화면은 탭 고르개).
+    """
+    if sheet:
+        for title, rows in tabs:
+            if title == sheet:
+                return title, rows
+        raise ValueError(f"`{sheet}` 탭이 없습니다 — 있는 탭: "
+                         + ", ".join(t for t, _r in tabs))
+    hits = [(title, rows) for title, rows in tabs if find_header(rows) is not None]
+    if len(hits) != 1:
+        names = ", ".join(t for t, _r in hits) or "없음"
+        raise ValueError("이 시트로 보이는 탭이 하나가 아닙니다"
+                         f"(찾은 탭: {names}) — {ask}")
+    return hits[0]
+
+
+def read_upload(filename: str, data: bytes,
+                sheet: Optional[str] = None) -> Tuple[str, List[List]]:
+    """화면에서 올린 파일(**바이트**) → `(읽은 탭 이름, 줄들)`. CSV 는 탭 이름이 빈 글자.
+
+    `read_rows` 의 바이트 판이다 — 임시 파일을 쓰지 않는다. 읽기는 업로드 공용
+    부품(`spreadsheet.read_tabs` — 크기 상한 · 깨진 파일 · CSV 인코딩 짐작)이,
+    탭 고르기는 `pick_tab` 이 한다. 못 읽으면 `ValueError`
+    (`spreadsheet.SpreadsheetError` 도 그 갈래다).
+    """
+    from . import spreadsheet as sp
+
+    return pick_upload(filename, sp.read_tabs(filename, data), sheet)
+
+
+def pick_upload(filename: str, tabs: Sequence[Tuple[str, List[List]]],
+                sheet: Optional[str] = None) -> Tuple[str, List[List]]:
+    """`read_upload` 의 뒷반 — **이미 읽은** 탭들(`spreadsheet.read_tabs`)에서 읽을 탭
+    하나. 화면(`routers/series_a.upload_pitch`)이 탭 이름을 알리려고 연 워크북을 다시
+    열지 않게 떼어 두었다. CSV 는 탭이 하나다."""
+    from . import spreadsheet as sp
+
+    if not filename.lower().endswith(sp.EXCEL_SUFFIXES):
+        return tabs[0]
+    return pick_tab(tabs, sheet, ask="[탭]에서 골라 주세요")
 
 
 def row_key(name: Optional[str], received_at: Optional[str]) -> Tuple[str, str]:
@@ -259,16 +301,41 @@ class Result:
     ambiguous: int = 0
 
 
-def upsert(db: Session, records: Iterable[dict], overwrite: bool = False) -> Result:
-    """넣을 값들을 표에 맞춘다. **커밋하지 않는다** — 부르는 쪽이 정한다.
+def table(db: Session) -> List[SeriesACompany]:
+    """표의 줄 전부, **번호순** — `match` 가 받는 차례다(같은 열쇠가 둘이면 앞 줄)."""
+    return list(db.execute(select(SeriesACompany)
+                           .order_by(SeriesACompany.id)).scalars())
+
+
+@dataclass
+class Matched:
+    """`match` 의 답 — 줄을 고치지 않고 **어느 시트 줄이 어느 표 줄인지만** 적는다."""
+
+    #: `(넣을 값, 열쇠, 맞은 줄 — 없으면 None(표에 없는 딜), 열쇠 없는 줄을 맞춘
+    #: 것인가)`. 차례는 열쇠로 맞은 줄들 → 남은 시트 줄들이다 — `upsert` 가 새
+    #: 줄을 이 차례로 만든다.
+    pairs: List[Tuple[dict, str, Optional[SeriesACompany], bool]] = field(
+        default_factory=list)
+    #: 시트 안에서 열쇠가 겹쳐 건너뛴 줄(앞 줄만 쓴다).
+    duplicates: List[dict] = field(default_factory=list)
+    #: 열쇠 없는 줄 중 어느 것인지 몰라 건너뛴 시트 줄(머리말 3).
+    ambiguous: List[dict] = field(default_factory=list)
+
+
+def match(rows: Sequence[SeriesACompany], records: Iterable[dict]) -> Matched:
+    """시트 줄들을 표의 줄들(`table`)에 맞춘다 — **아무것도 고치지 않는다.**
 
     맞추는 차례는 머리말에 있다 — 열쇠 → 열쇠 없는 줄의 지금 값 열쇠 →
-    `(기업명, 수신 일자)`(양쪽 다 하나일 때만).
+    `(기업명, 수신 일자)`(양쪽 다 하나일 때만). 가져오기(`upsert`)와 화면의
+    딜소개 문구 올리기(`services/series_a_pitch_upload.py`)가 **이 함수 하나**를
+    지난다 — 둘이 각자 맞추면 같은 파일이 두 길에서 다른 줄에 닿는다.
+
+    열쇠 없는 줄을 맞추면 그 줄에 열쇠를 적을지(`linked`)는 부르는 쪽이 정한다 —
+    그래서 줄을 건드리지 않고 표시만 한다.
     """
     keyed: Dict[str, SeriesACompany] = {}
     loose: List[SeriesACompany] = []          # 열쇠가 없는 줄
-    for row in db.execute(select(SeriesACompany)
-                          .order_by(SeriesACompany.id)).scalars():
+    for row in rows:
         if row.import_key:
             keyed.setdefault(row.import_key, row)
         else:
@@ -277,17 +344,17 @@ def upsert(db: Session, records: Iterable[dict], overwrite: bool = False) -> Res
     # 열쇠 없는 줄의 **지금 값**으로 셈한 열쇠 — 한 번만 셈한다.
     now_key = {id(row): import_key(row) for row in loose}
 
-    result = Result()
+    out = Matched()
     seen = set()
-    matched: List[Tuple[dict, str, Optional[SeriesACompany]]] = []
     later: List[Tuple[dict, str]] = []
     for values in records:
         key = import_key(values)
         if key in seen:
-            result.duplicates += 1
+            out.duplicates.append(values)
             continue
         seen.add(key)
         row = keyed.get(key)
+        linked = False
         if row is None:
             # 열쇠 없는 줄 중 **지금 값까지 같은** 줄 — 같은 (기업명, 수신 일자) 의
             # 시트 줄이 둘이어도 제 짝을 먼저 가져간다(시트 차례와 상관없이).
@@ -296,9 +363,8 @@ def upsert(db: Session, records: Iterable[dict], overwrite: bool = False) -> Res
                 later.append((values, key))
                 continue
             loose.remove(row)
-            row.import_key = key
-            result.linked += 1
-        matched.append((values, key, row))
+            linked = True
+        out.pairs.append((values, key, row, linked))
 
     # 남은 시트 줄 — 예전 열쇠로, **양쪽 다 하나일 때만** 맞춘다.
     wanted: Dict[Tuple[str, str], int] = {}
@@ -309,40 +375,74 @@ def upsert(db: Session, records: Iterable[dict], overwrite: bool = False) -> Res
         old = row_key(values.get("name"), values.get("received_at"))
         hits = [r for r in loose if row_key(r.name, r.received_at) == old]
         if not hits:
-            matched.append((values, key, None))
+            out.pairs.append((values, key, None, False))
             continue
         if len(hits) > 1 or wanted[old] > 1:
-            result.ambiguous += 1
+            out.ambiguous.append(values)
             continue
         row = hits[0]
         loose.remove(row)
-        row.import_key = key
-        result.linked += 1
-        matched.append((values, key, row))
+        out.pairs.append((values, key, row, True))
+    return out
 
-    for values, key, row in matched:
+
+#: 칸 하나를 어떻게 하나(`cell_plan` 의 답).
+BLANK, SAME, FILL, OVERWRITE, KEEP = "blank", "same", "fill", "overwrite", "keep"
+
+
+def cell_plan(now: Optional[str], value: str, overwrite: bool) -> str:
+    """앱의 칸(`now`)에 시트 값(`value`)을 어떻게 할지 — 머리말 `몇 번을 다시 돌려도`.
+
+      · 시트의 빈 칸 → `BLANK`(아무것도 안 지운다)
+      · 같은 글자 → `SAME`
+      · 앱이 빈 칸 → `FILL`
+      · 다르면 `overwrite` 일 때만 `OVERWRITE`, 아니면 `KEEP`(앱에서 고친 값일 수 있다)
+
+    가져오기(`upsert`)와 딜소개 문구 올리기가 같이 쓴다 — 무엇을 빈 칸 · 같은
+    글로 보는지가 두 길에서 갈리면 같은 파일이 다른 결과를 낸다.
+    """
+    if not value:
+        return BLANK
+    have = (now or "").strip()
+    if have == value:
+        return SAME
+    if not have:
+        return FILL
+    return OVERWRITE if overwrite else KEEP
+
+
+def upsert(db: Session, records: Iterable[dict], overwrite: bool = False) -> Result:
+    """넣을 값들을 표에 맞춘다. **커밋하지 않는다** — 부르는 쪽이 정한다.
+
+    어느 줄에 맞는지는 `match` 가 정한다(머리말의 차례). 여기서는 표에 없는
+    딜은 만들고, 열쇠 없이 맞은 줄에는 그 시트 줄의 열쇠를 적고(`linked`), 칸마다
+    `cell_plan` 대로 채운다.
+    """
+    found = match(table(db), records)
+    result = Result(duplicates=len(found.duplicates),
+                    ambiguous=len(found.ambiguous))
+
+    for values, key, row, linked in found.pairs:
         if row is None:
             fields = {k: (v or None) for k, v in values.items()}
             db.add(SeriesACompany(import_key=key, **fields))
             result.created += 1
             continue
+        if linked:
+            row.import_key = key
+            result.linked += 1
 
         touched = False
         for attr, value in values.items():
-            if not value:
-                continue                  # 시트의 빈 칸은 아무것도 안 지운다
-            now = (getattr(row, attr) or "").strip()
-            if now == value:
-                continue
-            if not now:
+            how = cell_plan(getattr(row, attr), value, overwrite)
+            if how in (FILL, OVERWRITE):
                 setattr(row, attr, value)
-                result.filled += 1
                 touched = True
-            elif overwrite:
-                setattr(row, attr, value)
-                result.overwritten += 1
-                touched = True
-            else:
+                if how == FILL:
+                    result.filled += 1
+                else:
+                    result.overwritten += 1
+            elif how == KEEP:
                 result.kept += 1
         if touched:
             result.updated += 1

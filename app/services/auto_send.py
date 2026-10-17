@@ -87,7 +87,7 @@ from sqlalchemy.orm import Session
 from .. import clock
 from ..db import SessionLocal
 from ..models import AutoSendRun, AutoSendSetting, User, VcContact
-from . import cadence, pipeline, sheet_owner
+from . import cadence, pipeline, send_window, sheet_owner
 
 log = logging.getLogger(__name__)
 
@@ -117,8 +117,12 @@ STATUS_FAILED = "failed"
 #: 결과 문의 **문자**는 09~20시다(`followup_sms`). 그쪽은 받는 사람이 우리
 #: 팀원이라 아침 일찍·저녁 늦게도 괜찮지만, 여기는 양쪽을 한 시간씩 좁혔다:
 #: 9시는 출근 직후라 아직 자리에 앉기 전이고, 19시 이후는 퇴근한 사람의 폰이다.
-EARLIEST_HOUR = 9
-LATEST_HOUR = 19
+#:
+#: 숫자는 `send_window` 한 곳에 있다. **판정은 이 상수가 아니라
+#: `send_window.hours()` 를 읽는다** — 테스트 서버에서 그 폭을 끄는 스위치가
+#: 있어서다(`DEALFLOW_TEST_SERVER_NO_SEND_WINDOW`). 상수는 운영의 폭을 적어 둔 것이다.
+EARLIEST_HOUR = send_window.EARLIEST_HOUR
+LATEST_HOUR = send_window.LATEST_HOUR
 
 #: 설정을 처음 켤 때의 값. 오전 10시~오후 5시는 어느 회사든 자리에 있는 시간이다.
 DEFAULT_FROM_HOUR = 10
@@ -202,8 +206,9 @@ def clamp_hours(from_hour: int, until_hour: int) -> tuple:
     그대로 두면 화면에는 켜짐이라고 떠 있는데 영영 아무것도 안 나가고, 왜인지
     적힌 곳이 없다. 조용히 안 도는 것보다 좁은 창이 낫다.
     """
-    start = max(EARLIEST_HOUR, min(int(from_hour or 0), LATEST_HOUR - 1))
-    end = max(start + 1, min(int(until_hour or 0), LATEST_HOUR))
+    low, high = send_window.hours()
+    start = max(low, min(int(from_hour or 0), high - 1))
+    end = max(start + 1, min(int(until_hour or 0), high))
     return start, end
 
 
@@ -538,9 +543,9 @@ def status(db: Session, kind: str = KIND_REVIEW,
         "max_per_day": (clamp_cap(setting.max_per_day) if setting
                         else DEFAULT_MAX_PER_DAY),
         "window": window_label(setting),
-        "hours": list(range(EARLIEST_HOUR, LATEST_HOUR + 1)),
-        "earliest": EARLIEST_HOUR,
-        "latest": LATEST_HOUR,
+        "hours": list(range(send_window.earliest(), send_window.latest() + 1)),
+        "earliest": send_window.earliest(),
+        "latest": send_window.latest(),
         "hard_max": HARD_MAX_PER_DAY,
         "today": _today_rows(db, kind, day),
         # **아직 안 누른 목록이 있는가.** 자동으로 서는 것이라, 세워 두고 아무도

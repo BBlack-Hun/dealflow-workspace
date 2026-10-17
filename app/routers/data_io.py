@@ -164,6 +164,9 @@ def _xlsx(filename: str, sheet_title: str, headers, rows) -> Response:
 CONTACT_HEADERS = [
     "담당 팀원", "담당자", "연결 단계", "그룹", "이름", "직함", "투자사", "부서",
     "채널", "카톡방", "방 확인", "초대", "관심도",
+    # 이어진 딜 소싱 줄에서 읽는 두 칸 — 화면과 같은 값(`sourcing_sync` ·
+    # `contacts.contact_rows`). 화면처럼 둘이 나란히 선다(사용자 결정 2026-10-17).
+    "Series A 딜 소싱", "참여 요청일",
     "라운드 규모", "선호 단계", "선호 분야",
     "휴대폰", "전자 메일 주소", "근무처 전화", "근무처 팩스", "근무지 주소", "명함 등록일",
     # `마지막 딜소개`·`회차 메모` 는 **딜소개만** 본다. `마지막 일` 은 그 뒤에
@@ -247,6 +250,7 @@ def _contact_row(r: dict) -> list:
     return [r["owner"], r["assignee"], r["connect_label"], r["group_name"],
             r["name"], r["title"], r["firm"], r["department"], "/".join(marks),
             r["room_name"], r["room_label"], r["invited_status"], r["interest_level"],
+            r["sourcing_join"], r["sourcing_requested_at"],
             r["round_size"], ", ".join(r["stages"]), ", ".join(r["sectors"]),
             r["phone"], r["email"], r["office_phone"], r["office_fax"],
             r["address"], r["card_registered_at"],

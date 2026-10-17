@@ -136,6 +136,50 @@ class TemplateChoice(TimestampMixin, Base):
         ForeignKey("message_templates.id", ondelete="CASCADE"))
 
 
+class TemplateApplyBackup(TimestampMixin, Base):
+    """[모든 팀원에게 적용] 을 되돌릴 버퍼 — 한 줄이 '한 번 누른 것'이다(0103).
+
+    관리자가 팀 문구 하나를 팀 전체에 적용하면 **사람이 손으로 정해 둔 것 둘**을
+    덮는다 — 사람마다 골라 둔 것(`TemplateChoice`)과, 그 자리의 개인 문구(꺼진다).
+    잘못 눌렀을 때 되돌릴 길이 없으면 누를 수 없는 단추가 된다. 그래서 덮기
+    **전에** 이 줄을 먼저 적는다(`services/template_apply.py`).
+
+    `OneLinerBackup` 과 같은 결이지만 줄 모양이 다르다. 그쪽은 기업마다 한 줄인
+    묶음이고, 이쪽은 **누른 한 번이 한 줄**이다 — 덮은 것(사람마다의 선택 · 끈
+    문구 번호)은 그 한 번에만 뜻이 있는 묶음이라 JSON 으로 한 칸에 담는다.
+    표를 하나 더 두면 한 묶음을 맞춰 읽는 일만 는다.
+
+    되돌린 줄은 지우지 않고 `restored_at` 을 적는다. 지우면 "언제 누가 팀 전체에
+    적용했고 되돌렸나" 를 물을 데가 없다 — 선택 표(`template_choices`)는 수정
+    로그가 보지 않는 표라(`edit_log.UNWATCHED`) 그 자취가 여기에만 남는다.
+    """
+
+    __tablename__ = "template_apply_backups"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # 누가 눌렀나. 언제는 `created_at` 이다.
+    user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    # 어느 자리인가 — `TemplateChoice` 의 (종류, 갈래)와 같은 열쇠다.
+    kind: Mapped[str] = mapped_column(String)
+    variant: Mapped[str] = mapped_column(String, default="", server_default="")
+    # 적용한 팀 문구. **외래키를 걸지 않는다** — 걸면 그 문구를 지우는 길
+    # (`templates_crud.delete_template`)이 이 버퍼 때문에 막힌다. 지워졌으면
+    # 되돌릴 때 선택들이 이미 거둬져 있어(`template_pick.forget_template`)
+    # 선택은 건너뛰고 끈 개인 문구만 되살린다.
+    template_id: Mapped[int] = mapped_column(Integer)
+    # 덮기 전의 선택 — `[{"user_id": 3, "template_id": 12 | null}]`. **null 이면
+    # 그때 고른 것이 없었다**는 뜻이다(되돌릴 때 선택을 지운다). 이미 이 문구를
+    # 고른 사람은 바뀐 것이 없어 적지 않는다.
+    previous_json: Mapped[str] = mapped_column(Text, default="[]")
+    # 끈 개인 문구 — `[{"id": 40, "sig": "…"}]`. `sig` 는 끌 때의 이름·본문
+    # 지문이다. 되돌릴 때 **그 뒤에 주인이 고쳤는가**를 이것과 맞춰 보고, 다르면
+    # 그 문구는 건드리지 않는다(`OneLinerBackup.applied` 와 같은 방식).
+    turned_off_json: Mapped[str] = mapped_column(Text, default="[]")
+    # 되돌린 때. 비어 있으면 아직 되돌리지 않았다 — 한 번 되돌린 것을 또
+    # 되돌리지 못하게 막는 칸이다.
+    restored_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+
 class VcContact(TimestampMixin, Base):
     __tablename__ = "vc_contacts"
 
@@ -1365,6 +1409,14 @@ class SourcingContact(TimestampMixin, Base):
     # `딜 받음` 이력이 이 줄에 달려 있다.
     vc_contact_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("vc_contacts.id"), nullable=True)
+    #: 위 잇기를 **사람이 [이 분으로 확정]으로** 정했나(1) · 앱이 저절로 이었나(0).
+    #: 시트를 다시 가져오면(`scripts/import_sourcing.py`) 갈래를 통째로 갈아 끼워
+    #: 잇기가 사라진다 — 저절로 이은 줄은 같은 규칙으로 다시 잇지만, 사람이 확정한
+    #: 줄은 이름 · 번호가 둘 다 맞지 않아 그 규칙으로는 못 잇는다. 그 줄만 이 표시로
+    #: 기억해 되살린다(`sourcing_sync.confirmed_links` · `restore_confirmed`). 이 칸이
+    #: 생기기 전부터 이어져 있던 줄도 1 이다(이주 `0104` — 받아들인 잇기). 잇기가 없으면
+    #: 뜻이 없다 — 이을 때마다 다시 적는다(`sourcing_sync.link`).
+    vc_link_confirmed: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     #: `참여` | `불참여`. 불참여인 분은 딜 소싱 제안(처음 안내 · 월간 리마인드)
     #: 대상에서 빠진다. **줄을 지우지 않는다** — 다시 참여하면 그 이력 그대로 돌아온다.
     participation: Mapped[str] = mapped_column(String, default="참여",

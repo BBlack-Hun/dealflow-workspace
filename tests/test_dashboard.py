@@ -1131,8 +1131,9 @@ def test_the_count_is_user_selectable(client, db, users):
         assert f'value="{n}"' in body, f"{n}명 고르는 값이 없다"
     assert 'select class="chip-select js-top-n"' in body, \
         "칩 여섯은 폰에서 줄을 넘긴다 — 드롭다운이어야 한다"
-    # 기본은 넉넉히 — 10명만 보면 그 아래에 누가 있는지 몰라 매번 늘려야 했다
-    assert TOP_DEFAULT == 50
+    # 기본은 넉넉히 — 10명만 보면 그 아래에 누가 있는지 몰라 매번 늘려야 했다.
+    # 50 으로 올렸다가 사용자가 끝(300)까지 올렸다(#26, 2026-10-16).
+    assert TOP_DEFAULT == 300 == TOP_CHOICES[-1]
     assert f'value="{TOP_DEFAULT}" selected' in body
 
     # 100단위를 더 달라고 한 것이라 300까지 있다. 그 위는 안 세운다 — 모집단이

@@ -83,7 +83,8 @@ class Kind:
 #: 팀 현황 판에 서는 차례. **여기 없는 열쇠는 저장하지 않는다.**
 KINDS: List[Kind] = [
     Kind(MEETING_REVIEW, "미팅 후 검토결과 문의",
-         "미팅 완료 2일 뒤 14:00 — 그 투자사 방에 미팅 후기 문구"),
+         "미팅 완료 2일 뒤 14:00 그 투자사 방에 미팅 후기 문구, "
+         "30일 뒤 14:00 투자 결정 문의(거절이면 안 물음)"),
     Kind(MEETING_REQUEST, "미팅 요청 2회",
          "IR 자료 전달 7일 뒤 14:00 미팅 요청, 답이 없으면 10일 뒤 한 번 더"),
     Kind(SOURCING_REMIND, "소싱 리마인드",
@@ -190,10 +191,20 @@ def hhmm(minutes: int) -> str:
 
 
 def guard_window() -> tuple:
-    """발송 안전장치가 허락하는 폭(분) — 팀 시간대는 이 안이어야 한다."""
-    from . import scheduled_send
+    """발송 안전장치가 허락하는 폭(분) — 팀 시간대는 이 안이어야 한다.
 
-    return scheduled_send.EARLIEST_HOUR * 60, scheduled_send.LATEST_HOUR * 60
+    폭은 `send_window` 한 곳에서 온다. 테스트 서버에서 껐으면 00:00~24:00 이다.
+    """
+    from . import send_window
+
+    low, high = send_window.hours()
+    return low * 60, high * 60
+
+
+def time_input(minutes: int) -> str:
+    """`<input type="time">` 에 넣을 값. 그 칸은 `24:00` 을 못 담아 `23:59` 로 적는다
+    (테스트 서버에서 시간 제한을 껐을 때만 생긴다)."""
+    return hhmm(min(minutes, 24 * 60 - 1))
 
 
 @dataclass(frozen=True)
@@ -688,5 +699,12 @@ def status(db: Session) -> dict:
                      "max_per_contact_daily": MAX_PER_CONTACT_DAILY,
                      "max_job_gap_min": MAX_JOB_GAP_MIN,
                      "guard_start": hhmm(guard_window()[0]),
-                     "guard_end": hhmm(guard_window()[1])},
+                     "guard_end": hhmm(guard_window()[1]),
+                     # 시간 칸(`<input type="time">`)에 넣는 값 — `24:00` 을
+                     # 못 담는다. 운영(09:00~19:00)에서는 위와 같은 글자다.
+                     "guard_end_input": time_input(guard_window()[1]),
+                     "window_end_input": time_input(_minutes(team_.window_end)),
+                     # 분 단위 칸. 운영은 10분(600초) 그대로이고, 테스트 서버에서
+                     # 껐을 때만 1분 — `23:59` 를 고를 수 있게.
+                     "time_step": 60 if guard_window()[1] >= 24 * 60 else 600},
             "agent": agent}

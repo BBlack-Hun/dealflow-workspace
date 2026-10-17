@@ -114,7 +114,7 @@ class SendWin(kw.KakaoDesktopSender):
     def _foreground_title(self):
         return "메모장" if self.fg_lost else "카카오톡"
 
-    def _opened_chat_window(self, room_name):
+    def _opened_chat_window(self, room_name, win=None):
         return self.chat if self.chat is not None and self.chat.title == room_name else None
 
     def _input_text(self, chat):
@@ -136,8 +136,12 @@ def test_연달아_보내도_한_건도_안_빠진다(uia_clear):
     assert [room for room, _ in sender.delivered] == ROOMS
 
 
-def test_예전처럼_안_비우면_번갈아_실패한다():
-    """이 흉내가 실제 증상을 재현하는지 — 비우기를 빼면 성공·실패가 번갈아야 한다."""
+def test_예전처럼_안_비우면_번갈아_실패한다(monkeypatch):
+    """이 흉내가 실제 증상을 재현하는지 — 비우기를 빼면 성공·실패가 번갈아야 한다.
+
+    0.11.10 부터는 Enter 로 방이 안 열리면 검색창을 닫고 한 번 더 찾아(`OPEN_ROOM_TRIES`)
+    이것만 빼서는 재현되지 않는다 — 다시 찾기도 끈다."""
+    monkeypatch.setattr(kw, "OPEN_ROOM_TRIES", 1)
     kakao = FakeKakao({})
     sender = SendWin(kakao)
 
@@ -147,6 +151,9 @@ def test_예전처럼_안_비우면_번갈아_실패한다():
         return None
 
     sender._put_room_query = old_way
+    # 0.11.9 부터는 보낸 뒤 검색창까지 닫아 이것만 빼서는 재현되지 않는다 —
+    # 보낸 뒤의 Esc 도 그때처럼 한 번만 누른다.
+    sender._leave_room = lambda chat, room_name: sender._safe_close()
     oks = [sender.send_text(room, "안녕하세요").ok for room in ROOMS]
     assert oks == [True, False, True, False, True, False]
 
@@ -223,7 +230,7 @@ class OpensLongerTitle(SendWin):
     def _hwnd_pid(self, hwnd):
         return 4242 if self.same_process else 7
 
-    def _opened_chat_window(self, room_name):
+    def _opened_chat_window(self, room_name, win=None):
         return None
 
 

@@ -77,7 +77,8 @@ from sqlalchemy.orm.attributes import set_committed_value
 from .. import clock
 from ..models import (SendItem, SendJob, SeriesACompany, SeriesAShare,
                       SourcingContact, User)
-from . import deal_history, deal_numbers, room_name, sourcing_msg, twin_send
+from . import (deal_history, deal_numbers, room_name, sourcing_buckets, sourcing_msg,
+               twin_send)
 from . import message_composer as mc
 from .sourcing_sync import SYNC_BUCKET
 
@@ -89,7 +90,8 @@ KIND = sourcing_msg.SHARE_KIND
 LABEL = "Series A 딜 공유"
 
 #: 이 글을 받는 **하나뿐인** 갈래 — 투자사 관리 현황과 이어진 그 갈래다.
-#: 이름을 바꿀 수 없는 갈래라(`sourcing_buckets.rename`) 글자로 견준다.
+#: 이름을 바꿀 수 없는 갈래라(`sourcing_buckets.rename`) 이 글자로 견준다 —
+#: 띄어쓰기만 다른 저장 글자도 이 갈래다(`is_share_bucket`).
 BUCKET = SYNC_BUCKET
 
 #: 문구 속 기업 자리. 딜 소개 · 자료 전달의 `{기업목록}`(붙여 쓴 것)도 같은
@@ -176,7 +178,7 @@ def body_for(db: Session, user: User, bucket: str) -> str:
 
 
 def is_share_bucket(bucket: Optional[str]) -> bool:
-    return (bucket or "") == BUCKET
+    return sourcing_buckets.same(bucket, BUCKET)
 
 
 def short_series(value: Optional[str]) -> str:
@@ -346,7 +348,10 @@ def _live_pairs(db: Session, company_ids: Optional[Iterable[int]] = None,
 
 
 def contacts_by_company(db: Session) -> Dict[int, Set[int]]:
-    """기업 → 그 기업을 받은 심사역들. 고르개의 `이미 받은 분` · 탭의 `공유한 심사역`."""
+    """기업 → 그 기업을 받은 심사역들. 고르개의 `이미 받은 분` · 탭 [삭제] 확인창의 `N명`.
+
+    (탭의 `공유한 심사역` 칸은 #24 에서 뺐다 — 받은 분 수는 이 함수로 그대로 센다.)
+    """
     out: Dict[int, Set[int]] = {}
     for company_id, contact_id in _live_pairs(db):
         out.setdefault(company_id, set()).add(contact_id)
@@ -361,27 +366,6 @@ def companies_by_contact(db: Session,
     out: Dict[int, Set[int]] = {}
     for company_id, contact_id in _live_pairs(db, company_ids, contact_ids):
         out.setdefault(contact_id, set()).add(company_id)
-    return out
-
-
-def shared_people(db: Session) -> Dict[int, List[str]]:
-    """기업 → 받은 심사역 `이름(회사)` — 탭의 `공유한 심사역` 칸 풍선말."""
-    by_company = contacts_by_company(db)
-    ids = {cid for people in by_company.values() for cid in people}
-    if not ids:
-        return {}
-    rows = {r.id: r for r in db.execute(
-        select(SourcingContact).where(SourcingContact.id.in_(ids))).scalars()}
-    out: Dict[int, List[str]] = {}
-    for company_id, people in by_company.items():
-        names = []
-        for cid in people:
-            row = rows.get(cid)
-            if row is None:
-                continue
-            firm = (row.firm or "").strip()
-            names.append(f"{row.name}({firm})" if firm else row.name)
-        out[company_id] = sorted(names)
     return out
 
 
@@ -680,7 +664,7 @@ def is_own(row: SeriesACompany, contact) -> bool:
 
 def _bucket_people(db: Session) -> List[SourcingContact]:
     return db.execute(select(SourcingContact).where(
-        SourcingContact.bucket == BUCKET)).scalars().all()
+        SourcingContact.bucket.in_(sourcing_buckets.variants(db, BUCKET)))).scalars().all()
 
 
 def _name_index(people: Iterable) -> Dict[str, List[Tuple[object, str]]]:

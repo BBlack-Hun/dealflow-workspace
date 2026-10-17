@@ -8,8 +8,8 @@ from fastapi.staticfiles import StaticFiles
 from . import config, deps
 from .deps import NoConsulting, NotAdmin, NotAuthenticated
 from .services import (auto_send, automation_runner, backup, edit_log,
-                       followup_sms, scheduled_send, sourcing_mail,
-                       startup_monthly)
+                       followup_sms, scheduled_send, send_window,
+                       sourcing_mail, startup_monthly)
 from .routers import auth as auth_router
 from .routers import templates_crud
 from .routers import setup as setup_router
@@ -25,6 +25,9 @@ def create_app() -> FastAPI:
     # 인터넷에 올릴 때 기본 토큰·비밀번호가 그대로면 여기서 멈춘다.
     # 저장소가 공개라 그 기본값은 이미 아무나 아는 값이다.
     config.assert_ready()
+    # 테스트 서버에서 보내는 시간(09:00~19:00) 제한을 껐으면 시작 로그에 경고를
+    # 남긴다(`services/send_window.py`). 기본(꺼지지 않음)이면 아무 말도 없다.
+    send_window.announce()
 
     # 일일 백업은 **이 프로세스 안에서** 돈다. 호스트 크론에 걸어 두었더니
     # 서버를 다시 세울 때 같이 사라졌고, 사라진 것을 아무도 몰랐다 — 그래서

@@ -13,8 +13,9 @@
    막는다 — 보내는 계정 카톡에서 그 둘은 **같은 방**이다. 방 제목은 띄어쓰기 ·
    대소문자를 빼고 견준다(`room_key`).
 3. **손으로 보낸 것** — 같은 글을 사람이 먼저 보냈으면 자동으로 또 보내지
-   않는다. 미팅 후 문의 · 미팅 요청은 **N일(기본 7일) 안**의 미팅 단계 글,
-   소싱 리마인드는 **그 달**의 월간 리마인드(`manual_*`).
+   않는다. 미팅 후 문의 · 미팅 요청은 **N일(기본 7일) 안**의 미팅 단계 글
+   (미팅 후 문의의 두 번째 — 30일 뒤 투자 결정 문의 — 는 **미팅을 마친 뒤
+   전부**), 소싱 리마인드는 **그 달**의 월간 리마인드(`manual_*`).
 
 ## 언제 보나 — 세울 때와 풀 때, 두 번
 
@@ -168,8 +169,13 @@ def ledger(db: Session, day: date, test: bool, *, limit: int,
 
 # ── 손으로 보낸 것 ───────────────────────────────────────────────────────────
 
-def _auto_items():
-    """자동화가 세운 발송 건 — 손 발송을 셀 때 뺀다(그쪽은 `automation_sends` 가 센다)."""
+def auto_items():
+    """자동화가 세운 발송 건 — 손 발송을 셀 때 뺀다(그쪽은 `automation_sends` 가 센다).
+
+    딜 소싱 표의 `N월 리마인드` 칸이 `자동` · `수동` 을 가를 때도 이것을 본다
+    (`services/sourcing_remind_log.py`) — 여기서 손으로 센 것과 그 칸의 `수동` 이
+    같은 건이어야 한다.
+    """
     return select(AutomationSend.item_id).where(AutomationSend.item_id.isnot(None))
 
 
@@ -185,6 +191,8 @@ def manual_meeting(db: Session, contact_id: Optional[int], since: date,
 
     `after`(예: 미팅을 마친 날)가 있으면 **그 뒤에** 보낸 것만 센다 — 미팅 후
     문의(A7)에서 그 미팅을 잡게 한 미팅 요청까지 세면 문의가 거의 늘 빠진다.
+    A7 의 두 번째(투자 결정 문의)는 `since` 도 미팅을 마친 날로 넘겨 그 뒤
+    전부를 본다.
 
     둘을 본다: 앱이 내보낸 것(`deal_intro` 잡의 `stage=3`, 실제로 `sent`)과 손으로
     적은 미팅 요청 기록(`ContactActivity` 의 `meeting_ask`, 되돌린 줄은 안 보인다).
@@ -204,7 +212,7 @@ def manual_meeting(db: Session, contact_id: Optional[int], since: date,
                SendItem.stage == cadence.STAGE_MEETING,
                SendItem.status == "sent",
                SendItem.sent_at >= floor,
-               SendItem.id.notin_(_auto_items())))
+               SendItem.id.notin_(auto_items())))
     mark_q = (
         select(func.max(ContactActivity.happened_at))
         .where(ContactActivity.contact_id == contact_id,
@@ -224,25 +232,48 @@ def manual_meeting(db: Session, contact_id: Optional[int], since: date,
     return ""
 
 
+def sourcing_remind_sent(first: str, last: Optional[str] = None) -> tuple:
+    """**나간 월간 리마인드** 건의 조건 — `first` 달부터 `last` 달까지(`YYYY-MM`,
+    둘 다 넣는다. `last` 를 비우면 `first` 한 달). `SendItem` ⋈ `SendJob` 에 건다.
+
+    무엇을 '월간 리마인드를 보냈다' 로 치는지는 **여기 한 벌**이다. 두 곳이
+    지난다 — 아래 `manual_sourcing_remind`(그 달 손으로 보냈으면 자동이 빠진다)와
+    딜 소싱 표의 `N월 리마인드` 칸(`services/sourcing_remind_log.py`). 따로 들면
+    표에는 `수동` 이 서 있는데 자동이 또 나가거나, 그 반대가 된다.
+
+      · 잡 종류 `sourcing_intro` + 문구 `sourcing_remind` — 처음 안내(문구 빈칸)와
+        Series A 딜 공유(`sourcing_deal_share`)도 같은 잡 종류라 문구로 가른다.
+        시험 모드 회차는 잡 종류가 `test_send` 이고 문구도 비어 여기 안 걸린다
+        (`automation.build_job`).
+      · 건이 `sent` — 실패 · 대기 · 취소는 받는 쪽에 아무것도 안 갔다.
+      · 보낸 시각이 그 달들 안 — 저장된 글자(`clock.now_iso`, 지역 시각)를 그대로
+        견준다. 보낸 시각이 빈 건은 범위 비교에서 저절로 빠진다.
+
+    받는 줄(`sourcing_contact_id`)은 부르는 쪽이 건다 — 한 분인지 표 전체인지가
+    다르다.
+    """
+    from . import sourcing_msg
+
+    start = f"{first}-01"
+    year, mon = int((last or first)[:4]), int((last or first)[5:7])
+    end = f"{year + (mon == 12):04d}-{(mon % 12) + 1:02d}-01"
+    return (SendJob.kind == "sourcing_intro",
+            SendJob.topic == sourcing_msg.REMIND_KIND,
+            SendItem.status == "sent",
+            SendItem.sent_at >= start, SendItem.sent_at < end)
+
+
 def manual_sourcing_remind(db: Session, sourcing_contact_id: Optional[int],
                            month: str) -> str:
     """그 달(`YYYY-MM`) 사람이 이 분께 **월간 리마인드**를 보냈으면 그 사유."""
-    from . import sourcing_msg
-
     if not sourcing_contact_id:
         return ""
-    start = f"{month}-01"
-    year, mon = int(month[:4]), int(month[5:7])
-    end = f"{year + (mon == 12):04d}-{(mon % 12) + 1:02d}-01"
     sent = db.execute(
         select(func.max(SendItem.sent_at))
         .join(SendJob, SendJob.id == SendItem.job_id)
         .where(SendItem.sourcing_contact_id == sourcing_contact_id,
-               SendJob.kind == "sourcing_intro",
-               SendJob.topic == sourcing_msg.REMIND_KIND,
-               SendItem.status == "sent",
-               SendItem.sent_at >= start, SendItem.sent_at < end,
-               SendItem.id.notin_(_auto_items()))
+               *sourcing_remind_sent(month),
+               SendItem.id.notin_(auto_items()))
     ).scalar()
     if sent:
         return f"{PREFIX} — {_md(sent)} 에 이 달 월간 리마인드를 손으로 보냈습니다"

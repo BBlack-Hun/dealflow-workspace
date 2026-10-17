@@ -39,6 +39,10 @@ for _name in ("HOST", "PORT", "USER", "PASSWORD"):
     os.environ[f"DEALFLOW_POP3_{_name}"] = ""
 os.environ["DEALFLOW_SECRET_KEY"] = ""
 os.environ["DEALFLOW_DOMAIN"] = ""
+# 테스트 서버의 '보내는 시간 제한 끄기' 스위치를 지운다. 테스트 서버 컨테이너
+# 안에서 검사를 돌려도 **운영과 같은 09~19시**로 돈다(`app/services/send_window.py`).
+# 스위치를 보는 검사는 그 검사가 스스로 켠다.
+os.environ.pop("DEALFLOW_TEST_SERVER_NO_SEND_WINDOW", None)
 
 import pytest  # noqa: E402
 

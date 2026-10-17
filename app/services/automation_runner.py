@@ -85,12 +85,14 @@ from .. import clock
 from ..db import SessionLocal
 from ..models import (AutoSendRun, Automation, AutomationSend, SendItem,
                       SendJob, User)
-from . import automation, scheduled_send
+from . import automation, scheduled_send, send_window
 
 log = logging.getLogger(__name__)
 
 #: 그날 몇 시부터 회차를 세우나. 사람이 출근해 오늘 할 일에서 보고 나가기
 #: 전에 빼거나 [중단] 할 틈이 남게 아침에 세운다(`startup_monthly` 와 같은 값).
+#: 판정은 `send_window.prepare_hour(PREPARE_HOUR)` — 테스트 서버에서 보내는 시간을
+#: 껐으면 0시부터 세운다(00:30 회차를 08시에 세우면 이미 지난 뒤다).
 PREPARE_HOUR = 8
 
 #: 얼마나 자주 깨어나 보나. 하루 한 번 서는 일이라 촘촘할 까닭이 없다.
@@ -155,6 +157,11 @@ class Field:
     low: int = 0
     high: int = 0
     hint: str = ""
+    #: **이미 저장된 줄에 이 값이 없을 때** 쓰는 값 — 그 칸이 생기기 전에 저장된 줄이다.
+    #: `None` 이면 `default` 와 같다. 새 동작을 여는 칸(예: A7 의 두 번째 날수)은 여기에
+    #: '끔' 을 둔다 — 배포하는 날 켜 둔 자동화에 묻지도 않은 회차가 저절로 붙지 않게
+    #: (덜 보내는 쪽). `default` 는 판에 처음 세울 때 · 새로 저장할 때의 값이다.
+    absent: object = None
 
 
 @dataclass(frozen=True)
@@ -271,7 +278,10 @@ def _clean_one(field_: Field, raw):
 
 
 def values(row: Optional[Automation], key: str) -> dict:
-    """이 자동화가 지금 쓰는 값 — 저장된 값, 없거나 못 읽으면 기본값."""
+    """이 자동화가 지금 쓰는 값 — 저장된 값, 없거나 못 읽으면 기본값.
+
+    줄은 있는데 그 칸만 없으면(그 칸이 생기기 전에 저장했다) `Field.absent` 가 있을
+    때 그 값이다."""
     _load_all()
     spec = REGISTRY.get(key)
     stored = automation.params(row)
@@ -284,6 +294,9 @@ def values(row: Optional[Automation], key: str) -> dict:
             except ValueError:
                 log.warning("자동화 %s 의 %s 값이 맞지 않아 기본값을 씁니다",
                             key, field_.name)
+        elif row is not None and field_.absent is not None:
+            out[field_.name] = field_.absent
+            continue
         out[field_.name] = field_.default
     return out
 
@@ -626,7 +639,7 @@ def run_once(db: Session, key: str, now: Optional[datetime] = None) -> dict:
     plan = spec.plan(db, row, today)
     if plan is None:
         return {"status": "not_today"}
-    if now.hour < PREPARE_HOUR:
+    if now.hour < send_window.prepare_hour(PREPARE_HOUR):
         return {"status": "too_early"}
     at = scheduled_send._aware(plan.at)
     if now >= at:

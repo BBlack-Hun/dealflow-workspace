@@ -396,6 +396,11 @@ UNWATCHED: Dict[str, str] = {
     "sms_notices": "문자 알림 발송 기록.",
     "one_liner_backups": "한 줄 소개 되돌리기용 버퍼. 되돌릴 값을 담아 두는 자리이고, "
                          "무엇이 바뀌었는지는 `ir_companies` 쪽에 이미 남는다.",
+    "template_apply_backups": "[모든 팀원에게 적용] 되돌리기용 버퍼(`services/template_apply.py`). "
+                              "덮기 전의 선택과 끈 개인 문구 번호를 담아 두는 자리이고, "
+                              "남의 개인 문구가 꺼지고 다시 켜진 것은 `message_templates` "
+                              "쪽에 줄마다 남는다. 누가 언제 적용 · 되돌렸는지는 이 표의 "
+                              "줄 자체가 말한다(`user_id` · `created_at` · `restored_at`).",
     "auto_send_runs": "자동 준비가 오늘 몇 건 돌았나. 기계 기록이다.",
     "automation_sends": "2단계 자동화가 이 대상에게 보냈다는 표시. 자동화가 적는 "
                         "기계 기록이고, 나간 글은 `send_items` 에 있다.",

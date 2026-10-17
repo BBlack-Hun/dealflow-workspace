@@ -691,6 +691,18 @@
       }
       if (row.hasAttribute("data-f-sourcing")) row.setAttribute("data-f-sourcing", data.sourcing_join);
     }
+    // `참여 요청일` — 읽기만 하는 칸이라 사람이 고칠 일은 없지만, O 로
+    // 새 줄이 생기거나 이어지면 그 줄의 날짜가 선다. 서버가 읽은 값 그대로(#28).
+    if ("sourcing_requested_at" in data) {
+      var requested = row.querySelector("td.sourcing-requested");
+      if (requested) {
+        requested.textContent = data.sourcing_requested_at;
+        requested.setAttribute("title", data.sourcing_requested_at);
+      }
+      if (row.hasAttribute("data-f-sourcing_date")) {
+        row.setAttribute("data-f-sourcing_date", data.sourcing_requested_at);
+      }
+    }
   }
   if (table) table.addEventListener("inline-saved", syncRoomCells);
 

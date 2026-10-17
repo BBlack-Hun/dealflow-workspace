@@ -802,6 +802,26 @@ def test_received_button_on_the_sourcing_page(client, db, people):
     assert sourcing_receipts.is_received(db, people["hong"].id, month)
 
 
+def test_received_button_stays_on_one_line(client, db, people):
+    """`☐ 10월 딜 받음` 은 한 줄로 선다 — 이름 칸이 96px 일 때 `10월 딜 받 / 음` 으로
+    접혀 줄마다 키가 늘었다. 단추는 `nowrap`(뒤 `(메일 10/15)` 는 통째로 다음 줄로
+    내려가도 된다)이고, 이름 칸은 그 단추가 드는 폭이다."""
+    import pathlib
+    import re
+
+    from app.routers.sourcing import COLUMNS
+
+    _login(client, "01000000001")
+    page = client.get(f"/sourcing?tab={GROUP}").text
+    form = page.split('data-testid="sourcing-received"', 1)[1].split("</form>", 1)[0]
+    assert 'class="linkbtn received-btn' in form
+    css = pathlib.Path("app/static/css/app.css").read_text(encoding="utf-8")
+    rule = re.search(r"^\.received-btn\b[^{]*\{([^}]*)\}", css, re.M)
+    assert rule and "white-space: nowrap" in rule.group(1)
+    width = {field: w for field, _label, w, _f in COLUMNS}["name"]
+    assert int(width.removesuffix("px")) >= 150, width
+
+
 def test_mail_hook_marks_by_address(db, people):
     from app.services import sourcing_receipts
 

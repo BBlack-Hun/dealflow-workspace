@@ -90,6 +90,11 @@ function texts(box, sel) {
                            ["11", "12"]);
     assert.deepStrictEqual(picks.map(function (b) { return b.textContent; }),
                            ["이 분으로 확정", "이 분으로 확정"]);
+    // 칸(124px)보다 긴 후보는 `…` 로 잘린다(app.css `.sa-sharer-name`) — 끝까지
+    // 읽을 길은 풍선말이다. 딱지에 적은 글 전체를 싣는다.
+    assert.deepStrictEqual(D.queryAll(dom.box, ".sa-sharer-name").map(function (n) {
+      return n.getAttribute("title");
+    }), texts(dom.box, ".sa-sharer-name"));
   }
   {
     const dom = build({ confirmed: null, candidates: [] });
@@ -110,6 +115,8 @@ function texts(box, sel) {
     assert.strictEqual(put[0].url, "/api/series-a-companies/5/sharer");
     assert.deepStrictEqual(put[0].body, { contact_id: 12 });
     assert.deepStrictEqual(texts(dom.box, ".sa-sharer-name"), ["확정 · 홍길동 팀장 (마바캐피탈)"]);
+    assert.strictEqual(D.queryAll(dom.box, ".sa-sharer-name")[0].getAttribute("title"),
+                       "확정 · 홍길동 팀장 (마바캐피탈)", "확정 딱지에도 풍선말이 없다");
     assert.strictEqual(D.queryAll(dom.box, ".js-sharer-pick").length, 0,
                        "확정했는데 후보 단추가 남았다");
     const clear = D.queryAll(dom.box, ".js-sharer-clear");

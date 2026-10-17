@@ -138,7 +138,13 @@ def test_only_blank_fields_are_filled(old_db):
 
 
 def test_the_rule_matches_the_app(db, users):
-    """이주가 이은 짝 = 앱이 딜 소싱에서 넣을 때 저절로 잇는 규칙(`auto_link`)."""
+    """이주가 이은 짝 = 앱이 딜 소싱에서 넣을 때 저절로 잇는 규칙(`auto_link`).
+
+    #28 에서 앱의 규칙은 **이름도** 보게 됐다(번호만 → 이름 + 번호). 이주는 고치지
+    않는다(이미 돈 판이고, 이어 둔 줄은 풀지 않는다). 이 짝들은 이름도 같아 지금
+    규칙으로도 같은 결과다 — 번호만 맞고 이름이 다른 줄은 이제 앱이 저절로 잇지
+    않고 후보로 띄운다(`tests/test_sourcing_link_confirm.py`).
+    """
     from app.models import SheetOwner, SourcingContact, VcContact
     from app.services import sourcing_sync
 

@@ -524,6 +524,10 @@ WRITE_ROUTES = {
     # `공유 심사역` 을 딜 소싱 명단의 그 분 줄로 확정 · 해제 — 같은 줄의 칸 하나
     # (`shared_by_contact_id`)를 고치는 일이라 고치기와 같은 쪽이다.
     ("PUT", "/api/series-a-companies/{row_id}/sharer"): WATCHED,
+    # 관리자의 [딜소개 문구 올리기] — 파일 한 판으로 여러 줄의 `딜소개 문구` 를
+    # 채우거나 덮는다(`services/series_a_pitch_upload.py`). 줄마다 남아야 무엇을
+    # 덮었는지 되짚는다. 주소는 올리는 길의 갈래(`/api/import/…`)에 있다.
+    ("POST", "/api/import/series-a-pitch"): WATCHED,
 
     ("POST", "/ir/requests"): WATCHED,
     ("POST", "/ir/deliver-guide"): WATCHED,
@@ -577,6 +581,11 @@ WRITE_ROUTES = {
     ("POST", "/templates/new"): WATCHED,
     ("POST", "/templates/{template_id}/edit"): WATCHED,
     ("POST", "/templates/{template_id}/delete"): WATCHED,
+    # 관리자의 [모든 팀원에게 적용] · [되돌리기] — 남의 개인 문구를 끄고 켠다
+    # (`services/template_apply.py`). 꺼지고 켜진 것은 `message_templates` 에
+    # 줄마다 남는다.
+    ("POST", "/templates/{template_id}/apply-all"): WATCHED,
+    ("POST", "/templates/apply-all/{backup_id}/undo"): WATCHED,
 
     ("POST", "/sourcing/buckets/rename"): WATCHED,
     ("POST", "/api/sourcing"): WATCHED,
@@ -591,6 +600,11 @@ WRITE_ROUTES = {
     # 확정](공용 명단 줄의 방 이름). `services/sourcing_rooms.py`.
     ("POST", "/sourcing/rooms/search"): WATCHED,
     ("POST", "/sourcing/{row_id}/room-confirm"): WATCHED,
+    # 딜 소싱 › 시리즈 A 줄을 투자사 관리 현황 줄과 [이 분으로 확정](#28) — 공용 명단
+    # 줄의 `vc_contact_id`(`edit_log.VALUE_FIELDS`). `services/sourcing_sync.confirm_link`.
+    ("POST", "/api/sourcing/{row_id}/link"): WATCHED,
+    # 그 잇기를 [연결 풀기] — 같은 칸(`vc_contact_id`)을 비운다. 두 줄 다 남는다.
+    ("POST", "/api/sourcing/{row_id}/unlink"): WATCHED,
 
     ("POST", "/api/contacts/verify-rooms"): WATCHED,
     ("POST", "/api/contacts/assign"): WATCHED,
@@ -820,14 +834,18 @@ def test_the_six_shared_routers_still_hold_the_forty_nine_paths(portal):
     # sourcing 의 5 · 6번째는 이 달 `딜 받음` 단추와 [지금 메일 확인]이다
     # (`services/sourcing_receipts.py` · `services/sourcing_mail.py`).
     # 7 · 8번째는 카톡방 [방 후보 찾기] · [이 방으로 확정]이다
-    # (`services/sourcing_rooms.py`).
+    # (`services/sourcing_rooms.py`). 9 · 10번째는 투자사 관리 현황 줄과 [이 분으로
+    # 확정] · [연결 풀기](#28 — `services/sourcing_sync.confirm_link` · `unlink`)다.
     # series_a 의 셋은 IR 기업 현황 메뉴의 `Series A 이상 딜 소싱` 탭을 더하기 ·
     # 고치기 · 지우기다(`routers/series_a.py`). 옆 두 탭과 같은 공용 화면이다.
     # 넷째는 `공유 심사역` 확정 · 해제(`/sharer` — Series A 딜 공유에서 이 딜을
-    # 넘겨 준 분을 짐작하지 않고 정해 둔다).
+    # 넘겨 준 분을 짐작하지 않고 정해 둔다). 다섯째는 관리자의 [딜소개 문구
+    # 올리기](`/api/import/series-a-pitch` — 파일로 `딜소개 문구` 칸만 채운다).
+    # templates_crud 의 6 · 7번째는 관리자의 [모든 팀원에게 적용] 과 그
+    # [되돌리기]다(`services/template_apply.py`).
     assert counted == {"companies": 8, "ir": 12, "consulting": 9,
-                       "templates_crud": 5, "sourcing": 8, "contacts": 22,
-                       "series_a": 4}
+                       "templates_crud": 7, "sourcing": 10, "contacts": 22,
+                       "series_a": 5}
 
 
 def test_every_table_is_either_watched_or_explained(db):

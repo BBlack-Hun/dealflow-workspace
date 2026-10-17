@@ -57,7 +57,7 @@ from sqlalchemy.orm import Session, object_session
 from .. import clock
 from ..models import (SOURCING_ROOM_TOPIC, SendItem, SendJob, SourcingContact, User,
                       VcContact)
-from . import room_match, sourcing_link, sourcing_sync
+from . import room_match, sourcing_buckets, sourcing_link, sourcing_sync
 # 줄의 상태 문구 · 확정 못 하는 까닭은 스타트업 [방 매칭] 과 **한 벌**이다 —
 # 두 벌이면 한쪽만 고친 날 두 [방 후보 찾기] 화면이 다른 말을 한다(PR #284 리뷰).
 from .startup_room_pick import STATE_LABELS, NotPickable  # noqa: F401 — 라우터가 잡는다
@@ -85,11 +85,13 @@ def needs_room(db: Session, rows: Iterable[SourcingContact]) -> List[SourcingCon
 
 def targets(db: Session, bucket: str = "",
             ids: Optional[Iterable[int]] = None) -> List[SourcingContact]:
-    """[방 후보 찾기] 가 찾을 줄 — 그 갈래(빈 값이면 전체)에서 방이 없는 줄."""
+    """[방 후보 찾기] 가 찾을 줄 — 그 갈래(빈 값이면 전체)에서 방이 없는 줄.
+    띄어쓰기만 다른 글자의 줄도 그 갈래다(`sourcing_buckets.variants`)."""
     stmt = select(SourcingContact).order_by(SourcingContact.position,
                                             SourcingContact.id)
     if bucket:
-        stmt = stmt.where(SourcingContact.bucket == bucket)
+        stmt = stmt.where(
+            SourcingContact.bucket.in_(sourcing_buckets.variants(db, bucket)))
     rows = needs_room(db, db.execute(stmt).scalars().all())
     if ids is None:
         return rows

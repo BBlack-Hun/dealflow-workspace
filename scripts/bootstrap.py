@@ -55,6 +55,10 @@ TEAM_TEMPLATES = [
     # 글자까지 `routers/deals.MEETING_ASK_AGAIN_FALLBACK` 과 같아야 한다(문구틀을
     # 지운 사람과 새로 깐 서버가 같은 글을 받게).
     ("closing_meeting_again", "지난번 미팅 일정 관련하여 다시 한번 여쭙습니다.\n이번주 또는 다음주 중 20~30분 정도 편하신 시간 말씀 주시면 맞추어 뵙겠습니다."),
+    # 미팅 후 검토결과 문의 자동화의 **두 번째** — 미팅 완료 30일 뒤 투자 결정을
+    # 묻는다. `{미팅 기업}` 은 그 미팅의 기업 이름으로 채워진다. 글자까지
+    # `routers/deals.MEETING_DECISION_FALLBACK` 과 같아야 한다(위와 같은 까닭).
+    ("meeting_review_decision", "지난번 미팅하셨던 {미팅 기업} 관련하여 다시 연락드립니다.\n미팅 후 한 달가량 지났는데, 혹시 투자 검토 결과가 나오셨는지 여쭙고 싶습니다.\n검토에 필요한 추가 자료가 있으시거나 한 번 더 미팅이 필요하시면 편하게 말씀 부탁드립니다. 바로 준비하겠습니다."),
     # 딜소개를 보냈는데 반응이 없을 때, 기업 목록 없이 이 문구만 보낸다.
     # 목록을 또 밀어 넣기보다 무엇을 보고 싶은지 되묻는 편이 답이 온다.
     ("ask_preference", "선호하는 기업분야 말씀해주시면 맞추어 딜 공유해드리겠습니다."),
@@ -266,20 +270,24 @@ def seed_sourcing_remind(db) -> int:
     **이미 있으면 건드리지 않는다.** 이 스크립트는 컨테이너가 뜰 때마다 돌고,
     운영자가 고쳐 둔 글(주소를 넣은 것)을 덮으면 안 된다. 갈래 이름을 바꾸면
     문구도 함께 옮겨지므로(`sourcing_buckets.rename`) 새 이름으로 또 심지 않는다.
+
+    **띄어쓰기만 다른 이름은 한 갈래다**(`sourcing_buckets.groups`) — 그 이름의
+    문구가 이미 있으면 심지 않는다. 한 자리에 팀 문구가 둘이면 아무것도 안
+    집혀(`template_pick.pick`) 운영자가 고친 글 대신 뼈대가 나간다.
     """
     from app.services import sourcing_buckets, sourcing_msg  # noqa: PLC0415
 
-    buckets = ([b for b in sourcing_buckets.names(db) if sourcing_msg.is_series_a(b)]
+    buckets = ([g["label"] for g in sourcing_buckets.groups(db)
+                if sourcing_msg.is_series_a(g["label"])]
                or [SOURCING_REMIND_BUCKET])
     made = 0
     for bucket in buckets:
-        exists = db.execute(
-            select(MessageTemplate.id).where(
+        names = db.execute(
+            select(MessageTemplate.name).where(
                 MessageTemplate.user_id.is_(None),
-                MessageTemplate.kind == sourcing_msg.REMIND_KIND,
-                MessageTemplate.name == bucket).limit(1)
-        ).first()
-        if exists is None:
+                MessageTemplate.kind == sourcing_msg.REMIND_KIND)
+        ).scalars().all()
+        if not any(sourcing_buckets.same(name, bucket) for name in names):
             db.add(MessageTemplate(user_id=None, kind=sourcing_msg.REMIND_KIND,
                                    name=bucket, is_active=1,
                                    body=sourcing_msg.remind_default_body(bucket)))
@@ -298,17 +306,17 @@ def seed_series_a_share(db) -> int:
     이름을 바꿀 수 없는 갈래). 그래서 명단을 훑지 않고 그 이름으로 심는다.
 
     **이미 있으면 건드리지 않는다** — 운영자가 문구 화면에서 고친 글을 다음 배포가
-    덮으면 안 된다(`seed_sourcing_remind` 와 같은 규칙).
+    덮으면 안 된다(`seed_sourcing_remind` 와 같은 규칙). 띄어쓰기만 다른 이름의
+    문구도 있는 것이다(`sourcing_buckets.same`).
     """
-    from app.services import series_a_share  # noqa: PLC0415
+    from app.services import series_a_share, sourcing_buckets  # noqa: PLC0415
 
-    exists = db.execute(
-        select(MessageTemplate.id).where(
+    names = db.execute(
+        select(MessageTemplate.name).where(
             MessageTemplate.user_id.is_(None),
-            MessageTemplate.kind == series_a_share.KIND,
-            MessageTemplate.name == series_a_share.BUCKET).limit(1)
-    ).first()
-    if exists is not None:
+            MessageTemplate.kind == series_a_share.KIND)
+    ).scalars().all()
+    if any(sourcing_buckets.same(name, series_a_share.BUCKET) for name in names):
         return 0
     db.add(MessageTemplate(user_id=None, kind=series_a_share.KIND,
                            name=series_a_share.BUCKET, is_active=1,

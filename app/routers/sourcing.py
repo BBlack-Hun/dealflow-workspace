@@ -19,6 +19,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..db import get_db
@@ -27,6 +28,7 @@ from ..models import SendItem, SendJob, SourcingContact, User
 from ..services import (series_a_share, sourcing_buckets, sourcing_link,
                         sourcing_mail, sourcing_receipts, sourcing_rooms,
                         sourcing_sync)
+from ..services import sourcing_remind_log
 from ..services.pipeline import current_assignee
 from ..ui import base_ctx
 # 방 확인 잡의 종류는 **한 곳에만 적는다**(`agent_api.VERIFY_KIND`).
@@ -57,7 +59,9 @@ router = APIRouter(tags=["sourcing"])
 # padding·테두리만큼 이름보다 넓다 — 담당자(72px)가 그래서 두 줄로 접혀 있었다.
 COLUMNS = [
     ("requested_at", "참여 요청일", "124px", True),
-    ("name", "이름", "96px", False),
+    # 이름 밑에 [삭제] · `☐ 10월 딜 받음` 단추가 선다(sourcing.html). 96px 에서는
+    # 그 단추가 `10월 딜 받 / 음` 으로 접혀 줄마다 키가 늘었다 — 단추가 한 줄에 드는 폭.
+    ("name", "이름", "150px", False),
     # ── 앱이 만든 칸. 원본 시트에는 없다 ──
     # `참여` · `불참여` 두 값이라 거른다. 불참여인 분은 딜 소싱 제안(처음 안내 ·
     # 월간 리마인드)에서 빠진다. 시리즈 A 갈래의 줄은 투자사 관리 현황의
@@ -76,6 +80,21 @@ COLUMNS = [
     ("kakao_room_name", "카톡방 이름", "170px", False),
 ]
 
+# ── 월간 리마인드 이력 칸(#14) — `COLUMNS` 밖의 읽기 전용 칸 ─────────────────
+# 지난 석 달(`8월 리마인드` `9월 리마인드` `10월 리마인드`) — 그 달 이 분께
+# 리마인드가 나간 시각과 `자동` · `수동`(`services/sourcing_remind_log.py`).
+#
+# `COLUMNS` 에 넣지 않는다. 그 목록은 **고칠 수 있는 칸**이라 행마다 같은 이름의
+# `data-field` 가 서고(tests/test_sourcing.py 가 지킨다), 달은 매달 바뀌어 고정된
+# 이름이 없다. 머리글은 아래 자리 뒤에 끼워 세우고, 행은 그 칸 바로 뒤에 손으로
+# 적는다(`sourcing.html`) — 고치지도 거르지도 않는다.
+#
+# 자리는 **`참여` 바로 뒤.** 이 칸은 사람마다 읽는다("이분께 이 달 리마인드가
+# 갔나") — 그래서 이름 · `딜 받음`(이름 밑) · `참여`(불참여면 리마인드에서 빠진다)
+# 와 나란히 있어야 한 눈에 읽힌다. 맨 오른쪽이면 `참여` 를 옮겨 온 까닭(가로로
+# 끝까지 밀어야 보였다)이 그대로 되풀이된다.
+REMIND_AFTER = "participation"
+
 
 def buckets(db: Session) -> List[dict]:
     """갈래별 인원. 탭에 건수를 띄운다 — 어디에 사람이 있는지 알아야 한다.
@@ -85,12 +104,13 @@ def buckets(db: Session) -> List[dict]:
     그 차례는 날짜와 아무 상관이 없다 — 갈래를 요청일로 세우면 누가 어느 날
     참여를 수락했느냐에 따라 왼쪽 탭이 매일 자리를 바꾼다. 명단 안에서 무엇이
     위로 오는지(아래 `rows_of`)와 **갈래가 늘어선 차례는 다른 판단**이다.
+
+    **띄어쓰기만 다른 글자는 탭 하나다**(`sourcing_buckets.groups`) — 수는 합친
+    것, 이름은 그 갈래가 쓰는 글자. `variants` 는 그 탭에 묶인 저장 글자들이다.
     """
-    rows = db.execute(
-        select(SourcingContact.bucket, func.count(), func.min(SourcingContact.position))
-        .group_by(SourcingContact.bucket)
-    ).all()
-    out = [{"key": b, "label": b, "count": n, "pos": pos or 0} for b, n, pos in rows]
+    out = [{"key": g["label"], "label": g["label"], "count": g["count"],
+            "pos": g["pos"], "variants": g["variants"]}
+           for g in sourcing_buckets.groups(db)]
     return sorted(out, key=lambda x: (x["pos"], x["label"]))
 
 
@@ -148,7 +168,9 @@ def rows_of(db: Session, bucket: str = "") -> List[SourcingContact]:
     """
     stmt = select(SourcingContact).order_by(SourcingContact.position, SourcingContact.id)
     if bucket:
-        stmt = stmt.where(SourcingContact.bucket == bucket)
+        # 탭 하나에 묶인 글자 전부(띄어쓰기만 다른 것 — `buckets`).
+        stmt = stmt.where(
+            SourcingContact.bucket.in_(sourcing_buckets.variants(db, bucket)))
     dated: List[SourcingContact] = []
     undated: List[SourcingContact] = []
     for row in db.execute(stmt).scalars().all():
@@ -229,8 +251,11 @@ def sourcing_page(request: Request, db: Session = Depends(get_db),
                   msg: str = ""):
     tabs = buckets(db)
     # 아무 것도 고르지 않았으면 첫 갈래를 연다. 전체를 먼저 보여주면 갈래가
-    # 나뉜 뜻이 사라진다.
-    selected = tab if any(t["key"] == tab for t in tabs) else (
+    # 나뉜 뜻이 사라진다. 띄어쓰기만 다른 글자로 와도 그 탭이다(예전 주소 ·
+    # 코드의 글자).
+    opened = next((t["key"] for t in tabs
+                   if tab and sourcing_buckets.same(t["key"], tab)), None)
+    selected = opened if opened is not None else (
         tabs[0]["key"] if tabs and tab != "all" else "")
     rows = rows_of(db, selected)
     ctx = base_ctx(request, db, user, active="sourcing")
@@ -255,11 +280,15 @@ def sourcing_page(request: Request, db: Session = Depends(get_db),
         "linked_rooms": linked,
         # 투자사 관리 현황의 줄과 **이어진** 줄 — `🔗 투자사 관리 현황: ○○ 명단`.
         # 시리즈 A 갈래만 이어진다(`sourcing_sync.SYNC_BUCKET`).
-        "vc_links": sourcing_sync.badges(db, rows),
-        # 연결 표시의 풍선말 — **어느 칸이 같이 바뀌는지**. 화면에 칸 이름을
-        # 적어 두면 칸이 늘 때(#17 투자분야 · 라운드 사이즈) 말만 옛것으로 남는다.
-        "vc_shared": " · ".join(sourcing_sync.SHARED_LABELS[f]
-                                for f in sourcing_sync.SHARED_FIELDS),
+        # 풍선말(어느 칸이 같이 바뀌는지)도 여기 실려 온다(`badges` 의 `title`).
+        # [연결 풀기]를 누를 수 있는지도(`can_unlink` — `_may_unlink`).
+        "vc_links": _badges(db, rows, user),
+        # `참여 요청일` 칸 · 거를 값 — 날짜 뒤에 붙은 시각을 뗀다(저장값은 그대로,
+        # `sourcing_sync.requested_label` — 투자사 관리 현황의 같은 칸도 이것이다).
+        "requested": {r.id: sourcing_sync.requested_label(r.requested_at) for r in rows},
+        # 저절로 못 이은 시리즈 A 줄의 **후보** — [이 분으로 확정](#28).
+        # 이름 · 번호가 둘 다 같아야 저절로 잇고, 나머지는 사람이 고른다.
+        "vc_picks": sourcing_sync.link_candidates(db, rows),
         # **보낼 방이 없는 줄** — 자기 방 이름도 이어받을 방도 없다
         # (`sourcing_rooms.needs_room` — 발송이 방을 고르는 규칙과 같다).
         # 그 줄에 `방 없음` 과 [방 후보 찾기] 가 선다.
@@ -284,10 +313,18 @@ def sourcing_page(request: Request, db: Session = Depends(get_db),
         "share_topic": series_a_share.KIND,
         # 그 탭에서만 표 맨 왼쪽에 **고르는 체크박스 칸**이 선다 — 단추가 체크한
         # 참여 분만 싣는다(`sourcing.html`). 다른 탭에는 고른 것을 쓸 곳이 없다.
-        "picking": selected == series_a_share.BUCKET,
+        "picking": series_a_share.is_share_bucket(selected),
         "total": sum(t["count"] for t in tabs),
         # 이름을 못 바꾼 까닭. 조용히 되돌아오면 왜 그대로인지 알 수 없다.
         "msg": msg,
+    })
+    # ── 월간 리마인드 이력(#14) — 지난 석 달, 표 전체에 질의 한 번 ──
+    remind_months = sourcing_remind_log.months()
+    ctx.update({
+        "remind_months": remind_months,
+        "remind_after": REMIND_AFTER,
+        "reminds": sourcing_remind_log.history(db, [r.id for r in rows],
+                                               remind_months),
     })
     return templates.TemplateResponse("sourcing.html", ctx)
 
@@ -359,11 +396,14 @@ def add_row(body: SourcingIn, bucket: str = "",
     target = (bucket or "").strip()
     if not target:
         raise HTTPException(status_code=400, detail="갈래를 고르세요")
+    # 그 갈래가 **쓰고 있는 글자**로 적는다 — 띄어쓰기만 다른 글자로 넣으면 저장된
+    # 글자는 그대로인데 줄마다 글자가 갈린다(`sourcing_buckets.label_of`).
+    target = sourcing_buckets.label_of(db, target)
 
     # 새 줄은 그 갈래의 맨 아래로. 시트의 번호를 사람이 매번 세지 않아도 되게.
     last = db.execute(
         select(func.max(SourcingContact.position))
-        .where(SourcingContact.bucket == target)
+        .where(SourcingContact.bucket.in_(sourcing_buckets.variants(db, target)))
     ).scalar() or 0
     row = SourcingContact(bucket=target, position=last + 1, name=name)
     for field, value in body.model_dump(exclude_unset=True).items():
@@ -373,8 +413,9 @@ def add_row(body: SourcingIn, bucket: str = "",
             setattr(row, field, value.strip() or None)
     row.participation = _participation(body.participation or sourcing_sync.JOINED)
     db.add(row)
-    # 시리즈 A 갈래에 넣은 분이 투자사 관리 현황에 **번호가 딱 한 줄** 맞으면
-    # 그 줄과 잇는다 — 그쪽 `Series A 딜 소싱` 칸이 곧바로 O 가 된다.
+    # 시리즈 A 갈래에 넣은 분이 투자사 관리 현황에 **이름 · 번호가 둘 다 같은
+    # 줄이 딱 하나**면 그 줄과 잇는다 — 그쪽 `Series A 딜 소싱` 칸이 곧바로 O 가
+    # 된다. 아니면 후보로 뜬다(`sourcing_sync.link_candidates`).
     contact = sourcing_sync.auto_link(db, row)
     db.commit()
     out = {"id": row.id, "bucket": target}
@@ -413,7 +454,7 @@ def update_row(row_id: int, body: SourcingIn, db: Session = Depends(get_db),
     # 관리 현황과 이어진 줄이어도 같다: 딜 소싱에 든 분은 보내는 사람 카톡의
     # 딜 소싱 방에 있는 분이라, 투자사 줄을 누가 맡았는지와 따로 관리한다
     # (사용자 원문 — "투자사 관리 현황이랑은 다르게 생각해야함").
-    phone_before = sourcing_sync.digits(row.phone)
+    key_before = sourcing_sync.link_key(row)
     for field, value in data.items():
         # 이름은 비울 수 없다 — 누구인지 모르는 줄이 남는다.
         if field == "name" and not value.strip():
@@ -422,11 +463,13 @@ def update_row(row_id: int, body: SourcingIn, db: Session = Depends(get_db),
             # 이름이 바뀌었으면 예전 확인 결과는 다른 방 이야기다.
             row.room_verified = "unverified"
         setattr(row, field, value.strip() or None)
-    # 번호를 고쳐 투자사 관리 현황의 줄과 맞게 됐으면 잇는다(`add_row` 와 같다).
-    # 이미 이어진 줄은 번호가 바뀌어도 잇기를 그대로 둔다 — 고친 번호는 이어진
-    # 투자사 줄에도 그대로 넘어간다(`sourcing_sync.before_flush`).
+    # 이름 · 번호를 고쳐 투자사 관리 현황의 줄과 맞게 됐으면 잇는다(`add_row` 와
+    # 같다 — 둘 다 같아야 하므로 이름을 고쳐도 다시 본다). 이미 이어진 줄은
+    # 번호가 바뀌어도 잇기를 그대로 둔다 — 고친 번호는 이어진 투자사 줄에도
+    # 그대로 넘어간다(`sourcing_sync.before_flush`).
     contact = None
-    if sourcing_sync.digits(row.phone) != phone_before:
+    relink = sourcing_sync.link_key(row) != key_before
+    if relink:
         contact = sourcing_sync.auto_link(db, row)
     db.commit()
     # 고친 줄의 **지금 담당** — 화면이 [담당자] 필터 값을 이것으로 고쳐 적는다
@@ -436,7 +479,111 @@ def update_row(row_id: int, body: SourcingIn, db: Session = Depends(get_db),
            "participation": sourcing_sync.participation_of(row)}
     if contact is not None:
         out["linked_msg"] = _linked_msg(db, row)
+    if relink and sourcing_sync.is_synced(row):
+        # 이름 · 번호가 바뀌면 후보도 바뀐다 — 이어졌으면 연결 표시, 아니면 새
+        # 후보로 그 자리를 다시 그린다(`sourcing_vc_link.js`).
+        out.update(_vc_view(db, row, user))
     return out
+
+
+# ── 투자사 관리 현황과 사람이 확정해 잇기 (#28) ─────────────────────────────
+
+def _may_unlink(user: User, owner_id: Optional[int]) -> bool:
+    """[연결 풀기]를 누를 수 있나 — 관리자 · 이어진 투자사 줄의 담당 팀원(그 줄의
+    `user_id`, 사용자 결정 2026-10-17). 잇기([이 분으로 확정])는 표를 고치는 누구나
+    하지만, 푸는 것은 남이 확정해 둔 것을 거두는 일이라 좁힌다.
+
+    딜 소싱 `담당자` 칸(`assignee_name`)으로는 **판정하지 않는다** — 그 칸은 로그인한
+    누구나 고치는 글 칸이라(`update_row`), 제 이름을 적고 누르면 뚫린다(PR #311 리뷰).
+    소싱 줄에는 주인 번호가 없다(`delete_row` 머리말)."""
+    return user.role == "admin" or (owner_id is not None and owner_id == user.id)
+
+
+def _badges(db: Session, rows: List[SourcingContact], user: User) -> dict:
+    """연결 표시(`sourcing_sync.badges`)에 [연결 풀기]를 누를 수 있는지를 얹는다."""
+    out = sourcing_sync.badges(db, rows)
+    for row in rows:
+        if row.id in out:
+            out[row.id]["can_unlink"] = _may_unlink(user, out[row.id]["owner_id"])
+    return out
+
+
+def _vc_view(db: Session, row: SourcingContact, user: User) -> dict:
+    """줄 이름 아래 투자사 관리 현황 자리 — 화면(`sourcing_vc_link.js`)이 그린다.
+
+    이어졌으면 연결 표시(`vc_link` — 서버가 그리는 것과 같은 `badges` 값)와 이 줄의
+    같은 칸 값(`fields` — 이으면서 빈 칸이 채워졌을 수 있다), 아니면 후보(`vc_picks`).
+    """
+    badge = _badges(db, [row], user).get(row.id)
+    if badge is None:
+        return {"vc_picks": sourcing_sync.link_candidates(db, [row]).get(row.id, [])}
+    return {"vc_link": badge,
+            "fields": {f: getattr(row, f, None) or "" for f in sourcing_sync.SHARED_FIELDS}}
+
+
+class LinkIn(BaseModel):
+    """고른 투자사 관리 현황 줄 번호."""
+
+    contact_id: Optional[int] = None
+
+
+@router.post("/api/sourcing/{row_id}/link")
+def confirm_vc_link(row_id: int, body: LinkIn, db: Session = Depends(get_db),
+                    user: User = Depends(get_current_user)):
+    """[이 분으로 확정] — 저절로 못 이은 시리즈 A 줄을 사람이 고른 투자사 줄과 잇는다.
+
+    이름 · 번호가 둘 다 같은 줄이 딱 하나일 때만 저절로 잇는다(`sourcing_sync.
+    auto_link`). 나머지는 후보를 보고 사람이 고른다 — 고른 줄이 **지금 다시 센
+    후보** 안에 있어야 잇는다(`sourcing_sync.confirm_link`). 잇고 나면 그쪽
+    `Series A 딜 소싱` 칸이 이 줄의 참여(O/X)로 선다. 잇는 것은 소싱 줄의
+    `vc_contact_id` 라 수정 로그에 남는다(`edit_log.VALUE_FIELDS`).
+
+    권한은 이 표를 고치는 것과 같다 — 로그인한 누구나(`update_row` 주석: 딜 소싱은
+    팀 공용이고, 투자사 줄을 누가 맡았는지와 따로 관리한다).
+    """
+    row = db.get(SourcingContact, row_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="찾을 수 없습니다")
+    try:
+        sourcing_sync.confirm_link(db, row, body.contact_id)
+    except sourcing_sync.SyncError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        # 두 사람이 같은 투자사 줄을 거의 동시에 확정했다 — 후보를 셀 때는 둘 다
+        # 비어 있었고, 늦게 커밋한 쪽이 유일 색인(한 투자사 줄에 소싱 줄 하나)에
+        # 걸린다. 다른 막힘과 같은 말로 답한다(500 이 아니라).
+        db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail="그 사이 다른 분이 이 투자사 줄을 다른 딜 소싱 줄과 이었습니다 — "
+                   "새로고침해 보세요.") from exc
+    return {"id": row.id, **_vc_view(db, row, user)}
+
+
+@router.post("/api/sourcing/{row_id}/unlink")
+def unlink_vc(row_id: int, db: Session = Depends(get_db),
+              user: User = Depends(get_current_user)):
+    """[연결 풀기] — 잘못 이은 투자사 관리 현황 줄과의 잇기를 푼다(사용자 결정
+    2026-10-17). **두 줄 다 지우지 않는다**(`sourcing_sync.unlink`) — 그쪽
+    `Series A 딜 소싱` 칸이 비고, 이 줄은 다시 후보로 뜬다. 관리자 · 이어진 투자사
+    줄의 담당만(`_may_unlink`). 푸는 것도 `vc_contact_id` 라 수정 로그에 남는다."""
+    row = db.get(SourcingContact, row_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="찾을 수 없습니다")
+    badge = _badges(db, [row], user).get(row.id)
+    if badge is None:
+        raise HTTPException(status_code=400,
+                            detail="투자사 관리 현황과 이어진 줄이 아닙니다 — 새로고침해 보세요.")
+    if not badge["can_unlink"]:
+        raise HTTPException(status_code=403,
+                            detail="연결은 관리자나 이어진 투자사 관리 현황 줄의 담당만 "
+                                   "풀 수 있습니다.")
+    sourcing_sync.unlink(row)
+    db.commit()
+    return {"id": row.id, **_vc_view(db, row, user)}
 
 
 @router.delete("/api/sourcing/{row_id}")
