@@ -37,8 +37,9 @@
     });
   });
 
-  document.getElementById("fc-add").addEventListener("click", function () {
-    var name = (window.prompt("기업명") || "").trim();
+  document.getElementById("fc-add").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var name = this.elements.company_name.value.trim();
     if (name) send("POST", "/api/forecast", { company_name: name }).then(reload, fail);
   });
 

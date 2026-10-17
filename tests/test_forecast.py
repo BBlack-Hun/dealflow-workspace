@@ -143,6 +143,25 @@ def test_같은_이름이_여럿이면_골라_잇고_이름을_바꾸면_다시_
     assert "스타트업DB에 없음" in portal["u1"].get("/report/forecast").text
 
 
+def test_자동완성_보기_같은_이름은_라운드_대표자로_가르고_투자사는_담당자_명단만(
+        portal, db, company):
+    from app.models import IrCompany
+
+    db.add_all([IrCompany(name="샘플가나랩", series="Series A", contact_name="대표나"),
+                IrCompany(name="샘플다라소재")])
+    db.commit()
+    _vc(db, "심사가", "010-0000-2222")
+    _vc(db, "심사남", "010-0000-3333", firm="샘플남의벤처스", user_id=2)
+    _add(portal["u1"])
+    page = portal["u1"].get("/report/forecast").text
+    assert 'list="fc-companies"' in page and 'data-list="fc-companies"' in page
+    assert '<option value="샘플다라소재"></option>' in page, "이름이 하나면 이름만"
+    assert '<option value="샘플가나랩" label="샘플가나랩 · 대표가">' in page
+    assert '<option value="샘플가나랩" label="샘플가나랩 · Series A · 대표나">' in page
+    assert 'data-list="fc-firms-1"' in page and '<option value="(주)가나벤처스">' in page
+    assert "샘플남의벤처스" not in page, "남의 명단 회사명은 안 싣는다"
+
+
 # --- 3. 심사역 고르기 -------------------------------------------------------------
 
 def test_심사역은_미팅_IR요청_명단_후보_차례로_정한다(portal, db, company):

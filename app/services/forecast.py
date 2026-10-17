@@ -61,6 +61,11 @@ def _text(value) -> str:
     return (value or "").strip()
 
 
+def _company_label(company) -> str:
+    """같은 이름의 IR 기업을 가르는 글자 — 이름 · 투자라운드 · 대표자."""
+    return " · ".join(p for p in (company.name, company.series, company.contact_name) if p)
+
+
 def _dates(meetings: List[Meeting]) -> tuple:
     """`(가장 이른 날, 나머지 건수)`."""
     days = sorted(m.scheduled_at for m in meetings if m.scheduled_at)
@@ -147,13 +152,13 @@ class Source:
                                 "value": value, "auto": bool(value)}
         return {
             "id": row.id,
+            "owner": row.user_id,
             "cells": cells,
             "auto": {f: v for f, (v, _n) in auto.items()},
             "company": ({"id": company.id, "name": company.name or "",
                          "href": ir_link.company_href(company)} if company else None),
             "company_candidates": ([] if company else [
-                {"id": c.id, "label": " · ".join(p for p in (c.name, c.series,
-                                                             c.contact_name) if p)}
+                {"id": c.id, "label": _company_label(c)}
                 for c in self.idx.candidates(row.company_name)]),
             "vc_candidates": ([] if _text(row.vc_name) else [
                 {"name": c.name, "label": " · ".join(p for p in (c.name, c.title) if p)}
@@ -165,6 +170,31 @@ def views(db: Session, rows: Iterable[RevenueForecast]) -> List[dict]:
     rows = list(rows)
     source = Source(db, rows)
     return [source.view(r) for r in rows]
+
+
+def company_options(db: Session) -> List[dict]:
+    """[줄 추가] · 기업명 칸의 자동완성 보기 — 후보를 찾는 그 IR 기업 목록(`ir_link.index`).
+
+    같은 이름이 여럿이면 `label` 에 투자라운드 · 대표자를 붙여 가른다. 고른 값은 이름
+    글자일 뿐이고, 잇는 규칙은 그대로다(`set_company_name` — 하나면 잇고 여럿이면 [이걸로]).
+    """
+    idx = ir_link.index(db)
+    twins = idx.duplicate_keys()
+    return [{"value": _text(c.name),
+             "label": _company_label(c) if ir_link.compare_key(c.name) in twins else ""}
+            for c in sorted(idx.by_id.values(), key=lambda c: (_text(c.name), c.id))
+            if _text(c.name)]
+
+
+def firm_options(db: Session, owners: Iterable[int]) -> Dict[int, List[str]]:
+    """투자사명 칸의 자동완성 보기 — 줄 담당자 명단의 회사명(심사역 자동 칸이 읽는 그 명단)."""
+    found: Dict[int, Dict[str, str]] = defaultdict(dict)
+    for user_id, firm, hidden in db.execute(
+            select(VcContact.user_id, VcContact.firm, VcContact.is_hidden)
+            .where(VcContact.user_id.in_(set(owners) or {0})).order_by(VcContact.id)):
+        if not hidden and firm_key(firm):
+            found[user_id].setdefault(firm_key(firm), _text(firm))
+    return {user_id: sorted(names.values()) for user_id, names in found.items()}
 
 
 def rows_for(db: Session, who: Optional[User]) -> List[RevenueForecast]:

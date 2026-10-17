@@ -51,8 +51,11 @@ def forecast_page(request: Request, db: Session = Depends(get_db),
                   scope: str = "", member: int = 0):
     who, team_wide = _scope(db, user, scope, member)
     ctx = base_ctx(request, db, user, active="report")
+    rows = svc.views(db, svc.rows_for(db, who))
     ctx.update({
-        "rows": svc.views(db, svc.rows_for(db, who)),
+        "rows": rows,
+        "company_options": svc.company_options(db),
+        "firm_options": svc.firm_options(db, {r["owner"] for r in rows}),
         "columns": svc.COLUMNS,
         "report_tab": "forecast",
         "viewing": who,

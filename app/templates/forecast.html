@@ -20,10 +20,12 @@
 {% include "_report_tabs.html" %}
 
 <div class="toolbar">
-  <div class="quick-chips">
-    <button type="button" class="primary-btn inline" id="fc-add">줄 추가</button>
+  <form class="quick-chips" id="fc-add">
+    <input type="text" name="company_name" list="fc-companies" placeholder="기업명"
+           aria-label="기업명" required>
+    <button type="submit" class="primary-btn inline">줄 추가</button>
     <a class="secondary-btn" href="/api/export/forecast.xlsx?{{ q }}" download>엑셀</a>
-  </div>
+  </form>
   {% if members %}
   <div class="toolbar-right">
     <a class="chip {% if not team_wide and viewing and viewing.id == user.id %}active{% endif %}"
@@ -38,6 +40,17 @@
   </div>
   {% endif %}
 </div>
+
+{# 자동완성 보기 — 기업명은 IR 기업 이름, 투자사명은 줄 담당자 명단의 회사명. #}
+<datalist id="fc-companies">
+  {% for o in company_options %}<option value="{{ o.value }}"{% if o.label %} label="{{ o.label }}"{% endif %}></option>
+  {% endfor %}
+</datalist>
+{% for owner, names in firm_options.items() %}
+<datalist id="fc-firms-{{ owner }}">
+  {% for n in names %}<option value="{{ n }}"></option>{% endfor %}
+</datalist>
+{% endfor %}
 
 <div class="table-wrap wide">
   <table class="grid-table fc-table" id="fc-table" data-inline-url="/api/forecast">
@@ -57,7 +70,8 @@
         <td {% if src %}title="{{ '직접 적음 · 지우면 자동(' ~ src ~ ')' if c.value and not c.auto else '자동 — ' ~ src }}"{% endif %}>
           <div class="cell {% if c.auto %}fc-auto{% endif %}" data-field="{{ field }}"
                data-value="{{ c.value }}"
-               {% if field.startswith('meeting') %}data-type="date"{% elif field == 'result_note' %}data-type="long"{% endif %}>{{ c.text }}</div>
+               {% if field.startswith('meeting') %}data-type="date"{% elif field == 'result_note' %}data-type="long"{% endif %}
+               {% if field == 'company_name' %}data-list="fc-companies"{% elif field == 'firm' %}data-list="fc-firms-{{ r.owner }}"{% endif %}>{{ c.text }}</div>
           {% if field == 'company_name' %}
           <div class="cell-sub">
             {% if r.company %}
