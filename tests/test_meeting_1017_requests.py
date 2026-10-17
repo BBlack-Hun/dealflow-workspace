@@ -131,6 +131,20 @@ def test_보낼_자료_단추는_IR_자료_전달_완료다(db, users, logged):
     assert db.get(IrRequest, row.id).status == "delivered"
 
 
+def test_안내문이_단추_이름_뒤에_조사를_틀리지_않는다(db, users, logged):
+    """`전달함` 일 때 붙던 `을` 이 `IR 자료 전달 완료` 뒤에 남아 `완료'을` 이 됐다.
+
+    단추 이름은 `pipeline.LABEL_DELIVERED` 한 곳에서 바뀔 수 있으므로 조사를
+    이름에 맞추지 않고 `[단추 이름] 단추를` 로 적는다 — 이름이 또 바뀌어도 맞다.
+    """
+    contact = _contact(db, users, "가담당")
+    _open_request(db, users, contact, "샘플애그", when=date.today())
+
+    body = logged.get("/ir").text
+    assert "완료'을" not in body and "완료'</b> 을" not in body
+    assert "[IR 자료 전달 완료] 단추를 누를 필요가 없습니다" in body
+
+
 def test_전달한_자료_표의_말이_바뀌었다(db, users, logged):
     contact = _contact(db, users, "가담당")
     _delivered(db, users, contact, "샘플애그", when=date.today() - timedelta(days=30))
