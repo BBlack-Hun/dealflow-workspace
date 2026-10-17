@@ -1283,8 +1283,8 @@ def save_startup_send(
     매월 자동 발송은 자동화 판의 A5 하나다(#31). 옛 화면이 보내던 매월 자동
     칸(`monthly` · `monthly_time`)은 받지 않는다 — 옛 30일 자동은 걷었다
     (`services/startup_monthly.py` 머리말). A5 는 **이 메뉴의 계정**으로 나가서,
-    계정을 바꾸면 A5 도 따라 바뀌고 옛 계정 PC 로 서 있던 A5 회차는 거둔다
-    (`automation.follow_startup_menu`).
+    계정을 바꾸면 A5 도 따라 바뀌고 옛 계정 PC 로 서 있던 A5 회차는 거둔다 —
+    메뉴를 끄면 A5 도 끈다(`automation.follow_startup_menu`).
 
     ## 왜 팀 현황인가
 
@@ -1321,14 +1321,16 @@ def save_startup_send(
     setting = startup_send.save(db, enabled=want_on,
                                 user_id=member.id if member else None)
     label = startup_send.LABEL
+    a5_off, stopped = automation.follow_startup_menu(db)
+    gone = f" — 서 있던 회차 {stopped}개를 거뒀습니다" if stopped else ""
     if not startup_send.is_on(setting):
-        return RedirectResponse(
-            f"/team?msg={quote(label)}+메뉴를+껐습니다+—+아무+계정에도+보이지+않습니다",
-            status_code=303)
+        note = f"{label} 메뉴를 껐습니다 — 아무 계정에도 보이지 않습니다"
+        if a5_off or stopped:
+            note += f" · 자동화 A5 도 껐습니다(보낼 계정이 없습니다){gone}"
+        return RedirectResponse(f"/team?msg={quote(note)}", status_code=303)
     note = f"{label} 메뉴 켜짐 — {member.name} 계정에만 보입니다"
-    stopped = automation.follow_startup_menu(db)
     if stopped:
-        note += f" · 자동화 A5 도 이 계정으로 — 옛 계정으로 서 있던 회차 {stopped}개를 거뒀습니다"
+        note += f" · 자동화 A5 도 이 계정으로{gone}"
     return RedirectResponse(f"/team?msg={quote(note)}", status_code=303)
 
 

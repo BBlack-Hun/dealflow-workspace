@@ -50,7 +50,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -519,22 +519,27 @@ def startup_menu_sender(db: Session, picked: Optional[int], enabled: bool) -> Op
     return menu
 
 
-def follow_startup_menu(db: Session) -> int:
-    """메뉴의 계정이 바뀌었으면 A5 도 그 계정으로 — 옛 계정 PC 로 서 있던 회차는
-    거둔다(`automation_runner.stop_jobs`). 거둔 회차 수. 커밋까지 한다.
+def follow_startup_menu(db: Session) -> Tuple[bool, int]:
+    """메뉴를 따라 A5 를 맞춘다 — `(A5 를 껐나, 거둔 회차 수)`. 커밋까지 한다.
 
-    메뉴를 끈 것은 따라가지 않는다(마지막 계정을 그대로 둔다) — 꺼진 메뉴로는
-    A5 가 회차를 세우지도 풀지도 못한다(`startup_send.may_send`).
+    - 메뉴의 계정이 바뀌었으면 A5 도 그 계정으로. 옛 계정 PC 로 서 있던 회차는
+      거둔다(`automation_runner.stop_jobs`).
+    - **메뉴를 껐으면 A5 도 끈다**(계정은 마지막 것 그대로) — 보낼 계정이 없는데
+      켜짐으로 남으면 화면이 '다음: 날짜' 를 약속하고 그날 아무것도 안 나간다.
     """
     from . import automation_runner, startup_send
 
     row = load(db, STARTUP_MONTHLY)
+    if row is None:
+        return False, 0
     menu = startup_send.sender_id(db)
-    if row is None or not menu or row.user_id == menu:
-        return 0
+    if not menu:
+        return turn_off(db, STARTUP_MONTHLY), automation_runner.stop_jobs(db, STARTUP_MONTHLY)
+    if row.user_id == menu:
+        return False, 0
     row.user_id = menu
     db.commit()
-    return automation_runner.stop_jobs(db, STARTUP_MONTHLY)
+    return False, automation_runner.stop_jobs(db, STARTUP_MONTHLY)
 
 
 # ── 시험방으로 돌리기 ─────────────────────────────────────────────────────────

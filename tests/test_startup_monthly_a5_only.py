@@ -162,6 +162,23 @@ def test_changing_the_menu_sender_moves_a5_and_stops_its_jobs(db, users, client,
     assert "거뒀습니다" in unquote(answer.headers["location"])
 
 
+def test_turning_the_menu_off_turns_a5_off_too(db, users, client):
+    """메뉴를 끄면 A5 는 보낼 계정이 없다 — 켜짐으로 남아 '다음: 날짜' 를 약속하지
+    않게 A5 도 끈다(서 있던 회차는 거둔다)."""
+    from app.services import automation
+    from app.services.automations import startup_monthly as a5
+
+    _turn_on(db, user_id=1)
+    _a5(db, test=True)
+    admin = _admin_client(client, db, users)
+    answer = admin.post("/team/startup-send", data={"enabled": "", "user_id": 1},
+                        follow_redirects=False)
+    db.expire_all()
+    assert automation.load(db, automation.STARTUP_MONTHLY).enabled == 0
+    assert "A5" in unquote(answer.headers["location"])
+    assert a5.header(db)["on"] is False
+
+
 def test_the_team_panel_shows_the_fixed_sender(db, users, client):
     _turn_on(db, user_id=2)
     page = _admin_client(client, db, users).get("/team").text
