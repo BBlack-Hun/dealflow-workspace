@@ -201,6 +201,10 @@
       if (type === "long") { startLong(cell, before, type); return; }
       if (type === "pick") { startPick(cell, before, type); return; }
       if (type === "email") { startEmail(cell, before, type); return; }
+      if (type === "sectors" && global.DealflowSectorPicker) {
+        startSectors(cell, before, type);
+        return;
+      }
 
       var multi = cell.classList.contains("multi");
       var input = document.createElement(multi ? "textarea" : "input");
@@ -631,6 +635,39 @@
         }
         api.pop.appendChild(hintLine(
           "`@` 까지 치면 도메인 후보가 뜹니다 · Enter 저장 · Esc 취소"));
+        return input;
+      });
+    }
+
+    // 선호 투자분야 — **분야 기준 목록에서 여러 개 고른다**(`sector_picker.js`).
+    //
+    // 고르는 목록은 부품이 그리고, 여기서는 떠 있는 창과 저장만 맡는다. 고른 값은
+    // 읽기만 하는 한 줄 칸에 모인다 — 창이 닫힐 때(바깥 클릭 · Enter) 그 칸의
+    // 값이 저장된다(`popover` 의 `finish`). Esc 는 다른 칸처럼 되돌린다.
+    function startSectors(cell, before, type) {
+      popover(cell, before, type, function (api) {
+        var input = document.createElement("input");
+        input.type = "text";
+        input.readOnly = true;
+        input.className = "cell-pop-input one-line";
+        input.value = before;
+        api.pop.appendChild(input);
+        var list = document.createElement("div");
+        list.className = "cell-pop-choices sector-pop";
+        api.pop.appendChild(list);
+        global.DealflowSectorPicker.build(list, before, function (value) {
+          input.value = value;
+          api.place();
+        });
+        api.pop.appendChild(hintLine("여러 개 고를 수 있습니다 · Enter 또는 바깥을 누르면 저장 · Esc 취소"));
+        input.addEventListener("keydown", function (e) {
+          if (e.isComposing || e.keyCode === 229) return;
+          if (e.key === "Enter") {
+            e.preventDefault();
+            api.close();
+            stepDown(cell);
+          }
+        });
         return input;
       });
     }

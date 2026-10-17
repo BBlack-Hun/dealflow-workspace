@@ -256,6 +256,13 @@ def bootstrap(db) -> dict:
     # 돌고, 운영 DB 에는 이미 탭이 서 있다(`ensure_member_tabs` 는 그 사람이
     # 그 화면의 탭을 하나라도 가졌으면 넘어간다).
     made["tabs"] = len(sheet_owner.ensure_member_tabs(db, _admin))
+
+    # 분야 기준 목록(#2)의 처음 값 — 목록이 **비어 있을 때만** 넣는다. 화면이
+    # 처음 읽을 때도 넣지만(`taxonomy.ensure_seed`), 배포하는 날 바로 서 있게
+    # 여기서도 부른다. 글자는 그 모듈 한 곳(`SEED`)에 있다.
+    from app.services import taxonomy  # noqa: PLC0415
+
+    made["sector_terms"] = int(taxonomy.ensure_seed(db))
     return made
 
 

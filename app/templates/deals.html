@@ -753,6 +753,20 @@
           이미 이 기업들을 받은 분 제외</label>
         <span class="hint" id="shared-count"></span>
       </div>
+      {#
+        **목록에서 뺀 분** — 딜 소싱 제안은 정확히 `참여` 인 분께만 나간다
+        (`sourcing_sync.takes_part`). `참여 의사를 물어보는 중` · 사람이 적은 문구
+        (참여 확인 전)와 `불참여` 는 처음부터 카드가 없다 — 조용히 빼면 왜 그분이
+        안 보이는지 모르므로 몇 명인지 적는다(`sourcing.held_counts`).
+      #}
+      {% if sourcing_held.pending or sourcing_held.left %}
+      <p class="hint" id="sourcing-held" data-testid="sourcing-held">
+        {%- if sourcing_held.pending %}참여 확인 전(제안 대기·물어보는 중 등) <b>{{ sourcing_held.pending }}</b>명{% endif -%}
+        {%- if sourcing_held.pending and sourcing_held.left %} · {% endif -%}
+        {%- if sourcing_held.left %}불참여 <b>{{ sourcing_held.left }}</b>명{% endif %}은
+        이 목록에서 뺐습니다 — 동의하시면 <a href="/sourcing">딜 소싱</a> 화면의 참여
+        칸을 '참여'로 바꾸면 여기에 뜹니다.</p>
+      {% endif %}
       <div class="filter-line" id="bucket-filter">
         <span class="filter-label">갈래</span>
         <button type="button" class="chip active" data-value="">
@@ -955,8 +969,10 @@
           {# 갈래가 곧 문구다 — 무엇이 나갈지 고르는 자리에서 보여야 한다. #}
           <div class="pick-tags"><span class="tag">{{ bucket }}</span>
             <span class="tag soft received-tag"{% if c.id not in sourcing_received %} hidden{% endif %}>{{ sourcing_month_label }} 딜 받음</span>
-            {# 화면을 연 뒤에 `불참여` 가 된 분 — 명단을 다시 읽을 때 선다(`deals.js`).
-               처음부터 불참여인 분은 이 목록에 아예 없다(`sourcing.sendable_rows`). #}
+            {# 화면을 연 뒤에 받지 않는 분이 된 줄 — 명단을 다시 읽을 때 선다(`deals.js`).
+               글자는 서버가 짓는다(`sourcing.out_label` — `딜 소싱 불참여` ·
+               `참여 확인 전 · 참여 의사를 물어보는 중`). 처음부터 `참여` 가 아닌 분은
+               이 목록에 아예 없다(`sourcing.sendable_rows` — 위 `sourcing-held`). #}
             <span class="tag warn out-tag" hidden>딜 소싱 불참여</span>
             {# Series A 딜 공유에서 고른 기업 중 이미 받은 것 — `deals.js` 가 적는다. #}
             <span class="tag warn share-tag" hidden></span></div>

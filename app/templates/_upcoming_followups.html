@@ -17,6 +17,8 @@
   `_closed_followups.html` 머리말에 **한 번만** 적어 두었다. 못 찾았을 때는
   어디를 더 봐야 하는지 말해 준다(아래 `upcoming-empty`).
 #}
+{# 리마인드 뒤 `답 없음 · 전화 필요`(10/17 회의 #37) — 부르는 화면과 같은 한 벌. #}
+{% from "_call_flag.html" import call_flag with context %}
 <section class="panel">
   <h2 class="panel-title">예약된 리마인드 <span class="hint">{{ upcoming|length }}건</span></h2>
   {% if upcoming %}
@@ -59,6 +61,8 @@
              title="이 투자사의 IR 자료 요청 기록하기">
             <b>{{ r.name }}</b> <span class="muted">{{ r.firm }}</span>
           </a>
+          {# 리마인드가 이미 나가 다음이 미팅 요청인 줄에만(`stage >= 2`). #}
+          {{ call_flag(r.contact_id, r.stage >= 2, 'remind') }}
         </td>
         <td>{{ r.next_label }}</td>
         <td class="num">{{ r.days_left }}일</td>

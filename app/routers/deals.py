@@ -214,6 +214,21 @@ RECEIVED_NOTE = "이번 달 딜 받음"
 #: `불참여` 는 딜 소싱 화면의 `참여` 칸이나 투자사 관리 현황의 `Series A 딜 소싱`
 #: 칸(X)에서 선다(`services/sourcing_sync.py`).
 OUT_NOTE = "딜 소싱 불참여"
+#: 딜 소싱에 **아직 동의하지 않은** 분 — `참여 의사를 물어보는 중` 이나 사람이 적은
+#: 문구(`sourcing_sync.takes_part` 는 정확히 `참여` 만 받는다). 불참여와 사정이 달라
+#: 따로 말한다 — 동의하시면 딜 소싱 화면에서 `참여` 로 바꾸면 된다. `{value}` 는 적힌 값.
+PENDING_NOTE = "딜 소싱 참여 확인 전({value}) — 동의하시면 딜 소싱 화면에서 '참여' 로 바꾼 뒤 보내세요"
+
+
+def _not_taking_part(contact) -> str:
+    """딜 소싱 제안을 **받지 않는** 까닭(`OUT_NOTE` · `PENDING_NOTE`). 받는 분이면 빈 글자."""
+    if sourcing_sync.takes_part(contact):
+        return ""
+    if sourcing_sync.is_left(contact):
+        return OUT_NOTE
+    return PENDING_NOTE.format(value=sourcing_sync.participation_of(contact))
+
+
 #: 딜 소싱 줄에 **보낼 방이 없다** — 미리보기 경고와 발송 목록에서 뺀 이유.
 #: 시리즈 A 갈래는 투자사 방을 이어받지 않으므로(`sourcing_link.linked_rooms`)
 #: 자기 방 이름이 없으면 여기 걸린다 — 딜 소싱 화면의 [방 후보 찾기]로 채운다.
@@ -656,9 +671,9 @@ def _load_recipients(db: Session, user: User, mode: str, ids: List[int]) -> List
         # 발송만 나가는 날이 온다.
         rows = [c for c in ir_monthly.contracted(db) if c.id in set(ids)]
     elif mode == MODE_SOURCING:
-        # `불참여` 인 분도 여기서는 싣는다 — 빼 버리면 발송이 `담당자 N 없음`
-        # 으로 막혀 **왜** 인지 모른다. 미리보기는 경고로, 발송은 이름을 대고
-        # 막는다(`OUT_NOTE` — `create_send_list`).
+        # `참여` 가 아닌 분(불참여 · 물어보는 중 · 문구)도 여기서는 싣는다 — 빼
+        # 버리면 발송이 `담당자 N 없음` 으로 막혀 **왜** 인지 모른다. 미리보기는
+        # 경고로, 발송은 이름을 대고 뺀다(`_not_taking_part` — `create_send_list`).
         rows = db.execute(
             select(SourcingContact).where(SourcingContact.id.in_(ids))
         ).scalars().all()
@@ -956,7 +971,7 @@ def preview(
                          + ([AUTO_ASKED_NOTE.format(day=auto_asked[contact.id])]
                             if contact.id in auto_asked else [])
                          + share_warns
-                         + ([OUT_NOTE] if sourcing and not sample
+                         + ([_not_taking_part(contact)] if sourcing and not sample
                             and not sourcing_sync.takes_part(contact) else [])),
             # 소싱 대상은 다른 표에 있다 — 같은 번호의 투자사 담당자 이력을
             # 제 것으로 읽으면 안 된다.
@@ -1120,10 +1135,12 @@ def create_send_list(
     if missing:
         raise HTTPException(status_code=404,
                             detail=f"담당자 {sorted(missing)[0]} 없음")
-    # ── 딜 소싱: `불참여` · **방 없음** 은 빼고 보낸다(처음 안내 · 월간 리마인드) ──
+    # ── 딜 소싱: **`참여` 가 아닌 분** · **방 없음** 은 빼고 보낸다(세 글 모두) ──
     #
-    # 불참여 — 화면은 그 카드를 싣지 않고(`sourcing.sendable_rows`), 화면을 연
-    # 뒤에 불참여가 된 카드는 고를 수 없게 한다(`deals.js` 의 `data-out`).
+    # `참여` 가 아닌 분 — 불참여 · 참여 의사를 물어보는 중 · 사람이 적은 문구
+    # (`sourcing_sync.takes_part` — 정확히 `참여` 만 받는다). 화면은 그 카드를
+    # 싣지 않고(`sourcing.sendable_rows`), 화면을 연 뒤에 그렇게 된 카드는 고를 수
+    # 없게 한다(`deals.js` 의 `data-out`). 메일 채널도 같다.
     # 방 없음 — 시리즈 A 갈래는 투자사 딜소개 방을 이어받지 않는다
     # (`sourcing_link.linked_rooms`). 그 방으로 보내는 대신 **빼고 이유를 말한다.**
     # **카톡으로 보낼 때만**이다 — 메일은 방이 아니라 주소로 나간다(주소가
@@ -1137,7 +1154,7 @@ def create_send_list(
     if sourcing:
         for contact in contacts:
             if not sourcing_sync.takes_part(contact):
-                why = OUT_NOTE + " — 뺐습니다"
+                why = _not_taking_part(contact) + " — 뺐습니다"
             elif share and not series_a_share.is_share_bucket(contact.bucket):
                 # Series A 딜 공유는 시리즈 A 갈래 심사역께만 — 다른 갈래의 분은
                 # 이 글을 받을 자리가 아니다(화면도 그 카드를 고를 수 없게 한다).

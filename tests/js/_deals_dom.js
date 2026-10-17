@@ -108,11 +108,16 @@ function sourcingCard(id, name, bucket, assignee, received) {
   // Series A 딜 공유에서 `고른 기업 중 N곳 이미 받음` 을 적는 자리(`deals.html`).
   const shareTag = el("span", { class: "tag warn share-tag" });
   shareTag.hidden = true;
+  // 화면을 연 뒤에 받지 않는 분이 된 줄의 딱지(`deals.html` 의 `out-tag`) — 글자는
+  // 다시 읽을 때 서버가 준다(`out_label`).
+  const outTag = el("span", { class: "tag warn out-tag" });
+  outTag.textContent = "딜 소싱 불참여";
+  outTag.hidden = true;
   return el("label", {
     class: "pick-card", "data-bucket": bucket, "data-assignee": assignee || "",
     "data-received": received ? "1" : "0",
     "data-search": (name + " " + bucket).toLowerCase()
-  }, [cb, tag, shareTag]);
+  }, [cb, tag, shareTag, outTag]);
 }
 
 // Series A 딜 공유의 **기업 고르개**(`#series-a-list`) — IR 기업 현황 ›

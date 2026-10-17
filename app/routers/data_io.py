@@ -26,16 +26,19 @@ import io
 from datetime import date
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import (APIRouter, Depends, File, Form, HTTPException, Request,
+                     UploadFile)
 from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..deps import get_current_user, may_manage_team_contacts
+from ..deps import admin_only, get_current_user, may_manage_team_contacts
 from ..models import IrCompany, SendItem, SendJob, User, VcContact
-from ..services import (amount, import_diff, report as report_svc, sheet_import,
-                        sheet_owner, spreadsheet as sp)
+from ..services import (amount, company_view, import_diff, investor_firms,
+                        pipeline,
+                        report as report_svc, sheet_import, sheet_owner,
+                        spreadsheet as sp)
 from .contacts import contact_rows
 
 # 경로를 /api/import, /api/export 로 따로 둔다.
@@ -167,7 +170,8 @@ CONTACT_HEADERS = [
     # 이어진 딜 소싱 줄에서 읽는 두 칸 — 화면과 같은 값(`sourcing_sync` ·
     # `contacts.contact_rows`). 화면처럼 둘이 나란히 선다(사용자 결정 2026-10-17).
     "Series A 딜 소싱", "참여 요청일",
-    "라운드 규모", "선호 단계", "선호 분야",
+    # `소유 펀드` — 회사 단위 값(#1). 화면처럼 라운드 바로 뒤에 선다.
+    "라운드 규모", "소유 펀드", "선호 단계", "선호 분야",
     "휴대폰", "전자 메일 주소", "근무처 전화", "근무처 팩스", "근무지 주소", "명함 등록일",
     # `마지막 딜소개`·`회차 메모` 는 **딜소개만** 본다. `마지막 일` 은 그 뒤에
     # 온 IR 요청·전달·미팅까지 함께 보고 회차명으로 적는다(`09/16 (9월 3주차)
@@ -234,6 +238,56 @@ def sample_contacts(user: User = Depends(get_current_user)):
                     headers=sp.content_disposition("투자사 관리 현황_업로드양식.xlsx"))
 
 
+# --- 소유 펀드(회사 단위 · #1) -----------------------------------------------
+#
+# 외부 조사로 모은 회사별 소유 펀드를 한 번에 넣는 길. **관리자만**이다 — 회사
+# 단위 값을 팀 전체 줄에 걸쳐 바꾸는 일이다. 팀원은 줄에서 칸을 눌러 적는다.
+#
+# 두 걸음이다: 미리보기(맞춘 회사 · 못 맞춘 이름 · 빈 칸)를 본 뒤, 확인을 받고
+# 회사마다 값을 **바꾼다**(`services/investor_firms.apply_upload`).
+
+#: 양식에 채워 두는 보기 줄. 회사도 펀드도 지어낸 것이다(저장소가 공개다).
+FUNDS_SAMPLE_ROWS = [
+    ["가나벤처스", "가나 1호 투자조합, 가나 스케일업 펀드"],
+    ["(주)다라인베스트", "다라 혁신성장 펀드"],
+]
+
+
+@router.get("/api/sample/owned-funds.xlsx")
+def sample_owned_funds(user: User = Depends(get_current_user)):
+    """`소유 펀드` 업로드 양식 — 머리글 두 칸(`투자사명` · `소유 펀드`)."""
+    admin_only(user)
+    try:
+        content = sp.write_plain_xlsx(
+            "소유 펀드", [list(investor_firms.HEADERS), *FUNDS_SAMPLE_ROWS],
+            head_row=1, widths=[24, 48])
+    except sp.SpreadsheetError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    return Response(content=content, media_type=sp.XLSX_MEDIA_TYPE,
+                    headers=sp.content_disposition("소유 펀드_업로드양식.xlsx"))
+
+
+@router.post("/api/import/owned-funds")
+def import_owned_funds(
+    file: UploadFile = File(...),
+    dry_run: bool = Form(True),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """소유 펀드 업로드. 기본은 미리보기 — 반영하려면 dry_run=false."""
+    admin_only(user)
+    data = file.file.read()
+    try:
+        rows = sp.read_rows(file.filename or "", data)
+        parsed = investor_firms.parse_upload(rows)
+    except (sp.SpreadsheetError, investor_firms.UploadError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    if dry_run:
+        return {"dry_run": True, **investor_firms.match(db, parsed).as_dict()}
+    result = investor_firms.apply_upload(db, parsed, user.id)
+    return {"dry_run": False, **result}
+
+
 def _contact_row(r: dict) -> list:
     """투자사 한 줄 → 엑셀 한 줄. `CONTACT_HEADERS` 와 **같은 차례**다.
 
@@ -251,7 +305,8 @@ def _contact_row(r: dict) -> list:
             r["name"], r["title"], r["firm"], r["department"], "/".join(marks),
             r["room_name"], r["room_label"], r["invited_status"], r["interest_level"],
             r["sourcing_join"], r["sourcing_requested_at"],
-            r["round_size"], ", ".join(r["stages"]), ", ".join(r["sectors"]),
+            r["round_size"], r["owned_funds"], ", ".join(r["stages"]),
+            ", ".join(r["sectors"]),
             r["phone"], r["email"], r["office_phone"], r["office_fax"],
             r["address"], r["card_registered_at"],
             r["last_deal"] or "", r["last_deal_note"], r["last_act_text"],
@@ -456,6 +511,33 @@ def export_companies(db: Session = Depends(get_db),
     # 매번 따져야 한다(가져오기도 시트 쪽 이름을 그대로 찾는다:
     # `scripts/import_company_sheets.py` 의 `find_sheet`).
     return _xlsx(f"IR 기업현황_{today}.xlsx", "IR 기업현황", COMPANY_HEADERS, rows)
+
+
+@router.get("/api/export/companies-view.xlsx")
+def export_companies_view(request: Request, q: str = "", sort: str = "",
+                          db: Session = Depends(get_db),
+                          user: User = Depends(get_current_user)):
+    """IR 기업 현황 탭 → **지금 화면 그대로** 엑셀(10/17 회의 #43).
+
+    위 `엑셀 내려받기`(전체)는 그대로 두고 따로 선다. 화면에서 걸어 둔 머리글
+    필터(주소의 `?sector=…` 등) · 검색(`q`) · 정렬(`sort`)을 **서버가 같은 규칙으로
+    다시 건다** — 화면 글을 긁지 않는다(`services/company_view.py` 머리말).
+    줄은 표가 먹는 한 벌(`companies.company_rows`)이고, 칸은 그 탭에 **보이는
+    칸**이다(`company_view.VIEW_HEADERS`).
+
+    권한은 전체 내려받기와 같다 — 로그인한 계정이면 누구나(투자컨설턴트는
+    `deps.CONSULTANT_PATHS` 밖이라 미들웨어가 막는다 — 전체 내려받기와 같다).
+    """
+    from .companies import company_rows
+
+    rows = company_view.view_rows(
+        company_rows(db), company_view.parse_raw_query(request.url.query),
+        q=q, sort=sort)
+    today = date.today().isoformat()
+    # 이름은 전체 파일(`IR 기업현황_날짜.xlsx`)과 갈라 둔다 — 둘을 같은 폴더에
+    # 받아 두면 어느 쪽이 거른 것인지 이름으로 보여야 한다.
+    return _xlsx(f"IR 기업현황_화면_{today}.xlsx", "IR 기업현황 (화면)",
+                 company_view.VIEW_HEADERS, company_view.to_cells(rows))
 
 
 # `/api/export/reactions.xlsx` 는 뺐다 — 업무 보고 `이 달의 반응` 머리에 달려
@@ -801,10 +883,12 @@ def _meetings_sheet(sheet, data, team_wide):
     # 줄마다 한 줄이라 수가 더 많다 — 둘 다 맞는 수인데 파일만 받아 보는
     # 사람에게는 그냥 안 맞는 숫자로 보인다. 까닭은 화면과 **같은 문자열**로
     # 싣는다(`report.meeting_ask_count_note`).
-    stats = [("요청받음", data["ir_requested"]),
-             ("전달함", data["ir_delivered"]),
+    # 이름은 화면(`report.html` 의 `IR 자료 요청` 판)과 **같은 말**이다 —
+    # `pipeline.LABEL_*` 한 곳에서 읽는다(10/17 회의 #35·#36·#40).
+    stats = [(pipeline.LABEL_REQUESTED, data["ir_requested"]),
+             (pipeline.LABEL_DELIVERED, data["ir_delivered"]),
              ("IR 자료 아직 안 보냄", data["ir_open"]),
-             ("미팅 요청 안 보냄(명)", data["ir_meeting_ask_missing"])]
+             (f"{pipeline.LABEL_NOT_ASKED}(명)", data["ir_meeting_ask_missing"])]
     # 사람 수와 건수가 같으면 이 줄은 아무 말도 안 한다 — 그때는 안 싣는다.
     if data["ir_meeting_ask_rows_note"]:
         stats.append(("그 담당자가 받은 자료 요청(건)",
@@ -840,7 +924,7 @@ def _buckets_sheet(sheet, data, team_wide):
             continue
         sheet.head(headers)
         for r in bucket["rows"]:
-            # 화면은 `전달함` 아래에 한 줄을 더 깐다. 파일에서도 **한 칸 안에서
+            # 화면은 `IR 자료 전달 완료` 아래에 한 줄을 더 깐다. 파일에서도 **한 칸 안에서
             # 줄을 바꾼다** — 칸을 새로 만들면 나머지 세 갈래에서 내내 비어
             # 있는 칸이 하나 생기고, ` · ` 로 이어 붙이면 상태와 미팅 요청이
             # 한 낱말처럼 읽힌다.
@@ -894,10 +978,11 @@ def report_workbook(data: dict, *, team_wide: bool, who: str,
                      9 if team_wide else 8),
         data, team_wide)
     _buckets_sheet(
-        # 상태 칸이 16 → 26. `미팅 요청 보냄 · 2026-09-10` 이 한 줄에 들어가야
-        # 한다 — 16 이면 접혀서 날짜만 아랫줄로 떨어진다.
+        # 상태 칸이 16 → 26 → 36. `회의실 미팅 톡 요청 보냄 완료 · 2026-09-10`
+        # 이 한 줄에 들어가야 한다(10/17 회의에서 말이 길어졌다) — 모자라면
+        # 접혀서 날짜만 아랫줄로 떨어진다.
         _ReportSheet(wb.create_sheet(f"{tag} 반응"),
-                     [12, 14, 12, 26, 26, 26, 10],
+                     [12, 14, 12, 26, 26, 36, 10],
                      7 if team_wide else 6),
         data, team_wide)
 

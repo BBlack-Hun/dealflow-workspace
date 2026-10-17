@@ -74,9 +74,10 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   function isRemind() { return mode === "sourcing" && sourcingTopic === REMIND; }
   function isShare() { return mode === "sourcing" && sourcingTopic === SHARE; }
   // 이 카드는 지금 **보낼 수 없는** 사람인가 — 리마인드에서 이 달 딜 받음이고,
-  // 포함을 켜지 않았다. 또는 화면을 연 뒤에 딜 소싱 `불참여` 가 되었다
-  // (`data-out` — 명단을 다시 읽을 때 선다). 불참여는 처음 안내도 리마인드도
-  // 안 나간다 — 켜는 칸이 없다(서버도 막는다: `routers/deals.py` 의 `OUT_NOTE`).
+  // 포함을 켜지 않았다. 또는 화면을 연 뒤에 딜 소싱 `참여` 가 아닌 값(불참여 ·
+  // 참여 의사를 물어보는 중 · 사람이 적은 문구)이 되었다(`data-out` — 명단을 다시
+  // 읽을 때 선다). 그런 분께는 어떤 글도 안 나간다 — 켜는 칸이 없다(서버도 막는다:
+  // `routers/deals.py` 의 `_not_taking_part`).
   function isExcluded(card) {
     if (!card) return false;
     if (card.getAttribute("data-out") === "1") return true;
@@ -824,7 +825,8 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       if (!row) return;
       var who = row.assignee || "";
       var got = row.received ? "1" : "0";
-      // 그 사이 `불참여` 가 된 분(딜 소싱 화면 · 투자사 관리 현황의 X).
+      // 그 사이 받지 않는 분이 된 줄 — 불참여(딜 소싱 화면 · 투자사 관리 현황의 X)
+      // 또는 참여 확인 전(물어보는 중 · 문구). 딱지 글자는 서버가 짓는다(`out_label`).
       var out = row.out ? "1" : "0";
       if (card.getAttribute("data-assignee") !== who ||
           card.getAttribute("data-received") !== got ||
@@ -833,7 +835,10 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       card.setAttribute("data-received", got);
       card.setAttribute("data-out", out);
       var outTag = card.querySelector(".out-tag");
-      if (outTag) outTag.hidden = !row.out;
+      if (outTag) {
+        outTag.hidden = !row.out;
+        if (row.out && row.out_label) outTag.textContent = row.out_label;
+      }
       var tag = card.querySelector(".received-tag");
       if (tag) {
         tag.hidden = !row.received;

@@ -63,6 +63,11 @@ MENU = [
      "needs": "consulting"},
     {"key": "report", "label": "업무 보고", "href": "/report", "ready": True},
     {"key": "admin", "label": "팀 현황", "href": "/team", "ready": True, "admin_only": True},
+    # 분야 기준 목록(#2) — IR 기업 현황의 대분류·소분류를 기준 말로 두고, 그 말로
+    # IR 기업 현황과 투자사 선호분야를 정리하는 자리. 이름 하나를 바꾸면 팀 전체의
+    # 값이 같이 바뀌므로 관리자만이다(`routers/taxonomy.py`).
+    {"key": "taxonomy", "label": "분야 기준 목록", "href": "/taxonomy", "ready": True,
+     "admin_only": True},
 ]
 
 

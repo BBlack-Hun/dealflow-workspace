@@ -69,6 +69,24 @@ STATUS_LABELS = {
     "done": "완료",
 }
 
+#: [답 옴] 을 눌렀을 때 시퀀스에 적는 사유(`SendSequence.stopped_reason` — **글자로
+#: 저장되는 값**이다). 10/17 회의(#44)에서 `답을 받았습니다` → `카톡에서 답을
+#: 받았습니다` 로 바뀌었다 — 답이 카톡으로 왔다는 것을 사람이 알려 준 것이라
+#: (IR 요청·미팅 기록으로 앱이 스스로 멈춘 것과 구별된다).
+REPLIED_REASON = "카톡에서 답을 받았습니다"
+
+#: **이미 저장된 옛 사유 → 화면에 보일 말.** DB 를 고쳐 쓰지 않고 보일 때만
+#: 바꾼다 — 지난 줄을 이주로 덮으면 언제 어떤 말로 적혔는지가 사라지고, 되돌린
+#: 이미지로 돌아가도 화면이 깨지지 않는다. 새로 적는 줄은 처음부터 새 말이다
+#: (`REPLIED_REASON`).
+REASON_DISPLAY = {"답을 받았습니다": REPLIED_REASON}
+
+
+def reason_label(reason: Optional[str]) -> str:
+    """저장된 멈춤 사유를 **화면에 보일 말**로. 모르는 사유는 적힌 그대로다."""
+    text = reason or ""
+    return REASON_DISPLAY.get(text.strip(), text)
+
 # 규칙이 하나도 없을 때 쓸 기본값. 부트스트랩이 DB 에 넣지만,
 # 규칙이 지워져도 화면이 죽지는 않아야 한다.
 DEFAULT_RULES = {
@@ -568,7 +586,8 @@ def sequence_rows(db: Session, user_id: int,
             # 언제 보냈는지" 를 이 값으로 적는다 — 딜소개일(`day1`)을 적으면
             # 사흘을 어디서부터 셌는지가 화면에서 안 맞아 보인다.
             "last_sent": (seq.last_sent_at or "")[:10],
-            "reason": seq.stopped_reason or "",
+            # 옛 사유는 보일 때 새 말로(`reason_label`) — DB 값은 그대로다.
+            "reason": reason_label(seq.stopped_reason),
         })
     return out
 

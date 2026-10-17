@@ -456,6 +456,13 @@
     {% if page.investors %}
     <button type="button" class="secondary-btn" id="import-btn">현황 업로드</button>
     {% endif %}
+    {# **소유 펀드 업로드**(#1) — 외부 조사로 모은 회사별 소유 펀드를 한 번에
+       넣는다. 회사 단위 값을 팀 전체 줄에 걸쳐 바꾸는 일이라 **관리자만**이다
+       (서버도 같은 판정 — `routers/data_io.import_owned_funds`). 팀원은 줄에서
+       칸을 눌러 한 회사씩 적는다. #}
+    {% if page.investors and user.role == 'admin' %}
+    <button type="button" class="secondary-btn" id="funds-btn">소유 펀드 업로드</button>
+    {% endif %}
     {#
       [방 연결 확인] 은 **투자사 화면만의 것이 아니게 됐다** — 스타트업 명단에도
       이제 각자 안내 카톡을 보내고(`ListPage.msg_href`), 그 방도 확인해야
@@ -558,6 +565,28 @@
     <button type="button" class="primary-btn inline" id="import-apply" disabled>반영하기</button>
   </div>
   <div id="import-result" class="import-result"></div>
+</section>
+{% endif %}
+
+<!-- 소유 펀드 업로드 — 미리보기(맞춘 회사 / 못 맞춘 이름)로 본 뒤, 확인을 받고
+     회사마다 값을 바꾼다. 여는 단추와 같은 조건으로 세운다(위 업로드와 같은 이유). -->
+{% if page.investors and user.role == 'admin' %}
+<section class="panel import-panel" id="funds-panel" hidden>
+  <h2 class="panel-title">소유 펀드 업로드 (회사 단위)
+    <button type="button" class="linkbtn" id="funds-close">닫기 ✕</button>
+  </h2>
+  <p class="hint">
+    <b>투자사명</b>·<b>소유 펀드</b> 두 칸짜리 표를 올립니다.
+    <a href="/api/sample/owned-funds.xlsx" download><b>양식 내려받기</b></a>
+    — 투자사명은 <code>(주)</code>·띄어쓰기·대소문자를 빼고 이 명단의 회사에 맞춥니다.
+    맞춘 회사는 <b>회사마다 값을 통째로 바꾸고</b>, 못 맞춘 이름과 빈 칸은 넣지 않습니다.
+  </p>
+  <div class="import-controls">
+    <input type="file" id="funds-file" accept=".xlsx,.xlsm,.csv">
+    <button type="button" class="secondary-btn" id="funds-preview">미리보기</button>
+    <button type="button" class="primary-btn inline" id="funds-apply" disabled>반영하기</button>
+  </div>
+  <div id="funds-result" class="import-result"></div>
 </section>
 {% endif %}
 
@@ -718,14 +747,20 @@
            갈래에 이 분이 있나(`services/sourcing_sync.py`). 원본 시트에는 없는,
            앱이 만든 칸이다.
 
-               O     이어진 소싱 줄이 있고 `참여`
+               O     이어진 소싱 줄이 있고 `불참여` 가 아님 — **갈래에 들어 있다**
+                     (`참여` · 제안 대기중 · 물어보는 중 · 사람이 적은 문구)
                X     이어진 소싱 줄이 있고 `불참여`(딜 소싱 제안에서 빠진다)
                빈칸  그 갈래에 없음
 
+           O 는 동의가 아니다 — 딜 소싱 제안이 나가는 것은 딜 소싱 화면의 `참여`
+           칸이 정확히 `참여` 인 분뿐이다(`sourcing_sync.takes_part`).
+
            **이 줄에 저장되는 값이 아니다.** 이어진 소싱 줄을 읽어 그린다 — 딜
            소싱 화면에서 참여를 바꾸면 여기도 그대로 바뀐다. 여기서 O 를 넣으면
-           그 갈래에서 같은 분을 찾아 잇고(번호 → 이름+회사), 없으면 새 줄을
-           만든다. X 는 그 줄을 `불참여` 로 둘 뿐 **지우지 않는다**.
+           그 갈래에서 같은 분을 찾아 잇고(이름 + 번호), 없으면 새 줄을
+           `딜 소싱 참여 제안 대기중` 으로 만든다. `불참여` 인 줄에 O 를 넣으면 다시
+           묻는 것으로 보아 `제안 대기중` 으로 되돌린다. X 는 그 줄을 `불참여` 로 둘
+           뿐 **지우지 않는다**.
 
            이름에 `Series A` 를 단 이유: 바로 앞 시트 칸 `딜소싱 참여 투자사` 는
            자유 글 칸이라, `딜 소싱` 만 적으면 둘 중 어느 것이 이어진 칸인지
@@ -763,6 +798,14 @@
            인데 키가 `stage`(선호 단계) 였다 — 값이 0개인 다른 칸을 보고 있어서
            표에는 52줄이 보이는데 필터를 열면 늘 빈 목록이었다. #}
         <th style="width:204px" data-filters="round:라운드 사이즈(투자운영금액)">라운드 사이즈(투자운영금액)<div class="th-filters"></div></th>
+        {# **소유 펀드** — 회사 단위 값이다(#1 · `services/investor_firms.py`).
+           이 줄이 아니라 이 줄의 **회사**에 적힌다 — 한 줄에서 고치면 같은 회사
+           (정규화한 회사명)의 모든 사람 줄에 같은 값이 선다(`contacts.js` 의
+           `syncFirmFunds`). 원본 시트에 없는 앱 칸이지만 `라운드 사이즈` 바로
+           오른쪽에 둔다(사용자 결정 2026-10-17) — 둘 다 그 투자사가 굴리는 돈의
+           이야기라 나란히 읽힌다. 필터는 안 단다(펀드 이름은 회사마다 달라 고를
+           거리가 못 된다). 폭 160px 만큼 `#contacts-table` min-width 도 올렸다. #}
+        <th style="width:160px">소유 펀드</th>
         {# 컬럼 이름은 **원본 시트 그대로** 쓴다 — 시트와 나란히 놓고 대조한다.
            이 표에서 가장 긴 이름(40자)이라 폭을 여기서만은 **데이터가 아니라
            이름에 맞춘다.** 값은 306줄 중 3줄뿐이고 전부 `O` 라 데이터만 보면
@@ -869,6 +912,7 @@
           data-f-sourcing_date="{{ r.sourcing_requested_at }}"
           data-search="{{ (r.name ~ ' ' ~ (r.firm or '') ~ ' ' ~ (r.title or '') ~ ' ' ~ (r.department or ''))|lower }}"
           data-f-round="{{ r.round_size }}"
+          data-firm-key="{{ r.firm_key }}"
           data-f-sector="{{ r.sectors|join('|') }}"
           data-f-dealstage="{{ r.deal_stage_label }}">
         {% if pool_view %}
@@ -917,13 +961,21 @@
            `sourcing_requested_at` 으로 다시 그린다(`contacts.js` — O 로 새 줄이 생기면
            그날이 선다). #}
         <td class="sourcing-requested" title="{{ r.sourcing_requested_at }}">{{ r.sourcing_requested_at }}</td>
+        {# `data-type="sectors"` — **분야 기준 목록에서 여러 개 고른다**(#2 ·
+           `sector_picker.js`). 자유 글로 적던 칸이라 목록 밖 옛 값이 남아 있을 수
+           있다 — 고르는 창이 그 값을 지우지 않고 `목록 밖 값` 으로 보여 준다. #}
         <td title="{{ r.sectors|join(', ') }}">
-          <div class="cell clamp2" data-field="sectors" data-type="long"
+          <div class="cell clamp2" data-field="sectors" data-type="sectors"
                data-filter-key="sector" data-filter-sep=",">{{ r.sectors|join(', ') }}</div>
         </td>
         <td title="{{ r.round_size }}">
           <div class="cell clamp2" data-field="round_size" data-type="long"
                data-filter-key="round">{{ r.round_size }}</div>
+        </td>
+        {# `소유 펀드` — 회사 단위(머리글 주석). 저장 뒤 같은 회사의 줄이 그 자리에서
+           따라 바뀐다(`contacts.js` 의 `syncFirmFunds`). #}
+        <td title="{{ r.owned_funds }}">
+          <div class="cell clamp2" data-field="owned_funds" data-type="long">{{ r.owned_funds }}</div>
         </td>
         <td title="{{ r.tips_note }}">
           <div class="cell clamp2" data-field="tips_note" data-type="long">{{ r.tips_note }}</div>
@@ -1241,6 +1293,10 @@
 
        값이 하나도 없으면 빈 목록이고, 그때 메일 칸은 그냥 보통 글자 칸이다. #}
     <div id="opts-email-domain" hidden data-domains='{{ email_domains|tojson }}'></div>
+    {# **분야 기준 목록** — 선호 투자분야를 고르는 자리가 읽는다(`sector_picker.js`).
+       글자를 화면에 적지 않고 서버가 넘긴 목록 하나를 쓴다(`taxonomy.picker_tree`)
+       — 관리자가 목록을 고치면 다음 화면부터 그대로 따라온다. #}
+    <div id="sector-taxonomy" hidden data-tree='{{ sector_tree|tojson }}'></div>
     {#
       ── 명단이 정한 칸으로 세우는 수정창 ────────────────────────────────────
 
@@ -1286,6 +1342,7 @@
                {% if c.source == 'note' %}id="f-note-{{ c.key }}" data-note="{{ c.key }}"
                {% else %}id="f-{{ c.key }}"{% endif %}
                {% if c.kind == 'email' %}data-email-hint{% endif %}
+               {% if c.kind == 'sectors' %}data-sector-picker{% endif %}
                {% if c.choices %}list="opts-panel-{{ c.key }}"{% endif %}
                {% if c.hint %}placeholder="{{ c.hint }}"
                {% elif c.choices %}placeholder="고르거나 새로 적습니다"{% endif %}>
@@ -1462,9 +1519,17 @@
          저장 자리는 `stages` 그대로다. 안내 자리는 아래 칸들과 통일한다. #}
       <label class="field"><span>선호 투자단계</span>
         <input type="text" id="f-stages" placeholder="Seed, SeriesA — 쉼표로 구분"></label>
+      {# **분야 기준 목록에서 고른다**(#2) — 칸은 읽기만 하고 [목록에서 고르기] 가
+         펼친다(`sector_picker.js`). 표 칸과 같은 부품이다. #}
       <label class="field"><span>선호 투자분야</span>
-        <input type="text" id="f-sectors" placeholder="AI, 헬스케어 — 쉼표로 구분"></label>
+        <input type="text" id="f-sectors" data-sector-picker
+               placeholder="목록에서 고릅니다 — 여러 개 고를 수 있습니다"></label>
       <label class="field wide"><span>라운드 사이즈(투자운영금액)</span><input type="text" id="f-round_size"></label>
+      {# 회사 단위 값(#1) — 이 창에서 고쳐도 같은 회사의 모든 줄에 같은 값이 선다.
+         이름은 표 머리글과 한 글자도 다르지 않게(`tests/test_ui_layout.py`). #}
+      <label class="field wide"><span>소유 펀드</span>
+        <input type="text" id="f-owned_funds"
+               placeholder="회사 단위 — 같은 회사의 모든 줄에 같은 값이 보입니다"></label>
       {# `data-email-hint` — `@` 까지 치면 도메인 후보가 뜬다. 재 보니 이 명단의
          주소 753개가 도메인 503가지인데 **절반 가까운 347개**가 두 번 이상 쓰인
          도메인이다(`services/email_domains.py` 에 근거가 적혀 있다). 주소 자체는
@@ -1685,6 +1750,9 @@ window.DEALFLOW_ADD_ROW = {{ (add_row or none)|tojson }};</script>
 {# 메일 칸의 도메인 후보. `inline_edit.js` 가 표 칸에서 이 부품을 쓰므로
    **먼저** 실려야 한다 — 없으면 표 쪽만 조용히 후보 없는 칸이 된다. #}
 <script src="{{ asset('js/email_hint.js') }}"></script>
+{# 선호 투자분야 고르기 부품 — 표 칸(`inline_edit.js`)과 수정창이 함께 쓰므로
+   그 둘보다 먼저 싣는다. 고를 거리는 `#sector-taxonomy` 에서 읽는다. #}
+<script src="{{ asset('js/sector_picker.js') }}"></script>
 <script src="{{ asset('js/inline_edit.js') }}"></script>
 <script src="{{ asset('js/pool_assign.js') }}"></script>
 {# 감춘 줄 골라 지우기. 막대가 없으면(평소 화면) 아무 일도 하지 않는다. #}
@@ -1703,6 +1771,7 @@ window.DEALFLOW_ADD_ROW = {{ (add_row or none)|tojson }};</script>
    불러올 때 `window.IrLinkBadge` 를 찾는다. #}
 {% if page.ir_link_href %}<script src="{{ asset('js/ir_link_badge.js') }}"></script>{% endif %}
 <script src="{{ asset('js/contacts.js') }}"></script>
+{% if page.investors and user.role == 'admin' %}<script src="{{ asset('js/owned_funds_upload.js') }}"></script>{% endif %}
 {# 업로드 패널을 안 세우는 화면에서는 스크립트도 부르지 않는다 — 없는 칸을
    찾다 콘솔에 오류만 남기고, 그 오류가 진짜 고장을 덮는다. #}
 {% if page.investors %}<script src="{{ asset('js/contact_import.js') }}"></script>{% endif %}

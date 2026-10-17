@@ -13,6 +13,11 @@
     // 만든다(`services/sourcing_sync.py`). 빈칸은 '바꾸지 않음' 이다.
     // 고칠 때는 **사람이 이 칸을 바꿨을 때만** 보낸다(`save` 의 `openedJoin`).
     "sourcing_join",
+    // `소유 펀드` — **회사 단위 값**이다(`services/investor_firms.py`). 이 줄이
+    // 아니라 이 줄의 회사에 적히므로 `Series A 딜 소싱` 처럼 **바꿨을 때만**
+    // 보낸다(`save` 의 `openedFunds`) — 회사명을 고치는 저장에 옛 회사의 값이
+    // 딸려 가 새 회사에 적히면 안 된다.
+    "owned_funds",
     "assignee_name", "department", "office_phone", "office_fax",
     "address", "card_registered_at", "interest_level",
     // 연결 상태. `<select>` 라 값 읽기·쓰기는 다른 칸과 같다.
@@ -46,6 +51,8 @@
   // 사이 딜 소싱에서 일어난 일(불참여로 바꿈 · 줄 삭제 · 저절로 이어짐)을
   // 되돌리거나 400 으로 다른 칸 수정까지 버린다(PR #284 리뷰).
   var openedJoin = null;
+  // 창을 열 때 읽은 `소유 펀드`(위 FIELDS 의 그 칸 주석).
+  var openedFunds = null;
   var filters = null;
 
   function esc(s) {
@@ -205,6 +212,10 @@
   function fillForm(c) {
     FIELDS.forEach(function (f) { if (el("f-" + f)) el("f-" + f).value = c[f] || ""; });
     openedJoin = el("f-sourcing_join") ? el("f-sourcing_join").value.trim() : null;
+    openedFunds = el("f-owned_funds") ? el("f-owned_funds").value.trim() : null;
+    // 선호 투자분야 고르기 목록을 펼쳐 둔 채 줄을 바꾸면 앞 사람의 체크가 남아
+    // 보인다 — 접어 두고, 다시 펼치면 이 줄의 값으로 세운다(`sector_picker.js`).
+    if (window.DealflowSectorPicker) window.DealflowSectorPicker.closeAll();
     // 명단이 정한 칸만 그려지므로 없는 칸이 있다 — 없으면 건너뛴다.
     // 여기서 그냥 두면 스타트업 명단을 열자마자 창이 통째로 안 채워진다.
     CHECKS.forEach(function (f) { if (el("f-" + f)) el("f-" + f).checked = !!c[f]; });
@@ -411,6 +422,11 @@
     // 그대로 다 보낸다 — 줄에 저장되는 값이라 다시 적어도 같은 값이다.
     if (current && "sourcing_join" in body && body.sourcing_join === openedJoin) {
       delete body.sourcing_join;
+    }
+    // `소유 펀드` 도 **바꿨을 때만**(위 `openedFunds`). 새로 넣는 줄은 빈 칸에서
+    // 시작하므로 적었으면 실린다.
+    if ("owned_funds" in body && body.owned_funds === (openedFunds || "")) {
+      delete body.owned_funds;
     }
     var url = current ? "/api/contacts/" + current : "/api/contacts";
     fetch(url, {
@@ -705,6 +721,27 @@
     }
   }
   if (table) table.addEventListener("inline-saved", syncRoomCells);
+
+  // `소유 펀드` — **같은 회사의 다른 줄도 그 자리에서** 바꾼다(#1).
+  //
+  // 값은 회사 단위라(`services/investor_firms.py`) 한 줄에서 고치면 같은 회사의
+  // 모든 줄이 같은 값이다. 새로고침해야 옆 줄이 바뀌면 그 사이 표가 서로 다른
+  // 말을 한다. 같은 회사인지는 서버가 지은 열쇠(`data-firm-key`)로 가른다 —
+  // 화면에서 회사명을 다시 정규화하면 규칙이 두 벌이 된다.
+  function syncFirmFunds(e) {
+    var data = (e && e.detail && e.detail.data) || {};
+    if (!("owned_funds" in data) || !data.firm_key || !table) return;
+    table.querySelectorAll("tr[data-firm-key]").forEach(function (tr) {
+      if (tr.getAttribute("data-firm-key") !== data.firm_key) return;
+      var cell = tr.querySelector('.cell[data-field="owned_funds"]');
+      if (!cell) return;
+      cell.textContent = data.owned_funds;
+      if (cell.parentNode && cell.parentNode.tagName === "TD") {
+        cell.parentNode.setAttribute("title", data.owned_funds);
+      }
+    });
+  }
+  if (table) table.addEventListener("inline-saved", syncFirmFunds);
 
   if (window.DealflowFilters && table) {
     // 검색은 컬럼 필터와 **AND** 로 묶는다 — 둘이 서로 tr.hidden 을 덮어쓰면

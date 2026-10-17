@@ -243,6 +243,11 @@ class VcContact(TimestampMixin, Base):
     room_candidates: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     stages: Mapped[Optional[str]] = mapped_column(String, nullable=True)   # CSV: Seed,SeriesA
     sectors: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # CSV: AI,헬스케어
+    # `sectors` 의 **원래 글** — 분야를 기준 목록 말로 다시 매기기 전에 한 번만
+    # 적는다(`services/pref_sectors.py` · `services/taxonomy.backup_once`).
+    # NULL 이면 아직 손댄 적이 없다는 뜻이고, 한 번 적힌 뒤로는 다시 돌려도
+    # 덮지 않는다 — 두 번째 판의 '원래 값' 은 이미 첫 판이 고친 값이다.
+    sectors_raw: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String, default="active")  # active | no_response | paused
     department: Mapped[Optional[str]] = mapped_column(String, nullable=True)   # 부서
     # 카톡방까지 연결됐는가. 발송 대상이 되기 전 단계를 여기서 관리한다.
@@ -506,6 +511,12 @@ class IrCompany(TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String)
     sector_major: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     sector_minor: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # 대분류·소분류의 **원래 값** — 분야 기준 목록으로 정리하기 전에 한 번만
+    # 적는다(`services/ir_sector_cleanup.py` · `services/taxonomy.backup_once`).
+    # NULL = 아직 손댄 적 없음, `""` = 손대기 전에 비어 있었음. 다시 돌려도
+    # 덮지 않는다.
+    sector_major_raw: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    sector_minor_raw: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     series: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     # IR 기업 현황의 **`딜 소개 문구`**(예전 이름 `딜 소개 문구 회사개요`).
     # 딜소개에 그대로 실려 나가는 회사 개요 한 줄이다.
@@ -2983,3 +2994,114 @@ class SenderRoom(TimestampMixin, Base):
     candidates: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     #: 마지막으로 찾아본 시각. 비어 있으면 아직 안 찾아봤다.
     checked_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+
+class SectorTerm(TimestampMixin, Base):
+    """**분야 기준 목록**의 한 줄 — 대분류(`parent_id` 가 빈 줄) 또는 소분류.
+
+    IR 기업 현황의 `대분류`·`소분류` 와 투자사의 `선호 투자분야` 가 **같은
+    말**을 쓰게 하려는 목록이다(사용자 결정 2026-10-17 — IR 기업 현황의 말이
+    기준). 관리자가 `분야 기준 목록` 화면에서 다룬다(`routers/taxonomy.py`).
+
+    **지우지 않는다.** 줄을 지우면 그 이름을 쓰던 값이 어디로 가야 하는지가
+    사라진다. 대신 숨기고(`is_hidden`), 합친 줄은 숨긴 채로 **어디로 합쳤는지**
+    (`merged_into_id`)를 남긴다 — 정리 화면이 옛 이름(`신약개` · `뷰티`)을 만나면
+    그 화살표를 따라 기준 이름으로 바꾼다(`services/taxonomy.Resolver`).
+
+    이름은 적힌 그대로 두고, 같은 말인지는 **가운뎃점·공백·대소문자를 지운
+    꼴**로 견준다(`services/taxonomy.norm`).
+    """
+
+    __tablename__ = "sector_terms"
+    __table_args__ = (
+        Index("ix_sector_terms_parent", "parent_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    #: 비어 있으면 대분류, 있으면 그 대분류 아래 소분류.
+    parent_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("sector_terms.id"), nullable=True)
+    name: Mapped[str] = mapped_column(String)
+    #: 같은 부모 안에서의 차례(작을수록 위).
+    position: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    #: 1 이면 고를 거리에서 빠진다. 값은 그대로다(지우는 것이 아니다).
+    is_hidden: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    #: 다른 줄로 **합쳐졌다**면 그 줄. 합친 줄은 늘 숨김이다.
+    merged_into_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("sector_terms.id"), nullable=True)
+
+
+class InvestorFirm(TimestampMixin, Base):
+    """투자사 **회사 단위** 값 — 지금은 `소유 펀드` 하나다(개선 과제 #1).
+
+    투자사 관리 현황은 **사람 줄**이다(`VcContact`). 같은 회사의 심사역이
+    여럿이면 줄도 여럿인데, 회사가 가진 펀드는 사람마다 다를 수가 없다. 사람
+    줄에 칸을 두면 한 줄만 고쳐지고 나머지는 옛 값으로 남는다. 그래서 회사
+    하나에 줄 하나를 두고, 사람 줄은 회사명으로 이 줄을 찾아 **같은 값을 보여
+    준다**(`services/investor_firms.py`).
+
+    회사를 가리키는 열쇠는 **정규화한 회사명**이다(`firm_key` — `(주)`·띄어쓰기·
+    대소문자를 지운 꼴, 딜 기업을 맞추는 `deal_history._key` 와 같은 규칙).
+    사람 줄에 회사 번호 칸을 새로 두지 않은 까닭: 시트 가져오기 · 화면 수정 ·
+    이관이 모두 `firm` 글자를 고치는 길이라, 번호를 따로 두면 글자와 번호가
+    갈리는 날이 온다. 글자에서 열쇠를 그때그때 지으면 갈릴 자리가 없다.
+    """
+
+    __tablename__ = "investor_firms"
+    __table_args__ = (
+        UniqueConstraint("firm_key", name="uq_investor_firms_firm_key"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    #: 정규화한 회사명. 사람 줄의 `firm` 에서 같은 규칙으로 지어 맞춘다.
+    firm_key: Mapped[str] = mapped_column(String)
+    #: 화면에 부르는 이름 — 처음 적힌 회사명 그대로.
+    display_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: 소유 펀드. 자유 글(펀드 이름 여럿을 쉼표로 적는다).
+    owned_funds: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    #: 마지막으로 고친 사람(언제는 `updated_at`).
+    updated_by: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id"), nullable=True)
+
+
+class DealFollowup(TimestampMixin, Base):
+    """**리마인드를 보냈는데 답이 없다 — 전화가 필요하다** 는 표시와 메모.
+
+    10/17 회의(#37): 리마인드 카톡을 보낸 뒤 팀원·담당자가 확인해서 답이 없으면
+    `답 없음 · 전화 필요` 를 켜고, 들은 것·할 것을 메모로 남긴다. 켜 두면 그
+    담당 팀원의 오늘 할 일에 `전화 필요` 로 선다(`services/call_flags.py`).
+
+    ## 왜 **담당자(투자사 사람) 한 명에 한 줄**인가
+
+    딜 진행 관리에서 리마인드가 나가는 흐름은 셋이고(딜소개 후속 사다리 ·
+    IR 자료 전달 뒤 미팅 요청 · 미팅 뒤 결과 문의), 줄은 각자 다른 표에 선다
+    (`send_sequences` · `ir_requests` · `meetings`). 그런데 "답이 없어 전화해야
+    한다" 는 **그 사람**에 대한 말이다 — 세 표에 따로 두면 한 사람에게 표시가
+    셋 생기고, 하나를 끄면 나머지가 남는다. 그래서 사람 하나에 한 줄을 두고,
+    그 사람의 줄이 서는 자리마다 같은 배지를 단다.
+
+    ## 누가 언제
+
+    켜고 끈 사람·때(`call_by`·`call_at`), 메모를 마지막으로 적은 사람·때
+    (`memo_by`·`memo_at`)를 줄에 바로 적는다 — 화면 배지가 그대로 읽는다.
+    수정 로그(`edit_log`)에 따로 남기지 않는 까닭은 `edit_log.UNWATCHED` 에.
+
+    **아무것도 보내지 않는다.** 전화는 사람이 건다 — 이 줄은 할 일 표시다.
+    """
+
+    __tablename__ = "deal_followups"
+    __table_args__ = (
+        UniqueConstraint("contact_id", name="uq_deal_followups_contact"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    contact_id: Mapped[int] = mapped_column(ForeignKey("vc_contacts.id"))
+    #: 1 이면 `답 없음 · 전화 필요` 가 켜져 있다.
+    call_needed: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    #: 마지막으로 켜거나 끈 사람과 그 시각.
+    call_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    call_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: 메모 — 통화 메모·답 상황. 비우면 지워진다.
+    memo: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    memo_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    memo_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)

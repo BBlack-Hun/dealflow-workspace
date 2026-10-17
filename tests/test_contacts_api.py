@@ -656,6 +656,12 @@ def test_the_detail_panel_can_read_and_write_every_table_column():
         detail.add("sourcing_join")
     if "sourcing = _sourcing_mark(db, contact, body, user)" in py:
         saved.add("sourcing_join")
+    # `소유 펀드` 도 **이 줄에 저장되지 않는 칸**이다 — 회사 단위 값이라 회사 표에서
+    # 읽고(`investor_firms.funds_of`) 회사 표를 고친다(`_owned_funds`).
+    if '"owned_funds": investor_firms.funds_of(db, contact.firm)' in py:
+        detail.add("owned_funds")
+    if "_owned_funds(db, contact, body, user)" in py:
+        saved.add("owned_funds")
 
     assert not table - panel, f"창에 칸이 없다: {sorted(table - panel)}"
     assert not table - fields, f"JS 목록에 없어 안 채워진다: {sorted(table - fields)}"

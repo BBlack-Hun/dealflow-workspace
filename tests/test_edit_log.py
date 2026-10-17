@@ -540,6 +540,13 @@ WRITE_ROUTES = {
     # 적히는 길이라 갈래는 보는 쪽이다. 손으로 적는 쪽은 아래
     # `/api/deals/manual-sends` 이고 그쪽은 실제로 줄마다 남는다.
     ("POST", "/ir/contacts/{contact_id}/meeting-asked"): WATCHED,
+    # 리마인드 뒤 `답 없음 · 전화 필요` 켜고 끄기 · 메모(10/17 회의 #37). 관리자와
+    # 그 투자사의 줄을 가진 팀원도 닿는 길이라(`call_flags.may_edit`) 갈래는 보는
+    # 쪽이다. 표(`deal_followups`)는 **누가 언제를 줄 자체가 적어서** 로그에는
+    # 따로 안 남긴다(`edit_log.UNWATCHED` 의 그 표 설명) — `/ir/deliver-guide` 처럼
+    # 공용 화면의 길이라 이 갈래에 선다.
+    ("POST", "/ir/contacts/{contact_id}/call-needed"): WATCHED,
+    ("POST", "/ir/contacts/{contact_id}/call-memo"): WATCHED,
     ("POST", "/ir/meetings"): WATCHED,
 
     # 손으로 보낸 것을 적는 길. **묶음 입력이 남의 담당자 줄에도 닿고**
@@ -680,6 +687,18 @@ WRITE_ROUTES = {
 
     # 시트 가져오기 — 남의 명단까지 통째로 갈아 끼운다.
     ("POST", "/api/import/contacts"): WATCHED,
+    # 소유 펀드(회사 단위 · #1) 엑셀 넣기 — 관리자가 팀 전체 회사의 값을 한 판에
+    # 바꾼다. 회사 표(`investor_firms`)는 공용이라 회사마다 남는다.
+    ("POST", "/api/import/owned-funds"): WATCHED,
+    # 분야 기준 목록(#2 · #30, 관리자) — 목록 한 줄을 고치면 그 말을 쓰는 IR 기업
+    # 현황 값과 투자사 선호분야 값이 함께 바뀐다. 셋 다 보는 표(공용 · 남의 것)다.
+    ("POST", "/api/taxonomy/terms"): WATCHED,
+    ("POST", "/api/taxonomy/terms/{term_id}/{op}"): WATCHED,
+    ("POST", "/api/taxonomy/ir-cleanup"): WATCHED,
+    ("POST", "/api/taxonomy/pref-sectors"): WATCHED,
+    # 이름 바꾸기 · 합치기 · 옮기기의 **미리보기** — 몇 줄이 바뀌는지 세기만 한다.
+    # POST 인 것은 새 이름 · 합칠 곳을 몸에 실어 보내서다. 아무것도 안 쓴다.
+    ("POST", "/api/taxonomy/terms/{term_id}/preview/{op}"): SELF,
     # 발송 날짜 규칙은 팀 전체의 일정이다.
     ("POST", "/followups/rules/{key}"): WATCHED,
     # `IR 요청 투자사` 표에서 줄 하나 지우기. 자기 줄만 지울 수 있지만
@@ -821,7 +840,8 @@ def test_the_six_shared_routers_still_hold_the_forty_nine_paths(portal):
     # contacts 는 명단 라우터 16 + 참고 자료 6 이다(참고 자료는 주소에 접두가
     # 없어 파일만 같이 쓴다). 15번째가 감춘 줄 한꺼번에 지우기(`/bulk-delete`),
     # 16번째가 관리자의 탭 지우기(`/sheets/delete`)다.
-    # ir 의 12번째는 미팅 요청을 손으로 보냈다고 적는 자리다.
+    # ir 의 12번째는 미팅 요청을 손으로 보냈다고 적는 자리다. 13 · 14번째는
+    # 리마인드 뒤 `답 없음 · 전화 필요` 켜고 끄기와 그 메모다(10/17 회의 #37).
     #
     # **`consulting` 의 아홉 번째는 주소가 `/api/contacts/from-consulting` 이다**
     # — 여기서 세는 것은 주소가 아니라 **그 길을 담고 있는 파일**이라
@@ -842,7 +862,7 @@ def test_the_six_shared_routers_still_hold_the_forty_nine_paths(portal):
     # 올리기](`/api/import/series-a-pitch` — 파일로 `딜소개 문구` 칸만 채운다).
     # templates_crud 의 6 · 7번째는 관리자의 [모든 팀원에게 적용] 과 그
     # [되돌리기]다(`services/template_apply.py`).
-    assert counted == {"companies": 8, "ir": 12, "consulting": 9,
+    assert counted == {"companies": 8, "ir": 14, "consulting": 9,
                        "templates_crud": 7, "sourcing": 10, "contacts": 22,
                        "series_a": 5}
 

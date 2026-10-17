@@ -99,7 +99,8 @@
        받는 사람으로 미리 골라져 있다(`?contacts=…`). 받는 분은 표 맨 왼쪽
        체크박스로 고른다(머리글 체크 = 지금 보이는 줄 모두). **아무도 안
        골랐으면 단추가 잠긴다** — 보이는 줄 전부로 슬쩍 대신하지 않는다. 체크한
-       불참여 분은 싣지 않고 몇 명 뺐는지 옆에 적는다. 이 갈래에서만 선다
+       분 중 `참여` 가 아닌 분(불참여 · 참여 의사를 물어보는 중 · 사람이 적은 문구)은
+       싣지 않고 불참여 · 확인 전을 나눠 몇 명 뺐는지 옆에 적는다. 이 갈래에서만 선다
        (`series_a_share.BUCKET`). #}
     {% if share_tab %}
     <a class="primary-btn inline" id="sourcing-share-btn" data-testid="sourcing-share-btn"
@@ -166,8 +167,11 @@
          값이라야 두 화면이 같은 사람을 고른다. 고친 뒤에는 서버가 돌려준 값으로
          다시 적는다(아래 `inline-saved`).
          `data-no-room` 은 이 줄이 `방 없음` 이라는 표시다(`no_room`) — 툴바
-         [방 후보 찾기]는 체크한 줄 중 이 표시가 있는 줄만 싣는다. #}
+         [방 후보 찾기]는 체크한 줄 중 이 표시가 있는 줄만 싣는다.
+         `data-part-kind` 는 `참여` 칸의 갈래(`joined` · `left` · `pending` —
+         `sourcing_sync.kind_of`). [Series A 딜 소개]가 이것으로 빼고 센다. #}
       <tr data-id="{{ r.id }}"{% if r.id in no_room %} data-no-room{% endif %}
+          data-part-kind="{{ part_kind[r.id] }}"
           data-search="{{ (r.name ~ ' ' ~ (r.firm or '') ~ ' ' ~ (r.memo or '') ~ ' ' ~ (r.title or ''))|lower }}"
           {% for field, label, width, filterable in columns if filterable %}data-f-{{ field }}="{{ (assignees.get(r.id) if field == 'assignee_name' else requested[r.id] if field == 'requested_at' else r|attr(field)) or '' }}" {% endfor %}>
         <td class="pick-col"><input type="checkbox" class="js-sourcing-pick" value="{{ r.id }}"
@@ -250,11 +254,17 @@
                data-vc-picks='{{ vc_picks[r.id]|tojson }}' hidden></div>
           {% endif %}
         </td>
-        {# 불참여인 분은 딜 소싱 제안(처음 안내 · 월간 리마인드)에서 빠진다. 줄은
-           그대로 둔다 — 다시 참여하시면 이력 그대로 돌아온다. **이름 바로 뒤**
-           — 칸 차례는 `COLUMNS`(routers/sourcing.py)와 같아야 한다. #}
-        <td class="cell{% if r.participation == '불참여' %} muted{% endif %}" data-field="participation"
-            data-type="pick" data-choices="참여,불참여">{{ r.participation or '참여' }}</td>
+        {# 딜 소싱 제안(참여 안내 · 월간 리마인드 · Series A 딜 공유)은 **정확히
+           `참여` 인 분께만** 나간다(`sourcing_sync.takes_part`). 불참여는 흐리게,
+           `참여 의사를 물어보는 중` · 사람이 적은 문구(아직 동의 전)는 주황
+           딱지(`part-pending`)로 — 둘 다 안 받지만 사정이 다르다. 줄은 그대로
+           둔다 — 다시 참여하시면 이력 그대로 돌아온다. 보기는 세 값이고 그 밖의
+           글도 직접 적는다(고르는 창이 다른 줄 값을 보기로 모아 준다).
+           **이름 바로 뒤** — 칸 차례는 `COLUMNS`(routers/sourcing.py)와 같아야 한다. #}
+        {% set pk = part_kind[r.id] %}
+        <td class="cell{% if pk == 'left' %} muted{% elif pk == 'pending' %} part-pending{% endif %}" data-field="participation"
+            data-type="pick" data-choices="{{ participation_choices }}"
+            {% if pk == 'pending' %}title="참여 확인 전 — 딜 소싱 제안이 나가지 않습니다. 동의하시면 '참여' 로 바꾸세요"{% endif %}>{{ r.participation or '참여' }}</td>
 
         {# **월간 리마인드 이력**(#14) — 머리글이 `참여` 뒤에 끼워 세운 달 칸과 같은
            자리 · 같은 수(`remind_months`). 그 달 이 분께 나간 리마인드를 보낸
@@ -419,10 +429,21 @@
       if (d.data.linked_msg) alert(d.data.linked_msg);
       var field = d.cell.getAttribute("data-field");
       // `참여` 는 서버가 읽은 값으로 다시 적는다(`O` 를 적어도 `참여` 로 선다).
+      // 칸 색 · 빼는 수의 갈래도 **서버가 정한 것**(`participation_kind`)을 쓴다 —
+      // 값을 보고 여기서 다시 가르면 규칙이 두 벌이 된다.
       if (field === "participation" && d.data.participation) {
+        var kind = d.data.participation_kind || "joined";
         d.cell.textContent = d.data.participation;
-        d.cell.classList.toggle("muted", d.data.participation === "불참여");
+        d.cell.classList.toggle("muted", kind === "left");
+        d.cell.classList.toggle("part-pending", kind === "pending");
+        if (kind === "pending") {
+          d.cell.setAttribute("title", "참여 확인 전 — 딜 소싱 제안이 나가지 않습니다. 동의하시면 '참여' 로 바꾸세요");
+        } else {
+          d.cell.removeAttribute("title");
+        }
         d.row.setAttribute("data-f-participation", d.data.participation);
+        d.row.setAttribute("data-part-kind", kind);
+        syncShareLink();
       }
       if (d.data.assignee === undefined || field !== "assignee_name") return;
       d.row.setAttribute("data-f-assignee_name", d.data.assignee || "");
@@ -456,8 +477,9 @@
     // [Series A 딜 소개] — **체크한 참여 분**을 받는 사람으로 싣는다
     // (`?contacts=…`). 아무도 안 골랐으면 단추를 잠근다 — 보이는 줄 전부로
     // 슬쩍 대신하면 고른 줄 알고 누른 사람이 갈래 전원을 받는 화면을 연다.
-    // 체크한 불참여 분은 싣지 않는다(딜 제안 관리에도 안 뜨고 발송도 막힌다) —
-    // 조용히 빼지 않고 몇 명 뺐는지 옆에 적는다. 검색 · 필터로 **숨은 줄의 체크도
+    // 체크한 분 중 **`참여` 가 아닌 분**(불참여 · 참여 의사를 물어보는 중 · 사람이
+    // 적은 문구 — `data-part-kind`)은 싣지 않는다(딜 제안 관리에도 안 뜨고 발송도
+    // 막힌다) — 조용히 빼지 않고 불참여 · 확인 전을 나눠 몇 명 뺐는지 옆에 적는다. 검색 · 필터로 **숨은 줄의 체크도
     // 싣는다** — 그렇다고 단추(`일부 숨김`)와 옆 말에 적는다. 머리글 체크는 지금
     // 보이는 줄만 켜고 끈다.
     var shareBtn = document.getElementById("sourcing-share-btn");
@@ -473,18 +495,20 @@
       });
     }
     function picked() {
-      var ids = [], out = 0, hidden = 0;
+      var ids = [], out = 0, pending = 0, hidden = 0;
       pickBoxes().forEach(function (cb) {
         if (!cb.checked) return;
         var tr = cb.closest("tr");
         if (!tr) return;
-        if ((tr.getAttribute("data-f-participation") || "참여") === "불참여") { out += 1; return; }
+        var kind = tr.getAttribute("data-part-kind") || "joined";
+        if (kind === "left") { out += 1; return; }
+        if (kind === "pending") { pending += 1; return; }
         var id = tr.getAttribute("data-id");
         if (!id) return;
         ids.push(id);
         if (tr.hidden) hidden += 1;
       });
-      return { ids: ids, out: out, hidden: hidden };
+      return { ids: ids, out: out, pending: pending, hidden: hidden };
     }
     function syncCheckAll() {
       if (!checkAll) return;
@@ -514,6 +538,7 @@
         if (!got.ids.length) notes.push("왼쪽 체크박스로 받을 분을 고르세요");
         if (got.hidden) notes.push("체크한 " + got.hidden + "명은 지금 검색 · 필터에 가려 있습니다 — 함께 엽니다");
         if (got.out) notes.push("체크한 불참여 " + got.out + "명은 빼고 엽니다");
+        if (got.pending) notes.push("체크한 참여 확인 전(제안 대기·물어보는 중 등) " + got.pending + "명은 빼고 엽니다");
         shareHint.textContent = notes.join(" · ");
         shareHint.hidden = !notes.length;
       }

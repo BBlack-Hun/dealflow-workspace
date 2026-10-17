@@ -32,9 +32,17 @@ const inline = /<script>([\s\S]*?)<\/script>/.exec(blocks)[1]
 
 const BASE = "/deals?mode=sourcing&topic=sourcing_deal_share";
 
+// 서버가 싣는 `data-part-kind`(`sourcing_sync.kind_of`) — 정확히 `참여` 만 받는다.
+function kindOf(participation) {
+  if (participation === "참여") return "joined";
+  if (participation === "불참여") return "left";
+  return "pending";
+}
+
 function row(id, participation, hidden) {
   const pick = el("input", { type: "checkbox", class: "js-sourcing-pick", value: String(id) });
-  const tr = el("tr", { "data-id": String(id), "data-f-participation": participation },
+  const tr = el("tr", { "data-id": String(id), "data-f-participation": participation,
+                        "data-part-kind": kindOf(participation) },
                 [el("td", { class: "pick-col" }, [pick]), el("td", { class: "rowno" })]);
   tr.hidden = !!hidden;
   return tr;
@@ -185,6 +193,20 @@ function locked(btn) { return btn.getAttribute("aria-disabled") === "true"; }
   assert.strictEqual(t.btn.textContent, "Series A 딜 소개 (선택 1명)");
   assert.strictEqual(t.hint.hidden, true);
   assert.strictEqual(t.all.indeterminate, true);
+}
+
+// --- ⑥ 참여 확인 전(물어보는 중 · 사람이 적은 문구)도 빼고 따로 센다 ---------
+{
+  const rows = [row(11, "참여"), row(12, "참여 의사를 물어보는 중"),
+                row(13, "11월 재연락"), row(14, "불참여")];
+  const t = setup(rows);
+  rows.forEach(function (r) { pick(r, true); });
+  assert.strictEqual(t.btn.getAttribute("href"), BASE + "&contacts=11",
+                     "아직 동의 전인 분이 받는 사람으로 실렸다");
+  assert.strictEqual(t.btn.textContent, "Series A 딜 소개 (선택 1명)");
+  assert.strictEqual(t.hint.textContent,
+                     "체크한 불참여 1명은 빼고 엽니다 · " +
+                     "체크한 참여 확인 전(제안 대기·물어보는 중 등) 2명은 빼고 엽니다");
 }
 
 console.log("sourcing_share_link_test: ok");
