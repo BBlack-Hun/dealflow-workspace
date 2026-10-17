@@ -28,9 +28,9 @@ from ..deps import can_open, get_current_user, may_manage_team_contacts
 from ..models import (AutomationSend, ContactActivity, ContactColumn, IrCompany, IrRequest,
                       Meeting, SendItem, SendJob, SenderRoom, SendSequence,
                       SourcingContact, User, VcContact)
-from ..services import (contact_columns, deal_stage, firm_type, last_activity,
-                        manual_send, meeting_kind, room_joined, room_name,
-                        sheet_import, sheet_owner, sourcing_sync)
+from ..services import (contact_columns, deal_stage, firm_type, investor_firms,
+                        last_activity, manual_send, meeting_kind, room_joined,
+                        room_name, sheet_import, sheet_owner, sourcing_sync)
 from ..services.room_name import DEFAULT_SUFFIX, build_room_name
 
 router = APIRouter(prefix="/api/contacts", tags=["contacts"])
@@ -187,6 +187,9 @@ def contact_rows(db: Session, user: User, team_wide: bool = False,
     # 이어진 소싱 줄**에서 읽는다(`services/sourcing_sync.py`). 딜 소싱 화면에서
     # 참여를 바꾸면 여기도 그대로다. 줄마다 묻지 않고 한 번에(두 칸이 질의 하나).
     sourcing_linked = sourcing_sync.linked_rows(db, ids)
+    # `소유 펀드` — **회사 단위 값**이라 줄에 저장돼 있지 않다. 회사명에서 열쇠를
+    # 지어 회사 표에서 읽는다(`services/investor_firms.py`). 표 한 장에 질의 하나.
+    funds = investor_firms.funds_map(db)
 
     rows = []
     for c in contacts:
@@ -265,6 +268,11 @@ def contact_rows(db: Session, user: User, team_wide: bool = False,
             "stages": _split_csv(c.stages),
             "sectors": _split_csv(c.sectors),
             "round_size": c.round_size or "",
+            # 회사 단위 값(#1) — 같은 회사의 줄은 늘 같은 값이다. 열쇠도 싣는다:
+            # 표에서 한 줄을 고치면 같은 열쇠의 다른 줄도 그 자리에서 바뀐다
+            # (`static/js/contacts.js` 의 `syncFirmFunds`).
+            "firm_key": investor_firms.firm_key(c.firm),
+            "owned_funds": funds.get(investor_firms.firm_key(c.firm), ""),
             # 시트에 있는데 그동안 화면·엑셀 어디에도 안 나오던 값들.
             "office_phone": c.office_phone or "",
             "office_fax": c.office_fax or "",
@@ -426,6 +434,10 @@ class ContactIn(BaseModel):
     stages: Optional[str] = None
     sectors: Optional[str] = None
     round_size: Optional[str] = None
+    # `소유 펀드` — **이 줄에 저장되지 않는다.** 이 줄의 회사(`firm`)의 값을
+    # 고친다 — 같은 회사의 다른 사람 줄에도 같은 값이 선다
+    # (`services/investor_firms.set_funds`). None 은 '안 바꿈' 이다.
+    owned_funds: Optional[str] = None
     status: Optional[str] = None
     memo: Optional[str] = None
     # 시트에 있던 값들 — 화면에서도 보고 고칠 수 있어야 한다.
@@ -957,6 +969,7 @@ def create_contact(
     # 잇는 줄이 이 줄 번호를 가리켜야 하므로 먼저 번호를 받는다.
     db.flush()
     sourcing = _sourcing_mark(db, contact, body, user)
+    _owned_funds(db, contact, body, user)
     db.commit()
     out = {"id": contact.id, "kakao_room_name": contact.kakao_room_name}
     if sourcing.get("message"):
@@ -1004,6 +1017,8 @@ def get_contact(
             "stages": contact.stages or "",
             "sectors": contact.sectors or "",
             "round_size": contact.round_size or "",
+            # 회사 단위 값(#1). 이 줄에 저장된 것이 아니라 회사 표에서 읽는다.
+            "owned_funds": investor_firms.funds_of(db, contact.firm),
             # 시트에 있는데 그동안 화면 어디에도 안 보이던 값들.
             "office_phone": contact.office_phone or "",
             "office_fax": contact.office_fax or "",
@@ -1233,6 +1248,8 @@ def update_contact(
     # 고칠 수 있는 사람이다. 위의 칸들을 먼저 적은 뒤에 부른다: 새 소싱 줄을
     # 만들 때 방금 고친 이름 · 번호로 만들어야 한다.
     sourcing = _sourcing_mark(db, contact, body, user)
+    # 회사 단위 값 — 위에서 회사명을 먼저 고친 뒤에 적는다(바뀐 회사의 값이다).
+    _owned_funds(db, contact, body, user)
     db.commit()
     linked = sourcing_sync.linked_row(db, contact)
     # `connect_note` 는 **서버가 저 혼자 바꾼 것**을 화면이 사람에게 전할 자리다.
@@ -1257,11 +1274,34 @@ def update_contact(
            # O 로 새 줄이 생기거나 이어지면 `참여 요청일` 도 함께 바뀐다.
            "sourcing_join": sourcing_sync.mark_of(linked),
            "sourcing_requested_at": sourcing_sync.requested_of(linked)}
+    if body.owned_funds is not None:
+        # 같은 회사의 다른 줄을 화면이 그 자리에서 고쳐 그리게 열쇠와 값을 싣는다.
+        out["firm_key"] = investor_firms.firm_key(contact.firm)
+        out["owned_funds"] = investor_firms.funds_of(db, contact.firm)
     if note:
         out["connect_note"] = note
     if sourcing.get("message"):
         out["sourcing_msg"] = sourcing["message"]
     return out
+
+
+def _owned_funds(db: Session, contact: VcContact, body: ContactIn,
+                 user: User) -> None:
+    """`소유 펀드` 를 고친 요청이면 **이 줄의 회사** 값을 고친다(#1).
+
+    이 줄을 고칠 수 있는 사람(`_owned`)이 그 칸을 고칠 수 있다 — 팀원이 값을
+    적는 칸이다. 다만 값은 회사 단위라 같은 회사의 남의 줄에도 같이 보인다. 그
+    일은 수정 로그에 `공용` 으로 남는다(`edit_log.WATCHED["investor_firms"]`).
+    회사명이 빈 줄은 적을 자리가 없어 400 이다 — 조용히 버리면 저장된 줄 안다.
+    """
+    if body.owned_funds is None:
+        return
+    if not investor_firms.firm_key(contact.firm):
+        if (body.owned_funds or "").strip():
+            raise HTTPException(status_code=400,
+                                detail="투자사명이 없어 소유 펀드를 적을 수 없습니다")
+        return
+    investor_firms.set_funds(db, contact.firm, body.owned_funds, user.id)
 
 
 def _sourcing_mark(db: Session, contact: VcContact, body: ContactIn,

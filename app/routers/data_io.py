@@ -32,10 +32,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..deps import get_current_user, may_manage_team_contacts
+from ..deps import admin_only, get_current_user, may_manage_team_contacts
 from ..models import IrCompany, SendItem, SendJob, User, VcContact
-from ..services import (amount, import_diff, report as report_svc, sheet_import,
-                        sheet_owner, spreadsheet as sp)
+from ..services import (amount, import_diff, investor_firms,
+                        report as report_svc, sheet_import, sheet_owner,
+                        spreadsheet as sp)
 from .contacts import contact_rows
 
 # 경로를 /api/import, /api/export 로 따로 둔다.
@@ -167,7 +168,8 @@ CONTACT_HEADERS = [
     # 이어진 딜 소싱 줄에서 읽는 두 칸 — 화면과 같은 값(`sourcing_sync` ·
     # `contacts.contact_rows`). 화면처럼 둘이 나란히 선다(사용자 결정 2026-10-17).
     "Series A 딜 소싱", "참여 요청일",
-    "라운드 규모", "선호 단계", "선호 분야",
+    # `소유 펀드` — 회사 단위 값(#1). 화면처럼 라운드 바로 뒤에 선다.
+    "라운드 규모", "소유 펀드", "선호 단계", "선호 분야",
     "휴대폰", "전자 메일 주소", "근무처 전화", "근무처 팩스", "근무지 주소", "명함 등록일",
     # `마지막 딜소개`·`회차 메모` 는 **딜소개만** 본다. `마지막 일` 은 그 뒤에
     # 온 IR 요청·전달·미팅까지 함께 보고 회차명으로 적는다(`09/16 (9월 3주차)
@@ -234,6 +236,56 @@ def sample_contacts(user: User = Depends(get_current_user)):
                     headers=sp.content_disposition("투자사 관리 현황_업로드양식.xlsx"))
 
 
+# --- 소유 펀드(회사 단위 · #1) -----------------------------------------------
+#
+# 외부 조사로 모은 회사별 소유 펀드를 한 번에 넣는 길. **관리자만**이다 — 회사
+# 단위 값을 팀 전체 줄에 걸쳐 바꾸는 일이다. 팀원은 줄에서 칸을 눌러 적는다.
+#
+# 두 걸음이다: 미리보기(맞춘 회사 · 못 맞춘 이름 · 빈 칸)를 본 뒤, 확인을 받고
+# 회사마다 값을 **바꾼다**(`services/investor_firms.apply_upload`).
+
+#: 양식에 채워 두는 보기 줄. 회사도 펀드도 지어낸 것이다(저장소가 공개다).
+FUNDS_SAMPLE_ROWS = [
+    ["가나벤처스", "가나 1호 투자조합, 가나 스케일업 펀드"],
+    ["(주)다라인베스트", "다라 혁신성장 펀드"],
+]
+
+
+@router.get("/api/sample/owned-funds.xlsx")
+def sample_owned_funds(user: User = Depends(get_current_user)):
+    """`소유 펀드` 업로드 양식 — 머리글 두 칸(`투자사명` · `소유 펀드`)."""
+    admin_only(user)
+    try:
+        content = sp.write_plain_xlsx(
+            "소유 펀드", [list(investor_firms.HEADERS), *FUNDS_SAMPLE_ROWS],
+            head_row=1, widths=[24, 48])
+    except sp.SpreadsheetError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    return Response(content=content, media_type=sp.XLSX_MEDIA_TYPE,
+                    headers=sp.content_disposition("소유 펀드_업로드양식.xlsx"))
+
+
+@router.post("/api/import/owned-funds")
+def import_owned_funds(
+    file: UploadFile = File(...),
+    dry_run: bool = Form(True),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """소유 펀드 업로드. 기본은 미리보기 — 반영하려면 dry_run=false."""
+    admin_only(user)
+    data = file.file.read()
+    try:
+        rows = sp.read_rows(file.filename or "", data)
+        parsed = investor_firms.parse_upload(rows)
+    except (sp.SpreadsheetError, investor_firms.UploadError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    if dry_run:
+        return {"dry_run": True, **investor_firms.match(db, parsed).as_dict()}
+    result = investor_firms.apply_upload(db, parsed, user.id)
+    return {"dry_run": False, **result}
+
+
 def _contact_row(r: dict) -> list:
     """투자사 한 줄 → 엑셀 한 줄. `CONTACT_HEADERS` 와 **같은 차례**다.
 
@@ -251,7 +303,8 @@ def _contact_row(r: dict) -> list:
             r["name"], r["title"], r["firm"], r["department"], "/".join(marks),
             r["room_name"], r["room_label"], r["invited_status"], r["interest_level"],
             r["sourcing_join"], r["sourcing_requested_at"],
-            r["round_size"], ", ".join(r["stages"]), ", ".join(r["sectors"]),
+            r["round_size"], r["owned_funds"], ", ".join(r["stages"]),
+            ", ".join(r["sectors"]),
             r["phone"], r["email"], r["office_phone"], r["office_fax"],
             r["address"], r["card_registered_at"],
             r["last_deal"] or "", r["last_deal_note"], r["last_act_text"],

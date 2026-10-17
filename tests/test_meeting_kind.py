@@ -281,7 +281,7 @@ def test_the_screen_and_the_excel_read_one_function():
                 name="", title="", firm="", department="", channel_kakao=0,
                 channel_email=0, room_name="", room_label="",
                 invited_status="", interest_level="", sourcing_join="",
-                sourcing_requested_at="", round_size="",
+                sourcing_requested_at="", round_size="", owned_funds="",
                 stages=[], sectors=[], phone="", email="", office_phone="",
                 office_fax="", address="", card_registered_at="",
                 last_deal="", last_deal_note="", last_act_text="",

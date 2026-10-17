@@ -107,6 +107,7 @@ from typing import List, Optional, Sequence, Tuple
 
 from . import group_name as gn
 from . import invest_stage as st
+from .pref_sectors import MOVED_MARK as SECTORS_MOVED_MARK
 
 # ── 그룹 이름 ───────────────────────────────────────────────────────────────
 #
@@ -273,6 +274,27 @@ def moved_text(memo: Optional[str]) -> str:
     return " ".join(part for part in out if part)
 
 
+def sector_moved_text(memo: Optional[str]) -> str:
+    """메모에서 **선호분야 칸에서 옮겨 온 줄만** 꺼낸다(`moved_text` 와 같은 꼴).
+
+    **그 줄도 이 사람의 선호다** — 선호분야 칸에 섞여 있던 단계 말(`Seed Pre A` ·
+    `Pre IPO`)이 재분류(#30 · `services/pref_sectors.py`)로 메모에 옮겨 가는데,
+    여기서 안 읽으면 그 사람이 라운드 그룹에서 `공통` 으로 샌다. 표시 글자는 그
+    모듈 하나에서 가져온다.
+
+    `moved_text` 와 나눠 둔 것은 **맨 앞 딱지**(`lead_label` — `보류` · `대형`)를
+    예전 그룹 칸의 글에서만 읽기 위해서다. 선호분야 칸의 글은 사람이 `갈래 |
+    자세한 것` 꼴로 적은 것이 아니라서, 거기서 딱지를 읽으면 엉뚱한 첫 낱말이
+    딱지가 된다.
+    """
+    out = []
+    for line in (memo or "").splitlines():
+        text = line.strip()
+        if text.startswith(SECTORS_MOVED_MARK):
+            out.append(text[len(SECTORS_MOVED_MARK):].strip())
+    return " ".join(part for part in out if part)
+
+
 def lead_label(text: str) -> str:
     """옮겨 온 글의 **맨 앞 딱지** — `갈래 | 자세한 것` 에서 `갈래` 쪽.
 
@@ -294,6 +316,9 @@ def blob(row) -> str:
     """
     parts = [(getattr(row, field, None) or "") for field in PREF_FIELDS]
     parts.append(moved_text(getattr(row, "memo", None)))
+    # 선호분야 칸에서 옮긴 글은 **맨 뒤**다 — 칸에 남은 기준 분야 말이 앞서야
+    # `글에서 먼저 나온 분야` 가 지금 적힌 분야가 된다.
+    parts.append(sector_moved_text(getattr(row, "memo", None)))
     return " ".join(part.strip() for part in parts if part.strip())
 
 
