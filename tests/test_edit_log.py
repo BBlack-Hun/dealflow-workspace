@@ -643,7 +643,6 @@ WRITE_ROUTES = {
     ("POST", "/team/members/{member_id}/auto-attach"): WATCHED,
     ("POST", "/team/members/{member_id}/reset-password"): WATCHED,
     ("POST", "/team/members/{member_id}/deactivate"): WATCHED,
-    ("POST", "/team/auto-send"): WATCHED,
     # 계정마다 하루 발송 상한 — `users.daily_send_cap` (발송 안전장치 판).
     ("POST", "/team/send-caps"): WATCHED,
     # 공지 — 관리자가 올리고 내리는 **팀 전원의 화면에 뜨는 글**이다.

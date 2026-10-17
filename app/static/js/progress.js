@@ -44,8 +44,8 @@
         "</tr>";
     }).join("");
 
-    // 아직 **한 건도 나가지 않은** 회차. 결과 문의 대기 목록이 이 상태로 선다
-    // (`services/auto_send.py`) — 발송 프로그램은 `queued` 만 집어가므로,
+    // 아직 **한 건도 나가지 않은** 회차. [대기 목록 만들기] 가 이 상태로 세운다
+    // (`routers/startup_send.py`) — 발송 프로그램은 `queued` 만 집어가므로,
     // 사람이 [발송 시작] 을 누를 때까지 그대로 기다린다.
     var draft = (d.status === "draft");
     var startBtn = document.getElementById("start-btn");

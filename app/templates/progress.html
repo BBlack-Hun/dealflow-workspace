@@ -27,7 +27,7 @@
   <span id="job-status-badge" class="status-badge">-</span>
   {% if not readonly %}
   {# [발송 시작] — **아직 한 건도 안 나간 회차**를 처음 내보낸다.
-     결과 문의 대기 목록이 그 상태로 선다(`services/auto_send.py`): 서버가
+     [대기 목록 만들기] 가 그 상태로 세운다(`routers/startup_send.py`): 서버가
      목록만 만들어 두고, 발송 프로그램은 `queued` 만 집어가므로 여기를 누를
      때까지 아무것도 나가지 않는다. 단추 글자에 인원수가 들어가므로 실제
      글자는 폴링 때마다 progress.js 가 채운다. #}

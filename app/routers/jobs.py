@@ -243,9 +243,10 @@ def start_draft(job_id: int, background: BackgroundTasks,
 
     ## 무엇이 `draft` 로 서 있나
 
-    결과 문의(미팅 후기)는 물어볼 때가 되면 서버가 **대기 목록만** 만들어 둔다
-    (`services/auto_send.py`). 그 회차는 `draft` 라 발송 프로그램이 집어가지
-    않는다(`agent_api.poll` 은 `queued` 만 고른다). 여기를 눌러야 나간다 —
+    스타트업 월간 발송의 [대기 목록 만들기](`routers/startup_send.py`)는 목록만
+    세워 둔다 — 걷기 전 옛 결과 문의 대기 목록(`services/auto_send.py`)이 남긴
+    회차도 같다. 그 회차는 `draft` 라 발송 프로그램이 집어가지 않는다
+    (`agent_api.poll` 은 `queued` 만 고른다). 여기를 눌러야 나간다 —
     **누르는 것은 사람이다.**
 
     ## 누르기 전에 무엇을 보게 되나  ★

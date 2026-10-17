@@ -80,15 +80,17 @@ def build(db: Session, user: User, today: Optional[date] = None) -> dict:
             ", ".join(m["name"] for m in ir["due_followups"][:3]),
             "/ir", len(ir["due_followups"])))
 
-    # 세워 두고 **아직 안 누른 발송 목록.** 결과 문의 목록을 켜 두면 서버가
-    # 때맞춰 목록을 만들어 두는데(`services/auto_send.py`), 보내는 것은 사람이라
-    # 여기 뜨지 않으면 서 있는 줄도 모른 채 그날이 지나간다.
-    #
-    # **급한 것으로 둔다.** 이미 물어볼 날이 지난 건들이고, 누르기만 하면 된다.
+    # **걷기 전에 세워 둔 옛 `미팅 후기 자동` 목록**(#31 — 결과 문의는 이제 A7
+    # 하나다). 예약 시각 없는 `draft` 라 **저절로 안 나간다** — 사람이 보내거나
+    # 취소할 때까지 여기 선다(`services/auto_send.waiting_for`). 관리자에게는 팀
+    # 전체가, 누를 수 있는 주인에게는 제 것이 선다.
     for waiting in auto_send.waiting_for(db, user):
+        owner = db.get(User, waiting["user_id"]) if waiting["user_id"] != user.id else None
         items.append(_item(
-            "meeting", "urgent", "보낼 목록이 서 있습니다",
-            f"미팅 후기 {waiting['count']}명 — 확인하고 [발송 시작]",
+            "meeting", "urgent", "옛 미팅 후기 자동 준비 목록이 남아 있습니다",
+            (f"{owner.name} 님 계정 · " if owner else "")
+            + f"{waiting['count']}명 — 자동화 전환 전에 선 목록이라 저절로 나가지 "
+            "않습니다. 확인하고 [발송 시작] 하거나 [취소] 하세요",
             f"/jobs/{waiting['job_id']}", waiting["count"]))
 
     # **걸어 두고 아직 안 나간 예약 발송.** 예약해 놓고 잊는 것이 그 기능에서

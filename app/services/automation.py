@@ -330,19 +330,20 @@ def save_team(db: Session, *, user_id: Optional[int], values: dict) -> Team:
 
 
 def startup_sender_id(db: Session) -> Optional[int]:
-    """**스타트업 월간 발송을 보내는 그 계정**(없으면 미팅 후기 자동 준비 계정).
+    """**스타트업 월간 발송을 보내는 그 계정.**
 
     자동 발송 계정을 따로 안 골랐을 때의 기본값이다. 이미 그 한 계정을 고르는
     자리가 있다 — 스타트업 월간 발송(`auto_send_settings` 의 `startup_ir` 줄)이
     **정해진 한 PC 의 카톡**에서만 나가도록 관리자가 고른 계정이다.
+
+    옛 미팅 후기 자동 준비 계정(`meeting_review` 줄)은 더 읽지 않는다 — 그 판을
+    걷어 화면에서 고칠 수 없는 값이 되었고, 이주(0105)가 그 계정을 팀 공통 자동
+    발송 계정으로 옮겼다(#31).
     """
-    for kind in ("startup_ir", "meeting_review"):
-        row = db.execute(
-            select(AutoSendSetting).where(AutoSendSetting.kind == kind)
-        ).scalars().first()
-        if row is not None and row.user_id:
-            return row.user_id
-    return None
+    row = db.execute(
+        select(AutoSendSetting).where(AutoSendSetting.kind == "startup_ir")
+    ).scalars().first()
+    return row.user_id if row is not None and row.user_id else None
 
 
 def default_sender_id(db: Session) -> Optional[int]:

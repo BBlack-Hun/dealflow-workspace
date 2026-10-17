@@ -2562,6 +2562,10 @@ class SmsNotice(TimestampMixin, Base):
 class AutoSendSetting(TimestampMixin, Base):
     """**결과 문의 대기 목록을 때맞춰 세워 둘지**를 정하는 줄. 종류마다 하나다.
 
+    #31 에서 그 엔진(`meeting_review`)과 스타트업 매월 30일 자동을 걷었다 — 결과
+    문의는 A7, 매월은 A5 하나다. 지금 읽히는 것은 스타트업 월간 발송 메뉴
+    (`startup_ir` 줄)의 켜짐 · 계정뿐이고, 나머지 줄 · 칸은 이력으로 남는다.
+
     켜 두면 물어볼 때가 된 건을 모아 발송 목록이 저절로 선다. **보내는 것은
     사람이다** — 목록은 `draft` 로 서고, 그 계정이 진행 화면에서 [발송 시작] 을
     눌러야 나간다(`services/auto_send.py` 머리말).
