@@ -26,7 +26,7 @@
 from __future__ import annotations
 
 import re
-from typing import Optional
+from typing import List, Optional
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -58,14 +58,9 @@ def _job_month(job: SendJob, batch_title: str) -> str:
     return found.group(1) if found else (job.created_at or "")[:7]
 
 
-def month_job(db: Session, month: str) -> Optional[SendJob]:
-    """그 달치 스타트업 회차(취소되지 않은 것 — 또는 취소됐어도 **한 곳이라도
-    나간 것**). 없으면 `None`.
-
-    A5 가 같은 달에 두 번 보내지 않게 하는 판정이다(사람이 먼저 세웠거나 옛 30일
-    자동이 세운 회차도 센다). 중간에 [중단] 한 회차도 이미 나간 곳이 있으면 그
-    달은 보낸 달이다.
-    """
+def month_jobs(db: Session, month: str) -> List[SendJob]:
+    """그 달치 스타트업 회차 전부(취소되지 않은 것 — 또는 취소됐어도 **한 곳이라도
+    나간 것**), 만든 차례로."""
     from sqlalchemy import exists, or_
 
     sent = exists().where(SendItem.job_id == SendJob.id,
@@ -77,7 +72,15 @@ def month_job(db: Session, month: str) -> Optional[SendJob]:
                or_(SendJob.status != "canceled", sent))
         .order_by(SendJob.id)
     ).all()
-    for job, title in rows:
-        if _job_month(job, title or "") == month:
-            return job
-    return None
+    return [job for job, title in rows if _job_month(job, title or "") == month]
+
+
+def month_job(db: Session, month: str) -> Optional[SendJob]:
+    """그 달치 스타트업 회차의 첫째(`month_jobs`). 없으면 `None`.
+
+    A5 가 같은 달에 두 번 보내지 않게 하는 판정이다(사람이 먼저 세웠거나 옛 30일
+    자동이 세운 회차도 센다). 중간에 [중단] 한 회차도 이미 나간 곳이 있으면 그
+    달은 보낸 달이다.
+    """
+    jobs = month_jobs(db, month)
+    return jobs[0] if jobs else None

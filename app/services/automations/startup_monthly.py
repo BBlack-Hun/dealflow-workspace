@@ -37,17 +37,23 @@
 from __future__ import annotations
 
 import calendar
+import logging
 import re
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
-from ...models import STARTUP_SEND_KIND, Automation, IrCompany, User
+from ...models import STARTUP_SEND_KIND, Automation, IrCompany, SendJob, User
 from .. import automation
 from .. import automation_runner as runner
 
+log = logging.getLogger(__name__)
+
 DEFAULT_SLOTS = ["26 11:00", "30 13:00", "28 14:00"]
+
+#: A5 가 꺼져(시험 모드여도) 있을 때 이 달 날짜를 며칠 앞부터 알리나.
+REMIND_DAYS = 10
 
 _SLOT = re.compile(r"(\d{1,2})\s+(\d{1,2}:\d{2})")
 
@@ -182,32 +188,168 @@ def header(db: Session, now=None) -> dict:
 
     다음 날짜의 달에 이미 회차가 있으면(사람이 먼저 세웠거나 옛 30일 자동이 세운
     것 — `month_job`) 그 달은 안 선다 — 그 사실(`skip`)과 **그 다음 달** 날짜를
-    준다. 시험 모드는 회차가 있어도 시험방으로 선다(`collect` 와 같은 판정).
+    준다. 그 회차가 **A5 가 오늘 아침 세운 제 회차**(아직 안 나감)면 건너뛰는 것이
+    아니다 — `booked`('오늘 HH:MM 나갑니다(예약)'). 시험 모드는 회차가 있어도
+    시험방으로 선다(`collect` 와 같은 판정). 이 달 날짜가 지났는데 나간 회차가
+    없으면 `missed`.
     """
-    from datetime import datetime
-
     from ... import clock
-    from .. import scheduled_send, startup_monthly, startup_send
+    from .. import scheduled_send, startup_monthly
 
     row = automation.load(db, automation.STARTUP_MONTHLY)
     out = {"on": automation.is_on(row), "test": automation.is_test(row),
-           "next_label": "", "next_count": 0, "skip": None}
+           "next_label": "", "next_count": 0, "skip": None, "booked": None,
+           "missed": None}
     if not out["on"]:
         return out
     cursor = scheduled_send._aware(now or clock.now())
+    out["missed"] = missed(db, row, cursor)
     for _ in range(2):
         plan_ = runner.next_plan(db, row, cursor)
         if plan_ is None:
             break
         month = f"{plan_.at.year:04d}-{plan_.at.month:02d}"
         done = None if out["test"] else startup_monthly.month_job(db, month)
+        if done is not None and _own_booking(db, plan_, done):
+            at = scheduled_send.scheduled_at(done) or plan_.at
+            out["booked"] = {
+                "label": (f"오늘 {at:%H:%M}" if at.date() == cursor.date()
+                          else scheduled_send.label(at)),
+                "job_id": done.id, "count": scheduled_send.pending_count(done)}
+            break
         if done is None:
             out["next_label"] = scheduled_send.label(plan_.at)
-            out["next_count"] = len(startup_send.sendable_ids(db, month))
+            out["next_count"] = _sendable_count(db, month)
             break
         out["skip"] = {"month": month, "job_id": done.id}
         first = _next_month(plan_.at.date())
         cursor = datetime(first.year, first.month, 1).astimezone()
+    return out
+
+
+def _own_booking(db: Session, plan_: runner.Plan, job: SendJob) -> bool:
+    """이 회차가 **그 회차 자리에 A5 가 세운 제 것**이고 아직 안 끝났나."""
+    run = runner.run_row(db, automation.STARTUP_MONTHLY, False, plan_.period)
+    return (run is not None and run.job_id == job.id
+            and job.status in runner.OPEN_JOBS)
+
+
+def _sendable_count(db: Session, month: str) -> int:
+    from .. import startup_send
+
+    try:
+        return len(startup_send.sendable_ids(db, month))
+    except Exception:  # noqa: BLE001 - 세는 데 실패해도 팀 현황 · 발송 화면은 떠야 한다
+        log.exception("스타트업 월간 발송(A5) — 곳 수를 세지 못했습니다")
+        return 0
+
+
+def missed(db: Session, row: Optional[Automation], now: datetime) -> Optional[dict]:
+    """**이 달 A5 날짜가 지났는데 나간 스타트업 회차가 없다** — 그 달이 끝나거나
+    한 곳이라도 나갈 때까지 `{month, month_num, slot, error}`. 실제 모드로 켜진
+    A5 만 본다(꺼짐 · 시험 모드는 `off_reminder`).
+
+    A5 는 그날 시각이 지나면 다시 세우지 않는다(늦게 조용히 나가지 않게). 그날의
+    오늘 할 일 줄(`automation_runner.today_items`)은 그날만 서서, 옛 30일 자동이
+    한 달 내내 띄우던 경고가 사라졌다(PR #315 리뷰). 나가는 중이거나 예약 시각을
+    기다리는 회차가 있으면 아직 아니다. 사람이 세우고 안 누른 목록 · 다 실패한
+    회차는 나간 것이 아니다.
+    """
+    from .. import scheduled_send, startup_monthly
+
+    if not automation.is_on(row) or automation.is_test(row):
+        return None
+    try:
+        day, hhmm = slot_for(runner.values(row, automation.STARTUP_MONTHLY),
+                             now.year, now.month)
+    except ValueError:
+        return None
+    at = runner.at_on(day, hhmm)
+    if now < at:
+        return None
+    month = f"{now.year:04d}-{now.month:02d}"
+    waiting = (scheduled_send.STATE_WAITING, scheduled_send.STATE_DUE)
+    for job in startup_monthly.month_jobs(db, month):
+        if any(item.status in ("sent", "sending") for item in job.items):
+            return None
+        if (job.status in ("queued", "running", "paused")
+                or scheduled_send.state(job, now) in waiting):
+            return None
+    run = runner.run_row(db, automation.STARTUP_MONTHLY, False,
+                         now.year * 100 + now.month)
+    error = (run.error or "") if run is not None and run.status in (
+        runner.STATUS_EMPTY, runner.STATUS_FAILED) else ""
+    return {"month": month, "month_num": now.month,
+            "slot": scheduled_send.label(at), "error": error}
+
+
+def off_reminder(db: Session, row: Optional[Automation], now: datetime) -> Optional[dict]:
+    """**A5 가 꺼져(또는 시험 모드라) 이 달 발송이 안 나간다** — 메뉴가 켜져 있고,
+    회차가 아직 없는 달의 A5 날짜가 `REMIND_DAYS` 일 안이거나 이미 지났을 때.
+
+    이주(0105)가 옛 30일 자동을 내리고 A5 를 꺼진 채 세웠다 — 켜는 것은 사람인데
+    아무도 그 사실을 떠올려 주지 않으면 그 달이 조용히 빠진다(PR #315 리뷰). 그 달
+    회차가 이미 있으면(사람이 먼저 보냈다 등) 다음 달을 본다.
+    """
+    from .. import scheduled_send, startup_monthly, startup_send
+
+    if automation.is_on(row) and not automation.is_test(row):
+        return None
+    if not startup_send.sender_id(db):
+        return None
+    values = runner.values(row, automation.STARTUP_MONTHLY)
+    cursor = date(now.year, now.month, 1)
+    for _ in range(2):
+        if startup_monthly.month_job(db, f"{cursor.year:04d}-{cursor.month:02d}") is None:
+            try:
+                day, hhmm = slot_for(values, cursor.year, cursor.month)
+            except ValueError:
+                return None
+            at = runner.at_on(day, hhmm)
+            if at > now and (day - now.date()).days > REMIND_DAYS:
+                return None
+            return {"month_num": cursor.month, "this_month": cursor == date(now.year, now.month, 1),
+                    "slot": scheduled_send.label(at), "passed": at <= now,
+                    "test": automation.is_on(row)}
+        cursor = _next_month(cursor)
+    return None
+
+
+def today_lines(db: Session, user: User, now: datetime) -> List[dict]:
+    """오늘 할 일 — **이 달 스타트업 월간 발송이 안 나갔다 · 안 나간다**(관리자 ·
+    메뉴의 계정에게). 그날만 서는 자동화 줄(`automation_runner.today_items`)과 달리
+    그 달이 끝나거나 나갈 때까지 선다. A5 가 꺼져 있어도 서야 해서 `Spec.notes`
+    (켜진 자동화만 부른다)가 아니라 오늘 할 일이 직접 부른다."""
+    from .. import startup_send
+
+    menu = startup_send.sender_id(db)
+    if user.role != "admin" and user.id != menu:
+        return []
+    row = automation.load(db, automation.STARTUP_MONTHLY)
+    out = []
+    gone = missed(db, row, now)
+    if gone is not None:
+        out.append({
+            "level": "urgent",
+            "title": f"스타트업 월간 발송 — {gone['month_num']}월분이 아직 안 나갔습니다",
+            "detail": (f"이 달 A5 날짜({gone['slot']})가 지났는데 나간 회차가 없습니다"
+                       + (f" — {gone['error']}" if gone["error"] else "")
+                       + ". A5 는 그날이 지나면 다시 세우지 않습니다 — 달이 끝나기 전에 "
+                       "스타트업 월간 발송 화면에서 손으로 보내세요(같은 달 두 번은 막힙니다)"),
+            "href": "/deals/startup-ir" if user.id == menu else "/team#automations",
+            "count": None})
+    off = off_reminder(db, row, now)
+    if off is not None:
+        when = "이번 달" if off["this_month"] else f"{off['month_num']}월"
+        title = (f"스타트업 월간 발송(A5)이 시험 모드라 {when} 발송이 실제로는 안 나갑니다 "
+                 "— 팀 현황 › 자동화에서 실제 발송으로 바꾸세요" if off["test"] else
+                 f"스타트업 월간 발송(A5)이 꺼져 있어 {when} 발송이 안 나갑니다 "
+                 "— 팀 현황 › 자동화에서 켜세요")
+        detail = (f"이 달 날짜({off['slot']})가 지났습니다 — 이 달은 스타트업 월간 발송 "
+                  "화면에서 손으로 보내세요" if off["passed"] else
+                  f"A5 날짜 {off['slot']} — 켜 두면 그날 아침 회차가 서고 그 시각에 나갑니다")
+        out.append({"level": "urgent" if off["passed"] else "soon", "title": title,
+                    "detail": detail, "href": "/team#automations", "count": None})
     return out
 
 

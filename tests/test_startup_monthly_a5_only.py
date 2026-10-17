@@ -315,3 +315,194 @@ def test_the_team_sender_default_names_the_menu_account(db, users, client):
     page = _admin_client(client, db, users).get("/team").text
     form = page.split('data-testid="automation-team-form"', 1)[1].split("</select>", 1)[0]
     assert f"스타트업 월간 발송 메뉴의 계정 따름 ({users['u2'].name})" in form
+
+
+# ── PR #315 리뷰 ─────────────────────────────────────────────────────────────
+#
+# 날짜를 박는다 — 2026-10 의 A5 날짜는 기본 순환으로 10/26(월) 11:00, 11월은 11/30.
+
+OCT_SLOT = datetime(2026, 10, 26, 11, 0)
+
+
+def _at(*args):
+    return datetime(*args).astimezone()
+
+
+def _lines(db, user, day, needle):
+    from app.services import today
+
+    return [i for i in today.build(db, user, day)["items"] if needle in i["title"]]
+
+
+def _startup_job(db, *, created="2026-10-02T10:00:00+09:00", status="done",
+                 item_status="sent"):
+    """사람이 세운 스타트업 회차 하나(이 달치) — 나간 곳이 한 곳 있다."""
+    from app.models import SendItem, SendJob
+
+    job = SendJob(user_id=1, kind="startup_ir", status=status, total=1,
+                  created_at=created)
+    db.add(job)
+    db.flush()
+    db.add(SendItem(job_id=job.id, channel="kakao", room_name="샘플에이 대표님",
+                    message="월간", status=item_status))
+    db.commit()
+    return job
+
+
+def test_header_shows_todays_own_booking_instead_of_skipping(db, seeded, client,
+                                                             monkeypatch):
+    """A5 가 오늘 아침 세운 **제 회차**(아직 안 나감)를 '이 달 회차가 이미 있음' 으로
+    읽어 '건너뜁니다 — 다음: 다음 달' 이라 적었다 — '오늘 HH:MM 나갑니다(예약)'."""
+    from app import clock
+    from app.services import automation, automation_runner as runner
+    from app.services.automations import startup_monthly as a5
+
+    _turn_on(db, user_id=1)
+    _a5(db, test=False)
+    today = date.today()
+    day, hhmm = a5.slot_for(_defaults(), today.year, today.month)
+    made = runner.run_once(db, automation.STARTUP_MONTHLY,
+                           _at(day.year, day.month, day.day, 9, 0))
+    assert made["status"] == "ready", made
+    later = _at(day.year, day.month, day.day, 9, 30)
+    head = a5.header(db, later)
+    assert head["skip"] is None
+    assert head["booked"] == {"label": f"오늘 {hhmm}", "job_id": made["job_ids"][0],
+                              "count": 1}
+    monkeypatch.setattr(clock, "now", lambda: later)
+    page = _login(client).get("/deals/startup-ir").text
+    line = page.split('data-testid="startup-a5-next"', 1)[1].split("</p>", 1)[0]
+    assert f"오늘 {hhmm} 나갑니다 (예약)" in line
+    assert "건너뜁니다" not in line
+
+
+def test_header_still_skips_a_month_someone_else_sent(db, seeded):
+    """사람이 먼저 세운 회차는 그대로 '건너뜁니다'(위와 갈리는 쪽)."""
+    from app.services.automations import startup_monthly as a5
+
+    _turn_on(db, user_id=1)
+    _a5(db, test=False)
+    _startup_job(db)
+    head = a5.header(db, _at(2026, 10, 17, 9, 0))
+    assert head["booked"] is None and head["skip"]["month"] == "2026-10"
+
+
+def test_header_survives_a_counting_failure(db, users, client, monkeypatch):
+    """곳 수를 세다 실패해도 팀 현황 · 발송 화면이 500 이 되지 않는다 — 0 곳으로 적는다."""
+    from app.services import startup_send
+    from app.services.automations import startup_monthly as a5
+
+    _turn_on(db, user_id=1)
+    _a5(db, test=True)
+
+    def boom(*_a, **_k):
+        raise RuntimeError("세다 실패")
+
+    monkeypatch.setattr(startup_send, "sendable_ids", boom)
+    head = a5.header(db, _at(2026, 10, 17, 9, 0))
+    assert head["next_label"] and head["next_count"] == 0
+    assert _admin_client(client, db, users).get("/team").status_code == 200
+
+
+def _missed_month(db):
+    """10월 A5 가 실제 모드로 켜져 있고, 그날 보낼 곳이 0곳이라 못 섰다."""
+    from app.services import automation, automation_runner as runner
+
+    _turn_on(db, user_id=1)
+    _a5(db, test=False)
+    assert runner.run_once(db, automation.STARTUP_MONTHLY,
+                           _at(2026, 10, 26, 9, 0))["status"] == "empty"
+
+
+def test_a_missed_month_warns_every_day_until_the_month_ends(db, users):
+    """A5 가 못 선 달 — 그날만이 아니라 **그 달이 끝나거나 나갈 때까지** 오늘 할 일에
+    (관리자 · 보내는 계정). 옛 30일 자동이 한 달 내내 띄우던 경고 자리."""
+    _missed_month(db)
+    needle = "10월분이 아직 안 나갔습니다"
+    for day in (date(2026, 10, 27), date(2026, 10, 30)):
+        [line] = _lines(db, users["u1"], day, needle)
+        assert line["level"] == "urgent"
+        assert "10/26" in line["detail"] and "0곳" in line["detail"]
+        assert "손으로" in line["detail"]
+    assert _lines(db, users["u1"], date(2026, 10, 25), needle) == []   # 날짜 전
+    assert _lines(db, users["u2"], date(2026, 10, 27), needle) == []   # 남의 일
+    users["u2"].role = "admin"
+    db.commit()
+    assert len(_lines(db, users["u2"], date(2026, 10, 27), needle)) == 1
+
+
+def test_the_missed_month_warning_goes_once_something_is_sent(db, users):
+    _missed_month(db)
+    _startup_job(db, created="2026-10-27T15:00:00+09:00")
+    assert _lines(db, users["u1"], date(2026, 10, 28), "아직 안 나갔습니다") == []
+
+
+def test_a_list_that_never_went_out_does_not_count_as_sent(db, users):
+    """사람이 세우고 안 누른 목록 · 다 실패한 회차는 '나간 회차' 가 아니다."""
+    _missed_month(db)
+    _startup_job(db, created="2026-10-27T15:00:00+09:00", status="draft",
+                 item_status="pending")
+    assert len(_lines(db, users["u1"], date(2026, 10, 28), "아직 안 나갔습니다")) == 1
+
+
+def test_the_missed_month_shows_in_the_startup_header(db, users, client, monkeypatch):
+    from app import clock
+    from app.services.automations import startup_monthly as a5
+
+    _missed_month(db)
+    when = _at(2026, 10, 28, 9, 0)
+    assert a5.header(db, when)["missed"]["month"] == "2026-10"
+    monkeypatch.setattr(clock, "now", lambda: when)
+    page = _login(client).get("/deals/startup-ir").text
+    line = page.split('data-testid="startup-a5-missed"', 1)[1].split("</p>", 1)[0]
+    assert "10월분이 아직 안 나갔습니다" in line
+
+
+# 리뷰 11 — A5 가 꺼져 있으면(또는 시험 모드면) 이 달 발송이 안 나간다고 알린다.
+OFF_NEEDLE = "스타트업 월간 발송(A5)이"
+
+
+def test_a5_off_reminds_ten_days_before_the_slot(db, users):
+    _turn_on(db, user_id=1)                          # 메뉴 켜짐 · A5 줄 없음 = 꺼짐
+    [line] = _lines(db, users["u1"], date(2026, 10, 17), OFF_NEEDLE)
+    assert line["title"] == ("스타트업 월간 발송(A5)이 꺼져 있어 이번 달 발송이 안 "
+                             "나갑니다 — 팀 현황 › 자동화에서 켜세요")
+    assert "10/26" in line["detail"] and line["href"] == "/team#automations"
+    assert _lines(db, users["u1"], date(2026, 10, 15), OFF_NEEDLE) == []   # 11일 전
+    assert _lines(db, users["u2"], date(2026, 10, 17), OFF_NEEDLE) == []   # 남의 일
+    users["u2"].role = "admin"
+    db.commit()
+    assert len(_lines(db, users["u2"], date(2026, 10, 17), OFF_NEEDLE)) == 1
+
+
+def test_a5_off_reminds_after_the_slot_passed_without_a_job(db, users):
+    _turn_on(db, user_id=1)
+    [line] = _lines(db, users["u1"], date(2026, 10, 28), OFF_NEEDLE)
+    assert line["level"] == "urgent" and "손으로" in line["detail"]
+
+
+def test_no_off_reminder_when_the_month_already_has_a_job(db, users):
+    """운영 모양 — 10월은 이미 회차가 있다. 11월 날짜(11/30)는 10일보다 멀다."""
+    _turn_on(db, user_id=1)
+    _startup_job(db)
+    assert _lines(db, users["u1"], date(2026, 10, 17), OFF_NEEDLE) == []
+    assert len(_lines(db, users["u1"], date(2026, 11, 20), OFF_NEEDLE)) == 1
+
+
+def test_no_off_reminder_without_the_menu(db, users):
+    users["u1"].role = "admin"
+    db.commit()
+    assert _lines(db, users["u1"], date(2026, 10, 17), OFF_NEEDLE) == []
+
+
+def test_test_mode_a5_reminds_too(db, users):
+    _turn_on(db, user_id=1)
+    _a5(db, test=True)
+    [line] = _lines(db, users["u1"], date(2026, 10, 17), OFF_NEEDLE)
+    assert "시험 모드" in line["title"]
+
+
+def test_a_real_a5_gets_no_off_reminder(db, users):
+    _turn_on(db, user_id=1)
+    _a5(db, test=False)
+    assert _lines(db, users["u1"], date(2026, 10, 17), OFF_NEEDLE) == []

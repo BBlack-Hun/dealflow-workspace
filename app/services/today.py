@@ -130,6 +130,15 @@ def build(db: Session, user: User, today: Optional[date] = None) -> dict:
         items.append(_item("send", line["level"], line["title"], line["detail"],
                            line["href"], line.get("count")))
 
+    # **스타트업 월간 발송이 이 달 안 나갔다 · 안 나간다**(A5 — 관리자 · 메뉴의 계정).
+    # 위 자동화 줄은 그날만 선다 — 이것은 그 달이 끝나거나 나갈 때까지 선다
+    # (`automations.startup_monthly.today_lines`).
+    from .automations import startup_monthly as a5
+
+    for line in a5.today_lines(db, user, _at(today)):
+        items.append(_item("send", line["level"], line["title"], line["detail"],
+                           line["href"], line.get("count")))
+
     # **딜 소싱 메일 확인** — 관리자에게. 매일 18:00 회차가 **새로 딜 받음을
     # 세웠을 때만** 그 결과(오늘 · 어제), 그리고 마지막 확인이 실패했으면 고칠
     # 때까지 그 사유. 아무도 새로 안 선 날은 안 선다(`services/sourcing_mail.py`).

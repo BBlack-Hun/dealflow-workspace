@@ -36,12 +36,23 @@
   {% if a5.on %}
   <p class="hint ok" data-testid="startup-a5-next">
     🗓 매월 자동 발송(자동화 A5{% if a5.test %} · <b>시험 모드</b> — 시험방으로만 갑니다{% endif %})
+    {% if a5.booked %}— <b>{{ a5.booked.label }} 나갑니다 (예약)</b> · <b>{{ a5.booked.count }}곳</b>
+      <a class="linkbtn" href="/jobs/{{ a5.booked.job_id }}">회차 보기</a>
+      — 그 전에 진행 화면에서 빼거나 [중단] 할 수 있습니다.
+      <b>그 시각에 이 PC 의 발송 프로그램이 켜져 있어야 합니다.</b>{% endif %}
     {% if a5.skip %}— {{ a5.skip.month }} 은 이미 회차가 있어 건너뜁니다
       <a class="linkbtn" href="/jobs/{{ a5.skip.job_id }}">회차 보기</a>{% endif %}
     {% if a5.next_label %}— 다음: <b>{{ a5.next_label }}</b> · 지금 기준 <b>{{ a5.next_count }}곳</b>.
     그날 아침 목록이 서고 그 시각에 나갑니다(그 전에 진행 화면에서 빼거나 [중단] 할 수 있습니다).
     <b>그 시각에 이 PC 의 발송 프로그램이 켜져 있어야 합니다.</b>{% endif %}
   </p>
+  {% if a5.missed %}
+  <p class="hint warn" data-testid="startup-a5-missed">
+    ⚠️ <b>{{ a5.missed.month_num }}월분이 아직 안 나갔습니다</b> — 이 달 A5 날짜({{ a5.missed.slot }})가
+    지났는데 나간 회차가 없습니다{% if a5.missed.error %}({{ a5.missed.error }}){% endif %}.
+    A5 는 그날이 지나면 다시 세우지 않습니다 — 달이 끝나기 전에 아래에서 손으로 보내세요.
+  </p>
+  {% endif %}
   {% else %}
   <p class="hint" data-testid="startup-a5-off">
     매월 자동 발송 — <b>자동화 A5 꺼짐</b>. 저절로 서는 회차가 없습니다 —
