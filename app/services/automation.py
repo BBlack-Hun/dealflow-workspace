@@ -56,9 +56,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import clock
-from ..models import (TEST_SEND_KIND, AutoSendSetting, Automation, DealBatch,
-                      IrCompany, SendItem, SendJob, SourcingContact, User,
-                      VcContact)
+from ..models import (TEST_SEND_KIND, Automation, DealBatch, IrCompany, SendItem,
+                      SendJob, SourcingContact, User, VcContact)
 
 log = logging.getLogger(__name__)
 
@@ -330,20 +329,25 @@ def save_team(db: Session, *, user_id: Optional[int], values: dict) -> Team:
 
 
 def startup_sender_id(db: Session) -> Optional[int]:
-    """**스타트업 월간 발송을 보내는 그 계정.**
+    """**스타트업 월간 발송을 보내는 그 계정** — 메뉴가 켜져 있을 때만.
 
     자동 발송 계정을 따로 안 골랐을 때의 기본값이다. 이미 그 한 계정을 고르는
     자리가 있다 — 스타트업 월간 발송(`auto_send_settings` 의 `startup_ir` 줄)이
     **정해진 한 PC 의 카톡**에서만 나가도록 관리자가 고른 계정이다.
 
+    판정은 A5 와 같은 `startup_send.sender_id` 하나다 — 메뉴를 끄면 비어 있다.
+    꺼진 메뉴의 계정을 기본으로 계속 쓰면 판의 '메뉴의 계정 따름' 이 거짓이 되고,
+    A5(메뉴 꺼짐 ⇒ 꺼짐)와 나머지 자동화가 다른 계정을 본다(PR #315 리뷰). 메뉴가
+    꺼졌고 팀 칸도 비었으면 자동화는 보낼 계정이 없다 — 판이 그렇게 적는다(덜
+    보내는 쪽).
+
     옛 미팅 후기 자동 준비 계정(`meeting_review` 줄)은 더 읽지 않는다 — 그 판을
-    걷어 화면에서 고칠 수 없는 값이 되었고, 이주(0105)가 그 계정을 팀 공통 자동
-    발송 계정으로 옮겼다(#31).
+    걷어 화면에서 고칠 수 없는 값이 되었고, 이주(0105)가 스타트업 계정이 없을 때
+    그 계정을 팀 공통 자동 발송 계정으로 옮겼다(#31).
     """
-    row = db.execute(
-        select(AutoSendSetting).where(AutoSendSetting.kind == "startup_ir")
-    ).scalars().first()
-    return row.user_id if row is not None and row.user_id else None
+    from . import startup_send
+
+    return startup_send.sender_id(db)
 
 
 def default_sender_id(db: Session) -> Optional[int]:
@@ -351,8 +355,9 @@ def default_sender_id(db: Session) -> Optional[int]:
 
     자동화는 모든 팀원의 투자사 방에 들어가 있는 계정 하나(업무용 PC)에서
     나간다. 그 계정이 누구인지 코드에 적지 않는다(저장소가 공개다). 자동화
-    판에서 고른 계정이 먼저고, 안 골랐으면 **스타트업 월간 발송 계정**
-    (`startup_sender_id`), 그것도 없으면 `None`(화면에서 골라야 한다).
+    판에서 고른 계정이 먼저고, 안 골랐으면 **스타트업 월간 발송 계정**(메뉴가
+    켜져 있을 때만 — `startup_sender_id`), 그것도 없으면 `None`(화면에서 골라야
+    한다).
     """
     row = _team_row(db)
     if row is not None and row.user_id:

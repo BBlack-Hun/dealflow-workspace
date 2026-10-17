@@ -93,6 +93,24 @@ def test_the_default_sender_no_longer_reads_the_old_review_setting(db, users):
     assert automation.default_sender_id(db) == users["u1"].id
 
 
+def test_the_default_sender_follows_the_menu_only_while_it_is_on(db, users, client):
+    """기본 계정은 '스타트업 월간 발송 메뉴의 계정 따름' — A5 가 읽는 것과 같이 메뉴가
+    **켜져 있을 때만** 그 계정이다(`startup_send.sender_id`). 메뉴가 꺼졌고 팀 칸도
+    비었으면 자동화는 보낼 계정이 없고, 판이 그렇게 적는다(PR #315 리뷰 8)."""
+    from app.models import AutoSendSetting
+    from app.services import automation
+
+    db.add(AutoSendSetting(kind="startup_ir", enabled=0, user_id=users["u2"].id))
+    db.commit()
+    assert automation.default_sender_id(db) is None
+    assert automation.sender(db, automation.load(db, automation.MEETING_REVIEW)) is None
+    _admin(db, users)
+    page = _login(client).get("/team").text
+    panel = page.split('data-testid="automation-panel"', 1)[1].split("</section>", 1)[0]
+    assert 'data-testid="automation-no-sender"' in panel
+    assert "메뉴가 꺼져 있어" in panel
+
+
 # ── 8. 남아 있던 옛 목록 ────────────────────────────────────────────────────
 
 def test_a_leftover_old_list_shows_in_today_for_a_person_to_handle(db, users):
