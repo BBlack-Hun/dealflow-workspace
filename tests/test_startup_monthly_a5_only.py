@@ -265,3 +265,53 @@ def test_an_empty_a5_day_shows_in_today(db, users):
     titles = [i["title"] for i in items["items"]]
     assert any("스타트업 월간 발송" in t and "안 나갑니다" in t for t in titles), titles
     assert not any("세우지 못했습니다" in t for t in titles)
+
+
+# ── 화면 점검에서 나온 것(테스트 서버 10/17) ────────────────────────────────
+
+def _css() -> str:
+    from pathlib import Path
+
+    return (Path(__file__).resolve().parent.parent / "app/static/css/app.css").read_text()
+
+
+def test_the_rotation_preview_is_not_cut_off(db, users, client):
+    """A5 순환 미리보기('순환: 10/26 … → 11/30 … → 12/28 …')가 좁은 칸에서 `…` 로
+    잘렸다 — 자동화 표의 칸 아래 줄은 접히고, 다 적은 글은 풍선말로도 단다."""
+    from app.services import automation_runner as runner
+
+    page = _admin_client(client, db, users).get("/team").text
+    describe = runner.status_of(db, "startup_monthly")["describe"]
+    row = page.split('data-automation="startup_monthly"', 1)[1].split("</tr>", 1)[0]
+    assert f'title="{describe}"' in row
+    assert 'class="grid-table compact automation-table"' in page
+    rule = _css().split(".automation-table td .cell-sub", 1)[1].split("}", 1)[0]
+    assert "white-space: normal" in rule
+
+
+def test_the_send_guard_card_does_not_stretch_beside_the_automation_panel(db, users, client):
+    page = _admin_client(client, db, users).get("/team").text
+    head = page.split('data-testid="send-guard-panel"', 1)[0].rsplit("<section", 1)[1]
+    assert "align-top" in head
+    rule = _css().split(".dash-grid .panel.align-top", 1)[1].split("}", 1)[0]
+    assert "align-self: start" in rule
+
+
+def test_a5_cannot_be_switched_on_in_the_form_while_the_menu_is_off(db, users, client):
+    page = _admin_client(client, db, users).get("/team").text
+    row = page.split('data-automation="startup_monthly"', 1)[1].split("</tr>", 1)[0]
+    switch = row.split('<select name="enabled"', 1)[1].split(">", 1)[0]
+    assert "disabled" in switch
+    assert "메뉴가 꺼져 있어 켤 수 없습니다" in row
+    # 메뉴를 켜면 고를 수 있다.
+    _turn_on(db, user_id=1)
+    page = client.get("/team").text
+    row = page.split('data-automation="startup_monthly"', 1)[1].split("</tr>", 1)[0]
+    assert "disabled" not in row.split('<select name="enabled"', 1)[1].split(">", 1)[0]
+
+
+def test_the_team_sender_default_names_the_menu_account(db, users, client):
+    _turn_on(db, user_id=2)
+    page = _admin_client(client, db, users).get("/team").text
+    form = page.split('data-testid="automation-team-form"', 1)[1].split("</select>", 1)[0]
+    assert f"스타트업 월간 발송 메뉴의 계정 따름 ({users['u2'].name})" in form

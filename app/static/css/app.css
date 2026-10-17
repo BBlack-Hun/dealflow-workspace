@@ -774,6 +774,11 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
 .log-table td .cell-sub { white-space: normal; overflow: visible;
   text-overflow: clip; }
 .cell-sub.row-actions { display: flex; gap: 10px; }
+/* 팀 현황 › 자동화 표 — 칸 아래 줄(요약 · 순환 미리보기 · 경고)도 **접는다.** 위
+   수정 로그와 같은 까닭이다: `순환: 10/26 … → 11/30 … → 12/28 …` 의 뒤 날짜가
+   `…` 뒤로 말없이 사라졌다(화면 점검 10/17). 다 적은 글은 풍선말로도 단다. */
+.automation-table td .cell-sub { white-space: normal; overflow: visible;
+  text-overflow: clip; }
 .memo { font-weight: 400; }
 .chan { font-size: 14px; letter-spacing: 2px; }
 .tag.soft { background: #f1f3f5; color: var(--muted); }
@@ -1160,6 +1165,9 @@ a.secondary-btn { display: inline-flex; align-items: center; text-decoration: no
 .dash-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .dash-grid .panel { margin: 0; }
 .dash-grid .panel.wide { grid-column: 1 / -1; }
+/* 옆 칸이 아주 긴 판(팀 현황 › 자동화) — 같은 줄 높이로 늘어나 빈 칸이 3천 px 넘게
+   서지 않게 제 키만큼만 선다(화면 점검 10/17). */
+.dash-grid .panel.align-top { align-self: start; }
 
 /* 막힌 것 목록 — 눌러서 바로 고치러 간다 */
 .blocker-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
