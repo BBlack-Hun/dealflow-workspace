@@ -91,16 +91,31 @@ def build(db: Session, user: User, today: Optional[date] = None) -> dict:
 
     # **걷기 전에 세워 둔 옛 `미팅 후기 자동` 목록**(#31 — 결과 문의는 이제 A7
     # 하나다). 예약 시각 없는 `draft` 라 **저절로 안 나간다** — 사람이 보내거나
-    # 취소할 때까지 여기 선다(`services/auto_send.waiting_for`). 관리자에게는 팀
-    # 전체가, 누를 수 있는 주인에게는 제 것이 선다.
+    # 취소할 때까지 여기 선다(`services/auto_send.waiting_for`). 누르고 취소하는 것은
+    # 주인뿐이라(`routers/jobs._job_or_404`) 급한 줄은 주인에게만 서고, 관리자에게는
+    # 남의 목록이 몇 개 남았는지 참고 한 줄이다(PR #315 리뷰).
+    others = []
     for waiting in auto_send.waiting_for(db, user):
-        owner = db.get(User, waiting["user_id"]) if waiting["user_id"] != user.id else None
+        if waiting["user_id"] != user.id:
+            others.append(waiting)
+            continue
         items.append(_item(
             "meeting", "urgent", "옛 미팅 후기 자동 준비 목록이 남아 있습니다",
-            (f"{owner.name} 님 계정 · " if owner else "")
-            + f"{waiting['count']}명 — 자동화 전환 전에 선 목록이라 저절로 나가지 "
+            f"{waiting['count']}명 — 자동화 전환 전에 선 목록이라 저절로 나가지 "
             "않습니다. 확인하고 [발송 시작] 하거나 [취소] 하세요",
             f"/jobs/{waiting['job_id']}", waiting["count"]))
+    if others:
+        names = []
+        for waiting in others:
+            owner = db.get(User, waiting["user_id"])
+            name = owner.name if owner else f"#{waiting['user_id']}"
+            if name not in names:
+                names.append(name)
+        items.append(_item(
+            "meeting", "info", "옛 미팅 후기 자동 준비 목록 — 다른 팀원 계정",
+            f"{', '.join(names)} 님 계정에 {len(others)}개 — 저절로 나가지 않습니다. "
+            "주인이 [발송 시작] 하거나 [취소] 합니다",
+            f"/jobs/{others[0]['job_id']}", len(others)))
 
     # **걸어 두고 아직 안 나간 예약 발송.** 예약해 놓고 잊는 것이 그 기능에서
     # 가장 흔한 사고라, 아침에 여는 이 화면에 서 있어야 한다

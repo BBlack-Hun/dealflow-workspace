@@ -203,6 +203,41 @@ def test_a_meeting_already_on_the_old_review_list_is_not_asked_again(db, users, 
     assert any("결과 문의 대기 목록으로 이미 섰습니다" in why for why in result["skipped"])
 
 
+@pytest.mark.parametrize("case,asks", [
+    ("failed", True),            # 옛 목록을 못 세웠다 — 아무것도 안 섰다
+    ("canceled", True),          # 섰다가 사람이 [취소] — 한 통도 안 나갔다
+    ("draft", False),            # 아직 서 있다(오늘 할 일에서 사람이 보낸다)
+    ("done", False),             # 나갔다
+    ("canceled_sent", False),    # 보내다 [중단] — 나간 곳이 있다
+    ("claimed", False),          # 세우다 멈췄다 — 모르면 막는다(덜 보내는 쪽)
+])
+def test_only_an_old_list_that_really_stood_blocks_a7(db, users, team, case, asks):
+    """옛 목록 줄이 있다고 다 막지 않는다 — **실제로 섰고 취소 · 실패가 아닌** 것만.
+    옛 목록이 취소됐거나 못 섰으면 A7 이 묻는다(돌아보는 사흘 안이면)."""
+    from app.models import AutoSendRun, SendItem, SendJob
+
+    meeting = team["meetings"]["u1"]
+    status = {"failed": "failed", "claimed": "claimed"}.get(case, "ready")
+    job_id = None
+    if status == "ready":
+        job = SendJob(user_id=users["u1"].id, kind="deal_intro",
+                      status="canceled" if case.startswith("canceled") else case,
+                      total=1, sent=0, failed=0)
+        db.add(job)
+        db.flush()
+        db.add(SendItem(job_id=job.id, contact_id=meeting.contact_id, channel="kakao",
+                        room_name="방", message="미팅 후기",
+                        status="sent" if case in ("done", "canceled_sent") else "canceled"))
+        job_id = job.id
+    db.add(AutoSendRun(kind="meeting_review", ref_id=meeting.id, user_id=users["u1"].id,
+                       day="2026-10-13", status=status, job_id=job_id))
+    db.commit()
+    _turn_on(db)
+    result = _run(db)
+    asked = {i.contact_id for i in _items(db) if i.job_id != job_id}
+    assert (team["people"]["u1"].id in asked) is asks, result
+
+
 def test_days_and_time_are_settings(db, users, team):
     from app.services import automation, automation_runner as runner, scheduled_send
 

@@ -277,3 +277,62 @@ def test_the_backlog_is_never_sent_automatically(db, users, world):
                              datetime(2026, 10, 19, 9, 0).astimezone())
     assert result["status"] == "empty"
     assert db.execute(select(AutomationSend)).scalars().all() == []
+
+
+def test_the_backlog_is_one_direct_query_not_everyones_today(db, users, world, monkeypatch):
+    """관리자 · 보내는 계정이 첫 화면을 열 때마다 팀원 전원의 `pipeline.today_items`
+    를 돌렸다 — 밀린 결과 문의는 미팅 표를 바로 묻는다(PR #315 리뷰 7). 고르는 규칙은
+    화면의 '물어볼 때' 와 같다: 거절 · 결과 적음 · 뒤 미팅 · 멈춘 팀원은 빠진다."""
+    from datetime import date
+
+    from app.models import Meeting, VcContact
+    from app.services import automation, pipeline
+    from app.services.automations import meeting_review as a7
+
+    _a7_real(db, users)
+    _first_run(db)
+
+    def contact(owner, name):
+        row = VcContact(user_id=owner.id, name=name, firm="사아벤처스", title="심사역",
+                        kakao_room_name=f"{name} 방", connect_stage="connected",
+                        source_sheet="내 명단")
+        db.add(row)
+        db.flush()
+        return row
+
+    def meeting(owner, who, **kw):
+        row = Meeting(user_id=owner.id, contact_id=who.id,
+                      scheduled_at=kw.pop("scheduled_at", LONG_PAST),
+                      status=kw.pop("status", "done"), done_at=LONG_PAST,
+                      followup_due=LONG_PAST, followup_done=kw.pop("followup_done", 0),
+                      outcome=kw.pop("outcome", "reviewing"), **kw)
+        db.add(row)
+        db.flush()
+        return row
+
+    other = meeting(users["u2"], contact(users["u2"], "이다른"))       # 남의 미팅 — 센다
+    meeting(users["u1"], contact(users["u1"], "박거절"), outcome="pass")
+    meeting(users["u1"], contact(users["u1"], "최적음"), followup_done=1)
+    later = contact(users["u1"], "정뒤미팅")
+    meeting(users["u1"], later)
+    meeting(users["u1"], later, scheduled_at="2026-10-20", status="scheduled")
+    from app.models import User
+    from app.services import auth as auth_svc
+
+    gone = User(id=7, name="퇴사자", phone="01000000007", role="user", is_active=0,
+                password_hash=auth_svc.hash_password(DEMO_PASSWORD))
+    db.add(gone)
+    db.flush()
+    meeting(gone, contact(gone, "한멈춤"))
+    db.commit()
+
+    def boom(*_a, **_k):
+        raise AssertionError("팀원마다 오늘 할 일을 다시 세면 안 됩니다")
+
+    monkeypatch.setattr(pipeline, "today_items", boom)
+    monkeypatch.setattr(pipeline, "meeting_rows", boom)
+    rows = a7.backlog(db, automation.load(db, automation.MEETING_REVIEW), date(2026, 10, 17))
+    got = sorted((owner.id, m.id) for owner, m in rows)
+    expected = sorted([(1, world["meetings"]["asked"].id), (1, world["meetings"]["manual"].id),
+                       (2, other.id)])
+    assert got == expected

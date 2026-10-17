@@ -138,9 +138,26 @@ def test_the_admin_sees_another_members_leftover_list_too(db, users):
     db.add(admin)
     db.commit()
     job = _old_draft(db, users["u2"])
-    lines = [i for i in today.build(db, admin)["items"] if i["href"] == f"/jobs/{job.id}"]
+    _old_draft(db, users["u1"], count=3, ref_id=601)
+    lines = [i for i in today.build(db, admin)["items"] if "옛 미팅 후기" in i["title"]]
+    # 관리자는 남의 목록을 누를 수 없다(`routers/jobs._job_or_404` — 주인만) — 급한 줄이
+    # 아니라 몇 개 남았는지 알리는 참고 한 줄이다(PR #315 리뷰 9).
     assert len(lines) == 1
-    assert users["u2"].name in lines[0]["detail"]
+    assert lines[0]["level"] == "info" and lines[0]["count"] == 2
+    assert users["u2"].name in lines[0]["detail"] and users["u1"].name in lines[0]["detail"]
+    assert lines[0]["href"] == f"/jobs/{job.id}"
+    # 주인에게는 그대로 급한 줄이다.
+    [mine] = [i for i in today.build(db, users["u2"])["items"] if "옛 미팅 후기" in i["title"]]
+    assert mine["level"] == "urgent"
+
+
+def test_the_admins_own_leftover_list_stays_urgent(db, users):
+    from app.services import today
+
+    admin = _admin(db, users)
+    job = _old_draft(db, admin)
+    [line] = [i for i in today.build(db, admin)["items"] if "옛 미팅 후기" in i["title"]]
+    assert line["level"] == "urgent" and line["href"] == f"/jobs/{job.id}"
 
 
 def test_a_leftover_list_is_never_released_on_its_own(db, users):
