@@ -46,6 +46,8 @@
   남의 담당 줄은 서버가 막는다. 화면에서만 감추면 주소를 아는 사람이
   그대로 부를 수 있다.
 #}
+{# 리마인드 뒤 `답 없음 · 전화 필요`(10/17 회의 #37) — 부르는 화면과 같은 한 벌. #}
+{% from "_call_flag.html" import call_flag with context %}
 <section class="panel wide">
   <h2 class="panel-title">IR 요청 투자사 <span class="hint">{{ closed|length }}건</span>
     <form method="post" action="/followups/backfill" class="inline-form"
@@ -99,7 +101,12 @@
         </td>
         <td>{{ r.stage_label }}</td>
         <td><span class="status-badge">{{ r.status_label }}</span></td>
-        <td class="muted">{{ r.reason }}</td>
+        {# 사유는 **보일 때** 옛 말을 새 말로 바꾼 값이다(`cadence.reason_label` —
+           `답을 받았습니다` → `카톡에서 답을 받았습니다`, 10/17 회의 #44). #}
+        <td class="muted">{{ r.reason }}
+          {# 리마인드까지 나갔던 줄(`stage >= 2`)에만. 답이 온 줄(`답 옴`)은 이미
+             답을 받았으니 새로 켤 일이 없다 — 켜 둔 것이 있으면 끌 수 있게는 선다. #}
+          {{ call_flag(r.contact_id, r.stage >= 2 and r.status != 'responded', 'remind') }}</td>
         {#
           단추 둘을 **나란히 두되 붙이지 않는다.** 되살리려고 [다시 켜기] 를
           누르러 왔다가 [지우기] 를 누르는 것이 이 표에서 가장 나쁜 실수다 —

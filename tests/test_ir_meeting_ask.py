@@ -396,7 +396,9 @@ def test_전달한_자료_판에_뜬다(db, users, logged):
 
     body = logged.get("/ir").text
     assert "7일 지남" in body
-    assert "미팅 요청 안 보냄 1명" in body
+    assert "회의실 미팅 톡 요청 미완료 1명" in body
+    # 줄에는 **지난 날 그대로**가 선다(10/17 회의 #39) — 예전엔 `7일 지남` 고정.
+    assert 'class="status-when bad">회의실 미팅 톡 요청 미완료 · 30일' in body
     assert f"/ir/contacts/{contact.id}/meeting-asked" in body
 
 
@@ -407,7 +409,7 @@ def test_보낸_줄에는_보냄과_날짜가_뜬다(db, users, logged):
     _meeting_send(db, users, contact, when=when + timedelta(days=1))
 
     body = logged.get("/ir").text
-    assert f"미팅 요청 보냄 · {(when + timedelta(days=1)).isoformat()}" in body
+    assert f"회의실 미팅 톡 요청 보냄 완료 · {(when + timedelta(days=1)).isoformat()}" in body
     assert "7일 지남" not in body
     # 이미 보낸 줄에는 표시할 단추가 없다 — 누를 일이 없는 단추는 소음이다.
     assert f"/ir/contacts/{contact.id}/meeting-asked" not in body
@@ -419,7 +421,7 @@ def test_업무_보고에_한_줄로_뜬다(db, users, logged):
     _delivered(db, users, contact, "샘플애그", when=when)
 
     body = logged.get(f"/report?month={when.year}-{when.month:02d}").text
-    assert "미팅 요청 안 보냄" in body
+    assert "회의실 미팅 톡 요청 미완료" in body
 
 
 # --- 20 줄 잘림 ---------------------------------------------------------------
@@ -455,7 +457,8 @@ def test_지난_줄이_스무_개를_넘어도_안_자른다(db, users, logged):
                    when=date.today() - timedelta(days=30))
 
     body = logged.get("/ir").text
-    # 판 제목 옆 안내문에도 같은 말이 한 번 나오므로 **줄의 배지**만 센다.
-    rows = body.count('class="status-when bad">7일 지남')
+    # 판 제목 옆 안내문(`(7일 지남 25명)`)과 갈라 **줄의 배지**만 센다 — 줄에는
+    # 지난 날이 그대로 선다(10/17 회의 #39).
+    rows = body.count('class="status-when bad">회의실 미팅 톡 요청 미완료 · 30일')
     assert rows == 25, rows
-    assert "미팅 요청 안 보냄 25명" in body
+    assert "회의실 미팅 톡 요청 미완료 25명" in body

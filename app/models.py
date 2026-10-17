@@ -3062,3 +3062,46 @@ class InvestorFirm(TimestampMixin, Base):
     #: 마지막으로 고친 사람(언제는 `updated_at`).
     updated_by: Mapped[Optional[int]] = mapped_column(
         ForeignKey("users.id"), nullable=True)
+
+
+class DealFollowup(TimestampMixin, Base):
+    """**리마인드를 보냈는데 답이 없다 — 전화가 필요하다** 는 표시와 메모.
+
+    10/17 회의(#37): 리마인드 카톡을 보낸 뒤 팀원·담당자가 확인해서 답이 없으면
+    `답 없음 · 전화 필요` 를 켜고, 들은 것·할 것을 메모로 남긴다. 켜 두면 그
+    담당 팀원의 오늘 할 일에 `전화 필요` 로 선다(`services/call_flags.py`).
+
+    ## 왜 **담당자(투자사 사람) 한 명에 한 줄**인가
+
+    딜 진행 관리에서 리마인드가 나가는 흐름은 셋이고(딜소개 후속 사다리 ·
+    IR 자료 전달 뒤 미팅 요청 · 미팅 뒤 결과 문의), 줄은 각자 다른 표에 선다
+    (`send_sequences` · `ir_requests` · `meetings`). 그런데 "답이 없어 전화해야
+    한다" 는 **그 사람**에 대한 말이다 — 세 표에 따로 두면 한 사람에게 표시가
+    셋 생기고, 하나를 끄면 나머지가 남는다. 그래서 사람 하나에 한 줄을 두고,
+    그 사람의 줄이 서는 자리마다 같은 배지를 단다.
+
+    ## 누가 언제
+
+    켜고 끈 사람·때(`call_by`·`call_at`), 메모를 마지막으로 적은 사람·때
+    (`memo_by`·`memo_at`)를 줄에 바로 적는다 — 화면 배지가 그대로 읽는다.
+    수정 로그(`edit_log`)에 따로 남기지 않는 까닭은 `edit_log.UNWATCHED` 에.
+
+    **아무것도 보내지 않는다.** 전화는 사람이 건다 — 이 줄은 할 일 표시다.
+    """
+
+    __tablename__ = "deal_followups"
+    __table_args__ = (
+        UniqueConstraint("contact_id", name="uq_deal_followups_contact"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    contact_id: Mapped[int] = mapped_column(ForeignKey("vc_contacts.id"))
+    #: 1 이면 `답 없음 · 전화 필요` 가 켜져 있다.
+    call_needed: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    #: 마지막으로 켜거나 끈 사람과 그 시각.
+    call_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    call_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: 메모 — 통화 메모·답 상황. 비우면 지워진다.
+    memo: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    memo_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    memo_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)

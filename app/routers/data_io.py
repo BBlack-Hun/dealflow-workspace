@@ -26,7 +26,8 @@ import io
 from datetime import date
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import (APIRouter, Depends, File, Form, HTTPException, Request,
+                     UploadFile)
 from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -34,7 +35,8 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import admin_only, get_current_user, may_manage_team_contacts
 from ..models import IrCompany, SendItem, SendJob, User, VcContact
-from ..services import (amount, import_diff, investor_firms,
+from ..services import (amount, company_view, import_diff, investor_firms,
+                        pipeline,
                         report as report_svc, sheet_import, sheet_owner,
                         spreadsheet as sp)
 from .contacts import contact_rows
@@ -511,6 +513,33 @@ def export_companies(db: Session = Depends(get_db),
     return _xlsx(f"IR 기업현황_{today}.xlsx", "IR 기업현황", COMPANY_HEADERS, rows)
 
 
+@router.get("/api/export/companies-view.xlsx")
+def export_companies_view(request: Request, q: str = "", sort: str = "",
+                          db: Session = Depends(get_db),
+                          user: User = Depends(get_current_user)):
+    """IR 기업 현황 탭 → **지금 화면 그대로** 엑셀(10/17 회의 #43).
+
+    위 `엑셀 내려받기`(전체)는 그대로 두고 따로 선다. 화면에서 걸어 둔 머리글
+    필터(주소의 `?sector=…` 등) · 검색(`q`) · 정렬(`sort`)을 **서버가 같은 규칙으로
+    다시 건다** — 화면 글을 긁지 않는다(`services/company_view.py` 머리말).
+    줄은 표가 먹는 한 벌(`companies.company_rows`)이고, 칸은 그 탭에 **보이는
+    칸**이다(`company_view.VIEW_HEADERS`).
+
+    권한은 전체 내려받기와 같다 — 로그인한 계정이면 누구나(투자컨설턴트는
+    `deps.CONSULTANT_PATHS` 밖이라 미들웨어가 막는다 — 전체 내려받기와 같다).
+    """
+    from .companies import company_rows
+
+    rows = company_view.view_rows(
+        company_rows(db), company_view.parse_raw_query(request.url.query),
+        q=q, sort=sort)
+    today = date.today().isoformat()
+    # 이름은 전체 파일(`IR 기업현황_날짜.xlsx`)과 갈라 둔다 — 둘을 같은 폴더에
+    # 받아 두면 어느 쪽이 거른 것인지 이름으로 보여야 한다.
+    return _xlsx(f"IR 기업현황_화면_{today}.xlsx", "IR 기업현황 (화면)",
+                 company_view.VIEW_HEADERS, company_view.to_cells(rows))
+
+
 # `/api/export/reactions.xlsx` 는 뺐다 — 업무 보고 `이 달의 반응` 머리에 달려
 # 있던 `전체 기간 엑셀` 단추가 그것이다. 바로 위 `엑셀 리포트` 와 나란히 붙어
 # 있어 무엇을 받는지 매번 따져야 했고, 실제로 쓰는 쪽은 리포트였다.
@@ -854,10 +883,12 @@ def _meetings_sheet(sheet, data, team_wide):
     # 줄마다 한 줄이라 수가 더 많다 — 둘 다 맞는 수인데 파일만 받아 보는
     # 사람에게는 그냥 안 맞는 숫자로 보인다. 까닭은 화면과 **같은 문자열**로
     # 싣는다(`report.meeting_ask_count_note`).
-    stats = [("요청받음", data["ir_requested"]),
-             ("전달함", data["ir_delivered"]),
+    # 이름은 화면(`report.html` 의 `IR 자료 요청` 판)과 **같은 말**이다 —
+    # `pipeline.LABEL_*` 한 곳에서 읽는다(10/17 회의 #35·#36·#40).
+    stats = [(pipeline.LABEL_REQUESTED, data["ir_requested"]),
+             (pipeline.LABEL_DELIVERED, data["ir_delivered"]),
              ("IR 자료 아직 안 보냄", data["ir_open"]),
-             ("미팅 요청 안 보냄(명)", data["ir_meeting_ask_missing"])]
+             (f"{pipeline.LABEL_NOT_ASKED}(명)", data["ir_meeting_ask_missing"])]
     # 사람 수와 건수가 같으면 이 줄은 아무 말도 안 한다 — 그때는 안 싣는다.
     if data["ir_meeting_ask_rows_note"]:
         stats.append(("그 담당자가 받은 자료 요청(건)",
@@ -893,7 +924,7 @@ def _buckets_sheet(sheet, data, team_wide):
             continue
         sheet.head(headers)
         for r in bucket["rows"]:
-            # 화면은 `전달함` 아래에 한 줄을 더 깐다. 파일에서도 **한 칸 안에서
+            # 화면은 `IR 자료 전달 완료` 아래에 한 줄을 더 깐다. 파일에서도 **한 칸 안에서
             # 줄을 바꾼다** — 칸을 새로 만들면 나머지 세 갈래에서 내내 비어
             # 있는 칸이 하나 생기고, ` · ` 로 이어 붙이면 상태와 미팅 요청이
             # 한 낱말처럼 읽힌다.
@@ -947,10 +978,11 @@ def report_workbook(data: dict, *, team_wide: bool, who: str,
                      9 if team_wide else 8),
         data, team_wide)
     _buckets_sheet(
-        # 상태 칸이 16 → 26. `미팅 요청 보냄 · 2026-09-10` 이 한 줄에 들어가야
-        # 한다 — 16 이면 접혀서 날짜만 아랫줄로 떨어진다.
+        # 상태 칸이 16 → 26 → 36. `회의실 미팅 톡 요청 보냄 완료 · 2026-09-10`
+        # 이 한 줄에 들어가야 한다(10/17 회의에서 말이 길어졌다) — 모자라면
+        # 접혀서 날짜만 아랫줄로 떨어진다.
         _ReportSheet(wb.create_sheet(f"{tag} 반응"),
-                     [12, 14, 12, 26, 26, 26, 10],
+                     [12, 14, 12, 26, 26, 36, 10],
                      7 if team_wide else 6),
         data, team_wide)
 

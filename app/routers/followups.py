@@ -173,9 +173,14 @@ def _rule_views(db: Session) -> List[dict]:
 @router.post("/followups/{sequence_id}/responded", include_in_schema=False)
 def mark_responded(sequence_id: int, db: Session = Depends(get_db),
                    user: User = Depends(get_current_user)):
-    """답이 왔으니 리마인드를 멈춘다."""
+    """답이 왔으니 리마인드를 멈춘다.
+
+    사유 글자는 `cadence.REPLIED_REASON`(`카톡에서 답을 받았습니다` — 10/17 회의
+    #44). 옛 글자(`답을 받았습니다`)로 적힌 줄은 화면에서만 새 말로 보인다
+    (`cadence.reason_label`).
+    """
     seq = _owned(db, sequence_id, user)
-    cadence.stop(db, seq, "답을 받았습니다", status="responded")
+    cadence.stop(db, seq, cadence.REPLIED_REASON, status="responded")
     db.commit()
     return RedirectResponse("/followups?msg=리마인드를+멈췄습니다", status_code=303)
 

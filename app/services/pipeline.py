@@ -47,11 +47,32 @@ IR_MEETING_ASK_DAYS = 7
 #: (`ir_attach.record_delivery` 의 `ir_delivery` 와 같은 방식).
 MEETING_ASK_KIND = "meeting_ask"
 #: 그 줄에 적는 말. 이력을 훑는 사람이 **앱이 보낸 것과 구별**할 수 있어야 한다.
+#: (DB 에 글자로 쌓이는 이력이라 아래 화면 문구를 바꿀 때 같이 바꾸지 않았다 —
+#: 투자사 관리 현황의 활동 이력에 이미 이 말로 수백 줄이 서 있다.)
 MEETING_ASK_BY_HAND = "미팅 요청 — 카톡으로 직접 보냄"
 
+# ── 딜 진행 관리의 **보이는 말** (10/17 회의 · 개선 과제 #35~#44) ──────────────
+#
+# 상태 코드(`open`·`delivered`)도, DB 값도, 주소도 그대로다 — **화면에 서는 말만**
+# 바꿨다. 말을 짓는 자리를 여기 한 곳으로 모은다: `/ir` · 업무 보고 · 엑셀 보고 ·
+# 투자사 활동 이력이 같은 말을 읽어야 한 화면만 옛말로 남는 일이 없다.
+#
+#   요청받음            → IR 자료 요청 받음
+#   전달함              → IR 자료 전달 완료
+#   미팅 요청 보냄      → 회의실 미팅 톡 요청 보냄 완료
+#   미팅 요청 안 보냄   → 회의실 미팅 톡 요청 미완료 (· N일 — 지난 날을 그대로 센다)
+#   미팅 잡기           → 회의실 미팅 잡기
+#   보냈음으로 표시     → IR 자료 검토 요청 보냄
+LABEL_REQUESTED = "IR 자료 요청 받음"
+LABEL_DELIVERED = "IR 자료 전달 완료"
+LABEL_ASKED = "회의실 미팅 톡 요청 보냄 완료"
+LABEL_NOT_ASKED = "회의실 미팅 톡 요청 미완료"
+LABEL_BOOK_MEETING = "회의실 미팅 잡기"
+LABEL_MARK_ASKED = "IR 자료 검토 요청 보냄"
+
 REQUEST_STATUS = {
-    "open": "요청받음",
-    "delivered": "전달함",
+    "open": LABEL_REQUESTED,
+    "delivered": LABEL_DELIVERED,
     "dropped": "보내지 않음",
 }
 MEETING_STATUS = {
@@ -156,6 +177,7 @@ def meeting_ask_state(db: Session, requests, *,
         asked_at      보냈으면 그 날 (안 보냈으면 빈 글자)
         due           보내야 하는 날 (= 전달일 + `IR_MEETING_ASK_DAYS`)
         overdue       안 보냈는데 그 날이 지났다
+        days          마지막 전달일에서 **오늘까지 지난 날** (상한 없음)
 
     ## 왜 이 판정이 필요한가
 
@@ -247,12 +269,17 @@ def meeting_ask_state(db: Session, requests, *,
         when = asked.get(contact_id, "")
         ok = bool(when) and when >= delivered
         try:
-            due = (date.fromisoformat(delivered)
-                   + timedelta(days=IR_MEETING_ASK_DAYS)).isoformat()
+            since = date.fromisoformat(delivered)
+            due = (since + timedelta(days=IR_MEETING_ASK_DAYS)).isoformat()
+            # **지난 날을 그대로 센다**(10/17 회의 #39). 예전에는 7일이 지나면
+            # `{기한}일 지남` 이라는 **고정된 말**만 떠서 8일째든 40일째든 같아
+            # 보였다. 상한도 초기화도 없다 — 마지막 전달일에서 오늘까지다.
+            days = max(0, (today - since).days)
         except ValueError:
             # 날짜가 깨진 줄 하나 때문에 화면이 죽지 않는다. 셀 수 없으면
             # 재촉하지도 않는다 — 근거 없는 경보가 제일 나쁘다.
             due = ""
+            days = None
         out[contact_id] = {
             "delivered_at": delivered,
             # 이 담당자가 자료를 받은 **요청 줄 수**. 사람 수와 줄 수가 왜
@@ -262,8 +289,33 @@ def meeting_ask_state(db: Session, requests, *,
             "asked_at": when if ok else "",
             "due": due,
             "overdue": bool(not ok and due and now >= due),
+            "days": days,
         }
     return out
+
+
+def meeting_ask_note(state: Optional[dict]) -> Tuple[str, str]:
+    """자료를 받은 담당자에게 **회의실 미팅 톡 요청까지 갔는가** — 한 줄 글과 색.
+
+    ★ 이 글자를 짓는 곳은 여기 하나다. `/ir` 의 「전달한 자료」 표 · 업무 보고
+    화면 · 엑셀 보고가 **같은 문자열**을 받아 쓴다(`report.meeting_ask_note` 는
+    이 함수를 그대로 부른다).
+
+        회의실 미팅 톡 요청 보냄 완료 · 2026-09-10     ok
+        회의실 미팅 톡 요청 미완료 · 12일               bad  (7일이 지났다)
+        회의실 미팅 톡 요청 미완료 · 3일                warn (아직 기한 안)
+
+    **날 수는 늘 지난 날 그대로다**(`meeting_ask_state` 의 `days`). 예전에는
+    지난 건에 `{기한}일 지남` 이라는 고정된 말이, 안 지난 건에는 `…까지` 가 떠서
+    며칠째인지가 어디에도 안 보였다. 빛깔만 기한(`IR_MEETING_ASK_DAYS`)을 본다.
+    """
+    if not state:
+        return "", ""
+    if state["asked"]:
+        return f"{LABEL_ASKED} · {state['asked_at']}", "ok"
+    days = state.get("days")
+    tail = f" · {days}일" if days is not None else ""
+    return f"{LABEL_NOT_ASKED}{tail}", ("bad" if state["overdue"] else "warn")
 
 
 def record_meeting_ask(db: Session, contact_id: int,
@@ -340,6 +392,9 @@ def request_rows(db: Session, user: User,
         row["meeting_asked_at"] = st["asked_at"] if st else ""
         row["meeting_ask_due"] = st["due"] if st else ""
         row["meeting_ask_overdue"] = bool(st and st["overdue"])
+        # 상태 칸에 서는 한 줄(`회의실 미팅 톡 요청 미완료 · 12일` 등)과 빛깔.
+        # 글자는 업무 보고와 **같은 함수**가 짓는다 — 화면마다 지으면 말이 갈린다.
+        row["meeting_ask_text"], row["meeting_ask_level"] = meeting_ask_note(st)
 
     # 자료 **파일명**을 함께 준다 — 요청 화면에서 무엇을 보낼지 보이게.
     # (링크가 아니다: 파일은 각자 PC 의 자료 폴더에 있다 — 0056 참고)
@@ -740,7 +795,7 @@ def deliver(db: Session, request: IrRequest, when: Optional[date] = None) -> IrR
 
 def close_requests_for(db: Session, job, contact_id: int,
                        when: Optional[date] = None) -> int:
-    """IR 자료를 보냈으면 그 요청을 '전달함'으로 닫는다.
+    """IR 자료를 보냈으면 그 요청을 '전달함'(`delivered` · 화면 말 `IR 자료 전달 완료`)으로 닫는다.
 
     보내고 나서 다시 화면으로 돌아와 버튼을 누르게 하면, 바쁠 때 그 한 번을
     빼먹는다. 그러면 이미 보낸 요청이 계속 '보낼 자료'에 남는다.

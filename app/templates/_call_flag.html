@@ -1,0 +1,63 @@
+{#
+  ── 답 없음 · 전화 필요 — 배지 · 단추 · 메모 (10/17 회의 #37) ───────────────
+
+  리마인드 카톡을 보낸 뒤 답이 없으면 팀원·담당자가 이 자리에서 `답 없음 · 전화
+  필요` 를 켜고 메모를 남긴다. 켜 두면 그 투자사를 맡은 팀원의 오늘 할 일과
+  `전화 요청` 구역 맨 위에 선다(`services/call_flags.needed_for`).
+
+  **한 벌을 여러 줄이 나눠 쓴다** — 오늘 보낼 리마인드 · 예약된 리마인드 ·
+  전화 요청 · IR 요청 투자사 · 전달한 자료 · 자동화가 물은 미팅 · 미팅 후기.
+  표시는 사람 하나에 한 줄이라(`models.DealFollowup`) 어느 줄에서 켜도 그 사람의
+  다른 줄에 같은 배지가 선다.
+
+  ## 언제 그리나
+
+  `reminded` — **그 줄에서 리마인드가 나갔는가.** 판정은 부르는 쪽이 줄의 값으로
+  넘긴다(시퀀스 `stage >= 2` · 「회의실 미팅 톡 요청 보냄 완료」 · 자동화가 물음).
+  안 나간 줄에는 아무것도 안 그린다 — 다만 이미 켜졌거나 메모가 있으면 그린다
+  (끌 길은 늘 있어야 한다). 서버도 같은 조건으로 켜는 것을 막는다.
+
+  ## 왜 폼인가
+
+  스크립트 없이도 눌린다 — 이 화면의 다른 단추(`답 옴` · `전화함`)와 같은 길이고,
+  누르면 `back` 구역으로 돌아온다(서버가 아는 구역 이름만 받는다).
+#}
+{% macro call_flag(contact_id, reminded, back) -%}
+{%- set f = call_flags.get(contact_id) if (call_flags is defined and call_flags) else none -%}
+{%- set label = call_flag_label if call_flag_label is defined else "답 없음 · 전화 필요" -%}
+{%- if reminded or f -%}
+<div class="call-flag{% if f and f.on %} on{% endif %}" data-call-flag="{{ contact_id }}">
+  {%- if f and f.on %}
+  {# 배지 — **누가 언제** 켰는지가 함께 선다. 끈 뒤에는 배지가 사라진다. #}
+  <span class="tag bad call-flag-badge" title="{{ f.by }} · {{ f.at }} 표시">📞 {{ label }}</span>
+  <span class="call-flag-who muted">{{ f.by }} · {{ f.at }}</span>
+  {%- endif %}
+  <form method="post" action="/ir/contacts/{{ contact_id }}/call-needed" class="call-flag-toggle">
+    <input type="hidden" name="back" value="{{ back }}">
+    <input type="hidden" name="on" value="{{ 0 if (f and f.on) else 1 }}">
+    {% if f and f.on %}
+    <button class="linkbtn" type="submit"
+            title="전화를 걸었거나 답이 왔으면 끄세요 — 오늘 할 일에서 빠집니다">전화 필요 끄기</button>
+    {% else %}
+    {# 단추 글자는 배지(`📞 답 없음 · 전화 필요`)와 **다르게** 둔다 — 같으면 켜진
+       줄과 안 켜진 줄이 한눈에 안 갈린다(헤드리스 크롬으로 그려 보고 고쳤다). #}
+    <button class="linkbtn danger" type="submit"
+            title="리마인드에 답이 없으면 눌러 '{{ label }}' 로 표시하세요 — 맡은 팀원의 오늘 할 일에 '전화 필요' 로 섭니다">전화 필요 표시</button>
+    {% endif %}
+  </form>
+  {# 메모 — 접어 두었다가 눌러 연다. 적힌 메모는 접힌 채로도 보인다. #}
+  <details class="call-flag-memo">
+    <summary class="linkbtn" title="{% if f and f.memo %}{{ f.memo }} — {{ f.memo_by }} · {{ f.memo_at }}{% else %}통화 메모 · 답 상황을 적어 둡니다{% endif %}">
+      {%- if f and f.memo %}📝 {{ f.memo }}{% else %}메모{% endif -%}
+    </summary>
+    <form method="post" action="/ir/contacts/{{ contact_id }}/call-memo">
+      <input type="hidden" name="back" value="{{ back }}">
+      <input type="text" name="memo" value="{{ f.memo if f else '' }}" maxlength="500"
+             placeholder="통화 메모 · 답 상황" autocomplete="off" aria-label="전화 필요 메모">
+      <button class="linkbtn" type="submit">저장</button>
+    </form>
+    {% if f and f.memo and f.memo_by %}<span class="hint">{{ f.memo_by }} · {{ f.memo_at }} 적음</span>{% endif %}
+  </details>
+</div>
+{%- endif -%}
+{%- endmacro %}

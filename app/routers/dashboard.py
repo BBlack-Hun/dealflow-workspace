@@ -643,7 +643,20 @@ def report_page(request: Request, db: Session = Depends(get_db),
     if yearly_view:
         ctx.update(report.yearly(db, year_, who, today))
     else:
-        ctx.update(report.monthly(db, year_, mon, who, today))
+        data = report.monthly(db, year_, mon, who, today)
+        ctx.update(data)
+        # 월간 몸통(`_report_month.html`)은 **`rep` 한 dict** 를 읽는다 — 연간
+        # 보기가 같은 조각을 달마다 다른 dict 로 열두 번 그리기 때문이다(#38).
+        ctx["rep"] = data
+    # 화면 말(10/17 회의 #35·#36·#40) — `/ir` 과 같은 말을 같은 자리에서 읽는다.
+    from ..services import pipeline as _pipeline
+
+    ctx["labels"] = {
+        "requested": _pipeline.LABEL_REQUESTED,
+        "delivered": _pipeline.LABEL_DELIVERED,
+        "asked": _pipeline.LABEL_ASKED,
+        "not_asked": _pipeline.LABEL_NOT_ASKED,
+    }
     ctx.update({
         "viewing": None if team_wide else target,
         "members": ([{"id": u.id, "name": u.name} for u in
