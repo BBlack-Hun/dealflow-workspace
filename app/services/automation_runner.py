@@ -157,6 +157,11 @@ class Field:
     low: int = 0
     high: int = 0
     hint: str = ""
+    #: **이미 저장된 줄에 이 값이 없을 때** 쓰는 값 — 그 칸이 생기기 전에 저장된 줄이다.
+    #: `None` 이면 `default` 와 같다. 새 동작을 여는 칸(예: A7 의 두 번째 날수)은 여기에
+    #: '끔' 을 둔다 — 배포하는 날 켜 둔 자동화에 묻지도 않은 회차가 저절로 붙지 않게
+    #: (덜 보내는 쪽). `default` 는 판에 처음 세울 때 · 새로 저장할 때의 값이다.
+    absent: object = None
 
 
 @dataclass(frozen=True)
@@ -273,7 +278,10 @@ def _clean_one(field_: Field, raw):
 
 
 def values(row: Optional[Automation], key: str) -> dict:
-    """이 자동화가 지금 쓰는 값 — 저장된 값, 없거나 못 읽으면 기본값."""
+    """이 자동화가 지금 쓰는 값 — 저장된 값, 없거나 못 읽으면 기본값.
+
+    줄은 있는데 그 칸만 없으면(그 칸이 생기기 전에 저장했다) `Field.absent` 가 있을
+    때 그 값이다."""
     _load_all()
     spec = REGISTRY.get(key)
     stored = automation.params(row)
@@ -286,6 +294,9 @@ def values(row: Optional[Automation], key: str) -> dict:
             except ValueError:
                 log.warning("자동화 %s 의 %s 값이 맞지 않아 기본값을 씁니다",
                             key, field_.name)
+        elif row is not None and field_.absent is not None:
+            out[field_.name] = field_.absent
+            continue
         out[field_.name] = field_.default
     return out
 

@@ -98,10 +98,12 @@ def _hand_send(db, world, who, sent_at):
 
 
 def _turn_on(db, *, test=False, **params):
+    """판에서 새로 저장하고 켠 것처럼 — 폼은 칸을 다 보내고, 새 줄의 두 번째 날수는
+    폼의 기본값(30)으로 실려 온다. 값 없이 저장된 줄은 두 번째가 꺼져 있다
+    (`test_a_row_saved_before_the_second_round_keeps_it_off`)."""
     from app.services import automation, automation_runner as runner
 
-    if params:
-        runner.save_params(db, automation.MEETING_REVIEW, params)
+    runner.save_params(db, automation.MEETING_REVIEW, {"decision_days": "30", **params})
     return automation.save(db, automation.MEETING_REVIEW, enabled=True,
                            user_id=None, test_mode=test, test_room=TEST_ROOM)
 
@@ -431,6 +433,33 @@ def test_zero_days_turns_off_only_the_second(db, users, world):
     _turn_on(db, decision_days="0")
     assert _run(db)["status"] == "ready"
     assert {i.contact_id for i in _items(db)} == {first.id}
+
+
+def test_a_row_saved_before_the_second_round_keeps_it_off(db, users, world):
+    """두 번째가 생기기 전에 저장해 둔 A7 줄(값에 `decision_days` 가 없다)은 배포하는 날
+    두 번째가 저절로 켜지지 않는다 — 저장된 줄에 없는 값은 0(안 묻는다)으로 읽는다.
+    30 은 판에 처음 세울 때 · 판에서 새로 저장할 때의 기본값일 뿐이다(덜 보내는 쪽)."""
+    from app.services import automation, automation_runner as runner
+
+    first = _contact(db, world, "홍길동", "가나다벤처스")
+    second = _contact(db, world, "김철수", "라마바벤처스")
+    _meeting(db, world, first, done=DONE2)
+    _meeting(db, world, second)
+    row = automation.save(db, automation.MEETING_REVIEW, enabled=True, user_id=None,
+                          test_mode=False, test_room=TEST_ROOM)
+    automation.set_params(row, {"days": 2, "time": "14:00", "manual_days": 7})   # 옛 판
+    db.commit()
+
+    assert runner.values(row, "meeting_review")["decision_days"] == 0
+    assert _run(db)["status"] == "ready"
+    assert {i.contact_id for i in _items(db)} == {first.id}
+    # 판에는 0 으로 선다 — 그대로 저장하면 0 이 적힌다
+    field = next(f for f in runner.status_of(db, "meeting_review")["fields"]
+                 if f["name"] == "decision_days")
+    assert field["value"] == 0
+    # 아직 줄이 없으면(판에 처음 세울 때) 폼의 기본값은 30 이다
+    assert runner.values(None, "meeting_review")["decision_days"] == 30
+    assert runner.clean_params("meeting_review", {})["decision_days"] == 30
 
 
 def test_the_round_time_is_the_earlier_of_the_two_times(db, users, world):

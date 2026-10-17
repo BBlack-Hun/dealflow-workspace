@@ -53,7 +53,10 @@
 - **미팅을 마친 뒤 사람이 미팅 단계 글을 보냈다** — 미팅을 마친 날부터 지금까지
   **전부**를 본다(`manual_days` 와 상관없이). 이미 사람이 묻고 답을 듣고 있는
   곳에 한 달 뒤 자동 문의가 끼어들면 안 된다. 자동화가 보낸 첫 번째는 세지
-  않는다(`automation_dedup.manual_meeting` 이 자동 발송 건을 뺀다).
+  않는다(`automation_dedup.manual_meeting` 이 자동 발송 건을 뺀다). 뒤 미팅과
+  달리 **기업으로 좁히지 않는다** — 손으로 보낸 미팅 요청 · 후기에는 기업이
+  실리지 않아(`routers/deals.MODES_WITH_COMPANIES` · `pipeline.record_meeting_ask`)
+  어느 기업 건인지 모른다. 모르는 글은 센다(덜 보내는 쪽 — PR #311 리뷰).
 - 취소된 미팅 · 멈춘 담당자 — 첫 번째와 같다.
 
 결과 문의를 했다는 표시(`followup_done` · `followup_note`)는 **보지 않는다** —
@@ -119,8 +122,11 @@ FIELDS = (
     runner.Field("days", "첫 번째(며칠 뒤)", "int", 2, low=1, high=14,
                  hint="미팅을 완료로 적은 날에서 며칠 뒤에 결과를 묻나 — 그날이 주말이면 다음 평일"),
     runner.Field("time", "첫 번째 보낼 시각", "time", "14:00"),
+    # 30 은 판에 처음 세울 때 · 새로 저장할 때의 값이다. 두 번째가 생기기 전에 저장된
+    # A7 줄(이 칸이 없다)은 **0 — 안 묻는다**(`absent`) — 배포하는 날 켜 둔 A7 에 두
+    # 번째가 저절로 붙지 않게(PR #311 리뷰). 판에는 0 으로 서고, 사람이 날수를 넣어야 켜진다.
     runner.Field("decision_days", "두 번째 — 투자 결정 문의(며칠 뒤)", "int", 30,
-                 low=0, high=90,
+                 low=0, high=90, absent=0,
                  hint="미팅을 완료로 적은 날에서 — 그날이 주말이면 다음 평일. "
                       "0 이면 두 번째는 안 묻는다(거절로 끝난 미팅에는 안 묻는다)"),
     runner.Field("decision_time", "두 번째 보낼 시각", "time", "14:00",
