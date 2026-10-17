@@ -29,6 +29,7 @@ from .series_a import pick_rows as series_a_pick_rows
 from .sourcing import assignee_chips as sourcing_assignee_chips
 from .sourcing import assignee_of as sourcing_assignee_of
 from .sourcing import buckets as sourcing_bucket_rows
+from .sourcing import held_counts as sourcing_held_counts
 from .sourcing import sendable_rows as sourcing_rows
 
 router = APIRouter(tags=["pages"])
@@ -121,10 +122,13 @@ def deals_page(
     # `routers/sourcing.py` 의 `rows_of`). 여기가 질의를 따로 들고 있었는데,
     # 같은 명단을 두 화면이 각자 세우면 한쪽만 고쳐지는 날 순서가 갈린다.
     #
-    # **`불참여` 인 분은 처음부터 안 싣는다**(`sourcing.sendable_rows`) — 딜 소싱
-    # 화면이나 투자사 관리 현황의 `Series A 딜 소싱` 칸에서 X 로 둔 분이다.
-    # 발송 길도 같은 판정으로 한 번 더 거른다(`deals._load_recipients`).
+    # **`참여` 가 아닌 분은 처음부터 안 싣는다**(`sourcing.sendable_rows`) — 딜 소싱
+    # 화면이나 투자사 관리 현황의 `Series A 딜 소싱` 칸에서 X 로 둔 분(불참여)과,
+    # O 로 넣었지만 아직 동의 전인 분(참여 의사를 물어보는 중 · 사람이 적은 문구).
+    # 발송 길도 같은 판정으로 한 번 더 거른다(`deals.create_send_list`). 뺀 수는
+    # 목록 위에 적는다(`sourcing_held`).
     sourcing_contacts = sourcing_rows(db)
+    sourcing_held = sourcing_held_counts(db)
     # 갈래는 곧 문구다. 이름을 검색창에 쳐서 찾게 하면 갈래가 몇 개인지도
     # 모른 채 골라야 하므로, 누를 수 있는 필터로 내놓는다. 순서는 좌측
     # [딜 소싱] 탭에서 보던 그대로여야 헷갈리지 않는다.
@@ -217,6 +221,7 @@ def deals_page(
         "queue_rows": deal_queue.rows(db, user),
         "queue_empty_label": deal_queue.EMPTY_GROUP_LABEL,
         "sourcing_contacts": sourcing_contacts,
+        "sourcing_held": sourcing_held,
         "sourcing_buckets": sourcing_buckets,
         "sourcing_bucket_of": sourcing_bucket_of,
         "sourcing_assignees": sourcing_assignees,

@@ -8,6 +8,8 @@
      같을 때만 — #28. 번호나 이름 · 회사만 같으면 잇지도 새로 만들지도 않고 딜 소싱
      화면의 후보로 넘긴다), 아무도 없으면 새 줄을 만든다. 다른 갈래의 줄은 건드리지 않는다.
   ② X — `불참여` 로 둘 뿐 지우지 않는다. 빈칸은 바꾸지 않음(이어진 분은 막는다).
+     O 는 갈래에 넣는 것이지 동의가 아니다 — 새 줄 · `불참여` 였던 줄은
+     `참여 의사를 물어보는 중` 이 된다(자세한 규칙은 `tests/test_sourcing_asking.py`).
   ③ 칸은 이어진 줄에서 그린다 — 다른 갈래는 안 본다. 머리글 필터가 선다.
   ④ 두 화면이 같은 칸을 본다 — 딜 소싱에서 참여를 바꾸면 투자사 쪽이 X/O.
   ⑤ 딜 소싱에서 넣거나 이름 · 번호를 고치면 투자사 쪽 같은 분과 저절로 잇는다
@@ -123,7 +125,9 @@ def test_O_makes_a_new_row_when_nobody_matches(board, db, users):
 
     [row] = sync_rows(db)
     assert row.vc_contact_id == contact.id
-    assert row.participation == "참여"
+    # O 는 갈래에 넣는 것이지 동의가 아니다 — 새 줄은 `참여 의사를 물어보는 중`
+    assert row.participation == "참여 의사를 물어보는 중"
+    assert "물어보는 중" in r.json()["sourcing_msg"]
     assert (row.name, row.title, row.firm, row.phone, row.email) == (
         "홍길동", "심사역", "가나다벤처스", "010-1234-5678", "hong@example.com")
     # 담당은 그 투자사 줄을 맡은 팀원, 방은 **비워 둔다**(이어진 투자사 줄의 방을 쓴다)
@@ -167,7 +171,8 @@ def test_O_links_the_row_with_the_same_phone(board, db, users):
     [row] = sync_rows(db)
     assert row.id == existing.id
     assert row.vc_contact_id == contact.id
-    assert row.participation == "참여"
+    # `불참여` 였던 분께 O — 다시 묻는 것으로 본다(바로 `참여` 가 되지 않는다)
+    assert row.participation == "참여 의사를 물어보는 중"
     assert row.firm == "가나다벤처스(주)"            # 다르게 적힌 값은 그대로
     assert row.email == "hong@example.com"           # 빈 칸만 채운다
 
@@ -289,7 +294,8 @@ def test_X_marks_not_taking_part_and_keeps_the_row(board, db, users):
 
     assert mark(board, contact.id, "O").status_code == 200
     [row] = sync_rows(db)
-    assert row.participation == "참여"
+    assert row.participation == "참여 의사를 물어보는 중"   # 다시 묻는다
+    assert column(board, contact.id) == "O"
 
 
 def test_X_without_a_row_is_refused(board, db, users):
@@ -427,9 +433,12 @@ def test_the_sourcing_page_shows_participation_and_the_link(board, db, users):
 
 
 def test_a_bad_participation_word_is_refused(board, db, users):
+    """사람이 적는 문구는 받는다(`tests/test_sourcing_asking.py`) — 막는 것은 줄바꿈 ·
+    탭 같은 제어문자와 너무 긴 글이다."""
     row = sc(db)
-    r = board.patch(f"/api/sourcing/{row.id}", json={"participation": "글쎄"})
-    assert r.status_code == 400
+    for bad in ("글쎄\n다음 달", "글쎄\t보류", "가" * 41):
+        r = board.patch(f"/api/sourcing/{row.id}", json={"participation": bad})
+        assert r.status_code == 400, bad
 
 
 # ── ⑤ 딜 소싱 쪽에서 넣으면 저절로 잇는다 ───────────────────────────────────
@@ -620,7 +629,8 @@ def test_link_create_and_participation_are_logged(board, db, users):
     logs = db.query(EditLog).filter_by(table_name="sourcing_contacts").order_by(EditLog.id).all()
     assert [log.action for log in logs] == ["create", "update"]
     changes = json.loads(logs[1].changes_json)
-    assert {"field": "participation", "before": "참여", "after": "불참여"} in changes
+    assert {"field": "participation", "before": "참여 의사를 물어보는 중",
+            "after": "불참여"} in changes
     created = {c["field"]: c.get("after") for c in json.loads(logs[0].changes_json)}
     assert str(created.get("vc_contact_id")) == str(contact.id)
 

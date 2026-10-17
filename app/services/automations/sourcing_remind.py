@@ -13,7 +13,9 @@
 ## 무엇을 보고 고르나
 
   · 갈래 — 자동화 판에서 고친다(여러 줄이면 여러 갈래).
-  · `불참여` — 뺀다(`sourcing_sync.takes_part` — 손으로 보낼 때와 같은 판정).
+  · `참여` 가 아닌 분 — 뺀다. 불참여 · `참여 의사를 물어보는 중` · 사람이 적은
+    문구 모두(`sourcing_sync.takes_part` — 정확히 `참여` 만 받는다. 손으로 보낼
+    때와 같은 판정). 건너뛴 까닭에는 그 칸에 적힌 값을 그대로 적는다.
   · `딜 받음` — 그 달 표시(`sourcing_receipts`). 사람이 누르거나, 회사 받은
     편지함(POP3) 확인이 저절로 세운다(`services/sourcing_mail.py`). 리마인드가
     나가는 날에는 **30분 전에 메일을 한 번 더 본다** — 아래 `remind_at` 을
@@ -41,8 +43,8 @@
 
 ## 아침에 세운 뒤 `딜 받음` 이 서면
 
-11시에 풀리는 순간 그 사람은 빠진다(`still_ok`). 그사이 `불참여` 가 됐거나
-줄이 지워졌어도 빠진다.
+11시에 풀리는 순간 그 사람은 빠진다(`still_ok`). 그사이 `참여` 가 아닌 값
+(불참여 · 물어보는 중 · 문구)이 됐거나 줄이 지워졌어도 빠진다.
 """
 from __future__ import annotations
 
@@ -169,11 +171,12 @@ def collect(db: Session, row: Automation, sender: User,
     got = sourcing_receipts.received_ids(db, month)
     linked = sourcing_link.linked_rooms(db, people)
     batch = runner.Batch(note="리마인드 보낼 심사역이 없습니다"
-                              "(모두 딜 받음 · 불참여이거나 방이 없음)")
+                              "(모두 딜 받음 · 참여 전 · 불참여이거나 방이 없음)")
     for person in people:
         who = f"{person.name}({person.firm or '-'})"
         if not sourcing_sync.takes_part(person):
-            batch.skipped.append(f"{who} — {sourcing_sync.LEFT}")
+            # 적힌 값 그대로 — `불참여` 인지 `참여 의사를 물어보는 중` 인지 읽혀야 한다.
+            batch.skipped.append(f"{who} — {sourcing_sync.participation_of(person)}")
             continue
         if person.id in got:
             batch.skipped.append(f"{who} — 이번 달 딜 받음")
@@ -190,8 +193,8 @@ def collect(db: Session, row: Automation, sender: User,
 
 
 def still_ok(db: Session, rec: AutomationSend) -> str:
-    """풀리기 직전 — 그사이 `딜 받음` 이 섰거나(메일 확인 · 사람) `불참여` 가
-    됐거나 줄이 지워졌으면 뺀다."""
+    """풀리기 직전 — 그사이 `딜 받음` 이 섰거나(메일 확인 · 사람) `참여` 가 아닌
+    값(불참여 · 물어보는 중 · 문구)이 됐거나 줄이 지워졌으면 뺀다."""
     try:
         _, contact_id, month, _nth = rec.ref.split(":")
         contact_id = int(contact_id)
@@ -203,7 +206,7 @@ def still_ok(db: Session, rec: AutomationSend) -> str:
     if person is None:
         return "딜 소싱 명단에서 지워짐"
     if not sourcing_sync.takes_part(person):
-        return sourcing_sync.LEFT
+        return sourcing_sync.participation_of(person)
     return ""
 
 

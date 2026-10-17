@@ -17,22 +17,44 @@
 투자사 줄에 이어진 소싱 줄(`SourcingContact.vc_contact_id`)의
 `participation` 을 읽어 그린다.
 
-    이어진 줄 있음 · 참여    →  O
-    이어진 줄 있음 · 불참여  →  X
-    이어진 줄 없음           →  빈칸
+    이어진 줄 있음 · 불참여        →  X
+    이어진 줄 있음 · 그 밖의 값    →  O   (참여 · 참여 의사를 물어보는 중 · 사람이 적은 문구)
+    이어진 줄 없음                 →  빈칸
+
+O 는 **"이 갈래에 들어 있다"** 이지 "딜을 받겠다고 했다" 가 아니다. 받는지는
+아래 `참여` 칸이 정한다.
 
 그래서 딜 소싱 화면에서 `참여` 를 `불참여` 로 바꾸면 투자사 관리 현황의 그 칸이
 그대로 X 가 된다 — 두 화면이 **같은 칸 하나**를 본다. O/X 를 투자사 쪽에
 따로 적어 두는 길을 고르지 않은 이유가 그것이다: 두 벌을 맞추는 코드는 반드시
 한쪽이 빠지고, 이 저장소가 반복해 당한 사고가 정확히 그 모양이다.
 
+## `참여` 칸 — 딜을 받는 것은 **정확히 `참여`** 인 분뿐이다
+
+    참여                     딜 소싱 제안(참여 안내 · 월간 리마인드 · Series A 딜 공유)을 받는다
+    불참여                   안 받는다 — 투자사 관리 현황 칸은 X
+    참여 의사를 물어보는 중  안 받는다 — 갈래에는 있다(O). 동의하시면 `참여` 로 바꾼다
+    그 밖의 글(사람이 적음)  안 받는다 — `물어보는 중` 과 같게 본다(`11월에 다시 연락` 같은 메모)
+
+`takes_part` 가 그 한 자리다. 예전에는 "불참여가 아니면 받는다" 였는데, 그러면
+값을 하나 더 들이는 순간 그 값이 `참여` 와 똑같이 딜을 받는다 — 아직 동의하지
+않은 분께 딜이 나간다. 그래서 **허용 목록**으로 뒤집었다: 받는 값은 하나다.
+발송 화면 · 발송 목록 · A1 소싱 리마인드(자동) · 메일 채널이 모두 이 함수를 지난다.
+
+사람이 적는 문구는 막지 않는다(`normalize_participation` — 앞뒤 공백을 떼고 40자 ·
+제어문자 금지). 보기를 따로 저장하지 않는다 — 표의 고르는 창이 같은 칸의 다른 줄
+값을 보기로 모아 준다(`inline_edit.js` 의 pick).
+
 ## 칸을 고치면 (`set_mark`)
 
-    O  이어진 줄이 있으면 `참여` 로. 없으면 그 갈래에서 **같은 사람**을 찾아
-       잇고(이름 + 번호가 둘 다 같을 때만 — 아래 `auto_link` 와 같은 규칙),
+    O  이어진 줄이 있으면 — `불참여` 면 `참여 의사를 물어보는 중` 으로(다시 묻는
+       것으로 본다). `참여` · `물어보는 중` · 사람이 적은 문구는 **덮지 않는다** —
+       O 는 갈래에 넣는 것이지 동의를 받았다는 뜻이 아니다.
+       없으면 그 갈래에서 **같은 사람**을 찾아 잇고(이름 + 번호가 둘 다 같을 때만 —
+       아래 `auto_link` 와 같은 규칙. 이은 줄에도 위 규칙을 그대로 적용한다),
        같은 사람일 수도 있는 줄(번호만 · 이름+회사만 같다)이 있으면 **잇지도
        만들지도 않고 막는다** — 딜 소싱 화면의 후보로 넘긴다. 아무도 없으면
-       **새 줄을 만든다**.
+       **새 줄을 `참여 의사를 물어보는 중` 으로 만든다** — 동의는 아직이다.
     X  이어진 줄을 `불참여` 로. **지우지 않는다** — 리마인드 · `딜 받음` 이력이
        그 줄에 달려 있고, 다시 참여하시면 그대로 돌아온다.
     빈칸  이어진 줄이 없으면 그대로. 이어진 줄이 있으면 **막는다** — 빠지는
@@ -118,6 +140,10 @@ addresses_of`)이 그분을 못 찾는다(PR #284 리뷰). 한쪽에서 일부�
     [방 후보 찾기]로 보내는 사람 카톡에서 찾아 확정한다(`sourcing_rooms`).
   · **담당** — 따라 고치지 않는다. O 로 새 줄을 만들 때만 **O 를 넣은 사람**을
     담당으로 적는다(`create_row`) — 그 뒤로는 딜 소싱에서 따로 관리한다.
+    한꺼번에 넣는 스크립트(`scripts/apply_sourcing_marks.py`)는 담당 이름을
+    직접 넘길 수 있다(`set_mark(..., assignee=)`) — 계정 이름(`users.name`)이 팀이
+    딜 소싱 담당 칸에 적어 온 이름과 다를 수 있다. 이어지기만 하는 기존 줄의 담당은
+    그때도 바꾸지 않는다.
   · **권한** — 투자사 칸(O/X)은 그 투자사 줄을 고칠 수 있는 사람(담당 · 관리자
     — `routers/contacts._owned`)이다. 딜 소싱 쪽은 지금까지처럼 로그인한 누구나
     고친다(이어진 줄이어도 같다). 이어진 줄의 같은 칸을 딜 소싱에서 고치면 남의
@@ -150,10 +176,26 @@ COLUMN_LABEL = "Series A 딜 소싱"
 
 JOINED = "참여"
 LEFT = "불참여"
+#: 갈래에는 넣었지만 아직 동의를 받지 않은 분. 딜을 **받지 않는다**(`takes_part`).
+ASKING = "참여 의사를 물어보는 중"
+#: 표의 고르는 칸이 먼저 세우는 보기 — 이 밖의 글도 적을 수 있다(`normalize_participation`).
+CHOICES = (JOINED, LEFT, ASKING)
+#: 사람이 적는 문구의 최대 길이(앞뒤 공백을 뗀 뒤). 표 칸 하나에 읽히는 길이다.
+PARTICIPATION_MAX = 40
+
+#: 화면이 칸 색을 고르는 갈래 — 값이 아니라 **받는가**로 나눈다(`kind_of`).
+KIND_JOINED = "joined"
+KIND_LEFT = "left"
+KIND_PENDING = "pending"     # 물어보는 중 · 사람이 적은 문구 — 안 받는다, 갈래에는 있다
 
 MARK_JOINED = "O"
 MARK_LEFT = "X"
-MARKS = {JOINED: MARK_JOINED, LEFT: MARK_LEFT}
+
+#: 같은 뜻으로 받아 주는 말 — 띄어쓰기를 뺀 글자로 견준다(`_key`).
+_JOINED_WORDS = {"참여", "o", "○"}
+_LEFT_WORDS = {"불참여", "x", "×"}
+_ASKING_WORDS = {"참여의사를물어보는중", "물어보는중", "참여의사확인중"}
+_CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 
 #: 두 표에 다 있는 칸 — 이어진 뒤에는 한쪽을 고치면 다른 쪽도 같이 고친다.
 #: 두 모델에서 **이름이 같은 칸**만 둔다(`getattr` 한 번으로 양쪽을 읽는다).
@@ -176,23 +218,67 @@ class SyncError(Exception):
 # ── 값 읽기 ──────────────────────────────────────────────────────────────────
 
 def participation_of(row) -> str:
-    """`참여` | `불참여`. 비어 있거나 모르는 값은 `참여` 로 본다(칸의 기본값)."""
-    return LEFT if (getattr(row, "participation", "") or "").strip() == LEFT else JOINED
+    """이 줄의 `참여` 칸 — 적힌 글자(앞뒤 공백만 뗀다). 비어 있으면 `참여`(칸의 기본값
+    — DB 의 `server_default` 와 같다. 이 칸이 빈 줄은 이 값이 생기기 전 줄뿐이다)."""
+    return (getattr(row, "participation", "") or "").strip() or JOINED
+
+
+def kind_of(value) -> str:
+    """`참여` 칸 값(또는 줄) → 화면 갈래 `joined` · `left` · `pending`.
+
+    `pending` 은 `참여 의사를 물어보는 중` 과 사람이 적은 문구 — 딜을 받지 않지만
+    갈래에는 있는 분이다. 칸 색 · 빠진 수 세기가 이것으로 나눈다(`sourcing.html` ·
+    `deals.js` 가 서버가 실어 준 이 값을 쓴다 — 규칙을 화면에 다시 적지 않는다).
+    """
+    text = value if isinstance(value, str) else participation_of(value)
+    text = (text or "").strip() or JOINED
+    if text == JOINED:
+        return KIND_JOINED
+    if text == LEFT:
+        return KIND_LEFT
+    return KIND_PENDING
 
 
 def takes_part(row) -> bool:
-    """딜 소싱 제안(처음 안내 · 월간 리마인드)을 받는 사람인가."""
-    return participation_of(row) != LEFT
+    """딜 소싱 제안(참여 안내 · 월간 리마인드 · Series A 딜 공유)을 받는 사람인가.
+
+    **정확히 `참여` 일 때만** 받는다(모듈 머리말 — 허용 목록). `불참여` ·
+    `참여 의사를 물어보는 중` · 사람이 적은 문구는 모두 안 받는다. 손으로 보내는 길
+    (`routers/deals.py`) · 받을 분 목록(`routers/sourcing.sendable_rows`) · A1 소싱
+    리마인드(`services/automations/sourcing_remind.py`)가 이 한 자리를 본다.
+    """
+    return participation_of(row) == JOINED
+
+
+def is_left(row) -> bool:
+    """`불참여` 인가 — 딜 소싱에서 **빠진** 분. `물어보는 중` 은 빠진 것이 아니다
+    (방 맞추기 · 주소 채우기 같은 준비는 그분도 한다 — `sourcing_rooms` · `sourcing_receipts`)."""
+    return participation_of(row) == LEFT
 
 
 def normalize_participation(value: Optional[str]) -> str:
-    """사람이 적은 값을 `참여`/`불참여` 로. 모르는 말은 막는다(조용히 버리지 않는다)."""
+    """사람이 적은 `참여` 칸 값을 저장할 글자로.
+
+    `참여` · `불참여` · `참여 의사를 물어보는 중` 은 같은 뜻의 말(`O` · `x` ·
+    `물어보는 중` …)을 제 글자로 맞춘다. 그 밖의 글은 **앞뒤 공백만 떼고 그대로**
+    둔다 — 막는 것은 빈칸, 제어문자(줄바꿈 · 탭 포함), `PARTICIPATION_MAX` 자 넘는
+    글뿐이다. 그런 글은 딜을 받지 않는다(`takes_part`).
+    """
     text = (value or "").strip()
-    if text in (JOINED, MARK_JOINED, "o", "○"):
+    if not text:
+        raise SyncError("참여 칸은 비울 수 없습니다 — 빠지시면 '불참여' 로 두세요.")
+    if _CONTROL.search(text):
+        raise SyncError("참여 칸에는 줄바꿈 · 탭 같은 제어문자를 넣을 수 없습니다.")
+    key = _key(text)
+    if key in _JOINED_WORDS:
         return JOINED
-    if text in (LEFT, MARK_LEFT, "x", "×"):
+    if key in _LEFT_WORDS:
         return LEFT
-    raise SyncError(f"참여 칸에는 '{JOINED}' 나 '{LEFT}' 만 적습니다: {text or '(빈칸)'}")
+    if key in _ASKING_WORDS:
+        return ASKING
+    if len(text) > PARTICIPATION_MAX:
+        raise SyncError(f"참여 칸은 {PARTICIPATION_MAX}자까지 적습니다({len(text)}자).")
+    return text
 
 
 def normalize_mark(value: Optional[str]) -> str:
@@ -208,8 +294,11 @@ def normalize_mark(value: Optional[str]) -> str:
 
 
 def mark_of(row: Optional[SourcingContact]) -> str:
-    """이어진 소싱 줄 → 투자사 관리 현황 칸 값."""
-    return "" if row is None else MARKS[participation_of(row)]
+    """이어진 소싱 줄 → 투자사 관리 현황 칸 값. `불참여` 만 X, 그 밖의 값(참여 ·
+    물어보는 중 · 사람이 적은 문구)은 O — **갈래에 들어 있다**는 뜻이다(모듈 머리말)."""
+    if row is None:
+        return ""
+    return MARK_LEFT if is_left(row) else MARK_JOINED
 
 
 def is_synced(row) -> bool:
@@ -422,10 +511,15 @@ def assignee_for(db: Session, contact: VcContact, user: Optional[User]) -> str:
     return sheet_owner.real_name(owner) if owner is not None else ""
 
 
-def create_row(db: Session, contact: VcContact, participation: str = JOINED,
-               user: Optional[User] = None) -> SourcingContact:
+def create_row(db: Session, contact: VcContact, participation: str = ASKING,
+               user: Optional[User] = None,
+               assignee: Optional[str] = None) -> SourcingContact:
     """그 갈래 맨 아래에 새 줄. 카톡방은 **비워 둔다** — 보내는 사람 카톡에서
     [방 후보 찾기]로 찾는다(모듈 머리말 ★).
+
+    참여는 기본 `참여 의사를 물어보는 중` — O 는 갈래에 넣는 것이지 동의를 받았다는
+    뜻이 아니다(모듈 머리말). 동의하시면 딜 소싱 화면에서 `참여` 로 바꾼다.
+    담당은 `assignee` 를 넘기면 그 이름, 아니면 O 를 넣은 사람(`assignee_for`).
 
     갈래 글자는 **저장된 그대로** 쓴다(`sourcing_buckets.label_of`) — 줄들이
     `딜소싱` 으로 들어 있는데 코드의 글자로 만들면 딜 소싱 화면에 탭이 둘 선다.
@@ -445,22 +539,37 @@ def create_row(db: Session, contact: VcContact, participation: str = JOINED,
         # 채워지는 칸이 만들 때만 비어, 어느 길로 들어왔느냐에 따라 줄이 다르다.
         sectors=_text(contact.sectors) or None,
         round_size=_text(contact.round_size) or None,
-        assignee_name=assignee_for(db, contact, user) or None,
-        # 참여하신 날 — 이 명단은 참여 요청일 최신순이라 방금 넣은 분이 맨 위다.
+        assignee_name=_text(assignee) or assignee_for(db, contact, user) or None,
+        # 갈래에 넣은 날 — 이 명단은 참여 요청일 최신순이라 방금 넣은 분이 맨 위다.
         requested_at=clock.today().isoformat(),
         room_verified="unverified",
-        participation=participation,
+        participation=normalize_participation(participation),
         vc_contact_id=contact.id,
     )
     db.add(row)
     return row
 
 
+#: `set_mark` 가 한 일 — 한꺼번에 넣는 스크립트가 센다(`scripts/apply_sourcing_marks.py`).
+ACT_NONE = "none"          # 빈칸 — 아무것도 안 함
+ACT_CREATED = "created"    # 갈래에 새 줄
+ACT_LINKED = "linked"      # 갈래에 있던 줄과 이음
+ACT_CHANGED = "changed"    # 이미 이어진 줄의 참여만 바꿈
+ACT_KEPT = "kept"          # 이미 이어져 있고 바꿀 것이 없음
+
+
 def set_mark(db: Session, contact: VcContact, value: Optional[str],
-             user: Optional[User] = None) -> dict:
+             user: Optional[User] = None, assignee: Optional[str] = None,
+             participation: str = ASKING) -> dict:
     """투자사 관리 현황의 `Series A 딜 소싱` 칸을 고친다.
 
-    돌려주는 것: `{"mark": 지금 칸 값, "message": 화면에 띄울 한 줄}`.
+    O 의 규칙(모듈 머리말): 새 줄은 `participation`(기본 `참여 의사를 물어보는 중`)으로
+    만들고, 이어진 줄이 `불참여` 면 `participation` 으로 되돌린다(다시 묻는다). 이어진
+    줄이 `참여` · `물어보는 중` · 사람이 적은 문구면 **덮지 않는다**. `assignee` 는 새 줄의
+    담당(넘기지 않으면 O 를 넣은 사람) — 이어지기만 하는 줄의 담당은 안 바꾼다.
+
+    돌려주는 것: `{"mark": 지금 칸 값, "message": 화면에 띄울 한 줄,
+    "action": ACT_*, "participation": 이어진 줄의 참여(없으면 빈 글자)}`.
     `db.commit()` 은 부르는 쪽이 한다. 못 하는 까닭은 `SyncError`.
     """
     mark = normalize_mark(value)
@@ -470,10 +579,11 @@ def set_mark(db: Session, contact: VcContact, value: Optional[str],
             raise SyncError(
                 f"딜 소싱 › {SYNC_BUCKET} 에 이어진 분이라 비울 수 없습니다 — 빠지시면 "
                 "X(불참여)로 두세요. 줄을 아예 빼려면 딜 소싱 화면에서 [삭제] 합니다.")
-        return {"mark": "", "message": ""}
+        return {"mark": "", "message": "", "action": ACT_NONE, "participation": ""}
 
-    want = JOINED if mark == MARK_JOINED else LEFT
+    revive = normalize_participation(participation)
     message = ""
+    action = ACT_KEPT
     if row is None:
         if not sheet_owner.on_investor_list(contact, sheet_owner.hidden_labels(db)):
             raise SyncError("투자사 명단의 줄만 딜 소싱에 넣습니다 — 이 줄은 투자사로 "
@@ -481,24 +591,41 @@ def set_mark(db: Session, contact: VcContact, value: Optional[str],
         row = find_row(db, contact)
         if row is not None:
             link(row, contact)
+            action = ACT_LINKED
             message = f"딜 소싱 › {SYNC_BUCKET} 에 있던 '{row.name}' 줄과 이었습니다."
-        elif want == LEFT:
+        elif mark == MARK_LEFT:
             raise SyncError(
                 f"딜 소싱 › {SYNC_BUCKET} 에 없는 분이라 X 로 둘 줄이 없습니다 — "
                 "빈칸이 '딜 소싱에 없음' 입니다.")
         else:
-            row = create_row(db, contact, JOINED, user)
-            message = (f"딜 소싱 › {SYNC_BUCKET} 에 새로 넣었습니다 — 카톡방은 딜 소싱 "
-                       "화면의 [방 후보 찾기]로 보내는 분 카톡에서 찾아 확정하세요.")
+            row = create_row(db, contact, revive, user, assignee=assignee)
+            action = ACT_CREATED
+            message = (f"딜 소싱 › {SYNC_BUCKET} 에 '{row.participation}' 으로 새로 "
+                       "넣었습니다 — 카톡방은 딜 소싱 화면의 [방 후보 찾기]로 보내는 분 "
+                       "카톡에서 찾아 확정하세요.")
+            if not takes_part(row):
+                message += (" 동의하시면 딜 소싱 화면의 `참여` 칸을 '참여' 로 바꿔야 "
+                            "딜이 나갑니다.")
             others = other_buckets(db, contact)
             if others:
                 message += (f" 다른 갈래({', '.join(others)})에도 있는 분이라 그 줄은 "
                             "그대로 둡니다.")
-    if participation_of(row) != want:
+            return {"mark": mark_of(row), "message": message, "action": action,
+                    "participation": participation_of(row)}
+
+    if mark == MARK_LEFT:
+        want = LEFT if not is_left(row) else None
+    else:
+        # O — `불참여` 만 되돌린다(다시 묻는다). 참여 · 물어보는 중 · 문구는 그대로.
+        want = revive if is_left(row) else None
+    if want is not None and participation_of(row) != want:
         row.participation = want
-        if not message:
-            message = f"딜 소싱에서 '{want}' 으로 바꿨습니다."
-    return {"mark": mark, "message": message}
+        if action == ACT_KEPT:
+            action = ACT_CHANGED
+        note = f"딜 소싱에서 '{want}' 으로 바꿨습니다."
+        message = f"{message} {note}".strip()
+    return {"mark": mark, "message": message, "action": action,
+            "participation": participation_of(row)}
 
 
 def link_key(row) -> tuple:
@@ -653,6 +780,33 @@ def restore_confirmed(db: Session, rows: List[SourcingContact], kept: List[tuple
         if len(same) != 1 or contact is None or linked_row(db, contact) is not None:
             continue
         link(same[0], contact, confirmed=True)
+        done += 1
+    return done
+
+
+def kept_participation(rows: Iterable[SourcingContact]) -> List[tuple]:
+    """시트를 다시 가져오기 **전에** — `참여` 가 아닌 줄의 `(이름 열쇠, 번호 숫자, 값)`.
+
+    시트에는 `참여` 칸이 없다. 갈래를 통째로 갈아 끼우면 새 줄은 기본값 `참여` 가
+    되어, `불참여` · `참여 의사를 물어보는 중` 이던 분이 **딜을 받는 분이 된다**
+    (`takes_part`). 그래서 갈아 끼우기 전에 적어 두고 `restore_participation` 으로
+    되살린다. 어느 갈래에서든 같다(받는 판정은 갈래를 가리지 않는다).
+    """
+    return [(*link_key(r), participation_of(r)) for r in rows if not takes_part(r)]
+
+
+def restore_participation(rows: List[SourcingContact], kept: List[tuple]) -> int:
+    """다시 가져온 줄에 적어 둔 `참여` 칸을 되살린다. 같은 분은 이름(`_key`)으로 찾고,
+    같은 이름이 여럿이면 번호까지 같은 줄이다(`restore_confirmed` 와 같은 손). 한 줄로
+    안 좁혀지면 건드리지 않는다. 돌려주는 것은 되살린 수."""
+    done = 0
+    for name, phone, value in kept:
+        same = [r for r in rows if _key(r.name) == name]
+        if len(same) > 1:
+            same = [r for r in same if digits(r.phone) == phone]
+        if len(same) != 1:
+            continue
+        same[0].participation = value
         done += 1
     return done
 

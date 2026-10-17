@@ -251,4 +251,31 @@ function checkedSourcing(dom) {
   assert.strictEqual(box(t.dom, "가소싱").checked, false);
 }
 
-console.log("ok - 딜 소싱 [보낼 문구] · 이 달 딜 받음 제외 · 명단 다시 읽기 · 불참여 제외");
+// --- ⑥ 화면을 연 뒤에 `참여 의사를 물어보는 중` 이 된 분 — 같이 빠지고 딱지가 다르다 ----
+//
+// 받는 것은 정확히 `참여` 인 분뿐이다(`sourcing_sync.takes_part`). 다시 읽은 줄의
+// `out_label` 이 딱지 글자다 — 불참여와 사정이 달라 서버가 따로 짓는다.
+{
+  const LABEL = "참여 확인 전 · 참여 의사를 물어보는 중";
+  const state = {
+    rows: SOURCING.map(function (s) {
+      return { id: s[0], assignee: s[3], received: s[4], out: s[0] === 102,
+               out_label: s[0] === 102 ? LABEL : "" };
+    }),
+    assignees: [{ name: "가담당", count: 1 }, { name: "나담당", count: 1 }]
+  };
+  const gets = {};
+  gets[STATE_URL] = state;
+  const t = setup(gets);
+  const asking = card(t.dom, "나소싱");
+  assert.strictEqual(asking.getAttribute("data-out"), "1", "물어보는 중인 분이 고를 수 있게 남았다");
+  assert.strictEqual(asking.hidden, true);
+  const tag = asking.querySelector(".out-tag");
+  assert.strictEqual(tag.hidden, false, "빠진 까닭 딱지가 안 섰다");
+  assert.strictEqual(tag.textContent, LABEL, "불참여 딱지를 그대로 달았다 — 사정이 다르다");
+  selectAll(t.dom);
+  assert.ok(checkedSourcing(t.dom).indexOf("나소싱") === -1,
+            "[전체선택] 이 물어보는 중인 분까지 골랐다");
+}
+
+console.log("ok - 딜 소싱 [보낼 문구] · 이 달 딜 받음 제외 · 명단 다시 읽기 · 불참여 · 확인 전 제외");
