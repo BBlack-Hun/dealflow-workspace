@@ -19,7 +19,7 @@ from ..services import (cadence, contact_columns, deal_history, deal_queue,
                         llm_brief, mailer, manual_send, ref_panel,
                         send_window, series_a_share, sheet_import,
                         sheet_owner, sourcing_link, sourcing_receipts,
-                        startup_send, taxonomy)
+                        sourcing_sync, startup_send, taxonomy)
 from ..ui import MENU, base_ctx as _base_ctx
 from .companies import BLOCKED_CONTRACT
 from .companies import blocked_reason as company_blocked_reason
@@ -30,6 +30,7 @@ from .sourcing import assignee_chips as sourcing_assignee_chips
 from .sourcing import assignee_of as sourcing_assignee_of
 from .sourcing import buckets as sourcing_bucket_rows
 from .sourcing import held_counts as sourcing_held_counts
+from .sourcing import out_label as sourcing_out_label
 from .sourcing import sendable_rows as sourcing_rows
 
 router = APIRouter(tags=["pages"])
@@ -122,12 +123,14 @@ def deals_page(
     # `routers/sourcing.py` 의 `rows_of`). 여기가 질의를 따로 들고 있었는데,
     # 같은 명단을 두 화면이 각자 세우면 한쪽만 고쳐지는 날 순서가 갈린다.
     #
-    # **`참여` 가 아닌 분은 처음부터 안 싣는다**(`sourcing.sendable_rows`) — 딜 소싱
-    # 화면이나 투자사 관리 현황의 `Series A 딜 소싱` 칸에서 X 로 둔 분(불참여)과,
-    # O 로 넣었지만 아직 동의 전인 분(참여 의사를 물어보는 중 · 사람이 적은 문구).
-    # 발송 길도 같은 판정으로 한 번 더 거른다(`deals.create_send_list`). 뺀 수는
-    # 목록 위에 적는다(`sourcing_held`).
-    sourcing_contacts = sourcing_rows(db)
+    # **참여 안내를 받는 분까지 싣는다**(`sourcing.sendable_rows(invite=True)`) —
+    # 불참여와 사람이 적은 문구는 처음부터 없다. 제안 대기중 · 물어보는 중은 참여
+    # 안내(처음)에서만 고른다 — 그 카드에 딱지를 달고(`sourcing_invite_only` 의
+    # 글자 — `sourcing.out_label`) 다른 글에서는 막는다(`deals.js`). 발송 길도 같은
+    # 판정으로 한 번 더 거른다(`deals.create_send_list`). 뺀 수는 목록 위에 적는다.
+    sourcing_contacts = sourcing_rows(db, invite=True)
+    sourcing_invite_only = {c.id: sourcing_out_label(c) for c in sourcing_contacts
+                            if not sourcing_sync.takes_part(c)}
     sourcing_held = sourcing_held_counts(db)
     # 갈래는 곧 문구다. 이름을 검색창에 쳐서 찾게 하면 갈래가 몇 개인지도
     # 모른 채 골라야 하므로, 누를 수 있는 필터로 내놓는다. 순서는 좌측
@@ -222,6 +225,7 @@ def deals_page(
         "queue_empty_label": deal_queue.EMPTY_GROUP_LABEL,
         "sourcing_contacts": sourcing_contacts,
         "sourcing_held": sourcing_held,
+        "sourcing_invite_only": sourcing_invite_only,
         "sourcing_buckets": sourcing_buckets,
         "sourcing_bucket_of": sourcing_bucket_of,
         "sourcing_assignees": sourcing_assignees,

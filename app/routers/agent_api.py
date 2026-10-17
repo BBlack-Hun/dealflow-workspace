@@ -27,7 +27,7 @@ from sqlalchemy.orm import Session
 from .. import clock, config
 from ..db import get_db
 from ..services import (cadence, pipeline, room_joined, scheduled_send,
-                        send_guard)
+                        send_guard, sourcing_sync)
 from ..deps import get_agent_device, may_auto_attach, now_iso
 from ..models import (ROOM_SEARCH_TOPIC, SENDER_ROOM_TOPIC, SOURCING_ROOM_TOPIC,
                       AgentDevice, SendItem, SendJob, User)
@@ -364,6 +364,8 @@ def item_result(
             # 보내고 나서 다시 화면으로 돌아와 '전달함'을 누르게 하면
             # 바쁠 때 그 한 번을 빼먹는다.
             pipeline.close_requests_for(db, job, item.contact_id)
+        # 참여 안내가 나간 `제안 대기중` 줄 → `물어보는 중`(`sourcing_sync.mark_invited`).
+        sourcing_sync.mark_invited(db, item, f"/agent/items/{item_id}/result")
     else:
         item.status = "failed"
         item.error = body.error or "unknown error"

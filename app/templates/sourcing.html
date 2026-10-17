@@ -254,8 +254,9 @@
                data-vc-picks='{{ vc_picks[r.id]|tojson }}' hidden></div>
           {% endif %}
         </td>
-        {# 딜 소싱 제안(참여 안내 · 월간 리마인드 · Series A 딜 공유)은 **정확히
-           `참여` 인 분께만** 나간다(`sourcing_sync.takes_part`). 불참여는 흐리게,
+        {# 월간 리마인드 · Series A 딜 공유는 **정확히 `참여` 인 분께만** 나간다
+           (`sourcing_sync.takes_part` — 참여 안내는 제안 대기중 · 물어보는 중도
+           받는다: `can_get_invite`). 불참여는 흐리게,
            `참여 의사를 물어보는 중` · 사람이 적은 문구(아직 동의 전)는 주황
            딱지(`part-pending`)로 — 둘 다 안 받지만 사정이 다르다. 줄은 그대로
            둔다 — 다시 참여하시면 이력 그대로 돌아온다. 보기는 세 값이고 그 밖의

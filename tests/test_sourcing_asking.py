@@ -12,12 +12,15 @@
   ② 값 검사 — 세 값은 같은 뜻의 말을 맞춰 적고, 그 밖의 글은 그대로(40자 · 제어문자 금지).
   ③ O — 새 줄은 `딜 소싱 참여 제안 대기중`, `불참여` 였던 줄도 `제안 대기중`(다시
      묻는다), 참여 · 제안 대기중 · 물어보는 중 · 문구는 덮지 않는다. 새 줄의 담당은 넘길 수 있다(스크립트용).
-  ④ 발송 — 딜 제안 관리 목록 · 참여 안내 · 월간 리마인드 · Series A 딜 공유 · 메일
-     채널 · A1 소싱 리마인드(collect · still_ok)가 모두 같은 판정으로 뺀다.
+  ④ 발송 — 월간 리마인드 · Series A 딜 공유 · A1 소싱 리마인드(collect · still_ok)는
+     정확히 `참여` 만. 참여 안내(처음)만 제안 대기중 · 물어보는 중도 받는다(문구 ·
+     불참여는 뺀다). 카톡 · 메일 같다.
   ⑤ 화면 — 딜 소싱 칸은 주황 딱지 · 보기 세 값 · 직접 적기. 딜 제안 관리에 뺀 수.
   ⑥ [방 후보 찾기] · 메일 주소 채우기는 물어보는 중인 분도 한다(발송이 아니다).
   ⑦ 시트를 다시 가져와도 `참여` 가 아닌 값은 되살린다(기본값 `참여` 로 돌아가지 않게).
   ⑧ 한꺼번에 넣는 스크립트(`scripts/apply_sourcing_marks.py`) — 미리보기는 DB 에 안 쓴다.
+  ⑨ 참여 안내가 `제안 대기중` 인 분께 나가면 `물어보는 중` 으로(수정 로그). 실패 ·
+     시험 · 중단 · 다른 값은 그대로.
 
 이름 · 회사 · 번호는 전부 가상값이다(공개 저장소).
 """
@@ -200,78 +203,105 @@ def _four(db):
     }
 
 
-def test_pending_people_are_not_offered_and_not_sent(board, db, users):
+def _send_to(board, rows, topic, channel=None):
+    body = {"contact_ids": [r.id for r in rows], "mode": "sourcing", "topic": topic}
+    if channel:
+        body["channel"] = channel
+    return board.post("/api/deals/send", json=body)
+
+
+def test_invite_lists_asking_but_not_custom_or_left(board, db, users):
+    """참여 안내(처음) — 물어보는 중은 카드가 있고(그 글에서만) 문구 · 불참여는 없다."""
     rows = _four(db)
 
     deals = board.get("/deals").text
     listing = deals[deals.index('id="sourcing-list"'):]
-    assert f'value="{rows["joined"].id}"' in listing
-    for key in ("asking", "custom", "left"):
+    for key in ("joined", "asking"):
+        assert f'value="{rows[key].id}"' in listing, key
+    for key in ("custom", "left"):
         assert f'value="{rows[key].id}"' not in listing, key
-    # 뺀 수를 목록 위에 적는다 — 확인 전과 불참여를 나눠서
+    card = listing[listing.rfind("<label", 0, listing.index(f'value="{rows["asking"].id}"')):]
+    card = card[:card.index("</label>")]
+    assert 'data-invite-only="1"' in card
+    assert f"참여 확인 전 · {ASKING}" in card
+    card = listing[listing.rfind("<label", 0, listing.index(f'value="{rows["joined"].id}"')):]
+    assert 'data-invite-only="0"' in card[:card.index("</label>")]
+    # 뺀 수 — 직접 문구와 불참여만. 제안 대기중 · 물어보는 중은 참여 안내에 뜬다고 말한다
     held = deals[deals.index('id="sourcing-held"'):]
     held = held[:held.index("</p>")]
-    assert "참여 확인 전(제안 대기·물어보는 중 등) <b>2</b>명" in held
+    assert "직접 적은 문구 <b>1</b>명" in held
     assert "불참여 <b>1</b>명" in held
-
-    for topic in ("sourcing_intro", "sourcing_remind"):
-        r = board.post("/api/deals/send", json={"contact_ids": [rows["asking"].id],
-                                                "mode": "sourcing", "topic": topic})
-        assert r.status_code == 400, r.text
-        assert f"참여 확인 전({ASKING})" in r.json()["detail"]
-
-        ids = [rows[k].id for k in ("joined", "asking", "custom", "left")]
-        r = board.post("/api/deals/send", json={"contact_ids": ids,
-                                                "mode": "sourcing", "topic": topic})
-        assert r.status_code == 200, r.text
-        assert r.json()["total"] == 1
-        reasons = {s["name"]: s["reason"] for s in r.json()["skipped"]}
-        assert f"참여 확인 전({CUSTOM})" in reasons["메모심사"]
-        assert "참여 확인 전" in reasons["묻는심사"]
-        assert "딜 소싱 불참여" in reasons["빠진심사"]
-
-    preview = board.post("/api/deals/preview", json={
-        "contact_ids": [rows["asking"].id], "mode": "sourcing"}).json()
-    assert any("참여 확인 전" in w for w in preview["previews"][0]["warnings"])
+    assert "제안 대기중·물어보는 중은 참여 안내(처음)에만" in held
 
 
-def test_offer_pending_people_are_not_offered_and_not_sent(board, db, users):
-    """O 로 막 넣은 분(`딜 소싱 참여 제안 대기중`) — 목록에도 없고 보내도 빠진다."""
-    joined = sc(db, name="참여심사", phone="010-1000-0001", kakao_room_name="참여 방")
-    offer = sc(db, name="대기심사", phone="010-1000-0006", kakao_room_name="대기 방",
-               participation=OFFER)
-
-    deals = board.get("/deals").text
-    listing = deals[deals.index('id="sourcing-list"'):]
-    assert f'value="{offer.id}"' not in listing
-    for topic in ("sourcing_intro", "sourcing_remind"):
-        r = board.post("/api/deals/send", json={"contact_ids": [joined.id, offer.id],
-                                                "mode": "sourcing", "topic": topic})
-        assert r.status_code == 200, r.text
-        assert r.json()["total"] == 1
-        reasons = {s["name"]: s["reason"] for s in r.json()["skipped"]}
-        assert f"참여 확인 전({OFFER})" in reasons["대기심사"]
-
-
-def test_state_marks_pending_people_out_with_their_own_label(board, db, users):
-    rows = _four(db)
-    state = {r["id"]: r for r in board.get("/api/sourcing/state").json()["rows"]}
-    assert (state[rows["joined"].id]["out"], state[rows["joined"].id]["out_label"]) == (False, "")
-    assert state[rows["asking"].id]["out"] is True
-    assert state[rows["asking"].id]["out_label"] == f"참여 확인 전 · {ASKING}"
-    assert state[rows["custom"].id]["out_label"] == f"참여 확인 전 · {CUSTOM}"
-    assert state[rows["left"].id]["out_label"] == "딜 소싱 불참여"
-
-
-def test_the_mail_channel_skips_pending_people_too(board, db, users, mail_on, monkeypatch):
+@pytest.mark.parametrize("channel", [None, "email"])
+def test_invite_goes_to_offer_and_asking_others_stay_joined_only(
+        board, db, users, mail_on, monkeypatch, channel):
+    """참여 안내는 제안 대기중 · 물어보는 중 · 참여, 월간 리마인드는 정확히 `참여` 만.
+    카톡과 메일이 같다."""
     from app.services import mail_sender
 
     monkeypatch.setattr(mail_sender, "send_job", lambda *a, **k: None)
-    asking = sc(db, email="ask@example.com", participation=ASKING)
-    r = board.post("/api/deals/send", json={"contact_ids": [asking.id],
-                                            "mode": "sourcing", "channel": "email"})
-    assert r.status_code == 400
-    assert "참여 확인 전" in r.json()["detail"]
+    rows = _four(db)
+    rows["offer"] = sc(db, name="대기심사", phone="010-1000-0006",
+                       kakao_room_name="대기 방", participation=OFFER)
+    for i, row in enumerate(rows.values()):
+        row.email = f"p{i}@example.com"
+    db.commit()
+    everyone = list(rows.values())
+
+    r = _send_to(board, everyone, "sourcing_intro", channel)
+    assert r.status_code == 200, r.text
+    assert r.json()["total"] == 3                    # 참여 · 물어보는 중 · 제안 대기중
+    reasons = {s["name"]: s["reason"] for s in r.json()["skipped"]}
+    assert set(reasons) == {"메모심사", "빠진심사"}
+    assert f"직접 적은 문구({CUSTOM})" in reasons["메모심사"]
+    assert "딜 소싱 불참여" in reasons["빠진심사"]
+
+    r = _send_to(board, [rows["custom"]], "sourcing_intro", channel)
+    assert r.status_code == 400 and "직접 적은 문구" in r.json()["detail"]
+
+    r = _send_to(board, everyone, "sourcing_remind", channel)
+    assert r.status_code == 200, r.text
+    assert r.json()["total"] == 1                    # 참여만
+    reasons = {s["name"]: s["reason"] for s in r.json()["skipped"]}
+    assert f"참여 확인 전({ASKING})" in reasons["묻는심사"]
+    assert f"참여 확인 전({OFFER})" in reasons["대기심사"]
+    assert f"참여 확인 전({CUSTOM})" in reasons["메모심사"]
+    assert "딜 소싱 불참여" in reasons["빠진심사"]
+
+    r = _send_to(board, [rows["offer"]], "sourcing_remind", channel)
+    assert r.status_code == 400 and f"참여 확인 전({OFFER})" in r.json()["detail"]
+
+
+def test_invite_preview_warns_only_custom_and_left(board, db, users):
+    rows = _four(db)
+
+    def warns(row, topic):
+        got = board.post("/api/deals/preview", json={
+            "contact_ids": [row.id], "mode": "sourcing", "topic": topic}).json()
+        return " ".join(got["previews"][0]["warnings"])
+
+    assert "참여 확인 전" not in warns(rows["asking"], "sourcing_intro")
+    assert "직접 적은 문구" in warns(rows["custom"], "sourcing_intro")
+    assert "불참여" in warns(rows["left"], "sourcing_intro")
+    assert "참여 확인 전" in warns(rows["asking"], "sourcing_remind")
+
+
+def test_state_marks_invite_only_and_out_rows(board, db, users):
+    rows = _four(db)
+    offer = sc(db, name="대기심사", phone="010-1000-0006", participation=OFFER)
+    state = {r["id"]: r for r in board.get("/api/sourcing/state").json()["rows"]}
+
+    def view(row):
+        got = state[row.id]
+        return got["out"], got["invite_only"], got["out_label"]
+
+    assert view(rows["joined"]) == (False, False, "")
+    assert view(rows["asking"]) == (False, True, f"참여 확인 전 · {ASKING}")
+    assert view(offer) == (False, True, f"참여 확인 전 · {OFFER}")
+    assert view(rows["custom"]) == (True, False, f"참여 확인 전 · {CUSTOM}")
+    assert view(rows["left"]) == (True, False, "딜 소싱 불참여")
 
 
 def test_series_a_share_skips_pending_people(world, client, db):
@@ -474,3 +504,113 @@ def test_the_script_can_ask_again_and_refuses_bad_values(db, users, marks_world,
     bad.write_text("12a\n", encoding="utf-8")
     with pytest.raises(SystemExit):
         apply_sourcing_marks.main(["--ids-file", str(bad)])
+
+
+# ── ⑨ 참여 안내가 나가면 `제안 대기중` → `물어보는 중` ─────────────────────────
+
+def _report_kakao(board, item_id, status):
+    from tests.conftest import DEMO_TOKEN, auth
+
+    r = board.post(f"/api/agent/items/{item_id}/result", headers=auth(DEMO_TOKEN),
+                   json={"status": status, "error": None if status == "sent" else "방 없음"})
+    assert r.status_code == 200, r.text
+
+
+def _items_by_row(db, job_id):
+    from app.models import SendItem
+
+    return {i.sourcing_contact_id: i for i in db.query(SendItem).filter_by(job_id=job_id)}
+
+
+def _participation_logs(db, row_id):
+    import json
+
+    from app.models import EditLog
+
+    logs = db.query(EditLog).filter_by(table_name="sourcing_contacts", row_id=row_id).all()
+    return [(log.actor_user_id, json.loads(log.changes_json)) for log in logs]
+
+
+def test_a_sent_invite_moves_offer_pending_to_asking(board, db, users):
+    """카톡 — 성공이면 바뀌고(수정 로그), 실패 · 다른 값 · 그 사이 바뀐 값은 그대로."""
+    sent = sc(db, name="대기하나", phone="010-1000-0011", kakao_room_name="방 하나",
+              participation=OFFER)
+    failed = sc(db, name="대기둘", phone="010-1000-0012", kakao_room_name="방 둘",
+                participation=OFFER)
+    changed = sc(db, name="대기셋", phone="010-1000-0013", kakao_room_name="방 셋",
+                 participation=OFFER)
+    joined = sc(db, name="참여심사", phone="010-1000-0014", kakao_room_name="방 넷")
+    asking = sc(db, name="묻는심사", phone="010-1000-0015", kakao_room_name="방 다섯",
+                participation=ASKING)
+    r = _send_to(board, [sent, failed, changed, joined, asking], "sourcing_intro")
+    assert r.status_code == 200 and r.json()["total"] == 5, r.text
+    items = _items_by_row(db, r.json()["job_id"])
+    changed.participation = "불참여"            # 보내는 사이 사람이 바꿨다
+    db.commit()
+    before = {row.id: len(_participation_logs(db, row.id)) for row in (sent, failed, joined)}
+
+    _report_kakao(board, items[sent.id].id, "sent")
+    _report_kakao(board, items[failed.id].id, "failed")
+    for row in (changed, joined, asking):
+        _report_kakao(board, items[row.id].id, "sent")
+    db.expire_all()
+    assert [r.participation for r in (sent, failed, changed, joined, asking)] == [
+        ASKING, OFFER, "불참여", "참여", ASKING]
+    [(actor, changes)] = _participation_logs(db, sent.id)[before[sent.id]:]
+    assert actor == users["u1"].id                  # 회차를 만든 사람
+    assert changes == [{"field": "participation", "before": OFFER, "after": ASKING}]
+    for row in (failed, joined):
+        assert len(_participation_logs(db, row.id)) == before[row.id]
+
+
+def test_test_sends_and_canceled_items_do_not_move_offer_pending(board, db, users):
+    """시험 발송(`test_send`) · 리마인드 회차 · 중단한 건은 성공을 받아도 그대로다."""
+    from app.models import TEST_SEND_KIND, SendItem, SendJob
+    from app.services import sourcing_msg
+
+    offer = sc(db, name="대기심사", phone="010-1000-0016", kakao_room_name="대기 방",
+               participation=OFFER)
+    ids = []
+    for kind, topic, status in ((TEST_SEND_KIND, None, "pending"),
+                                ("sourcing_intro", sourcing_msg.REMIND_KIND, "pending"),
+                                ("sourcing_intro", None, "canceled")):
+        job = SendJob(user_id=users["u1"].id, kind=kind, topic=topic, status="queued",
+                      total=1, sent=0, failed=0)
+        db.add(job)
+        db.flush()
+        item = SendItem(job_id=job.id, sourcing_contact_id=offer.id, room_name="시험방",
+                        message="시험", status=status)
+        db.add(item)
+        db.flush()
+        ids.append(item.id)
+    db.commit()
+    for item_id in ids:
+        _report_kakao(board, item_id, "sent")
+    db.expire_all()
+    assert offer.participation == OFFER
+
+
+def test_a_mailed_invite_moves_offer_pending_too(board, db, users, mail_on, monkeypatch):
+    """메일 — 보낸 건만 바뀐다. 거부된 주소는 그대로."""
+    import smtplib
+
+    from app.services import mail_sender
+
+    monkeypatch.setattr(mail_sender, "send_job", lambda *a, **k: None)
+    ok = sc(db, name="대기하나", phone="010-1000-0021", email="ok@example.com",
+            participation=OFFER)
+    bad = sc(db, name="대기둘", phone="010-1000-0022", email="bad@example.com",
+             participation=OFFER)
+    r = _send_to(board, [ok, bad], "sourcing_intro", "email")
+    assert r.status_code == 200 and r.json()["total"] == 2, r.text
+
+    def flaky(to, subject, body, settings=None):
+        if to == "bad@example.com":
+            raise smtplib.SMTPRecipientsRefused({to: (550, b"no such user")})
+
+    monkeypatch.setattr("app.services.mailer.send_mail", flaky)
+    mail_sender._run(db, r.json()["job_id"], gap_sec=0)
+    db.expire_all()
+    assert (ok.participation, bad.participation) == (ASKING, OFFER)
+    assert [c for _a, c in _participation_logs(db, ok.id)][-1] == [
+        {"field": "participation", "before": OFFER, "after": ASKING}]
