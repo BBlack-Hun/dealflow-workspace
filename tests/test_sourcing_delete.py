@@ -297,7 +297,7 @@ def test_the_delete_button_did_not_add_a_column(signed_in):
     first_row = body[body.index("<tbody>"):body.index("</tbody>")]
     first_row = first_row[:first_row.index("</tr>")]
 
-    # NO + 컬럼 + 월간 리마인드 달 칸(#14 — `COLUMNS` 밖의 읽기 전용 칸)
-    assert len(re.findall(r"<th[\s>]", head)) == len(COLUMNS) + 1 + MONTHS
-    assert len(re.findall(r"<td[\s>]", first_row)) == len(COLUMNS) + 1 + MONTHS
+    # 고르는 칸 + NO + 컬럼 + 월간 리마인드 달 칸(#14 — `COLUMNS` 밖의 읽기 전용 칸)
+    assert len(re.findall(r"<th[\s>]", head)) == len(COLUMNS) + 2 + MONTHS
+    assert len(re.findall(r"<td[\s>]", first_row)) == len(COLUMNS) + 2 + MONTHS
     assert "js-sourcing-del" in first_row

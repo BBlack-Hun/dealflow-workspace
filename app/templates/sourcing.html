@@ -17,8 +17,8 @@
 <p class="hint">
   보내는 것은 <a href="/deals">딜 제안 관리</a>의 <b>[딜 소싱 제안]</b> 탭에서 합니다.
   <b>카톡방 이름</b>이 비어 있으면 그 사람에게는 나가지 않습니다 — 보낼 방이 없기
-  때문입니다. 방은 <b>보내는 분 카톡의 딜 소싱 방</b>입니다 — 보낼 PC 에서
-  <b>[방 후보 찾기]</b> 를 누르면 그 카톡에서 찾아 후보를 담고, 후보를 눌러 확정합니다.
+  때문입니다. 방은 <b>보내는 분 카톡의 딜 소싱 방</b>입니다 — 보낼 PC 에서 찾을 분을
+  체크하고 <b>[방 후보 찾기]</b> 를 누르면 그 카톡에서 찾아 후보를 담고, 후보를 눌러 확정합니다.
 </p>
 
 {% if msg %}<p class="flash">{{ msg }}</p>{% endif %}
@@ -79,16 +79,20 @@
         지금 메일 확인</button>
     </form>
     {% endif %}
-    {# [방 후보 찾기] — 이 갈래(전체 탭이면 전체)에서 방이 없는 분을 **누른 사람
-       PC 의 카톡**에서 찾는다(`services/sourcing_rooms.py`). 아무것도 보내지
-       않는다. 찾은 제목은 후보로만 담기고, 각 줄의 카톡방 칸에서 골라 확정한다. #}
+    {# [방 후보 찾기] — 표 맨 왼쪽 체크박스로 **고른 분 중 `방 없음` 인 분**을
+       **누른 사람 PC 의 카톡**에서 찾는다(`services/sourcing_rooms.py`). 아무것도
+       보내지 않는다. 찾은 제목은 후보로만 담기고, 각 줄의 카톡방 칸에서 골라
+       확정한다. **아무도 안 골랐으면 단추가 잠긴다** — 예전처럼 이 갈래 전부로
+       대신하지 않는다(서버도 막는다). 고른 줄 번호(`ids`)는 화면 스크립트가 싣는다. #}
     <form method="post" action="/sourcing/rooms/search" class="inline-form"
-          data-testid="sourcing-room-search">
+          id="sourcing-room-search" data-testid="sourcing-room-search">
       <input type="hidden" name="tab" value="{{ selected or 'all' }}">
-      <button type="submit" class="secondary-btn"{% if not room_search_count %} disabled{% endif %}
-              title="방이 없는 {{ room_search_count }}명을 내 PC 의 카톡에서 찾습니다 — 메시지는 보내지 않습니다">
-        방 후보 찾기 ({{ room_search_count }}명)</button>
+      <input type="hidden" name="ids" value="">
+      <button type="submit" class="secondary-btn" id="sourcing-room-btn" disabled
+              title="표에서 체크한 분 중 방이 없는 분을 내 PC 의 카톡에서 찾습니다 — 메시지는 보내지 않습니다">
+        방 후보 찾기 (선택 0명)</button>
     </form>
+    <span class="hint" id="sourcing-room-hint" data-testid="sourcing-room-hint">찾을 분을 먼저 고르세요</span>
     {# **[Series A 딜 소개]** — 이 갈래 심사역께 IR 기업 현황 › `Series A 이상
        기업` 탭의 받은 딜을 소개한다. 누르면 딜 제안 관리 › 딜 소싱 제안이
        [보낼 문구 › Series A 딜 공유]로 열리고, **이 표에서 체크한 참여 분**이
@@ -97,7 +101,7 @@
        골랐으면 단추가 잠긴다** — 보이는 줄 전부로 슬쩍 대신하지 않는다. 체크한
        불참여 분은 싣지 않고 몇 명 뺐는지 옆에 적는다. 이 갈래에서만 선다
        (`series_a_share.BUCKET`). #}
-    {% if picking %}
+    {% if share_tab %}
     <a class="primary-btn inline" id="sourcing-share-btn" data-testid="sourcing-share-btn"
        aria-disabled="true"
        data-base="/deals?mode=sourcing&amp;topic={{ share_topic }}"
@@ -118,18 +122,16 @@
 <div class="chip-row" data-filter-chips></div>
 
 {% if rows %}
-{# 맨 왼쪽 체크박스 칸 — [Series A 딜 소개]로 넘길 분을 고른다. 그 단추가 서는
-   갈래(`share_bucket`)에서만 선다 — 다른 탭에는 고른 것을 쓸 곳이 없다.
+{# 맨 왼쪽 체크박스 칸 — [방 후보 찾기]로 찾을 분 · [Series A 딜 소개](시리즈 A
+   갈래)로 넘길 분을 고른다. [방 후보 찾기]가 모든 탭에 있으므로 이 칸도 모든 탭에 선다.
    **머리글 · 칸 수가 `COLUMNS` 와 1:1** 이라는 약속(아래 행 주석)은 그대로다 —
    이 칸은 `NO` 처럼 `COLUMNS` 밖의 머리 칸이고 `NO` 앞에 선다. #}
 <div class="table-wrap wide">
   <table class="grid-table" id="sourcing-table" data-inline-url="/api/sourcing">
     <thead>
       <tr>
-        {% if picking %}
         <th class="pick-col" style="width:32px"><input type="checkbox" id="sourcing-check-all"
             aria-label="지금 보이는 줄 모두 고르기" title="지금 보이는(걸러진) 줄을 모두 고르거나 풉니다"></th>
-        {% endif %}
         <th class="num" style="width:34px">NO</th>
         {# 어느 칸에 필터를 세울지는 `COLUMNS` 한 곳에서만 정한다 — 머리글과 행이
            같은 목록을 돌아야 선언(`data-filters`)과 값(`data-f-*`)이 어긋날 수
@@ -162,14 +164,14 @@
          **담당자만은 칸 글자가 아니라 지금 맡은 사람**이다(`assignees` —
          `가담당 > 10/13 나담당` 이면 `나담당`). 딜 제안 관리의 [담당] 칩과 같은
          값이라야 두 화면이 같은 사람을 고른다. 고친 뒤에는 서버가 돌려준 값으로
-         다시 적는다(아래 `inline-saved`). #}
-      <tr data-id="{{ r.id }}"
+         다시 적는다(아래 `inline-saved`).
+         `data-no-room` 은 이 줄이 `방 없음` 이라는 표시다(`no_room`) — 툴바
+         [방 후보 찾기]는 체크한 줄 중 이 표시가 있는 줄만 싣는다. #}
+      <tr data-id="{{ r.id }}"{% if r.id in no_room %} data-no-room{% endif %}
           data-search="{{ (r.name ~ ' ' ~ (r.firm or '') ~ ' ' ~ (r.memo or '') ~ ' ' ~ (r.title or ''))|lower }}"
           {% for field, label, width, filterable in columns if filterable %}data-f-{{ field }}="{{ (assignees.get(r.id) if field == 'assignee_name' else requested[r.id] if field == 'requested_at' else r|attr(field)) or '' }}" {% endfor %}>
-        {% if picking %}
         <td class="pick-col"><input type="checkbox" class="js-sourcing-pick" value="{{ r.id }}"
             aria-label="{{ r.name }} 고르기"></td>
-        {% endif %}
         <td class="rowno muted"></td>
         {# 날짜만 — 시트가 붙여 온 `00:00:00` 은 뗀다(`requested` — 저장값은 그대로). #}
         <td class="cell" data-field="requested_at">{{ requested[r.id] }}</td>
@@ -493,6 +495,7 @@
     }
     function syncShareLink() {
       syncCheckAll();
+      syncRoomBtn();
       if (!shareBtn) return;
       var got = picked();
       var base = shareBtn.getAttribute("data-base") || "/deals";
@@ -517,6 +520,57 @@
     }
     if (shareBtn) shareBtn.addEventListener("click", function (e) {
       if (shareBtn.getAttribute("aria-disabled") === "true") e.preventDefault();
+    });
+
+    // [방 후보 찾기] — **체크한 분 중 `방 없음`(`data-no-room`) 인 분**만 찾는다
+    // (`ids`). 아무도 안 골랐으면 단추를 잠근다 — 예전처럼 이 갈래 전부로 대신하면
+    // 고른 줄 알고 누른 사람 PC 가 갈래 전원을 찾는다. 방이 이미 있는(또는 불참여)
+    // 분은 싣지 않고 몇 명 뺐는지 옆에 적는다. 고르는 칸은 [Series A 딜 소개]와
+    // 같다 — 숨은 줄의 체크도 싣고 단추에 `일부 숨김` 이라 적는다.
+    var roomForm = document.getElementById("sourcing-room-search");
+    var roomBtn = document.getElementById("sourcing-room-btn");
+    var roomHint = document.getElementById("sourcing-room-hint");
+    function roomPicked() {
+      var rows = [], skip = 0, hidden = 0;
+      pickBoxes().forEach(function (cb) {
+        if (!cb.checked) return;
+        var tr = cb.closest("tr");
+        if (!tr) return;
+        if (!tr.hasAttribute("data-no-room")) { skip += 1; return; }
+        rows.push(tr);
+        if (tr.hidden) hidden += 1;
+      });
+      return { rows: rows, skip: skip, hidden: hidden };
+    }
+    function syncRoomBtn() {
+      if (!roomBtn) return;
+      var got = roomPicked();
+      roomBtn.textContent = "방 후보 찾기 (선택 " + got.rows.length + "명" +
+        (got.hidden ? " · 일부 숨김" : "") + ")";
+      roomBtn.disabled = !got.rows.length;
+      if (!roomHint) return;
+      var notes = [];
+      if (!got.rows.length) notes.push("찾을 분을 먼저 고르세요");
+      if (got.skip) notes.push("체크한 분 중 '방 없음' 이 아닌 " + got.skip + "명은 빼고 찾습니다");
+      roomHint.textContent = notes.join(" · ");
+      roomHint.hidden = !notes.length;
+    }
+    // 누르면 몇 명 · 누구인지 묻고, 확인하면 고른 줄 번호를 표 차례대로 싣는다.
+    if (roomForm) roomForm.addEventListener("submit", function (e) {
+      var got = roomPicked();
+      var names = got.rows.map(function (tr) {
+        var cell = tr.querySelector('[data-field="name"]');
+        return ((cell && cell.textContent) || "").trim();
+      });
+      var shown = names.slice(0, 10).join(", ") +
+        (names.length > 10 ? " 외 " + (names.length - 10) + "명" : "");
+      if (!names.length || !confirm("선택한 " + names.length + "명의 카톡방을 내 PC 의 " +
+          "카톡에서 찾을까요? 메시지는 보내지 않습니다.\n" + shown)) {
+        e.preventDefault();
+        return;
+      }
+      roomForm.querySelector('input[name="ids"]').value =
+        got.rows.map(function (tr) { return tr.getAttribute("data-id"); }).join(",");
     });
     if (checkAll) checkAll.addEventListener("change", function () {
       var on = !!checkAll.checked;

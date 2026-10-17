@@ -93,10 +93,10 @@ def test_every_column_has_a_cell(seeded):
     first_row = body[body.index("<tbody>"):body.index("</tbody>")]
     first_row = first_row[:first_row.index("</tr>")]
 
-    # 머리글 = # + 컬럼 수 + 월간 리마인드 달 칸(#14, `COLUMNS` 밖의 읽기 전용 칸)
-    # (`<thead>` 자체가 걸리지 않게 경계를 본다)
-    assert len(re.findall(r"<th[\s>]", head)) == len(COLUMNS) + 1 + MONTHS
-    assert len(re.findall(r"<td[\s>]", first_row)) == len(COLUMNS) + 1 + MONTHS
+    # 머리글 = 고르는 칸 + # + 컬럼 수 + 월간 리마인드 달 칸(#14, `COLUMNS` 밖의
+    # 읽기 전용 칸). (`<thead>` 자체가 걸리지 않게 경계를 본다)
+    assert len(re.findall(r"<th[\s>]", head)) == len(COLUMNS) + 2 + MONTHS
+    assert len(re.findall(r"<td[\s>]", first_row)) == len(COLUMNS) + 2 + MONTHS
 
     # 모든 컬럼이 눌러서 고칠 수 있어야 한다
     fields = set(re.findall(r'data-field="(\w+)"', first_row))
@@ -116,7 +116,7 @@ def test_participation_sits_right_after_the_name(seeded):
     head = body[body.index("<thead>"):body.index("</thead>")]
     labels = [re.sub(r"<[^>]+>", "", x).strip()
               for x in re.findall(r"<th[\s>].*?</th>", head, re.S)]
-    assert labels[1:4] == ["참여 요청일", "이름", "참여"], labels
+    assert labels[2:5] == ["참여 요청일", "이름", "참여"], labels
 
     first_row = body[body.index("<tbody>"):body.index("</tbody>")]
     first_row = first_row[:first_row.index("</tr>")]
