@@ -104,8 +104,13 @@ def main() -> None:
         # 사람이 [이 분으로 확정]한 잇기는 갈아 끼우기 **전에** 적어 둔다 — 아래에서
         # 되살린다(`sourcing_sync.restore_confirmed`). 묶인 글자의 줄 전부에서.
         # 0104 전부터 이어져 있던 줄도 확정으로 적혀 있다(그 이주 머리말).
-        kept = sourcing_sync.confirmed_links(db.execute(
+        old_rows = list(db.execute(
             select(SourcingContact).where(SourcingContact.bucket.in_(stored))).scalars())
+        kept = sourcing_sync.confirmed_links(old_rows)
+        # `참여` 가 아닌 줄(불참여 · 참여 의사를 물어보는 중 · 사람이 적은 문구)도 적어
+        # 둔다 — 시트에는 이 칸이 없어, 그냥 갈아 끼우면 기본값 `참여` 가 되어 아직
+        # 동의하지 않은 분께 딜이 나간다(`sourcing_sync.kept_participation`).
+        kept_part = sourcing_sync.kept_participation(old_rows)
         db.execute(delete(SourcingContact).where(SourcingContact.bucket.in_(stored)))
 
         n = 0
@@ -128,13 +133,17 @@ def main() -> None:
             n += 1
         made += n
         print(f"  {bucket:36} {n:3}명")
+        part_back = sourcing_sync.restore_participation(new_rows, kept_part)
+        if kept_part:
+            print(f"  {'':36} 참여 칸 되살림 {part_back}명 / 참여 아닌 줄 {len(kept_part)}명"
+                  " (시트에서 빠졌거나 같은 이름이 여럿인 줄은 못 되살림)")
         # 갈아 끼우면 투자사 관리 현황과의 잇기(`Series A 딜 소싱` 칸)와 `불참여`
         # 표시가 옛 줄과 함께 사라진다. 사람이 확정해 둔 잇기는 먼저 되살리고
         # (이름 · 번호가 둘 다 안 맞아도 — 사용자 결정 2026-10-17), 나머지는 화면에서
         # 넣을 때와 **같은 규칙**(`sourcing_sync.auto_link` — 이름 · 번호가 둘 다 같은
         # 투자사 줄이 딱 하나일 때)으로 다시 잇는다. 그래도 못 이은 줄은 딜 소싱
         # 화면에 후보로 뜬다 — [이 분으로 확정].
-        # 불참여는 시트에 칸이 없어 되살릴 수 없다 — 다시 X 로 두어야 한다.
+        # `참여` 칸(불참여 · 물어보는 중 · 문구)은 위에서 이름 · 번호로 되살렸다.
         if sourcing_buckets.same(bucket, sourcing_sync.SYNC_BUCKET):
             db.flush()
             restored = sourcing_sync.restore_confirmed(db, new_rows, kept)

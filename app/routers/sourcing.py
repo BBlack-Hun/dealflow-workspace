@@ -63,9 +63,11 @@ COLUMNS = [
     # 그 단추가 `10월 딜 받 / 음` 으로 접혀 줄마다 키가 늘었다 — 단추가 한 줄에 드는 폭.
     ("name", "이름", "150px", False),
     # ── 앱이 만든 칸. 원본 시트에는 없다 ──
-    # `참여` · `불참여` 두 값이라 거른다. 불참여인 분은 딜 소싱 제안(처음 안내 ·
-    # 월간 리마인드)에서 빠진다. 시리즈 A 갈래의 줄은 투자사 관리 현황의
-    # `Series A 딜 소싱` 칸(O/X)이 **이 값 그대로**다(`services/sourcing_sync.py`).
+    # `참여` · `불참여` · `참여 의사를 물어보는 중` + 사람이 적은 문구. 몇 가지로
+    # 모이는 값이라 거른다. **딜 소싱 제안(참여 안내 · 월간 리마인드 · Series A 딜
+    # 공유)은 정확히 `참여` 인 분께만 나간다**(`sourcing_sync.takes_part`). 시리즈 A
+    # 갈래의 줄은 투자사 관리 현황의 `Series A 딜 소싱` 칸이 이 값에서 선다 —
+    # `불참여` 만 X, 나머지는 O(`services/sourcing_sync.py`).
     ("participation", "참여", "84px", True),
     ("assignee_name", "담당자", "100px", True),
     ("phone", "휴대폰", "116px", False),
@@ -224,25 +226,63 @@ def sourcing_state(db: Session = Depends(get_db),
     rows = rows_of(db)
     month = sourcing_receipts.month_of()
     got = sourcing_receipts.received_ids(db, month)
-    # `out` — 그 사이 `불참여` 가 된 분. 딜 제안 관리가 그 카드를 고를 수 없게
-    # 한다(`deals.js`). 칩은 **보낼 수 있는 분만** 센다 — 화면을 그릴 때
-    # (`sendable_rows`)와 같은 모집단이어야 칩 수가 다시 읽을 때 흔들리지 않는다.
+    # `out` — 그 사이 받지 않는 분이 된 줄(`불참여` · `참여 의사를 물어보는 중` ·
+    # 사람이 적은 문구 — `sourcing_sync.takes_part`). 딜 제안 관리가 그 카드를 고를
+    # 수 없게 하고 `out_label` 을 딱지로 단다(`deals.js`). 칩은 **보낼 수 있는 분만**
+    # 센다 — 화면을 그릴 때(`sendable_rows`)와 같은 모집단이어야 칩 수가 다시 읽을
+    # 때 흔들리지 않는다.
     return {"month": month, "month_label": f"{int(month[5:])}월",
             "rows": [{"id": r.id, "assignee": assignee_of(r),
                       "received": r.id in got,
-                      "out": not sourcing_sync.takes_part(r)} for r in rows],
+                      "out": not sourcing_sync.takes_part(r),
+                      "out_label": out_label(r)} for r in rows],
             "assignees": assignee_chips(
                 [r for r in rows if sourcing_sync.takes_part(r)])}
 
 
 def sendable_rows(db: Session) -> List[SourcingContact]:
-    """딜 소싱 제안을 **받는** 분 — `불참여` 를 뺀 명단, 차례는 `rows_of` 그대로.
+    """딜 소싱 제안을 **받는** 분 — `참여` 인 분만(`sourcing_sync.takes_part`), 차례는
+    `rows_of` 그대로. `불참여` · `참여 의사를 물어보는 중` · 사람이 적은 문구는 빠진다.
 
     딜 제안 관리의 [딜 소싱 제안] 목록 · 칩이 이것을 지나고, 발송 길
-    (`routers/deals.create_send_list`)도 같은 판정(`sourcing_sync.takes_part`)으로
-    한 번 더 보고 막는다 — 화면을 연 뒤에 불참여가 된 분께 나가지 않게.
+    (`routers/deals.create_send_list`)도 같은 판정으로 한 번 더 보고 막는다 —
+    화면을 연 뒤에 받지 않는 분이 된 줄에 나가지 않게.
     """
     return [r for r in rows_of(db) if sourcing_sync.takes_part(r)]
+
+
+#: 받지 않는 분의 딱지 — 딜 제안 관리 카드(`deals.html` 의 `out-tag`)와 빠진 수 말.
+LEFT_LABEL = "딜 소싱 불참여"
+PENDING_LABEL = "참여 확인 전"
+
+
+def out_label(row: SourcingContact) -> str:
+    """받지 않는 분의 딱지 글자. 받는 분이면 빈 글자.
+
+    `참여 확인 전 · 참여 의사를 물어보는 중` 처럼 **적힌 값을 그대로** 붙인다 —
+    사람이 적은 문구(`11월 재연락`)도 무슨 사정인지 카드에서 읽혀야 한다."""
+    kind = sourcing_sync.kind_of(row)
+    if kind == sourcing_sync.KIND_JOINED:
+        return ""
+    if kind == sourcing_sync.KIND_LEFT:
+        return LEFT_LABEL
+    return f"{PENDING_LABEL} · {sourcing_sync.participation_of(row)}"
+
+
+def held_counts(db: Session) -> dict:
+    """딜 소싱 제안 목록에서 **뺀** 분의 수 — `{"left": 불참여, "pending": 물어보는 중 등}`.
+
+    딜 제안 관리가 목록 위에 `참여 확인 전 N명 · 불참여 M명은 목록에 없습니다` 로
+    적는다(`deals.html` 의 `sourcing-held`). 조용히 빼면 왜 그분이 안 보이는지 모른다.
+    """
+    out = {"left": 0, "pending": 0}
+    for row in rows_of(db):
+        kind = sourcing_sync.kind_of(row)
+        if kind == sourcing_sync.KIND_LEFT:
+            out["left"] += 1
+        elif kind == sourcing_sync.KIND_PENDING:
+            out["pending"] += 1
+    return out
 
 
 @router.get("/sourcing", response_class=HTMLResponse, include_in_schema=False)
@@ -294,6 +334,12 @@ def sourcing_page(request: Request, db: Session = Depends(get_db),
         # 그 줄에 `방 없음` 과 [방 후보 찾기] 가 서고, 툴바 [방 후보 찾기]는 체크한
         # 줄 중 이 줄만 싣는다(`data-no-room`).
         "no_room": {r.id for r in sourcing_rooms.needs_room(db, rows)},
+        # `참여` 칸의 갈래 — `joined` · `left` · `pending`(물어보는 중 · 사람이 적은
+        # 문구). 칸 색과 [Series A 딜 소개]가 빼는 수를 이것으로 정한다
+        # (`sourcing_sync.kind_of` — 규칙은 서버 한 곳).
+        "part_kind": {r.id: sourcing_sync.kind_of(r) for r in rows},
+        # 고르는 칸이 먼저 세우는 보기 — 이 밖의 글도 직접 적을 수 있다.
+        "participation_choices": ",".join(sourcing_sync.CHOICES),
         # [방 후보 찾기] 가 담아 온 후보 · 상태(`services/sourcing_rooms.py`).
         "room_picks": {r.id: sourcing_rooms.picks(r) for r in rows},
         "tabs": tabs,
@@ -473,9 +519,12 @@ def update_row(row_id: int, body: SourcingIn, db: Session = Depends(get_db),
     db.commit()
     # 고친 줄의 **지금 담당** — 화면이 [담당자] 필터 값을 이것으로 고쳐 적는다
     # (`sourcing.html`). 화면이 글자를 다시 자르면 규칙이 두 벌이 된다.
-    # `participation` 도 서버가 읽은 값으로 다시 적는다(`O` → `참여`).
+    # `participation` 도 서버가 읽은 값으로 다시 적는다(`O` → `참여`) — 칸 색을
+    # 고르는 갈래(`participation_kind` — 참여 · 불참여 · 확인 전)도 함께. 화면이
+    # 값을 보고 갈래를 다시 정하면 규칙이 두 벌이 된다(`sourcing.html`).
     out = {"ok": True, "assignee": assignee_of(row),
-           "participation": sourcing_sync.participation_of(row)}
+           "participation": sourcing_sync.participation_of(row),
+           "participation_kind": sourcing_sync.kind_of(row)}
     if contact is not None:
         out["linked_msg"] = _linked_msg(db, row)
     if relink and sourcing_sync.is_synced(row):

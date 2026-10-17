@@ -75,10 +75,12 @@ def needs_room(db: Session, rows: Iterable[SourcingContact]) -> List[SourcingCon
     실제로 못 보내는 줄이 같다.
     """
     # 불참여인 분은 받을 일이 없다 — `방 없음` 도, 방 찾기 대상도 아니다
-    # (발송도 그분을 뺀다 — `routers/deals.py`).
+    # (발송도 그분을 뺀다 — `routers/deals.py`). `참여 의사를 물어보는 중` ·
+    # 사람이 적은 문구인 분은 **찾는다** — 방 맞추기는 발송이 아니고, 동의하시면
+    # 바로 보낼 수 있어야 한다(발송은 `takes_part` 가 따로 막는다).
     rows = [r for r in rows
             if not (r.kakao_room_name or "").strip() and (r.name or "").strip()
-            and sourcing_sync.takes_part(r)]
+            and not sourcing_sync.is_left(r)]
     linked = sourcing_link.linked_rooms(db, rows)
     return [r for r in rows if r.id not in linked]
 

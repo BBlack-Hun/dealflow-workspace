@@ -685,6 +685,10 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
    세로로 맞춘다(`tabular-nums`). */
 #sourcing-table { min-width: 2402px; }
 #sourcing-table td.remind-col { font-variant-numeric: tabular-nums; }
+/* `참여` 칸 — `참여 의사를 물어보는 중` · 사람이 적은 문구(아직 동의 전). 딜 소싱
+   제안이 나가지 않는다(`sourcing_sync.takes_part`). 흐리게 그리는 `불참여` 와
+   다른 사정이라 주황으로 — `.tag.warn` 과 같은 색이다. */
+#sourcing-table td.part-pending { background: #fff4e5; color: var(--amber); font-weight: 600; }
 .grid-table { width: 100%; table-layout: fixed; border-collapse: collapse;
               background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
 /* 표 밀도. 8px/10px 이던 것을 6px/9px 로 — 글자 수 대비 자리가 남는 칸이

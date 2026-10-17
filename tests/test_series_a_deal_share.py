@@ -411,7 +411,9 @@ def test_the_sourcing_screen_has_the_button_and_the_row_note(world, client, db):
     assert "왼쪽 체크박스로 받을 분을 고르세요" in page
     # 체크한 참여 분을 `contacts=` 로 싣는다(불참여는 빼고 몇 명인지 말한다)
     assert 'shareBtn.setAttribute("href"' in page and '"&contacts="' in page
-    assert '=== "불참여") { out += 1; return; }' in page
+    # 빼는 갈래는 서버가 실어 준 `data-part-kind` 로 — 불참여 · 참여 확인 전을 따로 센다
+    assert 'if (kind === "left") { out += 1; return; }' in page
+    assert 'if (kind === "pending") { pending += 1; return; }' in page
 
     note = re.findall(r'data-testid="sourcing-share-note"\s*title="([^"]*)">([^<]*)<', page)
     assert note == [("샘플로보틱스 · 샘플바이오", "Series A 딜 공유 2건")], note
