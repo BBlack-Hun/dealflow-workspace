@@ -416,11 +416,11 @@ def test_the_sourcing_screen_has_the_button_and_the_row_note(world, client, db):
     note = re.findall(r'data-testid="sourcing-share-note"\s*title="([^"]*)">([^<]*)<', page)
     assert note == [("샘플로보틱스 · 샘플바이오", "Series A 딜 공유 2건")], note
 
-    # 다른 갈래 탭에는 단추도 고르는 칸도 없다
+    # 다른 갈래 탭에는 단추가 없다. 고르는 칸은 선다 — [방 후보 찾기]가 고른 분만 찾는다
     other = client.get(f"/sourcing?tab={quote(MNA)}").text
     assert re.search(r'class="sheet-tab active"\s+href="/sourcing\?tab=M%26A', other)
     assert 'id="sourcing-share-btn"' not in other
-    assert 'id="sourcing-check-all"' not in other and 'class="js-sourcing-pick"' not in other
+    assert 'id="sourcing-check-all"' in other and 'class="js-sourcing-pick"' in other
 
 
 def test_the_series_a_tab_has_a_pick_column_before_no(world, client):

@@ -291,10 +291,9 @@ def sourcing_page(request: Request, db: Session = Depends(get_db),
         "vc_picks": sourcing_sync.link_candidates(db, rows),
         # **보낼 방이 없는 줄** — 자기 방 이름도 이어받을 방도 없다
         # (`sourcing_rooms.needs_room` — 발송이 방을 고르는 규칙과 같다).
-        # 그 줄에 `방 없음` 과 [방 후보 찾기] 가 선다.
+        # 그 줄에 `방 없음` 과 [방 후보 찾기] 가 서고, 툴바 [방 후보 찾기]는 체크한
+        # 줄 중 이 줄만 싣는다(`data-no-room`).
         "no_room": {r.id for r in sourcing_rooms.needs_room(db, rows)},
-        # [방 후보 찾기] 단추에 적을 수 — 누르면 세우는 잡의 크기와 같은 함수다.
-        "room_search_count": len(sourcing_rooms.targets(db, selected)),
         # [방 후보 찾기] 가 담아 온 후보 · 상태(`services/sourcing_rooms.py`).
         "room_picks": {r.id: sourcing_rooms.picks(r) for r in rows},
         "tabs": tabs,
@@ -308,12 +307,12 @@ def sourcing_page(request: Request, db: Session = Depends(get_db),
         # 줄마다 받은 기업 이름 — `Series A 딜 공유 N건` 과 그 풍선말.
         "shared": series_a_share.shared_companies(db, [r.id for r in rows]),
         # [Series A 딜 소개] 단추는 이 갈래 탭에만 선다 — 이 글을 받는 갈래가
-        # 하나뿐이다(투자사 관리 현황과 이어진 갈래).
+        # 하나뿐이다(투자사 관리 현황과 이어진 갈래). 단추는 표 맨 왼쪽
+        # **고르는 체크박스 칸**에서 체크한 참여 분만 싣는다(`sourcing.html`).
+        # 그 칸은 모든 탭에 선다 — [방 후보 찾기]도 체크한 분만 찾는다.
         "share_bucket": series_a_share.BUCKET,
         "share_topic": series_a_share.KIND,
-        # 그 탭에서만 표 맨 왼쪽에 **고르는 체크박스 칸**이 선다 — 단추가 체크한
-        # 참여 분만 싣는다(`sourcing.html`). 다른 탭에는 고른 것을 쓸 곳이 없다.
-        "picking": series_a_share.is_share_bucket(selected),
+        "share_tab": series_a_share.is_share_bucket(selected),
         "total": sum(t["count"] for t in tabs),
         # 이름을 못 바꾼 까닭. 조용히 되돌아오면 왜 그대로인지 알 수 없다.
         "msg": msg,
@@ -712,7 +711,7 @@ def mail_check_now(tab: str = Form(""), db: Session = Depends(get_db),
 # ── 카톡방 후보 찾기 · 확정 ────────────────────────────────────────────────
 
 def _ids(raw: str) -> Optional[List[int]]:
-    """`3,5,8` → `[3, 5, 8]`. 비면 `None`(= 그 갈래의 방 없는 줄 전부)."""
+    """`3,5,8` → `[3, 5, 8]`. 비면 `None`(= 아무도 안 골랐다)."""
     out = [int(x) for x in re.findall(r"\d+", raw or "")]
     return out or None
 
@@ -721,19 +720,29 @@ def _ids(raw: str) -> Optional[List[int]]:
 def search_rooms(tab: str = Form(""), ids: str = Form(""),
                  db: Session = Depends(get_db),
                  user: User = Depends(get_current_user)):
-    """[방 후보 찾기] — 방이 없는 줄을 **누른 사람 PC 의 카톡**에서 찾는다.
+    """[방 후보 찾기] — **고른 줄**(`ids`) 중 방이 없는 줄을 **누른 사람 PC 의
+    카톡**에서 찾는다.
 
     잡은 누른 사람 계정에 선다(`sourcing_rooms.queue_search`) — 그 사람 PC 의
     발송기가 그 사람 카톡에서 찾고, 찾은 제목은 후보로만 담긴다. 보내는 사람이
     눌러야 그 사람 카톡의 방 제목이 나온다. **아무것도 보내지 않는다**(방 확인 잡).
 
+    **아무도 안 골랐으면 아무것도 안 세운다** — 예전처럼 그 갈래의 방 없는 줄
+    전부로 대신하지 않는다(사용자: "방 후보 찾기도 선택한걸 기반으로 찾게
+    해줘"). 화면도 단추를 잠그지만 여기서 한 번 더 막는다. 고른 줄도 그 탭
+    (전체 탭이면 전체)의 방 없는 줄만 찾는다(`sourcing_rooms.targets`) — 방이
+    이미 있거나 불참여인 줄 · 다른 갈래 줄은 빠진다.
+
     이 화면을 볼 수 있는 누구나 누른다 — 자기 PC 에 거는 일이다.
     """
+    picked = _ids(ids)
+    if not picked:
+        return _back(tab, "찾을 분을 먼저 고르세요 — 표 왼쪽 체크박스로 고릅니다")
     bucket = "" if tab in ("", "all") else tab
-    rows = sourcing_rooms.targets(db, bucket, _ids(ids))
+    rows = sourcing_rooms.targets(db, bucket, picked)
     job = sourcing_rooms.queue_search(db, user, rows)
     if job is None:
-        return _back(tab, "찾을 줄이 없습니다 — 방 이름이 다 있습니다")
+        return _back(tab, "찾을 줄이 없습니다 — 고른 분은 방 이름이 다 있습니다")
     db.commit()
     return _back(tab, f"{user.name} 님 PC 의 카톡에서 {job.total}명의 방을 찾습니다"
                       f"(회차 #{job.id}) — 그 PC 의 발송 프로그램이 켜져 있어야 합니다. "
