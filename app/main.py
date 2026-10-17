@@ -9,7 +9,7 @@ from . import config, deps
 from .deps import NoConsulting, NotAdmin, NotAuthenticated
 from .services import (auto_send, automation_runner, backup, edit_log,
                        followup_sms, scheduled_send, send_window,
-                       sourcing_mail, startup_monthly)
+                       sourcing_mail)
 from .routers import auth as auth_router
 from .routers import templates_crud
 from .routers import setup as setup_router
@@ -57,14 +57,12 @@ def create_app() -> FastAPI:
     # 그 위에 '켜 두는 것을 잊는' 사고를 하나 더 얹는 셈이다.
     scheduled_send.start_scheduler()
 
-    # 스타트업 월간 발송의 **매월 자동 예약**. 켜 둔 달의 30일(2월은 말일)
-    # 아침에 대기 목록을 세우고 정한 시각에 나가도록 예약만 건다 — 푸는 것은
-    # 바로 위 예약 발송이다(`services/startup_monthly.py`). 꺼 두면 아무 일도 없다.
-    startup_monthly.start_scheduler()
-
     # **2단계 자동화** — 5분마다 깨어나 그날 세울 회차가 있으면 아침에 세우고
     # 정한 시각에 나가도록 예약을 건다(`services/automation_runner.py`). 켠
     # 자동화가 없으면 깨어나도 곧바로 돌아온다. 푸는 것은 바로 위 예약 발송이다.
+    #
+    # 스타트업 월간 발송도 여기(A5) 하나다 — 매월 30일 자동은 걷었다(#31,
+    # `services/startup_monthly.py` 머리말).
     automation_runner.start_scheduler()
 
     # **딜 소싱 메일 확인** — 5분마다 깨어나 매일 18:00 에 회사 받은

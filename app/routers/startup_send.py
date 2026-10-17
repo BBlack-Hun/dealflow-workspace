@@ -58,7 +58,8 @@ from ..db import get_db
 from ..deps import get_current_user, templates
 from ..models import IrCompany, SendItem, SendJob, User
 from ..services import (cadence, ir_monthly, room_match, scheduled_send,
-                        send_window, startup_monthly, startup_send)
+                        send_window, startup_send)
+from ..services.automations import startup_monthly as a5
 from ..ui import base_ctx
 # 방 확인 잡의 종류는 **한 곳에만 적는다**(`agent_api.VERIFY_KIND`). 여기에
 # 글자를 한 벌 더 두면 잡은 서는데 발송기가 집어가지 않는 날이 온다 —
@@ -123,8 +124,9 @@ def startup_ir_page(
         # 여기 숫자를 적으면 화면과 서버가 두 벌이 된다(`scheduled_send`).
         "send_earliest_hour": send_window.earliest(),
         "send_latest_hour": send_window.latest(),
-        # 매월 자동 예약 — 다음이 언제 · 몇 곳인지(`services/startup_monthly`).
-        "monthly": startup_monthly.status(db),
+        # 매월 자동 발송(A5) — 다음이 언제 · 몇 곳인지, 꺼졌으면 꺼짐
+        # (`services/automations/startup_monthly.header`).
+        "a5": a5.header(db),
     })
     return templates.TemplateResponse("startup_send.html", ctx)
 

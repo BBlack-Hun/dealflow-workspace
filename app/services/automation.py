@@ -92,7 +92,8 @@ KINDS: List[Kind] = [
     Kind(CHANNEL_TOP, "채널방 TOP·핵심 딜",
          "매주 수요일 13:30 — 오픈채팅방마다 TOP·핵심 딜 3곳"),
     Kind(STARTUP_MONTHLY, "스타트업 월간 발송",
-         "매월 15일 11:00 → 20일 13:00 → 16일 14:00 순환"),
+         "매월 26일 11:00 → 30일(없으면 말일) 13:00 → 28일 14:00 순환, "
+         "토·일이면 앞 평일 — 스타트업 월간 발송 메뉴의 계정으로"),
 ]
 BY_KEY: Dict[str, Kind] = {k.key: k for k in KINDS}
 
@@ -471,6 +472,8 @@ def save(db: Session, key: str, *, enabled: bool, user_id: Optional[int],
         problem = test_room_problem(db, room)
         if problem:
             raise ValueError(problem)
+    if key == STARTUP_MONTHLY:
+        user_id = startup_menu_sender(db, user_id, enabled)
     member = db.get(User, user_id) if user_id else None
     if user_id and not may_send(member):
         raise ValueError("보내는 계정은 딜소개를 보내는 살아 있는 계정이어야 합니다")
@@ -492,6 +495,46 @@ def save(db: Session, key: str, *, enabled: bool, user_id: Optional[int],
     if commit:
         db.commit()
     return row
+
+
+def startup_menu_sender(db: Session, picked: Optional[int], enabled: bool) -> Optional[int]:
+    """스타트업 월간 발송(A5)의 보내는 계정 — **메뉴의 계정 그 하나**.
+
+    스타트업 대표방은 메뉴가 고른 그 한 PC 의 카톡에만 있고, 예약을 푸는 자리도
+    그 계정만 통과시킨다(`scheduled_send.held_back`). 다른 계정을 고를 수 있으면
+    회차는 서는데 아무 PC 도 못 보내는 반쯤 켜진 자동화가 된다 — 그래서 고르게
+    두지 않고 메뉴의 계정을 그대로 적는다(사용자 결정 2026-10-17). 다른 계정을
+    넘기면 `ValueError`, 메뉴가 꺼진 채로 켜도 `ValueError`.
+    """
+    from . import startup_send
+
+    menu = startup_send.sender_id(db)
+    label = startup_send.LABEL
+    if picked and picked != menu:
+        raise ValueError(f"{label}은 메뉴의 계정으로만 보냅니다 — 계정을 바꾸려면 "
+                         f"'{label} — 메뉴·보내는 계정' 판에서 바꾸세요")
+    if enabled and not menu:
+        raise ValueError(f"{label} 메뉴가 꺼져 있습니다 — '{label} — 메뉴·보내는 계정' "
+                         "판에서 먼저 켜세요(그 계정 PC 에서 나갑니다)")
+    return menu
+
+
+def follow_startup_menu(db: Session) -> int:
+    """메뉴의 계정이 바뀌었으면 A5 도 그 계정으로 — 옛 계정 PC 로 서 있던 회차는
+    거둔다(`automation_runner.stop_jobs`). 거둔 회차 수. 커밋까지 한다.
+
+    메뉴를 끈 것은 따라가지 않는다(마지막 계정을 그대로 둔다) — 꺼진 메뉴로는
+    A5 가 회차를 세우지도 풀지도 못한다(`startup_send.may_send`).
+    """
+    from . import automation_runner, startup_send
+
+    row = load(db, STARTUP_MONTHLY)
+    menu = startup_send.sender_id(db)
+    if row is None or not menu or row.user_id == menu:
+        return 0
+    row.user_id = menu
+    db.commit()
+    return automation_runner.stop_jobs(db, STARTUP_MONTHLY)
 
 
 # ── 시험방으로 돌리기 ─────────────────────────────────────────────────────────
@@ -666,10 +709,19 @@ def status(db: Session) -> dict:
         # 그 계정 PC 에서 나간다 — 업무용 PC 한 대에서 나가기로 했으니 판이
         # 크게 적는다.
         differs = bool(own and default_id and own != default_id)
+        # A5 는 고르지 않는다 — 메뉴의 계정을 보여 준다(`startup_menu_sender`).
+        fixed = None
+        if kind.key == STARTUP_MONTHLY:
+            from . import startup_send
+
+            menu_id = startup_send.sender_id(db)
+            menu_user = db.get(User, menu_id) if menu_id else None
+            fixed = {"id": menu_id or 0, "name": menu_user.name if menu_user else ""}
         rows.append({
             "key": kind.key,
             "label": kind.label,
             "summary": kind.summary,
+            "fixed_sender": fixed,
             "enabled": is_on(row),
             "test_mode": is_test(row),
             "test_room": (row.test_room or "") if row else "",

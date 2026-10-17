@@ -1275,27 +1275,27 @@ async def save_send_caps(
 def save_startup_send(
     enabled: str = Form(""),
     user_id: int = Form(0),
-    monthly: str = Form(""),
-    monthly_time: str = Form(""),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """**스타트업 월간 발송을 누가 쓸 수 있는가** — 그리고 **매월 자동 예약**.
+    """**스타트업 월간 발송을 누가 쓸 수 있는가** — 메뉴 · 보내는 계정.
 
-    `monthly`/`monthly_time` 은 매월 30일(2월은 말일) 자동 예약을 켜고 시각을
-    정한다(`services/startup_monthly.py`). 폼에 그 칸이 없으면(옛 화면)
-    시각은 그대로 두고 자동은 끈다 — 모르는 채로 켜 두지 않는다.
+    매월 자동 발송은 자동화 판의 A5 하나다(#31). 옛 화면이 보내던 매월 자동
+    칸(`monthly` · `monthly_time`)은 받지 않는다 — 옛 30일 자동은 걷었다
+    (`services/startup_monthly.py` 머리말). A5 는 **이 메뉴의 계정**으로 나가서,
+    계정을 바꾸면 A5 도 따라 바뀌고 옛 계정 PC 로 서 있던 A5 회차는 거둔다
+    (`automation.follow_startup_menu`).
 
     ## 왜 팀 현황인가
 
-    바로 위 `save_auto_send` 와 같은 까닭이다 — 짧게: `/setup` 은 본인이 자기
-    PC 를 손보는 화면이라 **누구든 스스로 켤 수 있다.** 여기 두면 켜는 사람이
-    관리자 하나다(`admin_only`, 옆칸 둘과 같은 문).
+    `/setup` 은 본인이 자기 PC 를 손보는 화면이라 **누구든 스스로 켤 수 있다.**
+    여기 두면 켜는 사람이 관리자 하나다(`admin_only`, 옆칸 둘과 같은 문).
 
     ## 여기서 켜도 카톡은 나가지 않는다
 
     켜지는 것은 **그 계정의 딜 제안 관리에 메뉴 하나**다. 그 사람이 달을 고르고
-    대기 목록을 세운 뒤 진행 화면에서 [발송 시작] 을 눌러야 나간다.
+    대기 목록을 세운 뒤 진행 화면에서 [발송 시작] 을 눌러야 나간다. 저절로 서는
+    것은 A5 를 켰을 때뿐이다.
 
     ## 이름을 코드에 적지 않는다
 
@@ -1305,7 +1305,7 @@ def save_startup_send(
     admin_only(user)
     from urllib.parse import quote
 
-    from ..services import startup_send
+    from ..services import automation, startup_send
 
     member = db.get(User, user_id) if user_id else None
     want_on = enabled == "on"
@@ -1318,25 +1318,18 @@ def save_startup_send(
         return RedirectResponse(
             "/team?msg=이+메뉴를+켜려면+보내는+계정을+고르세요", status_code=303)
 
-    from ..services import startup_monthly
-
-    try:
-        setting = startup_send.save(db, enabled=want_on,
-                                    user_id=member.id if member else None,
-                                    monthly=monthly == "on",
-                                    monthly_time=(monthly_time.strip() or None))
-    except ValueError as exc:
-        return RedirectResponse(f"/team?msg={quote(str(exc))}", status_code=303)
+    setting = startup_send.save(db, enabled=want_on,
+                                user_id=member.id if member else None)
     label = startup_send.LABEL
     if not startup_send.is_on(setting):
         return RedirectResponse(
             f"/team?msg={quote(label)}+메뉴를+껐습니다+—+아무+계정에도+보이지+않습니다",
             status_code=303)
-    note = f"{quote(label)}+메뉴+켜짐+—+{quote(member.name)}+계정에만+보입니다"
-    monthly_state = startup_monthly.status(db)
-    if monthly_state["on"]:
-        note += quote(f" · 매월 자동 발송 켜짐 — 다음 {monthly_state['next_label']}")
-    return RedirectResponse(f"/team?msg={note}", status_code=303)
+    note = f"{label} 메뉴 켜짐 — {member.name} 계정에만 보입니다"
+    stopped = automation.follow_startup_menu(db)
+    if stopped:
+        note += f" · 자동화 A5 도 이 계정으로 — 옛 계정으로 서 있던 회차 {stopped}개를 거뒀습니다"
+    return RedirectResponse(f"/team?msg={quote(note)}", status_code=303)
 
 
 @router.post("/team/automation-team", include_in_schema=False)
