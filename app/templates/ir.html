@@ -553,6 +553,35 @@
   </div>
   {% endif %}
 
+  {# **자동화(A7)가 이미 물은 미팅**(#31) — 또 묻지 않는다. '자동 문의함 M/D' 와
+     **들은 답을 적는 칸**만 선다. 적으면 위 목록과 같은 자리(`/followup`)로
+     가서 결과 문의가 닫힌다 — A7 이 묻는 것만으로는 닫지 않는다(답은 사람이 적는다). #}
+  {% if items.asked_followups %}
+  <div class="due-group" data-testid="asked-followups">
+    <div class="due-head"><b>자동화가 물었습니다 — 들은 답을 적어 주세요</b>
+      <span class="count-pill"><b>{{ items.asked_followups|length }}</b>건</span></div>
+    <ul class="due-list">
+      {% for m in items.asked_followups %}
+      <li>
+        <span class="due-when"><span class="tag ok">자동 문의함{% if m.auto_asked_on %} {{ m.auto_asked_on }}{% endif %}</span></span>
+        <span class="due-who"><b>{{ m.name }}</b> <span class="muted">{{ m.firm }}</span></span>
+        <span class="due-from muted">{{ m.when_label }} {{ m.kind_label }}{% if m.company_name %} · {{ m.company_name }}{% endif %} 완료</span>
+        <span class="due-acts">
+          <form method="post" action="/ir/meetings/{{ m.id }}/followup">
+            <select name="outcome">
+              <option value="">결과 그대로</option>
+              {% for key, label in outcomes.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+            </select>
+            <input type="text" name="note" placeholder="들은 답" maxlength="500" autocomplete="off">
+            <button class="linkbtn" type="submit">답 적기</button>
+          </form>
+        </span>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
   {% if scheduled %}
   <div class="table-wrap">
   <table class="grid-table compact">
@@ -826,6 +855,8 @@
             {% elif m.followup_done %}<span class="ok">완료</span>
             {# 거절로 끝났거나 다음 미팅을 잡았으면 물어볼 것이 없다. #}
             {% elif not m.needs_followup %}문의 불필요
+            {# 자동화(A7)가 이미 물었다 — 묻지 말고 들은 답만 적는다(#31). #}
+            {% elif m.auto_asked %}<span class="ok">자동 문의함{% if m.auto_asked_on %} {{ m.auto_asked_on }}{% endif %}</span>
             {% elif m.followup_due_now %}<span class="bad">{{ m.followup_due }} 지남</span>
             {% else %}{{ m.followup_due }} 예정{% endif %}
             {#
@@ -845,7 +876,7 @@
               <input type="text" name="note" placeholder="들은 내용"
                      maxlength="500" autocomplete="off">
               <button class="linkbtn" type="submit">
-                {% if m.followup_done %}다시 기록{% else %}물어봤음{% endif %}
+                {% if m.followup_done %}다시 기록{% elif m.auto_asked %}답 적기{% else %}물어봤음{% endif %}
               </button>
             </form>
             {% endif %}

@@ -218,6 +218,9 @@ OUT_NOTE = "딜 소싱 불참여"
 #: 시리즈 A 갈래는 투자사 방을 이어받지 않으므로(`sourcing_link.linked_rooms`)
 #: 자기 방 이름이 없으면 여기 걸린다 — 딜 소싱 화면의 [방 후보 찾기]로 채운다.
 NO_ROOM_NOTE = "딜 소싱 카톡방 없음 — 딜 소싱 화면의 [방 후보 찾기]로 보내는 분 카톡에서 찾아 확정하세요"
+#: 미팅 후기 탭 — **자동화(A7)가 이미 물은** 분(#31). 막지 않고 말만 한다.
+AUTO_ASKED_NOTE = ("자동 문의함 {day} — 미팅 후 검토결과 문의 자동화가 이미 물었습니다. "
+                   "같은 글을 또 보내기 전에 답이 왔는지 보세요")
 #: 문구 화면(`/templates`)이 그 탭 아래에 구간을 하나 더 세울 때 읽는다.
 MODE_TOPIC_KINDS = {MODE_SOURCING: ((sourcing_msg.REMIND_KIND, "월간 리마인드"),
                                     (sourcing_msg.SHARE_KIND, series_a_share.LABEL))}
@@ -736,8 +739,8 @@ class SendRequest(BaseModel):
     # 눌렀는데 9월치가 나가는 일이 생긴다.
     month: str = ""
     # 발송 화면에서는 오지 않는 값이다(기본 거짓 — 지금까지 그대로 바로 나간다).
-    # 쓰는 곳은 결과 문의 대기 목록을 **미리 세워 두는** 자리다
-    # (`services/auto_send.py`). 거기서 만들고 나서 상태를 고치는 방법도 있지만,
+    # 쓰는 곳은 대기 목록을 **미리 세워 두는** 자리다(스타트업 월간 발송의
+    # [대기 목록 만들기] · 예약). 만들고 나서 상태를 고치는 방법도 있지만,
     # 만드는 것과 고치는 것 사이에 발송기가 폴링하면 **사람이 누르기 전에
     # 나간다.** 세울 때 정해야 그 틈이 없다.
     draft: bool = False
@@ -861,6 +864,14 @@ def preview(
     # 빠진다**(`services/twin_send`). 빠질 분을 미리보기에서 먼저 알린다.
     twin_block = (twin_send.blocked(db, recipients, [c.id for c in companies])
                   if req.mode == MODE_DEAL and not sample else {})
+    # 미팅 후기 — **자동화(A7)가 이미 물은** 분(#31). 같은 투자사에 같은 글이 두 번
+    # 가지 않게 미리보기에서 말한다. 막지는 않는다 — 답이 없어 사람이 한 번 더
+    # 물을 수도 있다. 무엇을 '물었다' 로 보는지는 A7 한 곳이다.
+    auto_asked = {}
+    if req.mode == MODE_REVIEW and not sample:
+        from ..services.automations import meeting_review as a7
+
+        auto_asked = a7.asked_contacts(db, [c.id for c in recipients])
     # Series A 딜 공유 — 고른 분들이 **이미 받은** 기업(대기 · 보내는 중 · 보냄).
     shared = (series_a_share.companies_by_contact(
                   db, contact_ids=[c.id for c in recipients],
@@ -942,6 +953,8 @@ def preview(
                          + ([twin_block[contact.id]] if contact.id in twin_block
                             else [])
                          + ([RECEIVED_NOTE] if contact.id in received else [])
+                         + ([AUTO_ASKED_NOTE.format(day=auto_asked[contact.id])]
+                            if contact.id in auto_asked else [])
                          + share_warns
                          + ([OUT_NOTE] if sourcing and not sample
                             and not sourcing_sync.takes_part(contact) else [])),

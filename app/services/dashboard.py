@@ -22,7 +22,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import clock
-from . import (auto_send, automation, cadence, followup_sms, ir_monthly, mailer,
+from . import (automation, cadence, followup_sms, ir_monthly, mailer,
                manual_send, meeting_kind as mk, pipeline, report, send_guard,
                sheet_owner, startup_send)
 from .. import deps, version
@@ -1044,7 +1044,7 @@ def admin_dashboard(db: Session, today: Optional[date] = None) -> dict:
             # (투자현황이 꺼졌거나 투자컨설턴트가 되었거나). 감추지 않고
             # 그대로 그린다 — 감추면 "왜 안 고쳐지지" 를 알 길이 없어진다.
             "editors": editors_by_owner.get(u.id, []),
-            # 정지된 계정인가. 발송 준비의 **보내는 계정 고르개**가 이것을 읽는다
+            # 정지된 계정인가. 자동화 판의 **보내는 계정 고르개**가 이것을 읽는다
             # — 정지된 사람을 고르면 목록이 서도 누를 사람이 없다.
             "active": bool(u.is_active),
             "last_login": (u.last_login_at or "")[:10],
@@ -1081,11 +1081,6 @@ def admin_dashboard(db: Session, today: Optional[date] = None) -> dict:
         # 결과 문의 문자도 메일과 **나란히** 선다 — 켜졌는지, 무엇이
         # 없는지, 그리고 오늘 나간 것이 어떻게 됐는지.
         "sms": followup_sms.status(db),
-        # 미팅 후기 **발송 대기 목록 자동 준비**. 메일·문자와 나란히 선다 —
-        # 서버가 때맞춰 알아서 하는 것들이 한 화면에 모인다. 켜짐/꺼짐만이
-        # 아니라 **세워 두고 아직 아무도 안 누른 목록**까지 보여 준다:
-        # 보내는 것은 사람이라, 서 있는 줄 모르면 그대로 밀린다.
-        "auto_send": auto_send.status(db),
         # 스타트업 월간 발송 — **누가 보낼 수 있는가** 하나만 담긴 판.
         # 옆의 자동 준비와 같은 표를 쓰지만 때맞춰 저절로 서지는 않는다
         # (`services/startup_send.py` 머리말).

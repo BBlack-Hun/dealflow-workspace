@@ -19,6 +19,7 @@
 """
 from __future__ import annotations
 
+import re
 from datetime import datetime
 
 import pytest
@@ -109,9 +110,16 @@ def test_the_tab_shows_every_spelling_whichever_spelling_opens_it(client, db, us
         for name in SERIES_A_NAMES:
             assert name in html, (tab, name)
         assert "박다른" not in html and "라다른" not in html
-        # [추가] 는 저장된 글자로 · 방 후보 찾기는 그 탭의 방 없는 줄 다섯 명
+        # [추가] 는 저장된 글자로 · `방 없음` 은 그 탭의 방 없는 줄 다섯 명
         assert f'data-bucket="{TIGHT}"' in html
-        assert "방 후보 찾기 (5명)" in html
+        assert len(re.findall(r'<tr data-id="\d+" data-no-room', html)) == 5
+    # [방 후보 찾기]는 고른 다섯을 어느 글자의 줄이든 다 찾는다 — 다른 갈래 줄은 빠진다
+    from app.models import SendJob
+
+    ids = [spread[k].id for k in ("hong", "kim", "park", "lee", "choi", "mna")]
+    client.post("/sourcing/rooms/search",
+                data={"tab": WIDE, "ids": ",".join(map(str, ids))})
+    assert db.query(SendJob).one().total == 5
     html = client.get("/sourcing", params={"tab": MNA_WIDE}).text
     assert "박다른" in html and "라다른" in html
     assert _stored(db) == {TIGHT, SYNC, WIDE, MNA, MNA_WIDE}

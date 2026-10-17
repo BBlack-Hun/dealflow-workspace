@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from .. import clock
 from ..models import User
 from . import (auto_send, automation_runner, cadence, pipeline, readiness,
-               scheduled_send, send_guard, sourcing_mail, startup_monthly)
+               scheduled_send, send_guard, sourcing_mail)
 
 # 줄 하나 = 오늘 할 일 하나.
 #   kind  : 화면에서 묶어 보여줄 종류
@@ -80,16 +80,42 @@ def build(db: Session, user: User, today: Optional[date] = None) -> dict:
             ", ".join(m["name"] for m in ir["due_followups"][:3]),
             "/ir", len(ir["due_followups"])))
 
-    # 세워 두고 **아직 안 누른 발송 목록.** 결과 문의 목록을 켜 두면 서버가
-    # 때맞춰 목록을 만들어 두는데(`services/auto_send.py`), 보내는 것은 사람이라
-    # 여기 뜨지 않으면 서 있는 줄도 모른 채 그날이 지나간다.
-    #
-    # **급한 것으로 둔다.** 이미 물어볼 날이 지난 건들이고, 누르기만 하면 된다.
-    for waiting in auto_send.waiting_for(db, user):
+    # **자동화(A7)가 이미 물은 미팅**(#31) — 또 묻지 말고 들은 답만 적는다.
+    # 위 `미팅 결과 문의` 에서는 빠져 있다(`pipeline.today_items`).
+    if ir["asked_followups"]:
         items.append(_item(
-            "meeting", "urgent", "보낼 목록이 서 있습니다",
-            f"미팅 후기 {waiting['count']}명 — 확인하고 [발송 시작]",
+            "meeting", "soon", "자동 문의한 미팅 — 들은 답 적기",
+            ", ".join(f"{m['name']} 자동 문의함 {m['auto_asked_on']}".rstrip()
+                      for m in ir["asked_followups"][:3]),
+            "/ir#meetings", len(ir["asked_followups"])))
+
+    # **걷기 전에 세워 둔 옛 `미팅 후기 자동` 목록**(#31 — 결과 문의는 이제 A7
+    # 하나다). 예약 시각 없는 `draft` 라 **저절로 안 나간다** — 사람이 보내거나
+    # 취소할 때까지 여기 선다(`services/auto_send.waiting_for`). 누르고 취소하는 것은
+    # 주인뿐이라(`routers/jobs._job_or_404`) 급한 줄은 주인에게만 서고, 관리자에게는
+    # 남의 목록이 몇 개 남았는지 참고 한 줄이다(PR #315 리뷰).
+    others = []
+    for waiting in auto_send.waiting_for(db, user):
+        if waiting["user_id"] != user.id:
+            others.append(waiting)
+            continue
+        items.append(_item(
+            "meeting", "urgent", "옛 미팅 후기 자동 준비 목록이 남아 있습니다",
+            f"{waiting['count']}명 — 자동화 전환 전에 선 목록이라 저절로 나가지 "
+            "않습니다. 확인하고 [발송 시작] 하거나 [취소] 하세요",
             f"/jobs/{waiting['job_id']}", waiting["count"]))
+    if others:
+        names = []
+        for waiting in others:
+            owner = db.get(User, waiting["user_id"])
+            name = owner.name if owner else f"#{waiting['user_id']}"
+            if name not in names:
+                names.append(name)
+        items.append(_item(
+            "meeting", "info", "옛 미팅 후기 자동 준비 목록 — 다른 팀원 계정",
+            f"{', '.join(names)} 님 계정에 {len(others)}개 — 저절로 나가지 않습니다. "
+            "주인이 [발송 시작] 하거나 [취소] 합니다",
+            f"/jobs/{others[0]['job_id']}", len(others)))
 
     # **걸어 두고 아직 안 나간 예약 발송.** 예약해 놓고 잊는 것이 그 기능에서
     # 가장 흔한 사고라, 아침에 여는 이 화면에 서 있어야 한다
@@ -119,19 +145,21 @@ def build(db: Session, user: User, today: Optional[date] = None) -> dict:
         items.append(_item("send", line["level"], line["title"], line["detail"],
                            line["href"], line.get("count")))
 
+    # **스타트업 월간 발송이 이 달 안 나갔다 · 안 나간다**(A5 — 관리자 · 메뉴의 계정).
+    # 위 자동화 줄은 그날만 선다 — 이것은 그 달이 끝나거나 나갈 때까지 선다
+    # (`automations.startup_monthly.today_lines`).
+    from .automations import startup_monthly as a5
+
+    for line in a5.today_lines(db, user, _at(today)):
+        items.append(_item("send", line["level"], line["title"], line["detail"],
+                           line["href"], line.get("count")))
+
     # **딜 소싱 메일 확인** — 관리자에게. 매일 18:00 회차가 **새로 딜 받음을
     # 세웠을 때만** 그 결과(오늘 · 어제), 그리고 마지막 확인이 실패했으면 고칠
     # 때까지 그 사유. 아무도 새로 안 선 날은 안 선다(`services/sourcing_mail.py`).
     for line in sourcing_mail.today_items(db, user, _at(today)):
         items.append(_item("sourcing", line["level"], line["title"], line["detail"],
                            line["href"], line.get("count")))
-
-    # 스타트업 월간 **자동 예약을 못 세운 달.** 선 목록은 바로 위 예약으로
-    # 뜨지만, 못 선 것은 아무 데도 안 뜨면 그 달이 조용히 빠진다.
-    for missed in startup_monthly.today_items(db, user):
-        items.append(_item(
-            "send", "urgent", "스타트업 월간 자동 발송을 세우지 못했습니다",
-            missed["error"], "/deals/startup-ir"))
 
     # 3) 오늘 보낼 리마인드
     cadence.sweep_reactions(db, user.id)

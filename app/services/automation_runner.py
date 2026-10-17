@@ -1,6 +1,6 @@
 """2단계 자동화의 **공통 틀** — 언제 세우고, 누구에게, 몇 시에.
 
-스타트업 월간 자동 예약(`services/startup_monthly.py`)과 결과 문의 대기 목록
+옛 스타트업 월간 자동 예약(`services/startup_monthly.py`)과 결과 문의 대기 목록
 (`services/auto_send.py`)이 각자 들고 있던 얼개를 하나로 모은다. 자동화
 하나가 아는 것은 둘뿐이다.
 
@@ -63,9 +63,8 @@
 
 ## 스타트업 월간 자동 예약
 
-이 틀이 그 얼개를 일반화한 것이지만, 이 PR 에서는 **옮기지 않는다** — 월간
-발송은 지금 운영에서 켜져 돌고 있고, 날짜·문구 순환을 바꾸는 PR(A5)이 이
-틀 위로 옮긴다.
+옛 매월 30일 자동은 이 틀 위의 A5 로 옮겨졌고, 옛 실은 걷었다(#31 —
+`services/startup_monthly.py` 머리말). 매월 서는 회차는 A5 하나다.
 """
 from __future__ import annotations
 
@@ -192,6 +191,10 @@ class Spec:
     #: 이 자동화의 **보낼 시각들**(`HH:MM`) — 팀 시간대 안인지 저장 자리에서 본다.
     #: 비면 `time` 칸들이다. 스타트업 월간처럼 시각이 다른 칸 안에 있을 때 채운다.
     times: Optional[Callable[[dict], List[str]]] = None
+    #: 팀 현황 판 첫 칸의 한 줄을 **지금 값으로** 짓는다(`values`). 비면
+    #: `automation.Kind.summary`(기본값 기준 글) 그대로다. 칸으로 동작이 꺼지는
+    #: 자동화(A7 의 두 번째)는 기본값 글이 거짓말이 된다 — 그때 채운다.
+    summary: Optional[Callable[[dict], str]] = None
 
 
 REGISTRY: Dict[str, Spec] = {}
@@ -1067,6 +1070,65 @@ def stop_jobs(db: Session, key: str) -> int:
     return stopped
 
 
+def unreleased_jobs(db: Session, key: str) -> List[int]:
+    """이 자동화의 **풀리기 전 예약** 회차들 — 발송기 손에 한 번도 안 간 `draft`."""
+    return db.execute(
+        select(SendJob.id).distinct()
+        .join(AutomationSend, AutomationSend.job_id == SendJob.id)
+        .where(AutomationSend.automation == key, SendJob.status == "draft",
+               SendJob.released_at.is_(None))
+    ).scalars().all()
+
+
+#: 다시 세우려고 푼 자리의 메모 — 곧바로 다시 돈다(`rebuild`).
+REBUILD_NOTE = "보내는 계정이 바뀌어 거둔 회차 — 새 계정으로 다시 세웁니다"
+
+
+def rebuild(db: Session, key: str, job_ids, now: Optional[datetime] = None
+            ) -> Optional[dict]:
+    """보내는 계정이 바뀌어 **거둔 회차를 새 계정으로 다시 세운다** — `run_once` 의
+    결과, 다시 세울 수 없으면 `None`(사람이 손으로 보낸다).
+
+    거둔 회차의 자리(`auto_send_runs`)는 `ready` 로 남아 `_claim` 이 다시 안 잡고,
+    거둔 건은 '자동화 중지' 라 `sent_refs` 가 보낸 것으로 센다 — 그대로면 그 회차가
+    조용히 빠진다(PR #315 리뷰). 다시 세우는 것은 **둘 다** 맞을 때뿐이다:
+
+      · 거둔 회차가 **풀리기 전 예약**이었다(`unreleased_jobs` — 발송기 손에 한 번도
+        안 갔다). 풀린 회차는 보내는 중이던 건이 섞였을 수 있어 넘기지 않는다.
+      · 그 회차 자리가 **오늘 것이고 나갈 시각 전**이다(늦게 세우지 않는다).
+
+    그 회차의 거둔 건을 '자동 제외'(다시 실릴 수 있음)로 고치고 자리를 `empty` 로
+    풀어 곧바로 한 번 돈다 — 새 건이 서면 옛 건에 '다시 실림' 표시가 붙는다
+    (`_retake`). 같은 달 두 번 같은 자동화마다의 막음은 `collect` 가 그대로 지킨다
+    (A5 — `month_job`).
+    """
+    _load_all()
+    now = scheduled_send._aware(now or clock.now())
+    row = automation.load(db, key)
+    spec = REGISTRY.get(key)
+    jobs = [job for job in (db.get(SendJob, i) for i in job_ids or [])
+            if job is not None and job.status == "canceled"]
+    who = automation.sender(db, row)
+    plan = spec.plan(db, row, now.date()) if spec is not None and row is not None else None
+    if not jobs or who is None or plan is None or now >= scheduled_send._aware(plan.at):
+        return None
+    run_ids = set(db.execute(
+        select(AutomationSend.run_id).where(AutomationSend.job_id.in_([j.id for j in jobs]))
+    ).scalars().all())
+    runs = [db.get(AutoSendRun, i) for i in run_ids if i]
+    if not runs or any(r is None or r.ref_id != plan.period for r in runs):
+        return None
+    for job in jobs:
+        for item in job.items:
+            if item.status == "canceled" and (item.error or "").startswith(STOPPED):
+                item.error = f"{EXCLUDED} — {SENDER_REASON}(풀리기 전 · 새 계정으로 다시 세움)"
+    for run in runs:
+        run.status, run.job_id, run.user_id, run.error = (STATUS_EMPTY, None, who.id,
+                                                          REBUILD_NOTE)
+    db.commit()
+    return run_once(db, key, now)
+
+
 # ── 발송기에 내줄 때 (`routers/agent_api.poll`) ─────────────────────────────
 
 def automation_of(db: Session, job_id: int) -> Optional[str]:
@@ -1270,6 +1332,8 @@ def status_of(db: Session, key: str, now: Optional[datetime] = None) -> dict:
              "value": ("\n".join(current[f.name]) if f.kind == "lines"
                        else current[f.name])}
             for f in fields_of(spec)]
+        if spec.summary is not None:
+            out["summary"] = spec.summary(current)
         # 팀 시간대를 나중에 좁혔으면 저장된 시각이 그 밖에 남을 수 있다 — 판이 적는다.
         team = automation.team(db)
         outside = [t for t in times_of(key, current) if not team.contains(t)]

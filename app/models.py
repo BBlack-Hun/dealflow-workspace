@@ -1196,7 +1196,7 @@ STARTUP_SEND_KIND = "startup_ir"
 #: 명단의 내 줄)에 보내는 안내 문구(투자유치 진행 문의 · 견적서 공유 안내 ·
 #: 무료 투자유치 제안). 무슨 문구였는지는 `SendJob.topic` 이 담는다.
 #:
-#: **월간 발송(`startup_ir`)과 종류를 나눈다.** 매월 자동 예약은 그 달에
+#: **월간 발송(`startup_ir`)과 종류를 나눈다.** 매월 자동 발송(A5)은 그 달에
 #: `startup_ir` 회차가 이미 있으면 그 달을 건너뛴다(`services/startup_monthly.
 #: month_job`). 같은 종류를 쓰면 안내 카톡 한 번에 그 달 월간 발송이 조용히
 #: 빠진다. 받는 줄도 다르다 — 저쪽은 기업 표(`IrCompany`), 이쪽은 명단의 줄
@@ -2562,6 +2562,10 @@ class SmsNotice(TimestampMixin, Base):
 class AutoSendSetting(TimestampMixin, Base):
     """**결과 문의 대기 목록을 때맞춰 세워 둘지**를 정하는 줄. 종류마다 하나다.
 
+    #31 에서 그 엔진(`meeting_review`)과 스타트업 매월 30일 자동을 걷었다 — 결과
+    문의는 A7, 매월은 A5 하나다. 지금 읽히는 것은 스타트업 월간 발송 메뉴
+    (`startup_ir` 줄)의 켜짐 · 계정뿐이고, 나머지 줄 · 칸은 이력으로 남는다.
+
     켜 두면 물어볼 때가 된 건을 모아 발송 목록이 저절로 선다. **보내는 것은
     사람이다** — 목록은 `draft` 로 서고, 그 계정이 진행 화면에서 [발송 시작] 을
     눌러야 나간다(`services/auto_send.py` 머리말).
@@ -2595,7 +2599,8 @@ class AutoSendSetting(TimestampMixin, Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    #: 무엇을 자동으로 보내는가. `services/auto_send.py: KINDS` 가 아는 값만 온다.
+    #: 어느 설정인가 — `startup_ir`(스타트업 월간 발송 메뉴 · `services/startup_send`)
+    #: 와 옛 `meeting_review`(#31 에서 걷은 결과 문의 대기 목록 — 이력으로 남는다).
     kind: Mapped[str] = mapped_column(String)
     #: **기본은 꺼짐.** 줄이 아예 없는 것도 꺼짐이다.
     enabled: Mapped[int] = mapped_column(Integer, default=0)
@@ -2610,20 +2615,15 @@ class AutoSendSetting(TimestampMixin, Base):
     #: (`auto_send.EARLIEST_HOUR`~`LATEST_HOUR`).
     from_hour: Mapped[int] = mapped_column(Integer, default=10)
     until_hour: Mapped[int] = mapped_column(Integer, default=17)
-    #: **하루에 몇 건까지 세우는가.** 회당이 아니라 하루다 — 실이 30분마다
-    #: 깨어나므로 회당 상한만 두면 하루 총량이 잡히지 않는다
-    #: (까닭은 `auto_send.run_once`).
+    #: **하루에 몇 건까지 세우는가.** 회당이 아니라 하루다 — 옛 결과 문의 대기
+    #: 목록의 실이 30분마다 깨어났다(#31 에서 걷어 지금은 읽는 코드가 없다).
     max_per_day: Mapped[int] = mapped_column(Integer, default=10)
-    #: **매월 자동 예약** — 스타트업 월간 발송(`startup_ir`) 줄만 쓴다.
-    #:
-    #: 켜 두면 매월 30일(30일이 없는 2월은 말일) 아침에 그 달 대기 목록이
-    #: 저절로 서고, `monthly_time` 에 나가도록 예약이 걸린다
-    #: (`services/startup_monthly.py`). 세워진 목록은 진행 화면·오늘 할 일에
-    #: 서 있어 그 시각 전에 보고 빼거나 취소할 수 있다. 기본은 꺼짐.
+    #: **옛 매월 30일 자동 예약**의 두 칸 — 스타트업 월간 발송(`startup_ir`) 줄만
+    #: 썼다. #31 에서 그 자동을 걷어 **읽는 코드가 없다**(매월은 2단계 자동화 A5
+    #: 하나 — `services/startup_monthly.py` 머리말). 칸과 값은 이력으로 남긴다 —
+    #: 이주(0105)가 `monthly_auto` 를 0 으로 내리고 그 설정으로 A5 줄을 세웠다.
     monthly_auto: Mapped[int] = mapped_column(Integer, default=0,
                                               server_default="0")
-    #: 그날 몇 시에 나가는가(`HH:MM`, 지역 시각). 고를 수 있는 폭은 예약과
-    #: 같다(`scheduled_send.EARLIEST_HOUR`~`LATEST_HOUR`).
     monthly_time: Mapped[str] = mapped_column(String, default="17:00",
                                               server_default="17:00")
 
@@ -2673,7 +2673,8 @@ class AutoSendRun(TimestampMixin, Base):
     __tablename__ = "auto_send_runs"
     __table_args__ = (
         UniqueConstraint("kind", "ref_id", name="uq_auto_send_runs_kind_ref"),
-        # 하루 상한을 셀 때마다 이 두 칸으로 훑는다(`auto_send.remaining_today`).
+        # 그날의 회차 자리를 이 두 칸으로 훑는다(`automation_runner.today_items` ·
+        # `status_of`).
         Index("ix_auto_send_runs_kind_day", "kind", "day"),
     )
 

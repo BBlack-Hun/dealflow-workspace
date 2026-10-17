@@ -675,8 +675,8 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
 /* 딜 소싱 — `참여` 뒤에 **월간 리마인드 이력** 달 칸 셋(124px × 3)이 들었다(#14,
    `services/sourcing_remind_log.py`). 공용 규칙(.wide 2,030px)은 미팅 후기도 같이
    쓰는 값이라 올리지 않고, 이 표만 **든 만큼만** 올린다(2,030 + 372) — 안 올리면
-   폭을 안 준 `메모` 가 그 372px 을 통째로 내어 준다(644 → 272px). 시리즈 A 갈래의
-   고르는 칸(32px)도 전과 같이 `메모` 가 내어 준다.
+   폭을 안 준 `메모` 가 그 372px 을 통째로 내어 준다(644 → 272px). 맨 왼쪽
+   고르는 칸(32px, 모든 탭)도 전과 같이 `메모` 가 내어 준다.
    칸 폭 124px 은 가장 긴 한 줄 `10/12 14:05 수동` 을 글자 폭으로 셈한 값이다
    (13px — 숫자 여덟 · 한글 둘 · 기호 · 빈칸 ≈ 101px + 좌우 여백 18px). 머리글
    `12월 리마인드` 도 한 줄에 든다. 시각은 한 칸에 여러 줄이 서므로 자릿수를
@@ -774,6 +774,11 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
 .log-table td .cell-sub { white-space: normal; overflow: visible;
   text-overflow: clip; }
 .cell-sub.row-actions { display: flex; gap: 10px; }
+/* 팀 현황 › 자동화 표 — 칸 아래 줄(요약 · 순환 미리보기 · 경고)도 **접는다.** 위
+   수정 로그와 같은 까닭이다: `순환: 10/26 … → 11/30 … → 12/28 …` 의 뒤 날짜가
+   `…` 뒤로 말없이 사라졌다(화면 점검 10/17). 다 적은 글은 풍선말로도 단다. */
+.automation-table td .cell-sub { white-space: normal; overflow: visible;
+  text-overflow: clip; }
 .memo { font-weight: 400; }
 .chan { font-size: 14px; letter-spacing: 2px; }
 .tag.soft { background: #f1f3f5; color: var(--muted); }
@@ -1160,6 +1165,9 @@ a.secondary-btn { display: inline-flex; align-items: center; text-decoration: no
 .dash-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .dash-grid .panel { margin: 0; }
 .dash-grid .panel.wide { grid-column: 1 / -1; }
+/* 옆 칸이 아주 긴 판(팀 현황 › 자동화) — 같은 줄 높이로 늘어나 빈 칸이 3천 px 넘게
+   서지 않게 제 키만큼만 선다(화면 점검 10/17). */
+.dash-grid .panel.align-top { align-self: start; }
 
 /* 막힌 것 목록 — 눌러서 바로 고치러 간다 */
 .blocker-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
@@ -2940,10 +2948,11 @@ a.guard-go:hover { background: #1e4fd0; text-decoration: none; }
    `(메일 10/15)` · `(직접)` 은 자리가 모자라면 통째로 다음 줄로 내려간다. */
 .received-btn, .received-btn + .muted { white-space: nowrap; }
 
-/* ── 딜 소싱 › 시리즈 A 갈래 — 맨 왼쪽 고르는 칸 ──────────────────────────
-   [Series A 딜 소개]로 넘길 분을 고른다(`sourcing.html`). 체크박스만 서는 좁은
-   칸이라 가운데에 둔다. 안 고르면 그 단추가 잠긴다 — `<a>` 라 `:disabled` 가
-   없어 `aria-disabled` 로 잠근 모양을 낸다(눌림은 화면 스크립트가 막는다). */
+/* ── 딜 소싱 — 맨 왼쪽 고르는 칸 ──────────────────────────────────────────
+   [방 후보 찾기]로 찾을 분 · [Series A 딜 소개]로 넘길 분을 고른다
+   (`sourcing.html`). 체크박스만 서는 좁은 칸이라 가운데에 둔다. 안 고르면 두
+   단추가 잠긴다 — [Series A 딜 소개]는 `<a>` 라 `:disabled` 가 없어
+   `aria-disabled` 로 잠근 모양을 낸다(눌림은 화면 스크립트가 막는다). */
 .grid-table th.pick-col, .grid-table td.pick-col { text-align: center; padding-left: 4px;
   padding-right: 4px; }
 .grid-table td.pick-col input, .grid-table th.pick-col input { margin: 2px 0 0; cursor: pointer; }

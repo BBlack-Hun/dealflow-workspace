@@ -1146,82 +1146,6 @@ def toggle_auto_attach(
         status_code=303)
 
 
-@router.post("/team/auto-send", include_in_schema=False)
-def save_auto_send(
-    kind: str = Form(""),
-    enabled: str = Form(""),
-    user_id: int = Form(0),
-    from_hour: int = Form(0),
-    until_hour: int = Form(0),
-    max_per_day: int = Form(0),
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    """**결과 문의 대기 목록을 자동으로 세울지** 정하는 자리. 여기가 손잡이다.
-
-    켜 두면 물어볼 때가 된 건을 모아 발송 목록이 저절로 선다 —
-    **보내는 것은 사람이다**(목록은 `draft` 로 서고, 그 계정이 진행 화면에서
-    [발송 시작] 을 눌러야 나간다).
-
-    ## 왜 `/setup` 이 아니라 팀 현황인가  ★ 이 판단이 이 기능의 모양이다
-
-    `/setup` 은 **본인이 자기 PC 를 손보는 화면**이다 — 발송기를 내려받고, 그 PC
-    의 자료 폴더를 적고, 시험을 눌러 본다. 거기 두면 **누구든 스스로 켤 수 있다.**
-
-    이 저장소는 그 값을 이미 치렀다. 자료 자동 첨부는 처음에 `/setup` 의 폴더 칸
-    하나로 켜졌고, 그래서 아무나 켤 수 있었다 — 지금은 관리자가 팀 현황에서
-    계정마다 정한다(바로 위 `toggle_auto_attach`, #107). 여기도 같은 자리에
-    둔다: 켜면 **그 계정 화면에 누를 것이 저절로 생긴다.**
-
-    팀 현황에 두어야 하는 이유가 둘 더 있다.
-
-    - **묻는 것이 "누구 계정으로 무엇을 언제" 다.** `/setup` 은 내 PC 하나만 알고,
-      다른 계정을 고르는 칸이 있을 자리가 아니다.
-    - **메일·문자 설정이 이미 여기 나란히 서 있다.** 서버가 때맞춰 알아서 하는
-      것들이 한 화면에 모인다.
-
-    **누가 설정할 수 있는지에 대한 새 규칙을 만들지 않았다** — 옆칸 둘과 같은
-    문이다(`admin_only`).
-
-    ## 값은 여기서 판정하지 않는다
-
-    시각과 상한을 자르는 것은 `auto_send.save` 한 곳이다(`clamp_hours` ·
-    `clamp_cap`). 화면과 라우터가 각각 자르면 언젠가 한쪽만 고쳐진다.
-    """
-    admin_only(user)
-    from urllib.parse import quote
-
-    from ..services import auto_send
-
-    if kind not in auto_send.KINDS:
-        raise HTTPException(status_code=404, detail="그런 자동 준비는 없습니다")
-
-    member = db.get(User, user_id) if user_id else None
-    want_on = enabled == "on"
-
-    # 고르는 계정은 **딜소개를 보내는 살아 있는 계정**이어야 한다. 정지된 계정이나
-    # 투자컨설턴트(담당 투자사도 발송기도 없다)를 고르면 목록이 서기만 하고 누를
-    # 사람이 없다 — 켜 두고 아무 일도 안 일어나는 것이 제일 나쁘다.
-    if want_on and (member is None or not member.is_active
-                    or not deps.sends_deals(member)):
-        return RedirectResponse(
-            "/team?msg=자동+준비를+켜려면+보내는+계정을+고르세요", status_code=303)
-
-    setting = auto_send.save(db, kind, enabled=want_on,
-                             user_id=member.id if member else None,
-                             from_hour=from_hour, until_hour=until_hour,
-                             max_per_day=max_per_day)
-    label = auto_send.KINDS[kind].label
-    if not auto_send.is_on(setting):
-        return RedirectResponse(
-            f"/team?msg={quote(label)}+자동+준비를+껐습니다", status_code=303)
-    # 켤 때는 **무엇이 정해졌는지 그대로 되읽어 준다.** 잘라 넣은 값이 있으면
-    # 여기서 드러난다(고른 것과 다른 값이 적혀 있으면 바로 보인다).
-    note = (f"{label}+대기+목록+자동+준비+켜짐+—+{quote(member.name)}+계정으로+"
-            f"{quote(auto_send.window_label(setting))}+·+하루+{setting.max_per_day}건까지")
-    return RedirectResponse(f"/team?msg={note}", status_code=303)
-
-
 @router.post("/team/send-caps", include_in_schema=False)
 async def save_send_caps(
     request: Request,
@@ -1275,27 +1199,27 @@ async def save_send_caps(
 def save_startup_send(
     enabled: str = Form(""),
     user_id: int = Form(0),
-    monthly: str = Form(""),
-    monthly_time: str = Form(""),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """**스타트업 월간 발송을 누가 쓸 수 있는가** — 그리고 **매월 자동 예약**.
+    """**스타트업 월간 발송을 누가 쓸 수 있는가** — 메뉴 · 보내는 계정.
 
-    `monthly`/`monthly_time` 은 매월 30일(2월은 말일) 자동 예약을 켜고 시각을
-    정한다(`services/startup_monthly.py`). 폼에 그 칸이 없으면(옛 화면)
-    시각은 그대로 두고 자동은 끈다 — 모르는 채로 켜 두지 않는다.
+    매월 자동 발송은 자동화 판의 A5 하나다(#31). 옛 화면이 보내던 매월 자동
+    칸(`monthly` · `monthly_time`)은 받지 않는다 — 옛 30일 자동은 걷었다
+    (`services/startup_monthly.py` 머리말). A5 는 **이 메뉴의 계정**으로 나가서,
+    계정을 바꾸면 A5 도 따라 바뀌고 옛 계정 PC 로 서 있던 A5 회차는 거둔다 —
+    메뉴를 끄면 A5 도 끈다(`automation.follow_startup_menu`).
 
     ## 왜 팀 현황인가
 
-    바로 위 `save_auto_send` 와 같은 까닭이다 — 짧게: `/setup` 은 본인이 자기
-    PC 를 손보는 화면이라 **누구든 스스로 켤 수 있다.** 여기 두면 켜는 사람이
-    관리자 하나다(`admin_only`, 옆칸 둘과 같은 문).
+    `/setup` 은 본인이 자기 PC 를 손보는 화면이라 **누구든 스스로 켤 수 있다.**
+    여기 두면 켜는 사람이 관리자 하나다(`admin_only`, 옆칸 둘과 같은 문).
 
     ## 여기서 켜도 카톡은 나가지 않는다
 
     켜지는 것은 **그 계정의 딜 제안 관리에 메뉴 하나**다. 그 사람이 달을 고르고
-    대기 목록을 세운 뒤 진행 화면에서 [발송 시작] 을 눌러야 나간다.
+    대기 목록을 세운 뒤 진행 화면에서 [발송 시작] 을 눌러야 나간다. 저절로 서는
+    것은 A5 를 켰을 때뿐이다.
 
     ## 이름을 코드에 적지 않는다
 
@@ -1305,7 +1229,7 @@ def save_startup_send(
     admin_only(user)
     from urllib.parse import quote
 
-    from ..services import startup_send
+    from ..services import automation, startup_send
 
     member = db.get(User, user_id) if user_id else None
     want_on = enabled == "on"
@@ -1318,25 +1242,21 @@ def save_startup_send(
         return RedirectResponse(
             "/team?msg=이+메뉴를+켜려면+보내는+계정을+고르세요", status_code=303)
 
-    from ..services import startup_monthly
-
-    try:
-        setting = startup_send.save(db, enabled=want_on,
-                                    user_id=member.id if member else None,
-                                    monthly=monthly == "on",
-                                    monthly_time=(monthly_time.strip() or None))
-    except ValueError as exc:
-        return RedirectResponse(f"/team?msg={quote(str(exc))}", status_code=303)
+    setting = startup_send.save(db, enabled=want_on,
+                                user_id=member.id if member else None)
     label = startup_send.LABEL
+    a5_off, stopped, again = automation.follow_startup_menu(db)
+    gone = f" — 서 있던 회차 {stopped}개를 거뒀습니다" if stopped else ""
+    gone += f" · {again}" if again else ""
     if not startup_send.is_on(setting):
-        return RedirectResponse(
-            f"/team?msg={quote(label)}+메뉴를+껐습니다+—+아무+계정에도+보이지+않습니다",
-            status_code=303)
-    note = f"{quote(label)}+메뉴+켜짐+—+{quote(member.name)}+계정에만+보입니다"
-    monthly_state = startup_monthly.status(db)
-    if monthly_state["on"]:
-        note += quote(f" · 매월 자동 발송 켜짐 — 다음 {monthly_state['next_label']}")
-    return RedirectResponse(f"/team?msg={note}", status_code=303)
+        note = f"{label} 메뉴를 껐습니다 — 아무 계정에도 보이지 않습니다"
+        if a5_off or stopped:
+            note += f" · 자동화 A5 도 껐습니다(보낼 계정이 없습니다){gone}"
+        return RedirectResponse(f"/team?msg={quote(note)}", status_code=303)
+    note = f"{label} 메뉴 켜짐 — {member.name} 계정에만 보입니다"
+    if stopped:
+        note += f" · 자동화 A5 도 이 계정으로{gone}"
+    return RedirectResponse(f"/team?msg={quote(note)}", status_code=303)
 
 
 @router.post("/team/automation-team", include_in_schema=False)

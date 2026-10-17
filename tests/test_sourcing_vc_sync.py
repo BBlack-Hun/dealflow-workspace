@@ -21,11 +21,13 @@
   ⑨ 투자사 줄을 지워도 소싱 줄은 남고 연결만 끊긴다. 시리즈 A 갈래는 이름을 못 바꾼다.
   ⑩ 카톡방 — 시리즈 A 갈래는 투자사 딜소개 방을 이어받지 않는다. 방이 없으면
      빼고 보내고, [방 후보 찾기]로 누른 사람 PC 카톡에서 찾아 확정한다.
+     [방 후보 찾기]는 **표에서 고른 줄만** 찾는다 — 안 고르면 아무것도 안 찾는다.
 
 이름 · 회사 · 번호는 전부 가상값이다(공개 저장소).
 """
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -731,16 +733,18 @@ def test_room_search_runs_on_the_pressers_pc_and_only_collects_candidates(board,
     from app.models import SOURCING_ROOM_TOPIC, SendJob, SourcingContact
 
     a = sc(db, name="홍길동", title="심사역")
-    sc(db, name="김철수", phone="010-2222-3333", kakao_room_name="김철수 방")  # 방 있음
+    has_room = sc(db, name="김철수", phone="010-2222-3333", kakao_room_name="김철수 방")
     other = sc(db, name="박영희", phone="010-3333-4444", bucket=MNA)
     vc(db, users, name="박영희", phone="010-3333-4444")   # 다른 갈래는 이어받아 방 있음
 
     page = board.get(f"/sourcing?tab={SYNC}").text
-    assert "방 후보 찾기 (1명)" in page
+    assert _no_room_rows(page) == [a.id]
     assert 'data-testid="sourcing-no-room"' in page
 
     login(board, "01000000002")                   # 누른 사람 = u2 → u2 PC
-    r = board.post("/sourcing/rooms/search", data={"tab": SYNC},
+    # 셋을 골라도 방이 있는 줄 · 다른 갈래 줄은 빠진다
+    r = board.post("/sourcing/rooms/search",
+                   data={"tab": SYNC, "ids": f"{a.id},{has_room.id},{other.id}"},
                    follow_redirects=False)
     assert r.status_code == 303
     db.expire_all()
@@ -781,7 +785,7 @@ def test_room_search_runs_on_the_pressers_pc_and_only_collects_candidates(board,
     db.expire_all()
     row = db.get(SourcingContact, a.id)
     assert (row.kakao_room_name, row.room_verified) == ("홍길동 심사역 딜소싱", "verified")
-    assert "방 후보 찾기 (0명)" in board.get(f"/sourcing?tab={SYNC}").text
+    assert _no_room_rows(board.get(f"/sourcing?tab={SYNC}").text) == []
 
 
 def test_only_a_found_candidate_can_be_confirmed(board, db, users):
@@ -798,10 +802,95 @@ def test_only_a_found_candidate_can_be_confirmed(board, db, users):
 def test_nothing_to_search_queues_nothing(board, db, users):
     from app.models import SendJob
 
-    sc(db, kakao_room_name="홍길동 방")
-    r = board.post("/sourcing/rooms/search", data={"tab": SYNC}, follow_redirects=False)
+    row = sc(db, kakao_room_name="홍길동 방")
+    r = board.post("/sourcing/rooms/search", data={"tab": SYNC, "ids": str(row.id)},
+                   follow_redirects=False)
     assert "msg=" in r.headers["location"]
     assert db.query(SendJob).count() == 0
+
+
+def _no_room_rows(page):
+    """`방 없음` 표시(`data-no-room`)가 선 줄 번호 — 화면이 [방 후보 찾기]에 싣는 줄."""
+    return [int(rid) for rid, attrs in re.findall(r'<tr data-id="(\d+)"([^>]*)>', page)
+            if "data-no-room" in attrs]
+
+
+def test_room_search_looks_only_for_the_picked_rows(board, db, users):
+    """사용자: "딜 소싱의 방 후보 찾기도 선택한걸 기반으로 찾게 해줘".
+
+    고른 줄(`ids`)만 찾는다. 아무도 안 골랐으면 **아무것도 안 세운다** — 예전처럼
+    그 갈래의 방 없는 분 전부로 대신하지 않는다(화면이 단추를 잠가도 서버가 한 번 더).
+    """
+    from urllib.parse import unquote
+
+    from app.models import SendJob
+
+    a = sc(db, name="홍길동")
+    b = sc(db, name="김철수", phone="010-2222-3333", position=2)
+
+    for body in ({"tab": SYNC}, {"tab": SYNC, "ids": ""}, {"tab": "all", "ids": " , "}):
+        r = board.post("/sourcing/rooms/search", data=body, follow_redirects=False)
+        assert r.status_code == 303
+        assert "찾을 분을 먼저 고르세요" in unquote(r.headers["location"]), body
+    assert db.query(SendJob).count() == 0, "안 골랐는데 갈래 전부를 찾는다"
+
+    r = board.post("/sourcing/rooms/search", data={"tab": SYNC, "ids": str(b.id)},
+                   follow_redirects=False)
+    assert "1명의 방을 찾습니다" in unquote(r.headers["location"])
+    db.expire_all()
+    [job] = db.query(SendJob).all()
+    assert [i.sourcing_contact_id for i in job.items] == [b.id]
+    assert a.id not in [i.sourcing_contact_id for i in job.items]
+
+    # 전체 탭에서도 같다 — 고른 줄만
+    r = board.post("/sourcing/rooms/search", data={"tab": "all", "ids": str(a.id)},
+                   follow_redirects=False)
+    db.expire_all()
+    job = db.query(SendJob).order_by(SendJob.id.desc()).first()
+    assert [i.sourcing_contact_id for i in job.items] == [a.id]
+
+
+@pytest.mark.parametrize("tab", [SYNC, MNA, "all"])
+def test_every_tab_has_pick_boxes_and_a_locked_room_search_button(board, db, users, tab):
+    """[방 후보 찾기]는 모든 탭에 있다 — 고르는 칸도 모든 탭에 선다. 처음에는 아무도
+    안 골랐으니 단추가 잠긴 채 `(선택 0명)` 이고 옆에 `찾을 분을 먼저 고르세요`.
+    [Series A 딜 소개]는 예전처럼 시리즈 A 갈래에만."""
+    from urllib.parse import quote
+
+    a = sc(db, name="홍길동")
+    m = sc(db, name="김철수", phone="010-2222-3333", bucket=MNA)
+    page = board.get(f"/sourcing?tab={quote(tab)}").text
+
+    form = re.search(r'<form [^>]*id="sourcing-room-search".*?</form>', page, re.S)
+    assert form, "[방 후보 찾기] 자리가 없다"
+    assert 'action="/sourcing/rooms/search"' in form.group(0)
+    assert re.search(r'<input type="hidden" name="ids" value="">', form.group(0))
+    btn = re.search(r'<button [^>]*id="sourcing-room-btn"[^>]*>([^<]*)</button>',
+                    form.group(0))
+    assert btn and btn.group(1).strip() == "방 후보 찾기 (선택 0명)", btn and btn.group(1)
+    assert " disabled" in btn.group(0), "아무도 안 골랐는데 단추가 눌린다"
+    assert re.search(r'id="sourcing-room-hint"[^>]*>찾을 분을 먼저 고르세요<', page)
+
+    assert 'id="sourcing-check-all"' in page
+    picks = re.findall(r'class="js-sourcing-pick" value="(\d+)"', page)
+    shown = {SYNC: [a.id], MNA: [m.id], "all": [a.id, m.id]}[tab]
+    assert sorted(int(x) for x in picks) == sorted(shown)
+    assert sorted(_no_room_rows(page)) == sorted(shown)
+    assert ('id="sourcing-share-btn"' in page) == (tab == SYNC)
+
+
+ROOM_JS = Path(__file__).resolve().parent / "js" / "sourcing_room_search_test.js"
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치 — 브라우저 로직 테스트 생략")
+def test_the_room_search_button_follows_the_picks():
+    """체크한 `방 없음` 분만 싣는다 · 안 골랐으면 잠긴다 · 확인창에 누구인지(`sourcing.html`).
+
+    로컬에서는 `node tests/js/sourcing_room_search_test.js` 로도 돈다.
+    """
+    result = subprocess.run([shutil.which("node"), str(ROOM_JS)],
+                            capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 # ── PR #284 리뷰에서 짚인 것 ────────────────────────────────────────────────
@@ -1015,7 +1104,7 @@ def test_people_who_left_need_no_room(board, db, users):
     assert [r.id for r in sourcing_rooms.needs_room(db, [stays, left])] == [stays.id]
     assert [r.id for r in sourcing_rooms.targets(db, SYNC)] == [stays.id]
     assert sourcing_rooms.targets(db, SYNC, [left.id]) == []
-    assert "방 후보 찾기 (1명)" in board.get(f"/sourcing?tab={SYNC}").text
+    assert _no_room_rows(board.get(f"/sourcing?tab={SYNC}").text) == [stays.id]
 
 
 def test_deleting_the_investor_row_logs_the_unlink(board, db, users):
