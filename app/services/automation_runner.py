@@ -1070,6 +1070,65 @@ def stop_jobs(db: Session, key: str) -> int:
     return stopped
 
 
+def unreleased_jobs(db: Session, key: str) -> List[int]:
+    """이 자동화의 **풀리기 전 예약** 회차들 — 발송기 손에 한 번도 안 간 `draft`."""
+    return db.execute(
+        select(SendJob.id).distinct()
+        .join(AutomationSend, AutomationSend.job_id == SendJob.id)
+        .where(AutomationSend.automation == key, SendJob.status == "draft",
+               SendJob.released_at.is_(None))
+    ).scalars().all()
+
+
+#: 다시 세우려고 푼 자리의 메모 — 곧바로 다시 돈다(`rebuild`).
+REBUILD_NOTE = "보내는 계정이 바뀌어 거둔 회차 — 새 계정으로 다시 세웁니다"
+
+
+def rebuild(db: Session, key: str, job_ids, now: Optional[datetime] = None
+            ) -> Optional[dict]:
+    """보내는 계정이 바뀌어 **거둔 회차를 새 계정으로 다시 세운다** — `run_once` 의
+    결과, 다시 세울 수 없으면 `None`(사람이 손으로 보낸다).
+
+    거둔 회차의 자리(`auto_send_runs`)는 `ready` 로 남아 `_claim` 이 다시 안 잡고,
+    거둔 건은 '자동화 중지' 라 `sent_refs` 가 보낸 것으로 센다 — 그대로면 그 회차가
+    조용히 빠진다(PR #315 리뷰). 다시 세우는 것은 **둘 다** 맞을 때뿐이다:
+
+      · 거둔 회차가 전부 **풀리기 전 예약**이었다(`unreleased_jobs` — 발송기 손에
+        한 번도 안 갔다). 풀린 회차는 보내는 중이던 건이 섞였을 수 있다.
+      · 그 회차 자리가 **오늘 것이고 나갈 시각 전**이다(늦게 세우지 않는다).
+
+    그 회차의 거둔 건을 '자동 제외'(다시 실릴 수 있음)로 고치고 자리를 `empty` 로
+    풀어 곧바로 한 번 돈다 — 새 건이 서면 옛 건에 '다시 실림' 표시가 붙는다
+    (`_retake`). 같은 달 두 번 같은 자동화마다의 막음은 `collect` 가 그대로 지킨다
+    (A5 — `month_job`).
+    """
+    _load_all()
+    now = scheduled_send._aware(now or clock.now())
+    row = automation.load(db, key)
+    spec = REGISTRY.get(key)
+    jobs = [job for job in (db.get(SendJob, i) for i in job_ids or [])
+            if job is not None and job.status == "canceled"]
+    who = automation.sender(db, row)
+    plan = spec.plan(db, row, now.date()) if spec is not None and row is not None else None
+    if not jobs or who is None or plan is None or now >= scheduled_send._aware(plan.at):
+        return None
+    run_ids = set(db.execute(
+        select(AutomationSend.run_id).where(AutomationSend.job_id.in_([j.id for j in jobs]))
+    ).scalars().all())
+    runs = [db.get(AutoSendRun, i) for i in run_ids if i]
+    if not runs or any(r is None or r.ref_id != plan.period for r in runs):
+        return None
+    for job in jobs:
+        for item in job.items:
+            if item.status == "canceled" and (item.error or "").startswith(STOPPED):
+                item.error = f"{EXCLUDED} — {SENDER_REASON}(풀리기 전 · 새 계정으로 다시 세움)"
+    for run in runs:
+        run.status, run.job_id, run.user_id, run.error = (STATUS_EMPTY, None, who.id,
+                                                          REBUILD_NOTE)
+    db.commit()
+    return run_once(db, key, now)
+
+
 # ── 발송기에 내줄 때 (`routers/agent_api.poll`) ─────────────────────────────
 
 def automation_of(db: Session, job_id: int) -> Optional[str]:

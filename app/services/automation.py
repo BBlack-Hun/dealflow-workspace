@@ -525,27 +525,42 @@ def startup_menu_sender(db: Session, picked: Optional[int], enabled: bool) -> Op
     return menu
 
 
-def follow_startup_menu(db: Session) -> Tuple[bool, int]:
-    """메뉴를 따라 A5 를 맞춘다 — `(A5 를 껐나, 거둔 회차 수)`. 커밋까지 한다.
+def follow_startup_menu(db: Session) -> Tuple[bool, int, str]:
+    """메뉴를 따라 A5 를 맞춘다 — `(A5 를 껐나, 거둔 회차 수, 덧붙일 말)`. 커밋까지 한다.
 
     - 메뉴의 계정이 바뀌었으면 A5 도 그 계정으로. 옛 계정 PC 로 서 있던 회차는
-      거둔다(`automation_runner.stop_jobs`).
+      거둔다(`automation_runner.stop_jobs`). 거둔 회차가 **풀리기 전 예약**이고 그날
+      나갈 시각 전이면 새 계정으로 곧바로 다시 세운다(`automation_runner.rebuild`)
+      — 아니면 그 달은 손으로 보내라고 적는다(같은 달 두 번은 `month_job` 이 막는다).
     - **메뉴를 껐으면 A5 도 끈다**(계정은 마지막 것 그대로) — 보낼 계정이 없는데
       켜짐으로 남으면 화면이 '다음: 날짜' 를 약속하고 그날 아무것도 안 나간다.
     """
-    from . import automation_runner, startup_send
+    from . import automation_runner, scheduled_send, startup_send
 
     row = load(db, STARTUP_MONTHLY)
     if row is None:
-        return False, 0
+        return False, 0, ""
     menu = startup_send.sender_id(db)
     if not menu:
-        return turn_off(db, STARTUP_MONTHLY), automation_runner.stop_jobs(db, STARTUP_MONTHLY)
+        return (turn_off(db, STARTUP_MONTHLY),
+                automation_runner.stop_jobs(db, STARTUP_MONTHLY), "")
     if row.user_id == menu:
-        return False, 0
+        return False, 0, ""
     row.user_id = menu
     db.commit()
-    return False, automation_runner.stop_jobs(db, STARTUP_MONTHLY)
+    unreleased = automation_runner.unreleased_jobs(db, STARTUP_MONTHLY)
+    stopped = automation_runner.stop_jobs(db, STARTUP_MONTHLY)
+    if not stopped:
+        return False, 0, ""
+    again = automation_runner.rebuild(db, STARTUP_MONTHLY, unreleased)
+    if again is not None and again.get("status") == automation_runner.STATUS_READY:
+        at = scheduled_send.parse(again["at"][0])
+        return False, stopped, f"새 계정으로 다시 세웠습니다 — {scheduled_send.label(at)} 에 나갑니다"
+    why = ("이미 풀렸거나 나갈 시각이 지났습니다" if again is None
+           else again.get("error") or {"empty": "보낼 곳 0곳"}.get(again["status"],
+                                                                  again["status"]))
+    return False, stopped, (f"이 달 A5 회차는 새 계정으로 다시 세우지 않았습니다({why}) — "
+                            f"{startup_send.LABEL} 화면에서 손으로 보내세요")
 
 
 # ── 시험방으로 돌리기 ─────────────────────────────────────────────────────────

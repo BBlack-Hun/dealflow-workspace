@@ -136,7 +136,9 @@ def test_a5_cannot_be_turned_on_while_the_menu_is_off(db, users):
     assert row.enabled == 0
 
 
-def test_changing_the_menu_sender_moves_a5_and_stops_its_jobs(db, users, client, seeded):
+def test_changing_the_menu_sender_moves_a5_and_stops_its_jobs(db, users, client, seeded,
+                                                             monkeypatch):
+    from app import clock
     from app.models import SendJob
     from app.services import automation, automation_runner as runner
     from app.services.automations import startup_monthly as a5
@@ -149,6 +151,9 @@ def test_changing_the_menu_sender_moves_a5_and_stops_its_jobs(db, users, client,
     made = runner.run_once(db, automation.STARTUP_MONTHLY,
                            datetime(day.year, day.month, day.day, 9, 0).astimezone())
     assert made["status"] == "ready", made
+    # 나갈 시각이 지난 뒤에 바꾼다 — 그 전이면 새 계정으로 다시 선다(아래 리뷰 5).
+    monkeypatch.setattr(clock, "now", lambda: datetime(
+        day.year, day.month, day.day, 18, 0).astimezone())
 
     admin = _admin_client(client, db, users)
     answer = admin.post("/team/startup-send",
@@ -506,3 +511,83 @@ def test_a_real_a5_gets_no_off_reminder(db, users):
     _turn_on(db, user_id=1)
     _a5(db, test=False)
     assert _lines(db, users["u1"], date(2026, 10, 17), OFF_NEEDLE) == []
+
+
+# 리뷰 5 — 보내는 날 메뉴 계정을 바꾸면 거둔 A5 회차를 새 계정으로 다시 세운다.
+
+def _a5_booked_today(db):
+    """이번 달 A5 날 09:00 — 1번 계정 것으로 예약이 선다(아직 안 풀림)."""
+    from app.services import automation, automation_runner as runner
+    from app.services.automations import startup_monthly as a5
+
+    _turn_on(db, user_id=1)
+    _a5(db, test=False)
+    today = date.today()
+    day, hhmm = a5.slot_for(_defaults(), today.year, today.month)
+    made = runner.run_once(db, automation.STARTUP_MONTHLY,
+                           _at(day.year, day.month, day.day, 9, 0))
+    assert made["status"] == "ready", made
+    hour, minute = (int(x) for x in hhmm.split(":"))
+    return {"day": day, "at": _at(day.year, day.month, day.day, hour, minute),
+            "period": day.year * 100 + day.month}
+
+
+def _switch_menu(client, db, users, monkeypatch, when):
+    from app import clock
+
+    monkeypatch.setattr(clock, "now", lambda: when)
+    answer = _admin_client(client, db, users).post(
+        "/team/startup-send", data={"enabled": "on", "user_id": users["u2"].id},
+        follow_redirects=False)
+    assert answer.status_code == 303
+    db.expire_all()
+    return unquote(answer.headers["location"])
+
+
+def test_changing_the_sender_before_the_slot_rebuilds_for_the_new_sender(
+        db, users, client, seeded, monkeypatch):
+    """보내는 날 아침 메뉴 계정을 바꾸면 옛 계정 PC 로 선 회차는 거두는데, 그 달 자리
+    (`auto_send_runs`)가 `ready` 로 남아 다시 안 서고 그 달이 조용히 빠졌다 —
+    풀리기 전 예약이었으면 자리를 풀어 새 계정으로 다시 세운다."""
+    from datetime import timedelta
+
+    from app.services import automation, automation_runner as runner
+
+    slot = _a5_booked_today(db)
+    note = _switch_menu(client, db, users, monkeypatch, slot["at"] - timedelta(minutes=90))
+    old, new = _jobs(db)
+    assert old.status == "canceled" and old.user_id == 1
+    assert new.user_id == users["u2"].id and new.status == "draft"
+    assert [i.status for i in new.items] == ["pending"]
+    assert [i.status for i in old.items] == ["canceled"]
+    assert "다시 세웠습니다" in note, note
+    run = runner.run_row(db, automation.STARTUP_MONTHLY, False, slot["period"])
+    assert run.status == "ready" and run.job_id == new.id and run.user_id == users["u2"].id
+    # 옛 건은 '다시 실림' 표시 — 사람이 옛 회차를 되살려도 같은 곳에 또 가지 않는다.
+    assert runner.screen(db, old, old.items) == {
+        old.items[0].id: f"{runner.EXCLUDED} — {runner.RETAKEN}"}
+
+
+def test_after_the_slot_time_it_says_send_by_hand(db, users, client, seeded, monkeypatch):
+    from datetime import timedelta
+
+    slot = _a5_booked_today(db)
+    note = _switch_menu(client, db, users, monkeypatch, slot["at"] + timedelta(minutes=30))
+    [job] = _jobs(db)
+    assert job.status == "canceled"
+    assert "손으로 보내세요" in note, note
+
+
+def test_a_released_job_is_never_rebuilt(db, users, client, seeded, monkeypatch):
+    """이미 풀려 발송기 손에 갔을 수 있는 회차는 다시 세우지 않는다(두 번 가는 길)."""
+    from datetime import timedelta
+
+    from app import clock
+
+    slot = _a5_booked_today(db)
+    [job] = _jobs(db)
+    job.status, job.released_at = "queued", clock.now_iso()
+    db.commit()
+    note = _switch_menu(client, db, users, monkeypatch, slot["at"] - timedelta(minutes=90))
+    assert [j.status for j in _jobs(db)] == ["canceled"]
+    assert "손으로 보내세요" in note, note

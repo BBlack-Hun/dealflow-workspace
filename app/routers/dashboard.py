@@ -1245,8 +1245,9 @@ def save_startup_send(
     setting = startup_send.save(db, enabled=want_on,
                                 user_id=member.id if member else None)
     label = startup_send.LABEL
-    a5_off, stopped = automation.follow_startup_menu(db)
+    a5_off, stopped, again = automation.follow_startup_menu(db)
     gone = f" — 서 있던 회차 {stopped}개를 거뒀습니다" if stopped else ""
+    gone += f" · {again}" if again else ""
     if not startup_send.is_on(setting):
         note = f"{label} 메뉴를 껐습니다 — 아무 계정에도 보이지 않습니다"
         if a5_off or stopped:
