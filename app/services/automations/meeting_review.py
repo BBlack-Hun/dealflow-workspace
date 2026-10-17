@@ -383,6 +383,19 @@ def manual(db: Session, values: dict, target, day: date) -> str:
                                            after=after or None)
 
 
+def summary(values: dict) -> str:
+    """판 첫 칸의 한 줄 — **저장된 날수 · 시각으로** 적는다. 두 번째 날수가 0 이면
+    `두 번째 문의 꺼짐`(기본값 글 '30일 뒤 … 투자 결정 문의' 는 꺼 둔 줄에서 거짓말이다
+    — 화면 점검 10/17)."""
+    first = (f"미팅 완료 {values['days']}일 뒤 {values['time']} 그 투자사 방에 "
+             "미팅 후기 문구")
+    if not values["decision_days"]:
+        return f"{first} · 두 번째 문의 꺼짐"
+    return (f"{first}, {values['decision_days']}일 뒤 {values['decision_time']} "
+            "투자 결정 문의(거절이면 안 물음)")
+
+
 runner.register(runner.Spec(
     key=automation.MEETING_REVIEW, kind="deal_intro", plan=plan,
-    collect=collect, still_ok=still_ok, fields=FIELDS, check=_check, manual=manual))
+    collect=collect, still_ok=still_ok, fields=FIELDS, check=_check, manual=manual,
+    summary=summary))

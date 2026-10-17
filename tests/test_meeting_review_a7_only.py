@@ -145,3 +145,29 @@ def test_the_line_goes_away_once_started_or_canceled(db, users, client):
     db.expire_all()
     assert not [i for i in today.build(db, users["u1"])["items"]
                 if i["href"] == f"/jobs/{job.id}"]
+
+
+# ── 화면 점검에서 나온 것(테스트 서버 10/17) ────────────────────────────────
+
+def _a7_summary(page: str) -> str:
+    row = page.split('data-automation="meeting_review"', 1)[1].split("</tr>", 1)[0]
+    return row.split('<div class="cell-sub"', 1)[1].split("</div>", 1)[0]
+
+
+def test_the_a7_line_reads_the_saved_values(db, users, client):
+    """A7 줄 첫 칸이 저장값과 상관없이 '30일 뒤 14:00 투자 결정 문의' 라고 적었다 —
+    두 번째를 0 으로 꺼 둔 줄에서도. 저장된 날수 · 시각을 읽고, 0 이면 꺼짐이라 적는다."""
+    from app.services import automation, automation_runner as runner
+
+    _admin(db, users)
+    _login(client)
+    runner.save_params(db, automation.MEETING_REVIEW,
+                       {"days": "3", "time": "15:00", "decision_days": "0"})
+    line = _a7_summary(client.get("/team").text)
+    assert "3일 뒤 15:00" in line and "두 번째 문의 꺼짐" in line
+    assert "30일 뒤" not in line
+    runner.save_params(db, automation.MEETING_REVIEW,
+                       {"days": "2", "time": "14:00", "decision_days": "45",
+                        "decision_time": "13:00"})
+    line = _a7_summary(client.get("/team").text)
+    assert "2일 뒤 14:00" in line and "45일 뒤 13:00 투자 결정 문의" in line

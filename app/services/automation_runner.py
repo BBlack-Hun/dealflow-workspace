@@ -191,6 +191,10 @@ class Spec:
     #: 이 자동화의 **보낼 시각들**(`HH:MM`) — 팀 시간대 안인지 저장 자리에서 본다.
     #: 비면 `time` 칸들이다. 스타트업 월간처럼 시각이 다른 칸 안에 있을 때 채운다.
     times: Optional[Callable[[dict], List[str]]] = None
+    #: 팀 현황 판 첫 칸의 한 줄을 **지금 값으로** 짓는다(`values`). 비면
+    #: `automation.Kind.summary`(기본값 기준 글) 그대로다. 칸으로 동작이 꺼지는
+    #: 자동화(A7 의 두 번째)는 기본값 글이 거짓말이 된다 — 그때 채운다.
+    summary: Optional[Callable[[dict], str]] = None
 
 
 REGISTRY: Dict[str, Spec] = {}
@@ -1269,6 +1273,8 @@ def status_of(db: Session, key: str, now: Optional[datetime] = None) -> dict:
              "value": ("\n".join(current[f.name]) if f.kind == "lines"
                        else current[f.name])}
             for f in fields_of(spec)]
+        if spec.summary is not None:
+            out["summary"] = spec.summary(current)
         # 팀 시간대를 나중에 좁혔으면 저장된 시각이 그 밖에 남을 수 있다 — 판이 적는다.
         team = automation.team(db)
         outside = [t for t in times_of(key, current) if not team.contains(t)]
