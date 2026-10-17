@@ -7,7 +7,12 @@
 사람이 확정한 줄은 그 규칙에 안 맞아 다시 후보로 떴다. 이 표시로 그 줄만 기억해
 되살린다(사용자 결정 2026-10-17).
 
-처음에는 전부 0 이다 — 지금까지의 잇기는 이주(0093)와 저절로 잇기가 한 것이다.
+**칸을 더할 때 이미 이어져 있던 줄은 1 로 적는다.** 그 잇기는 이주(0093)와 #28 전의
+저절로 잇기(번호만)가 한 것인데, 지금까지 사람이 그대로 받아들여 쓴 잇기다 — 잘못
+이은 줄은 이제 [연결 풀기]로 사람이 푼다. 0 으로 두면 시트를 다시 가져올 때
+`confirmed_links` 가 기억하지 않아, 지금 규칙(이름 + 번호)에 안 맞는 옛 잇기가 조용히
+풀렸다(PR #311 리뷰). 안 이어진 줄은 0 이다. 이 판 뒤로 저절로 이은 줄은 0 이고,
+다시 가져오면 같은 규칙으로 다시 이어진다.
 
 ## 이 판의 번호
 
@@ -50,6 +55,9 @@ def upgrade() -> None:
     if COLUMN not in _columns():
         op.add_column(TABLE, sa.Column(COLUMN, sa.Integer(), nullable=False,
                                        server_default="0"))
+        # 칸을 막 더했을 때만 — 이미 이어져 있던 줄은 받아들인 잇기다(머리말).
+        op.execute(sa.text(f"UPDATE {TABLE} SET {COLUMN} = 1 "
+                           "WHERE vc_contact_id IS NOT NULL"))
 
 
 def downgrade() -> None:

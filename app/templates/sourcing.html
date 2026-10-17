@@ -228,7 +228,7 @@
             {% if vc.diff %}<span class="muted" data-testid="sourcing-vc-diff"
                   title="이을 때 이미 달랐던 칸입니다 — 어느 쪽에서든 한 번 고치면 같아집니다">다른 칸: {{ vc.diff|join(' · ') }}</span>{% endif %}
           </div>
-          {# [연결 풀기] — 관리자 · 이 줄의 담당만(`routers/sourcing._may_unlink`). 두 줄 다
+          {# [연결 풀기] — 관리자 · 이어진 투자사 줄의 담당만(`routers/sourcing._may_unlink`). 두 줄 다
              지우지 않는다. 누르는 일은 `sourcing_vc_link.js` 가 한다. #}
           {% if vc.can_unlink %}
           <div class="cell-sub" data-testid="sourcing-vc-unlink">

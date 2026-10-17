@@ -12,7 +12,7 @@
 // 연결 표시는 서버가 그리는 것(`sourcing.html` 의 `sourcing-vc-link`)과 같은 모양이고
 // 같은 값(`sourcing_sync.badges`)을 쓴다 — 풍선말도 서버가 실어 준다(`title`).
 //
-// [연결 풀기] — 관리자 · 그 줄의 담당에게만 선다(서버가 정한 `can_unlink`). 풀면 두 줄
+// [연결 풀기] — 관리자 · 이어진 투자사 줄의 담당에게만 선다(서버가 정한 `can_unlink`). 풀면 두 줄
 // 다 남고, 그 자리에 후보를 다시 그린다(서버가 그린 연결 표시는 걷는다).
 //
 // 글자는 `textContent` 로만 넣는다 — 이름 · 회사는 사람이 적은 말이다.
@@ -173,7 +173,7 @@
         " 명단 줄(" + btn.getAttribute("data-label") + ")과 잇습니다.\n" +
         "그쪽 `Series A 딜 소싱` 칸이 이 줄의 참여(O/X)로 서고, 이름 · 회사 · 휴대폰처럼 " +
         "두 표에 다 있는 칸은 어느 쪽에서 고쳐도 같이 바뀝니다. 잘못 이었으면 관리자나 " +
-        "이 줄의 담당이 [연결 풀기]로 풉니다.")) return;
+        "그 투자사 줄의 담당이 [연결 풀기]로 풉니다.")) return;
     btn.disabled = true;
     post("/api/sourcing/" + tr.getAttribute("data-id") + "/link",
          { contact_id: parseInt(btn.getAttribute("data-contact"), 10) }).then(function (res) {

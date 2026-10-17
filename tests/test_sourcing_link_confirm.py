@@ -13,10 +13,13 @@
   ④ 투자사 관리 현황에 `참여 요청일` — 이어진 줄의 `참여 요청일` 을 날짜만(시트가
      붙여 온 `00:00:00` 같은 시각은 뗀다), 읽기만. `Series A 딜 소싱` 바로 뒤.
      엑셀에도 두 칸이 같이 나간다.
-  ⑤ [연결 풀기](`POST /api/sourcing/{id}/unlink`) — 관리자 · 이 줄의 담당만. 두 줄
+  ⑤ [연결 풀기](`POST /api/sourcing/{id}/unlink`) — 관리자 · 이어진 투자사 줄의 담당만
+     (그 줄의 주인 번호로 — 누구나 고치는 `담당자` 칸으로는 판정하지 않는다). 두 줄
      다 지우지 않고 잇기만 푼다. 수정 로그에 남는다(사용자 결정 2026-10-17).
   ⑥ 시트를 다시 가져와도(`scripts/import_sourcing.py`) **사람이 확정한 잇기**는
      이름 · 번호가 둘 다 맞지 않아도 그대로 되살린다 — 다시 후보로 뜨지 않는다.
+     0104 전부터 이어져 있던 줄도 확정으로 친다. 감춰졌거나 투자사로 세지 않는
+     명단으로 간 투자사 줄에는 되살리지 않는다.
 
 이름 · 회사 · 번호는 전부 가상값이다(공개 저장소).
 """
@@ -258,6 +261,29 @@ def test_confirm_refuses_what_is_not_a_candidate(board, db, users):
     assert sync_rows(db)[0].vc_contact_id is None
 
 
+def test_two_people_confirming_the_same_investor_row_at_once(board, db, users, monkeypatch):
+    """두 사람이 같은 투자사 줄을 거의 동시에 [이 분으로 확정] — 둘 다 후보를 세는
+    순간에는 그 줄이 비어 있었다. 늦게 커밋한 쪽은 유일 색인에 걸리는데, 500 이 아니라
+    다른 막힘과 같은 400 '새로고침해 보세요' 로 답하고 아무것도 잇지 않는다."""
+    from app.services import sourcing_sync
+
+    contact = vc(db, users, name="김서연")          # 번호만 같다 — 두 줄 다의 후보
+    first = sc(db)
+    second = sc(db, position=2)
+    stale = {second.id: picks(db, second)}         # 늦은 쪽 화면이 본 후보
+    assert confirm(board, first.id, contact.id).status_code == 200
+
+    real = sourcing_sync.link_candidates
+    monkeypatch.setattr(sourcing_sync, "link_candidates",
+                        lambda db_, rows: {r.id: stale.get(r.id) or [] for r in rows}
+                        if any(r.id in stale for r in rows) else real(db_, rows))
+    r = confirm(board, second.id, contact.id)
+    assert r.status_code == 400, r.text
+    assert "새로고침" in r.json()["detail"]
+    rows = sync_rows(db)
+    assert [x.vc_contact_id for x in rows] == [contact.id, None]
+
+
 def test_confirm_refuses_linked_rows_and_other_buckets(board, db, users):
     first = vc(db, users, name="홍길동", phone="010-1234-5678")
     second = vc(db, users, name="홍길동", phone="010-2222-3333", firm="마바벤처스")
@@ -450,35 +476,52 @@ def test_unlink_frees_the_link_and_keeps_both_rows(board, db, users, admin):
 
 
 def test_unlink_is_for_the_admin_and_the_owner_only(board, db, users):
-    """누가 푸나 — 관리자 · 딜 소싱 `담당자` 칸의 지금 담당 · 이어진 투자사 줄의
-    담당 팀원. 그 밖의 팀원에게는 단추가 안 서고, 보내도 막힌다(403)."""
+    """누가 푸나 — 관리자 · 이어진 투자사 줄의 담당 팀원(그 줄의 `user_id`). 딜 소싱
+    `담당자` 칸에 이름이 적혀 있는 것만으로는 못 푼다 — 그 칸은 누구나 고친다.
+    그 밖의 팀원에게는 단추가 안 서고, 보내도 막힌다(403)."""
     contact = vc(db, users, name="김서연")          # u1(강민준) 의 투자사 줄
     row = sc(db, vc_contact_id=contact.id, assignee_name="윤서아")
     rid = row.id
 
-    login(board, "01000000002")                    # u2 — 딜 소싱 담당
+    login(board, "01000000002")                    # u2 — 딜 소싱 담당 칸에만 있다
+    page = board.get(f"/sourcing?tab={SYNC}").text
+    assert "js-vc-unlink" not in page
+    r = unlink(board, rid)
+    assert r.status_code == 403
+    assert "관리자" in r.json()["detail"]
+    assert sync_rows(db)[0].vc_contact_id == contact.id
+
+    login(board, "01000000001")                    # u1 — 이어진 투자사 줄의 담당
     page = board.get(f"/sourcing?tab={SYNC}").text
     assert "js-vc-unlink" in page
     assert unlink(board, rid).status_code == 200
     assert sync_rows(db)[0].vc_contact_id is None
 
-    sync_rows(db)[0].vc_contact_id = contact.id
-    db.commit()
-    login(board, "01000000001")                    # u1 — 이어진 투자사 줄의 담당
-    assert unlink(board, rid).status_code == 200
-
-    sync_rows(db)[0].vc_contact_id = contact.id
-    sync_rows(db)[0].assignee_name = "강민준 > 10/13 윤서아"     # 지금 담당은 윤서아
-    db.commit()
     other = vc(db, users, name="박지훈", phone="010-4444-5555", who="u2")
     sync_rows(db)[0].vc_contact_id = other.id     # u2 의 투자사 줄과 이어졌다
     db.commit()
-    page = board.get(f"/sourcing?tab={SYNC}").text   # u1 — 담당도 주인도 아니다
+    page = board.get(f"/sourcing?tab={SYNC}").text   # u1 — 그 투자사 줄의 주인이 아니다
     assert "js-vc-unlink" not in page
     r = unlink(board, rid)
     assert r.status_code == 403
-    assert "관리자" in r.json()["detail"]
     assert sync_rows(db)[0].vc_contact_id == other.id
+
+
+def test_writing_my_name_in_the_assignee_cell_does_not_open_unlink(board, db, users):
+    """`담당자` 칸은 로그인한 누구나 PATCH 로 고친다 — 거기 제 이름을 적고 [연결 풀기]를
+    누르는 길이 막혀야 한다(남이 확정해 둔 잇기를 거두는 일이다)."""
+    contact = vc(db, users, name="김서연")          # u1 의 투자사 줄
+    row = sc(db, vc_contact_id=contact.id, assignee_name="강민준")
+    rid = row.id
+
+    login(board, "01000000002")                    # u2 — 담당도 주인도 아니다
+    r = board.patch(f"/api/sourcing/{rid}", json={"assignee_name": users["u2"].name})
+    assert r.status_code == 200, r.text
+    assert sync_rows(db)[0].assignee_name == users["u2"].name
+    assert "js-vc-unlink" not in board.get(f"/sourcing?tab={SYNC}").text
+    r = unlink(board, rid)
+    assert r.status_code == 403
+    assert sync_rows(db)[0].vc_contact_id == contact.id
 
 
 def test_unlink_refuses_rows_that_are_not_linked(board, db, users, admin):
@@ -514,8 +557,9 @@ def _reimport(tmp_path, monkeypatch, rows):
 
 def test_reimport_keeps_links_a_person_confirmed(board, db, users, tmp_path, monkeypatch):
     """확정한 줄은 이름 · 번호가 둘 다 맞지 않아도 다시 이어진다 — 후보로 다시 뜨지
-    않는다. 저절로 이어지는 줄(이름 + 번호)은 지금 규칙으로 다시 잇고, 번호만으로
-    이어져 있던 옛 줄은 지금 규칙에 안 맞으면 후보로 뜬다(사람이 확정한 적이 없다)."""
+    않는다. 저절로 이어지는 줄(이름 + 번호)은 지금 규칙으로 다시 잇는다. 번호만으로
+    이어져 있던 옛 줄(이주 0093 · #28 전)도 남는다 — 0104 가 그 줄을 확정(1)으로
+    적었다(`test_links_made_before_0104_count_as_confirmed`)."""
     confirmed = vc(db, users, name="김서연", phone="010-1234-5678")   # 번호만 같다
     auto = vc(db, users, name="박지훈", phone="010-3333-4444")
     old = vc(db, users, name="최옛날", phone="010-5555-6666")
@@ -523,7 +567,9 @@ def test_reimport_keeps_links_a_person_confirmed(board, db, users, tmp_path, mon
     assert confirm(board, row.id, confirmed.id).status_code == 200
     assert board.post(f"/api/sourcing?bucket={SYNC}",                  # 저절로 이어진다
                       json={"name": "박지훈", "phone": "010-3333-4444"}).status_code == 200
-    sc(db, name="최옛줄", phone="010-5555-6666", position=3, vc_contact_id=old.id)
+    # 0104 를 지난 옛 잇기 — 이름이 달라도 확정으로 적혀 있다
+    sc(db, name="최옛줄", phone="010-5555-6666", position=3, vc_contact_id=old.id,
+       vc_link_confirmed=1)
     linked = {r.name: r.vc_contact_id for r in sync_rows(db)}
     assert linked == {"홍길동": confirmed.id, "박지훈": auto.id, "최옛줄": old.id}
 
@@ -535,10 +581,11 @@ def test_reimport_keeps_links_a_person_confirmed(board, db, users, tmp_path, mon
     rows = {r.name: r for r in sync_rows(db)}
     assert rows["홍길동"].vc_contact_id == confirmed.id
     assert rows["박지훈"].vc_contact_id == auto.id
-    assert rows["최옛줄"].vc_contact_id is None
+    assert rows["최옛줄"].vc_contact_id == old.id
     assert picks(db, rows["홍길동"]) is None                  # 후보 자리 없음 — 이어졌다
-    assert [c["id"] for c in picks(db, rows["최옛줄"])] == [old.id]
+    assert picks(db, rows["최옛줄"]) is None
     assert column(board, confirmed.id) == "O"
+    assert column(board, old.id) == "O"
 
     # 되살린 잇기도 사람이 확정한 것이다 — 한 번 더 가져와도 남는다.
     _reimport(tmp_path, monkeypatch, [("2026/05/21", "홍길동", "010-1234-5678", "")])
@@ -560,6 +607,66 @@ def test_reimport_restores_only_to_the_same_person(board, db, users, tmp_path, m
     _reimport(tmp_path, monkeypatch, [("", "박지훈", "010-7777-8888", "")])
     [left] = sync_rows(db)
     assert left.vc_contact_id is None
+
+
+@pytest.mark.parametrize("gone", ["hidden", "not_an_investor_list"])
+def test_reimport_does_not_restore_to_a_row_that_can_no_longer_be_linked(
+        board, db, users, tmp_path, monkeypatch, gone):
+    """확정해 둔 투자사 줄이 그사이 감춰졌거나 투자사로 세지 않는 명단으로 갔으면
+    되살리지 않는다 — 저절로 잇기 · 후보와 같은 모집단(`_investors`)만 잇는다."""
+    from app.models import SheetOwner, VcContact
+
+    confirmed = vc(db, users, name="김서연", phone="010-1234-5678")   # 번호만 같다
+    row = sc(db)
+    assert confirm(board, row.id, confirmed.id).status_code == 200
+    target = db.get(VcContact, confirmed.id)
+    if gone == "hidden":
+        target.is_hidden = 1
+    else:
+        db.add(SheetOwner(label="스타트업 명단", user_id=users["u1"].id,
+                          layout="startup", is_hidden=1))
+        target.source_sheet = "스타트업 명단"
+    db.commit()
+
+    _reimport(tmp_path, monkeypatch, [("", "홍길동", "010-1234-5678", "")])
+    [again] = sync_rows(db)
+    assert again.vc_contact_id is None
+
+
+def test_links_made_before_0104_count_as_confirmed(tmp_path):
+    """0104 가 칸을 더할 때 **이미 이어져 있던 줄은 확정(1)** 으로 적는다 — 이주(0093)와
+    #28 전의 저절로 잇기(번호만)가 이은 줄이고, 지금까지 사람이 그대로 받아들여 쓴
+    잇기다. 0 으로 두면 시트를 다시 가져올 때 조용히 풀렸다(`confirmed_links` 는 1 만
+    기억한다). 안 이어진 줄은 0 이다."""
+    import sqlite3
+
+    from tests.test_migrations import _alembic
+
+    db_path = tmp_path / "m.db"
+    done = _alembic(db_path, "upgrade", "0103_template_apply_backups")
+    assert done.returncode == 0, done.stdout + done.stderr
+    # 운영 DB 는 이 칸이 없는 채로 0104 를 맞는다(0001 의 create_all 은 이미 칸이 있다)
+    con = sqlite3.connect(db_path)
+    try:
+        con.execute("ALTER TABLE sourcing_contacts DROP COLUMN vc_link_confirmed")
+        con.executemany(
+            "INSERT INTO sourcing_contacts (id, bucket, position, name, room_verified, "
+            "participation, vc_contact_id, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, 'unverified', '참여', ?, '2026-10-01', '2026-10-01')",
+            [(1, SYNC, 1, "옛 잇기", 7), (2, SYNC, 2, "안 이음", None),
+             (3, MNA, 3, "다른 갈래", None)])
+        con.commit()
+    finally:
+        con.close()
+
+    done = _alembic(db_path, "upgrade", "0104_sourcing_vc_link_confirmed")
+    assert done.returncode == 0, done.stdout + done.stderr
+    con = sqlite3.connect(db_path)
+    try:
+        got = dict(con.execute("SELECT id, vc_link_confirmed FROM sourcing_contacts"))
+    finally:
+        con.close()
+    assert got == {1: 1, 2: 0, 3: 0}
 
 
 # ── 화면 — 후보 · 확정 · 읽기 칸 ────────────────────────────────────────────

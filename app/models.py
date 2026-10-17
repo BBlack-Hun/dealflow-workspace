@@ -1413,8 +1413,9 @@ class SourcingContact(TimestampMixin, Base):
     #: 시트를 다시 가져오면(`scripts/import_sourcing.py`) 갈래를 통째로 갈아 끼워
     #: 잇기가 사라진다 — 저절로 이은 줄은 같은 규칙으로 다시 잇지만, 사람이 확정한
     #: 줄은 이름 · 번호가 둘 다 맞지 않아 그 규칙으로는 못 잇는다. 그 줄만 이 표시로
-    #: 기억해 되살린다(`sourcing_sync.keep_confirmed`). 잇기가 없으면 뜻이 없다 —
-    #: 이을 때마다 다시 적는다(`sourcing_sync.link`).
+    #: 기억해 되살린다(`sourcing_sync.confirmed_links` · `restore_confirmed`). 이 칸이
+    #: 생기기 전부터 이어져 있던 줄도 1 이다(이주 `0104` — 받아들인 잇기). 잇기가 없으면
+    #: 뜻이 없다 — 이을 때마다 다시 적는다(`sourcing_sync.link`).
     vc_link_confirmed: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     #: `참여` | `불참여`. 불참여인 분은 딜 소싱 제안(처음 안내 · 월간 리마인드)
     #: 대상에서 빠진다. **줄을 지우지 않는다** — 다시 참여하면 그 이력 그대로 돌아온다.

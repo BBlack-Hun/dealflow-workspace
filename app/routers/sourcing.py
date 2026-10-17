@@ -19,6 +19,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..db import get_db
@@ -487,13 +488,15 @@ def update_row(row_id: int, body: SourcingIn, db: Session = Depends(get_db),
 
 # ── 투자사 관리 현황과 사람이 확정해 잇기 (#28) ─────────────────────────────
 
-def _may_unlink(user: User, row: SourcingContact, owner_id: Optional[int]) -> bool:
-    """[연결 풀기]를 누를 수 있나 — 관리자 · 이 줄의 담당(`담당자` 칸의 지금 담당,
-    `assignee_of`) · 이어진 투자사 줄의 담당 팀원(사용자 결정 2026-10-17). 잇기
-    ([이 분으로 확정])는 표를 고치는 누구나 하지만, 푸는 것은 남이 확정해 둔 것을
-    거두는 일이라 좁힌다."""
-    name = (user.name or "").strip()
-    return user.role == "admin" or owner_id == user.id or (bool(name) and assignee_of(row) == name)
+def _may_unlink(user: User, owner_id: Optional[int]) -> bool:
+    """[연결 풀기]를 누를 수 있나 — 관리자 · 이어진 투자사 줄의 담당 팀원(그 줄의
+    `user_id`, 사용자 결정 2026-10-17). 잇기([이 분으로 확정])는 표를 고치는 누구나
+    하지만, 푸는 것은 남이 확정해 둔 것을 거두는 일이라 좁힌다.
+
+    딜 소싱 `담당자` 칸(`assignee_name`)으로는 **판정하지 않는다** — 그 칸은 로그인한
+    누구나 고치는 글 칸이라(`update_row`), 제 이름을 적고 누르면 뚫린다(PR #311 리뷰).
+    소싱 줄에는 주인 번호가 없다(`delete_row` 머리말)."""
+    return user.role == "admin" or (owner_id is not None and owner_id == user.id)
 
 
 def _badges(db: Session, rows: List[SourcingContact], user: User) -> dict:
@@ -501,7 +504,7 @@ def _badges(db: Session, rows: List[SourcingContact], user: User) -> dict:
     out = sourcing_sync.badges(db, rows)
     for row in rows:
         if row.id in out:
-            out[row.id]["can_unlink"] = _may_unlink(user, row, out[row.id]["owner_id"])
+            out[row.id]["can_unlink"] = _may_unlink(user, out[row.id]["owner_id"])
     return out
 
 
@@ -546,7 +549,17 @@ def confirm_vc_link(row_id: int, body: LinkIn, db: Session = Depends(get_db),
     except sourcing_sync.SyncError as exc:
         db.rollback()
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        # 두 사람이 같은 투자사 줄을 거의 동시에 확정했다 — 후보를 셀 때는 둘 다
+        # 비어 있었고, 늦게 커밋한 쪽이 유일 색인(한 투자사 줄에 소싱 줄 하나)에
+        # 걸린다. 다른 막힘과 같은 말로 답한다(500 이 아니라).
+        db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail="그 사이 다른 분이 이 투자사 줄을 다른 딜 소싱 줄과 이었습니다 — "
+                   "새로고침해 보세요.") from exc
     return {"id": row.id, **_vc_view(db, row, user)}
 
 
@@ -555,8 +568,8 @@ def unlink_vc(row_id: int, db: Session = Depends(get_db),
               user: User = Depends(get_current_user)):
     """[연결 풀기] — 잘못 이은 투자사 관리 현황 줄과의 잇기를 푼다(사용자 결정
     2026-10-17). **두 줄 다 지우지 않는다**(`sourcing_sync.unlink`) — 그쪽
-    `Series A 딜 소싱` 칸이 비고, 이 줄은 다시 후보로 뜬다. 관리자 · 이 줄의 담당만
-    (`_may_unlink`). 푸는 것도 `vc_contact_id` 라 수정 로그에 남는다."""
+    `Series A 딜 소싱` 칸이 비고, 이 줄은 다시 후보로 뜬다. 관리자 · 이어진 투자사
+    줄의 담당만(`_may_unlink`). 푸는 것도 `vc_contact_id` 라 수정 로그에 남는다."""
     row = db.get(SourcingContact, row_id)
     if row is None:
         raise HTTPException(status_code=404, detail="찾을 수 없습니다")
@@ -566,7 +579,7 @@ def unlink_vc(row_id: int, db: Session = Depends(get_db),
                             detail="투자사 관리 현황과 이어진 줄이 아닙니다 — 새로고침해 보세요.")
     if not badge["can_unlink"]:
         raise HTTPException(status_code=403,
-                            detail="연결은 관리자나 이 줄의 담당(딜 소싱 담당자 · 투자사 줄 담당)만 "
+                            detail="연결은 관리자나 이어진 투자사 관리 현황 줄의 담당만 "
                                    "풀 수 있습니다.")
     sourcing_sync.unlink(row)
     db.commit()

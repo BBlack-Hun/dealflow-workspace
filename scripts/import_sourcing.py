@@ -103,6 +103,7 @@ def main() -> None:
         bucket = sourcing_buckets.label_of(db, bucket)
         # 사람이 [이 분으로 확정]한 잇기는 갈아 끼우기 **전에** 적어 둔다 — 아래에서
         # 되살린다(`sourcing_sync.restore_confirmed`). 묶인 글자의 줄 전부에서.
+        # 0104 전부터 이어져 있던 줄도 확정으로 적혀 있다(그 이주 머리말).
         kept = sourcing_sync.confirmed_links(db.execute(
             select(SourcingContact).where(SourcingContact.bucket.in_(stored))).scalars())
         db.execute(delete(SourcingContact).where(SourcingContact.bucket.in_(stored)))
