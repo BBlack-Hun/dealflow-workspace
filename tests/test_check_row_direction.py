@@ -52,6 +52,14 @@ def test_세로_가운데는_check_row_가_정한다():
         "격자 규칙이 방향을 또 정하고 있다 — 방향은 `.check-row` 한 곳이다"
 
 
+def test_수정창_분야_고르기_체크박스는_줄_폭을_안_먹는다():
+    """`.form-grid input` 의 `width: 100%` 가 선호 투자분야 목록의 체크박스에 걸리면
+    네모가 줄을 다 먹어 글자가 겹치고 잘린다(#319 뒤 수정창). 목록 안에서만 되돌린다."""
+    assert _prop(_rule(".form-grid .sector-pick-item input"), "width") == "auto"
+    assert _prop(_rule(".form-grid .sector-pick-item"), "display") == "flex"
+    assert "width: 100%" in _rule(".form-grid input, .form-grid select, .form-grid textarea")
+
+
 def test_함께_붙는_field_는_세로_그대로다():
     """`.field` 를 가로로 바꿔 고치면 **다른 모든 칸**이 깨진다."""
     assert _prop(_rule(".field"), "flex-direction") == "column"
