@@ -406,21 +406,23 @@ def _asked_days(db: Session, meeting_ids) -> Dict[int, str]:
     줄만 보면 안 된다: 14시 전에 [중단] 했거나 · 빠졌거나 · 발송기가 실패로 보고한
     한 통은 안 물은 것이다. 시험 모드(시험방으로 간 것)도 안 센다.
     """
-    wanted = {i for i in meeting_ids if i}
-    if not wanted:
-        return {}
-    rows = db.execute(
-        select(AutomationSend.ref, SendItem.sent_at)
-        .join(SendItem, SendItem.id == AutomationSend.item_id)
-        .where(AutomationSend.automation == automation.MEETING_REVIEW,
-               AutomationSend.test == 0, AutomationSend.ref.like(f"{REVIEW_REF}%"),
-               SendItem.status == "sent")
-    ).all()
+    wanted = sorted({i for i in meeting_ids if i})
     out: Dict[int, str] = {}
-    for ref, sent_at in rows:
-        _head, meeting_id = _parse_ref(ref)
-        if meeting_id in wanted:
-            out[meeting_id] = max(out.get(meeting_id, ""), (sent_at or "")[:10])
+    # 미팅 하나에 열쇠 둘 — 이 화면이 보는 미팅의 열쇠만 묻는다(유일 색인을 탄다).
+    # 한 번에 묻는 수를 잘라 SQLite 의 자리표 상한 아래에 둔다.
+    for start in range(0, len(wanted), 400):
+        chunk = wanted[start:start + 400]
+        refs = [f"{head}:{i}" for head in (REVIEW_REF, DECISION_REF) for i in chunk]
+        for ref, sent_at in db.execute(
+            select(AutomationSend.ref, SendItem.sent_at)
+            .join(SendItem, SendItem.id == AutomationSend.item_id)
+            .where(AutomationSend.automation == automation.MEETING_REVIEW,
+                   AutomationSend.test == 0, AutomationSend.ref.in_(refs),
+                   SendItem.status == "sent")
+        ).all():
+            _head, meeting_id = _parse_ref(ref)
+            if meeting_id is not None:
+                out[meeting_id] = max(out.get(meeting_id, ""), (sent_at or "")[:10])
     return out
 
 
