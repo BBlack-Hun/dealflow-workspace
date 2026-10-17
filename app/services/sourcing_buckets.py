@@ -190,7 +190,10 @@ def rename(db: Session, before: str, after: str) -> int:
     # 골라 둔 것은 (사람 · 종류)마다 하나만 데려간다 — 띄어쓰기만 다른 글자에 하나씩
     # 있으면 읽히던 것(`template_pick.chosen_id` — 먼저 것)만 남기고 지운다. 둘 다
     # 옮기면 (사람 · 종류 · 갈래) 유일 조건에 걸린다.
-    kept = set()
+    # **지우기를 먼저 DB 에 적고 옮긴다.** flush 는 UPDATE 를 DELETE 보다 먼저 낸다 —
+    # 띄어쓰기만 다른 글자로 바꾸면(`M&A  찾는` → `M&A 찾는`) 옮기는 줄이 아직 안 지운
+    # 줄과 같은 글자가 되어 유일 조건에 걸렸다(PR #311 리뷰).
+    kept, moving = set(), []
     for choice in db.execute(
         select(TemplateChoice).where(TemplateChoice.kind.in_(KINDS))
         .order_by(TemplateChoice.id)
@@ -201,6 +204,9 @@ def rename(db: Session, before: str, after: str) -> int:
             db.delete(choice)
             continue
         kept.add((choice.user_id, choice.kind))
+        moving.append(choice)
+    db.flush()
+    for choice in moving:
         choice.variant = after
     for backup in db.execute(
         select(TemplateApplyBackup).where(TemplateApplyBackup.kind.in_(KINDS))

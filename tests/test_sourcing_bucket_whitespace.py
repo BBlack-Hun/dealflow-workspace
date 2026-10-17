@@ -428,6 +428,30 @@ def test_renaming_takes_every_spelling(db, users, spread):
     assert db.query(MessageTemplate).filter_by(name=after).count() == 1
 
 
+def test_renaming_to_a_spacing_variant_keeps_one_choice(db, users, spread):
+    """탭 이름의 두 칸 공백만 한 칸으로 고친다 — 그 갈래의 두 글자에 골라 둔 것이 하나씩
+    있으면 읽히던 것(먼저 것) 하나만 남긴다. 옮기는 UPDATE 가 지우는 DELETE 보다 먼저
+    나가면 (사람 · 종류 · 갈래) 유일 조건(`uq_template_choice_slot`)에 걸려 터졌다."""
+    from app.models import TemplateChoice
+    from app.services import sourcing_buckets, sourcing_msg
+
+    user = users["u1"]
+    kind = sourcing_msg.KIND
+    wide = _tpl(db, kind, MNA_WIDE, "두 칸 글자 문구")
+    tight = _tpl(db, kind, MNA, "한 칸 글자 문구")
+    db.add(TemplateChoice(user_id=user.id, kind=kind, variant=MNA_WIDE,
+                          template_id=wide.id))
+    db.commit()
+    db.add(TemplateChoice(user_id=user.id, kind=kind, variant=MNA, template_id=tight.id))
+    db.commit()
+
+    assert sourcing_buckets.rename(db, MNA_WIDE, MNA) == 2
+    db.commit()
+    [choice] = db.query(TemplateChoice).filter_by(kind=kind).all()
+    assert (choice.variant, choice.template_id) == (MNA, wide.id)
+    assert _stored(db) == {TIGHT, SYNC, WIDE, MNA}
+
+
 def test_cannot_rename_onto_a_spelling_variant_of_another_bucket(db, users, spread):
     """띄어쓰기만 다른 이름은 이미 쓰는 이름이다 — 두 갈래가 한 덩어리가 된다."""
     from app.services import sourcing_buckets
