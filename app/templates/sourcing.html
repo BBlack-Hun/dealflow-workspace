@@ -137,8 +137,12 @@
         {# 어느 칸에 필터를 세울지는 `COLUMNS` 한 곳에서만 정한다 — 머리글과 행이
            같은 목록을 돌아야 선언(`data-filters`)과 값(`data-f-*`)이 어긋날 수
            없다. 손으로 두 군데 적던 시절에는 한쪽만 고쳐도 아무 티가 안 났다. #}
+        {# `참여 요청일` 은 머리글을 눌러 세운다(`table_sort.js`). 처음 차례가 이미 이 칸
+           최신순이라(`routers/sourcing.rows_of`) `data-sort-default="desc"` — 머리글이
+           `▼` 로 서고 첫 클릭이 오래된 순이다. 세울 값은 줄의 `data-s-requested_at`. #}
         {% for field, label, width, filterable in columns %}
         <th {% if width %}style="width:{{ width }}"{% endif %}
+            {% if field == 'requested_at' %}data-sort="requested_at" data-sort-default="desc"{% endif %}
             {% if filterable %}data-filters="{{ field }}:{{ label }}"{% endif %}>
           {{ label }}{% if filterable %}<div class="th-filters"></div>{% endif %}
         </th>
@@ -172,6 +176,7 @@
          `sourcing_sync.kind_of`). [Series A 딜 소개]가 이것으로 빼고 센다. #}
       <tr data-id="{{ r.id }}"{% if r.id in no_room %} data-no-room{% endif %}
           data-part-kind="{{ part_kind[r.id] }}"
+          data-s-requested_at="{{ requested_sort[r.id] }}"
           data-search="{{ (r.name ~ ' ' ~ (r.firm or '') ~ ' ' ~ (r.memo or '') ~ ' ' ~ (r.title or ''))|lower }}"
           {% for field, label, width, filterable in columns if filterable %}data-f-{{ field }}="{{ (assignees.get(r.id) if field == 'assignee_name' else requested[r.id] if field == 'requested_at' else r|attr(field)) or '' }}" {% endfor %}>
         <td class="pick-col"><input type="checkbox" class="js-sourcing-pick" value="{{ r.id }}"
@@ -355,6 +360,7 @@
 {% block scripts %}
 <script src="{{ asset('js/inline_edit.js') }}"></script>
 <script src="{{ asset('js/filters.js') }}"></script>
+<script src="{{ asset('js/table_sort.js') }}"></script>
 <script src="{{ asset('js/sourcing_vc_link.js') }}"></script>
 <script>
   // 메일 확인이 도는 중이면 잠시 뒤 다시 그린다 — 결과가 머리 줄에 선다.
@@ -445,6 +451,9 @@
         d.row.setAttribute("data-part-kind", kind);
         syncShareLink();
       }
+      // 세울 값(`참여 요청일` — 서버가 날짜로 읽은 것)을 다시 적고 한 박자 뒤에 다시 읽는다.
+      if ("requested_sort" in d.data) d.row.setAttribute("data-s-requested_at", d.data.requested_sort);
+      if (sort) setTimeout(sort.refresh, 0);
       if (d.data.assignee === undefined || field !== "assignee_name") return;
       d.row.setAttribute("data-f-assignee_name", d.data.assignee || "");
     });
@@ -459,6 +468,9 @@
       onChange: renumber
     });
     if (box) box.addEventListener("input", function () { api && api.apply(); });
+    // `참여 요청일` 머리글을 눌러 세운다(`table_sort.js`). 세운 뒤 NO 를 다시 매긴다.
+    var sort = window.DealflowSort &&
+      window.DealflowSort.init({ table: "#sourcing-table", onChange: renumber });
 
     // NO 는 **보이는 것** 기준으로 1부터 — 걸러낸 뒤 몇 명인지 세기 위해서다.
     // 걸러져 안 보이게 된 줄의 체크는 **그대로 둔다** — '검색 → 체크 → 다음 검색'

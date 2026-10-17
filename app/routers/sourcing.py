@@ -146,6 +146,16 @@ def requested_on(row: SourcingContact) -> Optional[date]:
         return None
 
 
+def requested_sort(row: Optional[SourcingContact]) -> str:
+    """머리글 정렬 값(`data-s-*`) — 날짜로 읽히면 `YYYY-MM-DD`, 아니면 빈칸.
+
+    화면 글자는 표기가 섞여 있어 브라우저(`table_sort.js`)가 글자로 세우면 틀린다
+    (위 `_DATED` 주석). 여기서 날짜로 읽어 한 꼴로 넘긴다. 빈칸은 방향과 상관없이
+    늘 끝이다. 투자사 관리 현황의 같은 칸도 이것이다(이어진 줄이 없으면 `None`)."""
+    day = requested_on(row) if row is not None else None
+    return day.isoformat() if day else ""
+
+
 def rows_of(db: Session, bucket: str = "") -> List[SourcingContact]:
     """명단을 뿌릴 차례. **정렬 판단은 이 함수 한 곳**이다.
 
@@ -326,6 +336,8 @@ def sourcing_page(request: Request, db: Session = Depends(get_db),
         # `참여 요청일` 칸 · 거를 값 — 날짜 뒤에 붙은 시각을 뗀다(저장값은 그대로,
         # `sourcing_sync.requested_label` — 투자사 관리 현황의 같은 칸도 이것이다).
         "requested": {r.id: sourcing_sync.requested_label(r.requested_at) for r in rows},
+        # 머리글을 눌러 세울 값(`requested_sort`) — 위 글자가 아니라 날짜로.
+        "requested_sort": {r.id: requested_sort(r) for r in rows},
         # 저절로 못 이은 시리즈 A 줄의 **후보** — [이 분으로 확정](#28).
         # 이름 · 번호가 둘 다 같아야 저절로 잇고, 나머지는 사람이 고른다.
         "vc_picks": sourcing_sync.link_candidates(db, rows),
@@ -524,7 +536,9 @@ def update_row(row_id: int, body: SourcingIn, db: Session = Depends(get_db),
     # 값을 보고 갈래를 다시 정하면 규칙이 두 벌이 된다(`sourcing.html`).
     out = {"ok": True, "assignee": assignee_of(row),
            "participation": sourcing_sync.participation_of(row),
-           "participation_kind": sourcing_sync.kind_of(row)}
+           "participation_kind": sourcing_sync.kind_of(row),
+           # `참여 요청일` 을 고치면 세울 값도 바뀐다(`sourcing.html` 이 줄에 다시 적는다).
+           "requested_sort": requested_sort(row)}
     if contact is not None:
         out["linked_msg"] = _linked_msg(db, row)
     if relink and sourcing_sync.is_synced(row):
