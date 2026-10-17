@@ -488,6 +488,10 @@
         // `-1` 이면 아무것도 안 짚은 것이고, 그때 Enter 는 적힌 그대로 저장한다.
         var chips = [];
         var at = -1;
+        // `data-no-keys` 칸은 숫자키로 고르지 않는다 — 딜 소싱 참여 칸에
+        // "11월 재연락" 을 치면 첫 `1` 이 '참여' 를 저장해 발송 대상이 됐다.
+        var numKeys = !cell.hasAttribute("data-no-keys");
+        var how = numKeys ? "↑↓ 또는 숫자키로" : "↑↓ 로";
 
         if (used.length) {
           var box = document.createElement("div");
@@ -502,7 +506,7 @@
             // 준다 — 글자에 섞어 넣으면 눌러 저장되는 값에 번호가 딸려 간다.
             // 아홉까지만 붙인다. 두 자리 수를 치는 동안에는 앞자리가 먼저
             // 저장돼 버려서, 번호가 오히려 함정이 된다.
-            if (i < 9) chip.setAttribute("data-key", String(i + 1));
+            if (i < 9 && numKeys) chip.setAttribute("data-key", String(i + 1));
             if (suggested.indexOf(value) !== -1) {
               chip.title = "한줄 소개를 보고 고른 후보입니다 — 맞는지 보고 고르세요";
             }
@@ -519,9 +523,9 @@
         api.pop.appendChild(hintLine(
           suggested.length
             ? "앞 " + suggested.length + "개는 한줄 소개를 보고 고른 후보입니다 "
-              + "— 맞는 것이 없으면 아래에서 고르세요 · ↑↓ 또는 숫자키로 고르기 "
+              + "— 맞는 것이 없으면 아래에서 고르세요 · " + how + " 고르기 "
               + "· Enter 저장 · Esc 취소"
-            : used.length ? "↑↓ 또는 숫자키로 고릅니다(새로 적어도 됩니다) "
+            : used.length ? how + " 고릅니다(새로 적어도 됩니다) "
                             + "· Enter 저장 · Esc 취소"
                           : "Enter 저장 · Esc 취소"));
 
@@ -573,7 +577,7 @@
           if (e.isComposing || e.keyCode === 229) return;
           if (e.key === "ArrowDown") { e.preventDefault(); move(1); return; }
           if (e.key === "ArrowUp") { e.preventDefault(); move(-1); return; }
-          if (!typed && !e.altKey && !e.ctrlKey && !e.metaKey
+          if (numKeys && !typed && !e.altKey && !e.ctrlKey && !e.metaKey
               && /^[1-9]$/.test(e.key) && chips[Number(e.key) - 1]) {
             e.preventDefault();
             take(used[Number(e.key) - 1]);

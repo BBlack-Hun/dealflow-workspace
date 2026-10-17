@@ -290,6 +290,39 @@ async function main() {
     assert.strictEqual(t.where(), "12/send", "숫자키로 고른 뒤 아래 줄로 안 갔다");
   }
 
+  // ── 8-1. **`data-no-keys` 칸은 숫자가 글자다** ─────────────────────────
+  //
+  // 딜 소싱 참여 칸의 1번 보기는 '참여' 다. 제안 대기중 줄에 "11월 재연락" 을
+  // 치면 첫 `1` 이 '참여' 를 저장해 그 사람이 발송 대상이 됐다.
+  {
+    const dom = build();
+    dom.rows[0].send.setAttribute("data-no-keys", "");
+    const t = run(dom);
+    t.press(dom.rows[0].send, "Enter");
+    assert.strictEqual(t.chips()[0].getAttribute("data-key"), null,
+      "숫자키를 막은 칸에 번호가 붙었다 ★ 안 되는 길이 보인다");
+    const pop = t.popInput();
+    assert.strictEqual(t.press(pop, "1"), false,
+      "숫자키를 막은 칸에서 숫자를 가로챘다 ★ 글자로 안 들어간다");
+    await flush();
+    assert.strictEqual(t.sent.length, 0, "숫자키를 막은 칸에서 숫자가 보기를 저장했다");
+    assert.ok(t.pop(), "숫자 하나에 창이 닫혔다");
+
+    pop.value = "11월 재연락";
+    pop.fire("input", {});
+    t.press(pop, "Enter");
+    await flush();
+    assert.strictEqual(t.sent.length, 1, "적은 그대로 저장이 안 됐다");
+    assert.strictEqual(t.sent[0].body.send, "11월 재연락");
+
+    // 막지 않은 아래 줄의 고르는 칸은 숫자키가 그대로다.
+    t.press(dom.rows[1].send, "Enter");
+    t.press(t.popInput(), "3");
+    await flush();
+    assert.strictEqual(t.sent[1] && t.sent[1].body.send, "발송 완료",
+      "다른 고르는 칸의 숫자키까지 꺼졌다");
+  }
+
   // ── 9. **타이핑하면 숫자는 다시 글자가 된다** ─────────────────────────
   //
   // 값에 숫자가 들어가는 칸이 있다(`2026-09`). 치는 숫자가 보기를 골라 버리면
