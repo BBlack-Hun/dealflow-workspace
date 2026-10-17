@@ -18,7 +18,7 @@
 `participation` 을 읽어 그린다.
 
     이어진 줄 있음 · 불참여        →  X
-    이어진 줄 있음 · 그 밖의 값    →  O   (참여 · 참여 의사를 물어보는 중 · 사람이 적은 문구)
+    이어진 줄 있음 · 그 밖의 값    →  O   (참여 · 제안 대기중 · 물어보는 중 · 사람이 적은 문구)
     이어진 줄 없음                 →  빈칸
 
 O 는 **"이 갈래에 들어 있다"** 이지 "딜을 받겠다고 했다" 가 아니다. 받는지는
@@ -33,6 +33,7 @@ O 는 **"이 갈래에 들어 있다"** 이지 "딜을 받겠다고 했다" 가 
 
     참여                     딜 소싱 제안(참여 안내 · 월간 리마인드 · Series A 딜 공유)을 받는다
     불참여                   안 받는다 — 투자사 관리 현황 칸은 X
+    딜 소싱 참여 제안 대기중 안 받는다 — O 로 막 넣은 분. 아직 제안 전이다
     참여 의사를 물어보는 중  안 받는다 — 갈래에는 있다(O). 동의하시면 `참여` 로 바꾼다
     그 밖의 글(사람이 적음)  안 받는다 — `물어보는 중` 과 같게 본다(`11월에 다시 연락` 같은 메모)
 
@@ -47,14 +48,14 @@ O 는 **"이 갈래에 들어 있다"** 이지 "딜을 받겠다고 했다" 가 
 
 ## 칸을 고치면 (`set_mark`)
 
-    O  이어진 줄이 있으면 — `불참여` 면 `참여 의사를 물어보는 중` 으로(다시 묻는
-       것으로 본다). `참여` · `물어보는 중` · 사람이 적은 문구는 **덮지 않는다** —
+    O  이어진 줄이 있으면 — `불참여` 면 `딜 소싱 참여 제안 대기중` 으로(다시 묻는
+       것으로 본다). 그 밖의 값(참여 · 제안 대기중 · 물어보는 중 · 문구)은 **덮지 않는다** —
        O 는 갈래에 넣는 것이지 동의를 받았다는 뜻이 아니다.
        없으면 그 갈래에서 **같은 사람**을 찾아 잇고(이름 + 번호가 둘 다 같을 때만 —
        아래 `auto_link` 와 같은 규칙. 이은 줄에도 위 규칙을 그대로 적용한다),
        같은 사람일 수도 있는 줄(번호만 · 이름+회사만 같다)이 있으면 **잇지도
        만들지도 않고 막는다** — 딜 소싱 화면의 후보로 넘긴다. 아무도 없으면
-       **새 줄을 `참여 의사를 물어보는 중` 으로 만든다** — 동의는 아직이다.
+       **새 줄을 `딜 소싱 참여 제안 대기중` 으로 만든다** — 제안도 동의도 아직이다.
     X  이어진 줄을 `불참여` 로. **지우지 않는다** — 리마인드 · `딜 받음` 이력이
        그 줄에 달려 있고, 다시 참여하시면 그대로 돌아온다.
     빈칸  이어진 줄이 없으면 그대로. 이어진 줄이 있으면 **막는다** — 빠지는
@@ -178,8 +179,11 @@ JOINED = "참여"
 LEFT = "불참여"
 #: 갈래에는 넣었지만 아직 동의를 받지 않은 분. 딜을 **받지 않는다**(`takes_part`).
 ASKING = "참여 의사를 물어보는 중"
+#: O 로 갈래에 막 넣은 분 — 참여 제안도 아직이다. O 로 새 줄이 생길 때의 기본값.
+#: 흐름: O → 제안 대기중 → 물어보는 중 → 참여 / 불참여. 딜은 **받지 않는다**.
+OFFER_PENDING = "딜 소싱 참여 제안 대기중"
 #: 표의 고르는 칸이 먼저 세우는 보기 — 이 밖의 글도 적을 수 있다(`normalize_participation`).
-CHOICES = (JOINED, LEFT, ASKING)
+CHOICES = (JOINED, LEFT, OFFER_PENDING, ASKING)
 #: 사람이 적는 문구의 최대 길이(앞뒤 공백을 뗀 뒤). 표 칸 하나에 읽히는 길이다.
 PARTICIPATION_MAX = 40
 
@@ -195,6 +199,7 @@ MARK_LEFT = "X"
 _JOINED_WORDS = {"참여", "o", "○"}
 _LEFT_WORDS = {"불참여", "x", "×"}
 _ASKING_WORDS = {"참여의사를물어보는중", "물어보는중", "참여의사확인중"}
+_OFFER_PENDING_WORDS = {"딜소싱참여제안대기중", "참여제안대기중", "제안대기중", "제안대기"}
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 
 #: 두 표에 다 있는 칸 — 이어진 뒤에는 한쪽을 고치면 다른 쪽도 같이 고친다.
@@ -259,8 +264,8 @@ def is_left(row) -> bool:
 def normalize_participation(value: Optional[str]) -> str:
     """사람이 적은 `참여` 칸 값을 저장할 글자로.
 
-    `참여` · `불참여` · `참여 의사를 물어보는 중` 은 같은 뜻의 말(`O` · `x` ·
-    `물어보는 중` …)을 제 글자로 맞춘다. 그 밖의 글은 **앞뒤 공백만 떼고 그대로**
+    `참여` · `불참여` · `딜 소싱 참여 제안 대기중` · `참여 의사를 물어보는 중` 은 같은
+    뜻의 말(`O` · `x` · `제안 대기` · `물어보는 중` …)을 제 글자로 맞춘다. 그 밖의 글은 **앞뒤 공백만 떼고 그대로**
     둔다 — 막는 것은 빈칸, 제어문자(줄바꿈 · 탭 포함), `PARTICIPATION_MAX` 자 넘는
     글뿐이다. 그런 글은 딜을 받지 않는다(`takes_part`).
     """
@@ -276,6 +281,8 @@ def normalize_participation(value: Optional[str]) -> str:
         return LEFT
     if key in _ASKING_WORDS:
         return ASKING
+    if key in _OFFER_PENDING_WORDS:
+        return OFFER_PENDING
     if len(text) > PARTICIPATION_MAX:
         raise SyncError(f"참여 칸은 {PARTICIPATION_MAX}자까지 적습니다({len(text)}자).")
     return text
@@ -511,13 +518,13 @@ def assignee_for(db: Session, contact: VcContact, user: Optional[User]) -> str:
     return sheet_owner.real_name(owner) if owner is not None else ""
 
 
-def create_row(db: Session, contact: VcContact, participation: str = ASKING,
+def create_row(db: Session, contact: VcContact, participation: str = OFFER_PENDING,
                user: Optional[User] = None,
                assignee: Optional[str] = None) -> SourcingContact:
     """그 갈래 맨 아래에 새 줄. 카톡방은 **비워 둔다** — 보내는 사람 카톡에서
     [방 후보 찾기]로 찾는다(모듈 머리말 ★).
 
-    참여는 기본 `참여 의사를 물어보는 중` — O 는 갈래에 넣는 것이지 동의를 받았다는
+    참여는 기본 `딜 소싱 참여 제안 대기중` — O 는 갈래에 넣는 것이지 동의를 받았다는
     뜻이 아니다(모듈 머리말). 동의하시면 딜 소싱 화면에서 `참여` 로 바꾼다.
     담당은 `assignee` 를 넘기면 그 이름, 아니면 O 를 넣은 사람(`assignee_for`).
 
@@ -560,10 +567,10 @@ ACT_KEPT = "kept"          # 이미 이어져 있고 바꿀 것이 없음
 
 def set_mark(db: Session, contact: VcContact, value: Optional[str],
              user: Optional[User] = None, assignee: Optional[str] = None,
-             participation: str = ASKING) -> dict:
+             participation: str = OFFER_PENDING) -> dict:
     """투자사 관리 현황의 `Series A 딜 소싱` 칸을 고친다.
 
-    O 의 규칙(모듈 머리말): 새 줄은 `participation`(기본 `참여 의사를 물어보는 중`)으로
+    O 의 규칙(모듈 머리말): 새 줄은 `participation`(기본 `딜 소싱 참여 제안 대기중`)으로
     만들고, 이어진 줄이 `불참여` 면 `participation` 으로 되돌린다(다시 묻는다). 이어진
     줄이 `참여` · `물어보는 중` · 사람이 적은 문구면 **덮지 않는다**. `assignee` 는 새 줄의
     담당(넘기지 않으면 O 를 넣은 사람) — 이어지기만 하는 줄의 담당은 안 바꾼다.

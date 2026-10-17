@@ -538,7 +538,7 @@
         if (!got.ids.length) notes.push("왼쪽 체크박스로 받을 분을 고르세요");
         if (got.hidden) notes.push("체크한 " + got.hidden + "명은 지금 검색 · 필터에 가려 있습니다 — 함께 엽니다");
         if (got.out) notes.push("체크한 불참여 " + got.out + "명은 빼고 엽니다");
-        if (got.pending) notes.push("체크한 참여 확인 전(물어보는 중 등) " + got.pending + "명은 빼고 엽니다");
+        if (got.pending) notes.push("체크한 참여 확인 전(제안 대기·물어보는 중 등) " + got.pending + "명은 빼고 엽니다");
         shareHint.textContent = notes.join(" · ");
         shareHint.hidden = !notes.length;
       }

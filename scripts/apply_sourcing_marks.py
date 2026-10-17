@@ -15,7 +15,7 @@
 
 ## 무엇을 넣나
 
-  · 새 줄의 `참여` — `--participation`(기본 `참여 의사를 물어보는 중`). 동의 전인
+  · 새 줄의 `참여` — `--participation`(기본 `딜 소싱 참여 제안 대기중`). 동의 전인
     분은 딜 소싱 제안을 **받지 않는다**(`sourcing_sync.takes_part` — 정확히 `참여`
     만 받는다). 동의하시면 딜 소싱 화면에서 `참여` 로 바꾼다.
   · 새 줄의 담당 — `--assignee`. 안 주면 `--user-id` 계정 이름, 그것도 없으면
@@ -29,7 +29,7 @@
 
   · id 가 없는 줄 · 감춘 줄(`is_hidden`) — 화면에도 안 뜨는 줄이다.
   · 이미 `불참여`(X)로 이어진 줄 — **스스로 안 하겠다고 한 분일 수 있다.** 화면의
-    O 는 다시 묻는 것으로 보아 `물어보는 중` 으로 되돌리지만, 한꺼번에 넣을 때는
+    O 는 다시 묻는 것으로 보아 `제안 대기중` 으로 되돌리지만, 한꺼번에 넣을 때는
     건드리지 않는다. 정말로 다시 물을 거면 `--revive-left` 를 준다.
 
 ## 미리보기는 운영 DB 에 쓰지 않는다
@@ -146,7 +146,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(description="투자사 관리 현황 줄에 Series A 딜 소싱 O 를 한꺼번에")
     ap.add_argument("--ids-file", required=True, help="vc_contacts.id 목록 파일(한 줄에 하나)")
     ap.add_argument("--participation", default=None,
-                    help="새 줄의 참여 칸(기본: 참여 의사를 물어보는 중)")
+                    help="새 줄의 참여 칸(기본: 딜 소싱 참여 제안 대기중)")
     ap.add_argument("--assignee", default=None, help="새 줄의 딜 소싱 담당 이름")
     ap.add_argument("--user-id", type=int, default=None,
                     help="O 를 넣은 계정 — 수정 로그에 남고, --assignee 가 없으면 담당 이름")
@@ -165,7 +165,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     try:
         participation = sourcing_sync.normalize_participation(
-            args.participation or sourcing_sync.ASKING)
+            args.participation or sourcing_sync.OFFER_PENDING)
     except sourcing_sync.SyncError as exc:
         print(f"--participation: {exc}", file=sys.stderr)
         return 2
