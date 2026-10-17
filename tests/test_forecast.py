@@ -181,18 +181,20 @@ def test_미팅은_같은_기업_같은_회사만_취소_빼고_외_N건(portal,
     db.add(other_co)
     db.commit()
     _meet(db, ga, company, "2026-11-03")
+    _meet(db, ga, company, "2026-11-10")
     _meet(db, ga, company, "2026-10-20", status="done")
     _meet(db, ga, company, "2026-10-28", kind="second", status="done")
     _meet(db, ga, company, "2026-10-01", status="canceled")
     _meet(db, elsewhere, company, "2026-10-05")
     _meet(db, ga, other_co, "2026-10-06")
     cells = _add(portal["u1"])["cells"]
-    assert cells["meeting_plan"]["text"] == "2026-10-20 외 2건"
+    assert cells["meeting_plan"]["text"] == "2026-11-03 외 1건"
+    assert "2026-10-20" not in cells["meeting_plan"]["text"], "완료된 미팅은 예정일에 안 잡힌다"
     assert cells["meeting1_done"]["text"] == "2026-10-20"
     assert cells["meeting2_done"]["text"] == "2026-10-28"
 
     row_id = db.query(RevenueForecast).one().id
-    _cells(portal["u1"], row_id, meeting_plan="2026-10-20")
+    _cells(portal["u1"], row_id, meeting_plan="2026-11-03")
     db.expire_all()
     assert db.get(RevenueForecast, row_id).meeting_plan is None, "가장 이른 날과 같으면 빈칸"
 

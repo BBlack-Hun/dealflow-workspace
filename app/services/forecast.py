@@ -8,7 +8,8 @@
     대표자 · 연락처 ·       이은 IR 기업(`IrCompany.contact_name` · `contact_phone`
     프리밸류 · 희망금액      · `pre_value` · `raise_target`)
     미팅 날짜 셋            줄 담당자의 미팅 — 같은 기업 + 상대 심사역이 같은 회사,
-                           취소 제외. 가장 이른 날, 더 있으면 `외 N건`
+                           취소 제외. 예정일은 아직 안 한(`scheduled`) 것만.
+                           가장 이른 날, 더 있으면 `외 N건`
 
 ## 심사역은 이 차례로 정한다
 
@@ -43,7 +44,7 @@ COLUMNS = (
     ("raise_target", "희망 투자유치금액", "스타트업DB — 투자유치희망금액"),
     ("post_value", "포스트밸류", None),
     ("ceo_share", "대표이사 지분율", None),
-    ("meeting_plan", "투자사 미팅 예정일", "딜 진행 관리 미팅 — 취소 제외"),
+    ("meeting_plan", "투자사 미팅 예정일", "딜 진행 관리 미팅 — 예정(아직 안 한 것)"),
     ("meeting1_done", "1차 미팅 완료일", "딜 진행 관리 미팅 — 1차 · 완료"),
     ("meeting2_done", "2차 미팅 완료일", "딜 진행 관리 미팅 — 2차 · 완료"),
     ("result_note", "결과 상세", None),
@@ -127,7 +128,7 @@ class Source:
 
         auto = {"vc_name": (person.name if person else "", 0),
                 "vc_phone": (_text(caller.phone) if caller else "", 0),
-                "meeting_plan": _dates(meets),
+                "meeting_plan": _dates([m for m in meets if m.status == "scheduled"]),
                 "meeting1_done": _dates([m for m in meets if m.status == "done"
                                          and m.kind != "second"]),
                 "meeting2_done": _dates([m for m in meets if m.status == "done"
