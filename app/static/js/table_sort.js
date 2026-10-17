@@ -125,7 +125,13 @@
     Array.prototype.forEach.call(table.querySelectorAll("th[data-sort]"), function (th) {
       var key = (th.getAttribute("data-sort") || "").trim();
       if (!key) return;
-      defs.push({ key: key, label: (th.textContent || "").trim(), th: th });
+      // 이름은 칸의 **글자 노드**에서 읽는다 — 같은 칸에 필터 단추(`▾`)가 먼저
+      // 섰어도 그 글자까지 이름이 되지 않게(`filters.js` 와 한 칸에 설 때).
+      // 글자 노드가 없으면(글자를 감싼 칸) 예전처럼 칸 전체 글자.
+      var label = Array.prototype.map.call(th.childNodes, function (n) {
+        return n.nodeType === 3 ? n.textContent : "";
+      }).join("").trim() || (th.textContent || "").trim();
+      defs.push({ key: key, label: label, th: th });
       var dflt = (th.getAttribute("data-sort-default") || "").trim();
       if (!base && (dflt === ASC || dflt === DESC)) base = { key: key, dir: dflt };
     });
@@ -256,7 +262,8 @@
       Array.prototype.slice.call(def.th.childNodes).forEach(function (n) {
         if (n.nodeType === 3) n.textContent = "";
       });
-      def.th.appendChild(btn);
+      // 이름 자리는 맨 앞 — 필터 단추 줄(`.th-filters`)이 있으면 그 위에 선다.
+      def.th.insertBefore(btn, def.th.firstChild);
     });
 
     // 줄에 적힌 값(`data-s-*`)을 **다시 읽는다.** 값은 처음 한 번만 읽으므로,

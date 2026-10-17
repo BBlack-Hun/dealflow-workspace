@@ -786,13 +786,14 @@
            **필터를 건다.** 딜 소싱 표가 같은 칸에 거는 까닭 그대로다(`routers/sourcing.
            COLUMNS` — 참여 요청일은 고를 만한 값 몇 가지로 모인다). 이 표에서는 이어진
            줄(시리즈 A 갈래 · 운영 스무 줄 남짓)만 값이 있어 더 적다.
-           **정렬은 안 단다** — 표기가 섞여 있어(`2026/05/21` · `2026-07-01`) 글자로
-           세우면 틀린다(`routers/sourcing.requested_on` 머리 주석). 엑셀에는 `Series A
+           **머리글을 눌러 세운다**(`table_sort.js`) — 표기가 섞여 있어(`2026/05/21` ·
+           `2026-07-01`) 글자로 세우면 틀리므로, 줄에는 서버가 날짜로 읽은 값을 싣는다
+           (`data-s-sourcing_date` · `routers/sourcing.requested_sort`). 빈칸은 늘 끝. 엑셀에는 `Series A
            딜 소싱` 과 함께 나간다(`routers/data_io.CONTACT_HEADERS`).
 
            폭은 딜 소싱 표의 같은 칸과 같은 124px — 필터 단추(`참여 요청일 (1) ▾`)와
            날짜(`2026-07-01`)가 한 줄에 든다. #}
-        <th style="width:124px" data-filters="sourcing_date:참여 요청일">참여 요청일<div class="th-filters"></div></th>
+        <th style="width:124px" data-sort="sourcing_date" data-filters="sourcing_date:참여 요청일">참여 요청일<div class="th-filters"></div></th>
         <th style="width:134px" data-filters="sector:선호 투자분야">선호 투자분야<div class="th-filters"></div></th>
         {# 필터 키는 **이 칸이 보여 주는 값**을 가리켜야 한다. 여기는 `round_size`
            인데 키가 `stage`(선호 단계) 였다 — 값이 0개인 다른 칸을 보고 있어서
@@ -910,6 +911,7 @@
           data-f-joined="{{ r.kakao_joined }}"
           data-f-sourcing="{{ r.sourcing_join }}"
           data-f-sourcing_date="{{ r.sourcing_requested_at }}"
+          data-s-sourcing_date="{{ r.sourcing_requested_sort }}"
           data-search="{{ (r.name ~ ' ' ~ (r.firm or '') ~ ' ' ~ (r.title or '') ~ ' ' ~ (r.department or ''))|lower }}"
           data-f-round="{{ r.round_size }}"
           data-firm-key="{{ r.firm_key }}"

@@ -37,8 +37,9 @@
   // 보통 공백으로 되돌아가도 아무도 알아채지 못한다.
   var NBSP = "\u00a0";
 
+  // 이름 없이도 부른다(정렬 머리글 — 아래 `sorted`) — 그때는 `▾` · `(1) ▾` 만.
   function buttonLabel(label, active) {
-    return label + (active ? NBSP + "(" + active + ")" : "") + NBSP + "▾";
+    return (label ? label + NBSP : "") + (active ? "(" + active + ")" + NBSP : "") + "▾";
   }
 
   function splitValues(raw) {
@@ -238,7 +239,7 @@
         if (!def.btn) return;
         var active = (state[def.key] || []).length;
         def.btn.classList.toggle("on", !!active);
-        def.btn.textContent = buttonLabel(def.label, active);
+        def.btn.textContent = buttonLabel(def.sorted ? "" : def.label, active);
       });
     }
 
@@ -375,8 +376,12 @@
     // 같은 말이 두 번 나왔다 — 칸은 좁은데 자리만 두 배로 먹었다.
     // 필터가 둘인 칸(진행 단계 / 연결 상태)은 이름을 남긴다 — 단추만 남기면
     // 둘 중 어느 것이 그 칸의 이름인지 알 수 없다.
+    // **정렬도 걸린 칸**(`data-sort`)은 이름 자리를 정렬 단추가 차지한다(`table_sort.js`)
+    // — 필터 단추는 이름 없이 `▾` 만 그 아래에 선다. 이름을 또 쓰면 두 번 나온다.
     defs.forEach(function (def) {
-      def.solo = defs.filter(function (d) { return d.th === def.th; }).length === 1;
+      def.sorted = def.th.hasAttribute("data-sort");
+      def.solo = !def.sorted &&
+        defs.filter(function (d) { return d.th === def.th; }).length === 1;
     });
 
     defs.forEach(function (def) {
@@ -390,7 +395,8 @@
           if (n.nodeType === 3) n.textContent = "";
         });
       }
-      btn.textContent = buttonLabel(def.label, 0);
+      btn.textContent = buttonLabel(def.sorted ? "" : def.label, 0);
+      if (def.sorted) btn.setAttribute("aria-label", def.label + " 필터");
       btn.onclick = function (e) {
         e.stopPropagation();
         var wasOpen = openPanel && openPanel.parentNode === def.th &&

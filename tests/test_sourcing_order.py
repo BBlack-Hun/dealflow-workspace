@@ -119,6 +119,20 @@ def test_both_notations_land_on_the_same_day():
         assert when(value) is None, value
 
 
+def test_header_sort_carries_the_date_not_the_text(seeded):
+    """머리글 정렬(`table_sort.js`)은 줄의 `data-s-requested_at` 을 **글자로** 센다 —
+    그래서 서버가 날짜로 읽은 한 꼴(`YYYY-MM-DD`)을 싣는다. 못 읽는 값 · 빈 값은
+    빈칸이라 방향과 상관없이 늘 끝이다. 처음 차례가 이 칸 최신순이라 `▼` 로 선다."""
+    from app.routers.sourcing import requested_sort
+
+    assert requested_sort(None) == ""
+    body = seeded.get("/sourcing", params={"tab": BUCKET}).text
+    assert 'data-sort="requested_at" data-sort-default="desc"' in body
+    # 줄 차례(= 서버 차례) 그대로 — 표기가 섞여도 한 꼴, 글자 내림차순이 곧 날짜 내림차순.
+    assert re.findall(r'data-s-requested_at="([^"]*)"', body) == [
+        "2026-09-02", "2026-08-11", "2026-07-01", "2026-07-01", "2026-05-21", "", ""]
+
+
 # --- 못 읽는 값과 빈 값 -----------------------------------------------------
 
 def test_unreadable_and_empty_go_to_the_bottom(seeded):
