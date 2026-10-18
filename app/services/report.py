@@ -323,13 +323,26 @@ def monthly(db: Session, year: int, month: int,
     # 대신 이 판은 **지난달을 다시 열면 그때와 숫자가 다를 수 있다.** 그 달에
     # 무엇을 받았는지(`요청받음`·`전달함`)는 안 변하고, 변하는 것은 "그래서
     # 지금 남은 일" 쪽이다.
-    ask = meeting_ask_state(db, requests, today=today)
+    #
+    # 판정에는 그 달 담당자들의 **전체** 전달 줄을 넘긴다 — 그 달 줄만
+    # 넘기면 마지막 전달일이 그 달 안에서 잘려, `/ir`(전체 줄을 본다)과
+    # `미완료 · N일` 의 N 이 갈린다. 팀원 범위는 위와 같이 `user_id` 로 거른다.
+    asked_ids = {r.contact_id for r in requests if r.status == "delivered"}
+    all_stmt = select(IrRequest).where(IrRequest.contact_id.in_(asked_ids or {0}),
+                                       IrRequest.status == "delivered")
+    if user is not None:
+        all_stmt = all_stmt.where(IrRequest.user_id == user.id)
+    ask = meeting_ask_state(db, db.execute(all_stmt).scalars().all(), today=today)
 
-    # 판에 함께 밝힐 **요청 건수** — 안 보낸 그 담당자들이 받은 요청 줄 수다.
-    # 세는 곳은 `meeting_ask_state` 하나이고 여기서는 더하기만 한다. 글자는
-    # `meeting_ask_count_note` 가 짓고 화면과 엑셀이 그걸 그대로 쓴다.
+    # 판에 함께 밝힐 **요청 건수** — 안 보낸 그 담당자들이 **그 달에** 받은 요청
+    # 줄 수다(아래 `IR 요청 투자사` 표가 그 줄 수만큼 선다). 그래서 줄 수는 그 달
+    # 줄만 넘겨 받는다 — 세는 곳은 여전히 `meeting_ask_state` 하나이고 여기서는
+    # 더하기만 한다. 글자는 `meeting_ask_count_note` 가 짓고 화면과 엑셀이 그걸
+    # 그대로 쓴다.
+    month_lines = meeting_ask_state(db, requests, today=today)
     ask_missing = sum(1 for st in ask.values() if not st["asked"])
-    ask_rows = sum(st["requests"] for st in ask.values() if not st["asked"])
+    ask_rows = sum(st["requests"] for cid, st in month_lines.items()
+                   if cid in ask and not ask[cid]["asked"])
     ask_count, ask_why = meeting_ask_count_note(ask_missing, ask_rows)
 
     return {

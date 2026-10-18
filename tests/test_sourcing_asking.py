@@ -73,7 +73,7 @@ def test_only_exact_joined_takes_part(value, takes, kind, mark_):
 
 @pytest.mark.parametrize("raw, saved", [
     ("참여", "참여"), ("O", "참여"), ("o", "참여"), ("○", "참여"),
-    ("불참여", "불참여"), ("X", "불참여"), ("×", "불참여"),
+    ("불참여", "불참여"), ("불참", "불참여"), ("X", "불참여"), ("×", "불참여"),
     (ASKING, ASKING), ("물어보는 중", ASKING), ("물어보는중", ASKING),
     ("참여의사를 물어보는 중", ASKING),
     (OFFER, OFFER), ("제안 대기", OFFER), ("제안대기중", OFFER), ("참여 제안 대기중", OFFER),
@@ -272,6 +272,72 @@ def test_invite_goes_to_offer_and_asking_others_stay_joined_only(
 
     r = _send_to(board, [rows["offer"]], "sourcing_remind", channel)
     assert r.status_code == 400 and f"참여 확인 전({OFFER})" in r.json()["detail"]
+
+
+#: 예약 시각 — 2099-03-12 는 목요일, 14:00 은 보내는 시간 안이다.
+BOOK_AT = "2099-03-12T14:00"
+
+
+def _job_items(db, job_id):
+    from app.models import SendJob
+
+    db.expire_all()
+    job = db.get(SendJob, job_id)
+    return job, {i.sourcing_contact_id: i for i in job.items}
+
+
+@pytest.mark.parametrize("topic", ["sourcing_intro", "sourcing_remind"])
+def test_a_booked_send_drops_someone_who_left_before_release(board, db, users, topic):
+    """예약 → 참여를 `불참여` 로 → 풀기. 그 건은 **나가는 순간** 다시 보고 뺀다
+    (`jobs._requeue` — [발송 시작] · 재시도 · 재발송 · 이어 보내기와 같은 길)."""
+    from app.models import SourcingContact
+    from app.services import scheduled_send
+
+    stay = sc(db, name="남는심사", phone="010-1000-0011", kakao_room_name="남는 방")
+    leave = sc(db, name="떠난심사", phone="010-1000-0012", kakao_room_name="떠난 방")
+    r = board.post("/api/deals/send", json={
+        "contact_ids": [stay.id, leave.id], "mode": "sourcing", "topic": topic,
+        "scheduled_at": BOOK_AT})
+    assert r.status_code == 200, r.text
+    job_id = r.json()["job_id"]
+
+    db.get(SourcingContact, leave.id).participation = "불참여"
+    db.commit()
+    assert scheduled_send.run_once(db, datetime(2099, 3, 12, 14, 0))["count"] == 1
+
+    job, items = _job_items(db, job_id)
+    assert items[leave.id].status == "canceled"
+    assert "딜 소싱 불참여" in items[leave.id].error
+    assert items[stay.id].status == "pending"
+    assert job.status == "queued"
+
+
+def test_start_closes_a_draft_when_no_one_can_get_it_any_more(board, db, users):
+    """[발송 시작] — 참여 안내를 받던 `물어보는 중` 이 불참여가 됐고, 다른 한 분은
+    딜 소싱 줄이 없어졌다. 둘 다 빼면 보낼 것이 없어 회차를 닫는다."""
+    from app.models import SourcingContact
+
+    rows = _four(db)
+    r = board.post("/api/deals/send", json={
+        "contact_ids": [rows["asking"].id, rows["joined"].id], "mode": "sourcing",
+        "topic": "sourcing_intro", "draft": True})
+    assert r.status_code == 200, r.text
+    job_id = r.json()["job_id"]
+
+    db.get(SourcingContact, rows["asking"].id).participation = "불참여"
+    db.commit()
+    _job, items = _job_items(db, job_id)
+    items[rows["joined"].id].sourcing_contact_id = None      # 줄이 사라졌다
+    db.commit()
+
+    got = board.post(f"/api/jobs/{job_id}/start")
+    assert got.status_code == 200, got.text
+    assert got.json()["requeued"] == 0
+    job, items = _job_items(db, job_id)
+    assert job.status == "canceled"
+    assert [i.status for i in job.items] == ["canceled", "canceled"]
+    assert "딜 소싱 불참여" in items[rows["asking"].id].error
+    assert "딜 소싱 명단에 없는 분" in items[None].error
 
 
 def test_invite_preview_warns_only_custom_and_left(board, db, users):
@@ -504,6 +570,40 @@ def test_the_script_can_ask_again_and_refuses_bad_values(db, users, marks_world,
     bad.write_text("12a\n", encoding="utf-8")
     with pytest.raises(SystemExit):
         apply_sourcing_marks.main(["--ids-file", str(bad)])
+
+
+def test_the_script_preview_leaves_no_temp_files(db, users, marks_world, tmp_path,
+                                                 monkeypatch, capsys):
+    """미리보기 복사본은 WAL 이라 `-wal` · `-shm` 이 함께 생긴다 — 셋 다 지운다."""
+    import tempfile
+
+    from scripts import apply_sourcing_marks
+
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(scratch))
+    path = _ids_file(tmp_path, marks_world)
+    assert apply_sourcing_marks.main(["--ids-file", str(path)]) == 0
+    assert "미리보기" in capsys.readouterr().out
+    assert list(scratch.iterdir()) == []
+
+
+def test_the_script_skips_a_left_row_that_is_not_linked_yet(db, users, tmp_path, capsys):
+    """아직 안 이어진 `불참여` 줄도 — O 를 넣으면 이어 붙을 줄이면 건너뛴다."""
+    from app.models import SheetOwner
+    from scripts import apply_sourcing_marks
+
+    db.add(SheetOwner(label=SHEET, user_id=users["u1"].id, layout="investor"))
+    db.commit()
+    contact = vc(db, users, name="안이은심사", phone="010-2000-0009")
+    row = sc(db, name="안이은심사", phone="010-2000-0009", participation="불참여")
+    path = tmp_path / "one.txt"
+    path.write_text(f"{contact.id}\n", encoding="utf-8")
+
+    assert apply_sourcing_marks.main(["--ids-file", str(path), "--apply"]) == 0
+    assert "건너뜀 1" in capsys.readouterr().out
+    db.expire_all()
+    assert (row.participation, row.vc_contact_id) == ("불참여", None)
 
 
 # ── ⑨ 참여 안내가 나가면 `제안 대기중` → `물어보는 중` ─────────────────────────

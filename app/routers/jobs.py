@@ -8,8 +8,9 @@ from sqlalchemy.orm import Session
 from ..clock import now_iso
 from ..db import get_db
 from ..deps import agent_status, get_current_user
-from ..models import SendItem, SendJob, User
-from ..services import automation_runner, mail_sender, scheduled_send, send_guard
+from ..models import SendItem, SendJob, SourcingContact, User
+from ..services import (automation_runner, mail_sender, scheduled_send, send_guard,
+                        sourcing_msg, sourcing_sync)
 
 router = APIRouter(prefix="/api", tags=["jobs"])
 
@@ -125,10 +126,21 @@ def _requeue(db: Session, job: SendJob, items: list[SendItem],
     두면 한쪽만 고쳐져 어긋난다(카톡은 되살아나는데 메일은 안 나가는 식으로).
 
     **어떤 건을 되살릴지는 부르는 쪽이 정한다.** 여기서는 받은 것만 손댄다.
+    단 딜 소싱 글 회차는 나가는 순간 참여를 다시 본다(`_drop_not_taking_part`).
     """
     for item in items:
         item.status = "pending"
         item.error = None
+    _drop_not_taking_part(db, job)
+    items = [i for i in items if i.status == "pending"]
+    if not any(i.status == "pending" for i in job.items):
+        # 다시 본 판정으로 전부 빠졌다 — 큐에 세우지 않는다. 예약으로 서 있던
+        # 회차는 닫는다(`_screen_auto` 와 같다 — 빈 회차가 남지 않게).
+        if job.status == "draft":
+            job.status = "canceled"
+            job.finished_at = now_iso()
+        db.commit()
+        return {"status": job.status, "requeued": 0}
     # 잡이 다시 `queued` 여야 발송 프로그램의 선점(`WHERE status='queued'`)에 걸린다.
     # `canceled`·`done` 인 채로 두면 카톡 건이 대기인 채로 영영 집혀 가지 않고,
     # 메일 쪽 `_finish()` 도 `canceled` 잡은 건드리지 않아 화면이 멈춘 것처럼 보인다.
@@ -142,6 +154,32 @@ def _requeue(db: Session, job: SendJob, items: list[SendItem],
     if any(i.channel == "email" for i in items):
         background.add_task(mail_sender.send_job, job.id)
     return {"status": job.status, "requeued": len(items)}
+
+
+def _drop_not_taking_part(db: Session, job: SendJob) -> None:
+    """딜 소싱 글 회차 — **나가는 순간 참여를 다시 본다.** 안 받는 대기 건은 취소.
+
+    회차를 세울 때 걸렀어도(`deals.create_send_list`) 예약 · [발송 시작] 까지
+    사이에 그분이 `불참여` 가 됐을 수 있다. 판정은 세울 때와 같은 함수다
+    (`deals._not_taking_part` — 참여 안내(처음)는 `can_get_invite`, 월간 리마인드 ·
+    Series A 딜 공유는 `takes_part`). 어느 글인지는 `topic` 이 가른다(빈 것이 참여
+    안내). 딜 소싱 줄이 없어졌으면 그 건도 뺀다. 다른 종류의 회차는 그대로.
+    """
+    if job.kind != sourcing_sync.INVITE_JOB_KIND:
+        return
+    from .deals import _not_taking_part
+
+    topic = job.topic or sourcing_msg.KIND
+    for item in job.items:
+        if item.status != "pending":
+            continue
+        row = (db.get(SourcingContact, item.sourcing_contact_id)
+               if item.sourcing_contact_id else None)
+        why = ("딜 소싱 명단에 없는 분" if row is None
+               else _not_taking_part(row, topic))
+        if why:
+            item.status = "canceled"
+            item.error = f"{why} — 나가기 전에 다시 보고 뺐습니다"
 
 
 def _screen_auto(db: Session, job: SendJob, items: list[SendItem]) -> list[SendItem]:

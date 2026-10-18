@@ -393,6 +393,9 @@ def _check_name(db: Session, name: str, *, exclude: Optional[int] = None) -> str
         # 한 이름이 두 낱말로 쪼개진다.
         raise TaxonomyError("이름에 쉼표(,)나 빗금(/)은 쓸 수 없습니다")
     for row in all_terms(db):
+        if exclude is not None and row.merged_into_id == exclude:
+            # 이 줄의 옛 이름(`rename` 이 남긴 것) — 원래 이름으로 되돌릴 수 있게.
+            continue
         if row.id != exclude and norm(row.name) == norm(text):
             where = ("숨긴 줄" if row.is_hidden or row.merged_into_id else "목록")
             raise TaxonomyError(f"이미 {where}에 같은 이름이 있습니다: {row.name}")
@@ -546,7 +549,16 @@ def add(db: Session, name: str, parent_id: Optional[int] = None) -> SectorTerm:
 def rename(db: Session, term_id: int, new_name: str) -> dict:
     row, name, edits = plan_rename(db, term_id, new_name)
     changed = apply_edits(edits)
+    old = row.name
     row.name = name
+    # 옛 이름은 **숨긴 채 합친 줄로 남긴다**(`SEED_ALIASES` 와 같은 꼴). 낱말 사전
+    # (`sector_words`)이 코드에 적힌 처음 이름으로 대분류를 찾는다 — 옛 이름이
+    # 목록에서 사라지면 그 분야의 낱말이 전부 버려진다.
+    if norm(old) != norm(name) and not any(
+            t.merged_into_id == row.id and norm(t.name) == norm(old)
+            for t in all_terms(db)):
+        db.add(SectorTerm(name=old, is_hidden=1, merged_into_id=row.id,
+                          parent_id=row.parent_id, position=row.position))
     return {"changed": changed, **impact(edits)}
 
 
