@@ -226,19 +226,24 @@ OUT_NOTE = "딜 소싱 불참여"
 PENDING_NOTE = "딜 소싱 참여 확인 전({value}) — 동의하시면 딜 소싱 화면에서 '참여' 로 바꾼 뒤 보내세요"
 #: 참여 안내(처음)에서 빠지는 **사람이 적은 문구** — 뜻을 몰라 안 보낸다(`sourcing_sync.can_get_invite`).
 CUSTOM_NOTE = ("딜 소싱 참여 칸이 직접 적은 문구({value}) — 참여 안내는 제안 대기중 · "
-               "물어보는 중 · 참여인 분께만 나갑니다")
+               "물어보는 중인 분께만 나갑니다")
+#: 참여 안내(처음)에서 빠지는 **이미 참여 중인** 분 — 청할 일이 없다.
+JOINED_NOTE = "이미 딜 소싱 참여 중 — 참여 안내는 제안 대기중 · 물어보는 중인 분께만 나갑니다"
 
 
 def _not_taking_part(contact, topic: str = "") -> str:
-    """이 글을 **받지 않는** 까닭(`OUT_NOTE` · `PENDING_NOTE` · `CUSTOM_NOTE`). 받으면 빈 글자.
+    """이 글을 **받지 않는** 까닭(`OUT_NOTE` · `PENDING_NOTE` · `CUSTOM_NOTE` ·
+    `JOINED_NOTE`). 받으면 빈 글자.
 
-    참여 안내(처음)는 `can_get_invite`(제안 대기중 · 물어보는 중도 받는다), 월간
+    참여 안내(처음)는 `can_get_invite`(제안 대기중 · 물어보는 중만), 월간
     리마인드 · Series A 딜 공유는 `takes_part`(정확히 `참여`)다."""
     invite = topic == sourcing_msg.KIND
     if (sourcing_sync.can_get_invite if invite else sourcing_sync.takes_part)(contact):
         return ""
     if sourcing_sync.is_left(contact):
         return OUT_NOTE
+    if invite and sourcing_sync.takes_part(contact):
+        return JOINED_NOTE
     note = CUSTOM_NOTE if invite else PENDING_NOTE
     return note.format(value=sourcing_sync.participation_of(contact))
 
@@ -1167,8 +1172,8 @@ def create_send_list(
     # ── 딜 소싱: **이 글을 안 받는 분** · **방 없음** 은 빼고 보낸다(세 글 모두) ──
     #
     # 안 받는 분 — 월간 리마인드 · Series A 딜 공유는 `참여` 가 아닌 분 전부
-    # (`sourcing_sync.takes_part`), 참여 안내(처음)는 불참여 · 사람이 적은 문구만
-    # (`can_get_invite` — 제안 대기중 · 물어보는 중은 받는다). 화면도 같은 판정으로
+    # (`sourcing_sync.takes_part`), 참여 안내(처음)는 참여 · 불참여 · 사람이 적은 문구
+    # (`can_get_invite` — 제안 대기중 · 물어보는 중만 받는다). 화면도 같은 판정으로
     # 카드를 막는다(`deals.js` 의 `data-out` · `data-invite-only`). 메일 채널도 같다.
     # 방 없음 — 시리즈 A 갈래는 투자사 딜소개 방을 이어받지 않는다
     # (`sourcing_link.linked_rooms`). 그 방으로 보내는 대신 **빼고 이유를 말한다.**

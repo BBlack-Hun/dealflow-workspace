@@ -33,6 +33,7 @@ import re
 import shutil
 import subprocess
 from pathlib import Path
+from urllib.parse import unquote
 
 import pytest
 
@@ -706,7 +707,7 @@ def test_series_a_rows_never_send_into_the_investor_room(board, db, users):
     assert "방 후보 찾기" in p["room_warning"]
 
     r = board.post("/api/deals/send", json={"contact_ids": [no_room.id, has_room.id],
-                                            "mode": "sourcing"})
+                                            "mode": "sourcing", "topic": "sourcing_remind"})
     assert r.status_code == 200, r.text
     skipped = r.json()["skipped"]
     assert [s["contact_id"] for s in skipped] == [no_room.id]
@@ -716,7 +717,7 @@ def test_series_a_rows_never_send_into_the_investor_room(board, db, users):
         (has_room.id, "김철수 딜소싱방")]
 
     r = board.post("/api/deals/send", json={"contact_ids": [no_room.id],
-                                            "mode": "sourcing"})
+                                            "mode": "sourcing", "topic": "sourcing_remind"})
     assert r.status_code == 400
     assert "카톡방" in r.json()["detail"]
 
@@ -971,7 +972,8 @@ def test_an_email_send_does_not_need_a_kakao_room(board, db, users, mail_on, mon
     monkeypatch.setattr(mail_sender, "send_job", lambda *a, **k: None)
     no_room = sc(db, email="hong@example.com")    # 시리즈 A · 방 없음 · 메일 있음
     r = board.post("/api/deals/send", json={"contact_ids": [no_room.id],
-                                            "mode": "sourcing", "channel": "email"})
+                                            "mode": "sourcing", "channel": "email",
+                                            "topic": "sourcing_remind"})
     assert r.status_code == 200, r.text
     assert not r.json().get("skipped")
     [item] = db.query(SendItem).filter_by(job_id=r.json()["job_id"]).all()
@@ -1006,7 +1008,7 @@ def _report(client, item, token=OTHER_TOKEN, **body):
 
 def test_room_search_sends_no_firm_and_drops_the_deal_intro_room(board, db, users):
     """회사를 실어 보내면 발송기가 회사 이름이 든 방(= 투자사 딜소개 방) 하나로
-    줄여 버린다. 회사는 안 보내고, 그분의 딜소개 방 제목은 후보에서 뺀다 —
+    줄여 버린다. 회사는 안 보내고, **참여 중인** 분의 딜소개 방 제목은 후보에서 뺀다 —
     이어진 투자사 줄의 방 · 번호가 같은 다른 팀원 명단 줄의 방 둘 다."""
     from app.models import SourcingContact
 
@@ -1014,6 +1016,8 @@ def test_room_search_sends_no_firm_and_drops_the_deal_intro_room(board, db, user
     vc(db, users, who="u2", sheet=SHEET, kakao_room_name="홍길동 이사님 딜소개")
     mark(board, contact.id, "O")
     [row] = sync_rows(db)
+    row.participation = "참여"
+    db.commit()
 
     item = _search(board, row.id)
     assert item["query"] == "홍길동 심사역" and item["name"] == "홍길동"
@@ -1037,6 +1041,7 @@ def test_a_deal_intro_room_cannot_be_confirmed_as_the_sourcing_room(board, db, u
     contact = vc(db, users, kakao_room_name="홍길동 심사역 가나다벤처스")
     mark(board, contact.id, "O")
     [row] = sync_rows(db)
+    row.participation = "참여"          # 참여 안내 받을 분은 확정한다(아래 시험)
     room_match.save_candidates(row, ["홍길동 심사역 가나다벤처스", "딜소싱 홍길동"],
                                at="2026-10-14T10:00:00+09:00")
     db.commit()
@@ -1047,6 +1052,34 @@ def test_a_deal_intro_room_cannot_be_confirmed_as_the_sourcing_room(board, db, u
     assert "msg=" in r.headers["location"]
     db.expire_all()
     assert not db.get(SourcingContact, row.id).kakao_room_name
+
+
+@pytest.mark.parametrize("value", ["딜 소싱 참여 제안 대기중", "참여 의사를 물어보는 중"])
+def test_an_invitee_keeps_the_deal_intro_room_and_can_confirm_it(board, db, users, value):
+    """참여 안내 받을 분(제안 대기중 · 물어보는 중)은 아직 딜 소싱 방이 없어 찾은 방이
+    딜소개 방 하나뿐이다 — 운영에서 그 방을 빼 고를 단추가 없었다(2026-10-19).
+    후보로 담고 [이 방으로 확정] 이 서고, 누르면 그 줄의 방이 된다."""
+    from app.models import SourcingContact
+
+    contact = vc(db, users, kakao_room_name="홍길동 심사역 가나다벤처스")
+    mark(board, contact.id, "O")
+    [row] = sync_rows(db)
+    row.participation = value
+    db.commit()
+
+    _report(board, _search(board, row.id), verify_result="found",
+            found_room="홍길동 심사역 가나다벤처스")
+    page = board.get(f"/sourcing?tab={SYNC}").text
+    assert "후보 1개" in page
+    assert "홍길동 심사역 가나다벤처스 — 이 방으로 확정" in page
+
+    r = board.post(f"/sourcing/{row.id}/room-confirm",
+                   data={"room": "홍길동 심사역 가나다벤처스", "tab": SYNC},
+                   follow_redirects=False)
+    assert r.status_code == 303 and "방을 확정했습니다" in unquote(r.headers["location"])
+    db.expire_all()
+    got = db.get(SourcingContact, row.id)
+    assert (got.kakao_room_name, got.room_verified) == ("홍길동 심사역 가나다벤처스", "verified")
 
 
 def test_a_room_search_does_not_block_deleting_the_row(board, db, users):

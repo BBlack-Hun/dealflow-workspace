@@ -125,9 +125,9 @@ def deals_page(
     #
     # **참여 안내를 받는 분까지 싣는다**(`sourcing.sendable_rows(invite=True)`) —
     # 불참여와 사람이 적은 문구는 처음부터 없다. 제안 대기중 · 물어보는 중은 참여
-    # 안내(처음)에서만 고른다 — 그 카드에 딱지를 달고(`sourcing_invite_only` 의
-    # 글자 — `sourcing.out_label`) 다른 글에서는 막는다(`deals.js`). 발송 길도 같은
-    # 판정으로 한 번 더 거른다(`deals.create_send_list`). 뺀 수는 목록 위에 적는다.
+    # 안내(처음)에서만, 참여는 다른 글에서만 고른다 — 앞의 카드에 딱지를 달고
+    # (`sourcing_invite_only` 의 글자 — `sourcing.out_label`) 글에 따라 막는다(`deals.js`).
+    # 발송 길도 같은 판정으로 한 번 더 거른다(`deals.create_send_list`). 뺀 수는 목록 위에 적는다.
     sourcing_contacts = sourcing_rows(db, invite=True)
     sourcing_invite_only = {c.id: sourcing_out_label(c) for c in sourcing_contacts
                             if not sourcing_sync.takes_part(c)}

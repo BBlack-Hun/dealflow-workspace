@@ -403,7 +403,8 @@ def test_send_records_against_the_sourcing_table(seeded, db):
     db.commit()
 
     r = seeded.post("/api/deals/send",
-                    json={"contact_ids": [who.id], "mode": "sourcing"})
+                    json={"contact_ids": [who.id], "mode": "sourcing",
+                          "topic": "sourcing_remind"})
     assert r.status_code == 200, r.text
 
     item = db.query(SendItem).filter_by(job_id=r.json()["job_id"]).one()
@@ -419,7 +420,8 @@ def test_send_blocks_when_there_is_no_room(seeded, db):
 
     who = db.query(SourcingContact).filter_by(name="홍길동").first()
     r = seeded.post("/api/deals/send",
-                    json={"contact_ids": [who.id], "mode": "sourcing"})
+                    json={"contact_ids": [who.id], "mode": "sourcing",
+                          "topic": "sourcing_remind"})
     assert r.status_code == 400
     assert "카톡방" in r.json()["detail"]
 
@@ -431,6 +433,7 @@ def test_sourcing_sends_do_not_start_the_follow_up_ladder(seeded, db):
 
     who = db.query(SourcingContact).filter_by(name="김철수").first()
     who.kakao_room_name = "김철수_소싱방"
+    who.participation = "딜 소싱 참여 제안 대기중"      # 참여 안내(처음)를 받는 분
     db.commit()
     job_id = seeded.post("/api/deals/send",
                          json={"contact_ids": [who.id], "mode": "sourcing"}).json()["job_id"]
@@ -534,7 +537,8 @@ def test_sending_uses_the_linked_room(seeded, db, users):
     who = _sc(db, "박세준", "010-1111-2222")
 
     r = seeded.post("/api/deals/send",
-                    json={"contact_ids": [who.id], "mode": "sourcing"})
+                    json={"contact_ids": [who.id], "mode": "sourcing",
+                          "topic": "sourcing_remind"})
     assert r.status_code == 200, r.text
     item = db.query(SendItem).filter_by(job_id=r.json()["job_id"]).one()
     assert item.room_name == "박세준 이사님 가나벤처스 Deal 공유"

@@ -166,8 +166,9 @@ function checkedSourcing(dom) {
 {
   const state = {
     month: "2026-10", month_label: "10월",
+    // 가소싱은 제안 대기중 — 처음 안내(참여 안내)에 뜬다. 나머지는 참여.
     rows: [
-      { id: 101, assignee: "라담당", received: true },
+      { id: 101, assignee: "라담당", received: true, invite_only: true },
       { id: 102, assignee: "나담당", received: false },
       { id: 103, assignee: "가담당", received: false }
     ],
@@ -200,7 +201,10 @@ function checkedSourcing(dom) {
 // 고르던 담당이 사라지면 [전체]로 돌아간다 — 없는 칩이 켜진 채면 아무도 안 보인다.
 {
   let state = {
-    rows: SOURCING.map(function (s) { return { id: s[0], assignee: s[3], received: s[4] }; }),
+    // 모두 제안 대기중 — 처음 안내(참여 안내)에 셋 다 뜬다.
+    rows: SOURCING.map(function (s) {
+      return { id: s[0], assignee: s[3], received: s[4], invite_only: true };
+    }),
     assignees: [{ name: "가담당", count: 2 }, { name: "나담당", count: 1 }]
   };
   const gets = {};
@@ -208,7 +212,9 @@ function checkedSourcing(dom) {
   const t = setup(gets);
   t.dom.document.querySelector('#assignee-filter .chip[data-value="나담당"]').fire("click");
   state = {
-    rows: SOURCING.map(function (s) { return { id: s[0], assignee: "가담당", received: s[4] }; }),
+    rows: SOURCING.map(function (s) {
+      return { id: s[0], assignee: "가담당", received: s[4], invite_only: true };
+    }),
     assignees: [{ name: "가담당", count: 3 }]
   };
   t.dom.root.fire("visibilitychange");     // 이 창으로 돌아왔다(문서까지 올라간다)
@@ -228,7 +234,9 @@ function checkedSourcing(dom) {
 {
   const state = {
     rows: SOURCING.map(function (s) {
-      return { id: s[0], assignee: s[3], received: s[4], out: s[0] === 101 };
+      // 나머지 둘은 제안 대기중 — 처음 안내(참여 안내)에 뜬다.
+      return { id: s[0], assignee: s[3], received: s[4], out: s[0] === 101,
+               invite_only: s[0] !== 101 };
     }),
     assignees: [{ name: "가담당", count: 1 }, { name: "나담당", count: 1 }]
   };
@@ -260,7 +268,7 @@ function checkedSourcing(dom) {
   const state = {
     rows: SOURCING.map(function (s) {
       return { id: s[0], assignee: s[3], received: s[4], out: s[0] === 102,
-               out_label: s[0] === 102 ? LABEL : "" };
+               invite_only: s[0] !== 102, out_label: s[0] === 102 ? LABEL : "" };
     }),
     assignees: [{ name: "가담당", count: 1 }, { name: "나담당", count: 1 }]
   };
@@ -278,10 +286,11 @@ function checkedSourcing(dom) {
             "[전체선택] 이 문구인 분까지 골랐다");
 }
 
-// --- ⑦ 제안 대기중 · 물어보는 중 — 참여 안내(처음)에서만 고른다 ----------------
+// --- ⑦ 제안 대기중 · 물어보는 중 — 참여 안내(처음)에서만, 참여는 다른 글에서만 ----
 //
-// 다시 읽은 줄의 `invite_only` 가 카드에 선다(`data-invite-only`). 월간 리마인드 ·
-// Series A 딜 공유에서는 빠지고, [Series A 딜 공유]에 잠깐 갔다 오면 체크가 돌아온다.
+// 다시 읽은 줄의 `invite_only` 가 카드에 선다(`data-invite-only`). 참여 안내에서는
+// 그 카드만 뜨고(참여인 분은 빠진다), 월간 리마인드 · Series A 딜 공유에서는 그 카드가
+// 빠진다. [Series A 딜 공유]에 잠깐 갔다 오면 체크가 돌아온다.
 {
   const LABEL = "참여 확인 전 · 딜 소싱 참여 제안 대기중";
   const state = {
@@ -299,23 +308,25 @@ function checkedSourcing(dom) {
   assert.strictEqual(offer.hidden, false, "참여 안내인데 제안 대기중인 분이 빠졌다");
   assert.strictEqual(offer.querySelector(".out-tag").hidden, false, "딱지가 안 섰다");
   assert.strictEqual(offer.querySelector(".out-tag").textContent, LABEL);
+  assert.strictEqual(card(t.dom, "나소싱").hidden, true, "참여 안내에 참여 중인 분이 보인다");
   selectAll(t.dom);
-  assert.deepStrictEqual(checkedSourcing(t.dom), ["가소싱", "나소싱", "다소싱"]);
-  assert.deepStrictEqual(previews(t.fetch).pop().body.contact_ids.slice().sort(), [101, 102, 103]);
+  assert.deepStrictEqual(checkedSourcing(t.dom), ["가소싱"],
+                         "[전체선택] 이 참여 안내에서 참여 중인 분까지 골랐다");
+  assert.deepStrictEqual(previews(t.fetch).pop().body.contact_ids, [101]);
 
   pickTopic(t.dom, "sourcing_deal_share");
   assert.strictEqual(offer.hidden, true, "Series A 딜 공유에 제안 대기중인 분이 보인다");
   assert.strictEqual(box(t.dom, "가소싱").checked, false);
   pickTopic(t.dom, "sourcing_intro");
-  assert.deepStrictEqual(checkedSourcing(t.dom), ["가소싱", "나소싱", "다소싱"],
+  assert.deepStrictEqual(checkedSourcing(t.dom), ["가소싱"],
                          "Series A 딜 공유에 갔다 오니 참여 안내 체크가 풀렸다");
 
   pickTopic(t.dom, "sourcing_remind");
   assert.strictEqual(offer.hidden, true, "월간 리마인드에 제안 대기중인 분이 보인다");
   assert.strictEqual(box(t.dom, "가소싱").checked, false);
   selectAll(t.dom);
-  assert.ok(checkedSourcing(t.dom).indexOf("가소싱") === -1,
-            "[전체선택] 이 리마인드에서 제안 대기중인 분까지 골랐다");
+  assert.deepStrictEqual(checkedSourcing(t.dom), ["나소싱", "다소싱"],
+                         "[전체선택] 이 리마인드에서 제안 대기중인 분까지 골랐다");
 }
 
 console.log("ok - 딜 소싱 [보낼 문구] · 이 달 딜 받음 제외 · 명단 다시 읽기 · 불참여 · 확인 전 제외 · 참여 안내만");
