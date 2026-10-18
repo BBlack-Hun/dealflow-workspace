@@ -167,16 +167,34 @@ function opened(replies, opts) {
 }());
 
 (function aCompanyWithoutAFileIsSaidSo() {
+  // 파일이 없는 기업은 빼고 보내고 글 끝에 추후 안내만 나간다(#53).
   const s = opened([previewReply({
-    attachments: [{ company_id: 11, name: A, file: "", no: 1, label: "[기업1]" }],
-    warnings: ["첨부할 IR 자료가 없는 기업: " + A + " — IR 기업 현황에 자료 파일명을 등록하세요"]
+    attachments: [
+      { company_id: 11, name: A, file: "", no: 1, label: "[기업1]", later: true },
+      { company_id: 12, name: B, file: B + "_IR.pdf", no: 3, label: "[기업3]",
+        later: false }
+    ],
+    warnings: ["IR 자료 파일명이 없는 기업: " + A + " — 이번엔 빼고 추후 발송 안내만 나갑니다"]
   })]);
 
-  assert.ok(ir_.attachRows(s.dom)[0].indexOf("첨부할 자료가 없습니다") >= 0);
+  assert.ok(ir_.attachRows(s.dom)[0].indexOf("이번엔 빼고 추후 발송 안내만 나갑니다") >= 0);
   // 서버가 미리 잡아 준 걱정거리는 **삼키지 않는다.**
   const warn = s.dom.document.getElementById("ir-send-warnings");
   assert.strictEqual(warn.hidden, false);
-  assert.ok(warn.textContent.indexOf("첨부할 IR 자료가 없는 기업") >= 0, warn.textContent);
+  assert.ok(warn.textContent.indexOf("IR 자료 파일명이 없는 기업") >= 0, warn.textContent);
+}());
+
+(function nothingToSendIsNotCalledLater() {
+  // 하나도 없으면 아무것도 안 나간다 — '추후 발송' 이라고 하지 않는다.
+  const s = opened([previewReply({
+    attachments: [{ company_id: 11, name: A, file: "", no: 1, label: "[기업1]",
+                    later: false }],
+    warnings: ["보낼 자료가 하나도 없습니다 — 요청은 그대로 남습니다"]
+  })]);
+
+  assert.ok(ir_.attachRows(s.dom)[0].indexOf("첨부할 자료가 없습니다") >= 0);
+  assert.ok(s.dom.document.getElementById("ir-send-warnings").textContent
+    .indexOf("보낼 자료가 하나도 없습니다") >= 0);
 }());
 
 // ── ③ 발송은 이미 있는 길로 ─────────────────────────────────────────────────

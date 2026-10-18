@@ -40,9 +40,11 @@ function person(name, rows) {
     parts: [],
     warnings: [],
     // `label` 은 서버가 짓는다 — 화면은 받아 적기만 한다.
+    // `later` 도 서버 판단 그대로 — 파일이 없고 **다른 기업 자료는 나갈 때**(#53).
     attachments: rows.map(function (r) {
       return { name: r[0], no: r[1], file: r[2],
-               label: r[1] ? "[기업" + r[1] + "]" : "" };
+               label: r[1] ? "[기업" + r[1] + "]" : "",
+               later: !r[2] && rows.some(function (x) { return !!x[2]; }) };
     })
   };
 }
@@ -83,7 +85,7 @@ function show(dom, previews) {
   });
 }
 
-// ── 2) 파일 이름이 없으면 **없다고 말한다** (번호는 그대로) ────────────────
+// ── 2) 파일 이름이 없으면 **빼고 추후 안내만 나간다고 말한다** (번호는 그대로) ──
 //
 // 조용히 비워 두면 자료가 안 나가는 줄 모르고 [발송] 을 누른다. 그리고 자료가
 // 없는 것과 번호가 없는 것은 **다른 이야기**라, 번호는 그대로 있어야 한다.
@@ -91,8 +93,8 @@ function show(dom, previews) {
   const dom = show(null, [person("가담당", [[A, 2, ""], [B, 5, B + "_IR.pdf"]])]);
   const shown = rows(dom);
 
-  assert.ok(shown[0].indexOf("첨부할 자료가 없습니다") >= 0,
-            "자료가 없는데 아무 말도 안 한다: " + shown[0]);
+  assert.ok(shown[0].indexOf("이번엔 빼고 추후 발송 안내만 나갑니다") >= 0,
+            "자료가 없는데 빠진다고 말하지 않는다: " + shown[0]);
   assert.ok(shown[0].indexOf("[기업2]") >= 0,
             "자료가 없다고 번호까지 지웠다: " + shown[0]);
 }

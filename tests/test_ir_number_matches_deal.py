@@ -187,6 +187,12 @@ def test_자료를_한_번_보낸_뒤에도_번호가_그대로다(client, db, s
     고치기 전에는 두 번째 자료 전달이 1 부터 다시 셌다 — 딜 소개에서 2·3번이던
     기업이 1·2번이 되어, 투자사가 기억하는 번호와 다른 기업을 짚었다.
     """
+    from app.models import IrCompany
+
+    # 파일명이 없으면 자료 전달 목록이 안 생긴다(#53) — 보낼 자료를 둔다.
+    for cid in _asked(seed):
+        db.get(IrCompany, cid).ir_file_name = "자료.pdf"
+    db.commit()
     _send(client, db, seed, "ir", _asked(seed))
 
     got = _ir_numbers(_preview(client, seed, "ir", _asked(seed)))

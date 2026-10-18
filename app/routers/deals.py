@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import re
 
-from typing import List, Optional
+from typing import List, Optional, Sequence
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
@@ -167,6 +167,12 @@ FOLLOW_UP_MODES = {
     # `sourcing_msg.body_for()` 가 갈래를 보고 고른다.
     MODE_SOURCING: (sourcing_msg.KIND, "", mc.STAGE_REMIND),
 }
+#: IR 자료 전달에서 **파일명이 없어 이번에 못 보낸 기업**을 글 끝에 알리는 한 줄(#53).
+#: `{기업목록}` 에는 못 보낸 기업이 번호와 함께 들어간다(`deal_numbers.company_list`).
+IR_LATER_KIND = "ir_delivery_later"
+IR_LATER_FALLBACK = "{기업목록} 자료는 준비되는 대로 추후 보내 드리겠습니다."
+#: 고른 기업 모두 파일명이 없을 때 — 발송 목록을 안 만들고 요청도 닫지 않는다.
+IR_NOTHING_NOTE = "보낼 자료가 하나도 없습니다 — 요청은 그대로 남습니다"
 #: 발송 화면의 **탭 → 문구 종류**. 한 곳에서 정해 두고 문구 관리 화면이
 #: 이것을 읽어 "어느 탭에서 쓰는 문구인지" 를 적는다 — 안 그러면 문구가
 #: 열다섯 종류인데 어느 것을 고쳐야 그 탭이 바뀌는지 알 수 없다.
@@ -317,6 +323,7 @@ def _compose_for_contact(
     topic: str = "",
     series_a: Optional[list] = None,
     series_a_empty: str = "",
+    later: Sequence[IrCompany] = (),
 ) -> mc.ComposeResult:
     # 인사말 기본값은 방식마다 다르다. 후속 문구는 이미 대화가 오간 방에 한 줄
     # 덧붙이는 것이라 인사를 다시 붙이지 않는 편이 자연스럽다. 화면에서 켜고 끌 수 있다.
@@ -378,6 +385,12 @@ def _compose_for_contact(
     # `meeting_ask_message`). 인사말 · 단계 · 조립 규칙은 그대로 탄다.
     if closing_override:
         closing_body = closing_override
+    if later:
+        # 자료 전달에서 파일명이 없어 이번에 빠진 기업 — 같은 글 끝에 한 줄(#53).
+        # `{기업목록}` 을 먼저 채운다 — 아래 조립은 그 자리를 **보낸** 기업으로 채운다.
+        closing_body = closing_body.rstrip() + "\n" + _template_body(
+            db, user.id, IR_LATER_KIND, IR_LATER_FALLBACK).replace(
+            "{기업목록}", deal_numbers.company_list(db, contact.id, later))
 
     who = _to_contact_view(contact)
     if mode == MODE_SOURCING and not (who.title or "").strip():
@@ -874,6 +887,13 @@ def preview(
     # 읽어야 한다 — 화면은 "손으로 붙이세요" 인데 파일이 함께 나가면(또는 그
     # 반대면) 사람은 자료를 두 번 보내거나 한 번도 안 보낸다.
     attach_on = req.mode == MODE_IR and ir_attach.auto_attach_enabled(db, user)
+    # 자료 전달은 파일명이 있는 기업만 보내고 나머지는 글 끝에 추후 안내(#53) —
+    # 발송 목록 만들기와 같은 판단이다. 하나도 없으면 발송이 막히므로 나누지
+    # 않고 예전 글을 보여 준다(경고가 막힌다고 말한다).
+    ready, later = (ir_attach.split_by_file(companies) if req.mode == MODE_IR
+                    else (companies, []))
+    if not ready:
+        ready, later = companies, []
     # 화면이 고른 갈래를 먼저 쓴다. 없을 때만 첫 갈래로 돌아간다.
     # Series A 딜 공유는 받는 갈래가 하나뿐이라 그 갈래 문구다.
     sample_bucket = (series_a_share.BUCKET if share
@@ -916,13 +936,14 @@ def preview(
             per_series = share_plan.send
             share_warns.extend(series_a_share.plan_notes(share_plan, req.per_person))
             share_view = series_a_share.plan_view(share_plan)
-        result = _compose_for_contact(db, user, contact, companies,
+        result = _compose_for_contact(db, user, contact, ready,
                                       req.opening_template_id, req.closing_template_id,
                                       mode=req.mode,
                                       include_opening=req.include_opening,
                                       topic=topic, series_a=per_series,
                                       series_a_empty=(series_a_share.NOTHING_SLOT
-                                                      if share and not sample else ""))
+                                                      if share and not sample else ""),
+                                      later=later)
         room = _room_of(contact, linked)
         room_ok = bool(room) and contact.room_verified in ("verified", "unverified")
         if sample:
@@ -938,20 +959,15 @@ def preview(
             if thin and req.mode != MODE_IR else []
         )
         # 파일명이 비어 있으면 **붙일 것을 못 찾는다.** 발송기가 붙이든 사람이
-        # 붙이든 마찬가지다. 발송 목록을 만들기 **전에** 알려야 한다.
-        #
-        # 자동 첨부를 켠 계정에서는 경고로 끝나지 않는다 — 목록을 만드는 자리가
-        # 아예 막는다(`create_send_list`). 자료 없이 "보내드렸습니다" 만 나가는
-        # 것이 제일 나쁘기 때문이다.
-        if req.mode == MODE_IR:
-            no_file = ir_attach.missing_files(companies)
-            if no_file:
-                thin_warnings.append(
-                    f"첨부할 IR 자료가 없는 기업: {', '.join(no_file)} — "
-                    + ("IR 기업 현황에 자료 파일명을 등록해야 발송할 수 있습니다"
-                       if attach_on else
-                       "IR 기업 현황에 자료 파일명을 등록하세요")
-                )
+        # 붙이든 마찬가지다. 발송 목록을 만들기 **전에** 알려야 한다 — 그 기업은
+        # 빼고 보내고 추후 안내만 나가며, 하나도 없으면 목록을 만드는 자리가
+        # 막는다(`create_send_list`).
+        if req.mode == MODE_IR and companies and not ir_attach.file_names(companies):
+            thin_warnings.append(IR_NOTHING_NOTE)
+        elif later:
+            thin_warnings.append(
+                f"IR 자료 파일명이 없는 기업: {', '.join(c.name for c in later)} — "
+                "이번엔 빼고 추후 발송 안내만 나갑니다")
         previews.append({
             "contact_id": contact.id,
             "name": contact.name,
@@ -1006,9 +1022,11 @@ def preview(
             # **파일 이름**(0056) — 링크가 아니다. 자동 첨부를 켰으면 발송기가
             # 이 이름으로 파일을 찾아 붙이고, 켜지 않았으면 사람이 이 이름을
             # 보고 PC 카톡에서 붙인다. 어느 쪽이든 **번호 차례대로** 간다.
+            # **`later`** — 이번엔 빠지고 글 끝에 추후 발송 안내만 나가는 기업(#53).
             "attachments": ([{"company_id": c.id, "name": c.name,
                               "file": c.ir_file_name or "", "no": no,
-                              "label": deal_numbers.label(no) if no else ""}
+                              "label": deal_numbers.label(no) if no else "",
+                              "later": c in later}
                              for no, c in deal_numbers.numbered_companies(
                                  db, contact.id, companies)]
                             if req.mode == MODE_IR else []),
@@ -1118,20 +1136,23 @@ def create_send_list(
     # 서버에는 그 파일이 없다(`services/mail_sender.py`).
     # 실을지 말지만 여기서 가린다. **무엇을 어떤 차례로** 실을지는 담당자마다
     # 다르므로(번호가 담당자마다 다르다) 아래 담당자 고리에서 정한다.
-    attach_on = False
-    if req.mode == MODE_IR and not by_email and ir_attach.auto_attach_enabled(db, user):
-        # 파일명이 빈 기업이 하나라도 있으면 **목록을 만들지 않는다.**
-        #
-        # 만들어 두면 발송기가 그 건에서 실패하고, 실패한 건은 문구도 안 나가서
-        # 그 사람만 아무것도 못 받는다 — 그것을 회차가 끝난 뒤에 알게 된다.
-        # 방 이름이 없을 때와 같은 자리에서 같은 방식으로 막는다: **말하고 멈춘다.**
-        blank = ir_attach.missing_files(companies)
-        if blank:
-            raise HTTPException(
-                status_code=400,
-                detail=(f"'{blank[0]}' IR 자료 파일명 미등록 — IR 기업 현황에서 "
-                        f"파일명을 넣거나 발송 대상에서 제외하세요"))
-        attach_on = True
+    attach_on = (req.mode == MODE_IR and not by_email
+                 and ir_attach.auto_attach_enabled(db, user))
+
+    # ── 자료 전달은 **파일명이 있는 기업만** 보낸다 (#53) ─────────────────────
+    #
+    # 없는 기업은 같은 글 끝에 "추후 보내 드리겠습니다" 한 줄로 알리고(`later`),
+    # 회차(`DealBatchCompany`)와 활동 이력에는 **보낸 기업만** 적는다 — 그래서
+    # 보낸 뒤 `pipeline.close_requests_for` 가 보낸 기업 요청만 닫고 못 보낸
+    # 요청은 '요청 받음' 으로 남는다. 발송기가 붙이든 사람이 붙이든 같은 규칙이다.
+    #
+    # 하나도 없으면 **목록을 만들지 않는다** — 자료 없이 "보내드렸습니다" 만
+    # 나가는 것이 제일 나쁘다. 말하고 멈춘다.
+    later: list = []
+    if req.mode == MODE_IR:
+        companies, later = ir_attach.split_by_file(companies)
+        if not companies:
+            raise HTTPException(status_code=400, detail=IR_NOTHING_NOTE)
 
     # Resolve + validate target contacts (must be owned, must have a room name).
     sourcing = req.mode == MODE_SOURCING
@@ -1419,7 +1440,8 @@ def create_send_list(
                                             mode=req.mode,
                                             include_opening=req.include_opening,
                                             topic=sourcing_topic,
-                                            series_a=share_plan.get(contact.id))
+                                            series_a=share_plan.get(contact.id),
+                                            later=later)
             text, parts = composed.text, list(composed.parts)
         if by_email:
             # **제목에 `[테스트]` 를 붙이지 않는다.** 붙이던 까닭은 카톡이 전부

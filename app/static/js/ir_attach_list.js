@@ -78,10 +78,13 @@
       else { badge = '<span class="ir-no none">번호 없음</span> '; missing += 1; }
       // 이름·파일명은 **한 덩어리**로 싼다. 줄이 `flex` 라 안 싸면 글자와 파일명이
       // 각각 따로 서서 사이의 `—` 가 엉뚱한 자리로 밀린다.
+      // 파일이 없는 기업은 빼고 보내고 글 끝에 추후 안내만 나간다(`later`, #53).
+      // 고른 기업 모두 없으면 아무것도 안 나가므로 `later` 가 아니다.
       li.innerHTML = badge + '<span class="ir-body">' + (a.file
         ? escapeHtml(a.name) + " — <code>" + escapeHtml(a.file) + "</code>"
-        : escapeHtml(a.name) +
-          ' <span class="warn-text">— 첨부할 자료가 없습니다</span>') + '</span>';
+        : escapeHtml(a.name) + ' <span class="warn-text">— '
+          + (a.later ? "이번엔 빼고 추후 발송 안내만 나갑니다" : "첨부할 자료가 없습니다")
+          + '</span>') + '</span>';
       list.appendChild(li);
     });
     if (!list.children.length) {

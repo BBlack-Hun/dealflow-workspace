@@ -211,9 +211,9 @@ def test_the_agent_gets_one_message(stage, db):
 # --- 자료가 없으면 첨부할 것이 없다 --------------------------------------------
 
 def test_a_company_without_material_is_still_warned(stage):
-    """파일명이 비어 있으면 붙일 것을 못 찾는다 — 보내기 전에 알려야 한다."""
+    """파일명이 비어 있으면 붙일 것을 못 찾는다 — 빼고 보낸다고 보내기 전에 알린다."""
     preview = _preview(stage, [stage["agri"].id, stage["medi"].id])
-    assert any("샘플메디" in w and "첨부할 IR 자료가 없는 기업" in w
+    assert any("샘플메디" in w and "이번엔 빼고 추후 발송 안내만 나갑니다" in w
                for w in preview["warnings"])
 
 
@@ -282,7 +282,8 @@ def test_sending_leaves_a_line_in_the_history(stage, db):
     assert len(rows) == 1
     assert "PC 에서 직접 첨부" in rows[0].content
     assert rows[0].source == "system"
-    assert sorted(rows[0].companies) == ["샘플메디", "샘플애그"]
+    # 파일명이 없는 샘플메디는 이번에 안 나갔다 — 보낸 기업만 적는다(#53).
+    assert rows[0].companies == ["샘플애그"]
 
 
 def test_pressing_it_leaves_nothing_until_it_is_sent(stage, db):
