@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_custom_cols.html" as cc with context %}
 {% block content %}
 {#
   딜 소싱 — 우리 딜을 같이 볼 사람 명단.
@@ -156,6 +157,9 @@
         {% endfor %}
         {% endif %}
         {% endfor %}
+        {# 관리자가 붙인 추가 칸 — `COLUMNS` 밖, 맨 오른쪽. 갈래(탭)를 가리지 않고
+           같은 칸이다(`_custom_cols.html`). #}
+        {{ cc.heads() }}
       </tr>
     </thead>
     <tbody>
@@ -178,7 +182,7 @@
           data-part-kind="{{ part_kind[r.id] }}"
           data-s-requested_at="{{ requested_sort[r.id] }}"
           data-search="{{ (r.name ~ ' ' ~ (r.firm or '') ~ ' ' ~ (r.memo or '') ~ ' ' ~ (r.title or ''))|lower }}"
-          {% for field, label, width, filterable in columns if filterable %}data-f-{{ field }}="{{ (assignees.get(r.id) if field == 'assignee_name' else requested[r.id] if field == 'requested_at' else r|attr(field)) or '' }}" {% endfor %}>
+          {% for field, label, width, filterable in columns if filterable %}data-f-{{ field }}="{{ (assignees.get(r.id) if field == 'assignee_name' else requested[r.id] if field == 'requested_at' else r|attr(field)) or '' }}" {% endfor %}{{ cc.attrs(r.id) }}>
         <td class="pick-col"><input type="checkbox" class="js-sourcing-pick" value="{{ r.id }}"
             aria-label="{{ r.name }} 고르기"></td>
         <td class="rowno muted"></td>
@@ -345,6 +349,7 @@
           </div>
           {% endif %}
         </td>
+        {{ cc.cells(r.id) }}
       </tr>
       {% endfor %}
     </tbody>

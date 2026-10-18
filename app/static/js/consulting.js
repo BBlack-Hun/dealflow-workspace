@@ -368,7 +368,13 @@
     var id = parseInt(tr.getAttribute("data-id"), 10);
     var body = {};
     var noteId = cell.getAttribute("data-note");
-    if (noteId) {
+    var custom = cell.getAttribute("data-custom");
+    var target = "/api/consulting/" + id;
+    if (custom) {
+      // 관리자가 붙인 추가 칸(`_custom_cols.html`) — 칸 값 길로 간다(inline_edit.js 와 같다).
+      target = "/api/custom-values/" + cell.getAttribute("data-custom-rows") + "/" + id;
+      body = { column_id: Number(custom), value: value };
+    } else if (noteId) {
       var notes = {};
       notes[noteId] = value;
       body.notes = notes;
@@ -376,8 +382,8 @@
       body[cell.getAttribute("data-field")] = value;
     }
     cell.classList.add("saving");
-    fetch("/api/consulting/" + id, {
-      method: "PATCH",
+    fetch(target, {
+      method: custom ? "PUT" : "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
     })
@@ -393,6 +399,12 @@
         // **고친 시각을 그 자리에서.** 서버가 보내 준 글자를 그대로 적는다
         // (꼴을 정하는 자리는 `app/clock.py` 의 `stamp_text` 한 곳이다).
         showStamp(cell, data && data.stamps);
+        // 추가 칸 — 서버가 맞춘 값으로 칸과 필터 값(`data-f-cc*`)을 다시 적는다.
+        if (custom && data && typeof data.value === "string") {
+          valueBox(cell).textContent = data.value;
+          var fk = "data-f-" + cell.getAttribute("data-field");
+          if (tr.hasAttribute(fk)) tr.setAttribute(fk, data.value);
+        }
         refreshRowFlags(tr);
         // 플래그만 고치고 끝내면 **화면은 옛 조건 그대로**다. `드랍` 만 보는
         // 중에 한 곳을 `관리 중` 으로 바꾸면 이제 드랍이 아닌데도 목록에

@@ -706,7 +706,15 @@
       if (!id) return;
       var body = {};
       var field = cell.getAttribute("data-field");
-      if (cell.hasAttribute("data-note")) {
+      var target = url + "/" + id;
+      var method = "PATCH";
+      if (cell.hasAttribute("data-custom")) {
+        // 관리자가 붙인 추가 칸(`_custom_cols.html`)은 줄의 표가 아니라 칸 값 길로
+        // 간다. 고칠 수 있는 줄인지는 그 길이 이 표의 판정 그대로 본다.
+        target = "/api/custom-values/" + cell.getAttribute("data-custom-rows") + "/" + id;
+        method = "PUT";
+        body = { column_id: Number(cell.getAttribute("data-custom")), value: value };
+      } else if (cell.hasAttribute("data-note")) {
         // 그 명단에만 있는 칸(달마다 늘어나는 칸 포함)은 `notes` 묶음으로 간다.
         // 칸이 하나 늘 때마다 서버 스키마에 이름을 또 적지 않아도 되게 —
         // 그렇게 적어 두면 네 곳 중 하나만 빠져도 조용히 저장이 안 된다.
@@ -718,8 +726,8 @@
       }
 
       cell.classList.add("saving");
-      fetch(url + "/" + id, {
-        method: "PATCH",
+      fetch(target, {
+        method: method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body)
       })
@@ -742,6 +750,12 @@
           }
           setTimeout(function () { cell.classList.remove("saved"); }, 900);
           return r.json().catch(function () { return {}; }).then(function (data) {
+            // 추가 칸은 서버가 맞춘 값(`o` → `O`)으로 다시 적는다 — 칸과 필터가 저장값과 같게.
+            if (method === "PUT" && data && typeof data.value === "string" && data.value !== value) {
+              cell.textContent = data.value;
+              var fk = "data-f-" + (cell.getAttribute("data-filter-key") || field);
+              if (row && row.hasAttribute(fk)) row.setAttribute(fk, data.value);
+            }
             table.dispatchEvent(new CustomEvent("inline-saved",
               { detail: { row: row, cell: cell, value: value, data: data } }));
           });

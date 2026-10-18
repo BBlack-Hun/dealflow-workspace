@@ -68,6 +68,11 @@ MENU = [
     # 값이 같이 바뀌므로 관리자만이다(`routers/taxonomy.py`).
     {"key": "taxonomy", "label": "분야 기준 목록", "href": "/taxonomy", "ready": True,
      "admin_only": True},
+    # 표에 붙이는 추가 칸(#6 · #7 · #8 · #12 · #46). 칸을 붙이고 이름을 바꾸고
+    # 숨기면 그 화면을 쓰는 팀 전체의 머리글이 바뀌므로 관리자만이다 — 팀원은
+    # 표에서 값만 적는다(`routers/custom_columns.py`).
+    {"key": "columns", "label": "컬럼 관리", "href": "/columns", "ready": True,
+     "admin_only": True},
 ]
 
 

@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import get_current_user, templates
 from ..models import IrCompany, RevenueForecast, User
+from ..services import custom_columns
 from ..services import forecast as svc
 from ..ui import base_ctx
 from .data_io import _xlsx
@@ -65,6 +66,8 @@ def forecast_page(request: Request, db: Session = Depends(get_db),
                      db.execute(select(User).order_by(User.id)).scalars()]
                     if user.role == "admin" else []),
     })
+    # 관리자가 붙인 추가 칸(`컬럼 관리` · `_custom_cols.html`).
+    ctx.update(custom_columns.view(db, "forecast", "revenue_forecasts"))
     return templates.TemplateResponse("forecast.html", ctx)
 
 
@@ -74,10 +77,13 @@ def export_forecast(db: Session = Depends(get_db),
                     scope: str = "", member: int = 0):
     """화면과 같은 범위 · 같은 칸 차례. 자동 칸은 화면에 보이는 글자 그대로."""
     who, _team = _scope(db, user, scope, member)
+    extra = custom_columns.view(db, "forecast", "revenue_forecasts")
     rows = [[v["cells"][f]["text"] for f, _l, _s in svc.COLUMNS]
+            + custom_columns.cells(extra, v["id"])
             for v in svc.views(db, svc.rows_for(db, who))]
     return _xlsx("매출예상리스트.xlsx", "매출예상리스트",
-                 [label for _f, label, _s in svc.COLUMNS], rows)
+                 [label for _f, label, _s in svc.COLUMNS]
+                 + custom_columns.names(extra), rows)
 
 
 class ForecastIn(BaseModel):

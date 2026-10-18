@@ -1,0 +1,50 @@
+{#
+  표에 붙인 **추가 칸**(#6 · #7 · #8 · #12 · #46) — 머리글 · 줄 속성 · 칸.
+
+  관리자가 `컬럼 관리` 에서 붙인 칸을 표 오른쪽에 세운다. 표마다 머리글과 칸을
+  손으로 적으면 하나를 고칠 때 나머지가 남는다 — 여섯 표가 이 조각 하나를 쓴다.
+
+    {% import "_custom_cols.html" as cc with context %}
+    <th>…</th>{{ cc.heads() }}
+    <tr data-id="…"{{ cc.attrs(r.id) }}>
+    <td>…</td>{{ cc.cells(r.id) }}
+
+  컨텍스트는 `services/custom_columns.view` 가 싣는다(`custom_cols` · `custom_vals` ·
+  `custom_rows`). 안 실은 화면에서는 아무것도 안 그린다.
+
+  칸을 눌러 적으면 `data-custom` 을 보고 줄의 표가 아니라 칸 값 길로 간다
+  (`inline_edit.js` · `consulting.js` 의 `save`). **O/X 칸만 필터를 세운다** — 메모는
+  줄마다 글이 달라 고를 것이 없다. 줄이 싣는 값(`data-f-cc*`)과 머리글의 선언이
+  같은 조건이라 한쪽만 서는 일이 없다(tests/test_filter_columns.py 의 2번).
+#}
+{% macro heads() -%}
+{%- for c in custom_cols %}
+<th class="custom-col" style="width:{{ 90 if c.kind == 'ox' else 180 }}px" title="{{ c.name }} · 눌러서 적습니다"
+    {%- if c.kind == 'ox' %} data-filters="cc{{ c.id }}:{{ c.name }}"{% endif %}>{{ c.name }}{% if c.kind == 'ox' %}<div class="th-filters"></div>{% endif %}</th>
+{%- endfor %}
+{%- endmacro %}
+
+{# 추가 칸이 차지하는 폭 — 칸 폭의 합으로 `min-width` 를 세우는 표(스타트업 명단)가 더한다. #}
+{% macro width() -%}
+{%- set ns = namespace(w=0) -%}
+{%- for c in custom_cols %}{% set ns.w = ns.w + (90 if c.kind == 'ox' else 180) %}{% endfor -%}
+{{ ns.w }}
+{%- endmacro %}
+
+{% macro attrs(row_id) -%}
+{%- for c in custom_cols if c.kind == 'ox' %} data-f-cc{{ c.id }}="{{ ((custom_vals or {}).get(row_id) or {}).get(c.id, '') }}"{% endfor -%}
+{%- endmacro %}
+
+{# `td=True` — 투자컨설턴트 표. 그 편집기는 `td.cell` 만 연다(consulting.js). #}
+{% macro cells(row_id, td=False) -%}
+{%- set got = (custom_vals or {}).get(row_id) or {} %}
+{%- for c in custom_cols %}{% set v = got.get(c.id, '') %}
+{%- if td %}
+<td class="cell{% if c.kind == 'memo' %} multi{% endif %}" data-field="cc{{ c.id }}" data-custom="{{ c.id }}" data-custom-rows="{{ custom_rows }}"
+    {%- if c.kind == 'ox' %} data-choices="{{ ox_choices }}"{% endif %}>{{ v }}</td>
+{%- else %}
+<td title="{{ v }}"><div class="cell{% if c.kind == 'memo' %} clamp2{% endif %}" data-field="cc{{ c.id }}" data-custom="{{ c.id }}" data-custom-rows="{{ custom_rows }}"
+    {%- if c.kind == 'ox' %} data-type="pick" data-choices="{{ ox_choices }}"{% else %} data-type="long"{% endif %}>{{ v }}</div></td>
+{%- endif %}
+{%- endfor %}
+{%- endmacro %}

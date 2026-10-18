@@ -19,6 +19,7 @@ from .routers import (agent_api, companies, consulting, contacts, dashboard,
                       startup_outreach, startup_send)
 from .routers import ir_link as ir_link_router
 from .routers import taxonomy as taxonomy_router
+from .routers import custom_columns as custom_columns_router
 
 
 def create_app() -> FastAPI:
@@ -106,6 +107,9 @@ def create_app() -> FastAPI:
     # 관리자 메뉴 `분야 기준 목록`(`/taxonomy`). 위 `/ir-link` 와 같은 까닭으로
     # `pages.router` 의 캐치올보다 먼저 붙는다.
     app.include_router(taxonomy_router.router)
+    # 관리자 메뉴 `컬럼 관리`(`/columns`) · 표에서 추가 칸 값 적기. 같은 까닭으로
+    # 캐치올보다 먼저 붙는다.
+    app.include_router(custom_columns_router.router)
     app.include_router(llm_brief.router)
     # 공지. [확인] 은 **모든 화면**에서 눌리므로(판이 밑틀에 선다) 화면
     # 라우터가 아니라 여기 따로 선다 — 왜 그런지는 `routers/notices.py`.

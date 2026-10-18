@@ -183,6 +183,9 @@ CONSULTANT_PATHS = (
     "/consulting",
     "/api/consulting",
     "/api/export/consulting.xlsx",
+    # 표에 붙인 추가 칸의 값 적기. 주소는 여러 화면이 같이 쓰므로, 자기 화면
+    # (투자컨설턴트) 줄인지는 라우터가 따로 본다(`routers/custom_columns.put_value`).
+    "/api/custom-values",
     # 참고 자료 패널. 투자사 관리 현황과 주소를 같이 쓴다 — 그래서 어느 화면의
     # 자료인지는 라우터가 따로 본다(routers/contacts.py 의 `_editable_ref`).
     "/ref-sheets",

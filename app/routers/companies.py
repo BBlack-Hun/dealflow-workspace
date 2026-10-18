@@ -28,7 +28,7 @@ from ..clock import stamp_text
 from ..db import get_db
 from ..deps import NotAdmin, admin_only, get_current_user, templates
 from ..models import IrCompany, OneLinerBackup, User
-from ..services import (amount, auth as auth_svc, deal_history, edit_log,
+from ..services import (amount, auth as auth_svc, custom_columns, deal_history, edit_log,
                         email_domains, room_match)
 from ..services.one_liner import (
     AUTO, apply_one_liner, bulk_rows, compose_one_liner, one_liner_status, origin,
@@ -721,6 +721,8 @@ def companies_page(request: Request, db: Session = Depends(get_db),
         "summary_labels": SUMMARY_LABELS,
         "contract_labels": CONTRACT_LABELS,
     })
+    # 관리자가 붙인 추가 칸 — 두 탭이 같은 칸을 쓴다(`_custom_cols.html`).
+    ctx.update(custom_columns.view(db, "companies", "ir_companies"))
     return templates.TemplateResponse("companies.html", ctx)
 
 
