@@ -17,7 +17,7 @@ search_hotkey: ["ctrl", "f"]          # 친구/채팅 검색 열기
 timings:
   window_wait: 5.0          # 메인 창 존재/준비 대기
   after_search_hotkey: 0.4  # Ctrl+F 후
-  after_query_paste: 0.8    # 방 이름 붙여넣기 후 검색 결과 대기
+  after_query_paste: 1.5    # 방 이름 붙여넣기 후 검색 결과 대기 (0.11.11: 0.8 → 1.5 — 짧으면 결과가 서기 전 Enter 로 다른 방이 열린다)
   after_open_room: 0.8      # Enter로 방 연 후
   chat_wait: 2.0            # 채팅창 핸들 대기
   before_message_paste: 0.2

@@ -1,4 +1,4 @@
-"""Windows 발송이 **같은 방으로 연달아** 보내면 한 건 걸러 실패하지 않는가 (0.11.9 → 0.11.10).
+"""Windows 발송이 **같은 방으로 연달아** 보내면 한 건 걸러 실패하지 않는가 (0.11.9 → 0.11.11).
 
 ## 실제로 난 일
 
@@ -33,14 +33,16 @@ room_mismatch` 로 번갈았다. 0.11.9 는 '보낸 뒤 Esc 한 번이 채팅창
     ① 같은 방으로 연달아 보내도 **전부** 나간다 — Enter 로 안 열리면 한 번 더 찾는다
     ② 다시 찾기가 없으면 실기처럼 번갈아 실패한다 (흉내가 증상을 재현하는지)
     ③ 그 방 창이 **이미 떠 있어도** 나간다 — 먼저 닫고 새로 연다
-    ④ 키가 가는 **앞 창**이 그 방이 아니면 안 보낸다 (같은 제목 창이 뒤에 있어도).
-       채팅창이 열린 뒤에는 다시 찾지 않는다
+    ④ 키가 가는 **앞 창**이 그 방이 아니면 안 보낸다 (같은 제목 창이 뒤에 있어도)
     ⑤ 제목이 어긋나면 여전히 room_mismatch 이고, **앞 창 제목** · 검색 결과를 적는다.
        앞 창이 카톡 창이 아니면 Esc 를 누르지 않는다
     ⑥ focus_failed 에 까닭을 적는다
     ⑦ 앞 건이 **어떻게 끝났든**(실패 · 예외) 다음 건은 같은 자리에서 시작한다
     ⑧ 메인 창을 숨기지 않는다 — 닫힌 검색창에 Esc 를 누르지 않고, 누른 뒤에는 기다렸다 본다
     ⑨ 결과 목록이 읽히면 그 방이 선 뒤에 Enter 를 누른다
+    ⑩ (0.11.11) **다른 방**이 열리면 그 창만 닫고 한 번만 더 찾는다. 실패 문구는 같은 방의
+       다른 이름일 때만 '방 이름을 고치라' 고 하고, 다른 방이면 '그대로 두고 재시도' 다.
+       Enter 전 대기는 1.5초다
 
 방 이름은 **전부 지어낸 값**이다 — 저장소가 공개다.
 """
@@ -117,6 +119,9 @@ class SameRoomWin(kw.KakaoDesktopSender):
                닫고 검색 상태를 지운다. 닫혀 있으면 메인 창이 숨는다(`hide_late` 면
                다음 대기 뒤에 — 숨기기는 한 박자 늦게 일어난다)
 
+    `wrong_opens` 가 있으면 검색창에서 누른 Enter 가 그 방을 **차례로 하나씩** 연다 — 결과가
+    서기 전에 Enter 가 눌려 대화 목록 맨 위의 다른 방이 열리는 것(0.11.10 실기 뒤의 짐작).
+
     결과 목록은 `list_readable` 일 때만 UIA 로 읽힌다(실기 PC 는 못 읽었다 — 0.11.1).
     새로 찾은 뒤 `lag_reads` 번째 읽기까지는 `stale` 줄이 보인다 — 결과가 한 박자 늦게
     선다(`_search_titles` 머리말 — 직전 검색의 결과가 잡혔다).
@@ -124,7 +129,7 @@ class SameRoomWin(kw.KakaoDesktopSender):
 
     def __init__(self, *, rooms=(ROOM, OTHER), opens=None, uia_clear=True,
                  activate_existing=True, input_readable=True, list_readable=False,
-                 lag_reads=0, stale=(), hide_late=False):
+                 lag_reads=0, stale=(), hide_late=False, wrong_opens=()):
         self.sel = dict(SELECTORS)
         self.sel["timings"] = {k: 0 for k in SELECTORS.get("timings", {})}
         self.screenshot_dir = ""
@@ -156,6 +161,9 @@ class SameRoomWin(kw.KakaoDesktopSender):
         self.delivered = []
         self.next_hwnd = 500
         self.opened_at = []                 # 방을 연 Enter 의 키 순번
+        self.wrong_opens = list(wrong_opens)
+        self.enter_queries = []             # 검색창에서 Enter 를 누른 때의 검색칸 글자
+        self.pasted_into = []               # 채팅 입력란에 붙여 넣은 방 제목
         self.resets = 0                     # 열린 검색창을 Esc 로 닫은 수
         hotkey, press = self._pyautogui.hotkey, self._pyautogui.press
 
@@ -201,6 +209,7 @@ class SameRoomWin(kw.KakaoDesktopSender):
         elif keys == ("ctrl", "v"):
             if self.fg in self.inputs:
                 self.inputs[self.fg] += self._pyperclip.text
+                self.pasted_into.append(self.windows[self.fg][0])
             elif on_main and self.search_open:
                 self.kakao.text += self._pyperclip.text
                 self._typed()
@@ -212,10 +221,13 @@ class SameRoomWin(kw.KakaoDesktopSender):
             if self.fg in self.inputs:
                 self.delivered.append((self.windows[self.fg][0], self.inputs[self.fg]))
                 self.inputs[self.fg] = ""
-            elif self.fg == MAIN and self.search_open and self.fresh and self.results:
+            elif self.fg == MAIN and self.search_open and (
+                    self.wrong_opens or (self.fresh and self.results)):
+                self.enter_queries.append(self.kakao.text)
+                title = self.wrong_opens.pop(0) if self.wrong_opens else self.results[0]
                 self.fresh = False
                 self.opened_at.append(len(self._pyautogui.keys))
-                self._open(self.results[0])
+                self._open(title)
                 self.search_open = False                 # 카톡이 검색창을 스스로 닫는다
         elif key == "esc":
             if self.fg in self.inputs:
@@ -397,16 +409,17 @@ def test_다른_앱의_같은_제목_창은_닫지_않는다():
 
 def test_뒤에_같은_제목_창이_있어도_앞_창이_다른_방이면_안_보낸다():
     """검색이 다른 방을 열었는데 그 방 창이 뒤에 떠 있었다 — 0.11.8 은 통과시켰고,
-    입력란을 못 읽는 PC 에서는 **앞에 열린 다른 방으로** 나갔다. 채팅창이 열렸으니
-    다시 찾지도 않는다(그 창에 무엇이 들어갔는지 모르는 채 되풀이하지 않는다)."""
+    입력란을 못 읽는 PC 에서는 **앞에 열린 다른 방으로** 나갔다. (0.11.11) 다른 방이면
+    그 창만 닫고 **한 번만** 더 찾는다 — 또 다른 방이면 멈춘다. 어느 창에도 안 붙였다."""
     sender = SameRoomWin(opens={ROOM: OTHER}, input_readable=False)
     sender.open_beforehand(400, ROOM)
     result = sender.send_text(ROOM, "안녕하세요")
     assert not result.ok
     assert result.error.startswith("room_mismatch:")
-    assert sender.delivered == []
-    assert len(sender.opened_at) == 1
-    assert sender._pyautogui.keys.count(("ctrl", "f")) == 1
+    assert sender.delivered == [] and sender.pasted_into == []
+    assert len(sender.opened_at) == 2                           # 한 번만 더 찾았다
+    assert sender.room_windows(OTHER) == []                     # 연 다른 방은 닫았다
+    assert sender.stray_keys == [] and sender.hides == 0
 
 
 def test_앞_창_대조():
@@ -427,15 +440,18 @@ def test_앞_창_대조():
 # ── ⑤ 제목이 어긋나면 여전히 막고, 앞 창 제목을 적는다 ────────────────────
 
 def test_제목이_어긋나면_안_보내고_열린_방_제목을_알려준다():
+    """방 이름이 든 다른 제목(같은 방의 다른 이름)이 열렸다 — 그 제목으로 고치라고 안내한다."""
     actual = ROOM + " 외 1명"
     sender = SameRoomWin(opens={ROOM: actual})
     result = sender.send_text(ROOM, "안녕하세요")
     assert not result.ok
     assert result.error.startswith("room_mismatch:")
-    assert actual in result.error
-    assert sender.delivered == []
-    after_open = sender._pyautogui.keys[sender.opened_at[0]:]
-    assert after_open and all(k == "esc" for k in after_open)   # 붙여 넣지 않았다
+    assert f"실제로 열린 방: {actual!r}" in result.error
+    assert "똑같이 고치면 나갑니다" in result.error
+    assert "그대로 두고" not in result.error
+    assert sender.delivered == [] and sender.pasted_into == []  # 붙여 넣지 않았다
+    after_open = sender._pyautogui.keys[sender.opened_at[-1]:]
+    assert after_open and all(k == "esc" for k in after_open)   # 연 뒤로는 Esc 뿐
     assert sender.room_windows(actual) == []                    # 그 창만 닫았다
 
 
@@ -631,3 +647,78 @@ def test_목록이_읽히면_같은_방_다섯_건도_다시_찾아_전부_나�
     sender = SameRoomWin(list_readable=True)
     results = [sender.send_text(ROOM, f"{n}번째") for n in range(1, 6)]
     assert [r.ok for r in results] == [True] * 5, [r.error for r in results]
+
+
+# ── ⑩ 다른 방이 열리면 그 창만 닫고 한 번 더 찾는다 (0.11.11) ──────────────
+
+@pytest.mark.parametrize("uia_clear,list_readable",
+                         [(True, False), (False, False), (True, True)],
+                         ids=["UIA로_비움", "키로_비움", "목록_읽힘"])
+def test_다른_방이_열리면_그_창만_닫고_한_번_더_찾아_보낸다(caplog, uia_clear, list_readable):
+    """Enter 가 다른 방을 열었다(결과가 서기 전에 눌린 것으로 본다). 입력란에는 아직 아무것도
+    안 넣었다 — 그 창만 닫고, 검색 상태를 지우고(열린 검색창에 Esc) 칸을 비워 다시 넣고
+    찾아 그 방으로 보낸다. 다른 방에는 한 글자도 안 들어간다."""
+    sender = SameRoomWin(wrong_opens=[OTHER], input_readable=False,
+                         uia_clear=uia_clear, list_readable=list_readable)
+    with caplog.at_level(logging.WARNING, logger="agent.kakao"):
+        result = sender.send_text(ROOM, "안녕하세요")
+    assert result.ok, result.error
+    assert sender.delivered == [(ROOM, "안녕하세요")]
+    assert sender.pasted_into == [ROOM]                         # 다른 방에는 안 붙였다
+    assert sender.enter_queries == [ROOM, ROOM]                 # 칸에는 늘 방 이름 하나만
+    assert len(sender.opened_at) == 2
+    assert sender.resets == 1                                   # 검색 상태를 지웠다
+    assert sender.room_windows(OTHER) == [] and sender.room_windows() == []
+    assert sender.stray_keys == [] and sender.hides == 0
+    assert f"다른 방이 열렸습니다({OTHER!r})" in caplog.text
+
+
+def test_다시_찾아도_다른_방이면_멈추고_그대로_두고_재시도하라고_적는다():
+    """두 번 다 다른 방 — 한 번만 더 찾고 멈춘다. 그 제목으로 방 이름을 고치면 다음 발송이
+    엉뚱한 사람에게 가므로, '고치라' 가 아니라 '그대로 두고 [실패 재시도]' 라고 적는다."""
+    sender = SameRoomWin(wrong_opens=[OTHER, OTHER])
+    result = sender.send_text(ROOM, "안녕하세요")
+    assert not result.ok and result.error.startswith("room_mismatch:")
+    assert f"다른 방이 열렸습니다: {OTHER!r}" in result.error
+    assert "방 이름은 그대로 두고 [실패 재시도]를 누르세요" in result.error
+    assert "고치면" not in result.error
+    assert sender.delivered == [] and sender.pasted_into == []
+    assert len(sender.opened_at) == 2
+    assert sender.room_windows(OTHER) == []
+
+
+def test_다른_방을_닫은_뒤_포커스를_못_잡으면_키를_더_누르지_않는다():
+    sender = SameRoomWin(wrong_opens=[OTHER])
+    real = sender._close_wrong_room
+
+    def close_then_lose(win):
+        real(win)
+        sender.windows[OTHER_APP] = ("메모장", 9)
+        sender.blocker = OTHER_APP
+
+    sender._close_wrong_room = close_then_lose
+    result = sender.send_text(ROOM, "안녕하세요")
+    assert result.error.startswith("focus_failed:")
+    assert "앞 창: '메모장'" in result.error
+    assert sender._pyautogui.keys.count(("ctrl", "f")) == 1    # 다시 찾지 않았다
+    assert sender.delivered == [] and sender.pasted_into == []
+
+
+def test_검색어를_넣고_Enter_전에_1_5초_기다린다(monkeypatch):
+    """목록을 못 읽는 PC 는 붙여 넣은 뒤 이만큼만 기다리고 Enter 를 누른다 — 짧으면 결과가
+    서기 전에 눌려 대화 목록 맨 위 방이 열린다(짐작). 목록이 읽히면 그 방 줄이 보이는 대로
+    넘어간다(목록을 더 기다리지 않는다)."""
+    assert SELECTORS["timings"]["after_query_paste"] == 1.5
+    for list_readable in (False, True):
+        sender = SameRoomWin(list_readable=list_readable)
+        sender.sel["timings"] = {"after_query_paste": 1.5}
+        slept = []
+        monkeypatch.setattr(kw, "time", SimpleNamespace(
+            sleep=lambda s: slept.append(s), monotonic=time.monotonic))
+        assert sender.send_text(ROOM, "안녕하세요").ok
+        assert slept.count(1.5) == 1
+        assert 0.15 not in slept                                # 목록을 다시 읽지 않았다
+    sender.sel["timings"] = {}                                  # 설정에 없어도 1.5
+    slept.clear()
+    sender._put_query(sender.kakao, OTHER, sender.room_search_conf)
+    assert 1.5 in slept
