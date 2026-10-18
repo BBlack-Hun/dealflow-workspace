@@ -3,6 +3,8 @@
 
   관리자가 `컬럼 관리` 에서 붙인 칸을 표 오른쪽에 세운다. 표마다 머리글과 칸을
   손으로 적으면 하나를 고칠 때 나머지가 남는다 — 여섯 표가 이 조각 하나를 쓴다.
+  자리를 고른 칸(`data-after` — 기존 칸의 머리글 이름)은 `custom_cols.js` 가 표를
+  그린 직후 그 칸 뒤로 옮긴다. 그 칸이 없는 탭에서는 여기(오른쪽 끝)에 그대로 남는다.
 
     {% import "_custom_cols.html" as cc with context %}
     <th>…</th>{{ cc.heads() }}
@@ -20,6 +22,7 @@
 {% macro heads() -%}
 {%- for c in custom_cols %}
 <th class="custom-col" style="width:{{ 90 if c.kind == 'ox' else 180 }}px" title="{{ c.name }} · 눌러서 적습니다"
+    {%- if c.after_key %} data-after="{{ c.after_key }}"{% endif %}
     {%- if c.kind == 'ox' %} data-filters="cc{{ c.id }}:{{ c.name }}"{% endif %}>{{ c.name }}{% if c.kind == 'ox' %}<div class="th-filters"></div>{% endif %}</th>
 {%- endfor %}
 {%- endmacro %}

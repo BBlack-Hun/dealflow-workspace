@@ -1,6 +1,6 @@
 """관리자 메뉴 `컬럼 관리` + 표에서 추가 칸 값 적기(개선 과제 #6 · #7 · #8 · #12 · #46).
 
-칸을 붙이고 · 이름을 바꾸고 · 옮기고 · 숨기는 것은 **전부 관리자만**이다
+칸을 붙이고 · 이름을 바꾸고 · 옮기고 · 자리를 고르고 · 숨기는 것은 **전부 관리자만**이다
 (`deps.admin_only`, 10/16 사용자 결정). 지우는 길은 없다 — 숨긴다.
 
 값을 적는 길(`PUT /api/custom-values/…`)은 팀원 것이다. **고칠 수 있는 줄은 그
@@ -56,6 +56,7 @@ def columns_page(request: Request, db: Session = Depends(get_db),
         "targets": svc.TARGETS,
         "target": target,
         "cols": svc.columns(db, target, include_hidden=True),
+        "anchors": svc.anchors(target),
         "kinds": svc.KINDS,
         "name_max": svc.NAME_MAX,
         "msg": msg,
@@ -97,6 +98,22 @@ def move_column(column_id: int, step: int = Form(...),
     svc.move(db, col, step)
     db.commit()
     return _back(col.target)
+
+
+@router.post("/columns/{column_id}/place", include_in_schema=False)
+def place_column(column_id: int, after: str = Form(""),
+                 db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """어느 기존 칸 뒤에 둘지(0110). 비면 맨 끝."""
+    admin_only(user)
+    col = _column(db, column_id)
+    try:
+        svc.place(col, after)
+    except svc.ColumnError as exc:
+        db.rollback()
+        return _back(col.target, str(exc))
+    db.commit()
+    return _back(col.target, f"'{col.name}' 칸을 "
+                 + (f"'{col.after_key}' 뒤에 둡니다" if col.after_key else "맨 끝에 둡니다"))
 
 
 @router.post("/columns/{column_id}/hidden", include_in_schema=False)

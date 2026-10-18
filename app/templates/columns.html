@@ -12,7 +12,8 @@
 <header class="page-head">
   <h1>{{ page_title }}</h1>
   <p class="muted">
-    표 오른쪽에 붙는 칸을 정합니다. 형식은 <b>메모(글)</b>와 <b>O/X</b> 두 가지이고,
+    표에 붙는 칸을 정합니다. 칸마다 <b>어느 기존 칸 뒤에 둘지</b> 고를 수 있고, 안 고르면
+    표 오른쪽 끝에 섭니다. 형식은 <b>메모(글)</b>와 <b>O/X</b> 두 가지이고,
     팀원은 표에서 값만 적습니다. 칸은 지우지 않고 <b>숨깁니다</b> — 숨긴 칸은 표와
     엑셀에서 빠지고, 적힌 값은 그대로 남아 다시 보이게 하면 함께 돌아옵니다.
   </p>
@@ -29,6 +30,8 @@
 <section class="panel">
   <h2 class="panel-title">{{ targets[target].label }}</h2>
   <p class="hint">붙는 자리: {{ targets[target].where }}</p>
+  <p class="hint">위치: 고른 칸 뒤에 섭니다. 같은 칸 뒤에 둔 칸끼리는 아래 차례(▲▼)대로 서고,
+    그 칸이 없는 탭에서는 맨 끝에 섭니다.</p>
 
   <form method="post" action="/columns" class="import-controls" data-testid="column-add">
     <input type="hidden" name="target" value="{{ target }}">
@@ -49,6 +52,7 @@
         <th style="width:40px" class="num">차례</th>
         <th>이름</th>
         <th style="width:90px">형식</th>
+        <th style="width:300px">위치</th>
         <th style="width:90px">상태</th>
         <th style="width:220px"></th>
       </tr>
@@ -65,6 +69,18 @@
           </form>
         </td>
         <td>{{ kinds[c.kind] }}</td>
+        <td>
+          {# 기존 칸 뒤(`custom_columns.anchors`). 그 칸이 없는 탭에서는 맨 끝에 선다. #}
+          <form method="post" action="/columns/{{ c.id }}/place" class="inline-form">
+            <select name="after" aria-label="{{ c.name }} 위치">
+              <option value="">맨 끝</option>
+              {% for label, note in anchors %}
+              <option value="{{ label }}" {% if c.after_key == label %}selected{% endif %}>{{ label }} 뒤{% if note %} ({{ note }}){% endif %}</option>
+              {% endfor %}
+            </select>
+            <button type="submit" class="linkbtn">위치 바꾸기</button>
+          </form>
+        </td>
         <td>{% if c.is_hidden %}<span class="tag soft">숨김</span>{% else %}보임{% endif %}</td>
         <td>
           <form method="post" action="/columns/{{ c.id }}/move" class="inline-form">

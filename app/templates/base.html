@@ -92,6 +92,10 @@
      중 여섯의 활성 메뉴가 줄 밖에 있었다(스타트업 380px ~ 팀 현황 946px).
      메뉴는 모든 화면에 서므로 표 맞추기와 같은 이유로 여기(base) 에 둔다. #}
   <script src="{{ asset('js/menu_scroll.js') }}"></script>
+  {# 관리자가 자리를 고른 추가 칸(`컬럼 관리`)을 그 기존 칸 뒤로 옮긴다. **페이지
+     스크립트보다 먼저** 돌아야 한다 — 필터가 머리글 이름을 단추로 바꾸기 전에
+     이름을 읽는다(`custom_cols.js`). 추가 칸이 서는 화면이 여섯이라 여기(base) 에 둔다. #}
+  <script src="{{ asset('js/custom_cols.js') }}"></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

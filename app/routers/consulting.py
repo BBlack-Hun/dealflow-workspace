@@ -1690,23 +1690,25 @@ def export_consulting(db: Session = Depends(get_db),
     # 자기 것만 보는 사람에게는 안 세운다(같은 이름이 줄마다 반복될 뿐이다).
     owned_col = may_view_all_consulting(user)
     # 관리자가 붙인 추가 칸은 **맨 끝**에 — 이미 내려받아 둔 파일과 칸 차례가 안 밀린다.
+    # 관리자가 자리(어느 칸 뒤)를 고른 칸만 화면처럼 그 칸 뒤에 선다.
     extra = custom_columns.view(db, "consulting", "consulting_companies")
     headers = (CONSULTING_EXPORT_HEADERS + (["담당"] if owned_col else [])
                + [c.label for c in cols]
                + [label for label, _ in TAIL_COLUMNS] + CONTRACT_EXPORT_HEADERS
                + STARTUP_EXPORT_HEADERS
-               + [label for label, _field in FIXED_EXTRA_EXPORT]
-               + custom_columns.names(extra))
+               + [label for label, _field in FIXED_EXTRA_EXPORT])
+    put = custom_columns.arranger(headers, extra)
+    headers = put(headers + custom_columns.names(extra))
     rows = [
-        [r["no"], r["region"], r["meeting_at"], r["company_name"], r["management"]]
-        + ([r["owner_name"]] if owned_col else [])
-        + [r["notes"].get(str(c.id), "") for c in cols]
-        + [r["ceo_name"], r["phone"], r["email"]]
-        + [r["success_fee"], r["contract_fee"], r["contract_received"]]
-        + [r["deal_pitch"], r["contract_management"], r["contract_done"],
-           r["kakao_joined"]]
-        + [r[field] for _label, field in FIXED_EXTRA_EXPORT]
-        + custom_columns.cells(extra, r["id"])
+        put([r["no"], r["region"], r["meeting_at"], r["company_name"], r["management"]]
+            + ([r["owner_name"]] if owned_col else [])
+            + [r["notes"].get(str(c.id), "") for c in cols]
+            + [r["ceo_name"], r["phone"], r["email"]]
+            + [r["success_fee"], r["contract_fee"], r["contract_received"]]
+            + [r["deal_pitch"], r["contract_management"], r["contract_done"],
+               r["kakao_joined"]]
+            + [r[field] for _label, field in FIXED_EXTRA_EXPORT]
+            + custom_columns.cells(extra, r["id"]))
         for r in company_rows(db, user)
     ]
     try:

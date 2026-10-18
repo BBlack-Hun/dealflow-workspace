@@ -510,3 +510,265 @@ def test_추가_칸은_칸_값_길로_저장된다():
     result = subprocess.run([shutil.which("node"), str(JS_TEST)],
                             capture_output=True, text=True, timeout=60)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 9. 자리 — 어느 기존 칸 뒤에 둘지(0110)
+# ═══════════════════════════════════════════════════════════════════════════
+
+JS_POSITION = Path(__file__).resolve().parent / "js" / "custom_column_position_test.js"
+VOID = {"input", "br", "img", "hr", "meta", "link", "source", "col", "wbr"}
+
+
+def _custom_head(html):
+    """추가 칸이 선 머리 줄 — `[(추가 칸인가, data-after, 이름)]`.
+
+    이름은 `custom_cols.js` 의 `label` 처럼 칸 바로 밑의 글자만 모은다.
+    """
+    from html.parser import HTMLParser
+
+    class Heads(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.rows, self.row, self.depth = [], None, 0
+
+        def handle_starttag(self, tag, attrs):
+            a = dict(attrs)
+            if tag == "tr":
+                self.row = []
+            elif tag == "th" and self.row is not None:
+                self.row.append(["custom-col" in (a.get("class") or ""), a.get("data-after"), ""])
+                self.depth = 1
+            elif self.depth and tag not in VOID:
+                self.depth += 1
+
+        def handle_endtag(self, tag):
+            if tag == "tr" and self.row is not None:
+                self.rows.append(self.row)
+                self.row = None
+            elif tag == "th":
+                self.depth = 0
+            elif self.depth > 1:
+                self.depth -= 1
+
+        def handle_data(self, data):
+            if self.depth == 1 and self.row:
+                self.row[-1][2] += data
+
+    parser = Heads()
+    parser.feed(html)
+    row = next(r for r in parser.rows if any(custom for custom, _a, _l in r))
+    return [(custom, after, " ".join(label.split())) for custom, after, label in row]
+
+
+def test_관리자만_자리를_고르고_그_화면에_없는_칸은_거절한다(portal, db):
+    from app.models import EditLog
+
+    _add(portal, "companies", "투자 검토", "ox")
+    col = _col(db, "companies", "투자 검토")
+    admin = portal["admin"]
+
+    page = admin.get("/columns?target=companies").text
+    assert f'action="/columns/{col.id}/place"' in page
+    assert '<option value="">맨 끝</option>' in page
+    # 몇 탭에만 있는 칸은 그 탭을 적는다 — 없는 탭에서는 맨 끝에 선다.
+    assert ">기업명 뒤</option>" in page
+    assert ">정책자금 뒤 (스타트업DB 탭만)</option>" in page
+
+    before = db.query(EditLog).count()
+    r = admin.post(f"/columns/{col.id}/place", data={"after": "기업명"},
+                   follow_redirects=False)
+    assert r.status_code == 303
+    assert _col(db, "companies", "투자 검토").after_key == "기업명"
+    assert 'value="기업명" selected' in admin.get("/columns?target=companies").text
+    # 수정 로그 — 칸 정의를 고친 다른 일(이름 · 숨김)과 같은 자리에 전→후로 남는다.
+    db.expire_all()
+    log = db.query(EditLog).order_by(EditLog.id.desc()).first()
+    assert db.query(EditLog).count() == before + 1
+    assert (log.table_name, log.scope) == ("custom_columns", "shared")
+    assert '"after_key"' in log.changes_json and "기업명" in log.changes_json
+
+    # 그 화면에 없는 칸 · 다른 화면의 칸은 안 받는다.
+    for bad in ("없는 칸", "투자사명"):
+        r = admin.post(f"/columns/{col.id}/place", data={"after": bad},
+                       follow_redirects=False)
+        assert "msg=" in r.headers["location"]
+        assert _col(db, "companies", "투자 검토").after_key == "기업명"
+    # 팀원은 못 바꾼다.
+    assert portal["u1"].post(f"/columns/{col.id}/place", data={"after": "대분류"},
+                             follow_redirects=False).status_code == 403
+    assert _col(db, "companies", "투자 검토").after_key == "기업명"
+    # 비우면 맨 끝(처음 동작)으로 돌아간다.
+    admin.post(f"/columns/{col.id}/place", data={"after": ""})
+    assert _col(db, "companies", "투자 검토").after_key is None
+
+
+def test_자리를_고른_칸은_머리글에_싣고_스크립트는_필터보다_먼저_돈다(portal, db, company):
+    _add(portal, "companies", "투자 검토", "ox")
+    _add(portal, "companies", "검토 메모")
+    ox = _col(db, "companies", "투자 검토")
+    portal["admin"].post(f"/columns/{ox.id}/place", data={"after": "대분류"})
+
+    html = portal["u1"].get("/companies").text
+    head = _custom_head(html)
+    assert (True, "대분류", "투자 검토") in head
+    assert (True, None, "검토 메모") in head          # 안 고른 칸은 지금처럼 맨 끝
+    # 옮기는 스크립트가 필터 · 칸 고치기 · 정렬보다 먼저 실린다 — 필터가 머리글
+    # 이름을 단추로 바꾸기 전에 이름을 읽어야 한다(`custom_cols.js`).
+    at = {name: html.index(f"js/{name}") for name in
+          ("custom_cols.js", "filters.js", "inline_edit.js", "table_sort.js")}
+    assert at["custom_cols.js"] < min(at["filters.js"], at["inline_edit.js"],
+                                      at["table_sort.js"])
+
+
+def test_자리_목록의_칸이_그_화면_머리글에_다_있다(portal, db, users, company):
+    """`anchors` 는 머리글 이름이다 — 템플릿에서 이름을 고치면 여기서 깨진다."""
+    from urllib.parse import quote
+
+    from app.models import (ConsultingCompany, RevenueForecast, SeriesACompany,
+                            SheetOwner, SourcingContact, VcContact)
+    from app.services import contact_columns as cc
+    from app.services import custom_columns as svc
+
+    u1 = users["u1"].id
+    db.add(SeriesACompany(name="샘플딜", received_at="2026-10-01"))
+    for sheet in ("스타트업", "경영본부 전달 기업", "월간 계약 업무현황표"):
+        db.add(ConsultingCompany(user_id=u1, company_name="샘플컨설팅", sheet=sheet))
+    db.add(SheetOwner(label="샘플 스타트업 명단", user_id=u1, layout=cc.STARTUP))
+    db.flush()
+    db.add(VcContact(user_id=u1, source_sheet="샘플 스타트업 명단", name="대표",
+                     firm="샘플스타트업"))
+    db.add(SourcingContact(bucket="샘플갈래", name="샘플심사역"))
+    db.add(RevenueForecast(user_id=u1, company_name="샘플랩"))
+    db.commit()
+    for target in svc.TARGETS:
+        _add(portal, target, "자리 시험")
+
+    pages = {
+        ("companies", "IR 기업 현황"): "/companies",
+        ("companies", "스타트업DB"): "/companies?tab=db",
+        ("companies", "Series A 이상 딜 소싱"): "/companies?tab=series-a",
+        ("consulting", "스타트업"): "/consulting?sheet=" + quote("스타트업"),
+        ("consulting", "그 밖의"): "/consulting?sheet=" + quote("경영본부 전달 기업"),
+        ("consulting", "월간 계약 업무현황표"):
+            "/consulting?sheet=" + quote("월간 계약 업무현황표"),
+        ("startup", "스타트업 명단"): "/startup?sheet=" + quote("샘플 스타트업 명단"),
+        ("sourcing", "딜 소싱"): "/sourcing",
+        ("forecast", "매출예상리스트"): "/report/forecast",
+    }
+    assert set(pages) == {(t, tab) for t in svc.TARGETS for tab in svc.anchor_groups(t)}
+    for (target, tab), url in pages.items():
+        resp = portal["u1"].get(url)
+        assert resp.status_code == 200, url
+        labels = {label for custom, _a, label in _custom_head(resp.text) if not custom}
+        missing = {svc.label_key(x) for x in svc.anchor_groups(target)[tab]} - labels
+        assert not missing, f"{target} · {tab} 머리글에 없는 자리: {missing}"
+
+
+def test_엑셀도_고른_자리에_서고_파일에_없는_칸이면_맨_끝이다(portal, db, users, company):
+    from app.models import RevenueForecast
+
+    _add(portal, "companies", "투자 검토", "ox")
+    _add(portal, "companies", "검토 메모")
+    _add(portal, "companies", "둘째 메모")
+    ox, memo, memo2 = (_col(db, "companies", n) for n in ("투자 검토", "검토 메모", "둘째 메모"))
+    admin = portal["admin"]
+    admin.post(f"/columns/{ox.id}/place", data={"after": "기업명"})
+    admin.post(f"/columns/{memo2.id}/place", data={"after": "기업명"})
+    member = portal["u1"]
+    _put(member, "ir_companies", company.id, ox.id, "O")
+    _put(member, "ir_companies", company.id, memo2.id, "둘째 글")
+
+    for url in ("/api/export/companies.xlsx", "/api/export/companies-view.xlsx"):
+        got = _sheet(member.get(url))
+        at = got[0].index("기업명")
+        # 같은 칸 뒤 둘은 `position` 차례, 안 고른 칸은 맨 끝.
+        assert got[0][at + 1:at + 3] == ["투자 검토", "둘째 메모"], url
+        assert got[1][at + 1:at + 3] == ["O", "둘째 글"], url
+        assert got[0][-1] == "검토 메모", url
+
+    # 파일 머리글에 그 칸이 없으면(화면에만 있는 칸) 맨 끝이다.
+    admin.post(f"/columns/{ox.id}/place", data={"after": "홍보메일삭제"})
+    got = _sheet(member.get("/api/export/companies.xlsx"))
+    assert "홍보메일삭제" not in got[0]
+    assert got[0][-2:] == ["투자 검토", "검토 메모"]
+
+    db.add(RevenueForecast(user_id=users["u1"].id, company_name="샘플랩"))
+    db.commit()
+    _add(portal, "forecast", "후속 메모")
+    fc = _col(db, "forecast", "후속 메모")
+    admin.post(f"/columns/{fc.id}/place", data={"after": "기업명"})
+    got = _sheet(member.get("/api/export/forecast.xlsx"))
+    assert got[0][got[0].index("기업명") + 1] == "후속 메모"
+
+
+def test_마이그레이션_0110은_올리고_내려도_칸과_값이_남는다(tmp_path):
+    import sqlite3
+
+    from .test_migrations import _alembic
+
+    db = tmp_path / "pos.db"
+    # 빈 DB 는 `0001` 이 지금 모델로 짓는다(칸이 이미 있다) — 0109 로 내려 운영 DB 의
+    # 꼴(칸 없음)을 만든 뒤 올린다.
+    assert _alembic(db, "upgrade", "head").returncode == 0
+    down = _alembic(db, "downgrade", "0109_custom_columns")
+    assert down.returncode == 0, down.stdout + down.stderr
+
+    def run(sql, *args):
+        con = sqlite3.connect(db)
+        try:
+            out = con.execute(sql, args).fetchall()
+            con.commit()
+            return out
+        finally:
+            con.close()
+
+    def cols():
+        return {r[1] for r in run("PRAGMA table_info(custom_columns)")}
+
+    add = ("INSERT INTO custom_columns (created_at, updated_at, target, name, kind, "
+           "position, is_hidden) VALUES ('t', 't', 'companies', '검토 메모', 'memo', ?, 0)")
+    run(add, 0)
+    assert "after_key" not in cols()
+
+    up = _alembic(db, "upgrade", "0110_custom_column_position")
+    assert up.returncode == 0, up.stdout + up.stderr
+    assert "after_key" in cols()
+    # 이미 붙은 칸은 비어 있다 = 지금처럼 맨 끝.
+    assert run("SELECT name, after_key FROM custom_columns") == [("검토 메모", None)]
+    run("UPDATE custom_columns SET after_key = '기업명'")
+
+    down = _alembic(db, "downgrade", "0109_custom_columns")
+    assert down.returncode == 0, down.stdout + down.stderr
+    assert "after_key" not in cols()
+    assert run("SELECT name FROM custom_columns") == [("검토 메모",)]
+    # 표를 새로 짓는 되돌리기라 이름 겹침 막기가 살아 있는지도 본다.
+    with pytest.raises(sqlite3.IntegrityError):
+        run(add, 1)
+    assert _alembic(db, "upgrade", "head").returncode == 0
+    assert "after_key" in cols()
+
+
+def test_엑셀_차례_고르기는_같은_칸_뒤_여럿과_없는_칸을_가린다():
+    from types import SimpleNamespace as C
+
+    from app.services.custom_columns import arranger
+
+    v = {"custom_cols": [C(after_key="가"), C(after_key=None), C(after_key="없음"),
+                         C(after_key=" 가 ")]}
+    put = arranger(["가", "", "나"], v)
+    assert put(["가", "", "나", "c1", "c2", "c3", "c4"]) == ["가", "c1", "c4", "", "나",
+                                                          "c2", "c3"]
+
+
+@pytest.mark.skipif(shutil.which("node") is None,
+                    reason="node 미설치 — 브라우저 로직 테스트 생략")
+def test_고른_자리로_옮긴_칸에서_필터_정렬_칸고치기가_맞는_칸을_가리킨다():
+    """`custom_cols.js` 를 먼저, 그다음 `inline_edit.js` · `filters.js` ·
+    `table_sort.js` 를 화면 차례대로 돌린다.
+
+    로컬에서는 `node tests/js/custom_column_position_test.js` 로도 돈다.
+    """
+    result = subprocess.run([shutil.which("node"), str(JS_POSITION)],
+                            capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stdout + result.stderr

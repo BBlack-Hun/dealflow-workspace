@@ -78,12 +78,13 @@ def export_forecast(db: Session = Depends(get_db),
     """화면과 같은 범위 · 같은 칸 차례. 자동 칸은 화면에 보이는 글자 그대로."""
     who, _team = _scope(db, user, scope, member)
     extra = custom_columns.view(db, "forecast", "revenue_forecasts")
-    rows = [[v["cells"][f]["text"] for f, _l, _s in svc.COLUMNS]
-            + custom_columns.cells(extra, v["id"])
+    heads = [label for _f, label, _s in svc.COLUMNS]
+    put = custom_columns.arranger(heads, extra)   # 추가 칸은 화면처럼 고른 자리에
+    rows = [put([v["cells"][f]["text"] for f, _l, _s in svc.COLUMNS]
+                + custom_columns.cells(extra, v["id"]))
             for v in svc.views(db, svc.rows_for(db, who))]
     return _xlsx("매출예상리스트.xlsx", "매출예상리스트",
-                 [label for _f, label, _s in svc.COLUMNS]
-                 + custom_columns.names(extra), rows)
+                 put(heads + custom_columns.names(extra)), rows)
 
 
 class ForecastIn(BaseModel):
