@@ -30,7 +30,8 @@ from ..models import (AutomationSend, ContactActivity, ContactColumn, DealFollow
                       Meeting, SendItem, SendJob, SenderRoom, SendSequence,
                       SourcingContact, User, VcContact)
 from ..services import (contact_columns, deal_stage, firm_type, investor_firms,
-                        last_activity, manual_send, meeting_kind, room_joined,
+                        last_activity, manual_send, meeting_kind, memo_intro,
+                        room_joined,
                         room_name, sheet_import, sheet_owner, sourcing_sync)
 from ..services.room_name import DEFAULT_SUFFIX, build_room_name
 from .sourcing import requested_sort
@@ -906,6 +907,38 @@ def delete_column(column_id: int, db: Session = Depends(get_db),
     db.delete(col)
     db.commit()
     return RedirectResponse(f"{_back(db, sheet)}?sheet={quote(sheet)}", status_code=303)
+
+
+class MemoIntroIn(BaseModel):
+    sheet: str = ""
+    #: **확인 없이는 한 줄도 안 적는다** — `/api/deals/manual-sends` 와 같은 결.
+    confirm: bool = False
+
+
+@router.post("/memo-intro")
+def memo_intro_apply(body: MemoIntroIn, db: Session = Depends(get_db),
+                     user: User = Depends(get_current_user)):
+    """탭의 딜소개 메모를 활동 이력으로 옮긴다(#52 — `services/memo_intro.py`).
+
+    `confirm` 없이 부르면 무엇을 적고 거두는지만 돌려준다.
+
+    권한은 **탭 주인과 관리자**(`sheet_owner.may_add_row` — 그 탭에 줄을 넣을 수
+    있는 사람과 같은 판정)이고, 손대는 줄마다 한 줄 고치기와 같은 `_owned` 를
+    지난다 — 남의 줄이 하나라도 섞이면 404 로 끝나고 아무 것도 안 적힌다.
+    """
+    name = _sheet_or_400(db, body.sheet)
+    if not sheet_owner.may_add_row(db, user, name):
+        raise HTTPException(status_code=403,
+                            detail="이 탭의 담당자와 관리자만 반영할 수 있습니다")
+    plan = memo_intro.plan(db, name)
+    for contact_id in plan["contact_ids"]:
+        _owned(db, contact_id, user)
+    view = memo_intro.view(plan)
+    if not body.confirm:
+        return {"ok": False, "confirmed": False, "plan": view}
+    done = memo_intro.apply(db, plan)
+    db.commit()
+    return {"ok": True, "confirmed": True, "plan": view, **done}
 
 
 @router.get("")
