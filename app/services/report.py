@@ -44,6 +44,7 @@ from ..models import (DealBatch, DealBatchCompany, IrCompany, IrRequest,
 # 날짜를 말한다.
 from . import cadence
 from . import manual_send
+from . import memo_intro
 # 단계 값(`STAGE_*`)은 **문구를 짓는 쪽이 정한 것**을 그대로 읽는다.
 # 여기 숫자를 다시 적어 두면 한쪽이 바뀔 때 보고만 옛 값으로 남는다
 # (`routers/deals.py` 도 같은 곳을 `mc` 로 읽는다).
@@ -484,18 +485,21 @@ def _manual_rounds(db: Session, start: date, end: date, user: Optional[User],
         got["count"] = max(got["count"], row["company_count"] or 0)
 
     out: Dict[str, List[dict]] = {}
-    for (key, _pack, _uid), got in sorted(packs.items()):
+    for (key, pack, _uid), got in sorted(packs.items()):
         n = len(got["people"])
         names = sorted(got["companies"])
         when = got["day"] or ""
         label = manual_send.KIND_LABELS.get(got["kind"], got["kind"])
+        # 탭의 딜소개 메모에서 옮긴 판은 `손으로 보냄(메모)` 로 선다(#52).
+        head = (memo_intro.BY_MEMO if memo_intro.is_memo(pack)
+                else manual_send.BY_HAND)
         out.setdefault(key, []).append({
             "row": {
                 # 볼 회차가 없다 — 화면이 이 값으로 [보기] 칸을 비운다.
                 "job_id": 0,
                 # **손으로 적은 줄임이 이름에 그대로 적힌다.** 합쳐 센 수를
                 # 되짚는 자리가 여기다(대시보드는 부제에서 밝힌다).
-                "title": f"{manual_send.BY_HAND} · {label}",
+                "title": f"{head} · {label}",
                 "manual": True,
                 "date": when,
                 "day": day_label(when),

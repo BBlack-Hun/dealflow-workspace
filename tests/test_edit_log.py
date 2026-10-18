@@ -630,6 +630,9 @@ WRITE_ROUTES = {
     # 감춘 줄을 골라 한꺼번에 지운다. **줄마다 한 줄씩** 남는다
     # (`confirm` 없이 부르면 세어 보기만 하고 아무 것도 안 지운다).
     ("POST", "/api/contacts/bulk-delete"): WATCHED,
+    # 탭의 딜소개 메모를 활동 이력으로 옮긴다(#52) — 손으로 적은 줄과 같은
+    # `source="manual"` 이라 줄마다 남는다(`services/memo_intro.py`).
+    ("POST", "/api/contacts/memo-intro"): WATCHED,
     # 관리자의 [탭 삭제]. 탭 하나가 **한 줄**(`edit_log.log_tab_delete` — 누가 ·
     # 어느 탭 · 몇 명)로 남고, 함께 지운 사람은 줄마다 따로 남는다.
     ("POST", "/api/contacts/sheets/delete"): WATCHED,
@@ -843,9 +846,10 @@ def test_the_six_shared_routers_still_hold_the_forty_nine_paths(portal):
     for (_m, _p), mod in _write_routes(portal["app"]).items():
         if mod in SHARED_ROUTERS:
             counted[mod] = counted.get(mod, 0) + 1
-    # contacts 는 명단 라우터 16 + 참고 자료 6 이다(참고 자료는 주소에 접두가
+    # contacts 는 명단 라우터 17 + 참고 자료 6 이다(참고 자료는 주소에 접두가
     # 없어 파일만 같이 쓴다). 15번째가 감춘 줄 한꺼번에 지우기(`/bulk-delete`),
-    # 16번째가 관리자의 탭 지우기(`/sheets/delete`)다.
+    # 16번째가 관리자의 탭 지우기(`/sheets/delete`)다. 17번째가 딜소개 메모 →
+    # 활동 이력(`/memo-intro` — #52)이다.
     # ir 의 12번째는 미팅 요청을 손으로 보냈다고 적는 자리다. 13 · 14번째는
     # 리마인드 뒤 `답 없음 · 전화 필요` 켜고 끄기와 그 메모다(10/17 회의 #37).
     #
@@ -870,7 +874,7 @@ def test_the_six_shared_routers_still_hold_the_forty_nine_paths(portal):
     # [되돌리기]다(`services/template_apply.py`).
     # forecast 의 넷은 매출예상리스트 줄 추가 · 고치기 · 기업 고르기 · 지우기다(#46).
     assert counted == {"companies": 8, "ir": 14, "consulting": 9,
-                       "templates_crud": 7, "sourcing": 10, "contacts": 22,
+                       "templates_crud": 7, "sourcing": 10, "contacts": 23,
                        "series_a": 5, "forecast": 4}
 
 

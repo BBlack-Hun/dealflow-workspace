@@ -16,7 +16,7 @@ from ..deps import get_current_user, may_manage_team_contacts, templates
 from ..models import ROOM_SEARCH_TOPIC, STARTUP_MSG_KIND, IrCompany, SendJob, User
 from ..services import (cadence, contact_columns, deal_history, deal_queue,
                         deal_stage, email_domains, group_name, ir_attach,
-                        llm_brief, mailer, manual_send, ref_panel,
+                        llm_brief, mailer, manual_send, memo_intro, ref_panel,
                         send_window, series_a_share, sheet_import,
                         sheet_owner, sourcing_link, sourcing_receipts,
                         sourcing_sync, startup_send, taxonomy)
@@ -669,6 +669,10 @@ def list_page(
         # 감춰 놓고 켜는 단추까지 감추면 DB 를 직접 고쳐야 한다(명단 숨김과
         # 같은 말 — `routers/contacts.py` 의 `toggle_sheet_hidden`).
         "hidden_months": hidden_months,
+        # [딜소개 메모 → 활동 이력](#52) — `딜소개` 달 칸이 있는 탭의 주인 · 관리자
+        # 에게만 선다. 서버가 보는 판정(`routers/contacts.memo_intro_apply`)과 같다.
+        "memo_intro": bool(selected and memo_intro.target_columns(all_months)
+                           and sheet_owner.may_add_row(db, user, selected)),
         "show_all_months": months == "all",
         # 감춘 줄 — 몇 줄인지와, 되돌리러 갈 자리.
         "hidden_count": len(hidden_rows),

@@ -191,6 +191,11 @@ def test_딜_소개가_담당자_방으로_간다(stage, db, test_room_on):
 
 
 def test_IR_자료_전달이_담당자_방으로_간다(stage, db, test_room_on):
+    from app.models import IrCompany
+
+    # 파일명이 없으면 자료 전달 목록이 안 생긴다(#53).
+    db.get(IrCompany, stage["company_id"]).ir_file_name = "샘플애그_IR.pdf"
+    db.commit()
     job_id = _send(stage, contact_ids=[stage["contact_id"]],
                    company_ids=[stage["company_id"]], mode="ir")
 

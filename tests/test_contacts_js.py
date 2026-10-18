@@ -212,6 +212,22 @@ def test_탭_삭제가_수를_보여_주고_확인을_받는가():
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+MEMO_INTRO_TEST = Path(__file__).resolve().parent / "js" / "memo_intro_test.js"
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치 — 브라우저 로직 테스트 생략")
+def test_딜소개_메모_반영이_먼저_세어_보이고_확인을_받는가():
+    """[딜소개 메모 → 활동 이력](#52) — 세어 보는 부름이 `confirm: false` 인지,
+    확인창이 새로 적을 회차 · 건너뜀 · 거둘 줄을 말하는지, [취소] 면 안 나가는지.
+    서버 쪽은 `tests/test_memo_intro.py`. 로컬: `node tests/js/memo_intro_test.js`.
+    """
+    result = subprocess.run(
+        [shutil.which("node"), str(MEMO_INTRO_TEST)], capture_output=True,
+        text=True, timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 ROOM_SYNC_TEST = Path(__file__).resolve().parent / "js" / "contacts_room_sync_test.js"
 
 

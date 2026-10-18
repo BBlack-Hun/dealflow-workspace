@@ -19,8 +19,9 @@
 
 1. 켠 계정의 잡에는 파일명이 **고른 차례대로** 실린다
 2. 켜지 않은 계정의 잡에는 **안 실린다** (자료가 두 번 나가면 안 된다)
-3. 파일명이 빈 기업이 있으면 **목록을 아예 안 만든다** — 자료 없이
-   "보내드렸습니다" 만 나가는 것이 제일 나쁘다
+3. 파일명이 빈 기업은 **빼고 보낸다**(글 끝에 추후 발송 안내 — #53). 하나도
+   없으면 **목록을 아예 안 만든다** — 자료 없이 "보내드렸습니다" 만 나가는 것이
+   제일 나쁘다
 4. 발송기는 **파일을 먼저, 문구를 마지막**으로 보낸다
 5. 파일이 하나라도 실패하면 **문구를 보내지 않는다**
 """
@@ -189,43 +190,42 @@ def test_a_blank_folder_setting_does_not_count(stage):
     assert _files_of(stage, r.json()["job_id"]) == []
 
 
-# ── 파일명이 없으면 보내지 않는다 ───────────────────────────────────────────
+# ── 파일명이 없는 기업은 빼고 보낸다 (#53) ──────────────────────────────────
 
-def test_a_company_without_a_file_name_stops_the_send_list(stage):
-    """자료 없이 "보내드리겠습니다" 만 나가는 것이 **제일 나쁘다.**
+def test_a_company_without_a_file_name_is_left_out(stage):
+    """있는 것만 붙이고, 없는 기업은 글 끝에 추후 발송 안내로 알린다.
 
-    목록을 만들어 두면 발송기가 그 건에서 실패하고, 실패한 건은 문구도 안 나가서
-    그 사람만 아무것도 못 받는다 — 그것을 회차가 끝난 뒤에 알게 된다.
+    예전에는 목록을 통째로 막았다 — 그러면 있는 자료까지 못 나갔다.
+    자세한 것(회차 · 이력 · 요청이 열린 채로 남는 것)은 `test_ir_partial_send.py`.
     """
-    from app.models import SendJob
-
     _turn_on(stage)
 
     r = _send(stage, [stage["agri"].id, stage["bare"].id])
+    assert r.status_code == 200, r.text
+    assert _files_of(stage, r.json()["job_id"]) == [AGRI_FILE]
+
+
+def test_nothing_to_attach_stops_the_send_list(stage):
+    """자료 없이 "보내드리겠습니다" 만 나가는 것이 **제일 나쁘다** — 켜지 않은 계정도."""
+    from app.models import SendJob
+
+    r = _send(stage, [stage["bare"].id])
     assert r.status_code == 400, r.text
-    assert "샘플페이" in r.json()["detail"]
-    # 조용히 빼고 보내지 않는다 — 목록 자체가 안 생겨야 한다.
+    assert r.json()["detail"] == "보낼 자료가 하나도 없습니다 — 요청은 그대로 남습니다"
+    # 목록 자체가 안 생겨야 한다.
     assert stage["db"].query(SendJob).count() == 0
 
 
-def test_a_missing_file_name_still_only_warns_when_it_is_off(stage):
-    """켜지 않은 계정에서는 지금까지처럼 **경고만** 하고 보낼 수 있다.
-
-    그쪽은 사람이 붙이는 길이라, 앱이 막으면 손으로 보낼 수 있던 것까지 못 보낸다.
-    """
-    r = _send(stage, [stage["agri"].id, stage["bare"].id])
-    assert r.status_code == 200, r.text
-
-
 def test_the_preview_warns_before_the_list_is_made(stage):
-    """막히는 것을 [발송] 을 누른 뒤에 알면 늦다."""
+    """빠지는 것을 [발송] 을 누른 뒤에 알면 늦다."""
     _turn_on(stage)
 
     r = stage["client"].post("/api/deals/preview", json={
         "mode": "ir", "contact_ids": [stage["contact"].id],
         "company_ids": [stage["agri"].id, stage["bare"].id]})
     warnings = r.json()["previews"][0]["warnings"]
-    assert any("샘플페이" in w and "첨부할 IR 자료가 없는 기업" in w for w in warnings)
+    assert any("샘플페이" in w and "이번엔 빼고 추후 발송 안내만 나갑니다" in w
+               for w in warnings)
 
 
 def test_email_never_carries_files(stage, db, monkeypatch):
