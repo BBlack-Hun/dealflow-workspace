@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 from .. import clock
 from ..db import SessionLocal
 from ..models import SendItem, SendJob
-from . import mailer
+from . import mailer, sourcing_sync
 
 log = logging.getLogger(__name__)
 
@@ -88,6 +88,8 @@ def _run(db: Session, job_id: int, gap_sec: float) -> dict:
             item.sent_at = _now()
             item.error = None
             sent += 1
+            # 카톡과 같다 — 참여 안내가 나간 `제안 대기중` 줄 → `물어보는 중`.
+            sourcing_sync.mark_invited(db, item, "mail_sender")
         _recount(db, job)
         db.commit()
 
