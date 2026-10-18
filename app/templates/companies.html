@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{# 관리자가 붙인 추가 칸(`컬럼 관리`) — 두 탭이 같은 칸을 쓴다(`_custom_cols.html`). #}
+{% import "_custom_cols.html" as cc with context %}
 
 {# ── 금액 칸 한 개 ────────────────────────────────────────────────────────
    금액 넷(`최근매출` · `누적투자금액` · `희망투자` · `Pre Value`)은 **사람이
@@ -277,6 +279,7 @@
            `IR` / `자료 (1) ▾` 두 줄이었다. 두 자리 수(`(12)`)까지 들어가게 여유를
            두어 102px(단추 77px + th 좌우 여백 18px + 한 자리 여유 7px). #}
         <th style="width:102px" data-filters="ir:IR 자료">IR 자료<div class="th-filters"></div></th>
+        {{ cc.heads() }}
         <th style="width:52px"></th>
       </tr>
     </thead>
@@ -293,7 +296,7 @@
          `data-s-name` 은 `기업명` 머리글(이름순)이 세울 값이다 — 옆 탭과 같다. #}
       <tr data-id="{{ r.id }}" data-search="{{ r.search }}"
           data-f-ir="{{ '● 있음' if r.has_ir else '⚠ 없음' }}"
-          data-s-name="{{ r.name }}">
+          data-s-name="{{ r.name }}"{{ cc.attrs(r.id) }}>
         {# 번호를 눌러도 [수정] 창이 열린다 — 표가 2,030px 라 오른쪽 끝의
            [수정] 단추까지 가로로 밀어야 닿는데, 줄을 짚는 손은 이미 왼쪽
            번호에 있다. **여는 길은 그대로 하나다**: 같은 `js-co-edit` 을
@@ -342,6 +345,7 @@
             <span class="room-badge warn" title="IR 요청이 와도 바로 보낼 자료가 없습니다">⚠ 없음</span>
           {% endif %}
         </td>
+        {{ cc.cells(r.id) }}
         <td><button type="button" class="linkbtn js-co-edit">수정</button></td>
       </tr>
       {% else %}
@@ -707,6 +711,7 @@
            `IR` / `자료 (1) ▾` 두 줄이었다. 두 자리 수(`(12)`)까지 들어가게 여유를
            두어 102px(단추 77px + th 좌우 여백 18px + 한 자리 여유 7px). #}
         <th style="width:102px" data-filters="ir:IR 자료">IR 자료<div class="th-filters"></div></th>
+        {{ cc.heads() }}
         <th style="width:52px"></th>
       </tr>
     </thead>
@@ -775,7 +780,7 @@
           data-s-name="{{ r.name }}"
           data-s-updated="{{ r.updated_at }}"
           data-s-sent="{{ r.sent_rounds }}"
-          data-s-meeting="{{ r.meeting_sort }}">
+          data-s-meeting="{{ r.meeting_sort }}"{{ cc.attrs(r.id) }}>
         {# 번호를 눌러도 [수정] 창이 열린다 — 표가 2,030px 라 오른쪽 끝의
            [수정] 단추까지 가로로 밀어야 닿는데, 줄을 짚는 손은 이미 왼쪽
            번호에 있다. **여는 길은 그대로 하나다**: 같은 `js-co-edit` 을
@@ -928,6 +933,7 @@
             <span class="room-badge warn" title="IR 요청이 와도 바로 보낼 자료가 없습니다">⚠ 없음</span>
           {% endif %}
         </td>
+        {{ cc.cells(r.id) }}
         <td><button type="button" class="linkbtn js-co-edit">수정</button></td>
       </tr>
       {% else %}

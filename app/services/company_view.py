@@ -82,13 +82,14 @@ def split_values(raw) -> List[str]:
     return parts or [EMPTY]
 
 
-def parse_raw_query(query: str) -> Dict[str, List[str]]:
+def parse_raw_query(query: str, extra=None) -> Dict[str, List[str]]:
     """**원본 쿼리 문자열**에서 필터를 읽는다 — `filters.js` 의 `parseQuery` 그대로.
 
     `,` 로 먼저 가르고 **그다음에** 값마다 푼다 — 화면이 값마다 따로
     `encodeURIComponent` 한 뒤 `,` 로 잇기 때문이다(`buildQuery`). 프레임워크가
     다 풀어 준 값을 쉼표로 가르면 값 안의 쉼표(`5%2C10억`)가 두 토막이 된다.
-    모르는 열쇠(`sort` · `q` · `tab`)는 버린다.
+    모르는 열쇠(`sort` · `q` · `tab`)는 버린다. `extra` 는 `FILTER_VALUES` 와 같은
+    꼴의 덧붙은 열쇠다(관리자가 붙인 O/X 칸 — `custom_filters`).
     """
     from urllib.parse import unquote
 
@@ -98,7 +99,7 @@ def parse_raw_query(query: str) -> Dict[str, List[str]]:
             continue
         key, _, raw = pair.partition("=")
         key = unquote(key)
-        if key not in FILTER_VALUES:
+        if key not in FILTER_VALUES and key not in (extra or {}):
             continue
         values = [unquote(v.replace("+", " ")) for v in raw.split(",")]
         values = [v for v in values if v]
@@ -107,12 +108,13 @@ def parse_raw_query(query: str) -> Dict[str, List[str]]:
     return out
 
 
-def match_filters(row: dict, state: Dict[str, List[str]]) -> bool:
+def match_filters(row: dict, state: Dict[str, List[str]], extra=None) -> bool:
     """`filters.js` 의 `matchRow` — 칸끼리 AND, 한 칸 안에서는 OR."""
+    values = {**FILTER_VALUES, **(extra or {})}
     for key, wanted in state.items():
         if not wanted:
             continue
-        have = split_values(FILTER_VALUES[key](row))
+        have = split_values(values[key](row))
         if not any(w in have for w in wanted):
             return False
     return True
@@ -196,9 +198,10 @@ def sort_rows(rows: List[dict], sort: str) -> List[dict]:
 
 
 def view_rows(rows: List[dict], filters: Dict[str, List[str]], q: str = "",
-              sort: str = "") -> List[dict]:
+              sort: str = "", extra=None) -> List[dict]:
     """표 한 벌 → **지금 화면에 보이는 줄들**(거르고 · 찾고 · 세운 차례)."""
-    shown = [r for r in rows if match_filters(r, filters) and match_search(r, q)]
+    shown = [r for r in rows
+             if match_filters(r, filters, extra) and match_search(r, q)]
     return sort_rows(shown, sort)
 
 
@@ -217,3 +220,14 @@ def to_cells(rows: List[dict]) -> List[list]:
             r["top_deal_kind"] or "", r["ir_file_name"] if r["has_ir"] else "없음",
         ])
     return out
+
+
+def custom_filters(view: dict) -> dict:
+    """관리자가 붙인 O/X 칸의 필터 열쇠 → 줄 값(`_custom_cols.html` 의 `data-f-cc*`).
+
+    `view` 는 `custom_columns.view` 가 준 것이다. 화면이 O/X 칸에만 필터를 세우므로
+    여기서도 그 칸만 싣는다.
+    """
+    vals = view["custom_vals"]
+    return {f"cc{c.id}": (lambda r, cid=c.id: vals.get(r["id"], {}).get(cid, ""))
+            for c in view["custom_cols"] if c.kind == "ox"}

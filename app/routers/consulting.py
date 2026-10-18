@@ -38,6 +38,7 @@ from ..deps import (NoConsulting, can_open, get_current_user,
 from ..models import (ConsultingColumn, ConsultingCompany, ConsultingRowGrant,
                       User)
 from ..services import consulting_sheets as cs
+from ..services import custom_columns
 from ..services import consulting_status as status
 from ..services import monthly_columns
 from ..services import sheet_owner
@@ -1152,6 +1153,8 @@ def consulting_page(request: Request, db: Session = Depends(get_db),
             "pending_label": (f"{_prev_month()}월 마지막주 리마인드톡 미완료 기업"),
         },
     })
+    # 관리자가 붙인 추가 칸 — 탭을 가리지 않고 같은 칸(달 칸과 따로 · #8).
+    ctx.update(custom_columns.view(db, "consulting", "consulting_companies"))
     return templates.TemplateResponse("consulting.html", ctx)
 
 
@@ -1686,11 +1689,14 @@ def export_consulting(db: Session = Depends(get_db),
     # 파일에만 없으면, 그 파일을 여는 사람은 55줄을 한 사람 것으로 읽는다.
     # 자기 것만 보는 사람에게는 안 세운다(같은 이름이 줄마다 반복될 뿐이다).
     owned_col = may_view_all_consulting(user)
+    # 관리자가 붙인 추가 칸은 **맨 끝**에 — 이미 내려받아 둔 파일과 칸 차례가 안 밀린다.
+    extra = custom_columns.view(db, "consulting", "consulting_companies")
     headers = (CONSULTING_EXPORT_HEADERS + (["담당"] if owned_col else [])
                + [c.label for c in cols]
                + [label for label, _ in TAIL_COLUMNS] + CONTRACT_EXPORT_HEADERS
                + STARTUP_EXPORT_HEADERS
-               + [label for label, _field in FIXED_EXTRA_EXPORT])
+               + [label for label, _field in FIXED_EXTRA_EXPORT]
+               + custom_columns.names(extra))
     rows = [
         [r["no"], r["region"], r["meeting_at"], r["company_name"], r["management"]]
         + ([r["owner_name"]] if owned_col else [])
@@ -1700,6 +1706,7 @@ def export_consulting(db: Session = Depends(get_db),
         + [r["deal_pitch"], r["contract_management"], r["contract_done"],
            r["kakao_joined"]]
         + [r[field] for _label, field in FIXED_EXTRA_EXPORT]
+        + custom_columns.cells(extra, r["id"])
         for r in company_rows(db, user)
     ]
     try:
@@ -1858,6 +1865,11 @@ def apply_rows(db: Session, parsed: dict, user: User,
     if replace:
         # **내 것만** 지운다. 예전에는 전체를 지워서, 한 사람이 다시 올리면
         # 다른 컨설턴트의 표까지 사라졌다.
+        # 추가 칸 값도 함께 — 한꺼번에 지우기는 flush 를 안 지나서 세션 이벤트
+        # (`custom_columns.forget_deleted`)가 못 본다.
+        custom_columns.forget_rows(db, "consulting_companies", db.execute(
+            select(ConsultingCompany.id).where(
+                ConsultingCompany.user_id == user.id)).scalars().all())
         db.query(ConsultingCompany).filter(
             ConsultingCompany.user_id == user.id).delete()
         db.commit()

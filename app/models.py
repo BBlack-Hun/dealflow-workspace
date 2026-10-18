@@ -3151,3 +3151,80 @@ class RevenueForecast(TimestampMixin, Base):
     post_value: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     ceo_share: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     result_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
+class CustomColumn(TimestampMixin, Base):
+    """관리자가 표에 붙인 **추가 칸** 하나(개선 과제 #6 · #7 · #8 · #12 · #46).
+
+    칸을 붙이는 일은 관리자 메뉴 `컬럼 관리` 에서만 한다 — 팀원은 표에서 값만
+    적는다. **지우지 않고 숨긴다**(`is_hidden`): 숨긴 칸은 화면 · 엑셀에서 빠지고
+    적힌 값은 그대로 남아, 다시 보이면 함께 돌아온다.
+
+    `target` 은 **화면**이다 — 표 단위가 아니다. IR 기업 현황의 탭 셋은 표가
+    둘인데(`ir_companies` · `series_a_companies`) 같은 칸을 같이 쓴다(사용자
+    결정 — 탭마다 따로 두지 않는다). 어느 화면이 어느 표의 줄을 그리는지는
+    `services/custom_columns.TARGETS` 한 곳에 있다.
+
+    달마다 늘어나는 칸(`ContactColumn` · `ConsultingColumn`)과는 **따로 산다.**
+    그쪽은 원본 시트를 따라 달마다 생기는 칸이고, 이쪽은 관리자가 정하는 칸이다.
+    """
+
+    __tablename__ = "custom_columns"
+    __table_args__ = (
+        UniqueConstraint("target", "name", name="uq_custom_columns_target_name"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    #: 어느 화면의 칸인가(`custom_columns.TARGETS` 의 열쇠).
+    target: Mapped[str] = mapped_column(String)
+    name: Mapped[str] = mapped_column(String)
+    #: `memo`(글) · `ox`(O/X).
+    kind: Mapped[str] = mapped_column(String, default="memo")
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    is_hidden: Mapped[int] = mapped_column(Integer, default=0)
+    created_by: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id"), nullable=True)
+
+
+class CustomColumnValue(TimestampMixin, Base):
+    """추가 칸 하나 × 줄 하나의 값.
+
+    **줄의 표에 칸을 더하지 않는다.** 붙일 표 여섯 중 넷에는 값을 담을 JSON 칸이
+    없고, 있는 둘(`VcContact.notes` · `ConsultingCompany.notes`)은 달 칸이 이미
+    쓰는 자리다 — 열쇠가 섞이면 달 칸을 지울 때 이 값까지 쓸려 간다.
+
+    줄은 `(row_table, row_id)` 로 가리킨다. 칸 하나가 두 표의 줄에 서는 화면이
+    있어서(IR 기업 현황의 탭 셋) 번호만으로는 어느 표의 줄인지 모른다. 외래키를
+    걸 수 없으니 **줄이 지워지면 세션 flush 가 값을 함께 지운다**
+    (`custom_columns.forget_deleted` — 어느 길로 지워도 빠뜨리지 않게).
+    빈 값은 줄을 남기지 않는다(지우면 줄째 지운다).
+    """
+
+    __tablename__ = "custom_column_values"
+    __table_args__ = (
+        UniqueConstraint("column_id", "row_table", "row_id",
+                         name="uq_custom_column_values_cell"),
+        Index("ix_custom_column_values_row", "row_table", "row_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    column_id: Mapped[int] = mapped_column(ForeignKey("custom_columns.id"))
+    row_table: Mapped[str] = mapped_column(String)
+    row_id: Mapped[int] = mapped_column(Integer)
+    value: Mapped[str] = mapped_column(Text, default="")
+    updated_by: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id"), nullable=True)
+
+
+def _forget_custom_values(session, flush_context, instances) -> None:
+    """지워지는 줄의 추가 칸 값을 함께 지운다(`custom_columns.forget_deleted`).
+
+    `_forget_series_a_sharers` 와 같은 자리 · 같은 까닭이다 — 줄을 지우는 길이
+    표마다 여럿이라(한 줄 · 여러 줄 · 탭 · 강제 삭제) 길마다 적으면 하나는 빠진다.
+    """
+    from .services import custom_columns
+
+    custom_columns.forget_deleted(session)
+
+
+event.listen(OrmSession, "before_flush", _forget_custom_values)

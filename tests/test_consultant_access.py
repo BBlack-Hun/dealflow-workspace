@@ -36,6 +36,9 @@ EXPECTED_OPEN = {
     ("PATCH", "/api/consulting/{company_id}"),
     ("DELETE", "/api/consulting/{company_id}"),
     ("GET", "/api/export/consulting.xlsx"),
+    # 관리자가 붙인 추가 칸의 값 적기 — 주소는 여러 화면이 같이 쓰고, 자기 화면
+    # (투자컨설턴트) 줄만 받는 것은 라우터가 따로 본다(`custom_columns.put_value`).
+    ("PUT", "/api/custom-values/{row_table}/{row_id}"),
     # 참고 자료 패널(스크립트·가이드). 투자사 관리 현황과 주소를 같이 쓰므로
     # 어느 화면 자료인지는 라우터가 따로 본다.
     ("PATCH", "/api/ref-sheets/{sheet_id}/cell"),

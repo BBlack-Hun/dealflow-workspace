@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_custom_cols.html" as cc with context %}
 
 {#
   **값 아래 잔글씨로 `수정한 날짜`.** 이 표가 값과 곁말을 한 칸에 세우는
@@ -616,6 +617,9 @@
         <th style="width:120px">연락처</th>
         <th style="width:180px">이메일</th>
         {% endif %}
+        {# 관리자가 붙인 추가 칸 — 탭을 가리지 않고 같은 칸이다. [월 열 추가]의 달 칸과
+           **따로 산다**(#8 사용자 결정 · `_custom_cols.html`). #}
+        {{ cc.heads() }}
         <th style="width:56px"></th>
       </tr>
     </thead>
@@ -668,7 +672,7 @@
           {% if is_startup_sheet %}data-f-done="{{ r.contract_done }}"{% endif %}
           {% if is_startup_sheet %}data-f-quote="{{ r.contract_management }}"{% endif %}
           {% if is_startup_sheet %}data-f-joined="{{ r.kakao_joined }}"{% endif %}
-          data-f-mgmt="{{ r.mgmt }}">
+          data-f-mgmt="{{ r.mgmt }}"{{ cc.attrs(r.id) }}>
         {#
           **이미 스타트업 명단에 있는 기업은 체크 칸 대신 표시가 선다.**
 
@@ -849,6 +853,7 @@
         <td class="cell" data-field="phone">{{ r.phone }}</td>
         <td class="cell" data-field="email">{{ r.email }}</td>
         {% endif %}
+        {{ cc.cells(r.id, td=True) }}
         <td>
           {# 남의 줄에는 세우지 않는다. 눌러 봐야 서버가 404 로 막으므로
              (`owned()`), 세워 두면 눌렀을 때 `삭제 실패` 만 뜨는 단추가 된다. #}

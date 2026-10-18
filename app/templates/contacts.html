@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{# 관리자가 붙인 추가 칸 — 스타트업 명단 표에만 실린다(`routers/pages.list_page`). #}
+{% import "_custom_cols.html" as cc with context %}
 {% block content %}
 {#
   투자사 명단 시트(`투자사 150/98/30`)를 그대로 옮긴 표. 컬럼 **이름과 순서**가
@@ -1102,7 +1104,7 @@
   <table class="grid-table startup-table" id="contacts-table"
          data-inline-url="/api/contacts"
          style="min-width:{{ table_columns|sum(attribute='width') + 44
-                              + (32 if delete_view else 0) }}px;
+                              + (32 if delete_view else 0) + (cc.width()|int) }}px;
                 --stick-a:{{ stick_lead }}px;
                 --stick-b:{{ stick_lead + stick_no }}px">
     <thead>
@@ -1133,6 +1135,7 @@
         >{{ c.label }}{% if th_filters %}<div class="th-filters"></div>{% endif %}</th>
         {% endif %}
         {% endfor %}
+        {{ cc.heads() }}
         <th style="width:44px"></th>
       </tr>
     </thead>
@@ -1149,7 +1152,7 @@
           #}
           {% for c in filter_columns %}
           data-f-{{ c.key }}="{{ r.notes.get(c.key, '') if c.source == 'note' else r[c.key] }}"
-          {% endfor %}>
+          {% endfor %}{{ cc.attrs(r.id) }}>
         {% if delete_view %}
         <td class="stick stick-lead">{% if r.is_hidden %}<input type="checkbox" class="hidden-del-cb"
               value="{{ r.id }}" data-name="{{ r.name }}">{% endif %}</td>
@@ -1224,6 +1227,7 @@
             title="{{ r[c.key] }}">{{ r[c.key] }}</td>
         {% endif %}
         {% endfor %}
+        {{ cc.cells(r.id) }}
         <td><button type="button" class="linkbtn js-detail">수정</button></td>
       </tr>
       {% endfor %}

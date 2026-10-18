@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_custom_cols.html" as cc with context %}
 
 {#
   업무 보고 › `매출예상리스트`(개선 과제 #46). 한 줄 = 기업 하나 × 투자사 하나.
@@ -59,12 +60,14 @@
         {% for field, label, src in columns %}
         <th {% if src %}class="fc-auto" title="비면 자동 — {{ src }}"{% endif %}>{{ label }}</th>
         {% endfor %}
+        {# 관리자가 붙인 추가 칸(`컬럼 관리` · `_custom_cols.html`). #}
+        {{ cc.heads() }}
         <th style="width:52px"></th>
       </tr>
     </thead>
     <tbody>
       {% for r in rows %}
-      <tr data-id="{{ r.id }}">
+      <tr data-id="{{ r.id }}"{{ cc.attrs(r.id) }}>
         {% for field, label, src in columns %}
         {% set c = r.cells[field] %}
         <td {% if src %}title="{{ '직접 적음 · 지우면 자동(' ~ src ~ ')' if c.value and not c.auto else '자동 — ' ~ src }}"{% endif %}>
@@ -95,10 +98,11 @@
           {% endif %}
         </td>
         {% endfor %}
+        {{ cc.cells(r.id) }}
         <td><button type="button" class="linkbtn js-fc-delete">삭제</button></td>
       </tr>
       {% else %}
-      <tr><td colspan="{{ columns|length + 1 }}" class="muted">아직 줄이 없습니다. [줄 추가]로 기업을 넣으세요.</td></tr>
+      <tr><td colspan="{{ columns|length + (custom_cols|length) + 1 }}" class="muted">아직 줄이 없습니다. [줄 추가]로 기업을 넣으세요.</td></tr>
       {% endfor %}
     </tbody>
   </table>

@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+
+{#
+  관리자 메뉴 `컬럼 관리`(#6 · #7 · #8 · #12 · #46) — 표에 붙이는 추가 칸.
+
+  화면(`target`)을 탭으로 고르고, 그 화면의 칸을 붙이고 · 이름을 바꾸고 · 옮기고 ·
+  숨긴다. **지우는 단추는 없다** — 숨긴 칸은 표와 엑셀에서 빠지고 값은 남는다.
+  단추는 전부 평범한 폼이다(누르면 이 화면으로 돌아온다).
+#}
+
+{% block content %}
+<header class="page-head">
+  <h1>{{ page_title }}</h1>
+  <p class="muted">
+    표 오른쪽에 붙는 칸을 정합니다. 형식은 <b>메모(글)</b>와 <b>O/X</b> 두 가지이고,
+    팀원은 표에서 값만 적습니다. 칸은 지우지 않고 <b>숨깁니다</b> — 숨긴 칸은 표와
+    엑셀에서 빠지고, 적힌 값은 그대로 남아 다시 보이게 하면 함께 돌아옵니다.
+  </p>
+</header>
+
+<nav class="sheet-tabs">
+  {% for key, spec in targets.items() %}
+  <a class="sheet-tab {% if key == target %}active{% endif %}" href="/columns?target={{ key }}">{{ spec.label }}</a>
+  {% endfor %}
+</nav>
+
+{% if msg %}<p class="flash" data-testid="columns-msg">{{ msg }}</p>{% endif %}
+
+<section class="panel">
+  <h2 class="panel-title">{{ targets[target].label }}</h2>
+  <p class="hint">붙는 자리: {{ targets[target].where }}</p>
+
+  <form method="post" action="/columns" class="import-controls" data-testid="column-add">
+    <input type="hidden" name="target" value="{{ target }}">
+    <label class="inline-field"><span>칸 이름</span>
+      <input type="text" name="name" maxlength="{{ name_max }}" required placeholder="예: 검토 메모"></label>
+    <label class="inline-field"><span>형식</span>
+      <select name="kind">
+        {% for key, label in kinds.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+      </select></label>
+    <button type="submit" class="primary-btn inline">칸 추가</button>
+  </form>
+
+  {% if cols %}
+  <div class="table-wrap">
+  <table class="grid-table compact" id="columns-table">
+    <thead>
+      <tr>
+        <th style="width:40px" class="num">차례</th>
+        <th>이름</th>
+        <th style="width:90px">형식</th>
+        <th style="width:90px">상태</th>
+        <th style="width:220px"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in cols %}
+      <tr data-id="{{ c.id }}"{% if c.is_hidden %} class="muted"{% endif %}>
+        <td class="num">{{ loop.index }}</td>
+        <td>
+          <form method="post" action="/columns/{{ c.id }}/rename" class="inline-form">
+            <input type="text" name="name" value="{{ c.name }}" maxlength="{{ name_max }}"
+                   aria-label="{{ c.name }} 이름" required>
+            <button type="submit" class="linkbtn">이름 바꾸기</button>
+          </form>
+        </td>
+        <td>{{ kinds[c.kind] }}</td>
+        <td>{% if c.is_hidden %}<span class="tag soft">숨김</span>{% else %}보임{% endif %}</td>
+        <td>
+          <form method="post" action="/columns/{{ c.id }}/move" class="inline-form">
+            <input type="hidden" name="step" value="-1">
+            <button type="submit" class="linkbtn" {% if loop.first %}disabled{% endif %} title="앞으로">▲</button>
+          </form>
+          <form method="post" action="/columns/{{ c.id }}/move" class="inline-form">
+            <input type="hidden" name="step" value="1">
+            <button type="submit" class="linkbtn" {% if loop.last %}disabled{% endif %} title="뒤로">▼</button>
+          </form>
+          <form method="post" action="/columns/{{ c.id }}/hidden" class="inline-form">
+            <input type="hidden" name="hidden" value="{{ 0 if c.is_hidden else 1 }}">
+            <button type="submit" class="linkbtn">{{ '다시 보이기' if c.is_hidden else '숨기기' }}</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="muted">아직 붙인 칸이 없습니다.</p>
+  {% endif %}
+</section>
+{% endblock %}

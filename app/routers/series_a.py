@@ -41,7 +41,7 @@ from ..clock import today
 from ..db import get_db
 from ..deps import NotAdmin, get_current_user, templates
 from ..models import IrCompany, SeriesACompany, SourcingContact, User
-from ..services import deal_history, series_a_share
+from ..services import custom_columns, deal_history, series_a_share
 from ..services.series_a_import import day_text
 from ..ui import base_ctx
 
@@ -213,6 +213,8 @@ def render_page(request: Request, db: Session, user: User, msg: str = "", q: str
         # [딜소개 문구 올리기] 를 보일지 — 관리자만(`can_upload_pitch`).
         "can_upload_pitch": can_upload_pitch(user),
     })
+    # 관리자가 붙인 추가 칸 — 옆 두 탭과 **같은 칸**(`custom_columns.TARGETS`).
+    ctx.update(custom_columns.view(db, "companies", "series_a_companies"))
     return templates.TemplateResponse("companies_series_a.html", ctx)
 
 

@@ -28,7 +28,7 @@ from ..models import SendItem, SendJob, SourcingContact, User
 from ..services import (series_a_share, sourcing_buckets, sourcing_link,
                         sourcing_mail, sourcing_receipts, sourcing_rooms,
                         sourcing_sync)
-from ..services import sourcing_remind_log
+from ..services import custom_columns, sourcing_remind_log
 from ..services.pipeline import current_assignee
 from ..ui import base_ctx
 # 방 확인 잡의 종류는 **한 곳에만 적는다**(`agent_api.VERIFY_KIND`).
@@ -388,6 +388,8 @@ def sourcing_page(request: Request, db: Session = Depends(get_db),
         "reminds": sourcing_remind_log.history(db, [r.id for r in rows],
                                                remind_months),
     })
+    # 관리자가 붙인 추가 칸 — 갈래(탭)를 가리지 않고 같은 칸(`_custom_cols.html`).
+    ctx.update(custom_columns.view(db, "sourcing", "sourcing_contacts"))
     return templates.TemplateResponse("sourcing.html", ctx)
 
 

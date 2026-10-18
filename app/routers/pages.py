@@ -14,7 +14,7 @@ from .. import clock
 from ..db import get_db
 from ..deps import get_current_user, may_manage_team_contacts, templates
 from ..models import ROOM_SEARCH_TOPIC, STARTUP_MSG_KIND, IrCompany, SendJob, User
-from ..services import (cadence, contact_columns, deal_history, deal_queue,
+from ..services import (cadence, contact_columns, custom_columns, deal_history, deal_queue,
                         deal_stage, email_domains, group_name, ir_attach,
                         llm_brief, mailer, manual_send, memo_intro, ref_panel,
                         send_window, series_a_share, sheet_import,
@@ -744,6 +744,10 @@ def list_page(
         # 실린다 — 고르는 자리에 숨긴 이름이 서면 숨긴 뜻이 없다.
         "sector_tree": taxonomy.picker_tree(db),
     })
+    # 관리자가 붙인 추가 칸 — **스타트업 화면의 명단 표에만**(#7). 명단(탭)을
+    # 가리지 않고 같은 칸이다. 투자사 관리 현황에는 붙이지 않는다(요청 범위 밖).
+    if page.key == STARTUP_PAGE.key:
+        ctx.update(custom_columns.view(db, "startup", "vc_contacts"))
     return templates.TemplateResponse("contacts.html", ctx)
 
 

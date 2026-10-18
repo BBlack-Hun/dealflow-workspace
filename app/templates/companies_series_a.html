@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{# 관리자가 붙인 추가 칸 — 옆 두 탭과 **같은 칸**이다(`custom_columns.TARGETS`). #}
+{% import "_custom_cols.html" as cc with context %}
 
 {#
   IR 기업 현황 메뉴의 셋째 탭 — `Series A 이상 딜 소싱`.
@@ -135,6 +137,7 @@
         <th style="width:120px" data-filters="series:투자라운드">투자라운드<div class="th-filters"></div></th>
         <th title="두 줄까지 보입니다 · 눌러서 수정">상세 내용</th>
         <th style="width:280px" title="두 줄까지 보입니다 · 눌러서 수정">딜소개 문구</th>
+        {{ cc.heads() }}
         <th style="width:52px"></th>
       </tr>
     </thead>
@@ -155,7 +158,7 @@
           data-s-received_at="{{ r.received_sort }}"
           {# 이 기업을 Series A 딜 공유로 받은 심사역 수 — 표에는 안 세우고(#24)
              [삭제] 확인창이 "공유 기록도 함께 지워진다" 고 말할 때 읽는다(`series_a.js`). #}
-          data-shared="{{ r.shared_count }}">
+          data-shared="{{ r.shared_count }}"{{ cc.attrs(r.id) }}>
         <td class="rowno muted stick stick-a"></td>
         <td class="co-name stick stick-b">
           <b class="cell" data-field="name">{{ r.name }}</b>
@@ -205,6 +208,7 @@
         <td title="{{ r.deal_pitch }}">
           <div class="cell clamp2" data-field="deal_pitch" data-type="long">{{ r.deal_pitch }}</div>
         </td>
+        {{ cc.cells(r.id) }}
         <td>
           {# 지우는 판정은 옆 두 탭과 같은 함수다(`companies.can_delete_company`). #}
           {% if can_delete %}

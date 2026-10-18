@@ -386,6 +386,11 @@ WATCHED: Dict[str, Watch] = {
             "여기 말고 물을 자리가 없다. **본문(`body`)은 값이 안 실린다** — 허용 "
             "목록에 없는 칸이라 `바뀜` 으로만 남고, 공지에는 사람·기업 이름이 실릴 수 "
             "있어 그 편이 맞다."),
+    "custom_columns": Watch(
+        owner=None, href="/columns", label=_attr("name"),
+        why="관리자가 표에 붙인 추가 칸(#6 · #7 · #8 · #12 · #46). 이름 하나를 바꾸거나 "
+            "숨기면 그 화면을 쓰는 **팀 전체의 머리글**이 바뀐다 — 주인 없는 공용 자리라 "
+            "누가 언제 바꿨는지가 여기 말고 안 남는다."),
 }
 
 
@@ -431,6 +436,11 @@ UNWATCHED: Dict[str, str] = {
                       "읽는다). 주인 칸이 없는 표라(맡은 사람은 담당자 줄이 정한다) "
                       "여기 남기면 모든 줄이 `공용` 으로 쌓여, 하루에도 여러 번 켜고 "
                       "끄는 할 일 표시가 `누가 무엇을 고쳤나` 를 덮는다.",
+    "custom_column_values": "추가 칸에 적은 값. **고친 일은 그 줄의 로그로 남는다**"
+                            "(`custom_columns.write` → `touched`) — 값 줄은 주인 칸이 "
+                            "없어 여기서 보면 모든 고침이 `공용` 으로 쌓이는데, 그 줄이 "
+                            "누구 것인지는 줄의 표(기업 · 명단 · 매출예상리스트)가 안다. "
+                            "줄과 함께 지워지는 값은 줄의 `삭제` 가 이미 말한다.",
     "notice_reads": "공지를 확인했다는 표시. 자기가 읽었다고 적는 줄이라 늘 자기 것이고"
                     "(남길 일이 아니다), 사람 수 × 공지 수만큼 쌓인다 — 남기면 로그가 "
                     "`누가 공지를 닫았다` 로 덮여 `누가 무엇을 고쳤나` 가 안 보인다. "
@@ -676,6 +686,23 @@ def also(table_name: str, field: str, value) -> None:
     # 잡아먹는다). `after` 에 담으면 그 화면에 `(빈 값)` 으로 뜬다.
     box.setdefault(table_name, []).append(
         {"field": field, "before": _trim(value), "after": None})
+
+
+def touched(table_name: str, field: str) -> None:
+    """`also` 와 같은 자리에 **값 없이 `바뀜`** 한 칸을 싣는다.
+
+    추가 칸 값(`custom_columns.write`)이 쓴다 — 값은 줄 밖의 표에 있어서 줄의
+    로그에는 안 잡히는데, 누가 어느 줄의 어느 칸을 고쳤는지는 **그 줄의 주인
+    판정 그대로** 남아야 한다(자기 줄이면 안 남고, 남의 줄 · 공용이면 남는다).
+    값은 싣지 않는다 — 메모 칸과 같은 규칙이다(`VALUE_FIELDS` 머리말).
+    """
+    if _ACTOR.get() is None:
+        return
+    box = _EXTRA.get()
+    if box is None:
+        box = {}
+        _EXTRA.set(box)
+    box.setdefault(table_name, []).append({"field": field, "changed": True})
 
 
 def actor_from_request(request) -> Optional[int]:
