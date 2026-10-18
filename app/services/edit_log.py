@@ -539,6 +539,10 @@ VALUE_FIELDS = frozenset({
     "received_at", "contract_month", "card_registered_at", "effective_from",
     "founded_year", "last_login_at",
 
+    # 추가 칸의 자리 — 어느 기존 칸 뒤인가(`custom_columns.after_key`). 머리글
+    # 이름이라 짧고, 바뀌면 그 화면을 쓰는 팀 전체의 칸 차례가 바뀐다.
+    "after_key",
+
     # 일정 규칙의 짧은 설정값.
     "layout", "weekday", "nth_weeks", "offset_min_days", "offset_max_days",
 })
@@ -610,6 +614,7 @@ FIELD_LABELS = {
     "tab_deleted_columns": "함께 지운 달 칸",
     "tab_snapshot": "지우기 직전 백업",
     "ir_company_id": "IR 기업 연결",
+    "after_key": "위치",
 }
 
 #: **자기 줄이라도 남기는 칸.** 보통은 자기 것을 고친 것은 안 남긴다(머리글 —

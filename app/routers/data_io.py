@@ -370,20 +370,21 @@ def _export_sheet(db: Session, user: User, label: str) -> Response:
         return _xlsx(f"{label}_{today}.xlsx", layout.label,
                      CONTACT_HEADERS + [c.label for c in months], body)
 
-    # 스타트업 화면의 명단이면 관리자가 붙인 추가 칸을 끝에 잇는다(화면과 같다).
+    # 스타트업 화면의 명단이면 관리자가 붙인 추가 칸을 잇는다 — 자리도 화면과 같다.
     extra = (custom_columns.view(db, "startup", "vc_contacts")
              if layout.page == cc.PAGE_STARTUP
              else {"custom_cols": [], "custom_vals": {}})
+    heads = ["담당 팀원"] + [c.label for c in columns]
+    put = custom_columns.arranger(heads, extra)
     body = [
-        [r["owner"]] + [(r["notes"].get(c.key, "") if c.source == "note"
-                         else r.get(c.key, "")) for c in columns]
-        + custom_columns.cells(extra, r["id"])
+        put([r["owner"]] + [(r["notes"].get(c.key, "") if c.source == "note"
+                             else r.get(c.key, "")) for c in columns]
+            + custom_columns.cells(extra, r["id"]))
         for r in rows
     ]
     today = date.today().isoformat()
     return _xlsx(f"{label}_{today}.xlsx", layout.label,
-                 ["담당 팀원"] + [c.label for c in columns]
-                 + custom_columns.names(extra), body)
+                 put(heads + custom_columns.names(extra)), body)
 
 
 @router.get("/api/export/contacts.xlsx")
@@ -495,22 +496,23 @@ def export_companies(db: Session = Depends(get_db),
                      user: User = Depends(get_current_user)):
     """IR 기업현황 → 엑셀. 소개 가능 여부를 함께 내보내 어디를 채워야 할지 보이게 한다."""
     companies = db.execute(select(IrCompany).order_by(IrCompany.name)).scalars().all()
-    # 관리자가 붙인 추가 칸 — 숨긴 칸은 빠진다(화면과 같다).
+    # 관리자가 붙인 추가 칸 — 숨긴 칸은 빠지고 고른 자리에 선다(화면과 같다).
     extra = custom_columns.view(db, "companies", "ir_companies")
+    put = custom_columns.arranger(COMPANY_HEADERS, extra)
     rows = [
-        [c.name, c.sector_major or "", c.sector_minor or "", c.series or "",
-         c.one_liner or "", "O" if c.introducible else "",
-         _eok(c.revenue_recent), _eok(c.funding_total),
-         _eok(c.raise_target), _eok(c.pre_value),
-         c.competitiveness or "",
-         # 아직 안 정한 기업은 **빈 칸**이다 — 없는 날짜를 지어내지 않는다.
-         c.meeting_offered_at or "", c.contract_status or "",
-         # 아직 안 정한 기업은 **빈 칸**이다 — `X` 로 채우면 엑셀에서 세는
-         # 순간 "확인했는데 안 왔다" 가 그 숫자에 들어간다.
-         c.contract_received or "", c.contract_month or "",
-         "★" if c.is_top_deal else "", c.funding_status or "",
-         c.summary_status or "", c.ir_file_name or ""]
-        + custom_columns.cells(extra, c.id)
+        put([c.name, c.sector_major or "", c.sector_minor or "", c.series or "",
+             c.one_liner or "", "O" if c.introducible else "",
+             _eok(c.revenue_recent), _eok(c.funding_total),
+             _eok(c.raise_target), _eok(c.pre_value),
+             c.competitiveness or "",
+             # 아직 안 정한 기업은 **빈 칸**이다 — 없는 날짜를 지어내지 않는다.
+             c.meeting_offered_at or "", c.contract_status or "",
+             # 아직 안 정한 기업은 **빈 칸**이다 — `X` 로 채우면 엑셀에서 세는
+             # 순간 "확인했는데 안 왔다" 가 그 숫자에 들어간다.
+             c.contract_received or "", c.contract_month or "",
+             "★" if c.is_top_deal else "", c.funding_status or "",
+             c.summary_status or "", c.ir_file_name or ""]
+            + custom_columns.cells(extra, c.id))
         for c in companies
     ]
     today = date.today().isoformat()
@@ -520,7 +522,7 @@ def export_companies(db: Session = Depends(get_db),
     # 매번 따져야 한다(가져오기도 시트 쪽 이름을 그대로 찾는다:
     # `scripts/import_company_sheets.py` 의 `find_sheet`).
     return _xlsx(f"IR 기업현황_{today}.xlsx", "IR 기업현황",
-                 COMPANY_HEADERS + custom_columns.names(extra), rows)
+                 put(COMPANY_HEADERS + custom_columns.names(extra)), rows)
 
 
 @router.get("/api/export/companies-view.xlsx")
@@ -540,8 +542,8 @@ def export_companies_view(request: Request, q: str = "", sort: str = "",
     """
     from .companies import company_rows
 
-    # 표 오른쪽의 추가 칸도 화면처럼 끝에 붙이고, 그 칸의 O/X 필터도 같이 건다
-    # (숨긴 칸은 빠진다).
+    # 추가 칸도 화면처럼 고른 자리(안 고르면 끝)에 붙이고, 그 칸의 O/X 필터도 같이
+    # 건다(숨긴 칸은 빠진다).
     extra = custom_columns.view(db, "companies", "ir_companies")
     by_custom = company_view.custom_filters(extra)
     rows = company_view.view_rows(
@@ -550,10 +552,11 @@ def export_companies_view(request: Request, q: str = "", sort: str = "",
     today = date.today().isoformat()
     # 이름은 전체 파일(`IR 기업현황_날짜.xlsx`)과 갈라 둔다 — 둘을 같은 폴더에
     # 받아 두면 어느 쪽이 거른 것인지 이름으로 보여야 한다.
-    cells = [line + custom_columns.cells(extra, r["id"])
+    put = custom_columns.arranger(company_view.VIEW_HEADERS, extra)
+    cells = [put(line + custom_columns.cells(extra, r["id"]))
              for r, line in zip(rows, company_view.to_cells(rows))]
     return _xlsx(f"IR 기업현황_화면_{today}.xlsx", "IR 기업현황 (화면)",
-                 company_view.VIEW_HEADERS + custom_columns.names(extra), cells)
+                 put(company_view.VIEW_HEADERS + custom_columns.names(extra)), cells)
 
 
 # `/api/export/reactions.xlsx` 는 뺐다 — 업무 보고 `이 달의 반응` 머리에 달려

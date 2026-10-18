@@ -3181,6 +3181,9 @@ class CustomColumn(TimestampMixin, Base):
     #: `memo`(글) · `ox`(O/X).
     kind: Mapped[str] = mapped_column(String, default="memo")
     position: Mapped[int] = mapped_column(Integer, default=0)
+    #: 어느 기존 칸 **뒤에** 서나 — 그 칸의 머리글 이름(`custom_columns.anchors`).
+    #: 비면 표 오른쪽 끝. 같은 칸 뒤에 여럿이면 `position` 차례다(0110).
+    after_key: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     is_hidden: Mapped[int] = mapped_column(Integer, default=0)
     created_by: Mapped[Optional[int]] = mapped_column(
         ForeignKey("users.id"), nullable=True)

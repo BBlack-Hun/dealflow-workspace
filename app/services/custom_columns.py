@@ -1,7 +1,8 @@
 """표에 붙이는 추가 칸 — 개선 과제 #6 · #7 · #8 · #12 · #46.
 
 관리자가 관리자 메뉴 `컬럼 관리`(`routers/custom_columns.py`)에서 칸을 붙이고
-(이름 · 형식 메모/OX), 이름을 바꾸고, 순서를 옮기고, 숨긴다. **지우는 길은 없다.**
+(이름 · 형식 메모/OX), 이름을 바꾸고, 순서를 옮기고, 자리(어느 기존 칸 뒤 —
+`anchors` · `place`)를 고르고, 숨긴다. **지우는 길은 없다.**
 팀원은 표에서 값만 적는다 — 칸을 눌러 적는 길은 그 표의 다른 칸과 같고
 (`inline_edit.js` · `consulting.js` 의 `data-custom`), 고칠 수 있는 줄도 그 표의
 판정 그대로다(`routers/custom_columns._row`).
@@ -56,6 +57,77 @@ TARGETS = {
 #: 줄의 표 → 화면. 표 하나는 한 화면에만 속한다.
 ROW_TARGET = {table: key for key, spec in TARGETS.items() for table in spec["tables"]}
 
+#: 추가 칸을 **어느 기존 칸 뒤에** 둘 수 있나 — 화면마다 탭별 머리글 이름(0110).
+#:
+#: 열쇠가 머리글 이름인 까닭: IR 기업 현황 · 투자컨설턴트는 머리글을 템플릿에 손으로
+#: 적어서(반복문이 아니다) 칸마다 붙은 열쇠가 없다. 이름은 화면과 엑셀이 같이 쓰는
+#: 말이라 엑셀도 같은 이름 뒤에 끼운다(`arranger`). 템플릿에서 이름을 고치면 그 뒤에
+#: 두었던 칸은 맨 끝으로 물러난다 — tests/test_custom_columns.py 가 화면과 대조한다.
+#: 고정 칸(`NO` · 고르기 칸)은 뺀다 — 그 사이에 끼면 가로 고정 자리 셈이 어긋난다.
+#: 반복문으로 머리글을 그리는 표(스타트업 · 딜 소싱 · 매출예상)는 그 목록을 읽는다.
+_HAND_ANCHORS = {
+    "companies": {
+        "IR 기업 현황": (
+            "기업명", "수신일", "대분류", "소분류", "투자라운드", "수정한 날짜",
+            "딜 소개 문구", "담당자", "소개 횟수", "미팅제공일자", "계약여부",
+            "계약서 수신 여부", "홍보메일삭제", "핵심/TOP Deal", "IR 자료"),
+        "스타트업DB": (
+            "수신일", "기업명", "대표자명", "연락처", "이메일", "기업 한줄 소개",
+            "22년 매출", "23년 매출", "24년 매출", "25년 매출", "누적투자금액",
+            "투자유치희망금액", "Pre Value", "특이사항 (장점)", "최근 매출액",
+            "설립년도", "정책자금", "IR 자료"),
+        "Series A 이상 딜 소싱": (
+            "기업명", "수신 일자", "Type", "담당팀원", "공유 심사역", "회사", "대분류",
+            "소분류", "투자라운드", "상세 내용", "딜소개 문구"),
+    },
+    "consulting": {
+        "스타트업": (
+            "지역", "미팅일", "미팅종류", "기업명", "기업 관리", "기업 내용",
+            "견적서 첨부 여부", "계약완료여부", "계약서 수신완료여부", "딜 소개문구",
+            "카톡 연결 여부", "대표자", "연락처", "이메일"),
+        "그 밖의": (
+            "지역", "미팅일", "미팅종류", "기업명", "기업 관리", "기업 내용",
+            "대표자", "연락처", "이메일"),
+        "월간 계약 업무현황표": (
+            "계약월", "기업명", "계약여부", "계약서 수신여부", "성공보수율", "계약금"),
+    },
+}
+
+
+def anchor_groups(target: str) -> Dict[str, tuple]:
+    """`{탭: 머리글 이름들}` — 그 화면의 기존 칸."""
+    if target in _HAND_ANCHORS:
+        return _HAND_ANCHORS[target]
+    # 순환 import 를 피해 늦게 부른다 — 그 화면들이 이 모듈을 부른다.
+    if target == "startup":
+        from .contact_columns import STARTUP_LAYOUT, table_columns
+        return {"스타트업 명단": tuple(c.label for c in table_columns(STARTUP_LAYOUT, [])
+                                  if c.source != "row_no")}
+    if target == "sourcing":
+        from ..routers.sourcing import COLUMNS
+        return {"딜 소싱": tuple(label for _f, label, _w, _fl in COLUMNS)}
+    if target == "forecast":
+        from .forecast import COLUMNS
+        return {"매출예상리스트": tuple(label for _f, label, _s in COLUMNS)}
+    return {}
+
+
+def label_key(text) -> str:
+    """머리글 이름을 견줄 꼴 — 띄어쓰기를 하나로(`custom_cols.js` 의 `key` 와 같다)."""
+    return " ".join(str(text or "").split())
+
+
+def anchors(target: str) -> List[tuple]:
+    """고를 자리 `[(이름, 안내)]`. 몇 탭에만 있는 칸은 안내에 그 탭을 적는다."""
+    groups = anchor_groups(target)
+    tabs: Dict[str, list] = {}
+    for tab, labels in groups.items():
+        for label in labels:
+            tabs.setdefault(label_key(label), []).append(tab)
+    return [(label, "" if len(where) == len(groups) else " · ".join(where) + " 탭만")
+            for label, where in tabs.items()]
+
+
 KINDS = {"memo": "메모(글)", "ox": "O/X"}
 OX_CHOICES = "O,X"
 NAME_MAX = 40
@@ -103,6 +175,24 @@ def names(v: dict) -> List[str]:
 def cells(v: dict, row_id: int) -> List[str]:
     got = v["custom_vals"].get(row_id, {})
     return [got.get(c.id, "") for c in v["custom_cols"]]
+
+
+def arranger(headers: List[str], v: dict):
+    """엑셀 한 줄(`headers` 차례의 기존 칸 + `cells`)을 **화면처럼 앵커 뒤에** 끼운
+    차례로 바꾸는 함수. 앵커가 이 파일 머리글에 없으면 그 칸은 지금처럼 맨 끝이다.
+    """
+    keys = [label_key(h) for h in headers]
+    n = len(keys)
+    after: Dict[int, list] = {}
+    tail = []
+    for j, c in enumerate(v["custom_cols"]):
+        key = label_key(c.after_key)
+        if key and key in keys:
+            after.setdefault(keys.index(key), []).append(n + j)
+        else:
+            tail.append(n + j)
+    order = [k for i in range(n) for k in [i] + after.get(i, [])] + tail
+    return lambda line: [line[k] for k in order]
 
 
 # ── 관리자: 붙이기 · 이름 · 순서 · 숨김 ───────────────────────────────────
@@ -159,6 +249,15 @@ def move(db: Session, col: CustomColumn, step: int) -> None:
         order[at], order[to] = order[to], order[at]
     for i, c in enumerate(order):
         c.position = i
+
+
+def place(col: CustomColumn, after: str) -> None:
+    """칸을 기존 칸 `after`(머리글 이름) 뒤로 — 비면 맨 끝. 탭에 그 칸이 없으면
+    그 탭에서는 맨 끝에 선다(`custom_cols.js`)."""
+    after = label_key(after)
+    if after and after not in dict(anchors(col.target)):
+        raise ColumnError("그 화면에 없는 칸입니다")
+    col.after_key = after or None
 
 
 def set_hidden(col: CustomColumn, hidden: bool) -> None:
