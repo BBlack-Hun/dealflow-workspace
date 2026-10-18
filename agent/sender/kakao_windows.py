@@ -152,7 +152,8 @@ UIA_MAIN_DUMP_FILE = "kakao_uia_dump.txt"
 UIA_CHAT_DUMP_FILE = "kakao_uia_chat_dump.txt"
 
 #: 발송할 방을 몇 번까지 찾아 여나 — 처음 한 번 + Enter 로 아무 방도 안 열렸을 때(또는
-#: 결과 목록이 읽히는데 그 방이 없을 때) **열린 검색창을 닫고** 한 번 더(0.11.10).
+#: 결과 목록이 읽히는데 그 방이 없을 때 · 다른 방이 열렸을 때 — 0.11.11) **열린 검색창을 닫고**
+#: 한 번 더(0.11.10).
 #: 실기(0.11.9)에서 같은 방을 다시 찾으면 카톡이 결과를 새로 세우지 않아 Enter 가 열 방이
 #: 없었고, 실패한 건의 Esc(열린 검색창을 닫는다) 뒤의 건은 나갔다 — 그 차례를 한 건 안에서
 #: 되풀이한다. 채팅 입력란에 키를 넣기 **전**의 일이라 다시 해도 겹쳐 나갈 것이 없다.
@@ -856,7 +857,7 @@ class KakaoDesktopSender(Sender):
             return False
         self._pyperclip.copy(query)
         self._pyautogui.hotkey(*(conf.get("paste_hotkey") or ["ctrl", "v"]))
-        time.sleep(self._t("after_query_paste", 0.8))
+        time.sleep(self._t("after_query_paste", 1.5))
         return True
 
     def _clear_by_uia(self, win, conf: dict) -> bool:
@@ -1017,7 +1018,8 @@ class KakaoDesktopSender(Sender):
           4. VERIFY **foreground** window title == room_name (exact); mismatch → close + failed
           (0.11.10) 3 에서 아무 방도 안 열리고 메인 창이 그대로 앞이면 — 또는 2 에서 읽은
           목록에 그 방이 없으면 — 열린 검색창을 Esc 로 닫고 2 부터 **한 번 더**
-          (`OPEN_ROOM_TRIES`). 채팅창이 열린 뒤에는 되풀이하지 않는다.
+          (`OPEN_ROOM_TRIES`). (0.11.11) 3 에서 **다른 방**(카톡 채팅창)이 열렸으면 그 창만
+          닫고 같은 차례로 한 번 더 — 입력란에 키를 넣기 전이다. 다른 앱이 앞이면 멈춘다.
 
         돌려주는 값: `(채팅창, 실패)`. 실패가 None 이 아니면 **그대로 돌려주고
         끝낸다** — 그 뒤로는 아무 키도 누르지 않는다. 채팅창을 받았으면 다 쓴 뒤
@@ -1094,16 +1096,35 @@ class KakaoDesktopSender(Sender):
                 self._search_open = False
                 return chat, None
             if not self._foreground_is_main(win):
-                # 다른 방(카톡 채팅창)이든 다른 앱이든 무엇이 앞에 왔다 — 되풀이하지 않는다.
-                # 검색창이 어떤지 모른다(모르는 쪽으로 둔다 — `_close_search_box`).
+                # 무엇이 앞에 왔다 — 검색창이 어떤지 모른다(모르는 쪽으로 둔다 —
+                # `_close_search_box`). 다른 앱이면 되풀이하지 않는다.
                 self._search_open = False
+                wrong = self._opened_title_hint(win, room_name)
+                if last or not wrong:
+                    break
+                # (0.11.11) 다른 방(카톡 채팅창)이 열렸다 — 결과가 서기 전에 Enter 가 눌려
+                # 대화 목록 맨 위 방이 열린 것으로 본다. 입력란에는 아직 아무것도 안 넣었다.
+                # 그 창만 닫고, 검색창을 열었다 아래 다시 찾기의 Esc 로 닫아 검색 상태를
+                # 지운다 — 방을 연 뒤 같은 글자로는 결과를 새로 세우지 않는다(0.11.10).
+                log.warning("다른 방이 열렸습니다(%r) — 그 창을 닫고 한 번 더 찾습니다 "
+                            "room=%r", _clip(wrong), room_name)
+                self._close_wrong_room(win)
+                if not self._focus_verified(win):
+                    return None, self._fail(
+                        room_name,
+                        "focus_failed: 다른 방을 닫은 뒤 카카오톡 창을 다시 앞으로 가져오지 "
+                        f"못했습니다(전송 안 함, {self._focus_cause(win)})")
+                self._pyautogui.hotkey(*self.sel.get("search_hotkey", ["ctrl", "f"]))
+                self._search_open = True
+                time.sleep(self._t("after_search_hotkey", 0.4))
+            elif last:
                 break
-            if last:
-                break
-            # 아무 방도 안 열렸고 메인 창이 그대로 앞이다 — 실기(0.11.9)에서 같은 방을 연달아
-            # 보낼 때 본 그 모양이다. 열린 검색창을 닫고(검색 상태가 지워진다) 다시 찾는다.
-            log.warning("Enter 로 방이 열리지 않았습니다(검색 결과: %s) — 검색창을 닫고 "
-                        "한 번 더 찾습니다 room=%r", results, room_name)
+            else:
+                # 아무 방도 안 열렸고 메인 창이 그대로 앞이다 — 실기(0.11.9)에서 같은 방을
+                # 연달아 보낼 때 본 그 모양이다. 열린 검색창을 닫고(검색 상태가 지워진다)
+                # 다시 찾는다.
+                log.warning("Enter 로 방이 열리지 않았습니다(검색 결과: %s) — 검색창을 닫고 "
+                            "한 번 더 찾습니다 room=%r", results, room_name)
             if not self._search_again(win):
                 break
 
@@ -1119,9 +1140,14 @@ class KakaoDesktopSender(Sender):
         seen = _clip(self._foreground_title())
         self._close_wrong_room(win)
         error = "room_mismatch: 열린 방 제목이 정확히 일치하지 않음"
-        if opened:
+        # ★ (0.11.11) '고치면 나갑니다' 는 열린 제목에 방 이름이 들어 있을 때만(같은 방의 다른
+        #   이름) — 다른 사람 방 제목으로 고치면 다음 발송이 그 사람에게 간다.
+        if opened and _norm_title(room_name) in _norm_title(opened):
             error += (f" — 실제로 열린 방: {opened!r}. 방 이름을 이 제목과 "
                       f"똑같이 고치면 나갑니다 (전송 안 함)")
+        elif opened:
+            error += (f" — 다른 방이 열렸습니다: {opened!r}. 방 이름은 그대로 두고 "
+                      f"[실패 재시도]를 누르세요 (전송 안 함)")
         elif seen:
             error += f" (전송 안 함, 앞 창: {seen!r})"
         else:
