@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+
+{#
+  업무 보고 › `매출예상리스트`(개선 과제 #46). 한 줄 = 기업 하나 × 투자사 하나.
+
+  **빨간 칸은 비면 자동이다.** 줄에는 사람이 적은 값만 있고, 빈 칸은 열 때마다
+  원본에서 읽는다(`services/forecast.py`). 칸 위에 손을 올리면 출처가 보인다.
+  적으면 그 값이 우선이고, 지우면 다시 자동이 된다.
+#}
+{% block content %}
+{% set q %}{% if scope %}scope={{ scope }}{% endif %}{% if viewing and members %}&member={{ viewing.id }}{% endif %}{% endset %}
+<header class="page-head">
+  <h1>{{ page_title }}</h1>
+  <p class="muted">
+    기업 하나 × 투자사 하나가 한 줄입니다. <b class="fc-auto">빨간 칸</b>은 비어 있으면
+    스타트업DB · 투자사 관리 현황 · 미팅에서 저절로 읽어 옵니다 — 직접 적으면 그 값이 우선이고,
+    지우면 다시 자동이 됩니다.
+  </p>
+</header>
+{% include "_report_tabs.html" %}
+
+<div class="toolbar">
+  <form class="quick-chips" id="fc-add">
+    <input type="text" name="company_name" list="fc-companies" placeholder="기업명"
+           aria-label="기업명" required>
+    <button type="submit" class="primary-btn inline">줄 추가</button>
+    <a class="secondary-btn" href="/api/export/forecast.xlsx?{{ q }}" download>엑셀</a>
+  </form>
+  {% if members %}
+  <div class="toolbar-right">
+    <a class="chip {% if not team_wide and viewing and viewing.id == user.id %}active{% endif %}"
+       href="/report/forecast">내 것</a>
+    <a class="chip {% if team_wide %}active{% endif %}" href="/report/forecast?scope=team">팀 전체</a>
+    <select class="chip-select" onchange="location = '/report/forecast?member=' + this.value">
+      <option value="">팀원 선택…</option>
+      {% for m in members %}
+      <option value="{{ m.id }}" {% if viewing and viewing.id == m.id %}selected{% endif %}>{{ m.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  {% endif %}
+</div>
+
+{# 자동완성 보기 — 기업명은 IR 기업 이름, 투자사명은 줄 담당자 명단의 회사명. #}
+<datalist id="fc-companies">
+  {% for o in company_options %}<option value="{{ o.value }}"{% if o.label %} label="{{ o.label }}"{% endif %}></option>
+  {% endfor %}
+</datalist>
+{% for owner, names in firm_options.items() %}
+<datalist id="fc-firms-{{ owner }}">
+  {% for n in names %}<option value="{{ n }}"></option>{% endfor %}
+</datalist>
+{% endfor %}
+
+<div class="table-wrap wide">
+  <table class="grid-table fc-table" id="fc-table" data-inline-url="/api/forecast">
+    <thead>
+      <tr>
+        {% for field, label, src in columns %}
+        <th {% if src %}class="fc-auto" title="비면 자동 — {{ src }}"{% endif %}>{{ label }}</th>
+        {% endfor %}
+        <th style="width:52px"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr data-id="{{ r.id }}">
+        {% for field, label, src in columns %}
+        {% set c = r.cells[field] %}
+        <td {% if src %}title="{{ '직접 적음 · 지우면 자동(' ~ src ~ ')' if c.value and not c.auto else '자동 — ' ~ src }}"{% endif %}>
+          <div class="cell {% if c.auto %}fc-auto{% endif %}" data-field="{{ field }}"
+               data-value="{{ c.value }}"
+               {% if field.startswith('meeting') %}data-type="date"{% elif field == 'result_note' %}data-type="long"{% endif %}
+               {% if field == 'company_name' %}data-list="fc-companies"{% elif field == 'firm' %}data-list="fc-firms-{{ r.owner }}"{% endif %}>{{ c.text }}</div>
+          {% if field == 'company_name' %}
+          <div class="cell-sub">
+            {% if r.company %}
+            <a class="room-badge ok" href="{{ r.company.href }}" title="스타트업DB에 이어진 기업">스타트업DB</a>
+            {% elif r.company_candidates %}
+            {% for o in r.company_candidates %}
+            <span class="tag soft">{{ o.label }}</span>
+            <button type="button" class="linkbtn js-fc-company" data-company="{{ o.id }}">이걸로</button>
+            {% endfor %}
+            {% elif c.value %}
+            <span class="tag warn">스타트업DB에 없음</span>
+            {% endif %}
+          </div>
+          {% elif field == 'vc_name' and r.vc_candidates %}
+          <div class="cell-sub">
+            {% for o in r.vc_candidates %}
+            <span class="tag soft">{{ o.label }}</span>
+            <button type="button" class="linkbtn js-fc-vc" data-name="{{ o.name }}">이걸로</button>
+            {% endfor %}
+          </div>
+          {% endif %}
+        </td>
+        {% endfor %}
+        <td><button type="button" class="linkbtn js-fc-delete">삭제</button></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="{{ columns|length + 1 }}" class="muted">아직 줄이 없습니다. [줄 추가]로 기업을 넣으세요.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ asset('js/inline_edit.js') }}"></script>
+<script src="{{ asset('js/forecast.js') }}"></script>
+{% endblock %}

@@ -251,12 +251,12 @@ function checkedSourcing(dom) {
   assert.strictEqual(box(t.dom, "가소싱").checked, false);
 }
 
-// --- ⑥ 화면을 연 뒤에 `참여 의사를 물어보는 중` 이 된 분 — 같이 빠지고 딱지가 다르다 ----
+// --- ⑥ 화면을 연 뒤에 사람이 적은 문구가 된 분 — 같이 빠지고 딱지가 다르다 ----
 //
-// 받는 것은 정확히 `참여` 인 분뿐이다(`sourcing_sync.takes_part`). 다시 읽은 줄의
+// 문구는 어떤 글도 안 받는다(`sourcing_sync.can_get_invite`). 다시 읽은 줄의
 // `out_label` 이 딱지 글자다 — 불참여와 사정이 달라 서버가 따로 짓는다.
 {
-  const LABEL = "참여 확인 전 · 참여 의사를 물어보는 중";
+  const LABEL = "참여 확인 전 · 11월 재연락";
   const state = {
     rows: SOURCING.map(function (s) {
       return { id: s[0], assignee: s[3], received: s[4], out: s[0] === 102,
@@ -268,14 +268,54 @@ function checkedSourcing(dom) {
   gets[STATE_URL] = state;
   const t = setup(gets);
   const asking = card(t.dom, "나소싱");
-  assert.strictEqual(asking.getAttribute("data-out"), "1", "물어보는 중인 분이 고를 수 있게 남았다");
+  assert.strictEqual(asking.getAttribute("data-out"), "1", "문구인 분이 고를 수 있게 남았다");
   assert.strictEqual(asking.hidden, true);
   const tag = asking.querySelector(".out-tag");
   assert.strictEqual(tag.hidden, false, "빠진 까닭 딱지가 안 섰다");
   assert.strictEqual(tag.textContent, LABEL, "불참여 딱지를 그대로 달았다 — 사정이 다르다");
   selectAll(t.dom);
   assert.ok(checkedSourcing(t.dom).indexOf("나소싱") === -1,
-            "[전체선택] 이 물어보는 중인 분까지 골랐다");
+            "[전체선택] 이 문구인 분까지 골랐다");
 }
 
-console.log("ok - 딜 소싱 [보낼 문구] · 이 달 딜 받음 제외 · 명단 다시 읽기 · 불참여 · 확인 전 제외");
+// --- ⑦ 제안 대기중 · 물어보는 중 — 참여 안내(처음)에서만 고른다 ----------------
+//
+// 다시 읽은 줄의 `invite_only` 가 카드에 선다(`data-invite-only`). 월간 리마인드 ·
+// Series A 딜 공유에서는 빠지고, [Series A 딜 공유]에 잠깐 갔다 오면 체크가 돌아온다.
+{
+  const LABEL = "참여 확인 전 · 딜 소싱 참여 제안 대기중";
+  const state = {
+    rows: SOURCING.map(function (s) {
+      return { id: s[0], assignee: s[3], received: false, out: false,
+               invite_only: s[0] === 101, out_label: s[0] === 101 ? LABEL : "" };
+    }),
+    assignees: [{ name: "가담당", count: 2 }, { name: "나담당", count: 1 }]
+  };
+  const gets = {};
+  gets[STATE_URL] = state;
+  const t = setup(gets);
+  const offer = card(t.dom, "가소싱");
+  assert.strictEqual(offer.getAttribute("data-invite-only"), "1");
+  assert.strictEqual(offer.hidden, false, "참여 안내인데 제안 대기중인 분이 빠졌다");
+  assert.strictEqual(offer.querySelector(".out-tag").hidden, false, "딱지가 안 섰다");
+  assert.strictEqual(offer.querySelector(".out-tag").textContent, LABEL);
+  selectAll(t.dom);
+  assert.deepStrictEqual(checkedSourcing(t.dom), ["가소싱", "나소싱", "다소싱"]);
+  assert.deepStrictEqual(previews(t.fetch).pop().body.contact_ids.slice().sort(), [101, 102, 103]);
+
+  pickTopic(t.dom, "sourcing_deal_share");
+  assert.strictEqual(offer.hidden, true, "Series A 딜 공유에 제안 대기중인 분이 보인다");
+  assert.strictEqual(box(t.dom, "가소싱").checked, false);
+  pickTopic(t.dom, "sourcing_intro");
+  assert.deepStrictEqual(checkedSourcing(t.dom), ["가소싱", "나소싱", "다소싱"],
+                         "Series A 딜 공유에 갔다 오니 참여 안내 체크가 풀렸다");
+
+  pickTopic(t.dom, "sourcing_remind");
+  assert.strictEqual(offer.hidden, true, "월간 리마인드에 제안 대기중인 분이 보인다");
+  assert.strictEqual(box(t.dom, "가소싱").checked, false);
+  selectAll(t.dom);
+  assert.ok(checkedSourcing(t.dom).indexOf("가소싱") === -1,
+            "[전체선택] 이 리마인드에서 제안 대기중인 분까지 골랐다");
+}
+
+console.log("ok - 딜 소싱 [보낼 문구] · 이 달 딜 받음 제외 · 명단 다시 읽기 · 불참여 · 확인 전 제외 · 참여 안내만");

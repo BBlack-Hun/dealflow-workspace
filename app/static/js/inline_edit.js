@@ -224,6 +224,8 @@
         input.type = type === "date" && !asText ? "date"
           : (type === "number" ? "number" : "text");
       }
+      // 칸이 `<datalist>` 를 가리키면(`data-list`) 그 보기를 붙인다(매출예상리스트 기업명 · 투자사명).
+      if (!multi && cell.hasAttribute("data-list")) input.setAttribute("list", cell.getAttribute("data-list"));
       input.value = before;
       if (!multi && input.value !== before) {
         input.type = "text";

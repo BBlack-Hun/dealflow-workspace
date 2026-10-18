@@ -717,6 +717,12 @@ WRITE_ROUTES = {
     ("PATCH", "/api/todo/routines/{routine_id}"): WATCHED,
     ("POST", "/todo/routines/{routine_id}/delete"): WATCHED,
     ("POST", "/todo/carry-over"): WATCHED,
+    # 업무 보고 › 매출예상리스트(#46) — 줄 추가 · 고치기 · 기업 고르기 · 지우기.
+    # 관리자가 팀원 줄을 고치고 지울 수 있어(`forecast._owned`) 보는 쪽이다.
+    ("POST", "/api/forecast"): WATCHED,
+    ("PATCH", "/api/forecast/{row_id}"): WATCHED,
+    ("POST", "/api/forecast/{row_id}/company"): WATCHED,
+    ("DELETE", "/api/forecast/{row_id}"): WATCHED,
 
     # ── 자기 것만 ───────────────────────────────────────────────────────────
     ("POST", "/login"): SELF,
@@ -782,7 +788,7 @@ WRITE_ROUTES = {
 #: 공용·타인 화면을 맡은 라우터. 여기 있는 파일의 쓰기 라우트는 **전부**
 #: `WATCHED` 여야 한다 — 목록에 손으로 적는 갈래를 실제와 묶어 두는 자리다.
 SHARED_ROUTERS = ("companies", "ir", "consulting", "templates_crud",
-                  "sourcing", "contacts", "series_a")
+                  "sourcing", "contacts", "series_a", "forecast")
 
 
 def _write_routes(app):
@@ -862,9 +868,10 @@ def test_the_six_shared_routers_still_hold_the_forty_nine_paths(portal):
     # 올리기](`/api/import/series-a-pitch` — 파일로 `딜소개 문구` 칸만 채운다).
     # templates_crud 의 6 · 7번째는 관리자의 [모든 팀원에게 적용] 과 그
     # [되돌리기]다(`services/template_apply.py`).
+    # forecast 의 넷은 매출예상리스트 줄 추가 · 고치기 · 기업 고르기 · 지우기다(#46).
     assert counted == {"companies": 8, "ir": 14, "consulting": 9,
                        "templates_crud": 7, "sourcing": 10, "contacts": 22,
-                       "series_a": 5}
+                       "series_a": 5, "forecast": 4}
 
 
 def test_every_table_is_either_watched_or_explained(db):

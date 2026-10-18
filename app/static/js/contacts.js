@@ -718,6 +718,10 @@
       if (row.hasAttribute("data-f-sourcing_date")) {
         row.setAttribute("data-f-sourcing_date", data.sourcing_requested_at);
       }
+      // 세울 값도 — 정렬기가 이 뒤 `inline-saved` 에서 다시 읽는다(아래 `sort.refresh`).
+      if ("sourcing_requested_sort" in data) {
+        row.setAttribute("data-s-sourcing_date", data.sourcing_requested_sort);
+      }
     }
   }
   if (table) table.addEventListener("inline-saved", syncRoomCells);

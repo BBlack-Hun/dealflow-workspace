@@ -3020,6 +3020,12 @@ a.primary-btn[aria-disabled="true"] { background: #b8c4d8; cursor: not-allowed; 
 .sector-pick-toggle { margin-top: 4px; }
 input[data-sector-picker] + .sector-pick-toggle + div { margin-top: 6px; max-height: 280px;
   overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
+/* 수정창(`.form-grid`) 안에서는 칸 규칙 `.form-grid input`(폭 100% · 안쪽 여백)이 목록의
+   체크박스에도 걸려, 네모가 줄 폭을 다 먹고 글자가 밖으로 밀려났다(겹침 · 잘림 · 가로
+   스크롤). 공통 규칙은 두고 목록 안에서만 되돌린다. 폰(≤720px)은 공통 20px 네모를 그대로. */
+.form-grid .sector-pick-item { display: flex; align-items: center; gap: 4px; white-space: normal; }
+.form-grid .sector-pick-item input { width: auto; margin: 0; padding: 0; flex: none; }
+@media (max-width: 720px) { .form-grid .sector-pick-item input { width: 20px; } }
 
 /* ── 분야 기준 목록(관리자 · `taxonomy.html`) ──────────────────────────── */
 .tx-tree { display: flex; flex-direction: column; gap: 10px; }
@@ -3038,3 +3044,8 @@ input[data-sector-picker] + .sector-pick-toggle + div { margin-top: 6px; max-hei
 .tx-table td { vertical-align: top; }
 .tx-table td.tx-pre { white-space: pre-wrap; word-break: break-word; max-width: 320px; }
 .tx-suggest td { background: #fffbeb; }
+
+/* 업무 보고 › 매출예상리스트(#46) — 비면 자동인 칸의 머리글과 자동 값은 빨간 글씨. */
+/* 머리글은 `.grid-table th` 의 회색이 이겨서 한 단계 더 좁혀 건다. */
+.fc-auto, .grid-table th.fc-auto { color: var(--red); }
+.fc-table .cell-sub { margin-top: 2px; }
