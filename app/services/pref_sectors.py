@@ -102,7 +102,7 @@ FILLER = frozenset({
     "중심", "중심으로", "등", "등등", "쪽", "산업", "스타트업", "벤처", "벤처기업",
     "전문", "기술", "선호", "및", "전반", "솔루션", "플랫폼", "서비스", "업종",
     "섹터", "그리고", "또는", "or", "and", "&", "기반", "포함", "메인", "주력",
-    "미래", "차세대", "b2b", "b2c", "분야는", "분야를", "업", "테크", "tech",
+    "미래", "차세대", "분야는", "분야를", "업", "테크", "tech",
 })
 
 #: 이만큼 넘게 긴 조각은 목록의 말이 없으면 문장으로 본다(메모로).
@@ -189,7 +189,8 @@ def read_part(text: str, resolver: Optional[tx.Resolver]) -> Part:
     plain = text.replace("\u2063", " ").strip()
     words = [w for w in re.split(r"\s+", plain) if w]
     if words and all(w.lower() in FILLER for w in words):
-        # `등` · `기타 분야` 처럼 뜻을 더하지 않는 말만 남은 조각 — 그냥 둔다.
+        # `등` · `기타 분야` 처럼 뜻을 더하지 않는 말만 남은 조각 — 분야 옆이면
+        # 버리고, 줄 전체가 이것뿐이면 `read_line` 이 못 맞춘 조각으로 남긴다.
         return Part(plain, PART_SECTOR, [])
     if _is_note(text, False):
         return Part(plain, PART_NOTE, [])
@@ -264,6 +265,8 @@ def read_line(line: str, resolver: Optional[tx.Resolver]) -> LineResult:
         if part.kind == PART_UNKNOWN:
             out.unknown.append(part.text)
     out.tokens = tx.dedupe(out.tokens)
+    if not out.tokens and not out.unknown and not out.to_memo:
+        out.unknown.append(text)     # 아무것도 못 읽은 줄도 지우지 않는다(머리말)
     return out
 
 

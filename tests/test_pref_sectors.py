@@ -48,6 +48,8 @@ def test_목록의_말로_바꾼다(resolver, value, tokens):
 
 
 @pytest.mark.parametrize("value", [
+    "로봇",
+    "로봇, 딥테크·제조, AI·SaaS·데이터",
     "핀테크·블록체인, 로봇",          # 고르는 창에서 대분류를 고르면 이렇게 적힌다
     "블록체인, DID·인증",
     "핀테크·블록체인, 공급망금융(SCF)",
@@ -137,6 +139,27 @@ def test_분야_목록_안의_모르는_말은_칸에_남는다(resolver):
     result = _classify("섬유/반도체/AI", resolver)
     assert result.after == "반도체, AI·SaaS·데이터, 섬유"
     assert result.unmatched == ["섬유"]
+
+
+@pytest.mark.parametrize("value", ["B2B", "플랫폼", "산업 전반"])
+def test_뜻을_더하지_않는_말뿐인_줄도_사라지지_않는다(resolver, value):
+    """`FILLER` 낱말뿐인 조각은 낱말 0개로 돌아와 칸에도 메모에도 안 남았다."""
+    result = _classify(value, resolver)
+    assert result.after == value
+    assert result.unmatched == [value]
+    assert not result.changes
+
+
+def test_분야_옆의_B2B도_칸에_남는다(resolver):
+    result = _classify("로봇, B2B", resolver)
+    assert result.after == "로봇, B2B"
+    assert result.unmatched == ["B2B"]
+
+
+def test_분야_줄_옆의_뜻없는_줄은_메모로_간다(resolver):
+    result = _classify("로봇\n산업 전반", resolver)
+    assert result.after == "로봇"
+    assert result.moved == ["산업 전반"]
 
 
 # ── 4. 메모 붙이기 ──────────────────────────────────────────────────────────
