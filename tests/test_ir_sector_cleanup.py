@@ -88,10 +88,25 @@ def test_목록에_없는_말은_그대로_두고_따로_센다(seeded):
     from app.services import ir_sector_cleanup as c
 
     _company(seeded, "가상기업", "가상대분류", "가상소분류")
+    # 목록 밖 대분류라도 소분류가 대분류를 정해 주면 바뀐다 — 그건 안 센다
+    _company(seeded, "가상기업2", "가상대분류", "로봇")
     result = c.plan(seeded)
-    assert not result.rows
+    assert [r.name for r in result.rows] == ["가상기업2"]
+    assert result.rows[0].new_major == "딥테크·제조"
     assert result.unknown_majors == {"가상대분류": 1}
     assert result.unknown_minors == {"가상소분류": 1}
+
+
+def test_숨긴_대분류로는_옮기거나_채우자고_하지_않는다(seeded):
+    from app.models import SectorTerm
+    from app.services import taxonomy as tx
+
+    deep = seeded.query(SectorTerm).filter_by(name="딥테크·제조").one()
+    tx.set_hidden(seeded, deep.id, True)
+    seeded.commit()
+    _company(seeded, "가상기업", "AI·SaaS·데이터", "첨단소재")   # 원래는 딥테크로 옮김
+    _company(seeded, "가상기업2", None, "로봇")                    # 원래는 딥테크로 채움
+    assert all(r.new_major != "딥테크·제조" for r in _rows(seeded).values())
 
 
 def test_설명_글로_찬_소분류는_쉼표도_안_고친다(seeded):

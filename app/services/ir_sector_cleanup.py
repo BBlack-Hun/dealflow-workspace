@@ -191,7 +191,7 @@ def plan(db: Session) -> Plan:
                 continue
             tokens.append(term.name)
             parent = resolver.parent_of(term)
-            if parent is not None:
+            if parent is not None and not parent.is_hidden:
                 minor_majors.append(parent.name)
             if why:
                 if why not in reasons:
@@ -209,9 +209,7 @@ def plan(db: Session) -> Plan:
         # ── 대분류 ──────────────────────────────────────────────────────
         major_term = resolver.major(major) if major else None
         current = major_term.name if major_term else major
-        if major and major_term is None:
-            out.unknown_majors[major] = out.unknown_majors.get(major, 0) + 1
-        elif major_term is not None and current != major:
+        if major_term is not None and current != major:
             if tx.norm(major) == tx.norm(current):
                 reasons.append(f"대분류 철자 통일 `{major}` → `{current}`")
             else:
@@ -230,6 +228,10 @@ def plan(db: Session) -> Plan:
                                f"`{new_major}` 아래")
         else:
             new_major = current
+            if major and major_term is None:
+                # 목록 밖 대분류 — **바뀌지 않고 남는** 것만 센다(소분류가 대분류를
+                # 정해 주면 위에서 바뀐다).
+                out.unknown_majors[major] = out.unknown_majors.get(major, 0) + 1
             if not major:
                 found = _suggest(resolver, company)
                 if found is None:

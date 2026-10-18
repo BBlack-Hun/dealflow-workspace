@@ -201,7 +201,7 @@ MARK_LEFT = "X"
 
 #: 같은 뜻으로 받아 주는 말 — 띄어쓰기를 뺀 글자로 견준다(`_key`).
 _JOINED_WORDS = {"참여", "o", "○"}
-_LEFT_WORDS = {"불참여", "x", "×"}
+_LEFT_WORDS = {"불참여", "불참", "x", "×"}
 _ASKING_WORDS = {"참여의사를물어보는중", "물어보는중", "참여의사확인중"}
 _OFFER_PENDING_WORDS = {"딜소싱참여제안대기중", "참여제안대기중", "제안대기중", "제안대기"}
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")

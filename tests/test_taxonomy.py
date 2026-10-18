@@ -193,6 +193,28 @@ def test_대분류_이름을_바꾸면_IR_대분류와_투자사_값이_바뀐�
     assert c.sectors == "AI·데이터"
 
 
+def test_대분류_이름을_바꿔도_낱말_사전이_그_분야를_찾고_되돌릴_수_있다(seeded):
+    """낱말 사전(`sector_words`)은 코드에 적힌 처음 이름으로 대분류를 찾는다. 옛 이름이
+    숨긴 채 합친 줄로 남아야 이름을 바꾼 뒤에도 그 분야 낱말이 걸린다."""
+    from app.services import sector_words
+    from app.services import taxonomy as tx
+
+    def majors(text):
+        return {h.major for h in sector_words.find(text, tx.Resolver.load(seeded))}
+
+    row = _term(seeded, "AI·SaaS·데이터")
+    tx.rename(seeded, row.id, "AI·데이터")
+    seeded.commit()
+    assert majors("클라우드 기반 소프트웨어") == {"AI·데이터"}
+    old = [t for t in tx.all_terms(seeded) if t.name == "AI·SaaS·데이터"]
+    assert [(t.is_hidden, t.merged_into_id) for t in old] == [(1, row.id)]
+
+    # 원래 이름으로 되돌리는 것은 그 옛 이름에 막히지 않는다
+    tx.rename(seeded, row.id, "AI·SaaS·데이터")
+    seeded.commit()
+    assert majors("클라우드 기반 소프트웨어") == {"AI·SaaS·데이터"}
+
+
 def test_백업은_처음_한_번만_적는다(seeded, users):
     from app.services import taxonomy as tx
 

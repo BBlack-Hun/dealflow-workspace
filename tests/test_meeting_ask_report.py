@@ -515,6 +515,21 @@ def test_달을_자르지_않는다는_것이_숫자와_줄에_똑같이_적용�
     assert "가담당" in marked[0]
 
 
+def test_두_달에_걸쳐_받은_담당자는_보고와_ir_의_날_수가_같다(db, users, logged):
+    """★ 판정은 **마지막 전달일** 기준이다. 지지난달 보고도 지난달에 또 받은 자료를
+    보고 센다 — 그 달 줄만 넘기면 지지난달 날짜로 세어 `/ir` 과 N 이 갈린다."""
+    last = (date.today().replace(day=1) - timedelta(days=1)).replace(day=1)
+    before = (last - timedelta(days=1)).replace(day=1)
+    contact = _contact(db, users, "가담당")
+    _delivered(db, users, contact, "샘플애그", when=before)
+    _delivered(db, users, contact, "샘플메디", when=last)
+
+    said = f"회의실 미팅 톡 요청 미완료 · {(date.today() - last).days}일"
+    assert said in logged.get("/ir").text
+    rows = _bucket_rows(_report(logged, before), "IR 요청 투자사")
+    assert len(rows) == 1 and said in rows[0], rows
+
+
 def test_그_달에_받은_수는_안_변한다(db, users, logged):
     """변하는 것은 "지금 남은 일" 쪽뿐이다 — 그 달에 무엇을 받았는지는 기록이다."""
     last = (date.today().replace(day=1) - timedelta(days=1)).replace(day=1)

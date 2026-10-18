@@ -28,9 +28,10 @@
 ## 건너뛰는 줄
 
   · id 가 없는 줄 · 감춘 줄(`is_hidden`) — 화면에도 안 뜨는 줄이다.
-  · 이미 `불참여`(X)로 이어진 줄 — **스스로 안 하겠다고 한 분일 수 있다.** 화면의
-    O 는 다시 묻는 것으로 보아 `제안 대기중` 으로 되돌리지만, 한꺼번에 넣을 때는
-    건드리지 않는다. 정말로 다시 물을 거면 `--revive-left` 를 준다.
+  · 이미 `불참여`(X)인 줄(이어진 줄 · O 를 넣으면 이어질 줄 모두) — **스스로 안
+    하겠다고 한 분일 수 있다.** 화면의 O 는 다시 묻는 것으로 보아 `제안 대기중` 으로
+    되돌리지만, 한꺼번에 넣을 때는 건드리지 않는다. 정말로 다시 물을 거면
+    `--revive-left` 를 준다.
 
 ## 미리보기는 운영 DB 에 쓰지 않는다
 
@@ -125,6 +126,12 @@ def run(db, ids: List[int], *, participation: str, assignee: Optional[str],
             results.append((cid, "skipped", "감춘 줄"))
             continue
         linked = sourcing_sync.linked_row(db, contact)
+        if linked is None:
+            # 아직 안 이어진 줄도 — `set_mark` 가 이어 붙일 그 줄이 불참여면 같다.
+            try:
+                linked = sourcing_sync.find_row(db, contact)
+            except sourcing_sync.SyncError:
+                pass        # 막히는 줄은 아래 `set_mark` 가 같은 까닭으로 막는다
         if linked is not None and sourcing_sync.is_left(linked) and not revive_left:
             results.append((cid, "skipped", "이미 불참여(X) — 건드리지 않음(--revive-left)"))
             continue
@@ -174,7 +181,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         print("id 가 하나도 없습니다.", file=sys.stderr)
         return 2
 
-    copy = None
+    copy = engine = None
     if args.apply:
         from app.db import SessionLocal
 
@@ -209,11 +216,14 @@ def main(argv: Optional[List[str]] = None) -> int:
         if token is not None:
             edit_log.end(token)
         db.close()
+        if engine is not None:
+            engine.dispose()        # 열린 연결을 닫아야 -wal · -shm 이 지워진다
         if copy is not None:
-            try:
-                os.remove(copy)
-            except OSError:
-                pass
+            for path in (copy, copy + "-wal", copy + "-shm"):
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
 
     counts = Counter(action for _, action, _ in results)
     print("미리보기 — 운영 DB 에는 쓰지 않았습니다(복사본에서 돌림)" if not args.apply

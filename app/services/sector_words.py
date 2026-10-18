@@ -239,7 +239,7 @@ def _resolve(resolver: Optional["tx.Resolver"], major: str,
         term = resolver.minor(minor)
         if term is not None and not term.is_hidden:
             parent = resolver.parent_of(term)
-            if parent is not None:
+            if parent is not None and not parent.is_hidden:
                 return parent.name, term.name
     term = resolver.major(major)
     if term is None or term.is_hidden:
