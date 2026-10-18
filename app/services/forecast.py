@@ -4,6 +4,7 @@
 엑셀이 열릴 때마다 여기서 원본을 읽어 채운다 — 옮겨 적으면 두 벌이 된다.
 
     심사역 · 전화번호       투자사 관리 현황(`vc_contacts`) — 줄 담당자의 명단만,
+                           투자사로 세는 줄만(`sheet_owner.is_investor`),
                            회사는 `investor_firms.firm_key` 로 맞춘다
     대표자 · 연락처 ·       이은 IR 기업(`IrCompany.contact_name` · `contact_phone`
     프리밸류 · 희망금액      · `pre_value` · `raise_target`)
@@ -28,7 +29,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from ..models import IrRequest, Meeting, RevenueForecast, User, VcContact
-from . import ir_link
+from . import ir_link, sheet_owner
 from .deal_history import _key as company_key
 from .investor_firms import firm_key
 
@@ -93,11 +94,13 @@ class Source:
                   or {0})
         self.contacts: Dict[int, VcContact] = {}
         self.roster: Dict[tuple, List[VcContact]] = defaultdict(list)
+        hidden = sheet_owner.hidden_labels(db)
         for c in db.execute(select(VcContact).where(or_(
                 VcContact.user_id.in_(owners), VcContact.id.in_(wanted)))
                 .order_by(VcContact.id)).scalars():
             self.contacts[c.id] = c
-            if c.user_id in owners and not c.is_hidden and firm_key(c.firm):
+            # 스타트업 명단 줄(대표)을 심사역으로 잡지 않는다.
+            if c.user_id in owners and firm_key(c.firm) and sheet_owner.is_investor(c, hidden):
                 self.roster[(c.user_id, firm_key(c.firm))].append(c)
 
     def view(self, row: RevenueForecast) -> dict:
@@ -187,13 +190,16 @@ def company_options(db: Session) -> List[dict]:
 
 
 def firm_options(db: Session, owners: Iterable[int]) -> Dict[int, List[str]]:
-    """투자사명 칸의 자동완성 보기 — 줄 담당자 명단의 회사명(심사역 자동 칸이 읽는 그 명단)."""
+    """투자사명 칸의 자동완성 보기 — 줄 담당자 명단의 회사명(심사역 자동 칸이 읽는 그 명단).
+
+    투자사로 세는 줄만 싣는다(`sheet_owner.investors`) — 스타트업 명단 회사명은 뺀다.
+    """
     found: Dict[int, Dict[str, str]] = defaultdict(dict)
-    for user_id, firm, hidden in db.execute(
-            select(VcContact.user_id, VcContact.firm, VcContact.is_hidden)
-            .where(VcContact.user_id.in_(set(owners) or {0})).order_by(VcContact.id)):
-        if not hidden and firm_key(firm):
-            found[user_id].setdefault(firm_key(firm), _text(firm))
+    for c in sheet_owner.investors(db, list(db.execute(
+            select(VcContact).where(VcContact.user_id.in_(set(owners) or {0}))
+            .order_by(VcContact.id)).scalars())):
+        if firm_key(c.firm):
+            found[c.user_id].setdefault(firm_key(c.firm), _text(c.firm))
     return {user_id: sorted(names.values()) for user_id, names in found.items()}
 
 

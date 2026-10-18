@@ -161,6 +161,15 @@ def test_자동완성_보기_같은_이름은_라운드_대표자로_가르고_�
     assert 'data-list="fc-firms-1"' in page and '<option value="(주)가나벤처스">' in page
     assert "샘플남의벤처스" not in page, "남의 명단 회사명은 안 싣는다"
 
+    # 스타트업 명단(투자사로 안 세는 명단) 줄은 후보에도, 심사역 자동 칸에도 안 뜬다.
+    from app.models import SheetOwner, VcContact
+    db.add_all([SheetOwner(label="시험 스타트업", user_id=1, layout="startup", is_hidden=1),
+                VcContact(user_id=1, source_sheet="시험 스타트업", name="대표스",
+                          firm="샘플스타트랩", phone="010-0000-5555")])
+    db.commit()
+    assert "샘플스타트랩" not in portal["u1"].get("/report/forecast").text
+    assert _add(portal["u1"], firm="샘플스타트랩")["cells"]["vc_name"]["text"] == ""
+
 
 # --- 3. 심사역 고르기 -------------------------------------------------------------
 
