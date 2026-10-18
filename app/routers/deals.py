@@ -30,7 +30,7 @@ from ..models import (
 )
 from ..services import mail_sender, mailer, matcher
 from ..services import message_composer as mc
-from ..services import (deal_numbers, deal_queue, ir_attach, ir_kakao,
+from ..services import (deal_numbers, deal_queue, group_name, ir_attach, ir_kakao,
                         ir_monthly, manual_send, scheduled_send, series_a_share,
                         sheet_owner, sourcing_link, sourcing_msg,
                         sourcing_receipts, sourcing_sync,
@@ -247,6 +247,9 @@ def _not_taking_part(contact, topic: str = "") -> str:
 #: 시리즈 A 갈래는 투자사 방을 이어받지 않으므로(`sourcing_link.linked_rooms`)
 #: 자기 방 이름이 없으면 여기 걸린다 — 딜 소싱 화면의 [방 후보 찾기]로 채운다.
 NO_ROOM_NOTE = "딜 소싱 카톡방 없음 — 딜 소싱 화면의 [방 후보 찾기]로 보내는 분 카톡에서 찾아 확정하세요"
+#: 딜 소개에 **따로 딜을 받는 갈래**(`group_name.SEPARATE`)가 섞였다 — 막지 않고
+#: 말만 한다. 그 칩만 골라 따로 보내는 길이 이 화면이기 때문이다. `{n}` 은 인원.
+SEPARATE_NOTE = f"{group_name.SEPARATE} {{n}}명이 들어 있습니다 — 이분들은 별도 딜 소개 대상입니다"
 #: 미팅 후기 탭 — **자동화(A7)가 이미 물은** 분(#31). 막지 않고 말만 한다.
 AUTO_ASKED_NOTE = ("자동 문의함 {day} — 미팅 후 검토결과 문의 자동화가 이미 물었습니다. "
                    "같은 글을 또 보내기 전에 답이 왔는지 보세요")
@@ -1040,9 +1043,14 @@ def preview(
                 ],
             },
         })
+    # 사람마다가 아니라 **한 줄로** 센다 — 여럿이면 같은 말이 사람 수만큼 선다.
+    separate = (sum(1 for c in recipients
+                    if sheet_owner.group_of(c) == group_name.SEPARATE)
+                if req.mode == MODE_DEAL and not sample else 0)
     # 자료를 발송기가 붙이는지 **화면도 알아야 한다** — [보낼 자료] 목록의
     # 말이 달라지고(붙여 보냅니다 / 손으로 붙이세요), 안내창도 그 판단을 따른다.
-    return {"previews": previews, "auto_attach": attach_on}
+    return {"previews": previews, "auto_attach": attach_on,
+            "warnings": [SEPARATE_NOTE.format(n=separate)] if separate else []}
 
 
 @router.post("/send")

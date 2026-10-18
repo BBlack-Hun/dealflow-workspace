@@ -16,6 +16,9 @@ const el = dom_.el;
 // 서버가 `sheet_owner.EMPTY_GROUP` 으로 실어 보내는 말. 표 필터(filters.js)의
 // `EMPTY` 와 같은 글자여야 한다 — 그 짝은 파이썬 쪽 검사가 지킨다.
 const EMPTY_GROUP = "(비어 있음)";
+// 따로 딜을 받는 갈래 — 서버가 `group_name.SEPARATE` 를 `data-separate` 로 실어
+// 보낸다. 화면이 그 속성을 그리는지는 파이썬 쪽이 본다.
+const SEPARATE = "딜 소싱 네트워크";
 
 // 회차명 — 서버가 **방식마다 한 벌씩** 만들어 `data-titles` 에 실어 준다
 // (`pages.py` · `cadence.default_batch_title`). 정규 발송(딜 소개)만 주차를
@@ -280,8 +283,12 @@ function buildDom(people) {
       return el("button", { class: "chip", "data-value": g });
     }))
     .concat([el("button", { class: "chip", "data-value": EMPTY_GROUP })]);
-  const groupBar = el("div", { id: "group-filter", "data-empty": EMPTY_GROUP }, chips);
-  const groupBox = el("div", { id: "contact-filters", class: "pick-filters" }, [groupBar]);
+  const groupBar = el("div", { id: "group-filter", "data-empty": EMPTY_GROUP,
+                               "data-separate": SEPARATE }, chips);
+  const separateNote = el("p", { id: "separate-note", class: "hint" });
+  separateNote.hidden = true;
+  const groupBox = el("div", { id: "contact-filters", class: "pick-filters" },
+                      [groupBar, separateNote]);
 
   // 갈래 칩. **딜 소싱은 갈래가 곧 문구**라, 이 칩은 목록만 거르는 것이 아니라
   // 미리보기를 바꾼다 — 그 이음새를 보려면 진짜 칩이 서 있어야 한다.
@@ -582,7 +589,7 @@ function previewReply(previews) {
 function clickSelectAll(dom) { dom.document.getElementById("select-all-contacts").fire("click"); }
 function clickClearAll(dom) { dom.document.getElementById("clear-all-contacts").fire("click"); }
 
-module.exports = { EMPTY_GROUP: EMPTY_GROUP, PEOPLE: PEOPLE, SOURCING: SOURCING,
+module.exports = { EMPTY_GROUP: EMPTY_GROUP, SEPARATE: SEPARATE, PEOPLE: PEOPLE, SOURCING: SOURCING,
                    COMPANIES: COMPANIES, BATCH_TITLES: BATCH_TITLES,
                    SERIES_A: SERIES_A, SHARE_BUCKET: SHARE_BUCKET,
                    fakeFetch: fakeFetch, companyBox: companyBox,

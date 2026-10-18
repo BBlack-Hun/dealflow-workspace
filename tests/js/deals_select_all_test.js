@@ -257,4 +257,49 @@ const clickClearAll = deals_.clickClearAll;
     "소싱 탭에서 누른 [전체해제]가 감춰져 있던 투자사 담당자 선택을 지웠다");
 }
 
+// ── 12) 따로 딜을 받는 갈래(`딜 소싱 네트워크`) ──────────────────────────────
+//
+// 일반 딜 소개 [전체선택] 기본에서 빠지고 화면이 몇 명 뺐는지 말한다. 막지는
+// 않는다 — 그 칩만 골라 누르면 켜지고(따로 보내는 길), 미리보기는 서버가 준
+// 경고를 먼저 세운다.
+{
+  const SEPARATE = deals_.SEPARATE;
+  const roster = deals_.PEOPLE.concat([[6, "바담당", SEPARATE, false]]);
+  const note = function (dom) { return dom.document.getElementById("separate-note"); };
+
+  const dom = run(roster);
+  clickSelectAll(dom);
+  assert.deepStrictEqual(checkedNames(dom),
+    ["가담당", "나담당", "다담당", "라담당", "마담당"],
+    "딜 소개 [전체선택]에 따로 받는 갈래가 딸려 왔다");
+  assert.strictEqual(note(dom).hidden, false, "몇 명 뺐는지 화면이 말하지 않는다");
+  assert.strictEqual(note(dom).textContent, SEPARATE + " 1명은 기본 선택에서 뺐습니다");
+
+  clickClearAll(dom);
+  assert.strictEqual(note(dom).hidden, true, "다 풀었는데 뺐다는 말이 남았다");
+
+  // 그 칩만 고르면 켜진다 — 따로 보내는 길이 막히면 안 된다.
+  pickGroup(dom, SEPARATE);
+  clickSelectAll(dom);
+  assert.deepStrictEqual(checkedNames(dom), ["바담당"]);
+  assert.strictEqual(note(dom).hidden, true);
+
+  // 다른 방식(리마인드 …)의 [전체선택]은 그대로다 — 일반 딜 소개만의 규칙이다.
+  const other = run(roster);
+  deals_.pickMode(other, "remind");
+  clickSelectAll(other);
+  assert.strictEqual(checkedNames(other).length, 6);
+
+  // 미리보기 — 서버가 준 한 줄 경고가 경고 칸에 선다.
+  const warn = SEPARATE + " 1명이 들어 있습니다 — 이분들은 별도 딜 소개 대상입니다";
+  const fetch = deals_.fakeFetch([{ ok: true, d: {
+    previews: [{ contact_id: 6, name: "바담당", title: "", message: "글", warnings: [] }],
+    warnings: [warn] } }]);
+  const shown = run(roster, { fetch: fetch });
+  shown.document.getElementById("refresh-preview").fire("click");
+  const box = shown.document.getElementById("send-warnings");
+  assert.strictEqual(box.hidden, false, "경고 칸이 안 열렸다");
+  assert.ok(box.innerHTML.indexOf(warn) === 0, box.innerHTML);
+}
+
 console.log("deals_select_all_test: 통과");
