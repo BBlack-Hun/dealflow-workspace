@@ -53,7 +53,7 @@ from __future__ import annotations
 
 import json
 from datetime import date
-from typing import List, Optional, Sequence
+from typing import List, Optional, Sequence, Tuple
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -94,9 +94,14 @@ def file_names(companies: Sequence) -> List[str]:
             if name]
 
 
-def missing_files(companies: Sequence) -> List[str]:
-    """자료 파일명이 **비어 있는** 기업 이름들. 비었으면 붙일 것이 없다."""
-    return [c.name for c in companies if not (c.ir_file_name or "").strip()]
+def split_by_file(companies: Sequence) -> Tuple[list, list]:
+    """(자료 파일명이 있는 기업, 없는 기업) — 고른 차례 그대로.
+
+    있는 것만 보내고 없는 것은 글 끝에 "추후 보내 드리겠습니다" 로 알린다(#53).
+    발송기가 붙이든 사람이 붙이든 같다 — 파일명이 없으면 붙일 것을 못 찾는다.
+    """
+    ready = [c for c in companies if (c.ir_file_name or "").strip()]
+    return ready, [c for c in companies if c not in ready]
 
 
 # ── 활동 이력 ───────────────────────────────────────────────────────────────

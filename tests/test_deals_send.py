@@ -294,13 +294,16 @@ def test_ir_requires_a_company(client, seed):
 
 
 def test_ir_warns_when_the_file_name_is_missing(client, db, seed):
-    """파일명이 비어 있으면 붙일 것을 못 찾는다 — 목록을 만들기 전에 알린다."""
+    """파일명이 비어 있으면 붙일 것을 못 찾는다 — 목록을 만들기 전에 알린다.
+
+    고른 기업 모두 없으면 보낼 것이 없다(발송 목록도 안 생긴다 — #53).
+    """
     r = client.post("/api/deals/preview", json={
         "company_ids": [seed["company_id"]],
         "contact_ids": [seed["contact_id"]], "mode": "ir",
     })
     warnings = r.json()["previews"][0]["warnings"]
-    assert any("첨부할 IR 자료가 없는 기업" in w for w in warnings)
+    assert "보낼 자료가 하나도 없습니다 — 요청은 그대로 남습니다" in warnings
 
 
 def test_ir_has_no_warning_once_the_file_name_is_set(client, db, seed):
@@ -315,7 +318,8 @@ def test_ir_has_no_warning_once_the_file_name_is_set(client, db, seed):
         "contact_ids": [seed["contact_id"]], "mode": "ir",
     })
     preview = r.json()["previews"][0]
-    assert not any("첨부할 IR 자료가 없는" in w for w in preview["warnings"])
+    assert not any("자료가 하나도 없습니다" in w or "추후 발송" in w
+                   for w in preview["warnings"])
     # 링크가 아니라 **파일명**이다(0056) — 화면은 이 이름으로 파일을 찾는다.
     assert preview["attachments"][0]["file"] == "샘플애그_IR.pdf"
 
