@@ -33,6 +33,7 @@ from ..services import (contact_columns, deal_stage, firm_type, investor_firms,
                         last_activity, manual_send, meeting_kind, room_joined,
                         room_name, sheet_import, sheet_owner, sourcing_sync)
 from ..services.room_name import DEFAULT_SUFFIX, build_room_name
+from .sourcing import requested_sort
 
 router = APIRouter(prefix="/api/contacts", tags=["contacts"])
 
@@ -288,6 +289,8 @@ def contact_rows(db: Session, user: User, team_wide: bool = False,
             "sourcing_join": sourcing_sync.mark_of(sourcing_linked.get(c.id)),
             # 이어진 딜 소싱 줄의 `참여 요청일` — 날짜만(시각은 뗀다), 읽기만(#28).
             "sourcing_requested_at": sourcing_sync.requested_of(sourcing_linked.get(c.id)),
+            # 그 칸을 머리글로 세울 값 — 날짜로 읽은 `YYYY-MM-DD`(딜 소싱 표와 같은 함수).
+            "sourcing_requested_sort": requested_sort(sourcing_linked.get(c.id)),
             # 이 명단에만 있는 칸들(스타트업 명단의 `사업분야 대분류` 등)과
             # 달마다 늘어나는 칸의 값. 화면은 배치가 정해 준 키로 꺼내 쓴다.
             "notes": contact_columns.load_notes(c.notes),
@@ -1278,7 +1281,8 @@ def update_contact(
            # 적힌 글자를 그대로 두면 필터와 칸이 다른 말을 한다(`contacts.js`).
            # O 로 새 줄이 생기거나 이어지면 `참여 요청일` 도 함께 바뀐다.
            "sourcing_join": sourcing_sync.mark_of(linked),
-           "sourcing_requested_at": sourcing_sync.requested_of(linked)}
+           "sourcing_requested_at": sourcing_sync.requested_of(linked),
+           "sourcing_requested_sort": requested_sort(linked)}
     if body.owned_funds is not None:
         # 같은 회사의 다른 줄을 화면이 그 자리에서 고쳐 그리게 열쇠와 값을 싣는다.
         out["firm_key"] = investor_firms.firm_key(contact.firm)
