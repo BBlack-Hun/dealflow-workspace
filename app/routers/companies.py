@@ -1251,6 +1251,8 @@ COMPANY_LINKS = (
     ("startup_links", "VcContact", "ir_company_id", "스타트업 명단 연결", DETACH),
     ("consulting_links", "ConsultingCompany", "ir_company_id",
      "투자컨설턴트 연결", DETACH),
+    # 업무 보고 › 매출예상리스트 줄(#46). 기업명을 제 줄에 들고 있어 끊어도 남는다.
+    ("forecasts", "RevenueForecast", "ir_company_id", "매출예상리스트 연결", DETACH),
     ("batches", "DealBatchCompany", "company_id", "발송 회차에 실린 줄", CASCADE),
     ("queued", "DealQueueCompany", "company_id", "예약에 실린 줄", CASCADE),
     ("backups", "OneLinerBackup", "company_id", "한 줄 소개 되돌리기 버퍼", SWEEP),

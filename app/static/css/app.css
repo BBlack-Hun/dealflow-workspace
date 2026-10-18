@@ -3044,3 +3044,8 @@ input[data-sector-picker] + .sector-pick-toggle + div { margin-top: 6px; max-hei
 .tx-table td { vertical-align: top; }
 .tx-table td.tx-pre { white-space: pre-wrap; word-break: break-word; max-width: 320px; }
 .tx-suggest td { background: #fffbeb; }
+
+/* 업무 보고 › 매출예상리스트(#46) — 비면 자동인 칸의 머리글과 자동 값은 빨간 글씨. */
+/* 머리글은 `.grid-table th` 의 회색이 이겨서 한 단계 더 좁혀 건다. */
+.fc-auto, .grid-table th.fc-auto { color: var(--red); }
+.fc-table .cell-sub { margin-top: 2px; }

@@ -287,6 +287,12 @@ WATCHED: Dict[str, Watch] = {
         label=_attr("title"), others_only=True,
         why="주간업무 반복 규칙 — 바로 위 `weekly_tasks` 와 같은 까닭. 지우는 것은 "
             "줄을 내리는 것(`is_active=0`)이라 `고침` 으로 남는다."),
+    "revenue_forecasts": Watch(
+        owner="user_id", href=lambda row: "/report/forecast",
+        label=_attr("company_name"),
+        why="업무 보고 › 매출예상리스트 줄(#46). 줄 담당자의 표지만 **관리자가 팀원 "
+            "줄을 고치고 지울 수 있다**(`routers/forecast._owned`) — 그 일이 남는다. "
+            "자기 줄을 고친 것은 안 남고, 지운 것과 기업을 잇고 푼 것은 남는다."),
     "users": Watch(
         owner="id", href="/team", label=_attr("name"),
         why="계정. 남의 권한·투자현황·비밀번호를 바꾸는 것은 공용 화면(팀 현황)에서 "

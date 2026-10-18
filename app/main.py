@@ -14,9 +14,9 @@ from .routers import templates_crud
 from .routers import setup as setup_router
 from .routers import automations as automations_router
 from .routers import (agent_api, companies, consulting, contacts, dashboard,
-                      data_io, deals, followups, ir, jobs, llm_brief, notices,
-                      pages, series_a, sourcing, startup, startup_outreach,
-                      startup_send)
+                      data_io, deals, followups, forecast, ir, jobs, llm_brief,
+                      notices, pages, series_a, sourcing, startup,
+                      startup_outreach, startup_send)
 from .routers import ir_link as ir_link_router
 from .routers import taxonomy as taxonomy_router
 
@@ -91,6 +91,8 @@ def create_app() -> FastAPI:
     # 화면 자체는 `companies` 의 `/companies?tab=series-a` 가 그린다.
     app.include_router(series_a.router)
     app.include_router(dashboard.router)
+    # 업무 보고 › 매출예상리스트(`/report/forecast` · `/api/forecast`, #46).
+    app.include_router(forecast.router)
     app.include_router(consulting.router)
     app.include_router(followups.router)
     app.include_router(ir.router)
