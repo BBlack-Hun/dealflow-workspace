@@ -73,6 +73,46 @@ def test_send_ignores_override_for_untargeted_contact(client, db, seed):
     assert "대상 아님" not in _sent_message(db, r.json()["job_id"])
 
 
+# --- 따로 딜을 받는 갈래(`딜 소싱 네트워크`) ---------------------------------
+#
+# 일반 딜 소개에 섞이면 미리보기가 **한 줄로** 경고한다. 막지는 않는다 — 그
+# 칩만 골라 따로 보내는 길이 바로 이 발송이다.
+
+def _join_separate(db, contact_id):
+    from app.models import VcContact
+    from app.services import group_name
+
+    db.get(VcContact, contact_id).group_name = group_name.SEPARATE
+    db.commit()
+
+
+def test_deal_preview_warns_when_the_separate_group_is_mixed_in(client, db, seed):
+    from app.routers.deals import SEPARATE_NOTE
+
+    body = {"company_ids": [seed["company_id"]], "contact_ids": [seed["contact_id"]]}
+    assert client.post("/api/deals/preview", json=body).json()["warnings"] == []
+
+    _join_separate(db, seed["contact_id"])
+    got = client.post("/api/deals/preview", json=body).json()["warnings"]
+    assert got == [SEPARATE_NOTE.format(n=1)]
+    assert "딜 소싱 네트워크 1명이 들어 있습니다" in got[0]
+    # 다른 방식(선호 분야 묻기)에는 안 뜬다 — 일반 딜 소개의 말이다.
+    ask = client.post("/api/deals/preview",
+                      json={"mode": "ask", "contact_ids": [seed["contact_id"]]})
+    assert ask.json()["warnings"] == []
+
+
+def test_the_separate_group_alone_can_still_be_sent(client, db, seed):
+    _join_separate(db, seed["contact_id"])
+    r = client.post("/api/deals/send", json={
+        "company_ids": [seed["company_id"]],
+        "contact_ids": [seed["contact_id"]],
+        "title": "딜 소싱 네트워크 회차",
+    })
+    assert r.status_code == 200, r.text
+    assert r.json()["job_id"]
+
+
 # --- 문구만 보내기 (선호 분야 묻기) ----------------------------------------
 #
 # 딜소개를 보냈는데 답이 없을 때, 목록을 또 밀어 넣기보다 무엇을 보고 싶은지

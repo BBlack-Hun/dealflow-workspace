@@ -1644,6 +1644,27 @@ def test_the_sendable_key_is_written_in_exactly_one_place(db, users):
         llm_brief.SENDABLE_KEY = "sendable"
 
 
+def test_the_separate_group_is_marked_so_no_general_deal_is_picked_for_it(db, users):
+    """`딜 소싱 네트워크` 는 일반 딜 소개 대상이 아니다 — 갈래 표와 사람 줄 둘 다에
+    표시가 붙고, 시킬 말은 **이름이 아니라 그 표시로** 건너뛰게 한다."""
+    from app.services import group_name, llm_brief
+
+    _contact(db, users["u1"].id, group_name=group_name.SEPARATE)
+    _contact(db, users["u1"].id, group_name="A")
+
+    out = _brief(db, users["u1"])
+    got = {g["name"]: g for g in out[llm_brief.GROUPS_KEY]}
+    assert got[group_name.SEPARATE] == {
+        "name": group_name.SEPARATE, "count": 1, llm_brief.SENDABLE_KEY: 1,
+        llm_brief.SEPARATE_KEY: True, "note": llm_brief.SEPARATE_NOTE}
+    assert "일반 딜 소개 대상이 아님" in llm_brief.SEPARATE_NOTE
+    assert llm_brief.SEPARATE_KEY not in got["A"]
+    marks = {i["group_name"]: i.get(llm_brief.SEPARATE_KEY) for i in out["investors"]}
+    assert marks == {group_name.SEPARATE: True, "A": None}
+    assert llm_brief.SEPARATE_KEY in out["prompt"]
+    assert group_name.SEPARATE not in out["prompt"]
+
+
 # ── 많아야 여덟, 맞는 것만 ─────────────────────────────────────────────────
 #
 # 사용자가 정한 것이다 — "기업이 8개가 안 되는 경우라면 보낼 수 있는 기업만이라도

@@ -80,8 +80,10 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   function isExcluded(card) {
     if (!card) return false;
     if (card.getAttribute("data-out") === "1") return true;
-    // 제안 대기중 · 물어보는 중 — 참여 안내(처음)만 받는다(`sourcing_sync.can_get_invite`).
-    if (card.getAttribute("data-invite-only") === "1" && sourcingTopic !== INTRO) return true;
+    // 참여 안내(처음)는 제안 대기중 · 물어보는 중만, 다른 글은 참여만 받는다
+    // (`sourcing_sync.can_get_invite`). 이 값은 딜 소싱 카드만 단다(`deals.html`).
+    var inviteOnly = card.getAttribute("data-invite-only");
+    if (inviteOnly !== null && (inviteOnly === "1") !== (sourcingTopic === INTRO)) return true;
     // Series A 딜 공유는 그 갈래 분께만 — 다른 갈래 카드는 고를 자리가 아니다
     // (서버도 뺀다: `series_a_share.NOT_BUCKET_NOTE`).
     if (isShare() && (card.getAttribute("data-bucket") || "") !== SHARE_BUCKET) return true;
@@ -575,6 +577,10 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   var groupBox = document.getElementById("contact-filters");
   var groupBar = document.getElementById("group-filter");
   var EMPTY_GROUP = (groupBar && groupBar.getAttribute("data-empty")) || "";
+  // 따로 딜을 받는 갈래(`group_name.SEPARATE`) — 딜 소개 [전체선택]의 기본에서
+  // 뺀다. 그 칩을 골라 누르면 켜진다(따로 보내는 길). 이름은 서버가 실어 준다.
+  var SEPARATE = (groupBar && groupBar.getAttribute("data-separate")) || "";
+  var separateNote = document.getElementById("separate-note");
 
   function matchesGroup(card) {
     if (!groupFilter) return true;
@@ -615,6 +621,9 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     if (topicBar) topicBar.querySelectorAll(".chip").forEach(function (c) {
       c.classList.toggle("active", c.getAttribute("data-value") === sourcingTopic);
     });
+    // `참여 중 N명 … 뺐습니다` 는 참여 안내에서만 맞는 말이다.
+    var held = document.getElementById("sourcing-held");
+    if (held) held.hidden = sourcingTopic !== INTRO;
   }
   // ── [Series A 딜 공유]로 잠깐 갔다 오면 다른 갈래 체크가 돌아온다 ──────────
   //
@@ -827,7 +836,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       var who = row.assignee || "";
       var got = row.received ? "1" : "0";
       // 그 사이 받지 않는 분이 된 줄 — 불참여(딜 소싱 화면 · 투자사 관리 현황의 X)
-      // 또는 참여 확인 전(물어보는 중 · 문구). 딱지 글자는 서버가 짓는다(`out_label`).
+      // 또는 사람이 적은 문구. 딱지 글자는 서버가 짓는다(`out_label`).
       var out = row.out ? "1" : "0";
       // 참여 안내(처음)만 받는 줄 — 제안 대기중 · 물어보는 중.
       var inviteOnly = row.invite_only ? "1" : "0";
@@ -1332,6 +1341,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       groupBox.hidden = sourcingMode;
       if (sourcingMode) resetGroupFilter();
     }
+    if (separateNote) separateNote.hidden = true;   // 딜 소개 [전체선택]의 말이다
     // 예약 큐는 **딜 소개 탭의 것**이다. 후속 문구(리마인드·미팅 요청 …)와
     // 소싱은 그때그때 사람을 골라 보내는 일이라 줄 세울 것이 없고, 큐가
     // 그대로 떠 있으면 지금 탭에서 [시작] 을 누르면 이 탭의 문구가 나가는
@@ -1582,7 +1592,8 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
         // 줄이면 그 자리가 없어져, [보낼 자료] 목록만 없는 담당자의 번호를 단다.
         if (lastPreviews.length) renderPreview(0);
         else { currentPreview = 0; renderIrLinks(); }
-        var warns = [];
+        // 사람마다가 아닌 경고(딜 소개에 섞인 따로 받는 갈래 인원)가 먼저 선다.
+        var warns = (res.d.warnings || []).slice();
         lastPreviews.forEach(function (p) {
           (p.warnings || []).forEach(function (w) { warns.push(p.name + ": " + w); });
         });
@@ -1795,6 +1806,18 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   var selAll = document.getElementById("select-all-contacts");
   if (selAll) selAll.addEventListener("click", function () {
     var boxes = filteredBoxes();
+    var before = boxes.length;
+    if (mode === "deal" && SEPARATE && !groupFilter) {
+      boxes = boxes.filter(function (c) {
+        var card = c.closest(".pick-card");
+        return !card || (card.getAttribute("data-group") || "").trim() !== SEPARATE;
+      });
+    }
+    if (separateNote) {
+      separateNote.hidden = before === boxes.length;
+      separateNote.textContent = SEPARATE + " " + (before - boxes.length) +
+        "명은 기본 선택에서 뺐습니다";
+    }
     if (!boxes.length) return;
     var allOn = boxes.every(function (c) { return c.checked; });
     boxes.forEach(function (c) { c.checked = !allOn; });
@@ -1818,6 +1841,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   // 켜는 쪽에도 끄는 쪽에도 애초에 안 들어온다(`tests/js/deals_select_all_test.js`).
   if (clearAllBtn) clearAllBtn.addEventListener("click", function () {
     contactCbs().forEach(function (c) { c.checked = false; });
+    if (separateNote) separateNote.hidden = true;
     parkedChecks = [];       // 사람이 다 풀었다 — 다른 글로 돌아가도 되살리지 않는다
     updateCounts();          // 알약 · 요약 줄 · 이 단추가 여기서 함께 0 이 된다
     applyContactFilter();

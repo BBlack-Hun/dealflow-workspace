@@ -30,7 +30,7 @@ from ..models import (
 )
 from ..services import mail_sender, mailer, matcher
 from ..services import message_composer as mc
-from ..services import (deal_numbers, deal_queue, ir_attach, ir_kakao,
+from ..services import (deal_numbers, deal_queue, group_name, ir_attach, ir_kakao,
                         ir_monthly, manual_send, scheduled_send, series_a_share,
                         sheet_owner, sourcing_link, sourcing_msg,
                         sourcing_receipts, sourcing_sync,
@@ -226,19 +226,24 @@ OUT_NOTE = "딜 소싱 불참여"
 PENDING_NOTE = "딜 소싱 참여 확인 전({value}) — 동의하시면 딜 소싱 화면에서 '참여' 로 바꾼 뒤 보내세요"
 #: 참여 안내(처음)에서 빠지는 **사람이 적은 문구** — 뜻을 몰라 안 보낸다(`sourcing_sync.can_get_invite`).
 CUSTOM_NOTE = ("딜 소싱 참여 칸이 직접 적은 문구({value}) — 참여 안내는 제안 대기중 · "
-               "물어보는 중 · 참여인 분께만 나갑니다")
+               "물어보는 중인 분께만 나갑니다")
+#: 참여 안내(처음)에서 빠지는 **이미 참여 중인** 분 — 청할 일이 없다.
+JOINED_NOTE = "이미 딜 소싱 참여 중 — 참여 안내는 제안 대기중 · 물어보는 중인 분께만 나갑니다"
 
 
 def _not_taking_part(contact, topic: str = "") -> str:
-    """이 글을 **받지 않는** 까닭(`OUT_NOTE` · `PENDING_NOTE` · `CUSTOM_NOTE`). 받으면 빈 글자.
+    """이 글을 **받지 않는** 까닭(`OUT_NOTE` · `PENDING_NOTE` · `CUSTOM_NOTE` ·
+    `JOINED_NOTE`). 받으면 빈 글자.
 
-    참여 안내(처음)는 `can_get_invite`(제안 대기중 · 물어보는 중도 받는다), 월간
+    참여 안내(처음)는 `can_get_invite`(제안 대기중 · 물어보는 중만), 월간
     리마인드 · Series A 딜 공유는 `takes_part`(정확히 `참여`)다."""
     invite = topic == sourcing_msg.KIND
     if (sourcing_sync.can_get_invite if invite else sourcing_sync.takes_part)(contact):
         return ""
     if sourcing_sync.is_left(contact):
         return OUT_NOTE
+    if invite and sourcing_sync.takes_part(contact):
+        return JOINED_NOTE
     note = CUSTOM_NOTE if invite else PENDING_NOTE
     return note.format(value=sourcing_sync.participation_of(contact))
 
@@ -247,6 +252,9 @@ def _not_taking_part(contact, topic: str = "") -> str:
 #: 시리즈 A 갈래는 투자사 방을 이어받지 않으므로(`sourcing_link.linked_rooms`)
 #: 자기 방 이름이 없으면 여기 걸린다 — 딜 소싱 화면의 [방 후보 찾기]로 채운다.
 NO_ROOM_NOTE = "딜 소싱 카톡방 없음 — 딜 소싱 화면의 [방 후보 찾기]로 보내는 분 카톡에서 찾아 확정하세요"
+#: 딜 소개에 **따로 딜을 받는 갈래**(`group_name.SEPARATE`)가 섞였다 — 막지 않고
+#: 말만 한다. 그 칩만 골라 따로 보내는 길이 이 화면이기 때문이다. `{n}` 은 인원.
+SEPARATE_NOTE = f"{group_name.SEPARATE} {{n}}명이 들어 있습니다 — 이분들은 별도 딜 소개 대상입니다"
 #: 미팅 후기 탭 — **자동화(A7)가 이미 물은** 분(#31). 막지 않고 말만 한다.
 AUTO_ASKED_NOTE = ("자동 문의함 {day} — 미팅 후 검토결과 문의 자동화가 이미 물었습니다. "
                    "같은 글을 또 보내기 전에 답이 왔는지 보세요")
@@ -1040,9 +1048,14 @@ def preview(
                 ],
             },
         })
+    # 사람마다가 아니라 **한 줄로** 센다 — 여럿이면 같은 말이 사람 수만큼 선다.
+    separate = (sum(1 for c in recipients
+                    if sheet_owner.group_of(c) == group_name.SEPARATE)
+                if req.mode == MODE_DEAL and not sample else 0)
     # 자료를 발송기가 붙이는지 **화면도 알아야 한다** — [보낼 자료] 목록의
     # 말이 달라지고(붙여 보냅니다 / 손으로 붙이세요), 안내창도 그 판단을 따른다.
-    return {"previews": previews, "auto_attach": attach_on}
+    return {"previews": previews, "auto_attach": attach_on,
+            "warnings": [SEPARATE_NOTE.format(n=separate)] if separate else []}
 
 
 @router.post("/send")
@@ -1167,8 +1180,8 @@ def create_send_list(
     # ── 딜 소싱: **이 글을 안 받는 분** · **방 없음** 은 빼고 보낸다(세 글 모두) ──
     #
     # 안 받는 분 — 월간 리마인드 · Series A 딜 공유는 `참여` 가 아닌 분 전부
-    # (`sourcing_sync.takes_part`), 참여 안내(처음)는 불참여 · 사람이 적은 문구만
-    # (`can_get_invite` — 제안 대기중 · 물어보는 중은 받는다). 화면도 같은 판정으로
+    # (`sourcing_sync.takes_part`), 참여 안내(처음)는 참여 · 불참여 · 사람이 적은 문구
+    # (`can_get_invite` — 제안 대기중 · 물어보는 중만 받는다). 화면도 같은 판정으로
     # 카드를 막는다(`deals.js` 의 `data-out` · `data-invite-only`). 메일 채널도 같다.
     # 방 없음 — 시리즈 A 갈래는 투자사 딜소개 방을 이어받지 않는다
     # (`sourcing_link.linked_rooms`). 그 방으로 보내는 대신 **빼고 이유를 말한다.**

@@ -66,7 +66,7 @@ COLUMNS = [
     # `참여` · `불참여` · `참여 의사를 물어보는 중` + 사람이 적은 문구. 몇 가지로
     # 모이는 값이라 거른다. **월간 리마인드 · Series A 딜 공유는 정확히 `참여` 인
     # 분께만**(`sourcing_sync.takes_part`), 참여 안내(처음)는 제안 대기중 · 물어보는
-    # 중에게도 나간다(`can_get_invite`). 시리즈 A
+    # 중에게만 나간다(`can_get_invite`). 시리즈 A
     # 갈래의 줄은 투자사 관리 현황의 `Series A 딜 소싱` 칸이 이 값에서 선다 —
     # `불참여` 만 X, 나머지는 O(`services/sourcing_sync.py`).
     ("participation", "참여", "84px", True),
@@ -238,19 +238,22 @@ def sourcing_state(db: Session = Depends(get_db),
     month = sourcing_receipts.month_of()
     got = sourcing_receipts.received_ids(db, month)
     # `out` — 그 사이 어떤 글도 안 받는 분이 된 줄(`불참여` · 사람이 적은 문구 —
-    # `sourcing_sync.can_get_invite`). `invite_only` — 참여 안내(처음)만 받는 줄
-    # (제안 대기중 · 물어보는 중). 딜 제안 관리가 그 카드를 막고 `out_label` 을 딱지로
-    # 단다(`deals.js`). 칩은 화면을 그릴 때(`sendable_rows(invite=True)`)와 같은
-    # 모집단이어야 칩 수가 다시 읽을 때 흔들리지 않는다.
+    # `_listed`). `invite_only` — 참여 안내(처음)만 받는 줄(제안 대기중 · 물어보는
+    # 중 — `sourcing_sync.can_get_invite`). 딜 제안 관리가 그 카드를 글에 따라 막고
+    # `out_label` 을 딱지로 단다(`deals.js`). 칩은 화면을 그릴 때
+    # (`sendable_rows(invite=True)`)와 같은 모집단이어야 칩 수가 다시 읽을 때 흔들리지 않는다.
     return {"month": month, "month_label": f"{int(month[5:])}월",
             "rows": [{"id": r.id, "assignee": assignee_of(r),
                       "received": r.id in got,
-                      "out": not sourcing_sync.can_get_invite(r),
-                      "invite_only": (sourcing_sync.can_get_invite(r)
-                                      and not sourcing_sync.takes_part(r)),
+                      "out": not _listed(r),
+                      "invite_only": sourcing_sync.can_get_invite(r),
                       "out_label": out_label(r)} for r in rows],
-            "assignees": assignee_chips(
-                [r for r in rows if sourcing_sync.can_get_invite(r)])}
+            "assignees": assignee_chips([r for r in rows if _listed(r)])}
+
+
+def _listed(row: SourcingContact) -> bool:
+    """딜 제안 관리 목록에 카드가 있는가 — 어느 글이든 받는 분(참여 · 제안 대기중 · 물어보는 중)."""
+    return sourcing_sync.takes_part(row) or sourcing_sync.can_get_invite(row)
 
 
 def sendable_rows(db: Session, invite: bool = False) -> List[SourcingContact]:
@@ -258,12 +261,12 @@ def sendable_rows(db: Session, invite: bool = False) -> List[SourcingContact]:
     `rows_of` 그대로. `불참여` · `참여 의사를 물어보는 중` · 사람이 적은 문구는 빠진다.
 
     `invite=True` 면 참여 안내(처음)를 받는 분까지(`can_get_invite` — 제안 대기중 ·
-    물어보는 중). 딜 제안 관리의 [딜 소싱 제안] 목록 · 칩이 그것을 싣고, 그 카드는
-    다른 글에서 고를 수 없다(`deals.js` 의 `data-invite-only`). 발송 길
-    (`routers/deals.create_send_list`)도 같은 판정으로 한 번 더 보고 막는다.
+    물어보는 중). 딜 제안 관리의 [딜 소싱 제안] 목록 · 칩이 그것을 싣는다. 참여 안내를
+    고르면 그 카드만, 다른 글을 고르면 `참여` 카드만 고를 수 있다(`deals.js` 의
+    `data-invite-only`). 발송 길(`routers/deals.create_send_list`)도 같은 판정으로
+    한 번 더 보고 막는다.
     """
-    ok = sourcing_sync.can_get_invite if invite else sourcing_sync.takes_part
-    return [r for r in rows_of(db) if ok(r)]
+    return [r for r in rows_of(db) if (_listed(r) if invite else sourcing_sync.takes_part(r))]
 
 
 #: 받지 않는 분의 딱지 — 딜 제안 관리 카드(`deals.html` 의 `out-tag`)와 빠진 수 말.
@@ -285,15 +288,17 @@ def out_label(row: SourcingContact) -> str:
 
 
 def held_counts(db: Session) -> dict:
-    """딜 소싱 제안 목록에서 **뺀** 분의 수 — `{"left": 불참여, "custom": 사람이 적은 문구}`.
+    """참여 안내(처음)에서 **뺀** 분의 수 — `{"joined": 참여, "left": 불참여, "custom": 문구}`.
 
-    딜 제안 관리가 목록 위에 `직접 적은 문구 N명 · 불참여 M명은 목록에서 뺐습니다` 로
-    적는다(`deals.html` 의 `sourcing-held`). 조용히 빼면 왜 그분이 안 보이는지 모른다.
-    제안 대기중 · 물어보는 중은 목록에 있다(참여 안내만 — `sendable_rows(invite=True)`).
+    딜 제안 관리가 참여 안내를 고르면 목록 위에 `참여 중 N명·불참여 M명·직접 문구 K명은
+    참여 안내 대상이 아니라 뺐습니다` 로 적는다(`deals.html` 의 `sourcing-held`). 조용히
+    빼면 왜 그분이 안 보이는지 모른다. 남는 것은 제안 대기중 · 물어보는 중뿐이다.
     """
-    out = {"left": 0, "custom": 0}
+    out = {"joined": 0, "left": 0, "custom": 0}
     for row in rows_of(db):
-        if sourcing_sync.is_left(row):
+        if sourcing_sync.takes_part(row):
+            out["joined"] += 1
+        elif sourcing_sync.is_left(row):
             out["left"] += 1
         elif not sourcing_sync.can_get_invite(row):
             out["custom"] += 1

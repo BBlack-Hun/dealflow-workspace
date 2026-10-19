@@ -123,7 +123,7 @@ from sqlalchemy.orm import Session
 from .. import clock
 from ..models import IrCompany, User
 from . import amount as amount_text
-from . import sheet_owner
+from . import group_name, sheet_owner
 # 방이 살아 있는지는 **대시보드가 세는 그 판정**을 그대로 쓴다. 여기에 다시
 # 적으면 화면 숫자와 어긋난다 — 투자사 관리 현황 117명 · 대시보드 123명으로
 # 갈렸던 사고가 판정을 두 벌로 적어 둔 탓이었다(`readiness.py` 도 같은 것을
@@ -490,6 +490,13 @@ GROUPS_KEY = "groups"
 #: 이름을 상수로 두는 까닭은 `GROUPS_KEY` 와 같다 — 읽는 법(`note`)도 시킬
 #: 말(`prompt`)도 자료(`groups()`)도 이 이름을 부른다.
 SENDABLE_KEY = "sendable"
+
+#: **따로 딜을 받는 갈래**(`group_name.SEPARATE`)에 붙는 표시 칸. 갈래 표와 그
+#: 갈래 사람 줄에 `true` 로만 붙는다(다른 줄에는 칸이 없다). 시킬 말은 이름이
+#: 아니라 이 표시로 건너뛰게 한다 — `SENDABLE_KEY` 와 같은 까닭이다.
+SEPARATE_KEY = "separate"
+SEPARATE_NOTE = (f"이 그룹은 일반 딜 소개 대상이 아님 — {group_name.SEPARATE} "
+                 "전용 딜로 따로 보냄")
 
 
 def note() -> str:
@@ -1105,6 +1112,8 @@ def investors(db: Session, user: User, *, others=None) -> List[dict]:
     for c in rows:
         item = {"id": investor_ref(c.id)}
         item.update(_fill(c, INVESTOR_FIELDS, scrub_with=c, others=others))
+        if sheet_owner.group_of(c) == group_name.SEPARATE:
+            item[SEPARATE_KEY] = True
         # 이미 보낸 기업 — **번호만**. 비어 있어도 칸을 남긴다: 다른 칸과
         # 달리 여기서 칸이 없는 것과 "보낸 적 없다" 는 것을 읽는 쪽이 구별할
         # 길이 없고, 그 둘을 헷갈리면 이력을 실은 뜻이 사라진다.
@@ -1275,6 +1284,8 @@ def groups(db: Session, user: User, *, rows=None) -> List[dict]:
     for g in sheet_owner.group_rows(rows):
         out.append({"name": g["label"], "count": g["count"],
                     SENDABLE_KEY: by_name.get(g["name"], 0)})
+        if g["name"] == group_name.SEPARATE:
+            out[-1].update({SEPARATE_KEY: True, "note": SEPARATE_NOTE})
     return out
 
 
@@ -1572,7 +1583,8 @@ def prompt(day: Optional[date] = None) -> str:
         "속한 분들이 적어 둔 말로만 보세요.",
         f"2. `{GROUPS_KEY}` 의 `{SENDABLE_KEY}` 값이 `0` 인 갈래는 **건너뛰세요.** "
         "딜 소개를 멈춰 두신 분들이라 뽑아도 보낼 데가 없습니다 — 그 갈래는 답에 "
-        "적지 마세요.",
+        f"적지 마세요. `{SEPARATE_KEY}` 가 `true` 인 갈래도 **건너뛰세요** — 일반 딜 "
+        "소개 대상이 아니라 따로 보내는 갈래입니다.",
         "3. 남은 갈래마다, 그 갈래에 속한 분들이 적어 둔 말 — 관심 분야"
         "(`sectors`) · 투자 단계(`stages`) · 투자 규모(`round_size`) · 메모"
         "(`memo` · `sourcing_note` · `tips_note`) — 을 읽고 **그 갈래가 무엇을 "
