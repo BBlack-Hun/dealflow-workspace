@@ -253,9 +253,13 @@
   `layout.monthly` 를 함께 보는 이유는 **첫 칸**이다. 칸이 하나도 없는 명단은
   `month_columns` 가 비어서, 이 조건이 없으면 [칸 추가] 마저 사라져 첫 칸을
   세울 길이 없다(달마다 칸이 서는 배치에서는 늘 세울 수 있어야 한다).
+
+  **관리자만.** 칸을 세우고·고치고·숨기고·지우는 일은 팀 전체의 표 모양을
+  바꾼다 — 새 컬럼 관리(`/columns`)와 같은 자리·같은 권한이다. 팀원은 칸을
+  그대로 보고 칸 안의 값만 고친다. 서버도 다시 본다(`routers/contacts.py`).
 #}
-{% if selected_sheet and (layout.monthly or month_columns or folded_months
-                          or hidden_months) %}
+{% if user.role == 'admin' and selected_sheet
+      and (layout.monthly or month_columns or folded_months or hidden_months) %}
 <div class="month-cols">
   <form method="post" action="/api/contacts/columns" class="inline-form">
     <input type="hidden" name="sheet" value="{{ selected_sheet }}">
@@ -304,9 +308,11 @@
   {% for c in hidden_months %}
   <span class="month-col-edit">
     <span class="muted">{{ c.label }}</span>
+    {% if user.role == 'admin' %}
     <form method="post" action="/api/contacts/columns/{{ c.id }}/hide">
       <button class="linkbtn" type="submit">숨김 해제</button>
     </form>
+    {% endif %}
   </span>
   {% endfor %}
 </div>
@@ -480,7 +486,7 @@
       주는지는 서버가 정한다(`sheet_owner.room_checkable`).
     #}
     {% if page.room_check %}
-    <button type="button" class="secondary-btn" id="verify-btn">방 연결 확인</button>
+    <button type="button" class="secondary-btn" id="verify-btn" data-send>방 연결 확인</button>
     {% endif %}
     {#
       [방 후보 찾기] · [방 매칭] — 방 이름이 **없는** 줄을 회사명으로 카톡에서
@@ -490,7 +496,7 @@
       (`startup_room_pick.targets` — 내 줄 중 확인 안 된 곳).
     #}
     {% if page.rooms_href %}
-    <button type="button" class="secondary-btn" id="room-search-btn"
+    <button type="button" class="secondary-btn" id="room-search-btn" data-send
             title="보이는 줄 중 카톡방이 확인 안 된 내 줄을 회사명으로 카톡에서 찾아 후보로 모읍니다 (문구는 보내지 않습니다)">방 후보 찾기</button>
     <a class="secondary-btn" id="room-match-link" href="{{ page.rooms_href }}">방 매칭</a>
     {% endif %}
@@ -1736,12 +1742,12 @@
        (`ListPage.room_check` — 툴바의 [방 연결 확인] 과 같은 값). 스타트업
        배치의 수정창에도 이제 방 이름 칸이 있다(`STARTUP_LAYOUT.extra`). #}
     {% if page.room_check %}
-    <button type="button" class="secondary-btn" id="verify-one-btn">이 방만 확인</button>
+    <button type="button" class="secondary-btn" id="verify-one-btn" data-send>이 방만 확인</button>
     {% endif %}
     {# 방 이름을 모르는 줄은 확인할 것이 없다 — 회사명으로 후보를 찾는다
        (툴바의 [방 후보 찾기] 와 같은 길, 이 한 줄만). #}
     {% if page.rooms_href %}
-    <button type="button" class="secondary-btn" id="room-search-one-btn">이 방 후보 찾기</button>
+    <button type="button" class="secondary-btn" id="room-search-one-btn" data-send>이 방 후보 찾기</button>
     {% endif %}
     {# **[저장] 옆에 두지 않는다.** 고친 값은 다시 고치면 되지만 지운 줄은
        화면 어디에도 안 남는다. 이 저장소가 같은 자리에서 쓰는 방법 그대로

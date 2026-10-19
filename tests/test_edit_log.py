@@ -708,7 +708,6 @@ WRITE_ROUTES = {
     ("POST", "/api/taxonomy/terms"): WATCHED,
     ("POST", "/api/taxonomy/terms/{term_id}/{op}"): WATCHED,
     ("POST", "/api/taxonomy/ir-cleanup"): WATCHED,
-    ("POST", "/api/taxonomy/pref-sectors"): WATCHED,
     # 이름 바꾸기 · 합치기 · 옮기기의 **미리보기** — 몇 줄이 바뀌는지 세기만 한다.
     # POST 인 것은 새 이름 · 합칠 곳을 몸에 실어 보내서다. 아무것도 안 쓴다.
     ("POST", "/api/taxonomy/terms/{term_id}/preview/{op}"): SELF,
@@ -751,6 +750,9 @@ WRITE_ROUTES = {
 
     # ── 기계 기록 ───────────────────────────────────────────────────────────
     ("POST", "/logout"): MACHINE,
+    # 팀원 화면으로 보기(#3) 켜고 끄기 — 쿠키만 굽고 DB 는 건드리지 않는다.
+    ("POST", "/account/view-as"): MACHINE,
+    ("POST", "/account/view-as/off"): MACHINE,
     ("POST", "/api/agent/heartbeat"): MACHINE,
     ("POST", "/api/agent/diagnostics"): MACHINE,
     ("POST", "/api/agent/items/{item_id}/result"): MACHINE,

@@ -478,7 +478,7 @@
       <li><span>보안 연결</span><b>{{ mail.security }}</b></li>
     </ul>
     <p class="hint ok">✅ 발송 화면에서 이메일 채널을 고를 수 있습니다.</p>
-    <form method="post" action="/team/mail-test" class="rule-form">
+    <form method="post" action="/team/mail-test" class="rule-form" data-send>
       <label class="field inline-field"><span>시험 발송 받을 주소</span>
         <input type="email" name="to" value="{{ mail.from_address }}" size="28"></label>
       <button class="secondary-btn" type="submit">한 통 보내 보기</button>
@@ -671,7 +671,7 @@
 
     {# **팀 공통** — 자동화 다섯이 함께 쓰는 값(`automation.Team`). 업무용 PC
        한 대에서 나가므로 시간대 · 피할 시간 · 회차 사이 간격이 팀에 하나다. #}
-    <form method="post" action="/team/automation-team" class="rule-form"
+    <form method="post" action="/team/automation-team" class="rule-form" data-send
           data-testid="automation-team-form">
       <label class="field inline-field"><span>자동 발송 계정</span>
         <select name="user_id">
@@ -741,7 +741,7 @@
           {% endif %}
         </td>
         <td>
-          <form method="post" action="/team/automations/{{ a.key }}" class="rule-form">
+          <form method="post" action="/team/automations/{{ a.key }}" class="rule-form" data-send>
             <input type="hidden" name="test_mode_shown" value="1">
             {# A5 는 메뉴가 꺼져 있으면 켤 수 없다(`automation.startup_menu_sender`) —
                고르개를 막아 '켜짐' 으로 저장했다가 거절되는 일이 없게 한다. 막힌
@@ -790,7 +790,7 @@
             <button class="secondary-btn" type="submit">저장</button>
           </form>
           {% if a.test_room %}
-          <form method="post" action="/team/automations/{{ a.key }}/check" class="inline-form">
+          <form method="post" action="/team/automations/{{ a.key }}/check" class="inline-form" data-send>
             <button class="linkbtn" type="submit">시험방으로 확인 한 통</button>
           </form>
           {% endif %}
@@ -841,7 +841,7 @@
     </p>
     {% endif %}
 
-    <form method="post" action="/team/startup-send" class="rule-form">
+    <form method="post" action="/team/startup-send" class="rule-form" data-send>
       <label class="field inline-field"><span>이 메뉴</span>
         <select name="enabled">
           <option value="">꺼짐</option>

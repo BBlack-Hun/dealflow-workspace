@@ -23,7 +23,7 @@ from ..models import IrCompany, RevenueForecast, User
 from ..services import custom_columns
 from ..services import forecast as svc
 from ..ui import base_ctx
-from .data_io import _xlsx
+from .data_io import _eok, _xlsx
 
 router = APIRouter(tags=["forecast"])
 
@@ -53,8 +53,11 @@ def forecast_page(request: Request, db: Session = Depends(get_db),
     who, team_wide = _scope(db, user, scope, member)
     ctx = base_ctx(request, db, user, active="report")
     rows = svc.views(db, svc.rows_for(db, who))
+    totals, missing = svc.totals(rows)
     ctx.update({
         "rows": rows,
+        "fee_totals": [(label, svc.number(value)) for label, value in totals],
+        "fee_missing": missing,
         "company_options": svc.company_options(db),
         "firm_options": svc.firm_options(db, {r["owner"] for r in rows}),
         "columns": svc.COLUMNS,
@@ -75,14 +78,28 @@ def forecast_page(request: Request, db: Session = Depends(get_db),
 def export_forecast(db: Session = Depends(get_db),
                     user: User = Depends(get_current_user),
                     scope: str = "", member: int = 0):
-    """화면과 같은 범위 · 같은 칸 차례. 자동 칸은 화면에 보이는 글자 그대로."""
+    """화면과 같은 범위 · 같은 칸 차례. 자동 칸은 화면에 보이는 글자 그대로.
+
+    예상 수수료는 수로 읽히면 수로 내린다(`data_io._eok` — 받아서 더하는 칸이다).
+    맨 아래 빈 줄 하나 뒤에 화면의 합계 줄(합계 · 가능성별)을 같은 수로 붙인다.
+    """
     who, _team = _scope(db, user, scope, member)
     extra = custom_columns.view(db, "forecast", "revenue_forecasts")
     heads = [label for _f, label, _s in svc.COLUMNS]
     put = custom_columns.arranger(heads, extra)   # 추가 칸은 화면처럼 고른 자리에
-    rows = [put([v["cells"][f]["text"] for f, _l, _s in svc.COLUMNS]
-                + custom_columns.cells(extra, v["id"]))
-            for v in svc.views(db, svc.rows_for(db, who))]
+    fee_at = svc.FIELDS.index("expected_fee")
+    blank = [""] * len(custom_columns.names(extra))
+    views = svc.views(db, svc.rows_for(db, who))
+    rows = []
+    for v in views:
+        line = [v["cells"][f]["text"] for f in svc.FIELDS]
+        line[fee_at] = _eok(line[fee_at])
+        rows.append(put(line + custom_columns.cells(extra, v["id"])))
+    rows.append(put([""] * len(heads) + blank))
+    for label, total in svc.totals(views)[0]:
+        line = [""] * len(heads)
+        line[0], line[fee_at] = label, float(total)
+        rows.append(put(line + blank))
     return _xlsx("매출예상리스트.xlsx", "매출예상리스트",
                  put(heads + custom_columns.names(extra)), rows)
 
@@ -103,7 +120,19 @@ class ForecastIn(BaseModel):
     meeting_plan: Optional[str] = None
     meeting1_done: Optional[str] = None
     meeting2_done: Optional[str] = None
+    fee_rate: Optional[str] = None
+    expected_fee: Optional[str] = None
+    expected_month: Optional[str] = None
+    likelihood: Optional[str] = None
     result_note: Optional[str] = None
+
+
+def _assign(db: Session, row: RevenueForecast, body: ForecastIn) -> None:
+    """못 받는 값(`예상 시기` 꼴 등)은 400 — 까닭 글이 화면 알림에 그대로 뜬다."""
+    try:
+        svc.assign(db, row, body.model_dump(exclude_unset=True))
+    except svc.InputError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 def _result(db: Session, row: RevenueForecast) -> dict:
@@ -118,7 +147,7 @@ def create_row(body: ForecastIn, db: Session = Depends(get_db),
     if not (body.company_name or "").strip():
         raise HTTPException(status_code=400, detail="기업명을 입력하세요")
     row = RevenueForecast(user_id=user.id)
-    svc.assign(db, row, body.model_dump(exclude_unset=True))
+    _assign(db, row, body)
     db.add(row)
     db.commit()
     return _result(db, row)
@@ -128,7 +157,7 @@ def create_row(body: ForecastIn, db: Session = Depends(get_db),
 def update_row(row_id: int, body: ForecastIn, db: Session = Depends(get_db),
                user: User = Depends(get_current_user)):
     row = _owned(db, user, row_id)
-    svc.assign(db, row, body.model_dump(exclude_unset=True))
+    _assign(db, row, body)
     db.commit()
     return _result(db, row)
 

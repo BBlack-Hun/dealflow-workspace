@@ -1,8 +1,8 @@
-// 분야 기준 목록(관리자) — 목록 고치기 · IR 기업현황 정리 · 투자사 선호분야 재분류.
+// 분야 기준 목록(관리자) — 목록 고치기 · IR 기업현황 정리.
 //
 // **값이 바뀌는 고침은 먼저 몇 줄이 바뀌는지 묻는다.** 이름 바꾸기 · 합치기 ·
 // 옮기기는 미리보기(`…/preview/<고침>`)로 IR 기업 수 · 투자사 수를 받아 확인을
-// 받은 뒤에야 보낸다. 정리 · 재분류는 미리보기 표에서 고른 것만 보낸다 — 서버는
+// 받은 뒤에야 보낸다. 정리는 미리보기 표에서 고른 것만 보낸다 — 서버는
 // 계획을 다시 세워 그 안에 있는 것만 바꾼다(`routers/taxonomy.py`).
 (function () {
   "use strict";
@@ -308,94 +308,6 @@
               (res.skipped ? " (그 사이 바뀐 " + res.skipped + "곳은 건너뜀)" : "") + ".");
         })
         .catch(function (err) { irApply.disabled = false; fail(err); });
-    });
-  }
-
-  // ── 투자사 선호분야 재분류 ─────────────────────────────────────────────
-  var prefResult = document.getElementById("pref-result");
-
-  function renderPref(d) {
-    var c = d.counts || {};
-    var html = '<ul class="import-stats">' +
-      "<li><span>바뀌는 투자사</span><b>" + (c.changes || 0) + "명</b></li>" +
-      "<li><span>그중 목록의 말로 맞춘 투자사</span><b>" + (c.matched || 0) + "명</b></li>" +
-      "<li><span>그중 메모로 옮길 글이 있는 투자사</span><b>" + (c.moved || 0) + "명</b></li>" +
-      "<li><span>못 맞춘 조각이 남는 투자사</span><b>" + (c.unmatched || 0) + "명</b></li>" +
-      "<li><span>선호분야가 적힌 투자사</span><b>" + (c.total || 0) + "명</b></li></ul>";
-    var rows = d.rows || [];
-    function who(r) {
-      return "<b>" + esc(r.name) + "</b><br><span class=\"muted\">" + esc(r.firm) +
-        (r.owner ? " · " + esc(r.owner) : "") + "</span>" +
-        (r.hidden ? ' <span class="tag soft">감춘 줄</span>' : "");
-    }
-    if (rows.length) {
-      html += '<div class="table-wrap"><table class="grid-table compact tx-table"><thead><tr>' +
-        "<th>고름</th><th>투자사</th><th>전</th><th>후</th><th>메모로 옮길 글</th>" +
-        "<th>못 맞춘 조각</th></tr></thead><tbody>" +
-        rows.map(function (r) {
-          return '<tr data-id="' + r.id + '"><td><input type="checkbox" class="pref-cb" checked></td>' +
-            "<td>" + who(r) + '</td><td class="tx-pre">' + esc(r.before) + "</td><td><b>" +
-            (esc(r.after) || '<span class="muted">(빈 칸)</span>') + '</b></td><td class="tx-pre">' +
-            list(r.moved || []) + "</td><td>" + list(r.unmatched || []) + "</td></tr>";
-        }).join("") + "</tbody></table></div>";
-    } else {
-      html += '<p class="hint ok">바꿀 투자사가 없습니다.</p>';
-    }
-    var stay = d.unmatched_only || [];
-    if (stay.length) {
-      html += '<details class="tx-sub"><summary>못 맞춘 조각만 있어 그대로 두는 투자사 ' +
-        stay.length + "명</summary><table class=\"grid-table compact tx-table\"><thead><tr>" +
-        "<th>투자사</th><th>선호분야</th><th>못 맞춘 조각</th></tr></thead><tbody>" +
-        stay.map(function (r) {
-          return "<tr><td>" + who(r) + '</td><td class="tx-pre">' + esc(r.before) + "</td><td>" +
-            list(r.unmatched || []) + "</td></tr>";
-        }).join("") + "</tbody></table></details>";
-    }
-    prefResult.innerHTML = html;
-    var any = rows.length > 0;
-    ["pref-apply-picked", "pref-apply-all"].forEach(function (id) {
-      document.getElementById(id).disabled = !any;
-    });
-    document.getElementById("pref-all").hidden = !any;
-    document.getElementById("pref-none").hidden = !any;
-  }
-
-  function applyPref(all) {
-    var ids = [];
-    prefResult.querySelectorAll("tr[data-id]").forEach(function (tr) {
-      var cb = tr.querySelector(".pref-cb");
-      if (cb && cb.checked) ids.push(Number(tr.getAttribute("data-id")));
-    });
-    var count = all ? prefResult.querySelectorAll("tr[data-id] .pref-cb").length : ids.length;
-    if (!count) { say("반영할 투자사를 고르세요", true); return; }
-    if (!window.confirm((all ? "미리보기에 뜬 투자사 전부(" : "고른 투자사 (") + count +
-                        "명)의 선호분야를 바꿉니다.\n메모로 옮길 글은 기존 메모 뒤에 붙고, " +
-                        "원래 글은 백업 칸에 남습니다. 진행할까요?")) return;
-    call("POST", "/api/taxonomy/pref-sectors", all ? { all: true } : { contact_ids: ids })
-      .then(function (res) {
-        renderPref(res);
-        say(res.applied + "명을 반영했습니다(메모로 옮긴 투자사 " + res.moved + "명)" +
-            (res.skipped ? " — 그 사이 바뀐 " + res.skipped + "명은 건너뜀" : "") + ".");
-      })
-      .catch(fail);
-  }
-
-  if (prefResult) {
-    document.getElementById("pref-preview").addEventListener("click", function () {
-      prefResult.innerHTML = '<p class="muted">읽는 중…</p>';
-      call("GET", "/api/taxonomy/pref-sectors").then(renderPref).catch(fail);
-    });
-    document.getElementById("pref-all").addEventListener("click", function () {
-      checkAll(prefResult, ".pref-cb", true);
-    });
-    document.getElementById("pref-none").addEventListener("click", function () {
-      checkAll(prefResult, ".pref-cb", false);
-    });
-    document.getElementById("pref-apply-picked").addEventListener("click", function () {
-      applyPref(false);
-    });
-    document.getElementById("pref-apply-all").addEventListener("click", function () {
-      applyPref(true);
     });
   }
 })();

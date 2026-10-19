@@ -659,6 +659,16 @@ def actor() -> Optional[dict]:
     return _ACTOR.get()
 
 
+def _sender(fallback: int) -> int:
+    """요청을 보낸 사람(세션 쿠키) — 요청 밖(스크립트)이면 부르는 쪽이 준 사람.
+
+    관리자가 팀원 화면으로 보는 중이면 부르는 쪽이 아는 `user` 는 그 팀원이다
+    (`deps.get_current_user`). 로그에는 **실제로 누른 관리자**가 남아야 한다.
+    """
+    ctx = _ACTOR.get()
+    return ctx["user_id"] if ctx else fallback
+
+
 #: 이 요청에서 **덤으로 실을 값**. `{표 이름: [{field, before, after}, …]}`.
 #:
 #: 왜 필요한가 — 세션 이벤트는 **줄 안에 있는 것**만 안다. 기업 강제 삭제는
@@ -990,6 +1000,7 @@ def log_import(db, *, actor_user_id: int, sheet_label: str,
     """
     from ..models import EditLog
 
+    actor_user_id = _sender(actor_user_id)
     counts = counts or {}
     if owner_user_id is None:
         scope = SCOPE_SHARED
@@ -1056,6 +1067,7 @@ def log_tab_delete(db, *, actor_user_id: int, label: str,
     """
     from ..models import EditLog
 
+    actor_user_id = _sender(actor_user_id)
     counts = counts or {}
     if owner_user_id is None:
         scope = SCOPE_SHARED

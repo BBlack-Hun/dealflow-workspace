@@ -23,7 +23,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..deps import get_current_user, templates
+from ..deps import get_current_user, no_send_as_member, templates
 from ..models import SendItem, SendJob, SourcingContact, User
 from ..services import (series_a_share, sourcing_buckets, sourcing_link,
                         sourcing_mail, sourcing_receipts, sourcing_rooms,
@@ -791,7 +791,8 @@ def _ids(raw: str) -> Optional[List[int]]:
     return out or None
 
 
-@router.post("/sourcing/rooms/search", include_in_schema=False)
+@router.post("/sourcing/rooms/search", include_in_schema=False,
+             dependencies=[Depends(no_send_as_member)])
 def search_rooms(tab: str = Form(""), ids: str = Form(""),
                  db: Session = Depends(get_db),
                  user: User = Depends(get_current_user)):

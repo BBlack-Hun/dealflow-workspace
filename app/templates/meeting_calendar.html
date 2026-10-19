@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+
+{#
+  IR 미팅 달력(#5) — 딜 진행 관리에 잡힌 미팅을 달·해 단위로 본다.
+  싣는 것·빼는 것은 `services/meeting_calendar.py` 첫머리에 있다(취소한 미팅은 뺀다).
+#}
+{% block content %}
+<header class="page-head">
+  <h1>{{ page_title }}</h1>
+  <p class="muted">
+    잡아 둔 IR 미팅을 날짜 위에 놓고 봅니다 — <b>어느 기업이 어느 투자사를</b>
+    만났는지(완료)·만날지(예정).
+  </p>
+</header>
+
+{% include "_ir_tabs.html" %}
+
+<div class="toolbar">
+  <div class="quick-chips">
+    <span class="seg-toggle">
+      <a class="chip {% if view == 'month' %}active{% endif %}"
+         href="/ir/calendar?view=month&ym={{ year }}-{{ '%02d'|format(month) }}{{ member_q }}">월간</a>
+      <a class="chip {% if view == 'year' %}active{% endif %}"
+         href="/ir/calendar?view=year&y={{ year }}{{ member_q }}">연간</a>
+    </span>
+    {% if view == 'year' %}
+    <a class="chip" href="/ir/calendar?view=year&y={{ year - 1 }}{{ member_q }}" aria-label="지난해">‹</a>
+    <b class="cal-label">{{ year }}년</b>
+    <a class="chip" href="/ir/calendar?view=year&y={{ year + 1 }}{{ member_q }}" aria-label="다음 해">›</a>
+    {% if year != this_year %}<a class="chip" href="/ir/calendar?view=year&y={{ this_year }}{{ member_q }}">올해</a>{% endif %}
+    {% else %}
+    <a class="chip" href="/ir/calendar?view=month&ym={{ prev_ym }}{{ member_q }}" aria-label="지난달">‹</a>
+    <b class="cal-label">{{ year }}년 {{ month }}월</b>
+    <a class="chip" href="/ir/calendar?view=month&ym={{ next_ym }}{{ member_q }}" aria-label="다음 달">›</a>
+    {% if '%d-%02d'|format(year, month) != this_ym %}<a class="chip" href="/ir/calendar?view=month&ym={{ this_ym }}{{ member_q }}">이번 달</a>{% endif %}
+    {% endif %}
+  </div>
+  {% if members %}
+  {# 관리자 — 팀 전체가 기본, 한 사람만 따로 볼 수도 있다(업무 보고의 고르개와 같은 모양). #}
+  {% set here = '/ir/calendar?view=' ~ view ~ ('&y=' ~ year if view == 'year' else '&ym=%d-%02d'|format(year, month)) %}
+  <div class="toolbar-right">
+    <a class="chip {% if not member %}active{% endif %}" href="{{ here }}{% if view_as %}&member=0{% endif %}">팀 전체</a>
+    <a class="chip {% if member == user.id %}active{% endif %}" href="{{ here }}&member={{ user.id }}">내 것</a>
+    <select class="chip-select" aria-label="팀원 선택"
+            onchange="location = '{{ here }}' + (this.value ? '&member=' + this.value : '')">
+      <option value="">팀원 선택…</option>
+      {% for m in members %}
+      <option value="{{ m.id }}" {% if member == m.id %}selected{% endif %}>{{ m.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  {% endif %}
+</div>
+
+{% if view == 'year' %}
+{% set done_sum = months|sum(attribute='done') %}
+{% set plan_sum = months|sum(attribute='planned') %}
+<section class="panel">
+  <h2 class="panel-title">{{ year }}년 IR 미팅
+    <span class="hint">완료 {{ done_sum }} · 예정 {{ plan_sum }} · 달을 누르면 그 달 달력으로 갑니다</span>
+  </h2>
+  <div class="cal-year">
+    {% for mo in months %}
+    <a class="cal-year-month {% if '%d-%02d'|format(year, mo.month) == this_ym %}now{% endif %}"
+       href="/ir/calendar?view=month&ym={{ year }}-{{ '%02d'|format(mo.month) }}{{ member_q }}">
+      <b>{{ mo.month }}월</b>
+      <span class="cal-count done">✓ 완료 {{ mo.done }}</span>
+      <span class="cal-count plan">예정 {{ mo.planned }}</span>
+    </a>
+    {% endfor %}
+  </div>
+</section>
+{% else %}
+<section class="panel">
+  <h2 class="panel-title">{{ year }}년 {{ month }}월 IR 미팅
+    <span class="hint"><span class="cal-chip done">✓ 완료 {{ done }}</span>
+      <span class="cal-chip plan">예정 {{ planned }}</span></span>
+  </h2>
+  {# 폰에서는 표 안에서 가로로 민다 — 일곱 칸을 390px 에 넣으면 칩 글자가 한 자씩 접힌다. #}
+  <div class="table-wrap">
+  <table class="cal-grid">
+    <thead><tr>{% for wd in '일월화수목금토' %}<th>{{ wd }}</th>{% endfor %}</tr></thead>
+    <tbody>
+      {% for week in weeks %}
+      <tr>
+        {% for d in week %}
+        <td class="{% if not d.in_month %}cal-out{% endif %}{% if d.today %} cal-today{% endif %}">
+          <span class="cal-day">{{ d.date.day }}</span>
+          {% for m in d.meetings %}
+          {#
+            제 미팅은 딜 진행 관리의 그 줄이 있는 구역으로 잇는다(예정 → 미팅,
+            완료 → 미팅 후기). 미팅 한 건의 상세 화면은 따로 없다. 남의 미팅은
+            그 화면에 안 보이므로(제 것만 나온다) 잇지 않는다.
+          #}
+          {% set tip = (m.time ~ ' ' if m.time else '') ~ m.kind ~ ' · ' ~ m.who ~ (' · ' ~ m.outcome if m.outcome else '') ~ (' · 담당 ' ~ m.owner if m.owner else '') %}
+          {% if m.user_id == user.id %}
+          <a class="cal-chip {{ 'done' if m.done else 'plan' }}" title="{{ tip }}"
+             href="/ir#{{ 'reviews' if m.done else 'meetings' }}">
+          {% else %}
+          <span class="cal-chip {{ 'done' if m.done else 'plan' }}" title="{{ tip }}">
+          {% endif %}
+            {% if m.done %}✓ {% endif %}{% if m.time %}<b>{{ m.time }}</b> {% endif %}{{ m.company or '기업 미기재' }} ↔ {{ m.firm }}{% if m.owner %} <span class="muted">· {{ m.owner }}</span>{% endif %}
+          {% if m.user_id == user.id %}</a>{% else %}</span>{% endif %}
+          {% endfor %}
+        </td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% if not done and not planned %}<p class="muted">이 달에는 잡힌 미팅이 없습니다.</p>{% endif %}
+</section>
+{% endif %}
+{% endblock %}

@@ -11,6 +11,9 @@
 4. 미팅은 같은 기업 + 같은 회사 상대만, 취소는 빼고, 가장 이른 날과 `외 N건`.
 5. 남의 줄은 404, 관리자는 고칠 수 있다. 엑셀은 화면과 같은 범위 · 같은 칸.
 6. IR 기업을 지우면 줄은 남고 연결만 끊긴다.
+7. 2판 수수료 칸 — 성공보수율은 이어 둔 계약 · 명단에서 하나로 모일 때만 자동,
+   예상 수수료 = 희망금액(구간이면 아래) × 보수율, 시기 · 가능성은 꼴을 맞추고,
+   합계는 화면 범위의 줄만 더해 화면 · 엑셀이 같은 수를 낸다.
 
 이름 · 회사 · 전화는 전부 지어낸 것이다(공개 저장소).
 """
@@ -264,7 +267,8 @@ def test_엑셀은_화면과_같은_칸_같은_글자(portal, db, company):
     grid = [list(row) for row in openpyxl.load_workbook(io.BytesIO(r.content))
             .active.iter_rows(values_only=True)]
     assert grid[0] == [label for _f, label, _s in svc.COLUMNS]
-    assert len(grid) == 2, "내 줄만"
+    assert [g[0] for g in grid[1:]] == ["가나벤처스", None, "합계", "가능성 상",
+                                        "가능성 중", "가능성 하"], "내 줄만 + 빈 줄 + 합계"
     line = dict(zip(grid[0], grid[1]))
     assert line["기업명"] == "샘플가나랩" and line["심사역 성함"] == "심사가"
     assert line["투자사 미팅 예정일"] == "2026-10-20 외 1건"
@@ -285,3 +289,103 @@ def test_IR_기업을_지우면_줄은_남고_연결만_끊긴다(portal, db, co
     row = db.get(RevenueForecast, rid)
     assert row is not None and row.ir_company_id is None
     assert portal["u1"].get("/report/forecast").status_code == 200
+
+
+# --- 7. 수수료 칸(2판) ------------------------------------------------------------
+
+def _consulting(db, company, success_fee):
+    from app.models import ConsultingCompany
+
+    db.add(ConsultingCompany(user_id=1, sheet="월간 계약 업무현황표", company_name=company.name,
+                             success_fee=success_fee, ir_company_id=company.id))
+    db.commit()
+
+
+def test_성공보수율은_이어_둔_계약에서_읽고_수수료는_희망금액_곱하기_보수율(portal, db, company):
+    _consulting(db, company, "3.5%")
+    _consulting(db, company, "협의")            # 못 읽는 글자는 안 센다
+    row = _add(portal["u1"])
+    cells = row["cells"]
+    assert cells["fee_rate"] == {"text": "3.5", "value": "3.5", "auto": True}
+    assert cells["expected_fee"] == {"text": "0.35", "value": "0.35", "auto": True}, "10억 × 3.5%"
+    page = portal["u1"].get("/report/forecast").text
+    assert 'class="cell fc-auto" data-field="expected_fee"' in page
+
+    # 희망금액을 구간으로 적으면 아래로 셈한다 · 보수율을 적으면 그 값이 우선.
+    cells = _cells(portal["u1"], row["id"], raise_target="30~50억", fee_rate="4%")
+    assert cells["fee_rate"] == {"text": "4", "value": "4", "auto": False}, "4% → 4 로 맞춘다"
+    assert cells["expected_fee"]["text"] == "1.2" and cells["expected_fee"]["auto"]
+    cells = _cells(portal["u1"], row["id"], expected_fee="2")
+    assert cells["expected_fee"] == {"text": "2", "value": "2", "auto": False}
+    cells = _cells(portal["u1"], row["id"], expected_fee="", fee_rate="")
+    assert cells["expected_fee"]["text"] == "1.05" and cells["fee_rate"]["auto"], "비우면 다시 자동"
+
+
+def test_성공보수율은_스타트업_명단도_보고_값이_갈리면_비운다(portal, db, company):
+    from app.models import VcContact
+
+    db.add(VcContact(user_id=2, source_sheet="시험 스타트업", name="대표가", firm=company.name,
+                     notes='{"success_fee": "3프로"}', ir_company_id=company.id))
+    db.commit()
+    row = _add(portal["u1"])
+    assert row["cells"]["fee_rate"]["text"] == "3", "명단의 `성공보수율 %`"
+    _consulting(db, company, "3%")
+    assert _cells(portal["u1"], row["id"])["fee_rate"]["text"] == "3", "같은 값이면 하나"
+    _consulting(db, company, "4%")
+    cells = _cells(portal["u1"], row["id"])
+    assert cells["fee_rate"]["text"] == "" and cells["expected_fee"]["text"] == "", \
+        "둘이 다르면 짐작하지 않는다"
+
+
+def test_시기_가능성_보수율_수수료는_꼴을_맞추고_못_받으면_400(portal, db, company):
+    from app.models import RevenueForecast
+    from app.services import forecast as svc
+
+    row = _add(portal["u1"])
+    cells = _cells(portal["u1"], row["id"], expected_month="2027-3", likelihood="상")
+    assert cells["expected_month"]["text"] == "2027-03" and cells["likelihood"]["text"] == "상"
+    for body in ({"expected_month": "2027-13"}, {"expected_month": "내년 봄"},
+                 {"likelihood": "최상"}, {"fee_rate": "3~4%"}, {"fee_rate": "150"},
+                 {"expected_fee": "많이"},
+                 {"likelihood": "중", "expected_month": "2027"}):
+        r = portal["u1"].patch(f"/api/forecast/{row['id']}", json=body)
+        assert r.status_code == 400, body
+        assert r.json()["detail"]
+    db.expire_all()
+    saved = db.get(RevenueForecast, row["id"])
+    assert (saved.expected_month, saved.likelihood) == ("2027-03", "상"), "하나라도 못 받으면 안 적는다"
+    assert portal["u1"].post("/api/forecast", json={"company_name": "샘플가나랩",
+                                                   "likelihood": "?"}).status_code == 400
+    assert svc.rate("3.5 %") == svc.rate("3.5") and svc.rate("") is None
+    page = portal["u1"].get("/report/forecast").text
+    assert 'data-field="likelihood"' in page and 'data-choices="상,중,하"' in page
+
+
+def test_합계는_화면_범위의_줄만_가능성별로_더하고_엑셀도_같은_수(portal, db, company):
+    openpyxl = pytest.importorskip("openpyxl")
+
+    _consulting(db, company, "3%")              # 10억 × 3% = 0.3
+    a = _add(portal["u1"])
+    _cells(portal["u1"], a["id"], likelihood="상")
+    b = _add(portal["u1"], firm="다라파트너스")
+    _cells(portal["u1"], b["id"], expected_fee="5천만원", likelihood="중")
+    _add(portal["u1"], name="샘플없는기업")      # 수수료 없음 — 빠지고 센다
+    c = _add(portal["u2"], firm="남의벤처스")
+    _cells(portal["u2"], c["id"], likelihood="하")
+
+    page = portal["u1"].get("/report/forecast").text
+    assert "<b>예상 수수료 합계 0.8억</b>" in page
+    assert "· 가능성 상 0.3억" in page and "· 가능성 중 0.5억" in page
+    assert "· 가능성 하 0억" in page and "가능성 미정" not in page
+    assert "예상 수수료가 없는 1줄은 빠졌습니다" in page
+    team = portal["admin"].get("/report/forecast?scope=team").text
+    assert "<b>예상 수수료 합계 1.1억</b>" in team and "· 가능성 하 0.3억" in team
+    assert "<b>예상 수수료 합계 0.3억</b>" in portal["admin"].get("/report/forecast?member=2").text
+
+    r = portal["u1"].get("/api/export/forecast.xlsx")
+    grid = [list(row) for row in openpyxl.load_workbook(io.BytesIO(r.content))
+            .active.iter_rows(values_only=True)]
+    fee_at = grid[0].index("예상 수수료(억)")
+    assert [g[fee_at] for g in grid[1:4]] == [0.3, 0.5, None], "수로 읽히면 억 수로(5천만원 → 0.5)"
+    totals = {g[0]: g[fee_at] for g in grid[5:]}
+    assert totals == {"합계": 0.8, "가능성 상": 0.3, "가능성 중": 0.5, "가능성 하": 0}

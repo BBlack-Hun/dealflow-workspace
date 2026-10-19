@@ -107,7 +107,12 @@ from typing import List, Optional, Sequence, Tuple
 
 from . import group_name as gn
 from . import invest_stage as st
-from .pref_sectors import MOVED_MARK as SECTORS_MOVED_MARK
+
+#: 투자사 선호분야 재분류(#30, 10/18 반영)가 메모로 옮긴 줄의 표시. 재분류 기능은
+#: 뺐지만(10/19) **이미 메모에 적힌 줄**은 그대로라 판정이 계속 읽는다 — 글자를
+#: 바꾸면 그 줄들이 안 읽힌다. `group_name.MOVED_MARK`(`[그룹 칸에서 옮김]`)와는
+#: 어느 칸에서 왔는지가 다르다.
+SECTORS_MOVED_MARK = "[선호분야 칸에서 옮김]"
 
 # ── 그룹 이름 ───────────────────────────────────────────────────────────────
 #
@@ -278,9 +283,8 @@ def sector_moved_text(memo: Optional[str]) -> str:
     """메모에서 **선호분야 칸에서 옮겨 온 줄만** 꺼낸다(`moved_text` 와 같은 꼴).
 
     **그 줄도 이 사람의 선호다** — 선호분야 칸에 섞여 있던 단계 말(`Seed Pre A` ·
-    `Pre IPO`)이 재분류(#30 · `services/pref_sectors.py`)로 메모에 옮겨 가는데,
-    여기서 안 읽으면 그 사람이 라운드 그룹에서 `공통` 으로 샌다. 표시 글자는 그
-    모듈 하나에서 가져온다.
+    `Pre IPO`)이 재분류(#30, 10/18 반영)로 메모에 옮겨 갔는데, 여기서 안 읽으면
+    그 사람이 라운드 그룹에서 `공통` 으로 샌다. 표시 글자는 위 `SECTORS_MOVED_MARK`.
 
     `moved_text` 와 나눠 둔 것은 **맨 앞 딱지**(`lead_label` — `보류` · `대형`)를
     예전 그룹 칸의 글에서만 읽기 위해서다. 선호분야 칸의 글은 사람이 `갈래 |

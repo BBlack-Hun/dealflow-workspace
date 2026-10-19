@@ -1,0 +1,12 @@
+{#
+  딜 진행 관리 메뉴의 탭 줄 — `ir.html` · `meeting_calendar.html` 이 같이 쓴다(#5).
+  업무 보고의 탭 줄(`_report_tabs.html`)과 같은 모양이다.
+
+  아래 점프바(`_flow_tabs.html`)와 다르다 — 점프바는 **한 페이지 안**을 내려가고,
+  이 탭은 **페이지를 바꾼다.** 둘을 한 줄에 섞으면 누를 때 무슨 일이 일어날지
+  예측할 수 없다(점프바가 탭이던 때 그랬다).
+#}
+<nav class="sheet-tabs">
+  <a class="sheet-tab {% if ir_tab != 'calendar' %}active{% endif %}" href="/ir">딜 진행 관리</a>
+  <a class="sheet-tab {% if ir_tab == 'calendar' %}active{% endif %}" href="/ir/calendar">미팅 달력</a>
+</nav>

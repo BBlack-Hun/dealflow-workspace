@@ -177,9 +177,11 @@ def test_달_칸을_고쳐도_다른_달_기록이_사라지지_않는다(sheets
         assert got.get(key) == value, f"한 칸을 고쳤더니 `{key}` 가 사라졌습니다"
 
 
-def test_달_칸을_고치고_지우는_도구줄이_그대로_있다(sheets):
+def test_달_칸을_고치고_지우는_도구줄이_그대로_있다(sheets, db, users):
     """표에 안 서는 배치라고 칸 관리까지 사라지면, 값은 보이는데 칸 이름을
-    고치거나 지울 자리가 아예 없어진다."""
+    고치거나 지울 자리가 아예 없어진다. (칸 관리는 관리자만 — 아래 3번.)"""
+    users["u1"].role = "admin"
+    db.commit()
     html = sheets.get(_url(DEAL)).text
     assert "month-cols" in html, "달 칸 도구줄이 사라졌습니다"
     assert "/api/contacts/columns" in html, "[칸 추가] 가 사라졌습니다"
@@ -225,3 +227,65 @@ def test_달_칸이_없는_명단에는_달_칸이_생기지_않는다(sheets, d
     sheets.get(_url(CARD))
     db.expire_all()
     assert db.query(ContactColumn).filter(ContactColumn.sheet == CARD).count() == 0
+
+
+# ── 3. 칸 관리는 관리자만, 칸 안의 값은 팀원도 ─────────────────────────────
+#
+# 옛 [칸 추가]·이름 저장·칸 숨기기·칸 삭제는 팀 전체의 표 모양을 바꾼다 — 새
+# 컬럼 관리(`/columns`)와 같은 권한(관리자)에 둔다. 팀원은 칸을 그대로 보고
+# **값만** 고친다.
+
+def _column_ops(column_id: int) -> list:
+    return [("/api/contacts/columns", {"sheet": DEAL, "label": "9월 딜소개"}),
+            (f"/api/contacts/columns/{column_id}/rename", {"label": "바뀐 이름"}),
+            (f"/api/contacts/columns/{column_id}/hide", None),
+            (f"/api/contacts/columns/{column_id}/delete", None)]
+
+
+def test_팀원은_칸을_세우고_고치고_숨기고_지우지_못한다(sheets, db):
+    from app.models import ContactColumn
+
+    column = db.query(ContactColumn).filter(ContactColumn.sheet == DEAL,
+                                            ContactColumn.label == MONTHS[0]).one()
+    for path, data in _column_ops(column.id):
+        res = sheets.post(path, data=data, follow_redirects=False)
+        assert res.status_code == 403, f"{path}: {res.status_code}"
+
+    db.expire_all()
+    column = db.query(ContactColumn).filter(ContactColumn.id == column.id).one()
+    assert (column.label, column.is_hidden) == (MONTHS[0], 0)
+    assert not db.query(ContactColumn).filter(ContactColumn.label == "9월 딜소개").count()
+    # 단추도 안 선다 — 눌러서 403 을 보게 두지 않는다.
+    assert "/api/contacts/columns" not in sheets.get(_url(DEAL)).text
+
+
+def test_팀원도_칸은_보고_칸_안의_값은_고친다(sheets, db):
+    from app.models import VcContact
+    from app.services import contact_columns as cc
+
+    column = cc.month_columns(db, DEAL)[0]
+    key = cc.note_key(column.id)
+    assert _panel_notes(sheets.get(_url(DEAL)).text).get(key) == column.label
+
+    who = db.query(VcContact).filter(VcContact.source_sheet == DEAL).first()
+    res = sheets.patch(f"/api/contacts/{who.id}", json={"notes": {key: "9/2 샘플라"}})
+    assert res.status_code == 200, res.text
+    assert sheets.get(f"/api/contacts/{who.id}").json()["contact"]["notes"][key] == "9/2 샘플라"
+
+
+def test_관리자는_칸을_세우고_고치고_숨기고_지운다(sheets, db, users):
+    from app.models import ContactColumn
+
+    users["u1"].role = "admin"
+    db.commit()
+    column = db.query(ContactColumn).filter(ContactColumn.sheet == DEAL,
+                                            ContactColumn.label == MONTHS[0]).one()
+    column_id = column.id
+    for path, data in _column_ops(column_id):
+        res = sheets.post(path, data=data, follow_redirects=False)
+        assert res.status_code == 303, f"{path}: {res.status_code}"
+
+    db.expire_all()
+    assert db.query(ContactColumn).filter(ContactColumn.label == "9월 딜소개").count() == 1
+    assert not db.query(ContactColumn).filter(ContactColumn.id == column_id).count(), (
+        "지운 칸이 남아 있습니다")

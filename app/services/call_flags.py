@@ -45,7 +45,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import clock
-from ..deps import may_manage_team_contacts
+from ..deps import doer, may_manage_team_contacts
 from ..models import (ContactActivity, DealFollowup, IrRequest, Meeting,
                       SendItem, SendSequence, User, VcContact)
 
@@ -122,7 +122,7 @@ def set_call(db: Session, contact_id: int, on: bool, user: User) -> DealFollowup
     """켜거나 끈다. 누가 언제 했는지 함께 적는다. 커밋은 부르는 쪽이 한다."""
     row = _row(db, contact_id)
     row.call_needed = 1 if on else 0
-    row.call_by = user.id
+    row.call_by = doer(user).id
     row.call_at = clock.now_iso()
     db.flush()
     return row
@@ -133,7 +133,7 @@ def set_memo(db: Session, contact_id: int, memo: str, user: User) -> DealFollowu
     row = _row(db, contact_id)
     text = (memo or "").strip()[:MEMO_MAX]
     row.memo = text or None
-    row.memo_by = user.id
+    row.memo_by = doer(user).id
     row.memo_at = clock.now_iso()
     db.flush()
     return row
