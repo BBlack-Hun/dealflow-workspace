@@ -797,7 +797,9 @@ def test_화면이_전체선택_검사가_기대하는_모양을_실제로_그�
                    'id="group-filter"', 'id="contact-filters"',
                    'class="contact-cb"', 'class="pick-card" data-group=',
                    'id="contact-filter-note"', 'id="contact-summary"',
-                   'id="bucket-mix-note"', 'data-empty='):
+                   'id="bucket-mix-note"', 'data-empty=',
+                   # 따로 딜을 받는 갈래 — [전체선택] 기본에서 빼는 이름과 그 말 자리.
+                   'data-separate="딜 소싱 네트워크"', 'id="separate-note"'):
         assert needed in html, f"화면에 {needed} 가 없다 — 브라우저 검사가 헛돈다"
 
 

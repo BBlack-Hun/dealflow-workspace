@@ -696,7 +696,8 @@
     #}
     {% if contact_groups %}
     <div class="pick-filters" id="contact-filters">
-      <div class="filter-line" id="group-filter" data-empty="{{ empty_group }}">
+      <div class="filter-line" id="group-filter" data-empty="{{ empty_group }}"
+           data-separate="{{ separate_group }}">
         <span class="filter-label">그룹</span>
         <button type="button" class="chip active" data-value="">
           전체 <b>{{ contacts|length }}</b></button>
@@ -706,6 +707,8 @@
           {{ g.label }} <b>{{ g.count }}</b></button>
         {% endfor %}
       </div>
+      {# 딜 소개 [전체선택]이 따로 딜을 받는 갈래를 뺐을 때 몇 명인지(`deals.js`). #}
+      <p class="hint" id="separate-note" hidden></p>
     </div>
     {% endif %}
     {#

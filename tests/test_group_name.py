@@ -71,6 +71,20 @@ def test_사용자가_쓰는_이름들도_그대로_통과한다():
     assert gn.CHOICES == ",".join(gn.KNOWN)
 
 
+def test_딜_소싱_네트워크와_메일도_정리_스크립트가_남긴다():
+    """목록(`NAMED`)에 없으면 다음 정리·업로드가 문장으로 보고 메모로 옮긴다.
+
+    스크립트를 `--apply` 로 돌려 남는지는 아래
+    `test_정리_스크립트는_사용자가_넣은_이름을_안_건드린다` 가 `NAMED` 전부로 본다.
+    """
+    assert gn.SEPARATE == "딜 소싱 네트워크"
+    for name in (gn.SEPARATE, "메일"):
+        assert name in gn.NAMED, name
+        assert gn.decide(name).action == gn.KEEP, name
+    # 띄어쓰기만 다른 것은 제 글자로 모인다.
+    assert gn.decide("딜소싱네트워크").group == gn.SEPARATE
+
+
 def test_이름은_적어_둔_글자_그대로_돌려준다():
     """표기가 갈린 것은 **제 글자로 모은다.** 표에서 고른 값과 창에서 친 값이
     한 글자라도 다르면 딜 제안 관리에서 다른 그룹이 된다."""

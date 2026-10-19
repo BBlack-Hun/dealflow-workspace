@@ -215,6 +215,8 @@ def deals_page(
         # 거르는 그 값이라, 양쪽에서 고른 사람이 같아야 한다.
         "contact_groups": sheet_owner.group_rows(contacts),
         "empty_group": sheet_owner.EMPTY_GROUP,
+        # 따로 딜을 받는 갈래 — 딜 소개 [전체선택] 기본에서 뺀다(`deals.js`).
+        "separate_group": group_name.SEPARATE,
         # 예약 큐 — 그룹마다 붙일 기업이 달라서 미리 줄 세워 두는 자리.
         #
         # **대상 수는 저장된 값이 아니라 지금 세어 본 값이다**(`deal_queue.rows`).
