@@ -244,7 +244,8 @@ class VcContact(TimestampMixin, Base):
     stages: Mapped[Optional[str]] = mapped_column(String, nullable=True)   # CSV: Seed,SeriesA
     sectors: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # CSV: AI,헬스케어
     # `sectors` 의 **원래 글** — 분야를 기준 목록 말로 다시 매기기 전에 한 번만
-    # 적는다(`services/pref_sectors.py` · `services/taxonomy.backup_once`).
+    # 적었다(선호분야 재분류 #30, 10/18 반영 — 기능은 10/19 에 뺐다 ·
+    # `services/taxonomy.backup_once`).
     # NULL 이면 아직 손댄 적이 없다는 뜻이고, 한 번 적힌 뒤로는 다시 돌려도
     # 덮지 않는다 — 두 번째 판의 '원래 값' 은 이미 첫 판이 고친 값이다.
     sectors_raw: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
