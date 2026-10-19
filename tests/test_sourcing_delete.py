@@ -153,7 +153,8 @@ def _send_to(client, db, row, room="시험용_소싱방"):
     row.kakao_room_name = room
     db.commit()
     r = client.post("/api/deals/send",
-                    json={"contact_ids": [row.id], "mode": "sourcing"})
+                    json={"contact_ids": [row.id], "mode": "sourcing",
+                          "topic": "sourcing_remind"})
     assert r.status_code == 200, r.text
     return r.json()
 

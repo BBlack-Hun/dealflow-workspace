@@ -80,8 +80,10 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   function isExcluded(card) {
     if (!card) return false;
     if (card.getAttribute("data-out") === "1") return true;
-    // 제안 대기중 · 물어보는 중 — 참여 안내(처음)만 받는다(`sourcing_sync.can_get_invite`).
-    if (card.getAttribute("data-invite-only") === "1" && sourcingTopic !== INTRO) return true;
+    // 참여 안내(처음)는 제안 대기중 · 물어보는 중만, 다른 글은 참여만 받는다
+    // (`sourcing_sync.can_get_invite`). 이 값은 딜 소싱 카드만 단다(`deals.html`).
+    var inviteOnly = card.getAttribute("data-invite-only");
+    if (inviteOnly !== null && (inviteOnly === "1") !== (sourcingTopic === INTRO)) return true;
     // Series A 딜 공유는 그 갈래 분께만 — 다른 갈래 카드는 고를 자리가 아니다
     // (서버도 뺀다: `series_a_share.NOT_BUCKET_NOTE`).
     if (isShare() && (card.getAttribute("data-bucket") || "") !== SHARE_BUCKET) return true;
@@ -615,6 +617,9 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     if (topicBar) topicBar.querySelectorAll(".chip").forEach(function (c) {
       c.classList.toggle("active", c.getAttribute("data-value") === sourcingTopic);
     });
+    // `참여 중 N명 … 뺐습니다` 는 참여 안내에서만 맞는 말이다.
+    var held = document.getElementById("sourcing-held");
+    if (held) held.hidden = sourcingTopic !== INTRO;
   }
   // ── [Series A 딜 공유]로 잠깐 갔다 오면 다른 갈래 체크가 돌아온다 ──────────
   //
@@ -827,7 +832,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       var who = row.assignee || "";
       var got = row.received ? "1" : "0";
       // 그 사이 받지 않는 분이 된 줄 — 불참여(딜 소싱 화면 · 투자사 관리 현황의 X)
-      // 또는 참여 확인 전(물어보는 중 · 문구). 딱지 글자는 서버가 짓는다(`out_label`).
+      // 또는 사람이 적은 문구. 딱지 글자는 서버가 짓는다(`out_label`).
       var out = row.out ? "1" : "0";
       // 참여 안내(처음)만 받는 줄 — 제안 대기중 · 물어보는 중.
       var inviteOnly = row.invite_only ? "1" : "0";

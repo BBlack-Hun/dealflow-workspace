@@ -280,8 +280,10 @@ def test_intro_is_unchanged(people, client, db):
     assert default["가심사"]["message"] == named["가심사"]["message"]
     assert "Deal Sourcing 네트워크 참여 방법 안내 드립니다." in default["가심사"]["message"]
 
-    # 처음 안내는 이 달 딜 받음을 보지 않는다(지금까지 그대로)
+    # 처음 안내는 이 달 딜 받음을 보지 않는다(지금까지 그대로). 받는 분은 제안 대기중이다
     _mark(db, people["a"])
+    people["a"].participation = "딜 소싱 참여 제안 대기중"
+    db.commit()
     r = client.post("/api/deals/send", json={
         "contact_ids": [people["a"].id], "mode": "sourcing"})
     assert r.status_code == 200 and r.json()["skipped"] == []

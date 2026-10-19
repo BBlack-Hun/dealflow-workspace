@@ -206,7 +206,8 @@ def test_IR_자료_전달이_담당자_방으로_간다(stage, db, test_room_on)
 
 def test_소싱_제안이_소싱_명단의_방으로_간다(stage, db, test_room_on):
     """소싱은 받는 표가 다르다(`SourcingContact`) — 그래서 따로 본다."""
-    job_id = _send(stage, contact_ids=[stage["sourcing_id"]], mode="sourcing")
+    job_id = _send(stage, contact_ids=[stage["sourcing_id"]], mode="sourcing",
+                   topic="sourcing_remind")
 
     item = _sole(db, job_id)
     assert item.room_name == SOURCING_ROOM

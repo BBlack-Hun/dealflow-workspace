@@ -1030,6 +1030,12 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
 .sourcing-vc-picks .vc-pick-name { width: fit-content; box-sizing: border-box; }
 .sourcing-vc-picks .tag { margin-left: 0; }
 .sourcing-vc-picks .linkbtn { font-size: 11.5px; }
+/* 딜 소싱 `카톡방 이름` 칸 아래 — `방 없음` · [방 후보 찾기] · 후보마다 [이 방으로 확정]
+   (`sourcing.html`). 칸이 좁아(170px) `.cell-sub` 의 한 줄 자르기에 단추가 `…` 뒤로
+   숨어 고를 수 없었다(10/19) — 접고, 단추마다 한 줄씩 둔다. */
+.sourcing-room { white-space: normal; }
+.sourcing-room .inline-form { display: block; }
+.sourcing-room .linkbtn { padding: 0; text-align: left; }
 
 
 /* ── 문구 선택기 (발송 화면) ───────────────────────────────── */

@@ -754,18 +754,18 @@
         <span class="hint" id="shared-count"></span>
       </div>
       {#
-        **목록에서 뺀 분** — 사람이 적은 문구와 `불참여` 는 처음부터 카드가 없다
-        (`sourcing_sync.can_get_invite`). 제안 대기중 · 물어보는 중은 카드가 있지만
-        참여 안내(처음)에서만 고른다(월간 리마인드 · Series A 딜 공유는 정확히 `참여`
-        — `takes_part`). 조용히 빼면 왜 그분이 안 보이는지 모르므로 몇 명인지 적는다
-        (`sourcing.held_counts`).
+        **참여 안내(처음)에서 뺀 분** — 사람이 적은 문구와 `불참여` 는 처음부터 카드가
+        없고, `참여` 카드는 참여 안내에서 숨는다(제안 대기중 · 물어보는 중만 —
+        `sourcing_sync.can_get_invite`). 월간 리마인드 · Series A 딜 공유는 거꾸로 `참여`
+        카드만 뜬다(`takes_part`). 조용히 빼면 왜 그분이 안 보이는지 모르므로 몇 명인지
+        적는다(`sourcing.held_counts`). 참여 안내를 골랐을 때만 선다(`deals.js` 의 `markTopicChip`).
       #}
-      {% if sourcing_held.custom or sourcing_held.left %}
+      {% set held = [("참여 중", sourcing_held.joined), ("불참여", sourcing_held.left),
+                     ("직접 문구", sourcing_held.custom)] | selectattr("1") | list %}
+      {% if held %}
       <p class="hint" id="sourcing-held" data-testid="sourcing-held">
-        {%- if sourcing_held.custom %}직접 적은 문구 <b>{{ sourcing_held.custom }}</b>명{% endif -%}
-        {%- if sourcing_held.custom and sourcing_held.left %} · {% endif -%}
-        {%- if sourcing_held.left %}불참여 <b>{{ sourcing_held.left }}</b>명{% endif %}은
-        이 목록에서 뺐습니다 — 제안 대기중·물어보는 중은 참여 안내(처음)에만 뜹니다.</p>
+        {%- for label, n in held %}{{ label }} <b>{{ n }}</b>명{% if not loop.last %}·{% endif %}{% endfor %}은
+        참여 안내 대상이 아니라 뺐습니다.</p>
       {% endif %}
       <div class="filter-line" id="bucket-filter">
         <span class="filter-label">갈래</span>

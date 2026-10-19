@@ -264,7 +264,7 @@
           {% endif %}
         </td>
         {# 월간 리마인드 · Series A 딜 공유는 **정확히 `참여` 인 분께만** 나간다
-           (`sourcing_sync.takes_part` — 참여 안내는 제안 대기중 · 물어보는 중도
+           (`sourcing_sync.takes_part` — 참여 안내는 제안 대기중 · 물어보는 중만
            받는다: `can_get_invite`). 불참여는 흐리게,
            `참여 의사를 물어보는 중` · 사람이 적은 문구(아직 동의 전)는 주황
            딱지(`part-pending`)로 — 둘 다 안 받지만 사정이 다르다. 줄은 그대로
@@ -320,7 +320,7 @@
              보내는 분 카톡의 딜 소싱 방을 찾아 확정해야 한다(`sourcing_rooms`). #}
           {% set pick = room_picks.get(r.id) %}
           {% if r.id in no_room %}
-          <div class="cell-sub" data-testid="sourcing-no-room">
+          <div class="cell-sub sourcing-room" data-testid="sourcing-no-room">
             <span class="room-badge warn">방 없음</span>
             <span class="muted">{{ pick.state_label }}</span>
             {# 마지막 찾기가 발송기 오류로 끝났다 — 후보는 그 전 것 그대로다. #}
@@ -335,7 +335,7 @@
           </div>
           {% endif %}
           {% if pick and pick.rooms and pick.state != 'confirmed' %}
-          <div class="cell-sub" data-testid="sourcing-room-picks">
+          <div class="cell-sub sourcing-room" data-testid="sourcing-room-picks">
             {% for p in pick.rooms %}
             <form method="post" action="/sourcing/{{ r.id }}/room-confirm" class="inline-form">
               <input type="hidden" name="tab" value="{{ selected or 'all' }}">
