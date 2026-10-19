@@ -25,7 +25,7 @@ from .. import config, deps
 from ..db import SessionLocal, get_db
 from ..deps import (admin_only, auto_attach_default_for,
                     consulting_default_for, consulting_is_only_screen,
-                    get_current_user, templates)
+                    get_current_user, no_send_as_member, templates)
 from ..models import (AgentDevice, ConsultingRowGrant, User, WeeklyRoutine,
                       WeeklyTask)
 from ..services import auth as auth_svc
@@ -680,7 +680,7 @@ def report_page(request: Request, db: Session = Depends(get_db),
     return templates.TemplateResponse("report.html", ctx)
 
 
-@router.post("/team/mail-test", include_in_schema=False)
+@router.post("/team/mail-test", include_in_schema=False, dependencies=[Depends(no_send_as_member)])
 def test_mail(to: str = Form(""), db: Session = Depends(get_db),
               user: User = Depends(get_current_user)):
     """설정이 맞는지 한 통 보내 본다.
@@ -1208,7 +1208,8 @@ async def save_send_caps(
         status_code=303)
 
 
-@router.post("/team/startup-send", include_in_schema=False)
+@router.post("/team/startup-send", include_in_schema=False,
+             dependencies=[Depends(no_send_as_member)])
 def save_startup_send(
     enabled: str = Form(""),
     user_id: int = Form(0),
@@ -1272,7 +1273,8 @@ def save_startup_send(
     return RedirectResponse(f"/team?msg={quote(note)}", status_code=303)
 
 
-@router.post("/team/automation-team", include_in_schema=False)
+@router.post("/team/automation-team", include_in_schema=False,
+             dependencies=[Depends(no_send_as_member)])
 def save_automation_team(
     user_id: int = Form(0),
     window_start: str = Form(""),
@@ -1318,7 +1320,8 @@ def save_automation_team(
     return RedirectResponse(f"/team?msg={quote(note)}#automations", status_code=303)
 
 
-@router.post("/team/automations/{key}", include_in_schema=False)
+@router.post("/team/automations/{key}", include_in_schema=False,
+             dependencies=[Depends(no_send_as_member)])
 async def save_automation(
     key: str,
     request: Request,
@@ -1391,7 +1394,8 @@ async def save_automation(
     return RedirectResponse(f"/team?msg={quote(note)}#automations", status_code=303)
 
 
-@router.post("/team/automations/{key}/check", include_in_schema=False)
+@router.post("/team/automations/{key}/check", include_in_schema=False,
+             dependencies=[Depends(no_send_as_member)])
 def check_automation_room(
     key: str,
     db: Session = Depends(get_db),
@@ -1465,7 +1469,8 @@ def sender_rooms_page(request: Request, db: Session = Depends(get_db),
     return templates.TemplateResponse("sender_rooms.html", ctx)
 
 
-@router.post("/team/sender-rooms/check", include_in_schema=False)
+@router.post("/team/sender-rooms/check", include_in_schema=False,
+             dependencies=[Depends(no_send_as_member)])
 def sender_rooms_check(sender_id: int = Form(0), db: Session = Depends(get_db),
                        user: User = Depends(get_current_user)):
     """[보내는 계정 PC 로 전체 방 확인] — 방 확인 잡을 **그 계정 것으로** 세운다.

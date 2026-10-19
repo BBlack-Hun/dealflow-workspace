@@ -272,7 +272,7 @@
         // 손으로 적은 줄만 되돌릴 수 있다 — 세울지는 서버가 정한다
         // (`manual_send.undoable`). 여기서 `source === "manual"` 을 다시 보면
         // 판정이 두 벌이 된다.
-        (t.undoable ? '<button type="button" class="linkbtn tl-undo" data-batch="' +
+        (t.undoable ? '<button type="button" class="linkbtn tl-undo" data-send data-batch="' +
           esc(t.batch_key) + '">되돌리기</button>' : "") +
         "</li>";
     });

@@ -33,7 +33,7 @@ from .. import clock
 # 값이 두 꼴로 보인다 — IR 기업 현황·스타트업 명단이 같은 함수를 부른다.
 from ..clock import stamp_text
 from ..db import get_db
-from ..deps import (NoConsulting, can_open, get_current_user,
+from ..deps import (NoConsulting, can_open, doer, get_current_user,
                     may_view_all_consulting, may_view_consulting, templates)
 from ..models import (ConsultingColumn, ConsultingCompany, ConsultingRowGrant,
                       User)
@@ -1002,6 +1002,10 @@ def consulting_page(request: Request, db: Session = Depends(get_db),
                     months: str = "", sheet: str = "", owner: int = 0,
                     ref: str = ""):
     require_access(user)
+    # 팀원 화면으로 보는 중이면 담당 고르개의 기본은 그 팀원이다(#3) —
+    # `전체` 칩은 `owner=0` 을 실어 와서 그대로 전체가 열린다.
+    if "owner" not in request.query_params and doer(user) is not user:
+        owner = user.id
     # 자기 것만 보는 사람(투자컨설턴트)에게는 고를 것이 없다 — 무엇을 넣든
     # 자기 줄만 나온다(`scope()` 가 같은 판정을 읽는다).
     owner = _pick_owner(db, user, owner)

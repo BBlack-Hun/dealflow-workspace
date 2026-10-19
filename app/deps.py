@@ -86,13 +86,106 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
 
     쿠키에는 **세션 토큰만** 담기고 소유자는 서버가 DB 에서 판단한다.
     (이전의 개발용 전환은 쿠키에 user_id 를 그대로 담아 누구나 바꿀 수 있었다.)
+
+    관리자가 **팀원 화면으로 보는 중**이면 그 팀원으로 돌려준다(`_acting`) —
+    "내 것" 을 읽는 화면·API 가 전부 이 한 자리를 지나므로 따로 고칠 곳이 없다.
     """
     from .services import auth as auth_svc
 
     user = auth_svc.user_for_token(db, request.cookies.get(auth_svc.SESSION_COOKIE))
     if user is None:
         raise NotAuthenticated()
-    return user
+    member = view_as_member(db, user, request.cookies.get(VIEW_AS_COOKIE))
+    # 밑틀의 띠와 발송 막기가 읽는다 — 관리자 본인 자리에서도 띠는 서야 한다.
+    request.state.view_as = member
+    if member is None or _own_path(request.url.path):
+        return user
+    return _acting(member, user)
+
+
+# --- 관리자가 팀원 화면으로 보기 (#3) ----------------------------------------
+#
+# 관리자가 팀원 아이디·비밀번호 없이 **그 팀원 화면 그대로**를 본다. 고른 팀원은
+# 쿠키에만 둔다(DB 아님 · 브라우저를 닫으면 풀린다). 쿠키는 누구나 고칠 수
+# 있으므로 **서버가 매 요청 다시 판정한다** — 로그인한 사람이 관리자가 아니면
+# 쿠키가 있어도 아무 일도 없다(`view_as_member`).
+#
+# 팀원 쪽으로 바뀌는 것은 **누구의 데이터인가** 하나다. 권한(`role`)은 진짜
+# 관리자 것 그대로라 관리자 메뉴·화면마다의 팀원 고르개가 그대로 서고, 없던
+# 권한이 생기지도 않는다. 팀 결정 "관리자 대리는 보기·수정까지, 발송은 안 됨"
+# — 발송 쪽은 `no_send_as_member` 한 곳이 끊는다. 고친 것은 수정 로그에 관리자
+# 이름으로 남는다(로그는 세션 쿠키를 읽는다 — `edit_log.actor_from_request`).
+VIEW_AS_COOKIE = "dealflow_view_as"
+VIEW_AS_BLOCKED = "팀원 화면으로 보는 중에는 발송·예약·방 확인을 할 수 없습니다"
+
+# 보는 중에도 **관리자 본인으로** 여는 자리. 팀원 쪽으로 가면 안 되는 것들이다:
+# 팀 현황의 "나 자신은 정지 못 함" 같은 판정 · 비밀번호 바꾸기 · 발송 프로그램
+# 토큰(남의 토큰이 뜨면 그 사람 발송기로 행세할 수 있다) · 공지 확인.
+VIEW_AS_OWN_PATHS = ("/team", "/taxonomy", "/api/taxonomy", "/columns",
+                     "/account", "/setup", "/download", "/notices")
+
+
+def _own_path(path: str) -> bool:
+    return any(path == p or path.startswith(p + "/") for p in VIEW_AS_OWN_PATHS)
+
+
+def may_view_as(real: User, member: Optional[User]) -> bool:
+    """`real` 이 `member` 의 화면으로 볼 수 있는가 — **판정은 여기 하나뿐이다.**
+
+    투자컨설턴트는 고를 수 없다 — 그 계정의 화면은 투자컨설턴트 하나뿐이고,
+    그 화면에는 이미 관리자용 담당 고르개가 있다.
+    """
+    return (real.role == "admin" and member is not None and member.id != real.id
+            and bool(member.is_active) and member.role != "consultant")
+
+
+def view_as_member(db: Session, real: User, raw: Optional[str]) -> Optional[User]:
+    """쿠키 값이 가리키는 팀원 — 볼 수 없는 사람이면 None."""
+    member = db.get(User, int(raw)) if (raw or "").isdigit() else None
+    return member if may_view_as(real, member) else None
+
+
+def view_as_targets(db: Session, real: User) -> list:
+    """밑틀의 팀원 고르개에 세울 사람들."""
+    if real.role != "admin":
+        return []
+    rows = db.execute(select(User).where(User.is_active == 1)
+                      .order_by(User.id)).scalars().all()
+    return [u for u in rows if may_view_as(real, u)]
+
+
+def _acting(member: User, real: User) -> User:
+    """팀원의 값에 **역할만 관리자 것**을 얹은 사본.
+
+    세션에 붙이지 않은 사본이라 무엇을 바꿔도 DB 의 팀원 줄에 저장되지 않는다
+    (역할을 원본에 쓰면 커밋 한 번에 그 팀원이 관리자가 된다).
+    """
+    from sqlalchemy import inspect
+
+    acting = User(**{a.key: getattr(member, a.key) for a in inspect(User).column_attrs})
+    acting.role = real.role
+    acting.viewed_by = real
+    return acting
+
+
+def doer(user: User) -> User:
+    """그 일을 **실제로 한 사람** — 팀원 화면으로 보는 중이면 관리자 본인.
+
+    `누가 고쳤나` 를 적는 칸(전화 필요를 켠 사람 등)이 읽는다. 팀원 이름으로
+    적히면 그 팀원이 하지 않은 일을 한 것으로 남는다.
+    """
+    return getattr(user, "viewed_by", None) or user
+
+
+def no_send_as_member(request: Request, user: User = Depends(get_current_user)) -> None:
+    """팀원 화면으로 보는 중이면 발송·예약·방 확인을 끊는다.
+
+    **판정은 여기 하나뿐이다.** 발송 회차를 세우거나 · 예약을 걸거나 풀거나 ·
+    발송기에 방 확인을 시키는 길마다 `dependencies=[Depends(no_send_as_member)]`
+    로 건다 — 길이 하나 늘면 그 길에 이 한 줄을 붙인다.
+    """
+    if getattr(request.state, "view_as", None) is not None:
+        raise HTTPException(status_code=403, detail=VIEW_AS_BLOCKED)
 
 
 # --- 관리자 전용 ------------------------------------------------------------

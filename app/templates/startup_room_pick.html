@@ -57,11 +57,11 @@
   <div class="toolbar-right">
     {# 방 이름은 적혀 있는데 확인 전인 줄 — 투자사 화면과 **같은 길**이다
        (`/api/contacts/verify-rooms`). #}
-    <button type="button" class="secondary-btn" id="room-verify-btn"
+    <button type="button" class="secondary-btn" id="room-verify-btn" data-send
             data-ids="{{ verify_ids|join(',') }}"{% if not verify_ids %} disabled{% endif %}>
       방 연결 확인 ({{ verify_ids|length }}곳)</button>
     {# **한 통도 나가지 않는다.** 그 말이 단추 옆에 있어야 사람이 누를 수 있다. #}
-    <button type="button" class="primary-btn inline" id="room-search-btn"
+    <button type="button" class="primary-btn inline" id="room-search-btn" data-send
             data-count="{{ search_count }}"{% if not search_count %} disabled{% endif %}>
       방 후보 찾기 ({{ search_count }}곳)</button>
   </div>

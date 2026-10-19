@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from ..clock import now_iso
 from ..db import get_db
-from ..deps import agent_status, get_current_user
+from ..deps import agent_status, get_current_user, no_send_as_member
 from ..models import SendItem, SendJob, SourcingContact, User
 from ..services import (automation_runner, mail_sender, scheduled_send, send_guard,
                         sourcing_msg, sourcing_sync)
@@ -101,7 +101,7 @@ def job_status(job_id: int, db: Session = Depends(get_db), user: User = Depends(
     }
 
 
-@router.post("/jobs/{job_id}/cancel")
+@router.post("/jobs/{job_id}/cancel", dependencies=[Depends(no_send_as_member)])
 def cancel_job(job_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """[중단] — stop the job; pending/sending items become canceled."""
     job = _job_or_404(db, job_id, user)
@@ -216,7 +216,7 @@ def _screen_auto(db: Session, job: SendJob, items: list[SendItem]) -> list[SendI
     return kept
 
 
-@router.post("/jobs/{job_id}/retry")
+@router.post("/jobs/{job_id}/retry", dependencies=[Depends(no_send_as_member)])
 def retry_failed(job_id: int, background: BackgroundTasks,
                  db: Session = Depends(get_db),
                  user: User = Depends(get_current_user)):
@@ -229,7 +229,7 @@ def retry_failed(job_id: int, background: BackgroundTasks,
     return _requeue(db, job, failed_items, background)
 
 
-@router.post("/jobs/{job_id}/resend-canceled")
+@router.post("/jobs/{job_id}/resend-canceled", dependencies=[Depends(no_send_as_member)])
 def resend_canceled(job_id: int, background: BackgroundTasks,
                     db: Session = Depends(get_db),
                     user: User = Depends(get_current_user)):
@@ -273,7 +273,7 @@ def resend_canceled(job_id: int, background: BackgroundTasks,
     return _requeue(db, job, canceled_items, background)
 
 
-@router.post("/jobs/{job_id}/start")
+@router.post("/jobs/{job_id}/start", dependencies=[Depends(no_send_as_member)])
 def start_draft(job_id: int, background: BackgroundTasks,
                 db: Session = Depends(get_db),
                 user: User = Depends(get_current_user)):
@@ -326,7 +326,7 @@ def start_draft(job_id: int, background: BackgroundTasks,
     return _requeue(db, job, pending_items, background)
 
 
-@router.post("/jobs/{job_id}/resume")
+@router.post("/jobs/{job_id}/resume", dependencies=[Depends(no_send_as_member)])
 def resume_pending(job_id: int, background: BackgroundTasks,
                    db: Session = Depends(get_db),
                    user: User = Depends(get_current_user)):
@@ -394,7 +394,7 @@ class ScheduleRequest(BaseModel):
     at: str
 
 
-@router.post("/jobs/{job_id}/schedule")
+@router.post("/jobs/{job_id}/schedule", dependencies=[Depends(no_send_as_member)])
 def schedule_job(job_id: int, req: ScheduleRequest,
                  db: Session = Depends(get_db),
                  user: User = Depends(get_current_user)):
@@ -425,7 +425,7 @@ def schedule_job(job_id: int, req: ScheduleRequest,
         raise HTTPException(status_code=400, detail=str(exc)) from None
 
 
-@router.delete("/jobs/{job_id}/schedule")
+@router.delete("/jobs/{job_id}/schedule", dependencies=[Depends(no_send_as_member)])
 def unschedule_job(job_id: int, db: Session = Depends(get_db),
                    user: User = Depends(get_current_user)):
     """[예약 취소] — **예약만 뗀다.** 회차는 `draft` 로 남아 그대로 기다린다.

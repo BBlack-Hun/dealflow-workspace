@@ -11,8 +11,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from . import config, version
-from .deps import (agent_status, consultant_may_open, may_auto_attach,
-                   may_view_consulting)
+from .deps import (VIEW_AS_BLOCKED, agent_status, consultant_may_open, doer,
+                   may_auto_attach, may_view_consulting, view_as_targets)
 from .models import User
 from .services import notices
 
@@ -141,7 +141,18 @@ PASSWORD_CHANGED = "pw"
 
 
 def base_ctx(request: Request, db: Session, user: User, active: str) -> dict:
+    # 팀원 화면으로 보는 중이면 `user` 는 그 팀원이다(`deps.get_current_user`).
+    # 사이드바의 내 계정 칸 · 팀원 고르개 · 공지는 **로그인한 본인** 것이다.
+    me = doer(user)
     return {
+        "me": me,
+        "view_as": getattr(request.state, "view_as", None),
+        "view_as_targets": view_as_targets(db, me),
+        "view_as_note": VIEW_AS_BLOCKED,
+        # 켜고 끈 뒤 **같은 주소**로 돌아온다 — `?view=year&y=2026` 같은 조건이
+        # 빠지면 다른 화면이 된다(`current_path` 는 경로뿐이다).
+        "view_as_next": (f"{request.url.path}?{request.url.query}"
+                         if request.url.query else request.url.path),
         "page_title": menu_label(active),
         "request": request,
         "menu": visible_menu(user),
@@ -168,5 +179,5 @@ def base_ctx(request: Request, db: Session, user: User, active: str) -> dict:
         #
         # 값싸다: 켜져 있는 공지가 대개 없고, 있어도 한둘이다. 없으면
         # 밑틀은 아무 것도 그리지 않는다(`_notices.html`).
-        "notices": notices.unread(db, user),
+        "notices": notices.unread(db, me),
     }

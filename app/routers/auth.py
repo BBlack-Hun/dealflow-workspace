@@ -1,12 +1,13 @@
 """로그인 / 로그아웃 / 비밀번호 변경 (휴대폰번호 + 비밀번호)."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..deps import can_open, get_current_user, home_for, templates
+from ..deps import (VIEW_AS_COOKIE, admin_only, can_open, get_current_user,
+                    home_for, may_view_as, templates)
 from ..ui import PASSWORD_CHANGED, base_ctx
 from ..models import User
 from ..services import auth as auth_svc
@@ -63,6 +64,8 @@ def login(
         target = home_for(user)
     resp = RedirectResponse(url=target, status_code=303)
     auth_svc.set_session_cookie(resp, token)
+    # 같은 브라우저에서 앞사람이 켜 둔 `팀원 화면으로 보기` 를 물려받지 않게.
+    resp.delete_cookie(VIEW_AS_COOKIE)
     return resp
 
 
@@ -72,6 +75,31 @@ def logout(request: Request, db: Session = Depends(get_db)):
     auth_svc.destroy_session(db, request.cookies.get(auth_svc.SESSION_COOKIE))
     resp = RedirectResponse(url="/login", status_code=303)
     resp.delete_cookie(auth_svc.SESSION_COOKIE)
+    resp.delete_cookie(VIEW_AS_COOKIE)
+    return resp
+
+
+# ── 팀원 화면으로 보기 (#3) ──────────────────────────────────────────────────
+# `/account` 아래라 이 두 길은 보는 중에도 관리자 본인으로 열린다
+# (`deps.VIEW_AS_OWN_PATHS`). 누구를 고를 수 있는지는 `deps.may_view_as` 하나.
+
+@router.post("/account/view-as", include_in_schema=False)
+def view_as_on(member_id: int = Form(0), next: str = Form(""),
+               db: Session = Depends(get_db),
+               user: User = Depends(get_current_user)):
+    admin_only(user)
+    if not may_view_as(user, db.get(User, member_id)):
+        raise HTTPException(status_code=404, detail="볼 수 있는 팀원이 아닙니다")
+    resp = RedirectResponse(_safe_next(next) or "/", status_code=303)
+    # 수명을 주지 않는다 — 브라우저를 닫으면 내 화면으로 돌아온다.
+    resp.set_cookie(VIEW_AS_COOKIE, str(member_id), httponly=True, samesite="lax")
+    return resp
+
+
+@router.post("/account/view-as/off", include_in_schema=False)
+def view_as_off(next: str = Form(""), user: User = Depends(get_current_user)):
+    resp = RedirectResponse(_safe_next(next) or "/", status_code=303)
+    resp.delete_cookie(VIEW_AS_COOKIE)
     return resp
 
 

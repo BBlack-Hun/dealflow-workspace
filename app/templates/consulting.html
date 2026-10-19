@@ -86,7 +86,7 @@
 <div class="filter-line owner-line">
   <span class="filter-label">담당</span>
   <a class="chip {% if not selected_owner %}active{% endif %}"
-     href="/consulting?sheet={{ selected_sheet|urlencode }}">전체</a>
+     href="/consulting?sheet={{ selected_sheet|urlencode }}&owner=0">전체</a>
   {% for o in owner_tabs %}
   <a class="chip {% if selected_owner == o.id %}active{% endif %}"
      href="/consulting?sheet={{ selected_sheet|urlencode }}&owner={{ o.id }}">

@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from .. import clock
 from ..db import get_db
-from ..deps import get_current_user, now_iso
+from ..deps import get_current_user, no_send_as_member, now_iso
 from ..models import (
     SEND_KINDS,
     STARTUP_MSG_KIND,
@@ -1058,7 +1058,7 @@ def preview(
             "warnings": [SEPARATE_NOTE.format(n=separate)] if separate else []}
 
 
-@router.post("/send")
+@router.post("/send", dependencies=[Depends(no_send_as_member)])
 def create_send_list(
     req: SendRequest,
     background: BackgroundTasks,
@@ -1593,7 +1593,7 @@ def _queue_item(db: Session, item_id: int, user: User):
     return item
 
 
-@router.post("/queue")
+@router.post("/queue", dependencies=[Depends(no_send_as_member)])
 def add_queue_item(
     req: QueueAddRequest,
     db: Session = Depends(get_db),
@@ -1630,7 +1630,7 @@ def add_queue_item(
             "target_count": len(deal_queue.targets(db, user, item.group_name))}
 
 
-@router.post("/queue/{item_id}/start")
+@router.post("/queue/{item_id}/start", dependencies=[Depends(no_send_as_member)])
 def start_queue_item(
     item_id: int,
     req: QueueStartRequest,
@@ -1685,7 +1685,7 @@ def start_queue_item(
             "status": item.status, "skipped": result.get("skipped", [])}
 
 
-@router.post("/queue/{item_id}/cancel")
+@router.post("/queue/{item_id}/cancel", dependencies=[Depends(no_send_as_member)])
 def cancel_queue_item(
     item_id: int,
     db: Session = Depends(get_db),
@@ -1800,7 +1800,7 @@ def manual_send_batches(db: Session = Depends(get_db),
             "remind_note": manual_send.REMIND_NOTE}
 
 
-@router.post("/manual-sends")
+@router.post("/manual-sends", dependencies=[Depends(no_send_as_member)])
 def create_manual_send(body: ManualSendIn, db: Session = Depends(get_db),
                        user: User = Depends(get_current_user)):
     """손으로 보낸 것을 **한 판으로** 적는다.
@@ -1846,7 +1846,7 @@ class ManualUndoIn(BaseModel):
     contact_id: Optional[int] = None
 
 
-@router.post("/manual-sends/{batch_key}/undo")
+@router.post("/manual-sends/{batch_key}/undo", dependencies=[Depends(no_send_as_member)])
 def undo_manual_send(batch_key: str, body: ManualUndoIn,
                      db: Session = Depends(get_db),
                      user: User = Depends(get_current_user)):
