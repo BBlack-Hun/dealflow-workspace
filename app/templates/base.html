@@ -44,7 +44,7 @@
           </div>
           {% if view_as_targets %}
           <form method="post" action="/account/view-as" class="view-as-pick" data-testid="view-as-form">
-            <input type="hidden" name="next" value="{{ current_path }}">
+            <input type="hidden" name="next" value="{{ view_as_next }}">
             <select name="member_id" aria-label="팀원 화면으로 보기">
               {% for m in view_as_targets %}
               <option value="{{ m.id }}" {% if view_as and view_as.id == m.id %}selected{% endif %}>{{ m.name }}</option>
@@ -67,7 +67,7 @@
       <div class="test-banner view-as-banner" data-testid="view-as-banner">
         👁 <b>{{ view_as.name }} 화면으로 보는 중</b> ·
         <form method="post" action="/account/view-as/off" class="inline-form">
-          <input type="hidden" name="next" value="{{ current_path }}">
+          <input type="hidden" name="next" value="{{ view_as_next }}">
           <button type="submit" class="linkbtn">[내 화면으로 돌아가기]</button>
         </form>
         <br>보기·수정만 됩니다(고친 것은 내 이름으로 남습니다) — {{ view_as_note }}.

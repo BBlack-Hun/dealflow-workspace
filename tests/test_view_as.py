@@ -192,6 +192,20 @@ def test_existing_member_picker_defaults_to_that_member(client, db, users, admin
     assert other.status_code == 200 and "윤서아 님의 주간업무를 보는 중" in other.text
 
 
+def test_switching_returns_to_the_same_address(client, users, admin):
+    """켜고 끈 뒤 주소의 조건(`?…`)까지 그대로 돌아온다 — 빠지면 다른 화면이 된다."""
+    _login(client, "01000000009")
+    here = "/todo?a=1&b=2"
+    assert 'name="next" value="/todo?a=1&amp;b=2"' in client.get(here).text
+    r = client.post("/account/view-as", data={"member_id": users["u1"].id, "next": here},
+                    follow_redirects=False)
+    assert r.headers["location"] == here
+    # 보는 중에는 고르개와 띠의 [내 화면으로 돌아가기] 둘 다 같은 주소를 싣는다.
+    assert client.get(here).text.count('name="next" value="/todo?a=1&amp;b=2"') == 2
+    r = client.post("/account/view-as/off", data={"next": here}, follow_redirects=False)
+    assert r.headers["location"] == here
+
+
 def test_own_device_token_never_shows_the_members(client, users, admin):
     _login(client, "01000000009")
     _view_as(client, users["u1"].id)

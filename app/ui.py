@@ -149,6 +149,10 @@ def base_ctx(request: Request, db: Session, user: User, active: str) -> dict:
         "view_as": getattr(request.state, "view_as", None),
         "view_as_targets": view_as_targets(db, me),
         "view_as_note": VIEW_AS_BLOCKED,
+        # 켜고 끈 뒤 **같은 주소**로 돌아온다 — `?view=year&y=2026` 같은 조건이
+        # 빠지면 다른 화면이 된다(`current_path` 는 경로뿐이다).
+        "view_as_next": (f"{request.url.path}?{request.url.query}"
+                         if request.url.query else request.url.path),
         "page_title": menu_label(active),
         "request": request,
         "menu": visible_menu(user),
