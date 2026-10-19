@@ -3055,6 +3055,7 @@ input[data-sector-picker] + .sector-pick-toggle + div { margin-top: 6px; max-hei
 /* 머리글은 `.grid-table th` 의 회색이 이겨서 한 단계 더 좁혀 건다. */
 .fc-auto, .grid-table th.fc-auto { color: var(--red); }
 .fc-table .cell-sub { margin-top: 2px; }
+.fc-total { margin: 8px 0; font-size: 13px; }
 
 /* ── IR 미팅 달력(`meeting_calendar.html` · #5) ─────────────────────────────
    월간은 일곱 칸 표, 칸마다 그날 미팅이 작은 칩으로 선다(`기업 ↔ 투자사`).
