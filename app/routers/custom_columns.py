@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 
 from ..clock import stamp_text
 from ..db import get_db
-from ..deps import admin_only, can_open, get_current_user, templates
+from ..deps import admin_only, can_open, doer, get_current_user, templates
 from ..models import CustomColumn, User
 from ..services import custom_columns as svc
 from ..ui import base_ctx
@@ -175,7 +175,7 @@ def put_value(row_table: str, row_id: int, body: ValueIn,
     if col is None:
         raise HTTPException(status_code=404, detail="칸을 찾을 수 없습니다")
     try:
-        value = svc.write(db, row, col, body.value, user.id)
+        value = svc.write(db, row, col, body.value, doer(user).id)
     except svc.ColumnError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     db.commit()

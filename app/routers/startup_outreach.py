@@ -51,7 +51,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..deps import get_current_user, templates
+from ..deps import get_current_user, no_send_as_member, templates
 from ..models import ROOM_SEARCH_TOPIC, SendItem, SendJob, User, VcContact
 from ..services import (cadence, send_window, startup_outreach,
                         startup_room_pick)
@@ -172,7 +172,7 @@ class SendIn(BaseModel):
     scheduled_at: str = ""
 
 
-@router.post("/api/startup-msg/send")
+@router.post("/api/startup-msg/send", dependencies=[Depends(no_send_as_member)])
 def make_draft(body: SendIn, background: BackgroundTasks,
                db: Session = Depends(get_db),
                user: User = Depends(get_current_user)):
@@ -259,7 +259,7 @@ class RoomSearchIn(BaseModel):
     contact_ids: Optional[List[int]] = None
 
 
-@router.post("/api/startup-rooms/search")
+@router.post("/api/startup-rooms/search", dependencies=[Depends(no_send_as_member)])
 def search_rooms(body: RoomSearchIn, db: Session = Depends(get_db),
                  user: User = Depends(get_current_user)):
     """[방 후보 찾기] — 회사명으로 카톡을 뒤져 후보를 모아 오는 잡을 세운다.

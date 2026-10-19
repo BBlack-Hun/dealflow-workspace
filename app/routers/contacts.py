@@ -24,7 +24,8 @@ from sqlalchemy.orm import Session
 from .. import clock
 from ..clock import stamp_text
 from ..db import get_db
-from ..deps import can_open, get_current_user, may_manage_team_contacts
+from ..deps import (can_open, doer, get_current_user, may_manage_team_contacts,
+                    no_send_as_member)
 from ..models import (AutomationSend, ContactActivity, ContactColumn, DealFollowup,
                       IrCompany, IrRequest,
                       Meeting, SendItem, SendJob, SenderRoom, SendSequence,
@@ -499,7 +500,7 @@ class VerifyRequest(BaseModel):
 # ── 방 연결 확인 (ROADMAP 2.5) ──────────────────────────────────────────────
 # 라우트 순서 주의: "/verify-rooms" 가 "/{contact_id}"(int) 보다 먼저 등록돼야 한다.
 
-@router.post("/verify-rooms")
+@router.post("/verify-rooms", dependencies=[Depends(no_send_as_member)])
 def verify_rooms(
     req: VerifyRequest,
     db: Session = Depends(get_db),
@@ -1343,7 +1344,7 @@ def _owned_funds(db: Session, contact: VcContact, body: ContactIn,
             raise HTTPException(status_code=400,
                                 detail="투자사명이 없어 소유 펀드를 적을 수 없습니다")
         return
-    investor_firms.set_funds(db, contact.firm, body.owned_funds, user.id)
+    investor_firms.set_funds(db, contact.firm, body.owned_funds, doer(user).id)
 
 
 def _sourcing_mark(db: Session, contact: VcContact, body: ContactIn,

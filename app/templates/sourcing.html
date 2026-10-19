@@ -85,7 +85,7 @@
        보내지 않는다. 찾은 제목은 후보로만 담기고, 각 줄의 카톡방 칸에서 골라
        확정한다. **아무도 안 골랐으면 단추가 잠긴다** — 예전처럼 이 갈래 전부로
        대신하지 않는다(서버도 막는다). 고른 줄 번호(`ids`)는 화면 스크립트가 싣는다. #}
-    <form method="post" action="/sourcing/rooms/search" class="inline-form"
+    <form method="post" action="/sourcing/rooms/search" class="inline-form" data-send
           id="sourcing-room-search" data-testid="sourcing-room-search">
       <input type="hidden" name="tab" value="{{ selected or 'all' }}">
       <input type="hidden" name="ids" value="">
@@ -326,7 +326,7 @@
             {# 마지막 찾기가 발송기 오류로 끝났다 — 후보는 그 전 것 그대로다. #}
             {% if pick.error %}<span class="muted" data-testid="sourcing-room-error"
                   title="{{ pick.error }}">· 지난 찾기 오류</span>{% endif %}
-            <form method="post" action="/sourcing/rooms/search" class="inline-form">
+            <form method="post" action="/sourcing/rooms/search" class="inline-form" data-send>
               <input type="hidden" name="tab" value="{{ selected or 'all' }}">
               <input type="hidden" name="ids" value="{{ r.id }}">
               <button type="submit" class="linkbtn"

@@ -751,6 +751,9 @@ WRITE_ROUTES = {
 
     # ── 기계 기록 ───────────────────────────────────────────────────────────
     ("POST", "/logout"): MACHINE,
+    # 팀원 화면으로 보기(#3) 켜고 끄기 — 쿠키만 굽고 DB 는 건드리지 않는다.
+    ("POST", "/account/view-as"): MACHINE,
+    ("POST", "/account/view-as/off"): MACHINE,
     ("POST", "/api/agent/heartbeat"): MACHINE,
     ("POST", "/api/agent/diagnostics"): MACHINE,
     ("POST", "/api/agent/items/{item_id}/result"): MACHINE,

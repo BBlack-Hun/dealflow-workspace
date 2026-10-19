@@ -10,7 +10,8 @@
   <link rel="stylesheet" href="{{ asset('css/app.css') }}">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>📨</text></svg>">
 </head>
-<body>
+{# 팀원 화면으로 보는 중이면 발송·예약·방 확인 단추(`data-send`)를 끈다(`view_as.js`). #}
+<body{% if view_as %} data-view-as-note="{{ view_as_note }}"{% endif %}>
   <div class="layout">
     <aside class="sidebar">
       <a class="brand-link" href="/">
@@ -30,14 +31,28 @@
         {% endfor %}
       </nav>
       <div class="sidebar-foot">
+        {# 내 계정 칸은 **로그인한 본인**이다 — 팀원 화면으로 보는 중이어도
+           (`ui.base_ctx` 의 `me`). 비밀번호·로그아웃이 본인 것이기 때문이다. #}
+        {% set me = me or user %}
         <div class="me">
-          <div class="me-name">{{ user.name }}{% if user.role == 'admin' %} · 관리자{% endif %}</div>
-          {% if user.phone %}<div class="me-phone">{{ user.phone }}</div>{% endif %}
+          <div class="me-name">{{ me.name }}{% if me.role == 'admin' %} · 관리자{% endif %}</div>
+          {% if me.phone %}<div class="me-phone">{{ me.phone }}</div>{% endif %}
           <div class="me-links">
             <a href="/account/password">비밀번호 변경</a>
             <a href="/logout">로그아웃</a>
             <a href="/setup">발송 프로그램 설치</a>
           </div>
+          {% if view_as_targets %}
+          <form method="post" action="/account/view-as" class="view-as-pick" data-testid="view-as-form">
+            <input type="hidden" name="next" value="{{ current_path }}">
+            <select name="member_id" aria-label="팀원 화면으로 보기">
+              {% for m in view_as_targets %}
+              <option value="{{ m.id }}" {% if view_as and view_as.id == m.id %}selected{% endif %}>{{ m.name }}</option>
+              {% endfor %}
+            </select>
+            <button type="submit" class="linkbtn">팀원 화면으로 보기</button>
+          </form>
+          {% endif %}
         </div>
         <div id="agent-badge" class="agent-badge {% if agent.online %}on{% else %}off{% endif %}">
           <span class="dot"></span>
@@ -46,6 +61,18 @@
       </div>
     </aside>
     <main class="content">
+      {# 관리자가 팀원 화면으로 보는 중(#3). **모든 화면**에 선다 — 지금 누구의
+         데이터를 보고 고치는지 모르면 남의 것을 내 것으로 안다. #}
+      {% if view_as %}
+      <div class="test-banner view-as-banner" data-testid="view-as-banner">
+        👁 <b>{{ view_as.name }} 화면으로 보는 중</b> ·
+        <form method="post" action="/account/view-as/off" class="inline-form">
+          <input type="hidden" name="next" value="{{ current_path }}">
+          <button type="submit" class="linkbtn">[내 화면으로 돌아가기]</button>
+        </form>
+        <br>보기·수정만 됩니다(고친 것은 내 이름으로 남습니다) — {{ view_as_note }}.
+      </div>
+      {% endif %}
       {# 테스트 서버에서 보내는 시간(09:00~19:00) 제한을 껐다는 표시. 관리자에게만 —
          운영에서는 켜지지 않는다(`services/send_window.py`). #}
       {% if user and user.role == 'admin' and send_window_off() %}
@@ -83,6 +110,7 @@
     </main>
   </div>
   <script src="{{ asset('js/agent_badge.js') }}"></script>
+  {% if view_as %}<script src="{{ asset('js/view_as.js') }}"></script>{% endif %}
   {# 넓은 표의 키를 화면 높이가 아니라 **표가 실제로 시작하는 자리**에 맞춘다.
      모든 화면이 쓰므로 여기(base) 에 둔다 — 표가 있는 화면마다 붙이면
      새 화면에서 빠뜨렸을 때 가로 스크롤바가 조용히 사라진다. #}

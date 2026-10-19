@@ -42,7 +42,7 @@
     · 못 찾음 <b>{{ board.counts.not_found }}</b>
     · 아직 안 찾아봄 <b>{{ board.counts.never }}</b>
   </p>
-  <form method="post" action="/team/sender-rooms/check" class="inline-form">
+  <form method="post" action="/team/sender-rooms/check" class="inline-form" data-send>
     <input type="hidden" name="sender_id" value="{{ board.sender_id }}">
     <button class="primary-btn inline" type="submit"{% if not board.total %} disabled{% endif %}>
       {{ board.sender }} PC로 전체 방 확인 ({{ board.total }}명)</button>

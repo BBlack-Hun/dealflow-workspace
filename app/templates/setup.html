@@ -141,7 +141,7 @@
   <p class="hint">
     위 <b>③ 자료 폴더</b> 안에 있는 <b>파일 이름</b>을 그대로 적으세요.
   </p>
-  <form method="post" action="/setup/test/attach" class="test-form">
+  <form method="post" action="/setup/test/attach" class="test-form" data-send>
     <input type="text" name="file_name" class="input wide" placeholder="예) 회사소개서.pdf"
            autocomplete="off" spellcheck="false">
     <button class="btn primary" type="submit">시험방으로 보내보기</button>
@@ -176,7 +176,7 @@
     고칠 곳 → <a href="/templates#startup_sms">딜 제안 문구 · 기업 리마인드 — 문자</a>
   </p>
   {% if test_companies %}
-  <form method="post" action="/setup/test/startup-remind" class="test-form">
+  <form method="post" action="/setup/test/startup-remind" class="test-form" data-send>
     <select name="company_id" class="input wide">
       <option value="">어느 기업 것으로 만들까요</option>
       {% for c in test_companies %}
@@ -193,7 +193,7 @@
   {# 명단 자체가 빈 화면. 예전에는 "만들 수 있는 문구가 없습니다" 한 줄만
      세워 두었다 — 발송기를 처음 깔 때가 바로 그 상태라, 정작 시험이 필요한
      순간에 눌러 볼 단추가 없었다. 보기 자료로 만든다(`services/test_demo.py`). #}
-  <form method="post" action="/setup/test/startup-remind" class="test-form">
+  <form method="post" action="/setup/test/startup-remind" class="test-form" data-send>
     <button class="btn primary" type="submit">보기 자료로 시험방에 보내보기</button>
   </form>
   <p class="hint">
@@ -216,7 +216,7 @@
     고칠 곳 → <a href="/templates#meeting_review">딜 제안 문구 · 문구만 — 미팅 후기</a>
   </p>
   {% if test_meetings %}
-  <form method="post" action="/setup/test/meeting-review" class="test-form">
+  <form method="post" action="/setup/test/meeting-review" class="test-form" data-send>
     <select name="meeting_id" class="input wide">
       <option value="">어느 미팅 것으로 만들까요</option>
       {% for m in test_meetings %}
@@ -234,7 +234,7 @@
   {% else %}
   {# 미팅이 하나도 없는 화면. 기업 리마인드와 같은 자리, 같은 답이다 —
      눌러 볼 단추가 없으면 이 시험 자리를 만든 뜻이 사라진다. #}
-  <form method="post" action="/setup/test/meeting-review" class="test-form">
+  <form method="post" action="/setup/test/meeting-review" class="test-form" data-send>
     <button class="btn primary" type="submit">보기 자료로 시험방에 보내보기</button>
   </form>
   <p class="hint">
@@ -248,7 +248,7 @@
     적은 <b>방 이름</b>이 카카오톡에서 열리는지만 봅니다 —
     <b>아무것도 보내지 않습니다.</b>
   </p>
-  <form method="post" action="/setup/test/room" class="test-form">
+  <form method="post" action="/setup/test/room" class="test-form" data-send>
     <input type="text" name="room_name" class="input wide" placeholder="예) 회사이름 대표님"
            autocomplete="off" spellcheck="false">
     <button class="btn" type="submit">방 이름만 확인</button>

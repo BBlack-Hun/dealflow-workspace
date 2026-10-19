@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 
 from .. import config
 from ..db import get_db
-from ..deps import get_current_user, may_auto_attach, templates
+from ..deps import get_current_user, may_auto_attach, no_send_as_member, templates
 from ..models import (TEST_SEND_KIND, AgentDevice, IrCompany, Meeting, SendItem,
                       SendJob, User, VcContact)
 from ..services import ir_kakao, ir_monthly, pipeline, test_demo
@@ -472,7 +472,7 @@ def _queue_test_job(db: Session, user: User, kind: str, room: str,
     return job.id
 
 
-@router.post("/setup/test/attach")
+@router.post("/setup/test/attach", dependencies=[Depends(no_send_as_member)])
 def test_attach(
     file_name: str = Form(""),
     db: Session = Depends(get_db),
@@ -532,7 +532,7 @@ def test_attach(
     return RedirectResponse(f"/jobs/{job_id}", status_code=303)
 
 
-@router.post("/setup/test/startup-remind")
+@router.post("/setup/test/startup-remind", dependencies=[Depends(no_send_as_member)])
 def test_startup_remind(
     company_id: int = Form(0),
     db: Session = Depends(get_db),
@@ -641,7 +641,7 @@ def test_startup_remind(
     return RedirectResponse(f"/jobs/{job_id}", status_code=303)
 
 
-@router.post("/setup/test/meeting-review")
+@router.post("/setup/test/meeting-review", dependencies=[Depends(no_send_as_member)])
 def test_meeting_review(
     meeting_id: int = Form(0),
     db: Session = Depends(get_db),
@@ -724,7 +724,7 @@ def test_meeting_review(
     return RedirectResponse(f"/jobs/{job_id}", status_code=303)
 
 
-@router.post("/setup/test/room")
+@router.post("/setup/test/room", dependencies=[Depends(no_send_as_member)])
 def test_room_name(
     room_name: str = Form(""),
     db: Session = Depends(get_db),

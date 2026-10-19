@@ -982,6 +982,10 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
             font-size: 11.5px; margin-top: 1px; }
 .me-links { margin-top: 6px; display: flex; gap: 10px; }
 .me-links a { color: var(--muted, #6b7280); font-size: 11.5px; }
+/* 팀원 화면으로 보기(#3) — 관리자에게만 서는 고르개와, 보는 중의 발송 단추 */
+.view-as-pick { margin-top: 8px; display: flex; gap: 6px; align-items: center; }
+.view-as-pick select { max-width: 110px; font-size: 11.5px; }
+body[data-view-as-note] [data-send] { opacity: .45; cursor: not-allowed; }
 
 /* ── 기업 검색 (딜소개 보내기) ─────────────────────────────── */
 .picker-search { display: flex; gap: 10px; align-items: center; margin: 8px 0 10px; }

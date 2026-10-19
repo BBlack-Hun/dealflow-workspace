@@ -219,6 +219,7 @@
         var btn = document.createElement("button");
         btn.type = "button";
         btn.className = "linkbtn";
+        btn.setAttribute("data-send", "");
         btn.textContent = b.undone ? "남은 줄 되돌리기" : "되돌리기";
         btn.addEventListener("click", function () { undo(b, btn); });
         line.appendChild(btn);

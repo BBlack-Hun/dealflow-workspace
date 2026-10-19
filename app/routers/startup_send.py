@@ -55,7 +55,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..deps import get_current_user, templates
+from ..deps import get_current_user, no_send_as_member, templates
 from ..models import IrCompany, SendItem, SendJob, User
 from ..services import (cadence, ir_monthly, room_match, scheduled_send,
                         send_window, startup_send)
@@ -131,7 +131,8 @@ def startup_ir_page(
     return templates.TemplateResponse("startup_send.html", ctx)
 
 
-@router.post("/deals/startup-ir/send", include_in_schema=False)
+@router.post("/deals/startup-ir/send", include_in_schema=False,
+             dependencies=[Depends(no_send_as_member)])
 def make_draft(
     background: BackgroundTasks,
     company_ids: List[int] = Form(default=[]),
@@ -305,7 +306,8 @@ def save_rooms(
     return _back_rooms(" · ".join(parts))
 
 
-@router.post("/deals/startup-ir/rooms/search", include_in_schema=False)
+@router.post("/deals/startup-ir/rooms/search", include_in_schema=False,
+             dependencies=[Depends(no_send_as_member)])
 def search_rooms(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),

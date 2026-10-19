@@ -33,7 +33,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..deps import admin_only, get_current_user, may_manage_team_contacts
+from ..deps import admin_only, doer, get_current_user, may_manage_team_contacts
 from ..models import IrCompany, SendItem, SendJob, User, VcContact
 from ..services import (amount, company_view, custom_columns, import_diff, investor_firms,
                         pipeline,
@@ -284,7 +284,7 @@ def import_owned_funds(
         raise HTTPException(status_code=400, detail=str(exc))
     if dry_run:
         return {"dry_run": True, **investor_firms.match(db, parsed).as_dict()}
-    result = investor_firms.apply_upload(db, parsed, user.id)
+    result = investor_firms.apply_upload(db, parsed, doer(user).id)
     return {"dry_run": False, **result}
 
 
