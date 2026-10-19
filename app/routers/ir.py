@@ -22,7 +22,8 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import get_current_user, now_iso, templates
 from ..models import IrCompany, IrRequest, Meeting, User, VcContact
-from ..services import call_flags, cadence, flow, ir_attach, pipeline, sheet_owner
+from ..services import (call_flags, cadence, flow, ir_attach, meeting_calendar,
+                        pipeline, sheet_owner)
 from . import followups
 from .companies import BLOCKED_CONTRACT, contract_key
 from ..ui import base_ctx
@@ -193,6 +194,59 @@ def ir_page(request: Request, db: Session = Depends(get_db),
         "msg": msg,
     })
     return templates.TemplateResponse("ir.html", ctx)
+
+
+def _month_of(ym: str, today: date) -> tuple:
+    """`2026-10` → (2026, 10). 못 읽으면 이번 달 — 주소를 손으로 고쳐도 500 이 안 난다."""
+    try:
+        year, mon = (int(x) for x in ym.split("-"))
+    except ValueError:
+        return today.year, today.month
+    return (year, mon) if 2000 <= year <= 2100 and 1 <= mon <= 12 else (today.year, today.month)
+
+
+@router.get("/ir/calendar", response_class=HTMLResponse, include_in_schema=False)
+def meeting_calendar_page(request: Request, db: Session = Depends(get_db),
+                          user: User = Depends(get_current_user),
+                          view: str = "month", ym: str = "", y: str = "",
+                          member: int = 0):
+    """IR 미팅 달력 — 월간(`?view=month&ym=2026-10`) · 연간(`?view=year&y=2026`) (#5).
+
+    팀원은 **제 미팅만** 본다. 관리자는 팀 전체가 기본이고 팀원 한 사람을
+    고를 수 있다 — 업무 보고의 `?member=` 와 같은 모양이다. 관리자가 아닌
+    계정이 `member` 를 붙여 와도 제 것만 나온다(업무 보고와 같다).
+    """
+    today = date.today()
+    admin = user.role == "admin"
+    who = (member or None) if admin else user.id
+    ctx = base_ctx(request, db, user, active="flow")
+    ctx.update({
+        "ir_tab": "calendar",
+        "view": "year" if view == "year" else "month",
+        "member": member if admin else 0,
+        # 앞뒤 이동·월간/연간 전환이 고른 팀원을 놓치지 않게 주소에 이어 붙인다.
+        "member_q": f"&member={member}" if admin and member else "",
+        "members": ([{"id": u.id, "name": u.name} for u in
+                     db.execute(select(User).where(User.is_active == 1)
+                                .order_by(User.id)).scalars().all()]
+                    if admin else []),
+        "this_ym": f"{today.year}-{today.month:02d}",
+        "this_year": today.year,
+    })
+    if ctx["view"] == "year":
+        year = _month_of(f"{y}-01", today)[0]   # 해만 고른다 — 읽는 규칙은 월간과 하나
+        # `월간` 으로 돌아갈 달 — 올해면 이번 달, 아니면 1월.
+        ctx.update({"year": year, "month": today.month if year == today.year else 1,
+                    "months": meeting_calendar.year(db, who, year)})
+    else:
+        year, mon = _month_of(ym, today)
+        prev = (year - 1, 12) if mon == 1 else (year, mon - 1)
+        nxt = (year + 1, 1) if mon == 12 else (year, mon + 1)
+        ctx.update({"year": year, "month": mon,
+                    "prev_ym": f"{prev[0]}-{prev[1]:02d}",
+                    "next_ym": f"{nxt[0]}-{nxt[1]:02d}",
+                    **meeting_calendar.month(db, who, year, mon, today)})
+    return templates.TemplateResponse("meeting_calendar.html", ctx)
 
 
 @router.get("/api/ir/last-batch/{contact_id}")
