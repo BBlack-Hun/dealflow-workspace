@@ -3112,7 +3112,7 @@ class RevenueForecast(TimestampMixin, Base):
 
     ## 자동 칸은 값을 베껴 두지 않는다
 
-    아래 `비면 자동` 칸 아홉은 **사람이 적은 값만** 담는다. 비어 있으면 화면이 열릴
+    아래 `비면 자동` 칸 열하나는 **사람이 적은 값만** 담는다. 비어 있으면 화면이 열릴
     때마다 원본(스타트업DB · 투자사 관리 현황 · 딜 진행 관리 미팅)에서 읽어 빨간
     글씨로 보인다(`services/forecast.py`). 원본을 옮겨 적으면 두 벌이 되어 한쪽만
     고쳐진다 — `SeriesACompany` 머리말과 같은 까닭이다. 원본과 글자까지 같은 값은
@@ -3147,9 +3147,16 @@ class RevenueForecast(TimestampMixin, Base):
     meeting_plan: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     meeting1_done: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     meeting2_done: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # 2판(0111) — 이 표의 매출은 **우리 수수료(성공보수)**다. 보수율은 이어 둔
+    # 기업에서, 수수료는 희망 투자유치금액 × 보수율로 읽는다(`services/forecast.py`).
+    fee_rate: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    expected_fee: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     # ── 직접 적는 칸(원본이 없다) ────────────────────────────────────────────
     post_value: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     ceo_share: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: 예상 시기 `YYYY-MM` · 가능성 `상`/`중`/`하` — 적을 때 맞춘다(`forecast.clean`).
+    expected_month: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    likelihood: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     result_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
 

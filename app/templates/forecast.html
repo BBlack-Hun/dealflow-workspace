@@ -7,6 +7,9 @@
   **빨간 칸은 비면 자동이다.** 줄에는 사람이 적은 값만 있고, 빈 칸은 열 때마다
   원본에서 읽는다(`services/forecast.py`). 칸 위에 손을 올리면 출처가 보인다.
   적으면 그 값이 우선이고, 지우면 다시 자동이 된다.
+
+  표 위 합계 줄은 **이 화면 범위의 줄**(내 것 · 팀 전체 · 팀원)의 예상 수수료를
+  더한다(`forecast.totals`). 엑셀 맨 아래 합계 줄도 같은 수다.
 #}
 {% block content %}
 {% set q %}{% if scope %}scope={{ scope }}{% endif %}{% if viewing and members %}&member={{ viewing.id }}{% endif %}{% endset %}
@@ -14,8 +17,9 @@
   <h1>{{ page_title }}</h1>
   <p class="muted">
     기업 하나 × 투자사 하나가 한 줄입니다. <b class="fc-auto">빨간 칸</b>은 비어 있으면
-    스타트업DB · 투자사 관리 현황 · 미팅에서 저절로 읽어 옵니다 — 직접 적으면 그 값이 우선이고,
-    지우면 다시 자동이 됩니다.
+    스타트업DB · 투자사 관리 현황 · 미팅 · 성공보수율(투자컨설턴트 계약 · 스타트업 명단)에서
+    저절로 읽어 옵니다 — 직접 적으면 그 값이 우선이고, 지우면 다시 자동이 됩니다.
+    매출은 우리 수수료(성공보수)이고, 예상 수수료 = 희망 투자유치금액 × 성공보수율입니다.
   </p>
 </header>
 {% include "_report_tabs.html" %}
@@ -53,6 +57,15 @@
 </datalist>
 {% endfor %}
 
+{% if rows %}
+<p class="fc-total" id="fc-total">
+  {% for label, value in fee_totals %}
+  {% if loop.first %}<b>예상 수수료 {{ label }} {{ value }}억</b>{% else %}· {{ label }} {{ value }}억{% endif %}
+  {% endfor %}
+  {% if fee_missing %}<span class="muted">— 예상 수수료가 없는 {{ fee_missing }}줄은 빠졌습니다</span>{% endif %}
+</p>
+{% endif %}
+
 <div class="table-wrap wide">
   <table class="grid-table fc-table" id="fc-table" data-inline-url="/api/forecast">
     <thead>
@@ -70,10 +83,10 @@
       <tr data-id="{{ r.id }}"{{ cc.attrs(r.id) }}>
         {% for field, label, src in columns %}
         {% set c = r.cells[field] %}
-        <td {% if src %}title="{{ '직접 적음 · 지우면 자동(' ~ src ~ ')' if c.value and not c.auto else '자동 — ' ~ src }}"{% endif %}>
+        <td {% if src %}title="{{ '직접 적음 · 지우면 자동(' ~ src ~ ')' if c.value and not c.auto else '자동 — ' ~ src }}"{% elif field == 'expected_month' %}title="YYYY-MM — 예: 2027-03"{% endif %}>
           <div class="cell {% if c.auto %}fc-auto{% endif %}" data-field="{{ field }}"
                data-value="{{ c.value }}"
-               {% if field.startswith('meeting') %}data-type="date"{% elif field == 'result_note' %}data-type="long"{% endif %}
+               {% if field.startswith('meeting') %}data-type="date"{% elif field == 'result_note' %}data-type="long"{% elif field == 'likelihood' %}data-type="pick" data-choices="상,중,하"{% endif %}
                {% if field == 'company_name' %}data-list="fc-companies"{% elif field == 'firm' %}data-list="fc-firms-{{ r.owner }}"{% endif %}>{{ c.text }}</div>
           {% if field == 'company_name' %}
           <div class="cell-sub">

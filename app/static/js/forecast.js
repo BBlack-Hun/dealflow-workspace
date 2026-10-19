@@ -3,10 +3,12 @@
 // 칸을 눌러 고치는 일은 공통 부품(`inline_edit.js`)이 한다. 자동 칸은 서버만
 // 알므로(`services/forecast.py`) 저장 응답의 `cells` 로 그 줄을 다시 그린다.
 // 기업 · 투자사 · 심사역을 고치면 딱지(후보)도 바뀌어 화면을 다시 연다.
+// 수수료에 닿는 칸(희망금액 · 보수율 · 수수료 · 가능성)도 표 위 합계가 바뀌어 다시 연다.
 (function () {
   var table = document.getElementById("fc-table");
   if (!table) return;
-  var RELOAD = ["firm", "company_name", "vc_name"];
+  var RELOAD = ["firm", "company_name", "vc_name",
+                "raise_target", "fee_rate", "expected_fee", "likelihood"];
 
   function send(method, url, body) {
     return fetch(url, {
