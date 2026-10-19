@@ -708,7 +708,6 @@ WRITE_ROUTES = {
     ("POST", "/api/taxonomy/terms"): WATCHED,
     ("POST", "/api/taxonomy/terms/{term_id}/{op}"): WATCHED,
     ("POST", "/api/taxonomy/ir-cleanup"): WATCHED,
-    ("POST", "/api/taxonomy/pref-sectors"): WATCHED,
     # 이름 바꾸기 · 합치기 · 옮기기의 **미리보기** — 몇 줄이 바뀌는지 세기만 한다.
     # POST 인 것은 새 이름 · 합칠 곳을 몸에 실어 보내서다. 아무것도 안 쓴다.
     ("POST", "/api/taxonomy/terms/{term_id}/preview/{op}"): SELF,

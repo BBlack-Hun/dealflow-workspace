@@ -120,6 +120,15 @@ def test_옮겨_온_줄만_읽고_같은_메모의_나머지는_안_읽는다():
     assert got.why == pg.BY_ROUND        # `에너지` 가 분야로 안 읽혔다
 
 
+def test_선호분야_칸에서_옮긴_단계_말도_읽는다():
+    """재분류(#30, 10/18 반영)로 메모에 간 `Pre IPO` 가 판정에서 사라지면 안 된다.
+
+    재분류 기능은 뺐지만 이미 옮겨 간 줄은 메모에 그대로 있다.
+    """
+    row = Fake(memo="통화 완료\n[선호분야 칸에서 옮김] Pre IPO")
+    assert pg.decide(row).group == pg.LATE
+
+
 def test_소싱메모와_팁스메모는_안_읽는다():
     """전화·부재중 기록이라 선호가 아니다. 칸 목록에 없다는 것을 못 박는다."""
     assert "sourcing_note" not in pg.PREF_FIELDS

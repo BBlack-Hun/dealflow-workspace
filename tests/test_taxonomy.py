@@ -387,8 +387,6 @@ def test_팀원은_분야_기준_목록에_못_들어간다(member, db):
         ("post", "/api/taxonomy/terms/1/preview/rename", {"name": "가상"}),
         ("get", "/api/taxonomy/ir-cleanup", None),
         ("post", "/api/taxonomy/ir-cleanup", {"items": [{"id": 1}]}),
-        ("get", "/api/taxonomy/pref-sectors", None),
-        ("post", "/api/taxonomy/pref-sectors", {"all": True}),
     ):
         r = getattr(member, method)(url, **({"json": body} if body is not None else {}))
         assert r.status_code == 403, (method, url, r.status_code)
@@ -417,7 +415,21 @@ def test_관리자_화면은_목록을_그린다(admin):
     # 관리자 화면에는 숨긴 옛 이름도 실린다(`→ 합친 곳` 으로 보인다).
     assert any(x["merged_into"] == "신약개발" for m in tree for x in m["minors"])
     assert admin.get("/taxonomy?tab=ir").status_code == 200
-    assert admin.get("/taxonomy?tab=pref").status_code == 200
+
+
+def test_선호분야_재분류_탭은_없다(admin):
+    """10/18 에 한 번 반영했다. 다시 돌리면 원치 않는 데이터 이동이 생긴 적이 있어
+    탭도 길도 뺐다 — 관리자도 다시 누를 수 없어야 한다."""
+    page = admin.get("/taxonomy").text
+    assert "tab=pref" not in page and "투자사 선호분야 재분류" not in page
+    for method, body in (("get", None), ("post", {"all": True})):
+        r = getattr(admin, method)("/api/taxonomy/pref-sectors",
+                                   **({"json": body} if body is not None else {}))
+        assert r.status_code == 404, (method, r.status_code)
+    # 옛 주소로 와도 오류 없이 기본 탭(기준 목록)이 뜬다.
+    old = admin.get("/taxonomy?tab=pref")
+    assert old.status_code == 200
+    assert 'id="tx-tree"' in old.text and "pref-preview" not in old.text
 
 
 def test_미리보기는_수만_세고_반영은_한_번에_한다(admin, db, users):
