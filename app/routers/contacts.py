@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 from .. import clock
 from ..clock import stamp_text
 from ..db import get_db
-from ..deps import can_open, get_current_user, may_manage_team_contacts
+from ..deps import can_open, get_current_user, may_manage_team_contacts, require_admin
 from ..models import (AutomationSend, ContactActivity, ContactColumn, DealFollowup,
                       IrCompany, IrRequest,
                       Meeting, SendItem, SendJob, SenderRoom, SendSequence,
@@ -799,6 +799,10 @@ def toggle_sheet_deal_list(
 # `7월 리마인드 문자 (7/28)` 은 한 달 뒤면 `8월 …` 이 옆에 붙는다. 시트를 다시
 # 올리지 않고도 화면에서 칸을 세울 수 있어야 한다 — 투자컨설턴트 현황의
 # 열 추가·이름 바꾸기·삭제와 **같은 방식·같은 어휘**다.
+#
+# **칸을 세우고·고치고·숨기고·지우는 것은 관리자만**(`require_admin`). 팀 전체의
+# 표 모양이 바뀌는 일이라 새 컬럼 관리(`routers/custom_columns.py`)와 같은 권한에
+# 둔다. 칸 안의 **값**은 그대로 팀원이 고친다(`PATCH /api/contacts/{id}` 의 notes).
 
 def _sheet_or_400(db: Session, label: str) -> str:
     """이미 쓰고 있는 명단 이름만 받는다.
@@ -820,7 +824,7 @@ def _sheet_or_400(db: Session, label: str) -> str:
 @router.post("/columns", include_in_schema=False)
 def add_column(label: str = Form(...), sheet: str = Form(...),
                db: Session = Depends(get_db),
-               user: User = Depends(get_current_user)):
+               user: User = Depends(require_admin)):
     """달이 바뀌면 칸을 하나 늘린다. 새 칸이 **맨 앞**에 오도록 한다.
 
     지금 챙겨야 할 달이 먼저 보여야 한다. (시트가 늘 그 순서인 것은 아니다 —
@@ -845,7 +849,7 @@ def add_column(label: str = Form(...), sheet: str = Form(...),
 @router.post("/columns/{column_id}/rename", include_in_schema=False)
 def rename_column(column_id: int, label: str = Form(...),
                   db: Session = Depends(get_db),
-                  user: User = Depends(get_current_user)):
+                  user: User = Depends(require_admin)):
     col = db.get(ContactColumn, column_id)
     if col is None:
         raise HTTPException(status_code=404, detail="칸을 찾을 수 없습니다")
@@ -859,7 +863,7 @@ def rename_column(column_id: int, label: str = Form(...),
 
 @router.post("/columns/{column_id}/hide", include_in_schema=False)
 def toggle_column_hidden(column_id: int, db: Session = Depends(get_db),
-                         user: User = Depends(get_current_user)):
+                         user: User = Depends(require_admin)):
     """칸 하나를 **표에서 빼거나 되돌린다. 지우는 것이 아니다.**
 
     명단마다 시트에서 그대로 딸려 온 옛 칸이 있다. 팀이 쓰는 한 가지 모양으로
@@ -888,7 +892,7 @@ def toggle_column_hidden(column_id: int, db: Session = Depends(get_db),
 
 @router.post("/columns/{column_id}/delete", include_in_schema=False)
 def delete_column(column_id: int, db: Session = Depends(get_db),
-                  user: User = Depends(get_current_user)):
+                  user: User = Depends(require_admin)):
     """칸을 지우면 **그 달의 기록도 함께 사라진다** — 화면에서 한 번 더 묻는다.
 
     남은 값을 그냥 두면 어느 칸의 것인지 모르는 값이 JSON 에 쌓인다.

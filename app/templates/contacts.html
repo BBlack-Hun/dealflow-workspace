@@ -253,9 +253,13 @@
   `layout.monthly` 를 함께 보는 이유는 **첫 칸**이다. 칸이 하나도 없는 명단은
   `month_columns` 가 비어서, 이 조건이 없으면 [칸 추가] 마저 사라져 첫 칸을
   세울 길이 없다(달마다 칸이 서는 배치에서는 늘 세울 수 있어야 한다).
+
+  **관리자만.** 칸을 세우고·고치고·숨기고·지우는 일은 팀 전체의 표 모양을
+  바꾼다 — 새 컬럼 관리(`/columns`)와 같은 자리·같은 권한이다. 팀원은 칸을
+  그대로 보고 칸 안의 값만 고친다. 서버도 다시 본다(`routers/contacts.py`).
 #}
-{% if selected_sheet and (layout.monthly or month_columns or folded_months
-                          or hidden_months) %}
+{% if user.role == 'admin' and selected_sheet
+      and (layout.monthly or month_columns or folded_months or hidden_months) %}
 <div class="month-cols">
   <form method="post" action="/api/contacts/columns" class="inline-form">
     <input type="hidden" name="sheet" value="{{ selected_sheet }}">
@@ -304,9 +308,11 @@
   {% for c in hidden_months %}
   <span class="month-col-edit">
     <span class="muted">{{ c.label }}</span>
+    {% if user.role == 'admin' %}
     <form method="post" action="/api/contacts/columns/{{ c.id }}/hide">
       <button class="linkbtn" type="submit">숨김 해제</button>
     </form>
+    {% endif %}
   </span>
   {% endfor %}
 </div>

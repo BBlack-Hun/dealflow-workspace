@@ -239,7 +239,7 @@ def test_머리글_수와_데이터_칸_수가_같다(sheets):
         assert cells == heads, f"{i + 1}번째 줄: 머리글 {heads}칸 · 데이터 {cells}칸"
 
 
-def test_칸을_하나_늘려도_머리글과_데이터_칸이_함께_늘어난다(sheets, db):
+def test_칸을_하나_늘려도_머리글과_데이터_칸이_함께_늘어난다(sheets, db, users):
     """달이 바뀌면 칸이 옆에 붙는다. 한 달에 세 칸씩이다.
 
     고정 목록으로 짜 두면 매달 코드를 고치고 배포해야 한다. 화면에서 칸을
@@ -248,6 +248,7 @@ def test_칸을_하나_늘려도_머리글과_데이터_칸이_함께_늘어난�
     **같은 달** 이름으로 세운다. 접는 기준이 달이라, 다른 달 이름으로 세우면
     세우자마자 접혀서 머리글에 안 선다 — 이 검사가 보려는 것은 접기가 아니다.
     """
+    _as_admin(db, users)
     label = f"{_month()}월 리마인드 카톡"
     before = len(_thead(sheets.get(_url(LIST)).text))
     sheets.post("/api/contacts/columns",
@@ -670,7 +671,13 @@ def _hide(client, column_id: int):
                        follow_redirects=False)
 
 
-def test_숨긴_칸은_표와_수정창에서_빠지고_값은_남는다(sheets, db):
+def _as_admin(db, users):
+    """칸을 세우고·숨기는 것은 관리자만이다(`routers/contacts.py`). 같은 사람을 올린다."""
+    users["u1"].role = "admin"
+    db.commit()
+
+
+def test_숨긴_칸은_표와_수정창에서_빠지고_값은_남는다(sheets, db, users):
     """**지우는 것이 아니다.** [칸 삭제] 는 적힌 내용까지 지운다.
 
     명단마다 시트에서 딸려 온 옛 칸이 있는데, 팀의 한 가지 모양으로 맞추면서
@@ -685,6 +692,7 @@ def test_숨긴_칸은_표와_수정창에서_빠지고_값은_남는다(sheets,
     row = db.query(VcContact).filter(VcContact.source_sheet == LIST).first()
     assert cc.load_notes(row.notes).get(key) == "O", "밑자리에 값이 있어야 한다"
 
+    _as_admin(db, users)
     assert _hide(sheets, column.id).status_code == 303
     html = sheets.get(_url(LIST)).text
     assert MONTH_HEADS[0] not in _thead(html), _thead(html)
@@ -697,20 +705,21 @@ def test_숨긴_칸은_표와_수정창에서_빠지고_값은_남는다(sheets,
     assert "숨김 해제" in html and MONTHS[0] in html
 
 
-def test_숨김을_되돌리면_칸도_값도_그대로_돌아온다(sheets, db):
+def test_숨김을_되돌리면_칸도_값도_그대로_돌아온다(sheets, db, users):
     from app.models import ContactColumn
 
     column = db.query(ContactColumn).filter(
         ContactColumn.sheet == LIST, ContactColumn.label == MONTHS[0]).one()
-    _hide(sheets, column.id)
-    _hide(sheets, column.id)
+    _as_admin(db, users)
+    assert _hide(sheets, column.id).status_code == 303
+    assert _hide(sheets, column.id).status_code == 303
     html = sheets.get(_url(LIST)).text
     assert _thead(html)[:-1] == [_same(t) for t in HEAD + MONTH_HEADS + TAIL]
     body = _rows(html)[0]
     assert ">O<" in body, "되돌렸는데 값이 안 보입니다"
 
 
-def test_숨긴_칸은_엑셀에서도_빠진다(sheets, db):
+def test_숨긴_칸은_엑셀에서도_빠진다(sheets, db, users):
     """접는 것과 다르다. 접기는 **화면이 가로로 밀려서** 잠깐 감추는 것이고,
     숨김은 사람이 **이 명단에서는 안 쓰는 칸**이라고 정한 것이다.
 
@@ -731,7 +740,8 @@ def test_숨긴_칸은_엑셀에서도_빠진다(sheets, db):
     assert MONTH_HEADS[0] in _head()
     column = db.query(ContactColumn).filter(
         ContactColumn.sheet == LIST, ContactColumn.label == MONTHS[0]).one()
-    _hide(sheets, column.id)
+    _as_admin(db, users)
+    assert _hide(sheets, column.id).status_code == 303
     assert MONTHS[0] not in _head(), "숨긴 칸이 파일에는 남아 있습니다"
     _hide(sheets, column.id)
     assert MONTH_HEADS[0] in _head(), "숨김을 되돌렸는데 파일에 안 돌아왔습니다"
@@ -1136,7 +1146,7 @@ def test_자유롭게_적는_칸에는_필터가_안_선다(sheets, db):
     assert not got.get(_same(TAIL[-1])), "메모 칸에 필터가 섰습니다"
 
 
-def test_칸을_새로_더해도_그_칸은_메모_칸이다(sheets, db):
+def test_칸을_새로_더해도_그_칸은_메모_칸이다(sheets, db, users):
     """**다음 달 칸에는 아무도 손으로 무엇을 안 붙인다** — 그러니 저절로 맞아야 한다.
 
     이 표는 달마다 칸이 세 개씩 늘고, 화면의 [칸 추가] 로도 는다. 한동안 그
@@ -1152,6 +1162,7 @@ def test_칸을_새로_더해도_그_칸은_메모_칸이다(sheets, db):
     """
     from app.services import contact_columns as cc
 
+    _as_admin(db, users)
     label = f"{_month()}월 리마인드 카톡"
     sheets.post("/api/contacts/columns", data={"sheet": LIST, "label": label},
                 follow_redirects=False)
