@@ -145,6 +145,28 @@ def test_admin_sees_the_team_and_can_pick_one(client, db, meetings, users):
     assert f"ym=2026-11&amp;member={users['u2'].id}" in html   # 속성 안이라 `&` 가 `&amp;`
 
 
+def test_view_as_defaults_to_the_viewed_member(client, db, meetings, users):
+    """관리자가 팀원 화면으로 보는 중이면(#3) 기본은 그 팀원 — 고르개로 팀 전체도 연다."""
+    from app.models import User
+    from app.services import auth as auth_svc
+
+    db.add(User(id=9, name="관리자", phone="01000000009", role="admin",
+                password_hash=auth_svc.hash_password(DEMO_PASSWORD)))
+    db.commit()
+    client.post("/login", data={"phone": "01000000009", "password": DEMO_PASSWORD})
+    client.post("/account/view-as", data={"member_id": users["u2"].id, "next": "/"})
+
+    html = client.get("/ir/calendar?ym=2026-10").text
+    assert "남의기업" in html and "샘플애그" not in html
+    assert "팀원 선택" in html                                  # 관리자 고르개는 그대로
+    assert f"ym=2026-11&amp;member={users['u2'].id}" in html   # 앞뒤 이동도 그 팀원
+    assert 'ym=2026-10&member=0">팀 전체' in html               # `내 것` 처럼 템플릿 글자 `&`
+
+    html = client.get("/ir/calendar?ym=2026-10&member=0").text   # [팀 전체]
+    assert "남의기업" in html and "샘플애그" in html
+    assert "ym=2026-11&amp;member=0" in html                   # 팀 전체를 고른 채 넘어간다
+
+
 # --- 4. 주소 ------------------------------------------------------------------
 
 @pytest.mark.parametrize("ym", ["", "abc", "2026-13", "2026", "1999-05", "2026-10-05"])

@@ -20,7 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..deps import get_current_user, now_iso, templates
+from ..deps import doer, get_current_user, now_iso, templates
 from ..models import IrCompany, IrRequest, Meeting, User, VcContact
 from ..services import (call_flags, cadence, flow, ir_attach, meeting_calendar,
                         pipeline, sheet_owner)
@@ -218,6 +218,11 @@ def meeting_calendar_page(request: Request, db: Session = Depends(get_db),
     """
     today = date.today()
     admin = user.role == "admin"
+    # 팀원 화면으로 보는 중이면 고르개의 기본은 그 팀원이다(#3) — `팀 전체` 칩은
+    # `member=0` 을 실어 와서 그대로 전체가 열린다(투자컨설턴트 고르개와 같은 길).
+    viewing = doer(user) is not user
+    if viewing and "member" not in request.query_params:
+        member = user.id
     who = (member or None) if admin else user.id
     ctx = base_ctx(request, db, user, active="flow")
     ctx.update({
@@ -225,7 +230,8 @@ def meeting_calendar_page(request: Request, db: Session = Depends(get_db),
         "view": "year" if view == "year" else "month",
         "member": member if admin else 0,
         # 앞뒤 이동·월간/연간 전환이 고른 팀원을 놓치지 않게 주소에 이어 붙인다.
-        "member_q": f"&member={member}" if admin and member else "",
+        # 보는 중에 고른 `팀 전체`(0)도 이어 붙인다 — 빠지면 다음 달에서 그 팀원으로 돌아간다.
+        "member_q": f"&member={member}" if admin and (member or viewing) else "",
         "members": ([{"id": u.id, "name": u.name} for u in
                      db.execute(select(User).where(User.is_active == 1)
                                 .order_by(User.id)).scalars().all()]

@@ -39,7 +39,7 @@
   {# 관리자 — 팀 전체가 기본, 한 사람만 따로 볼 수도 있다(업무 보고의 고르개와 같은 모양). #}
   {% set here = '/ir/calendar?view=' ~ view ~ ('&y=' ~ year if view == 'year' else '&ym=%d-%02d'|format(year, month)) %}
   <div class="toolbar-right">
-    <a class="chip {% if not member %}active{% endif %}" href="{{ here }}">팀 전체</a>
+    <a class="chip {% if not member %}active{% endif %}" href="{{ here }}{% if view_as %}&member=0{% endif %}">팀 전체</a>
     <a class="chip {% if member == user.id %}active{% endif %}" href="{{ here }}&member={{ user.id }}">내 것</a>
     <select class="chip-select" aria-label="팀원 선택"
             onchange="location = '{{ here }}' + (this.value ? '&member=' + this.value : '')">
