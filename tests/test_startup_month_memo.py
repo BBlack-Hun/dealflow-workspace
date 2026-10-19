@@ -240,7 +240,7 @@ def test_수정창_이름도_표_머리글과_같은_글자다(sheets, db):
             f"수정창 이름이 표 머리글과 다릅니다: {block.group(1)}")
 
 
-def test_칸_이름을_고치는_자리는_저장된_이름_그대로_보여_준다(sheets, db):
+def test_칸_이름을_고치는_자리는_저장된_이름_그대로_보여_준다(sheets, db, users):
     """⚙ 명단·칸 설정에서 고치는 것은 **저장된 글자**다.
 
     거기까지 꼬리말이 실리면, 이름을 안 고치고 [저장]만 눌러도 저장된 이름에
@@ -248,6 +248,9 @@ def test_칸_이름을_고치는_자리는_저장된_이름_그대로_보여_준
     """
     from app.services import contact_columns as cc
 
+    # 칸 설정은 관리자에게만 선다(`contacts.html` 의 `month-cols`).
+    users["u1"].role = "admin"
+    db.commit()
     html = sheets.get(_url(show_all=True)).text
     for column in cc.month_columns(db, LIST):
         assert f'value="{column.label}"' in html, (

@@ -271,12 +271,15 @@ FOLDED = [
 ]
 
 
-def test_표_위의_설정은_접혀_있고_눌러서_펼_수_있다(sheets):  # noqa: F811
+def test_표_위의_설정은_접혀_있고_눌러서_펼_수_있다(sheets, db, users):  # noqa: F811
     """`<details>` 다 — **지우는 것이 아니라 접는 것**이다.
 
     접힌 것도 DOM 에 그대로 있어서 브라우저 찾기·검사가 다 본다. 자바스크립트
     없이 브라우저가 여닫으므로, 스크립트가 막힌 화면에서도 열린다.
     """
+    # 칸 도구줄은 관리자에게만 선다(`contacts.html` 의 `month-cols`).
+    users["u1"].role = "admin"
+    db.commit()
     body = sheets.get(_url(LIST)).text
     m = re.search(r'<details class="sheet-fold">(.*?)</details>', body, re.S)
     assert m, "표 위 설정을 담은 접는 상자가 없습니다"

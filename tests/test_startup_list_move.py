@@ -184,7 +184,7 @@ def test_명단_소유가_따라온다(lists, admin, db, users):
         assert label in page
 
 
-def test_월별_칸을_새_화면에서_세우고_고치고_지운다(lists, db):
+def test_월별_칸을_새_화면에서_세우고_고치고_지운다(lists, admin, db):
     """달마다 세 칸씩 붙는 표다. 그 조작이 옛 화면으로 튀면 **고친 것이 사라진
     것처럼** 보인다 — 거기엔 그 탭이 없어 빈 표가 뜬다.
     """
@@ -193,7 +193,8 @@ def test_월별_칸을_새_화면에서_세우고_고치고_지운다(lists, db)
     home, label = _pages()["startup"], STARTUP_LISTS[0]
     url = f"{home}?sheet={quote(label)}"
 
-    r = lists.post("/api/contacts/columns",
+    # 칸을 세우고·고치고·지우는 것은 관리자만이다(`routers/contacts.py`).
+    r = admin.post("/api/contacts/columns",
                    data={"sheet": label, "label": f"{_month()}월 카톡 연결"},
                    follow_redirects=False)
     assert r.status_code == 303
@@ -208,7 +209,7 @@ def test_월별_칸을_새_화면에서_세우고_고치고_지운다(lists, db)
         ContactColumn.label == f"{_month()}월 카톡 연결").one()
     for path in (f"/api/contacts/columns/{col.id}/rename",
                  f"/api/contacts/columns/{col.id}/delete"):
-        r = lists.post(path, data={"label": f"{_month()}월 카톡"},
+        r = admin.post(path, data={"label": f"{_month()}월 카톡"},
                        follow_redirects=False)
         assert r.headers["location"].startswith(home), path
 
