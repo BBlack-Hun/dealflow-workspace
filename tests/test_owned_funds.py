@@ -178,7 +178,7 @@ def test_엑셀_내려받기에도_실린다(member, db, users):
     ws = openpyxl.load_workbook(io.BytesIO(r.content)).active
     head = [c.value for c in ws[1]]
     at = head.index("소유 펀드")
-    assert head[at - 1] == "라운드 규모"
+    assert head[at - 1] == "라운드 사이즈(투자운영금액)"
     values = [row[at] for row in ws.iter_rows(min_row=2, values_only=True)]
     assert "가상 1호" in values
 

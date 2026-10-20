@@ -75,7 +75,7 @@
             <select name="after" aria-label="{{ c.name }} 위치">
               <option value="">맨 끝</option>
               {% for label, note in anchors %}
-              <option value="{{ label }}" {% if c.after_key == label %}selected{% endif %}>{{ label }} 뒤{% if note %} ({{ note }}){% endif %}</option>
+              <option value="{{ label }}" {% if afters.get(c.id) == label %}selected{% endif %}>{{ label }} 뒤{% if note %} ({{ note }}){% endif %}</option>
               {% endfor %}
             </select>
             <button type="submit" class="linkbtn">위치 바꾸기</button>

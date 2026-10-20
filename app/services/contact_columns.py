@@ -995,8 +995,10 @@ INVESTOR_MONTHLY_LAYOUT = Layout(
     head=[
         Column("NO", "no", 34, source="row_no"),
         # 사람이 주인공이다. 시트도 `이름` 이 먼저고 `투자사명` 이 뒤다.
+        # 이름은 투자사 관리 현황의 같은 칸 그대로 `회사`(#63 — 같은 칸은 같은 이름).
+        # 시트를 올릴 때는 `투자사명` 도 그대로 받는다(`sheet_import.parse_sheet_a`).
         Column("이름", "name", 96),
-        Column("투자사명", "firm", 180),
+        Column("회사", "firm", 180),
         # ── 그룹은 **정해 둔 갈래만** 담는다(한 글자 여섯 + 이름들) ──────
         #
         # 시트 머리글은 `그룹/투자분야/라운드사이즈` 다. 세 가지를 한 칸에
@@ -1052,7 +1054,7 @@ INVESTOR_MONTHLY_LAYOUT = Layout(
         # 부품을 붙인다(`contacts.html` · `sector_picker.js`).
         Column("선호 투자분야", "sectors", 0, in_table=False, kind="sectors"),
         Column("TIPS 운영사", "tips_note", 0, in_table=False),
-        Column("라운드 사이즈", "round_size", 0, in_table=False),
+        Column("라운드 사이즈(투자운영금액)", "round_size", 0, in_table=False),
         # 회사 단위 값(#1) — `라운드 사이즈` 바로 뒤. 이 줄이 아니라 회사에 적힌다
         # (`services/investor_firms.py`). 행이 `owned_funds` 로 실어 오므로 엑셀도
         # 이 목록에서 그대로 나간다(`routers/data_io._export_sheet`).
