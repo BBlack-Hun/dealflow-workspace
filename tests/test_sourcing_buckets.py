@@ -93,7 +93,8 @@ def test_a_chosen_person_beats_the_screens_bucket(client, db, users, buckets):
 # --- ③ 이름을 바꾸면 줄이 따라간다 -------------------------------------------
 
 def test_renaming_takes_the_rows_with_it(client, db, users, buckets):
-    """사람 · 문구 · 골라 둔 것이 **함께** 옮겨간다."""
+    """사람 · 문구 · 골라 둔 것이 **함께** 옮겨간다(잇지 않는 갈래로 본다 — 시리즈 A ·
+    M&A · 구주·후속은 투자사 관리 현황과 이어져 이름을 못 바꾼다)."""
     from app.models import (MessageTemplate, SourcingContact, TemplateChoice,
                             User)
     from app.services import sourcing_buckets, template_pick
@@ -101,23 +102,23 @@ def test_renaming_takes_the_rows_with_it(client, db, users, buckets):
     _login(client)
     user_id = db.query(User).filter_by(phone="01000000001").one().id
     tpl = db.query(MessageTemplate).filter_by(kind="sourcing_intro",
-                                              name=MNA).one()
-    template_pick.set_choice(db, user_id, "sourcing_intro", tpl.id, variant=MNA)
+                                              name=CEO).one()
+    template_pick.set_choice(db, user_id, "sourcing_intro", tpl.id, variant=CEO)
     db.commit()
 
-    after = "M&A · 세컨더리 찾는 투자사"
-    moved = sourcing_buckets.rename(db, MNA, after)
+    after = "딜 소싱 참여 투자사 대표 (2026)"
+    moved = sourcing_buckets.rename(db, CEO, after)
     db.commit()
 
     assert moved == 1
-    assert db.query(SourcingContact).filter_by(bucket=MNA).count() == 0
+    assert db.query(SourcingContact).filter_by(bucket=CEO).count() == 0
     assert db.query(SourcingContact).filter_by(bucket=after).count() == 1
     assert db.query(MessageTemplate).filter_by(kind="sourcing_intro",
-                                               name=MNA).count() == 0
+                                               name=CEO).count() == 0
     assert db.query(MessageTemplate).filter_by(kind="sourcing_intro",
                                                name=after).count() == 1
     assert db.query(TemplateChoice).filter_by(kind="sourcing_intro",
-                                              variant=MNA).count() == 0
+                                              variant=CEO).count() == 0
     assert db.query(TemplateChoice).filter_by(kind="sourcing_intro",
                                               variant=after).count() == 1
 
@@ -131,12 +132,12 @@ def test_the_message_follows_the_new_name(client, db, users, buckets):
     from app.services import sourcing_buckets
 
     _login(client)
-    after = "M&A · 세컨더리 찾는 투자사"
-    sourcing_buckets.rename(db, MNA, after)
+    after = "딜 소싱 참여 투자사 대표 (2026)"
+    sourcing_buckets.rename(db, CEO, after)
     db.commit()
 
-    text = _preview(client, contact_ids=[buckets[MNA]])
-    assert f"[{MNA}] 갈래 문구입니다." in text     # 문구 본문은 그대로 따라왔다
+    text = _preview(client, contact_ids=[buckets[CEO]])
+    assert f"[{CEO}] 갈래 문구입니다." in text     # 문구 본문은 그대로 따라왔다
     assert f"[{after}] 갈래 문구입니다." not in text
 
 
@@ -146,13 +147,13 @@ def test_the_tab_is_reachable_under_the_new_name(client, db, users, buckets):
     from app.routers.sourcing import buckets as bucket_rows
 
     _login(client)
-    after = "M&A · 세컨더리 찾는 투자사"
-    sourcing_buckets.rename(db, MNA, after)
+    after = "딜 소싱 참여 투자사 대표 (2026)"
+    sourcing_buckets.rename(db, CEO, after)
     db.commit()
 
     keys = [b["key"] for b in bucket_rows(db)]
     assert after in keys
-    assert MNA not in keys
+    assert CEO not in keys
     assert len(keys) == 3
 
 

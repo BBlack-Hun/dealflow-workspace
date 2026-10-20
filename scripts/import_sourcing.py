@@ -137,14 +137,15 @@ def main() -> None:
         if kept_part:
             print(f"  {'':36} 참여 칸 되살림 {part_back}명 / 참여 아닌 줄 {len(kept_part)}명"
                   " (시트에서 빠졌거나 같은 이름이 여럿인 줄은 못 되살림)")
-        # 갈아 끼우면 투자사 관리 현황과의 잇기(`Series A 딜 소싱` 칸)와 `불참여`
+        # 갈아 끼우면 투자사 관리 현황과의 잇기(`딜 소싱` 칸)와 `불참여`
         # 표시가 옛 줄과 함께 사라진다. 사람이 확정해 둔 잇기는 먼저 되살리고
         # (이름 · 번호가 둘 다 안 맞아도 — 사용자 결정 2026-10-17), 나머지는 화면에서
         # 넣을 때와 **같은 규칙**(`sourcing_sync.auto_link` — 이름 · 번호가 둘 다 같은
         # 투자사 줄이 딱 하나일 때)으로 다시 잇는다. 그래도 못 이은 줄은 딜 소싱
         # 화면에 후보로 뜬다 — [이 분으로 확정].
         # `참여` 칸(불참여 · 물어보는 중 · 문구)은 위에서 이름 · 번호로 되살렸다.
-        if sourcing_buckets.same(bucket, sourcing_sync.SYNC_BUCKET):
+        # 잇는 갈래 셋(Series A · M&A · 구주·후속 — `sourcing_sync.BRANCHES`) 모두.
+        if sourcing_sync.branch_of(bucket):
             db.flush()
             restored = sourcing_sync.restore_confirmed(db, new_rows, kept)
             relinked = sum(1 for row in new_rows if sourcing_sync.auto_link(db, row))

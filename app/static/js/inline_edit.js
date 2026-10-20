@@ -201,6 +201,7 @@
       if (type === "long") { startLong(cell, before, type); return; }
       if (type === "pick") { startPick(cell, before, type); return; }
       if (type === "email") { startEmail(cell, before, type); return; }
+      if (type === "branches") { startBranches(cell, before, type); return; }
       if (type === "sectors" && global.DealflowSectorPicker) {
         startSectors(cell, before, type);
         return;
@@ -421,8 +422,12 @@
         var after = canceled ? before
           : (picked !== undefined ? picked : input.value).trim();
         if (pop.parentNode) pop.parentNode.removeChild(pop);
-        cell.textContent = after;
-        cell.title = after;
+        // `branches` 칸은 딱지를 그대로 둔다 — 저장 뒤 화면(`contacts.js`)이 서버 값으로
+        // 다시 그린다. 글자로 덮으면 딱지가 사라진 채 응답을 기다린다.
+        if (type !== "branches") {
+          cell.textContent = after;
+          cell.title = after;
+        }
         if (cell.hasAttribute("data-value")) cell.setAttribute("data-value", after);
         if (after !== before) save(cell, after, before, type);
       }
@@ -678,6 +683,67 @@
       });
     }
 
+    // ── 여러 갈래를 체크해 고르는 칸(`data-type="branches"`) ─────────────
+    //
+    // 보기는 칸의 `data-choices`(투자사 관리 현황 `딜 소싱` — Series A · M&A ·
+    // 구주·후속), 지금 값은 `data-value`(`Series A, M&A`). 체크하면 읽기만 하는 한
+    // 줄 칸에 고른 것이 `, ` 로 모이고, 창이 닫힐 때(바깥 클릭 · Enter) 그 값이
+    // 저장된다(`popover` 의 `finish`). Esc 는 되돌린다 — 다른 칸과 같다.
+    function startBranches(cell, before, type) {
+      popover(cell, before, type, function (api) {
+        var input = document.createElement("input");
+        input.type = "text";
+        input.readOnly = true;
+        input.className = "cell-pop-input one-line";
+        input.value = before;
+        api.pop.appendChild(input);
+        var box = document.createElement("div");
+        box.className = "branch-pick";
+        var picked = before.split(",").map(function (v) { return v.trim(); });
+        var choices = (cell.getAttribute("data-choices") || "").split(",")
+          .map(function (v) { return v.trim(); }).filter(function (v) { return v; });
+        var boxes = choices.map(function (value) {
+          var label = document.createElement("label");
+          var check = document.createElement("input");
+          check.type = "checkbox";
+          check.value = value;
+          check.checked = picked.indexOf(value) !== -1;
+          check.addEventListener("change", function () {
+            input.value = boxes.filter(function (b) { return b.checked; })
+              .map(function (b) { return b.value; }).join(", ");
+          });
+          label.appendChild(check);
+          label.appendChild(document.createTextNode(" " + value));
+          box.appendChild(label);
+          return check;
+        });
+        api.pop.appendChild(box);
+        api.pop.appendChild(hintLine("체크하면 딜 소싱 그 갈래에 넣고, 풀면 불참여로 둡니다 · " +
+                                     "Tab 으로 옮겨 Space 로 체크 · Enter 또는 바깥을 누르면 저장 · Esc 취소"));
+        // 키보드로도 고른다 — Tab 은 상자 사이를 옮기고(끝에서는 창의 Tab: 저장하고 옆
+        // 칸), Space 는 브라우저가 체크하고, Enter 는 어디서든 저장하고 아래 칸.
+        var stops = [input].concat(boxes);
+        stops.forEach(function (el, i) {
+          el.addEventListener("keydown", function (e) {
+            if (e.isComposing || e.keyCode === 229) return;
+            if (e.key === "Enter") {
+              e.preventDefault();
+              api.close();
+              stepDown(cell);
+              return;
+            }
+            if (e.key !== "Tab") return;
+            var next = i + (e.shiftKey ? -1 : 1);
+            if (next < 0 || next >= stops.length) return;
+            e.preventDefault();
+            e.stopPropagation();
+            stops[next].focus();
+          });
+        });
+        return input;
+      });
+    }
+
     // 같은 컬럼의 다른 행이 실제로 쓰고 있는 값. 서버에 목록을 따로 두면
     // 실제 값과 어긋난다 — 표에 있는 것이 곧 목록이다.
     function knownValues(field) {
@@ -764,7 +830,11 @@
           cell.classList.remove("saving");
           cell.classList.add("save-failed");
           // 저장 못 했으면 화면도 되돌린다 — 고쳐진 것처럼 보이면 안 된다.
-          cell.textContent = type === "number" ? withCommas(before) : before;
+          // (`branches` 칸은 딱지를 안 건드렸으니 값만 되돌린다.)
+          if (type !== "branches") {
+            cell.textContent = type === "number" ? withCommas(before) : before;
+          }
+          if (cell.hasAttribute("data-value")) cell.setAttribute("data-value", before);
           alert("저장하지 못했습니다." + (err.message ? "\n" + err.message : ""));
         });
     }

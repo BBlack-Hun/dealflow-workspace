@@ -97,10 +97,13 @@ def test_remind_uses_the_code_default_with_the_month_and_greeting(people, client
     # 빈 직함은 갈래 호칭으로 — 처음 안내와 같은 규칙(`sourcing_msg.honorific`)
     assert got["나심사"]["message"].startswith("안녕하세요, 나심사 심사역님")
 
-    # 시리즈 A 가 아닌 갈래에 `Series A 이상` 이라고 하지 않는다
+    # 시리즈 A 가 아닌 갈래에 `Series A 이상` 이라고 하지 않는다 — M&A 갈래는 M&A 말로
+    # 쓴 뼈대다(`sourcing_msg.remind_mna_body` — 기본 뼈대로 떨어지지 않는다).
     m = got["마투자"]["message"]
     assert m.startswith("안녕하세요, 마투자 이사님")
-    assert "Series A" not in m and "10월에 공유해 주실 딜은" in m
+    assert "Series A" not in m and "Deal Sourcing 네트워크" not in m
+    assert "M&A 딜 네트워크에 함께해 주셔서 감사합니다." in m
+    assert "10월에 공유해 주실 M&A 딜(매각 · 인수 희망 기업)은" in m
 
 
 def test_remind_reads_the_stored_template_and_fills_the_month(people, client, db):
@@ -328,16 +331,20 @@ def test_renaming_a_bucket_takes_the_remind_along(people, client, db):
     from app.models import MessageTemplate
     from app.services import sourcing_buckets
 
-    # 시리즈 A 갈래는 이름을 못 바꾼다 — 투자사 관리 현황과 이어진 갈래다
-    # (`sourcing_sync.SYNC_BUCKET` · `tests/test_sourcing_vc_sync.py`). 그래서
-    # 옮겨 가는지는 M&A 갈래로 본다.
-    db.add(MessageTemplate(user_id=None, kind="sourcing_remind", name=MNA,
+    # 시리즈 A · M&A · 구주·후속 갈래는 이름을 못 바꾼다 — 투자사 관리 현황과 이어진
+    # 갈래다(`sourcing_sync.BRANCHES` · `tests/test_sourcing_vc_sync.py`). 그래서
+    # 옮겨 가는지는 잇지 않는 갈래(투자사 대표)로 본다.
+    from app.models import SourcingContact
+
+    ceo = "딜 소싱  참여 투자사 대표"
+    db.add(SourcingContact(bucket=ceo, position=1, name="가대표"))
+    db.add(MessageTemplate(user_id=None, kind="sourcing_remind", name=ceo,
                            is_active=1, body="리마인드"))
     db.commit()
-    sourcing_buckets.rename(db, MNA, "M&A 찾는 투자사 (2026)")
+    sourcing_buckets.rename(db, ceo, "딜 소싱 참여 투자사 대표 (2026)")
     db.commit()
     row = db.query(MessageTemplate).filter_by(kind="sourcing_remind").one()
-    assert row.name == "M&A 찾는 투자사 (2026)"
+    assert row.name == "딜 소싱 참여 투자사 대표 (2026)"
 
 
 # ── ⑤ 심는 글 ───────────────────────────────────────────────────────────────
@@ -386,10 +393,14 @@ def test_the_seeded_text_has_no_email_address(db, users):
                 SourcingContact(bucket="시리즈 A 이상 개인 참여 심사역", name="다"),
                 SourcingContact(bucket=MNA, name="나")])
     db.commit()
-    assert seed_sourcing_remind(db) == 1
+    # M&A 갈래에도 하나 — M&A 말로 쓴 글이다(`sourcing_msg.remind_mna_body`).
+    assert seed_sourcing_remind(db) == 2
     db.commit()
     names = {r.name for r in db.query(MessageTemplate).filter_by(kind="sourcing_remind")}
-    assert names == {SOURCING_REMIND_BUCKET, "시리즈 A 이상 개인 참여 심사역"}
+    assert names == {SOURCING_REMIND_BUCKET, "시리즈 A 이상 개인 참여 심사역", MNA}
+    mna = db.query(MessageTemplate).filter_by(kind="sourcing_remind", name=MNA).one()
+    assert mna.body == sourcing_msg.remind_mna_body()
+    assert "@" not in mna.body and "{월}" in mna.body
 
 
 def test_bootstrap_seeds_it(db, users):

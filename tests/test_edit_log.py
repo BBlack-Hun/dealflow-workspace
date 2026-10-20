@@ -612,6 +612,9 @@ WRITE_ROUTES = {
     ("POST", "/api/sourcing/{row_id}/link"): WATCHED,
     # 그 잇기를 [연결 풀기] — 같은 칸(`vc_contact_id`)을 비운다. 두 줄 다 남는다.
     ("POST", "/api/sourcing/{row_id}/unlink"): WATCHED,
+    # 갈래 하나의 [저절로 잇기] — 같은 칸(`vc_contact_id`)을 이름 + 번호 규칙으로 채운다
+    # (`services/sourcing_sync.auto_link_all`).
+    ("POST", "/sourcing/vc-auto-link"): WATCHED,
 
     ("POST", "/api/contacts/verify-rooms"): WATCHED,
     ("POST", "/api/contacts/assign"): WATCHED,
@@ -879,6 +882,7 @@ def test_the_six_shared_routers_still_hold_the_forty_nine_paths(portal):
     # 7 · 8번째는 카톡방 [방 후보 찾기] · [이 방으로 확정]이다
     # (`services/sourcing_rooms.py`). 9 · 10번째는 투자사 관리 현황 줄과 [이 분으로
     # 확정] · [연결 풀기](#28 — `services/sourcing_sync.confirm_link` · `unlink`)다.
+    # 11번째는 갈래 하나의 [저절로 잇기](`sourcing_sync.auto_link_all`)다.
     # series_a 의 셋은 IR 기업 현황 메뉴의 `Series A 이상 딜 소싱` 탭을 더하기 ·
     # 고치기 · 지우기다(`routers/series_a.py`). 옆 두 탭과 같은 공용 화면이다.
     # 넷째는 `공유 심사역` 확정 · 해제(`/sharer` — Series A 딜 공유에서 이 딜을
@@ -890,7 +894,7 @@ def test_the_six_shared_routers_still_hold_the_forty_nine_paths(portal):
     # custom_columns 의 여섯은 관리자 `컬럼 관리` 다섯(붙이기 · 이름 · 순서 · 자리 ·
     # 숨김)과 표에서 추가 칸 값 적기 하나다 — 지우는 길은 없다(사용자 결정: 숨김만).
     assert counted == {"companies": 8, "ir": 14, "consulting": 9,
-                       "templates_crud": 7, "sourcing": 10, "contacts": 23,
+                       "templates_crud": 7, "sourcing": 11, "contacts": 23,
                        "series_a": 5, "forecast": 4, "custom_columns": 6}
 
 

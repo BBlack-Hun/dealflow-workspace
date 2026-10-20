@@ -649,13 +649,13 @@ def test_the_detail_panel_can_read_and_write_every_table_column():
     saved = set(re.findall(r'"([a-z_]+)"',
                            re.search(r"def _assign.*?for field in \((.*?)\):", py, re.S).group(1)))
     saved |= {"name"}
-    # `Series A 딜 소싱` 은 **이 줄에 저장되지 않는 칸**이다 — 딜 소싱의 이어진
-    # 줄에서 읽고(`sourcing_sync.marks_for`) 그 줄을 고친다(`_sourcing_mark`).
+    # `딜 소싱` 은 **이 줄에 저장되지 않는 칸**이다 — 딜 소싱의 이어진 줄들에서
+    # 읽고(`sourcing_sync.cells`) 그 줄들을 고친다(`_sourcing_mark`).
     # 네 곳 중 둘이 다른 길을 지나므로 그 길이 실제로 있는지를 본다.
-    if '"sourcing_join": sourcing_sync.marks_for(db, [contact.id])' in py:
-        detail.add("sourcing_join")
+    if '"sourcing_branches": sourcing_sync.cells(' in py:
+        detail.add("sourcing_branches")
     if "sourcing = _sourcing_mark(db, contact, body, user)" in py:
-        saved.add("sourcing_join")
+        saved.add("sourcing_branches")
     # `소유 펀드` 도 **이 줄에 저장되지 않는 칸**이다 — 회사 단위 값이라 회사 표에서
     # 읽고(`investor_firms.funds_of`) 회사 표를 고친다(`_owned_funds`).
     if '"owned_funds": investor_firms.funds_of(db, contact.firm)' in py:

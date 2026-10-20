@@ -162,6 +162,9 @@ def test_no_index_is_lost_on_the_empty_db_path(fresh_db):
         wanted |= set(named.findall(text))
         only_constraint |= set(constraint.findall(text))
     wanted -= only_constraint
+    # 뒤 판이 **일부러 지운** 인덱스 — 빈 DB 에 없어야 맞다.
+    #   uq_sourcing_contacts_vc_contact — 0114 가 (vc_contact_id, bucket) 으로 바꿨다.
+    wanted -= {"uq_sourcing_contacts_vc_contact"}
     assert wanted, "마이그레이션에서 인덱스 이름을 하나도 못 찾았다 — 검사가 헛돈다"
 
     _, have = _schema(fresh_db)
