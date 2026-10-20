@@ -510,6 +510,9 @@ VALUE_FIELDS = frozenset({
     # 계정마다 하루 발송 상한(`services/send_guard.py`) — 잘못 낮추면 그 계정의
     # 발송이 조용히 다음 날로 밀린다. 숫자 하나라 값을 남긴다.
     "daily_send_cap",
+    # 이 계정의 잡을 **누구의 발송기가** 집어가나(`users.send_via_user_id`) — 잘못
+    # 고르면 그 계정 발송이 엉뚱한 PC 의 카톡에서 나간다.
+    "send_via_user_id",
     # 2단계 자동화의 시험 모드와 시험방(`services/automation.py`) — 시험 모드가
     # 꺼지면 진짜 방으로 나가고, 시험방이 틀리면 시험 글이 엉뚱한 방에 간다.
     "test_mode", "test_room",
@@ -569,7 +572,7 @@ FIELD_LABELS = {
     "channel_kakao": "카톡 발송", "channel_email": "메일 발송",
     "is_hidden": "숨김", "is_active": "사용", "is_deal_list": "딜 명단",
     "can_view_consulting": "투자현황", "can_auto_attach_ir": "자료 자동 첨부",
-    "daily_send_cap": "하루 발송 상한",
+    "daily_send_cap": "하루 발송 상한", "send_via_user_id": "발송기",
     "must_change_password": "비밀번호 변경 필요", "password_hash": "비밀번호",
     "password_enc": "비밀번호", "host": "메일 서버", "username": "계정",
     "series": "라운드", "sector_major": "분야", "sector_minor": "세부 분야",

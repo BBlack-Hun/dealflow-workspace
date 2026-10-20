@@ -21,14 +21,14 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel
-from sqlalchemy import and_, exists, select, text
+from sqlalchemy import and_, exists, or_, select, text
 from sqlalchemy.orm import Session
 
 from .. import clock, config
 from ..db import get_db
 from ..services import (cadence, pipeline, room_joined, scheduled_send,
                         send_guard, sourcing_sync)
-from ..deps import get_agent_device, may_auto_attach, now_iso
+from ..deps import agent_serves, get_agent_device, may_auto_attach, now_iso
 from ..models import (ROOM_SEARCH_TOPIC, SENDER_ROOM_TOPIC, SOURCING_ROOM_TOPIC,
                       AgentDevice, SendItem, SendJob, User)
 
@@ -102,7 +102,11 @@ def poll(
     db: Session = Depends(get_db),
     device: AgentDevice = Depends(get_agent_device),
 ):
-    """Atomically claim the oldest queued job for this agent's user and return it.
+    """Atomically claim the oldest queued job for this agent's users and return it.
+
+    "this agent's users" = 기기 주인 + 이 발송기로 맡긴 계정(`deps.agent_serves`).
+    잡은 그대로 그 계정 것이다 — 아래 판정(시간 · 하루 상한 · 놓친 예약 · 자동
+    회차)도 **잡 주인마다** 따로 본다.
 
     `kinds` (CSV) = 이 에이전트가 처리할 수 있는 잡 종류. 생략하면 발송 잡만 준다.
     `cap` = 이 에이전트가 한 번에 처리할 건수 상한(계정 보호). 아래 참고.
@@ -119,11 +123,30 @@ def poll(
     #   지나 버린 예약으로 되돌린다(`scheduled_send.expire_missed`) — 예약 실이
     #   멎어 있어도 **내주는 자리에서** 한 번 더 걸러진다. 그대로 두면 저녁
     #   9시에 켜진 PC 가 오후 2시 예약을 그 자리에서 보낸다.
+    #
+    #   하루 상한은 **계정마다**다 — 남의 발송기로 보내도 그 계정의 상한을 쓴다.
+    #   맡기기 전에도 같은 카톡을 두 발송기가 각자 제 상한으로 몰았으니 한 카톡이
+    #   하루에 보낼 수 있는 총량은 그대로다.
+    from ..services import automation_runner
+
     now = clock.now()
-    scheduled_send.expire_missed(db, now, user_id=device.user_id)
-    guard = send_guard.gate(db, db.get(User, device.user_id), now)
-    wanted = [k for k in _requested_kinds(kinds) if k not in guard.blocked]
-    if not wanted:
+    gates = {}
+    allowed = []
+    held = {}
+    for owner_id in agent_serves(db, device.user_id):
+        scheduled_send.expire_missed(db, now, user_id=owner_id)
+        gates[owner_id] = guard = send_guard.gate(db, db.get(User, owner_id), now)
+        wanted = [k for k in _requested_kinds(kinds) if k not in guard.blocked]
+        if not wanted:
+            continue
+        allowed.append(and_(SendJob.user_id == owner_id, SendJob.kind.in_(wanted)))
+        # ★ **2단계 자동화 회차** — 건 사이 간격을 지키는 발송기(0.11.8~)에만,
+        #   다른 자동 회차가 끝난 뒤 팀의 `자동 회차 사이 최소 간격` 이 지나서
+        #   내준다(`automation_runner.held_jobs`). 못 내주는 회차는 큐에 그대로
+        #   선다 — 사람이 누른 회차는 이 판정과 상관없이 그대로 나간다. 판은
+        #   **이 발송기**의 판이다(실제로 보낼 쪽).
+        held.update(automation_runner.held_jobs(db, owner_id, device.agent_version, now))
+    if not allowed:
         db.commit()
         return Response(status_code=204)
 
@@ -140,20 +163,8 @@ def poll(
     # (`/setup` 에서 다시 내려받으면 그다음 폴링에 그대로 이어 나간다).
     can_attach = bool(files)
 
-    # ★ **2단계 자동화 회차** — 건 사이 간격을 지키는 발송기(0.11.8~)에만,
-    #   다른 자동 회차가 끝난 뒤 팀의 `자동 회차 사이 최소 간격` 이 지나서
-    #   내준다(`automation_runner.held_jobs`). 못 내주는 회차는 큐에 그대로 선다
-    #   — 사람이 누른 회차는 이 판정과 상관없이 그대로 나간다.
-    from ..services import automation_runner
-
-    held = automation_runner.held_jobs(db, device.user_id, device.agent_version, now)
-
-    # Find a candidate queued job owned by this agent's user.
-    query = (
-        select(SendJob.id)
-        .where(SendJob.status == "queued", SendJob.user_id == device.user_id,
-               SendJob.kind.in_(wanted))
-    )
+    # Find a candidate queued job owned by one of this agent's users.
+    query = select(SendJob.id).where(SendJob.status == "queued", or_(*allowed))
     if held:
         query = query.where(SendJob.id.notin_(list(held)))
     if not can_attach:
@@ -206,7 +217,7 @@ def poll(
     #   건은 대기로 남고, 발송기가 회분을 끝냈다고 알리면 `_settle` 이 잡을
     #   다시 큐로 돌린다 — 다음 날 시간이 되면 거기서 이어 나간다.
     if job.kind in send_guard.GATED_KINDS:
-        pending_items = pending_items[:guard.left]
+        pending_items = pending_items[:gates[job.user_id].left]
 
     # ★ **자동 회차의 건 사이 간격**은 서버가 정해 싣는다(자동화 판의 `건 사이
     #   간격`). 발송기는 이 잡에서만 제 설정(3~7초) 대신 이 폭으로 쉰다
@@ -582,10 +593,13 @@ def job_state(
 
     없는 잡·남의 잡은 ``canceled: true`` 로 답한다. 모르면 보내지 않는 쪽이
     안전하다 — 잘못 물어본 에이전트가 계속 보내는 것보다 멈추는 게 낫다.
+    이 발송기로 맡긴 계정의 잡(`deps.agent_serves`)은 남의 잡이 아니다. 본인
+    잡은 맡긴 뒤에도 답한다 — 맡기기 전에 물고 간 회분을 중간에 끊지 않게.
     """
     _touch_device(db, device)
     job = db.get(SendJob, job_id)
-    if job is None or job.user_id != device.user_id:
+    if job is None or (job.user_id != device.user_id
+                       and job.user_id not in agent_serves(db, device.user_id)):
         db.commit()
         return {"ok": False, "detail": "job not found", "job_id": job_id,
                 "status": "unknown", "canceled": True, "canceled_items": []}

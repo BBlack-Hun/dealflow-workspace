@@ -252,7 +252,22 @@
         <td class="num">{{ m.meeting }}</td>
         <td class="{% if m.agent_old %}warn{% elif m.agent_ok %}ok{% else %}muted{% endif %}"
             title="{% if m.agent_version %}v{{ m.agent_version }}{% else %}버전 미상{% endif %}">
-          {{ m.agent }}</td>
+          {{ m.agent }}
+          {# 한 PC 의 한 카톡에 두 계정 발송기가 붙으면 서로 부딪친다 — 이 계정의
+             잡을 누구의 발송기가 집어갈지(`routers/dashboard.set_send_via`). 남이
+             맡긴 줄은 고르개 대신 그 계정을 적는다(사슬은 라우터가 막는다). #}
+          {% if m.serves %}
+          <div class="muted">{{ m.serves|join(', ') }} 것도 보냄</div>
+          {% else %}
+          <form method="post" action="/team/members/{{ m.id }}/send-via">
+            <select name="via" onchange="this.form.submit()" aria-label="{{ m.name }} 발송기">
+              <option value="0">본인 발송기</option>
+              {% for h in agent_hosts if h.id != m.id %}
+              <option value="{{ h.id }}" {% if m.send_via == h.id %}selected{% endif %}>{{ h.name }} 발송기로</option>
+              {% endfor %}
+            </select>
+          </form>
+          {% endif %}</td>
         {% else %}
         {% set na = '투자컨설턴트는 담당 투자사를 받지 않고 딜소개를 보내지 않습니다' %}
         <td class="num muted" title="{{ na }}">—</td>
