@@ -781,6 +781,7 @@ class Diagnostics(BaseModel):
     target_room: Optional[str] = None     # 보내려던 방
     error: Optional[str] = None
     log_tail: Optional[str] = None        # 최근 로그 몇 줄
+    ui_dump: Optional[list] = None        # 파일 첨부 진단 — 카톡 창들과 그 속 컨트롤(Windows)
 
 
 @router.post("/diagnostics")

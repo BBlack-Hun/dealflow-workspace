@@ -319,4 +319,9 @@ def resolve_ir_file(file_name: str, configured_root: str) -> Path:
         path = twin
     if not path.is_file():
         raise IrPathError(f"파일이 아닙니다: {path}")
+    if path.stat().st_size == 0:
+        # 카톡은 빈 파일을 `전송 불가 — 비어있는 파일` 로 받지 않는다(Windows 실기,
+        # 0.11.12). 카톡을 열기 **전에** 막아 그 까닭을 그대로 알린다.
+        raise IrPathError(f"자료 파일을 보낼 수 없습니다 — 비어있는 파일(0바이트): "
+                          f"{path.name}. 카톡은 빈 파일을 받지 않습니다")
     return path

@@ -777,6 +777,11 @@ def collect_diagnostics(sender, kind: str, target_room=None, error=None) -> dict
     except Exception as exc:  # noqa: BLE001
         payload["window_titles"] = [f"(수집 실패: {exc})"]
 
+    # 파일 첨부 진단(Windows) — 붙인 직후 · 실패할 때 떠 둔 카톡 창들과 그 속 컨트롤
+    dump = getattr(sender, "ui_dump", None)
+    if dump:
+        payload["ui_dump"] = list(dump)
+
     try:
         fg = getattr(sender, "_foreground_title", None)
         if callable(fg):

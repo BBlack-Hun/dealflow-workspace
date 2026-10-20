@@ -577,7 +577,7 @@ def test_파일_보내기가_한_파일에서_실패해도_다음_문구가_같�
     (docs / "IR.pdf").write_bytes(b"pretend pdf")
     sender = SameRoomWin()
     sender.can_send_files, sender.ir_root_setting = True, str(docs)
-    sender._send_one_file = lambda room, chat, path: kw.SendResult(
+    sender._send_one_file = lambda room, chat, path, *_: kw.SendResult(
         ok=False, error="gate_blocked: 시험 — 취소했습니다 (전송 안 함)")
 
     failed = sender.send_file(ROOM, ["IR.pdf"])

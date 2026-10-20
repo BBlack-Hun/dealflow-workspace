@@ -41,6 +41,7 @@ def confirm_window(*, room=ROOM, files=("IR.pdf",), count=None, rows=None,
     n = len(files) if count is None else count
     return {
         "present": True,
+        "hwnd": 500,
         "title": title,
         "owner_title": room,
         "buttons": buttons if buttons is not None else ["취소", f"{n}개 전송"],
@@ -49,7 +50,7 @@ def confirm_window(*, room=ROOM, files=("IR.pdf",), count=None, rows=None,
     }
 
 
-NOTHING = {"present": False, "title": "", "owner_title": "",
+NOTHING = {"present": False, "hwnd": 0, "title": "", "owner_title": "",
            "buttons": [], "texts": [], "rows": None}
 
 
@@ -89,16 +90,20 @@ class FakeWin(kw.KakaoDesktopSender):
     def _clipboard_read(self):
         return self.clipboard
 
-    def _paste_into_chat(self, chat):
+    def _paste_into_chat(self, chat, room_name=None):
         self.pasted.append(self.clipboard)
         self.phase = "confirm"
+        return True
 
-    def _confirm_snapshot(self, room_name):
+    def _confirm_snapshot(self, chat=None, before=None):
         if self.phase == "confirm":
             return dict(self.snapshot)
         return dict(NOTHING)
 
-    def _click_dialog_button(self, room_name, name):
+    def _is_window_visible(self, hwnd):
+        return self.phase == "confirm"
+
+    def _click_dialog_button(self, snapshot, name):
         self.clicked.append(name)
         self.phase = "idle"                 # 눌렀으면 창이 닫힌다
         return True
@@ -230,7 +235,7 @@ def test_a_window_that_is_not_the_confirm_window_is_not_trusted(ir_dir):
 
     assert not result.ok
     assert not win.sent
-    assert "confirm_window_not_shown" in result.error
+    assert "확인 창이 아닙니다" in result.error
 
 
 def test_an_unreadable_file_list_is_not_trusted(ir_dir):
@@ -259,7 +264,7 @@ def test_the_gate_is_checked_before_the_send_button(ir_dir):
 def test_a_send_button_that_leaves_the_window_open_is_not_a_success(ir_dir):
     """단추를 눌렀는데 창이 그대로면 **나갔는지 모른다** — 성공으로 치지 않는다."""
     win = FakeWin(confirm_window(), ir_root=str(ir_dir))
-    win._click_dialog_button = lambda room, name: win.clicked.append(name) or True
+    win._click_dialog_button = lambda snapshot, name: win.clicked.append(name) or True
     result = win.send_file(ROOM, ["IR.pdf"])
 
     assert not result.ok
@@ -549,8 +554,7 @@ def test_gate_ignores_the_underline_marker_in_button_names():
     assert kw.check_confirm_window(window, ROOM, ["IR.pdf"]) is None
 
 
-@pytest.mark.parametrize("blanked", ["confirm_title_re", "cancel_button_re",
-                                     "send_button_re"])
+@pytest.mark.parametrize("blanked", ["cancel_button_re", "send_button_re"])
 def test_a_blanked_selector_blocks_instead_of_matching_anything(blanked):
     """★ 값을 비워 두면 **아무 창에나 걸리는** 것이 아니라 막힌다.
 
@@ -629,10 +633,21 @@ def test_stop_before_the_first_file_attaches_nothing(ir_dir):
 
 
 def test_stop_between_files_attaches_no_more(ir_dir):
-    """파일 하나 앞마다 묻는다 — 두 번째 앞에서 [중단]이면 첫 파일만 나간다."""
+    """파일 하나 앞마다 묻는다 — 두 번째 앞에서 [중단]이면 첫 파일만 나간다.
+    (파일마다 두 번 묻는다: 붙이기 전 · 확인 창의 [전송] 누르기 전)"""
     win = FakeWin(confirm_window(files=("IR.pdf",)), ir_root=str(ir_dir))
-    answers = iter([False, True])
+    answers = iter([False, False, True])
     result = win.send_file(ROOM, ["IR.pdf", "IR.pdf"], should_stop=lambda: next(answers))
 
     assert not result.ok and result.stopped == 1               # 한 개는 나갔다
     assert len(win.pasted) == 1
+
+
+def test_stop_at_the_confirm_window_cancels_it(ir_dir):
+    """확인 창까지 왔다가 [중단] — [전송] 대신 [취소]를 누르고 아무것도 안 나간다."""
+    win = FakeWin(confirm_window(files=("IR.pdf",)), ir_root=str(ir_dir))
+    answers = iter([False, True])
+    result = win.send_file(ROOM, ["IR.pdf"], should_stop=lambda: next(answers))
+
+    assert not result.ok and result.stopped == 0
+    assert win.clicked == ["취소"] and not win.sent
