@@ -199,6 +199,27 @@ def test_hitting_stop_mid_job_stops_the_kakao(client, db, users, agent_main):
     assert item_statuses[2:] == ["canceled", "canceled", "canceled"]
 
 
+def test_stop_inside_one_item_stops_before_the_next_message(client, db, users, agent_main):
+    """(0.11.12) 한 건 **안에서** [중단] — 두 통짜리 건의 첫 통을 보내는 중에 눌렀다.
+    둘째 통은 나가면 안 되고, 첫 통은 나갔으니 서버에 '보냄' 으로 남는다(잡 150)."""
+    import json
+
+    from app.models import SendItem
+
+    job_id = make_job(db, users["u1"], count=1)
+    item = db.query(SendItem).filter_by(job_id=job_id).one()
+    item.parts_json = json.dumps(["첫 통", "둘째 통"])
+    db.commit()
+    login(client)
+    ac = agent_for(client, DEMO_TOKEN)
+
+    sender = StopWhileSending(client, job_id, stop_at=1)
+    agent_main.process_job(ac, sender, ac.poll(), FAST)
+
+    assert sender.sent == ["테스트방 1"], "[중단] 뒤에 둘째 통이 나갔다"
+    assert statuses(db, job_id) == ("canceled", ["sent"])
+
+
 
 def test_a_failure_after_stop_stays_canceled(client, db, users):
     """[중단] 뒤에 온 '실패' 는 버린다 — 취소한 건이 실패 목록에 다시 뜨지 않게."""
