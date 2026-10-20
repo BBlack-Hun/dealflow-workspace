@@ -84,7 +84,7 @@ from typing import List, Optional
 
 from . import win_clipboard
 from .base import (FILE_SEND_UNSUPPORTED, IrPathError, SendResult, Sender, nfc,
-                   resolve_ir_file, same_file_name)
+                   resolve_ir_file, same_file_name, stop_result)
 
 log = logging.getLogger("agent.kakao")
 
@@ -1005,7 +1005,7 @@ class KakaoDesktopSender(Sender):
                     return rows
         return None
 
-    def _open_room_verified(self, room_name: str):
+    def _open_room_verified(self, room_name: str, should_stop=None):
         """방을 찾아 열고 **창 제목이 정확히 일치하는지** 확인한다.
 
         ★ `send_text` 와 `send_file` 이 **같은 이 자리**를 쓴다. 파일 쪽에 새 길을
@@ -1027,6 +1027,10 @@ class KakaoDesktopSender(Sender):
         돌려주는 값: `(채팅창, 실패)`. 실패가 None 이 아니면 **그대로 돌려주고
         끝낸다** — 그 뒤로는 아무 키도 누르지 않는다. 채팅창을 받았으면 다 쓴 뒤
         `_leave_room` 으로 나온다.
+
+        (0.11.12) `should_stop` 을 받으면 **다시 찾기 전에** [중단]을 묻는다 — 다시
+        찾기는 몇 초가 걸린다(실기: [중단] 0.4초 뒤 첫 Enter 가 빗나가고, 다시 찾아 약
+        7초 뒤 문구가 나갔다). 참이면 키를 더 누르지 않고 `stop_result` 를 돌려준다.
         """
         win = self._kakao_window()
         # ★ 포커스가 확인되지 않으면 키 입력을 하지 않는다.
@@ -1056,6 +1060,10 @@ class KakaoDesktopSender(Sender):
         tries = 0
         for tries in range(1, OPEN_ROOM_TRIES + 1):
             last = tries == OPEN_ROOM_TRIES
+            # (0.11.12) 다시 찾기 전 — 검색창은 `_search_again` 이 이미 닫았다
+            if tries > 1 and should_stop is not None and should_stop():
+                log.warning("[중단] — 방을 다시 찾기 전에 멈춥니다 room=%r", room_name)
+                return None, stop_result("방을 다시 찾기 전에 멈췄습니다(전송 안 함)")
             # 2) search — ★ **칸을 비우고** 붙인다(`_put_room_query`).
             #
             #    예전에는 Ctrl+F 뒤에 바로 붙였다. 카톡은 검색칸에 **직전 검색어를
@@ -1365,16 +1373,22 @@ class KakaoDesktopSender(Sender):
             "search_not_cleared: 카톡 검색칸에 다른 글자가 남아 방을 열지 "
             f"않았습니다(전송 안 함, 읽은 값={typed!r})")
 
-    def send_text(self, room_name: str, text: str) -> SendResult:
+    def send_text(self, room_name: str, text: str, should_stop=None) -> SendResult:
         """Open the room by exact name and send `text` (drive links are plain text).
 
         방을 열고 제목을 확인하는 자리는 `_open_room_verified` 하나다
         (`send_file` 과 같은 자리). 여기서는 그 뒤 — 붙여넣기 → Enter → 닫기.
         """
         try:
-            chat, bad = self._open_room_verified(room_name)
+            chat, bad = self._open_room_verified(room_name, should_stop)
             if bad is not None:
                 return bad
+
+            # (0.11.12) 방을 연 뒤 넣기 **직전** — 여는 사이 누른 [중단]을 듣는다
+            if should_stop is not None and should_stop():
+                log.warning("[중단] — 문구를 넣기 전에 멈춥니다 room=%r", room_name)
+                self._leave_room(chat, room_name)
+                return stop_result("문구를 넣기 전에 멈췄습니다(전송 안 함)")
 
             # 5) 본문 입력 — ★ 넣은 뒤 실제로 들어갔는지 확인하고 나서 보낸다.
             #    (macOS 실기 검증에서 '붙여넣기가 안 됐는데 성공 보고'하는 문제가 있었다.
@@ -1463,7 +1477,7 @@ class KakaoDesktopSender(Sender):
 
         try:
             # ② 방 열기 + 창 제목 정확 일치 (send_text 와 **같은 자리**)
-            chat, bad = self._open_room_verified(room_name)
+            chat, bad = self._open_room_verified(room_name, should_stop)
             if bad is not None:
                 return bad
 
@@ -1473,8 +1487,8 @@ class KakaoDesktopSender(Sender):
                     log.warning("[kakao_windows] [중단] — 파일 %d/%d 앞에서 멈춥니다 room=%r",
                                 n, len(resolved), room_name)
                     self._leave_room(chat, room_name)
-                    return SendResult(ok=False, error=f"stopped: 파일 {n - 1}/"
-                                                      f"{len(resolved)}개를 보낸 뒤 [중단]")
+                    return stop_result(f"파일 {n - 1}/{len(resolved)}개를 보낸 뒤 "
+                                       f"멈췄습니다", n - 1)
                 result = self._send_one_file(room_name, chat, path)
                 if not result.ok:
                     if n > 1:

@@ -45,6 +45,8 @@ room_mismatch` 로 번갈았다. 0.11.9 는 '보낸 뒤 Esc 한 번이 채팅창
        Enter 전 대기는 1.5초다
     ⑪ (0.11.12) 다시 찾을 때는 **다른 글자**로 찾는다(`retry_query`). 첫 시도에 막혔다가
        나간 건은 실패가 아니라 경고(`SendResult.warning`)를 싣는다
+    ⑫ (0.11.12) 방을 연 뒤 넣기 직전 · 다시 찾기 전에 [중단]을 묻는다 — 참이면 그 자리에서
+       멈추고 아무것도 넣지 않는다
 
 방 이름은 **전부 지어낸 값**이다 — 저장소가 공개다.
 """
@@ -779,3 +781,40 @@ def test_다른_방이_열렸다가_다시_찾아_나가면_그_방_제목을_�
     result = sender.send_text(ROOM, "안녕하세요")
     assert result.ok, result.error
     assert f"다른 방이 열림({OTHER!r})" in result.warning
+
+
+# ── ⑫ (0.11.12) 방을 연 뒤 넣기 직전 · 다시 찾기 전에 [중단]을 묻는다 ────────
+
+def test_방을_연_뒤_넣기_전에_멈추면_아무것도_안_붙이고_창을_닫는다():
+    """시험 서버 실기 — 한 통짜리 건을 집은 0.4초 뒤 [중단]을 눌렀는데 그대로 나갔다."""
+    sender = SameRoomWin()
+    result = sender.send_text(ROOM, "안녕하세요", should_stop=lambda: True)
+    assert not result.ok and result.stopped == 0
+    assert sender.delivered == [] and sender.pasted_into == []
+    assert sender.room_windows() == []                          # 연 방은 닫았다
+    assert sender.stray_keys == [] and sender.hides == 0
+
+
+def test_다시_찾기_전에_멈추면_더_찾지_않는다():
+    """같은 방 둘째 건 — 첫 Enter 가 빗나가 다시 찾기 전에 [중단]을 묻는다(실기에서는
+    여기서 약 7초가 걸리고 그 뒤에 나갔다)."""
+    sender = SameRoomWin()
+    assert sender.send_text(ROOM, "첫 건").ok
+    sender._pyautogui.keys.clear()
+    asked = []
+    result = sender.send_text(ROOM, "둘째 건", should_stop=lambda: asked.append(1) or True)
+    assert not result.ok and result.stopped == 0
+    assert len(asked) == 1                                      # 다시 찾기 전 한 번
+    assert sender._pyautogui.keys.count(("ctrl", "f")) == 1     # 다시 찾지 않았다
+    assert sender.delivered == [(ROOM, "첫 건")]
+    assert not sender.search_open and sender.hides == 0
+
+
+def test_멈추지_않으면_다시_찾기_전과_넣기_직전에_묻고_보낸다():
+    sender = SameRoomWin()
+    assert sender.send_text(ROOM, "첫 건").ok
+    asked = []
+    result = sender.send_text(ROOM, "둘째 건", should_stop=lambda: asked.append(1) and False)
+    assert result.ok, result.error
+    assert len(asked) == 2
+    assert sender.delivered[-1] == (ROOM, "둘째 건")

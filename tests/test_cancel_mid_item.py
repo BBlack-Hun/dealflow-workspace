@@ -6,15 +6,20 @@
 뒤에 자료 파일 셋과 문구가 그대로 나갔다. 0.11.11 까지는 건 **앞에서** 한 번만 물었고
 (`check_before_send`), 파일을 올리고 문구를 보내는 동안에는 다시 묻지 않았다.
 
+0.11.12 첫 판도 **한 통짜리 건**은 다시 묻지 않았다 — 시험 서버 실기에서 [중단] 0.4초
+뒤 첫 Enter 가 빗나가고, 다시 찾아 약 7초 뒤 문구가 나갔다. 이제 발송기가 방을 연 뒤
+넣기 직전마다 · 다시 찾기 전마다 묻는다(그쪽은 발송기별 시험이 본다).
+
 ## 이 파일이 지키는 것
 
-    ① 파일 하나 · 문구 한 통 앞마다 다시 묻는다 — 첫 파일 앞 · 파일 사이 · 문구 앞
+    ① 파일 하나 · 문구 한 통 앞마다 다시 묻는다 — 첫 파일 앞 · 파일 사이 · 문구 앞 ·
+       **한 통짜리 건의 그 한 통 앞**
     ② 아무것도 안 나갔으면 건 앞에서 멈춘 것과 같다(그 건은 보고하지 않고 잡만 멈춤)
     ③ 무엇이 나갔으면 '보냄' 으로 적고 무엇이 나갔는지 남긴다 — 안 그러면 [취소분
        재발송]이 같은 자료를 또 보낸다
     ④ 이 건만 취소됐으면 이 건만 멈추고 다음 건은 보낸다
     ⑤ 서버에 못 물으면 건 앞의 확인과 똑같이 몇 번 다시 묻고 멈춘다(잡은 '멈춤')
-    ⑥ 문구 한 통뿐인 건은 묻는 수가 늘지 않는다 — 건 앞에서 방금 물었다
+    ⑥ 묻는 수 — 건 앞 한 번 + 넣을 것(파일 · 문구 한 통)마다 한 번
 
 서버는 흉내다(`FakeClient`) — 묻는 차례대로 답을 정해 둔다. 실제 서버와 맞물리는 것은
 `test_cancel_stops_sending.py` 가 본다.
@@ -26,7 +31,7 @@ import importlib
 import pytest
 import requests
 
-from agent.sender.base import SendResult
+from agent.sender.base import SendResult, stop_result
 
 FAST = {"delay_min_sec": 0, "delay_max_sec": 0, "part_gap_sec": 0, "job_cap": 60,
         "cancel_check_retries": 3, "cancel_check_backoff_sec": 0}
@@ -77,8 +82,8 @@ class FakeClient:
 
 
 class Kakao:
-    """보낸 것을 차례대로 적는 가짜 카톡. 파일은 하나 앞마다 `should_stop` 을 묻는다
-    (진짜 발송기와 같은 약속 — `Sender.send_file`)."""
+    """보낸 것을 차례대로 적는 가짜 카톡. 파일 하나 · 문구 한 통을 넣기 직전마다
+    `should_stop` 을 묻는다(진짜 발송기와 같은 약속 — `Sender.send_file` · `send_text`)."""
 
     name = "test"
 
@@ -86,13 +91,15 @@ class Kakao:
         self.sent = []
 
     def send_file(self, room, files, should_stop=None):
-        for name in files:
+        for n, name in enumerate(files):
             if should_stop is not None and should_stop():
-                return SendResult(ok=False, error="stopped")
+                return stop_result("파일 앞에서 멈췄습니다", n)
             self.sent.append(name)
         return SendResult(ok=True)
 
-    def send_text(self, room, text):
+    def send_text(self, room, text, should_stop=None):
+        if should_stop is not None and should_stop():
+            return stop_result("문구를 넣기 전에 멈췄습니다")
         self.sent.append(text)
         return SendResult(ok=True)
 
@@ -139,8 +146,19 @@ def test_문구_앞에서_멈추면_파일만_보냄으로_적는다(agent_main)
     assert client.jobs == ["canceled"]
 
 
+def test_한_통짜리_건도_방을_연_뒤_넣기_전에_멈추면_아무것도_안_보낸다(agent_main):
+    """시험 서버 실기(0.11.12 첫 판) — 건을 집은 0.4초 뒤 [중단], 그래도 문구가 나갔다."""
+    client, kakao = FakeClient(stop_at=2), Kakao()        # 2 = 방을 연 뒤 그 한 통 앞
+    agent_main.process_job(client, kakao, {"job_id": 7, "kind": "deal_intro", "items": [
+        {"id": 1, "room_name": ROOM, "message": "안녕하세요"}]}, FAST)
+
+    assert kakao.sent == []
+    assert client.items == []                 # 서버에는 이미 '취소' — 그대로 둔다
+    assert client.jobs == ["canceled"]
+
+
 def test_여러_통_문구_사이에서_멈추면_나간_통까지_적는다(agent_main):
-    client, kakao = FakeClient(stop_at=2), Kakao()        # 2 = 둘째 통 앞(파일 없음)
+    client, kakao = FakeClient(stop_at=3), Kakao()        # 3 = 둘째 통 앞(파일 없음)
     item = ir_item(files=(), parts=("첫 통", "둘째 통"))
     agent_main.process_job(client, kakao, ir_job(item), FAST)
 
@@ -185,13 +203,13 @@ def test_보내는_중에_서버에_못_물으면_몇_번_다시_묻고_멈춘�
 
 # ── ⑥ 묻는 수 ───────────────────────────────────────────────────────────
 
-def test_문구_한_통뿐인_건은_건_앞에서만_묻는다(agent_main):
+def test_한_통짜리_건은_건_앞과_넣기_직전에_묻는다(agent_main):
     client, kakao = FakeClient(), Kakao()
     items = [{"id": n, "room_name": ROOM, "message": f"{n}번째"} for n in (1, 2, 3)]
     agent_main.process_job(client, kakao, {"job_id": 7, "kind": "deal_intro",
                                            "items": items}, FAST)
 
-    assert client.asked == 3
+    assert client.asked == 3 * 2
     assert [status for _id, status, _e in client.items] == ["sent"] * 3
 
 
@@ -199,8 +217,8 @@ def test_문구_한_통뿐인_건은_건_앞에서만_묻는다(agent_main):
 
 def test_첫_시도_경고는_보냄으로_적고_로그와_진단_기록에_남긴다(agent_main, caplog):
     class Retried(Kakao):
-        def send_text(self, room, text):
-            super().send_text(room, text)
+        def send_text(self, room, text, should_stop=None):
+            super().send_text(room, text, should_stop)
             return SendResult(ok=True, warning="첫 시도에 Enter 로 방이 열리지 않음 — "
                                                "다시 찾아 열었습니다")
 

@@ -69,7 +69,7 @@ class CountingSender:
     def __init__(self):
         self.sent = []
 
-    def send_text(self, room, _text):
+    def send_text(self, room, _text, should_stop=None):
         self.sent.append(room)
         return FakeResult()
 

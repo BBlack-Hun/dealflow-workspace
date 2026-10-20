@@ -299,11 +299,13 @@ def send_item(sender, item: dict, cfg: dict, should_stop=None):
 
     ## [중단]은 한 건 **안에서도** 듣는다 (0.11.12)
 
-    `should_stop`(`StopCheck`)을 받으면 파일 하나 · 문구 한 통을 보내기 직전마다
-    묻는다 — 파일 쪽은 발송기가 `send_file` 안에서 묻는다. 0.11.11 까지는 건 앞에서
-    한 번만 물어, 자료 셋 + 문구를 올리는 30~40초 사이에 누른 [중단]이 그 건이 다
-    나간 뒤에야 들렸다(잡 150). 문구가 첫 동작이면(파일 없음) 방금 건 앞에서 물었으니
-    다시 묻지 않는다. 걸리면 그 자리에서 멈추고(`_stopped`) —
+    `should_stop`(`StopCheck`)을 발송기에 그대로 넘긴다. 발송기는 방을 **다시 찾기
+    전마다**, 그리고 방을 연 뒤 파일 하나 · 문구 한 통을 넣기 **직전마다** 묻는다 —
+    한 통짜리 건도 방을 연 뒤 한 번 더 묻는다. 0.11.11 까지는 건 앞에서 한 번만 물어,
+    자료 셋 + 문구를 올리는 30~40초 사이에 누른 [중단]이 그 건이 다 나간 뒤에야
+    들렸다(잡 150). 0.11.12 첫 판은 한 통짜리 건을 다시 묻지 않아, [중단] 0.4초 뒤
+    첫 Enter 가 빗나가고 다시 찾아 약 7초 뒤 문구가 나갔다(시험 서버 실기).
+    걸리면(`SendResult.stopped`) 그 자리에서 멈추고(`_stopped`) —
       · 아무것도 안 나갔으면 `ok=False`, `error=None`
       · 무엇이 나갔으면 `ok=True` 에 나간 것을 적는다(`중단: 파일 2/3 보냄, 문구 안 보냄`)
     무엇에 걸렸는지(잡 중단 · 이 건만 취소 · 서버에 못 물음)는 `should_stop.gate` 에
@@ -311,26 +313,16 @@ def send_item(sender, item: dict, cfg: dict, should_stop=None):
     """
     gap = float(cfg.get("part_gap_sec", 1.2))
     room = item["room_name"]
-    stop = should_stop or (lambda: False)
     parts = item.get("parts") or [item["message"]]
     warned = []         # 성공했지만 남길 것(`SendResult.warning`) — 파일 · 문구에서 모은다
 
     # 자료 파일 — 이 칸을 모르는 서버(구버전)는 주지 않는다. 그러면 지금까지처럼
     # 문구만 나가고 자료는 사람이 PC 카톡에서 붙인다.
     files = [str(f) for f in (item.get("files") or []) if str(f).strip()]
-    asked = 0           # 발송기가 파일 앞에서 물은 수 — 멈췄으면 나간 파일은 asked - 1
-    halted = False
-
-    def before_file() -> bool:
-        nonlocal asked, halted
-        asked += 1
-        halted = stop()
-        return halted
-
     if files:
-        result = sender.send_file(room, files, should_stop=before_file)
-        if halted:
-            return _stopped(asked - 1, len(files), 0, len(parts))
+        result = sender.send_file(room, files, should_stop=should_stop)
+        if getattr(result, "stopped", None) is not None:
+            return _stopped(result.stopped, len(files), 0, len(parts))
         if not result.ok:
             result.error = (f"자료 파일을 보내지 못해 **문구도 보내지 않았습니다** "
                             f"— {result.error}")
@@ -342,9 +334,9 @@ def send_item(sender, item: dict, cfg: dict, should_stop=None):
 
     result = None
     for n, text in enumerate(parts, start=1):
-        if (files or n > 1) and stop():
+        result = sender.send_text(room, text, should_stop=should_stop)
+        if getattr(result, "stopped", None) is not None:
             return _stopped(len(files), len(files), n - 1, len(parts))
-        result = sender.send_text(room, text)
         if not result.ok:
             if len(parts) > 1:
                 result.error = f"{n}/{len(parts)}번째 통에서 실패 — {result.error}"

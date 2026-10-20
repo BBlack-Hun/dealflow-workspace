@@ -79,7 +79,7 @@ class FakeWin(kw.KakaoDesktopSender):
         self.opened: list = []
 
     # --- 카톡을 건드리는 자리 --------------------------------------------
-    def _open_room_verified(self, room_name):
+    def _open_room_verified(self, room_name, should_stop=None):
         self.opened.append(room_name)
         return object(), None               # 방은 열렸고 제목도 맞다고 친다
 
@@ -624,7 +624,7 @@ def test_stop_before_the_first_file_attaches_nothing(ir_dir):
     win = FakeWin(confirm_window(files=("IR.pdf",)), ir_root=str(ir_dir))
     result = win.send_file(ROOM, ["IR.pdf"], should_stop=lambda: True)
 
-    assert not result.ok and result.error.startswith("stopped: 파일 0/1")
+    assert not result.ok and result.stopped == 0
     assert win.pasted == [] and not win.sent
 
 
@@ -634,5 +634,5 @@ def test_stop_between_files_attaches_no_more(ir_dir):
     answers = iter([False, True])
     result = win.send_file(ROOM, ["IR.pdf", "IR.pdf"], should_stop=lambda: next(answers))
 
-    assert not result.ok and result.error.startswith("stopped: 파일 1/2")
+    assert not result.ok and result.stopped == 1               # 한 개는 나갔다
     assert len(win.pasted) == 1

@@ -27,6 +27,8 @@ from pathlib import Path
 import pytest
 import requests
 
+from agent.sender.base import stop_result
+
 from .conftest import DEMO_PASSWORD, DEMO_TOKEN, OTHER_TOKEN
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -55,14 +57,17 @@ class FakeResult:
 
 
 class CountingSender:
-    """보낸 방을 순서대로 적어 두는 가짜 카톡."""
+    """보낸 방을 순서대로 적어 두는 가짜 카톡. 진짜 발송기처럼 방을 연 뒤 넣기
+    직전에 [중단]을 묻는다(0.11.12 — `Sender.send_text`)."""
 
     name = "test"
 
     def __init__(self):
         self.sent = []
 
-    def send_text(self, room, _text):
+    def send_text(self, room, _text, should_stop=None):
+        if should_stop is not None and should_stop():
+            return stop_result("문구를 넣기 전에 멈췄습니다")
         self.sent.append(room)
         return FakeResult()
 
@@ -80,8 +85,8 @@ class StopWhileSending(CountingSender):
         self.job_id = job_id
         self.stop_at = stop_at
 
-    def send_text(self, room, text):
-        result = super().send_text(room, text)
+    def send_text(self, room, text, should_stop=None):
+        result = super().send_text(room, text, should_stop)
         if len(self.sent) == self.stop_at:
             self.http.post(f"/api/jobs/{self.job_id}/cancel")
         return result
@@ -275,7 +280,8 @@ def test_it_asks_before_every_single_one(agent_main):
     agent_main.process_job(nosy, sender, job, FAST)
 
     assert len(sender.sent) == 3
-    assert nosy.asked == 3, f"3건을 보내며 {nosy.asked}번만 물어봤다"
+    # 건 앞에서 한 번 + 방을 연 뒤 넣기 직전에 한 번(0.11.12)
+    assert nosy.asked == 6, f"3건을 보내며 {nosy.asked}번 물어봤다"
 
 
 # --- 서버에 못 물어보는 경우 ---------------------------------------------------
