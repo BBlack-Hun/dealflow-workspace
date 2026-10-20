@@ -41,7 +41,7 @@
 <div class="toolbar">
   <div class="toolbar-right">
     <input type="search" id="sa-search" placeholder="기업명 · 회사 · 심사역 · 내용"
-           title="기업명 · 회사 · 공유 심사역 · 담당팀원 · 분야 · 투자라운드 · 상세 내용 · 딜소개 문구로 찾습니다."
+           title="기업명 · 회사 · 공유 심사역 · 담당팀원 · 분야 · 투자라운드 · 대표자명 · 핸드폰 · 이메일 · 상세 내용 · 딜소개 문구로 찾습니다."
            value="{{ q }}" autocomplete="off">
     {# 관리자만 — 단추와 길이 같은 판정(`series_a.can_upload_pitch`)을 읽는다. #}
     {% if can_upload_pitch %}
@@ -95,9 +95,21 @@
 <div class="chip-row" data-filter-chips></div>
 <p class="hint" id="sa-note" hidden></p>
 
-{# 표 폭은 넓은 표 공통 값(`.table-wrap.wide .grid-table` 의 min-width)을 그대로
-   쓴다. 폭을 안 준 칸이 `상세 내용` 하나라 남는 자리를 그 칸이 가져간다 — 이
-   표에서 글이 가장 긴 칸이다. #}
+{# 표 폭은 넓은 표 공통 값(2,030px)에 직접 적는 칸 열의 폭 합(932px)을 더한
+   값이다(`app.css` 의 `#sa-table`). 폭을 안 준 칸이 `상세 내용` 하나라 남는 자리를
+   그 칸이 가져간다 — 이 표에서 글이 가장 긴 칸이다.
+
+   ## 직접 적는 칸 — 대표자 · 매출 · 금액 (#24 · 0112)
+
+   시트에 없는 칸이라 **이 탭에서 사람이 적는다**(사용자 결정 — IR 기업 현황에서
+   옮겨 오지 않는다). 칸 이름은 요청한 말 그대로다(`핸드폰` · `프리밸류`). 금액은
+   단위 억, 적은 그대로 저장된다(`5-10억` · `~` 도 그대로). `투자라운드` 뒤 ·
+   `상세 내용` 앞에 둔다 — 긴 글 두 칸(`상세 내용` · `딜소개 문구`)은 끝에 붙어
+   있고, 요청 차례도 숫자 칸 뒤가 `딜소개 문구` 다. 칸 폭은 스타트업DB 의 같은 칸
+   (`핸드폰` 은 `연락처`)과 같다. 칸을 바꾸면 `routers/series_a.TYPED` · `app.css` 의 `#sa-table` 폭 ·
+   `custom_columns._HAND_ANCHORS` 도 함께. #}
+{% set typed_tip = "이 탭에서 직접 적습니다 · 눌러서 수정" %}
+{% set amount_tip = "단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 1억 미만은 `5천만원` · 모르면 `~` · 눌러서 수정" %}
 <div class="table-wrap wide">
   {# ── 왼쪽 두 칸(`NO` · `기업명`)은 가로로 밀어도 제자리 ──────────────────
      IR 기업 현황과 같은 규칙 · 같은 CSS 다(`app.css` 의 `.stick-a` · `.stick-b`).
@@ -135,6 +147,16 @@
         <th style="width:140px" data-filters="sector:대분류">대분류<div class="th-filters"></div></th>
         <th style="width:150px" data-filters="minor:소분류">소분류<div class="th-filters"></div></th>
         <th style="width:120px" data-filters="series:투자라운드">투자라운드<div class="th-filters"></div></th>
+        <th style="width:70px" title="{{ typed_tip }}">대표자명</th>
+        <th style="width:104px" title="{{ typed_tip }}">핸드폰</th>
+        <th style="width:170px" title="{{ typed_tip }}">이메일</th>
+        <th class="num" style="width:74px" title="{{ amount_tip }}">24년 매출</th>
+        <th class="num" style="width:74px" title="{{ amount_tip }}">25년 매출</th>
+        <th class="num" style="width:74px" title="{{ amount_tip }}">26년 매출</th>
+        <th class="num" style="width:74px" title="{{ amount_tip }}">27년 매출</th>
+        <th class="num" style="width:96px" title="{{ amount_tip }}">누적투자금액</th>
+        <th class="num" style="width:120px" title="{{ amount_tip }}">투자유치희망금액</th>
+        <th class="num" style="width:76px" title="{{ amount_tip }}">프리밸류</th>
         <th title="두 줄까지 보입니다 · 눌러서 수정">상세 내용</th>
         <th style="width:280px" title="두 줄까지 보입니다 · 눌러서 수정">딜소개 문구</th>
         {{ cc.heads() }}
@@ -202,6 +224,18 @@
           <div class="cell clamp2" data-field="series" data-type="pick"
                data-filter-key="series" data-value="{{ r.series }}">{{ r.series_short }}</div>
         </td>
+        {# 직접 적는 칸 — 적은 그대로 글자다(금액도 `data-type="number"` 를 두지 않는다:
+           화면이 `Number()` 로 읽으면 `5-10억` 이 통째로 사라진다 — 스타트업DB 와 같다). #}
+        <td class="cell" data-field="ceo_name">{{ r.ceo_name }}</td>
+        <td class="cell" data-field="ceo_phone">{{ r.ceo_phone }}</td>
+        <td class="cell ellipsis" data-field="ceo_email" title="{{ r.ceo_email }}">{{ r.ceo_email }}</td>
+        <td class="cell num" data-field="revenue_2024">{{ r.revenue_2024 }}</td>
+        <td class="cell num" data-field="revenue_2025">{{ r.revenue_2025 }}</td>
+        <td class="cell num" data-field="revenue_2026">{{ r.revenue_2026 }}</td>
+        <td class="cell num" data-field="revenue_2027">{{ r.revenue_2027 }}</td>
+        <td class="cell num" data-field="funding_total">{{ r.funding_total }}</td>
+        <td class="cell num" data-field="raise_target">{{ r.raise_target }}</td>
+        <td class="cell num" data-field="pre_value">{{ r.pre_value }}</td>
         <td title="{{ r.detail }}">
           <div class="cell clamp2" data-field="detail" data-type="long">{{ r.detail }}</div>
         </td>
@@ -217,7 +251,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="13" class="muted">아직 받은 딜이 없습니다. [기업 추가]로 넣거나 시트를 가져오세요.</td></tr>
+      <tr><td colspan="23" class="muted">아직 받은 딜이 없습니다. [기업 추가]로 넣거나 시트를 가져오세요.</td></tr>
       {% endfor %}
     </tbody>
   </table>

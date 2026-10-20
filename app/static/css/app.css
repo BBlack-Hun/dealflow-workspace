@@ -592,6 +592,10 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
     그 칸은 두 줄(`clamp2`)에서 잘릴 뿐 글자가 사라지지는 않는다(전체는
     `title`). 줄어든 것이 거슬리면 이 값을 163px 쪽으로 올리면 된다.) */
 #co-table { min-width: 2612px; }
+/* IR 기업 현황 › Series A 이상 딜 소싱 — 넓은 표 공통 값(2,030px)에 직접 적는 칸
+   열(#24 · `companies_series_a.html` 의 `대표자명` ~ `프리밸류`, 폭 합 932px)을 **든 만큼만**
+   더한다. 안 올리면 폭을 안 준 `상세 내용` 이 그 932px 을 내어 주다 0 으로 짜부라진다. */
+#sa-table { min-width: 2962px; }
 /* 표의 `소개 횟수` — 회차 수와 사람 수를 **위아래로** 세운다(사용자 요청,
    「세로 좌측 정렬」). 둘을 함께 두는 까닭은 `services/deal_history.py`
    머리글에 있다(회차 수만 보면 180명짜리와 103명짜리가 똑같이 `6회` 로 읽힌다).
