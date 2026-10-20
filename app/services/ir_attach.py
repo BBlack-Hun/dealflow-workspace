@@ -58,7 +58,7 @@ from typing import List, Optional, Sequence, Tuple
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..deps import may_auto_attach
+from ..deps import agent_user_id, may_auto_attach
 from ..models import AgentDevice, ContactActivity, User
 
 
@@ -75,8 +75,10 @@ def auto_attach_enabled(db: Session, user: User) -> bool:
     """
     if not may_auto_attach(user):
         return False
+    # 폴더는 **실제로 보낼 발송기**의 것이다 — 남의 발송기로 보내는 계정이면
+    # 그 발송기가 제 폴더에서 파일을 찾는다(`deps.agent_user_id`).
     root = db.execute(
-        select(AgentDevice.ir_root).where(AgentDevice.user_id == user.id)
+        select(AgentDevice.ir_root).where(AgentDevice.user_id == agent_user_id(db, user.id))
     ).scalar_one_or_none()
     return bool((root or "").strip())
 

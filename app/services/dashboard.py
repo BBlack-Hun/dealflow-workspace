@@ -586,7 +586,7 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None,
         })
 
     device = db.execute(
-        select(AgentDevice).where(AgentDevice.user_id == user.id)
+        select(AgentDevice).where(AgentDevice.user_id == deps.agent_user_id(db, user.id))
     ).scalars().first()
     if device is None or not device.last_poll_at:
         blockers.append({
@@ -969,6 +969,13 @@ def admin_dashboard(db: Session, today: Optional[date] = None) -> dict:
     devices = {
         d.user_id: d for d in db.execute(select(AgentDevice)).scalars().all()
     }
+    # 남의 발송기로 보내는 계정(`users.send_via_user_id`) — 줄마다 **실제로 집어갈
+    # 발송기**를 보이고, 맡긴 쪽 · 맡은 쪽을 서로 적는다.
+    names = {u.id: u.name or "-" for u in users}
+    serves: Dict[int, List[str]] = {}
+    for u in users:
+        if u.send_via_user_id:
+            serves.setdefault(u.send_via_user_id, []).append(names.get(u.id, "-"))
 
     # 누구의 줄을 누가 고칠 수 있게 맡겨 두었나(`models.ConsultingRowGrant`).
     editors_by_owner = _consulting_editors(db, users)
@@ -997,7 +1004,8 @@ def admin_dashboard(db: Session, today: Optional[date] = None) -> dict:
         states = Counter(_room_state(c) for c in mine)
         ready = sum(states[state] for state in _SENDABLE_ROOM)
         acts = _recent_activity_counts(db, [c.id for c in mine], cutoff)
-        device = devices.get(u.id)
+        via = u.send_via_user_id or 0
+        device = devices.get(via or u.id)
         rows.append({
             "id": u.id,
             "name": u.name or "-",
@@ -1016,7 +1024,12 @@ def admin_dashboard(db: Session, today: Optional[date] = None) -> dict:
             # 최근 활동의 `미팅` — 갈래 넷을 합친다(`meeting_kind.ALL`).
             # 한 갈래만 세면 시트 머리글이 다른 명단만 조용히 0 이 된다.
             "meeting": sum(acts.get(k, 0) for k in mk.ALL),
-            "agent": _agent_label(device),
+            "agent": (f"{names.get(via, via)} 발송기로 보냄 · " if via else "")
+                     + _agent_label(device),
+            # 발송기 고르개(`routers/dashboard.set_send_via`) — 지금 고른 계정과,
+            # 이 발송기로 맡긴 계정들(맡은 쪽은 남에게 다시 맡길 수 없다).
+            "send_via": via,
+            "serves": serves.get(u.id, []),
             "agent_ok": bool(device and device.last_poll_at),
             "agent_version": (device.agent_version if device else "") or "",
             "agent_old": bool(device and device.last_poll_at
@@ -1067,6 +1080,11 @@ def admin_dashboard(db: Session, today: Optional[date] = None) -> dict:
              "sub": "건 성공", "href": "/team"},
         ],
         "members": rows,
+        # 맡길 수 있는 발송기 — 딜소개를 보내고 정지되지 않았고 연결키가 있고
+        # 스스로 맡기지 않은 계정. 고르개가 읽고, 지키는 것은 저장하는 라우터다.
+        "agent_hosts": [{"id": u.id, "name": names[u.id]} for u in users
+                        if u.is_active and deps.sends_deals(u) and u.id in devices
+                        and not u.send_via_user_id],
         "next_send": cadence.upcoming_send_dates(db, today)[0],
         "upcoming": cadence.upcoming_send_dates(db, today),
         "companies": {

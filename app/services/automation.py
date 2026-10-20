@@ -707,10 +707,12 @@ def agent_state(db: Session, user_id: Optional[int]) -> dict:
     `version.agent_handles_automation` 한 곳이다.
     """
     from .. import version
+    from ..deps import agent_user_id
     from ..models import AgentDevice
 
+    # 보내는 계정이 남의 발송기로 보내면 그 발송기의 판이다(`deps.agent_user_id`).
     device = db.execute(
-        select(AgentDevice).where(AgentDevice.user_id == user_id)
+        select(AgentDevice).where(AgentDevice.user_id == agent_user_id(db, user_id))
     ).scalars().first() if user_id else None
     reported = (device.agent_version or "") if device is not None else ""
     return {"version": reported,

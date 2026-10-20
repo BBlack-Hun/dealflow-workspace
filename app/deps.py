@@ -642,16 +642,46 @@ def get_agent_device(
     return device
 
 
+def agent_user_id(db: Session, user_id: int) -> int:
+    """이 계정의 잡을 **실제로 집어가는 발송기의 주인**.
+
+    보통은 본인이다. 관리자가 팀 현황에서 `○○ 발송기로` 를 골랐으면
+    (`users.send_via_user_id`) 그 계정이다. 배지 · 준비 점검 · 자료 폴더처럼
+    "이 계정의 발송기" 를 묻는 자리는 전부 여기를 지난다 — 내주는 쪽은
+    `agent_serves` 가 같은 칸을 거꾸로 읽는다.
+    """
+    user = db.get(User, user_id) if user_id else None
+    return (user.send_via_user_id or user_id) if user is not None else user_id
+
+
+def agent_serves(db: Session, device_user_id: int) -> list:
+    """이 발송기가 **집어갈 잡의 주인들** — 본인 + 이 발송기로 맡긴 계정.
+
+    본인이 남의 발송기로 보내면 빈 목록이다. 같은 PC 의 같은 카톡을 두
+    발송기가 함께 몰면 서로 부딪친다 — 맡긴 쪽 발송기는 아무것도 안 받는다.
+    맡긴 계정이 또 맡기는 줄(사슬)은 저장하는 자리가 막는다(`set_send_via`).
+    """
+    me = db.get(User, device_user_id)
+    if me is not None and me.send_via_user_id:
+        return []
+    return [device_user_id] + list(db.execute(
+        select(User.id).where(User.send_via_user_id == device_user_id)
+        .order_by(User.id)).scalars())
+
+
 def agent_status(db: Session, user_id: Optional[int] = None) -> dict:
     """Connection badge state for a user's agent device.
 
     사용자를 전환하면 배지도 그 사용자의 기기를 가리켜야 한다 — 그렇지 않으면
     Mac 화면에서 Windows 에이전트가 '내 에이전트'처럼 보인다(실제로 겪은 혼선).
+
+    남의 발송기로 보내는 계정(`agent_user_id`)이면 **그 발송기**를 본다 — 그
+    계정의 잡을 실제로 집어가는 것이 그쪽이다.
     """
+    uid = user_id if user_id is not None else config.CURRENT_USER_ID
+    via = agent_user_id(db, uid)
     device = db.execute(
-        select(AgentDevice).where(
-            AgentDevice.user_id == (user_id if user_id is not None else config.CURRENT_USER_ID)
-        )
+        select(AgentDevice).where(AgentDevice.user_id == via)
     ).scalar_one_or_none()
     online = False
     last_poll = None
@@ -678,6 +708,10 @@ def agent_status(db: Session, user_id: Optional[int] = None) -> dict:
         label = f"연습 모드 — 실제로 보내지 않음{f' · {host}' if host else ''}"
     else:
         label = f"발송 프로그램 연결됨{f' · {host}' if host else ''}"
+    if via != uid:
+        owner = db.get(User, via)
+        label = (f"{owner.name if owner else via} 발송기로 보냄 · "
+                 f"{label.removeprefix('발송 프로그램 ')}")
 
     return {
         "online": online,

@@ -72,6 +72,13 @@ class User(TimestampMixin, Base):
     # `send_guard.DEFAULT_DAILY_CAP` 과 같은 수다.
     daily_send_cap: Mapped[int] = mapped_column(Integer, default=200,
                                                 server_default="200")
+    # **이 계정의 잡을 대신 집어가는 발송기의 주인**(0113). 비면 본인 발송기.
+    #
+    # 한 PC 의 한 카톡을 두 계정의 발송기가 함께 몰면 서로 부딪친다. 그 계정
+    # 것까지 한 발송기가 차례로 보내게 한다 — 잡 · 이력 · 하루 상한은 그대로
+    # 이 계정 것이다(`deps.agent_user_id` · `deps.agent_serves`). 옆칸들처럼
+    # 관리자가 팀 현황에서 정한다(`routers/dashboard.set_send_via`).
+    send_via_user_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
 
 class Session(TimestampMixin, Base):
