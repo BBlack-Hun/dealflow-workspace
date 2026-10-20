@@ -1173,7 +1173,8 @@ def set_send_via(
     (`deps.agent_serves`). 잡 · 이력 · 하루 상한은 그대로 이 계정 것이다.
 
     막는 것 — 계정이 정지됐거나 연결키(발송기 토큰)가 없는 발송기, 이미 남의
-    발송기로 보내는 발송기, 남이 맡겨 둔 계정을 다시 남에게 맡기기(사슬). 사슬을
+    발송기로 보내는 발송기, 남이 맡겨 둔 계정을 다시 남에게 맡기기(사슬),
+    딜소개를 보내지 않는 계정(투자컨설턴트)의 발송기. 사슬을
     허락하면 맡긴 잡이 아무 발송기에도 안 내려간다(`agent_serves` 는 맡긴
     발송기에 빈 목록을 준다).
 
@@ -1198,6 +1199,8 @@ def set_send_via(
             problem = "본인 발송기는 [본인 발송기] 로 고르세요"
         elif not target.is_active:
             problem = f"{target.name} 계정은 정지되어 있습니다"
+        elif not deps.sends_deals(target):
+            problem = f"{target.name} 님은 딜소개를 보내지 않는 계정(투자컨설턴트)이라 발송기를 맡길 수 없습니다"
         elif not has_token:
             problem = f"{target.name} 님은 발송 프로그램 연결키가 없습니다 — 먼저 그 계정으로 [발송 프로그램 설치] 를 여세요"
         elif target.send_via_user_id:

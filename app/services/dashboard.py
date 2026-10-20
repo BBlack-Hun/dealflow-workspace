@@ -1080,10 +1080,11 @@ def admin_dashboard(db: Session, today: Optional[date] = None) -> dict:
              "sub": "건 성공", "href": "/team"},
         ],
         "members": rows,
-        # 맡길 수 있는 발송기 — 정지되지 않았고 연결키가 있고 스스로 맡기지 않은
-        # 계정. 고르개가 읽고, 지키는 것은 저장하는 라우터다(사슬 · 정지).
+        # 맡길 수 있는 발송기 — 딜소개를 보내고 정지되지 않았고 연결키가 있고
+        # 스스로 맡기지 않은 계정. 고르개가 읽고, 지키는 것은 저장하는 라우터다.
         "agent_hosts": [{"id": u.id, "name": names[u.id]} for u in users
-                        if u.is_active and u.id in devices and not u.send_via_user_id],
+                        if u.is_active and deps.sends_deals(u) and u.id in devices
+                        and not u.send_via_user_id],
         "next_send": cadence.upcoming_send_dates(db, today)[0],
         "upcoming": cadence.upcoming_send_dates(db, today),
         "companies": {

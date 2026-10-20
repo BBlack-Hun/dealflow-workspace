@@ -177,6 +177,22 @@ def test_delegate_must_be_active_and_have_a_token(client, db, users):
     assert db.get(User, 2).send_via_user_id is None
 
 
+def test_consultant_agent_is_not_offered(client, db, users):
+    """투자컨설턴트는 딜소개를 보내지 않는다 — 연결키가 있어도 맡길 발송기가 아니다."""
+    from app.models import User
+
+    _admin(db)
+    db.get(User, 1).role = "consultant"
+    db.commit()
+    client.post("/login", data={"phone": "01000000009", "password": DEMO_PASSWORD})
+
+    page = client.get("/team").text
+    assert "강민준 발송기로</option>" not in page
+    client.post("/team/members/2/send-via", data={"via": "1"})
+    db.expire_all()
+    assert db.get(User, 2).send_via_user_id is None
+
+
 def test_members_cannot_set_it(client, db, users):
     from app.models import User
 
