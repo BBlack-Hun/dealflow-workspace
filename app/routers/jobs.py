@@ -101,7 +101,7 @@ def job_status(job_id: int, db: Session = Depends(get_db), user: User = Depends(
     }
 
 
-@router.post("/jobs/{job_id}/cancel", dependencies=[Depends(no_send_as_member)])
+@router.post("/jobs/{job_id}/cancel")
 def cancel_job(job_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """[중단] — stop the job; pending/sending items become canceled."""
     job = _job_or_404(db, job_id, user)
@@ -425,7 +425,7 @@ def schedule_job(job_id: int, req: ScheduleRequest,
         raise HTTPException(status_code=400, detail=str(exc)) from None
 
 
-@router.delete("/jobs/{job_id}/schedule", dependencies=[Depends(no_send_as_member)])
+@router.delete("/jobs/{job_id}/schedule")
 def unschedule_job(job_id: int, db: Session = Depends(get_db),
                    user: User = Depends(get_current_user)):
     """[예약 취소] — **예약만 뗀다.** 회차는 `draft` 로 남아 그대로 기다린다.

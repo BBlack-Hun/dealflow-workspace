@@ -183,6 +183,9 @@ def no_send_as_member(request: Request, user: User = Depends(get_current_user)) 
     **판정은 여기 하나뿐이다.** 발송 회차를 세우거나 · 예약을 걸거나 풀거나 ·
     발송기에 방 확인을 시키는 길마다 `dependencies=[Depends(no_send_as_member)]`
     로 건다 — 길이 하나 늘면 그 길에 이 한 줄을 붙인다.
+
+    **멈추는 길([중단] · 예약 취소 · 대기 예약 취소)에는 걸지 않는다.** 멈춤은
+    안전 조치라 누가 어떤 화면에서 누르든 언제나 먹어야 한다.
     """
     if getattr(request.state, "view_as", None) is not None:
         raise HTTPException(status_code=403, detail=VIEW_AS_BLOCKED)
