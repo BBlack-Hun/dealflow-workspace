@@ -192,9 +192,25 @@ def test_hitting_stop_mid_job_stops_the_kakao(client, db, users, agent_main):
 
     job_status, item_statuses = statuses(db, job_id)
     assert job_status == "canceled"
+    # 2번은 [중단] 순간 이미 나가고 있었다 — 실제로 나갔으니 '보냄' 으로 남는다.
+    # '취소' 로 남기면 [취소분 재발송] 이 같은 사람에게 한 번 더 보낸다(10/20 사고).
+    assert item_statuses[:2] == ["sent", "sent"]
     # 3~5번은 아예 보내지 않았고 서버에서도 취소로 남는다.
     assert item_statuses[2:] == ["canceled", "canceled", "canceled"]
 
+
+
+def test_a_failure_after_stop_stays_canceled(client, db, users):
+    """[중단] 뒤에 온 '실패' 는 버린다 — 취소한 건이 실패 목록에 다시 뜨지 않게."""
+    job_id = make_job(db, users["u1"], count=1)
+    login(client)
+    ac = agent_for(client, DEMO_TOKEN)
+    item_id = ac.poll()["items"][0]["id"]
+    client.post(f"/api/jobs/{job_id}/cancel")
+
+    ac.report_item(item_id, "failed", error="방을 못 찾음")
+
+    assert statuses(db, job_id) == ("canceled", ["canceled"])
 
 def test_stopping_before_the_first_one_sends_nothing(client, db, users, agent_main):
     """폴링과 첫 발송 사이에도 [중단]을 누를 수 있다 — 첫 건 앞에서도 확인한다."""

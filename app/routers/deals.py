@@ -1685,7 +1685,7 @@ def start_queue_item(
             "status": item.status, "skipped": result.get("skipped", [])}
 
 
-@router.post("/queue/{item_id}/cancel", dependencies=[Depends(no_send_as_member)])
+@router.post("/queue/{item_id}/cancel")
 def cancel_queue_item(
     item_id: int,
     db: Session = Depends(get_db),

@@ -34,7 +34,7 @@
   {# `inline` 은 줄 안에 서는 단추다 — 없으면 `.primary-btn` 이 폭을 다 먹어
      같은 줄의 [엑셀 내려받기] 가 두 줄로 접힌다(예약 큐의 [시작] 과 같은 차림). #}
   <button type="button" id="start-btn" class="primary-btn inline" hidden data-send>발송 시작</button>
-  <button type="button" id="cancel-btn" class="danger-btn" data-send>중단</button>
+  <button type="button" id="cancel-btn" class="danger-btn">중단</button>
   <button type="button" id="retry-btn" class="secondary-btn" hidden data-send>{% if verify %}불일치 재확인{% else %}실패 재시도{% endif %}</button>
   {# [중단] 으로 남은 취소 건을 다시 보낸다. 취소된 건이 없으면 progress.js 가 감춘다 —
      버튼 문구에 인원수가 들어가므로 실제 글자는 폴링 때마다 JS 가 채운다. #}
@@ -83,7 +83,7 @@
        화면만 막으면 주소로 폼을 흉내 내는 순간 뚫린다. #}
     <input type="datetime-local" id="schedule-at">
     <button type="button" id="schedule-btn" class="secondary-btn inline" data-send>예약</button>
-    <button type="button" id="unschedule-btn" class="linkbtn" hidden data-send>예약 취소</button>
+    <button type="button" id="unschedule-btn" class="linkbtn" hidden>예약 취소</button>
   </div>
   <p class="hint muted" id="schedule-hint"></p>
 </div>
