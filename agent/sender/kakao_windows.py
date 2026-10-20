@@ -23,34 +23,30 @@ automation constants — ROADMAP 공통 원칙 2).
 파일 첨부 (`send_file`) — ⚠ **실기 확인 전이다**
 ──────────────────────────────────────────────────────────────────────────────
 
-글자는 클립보드 + Ctrl+V 로 넣는 길이 실기에서 확인됐다. 파일도 같은 길로 간다
-(`CF_HDROP` — 탐색기에서 파일을 복사해 붙이는 것과 같은 형식). mac 은 이 길이
-아예 막혀서 `파일전송 ⌘O` 단추로 돌아갔지만 Windows 는 다를 것이다.
+**붙여넣기(Ctrl+V)로는 파일이 안 간다**(Windows 실기 0.11.12 — 카톡이 클립보드의
+파일을 받지 않는다). 사람이 하는 그대로 **첨부 단추**로 간다:
 
-**다를 것이라는 것까지가 아는 것이고, 확인 창이 어떻게 생겼는지는 모른다.**
-그래서 이렇게 만들었다:
+  ① 이름 빗장(0바이트도 막는다) → ② 방 열고 앞 창 제목 정확 일치
+  → ③ 채팅창 아래 줄의 첨부 단추(풍선 도움말 `파일전송 Ctrl+T`). UIA 로 못 찾으면
+     그 단추의 단축키 Ctrl+T — 앞 창이 그 채팅창일 때만 누른다
+  → ④ Windows **열기 창**(`#32770` · 제목 `열기` · 카톡 프로세스 · 새로 뜬 창 · 주인이
+     그 채팅창) — 여기서 [중단]이면 [취소]
+  → ⑤ `파일 이름(N):` 칸에 **전체 경로**를 넣고 **되읽어 견준 뒤** [열기(O)]
+  → ⑥ ★ 카톡 **`파일 전송` 카드**(채팅창 위에 뜬다) 관문: 후보가 딱 하나 · 제목
+     `파일 전송` · [N개 전송] 단추가 딱 하나 · N == 1 · 파일명이 읽히면 같아야 한다
+  → ⑦ [중단]을 한 번 더 묻고 [1개 전송] → 카드가 사라졌나
 
-  ① 이름 빗장 → ② 방 열고 제목 정확 일치 → ③ 클립보드에 담고 **다시 읽어 견줌**
-  → ④ Ctrl+V → ⑤ ★ **확인 창 관문**(방·파일명·개수) → ⑥ 보내기
+`전송 불가` 카드(실기: 0바이트 파일 — `전송 불가 1 · 비어있는 파일 · [확인]`)는
+[확인]으로 닫고 그 까닭을 실패로 남긴다(문구도 안 나간다). 어긋나면 카드를 [×]
+(못 찾으면 그 창에 WM_CLOSE → Esc)로 닫는다 — `⋮` 메뉴는 누르지 않는다.
+**카드를 못 찾는 것도 실패다** — 모르면 안 보낸다.
 
-⑤ 에서 하나라도 어긋나면 취소하고 아무것도 보내지 않는다. **확인 창을 못 찾는
-것도 실패다** — 못 찾았으니 그냥 보내는 길은 만들지 않았다. 모르면 안 보낸다.
-
-(0.11.12 실기, 잡 78/79) Ctrl+V 뒤에 카톡이 **제 창** `파일 전송` 을 띄웠다. 그 시험
-파일은 0바이트라 창은 `전송 불가 1 · 비어있는 파일 · [확인]` 이었다. 예전 판은 제목에
-더해 [취소]·보내기 단추가 **둘 다** 있어야 확인 창으로 봤고(`확인` 을 보내기로도 쳤다)
-그 창을 놓쳤다. 이제 확인 창은 이렇게 찾는다(`_confirm_snapshot`):
-  · 카톡 프로세스의 창 중 **붙이기 전에 없던 창** · **채팅창이 띄운(owner) 창** ·
-    제목이 `confirm_title_re` 인 창, 그리고 채팅창 **속** 창 중 제목이 맞는 것
-  · 그중 제목이 맞거나 보내기 단추나 `전송 불가` 글자가 든 창이 **딱 하나**일 때만
-  · `전송 불가` 면 [확인]으로 닫고 그 까닭을 실패로 남긴다(문구도 안 나간다)
-붙인 직후와 실패할 때 카톡 창들과 그 속 컨트롤을 떠 둔다(`ui_dump` → 진단 기록).
-
-그래서 실기 확인 전에 켜지면 **잘못 보내는 대신 안 보내고 실패로 남는다.**
-그것이 맞는 실패다. 확인 창을 읽는 자리(`_confirm_snapshot`)와 그 모양을 적어
-둔 값(`selectors.yaml: file_send`)은 전부 **추측**이고 그렇게 표시해 두었다.
-관문 판단 자체(`check_confirm_window`)는 창과 떨어진 순수 함수라 이 기계에서
-그대로 시험한다.
+열기 창 · 카드가 뜰 때와 실패할 때 카톡 창들과 그 속 컨트롤을 떠서(`ui_dump`)
+진단 기록으로 올린다. 실기 확인 전(`verified: false`)에는 **성공해도** 올린다.
+창을 읽는 자리(`_confirm_snapshot` · `_wait_open_dialog`)와 그 모양을 적어 둔 값
+(`selectors.yaml: file_send`)은 실기에서 본 화면을 본뜬 것이고, UIA 로 무엇이
+읽히는지는 아직 모른다. 관문 판단(`check_file_card`)은 창과 떨어진 순수 함수라
+이 기계에서 그대로 시험한다.
 
 `can_send_files` 는 **기본이 꺼짐**이다 — 확인 전에 서버가 파일 잡을 내주면
 그 회차의 자료 전달이 통째로 실패한다(문구까지 안 나간다). 팀 PC 에서 확인할
@@ -92,35 +88,38 @@ import re
 import time
 from typing import List, Optional
 
-from . import win_clipboard
 from .base import (FILE_SEND_UNSUPPORTED, IrPathError, SendResult, Sender, nfc,
                    resolve_ir_file, same_file_name, stop_result)
 
 log = logging.getLogger("agent.kakao")
 
-# ── 확인 창의 모양 — ⚠ 전부 **추측**이다 ───────────────────────────────────
+# ── 파일 첨부 화면의 모양 — 실기 화면(10/20)을 본떴다 ──────────────────────
 #
-# mac 에서는 이 자리가 실기로 확인된 값이었다(`파일 전송` 시트, `1개 전송` 단추).
-# Windows 카톡은 아무도 못 봤다. 그래서 아래는 "이렇게 생겼을 것" 이고,
-# **틀리면 관문이 막아서 안 보낸다**(잘못 보내지 않는다).
-#
-# 실기에서 확인한 뒤 `selectors.yaml: file_send` 를 고친다 — 코드를 고치지
+# 실기에서 다르면 `selectors.yaml: file_send` 를 고친다 — 코드를 고치지
 # 않는다(ROADMAP 공통 원칙 2).
 FILE_SEND_DEFAULTS = {
-    # 확인 창의 제목. mac 은 `파일 전송` 이었다.
-    "confirm_title_re": r"파일\s*전송|전송\s*확인",
-    # 취소 단추. 이것이 없으면 확인 창으로 보지 않는다.
-    "cancel_button_re": r"^(취소|아니오|Cancel)(\(.\))?$",
-    # 보내기 단추. mac 처럼 개수가 박혀 나오면(`1개 전송`) 그 숫자도 함께 읽는다.
-    # ⚠ `확인` 은 넣지 않는다 — 실기의 `전송 불가` 창에서 하나뿐인 단추가 `확인`(닫기)이었다.
-    "send_button_re": r"^((\d+)\s*개\s*)?(전송|보내기|Send)(\(.\))?$",
-    # `전송 불가` 창을 닫는 단추. 보내기 단추가 없는 창에서만 누른다.
-    "dismiss_button_re": r"^(확인|닫기|OK|Close)$",
+    # ③ 채팅창 아래 줄의 첨부 단추 — 이름(또는 도움말)이 이 본에 걸리는 Button 하나
+    "attach_button_re": r"파일\s*전송",
+    # UIA 로 그 단추를 못 찾으면 누르는 단축키(그 단추의 풍선 도움말에 적힌 것)
+    "attach_hotkey": ["ctrl", "t"],
+    # ④ Windows 열기 창
+    "open_dialog_title_re": r"^(열기|Open)$",
+    "open_dialog_class": "#32770",
+    # ⑤ 열기 창의 컨트롤 — Windows 공통 대화 상자의 AutomationId(언어와 무관)
+    "file_name_edit_id": "1148",
+    "open_button_id": "1",
+    "cancel_button_id": "2",
+    # ⑥ 카톡 `파일 전송` 카드 — 창 제목이나 카드 속 글자
+    "confirm_title_re": r"파일\s*전송",
+    # 보내기 단추. 개수가 박혀 나온다(`1개 전송`) — 그 숫자가 보내려던 개수와 같아야 한다.
+    # ⚠ `확인` 은 보내기가 아니다 — `전송 불가` 카드의 [확인]은 닫기다(실기).
+    "send_button_re": r"^\s*(\d+)\s*개\s*전송\s*$",
+    # 카드를 닫는 [×]. 못 찾으면 그 창에 WM_CLOSE → Esc. `⋮` 메뉴는 누르지 않는다.
+    "close_button_re": r"^(닫기|Close|×|✕|X)$",
+    # `전송 불가` 카드를 닫는 단추. 그 카드에서만 누른다.
+    "dismiss_button_re": r"^(확인|OK)$",
     # 카톡이 파일을 받지 않았다는 글자 (실기: `전송 불가 1` · `비어있는 파일`)
     "unsendable_re": r"전송\s*불가",
-    # 창 안의 글자에서 개수를 읽어 내는 본. (`파일 2개를 …` · `전송 가능 1` ← 추측)
-    "count_re": r"(\d+)\s*개|전송\s*가능\s*(\d+)",
-    "paste_hotkey": ["ctrl", "v"],
     # 실기에서 확인한 뒤 참으로 바꾼다. 그 전에는 `send_file` 이 거절한다.
     "verified": False,
 }
@@ -1054,7 +1053,6 @@ class KakaoDesktopSender(Sender):
         찾기는 몇 초가 걸린다(실기: [중단] 0.4초 뒤 첫 Enter 가 빗나가고, 다시 찾아 약
         7초 뒤 문구가 나갔다). 참이면 키를 더 누르지 않고 `stop_result` 를 돌려준다.
         """
-        self.ui_dump = []
         win = self._kakao_window()
         # ★ 포커스가 확인되지 않으면 키 입력을 하지 않는다.
         #   (브라우저 등 다른 앱에 방 이름이 입력되는 사고 방지)
@@ -1462,8 +1460,8 @@ class KakaoDesktopSender(Sender):
         (`agent/sender/base.py: resolve_ir_file`). 규칙에 어긋나는 이름이나 이
         PC 에 없는 파일은 **카톡을 건드리기 전에** 거절한다.
 
-        **한 번에 한 파일씩** 보낸다. 클립보드에는 여러 개를 한꺼번에 담을 수
-        있지만(`CF_HDROP` 는 목록이다) 그러면 확인 창에 여러 개가 뜨고, 카톡이
+        **한 번에 한 파일씩** 보낸다. 열기 창에서 여러 개를 한꺼번에 고를 수
+        있지만 그러면 `파일 전송` 카드에 여러 개가 뜨고, 카톡이
         차례를 지키는지 묶어 버리는지를 모른다. 파일 차례는 **투자사가 기억하는
         번호의 차례**라(딜 소개에서 붙인 번호) 뒤집히면 문구와 어긋난다. 한 개씩
         보내면 차례가 확실하고, 확인 창의 개수는 **항상 1** 이라 관문이 제일
@@ -1504,6 +1502,7 @@ class KakaoDesktopSender(Sender):
             if bad is not None:
                 return bad
 
+            notes = [self._retry_note]      # 성공했지만 남길 말(파일명을 못 읽은 카드 따위)
             for n, path in enumerate(resolved, start=1):
                 # (0.11.12) 파일 하나 앞마다 [중단]을 다시 묻는다(`Sender.send_file`)
                 if should_stop is not None and should_stop():
@@ -1514,7 +1513,7 @@ class KakaoDesktopSender(Sender):
                                        f"멈췄습니다", n - 1)
                 result = self._send_one_file(room_name, chat, path, should_stop)
                 if result.stopped is not None:
-                    # 확인 창까지 왔다가 [중단] — 취소하고 나왔다(`_send_one_file`)
+                    # 열기 창 · 카드까지 왔다가 [중단] — 닫고 나왔다(`_send_one_file`)
                     self._leave_room(chat, room_name)
                     return stop_result(f"파일 {n - 1}/{len(resolved)}개를 보낸 뒤 "
                                        f"멈췄습니다", n - 1)
@@ -1523,123 +1522,260 @@ class KakaoDesktopSender(Sender):
                         result.error = (f"{n - 1}개를 보낸 뒤 {n}번째에서 실패 "
                                         f"— {result.error}")
                     return result
+                notes.append(result.warning)
 
             self._leave_room(chat, room_name)
             log.info("[kakao_windows] SENT FILES room=%r files=%s",
                      room_name, [p.name for p in resolved])
-            return SendResult(ok=True, warning=self._retry_note or None)
+            return SendResult(ok=True, warning=" · ".join(w for w in notes if w) or None)
         except Exception as exc:  # noqa: BLE001
             log.exception("send_file error room=%r", room_name)
             return self._fail(room_name, f"exception: {exc}")
 
     def _send_one_file(self, room_name: str, chat, path, should_stop=None) -> SendResult:
-        """파일 하나. 확인 창이 어긋나면 **취소하고 아무것도 보내지 않는다.**"""
+        """파일 하나 — 첨부 단추 → 열기 창에 전체 경로 → [열기] → `파일 전송` 카드의 [1개 전송].
+
+        카드의 관문이 어긋나면 **닫고 아무것도 보내지 않는다.** [중단]은 [열기] 앞과
+        [1개 전송] 앞에서 한 번씩 더 듣는다.
+        """
         self.ui_dump = []           # 진단은 이 파일 한 개 것만 — 실패하면 여기서 멈춘다
-        # ③ 클립보드에 담고 **다시 읽어 견준다.**
-        #    담긴 줄 알았는데 안 담긴 채로 Ctrl+V 를 누르면 **직전에 복사해 둔
-        #    것**(바로 앞 건의 문구일 수도 있다)이 그대로 나간다.
-        try:
-            self._clipboard_put([str(path)])
-            placed = self._clipboard_read()
-        except Exception as exc:  # noqa: BLE001
-            return self._fail(room_name,
-                              f"clipboard_failed: 클립보드에 파일을 담지 못했습니다: "
-                              f"{exc} (전송 안 함)")
-        if not _same_paths(placed, [str(path)]):
-            return self._fail(room_name,
-                              f"clipboard_mismatch: 클립보드에 담긴 것이 보내려던 "
-                              f"것과 다릅니다 {placed!r} (전송 안 함)")
-
-        # ④ 붙여넣기 — 붙이기 **전** 창 목록을 떠 둔다. 그 뒤에 뜬 창이 확인 창 후보다.
+        conf = self.file_send_conf
         before = self._top_windows()
-        if not self._paste_into_chat(chat, room_name):
-            return self._fail(room_name,
-                              "focus_lost: 붙여넣기 직전 앞 창이 그 방 채팅창이 아닙니다 "
-                              "(전송 안 함)")
-        self._note_windows(chat, before, "붙여넣기 직후")
 
-        def refuse(error: str, snapshot: dict) -> SendResult:
-            # 진단을 먼저 뜬다 — 물러나면(취소·Esc) 그 창은 사라진다.
-            self._note_windows(chat, before, f"실패: {error.split(':')[0]}")
-            self._dismiss_confirm(snapshot)
+        # ③ 첨부 단추 → ④ 열기 창
+        dlg, how = self._open_file_dialog(chat, room_name, before, conf)
+        if not dlg:
+            self._note_windows(chat, before, "실패: open_dialog_not_shown", failing=True)
+            if how:
+                self._safe_close()  # 다른 판이 열렸을 수 있다 — Esc
+            return self._fail(room_name,
+                              f"open_dialog_not_shown: 첨부({how or '못 누름'}) 뒤 열기 "
+                              f"창이 뜨지 않았습니다 (전송 안 함)")
+        self._note_windows(chat, before, f"열기 창 ({how})")
+
+        def back_out(error: str) -> SendResult:
+            # 진단을 먼저 뜬다 — 물러나면(취소) 그 창은 사라진다.
+            self._note_windows(chat, before, f"실패: {error.split(':')[0]}", failing=True)
+            self._cancel_open_dialog(dlg, conf)
             return self._fail(room_name, error)
 
-        # ⑤ ★ 관문. 확인 창을 찾는다 — **못 찾는 것도 실패다.**
-        conf = self.file_send_conf
-        snapshot = self._wait_confirm(chat, before)
-        if not snapshot.get("present"):
-            # 붙여넣기가 입력창에 첨부로 얹혔을 수 있다. 남겨 두면 **다음 문구와
-            # 함께 나간다** — Esc 로 털고 실패로 남긴다.
-            return refuse("confirm_window_not_shown: 파일 전송 확인 창을 찾지 못했습니다 "
-                          "(전송 안 함). 확인 창을 못 찾으면 보내지 않습니다", snapshot)
+        owner = self._owner_hwnd(dlg)
+        if owner not in (0, _handle(chat)):
+            return back_out(f"open_dialog_foreign: 열기 창을 띄운 창이 그 방 채팅창이 "
+                            f"아닙니다 (주인 {_clip(self._hwnd_title(owner))!r}) (전송 안 함)")
 
-        # ⑤-1 카톡이 **받지 않은** 파일(`전송 불가` — 실기: 0바이트 파일). [확인]으로 닫는다.
-        refused = unsendable_detail(snapshot, conf)
+        if should_stop is not None and should_stop():
+            log.warning("[중단] — 열기 창을 취소합니다 room=%r file=%r", room_name, path.name)
+            self._cancel_open_dialog(dlg, conf)
+            return stop_result("열기 창을 취소했습니다(전송 안 함)")
+
+        # ⑤ 파일 이름 칸에 전체 경로 → **되읽어 견준 뒤** [열기]
+        typed = self._put_file_name(dlg, str(path), conf)
+        if typed is None or nfc(typed) != nfc(str(path)):
+            return back_out(f"file_name_not_set: 열기 창의 파일 이름 칸에 경로가 들어가지 "
+                            f"않았습니다 (읽힌 값 {typed!r}) (전송 안 함)")
+        opened_at = self._top_windows()     # 이 뒤에 뜬 창이 `파일 전송` 카드 후보다
+        if not self._click_by_id(dlg, conf.get("open_button_id"), "열기"):
+            return back_out("open_button_not_clicked: 열기 창의 [열기] 단추를 누르지 "
+                            "못했습니다 (전송 안 함)")
+        if not self._wait_gone(dlg, self._t("open_dialog_wait", 5.0)):
+            return back_out("open_dialog_stuck: [열기] 뒤에도 열기 창이 그대로입니다 — "
+                            "파일을 못 찾았을 수 있습니다 (전송 안 함)")
+
+        # ⑥ ★ 카톡 `파일 전송` 카드 — **못 찾는 것도 실패다.**
+        card = self._wait_confirm(chat, opened_at)
+
+        def refuse(error: str) -> SendResult:
+            self._note_windows(chat, opened_at, f"실패: {error.split(':')[0]}",
+                               failing=True)
+            self._dismiss_confirm(card)
+            return self._fail(room_name, error)
+
+        if not card.get("present"):
+            # 카드가 떠 있는데 못 읽은 것일 수 있다 — Esc 로 닫는다(남기면 다음 문구 때
+            # 채팅창이 닫히며 함께 사라진다. 나가지는 않는다).
+            return refuse("confirm_window_not_shown: [열기] 뒤 '파일 전송' 창을 찾지 "
+                          "못했습니다 — Esc 로 닫았습니다 (전송 안 함)")
+        self._note_windows(chat, opened_at, "파일 전송 창")
+
+        refused = unsendable_detail(card, conf)
         if refused is not None:
             return refuse(f"file_refused: 카톡이 파일을 받지 않았습니다(전송 불가) — "
-                          f"{refused} (전송 안 함)", snapshot)
-
-        reason = check_confirm_window(snapshot, room_name, [path.name], conf)
+                          f"{refused} (전송 안 함)")
+        reason, note = check_file_card(card, [path.name], conf)
         if reason:
-            log.warning("확인 창이 어긋났습니다 — 취소합니다: %s | snapshot=%r",
-                        reason, snapshot)
-            return refuse(f"gate_blocked: {reason} — 취소했습니다 (전송 안 함)", snapshot)
+            log.warning("파일 전송 창이 어긋났습니다 — 닫습니다: %s | card=%r", reason, card)
+            return refuse(f"gate_blocked: {reason} — 닫았습니다 (전송 안 함)")
+        if note:
+            log.warning("%s | card=%r", note, card)
 
-        # (0.11.12) 누르기 **직전** — 그 사이 누른 [중단]을 듣는다
+        # ⑦ 누르기 **직전** — 그 사이 누른 [중단]을 듣는다
         if should_stop is not None and should_stop():
-            log.warning("[중단] — 확인 창을 취소합니다 room=%r file=%r", room_name, path.name)
-            self._dismiss_confirm(snapshot)
-            return stop_result("확인 창을 취소했습니다(전송 안 함)")
+            log.warning("[중단] — 파일 전송 창을 닫습니다 room=%r file=%r",
+                        room_name, path.name)
+            self._dismiss_confirm(card)
+            return stop_result("파일 전송 창을 닫았습니다(전송 안 함)")
 
-        # ⑥ 보내기 단추
-        button = _send_button(snapshot, conf)[0]
-        if not self._click_dialog_button(snapshot, button):
+        button = _send_button(card, conf)[0]
+        if not self._click_dialog_button(card, button):
             return refuse(f"send_button_not_clicked: {button!r} 단추를 누르지 "
-                          f"못했습니다 (전송 안 함)", snapshot)
+                          f"못했습니다 (전송 안 함)")
         time.sleep(self._t("after_confirm_click", 1.0))
 
-        # ⑦ 확인 창이 닫혔나. 여기까지가 사후 확인의 한계다 — 보낸 뒤 파일 메시지
-        #    줄에서 파일명을 읽는 길은 mac 에서도 없었고 Windows 는 더 모른다.
-        if self._is_window_visible(snapshot.get("hwnd")):
+        # 카드가 닫혔나. 여기까지가 사후 확인의 한계다 — 보낸 뒤 파일 메시지 줄에서
+        # 파일명을 읽는 길은 mac 에서도 없었다.
+        if self._is_window_visible(card.get("hwnd")):
             return refuse(
-                f"send_unconfirmed: {button!r} 을 눌렀지만 확인 창이 그대로입니다 — "
-                f"취소를 눌러 정리했습니다. 카톡을 직접 확인하세요 — 다시 보내면 "
-                f"겹칠 수 있습니다", snapshot)
-        return SendResult(ok=True)
+                f"send_unconfirmed: {button!r} 을 눌렀지만 파일 전송 창이 그대로입니다 — "
+                f"닫아서 정리했습니다. 카톡을 직접 확인하세요 — 다시 보내면 "
+                f"겹칠 수 있습니다")
+        log.info("파일 전송 창의 %r 을 눌렀습니다 room=%r file=%r", button, room_name,
+                 path.name)
+        return SendResult(ok=True, warning=note or None)
 
     # --- 파일 첨부에 쓰는 자리들 (시험에서 갈아 끼우는 이음매) ---------------
 
     @property
     def file_send_conf(self) -> dict:
-        """확인 창의 모양. 추측값 위에 `selectors.yaml: file_send` 를 덮는다."""
+        """첨부 화면의 모양. 기본값 위에 `selectors.yaml: file_send` 를 덮는다."""
         conf = dict(FILE_SEND_DEFAULTS)
         conf.update(self.sel.get("file_send") or {})
         return conf
 
-    def _clipboard_put(self, paths: List[str]) -> None:
-        win_clipboard.set_files(paths)
+    def _open_file_dialog(self, chat, room_name: str, before, conf: dict):
+        """첨부 단추를 눌러 열기 창을 띄운다. `(열기 창 hwnd 또는 0, 누른 방법)`.
 
-    def _clipboard_read(self) -> Optional[List[str]]:
-        return win_clipboard.get_files()
+        누르는 차례: 채팅창 속 **이름이 첨부 단추인 Button 하나**(UIA — 그 자리 한가운데를
+        누른다) → 열기 창이 안 뜨면 그 단추의 단축키(Ctrl+T). 둘 다 **앞 창이 그 채팅창일
+        때만** 누른다 — 두 번째 파일 앞에서는 카드가 막 닫힌 뒤라 무엇이 앞인지 모른다.
+        화면 좌표를 짐작해 누르지 않는다 — 창 크기·배율이 PC 마다 달라 엉뚱한 아이콘
+        (`+` · 이모티콘)이 눌린다. 누른 방법은 로그와 진단에 남는다.
+        """
+        tried = ""
+        for how in ("첨부 단추(UIA)", "단축키 " + "+".join(conf.get("attach_hotkey") or [])):
+            if not self._chat_in_front(chat, room_name):
+                log.warning("첨부 직전 앞 창이 채팅창이 아닙니다: %r", self._foreground_title())
+                return 0, tried
+            if how.startswith("첨부"):
+                button = self._attach_button(chat, conf)
+                if button is None:
+                    continue
+                try:
+                    button.click_input()
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("첨부 단추를 누르지 못했습니다: %s", exc)
+                    continue
+            elif conf.get("attach_hotkey"):
+                self._pyautogui.hotkey(*conf["attach_hotkey"])
+            else:
+                continue
+            tried = how
+            log.info("파일 첨부: %s 로 열기 창을 엽니다", how)
+            dlg = self._wait_open_dialog(chat, before, conf)
+            if dlg:
+                return dlg, how
+        return 0, tried
 
-    def _paste_into_chat(self, chat, room_name: str) -> bool:
-        """그 방 채팅창이 **앞에 있을 때만** Ctrl+V. 아니면 한 번 앞으로 올려 보고, 그래도
-        아니면 키를 누르지 않는다 — 두 번째 파일 앞에서는 확인 창이 막 닫힌 뒤라
-        무엇이 앞인지 모른다."""
+    def _chat_in_front(self, chat, room_name: str) -> bool:
         hwnd = _handle(chat)
-        if self._foreground_hwnd() != hwnd:
-            self._focus_verified(chat, room_name)
-            if not hwnd or self._foreground_hwnd() != hwnd:
-                log.warning("붙여넣기 직전 앞 창이 채팅창이 아닙니다: %r",
-                            self._foreground_title())
+        if hwnd and self._foreground_hwnd() == hwnd:
+            return True
+        self._focus_verified(chat, room_name)
+        return bool(hwnd) and self._foreground_hwnd() == hwnd
+
+    def _attach_button(self, chat, conf: dict):
+        """채팅창 속 첨부 단추 — 이름이나 도움말이 `attach_button_re` 인 Button **하나.**
+        없거나 여럿이면 None(그러면 단축키로 간다)."""
+        rx = _rx(conf.get("attach_button_re"))
+        try:
+            hits = [b for b in chat.descendants(control_type="Button")
+                    if _hit(rx, _control_label(b))]
+        except Exception:  # noqa: BLE001
+            return None
+        if len(hits) != 1:
+            log.info("첨부 단추를 UIA 로 %d개 찾았습니다 — 단축키로 갑니다", len(hits))
+            return None
+        return hits[0]
+
+    def _wait_open_dialog(self, chat, before, conf: dict) -> int:
+        """새로 뜬 **열기 창 하나** — 카톡 프로세스 · 제목 `open_dialog_title_re` ·
+        클래스 `open_dialog_class`. 없거나 여럿이면 0."""
+        pid = self._window_pid(chat) if chat is not None else 0
+        title_rx = _rx(conf.get("open_dialog_title_re"))
+        want_class = conf.get("open_dialog_class") or ""
+        deadline = time.monotonic() + self._t("open_dialog_wait", 5.0)
+        while True:
+            found = [hwnd for hwnd, (title, wpid) in (self._top_windows() or {}).items()
+                     if pid and wpid == pid and (before is None or hwnd not in before)
+                     and _hit(title_rx, title)
+                     and (not want_class or self._hwnd_class(hwnd) == want_class)]
+            if len(found) == 1:
+                return found[0]
+            if len(found) > 1:
+                log.warning("열기 창이 %d개라 고르지 않습니다: %r", len(found), found)
+                return 0
+            if time.monotonic() >= deadline:
+                return 0
+            time.sleep(self._t("room_search_poll", 0.15))
+
+    def _put_file_name(self, dlg, path: str, conf: dict) -> Optional[str]:
+        """열기 창의 `파일 이름` 칸(AutomationId `file_name_edit_id`)에 경로를 넣고
+        **되읽은 값**을 돌려준다. 칸을 못 찾거나 못 넣으면 None."""
+        try:
+            dialog = self._desktop.window(handle=dlg)
+            edits = [e for e in dialog.descendants(control_type="Edit")
+                     if _auto_id(e) == str(conf.get("file_name_edit_id") or "")]
+            if len(edits) != 1:
+                log.warning("열기 창의 파일 이름 칸이 %d개입니다", len(edits))
+                return None
+            edits[0].set_edit_text(path)
+            return _box_value(edits[0])
+        except Exception as exc:  # noqa: BLE001
+            log.warning("열기 창의 파일 이름 칸에 넣지 못했습니다: %s", exc)
+            return None
+
+    def _click_by_id(self, hwnd, auto_id, what: str) -> bool:
+        """그 창의 단추(Button · SplitButton) 중 AutomationId 가 `auto_id` 인 것 **하나**를
+        누른다 — UIA Invoke, 안 되면 그 자리 한가운데를 클릭."""
+        try:
+            dialog = self._desktop.window(handle=hwnd)
+            hits = [b for kind in ("Button", "SplitButton")
+                    for b in dialog.descendants(control_type=kind)
+                    if _auto_id(b) == str(auto_id or "")]
+            if len(hits) != 1:
+                log.warning("%r 단추(id=%r)가 %d개라 누르지 않습니다", what, auto_id, len(hits))
                 return False
-        hotkey = self.file_send_conf.get("paste_hotkey") or ["ctrl", "v"]
-        self._pyautogui.hotkey(*hotkey)
-        time.sleep(self._t("after_file_paste", 1.0))
+            try:
+                hits[0].invoke()
+            except Exception:  # noqa: BLE001
+                hits[0].click_input()
+            return True
+        except Exception as exc:  # noqa: BLE001
+            log.warning("%r 단추를 누르지 못했습니다: %s", what, exc)
+            return False
+
+    def _wait_gone(self, hwnd, timeout: float) -> bool:
+        deadline = time.monotonic() + timeout
+        while self._is_window_visible(hwnd):
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.2)
         return True
 
+    def _cancel_open_dialog(self, dlg, conf: dict) -> None:
+        """열기 창에서 물러난다 — 그 창이 띄운 알림(파일을 찾을 수 없음 따위)을 닫고
+        [취소], 안 되면 그 창에 WM_CLOSE. 키는 누르지 않는다."""
+        for hwnd in list((self._top_windows() or {})):
+            if self._owner_hwnd(hwnd) == dlg:
+                self._post_close(hwnd)
+        if self._wait_gone(dlg, 0) or (
+                self._click_by_id(dlg, conf.get("cancel_button_id"), "취소")
+                and self._wait_gone(dlg, self._t("after_close_chat", 0.3) + 1.0)):
+            return
+        self._post_close(dlg)
+
     def _wait_confirm(self, chat, before) -> dict:
-        """확인 창이 뜨기를 기다린다. 안 뜨면 마지막으로 본 것을 그대로 돌려준다.
+        """`파일 전송` 카드가 뜨기를 기다린다. 안 뜨면 마지막으로 본 것을 그대로 돌려준다.
 
         창만 뜨고 단추가 아직 안 읽히면 조금 더 기다린다(끝까지 안 읽히면 그대로).
         **없는 것을 있는 것으로 만들지 않는다** — 부르는 쪽이 그것을 보고 멈춘다.
@@ -1653,9 +1789,9 @@ class KakaoDesktopSender(Sender):
             time.sleep(0.2)
 
     def _dialog_candidates(self, chat, before, conf: dict) -> List[tuple]:
-        """확인 창**일 수 있는** 창들 `(hwnd, 제목, 주인 hwnd)`. 속은 아직 안 본다.
+        """`파일 전송` 카드**일 수 있는** 창들 `(hwnd, 제목, 주인 hwnd)`. 속은 아직 안 본다.
 
-          · 카톡 프로세스(pid)의 보이는 창 중 — 붙이기 전에 없던 창 · 채팅창이 띄운
+          · 카톡 프로세스(pid)의 보이는 창 중 — [열기] 전에 없던 창 · 채팅창이 띄운
             (owner) 창 · 제목이 `confirm_title_re` 인 창
           · 채팅창 **속** 창(자식 창) 중 제목이 `confirm_title_re` 인 것
         프로세스를 모르면 채팅창이 띄운 창과 채팅창 속 창만 본다.
@@ -1678,56 +1814,47 @@ class KakaoDesktopSender(Sender):
         return out
 
     def _confirm_snapshot(self, chat, before) -> dict:
-        """지금 떠 있는 파일 전송 확인 창을 읽는다.
+        """지금 떠 있는 `파일 전송` 카드를 읽는다.
 
-        ⚠⚠ **읽는 자리는 아직 추측이다.** 실기(0.11.12)에서 본 것은 `전송 불가` 상태의
-          `파일 전송` 창 하나뿐이다(제목 · `전송 불가 1` · 파일명 · 까닭 · [확인]).
-          보낼 수 있는 상태의 창이 무엇을 보여 주는지, UIA 로 단추·글자가 읽히는지는
-          모른다 — 그래서 붙인 직후와 실패할 때 창들을 떠 둔다(`_note_windows`).
+        실기 화면(10/20): 채팅창 위에 뜨는 카드 — 제목 `파일 전송` · [×] · 파일 줄
+        (`시험자료.pdf` · `149KB` · `⋮`) · 넓은 [1개 전송] 하나. `전송 불가` 면 `전송 불가 1` ·
+        까닭 · [확인] 하나. ⚠ 그 카드가 UIA 로 무엇을 드러내는지는 아직 모른다 — 그래서
+        뜰 때와 실패할 때 창들을 떠 둔다(`_note_windows`).
 
-        후보(`_dialog_candidates`) 중 제목이 맞거나 · 보내기 단추가 있거나 ·
-        `전송 불가` 글자가 든 창이 **딱 하나**일 때만 그 창을 읽는다. 없거나(0) 여럿이면
-        (2+) 어느 것인지 모른다 — 고르지 않는다(`present=False`). 부르는 쪽이 **안 보낸다.**
+        후보(`_dialog_candidates`) 중 제목(창 제목이나 카드 속 글자)이 맞거나 · 보내기
+        단추가 있거나 · `전송 불가` 글자가 든 창이 **딱 하나**일 때만 그 창을 읽는다.
+        없거나(0) 여럿이면(2+) 어느 것인지 모른다 — 고르지 않는다(`present=False`).
 
-        돌려주는 모양(mac 의 `_sheet_snapshot` 과 같은 결):
-            present      확인 창을 찾았는가
-            hwnd         그 창 — 단추를 누르고 닫혔는지 보는 자리
-            title        그 창의 제목
-            owner_title  그 창을 띄운 창의 제목 ← **방 확인은 이것으로 한다**
-            buttons      단추 이름들
-            texts        창 안의 글자들 (파일명이 여기 나오기를 기대한다)
-            rows         파일 목록의 줄 수. 못 읽으면 None
+        돌려주는 모양:
+            present   카드를 찾았는가
+            hwnd      그 창 — 단추를 누르고 닫혔는지 보는 자리
+            title     그 창의 제목
+            owner     그 창을 띄운 창(hwnd) — 진단용
+            buttons   단추 이름들
+            texts     창 안의 모든 컨트롤 이름 (제목 · 파일명이 여기 나오기를 기대한다)
         """
-        blank = {"present": False, "hwnd": 0, "title": "", "owner_title": "",
-                 "buttons": [], "texts": [], "rows": None}
+        blank = {"present": False, "hwnd": 0, "title": "", "owner": 0,
+                 "buttons": [], "texts": []}
         conf = self.file_send_conf
         try:
             title_rx = _rx(conf.get("confirm_title_re"))
             found = []
             for hwnd, title, owner in self._dialog_candidates(chat, before, conf):
                 dialog = self._desktop.window(handle=hwnd)
-                shape = {"buttons": _control_texts(dialog, "Button"),
+                shape = {"title": title,
+                         "buttons": _control_texts(dialog, "Button"),
                          "texts": _control_texts(dialog)}
-                if (_hit(title_rx, title) or _send_button(shape, conf)
+                if (_titled(shape, title_rx) or _send_button(shape, conf)
                         or unsendable_detail(shape, conf) is not None):
-                    found.append((hwnd, title, owner, dialog, shape))
+                    found.append(dict(shape, present=True, hwnd=hwnd, owner=owner))
             if len(found) != 1:
                 if found:
-                    log.warning("확인 창 후보가 %d개라 고르지 않습니다: %r", len(found),
-                                [(h, t, sh["buttons"]) for h, t, _o, _d, sh in found])
+                    log.warning("파일 전송 창 후보가 %d개라 고르지 않습니다: %r", len(found),
+                                [(f["hwnd"], f["title"], f["buttons"]) for f in found])
                 return blank
-            hwnd, title, owner, dialog, shape = found[0]
-            return {
-                "present": True,
-                "hwnd": hwnd,
-                "title": title,
-                "owner_title": self._hwnd_title(owner).strip() if owner else "",
-                "buttons": shape["buttons"],
-                "texts": shape["texts"],
-                "rows": _list_rows(dialog),
-            }
+            return found[0]
         except Exception as exc:  # noqa: BLE001
-            log.warning("확인 창을 읽지 못했습니다(전송 안 함): %s", exc)
+            log.warning("파일 전송 창을 읽지 못했습니다(전송 안 함): %s", exc)
             return blank
 
     def _owner_hwnd(self, hwnd) -> int:
@@ -1768,20 +1895,29 @@ class KakaoDesktopSender(Sender):
             return []
         return out
 
-    def _hwnd_line(self, hwnd) -> str:
-        """진단 한 줄: 창 제목 · 클래스 · 자리(rect). 못 읽는 칸은 '?'."""
-        cls = rect = "?"
+    def _hwnd_class(self, hwnd) -> str:
+        """창 클래스 이름(열기 창은 `#32770`). 못 읽으면 ""."""
         try:
             import win32gui  # type: ignore
 
-            cls = win32gui.GetClassName(hwnd)
+            return win32gui.GetClassName(hwnd) or ""
+        except Exception:  # noqa: BLE001
+            return ""
+
+    def _hwnd_line(self, hwnd) -> str:
+        """진단 한 줄: 창 제목 · 클래스 · 자리(rect). 못 읽는 칸은 '?'."""
+        rect = "?"
+        try:
+            import win32gui  # type: ignore
+
             rect = tuple(win32gui.GetWindowRect(hwnd))
         except Exception:  # noqa: BLE001
             pass
-        return f"hwnd={hwnd} {_clip(self._hwnd_title(hwnd), 60)!r} class={cls!r} rect={rect}"
+        return (f"hwnd={hwnd} {_clip(self._hwnd_title(hwnd), 60)!r} "
+                f"class={self._hwnd_class(hwnd) or '?'!r} rect={rect}")
 
     def _click_dialog_button(self, snapshot: dict, name: str) -> bool:
-        """확인 창(`snapshot['hwnd']`)의 단추를 **컨트롤로** 누른다.
+        """카드(`snapshot['hwnd']`)의 단추를 **컨트롤로** 누른다.
 
         이름이 같은 단추가 **딱 하나**일 때만. `click_input` 은 그 컨트롤의 자리
         한가운데를 누른다 — 화면 좌표를 짐작해 누르지 않는다.
@@ -1794,32 +1930,29 @@ class KakaoDesktopSender(Sender):
             hits = [b for b in dialog.descendants(control_type="Button")
                     if _norm_button(_text_of(b)) == _norm_button(name)]
             if len(hits) != 1:
-                log.warning("확인 창에서 %r 단추가 %d개라 누르지 않습니다", name, len(hits))
+                log.warning("파일 전송 창에서 %r 단추가 %d개라 누르지 않습니다", name, len(hits))
                 return False
             hits[0].click_input()
             return True
         except Exception as exc:  # noqa: BLE001
-            log.warning("확인 창 단추를 누르지 못했습니다(%r): %s", name, exc)
+            log.warning("파일 전송 창 단추를 누르지 못했습니다(%r): %s", name, exc)
             return False
 
     def _dismiss_confirm(self, snapshot: Optional[dict]) -> None:
         """보내지 않고 물러난다.
 
-        확인 창을 알면: [취소] → (보내기 단추가 없는 창이면) [확인]·[닫기] → 그 창에만
-        WM_CLOSE(× 와 같다). 그래도 남았거나 창을 모르면 Esc.
-
-        ⚠ 확인 창을 못 찾은 경우에도 반드시 부른다. 붙여넣기가 **입력창에 첨부로
-          얹혀 있을 수 있고**, 남겨 두면 다음에 보내는 문구와 함께 나간다.
+        카드를 알면: `전송 불가` 카드는 [확인], 그 밖에는 [×](`close_button_re`) — `⋮`
+        메뉴나 이름 모를 단추는 누르지 않는다. 안 되면 그 창에만 WM_CLOSE. 그래도
+        남았거나 카드를 모르면 Esc.
         """
         conf = self.file_send_conf
         snapshot = snapshot or {}
         hwnd = snapshot.get("hwnd")
         if hwnd:
-            buttons = snapshot.get("buttons", [])
-            backs = _match_buttons(buttons, conf.get("cancel_button_re", ""))
-            if not backs and not _send_button(snapshot, conf):
-                backs = _match_buttons(buttons, conf.get("dismiss_button_re", ""))
-            if backs and self._click_dialog_button(snapshot, backs[0]):
+            key = ("dismiss_button_re" if unsendable_detail(snapshot, conf) is not None
+                   else "close_button_re")
+            picks = _match_buttons(snapshot.get("buttons", []), conf.get(key, ""))
+            if picks and self._click_dialog_button(snapshot, picks[0]):
                 time.sleep(self._t("after_close_chat", 0.3))
                 if not self._is_window_visible(hwnd):
                     return
@@ -1834,12 +1967,15 @@ class KakaoDesktopSender(Sender):
 
     # --- 파일 첨부 진단 ---------------------------------------------------------
 
-    def _note_windows(self, chat, before, label: str) -> None:
-        """카톡 창들과 그 속 컨트롤을 떠서 `ui_dump` 에 더한다 — 실패 보고에 실린다.
+    def _note_windows(self, chat, before, label: str, failing: bool = False) -> None:
+        """카톡 창들과 그 속 컨트롤을 떠서 `ui_dump` 에 더한다 — 진단 기록에 실린다.
 
+        실패는 늘, 성공 길(열기 창 · 카드)은 **실기 확인 전(`verified: false`)에만** 뜬다.
         로그에는 창 줄만(단추 이름 포함) 남기고, 전체는 `agent_logs/` 의
         `UIA_FILE_DUMP_FILE` 에 쓴다. 진단이라 무엇이 실패해도 발송을 막지 않는다.
         """
+        if not failing and self.file_send_conf.get("verified"):
+            return
         try:
             lines = self._kakao_windows_dump(chat, before, label)
         except Exception as exc:  # noqa: BLE001
@@ -1853,13 +1989,14 @@ class KakaoDesktopSender(Sender):
         except Exception:  # noqa: BLE001
             path = None
         log.info("파일 첨부 진단 — %s (전체: %s)\n%s", label, path or "파일 못 씀",
-                 "\n".join(l for l in lines if not l.startswith("      ")))
+                 "\n".join(line for line in lines if not line.startswith("      ")))
 
     def _kakao_windows_dump(self, chat, before, label: str) -> List[str]:
         """앞 창 + 카톡 프로세스의 보이는 창 전부(제목·클래스·자리·주인) + 채팅창 속 창.
 
-        **속(컨트롤)까지 뜨는 것은** 채팅창 · 붙인 뒤 새로 뜬 창 · 채팅창이 띄운 창뿐이다.
-        메인 창(대화 목록 — 남의 이름과 말이 있다)은 줄 하나로만 적는다.
+        **속(컨트롤)까지 뜨는 것은** 채팅창 · 새로 뜬 창 · 채팅창이 띄운 창뿐이다.
+        메인 창(대화 목록 — 남의 이름과 말이 있다)은 줄 하나로만 적는다. 열기 창
+        (`#32770`)은 목록 · 트리 속(폴더 · 남의 파일 이름)을 빼고 단추 · 칸만 적는다.
         """
         chat_hwnd = _handle(chat)
         pid = self._window_pid(chat) if chat is not None else 0
@@ -1884,9 +2021,12 @@ class KakaoDesktopSender(Sender):
                 if hasattr(root, "wrapper_object"):
                     root = root.wrapper_object()
                 entries = uia_tree_entries(root, max_depth=8, max_nodes=150)
+                if self._hwnd_class(hwnd) == "#32770":
+                    entries = without_lists(entries)
             except Exception as exc:  # noqa: BLE001
                 entries, tags = [], tags + [f"UIA 못 읽음: {exc}"]
-            buttons = [e.get("name") for e in entries if e.get("control_type") == "Button"]
+            buttons = [e.get("name") for e in entries
+                       if e.get("control_type") in ("Button", "SplitButton")]
             lines.append(f"  창 {self._hwnd_line(hwnd)} owner={owner} "
                          f"[{' · '.join(tags)}] 단추={buttons!r}")
             lines += ["      " + line for line in format_uia_entries(entries)]
@@ -2446,6 +2586,31 @@ def _control_texts(dialog, control_type: Optional[str] = None) -> List[str]:
         return []
 
 
+def _control_label(ctrl) -> str:
+    """컨트롤 이름 + (있으면) 도움말 · 설명 — 아이콘 단추는 이름 대신 풍선 도움말만 있을 수 있다."""
+    parts = [_text_of(ctrl)]
+    try:
+        legacy = ctrl.legacy_properties() or {}
+        parts += [str(legacy.get("Help") or ""), str(legacy.get("Description") or "")]
+    except Exception:  # noqa: BLE001
+        pass
+    return " ".join(p for p in parts if p)
+
+
+def without_lists(entries) -> List[dict]:
+    """UIA 항목에서 목록 · 트리 · 표의 **속**을 뺀다(열기 창의 폴더 · 남의 파일 이름)."""
+    out, cut = [], None
+    for e in entries or []:
+        depth = int(e.get("depth") or 0)
+        if cut is not None and depth > cut:
+            continue
+        cut = None
+        out.append(e)
+        if e.get("control_type") in ("List", "Tree", "DataGrid", "Table"):
+            cut = depth
+    return out
+
+
 def _handle(win) -> int:
     try:
         return int(getattr(win, "handle", 0) or 0)
@@ -2477,35 +2642,15 @@ def unsendable_detail(snapshot: Optional[dict], conf: Optional[dict] = None) -> 
     settings = dict(FILE_SEND_DEFAULTS)
     settings.update(conf or {})
     rx = _rx(settings.get("unsendable_re"))
+    title_rx = _rx(settings.get("confirm_title_re"))
     snapshot = snapshot or {}
     texts = [snapshot.get("title") or ""] + list(snapshot.get("texts") or [])
     if not any(_hit(rx, t) for t in texts):
         return None
-    skip = set(snapshot.get("buttons") or []) | {snapshot.get("title") or ""}
-    detail = [t for t in texts if t and t not in skip and not _hit(rx, t)]
+    skip = set(snapshot.get("buttons") or [])
+    detail = [t for t in texts if t and t not in skip and not _hit(rx, t)
+              and not _hit(title_rx, t)]
     return " · ".join(dict.fromkeys(detail)) or "까닭을 읽지 못했습니다"
-
-
-def _list_rows(dialog) -> Optional[int]:
-    """확인 창의 파일 목록이 몇 줄인가. **못 읽으면 None** (= 판단 불가).
-
-    None 이면 관문이 막는다 — 못 읽는 것과 맞는 것은 다르다(mac 과 같은 원칙).
-    """
-    for container in ("List", "DataGrid", "Table", "Tree"):
-        try:
-            found = dialog.descendants(control_type=container)
-        except Exception:  # noqa: BLE001
-            return None
-        if not found:
-            continue
-        rows = 0
-        for item in ("ListItem", "DataItem", "TreeItem"):
-            try:
-                rows += len(found[0].descendants(control_type=item))
-            except Exception:  # noqa: BLE001
-                return None
-        return rows
-    return None
 
 
 def _norm_button(text: str) -> str:
@@ -2531,54 +2676,22 @@ def _send_button(snapshot: dict, conf: Optional[dict] = None) -> List[str]:
                           conf.get("send_button_re", ""))
 
 
-def _is_confirm_window(snapshot: Optional[dict], conf: Optional[dict] = None) -> bool:
-    """지금 떠 있는 것이 **보낼 수 있는 파일 전송 확인 창**인가.
-
-    취소 단추와 보내기 단추가 둘 다 있어야 한다. 하나라도 없으면 확인 창으로 보지
-    않는다 — 확인 창이 아닌 것을 확인 창으로 보면 관문이 헛돈다.
-
-    (0.11.12) 제목은 **더는 보지 않는다** — 창을 고르는 단서일 뿐이다
-    (`_confirm_snapshot`). 실기의 제목은 `파일 전송` 이었지만, 보낼 수 있는 상태의
-    창도 그 제목인지는 모른다.
-    """
-    conf = conf or FILE_SEND_DEFAULTS
-    if not snapshot or not snapshot.get("present"):
-        return False
-    buttons = snapshot.get("buttons", [])
-    return bool(_match_buttons(buttons, conf.get("cancel_button_re", ""))
-                and _match_buttons(buttons, conf.get("send_button_re", "")))
+def _titled(shape: dict, title_rx) -> bool:
+    """창 제목이나 카드 속 글자 중 하나가 `파일 전송` 인가(카드는 제목을 글자로 그린다)."""
+    return any(_hit(title_rx, t) for t in [shape.get("title") or ""]
+               + list(shape.get("texts") or []))
 
 
-def _counts(snapshot: dict, conf: dict) -> List[int]:
-    """확인 창에서 **읽어 낼 수 있는 개수**를 전부 모은다.
+def _button_count(button: str, conf: dict) -> Optional[int]:
+    """[N개 전송] 의 N. 본에 숫자 괄호가 없거나 못 읽으면 None."""
+    rx = _rx(conf.get("send_button_re"))
+    hit = rx.match(_norm_button(button)) if rx is not None else None
+    num = next((g for g in hit.groups() if g), "") if hit else ""
+    return int(num) if num.isdigit() else None
 
-    셋 중 어디서든 나온다: 목록 줄 수 · 개수가 박힌 단추(`1개 전송`) · 창의
-    글자(`파일 2개를 …`). 하나도 못 읽으면 빈 목록이고, 그러면 관문이 막는다.
-    """
-    found: List[int] = []
-    rows = snapshot.get("rows")
-    if isinstance(rows, int) and not isinstance(rows, bool):
-        found.append(rows)
 
-    pattern = conf.get("count_re") or ""
-    if not pattern:
-        return found
-    try:
-        rx = re.compile(pattern)
-    except re.error:
-        log.warning("selectors.yaml 의 개수 본이 깨졌습니다: %r", pattern)
-        return found
-    if rx.groups < 1:
-        # 숫자를 꺼낼 자리가 없는 본이다. 못 읽는 것으로 두면 관문이 막는다.
-        log.warning("개수 본에 숫자를 담는 괄호가 없습니다: %r", pattern)
-        return found
-
-    for text in list(snapshot.get("buttons", [])) + list(snapshot.get("texts", [])):
-        hit = rx.search(_norm_button(text))
-        num = next((g for g in hit.groups() if g), "") if hit else ""
-        if num.isdigit():
-            found.append(int(num))
-    return found
+#: 파일 이름처럼 보이는 글자(끝에 `.확장자`) — 카드에 **다른** 파일이 떠 있는지 보는 데 쓴다.
+_FILE_LIKE = re.compile(r"\.[A-Za-z0-9]{1,8}$")
 
 
 def _leaf(text: str) -> str:
@@ -2590,79 +2703,52 @@ def _leaf(text: str) -> str:
     return re.split(r"[\\/]", text or "")[-1]
 
 
-def check_confirm_window(snapshot: Optional[dict], room_name: str,
-                         expected_names: List[str],
-                         conf: Optional[dict] = None) -> Optional[str]:
-    """★ 관문. 보내려던 것과 **정확히 같을 때만** None 을 돌려준다.
+def check_file_card(snapshot: Optional[dict], expected_names: List[str],
+                    conf: Optional[dict] = None):
+    """★ 관문. `(막는 까닭 또는 None, 남길 말)` — 까닭이 있으면 **닫고 보내지 않는다.**
 
-    어긋나면 그 이유를 문자열로 돌려주고, 부르는 쪽은 **취소하고 아무것도 보내지
-    않는다.** mac 과 같은 원칙이다(`kakao_mac.check_confirm_sheet`) — 방 제목 ·
-    파일명 · 개수를 나가기 직전에 확인하고, **하나라도 확인이 안 되면 안 보낸다.**
-
-    "못 읽었다" 는 "맞다" 가 아니다. 주인 창을 못 읽어도, 개수를 못 읽어도 막는다.
+    실기 카드(10/20): 제목 `파일 전송` · 파일 줄 · [1개 전송] 하나 · [×] (취소 단추는
+    없다). 그래서 통과하려면:
+      ① 제목(창 제목이나 카드 속 글자)이 `confirm_title_re`
+      ② 보내기 단추(`send_button_re` — [N개 전송])가 **딱 하나**
+      ③ 그 N 이 보내려던 개수와 **같다** — 한 번에 한 파일이라 늘 1. 남은 선택이 섞이면
+         여기서 걸린다
+      ④ 파일명: 카드에서 읽히면 보내려던 것과 같아야 한다. 파일처럼 보이는 **다른**
+         이름만 보이면 막는다. **아무 이름도 못 읽으면** 통과시키되 그 말을 남긴다 —
+         카드는 열기 창에서 되읽어 견준 그 경로를 [열기]한 바로 뒤에 뜬 창이다(방은 앞
+         창 제목 · 열기 창의 주인으로 이미 확인했다). 남는 위험: 카드가 다른 파일을
+         보여 주는데 UIA 로 아무 글자도 안 읽히는 경우 — 그때는 개수 ③ 만 지킨다.
+    `전송 불가` 는 이 앞에서 따로 거른다(`unsendable_detail`).
     """
     want = list(expected_names or [])
     settings = dict(FILE_SEND_DEFAULTS)
     settings.update(conf or {})
-
     if not snapshot or not snapshot.get("present"):
-        return "확인 창이 없습니다"
+        return "파일 전송 창이 없습니다", ""
 
-    # ① 확인 창이 맞나. 취소 단추·보내기 단추가 다 있어야 한다(제목은 고르는 단서일 뿐).
-    if not _is_confirm_window(snapshot, settings):
-        return (f"파일 전송 확인 창이 아닙니다: 제목={snapshot.get('title')!r} "
-                f"단추={snapshot.get('buttons')!r}")
+    if not _titled(snapshot, _rx(settings.get("confirm_title_re"))):
+        return (f"'파일 전송' 창이 아닙니다: 제목={snapshot.get('title')!r} "
+                f"단추={snapshot.get('buttons')!r}"), ""
 
-    # ② 방이 맞나 — 파일을 붙이는 사이에 다른 창이 앞으로 올 수 있다.
-    #    Windows 의 대화 상자는 제 창이라 **주인 창**의 제목을 본다.
-    #    한글은 자모 조합 형태가 두 가지라 그것만 맞춰 견준다(`base.nfc`).
-    owner = (snapshot.get("owner_title") or "").strip()
-    if not owner:
-        # ★ 못 읽은 것은 맞은 것이 아니다. 어느 방인지 모르면 안 보낸다.
-        return "확인 창을 띄운 방을 읽지 못했습니다"
-    if nfc(owner) != nfc(room_name):
-        return f"방이 다릅니다: 확인 창을 띄운 창 {owner!r} != 대상 {room_name!r}"
-
-    # ③ 보내기 단추가 하나여야 한다 — 둘이면 어느 쪽인지 알 수 없다.
     senders = _send_button(snapshot, settings)
-    if len(senders) > 1:
-        return f"보내기 단추가 여러 개입니다: {senders!r}"
+    if len(senders) != 1:
+        return (f"보내기 단추가 {len(senders)}개입니다: "
+                f"단추={snapshot.get('buttons')!r}"), ""
+    count = _button_count(senders[0], settings)
+    if count != len(want):
+        return (f"개수가 다릅니다: 창은 {senders[0]!r} 인데 "
+                f"보내려던 것은 {len(want)}개"), ""
 
-    # ④ 개수. 목록 줄 수 · 개수가 박힌 단추 · 창의 글자 중 **읽히는 것은 전부**
-    #    맞아야 하고, 하나도 못 읽으면 막는다(못 읽는 것과 맞는 것은 다르다).
-    counts = _counts(snapshot, settings)
-    if not counts:
-        return (f"보낼 개수를 읽지 못했습니다: 단추={snapshot.get('buttons')!r} "
-                f"목록={snapshot.get('rows')!r}")
-    wrong = sorted({c for c in counts if c != len(want)})
-    if wrong:
-        return (f"개수가 다릅니다: 창은 {wrong}개인데 "
-                f"보내려던 것은 {len(want)}개")
-
-    # ⑤ 파일명이 전부 있나.
-    #
-    #    ★ 두 쪽을 **같은 형태로 맞춘 뒤** 견준다(`base.same_file_name`).
-    #      한글 파일명은 자모 조합 형태가 두 가지라 그냥 `==` 로 견주면 멀쩡한
-    #      파일을 "창에 없다" 며 취소한다 — 가짜 실패(mac 에서 실제로 겪었다).
-    #
-    #    창이 파일명 대신 **전체 경로**를 보여 줄 수도 있어 마지막 조각도 함께
-    #    본다. 느슨해지는 것이 아니다 — 조각이 파일명과 정확히 같아야 한다.
+    #    ★ 두 쪽을 **같은 형태로 맞춘 뒤** 견준다(`base.same_file_name`) — 한글 파일명은
+    #      자모 조합 형태가 두 가지다(mac 에서 실제로 겪었다). 전체 경로면 마지막 조각.
     texts = list(snapshot.get("texts", []))
     missing = [n for n in want
-               if not any(same_file_name(n, shown) or same_file_name(n, _leaf(shown))
-                          for shown in texts)]
-    if missing:
-        return f"확인 창에 없는 파일: {missing!r} (창에 있는 것: {texts!r})"
-    return None
-
-
-def _same_paths(placed: Optional[List[str]], wanted: List[str]) -> bool:
-    """클립보드에서 다시 읽은 목록이 담으려던 것과 **정확히 같은가.**
-
-    개수·차례까지 본다. 한글 경로는 자모 조합 형태가 두 가지라 그것만 맞춘다.
-    """
-    if placed is None:
-        return False
-    if len(placed) != len(wanted):
-        return False
-    return all(nfc(a) == nfc(b) for a, b in zip(placed, wanted))
+               if not any(same_file_name(n, t) or same_file_name(n, _leaf(t))
+                          for t in texts)]
+    if not missing:
+        return None, ""
+    others = [t for t in texts if _FILE_LIKE.search(t)]
+    if others:
+        return f"창에 다른 파일이 있습니다: {others!r} (보내려던 것 {want!r})", ""
+    return None, (f"파일명을 '파일 전송' 창에서 읽지 못해 제목과 {senders[0]!r} 로만 "
+                  f"확인했습니다 (보낸 것 {want!r})")

@@ -40,7 +40,8 @@
         "<td>" + esc(i.room_name) + "</td>" +
         '<td class="st st-' + i.status + '">' + (STATUS_KO[i.status] || i.status) + "</td>" +
         "<td>" + (i.retry_count || 0) + "</td>" +
-        "<td>" + esc(i.error || i.sent_at || "") + "</td>" +
+        // 예전 발송기는 사유에 `**강조**` 표시를 그대로 실었다 — 글자로 보이지 않게 뗀다
+        "<td>" + esc(i.error && i.error.replace(/\*\*/g, "") || i.sent_at || "") + "</td>" +
         "</tr>";
     }).join("");
 

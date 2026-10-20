@@ -324,7 +324,7 @@ def send_item(sender, item: dict, cfg: dict, should_stop=None):
         if getattr(result, "stopped", None) is not None:
             return _stopped(result.stopped, len(files), 0, len(parts))
         if not result.ok:
-            result.error = (f"자료 파일을 보내지 못해 **문구도 보내지 않았습니다** "
+            result.error = (f"자료 파일을 보내지 못해 문구도 보내지 않았습니다 "
                             f"— {result.error}")
             return result
         warned.append(getattr(result, "warning", None))
@@ -658,6 +658,11 @@ def process_job(client: AgentClient, sender, job: dict, cfg: dict):
                                         error=result.warning))
             else:
                 log.info("  [%d/%d] SENT room=%r", i, len(items), item["room_name"])
+                if getattr(sender, "ui_dump", None):
+                    # 실기 확인 전 파일 첨부는 **나가도** 화면 구조를 올린다(`_note_windows`)
+                    client.report_diagnostics(
+                        collect_diagnostics(sender, "file_sent",
+                                            target_room=item["room_name"]))
         else:
             any_fail = True
             client.report_item(item["id"], "failed", error=result.error,
@@ -777,10 +782,12 @@ def collect_diagnostics(sender, kind: str, target_room=None, error=None) -> dict
     except Exception as exc:  # noqa: BLE001
         payload["window_titles"] = [f"(수집 실패: {exc})"]
 
-    # 파일 첨부 진단(Windows) — 붙인 직후 · 실패할 때 떠 둔 카톡 창들과 그 속 컨트롤
+    # 파일 첨부 진단(Windows) — 열기 창 · `파일 전송` 창 · 실패할 때 떠 둔 카톡 창들과 그
+    # 속 컨트롤. **한 번 실으면 비운다** — 다음 건의 진단에 묻어가지 않게.
     dump = getattr(sender, "ui_dump", None)
     if dump:
         payload["ui_dump"] = list(dump)
+        sender.ui_dump = []
 
     try:
         fg = getattr(sender, "_foreground_title", None)

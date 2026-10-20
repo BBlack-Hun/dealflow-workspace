@@ -772,7 +772,7 @@ class Diagnostics(BaseModel):
     대신 에이전트가 스스로 상태를 수집해 서버로 보내면, 서버 쪽에서
     원인을 확인할 수 있다(카톡 창 제목 불일치·포커스 실패 진단용).
     """
-    kind: Optional[str] = None            # startup | send_failed | manual
+    kind: Optional[str] = None            # startup | send_failed | send_warning | file_sent | manual
     agent_hostname: Optional[str] = None  # 에이전트가 도는 PC 이름
     platform: Optional[str] = None
     sender: Optional[str] = None
