@@ -52,6 +52,13 @@
             </select>
             <button type="submit" class="linkbtn">팀원 화면으로 보기</button>
           </form>
+          {# 되돌아오는 길도 고르개 곁에 — 위 띠의 [내 화면으로 돌아가기]와 같은 폼이다. #}
+          {% if view_as %}
+          <form method="post" action="/account/view-as/off" class="view-as-pick" data-testid="view-as-back">
+            <input type="hidden" name="next" value="{{ view_as_next }}">
+            <button type="submit" class="linkbtn">내 화면으로</button>
+          </form>
+          {% endif %}
           {% endif %}
         </div>
         <div id="agent-badge" class="agent-badge {% if agent.online %}on{% else %}off{% endif %}">
