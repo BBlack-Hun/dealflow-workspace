@@ -52,6 +52,13 @@ TAB = "series-a"
 
 _DATED = re.compile(r"\d{4}-\d{2}-\d{2}")
 
+#: 사람이 탭에서 적기만 하는 칸(#24 · 0112) — 대표자 · 매출 · 금액. 시트에 없고
+#: 서버가 다듬지도 않는다(적은 그대로, 금액 단위는 억). 응답 · 검색이 이 한 목록을
+#: 읽는다 — 화면은 `companies_series_a.html` 에 손으로 적었다(다른 칸과 같다).
+TYPED = ("ceo_name", "ceo_phone", "ceo_email",
+         "revenue_2024", "revenue_2025", "revenue_2026", "revenue_2027",
+         "funding_total", "raise_target", "pre_value")
+
 
 def received_sort_key(text: Optional[str]) -> str:
     """`수신 일자` 를 세울 값(`data-s-received_at`). 날짜로 적힌 것만, 아니면 빈 값.
@@ -78,7 +85,7 @@ def search_text(c: SeriesACompany) -> str:
     """줄에 실어 둘 검색용 글자. 표에 보이는 칸은 다 찾아져야 한다."""
     parts = [c.name, c.received_at, c.deal_type, c.assignee_name, c.shared_by,
              c.source_firm, c.sector_major, c.sector_minor, c.series,
-             c.detail, c.deal_pitch]
+             c.detail, c.deal_pitch] + [getattr(c, f) for f in TYPED]
     return " ".join(filter(None, parts)).lower()
 
 
@@ -120,6 +127,7 @@ def row_dict(c: SeriesACompany, known: Dict[str, str],
         "series_short": short_series(c.series),
         "detail": c.detail or "",
         "deal_pitch": c.deal_pitch or "",
+        **{f: getattr(c, f) or "" for f in TYPED},
         # IR 기업 현황에 같은 기업이 있으면 그 탭에 적힌 이름 — 딱지가 그 이름으로
         # 그 탭을 연다(`/companies?q=…` 가 검색칸을 채운다).
         "ir_name": ir_name,
@@ -234,6 +242,17 @@ class SeriesAIn(BaseModel):
     series: Optional[str] = None
     detail: Optional[str] = None
     deal_pitch: Optional[str] = None
+    # 직접 적는 칸(`TYPED`) — 적은 그대로 저장한다(`_assign` 의 마지막 갈래).
+    ceo_name: Optional[str] = None
+    ceo_phone: Optional[str] = None
+    ceo_email: Optional[str] = None
+    revenue_2024: Optional[str] = None
+    revenue_2025: Optional[str] = None
+    revenue_2026: Optional[str] = None
+    revenue_2027: Optional[str] = None
+    funding_total: Optional[str] = None
+    raise_target: Optional[str] = None
+    pre_value: Optional[str] = None
 
 
 def _assign(row: SeriesACompany, body: SeriesAIn) -> None:
@@ -268,7 +287,7 @@ def _result(row: SeriesACompany, db: Session) -> dict:
     return {key: data[key] for key in (
         "id", "name", "received_at", "deal_type", "assignee_name", "shared_by",
         "source_firm", "sector_major", "sector_minor", "series", "detail",
-        "deal_pitch", "received_sort", "series_short", "ir_name", "search",
+        "deal_pitch", *TYPED, "received_sort", "series_short", "ir_name", "search",
         "sharer")}
 
 

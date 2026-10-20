@@ -676,7 +676,10 @@ def test_a_sent_invite_moves_offer_pending_to_asking(board, db, users):
 
 
 def test_test_sends_and_canceled_items_do_not_move_offer_pending(board, db, users):
-    """시험 발송(`test_send`) · 리마인드 회차 · 중단한 건은 성공을 받아도 그대로다."""
+    """시험 발송(`test_send`) · 리마인드 회차는 성공을 받아도 그대로다.
+
+    중단한 건은 다르다 — 실제로 나갔다는 보고면 나간 것으로 적는다
+    (`test_a_canceled_invite_that_still_went_out_moves_offer_pending`)."""
     from app.models import TEST_SEND_KIND, SendItem, SendJob
     from app.services import sourcing_msg
 
@@ -684,8 +687,7 @@ def test_test_sends_and_canceled_items_do_not_move_offer_pending(board, db, user
                participation=OFFER)
     ids = []
     for kind, topic, status in ((TEST_SEND_KIND, None, "pending"),
-                                ("sourcing_intro", sourcing_msg.REMIND_KIND, "pending"),
-                                ("sourcing_intro", None, "canceled")):
+                                ("sourcing_intro", sourcing_msg.REMIND_KIND, "pending")):
         job = SendJob(user_id=users["u1"].id, kind=kind, topic=topic, status="queued",
                       total=1, sent=0, failed=0)
         db.add(job)
@@ -701,6 +703,27 @@ def test_test_sends_and_canceled_items_do_not_move_offer_pending(board, db, user
     db.expire_all()
     assert offer.participation == OFFER
 
+
+
+def test_a_canceled_invite_that_still_went_out_moves_offer_pending(board, db, users):
+    """[중단] 순간 이미 나가던 안내 — 받은 분이니 `물어보는 중` 으로 간다.
+    `제안 대기중` 에 남기면 다음 안내 회차가 같은 분께 또 보낸다."""
+    from app.models import SendItem, SendJob
+
+    offer = sc(db, name="중단심사", phone="010-1000-0017", kakao_room_name="중단 방",
+               participation=OFFER)
+    job = SendJob(user_id=users["u1"].id, kind="sourcing_intro", status="canceled",
+                  total=1, sent=0, failed=0)
+    db.add(job)
+    db.flush()
+    item = SendItem(job_id=job.id, sourcing_contact_id=offer.id, room_name="중단 방",
+                    message="안내", status="canceled")
+    db.add(item)
+    db.commit()
+
+    _report_kakao(board, item.id, "sent")
+    db.expire_all()
+    assert offer.participation == ASKING
 
 def test_a_mailed_invite_moves_offer_pending_too(board, db, users, mail_on, monkeypatch):
     """메일 — 보낸 건만 바뀐다. 거부된 주소는 그대로."""

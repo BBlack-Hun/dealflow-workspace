@@ -345,13 +345,16 @@ def item_result(
         db.commit()
         return {"ok": False, "detail": "item not found"}
 
-    # Guard: don't overwrite a canceled item (e.g. user hit [중단] mid-flight).
-    if item.status == "canceled":
+    job = item.job
+    is_verify = job is not None and job.kind == VERIFY_KIND
+    # [중단] 뒤에 온 결과는 버린다 — 단 **실제로 나갔다**는 보고는 적는다. 발송기는
+    # 건과 건 사이에서만 [중단]을 물어서, 이미 손에 쥔 건(자료 파일 + 문구)은 끝까지
+    # 나간다. 그걸 '취소' 로 남기면 [취소분 재발송] 이 같은 자료를 한 번 더 보낸다.
+    if item.status == "canceled" and (body.status != "sent" or is_verify):
         db.commit()
         return {"ok": True, "detail": "item canceled, result ignored"}
 
-    job = item.job
-    if job is not None and job.kind == VERIFY_KIND:
+    if is_verify:
         _apply_verify_result(item, body)
     elif body.status == "sent":
         item.status = "sent"
