@@ -200,10 +200,28 @@ def test_switching_returns_to_the_same_address(client, users, admin):
     r = client.post("/account/view-as", data={"member_id": users["u1"].id, "next": here},
                     follow_redirects=False)
     assert r.headers["location"] == here
-    # 보는 중에는 고르개와 띠의 [내 화면으로 돌아가기] 둘 다 같은 주소를 싣는다.
-    assert client.get(here).text.count('name="next" value="/todo?a=1&amp;b=2"') == 2
+    # 보는 중에는 고르개 · 곁의 [내 화면으로] · 띠의 [내 화면으로 돌아가기] 셋 다 같은 주소를 싣는다.
+    assert client.get(here).text.count('name="next" value="/todo?a=1&amp;b=2"') == 3
     r = client.post("/account/view-as/off", data={"next": here}, follow_redirects=False)
     assert r.headers["location"] == here
+
+
+def test_sidebar_has_the_way_back_only_while_viewing(client, users, admin):
+    """돌아오는 단추가 사이드바 고르개 곁에도 선다 — 띠만 있으면 고르개에서 길을 못 찾는다."""
+    import re
+
+    _login(client, "01000000009")
+    here = "/todo?a=1"
+    assert 'data-testid="view-as-back"' not in client.get(here).text
+    _view_as(client, users["u1"].id)
+    page = client.get(here).text
+    back = re.search(r'<form method="post" action="([^"]+)"[^>]*data-testid="view-as-back">'
+                     r'\s*<input type="hidden" name="next" value="([^"]+)">'
+                     r'\s*<button type="submit" class="linkbtn">내 화면으로</button>', page)
+    assert back and back.groups() == ("/account/view-as/off", here)
+    r = client.post(back[1], data={"next": here}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == here
+    assert 'data-testid="view-as-back"' not in client.get(here).text
 
 
 def test_own_device_token_never_shows_the_members(client, users, admin):
