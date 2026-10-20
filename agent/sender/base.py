@@ -17,6 +17,9 @@ class SendResult:
     ok: bool
     error: Optional[str] = None
     screenshot_b64: Optional[str] = None
+    #: 성공했지만 남길 것 (0.11.12) — 첫 시도에 방이 안 열려 다시 찾아 나간 것 같은.
+    #: 실패가 아니라 경고다(`agent/main.py: process_job` 이 로그 · 진단 기록에 남긴다).
+    warning: Optional[str] = None
 
 
 #: `send_file` 이 **"지원 안 함"** 으로 거절할 때 error 앞에 붙는 표식.
@@ -57,8 +60,13 @@ class Sender:
         """Send `text` to the chat room whose title EXACTLY equals `room_name`."""
         raise NotImplementedError
 
-    def send_file(self, room_name: str, file_names: Sequence[str]) -> SendResult:
+    def send_file(self, room_name: str, file_names: Sequence[str],
+                  should_stop=None) -> SendResult:
         """IR 자료 공통 폴더의 `file_names` 를 첨부해 `room_name` 방으로 보낸다.
+
+        `should_stop` 을 받으면 파일 하나를 올리기 **직전마다** 부른다(0.11.12 — 한 건
+        안에서도 [중단]을 듣는다). 참이면 그 파일부터 보내지 않고 `ok=False` 로
+        돌려준다. 몇 개가 나갔는지는 부른 쪽이 센다(`agent/main.py: send_item`).
 
         **경로가 아니라 파일명을 받는다** — 실제 자리는 각 PC 가 설정한 뿌리로
         조립한다(`resolve_ir_file`).

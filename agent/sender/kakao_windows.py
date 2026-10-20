@@ -175,6 +175,9 @@ def create(selectors: dict, screenshot_dir: str) -> "KakaoDesktopSender":
 
 class KakaoDesktopSender(Sender):
     name = "kakao_windows"
+    #: (0.11.12) 마지막으로 연 방이 **첫 시도에** 막혔다가 다시 찾아 열렸으면 그 까닭.
+    #: 성공 결과의 경고로 싣는다(`SendResult.warning`) — 실패는 아니지만 로그에 남긴다.
+    _retry_note = ""
 
     def __init__(self, selectors: dict, screenshot_dir: str):
         if not is_supported():  # defense in depth
@@ -1049,6 +1052,7 @@ class KakaoDesktopSender(Sender):
                 f"못했습니다(전송 안 함, {self._focus_cause(win)})")
 
         results = "목록 못 읽음"
+        missed = ""         # (0.11.12) 첫 시도에 막힌 까닭 — 다시 찾아 열리면 경고로 남긴다
         tries = 0
         for tries in range(1, OPEN_ROOM_TRIES + 1):
             last = tries == OPEN_ROOM_TRIES
@@ -1058,10 +1062,12 @@ class KakaoDesktopSender(Sender):
             #    남겨 두어** 앞 방 이름 뒤에 이번 방 이름이 이어 붙었고, 그 글자로는
             #    방이 안 나와 `room_mismatch` 로 떨어졌다(실기 0.11.4). 비워도 **같은 방**
             #    이면 카톡이 결과를 새로 세우지 않는다 — 아래 다시 찾기가 맡는다(0.11.10).
+            #    (0.11.12) 다시 찾을 때는 **다른 글자**로 찾는다(`retry_query`).
             self._pyautogui.hotkey(*self.sel.get("search_hotkey", ["ctrl", "f"]))
             self._search_open = True
             time.sleep(self._t("after_search_hotkey", 0.4))
-            bad = self._put_room_query(win, room_name)
+            query = room_name if tries == 1 else retry_query(room_name)
+            bad = self._put_room_query(win, room_name, query)
             if bad is not None:
                 return None, bad
 
@@ -1074,6 +1080,7 @@ class KakaoDesktopSender(Sender):
             if found is False and not last:
                 log.warning("검색 결과에 그 방이 없습니다(%s) — 검색창을 닫고 한 번 더 "
                             "찾습니다 room=%r", results, room_name)
+                missed = f"검색 결과에 그 방이 없음({results})"
                 if not self._search_again(win):
                     break
                 continue
@@ -1094,6 +1101,8 @@ class KakaoDesktopSender(Sender):
                 # 방을 열면 카톡이 검색창을 **스스로 닫는다**(0.11.9 실기 — 보낸 뒤의 Esc 가
                 # 닫힌 검색창에 떨어져 아무것도 안 지웠다). 열려 있다고 알지 않는다.
                 self._search_open = False
+                self._retry_note = (f"첫 시도에 {missed} — 다시 찾아 열었습니다"
+                                    if missed else "")
                 return chat, None
             if not self._foreground_is_main(win):
                 # 무엇이 앞에 왔다 — 검색창이 어떤지 모른다(모르는 쪽으로 둔다 —
@@ -1108,6 +1117,7 @@ class KakaoDesktopSender(Sender):
                 # 지운다 — 방을 연 뒤 같은 글자로는 결과를 새로 세우지 않는다(0.11.10).
                 log.warning("다른 방이 열렸습니다(%r) — 그 창을 닫고 한 번 더 찾습니다 "
                             "room=%r", _clip(wrong), room_name)
+                missed = f"다른 방이 열림({_clip(wrong)!r})"
                 self._close_wrong_room(win)
                 if not self._focus_verified(win):
                     return None, self._fail(
@@ -1125,6 +1135,7 @@ class KakaoDesktopSender(Sender):
                 # 다시 찾는다.
                 log.warning("Enter 로 방이 열리지 않았습니다(검색 결과: %s) — 검색창을 닫고 "
                             "한 번 더 찾습니다 room=%r", results, room_name)
+                missed = f"Enter 로 방이 열리지 않음(검색 결과: {results})"
             if not self._search_again(win):
                 break
 
@@ -1311,8 +1322,9 @@ class KakaoDesktopSender(Sender):
         except Exception:  # noqa: BLE001
             return ""
 
-    def _put_room_query(self, win, room_name: str) -> Optional[SendResult]:
-        """발송할 방 이름을 검색칸에 **비우고** 넣는다. 못 넣었으면 실패를 돌려준다.
+    def _put_room_query(self, win, room_name: str, query: str) -> Optional[SendResult]:
+        """검색어(`query` — 첫 시도는 방 이름, 다시 찾을 때는 `retry_query`)를 검색칸에
+        **비우고** 넣는다. 못 넣었으면 실패를 돌려준다.
 
         방 검색(`_read_search`)과 **같은 자리**(`_put_query`)로 비운다 — UIA 로
         먼저, 안 되면 End → Shift+Home → Backspace. Ctrl+A 는 누르지 않는다.
@@ -1332,20 +1344,20 @@ class KakaoDesktopSender(Sender):
             room_name,
             "focus_failed: 검색 중 카카오톡 메인 창이 앞에서 사라졌습니다(전송 안 함). "
             "발송 중에는 다른 창을 클릭하지 마세요.")
-        if not self._put_query(win, room_name, conf):
+        if not self._put_query(win, query, conf):
             return lost
         typed = self._search_input_text(win, conf)
-        if query_was_typed(typed, room_name):
+        if query_was_typed(typed, query):
             return None
-        log.warning("검색칸 글자가 방 이름과 다릅니다(읽은 값=%r, 넣은 값=%r) — "
-                    "비우고 한 번 더 넣습니다", typed, room_name)
+        log.warning("검색칸 글자가 넣은 글자와 다릅니다(읽은 값=%r, 넣은 값=%r) — "
+                    "비우고 한 번 더 넣습니다", typed, query)
         if not self._focus_verified(win):
             # 포커스를 잃었다 — Esc 도 누르지 않는다(다른 앱으로 간다).
             return lost
-        if not self._put_query(win, room_name, conf):
+        if not self._put_query(win, query, conf):
             return lost
         typed = self._search_input_text(win, conf)
-        if query_was_typed(typed, room_name):
+        if query_was_typed(typed, query):
             return None
         self._close_search()
         return self._fail(
@@ -1396,7 +1408,7 @@ class KakaoDesktopSender(Sender):
             # 7) 채팅창을 닫는다(열린 검색창이 있다고 알면 그것도) — 다음 건은 시작할
             #    때 한 번 더 같은 자리로 맞춘다(`_open_room_verified` 의 1)
             self._leave_room(chat, room_name)
-            return SendResult(ok=True)
+            return SendResult(ok=True, warning=self._retry_note or None)
         except Exception as exc:  # noqa: BLE001
             log.exception("send_text error room=%r", room_name)
             return self._fail(room_name, f"exception: {exc}")
@@ -1405,7 +1417,7 @@ class KakaoDesktopSender(Sender):
     #  파일 첨부 — ⚠ 실기 확인 전. **관문을 통과하지 못하면 무조건 취소한다.**
     # ══════════════════════════════════════════════════════════════════════
 
-    def send_file(self, room_name: str, file_names) -> SendResult:
+    def send_file(self, room_name: str, file_names, should_stop=None) -> SendResult:
         """IR 자료를 첨부해 보낸다. **관문을 통과할 때만 보낸다.**
 
         `file_names` 는 **공통 폴더 안의 파일명**이다(경로가 아니다). 실제 자리는
@@ -1456,6 +1468,13 @@ class KakaoDesktopSender(Sender):
                 return bad
 
             for n, path in enumerate(resolved, start=1):
+                # (0.11.12) 파일 하나 앞마다 [중단]을 다시 묻는다(`Sender.send_file`)
+                if should_stop is not None and should_stop():
+                    log.warning("[kakao_windows] [중단] — 파일 %d/%d 앞에서 멈춥니다 room=%r",
+                                n, len(resolved), room_name)
+                    self._leave_room(chat, room_name)
+                    return SendResult(ok=False, error=f"stopped: 파일 {n - 1}/"
+                                                      f"{len(resolved)}개를 보낸 뒤 [중단]")
                 result = self._send_one_file(room_name, chat, path)
                 if not result.ok:
                     if n > 1:
@@ -1466,7 +1485,7 @@ class KakaoDesktopSender(Sender):
             self._leave_room(chat, room_name)
             log.info("[kakao_windows] SENT FILES room=%r files=%s",
                      room_name, [p.name for p in resolved])
-            return SendResult(ok=True)
+            return SendResult(ok=True, warning=self._retry_note or None)
         except Exception as exc:  # noqa: BLE001
             log.exception("send_file error room=%r", room_name)
             return self._fail(room_name, f"exception: {exc}")
@@ -1782,6 +1801,21 @@ def query_was_typed(typed: Optional[str], query: str) -> bool:
     if not got:
         return False
     return got == want or want.startswith(got)
+
+
+def retry_query(room_name: str) -> str:
+    """다시 찾을 때 검색칸에 넣을 글자 (0.11.12) — 첫 시도와 **다른** 글자.
+
+    같은 글자로는 카톡이 결과를 새로 세우지 않는다(0.11.10 짐작). 끝의 문장부호 · 이모지 ·
+    기호를 떼고(카톡 검색이 그것 때문에 못 찾을 수도 있다), 뗄 것이 없으면 끝 한 글자를
+    뗀다. 두 글자보다 짧아지면 그대로 둔다 — 너무 짧으면 맨 위에 다른 방이 선다.
+    어떤 글자로 찾든 여는 방은 앞 창 제목 정확 일치로만 통과한다(`_opened_chat_window`).
+    """
+    text = (room_name or "").strip()
+    cut = re.sub(r"[\W_]+$", "", text)
+    if cut == text:
+        cut = text[:-1].rstrip()
+    return cut if len(cut) >= 2 else text
 
 
 def _clip(text: str, limit: int = 40) -> str:

@@ -43,6 +43,8 @@ room_mismatch` 로 번갈았다. 0.11.9 는 '보낸 뒤 Esc 한 번이 채팅창
     ⑩ (0.11.11) **다른 방**이 열리면 그 창만 닫고 한 번만 더 찾는다. 실패 문구는 같은 방의
        다른 이름일 때만 '방 이름을 고치라' 고 하고, 다른 방이면 '그대로 두고 재시도' 다.
        Enter 전 대기는 1.5초다
+    ⑪ (0.11.12) 다시 찾을 때는 **다른 글자**로 찾는다(`retry_query`). 첫 시도에 막혔다가
+       나간 건은 실패가 아니라 경고(`SendResult.warning`)를 싣는다
 
 방 이름은 **전부 지어낸 값**이다 — 저장소가 공개다.
 """
@@ -129,7 +131,7 @@ class SameRoomWin(kw.KakaoDesktopSender):
 
     def __init__(self, *, rooms=(ROOM, OTHER), opens=None, uia_clear=True,
                  activate_existing=True, input_readable=True, list_readable=False,
-                 lag_reads=0, stale=(), hide_late=False, wrong_opens=()):
+                 lag_reads=0, stale=(), hide_late=False, wrong_opens=(), esc_forgets=True):
         self.sel = dict(SELECTORS)
         self.sel["timings"] = {k: 0 for k in SELECTORS.get("timings", {})}
         self.screenshot_dir = ""
@@ -165,6 +167,7 @@ class SameRoomWin(kw.KakaoDesktopSender):
         self.enter_queries = []             # 검색창에서 Enter 를 누른 때의 검색칸 글자
         self.pasted_into = []               # 채팅 입력란에 붙여 넣은 방 제목
         self.resets = 0                     # 열린 검색창을 Esc 로 닫은 수
+        self.esc_forgets = esc_forgets      # 거짓이면 Esc 뒤에도 '마지막으로 찾은 글자' 가 남는다
         hotkey, press = self._pyautogui.hotkey, self._pyautogui.press
 
         def _hotkey(*keys):
@@ -185,7 +188,10 @@ class SameRoomWin(kw.KakaoDesktopSender):
             self.results, self.fresh = [], False
         elif text != self.last_query:
             self.last_query = text
-            title = self.opens.get(text, text if text in self.rooms else None)
+            # 그 글자로 **시작하는** 방을 찾는다 — 다시 찾을 때 줄인 글자(`retry_query`,
+            # 0.11.12)로도 같은 방이 선다. `opens` 도 같은 규칙(그 방 이름의 앞부분이면 그 창)
+            title = next((v for k, v in self.opens.items() if k.startswith(text)),
+                         next((r for r in sorted(self.rooms) if r.startswith(text)), None))
             self.results = [title] if title else []
             self.fresh, self.lag_left = bool(title), self.lag_reads
 
@@ -234,7 +240,9 @@ class SameRoomWin(kw.KakaoDesktopSender):
                 self._post_close(self.fg)
             elif self.fg == MAIN and self.search_open:
                 self.search_open, self.kakao.text = False, ""
-                self.last_query, self.results, self.fresh = None, [], False
+                self.results, self.fresh = [], False
+                if self.esc_forgets:
+                    self.last_query = None
                 self.resets += 1
             elif self.fg == MAIN:
                 self.hides += 1
@@ -665,7 +673,8 @@ def test_다른_방이_열리면_그_창만_닫고_한_번_더_찾아_보낸다(
     assert result.ok, result.error
     assert sender.delivered == [(ROOM, "안녕하세요")]
     assert sender.pasted_into == [ROOM]                         # 다른 방에는 안 붙였다
-    assert sender.enter_queries == [ROOM, ROOM]                 # 칸에는 늘 방 이름 하나만
+    # 칸에는 늘 검색어 하나만 — 다시 찾을 때는 다른 글자(0.11.12 `retry_query`)
+    assert sender.enter_queries == [ROOM, kw.retry_query(ROOM)]
     assert len(sender.opened_at) == 2
     assert sender.resets == 1                                   # 검색 상태를 지웠다
     assert sender.room_windows(OTHER) == [] and sender.room_windows() == []
@@ -722,3 +731,51 @@ def test_검색어를_넣고_Enter_전에_1_5초_기다린다(monkeypatch):
     slept.clear()
     sender._put_query(sender.kakao, OTHER, sender.room_search_conf)
     assert 1.5 in slept
+
+
+# ── ⑪ (0.11.12) 다시 찾을 때는 다른 글자 · 첫 시도에 막힌 것은 경고로 ────────
+
+def test_다시_찾을_글자는_끝의_기호를_떼고_뗄_것이_없으면_한_글자를_뗀다():
+    assert kw.retry_query("가나다 시험방 🙂") == "가나다 시험방"
+    assert kw.retry_query("가나다 시험방!!") == "가나다 시험방"
+    assert kw.retry_query(" 가나다_ ") == "가나다"
+    assert kw.retry_query(ROOM) == "가나다 시험"
+    assert kw.retry_query("가나") == "가나"                      # 너무 짧아지면 그대로
+
+
+def test_Esc_뒤에도_같은_글자로는_안_찾는_카톡에서도_다른_글자로_다시_찾아_나간다():
+    """같은 글자는 열린 검색창을 Esc 로 닫은 뒤에도 새로 안 찾는 카톡이라면 — 0.11.11 의
+    다시 찾기(같은 글자)는 같은 방 둘째 건에서 실패한다. 다른 글자는 새로 찾는다."""
+    sender = SameRoomWin(esc_forgets=False)
+    results = [sender.send_text(ROOM, f"{n}번째") for n in range(1, 6)]
+    assert [r.ok for r in results] == [True] * 5, [r.error for r in results]
+    assert kw.retry_query(ROOM) in sender.enter_queries
+    assert sender.pasted_into == [ROOM] * 5
+
+
+def test_같은_글자로_다시_찾으면_그_카톡에서는_실패한다(monkeypatch):
+    """흉내가 그 증상을 재현하는지 — 다시 찾는 글자를 바꾸지 않으면 둘째 건이 막힌다."""
+    monkeypatch.setattr(kw, "retry_query", lambda room: room)
+    sender = SameRoomWin(esc_forgets=False)
+    results = [sender.send_text(ROOM, "안녕하세요") for _ in range(2)]
+    assert [r.ok for r in results] == [True, False]
+    assert sender.delivered == [(ROOM, "안녕하세요")]
+
+
+def test_첫_시도에_막혔다가_다시_찾아_나가면_실패가_아니라_경고를_싣는다():
+    sender = SameRoomWin()
+    first = sender.send_text(ROOM, "첫 건")
+    assert first.ok and first.warning is None
+    second = sender.send_text(ROOM, "둘째 건")          # 같은 방 — 첫 Enter 로 안 열린다
+    assert second.ok, second.error
+    assert second.warning.startswith("첫 시도에 Enter 로 방이 열리지 않음")
+    assert second.warning.endswith("다시 찾아 열었습니다")
+    third = sender.send_text(ROOM, "셋째 건")           # 첫 시도에 열렸다 — 경고가 남지 않는다
+    assert third.ok and third.warning is None
+
+
+def test_다른_방이_열렸다가_다시_찾아_나가면_그_방_제목을_경고에_적는다():
+    sender = SameRoomWin(wrong_opens=[OTHER])
+    result = sender.send_text(ROOM, "안녕하세요")
+    assert result.ok, result.error
+    assert f"다른 방이 열림({OTHER!r})" in result.warning

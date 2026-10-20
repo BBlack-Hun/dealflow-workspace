@@ -615,3 +615,24 @@ def test_it_ships_in_the_zip():
     from app.routers.setup import AGENT_FILES
 
     assert "agent/sender/win_clipboard.py" in {src for src, _dest in AGENT_FILES}
+
+
+# ── (0.11.12) 한 건 안에서도 [중단]을 듣는다 ───────────────────────────────
+
+def test_stop_before_the_first_file_attaches_nothing(ir_dir):
+    """방을 연 뒤 첫 파일 앞에서 [중단] — 아무것도 붙이지 않고 돌아온다."""
+    win = FakeWin(confirm_window(files=("IR.pdf",)), ir_root=str(ir_dir))
+    result = win.send_file(ROOM, ["IR.pdf"], should_stop=lambda: True)
+
+    assert not result.ok and result.error.startswith("stopped: 파일 0/1")
+    assert win.pasted == [] and not win.sent
+
+
+def test_stop_between_files_attaches_no_more(ir_dir):
+    """파일 하나 앞마다 묻는다 — 두 번째 앞에서 [중단]이면 첫 파일만 나간다."""
+    win = FakeWin(confirm_window(files=("IR.pdf",)), ir_root=str(ir_dir))
+    answers = iter([False, True])
+    result = win.send_file(ROOM, ["IR.pdf", "IR.pdf"], should_stop=lambda: next(answers))
+
+    assert not result.ok and result.error.startswith("stopped: 파일 1/2")
+    assert len(win.pasted) == 1

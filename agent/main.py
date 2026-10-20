@@ -32,6 +32,7 @@ from typing import List
 import requests
 import yaml
 
+from .sender.base import SendResult
 from .version import VERSION
 
 log = logging.getLogger("agent")
@@ -264,7 +265,7 @@ class AgentClient:
                                  json={"status": status}, timeout=15)
 
 
-def send_item(sender, item: dict, cfg: dict):
+def send_item(sender, item: dict, cfg: dict, should_stop=None):
     """한 건을 보낸다 — **자료 파일이 먼저, 문구가 마지막.**
 
     ## 차례
@@ -295,35 +296,79 @@ def send_item(sender, item: dict, cfg: dict):
     문구도 마찬가지다. 서버가 다시 큐에 넣을 때 **처음부터** 다시 보내야 차례가
     맞는다 — 그래서 다시 보내면 이미 나간 파일이 겹칠 수 있고, 그 사실은 실패
     문구에 적힌다(`send_file` 이 몇 개를 보낸 뒤 막혔는지 적는다).
+
+    ## [중단]은 한 건 **안에서도** 듣는다 (0.11.12)
+
+    `should_stop`(`StopCheck`)을 받으면 파일 하나 · 문구 한 통을 보내기 직전마다
+    묻는다 — 파일 쪽은 발송기가 `send_file` 안에서 묻는다. 0.11.11 까지는 건 앞에서
+    한 번만 물어, 자료 셋 + 문구를 올리는 30~40초 사이에 누른 [중단]이 그 건이 다
+    나간 뒤에야 들렸다(잡 150). 문구가 첫 동작이면(파일 없음) 방금 건 앞에서 물었으니
+    다시 묻지 않는다. 걸리면 그 자리에서 멈추고(`_stopped`) —
+      · 아무것도 안 나갔으면 `ok=False`, `error=None`
+      · 무엇이 나갔으면 `ok=True` 에 나간 것을 적는다(`중단: 파일 2/3 보냄, 문구 안 보냄`)
+    무엇에 걸렸는지(잡 중단 · 이 건만 취소 · 서버에 못 물음)는 `should_stop.gate` 에
+    남는다(`process_job`).
     """
     gap = float(cfg.get("part_gap_sec", 1.2))
+    room = item["room_name"]
+    stop = should_stop or (lambda: False)
+    parts = item.get("parts") or [item["message"]]
+    warned = []         # 성공했지만 남길 것(`SendResult.warning`) — 파일 · 문구에서 모은다
 
     # 자료 파일 — 이 칸을 모르는 서버(구버전)는 주지 않는다. 그러면 지금까지처럼
     # 문구만 나가고 자료는 사람이 PC 카톡에서 붙인다.
     files = [str(f) for f in (item.get("files") or []) if str(f).strip()]
+    asked = 0           # 발송기가 파일 앞에서 물은 수 — 멈췄으면 나간 파일은 asked - 1
+    halted = False
+
+    def before_file() -> bool:
+        nonlocal asked, halted
+        asked += 1
+        halted = stop()
+        return halted
+
     if files:
-        result = sender.send_file(item["room_name"], files)
+        result = sender.send_file(room, files, should_stop=before_file)
+        if halted:
+            return _stopped(asked - 1, len(files), 0, len(parts))
         if not result.ok:
             result.error = (f"자료 파일을 보내지 못해 **문구도 보내지 않았습니다** "
                             f"— {result.error}")
             return result
+        warned.append(getattr(result, "warning", None))
         # 파일이 다 올라간 뒤에 문구가 와야 한다. 연달아 쏟으면 카톡이 순서를
         # 뒤집거나 묶어 버린다(통 사이 간격과 같은 이유·같은 값).
         time.sleep(gap)
 
-    parts = item.get("parts") or [item["message"]]
-
     result = None
     for n, text in enumerate(parts, start=1):
-        result = sender.send_text(item["room_name"], text)
+        if (files or n > 1) and stop():
+            return _stopped(len(files), len(files), n - 1, len(parts))
+        result = sender.send_text(room, text)
         if not result.ok:
             if len(parts) > 1:
                 result.error = f"{n}/{len(parts)}번째 통에서 실패 — {result.error}"
             return result
+        warned.append(getattr(result, "warning", None))
         if n < len(parts):
             # 연달아 쏟으면 카톡이 순서를 뒤집거나 묶어 버린다.
             time.sleep(gap)
+    result.warning = " · ".join(w for w in warned if w) or None
     return result
+
+
+def _stopped(files_sent: int, files_total: int, parts_sent: int,
+             parts_total: int) -> SendResult:
+    """한 건 안에서 [중단]에 걸렸을 때 돌려줄 결과 (0.11.12 — `send_item`).
+
+    나간 것이 있으면 **보낸 것으로**(`ok=True`) 무엇이 나갔는지 적는다 — 안 보낸 것으로
+    두면 [취소분 재발송] · [실패 재시도] 가 이미 나간 자료를 또 보낸다.
+    """
+    if not (files_sent or parts_sent):
+        return SendResult(ok=False)
+    went = [f"파일 {files_sent}/{files_total} 보냄"] if files_total else []
+    went.append(f"문구 {parts_sent}/{parts_total}통 보냄" if parts_sent else "문구 안 보냄")
+    return SendResult(ok=True, error="중단: " + ", ".join(went))
 
 
 # 발송 직전 확인 결과. `go` 가 False 면 **이 건도 남은 건도 보내지 않는다**.
@@ -375,6 +420,26 @@ def check_before_send(client: AgentClient, job_id: int, cfg: dict) -> Gate:
         return Gate(True, "", "", set(state.get("canceled_items") or []))
 
     return Gate(False, "unreachable", f"서버에 물어보지 못했습니다 ({last_error})", set())
+
+
+class StopCheck:
+    """한 건 **안에서** 다시 묻는 [중단] 확인 (0.11.12) — `send_item` 에 넘긴다.
+
+    묻는 길은 건 앞의 확인과 같다(`check_before_send` — GET 하나, 못 물으면 몇 번 다시
+    묻고 그래도 안 되면 멈춘다). 멈춰야 하면 참을 돌려주고 그때의 답을 `gate` 에
+    남긴다 — 잡이 멈췄거나, 이 건만 취소됐거나, 서버에 못 물어봤다.
+    """
+
+    def __init__(self, client: "AgentClient", job_id: int, item_id: int, cfg: dict):
+        self.client, self.job_id, self.item_id, self.cfg = client, job_id, item_id, cfg
+        self.gate = None
+
+    def __call__(self) -> bool:
+        gate = check_before_send(self.client, self.job_id, self.cfg)
+        if gate.go and self.item_id not in gate.canceled_items:
+            return False
+        self.gate = gate
+        return True
 
 
 def report_stopped(client: AgentClient, job_id: int, gate: Gate, remaining: int) -> None:
@@ -568,11 +633,39 @@ def process_job(client: AgentClient, sender, job: dict, cfg: dict):
             log.info("  [%d/%d] SKIP 취소된 건 room=%r", i, len(items), item["room_name"])
             continue
 
-        result = send_item(sender, item, cfg)
+        stop = StopCheck(client, job_id, item["id"], cfg)
+        result = send_item(sender, item, cfg, stop)
         attempted = True
+        if stop.gate is not None:
+            # (0.11.12) 한 건 안에서 [중단]에 걸렸다. 나간 것이 있으면 '보냄' 으로 적는다
+            # (`_stopped`). 서버는 '보냄' 의 error 를 지금은 버린다(`item_result`) — 무엇이
+            # 나갔는지는 이 로그와 진단 기록(서버 data/agent_reports.log)에 남는다.
+            if result.ok:
+                log.warning("  [%d/%d] %s room=%r", i, len(items), result.error,
+                            item["room_name"])
+                client.report_item(item["id"], "sent", error=result.error)
+                client.report_diagnostics(
+                    collect_diagnostics(sender, "send_stopped",
+                                        target_room=item["room_name"], error=result.error))
+            if not stop.gate.go:
+                report_stopped(client, job_id, stop.gate,
+                               remaining=len(items) - i + (0 if result.ok else 1))
+                return
+            log.info("  [%d/%d] SKIP 보내는 중 취소된 건 room=%r", i, len(items),
+                     item["room_name"])
+            continue
         if result.ok:
             client.report_item(item["id"], "sent")
-            log.info("  [%d/%d] SENT room=%r", i, len(items), item["room_name"])
+            if result.warning:
+                # (0.11.12) 나갔지만 첫 시도에 막혔다 — 실패가 아니라 경고로 남긴다.
+                log.warning("  [%d/%d] SENT room=%r (경고: %s)", i, len(items),
+                            item["room_name"], result.warning)
+                client.report_diagnostics(
+                    collect_diagnostics(sender, "send_warning",
+                                        target_room=item["room_name"],
+                                        error=result.warning))
+            else:
+                log.info("  [%d/%d] SENT room=%r", i, len(items), item["room_name"])
         else:
             any_fail = True
             client.report_item(item["id"], "failed", error=result.error,

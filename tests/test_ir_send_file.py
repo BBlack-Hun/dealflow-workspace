@@ -882,3 +882,24 @@ def test_two_names_that_differ_only_in_form_are_refused(tmp_path):
         pytest.skip("형태를 가리지 않는 파일 시스템 — 둘로 만들어지지 않는다")
 
     assert base._same_name_in(root, NFD_NAME) is None
+
+
+# ── (0.11.12) 한 건 안에서도 [중단]을 듣는다 ───────────────────────────────
+
+def test_stop_before_the_first_file_opens_no_panel(ir_dir):
+    """방을 연 뒤 첫 파일 앞에서 [중단] — 파일전송 단추도 누르지 않는다."""
+    mac = FakeMac(confirm_sheet(files=("IR.pdf",)), ir_root=str(ir_dir))
+    result = mac.send_file(ROOM, ["IR.pdf"], should_stop=lambda: True)
+
+    assert not result.ok and result.error.startswith("stopped: 파일 0/1")
+    assert mac.clicked == [] and not mac.sent
+
+
+def test_stop_between_files_sends_no_more(ir_dir):
+    """파일 하나 앞마다 묻는다 — 두 번째 앞에서 [중단]이면 첫 파일만 나간다."""
+    mac = FakeMac(confirm_sheet(files=("IR.pdf",)), ir_root=str(ir_dir))
+    answers = iter([False, True])
+    result = mac.send_file(ROOM, ["IR.pdf", "IR.pdf"], should_stop=lambda: next(answers))
+
+    assert not result.ok and result.error.startswith("stopped: 파일 1/2")
+    assert len(mac.goto) == 1

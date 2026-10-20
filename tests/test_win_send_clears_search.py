@@ -145,7 +145,7 @@ def test_예전처럼_안_비우면_번갈아_실패한다(monkeypatch):
     kakao = FakeKakao({})
     sender = SendWin(kakao)
 
-    def old_way(win, room):                       # 0.11.4 까지: 비우지 않고 붙였다
+    def old_way(win, room, _query):               # 0.11.4 까지: 비우지 않고 붙였다
         sender._pyperclip.copy(room)
         sender._pyautogui.hotkey("ctrl", "v")
         return None

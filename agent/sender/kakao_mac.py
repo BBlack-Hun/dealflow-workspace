@@ -1316,7 +1316,7 @@ class KakaoMacSender(Sender):
         _wait_until(lambda: not self._sheet_snapshot(room_name).get("present"),
                     timeout=2.0)
 
-    def send_file(self, room_name: str, file_names) -> SendResult:
+    def send_file(self, room_name: str, file_names, should_stop=None) -> SendResult:
         """IR 자료를 첨부해 보낸다. **관문을 통과할 때만 보낸다.**
 
         `file_names` 는 **공통 폴더 안의 파일명**이다(경로가 아니다). 실제 자리는
@@ -1355,6 +1355,12 @@ class KakaoMacSender(Sender):
                 return bad
 
             for n, path in enumerate(resolved, start=1):
+                # (0.11.12) 파일 하나 앞마다 [중단]을 다시 묻는다(`Sender.send_file`)
+                if should_stop is not None and should_stop():
+                    log.warning("[kakao_mac] [중단] — 파일 %d/%d 앞에서 멈춥니다 room=%r",
+                                n, len(resolved), room_name)
+                    return SendResult(ok=False, error=f"stopped: 파일 {n - 1}/"
+                                                      f"{len(resolved)}개를 보낸 뒤 [중단]")
                 result = self._send_one_file(room_name, path)
                 if not result.ok:
                     if n > 1:
