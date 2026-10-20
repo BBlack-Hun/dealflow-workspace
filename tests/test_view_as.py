@@ -22,20 +22,18 @@ BLOCKED = "팀원 화면으로 보는 중에는 발송·예약·방 확인을 �
 
 # 발송 회차를 세우거나 · 예약을 걸고 풀거나 · 발송기에 방 확인을 시키는 길 전부.
 # 하나가 늘면 여기와 라우터(`dependencies=[Depends(no_send_as_member)]`)를 같이 고친다.
+# 멈추는 길(STOP_ROUTES)은 일부러 빠져 있다 — 멈춤은 언제나 먹어야 한다.
 SEND_ROUTES = {
     ("POST", "/api/deals/send"),
     ("POST", "/api/deals/queue"),
     ("POST", "/api/deals/queue/{item_id}/start"),
-    ("POST", "/api/deals/queue/{item_id}/cancel"),
     ("POST", "/api/deals/manual-sends"),
     ("POST", "/api/deals/manual-sends/{batch_key}/undo"),
     ("POST", "/api/jobs/{job_id}/start"),
-    ("POST", "/api/jobs/{job_id}/cancel"),
     ("POST", "/api/jobs/{job_id}/retry"),
     ("POST", "/api/jobs/{job_id}/resend-canceled"),
     ("POST", "/api/jobs/{job_id}/resume"),
     ("POST", "/api/jobs/{job_id}/schedule"),
-    ("DELETE", "/api/jobs/{job_id}/schedule"),
     ("POST", "/api/contacts/verify-rooms"),
     ("POST", "/api/startup-msg/send"),
     ("POST", "/api/startup-rooms/search"),
@@ -52,6 +50,12 @@ SEND_ROUTES = {
     ("POST", "/team/automations/{key}"),
     ("POST", "/team/automation-team"),
     ("POST", "/team/startup-send"),
+}
+
+STOP_ROUTES = {
+    ("POST", "/api/deals/queue/{item_id}/cancel"),
+    ("POST", "/api/jobs/{job_id}/cancel"),
+    ("DELETE", "/api/jobs/{job_id}/schedule"),
 }
 
 
@@ -249,6 +253,41 @@ def test_send_routes_are_blocked_while_viewing(client, users, admin, method, pat
     r = client.request(method, _fill(path), json={})
     assert not (r.status_code == 403 and r.json().get("detail") == BLOCKED)
 
+
+
+# ── 3-1. 멈추는 길은 보는 중에도 먹는다 ──────────────────────────────────────
+# 10/20 IR 자료 발송 [중단] 사고 뒤: 멈춤은 안전 조치라 어떤 화면에서든 먹어야 한다.
+
+@pytest.mark.parametrize("method, path", sorted(STOP_ROUTES))
+def test_stop_routes_are_never_blocked_while_viewing(client, users, admin, method, path):
+    _login(client, "01000000009")
+    _view_as(client, users["u1"].id)
+    r = client.request(method, _fill(path), json={})
+    assert not (r.status_code == 403 and r.json().get("detail") == BLOCKED)
+
+
+def test_stop_button_works_while_viewing(client, db, users, admin):
+    """보고 있는 팀원의 회차가 나가는 중 — 관리자가 [중단] 을 누르면 멈춘다."""
+    from app.models import SendItem, SendJob
+
+    job = SendJob(user_id=users["u1"].id, kind="ir_delivery", status="running",
+                  total=2, sent=0, failed=0)
+    db.add(job)
+    db.flush()
+    db.add_all([SendItem(job_id=job.id, room_name=f"방 {n}", message="문구",
+                         status="pending") for n in (1, 2)])
+    db.commit()
+    _login(client, "01000000009")
+    _view_as(client, users["u1"].id)
+
+    page = client.get(f"/jobs/{job.id}").text
+    assert 'id="cancel-btn" class="danger-btn">' in page      # 흐리게 하지 않는다
+
+    r = client.post(f"/api/jobs/{job.id}/cancel")
+    assert r.status_code == 200, r.text
+    db.expire_all()
+    assert db.get(SendJob, job.id).status == "canceled"
+    assert {i.status for i in db.get(SendJob, job.id).items} == {"canceled"}
 
 def test_send_works_again_after_switching_back(client, db, users, admin):
     from app.models import IrCompany, VcContact
