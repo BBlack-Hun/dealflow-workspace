@@ -1287,12 +1287,14 @@ def release_floor(db: Session, job: SendJob, now: Optional[datetime] = None
 
 def hold_reason(db: Session, job: SendJob, now: Optional[datetime] = None) -> str:
     """진행 화면 — 이 회차가 지금 **왜 안 내려가나**(자동 회차만). 없으면 빈 글자."""
+    from ..deps import agent_user_id
     from ..models import AgentDevice
 
     if job.status != "queued" or automation_of(db, job.id) is None:
         return ""
+    # 이 회차를 실제로 집어갈 발송기의 판(`deps.agent_user_id`).
     device = db.execute(
-        select(AgentDevice).where(AgentDevice.user_id == job.user_id)
+        select(AgentDevice).where(AgentDevice.user_id == agent_user_id(db, job.user_id))
     ).scalars().first()
     reported = device.agent_version if device is not None else None
     return held_jobs(db, job.user_id, reported, now).get(job.id, "")

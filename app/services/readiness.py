@@ -36,8 +36,11 @@ def _check(level: str, title: str, detail: str, action: str = "",
 
 
 def _agent_check(db: Session, user: User) -> dict:
+    from ..deps import agent_user_id
+
+    # 남의 발송기로 보내는 계정이면 그 발송기를 본다(`deps.agent_user_id`).
     device = db.execute(
-        select(AgentDevice).where(AgentDevice.user_id == user.id)
+        select(AgentDevice).where(AgentDevice.user_id == agent_user_id(db, user.id))
     ).scalars().first()
     if device is None or not device.last_poll_at:
         return _check(BLOCK, "발송 프로그램", "한 번도 연결된 적이 없습니다",

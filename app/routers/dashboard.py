@@ -1159,6 +1159,62 @@ def toggle_auto_attach(
         status_code=303)
 
 
+@router.post("/team/members/{member_id}/send-via", include_in_schema=False)
+def set_send_via(
+    member_id: int,
+    via: int = Form(0),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """이 계정의 잡을 **누구의 발송기로** 보낼지 — 본인 것(0) 또는 다른 계정 것.
+
+    한 PC 의 한 카톡에 두 계정의 발송기가 붙어 있으면 서로 부딪친다. 한 계정을
+    다른 계정 발송기로 돌리면 그 발송기 하나가 둘 다 보낸다
+    (`deps.agent_serves`). 잡 · 이력 · 하루 상한은 그대로 이 계정 것이다.
+
+    막는 것 — 계정이 정지됐거나 연결키(발송기 토큰)가 없는 발송기, 이미 남의
+    발송기로 보내는 발송기, 남이 맡겨 둔 계정을 다시 남에게 맡기기(사슬). 사슬을
+    허락하면 맡긴 잡이 아무 발송기에도 안 내려간다(`agent_serves` 는 맡긴
+    발송기에 빈 목록을 준다).
+
+    문은 옆칸들과 같다(`admin_only`).
+    """
+    admin_only(user)
+    from urllib.parse import quote
+
+    member = db.get(User, member_id)
+    if member is None:
+        raise HTTPException(status_code=404, detail="계정을 찾을 수 없습니다")
+    target = db.get(User, via) if via else None
+    problem = ""
+    if via and target is None:
+        problem = "그 계정을 찾을 수 없습니다"
+    elif target is not None:
+        backers = db.execute(select(User.name).where(
+            User.send_via_user_id == member.id)).scalars().all()
+        has_token = db.execute(select(AgentDevice.id).where(
+            AgentDevice.user_id == target.id)).first() is not None
+        if target.id == member.id:
+            problem = "본인 발송기는 [본인 발송기] 로 고르세요"
+        elif not target.is_active:
+            problem = f"{target.name} 계정은 정지되어 있습니다"
+        elif not has_token:
+            problem = f"{target.name} 님은 발송 프로그램 연결키가 없습니다 — 먼저 그 계정으로 [발송 프로그램 설치] 를 여세요"
+        elif target.send_via_user_id:
+            problem = f"{target.name} 님도 다른 발송기로 보내고 있어 맡길 수 없습니다"
+        elif backers:
+            problem = (f"{', '.join(backers)} 님이 {member.name} 님 발송기로 보내고 있어 "
+                       "다른 발송기로 맡길 수 없습니다")
+    if problem:
+        return RedirectResponse(f"/team?msg={quote(problem)}", status_code=303)
+    member.send_via_user_id = target.id if target else None
+    db.commit()
+    note = (f"{member.name} 님의 발송을 {target.name} 님 발송기가 보냅니다 — "
+            f"{member.name} 님 발송기는 꺼도 됩니다" if target else
+            f"{member.name} 님은 본인 발송기로 보냅니다 — 그 PC 에서 발송기를 켜야 나갑니다")
+    return RedirectResponse(f"/team?msg={quote(note)}", status_code=303)
+
+
 @router.post("/team/send-caps", include_in_schema=False)
 async def save_send_caps(
     request: Request,
@@ -1613,6 +1669,11 @@ def deactivate_member(
     if member is None:
         raise HTTPException(status_code=404, detail="계정을 찾을 수 없습니다")
     member.is_active = 0
+    # 이 계정 발송기로 맡겨 둔 계정은 본인 발송기로 되돌린다 — 정지된 계정의
+    # 발송기에 남의 잡이 계속 내려가면 안 된다(`set_send_via` 가 막는 것과 같다).
+    for backer in db.execute(select(User).where(
+            User.send_via_user_id == member.id)).scalars().all():
+        backer.send_via_user_id = None
     db.commit()
     auth_svc.destroy_all_sessions(db, member.id)
     return RedirectResponse(f"/team?msg={member.name}+계정을+정지했습니다", status_code=303)
