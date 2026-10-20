@@ -876,9 +876,13 @@ class SeriesACompany(TimestampMixin, Base):
 
     ## 칸
 
-    금액이 없다 — 시트에 없는 칸은 만들지 않는다. 글자는 **적힌 그대로**다
-    (`series` 는 `Series A (누적투자금 10억이상, …)` 처럼 길게 오고, 표에서만
-    괄호 앞을 보인다 — IR 기업 현황의 `투자라운드` 와 같다).
+    글자는 **적힌 그대로**다(`series` 는 `Series A (누적투자금 10억이상, …)` 처럼
+    길게 오고, 표에서만 괄호 앞을 보인다 — IR 기업 현황의 `투자라운드` 와 같다).
+
+    대표자 · 매출 · 금액 칸(0112 — 개선 과제 #24)은 **시트에 없고 탭에서 사람이
+    적는다**(사용자 결정: "별도로 기록하고 있기 때문에 IR 기업현황에 자료가 없을것
+    … 직접 입력"). 시트 가져오기(`series_a_import.HEADERS`)는 이 칸을 안 건드리고,
+    IR 기업 현황의 같은 이름 칸에서 옮겨 오지도 않는다.
     """
 
     __tablename__ = "series_a_companies"
@@ -922,6 +926,20 @@ class SeriesACompany(TimestampMixin, Base):
     #: 가 기업 덩어리의 `소개` 로 이 문구를 쓴다(비면 `상세 내용` 앞부분 —
     #: `services/series_a_share.pitch_of`).
     deal_pitch: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    #: 대표자명 · 핸드폰 · 이메일 — 받은 딜 기업의 대표(우리 팀 담당자가 아니다).
+    ceo_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    ceo_phone: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    ceo_email: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: 연도별 매출 · 누적투자금액 · 투자유치희망금액 · 프리밸류 — 단위 억, **적은
+    #: 그대로 글자**다(`IrCompany` 의 같은 이름 칸과 같은 까닭 — `5-10억` · `~`).
+    #: 문구에 실리지 않으므로 `services/amount.py` 로 읽는 자리가 없다.
+    revenue_2024: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    revenue_2025: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    revenue_2026: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    revenue_2027: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    funding_total: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    raise_target: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    pre_value: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     #: 가져오기 열쇠 — **가져온 그때의 시트 줄**(기업명 · 수신 일자 · 공유 심사역 ·
     #: 회사를 다듬은 값, `services/series_a_import.import_key`). 다시 가져올 때 이
     #: 값으로 같은 딜을 알아본다. **앱에서 고쳐도 다시 셈하지 않는다** — 고칠 때마다
