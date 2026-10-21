@@ -28,7 +28,7 @@ from ..models import SendItem, SendJob, SourcingContact, User
 from ..services import (series_a_share, sourcing_buckets, sourcing_link,
                         sourcing_mail, sourcing_receipts, sourcing_rooms,
                         sourcing_sync)
-from ..services import custom_columns, sourcing_remind_log
+from ..services import custom_columns, sourcing_remind_log, taxonomy
 from ..services.pipeline import current_assignee
 from ..ui import base_ctx
 # 방 확인 잡의 종류는 **한 곳에만 적는다**(`agent_api.VERIFY_KIND`).
@@ -47,7 +47,7 @@ router = APIRouter(tags=["sourcing"])
 # 안 싣는(=열어도 늘 빈 목록) 필터가 조용히 생긴다.
 #
 # 거는 기준은 **고를 만한 값이 몇 가지로 모이는가**다(실데이터 39행 기준):
-#   담당자 5종 · 투자분야 6종 · 참여 요청일 12종 · 라운드 사이즈 13종 ·
+#   담당자 5종 · 선호 투자분야 6종 · 참여 요청일 12종 · 라운드 사이즈 13종 ·
 #   직함 18종                                        → 건다
 #   이름 35 · 회사 29 · 휴대폰 29 · 이메일 26종      → 줄마다 달라 고를 것이 없다
 #   메모(자유 문장, 최대 75자)                       → 목록 한 줄에 담기지 않는다
@@ -73,10 +73,12 @@ COLUMNS = [
     ("assignee_name", "담당자", "100px", True),
     ("phone", "휴대폰", "116px", False),
     ("title", "직함", "88px", True),
-    ("email", "이메일 주소", "170px", False),
+    # 투자사 관리 현황과 같은 저장 칸은 **그 화면의 머리글 그대로** 부른다(#63 —
+    # 사용자 결정 2026-10-20). 폭도 그 화면의 같은 칸과 같다(필터 단추가 한 줄에 든다).
+    ("email", "전자 메일 주소", "170px", False),
     ("firm", "회사", "150px", False),
-    ("sectors", "투자분야", "120px", True),
-    ("round_size", "라운드 사이즈", "134px", True),
+    ("sectors", "선호 투자분야", "134px", True),
+    ("round_size", "라운드 사이즈(투자운영금액)", "204px", True),
     ("memo", "메모", "", False),
     # 여기서 딜 소싱 제안을 보낸다 — 방 이름이 없으면 보낼 길이 없다.
     # 발송 화면(딜 제안 관리)에서 고를 수 있으려면 이 칸이 먼저 차야 한다.
@@ -368,6 +370,8 @@ def sourcing_page(request: Request, db: Session = Depends(get_db),
         "selected": selected,
         "columns": COLUMNS,
         "rows": rows,
+        # `선호 투자분야` 를 고를 거리 — 투자사 관리 현황과 같은 분야 기준 목록(#63).
+        "sector_tree": taxonomy.picker_tree(db),
         # [담당자] 필터가 거르는 값 — 칸에 적힌 글자가 아니라 **지금 맡은 사람**
         # (`assignee_of`). 딜 제안 관리의 [담당] 칩과 같은 값이다.
         "assignees": {r.id: assignee_of(r) for r in rows},

@@ -445,7 +445,7 @@ def test_발송기는_안내_카톡을_발송_잡처럼_보낸다():
     class Sender:
         name = "mock"
 
-        def send_text(self, room, text):
+        def send_text(self, room, text, should_stop=None):
             sent.append((room, text))
             return SendResult(ok=True)
 

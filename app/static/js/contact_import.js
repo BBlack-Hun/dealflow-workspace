@@ -155,7 +155,7 @@
         d.overlap_total + "명 — " +
         (d.keep_other_owner ? "이 담당자 몫으로 <b>따로 만듭니다</b>"
                             : "이 담당자에게 <b>옮깁니다</b>") +
-        "</summary><table class=\"mini-table\"><tr><th>이름</th><th>투자사</th><th>지금 담당</th></tr>" +
+        "</summary><table class=\"mini-table\"><tr><th>이름</th><th>회사</th><th>지금 담당</th></tr>" +
         d.overlaps.map(function (o) {
           return "<tr><td>" + esc(o.name) + "</td><td>" + esc(o.firm) + "</td><td>" + esc(o.owner) + "</td></tr>";
         }).join("") + "</table></details>";

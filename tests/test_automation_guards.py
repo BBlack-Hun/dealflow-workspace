@@ -583,7 +583,7 @@ def test_the_agent_rests_the_jobs_gap_between_items(agent_main, monkeypatch):
     class Sender:
         name = "test"
 
-        def send_text(self, room, text):
+        def send_text(self, room, text, should_stop=None):
             return Result()
 
     class Client:

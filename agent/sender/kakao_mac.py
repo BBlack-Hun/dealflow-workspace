@@ -24,7 +24,7 @@ import time
 from typing import List, Optional
 
 from .base import (IrPathError, SendResult, Sender, ir_root, nfc,
-                   resolve_ir_file, same_file_name)
+                   resolve_ir_file, same_file_name, stop_result)
 
 log = logging.getLogger("agent.kakao_mac")
 
@@ -625,7 +625,7 @@ class KakaoMacSender(Sender):
             f'to return name of front window'
         )
 
-    def _ensure_room_front(self, room_name: str) -> Optional[SendResult]:
+    def _ensure_room_front(self, room_name: str, should_stop=None) -> Optional[SendResult]:
         """방을 앞으로 올리고 **최전면 창 제목이 정확히 일치하는지** 확인한다.
 
         문제가 없으면 None, 있으면 그대로 돌려줄 실패 결과를 준다.
@@ -641,6 +641,11 @@ class KakaoMacSender(Sender):
         if not self._focus_window(room_name):
             opened = False
             for attempt in (1, 2):
+                # (0.11.12) 다시 찾기 전에 [중단]을 묻는다(`Sender.send_text`)
+                if attempt > 1 and should_stop is not None and should_stop():
+                    log.warning("[kakao_mac] [중단] — 방을 다시 찾기 전에 멈춥니다 room=%r",
+                                room_name)
+                    return stop_result("방을 다시 찾기 전에 멈췄습니다(전송 안 함)")
                 try:
                     self._open_room_via_search(room_name)
                 except QuartzUnavailable as exc:
@@ -665,16 +670,22 @@ class KakaoMacSender(Sender):
             )
         return None
 
-    def send_text(self, room_name: str, text: str) -> SendResult:
+    def send_text(self, room_name: str, text: str, should_stop=None) -> SendResult:
         """기존 방을 열어 텍스트 전송. 제목 불일치면 절대 보내지 않는다."""
         if not room_name or not room_name.strip():
             return SendResult(ok=False, error="room_name empty")
 
         try:
             # 1~2) 방을 열고 창 제목을 확인한다 (send_file 과 같은 판단을 쓴다).
-            bad = self._ensure_room_front(room_name)
+            bad = self._ensure_room_front(room_name, should_stop)
             if bad is not None:
                 return bad
+
+            # (0.11.12) 방을 연 뒤 넣기 **직전** — 여는 사이 누른 [중단]을 듣는다
+            if should_stop is not None and should_stop():
+                log.warning("[kakao_mac] [중단] — 문구를 넣기 전에 멈춥니다 room=%r",
+                            room_name)
+                return stop_result("문구를 넣기 전에 멈췄습니다(전송 안 함)")
 
             # 3) 본문 입력
             # 실기 확인 결과: Cmd+V(클립보드 붙여넣기)는 카톡 Mac 입력창에 들어가지 않는다.
@@ -1316,7 +1327,7 @@ class KakaoMacSender(Sender):
         _wait_until(lambda: not self._sheet_snapshot(room_name).get("present"),
                     timeout=2.0)
 
-    def send_file(self, room_name: str, file_names) -> SendResult:
+    def send_file(self, room_name: str, file_names, should_stop=None) -> SendResult:
         """IR 자료를 첨부해 보낸다. **관문을 통과할 때만 보낸다.**
 
         `file_names` 는 **공통 폴더 안의 파일명**이다(경로가 아니다). 실제 자리는
@@ -1350,11 +1361,17 @@ class KakaoMacSender(Sender):
 
         try:
             # ② 방 열기 + 창 제목 정확 일치 (send_text 와 **같은 판단**)
-            bad = self._ensure_room_front(room_name)
+            bad = self._ensure_room_front(room_name, should_stop)
             if bad is not None:
                 return bad
 
             for n, path in enumerate(resolved, start=1):
+                # (0.11.12) 파일 하나 앞마다 [중단]을 다시 묻는다(`Sender.send_file`)
+                if should_stop is not None and should_stop():
+                    log.warning("[kakao_mac] [중단] — 파일 %d/%d 앞에서 멈춥니다 room=%r",
+                                n, len(resolved), room_name)
+                    return stop_result(f"파일 {n - 1}/{len(resolved)}개를 보낸 뒤 "
+                                       f"멈췄습니다", n - 1)
                 result = self._send_one_file(room_name, path)
                 if not result.ok:
                     if n > 1:

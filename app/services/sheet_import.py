@@ -670,13 +670,16 @@ def parse_sheet_a(rows: Sequence[Sequence[str]], year: int) -> SheetAParse:
     """
     out = SheetAParse()
     # 명단 시트마다 머리글이 조금씩 다르다. 딜소개현황은 '이름 + 투자사명',
-    # 신규 명단(150/98/30)은 'NO + 회사' 다. 둘 다 받아들인다.
+    # 신규 명단(150/98/30)은 'NO + 회사' 다. 앱이 내주는 양식 · 엑셀은 화면 머리글
+    # 그대로 '이름 + 회사' 다(#63). 셋 다 받아들인다.
     header_idx = detect_header_row(rows, ["이름", "투자사"])
     if header_idx is None:
         header_idx = detect_header_row(rows, ["NO", "회사"])
     if header_idx is None:
+        header_idx = detect_header_row(rows, ["이름", "회사"])
+    if header_idx is None:
         raise ValueError(
-            "헤더 행을 찾지 못했습니다 — '이름'+'투자사명' 또는 'NO'+'회사' 가 있는 행이 필요합니다"
+            "헤더 행을 찾지 못했습니다 — '이름'+'회사'(또는 '투자사명') 또는 'NO'+'회사' 가 있는 행이 필요합니다"
         )
     out.header_row = header_idx
     header = rows[header_idx]
@@ -710,7 +713,8 @@ def parse_sheet_a(rows: Sequence[Sequence[str]], year: int) -> SheetAParse:
         "invited": find_column(header, ["초대"]),
         "interest": find_column(header, ["관심도"]),
         "kakao_joined": first_column(header, ["카톡방", "참여"], ["카톡", "연결"]),
-        "sectors": first_column(header, ["선호", "투자분야"], ["투자분야"]),
+        # `선호 분야` 는 #63 전 엑셀 내려받기의 이름이다(지금은 `선호 투자분야`).
+        "sectors": first_column(header, ["선호", "투자분야"], ["투자분야"], ["선호", "분야"]),
         "round": find_column(header, ["라운드"]),
         # 아직 어느 시트에도 없는 칸이다(위 `ParsedContact.stages` 참고).
         # `투자` 와 `단계` 를 **둘 다** 요구한다 — `단계` 하나로 찾으면
@@ -1127,10 +1131,10 @@ _DIFF_FIELDS = ("title", "round_size", "stages", "memo", "phone",
 
 #: 화면에 읽을 이름. 이 길은 머리글을 칸마다 들고 있지 않아(파서가 값만
 #: 넘긴다) 앱의 이름을 쓴다 — 없으면 칸 이름이 그대로 나온다.
-_DIFF_LABELS = {"title": "직함", "round_size": "라운드 사이즈",
+_DIFF_LABELS = {"title": "직함", "round_size": "라운드 사이즈(투자운영금액)",
                 "stages": "선호 투자단계", "memo": "메모", "phone": "연락처",
                 "office_phone": "유선전화", "address": "주소",
-                "department": "부서", "email": "메일", "sectors": "선호 투자분야",
+                "department": "부서", "email": "전자 메일 주소", "sectors": "선호 투자분야",
                 "group_name": "그룹"}
 
 

@@ -593,7 +593,7 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
     `title`). 줄어든 것이 거슬리면 이 값을 163px 쪽으로 올리면 된다.) */
 #co-table { min-width: 2612px; }
 /* IR 기업 현황 › Series A 이상 딜 소싱 — 넓은 표 공통 값(2,030px)에 직접 적는 칸
-   열(#24 · `companies_series_a.html` 의 `대표자명` ~ `프리밸류`, 폭 합 932px)을 **든 만큼만**
+   열(#24 · `companies_series_a.html` 의 `대표자명` ~ `Pre Value`, 폭 합 932px)을 **든 만큼만**
    더한다. 안 올리면 폭을 안 준 `상세 내용` 이 그 932px 을 내어 주다 0 으로 짜부라진다. */
 #sa-table { min-width: 2962px; }
 /* 표의 `소개 횟수` — 회차 수와 사람 수를 **위아래로** 세운다(사용자 요청,
@@ -700,8 +700,10 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
    칸 폭 124px 은 가장 긴 한 줄 `10/12 14:05 수동` 을 글자 폭으로 셈한 값이다
    (13px — 숫자 여덟 · 한글 둘 · 기호 · 빈칸 ≈ 101px + 좌우 여백 18px). 머리글
    `12월 리마인드` 도 한 줄에 든다. 시각은 한 칸에 여러 줄이 서므로 자릿수를
-   세로로 맞춘다(`tabular-nums`). */
-#sourcing-table { min-width: 2402px; }
+   세로로 맞춘다(`tabular-nums`).
+   (2,402 → 2,486 : `선호 투자분야` 120→134 · `라운드 사이즈(투자운영금액)` 134→204 —
+    투자사 관리 현황의 같은 칸 이름 · 폭으로 맞췄다(#63). 든 만큼 올려 `메모` 는 그대로) */
+#sourcing-table { min-width: 2486px; }
 #sourcing-table td.remind-col { font-variant-numeric: tabular-nums; }
 /* `참여` 칸 — `참여 의사를 물어보는 중` · 사람이 적은 문구(아직 동의 전). 딜 소싱
    제안이 나가지 않는다(`sourcing_sync.takes_part`). 흐리게 그리는 `불참여` 와

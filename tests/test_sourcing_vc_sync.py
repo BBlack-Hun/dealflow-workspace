@@ -1240,7 +1240,7 @@ def test_linking_fills_only_empty_sectors_and_flags_a_difference(board, db, user
     [row] = sync_rows(db)
     assert row.sectors == "핀테크" and row.round_size == "10억"
     body = board.get(f"/sourcing?tab={SYNC}").text
-    assert "다른 칸: 투자분야" in body
+    assert "다른 칸: 선호 투자분야" in body
 
 
 def test_comma_spacing_alone_is_not_a_different_field(board, db, users):
@@ -1341,5 +1341,5 @@ def test_the_link_badge_names_every_shared_field(board, db, users):
     contact = vc(db, users)
     mark(board, contact.id, "O")
     body = board.get(f"/sourcing?tab={SYNC}").text
-    assert ("두 화면이 같이 바뀌는 칸: 이름 · 직함 · 회사 · 휴대폰 · 이메일 · 투자분야 · "
-            "라운드 사이즈 (메모는 따로)") in body
+    assert ("두 화면이 같이 바뀌는 칸: 이름 · 직함 · 회사 · 휴대폰 · 전자 메일 주소 · "
+            "선호 투자분야 · 라운드 사이즈(투자운영금액) (메모는 따로)") in body

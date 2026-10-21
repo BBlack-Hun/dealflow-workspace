@@ -39,7 +39,7 @@ class FakeSender:
         self.sent = []
         self.fail_on = fail_on          # 몇 번째 통에서 실패할지 (1부터)
 
-    def send_text(self, room, text):
+    def send_text(self, room, text, should_stop=None):
         self.sent.append((room, text))
         if self.fail_on == len(self.sent):
             return FakeResult(ok=False, error="방을 찾지 못했습니다")

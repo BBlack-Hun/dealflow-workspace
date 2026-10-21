@@ -17,6 +17,17 @@ class SendResult:
     ok: bool
     error: Optional[str] = None
     screenshot_b64: Optional[str] = None
+    #: 성공했지만 남길 것 (0.11.12) — 첫 시도에 방이 안 열려 다시 찾아 나간 것 같은.
+    #: 실패가 아니라 경고다(`agent/main.py: process_job` 이 로그 · 진단 기록에 남긴다).
+    warning: Optional[str] = None
+    #: [중단]에 걸려 멈췄으면 그 전에 나간 **파일 수**(문구는 늘 0). 안 멈췄으면 None
+    #: (0.11.12 — `should_stop`, `stop_result`).
+    stopped: Optional[int] = None
+
+
+def stop_result(what: str, sent_files: int = 0) -> SendResult:
+    """`should_stop` 이 참이라 멈췄을 때 돌려주는 결과 (0.11.12)."""
+    return SendResult(ok=False, error=f"stopped: [중단] — {what}", stopped=sent_files)
 
 
 #: `send_file` 이 **"지원 안 함"** 으로 거절할 때 error 앞에 붙는 표식.
@@ -53,12 +64,22 @@ class Sender:
         """Return 'verified' | 'not_found' | 'ambiguous'. (Used by Sprint 2 [방 연결 확인].)"""
         raise NotImplementedError
 
-    def send_text(self, room_name: str, text: str) -> SendResult:
-        """Send `text` to the chat room whose title EXACTLY equals `room_name`."""
+    def send_text(self, room_name: str, text: str, should_stop=None) -> SendResult:
+        """Send `text` to the chat room whose title EXACTLY equals `room_name`.
+
+        `should_stop` 을 받으면 (0.11.12) 방을 **다시 찾기 전마다**, 그리고 방을 연 뒤
+        문구를 넣기 **직전에** 부른다. 참이면 아무것도 넣지 않고 `stop_result` 를
+        돌려준다 — 방을 여는 데 몇 초가 걸려 그사이 누른 [중단]이 있다.
+        """
         raise NotImplementedError
 
-    def send_file(self, room_name: str, file_names: Sequence[str]) -> SendResult:
+    def send_file(self, room_name: str, file_names: Sequence[str],
+                  should_stop=None) -> SendResult:
         """IR 자료 공통 폴더의 `file_names` 를 첨부해 `room_name` 방으로 보낸다.
+
+        `should_stop` 을 받으면 (0.11.12) 방을 다시 찾기 전마다, 그리고 파일 하나를
+        올리기 **직전마다** 부른다. 참이면 그 파일부터 보내지 않고 `stop_result` 를
+        돌려준다(`stopped` = 그 전에 나간 파일 수).
 
         **경로가 아니라 파일명을 받는다** — 실제 자리는 각 PC 가 설정한 뿌리로
         조립한다(`resolve_ir_file`).
@@ -298,4 +319,9 @@ def resolve_ir_file(file_name: str, configured_root: str) -> Path:
         path = twin
     if not path.is_file():
         raise IrPathError(f"파일이 아닙니다: {path}")
+    if path.stat().st_size == 0:
+        # 카톡은 빈 파일을 `전송 불가 — 비어있는 파일` 로 받지 않는다(Windows 실기,
+        # 0.11.12). 카톡을 열기 **전에** 막아 그 까닭을 그대로 알린다.
+        raise IrPathError(f"자료 파일을 보낼 수 없습니다 — 비어있는 파일(0바이트): "
+                          f"{path.name}. 카톡은 빈 파일을 받지 않습니다")
     return path
