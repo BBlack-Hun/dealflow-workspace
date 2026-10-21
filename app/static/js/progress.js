@@ -40,7 +40,8 @@
         "<td>" + esc(i.room_name) + "</td>" +
         '<td class="st st-' + i.status + '">' + (STATUS_KO[i.status] || i.status) + "</td>" +
         "<td>" + (i.retry_count || 0) + "</td>" +
-        "<td>" + esc(i.error || i.sent_at || "") + "</td>" +
+        // 예전 발송기는 사유에 `**강조**` 표시를 그대로 실었다 — 글자로 보이지 않게 뗀다
+        "<td>" + esc(i.error && i.error.replace(/\*\*/g, "") || i.sent_at || "") + "</td>" +
         "</tr>";
     }).join("");
 
@@ -66,11 +67,12 @@
     renderSchedule(d, draft);
     renderStanding(d);
     renderGuard(d);
-    // 아직 안 보낸 회차를 [중단] 할 일은 없다 — 중단할 것이 없다.
-    var cancelBtn2 = document.getElementById("cancel-btn");
-    if (cancelBtn2) cancelBtn2.hidden = draft;
-
     var terminal = (d.status === "done" || d.status === "done_with_errors" || d.status === "canceled");
+    // [중단] 은 멈출 것이 있을 때만 — 대기 · 보내는 중 · 멈춤. 아직 안 보낸 회차(작성 중)와
+    // 이미 끝난 회차에는 멈출 것이 없다. 끝난 회차에 남아 있으면 눌러도 아무 일이 없는데
+    // 눌러야 하는 것처럼 보인다(0.11.12 실기).
+    var cancelBtn2 = document.getElementById("cancel-btn");
+    if (cancelBtn2) cancelBtn2.hidden = draft || terminal;
     // 관리자가 읽기 전용으로 보고 있으면 버튼 자체가 없다 — 재시도 표시할 곳도 없다.
     var retryBtn = document.getElementById("retry-btn");
     if (retryBtn) retryBtn.hidden = !(terminal && d.counts.failed > 0);

@@ -27,6 +27,8 @@ from pathlib import Path
 import pytest
 import requests
 
+from agent.sender.base import stop_result
+
 from .conftest import DEMO_PASSWORD, DEMO_TOKEN, OTHER_TOKEN
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -55,14 +57,17 @@ class FakeResult:
 
 
 class CountingSender:
-    """보낸 방을 순서대로 적어 두는 가짜 카톡."""
+    """보낸 방을 순서대로 적어 두는 가짜 카톡. 진짜 발송기처럼 방을 연 뒤 넣기
+    직전에 [중단]을 묻는다(0.11.12 — `Sender.send_text`)."""
 
     name = "test"
 
     def __init__(self):
         self.sent = []
 
-    def send_text(self, room, _text):
+    def send_text(self, room, _text, should_stop=None):
+        if should_stop is not None and should_stop():
+            return stop_result("문구를 넣기 전에 멈췄습니다")
         self.sent.append(room)
         return FakeResult()
 
@@ -80,8 +85,8 @@ class StopWhileSending(CountingSender):
         self.job_id = job_id
         self.stop_at = stop_at
 
-    def send_text(self, room, text):
-        result = super().send_text(room, text)
+    def send_text(self, room, text, should_stop=None):
+        result = super().send_text(room, text, should_stop)
         if len(self.sent) == self.stop_at:
             self.http.post(f"/api/jobs/{self.job_id}/cancel")
         return result
@@ -199,6 +204,27 @@ def test_hitting_stop_mid_job_stops_the_kakao(client, db, users, agent_main):
     assert item_statuses[2:] == ["canceled", "canceled", "canceled"]
 
 
+def test_stop_inside_one_item_stops_before_the_next_message(client, db, users, agent_main):
+    """(0.11.12) 한 건 **안에서** [중단] — 두 통짜리 건의 첫 통을 보내는 중에 눌렀다.
+    둘째 통은 나가면 안 되고, 첫 통은 나갔으니 서버에 '보냄' 으로 남는다(잡 150)."""
+    import json
+
+    from app.models import SendItem
+
+    job_id = make_job(db, users["u1"], count=1)
+    item = db.query(SendItem).filter_by(job_id=job_id).one()
+    item.parts_json = json.dumps(["첫 통", "둘째 통"])
+    db.commit()
+    login(client)
+    ac = agent_for(client, DEMO_TOKEN)
+
+    sender = StopWhileSending(client, job_id, stop_at=1)
+    agent_main.process_job(ac, sender, ac.poll(), FAST)
+
+    assert sender.sent == ["테스트방 1"], "[중단] 뒤에 둘째 통이 나갔다"
+    assert statuses(db, job_id) == ("canceled", ["sent"])
+
+
 
 def test_a_failure_after_stop_stays_canceled(client, db, users):
     """[중단] 뒤에 온 '실패' 는 버린다 — 취소한 건이 실패 목록에 다시 뜨지 않게."""
@@ -254,7 +280,8 @@ def test_it_asks_before_every_single_one(agent_main):
     agent_main.process_job(nosy, sender, job, FAST)
 
     assert len(sender.sent) == 3
-    assert nosy.asked == 3, f"3건을 보내며 {nosy.asked}번만 물어봤다"
+    # 건 앞에서 한 번 + 방을 연 뒤 넣기 직전에 한 번(0.11.12)
+    assert nosy.asked == 6, f"3건을 보내며 {nosy.asked}번 물어봤다"
 
 
 # --- 서버에 못 물어보는 경우 ---------------------------------------------------

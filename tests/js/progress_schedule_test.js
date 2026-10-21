@@ -13,6 +13,7 @@
 //   ⑤ 큐에 서 있는데 발송기가 없으면 **막힌 것이 아니라 서 있는 것**이라고 적는다.
 //   ⑥ 2초 폴링이 **사람이 고치고 있는 시각 칸을 덮어쓰지 않는다** — 덮어쓰면
 //      시각을 아예 못 고친다.
+//   (⑦ 발송 안전장치 문장, ⑧ [중단] 은 멈출 것이 있을 때만 보인다 — 아래 각 자리)
 "use strict";
 const assert = require("assert");
 const fs = require("fs");
@@ -326,6 +327,21 @@ function run(data, opts) {
   const s = run(payload({ status: "queued", guard: {
     gated: false, held: false, sentence: "" } }));
   assert.strictEqual(s.id("guard-note").hidden, true);
+})();
+
+// ── ⑧ [중단] 은 멈출 것이 있을 때만 ─────────────────────────────────────────
+
+(function theStopButtonShowsOnlyWhileThereIsSomethingToStop() {
+  ["queued", "running", "paused"].forEach(function (status) {
+    const s = run(payload({ status: status }));
+    assert.strictEqual(s.id("cancel-btn").hidden, false,
+      status + " 회차는 멈출 수 있어야 한다");
+  });
+  ["draft", "done", "done_with_errors", "canceled"].forEach(function (status) {
+    const s = run(payload({ status: status }));
+    assert.strictEqual(s.id("cancel-btn").hidden, true,
+      status + " 회차에는 멈출 것이 없다 — [중단] 이 보이면 눌러야 하는 것처럼 보인다");
+  });
 })();
 
 console.log("ok");
