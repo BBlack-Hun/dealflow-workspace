@@ -10,7 +10,7 @@ IR 요청이 왔는데 "지난번 공유드린 기업들 검토 중…"이 또 �
 from __future__ import annotations
 
 from datetime import date
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -22,9 +22,10 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import doer, get_current_user, now_iso, templates
 from ..models import IrCompany, IrRequest, Meeting, User, VcContact
-from ..services import (call_flags, cadence, flow, ir_attach, meeting_calendar,
-                        pipeline, sheet_owner)
+from ..services import (call_flags, cadence, flow, ir_attach, ir_no_meeting,
+                        meeting_calendar, pipeline, sheet_owner)
 from . import followups
+from .data_io import _xlsx
 from .companies import BLOCKED_CONTRACT, contract_key
 from ..ui import base_ctx
 
@@ -205,6 +206,33 @@ def _month_of(ym: str, today: date) -> tuple:
     return (year, mon) if 2000 <= year <= 2100 and 1 <= mon <= 12 else (today.year, today.month)
 
 
+def _who(request: Request, user: User, member: int) -> tuple:
+    """`(누구 것 — None 이면 팀 전체, 고른 팀원, 주소에 이어 붙일 꼬리)`.
+
+    팀원은 **제 것만**(`member` 를 붙여 와도). 관리자는 팀 전체가 기본이고 한 사람을
+    고를 수 있다 — 업무 보고의 `?member=` 와 같은 모양이다. 팀원 화면으로 보는
+    중이면 기본은 그 팀원이다(#3) — `팀 전체` 칩은 `member=0` 을 실어 와서 그대로
+    전체가 열린다(투자컨설턴트 고르개와 같은 길).
+    """
+    if user.role != "admin":
+        return user.id, 0, ""
+    viewing = doer(user) is not user
+    if viewing and "member" not in request.query_params:
+        member = user.id
+    # 앞뒤 이동·거르기가 고른 팀원을 놓치지 않게 주소에 이어 붙인다. 보는 중에
+    # 고른 `팀 전체`(0)도 이어 붙인다 — 빠지면 다음 화면에서 그 팀원으로 돌아간다.
+    return member or None, member, f"&member={member}" if member or viewing else ""
+
+
+def _members(db: Session, user: User) -> list:
+    """관리자 고르개에 세울 사람들 — 관리자가 아니면 빈 목록(고르개가 안 선다)."""
+    if user.role != "admin":
+        return []
+    return [{"id": u.id, "name": u.name} for u in
+            db.execute(select(User).where(User.is_active == 1)
+                       .order_by(User.id)).scalars().all()]
+
+
 @router.get("/ir/calendar", response_class=HTMLResponse, include_in_schema=False)
 def meeting_calendar_page(request: Request, db: Session = Depends(get_db),
                           user: User = Depends(get_current_user),
@@ -217,25 +245,14 @@ def meeting_calendar_page(request: Request, db: Session = Depends(get_db),
     계정이 `member` 를 붙여 와도 제 것만 나온다(업무 보고와 같다).
     """
     today = date.today()
-    admin = user.role == "admin"
-    # 팀원 화면으로 보는 중이면 고르개의 기본은 그 팀원이다(#3) — `팀 전체` 칩은
-    # `member=0` 을 실어 와서 그대로 전체가 열린다(투자컨설턴트 고르개와 같은 길).
-    viewing = doer(user) is not user
-    if viewing and "member" not in request.query_params:
-        member = user.id
-    who = (member or None) if admin else user.id
+    who, member, member_q = _who(request, user, member)
     ctx = base_ctx(request, db, user, active="flow")
     ctx.update({
         "ir_tab": "calendar",
         "view": "year" if view == "year" else "month",
-        "member": member if admin else 0,
-        # 앞뒤 이동·월간/연간 전환이 고른 팀원을 놓치지 않게 주소에 이어 붙인다.
-        # 보는 중에 고른 `팀 전체`(0)도 이어 붙인다 — 빠지면 다음 달에서 그 팀원으로 돌아간다.
-        "member_q": f"&member={member}" if admin and (member or viewing) else "",
-        "members": ([{"id": u.id, "name": u.name} for u in
-                     db.execute(select(User).where(User.is_active == 1)
-                                .order_by(User.id)).scalars().all()]
-                    if admin else []),
+        "member": member,
+        "member_q": member_q,
+        "members": _members(db, user),
         "this_ym": f"{today.year}-{today.month:02d}",
         "this_year": today.year,
     })
@@ -253,6 +270,72 @@ def meeting_calendar_page(request: Request, db: Session = Depends(get_db),
                     "next_ym": f"{nxt[0]}-{nxt[1]:02d}",
                     **meeting_calendar.month(db, who, year, mon, today)})
     return templates.TemplateResponse("meeting_calendar.html", ctx)
+
+
+# 경과일 거르기 칩 — 그 밖의 값은 `전체` 로 읽는다(주소를 손으로 고쳐도 500 이 안 난다).
+NO_MEETING_DAYS = ("7", "30", "90")
+
+
+def _no_meeting(request: Request, db: Session, user: User, view: str, days: str,
+                sent: str, src: str, drop: str, member: int) -> dict:
+    """`IR 요청 후 미팅 없음` 화면과 엑셀이 **같이 읽는** 줄 — 거르기까지 한 번에."""
+    who, member, member_q = _who(request, user, member)
+    view = "scheduled" if view == "scheduled" else "none"
+    days = days if days in NO_MEETING_DAYS else ""
+    sent = sent if sent in ("yes", "no") else ""
+    src = src if src in ("app", "sheet") else ""
+    drop = "show" if drop == "show" else ""     # `보내지 않음` 은 기본으로 뺀다 — 칩으로 본다
+    found, skipped = ir_no_meeting.rows(db, who, date.today())
+    rows = [r for r in found
+            if (not days or (r["days"] or 0) >= int(days))
+            and (not sent or (r["state"] == "delivered") == (sent == "yes"))
+            and (not src or (r["src"] == "sheet") == (src == "sheet"))
+            and (drop or r["state"] != "dropped")]
+    planned = [r for r in rows if r["scheduled"]]
+    params = {"view": view, "days": days, "sent": sent, "src": src, "drop": drop}
+
+    def href(path: str = "/ir/no-meeting", **change) -> str:
+        """지금 거르기에 `change` 만 바꾼 주소 — 고른 팀원도 이어 붙인다."""
+        return f"{path}?{urlencode({k: v for k, v in {**params, **change}.items() if v})}{member_q}"
+
+    return {
+        **params, "who": who, "member": member, "href": href, "skipped": skipped,
+        "here": f"/ir/no-meeting?{urlencode({k: v for k, v in params.items() if v})}",
+        "rows": planned if view == "scheduled" else [r for r in rows if not r["scheduled"]],
+        "n_none": len(rows) - len(planned), "n_planned": len(planned),
+    }
+
+
+@router.get("/ir/no-meeting", response_class=HTMLResponse, include_in_schema=False)
+def no_meeting_page(request: Request, db: Session = Depends(get_db),
+                    user: User = Depends(get_current_user), view: str = "",
+                    days: str = "", sent: str = "", src: str = "", drop: str = "",
+                    member: int = 0):
+    """IR 요청 후 미팅 없음 — 정의는 `services/ir_no_meeting.py` 첫머리."""
+    ctx = base_ctx(request, db, user, active="flow")
+    ctx.update(_no_meeting(request, db, user, view, days, sent, src, drop, member))
+    ctx.update({"ir_tab": "no_meeting", "members": _members(db, user),
+                "day_steps": NO_MEETING_DAYS, "sources": ir_no_meeting.SOURCES})
+    return templates.TemplateResponse("ir_no_meeting.html", ctx)
+
+
+@router.get("/api/export/ir-no-meeting.xlsx")
+def export_no_meeting(request: Request, db: Session = Depends(get_db),
+                      user: User = Depends(get_current_user), view: str = "",
+                      days: str = "", sent: str = "", src: str = "", drop: str = "",
+                      member: int = 0):
+    """화면과 같은 범위 · 같은 거르기. 요청일은 첫·최근 두 칸으로 가른다."""
+    got = _no_meeting(request, db, user, view, days, sent, src, drop, member)
+    planned = got["view"] == "scheduled"
+    heads = ["기업명", "투자사", "심사역", "첫 요청일", "최근 요청일", "요청 상태", "전달일",
+             "경과일", "담당", "요청 건수", "출처", "비고"] + (["미팅 예정일"] if planned else [])
+    rows = [[r["company"], r["firm"], f"{r['contact_name']} {r['contact_title']}".strip(),
+             r["first_at"], r["last_at"], r["status_label"], r["delivered_at"], r["days"],
+             r["owners"], r["count"], ir_no_meeting.SOURCES[r["src"]], r["note"]]
+            + ([r["scheduled_on"]] if planned else [])
+            for r in got["rows"]]
+    title = "IR 요청 후 미팅 예정" if planned else "IR 요청 후 미팅 없음"
+    return _xlsx(f"{title}_{date.today().isoformat()}.xlsx", title, heads, rows)
 
 
 @router.get("/api/ir/last-batch/{contact_id}")

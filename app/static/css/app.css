@@ -2385,7 +2385,8 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
   .detail-tabs, .weekday-pick {
     overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch;
   }
-  .funnel-step, .sheet-tab, .mode-tab, .chip { flex: 0 0 auto; }
+  /* 칩 묶음(`.seg-toggle`)도 안 줄어든다 — 줄어들면 속 칩이 다음 묶음 위로 겹친다. */
+  .funnel-step, .sheet-tab, .mode-tab, .chip, .seg-toggle { flex: 0 0 auto; }
 
   /* 우측 상세 패널은 폰에서 화면을 다 쓴다 — 420px 은 화면보다 넓다. */
   .detail-panel, .detail-panel.wide { width: 100vw; }

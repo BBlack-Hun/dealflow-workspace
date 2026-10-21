@@ -183,10 +183,15 @@ def of_content(text: str) -> Optional[str]:
 
     안 했다는 말이 섞여 있으면 못 정한 것으로 본다(위 `_NEGATIVE`).
     """
-    low = _norm(text)
-    if any(no in low for no in _NEGATIVE):
+    if negated(text):
         return None
-    return _strongest(_hits(low))
+    return _strongest(_hits(_norm(text)))
+
+
+def negated(text: str) -> bool:
+    """안 했다는 말(`_NEGATIVE`)이 있는가 — `of_content` 가 갈래를 포기하는 그 판정."""
+    low = _norm(text)
+    return any(no in low for no in _NEGATIVE)
 
 
 def refine(kind: str, content: str) -> str:

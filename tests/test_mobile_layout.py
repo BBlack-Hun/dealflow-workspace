@@ -288,6 +288,14 @@ def test_overlays_stay_inside_the_screen():
     assert ".cell-pop" in phone, "폰에서 칸 편집창이 화면 안으로 안 들어온다"
 
 
+def test_chip_groups_do_not_shrink_into_each_other():
+    """폰에서 칩 줄은 가로로 민다. 그 안의 **칩 묶음**(`.seg-toggle`)이 줄어들면 속 칩이
+    다음 묶음 위로 겹쳤다(IR 요청 후 미팅 없음의 거르기 줄 — 390px 에서 셋이 겹쳤다)."""
+    phone = _block(_css(), PHONE)
+    assert any(".seg-toggle" in sel and re.search(r"flex:\s*0 0 auto", body)
+               for sel, body in _rules(phone)), "폰에서 칩 묶음이 줄어든다"
+
+
 def test_the_filter_dropdown_is_pulled_back_into_view():
     """필터 창은 누른 칸에 붙어 뜬다 — 표는 화면보다 넓어서 **오른쪽 칸일수록**
     창이 보이는 자리 밖으로 나갔다(390px 에서 오른쪽 절반이 잘렸다)."""

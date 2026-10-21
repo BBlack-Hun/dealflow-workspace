@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+
+{#
+  딜 진행 관리 › IR 요청 후 미팅 없음 — 지금 기준으로 뽑는다.
+  무엇을 싣고 무엇을 빼는지(사람 · 두 출처 · 취소 · 예정 · 기업 맞추기)는
+  `services/ir_no_meeting.py` 첫머리에 있다. 거르기는 화면과 엑셀이 같은 함수
+  (`routers/ir.py` 의 `_no_meeting`)를 지난다.
+#}
+{% block content %}
+<header class="page-head">
+  <h1>{{ page_title }}</h1>
+  <p class="muted">
+    IR 자료를 요청한 투자사 심사역 × 기업 중 <b>아직 미팅이 없는</b> 쌍입니다(오늘 기준).
+    이 앱의 기록과 시트에서 옮겨 온 이력을 함께 봅니다. 완료한 미팅이 있으면 빠지고,
+    취소한 미팅은 없던 일로 봅니다. 시트의 ‘미팅확정’은 만난 것으로 봅니다.
+    날짜가 아직 오지 않은 예정 미팅만 있는 쌍은 <b>미팅 예정</b>에 따로 서고,
+    예정일이 지났는데 완료 처리가 안 된 미팅은 미팅 없음으로 보고 비고에 적습니다.
+    ‘보내지 않음’ 요청은 기본으로 뺍니다.
+  </p>
+</header>
+
+{% include "_ir_tabs.html" %}
+
+<div class="toolbar">
+  <div class="quick-chips">
+    <span class="seg-toggle">
+      <a class="chip {% if view == 'none' %}active{% endif %}" href="{{ href(view='none') }}">미팅 없음 {{ n_none }}</a>
+      <a class="chip {% if view == 'scheduled' %}active{% endif %}" href="{{ href(view='scheduled') }}">미팅 예정 {{ n_planned }}</a>
+    </span>
+    <a class="secondary-btn" href="{{ href('/api/export/ir-no-meeting.xlsx') }}" download>엑셀</a>
+  </div>
+  {% if members %}
+  {# 관리자 — 팀 전체가 기본, 한 사람만 따로 볼 수도 있다(미팅 달력의 고르개와 같은 모양). #}
+  <div class="toolbar-right">
+    <a class="chip {% if not member %}active{% endif %}" href="{{ here }}{% if view_as %}&member=0{% endif %}">팀 전체</a>
+    <a class="chip {% if member == user.id %}active{% endif %}" href="{{ here }}&member={{ user.id }}">내 것</a>
+    <select class="chip-select" aria-label="팀원 선택"
+            onchange="location = '{{ here }}' + (this.value ? '&member=' + this.value : '')">
+      <option value="">팀원 선택…</option>
+      {% for m in members %}
+      <option value="{{ m.id }}" {% if member == m.id %}selected{% endif %}>{{ m.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  {% endif %}
+</div>
+{# 거르기는 한 줄 아래 — 한 줄에 다 세우면 오른쪽 고르개가 눌려 글자가 세로로 접힌다. #}
+<div class="toolbar">
+  <div class="quick-chips">
+    <span class="seg-toggle" aria-label="경과일">
+      <a class="chip {% if not days %}active{% endif %}" href="{{ href(days='') }}">경과 전체</a>
+      {% for d in day_steps %}
+      <a class="chip {% if days == d %}active{% endif %}" href="{{ href(days=d) }}">{{ d }}일+</a>
+      {% endfor %}
+    </span>
+    <span class="seg-toggle" aria-label="전달 여부">
+      <a class="chip {% if not sent %}active{% endif %}" href="{{ href(sent='') }}">전달 전체</a>
+      <a class="chip {% if sent == 'yes' %}active{% endif %}" href="{{ href(sent='yes') }}">전달 완료</a>
+      <a class="chip {% if sent == 'no' %}active{% endif %}" href="{{ href(sent='no') }}">미전달</a>
+    </span>
+    <span class="seg-toggle" aria-label="출처">
+      <a class="chip {% if not src %}active{% endif %}" href="{{ href(src='') }}">출처 전체</a>
+      <a class="chip {% if src == 'app' %}active{% endif %}" href="{{ href(src='app') }}">앱 기록</a>
+      <a class="chip {% if src == 'sheet' %}active{% endif %}" href="{{ href(src='sheet') }}">시트 이력만</a>
+    </span>
+    <a class="chip {% if drop %}active{% endif %}" href="{{ href(drop='' if drop else 'show') }}">보내지 않음 보기</a>
+  </div>
+</div>
+
+<section class="panel">
+  <h2 class="panel-title">{{ '미팅 예정' if view == 'scheduled' else '미팅 없음' }}
+    <span class="hint">{{ rows|length }}쌍 · 최근 요청에서 오래된 것부터</span>
+  </h2>
+  {% if skipped %}
+  <p class="hint">시트 이력의 IR 요청 중 기업을 IR 기업 현황에서 찾지 못한 {{ skipped }}건(기업 칸에 섞인 메모 · “핵심 딜 8개사” 처럼 개수만 적힌 줄)은 뺐습니다.</p>
+  {% endif %}
+  {% if rows %}
+  <div class="table-wrap">
+  <table class="grid-table compact" id="irnm-table">
+    <thead><tr>
+      <th>기업명</th><th>투자사</th><th>심사역</th><th style="width:150px">IR 요청일</th>
+      <th style="width:150px">요청 상태</th><th class="num" style="width:64px">경과일</th>
+      {% if not who %}<th>담당</th>{% endif %}
+      <th class="num" style="width:56px">건수</th><th style="width:80px">출처</th><th>비고</th>
+      {% if view == 'scheduled' %}<th style="width:96px">미팅 예정일</th>{% endif %}
+    </tr></thead>
+    <tbody>
+      {% for r in rows %}
+      <tr data-pair>
+        <td>{% if r.company_q %}<a href="/companies?q={{ r.company_q|urlencode }}" title="IR 기업 현황에서 보기">{{ r.company }}</a>{% else %}{{ r.company }}{% endif %}</td>
+        <td>{{ r.firm }}</td>
+        <td><b>{{ r.contact_name }}</b> <span class="muted">{{ r.contact_title }}</span></td>
+        <td>{{ r.last_at }}{% if r.first_at != r.last_at %}<br><span class="muted">첫 요청 {{ r.first_at }}</span>{% endif %}</td>
+        {# 제 앱 요청이면 딜 진행 관리의 그 구역으로 잇는다(열린 요청 → 받은 요청, 그 밖 → 전달한 자료).
+           남의 요청 · 시트 이력은 그 화면에 안 보이므로 잇지 않는다 — 미팅 달력과 같다. #}
+        <td class="status-cell">
+          {% if user.id in r.app_owner_ids %}<a class="status-badge" href="/ir#{{ 'requests' if r.state == 'open' else 'delivered' }}">{{ r.status_label }}</a>
+          {% else %}<span class="status-badge">{{ r.status_label }}</span>{% endif %}
+          {% if r.delivered_at %}<span class="status-when muted">{{ r.delivered_at }}</span>{% endif %}
+        </td>
+        <td class="num">{% if r.days is not none %}{{ r.days }}일{% else %}-{% endif %}</td>
+        {% if not who %}<td>{{ r.owners }}</td>{% endif %}
+        <td class="num">{{ r.count }}</td>
+        <td class="muted">{{ sources[r.src] }}</td>
+        <td class="muted">{{ r.note }}</td>
+        {% if view == 'scheduled' %}<td>{{ r.scheduled_on or '날짜 미기재' }}</td>{% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="all-clear">✅ 조건에 맞는 쌍이 없습니다.</p>
+  {% endif %}
+</section>
+{% endblock %}
