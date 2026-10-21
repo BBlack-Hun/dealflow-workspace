@@ -665,7 +665,7 @@
         {#
           시트의 칸을 **이름·순서 그대로** 세운다. 앱이 만든 칸(그룹 · 진행
           단계 · 채널)은 뒤로 뺀다 — 시트 부분이 앞에서 끊기지 않아야 눈으로
-          대조할 수 있다. 예외는 `Series A 딜 소싱` · `참여 요청일` 둘 —
+          대조할 수 있다. 예외는 `딜 소싱` · `참여 요청일` 둘 —
           같은 주제의 시트 칸 `딜소싱 참여 투자사` 바로 뒤에 선다(그 자리 주석 참고).
 
           `담당자` 는 한동안 뺐다가(요청) **다시 세웠다** — 대시보드의
@@ -759,54 +759,47 @@
         <th style="width:276px"
             title="메모 ( 통화내용 /  카톡내용  /  카톡답신내용)">메모 ( 통화내용 /  카톡내용  /  카톡답신내용)</th>
         <th style="width:180px">딜소싱 참여 투자사</th>
-        {# **딜 소싱과 이어진 칸** — 딜 소싱의 `시리즈 A 이상 딜 소싱 참여 심사역`
-           갈래에 이 분이 있나(`services/sourcing_sync.py`). 원본 시트에는 없는,
-           앱이 만든 칸이다.
+        {# **딜 소싱과 이어진 칸** — 딜 소싱의 세 갈래(`Series A` · `M&A` · `구주·후속`
+           — `sourcing_sync.BRANCHES`) 중 어디에 이 분이 있나(`services/sourcing_sync.py`).
+           원본 시트에는 없는, 앱이 만든 칸이다. 예전 `Series A 딜 소싱`(O/X) 칸을
+           이 칸 하나로 바꿨다(사용자 결정 2026-10-21).
 
-               O     이어진 소싱 줄이 있고 `불참여` 가 아님 — **갈래에 들어 있다**
-                     (`참여` · 제안 대기중 · 물어보는 중 · 사람이 적은 문구)
-               X     이어진 소싱 줄이 있고 `불참여`(딜 소싱 제안에서 빠진다)
-               빈칸  그 갈래에 없음
+           **갈래마다 딱지 하나** — `Series A·참여` · `M&A·제안 대기중`. 이어진 줄이
+           `불참여` 면 흐린 딱지로 남긴다(줄과 이력이 그대로 있다 — 숨기면 빠진 분과
+           처음부터 없던 분이 같아 보인다). **고른 갈래 = `불참여` 가 아닌 딱지**다.
+           딱지는 동의가 아니다 — 딜이 나가는 것은 딜 소싱 화면의 `참여` 칸이 정확히
+           `참여` 인 분뿐이다(`sourcing_sync.takes_part`).
 
-           O 는 동의가 아니다 — 딜이 나가는 것은 딜 소싱 화면의 `참여` 칸이 정확히
-           `참여` 인 분뿐이다(`sourcing_sync.takes_part`). 참여 안내(처음)는 제안
-           대기중 · 물어보는 중에게만 나간다(`can_get_invite`).
+           **이 줄에 저장되는 값이 아니다.** 이어진 소싱 줄들을 읽어 그린다 — 딜 소싱
+           화면에서 참여를 바꾸면 여기도 그대로 바뀐다. 누르면 체크 상자 셋이 뜬다
+           (`inline_edit.js` 의 `branches`). 체크하면 그 갈래에서 같은 분을 찾아
+           잇고(이름 + 번호), 없으면 새 줄을 `딜 소싱 참여 제안 대기중` 으로 만든다.
+           풀면 그 줄을 `불참여` 로 둘 뿐 **지우지 않는다**. `(딜 소개 X)` · `딜 소개
+           보류` 인 분은 넣지 않는다(서버가 까닭을 말한다).
 
-           **이 줄에 저장되는 값이 아니다.** 이어진 소싱 줄을 읽어 그린다 — 딜
-           소싱 화면에서 참여를 바꾸면 여기도 그대로 바뀐다. 여기서 O 를 넣으면
-           그 갈래에서 같은 분을 찾아 잇고(이름 + 번호), 없으면 새 줄을
-           `딜 소싱 참여 제안 대기중` 으로 만든다. `불참여` 인 줄에 O 를 넣으면 다시
-           묻는 것으로 보아 `제안 대기중` 으로 되돌린다. X 는 그 줄을 `불참여` 로 둘
-           뿐 **지우지 않는다**.
+           **자리는 시트 칸 `딜소싱 참여 투자사` 바로 뒤다**(요청). 앱이 만든 칸은 시트
+           부분 뒤로 빼는 것이 이 표의 규칙인데, 이 칸만은 예외다 — 같은 주제(딜 소싱)의
+           두 칸이 나란히 서야 함께 읽힌다. 수정창도 같은 차례다.
 
-           이름에 `Series A` 를 단 이유: 바로 앞 시트 칸 `딜소싱 참여 투자사` 는
-           자유 글 칸이라, `딜 소싱` 만 적으면 둘 중 어느 것이 이어진 칸인지
-           가릴 수 없다.
-
-           **자리는 그 시트 칸 바로 뒤다**(요청). 앱이 만든 칸은 시트 부분 뒤로
-           빼는 것이 이 표의 규칙인데, 이 칸만은 예외다 — 같은 주제(딜 소싱)의
-           두 칸이 나란히 서야 함께 읽힌다. 맨 뒤 앱 칸들 사이에 두었을 때는
-           가로로 끝까지 밀어야 보였다. 수정창도 같은 차례다(`딜소싱 참여
-           투자사` 바로 아래). 폭 합은 그대로라 `#contacts-table` min-width 는
-           안 바뀐다.
-
-           폭은 필터 단추(`Series A 딜 소싱 (1) ▾` = 149px)에 여유 7px. #}
-        <th style="width:156px" data-filters="sourcing:Series A 딜 소싱">Series A 딜 소싱<div class="th-filters"></div></th>
-        {# **참여 요청일** — 위 `Series A 딜 소싱` 칸과 같은 이어진 소싱 줄의
+           폭 200px — 딱지 둘(`Series A·참여` `M&A·참여`)이 한 줄에, 셋째부터는 다음
+           줄로 접힌다. 필터 값은 `Series A` · `M&A 불참여` 꼴(`sourcing_sync.cells`). #}
+        <th style="width:200px" data-filters="sourcing:딜 소싱">딜 소싱<div class="th-filters"></div></th>
+        {# **참여 요청일** — 위 `딜 소싱` 칸과 같은 이어진 소싱 줄들 중 **가장 최근**
            `참여 요청일` 을 날짜만 보여 준다(#28 · `sourcing_sync.requested_of` — 적힌
            표기는 그대로, 시트가 붙여 온 `00:00:00` 같은 시각만 뗀다). 이어진 줄이 없으면
            빈칸. 앱이 만든 칸이고 **읽기만** 한다 — 이 줄에 저장되는 값이 아니라
            `.cell` 도 `data-field` 도 없다(눌러 고치는 `inline_edit.js` 가 안 잡는다).
            고치는 곳은 딜 소싱 화면이다. 이름은 딜 소싱 표의 머리글과 같다(사용자 결정
-           2026-10-17). 자리는 `Series A 딜 소싱` 바로 뒤 — 같은 줄에서 오는 두 값이다.
+           2026-10-17). 자리는 `딜 소싱` 바로 뒤 — 같은 줄들에서 오는 두 값이다.
+           갈래마다의 날짜는 딱지의 풍선말에 있다.
 
            **필터를 건다.** 딜 소싱 표가 같은 칸에 거는 까닭 그대로다(`routers/sourcing.
            COLUMNS` — 참여 요청일은 고를 만한 값 몇 가지로 모인다). 이 표에서는 이어진
-           줄(시리즈 A 갈래 · 운영 스무 줄 남짓)만 값이 있어 더 적다.
+           줄(세 갈래)만 값이 있어 더 적다.
            **머리글을 눌러 세운다**(`table_sort.js`) — 표기가 섞여 있어(`2026/05/21` ·
            `2026-07-01`) 글자로 세우면 틀리므로, 줄에는 서버가 날짜로 읽은 값을 싣는다
-           (`data-s-sourcing_date` · `routers/sourcing.requested_sort`). 빈칸은 늘 끝. 엑셀에는 `Series A
-           딜 소싱` 과 함께 나간다(`routers/data_io.CONTACT_HEADERS`).
+           (`data-s-sourcing_date` · `routers/sourcing.requested_sort`). 빈칸은 늘 끝. 엑셀에는 `딜 소싱`
+           과 함께 나간다(`routers/data_io.CONTACT_HEADERS`).
 
            폭은 딜 소싱 표의 같은 칸과 같은 124px — 필터 단추(`참여 요청일 (1) ▾`)와
            날짜(`2026-07-01`)가 한 줄에 든다. #}
@@ -847,7 +840,7 @@
         <th style="width:190px">근무지 주소 번지</th>
         <th style="width:92px">명함 등록일</th>
         {# ── 여기부터는 앱이 만든 칸. 시트에는 없다 ──
-           (`Series A 딜 소싱` · `참여 요청일` 만은 앞쪽 `딜소싱 참여 투자사`
+           (`딜 소싱` · `참여 요청일` 만은 앞쪽 `딜소싱 참여 투자사`
             바로 뒤에 선다 — 그 자리 주석 참고) #}
         <th style="width:88px" data-filters="group:그룹">그룹<div class="th-filters"></div></th>
         {# 필터가 둘이다. `연결 상태`(미착수 → 진행 중 → 연결 완료 / 참여 안 함)는
@@ -926,7 +919,7 @@
           data-f-room="{{ r.send_label }}"
           data-f-interest="{{ r.interest_level }}"
           data-f-joined="{{ r.kakao_joined }}"
-          data-f-sourcing="{{ r.sourcing_join }}"
+          data-f-sourcing="{{ r.sourcing_filter }}"
           data-f-sourcing_date="{{ r.sourcing_requested_at }}"
           data-s-sourcing_date="{{ r.sourcing_requested_sort }}"
           data-search="{{ (r.name ~ ' ' ~ (r.firm or '') ~ ' ' ~ (r.title or '') ~ ' ' ~ (r.department or ''))|lower }}"
@@ -971,11 +964,14 @@
         <td title="{{ r.sourcing_note }}">
           <div class="cell clamp2" data-field="sourcing_note" data-type="long">{{ r.sourcing_note }}</div>
         </td>
-        {# `Series A 딜 소싱` — **`딜소싱 참여 투자사` 바로 뒤**(위 머리글 주석).
-           고치면 딜 소싱 줄을 잇거나 만든다. 저장 뒤 칸은 **서버가 읽은 값**으로
-           다시 그린다(`contacts.js` — `o` 를 적어도 `O` 로 선다). #}
-        <td class="cell" data-field="sourcing_join" data-type="pick"
-            data-choices="O,X" data-filter-key="sourcing">{{ r.sourcing_join }}</td>
+        {# `딜 소싱` — **`딜소싱 참여 투자사` 바로 뒤**(위 머리글 주석). 값(`data-value`)은
+           고른 갈래 `Series A, M&A` — 체크 상자 창이 이것으로 서고 이것을 보낸다. 저장 뒤
+           딱지는 **서버가 읽은 값**으로 다시 그린다(`contacts.js` 의 `drawSourcing`). #}
+        <td class="cell sourcing-cell" data-field="sourcing_branches" data-type="branches"
+            data-choices="Series A,M&amp;A,구주·후속" data-filter-key="sourcing"
+            data-value="{{ r.sourcing_branches }}">{% for chip in r.sourcing_chips %}<span
+            class="branch-chip {{ chip.kind }}{% if not chip.on %} off{% endif %}"
+            title="{{ chip.text }}{% if chip.requested %} · 참여 요청일 {{ chip.requested }}{% endif %}">{{ chip.text }}</span>{% endfor %}</td>
         {# `참여 요청일` — 읽기만(위 머리글 주석). 저장 뒤에는 응답의
            `sourcing_requested_at` 으로 다시 그린다(`contacts.js` — O 로 새 줄이 생기면
            그날이 선다). #}
@@ -1596,19 +1592,19 @@
           <option value="낮음"></option>
         </datalist></label>
       <label class="field wide"><span>딜소싱 참여 투자사</span><input type="text" id="f-sourcing_note"></label>
-      {# 표의 `Series A 딜 소싱` 칸과 **같은 칸**이다 — 이름도 보기(`O`/`X`)도
-         표와 한 글자도 다르지 않게(`tests/test_ui_layout.py` ·
-         `tests/test_group_choices.py` 가 그 짝을 잰다). 바로 위 시트 칸은 자유
-         글이고, 이 칸이 딜 소싱과 **이어진** 칸이다(`services/sourcing_sync.py`).
-         빈칸으로 저장하면 아무 것도 바꾸지 않는다 — 이어진 분은 빈칸으로 못
-         돌리고 X 로 둔다. #}
-      <label class="field"><span>Series A 딜 소싱</span>
-        <input type="text" id="f-sourcing_join" list="opts-panel-sourcing_join"
-               placeholder="O 면 딜 소싱에 들어갑니다">
-        <datalist id="opts-panel-sourcing_join">
-          <option value="O"></option>
-          <option value="X"></option>
-        </datalist></label>
+      {# 표의 `딜 소싱` 칸과 **같은 칸**이다 — 이름도 보기(갈래 셋)도 표와 같게.
+         바로 위 시트 칸은 자유 글이고, 이 칸이 딜 소싱과 **이어진** 칸이다
+         (`services/sourcing_sync.py`). 체크 상자가 숨은 칸(`f-sourcing_branches`)에
+         고른 갈래를 `Series A, M&A` 로 모은다 — 저장은 그 값을 **바꿨을 때만** 보낸다
+         (`contacts.js` 의 `openedBranches`). 푼 갈래는 `불참여` 가 된다(지우지 않는다). #}
+      <div class="field checks"><span>딜 소싱</span>
+        <input type="hidden" id="f-sourcing_branches">
+        <span class="check-row">
+          <label><input type="checkbox" class="f-branch" value="Series A"> Series A</label>
+          <label><input type="checkbox" class="f-branch" value="M&amp;A"> M&amp;A</label>
+          <label><input type="checkbox" class="f-branch" value="구주·후속"> 구주·후속</label>
+        </span>
+      </div>
       <label class="field wide"
              title="TIPS 운영사 투자금 1-10억 스타트업매출액 3-20억 기업에 주로 투자">
         <span>TIPS 운영사 투자금 1-10억 스타트업매출액 3-20억 기업에 주로 투자</span>

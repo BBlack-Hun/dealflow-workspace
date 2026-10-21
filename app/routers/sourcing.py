@@ -66,9 +66,9 @@ COLUMNS = [
     # `참여` · `불참여` · `참여 의사를 물어보는 중` + 사람이 적은 문구. 몇 가지로
     # 모이는 값이라 거른다. **월간 리마인드 · Series A 딜 공유는 정확히 `참여` 인
     # 분께만**(`sourcing_sync.takes_part`), 참여 안내(처음)는 제안 대기중 · 물어보는
-    # 중에게만 나간다(`can_get_invite`). 시리즈 A
-    # 갈래의 줄은 투자사 관리 현황의 `Series A 딜 소싱` 칸이 이 값에서 선다 —
-    # `불참여` 만 X, 나머지는 O(`services/sourcing_sync.py`).
+    # 중에게만 나간다(`can_get_invite`). 잇는 세
+    # 갈래(Series A · M&A · 구주·후속)의 줄은 투자사 관리 현황의 `딜 소싱` 칸 딱지가
+    # 이 값에서 선다 — `불참여` 만 흐린 딱지(`services/sourcing_sync.py`).
     ("participation", "참여", "84px", True),
     ("assignee_name", "담당자", "100px", True),
     ("phone", "휴대폰", "116px", False),
@@ -341,7 +341,7 @@ def sourcing_page(request: Request, db: Session = Depends(get_db),
         "is_admin": user.role == "admin",
         "linked_rooms": linked,
         # 투자사 관리 현황의 줄과 **이어진** 줄 — `🔗 투자사 관리 현황: ○○ 명단`.
-        # 시리즈 A 갈래만 이어진다(`sourcing_sync.SYNC_BUCKET`).
+        # 세 갈래(Series A · M&A · 구주·후속 — `sourcing_sync.BRANCHES`)만 이어진다.
         # 풍선말(어느 칸이 같이 바뀌는지)도 여기 실려 온다(`badges` 의 `title`).
         # [연결 풀기]를 누를 수 있는지도(`can_unlink` — `_may_unlink`).
         "vc_links": _badges(db, rows, user),
@@ -350,7 +350,7 @@ def sourcing_page(request: Request, db: Session = Depends(get_db),
         "requested": {r.id: sourcing_sync.requested_label(r.requested_at) for r in rows},
         # 머리글을 눌러 세울 값(`requested_sort`) — 위 글자가 아니라 날짜로.
         "requested_sort": {r.id: requested_sort(r) for r in rows},
-        # 저절로 못 이은 시리즈 A 줄의 **후보** — [이 분으로 확정](#28).
+        # 저절로 못 이은 세 갈래 줄의 **후보** — [이 분으로 확정](#28).
         # 이름 · 번호가 둘 다 같아야 저절로 잇고, 나머지는 사람이 고른다.
         "vc_picks": sourcing_sync.link_candidates(db, rows),
         # **보낼 방이 없는 줄** — 자기 방 이름도 이어받을 방도 없다
@@ -385,6 +385,8 @@ def sourcing_page(request: Request, db: Session = Depends(get_db),
         "share_bucket": series_a_share.BUCKET,
         "share_topic": series_a_share.KIND,
         "share_tab": series_a_share.is_share_bucket(selected),
+        # 투자사 관리 현황과 잇는 갈래 탭인가 — [저절로 잇기] 단추가 선다.
+        "sync_tab": bool(selected) and sourcing_sync.branch_of(selected) is not None,
         "total": sum(t["count"] for t in tabs),
         # 이름을 못 바꾼 까닭. 조용히 되돌아오면 왜 그대로인지 알 수 없다.
         "msg": msg,
@@ -486,9 +488,9 @@ def add_row(body: SourcingIn, bucket: str = "",
             setattr(row, field, value.strip() or None)
     row.participation = _participation(body.participation or sourcing_sync.JOINED)
     db.add(row)
-    # 시리즈 A 갈래에 넣은 분이 투자사 관리 현황에 **이름 · 번호가 둘 다 같은
-    # 줄이 딱 하나**면 그 줄과 잇는다 — 그쪽 `Series A 딜 소싱` 칸이 곧바로 O 가
-    # 된다. 아니면 후보로 뜬다(`sourcing_sync.link_candidates`).
+    # 잇는 갈래(Series A · M&A · 구주·후속)에 넣은 분이 투자사 관리 현황에 **이름 ·
+    # 번호가 둘 다 같은 줄이 딱 하나**면 그 줄과 잇는다 — 그쪽 `딜 소싱` 칸에 곧바로
+    # 이 갈래가 선다. 아니면 후보로 뜬다(`sourcing_sync.link_candidates`).
     contact = sourcing_sync.auto_link(db, row)
     db.commit()
     out = {"id": row.id, "bucket": target}
@@ -509,7 +511,7 @@ def _linked_msg(db: Session, row: SourcingContact) -> str:
     if not badge:
         return ""
     return (f"투자사 관리 현황의 '{badge['sheet']}' 명단 줄과 이었습니다 — "
-            f"그쪽 `{sourcing_sync.COLUMN_LABEL}` 칸이 O/X 로 같이 보입니다.")
+            f"그쪽 `{sourcing_sync.COLUMN_LABEL}` 칸에 이 갈래가 같이 보입니다.")
 
 
 @router.patch("/api/sourcing/{row_id}")
@@ -608,12 +610,12 @@ class LinkIn(BaseModel):
 @router.post("/api/sourcing/{row_id}/link")
 def confirm_vc_link(row_id: int, body: LinkIn, db: Session = Depends(get_db),
                     user: User = Depends(get_current_user)):
-    """[이 분으로 확정] — 저절로 못 이은 시리즈 A 줄을 사람이 고른 투자사 줄과 잇는다.
+    """[이 분으로 확정] — 저절로 못 이은 잇는 갈래의 줄을 사람이 고른 투자사 줄과 잇는다.
 
     이름 · 번호가 둘 다 같은 줄이 딱 하나일 때만 저절로 잇는다(`sourcing_sync.
     auto_link`). 나머지는 후보를 보고 사람이 고른다 — 고른 줄이 **지금 다시 센
     후보** 안에 있어야 잇는다(`sourcing_sync.confirm_link`). 잇고 나면 그쪽
-    `Series A 딜 소싱` 칸이 이 줄의 참여(O/X)로 선다. 잇는 것은 소싱 줄의
+    `딜 소싱` 칸에 이 갈래가 이 줄의 참여로 선다. 잇는 것은 소싱 줄의
     `vc_contact_id` 라 수정 로그에 남는다(`edit_log.VALUE_FIELDS`).
 
     권한은 이 표를 고치는 것과 같다 — 로그인한 누구나(`update_row` 주석: 딜 소싱은
@@ -646,7 +648,7 @@ def unlink_vc(row_id: int, db: Session = Depends(get_db),
               user: User = Depends(get_current_user)):
     """[연결 풀기] — 잘못 이은 투자사 관리 현황 줄과의 잇기를 푼다(사용자 결정
     2026-10-17). **두 줄 다 지우지 않는다**(`sourcing_sync.unlink`) — 그쪽
-    `Series A 딜 소싱` 칸이 비고, 이 줄은 다시 후보로 뜬다. 관리자 · 이어진 투자사
+    `딜 소싱` 칸에서 이 갈래가 빠지고, 이 줄은 다시 후보로 뜬다. 관리자 · 이어진 투자사
     줄의 담당만(`_may_unlink`). 푸는 것도 `vc_contact_id` 라 수정 로그에 남는다."""
     row = db.get(SourcingContact, row_id)
     if row is None:
@@ -686,8 +688,8 @@ def delete_row(row_id: int, db: Session = Depends(get_db),
     투자컨설턴트는 이 주소에 닿기 전에 끊긴다 — 역할 판정은 `app/main.py`
     미들웨어 한 곳에서만 한다(`deps.CONSULTANT_PATHS` 에 소싱이 없다).
 
-    투자사 관리 현황과 이어진 줄(시리즈 A 갈래)도 같다 — 빼면 그쪽
-    `Series A 딜 소싱` 칸이 빈칸이 될 뿐이고, 투자사 줄은 그대로다.
+    투자사 관리 현황과 이어진 줄(잇는 세 갈래)도 같다 — 빼면 그쪽
+    `딜 소싱` 칸에서 그 갈래가 빠질 뿐이고, 투자사 줄은 그대로다.
     """
     row = db.get(SourcingContact, row_id)
     if row is None:
@@ -766,6 +768,29 @@ def toggle_received(row_id: int, month: str = Form(""), on: str = Form(""),
         sourcing_receipts.unmark(db, row.id, month)
     db.commit()
     return _back(tab)
+
+
+@router.post("/sourcing/vc-auto-link", include_in_schema=False)
+def vc_auto_link(tab: str = Form(""), db: Session = Depends(get_db),
+                 user: User = Depends(get_current_user)):
+    """[저절로 잇기] — 이 갈래의 안 이어진 줄을 투자사 관리 현황과 잇는다.
+
+    규칙은 줄 하나를 넣을 때와 같다(`sourcing_sync.auto_link` — 이름 · 번호가 둘 다
+    같은 투자사 줄이 딱 하나일 때만). M&A · 구주·후속 갈래는 잇기가 생기기 전부터
+    있던 줄이라 한 번 돌려 줘야 한다(사용자 결정 2026-10-21 — 이주로 몰래 잇지 않는다).
+    못 이은 줄은 그 줄 이름 아래 후보로 남아 [이 분으로 확정]을 기다린다. `참여` 칸은
+    건드리지 않는다. 권한은 [이 분으로 확정]과 같다 — 로그인한 누구나.
+    """
+    bucket = sourcing_sync.branch_of(tab)
+    if bucket is None:
+        return _back(tab, "투자사 관리 현황과 잇는 갈래(Series A · M&A · 구주·후속)에서만 "
+                          "누를 수 있습니다")
+    done = sourcing_sync.auto_link_all(db, bucket)
+    db.commit()
+    rows = [r for r in rows_of(db, tab) if not r.vc_contact_id]
+    waiting = sum(1 for picks in sourcing_sync.link_candidates(db, rows).values() if picks)
+    return _back(tab, f"{done}명을 투자사 관리 현황과 이었습니다 · 사람이 확정할 후보가 있는 분 "
+                      f"{waiting}명 · 맞는 분이 없는 분 {len(rows) - waiting}명")
 
 
 @router.post("/sourcing/mail-check", include_in_schema=False)

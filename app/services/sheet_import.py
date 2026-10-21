@@ -616,7 +616,32 @@ class ParsedContact:
     department: Optional[str] = None
     email: Optional[str] = None
     connect_stage: Optional[str] = None
+    #: `딜 소싱` 칸 — `Series A, M&A 불참여` 꼴(`sourcing_sync.parse_branches`). 예전
+    #: 머리글 `Series A 딜 소싱` 의 O/X 는 여기서 `Series A` · `Series A 불참여` 로 옮긴다.
+    sourcing: Optional[str] = None
     activities: List[ParsedActivity] = field(default_factory=list)
+
+
+def _sourcing_columns(header: Sequence[str]) -> Tuple[Optional[int], Optional[int]]:
+    """`딜 소싱` · 예전 `Series A 딜 소싱` 머리글 자리. **글자가 꼭 같을 때만**
+    (띄어쓰기 · 대소문자만 무시) — 시트의 `딜소싱 참여 투자사`(자유 글 칸)를 잡지 않게."""
+    keys = [re.sub(r"\s+", "", norm(c)).lower() for c in header]
+    new = keys.index("딜소싱") if "딜소싱" in keys else None
+    old = keys.index("seriesa딜소싱") if "seriesa딜소싱" in keys else None
+    return new, old
+
+
+def _sourcing_cell(row: Sequence[str], new: Optional[int], old: Optional[int]) -> Optional[str]:
+    """한 줄의 `딜 소싱` 값 — 새 칸이 먼저, 비었으면 예전 칸의 O/X."""
+    text = _cell(row, new)
+    if text:
+        return text
+    mark = _cell(row, old).strip().lower()
+    if mark in ("o", "○"):
+        return "Series A"
+    if mark in ("x", "×"):
+        return "Series A 불참여"
+    return _cell(row, old) or None
 
 
 @dataclass
@@ -707,9 +732,11 @@ def parse_sheet_a(rows: Sequence[Sequence[str]], year: int) -> SheetAParse:
         "department": find_column(header, ["부서"]),
         "email": first_column(header, ["전자", "메일"], ["이메일"]),
     }
+    sourcing_new, sourcing_old = _sourcing_columns(header)
     # 활동 컬럼은 기본 정보 컬럼을 빼고 헤더 문맥으로 찾는다(담당자 컬럼이 오른쪽에 있어도 안전).
     out.activity_columns = detect_activity_columns(
-        rows, header_idx, year, skip_cols=[c for c in cols.values() if c is not None]
+        rows, header_idx, year,
+        skip_cols=[c for c in [*cols.values(), sourcing_new, sourcing_old] if c is not None]
     )
 
     for offset, row in enumerate(rows[header_idx + 1:], start=header_idx + 2):
@@ -774,6 +801,7 @@ def parse_sheet_a(rows: Sequence[Sequence[str]], year: int) -> SheetAParse:
             address=_cell(row, cols["address"]) or None,
             department=_cell(row, cols["department"]) or None,
             email=_cell(row, cols["email"]) or None,
+            sourcing=_sourcing_cell(row, sourcing_new, sourcing_old),
         )
         # 연결이 어디까지 갔는지는 시트에 한 칸으로 있지 않다 —
         # 카톡방 참여여부(O/X)와 메모 문장에서 읽어낸다.
@@ -1181,6 +1209,9 @@ def apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
     # — `애매`·`뒤집힘` 이 몇 줄인지 보여야 사람이 그 줄을 손으로 채울 수 있다.
     stage_actions: Dict[str, int] = {ist.EMPTY: 0, ist.TAKEN: 0, ist.NONE: 0,
                                      ist.VAGUE: 0, ist.NEGATED: 0, ist.FILL: 0}
+    # `딜 소싱` 칸으로 갈래를 넣거나 뺀 줄 수 · 그 일을 한 사람(새 소싱 줄의 담당).
+    sourcing_done = 0
+    importer = None
 
     for pc in parsed.contacts:
         owner_id = None
@@ -1361,6 +1392,24 @@ def apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
         room_joined.after_edit(contact, was_room)
         db.flush()
 
+        # ── `딜 소싱` 칸 — 화면에서 체크하는 것과 같은 함수다 ──────────────
+        #
+        # 적힌 갈래만 넣거나(`Series A`) 뺀다(`M&A 불참여`). 안 적힌 갈래는 그대로다
+        # — 빈 칸은 '모름' 이지 '빼라' 가 아니다(위 `_set_if_value` 와 같은 결).
+        # 막히면(`(딜 소개 X)` · 같은 사람일 수도 있는 줄 …) 그 줄만 되돌리고 적어 둔다.
+        if pc.sourcing:
+            from . import sourcing_sync      # noqa: PLC0415 — 모델을 함께 쓰는 이웃이다
+            if importer is None:
+                importer = db.get(User, user_id)
+            try:
+                with db.begin_nested():
+                    got = sourcing_sync.apply_branches(
+                        db, contact, sourcing_sync.parse_branches(pc.sourcing), importer)
+                if got["message"]:
+                    sourcing_done += 1
+            except sourcing_sync.SyncError as exc:
+                report.notes.append(f"{pc.row_no}행 {pc.name} — 딜 소싱: {exc}")
+
         # ── 시트와 앱이 **다른 칸** ──────────────────────────────────────
         #
         # 안 얹고 지나간 칸을 여기서 세어 둔다. 고객이 겪은 일이 바로 이것이다
@@ -1437,6 +1486,9 @@ def apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
             f"뜻이 뒤집혀 안 넣음 {stage_actions[ist.NEGATED]}행 "
             "(라운드 사이즈 원문은 그대로 둡니다)"
         )
+    if sourcing_done:
+        report.notes.append(f"딜 소싱 칸으로 갈래를 넣거나 뺀 줄 {sourcing_done}행 "
+                            "(새로 넣은 분은 `딜 소싱 참여 제안 대기중`)")
     if report.overlaps:
         # **누구를 어떻게 했는지 이름으로 적는다** — 수만 보고는 원래 주인에게
         # 물어볼 수가 없다. 길어지면 앞의 몇 명만.

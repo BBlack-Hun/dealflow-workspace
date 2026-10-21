@@ -173,7 +173,9 @@ CONTACT_HEADERS = [
     "채널", "카톡방", "방 확인", "초대", "관심도",
     # 이어진 딜 소싱 줄에서 읽는 두 칸 — 화면과 같은 값(`sourcing_sync` ·
     # `contacts.contact_rows`). 화면처럼 둘이 나란히 선다(사용자 결정 2026-10-17).
-    "Series A 딜 소싱", "참여 요청일",
+    # `딜 소싱` 은 `Series A, M&A 불참여` 꼴 — 고른 갈래 · 빠진 갈래(`불참여`)를 쉼표로.
+    # 엑셀 올리기가 받는 글자와 같다(`sourcing_sync.parse_branches`).
+    "딜 소싱", "참여 요청일",
     # `소유 펀드` — 회사 단위 값(#1). 화면처럼 라운드 바로 뒤에 선다.
     "라운드 사이즈(투자운영금액)", "소유 펀드", "선호 투자단계", "선호 투자분야",
     "휴대폰", "전자 메일 주소", "근무처 전화", "근무처 팩스", "근무지 주소", "명함 등록일",
@@ -308,7 +310,7 @@ def _contact_row(r: dict) -> list:
     return [r["owner"], r["assignee"], r["connect_label"], r["group_name"],
             r["name"], r["title"], r["firm"], r["department"], "/".join(marks),
             r["room_name"], r["room_label"], r["invited_status"], r["interest_level"],
-            r["sourcing_join"], r["sourcing_requested_at"],
+            r["sourcing_filter"].replace("|", ", "), r["sourcing_requested_at"],
             r["round_size"], r["owned_funds"], ", ".join(r["stages"]),
             ", ".join(r["sectors"]),
             r["phone"], r["email"], r["office_phone"], r["office_fax"],

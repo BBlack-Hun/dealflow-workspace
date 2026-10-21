@@ -9,12 +9,13 @@
     // 표에는 있는데 이 목록에 없으면 **상세 창에서 적을 수가 없다** —
     // 칸을 그려 놔도 값이 안 채워지고 저장도 안 된다.
     "kakao_joined", "sourcing_note", "tips_note",
-    // `Series A 딜 소싱`(O/X) — 이 줄에 저장되지 않고 딜 소싱 줄을 잇거나
-    // 만든다(`services/sourcing_sync.py`). 빈칸은 '바꾸지 않음' 이다.
-    // 고칠 때는 **사람이 이 칸을 바꿨을 때만** 보낸다(`save` 의 `openedJoin`).
-    "sourcing_join",
+    // `딜 소싱` — 고른 갈래 `Series A, M&A`(숨은 칸 — 체크 상자 셋이 채운다,
+    // `branchBoxes`). 이 줄에 저장되지 않고 딜 소싱 줄을 잇거나 만들고, 푼 갈래는
+    // `불참여` 로 둔다(`services/sourcing_sync.py`). 고칠 때는 **사람이 이 칸을
+    // 바꿨을 때만** 보낸다(`save` 의 `openedBranches`).
+    "sourcing_branches",
     // `소유 펀드` — **회사 단위 값**이다(`services/investor_firms.py`). 이 줄이
-    // 아니라 이 줄의 회사에 적히므로 `Series A 딜 소싱` 처럼 **바꿨을 때만**
+    // 아니라 이 줄의 회사에 적히므로 `딜 소싱` 처럼 **바꿨을 때만**
     // 보낸다(`save` 의 `openedFunds`) — 회사명을 고치는 저장에 옛 회사의 값이
     // 딸려 가 새 회사에 적히면 안 된다.
     "owned_funds",
@@ -46,11 +47,11 @@
   var table = document.getElementById("contacts-table");
   var msg = document.getElementById("detail-msg");
   var current = null;   // null = 새 담당자 추가 모드
-  // 창을 열 때 읽은 `Series A 딜 소싱` 값. 이 칸은 저장할 때마다 딜 소싱 줄을
-  // 잇거나 참여/불참여를 바꾸므로(`set_mark`), 안 바꿨는데 다시 보내면 창을 연
+  // 창을 열 때 읽은 `딜 소싱` 값. 이 칸은 저장할 때마다 딜 소싱 줄을 잇거나
+  // 참여/불참여를 바꾸므로(`apply_branches`), 안 바꿨는데 다시 보내면 창을 연
   // 사이 딜 소싱에서 일어난 일(불참여로 바꿈 · 줄 삭제 · 저절로 이어짐)을
   // 되돌리거나 400 으로 다른 칸 수정까지 버린다(PR #284 리뷰).
-  var openedJoin = null;
+  var openedBranches = null;
   // 창을 열 때 읽은 `소유 펀드`(위 FIELDS 의 그 칸 주석).
   var openedFunds = null;
   var filters = null;
@@ -211,7 +212,10 @@
 
   function fillForm(c) {
     FIELDS.forEach(function (f) { if (el("f-" + f)) el("f-" + f).value = c[f] || ""; });
-    openedJoin = el("f-sourcing_join") ? el("f-sourcing_join").value.trim() : null;
+    // 체크 상자는 숨은 칸 값(`Series A, M&A`)으로 세운다.
+    var branches = (c.sourcing_branches || "").split(",").map(function (v) { return v.trim(); });
+    branchBoxes().forEach(function (box) { box.checked = branches.indexOf(box.value) !== -1; });
+    openedBranches = el("f-sourcing_branches") ? el("f-sourcing_branches").value.trim() : null;
     openedFunds = el("f-owned_funds") ? el("f-owned_funds").value.trim() : null;
     // 선호 투자분야 고르기 목록을 펼쳐 둔 채 줄을 바꾸면 앞 사람의 체크가 남아
     // 보인다 — 접어 두고, 다시 펼치면 이 줄의 값으로 세운다(`sector_picker.js`).
@@ -231,7 +235,17 @@
     }
   }
 
+  // 수정창의 `딜 소싱` 체크 상자(갈래 셋). 없는 화면(스타트업 명단)이면 빈 목록.
+  function branchBoxes() {
+    return panel ? Array.prototype.slice.call(panel.querySelectorAll(".f-branch")) : [];
+  }
+
   function readForm() {
+    // 체크 상자 → 숨은 `딜 소싱` 칸(`Series A, M&A`). 그 값을 아래에서 다른 칸처럼 읽는다.
+    if (el("f-sourcing_branches")) {
+      el("f-sourcing_branches").value = branchBoxes().filter(function (b) { return b.checked; })
+        .map(function (b) { return b.value; }).join(", ");
+    }
     var body = {};
     FIELDS.forEach(function (f) { if (el("f-" + f)) body[f] = el("f-" + f).value.trim(); });
     CHECKS.forEach(function (f) { if (el("f-" + f)) body[f] = el("f-" + f).checked ? 1 : 0; });
@@ -418,10 +432,12 @@
       // 줄 안다(`routers/contacts.py` 의 `ContactIn.sheet`).
       if (ADD && ADD.sheet) body.sheet = ADD.sheet;
     }
-    // `Series A 딜 소싱` 은 **바꿨을 때만** 싣는다(위 `openedJoin`). 다른 칸은
-    // 그대로 다 보낸다 — 줄에 저장되는 값이라 다시 적어도 같은 값이다.
-    if (current && "sourcing_join" in body && body.sourcing_join === openedJoin) {
-      delete body.sourcing_join;
+    // `딜 소싱` 은 **바꿨을 때만** 싣는다(위 `openedBranches`). 새로 넣는 줄은 고른
+    // 갈래가 있을 때만. 다른 칸은 그대로 다 보낸다 — 줄에 저장되는 값이라 다시 적어도
+    // 같은 값이다.
+    if ("sourcing_branches" in body &&
+        body.sourcing_branches === (current ? openedBranches : "")) {
+      delete body.sourcing_branches;
     }
     // `소유 펀드` 도 **바꿨을 때만**(위 `openedFunds`). 새로 넣는 줄은 빈 칸에서
     // 시작하므로 적었으면 실린다.
@@ -442,8 +458,8 @@
         // `지금 연결 중` 으로 계속 뜨는 이유를 아무도 알 수 없었다.
         // 새로고침이 뒤따르므로 화면에 적어 두면 그대로 지나간다 — 멈춰 세운다.
         if (res.d.connect_note) alert(res.d.connect_note);
-        // `Series A 딜 소싱` 을 O 로 두어 딜 소싱에 새 줄이 생겼거나 있던 줄과
-        // 이어졌으면 그렇게 됐다고 말한다 — 다른 메뉴에서 일어난 일이다.
+        // `딜 소싱` 갈래를 골라 딜 소싱에 새 줄이 생겼거나 있던 줄과 이어졌으면
+        // (풀어서 `불참여` 가 됐으면) 그렇게 됐다고 말한다 — 다른 메뉴에서 일어난 일이다.
         if (res.d.sourcing_msg) alert(res.d.sourcing_msg);
         // 표의 집계값(최근 딜소개·반응)은 서버에서 만든다 → 다시 받는 것이
         // 가장 정확하다. **표가 서 있던 자리는 들고 간다**(위 `reload`).
@@ -695,17 +711,19 @@
       if (joined && joined !== detail.cell) joined.textContent = data.kakao_joined;
       if (row.hasAttribute("data-f-joined")) row.setAttribute("data-f-joined", data.kakao_joined);
     }
-    // `Series A 딜 소싱` 은 **방금 고친 칸이어도 서버 값으로 다시 그린다.**
-    // 저장된 글자가 아니라 이어진 딜 소싱 줄에서 읽은 값이라(`o` → `O`),
-    // 적힌 그대로 두면 칸과 필터가 서버와 다른 말을 한다. 딜 소싱 쪽에서 일어난
-    // 일(새 줄 · 이어짐)은 칸의 풍선말로 남긴다.
-    if ("sourcing_join" in data) {
-      var sourcing = row.querySelector('.cell[data-field="sourcing_join"]');
+    // `딜 소싱` 은 **방금 고친 칸이어도 서버 값으로 다시 그린다**(갈래마다 딱지 —
+    // `drawSourcing`). 저장된 글자가 아니라 이어진 딜 소싱 줄들에서 읽은 값이라,
+    // 고른 그대로 두면 칸과 필터가 서버와 다른 말을 한다(`M&A` 를 골랐어도 같은
+    // 분일 수도 있는 줄이 있으면 막힌다). 딜 소싱 쪽에서 일어난 일(새 줄 · 이어짐 ·
+    // 불참여)은 칸의 풍선말로 남긴다.
+    if ("sourcing_chips" in data) {
+      var sourcing = row.querySelector('.cell[data-field="sourcing_branches"]');
       if (sourcing) {
-        sourcing.textContent = data.sourcing_join;
+        drawSourcing(sourcing, data.sourcing_chips);
+        sourcing.setAttribute("data-value", data.sourcing_branches || "");
         if (data.sourcing_msg) sourcing.setAttribute("title", data.sourcing_msg);
       }
-      if (row.hasAttribute("data-f-sourcing")) row.setAttribute("data-f-sourcing", data.sourcing_join);
+      if (row.hasAttribute("data-f-sourcing")) row.setAttribute("data-f-sourcing", data.sourcing_filter || "");
     }
     // `참여 요청일` — 읽기만 하는 칸이라 사람이 고칠 일은 없지만, O 로
     // 새 줄이 생기거나 이어지면 그 줄의 날짜가 선다. 서버가 읽은 값 그대로(#28).
@@ -725,6 +743,21 @@
     }
   }
   if (table) table.addEventListener("inline-saved", syncRoomCells);
+
+  // `딜 소싱` 칸의 딱지 — 서버가 그리는 것(`contacts.html`)과 같은 모양이다.
+  // 값 · 갈래(`kind`) · 고른 것인지(`on`)는 서버가 정해 보낸다(`sourcing_sync.cells`).
+  function drawSourcing(cell, chips) {
+    // 옛 딱지를 걷는다(글자 노드까지 — 서버가 그린 칸은 딱지만 들고 있다).
+    Array.prototype.slice.call(cell.children).forEach(function (kid) { cell.removeChild(kid); });
+    cell.textContent = "";
+    (chips || []).forEach(function (chip) {
+      var tag = document.createElement("span");
+      tag.className = "branch-chip " + (chip.kind || "") + (chip.on ? "" : " off");
+      tag.textContent = chip.text;
+      tag.setAttribute("title", chip.text + (chip.requested ? " · 참여 요청일 " + chip.requested : ""));
+      cell.appendChild(tag);
+    });
+  }
 
   // `소유 펀드` — **같은 회사의 다른 줄도 그 자리에서** 바꾼다(#1).
   //
