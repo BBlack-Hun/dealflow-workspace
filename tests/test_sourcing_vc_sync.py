@@ -366,14 +366,18 @@ def test_the_table_has_the_column_and_its_filter(board, db, users):
     mark(board, contact.id, "O")
 
     body = board.get(f"/contacts?sheet={SHEET}").text
-    assert 'data-filters="sourcing:Series A 딜 소싱"' in body
-    assert 'data-f-sourcing="O"' in body
-    assert 'data-field="sourcing_join"' in body
-    assert 'id="f-sourcing_join"' in body
+    # 예전 `Series A 딜 소싱`(O/X) 칸은 갈래 셋을 고르는 `딜 소싱` 칸이 되었다(2026-10-21).
+    assert 'data-filters="sourcing:딜 소싱"' in body
+    assert 'data-f-sourcing="Series A"' in body
+    assert 'data-field="sourcing_branches" data-type="branches"' in body
+    assert 'data-value="Series A"' in body
+    assert "Series A·제안 대기중</span>" in body
+    assert 'id="f-sourcing_branches"' in body
+    assert "Series A 딜 소싱" not in body
 
 
 def test_the_column_sits_right_after_the_sheet_sourcing_column(board, db, users):
-    """`Series A 딜 소싱` 은 시트 칸 `딜소싱 참여 투자사` **바로 뒤**다(요청).
+    """`딜 소싱` 은 시트 칸 `딜소싱 참여 투자사` **바로 뒤**다(요청).
 
     머리글은 손으로 적고 행 칸도 손으로 적는다 — 한쪽만 옮기면 머리글 밑에 남의
     값이 선다. 그래서 머리글 · 행 · 수정창 세 곳의 차례를 같이 본다.
@@ -388,13 +392,13 @@ def test_the_column_sits_right_after_the_sheet_sourcing_column(board, db, users)
     labels = [re.sub(r"<[^>]+>", "", x).strip()
               for x in re.findall(r"<th[\s>].*?</th>", head, re.S)]
     at = labels.index("딜소싱 참여 투자사")
-    assert labels[at + 1] == "Series A 딜 소싱", labels
-    assert labels.count("Series A 딜 소싱") == 1
+    assert labels[at + 1] == "딜 소싱", labels
+    assert labels.count("딜 소싱") == 1
 
     rows = body[body.index("<tbody>"):body.index("</tbody>")]
     first_row = rows[:rows.index("</tr>")]
     fields = re.findall(r'data-field="(\w+)"', first_row)
-    assert fields[fields.index("sourcing_note") + 1] == "sourcing_join", fields
+    assert fields[fields.index("sourcing_note") + 1] == "sourcing_branches", fields
 
     # 머리글 칸 수 == 행 칸 수 — 옮기다 하나가 빠지거나 겹치면 여기서 걸린다.
     assert (len(re.findall(r"<th[\s>]", head))
@@ -402,7 +406,7 @@ def test_the_column_sits_right_after_the_sheet_sourcing_column(board, db, users)
 
     # 수정창도 같은 차례 — `딜소싱 참여 투자사` 바로 다음 입력칸
     panel = re.findall(r'id="f-(\w+)"', body)
-    assert panel[panel.index("sourcing_note") + 1] == "sourcing_join", panel
+    assert panel[panel.index("sourcing_note") + 1] == "sourcing_branches", panel
 
 
 # ── ④ 두 화면이 같은 칸 ─────────────────────────────────────────────────────
@@ -1236,7 +1240,7 @@ def test_linking_fills_only_empty_sectors_and_flags_a_difference(board, db, user
     [row] = sync_rows(db)
     assert row.sectors == "핀테크" and row.round_size == "10억"
     body = board.get(f"/sourcing?tab={SYNC}").text
-    assert "다른 칸: 투자분야" in body
+    assert "다른 칸: 선호 투자분야" in body
 
 
 def test_comma_spacing_alone_is_not_a_different_field(board, db, users):
@@ -1337,5 +1341,5 @@ def test_the_link_badge_names_every_shared_field(board, db, users):
     contact = vc(db, users)
     mark(board, contact.id, "O")
     body = board.get(f"/sourcing?tab={SYNC}").text
-    assert ("두 화면이 같이 바뀌는 칸: 이름 · 직함 · 회사 · 휴대폰 · 이메일 · 투자분야 · "
-            "라운드 사이즈 (메모는 따로)") in body
+    assert ("두 화면이 같이 바뀌는 칸: 이름 · 직함 · 회사 · 휴대폰 · 전자 메일 주소 · "
+            "선호 투자분야 · 라운드 사이즈(투자운영금액) (메모는 따로)") in body

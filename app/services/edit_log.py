@@ -490,7 +490,7 @@ VALUE_FIELDS = frozenset({
     "shared_by", "source_firm", "deal_type",
 
     # **딜 소싱의 어느 줄이 투자사 관리 현황의 어느 줄과 이어졌나 · 참여하나.**
-    # 투자사 관리 현황의 `Series A 딜 소싱` 칸(O/X)이 이 둘에서 나온다
+    # 투자사 관리 현황의 `딜 소싱` 칸(갈래마다 딱지)이 이 둘에서 나온다
     # (`services/sourcing_sync.py`) — 잘못 이어지면 남의 방으로 딜 소싱 제안이
     # 나가고, 잘못 `불참여` 가 되면 그 분만 조용히 빠진다.
     "vc_contact_id", "participation",

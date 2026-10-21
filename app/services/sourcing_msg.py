@@ -88,6 +88,12 @@ def is_series_a(bucket: str) -> bool:
     return _SERIES_A_HINT in (bucket or "").lower()
 
 
+def is_mna(bucket: str) -> bool:
+    """M&A 갈래인가(`M&A 찾는 투자사`) — 월간 리마인드 뼈대가 M&A 말로 바뀐다.
+    구주·후속 갈래는 이름에 `m&a` 가 없어 여기 안 걸린다(그 갈래는 기본 뼈대)."""
+    return "m&a" in (bucket or "").lower()
+
+
 def scope(bucket: str) -> Optional[str]:
     """이 갈래가 찾는 딜의 범위. 없으면 범위 줄을 넣지 않는다."""
     low = (bucket or "").lower()
@@ -164,7 +170,13 @@ def remind_default_body(bucket: str) -> str:
 
     **메일 주소를 넣지 않는다**(공개 저장소). 운영에서는 `/templates` 의 이
     문구에 실제 주소를 적는다 — 그 저장 문구가 이 글을 대신한다.
+
+    **M&A 갈래는 M&A 말로 쓴다**(`remind_mna_body` — 사용자 결정 2026-10-21). 같은
+    뼈대(감사 · 이 달 딜 · 지난 딜 · 담당자 연락처 · 맺음)에서 찾는 딜만 바꾼 글이다.
+    `scripts/bootstrap.py` 가 그 갈래에도 팀 문구로 심는다 — `/templates` 에서 고친다.
     """
+    if is_mna(bucket):
+        return remind_mna_body()
     first = ("Series A 이상 딜 네트워크에 함께해 주셔서 감사합니다."
              if is_series_a(bucket)
              else "Deal Sourcing 네트워크에 함께해 주셔서 감사합니다.")
@@ -176,6 +188,23 @@ def remind_default_body(bucket: str) -> str:
         "",
         "딜을 전달해 주실 때 기업 담당자 성함과 연락처도 함께 알려 주시면,",
         "투자 검토 의향이 있는 투자사와 바로 연결해 드리겠습니다.",
+        "",
+        "이미 전달해 주셨다면 이 메시지는 넘겨 주셔도 됩니다.",
+        "감사합니다.",
+    ])
+
+
+def remind_mna_body() -> str:
+    """M&A 갈래의 월간 리마인드 뼈대 — 위 `remind_default_body` 와 같은 차례의 글.
+    메일 주소 · 실명은 넣지 않는다(공개 저장소)."""
+    return "\n".join([
+        "M&A 딜 네트워크에 함께해 주셔서 감사합니다.",
+        "",
+        f"{MONTH_TOKEN}월에 공유해 주실 M&A 딜(매각 · 인수 희망 기업)은 카톡 또는 메일로 전달 부탁드립니다.",
+        "지난번 공유드린 딜 중 관심 있는 기업이 있으시면 기업 소개 자료를 보내 드리겠습니다.",
+        "",
+        "딜을 전달해 주실 때 기업 담당자 성함과 연락처도 함께 알려 주시면,",
+        "인수 · 투자 검토 의향이 있는 곳과 바로 연결해 드리겠습니다.",
         "",
         "이미 전달해 주셨다면 이 메시지는 넘겨 주셔도 됩니다.",
         "감사합니다.",

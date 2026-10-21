@@ -13,7 +13,8 @@
   ③ [추가] · 시트 가져오기 — 저장된 글자를 그대로 쓴다.
   ④ 잇는 갈래 판정 · Series A 딜 공유 · 방 이어받기 · A1 갈래가 같은 갈래로 본다.
   ⑤ 문구 — 어느 글자의 줄이든 같은 문구를 찾는다. 심는 문구도 한 벌.
-  ⑥ 이름 바꾸기 — 잇는 갈래는 어느 글자로도 못 바꾸고, 다른 갈래는 글자 전부가 간다.
+  ⑥ 이름 바꾸기 — 잇는 갈래(Series A · M&A · 구주·후속)는 어느 글자로도 못 바꾸고,
+     다른 갈래는 글자 전부가 간다.
 
 이름 · 회사 · 번호는 전부 가상값이다(공개 저장소).
 """
@@ -31,6 +32,9 @@ TIGHT = "시리즈 A 이상 딜소싱 참여 심사역"       # 띄어쓰기 하
 WIDE = "시리즈 A 이상  딜 소싱 참여 심사역"      # 두 칸 공백(운영 시트 탭처럼)
 MNA = "M&A 찾는 투자사"
 MNA_WIDE = "M&A  찾는 투자사"
+# 투자사 관리 현황과 잇지 않는 갈래(이름을 바꿀 수 있다) — 운영 시트 탭처럼 두 칸 공백.
+CEO = "딜 소싱 참여 투자사 대표"
+CEO_WIDE = "딜 소싱  참여 투자사 대표"
 SHEET = "가상 투자사 명단"
 
 SERIES_A_NAMES = ("홍길동", "김서연", "가심사", "나심사", "다심사")
@@ -269,11 +273,18 @@ def test_the_sheet_import_replaces_every_spelling(db, users, spread, tmp_path,
 def test_every_spelling_is_the_synced_bucket(db, users, spread):
     from app.services import series_a_share, sourcing_sync
 
+    from app.models import SourcingContact
+
     for key in ("hong", "lee", "choi"):
         assert sourcing_sync.is_synced(spread[key]), key
         assert series_a_share.is_share_bucket(spread[key].bucket), key
-    assert not sourcing_sync.is_synced(spread["mna"])
+    # M&A 도 투자사 관리 현황과 잇는 갈래다(2026-10-21 — 갈래 셋) — 어느 글자로든.
+    # Series A 딜 공유는 그대로 시리즈 A 에만.
+    for key in ("mna", "mna2"):
+        assert sourcing_sync.is_synced(spread[key]), key
+        assert sourcing_sync.branch_of(spread[key]) == MNA
     assert not series_a_share.is_share_bucket(MNA)
+    assert not sourcing_sync.is_synced(SourcingContact(bucket=CEO_WIDE))
 
 
 def test_series_a_share_sees_every_spelling(client, db, users, spread):
@@ -400,11 +411,12 @@ def test_seeding_plants_one_template_per_bucket(db, users, spread):
     from app.services import series_a_share, sourcing_msg
     from scripts.bootstrap import seed_series_a_share, seed_sourcing_remind
 
-    assert seed_sourcing_remind(db) == 1
+    # 시리즈 A 하나 · M&A 하나(M&A 말로 쓴 글 — `sourcing_msg.remind_mna_body`)
+    assert seed_sourcing_remind(db) == 2
     db.commit()
     assert seed_sourcing_remind(db) == 0
-    [remind] = db.query(MessageTemplate).filter_by(kind=sourcing_msg.REMIND_KIND).all()
-    assert remind.name == TIGHT
+    names = {t.name for t in db.query(MessageTemplate).filter_by(kind=sourcing_msg.REMIND_KIND)}
+    assert names == {TIGHT, MNA}
 
     _tpl(db, series_a_share.KIND, WIDE, "운영자가 고친 공유 글 {기업 목록}")
     assert seed_series_a_share(db) == 0
@@ -415,7 +427,7 @@ def test_seeding_plants_one_template_per_bucket(db, users, spread):
 def test_the_synced_bucket_cannot_be_renamed_under_any_spelling(db, users, spread):
     from app.services import sourcing_buckets
 
-    for before in (TIGHT, SYNC, WIDE):
+    for before in (TIGHT, SYNC, WIDE, MNA, MNA_WIDE):     # 잇는 갈래는 셋 다 못 바꾼다
         with pytest.raises(sourcing_buckets.RenameError):
             sourcing_buckets.rename(db, before, "새 갈래")
     assert _stored(db) == {TIGHT, SYNC, WIDE, MNA, MNA_WIDE}
@@ -427,12 +439,14 @@ def test_renaming_takes_every_spelling(db, users, spread):
     from app.models import MessageTemplate, SourcingContact
     from app.services import sourcing_buckets, sourcing_msg
 
-    _tpl(db, sourcing_msg.KIND, MNA_WIDE, "M&A 문구")
-    after = "M&A · 세컨더리 찾는 투자사"
-    assert sourcing_buckets.rename(db, MNA, after) == 2
+    _sc(db, "박대표", CEO, 2000, phone="010-0000-0008")
+    _sc(db, "라대표", CEO_WIDE, 2001, phone="010-0000-0009")
+    _tpl(db, sourcing_msg.KIND, CEO_WIDE, "대표 문구")
+    after = "딜 소싱 참여 투자사 대표 (2026)"
+    assert sourcing_buckets.rename(db, CEO, after) == 2
     db.commit()
     assert {r.name for r in db.query(SourcingContact).filter_by(bucket=after)} == {
-        "박다른", "라다른"}
+        "박대표", "라대표"}
     assert db.query(MessageTemplate).filter_by(name=after).count() == 1
 
 
@@ -445,19 +459,21 @@ def test_renaming_to_a_spacing_variant_keeps_one_choice(db, users, spread):
 
     user = users["u1"]
     kind = sourcing_msg.KIND
-    wide = _tpl(db, kind, MNA_WIDE, "두 칸 글자 문구")
-    tight = _tpl(db, kind, MNA, "한 칸 글자 문구")
-    db.add(TemplateChoice(user_id=user.id, kind=kind, variant=MNA_WIDE,
+    _sc(db, "박대표", CEO, 2000, phone="010-0000-0008")
+    _sc(db, "라대표", CEO_WIDE, 2001, phone="010-0000-0009")
+    wide = _tpl(db, kind, CEO_WIDE, "두 칸 글자 문구")
+    tight = _tpl(db, kind, CEO, "한 칸 글자 문구")
+    db.add(TemplateChoice(user_id=user.id, kind=kind, variant=CEO_WIDE,
                           template_id=wide.id))
     db.commit()
-    db.add(TemplateChoice(user_id=user.id, kind=kind, variant=MNA, template_id=tight.id))
+    db.add(TemplateChoice(user_id=user.id, kind=kind, variant=CEO, template_id=tight.id))
     db.commit()
 
-    assert sourcing_buckets.rename(db, MNA_WIDE, MNA) == 2
+    assert sourcing_buckets.rename(db, CEO_WIDE, CEO) == 2
     db.commit()
     [choice] = db.query(TemplateChoice).filter_by(kind=kind).all()
-    assert (choice.variant, choice.template_id) == (MNA, wide.id)
-    assert _stored(db) == {TIGHT, SYNC, WIDE, MNA}
+    assert (choice.variant, choice.template_id) == (CEO, wide.id)
+    assert _stored(db) == {TIGHT, SYNC, WIDE, MNA, MNA_WIDE, CEO}
 
 
 def test_cannot_rename_onto_a_spelling_variant_of_another_bucket(db, users, spread):

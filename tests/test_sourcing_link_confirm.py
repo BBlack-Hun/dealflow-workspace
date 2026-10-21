@@ -9,9 +9,9 @@
      (`link_candidates`) — 이미 다른 소싱 줄과 이어진 투자사 줄 · 감춘 줄 ·
      투자사로 세지 않는 명단의 줄은 후보가 아니다.
   ③ [이 분으로 확정](`POST /api/sourcing/{id}/link`) — 서버가 후보를 다시 세어 그
-     안에 있을 때만 잇는다. 시리즈 A 갈래 · 안 이어진 줄만. 수정 로그에 남는다.
+     안에 있을 때만 잇는다. 잇는 세 갈래 · 안 이어진 줄만. 수정 로그에 남는다.
   ④ 투자사 관리 현황에 `참여 요청일` — 이어진 줄의 `참여 요청일` 을 날짜만(시트가
-     붙여 온 `00:00:00` 같은 시각은 뗀다), 읽기만. `Series A 딜 소싱` 바로 뒤.
+     붙여 온 `00:00:00` 같은 시각은 뗀다), 읽기만. `딜 소싱` 바로 뒤.
      엑셀에도 두 칸이 같이 나간다.
   ⑤ [연결 풀기](`POST /api/sourcing/{id}/unlink`) — 관리자 · 이어진 투자사 줄의 담당만
      (그 줄의 주인 번호로 — 누구나 고치는 `담당자` 칸으로는 판정하지 않는다). 두 줄
@@ -192,11 +192,16 @@ def test_a_change_that_does_not_link_answers_with_new_candidates(board, db, user
     assert "vc_picks" not in r.json()
 
 
+#: 투자사 관리 현황과 잇지 않는 갈래 — 운영 시트 탭처럼 두 칸 공백.
+CEO = "딜 소싱  참여 투자사 대표"
+
+
 def test_other_buckets_never_get_candidates(board, db, users):
+    """잇는 세 갈래(Series A · M&A · 구주·후속) 밖의 갈래에는 후보가 안 선다."""
     vc(db, users)
-    row = sc(db, bucket=MNA)
+    row = sc(db, bucket=CEO)
     assert picks(db, row) is None
-    page = board.get(f"/sourcing?tab={MNA}").text
+    page = board.get("/sourcing", params={"tab": CEO}).text
     assert 'data-testid="sourcing-vc-picks"' not in page
 
 
@@ -293,10 +298,10 @@ def test_confirm_refuses_linked_rows_and_other_buckets(board, db, users):
     assert "이미" in r.json()["detail"]
     assert sync_rows(db)[0].vc_contact_id == first.id
 
-    other = sc(db, bucket=MNA, phone="010-2222-3333")
+    other = sc(db, bucket=CEO, phone="010-2222-3333")
     r = confirm(board, other.id, second.id)
     assert r.status_code == 400
-    assert SYNC in r.json()["detail"]
+    assert "Series A · M&A · 구주·후속 갈래 줄만" in r.json()["detail"]
 
     assert confirm(board, 999999, second.id).status_code == 404
 
@@ -328,13 +333,13 @@ def test_the_requested_date_shows_only_for_linked_rows_as_written(board, db, use
     alone = vc(db, users, name="김서연", phone="010-2222-3333")
     other_bucket = vc(db, users, name="박지훈", phone="010-3333-4444")
     sc(db, vc_contact_id=linked.id, requested_at="2026/05/21")
-    # 다른 갈래의 줄은 이어진 줄이 아니다(`Series A 딜 소싱` 칸과 같은 판정)
+    # M&A 갈래의 이어진 줄도 이어진 줄이다(갈래 셋 — `딜 소싱` 칸과 같은 판정)
     sc(db, name="박지훈", phone="010-3333-4444", bucket=MNA,
        vc_contact_id=other_bucket.id, requested_at="2026-01-01")
 
     assert _requested(board, linked.id) == "2026/05/21"      # 적힌 표기 그대로
     assert _requested(board, alone.id) == ""
-    assert _requested(board, other_bucket.id) == ""
+    assert _requested(board, other_bucket.id) == "2026-01-01"
 
     body = board.get(f"/contacts?sheet={SHEET}").text
     assert 'data-filters="sourcing_date:참여 요청일"' in body
@@ -365,7 +370,7 @@ def test_the_requested_date_drops_the_time_the_sheet_carried(board, db, users):
 
 
 def test_the_requested_date_sits_right_after_series_a_and_is_read_only(board, db, users):
-    """머리글 · 행 칸 차례가 같아야 한다 — `Series A 딜 소싱` 바로 뒤. 칸에는
+    """머리글 · 행 칸 차례가 같아야 한다 — `딜 소싱` 바로 뒤. 칸에는
     `.cell` · `data-field` 가 없다(눌러 고치는 `inline_edit.js` 가 안 잡는다)."""
     contact = vc(db, users)
     sc(db, vc_contact_id=contact.id, requested_at="2026-07-01 00:00:00")
@@ -375,20 +380,20 @@ def test_the_requested_date_sits_right_after_series_a_and_is_read_only(board, db
     labels = [re.sub(r"<[^>]+>", "", x).strip()
               for x in re.findall(r"<th[\s>].*?</th>", head, re.S)]
     at = labels.index("딜소싱 참여 투자사")
-    assert labels[at + 1:at + 3] == ["Series A 딜 소싱", "참여 요청일"], labels
+    assert labels[at + 1:at + 3] == ["딜 소싱", "참여 요청일"], labels
 
     rows = body[body.index("<tbody>"):body.index("</tbody>")]
     first_row = rows[:rows.index("</tr>")]
     tds = re.findall(r"<td(?:\s[^>]*)?>", first_row)
-    i = next(n for n, td in enumerate(tds) if 'data-field="sourcing_join"' in td)
+    i = next(n for n, td in enumerate(tds) if 'data-field="sourcing_branches"' in td)
     assert tds[i + 1].startswith('<td class="sourcing-requested"'), tds[i + 1]
     assert 'class="cell' not in tds[i + 1] and "data-field" not in tds[i + 1]
     assert len(re.findall(r"<th[\s>]", head)) == len(re.findall(r"<td[\s>]", first_row))
 
-    # 수정창에는 없다 — 고칠 칸이 아니다(`딜소싱 참여 투자사` 다음은 여전히 O/X)
+    # 수정창에는 없다 — 고칠 칸이 아니다(`딜소싱 참여 투자사` 다음은 여전히 `딜 소싱`)
     panel = re.findall(r'id="f-(\w+)"', body)
     assert "sourcing_requested_at" not in panel
-    assert panel[panel.index("sourcing_note") + 1] == "sourcing_join"
+    assert panel[panel.index("sourcing_note") + 1] == "sourcing_branches"
 
 
 def test_patch_ignores_the_requested_date(board, db, users):
@@ -424,8 +429,8 @@ def _xlsx_rows(content):
 
 
 def test_the_excel_carries_series_a_and_the_requested_date(board, db, users):
-    """엑셀(`전체` · 명단별)에도 `Series A 딜 소싱` · `참여 요청일` 두 칸이 화면과
-    같은 값으로 나란히 나간다."""
+    """엑셀(`전체` · 명단별)에도 `딜 소싱` · `참여 요청일` 두 칸이 화면과
+    같은 값으로 나란히 나간다(`딜 소싱` 은 `Series A, M&A 불참여` 꼴)."""
     linked = vc(db, users, name="홍길동")
     vc(db, users, name="김서연", phone="010-2222-3333")
     sc(db, vc_contact_id=linked.id, requested_at="2026-07-01 00:00:00")
@@ -434,10 +439,10 @@ def test_the_excel_carries_series_a_and_the_requested_date(board, db, users):
         r = board.get(url)
         assert r.status_code == 200, (url, r.text[:200])
         head, rows = _xlsx_rows(r.content)
-        at = head.index("Series A 딜 소싱")
+        at = head.index("딜 소싱")
         assert head[at + 1] == "참여 요청일", (url, head)
         got = {row[head.index("이름")]: (row[at] or "", row[at + 1] or "") for row in rows}
-        assert got == {"홍길동": ("O", "2026-07-01"), "김서연": ("", "")}, (url, got)
+        assert got == {"홍길동": ("Series A", "2026-07-01"), "김서연": ("", "")}, (url, got)
 
 
 # ── ⑤ [연결 풀기] ───────────────────────────────────────────────────────────

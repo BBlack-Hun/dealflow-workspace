@@ -56,8 +56,8 @@
       pick.setAttribute("data-contact", String(c.id));
       pick.setAttribute("data-label", c.label || "");
       pick.setAttribute("data-sheet", c.sheet || "");
-      pick.setAttribute("title", "투자사 관리 현황의 이 줄과 잇습니다 — 그쪽 `Series A 딜 소싱` " +
-                                 "칸이 이 줄의 참여(O/X)로 섭니다");
+      pick.setAttribute("title", "투자사 관리 현황의 이 줄과 잇습니다 — 그쪽 `딜 소싱` " +
+                                 "칸에 이 갈래가 이 줄의 참여로 섭니다");
       item.appendChild(pick);
       box.appendChild(item);
     });
@@ -171,7 +171,7 @@
   function onPick(btn, tr) {
     if (!window.confirm("'" + whoOf(tr) + "' 님을 투자사 관리 현황의 " + btn.getAttribute("data-sheet") +
         " 명단 줄(" + btn.getAttribute("data-label") + ")과 잇습니다.\n" +
-        "그쪽 `Series A 딜 소싱` 칸이 이 줄의 참여(O/X)로 서고, 이름 · 회사 · 휴대폰처럼 " +
+        "그쪽 `딜 소싱` 칸에 이 갈래가 이 줄의 참여로 서고, 이름 · 회사 · 휴대폰처럼 " +
         "두 표에 다 있는 칸은 어느 쪽에서 고쳐도 같이 바뀝니다. 잘못 이었으면 관리자나 " +
         "그 투자사 줄의 담당이 [연결 풀기]로 풉니다.")) return;
     btn.disabled = true;
@@ -192,8 +192,8 @@
   // [연결 풀기] — 두 줄 다 남는다는 것을 확인창에 적는다.
   function onUnlink(btn, tr) {
     if (!window.confirm("'" + whoOf(tr) + "' 님과 투자사 관리 현황의 " + btn.getAttribute("data-sheet") +
-        " 명단 줄의 연결을 풉니다.\n두 줄 다 지우지 않습니다 — 그쪽 `Series A 딜 소싱` 칸이 " +
-        "비고, 같은 칸을 따라 고치는 것도 멈춥니다. 맞는 분이 있으면 후보에서 다시 " +
+        " 명단 줄의 연결을 풉니다.\n두 줄 다 지우지 않습니다 — 그쪽 `딜 소싱` 칸에서 이 갈래가 " +
+        "빠지고, 같은 칸을 따라 고치는 것도 멈춥니다. 맞는 분이 있으면 후보에서 다시 " +
         "[이 분으로 확정]을 누르세요.")) return;
     btn.disabled = true;
     post("/api/sourcing/" + tr.getAttribute("data-id") + "/unlink", null).then(function (res) {

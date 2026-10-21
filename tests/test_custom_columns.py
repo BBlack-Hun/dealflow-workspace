@@ -749,6 +749,39 @@ def test_마이그레이션_0110은_올리고_내려도_칸과_값이_남는다(
     assert "after_key" in cols()
 
 
+def test_옛_머리글_이름으로_고른_자리는_새_이름_칸_뒤에_선다(portal, db):
+    """#63 — 같은 칸을 같은 이름으로 맞추며 머리글 몇 개의 이름이 바뀌었다
+    (딜 소싱 `투자분야` → `선호 투자분야` · Series A 탭 `핸드폰` → `연락처` …).
+    `after_key` 는 고른 그때의 글자라 그대로 두면 그 칸이 맨 끝으로 물러난다 —
+    저장값은 두고 **읽을 때** 새 이름으로 본다(`custom_columns.anchor_of`)."""
+    from types import SimpleNamespace as C
+
+    from app.models import SeriesACompany, SourcingContact
+    from app.services.custom_columns import arranger
+
+    db.add(SourcingContact(bucket="샘플갈래", name="샘플심사역"))
+    db.add(SeriesACompany(name="샘플딜", received_at="2026-10-01"))
+    db.commit()
+    _add(portal, "sourcing", "소싱 메모")
+    _add(portal, "companies", "연락 메모")
+    _col(db, "sourcing", "소싱 메모").after_key = "투자분야"       # 옛 이름 그대로 저장된 칸
+    db.commit()                      # `_col` 이 expire_all 을 부르므로 하나씩 적는다
+    _col(db, "companies", "연락 메모").after_key = "핸드폰"
+    db.commit()
+
+    assert (True, "선호 투자분야", "소싱 메모") in _custom_head(portal["u1"].get("/sourcing").text)
+    assert (True, "연락처", "연락 메모") in _custom_head(
+        portal["u1"].get("/companies?tab=series-a").text)
+    # 관리 화면도 그 자리를 고른 것으로 보인다 — 저장값은 안 바뀐다.
+    assert '<option value="선호 투자분야" selected>' in \
+        portal["admin"].get("/columns?target=sourcing").text
+    assert _col(db, "sourcing", "소싱 메모").after_key == "투자분야"
+    # 엑셀 차례도 같은 판정.
+    put = arranger(["이름", "선호 투자분야", "메모"],
+                   {"custom_cols": [C(target="sourcing", after_key="투자분야")]})
+    assert put(["a", "b", "c", "x"]) == ["a", "b", "x", "c"]
+
+
 def test_엑셀_차례_고르기는_같은_칸_뒤_여럿과_없는_칸을_가린다():
     from types import SimpleNamespace as C
 

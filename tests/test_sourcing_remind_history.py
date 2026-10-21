@@ -191,7 +191,9 @@ def test_the_table_grew_by_exactly_the_month_columns():
                          css).group(1))
     own = int(re.search(r"#sourcing-table \{ min-width: (\d+)px; \}", css).group(1))
     col = int(re.search(r'<th class="remind-col" style="width:(\d+)px"', html).group(1))
-    assert own == wide + MONTHS * col, (own, wide, col)
+    # #63 — `선호 투자분야` 120→134 · `라운드 사이즈(투자운영금액)` 134→204 도 든 만큼.
+    widened = (134 - 120) + (204 - 134)
+    assert own == wide + MONTHS * col + widened, (own, wide, col)
 
 
 def test_the_router_decides_where_the_months_go():

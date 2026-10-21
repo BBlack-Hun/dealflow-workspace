@@ -267,7 +267,7 @@ def bootstrap(db) -> dict:
 
 
 def seed_sourcing_remind(db) -> int:
-    """딜 소싱 월간 리마인드 팀 기본 문구 — 시리즈 A 이상 갈래마다 하나.
+    """딜 소싱 월간 리마인드 팀 기본 문구 — 시리즈 A 이상 갈래 · M&A 갈래마다 하나.
 
     글은 `sourcing_msg.remind_default_body` 그대로다(문구틀이 없을 때 나가는 글과
     같은 값 — 두 곳에 적으면 새로 깐 서버와 문구틀을 지운 사람이 다른 글을
@@ -287,6 +287,10 @@ def seed_sourcing_remind(db) -> int:
     buckets = ([g["label"] for g in sourcing_buckets.groups(db)
                 if sourcing_msg.is_series_a(g["label"])]
                or [SOURCING_REMIND_BUCKET])
+    # M&A 갈래도 — 그 갈래 말로 쓴 글(`sourcing_msg.remind_mna_body`)이 기본 뼈대 대신
+    # 나가고, 문구 화면에서 고칠 수 있게(사용자 결정 2026-10-21). 갈래가 있을 때만.
+    buckets += [g["label"] for g in sourcing_buckets.groups(db)
+                if sourcing_msg.is_mna(g["label"])]
     made = 0
     for bucket in buckets:
         names = db.execute(

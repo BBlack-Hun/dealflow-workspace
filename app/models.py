@@ -1431,17 +1431,17 @@ class SourcingContact(TimestampMixin, Base):
     # ── 투자사 관리 현황과 잇기 (`services/sourcing_sync.py`) ─────────────
     #
     # **이 줄이 투자사 관리 현황의 어느 줄과 같은 사람인가.** 잇는 것은
-    # `시리즈 A 이상 딜 소싱 참여 심사역` 갈래(`sourcing_sync.SYNC_BUCKET`)의
-    # 줄뿐이다 — 투자사 관리 현황의 `Series A 딜 소싱` 칸(O/X)이 이 줄을 보고
-    # 선다. 그 칸은 **따로 저장하지 않는다**: 이어진 줄이 있고 아래
-    # `participation` 이 `참여` 면 O, `불참여` 면 X, 이어진 줄이 없으면 빈칸.
+    # Series A · M&A · 구주·후속 세 갈래(`sourcing_sync.BRANCHES`)의 줄뿐이다 —
+    # 투자사 관리 현황의 `딜 소싱` 칸이 이 줄들을 보고 갈래마다 딱지로 선다. 그
+    # 칸은 **따로 저장하지 않는다**: 이어진 줄이 있고 아래 `participation` 이
+    # `불참여` 가 아니면 그 갈래를 고른 것, `불참여` 면 흐린 딱지, 없으면 딱지 없음.
     # 두 화면이 같은 칸 하나를 읽으므로 한쪽에서 고치면 다른 쪽도 그대로다.
     #
     # **카톡방은 잇지 않는다.** 소싱 줄의 방은 보내는 사람 카톡의 **딜 소싱
     # 방**이고, 투자사 줄의 방은 그 담당 팀원의 딜소개 방이다 — 다른 방이다.
     # 이 갈래 줄은 자기 방 이름이 없으면 보내지 않는다(`sourcing_link.linked_rooms`).
     #
-    # 한 투자사 줄에는 많아야 한 줄만 이어진다(유일 색인). 투자사 줄을 지우면
+    # 한 투자사 줄에는 갈래마다 많아야 한 줄만 이어진다(유일 색인). 투자사 줄을 지우면
     # 이 칸만 비우고 소싱 줄은 남긴다(`sourcing_sync.detach`) — 리마인드 ·
     # `딜 받음` 이력이 이 줄에 달려 있다.
     vc_contact_id: Mapped[Optional[int]] = mapped_column(
@@ -1460,7 +1460,10 @@ class SourcingContact(TimestampMixin, Base):
                                                server_default="참여")
 
     __table_args__ = (
-        Index("uq_sourcing_contacts_vc_contact", "vc_contact_id", unique=True),
+        # 한 투자사 줄에는 **갈래마다** 한 줄(이주 `0114` — 그 전에는 갈래를 가리지
+        # 않고 한 줄이었다. 잇는 갈래가 셋이 되며 같은 분이 Series A · M&A 에 다 있다).
+        Index("uq_sourcing_contacts_vc_contact_bucket", "vc_contact_id", "bucket",
+              unique=True),
     )
 
 

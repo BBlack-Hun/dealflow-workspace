@@ -19,8 +19,8 @@ from tests.test_template_apply_all import people, portal  # noqa: F401
 
 SYNC = "시리즈 A 이상 딜 소싱 참여 심사역"
 TIGHT = "시리즈 A 이상 딜소싱 참여 심사역"
-MNA = "M&A 찾는 투자사"
-MNA_WIDE = "M&A  찾는 투자사"
+CEO = "딜 소싱 참여 투자사 대표"
+CEO_WIDE = "딜 소싱  참여 투자사 대표"
 
 
 def test_apply_all_covers_the_whitespace_variant(db, people):
@@ -51,18 +51,19 @@ def test_renaming_carries_backups_of_every_variant(db, people):
     from app.models import MessageTemplate, SourcingContact, TemplateApplyBackup
     from app.services import sourcing_buckets
 
-    db.add(SourcingContact(bucket=MNA_WIDE, position=1, name="홍길동"))
-    team = MessageTemplate(user_id=None, kind="sourcing_intro", name=MNA_WIDE,
+    # 잇지 않는 갈래로 본다 — M&A 는 투자사 관리 현황과 이어져 이름을 못 바꾼다.
+    db.add(SourcingContact(bucket=CEO_WIDE, position=1, name="홍길동"))
+    team = MessageTemplate(user_id=None, kind="sourcing_intro", name=CEO_WIDE,
                            body="팀 문구", is_active=1)
     db.add(team)
     db.commit()
     db.add(TemplateApplyBackup(user_id=people["admin"].id, kind="sourcing_intro",
-                               variant=MNA_WIDE, template_id=team.id,
+                               variant=CEO_WIDE, template_id=team.id,
                                previous_json="[]", turned_off_json="[]"))
     db.commit()
-    sourcing_buckets.rename(db, MNA, "M&A 찾는 곳")
+    sourcing_buckets.rename(db, CEO, "투자사 대표")
     db.commit()
-    assert db.query(TemplateApplyBackup).one().variant == "M&A 찾는 곳"
+    assert db.query(TemplateApplyBackup).one().variant == "투자사 대표"
 
 
 def test_reimport_keeps_a_confirmed_link_on_a_whitespace_variant(board, db, users, tmp_path,

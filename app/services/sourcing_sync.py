@@ -5,19 +5,28 @@
 메뉴에서 따로 적었다 — 투자사 관리 현황에서 "이 분 시리즈 A 딜 소싱 참여하신대"
 를 듣고 딜 소싱 메뉴로 가서 이름 · 회사 · 번호를 다시 쳐 넣었다.
 
-## 무엇을 잇나 — `시리즈 A 이상 딜 소싱 참여 심사역` 갈래 하나
+## 무엇을 잇나 — 세 갈래(`BRANCHES`)
 
-잇는 것은 **그 갈래의 줄뿐**이다(`SYNC_BUCKET`). 사용자가 정했다 — "딜소싱
-연동은 시리즈 A 이상 딜 소싱 참여 심사역 탭에만". M&A · 후속투자 같은 다른
-갈래에 같은 분이 있어도 그 줄은 건드리지 않는다(옮기지도, 잇지도 않는다).
+잇는 것은 **세 갈래의 줄뿐**이다 — `Series A`(`시리즈 A 이상 딜 소싱 참여 심사역`
+· `SYNC_BUCKET`) · `M&A`(`M&A 찾는 투자사`) · `구주·후속`(`구주매각 / 후속투자사
+…`). 사용자가 정했다(2026-10-21 — 처음에는 시리즈 A 하나였다). `딜 소싱  참여
+투자사 대표` · `딜 소싱  개인참여 심사역` 갈래는 예전 그대로 잇지 않는다.
+
+한 투자사 줄은 **갈래마다 한 줄**과 이어진다(유일 색인 `(vc_contact_id, bucket)`
+— 이주 `0114`). 같은 분이 Series A 와 M&A 에 다 있으면 두 줄이 그 투자사 줄을
+가리킨다. 시리즈 A 에만 있는 일(Series A 딜 공유 · A1 자동 리마인드의 기본
+갈래 · 투자사 방을 이어받지 않는 것)은 그대로 시리즈 A 에만 있다.
 
 ## 칸은 하나다 — 따로 저장하지 않는다
 
-투자사 관리 현황의 `Series A 딜 소싱` 칸(O / X / 빈칸)은 **값이 없다.** 그
-투자사 줄에 이어진 소싱 줄(`SourcingContact.vc_contact_id`)의
-`participation` 을 읽어 그린다.
+투자사 관리 현황의 `딜 소싱` 칸은 **값이 없다.** 그 투자사 줄에 이어진 소싱
+줄들(`SourcingContact.vc_contact_id`)의 갈래와 `participation` 을 읽어 갈래마다
+딱지 하나로 그린다(`chips`) — `Series A·참여` · `M&A·제안 대기중`. `불참여` 인
+줄은 흐린 딱지로 남긴다(지우지 않았고 이력이 그 줄에 있다 — 숨기면 빠진 것과
+처음부터 없던 것이 같아 보인다). **고른 갈래 = 이어진 줄이 있고 `불참여` 가
+아닌 갈래**다. 갈래 하나만 보면 예전 O/X 그대로다.
 
-    이어진 줄 있음 · 불참여        →  X
+    이어진 줄 있음 · 불참여        →  X   (흐린 딱지)
     이어진 줄 있음 · 그 밖의 값    →  O   (참여 · 제안 대기중 · 물어보는 중 · 사람이 적은 문구)
     이어진 줄 없음                 →  빈칸
 
@@ -50,7 +59,11 @@ O 는 **"이 갈래에 들어 있다"** 이지 "딜을 받겠다고 했다" 가 
 제어문자 금지). 보기를 따로 저장하지 않는다 — 표의 고르는 창이 같은 칸의 다른 줄
 값을 보기로 모아 준다(`inline_edit.js` 의 pick).
 
-## 칸을 고치면 (`set_mark`)
+## 칸을 고치면 (`set_mark` — 갈래 하나씩, `apply_branches` — 여럿)
+
+칸의 고르는 창은 갈래 셋에 체크 상자 하나씩이다. 체크하면 그 갈래에 O, 풀면 X 다.
+`(딜 소개 X)` 가 이름에 붙었거나 그룹이 `딜 소개 보류` 인 분은 **넣지 않는다**
+(`intro_blocked` — O 만 막고 X 는 막지 않는다).
 
     O  이어진 줄이 있으면 — `불참여` 면 `딜 소싱 참여 제안 대기중` 으로(다시 묻는
        것으로 본다). 그 밖의 값(참여 · 제안 대기중 · 물어보는 중 · 문구)은 **덮지 않는다** —
@@ -73,6 +86,9 @@ O 는 **"이 갈래에 들어 있다"** 이지 "딜을 받겠다고 했다" 가 
 번호일 때만 저절로, 아니면 사람이 확정". 번호만으로 잇던 때는 번호를 한 자리
 잘못 적은 줄이 남의 투자사 줄과 조용히 이어질 수 있었다. 이름만으로는 원래
 잇지 않는다 — 같은 이름이 여럿이다(`sourcing_link` 머리말).
+
+잇기가 생기기 전부터 있던 M&A · 구주·후속 줄은 이 길을 지난 적이 없다 — 딜 소싱
+화면의 그 탭 [저절로 잇기]가 같은 규칙으로 한꺼번에 잇는다(`auto_link_all`).
 
 이름은 `_key` 로 맞춘다(띄어쓰기를 빼고 소문자로) — 투자사 쪽에서 O 를 넣을 때
 같은 분을 찾는 규칙(`find_row` 의 이름+회사)과 **같은 잣대**다. 두 길이 이름을
@@ -101,8 +117,8 @@ O 는 **"이 갈래에 들어 있다"** 이지 "딜을 받겠다고 했다" 가 
 이름 · 직함 · 회사 · 휴대폰 · 메일 · 투자분야 · 라운드 사이즈(`SHARED_FIELDS`)는
 두 표에 다 있다. 이어진 뒤에 한쪽에서 고치면 다른 쪽에도 같은 값을 적는다.
 
-투자분야는 딜 소싱 표의 `투자분야` 와 투자사 관리 현황의 `선호 투자분야` 가
-**같은 칸**이다(둘 다 `sectors`). 라운드 사이즈도 두 표에서 같은 이름이다(#17 —
+선호 투자분야는 두 표에서 **같은 칸**이다(둘 다 `sectors` — 딜 소싱 머리글도 #63 부터
+같은 이름이다). 라운드 사이즈도 두 표에서 같은 이름이다(#17 —
 "두 메뉴의 컬럼이 같으면 어느 쪽에 넣어도 다른 쪽에 자동으로"). 값은 적힌
 **글자 그대로** 옮긴다 — 투자사 쪽은 쉼표로 나눠 읽고 딜 소싱 쪽은 글 칸이라,
 여기서 고쳐 쓰면 사람이 적은 글이 다른 표에서 바뀌어 보인다.
@@ -168,16 +184,25 @@ from .. import clock
 from ..models import SourcingContact, User, VcContact
 from . import edit_log, sheet_owner, sourcing_buckets, sourcing_link
 
-#: 투자사 관리 현황과 잇는 **하나뿐인** 갈래. 원본 시트의 탭 이름 그대로다
-#: (운영 21줄 · 2026-10). 이 이름은 딜 소싱 화면에서 바꿀 수 없다
-#: (`sourcing_buckets.rename`) — 바꾸면 이 글자와 갈려 잇기가 통째로 끊긴다.
+#: 시리즈 A 갈래 — 투자사 관리 현황과 잇는 세 갈래 중 하나이고, Series A 딜 공유 ·
+#: A1 자동 리마인드가 보는 갈래다. 원본 시트의 탭 이름 그대로다.
+#: 잇는 갈래의 이름은 딜 소싱 화면에서 바꿀 수 없다(`sourcing_buckets.rename`) —
+#: 바꾸면 이 글자와 갈려 잇기가 통째로 끊긴다.
 #: 견줄 때는 **띄어쓰기를 빼고** 본다(`sourcing_buckets.same`) — 저장된 줄이
 #: `딜소싱` 처럼 띄어쓰기만 달라도 이 갈래다. 새 줄은 저장된 글자로 적는다(`create_row`).
 SYNC_BUCKET = "시리즈 A 이상 딜 소싱 참여 심사역"
+MNA_BUCKET = "M&A 찾는 투자사"
+FOLLOW_BUCKET = "구주매각 / 후속투자사 찾는 투자사 / 공동투자사 / 앵커투자사"
+#: 투자사 관리 현황의 `딜 소싱` 칸이 고르는 갈래 — `(짧은 이름, 갈래 글자)`.
+#: 차례가 딱지 · 고르는 창 · 엑셀 글자의 차례다.
+BRANCHES = (("Series A", SYNC_BUCKET), ("M&A", MNA_BUCKET), ("구주·후속", FOLLOW_BUCKET))
+SYNC_BUCKETS = tuple(bucket for _label, bucket in BRANCHES)
 
-#: 투자사 관리 현황의 칸 이름. 어느 갈래와 이어지는지가 이름에 드러나야 한다 —
-#: 그 표에는 원본 시트의 `딜소싱 참여 투자사`(자유 글 칸)가 이미 있다.
-COLUMN_LABEL = "Series A 딜 소싱"
+#: 투자사 관리 현황의 칸 이름. 바로 앞 시트 칸 `딜소싱 참여 투자사`(자유 글)와는
+#: 이름이 다르다 — 엑셀 머리글도 이 글자 그대로 찾는다(`sheet_import`).
+COLUMN_LABEL = "딜 소싱"
+#: 예전 칸 이름 — 엑셀 올리기는 이 머리글도 받는다(O → Series A, X → Series A 불참여).
+OLD_COLUMN_LABEL = "Series A 딜 소싱"
 
 JOINED = "참여"
 LEFT = "불참여"
@@ -210,11 +235,11 @@ _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 #: 두 모델에서 **이름이 같은 칸**만 둔다(`getattr` 한 번으로 양쪽을 읽는다).
 #: `memo` 는 일부러 뺐다(모듈 머리말 — 담는 이야기가 다르다).
 SHARED_FIELDS = ("name", "title", "firm", "phone", "email", "sectors", "round_size")
-#: 화면에 부를 이름. 딜 소싱 표의 머리글과 같은 말이다(투자분야는 투자사 관리
-#: 현황에서 `선호 투자분야` 라 부른다 — 같은 칸이다).
+#: 화면에 부를 이름. 딜 소싱 표의 머리글과 같은 말이고, 그 머리글은 투자사 관리
+#: 현황의 말이다(#63 — 같은 칸은 같은 이름).
 SHARED_LABELS = {"name": "이름", "title": "직함", "firm": "회사",
-                 "phone": "휴대폰", "email": "이메일",
-                 "sectors": "투자분야", "round_size": "라운드 사이즈"}
+                 "phone": "휴대폰", "email": "전자 메일 주소",
+                 "sectors": "선호 투자분야", "round_size": "라운드 사이즈(투자운영금액)"}
 
 #: 휴대폰으로 인정할 최소 자릿수 — 방을 잇는 규칙과 **같은 값**이다.
 MIN_DIGITS = sourcing_link.MIN_DIGITS
@@ -337,20 +362,47 @@ def normalize_mark(value: Optional[str]) -> str:
         return MARK_JOINED
     if text in (MARK_LEFT, "x", "×", LEFT):
         return MARK_LEFT
-    raise SyncError(f"{COLUMN_LABEL} 칸에는 O(참여) 나 X(불참여) 만 적습니다: {text}")
+    raise SyncError(f"{OLD_COLUMN_LABEL} 칸에는 O(참여) 나 X(불참여) 만 적습니다: {text}")
 
 
 def mark_of(row: Optional[SourcingContact]) -> str:
-    """이어진 소싱 줄 → 투자사 관리 현황 칸 값. `불참여` 만 X, 그 밖의 값(참여 ·
+    """이어진 소싱 줄 → 그 갈래의 O/X. `불참여` 만 X, 그 밖의 값(참여 ·
     물어보는 중 · 사람이 적은 문구)은 O — **갈래에 들어 있다**는 뜻이다(모듈 머리말)."""
     if row is None:
         return ""
     return MARK_LEFT if is_left(row) else MARK_JOINED
 
 
+def branch_of(value) -> Optional[str]:
+    """줄 · 갈래 글자 · 짧은 이름(`M&A`) → 잇는 갈래의 글자(`BRANCHES`), 아니면 None.
+    띄어쓰기는 안 본다(`sourcing_buckets.same`) — 짧은 이름은 대소문자도 안 본다."""
+    text = value if isinstance(value, str) else getattr(value, "bucket", "")
+    for label, bucket in BRANCHES:
+        if sourcing_buckets.same(text, bucket) or _key(text) == _key(label):
+            return bucket
+    return None
+
+
 def is_synced(row) -> bool:
-    """이 소싱 줄이 투자사 관리 현황과 이어지는 갈래의 줄인가(띄어쓰기는 안 본다)."""
+    """이 소싱 줄이 투자사 관리 현황과 이어지는 갈래(셋 중 하나)의 줄인가."""
+    return branch_of(row) is not None
+
+
+def is_series_a(row) -> bool:
+    """시리즈 A 갈래의 줄인가 — 시리즈 A 에만 있는 일(방을 이어받지 않음 ·
+    Series A 딜 공유)이 본다."""
     return sourcing_buckets.same(getattr(row, "bucket", ""), SYNC_BUCKET)
+
+
+#: `(딜 소개 X)` 가 이름에 붙은 분 · 그룹이 `딜 소개 보류` 인 분 — 딜 소싱에 넣지 않는다.
+_NO_INTRO = re.compile(r"\(\s*딜\s*소개\s*x\s*\)", re.IGNORECASE)
+_HOLD_GROUP = "딜소개보류"      # `pref_group.HOLD` 를 띄어쓰기 없이
+
+
+def intro_blocked(contact: VcContact) -> bool:
+    """딜 소싱에 넣지 않을 분인가 — 이름에 `(딜 소개 X)` · 그룹이 `딜 소개 보류`."""
+    return bool(_NO_INTRO.search(contact.name or "")
+                or _HOLD_GROUP in _key(contact.group_name))
 
 
 def digits(phone: Optional[str]) -> str:
@@ -384,24 +436,69 @@ def same_value(field: str, a, b) -> bool:
     return _text(a) == _text(b)
 
 
-def linked_rows(db: Session, contact_ids: Iterable[int]) -> Dict[int, SourcingContact]:
-    """투자사 줄 번호 → 이어진 소싱 줄. **한 번에** 읽는다(표 한 장에 질의 하나)."""
+def linked_all(db: Session, contact_ids: Iterable[int]) -> Dict[int, Dict[str, SourcingContact]]:
+    """투자사 줄 번호 → {갈래 글자(`BRANCHES`): 이어진 소싱 줄}. **한 번에** 읽는다
+    (표 한 장에 질의 하나)."""
     ids = [i for i in dict.fromkeys(contact_ids) if i]
     if not ids:
         return {}
     rows = db.execute(
         select(SourcingContact).where(SourcingContact.vc_contact_id.in_(ids))
+        .order_by(SourcingContact.id)
     ).scalars().all()
-    return {r.vc_contact_id: r for r in rows if is_synced(r)}
+    out: Dict[int, Dict[str, SourcingContact]] = {}
+    for r in rows:
+        bucket = branch_of(r)
+        if bucket is not None:
+            out.setdefault(r.vc_contact_id, {}).setdefault(bucket, r)
+    return out
+
+
+def linked_rows(db: Session, contact_ids: Iterable[int],
+                bucket: str = SYNC_BUCKET) -> Dict[int, SourcingContact]:
+    """투자사 줄 번호 → 그 갈래(기본 시리즈 A)의 이어진 소싱 줄."""
+    bucket = branch_of(bucket) or bucket
+    return {cid: found[bucket] for cid, found in linked_all(db, contact_ids).items()
+            if bucket in found}
 
 
 def marks_for(db: Session, contact_ids: Iterable[int]) -> Dict[int, str]:
-    """투자사 줄 번호 → `O`/`X`. 이어진 줄이 없는 번호는 빠진다(= 빈칸)."""
+    """투자사 줄 번호 → 시리즈 A 갈래의 `O`/`X`. 이어진 줄이 없는 번호는 빠진다(= 빈칸)."""
     return {cid: mark_of(row) for cid, row in linked_rows(db, contact_ids).items()}
 
 
-def linked_row(db: Session, contact: VcContact) -> Optional[SourcingContact]:
-    return linked_rows(db, [contact.id]).get(contact.id)
+def linked_row(db: Session, contact: VcContact,
+               bucket: str = SYNC_BUCKET) -> Optional[SourcingContact]:
+    return linked_rows(db, [contact.id], bucket).get(contact.id)
+
+
+#: 딱지에 적는 짧은 참여 — 칸이 좁다. 사람이 적은 문구는 그대로.
+_SHORT = {OFFER_PENDING: "제안 대기중", ASKING: "물어보는 중"}
+
+
+def cells(found: Dict[str, SourcingContact]) -> dict:
+    """한 투자사 줄의 `딜 소싱` 칸 — 표 · 응답 · 엑셀이 이 값 하나를 쓴다.
+
+    `chips` — 갈래마다 딱지(`BRANCHES` 차례). `branches` — 고른 갈래(`불참여` 가
+    아닌 줄)의 짧은 이름을 `, ` 로(고르는 창의 값 · 엑셀 글자). `filter` — 머리글
+    필터 값(`|` 로 나눔 — 고른 갈래는 `M&A`, 빠진 갈래는 `M&A 불참여`).
+    `join` — 시리즈 A 갈래의 O/X(예전 칸 — API · 스크립트가 아직 읽는다).
+    """
+    chips, picked, tags = [], [], []
+    for label, bucket in BRANCHES:
+        row = found.get(bucket)
+        if row is None:
+            continue
+        value = participation_of(row)
+        on = not is_left(row)
+        chips.append({"label": label, "text": f"{label}·{_SHORT.get(value, value)}",
+                      "kind": kind_of(row), "on": on,
+                      "requested": requested_of(row)})
+        if on:
+            picked.append(label)
+        tags.append(label if on else f"{label} {LEFT}")
+    return {"chips": chips, "branches": ", ".join(picked), "filter": "|".join(tags),
+            "join": mark_of(found.get(SYNC_BUCKET))}
 
 
 #: 날짜 뒤에 붙은 시각 — 시트 가져오기가 날짜 칸을 `2026-08-11 00:00:00` 으로 적었다.
@@ -419,17 +516,17 @@ def requested_label(value: Optional[str]) -> str:
 
 def requested_of(row: Optional[SourcingContact]) -> str:
     """이어진 소싱 줄 → 투자사 관리 현황의 `참여 요청일` 칸 값(`requested_label`).
-    이어진 줄이 없으면 빈칸. 이 칸도 `Series A 딜 소싱` 처럼 **저장된 값이 아니다.**
+    이어진 줄이 없으면 빈칸. 이 칸도 `딜 소싱` 처럼 **저장된 값이 아니다.**
     """
     return "" if row is None else requested_label(row.requested_at)
 
 
-def _sync_rows(db: Session) -> List[SourcingContact]:
+def _sync_rows(db: Session, bucket: str = SYNC_BUCKET) -> List[SourcingContact]:
     """그 갈래의 줄 전부 — 갈래 글자(띄어쓰기만 다른 것까지)로 **질의에서** 거른다.
     표 전체를 읽어 파이썬에서 거르지 않는다 — O 한 번 · 줄 하나 넣기마다 불린다."""
     return list(db.execute(
         select(SourcingContact)
-        .where(SourcingContact.bucket.in_(sourcing_buckets.variants(db, SYNC_BUCKET)))
+        .where(SourcingContact.bucket.in_(sourcing_buckets.variants(db, bucket)))
         .order_by(SourcingContact.id)
     ).scalars().all())
 
@@ -455,7 +552,8 @@ def _phone_conflict(row: SourcingContact, phone: str) -> bool:
     return len(phone) >= MIN_DIGITS and len(other) >= MIN_DIGITS and other != phone
 
 
-def find_row(db: Session, contact: VcContact) -> Optional[SourcingContact]:
+def find_row(db: Session, contact: VcContact,
+             bucket: str = SYNC_BUCKET) -> Optional[SourcingContact]:
     """이 투자사 줄과 **같은 사람**인 그 갈래의 소싱 줄 — 이름과 번호가 둘 다 같을 때만.
 
     같은 사람일 수도 있는 줄을 번호, 없으면 이름+회사로 찾는다. 한 줄로 좁혀질 때만
@@ -473,7 +571,7 @@ def find_row(db: Session, contact: VcContact) -> Optional[SourcingContact]:
     팀원 명단에 한 줄씩 있는 경우인데(`sheet_import` 의 `따로 만들기`), 여기서
     새 줄을 또 만들면 그 분께 딜 소싱 제안이 두 번 나간다.
     """
-    rows = _sync_rows(db)
+    rows = _sync_rows(db, bucket)
     phone = digits(contact.phone)
 
     def pick(same: List[SourcingContact], how: str) -> Optional[SourcingContact]:
@@ -483,12 +581,12 @@ def find_row(db: Session, contact: VcContact) -> Optional[SourcingContact]:
             owner = db.get(VcContact, taken[0].vc_contact_id)
             who = sheet_owner.labels_of(owner.source_sheet)[0] if owner else "다른"
             raise SyncError(
-                f"딜 소싱 › {SYNC_BUCKET} 의 '{taken[0].name}' 줄이 이미 투자사 관리 "
+                f"딜 소싱 › {bucket} 의 '{taken[0].name}' 줄이 이미 투자사 관리 "
                 f"현황의 다른 줄({who} 명단)과 이어져 있습니다 — 같은 분이면 그 줄에서 "
-                "O/X 를 고치세요(한 분께 딜 소싱 제안이 두 번 나가지 않게 한 줄만 잇습니다).")
+                "딜 소싱 칸을 고치세요(한 분께 딜 소싱 제안이 두 번 나가지 않게 한 줄만 잇습니다).")
         if len(mine) > 1:
             raise SyncError(
-                f"딜 소싱 › {SYNC_BUCKET} 에 {how}이 같은 줄이 {len(mine)}개라 어느 줄인지 "
+                f"딜 소싱 › {bucket} 에 {how}이 같은 줄이 {len(mine)}개라 어느 줄인지 "
                 "정할 수 없습니다 — 딜 소싱 화면에서 겹친 줄을 먼저 정리해 주세요.")
         return mine[0] if mine else None
 
@@ -501,24 +599,24 @@ def find_row(db: Session, contact: VcContact) -> Optional[SourcingContact]:
                            and not _phone_conflict(r, phone)], "이름 · 회사"), "이름 · 회사"
     if found is not None and (len(phone) < MIN_DIGITS or link_key(found) != (name, phone)):
         raise SyncError(
-            f"딜 소싱 › {SYNC_BUCKET} 의 '{found.name}' 줄과 {how}만 같아 잇지 않았습니다 "
+            f"딜 소싱 › {bucket} 의 '{found.name}' 줄과 {how}만 같아 잇지 않았습니다 "
             "— 같은 분이면 딜 소싱 화면 그 줄의 [이 분으로 확정]으로 이어 주세요(이름과 "
             "번호가 둘 다 같을 때만 저절로 잇습니다). 다른 분이면 딜 소싱 화면에서 따로 넣으세요.")
     return found
 
 
-def other_buckets(db: Session, contact: VcContact) -> List[str]:
+def other_buckets(db: Session, contact: VcContact, bucket: str = SYNC_BUCKET) -> List[str]:
     """같은 번호가 **다른 갈래**에도 있는가 — 그 줄은 건드리지 않았다고 말해 준다."""
     phone = digits(contact.phone)
     if len(phone) < MIN_DIGITS:
         return []
     out: List[str] = []
-    for bucket, raw in db.execute(
+    for other, raw in db.execute(
         select(SourcingContact.bucket, SourcingContact.phone)
     ).all():
-        if (digits(raw) == phone and not sourcing_buckets.same(bucket, SYNC_BUCKET)
-                and not any(sourcing_buckets.same(bucket, b) for b in out)):
-            out.append(bucket)
+        if (digits(raw) == phone and not sourcing_buckets.same(other, bucket)
+                and not any(sourcing_buckets.same(other, b) for b in out)):
+            out.append(other)
     return out
 
 
@@ -560,7 +658,8 @@ def assignee_for(db: Session, contact: VcContact, user: Optional[User]) -> str:
 
 def create_row(db: Session, contact: VcContact, participation: str = OFFER_PENDING,
                user: Optional[User] = None,
-               assignee: Optional[str] = None) -> SourcingContact:
+               assignee: Optional[str] = None,
+               bucket: str = SYNC_BUCKET) -> SourcingContact:
     """그 갈래 맨 아래에 새 줄. 카톡방은 **비워 둔다** — 보내는 사람 카톡에서
     [방 후보 찾기]로 찾는다(모듈 머리말 ★).
 
@@ -573,10 +672,10 @@ def create_row(db: Session, contact: VcContact, participation: str = OFFER_PENDI
     """
     last = db.execute(
         select(func.max(SourcingContact.position))
-        .where(SourcingContact.bucket.in_(sourcing_buckets.variants(db, SYNC_BUCKET)))
+        .where(SourcingContact.bucket.in_(sourcing_buckets.variants(db, bucket)))
     ).scalar() or 0
     row = SourcingContact(
-        bucket=sourcing_buckets.label_of(db, SYNC_BUCKET), position=last + 1,
+        bucket=sourcing_buckets.label_of(db, bucket), position=last + 1,
         name=_text(contact.name) or "(이름 없음)",
         title=_text(contact.title) or None,
         firm=_text(contact.firm) or None,
@@ -607,8 +706,9 @@ ACT_KEPT = "kept"          # 이미 이어져 있고 바꿀 것이 없음
 
 def set_mark(db: Session, contact: VcContact, value: Optional[str],
              user: Optional[User] = None, assignee: Optional[str] = None,
-             participation: str = OFFER_PENDING) -> dict:
-    """투자사 관리 현황의 `Series A 딜 소싱` 칸을 고친다.
+             participation: str = OFFER_PENDING, bucket: str = SYNC_BUCKET) -> dict:
+    """투자사 관리 현황의 `딜 소싱` 칸에서 **갈래 하나**(`bucket` — 기본 시리즈 A)를
+    O/X 로 고친다(예전 `Series A 딜 소싱` 칸이 시리즈 A 하나로 하던 일 그대로).
 
     O 의 규칙(모듈 머리말): 새 줄은 `participation`(기본 `딜 소싱 참여 제안 대기중`)으로
     만들고, 이어진 줄이 `불참여` 면 `participation` 으로 되돌린다(다시 묻는다). 이어진
@@ -619,12 +719,18 @@ def set_mark(db: Session, contact: VcContact, value: Optional[str],
     "action": ACT_*, "participation": 이어진 줄의 참여(없으면 빈 글자)}`.
     `db.commit()` 은 부르는 쪽이 한다. 못 하는 까닭은 `SyncError`.
     """
+    bucket = branch_of(bucket) or bucket
     mark = normalize_mark(value)
-    row = linked_row(db, contact)
+    row = linked_row(db, contact, bucket)
+    if mark == MARK_JOINED and (row is None or is_left(row)) and intro_blocked(contact):
+        raise SyncError(
+            f"'{contact.name}' 은 이름에 `(딜 소개 X)` 가 붙었거나 그룹이 `딜 소개 보류` 라 "
+            "딜 소싱에 넣지 않습니다 — 넣어야 하는 분이면 투자사 관리 현황에서 그 표시를 "
+            "먼저 거두세요.")
     if not mark:
         if row is not None:
             raise SyncError(
-                f"딜 소싱 › {SYNC_BUCKET} 에 이어진 분이라 비울 수 없습니다 — 빠지시면 "
+                f"딜 소싱 › {bucket} 에 이어진 분이라 비울 수 없습니다 — 빠지시면 "
                 "X(불참여)로 두세요. 줄을 아예 빼려면 딜 소싱 화면에서 [삭제] 합니다.")
         return {"mark": "", "message": "", "action": ACT_NONE, "participation": ""}
 
@@ -635,25 +741,25 @@ def set_mark(db: Session, contact: VcContact, value: Optional[str],
         if not sheet_owner.on_investor_list(contact, sheet_owner.hidden_labels(db)):
             raise SyncError("투자사 명단의 줄만 딜 소싱에 넣습니다 — 이 줄은 투자사로 "
                             "세지 않는 명단에 있습니다.")
-        row = find_row(db, contact)
+        row = find_row(db, contact, bucket)
         if row is not None:
             link(row, contact)
             action = ACT_LINKED
-            message = f"딜 소싱 › {SYNC_BUCKET} 에 있던 '{row.name}' 줄과 이었습니다."
+            message = f"딜 소싱 › {bucket} 에 있던 '{row.name}' 줄과 이었습니다."
         elif mark == MARK_LEFT:
             raise SyncError(
-                f"딜 소싱 › {SYNC_BUCKET} 에 없는 분이라 X 로 둘 줄이 없습니다 — "
+                f"딜 소싱 › {bucket} 에 없는 분이라 X 로 둘 줄이 없습니다 — "
                 "빈칸이 '딜 소싱에 없음' 입니다.")
         else:
-            row = create_row(db, contact, revive, user, assignee=assignee)
+            row = create_row(db, contact, revive, user, assignee=assignee, bucket=bucket)
             action = ACT_CREATED
-            message = (f"딜 소싱 › {SYNC_BUCKET} 에 '{row.participation}' 으로 새로 "
+            message = (f"딜 소싱 › {bucket} 에 '{row.participation}' 으로 새로 "
                        "넣었습니다 — 카톡방은 딜 소싱 화면의 [방 후보 찾기]로 보내는 분 "
                        "카톡에서 찾아 확정하세요.")
             if not takes_part(row):
                 message += (" 동의하시면 딜 소싱 화면의 `참여` 칸을 '참여' 로 바꿔야 "
                             "딜이 나갑니다.")
-            others = other_buckets(db, contact)
+            others = other_buckets(db, contact, bucket)
             if others:
                 message += (f" 다른 갈래({', '.join(others)})에도 있는 분이라 그 줄은 "
                             "그대로 둡니다.")
@@ -669,10 +775,60 @@ def set_mark(db: Session, contact: VcContact, value: Optional[str],
         row.participation = want
         if action == ACT_KEPT:
             action = ACT_CHANGED
-        note = f"딜 소싱에서 '{want}' 으로 바꿨습니다."
+        note = f"딜 소싱 › {bucket} 에서 '{want}' 으로 바꿨습니다."
         message = f"{message} {note}".strip()
     return {"mark": mark, "message": message, "action": action,
             "participation": participation_of(row)}
+
+
+def parse_branches(text: Optional[str]) -> Dict[str, bool]:
+    """`Series A, M&A 불참여` → `{시리즈 A 갈래: True, M&A 갈래: False}`.
+
+    쉼표로 나눈 낱말마다 짧은 이름(`BRANCHES` — 갈래 글자도 받는다). 뒤에
+    `불참여`(또는 `X`)가 붙으면 그 갈래를 빼는 것이다. 모르는 낱말은 막는다 —
+    조용히 버리면 넣었다고 생각한 갈래가 빠진다. 엑셀 올리기 · 표의 고르는 창이 함께 쓴다.
+    """
+    out: Dict[str, bool] = {}
+    for word in (text or "").split(","):
+        word = word.strip()
+        if not word:
+            continue
+        on = True
+        tail = re.search(r"[\s·(]*(불참여|x)\)?$", word, re.IGNORECASE)
+        if tail and branch_of(word[:tail.start()]):
+            word, on = word[:tail.start()], False
+        bucket = branch_of(word)
+        if bucket is None:
+            names = " · ".join(label for label, _b in BRANCHES)
+            raise SyncError(f"{COLUMN_LABEL} 칸에는 {names} 만 적습니다: {word}")
+        out[bucket] = on
+    return out
+
+
+def apply_branches(db: Session, contact: VcContact, wanted: Dict[str, bool],
+                   user: Optional[User] = None) -> dict:
+    """갈래마다 넣고(True) 뺀다(False) — 바뀌는 갈래만 `set_mark` 를 부른다.
+
+    지금 고른 갈래(이어진 줄이 있고 `불참여` 가 아님)와 같으면 아무것도 안 한다 —
+    그래야 `물어보는 중` 인 줄에 다시 O 를 보내 값을 흔들지 않고, 이어진 줄이 없는
+    갈래에 X 를 보내 막히지 않는다. 돌려주는 것은 `{"message": 화면에 띄울 말}`.
+    `db.commit()` 은 부르는 쪽이 한다. 못 하는 까닭은 `SyncError`(한 갈래라도 막히면
+    부르는 쪽이 통째로 되돌린다).
+    """
+    found = linked_all(db, [contact.id]).get(contact.id, {})
+    notes = []
+    for _label, bucket in BRANCHES:
+        if bucket not in wanted:
+            continue
+        row = found.get(bucket)
+        if wanted[bucket] == (row is not None and not is_left(row)):
+            continue
+        got = set_mark(db, contact, MARK_JOINED if wanted[bucket] else MARK_LEFT,
+                       user, bucket=bucket)
+        if got["message"]:
+            notes.append(got["message"])
+        db.flush()      # 다음 갈래의 `find_row` 가 방금 이은 줄을 보게
+    return {"message": " ".join(notes)}
 
 
 def link_key(row) -> tuple:
@@ -693,23 +849,44 @@ def auto_link(db: Session, row: SourcingContact) -> Optional[VcContact]:
 
     이주(`0093_sourcing_vc_link`)가 처음 한 번 이은 규칙은 번호만 봤다. 그때 이은
     줄은 풀지 않는다 — 이주는 고치지 않는다(이미 돈 판이다).
+
+    잇는 세 갈래(`BRANCHES`) 모두 같은 규칙이다 — 맞은 투자사 줄이 **같은 갈래**의
+    다른 줄과 이어져 있을 때만 막는다(다른 갈래와 이어진 것은 괜찮다). `참여` 칸은
+    건드리지 않는다(`link` 는 빈 칸만 채운다).
     """
-    if not is_synced(row) or row.vc_contact_id:
+    bucket = branch_of(row)
+    if bucket is None or row.vc_contact_id:
         return None
     name, phone = link_key(row)
     if not name or len(phone) < MIN_DIGITS:
         return None
-    if any(digits(other.phone) == phone for other in _sync_rows(db)
+    if any(digits(other.phone) == phone for other in _sync_rows(db, bucket)
            if other.id != row.id):
         return None
     contacts = [c for c in _investors(db) if digits(c.phone) == phone]
     if len(contacts) != 1 or _key(contacts[0].name) != name:
         return None
     contact = contacts[0]
-    if linked_row(db, contact) is not None:
+    if linked_row(db, contact, bucket) is not None:
         return None
     link(row, contact)
     return contact
+
+
+def auto_link_all(db: Session, bucket: str) -> int:
+    """그 갈래의 안 이어진 줄을 모두 `auto_link` 로 — 딜 소싱 화면의 [저절로 잇기].
+
+    시리즈 A 밖의 갈래(M&A · 구주·후속)는 잇기가 생기기 전부터 있던 줄이라 한 번도
+    저절로 잇기를 지나지 않았다. 이주로 몰래 잇지 않고 화면에서 사람이 눌러 돌린다
+    (사용자 결정 2026-10-21). 못 이은 줄은 그대로 후보로 뜬다. 돌려주는 것은 이은 수.
+    `db.commit()` 은 부르는 쪽이 한다.
+    """
+    done = 0
+    for row in _sync_rows(db, bucket):
+        if auto_link(db, row) is not None:
+            db.flush()      # 다음 줄이 방금 이은 투자사 줄을 '이미 이어짐' 으로 보게
+            done += 1
+    return done
 
 
 def _person_label(contact: VcContact) -> str:
@@ -729,22 +906,22 @@ def link_candidates(db: Session, rows: Iterable[SourcingContact]) -> Dict[int, L
 
     후보는 이름(`_key`)이나 번호(숫자 `MIN_DIGITS` 자리 이상)가 같은 투자사 줄이다.
     모집단은 저절로 잇기와 같고(`_investors` — 감춘 줄 · 투자사로 세지 않는 명단은
-    빠진다), **이미 다른 소싱 줄과 이어진 투자사 줄은 빠진다** — 한 투자사 줄에는
-    소싱 줄이 하나뿐이다(유일 색인 · 한 분께 딜 소싱 제안이 두 번 나가지 않게).
+    빠진다), **같은 갈래의 다른 소싱 줄과 이미 이어진 투자사 줄은 빠진다** — 한
+    투자사 줄에는 갈래마다 소싱 줄이 하나뿐이다(유일 색인 · 한 분께 같은 딜 소싱
+    제안이 두 번 나가지 않게).
     차례는 이름 · 번호 둘 다 같은 줄 → 번호만 → 이름만.
     """
     rows = [r for r in rows if is_synced(r) and not r.vc_contact_id]
     if not rows:
         return {}
-    taken = set(db.execute(
-        select(SourcingContact.vc_contact_id)
+    # 한 투자사 줄은 **갈래마다** 한 줄과 이어진다 — 같은 갈래에 이미 이어진 줄만 뺀다.
+    taken = {(cid, branch_of(bucket)) for cid, bucket in db.execute(
+        select(SourcingContact.vc_contact_id, SourcingContact.bucket)
         .where(SourcingContact.vc_contact_id.is_not(None))
-    ).scalars().all())
+    ).all()}
     by_name: Dict[str, List[VcContact]] = {}
     by_phone: Dict[str, List[VcContact]] = {}
     for c in _investors(db):
-        if c.id in taken:
-            continue
         name, phone = _key(c.name), digits(c.phone)
         if name:
             by_name.setdefault(name, []).append(c)
@@ -757,6 +934,8 @@ def link_candidates(db: Session, rows: Iterable[SourcingContact]) -> Dict[int, L
         found = {c.id: c for c in by_name.get(name, [])}
         if len(phone) >= MIN_DIGITS:
             found.update((c.id, c) for c in by_phone.get(phone, []))
+        bucket = branch_of(row)
+        found = {cid: c for cid, c in found.items() if (cid, bucket) not in taken}
         cands = [{"id": c.id, "label": _person_label(c), "sheet": _sheet_of(c, hidden),
                   "name_match": bool(name) and _key(c.name) == name,
                   "phone_match": len(phone) >= MIN_DIGITS and digits(c.phone) == phone}
@@ -776,7 +955,8 @@ def confirm_link(db: Session, row: SourcingContact, contact_id: Optional[int]) -
     `db.commit()` 은 부르는 쪽이 한다. 못 하는 까닭은 `SyncError`.
     """
     if not is_synced(row):
-        raise SyncError(f"딜 소싱 › {SYNC_BUCKET} 줄만 투자사 관리 현황과 잇습니다.")
+        names = " · ".join(label for label, _b in BRANCHES)
+        raise SyncError(f"딜 소싱의 {names} 갈래 줄만 투자사 관리 현황과 잇습니다.")
     if row.vc_contact_id:
         raise SyncError("이미 투자사 관리 현황의 줄과 이어져 있습니다 — 새로고침해 보세요.")
     picks = {c["id"] for c in link_candidates(db, [row]).get(row.id, [])}
@@ -791,7 +971,7 @@ def confirm_link(db: Session, row: SourcingContact, contact_id: Optional[int]) -
 def unlink(row: SourcingContact) -> None:
     """[연결 풀기] — 잘못 이은 잇기를 푼다. **두 줄 다 지우지 않는다** — 소싱 줄의
     `vc_contact_id` 만 비운다(투자사 줄을 지울 때의 `detach` 와 같은 끝). 그쪽
-    `Series A 딜 소싱` 칸이 비고, 같은 칸을 따라 고치는 것도 멈춘다. 그 줄은 다시
+    `딜 소싱` 칸에서 그 갈래가 빠지고, 같은 칸을 따라 고치는 것도 멈춘다. 그 줄은 다시
     후보로 뜬다. `db.commit()` 은 부르는 쪽이 한다."""
     row.vc_contact_id = None
     row.vc_link_confirmed = 0
@@ -824,7 +1004,8 @@ def restore_confirmed(db: Session, rows: List[SourcingContact], kept: List[tuple
         if len(same) > 1:
             same = [r for r in same if digits(r.phone) == phone]
         contact = db.get(VcContact, contact_id) if contact_id in linkable else None
-        if len(same) != 1 or contact is None or linked_row(db, contact) is not None:
+        if (len(same) != 1 or contact is None
+                or linked_row(db, contact, branch_of(same[0]) or SYNC_BUCKET) is not None):
             continue
         link(same[0], contact, confirmed=True)
         done += 1
@@ -971,6 +1152,9 @@ def before_flush(session: Session) -> None:
 
     `app/models.py` 가 세션 이벤트로 건다(모든 flush 가 지난다).
 
+    한 투자사 줄에 갈래마다 한 줄씩 이어질 수 있다(`BRANCHES`) — 한 줄을 고치면
+    투자사 줄과 **다른 갈래의 이어진 줄**에도 같은 값을 적는다.
+
     **한 칸을 두 쪽에서 동시에 고친 flush** 는 투자사 쪽 값이 이긴다 — 먼저
     투자사 → 소싱으로 옮기고, 이미 옮긴 칸은 거꾸로 옮기지 않는다. 화면에서는
     한 번에 한 쪽만 고치므로 생길 일이 거의 없지만, 순서가 정해져 있어야 같은
@@ -1011,7 +1195,17 @@ def before_flush(session: Session) -> None:
             continue
         with session.no_autoflush:
             contact = session.get(VcContact, row.vc_contact_id)
+            # 같은 투자사 줄에 이어진 **다른 갈래의 줄**도 같이 — 투자사 줄을 고친 것은
+            # 이 flush 의 위 고리가 이미 지났으니 여기서 직접 옮긴다.
+            siblings = session.execute(select(SourcingContact).where(
+                SourcingContact.vc_contact_id == row.vc_contact_id,
+                SourcingContact.id != row.id)).scalars().all()
         if contact is None or contact in session.deleted:
             continue
         for field in changed:
             _copy(row, contact, field)
+            for sib in siblings:
+                # 그 줄도 이번에 같은 칸을 고쳤으면 그 줄 값을 둔다(제 손으로 고친 값).
+                if (sib not in session.deleted and is_synced(sib)
+                        and field not in _changed(sib)):
+                    _copy(row, sib, field)
