@@ -1626,55 +1626,67 @@ class KakaoDesktopSender(Sender):
             return SendResult(ok=False, error=error, screenshot_b64=shot)
 
         if len(found) != 1:
-            # 카드가 떠 있는데 못 알아본 것일 수 있다 — Esc 로 닫는다(남기면 다음 문구 때
-            # 채팅창이 닫히며 함께 사라진다. 나가지는 않는다).
-            what = f"{len(found)}개 찾아 고르지 않았습니다" if found else "찾지 못했습니다"
+            # 여럿이면 다 닫는다. 없으면 카드가 떠 있는데 못 알아본 것일 수 있다 — Esc(남기면
+            # 다음 건이 방을 열 때 그 채팅창이 닫히며 함께 사라진다. 나가지는 않는다).
+            what = (f"{len(found)}개 찾아 고르지 않았습니다 — 모두 닫았습니다" if found
+                    else "찾지 못했습니다 — Esc 를 눌렀습니다")
             return refuse(f"confirm_window_not_shown: [열기] 뒤 '파일 전송' 카드를 {what} "
-                          f"— Esc 로 닫았습니다 (전송 안 함)")
-        card.update(self._read_card(card["hwnd"], conf))
-        if card.get("ocr_error"):
-            return refuse(f"ocr_unavailable: 윈도우 한국어 글자 인식(OCR)을 쓸 수 없습니다 — "
-                          f"{card['ocr_error']} — 카드를 닫았습니다 (전송 안 함)")
-        self._note_windows(chat, opened_at, "파일 전송 창")
+                          f"(전송 안 함)")
+        try:
+            card.update(self._read_card(card["hwnd"], conf))
+            if card.get("ocr_error"):
+                return refuse(f"ocr_unavailable: 윈도우 한국어 글자 인식(OCR)을 쓸 수 없습니다 — "
+                              f"{card['ocr_error']} — 카드를 닫았습니다 (전송 안 함)")
+            self._note_windows(chat, opened_at, "파일 전송 창")
 
-        refused = unsendable_detail(card, conf)
-        if refused is not None:
-            return refuse(f"file_refused: 카톡이 파일을 받지 않았습니다(전송 불가) — "
-                          f"{refused} (전송 안 함)")
-        reason, note = check_file_card(card, [path.name], conf)
-        if reason:
-            log.warning("파일 전송 카드가 어긋났습니다 — 닫습니다: %s | OCR=%r", reason,
-                        card.get("texts"))
-            return refuse(f"gate_blocked: {reason} — 닫았습니다 (전송 안 함)")
-        button = _send_button(card, conf)[0]
-        point = card_point(card, conf.get("send_button_re"))
-        if point is None or not self._point_on(card["hwnd"], point):
-            return refuse(f"send_button_not_located: {button!r} 글자의 자리가 카드 위가 "
-                          f"아닙니다 (점 {point}) — 닫았습니다 (전송 안 함)")
-        if note:
-            log.warning("%s | OCR=%r", note, card.get("texts"))
+            refused = unsendable_detail(card, conf)
+            if refused is not None:
+                return refuse(f"file_refused: 카톡이 파일을 받지 않았습니다(전송 불가) — "
+                              f"{refused} (전송 안 함)")
+            reason, note = check_file_card(card, [path.name], conf)
+            if reason:
+                log.warning("파일 전송 카드가 어긋났습니다 — 닫습니다: %s | OCR=%r", reason,
+                            card.get("texts"))
+                return refuse(f"gate_blocked: {reason} — 닫았습니다 (전송 안 함)")
+            button = _send_button(card, conf)[0]
+            point = card_point(card, conf.get("send_button_re"))
+            if point is None or not self._point_on(card["hwnd"], point):
+                return refuse(f"send_button_not_located: {button!r} 글자의 자리가 카드 위가 "
+                              f"아닙니다 (점 {point}) — 닫았습니다 (전송 안 함)")
+            if note:
+                log.warning("%s | OCR=%r", note, card.get("texts"))
 
-        # ⑦ 누르기 **직전** — 그 사이 누른 [중단]을 듣는다
-        if should_stop is not None and should_stop():
-            log.warning("[중단] — 파일 전송 카드를 닫습니다 room=%r file=%r",
-                        room_name, path.name)
-            self._note_card(card, "[중단] — 닫음")
+            # ⑦ 누르기 **직전** — 그 사이 누른 [중단]을 듣는다
+            if should_stop is not None and should_stop():
+                log.warning("[중단] — 파일 전송 카드를 닫습니다 room=%r file=%r",
+                            room_name, path.name)
+                self._note_card(card, "[중단] — 닫음")
+                self._close_card(card)
+                return stop_result("파일 전송 카드를 닫았습니다(전송 안 함)")
+
+            # 찍은 뒤 OCR · [중단] 을 묻는 사이 카드가 움직였거나 덮였으면 그 점은 낡았다
+            if (self._hwnd_rect(card["hwnd"]) != card.get("rect")
+                    or not self._point_on(card["hwnd"], point)):
+                return refuse(f"send_button_not_located: 읽은 뒤 카드가 움직였거나 덮였습니다 "
+                              f"(점 {point}) — 닫았습니다 (전송 안 함)")
+            self._pyautogui.click(*point)
+            # 카드가 닫혔나. 여기까지가 사후 확인의 한계다 — 보낸 뒤 파일 메시지 줄에서
+            # 파일명을 읽는 길은 mac 에서도 없었다.
+            if not self._wait_gone(card["hwnd"], self._t("after_confirm_click", 3.0)):
+                return refuse(
+                    f"send_unconfirmed: {button!r} 을 눌렀지만 파일 전송 카드가 그대로입니다 — "
+                    f"닫아서 정리했습니다. 카톡을 직접 확인하세요 — 다시 보내면 "
+                    f"겹칠 수 있습니다")
+            self._note_card(card, f"보냄 — {button!r} 를 {point} 에서 누름"
+                                  + (f" · {note}" if note else ""))
+            log.info("파일 전송 카드의 %r 을 눌렀습니다 room=%r file=%r", button, room_name,
+                     path.name)
+            return SendResult(ok=True, warning=note or None)
+        except Exception as exc:  # noqa: BLE001
+            # 카드가 떠 있는 채로 빠져나가면 다음 문구에 첨부가 묻어갈 수 있다 — 닫고 올린다
+            self._note_card(card, f"예외: {exc}", failing=True)
             self._close_card(card)
-            return stop_result("파일 전송 카드를 닫았습니다(전송 안 함)")
-
-        self._pyautogui.click(*point)
-        # 카드가 닫혔나. 여기까지가 사후 확인의 한계다 — 보낸 뒤 파일 메시지 줄에서
-        # 파일명을 읽는 길은 mac 에서도 없었다.
-        if not self._wait_gone(card["hwnd"], self._t("after_confirm_click", 3.0)):
-            return refuse(
-                f"send_unconfirmed: {button!r} 을 눌렀지만 파일 전송 카드가 그대로입니다 — "
-                f"닫아서 정리했습니다. 카톡을 직접 확인하세요 — 다시 보내면 "
-                f"겹칠 수 있습니다")
-        self._note_card(card, f"보냄 — {button!r} 를 {point} 에서 누름"
-                              + (f" · {note}" if note else ""))
-        log.info("파일 전송 카드의 %r 을 눌렀습니다 room=%r file=%r", button, room_name,
-                 path.name)
-        return SendResult(ok=True, warning=note or None)
+            raise
 
     # --- 파일 첨부에 쓰는 자리들 (시험에서 갈아 끼우는 이음매) ---------------
 
@@ -2007,7 +2019,10 @@ class KakaoDesktopSender(Sender):
         conf = self.file_send_conf
         hwnd = card.get("hwnd")
         if not hwnd:
-            self._safe_close()
+            for other in card.get("candidates") or []:    # 여럿이라 못 골랐다 — 다 닫는다
+                self._close_card({"hwnd": other})
+            if not card.get("candidates"):
+                self._safe_close()
             return
         rect = card.get("rect") or self._hwnd_rect(hwnd)
         offset = conf.get("card_close_offset") or []
@@ -2884,6 +2899,8 @@ def windows_ocr(image_path: str, lang: str = "ko", timeout: float = 30.0) -> lis
         os.remove(out)
     except OSError:
         pass
+    if os.path.exists(out):     # 지난 카드의 결과를 이 카드 것으로 읽으면 안 된다
+        raise OcrUnavailable(f"지난 OCR 결과 파일을 지우지 못했습니다: {out}")
     cmd = ["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
            "-File", OCR_SCRIPT, "-Image", os.path.abspath(image_path),
            "-Out", os.path.abspath(out), "-Lang", lang]
@@ -2899,6 +2916,8 @@ def windows_ocr(image_path: str, lang: str = "ko", timeout: float = 30.0) -> lis
         err = (proc.stderr or b"").decode(locale.getpreferredencoding(False), errors="replace")
         raise OcrUnavailable(f"PowerShell 이 OCR 결과를 남기지 않았습니다(코드 {proc.returncode}): "
                              f"{_clip(' '.join(err.split()), 300)}") from None
+    if not isinstance(data, dict):
+        raise OcrUnavailable(f"OCR 결과를 읽지 못했습니다: {_clip(repr(data), 200)}")
     if data.get("error") == "no_recognizer":
         have = ", ".join(data.get("available") or []) or "없음"
         raise OcrUnavailable(f"{OCR_INSTALL_HINT} (이 PC 의 인식기: {have})")

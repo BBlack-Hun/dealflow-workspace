@@ -463,8 +463,40 @@ def test_two_candidates_are_refused(ir_dir):
 
     assert not result.ok and "confirm_window_not_shown" in result.error
     assert "2개 찾아 고르지 않았습니다" in result.error
-    assert not kakao.sent and kakao.esc and kakao.grabs == [], "고르지도 않고 찍었다"
+    assert not kakao.sent and kakao.grabs == [], "고르지도 않고 찍었다"
+    assert CARD not in kakao.windows and CARD2 not in kakao.windows, "둘 다 닫아야 한다"
+    assert not kakao.esc, "누가 앞인지 모르는 Esc 는 누르지 않는다"
     assert f"hwnd={CARD} " in kakao.dump and f"hwnd={CARD2} " in kakao.dump
+
+
+def test_an_unexpected_error_on_the_card_still_closes_it(ir_dir):
+    """★ 카드를 연 채로 예외가 나면 닫고 실패한다 — 남기면 다음 문구에 첨부가 묻어갈 수 있다."""
+    kakao = Kakao(str(ir_dir), card=sendable())
+
+    def broken(path, conf):
+        raise RuntimeError("뜻밖의 고장")
+    kakao._ocr = broken
+    result = kakao.send_file(ROOM, ["IR.pdf"])
+
+    assert not result.ok and "뜻밖의 고장" in result.error
+    assert not kakao.sent and CARD not in kakao.windows
+    assert "예외: 뜻밖의 고장" in kakao.dump
+
+
+def test_a_card_that_moved_after_reading_is_not_clicked(ir_dir):
+    """찍고 읽는 사이(PowerShell 몇 초) 카드가 움직였으면 읽은 점은 낡았다 — 안 누른다."""
+    kakao = Kakao(str(ir_dir), card=sendable())
+    answers = iter([False, False, False])
+
+    def stop_and_move():
+        if kakao.rects.get(CARD) == CARD_RECT and kakao.grabs:
+            kakao.rects[CARD] = (900, 500, 1350, 776)
+        return next(answers)
+    result = kakao.send_file(ROOM, ["IR.pdf"], should_stop=stop_and_move)
+
+    assert not result.ok and "send_button_not_located" in result.error
+    assert "움직였거나 덮였습니다" in result.error
+    assert not kakao.sent and CARD not in kakao.windows
 
 
 @pytest.mark.parametrize("odd", [

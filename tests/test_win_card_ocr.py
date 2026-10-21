@@ -206,6 +206,21 @@ def test_a_blocked_script_leaves_no_result_and_is_unavailable(monkeypatch, tmp_p
         kw.windows_ocr(str(png))
 
 
+def test_a_stale_result_that_cannot_be_removed_is_never_read(monkeypatch, tmp_path):
+    """지난 카드의 결과 파일을 못 지우면 OCR 을 돌리지 않는다 — 지난 글자로 판단하면 안 된다."""
+    png = tmp_path / "card.png"
+    (tmp_path / "card.png.json").write_text('{"ok": true, "lines": []}')
+
+    def locked(path):
+        raise PermissionError("in use")
+    run = Run({"ok": True, "lines": []})
+    monkeypatch.setattr(kw.os, "remove", locked)
+    monkeypatch.setattr(kw.subprocess, "run", run)
+    with pytest.raises(kw.OcrUnavailable, match="지우지 못했습니다"):
+        kw.windows_ocr(str(png))
+    assert run.calls == []
+
+
 def test_a_failed_recognition_is_unavailable(monkeypatch, tmp_path):
     monkeypatch.setattr(kw.subprocess, "run", Run({"ok": False, "error": "boom"}, returncode=1))
     with pytest.raises(kw.OcrUnavailable, match="boom"):
