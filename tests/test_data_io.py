@@ -267,7 +267,7 @@ def test_a_sheet_export_still_names_the_people(logged, db):
     rows = list(ws.iter_rows(values_only=True))
     head = rows[0]
 
-    for col in ("이름", "투자사", "휴대폰", "전자 메일 주소", "카톡방"):
+    for col in ("이름", "회사", "휴대폰", "전자 메일 주소", "카톡방"):
         assert col in head, f"명단별 엑셀에 '{col}' 칸이 없다: {head}"
     assert len(rows) > 1, "줄이 하나도 없다"
     for body in rows[1:]:

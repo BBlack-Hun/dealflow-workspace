@@ -78,9 +78,9 @@ _HAND_ANCHORS = {
             "설립년도", "정책자금", "IR 자료"),
         "Series A 이상 딜 소싱": (
             "기업명", "수신 일자", "Type", "담당팀원", "공유 심사역", "회사", "대분류",
-            "소분류", "투자라운드", "대표자명", "핸드폰", "이메일", "24년 매출",
+            "소분류", "투자라운드", "대표자명", "연락처", "이메일", "24년 매출",
             "25년 매출", "26년 매출", "27년 매출", "누적투자금액", "투자유치희망금액",
-            "프리밸류", "상세 내용", "딜소개 문구"),
+            "Pre Value", "상세 내용", "딜소개 문구"),
     },
     "consulting": {
         "스타트업": (
@@ -94,6 +94,23 @@ _HAND_ANCHORS = {
             "계약월", "기업명", "계약여부", "계약서 수신여부", "성공보수율", "계약금"),
     },
 }
+
+
+#: **이름을 바꾼 머리글** — `{화면: {옛 이름: 새 이름}}`(#63 · 같은 칸은 같은 이름).
+#: `after_key` 는 고른 그때의 머리글 글자라, 이름이 바뀌면 그 칸이 맨 끝으로 물러난다.
+#: 저장된 값은 그대로 두고 **읽을 때** 새 이름으로 본다(`anchor_of`).
+RENAMED = {
+    "sourcing": {"투자분야": "선호 투자분야",
+                 "라운드 사이즈": "라운드 사이즈(투자운영금액)",
+                 "이메일 주소": "전자 메일 주소"},
+    "companies": {"핸드폰": "연락처", "프리밸류": "Pre Value"},
+}
+
+
+def anchor_of(col) -> str:
+    """이 칸이 설 자리(기존 칸의 머리글 이름) — 옛 이름이면 새 이름으로. 없으면 `""`."""
+    key = label_key(col.after_key)
+    return RENAMED.get(getattr(col, "target", None), {}).get(key, key)
 
 
 def anchor_groups(target: str) -> Dict[str, tuple]:
@@ -167,7 +184,8 @@ def view(db: Session, target: str, row_table: str) -> dict:
     """화면 컨텍스트 — 밑틀 조각(`_custom_cols.html`)이 이 이름들을 읽는다."""
     cols = columns(db, target)
     return {"custom_cols": cols, "custom_vals": values(db, row_table, cols),
-            "custom_rows": row_table, "ox_choices": OX_CHOICES}
+            "custom_rows": row_table, "ox_choices": OX_CHOICES,
+            "custom_after": {c.id: anchor_of(c) for c in cols}}
 
 
 def names(v: dict) -> List[str]:
@@ -188,7 +206,7 @@ def arranger(headers: List[str], v: dict):
     after: Dict[int, list] = {}
     tail = []
     for j, c in enumerate(v["custom_cols"]):
-        key = label_key(c.after_key)
+        key = anchor_of(c)
         if key and key in keys:
             after.setdefault(keys.index(key), []).append(n + j)
         else:

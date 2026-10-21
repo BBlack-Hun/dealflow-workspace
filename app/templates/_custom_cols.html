@@ -22,7 +22,7 @@
 {% macro heads() -%}
 {%- for c in custom_cols %}
 <th class="custom-col" style="width:{{ 90 if c.kind == 'ox' else 180 }}px" title="{{ c.name }} · 눌러서 적습니다"
-    {%- if c.after_key %} data-after="{{ c.after_key }}"{% endif %}
+    {%- if c.after_key %} data-after="{{ (custom_after or {}).get(c.id, c.after_key) }}"{% endif %}
     {%- if c.kind == 'ox' %} data-filters="cc{{ c.id }}:{{ c.name }}"{% endif %}>{{ c.name }}{% if c.kind == 'ox' %}<div class="th-filters"></div>{% endif %}</th>
 {%- endfor %}
 {%- endmacro %}
