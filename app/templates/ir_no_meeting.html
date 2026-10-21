@@ -24,23 +24,6 @@
       <a class="chip {% if view == 'none' %}active{% endif %}" href="{{ href(view='none') }}">미팅 없음 {{ n_none }}</a>
       <a class="chip {% if view == 'scheduled' %}active{% endif %}" href="{{ href(view='scheduled') }}">미팅 예정 {{ n_planned }}</a>
     </span>
-    <span class="seg-toggle" aria-label="경과일">
-      <a class="chip {% if not days %}active{% endif %}" href="{{ href(days='') }}">경과 전체</a>
-      {% for d in day_steps %}
-      <a class="chip {% if days == d %}active{% endif %}" href="{{ href(days=d) }}">{{ d }}일+</a>
-      {% endfor %}
-    </span>
-    <span class="seg-toggle" aria-label="전달 여부">
-      <a class="chip {% if not sent %}active{% endif %}" href="{{ href(sent='') }}">전달 전체</a>
-      <a class="chip {% if sent == 'yes' %}active{% endif %}" href="{{ href(sent='yes') }}">전달 완료</a>
-      <a class="chip {% if sent == 'no' %}active{% endif %}" href="{{ href(sent='no') }}">미전달</a>
-    </span>
-    <span class="seg-toggle" aria-label="출처">
-      <a class="chip {% if not src %}active{% endif %}" href="{{ href(src='') }}">출처 전체</a>
-      <a class="chip {% if src == 'app' %}active{% endif %}" href="{{ href(src='app') }}">앱 기록</a>
-      <a class="chip {% if src == 'sheet' %}active{% endif %}" href="{{ href(src='sheet') }}">시트 이력만</a>
-    </span>
-    <a class="chip {% if drop %}active{% endif %}" href="{{ href(drop='' if drop else 'hide') }}">보내지 않음 빼기</a>
     <a class="secondary-btn" href="{{ href('/api/export/ir-no-meeting.xlsx') }}" download>엑셀</a>
   </div>
   {% if members %}
@@ -58,13 +41,35 @@
   </div>
   {% endif %}
 </div>
+{# 거르기는 한 줄 아래 — 한 줄에 다 세우면 오른쪽 고르개가 눌려 글자가 세로로 접힌다. #}
+<div class="toolbar">
+  <div class="quick-chips">
+    <span class="seg-toggle" aria-label="경과일">
+      <a class="chip {% if not days %}active{% endif %}" href="{{ href(days='') }}">경과 전체</a>
+      {% for d in day_steps %}
+      <a class="chip {% if days == d %}active{% endif %}" href="{{ href(days=d) }}">{{ d }}일+</a>
+      {% endfor %}
+    </span>
+    <span class="seg-toggle" aria-label="전달 여부">
+      <a class="chip {% if not sent %}active{% endif %}" href="{{ href(sent='') }}">전달 전체</a>
+      <a class="chip {% if sent == 'yes' %}active{% endif %}" href="{{ href(sent='yes') }}">전달 완료</a>
+      <a class="chip {% if sent == 'no' %}active{% endif %}" href="{{ href(sent='no') }}">미전달</a>
+    </span>
+    <span class="seg-toggle" aria-label="출처">
+      <a class="chip {% if not src %}active{% endif %}" href="{{ href(src='') }}">출처 전체</a>
+      <a class="chip {% if src == 'app' %}active{% endif %}" href="{{ href(src='app') }}">앱 기록</a>
+      <a class="chip {% if src == 'sheet' %}active{% endif %}" href="{{ href(src='sheet') }}">시트 이력만</a>
+    </span>
+    <a class="chip {% if drop %}active{% endif %}" href="{{ href(drop='' if drop else 'hide') }}">보내지 않음 빼기</a>
+  </div>
+</div>
 
 <section class="panel">
   <h2 class="panel-title">{{ '미팅 예정' if view == 'scheduled' else '미팅 없음' }}
     <span class="hint">{{ rows|length }}쌍 · 최근 요청에서 오래된 것부터</span>
   </h2>
   {% if skipped %}
-  <p class="hint">시트 이력 중 기업 이름 없이 적힌 IR 요청 {{ skipped }}건(“핵심 딜 8개사” 같은 줄)은 쌍을 만들 수 없어 뺐습니다.</p>
+  <p class="hint">시트 이력의 IR 요청 중 기업을 IR 기업 현황에서 찾지 못한 {{ skipped }}건(기업 칸에 섞인 메모 · “핵심 딜 8개사” 처럼 개수만 적힌 줄)은 뺐습니다.</p>
   {% endif %}
   {% if rows %}
   <div class="table-wrap">

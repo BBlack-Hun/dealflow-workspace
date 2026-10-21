@@ -14,9 +14,12 @@
 
 앱 표만 읽으면 시트 시절에 만난 쌍이 전부 "미팅 없음" 으로 선다 — 요청을 두 곳에서
 읽는 `ir_monthly.monthly_requests` 와 같은 까닭이고, 기업 이름 맞추기도 그 파일의
-`_Index`(완전 일치 → 한 곳에만 걸리는 부분 일치)를 그대로 쓴다. 못 맞춘 이름은
-지어내지 않고 **이름끼리** 맞춘다. 기업 이름이 없는 시트 요청(`핵심 딜 8개사`)은
-쌍을 만들 수 없어 세기만 한다(`skipped`).
+`_Index`(완전 일치 → 한 곳에만 걸리는 부분 일치)를 그대로 쓴다. 앱 요청은 못 맞춘
+이름도 **이름끼리** 맞춘다(사람이 적은 기업명이다). 시트 이력은 IR 기업 현황에서 찾은
+기업만 싣는다 — 그 칸에는 `미팅 요청 완료 -> 검토 중` 같은 메모가 기업 이름 자리에
+섞여 들어와 있어, 못 맞춘 조각을 기업으로 세우면 메모가 줄로 선다. 못 맞춘 조각과
+기업 이름 없이 개수만 적힌 줄(`핵심 딜 8개사`)은 세기만 한다(`skipped` —
+`ir_monthly` 가 못 맞춘 요청을 세는 것과 같다).
 
 미팅으로 치는 것 — 갈래 판정은 `meeting_kind` 한 곳이다.
 
@@ -76,7 +79,7 @@ def _meeting_of(act: ContactActivity) -> Optional[str]:
 
 
 def rows(db: Session, user_id: Optional[int], today: date) -> Tuple[List[dict], int]:
-    """(완료 미팅이 없는 쌍들 — 경과일 긴 것부터, 기업 이름이 없어 뺀 시트 요청 수).
+    """(완료 미팅이 없는 쌍들 — 경과일 긴 것부터, 기업을 못 찾아 뺀 시트 요청 수).
 
     `user_id` 가 없으면 팀 전체.
     """
@@ -124,7 +127,8 @@ def rows(db: Session, user_id: Optional[int], today: date) -> Tuple[List[dict], 
         if contact is None:
             continue
         day = (a.happened_at or "")[:10] or (a.month or "")
-        found = [company(None, n) for n in a.companies]
+        ids = [index.find(n)[0] for n in a.companies]
+        found = [(cid, names[cid]) for cid in ids if cid]
         state = _meeting_of(a)
         for key, name in found:
             met(contact, key, state, day)
@@ -132,8 +136,8 @@ def rows(db: Session, user_id: Optional[int], today: date) -> Tuple[List[dict], 
                 items.append({"contact": contact, "key": key, "name": name, "date": day,
                               "owner": contact.user_id, "src": "sheet", "state": "sheet",
                               "delivered_at": ""})
-        if a.kind == "ir_request" and not found and user_id in (None, contact.user_id):
-            skipped += 1
+        if a.kind == "ir_request" and user_id in (None, contact.user_id):
+            skipped += (len(ids) - len(found)) if ids else 1
 
     groups: Dict[tuple, List[dict]] = {}
     for it in items:

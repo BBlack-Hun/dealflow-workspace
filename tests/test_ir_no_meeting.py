@@ -46,7 +46,8 @@ def _seed(db, users, today: date = TODAY):
     agg = IrCompany(name="샘플애그")
     lab = IrCompany(name="테스트랩")
     farm = IrCompany(name="보기팜")
-    db.add_all([kim, lee, park, kim2, agg, lab, farm])
+    sheet = [IrCompany(name=f"시트기업{x}") for x in "ABCDEF"]
+    db.add_all([kim, lee, park, kim2, agg, lab, farm, *sheet])
     db.flush()
 
     def req(user, contact, company, name, days, status="open", delivered=None):
@@ -106,8 +107,9 @@ def _seed(db, users, today: date = TODAY):
     act(lee, "meeting", 70, "8/1", ["시트기업F"])
     # 이몽룡 × 테스트랩 — 시트에 미팅 확정 → 앱 요청이 `미팅 예정` 쪽으로 간다
     act(lee, "meeting_set", 2, "미팅확정", ["테스트랩"])
-    # 기업 이름 없이 개수만 적힌 시트 요청 — 세기만 한다
+    # 기업 이름 없이 개수만 적힌 시트 요청 · 기업 칸에 섞인 메모 — 세기만 한다
     act(lee, "ir_request", 30, "핵심 딜 8개사", [])
+    act(lee, "ir_request", 30, "메모", ["미팅 요청 완료 -> 검토 중"])
     db.commit()
 
 
@@ -139,7 +141,7 @@ def test_definition_edge_cases(db, users):
     assert got[("이몽룡", "테스트랩")]["scheduled"] is True
     assert got[("홍길동", "샘플애그")]["scheduled"] is False
     assert got[("이몽룡", "보류기업")]["status_label"] == "보내지 않음"
-    assert skipped == 1
+    assert skipped == 2
 
 
 def test_one_row_per_pair_with_counts_and_dates(db, users):
@@ -239,7 +241,7 @@ def test_filters(client, db, users):
     rows = _rows(planned)
     assert len(rows) == 2 and all("테스트랩" in r for r in rows)
     assert _ago(-3, date.today()) in planned
-    assert "기업 이름 없이 적힌 IR 요청 1건" in c.get("/ir/no-meeting").text
+    assert "찾지 못한 2건" in c.get("/ir/no-meeting").text
 
 
 @pytest.mark.parametrize("q", ["days=abc", "days=-5", "sent=zzz", "view=zzz", "src=x",
