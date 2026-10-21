@@ -379,13 +379,13 @@ class FakeSender:
         self.sent = []
         self.files_fail = files_fail
 
-    def send_file(self, room, file_names):
+    def send_file(self, room, file_names, should_stop=None):
         self.sent.append(("file", room, list(file_names)))
         if self.files_fail:
             return FakeResult(ok=False, error="이 PC 에 없습니다")
         return FakeResult(ok=True)
 
-    def send_text(self, room, text):
+    def send_text(self, room, text, should_stop=None):
         self.sent.append(("text", room, text))
         return FakeResult(ok=True)
 

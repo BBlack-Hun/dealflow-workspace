@@ -41,7 +41,7 @@
 <div class="toolbar">
   <div class="toolbar-right">
     <input type="search" id="sa-search" placeholder="기업명 · 회사 · 심사역 · 내용"
-           title="기업명 · 회사 · 공유 심사역 · 담당팀원 · 분야 · 투자라운드 · 대표자명 · 핸드폰 · 이메일 · 상세 내용 · 딜소개 문구로 찾습니다."
+           title="기업명 · 회사 · 공유 심사역 · 담당팀원 · 분야 · 투자라운드 · 대표자명 · 연락처 · 이메일 · 상세 내용 · 딜소개 문구로 찾습니다."
            value="{{ q }}" autocomplete="off">
     {# 관리자만 — 단추와 길이 같은 판정(`series_a.can_upload_pitch`)을 읽는다. #}
     {% if can_upload_pitch %}
@@ -102,11 +102,12 @@
    ## 직접 적는 칸 — 대표자 · 매출 · 금액 (#24 · 0112)
 
    시트에 없는 칸이라 **이 탭에서 사람이 적는다**(사용자 결정 — IR 기업 현황에서
-   옮겨 오지 않는다). 칸 이름은 요청한 말 그대로다(`핸드폰` · `프리밸류`). 금액은
+   옮겨 오지 않는다). 칸 이름은 스타트업DB 의 같은 칸 그대로다(`연락처` · `Pre Value` —
+   #63, 처음 요청한 말은 `핸드폰` · `프리밸류` 였다). 금액은
    단위 억, 적은 그대로 저장된다(`5-10억` · `~` 도 그대로). `투자라운드` 뒤 ·
    `상세 내용` 앞에 둔다 — 긴 글 두 칸(`상세 내용` · `딜소개 문구`)은 끝에 붙어
    있고, 요청 차례도 숫자 칸 뒤가 `딜소개 문구` 다. 칸 폭은 스타트업DB 의 같은 칸
-   (`핸드폰` 은 `연락처`)과 같다. 칸을 바꾸면 `routers/series_a.TYPED` · `app.css` 의 `#sa-table` 폭 ·
+   과 같다. 칸을 바꾸면 `routers/series_a.TYPED` · `app.css` 의 `#sa-table` 폭 ·
    `custom_columns._HAND_ANCHORS` 도 함께. #}
 {% set typed_tip = "이 탭에서 직접 적습니다 · 눌러서 수정" %}
 {% set amount_tip = "단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 1억 미만은 `5천만원` · 모르면 `~` · 눌러서 수정" %}
@@ -148,7 +149,7 @@
         <th style="width:150px" data-filters="minor:소분류">소분류<div class="th-filters"></div></th>
         <th style="width:120px" data-filters="series:투자라운드">투자라운드<div class="th-filters"></div></th>
         <th style="width:70px" title="{{ typed_tip }}">대표자명</th>
-        <th style="width:104px" title="{{ typed_tip }}">핸드폰</th>
+        <th style="width:104px" title="{{ typed_tip }}">연락처</th>
         <th style="width:170px" title="{{ typed_tip }}">이메일</th>
         <th class="num" style="width:74px" title="{{ amount_tip }}">24년 매출</th>
         <th class="num" style="width:74px" title="{{ amount_tip }}">25년 매출</th>
@@ -156,7 +157,7 @@
         <th class="num" style="width:74px" title="{{ amount_tip }}">27년 매출</th>
         <th class="num" style="width:96px" title="{{ amount_tip }}">누적투자금액</th>
         <th class="num" style="width:120px" title="{{ amount_tip }}">투자유치희망금액</th>
-        <th class="num" style="width:76px" title="{{ amount_tip }}">프리밸류</th>
+        <th class="num" style="width:76px" title="{{ amount_tip }}">Pre Value</th>
         <th title="두 줄까지 보입니다 · 눌러서 수정">상세 내용</th>
         <th style="width:280px" title="두 줄까지 보입니다 · 눌러서 수정">딜소개 문구</th>
         {{ cc.heads() }}

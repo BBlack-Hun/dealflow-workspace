@@ -20,7 +20,7 @@ import urllib.parse
 import urllib.request
 from typing import Optional
 
-from .base import SendResult, Sender
+from .base import SendResult, Sender, stop_result
 
 log = logging.getLogger("agent.telegram")
 
@@ -45,12 +45,14 @@ class TelegramSender(Sender):
         # 텔레그램에는 카톡 방 개념이 없다. 빈 이름만 걸러낸다(오발송 방지 규칙 유지).
         return "verified" if room_name and room_name.strip() else "not_found"
 
-    def send_text(self, room_name: str, text: str) -> SendResult:
+    def send_text(self, room_name: str, text: str, should_stop=None) -> SendResult:
         if not room_name or not room_name.strip():
             return SendResult(ok=False, error="room_name empty (telegram)")
 
         # 사람 유사 발송 간격 — 실제 카톡 발송과 동일한 리듬으로 테스트되도록.
         time.sleep(random.uniform(self.delay_min, self.delay_max))
+        if should_stop is not None and should_stop():     # `Sender.send_text`
+            return stop_result("문구를 보내기 전에 멈췄습니다(전송 안 함, telegram)")
 
         body = text
         if self.prefix_room:

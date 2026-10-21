@@ -71,7 +71,7 @@ class FakeMac(kakao_mac.KakaoMacSender):
         self.goto: list = []
 
     # --- 카톡을 건드리는 자리를 전부 가짜로 -------------------------------
-    def _ensure_room_front(self, room_name):
+    def _ensure_room_front(self, room_name, should_stop=None):
         return None
 
     def _chat_rows(self, room_name):
@@ -882,3 +882,48 @@ def test_two_names_that_differ_only_in_form_are_refused(tmp_path):
         pytest.skip("형태를 가리지 않는 파일 시스템 — 둘로 만들어지지 않는다")
 
     assert base._same_name_in(root, NFD_NAME) is None
+
+
+# ── (0.11.12) 한 건 안에서도 [중단]을 듣는다 ───────────────────────────────
+
+def test_stop_before_the_first_file_opens_no_panel(ir_dir):
+    """방을 연 뒤 첫 파일 앞에서 [중단] — 파일전송 단추도 누르지 않는다."""
+    mac = FakeMac(confirm_sheet(files=("IR.pdf",)), ir_root=str(ir_dir))
+    result = mac.send_file(ROOM, ["IR.pdf"], should_stop=lambda: True)
+
+    assert not result.ok and result.stopped == 0
+    assert mac.clicked == [] and not mac.sent
+
+
+def test_stop_between_files_sends_no_more(ir_dir):
+    """파일 하나 앞마다 묻는다 — 두 번째 앞에서 [중단]이면 첫 파일만 나간다."""
+    mac = FakeMac(confirm_sheet(files=("IR.pdf",)), ir_root=str(ir_dir))
+    answers = iter([False, True])
+    result = mac.send_file(ROOM, ["IR.pdf", "IR.pdf"], should_stop=lambda: next(answers))
+
+    assert not result.ok and result.stopped == 1               # 한 개는 나갔다
+    assert len(mac.goto) == 1
+
+
+def test_stop_after_the_room_opens_types_no_message():
+    """한 통짜리 문구도 방을 연 뒤 넣기 직전에 [중단]을 묻는다 — 참이면 입력창에 손대지 않는다."""
+    mac = FakeMac(confirm_sheet(files=("IR.pdf",)))
+    typed = []
+    mac._set_input_text = lambda room, text: typed.append(text) or True
+    result = mac.send_text(ROOM, "안녕하세요", should_stop=lambda: True)
+
+    assert not result.ok and result.stopped == 0
+    assert typed == []
+
+
+def test_stop_before_searching_again_opens_nothing_more(monkeypatch):
+    """첫 검색으로 방이 안 열려 다시 찾기 전 — [중단]이면 다시 찾지 않는다."""
+    mac = FakeMac(confirm_sheet(files=("IR.pdf",)))
+    searched = []
+    mac._focus_window = lambda title: False
+    mac._open_room_via_search = searched.append
+    monkeypatch.setattr(kakao_mac.time, "sleep", lambda _s: None)
+    result = kakao_mac.KakaoMacSender._ensure_room_front(mac, ROOM, lambda: True)
+
+    assert result is not None and result.stopped == 0
+    assert searched == [ROOM]                                  # 한 번만 찾았다

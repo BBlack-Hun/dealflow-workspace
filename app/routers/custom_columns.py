@@ -52,10 +52,13 @@ def columns_page(request: Request, db: Session = Depends(get_db),
     admin_only(user)
     target = target if target in svc.TARGETS else next(iter(svc.TARGETS))
     ctx = base_ctx(request, db, user, active=MENU_KEY)
+    cols = svc.columns(db, target, include_hidden=True)
     ctx.update({
         "targets": svc.TARGETS,
         "target": target,
-        "cols": svc.columns(db, target, include_hidden=True),
+        "cols": cols,
+        # 고른 자리 — 이름이 바뀐 머리글이면 새 이름(`svc.anchor_of` · #63).
+        "afters": {c.id: svc.anchor_of(c) for c in cols},
         "anchors": svc.anchors(target),
         "kinds": svc.KINDS,
         "name_max": svc.NAME_MAX,
