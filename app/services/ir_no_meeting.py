@@ -25,13 +25,18 @@
 
 - 완료: 앱 `done` · 시트 `meeting_done` · 옛 값 `meeting`(안 했다는 말이 없을 때 —
   `meeting_kind.MET` 이 옛 값을 만난 것으로 세는 것과 같다) · IR 요청 글의 `미팅완료`
-- 예정: 앱 `scheduled` · 시트 `meeting_set` · IR 요청 글의 `미팅확정` → `미팅 예정` 쪽
-- 안 친다: 취소한 미팅(없던 일) · `meeting_request`(청했을 뿐 — 아직 안 만났다)
+  · 시트 `meeting_set` 과 IR 요청 글의 `미팅확정`(시트 시절엔 확정 뒤 완료로 고쳐 적지
+  않았다 — 만난 것으로 본다. 날짜가 오늘보다 뒤면 예정)
+- 예정: 앱 `scheduled` 중 날짜가 오늘이거나 뒤인 것(날짜 미기재 포함) → `미팅 예정` 쪽
+- 안 친다: 취소한 미팅(없던 일) · `meeting_request`(청했을 뿐 — 아직 안 만났다) ·
+  앱 `scheduled` 인데 날짜가 지났고 완료 처리가 안 된 것(비고 `예정일 지남`)
+
+같은 투자사의 다른 심사역이 그 기업을 만났어도 줄은 사람마다 선다 — 비고에 적는다.
 
 미팅은 **팀 누가 적었든** 센다. 요청은 내가 받고 미팅은 다른 팀원이 잡았어도 그
 투자사는 이미 만난 것이다. 요청의 담당은 앱은 적은 사람, 시트는 그 명단 주인이다.
 
-`보내지 않음`(`dropped`) 요청도 싣는다 — 상태 칸에 그대로 적히고 화면에서 뺄 수 있다.
+`보내지 않음`(`dropped`) 요청도 싣는다 — 상태 칸에 그대로 적히고, 화면은 기본으로 뺀다(칩으로 본다).
 """
 from __future__ import annotations
 
@@ -58,6 +63,8 @@ SOURCES = {"app": "앱", "sheet": "시트 이력", "both": "앱 · 시트"}
 #: `미팅 진행` 으로 읽어 완료가 된다. 여기서만 거른다 — `meeting_kind._NEGATIVE` 에
 #: 넣으면 시트를 읽어 넣을 때 그런 줄이 `meeting`(만난 것으로 세는 옛 값)으로 떨어진다.
 _NOT_MET = ("않", "미팅x", "미팅 x")
+NOTE_OVERDUE = "예정일 지남(완료 처리 안 됨)"
+NOTE_COLLEAGUE = "같은 투자사 다른 심사역 미팅 있음"
 
 
 def _person(contact: VcContact) -> tuple:
@@ -93,8 +100,9 @@ def rows(db: Session, user_id: Optional[int], today: date) -> Tuple[List[dict], 
 
     contacts = {c.id: c for c in db.execute(select(VcContact)).scalars()}
     items: List[dict] = []
-    done, planned = set(), {}
+    done, planned, overdue = set(), {}, set()
     skipped = 0
+    now = today.isoformat()
 
     def met(contact: VcContact, key, state: Optional[str], day: str) -> None:
         pair = (_person(contact), key)
@@ -102,6 +110,8 @@ def rows(db: Session, user_id: Optional[int], today: date) -> Tuple[List[dict], 
             done.add(pair)
         elif state == "scheduled":
             planned[pair] = max(planned.get(pair, ""), day or "")
+        elif state == "overdue":
+            overdue.add(pair)
 
     for r in db.execute(select(IrRequest)).scalars():
         contact = contacts.get(r.contact_id)
@@ -116,8 +126,10 @@ def rows(db: Session, user_id: Optional[int], today: date) -> Tuple[List[dict], 
     for m in db.execute(select(Meeting).where(Meeting.status != "canceled")).scalars():
         contact = contacts.get(m.contact_id)
         if contact is not None and (m.company_id or m.company_name):
+            day = (m.scheduled_at or "")[:10]
             met(contact, company(m.company_id, m.company_name)[0],
-                "done" if m.status == "done" else "scheduled", m.scheduled_at)
+                "done" if m.status == "done" else
+                "overdue" if day and day < now else "scheduled", day)
 
     acts = db.execute(select(ContactActivity).where(
         ContactActivity.kind.in_(("ir_request", mk.DONE, mk.SET, mk.LEGACY)),
@@ -130,6 +142,8 @@ def rows(db: Session, user_id: Optional[int], today: date) -> Tuple[List[dict], 
         ids = [index.find(n)[0] for n in a.companies]
         found = [(cid, names[cid]) for cid in ids if cid]
         state = _meeting_of(a)
+        if state == "scheduled" and day <= now:     # 시트의 지난 `미팅확정` = 만났다
+            state = "done"
         for key, name in found:
             met(contact, key, state, day)
             if a.kind == "ir_request":
@@ -145,6 +159,8 @@ def rows(db: Session, user_id: Optional[int], today: date) -> Tuple[List[dict], 
         if it["key"] and pair not in done and user_id in (None, it["owner"]):
             groups.setdefault(pair, []).append(it)
 
+    # 같은 투자사(사람 키의 앞자리)에서 그 기업을 만난 사람이 있나 — 이 줄의 사람은 안 만났다.
+    firm_met = {(p[0], key) for p, key in done if p[0] != "#"}
     owners = dict(db.execute(select(User.id, User.name)).all())
     out = []
     for pair, its in groups.items():
@@ -175,6 +191,9 @@ def rows(db: Session, user_id: Optional[int], today: date) -> Tuple[List[dict], 
             "owners": ", ".join(sorted({owners.get(i["owner"], "") for i in its} - {""})),
             "scheduled": pair in planned,
             "scheduled_on": planned.get(pair, ""),
+            "note": " · ".join(
+                ([NOTE_OVERDUE] if pair in overdue and pair not in planned else [])
+                + ([NOTE_COLLEAGUE] if (pair[0][0], pair[1]) in firm_met else [])),
         })
     out.sort(key=lambda r: (-(r["days"] if r["days"] is not None else -1), r["company"]))
     return out, skipped

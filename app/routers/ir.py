@@ -284,13 +284,13 @@ def _no_meeting(request: Request, db: Session, user: User, view: str, days: str,
     days = days if days in NO_MEETING_DAYS else ""
     sent = sent if sent in ("yes", "no") else ""
     src = src if src in ("app", "sheet") else ""
-    drop = "hide" if drop == "hide" else ""
+    drop = "show" if drop == "show" else ""     # `보내지 않음` 은 기본으로 뺀다 — 칩으로 본다
     found, skipped = ir_no_meeting.rows(db, who, date.today())
     rows = [r for r in found
             if (not days or (r["days"] or 0) >= int(days))
             and (not sent or (r["state"] == "delivered") == (sent == "yes"))
             and (not src or (r["src"] == "sheet") == (src == "sheet"))
-            and not (drop and r["state"] == "dropped")]
+            and (drop or r["state"] != "dropped")]
     planned = [r for r in rows if r["scheduled"]]
     params = {"view": view, "days": days, "sent": sent, "src": src, "drop": drop}
 
@@ -328,10 +328,10 @@ def export_no_meeting(request: Request, db: Session = Depends(get_db),
     got = _no_meeting(request, db, user, view, days, sent, src, drop, member)
     planned = got["view"] == "scheduled"
     heads = ["기업명", "투자사", "심사역", "첫 요청일", "최근 요청일", "요청 상태", "전달일",
-             "경과일", "담당", "요청 건수", "출처"] + (["미팅 예정일"] if planned else [])
+             "경과일", "담당", "요청 건수", "출처", "비고"] + (["미팅 예정일"] if planned else [])
     rows = [[r["company"], r["firm"], f"{r['contact_name']} {r['contact_title']}".strip(),
              r["first_at"], r["last_at"], r["status_label"], r["delivered_at"], r["days"],
-             r["owners"], r["count"], ir_no_meeting.SOURCES[r["src"]]]
+             r["owners"], r["count"], ir_no_meeting.SOURCES[r["src"]], r["note"]]
             + ([r["scheduled_on"]] if planned else [])
             for r in got["rows"]]
     title = "IR 요청 후 미팅 예정" if planned else "IR 요청 후 미팅 없음"

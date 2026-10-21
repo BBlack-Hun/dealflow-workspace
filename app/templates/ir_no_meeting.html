@@ -12,7 +12,10 @@
   <p class="muted">
     IR 자료를 요청한 투자사 심사역 × 기업 중 <b>아직 미팅이 없는</b> 쌍입니다(오늘 기준).
     이 앱의 기록과 시트에서 옮겨 온 이력을 함께 봅니다. 완료한 미팅이 있으면 빠지고,
-    취소한 미팅은 없던 일로 봅니다. 예정·확정만 있는 쌍은 <b>미팅 예정</b>에 따로 섭니다.
+    취소한 미팅은 없던 일로 봅니다. 시트의 ‘미팅확정’은 만난 것으로 봅니다.
+    날짜가 아직 오지 않은 예정 미팅만 있는 쌍은 <b>미팅 예정</b>에 따로 서고,
+    예정일이 지났는데 완료 처리가 안 된 미팅은 미팅 없음으로 보고 비고에 적습니다.
+    ‘보내지 않음’ 요청은 기본으로 뺍니다.
   </p>
 </header>
 
@@ -60,7 +63,7 @@
       <a class="chip {% if src == 'app' %}active{% endif %}" href="{{ href(src='app') }}">앱 기록</a>
       <a class="chip {% if src == 'sheet' %}active{% endif %}" href="{{ href(src='sheet') }}">시트 이력만</a>
     </span>
-    <a class="chip {% if drop %}active{% endif %}" href="{{ href(drop='' if drop else 'hide') }}">보내지 않음 빼기</a>
+    <a class="chip {% if drop %}active{% endif %}" href="{{ href(drop='' if drop else 'show') }}">보내지 않음 보기</a>
   </div>
 </div>
 
@@ -78,7 +81,7 @@
       <th>기업명</th><th>투자사</th><th>심사역</th><th style="width:150px">IR 요청일</th>
       <th style="width:150px">요청 상태</th><th class="num" style="width:64px">경과일</th>
       {% if not who %}<th>담당</th>{% endif %}
-      <th class="num" style="width:56px">건수</th><th style="width:80px">출처</th>
+      <th class="num" style="width:56px">건수</th><th style="width:80px">출처</th><th>비고</th>
       {% if view == 'scheduled' %}<th style="width:96px">미팅 예정일</th>{% endif %}
     </tr></thead>
     <tbody>
@@ -99,6 +102,7 @@
         {% if not who %}<td>{{ r.owners }}</td>{% endif %}
         <td class="num">{{ r.count }}</td>
         <td class="muted">{{ sources[r.src] }}</td>
+        <td class="muted">{{ r.note }}</td>
         {% if view == 'scheduled' %}<td>{{ r.scheduled_on or '날짜 미기재' }}</td>{% endif %}
       </tr>
       {% endfor %}
