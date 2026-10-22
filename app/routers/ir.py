@@ -170,6 +170,9 @@ def ir_page(request: Request, db: Session = Depends(get_db),
         "pick_notes": sheet_owner.pick_notes(db, picks),
         # 「요청받은 기업」 칸의 후보. **질의는 이 한 번뿐**이다 — 위 함수 참고.
         "company_names": _company_names(db),
+        # 같은 칸에 함께 뜨는 **Series A 이상 딜 소싱** 기업 — 화면이 `Series A`
+        # 딱지를 붙인다. IR 기업 현황에 같은 기업이 있으면 IR 쪽 하나로만 선다.
+        "series_a_names": sorted(pipeline.series_a_names(db).values()),
         "outcomes": pipeline.OUTCOMES,
         "kinds": pipeline.MEETING_KINDS,
         "meet_modes": pipeline.MEETING_MODES,

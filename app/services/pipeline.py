@@ -19,7 +19,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..models import (ContactActivity, IrCompany, IrRequest, Meeting, SendItem,
-                      User, VcContact)
+                      SeriesACompany, User, VcContact)
 from . import cadence, calendar_link, deal_numbers
 from .sheet_import import normalize_company_name
 
@@ -117,6 +117,28 @@ def match_company(db: Session, name: str) -> Optional[IrCompany]:
         if _key(company.name) == key:
             return company
     return None
+
+
+def series_a_names(db: Session) -> Dict[str, str]:
+    """Series A 이상 딜 소싱 기업 — `{비교용 이름: 그 탭에 적힌 이름}`.
+
+    딜 진행 관리에서 이 기업도 골라 IR 요청·전달을 적는다(사용자 요청 10/22 —
+    딜 소싱으로 받은 딜의 IR 도 전달한다). **IR 기업 현황에 줄을 만들지 않는다**:
+    고른 이름은 IR 기업 현황에 없는 기업을 적어 온 그 길로 `company_id` 없이
+    적히고, Series A 줄은 이 이름으로 그때그때 잇는다(`SeriesACompany` 머리말 —
+    섞으면 딜 소개 목록에 받기만 한 기업이 뜬다).
+
+    IR 기업 현황에 같은 이름(`_key` — `deal_history._key` 와 같은 규칙)이 있으면
+    **뺀다** — 그 이름은 `match_company` 가 IR 줄에 잇는다. IR 쪽이 딜소개 불가면
+    후보에서 둘 다 빠진다.
+    """
+    ir = {_key(n) for n in db.execute(select(IrCompany.name)).scalars()}
+    out: Dict[str, str] = {}
+    for name in db.execute(select(SeriesACompany.name)).scalars():
+        key = _key(name)
+        if key and key not in ir:
+            out.setdefault(key, name.strip())
+    return out
 
 
 def followup_date(done_on: date) -> date:
@@ -368,6 +390,8 @@ def request_rows(db: Session, user: User,
             "company_name": row.company_name,
             "company_id": row.company_id,
             "ir_file": "",
+            # Series A 탭에 적힌 이름 — 화면이 `Series A` 딱지로 그 줄에 잇는다.
+            "series_a": "",
             "requested_at": row.requested_at,
             "waited": waited,
             # 사흘 넘게 안 보냈으면 눈에 띄어야 한다.
@@ -407,6 +431,11 @@ def request_rows(db: Session, user: User,
         }
         for row in out:
             row["ir_file"] = names.get(row["company_id"], "")
+    if any(not r["company_id"] for r in out):
+        sa = series_a_names(db)
+        for row in out:
+            if not row["company_id"]:
+                row["series_a"] = sa.get(_key(row["company_name"]), "")
     return out
 
 
@@ -748,12 +777,16 @@ def group_by_contact(requests: List[dict]) -> List[dict]:
             "contact_id": row["contact_id"], "name": row["name"],
             "title": row["title"], "firm": row["firm"],
             "rows": [], "company_ids": [], "missing": [], "no_file": [],
+            "series_a": [],
         })
         item["rows"].append(row)
         if row["company_id"]:
             item["company_ids"].append(row["company_id"])
             if not row["ir_file"]:
                 item["no_file"].append(row["company_name"])
+        elif row.get("series_a"):
+            # IR 기업 현황에 등록하라고 하지 않는다 — 일부러 따로 둔 기업이다.
+            item["series_a"].append(row["company_name"])
         else:
             item["missing"].append(row["company_name"])
     return sorted(grouped.values(), key=lambda g: -len(g["rows"]))

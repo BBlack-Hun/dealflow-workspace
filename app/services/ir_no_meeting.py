@@ -47,7 +47,8 @@ from typing import Dict, List, Optional, Tuple
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..models import ContactActivity, IrCompany, IrRequest, Meeting, User, VcContact
+from ..models import (ContactActivity, IrCompany, IrRequest, Meeting, SeriesACompany,
+                      User, VcContact)
 from . import meeting_kind as mk
 from . import pipeline
 from .ir_monthly import _Index, _key
@@ -91,7 +92,8 @@ def rows(db: Session, user_id: Optional[int], today: date) -> Tuple[List[dict], 
     `user_id` 가 없으면 팀 전체.
     """
     companies = db.execute(select(IrCompany)).scalars().all()
-    index, names = _Index(companies), {c.id: c.name for c in companies}
+    index = _Index(companies, db.execute(select(SeriesACompany.name)).scalars())
+    names = {c.id: c.name for c in companies}
 
     def company(company_id: Optional[int], name: Optional[str]) -> tuple:
         """→ (맞춤 키, 보일 이름). 번호 → 이름으로 찾은 번호 → 이름 그대로."""
