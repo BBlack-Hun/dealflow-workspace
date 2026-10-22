@@ -16,7 +16,7 @@ from typing import List, Optional
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -27,7 +27,7 @@ from ..deps import get_current_user, no_send_as_member, templates
 from ..models import SendItem, SendJob, SourcingContact, User
 from ..services import (series_a_share, sourcing_buckets, sourcing_link,
                         sourcing_mail, sourcing_receipts, sourcing_rooms,
-                        sourcing_sync)
+                        sourcing_sync, spreadsheet)
 from ..services import custom_columns, sourcing_remind_log, taxonomy
 from ..services.pipeline import current_assignee
 from ..ui import base_ctx
@@ -307,18 +307,25 @@ def held_counts(db: Session) -> dict:
     return out
 
 
+def _pick_tab(tabs: List[dict], tab: str) -> str:
+    """주소의 `tab` → 열 갈래(`""` = 전체). 화면과 엑셀이 같은 탭을 읽는다.
+
+    아무 것도 고르지 않았으면 첫 갈래를 연다. 전체를 먼저 보여주면 갈래가
+    나뉜 뜻이 사라진다. 띄어쓰기만 다른 글자로 와도 그 탭이다(예전 주소 ·
+    코드의 글자)."""
+    opened = next((t["key"] for t in tabs
+                   if tab and sourcing_buckets.same(t["key"], tab)), None)
+    if opened is not None:
+        return opened
+    return tabs[0]["key"] if tabs and tab != "all" else ""
+
+
 @router.get("/sourcing", response_class=HTMLResponse, include_in_schema=False)
 def sourcing_page(request: Request, db: Session = Depends(get_db),
                   user: User = Depends(get_current_user), tab: str = "",
                   msg: str = ""):
     tabs = buckets(db)
-    # 아무 것도 고르지 않았으면 첫 갈래를 연다. 전체를 먼저 보여주면 갈래가
-    # 나뉜 뜻이 사라진다. 띄어쓰기만 다른 글자로 와도 그 탭이다(예전 주소 ·
-    # 코드의 글자).
-    opened = next((t["key"] for t in tabs
-                   if tab and sourcing_buckets.same(t["key"], tab)), None)
-    selected = opened if opened is not None else (
-        tabs[0]["key"] if tabs and tab != "all" else "")
+    selected = _pick_tab(tabs, tab)
     rows = rows_of(db, selected)
     ctx = base_ctx(request, db, user, active="sourcing")
     # 투자사 관리 현황에서 이미 방을 연결해 둔 사람이면 다시 적을 이유가 없다.
@@ -402,6 +409,105 @@ def sourcing_page(request: Request, db: Session = Depends(get_db),
     # 관리자가 붙인 추가 칸 — 갈래(탭)를 가리지 않고 같은 칸(`_custom_cols.html`).
     ctx.update(custom_columns.view(db, "sourcing", "sourcing_contacts"))
     return templates.TemplateResponse("sourcing.html", ctx)
+
+
+# ── 엑셀 내려받기 ────────────────────────────────────────────────────────────
+
+def _export_table(db: Session, rows: List[SourcingContact], extra: dict,
+                  with_bucket: bool) -> tuple:
+    """표 한 장 — `(머리글, 줄)`. 칸은 **화면 표 그대로**(`COLUMNS` 차례).
+
+    이름 칸 밑에 붙어 보이던 것(이 달 `딜 받음` · 투자사 관리 현황 연결)은 이름 바로
+    뒤에, 월간 리마인드 석 달은 화면처럼 `참여` 뒤에(`REMIND_AFTER`), 관리자가 붙인
+    추가 칸은 화면처럼 고른 칸 뒤(안 고르면 끝)에 선다(`custom_columns.arranger`).
+    `전체` 탭이면 맨 앞에 `갈래` 를 세운다 — 한 장에 갈래가 섞인다."""
+    month = sourcing_receipts.month_of()
+    got = sourcing_receipts.receipts(db, month)
+    months = sourcing_remind_log.months()
+    reminds = sourcing_remind_log.history(db, [r.id for r in rows], months)
+    links = sourcing_sync.badges(db, rows)
+    rooms = sourcing_link.linked_rooms(db, rows)
+
+    def received(r: SourcingContact) -> str:
+        mark = got.get(r.id)
+        if mark is None:
+            return ""
+        if mark.source == sourcing_receipts.SOURCE_MAIL:
+            return f"받음 (메일 {sourcing_mail.day_stamp(mark.mail_at)})"
+        return "받음 (직접)"
+
+    def linked(r: SourcingContact) -> str:
+        if not sourcing_sync.is_synced(r):
+            return ""          # 잇지 않는 갈래
+        return f"{links[r.id]['sheet']} 명단" if r.id in links else "안 이어짐"
+
+    def cell(r: SourcingContact, field: str) -> list:
+        if field == "requested_at":
+            out = [sourcing_sync.requested_label(r.requested_at)]
+        elif field == "participation":
+            out = [sourcing_sync.participation_of(r)]
+        elif field == "kakao_room_name" and not r.kakao_room_name and r.id in rooms:
+            # 화면의 `🔗 방 (투자사 명단)` — 보낼 때 이 방을 쓴다(`sourcing_link.room_for`).
+            out = [f"{rooms[r.id]['room']} (투자사 명단)"]
+        else:
+            out = [getattr(r, field) or ""]
+        if field == "name":
+            out += [received(r), linked(r)]
+        if field == REMIND_AFTER:
+            out += [", ".join(f"{s.when} {s.how}" for s in reminds.get(r.id, {}).get(m.key, []))
+                    for m in months]
+        return out
+
+    heads: List[str] = ["갈래"] if with_bucket else []
+    for field, label, _w, _f in COLUMNS:
+        heads.append(label)
+        if field == "name":
+            heads += [f"{int(month[5:])}월 딜 받음", "투자사 관리 현황"]
+        if field == REMIND_AFTER:
+            heads += [m.label for m in months]
+    put = custom_columns.arranger(heads, extra)
+    lines = [put(([r.bucket] if with_bucket else [])
+                 + [v for field, *_ in COLUMNS for v in cell(r, field)]
+                 + custom_columns.cells(extra, r.id))
+             for r in rows]
+    return put(heads + custom_columns.names(extra)), lines
+
+
+@router.get("/api/sourcing/export.xlsx")
+def export_sourcing(tab: str = "", ids: Optional[str] = None, every: int = 0,
+                    db: Session = Depends(get_db),
+                    user: User = Depends(get_current_user)):
+    """[엑셀 내려받기] — 지금 탭의 **보이는 줄**, 또는 탭마다 한 장(`every=1`).
+
+    머리글 필터 · 검색은 화면에서만 돈다(`filters.js`) — 서버에 같은 규칙을 또 적으면
+    두 벌이 된다. 그래서 화면이 지금 보이는 줄 번호를 **보이는 차례대로** 싣고
+    (`ids`), 서버는 그 탭의 줄 중에서만 고른다([방 후보 찾기]와 같은 길). `ids` 가
+    없으면 그 탭 전부다. `every=1` 은 거르지 않은 전부를 탭마다 한 장씩.
+
+    권한은 화면과 같다 — 로그인한 누구나(이 표는 팀 공용 · 투자컨설턴트는 미들웨어가
+    막는다 — `deps.CONSULTANT_PATHS` 에 없다)."""
+    tabs = buckets(db)
+    extra = custom_columns.view(db, "sourcing", "sourcing_contacts")
+    today = date.today().isoformat()
+    if every:
+        sheets = [(t["label"], *_export_table(db, rows_of(db, t["key"]), extra, False))
+                  for t in tabs] or [("딜 소싱", *_export_table(db, [], extra, False))]
+        name = f"딜 소싱_전체 탭_{today}.xlsx"
+    else:
+        selected = _pick_tab(tabs, tab)
+        rows = rows_of(db, selected)
+        if ids is not None:
+            order = {int(x): i for i, x in enumerate(re.findall(r"\d+", ids))}
+            rows = sorted((r for r in rows if r.id in order), key=lambda r: order[r.id])
+        sheets = [(selected or "전체", *_export_table(db, rows, extra, not selected))]
+        # 갈래 이름의 `/`(구주매각 / 후속…)는 파일 이름에 못 쓴다.
+        name = f"딜 소싱_{re.sub(r'[/:*?<>|]+', ' ', selected or '전체')}_{today}.xlsx"
+    try:
+        content = spreadsheet.write_xlsx_sheets(sheets)
+    except spreadsheet.SpreadsheetError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return Response(content=content, media_type=spreadsheet.XLSX_MEDIA_TYPE,
+                    headers=spreadsheet.content_disposition(name))
 
 
 @router.post("/sourcing/buckets/rename", include_in_schema=False)
