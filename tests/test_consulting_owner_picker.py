@@ -7,8 +7,8 @@
 
 여기서 지키는 것 넷:
 
-1. 이름은 **줄에 붙어 있는 담당**에서 나온다. 계정 목록으로 세우면 아직 기업을
-   안 받은 사람이 `0` 으로 서서, 고를 것이 없는 이름만 늘어난다.
+1. 이름은 **줄에 붙어 있는 담당 + 켜져 있는 컨설턴트 계정**이다. 새 컨설턴트는
+   기업을 받기 전에도 `0` 으로 바로 서고, 정지한 계정은 줄이 남아 있을 때만 선다.
 2. **숫자는 눌렀을 때 나올 수와 같다.** 탭을 가리지 않고 세면 탭에는 32 라고
    적혀 있는데 이름 옆에는 55 가 붙는다.
 3. **KPI 도 칩도 표도 고른 사람 것이다.** 위 숫자만 전체로 남아 있으면 어느
@@ -47,7 +47,7 @@ def stage(db, users):
                  can_view_consulting=1, password_hash=pw)
     second = User(name="컨설을", phone="01000000102", role="consultant",
                   can_view_consulting=1, password_hash=pw)
-    # 계정만 있고 줄이 하나도 없는 컨설턴트 — 고르는 자리에 서면 안 된다.
+    # 계정만 있고 줄이 하나도 없는 컨설턴트 — 새로 만든 사람이다. `0` 으로 선다.
     idle = User(name="컨설병", phone="01000000103", role="consultant",
                 can_view_consulting=1, password_hash=pw)
     admin = User(name="관리갑", phone="01000000104", role="admin",
@@ -123,17 +123,36 @@ def _rows(html: str) -> list:
                       body)
 
 
-# --- 1. 이름은 줄에서 나온다 ---------------------------------------------------
+# --- 1. 이름은 줄 + 켜진 컨설턴트 계정에서 나온다 ---------------------------------
 
-def test_the_picker_lists_only_people_who_actually_hold_rows(stage, sign_in):
-    """계정 목록으로 세우면 **줄이 없는 이름**이 고르는 자리에 선다.
+def test_a_new_consultant_shows_up_before_getting_any_rows(stage, sign_in):
+    """컨설턴트를 새로 만들면 기업을 받기 전에도 고르는 자리에 `0` 으로 선다.
 
-    `컨설병` 은 계정만 있고 담당 기업이 하나도 없다 — 눌러도 빈 표가 나온다.
+    줄에서만 뽑으면 새 컨설턴트는 첫 기업을 받을 때까지 화면 어디에도 없다.
     """
-    names = [name for name, _n in _picker(sign_in("member").get("/consulting").text)]
+    client = sign_in("member")
+    counts = dict(_picker(client.get(f"/consulting?sheet={STARTUP}").text))
+    assert counts.get("컨설병") == 0, counts
+    for who in ("강민준 팀원", "컨설갑", "컨설을"):
+        assert who in counts, counts
+    # 눌러도 전체로 돌아가지 않는다 — 그 사람의 빈 표가 왜 비었는지 말한다.
+    body = client.get(f"/consulting?sheet={STARTUP}&owner={stage['idle'].id}").text
+    assert _rows(body) == []
+    assert "<b>컨설병</b> 님이 이 탭에서 맡은 기업이 없습니다" in body
+
+
+def test_a_deactivated_account_stands_only_while_it_still_holds_rows(db, stage, sign_in):
+    """정지한 계정은 줄이 남아 있을 때만 선다 — 줄도 없으면 고를 것이 없다."""
+    stage["idle"].is_active = 0
+    stage["second"].is_active = 0
+    db.commit()
+    client = sign_in("member")
+    names = [name for name, _n in _picker(client.get("/consulting").text)]
     assert "컨설병" not in names, names
-    for who in ("강민준", "컨설갑", "컨설을"):
-        assert who in " ".join(names), names
+    assert "컨설을" in names, names
+    # 주소로 실어 와도 고르는 자리에 없는 사람이면 전체로 돌린다.
+    body = client.get(f"/consulting?sheet={STARTUP}&owner={stage['idle'].id}").text
+    assert _kpi(body, "total") == 4
 
 
 def test_a_row_with_no_owner_gets_its_own_name(stage, sign_in):
