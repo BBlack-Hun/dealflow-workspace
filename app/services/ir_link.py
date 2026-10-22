@@ -17,15 +17,16 @@
 축이 될 수 있는 것은 기업 하나에 줄 하나인 그 표뿐이다(`VcContact.ir_company_id`
 · `ConsultingCompany.ir_company_id`).
 
-## 잇는 것은 사람이다  ★
+## 이름이 정확히 하나 맞으면 잇는다 — `자동 연결` 로 적고 풀 수 있게  ★
 
-이 파일은 **후보를 세워 주기만** 한다. 후보가 하나뿐이어도 저절로 넣지 않는다 —
-`room_match` 가 카톡방 후보를 다루는 것과 같은 결이다. 이름이 같다고 같은
-기업이라는 보장이 없고, 같은 이름의 IR 기업이 둘인 곳이 운영에 실제로 있다.
+처음에는 "잇는 것은 사람" 이었다. 10/22 사용자가 바꿨다(결정 2): **새로 생기는 줄**은
+이름이 정확히 하나 맞으면 저절로 잇고(`services/company_sync._auto_link`),
+[후보가 하나인 줄 일괄 연결] 로 이은 줄과 함께 `ir_link_auto` 로 적어 화면에
+`자동 연결` 을 보인다 — 잘못 붙었으면 [연결 풀기]. 사람이 한 줄씩 고른 것은 0 이다.
 
-[후보가 하나인 줄 일괄 연결] 도 사람이 누르는 단추이고, 누르기 전에 몇 줄이
-어디에 붙는지를 먼저 보여 준다(`routers/ir_link.py`). 그것도 **후보가 정확히
-하나**인 줄만 받는다.
+후보가 둘 이상이거나 없으면 여전히 **사람이 고른다**. 이름이 같다고 같은 기업이라는
+보장이 없고, 같은 이름의 IR 기업이 둘인 곳이 운영에 실제로 있다. 잇는 순간에는
+양쪽 빈칸만 채운다(다른 값은 덮지 않는다 — `company_sync` 머리말).
 
 ## 이름을 맞추는 규칙은 새로 짓지 않는다
 
@@ -48,11 +49,10 @@
 두 팀원의 명단에 같은 기업이 서고, 투자컨설턴트 표는 탭마다 같은 기업이 한
 줄씩 실린다. 막지 않되 **몇 줄이 붙어 있는지를 화면에 적는다**(`link_counts`).
 
-## 값은 아직 오가지 않는다
+## 값이 오간다 — `services/company_sync.py`(10/22, 1단계)
 
-이어도 미팅일·담당자·연매출은 그대로 각자의 칸에 있다. 나중에 값을 맞추는
-일이 생기면 **`company_for(row)` 하나**로 이은 기업을 읽는다 — 그 판정을
-여러 곳에 적으면 `이어졌는가` 가 화면마다 갈린다.
+대표자명 · 연락처 · 이메일 · 지역 · 견적서 첨부 여부 · 카톡 연결 여부는 이어진
+줄끼리 고칠 때 따라 고친다. 계약 · 미팅 칸은 2단계다.
 """
 from __future__ import annotations
 
@@ -216,8 +216,11 @@ def link_counts(db: Session) -> Dict[int, int]:
 
 # ── 잇기 · 풀기 ─────────────────────────────────────────────────────────────
 
-def link(db: Session, row: Row, company: IrCompany) -> bool:
+def link(db: Session, row: Row, company: IrCompany, auto: bool = False) -> bool:
     """이 줄을 그 IR 기업에 잇는다. 바뀌었으면 True.
+
+    `auto` — 이름으로 이은 것(일괄 연결)이면 True(`자동 연결` 표시), 사람이 한 줄씩
+    고른 것이면 False.
 
     **줄마다 ORM 으로 고친다** — 한꺼번에 `update()` 로 치우면 flush 를 지나지
     않아 수정 로그가 빈다(`services/edit_log.py` 머리글). 잇고 푼 것은 자기
@@ -229,8 +232,12 @@ def link(db: Session, row: Row, company: IrCompany) -> bool:
     if company is None or company.id is None:
         raise NotLinkable("이을 IR 기업이 없습니다")
     if row.ir_company_id == company.id:
+        if not auto and row.ir_link_auto:
+            row.ir_link_auto = 0       # 사람이 같은 기업을 다시 골랐다 — 확인한 것으로 본다
+            return True
         return False
     row.ir_company_id = company.id
+    row.ir_link_auto = 1 if auto else 0
     return True
 
 
@@ -239,6 +246,7 @@ def unlink(db: Session, row: Row) -> bool:
     if row.ir_company_id is None:
         return False
     row.ir_company_id = None
+    row.ir_link_auto = 0
     return True
 
 
@@ -247,7 +255,7 @@ def unlink(db: Session, row: Row) -> bool:
 def company_for(row: Row, db: Optional[Session] = None) -> Optional[IrCompany]:
     """**이 줄에 이어 둔 IR 기업.** 안 이었으면 None.
 
-    미팅일·담당자·연매출을 맞추는 일(아직 없다)이 이 함수 하나로 읽는다.
+    값을 맞추는 일(`company_sync`)은 flush 자리에서 `ir_company_id` 를 바로 본다.
 
     **후보로 대신하지 않는다** — 후보가 하나뿐이어도 사람이 잇기 전까지는
     None 이다. 이름으로 짐작해 돌려주면 이 함수를 읽는 쪽이 사람이 한 번도
@@ -286,6 +294,7 @@ def badge(row: Row, company: Optional[IrCompany],
     """
     kind = kind_of(row)
     out = {"linked": company is not None,
+           "auto": bool(company is not None and getattr(row, "ir_link_auto", 0)),
            "link_href": link_href(kind, row.id),
            "candidates": int(candidates)}
     if company is not None:

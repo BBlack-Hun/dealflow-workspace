@@ -100,6 +100,12 @@ function submit(form) {
   assert.ok(/연결 안 됨/.test(box.innerHTML) && /연결하기/.test(box.innerHTML));
   assert.ok(/1곳/.test(box.innerHTML), "후보 수를 안 적었다");
 
+  // 이름으로 저절로 이은 줄은 `자동 연결` 과 [연결 풀기]가 선다(10/22 결정 2).
+  badge.show({ linked: true, auto: true, name: "샘플랩", company_href: "/c",
+               link_href: "/ir-link?tab=startup&row=7" });
+  assert.ok(/자동 연결/.test(box.innerHTML) && /연결 풀기/.test(box.innerHTML));
+  assert.ok(!/연결됨/.test(box.innerHTML));
+
   // 이름에 든 꺾쇠는 글자로 남는다.
   badge.show({ linked: true, name: "<b>가짜</b>", company_href: "/c", link_href: "/l" });
   assert.ok(!/<b>가짜<\/b>/.test(box.innerHTML) && /&lt;b&gt;/.test(box.innerHTML));

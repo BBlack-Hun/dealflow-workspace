@@ -19,9 +19,11 @@
 
   function html(info) {
     if (info.linked) {
+      // 이름으로 저절로(또는 일괄 연결로) 이은 줄은 `자동 연결` — 맞지 않으면 풀거나 바꾼다.
       return 'IR 기업: <a href="' + esc(info.company_href) + '">' + esc(info.name) +
-        '</a> <span class="room-badge ok">연결됨</span> · ' +
-        '<a class="linkbtn" href="' + esc(info.link_href) + '">바꾸기</a>';
+        '</a> <span class="room-badge ok">' + (info.auto ? "자동 연결" : "연결됨") +
+        '</span> · <a class="linkbtn" href="' + esc(info.link_href) + '">' +
+        (info.auto ? "연결 풀기 · 바꾸기" : "바꾸기") + '</a>';
     }
     var hint = info.candidates ? " (이름이 같은 IR 기업 " + info.candidates + "곳)" : "";
     return 'IR 기업: <span class="muted">연결 안 됨' + esc(hint) + '</span> → ' +

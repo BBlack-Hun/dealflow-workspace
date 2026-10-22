@@ -1142,6 +1142,19 @@ def apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
                   room_suffix: str = DEFAULT_SUFFIX, dry_run: bool = False,
                   source_label: Optional[str] = None,
                   keep_other_owner: bool = False) -> ImportReport:
+    """아래 `_apply_sheet_a` — IR 기업에 이어진 줄(스타트업 명단)은 따라 고치기를 빈칸만
+    채우게 하고 돈다(10/22 결정 7 · `company_sync.fill_only`)."""
+    from . import company_sync
+
+    with company_sync.fill_only(db):
+        return _apply_sheet_a(db, parsed, user_id, room_suffix=room_suffix, dry_run=dry_run,
+                              source_label=source_label, keep_other_owner=keep_other_owner)
+
+
+def _apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
+                   room_suffix: str = DEFAULT_SUFFIX, dry_run: bool = False,
+                   source_label: Optional[str] = None,
+                   keep_other_owner: bool = False) -> ImportReport:
     """담당자 upsert (이름+투자사 기준) + 활동 이력 정규화 적재.
 
     소유자(user_id)는 시트의 **담당자 컬럼**이 정한다. 한 시트에 여러 팀원의 담당분이
@@ -1282,7 +1295,10 @@ def apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
         # 상태 칸: 새 시트가 최신 판단 → 덮어쓴다
         _set_if_value(contact, "invited_status", pc.invited_status)
         _set_if_value(contact, "interest_level", pc.interest_level)
-        _set_if_value(contact, "kakao_joined", pc.kakao_joined)
+        # IR 기업에 이어진 줄(스타트업 명단)은 앱 값을 덮지 않는다 — 덮으면 IR 과 이어진
+        # 다른 줄까지 따라 고쳐진다(10/22 결정 7). 비어 있을 때만 받는다.
+        if not (contact.ir_company_id and (contact.kakao_joined or "").strip()):
+            _set_if_value(contact, "kakao_joined", pc.kakao_joined)
         # 프로필·연락처: 시트마다 조각이 나뉘어 있다 → 비어 있을 때만 채운다(병합)
         report.filled += sum([
             _fill_if_empty(contact, "title", pc.title),
@@ -1558,12 +1574,17 @@ def _append_label(current: Optional[str], label: str) -> str:
     return ",".join(labels)
 
 
+#: 계약여부가 **아직 안 정해진** 값 — 미계약(기본). `routers/companies.CONTRACT_ALIAS` 와 같은 셋.
+UNSET_CONTRACT = ("no", "none", "")
+
+
 def apply_sheet_b(db: Session, parsed: SheetBParse, dry_run: bool = False) -> ImportReport:
     """기업 upsert (기업명 기준). 담당자는 users.name 이 일치할 때만 연결한다."""
     report = ImportReport(skipped=list(parsed.skipped),
                           notes=list(getattr(parsed, 'notes', [])))
     owners: Dict[str, Optional[int]] = {}
     unmatched_owners = set()
+    kept_contract = 0
 
     for pc in parsed.companies:
         company = db.execute(
@@ -1598,8 +1619,16 @@ def apply_sheet_b(db: Session, parsed: SheetBParse, dry_run: bool = False) -> Im
         # 적혀 있나" 를 물을 때 파싱까지 없으면 다시 만들어야 한다. 여기서
         # 끊는 것은 **DB 에 쓰는 한 줄**뿐이다.
         _set_if_value(company, "contract_month", pc.contract_month)
-        # 계약·핵심 여부는 시트가 최신 판단이므로 덮어쓴다(빈 칸 = '아니오'가 맞는 칸들).
-        company.contract_status = pc.contract_status
+        # 계약여부는 **앱에서 정한 값을 덮지 않는다**(10/22 · 1단계). 이제 앱이 기준이고
+        # (IR 기업 현황 · 곧 투자컨설턴트 · 스타트업 명단이 따라 고친다), 시트를 다시
+        # 올리는 것만으로 `딜소개 불가` · `유료계약완료` 가 시트의 옛 값(빈칸 = 미계약)으로
+        # 돌아가면 발송 대상이 조용히 바뀐다. 앱 값이 미계약(기본)일 때만 시트 값을 받고,
+        # 다른데 안 덮은 수는 적어 알린다. 핵심 여부는 예전처럼 시트가 정한다.
+        if (company.contract_status or "no") in UNSET_CONTRACT:
+            company.contract_status = pc.contract_status
+        elif (pc.contract_status or "no") not in UNSET_CONTRACT \
+                and pc.contract_status != company.contract_status:
+            kept_contract += 1
         company.is_top_deal = pc.is_top_deal
 
         if pc.owner_name:
@@ -1619,6 +1648,8 @@ def apply_sheet_b(db: Session, parsed: SheetBParse, dry_run: bool = False) -> Im
         report.notes.append(
             "담당자 미매칭(계정 없음, owner 비움): " + ", ".join(sorted(unmatched_owners))
         )
+    if kept_contract:
+        report.notes.append(f"계약여부: 앱 값과 시트 값이 달라 앱 값을 둔 기업 {kept_contract}곳")
     report.notes.append("요약문(summary)은 임포트하지 않는다 — 딜 기업 DB 화면에서 작성/자동조합")
 
     if dry_run:

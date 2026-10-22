@@ -36,7 +36,8 @@ from ..db import get_db
 from ..deps import (NoConsulting, can_open, doer, get_current_user,
                     may_view_all_consulting, may_view_consulting, templates)
 from ..models import (ConsultingColumn, ConsultingCompany, ConsultingRowGrant,
-                      User)
+                      User, VcContact)
+from ..services import company_sync
 from ..services import consulting_sheets as cs
 from ..services import custom_columns
 from ..services import consulting_status as status
@@ -208,8 +209,8 @@ STARTUP_COLUMNS = FIXED_COLUMNS + [
     # 계약 세 마디와 같은 `O`/`X` 칸이다(빈칸은 `아직 안 정함`).
     #
     # **`VcContact.kakao_joined` 와 이름이 같지만 다른 표의 다른 칸이다.**
-    # 한쪽에 `O` 를 넣어도 다른 쪽은 계속 비어 있다 — 같은 기업이 스타트업
-    # 화면과 이 화면에서 다른 답을 보일 수 있고, 그것은 알고 둔 것이다.
+    # 10/22 부터 IR 기업에 이어진 줄끼리는 한쪽에 `O`/`X` 를 넣으면 IR 과 스타트업
+    # 줄도 따라온다(`services/company_sync.py`). 이어지지 않은 줄은 예전처럼 따로다.
     # 어디에 또 있고 왜 안 이었는지는 `models.ConsultingCompany.kakao_joined`
     # 주석에 한 곳으로 적혀 있다(설명을 두 벌 두면 한 벌이 낡는다).
     ("카톡 연결 여부", "kakao_joined"),   # O / X
@@ -1478,7 +1479,20 @@ def send_to_startup(body: ToStartupIn, db: Session = Depends(get_db),
         # **줄을 세우는 길은 `POST /api/contacts` 하나다.** 여기서 `VcContact`
         # 를 직접 만들면 반드시 있어야 하는 칸(`Layout.required`)·담당
         # (`owner_for`)·권한(`may_add_row`)이 두 벌이 된다.
-        made = create_contact(ContactIn(sheet=label, **fields), db, user)
+        # 원래 줄의 IR 연결을 그대로 물려준다(10/22 — 이름으로 다시 찾지 않는다). 이름으로
+        # 먼저 다른 IR 에 붙지 않게, 이을 기업이 있으면 새 줄 자동 연결을 끈 채 만든다.
+        if company.ir_company_id:
+            db.info[company_sync.NO_AUTO_LINK] = True
+        try:
+            made = create_contact(ContactIn(sheet=label, **fields), db, user)
+        finally:
+            db.info.pop(company_sync.NO_AUTO_LINK, None)
+        if company.ir_company_id:
+            contact = db.get(VcContact, made["id"])
+            if contact.ir_company_id != company.ir_company_id:
+                contact.ir_company_id = company.ir_company_id
+                contact.ir_link_auto = company.ir_link_auto or 0
+                db.commit()
         # **같은 요청 안의 중복도 막는다.** 같은 기업이 두 줄로 적힌 표가
         # 실제로 있어서, 둘 다 골라 누르면 스타트업 명단에 두 줄이 선다.
         seen[key] = made["id"]
@@ -1886,8 +1900,36 @@ def apply_rows(db: Session, parsed: dict, user: User,
     """읽은 내용을 DB 에 반영. 기업명이 같으면 갱신, 없으면 추가.
 
     올린 사람의 표가 된다 — 남의 표를 덮지 않는다.
+
+    **IR 기업에 이어진 줄은 빈칸만 채운다**(10/22 결정 7 · `company_sync`). 시트
+    값이 이어진 줄의 대표자명 · 연락처 · 카톡 연결 여부 … 를 덮으면 그 값이 IR 과
+    이어진 다른 줄까지 따라 고쳐진다. 그래서 그 칸들은 비어 있을 때만 받고, 따라
+    고치기도 빈칸만 채운다(`company_sync.fill_only`).
+
+    **[전체 바꾸기]도 연결을 끊지 않는다.** 내 줄을 지우고 새로 만드는 길이라 예전에는
+    잇기(`ir_company_id`)가 통째로 사라졌다 — 지우기 전에 기업명마다 이어 둔 IR 기업을
+    적어 두었다가 새 줄에 되살린다(`_kept_links`).
     """
+    with company_sync.fill_only(db):
+        return _apply_rows(db, parsed, user, replace)
+
+
+def _kept_links(rows) -> Dict[str, tuple]:
+    """`{비교용 기업명: (IR 번호, 자동 연결)}` — 한 이름이 서로 다른 IR 에 이어져 있으면 뺀다."""
+    found: Dict[str, set] = {}
+    for row in rows:
+        if row.ir_company_id:
+            key = startup_handoff.compare_key(startup_handoff.company_name_of(row.company_name))
+            found.setdefault(key, set()).add((row.ir_company_id, row.ir_link_auto or 0))
+    return {k: next(iter(v)) for k, v in found.items()
+            if k and len({cid for cid, _a in v}) == 1}
+
+
+def _apply_rows(db: Session, parsed: dict, user: User, replace: bool) -> dict:
+    kept: Dict[str, tuple] = {}
     if replace:
+        kept = _kept_links(db.execute(select(ConsultingCompany).where(
+            ConsultingCompany.user_id == user.id)).scalars().all())
         # **내 것만** 지운다. 예전에는 전체를 지워서, 한 사람이 다시 올리면
         # 다른 컨설턴트의 표까지 사라졌다.
         # 추가 칸 값도 함께 — 한꺼번에 지우기는 flush 를 안 지나서 세션 이벤트
@@ -1925,6 +1967,10 @@ def apply_rows(db: Session, parsed: dict, user: User,
         company = by_name.get(name)
         if company is None:
             company = ConsultingCompany(user_id=user.id)
+            # [전체 바꾸기] 로 지운 줄의 연결을 되살린다 — 새 줄 자동 연결보다 먼저.
+            link = kept.get(startup_handoff.compare_key(startup_handoff.company_name_of(name)))
+            if link:
+                company.ir_company_id, company.ir_link_auto = link
             db.add(company)
             by_name[name] = company
             created += 1
@@ -1935,7 +1981,7 @@ def apply_rows(db: Session, parsed: dict, user: User,
                       "contract_management", "contract_done",
                       "contract_received", "kakao_joined"):
             value = item.get(field)
-            if value:
+            if value and not company_sync.sheet_keeps(company, field):
                 setattr(company, field, value)
         raw_no = item.get("position") or ""
         digits = "".join(ch for ch in raw_no if ch.isdigit())

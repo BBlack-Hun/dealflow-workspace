@@ -46,7 +46,8 @@
 {%- set b = ir_badges.get(r.id) if ir_badges else none -%}
 {%- if b -%}
 <div class="cell-main">{{ r.company_name }}</div><div class="ir-link-sub muted">IR 기업:
-{%- if b.linked %} <a href="{{ b.company_href }}">{{ b.name }}</a> (연결됨)
+{%- if b.linked %} <a href="{{ b.company_href }}">{{ b.name }}</a>
+{%- if b.auto %} (자동 연결{% if r.editable %} · <a href="{{ b.link_href }}">연결 풀기</a>{% endif %}){% else %} (연결됨){% endif %}
 {%- else %} 연결 안 됨{% if r.editable %} → <a href="{{ b.link_href }}">연결하기</a>{% endif %}{% endif %}</div>
 {%- else -%}{{ r.company_name }}{%- endif -%}
 {%- endmacro -%}

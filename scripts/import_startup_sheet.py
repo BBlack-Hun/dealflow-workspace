@@ -38,6 +38,7 @@ from sqlalchemy import select  # noqa: E402
 
 from app.db import SessionLocal  # noqa: E402
 from app.models import ContactColumn, RefSheet, VcContact  # noqa: E402
+from app.services import company_sync  # noqa: E402
 from app.services import contact_columns as cc  # noqa: E402
 from app.services import sheet_owner  # noqa: E402
 from app.services import spreadsheet as sp  # noqa: E402
@@ -362,12 +363,17 @@ def main() -> int:
             columns[label] = col
     db.flush()
 
+    # IR 기업에 이어진 줄은 같은 기업 칸을 **빈칸일 때만** 받는다(10/22 결정 7) — 시트
+    # 값이 IR 과 이어진 다른 줄까지 덮지 않게. 따라 고치기도 빈칸만 채운다.
+    db.info[company_sync.FILL_ONLY] = True
     for item in matched:
         contact = by_firm[item["fields"]["firm"]]
+        keep = company_sync.startup_keeps(contact)
         for field, value in item["fields"].items():
-            setattr(contact, field, value)
+            if field not in keep:
+                setattr(contact, field, value)
         values = cc.load_notes(contact.notes)
-        values.update(item["notes"])
+        values.update({k: v for k, v in item["notes"].items() if f"note:{k}" not in keep})
         for label, text in item["months"].items():
             values[cc.note_key(columns[label].id)] = text
         contact.notes = cc.dump_notes(values)
