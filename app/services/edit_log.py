@@ -593,7 +593,7 @@ FIELD_LABELS = {
     # 이 탭만의 이름(기업명 · 투자라운드 · 담당팀원)으로 바꾸지 않는다 — 바꾸면
     # 다른 표의 로그가 틀린 이름을 단다.
     "received_at": "수신일",
-    "detail": "상세 내용", "deal_pitch": "딜소개 문구",
+    "detail": "상세 내용", "deal_pitch": "딜 소개 문구",
     "memo": "메모", "notes": "칸 메모", "note": "메모", "body": "본문",
     "phone": "연락처", "email": "메일", "one_liner": "한 줄 소개",
     "summary": "요약", "business_desc": "사업 설명", "content_json": "내용",

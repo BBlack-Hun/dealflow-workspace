@@ -151,7 +151,7 @@
     <button type="button" class="chip" data-cs-filter="nocontact">연락 기록 없음</button>
   </div>
   <div class="toolbar-right">
-    <input type="search" id="cs-search" placeholder="기업 · 대표자 · 내용 검색" autocomplete="off">
+    <input type="search" id="cs-search" placeholder="기업 · 대표자명 · 내용 검색" autocomplete="off">
     <a class="secondary-btn" href="/api/export/consulting.xlsx" download>엑셀 내려받기</a>
     <button type="button" class="secondary-btn" id="cs-import-btn">시트 올리기</button>
     {# 지금 보고 있는 탭을 단추에 실어 둔다 — 딜 소싱의 `[○○에 추가]`(sourcing.html
@@ -313,7 +313,7 @@
   </select>
   <button type="button" class="primary-btn inline" id="cs-startup-send" disabled>
     {{ startup_label }} 명단으로 보내기</button>
-  <span class="hint">이 표에서 빠지지 않습니다 — 기업명·대표자·연락처·이메일·기업 관리만 옮겨 적습니다.</span>
+  <span class="hint">이 표에서 빠지지 않습니다 — 기업명·대표자명·연락처·이메일·기업 관리만 옮겨 적습니다.</span>
 </div>
   </div>
 </details>
@@ -461,12 +461,12 @@
 
            `계약서 수신여부 (1) ▾` 가 한 줄에 들어가야 한다 — 이름 105px
            + th 여백 18px + 단추 여백 14px = 137px. #}
-        <th style="width:140px" data-filters="received:계약서 수신여부">계약서 수신여부<div class="th-filters"></div></th>
+        <th style="width:148px" data-filters="received:계약서 수신 여부">계약서 수신 여부<div class="th-filters"></div></th>
         <th style="width:110px">성공보수율</th>
         <th style="width:120px">계약금</th>
         {% else %}
         <th style="width:88px" data-filters="region:지역">지역<div class="th-filters"></div></th>
-        <th style="width:120px">미팅일</th>
+        <th style="width:120px">컨설팅 미팅일</th>
         {# **어떤 자리에서 만났는가** — 사용자 요청으로 `미팅일` 바로 오른쪽에
            세운다. 이 칸이 갈라져 나온 자리가 바로 옆이다: 원본 시트의 머리글이
            `미팅일(화상, 회의실)` 이라(`routers/consulting.py` 의
@@ -553,7 +553,7 @@
 
            `계약완료여부 (1) ▾` 가 한 줄에 들어가야 한다 — 이름 90px
            + th 여백 18px + 단추 여백 14px = 122px. #}
-        <th style="width:130px" data-filters="done:계약완료여부">계약완료여부<div class="th-filters"></div></th>
+        <th style="width:130px" data-filters="done:계약여부">계약여부<div class="th-filters"></div></th>
         {# 계약 탭의 `계약서 수신여부` 와 **같은 칸**이다(`contract_received`).
            묻는 사실이 하나뿐이라 — 계약서가 왔는가 — 칸을 새로 만들지 않았다.
            이름만 탭이 정한다(같은 `meeting_at` 이 한 탭에서는 `미팅일`, 계약
@@ -561,7 +561,7 @@
 
            `계약서 수신완료여부 (1) ▾` 가 한 줄에 들어가야 한다 — 이름 135px
            + th 여백 18px + 단추 여백 14px = 167px. #}
-        <th style="width:170px" data-filters="received:계약서 수신완료여부">계약서 수신완료여부<div class="th-filters"></div></th>
+        <th style="width:148px" data-filters="received:계약서 수신 여부">계약서 수신 여부<div class="th-filters"></div></th>
         {# 이 기업과 카톡방이 연결됐는가. `O`/`X` 두 가지라 위 칸들과 같은
            방식으로 골라 넣고 필터를 세운다 — 무엇보다 **빈칸(아직 안 정함)을
            고를 수 있어야** 한다(filters.js 가 빈 값을 `(비어 있음)` 으로 세워
@@ -591,7 +591,7 @@
            폭은 옆 `기업 관리`(220px)보다 조금 넓게 잡는다. 문단이 들어오는
            칸이라 좁으면 접힌 두어 줄에 아무것도 안 남는다. #}
         {% if is_startup_sheet %}
-        <th style="width:240px">딜 소개문구</th>
+        <th style="width:240px">소개 메모</th>
         <th style="width:140px" data-filters="joined:카톡 연결 여부">카톡 연결 여부<div class="th-filters"></div></th>
         {% endif %}
         {% endif %}
@@ -613,7 +613,7 @@
            원래 값이 없는 칸이라 자리만 먹는데, 값을 지우는 것은 다른 문제다 —
            이 저장소는 이력을 함부로 지우지 않는다. #}
         {% if not is_contract_sheet %}
-        <th style="width:90px">대표자</th>
+        <th style="width:90px">대표자명</th>
         <th style="width:120px">연락처</th>
         <th style="width:180px">이메일</th>
         {% endif %}

@@ -216,7 +216,7 @@ def test_계약_탭의_머리글은_시트가_부르는_이름이다(allowed, db
     # 서 있던 칸인데, 바로 옆 `계약월`(`meeting_at`)이 같은 물음을 받고 있어
     # 달을 적을 자리는 그대로 남는다 — 아래 검사가 그것을 짚는다.
     assert heads == ["NO", "담당", "계약월", "기업명", "계약여부",
-                     "계약서 수신여부", "성공보수율", "계약금", ""], heads
+                     "계약서 수신 여부", "성공보수율", "계약금", ""], heads
     # 머리글과 데이터 칸이 **같은 순서로** 갈라져야 한다. 어긋나면 그 뒤가
     # 통째로 한 칸씩 밀린다.
     assert _fields(_open(allowed, CONTRACT)) == [
@@ -331,11 +331,11 @@ def test_다른_탭의_표는_한_칸도_안_바뀐다(allowed, db, users):
     _row(db, users["u1"].id, company_name="샘플자", region="서울",
          ceo_name="김샘플", phone="010-0000-0000", email="a@example.com")
     body = _open(allowed, "스타트업")
-    assert _heads(body) == ["NO", "담당", "지역", "미팅일", "미팅종류", "기업명", "기업 관리", "기업 내용",
-                            "견적서 첨부 여부", "계약완료여부",
-                            "계약서 수신완료여부", "딜 소개문구",
+    assert _heads(body) == ["NO", "담당", "지역", "컨설팅 미팅일", "미팅종류", "기업명", "기업 관리", "기업 내용",
+                            "견적서 첨부 여부", "계약여부",
+                            "계약서 수신 여부", "소개 메모",
                             "카톡 연결 여부",
-                            "대표자", "연락처", "이메일", ""], _heads(body)
+                            "대표자명", "연락처", "이메일", ""], _heads(body)
     assert _fields(body) == ["region", "meeting_at", "meeting_kind", "company_name",
                              "management", "management_detail", "contract_management",
                              "contract_done", "contract_received",
@@ -413,7 +413,7 @@ def test_엑셀에도_새_칸이_실린다(allowed, db, users):
 
     _row(db, users["u1"].id, sheet=CONTRACT, position=1, company_name="샘플파",
          success_fee="3%", contract_fee="무료", contract_received="O")
-    assert CONTRACT_EXPORT_HEADERS == ["성공보수율", "계약금", "계약서 수신여부"]
+    assert CONTRACT_EXPORT_HEADERS == ["성공보수율", "계약금", "계약서 수신 여부"]
     r = allowed.get("/api/export/consulting.xlsx")
     assert r.status_code == 200 and len(r.content) > 0
 
@@ -476,7 +476,7 @@ def test_계약서_수신여부_필터는_세_곳이_짝이_맞는다(allowed, d
     _row(db, users["u1"].id, sheet=CONTRACT, position=1,
          company_name="샘플너", management="유료", contract_received="O")
     body = _open(allowed, CONTRACT)
-    assert 'data-filters="received:계약서 수신여부"' in body
+    assert 'data-filters="received:계약서 수신 여부"' in body
     assert 'data-f-received="O"' in body
     assert 'data-field="contract_received" data-filter-key="received"' in body
     # 값은 **골라서** 넣는다. 손으로 적게 두면 `O`·`o`·`ㅇ`·`○` 로 갈려
@@ -502,17 +502,17 @@ def test_계약_탭에만_있는_칸은_다른_탭으로_안_샌다(allowed, db,
         assert label not in body, label
     for field in ("success_fee", "contract_fee"):
         assert field not in body, field
-    # 계약 탭 이름 그대로는 안 선다 — 이 탭의 이름은 `계약서 수신완료여부` 다.
-    assert 'data-filters="received:계약서 수신여부"' not in body
+    # 10/22 이름 통일 — 두 탭이 같은 칸을 같은 이름(`계약서 수신 여부`)으로 부른다.
+    assert 'data-filters="received:계약서 수신 여부"' in body
     # `견적서 첨부 여부`·`계약완료여부`·`계약서 수신완료여부`·`딜 소개문구` 는
     # 탭에 대고 따로 정한 자리라 여기 들어 있다
     # (`tests/test_consulting_contract_done.py` ·
     #  `tests/test_consulting_deal_pitch.py`).
-    assert _heads(body) == ["NO", "담당", "지역", "미팅일", "미팅종류", "기업명", "기업 관리", "기업 내용",
-                            "견적서 첨부 여부", "계약완료여부",
-                            "계약서 수신완료여부", "딜 소개문구",
+    assert _heads(body) == ["NO", "담당", "지역", "컨설팅 미팅일", "미팅종류", "기업명", "기업 관리", "기업 내용",
+                            "견적서 첨부 여부", "계약여부",
+                            "계약서 수신 여부", "소개 메모",
                             "카톡 연결 여부",
-                            "대표자", "연락처", "이메일", ""], _heads(body)
+                            "대표자명", "연락처", "이메일", ""], _heads(body)
     assert _fields(body) == ["region", "meeting_at", "meeting_kind", "company_name",
                              "management", "management_detail", "contract_management",
                              "contract_done", "contract_received",

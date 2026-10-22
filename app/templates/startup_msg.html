@@ -85,8 +85,8 @@
     </select>
   </div>
   <div class="toolbar-right">
-    <input type="search" id="msg-search" placeholder="기업명 · 성함 · 방 검색"
-           autocomplete="off" aria-label="기업명 · 성함 · 방 검색">
+    <input type="search" id="msg-search" placeholder="기업명 · 대표자명 · 방 검색"
+           autocomplete="off" aria-label="기업명 · 대표자명 · 방 검색">
   </div>
 </div>
 
@@ -96,7 +96,7 @@
       <tr>
         <th style="width:36px"><input type="checkbox" id="msg-all" aria-label="보이는 줄 전체 선택"></th>
         <th>기업명</th>
-        <th>대표(성함)</th>
+        <th>대표자명</th>
         <th>계약여부</th>
         <th>카톡방</th>
         <th>이 문구 마지막 발송</th>
@@ -198,7 +198,7 @@
       방 연결 확인 ({{ verify_ids|length }}곳)</button>
     <div class="table-wrap">
       <table class="grid-table" id="msg-noroom-table">
-        <thead><tr><th>기업명</th><th>대표(성함)</th><th>카톡 연결 여부</th><th>카톡방 제목</th><th>상태</th></tr></thead>
+        <thead><tr><th>기업명</th><th>대표자명</th><th>카톡 연결 여부</th><th>카톡방 제목</th><th>상태</th></tr></thead>
         <tbody>
           {% for r in no_room_rows %}
           <tr data-id="{{ r.id }}">

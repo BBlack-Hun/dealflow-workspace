@@ -520,17 +520,18 @@ STARTUP_LAYOUT = Layout(
         # 표와 같은 차례(`기업명` 뒤)로 옮긴다. 저장 자리(`notes` 의 같은 키)도
         # 시트 임포터가 찾는 머리글(`scripts/import_startup_sheet.py` 의 `NOTES`
         # — `IR dack` 옛 철자 그대로)도 안 바뀐다.
-        Column("사업분야 대분류", "sector_major", 140, source="note",
+        # 이름 통일(10/22) — 기업 쪽 칸은 IR 기업 현황 낱말로 부른다(값 · 열쇠는 그대로).
+        Column("대분류", "sector_major", 140, source="note",
                kind="pick"),
         Column("소분류", "sector_minor", 100, source="note", kind="pick"),
-        Column("기업구분", "company_kind", 110, source="note", kind="pick",
+        Column("투자라운드", "company_kind", 120, source="note", kind="pick",
                hint="Angel, Seed (누적투자금 0, 년매출액 3억미만)"),
         # 시트에는 `IR dack` 으로 적혀 있지만 화면에는 **`IR Deck`** 으로
         # 적는다. 시트에서 읽어 넣는 쪽(`import_startup_sheet.py`)은 옛 철자를
         # 그대로 찾는다 — 거기까지 고치면 그 열을 못 찾아 값이 안 들어온다.
-        Column("IR Deck 유무", "ir_deck", 130, source="note",
+        Column("IR 자료 유무", "ir_deck", 130, source="note",
                kind="pick", choices="O,X"),
-        Column("성함", "name", 84),
+        Column("대표자명", "name", 84),
         Column("연락처", "phone", 116),
         # `kind="email"` — 눌러 고칠 때 `@` 뒤 도메인 후보가 뜬다. 주소 자체는
         # 줄마다 달라 고를 것이 못 되지만 도메인은 겹친다
@@ -615,7 +616,7 @@ STARTUP_LAYOUT = Layout(
         # 표 폭(`min-width`)은 **적어 둔 칸 폭의 합**이라
         # (`contacts.html` 의 `table_columns|sum(attribute='width')`) 저절로
         # 따라 늘고, 손으로 맞출 데가 없다.
-        Column("IR 미팅 제공일자", "ir_meeting_offered_at", 104,
+        Column("미팅제공일자", "ir_meeting_offered_at", 104,
                source="note", hint="예: 2026-09-15"),
         # ── 여기부터는 **일이 진행되는 차례**다 ────────────────────────────
         #
@@ -692,7 +693,7 @@ STARTUP_LAYOUT = Layout(
         # (`견적서 첨부여부 (1) ▾` = 137px). 값 길이로 잡으면 화면에서는
         # 멀쩡하다가 필터를 거는 순간 머리글이 두 줄로 접힌다
         # (`tests/test_startup_tab.py` 의 `머리글은_필터_단추까지_한_줄에_들어간다`).
-        Column("견적서 첨부여부", "quote_attached", 140, source="note",
+        Column("견적서 첨부 여부", "quote_attached", 150, source="note",
                kind="pick", choices="O,X"),
         # 계약까지 갔는가.
         #
@@ -728,7 +729,7 @@ STARTUP_LAYOUT = Layout(
         # `관리 스타트업` 탭). 셋은 값을 주고받지 않는다 — 여기에 `O` 를 넣어도
         # 저 둘은 계속 비어 있다. 왜 아직 하나로 못 모으는지는
         # `models.IrCompany.contract_received` 의 주석에 적혀 있다.
-        Column("계약서 수신여부", "invoice_received", 140, source="note",
+        Column("계약서 수신 여부", "invoice_received", 148, source="note",
                kind="pick", choices="O,X"),
         # ── ④ `회신 상태` — **여기서 뺐다** ────────────────────────────────
         #
@@ -933,7 +934,7 @@ STARTUP_LAYOUT = Layout(
                     "투자유치희망금액 I Pre value ㅣ특이사항"),
         # 금액·비율은 **적힌 그대로** 둔다. `2.5%` 인지 `2.5` 인지, `900,000` 인지
         # `90만` 인지는 계약서에 적힌 말이라 앱이 고쳐 쓸 것이 아니다.
-        Column("성공보수율 %", "success_fee", 0, source="note", in_table=False),
+        Column("성공보수율", "success_fee", 0, source="note", in_table=False),
         # 담당자 워크북에서 온 두 칸. **달마다 늘어나는 칸이 아니라서** 여기 둔다.
         #
         # 남는 머리글은 전부 월별 칸으로 서는데(`import_startup_sheet.parse`),

@@ -136,7 +136,7 @@
                  "덮으려면 [이미 적힌 문구도 덮어쓰기]를 켜고 다시 미리보세요.");
     }
     if (d.same) notes.push("문구가 이미 같은 줄 " + d.same + "줄은 그대로입니다.");
-    if (d.blank) notes.push("파일의 딜소개 문구가 빈 줄 " + d.blank + "줄은 아무것도 지우지 않습니다.");
+    if (d.blank) notes.push("파일의 딜 소개 문구가 빈 줄 " + d.blank + "줄은 아무것도 지우지 않습니다.");
     if (d.unmatched) {
       notes.push("못 맞춘 줄은 이 탭에 없는 딜입니다 — 줄을 새로 만들지 않습니다.");
     }
@@ -174,7 +174,7 @@
     if (!(rows || []).length) return "";
     return '<details class="import-skipped"><summary>' + esc(title) + " " + total + "줄 보기" +
       more(rows.length, total) + "</summary>" +
-      '<table class="mini-table"><tr>' + heads() + "<th>딜소개 문구</th></tr>" +
+      '<table class="mini-table"><tr>' + heads() + "<th>딜 소개 문구</th></tr>" +
       rows.map(function (r) {
         return "<tr>" + idCells(r) + "<td>" + (r.has_pitch ? "있음" : "—") + "</td></tr>";
       }).join("") + "</table></details>";
@@ -210,7 +210,7 @@
     var how = last.overwrite
       ? "이미 적힌 문구도 덮어씁니다(덮어씀 " + last.overwritten + "줄)."
       : "빈 칸만 채웁니다.";
-    if (!window.confirm("미리보기대로 딜소개 문구 " + last.changed + "줄을 반영합니다.\n" + how +
+    if (!window.confirm("미리보기대로 딜 소개 문구 " + last.changed + "줄을 반영합니다.\n" + how +
                         "\n줄을 새로 만들거나 다른 칸을 고치지 않습니다. 계속할까요?")) return;
     send(false);
   });

@@ -32,7 +32,7 @@ def test_스타트업_계약서_수신여부는_notes의_invoice_received에만_
     그래 놓고도 다른 두 자리와 이어지지는 않는다.
     """
     column = next(c for c in cc.STARTUP_LAYOUT.head
-                  if c.label == "계약서 수신여부")
+                  if c.label == "계약서 수신 여부")
     assert column.key == "invoice_received"
     assert column.source == "note"          # `VcContact.notes` 안에 담긴다
 

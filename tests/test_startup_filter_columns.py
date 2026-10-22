@@ -40,11 +40,11 @@ OTHER = "샘플 투자사 20"
 DEAL = "샘플 딜공유 20"
 
 # 이번에 표로 올린 넷. **차례가 곧 요청의 절반**이라 여기 적는다.
-COLUMNS = ["사업분야 대분류", "소분류", "기업구분", "IR Deck 유무"]
+COLUMNS = ["대분류", "소분류", "투자라운드", "IR 자료 유무"]
 KEYS = ["sector_major", "sector_minor", "company_kind", "ir_deck"]
 # 넷의 폭. 필터를 건 뒤의 머리글(`… (1) ▾`)에 몇 px 을 얹은 값이다 —
 # 왜 그 값인지는 `contact_columns.STARTUP_LAYOUT` 의 그 자리 주석에 있다.
-WIDTHS = [140, 100, 110, 130]
+WIDTHS = [140, 100, 120, 130]
 
 # 머리글 필터 단추는 고른 수가 붙어 `라벨 (1) ▾` 로 선다. 그 상태까지 잰다
 # (`tests/test_startup_tab.py` 의 `머리글은_필터_단추까지_한_줄에_들어간다` 와 같은 자).
@@ -185,7 +185,7 @@ def test_기업명_바로_뒤에_넷이_붙어_선다(sheets):
         f"`기업명` 바로 뒤에 넷이 차례대로 붙어 있지 않습니다: {heads}")
     # 그다음은 한 사람에게 닿는 묶음이다 — 사이에 안 끼운다.
     assert heads[at + 1 + len(COLUMNS):at + 4 + len(COLUMNS)] == \
-        ["성함", "연락처", "이메일"], heads
+        ["대표자명", "연락처", "이메일"], heads
 
 
 def test_뒤따르는_차례는_한_칸도_안_바뀐다(sheets, db):
@@ -200,9 +200,9 @@ def test_뒤따르는_차례는_한_칸도_안_바뀐다(sheets, db):
     from app.services import contact_columns as cc
 
     heads = _thead(sheets.get(_url()).text)
-    after = ["성함", "연락처", "이메일", "IR 미팅 제공일자",
+    after = ["대표자명", "연락처", "이메일", "미팅제공일자",
              "투자유치 상태", "당사 협업 상태",
-             "견적서 첨부여부", "계약여부", "계약서 수신여부", "수정한 날짜"]
+             "견적서 첨부 여부", "계약여부", "계약서 수신 여부", "수정한 날짜"]
     at = heads.index(after[0])
     assert heads[at:at + len(after)] == after, heads
     first_month = cc.month_label(cc.STARTUP_LAYOUT, f"{_month()}월 리마인드 문자")
@@ -402,7 +402,7 @@ def test_엑셀에는_화면과_같은_차례로_한_번씩_나온다(sheets):
     at = head.index("기업명")
     assert head[at + 1:at + 1 + len(COLUMNS)] == COLUMNS, head
     by_firm = {r[head.index("기업명")]: r for r in rows[1:]}
-    assert by_firm["샘플기업1"][head.index("사업분야 대분류")] == "에듀테크"
+    assert by_firm["샘플기업1"][head.index("대분류")] == "에듀테크"
 
 
 def test_시트_임포터는_같은_저장_자리로_읽어_넣는다():
@@ -413,7 +413,8 @@ def test_시트_임포터는_같은_저장_자리로_읽어_넣는다():
     """
     from scripts.import_startup_sheet import NOTES
 
-    by_key = {key: label for label, key in NOTES}
+    # 튜플이면 첫 낱말이 원본 시트 머리글이다(그다음은 10/22 화면 이름).
+    by_key = {key: (label[0] if isinstance(label, tuple) else label) for label, key in NOTES}
     assert by_key.get("sector_major") == "사업분야 대분류"
     assert by_key.get("sector_minor") == "소분류"
     assert by_key.get("company_kind") == "기업구분"

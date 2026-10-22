@@ -59,7 +59,8 @@ router = APIRouter(tags=["consulting"])
 FIXED_COLUMNS = [
     ("NO", "position"),
     ("지역", "region"),
-    ("미팅일(화상, 회의실)", "meeting_at"),
+    # 이름 통일(10/22): IR `미팅제공일자` 와 다른 미팅이라 `컨설팅` 을 붙여 가른다.
+    ("컨설팅 미팅일(화상, 회의실)", "meeting_at"),
     # 위 칸 머리글의 괄호가 **이 칸의 정체**다 — 시트가 처음부터 `미팅일` 과
     # `화상, 회의실` 두 가지를 한 칸에 적으라고 했고, 값이 `9/16 PM2 (화상미팅)`
     # 처럼 붙어 있었다. 자리를 갈라 세운다(사용자 요청: "미팅날짜 컬럼 옆에").
@@ -94,7 +95,7 @@ FIXED_COLUMNS = [
     ("기업 내용", "management_detail"),
 ]
 TAIL_COLUMNS = [
-    ("대표자", "ceo_name"),
+    ("대표자명", "ceo_name"),
     ("연락처", "phone"),
     ("이메일", "email"),
 ]
@@ -192,10 +193,11 @@ STARTUP_COLUMNS = FIXED_COLUMNS + [
     # 담기는 칸은 `contract_management` 그대로다(위 묶음 주석 참고).
     ("견적서 첨부 여부", "contract_management"),
     # 보기 둘 + 빈칸. 값은 `CONTRACT_DONE_CHOICES` 한 곳에서 온다.
-    ("계약완료여부", "contract_done"),
+    ("계약여부", "contract_done"),
     # 계약 탭과 **같은 칸**이다(이름만 탭이 정한다 — 위 참고).
-    ("계약서 수신완료여부", "contract_received"),   # O / X
-    ("딜 소개문구", "deal_pitch"),
+    ("계약서 수신 여부", "contract_received"),   # O / X
+    # 이름 통일(10/22): 발송에 안 쓰이는 메모라 IR `딜 소개 문구` 와 갈라 부른다.
+    ("소개 메모", "deal_pitch"),
     # 이 기업과 카톡방이 연결됐는가. **자리는 사용자가 정했다** — 이 묶음의
     # **맨 뒤**, `딜 소개문구` 다음이다. (처음에는 `IR 자료 회신여부` 앞이라고
     # 불렀는데 이 탭에는 그런 칸이 없어 자리를 다시 물었고, 한 번 `계약서
@@ -251,7 +253,7 @@ CONTRACT_COLUMNS = [
     # 계약을 맺은 것과 **계약서를 받은 것**은 다른 사실이다. 앞 칸에 섞어 두면
     # 계약은 했는데 서류가 아직 안 온 곳을 가려낼 수가 없다.
     # 빈칸은 `아직 안 정함` 이다(`models.ConsultingCompany.contract_received`).
-    ("계약서 수신여부", "contract_received"),   # O / X
+    ("계약서 수신 여부", "contract_received"),   # O / X
     ("성공보수율", "success_fee"),
     ("계약금", "contract_fee"),
 ]
@@ -1667,7 +1669,7 @@ CONSULTING_EXPORT_HEADERS = [label for label, field in FIXED_COLUMNS
 # 계약 탭에만 값이 있는 칸. 엑셀은 탭을 가리지 않고 한 장으로 내려받으므로
 # **머리글 한 벌**에 뒤로 붙인다 — 탭마다 다른 장을 만들면 내려받은 파일에서
 # 어느 장이 무엇인지 다시 맞춰야 한다. 다른 탭 줄에서는 빈 칸이다.
-CONTRACT_EXPORT_HEADERS = ["성공보수율", "계약금", "계약서 수신여부"]
+CONTRACT_EXPORT_HEADERS = ["성공보수율", "계약금", "계약서 수신 여부"]
 # 스타트업 탭에만 값이 있는 칸. **엑셀에는 싣는다** — 화면에 보이는 칸이
 # 내려받은 파일에만 없으면, 없다는 사실 자체를 아무도 눈치채지 못한 채 그
 # 파일이 보고서로 돌아다닌다. 바로 옆 `기업 관리` 도 같은 성격의 긴 글인데
@@ -1686,7 +1688,7 @@ CONTRACT_EXPORT_HEADERS = ["성공보수율", "계약금", "계약서 수신여�
 # `contract_received` 라 위 `CONTRACT_EXPORT_HEADERS` 의 `계약서 수신여부` 로
 # 이미 실린다. 엑셀은 탭을 가리지 않고 한 장이므로 여기 또 세우면 **같은 값이
 # 두 칸에** 나오고, 그 파일을 여는 사람은 둘이 다른 사실인 줄 안다.
-STARTUP_EXPORT_HEADERS = ["딜 소개문구", "견적서 첨부 여부", "계약완료여부",
+STARTUP_EXPORT_HEADERS = ["소개 메모", "견적서 첨부 여부", "계약여부",
                           "카톡 연결 여부"]
 
 
@@ -1739,6 +1741,11 @@ def export_consulting(db: Session = Depends(get_db),
 
 def _norm(value) -> str:
     return " ".join(str(value or "").split())
+
+
+def _first(*found: Optional[int]) -> Optional[int]:
+    """찾은 열 중 첫 것 — 옛 머리글이 먼저, 새 머리글은 그다음."""
+    return next((j for j in found if j is not None), None)
 
 
 def parse_rows(rows: List[List[str]]) -> dict:
@@ -1820,7 +1827,10 @@ def parse_rows(rows: List[List[str]]) -> dict:
         # 필터가 줄마다 다른 값으로 갈려 못 쓰게 된다. 그 열은 이제 월별
         # 리마인드 열로 들어가 **기록으로 남는다**(아래 `note_cols`).
         "contract_management": fixed("견적서", "첨부"),
-        "contract_done": fixed("계약", "완료", without=("수신", "관리")),
+        # 화면 이름이 `계약여부` 로 바뀌었다(10/22) — 내려받은 파일을 다시 올려도
+        # 이 칸으로 오게 새 이름도 받는다(옛 `계약완료여부` 가 먼저다).
+        "contract_done": _first(fixed("계약", "완료", without=("수신", "관리")),
+                                fixed("계약여부", without=("수신",))),
         "contract_received": fixed("계약서", "수신"),
         # 시트에 `카톡 연결 여부` 열이 있으면 여기로 받는다. 안 받으면 월별
         # 리마인드 열로 딸려 들어가 같은 이름이 표에 두 번 선다(위 참고).

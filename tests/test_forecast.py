@@ -270,7 +270,7 @@ def test_엑셀은_화면과_같은_칸_같은_글자(portal, db, company):
     assert [g[0] for g in grid[1:]] == ["가나벤처스", None, "합계", "가능성 상",
                                         "가능성 중", "가능성 하"], "내 줄만 + 빈 줄 + 합계"
     line = dict(zip(grid[0], grid[1]))
-    assert line["기업명"] == "샘플가나랩" and line["심사역 성함"] == "심사가"
+    assert line["기업명"] == "샘플가나랩" and line["심사역 이름"] == "심사가"
     assert line["투자사 미팅 예정일"] == "2026-10-20 외 1건"
 
 

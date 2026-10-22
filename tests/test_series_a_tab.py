@@ -145,7 +145,7 @@ def test_왼쪽_두_칸이_가로로_고정이다(logged_in, rows):
     assert re.search(r'<td class="co-name stick stick-b"', first)
 
 
-FILTERS = {"type": "Type", "assignee": "담당팀원", "sharer": "공유 심사역",
+FILTERS = {"type": "Type", "assignee": "담당자", "sharer": "공유 심사역",
            "firm": "회사", "sector": "대분류", "minor": "소분류", "series": "투자라운드"}
 
 

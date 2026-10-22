@@ -184,7 +184,7 @@ def test_미팅일_바로_오른쪽에_선다(allowed, db, users):
     _row(db, users["u1"].id, sheet=STARTUP, position=1, company_name="샘플마",
          meeting_at="9/16 PM2", meeting_kind="화상미팅")
     heads = _heads(_open(allowed, STARTUP))
-    at = heads.index("미팅일")
+    at = heads.index("컨설팅 미팅일")
     assert heads[at + 1] == LABEL, heads
     fields = _fields(_open(allowed, STARTUP))
     at = fields.index("meeting_at")
@@ -192,7 +192,7 @@ def test_미팅일_바로_오른쪽에_선다(allowed, db, users):
     # 칸 묶음 쪽도 같은 차례다 — 화면만 고치고 묶음을 안 고치면 탭 하나가
     # 다른 차례로 그려진다.
     labels = [label for label, _f in consulting.FIXED_COLUMNS]
-    at = labels.index("미팅일(화상, 회의실)")
+    at = labels.index("컨설팅 미팅일(화상, 회의실)")
     assert labels[at + 1] == LABEL, labels
     assert consulting.FIXED_COLUMNS[at + 1] == (LABEL, FIELD)
 

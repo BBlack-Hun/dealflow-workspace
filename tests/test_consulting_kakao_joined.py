@@ -169,16 +169,16 @@ def test_딜_소개문구_다음에_맨_뒤로_선다(allowed, db, users):
     _row(db, users["u1"].id, sheet=STARTUP, position=1, company_name="샘플마",
          management="관리 중", contract_received="O", kakao_joined="O")
     heads = _heads(_open(allowed, STARTUP))
-    at = heads.index("계약서 수신완료여부")
-    assert heads[at + 1:at + 3] == ["딜 소개문구", LABEL], heads
+    at = heads.index("계약서 수신 여부")
+    assert heads[at + 1:at + 3] == ["소개 메모", LABEL], heads
     fields = _fields(_open(allowed, STARTUP))
     at = fields.index("contract_received")
     assert fields[at + 1:at + 3] == ["deal_pitch", FIELD], fields
     # 칸 묶음 쪽도 같은 차례다 — 화면만 고치고 묶음을 안 고치면 탭 하나가
     # 다른 차례로 그려진다.
     labels = [label for label, _f in consulting.STARTUP_COLUMNS]
-    at = labels.index("계약서 수신완료여부")
-    assert labels[at + 1:at + 3] == ["딜 소개문구", LABEL], labels
+    at = labels.index("계약서 수신 여부")
+    assert labels[at + 1:at + 3] == ["소개 메모", LABEL], labels
     assert consulting.STARTUP_COLUMNS[at + 2] == (LABEL, FIELD)
     # 묶음의 **맨 뒤** 칸이다 — 뒤에 무엇이 붙으면 이 검사가 먼저 깨진다.
     assert consulting.STARTUP_COLUMNS[-1] == (LABEL, FIELD)
@@ -339,7 +339,7 @@ def test_엑셀에도_실리고_이미_받아_둔_파일의_자리는_안_밀린
     # 같은 값이 두 칸에 나오지 않는가 — 그 파일을 여는 사람은 둘이 다른
     # 사실인 줄 안다(`계약서 수신여부` 와 보기가 같은 `O`/`X` 라 특히 그렇다).
     assert body[head.index(LABEL)] == "X"
-    assert body[head.index("계약서 수신여부")] == "O"
+    assert body[head.index("계약서 수신 여부")] == "O"
 
 
 def test_시트를_올릴_때_월별_열로_딸려_들어가지_않는다(db, users):

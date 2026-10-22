@@ -263,7 +263,7 @@ def test_반영은_빈_칸만_채우고_딜소개_문구_말고는_안_바꾼다
     assert res.status_code == 200, res.text
     d = res.json()
     assert d["dry_run"] is False and d["changed"] == 3, d
-    assert "딜소개 문구 3줄을 바꿨습니다" in d["summary"], d["summary"]
+    assert "딜 소개 문구 3줄을 바꿨습니다" in d["summary"], d["summary"]
 
     after = _snapshot(db)
     assert set(after) == set(before), "줄이 새로 생기거나 사라졌습니다"
