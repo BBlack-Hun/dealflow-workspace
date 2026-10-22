@@ -34,7 +34,8 @@
    덮지도 않는다 — 그 글이 그날의 기록이다.
 4. **잇는 순간에는 빈칸만 채운다**(결정 2 · 5) — 양쪽에 다른 값이 있으면 덮지 않고
    `/ir-link` 의 `값 다름` 목록에 세운다(`differences`). 사람이 한쪽을 고르면
-   (`resolve`) 그때부터 같아진다.
+   (`resolve`) 그때부터 같아진다. 연락처 · 이메일은 둘 다 남길 수도 있다 — 한 칸에
+   `IR 값, 줄 값`(앞이 정 · 메일은 정에만 간다, `keep_both` · 10/23 결정).
 5. 시트 · 엑셀 다시 올리기는 이어진 줄의 빈칸만 채운다(결정 7 — `fill_only`).
 6. 새 줄은 이름이 정확히 하나 맞으면 저절로 잇는다(`ir_link_auto` — 결정 2).
 7. 수정 로그는 flush 자리라 `edit_log` 가 그대로 남긴다 — 컨설턴트가 고친 값이 IR
@@ -48,7 +49,7 @@ from __future__ import annotations
 import json
 import re
 from contextlib import contextmanager
-from typing import Dict, Iterable, List, Optional, Union
+from typing import Dict, Iterable, List, Optional, Tuple, Union
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -111,6 +112,34 @@ def same(field: str, a, b) -> bool:
     if field in OX:
         return _raw(a).upper() == _raw(b).upper()
     return _raw(a) == _raw(b)
+
+
+#: [둘 다 남기기] 를 받는 칸 — 연락 수단이라 다른 값은 둘 다 둔다(10/23 결정).
+#: 한 칸에 `정, 부` 로 잇는다. 앞(정)이 IR 값이고, 메일은 정에만 간다
+#: (`mailer.primary_email`).
+BOTH = ("contact_phone", "contact_email")
+SEP = ", "
+
+
+def pieces(value) -> List[str]:
+    """한 칸에 적힌 값들 — `,` · `;` · 줄바꿈으로 나눈다(`/` 는 내선 번호에 쓰여 안 나눈다)."""
+    return [p.strip() for p in re.split(r"[,;\n]", _raw(value)) if p.strip()]
+
+
+def combine(field: str, values: Iterable) -> Tuple[str, int]:
+    """값들을 차례대로 `, ` 로 잇는다(앞이 정). 같은 값은 한 번만 — 번호는 숫자만,
+    메일은 대소문자 없이 견준다. `(이은 글, 꼴만 달라 하나로 접은 수)`."""
+    out: List[str] = []
+    seen: Dict[str, str] = {}
+    folded = 0
+    for piece in (p for v in values for p in pieces(v)):
+        key = (re.sub(r"\D", "", piece) if field == "contact_phone" else piece.lower()) or piece
+        if key in seen:
+            folded += seen[key] != piece
+            continue
+        seen[key] = piece
+        out.append(piece)
+    return SEP.join(out), folded
 
 
 # ── 줄의 칸 ────────────────────────────────────────────────────────────────
@@ -396,12 +425,13 @@ def differences(db: Session, rows: Iterable[Row]) -> Dict[int, List[dict]]:
             if mine and theirs and not same(field, mine, theirs):
                 out.setdefault(row.id, []).append({
                     "field": field, "label": LABELS[field], "row": mine, "ir": theirs,
-                    "movable": norm(field, mine) is not None})
+                    "movable": norm(field, mine) is not None, "both": field in BOTH})
     return out
 
 
 def resolve(db: Session, row: Row, field: str, pick: str) -> None:
-    """`값 다름` 한 칸을 사람이 고른다 — `ir`(IR 값으로 이 줄을) · `row`(이 줄 값으로 IR 을).
+    """`값 다름` 한 칸을 사람이 고른다 — `ir`(IR 값으로 이 줄을) · `row`(이 줄 값으로 IR 을)
+    · `both`(연락처 · 이메일만 — 둘 다 남긴다, `keep_both`).
 
     적기만 한다. 나머지 이어진 줄은 flush 가 따라 고친다(규칙 2). 커밋은 부르는 쪽.
     """
@@ -409,7 +439,9 @@ def resolve(db: Session, row: Row, field: str, pick: str) -> None:
     where = slot(row, field, sheet_kinds(db)) if field in FIELDS else None
     if company is None or where is None:
         raise ValueError("이어진 IR 기업이나 맞출 칸이 없습니다")
-    if pick == "ir":
+    if pick == "both":
+        keep_both(db, row, field)
+    elif pick == "ir":
         value = _raw(getattr(company, field))
         if not value:
             raise ValueError("IR 쪽 값이 비어 있습니다")
@@ -421,3 +453,60 @@ def resolve(db: Session, row: Row, field: str, pick: str) -> None:
         setattr(company, field, value)
     else:
         raise ValueError("고르는 쪽이 올바르지 않습니다")
+
+
+def keep_both(db: Session, row: Row, field: str, skip_odd: bool = False) -> Dict[str, int]:
+    """연락처 · 이메일 `값 다름` 을 **둘 다 남긴다** — `IR 값, 이 줄 값`(앞이 정).
+
+    · 꼴만 다른 같은 번호 · 대소문자만 다른 같은 메일은 하나로 접는다(`combine`).
+    · 연락처 칸에 적힌 메일 주소는 이메일 칸 뒤로 옮겨 잇는다 — 투자컨설턴트
+      `경영본부 전달 기업` 탭이 연락처 칸에 메일을 적어 두었다.
+    · 이 IR 에 이어진 **다른 줄의 값도 뒤에** 잇고 그 줄들까지 같은 값을 적는다 —
+      IR 을 고치면 flush 가 그 줄들을 덮으므로(규칙 2) 안 이으면 그 값이 사라진다.
+
+    `odd` 는 모양이 이상한 값 수 — 연락처에 숫자가 없는 글, 이메일에 `@` 가 없는 글.
+    `skip_odd` 면 그런 값이 하나라도 있을 때 아무것도 안 적는다(일괄 스크립트 — 사람이
+    `/ir-link` 에서 고르게 남긴다). 적기만 한다(커밋은 부르는 쪽 — 수정 로그는 flush 가).
+    돌려주는 것: `{"moved": 옮긴 메일 수, "folded": 꼴만 달라 접은 수, "odd": …}`.
+    """
+    company = db.get(IrCompany, row.ir_company_id) if row.ir_company_id else None
+    kinds = sheet_kinds(db)
+    if field not in BOTH or company is None or slot(row, field, kinds) is None:
+        raise ValueError("둘 다 남기기는 이어진 줄의 연락처 · 이메일 칸만 됩니다")
+    rows = [row] + [r for model in (ConsultingCompany, VcContact)
+                    for r in db.execute(select(model).where(
+                        model.ir_company_id == company.id).order_by(model.id)).scalars()
+                    if r is not row]
+
+    def values(f: str) -> List[str]:
+        """IR 이 앞, 이 줄, 다른 이어진 줄 차례의 낱값."""
+        found = [getattr(company, f)] + [_get(r, w) for r in rows if (w := slot(r, f, kinds))]
+        return [p for v in found for p in pieces(v)]
+
+    new: Dict[str, str] = {}
+    phones: List[str] = []
+    emails: List[str] = []
+    moved: List[str] = []
+    folded = 0
+    if field == "contact_phone":
+        phones = values(field)
+        moved = [p for p in phones if "@" in p]
+        phones = [p for p in phones if "@" not in p]
+        new[field], folded = combine(field, phones)
+    if field == "contact_email" or moved:
+        emails = values("contact_email") + moved
+        new["contact_email"], n = combine("contact_email", emails)
+        folded += n
+    odd = (sum(1 for p in phones if not re.search(r"\d", p))
+           + sum(1 for p in emails if "@" not in p))
+    if skip_odd and odd:
+        return {"moved": 0, "folded": 0, "odd": odd}
+    # 글자 그대로 견준다 — `same` 은 숫자만 보므로 연락처 칸의 메일(숫자 없음)을 못 비운다.
+    for f, text in new.items():
+        if _raw(getattr(company, f)) != text:
+            setattr(company, f, text)
+        for r in rows:
+            w = slot(r, f, kinds)
+            if w and _raw(_get(r, w)) != text:
+                _set(r, w, text)
+    return {"moved": len(moved), "folded": folded, "odd": odd}

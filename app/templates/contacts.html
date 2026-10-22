@@ -1003,7 +1003,7 @@
            수정창의 메일 칸과 **같은 부품**을 쓴다(`static/js/email_hint.js`) —
            들어온 길에 따라 되고 안 되는 칸이 되면 안 된다.
            스타트업 표의 같은 칸은 배치가 정한다(`contact_columns` 의 `kind`). #}
-        <td class="cell ellipsis" data-field="email" data-type="email"
+        <td class="cell ellipsis{% if ',' in r.email %} mail-primary{% endif %}" data-field="email" data-type="email"
             title="{{ r.email }}">{{ r.email }}</td>
         <td class="cell" data-field="office_phone">{{ r.office_phone }}</td>
         <td class="cell" data-field="office_fax">{{ r.office_fax }}</td>
@@ -1224,7 +1224,7 @@
            그러면 보기는 **다른 줄이 이미 쓰고 있는 값**뿐이라, 아무도 안 채운
            칸에서는 빈 칸에 타이핑하게 된다 — `A` 와 `a그룹`, `O` 와 `o`·`완료`
            로 갈리는 바로 그 자리다. #}
-        <td class="cell ellipsis{{ sc }}" data-field="{{ c.key }}" data-type="{{ c.kind }}"
+        <td class="cell ellipsis{{ sc }}{% if c.kind == 'email' and ',' in (r[c.key] or '') %} mail-primary{% endif %}" data-field="{{ c.key }}" data-type="{{ c.kind }}"
             {% if c.choices %}data-choices="{{ c.choices }}"{% endif %}
             title="{{ r[c.key] }}">{{ r[c.key] }}</td>
         {% endif %}

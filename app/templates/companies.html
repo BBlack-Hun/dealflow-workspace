@@ -313,7 +313,7 @@
         {# `data-type="email"` — 눌러 고칠 때 `@` 뒤 도메인 후보가 뜬다.
            수정창의 메일 칸과 **같은 부품**을 쓴다(`static/js/email_hint.js`) —
            들어온 길에 따라 되고 안 되는 칸이 되면 안 된다. #}
-        <td class="cell ellipsis" data-field="contact_email" data-type="email"
+        <td class="cell ellipsis{% if ',' in r.contact_email %} mail-primary{% endif %}" data-field="contact_email" data-type="email"
             title="{{ r.contact_email }}">{{ r.contact_email }}</td>
         <td title="{{ r.business_desc }}">
           <div class="cell clamp2" data-field="business_desc" data-type="long">{{ r.business_desc }}</div>

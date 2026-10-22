@@ -1549,7 +1549,7 @@ def create_send_list(
             # 시험방으로 모이는 동안 메일만 진짜로 나가서, 그 차이를 제목으로나마
             # 알리자는 것이었다. 이제 카톡도 제 갈 곳으로 가므로 그 차이 자체가
             # 없다 — 남겨 두면 **투자사 메일함에 `[테스트]` 가 꽂힌다.**
-            target = (contact.email or "").strip()
+            target = mailer.primary_email(contact.email)    # 첫 주소(정)에만 — 10/23
             message = text
             subject = _mail_subject(req, contact, companies,
                                     count=(len(shared_now) if share else None))

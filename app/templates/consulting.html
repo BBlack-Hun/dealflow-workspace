@@ -852,7 +852,7 @@
         {% if not is_contract_sheet %}
         <td class="cell" data-field="ceo_name">{{ r.ceo_name }}</td>
         <td class="cell" data-field="phone">{{ r.phone }}</td>
-        <td class="cell" data-field="email">{{ r.email }}</td>
+        <td class="cell{% if ',' in r.email %} mail-primary{% endif %}" data-field="email">{{ r.email }}</td>
         {% endif %}
         {{ cc.cells(r.id, td=True) }}
         <td>

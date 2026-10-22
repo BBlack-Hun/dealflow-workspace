@@ -19,7 +19,6 @@
 """
 from __future__ import annotations
 
-import re
 from datetime import date
 from typing import Dict, Iterable, List, Optional, Set
 
@@ -28,6 +27,7 @@ from sqlalchemy.orm import Session
 
 from .. import clock
 from ..models import SourcingContact, SourcingMailSeen, SourcingReceipt
+from . import mailer
 
 SOURCE_MANUAL = "manual"
 SOURCE_MAIL = "mail"
@@ -94,9 +94,9 @@ def unmark(db: Session, contact_id: int, month: str) -> int:
     return len(rows)
 
 
-# 주소 한 개. 칸에 이름·괄호·여러 주소가 섞여 있어도 주소만 줍는다.
+# 주소 한 개(`mailer.ADDRESS` — 보내는 쪽과 같은 모양을 본다).
 # 전각 골뱅이(＠)는 먼저 반각으로 바꾼다 — 손으로 옮겨 적은 칸에 섞여 있다.
-_ADDRESS = re.compile(r"[A-Za-z0-9._%+'\-]+@[A-Za-z0-9\-]+(?:\.[A-Za-z0-9\-]+)*\.[A-Za-z]{2,}")
+_ADDRESS = mailer.ADDRESS
 
 
 def addresses_in(text: Optional[str]) -> List[str]:
