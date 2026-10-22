@@ -4,7 +4,10 @@
 
 1. 후보 — 이름이 **통째로 같을 때만**(`deal_history._key`). 부분일치는 직접
    찾기에서만. 같은 이름의 IR 기업이 둘이면 `후보 여럿` 이다.
-2. **저절로 잇지 않는다** — 화면을 열어도, 후보가 하나여도.
+2. **이미 있던 줄은 저절로 잇지 않는다** — 화면을 열어도, 후보가 하나여도.
+   (10/22 부터 **새로 생기는 줄**은 이름이 하나 맞으면 저절로 잇는다 —
+   `tests/test_company_sync.py`. 그래서 아래 무대는 줄을 먼저 세우고 IR 기업을
+   나중에 넣는다 — 기능이 생기기 전부터 있던 줄과 같은 모양이다.)
 3. 누가 잇는가 — 그 줄이 사는 화면의 문 그대로(관리자 · 줄의 주인).
 4. 일괄 연결은 **후보가 정확히 하나인 줄만**, 확인 화면에 보인 짝 그대로.
 5. 잇고 푼 것은 수정 로그에 남는다 — 자기 줄이어도.
@@ -77,8 +80,6 @@ def stage(db, users, people):
         "long": IrCompany(name="가나라전자"),
         "en": IrCompany(name="Sample Labs"),
     }
-    db.add_all(ir.values())
-    db.flush()
     rows = {
         "exact": VcContact(user_id=u1.id, source_sheet=LIST_U1, name="홍길동",
                            firm="라마바"),
@@ -108,6 +109,10 @@ def stage(db, users, people):
                                     company_name="라마바"),
     }
     db.add_all(cons.values())
+    db.commit()
+    # IR 기업은 **줄 다음에** 넣는다 — 새 줄 자동 연결(`company_sync`)이 안 걸린,
+    # 예전부터 있던 줄이다.
+    db.add_all(ir.values())
     db.commit()
     return {"ir": ir, "rows": rows, "cons": cons}
 
@@ -408,8 +413,10 @@ def test_자기_줄을_이어도_로그에_남는다(db, stage, portal):
 
     # 로그 화면은 번호가 아니라 기업 이름을 보인다.
     shown = edit_log.recent(db)
-    line = next(x for x in shown if x["path"] == "/ir-link/link")
-    item = next(c for c in line["changes"] if c["label"] == "IR 기업 연결")
+    # 잇는 순간 IR 의 빈칸도 채워(`company_sync`) 같은 주소의 IR 줄 로그가 함께 선다 —
+    # 그중 연결 칸을 가진 줄을 본다.
+    item = next(c for x in shown if x["path"] == "/ir-link/link"
+                for c in x["changes"] if c["label"] == "IR 기업 연결")
     assert item["after"] == "라마바"
     assert item["before"] == "(빈 값)"
 

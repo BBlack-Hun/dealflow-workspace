@@ -56,14 +56,14 @@ OTHER = "샘플 투자사 20"
 HEAD = ["NO", "기업명",
         # "이 기업이 무엇인가" — 걸러 보려고 수정창에서 표로 올렸다. IR 기업
         # 현황 표와 같은 차례다(`tests/test_startup_filter_columns.py`).
-        "사업분야 대분류", "소분류", "기업구분", "IR Deck 유무",
-        "성함", "연락처", "이메일",
+        "대분류", "소분류", "투자라운드", "IR 자료 유무",
+        "대표자명", "연락처", "이메일",
         # 사용자가 자리를 못 박았다 — 「이메일 컬럼 오른쪽」
         # (`tests/test_startup_ir_meeting_date.py`). 아래 흐름 묶음 **앞**이라
         # ①②→계약 세 칸의 상대 차례는 그대로다.
-        "IR 미팅 제공일자",
+        "미팅제공일자",
         "투자유치 상태", "당사 협업 상태",
-        "견적서 첨부여부", "계약여부", "계약서 수신여부",
+        "견적서 첨부 여부", "계약여부", "계약서 수신 여부",
         # 사용자가 말한 자리 — **월별 리마인드 앞쪽**. 월별 묶음이 `head` 와
         # `tail` 사이에 통째로 서므로 `head` 의 맨 끝이 곧 그 자리다.
         # 앱이 적는 값이라 눌러 고칠 수 없다(`tests/test_startup_updated_at.py`).
@@ -221,7 +221,7 @@ def test_다른_명단의_머리글은_한_칸도_안_바뀐다(sheets):
     got = _thead(sheets.get(_url(OTHER)).text)
     assert "이름" in got and "회사" in got and "명함 등록일" in got
     # 스타트업 명단에서만 쓰는 칸이 넘어오면 안 된다.
-    for name in ("기업명", "성함", "IR 자료 수신 여부") + tuple(MONTH_HEADS):
+    for name in ("기업명", "대표자명", "IR 자료 수신 여부") + tuple(MONTH_HEADS):
         assert name not in got, f"투자사 표에 `{name}` 이 끼어들었습니다"
 
 
@@ -462,10 +462,10 @@ def test_계약여부_앞뒤에_견적서와_계약서_칸이_선다(sheets):
     **셋의 상대 차례**이고, 묶음의 자리는 아래 `흐름` 검사가 통째로 본다.
     """
     head = _thead(sheets.get(_url(LIST)).text)
-    want = ["견적서 첨부여부", "계약여부", "계약서 수신여부"]
-    at = head.index("견적서 첨부여부")
+    want = ["견적서 첨부 여부", "계약여부", "계약서 수신 여부"]
+    at = head.index("견적서 첨부 여부")
     assert head[at:at + 3] == want, head
-    assert head.index("계약서 수신여부") < head.index(MONTH_HEADS[0]), head
+    assert head.index("계약서 수신 여부") < head.index(MONTH_HEADS[0]), head
 
 
 def test_칸이_일의_흐름대로_선다(sheets):
@@ -491,17 +491,17 @@ def test_칸이_일의_흐름대로_선다(sheets):
     """
     head = _thead(sheets.get(_url(LIST)).text)
     flow = ["기업명", "투자유치 상태", "당사 협업 상태",
-            "견적서 첨부여부", "계약여부", "계약서 수신여부"]
+            "견적서 첨부 여부", "계약여부", "계약서 수신 여부"]
     at = [head.index(name) for name in flow]
     assert at == sorted(at), (
         "칸 차례가 일의 흐름과 다릅니다:\n"
         f"  흐름 {flow}\n  화면 {head}")
     # 달에 매이는 칸(문자·통화·카톡방)은 전부 그 뒤다.
-    assert head.index("계약서 수신여부") < head.index(MONTH_HEADS[0]), head
-    # 계약서 수신여부 바로 뒤는 **`수정한 날짜`** 이고, 그다음이 월별 묶음이다
+    assert head.index("계약서 수신 여부") < head.index(MONTH_HEADS[0]), head
+    # 계약서 수신 여부 바로 뒤는 **`수정한 날짜`** 이고, 그다음이 월별 묶음이다
     # — 사용자가 그 칸을 "월별 리마인드 앞쪽" 에 달라고 했다. 둘은 이어서
     # 읽힌다("어디까지 왔나 → 그 기록이 최근인가 → 그 달에 무엇을 했나").
-    assert head[head.index("계약서 수신여부") + 1] == "수정한 날짜", head
+    assert head[head.index("계약서 수신 여부") + 1] == "수정한 날짜", head
     assert head[head.index("수정한 날짜") + 1] == MONTH_HEADS[0], head
 
 
@@ -608,7 +608,7 @@ def test_카톡_연결_여부는_고치면_모델_칸에_들어가고_투자사_
 def test_투자사_표에는_두_칸이_서지_않는다(sheets):
     """스타트업 명단의 칸이다 — 투자사 명단 머리글은 한 칸도 안 바뀐다."""
     head = _thead(sheets.get(_url(OTHER)).text)
-    for label in ("견적서 첨부여부", "계약서 수신여부"):
+    for label in ("견적서 첨부 여부", "계약서 수신 여부"):
         assert label not in head, head
 
 
@@ -629,13 +629,13 @@ def test_세_번째_칸은_계약서_수신여부로_보이고_저장_자리는_
 
     body = sheets.get(_url(LIST)).text
     head = _thead(body)
-    assert "계약서 수신여부" in head, head
+    assert "계약서 수신 여부" in head, head
     # 옛 이름은 머리글에도 표 어디에도 안 남는다(필터 단추·수정창 포함).
     assert not [h for h in head if "계산서" in h], head
     assert "계산서" not in body
 
     column = next(c for c in cc.STARTUP_LAYOUT.head
-                  if c.label == "계약서 수신여부")
+                  if c.label == "계약서 수신 여부")
     assert column.key == "invoice_received", \
         "이름만 바뀐 것이다 — 열쇠를 바꾸면 이미 들어 있는 값이 끊긴다"
     assert column.source == "note"
@@ -1139,7 +1139,7 @@ def test_자유롭게_적는_칸에는_필터가_안_선다(sheets, db):
         f"나옵니다: {extra}")
     # 실제로 그 칸들이다. 기준이 뒤집혀 전부 `pick` 이 되면 위 검사는 통과하는데
     # (안 붙는 칸이 없으니) 표는 필터투성이가 된다 — 그것까지 못 박는다.
-    for label in ("기업명", "성함", "연락처", "이메일"):
+    for label in ("기업명", "대표자명", "연락처", "이메일"):
         assert not got.get(label), f"`{label}` 에 필터가 섰습니다"
     # 메모는 **`tail` 의 마지막**이다. 자리로 세면 `tail` 에 칸이 하나 붙을
     # 때마다 다른 칸을 가리키게 된다(실제로 `카톡 연결 여부` 가 붙으며 그랬다).
@@ -1252,7 +1252,7 @@ def test_IR_Deck_은_화면에서_바르게_적고_시트는_옛_철자로_읽�
     labels = [c.label for c in contact_columns.STARTUP_LAYOUT.head
               + contact_columns.STARTUP_LAYOUT.extra
               + contact_columns.STARTUP_LAYOUT.tail]
-    assert "IR Deck 유무" in labels, labels
+    assert "IR 자료 유무" in labels, labels
     assert "IR dack 유무" not in labels
 
     # 시트에서 읽는 쪽은 옛 철자 그대로여야 한다.

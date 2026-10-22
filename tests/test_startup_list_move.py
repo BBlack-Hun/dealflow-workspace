@@ -276,7 +276,7 @@ def test_엑셀이_이_명단의_칸으로_나온다(lists):
     assert res.status_code == 200
     rows = sp.read_rows("x.xlsx", res.content, None)
     head = [str(c or "") for c in rows[0]]
-    for want in ("기업명", "성함", "이메일", "계약여부",
+    for want in ("기업명", "대표자명", "이메일", "계약여부",
                  f"{_month()}월 리마인드 문자(내용 기입)"):
         assert want in head, f"엑셀에 `{want}` 칸이 없습니다: {head}"
     # 투자사 명함 칸이 딸려 오면 빈 칸만 스무 개다.
@@ -404,12 +404,12 @@ def test_계약까지_가는_세_칸이_흐름_안에서_나란히_선다(lists)
     """
     head = _thead(lists.get(
         _pages()["startup"] + f"?sheet={quote(STARTUP_LISTS[0])}").text)
-    want = ["견적서 첨부여부", "계약여부", "계약서 수신여부"]
-    at = head.index("견적서 첨부여부")
+    want = ["견적서 첨부 여부", "계약여부", "계약서 수신 여부"]
+    at = head.index("견적서 첨부 여부")
     assert head[at:at + 3] == want, head
     # 사람 정보 뒤이고, 월별 칸보다 앞이다.
     assert head.index("이메일") < at, head
-    assert head.index("계약서 수신여부") < head.index(
+    assert head.index("계약서 수신 여부") < head.index(
         f"{_month()}월 리마인드 문자(내용 기입)")
 
 

@@ -591,7 +591,9 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
     67px 넓어진다. 지금까지 칸을 더할 때마다 써 온 셈(든 만큼)을 따른다 —
     그 칸은 두 줄(`clamp2`)에서 잘릴 뿐 글자가 사라지지는 않는다(전체는
     `title`). 줄어든 것이 거슬리면 이 값을 163px 쪽으로 올리면 된다.) */
-#co-table { min-width: 2612px; }
+/* (2,612 → 2,902 : 0116 의 `견적서 첨부 여부`(150px) · `카톡 연결 여부`(140px)가 IR
+    기업 현황 탭에 들었다 — 든 만큼만 올린다. 스타트업DB 탭의 `지역`(80px)은 그 안에 든다.) */
+#co-table { min-width: 2902px; }
 /* IR 기업 현황 › Series A 이상 딜 소싱 — 넓은 표 공통 값(2,030px)에 직접 적는 칸
    열(#24 · `companies_series_a.html` 의 `대표자명` ~ `Pre Value`, 폭 합 932px)을 **든 만큼만**
    더한다. 안 올리면 폭을 안 준 `상세 내용` 이 그 932px 을 내어 주다 0 으로 짜부라진다. */
@@ -2154,6 +2156,8 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
 /* 자른 사실과 고르는 법. **한 줄을 통째로 차지한다**(flex-basis 100%) —
    딱지 사이에 끼면 후보처럼 보여서 눌러 보게 된다. */
 .email-hint-note, .name-hint-note { flex: 0 0 100%; font-size: 11px; color: var(--muted); }
+/* Series A 이상 딜 소싱 기업 후보의 출처 딱지 — IR 기업과 구별한다. */
+.name-hint-tag { margin-left: 5px; font-size: 10px; color: var(--muted); }
 
 /* ── 담당자 고르기 위의 검색칸 (static/js/ir_contact_search.js) ─────────
    133명짜리 `<select>` 위에 얹힌다. `.field.inline-field` 가 세로 칸이라

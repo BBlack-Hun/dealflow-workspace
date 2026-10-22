@@ -494,6 +494,8 @@ COMPANY_HEADERS = [
     # 파일을 화면과 나란히 놓고 대조하는 자리라, 이름이 갈리면 어느 칸인지
     # 매번 따져야 한다.
     "IR 자료 파일명",
+    # 0116 새 칸 셋은 **끝에 붙인다**(결정 9) — 앞에 끼우면 받아 쓰던 수식의 칸이 밀린다.
+    "지역", "견적서 첨부 여부", "카톡 연결 여부",
 ]
 
 
@@ -517,7 +519,8 @@ def export_companies(db: Session = Depends(get_db),
              # 순간 "확인했는데 안 왔다" 가 그 숫자에 들어간다.
              c.contract_received or "", c.contract_month or "",
              "★" if c.is_top_deal else "", c.funding_status or "",
-             c.summary_status or "", c.ir_file_name or ""]
+             c.summary_status or "", c.ir_file_name or "",
+             c.region or "", c.quote_attached or "", c.kakao_joined or ""]
             + custom_columns.cells(extra, c.id))
         for c in companies
     ]

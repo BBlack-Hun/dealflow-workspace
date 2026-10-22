@@ -38,6 +38,7 @@ from sqlalchemy import select  # noqa: E402
 
 from app.db import SessionLocal  # noqa: E402
 from app.models import ContactColumn, RefSheet, VcContact  # noqa: E402
+from app.services import company_sync  # noqa: E402
 from app.services import contact_columns as cc  # noqa: E402
 from app.services import sheet_owner  # noqa: E402
 from app.services import spreadsheet as sp  # noqa: E402
@@ -48,7 +49,8 @@ from app.services import spreadsheet as sp  # noqa: E402
 # (`한줄 소개\n예시) 사업분야 | …`). 완전 일치로 찾으면 그런 칸이 통째로 빠진다.
 FIELDS = [
     ("기업명", "firm"),
-    ("성함", "name"),
+    # 튜플이면 앞의 것부터 찾는다 — 옛 시트 머리글이 먼저, 앱 화면 이름(10/22 통일)은 그다음.
+    (("성함", "대표자명"), "name"),
     ("연락처", "phone"),
     ("이메일", "email"),
     ("메모", "memo"),
@@ -58,11 +60,11 @@ FIELDS = [
 # 배치가 정한 키를 그대로 쓴다 — 여기서 새 이름을 지으면 화면이 못 찾는다.
 NOTES = [
     ("IR 자료 회신", "ir_reply"),
-    ("사업분야 대분류", "sector_major"),
+    (("사업분야 대분류", "대분류"), "sector_major"),
     ("소분류", "sector_minor"),
-    ("기업구분", "company_kind"),
+    (("기업구분", "투자라운드"), "company_kind"),
     ("한줄 소개", "one_liner"),
-    ("IR dack", "ir_deck"),
+    (("IR dack", "IR 자료 유무"), "ir_deck"),
     # 계약까지 가는 세 칸. **여기서 안 잡으면 남는 머리글이라 월별 칸으로
     # 선다** — 그러면 시트에 적혀 있던 자리(계약여부 앞뒤)가 아니라 달 칸
     # 사이에 서고, 달을 못 읽는 칸은 혼자 한 묶음이라 펴 둘 달 자리를 먹어
@@ -73,7 +75,7 @@ NOTES = [
     # 로 바뀌었고(`contact_columns.STARTUP_LAYOUT`), 저장 자리와 시트 머리글은
     # 안 건드렸다 — 여기를 화면 이름에 맞춰 고치면 원본 시트의 그 열을 못 찾아
     # 값이 통째로 안 들어온다.
-    ("계산서 수신", "invoice_received"),
+    (("계산서 수신", "계약서 수신"), "invoice_received"),
     ("성공보수율", "success_fee"),
     # 담당자 워크북에만 있는 두 칸. **여기 적어 두는 이유는 월별 칸이 아니어서다.**
     #
@@ -106,7 +108,7 @@ NOTES = [
     # 월별 칸으로 서고, 달에 안 매이는 값이 달 칸 자리에 서면 펴 둘 달 자리를
     # 하나 먹어 그 달의 기록을 접어 버린다. 화면에서 적기 시작한 값이 시트를
     # 한 번 올리는 것으로 그렇게 갈린다.
-    ("IR 미팅 제공일자", "ir_meeting_offered_at"),
+    (("IR 미팅 제공일자", "미팅제공일자"), "ir_meeting_offered_at"),
     # 찾는 말을 `회신` 한 낱말로 줄이지 않는다 — 여기는 **포함**으로 찾아서
     # (아래 `find`) 위의 `IR 자료 회신` 머리글까지 같이 걸린다. 둘은 다른
     # 칸이다: 저쪽은 IR 자료를 보내고 받은 답, 이쪽은 문자·카톡에 온 반응이다.
@@ -202,8 +204,12 @@ def parse(rows, is_row=None, aliases=None) -> dict:
         return {"columns": [], "items": [], "skipped": [], "hidden": []}
     header = [flat(c) for c in rows[at]]
 
-    def find(token):
-        return next((i for i, h in enumerate(header) if token in h), None)
+    def find(tokens):
+        for token in (tokens if isinstance(tokens, tuple) else (tokens,)):
+            hit = next((i for i, h in enumerate(header) if token in h), None)
+            if hit is not None:
+                return hit
+        return None
 
     where = {f: find(t) for t, f in FIELDS}
     notes_at = {k: find(t) for t, k in NOTES}
@@ -357,12 +363,17 @@ def main() -> int:
             columns[label] = col
     db.flush()
 
+    # IR 기업에 이어진 줄은 같은 기업 칸을 **빈칸일 때만** 받는다(10/22 결정 7) — 시트
+    # 값이 IR 과 이어진 다른 줄까지 덮지 않게. 따라 고치기도 빈칸만 채운다.
+    db.info[company_sync.FILL_ONLY] = True
     for item in matched:
         contact = by_firm[item["fields"]["firm"]]
+        keep = company_sync.startup_keeps(contact)
         for field, value in item["fields"].items():
-            setattr(contact, field, value)
+            if field not in keep:
+                setattr(contact, field, value)
         values = cc.load_notes(contact.notes)
-        values.update(item["notes"])
+        values.update({k: v for k, v in item["notes"].items() if f"note:{k}" not in keep})
         for label, text in item["months"].items():
             values[cc.note_key(columns[label].id)] = text
         contact.notes = cc.dump_notes(values)

@@ -198,11 +198,11 @@ def test_엑셀에도_실린다(allowed, db, users):
     # **뒤에** 붙는다 — 이미 내려받아 둔 파일의 칸 자리가 안 밀려야 한다.
     # 목록 전체를 못 박으면 칸을 더할 때마다 이 줄이 같이 빨개지는데, 그때
     # 이 검사가 지키려던 것(`딜 소개문구` 가 엑셀에 실린다)은 멀쩡하다.
-    assert STARTUP_EXPORT_HEADERS[0] == "딜 소개문구"
+    assert STARTUP_EXPORT_HEADERS[0] == "소개 메모"
     # 계약 탭 칸들 뒤에 붙는다 — 이미 내려받아 둔 파일의 칸 자리가 안 밀린다.
     src = pathlib.Path("app/routers/consulting.py").read_text(encoding="utf-8")
     assert "CONTRACT_EXPORT_HEADERS\n               + STARTUP_EXPORT_HEADERS" in src
-    assert CONTRACT_EXPORT_HEADERS[-1] == "계약서 수신여부"
+    assert CONTRACT_EXPORT_HEADERS[-1] == "계약서 수신 여부"
 
     r = allowed.get("/api/export/consulting.xlsx")
     assert r.status_code == 200 and len(r.content) > 0
@@ -225,15 +225,15 @@ def test_다른_두_탭에는_칸도_값도_안_선다(allowed, db, users):
          management="유료")
     for sheet in (HANDOVER, CONTRACT):
         body = _open(allowed, sheet)
-        assert "딜 소개문구" not in body, sheet
+        assert "소개 메모" not in body, sheet
         assert "deal_pitch" not in body, sheet
     # 경영본부 탭에는 `딜 소개문구` 가 없다. `담당` 은 이 화면이 사람별로
     # 갈리면서 모든 탭에 서는 칸이라(`feat/consulting-owner-filter`) 여기에도
     # 있다 — 이 검사가 지키는 것은 **`딜 소개문구` 가 스타트업 탭에만 선다**는
     # 것이지 머리글 전체가 영영 안 바뀐다는 것이 아니다.
     assert _heads(_open(allowed, HANDOVER)) == [
-        "NO", "담당", "지역", "미팅일", "미팅종류", "기업명", "기업 관리", "기업 내용",
-        "대표자", "연락처", "이메일", ""]
+        "NO", "담당", "지역", "컨설팅 미팅일", "미팅종류", "기업명", "기업 관리", "기업 내용",
+        "대표자명", "연락처", "이메일", ""]
 
 
 def test_스타트업_탭에서만_서는_칸들_끝에_선다(allowed, db, users):
@@ -261,11 +261,11 @@ def test_스타트업_탭에서만_서는_칸들_끝에_선다(allowed, db, user
     # **기준점이 `기업 관리` 에서 `기업 내용` 으로 옮겨 갔다** — 그 칸이
     # `기업 관리` 바로 오른쪽에 새로 서면서 이 묶음의 앞자리가 그쪽이 됐다
     # (`tests/test_consulting_management_detail.py`).
-    assert heads[heads.index("기업 내용") + 4] == "딜 소개문구", heads
-    assert heads[heads.index("딜 소개문구") + 1] == "카톡 연결 여부", heads
+    assert heads[heads.index("기업 내용") + 4] == "소개 메모", heads
+    assert heads[heads.index("소개 메모") + 1] == "카톡 연결 여부", heads
     # 머리글과 칸이 같은 차례인가 — 이름은 다르지만 자리가 같아야 한다.
     assert fields.index("deal_pitch") - fields.index("management_detail") \
-        == heads.index("딜 소개문구") - heads.index("기업 내용"), (heads, fields)
+        == heads.index("소개 메모") - heads.index("기업 내용"), (heads, fields)
     assert fields[fields.index("deal_pitch") + 1] == "kakao_joined", fields
 
 
@@ -315,7 +315,7 @@ def test_표_모양은_이름이_아니라_열쇠로_짝짓는다(db):
 
     assert consulting.SHEET_LAYOUTS[cs.STARTUP] == (
         consulting.STARTUP_COLUMNS, consulting.TAIL_COLUMNS)
-    assert consulting.STARTUP_COLUMNS[-2] == ("딜 소개문구", "deal_pitch")
+    assert consulting.STARTUP_COLUMNS[-2] == ("소개 메모", "deal_pitch")
     # 경영본부 탭과 사람이 만든 탭은 지금까지의 묶음 그대로다.
     assert cs.HANDOVER not in consulting.SHEET_LAYOUTS
     assert consulting.layout_of(db, "경영본부 전달 기업") == (

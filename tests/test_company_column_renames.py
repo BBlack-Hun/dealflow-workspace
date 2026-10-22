@@ -255,24 +255,22 @@ def test_엑셀_머리글은_그대로다(logged_in, db, company):
     assert "수식이 머리글로 칸을 찾는다" in src, "왜 안 바꿨는지 안 적혀 있습니다"
 
 
-def test_투자컨설턴트의_대표자는_그대로다():
-    """다른 표의 다른 칸(`ConsultingCompany.ceo_name`)이다."""
-    from app.routers import consulting
+def test_투자컨설턴트의_대표자도_IR_낱말로_부른다():
+    """10/22 이름 통일 — 같은 사실(`ceo_name` = IR `contact_name`)은 같은 이름이다.
 
-    labels = [label for label, _field in consulting.MANAGEMENT_COLUMNS] \
-        if hasattr(consulting, "MANAGEMENT_COLUMNS") else []
+    (예전에는 다른 표의 칸이라 그대로 두었는데, 사용자가 전체 메뉴를 IR 낱말로
+    통일하기로 정했다 — `tests/test_unify_names_1022.py`.)
+    """
     src = (ROOT / "app" / "routers" / "consulting.py").read_text("utf-8")
-    assert '("대표자", "ceo_name")' in src, \
-        "투자컨설턴트의 `대표자` 까지 바꿨습니다 — 다른 표의 다른 칸입니다"
-    assert "대표자명" not in src or labels is not None
+    assert '("대표자명", "ceo_name")' in src
 
 
-def test_스타트업_명단의_칸_이름은_그대로다():
-    """`VcContact.notes` 쪽 칸이라 여기와 남남이다."""
+def test_스타트업_명단의_칸도_IR_낱말로_부른다():
+    """값 · 열쇠(`VcContact.notes`)는 그대로, 머리글만 IR 기업 현황 낱말이다."""
     from app.services import contact_columns as cc
 
     names = [c.label for c in
              list(cc.STARTUP_LAYOUT.head) + list(cc.STARTUP_LAYOUT.tail)
              + list(cc.STARTUP_LAYOUT.extra)]
-    assert "사업분야 대분류" in names and "기업구분" in names, \
-        "스타트업 명단까지 바꿨습니다 — 그 탭은 다른 표를 봅니다"
+    assert "대분류" in names and "투자라운드" in names
+    assert "사업분야 대분류" not in names and "기업구분" not in names

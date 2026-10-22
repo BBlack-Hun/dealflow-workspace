@@ -51,6 +51,8 @@ FILTER_VALUES = {
     "assignee": lambda r: r["assignee"],
     "contract": lambda r: r["contract_label"],
     "received": lambda r: r["contract_received"],
+    "quote": lambda r: r["quote_attached"],
+    "joined": lambda r: r["kakao_joined"],
     "ir": lambda r: "● 있음" if r["has_ir"] else "⚠ 없음",
 }
 
@@ -68,8 +70,9 @@ PHONEISH = re.compile(r"^[0-9][0-9\s().+-]*$")
 #: 파일 머리글 — IR 기업 현황 탭의 머리글 그대로(왼쪽부터).
 VIEW_HEADERS = [
     "NO", "기업명", "수신일", "대분류", "소분류", "투자라운드", "수정한 날짜",
-    "딜 소개 문구", "담당자", "소개 횟수", "소개 발송(명)", "미팅제공일자",
-    "계약여부", "계약서 수신 여부", "홍보메일삭제", "핵심/TOP Deal", "IR 자료",
+    "딜 소개 문구", "담당자", "소개 횟수", "소개 발송(명)", "견적서 첨부 여부",
+    "미팅제공일자", "계약여부", "계약서 수신 여부", "카톡 연결 여부", "홍보메일삭제",
+    "핵심/TOP Deal", "IR 자료",
 ]
 
 
@@ -215,8 +218,9 @@ def to_cells(rows: List[dict]) -> List[list]:
             # 생략). 파일에서는 전체 값을 싣는다 — 짚어야 보이던 것이 칸에 바로 선다.
             r["series"], r["updated_at"], r["one_liner"], r["assignee"],
             # 한 번도 안 나간 기업은 화면이 `–` 로 보인다 — 파일에서는 수 0 이다.
-            r["sent_rounds"], r["sent_total"], r["meeting_offered_at"],
-            r["contract_label"], r["contract_received"], r["contract_month"],
+            r["sent_rounds"], r["sent_total"], r["quote_attached"],
+            r["meeting_offered_at"], r["contract_label"], r["contract_received"],
+            r["kakao_joined"], r["contract_month"],
             r["top_deal_kind"] or "", r["ir_file_name"] if r["has_ir"] else "없음",
         ])
     return out

@@ -39,7 +39,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import clock
-from ..models import ContactActivity, IrCompany, IrRequest, VcContact
+from ..models import ContactActivity, IrCompany, IrRequest, SeriesACompany, VcContact
 from . import ir_mask
 from .sheet_import import normalize_company_name
 
@@ -173,12 +173,17 @@ def _key(name: Optional[str]) -> str:
 class _Index:
     """이름 → 기업 id. 못 맞추면 **까닭**을 함께 돌려준다."""
 
-    def __init__(self, companies: List[IrCompany]) -> None:
+    def __init__(self, companies: List[IrCompany], series_a=()) -> None:
         self._exact: Dict[str, List[int]] = {}
         for company in companies:
             key = _key(company.name)
             if key:
                 self._exact.setdefault(key, []).append(company.id)
+        # Series A 이상 딜 소싱 기업 이름(IR 쪽에 같은 이름이 없는 것)은 **부분
+        # 일치로 IR 기업에 붙이지 않는다** — 딜 진행 관리에서 그 이름으로 요청을
+        # 적는다(`pipeline.series_a_names`). 붙이면 이름이 비슷한 남의 기업 문서에
+        # 그 투자사가 실린다.
+        self._series_a = {_key(n) for n in series_a} - set(self._exact)
 
     def find(self, raw: Optional[str]) -> Tuple[Optional[int], str]:
         key = _key(raw)
@@ -196,7 +201,7 @@ class _Index:
         #
         # **한 곳에만 걸릴 때만** 받아들인다. 여럿에 걸리면 어느 쪽인지 알 수
         # 없고, 짧은 이름(한 글자)은 아무 데나 걸리므로 아예 보지 않는다.
-        if len(key) < 2:
+        if len(key) < 2 or key in self._series_a:
             return None, SKIP_NO_MATCH
         found = {ids[0] for other, ids in self._exact.items()
                  if len(ids) == 1 and len(other) >= 2
@@ -267,7 +272,7 @@ def monthly_requests(db: Session, month: str,
         return out
 
     companies = db.execute(select(IrCompany)).scalars().all()
-    index = _Index(companies)
+    index = _Index(companies, db.execute(select(SeriesACompany.name)).scalars())
     known = {c.id for c in companies}
 
     skips: Dict[str, int] = {}

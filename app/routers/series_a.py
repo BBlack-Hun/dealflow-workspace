@@ -449,7 +449,7 @@ def upload_pitch(
     if missing:
         return _bad(" · ".join(f"`{m}`" for m in missing) + " 칸이 없습니다 — 머리글 줄에 "
                     "줄을 맞추는 `기업명` · `수신 일자` · `공유 심사역` · `회사`(시트 "
-                    "가져오기와 같은 열쇠)와 `딜소개 문구` 칸이 있어야 합니다", tabs)
+                    "가져오기와 같은 열쇠)와 `딜 소개 문구` 칸이 있어야 합니다", tabs)
 
     p = pitch.plan(db, parsed.records, overwrite=overwrite)
     if dry_run:
@@ -460,7 +460,7 @@ def upload_pitch(
 
     # 반영 뒤 화면 위에 뜨는 한 줄(`series_a_pitch.js` 가 `msg` 로 넘긴다).
     head = (f"바뀔 줄 {len(p.changes)}" if dry_run
-            else f"딜소개 문구 {len(p.changes)}줄을 바꿨습니다")
+            else f"딜 소개 문구 {len(p.changes)}줄을 바꿨습니다")
     summary = (f"{head}(빈 칸 채움 {p.filled} · 덮어씀 {p.overwritten})"
                f" · 못 맞춘 줄 {len(p.unmatched)} · 애매해서 건너뛴 줄 {len(p.ambiguous)}")
     return {

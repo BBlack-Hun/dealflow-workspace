@@ -582,6 +582,8 @@ WRITE_ROUTES = {
     ("POST", "/ir-link/link"): WATCHED,
     ("POST", "/ir-link/unlink"): WATCHED,
     ("POST", "/ir-link/bulk"): WATCHED,
+    # `값 다름` 한 칸 맞추기 — 줄 또는 IR(공용)을 고치고, 이어진 줄은 flush 가 따라 고친다.
+    ("POST", "/ir-link/resolve"): WATCHED,
 
     ("POST", "/templates/choose"): WATCHED,
     ("POST", "/templates/copy"): WATCHED,

@@ -69,8 +69,8 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 # 셋 다 `O`/`X` 를 골라 넣는 칸이라 셋 다 필터 키가 있다.
 COLUMNS = [
     ("견적서 첨부 여부", "contract_management", "quote"),
-    ("계약완료여부", "contract_done", "done"),
-    ("계약서 수신완료여부", "contract_received", "received"),
+    ("계약여부", "contract_done", "done"),
+    ("계약서 수신 여부", "contract_received", "received"),
 ]
 
 # 0065 가 세웠다가 0068 이 지운 **칸 이름**들. 모델·DB·화면·엑셀·시트 올리기
@@ -277,10 +277,10 @@ def test_기업_관리_바로_뒤에_차례대로_선다(allowed, db, users):
     # 탭이 함께 쓰는 칸 묶음 바로 뒤에 차례대로 선다**는 것.
     at = heads.index("기업 내용")
     assert heads[at - 1] == "기업 관리", heads
-    # 세 마디 뒤로 `딜 소개문구` · `카톡 연결 여부` 가 차례로 선다(카톡 칸의
+    # 세 마디 뒤로 `소개 메모` · `카톡 연결 여부` 가 차례로 선다(카톡 칸의
     # 자리는 사용자가 정했다 — `tests/test_consulting_kakao_joined.py`).
     assert heads[at + 1:at + 6] == [label for label, _f, _k in COLUMNS] \
-        + ["딜 소개문구", "카톡 연결 여부"], heads
+        + ["소개 메모", "카톡 연결 여부"], heads
     fields = _fields(body)
     at = fields.index("management_detail")
     assert fields[at - 1] == "management", fields
@@ -337,7 +337,10 @@ def test_다른_두_탭에는_이_묶음이_안_선다(allowed, db, users):
         for label, field, _key in COLUMNS:
             if field == "contract_received":
                 continue
-            assert label not in body, (sheet, label)
+            # 10/22 이름 통일로 `contract_done` 도 `계약여부` 라 불린다 — 계약 탭의
+            # `계약여부`(`management`)와 글자가 같아 그 탭에서는 칸 이름으로 본다.
+            if not (sheet == CONTRACT and label == "계약여부"):
+                assert label not in body, (sheet, label)
             assert field not in body, (sheet, field)
     # `경영본부 전달 기업` 과 사람이 만든 탭에는 `계약서 수신완료여부` 도
     # 안 선다 — 빈 값이라도 실으면 아무 머리글도 안 보는 죽은 속성이 된다.
@@ -358,8 +361,8 @@ def test_계약서_수신여부는_두_탭에서_한_칸이다(allowed, db, user
 
     startup = dict((f, label) for label, f in consulting.STARTUP_COLUMNS)
     contract = dict((f, label) for label, f in consulting.CONTRACT_COLUMNS)
-    assert startup["contract_received"] == "계약서 수신완료여부"
-    assert contract["contract_received"] == "계약서 수신여부"
+    assert startup["contract_received"] == "계약서 수신 여부"
+    assert contract["contract_received"] == "계약서 수신 여부"
     # 모델에 같은 뜻의 칸이 하나 더 생기지 않았는가.
     from app.models import ConsultingCompany
 
@@ -398,7 +401,7 @@ def test_표_모양은_이름이_아니라_열쇠로_짝짓는다(db):
         consulting.STARTUP_COLUMNS, consulting.TAIL_COLUMNS)
     assert consulting.STARTUP_COLUMNS[len(consulting.FIXED_COLUMNS):] == [
         (label, field) for label, field, _key in COLUMNS
-    ] + [("딜 소개문구", "deal_pitch"), ("카톡 연결 여부", "kakao_joined")]
+    ] + [("소개 메모", "deal_pitch"), ("카톡 연결 여부", "kakao_joined")]
     assert consulting.layout_of(db, "경영본부 전달 기업") == (
         consulting.FIXED_COLUMNS, consulting.TAIL_COLUMNS)
 
@@ -481,9 +484,9 @@ def test_엑셀에도_실리고_이미_받아_둔_파일의_자리는_안_밀린
     from app.routers.consulting import (CONTRACT_EXPORT_HEADERS,
                                         STARTUP_EXPORT_HEADERS)
 
-    assert STARTUP_EXPORT_HEADERS == ["딜 소개문구", "견적서 첨부 여부",
-                                      "계약완료여부", "카톡 연결 여부"]
-    assert "계약서 수신여부" in CONTRACT_EXPORT_HEADERS
+    assert STARTUP_EXPORT_HEADERS == ["소개 메모", "견적서 첨부 여부",
+                                      "계약여부", "카톡 연결 여부"]
+    assert "계약서 수신 여부" in CONTRACT_EXPORT_HEADERS
 
     _row(db, users["u1"].id, sheet=STARTUP, position=1, company_name="샘플파",
          contract_management="X", contract_done="무료계약완료",
@@ -501,7 +504,7 @@ def test_엑셀에도_실리고_이미_받아_둔_파일의_자리는_안_밀린
     # 머리글 수와 줄의 칸 수가 같은가 — 하나라도 빠지면 그 뒤가 통째로 밀린다.
     body = list(grid[1])
     assert len(body) == len(head)
-    for label in ("견적서 첨부 여부", "계약완료여부", "계약서 수신여부"):
+    for label in ("견적서 첨부 여부", "계약여부", "계약서 수신 여부"):
         assert head.count(label) == 1, (label, head)
     assert "계약관리" not in head, head
     # 지운 두 칸은 엑셀에도 없다.
@@ -511,7 +514,7 @@ def test_엑셀에도_실리고_이미_받아_둔_파일의_자리는_안_밀린
     # 세 칸이 **각자 제 자리에** 실린다. `O`/`X` 를 서로 다른 글자로 넣어 두는
     # 것은 두 칸이 같은 값을 실어도 못 알아채는 자리를 없애려는 것이다.
     assert body[head.index("견적서 첨부 여부")] == "X"
-    assert body[head.index("계약서 수신여부")] == "O"
+    assert body[head.index("계약서 수신 여부")] == "O"
     # `카톡 연결 여부` 는 이 줄에서 비워 두었다 — `O`/`X` 를 세는 이 검사가
     # 어느 칸의 값인지 헷갈리지 않게 하려는 것이다(그 칸은
     # `tests/test_consulting_kakao_joined.py` 가 따로 본다).

@@ -30,6 +30,8 @@
     // 두 탭을 합치면서 표에서 뗐더니(0051) 고칠 자리가 아예 없어졌던 칸이다.
     "business_desc",
     "founded_year", "guarantee",
+    // 0116 — 투자컨설턴트 메타에서 올라온 기업 사실 셋.
+    "region", "quote_attached", "kakao_joined",
     // 기업 쪽 연락처 — 표(스타트업DB)의 맨 앞 네 칸.
     "received_at", "contact_name", "contact_phone", "contact_email",
     // 대표와의 **카톡방 제목**. 스타트업 월간 발송이 이 방으로 나간다
@@ -759,15 +761,18 @@
 
   table.addEventListener("inline-saved", function (e) {
     var data = e.detail.data || {};
-    if (!("contract_received" in data)) return;
+    // `O`/`X` 칸 셋(0116 의 둘 포함) — 칸 이름 → 그 줄의 필터 속성.
+    var OX = { contract_received: "data-f-received", quote_attached: "data-f-quote",
+               kakao_joined: "data-f-joined" };
     var cell = e.detail.cell;
-    if (cell.getAttribute("data-field") !== "contract_received") return;
+    var field = cell.getAttribute("data-field");
+    if (!OX[field] || !(field in data)) return;
 
-    cell.textContent = data.contract_received;
-    cell.title = data.contract_received;
+    cell.textContent = data[field];
+    cell.title = data[field];
     var row = e.detail.row;
-    if (row && row.hasAttribute("data-f-received")) {
-      row.setAttribute("data-f-received", data.contract_received);
+    if (row && row.hasAttribute(OX[field])) {
+      row.setAttribute(OX[field], data[field]);
     }
   });
 })();

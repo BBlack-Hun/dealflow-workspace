@@ -206,9 +206,9 @@ class VcContact(TimestampMixin, Base):
     # 이 값이 `connect_stage` 를 거쳐 **지금 보낼 수 있는가**를 정한다
     # (`services/sheet_import.py` · `services/sheet_owner.can_send_to`).
     #
-    # 같은 물음을 적는 자리가 셋이고, 값은 서로 오가지 않는다. 어디에 무엇이
-    # 있고 왜 아직 안 이었는지는 `ConsultingCompany.kakao_joined` 의 주석에
-    # **한 곳**으로 적혀 있다 — 설명을 세 벌 두면 한 벌이 낡는다.
+    # 같은 물음을 적는 자리가 셋이다. IR 기업에 이어진 스타트업 줄은 10/22 부터
+    # 투자컨설턴트 메타 · IR 과 따라 고친다(`services/company_sync.py`) — 자세한
+    # 것은 `ConsultingCompany.kakao_joined` 의 주석 **한 곳**에 있다.
     kakao_joined: Mapped[Optional[str]] = mapped_column(String, nullable=True)     # 카톡방 참여여부
     # 시트에 있는데 앱에 칸이 없어 통째로 버려지던 값들.
     # "명함 받은 날" 은 언제부터 아는 사이인지를 말해 준다 — 오래 알던 분께
@@ -295,10 +295,15 @@ class VcContact(TimestampMixin, Base):
     # 경우가 실제로 있고, 이름이 같다고 같은 기업인 것도 아니다.
     #
     # 한 IR 기업에 여러 줄이 이어질 수 있다(두 팀원의 명단에 같은 기업이 선다).
-    # 값은 아직 오가지 않는다 — 읽는 자리는 `ir_link.company_for` 하나다.
     # 투자컨설턴트 쪽 같은 칸은 `ConsultingCompany.ir_company_id`.
+    #
+    # **10/22 부터 값이 오간다**(`services/company_sync.py`) — 대표자명 · 연락처 ·
+    # 이메일 · 견적서 첨부 여부 · 카톡 연결 여부를 이어진 줄끼리 따라 고친다. 새 줄은
+    # 이름이 정확히 하나 맞으면 저절로 잇는다(`ir_link_auto` = 1 — 결정 2).
     ir_company_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("ir_companies.id"), nullable=True)
+    # 이름으로 **저절로**(또는 일괄 연결로) 이어졌는가 — 화면의 `자동 연결` 표시(0117).
+    ir_link_auto: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
 
 class ContactActivity(TimestampMixin, Base):
@@ -492,6 +497,20 @@ def _sync_sourcing_links(session, flush_context, instances) -> None:
 event.listen(OrmSession, "before_flush", _sync_sourcing_links)
 
 
+def _sync_company_links(session, flush_context, instances) -> None:
+    """IR 기업 현황 ↔ 투자컨설턴트 ↔ 스타트업 명단 — 이어진 줄의 같은 기업 칸을 함께.
+
+    무엇을 하는지는 `services/company_sync.before_flush`. 거는 자리와 까닭은 바로
+    위 `_sync_sourcing_links` 와 같다(수정 로그보다 먼저).
+    """
+    from .services import company_sync
+
+    company_sync.before_flush(session)
+
+
+event.listen(OrmSession, "before_flush", _sync_company_links)
+
+
 def _forget_series_a_sharers(session, flush_context, instances) -> None:
     """지워지는 딜 소싱 줄을 **확정한 공유 심사역**으로 가리키던 칸을 비운다.
 
@@ -618,6 +637,20 @@ class IrCompany(TimestampMixin, Base):
     # 주석은 낡는다. 셋이 여전히 서로 다른 자리라는 사실 쪽은 시험이 지킨다
     # (`tests/test_contract_received_xref.py`).
     contract_received: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # ── 투자컨설턴트 메타 탭에만 있던 **기업 사실** 셋(0116 · 10/22 요청) ────────
+    #
+    # 기준 값은 여기다. 이어진 컨설턴트 · 스타트업 줄의 같은 칸과는 고칠 때 서로
+    # 따라 고친다(`services/company_sync.py`). 셋 다 빈칸이 `아직 안 정함` 이다.
+    #
+    #   region          지역               — 컨설턴트 `region`(계약 탭 제외)
+    #   quote_attached  견적서 첨부 여부   — 메타 `contract_management` · 스타트업 `notes.quote_attached`
+    #   kakao_joined    카톡 연결 여부     — 메타 `kakao_joined` · 스타트업 `kakao_joined`
+    #
+    # 뒤의 둘은 `O` / `X` 만 담는다(`routers/companies.RECEIVED_CHOICES` 와 같은 보기).
+    # 컨설팅 진행 기록(미팅일 · 기업 관리)은 여기 담지 않는다 — 결정 3.
+    region: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    quote_attached: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    kakao_joined: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     contract_month: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     is_top_deal: Mapped[int] = mapped_column(Integer, default=0)
     # ── `투자 현황` — **화면에서 뺀 칸이다. 값은 여기 그대로 있다.** ──────────
@@ -2029,6 +2062,11 @@ class ConsultingCompany(TimestampMixin, Base):
     # 이름을 달리 지으면 같은 물음이라는 사실이 코드에서 사라져, 다음 사람이
     # 둘을 견주어 볼 생각조차 못 한다.
     #
+    # ★ **10/22 부터 IR 기업에 이어진 줄끼리는 따라 고친다** — 이 칸 · 스타트업 줄의
+    #   `VcContact.kakao_joined` · `IrCompany.kakao_joined`(`services/company_sync.py`,
+    #   `O`/`X` 만). 아래 "오가지 않는다" 는 그 전 이야기이고, 이어지지 않은 줄과
+    #   월별 `N월 카톡 연결` 메모에는 지금도 그대로 맞다.
+    #
     # ## 같은 물음을 적는 자리가 **셋**이다 — 값은 서로 오가지 않는다
     #
     #   · `VcContact.kakao_joined` — **줄마다 하나**. `내 투자사` 화면의
@@ -2072,9 +2110,12 @@ class ConsultingCompany(TimestampMixin, Base):
     # `startup_handoff.company_name_of` 로 꺼내 후보만 세운다).
     #
     # 이 표는 시트 줄이라 한 기업이 탭마다 한 줄씩 실린다(`sheet`) — 그래서
-    # 한 IR 기업에 여러 줄이 이어지는 것이 정상이다.
+    # 한 IR 기업에 여러 줄이 이어지는 것이 정상이다. 이어진 줄끼리 값을 따라
+    # 고치는 일은 `services/company_sync.py`(10/22).
     ir_company_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("ir_companies.id"), nullable=True)
+    # `VcContact.ir_link_auto` 와 같다(0117).
+    ir_link_auto: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
 
 class ConsultingRowGrant(TimestampMixin, Base):

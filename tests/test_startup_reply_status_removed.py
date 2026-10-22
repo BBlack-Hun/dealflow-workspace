@@ -41,7 +41,7 @@ GONE_KEY = "reply_status"
 GONE_WIDTH = 110
 
 # 뺀 칸 **바로 앞**에 서 있던 칸. 그 뒤가 월별 묶음이 되어야 한다.
-BEFORE = "계약서 수신여부"
+BEFORE = "계약서 수신 여부"
 
 
 def _month(offset: int = 0) -> int:
@@ -307,7 +307,8 @@ def test_남은_칸은_차례도_폭도_그대로고_표만_그만큼_좁아진�
 
     # 남은 칸의 폭은 한 칸도 안 건드렸다.
     widths = {c.label: c.width for c in cc.STARTUP_LAYOUT.head}
-    assert widths["계약여부"] == 110 and widths[BEFORE] == 140, widths
+    # (`계약서 수신 여부` 는 10/22 이름 통일로 한 칸 늘어 148px — IR 기업 현황과 같은 폭.)
+    assert widths["계약여부"] == 110 and widths[BEFORE] == 148, widths
 
 
 # ── 5. 시트 임포터가 조용히 쌓지 않는다 ─────────────────────────────────────

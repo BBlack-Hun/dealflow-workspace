@@ -504,6 +504,8 @@ VALUE_FIELDS = frozenset({
     "contract_status", "funding_status", "summary_status", "outcome",
     "meet_mode", "firm_type", "series", "sector_major", "sector_minor",
     "top_deal_kind", "share_method", "management", "contract_management",
+    # 0116 · 0117 — IR 기업 현황의 지역 · 견적서 첨부 여부(짧은 고르는 값)와 자동 연결 표시.
+    "region", "quote_attached", "ir_link_auto",
 
     # 켜짐 · 꺼짐. 하나 잘못 켜지면 안 나가야 할 곳으로 나간다.
     "is_active", "is_hidden", "is_deal_list", "is_top_deal", "enabled",
@@ -593,7 +595,7 @@ FIELD_LABELS = {
     # 이 탭만의 이름(기업명 · 투자라운드 · 담당팀원)으로 바꾸지 않는다 — 바꾸면
     # 다른 표의 로그가 틀린 이름을 단다.
     "received_at": "수신일",
-    "detail": "상세 내용", "deal_pitch": "딜소개 문구",
+    "detail": "상세 내용", "deal_pitch": "딜 소개 문구",
     "memo": "메모", "notes": "칸 메모", "note": "메모", "body": "본문",
     "phone": "연락처", "email": "메일", "one_liner": "한 줄 소개",
     "summary": "요약", "business_desc": "사업 설명", "content_json": "내용",
@@ -620,7 +622,9 @@ FIELD_LABELS = {
     "tab_canceled_jobs": "비어서 취소한 발송 회차",
     "tab_deleted_columns": "함께 지운 달 칸",
     "tab_snapshot": "지우기 직전 백업",
-    "ir_company_id": "IR 기업 연결",
+    "ir_company_id": "IR 기업 연결", "ir_link_auto": "자동 연결",
+    "region": "지역", "quote_attached": "견적서 첨부 여부",
+    "contact_name": "대표자명", "contact_phone": "연락처", "contact_email": "이메일",
     "after_key": "위치",
 }
 

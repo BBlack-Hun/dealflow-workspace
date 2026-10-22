@@ -36,7 +36,8 @@ from ..db import get_db
 from ..deps import (NoConsulting, can_open, doer, get_current_user,
                     may_view_all_consulting, may_view_consulting, templates)
 from ..models import (ConsultingColumn, ConsultingCompany, ConsultingRowGrant,
-                      User)
+                      User, VcContact)
+from ..services import company_sync
 from ..services import consulting_sheets as cs
 from ..services import custom_columns
 from ..services import consulting_status as status
@@ -59,7 +60,8 @@ router = APIRouter(tags=["consulting"])
 FIXED_COLUMNS = [
     ("NO", "position"),
     ("지역", "region"),
-    ("미팅일(화상, 회의실)", "meeting_at"),
+    # 이름 통일(10/22): IR `미팅제공일자` 와 다른 미팅이라 `컨설팅` 을 붙여 가른다.
+    ("컨설팅 미팅일(화상, 회의실)", "meeting_at"),
     # 위 칸 머리글의 괄호가 **이 칸의 정체**다 — 시트가 처음부터 `미팅일` 과
     # `화상, 회의실` 두 가지를 한 칸에 적으라고 했고, 값이 `9/16 PM2 (화상미팅)`
     # 처럼 붙어 있었다. 자리를 갈라 세운다(사용자 요청: "미팅날짜 컬럼 옆에").
@@ -94,7 +96,7 @@ FIXED_COLUMNS = [
     ("기업 내용", "management_detail"),
 ]
 TAIL_COLUMNS = [
-    ("대표자", "ceo_name"),
+    ("대표자명", "ceo_name"),
     ("연락처", "phone"),
     ("이메일", "email"),
 ]
@@ -192,10 +194,11 @@ STARTUP_COLUMNS = FIXED_COLUMNS + [
     # 담기는 칸은 `contract_management` 그대로다(위 묶음 주석 참고).
     ("견적서 첨부 여부", "contract_management"),
     # 보기 둘 + 빈칸. 값은 `CONTRACT_DONE_CHOICES` 한 곳에서 온다.
-    ("계약완료여부", "contract_done"),
+    ("계약여부", "contract_done"),
     # 계약 탭과 **같은 칸**이다(이름만 탭이 정한다 — 위 참고).
-    ("계약서 수신완료여부", "contract_received"),   # O / X
-    ("딜 소개문구", "deal_pitch"),
+    ("계약서 수신 여부", "contract_received"),   # O / X
+    # 이름 통일(10/22): 발송에 안 쓰이는 메모라 IR `딜 소개 문구` 와 갈라 부른다.
+    ("소개 메모", "deal_pitch"),
     # 이 기업과 카톡방이 연결됐는가. **자리는 사용자가 정했다** — 이 묶음의
     # **맨 뒤**, `딜 소개문구` 다음이다. (처음에는 `IR 자료 회신여부` 앞이라고
     # 불렀는데 이 탭에는 그런 칸이 없어 자리를 다시 물었고, 한 번 `계약서
@@ -206,8 +209,8 @@ STARTUP_COLUMNS = FIXED_COLUMNS + [
     # 계약 세 마디와 같은 `O`/`X` 칸이다(빈칸은 `아직 안 정함`).
     #
     # **`VcContact.kakao_joined` 와 이름이 같지만 다른 표의 다른 칸이다.**
-    # 한쪽에 `O` 를 넣어도 다른 쪽은 계속 비어 있다 — 같은 기업이 스타트업
-    # 화면과 이 화면에서 다른 답을 보일 수 있고, 그것은 알고 둔 것이다.
+    # 10/22 부터 IR 기업에 이어진 줄끼리는 한쪽에 `O`/`X` 를 넣으면 IR 과 스타트업
+    # 줄도 따라온다(`services/company_sync.py`). 이어지지 않은 줄은 예전처럼 따로다.
     # 어디에 또 있고 왜 안 이었는지는 `models.ConsultingCompany.kakao_joined`
     # 주석에 한 곳으로 적혀 있다(설명을 두 벌 두면 한 벌이 낡는다).
     ("카톡 연결 여부", "kakao_joined"),   # O / X
@@ -251,7 +254,7 @@ CONTRACT_COLUMNS = [
     # 계약을 맺은 것과 **계약서를 받은 것**은 다른 사실이다. 앞 칸에 섞어 두면
     # 계약은 했는데 서류가 아직 안 온 곳을 가려낼 수가 없다.
     # 빈칸은 `아직 안 정함` 이다(`models.ConsultingCompany.contract_received`).
-    ("계약서 수신여부", "contract_received"),   # O / X
+    ("계약서 수신 여부", "contract_received"),   # O / X
     ("성공보수율", "success_fee"),
     ("계약금", "contract_fee"),
 ]
@@ -1476,7 +1479,20 @@ def send_to_startup(body: ToStartupIn, db: Session = Depends(get_db),
         # **줄을 세우는 길은 `POST /api/contacts` 하나다.** 여기서 `VcContact`
         # 를 직접 만들면 반드시 있어야 하는 칸(`Layout.required`)·담당
         # (`owner_for`)·권한(`may_add_row`)이 두 벌이 된다.
-        made = create_contact(ContactIn(sheet=label, **fields), db, user)
+        # 원래 줄의 IR 연결을 그대로 물려준다(10/22 — 이름으로 다시 찾지 않는다). 이름으로
+        # 먼저 다른 IR 에 붙지 않게, 이을 기업이 있으면 새 줄 자동 연결을 끈 채 만든다.
+        if company.ir_company_id:
+            db.info[company_sync.NO_AUTO_LINK] = True
+        try:
+            made = create_contact(ContactIn(sheet=label, **fields), db, user)
+        finally:
+            db.info.pop(company_sync.NO_AUTO_LINK, None)
+        if company.ir_company_id:
+            contact = db.get(VcContact, made["id"])
+            if contact.ir_company_id != company.ir_company_id:
+                contact.ir_company_id = company.ir_company_id
+                contact.ir_link_auto = company.ir_link_auto or 0
+                db.commit()
         # **같은 요청 안의 중복도 막는다.** 같은 기업이 두 줄로 적힌 표가
         # 실제로 있어서, 둘 다 골라 누르면 스타트업 명단에 두 줄이 선다.
         seen[key] = made["id"]
@@ -1667,7 +1683,7 @@ CONSULTING_EXPORT_HEADERS = [label for label, field in FIXED_COLUMNS
 # 계약 탭에만 값이 있는 칸. 엑셀은 탭을 가리지 않고 한 장으로 내려받으므로
 # **머리글 한 벌**에 뒤로 붙인다 — 탭마다 다른 장을 만들면 내려받은 파일에서
 # 어느 장이 무엇인지 다시 맞춰야 한다. 다른 탭 줄에서는 빈 칸이다.
-CONTRACT_EXPORT_HEADERS = ["성공보수율", "계약금", "계약서 수신여부"]
+CONTRACT_EXPORT_HEADERS = ["성공보수율", "계약금", "계약서 수신 여부"]
 # 스타트업 탭에만 값이 있는 칸. **엑셀에는 싣는다** — 화면에 보이는 칸이
 # 내려받은 파일에만 없으면, 없다는 사실 자체를 아무도 눈치채지 못한 채 그
 # 파일이 보고서로 돌아다닌다. 바로 옆 `기업 관리` 도 같은 성격의 긴 글인데
@@ -1686,7 +1702,7 @@ CONTRACT_EXPORT_HEADERS = ["성공보수율", "계약금", "계약서 수신여�
 # `contract_received` 라 위 `CONTRACT_EXPORT_HEADERS` 의 `계약서 수신여부` 로
 # 이미 실린다. 엑셀은 탭을 가리지 않고 한 장이므로 여기 또 세우면 **같은 값이
 # 두 칸에** 나오고, 그 파일을 여는 사람은 둘이 다른 사실인 줄 안다.
-STARTUP_EXPORT_HEADERS = ["딜 소개문구", "견적서 첨부 여부", "계약완료여부",
+STARTUP_EXPORT_HEADERS = ["소개 메모", "견적서 첨부 여부", "계약여부",
                           "카톡 연결 여부"]
 
 
@@ -1739,6 +1755,11 @@ def export_consulting(db: Session = Depends(get_db),
 
 def _norm(value) -> str:
     return " ".join(str(value or "").split())
+
+
+def _first(*found: Optional[int]) -> Optional[int]:
+    """찾은 열 중 첫 것 — 옛 머리글이 먼저, 새 머리글은 그다음."""
+    return next((j for j in found if j is not None), None)
 
 
 def parse_rows(rows: List[List[str]]) -> dict:
@@ -1820,7 +1841,10 @@ def parse_rows(rows: List[List[str]]) -> dict:
         # 필터가 줄마다 다른 값으로 갈려 못 쓰게 된다. 그 열은 이제 월별
         # 리마인드 열로 들어가 **기록으로 남는다**(아래 `note_cols`).
         "contract_management": fixed("견적서", "첨부"),
-        "contract_done": fixed("계약", "완료", without=("수신", "관리")),
+        # 화면 이름이 `계약여부` 로 바뀌었다(10/22) — 내려받은 파일을 다시 올려도
+        # 이 칸으로 오게 새 이름도 받는다(옛 `계약완료여부` 가 먼저다).
+        "contract_done": _first(fixed("계약", "완료", without=("수신", "관리")),
+                                fixed("계약여부", without=("수신",))),
         "contract_received": fixed("계약서", "수신"),
         # 시트에 `카톡 연결 여부` 열이 있으면 여기로 받는다. 안 받으면 월별
         # 리마인드 열로 딸려 들어가 같은 이름이 표에 두 번 선다(위 참고).
@@ -1876,8 +1900,36 @@ def apply_rows(db: Session, parsed: dict, user: User,
     """읽은 내용을 DB 에 반영. 기업명이 같으면 갱신, 없으면 추가.
 
     올린 사람의 표가 된다 — 남의 표를 덮지 않는다.
+
+    **IR 기업에 이어진 줄은 빈칸만 채운다**(10/22 결정 7 · `company_sync`). 시트
+    값이 이어진 줄의 대표자명 · 연락처 · 카톡 연결 여부 … 를 덮으면 그 값이 IR 과
+    이어진 다른 줄까지 따라 고쳐진다. 그래서 그 칸들은 비어 있을 때만 받고, 따라
+    고치기도 빈칸만 채운다(`company_sync.fill_only`).
+
+    **[전체 바꾸기]도 연결을 끊지 않는다.** 내 줄을 지우고 새로 만드는 길이라 예전에는
+    잇기(`ir_company_id`)가 통째로 사라졌다 — 지우기 전에 기업명마다 이어 둔 IR 기업을
+    적어 두었다가 새 줄에 되살린다(`_kept_links`).
     """
+    with company_sync.fill_only(db):
+        return _apply_rows(db, parsed, user, replace)
+
+
+def _kept_links(rows) -> Dict[str, tuple]:
+    """`{비교용 기업명: (IR 번호, 자동 연결)}` — 한 이름이 서로 다른 IR 에 이어져 있으면 뺀다."""
+    found: Dict[str, set] = {}
+    for row in rows:
+        if row.ir_company_id:
+            key = startup_handoff.compare_key(startup_handoff.company_name_of(row.company_name))
+            found.setdefault(key, set()).add((row.ir_company_id, row.ir_link_auto or 0))
+    return {k: next(iter(v)) for k, v in found.items()
+            if k and len({cid for cid, _a in v}) == 1}
+
+
+def _apply_rows(db: Session, parsed: dict, user: User, replace: bool) -> dict:
+    kept: Dict[str, tuple] = {}
     if replace:
+        kept = _kept_links(db.execute(select(ConsultingCompany).where(
+            ConsultingCompany.user_id == user.id)).scalars().all())
         # **내 것만** 지운다. 예전에는 전체를 지워서, 한 사람이 다시 올리면
         # 다른 컨설턴트의 표까지 사라졌다.
         # 추가 칸 값도 함께 — 한꺼번에 지우기는 flush 를 안 지나서 세션 이벤트
@@ -1915,6 +1967,10 @@ def apply_rows(db: Session, parsed: dict, user: User,
         company = by_name.get(name)
         if company is None:
             company = ConsultingCompany(user_id=user.id)
+            # [전체 바꾸기] 로 지운 줄의 연결을 되살린다 — 새 줄 자동 연결보다 먼저.
+            link = kept.get(startup_handoff.compare_key(startup_handoff.company_name_of(name)))
+            if link:
+                company.ir_company_id, company.ir_link_auto = link
             db.add(company)
             by_name[name] = company
             created += 1
@@ -1925,7 +1981,7 @@ def apply_rows(db: Session, parsed: dict, user: User,
                       "contract_management", "contract_done",
                       "contract_received", "kakao_joined"):
             value = item.get(field)
-            if value:
+            if value and not company_sync.sheet_keeps(company, field):
                 setattr(company, field, value)
         raw_no = item.get("position") or ""
         digits = "".join(ch for ch in raw_no if ch.isdigit())

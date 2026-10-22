@@ -35,7 +35,7 @@ import pytest
 
 from .conftest import DEMO_PASSWORD
 
-COLUMN = "IR 미팅 제공일자"
+COLUMN = "미팅제공일자"
 KEY = "ir_meeting_offered_at"
 # 머리글(`IR 미팅 제공일자` · 12px 굵은 글씨)에 맞춘 폭. 값(`2026-09-15` ·
 # 10자)보다 머리글이 넓은 칸이라 넓은 쪽이 정했다 — 아래 `test_폭은_머리글에_맞춘다`.
@@ -126,7 +126,7 @@ def test_일이_진행되는_차례_묶음을_안_흐트러뜨린다():
 
     labels = [c.label for c in cc.STARTUP_LAYOUT.head]
     flow = ["투자유치 상태", "당사 협업 상태",
-            "견적서 첨부여부", "계약여부", "계약서 수신여부"]
+            "견적서 첨부 여부", "계약여부", "계약서 수신 여부"]
     at = [labels.index(x) for x in flow]
     assert at == list(range(at[0], at[0] + len(flow))), (
         f"흐름 묶음 사이에 다른 칸이 끼었습니다: {labels}")

@@ -266,6 +266,9 @@
         <th style="width:260px">특이사항 (장점)</th>
         <th class="num" style="width:90px" title="단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 1억 미만은 `5천만원` · 모르면 `~`">최근 매출액</th>
         <th style="width:72px">설립년도</th>
+        {# 0116 — 투자컨설턴트 메타에서 올라온 기업 사실. 이어진 컨설턴트 줄과 서로
+           따라 고친다(`services/company_sync.py`). 자유 글이라 필터는 안 단다. #}
+        <th style="width:80px">지역</th>
         {# 예전 이름 `기보, 신보, 중진공`. 이름은 11자에서 4자로 줄었지만
            **폭은 130px 그대로 둔다.** 이 칸에 드는 값은 `기보 3억, 신보 2억`
            처럼 이름보다 길고(가장 긴 값 72자) 두 줄까지 보이는 칸이라
@@ -332,6 +335,7 @@
         </td>
         {{ amount_cell(r.revenue_recent, "revenue_recent") }}
         <td class="cell" data-field="founded_year">{{ r.founded_year }}</td>
+        <td class="cell" data-field="region">{{ r.region }}</td>
         <td title="{{ r.guarantee }}">
           <div class="cell clamp2" data-field="guarantee" data-type="long">{{ r.guarantee }}</div>
         </td>
@@ -349,7 +353,7 @@
         <td><button type="button" class="linkbtn js-co-edit">수정</button></td>
       </tr>
       {% else %}
-      <tr><td colspan="19" class="muted">등록된 기업이 없습니다. [기업 추가]로 시작하세요.</td></tr>
+      <tr><td colspan="21" class="muted">등록된 기업이 없습니다. [기업 추가]로 시작하세요.</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -662,6 +666,11 @@
            필터는 안 세운다. 값이 줄마다 다른 날짜라 목록으로 고를 것이 아니다 —
            같은 결인 `홍보메일삭제` 도 필터가 없다. 그래서 폭은 단추가 아니라
            **이름**(`미팅제공일자` 63px + th 좌우 여백 18px)에 맞춘다. #}
+        {# 0116 — 견적서를 보냈는가(`O`/`X`). 투자컨설턴트 메타 · 스타트업 명단의 같은
+           칸과 이어진 줄끼리 따라 고친다(`services/company_sync.py`). 폭은 그 화면들과
+           같은 150px(`견적서 첨부 여부 (1) ▾`). `미팅제공일자` 앞에 선다 — 그 날짜는 바로
+           오른쪽 `계약여부` 의 미팅 상태를 묻는 말이라 둘 사이를 벌리지 않는다. #}
+        <th style="width:150px" data-filters="quote:견적서 첨부 여부">견적서 첨부 여부<div class="th-filters"></div></th>
         <th style="width:100px" data-sort="meeting"
             title="무료 IR 미팅을 언제 제공하는지 · 눌러서 수정">미팅제공일자</th>
         {# **여기는 값이 이름보다 넓다.** 새로 든 `무료 IR 미팅제공완료함` 은
@@ -689,6 +698,8 @@
            늘어 단추가 108 → 122px 이 된 몫이다 — 폭을 안 올리면 필터를 거는
            순간 두 줄로 접힌다. app.css 의 `#co-table` min-width 도 같이 올렸다. #}
         <th style="width:148px" data-filters="received:계약서 수신 여부">계약서 수신 여부<div class="th-filters"></div></th>
+        {# 0116 — 이 기업과 카톡방이 연결됐는가(`O`/`X`). 위 `견적서 첨부 여부` 와 같은 결. #}
+        <th style="width:140px" data-filters="joined:카톡 연결 여부">카톡 연결 여부<div class="th-filters"></div></th>
         {# 이름을 **칸에 든 값**에 맞춘다. `날짜 기입` 은 무엇을 적는 칸인지
            말해 주지 않는데, 실제 값 43줄 중 42줄이 홍보 메일을 지웠다는 기록이다
            (`삭제 완료` 28 · `7월 삭제필요 -> 삭제 완료` 8 · `민진 8/13 삭제` 5 …).
@@ -705,6 +716,14 @@
             title="계약기업 · 거부메일 주소를 홍보 메일 목록에서 지웠는지">홍보메일삭제</th>
         {# 같은 이유로 두 줄이던 칸. `핵심/TOP Deal (1) ▾` 는 118px 이 필요하다. #}
         <th style="width:144px" data-filters="top:핵심/TOP Deal">핵심/TOP Deal<div class="th-filters"></div></th>
+        {# ── 투자컨설턴트 진행 기록 — **읽기만**(결정 3) ──────────────────────
+           이어진 투자컨설턴트 줄의 `기업 관리` 갈래 · `컨설팅 미팅일` 을 보여 줄 뿐
+           IR 에는 저장하지 않는다(`routers/companies.consulting_view`). 그 화면을
+           볼 수 있는 사람에게만 선다. 고치는 곳은 투자컨설턴트 화면이다. #}
+        {% if consulting is not none %}
+        <th style="width:110px" title="이어진 투자컨설턴트 줄의 기업 관리 — 읽기만">컨설팅 상태</th>
+        <th style="width:120px" title="이어진 투자컨설턴트 줄의 컨설팅 미팅일 — 읽기만">컨설팅 미팅일</th>
+        {% endif %}
         {# IR 자료는 맨 끝에 그대로 둔다 — 요청이 왔을 때 바로 꺼내 쓰는 칸이다. #}
         {# 폭은 이름(`IR 자료`)이 아니라 **필터를 고른 뒤의 단추**(`IR 자료 (1) ▾`)에
            맞춘다 — 고르고 나면 `(1)` 이 붙어 13px 이 더 든다. 82px 에서는 화면에서
@@ -731,6 +750,8 @@
              (`핵심/TOP Deal` 은 반대다: 거기는 빈 값이 `일반` 이라는 **뜻**을
              가져서 행에 `일반` 을 적는다). #}
           data-f-received="{{ r.contract_received }}"
+          data-f-quote="{{ r.quote_attached }}"
+          data-f-joined="{{ r.kakao_joined }}"
           data-f-ir="{{ '● 있음' if r.has_ir else '⚠ 없음' }}"
           {# ── 세울 값(`data-s-*`) ── 머리글의 `data-sort` 와 짝이다.
              선언만 하고 안 실으면 머리글이 단추로 서기만 하고 아무 줄도 안
@@ -896,6 +917,8 @@
         {# 자유 입력이다 — `data-type` 을 주지 않으면 inline_edit.js 가 그냥
            글자 칸으로 연다(옆의 `홍보메일삭제` 와 같다). `pick` 을 달면 이미
            적힌 날짜들이 보기로 뜨는데, 날짜는 고를 목록이 아니다. #}
+        <td class="cell" data-field="quote_attached" data-type="pick"
+            data-filter-key="quote" data-choices="O,X">{{ r.quote_attached }}</td>
         <td class="cell" data-field="meeting_offered_at">{{ r.meeting_offered_at }}</td>
         {# 칸에는 **말**이 보이고, 저장되는 것은 값(`blocked`)이다. 라우터가
            그 짝을 맞춘다(`CONTRACT_FROM_LABEL`) — 여기서 값을 보여 주면
@@ -916,6 +939,8 @@
         <td class="cell" data-field="contract_received" data-type="pick"
             data-filter-key="received"
             data-choices="O,X">{{ r.contract_received }}</td>
+        <td class="cell" data-field="kakao_joined" data-type="pick"
+            data-filter-key="joined" data-choices="O,X">{{ r.kakao_joined }}</td>
         <td class="cell" data-field="contract_month">{{ r.contract_month }}</td>
         {# `핵심` · `TOP` · 둘 다. 눌러서 목록에서 고른다.
            비우면 행에는 `일반` 이 실린다 — 빈 값으로 두면 같은 뜻이 목록에
@@ -923,6 +948,11 @@
         <td class="cell {% if r.top_deal_kind %}top-on{% endif %}"
             data-field="top_deal_kind" data-type="pick"
             data-filter-key="top">{{ r.top_deal_kind }}</td>
+        {% if consulting is not none %}
+        {% set cv = consulting.get(r.id, {}) %}
+        <td class="muted" title="{{ cv.status }}">{{ cv.status }}</td>
+        <td class="muted" title="{{ cv.meeting }}">{{ cv.meeting }}</td>
+        {% endif %}
         <td>
           {# **링크가 아니다.** 이 칸에는 자료 폴더 안의 파일명이 들어 있고(0056),
              파일은 각자 PC 에 있다 — 브라우저가 열 수 있는 자리가 아니다.
@@ -937,7 +967,7 @@
         <td><button type="button" class="linkbtn js-co-edit">수정</button></td>
       </tr>
       {% else %}
-      <tr><td colspan="17" class="muted">등록된 기업이 없습니다. [기업 추가]로 시작하세요.</td></tr>
+      <tr><td colspan="21" class="muted">등록된 기업이 없습니다. [기업 추가]로 시작하세요.</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -1120,6 +1150,7 @@
        **2. 재무·투자현황** 의 `정책자금` 자리로 옮겨 놓았으므로 따라 옮겼다 —
        그쪽도 같은 이유로 글자 칸이다(가장 긴 값이 72자, 줄바꿈은 없다). #}
     <label class="field"><span>설립년도</span><input type="text" id="f-founded_year" placeholder="예: 2015년"></label>
+    <label class="field"><span>지역</span><input type="text" id="f-region" placeholder="예: 서울"></label>
     {# ── 대표자명 — **우리 팀 담당자가 아니다** (예전 이름 `대표자`) ──────────────────────────
        모델의 `contact_*` 셋이고, 홍보메일에 답장한 기업 쪽 사람이다. 표의
        `담당자`(`assignee_name`)는 우리 팀원이라 다른 칸이다 — 예전에는 그 말이
@@ -1392,6 +1423,12 @@
        손으로 적어 두었더니 그 목록에 새 상태를 더해도 이 창만 옛 다섯 가지를
        보여 주었다 — 표에서는 고를 수 있는데 수정창에서는 없는 상태가 된다.
        위 `소개 상태`(`summary_labels`)가 이미 이렇게 돈다. #}
+    <label class="field"><span>견적서 첨부 여부</span>
+      <select id="f-quote_attached">
+        <option value="">(비어 있음)</option>
+        <option value="O">O</option>
+        <option value="X">X</option>
+      </select></label>
     <label class="field"><span>계약여부</span>
       <select id="f-contract_status">
         {% for key, label in contract_labels.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
@@ -1408,6 +1445,12 @@
        뜻을 두 화면이 다르게 부르면 어느 쪽이 맞는지 알 수 없다. #}
     <label class="field"><span>계약서 수신 여부</span>
       <select id="f-contract_received">
+        <option value="">(비어 있음)</option>
+        <option value="O">O</option>
+        <option value="X">X</option>
+      </select></label>
+    <label class="field"><span>카톡 연결 여부</span>
+      <select id="f-kakao_joined">
         <option value="">(비어 있음)</option>
         <option value="O">O</option>
         <option value="X">X</option>

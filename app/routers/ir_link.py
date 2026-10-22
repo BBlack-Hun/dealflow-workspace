@@ -17,12 +17,20 @@
 투자컨설턴트(역할)는 이 화면에 못 들어온다(`deps.CONSULTANT_PATHS` 밖이다) —
 IR 기업 현황 자체가 그 사람에게 닫혀 있다.
 
-## 저절로 잇지 않는다
+## 잇기 — 새 줄은 저절로, 있던 줄은 확인 화면을 거쳐
 
-[이 기업으로 연결] · [연결 해제] 는 줄 하나씩이다. [후보가 하나인 줄 일괄
-연결] 은 **확인 화면을 한 번 거친다**(`GET /ir-link/bulk`) — 몇 줄이 어느
+새로 생기는 줄은 이름이 정확히 하나 맞으면 저절로 이어진다(10/22 결정 2 —
+`services/company_sync._auto_link`). 이미 있던 줄은 [후보가 하나인 줄 일괄
+연결] 이 **확인 화면을 한 번 거쳐** 잇는다(`GET /ir-link/bulk`) — 몇 줄이 어느
 기업에 붙는지를 먼저 보이고, 누른 뒤에도 서버가 그 짝이 **아직 그대로인지**를
 줄마다 다시 본다(그 사이 누가 잇거나 IR 기업이 늘어 후보가 둘이 되었으면 건너뛴다).
+이름으로 이은 줄은 `자동 연결` 로 보이고 [연결 해제] 로 푼다.
+
+## 값 다름
+
+잇는 순간에는 빈칸만 채우므로(`company_sync` 머리말), 양쪽에 다른 값이 있던 칸은
+그대로 남는다. `값 다름` 칩이 그 줄을 모으고, 칸마다 [IR 값으로] · [이 줄 값으로]
+를 골라 맞춘다(`POST /ir-link/resolve`). 고른 뒤로는 이어진 줄 모두가 같아진다.
 
 ## 수정 로그
 
@@ -41,7 +49,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import get_current_user, may_view_consulting, templates
 from ..models import ConsultingCompany, IrCompany, User, VcContact
-from ..services import contact_columns, ir_link, sheet_owner
+from ..services import company_sync, contact_columns, ir_link, sheet_owner
 from ..ui import base_ctx
 from . import consulting as consulting_router
 from .companies import CONTRACT_LABELS, contract_key
@@ -61,7 +69,8 @@ TAB_LABELS = {ir_link.STARTUP: "스타트업 명단", ir_link.CONSULTING: "투�
 SHOW_LINKED = "linked"
 SHOW_CANDIDATE = "cand"     # 안 이었고 후보가 있다(하나든 여럿이든)
 SHOW_NONE = "none"          # 안 이었고 후보도 없다
-SHOWS = ("", SHOW_LINKED, SHOW_CANDIDATE, SHOW_NONE)
+SHOW_DIFF = "diff"          # 이었는데 IR 과 값이 다른 칸이 있다(`company_sync.differences`)
+SHOWS = ("", SHOW_LINKED, SHOW_CANDIDATE, SHOW_NONE, SHOW_DIFF)
 
 
 # ── 누구의 줄인가 ───────────────────────────────────────────────────────────
@@ -162,7 +171,8 @@ def _where(db: Session, row, owners: Dict[int, str]) -> Tuple[str, str]:
 
 
 def row_view(db: Session, idx: ir_link.Index, row, counts: Dict[int, int],
-             dup_ids: set, owners: Dict[int, str]) -> dict:
+             dup_ids: set, owners: Dict[int, str],
+             diffs: Optional[Dict[int, list]] = None) -> dict:
     st = ir_link.state(idx, row)
     linked = ir_link.linked_company(idx, row)
     found = [] if linked else idx.candidates(ir_link.row_name(row))
@@ -176,6 +186,9 @@ def row_view(db: Session, idx: ir_link.Index, row, counts: Dict[int, int],
         "state": st,
         "state_label": ir_link.STATE_LABELS[st],
         "linked": company_view(linked, counts, dup_ids) if linked else None,
+        # 이름으로 이어졌는가(일괄 연결 · 새 줄 저절로) — `자동 연결` 표시.
+        "auto": bool(linked and row.ir_link_auto),
+        "diffs": (diffs or {}).get(row.id, []) if linked else [],
         "candidates": [company_view(c, counts, dup_ids) for c in found],
     }
 
@@ -196,6 +209,7 @@ def tally(views: List[dict]) -> dict:
         "multi": by[ir_link.MULTI],
         "candidate": by[ir_link.SINGLE] + by[ir_link.MULTI],
         "none": by[ir_link.NONE],
+        "diff": sum(1 for v in shown if v["diffs"]),
     }
 
 
@@ -206,6 +220,8 @@ def _keep(view: dict, show: str) -> bool:
         return view["state"] in (ir_link.SINGLE, ir_link.MULTI)
     if show == SHOW_NONE:
         return view["state"] == ir_link.NONE
+    if show == SHOW_DIFF:
+        return bool(view["diffs"])
     return True
 
 
@@ -258,7 +274,8 @@ def ir_link_page(request: Request, db: Session = Depends(get_db),
     owners = _owners(db)
 
     rows = rows_for(db, user, kind, include_hidden=bool(row))
-    views = [row_view(db, idx, r, counts, dup_ids, owners) for r in rows]
+    diffs = company_sync.differences(db, rows)
+    views = [row_view(db, idx, r, counts, dup_ids, owners, diffs) for r in rows]
     totals = tally(views)
 
     focus = None
@@ -399,10 +416,36 @@ def bulk_link(tab: str = Form(...), pair: List[str] = Form(default=[]),
         if hit is None or hit[1].id != company_id:
             skipped += 1
             continue
-        if ir_link.link(db, hit[0], hit[1]):
+        # 이름으로 이은 것이라 `자동 연결` 로 적는다 — 화면에서 보고 풀 수 있게.
+        if ir_link.link(db, hit[0], hit[1], auto=True):
             done += 1
     db.commit()
     msg = f"{done}줄을 이었습니다."
     if skipped:
         msg += f" {skipped}줄은 그 사이 바뀌어 건너뛰었습니다(다시 확인해 주세요)."
     return RedirectResponse(_back(kind, msg=msg), status_code=303)
+
+
+@router.post(HREF + "/resolve", include_in_schema=False)
+def resolve_diff(tab: str = Form(...), row_id: int = Form(...),
+                 field: str = Form(...), pick: str = Form(...), show: str = Form(""),
+                 db: Session = Depends(get_db),
+                 user: User = Depends(get_current_user)):
+    """`값 다름` 한 칸 맞추기 — [IR 값으로](`pick=ir`) · [이 줄 값으로](`pick=row`).
+
+    문은 잇기 · 풀기와 같다(`editable_row`). 나머지 이어진 줄은 flush 가 따라 고친다.
+    """
+    kind = _kind(tab)
+    row = editable_row(db, user, kind, row_id)
+    name = ir_link.row_name(row) or f"#{row.id}"
+    try:
+        company_sync.resolve(db, row, field, pick)
+    except ValueError as exc:
+        return RedirectResponse(_back(kind, show, f"‘{name}’ — {exc}", anchor=row.id),
+                                status_code=303)
+    db.commit()
+    label = company_sync.LABELS.get(field, field)
+    side = "IR 값" if pick == "ir" else "이 줄 값"
+    return RedirectResponse(
+        _back(kind, show, f"‘{name}’ 의 {label} 을(를) {side}으로 맞췄습니다.", anchor=row.id),
+        status_code=303)
