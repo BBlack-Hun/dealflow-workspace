@@ -1012,15 +1012,16 @@ def _report(client, item, token=OTHER_TOKEN, **body):
 
 def test_room_search_sends_no_firm_and_drops_the_deal_intro_room(board, db, users):
     """회사를 실어 보내면 발송기가 회사 이름이 든 방(= 투자사 딜소개 방) 하나로
-    줄여 버린다. 회사는 안 보내고, **참여 중인** 분의 딜소개 방 제목은 후보에서 뺀다 —
-    이어진 투자사 줄의 방 · 번호가 같은 다른 팀원 명단 줄의 방 둘 다."""
+    줄여 버린다. 회사는 안 보내고, **사람이 적은 문구**인 분의 딜소개 방 제목은 후보에서
+    뺀다 — 이어진 투자사 줄의 방 · 번호가 같은 다른 팀원 명단 줄의 방 둘 다(`참여` ·
+    참여 안내 받을 분은 둔다 — 아래 시험)."""
     from app.models import SourcingContact
 
     contact = vc(db, users, kakao_room_name="홍길동 심사역 가나다벤처스")
     vc(db, users, who="u2", sheet=SHEET, kakao_room_name="홍길동 이사님 딜소개")
     mark(board, contact.id, "O")
     [row] = sync_rows(db)
-    row.participation = "참여"
+    row.participation = "다음 달에 다시 여쭙기"
     db.commit()
 
     item = _search(board, row.id)
@@ -1045,7 +1046,7 @@ def test_a_deal_intro_room_cannot_be_confirmed_as_the_sourcing_room(board, db, u
     contact = vc(db, users, kakao_room_name="홍길동 심사역 가나다벤처스")
     mark(board, contact.id, "O")
     [row] = sync_rows(db)
-    row.participation = "참여"          # 참여 안내 받을 분은 확정한다(아래 시험)
+    row.participation = "다음 달에 다시 여쭙기"   # 참여 · 참여 안내 받을 분은 확정한다(아래 시험)
     room_match.save_candidates(row, ["홍길동 심사역 가나다벤처스", "딜소싱 홍길동"],
                                at="2026-10-14T10:00:00+09:00")
     db.commit()
@@ -1058,10 +1059,11 @@ def test_a_deal_intro_room_cannot_be_confirmed_as_the_sourcing_room(board, db, u
     assert not db.get(SourcingContact, row.id).kakao_room_name
 
 
-@pytest.mark.parametrize("value", ["딜 소싱 참여 제안 대기중", "참여 의사를 물어보는 중"])
+@pytest.mark.parametrize("value", ["딜 소싱 참여 제안 대기중", "참여 의사를 물어보는 중", "참여"])
 def test_an_invitee_keeps_the_deal_intro_room_and_can_confirm_it(board, db, users, value):
     """참여 안내 받을 분(제안 대기중 · 물어보는 중)은 아직 딜 소싱 방이 없어 찾은 방이
     딜소개 방 하나뿐이다 — 운영에서 그 방을 빼 고를 단추가 없었다(2026-10-19).
+    `참여` 인 분도 같다 — 팀은 대개 한 방에서 딜소개와 딜 소싱을 같이 한다(2026-10-22).
     후보로 담고 [이 방으로 확정] 이 서고, 누르면 그 줄의 방이 된다."""
     from app.models import SourcingContact
 
