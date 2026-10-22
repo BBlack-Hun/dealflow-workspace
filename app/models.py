@@ -1467,6 +1467,22 @@ class SourcingContact(TimestampMixin, Base):
     )
 
 
+class SourcingTab(TimestampMixin, Base):
+    """딜 소싱 화면의 [+ 탭 추가]로 만든 갈래(탭) 이름 — **사람이 없어도 탭이 선다.**
+
+    갈래는 원래 `sourcing_contacts.bucket` 에 적힌 글자를 모은 것이라
+    (`services/sourcing_buckets.py`) 사람이 한 명도 없는 갈래는 탭이 서지 않는다.
+    새 탭은 이름만 여기 남기고, 줄 · 문구는 이 이름을 그대로 쓴다. 투자사 관리
+    현황과는 잇지 않는다(잇는 갈래는 `sourcing_sync.BRANCHES` 셋뿐이다).
+    """
+
+    __tablename__ = "sourcing_tabs"
+    __table_args__ = (UniqueConstraint("name", name="uq_sourcing_tabs_name"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String)
+
+
 class SourcingReceipt(TimestampMixin, Base):
     """**이 달 이 사람에게서 딜을 받았다** — 딜 소싱 화면의 `딜 받음` 표시.
 

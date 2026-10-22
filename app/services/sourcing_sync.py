@@ -87,6 +87,10 @@ O 는 **"이 갈래에 들어 있다"** 이지 "딜을 받겠다고 했다" 가 
 잘못 적은 줄이 남의 투자사 줄과 조용히 이어질 수 있었다. 이름만으로는 원래
 잇지 않는다 — 같은 이름이 여럿이다(`sourcing_link` 머리말).
 
+딜 소싱 [추가]로 넣은 분은 **투자사 관리 현황에도 선다**(사용자 요청 2026-10-22 — "쌍방으로").
+같은 분이 없으면 넣은 사람의 `직접 추가` 명단에 새로 만들어 잇고, 같은 분일 수 있는 줄이
+있으면 만들지 않고 후보로 남긴다(`add_from_sourcing`). 줄을 고칠 때는 만들지 않는다.
+
 잇기가 생기기 전부터 있던 M&A · 구주·후속 줄은 이 길을 지난 적이 없다 — 딜 소싱
 화면의 그 탭 [저절로 잇기]가 같은 규칙으로 한꺼번에 잇는다(`auto_link_all`).
 
@@ -173,7 +177,7 @@ addresses_of`)이 그분을 못 찾는다(PR #284 리뷰). 한쪽에서 일부�
 from __future__ import annotations
 
 import re
-from typing import Dict, Iterable, List, Optional
+from typing import Dict, Iterable, List, Optional, Tuple
 from urllib.parse import quote
 
 from sqlalchemy import func, select
@@ -871,6 +875,73 @@ def auto_link(db: Session, row: SourcingContact) -> Optional[VcContact]:
         return None
     link(row, contact)
     return contact
+
+
+def _name_key(text: Optional[str]) -> str:
+    """이름 견주기 — `(딜 소개 X)` 표시를 떼고 `_key`. 표시가 붙은 투자사 줄도 같은 이름이다."""
+    return _key(_NO_INTRO.sub("", text or ""))
+
+
+def lookalikes(db: Session, row: SourcingContact) -> List[VcContact]:
+    """투자사 관리 현황에서 이 소싱 줄과 **이름이나 번호가 같은** 줄 — 같은 분일 수 있는 줄.
+
+    표에서 감춘 줄까지 본다(`sheet_owner.on_investor_list`) — 감췄어도 같은 분이 있으면
+    새로 만들지 않는다. 투자사로 세지 않는 명단(스타트업 등)은 뺀다."""
+    name, phone = _name_key(row.name), digits(row.phone)
+    hidden = sheet_owner.hidden_labels(db)
+    return [c for c in db.execute(select(VcContact)).scalars()
+            if sheet_owner.on_investor_list(c, hidden)
+            and ((name and _name_key(c.name) == name)
+                 or (len(phone) >= MIN_DIGITS and digits(c.phone) == phone))]
+
+
+def add_from_sourcing(db: Session, row: SourcingContact,
+                      user: User) -> Tuple[Optional[VcContact], str]:
+    """딜 소싱 [추가] — **투자사 관리 현황에도 같은 분이 서게** 한다(사용자 요청 2026-10-22:
+    "딜 소싱에서 사용자를 추가하게 되면 투자사 관리현황에도 동일하게 — 쌍방으로").
+
+      ① `(딜 소개 X)` · `딜 소개 보류` 인 투자사 줄과 번호가 같거나, 넣는 이름에 그 표시가
+         있으면 **막는다**(`SyncError`) — 어느 갈래든(`set_mark` 의 O 와 같은 규칙).
+      ② 잇는 갈래(`BRANCHES` 셋)가 아니면 여기까지 — 대표 · 개인 갈래는 예전처럼 잇지 않는다.
+      ③ 이름 + 번호가 같은 투자사 줄이 팀 전체에 딱 하나면 그 줄과 잇는다(`auto_link`).
+      ④ 이름이나 번호가 같은 줄이 있는데 못 이었으면 **만들지 않는다**(`lookalikes`) —
+         어느 줄인지 코드가 고르지 않는다. 그 줄 이름 아래 후보에서 사람이 확정한다.
+      ⑤ 아무도 없으면 **넣은 사람의 `직접 추가` 명단**에 새 투자사 줄을 만들고 잇는다
+         (`sheet_owner.MANUAL_SHEET` — 명단을 안 고르고 넣는 [담당자 추가]와 같은 자리 ·
+         같은 담당). 같은 칸(`SHARED_FIELDS`)만 옮기고, 카톡방은 비운다 — 이 줄의 방은
+         딜 소싱 방이고 투자사 쪽 방은 그 담당이 연결할 때 적는다(모듈 머리말 ★).
+         사람이 확정한 것과 같이 친다 — 시트를 다시 가져와도 되살린다(`restore_confirmed`).
+
+    돌려주는 것: `(이어진 투자사 줄 또는 None, 화면에 띄울 말)`. `db.commit()` 은 부르는 쪽.
+    """
+    phone = digits(row.phone)
+    same = lookalikes(db, row)
+    blocked = next((c for c in same if intro_blocked(c)
+                    and len(phone) >= MIN_DIGITS and digits(c.phone) == phone), None)
+    if blocked is not None or _NO_INTRO.search(row.name or ""):
+        who = blocked.name if blocked is not None else row.name
+        raise SyncError(
+            f"'{who}' 은 이름에 `(딜 소개 X)` 가 붙었거나 그룹이 `딜 소개 보류` 라 딜 소싱에 "
+            "넣지 않습니다 — 넣어야 하는 분이면 투자사 관리 현황에서 그 표시를 먼저 거두세요.")
+    if not is_synced(row):
+        return None, ""
+    contact = auto_link(db, row)
+    if contact is not None:
+        return contact, ""
+    if same:
+        return None, (
+            f"투자사 관리 현황에 이름이나 휴대폰이 같은 분이 {len(same)}명 있어 새로 만들지 "
+            "않았습니다 — 같은 분이면 이 줄 이름 아래 후보에서 [이 분으로 확정]으로 이어 "
+            "주세요(후보가 없으면 그 줄을 표에서 감췄거나 이미 이 갈래의 다른 줄과 이어진 분입니다).")
+    contact = VcContact(user_id=user.id,
+                        **{f: _text(getattr(row, f, None)) or None for f in SHARED_FIELDS})
+    db.add(contact)
+    db.flush()
+    link(row, contact, confirmed=True)
+    return contact, (
+        f"투자사 관리 현황에 없는 분이라 내 '{sheet_owner.MANUAL_SHEET}' 명단에 새로 넣고 "
+        f"이었습니다 — {' · '.join(SHARED_LABELS[f] for f in SHARED_FIELDS)}은 어느 쪽에서 "
+        "고쳐도 같이 바뀝니다(메모 · 카톡방은 따로).")
 
 
 def auto_link_all(db: Session, bucket: str) -> int:
