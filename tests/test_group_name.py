@@ -85,6 +85,21 @@ def test_딜_소싱_네트워크와_메일도_정리_스크립트가_남긴다()
     assert gn.decide("딜소싱네트워크").group == gn.SEPARATE
 
 
+def test_프롭테크_스마트시티는_IR_대분류_글자_그대로_그룹으로_남는다():
+    """사용자가 한 분의 그룹을 이 이름으로 묶었다. `NAMED` 에 없으면 다음 시트
+    업로드·정리 스크립트가 문장으로 보고 메모로 옮긴다."""
+    from app.services import taxonomy
+
+    name = "프롭테크·스마트시티"
+    assert name in [major for major, _ in taxonomy.SEED]   # IR 대분류 글자 그대로
+    assert gn.decide(name) == gn.Decision(gn.KEEP, group=name)
+    # 가운뎃점·띄어쓰기만 다른 것은 제 글자로 모인다.
+    assert gn.decide("프롭테크 / 스마트시티").group == name
+    # 고르는 칸의 보기에도 선다.
+    assert name in gn.CHOICES.split(",")
+    assert name in gn.options([]).split(",")
+
+
 def test_이름은_적어_둔_글자_그대로_돌려준다():
     """표기가 갈린 것은 **제 글자로 모은다.** 표에서 고른 값과 창에서 친 값이
     한 글자라도 다르면 딜 제안 관리에서 다른 그룹이 된다."""
