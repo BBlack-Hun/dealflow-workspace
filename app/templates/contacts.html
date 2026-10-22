@@ -759,8 +759,8 @@
         <th style="width:276px"
             title="메모 ( 통화내용 /  카톡내용  /  카톡답신내용)">메모 ( 통화내용 /  카톡내용  /  카톡답신내용)</th>
         <th style="width:180px">딜소싱 참여 투자사</th>
-        {# **딜 소싱과 이어진 칸** — 딜 소싱의 세 갈래(`Series A` · `M&A` · `구주·후속`
-           — `sourcing_sync.BRANCHES`) 중 어디에 이 분이 있나(`services/sourcing_sync.py`).
+        {# **딜 소싱과 이어진 칸** — 딜 소싱의 잇는 갈래(`Series A` · `M&A` · `구주·후속` ·
+           `대표` · `개인참여` — `sourcing_sync.BRANCHES`) 중 어디에 이 분이 있나(`services/sourcing_sync.py`).
            원본 시트에는 없는, 앱이 만든 칸이다. 예전 `Series A 딜 소싱`(O/X) 칸을
            이 칸 하나로 바꿨다(사용자 결정 2026-10-21).
 
@@ -771,7 +771,7 @@
            `참여` 인 분뿐이다(`sourcing_sync.takes_part`).
 
            **이 줄에 저장되는 값이 아니다.** 이어진 소싱 줄들을 읽어 그린다 — 딜 소싱
-           화면에서 참여를 바꾸면 여기도 그대로 바뀐다. 누르면 체크 상자 셋이 뜬다
+           화면에서 참여를 바꾸면 여기도 그대로 바뀐다. 누르면 갈래마다 체크 상자가 뜬다
            (`inline_edit.js` 의 `branches`). 체크하면 그 갈래에서 같은 분을 찾아
            잇고(이름 + 번호), 없으면 새 줄을 `딜 소싱 참여 제안 대기중` 으로 만든다.
            풀면 그 줄을 `불참여` 로 둘 뿐 **지우지 않는다**. `(딜 소개 X)` · `딜 소개
@@ -795,7 +795,7 @@
 
            **필터를 건다.** 딜 소싱 표가 같은 칸에 거는 까닭 그대로다(`routers/sourcing.
            COLUMNS` — 참여 요청일은 고를 만한 값 몇 가지로 모인다). 이 표에서는 이어진
-           줄(세 갈래)만 값이 있어 더 적다.
+           줄(잇는 갈래)만 값이 있어 더 적다.
            **머리글을 눌러 세운다**(`table_sort.js`) — 표기가 섞여 있어(`2026/05/21` ·
            `2026-07-01`) 글자로 세우면 틀리므로, 줄에는 서버가 날짜로 읽은 값을 싣는다
            (`data-s-sourcing_date` · `routers/sourcing.requested_sort`). 빈칸은 늘 끝. 엑셀에는 `딜 소싱`
@@ -968,7 +968,7 @@
            고른 갈래 `Series A, M&A` — 체크 상자 창이 이것으로 서고 이것을 보낸다. 저장 뒤
            딱지는 **서버가 읽은 값**으로 다시 그린다(`contacts.js` 의 `drawSourcing`). #}
         <td class="cell sourcing-cell" data-field="sourcing_branches" data-type="branches"
-            data-choices="Series A,M&amp;A,구주·후속" data-filter-key="sourcing"
+            data-choices="{{ sourcing_branch_labels|join(',') }}" data-filter-key="sourcing"
             data-value="{{ r.sourcing_branches }}">{% for chip in r.sourcing_chips %}<span
             class="branch-chip {{ chip.kind }}{% if not chip.on %} off{% endif %}"
             title="{{ chip.text }}{% if chip.requested %} · 참여 요청일 {{ chip.requested }}{% endif %}">{{ chip.text }}</span>{% endfor %}</td>
@@ -1592,7 +1592,7 @@
           <option value="낮음"></option>
         </datalist></label>
       <label class="field wide"><span>딜소싱 참여 투자사</span><input type="text" id="f-sourcing_note"></label>
-      {# 표의 `딜 소싱` 칸과 **같은 칸**이다 — 이름도 보기(갈래 셋)도 표와 같게.
+      {# 표의 `딜 소싱` 칸과 **같은 칸**이다 — 이름도 보기(`sourcing_branch_labels`)도 표와 같게.
          바로 위 시트 칸은 자유 글이고, 이 칸이 딜 소싱과 **이어진** 칸이다
          (`services/sourcing_sync.py`). 체크 상자가 숨은 칸(`f-sourcing_branches`)에
          고른 갈래를 `Series A, M&A` 로 모은다 — 저장은 그 값을 **바꿨을 때만** 보낸다
@@ -1600,9 +1600,9 @@
       <div class="field checks"><span>딜 소싱</span>
         <input type="hidden" id="f-sourcing_branches">
         <span class="check-row">
-          <label><input type="checkbox" class="f-branch" value="Series A"> Series A</label>
-          <label><input type="checkbox" class="f-branch" value="M&amp;A"> M&amp;A</label>
-          <label><input type="checkbox" class="f-branch" value="구주·후속"> 구주·후속</label>
+          {% for label in sourcing_branch_labels %}
+          <label><input type="checkbox" class="f-branch" value="{{ label }}"> {{ label }}</label>
+          {% endfor %}
         </span>
       </div>
       <label class="field wide"

@@ -13,17 +13,25 @@
 
     ① 첨부는 UIA 로 찾은 첨부 단추 하나 → 없으면 그 단축키(Ctrl+T). 좌표로 누르지 않는다
     ② 열기 창에 **전체 경로**를 넣고 되읽어 같을 때만 [열기]. 아니면 [취소]
-    ③ 카드: 후보가 딱 하나 · 제목 `파일 전송` · [N개 전송] 하나 · N == 1 일 때만 누른다.
-       파일명이 읽히면 같아야 하고, 못 읽으면 통과시키되 말을 남긴다
+    ③ 카드(0.11.13): UIA 로는 속이 안 보인다(실기) — **창 구조로** 후보를 딱 하나 고르고
+       (`EVA_Window_Dblclk` · 주인이 채팅창 · 속에 `EVA_ChildWindow` 1001), 글자는 찍어서
+       윈도우 OCR 로 읽는다. 글자 `파일 전송` · `N개 전송` 줄 하나 · N == 1 일 때만 그 글자
+       한가운데를 누른다. 파일명이 읽히면 같아야 하고, 못 읽으면 통과시키되 말을 남긴다.
+       OCR 을 못 쓰면 보내지 않는다
     ④ `전송 불가` 는 [확인]으로 닫고 까닭을 남긴다 — **문구도 안 나간다**
     ⑤ [중단]은 [열기] 앞에서 [취소], [1개 전송] 앞에서 [×]
     ⑥ 진단에는 카톡 창들과 그 속 컨트롤이 실린다(실기 확인 전에는 **성공해도**) —
        메인 창(대화 목록)의 속 · 열기 창의 파일 목록은 싣지 않는다
     ⑦ 0바이트 파일은 카톡을 열기 **전에** 막는다
 
-창 · 컨트롤 · 키보드는 가짜로 대신한다. 창을 고르고 누르고 닫는 코드는 진짜다.
+창 · 컨트롤 · 키보드 · 화면 찍기 · OCR 은 가짜로 대신한다. 창을 고르고 읽은 글자로
+판단하고 누르고 닫는 코드는 진짜다.
 """
 from __future__ import annotations
+
+import base64
+import json
+import os
 
 import pytest
 
@@ -36,6 +44,15 @@ MAIN, CHAT, NOTEPAD, OPEN, NOTICE, CARD, CARD2, OVERLAY = 100, 200, 300, 400, 40
 PID = 7
 SECRET = "남의 이름 — 지난 대화"          # 메인 창(대화 목록)에만 있는 글자
 PRIVATE_FILE = "남의사진_승차권.jpg"       # 열기 창의 파일 목록에만 있는 이름
+CARD_CLASS = kw.FILE_SEND_DEFAULTS["card_class"]
+CARD_RECT = (1000, 500, 1450, 776)          # 실기 카드 450×276
+
+
+def ocr_lines(rows):
+    """[(글자, 넓은 단추냐)] → 윈도우 OCR 이 돌려주는 모양. 줄마다 36 화소씩 아래로."""
+    return [{"text": text, "words": [{"text": text, "x": 30, "y": 20 + 36 * i,
+                                      "w": 390 if wide else 200, "h": 22}]}
+            for i, (text, wide) in enumerate(rows)]
 
 
 class Node:
@@ -93,6 +110,11 @@ class Keys:
     def __init__(self, kakao):
         self.kakao = kakao
         self.keys = []
+        self.points = []
+
+    def click(self, x, y):
+        self.points.append((x, y))
+        self.kakao.click_at(x, y)
 
     def hotkey(self, *keys):
         self.keys.append(keys)
@@ -107,16 +129,17 @@ class Kakao(kw.KakaoDesktopSender):
     """Win32 · UIA 를 부르는 맨 끝 자리만 가짜로 바꾼 Windows 발송기.
 
     `attach_button` — 채팅창 속 첨부 단추가 UIA 로 보이는가(아니면 Ctrl+T 로 간다).
-    `card` — [열기] 뒤 뜰 카드의 모양(`card_shape`). None 이면 아무것도 안 뜬다.
+    `card` — [열기] 뒤 뜰 카드들(`card_node`). None 이면 아무것도 안 뜬다.
+    `ocr_error` — 윈도우 OCR 을 못 쓴다(그 까닭). `covered` — 누를 점을 다른 창이 덮었다.
     `file_missing` — [열기] 를 누르면 '파일을 찾을 수 없습니다' 알림이 뜨고 열기 창이 남는다.
     """
 
     def __init__(self, ir_root, *, card=None, attach_button=True, hotkey_opens=True,
                  opens=True, open_owner=CHAT, file_missing=False, edit_echo=None,
-                 enabled=True):
+                 enabled=True, ocr_error=None, png_dir=None):
         self.sel = {"timings": {"open_dialog_wait": 0, "confirm_wait": 0,
                                 "after_confirm_click": 0, "after_close_chat": 0,
-                                "room_search_poll": 0}}
+                                "room_search_poll": 0, "card_settle": 0}}
         self.screenshot_dir = ""
         self.ir_root_setting = ir_root
         self.can_send_files = enabled
@@ -133,6 +156,11 @@ class Kakao(kw.KakaoDesktopSender):
         self.open_owner = open_owner
         self.file_missing = file_missing
         self.edit_echo = edit_echo
+        self.rects, self.ocr, self.closes_on = {}, {}, {}
+        self.ocr_error = ocr_error
+        self.png_dir = png_dir
+        self.covered = False
+        self.grabs = []
         chat_kids = [Node("Edit", "메시지 입력"), Node("Button", "전송")]
         if attach_button:
             chat_kids.append(Node("Button", "파일전송 Ctrl+T", on_click=self._attach))
@@ -185,16 +213,59 @@ class Kakao(kw.KakaoDesktopSender):
         self.windows.pop(OPEN, None)
 
     def card_node(self, hwnd, title="", *, texts=("파일 전송", "IR.pdf", "149KB"),
-                  buttons=("닫기", "1개 전송"), closes_on=None):
-        """`closes_on` — 누르면 카드가 닫히는 단추들. None 이면 어느 단추든 닫힌다."""
-        def _click(name):
+                  buttons=("1개 전송",), closes_on=None, cls=CARD_CLASS, child=True):
+        """카드 창 — UIA 로는 파일 줄 자리(`EVA_ChildWindow` 1001)만 보이고 글자는 OCR 로만
+        읽힌다(실기). `closes_on` — 누르면 카드가 닫히는 것(OCR 줄 글자 · `×`). None 이면 다."""
+        self.classes[hwnd] = cls
+        self.rects[hwnd] = CARD_RECT
+        self.ocr[hwnd] = ocr_lines([(t, False) for t in texts] + [(b, True) for b in buttons])
+        self.closes_on[hwnd] = closes_on
+        pane = Node("Pane", aid="1001")
+        pane.class_name = "EVA_ChildWindow"
+        return Node("Window", title, [pane] if child else [])
+
+    def click_at(self, x, y):
+        """화면 점 누르기 — 그 점의 카드 [×] 나 OCR 줄을 누른 것으로 친다."""
+        for hwnd, (left, top, right, bottom) in reversed(self.rects.items()):  # 새 창이 위
+            if hwnd not in self.windows or not (left <= x < right and top <= y < bottom):
+                continue
+            lx, ly = x - left, y - top
+            name = "×" if abs(lx - (right - left - 20)) <= 6 and abs(ly - 19) <= 6 else next(
+                (line["text"] for line in self.ocr.get(hwnd, []) for w in line["words"]
+                 if w["x"] <= lx < w["x"] + w["w"] and w["y"] <= ly < w["y"] + w["h"]),
+                f"@{lx},{ly}")
             self.clicks.append(name)
-            if closes_on is None or name in closes_on:
+            if self.closes_on[hwnd] is None or name in self.closes_on[hwnd]:
                 self.windows.pop(hwnd, None)
-        kids = [Node("Text", t) for t in texts]
-        kids += [Node("Button", b, on_click=_click) for b in buttons]
-        kids.append(Node("Button", "더보기", on_click=_click))      # `⋮` — 누르면 안 된다
-        return Node("Window", title, kids)
+            return
+        self.clicks.append(f"@{x},{y}")
+
+    # --- 화면 찍기 · OCR ---
+    def _hwnd_rect(self, hwnd):
+        return self.rects.get(hwnd)
+
+    def _dpi_scale(self, hwnd):
+        return 1.0
+
+    def _point_on(self, hwnd, point):
+        left, top, right, bottom = self.rects.get(hwnd) or (0, 0, 0, 0)
+        return (not self.covered and hwnd in self.windows
+                and left <= point[0] < right and top <= point[1] < bottom)
+
+    def _grab(self, rect, upscale=1):
+        self.grabs.append(rect)
+        path = ""
+        if self.png_dir:
+            path = os.path.join(self.png_dir, kw.CARD_PNG_FILE)
+            with open(path, "wb") as fh:
+                fh.write(b"card-png")
+        return path, (rect[2] - rect[0], rect[3] - rect[1]), 1
+
+    def _ocr(self, path, conf):
+        if self.ocr_error:
+            raise kw.OcrUnavailable(self.ocr_error)
+        live = [h for h in reversed(self.ocr) if h in self.windows]   # 새 창이 위
+        return self.ocr[live[0]] if live else []
 
     # --- Win32 ---
     def _top_windows(self):
@@ -301,10 +372,27 @@ def test_without_a_visible_attach_button_it_uses_the_shortcut(ir_dir):
     assert kakao.clicks == ["열기(O)", "1개 전송"]
 
 
-def test_a_card_titled_by_its_window_is_also_found(ir_dir):
-    kakao = Kakao(str(ir_dir), card=sendable(title="파일 전송",
-                                             texts=("IR.pdf", "149KB")))
+def test_the_click_lands_in_the_middle_of_the_ocr_box(ir_dir):
+    """OCR 이 읽은 `1개 전송` 글자 자리(그림 속) + 카드 왼쪽 위 = 누르는 화면 점."""
+    kakao = Kakao(str(ir_dir), card=sendable())
     assert kakao.send_file(ROOM, ["IR.pdf"]).ok
+    # 넷째 줄(파일 전송 · IR.pdf · 149KB · 1개 전송): x 30~420, y 128~150
+    assert kakao._pyautogui.points == [(1000 + 225, 500 + 139)]
+    assert kakao.grabs == [CARD_RECT], "카드 자리를 그대로 찍어야 한다"
+
+
+def test_a_card_window_titled_like_the_card_is_also_a_candidate(ir_dir):
+    kakao = Kakao(str(ir_dir), card=sendable(title="파일 전송"))
+    assert kakao.send_file(ROOM, ["IR.pdf"]).ok
+
+
+def test_ocr_that_breaks_up_the_words_still_reads_the_card(ir_dir):
+    """OCR 은 `1개 전송` 을 붙이거나 낱자마다 띄워 읽는다 — 띄어쓰기를 지우고 본다."""
+    kakao = Kakao(str(ir_dir), card=sendable(texts=("파 일 전 송", "IR .pdf"),
+                                             buttons=("1 개전송",)))
+    result = kakao.send_file(ROOM, ["IR.pdf"])
+    assert result.ok, result.error
+    assert result.warning is None, "파일명을 읽었는데 못 읽었다고 한다"
 
 
 def test_an_unreadable_file_name_passes_on_title_and_button_with_a_note(ir_dir):
@@ -313,7 +401,7 @@ def test_an_unreadable_file_name_passes_on_title_and_button_with_a_note(ir_dir):
     result = kakao.send_file(ROOM, ["IR.pdf"])
 
     assert result.ok, result.error
-    assert "파일명을" in result.warning and "1개 전송" in result.warning
+    assert "파일명을" in result.warning and "1개전송" in result.warning  # OCR 글자(띄어쓰기 지움)
 
 
 def test_several_files_go_one_card_at_a_time(ir_dir):
@@ -332,13 +420,14 @@ def test_several_files_go_one_card_at_a_time(ir_dir):
 # ══════════════════════════════════════════════════════════════════════════
 
 def test_a_count_that_is_not_one_is_refused_and_closed(ir_dir):
-    """★ [2개 전송] — 남은 선택이 섞였다. 누르지 않고 [×]."""
-    kakao = Kakao(str(ir_dir), card=sendable(buttons=("닫기", "2개 전송")))
+    """★ [2개 전송] — 남은 선택이 섞였다. 누르지 않고 [×](오른쪽 위 모서리)."""
+    kakao = Kakao(str(ir_dir), card=sendable(buttons=("2개 전송",)))
     result = kakao.send_file(ROOM, ["IR.pdf"])
 
     assert not result.ok and "개수가 다릅니다" in result.error
-    assert "2개 전송" not in kakao.clicks and "더보기" not in kakao.clicks
-    assert kakao.clicks[-1] == "닫기" and CARD not in kakao.windows
+    assert "2개 전송" not in kakao.clicks
+    assert kakao.clicks[-1] == "×" and CARD not in kakao.windows
+    assert kakao._pyautogui.points[-1] == (1450 - 20, 500 + 19)
 
 
 def test_another_file_on_the_card_is_refused(ir_dir):
@@ -349,22 +438,22 @@ def test_another_file_on_the_card_is_refused(ir_dir):
     assert not kakao.sent
 
 
-def test_a_card_without_a_close_button_is_closed_by_wm_close(ir_dir):
-    """[×] 이 UIA 로 안 보이면 그 창에만 WM_CLOSE — `⋮` 는 누르지 않는다."""
-    kakao = Kakao(str(ir_dir), card=sendable(buttons=("2개 전송",)))
+def test_a_card_the_close_mark_does_not_close_gets_wm_close(ir_dir):
+    """[×] 를 눌러도 남으면 그 창에만 WM_CLOSE(카드가 앞이 아니면 Esc 도 안 누른다)."""
+    kakao = Kakao(str(ir_dir), card=sendable(buttons=("2개 전송",), closes_on=()))
     kakao.send_file(ROOM, ["IR.pdf"])
 
-    assert kakao.closed == [CARD]
-    assert "더보기" not in kakao.clicks and not kakao.sent
+    assert kakao.clicks[-1] == "×" and kakao.closed == [CARD]
+    assert not kakao.sent and not kakao.esc
 
 
 def test_a_send_click_that_leaves_the_card_open_is_cleaned_up(ir_dir):
-    kakao = Kakao(str(ir_dir), card=sendable(closes_on=("닫기",)))
+    kakao = Kakao(str(ir_dir), card=sendable(closes_on=("×",)))
     result = kakao.send_file(ROOM, ["IR.pdf"])
 
     assert not result.ok
     assert "send_unconfirmed" in result.error and "겹칠 수 있습니다" in result.error
-    assert kakao.clicks[-2:] == ["1개 전송", "닫기"]
+    assert kakao.clicks[-2:] == ["1개 전송", "×"], "다시 누르지 않고 닫기만 한다"
 
 
 def test_two_candidates_are_refused(ir_dir):
@@ -373,19 +462,95 @@ def test_two_candidates_are_refused(ir_dir):
     result = kakao.send_file(ROOM, ["IR.pdf"])
 
     assert not result.ok and "confirm_window_not_shown" in result.error
-    assert not kakao.sent and kakao.esc
+    assert "2개 찾아 고르지 않았습니다" in result.error
+    assert not kakao.sent and kakao.grabs == [], "고르지도 않고 찍었다"
+    assert CARD not in kakao.windows and CARD2 not in kakao.windows, "둘 다 닫아야 한다"
+    assert not kakao.esc, "누가 앞인지 모르는 Esc 는 누르지 않는다"
     assert f"hwnd={CARD} " in kakao.dump and f"hwnd={CARD2} " in kakao.dump
 
 
-def test_an_empty_overlay_does_not_count_as_a_candidate(ir_dir):
-    """카드 뒤 채팅창을 어둡게 덮는 창(속이 빈 새 창)은 후보가 아니다."""
-    kakao = Kakao(str(ir_dir), card=lambda k: [
-        (OVERLAY, "", CHAT, kw_node("Pane")), (CARD, "", CHAT, k.card_node(CARD))])
-    assert kakao.send_file(ROOM, ["IR.pdf"]).ok
+def test_an_unexpected_error_on_the_card_still_closes_it(ir_dir):
+    """★ 카드를 연 채로 예외가 나면 닫고 실패한다 — 남기면 다음 문구에 첨부가 묻어갈 수 있다."""
+    kakao = Kakao(str(ir_dir), card=sendable())
+
+    def broken(path, conf):
+        raise RuntimeError("뜻밖의 고장")
+    kakao._ocr = broken
+    result = kakao.send_file(ROOM, ["IR.pdf"])
+
+    assert not result.ok and "뜻밖의 고장" in result.error
+    assert not kakao.sent and CARD not in kakao.windows
+    assert "예외: 뜻밖의 고장" in kakao.dump
 
 
-def kw_node(ctype):
-    return Node(ctype)
+def test_a_card_that_moved_after_reading_is_not_clicked(ir_dir):
+    """찍고 읽는 사이(PowerShell 몇 초) 카드가 움직였으면 읽은 점은 낡았다 — 안 누른다."""
+    kakao = Kakao(str(ir_dir), card=sendable())
+    answers = iter([False, False, False])
+
+    def stop_and_move():
+        if kakao.rects.get(CARD) == CARD_RECT and kakao.grabs:
+            kakao.rects[CARD] = (900, 500, 1350, 776)
+        return next(answers)
+    result = kakao.send_file(ROOM, ["IR.pdf"], should_stop=stop_and_move)
+
+    assert not result.ok and "send_button_not_located" in result.error
+    assert "움직였거나 덮였습니다" in result.error
+    assert not kakao.sent and CARD not in kakao.windows
+
+
+@pytest.mark.parametrize("odd", [
+    dict(cls="EVA_Window"),                 # 클래스가 다르다(카드 뒤를 어둡게 덮는 창 따위)
+    dict(child=False),                      # 속에 파일 줄(EVA_ChildWindow 1001)이 없다
+    dict(owner=MAIN),                       # 채팅창이 띄운 창이 아니다
+    dict(title="다른 창"),                  # 제목이 있다
+])
+def test_a_window_off_the_card_structure_is_not_a_candidate(ir_dir, odd):
+    """★ 카드는 창 구조로만 고른다 — 하나라도 어긋나면 후보가 아니다(글자를 보기 전에)."""
+    owner = odd.pop("owner", CHAT)
+    title = odd.pop("title", "")
+    alone = Kakao(str(ir_dir), card=lambda k: [(OVERLAY, title, owner,
+                                                k.card_node(OVERLAY, title, **odd))])
+    result = alone.send_file(ROOM, ["IR.pdf"])
+    assert not result.ok and "confirm_window_not_shown" in result.error
+    assert not alone.sent and alone.grabs == []
+
+    beside = Kakao(str(ir_dir), card=lambda k: [
+        (OVERLAY, title, owner, k.card_node(OVERLAY, title, **odd)),
+        (CARD, "", CHAT, k.card_node(CARD))])
+    assert beside.send_file(ROOM, ["IR.pdf"]).ok, "진짜 카드 옆에 있어도 후보가 아니다"
+
+
+def test_ocr_unavailable_never_sends(ir_dir):
+    """★ 한국어 OCR 이 없으면(또는 PowerShell 이 막히면) 카드를 닫고 안 보낸다."""
+    why = f"{kw.OCR_INSTALL_HINT} (이 PC 의 인식기: en-US)"
+    kakao = Kakao(str(ir_dir), card=sendable(), ocr_error=why)
+    result = kakao.send_file(ROOM, ["IR.pdf"])
+
+    assert not result.ok and result.error.startswith("ocr_unavailable")
+    assert "윈도우 한국어 글자 인식(OCR)을 쓸 수 없습니다" in result.error
+    assert "설정 > 언어에서 한국어 OCR 설치 필요" in result.error
+    assert not kakao.sent and kakao.clicks[-1] == "×" and CARD not in kakao.windows
+    assert "OCR 못 씀=" in kakao.dump
+
+
+def test_a_point_another_window_covers_is_not_clicked(ir_dir):
+    """누를 점이 카드 위가 아니면(다른 창이 덮었다) 누르지 않는다."""
+    kakao = Kakao(str(ir_dir), card=sendable())
+    kakao.covered = True
+    result = kakao.send_file(ROOM, ["IR.pdf"])
+
+    assert not result.ok and "send_button_not_located" in result.error
+    assert not kakao.sent and kakao.closed == [CARD]
+
+
+def test_a_refusal_carries_the_card_picture(ir_dir, tmp_path):
+    """실패한 건의 화면은 OCR 이 본 카드 그림이다 — 닫은 뒤 찍은 화면에는 카드가 없다."""
+    kakao = Kakao(str(ir_dir), card=sendable(buttons=("2개 전송",)), png_dir=str(tmp_path))
+    result = kakao.send_file(ROOM, ["IR.pdf"])
+
+    assert not result.ok
+    assert result.screenshot_b64 == base64.b64encode(b"card-png").decode("ascii")
 
 
 def test_no_card_is_refused_with_diagnostics_and_cleanup(ir_dir, tmp_path):
@@ -465,8 +630,9 @@ def test_an_unsendable_card_is_dismissed_with_its_reason(ir_dir):
     result = kakao.send_file(ROOM, ["IR.pdf"])
 
     assert not result.ok and result.error.startswith("file_refused")
-    assert "IR.pdf · 비어있는 파일" in result.error
+    assert "IR.pdf · 비어있는파일" in result.error, "OCR 글자는 띄어쓰기를 지운 것"
     assert kakao.clicks[-1] == "확인" and CARD not in kakao.windows
+    assert not kakao.sent
 
 
 def test_an_unsendable_file_stops_the_message_too(ir_dir):
@@ -515,7 +681,7 @@ def test_stop_at_the_card_closes_it(ir_dir):
     result = kakao.send_file(ROOM, ["IR.pdf"], should_stop=lambda: next(answers))
 
     assert not result.ok and result.stopped == 0
-    assert kakao.clicks[-1] == "닫기" and not kakao.sent
+    assert kakao.clicks[-1] == "×" and not kakao.sent
     assert CARD not in kakao.windows
 
 
@@ -537,6 +703,9 @@ def test_a_successful_send_still_reports_the_dump_while_unverified(ir_dir):
     kakao = Kakao(str(ir_dir), card=sendable())
     assert kakao.send_file(ROOM, ["IR.pdf"]).ok
     assert "[열기 창 (첨부 단추(UIA))]" in kakao.dump and "[파일 전송 창]" in kakao.dump
+    assert f"[파일 전송 카드] hwnd={CARD} " in kakao.dump
+    assert f"rect={CARD_RECT}" in kakao.dump and "'1개 전송'" in kakao.dump
+    assert "판단=보냄" in kakao.dump
 
 
 def test_a_verified_success_keeps_quiet(ir_dir):

@@ -66,8 +66,8 @@ COLUMNS = [
     # `참여` · `불참여` · `참여 의사를 물어보는 중` + 사람이 적은 문구. 몇 가지로
     # 모이는 값이라 거른다. **월간 리마인드 · Series A 딜 공유는 정확히 `참여` 인
     # 분께만**(`sourcing_sync.takes_part`), 참여 안내(처음)는 제안 대기중 · 물어보는
-    # 중에게만 나간다(`can_get_invite`). 잇는 세
-    # 갈래(Series A · M&A · 구주·후속)의 줄은 투자사 관리 현황의 `딜 소싱` 칸 딱지가
+    # 중에게만 나간다(`can_get_invite`). 잇는
+    # 갈래(`sourcing_sync.BRANCHES`)의 줄은 투자사 관리 현황의 `딜 소싱` 칸 딱지가
     # 이 값에서 선다 — `불참여` 만 흐린 딱지(`services/sourcing_sync.py`).
     ("participation", "참여", "84px", True),
     ("assignee_name", "담당자", "100px", True),
@@ -348,7 +348,7 @@ def sourcing_page(request: Request, db: Session = Depends(get_db),
         "is_admin": user.role == "admin",
         "linked_rooms": linked,
         # 투자사 관리 현황의 줄과 **이어진** 줄 — `🔗 투자사 관리 현황: ○○ 명단`.
-        # 세 갈래(Series A · M&A · 구주·후속 — `sourcing_sync.BRANCHES`)만 이어진다.
+        # 잇는 갈래(`sourcing_sync.BRANCHES`)의 줄만 이어진다.
         # 풍선말(어느 칸이 같이 바뀌는지)도 여기 실려 온다(`badges` 의 `title`).
         # [연결 풀기]를 누를 수 있는지도(`can_unlink` — `_may_unlink`).
         "vc_links": _badges(db, rows, user),
@@ -357,7 +357,7 @@ def sourcing_page(request: Request, db: Session = Depends(get_db),
         "requested": {r.id: sourcing_sync.requested_label(r.requested_at) for r in rows},
         # 머리글을 눌러 세울 값(`requested_sort`) — 위 글자가 아니라 날짜로.
         "requested_sort": {r.id: requested_sort(r) for r in rows},
-        # 저절로 못 이은 세 갈래 줄의 **후보** — [이 분으로 확정](#28).
+        # 저절로 못 이은 잇는 갈래 줄의 **후보** — [이 분으로 확정](#28).
         # 이름 · 번호가 둘 다 같아야 저절로 잇고, 나머지는 사람이 고른다.
         "vc_picks": sourcing_sync.link_candidates(db, rows),
         # **보낼 방이 없는 줄** — 자기 방 이름도 이어받을 방도 없다
@@ -394,6 +394,8 @@ def sourcing_page(request: Request, db: Session = Depends(get_db),
         "share_tab": series_a_share.is_share_bucket(selected),
         # 투자사 관리 현황과 잇는 갈래 탭인가 — [저절로 잇기] 단추가 선다.
         "sync_tab": bool(selected) and sourcing_sync.branch_of(selected) is not None,
+        # [+ 탭 추가] 안내의 '잇는 갈래' — 목록은 서버 한 곳(`BRANCHES`)에서.
+        "branch_labels": " · ".join(label for label, _b in sourcing_sync.BRANCHES),
         "total": sum(t["count"] for t in tabs),
         # 이름을 못 바꾼 까닭. 조용히 되돌아오면 왜 그대로인지 알 수 없다.
         "msg": msg,
@@ -546,7 +548,7 @@ def add_bucket(name: str = Form(""), tab: str = Form(""),
     """[+ 탭 추가] — 사람이 아직 없는 새 갈래(탭)를 만든다(`sourcing_buckets.create`).
 
     권한은 [이름 저장]과 같다 — 이 화면을 볼 수 있는 누구나(위 `rename_bucket`).
-    새 탭은 투자사 관리 현황과 잇지 않는다 — 잇는 갈래는 셋뿐이다(`sourcing_sync.BRANCHES`).
+    새 탭은 투자사 관리 현황과 잇지 않는다 — 잇는 갈래는 `sourcing_sync.BRANCHES` 뿐이다.
     """
     try:
         label = sourcing_buckets.create(db, name)
@@ -615,7 +617,7 @@ def add_row(body: SourcingIn, bucket: str = "",
             setattr(row, field, value.strip() or None)
     row.participation = _participation(body.participation or sourcing_sync.JOINED)
     db.add(row)
-    # 잇는 갈래(Series A · M&A · 구주·후속)에 넣은 분은 **투자사 관리 현황에도** 선다 —
+    # 잇는 갈래(`sourcing_sync.BRANCHES`)에 넣은 분은 **투자사 관리 현황에도** 선다 —
     # 이름 · 번호가 둘 다 같은 줄이 딱 하나면 그 줄과 잇고, 같은 분일 수 있는 줄이
     # 있으면 후보로 남기고(`link_candidates`), 아무도 없으면 넣은 사람의 `직접 추가`
     # 명단에 새로 만들어 잇는다(`sourcing_sync.add_from_sourcing`). 그쪽 `딜 소싱` 칸에
@@ -823,7 +825,7 @@ def delete_row(row_id: int, db: Session = Depends(get_db),
     투자컨설턴트는 이 주소에 닿기 전에 끊긴다 — 역할 판정은 `app/main.py`
     미들웨어 한 곳에서만 한다(`deps.CONSULTANT_PATHS` 에 소싱이 없다).
 
-    투자사 관리 현황과 이어진 줄(잇는 세 갈래)도 같다 — 빼면 그쪽
+    투자사 관리 현황과 이어진 줄(잇는 갈래)도 같다 — 빼면 그쪽
     `딜 소싱` 칸에서 그 갈래가 빠질 뿐이고, 투자사 줄은 그대로다.
     """
     row = db.get(SourcingContact, row_id)
@@ -911,15 +913,16 @@ def vc_auto_link(tab: str = Form(""), db: Session = Depends(get_db),
     """[저절로 잇기] — 이 갈래의 안 이어진 줄을 투자사 관리 현황과 잇는다.
 
     규칙은 줄 하나를 넣을 때와 같다(`sourcing_sync.auto_link` — 이름 · 번호가 둘 다
-    같은 투자사 줄이 딱 하나일 때만). M&A · 구주·후속 갈래는 잇기가 생기기 전부터
-    있던 줄이라 한 번 돌려 줘야 한다(사용자 결정 2026-10-21 — 이주로 몰래 잇지 않는다).
+    같은 투자사 줄이 딱 하나일 때만). M&A · 구주·후속 · 대표 · 개인참여 갈래는 잇기가
+    생기기 전부터 있던 줄이라 한 번 돌려 줘야 한다(사용자 결정 2026-10-21 — 이주로 몰래
+    잇지 않는다).
     못 이은 줄은 그 줄 이름 아래 후보로 남아 [이 분으로 확정]을 기다린다. `참여` 칸은
     건드리지 않는다. 권한은 [이 분으로 확정]과 같다 — 로그인한 누구나.
     """
     bucket = sourcing_sync.branch_of(tab)
     if bucket is None:
-        return _back(tab, "투자사 관리 현황과 잇는 갈래(Series A · M&A · 구주·후속)에서만 "
-                          "누를 수 있습니다")
+        names = " · ".join(label for label, _b in sourcing_sync.BRANCHES)
+        return _back(tab, f"투자사 관리 현황과 잇는 갈래({names})에서만 누를 수 있습니다")
     done = sourcing_sync.auto_link_all(db, bucket)
     db.commit()
     rows = [r for r in rows_of(db, tab) if not r.vc_contact_id]

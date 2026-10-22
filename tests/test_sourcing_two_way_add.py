@@ -9,7 +9,8 @@
      후보에서 사람이 확정한다
   ④ `(딜 소개 X)` · `딜 소개 보류` 인 분은 막는다 — 딜 소싱 줄도 안 생긴다
   ⑤ 넣은 뒤에는 같은 칸이 어느 쪽에서 고쳐도 같이 바뀐다
-  ⑥ 잇지 않는 갈래(대표 · 개인)는 예전 그대로 딜 소싱에만 들어간다
+  ⑥ 잇지 않는 갈래([+ 탭 추가]로 만든 탭)는 딜 소싱에만 들어간다
+  ⑦ 대표 · 개인참여 갈래도 잇는다(사용자 결정 2026-10-22) — ① ~ ④ 가 그대로
 
 이름 · 회사 · 번호는 전부 가상값이다(공개 저장소).
 """
@@ -20,6 +21,9 @@ from tests.test_sourcing_vc_sync import (  # noqa: F401 - 픽스처를 함께 �
     MNA, SHEET, SYNC, board, column, sc, sync_rows, vc)
 
 CEO = "딜 소싱  참여 투자사 대표"
+SOLO = "딜 소싱  개인참여 심사역"
+#: 투자사 관리 현황과 잇지 않는 갈래 — [+ 탭 추가]로 만든 탭 같은 것.
+OTHER = "해외 LP 찾는 투자사"
 
 
 def add(client, bucket=SYNC, **body):
@@ -130,7 +134,7 @@ def test_an_on_hold_investor_is_refused(board, db, users):
 
 def test_a_no_intro_investor_is_refused_in_any_bucket(board, db, users):
     vc(db, users, name="홍길동 (딜 소개 X)")
-    r = add(board, bucket=CEO, name="홍길동", phone="010-1234-5678")   # 잇지 않는 갈래도
+    r = add(board, bucket=OTHER, name="홍길동", phone="010-1234-5678")   # 잇지 않는 갈래도
     assert r.status_code == 400
     from app.models import SourcingContact
     db.expire_all()
@@ -172,7 +176,7 @@ def test_edits_flow_both_ways_after_adding(board, db, users):
 def test_an_unsynced_bucket_stays_sourcing_only(board, db, users):
     from app.models import SourcingContact
 
-    r = add(board, bucket=CEO, name="최대표", phone="010-7777-8888")
+    r = add(board, bucket=OTHER, name="최대표", phone="010-7777-8888")
     assert r.status_code == 200, r.text
     assert "linked_msg" not in r.json() and "vc_msg" not in r.json()
     assert investors(db) == []
@@ -182,8 +186,45 @@ def test_an_unsynced_bucket_stays_sourcing_only(board, db, users):
 def test_the_add_button_says_which_tabs_are_linked(board, db, users):
     sc(db)
     sc(db, bucket=CEO, name="최대표", position=1000)
-    synced = board.get("/sourcing", params={"tab": SYNC}).text
-    assert "투자사 관리 현황에도 같이 들어갑니다" in synced
-    assert 'data-testid="sourcing-add-unsynced"' not in synced
+    sc(db, bucket=SOLO, name="최개인", position=1001)
+    sc(db, bucket=OTHER, name="최해외", position=1002)
+    for tab in (SYNC, CEO, SOLO):        # 대표 · 개인참여도 잇는 갈래(2026-10-22)
+        page = board.get("/sourcing", params={"tab": tab}).text
+        assert "투자사 관리 현황에도 같이 들어갑니다" in page, tab
+        assert 'data-testid="sourcing-add-unsynced"' not in page, tab
     assert 'data-testid="sourcing-add-unsynced"' in board.get(
-        "/sourcing", params={"tab": CEO}).text
+        "/sourcing", params={"tab": OTHER}).text
+
+
+# ── ⑦ 대표 · 개인참여 갈래 ─────────────────────────────────────────────────
+
+def test_ceo_and_solo_buckets_make_link_and_hold_like_the_others(board, db, users):
+    """대표 · 개인참여도 다른 잇는 갈래와 똑같다 — 없으면 만들고, 이름 + 번호가 같은 분이
+    딱 하나면 잇고, 이름 하나만 같으면 안 만든다. 참여 기본값은 [추가] 그대로 `참여`."""
+    from app.models import SourcingContact
+
+    existing = vc(db, users, name="한지민", phone="010-3333-4444")
+    lookalike = vc(db, users, name="윤하늘", phone="010-6666-7777")
+    for bucket, name, phone in ((CEO, "새대표", "010-2222-0001"),
+                                (SOLO, "새개인", "010-2222-0002")):
+        made = add(board, bucket=bucket, name=name, phone=phone)
+        assert made.status_code == 200, made.text
+        assert "직접 추가" in made.json()["linked_msg"]
+        row = db.get(SourcingContact, made.json()["id"])
+        assert row.vc_contact_id and row.vc_link_confirmed == 1, bucket
+        assert row.participation == "참여"
+
+        linked = add(board, bucket=bucket, name="한지민", phone="01033334444")
+        assert linked.status_code == 200, linked.text
+        assert db.get(SourcingContact, linked.json()["id"]).vc_contact_id == existing.id
+
+        held = add(board, bucket=bucket, name="윤하늘")          # 이름만 같다
+        assert "새로 만들지 않았습니다" in held.json()["vc_msg"]
+        held_row = db.get(SourcingContact, held.json()["id"])
+        assert held_row.vc_contact_id is None
+        assert [c["id"] for c in picks(db, held_row)] == [lookalike.id]
+    # 새 투자사 줄은 갈래마다 하나씩 — 있던 두 분은 그대로
+    assert len(investors(db)) == 4
+    # 투자사 관리 현황 `딜 소싱` 칸에 두 갈래가 선다(같은 한 분이 두 갈래에)
+    got = board.get("/api/contacts").json()["contacts"]
+    assert next(r for r in got if r["id"] == existing.id)["sourcing_branches"] == "대표, 개인참여"

@@ -82,6 +82,11 @@ def test_adding_people_keeps_the_tab_in_its_place(page, db):
     ("시리즈A이상", "이미 있는 탭"),                 # 띄어쓰기만 다르다
     ("M&A", "잇는 갈래"),                           # 잇는 갈래의 짧은 이름
     ("구주매각 / 후속투자사 찾는 투자사 / 공동투자사 / 앵커투자사", "잇는 갈래"),
+    # 대표 · 개인참여도 잇는 갈래다(2026-10-22) — 갈래 글자(띄어쓰기만 달라도) · 짧은 이름
+    ("딜 소싱 참여 투자사 대표", "잇는 갈래"),
+    ("딜소싱  개인참여 심사역", "잇는 갈래"),
+    ("대표", "잇는 갈래"),
+    ("개인 참여", "잇는 갈래"),
     ("전체", "전체"),
     ("all", "전체"),
 ])
@@ -111,11 +116,18 @@ def test_renaming_an_empty_tab_moves_it(page, db):
     assert NEW not in [t[0] for t in _tabs(db)]
 
 
-def test_a_tab_cannot_be_renamed_into_a_synced_name(page, db):
-    r = page.post("/sourcing/buckets/rename", data={"old": "시리즈 A 이상", "new": "M&A"},
+@pytest.mark.parametrize("synced", ["M&A", "대표", "개인참여"])
+def test_a_tab_cannot_be_renamed_into_a_synced_name(page, db, synced):
+    r = page.post("/sourcing/buckets/rename", data={"old": "시리즈 A 이상", "new": synced},
                   follow_redirects=False)
     assert "잇는 갈래" in unquote(r.headers["location"])
     assert ("시리즈 A 이상", 1) in _tabs(db)
+
+
+def test_the_add_tab_hint_lists_every_synced_branch(page, db):
+    """[+ 탭 추가]의 안내가 잇는 갈래를 서버 목록(`BRANCHES`)으로 읽는다."""
+    body = page.get("/sourcing").text
+    assert "Series A · M&amp;A · 구주·후속 · 대표 · 개인참여 뿐입니다" in body
 
 
 def test_the_empty_tab_has_its_own_sheet(page, db):

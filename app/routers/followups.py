@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import get_current_user, templates
 from ..models import ScheduleRule, SendSequence, User
-from ..services import cadence, flow
+from ..services import cadence, flow, sheet_owner
 from ..ui import base_ctx
 
 router = APIRouter(tags=["followups"])
@@ -68,6 +68,12 @@ def remind_context(db: Session, user: User, today: date) -> dict:
 
     calls = [r for r in due if is_call(r)]
     sends = [r for r in due if not is_call(r)]
+    # 카톡방을 나간 분은 **오늘 보낼 묶음에서 뺀다** — 판에 서 있으면 [보내기]
+    # 링크에 함께 실린다(10/22 리마인드 107명 중 2명이 그런 분이었다). 줄을
+    # 멈추거나 닫지는 않는다: 단계를 되돌리면 다음 화면부터 다시 선다. 왜
+    # 빠졌는지는 판 아래 접힌 줄이 이름으로 말한다(`due_left_room`).
+    left = [r for r in sends if r["left_room"]]
+    sends = [r for r in sends if not r["left_room"]]
     # 예약된 것도 같이 가른다. `예약된 리마인드` 표는 **보낼 것**을 세우는
     # 자리이고(`_upcoming_followups.html`), 전화는 아래 제 구역에 `예정` 으로
     # 선다 — 안 가르면 한 줄이 두 표에 나란히 서서 두 건으로 읽힌다.
@@ -85,6 +91,9 @@ def remind_context(db: Session, user: User, today: date) -> dict:
              "mode": cadence.STAGE_MODES.get(stage, ""), "rows": items}
             for stage, items in sorted(by_stage.items())
         ],
+        "due_left_room": left,
+        # 접힌 줄의 머리말 — 단계 이름은 화면이 적지 않는다(`CONNECT_LABELS`).
+        "left_room_label": sheet_owner.left_room_label(),
         # 오늘까지 **걸어야 할 전화**. 지난 날짜도 들어 있다(`due` 와 같은 기준) —
         # 놓친 전화가 목록에서 사라지면 이 단계를 둔 뜻이 없다.
         "calls": calls,

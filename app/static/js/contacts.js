@@ -9,7 +9,7 @@
     // 표에는 있는데 이 목록에 없으면 **상세 창에서 적을 수가 없다** —
     // 칸을 그려 놔도 값이 안 채워지고 저장도 안 된다.
     "kakao_joined", "sourcing_note", "tips_note",
-    // `딜 소싱` — 고른 갈래 `Series A, M&A`(숨은 칸 — 체크 상자 셋이 채운다,
+    // `딜 소싱` — 고른 갈래 `Series A, M&A`(숨은 칸 — 갈래마다 체크 상자가 채운다,
     // `branchBoxes`). 이 줄에 저장되지 않고 딜 소싱 줄을 잇거나 만들고, 푼 갈래는
     // `불참여` 로 둔다(`services/sourcing_sync.py`). 고칠 때는 **사람이 이 칸을
     // 바꿨을 때만** 보낸다(`save` 의 `openedBranches`).
@@ -235,7 +235,7 @@
     }
   }
 
-  // 수정창의 `딜 소싱` 체크 상자(갈래 셋). 없는 화면(스타트업 명단)이면 빈 목록.
+  // 수정창의 `딜 소싱` 체크 상자(갈래마다 하나). 없는 화면(스타트업 명단)이면 빈 목록.
   function branchBoxes() {
     return panel ? Array.prototype.slice.call(panel.querySelectorAll(".f-branch")) : [];
   }
