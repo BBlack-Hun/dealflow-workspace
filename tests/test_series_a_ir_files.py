@@ -139,6 +139,13 @@ def test_IR_기업현황에도_있는_기업은_IR_쪽_자료를_쓴다(stage):
     assert f"📎 {AGRI_FILE}" in row, "IR 쪽 자료 파일 이름을 안 보여 준다"
 
 
+def test_수정_로그에_칸_이름으로_남는다():
+    """누가 이 기업의 자료 파일을 바꿨나 — 수정 로그 화면에 `ir_file_name` 이 날것으로 안 뜨게."""
+    from app.services import edit_log
+
+    assert edit_log.field_label("ir_file_name") == "IR 자료"
+
+
 # ── 2. 보내기 ────────────────────────────────────────────────────────────────
 
 def test_ir_화면에서_자료_보내기에_실린다(stage):

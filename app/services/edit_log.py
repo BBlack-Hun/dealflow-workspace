@@ -596,6 +596,8 @@ FIELD_LABELS = {
     # 다른 표의 로그가 틀린 이름을 단다.
     "received_at": "수신일",
     "detail": "상세 내용", "deal_pitch": "딜 소개 문구",
+    # 보낼 IR 자료 파일 이름 — IR 기업 현황 · `Series A 이상 딜 소싱`(0118) 두 탭의 `IR 자료`.
+    "ir_file_name": "IR 자료",
     "memo": "메모", "notes": "칸 메모", "note": "메모", "body": "본문",
     "phone": "연락처", "email": "메일", "one_liner": "한 줄 소개",
     "summary": "요약", "business_desc": "사업 설명", "content_json": "내용",
