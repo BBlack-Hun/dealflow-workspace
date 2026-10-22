@@ -20,13 +20,15 @@ const CONTACT_ID = 7;
 const COMPANY_IDS = [11, 12];
 const NAME = "가담당";
 
-function deliverForm(name, contactId, companyIds) {
+function deliverForm(name, contactId, companyIds, seriesAIds) {
   return el("form", {
     class: "deliver-form", method: "post", action: "/ir/deliver-guide",
     "data-name": name
   }, [
     el("input", { type: "hidden", name: "contact_id", value: String(contactId) }),
     el("input", { type: "hidden", name: "company_ids", value: companyIds.join(",") }),
+    // Series A 이상 딜 소싱 기업(그 탭에 IR 자료를 적은 것 — 0118). 화면은 늘 이 칸을 싣는다.
+    el("input", { type: "hidden", name: "series_a_ids", value: (seriesAIds || []).join(",") }),
     el("button", { class: "primary-btn inline", type: "submit" })
   ]);
 }
@@ -56,9 +58,10 @@ function sendModal() {
   ]);
 }
 
-function buildDom() {
+function buildDom(opts) {
   dom_.resetHandlers();
-  const form = deliverForm(NAME, CONTACT_ID, COMPANY_IDS);
+  const form = deliverForm(NAME, CONTACT_ID, (opts && opts.companyIds) || COMPANY_IDS,
+                           opts && opts.seriesAIds);
   const head = el("div", { class: "due-head" }, [form]);
   const modal = sendModal();
   const root = el("div", { class: "layout" }, [
@@ -85,7 +88,7 @@ function buildDom() {
 // (`ir_attach_list.js`)이 화면에서 먼저 실리므로 여기서도 같은 차례로 돌린다.
 function run(opts) {
   opts = opts || {};
-  const dom = buildDom();
+  const dom = buildDom(opts);
   const JS = path.join(__dirname, "..", "..", "app", "static", "js");
   const win = { location: { search: "", href: "" } };
   const ctx = {

@@ -168,8 +168,14 @@ def numbered_companies(db, contact_id: int,
     셀 수 있는 것을 먼저 두고 못 세는 것을 뒤에 둔다. 그들끼리는 **고른 차례**
     그대로다(정렬이 안정적이라 저절로 그렇게 된다).
     """
+    from ..models import IrCompany
+
     positions = for_contact(db, contact_id)
-    pairs = [(positions.get(company.id), company) for company in companies]
+    # 번호는 IR 기업 번호로 남아 있다(`deal_batch_companies`). 함께 실린 Series A 이상
+    # 딜 소싱 기업(0118)은 딜 소개에 나간 적이 없어 번호가 없다 — 번호만 같은 IR 기업의
+    # 번호를 빌려 쓰지 않게 IR 기업만 찾는다.
+    pairs = [(positions.get(company.id) if isinstance(company, IrCompany) else None,
+              company) for company in companies]
     # 번호 있는 것 먼저(오름차순) · 없는 것은 뒤에, 둘 다 고른 차례를 지킨다.
     return sorted(pairs, key=lambda pair: (pair[0] is None, pair[0] or 0))
 

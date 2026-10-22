@@ -22,6 +22,7 @@ from ..models import (
     DealBatchCompany,
     IrCompany,
     MessageTemplate,
+    SeriesACompany,
     SendItem,
     SendJob,
     SourcingContact,
@@ -30,8 +31,8 @@ from ..models import (
 )
 from ..services import mail_sender, mailer, matcher
 from ..services import message_composer as mc
-from ..services import (deal_numbers, deal_queue, group_name, ir_attach, ir_kakao,
-                        ir_monthly, manual_send, scheduled_send, series_a_share,
+from ..services import (deal_history, deal_numbers, deal_queue, group_name, ir_attach,
+                        ir_kakao, ir_monthly, manual_send, scheduled_send, series_a_share,
                         sheet_owner, sourcing_link, sourcing_msg,
                         sourcing_receipts, sourcing_sync,
                         startup_outreach, startup_send, template_pick,
@@ -531,6 +532,52 @@ def _load_companies(db: Session, company_ids: List[int]) -> List[IrCompany]:
     return companies
 
 
+# ── IR 자료 전달에 **Series A 이상 딜 소싱** 기업도 싣는다 (0118) ──────────────
+#
+# 딜 진행 관리에서 그 기업의 IR 요청을 적고(#365) 그 탭에 IR 자료 파일 이름을 적으면
+# (`SeriesACompany.ir_file_name`) [자료 보내기]가 IR 기업처럼 그 파일을 붙여 보낸다.
+# 고른 번호는 `series_a_ids` 로 따로 온다(다른 표다 — Series A 딜 공유와 같은 칸).
+# IR 기업 뒤에 이어 실어 **같은 길**을 지난다: 파일 나누기(`ir_attach.split_by_file`) ·
+# 문구 · 첨부 차례 · 활동 이력. 다른 것은 둘 — 번호가 없고(`deal_numbers` 가 IR 기업만
+# 찾는다), 회차에는 `deal_batch_companies` 대신 이름으로 남는다(`series_a_names`).
+
+def _picked_count(req) -> int:
+    """고른 기업 수 — IR 자료 전달은 Series A 기업까지 센다(한도는 같다)."""
+    return len(req.company_ids) + (len(req.series_a_ids) if req.mode == MODE_IR else 0)
+
+
+def _picked_companies(db: Session, req) -> list:
+    """보낼 기업 — 기업을 고르는 방식만, IR 자료 전달은 IR 기업 뒤에 Series A 기업."""
+    if req.mode not in MODES_WITH_COMPANIES:
+        return []
+    companies = _load_companies(db, req.company_ids)
+    if req.mode == MODE_IR and req.series_a_ids:
+        companies += _series_a_for_ir(db, req.series_a_ids)
+    return companies
+
+
+def _series_a_for_ir(db: Session, ids: List[int]) -> list:
+    """IR 자료 전달에 실을 Series A 기업 — 고른 차례, 같은 기업(이름)은 한 번만.
+
+    IR 기업 현황에도 있는 기업은 **받지 않는다**(말하고 멈춘다) — 그 이름의 요청은
+    IR 줄로 이어져 있고(`pipeline.match_company`) 자료도 IR 쪽 것이 나가야 한다.
+    여기로 실으면 IR 쪽 자료 대신 이 줄의 것이 붙거나 번호 없이 나간다.
+    """
+    ir = {deal_history._key(n) for n in db.execute(select(IrCompany.name)).scalars()}
+    rows, seen = [], set()
+    for row in _load_series_a(db, ids):
+        key = deal_history._key(row.name)
+        if key in ir:
+            raise HTTPException(
+                status_code=400,
+                detail=f"'{row.name}' 은(는) IR 기업 현황에도 있는 기업입니다 — "
+                       "IR 기업 목록에서 고르세요")
+        if key not in seen:
+            seen.add(key)
+            rows.append(row)
+    return rows
+
+
 class _SampleRecipient:
     """담당자를 고르기 전에 보여 줄 **가상의 받는 사람**.
 
@@ -742,6 +789,7 @@ class PreviewRequest(BaseModel):
     # ── Series A 딜 공유에서만 쓴다 ──
     # 고른 `Series A 이상 딜 소싱` 기업(`series_a_companies.id`) — **고른 차례가 곧
     # 문구의 번호**다(`[기업1]`). `company_ids`(IR 기업 현황)와 다른 표라 따로 받는다.
+    # IR 자료 전달도 이 칸으로 Series A 기업을 받는다(0118 — `_picked_companies`).
     series_a_ids: List[int] = []
     # 이미 받은 기업도 **다시 보낼지**. 기본은 그 분 문구에서 뺀다(다 받은 분은
     # 목록에서 빠진다) — 화면의 [이미 이 기업들을 받은 분 제외]를 끈 것이 참이다.
@@ -870,12 +918,12 @@ def preview(
         raise HTTPException(status_code=400,
                             detail=f"{startup_outreach.LABEL} 화면에서 보세요")
     if (not sample and req.mode in MODES_WITH_COMPANIES
-            and not (1 <= len(req.company_ids) <= MAX_COMPANIES_PER_SEND)):
+            and not (1 <= _picked_count(req) <= MAX_COMPANIES_PER_SEND)):
         raise HTTPException(
             status_code=400,
             detail=f"기업은 1~{MAX_COMPANIES_PER_SEND}개 선택하세요",
         )
-    companies = _load_companies(db, req.company_ids) if req.mode in MODES_WITH_COMPANIES else []
+    companies = _picked_companies(db, req)
     previews = []
     sourcing = req.mode == MODE_SOURCING
     # 딜 소싱 제안의 [보낼 문구] — 처음 안내 / 월간 리마인드 / Series A 딜 공유.
@@ -962,7 +1010,10 @@ def preview(
         # 소싱 제안은 기업을 붙이지 않아 companies 가 비고, 그러면 견줄 것이
         # 없어 빈 결과가 나온다.
         fit = matcher.evaluate_contact(contact, companies)
-        thin = [c.name for c in companies if not c.introducible]  # 문구만 모드면 companies 가 비어 있다
+        # 문구만 모드면 companies 가 비어 있다. 자료 전달은 보지 않는다(아래) — Series A
+        # 기업에는 소개 가능 판정 자체가 없다.
+        thin = ([] if req.mode == MODE_IR
+                else [c.name for c in companies if not c.introducible])
         thin_warnings = (
             [f"내용이 부족한 기업이 포함됐습니다: {', '.join(thin)} — "
              f"IR 기업 현황에서 한줄소개·숫자를 채우면 문구가 좋아집니다"]
@@ -1081,7 +1132,7 @@ def create_send_list(
     FEATURE_SPEC §5 ⑥: 발송 목록 생성 → send_job(queued). The mock/real agent
     then claims it via the queue API.
     """
-    if req.mode in MODES_WITH_COMPANIES and not (1 <= len(req.company_ids) <= MAX_COMPANIES_PER_SEND):
+    if req.mode in MODES_WITH_COMPANIES and not (1 <= _picked_count(req) <= MAX_COMPANIES_PER_SEND):
         raise HTTPException(
             status_code=400,
             detail=f"기업은 1~{MAX_COMPANIES_PER_SEND}개 선택하세요",
@@ -1148,7 +1199,7 @@ def create_send_list(
             status_code=400,
             detail="메일 서버 설정이 없습니다 — 팀 현황에서 설정을 확인하세요")
 
-    companies = _load_companies(db, req.company_ids) if req.mode in MODES_WITH_COMPANIES else []
+    companies = _picked_companies(db, req)
 
     # ── 자료를 발송기가 붙이는가 ────────────────────────────────────────────
     #
@@ -1388,12 +1439,18 @@ def create_send_list(
                or MODE_TITLES.get(req.mode, "딜소개 회차")),
         sent_date=now_iso()[:10],
         cycle_type="adhoc",
+        # 자료 전달에 실린 Series A 기업(보낼 파일이 있는 것만) — 보낸 뒤 그 요청을
+        # 이 이름으로 닫는다(`pipeline.close_requests_for`). 아래 기업 칸은 IR 기업만 담는다.
+        series_a_names=(json.dumps([c.name for c in companies
+                                    if isinstance(c, SeriesACompany)], ensure_ascii=False)
+                        if any(isinstance(c, SeriesACompany) for c in companies) else None),
     )
     db.add(batch)
     db.flush()
     # 회차에 남기는 번호 = 문구에 붙는 번호. 같은 자리에서 가져온다 —
     # 자료 전달이 나중에 이 번호를 되읽어 "[기업2] …" 라고 짚는다.
-    for pos, company in deal_numbers.numbered(companies):
+    for pos, company in deal_numbers.numbered(
+            [c for c in companies if isinstance(c, IrCompany)]):
         db.add(DealBatchCompany(batch_id=batch.id, company_id=company.id, position=pos))
 
     # Job (queued) + items (pending, snapshotted message + room name)

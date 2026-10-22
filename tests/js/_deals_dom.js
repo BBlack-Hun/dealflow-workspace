@@ -261,11 +261,17 @@ function buildDom(people) {
   const perPerson = el("input", { id: "sa-per-person", type: "number", min: "1", max: "10",
                                   value: "2" });
   const perPersonHint = el("span", { id: "sa-per-person-hint", class: "hint" });
+  // 자료 전달에서도 이 고르개가 선다(0118) — 그때 `data-only="share"` 칸이 숨고
+  // `data-only="ir"` 안내가 선다(`deals.js` 의 `syncCompanyPanel`).
+  const irOnlyHint = el("p", { class: "hint", "data-only": "ir" });
+  irOnlyHint.hidden = true;
   const seriesAPicker = el("div", { id: "series-a-picker" }, [
-    perPerson, perPersonHint,
+    irOnlyHint,
+    el("div", { id: "sa-per-person-line", "data-only": "share" }, [perPerson, perPersonHint]),
     el("input", { id: "sa-pick-search", type: "search" }),
     el("input", { id: "sa-only-picked", type: "checkbox" }),
-    el("input", { id: "sa-only-fresh", type: "checkbox" }),
+    el("label", { "data-only": "share" },
+       [el("input", { id: "sa-only-fresh", type: "checkbox" })]),
     seriesAList,
     el("p", { id: "sa-filter-note", class: "hint" })
   ]);

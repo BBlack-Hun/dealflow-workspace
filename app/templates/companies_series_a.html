@@ -160,6 +160,10 @@
         <th class="num" style="width:76px" title="{{ amount_tip }}">Pre Value</th>
         <th title="두 줄까지 보입니다 · 눌러서 수정">상세 내용</th>
         <th style="width:280px" title="두 줄까지 보입니다 · 눌러서 수정">딜 소개 문구</th>
+        {# 보낼 IR 자료의 **파일 이름**(0118) — IR 기업 현황의 `IR 자료 파일명` 과 같은 칸 ·
+           같은 규칙이다. 폴더 경로가 아니라 자료 폴더 안의 이름 하나를 적고, 딜 진행
+           관리의 [자료 보내기]가 그 이름으로 파일을 붙인다(폴더는 각자 `/setup`). #}
+        <th style="width:180px" title="자료 폴더에 넣어 둔 파일 이름(예: 샘플애그_IR_2026.pdf) · 경로·주소는 받지 않습니다 · 눌러서 수정">IR 자료</th>
         {{ cc.heads() }}
         <th style="width:52px"></th>
       </tr>
@@ -243,6 +247,16 @@
         <td title="{{ r.deal_pitch }}">
           <div class="cell clamp2" data-field="deal_pitch" data-type="long">{{ r.deal_pitch }}</div>
         </td>
+        {# IR 기업 현황에도 있는 기업은 **그쪽 자료**가 나간다(`pipeline.match_company` 가
+           요청을 IR 줄로 잇는다) — 여기서는 고치지 않고 IR 쪽 파일 이름을 보여만 준다.
+           서버도 이 줄에 적기를 막는다(`series_a._check_ir_file`). #}
+        {% if r.ir_name %}
+        <td class="muted" title="IR 기업 현황에도 있는 기업 — IR 자료는 IR 기업 현황에서 등록합니다">
+          {% if r.ir_file %}📎 {{ r.ir_file }}{% else %}IR 현황에서 등록{% endif %}
+        </td>
+        {% else %}
+        <td class="cell ellipsis" data-field="ir_file_name" title="{{ r.ir_file_name }}">{{ r.ir_file_name }}</td>
+        {% endif %}
         {{ cc.cells(r.id) }}
         <td>
           {# 지우는 판정은 옆 두 탭과 같은 함수다(`companies.can_delete_company`). #}
@@ -252,14 +266,15 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="23" class="muted">아직 받은 딜이 없습니다. [기업 추가]로 넣거나 시트를 가져오세요.</td></tr>
+      <tr><td colspan="24" class="muted">아직 받은 딜이 없습니다. [기업 추가]로 넣거나 시트를 가져오세요.</td></tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
 <p class="hint">
   머리글을 눌러 정렬하고, 머리글의 ▾ 로 거릅니다. 칸을 눌러 바로 고칩니다.
-  {% if in_ir %}<b>IR 현황</b> 딱지는 IR 기업 현황에도 있는 기업({{ in_ir }}곳)입니다.{% endif %}
+  {% if in_ir %}<b>IR 현황</b> 딱지는 IR 기업 현황에도 있는 기업({{ in_ir }}곳)입니다 — 그 기업의 <b>IR 자료</b>는 IR 기업 현황에서 등록합니다.{% endif %}
+  <b>IR 자료</b>에 자료 폴더 안의 <b>파일 이름</b>을 적으면 딜 진행 관리의 <b>[자료 보내기]</b>가 그 파일을 붙여 보냅니다.
   <b>공유 심사역</b> 아래 후보는 딜 소싱 명단에서 이름이 같은 분입니다 — 그 딜을 넘겨 준 분께는 Series A 딜 공유에서
   이 딜이 빠지므로, 맞는 분을 <b>[이 분으로 확정]</b>하면 이름 · 회사로 짐작하지 않고 그 분만 뺍니다.
 </p>

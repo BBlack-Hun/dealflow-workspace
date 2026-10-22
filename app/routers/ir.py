@@ -430,6 +430,7 @@ def create_request(
 
 @router.post("/ir/deliver-guide", include_in_schema=False)
 def deliver_guide(contact_id: int = Form(...), company_ids: str = Form(""),
+                  series_a_ids: str = Form(""),
                   db: Session = Depends(get_db),
                   user: User = Depends(get_current_user)):
     """[자료 보내기] 의 **스크립트 없는 길** — 담당자·기업이 골라진 발송 화면으로.
@@ -442,16 +443,24 @@ def deliver_guide(contact_id: int = Form(...), company_ids: str = Form(""),
     # 기업만 넘긴다 — 남의 기업 번호가 주소에 섞여 들어와도 발송 화면에는 이
     # 담당자가 실제로 요청한 것만 골라져 있어야 한다.
     asked = [int(v) for v in company_ids.split(",") if v.strip().isdigit()]
-    ids = [row.company_id for row in db.execute(
+    opened = db.execute(
         select(IrRequest).where(IrRequest.contact_id == contact.id,
-                                IrRequest.status == "open",
-                                IrRequest.company_id.in_(asked))
-    ).scalars().all() if row.company_id]
+                                IrRequest.status == "open")
+    ).scalars().all()
+    ids = [row.company_id for row in opened if row.company_id in asked]
+    # Series A 이상 딜 소싱 기업(0118) — 이 담당자가 **이름으로 열어 둔 요청**의 그
+    # 기업 줄만 넘긴다(`pipeline.series_a_rows` 가 고른 그 줄 — 화면도 같은 줄을 싣는다).
+    picked = {int(v) for v in series_a_ids.split(",") if v.strip().isdigit()}
+    wanted = {pipeline._key(row.company_name) for row in opened if not row.company_id}
+    sa_ids = [row.id for key, row in pipeline.series_a_rows(db).items()
+              if key in wanted and row.id in picked]
 
     # 넘어갈 곳은 예전과 같다 — 담당자와 기업이 이미 골라진 발송 화면.
     # `attach=1` 이 거기서 안내창을 띄운다(자동 첨부를 켜지 않은 계정만).
     query = (f"mode=ir&contacts={contact.id}"
              f"&companies={','.join(str(i) for i in ids)}&attach=1")
+    if sa_ids:
+        query += f"&series_a={','.join(str(i) for i in sa_ids)}"
     return RedirectResponse(f"/deals?{query}", status_code=303)
 
 

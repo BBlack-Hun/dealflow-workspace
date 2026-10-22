@@ -166,7 +166,7 @@
       <div class="due-head">
         <b>{{ g.name }}</b> {{ g.title }} <span class="muted">{{ g.firm }}</span>
         <span class="count-pill on"><b>{{ g.rows|length }}</b>개 기업</span>
-        {% if g.company_ids %}
+        {% if g.company_ids or g.series_a_ids %}
         {# **폼 하나로 두 갈래를 다 태운다.**
 
            자료를 손으로 붙이는 계정에서는 `ir_send.js` 가 이 폼의 `submit` 을
@@ -186,6 +186,8 @@
               data-name="{{ g.name }}">
           <input type="hidden" name="contact_id" value="{{ g.contact_id }}">
           <input type="hidden" name="company_ids" value="{{ g.company_ids|join(',') }}">
+          {# Series A 이상 딜 소싱 기업 중 그 탭에 IR 자료를 적은 것(0118) — 다른 표라 칸도 따로. #}
+          <input type="hidden" name="series_a_ids" value="{{ g.series_a_ids|join(',') }}">
           <button class="primary-btn inline" type="submit">자료 보내기</button>
         </form>
         {% endif %}
@@ -201,8 +203,9 @@
       {% endif %}
       {% if g.series_a %}
       <p class="hint">
-        Series A 이상 딜 소싱 기업: {{ g.series_a|join(', ') }} — IR 기업 현황에 없는 기업이라
+        Series A 이상 딜 소싱 기업: {{ g.series_a|join(', ') }} — IR 자료 파일명이 없어
         [자료 보내기] 에는 안 실립니다. 자료를 직접 보내고 [{{ labels.delivered }}] 를 눌러 주세요.
+        (<a href="/companies?tab=series-a">Series A 이상 딜 소싱</a> 탭의 <b>IR 자료</b> 칸에 파일명을 적으면 함께 보낼 수 있습니다.)
       </p>
       {% endif %}
       {% if g.no_file %}
@@ -238,6 +241,7 @@
              켜지 않았으면 사람이 이 이름을 보고 PC 카톡에서 붙인다. #}
           {% if r.ir_file %}
             <span class="room-badge ok" title="{{ r.ir_file }}">📎 {{ r.ir_file }}</span>
+            {% if r.series_a %}{{ series_a_tag(r.series_a) }}{% endif %}
           {% elif r.company_id %}
             <span class="room-badge warn" title="IR 기업 현황에 자료 파일명을 등록해야 보낼 수 있습니다">⚠ 자료 없음</span>
           {% elif r.series_a %}

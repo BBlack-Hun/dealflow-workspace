@@ -5,9 +5,12 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   // 고르는 기업 상자. **Series A 딜 공유**(딜 소싱 제안의 셋째 글)를 고르면
   // ① 칸이 `Series A 이상 딜 소싱` 고르개(`#series-a-list`)로 바뀌고, 고른 차례 ·
   // 번호 배지 · 10개 한도가 그 상자를 그대로 따른다 — 셈을 한 벌 더 두지 않는다.
+  // **IR 자료 전달**은 두 상자를 함께 센다 — IR 기업 뒤에 Series A 이상 딜 소싱
+  // 기업도 실린다(0118 · 그 탭에 IR 자료를 적은 기업). 한도도 둘을 합친 수다.
   var companyCbs = function () {
     return Array.prototype.slice.call(document.querySelectorAll(
-      isShare() ? "#series-a-list .sa-cb" : ".company-cb"));
+      isShare() ? "#series-a-list .sa-cb"
+        : (mode === "ir" ? ".company-cb, #series-a-list .sa-cb" : ".company-cb")));
   };
   // 대상 목록이 두 개다(투자사 담당자 / 딜 소싱 명단). **지금 보이는 쪽만**
   // 센다 — 숨은 목록에 체크가 남아 있는데 그것까지 보내면, 화면에 없는
@@ -338,9 +341,8 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   // **읽으면서 번호를 다시 매긴다.** 읽는 자리와 번호를 붙이는 자리를 떼어
   // 놓으면, 한쪽만 불린 길에서 화면의 번호와 나가는 차례가 갈린다.
   function selectedCompanyIds() {
-    var box = isShare() ? ".sa-cb" : ".company-cb";
     return renumberPicks().map(function (card) {
-      return parseInt(card.querySelector(box).value, 10);
+      return parseInt(card.querySelector(".company-cb, .sa-cb").value, 10);
     });
   }
   function selectedContactIds() {
@@ -397,6 +399,8 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
         note.hidden = true;
       }
     }
+    // 자료 전달은 Series A 고르개도 함께 선다 — 그 검색 · 고른 것만도 따라온다.
+    if (mode === "ir") applySeriesAFilter();
   }
 
 
@@ -411,7 +415,8 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     var note = document.getElementById("sa-filter-note");
     var q = ((box && box.value) || "").trim().toLowerCase();
     var pickedOnly = !!(onlyPicked && onlyPicked.checked);
-    var freshOnly = !!(onlyFresh && onlyFresh.checked);
+    // `아직 공유 안 한 것만` 은 Series A 딜 공유의 칸이다 — 자료 전달에서는 숨고 안 거른다.
+    var freshOnly = isShare() && !!(onlyFresh && onlyFresh.checked);
     // 지금 고른 받는 분(갈래 밖 · 불참여로 빠진 분은 안 센다).
     var who = contactCbs().filter(function (c) {
       return c.checked && !isExcluded(c.closest(".pick-card"));
@@ -464,7 +469,14 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     companyPanel.classList.toggle("dimmed", !needsCompanies());
     // 자료 전달에서는 고른 차례가 번호가 아니다 — 배지를 비운다(위 설명 참고).
     companyPanel.classList.toggle("no-pick-badge", mode === "ir");
-    if (saPicker) saPicker.hidden = !share;
+    // 자료 전달에서도 선다(0118) — Series A 딜 공유에만 맞는 칸(사람당 N개 · 안내 ·
+    // `아직 공유 안 한 것만`)은 숨기고 자료 전달 안내를 세운다.
+    if (saPicker) {
+      saPicker.hidden = !(share || mode === "ir");
+      saPicker.querySelectorAll("[data-only]").forEach(function (el) {
+        el.hidden = el.getAttribute("data-only") !== (share ? "share" : "ir");
+      });
+    }
     ["company-list", "company-picker-search", "company-filter-note"].forEach(function (id) {
       var el = document.getElementById(id);
       if (el && share) el.hidden = true;
@@ -1191,6 +1203,16 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   // 고른 기업을 서버가 받는 칸으로 — IR 기업(`company_ids`)과 Series A 이상
   // 기업(`series_a_ids`)은 다른 표라 칸도 다르다. 미리보기와 발송이 같은 손을 지난다.
   function pickedPayload(cids, tids) {
+    if (mode === "ir") {
+      // 자료 전달은 두 상자에서 고른다 — 고른 차례대로 칸을 나눠 싣는다(0118).
+      var cards = renumberPicks();
+      var of = function (sel) {
+        return cards.map(function (card) { return card.querySelector(sel); })
+          .filter(Boolean).map(function (cb) { return parseInt(cb.value, 10); });
+      };
+      return { company_ids: of(".company-cb"), contact_ids: tids,
+               series_a_ids: of(".sa-cb") };
+    }
     return { company_ids: isShare() ? [] : cids, contact_ids: tids,
              series_a_ids: isShare() ? cids : [] };
   }
@@ -1981,6 +2003,15 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
         gotSeries = check(companyCbs(), params.get("series_a"), true);
       }
     }
+    // IR 관리의 [자료 보내기]가 Series A 이상 딜 소싱 기업(그 탭에 IR 자료를 적은
+    // 것 — 0118)도 `series_a` 로 넘긴다. 자료 전달로 바꾼 뒤에 그 상자에 켠다.
+    if (wanted === "ir" && mode === "ir") {
+      askedSeries = (params.get("series_a") || "").split(",")
+        .map(function (v) { return v.trim(); }).filter(Boolean)
+        .filter(function (v, i, a) { return a.indexOf(v) === i; }).length;
+      gotSeries = check(Array.prototype.slice.call(
+        document.querySelectorAll("#series-a-list .sa-cb")), params.get("series_a"), true);
+    }
     var warns = [];
     if (askedSourcing && keptSourcing < askedSourcing) {
       warns.push("딜 소싱 대상 " + (askedSourcing - keptSourcing) + "명은 고르지 " +
@@ -2017,7 +2048,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     }
     incomingWarns = warns;
     showWarnings([]);
-    if (picked) applyCompanyFilter();
+    if (picked || gotSeries) applyCompanyFilter();
   })();
 
   syncChannel();

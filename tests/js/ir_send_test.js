@@ -87,7 +87,8 @@ function opened(replies, opts) {
   assert.strictEqual(call.url, "/api/deals/preview",
     "미리보기를 서버에 안 물었다 — 화면이 문구를 지으면 두 벌이 된다");
   assert.deepStrictEqual(call.body, {
-    mode: "ir", contact_ids: [ir_.CONTACT_ID], company_ids: ir_.COMPANY_IDS
+    mode: "ir", contact_ids: [ir_.CONTACT_ID], company_ids: ir_.COMPANY_IDS,
+    series_a_ids: []
   }, "화면이 실어 둔 담당자·기업 그대로 물어야 한다");
 }());
 
@@ -208,7 +209,8 @@ function opened(replies, opts) {
   assert.strictEqual(call.url, "/api/deals/send",
     "발송 길을 새로 파면 안 된다 — 방 확인·검토중단 막이가 전부 그 함수 안에 있다");
   assert.deepStrictEqual(call.body, {
-    mode: "ir", contact_ids: [ir_.CONTACT_ID], company_ids: ir_.COMPANY_IDS
+    mode: "ir", contact_ids: [ir_.CONTACT_ID], company_ids: ir_.COMPANY_IDS,
+    series_a_ids: []
   });
   // 보내고 나서도 화면은 그대로다.
   assert.strictEqual(s.dom.window.location.href, "",
@@ -250,6 +252,32 @@ function opened(replies, opts) {
   assert.ok(href.indexOf("mode=ir") >= 0, href);
   assert.ok(href.indexOf("contacts=" + ir_.CONTACT_ID) >= 0, href);
   assert.ok(href.indexOf("companies=" + ir_.COMPANY_IDS.join(",")) >= 0, href);
+}());
+
+(function seriesACompaniesRideAlong() {
+  // Series A 이상 딜 소싱 기업도 그 탭에 IR 자료를 적었으면 같은 길로 간다(0118) —
+  // 번호 칸이 따로다(`series_a_ids`). 미리보기 · 발송 · 확인창 수 · 딜 제안 관리 길 모두.
+  let asked = "";
+  const s = opened([previewReply(), SENT], {
+    seriesAIds: [21],
+    confirm: function (text) { asked = text; return true; }
+  });
+  const want = { mode: "ir", contact_ids: [ir_.CONTACT_ID],
+                 company_ids: ir_.COMPANY_IDS, series_a_ids: [21] };
+  assert.deepStrictEqual(s.fetch.calls[0].body, want, "미리보기에 Series A 기업이 안 실렸다");
+  s.dom.document.getElementById("ir-send-go").fire("click");
+  assert.deepStrictEqual(s.fetch.calls[1].body, want, "발송에 Series A 기업이 안 실렸다");
+  assert.ok(asked.indexOf("3개 기업") >= 0, "확인창이 Series A 기업을 안 셌다: " + asked);
+  const href = s.dom.document.getElementById("ir-send-open-deals").getAttribute("href");
+  assert.ok(href.indexOf("series_a=21") >= 0, "딜 제안 관리로 가는 길에 Series A 기업이 빠졌다: " + href);
+}());
+
+(function onlySeriesACompaniesStillOpenTheModal() {
+  // IR 기업 없이 Series A 기업만 요청받았어도 같은 창이 열린다.
+  const s = opened([previewReply()], { companyIds: [], seriesAIds: [21] });
+  assert.strictEqual(s.prevented, 1);
+  assert.deepStrictEqual(s.fetch.calls[0].body.company_ids, []);
+  assert.deepStrictEqual(s.fetch.calls[0].body.series_a_ids, [21]);
 }());
 
 // ── ④ 막히면 막힌 이유가 뜬다 ───────────────────────────────────────────────

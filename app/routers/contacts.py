@@ -1212,8 +1212,14 @@ def _known_company_names(db: Session) -> Dict[str, str]:
 
 
 def _batch_company_names(db: Session, batch_ids: set) -> Dict[int, List[str]]:
-    """회차별 기업 이름을 **번호 순서대로**. 한 번에 모아 온다."""
-    from ..models import DealBatchCompany
+    """회차별 기업 이름을 **번호 순서대로**. 한 번에 모아 온다.
+
+    IR 자료 전달에 함께 실린 Series A 이상 딜 소싱 기업(0118 — 회차의 `series_a_names`)은
+    뒤에 붙는다 — 그 기업만 보낸 회차가 기업 없이 서지 않게.
+    """
+    import json
+
+    from ..models import DealBatch, DealBatchCompany
 
     ids = [b for b in batch_ids if b]
     if not ids:
@@ -1227,6 +1233,11 @@ def _batch_company_names(db: Session, batch_ids: set) -> Dict[int, List[str]]:
     out: Dict[int, List[str]] = {}
     for batch_id, name in rows:
         out.setdefault(batch_id, []).append(name)
+    for batch_id, extra in db.execute(
+        select(DealBatch.id, DealBatch.series_a_names)
+        .where(DealBatch.id.in_(ids), DealBatch.series_a_names.isnot(None))
+    ).all():
+        out.setdefault(batch_id, []).extend(json.loads(extra or "[]"))
     return out
 
 
