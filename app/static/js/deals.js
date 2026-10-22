@@ -261,6 +261,8 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   }
   var sendBtn = document.getElementById("send-btn");
   var lastPreviews = [];
+  // 마지막 미리보기가 센 `방 나감` 인원 — 확인창이 "K명은 빼고 보냅니다" 로 쓴다.
+  var leftRoomCount = 0;
   // **지금 열어 둔 미리보기 탭**(담당자 하나). [보낼 자료] 목록의 번호가 이
   // 탭을 따른다 — 번호는 담당자마다 다르기 때문에 "누구 것인지" 없이는 적을
   // 수 없다(`renderIrLinks` 설명 참고).
@@ -1375,6 +1377,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     var greet = document.getElementById("include-opening");
     if (greet) { greet.checked = (mode !== "ask"); syncOpeningToggle(); }
     lastPreviews = [];
+    leftRoomCount = 0;
     currentPreview = 0;
     // 방식을 바꾸면 고친 것도 버린다 — 딜소개용으로 고친 문구가 IR 자료
     // 전달에 얹히면 엉뚱한 말이 나간다.
@@ -1560,13 +1563,16 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     fetch("/api/deals/preview", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(Object.assign(pickedPayload(cids, tids), selectedTemplateIds()))
+      // 채널도 싣는다 — 카톡방을 나간 분은 카톡일 때만 빠진다(서버가 경고로 센다).
+      body: JSON.stringify(Object.assign(pickedPayload(cids, tids), selectedTemplateIds(),
+                                         { channel: currentChannel() }))
     })
       .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
       .then(function (res) {
         if (seq !== previewSeq) return;      // 그 사이 새 요청이 나갔다
         if (!res.ok) { previewArea.innerHTML = '<p class="muted">' + escapeHtml(res.d.detail || "미리보기 실패") + "</p>"; return; }
         lastPreviews = res.d.previews || [];
+        leftRoomCount = res.d.left_room || 0;
         // 고친 문구를 되살린다. 담당자를 하나 더 체크하면 미리보기가 새로
         // 그려지는데, 그때마다 앞서 고쳐 둔 것이 **말없이 사라졌다** —
         // 열 명을 고치고 한 명 더 넣으면 열 명분이 날아간다.
@@ -1744,7 +1750,10 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     // 확인창이 **언제 나가는지**를 말한다. 고른 값을 그대로 읽어 적는다 —
     // 여기서 날짜를 다시 지으면 서버가 회차 화면에 적는 문장과 두 벌이 된다.
     var when = at ? ("\n" + at.replace("T", " ") + " 에 나갑니다 (지금은 나가지 않습니다).") : "";
-    if (!confirm(what + "\n" + via + "대상 " + tids.length + "명에게 발송합니다."
+    // 카톡방을 나간 분은 서버가 빼고 만든다 — 확인창에서도 먼저 말한다.
+    var leftNote = (leftRoomCount && currentChannel() !== "email")
+      ? "\n(방 나감 " + leftRoomCount + "명은 빼고 보냅니다)" : "";
+    if (!confirm(what + "\n" + via + "대상 " + tids.length + "명에게 발송합니다." + leftNote
                  + when + editNote + lastCheck)) return;
     sendBtn.disabled = true;
     fetch("/api/deals/send", {

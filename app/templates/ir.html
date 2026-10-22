@@ -343,6 +343,25 @@
   {% else %}
   <p class="all-clear">✅ 오늘 보낼 리마인드가 없습니다.</p>
   {% endif %}
+  {# 카톡방을 나간 분 — 위 묶음([보내기])에서 뺐다. 줄은 그대로라 단계를
+     되돌리면 다시 위로 선다. 왜 빠졌는지 이름으로 남긴다. #}
+  {% if due_left_room %}
+  <details class="due-left-room">
+    <summary class="muted">{{ left_room_label }} {{ due_left_room|length }}명 — 보내지 않음</summary>
+    <ul class="due-list">
+      {% for r in due_left_room %}
+      <li>
+        <span class="due-who">
+          <a class="req-link" href="/ir?contact={{ r.contact_id }}">
+            <b>{{ r.name }}</b> {{ r.title }} <span class="muted">{{ r.firm }}</span>
+          </a>
+        </span>
+        <span class="due-from muted">{{ r.next_label }} · {{ r.batch_title }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
 </section>
 
 <div class="dash-grid">
