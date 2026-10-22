@@ -22,3 +22,8 @@ pywinauto>=0.6.9
 pywin32>=308
 pyperclip>=1.9.0
 pyautogui>=0.9.54
+# 화면 찍기(실패 화면 · `파일 전송` 카드 그림 → 윈도우 OCR). pyautogui 가 쓰는데 파이썬 3.12+
+# 에서는 pyautogui 쪽이 Pillow 를 끌어오지 않는다(pyscreeze 의 조건이 3.11 까지) — 그래서
+# 0.11.12 까지 실패 화면이 한 장도 서버에 안 올라갔다. 바닥값은 실기 전이다(ImageGrab 의
+# all_screens 가 있는 판 이상).
+Pillow>=10.4.0

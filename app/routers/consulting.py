@@ -462,9 +462,9 @@ def _editable_column(db: Session, column_id: int, user: User) -> ConsultingColum
 def owner_tabs(db: Session, user: User, sheet: str = "") -> List[dict]:
     """화면 위의 **사람을 고르는 자리.** 자기 것만 보는 사람에게는 없다.
 
-    **이름은 계정 목록이 아니라 줄에서 뽑는다.** 계정으로 세우면 컨설턴트로
-    만들어만 두고 아직 기업을 안 받은 사람이 `0` 으로 서서, 고를 것이 없는
-    이름이 늘어난다. 줄이 곧 담당이므로 줄에 붙어 있는 사람만 세운다.
+    **이름은 줄에 붙은 담당 + 켜져 있는 투자컨설턴트 계정이다**
+    (`_active_consultant_ids`). 컨설턴트를 새로 만들면 기업을 받기 전에도 바로 서야
+    그 사람 표로 건너가 볼 수 있다(`0`). 정지한 계정은 줄이 남아 있을 때만 선다.
 
     **담당이 컨설턴트가 아닌 줄도 그 사람 이름으로 선다.** 지금 운영의 모든
     줄이 그 상태다(팀원 한 사람이 시트를 통째로 들고 있다). 그것을 `미배정`
@@ -490,6 +490,8 @@ def owner_tabs(db: Session, user: User, sheet: str = "") -> List[dict]:
         select(ConsultingCompany.user_id, func.count())
         .group_by(ConsultingCompany.user_id)
     ).all())
+    for uid in _active_consultant_ids(db):
+        totals.setdefault(uid, 0)
     out = []
     for uid, total in totals.items():
         who = db.get(User, uid) if uid else None
@@ -748,7 +750,14 @@ def _pick_owner(db: Session, user: User, owner: int) -> int:
     known = {uid or UNASSIGNED for (uid,) in db.execute(
         select(ConsultingCompany.user_id)
         .group_by(ConsultingCompany.user_id)).all()}
-    return owner if owner in known else 0
+    # 고르는 자리(`owner_tabs`)에 선 사람은 눌러도 그대로여야 한다 — 줄이 0개인 컨설턴트도.
+    return owner if owner in known | _active_consultant_ids(db) else 0
+
+
+def _active_consultant_ids(db: Session) -> set:
+    """켜져 있는 투자컨설턴트 계정 — 줄이 하나도 없어도 [담당] 고르개에 선다."""
+    return set(db.execute(select(User.id).where(
+        User.role == "consultant", User.is_active == 1)).scalars())
 
 
 def _notes(company: ConsultingCompany) -> Dict[str, str]:

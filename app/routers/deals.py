@@ -750,6 +750,8 @@ class PreviewRequest(BaseModel):
     # 사람당 보낼 기업 수(1~10, 기본 2). 사람마다 본인 공유 · 이미 받은 기업을
     # 빼고 **고른 차례 앞에서부터** 이만큼 간다(`series_a_share.plan`).
     per_person: int = series_a_share.PER_PERSON_DEFAULT
+    # 카톡이면 카톡방을 나간 분(`방 나감`)이 빠진다고 미리 말한다 — 메일은 안 뺀다.
+    channel: str = "kakao"
 
 
 class MessageOverride(BaseModel):
@@ -1054,8 +1056,17 @@ def preview(
                 if req.mode == MODE_DEAL and not sample else 0)
     # 자료를 발송기가 붙이는지 **화면도 알아야 한다** — [보낼 자료] 목록의
     # 말이 달라지고(붙여 보냅니다 / 손으로 붙이세요), 안내창도 그 판단을 따른다.
-    return {"previews": previews, "auto_attach": attach_on,
-            "warnings": [SEPARATE_NOTE.format(n=separate)] if separate else []}
+    # 카톡방을 나간 분 — 발송 목록을 만들 때 빠진다(`create_send_list`). 몇
+    # 명이 누구인지 먼저 말한다. 판정 범위도 그쪽과 같다(투자사 명단 · 카톡).
+    left = ([c.name for c in recipients if sheet_owner.left_room(c)]
+            if not sample and req.mode != MODE_SOURCING and req.channel != "email"
+            else [])
+    warnings = [SEPARATE_NOTE.format(n=separate)] if separate else []
+    if left:
+        warnings.append(f"{sheet_owner.left_room_label()} {len(left)}명 제외 — "
+                        f"{sheet_owner.LEFT_ROOM_WHY}: {', '.join(left)}")
+    return {"previews": previews, "auto_attach": attach_on, "warnings": warnings,
+            "left_room": len(left)}
 
 
 @router.post("/send", dependencies=[Depends(no_send_as_member)])
@@ -1278,11 +1289,31 @@ def create_send_list(
                     status_code=400,
                     detail=(f"'{startup_outreach.who(contact)}' {why} — "
                             "발송 대상에서 제외하세요"))
+    # ── 카톡방을 **나간** 분은 카톡 목록에서 뺀다 ───────────────────────────
+    #
+    # 방 이름이 그대로 남아 있어서 아래 방 이름 검사로는 안 걸린다 — 10/22
+    # 리마인드 107명에 그런 분 2명이 섞였다. 멈추지 않고 빼는 까닭은 소싱의 방
+    # 없음과 같다(한두 명 때문에 나머지가 못 나가면 안 된다). 뺀 분과 이유는
+    # `skipped` 로 돌려준다. **메일은 빼지 않는다** — 방을 나간 것이 메일을
+    # 거절한 것은 아니다(`sheet_owner.left_room`).
+    skipped_left = []
+    if req.mode not in (MODE_SOURCING, MODE_STARTUP) and not by_email:
+        why = f"{sheet_owner.left_room_label()} — {sheet_owner.LEFT_ROOM_WHY}"
+        skipped_left = [{"contact_id": c.id, "name": c.name,
+                         "reason": why + " — 뺐습니다"}
+                        for c in contacts if sheet_owner.left_room(c)]
+        contacts = [c for c in contacts if not sheet_owner.left_room(c)]
+        if not contacts:
+            raise HTTPException(
+                status_code=400,
+                detail=(f"'{skipped_left[0]['name']}' {why}"
+                        " — 고른 분 모두 보낼 수 없습니다"))
     # 화면에서 뺀 사람은 **보내지도 않는다.** 오래된 탭에 남아 있던 체크나 손으로
     # 만든 요청으로도 id 는 들어올 수 있고, 나간 뒤에는 되돌릴 수가 없다.
     #
     # 연결 단계까지 여기서 막지는 않는다 — 그쪽은 **보낼 방이 없다**는 뜻이고,
-    # 방이 없는 것은 바로 아래에서 이미 막는다. 멈춰 둔 것은 다르다: 방이
+    # 방이 없는 것은 바로 아래에서 이미 막는다(방 이름이 남는 `방 나감` 만 위에서
+    # 뺀다). 멈춰 둔 것은 다르다: 방이
     # 멀쩡히 있어도 **사람이 보내지 말라고 정해 둔 것**이라, 여기서 막지 않으면
     # 화면에서 뺀 사람에게 그대로 나간다.
     #
@@ -1540,8 +1571,9 @@ def create_send_list(
             # 다른 팀원 몫으로 이미 나가 **이번 목록에서 뺀 분**과 그 이유.
             # 딜 소싱 월간 리마인드에서 이 달 `딜 받음` 이라 뺀 분도 같은 자리다.
             # Series A 딜 공유에서 고른 기업을 이미 다 받아 뺀 분도 같은 자리다.
-            "skipped": (skipped_twins + skipped_received + skipped_sourcing
-                        + skipped_shared)}
+            # 카톡방을 나가 카톡 목록에서 뺀 분(`방 나감`)도 같은 자리다.
+            "skipped": (skipped_left + skipped_twins + skipped_received
+                        + skipped_sourcing + skipped_shared)}
 
 
 # ── 예약 큐 ─────────────────────────────────────────────────────────────────

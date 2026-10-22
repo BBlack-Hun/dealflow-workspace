@@ -1431,7 +1431,7 @@ class SourcingContact(TimestampMixin, Base):
     # ── 투자사 관리 현황과 잇기 (`services/sourcing_sync.py`) ─────────────
     #
     # **이 줄이 투자사 관리 현황의 어느 줄과 같은 사람인가.** 잇는 것은
-    # Series A · M&A · 구주·후속 세 갈래(`sourcing_sync.BRANCHES`)의 줄뿐이다 —
+    # 잇는 갈래(`sourcing_sync.BRANCHES` — 원본 시트의 다섯 갈래)의 줄뿐이다 —
     # 투자사 관리 현황의 `딜 소싱` 칸이 이 줄들을 보고 갈래마다 딱지로 선다. 그
     # 칸은 **따로 저장하지 않는다**: 이어진 줄이 있고 아래 `participation` 이
     # `불참여` 가 아니면 그 갈래를 고른 것, `불참여` 면 흐린 딱지, 없으면 딱지 없음.
@@ -1461,10 +1461,26 @@ class SourcingContact(TimestampMixin, Base):
 
     __table_args__ = (
         # 한 투자사 줄에는 **갈래마다** 한 줄(이주 `0114` — 그 전에는 갈래를 가리지
-        # 않고 한 줄이었다. 잇는 갈래가 셋이 되며 같은 분이 Series A · M&A 에 다 있다).
+        # 않고 한 줄이었다. 잇는 갈래가 여럿이 되며 같은 분이 Series A · M&A 에 다 있다).
         Index("uq_sourcing_contacts_vc_contact_bucket", "vc_contact_id", "bucket",
               unique=True),
     )
+
+
+class SourcingTab(TimestampMixin, Base):
+    """딜 소싱 화면의 [+ 탭 추가]로 만든 갈래(탭) 이름 — **사람이 없어도 탭이 선다.**
+
+    갈래는 원래 `sourcing_contacts.bucket` 에 적힌 글자를 모은 것이라
+    (`services/sourcing_buckets.py`) 사람이 한 명도 없는 갈래는 탭이 서지 않는다.
+    새 탭은 이름만 여기 남기고, 줄 · 문구는 이 이름을 그대로 쓴다. 투자사 관리
+    현황과는 잇지 않는다(잇는 갈래는 `sourcing_sync.BRANCHES` 뿐이다).
+    """
+
+    __tablename__ = "sourcing_tabs"
+    __table_args__ = (UniqueConstraint("name", name="uq_sourcing_tabs_name"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String)
 
 
 class SourcingReceipt(TimestampMixin, Base):

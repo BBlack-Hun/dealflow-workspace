@@ -215,6 +215,13 @@ def write_plain_xlsx(sheet_title: str, rows: Sequence[Sequence[Any]],
 def write_xlsx(sheet_title: str, headers: Sequence[str],
                rows: Sequence[Sequence[Any]]) -> bytes:
     """표 하나를 담은 .xlsx 바이트. 머리행 고정 + 컬럼 폭 자동."""
+    return write_xlsx_sheets([(sheet_title, headers, rows)])
+
+
+def write_xlsx_sheets(sheets: Sequence[tuple]) -> bytes:
+    """표 여러 장 — `(시트 이름, 머리글, 줄)` 마다 한 장. 꾸밈은 `write_xlsx` 와 같다.
+
+    이름이 31자에서 잘려 겹치면 openpyxl 이 뒤에 숫자를 붙인다(`가나다1`)."""
     try:
         import openpyxl
         from openpyxl.styles import Alignment, Font, PatternFill
@@ -224,43 +231,44 @@ def write_xlsx(sheet_title: str, headers: Sequence[str],
 
     wb = openpyxl.Workbook()
     wb.properties.keywords = EXPORT_MARK   # 되올리기 방지 표식
-    ws = wb.active
-    # 엑셀 시트 이름 제한: 31자, : \ / ? * [ ] 금지
-    ws.title = _safe_sheet_title(sheet_title)
+    wb.remove(wb.active)
+    for sheet_title, headers, rows in sheets:
+        # 엑셀 시트 이름 제한: 31자, : \ / ? * [ ] 금지
+        ws = wb.create_sheet(_safe_sheet_title(sheet_title))
 
-    ws.append(list(headers))
-    head_fill = PatternFill("solid", fgColor="EEF2F7")
-    for cell in ws[1]:
-        cell.font = Font(bold=True)
-        cell.fill = head_fill
-        cell.alignment = Alignment(vertical="center")
+        ws.append(list(headers))
+        head_fill = PatternFill("solid", fgColor="EEF2F7")
+        for cell in ws[1]:
+            cell.font = Font(bold=True)
+            cell.fill = head_fill
+            cell.alignment = Alignment(vertical="center")
 
-    text_cols = {i for i, h in enumerate(headers)
-                 if any(t in str(h) for t in TEXT_COLUMNS)}
+        text_cols = {i for i, h in enumerate(headers)
+                     if any(t in str(h) for t in TEXT_COLUMNS)}
 
-    for row in rows:
-        out = []
-        for i, value in enumerate(row):
-            if value is None:
-                out.append("")
-            elif isinstance(value, (int, float)):
-                out.append(value)
-            elif i not in text_cols and isinstance(value, str) and _looks_numeric(value):
-                out.append(float(value.replace(",", "")))
-            else:
-                out.append(str(value))
-        ws.append(out)
+        for row in rows:
+            out = []
+            for i, value in enumerate(row):
+                if value is None:
+                    out.append("")
+                elif isinstance(value, (int, float)):
+                    out.append(value)
+                elif i not in text_cols and isinstance(value, str) and _looks_numeric(value):
+                    out.append(float(value.replace(",", "")))
+                else:
+                    out.append(str(value))
+            ws.append(out)
 
-    ws.freeze_panes = "A2"
-    ws.auto_filter.ref = ws.dimensions
+        ws.freeze_panes = "A2"
+        ws.auto_filter.ref = ws.dimensions
 
-    for i, header in enumerate(headers, start=1):
-        longest = max(
-            [_display_width(str(header))]
-            + [_display_width(str(r[i - 1])) for r in rows[:200] if i - 1 < len(r)]
-            or [8]
-        )
-        ws.column_dimensions[get_column_letter(i)].width = min(max(longest + 2, 8), 55)
+        for i, header in enumerate(headers, start=1):
+            longest = max(
+                [_display_width(str(header))]
+                + [_display_width(str(r[i - 1])) for r in rows[:200] if i - 1 < len(r)]
+                or [8]
+            )
+            ws.column_dimensions[get_column_letter(i)].width = min(max(longest + 2, 8), 55)
 
     buf = io.BytesIO()
     wb.save(buf)

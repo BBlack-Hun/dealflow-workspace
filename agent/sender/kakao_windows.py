@@ -32,21 +32,30 @@ automation constants — ROADMAP 공통 원칙 2).
   → ④ Windows **열기 창**(`#32770` · 제목 `열기` · 카톡 프로세스 · 새로 뜬 창 · 주인이
      그 채팅창) — 여기서 [중단]이면 [취소]
   → ⑤ `파일 이름(N):` 칸에 **전체 경로**를 넣고 **되읽어 견준 뒤** [열기(O)]
-  → ⑥ ★ 카톡 **`파일 전송` 카드**(채팅창 위에 뜬다) 관문: 후보가 딱 하나 · 제목
-     `파일 전송` · [N개 전송] 단추가 딱 하나 · N == 1 · 파일명이 읽히면 같아야 한다
-  → ⑦ [중단]을 한 번 더 묻고 [1개 전송] → 카드가 사라졌나
+  → ⑥ ★ 카톡 **`파일 전송` 카드**(채팅창 위에 뜬다). UIA 로는 글자도 단추도 안 보인다
+     (실기 0.11.12 — 손으로 그린 창). 그래서 (0.11.13)
+       · **창 구조로** 찾는다: [열기] 뒤 새로 뜬 카톡 창 · 클래스 `EVA_Window_Dblclk` ·
+         주인이 그 채팅창 · 제목 없음(또는 `파일 전송`) · 속에 `EVA_ChildWindow`(id 1001)
+         — 딱 하나일 때만(`_card_candidates`)
+       · **글자는 찍어서 읽는다**: 카드 자리를 PNG 로 찍고(Pillow) 윈도우 내장 글자
+         인식(Windows.Media.Ocr, 한국어)을 PowerShell 로 부른다(`win_ocr.ps1` ·
+         `windows_ocr`). OCR 을 못 쓰면 **안 보낸다**
+     관문: 글자 `파일 전송` · `N개 전송` 줄이 딱 하나 · N == 1 · `전송 불가` 없음 ·
+     파일명이 읽히면 같아야 한다(띄어쓰기 · `_` · 대소문자 · 말줄임은 봐준다)
+  → ⑦ [중단]을 한 번 더 묻고 OCR 이 읽은 `1개 전송` 글자 한가운데를 누른다(그 점이
+     카드 위일 때만) → 카드가 사라졌나. 안 사라지면 닫고 send_unconfirmed
 
 `전송 불가` 카드(실기: 0바이트 파일 — `전송 불가 1 · 비어있는 파일 · [확인]`)는
-[확인]으로 닫고 그 까닭을 실패로 남긴다(문구도 안 나간다). 어긋나면 카드를 [×]
-(못 찾으면 그 창에 WM_CLOSE → Esc)로 닫는다 — `⋮` 메뉴는 누르지 않는다.
-**카드를 못 찾는 것도 실패다** — 모르면 안 보낸다.
+OCR 이 읽은 [확인]으로 닫고 그 까닭을 실패로 남긴다(문구도 안 나간다). 어긋나면 카드를
+[×](카드 오른쪽 위 모서리에서 `card_close_offset`)로 닫고, 그래도 남으면 카드가 앞일 때
+Esc → 그 창에 WM_CLOSE. `⋮` 메뉴는 누르지 않는다.
+**카드를 못 찾거나 못 읽는 것도 실패다** — 모르면 안 보낸다.
 
-열기 창 · 카드가 뜰 때와 실패할 때 카톡 창들과 그 속 컨트롤을 떠서(`ui_dump`)
-진단 기록으로 올린다. 실기 확인 전(`verified: false`)에는 **성공해도** 올린다.
-창을 읽는 자리(`_confirm_snapshot` · `_wait_open_dialog`)와 그 모양을 적어 둔 값
-(`selectors.yaml: file_send`)은 실기에서 본 화면을 본뜬 것이고, UIA 로 무엇이
-읽히는지는 아직 모른다. 관문 판단(`check_file_card`)은 창과 떨어진 순수 함수라
-이 기계에서 그대로 시험한다.
+열기 창 · 카드가 뜰 때와 실패할 때 카톡 창들과 그 속 컨트롤, 카드의 OCR 글자 · 자리 ·
+판단을 떠서(`ui_dump`) 진단 기록으로 올린다. 실기 확인 전(`verified: false`)에는
+**성공해도** 올린다. 카드 그림은 `agent_logs/kakao_file_card.png` 에 남고, 실패하면
+그 그림이 그 건의 화면으로 올라간다. 관문 판단(`check_file_card` · `ocr_card` ·
+`card_point`)은 창과 떨어진 순수 함수라 이 기계에서 그대로 시험한다.
 
 `can_send_files` 는 **기본이 꺼짐**이다 — 확인 전에 서버가 파일 잡을 내주면
 그 회차의 자료 전달이 통째로 실패한다(문구까지 안 나간다). 팀 PC 에서 확인할
@@ -81,15 +90,18 @@ automation constants — ROADMAP 공통 원칙 2).
 from __future__ import annotations
 
 import base64
+import json
+import locale
 import logging
 import os
 import platform
 import re
+import subprocess
 import time
 from typing import List, Optional
 
 from .base import (FILE_SEND_UNSUPPORTED, IrPathError, SendResult, Sender, nfc,
-                   resolve_ir_file, same_file_name, stop_result)
+                   resolve_ir_file, stop_result)
 
 log = logging.getLogger("agent.kakao")
 
@@ -109,15 +121,25 @@ FILE_SEND_DEFAULTS = {
     "file_name_edit_id": "1148",
     "open_button_id": "1",
     "cancel_button_id": "2",
-    # ⑥ 카톡 `파일 전송` 카드 — 창 제목이나 카드 속 글자
+    # ⑥ 카톡 `파일 전송` 카드 — **창 구조로** 찾는다(UIA 로는 속이 안 보인다 — 실기 0.11.12)
+    "card_class": "EVA_Window_Dblclk",
+    "card_title_re": r"^(|파일\s*전송)$",
+    "card_child_class": "EVA_ChildWindow",
+    "card_child_id": "1001",
+    # 카드 글자는 찍어서 윈도우 내장 OCR 로 읽는다 — 그 인식기 언어 · 읽기 전에 키우는 배수
+    # (작은 화면 글자는 키워야 잘 읽힌다. 누를 점은 그만큼 되돌려 셈한다)
+    "ocr_language": "ko",
+    "ocr_upscale": 2,
+    # 카드 속 글자 `파일 전송` (OCR 이 읽은 줄, 띄어쓰기를 지운 것)
     "confirm_title_re": r"파일\s*전송",
     # 보내기 단추. 개수가 박혀 나온다(`1개 전송`) — 그 숫자가 보내려던 개수와 같아야 한다.
     # ⚠ `확인` 은 보내기가 아니다 — `전송 불가` 카드의 [확인]은 닫기다(실기).
     "send_button_re": r"^\s*(\d+)\s*개\s*전송\s*$",
-    # 카드를 닫는 [×]. 못 찾으면 그 창에 WM_CLOSE → Esc. `⋮` 메뉴는 누르지 않는다.
-    "close_button_re": r"^(닫기|Close|×|✕|X)$",
     # `전송 불가` 카드를 닫는 단추. 그 카드에서만 누른다.
     "dismiss_button_re": r"^(확인|OK)$",
+    # 카드의 [×] — 오른쪽 위 모서리에서 (왼쪽으로, 아래로) 화면 점. 배율 100% 기준이고
+    # 창의 배율만큼 늘린다. 실기 화면(10/20)에서 쟀다. `⋮` 메뉴는 누르지 않는다.
+    "card_close_offset": [20, 19],
     # 카톡이 파일을 받지 않았다는 글자 (실기: `전송 불가 1` · `비어있는 파일`)
     "unsendable_re": r"전송\s*불가",
     # 실기에서 확인한 뒤 참으로 바꾼다. 그 전에는 `send_file` 이 거절한다.
@@ -166,6 +188,13 @@ UIA_MAIN_DUMP_FILE = "kakao_uia_dump.txt"
 UIA_CHAT_DUMP_FILE = "kakao_uia_chat_dump.txt"
 #: 파일 첨부 진단 — 마지막 파일 한 개를 붙일 때 떠 둔 카톡 창들(`ui_dump` 와 같은 것).
 UIA_FILE_DUMP_FILE = "kakao_file_send_dump.txt"
+#: 마지막으로 찍은 `파일 전송` 카드 그림(OCR 이 읽은 것) — 실패하면 그 건의 화면으로 올라간다.
+CARD_PNG_FILE = "kakao_file_card.png"
+#: 윈도우 내장 OCR 을 부르는 PowerShell 스크립트 — zip 에서 이 파일 옆에 실린다
+#: (`app/routers/setup.py: OS_FILES`).
+OCR_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "win_ocr.ps1")
+#: 한국어 인식기가 없을 때 사람에게 할 말
+OCR_INSTALL_HINT = "설정 > 언어에서 한국어 OCR 설치 필요"
 #: 진단 한 번에 싣는 줄 수 상한 — 서버로 올라가는 진단 기록이 끝없이 커지지 않게.
 UI_DUMP_MAX_LINES = 600
 
@@ -1000,7 +1029,7 @@ class KakaoDesktopSender(Sender):
 
         목록 컨트롤을 `list_control_types` 차례로 찾아보고, **줄이 든 첫 번째**
         것을 쓴다. 셀렉터가 비어 있으면 아무것도 뒤지지 않는다 — 빈 본으로
-        창을 뒤지면 엉뚱한 컨트롤이 잡힌다(`_confirm_snapshot` 과 같은 판단).
+        창을 뒤지면 엉뚱한 컨트롤이 잡힌다(`_rx` 와 같은 판단).
         """
         containers = list(conf.get("list_control_types") or [])
         items = list(conf.get("item_control_types") or [])
@@ -1582,56 +1611,82 @@ class KakaoDesktopSender(Sender):
             return back_out("open_dialog_stuck: [열기] 뒤에도 열기 창이 그대로입니다 — "
                             "파일을 못 찾았을 수 있습니다 (전송 안 함)")
 
-        # ⑥ ★ 카톡 `파일 전송` 카드 — **못 찾는 것도 실패다.**
-        card = self._wait_confirm(chat, opened_at)
+        # ⑥ ★ 카톡 `파일 전송` 카드 — **창 구조로** 찾고(`_card_candidates`) 글자는 찍어서
+        #   윈도우 OCR 로 읽는다(`_read_card`). **못 찾거나 못 읽는 것도 실패다.**
+        found = self._wait_card(chat, opened_at, conf)
+        card = {"hwnd": found[0] if len(found) == 1 else 0, "candidates": found}
 
         def refuse(error: str) -> SendResult:
+            self._note_card(card, error, failing=True)
             self._note_windows(chat, opened_at, f"실패: {error.split(':')[0]}",
                                failing=True)
-            self._dismiss_confirm(card)
-            return self._fail(room_name, error)
+            # 화면은 닫기 **전에** — 카드 그림이 있으면 그것(OCR 이 본 그대로)
+            shot = _file_b64(card.get("image")) or self._screenshot(room_name)
+            self._close_card(card)
+            return SendResult(ok=False, error=error, screenshot_b64=shot)
 
-        if not card.get("present"):
-            # 카드가 떠 있는데 못 읽은 것일 수 있다 — Esc 로 닫는다(남기면 다음 문구 때
-            # 채팅창이 닫히며 함께 사라진다. 나가지는 않는다).
-            return refuse("confirm_window_not_shown: [열기] 뒤 '파일 전송' 창을 찾지 "
-                          "못했습니다 — Esc 로 닫았습니다 (전송 안 함)")
-        self._note_windows(chat, opened_at, "파일 전송 창")
+        if len(found) != 1:
+            # 여럿이면 다 닫는다. 없으면 카드가 떠 있는데 못 알아본 것일 수 있다 — Esc(남기면
+            # 다음 건이 방을 열 때 그 채팅창이 닫히며 함께 사라진다. 나가지는 않는다).
+            what = (f"{len(found)}개 찾아 고르지 않았습니다 — 모두 닫았습니다" if found
+                    else "찾지 못했습니다 — Esc 를 눌렀습니다")
+            return refuse(f"confirm_window_not_shown: [열기] 뒤 '파일 전송' 카드를 {what} "
+                          f"(전송 안 함)")
+        try:
+            card.update(self._read_card(card["hwnd"], conf))
+            if card.get("ocr_error"):
+                return refuse(f"ocr_unavailable: 윈도우 한국어 글자 인식(OCR)을 쓸 수 없습니다 — "
+                              f"{card['ocr_error']} — 카드를 닫았습니다 (전송 안 함)")
+            self._note_windows(chat, opened_at, "파일 전송 창")
 
-        refused = unsendable_detail(card, conf)
-        if refused is not None:
-            return refuse(f"file_refused: 카톡이 파일을 받지 않았습니다(전송 불가) — "
-                          f"{refused} (전송 안 함)")
-        reason, note = check_file_card(card, [path.name], conf)
-        if reason:
-            log.warning("파일 전송 창이 어긋났습니다 — 닫습니다: %s | card=%r", reason, card)
-            return refuse(f"gate_blocked: {reason} — 닫았습니다 (전송 안 함)")
-        if note:
-            log.warning("%s | card=%r", note, card)
+            refused = unsendable_detail(card, conf)
+            if refused is not None:
+                return refuse(f"file_refused: 카톡이 파일을 받지 않았습니다(전송 불가) — "
+                              f"{refused} (전송 안 함)")
+            reason, note = check_file_card(card, [path.name], conf)
+            if reason:
+                log.warning("파일 전송 카드가 어긋났습니다 — 닫습니다: %s | OCR=%r", reason,
+                            card.get("texts"))
+                return refuse(f"gate_blocked: {reason} — 닫았습니다 (전송 안 함)")
+            button = _send_button(card, conf)[0]
+            point = card_point(card, conf.get("send_button_re"))
+            if point is None or not self._point_on(card["hwnd"], point):
+                return refuse(f"send_button_not_located: {button!r} 글자의 자리가 카드 위가 "
+                              f"아닙니다 (점 {point}) — 닫았습니다 (전송 안 함)")
+            if note:
+                log.warning("%s | OCR=%r", note, card.get("texts"))
 
-        # ⑦ 누르기 **직전** — 그 사이 누른 [중단]을 듣는다
-        if should_stop is not None and should_stop():
-            log.warning("[중단] — 파일 전송 창을 닫습니다 room=%r file=%r",
-                        room_name, path.name)
-            self._dismiss_confirm(card)
-            return stop_result("파일 전송 창을 닫았습니다(전송 안 함)")
+            # ⑦ 누르기 **직전** — 그 사이 누른 [중단]을 듣는다
+            if should_stop is not None and should_stop():
+                log.warning("[중단] — 파일 전송 카드를 닫습니다 room=%r file=%r",
+                            room_name, path.name)
+                self._note_card(card, "[중단] — 닫음")
+                self._close_card(card)
+                return stop_result("파일 전송 카드를 닫았습니다(전송 안 함)")
 
-        button = _send_button(card, conf)[0]
-        if not self._click_dialog_button(card, button):
-            return refuse(f"send_button_not_clicked: {button!r} 단추를 누르지 "
-                          f"못했습니다 (전송 안 함)")
-        time.sleep(self._t("after_confirm_click", 1.0))
-
-        # 카드가 닫혔나. 여기까지가 사후 확인의 한계다 — 보낸 뒤 파일 메시지 줄에서
-        # 파일명을 읽는 길은 mac 에서도 없었다.
-        if self._is_window_visible(card.get("hwnd")):
-            return refuse(
-                f"send_unconfirmed: {button!r} 을 눌렀지만 파일 전송 창이 그대로입니다 — "
-                f"닫아서 정리했습니다. 카톡을 직접 확인하세요 — 다시 보내면 "
-                f"겹칠 수 있습니다")
-        log.info("파일 전송 창의 %r 을 눌렀습니다 room=%r file=%r", button, room_name,
-                 path.name)
-        return SendResult(ok=True, warning=note or None)
+            # 찍은 뒤 OCR · [중단] 을 묻는 사이 카드가 움직였거나 덮였으면 그 점은 낡았다
+            if (self._hwnd_rect(card["hwnd"]) != card.get("rect")
+                    or not self._point_on(card["hwnd"], point)):
+                return refuse(f"send_button_not_located: 읽은 뒤 카드가 움직였거나 덮였습니다 "
+                              f"(점 {point}) — 닫았습니다 (전송 안 함)")
+            self._pyautogui.click(*point)
+            # 카드가 닫혔나. 여기까지가 사후 확인의 한계다 — 보낸 뒤 파일 메시지 줄에서
+            # 파일명을 읽는 길은 mac 에서도 없었다.
+            if not self._wait_gone(card["hwnd"], self._t("after_confirm_click", 3.0)):
+                return refuse(
+                    f"send_unconfirmed: {button!r} 을 눌렀지만 파일 전송 카드가 그대로입니다 — "
+                    f"닫아서 정리했습니다. 카톡을 직접 확인하세요 — 다시 보내면 "
+                    f"겹칠 수 있습니다")
+            self._note_card(card, f"보냄 — {button!r} 를 {point} 에서 누름"
+                                  + (f" · {note}" if note else ""))
+            log.info("파일 전송 카드의 %r 을 눌렀습니다 room=%r file=%r", button, room_name,
+                     path.name)
+            return SendResult(ok=True, warning=note or None)
+        except Exception as exc:  # noqa: BLE001
+            # 카드가 떠 있는 채로 빠져나가면 다음 문구에 첨부가 묻어갈 수 있다 — 닫고 올린다
+            self._note_card(card, f"예외: {exc}", failing=True)
+            self._close_card(card)
+            raise
 
     # --- 파일 첨부에 쓰는 자리들 (시험에서 갈아 끼우는 이음매) ---------------
 
@@ -1774,88 +1829,125 @@ class KakaoDesktopSender(Sender):
             return
         self._post_close(dlg)
 
-    def _wait_confirm(self, chat, before) -> dict:
-        """`파일 전송` 카드가 뜨기를 기다린다. 안 뜨면 마지막으로 본 것을 그대로 돌려준다.
-
-        창만 뜨고 단추가 아직 안 읽히면 조금 더 기다린다(끝까지 안 읽히면 그대로).
-        **없는 것을 있는 것으로 만들지 않는다** — 부르는 쪽이 그것을 보고 멈춘다.
-        """
+    def _wait_card(self, chat, before, conf: dict) -> List[int]:
+        """[열기] 뒤 새로 뜬 `파일 전송` 카드 후보들(`_card_candidates`). 하나라도 서면 바로,
+        아니면 `confirm_wait` 까지 기다린다. **여럿이면 고르지 않는다** — 부르는 쪽이 멈춘다."""
         deadline = time.monotonic() + self._t("confirm_wait", 5.0)
         while True:
-            snapshot = self._confirm_snapshot(chat, before)
-            if (snapshot.get("present") and snapshot.get("buttons")) \
-                    or time.monotonic() >= deadline:
-                return snapshot
-            time.sleep(0.2)
+            found = self._card_candidates(chat, before, conf)
+            if found or time.monotonic() >= deadline:
+                return found
+            time.sleep(self._t("room_search_poll", 0.15))
 
-    def _dialog_candidates(self, chat, before, conf: dict) -> List[tuple]:
-        """`파일 전송` 카드**일 수 있는** 창들 `(hwnd, 제목, 주인 hwnd)`. 속은 아직 안 본다.
+    def _card_candidates(self, chat, before, conf: dict) -> List[int]:
+        """`파일 전송` 카드**일 수 있는** 창들 — 글자는 안 보고 **창 구조로만** 고른다.
 
-          · 카톡 프로세스(pid)의 보이는 창 중 — [열기] 전에 없던 창 · 채팅창이 띄운
-            (owner) 창 · 제목이 `confirm_title_re` 인 창
-          · 채팅창 **속** 창(자식 창) 중 제목이 `confirm_title_re` 인 것
-        프로세스를 모르면 채팅창이 띄운 창과 채팅창 속 창만 본다.
+        실기(0.11.12): 카드는 카톡 프로세스의 최상위 창 · 클래스 `EVA_Window_Dblclk` ·
+        제목 없음 · 주인이 그 채팅창 · 속에 `EVA_ChildWindow`(AutomationId 1001, 파일 줄)
+        하나. UIA 로는 그 밖에 아무것도 안 보인다. [열기] 전에 없던 창만 본다.
         """
         chat_hwnd = _handle(chat)
         pid = self._window_pid(chat) if chat is not None else 0
-        title_rx = _rx(conf.get("confirm_title_re"))
-        out = []
-        for hwnd, (title, wpid) in (self._top_windows() or {}).items():
-            if hwnd == chat_hwnd or (pid and wpid != pid):
-                continue
-            owner = self._owner_hwnd(hwnd)
-            owned = bool(chat_hwnd) and owner == chat_hwnd
-            new = before is not None and hwnd not in before
-            if owned or (pid and (new or _hit(title_rx, title))):
-                out.append((hwnd, title or "", owner))
-        for hwnd, title in self._child_windows(chat_hwnd):
-            if _hit(title_rx, title):
-                out.append((hwnd, title, chat_hwnd))
+        if not (chat_hwnd and pid and before is not None):
+            return []
+        title_rx = _rx(conf.get("card_title_re"))
+        return [hwnd for hwnd, (title, wpid) in (self._top_windows() or {}).items()
+                if wpid == pid and hwnd not in before
+                and self._owner_hwnd(hwnd) == chat_hwnd
+                and self._hwnd_class(hwnd) == conf.get("card_class")
+                and _hit(title_rx, title) and self._has_card_child(hwnd, conf)]
+
+    def _has_card_child(self, hwnd, conf: dict) -> bool:
+        """그 창 속에 카드의 파일 줄(`card_child_class` · id `card_child_id`)이 있나."""
+        try:
+            kids = self._desktop.window(handle=hwnd).descendants()
+        except Exception:  # noqa: BLE001
+            return False
+        want = (str(conf.get("card_child_class") or ""), str(conf.get("card_child_id") or ""))
+        return any((info["class_name"], info["automation_id"]) == want
+                   for info in map(_uia_info, kids))
+
+    def _read_card(self, hwnd, conf: dict) -> dict:
+        """카드를 찍어(PNG) 윈도우 OCR 로 읽는다 — `ocr_card` 모양 + `rect` · `image` · `size`.
+
+        찍지 못하거나 OCR 을 못 쓰면 `ocr_error` 에 까닭을 적는다(그러면 보내지 않는다).
+        막 뜬 카드는 아직 덜 그려졌을 수 있어 잠깐 두고 찍고, 제목 글자가 안 읽히면 한 번
+        더 찍는다.
+        """
+        out: dict = {}
+        for _ in range(2):
+            time.sleep(self._t("card_settle", 0.5))
+            out = {"hwnd": hwnd, "rect": self._hwnd_rect(hwnd)}
+            try:
+                if not out["rect"]:
+                    raise OcrUnavailable("카드 자리를 읽지 못했습니다")
+                out["image"], out["size"], out["scale"] = self._grab(
+                    out["rect"], conf.get("ocr_upscale") or 1)
+                out.update(ocr_card(self._ocr(out["image"], conf), conf))
+            except OcrUnavailable as exc:
+                out["ocr_error"] = str(exc)
+                return out
+            if _titled(out, _rx(conf.get("confirm_title_re"))):
+                break
         return out
 
-    def _confirm_snapshot(self, chat, before) -> dict:
-        """지금 떠 있는 `파일 전송` 카드를 읽는다.
-
-        실기 화면(10/20): 채팅창 위에 뜨는 카드 — 제목 `파일 전송` · [×] · 파일 줄
-        (`시험자료.pdf` · `149KB` · `⋮`) · 넓은 [1개 전송] 하나. `전송 불가` 면 `전송 불가 1` ·
-        까닭 · [확인] 하나. ⚠ 그 카드가 UIA 로 무엇을 드러내는지는 아직 모른다 — 그래서
-        뜰 때와 실패할 때 창들을 떠 둔다(`_note_windows`).
-
-        후보(`_dialog_candidates`) 중 제목(창 제목이나 카드 속 글자)이 맞거나 · 보내기
-        단추가 있거나 · `전송 불가` 글자가 든 창이 **딱 하나**일 때만 그 창을 읽는다.
-        없거나(0) 여럿이면(2+) 어느 것인지 모른다 — 고르지 않는다(`present=False`).
-
-        돌려주는 모양:
-            present   카드를 찾았는가
-            hwnd      그 창 — 단추를 누르고 닫혔는지 보는 자리
-            title     그 창의 제목
-            owner     그 창을 띄운 창(hwnd) — 진단용
-            buttons   단추 이름들
-            texts     창 안의 모든 컨트롤 이름 (제목 · 파일명이 여기 나오기를 기대한다)
-        """
-        blank = {"present": False, "hwnd": 0, "title": "", "owner": 0,
-                 "buttons": [], "texts": []}
-        conf = self.file_send_conf
+    def _grab(self, rect, upscale=1) -> tuple:
+        """화면의 `rect` 를 찍어 `upscale` 배로 키워 agent_logs 에 PNG 로 둔다 —
+        `(그림 자리, 찍은 크기 (w, h), 키운 배수)`."""
+        path = self._dump_path(CARD_PNG_FILE)
+        if not path:
+            raise OcrUnavailable("로그 폴더(agent_logs)를 몰라 카드를 찍을 자리가 없습니다")
         try:
-            title_rx = _rx(conf.get("confirm_title_re"))
-            found = []
-            for hwnd, title, owner in self._dialog_candidates(chat, before, conf):
-                dialog = self._desktop.window(handle=hwnd)
-                shape = {"title": title,
-                         "buttons": _control_texts(dialog, "Button"),
-                         "texts": _control_texts(dialog)}
-                if (_titled(shape, title_rx) or _send_button(shape, conf)
-                        or unsendable_detail(shape, conf) is not None):
-                    found.append(dict(shape, present=True, hwnd=hwnd, owner=owner))
-            if len(found) != 1:
-                if found:
-                    log.warning("파일 전송 창 후보가 %d개라 고르지 않습니다: %r", len(found),
-                                [(f["hwnd"], f["title"], f["buttons"]) for f in found])
-                return blank
-            return found[0]
+            from PIL import ImageGrab  # type: ignore
+        except ImportError as exc:
+            raise OcrUnavailable("화면을 찍는 Pillow 가 없습니다 — setup.bat 을 다시 "
+                                 "실행하세요") from exc
+        try:
+            # 카톡 카드는 겹창(layered)일 수 있다 — 그 창까지 찍는다
+            img = ImageGrab.grab(bbox=tuple(rect), include_layered_windows=True,
+                                 all_screens=True)
+            size, scale = tuple(img.size), max(1, int(upscale))
+            if scale > 1:
+                img = img.resize((size[0] * scale, size[1] * scale))
+            img.save(path, "PNG")
+            return path, size, scale
         except Exception as exc:  # noqa: BLE001
-            log.warning("파일 전송 창을 읽지 못했습니다(전송 안 함): %s", exc)
-            return blank
+            raise OcrUnavailable(f"카드를 찍지 못했습니다: {exc}") from exc
+
+    def _ocr(self, path: str, conf: dict) -> list:
+        return windows_ocr(path, str(conf.get("ocr_language") or "ko"),
+                           self._t("ocr_timeout", 30.0))
+
+    def _hwnd_rect(self, hwnd) -> Optional[tuple]:
+        """창의 화면 자리 `(left, top, right, bottom)`. 못 읽으면 None."""
+        try:
+            import win32gui  # type: ignore
+
+            return tuple(int(v) for v in win32gui.GetWindowRect(hwnd))
+        except Exception:  # noqa: BLE001
+            return None
+
+    def _dpi_scale(self, hwnd) -> float:
+        """그 창의 화면 배율(100% = 1.0). 못 읽으면 1.0."""
+        try:
+            import ctypes
+
+            return (ctypes.windll.user32.GetDpiForWindow(hwnd) or 96) / 96.0
+        except Exception:  # noqa: BLE001
+            return 1.0
+
+    def _point_on(self, hwnd, point) -> bool:
+        """화면의 그 점이 **그 창 위**인가 — 다른 창이 덮고 있으면 누르지 않는다."""
+        try:
+            import ctypes
+
+            import win32gui  # type: ignore
+
+            GA_ROOT = 2     # 자식 창(파일 줄 따위)이면 그 최상위 창으로
+            hit = win32gui.WindowFromPoint(tuple(int(v) for v in point))
+            return bool(hit) and int(ctypes.windll.user32.GetAncestor(hit, GA_ROOT)) == hwnd
+        except Exception:  # noqa: BLE001
+            return False
 
     def _owner_hwnd(self, hwnd) -> int:
         """그 창을 띄운 **주인(owner) 창.** 없거나 못 읽으면 0.
@@ -1916,54 +2008,43 @@ class KakaoDesktopSender(Sender):
         return (f"hwnd={hwnd} {_clip(self._hwnd_title(hwnd), 60)!r} "
                 f"class={self._hwnd_class(hwnd) or '?'!r} rect={rect}")
 
-    def _click_dialog_button(self, snapshot: dict, name: str) -> bool:
-        """카드(`snapshot['hwnd']`)의 단추를 **컨트롤로** 누른다.
+    def _close_card(self, card: dict) -> None:
+        """보내지 않고 카드를 닫는다.
 
-        이름이 같은 단추가 **딱 하나**일 때만. `click_input` 은 그 컨트롤의 자리
-        한가운데를 누른다 — 화면 좌표를 짐작해 누르지 않는다.
-        """
-        hwnd = (snapshot or {}).get("hwnd")
-        if not hwnd:
-            return False
-        try:
-            dialog = self._desktop.window(handle=hwnd)
-            hits = [b for b in dialog.descendants(control_type="Button")
-                    if _norm_button(_text_of(b)) == _norm_button(name)]
-            if len(hits) != 1:
-                log.warning("파일 전송 창에서 %r 단추가 %d개라 누르지 않습니다", name, len(hits))
-                return False
-            hits[0].click_input()
-            return True
-        except Exception as exc:  # noqa: BLE001
-            log.warning("파일 전송 창 단추를 누르지 못했습니다(%r): %s", name, exc)
-            return False
-
-    def _dismiss_confirm(self, snapshot: Optional[dict]) -> None:
-        """보내지 않고 물러난다.
-
-        카드를 알면: `전송 불가` 카드는 [확인], 그 밖에는 [×](`close_button_re`) — `⋮`
-        메뉴나 이름 모를 단추는 누르지 않는다. 안 되면 그 창에만 WM_CLOSE. 그래도
-        남았거나 카드를 모르면 Esc.
+        `전송 불가` 카드는 OCR 이 읽은 [확인], 그 밖에는 [×](오른쪽 위 모서리에서
+        `card_close_offset` × 창 배율). 그래도 남으면 카드가 앞일 때만 Esc, 그다음 그 창에만
+        WM_CLOSE. `⋮` 메뉴나 [N개 전송]은 누르지 않는다. 카드를 모르면(못 찾았거나 여럿)
+        Esc 만 — 예전과 같다.
         """
         conf = self.file_send_conf
-        snapshot = snapshot or {}
-        hwnd = snapshot.get("hwnd")
-        if hwnd:
-            key = ("dismiss_button_re" if unsendable_detail(snapshot, conf) is not None
-                   else "close_button_re")
-            picks = _match_buttons(snapshot.get("buttons", []), conf.get(key, ""))
-            if picks and self._click_dialog_button(snapshot, picks[0]):
-                time.sleep(self._t("after_close_chat", 0.3))
-                if not self._is_window_visible(hwnd):
-                    return
-            self._post_close(hwnd)
-            time.sleep(self._t("after_close_chat", 0.3))
-            if not self._is_window_visible(hwnd):
+        hwnd = card.get("hwnd")
+        if not hwnd:
+            for other in card.get("candidates") or []:    # 여럿이라 못 골랐다 — 다 닫는다
+                self._close_card({"hwnd": other})
+            if not card.get("candidates"):
+                self._safe_close()
+            return
+        rect = card.get("rect") or self._hwnd_rect(hwnd)
+        offset = conf.get("card_close_offset") or []
+        if unsendable_detail(card, conf) is not None:
+            point = card_point(card, conf.get("dismiss_button_re"))
+        elif rect and len(offset) == 2:
+            scale = self._dpi_scale(hwnd)
+            point = (rect[2] - round(offset[0] * scale), rect[1] + round(offset[1] * scale))
+        else:
+            point = None
+        wait = self._t("after_close_chat", 0.3) + 1.0
+        if point and self._point_on(hwnd, point):
+            self._pyautogui.click(*point)
+            if self._wait_gone(hwnd, wait):
                 return
-        try:
+        if self._foreground_hwnd() == hwnd:
             self._pyautogui.press("esc")
-        except Exception:  # noqa: BLE001
-            pass
+            if self._wait_gone(hwnd, wait):
+                return
+        self._post_close(hwnd)
+        if not self._wait_gone(hwnd, wait):
+            log.warning("파일 전송 카드가 닫히지 않습니다 hwnd=%s", hwnd)
 
     # --- 파일 첨부 진단 ---------------------------------------------------------
 
@@ -1990,6 +2071,22 @@ class KakaoDesktopSender(Sender):
             path = None
         log.info("파일 첨부 진단 — %s (전체: %s)\n%s", label, path or "파일 못 씀",
                  "\n".join(line for line in lines if not line.startswith("      ")))
+
+    def _note_card(self, card: dict, decision: str, failing: bool = False) -> None:
+        """카드 한 줄 — 후보 · 자리 · 그림 · OCR 글자(줄마다 그림 속 자리) · 판단.
+
+        `ui_dump` 에 더한다 — `_note_windows` 와 같은 규칙(실패는 늘, 성공은 실기 확인 전에만).
+        """
+        if not failing and self.file_send_conf.get("verified"):
+            return
+        rows = [(r.get("raw"), r.get("box")) for r in card.get("rows") or []]
+        line = (f"[파일 전송 카드] hwnd={card.get('hwnd')} 후보={card.get('candidates')} "
+                f"rect={card.get('rect')} 그림={card.get('image') or '-'} OCR={rows!r}"
+                + (f" OCR 못 씀={card['ocr_error']!r}" if card.get("ocr_error") else "")
+                + f" 판단={decision}")
+        # 상한에 걸려도 이 줄은 남긴다 — 카드에서 무엇을 읽고 무엇을 했는지가 제일 쓸모 있다
+        self.ui_dump = list(self.ui_dump)[:UI_DUMP_MAX_LINES - 1] + [line]
+        log.info(line)
 
     def _kakao_windows_dump(self, chat, before, label: str) -> List[str]:
         """앞 창 + 카톡 프로세스의 보이는 창 전부(제목·클래스·자리·주인) + 채팅창 속 창.
@@ -2107,7 +2204,10 @@ class KakaoDesktopSender(Sender):
             buf = io.BytesIO()
             img.save(buf, format="PNG")
             return base64.b64encode(buf.getvalue()).decode("ascii")
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            # 0.11.12 까지 조용히 None 이었다 — 파이썬 3.12+ 에서는 pyautogui 가 Pillow 를
+            # 끌어오지 않아 화면이 한 장도 안 올라갔다(requirements-agent-windows.txt)
+            log.warning("화면을 찍지 못했습니다(실패 화면 없이 보고): %s", exc)
             return None
 
 
@@ -2496,9 +2596,9 @@ def _max_rows(conf: dict) -> int:
 # ══════════════════════════════════════════════════════════════════════════
 #  확인 창 읽기·검사 — **창과 떨어져 있어 이 기계에서 그대로 시험한다**
 #
-#  Windows 카톡이 없어도 도는 순수 함수들이다. 위쪽 `_confirm_snapshot` 이
-#  창을 읽는 자리(전부 추측)라면, 여기는 **읽은 것을 보고 보낼지 말지 정하는
-#  자리**다. 그 판단은 추측이 아니어야 해서 따로 떼어 두었다.
+#  Windows 카톡이 없어도 도는 순수 함수들이다. 위쪽 `_read_card` 가 카드를
+#  찍어 OCR 로 읽는 자리라면, 여기는 **읽은 것을 보고 보낼지 말지 · 어디를 누를지
+#  정하는 자리**다. 그 판단은 추측이 아니어야 해서 따로 떼어 두었다.
 #  (mac 의 `kakao_mac.check_confirm_sheet` 와 같은 결)
 # ══════════════════════════════════════════════════════════════════════════
 
@@ -2708,16 +2808,17 @@ def check_file_card(snapshot: Optional[dict], expected_names: List[str],
     """★ 관문. `(막는 까닭 또는 None, 남길 말)` — 까닭이 있으면 **닫고 보내지 않는다.**
 
     실기 카드(10/20): 제목 `파일 전송` · 파일 줄 · [1개 전송] 하나 · [×] (취소 단추는
-    없다). 그래서 통과하려면:
-      ① 제목(창 제목이나 카드 속 글자)이 `confirm_title_re`
-      ② 보내기 단추(`send_button_re` — [N개 전송])가 **딱 하나**
+    없다). 글자는 OCR 이 읽은 줄이다(`ocr_card`). 그래서 통과하려면:
+      ① 글자 중 하나가 `confirm_title_re`(`파일 전송`)
+      ② 보내기 줄(`send_button_re` — `N개 전송`)이 **딱 하나**
       ③ 그 N 이 보내려던 개수와 **같다** — 한 번에 한 파일이라 늘 1. 남은 선택이 섞이면
          여기서 걸린다
-      ④ 파일명: 카드에서 읽히면 보내려던 것과 같아야 한다. 파일처럼 보이는 **다른**
-         이름만 보이면 막는다. **아무 이름도 못 읽으면** 통과시키되 그 말을 남긴다 —
-         카드는 열기 창에서 되읽어 견준 그 경로를 [열기]한 바로 뒤에 뜬 창이다(방은 앞
-         창 제목 · 열기 창의 주인으로 이미 확인했다). 남는 위험: 카드가 다른 파일을
-         보여 주는데 UIA 로 아무 글자도 안 읽히는 경우 — 그때는 개수 ③ 만 지킨다.
+      ④ 파일명: 카드에서 읽히면 보내려던 것과 같아야 한다(`card_name_matches` — OCR 이
+         흔히 어긋나는 띄어쓰기 · `_` · 대소문자 · 말줄임만 봐준다). 파일처럼 보이는
+         **다른** 이름만 보이면 막는다. **아무 이름도 못 읽으면** 통과시키되 그 말을
+         남긴다 — 카드는 열기 창에서 되읽어 견준 그 경로를 [열기]한 바로 뒤에 뜬 창이다
+         (방은 앞 창 제목 · 열기 창의 주인으로 이미 확인했다). 남는 위험: 카드가 다른
+         파일을 보여 주는데 OCR 이 그 이름을 못 읽는 경우 — 그때는 개수 ③ 만 지킨다.
     `전송 불가` 는 이 앞에서 따로 거른다(`unsendable_detail`).
     """
     want = list(expected_names or [])
@@ -2739,11 +2840,11 @@ def check_file_card(snapshot: Optional[dict], expected_names: List[str],
         return (f"개수가 다릅니다: 창은 {senders[0]!r} 인데 "
                 f"보내려던 것은 {len(want)}개"), ""
 
-    #    ★ 두 쪽을 **같은 형태로 맞춘 뒤** 견준다(`base.same_file_name`) — 한글 파일명은
+    #    ★ 두 쪽을 **같은 형태로 맞춘 뒤** 견준다(`card_name_matches`) — 한글 파일명은
     #      자모 조합 형태가 두 가지다(mac 에서 실제로 겪었다). 전체 경로면 마지막 조각.
     texts = list(snapshot.get("texts", []))
     missing = [n for n in want
-               if not any(same_file_name(n, t) or same_file_name(n, _leaf(t))
+               if not any(card_name_matches(n, t) or card_name_matches(n, _leaf(t))
                           for t in texts)]
     if not missing:
         return None, ""
@@ -2752,3 +2853,145 @@ def check_file_card(snapshot: Optional[dict], expected_names: List[str],
         return f"창에 다른 파일이 있습니다: {others!r} (보내려던 것 {want!r})", ""
     return None, (f"파일명을 '파일 전송' 창에서 읽지 못해 제목과 {senders[0]!r} 로만 "
                   f"확인했습니다 (보낸 것 {want!r})")
+
+
+def card_name_matches(want: str, seen: str) -> bool:
+    """카드에서 읽은 파일명이 보내려던 것인가 — OCR 이 흔히 어긋나는 것만 봐준다.
+
+    띄어쓰기 · `_`(OCR 이 빼먹거나 띄어 읽는다) · 대소문자를 지우고 한글 형태를 맞춘 뒤
+    (`nfc` — 자모를 쪼갠 형태와 합친 형태) 견준다. 긴 이름은 카드가 말줄임(`…` · `...`)으로
+    자르므로 그 앞뒤 조각이 보내려던 이름의 처음과 끝이면 같다고 본다. 전체 경로는 열기
+    창에서 이미 되읽어 견줬다 — 여기는 카드가 **다른 파일**을 보여 주는지 보는 자리다.
+    """
+    def squash(text: str) -> str:
+        return re.sub(r"[\s_]+", "", nfc(text)).casefold()
+
+    full, read = squash(want), squash(seen).replace("...", "…")
+    if "…" not in read:
+        return bool(full) and full == read
+    head, tail = read.split("…")[0], read.split("…")[-1]
+    return (bool(head or tail) and len(head) + len(tail) <= len(full)
+            and full.startswith(head) and full.endswith(tail))
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  `파일 전송` 카드를 글자로 읽기 — 윈도우 내장 OCR (0.11.13)
+#
+#  카드는 손으로 그린 창이라 UIA 로는 글자도 단추도 안 보인다(실기 0.11.12). 그래서
+#  카드 자리를 찍어 Windows.Media.Ocr(한국어)로 읽는다. 새 프로그램은 깔지 않는다 —
+#  Windows PowerShell 5.1 이 그 OCR 을 부른다(`win_ocr.ps1`).
+# ══════════════════════════════════════════════════════════════════════════
+
+class OcrUnavailable(Exception):
+    """윈도우 OCR 을 쓸 수 없다(인식기 없음 · PowerShell 막힘 · 화면을 못 찍음). 보내지 않는다."""
+
+
+def windows_ocr(image_path: str, lang: str = "ko", timeout: float = 30.0) -> list:
+    """그림을 윈도우 OCR 로 읽는다 — `[{text, words: [{text, x, y, w, h}]}]` (그림 속 화소).
+
+    `powershell.exe`(5.1 — WinRT 를 부를 줄 아는 쪽. pwsh 7 은 못 부른다)로 `win_ocr.ps1` 을
+    돌리고, 그 스크립트가 남긴 UTF-8 JSON 을 읽는다 — 콘솔 출력은 한글이 깨진다(CP949).
+    창은 띄우지 않는다(`CREATE_NO_WINDOW` — 카톡 카드에서 포커스를 뺏지 않게).
+    실행 정책은 이 한 번만 `Bypass` 다(PC 설정은 안 바꾼다). 못 쓰면 `OcrUnavailable`.
+    """
+    out = image_path + ".json"
+    try:
+        os.remove(out)
+    except OSError:
+        pass
+    if os.path.exists(out):     # 지난 카드의 결과를 이 카드 것으로 읽으면 안 된다
+        raise OcrUnavailable(f"지난 OCR 결과 파일을 지우지 못했습니다: {out}")
+    cmd = ["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+           "-File", OCR_SCRIPT, "-Image", os.path.abspath(image_path),
+           "-Out", os.path.abspath(out), "-Lang", lang]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, timeout=timeout,
+                              creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise OcrUnavailable(f"PowerShell 을 돌리지 못했습니다: {exc}") from exc
+    try:
+        with open(out, encoding="utf-8-sig") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        err = (proc.stderr or b"").decode(locale.getpreferredencoding(False), errors="replace")
+        raise OcrUnavailable(f"PowerShell 이 OCR 결과를 남기지 않았습니다(코드 {proc.returncode}): "
+                             f"{_clip(' '.join(err.split()), 300)}") from None
+    if not isinstance(data, dict):
+        raise OcrUnavailable(f"OCR 결과를 읽지 못했습니다: {_clip(repr(data), 200)}")
+    if data.get("error") == "no_recognizer":
+        have = ", ".join(data.get("available") or []) or "없음"
+        raise OcrUnavailable(f"{OCR_INSTALL_HINT} (이 PC 의 인식기: {have})")
+    if not data.get("ok"):
+        raise OcrUnavailable(f"OCR 이 실패했습니다: {_clip(str(data.get('error') or '?'), 300)}")
+    lines = data.get("lines") or []
+    return lines if isinstance(lines, list) else []
+
+
+def _union_box(words) -> Optional[tuple]:
+    """낱말 자리들을 감싸는 `(x0, y0, x1, y1)`. 못 읽으면 None."""
+    try:
+        boxes = [(float(w["x"]), float(w["y"]), float(w["x"]) + float(w["w"]),
+                  float(w["y"]) + float(w["h"])) for w in words]
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not boxes:
+        return None
+    return (min(b[0] for b in boxes), min(b[1] for b in boxes),
+            max(b[2] for b in boxes), max(b[3] for b in boxes))
+
+
+def ocr_card(lines, conf: Optional[dict] = None) -> dict:
+    """OCR 줄들 → 카드 모양(`check_file_card` · `unsendable_detail` · `card_point` 가 읽는 것).
+
+    줄 글자는 **띄어쓰기를 지운다**(원래 글자는 `raw`) — OCR 은 `1개 전송` 을 `1개전송` 으로도,
+    낱자마다 띄워서도 읽는다. 본(`selectors.yaml: file_send`)은 모두 `\\s*` 라 지워도 걸린다.
+    단추는 보내기(`send_button_re`) · 닫기(`dismiss_button_re`) 본에 걸리는 줄이다 — OCR 은
+    무엇이 단추인지 모른다.
+    """
+    settings = dict(FILE_SEND_DEFAULTS)
+    settings.update(conf or {})
+    rows = []
+    for line in lines or []:
+        if not isinstance(line, dict):
+            continue
+        words = [w for w in line.get("words") or [] if isinstance(w, dict)]
+        raw = str(line.get("text") or " ".join(str(w.get("text") or "") for w in words))
+        text = "".join(raw.split())
+        if text:
+            rows.append({"text": text, "raw": raw, "box": _union_box(words)})
+    texts = [r["text"] for r in rows]
+    buttons = [t for t in texts
+               if _match_buttons([t], settings.get("send_button_re", ""))
+               or _match_buttons([t], settings.get("dismiss_button_re", ""))]
+    return {"present": True, "title": "", "texts": texts, "buttons": buttons, "rows": rows}
+
+
+def card_point(card: dict, pattern) -> Optional[tuple]:
+    """카드에서 `pattern` 에 걸리는 OCR 줄 **하나**의 한가운데 — 화면 좌표. 못 정하면 None.
+
+    그림은 카드 자리(`rect`)를 그대로 찍어 `scale` 배로 키운 것이라 그림 속 점 ÷ 배수 + 카드
+    왼쪽 위 = 화면 점이다.
+    발송기는 화면 배율을 아는 프로세스라(pywinauto · pyautogui 가 켤 때 맞춘다) 창 자리 ·
+    찍기 · 누르기가 모두 실제 화소로 같다. 그림 크기가 카드 자리와 다르면 그 셈이 틀어진
+    것이라 None. 줄이 없거나 여럿이거나 점이 카드 밖이어도 None — 누르지 않는다.
+    """
+    rect, size = card.get("rect"), card.get("size")
+    if not rect or not size or tuple(size) != (rect[2] - rect[0], rect[3] - rect[1]):
+        return None
+    hits = [r for r in card.get("rows") or []
+            if r.get("box") and _match_buttons([r["text"]], pattern or "")]
+    if len(hits) != 1:
+        return None
+    x0, y0, x1, y1 = hits[0]["box"]
+    scale = card.get("scale") or 1
+    x, y = rect[0] + round((x0 + x1) / 2 / scale), rect[1] + round((y0 + y1) / 2 / scale)
+    return (x, y) if rect[0] <= x < rect[2] and rect[1] <= y < rect[3] else None
+
+
+def _file_b64(path) -> Optional[str]:
+    """파일을 base64 로 — 실패 보고의 화면 칸(`screenshot_b64`)에 싣는다. 못 읽으면 None."""
+    try:
+        with open(path, "rb") as fh:
+            return base64.b64encode(fh.read()).decode("ascii")
+    except (OSError, TypeError):
+        return None

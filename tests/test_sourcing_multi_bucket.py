@@ -1,7 +1,8 @@
-"""투자사 관리 현황의 `딜 소싱` 칸 — 갈래 셋(Series A · M&A · 구주·후속)을 고른다.
+"""투자사 관리 현황의 `딜 소싱` 칸 — 갈래(Series A · M&A · 구주·후속 · 대표 · 개인참여)를 고른다.
 
-예전 `Series A 딜 소싱`(O/X) 칸을 갈래 셋을 고르는 칸 하나로 바꿨다(사용자 결정
-2026-10-21 · `services/sourcing_sync.BRANCHES`). 여기서 못 박는 것.
+예전 `Series A 딜 소싱`(O/X) 칸을 갈래를 고르는 칸 하나로 바꿨다(사용자 결정
+2026-10-21 · `services/sourcing_sync.BRANCHES`). 2026-10-22 대표 · 개인참여 갈래도 잇는다
+(⑧ — 발송은 그대로). 여기서 못 박는 것.
 
   ① 체크 — 그 갈래에서 같은 분을 찾아 잇거나 새 줄(`딜 소싱 참여 제안 대기중`).
      풀기 — 그 줄을 `불참여` 로(지우지 않는다). 한 분이 두 갈래에 다 있을 수 있다.
@@ -12,6 +13,8 @@
   ⑤ M&A 갈래의 [저절로 잇기] · 후보 [이 분으로 확정] — `참여` 칸은 그대로.
   ⑥ M&A 월간 리마인드는 M&A 문구(저장 문구가 있으면 그것).
   ⑦ 이주 0114 — 색인을 (vc_contact_id, bucket) 으로. 겹친 줄이 있으면 내리기를 거절.
+  ⑧ 대표 · 개인참여 — 체크 · 풀기 · 같은 칸 · [저절로 잇기] · 엑셀이 나머지 셋과 같다.
+     방(투자사 방 이어받기) · 문구 · Series A 딜 공유는 예전 그대로.
 
 이름 · 회사 · 번호는 전부 가상값이다(공개 저장소).
 """
@@ -27,6 +30,10 @@ from tests.test_sourcing_vc_sync import (  # noqa: F401 - 픽스처를 함께 �
     MNA, SHEET, SYNC, board, sc, vc)
 
 FOLLOW = "구주매각 / 후속투자사 찾는 투자사 / 공동투자사 / 앵커투자사"
+CEO = "딜 소싱  참여 투자사 대표"          # 운영 시트 탭처럼 두 칸 공백
+SOLO = "딜 소싱  개인참여 심사역"
+#: 잇지 않는 갈래 — [+ 탭 추가]로 만든 탭 같은 것.
+OTHER = "해외 LP 찾는 투자사"
 PENDING = "딜 소싱 참여 제안 대기중"
 
 
@@ -116,7 +123,7 @@ def test_unknown_branch_names_are_refused(board, db, users):
     contact = vc(db, users)
     r = pick(board, contact.id, "M&A, 시리즈 B")
     assert r.status_code == 400
-    assert "Series A · M&A · 구주·후속" in r.json()["detail"]
+    assert "Series A · M&A · 구주·후속 · 대표 · 개인참여 만 적습니다" in r.json()["detail"]
     assert rows_of(db, MNA) == []                    # 한 갈래라도 막히면 통째로
 
 
@@ -254,12 +261,12 @@ def test_auto_link_pass_links_m_and_a_rows_by_name_and_phone(board, db, users):
     a = sc(db, name="가투자", phone="01011110001", bucket=MNA, participation="참여")
     b = sc(db, name="나투자씨", phone="010-1111-0002", bucket=MNA, participation="참여")
     c = sc(db, name="라투자", phone=None, bucket=MNA, participation="불참여")
-    sc(db, name="마대표", phone="010-1111-0009", bucket="딜 소싱  참여 투자사 대표")
+    sc(db, name="마해외", phone="010-1111-0009", bucket=OTHER)
 
     page = board.get("/sourcing", params={"tab": MNA}).text
     assert 'data-testid="sourcing-vc-auto-link"' in page
     assert 'data-testid="sourcing-vc-auto-link"' not in board.get(
-        "/sourcing", params={"tab": "딜 소싱  참여 투자사 대표"}).text
+        "/sourcing", params={"tab": OTHER}).text
 
     r = board.post("/sourcing/vc-auto-link", data={"tab": MNA}, follow_redirects=False)
     assert r.status_code == 303
@@ -384,3 +391,96 @@ def test_migration_widens_the_index_and_refuses_to_go_down_with_twins(tmp_path):
     idx = _indexes(path)
     assert "uq_sourcing_contacts_vc_contact" in idx
     assert "uq_sourcing_contacts_vc_contact_bucket" not in idx
+
+
+# ── ⑧ 대표 · 개인참여 (사용자 결정 2026-10-22) ──────────────────────────────
+
+def test_ceo_and_solo_branches_check_uncheck_and_show_chips(board, db, users):
+    contact = vc(db, users)
+    # 운영처럼 이미 있는 갈래(한 칸 공백 글자) — 새 줄은 그 글자로 선다(탭이 둘로 안 갈린다)
+    sc(db, name="가대표", phone="010-1111-0001", bucket="딜 소싱 참여 투자사 대표")
+
+    r = pick(board, contact.id, "대표, 개인참여")
+    assert r.status_code == 200, r.text
+    got = r.json()
+    assert got["sourcing_branches"] == "대표, 개인참여"
+    assert [(c["text"], c["on"]) for c in got["sourcing_chips"]] == [
+        ("대표·제안 대기중", True), ("개인참여·제안 대기중", True)]
+    assert got["sourcing_join"] == ""                 # 시리즈 A 칸은 그대로
+    [ceo] = [x for x in rows_of(db, "딜 소싱 참여 투자사 대표") if x.vc_contact_id]
+    [solo] = rows_of(db, SOLO)
+    assert (ceo.participation, solo.participation) == (PENDING, PENDING)
+    assert ceo.vc_contact_id == solo.vc_contact_id == contact.id
+    assert rows_of(db, CEO) == []                     # 두 칸 공백 글자로 새 탭을 안 세웠다
+
+    # 개인참여를 풀면 그 줄은 `불참여` — 지우지 않는다
+    r = pick(board, contact.id, "대표")
+    assert r.status_code == 200, r.text
+    assert r.json()["sourcing_filter"] == "대표|개인참여 불참여"
+    [solo] = rows_of(db, SOLO)
+    assert (solo.vc_contact_id, solo.participation) == (contact.id, "불참여")
+
+    # 엑셀 글자도 같은 짧은 이름
+    from app.services import sourcing_sync
+    assert sourcing_sync.parse_branches("대표, 개인참여 불참여") == {
+        sourcing_sync.CEO_BUCKET: True, sourcing_sync.SOLO_BUCKET: False}
+
+
+def test_the_table_and_edit_panel_offer_all_five_branches(board, db, users):
+    vc(db, users)
+    body = board.get(f"/contacts?sheet={SHEET}").text
+    assert 'data-choices="Series A,M&amp;A,구주·후속,대표,개인참여"' in body
+    boxes = [v for v in ("Series A", "M&amp;A", "구주·후속", "대표", "개인참여")
+             if f'class="f-branch" value="{v}"' in body]
+    assert len(boxes) == 5
+
+
+def test_shared_fields_follow_into_ceo_and_solo_rows(board, db, users):
+    from app.models import SourcingContact, VcContact
+
+    contact = vc(db, users)
+    pick(board, contact.id, "Series A, 개인참여")
+    board.patch(f"/api/contacts/{contact.id}", json={"firm": "새이름벤처스"})
+    [sa], [solo] = rows_of(db, SYNC), rows_of(db, SOLO)
+    assert (sa.firm, solo.firm) == ("새이름벤처스", "새이름벤처스")
+    # 개인참여 줄에서 고치면 투자사 줄과 시리즈 A 줄도
+    r = board.patch(f"/api/sourcing/{solo.id}", json={"email": "solo@example.com"})
+    assert r.status_code == 200, r.text
+    db.expire_all()
+    assert db.get(VcContact, contact.id).email == "solo@example.com"
+    assert db.get(SourcingContact, sa.id).email == "solo@example.com"
+
+
+def test_auto_link_pass_runs_on_ceo_and_solo_tabs(board, db, users):
+    exact = vc(db, users, name="가투자", phone="010-1111-0001")
+    a = sc(db, name="가투자", phone="01011110001", bucket=CEO, participation="참여")
+    b = sc(db, name="나투자", phone="010-1111-0002", bucket=SOLO, participation="참여")
+    for tab, row, want in ((CEO, a, exact.id), (SOLO, b, None)):
+        page = board.get("/sourcing", params={"tab": tab}).text
+        assert 'data-testid="sourcing-vc-auto-link"' in page, tab
+        assert 'data-testid="sourcing-add-unsynced"' not in page, tab
+        r = board.post("/sourcing/vc-auto-link", data={"tab": tab}, follow_redirects=False)
+        assert r.status_code == 303
+        db.expire_all()
+        assert rows_of(db, tab)[0].vc_contact_id == want, tab
+        assert rows_of(db, tab)[0].participation == "참여"       # 참여 칸은 그대로
+    assert board.get("/api/contacts").json()["contacts"][0]["sourcing_branches"] == "대표"
+    # 잇지 않는 갈래에서 누르면 막고 잇는 갈래 이름을 다 말한다
+    r = board.post("/sourcing/vc-auto-link", data={"tab": OTHER}, follow_redirects=False)
+    from urllib.parse import unquote
+    assert "Series A · M&A · 구주·후속 · 대표 · 개인참여" in unquote(r.headers["location"])
+
+
+def test_ceo_and_solo_sending_rules_stay_as_they_were(board, db, users):
+    """잇기만 늘었다 — 방은 예전처럼 투자사 방을 이어받고(시리즈 A 만 안 받는다),
+    Series A 딜 공유는 시리즈 A 에만, 호칭 · 개수는 갈래 이름 그대로."""
+    from app.services import series_a_share, sourcing_link, sourcing_msg
+
+    contact = vc(db, users)
+    pick(board, contact.id, "대표, 개인참여")
+    ceo, solo = rows_of(db, CEO)[0], rows_of(db, SOLO)[0]
+    linked = sourcing_link.linked_rooms(db, [ceo, solo])
+    assert linked[ceo.id]["room"] == linked[solo.id]["room"] == "홍길동 방"
+    assert not series_a_share.is_share_bucket(CEO) and not series_a_share.is_share_bucket(SOLO)
+    assert (sourcing_msg.honorific(CEO), sourcing_msg.deal_count(CEO)) == ("대표", 5)
+    assert (sourcing_msg.honorific(SOLO), sourcing_msg.deal_count(SOLO)) == ("심사역", 2)

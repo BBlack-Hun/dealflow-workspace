@@ -330,6 +330,31 @@ def is_paused(contact: VcContact) -> bool:
     return (contact.status or "") == STATUS_PAUSED
 
 
+#: 카톡방을 나간 분을 카톡 목록에서 뺄 때 붙이는 까닭 — 미리보기·발송 목록이
+#: 같은 말을 쓴다. 단계 이름은 `left_room_label` 이 준다.
+LEFT_ROOM_WHY = "카톡방을 나간 분이라 카톡으로 보내지 않습니다"
+
+
+def left_room_label() -> str:
+    """`방 나감` 이라는 말 — 임포트가 정한 이름을 읽는다(`CONNECT_LABELS`)."""
+    from .sheet_import import CONNECT_LABELS, STAGE_LEFT_ROOM
+
+    return CONNECT_LABELS[STAGE_LEFT_ROOM]
+
+
+def left_room(contact: VcContact) -> bool:
+    """카톡방을 **나간** 사람인가(연결 단계 `방 나감`).
+
+    `is_connected` 가 거짓인 것과 다르다 — 미착수·진행 중은 아직 방이 없을
+    뿐이지만, 이 사람은 방 이름이 그대로 남아 있어서 방 이름 검사로는 안
+    걸린다. 그래서 **카톡** 발송 목록은 이 판정으로 따로 뺀다. 메일은 막지
+    않는다 — 방을 나간 분이 메일로 자료를 청하는 일이 있다(`pick_note`).
+    """
+    from .sheet_import import STAGE_LEFT_ROOM   # 순환 임포트라 함수 안에서
+
+    return contact.connect_stage == STAGE_LEFT_ROOM
+
+
 def can_send_to(contact: VcContact) -> bool:
     """지금 이 사람에게 문구를 보낼 수 있는가.
 
