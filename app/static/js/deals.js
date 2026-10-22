@@ -121,7 +121,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   // 화면을 연 뒤에 다른 회차가 나갔거나 [중단]됐으면 `이미 받은 분` 이 달라지고,
   // 공유 심사역을 확정하면 `본인 공유` 가 달라진다. 늦게 온 옛 답은 버린다.
   var shareStateSeq = 0;
-  function refreshShareState() {
+  function refreshShareState(then) {
     if (!isShare()) return;
     var seq = ++shareStateSeq;
     fetch("/api/series-a-share/state", { headers: { "Accept": "application/json" } })
@@ -129,10 +129,46 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
       .then(function (res) {
         if (seq !== shareStateSeq || !res.ok) return;
         applyShareState(res.d || {});
+        if (typeof then === "function") then(res.d || {});
       })
       .catch(function () { /* 못 읽어도 보내는 것은 서버가 다시 센다 */ });
   }
+  // ── [후보 자동 채우기] ──────────────────────────────────────────────────
+  // 누를 때 서버에서 새로 읽고(덜 나간 순이 그 사이 나간 회차로 바뀐다), 체크를
+  // 지운 뒤 서버가 정한 차례(`autofill.ids` — `series_a_share.autofill`: 딜 소개 문구
+  // 있는 기업, 투자유치 금액 높은 순)대로 체크한다. **그 차례가 곧 번호**이고 사람마다
+  // 앞에서 N개를 나눌 차례다 — 여기서 다시 정렬하지 않는다(규칙은 서버 한 벌).
+  var autofillNote = document.getElementById("sa-autofill-note");
+  function showAutofillBlank(a) {
+    if (!autofillNote) return;
+    autofillNote.hidden = !(a && a.blank);
+    autofillNote.textContent = autofillNote.hidden ? ""
+      : "후보 " + a.candidates + "곳 중 금액이 빈 곳 " + a.blank + "곳";
+  }
+  function applyAutofill(a) {
+    var byId = {};
+    Array.prototype.slice.call(document.querySelectorAll("#series-a-list .sa-cb"))
+      .forEach(function (cb) {
+        cb.checked = false;
+        cardOf(cb).removeAttribute("data-pick-order");
+        byId[cb.value] = cb;
+      });
+    // 화면에 없는 번호(화면을 연 뒤에 생긴 줄)는 건너뛴다 — 빈 번호는 `renumberPicks` 가 당긴다.
+    ((a && a.ids) || []).forEach(function (id, i) {
+      var cb = byId[String(id)];
+      if (!cb) return;
+      cb.checked = true;
+      cardOf(cb).setAttribute("data-pick-order", String(i + 1));
+    });
+    dropShareEdits("고른 기업이");
+    updateCounts();
+  }
+  var autofillBtn = document.getElementById("sa-autofill");
+  if (autofillBtn) autofillBtn.addEventListener("click", function () {
+    refreshShareState(function (d) { applyAutofill(d.autofill); });
+  });
   function applyShareState(d) {
+    showAutofillBlank(d.autofill);
     var byId = {};
     (d.companies || []).forEach(function (c) { byId[String(c.id)] = c; });
     Array.prototype.slice.call(document.querySelectorAll("#series-a-list .sa-cb"))

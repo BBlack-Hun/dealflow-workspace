@@ -540,6 +540,15 @@
                  aria-label="사람당 보낼 기업 수">개</label>
         <span class="hint" id="sa-per-person-hint">{{ share_per_person_hint }}</span>
       </div>
+      {# [후보 자동 채우기] — 체크를 지우고 서버가 정한 차례(`series_a_share.autofill` —
+         딜 소개 문구 있는 기업, 투자유치희망금액 높은 순)로 체크한다. 그 차례가 곧
+         사람마다 앞에서 N개를 나눌 차례다. 금액이 빈 후보 수는 `deals.js` 가 적는다. #}
+      <div class="filter-line" id="sa-autofill-line" data-only="share">
+        <button type="button" class="secondary-btn" id="sa-autofill"
+                title="딜 소개 문구가 있는 기업만 — 금액이 같으면 덜 나간 순, 그다음 받은 날 최신순">후보 자동 채우기</button>
+        <span class="hint">투자유치 금액 높은 순으로 최대 {{ share_per_person_max }}곳 — 금액이 빈 곳은 뒤로</span>
+        <span class="hint" id="sa-autofill-note" hidden></span>
+      </div>
       <div class="picker-search">
         <input type="search" id="sa-pick-search"
                placeholder="기업명 · 분야 · 투자라운드 · Type · 수신 일자 검색 ({{ series_a_rows|length }}개)"

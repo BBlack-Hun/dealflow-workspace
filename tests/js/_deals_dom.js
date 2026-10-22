@@ -265,9 +265,14 @@ function buildDom(people) {
   // `data-only="ir"` 안내가 선다(`deals.js` 의 `syncCompanyPanel`).
   const irOnlyHint = el("p", { class: "hint", "data-only": "ir" });
   irOnlyHint.hidden = true;
+  // [후보 자동 채우기] — 서버가 정한 차례(`/api/series-a-share/state` 의 `autofill`)로 체크한다.
+  const autofillNote = el("span", { id: "sa-autofill-note", class: "hint" });
+  autofillNote.hidden = true;
   const seriesAPicker = el("div", { id: "series-a-picker" }, [
     irOnlyHint,
     el("div", { id: "sa-per-person-line", "data-only": "share" }, [perPerson, perPersonHint]),
+    el("div", { id: "sa-autofill-line", "data-only": "share" },
+       [el("button", { id: "sa-autofill", type: "button" }), autofillNote]),
     el("input", { id: "sa-pick-search", type: "search" }),
     el("input", { id: "sa-only-picked", type: "checkbox" }),
     el("label", { "data-only": "share" },

@@ -77,7 +77,7 @@ from sqlalchemy.orm.attributes import set_committed_value
 from .. import clock
 from ..models import (SendItem, SendJob, SeriesACompany, SeriesAShare,
                       SourcingContact, User)
-from . import (deal_history, deal_numbers, room_name, sourcing_buckets, sourcing_msg,
+from . import (amount, deal_history, deal_numbers, room_name, sourcing_buckets, sourcing_msg,
                twin_send)
 from . import message_composer as mc
 from .sourcing_sync import SYNC_BUCKET
@@ -324,6 +324,29 @@ def load(db: Session, ids: Iterable[int]) -> List[SeriesACompany]:
             raise MissingCompany(f"Series A 이상 딜 소싱 기업 {cid} 없음")
         out.append(row)
     return out
+
+
+def autofill(rows: Sequence[dict], sent: Dict[int, Set[int]]) -> dict:
+    """고르개의 [후보 자동 채우기] — 체크할 기업 번호(**그 차례대로**)와 후보 · 금액이 빈 후보 수.
+
+    사용자 요청(10/22): "자동채우기이지만 투자 유치금액 높은순으로 해줘~"
+
+    대상은 딜 소개 문구(`deal_pitch`)가 있는 기업, 차례는 투자유치희망금액
+    (`raise_target`) 높은 순이다 — 범위는 **위쪽 값**(`amount.million_top`). 비었거나
+    `~` · 못 읽는 글자인 곳은 맨 뒤. 같으면 덜 나간 순(`sent` — 받은 분 수,
+    `contacts_by_company`), 그다음 `rows` 의 차례(고르개 차례 = 수신 일자 최신순 —
+    `routers/series_a.sort_rows`, 안정 정렬이 지킨다). 앞에서 10곳(고르개 한도).
+
+    이 차례가 곧 사람마다 앞에서 N개를 나눌 차례다(`plan`) — 화면은 이 번호를 받은
+    그대로 체크한다(`deals.js`). 규칙은 여기 한 벌이다.
+    """
+    picks = [r for r in rows if (r.get("deal_pitch") or "").strip()]
+    top = {r["id"]: amount.million_top(r.get("raise_target")) for r in picks}
+    picks = sorted(picks, key=lambda r: (top[r["id"]] is None, -(top[r["id"]] or 0),
+                                         len(sent.get(r["id"], ()))))
+    return {"ids": [r["id"] for r in picks[:mc.MAX_COMPANIES_PER_SEND]],
+            "candidates": len(picks),
+            "blank": sum(1 for v in top.values() if v is None)}
 
 
 # ── 기록 ────────────────────────────────────────────────────────────────────
