@@ -351,6 +351,9 @@
     <ul class="due-list">
       {% for r in due_left_room %}
       <li>
+        <span class="due-when">
+          {% if r.overdue %}{{ -r.days_left }}일 지남{% else %}오늘{% endif %}
+        </span>
         <span class="due-who">
           <a class="req-link" href="/ir?contact={{ r.contact_id }}">
             <b>{{ r.name }}</b> {{ r.title }} <span class="muted">{{ r.firm }}</span>
