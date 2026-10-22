@@ -683,7 +683,7 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
                background: #eafaf0; color: var(--green); }
 .branch-chip.pending { background: #fff4e5; color: var(--amber); }
 .branch-chip.off { background: #f1f3f5; color: var(--muted); text-decoration: line-through; }
-/* 고르는 창(`inline_edit.js` 의 `branches`) — 갈래 셋을 한 줄씩. */
+/* 고르는 창(`inline_edit.js` 의 `branches`) — 갈래마다 한 줄씩. */
 .cell-pop .branch-pick { display: flex; flex-direction: column; gap: 6px; padding: 6px 2px; }
 .cell-pop .branch-pick label { display: flex; align-items: center; gap: 8px; font-size: 14px; }
 /* 팀 현황도 같은 방식이다 — 폭은 th 에서 잡고 여기서는 표가 줄지 않게만 막는다.

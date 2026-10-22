@@ -598,8 +598,9 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None,
     # 오늘 보낼 리마인드 — 딜소개 회차보다 먼저 챙겨야 할 때가 많다.
     cadence.sweep_reactions(db, user.id)
     due_rows = cadence.sequence_rows(db, user.id, today)
+    # 카톡방을 나간 분은 뺀다 — 딜 진행 관리의 같은 판과 같은 기준이다.
     due_today = [r for r in due_rows if r["status"] == "active" and r["due"]
-                 and r["due"] <= today.isoformat()]
+                 and r["due"] <= today.isoformat() and not r["left_room"]]
 
     upcoming = cadence.upcoming_send_dates(db, today)
     next_send = upcoming[0]

@@ -39,7 +39,7 @@ def _book(resp):
 
 @pytest.fixture()
 def board(client, db, users):
-    """시리즈 A(이어진 줄 하나 · 안 이어진 줄 둘) · 대표 갈래(잇지 않음) 하나."""
+    """시리즈 A(이어진 줄 하나 · 안 이어진 줄 둘) · 대표 갈래(안 이어진 줄) 하나."""
     from app.models import SheetOwner, SourcingContact, VcContact
 
     db.add(SheetOwner(label="강민준 투자사", user_id=users["u1"].id, layout="investor"))
@@ -106,15 +106,22 @@ def test_ids_from_another_tab_are_ignored(client, board):
     assert rows[1:] == []                        # 화면에 아무도 안 보이면 빈 표
 
 
-def test_the_all_view_adds_a_bucket_column(client, board):
+def test_the_all_view_adds_a_bucket_column(client, db, board):
+    from app.models import SourcingContact
+
+    other = "해외 LP 찾는 투자사"            # [+ 탭 추가]로 만든 탭 같은 것 — 잇지 않는다
+    db.add(SourcingContact(bucket=other, position=2000, name="최해외", participation="참여"))
+    db.commit()
     sheet = _book(client.get("/api/sourcing/export.xlsx", params={"tab": "all"}))
     [(title, rows)] = sheet.items()
     assert title == "전체"
     assert rows[0][0] == "갈래"
-    assert {r[0] for r in rows[1:]} == {SYNC, CEO}
+    assert {r[0] for r in rows[1:]} == {SYNC, CEO, other}
+    by_bucket = {r[0]: dict(zip(rows[0], r)) for r in rows[1:]}
+    # 대표 갈래는 잇는 갈래(2026-10-22) — 안 이어진 줄은 `안 이어짐`
+    assert by_bucket[CEO]["투자사 관리 현황"] == "안 이어짐"
     # 잇지 않는 갈래는 연결 칸이 빈칸 — `안 이어짐` 이 아니다
-    ceo = next(dict(zip(rows[0], r)) for r in rows[1:] if r[0] == CEO)
-    assert not ceo["투자사 관리 현황"]
+    assert not by_bucket[other]["투자사 관리 현황"]
 
 
 def test_every_tab_gets_its_own_sheet(client, board):

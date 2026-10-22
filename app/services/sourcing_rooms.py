@@ -38,11 +38,14 @@ A 갈래는 투자사 방을 이어받지 않으므로(`sourcing_link.linked_roo
 아닌 것이 확실하므로 후보에서 빼고 확정도 막는다(`deal_rooms`) — 확정하면 소싱
 리마인드가 남의 딜소개 방으로 간다.
 
-**참여 안내를 받을 분(제안 대기중 · 물어보는 중)은 예외다**(`sourcing_sync.can_get_invite`).
+**참여 안내를 받을 분(제안 대기중 · 물어보는 중)과 `참여` 인 분은 예외다**(`_keeps_deal_room`).
 O 로 막 들어와 아직 딜 소싱 방이 없는 분이라, 누른 사람 카톡에서 찾은 그분 방이
 딜소개 방 하나뿐이다 — 운영에서 [방 후보 찾기] 33줄 중 32줄이 그 방 하나만 찾고
 빠져 고를 단추가 없었다(2026-10-19). 참여를 청하는 글은 그 방으로 가야 하므로 후보로
-담고 확정도 받는다. `참여` 인 분은 예전 그대로 뺀다.
+담고 확정도 받는다. `참여` 인 분도 같다 — 팀은 대개 한 방에서 딜소개와 딜 소싱을 같이
+한다(운영 2026-10-22: 방이 확정된 시리즈 A 줄 12개 중 10개가 딜소개 방과 같은 제목,
+`참여` 인 분은 찾을 때마다 그 방이 빠져 `후보 없음` 으로만 섰다). 사람이 적은 문구인
+분만 예전 그대로 뺀다.
 
 **못 지우게 막지 않는다.** 방 찾기 건(`SendItem`)이 이 줄을 가리키지만 보낸
 것이 아니다 — 딜 소싱 [삭제] 의 '보낸 이력' 에서 빼고, 지울 때 함께 치운다
@@ -197,6 +200,11 @@ def deal_rooms(db: Optional[Session], contact: SourcingContact) -> Set[str]:
     return out
 
 
+def _keeps_deal_room(contact: SourcingContact) -> bool:
+    """딜소개 방을 후보로 두고 확정도 받는 분 — 참여 안내 받을 분과 `참여` 인 분(모듈 머리말)."""
+    return sourcing_sync.can_get_invite(contact) or sourcing_sync.takes_part(contact)
+
+
 def _note_failure(contact: SourcingContact, error: str) -> None:
     """찾기가 **오류로** 끝났다 — 담아 둔 후보는 그대로 두고 오류만 적는다."""
     try:
@@ -243,8 +251,8 @@ def apply_result(item: SendItem, body) -> None:
         item.sent_at = None
         item.error = error
         return
-    # 그분의 딜소개 방은 후보에서 뺀다(모듈 머리말 · `deal_rooms`) — 참여 안내 받을 분은 둔다.
-    known = (set() if sourcing_sync.can_get_invite(contact)
+    # 그분의 딜소개 방은 후보에서 뺀다(모듈 머리말 · `deal_rooms`) — 참여 안내 받을 분 · 참여인 분은 둔다.
+    known = (set() if _keeps_deal_room(contact)
              else deal_rooms(object_session(contact), contact))
     kept = [r for r in rooms if _room_key(r) not in known]
     room_match.save_candidates(contact, kept, at=clock.now_iso(),
@@ -296,7 +304,7 @@ def confirm(contact: SourcingContact, title: str) -> SourcingContact:
     if text in found["same"]:
         raise NotPickable("카톡에 같은 제목의 방이 여럿입니다 — 카톡에서 방 이름을 "
                           "고유하게 바꾼 뒤 `카톡방 이름` 칸에 직접 적어 주세요")
-    if (not sourcing_sync.can_get_invite(contact)
+    if (not _keeps_deal_room(contact)
             and _room_key(text) in deal_rooms(object_session(contact), contact)):
         # 예전에 담긴 후보에 남아 있을 수 있다 — 담을 때 빼는 것과 같은 규칙.
         raise NotPickable("이 분의 투자사 딜소개 방입니다 — 딜 소싱 방이 아니라 "

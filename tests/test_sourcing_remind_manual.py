@@ -331,20 +331,20 @@ def test_renaming_a_bucket_takes_the_remind_along(people, client, db):
     from app.models import MessageTemplate
     from app.services import sourcing_buckets
 
-    # 시리즈 A · M&A · 구주·후속 갈래는 이름을 못 바꾼다 — 투자사 관리 현황과 이어진
-    # 갈래다(`sourcing_sync.BRANCHES` · `tests/test_sourcing_vc_sync.py`). 그래서
-    # 옮겨 가는지는 잇지 않는 갈래(투자사 대표)로 본다.
+    # 원본 시트의 갈래(시리즈 A · M&A · 구주·후속 · 대표 · 개인참여)는 이름을 못 바꾼다
+    # — 투자사 관리 현황과 이어진 갈래다(`sourcing_sync.BRANCHES` ·
+    # `tests/test_sourcing_vc_sync.py`). 그래서 옮겨 가는지는 잇지 않는 갈래로 본다.
     from app.models import SourcingContact
 
-    ceo = "딜 소싱  참여 투자사 대표"
-    db.add(SourcingContact(bucket=ceo, position=1, name="가대표"))
-    db.add(MessageTemplate(user_id=None, kind="sourcing_remind", name=ceo,
+    lp = "해외 LP  찾는 투자사"
+    db.add(SourcingContact(bucket=lp, position=1, name="가대표"))
+    db.add(MessageTemplate(user_id=None, kind="sourcing_remind", name=lp,
                            is_active=1, body="리마인드"))
     db.commit()
-    sourcing_buckets.rename(db, ceo, "딜 소싱 참여 투자사 대표 (2026)")
+    sourcing_buckets.rename(db, lp, "해외 LP 찾는 투자사 (2026)")
     db.commit()
     row = db.query(MessageTemplate).filter_by(kind="sourcing_remind").one()
-    assert row.name == "딜 소싱 참여 투자사 대표 (2026)"
+    assert row.name == "해외 LP 찾는 투자사 (2026)"
 
 
 # ── ⑤ 심는 글 ───────────────────────────────────────────────────────────────

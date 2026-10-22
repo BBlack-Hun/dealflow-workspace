@@ -685,8 +685,8 @@
 
     // ── 여러 갈래를 체크해 고르는 칸(`data-type="branches"`) ─────────────
     //
-    // 보기는 칸의 `data-choices`(투자사 관리 현황 `딜 소싱` — Series A · M&A ·
-    // 구주·후속), 지금 값은 `data-value`(`Series A, M&A`). 체크하면 읽기만 하는 한
+    // 보기는 칸의 `data-choices`(투자사 관리 현황 `딜 소싱` — 서버의
+    // `sourcing_sync.BRANCHES`), 지금 값은 `data-value`(`Series A, M&A`). 체크하면 읽기만 하는 한
     // 줄 칸에 고른 것이 `, ` 로 모이고, 창이 닫힐 때(바깥 클릭 · Enter) 그 값이
     // 저장된다(`popover` 의 `finish`). Esc 는 되돌린다 — 다른 칸과 같다.
     function startBranches(cell, before, type) {

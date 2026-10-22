@@ -25,6 +25,10 @@ def counts(db: Session, user: User, today: Optional[date] = None) -> dict:
     rows = cadence.sequence_rows(db, user.id, today)
     active = [r for r in rows if r["status"] == "active" and r["due"]]
     due = [r for r in active if r["due"] <= today.isoformat()]
+    # 카톡방을 나간 분은 오늘 보낼 판에서 빠진다(`followups.remind_context`) —
+    # 여기서도 빼야 점프바 수와 판의 줄 수가 맞는다. 전화는 그대로 센다.
+    due = [r for r in due if not (r["left_room"]
+                                  and r["next_stage"] != cadence.STAGE_CALL)]
     # 전화는 **보내는 것이 아니다** — 리마인드 수에서 갈라 낸다. 한 수에 섞으면
     # 점프바의 `리마인드 3` 을 눌러 갔는데 보낼 것은 두 건뿐인 일이 생긴다.
     # 가르는 기준은 리마인드 구역과 **같은 곳**이다(`routers/followups.py`).

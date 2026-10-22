@@ -37,6 +37,7 @@ from ..models import (
     VcContact,
 )
 from . import meeting_kind as mk
+from . import sheet_owner
 
 # 단계. message_composer 의 STAGE_* 와 같은 값을 쓴다.
 STAGE_DAY1 = 1
@@ -568,6 +569,9 @@ def sequence_rows(db: Session, user_id: int,
             "title": (contact.title or "") if contact else "",
             "firm": (contact.firm or "") if contact else "",
             "room_name": (contact.kakao_room_name or "") if contact else "",
+            # 카톡방을 나간 분 — 오늘 보낼 판에서 따로 접는다. 줄은 그대로 두므로
+            # 단계를 되돌리면 다시 선다(`followups.remind_context`).
+            "left_room": bool(contact) and sheet_owner.left_room(contact),
             "stage": seq.stage,
             "stage_label": STAGE_LABELS.get(seq.stage, "-"),
             "next_stage": seq.next_stage,

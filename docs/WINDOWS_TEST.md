@@ -174,6 +174,17 @@ Windows 검증은 팀원 PC가 확보될 때 이 문서대로 진행하면 된�
   빈 파일은 카톡을 열기 전에 막는다)
 - 지금 코드는 **꺼져 있다.** 아무것도 안 하면 예전 그대로 문구만 나간다.
   아래 H-1 에서 그 창에서만 켠다.
+- (0.11.13) 카드 글자는 **윈도우 내장 한국어 OCR** 로 읽는다. 있는지 먼저 본다 —
+  명령 프롬프트에서(한 줄):
+
+  ```bat
+  powershell -NoProfile -Command "$null=[Windows.Media.Ocr.OcrEngine,Windows.Foundation,ContentType=WindowsRuntime]; [Windows.Media.Ocr.OcrEngine]::AvailableRecognizerLanguages | ForEach-Object LanguageTag"
+  ```
+
+  `ko` 가 보이면 된다. 없으면 설정 > 시간 및 언어 > 언어 및 지역 > 한국어 > 언어 옵션에서
+  한국어 기능을 받는다(또는 관리자 PowerShell: `Add-WindowsCapability -Online -Name
+  "Language.OCR~~~ko-KR~0.0.1.0"`). 없으면 발송기는 `ocr_unavailable` 로 **안 보낸다.**
+- 발송기를 새로 받으면 **setup.bat 을 한 번 더** 돌린다 — 화면을 찍는 Pillow 가 새로 깔린다.
 
 ## H-1. 켜기 (그 창에서만)
 
@@ -225,17 +236,23 @@ set DEALFLOW_WIN_FILE_SEND=1          ← ★ 이 줄이 파일 첨부를 켠다
 
 ### ③ ★★ `파일 전송` 카드에서 [1개 전송]이 눌리는가 ★★  ← **제일 중요**
 
-발송기는 **카드를 못 찾으면 안 보낸다.** 카드가 UIA 로 무엇을 드러내는지가 이번 확인의
-전부다. 관문은 넷이다:
+발송기는 **카드를 못 찾거나 못 읽으면 안 보낸다.** 0.11.12 실기(잡 82)에서 카드는 UIA 로
+아무 글자도 안 드러냈다(손으로 그린 창 — 보이는 것은 `EVA_Window_Dblclk` 창과 그 속
+`EVA_ChildWindow` id 1001 뿐). 그래서 0.11.13 은 **창 구조로 찾고 글자는 찍어서 OCR 로**
+읽는다. 관문은 다섯이다:
 
-- [ ] 카드가 **딱 하나** — 붙인 뒤 새로 뜬 카톡 창 · 채팅창이 띄운 창 · 채팅창 속 창 중
-- [ ] 제목(창 제목이나 카드 속 글자)이 `파일 전송`
-- [ ] 단추 `N개 전송` 이 **딱 하나**이고 **N 이 1**
-- [ ] 파일명이 읽히면 보내려던 것과 같다(**못 읽으면** 통과시키되 경고를 남긴다)
+- [ ] 카드 창이 **딱 하나** — [열기] 뒤 새로 뜬 카톡 창 · 클래스 `EVA_Window_Dblclk` · 주인이
+      그 채팅창 · 제목 없음 · 속에 `EVA_ChildWindow`(id 1001)
+- [ ] OCR 글자에 `파일 전송`
+- [ ] `N개 전송` 줄이 **딱 하나**이고 **N 이 1**, `전송 불가` 는 없다
+- [ ] 파일명이 읽히면 보내려던 것과 같다(띄어쓰기 · `_` · 대소문자 · 말줄임은 봐준다.
+      **못 읽으면** 통과시키되 경고를 남긴다)
+- [ ] 누를 점(OCR 이 읽은 `1개 전송` 글자 한가운데)이 그 카드 위다
 
-> 하나라도 어긋나면 카드를 [×](못 찾으면 그 창에 WM_CLOSE → Esc)로 닫고 **안 보낸다.**
-> `⋮` 메뉴는 누르지 않는다. 진단의 카드 줄(`[파일 전송 창]`)에 보이는 이름으로
-> `agent/selectors.yaml` 의 `file_send` 를 고치면 통과한다. **코드는 고치지 않는다.**
+> 하나라도 어긋나면 카드를 [×](오른쪽 위 모서리 — 안 닫히면 Esc → WM_CLOSE)로 닫고
+> **안 보낸다.** `⋮` 메뉴는 누르지 않는다. 진단의 `[파일 전송 카드]` 줄에 OCR 글자 · 자리 ·
+> 판단이, `agent_logs/kakao_file_card.png` 에 찍은 카드가 남는다(실패하면 그 그림이 그 건의
+> 화면으로 올라간다). 거기 보이는 값으로 `agent/selectors.yaml` 의 `file_send` 를 고친다.
 
 ### ④ 닫기가 되는가
 
@@ -290,7 +307,9 @@ set DEALFLOW_WIN_FILE_SEND=1          ← ★ 이 줄이 파일 첨부를 켠다
 | `open_dialog_foreign` | 열기 창을 띄운 창이 그 방이 아니다 | 진단의 owner 를 본다 |
 | `file_name_not_set` | 파일 이름 칸에 경로가 안 들어갔다 | 진단의 열기 창 칸(id `1148`)을 본다 |
 | `open_dialog_stuck` | [열기] 뒤 열기 창이 그대로 | 경로 · 파일을 확인한다 |
-| `confirm_window_not_shown` | **`파일 전송` 카드를 못 찾았다** | 진단의 `[실패: …]` 카톡 창 목록으로 selectors 를 고친다 |
+| `confirm_window_not_shown` | **`파일 전송` 카드를 못 찾았다**(또는 여럿) | 진단의 `[실패: …]` 카톡 창 목록으로 selectors 의 `card_*` 를 고친다 |
+| `ocr_unavailable` | 카드 글자를 **못 읽었다**(한국어 OCR 없음 · PowerShell 막힘 · Pillow 없음) | 뒤에 붙은 까닭대로 — 한국어 OCR 설치 · setup.bat 다시 |
+| `send_button_not_located` | `1개 전송` 글자 자리가 카드 위가 아니다 | 진단의 `[파일 전송 카드]` 줄 · 카드 그림을 본다 |
 | `file_refused: …` | 카톡이 `전송 불가` 라고 했다 | 뒤에 붙은 까닭(예: `비어있는 파일`)을 고친다 |
 | `gate_blocked: …` | 카드가 어긋나 **닫았다** | 뒤에 붙은 이유를 그대로 적어 온다 |
 | `send_unconfirmed` | [1개 전송]은 눌렀는데 카드가 안 닫혔다 | **카톡을 직접 확인** — 다시 보내면 겹칠 수 있다 |

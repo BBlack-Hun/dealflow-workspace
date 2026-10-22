@@ -173,7 +173,7 @@ def rename(db: Session, before: str, after: str) -> int:
     stored = variants(db, before)
     if not stored:
         raise RenameError(f"없는 갈래입니다: {before}")
-    # 투자사 관리 현황과 이어진 갈래(셋 — `sourcing_sync.BRANCHES`)는 **이름이 곧
+    # 투자사 관리 현황과 이어진 갈래(`sourcing_sync.BRANCHES`)는 **이름이 곧
     # 잇는 열쇠**다. 바꾸면 그쪽 `딜 소싱` 칸에서 그 갈래가 통째로 빠지고, 다음
     # 체크는 옛 이름의 새 갈래(유령 탭)를 만든다.
     from . import sourcing_sync      # noqa: PLC0415 — 서로 참조한다
