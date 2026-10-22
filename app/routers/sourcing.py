@@ -615,14 +615,22 @@ def add_row(body: SourcingIn, bucket: str = "",
             setattr(row, field, value.strip() or None)
     row.participation = _participation(body.participation or sourcing_sync.JOINED)
     db.add(row)
-    # 잇는 갈래(Series A · M&A · 구주·후속)에 넣은 분이 투자사 관리 현황에 **이름 ·
-    # 번호가 둘 다 같은 줄이 딱 하나**면 그 줄과 잇는다 — 그쪽 `딜 소싱` 칸에 곧바로
-    # 이 갈래가 선다. 아니면 후보로 뜬다(`sourcing_sync.link_candidates`).
-    contact = sourcing_sync.auto_link(db, row)
+    # 잇는 갈래(Series A · M&A · 구주·후속)에 넣은 분은 **투자사 관리 현황에도** 선다 —
+    # 이름 · 번호가 둘 다 같은 줄이 딱 하나면 그 줄과 잇고, 같은 분일 수 있는 줄이
+    # 있으면 후보로 남기고(`link_candidates`), 아무도 없으면 넣은 사람의 `직접 추가`
+    # 명단에 새로 만들어 잇는다(`sourcing_sync.add_from_sourcing`). 그쪽 `딜 소싱` 칸에
+    # 곧바로 이 갈래가 선다. `(딜 소개 X)` · `딜 소개 보류` 인 분은 막는다.
+    try:
+        contact, note = sourcing_sync.add_from_sourcing(db, row, user)
+    except sourcing_sync.SyncError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     db.commit()
     out = {"id": row.id, "bucket": target}
     if contact is not None:
-        out["linked_msg"] = _linked_msg(db, row)
+        out["linked_msg"] = note or _linked_msg(db, row)
+    elif note:
+        out["vc_msg"] = note
     return out
 
 
