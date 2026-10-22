@@ -519,14 +519,20 @@
       (`series_a_share.plan` — 서버가 미리보기 · 발송에서 같은 함수로 고른다).
     #}
     <div id="series-a-picker" hidden data-testid="series-a-picker">
-      <p class="hint">
+      {# IR 자료 전달에서도 이 고르개가 IR 기업 목록 아래에 선다(0118). 그때는
+         `data-only="share"` 칸이 숨고 이 안내(`data-only="ir"`)가 선다(`deals.js` 의 `syncCompanyPanel`). #}
+      <p class="hint" data-only="ir" hidden>
+        <b>Series A 이상 딜 소싱</b> 기업도 함께 보낼 수 있습니다 — 그 탭의 <b>IR 자료</b> 칸에
+        적은 파일이 붙고, 번호 없이 이름으로 나갑니다. IR 기업 현황에도 있는 기업은 위 IR 기업 목록에서 고르세요.
+      </p>
+      <p class="hint" data-only="share">
         <b>Series A 이상 딜 소싱</b>(IR 기업 현황 › Series A 이상 딜 소싱 탭)에서 소개할 기업을
         고르세요 — 기업마다 <b>기업명 · 분야 · 투자라운드 · 소개</b>(딜소개 문구, 없으면 상세
         내용 첫 문장)가 한 덩어리로 <code>[기업1]</code> <code>[기업2]</code> … 번호를 달고 나갑니다.
         <b>본인 공유 N명 제외</b>는 지금 고른 받는 분 중 이 딜을 공유해 준 분(그 분께는 늘
         빠집니다), <b>이미 받은 분 N명</b>은 이 기업을 이미 받은 분입니다.
       </p>
-      <div class="filter-line" id="sa-per-person-line">
+      <div class="filter-line" id="sa-per-person-line" data-only="share">
         <label class="only-picked" for="sa-per-person">사람당 보낼 기업 수
           <input type="number" id="sa-per-person" class="sa-per-person"
                  min="1" max="{{ share_per_person_max }}" step="1"
@@ -541,7 +547,7 @@
         <label class="only-picked">
           <input type="checkbox" id="sa-only-picked"> 선택한 것만
         </label>
-        <label class="only-picked" title="아직 아무에게도 공유하지 않은 기업만 봅니다">
+        <label class="only-picked" title="아직 아무에게도 공유하지 않은 기업만 봅니다" data-only="share">
           <input type="checkbox" id="sa-only-fresh"> 아직 공유 안 한 것만
         </label>
       </div>

@@ -85,24 +85,25 @@ def search_text(c: SeriesACompany) -> str:
     """줄에 실어 둘 검색용 글자. 표에 보이는 칸은 다 찾아져야 한다."""
     parts = [c.name, c.received_at, c.deal_type, c.assignee_name, c.shared_by,
              c.source_firm, c.sector_major, c.sector_minor, c.series,
-             c.detail, c.deal_pitch] + [getattr(c, f) for f in TYPED]
+             c.detail, c.deal_pitch, c.ir_file_name] + [getattr(c, f) for f in TYPED]
     return " ".join(filter(None, parts)).lower()
 
 
-def ir_names(db: Session) -> Dict[str, str]:
-    """IR 기업 현황의 `{비교용 이름: 그 탭에 적힌 이름}` — `IR 현황` 딱지의 재료."""
-    out: Dict[str, str] = {}
-    for (name,) in db.execute(select(IrCompany.name)):
+def ir_names(db: Session) -> Dict[str, tuple]:
+    """IR 기업 현황의 `{비교용 이름: (그 탭에 적힌 이름, IR 자료 파일 이름)}` —
+    `IR 현황` 딱지와 그 줄의 `IR 자료` 칸(IR 쪽 자료를 보여만 준다)의 재료."""
+    out: Dict[str, tuple] = {}
+    for name, file_name in db.execute(select(IrCompany.name, IrCompany.ir_file_name)):
         key = deal_history._key(name)
         if key:
-            out.setdefault(key, name)
+            out.setdefault(key, (name, (file_name or "").strip()))
     return out
 
 
-def row_dict(c: SeriesACompany, known: Dict[str, str],
+def row_dict(c: SeriesACompany, known: Dict[str, tuple],
              people: Optional[Dict[int, Set[int]]] = None,
              sharer: Optional[dict] = None) -> dict:
-    ir_name = known.get(deal_history._key(c.name), "")
+    ir_name, ir_file = known.get(deal_history._key(c.name), ("", ""))
     # **Series A 딜 공유로 이 기업을 받은 심사역** — 딜 제안 관리 › 딜 소싱 제안의
     # [Series A 딜 공유]가 적은 기록(`services/series_a_share.py`). 대기 · 보내는
     # 중 · 보냄만 센다(중단 · 실패한 건은 안 센다).
@@ -131,6 +132,11 @@ def row_dict(c: SeriesACompany, known: Dict[str, str],
         # IR 기업 현황에 같은 기업이 있으면 그 탭에 적힌 이름 — 딱지가 그 이름으로
         # 그 탭을 연다(`/companies?q=…` 가 검색칸을 채운다).
         "ir_name": ir_name,
+        # `IR 자료` 칸 — 이 줄에 적은 파일 이름. IR 기업 현황에 같은 기업이 있으면
+        # 이 칸 대신 **IR 쪽 파일 이름**(`ir_file`)을 보여만 준다 — [자료 보내기]는 그
+        # 이름의 요청을 IR 줄로 잇고 IR 쪽 자료를 붙인다(`_check_ir_file` 이 여기 적기를 막는다).
+        "ir_file_name": c.ir_file_name or "",
+        "ir_file": ir_file,
         "shared_count": len(shared),
         # `공유 심사역` 칸 아래 — 확정한 분 · 이름이 같은 후보(`series_a_share.
         # sharer_views`). 화면(`series_a.js`)이 이 값으로 [이 분으로 확정]/[해제]를 그린다.
@@ -253,6 +259,34 @@ class SeriesAIn(BaseModel):
     funding_total: Optional[str] = None
     raise_target: Optional[str] = None
     pre_value: Optional[str] = None
+    # 보낼 IR 자료 **파일 이름**(0118) — IR 기업 현황의 `IR 자료 파일명` 과 같은 규칙.
+    ir_file_name: Optional[str] = None
+
+
+#: IR 기업 현황에도 있는 기업의 `IR 자료` 를 여기 적으려 할 때.
+IR_TWIN_FILE = ("IR 기업 현황에도 있는 기업입니다 — IR 자료는 IR 기업 현황에서 등록하세요"
+                "(딜 진행 관리의 [자료 보내기]는 그쪽 자료를 붙입니다)")
+
+
+def _check_ir_file(db: Session, row: SeriesACompany, body: SeriesAIn) -> None:
+    """`IR 자료` 칸 — IR 기업 현황의 같은 칸과 **같은 판정**으로 거른다.
+
+    파일 이름 하나만 받는다(`companies._looks_like_a_file_name` — 발송기가 거부하는
+    경로 · 주소를 넣는 자리에서 먼저 막는다). IR 기업 현황에 같은 이름(이름을 고치는
+    중이면 고친 이름)의 기업이 있으면 받지 않는다 — 그 이름의 요청은 IR 줄로 이어져
+    IR 쪽 자료가 나가므로, 여기 적으면 안 쓰이는 두 번째 벌이 된다. 비우기는 늘 된다.
+    """
+    from .companies import _looks_like_a_file_name
+
+    text = (body.ir_file_name or "").strip()
+    if not text:
+        return
+    if not _looks_like_a_file_name(text):
+        raise HTTPException(status_code=400,
+                            detail="자료 폴더 안의 파일 이름만 적습니다 — 폴더 경로·주소는 받지 않습니다")
+    name = (body.name or "").strip() or row.name
+    if deal_history._key(name) in ir_names(db):
+        raise HTTPException(status_code=400, detail=IR_TWIN_FILE)
 
 
 def _assign(row: SeriesACompany, body: SeriesAIn) -> None:
@@ -287,8 +321,8 @@ def _result(row: SeriesACompany, db: Session) -> dict:
     return {key: data[key] for key in (
         "id", "name", "received_at", "deal_type", "assignee_name", "shared_by",
         "source_firm", "sector_major", "sector_minor", "series", "detail",
-        "deal_pitch", *TYPED, "received_sort", "series_short", "ir_name", "search",
-        "sharer")}
+        "deal_pitch", *TYPED, "ir_file_name", "received_sort", "series_short", "ir_name",
+        "ir_file", "search", "sharer")}
 
 
 @router.post("/api/series-a-companies")
@@ -298,6 +332,8 @@ def create_row(body: SeriesAIn, db: Session = Depends(get_db),
     if not (body.name or "").strip():
         raise HTTPException(status_code=400, detail="기업명을 입력하세요")
     row = SeriesACompany(name=body.name.strip())
+    if "ir_file_name" in body.model_fields_set:
+        _check_ir_file(db, row, body)
     _assign(row, body)
     if not row.received_at:
         row.received_at = today().isoformat()
@@ -312,6 +348,8 @@ def update_row(row_id: int, body: SeriesAIn, db: Session = Depends(get_db),
     row = db.get(SeriesACompany, row_id)
     if row is None:
         raise HTTPException(status_code=404, detail="줄을 찾을 수 없습니다")
+    if "ir_file_name" in body.model_fields_set:
+        _check_ir_file(db, row, body)
     _assign(row, body)
     db.commit()
     return _result(row, db)

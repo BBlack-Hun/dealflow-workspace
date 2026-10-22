@@ -986,6 +986,15 @@ class SeriesACompany(TimestampMixin, Base):
     #: 바뀌면 다음 가져오기에서 같은 딜이 새 줄로 또 선다. 앱에서 더한 줄 · 이 칸이
     #: 생기기 전에 들어온 줄은 비어 있고, 다음 가져오기가 맞춰 채운다.
     import_key: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: 보낼 IR 자료의 **파일 이름** — `IrCompany.ir_file_name` 과 같은 칸 · 같은 규칙이다
+    #: (경로 · 주소가 아니라 자료 폴더 안의 이름 하나, 발송기가 `/setup` 폴더 + 이 이름으로
+    #: 붙인다). 딜 진행 관리의 [자료 보내기]가 이 기업 요청에도 이 이름으로 파일을 붙인다
+    #: (0118 · 10/22 요청 "Series A 이상 딜 소싱에 있는 기업도 IR 자료 등록").
+    #:
+    #: **IR 기업 현황에 같은 이름 기업이 있으면 적지 않는다**(`routers/series_a._assign` 이
+    #: 막는다) — 그 이름의 요청은 IR 줄로 이어져(`pipeline.match_company`) IR 쪽 자료가
+    #: 나가므로, 여기 적은 값은 아무 데도 안 쓰이는 두 번째 벌이 된다.
+    ir_file_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
 
 class SeriesAShare(TimestampMixin, Base):
@@ -1051,6 +1060,11 @@ class DealBatch(TimestampMixin, Base):
         ForeignKey("message_templates.id"), nullable=True
     )
     body_override: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    #: IR 자료 전달 회차에 실린 **Series A 이상 딜 소싱 기업 이름**(JSON 목록, 0118).
+    #: `deal_batch_companies` 는 `ir_companies` 만 가리켜(외래키) 그 기업을 못 담는다.
+    #: 보낸 뒤 `pipeline.close_requests_for` 가 이 이름으로 그 요청을 닫는다 — IR 기업
+    #: 현황 · 딜 소개 이력 · 번호(`deal_numbers`)는 이 칸을 안 읽는다(섞이지 않게).
+    series_a_names: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     companies: Mapped[list["DealBatchCompany"]] = relationship(
         back_populates="batch", cascade="all, delete-orphan", order_by="DealBatchCompany.position"

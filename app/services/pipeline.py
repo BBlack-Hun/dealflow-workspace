@@ -11,6 +11,7 @@
 """
 from __future__ import annotations
 
+import json
 import re
 from datetime import date, time, timedelta
 from typing import Dict, List, Optional, Tuple
@@ -132,12 +133,25 @@ def series_a_names(db: Session) -> Dict[str, str]:
     **뺀다** — 그 이름은 `match_company` 가 IR 줄에 잇는다. IR 쪽이 딜소개 불가면
     후보에서 둘 다 빠진다.
     """
+    return {key: row.name.strip() for key, row in series_a_rows(db).items()}
+
+
+def series_a_rows(db: Session) -> Dict[str, SeriesACompany]:
+    """`series_a_names` 의 같은 기업들 — `{비교용 이름: 그 기업의 Series A 줄}`.
+
+    한 기업이 여러 번 받은 딜이면 줄이 여럿이다(한 줄이 받은 딜 한 건). 그중
+    **IR 자료 파일 이름을 적은 줄**을 고른다(여럿이면 먼저 들어온 줄) — [자료 보내기]가
+    그 줄의 파일을 붙인다(0118). 아무 줄에도 없으면 먼저 들어온 줄이다.
+    """
     ir = {_key(n) for n in db.execute(select(IrCompany.name)).scalars()}
-    out: Dict[str, str] = {}
-    for name in db.execute(select(SeriesACompany.name)).scalars():
-        key = _key(name)
-        if key and key not in ir:
-            out.setdefault(key, name.strip())
+    out: Dict[str, SeriesACompany] = {}
+    for row in db.execute(select(SeriesACompany).order_by(SeriesACompany.id)).scalars():
+        key = _key(row.name)
+        if not key or key in ir:
+            continue
+        if key not in out or ((row.ir_file_name or "").strip()
+                              and not (out[key].ir_file_name or "").strip()):
+            out[key] = row
     return out
 
 
@@ -392,6 +406,8 @@ def request_rows(db: Session, user: User,
             "ir_file": "",
             # Series A 탭에 적힌 이름 — 화면이 `Series A` 딱지로 그 줄에 잇는다.
             "series_a": "",
+            # 그 Series A 줄 번호 — [자료 보내기]가 이 번호로 그 줄의 IR 자료를 붙인다.
+            "series_a_id": None,
             "requested_at": row.requested_at,
             "waited": waited,
             # 사흘 넘게 안 보냈으면 눈에 띄어야 한다.
@@ -432,10 +448,14 @@ def request_rows(db: Session, user: User,
         for row in out:
             row["ir_file"] = names.get(row["company_id"], "")
     if any(not r["company_id"] for r in out):
-        sa = series_a_names(db)
+        sa = series_a_rows(db)
         for row in out:
-            if not row["company_id"]:
-                row["series_a"] = sa.get(_key(row["company_name"]), "")
+            hit = None if row["company_id"] else sa.get(_key(row["company_name"]))
+            if hit is not None:
+                row["series_a"] = hit.name.strip()
+                row["series_a_id"] = hit.id
+                # Series A 탭 `IR 자료` 칸(0118) — 있으면 IR 기업처럼 [자료 보내기]에 실린다.
+                row["ir_file"] = (hit.ir_file_name or "").strip()
     return out
 
 
@@ -777,15 +797,20 @@ def group_by_contact(requests: List[dict]) -> List[dict]:
             "contact_id": row["contact_id"], "name": row["name"],
             "title": row["title"], "firm": row["firm"],
             "rows": [], "company_ids": [], "missing": [], "no_file": [],
-            "series_a": [],
+            "series_a": [], "series_a_ids": [],
         })
         item["rows"].append(row)
         if row["company_id"]:
             item["company_ids"].append(row["company_id"])
             if not row["ir_file"]:
                 item["no_file"].append(row["company_name"])
+        elif row.get("series_a") and row["ir_file"]:
+            # Series A 탭에 IR 자료를 적은 기업 — IR 기업처럼 [자료 보내기]에 실린다(0118).
+            if row["series_a_id"] not in item["series_a_ids"]:
+                item["series_a_ids"].append(row["series_a_id"])
         elif row.get("series_a"):
             # IR 기업 현황에 등록하라고 하지 않는다 — 일부러 따로 둔 기업이다.
+            # 자료가 없으면 직접 보내고 [IR 자료 전달 완료]를 누른다(`ir.html` 안내).
             item["series_a"].append(row["company_name"])
         else:
             item["missing"].append(row["company_name"])
@@ -835,8 +860,12 @@ def close_requests_for(db: Session, job, contact_id: int,
 
     회차에 담긴 기업과 이름이 맞는 열린 요청만 닫는다 — 같은 담당자의
     다른 기업 요청까지 함께 닫으면 안 보낸 것을 보냈다고 적는 셈이다.
+
+    Series A 이상 딜 소싱 기업은 회차의 `series_a_names` 에 이름으로 실린다(0118 —
+    `deal_batch_companies` 는 IR 기업만 담는다). 그 이름은 **기업 번호 없이 적힌 요청**
+    (`company_id` 가 빈 줄 — Series A 기업을 고른 그 길)에만 맞춘다.
     """
-    from ..models import DealBatchCompany
+    from ..models import DealBatch, DealBatchCompany
 
     if job.batch_id is None:
         return 0
@@ -845,7 +874,9 @@ def close_requests_for(db: Session, job, contact_id: int,
             select(DealBatchCompany).where(DealBatchCompany.batch_id == job.batch_id)
         ).scalars().all()
     }
-    if not sent_ids:
+    batch = db.get(DealBatch, job.batch_id)
+    series_keys = {_key(n) for n in json.loads((batch and batch.series_a_names) or "[]")}
+    if not sent_ids and not series_keys:
         return 0
     sent_keys = {
         _key(c.name) for c in db.execute(
@@ -858,7 +889,8 @@ def close_requests_for(db: Session, job, contact_id: int,
         select(IrRequest).where(IrRequest.contact_id == contact_id,
                                 IrRequest.status == "open")
     ).scalars().all():
-        matched = row.company_id in sent_ids or _key(row.company_name) in sent_keys
+        matched = (row.company_id in sent_ids or _key(row.company_name) in sent_keys
+                   or (not row.company_id and _key(row.company_name) in series_keys))
         if matched:
             deliver(db, row, when)
             closed += 1

@@ -135,7 +135,8 @@
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mode: "ir", contact_ids: [item.contactId],
-                             company_ids: item.companyIds })
+                             company_ids: item.companyIds,
+                             series_a_ids: item.seriesAIds })
     })
       .then(function (r) {
         return r.json().then(function (d) { return { ok: r.ok, d: d }; });
@@ -167,7 +168,8 @@
   function send() {
     if (!open) return;
     var item = open;
-    if (!window.confirm(item.name + " 님에게 " + item.companyIds.length
+    if (!window.confirm(item.name + " 님에게 "
+                        + (item.companyIds.length + item.seriesAIds.length)
                         + "개 기업 IR 자료 전달 문구를 발송합니다.\n"
                         + "방 이름을 최종 확인하셨나요?")) return;
     goBtn.disabled = true;
@@ -176,7 +178,8 @@
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mode: "ir", contact_ids: [item.contactId],
-                             company_ids: item.companyIds })
+                             company_ids: item.companyIds,
+                             series_a_ids: item.seriesAIds })
     })
       .then(function (r) {
         return r.json().then(function (d) { return { ok: r.ok, d: d }; });
@@ -214,22 +217,32 @@
     closeBtn.textContent = "닫기";
   }
 
-  function openFor(form) {
-    seq += 1;
-    var ids = (form.querySelector('[name="company_ids"]').value || "")
+  // 폼의 번호 칸 하나 → 숫자 목록. 칸이 없으면(낡은 화면) 빈 목록.
+  function idsOf(form, name) {
+    var box = form.querySelector('[name="' + name + '"]');
+    return ((box && box.value) || "")
       .split(",").filter(function (v) { return v.trim() !== ""; })
       .map(function (v) { return parseInt(v, 10); });
+  }
+
+  function openFor(form) {
+    seq += 1;
+    var ids = idsOf(form, "company_ids");
+    // Series A 이상 딜 소싱 기업(그 탭에 IR 자료를 적은 것 — 0118). 다른 표라 칸도 따로다.
+    var saIds = idsOf(form, "series_a_ids");
     open = {
       seq: seq,
       form: form,
       contactId: parseInt(form.querySelector('[name="contact_id"]').value, 10),
       companyIds: ids,
+      seriesAIds: saIds,
       name: form.getAttribute("data-name") || ""
     };
     // 딜 제안 관리로 가는 길 — 문구를 손보거나 담당자를 더할 때 필요하다.
     // 주소는 예전에 넘어가던 그것과 같다(`/ir/deliver-guide` 가 만들던 주소).
     dealsLink.href = "/deals?mode=ir&contacts=" + open.contactId
-      + "&companies=" + ids.join(",") + "&attach=1";
+      + "&companies=" + ids.join(",") + "&attach=1"
+      + (saIds.length ? "&series_a=" + saIds.join(",") : "");
     // 창을 다시 열 때는 지난번 결과가 남아 있으면 안 된다.
     links.innerHTML = "";
     body.value = "";
