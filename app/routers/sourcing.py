@@ -539,6 +539,27 @@ def rename_bucket(old: str = Form(""), new: str = Form(""),
     return RedirectResponse(f"/sourcing?tab={quote(after)}", status_code=303)
 
 
+@router.post("/sourcing/buckets/add", include_in_schema=False)
+def add_bucket(name: str = Form(""), tab: str = Form(""),
+               db: Session = Depends(get_db),
+               user: User = Depends(get_current_user)):
+    """[+ 탭 추가] — 사람이 아직 없는 새 갈래(탭)를 만든다(`sourcing_buckets.create`).
+
+    권한은 [이름 저장]과 같다 — 이 화면을 볼 수 있는 누구나(위 `rename_bucket`).
+    새 탭은 투자사 관리 현황과 잇지 않는다 — 잇는 갈래는 셋뿐이다(`sourcing_sync.BRANCHES`).
+    """
+    try:
+        label = sourcing_buckets.create(db, name)
+        db.commit()
+    except (sourcing_buckets.RenameError, IntegrityError) as exc:
+        db.rollback()
+        # IntegrityError — 같은 이름을 두 사람이 거의 동시에 만들었다(유일 조건).
+        why = str(exc) if isinstance(exc, sourcing_buckets.RenameError) else (
+            f"이미 있는 탭입니다: {(name or '').strip()}")
+        return _back(tab, why)
+    return RedirectResponse(f"/sourcing?tab={quote(label)}", status_code=303)
+
+
 class SourcingIn(BaseModel):
     name: Optional[str] = None
     title: Optional[str] = None

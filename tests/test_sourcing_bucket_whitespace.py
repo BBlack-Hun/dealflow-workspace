@@ -110,7 +110,8 @@ def test_the_tab_shows_every_spelling_whichever_spelling_opens_it(client, db, us
     _login(client)
     for tab in (TIGHT, SYNC, WIDE):
         html = client.get("/sourcing", params={"tab": tab}).text
-        assert html.count('class="sheet-tab ') == 3, tab     # 두 갈래 + 전체
+        # 탭은 `<a>` 다 — [+ 탭 추가] 여닫이도 탭 모양(`sheet-tab`)을 빌려 쓴다.
+        assert html.count('<a class="sheet-tab ') == 3, tab     # 두 갈래 + 전체
         for name in SERIES_A_NAMES:
             assert name in html, (tab, name)
         assert "박다른" not in html and "라다른" not in html

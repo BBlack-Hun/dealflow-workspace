@@ -51,6 +51,20 @@
   {% endfor %}
   <a class="sheet-tab {% if not selected %}active{% endif %}"
      href="/sourcing?tab=all">전체 <span>{{ total }}</span></a>
+  {# **[+ 탭 추가]** — 사람이 없는 새 갈래(`sourcing_buckets.create`). 여닫이와 모양은
+     참고자료 `+`(`_ref_new.html`)를 그대로 쓴다. 새 탭은 투자사 관리 현황과 잇지 않는다. #}
+  <details class="ref-new" data-testid="sourcing-tab-add">
+    <summary class="sheet-tab ref-new-btn" title="탭 추가 — 새 갈래를 만듭니다"
+             aria-label="탭 추가">+ 탭 추가</summary>
+    <form method="post" action="/sourcing/buckets/add" class="ref-new-form">
+      <input type="hidden" name="tab" value="{{ selected or 'all' }}">
+      <label class="field"><span>탭 이름</span>
+        <input type="text" name="name" maxlength="40" required placeholder="예) 새 갈래 이름"></label>
+      <button class="primary-btn inline" type="submit">만들기</button>
+      <p class="hint">새 탭은 투자사 관리 현황과 <b>잇지 않습니다</b> — 잇는 갈래는
+        Series A · M&amp;A · 구주·후속 셋뿐입니다. 보낼 문구는 이 탭 이름으로 따로 적습니다.</p>
+    </form>
+  </details>
 </nav>
 
 {# 갈래 이름 바꾸기 — 투자사 관리 현황·투자컨설턴트의 [이름 저장]과 같은 모양.
@@ -383,6 +397,10 @@
 <p class="muted" data-filter-empty hidden>조건에 맞는 사람이 없습니다.</p>
 {# **분야 기준 목록** — `선호 투자분야` 칸의 고르는 창이 읽는다(투자사 관리 현황과 같은 것). #}
 <div id="sector-taxonomy" hidden data-tree='{{ sector_tree|tojson }}'></div>
+{% elif selected %}
+{# [+ 탭 추가]로 막 만든 탭 — 사람이 아직 없다. #}
+<p class="muted" data-testid="sourcing-empty-tab">이 탭에는 아직 사람이 없습니다 —
+  위 <b>[{{ selected }}에 추가]</b>로 넣으세요.</p>
 {% else %}
 <p class="muted">
   아직 명단이 없습니다 — <code>scripts/import_sourcing.py</code> 로 시트를 가져오세요.

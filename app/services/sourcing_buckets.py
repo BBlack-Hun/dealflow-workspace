@@ -47,8 +47,8 @@ from typing import Dict, List, Optional
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ..models import (MessageTemplate, SourcingContact, TemplateApplyBackup,
-                      TemplateChoice)
+from ..models import (MessageTemplate, SourcingContact, SourcingTab,
+                      TemplateApplyBackup, TemplateChoice)
 from . import sourcing_msg, template_pick
 
 #: 갈래 이름을 열쇠로 쓰는 문구 종류 — 처음 안내 · 월간 리마인드.
@@ -56,10 +56,12 @@ KINDS = tuple(sorted(template_pick.NAME_IS_A_BUCKET))
 
 #: 갈래 이름 길이 한도. 명단 이름(`sheet_owner`)과 같은 값이다.
 MAX_LABEL = 80
+#: [+ 탭 추가]로 새로 만드는 탭 이름 한도 — 탭 줄 · 시트 이름에 들 만큼.
+NEW_MAX = 40
 
 
 class RenameError(Exception):
-    """이름을 바꿀 수 없는 까닭. 화면에 그대로 띄운다."""
+    """이름을 바꾸거나 새로 만들 수 없는 까닭. 화면에 그대로 띄운다."""
 
 
 def normalize_label(value: Optional[str]) -> str:
@@ -86,11 +88,17 @@ def same(a: Optional[str], b: Optional[str]) -> bool:
     return key(a) == key(b)
 
 
+def _made(db: Session) -> List[str]:
+    """[+ 탭 추가]로 만든 탭 이름(`SourcingTab`) — 만든 차례."""
+    return list(db.execute(select(SourcingTab.name).order_by(SourcingTab.id)).scalars())
+
+
 def names(db: Session) -> List[str]:
-    """지금 쓰이고 있는 갈래 이름(저장된 글자 그대로). 사람이 든 것만 센다."""
-    return [b for b in db.execute(
+    """지금 쓰이고 있는 갈래 이름(저장된 글자 그대로) — 사람이 든 것과 만든 탭."""
+    used = [b for b in db.execute(
         select(SourcingContact.bucket).group_by(SourcingContact.bucket)
     ).scalars().all() if b]
+    return used + [n for n in _made(db) if n not in used]
 
 
 def groups(db: Session) -> List[dict]:
@@ -107,13 +115,18 @@ def groups(db: Session) -> List[dict]:
         .group_by(SourcingContact.bucket)
     ).all():
         by_key.setdefault(key(bucket), []).append((-n, pos or 0, bucket))
-    out = []
-    for found in by_key.values():
+    out: Dict[str, dict] = {}
+    for k, found in by_key.items():
         found.sort()
-        out.append({"label": found[0][2], "variants": [b for _n, _p, b in found],
-                    "count": -sum(n for n, _p, _b in found),
-                    "pos": min(p for _n, p, _b in found)})
-    return out
+        out[k] = {"label": found[0][2], "variants": [b for _n, _p, b in found],
+                  "count": -sum(n for n, _p, _b in found),
+                  "pos": min(p for _n, p, _b in found)}
+    # 만든 탭은 사람이 없어도 서고, 시트에서 온 탭들 **뒤에** 만든 차례로 선다 — 사람을
+    # 넣어도 그 자리다(새 줄의 `position` 은 1 부터라 줄로 세우면 맨 앞으로 뛴다).
+    last = max((g["pos"] for g in out.values()), default=0)
+    for i, name in enumerate(_made(db), start=1):
+        out.setdefault(key(name), {"label": name, "variants": [], "count": 0})["pos"] = last + i
+    return list(out.values())
 
 
 def variants(db: Session, *labels: str) -> List[str]:
@@ -169,8 +182,16 @@ def rename(db: Session, before: str, after: str) -> int:
         raise RenameError(
             f"'{before}' 은 투자사 관리 현황의 `{sourcing_sync.COLUMN_LABEL}` 칸과 "
             "이어진 갈래라 이름을 바꿀 수 없습니다")
+    if sourcing_sync.branch_of(after) is not None:
+        # 거꾸로 — 다른 갈래를 잇는 갈래의 이름(짧은 이름 `M&A` 포함)으로 바꾸면 그 줄이
+        # 잇는 갈래로 읽힌다(`branch_of`). [+ 탭 추가]도 같은 이유로 막는다(`create`).
+        raise RenameError(
+            f"'{after}' 은 투자사 관리 현황과 잇는 갈래 이름이라 쓸 수 없습니다")
     if label_in_use(db, after, ignore=before):
         raise RenameError(f"이미 쓰고 있는 이름입니다: {after}")
+    for tab in db.execute(select(SourcingTab)).scalars():
+        if same(tab.name, before):
+            tab.name = after
 
     # 탭 하나에 묶인 **글자 전부**를 데려간다 — 하나만 옮기면 남은 글자가 옛 이름
     # 탭으로 남는다(`groups`).
@@ -215,6 +236,33 @@ def rename(db: Session, before: str, after: str) -> int:
             backup.variant = after
     db.flush()
     return moved
+
+
+def create(db: Session, name: Optional[str]) -> str:
+    """[+ 탭 추가] — 사람이 없는 새 갈래(탭)를 만든다. 만든 이름을 돌려준다.
+
+    앞뒤 공백만 떼고(가운데는 그대로 — `normalize_label`) `NEW_MAX` 자까지. 띄어쓰기만
+    다른 이름이 이미 있으면(사람 · 문구 · 골라 둔 것 · 만든 탭 — `label_in_use`) 막는다.
+    투자사 관리 현황과 잇는 갈래 이름(짧은 이름 `M&A` 포함 — `sourcing_sync.branch_of`)과
+    `전체` 탭 이름도 막는다 — 그 이름의 줄이 잇는 갈래로 읽히거나 `전체` 탭과 겹친다.
+    `db.commit()` 은 부르는 쪽이 한다."""
+    from . import sourcing_sync      # noqa: PLC0415 — 서로 참조한다
+
+    label = (name or "").strip()
+    if not label:
+        raise RenameError("탭 이름을 입력하세요")
+    if len(label) > NEW_MAX:
+        raise RenameError(f"탭 이름은 {NEW_MAX}자까지입니다")
+    if key(label).lower() in ("all", "전체"):
+        raise RenameError("'전체' 는 모든 갈래를 함께 보는 탭이라 이름으로 쓸 수 없습니다")
+    if sourcing_sync.branch_of(label) is not None:
+        raise RenameError(
+            f"'{label}' 은 투자사 관리 현황과 잇는 갈래 이름이라 새 탭으로 만들 수 없습니다")
+    if label_in_use(db, label):
+        raise RenameError(f"이미 있는 탭입니다(띄어쓰기만 달라도 같은 탭): {label}")
+    db.add(SourcingTab(name=label))
+    db.flush()
+    return label
 
 
 def message_shape(bucket: str) -> dict:
