@@ -618,6 +618,20 @@ class IrCompany(TimestampMixin, Base):
     # 주석은 낡는다. 셋이 여전히 서로 다른 자리라는 사실 쪽은 시험이 지킨다
     # (`tests/test_contract_received_xref.py`).
     contract_received: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # ── 투자컨설턴트 메타 탭에만 있던 **기업 사실** 셋(0116 · 10/22 요청) ────────
+    #
+    # 기준 값은 여기다. 이어진 컨설턴트 · 스타트업 줄의 같은 칸과는 고칠 때 서로
+    # 따라 고친다(`services/company_sync.py`). 셋 다 빈칸이 `아직 안 정함` 이다.
+    #
+    #   region          지역               — 컨설턴트 `region`(계약 탭 제외)
+    #   quote_attached  견적서 첨부 여부   — 메타 `contract_management` · 스타트업 `notes.quote_attached`
+    #   kakao_joined    카톡 연결 여부     — 메타 `kakao_joined` · 스타트업 `kakao_joined`
+    #
+    # 뒤의 둘은 `O` / `X` 만 담는다(`routers/companies.RECEIVED_CHOICES` 와 같은 보기).
+    # 컨설팅 진행 기록(미팅일 · 기업 관리)은 여기 담지 않는다 — 결정 3.
+    region: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    quote_attached: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    kakao_joined: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     contract_month: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     is_top_deal: Mapped[int] = mapped_column(Integer, default=0)
     # ── `투자 현황` — **화면에서 뺀 칸이다. 값은 여기 그대로 있다.** ──────────

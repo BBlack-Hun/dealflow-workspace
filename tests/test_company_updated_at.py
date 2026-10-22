@@ -404,7 +404,9 @@ def test_표_min_width_이_칸_폭을_따라간다():
     # 빼고 재면 이 칸과 상관없는 일로 이 검사가 깨진다.
     #   · `수신일` 96px — 표의 기본 차례(수신일 최신순)의 까닭을 보이려고
     #     `기업명` 뒤에 세웠다(app.css 의 `#co-table` 주석 · test_company_tab_order.py)
-    later = 96
+    #   · `견적서 첨부 여부` 150px · `카톡 연결 여부` 140px — 0116(투자컨설턴트 메타의
+    #     기업 사실을 IR 로 올림)
+    later = 96 + 150 + 140
     assert int(m.group(1)) == 2386 + WIDTH_PX + later, (
         f"`{COLUMN}` 은 {WIDTH_PX}px 인데 표 폭이 {m.group(1)}px 입니다 — "
         f"{2386 + WIDTH_PX + later}px 여야 합니다")

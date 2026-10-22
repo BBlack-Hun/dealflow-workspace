@@ -26,8 +26,8 @@ from sqlalchemy.orm import Session
 
 from ..clock import stamp_text
 from ..db import get_db
-from ..deps import NotAdmin, admin_only, get_current_user, templates
-from ..models import IrCompany, OneLinerBackup, User
+from ..deps import NotAdmin, admin_only, get_current_user, may_view_consulting, templates
+from ..models import ConsultingCompany, ConsultingSheet, IrCompany, OneLinerBackup, User
 from ..services import (amount, auth as auth_svc, custom_columns, deal_history, edit_log,
                         email_domains, room_match)
 from ..services.one_liner import (
@@ -583,6 +583,10 @@ def company_rows(db: Session, sent=None) -> List[dict]:
             # 필터는 그것을 `(비어 있음)` 으로 모은다 — 없는 값을 지어내
             # `X` 로 채우면 "확인했는데 안 왔다" 는 뜻이 되어 버린다.
             "contract_received": c.contract_received or "",
+            # 0116 — 투자컨설턴트 메타에서 올라온 기업 사실 셋. 빈칸은 `아직 안 정함`.
+            "region": c.region or "",
+            "quote_attached": c.quote_attached or "",
+            "kakao_joined": c.kakao_joined or "",
             # 무료 IR 미팅을 **언제** 주기로 했는가 / 줬는가. 손으로 적는 글자다 —
             # 아직 안 정한 곳은 빈 글자로 나가 표에서 빈 칸으로 보인다.
             "meeting_offered_at": c.meeting_offered_at or "",
@@ -619,6 +623,33 @@ def company_rows(db: Session, sent=None) -> List[dict]:
     # 차례인지 알 수 없게 된다. (머리글을 눌러 세우는 것은 사람이 고른 차례라
     # 다르다 — 끄면 이 차례로 돌아온다. `table_sort.js` 의 `order`.)
     return sort_by_received(rows)
+
+
+def consulting_view(db: Session) -> dict:
+    """IR 기업마다 이어진 투자컨설턴트 줄의 **진행 기록** — 읽기만 한다(결정 3).
+
+    `{IR 번호: {"status": 컨설팅 상태, "meeting": 컨설팅 미팅일}}`. IR 에 저장하지
+    않는다 — 같은 기업이 두 컨설턴트 표에 있는 곳이 있어, 한 칸에 담으면 서로 덮는다.
+    여럿이면 ` · ` 로 잇는다. 계약 탭은 뺀다 — 거기 `meeting_at` 은 계약월,
+    `management` 는 계약여부라 다른 물음이다.
+    """
+    from ..services import consulting_sheets, consulting_status
+
+    contract = {s.label for s in db.execute(select(ConsultingSheet)).scalars()
+                if s.kind == consulting_sheets.CONTRACT}
+    found: dict = {}
+    for row in db.execute(select(ConsultingCompany).where(
+            ConsultingCompany.ir_company_id.isnot(None))
+            .order_by(ConsultingCompany.id)).scalars():
+        if row.sheet in contract:
+            continue
+        at = found.setdefault(row.ir_company_id, {"status": [], "meeting": []})
+        for key, value in (("status", consulting_status.tag_value(row.management)),
+                           ("meeting", (row.meeting_at or "").strip())):
+            if value and value not in at[key]:
+                at[key].append(value)
+    return {k: {"status": " · ".join(v["status"]), "meeting": " · ".join(v["meeting"])}
+            for k, v in found.items()}
 
 
 def tab_counts(db: Session) -> dict:
@@ -720,6 +751,8 @@ def companies_page(request: Request, db: Session = Depends(get_db),
         "required_fields": [label for _a, label in REQUIRED_FIELDS],
         "summary_labels": SUMMARY_LABELS,
         "contract_labels": CONTRACT_LABELS,
+        # 투자컨설턴트 진행 기록(읽기만 · 결정 3). 그 화면을 볼 수 있는 사람에게만 선다.
+        "consulting": consulting_view(db) if may_view_consulting(user) else None,
     })
     # 관리자가 붙인 추가 칸 — 두 탭이 같은 칸을 쓴다(`_custom_cols.html`).
     ctx.update(custom_columns.view(db, "companies", "ir_companies"))
@@ -845,11 +878,21 @@ class CompanyIn(BaseModel):
     ir_file_name: Optional[str] = None
     contract_status: Optional[str] = None
     contract_received: Optional[str] = None
+    # 0116 — 투자컨설턴트 메타에만 있던 기업 사실 셋(`models.IrCompany.region`).
+    region: Optional[str] = None
+    quote_attached: Optional[str] = None
+    kakao_joined: Optional[str] = None
     meeting_offered_at: Optional[str] = None
     contract_month: Optional[str] = None
     is_top_deal: Optional[bool] = None
     summary_status: Optional[str] = None
     note: Optional[str] = None
+
+
+#: `O` / `X` / 빈칸만 받는 칸 — `{칸: 화면 이름}`. 셋 다 `received_key` 로 맞춘다.
+OX_FIELDS = {"contract_received": "계약서 수신 여부",
+             "quote_attached": "견적서 첨부 여부",
+             "kakao_joined": "카톡 연결 여부"}
 
 
 def _assign(company: IrCompany, body: CompanyIn) -> None:
@@ -878,17 +921,17 @@ def _assign(company: IrCompany, body: CompanyIn) -> None:
                            f"{value!r} — {' · '.join(CONTRACT_LABELS.values())} "
                            "중에서 고르세요")
             company.contract_status = key
-        elif field == "contract_received":
+        elif field in OX_FIELDS:
             # 빈 값은 지우는 것이다 — `미정` 으로 되돌릴 길이 있어야 한다.
             # (잘못 찍은 `O` 를 `X` 로만 고칠 수 있으면 그것도 거짓말이 된다.)
             key = received_key(value)
             if key is not None and key not in RECEIVED_CHOICES:
                 raise HTTPException(
                     status_code=400,
-                    detail="모르는 계약서 수신 여부입니다: "
+                    detail=f"모르는 {OX_FIELDS[field]}입니다: "
                            f"{value!r} — {' · '.join(RECEIVED_CHOICES)} 중에서 "
                            "고르거나, 아직 안 정했으면 비워 두세요")
-            company.contract_received = key
+            setattr(company, field, key)
         elif field == "kakao_room_name":
             # **방 이름을 적는 자리는 한 곳이다**(`services/room_match.set_room`).
             # 맞추기 화면(`/deals/startup-ir/rooms`)도 같은 함수를 지난다 —
@@ -964,7 +1007,7 @@ def _contract_result(company: IrCompany) -> dict:
     return {"contract_status": key,
             "contract_label": CONTRACT_LABELS.get(key, "미계약"),
             "blocked": key == BLOCKED_CONTRACT,
-            "contract_received": company.contract_received or ""}
+            **{f: getattr(company, f) or "" for f in OX_FIELDS}}
 
 
 @router.post("/api/companies")
