@@ -331,6 +331,10 @@ WATCHED: Dict[str, Watch] = {
     "sourcing_contacts": Watch(
         owner=None, href="/sourcing", label=_attr("name"),
         why="딜 소싱 명단. 주인 칸이 없고 로그인한 사람이면 누구나 고친다."),
+    "sourcing_tabs": Watch(
+        owner=None, href="/sourcing", label=_attr("name"),
+        why="딜 소싱 [+ 탭 추가]로 만든 갈래(탭) 이름. 공용 화면의 탭이라 누가 만들고 "
+            "바꿨는지 남긴다."),
     "sourcing_receipts": Watch(
         owner=None, href="/sourcing", label=_attr("month"),
         why="딜 소싱 명단의 달마다 `딜 받음` 표시. 사람이 누르거나 메일 확인이 "

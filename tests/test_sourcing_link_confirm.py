@@ -9,7 +9,7 @@
      (`link_candidates`) — 이미 다른 소싱 줄과 이어진 투자사 줄 · 감춘 줄 ·
      투자사로 세지 않는 명단의 줄은 후보가 아니다.
   ③ [이 분으로 확정](`POST /api/sourcing/{id}/link`) — 서버가 후보를 다시 세어 그
-     안에 있을 때만 잇는다. 잇는 세 갈래 · 안 이어진 줄만. 수정 로그에 남는다.
+     안에 있을 때만 잇는다. 잇는 갈래 · 안 이어진 줄만. 수정 로그에 남는다.
   ④ 투자사 관리 현황에 `참여 요청일` — 이어진 줄의 `참여 요청일` 을 날짜만(시트가
      붙여 온 `00:00:00` 같은 시각은 뗀다), 읽기만. `딜 소싱` 바로 뒤.
      엑셀에도 두 칸이 같이 나간다.
@@ -192,17 +192,33 @@ def test_a_change_that_does_not_link_answers_with_new_candidates(board, db, user
     assert "vc_picks" not in r.json()
 
 
-#: 투자사 관리 현황과 잇지 않는 갈래 — 운영 시트 탭처럼 두 칸 공백.
+#: 잇는 갈래(2026-10-22 부터) — 운영 시트 탭처럼 두 칸 공백.
 CEO = "딜 소싱  참여 투자사 대표"
+SOLO = "딜 소싱  개인참여 심사역"
+#: 투자사 관리 현황과 잇지 않는 갈래 — [+ 탭 추가]로 만든 탭 같은 것.
+OTHER = "해외 LP 찾는 투자사"
 
 
 def test_other_buckets_never_get_candidates(board, db, users):
-    """잇는 세 갈래(Series A · M&A · 구주·후속) 밖의 갈래에는 후보가 안 선다."""
+    """잇는 갈래(`sourcing_sync.BRANCHES`) 밖의 갈래에는 후보가 안 선다."""
     vc(db, users)
-    row = sc(db, bucket=CEO)
+    row = sc(db, bucket=OTHER)
     assert picks(db, row) is None
-    page = board.get("/sourcing", params={"tab": CEO}).text
+    page = board.get("/sourcing", params={"tab": OTHER}).text
     assert 'data-testid="sourcing-vc-picks"' not in page
+
+
+def test_ceo_and_solo_buckets_get_candidates_too(board, db, users):
+    """대표 · 개인참여 갈래도 잇는다(사용자 결정 2026-10-22) — 이름 · 번호가 다 같지 않은
+    줄은 다른 갈래처럼 후보로 서고, [이 분으로 확정]으로 잇는다."""
+    contact = vc(db, users, name="김서연")          # 번호만 같다 — 후보
+    for bucket in (CEO, SOLO):
+        row = sc(db, bucket=bucket)
+        assert [c["id"] for c in picks(db, row)] == [contact.id], bucket
+        r = confirm(board, row.id, contact.id)
+        assert r.status_code == 200, (bucket, r.text)
+        db.refresh(row)
+        assert row.vc_contact_id == contact.id
 
 
 # ── ③ [이 분으로 확정] ──────────────────────────────────────────────────────
@@ -298,10 +314,10 @@ def test_confirm_refuses_linked_rows_and_other_buckets(board, db, users):
     assert "이미" in r.json()["detail"]
     assert sync_rows(db)[0].vc_contact_id == first.id
 
-    other = sc(db, bucket=CEO, phone="010-2222-3333")
+    other = sc(db, bucket=OTHER, phone="010-2222-3333")
     r = confirm(board, other.id, second.id)
     assert r.status_code == 400
-    assert "Series A · M&A · 구주·후속 갈래 줄만" in r.json()["detail"]
+    assert "Series A · M&A · 구주·후속 · 대표 · 개인참여 갈래 줄만" in r.json()["detail"]
 
     assert confirm(board, 999999, second.id).status_code == 404
 

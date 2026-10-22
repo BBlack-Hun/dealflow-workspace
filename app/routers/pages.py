@@ -745,6 +745,8 @@ def list_page(
         # 표 칸과 수정창이 이 한 벌을 읽는다(`sector_picker.js`). 숨긴 줄은 안
         # 실린다 — 고르는 자리에 숨긴 이름이 서면 숨긴 뜻이 없다.
         "sector_tree": taxonomy.picker_tree(db),
+        # `딜 소싱` 칸 · 수정창이 고를 갈래(짧은 이름) — 서버 한 곳(`sourcing_sync.BRANCHES`).
+        "sourcing_branch_labels": [label for label, _b in sourcing_sync.BRANCHES],
     })
     # 관리자가 붙인 추가 칸 — **스타트업 화면의 명단 표에만**(#7). 명단(탭)을
     # 가리지 않고 같은 칸이다. 투자사 관리 현황에는 붙이지 않는다(요청 범위 밖).
