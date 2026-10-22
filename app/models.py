@@ -972,7 +972,8 @@ class SeriesACompany(TimestampMixin, Base):
     ceo_email: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     #: 연도별 매출 · 누적투자금액 · 투자유치희망금액 · 프리밸류 — 단위 억, **적은
     #: 그대로 글자**다(`IrCompany` 의 같은 이름 칸과 같은 까닭 — `5-10억` · `~`).
-    #: 문구에 실리지 않으므로 `services/amount.py` 로 읽는 자리가 없다.
+    #: 문구에 실리지 않는다. 숫자로 읽는 자리는 `raise_target` 하나 — Series A 딜 공유의
+    #: [후보 자동 채우기] 차례(`services/series_a_share.autofill` → `amount.million_top`).
     revenue_2024: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     revenue_2025: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     revenue_2026: Mapped[Optional[str]] = mapped_column(String, nullable=True)

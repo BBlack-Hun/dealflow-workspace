@@ -384,6 +384,7 @@ READERS = [
     "app/services/llm_brief.py",
     "app/routers/data_io.py",
     "app/services/matcher.py",
+    "app/services/series_a_share.py",
     "app/routers/companies.py",
     "app/deps.py",
     # 화면도 마찬가지다. 예전에는 여기서 억↔백만원을 곱하고 나눴고, 그 자리

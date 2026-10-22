@@ -196,12 +196,17 @@ def share_state(db: Session = Depends(get_db),
     화면이 지금 고른 받는 분과 견주어 `이미 받은 분 N명` · `본인 공유 N명 제외` 를
     세고, 보낼 기업이 안 남는 분을 받는 사람에서 뺀다(`deals.js`). 고를 때 · 창으로
     돌아올 때 읽는다(`pick_rows` 머리말).
+
+    `autofill` — [후보 자동 채우기]가 체크할 기업 번호 · 차례(`series_a_share.autofill`).
+    덜 나간 순을 이 자리의 `sent` 로 세므로 고르개 줄(`pick_rows`)이 아니라 여기 싣는다.
     """
     sent = series_a_share.contacts_by_company(db)
     companies = db.execute(select(SeriesACompany)).scalars().all()
     own = series_a_share.own_by_company(db, companies)
+    rows = sort_rows([row_dict(c, {}) for c in companies])
     return {"companies": [{"id": c.id, "sent_to": sorted(sent.get(c.id, ())),
-                           "own_by": own.get(c.id, [])} for c in companies]}
+                           "own_by": own.get(c.id, [])} for c in companies],
+            "autofill": series_a_share.autofill(rows, sent)}
 
 
 def count(db: Session) -> int:

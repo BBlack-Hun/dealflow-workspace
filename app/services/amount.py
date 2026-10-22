@@ -18,14 +18,15 @@
 붙여 적을 수 있다**(사용자 요청). 단위는 글자에 그대로 남고, 숫자로 옮기는 일은
 여기 한 곳이 한다.
 
-숫자로 쓰는 곳은 여섯이다. **뽑는 규칙은 이 파일 하나뿐이다.**
+숫자로 쓰는 곳은 일곱이다. **뽑는 규칙은 이 파일 하나뿐이다.**
   1. 딜 소개 문구      `services/message_composer.py`
   2. 한줄소개          `services/one_liner.py`
   3. 소개 가능 판정    `models.py: IrCompany.introducible`
   4. LLM 자료 구간화   `services/llm_brief.py: amount_band`
   5. 엑셀 내보내기     `routers/data_io.py`
   6. 투자사 매칭 점수  `services/matcher.py`
-여섯이 각자 해석하면 문구·LLM·엑셀 숫자가 갈린다. 갈린 숫자는 겉보기에
+  7. Series A 딜 공유 후보 차례  `services/series_a_share.py: autofill`
+일곱이 각자 해석하면 문구·LLM·엑셀 숫자가 갈린다. 갈린 숫자는 겉보기에
 멀쩡해서 알아채기까지 오래 걸린다.
 
 무엇까지 받아들이나
