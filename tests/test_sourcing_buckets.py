@@ -26,7 +26,8 @@ BUCKET_PREVIEW_JS = (Path(__file__).resolve().parent
 
 SERIES_A = "시리즈 A 이상 딜소싱 참여 심사역"
 MNA = "M&A 찾는 투자사"
-CEO = "딜 소싱 참여 투자사 대표"
+#: 잇지 않는 갈래(이름을 바꿀 수 있다) — 원본 시트 다섯 갈래는 투자사 관리 현황과 이어져 못 바꾼다.
+LP = "해외 LP 찾는 투자사"
 
 
 def _login(client, phone: str = "01000000001"):
@@ -40,7 +41,7 @@ def buckets(client, db, users):
     from app.models import MessageTemplate, SourcingContact
 
     made = {}
-    for pos, bucket in enumerate((SERIES_A, MNA, CEO)):
+    for pos, bucket in enumerate((SERIES_A, MNA, LP)):
         row = SourcingContact(bucket=bucket, position=pos * 1000,
                               name=f"담당자{pos}", title="심사역", firm="가나벤처스",
                               kakao_room_name=f"방{pos}")
@@ -68,7 +69,7 @@ def test_picking_a_bucket_shows_that_buckets_message(client, db, users, buckets)
     놓고 시리즈 A 문구를 보며 발송을 누르게 된다.
     """
     _login(client)
-    for bucket in (SERIES_A, MNA, CEO):
+    for bucket in (SERIES_A, MNA, LP):
         assert f"[{bucket}] 갈래 문구입니다." in _preview(client, bucket=bucket), bucket
 
 
@@ -94,7 +95,7 @@ def test_a_chosen_person_beats_the_screens_bucket(client, db, users, buckets):
 
 def test_renaming_takes_the_rows_with_it(client, db, users, buckets):
     """사람 · 문구 · 골라 둔 것이 **함께** 옮겨간다(잇지 않는 갈래로 본다 — 시리즈 A ·
-    M&A · 구주·후속은 투자사 관리 현황과 이어져 이름을 못 바꾼다)."""
+    M&A · 구주·후속 · 대표 · 개인참여는 투자사 관리 현황과 이어져 이름을 못 바꾼다)."""
     from app.models import (MessageTemplate, SourcingContact, TemplateChoice,
                             User)
     from app.services import sourcing_buckets, template_pick
@@ -102,23 +103,23 @@ def test_renaming_takes_the_rows_with_it(client, db, users, buckets):
     _login(client)
     user_id = db.query(User).filter_by(phone="01000000001").one().id
     tpl = db.query(MessageTemplate).filter_by(kind="sourcing_intro",
-                                              name=CEO).one()
-    template_pick.set_choice(db, user_id, "sourcing_intro", tpl.id, variant=CEO)
+                                              name=LP).one()
+    template_pick.set_choice(db, user_id, "sourcing_intro", tpl.id, variant=LP)
     db.commit()
 
-    after = "딜 소싱 참여 투자사 대표 (2026)"
-    moved = sourcing_buckets.rename(db, CEO, after)
+    after = "해외 LP 찾는 투자사 (2026)"
+    moved = sourcing_buckets.rename(db, LP, after)
     db.commit()
 
     assert moved == 1
-    assert db.query(SourcingContact).filter_by(bucket=CEO).count() == 0
+    assert db.query(SourcingContact).filter_by(bucket=LP).count() == 0
     assert db.query(SourcingContact).filter_by(bucket=after).count() == 1
     assert db.query(MessageTemplate).filter_by(kind="sourcing_intro",
-                                               name=CEO).count() == 0
+                                               name=LP).count() == 0
     assert db.query(MessageTemplate).filter_by(kind="sourcing_intro",
                                                name=after).count() == 1
     assert db.query(TemplateChoice).filter_by(kind="sourcing_intro",
-                                              variant=CEO).count() == 0
+                                              variant=LP).count() == 0
     assert db.query(TemplateChoice).filter_by(kind="sourcing_intro",
                                               variant=after).count() == 1
 
@@ -132,12 +133,12 @@ def test_the_message_follows_the_new_name(client, db, users, buckets):
     from app.services import sourcing_buckets
 
     _login(client)
-    after = "딜 소싱 참여 투자사 대표 (2026)"
-    sourcing_buckets.rename(db, CEO, after)
+    after = "해외 LP 찾는 투자사 (2026)"
+    sourcing_buckets.rename(db, LP, after)
     db.commit()
 
-    text = _preview(client, contact_ids=[buckets[CEO]])
-    assert f"[{CEO}] 갈래 문구입니다." in text     # 문구 본문은 그대로 따라왔다
+    text = _preview(client, contact_ids=[buckets[LP]])
+    assert f"[{LP}] 갈래 문구입니다." in text     # 문구 본문은 그대로 따라왔다
     assert f"[{after}] 갈래 문구입니다." not in text
 
 
@@ -147,13 +148,13 @@ def test_the_tab_is_reachable_under_the_new_name(client, db, users, buckets):
     from app.routers.sourcing import buckets as bucket_rows
 
     _login(client)
-    after = "딜 소싱 참여 투자사 대표 (2026)"
-    sourcing_buckets.rename(db, CEO, after)
+    after = "해외 LP 찾는 투자사 (2026)"
+    sourcing_buckets.rename(db, LP, after)
     db.commit()
 
     keys = [b["key"] for b in bucket_rows(db)]
     assert after in keys
-    assert CEO not in keys
+    assert LP not in keys
     assert len(keys) == 3
 
 
@@ -164,10 +165,10 @@ def test_rename_through_the_screen(client, db, users, buckets):
     _login(client)
     after = "개인 참여 심사역"
     r = client.post("/sourcing/buckets/rename",
-                    data={"old": CEO, "new": after}, follow_redirects=False)
+                    data={"old": LP, "new": after}, follow_redirects=False)
     assert r.status_code == 303
     assert db.query(SourcingContact).filter_by(bucket=after).count() == 1
-    assert db.query(SourcingContact).filter_by(bucket=CEO).count() == 0
+    assert db.query(SourcingContact).filter_by(bucket=LP).count() == 0
 
 
 # --- ④ 막아야 하는 것 --------------------------------------------------------

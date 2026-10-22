@@ -231,6 +231,8 @@ OS_FILES = {
         ("packaging/windows/setup.bat", "setup.bat"),
         ("packaging/windows/run_agent.bat", "run_agent.bat"),
         ("packaging/windows/README-KR.txt", "README-KR.txt"),
+        # `파일 전송` 카드를 읽는 윈도우 OCR(0.11.13 — `kakao_windows.windows_ocr`)
+        ("agent/sender/win_ocr.ps1", "agent/sender/win_ocr.ps1"),
     ],
     "mac": [
         ("requirements-agent-mac.txt", "requirements.txt"),
