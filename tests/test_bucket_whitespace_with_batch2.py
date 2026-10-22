@@ -19,8 +19,9 @@ from tests.test_template_apply_all import people, portal  # noqa: F401
 
 SYNC = "시리즈 A 이상 딜 소싱 참여 심사역"
 TIGHT = "시리즈 A 이상 딜소싱 참여 심사역"
-CEO = "딜 소싱 참여 투자사 대표"
-CEO_WIDE = "딜 소싱  참여 투자사 대표"
+#: 잇지 않는 갈래(이름을 바꿀 수 있다) — 원본 시트 다섯 갈래는 투자사 관리 현황과 이어져 못 바꾼다.
+LP = "해외 LP 찾는 투자사"
+LP_WIDE = "해외 LP  찾는 투자사"
 
 
 def test_apply_all_covers_the_whitespace_variant(db, people):
@@ -51,19 +52,19 @@ def test_renaming_carries_backups_of_every_variant(db, people):
     from app.models import MessageTemplate, SourcingContact, TemplateApplyBackup
     from app.services import sourcing_buckets
 
-    # 잇지 않는 갈래로 본다 — M&A 는 투자사 관리 현황과 이어져 이름을 못 바꾼다.
-    db.add(SourcingContact(bucket=CEO_WIDE, position=1, name="홍길동"))
-    team = MessageTemplate(user_id=None, kind="sourcing_intro", name=CEO_WIDE,
+    # 잇지 않는 갈래로 본다 — 원본 시트 갈래는 투자사 관리 현황과 이어져 이름을 못 바꾼다.
+    db.add(SourcingContact(bucket=LP_WIDE, position=1, name="홍길동"))
+    team = MessageTemplate(user_id=None, kind="sourcing_intro", name=LP_WIDE,
                            body="팀 문구", is_active=1)
     db.add(team)
     db.commit()
     db.add(TemplateApplyBackup(user_id=people["admin"].id, kind="sourcing_intro",
-                               variant=CEO_WIDE, template_id=team.id,
+                               variant=LP_WIDE, template_id=team.id,
                                previous_json="[]", turned_off_json="[]"))
     db.commit()
-    sourcing_buckets.rename(db, CEO, "투자사 대표")
+    sourcing_buckets.rename(db, LP, "해외 투자사")
     db.commit()
-    assert db.query(TemplateApplyBackup).one().variant == "투자사 대표"
+    assert db.query(TemplateApplyBackup).one().variant == "해외 투자사"
 
 
 def test_reimport_keeps_a_confirmed_link_on_a_whitespace_variant(board, db, users, tmp_path,

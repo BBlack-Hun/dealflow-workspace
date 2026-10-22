@@ -145,7 +145,7 @@ def main() -> None:
         # 투자사 줄이 딱 하나일 때)으로 다시 잇는다. 그래도 못 이은 줄은 딜 소싱
         # 화면에 후보로 뜬다 — [이 분으로 확정].
         # `참여` 칸(불참여 · 물어보는 중 · 문구)은 위에서 이름 · 번호로 되살렸다.
-        # 잇는 갈래 셋(Series A · M&A · 구주·후속 — `sourcing_sync.BRANCHES`) 모두.
+        # 잇는 갈래(`sourcing_sync.BRANCHES`) 모두.
         if sourcing_sync.branch_of(bucket):
             db.flush()
             restored = sourcing_sync.restore_confirmed(db, new_rows, kept)
