@@ -2156,6 +2156,8 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
 /* 자른 사실과 고르는 법. **한 줄을 통째로 차지한다**(flex-basis 100%) —
    딱지 사이에 끼면 후보처럼 보여서 눌러 보게 된다. */
 .email-hint-note, .name-hint-note { flex: 0 0 100%; font-size: 11px; color: var(--muted); }
+/* Series A 이상 딜 소싱 기업 후보의 출처 딱지 — IR 기업과 구별한다. */
+.name-hint-tag { margin-left: 5px; font-size: 10px; color: var(--muted); }
 
 /* ── 담당자 고르기 위의 검색칸 (static/js/ir_contact_search.js) ─────────
    133명짜리 `<select>` 위에 얹힌다. `.field.inline-field` 가 세로 칸이라

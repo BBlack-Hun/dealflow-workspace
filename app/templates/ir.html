@@ -75,6 +75,12 @@
       </div>
 {% endmacro %}
 
+{# **Series A 이상 딜 소싱** 기업으로 고른 줄 — 그 탭의 그 기업으로 잇는다. IR 기업
+   현황에 줄이 없는 기업이라 `company_id` 가 비어 있고, 잇는 것은 이름이다
+   (`pipeline.series_a_names` · `request_rows` 의 `series_a`). #}
+{% macro series_a_tag(name) %}<a class="room-badge muted" href="/companies?tab=series-a&q={{ name|urlencode }}"
+   title="Series A 이상 딜 소싱 기업 — 그 탭에서 보기">Series A</a>{% endmacro %}
+
 {% block content %}
 {# 리마인드 뒤 `답 없음 · 전화 필요` 배지 · 단추 · 메모 — 한 벌을 여러 줄이 나눠
    쓴다(`_call_flag.html`). 아래 두 조각(`_upcoming_followups` · `_closed_followups`)
@@ -140,6 +146,7 @@
       <b>번호를 직접 적어도 됩니다</b>(<code>[기업2]</code> · <code>기업2</code> ·
       <code>2</code>). 지난 회차의 번호로 읽습니다.<br>
       기업명을 치면 <b>그 줄에만</b> 후보가 뜹니다(↑↓·Enter 로 고르기 · Esc 로 닫기).
+      <b>Series A 이상 딜 소싱</b> 기업도 <code>Series A</code> 딱지를 달고 함께 뜹니다.
       번호만 친 줄에는 안 뜹니다 — 그 줄은 번호로 읽는 줄입니다.<br>
       요청이 왔다는 것은 답이 왔다는 뜻이라, 그 담당자의 <b>리마인드는 자동으로 멈춥니다.</b>
     </p>
@@ -147,7 +154,7 @@
        줄을 적는 동안 질의가 열 번 넘게 나간다. 목록을 만드는 자리는 한
        곳이다(`routers/ir.py` 의 `_company_names`). 메일 도메인 후보를 싣는
        칸과 같은 방식이다(`#opts-email-domain`). #}
-    <div id="opts-ir-company" hidden data-names='{{ company_names|tojson }}'></div>
+    <div id="opts-ir-company" hidden data-names='{{ company_names|tojson }}' data-series-a='{{ series_a_names|tojson }}'></div>
   </div>
 
   {% if request_groups %}
@@ -192,6 +199,12 @@
         <a href="/companies">IR 기업 현황</a>에서 등록해야 함께 보낼 수 있습니다.
       </p>
       {% endif %}
+      {% if g.series_a %}
+      <p class="hint">
+        Series A 이상 딜 소싱 기업: {{ g.series_a|join(', ') }} — IR 기업 현황에 없는 기업이라
+        [자료 보내기] 에는 안 실립니다. 자료를 직접 보내고 [{{ labels.delivered }}] 를 눌러 주세요.
+      </p>
+      {% endif %}
       {% if g.no_file %}
       {# 파일명이 비어 있으면 붙일 것을 못 찾는다 — 발송기가 붙이든 사람이
          붙이든 마찬가지다. 그 기업은 빼고 보내고 글 끝에 추후 안내만 나간다(#53). #}
@@ -227,6 +240,8 @@
             <span class="room-badge ok" title="{{ r.ir_file }}">📎 {{ r.ir_file }}</span>
           {% elif r.company_id %}
             <span class="room-badge warn" title="IR 기업 현황에 자료 파일명을 등록해야 보낼 수 있습니다">⚠ 자료 없음</span>
+          {% elif r.series_a %}
+            {{ series_a_tag(r.series_a) }}
           {% else %}
             <span class="muted" title="우리 DB에 없는 기업명입니다">기업 미등록</span>
           {% endif %}
@@ -812,7 +827,7 @@
                  href="/deals?mode=meeting&contacts={{ r.contact_id }}"
                  title="이 투자사에 미팅 요청 문구 보내기 — 담당자가 골라진 채로 열립니다"
                 >{{ r.name }} <span class="muted">{{ r.firm }}</span></a></td>
-          <td>{{ r.company_name }}</td>
+          <td>{{ r.company_name }}{% if r.series_a %} {{ series_a_tag(r.series_a) }}{% endif %}</td>
           {# 배지 옆에 날짜를 나란히 두면 좁은 칸에서 둘이 엉켜 끊긴다.
              배지는 한 덩어리로 두고 날짜는 아랫줄로 내린다. #}
           <td class="status-cell"><span class="status-badge">{{ r.status_label }}</span>

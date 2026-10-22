@@ -35,12 +35,14 @@ const NAMES = ["샘플애그", "샘플바이오", "샘플에너지", "샘플헬�
                "가나테크", "다라소프트", "마바로보틱스", "사아모빌리티",
                "자차데이터", "카타핀테크", "파하클라우드"];
 
-function build(names) {
+function build(names, seriesA) {
   D.resetHandlers();
-  const carrier = D.el("div", {
+  const attrs = {
     id: "opts-ir-company", hidden: "",
     "data-names": JSON.stringify(names === undefined ? NAMES : names)
-  });
+  };
+  if (seriesA) attrs["data-series-a"] = JSON.stringify(seriesA);
+  const carrier = D.el("div", attrs);
   const textarea = D.el("textarea", {
     id: "request-companies", name: "company_name", "data-company-hint": ""
   });
@@ -251,6 +253,32 @@ function main() {
     assert.ok(/외 \d+곳/.test(
       boxOf(many).querySelector(".name-hint-note").textContent),
       "자른 것을 말해 주지 않는다");
+  }
+
+  // ── 14. **Series A 이상 딜 소싱** 기업도 뜬다 — 딱지를 달고, IR 기업 뒤에 ──
+  //
+  // 서버가 따로 실어 준다(`data-series-a` — IR 기업 현황과 같은 기업은 이미
+  // 뺐다). 고르면 **이름만** 들어간다 — 딱지 글자가 칸에 섞이면 그 글자째
+  // 기업명으로 적힌다.
+  {
+    const dom = build(["샘플애그", "샘플에이원"], ["샘플에이랩", "샘플에스에이"]);
+    run(dom);
+    type(dom, "에이");
+    assert.deepStrictEqual(items(dom), ["샘플에이원", "샘플에이랩", "샘플에스에이"],
+      "IR 기업이 먼저 서지 않거나 Series A 기업이 안 뜬다");
+    const nodes = boxOf(dom).querySelectorAll(".name-hint-item");
+    assert.strictEqual(nodes[0].querySelector(".name-hint-tag"), null,
+      "IR 기업에 Series A 딱지가 붙었다");
+    assert.strictEqual(nodes[1].querySelector(".name-hint-tag").textContent, "Series A",
+      "Series A 기업에 딱지가 없다 ★ IR 기업과 구별이 안 된다");
+    nodes[1].fire("mousedown", { preventDefault: function () {} });
+    assert.strictEqual(dom.textarea.value, "샘플에이랩", "딱지 글자가 칸에 섞였다");
+
+    // IR 후보가 하나도 없어도 Series A 후보만으로 붙는다.
+    const only = build([], ["샘플에이랩"]);
+    run(only);
+    type(only, "에이");
+    assert.deepStrictEqual(items(only), ["샘플에이랩"], "Series A 만 있을 때 안 붙는다");
   }
 
   // ── 13. 후보 목록을 읽는 자리가 **한 곳**이다 ────────────────────────

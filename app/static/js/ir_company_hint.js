@@ -51,6 +51,10 @@
   var LIST_ID = "opts-ir-company";
   //: 후보를 붙일 칸에 화면이 달아 두는 표시.
   var HOOK = "data-company-hint";
+  //: 같은 칸에 실린 **Series A 이상 딜 소싱** 기업 이름(`pipeline.series_a_names`).
+  //: IR 기업 뒤에 세우고 `Series A` 딱지를 붙인다 — 고르면 이름만 들어간다.
+  var SA_ATTR = "data-series-a";
+  var SA_TAG = "Series A";
 
   // 한 번에 세우는 후보 수. 기업이 344곳이라 안 자르면 칸을 통째로 덮는다.
   // 자른 것은 **말해 준다** — 안 보이는 것이 없는 것으로 읽히면 사람이 목록을
@@ -63,22 +67,28 @@
   var SEPS = ["\n", ","];
 
   // ── 후보 목록을 읽는 **한 곳** ─────────────────────────────────────────
-  function names() {
+  function read(attr, out) {
     var node = document.getElementById(LIST_ID);
-    if (!node) return [];
+    if (!node) return out;
     var parsed;
     try {
-      parsed = JSON.parse(node.getAttribute("data-names") || "[]");
+      parsed = JSON.parse(node.getAttribute(attr) || "[]");
     } catch (err) {
-      return [];               // 값이 깨져 있어도 칸은 그냥 글자 칸으로 산다
+      return out;              // 값이 깨져 있어도 칸은 그냥 글자 칸으로 산다
     }
-    if (!parsed || typeof parsed.length !== "number") return [];
-    var out = [];
+    if (!parsed || typeof parsed.length !== "number") return out;
     for (var i = 0; i < parsed.length; i += 1) {
       var one = String(parsed[i] == null ? "" : parsed[i]).trim();
       if (one && out.indexOf(one) === -1) out.push(one);
     }
     return out;
+  }
+
+  // IR 기업 먼저, Series A 기업은 그 뒤 — 같은 글자면 IR 쪽 하나만 남는다.
+  function names() { return read(SA_ATTR, read("data-names", [])); }
+  function seriesA() {
+    var ir = read("data-names", []);
+    return read(SA_ATTR, []).filter(function (n) { return ir.indexOf(n) === -1; });
   }
 
   // ── 지금 치고 있는 조각 ────────────────────────────────────────────────
@@ -138,6 +148,7 @@
     if (!input) return null;
     opts = opts || {};
     var list = opts.names || names();
+    var sa = opts.seriesA || seriesA();
     var host = opts.anchor || input.parentNode;
     if (!host) return null;
 
@@ -218,6 +229,12 @@
         item.type = "button";
         item.className = "name-hint-item";
         item.textContent = name;
+        if (sa.indexOf(name) !== -1) {
+          var tag = document.createElement("span");
+          tag.className = "name-hint-tag";
+          tag.textContent = SA_TAG;
+          item.appendChild(tag);
+        }
         // `mousedown` 이라야 초점이 칸을 떠나기 전에 잡힌다.
         item.addEventListener("mousedown", function (e) {
           e.preventDefault();
@@ -304,13 +321,13 @@
       document.querySelectorAll("[" + HOOK + "]"), function (input) {
         if (input.getAttribute(HOOK + "-on")) return;
         input.setAttribute(HOOK + "-on", "1");
-        attach(input, { names: list });
+        attach(input, { names: list, seriesA: seriesA() });
       });
   }
 
   global.DealflowCompanyHint = {
     LIST_ID: LIST_ID, HOOK: HOOK, MAX_SHOWN: MAX_SHOWN,
-    names: names, token: token, matches: matches,
+    names: names, seriesA: seriesA, token: token, matches: matches,
     attach: attach, attachAll: attachAll
   };
 
