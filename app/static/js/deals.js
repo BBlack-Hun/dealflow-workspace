@@ -496,6 +496,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     var picks = pickedSeriesA();
     var coveredInView = 0, ownInView = 0, gotInView = 0;
 
+    syncAssigneeCounts();
     var list = activeList();
     (list ? list.querySelectorAll(".pick-card") : []).forEach(function (card) {
       var cb = card.querySelector(".contact-cb");
@@ -614,6 +615,32 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   var bucketBar = bindFilter("bucket-filter", function (v) { bucketFilter = v; },
                              schedulePreview);
   var assigneeBar = bindFilter("assignee-filter", function (v) { assigneeFilter = v; });
+
+  // [담당] 칩 수 = **지금 고른 글에서 뜨는 카드 수**(`isExcluded` 가 아닌 카드). 서버는
+  // 어느 글이든 받는 분을 다 세어(`sourcing.assignee_chips`) 리마인드에서 `55` 인데 카드가
+  // 13장이었다. 0 이면 숨긴다 — 서버도 0 인 칩은 안 세운다. 고르던 칩이 숨으면 [전체]로
+  // (`rebuildAssigneeChips` 와 같은 까닭). `data-count` 는 서버 값 그대로 둔다(다시 읽기 비교용).
+  function syncAssigneeCounts() {
+    if (!assigneeBar || mode !== "sourcing") return;
+    var per = {};
+    var list = activeList();
+    (list ? list.querySelectorAll(".pick-card") : []).forEach(function (card) {
+      if (isExcluded(card)) return;
+      var who = card.getAttribute("data-assignee") || "";
+      per[who] = (per[who] || 0) + 1;
+    });
+    var chips = Array.prototype.slice.call(assigneeBar.querySelectorAll(".chip"));
+    chips.slice(1).forEach(function (c) {
+      var name = c.getAttribute("data-value") || "";
+      var n = per[name] || 0;
+      c.innerHTML = escapeHtml(name) + " <b>" + n + "</b>";
+      c.hidden = !n;
+      if (!n && name === assigneeFilter) assigneeFilter = "";
+    });
+    chips.forEach(function (c) {
+      c.classList.toggle("active", (c.getAttribute("data-value") || "") === assigneeFilter);
+    });
+  }
   bindFilter("group-filter", function (v) { groupFilter = v; });
 
   // [보낼 문구] — 누르면 글이 바뀐다. 문구 고르개(종류가 다르다) · 회차명 ·

@@ -16,6 +16,9 @@
 from __future__ import annotations
 
 import re
+import shutil
+import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -144,3 +147,15 @@ def test_state_carries_this_months_receipts(roster, client, db):
     got = {x["id"]: x["received"] for x in state["rows"]}
     assert got == {roster["handed"].id: False, roster["twice"].id: True,
                    roster["plain"].id: False}
+
+
+def test_chip_counts_follow_the_picked_message():
+    """[담당] 칩 숫자 = **지금 고른 문구에서 뜨는 카드 수**(`deals.js` 의 `syncAssigneeCounts`).
+    서버는 어느 글이든 받는 분을 다 세어 보내 리마인드에서 칩 55 · 카드 13장이었다."""
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node 미설치 — 브라우저 로직 테스트 생략 "
+                    "(호스트에서 `node tests/js/sourcing_assignee_counts_test.js`)")
+    script = Path(__file__).resolve().parent / "js" / "sourcing_assignee_counts_test.js"
+    result = subprocess.run([node, str(script)], capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stdout + result.stderr
