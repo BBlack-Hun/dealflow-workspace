@@ -141,7 +141,7 @@ def _finish(db: Session, job: SendJob) -> None:
 
 def address_problem(contact) -> Optional[str]:
     """이 담당자에게 메일을 보낼 수 있는가. 못 보내면 사유를 돌려준다."""
-    address = (getattr(contact, "email", "") or "").strip()
+    address = mailer.primary_email(getattr(contact, "email", ""))  # 보낼 주소(정)만 본다
     if not address:
         return "메일 주소가 없습니다"
     if "@" not in address or address.startswith("@") or address.endswith("@"):

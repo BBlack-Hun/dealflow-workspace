@@ -236,6 +236,145 @@ def test_값_다름은_연결_화면에_칩과_단추로_선다(db, users, stage
     assert "자동 연결" in html
 
 
+# ── 4-2. 둘 다 남기기(연락처 · 이메일 — 10/23) ──────────────────────────────
+
+def _raw_set(db, row, **values):
+    """이을 때부터 달랐던 값을 흉내 낸다 — 따라 고치기를 지나지 않고 줄만 바꾼다."""
+    db.execute(row.__table__.update().where(row.__table__.c.id == row.id).values(**values))
+    db.commit()
+    return _fresh(db, row)[0]
+
+
+def test_합치기는_앞이_정이고_같은_값은_한_번(db):
+    from app.services.company_sync import combine
+
+    # 꼴만 다른 같은 번호 · 대소문자만 다른 같은 메일은 하나로(앞의 꼴을 둔다).
+    assert combine("contact_phone", ["010-0000-1111", "01000001111, 02-123-4567"]) == \
+        ("010-0000-1111, 02-123-4567", 1)
+    assert combine("contact_email", ["Ceo@Example.com", "ceo@example.com", "", None,
+                                     "ceo@example.com, sub@example.net"]) == \
+        ("Ceo@Example.com, sub@example.net", 2)
+
+
+def test_둘_다_남기기는_IR값을_앞에_두고_이어진_줄_모두에_적는다(db, users, stage, linked,
+                                                    logged_in):
+    from app.models import EditLog
+    from app.services import company_sync
+
+    meta = _raw_set(db, linked["meta"], phone="010-7777-0000")
+    users["u1"].role = "admin"
+    db.commit()
+    html = logged_in.get("/ir-link?tab=consulting&show=diff").text
+    assert "둘 다 남기기" in html
+    r = logged_in.post("/ir-link/resolve", data={"tab": "consulting", "row_id": meta.id,
+                                                 "field": "contact_phone", "pick": "both"},
+                       follow_redirects=False)
+    assert r.status_code == 303
+    ir, meta, su, hand = _fresh(db, stage["ir"], meta, linked["startup"], linked["handover"])
+    both = "010-0000-1111, 010-7777-0000"
+    assert ir.contact_phone == both and meta.phone == both
+    assert su.phone == both and hand.phone == both
+    assert company_sync.differences(db, [meta]) == {}
+    logs = db.query(EditLog).filter(EditLog.table_name == "ir_companies").all()
+    assert any("contact_phone" in (log.changes_json or "") for log in logs)
+
+
+def test_둘_다_남기기는_대표자명_같은_칸에는_안_된다(db, stage, linked):
+    from app.services import company_sync
+
+    meta = _raw_set(db, linked["meta"], ceo_name="박샘플")
+    with pytest.raises(ValueError):
+        company_sync.resolve(db, meta, "contact_name", "both")
+
+
+def test_연락처_칸의_메일은_이메일_칸으로_옮겨_잇는다(db, stage, linked):
+    from app.services import company_sync
+
+    ir = stage["ir"]
+    ir.contact_email = "ir@example.com"
+    db.commit()
+    # 경영본부 전달 탭 — 연락처 칸에 메일이 적혀 있다.
+    hand = _raw_set(db, linked["handover"], phone="ceo@example.com")
+    assert [d["field"] for d in company_sync.differences(db, [hand])[hand.id]] == \
+        ["contact_phone"]
+    done = company_sync.keep_both(db, hand, "contact_phone")
+    db.commit()
+    assert done == {"moved": 1, "folded": 0, "odd": 0}
+    ir, hand, su = _fresh(db, ir, hand, linked["startup"])
+    assert ir.contact_phone == "010-0000-1111" and hand.phone == "010-0000-1111"
+    assert ir.contact_email == "ir@example.com, ceo@example.com"
+    assert hand.email == ir.contact_email and su.email == ir.contact_email
+    assert company_sync.differences(db, [hand]) == {}
+
+
+def test_둘_다_남기기는_다른_이어진_줄의_셋째_값도_잃지_않는다(db, stage, linked):
+    from app.services import company_sync
+
+    ir = _raw_set(db, stage["ir"], contact_email="ir@example.com")
+    meta = _raw_set(db, linked["meta"], email="meta@example.com")
+    su = _raw_set(db, linked["startup"], email="su@example.com")
+    company_sync.keep_both(db, _fresh(db, meta)[0], "contact_email")
+    db.commit()
+    ir, meta, su = _fresh(db, ir, meta, su)
+    assert ir.contact_email == "ir@example.com, meta@example.com, su@example.com"
+    assert meta.email == su.email == ir.contact_email
+
+
+def test_메일이_여럿인_칸에는_정_표시가_선다(db, users, stage, linked, logged_in):
+    """첫 주소(정)에만 메일이 간다 — 표가 그 칸에 `정` 을 단다(CSS `td.mail-primary`)."""
+    from app.services import company_sync
+
+    _raw_set(db, stage["ir"], contact_email="ir@example.com")
+    meta = _raw_set(db, linked["meta"], email="meta@example.com")
+    company_sync.keep_both(db, meta, "contact_email")
+    db.commit()
+    assert _fresh(db, stage["ir"])[0].contact_email == "ir@example.com, meta@example.com"
+    for page in ("/companies?tab=db", "/consulting"):
+        html = logged_in.get(page).text
+        assert 'mail-primary" data-field="' in html, page
+
+
+def test_일괄_스크립트는_같은_규칙으로_잇는다(db, stage, linked):
+    from scripts import ir_link_keep_both
+
+    from app.services import company_sync
+
+    ir = stage["ir"]
+    ir.contact_email = "ir@example.com"
+    db.commit()
+    _raw_set(db, linked["meta"], phone="010 7777 0000")
+    _raw_set(db, linked["handover"], phone="ceo@example.com")
+    _raw_set(db, linked["startup"], phone="01000001111")     # 꼴만 다른 같은 번호
+    counts, _trace = ir_link_keep_both.run(db)
+    db.commit()
+    # 메타 줄 하나가 같은 IR 의 줄 모두를 맞춘다 — 경영본부 줄의 값 다름도 함께 닫힌다.
+    assert (counts["contact_phone"], counts["contact_email"]) == (1, 0)
+    assert (counts["moved"], counts["folded"], counts["odd"], counts["left"]) == (1, 1, 0, 0)
+    ir, meta, hand, su = _fresh(db, ir, linked["meta"], linked["handover"], linked["startup"])
+    both = "010-0000-1111, 010 7777 0000"
+    assert ir.contact_phone == meta.phone == hand.phone == su.phone == both
+    assert ir.contact_email == hand.email == "ir@example.com, ceo@example.com"
+    assert company_sync.differences(db, [meta, hand]) == {}
+
+
+def test_일괄_스크립트는_모양이_이상한_값이_끼면_사람에게_남긴다(db, stage, linked):
+    from scripts import ir_link_keep_both
+
+    from app.services import company_sync
+
+    ir = stage["ir"]
+    ir.contact_email = "ir@example.com"
+    db.commit()
+    hand = _raw_set(db, linked["handover"], email="메일 없음 10/2 확인")
+    counts, _trace = ir_link_keep_both.run(db)
+    db.commit()
+    assert (counts["contact_email"], counts["odd"], counts["left"]) == (0, 1, 1)
+    hand, ir = _fresh(db, hand, ir)
+    assert hand.email == "메일 없음 10/2 확인" and ir.contact_email == "ir@example.com"
+    assert [d["field"] for d in company_sync.differences(db, [hand])[hand.id]] == \
+        ["contact_email"]
+
+
 # ── 5. 시트 다시 올리기 ─────────────────────────────────────────────────────
 
 def test_시트를_다시_올려도_이어진_줄과_IR을_덮지_않는다(db, users, stage):

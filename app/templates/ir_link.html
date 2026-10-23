@@ -50,7 +50,8 @@
     저절로 이어지고 <b>자동 연결</b> 로 보입니다(잘못 붙었으면 [연결 해제]).
     이어진 줄끼리는 <b>대표자명 · 연락처 · 이메일 · 지역 · 견적서 첨부 여부 · 카톡 연결 여부</b>를
     한쪽에서 고치면 나머지도 따라 고칩니다. 이을 때는 빈칸만 채우고, 서로 다른 값은
-    <b>값 다름</b> 에서 골라 맞춥니다.
+    <b>값 다름</b> 에서 골라 맞춥니다. 연락처 · 이메일은 <b>[둘 다 남기기]</b> 로 두 값을
+    <code>IR 값, 이 줄 값</code> 으로 이을 수 있습니다(앞이 정 — 메일은 첫 주소로만 갑니다).
   </p>
 </header>
 
@@ -189,8 +190,9 @@
             {% for d in r.diffs %}
             <li class="ir-diff">
               <b>{{ d.label }}</b> 값 다름 — 이 줄 <b>{{ d.row }}</b> · IR <b>{{ d.ir }}</b>
-              {% for pick, label in (('ir', 'IR 값으로'), ('row', '이 줄 값으로')) %}
-              {% if pick == 'ir' or d.movable %}
+              {# [둘 다 남기기] — 연락처 · 이메일만. `IR 값, 이 줄 값`(앞이 정 — 메일은 정에만 간다). #}
+              {% for pick, label in (('ir', 'IR 값으로'), ('row', '이 줄 값으로'), ('both', '둘 다 남기기')) %}
+              {% if pick == 'ir' or (pick == 'row' and d.movable) or (pick == 'both' and d.both) %}
               <form method="post" action="/ir-link/resolve" class="inline-form">
                 <input type="hidden" name="tab" value="{{ kind }}">
                 <input type="hidden" name="row_id" value="{{ r.id }}">

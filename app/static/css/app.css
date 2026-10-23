@@ -205,6 +205,11 @@ a:hover { text-decoration: underline; }
    고칠 것이 없다 — 빨간 칸으로 두면 매번 손대야 할 것처럼 읽힌다. */
 .room-badge.bad { background: #fdeeee; color: var(--red); }
 .room-badge.muted { background: #f1f3f5; color: var(--muted); }
+/* 메일 칸에 주소가 여럿이면(`정, 부`) 첫 주소 앞에 `정` — 메일은 그 주소로만 간다
+   (`mailer.primary_email`). 가짜 요소라 칸 글자(눌러 고치기 · 정렬)에 안 섞인다. */
+td.mail-primary::before { content: "\C815"; font-size: 10px; background: #eafaf0; color: var(--green);
+  border-radius: 4px; padding: 0 3px; margin-right: 4px; }
+td.mail-primary:has(.cell-input)::before { display: none; }
 
 /* Preview */
 .preview-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }

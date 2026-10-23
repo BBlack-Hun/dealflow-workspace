@@ -107,6 +107,56 @@ def test_items_are_marked_as_email(logged, db, seed, mail_on, monkeypatch):
     assert item.subject == "딜 소개 안내"
 
 
+def test_주소가_여럿이면_첫_주소_정에만_보낸다(logged, db, seed, mail_on, monkeypatch):
+    """10/23 — 한 칸에 `정, 부` 로 주소를 잇는다(`/ir-link` [둘 다 남기기]). 뒤의 주소(부)는
+    참고용이라 받는 사람에도 참조에도 넣지 않는다. 목록 · 형식 검사 · SMTP 머리글이 같은
+    규칙(`mailer.primary_email`)을 쓴다."""
+    from app.models import SendItem, VcContact
+    from app.services import mail_sender, mailer
+
+    row = db.get(VcContact, seed["ok"])
+    row.email = "hong@example.com, hong.sub@example.net"
+    db.commit()
+    assert mail_sender.address_problem(row) is None
+    monkeypatch.setattr(mail_sender, "send_job", lambda *a, **k: None)
+    r = _send(logged, seed, [seed["ok"]])
+    assert r.status_code == 200, r.text
+    item = db.query(SendItem).filter_by(job_id=r.json()["job_id"]).one()
+    assert item.room_name == "hong@example.com"
+
+    sent = []
+
+    class FakeSMTP:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def login(self, *a):
+            pass
+
+        def send_message(self, msg):
+            sent.append(msg)
+
+    monkeypatch.setattr(mailer, "_connect", lambda s: FakeSMTP())
+    mailer.send_mail("hong@example.com, hong.sub@example.net", "제목", "본문")
+    assert [m["To"] for m in sent] == ["hong@example.com"]
+    assert sent[0]["Cc"] is None and sent[0]["Bcc"] is None
+
+
+def test_primary_email_첫_주소만_줍는다():
+    from app.services.mailer import primary_email
+
+    assert primary_email("a@example.com, b@example.net") == "a@example.com"
+    assert primary_email("  b@example.net ; a@example.com") == "b@example.net"
+    assert primary_email("대표 <a@example.com>") == "a@example.com"
+    assert primary_email("a＠example.com") == "a@example.com"
+    # 주소 모양이 없으면 적힌 그대로 — 형식 검사가 그 글로 사유를 적는다.
+    assert primary_email("주소아님") == "주소아님"
+    assert primary_email(None) == ""
+
+
 def test_agent_does_not_pick_up_mail(logged, db, seed, mail_on, monkeypatch):
     """발송 프로그램이 메일 건을 집어가면 방을 찾다가 실패한다."""
     from app.models import AgentDevice

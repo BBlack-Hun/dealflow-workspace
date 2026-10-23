@@ -31,6 +31,8 @@ IR 기업 현황 자체가 그 사람에게 닫혀 있다.
 잇는 순간에는 빈칸만 채우므로(`company_sync` 머리말), 양쪽에 다른 값이 있던 칸은
 그대로 남는다. `값 다름` 칩이 그 줄을 모으고, 칸마다 [IR 값으로] · [이 줄 값으로]
 를 골라 맞춘다(`POST /ir-link/resolve`). 고른 뒤로는 이어진 줄 모두가 같아진다.
+연락처 · 이메일은 [둘 다 남기기] 도 선다 — `IR 값, 이 줄 값` 으로 잇는다
+(10/23 결정, `company_sync.keep_both`).
 
 ## 수정 로그
 
@@ -431,7 +433,8 @@ def resolve_diff(tab: str = Form(...), row_id: int = Form(...),
                  field: str = Form(...), pick: str = Form(...), show: str = Form(""),
                  db: Session = Depends(get_db),
                  user: User = Depends(get_current_user)):
-    """`값 다름` 한 칸 맞추기 — [IR 값으로](`pick=ir`) · [이 줄 값으로](`pick=row`).
+    """`값 다름` 한 칸 맞추기 — [IR 값으로](`pick=ir`) · [이 줄 값으로](`pick=row`)
+    · [둘 다 남기기](`pick=both` — 연락처 · 이메일만).
 
     문은 잇기 · 풀기와 같다(`editable_row`). 나머지 이어진 줄은 flush 가 따라 고친다.
     """
@@ -445,7 +448,9 @@ def resolve_diff(tab: str = Form(...), row_id: int = Form(...),
                                 status_code=303)
     db.commit()
     label = company_sync.LABELS.get(field, field)
-    side = "IR 값" if pick == "ir" else "이 줄 값"
-    return RedirectResponse(
-        _back(kind, show, f"‘{name}’ 의 {label} 을(를) {side}으로 맞췄습니다.", anchor=row.id),
-        status_code=303)
+    if pick == "both":
+        msg = f"‘{name}’ 의 {label} 을(를) 둘 다 남겼습니다 — 앞이 IR 값(정)입니다."
+    else:
+        side = "IR 값" if pick == "ir" else "이 줄 값"
+        msg = f"‘{name}’ 의 {label} 을(를) {side}으로 맞췄습니다."
+    return RedirectResponse(_back(kind, show, msg, anchor=row.id), status_code=303)

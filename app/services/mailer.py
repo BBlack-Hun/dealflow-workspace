@@ -24,6 +24,7 @@
 from __future__ import annotations
 
 import os
+import re
 import smtplib
 from dataclasses import dataclass
 from email.message import EmailMessage
@@ -37,6 +38,22 @@ class MailerNotConfigured(RuntimeError):
 
 # 처음부터 SSL 로 접속하는 표준 포트. STARTTLS(587) 와 방식이 다르다.
 SSL_PORT = 465
+
+# 주소 한 개. 칸에 이름·괄호·여러 주소가 섞여 있어도 주소만 줍는다
+# (`sourcing_receipts` 의 받은 메일 맞추기도 이것을 쓴다).
+ADDRESS = re.compile(r"[A-Za-z0-9._%+'\-]+@[A-Za-z0-9\-]+(?:\.[A-Za-z0-9\-]+)*\.[A-Za-z]{2,}")
+
+
+def primary_email(text: Optional[str]) -> str:
+    """칸의 **첫 주소(정)** — 메일은 이 주소로만 간다(10/23 결정).
+
+    `/ir-link` 의 [둘 다 남기기]가 한 칸에 `정, 부` 로 주소를 잇는다. 뒤의 주소(부)는
+    참고용이라 받는 사람에도 참조에도 넣지 않는다. 주소 모양이 하나도 없으면 적힌
+    그대로 돌려준다 — 형식 검사(`mail_sender.address_problem`)가 그 글로 사유를 적는다.
+    """
+    raw = str(text or "").replace("＠", "@").strip()
+    hit = ADDRESS.search(raw)
+    return hit.group(0) if hit else raw
 
 
 @dataclass
@@ -130,7 +147,7 @@ def send_mail(to: str, subject: str, body: str,
         raise ValueError("받는 사람 메일 주소가 없습니다")
 
     msg = EmailMessage()
-    msg["To"] = to.strip()
+    msg["To"] = primary_email(to)     # 칸에 주소가 여럿이어도 첫 주소(정)에만
     msg["From"] = _format_sender(s.from_address)
     msg["Subject"] = subject
     msg.set_content(body)
