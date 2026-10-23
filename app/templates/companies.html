@@ -698,6 +698,8 @@
            늘어 단추가 108 → 122px 이 된 몫이다 — 폭을 안 올리면 필터를 거는
            순간 두 줄로 접힌다. app.css 의 `#co-table` min-width 도 같이 올렸다. #}
         <th style="width:148px" data-filters="received:계약서 수신 여부">계약서 수신 여부<div class="th-filters"></div></th>
+        {# 0119 — 성공보수율(결정 10). 손으로 적는 글자라(`3%` · `3프로`) 필터는 안 단다. 폭은 이름. #}
+        <th style="width:96px">성공보수율</th>
         {# 0116 — 이 기업과 카톡방이 연결됐는가(`O`/`X`). 위 `견적서 첨부 여부` 와 같은 결. #}
         <th style="width:140px" data-filters="joined:카톡 연결 여부">카톡 연결 여부<div class="th-filters"></div></th>
         {# 이름을 **칸에 든 값**에 맞춘다. `날짜 기입` 은 무엇을 적는 칸인지
@@ -939,6 +941,7 @@
         <td class="cell" data-field="contract_received" data-type="pick"
             data-filter-key="received"
             data-choices="O,X">{{ r.contract_received }}</td>
+        <td class="cell" data-field="success_fee">{{ r.success_fee }}</td>
         <td class="cell" data-field="kakao_joined" data-type="pick"
             data-filter-key="joined" data-choices="O,X">{{ r.kakao_joined }}</td>
         <td class="cell" data-field="contract_month">{{ r.contract_month }}</td>
@@ -967,7 +970,7 @@
         <td><button type="button" class="linkbtn js-co-edit">수정</button></td>
       </tr>
       {% else %}
-      <tr><td colspan="21" class="muted">등록된 기업이 없습니다. [기업 추가]로 시작하세요.</td></tr>
+      <tr><td colspan="22" class="muted">등록된 기업이 없습니다. [기업 추가]로 시작하세요.</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -1449,6 +1452,8 @@
         <option value="O">O</option>
         <option value="X">X</option>
       </select></label>
+    <label class="field"><span>성공보수율</span>
+      <input type="text" id="f-success_fee" placeholder="예: 3%"></label>
     <label class="field"><span>카톡 연결 여부</span>
       <select id="f-kakao_joined">
         <option value="">(비어 있음)</option>

@@ -71,7 +71,7 @@ PHONEISH = re.compile(r"^[0-9][0-9\s().+-]*$")
 VIEW_HEADERS = [
     "NO", "기업명", "수신일", "대분류", "소분류", "투자라운드", "수정한 날짜",
     "딜 소개 문구", "담당자", "소개 횟수", "소개 발송(명)", "견적서 첨부 여부",
-    "미팅제공일자", "계약여부", "계약서 수신 여부", "카톡 연결 여부", "홍보메일삭제",
+    "미팅제공일자", "계약여부", "계약서 수신 여부", "성공보수율", "카톡 연결 여부", "홍보메일삭제",
     "핵심/TOP Deal", "IR 자료",
 ]
 
@@ -220,7 +220,7 @@ def to_cells(rows: List[dict]) -> List[list]:
             # 한 번도 안 나간 기업은 화면이 `–` 로 보인다 — 파일에서는 수 0 이다.
             r["sent_rounds"], r["sent_total"], r["quote_attached"],
             r["meeting_offered_at"], r["contract_label"], r["contract_received"],
-            r["kakao_joined"], r["contract_month"],
+            r["success_fee"], r["kakao_joined"], r["contract_month"],
             r["top_deal_kind"] or "", r["ir_file_name"] if r["has_ir"] else "없음",
         ])
     return out

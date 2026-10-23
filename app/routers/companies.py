@@ -587,6 +587,8 @@ def company_rows(db: Session, sent=None) -> List[dict]:
             "region": c.region or "",
             "quote_attached": c.quote_attached or "",
             "kakao_joined": c.kakao_joined or "",
+            # 0119 — 성공보수율(결정 10). 적힌 글자 그대로.
+            "success_fee": c.success_fee or "",
             # 무료 IR 미팅을 **언제** 주기로 했는가 / 줬는가. 손으로 적는 글자다 —
             # 아직 안 정한 곳은 빈 글자로 나가 표에서 빈 칸으로 보인다.
             "meeting_offered_at": c.meeting_offered_at or "",
@@ -882,6 +884,8 @@ class CompanyIn(BaseModel):
     region: Optional[str] = None
     quote_attached: Optional[str] = None
     kakao_joined: Optional[str] = None
+    # 0119 — 성공보수율(결정 10). 글자 그대로 받는다(`3%` · `3프로`).
+    success_fee: Optional[str] = None
     meeting_offered_at: Optional[str] = None
     contract_month: Optional[str] = None
     is_top_deal: Optional[bool] = None

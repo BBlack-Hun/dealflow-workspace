@@ -190,6 +190,9 @@
             {% for d in r.diffs %}
             <li class="ir-diff">
               <b>{{ d.label }}</b> 값 다름 — 이 줄 <b>{{ d.row }}</b> · IR <b>{{ d.ir }}</b>
+              {# `딜소개 불가` 가 낀 칸은 저절로 안 맞춘다 — 고르는 쪽에 따라 딜 발송 대상이 바뀐다
+                 (`company_sync` 머리말). #}
+              {% if d.blocked %}<span class="room-badge warn">딜소개 불가 — 고르면 딜 발송 대상이 바뀝니다</span>{% endif %}
               {# [둘 다 남기기] — 연락처 · 이메일만. `IR 값, 이 줄 값`(앞이 정 — 메일은 정에만 간다). #}
               {% for pick, label in (('ir', 'IR 값으로'), ('row', '이 줄 값으로'), ('both', '둘 다 남기기')) %}
               {% if pick == 'ir' or (pick == 'row' and d.movable) or (pick == 'both' and d.both) %}

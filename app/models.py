@@ -614,6 +614,10 @@ class IrCompany(TimestampMixin, Base):
     #     `계약서 수신여부`(`services/contact_columns.py` 의 `STARTUP_LAYOUT`).
     #     머리글만 바뀌고 열쇠는 옛 이름 그대로다.
     #
+    # ★ **10/23(2단계)부터 IR 기업에 이어진 줄끼리는 따라 고친다**
+    #   (`services/company_sync.py` — `O`/`X`, 날짜 글은 IR 에 `O` 로). 아래
+    #   "주고받지 않는다" 는 그 전 이야기이고, 이어지지 않은 줄에는 지금도 맞다.
+    #
     # **셋은 값을 주고받지 않는다.** 한 곳에 `O` 를 넣어도 나머지 둘은 계속
     # 비어 있다. 세 화면이 같은 기업을 함께 보고 있다고 읽으면 안 된다.
     #
@@ -651,6 +655,9 @@ class IrCompany(TimestampMixin, Base):
     region: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     quote_attached: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     kakao_joined: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # 성공보수율(0119 · 결정 10) — 적힌 글자 그대로(`3%` · `3프로`). 투자컨설턴트 계약 탭
+    # `success_fee` · 스타트업 `notes.success_fee` 와 따라 고친다. 계약금은 계약 탭에만 둔다.
+    success_fee: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     contract_month: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     is_top_deal: Mapped[int] = mapped_column(Integer, default=0)
     # ── `투자 현황` — **화면에서 뺀 칸이다. 값은 여기 그대로 있다.** ──────────

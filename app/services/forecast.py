@@ -11,7 +11,7 @@
     미팅 날짜 셋            줄 담당자의 미팅 — 같은 기업 + 상대 심사역이 같은 회사,
                            취소 제외. 예정일은 아직 안 한(`scheduled`) 것만.
                            가장 이른 날, 더 있으면 `외 N건`
-    성공보수율              이은 IR 기업에 이어 둔(`/ir-link`) 투자컨설턴트 줄의
+    성공보수율              이은 IR 기업(`success_fee` · 0119)과 그 기업에 이어 둔 투자컨설턴트 줄의
                            `success_fee` · 스타트업 명단 줄의 `성공보수율 %` —
                            글자 칸이라 `3.5%` · `3프로` 꼴만 읽고, 읽은 값이 **하나로
                            모일 때만** 쓴다(둘이 다르면 사람이 적는다)
@@ -38,7 +38,7 @@ from typing import Dict, Iterable, List, Optional
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from ..models import (ConsultingCompany, IrRequest, Meeting, RevenueForecast, User,
+from ..models import (ConsultingCompany, IrCompany, IrRequest, Meeting, RevenueForecast, User,
                       VcContact)
 from . import amount, ir_link, sheet_owner
 from .contact_columns import load_notes
@@ -181,6 +181,9 @@ class Source:
         found = list(db.execute(select(ConsultingCompany.ir_company_id,
                                        ConsultingCompany.success_fee)
                                 .where(ConsultingCompany.ir_company_id.in_(linked))))
+        # IR 기업 현황의 성공보수율(0119 · 결정 10) — 이어진 줄과 따라 고치는 같은 값이다.
+        found += list(db.execute(select(IrCompany.id, IrCompany.success_fee)
+                                 .where(IrCompany.id.in_(linked))))
         found += [(company_id, load_notes(notes).get("success_fee"))
                   for company_id, notes in db.execute(
                       select(VcContact.ir_company_id, VcContact.notes)

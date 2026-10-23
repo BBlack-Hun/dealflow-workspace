@@ -598,7 +598,8 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
     `title`). 줄어든 것이 거슬리면 이 값을 163px 쪽으로 올리면 된다.) */
 /* (2,612 → 2,902 : 0116 의 `견적서 첨부 여부`(150px) · `카톡 연결 여부`(140px)가 IR
     기업 현황 탭에 들었다 — 든 만큼만 올린다. 스타트업DB 탭의 `지역`(80px)은 그 안에 든다.) */
-#co-table { min-width: 2902px; }
+/* (2,902 → 2,998 : 0119 의 `성공보수율`(96px) — 든 만큼만 올린다.) */
+#co-table { min-width: 2998px; }
 /* IR 기업 현황 › Series A 이상 딜 소싱 — 넓은 표 공통 값(2,030px)에 직접 적는 칸
    열(#24 · `companies_series_a.html` 의 `대표자명` ~ `Pre Value`, 폭 합 932px)을 **든 만큼만**
    더한다. 안 올리면 폭을 안 준 `상세 내용` 이 그 932px 을 내어 주다 0 으로 짜부라진다.
