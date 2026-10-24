@@ -563,6 +563,9 @@ STARTUP_LAYOUT = Layout(
         # `note` 갈래 · 옆의 `견적서 첨부여부`·`계약여부`가 그렇다). 306행 전체가
         # 한 명단에서만 쓰는 빈 칸을 지고 다니지 않게 한 그것이다.
         #
+        # ★ 10/23(기업 동기화 2단계)부터 IR 기업에 이어진 줄은 IR `미팅제공일자` 와 따라
+        #   고친다(`services/company_sync.py`). 아래는 그 전 이야기 — 안 이은 줄에는 맞다.
+        #
         # **IR 기업 현황의 `미팅제공일자` 와 다른 칸이다** —
         # 저쪽은 `IrCompany.meeting_offered_at` 이라는 기업 단위의 모델 칸이고,
         # 이쪽은 이 명단의 줄에 `notes` 로 붙는다. 여기에 적어도 저쪽은 안
@@ -701,6 +704,9 @@ STARTUP_LAYOUT = Layout(
         # (`routers/companies.py` 의 `CONTRACT_LABELS`). 같은 것을 두 화면에서
         # 다른 말로 부르면 어느 쪽이 맞는지 알 수 없다.
         #
+        # ★ 10/23(2단계)부터 IR 기업에 이어진 줄은 IR 계약여부와 따라 고친다
+        #   (`services/company_sync.py` — 보기 넷만 적고, `딜소개 불가` 는 저절로 안 오간다).
+        #
         # **IR 기업 현황의 `IrCompany.contract_status` 와는 다른 칸이다.**
         # 저쪽은 `free`/`paid` 두 값을 가진 기업 단위의 칸이고, 이쪽은 이 명단의
         # 줄에 `notes` 로 붙는 글자 칸이다. 이름이 같다고 한쪽을 고치면 다른
@@ -726,7 +732,8 @@ STARTUP_LAYOUT = Layout(
         # **같은 물음을 적는 칸이 다른 화면에도 둘 더 있다** —
         # `models.IrCompany.contract_received`(IR 기업 현황 `계약서 수신 여부`)와
         # `models.ConsultingCompany.contract_received`(`투자컨설턴트` 의 `계약` ·
-        # `관리 스타트업` 탭). 셋은 값을 주고받지 않는다 — 여기에 `O` 를 넣어도
+        # `관리 스타트업` 탭). (10/23 부터 IR 기업에 이어진 줄끼리는 따라 고친다 —
+        # `services/company_sync.py`.) 안 이은 줄은 값을 주고받지 않는다 — 여기에 `O` 를 넣어도
         # 저 둘은 계속 비어 있다. 왜 아직 하나로 못 모으는지는
         # `models.IrCompany.contract_received` 의 주석에 적혀 있다.
         Column("계약서 수신 여부", "invoice_received", 148, source="note",

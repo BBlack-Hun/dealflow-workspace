@@ -625,7 +625,7 @@ FIELD_LABELS = {
     "tab_deleted_columns": "함께 지운 달 칸",
     "tab_snapshot": "지우기 직전 백업",
     "ir_company_id": "IR 기업 연결", "ir_link_auto": "자동 연결",
-    "region": "지역", "quote_attached": "견적서 첨부 여부",
+    "region": "지역", "quote_attached": "견적서 첨부 여부", "success_fee": "성공보수율",
     "contact_name": "대표자명", "contact_phone": "연락처", "contact_email": "이메일",
     "after_key": "위치",
 }

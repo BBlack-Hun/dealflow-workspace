@@ -32,6 +32,8 @@
     "founded_year", "guarantee",
     // 0116 — 투자컨설턴트 메타에서 올라온 기업 사실 셋.
     "region", "quote_attached", "kakao_joined",
+    // 0119 — 성공보수율(결정 10). 투자컨설턴트 계약 탭 · 스타트업과 따라 고친다.
+    "success_fee",
     // 기업 쪽 연락처 — 표(스타트업DB)의 맨 앞 네 칸.
     "received_at", "contact_name", "contact_phone", "contact_email",
     // 대표와의 **카톡방 제목**. 스타트업 월간 발송이 이 방으로 나간다

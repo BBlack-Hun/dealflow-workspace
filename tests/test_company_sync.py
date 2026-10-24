@@ -495,3 +495,229 @@ def test_스타트업_시트_가져오기도_이어진_줄은_빈칸만_채운�
     su, ir = _fresh(db, su, stage["ir"])
     assert su.phone == "010-1000-2000" and ir.contact_phone == "010-0000-1111"
     assert su.name == "시트대표" and ir.contact_name == "시트대표"
+
+
+# ── 7. 2단계 — 계약여부 · 계약서 수신 여부 · 미팅제공일자 · 성공보수율(#59) ─────
+
+def _notes(row) -> dict:
+    from app.services import contact_columns as cc
+
+    return cc.load_notes(row.notes)
+
+
+def _set_note(db, row, **values):
+    """스타트업 수정창이 하는 것처럼 `notes` 열쇠를 고친다(따라 고치기를 지난다)."""
+    from app.services import contact_columns as cc
+
+    notes = cc.load_notes(row.notes)
+    notes.update(values)
+    row.notes = cc.dump_notes(notes)
+    db.commit()
+
+
+def test_메타_계약여부를_고치면_IR_계약탭_스타트업이_자리마다의_말로_따라온다(
+        logged_in, db, stage, linked):
+    r = logged_in.patch(f"/api/consulting/{linked['meta'].id}",
+                        json={"contract_done": "유료계약완료"})
+    assert r.status_code == 200, r.text
+    ir, con, su, hand = _fresh(db, stage["ir"], linked["contract"], linked["startup"],
+                               linked["handover"])
+    assert ir.contract_status == "paid"
+    assert con.management == "유료"                       # 월간 계약 탭은 `무료`/`유료`
+    assert _notes(su)["contract"] == "유료계약완료"
+    # 경영본부 탭에는 계약 칸이 없다 — 그 탭의 `management` 는 `기업 관리` 글이다.
+    assert hand.management is None and hand.contract_received is None
+    assert con.region == "누적"                           # 달 묶음 이름은 여전히 안 잇는다
+
+
+def test_계약탭에서_고친_계약_계약서_보수율도_따라간다(logged_in, db, stage, linked):
+    r = logged_in.patch(f"/api/consulting/{linked['contract'].id}",
+                        json={"management": "무료", "contract_received": "O",
+                              "success_fee": "3%"})
+    assert r.status_code == 200, r.text
+    ir, meta, su = _fresh(db, stage["ir"], linked["meta"], linked["startup"])
+    assert (ir.contract_status, ir.contract_received, ir.success_fee) == ("free", "O", "3%")
+    assert (meta.contract_done, meta.contract_received) == ("무료계약완료", "O")
+    assert _notes(su)["contract"] == "무료계약완료"
+    assert (_notes(su)["invoice_received"], _notes(su)["success_fee"]) == ("O", "3%")
+
+
+def test_IR을_고치면_스타트업은_보기대로_메타는_보기_밖이면_빈칸(logged_in, db, stage, linked):
+    logged_in.patch(f"/api/consulting/{linked['meta'].id}", json={"contract_done": "무료계약완료"})
+    r = logged_in.patch(f"/api/companies/{stage['ir'].id}",
+                        json={"contract_status": "계약검토중", "meeting_offered_at": "2026-11-05"})
+    assert r.status_code == 200, r.text
+    ir, meta, con, su = _fresh(db, stage["ir"], linked["meta"], linked["contract"],
+                               linked["startup"])
+    assert ir.contract_status == "review"
+    assert _notes(su)["contract"] == "계약검토중"
+    assert _notes(su)["ir_meeting_offered_at"] == "2026-11-05"
+    # 메타 칸은 무료 · 유료계약완료 둘뿐 — 다른 상태는 `아직 완료 아님`(빈칸, 설계 4-4).
+    assert meta.contract_done == ""
+    # 월간 계약 탭은 계약 기록이라 못 적는 상태면 그대로 두고 `값 다름` 에 세운다.
+    assert con.management == "무료"
+    from app.services import company_sync
+
+    assert [d["field"] for d in company_sync.differences(db, [con])[con.id]] == \
+        ["contract_status"]
+
+
+def test_스타트업_미팅제공일자와_계약서_수신을_고치면_IR과_메타가_따라온다(db, stage, linked):
+    _set_note(db, linked["startup"], ir_meeting_offered_at="11/5", invoice_received="o")
+    ir, meta, con = _fresh(db, stage["ir"], linked["meta"], linked["contract"])
+    assert (ir.meeting_offered_at, ir.contract_received) == ("11/5", "O")
+    assert meta.contract_received == "O" and con.contract_received == "O"
+
+
+def test_투자컨설턴트_칸의_다른_계약_상태는_IR로_안_간다(logged_in, db, stage, linked):
+    """결정 4 — 투자컨설턴트가 IR 계약을 바꿀 수 있는 값은 무료 · 유료계약완료뿐."""
+    for body in ({"contract_done": "계약검토중"}, {"contract_done": "딜소개 불가"}):
+        logged_in.patch(f"/api/consulting/{linked['meta'].id}", json=body)
+    logged_in.patch(f"/api/consulting/{linked['contract'].id}", json={"management": "딜소개불가"})
+    ir, su = _fresh(db, stage["ir"], linked["startup"])
+    assert ir.contract_status == "no" and "contract" not in _notes(su)
+
+
+def test_날짜가_적힌_계약서_수신은_IR에_O로_가고_글은_그_줄에_남는다(logged_in, db, stage,
+                                                    linked):
+    from app.services import company_sync
+
+    meta = linked["meta"]
+    logged_in.patch(f"/api/consulting/{meta.id}",
+                    json={"contract_received": "9/25 계약서 수신완료"})
+    ir, meta, su = _fresh(db, stage["ir"], meta, linked["startup"])
+    assert ir.contract_received == "O" and _notes(su)["invoice_received"] == "O"
+    assert meta.contract_received == "9/25 계약서 수신완료"           # 결정 11
+    assert company_sync.differences(db, [meta]) == {}
+    # IR 을 X 로 고쳐도 날짜 글은 덮지 않는다 — 그날의 기록이다. `값 다름` 에 선다.
+    logged_in.patch(f"/api/companies/{ir.id}", json={"contract_received": "X"})
+    meta, su = _fresh(db, meta, su)
+    assert meta.contract_received == "9/25 계약서 수신완료"
+    assert _notes(su)["invoice_received"] == "X"
+    assert [d["field"] for d in company_sync.differences(db, [meta])[meta.id]] == \
+        ["contract_received"]
+    # 아니라는 글은 O 로 읽지 않는다.
+    assert company_sync.norm("contract_received", "9/25 수신 안됨") is None
+
+
+# ── 7-2. 딜소개 불가 안전장치 ────────────────────────────────────────────────
+
+def test_스타트업의_딜소개_불가는_IR로_저절로_안_가고_사람이_고르면_간다(db, stage, linked):
+    from app.services import company_sync
+
+    su = linked["startup"]
+    _set_note(db, su, contract="딜소개 불가")
+    ir, meta = _fresh(db, stage["ir"], linked["meta"])
+    assert ir.contract_status == "no"            # 딜 발송 대상이 저절로 바뀌지 않는다
+    su = _fresh(db, su)[0]
+    diffs = company_sync.differences(db, [su])[su.id]
+    assert [(d["field"], d["ir"], d["blocked"], d["movable"]) for d in diffs] == \
+        [("contract_status", "미계약", True, True)]
+    company_sync.resolve(db, su, "contract_status", "row")
+    db.commit()
+    ir, meta = _fresh(db, stage["ir"], meta)
+    assert ir.contract_status == "blocked"
+    # 메타 칸은 그 상태를 못 적는다 — 저절로도 안 적는다.
+    assert not meta.contract_done
+
+
+def test_딜소개_불가인_IR은_줄을_고쳐도_안_풀리고_값_다름에_선다(logged_in, db, stage, linked):
+    from app.services import company_sync
+
+    ir = stage["ir"]
+    ir.contract_status = "blocked"
+    db.commit()
+    logged_in.patch(f"/api/consulting/{linked['meta'].id}", json={"contract_done": "유료계약완료"})
+    _set_note(db, _fresh(db, linked["startup"])[0], contract="계약검토중")
+    ir, meta, su = _fresh(db, ir, linked["meta"], linked["startup"])
+    assert ir.contract_status == "blocked"
+    assert _notes(su)["contract"] == "계약검토중"     # 메타 값이 스타트업으로 번지지도 않는다
+    for row in (meta, su):
+        (d,) = company_sync.differences(db, [row])[row.id]
+        assert (d["field"], d["ir"], d["blocked"]) == ("contract_status", "딜소개 불가", True)
+
+
+def test_IR에서_사람이_딜소개_불가를_걸고_풀면_IR만_바뀌고_줄은_안_번진다(logged_in, db, stage,
+                                                         linked):
+    su = linked["startup"]
+    _set_note(db, su, contract="유료계약완료")
+    assert _fresh(db, stage["ir"])[0].contract_status == "paid"
+    r = logged_in.patch(f"/api/companies/{stage['ir'].id}", json={"contract_status": "딜소개 불가"})
+    assert r.status_code == 200, r.text
+    ir, su, meta = _fresh(db, stage["ir"], su, linked["meta"])
+    assert ir.contract_status == "blocked"               # 사람이 IR 화면에서 — 그대로 된다
+    assert _notes(su)["contract"] == "유료계약완료" and meta.contract_done == "유료계약완료"
+    # 스타트업 줄이 `딜소개 불가` 인 채로 IR 을 풀어도 그 줄(스타트업 안내 발송 막음)은 그대로.
+    _set_note(db, su, contract="딜소개 불가")
+    logged_in.patch(f"/api/companies/{ir.id}", json={"contract_status": "무료계약완료"})
+    ir, su, meta = _fresh(db, ir, su, meta)
+    assert ir.contract_status == "free" and _notes(su)["contract"] == "딜소개 불가"
+    assert meta.contract_done == "무료계약완료"
+
+
+def test_이을_때도_딜소개_불가는_IR에_안_채운다(db, users, stage):
+    from app.services import company_sync
+    from app.services import contact_columns as cc
+
+    su = _startup(db, users, name="", firm="샘플가람",
+                  notes=cc.dump_notes({"contract": "딜소개 불가", "invoice_received": "O"}))
+    su, ir = _fresh(db, su, stage["ir"])
+    assert su.ir_company_id == ir.id
+    assert ir.contract_status == "no" and ir.contract_received == "O"
+    assert company_sync.differences(db, [su])[su.id][0]["blocked"] is True
+
+
+def test_값_다름_화면에_새_칸과_딜소개_불가_딱지가_선다(db, users, stage, linked, logged_in):
+    _set_note(db, linked["startup"], contract="딜소개 불가")
+    users["u1"].role = "admin"
+    db.commit()
+    html = logged_in.get("/ir-link?tab=startup&show=diff").text
+    assert "계약여부" in html and "딜소개 불가 — 고르면 딜 발송 대상이 바뀝니다" in html
+
+
+# ── 7-3. 처음 맞추기 스크립트 ──────────────────────────────────────────────────
+
+def test_채우기_스크립트는_빈칸만_채우고_딜소개_불가는_남긴다(db, users, stage, linked):
+    from scripts import company_sync_fill
+
+    from app.models import IrCompany
+    from app.services import company_sync
+
+    # 2단계 칸이 잇는 칸이 되기 전에 이어진 줄 — 따라 고치기를 안 지나고 값만 넣는다.
+    _raw_set(db, linked["meta"], contract_done="무료계약완료",
+             contract_received="8/24 계약서 수신함")
+    _raw_set(db, linked["contract"], success_fee="2.5%")
+    other = IrCompany(name="샘플나래", contract_status="paid")
+    db.add(other)
+    db.commit()
+    su2 = _startup(db, users, name="", firm="샘플나래")
+    assert _fresh(db, su2)[0].ir_company_id == other.id
+    _raw_set(db, su2, notes=json.dumps({"contract": "딜소개 불가"}, ensure_ascii=False))
+
+    counts = company_sync_fill.run(db)
+    db.commit()
+    ir, meta, con, su, other = _fresh(db, stage["ir"], linked["meta"], linked["contract"],
+                                      linked["startup"], other)
+    assert (ir.contract_status, ir.contract_received, ir.success_fee) == ("free", "O", "2.5%")
+    assert con.management == "무료" and con.contract_received == "O"
+    assert (_notes(su)["contract"], _notes(su)["invoice_received"]) == ("무료계약완료", "O")
+    assert meta.contract_received == "8/24 계약서 수신함"
+    # 유료 IR 과 `딜소개 불가` 줄 — 덮지 않고 남긴다(값 다름 · 딜소개 불가 딱지).
+    assert other.contract_status == "paid"
+    assert counts["blocked"] == 1 and counts["blocked_changed"] == 0
+    assert counts["left:contract_status"] == 1
+    assert counts["ir:contract_status"] == 1 and counts["a5_in"] == 1
+    assert company_sync.differences(db, [_fresh(db, su2)[0]])
+
+
+def test_채우기_스크립트_미리보기는_DB를_안_바꾼다(db, stage, linked, monkeypatch, capsys):
+    from scripts import company_sync_fill
+
+    from app import config
+
+    _raw_set(db, linked["meta"], contract_done="유료계약완료")
+    url = str(db.get_bind().url)
+    monkeypatch.setattr(config, "DATABASE_URL", url)
+    assert company_sync_fill.main([]) == 0
+    assert "미리보기" in capsys.readouterr().out
+    assert _fresh(db, stage["ir"])[0].contract_status == "no"
