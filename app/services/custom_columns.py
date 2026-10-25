@@ -2,7 +2,7 @@
 
 관리자가 관리자 메뉴 `컬럼 관리`(`routers/custom_columns.py`)에서 칸을 붙이고
 (이름 · 형식 메모/OX), 이름을 바꾸고, 순서를 옮기고, 자리(어느 기존 칸 뒤 —
-`anchors` · `place`)를 고르고, 숨긴다. **지우는 길은 없다.**
+`anchors` · `place`)를 고르고, 숨기거나 지운다(`delete` — 값도 함께 사라진다).
 팀원은 표에서 값만 적는다 — 칸을 눌러 적는 길은 그 표의 다른 칸과 같고
 (`inline_edit.js` · `consulting.js` 의 `data-custom`), 고칠 수 있는 줄도 그 표의
 판정 그대로다(`routers/custom_columns._row`).
@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional
 
-from sqlalchemy import select
+from sqlalchemy import delete as sql_delete, func, select
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -193,6 +193,16 @@ def values(db: Session, row_table: str, cols) -> Dict[int, Dict[int, str]]:
     return out
 
 
+def value_counts(db: Session, cols) -> Dict[int, int]:
+    """`{칸 번호: 값이 든 줄 수}` — [칸 삭제] 확인창이 함께 지워질 줄 수로 보인다."""
+    ids = [c.id for c in cols]
+    if not ids:
+        return {}
+    return dict(db.execute(select(CustomColumnValue.column_id, func.count())
+                           .where(CustomColumnValue.column_id.in_(ids))
+                           .group_by(CustomColumnValue.column_id)).all())
+
+
 def view(db: Session, target: str, row_table: str) -> dict:
     """화면 컨텍스트 — 밑틀 조각(`_custom_cols.html`)이 이 이름들을 읽는다."""
     cols = columns(db, target)
@@ -228,7 +238,7 @@ def arranger(headers: List[str], v: dict):
     return lambda line: [line[k] for k in order]
 
 
-# ── 관리자: 붙이기 · 이름 · 순서 · 숨김 ───────────────────────────────────
+# ── 관리자: 붙이기 · 이름 · 순서 · 숨김 · 삭제 ────────────────────────────
 
 def _clean_name(name: str) -> str:
     text = " ".join((name or "").split())
@@ -295,6 +305,19 @@ def place(col: CustomColumn, after: str) -> None:
 
 def set_hidden(col: CustomColumn, hidden: bool) -> None:
     col.is_hidden = 1 if hidden else 0
+
+
+def delete(db: Session, col: CustomColumn) -> int:
+    """칸과 그 칸에 적힌 값을 지우고 지운 값 수를 돌려준다 — 숨기기와 달리 되돌릴 수 없다.
+
+    값 줄은 수정 로그가 안 보는 표라(`edit_log.UNWATCHED`) 지운 수를 칸의 `삭제`
+    줄에 얹는다. 값을 먼저 지운다 — 값이 칸을 외래키로 가리킨다.
+    """
+    gone = db.execute(sql_delete(CustomColumnValue).where(
+        CustomColumnValue.column_id == col.id)).rowcount
+    edit_log.also("custom_columns", "deleted_values", gone)
+    db.delete(col)
+    return gone
 
 
 # ── 팀원: 값 적기 ─────────────────────────────────────────────────────────
