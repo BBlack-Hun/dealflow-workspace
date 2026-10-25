@@ -141,7 +141,8 @@
   것을 모르면 "왜 그 칸이 없지" 를 DB 에서 찾게 된다(아래 `숨긴 칸` 주석이
   경계하는 그것이다).
 #}
-<details class="sheet-fold">
+{# 투자사 화면은 펴 둔 채로 연다(`ListPage.settings_open` — 10/25 사용자 요청). #}
+<details class="sheet-fold"{% if page.settings_open %} open{% endif %}>
   <summary>⚙ 명단·칸 설정{% if month_columns %} · 달 칸 {{ month_columns|length }}개{% endif %}{% if hidden_months %} · 🙈 숨긴 칸 {{ hidden_months|length }}개{% endif %}</summary>
   <div class="sheet-fold-body">
 {# 참고 탭은 이름을 바꿀 수 있는데 명단 탭은 못 바꿨다. 원본 시트에서 이름을
