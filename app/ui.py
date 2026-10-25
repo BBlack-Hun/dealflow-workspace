@@ -46,6 +46,11 @@ MENU = [
     {"key": "startup", "label": "스타트업", "href": "/startup", "ready": True},
 
     {"key": "su", "label": "IR 기업 현황", "href": "/companies", "ready": True},
+    # 스타트업 · 투자컨설턴트 줄을 IR 기업 현황의 기업에 잇는 화면(`/ir-link`).
+    # 주소를 쳐야만 닿던 자리라 바로 위 IR 기업 현황 밑에 붙인다. 볼 사람은
+    # 라우터와 같다 — 로그인한 누구나, 투자컨설턴트(역할)만 빼고(`can_see` 가
+    # `deps.CONSULTANT_PATHS` 로 거른다). 그래서 `admin_only` · `needs` 가 없다.
+    {"key": "irlink", "label": "IR 기업 연결", "href": "/ir-link", "ready": True},
 
     # 딜소개를 **보내는** 명단(투자사 관리 현황)과 다르다 — 여기는 우리 딜을
     # 같이 볼 사람이라 무엇을 찾는지로 갈래가 나뉜다.

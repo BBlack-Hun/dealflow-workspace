@@ -60,9 +60,8 @@ from .contacts import _owned as owned_contact
 router = APIRouter(tags=["ir-link"])
 
 HREF = "/ir-link"
-#: 좌측 메뉴에서 불이 들어올 자리. 이 화면은 메뉴에 따로 서지 않는다 —
-#: IR 기업 현황의 기업에 잇는 일이라 그 메뉴 아래에 있는 것으로 읽힌다.
-ACTIVE = "su"
+#: 좌측 메뉴에서 불이 들어올 자리 — 이 화면의 메뉴(`ui.MENU`, IR 기업 현황 바로 밑).
+ACTIVE = "irlink"
 TITLE = "IR 기업 연결"
 
 TAB_LABELS = {ir_link.STARTUP: "스타트업 명단", ir_link.CONSULTING: "투자컨설턴트"}
