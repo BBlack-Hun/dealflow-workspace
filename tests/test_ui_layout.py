@@ -701,3 +701,15 @@ def test_툴바_검색칸을_id_로_하나씩_적지_않는다():
     assert not named, (
         "툴바 검색칸을 id 로 꾸미고 있습니다 — 화면이 늘면 반드시 하나 빠집니다. "
         "`.toolbar input[type=\"search\"]` 처럼 자리로 거세요: " + ", ".join(named))
+
+
+def test_툴바는_단추를_누르지_않고_줄을_바꾼다():
+    """단추가 많은 툴바(딜 소싱)가 좁은 화면에서 단추를 눌러 글자가 2~3줄로 접히고,
+    높이가 `--ctl-h` 로 묶여 있어 위아래가 잘렸다. 줄을 바꾸고, 단추 글자는 한 줄이다."""
+    css = CSS.read_text(encoding="utf-8")
+    for selector in (".toolbar", ".toolbar-right"):
+        assert "flex-wrap: wrap" in _rule(css, selector), f"{selector} 가 줄을 안 바꿉니다"
+    controls = _rule(css, ".toolbar a, .toolbar button, .toolbar label")
+    assert "white-space: nowrap" in controls and "flex-shrink: 0" in controls, (
+        "툴바 단추가 눌리면 글자가 접히고 고정 높이에 잘립니다")
+    assert "flex-shrink: 0" in _rule(css, ".toolbar .hint"), "안내문이 좁은 기둥으로 접힙니다"

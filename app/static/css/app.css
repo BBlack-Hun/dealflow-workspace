@@ -264,7 +264,7 @@ td.mail-primary:has(.cell-input)::before { display: none; }
 .counter.sending .c-num { color: var(--amber); }
 .counter.ok .c-num { color: var(--green); }
 .counter.fail .c-num { color: var(--red); }
-.progress-actions { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+.progress-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 16px; }
 /* 배지는 한 덩어리다 — inline 인 채로 두면 좁은 칸에서 글자 사이가 끊겨
    알약 모양이 두 줄로 잘린다. */
 .status-badge { display: inline-block; white-space: nowrap;
@@ -335,9 +335,11 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
    그래서 **높이를 값 하나(`--ctl-h`)로 정하고** 툴바 안의 조작 요소를 전부
    거기에 맞춘다. 화면·탭마다 규칙을 흩어 두면 탭이 하나 늘 때 또 어긋난다.
    (`.rule-form` 이 같은 방식으로 34px 을 쓴다 — 값을 맞춰 두었다) */
+/* 단추가 많으면 **줄을 바꾼다** — 안 바꾸면 단추가 눌려 글자가 2~3줄로 접히고,
+   높이가 `--ctl-h` 로 묶여 있어 위아래가 잘렸다(딜 소싱 툴바). */
 .toolbar { --ctl-h: 34px;
-  display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 12px 0 8px; }
-.toolbar-right { display: flex; align-items: center; gap: 8px; }
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin: 12px 0 8px; }
+.toolbar-right { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 /* 줄 안의 묶음도 같은 간격으로 — 왼쪽 칩 묶음만 6px 이라 눈에 걸렸다. */
 .toolbar .quick-chips { gap: 8px; }
 
@@ -347,7 +349,9 @@ pre.code { background: var(--code-bg, #f1f3f5); border: 1px solid var(--line, #e
 .toolbar a, .toolbar button, .toolbar label {
   height: var(--ctl-h); box-sizing: border-box;
   display: inline-flex; align-items: center; justify-content: center;
-  font-size: 13px; line-height: 1.2; }
+  font-size: 13px; line-height: 1.2; white-space: nowrap; flex-shrink: 0; }
+/* 안내문은 좁은 기둥으로 접히지 않는다 — 한 줄에 안 들어가면 제 줄로 내려가 그 폭에서 접힌다. */
+.toolbar .hint { flex-shrink: 0; max-width: 100%; }
 /* 칩은 `<a>` 로도 `<button>` 으로도 `<span>` 으로도 쓴다 — 주간 업무의 이번 주
    칸(`{{ week_label }}`)만 span 이라 혼자 12px 로 남았다. 글자 크기는 태그와
    상관없이 같아야 한다. */
@@ -2359,7 +2363,6 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
   }
   .kpi-card, .react { width: auto; }
   .toolbar { flex-direction: column; align-items: stretch; gap: 8px; }
-  .toolbar-right { flex-wrap: wrap; }
   .page-head h1, .page-title { font-size: 19px; }
 
   /* 표는 좁히면 못 읽는다 — 폭을 지키고 가로로 민다.
