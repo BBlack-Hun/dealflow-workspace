@@ -277,6 +277,9 @@ def contact_rows(db: Session, user: User, team_wide: bool = False,
             # (`static/js/contacts.js` 의 `syncFirmFunds`).
             "firm_key": investor_firms.firm_key(c.firm),
             "owned_funds": funds.get(investor_firms.firm_key(c.firm), ""),
+            # `소유 펀드` 필터가 세는 펀드 이름들 — 템플릿이 `|` 로 이어 행에 싣는다.
+            "owned_fund_list": investor_firms.split_funds(
+                funds.get(investor_firms.firm_key(c.firm))),
             # 시트에 있는데 그동안 화면·엑셀 어디에도 안 나오던 값들.
             "office_phone": c.office_phone or "",
             "office_fax": c.office_fax or "",
@@ -1336,6 +1339,8 @@ def update_contact(
         # 같은 회사의 다른 줄을 화면이 그 자리에서 고쳐 그리게 열쇠와 값을 싣는다.
         out["firm_key"] = investor_firms.firm_key(contact.firm)
         out["owned_funds"] = investor_firms.funds_of(db, contact.firm)
+        # 같은 회사 줄들의 필터 값(`data-f-fund`)도 서버가 나눈 그대로 다시 적는다.
+        out["owned_fund_list"] = investor_firms.split_funds(out["owned_funds"])
     if note:
         out["connect_note"] = note
     if sourcing.get("message"):
