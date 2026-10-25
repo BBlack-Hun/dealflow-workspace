@@ -29,9 +29,8 @@
 월간 계약 탭은 계약 칸(`CONTRACT_TAB`)만 잇는다 — 그 탭의 `region` 은 달 묶음 이름이다.
 진행 기록(기업 관리 · 컨설팅 미팅일)은 잇지 않고 IR 화면에서 읽기만 한다(결정 3).
 
-계약여부는 **화면마다 값 꼴이 다르다** — IR 은 열쇠(`paid`), 메타 · 계약 탭은 보기 둘
-(`무료계약완료` · `유료계약완료` — 결정 4 · 계약 탭은 옛 값 `무료` · `유료` 도 읽는다),
-스타트업은 보기 넷.
+계약여부는 **화면마다 값 꼴이 다르다** — IR 은 열쇠(`paid`), 메타는 보기 둘
+(`무료계약완료` · `유료계약완료` — 결정 4), 계약 탭은 `무료` · `유료`, 스타트업은 보기 넷.
 읽을 때는 `contract_key` 로 열쇠로 맞추고(`norm`), 적을 때는 그 자리의 말로 바꾼다
 (`_out` — 못 적는 상태면 안 적는다). 투자컨설턴트 칸에서는 무료 · 유료만 IR 로 간다.
 IR 의 `미계약`(기본값)은 빈칸으로 본다.
@@ -92,7 +91,7 @@ FIELDS = {
     "meeting_offered_at": (None, "note:ir_meeting_offered_at"),
     "success_fee": (None, "note:success_fee"),
 }
-#: 월간 계약 탭이 받는 칸 — 그 탭은 표가 달라 계약여부가 `management`(메타와 같은 보기 둘)다.
+#: 월간 계약 탭이 받는 칸 — 그 탭은 표가 달라 계약여부가 `management`(`무료`/`유료`)다.
 CONTRACT_TAB = {"contract_status": "management", "contract_received": "contract_received",
                 "success_fee": "success_fee"}
 #: 화면 이름 — 10/22 통일한 IR 기업 현황 낱말.
@@ -113,7 +112,7 @@ NONE, BLOCKED = "none", "blocked"
 #: 투자컨설턴트가 IR 로 올릴 수 있는 계약 값 — 무료 · 유료계약완료 둘(결정 4). 그 밖의
 #: 상태(검토중 · 미팅제공 · 딜소개 불가)는 투자컨설턴트 칸에서 IR 로 가지 않는다.
 CONSULTANT_KEYS = ("free", "paid")
-#: 월간 계약 탭 `계약여부` 의 옛 두 마디 — 읽기만 한다(적을 때는 보기 말, `_out`).
+#: 월간 계약 탭 `계약여부` 의 두 마디 — `contract_key` 가 모르는 말이라 여기서만 잇는다.
 TAB_WORDS = {"무료": "free", "유료": "paid"}
 #: 스타트업 `계약여부` 에 적을 수 있는 상태 — 보기 넷(`contact_columns` 의 그 칸) +
 #: 옛 값 `딜소개 불가`(사람이 `값 다름` 에서 고를 때만 적힌다).
@@ -197,15 +196,14 @@ def _out(field: str, where: str, value: str) -> Optional[str]:
     """IR 값 `value` 를 이 자리에 적을 글 — 그 자리가 못 받는 상태면 None.
 
     계약여부만 자리마다 말이 다르다. 메타 칸은 보기 둘뿐이라 다른 상태는 빈칸
-    (`아직 완료 아님` — 설계 4-4), 계약 탭은 같은 보기 둘만(다른 상태는 안 적는다),
-    스타트업은 보기 넷.
+    (`아직 완료 아님` — 설계 4-4), 계약 탭은 `무료` / `유료` 만, 스타트업은 보기 넷.
     """
     if field != CONTRACT or where == CONTRACT:
         return value
     from ..routers.companies import CONTRACT_LABELS
 
     if where == "management":
-        return CONTRACT_LABELS[value] if value in CONSULTANT_KEYS else None
+        return {v: k for k, v in TAB_WORDS.items()}.get(value)
     if where == "contract_done":
         return CONTRACT_LABELS[value] if value in CONSULTANT_KEYS else ""
     return CONTRACT_LABELS[value] if value in STARTUP_KEYS else None

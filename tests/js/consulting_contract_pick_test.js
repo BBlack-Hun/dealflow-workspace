@@ -15,7 +15,7 @@ const vm = require("vm");
 const D = require("./_dom.js");
 const SRC = path.join(__dirname, "..", "..", "app", "static", "js", "consulting.js");
 const src = fs.readFileSync(SRC, "utf8");
-const CHOICES = "무료계약완료,유료계약완료";
+const CHOICES = "무료,유료";
 
 function row(id, value) {
   const cell = D.el("td", {
@@ -29,7 +29,7 @@ function row(id, value) {
   }, [cell]);
 }
 
-const rows = [row(1, ""), row(2, "무료")];
+const rows = [row(1, ""), row(2, "유료 90만")];
 const root = D.el("div", {}, [
   D.el("span", { class: "kpi-value", "data-kpi": "total" }),
   D.el("button", { "data-cs-filter": "" }),
@@ -95,37 +95,37 @@ async function choose(tr, label) {
 
 (async function () {
   // 1. 보기 둘 + 비움
-  assert.deepStrictEqual(labels(open(rows[0]).chips), ["무료계약완료", "유료계약완료", "비움"]);
+  assert.deepStrictEqual(labels(open(rows[0]).chips), ["무료", "유료", "비움"]);
 
   // 2. 옛 값은 맨 앞에 켜져 선다 — 보기 중 어느 것도 켜지지 않는다.
   const old = open(rows[1]).chips;
-  assert.deepStrictEqual(labels(old), ["옛 값: 무료", "무료계약완료", "유료계약완료", "비움"]);
+  assert.deepStrictEqual(labels(old), ["옛 값: 유료 90만", "무료", "유료", "비움"]);
   assert.deepStrictEqual(labels(old.filter(function (c) { return c.classList.contains("on"); })),
-    ["옛 값: 무료"], "옛 값에 표시가 없습니다");
+    ["옛 값: 유료 90만"], "옛 값에 표시가 없습니다");
   sent.length = 0;
-  const kept = await choose(rows[1], "옛 값: 무료");
+  const kept = await choose(rows[1], "옛 값: 유료 90만");
   assert.deepStrictEqual(sent, [], "옛 값을 눌렀는데 저장이 나갔습니다");
-  assert.strictEqual(kept.cell.textContent, "무료", "옛 값이 칸에서 사라졌습니다");
+  assert.strictEqual(kept.cell.textContent, "유료 90만", "옛 값이 칸에서 사라졌습니다");
 
   // 3. 보기를 고르면 `management` 로 나간다.
   sent.length = 0;
-  await choose(rows[0], "유료계약완료");
+  await choose(rows[0], "유료");
   assert.deepStrictEqual(sent, [{
-    url: "/api/consulting/1", method: "PATCH", body: { management: "유료계약완료" }
+    url: "/api/consulting/1", method: "PATCH", body: { management: "유료" }
   }]);
-  assert.strictEqual(rows[0].getAttribute("data-f-mgmt"), "유료계약완료");
+  assert.strictEqual(rows[0].getAttribute("data-f-mgmt"), "유료");
 
   // 4. 서버가 막으면 까닭을 띄우고 옛 값으로 되돌린다.
-  reply = { ok: false, body: { detail: "계약여부는 무료계약완료 · 유료계약완료 중에서 고르거나 비워 두세요" } };
+  reply = { ok: false, body: { detail: "계약여부는 무료 · 유료 중에서 고르거나 비워 두세요" } };
   const ui = open(rows[1]);
   const inputs = ui.cell.children.filter(function (c) { return c.tag === "input"; });
   const input = inputs[inputs.length - 1];
-  input.value = "유료 (구두)";
+  input.value = "무료 (구두)";
   input.fire("blur", { target: input });
   await settle();
   await settle();
   assert.deepStrictEqual(alerts, [reply.body.detail], "서버가 막은 까닭이 안 보입니다");
-  assert.strictEqual(ui.cell.textContent, "무료", "막혔는데 칸이 옛 값으로 안 돌아왔습니다");
+  assert.strictEqual(ui.cell.textContent, "유료 90만", "막혔는데 칸이 옛 값으로 안 돌아왔습니다");
 
   console.log("consulting_contract_pick_test OK");
 })().catch(function (e) { console.error(e); process.exit(1); });

@@ -523,7 +523,7 @@ def test_메타_계약여부를_고치면_IR_계약탭_스타트업이_자리마
     ir, con, su, hand = _fresh(db, stage["ir"], linked["contract"], linked["startup"],
                                linked["handover"])
     assert ir.contract_status == "paid"
-    assert con.management == "유료계약완료"               # 월간 계약 탭도 메타와 같은 보기
+    assert con.management == "유료"                       # 월간 계약 탭은 `무료`/`유료`
     assert _notes(su)["contract"] == "유료계약완료"
     # 경영본부 탭에는 계약 칸이 없다 — 그 탭의 `management` 는 `기업 관리` 글이다.
     assert hand.management is None and hand.contract_received is None
@@ -532,7 +532,7 @@ def test_메타_계약여부를_고치면_IR_계약탭_스타트업이_자리마
 
 def test_계약탭에서_고친_계약_계약서_보수율도_따라간다(logged_in, db, stage, linked):
     r = logged_in.patch(f"/api/consulting/{linked['contract'].id}",
-                        json={"management": "무료계약완료", "contract_received": "O",
+                        json={"management": "무료", "contract_received": "O",
                               "success_fee": "3%"})
     assert r.status_code == 200, r.text
     ir, meta, su = _fresh(db, stage["ir"], linked["meta"], linked["startup"])
@@ -555,7 +555,7 @@ def test_IR을_고치면_스타트업은_보기대로_메타는_보기_밖이면
     # 메타 칸은 무료 · 유료계약완료 둘뿐 — 다른 상태는 `아직 완료 아님`(빈칸, 설계 4-4).
     assert meta.contract_done == ""
     # 월간 계약 탭은 계약 기록이라 못 적는 상태면 그대로 두고 `값 다름` 에 세운다.
-    assert con.management == "무료계약완료"
+    assert con.management == "무료"
     from app.services import company_sync
 
     assert [d["field"] for d in company_sync.differences(db, [con])[con.id]] == \
@@ -573,7 +573,7 @@ def test_투자컨설턴트_칸의_다른_계약_상태는_IR로_안_간다(logg
     """결정 4 — 투자컨설턴트가 IR 계약을 바꿀 수 있는 값은 무료 · 유료계약완료뿐."""
     for body in ({"contract_done": "계약검토중"}, {"contract_done": "딜소개 불가"}):
         logged_in.patch(f"/api/consulting/{linked['meta'].id}", json=body)
-    # 계약 탭은 보기 밖 새 글자를 아예 안 받는다(400).
+    # 계약 탭은 보기(무료 · 유료) 밖 새 글자를 아예 안 받는다(400).
     r = logged_in.patch(f"/api/consulting/{linked['contract'].id}", json={"management": "딜소개불가"})
     assert r.status_code == 400, r.text
     ir, su = _fresh(db, stage["ir"], linked["startup"])
@@ -701,7 +701,7 @@ def test_채우기_스크립트는_빈칸만_채우고_딜소개_불가는_남�
     ir, meta, con, su, other = _fresh(db, stage["ir"], linked["meta"], linked["contract"],
                                       linked["startup"], other)
     assert (ir.contract_status, ir.contract_received, ir.success_fee) == ("free", "O", "2.5%")
-    assert con.management == "무료계약완료" and con.contract_received == "O"
+    assert con.management == "무료" and con.contract_received == "O"
     assert (_notes(su)["contract"], _notes(su)["invoice_received"]) == ("무료계약완료", "O")
     assert meta.contract_received == "8/24 계약서 수신함"
     # 유료 IR 과 `딜소개 불가` 줄 — 덮지 않고 남긴다(값 다름 · 딜소개 불가 딱지).
