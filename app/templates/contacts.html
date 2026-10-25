@@ -814,9 +814,12 @@
            (정규화한 회사명)의 모든 사람 줄에 같은 값이 선다(`contacts.js` 의
            `syncFirmFunds`). 원본 시트에 없는 앱 칸이지만 `라운드 사이즈` 바로
            오른쪽에 둔다(사용자 결정 2026-10-17) — 둘 다 그 투자사가 굴리는 돈의
-           이야기라 나란히 읽힌다. 필터는 안 단다(펀드 이름은 회사마다 달라 고를
-           거리가 못 된다). 폭 160px 만큼 `#contacts-table` min-width 도 올렸다. #}
-        <th style="width:160px">소유 펀드</th>
+           이야기라 나란히 읽힌다. 폭 160px 만큼 `#contacts-table` min-width 도 올렸다.
+           **필터를 단다**(요청 2026-10-25) — 펀드 이름마다 줄 수가 뜨고, 펀드가 여럿인
+           회사의 줄은 그 펀드마다 센다. 나누는 규칙은 서버 한 곳
+           (`investor_firms.split_funds`)이고, 값이 열 개를 넘으면 창 안에 값 검색이 선다.
+           소유 펀드가 없는 줄은 `(비어 있음)` 으로 고른다. #}
+        <th style="width:160px" data-filters="fund:소유 펀드">소유 펀드<div class="th-filters"></div></th>
         {# 컬럼 이름은 **원본 시트 그대로** 쓴다 — 시트와 나란히 놓고 대조한다.
            이 표에서 가장 긴 이름(40자)이라 폭을 여기서만은 **데이터가 아니라
            이름에 맞춘다.** 값은 306줄 중 3줄뿐이고 전부 `O` 라 데이터만 보면
@@ -926,6 +929,7 @@
           data-f-round="{{ r.round_size }}"
           data-firm-key="{{ r.firm_key }}"
           data-f-sector="{{ r.sectors|join('|') }}"
+          data-f-fund="{{ r.owned_fund_list|join('|') }}"
           data-f-dealstage="{{ r.deal_stage_label }}">
         {% if pool_view %}
         <td class="stick stick-lead"><input type="checkbox" class="pool-cb" value="{{ r.id }}"></td>
@@ -987,10 +991,11 @@
           <div class="cell clamp2" data-field="round_size" data-type="long"
                data-filter-key="round">{{ r.round_size }}</div>
         </td>
-        {# `소유 펀드` — 회사 단위(머리글 주석). 저장 뒤 같은 회사의 줄이 그 자리에서
-           따라 바뀐다(`contacts.js` 의 `syncFirmFunds`). #}
+        {# `소유 펀드` — 회사 단위(머리글 주석). 저장 뒤 같은 회사의 줄이 칸도 필터 값도
+           그 자리에서 따라 바뀐다(`contacts.js` 의 `syncFirmFunds`). #}
         <td title="{{ r.owned_funds }}">
-          <div class="cell clamp2" data-field="owned_funds" data-type="long">{{ r.owned_funds }}</div>
+          <div class="cell clamp2" data-field="owned_funds" data-type="long"
+               data-filter-key="fund" data-filter-sep=",">{{ r.owned_funds }}</div>
         </td>
         <td title="{{ r.tips_note }}">
           <div class="cell clamp2" data-field="tips_note" data-type="long">{{ r.tips_note }}</div>
