@@ -250,7 +250,9 @@ CONTRACT_COLUMNS = [
     # 않는다(`split_contract_line` 참고).
     ("계약월", "meeting_at"),
     ("기업명", "company_name"),
-    ("계약여부", "management"),   # 무료 / 유료
+    # 보기 둘 + 빈칸 — 메타 탭과 같은 `CONTRACT_DONE_CHOICES`(10/22 결정). 옛 값
+    # (`무료` · 자유 글)은 지우지 않고 그대로 보인다(`_check_contract_pick`).
+    ("계약여부", "management"),
     # 계약을 맺은 것과 **계약서를 받은 것**은 다른 사실이다. 앞 칸에 섞어 두면
     # 계약은 했는데 서류가 아직 안 온 곳을 가려낼 수가 없다.
     # 빈칸은 `아직 안 정함` 이다(`models.ConsultingCompany.contract_received`).
@@ -1275,6 +1277,22 @@ def _assign(company: ConsultingCompany, body: CompanyIn) -> None:
         company.field_stamps = json.dumps(stamps, ensure_ascii=False)
 
 
+def _check_contract_pick(db: Session, company: ConsultingCompany, body: CompanyIn) -> None:
+    """계약 탭 `계약여부`(`management`)는 보기(`CONTRACT_DONE_CHOICES`)나 빈칸만 받는다.
+
+    그 줄에 이미 적힌 옛 값(`무료` · 자유 글)은 그대로 다시 와도 받는다 — 지우지 않고
+    사람이 다시 고르게 둔다. 시트 올리기(`apply_rows`)는 여기를 안 지난다(적힌 그대로).
+    다른 탭의 `management` 는 `기업 관리` 자유 글이라 막지 않는다.
+    """
+    value = (body.management or "").strip()
+    if (not value or value in CONTRACT_DONE_CHOICES
+            or value == (company.management or "").strip()
+            or not is_contract(db, body.sheet or company.sheet or "")):
+        return
+    raise HTTPException(status_code=400, detail="계약여부는 "
+                        + " · ".join(CONTRACT_DONE_CHOICES) + " 중에서 고르거나 비워 두세요")
+
+
 @router.get("/api/consulting/{company_id}")
 def get_company(company_id: int, db: Session = Depends(get_db),
                 user: User = Depends(get_current_user)):
@@ -1316,6 +1334,7 @@ def create_company(body: CompanyIn, db: Session = Depends(get_db),
         ).scalar()
         body.position = (last or 0) + 1
     company = ConsultingCompany(user_id=user.id)
+    _check_contract_pick(db, company, body)
     _assign(company, body)
     db.add(company)
     db.commit()
@@ -1328,6 +1347,7 @@ def update_company(company_id: int, body: CompanyIn,
                    user: User = Depends(get_current_user)):
     require_access(user)
     company = owned(db, ConsultingCompany, company_id, user, "기업")
+    _check_contract_pick(db, company, body)
     _assign(company, body)
     db.commit()
     # **고친 시각을 응답에 싣는다.** 표의 잔글씨가 이것으로 그 자리에서
