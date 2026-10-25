@@ -55,13 +55,15 @@ from ..services import company_sync, contact_columns, ir_link, sheet_owner
 from ..ui import base_ctx
 from . import consulting as consulting_router
 from .companies import CONTRACT_LABELS, contract_key
+from .companies import tab_counts as company_tab_counts
 from .contacts import _owned as owned_contact
 
 router = APIRouter(tags=["ir-link"])
 
 HREF = "/ir-link"
-#: 좌측 메뉴에서 불이 들어올 자리 — 이 화면의 메뉴(`ui.MENU`, IR 기업 현황 바로 밑).
-ACTIVE = "irlink"
+#: 좌측 메뉴에서 불이 들어올 자리. 이 화면은 메뉴에 따로 서지 않는다 —
+#: IR 기업 현황의 탭 하나다(`_company_tabs.html`). 스타트업 툴바에서도 닿는다.
+ACTIVE = "su"
 TITLE = "IR 기업 연결"
 
 TAB_LABELS = {ir_link.STARTUP: "스타트업 명단", ir_link.CONSULTING: "투자컨설턴트"}
@@ -315,6 +317,9 @@ def ir_link_page(request: Request, db: Session = Depends(get_db),
         "msg": msg,
         "back": _back(kind, show),
         "home_href": "/startup" if kind == ir_link.STARTUP else "/consulting",
+        # 위의 IR 기업 현황 탭 줄(`_company_tabs.html`) — 이 화면이 그 넷째 탭이다.
+        "co_tab": "ir-link",
+        "counts": company_tab_counts(db),
     })
     return templates.TemplateResponse("ir_link.html", ctx)
 

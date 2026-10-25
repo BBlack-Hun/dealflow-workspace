@@ -503,7 +503,7 @@
     {% endif %}
     {# 명단 줄을 IR 기업 현황의 기업에 잇는 자리(`ListPage.ir_link_href`).
        저절로 잇지 않는다 — 그 화면에서 후보를 보고 사람이 고른다. #}
-    {% if page.ir_link_href %}
+    {% if page.ir_link_href and can_ir_link %}
     <a class="secondary-btn" id="ir-link-link" href="{{ page.ir_link_href }}">IR 기업 연결</a>
     {% endif %}
     {% if page.msg_href %}
