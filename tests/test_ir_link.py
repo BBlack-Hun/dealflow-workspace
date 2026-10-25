@@ -590,6 +590,28 @@ def test_투자컨설턴트_탭은_볼_수_있는_사람에게만(db, stage, por
     assert f'id="row-{stage["rows"]["other"].id}"' in html
 
 
+def test_좌측_메뉴에_서고_이_화면에서_불이_들어온다(db, stage, portal):
+    """주소를 쳐야만 닿던 자리 — 메뉴는 라우터와 같은 사람에게만 선다."""
+    from app import ui
+
+    item = next(m for m in ui.MENU if m["href"] == "/ir-link")
+    assert item["label"] == "IR 기업 연결"
+    # IR 기업 현황 바로 밑이다.
+    hrefs = [m["href"] for m in ui.MENU]
+    assert hrefs.index("/ir-link") == hrefs.index("/companies") + 1
+
+    link = re.compile(r'class="menu-item\s*(active)?"\s+href="/ir-link"')
+    for who in ("u1", "u2", "admin"):
+        m = link.search(portal[who].get("/deals").text)
+        assert m and not m.group(1), who
+    # 이 화면에서는 이 메뉴에 불이 들어오고, IR 기업 현황에는 안 들어온다.
+    html = portal["u1"].get("/ir-link").text
+    assert link.search(html).group(1) == "active"
+    assert not re.search(r'class="menu-item\s*active"\s+href="/companies"', html)
+    # 투자컨설턴트(역할)는 라우터가 막으므로 메뉴에도 없다.
+    assert 'href="/ir-link"' not in portal["consultant"].get("/consulting").text
+
+
 def test_수정창이_연결_표시를_받는다(db, stage, portal):
     row, ra = stage["rows"]["exact"], stage["ir"]["ra"]
     got = portal["u1"].get(f"/api/contacts/{row.id}").json()["ir_link"]
