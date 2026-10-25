@@ -3,7 +3,8 @@
 10/16 · 10/18 사용자 결정:
 
   · 형식은 **메모(글)** · **O/X** 둘. 팀원은 표에서 값만 적는다.
-  · 칸 추가 · 이름 변경 · 숨김은 관리자 메뉴 `컬럼 관리` 에서만. 삭제는 없다(숨김).
+  · 칸 추가 · 이름 변경 · 숨김 · 삭제는 관리자 메뉴 `컬럼 관리` 에서만. 삭제는 값까지
+    지운다(10/25 — 값을 남기려면 숨김).
   · IR 기업 현황은 탭 셋(기업현황 · 스타트업DB · Series A)이 **같은 칸**을 쓴다.
   · 투자컨설턴트의 [월 열 추가](달 칸)는 그대로 두고, 새 칸은 일반 칸으로만 붙인다.
   · 딜 소싱 · 스타트업 · 매출예상리스트에도 같은 기능.
@@ -137,7 +138,8 @@ def test_팀원은_칸을_못_붙이고_못_고친다(portal, db):
     for url, data in (("/columns", {"target": "companies", "name": "몰래", "kind": "memo"}),
                       (f"/columns/{col.id}/rename", {"name": "바꿈"}),
                       (f"/columns/{col.id}/move", {"step": 1}),
-                      (f"/columns/{col.id}/hidden", {"hidden": 1})):
+                      (f"/columns/{col.id}/hidden", {"hidden": 1}),
+                      (f"/columns/{col.id}/delete", {})):
         assert member.post(url, data=data, follow_redirects=False).status_code == 403, url
     # 화면은 안내창으로 답한다(주소창이 여는 GET — `deps.admin_block_response`).
     page = member.get("/columns")
@@ -149,11 +151,57 @@ def test_팀원은_칸을_못_붙이고_못_고친다(portal, db):
     assert 'href="/columns"' not in member.get("/").text
 
 
-def test_삭제하는_길은_없다(portal):
-    from app.main import create_app
+def test_관리자가_칸을_지우면_그_칸의_값도_함께_지워진다(portal, db, company):
+    import json
+    import re
 
-    paths = {getattr(r, "path", "") for r in create_app().routes}
-    assert not any("delete" in p for p in paths if p.startswith("/columns"))
+    from app.models import CustomColumn, EditLog, SeriesACompany
+
+    deal = SeriesACompany(name="샘플딜", received_at="2026-10-01")
+    db.add(deal)
+    db.commit()
+    _add(portal, "companies", "검토 메모")
+    _add(portal, "companies", "남길 칸")
+    gone, keep = _col(db, "companies", "검토 메모"), _col(db, "companies", "남길 칸")
+    member, admin = portal["u1"], portal["admin"]
+    _put(member, "ir_companies", company.id, gone.id, "지워질 메모")
+    _put(member, "series_a_companies", deal.id, gone.id, "지워질 메모 둘")
+    _put(member, "ir_companies", company.id, keep.id, "남는 메모")
+
+    # 확인창이 함께 지워질 줄 수를 말한다 — 두 표(IR · Series A)의 값을 다 센다.
+    page = admin.get("/columns?target=companies").text
+    asks = [json.loads(m) for m in re.findall(r"return confirm\((\".*?\")\)'", page)]
+    assert asks == ["'검토 메모' 칸을 지울까요?\n값이 든 줄 2개가 함께 지워집니다. "
+                    "되돌릴 수 없습니다 — 값을 남기려면 [숨기기]를 쓰세요.",
+                    "'남길 칸' 칸을 지울까요?\n값이 든 줄 1개가 함께 지워집니다. "
+                    "되돌릴 수 없습니다 — 값을 남기려면 [숨기기]를 쓰세요."]
+
+    gone_id, keep_id, company_id = gone.id, keep.id, company.id
+    r = admin.post(f"/columns/{gone_id}/delete", follow_redirects=False)
+    assert r.status_code == 303 and "msg=" in r.headers["location"]
+    db.expire_all()
+    assert db.get(CustomColumn, gone_id) is None
+    assert _values(db) == {(keep_id, "ir_companies", company_id): "남는 메모"}
+    assert "검토 메모" not in member.get("/companies").text
+
+    # 수정 로그 — 공용 표의 `삭제` 한 줄에 지운 값 수가 실린다.
+    last = db.query(EditLog).order_by(EditLog.id.desc()).first()
+    assert (last.table_name, last.action, last.row_label) == (
+        "custom_columns", "delete", "검토 메모")
+    assert {"field": "deleted_values", "before": 2, "after": None} in json.loads(
+        last.changes_json)
+
+
+def test_기존_칸은_지울_수_없다(portal, db):
+    """지우는 단추는 붙인 칸에만 선다 — 기존 칸(자리 목록)은 칸 번호가 없다."""
+    _add(portal, "companies", "검토 메모")
+    col = _col(db, "companies", "검토 메모")
+    page = portal["admin"].get("/columns?target=companies").text
+    assert page.count('/delete"') == 1 and f'/columns/{col.id}/delete"' in page
+    admin = portal["admin"]
+    assert admin.post("/columns/9999/delete", follow_redirects=False).status_code == 404
+    assert admin.post("/columns/기업명/delete", follow_redirects=False).status_code == 422
+    assert _col(db, "companies", "검토 메모").id == col.id
 
 
 def test_같은_화면에_같은_이름은_막는다_숨긴_칸까지(portal, db):
