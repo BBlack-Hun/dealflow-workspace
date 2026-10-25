@@ -108,6 +108,29 @@ IR 기업 344곳 중 한줄소개·요약 문장 안에 자기 이름이 또 적
 (`revenue_over()`). 이것은 **맞추는 일이 아니라 자료를 꺼내는 일**이다: 근거가
 투자라운드(`series`) 칸과 최근매출(`revenue_recent`) 두 곳에 이미 적혀 있고,
 어느 기업을 고를지는 여전히 LLM 이 정한다. **정확한 금액은 그대로 안 나간다.**
+
+메모 가리기가 **못 거르는 것**
+------------------------------
+메모 같은 자유 문장은 `_scrub` 이 `[가림]` 으로 가린다. 그래도 아래는 못
+거른다 — 안 적으면 "자동으로 다 걸러진다" 고 믿게 된다.
+
+  · **조사가 붙은 두 글자 기업명**(`가나는`). 두 글자는 앞뒤가 둘 다 한글이
+    아닐 때만 가린다 — 흔한 낱말과 글자가 겹치기 쉬워 조사까지 받으면 멀쩡한
+    말을 뭉갠다. 세 글자부터는 조사·`대표`·`측` 이 붙어도 가린다(`_ORG_TAILS`).
+  · **다른 낱말에 붙여 쓴 짧은 기업명**(`가나바이오` 처럼 앞뒤에 한글이 붙은
+    꼴). 낱말 한가운데 박힌 같은 글자와 구별할 길이 없다.
+  · **영문·숫자가 섞인 짧은 기업명과 2~3자 투자사명.** 약어(`AI`·`IR`)와 글자가
+    같아지면 분야 칸까지 뭉갠다(`_SHORT_ORG`). 투자사명은 4자 이상만 가린다.
+  · **표지 없이 적힌 카톡 ID.** ID 를 담는 칸이 앱에 없어서 `카톡 ID`·`카카오톡
+    아이디` 표지 바로 뒤(한글 낱말 하나까지 끼어도 된다)에 적힌 것만 알아본다
+    (`_KAKAO_ID`).
+  · **남의 사람 이름.** 그 줄 자신의 이름만 가린다(`_scrub` 위 설명).
+
+거꾸로 **흔한 낱말과 똑같은 짧은 기업명**은 그 낱말이 혼자 쓰인 자리에서도
+가려진다. 테스트 서버 자료로 재 볼 때는 짧은 기업명이 걸린 자리가 셋뿐이었고,
+그 이름들은 자료 어디에도 다른 낱말 속에 나오지 않았다 — 흔한 낱말이라는 표가
+없었다. 그런 이름이 생겨 헛맞음이 늘면 **가리지 않는 쪽**을 고른다(말을 뭉개는
+것보다 낫다) — `_org_pattern` 에서 그 길이를 빼면 된다.
 """
 from __future__ import annotations
 
@@ -123,7 +146,7 @@ from sqlalchemy.orm import Session
 from .. import clock
 from ..models import IrCompany, User
 from . import amount as amount_text
-from . import group_name, sheet_owner
+from . import group_name, pref_notes, sheet_owner
 # 방이 살아 있는지는 **대시보드가 세는 그 판정**을 그대로 쓴다. 여기에 다시
 # 적으면 화면 숫자와 어긋난다 — 투자사 관리 현황 117명 · 대시보드 123명으로
 # 갈렸던 사고가 판정을 두 벌로 적어 둔 탓이었다(`readiness.py` 도 같은 것을
@@ -747,10 +770,19 @@ COMPANY_FIELDS = ("sector_major", "series", "one_liner", "summary") + AMOUNT_FIE
 # 이므로, 그 줄을 가리키는 값만 지우면 번호로 내보내는 뜻이 유지된다.
 #
 # **상호(기업명·투자사명)는 다르다 — 남의 것도 지운다.** 아래 `_org_pattern`
-# 참고. 짧아서 뭉개지는 문제가 상호에는 없고, 지금 이 자료는 기업도 번호로만
-# 내보내므로 남의 메모에 적힌 기업명 하나가 그 규칙을 통째로 무르게 한다.
+# 참고. 지금 이 자료는 기업도 번호로만 내보내므로 남의 메모에 적힌 기업명
+# 하나가 그 규칙을 통째로 무르게 한다. 짧은 기업명은 **제 낱말로 서 있을
+# 때만** 지워서 뭉개짐을 막는다.
+#
+# `address`·`assignee_name` 은 나중에 더했다. 테스트 서버 자료(투자사 338줄)로
+# 재 보니 이 목록으로 가린 뒤에도 **자기 줄의 사무실 주소가 메모에 통째로 1곳,
+# 우리 쪽 담당 팀원 이름이 `○○○님` 꼴로 1곳** 남아 있었다. 기업 쪽 목록
+# (`COMPANY_IDENTIFYING_FIELDS`)은 담당 팀원 이름을 이미 지우고 있었다 — 투자사
+# 쪽만 빠져 있던 것이다. 직함·부서는 넣지 않는다 — 여러 사람이 같이 쓰는 말이라
+# 그 줄을 가리키지 않고, 가리면 `이사님` 같은 말만 뭉개진다.
 INVESTOR_IDENTIFYING_FIELDS = ("kakao_room_name", "firm", "name", "email",
-                               "phone", "office_phone", "office_fax")
+                               "phone", "office_phone", "office_fax",
+                               "address", "assignee_name")
 
 # 기업도 같은 처리를 받는다. 이름 칸을 빼도 **문장 안에 자기 이름이 남는**
 # 줄이 있다(개발 자료 344곳 중 5곳). 칸만 막고 끝내면 번호로 내보내는 뜻이
@@ -770,13 +802,57 @@ MASK = "[가림]"
 _PHONE = re.compile(r"0\d{1,2}[-.\s]?\d{3,4}[-.\s]?\d{4}")
 _EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
 
-#: 남의 상호를 지울 때의 **최소 길이**.
+# 카톡 ID 도 같은 자리다 — **값을 담는 칸이 앱에 없다.** 모델에 있는 카톡 칸은
+# 방 제목(`kakao_room_name`)·들어왔는지(`kakao_joined`)·채널 표시
+# (`channel_kakao`)뿐이라, 위 칸 목록으로는 ID 를 지울 수가 없다. 메모에는
+# `카톡 ID abc123` · `카톡ID 추가 abc123` 꼴로 **표지 뒤에** 적힌다 — 테스트 서버
+# 자료에서 표지가 6곳, 그 뒤에 실제 ID 모양이 2곳 있었다.
+#
+# **표지는 남기고 ID 만 가린다.** "카톡으로 이어진 분" 이라는 사실은 고르는 데
+# 쓰이고, 무엇이 가려졌는지도 읽힌다. ID 에 **영문이 하나는 있어야** 한다 —
+# 숫자·점만 있는 덩어리는 날짜(`2024.10.12`)일 수 있고 날짜는 안 건드린다.
+# 표지와 ID 사이에 한글 낱말 하나(`추가`·`검색`)까지는 끼어도 본다.
+_KAKAO_ID = re.compile(
+    r"(?P<label>(?:카카오톡|카카오|카톡)\s*(?:ID|아이디)\s*[:：=]?\s*"
+    r"(?:[가-힣]{1,4}\s+)?)"
+    r"(?=[0-9._-]*[A-Za-z])[A-Za-z0-9][A-Za-z0-9._-]{2,18}[A-Za-z0-9]"
+    r"(?![A-Za-z0-9])",
+    re.IGNORECASE)
+
+#: 남의 상호를 **앞뒤 안 보고** 지울 때의 최소 길이.
 #:
 #: 짧은 값으로 지우기 시작하면 멀쩡한 문장이 뭉개진다(`카카오` 를 지우면
 #: `카카오톡` 이야기가 `[가림]톡` 이 된다). 개발 자료로 3·4·5·6자를 다 재
 #: 보니 3자와 4자가 잡아내는 것이 **똑같았고**(걸린 칸 9개 · 76자), 값의
 #: 개수만 582개에서 541개로 줄었다 — 잡는 것이 같다면 덜 지우는 쪽이 낫다.
+#:
+#: 이보다 짧은 **기업명**(한글 2~3자)은 따로 잡는다 — 앞뒤를 보고 **제 낱말로
+#: 서 있을 때만**(`_org_pattern` · `_ORG_TAILS`).
 CROSS_MIN_LEN = 4
+
+# 짧은 기업명으로 받는 모양. **한글 두~세 자만**이다.
+#
+# 영문·숫자가 섞인 짧은 이름은 받지 않는다. 경계(`pref_notes.standalone`)가
+# 한글 낱말 기준이라 `AB` 가 `ABC` 한가운데에 박히고, 무엇보다 `AI`·`IR`·`VC`
+# 같은 약어와 글자가 같아지는 순간 분야·라운드 칸까지 뭉갠다 — 그 칸들도 같은
+# `_scrub` 을 지난다. 테스트 서버 자료에 그런 이름이 4개 있었고 문장에 걸리는
+# 자리는 0곳이었다.
+_SHORT_ORG = re.compile(r"[가-힣]{2,3}")
+
+# 세 글자 기업명 바로 뒤에 붙어도 **낱말 경계로 치는 말** — 조사와, 기업 뒤에
+# 흔히 붙는 `대표`·`님`·`측`. 하나에서 셋까지 이어 붙고(`대표님께서` ·
+# `측에서는`) **그 뒤는 한글이 아니어야** 한다.
+#
+# 뒤를 보는 이유는 한 글자 조사가 **아무 낱말의 첫 글자와도 같아서**다
+# (`가`·`이`·`도`). 뒤를 안 보면 `가나다가방` 의 `가나다` 를 이름으로 잡는다.
+# `pref_notes._TITLES` 는 사람 직함이라 가져오지 않는다 — 기업 뒤에는 `부장`
+# 이 아니라 `측` 이 붙는다.
+_ORG_TAILS = ("에서", "에게", "으로", "한테", "께서", "이랑", "부터", "까지",
+              "보다", "처럼", "하고", "대표",
+              "은", "는", "이", "가", "을", "를", "에", "의", "와", "과",
+              "도", "로", "께", "랑", "만", "님", "측")
+_ORG_AFTER = (r"(?:" + "|".join(sorted(_ORG_TAILS, key=len, reverse=True))
+              + r"){1,3}(?![가-힣])")
 
 
 def _org_pattern(db: Session):
@@ -795,6 +871,30 @@ def _org_pattern(db: Session):
     개발 자료로 재 보니 자유 문장 1,018칸 47,226자 중 **9칸 76자**가 가려진다
     (0.16%). 남는 문장은 그대로다 — 상호는 문장의 뼈대가 아니라 이름표다.
 
+    ## 짧은 기업명은 **제 낱말로 서 있을 때만**
+
+    `CROSS_MIN_LEN`(4자) 아래 기업명은 처음에 통째로 뺐다. 그런데 투자사 메모에
+    **지난 딜 목록**이 `가나, 다라마 소개` 꼴로 적히고, 거기 든 두세 글자
+    기업명이 그대로 나갔다. 그래서 한글 2~3자 기업명은 `pref_notes` 가 팀원
+    이름에 쓰는 **같은 경계**(`pref_notes.standalone`)로 잡는다.
+
+        세 글자   앞이 한글이 아니고, 뒤가 한글이 아니거나 조사·`대표`·`측`
+                  으로 낱말이 끝난다(`_ORG_TAILS`). `가나다는` · `가나다 측` 은
+                  잡고 `가나다라` 는 안 잡는다.
+        두 글자   **앞뒤가 둘 다 한글이 아닐 때만.** 조사도 안 받는다 — 두 글자는
+                  흔한 낱말과 글자가 겹치기 쉬워, 조사까지 받으면 멀쩡한 말을
+                  뭉갠다(`pref_notes` 가 성 뗀 두 자 이름을 더 엄하게 보는 것과
+                  같은 까닭이다).
+
+    테스트 서버 자료(자유 문장 1,147칸 · 52,103자, 한글 2~3자 기업명 51개)로
+    재 보니 부분문자열로 대면 5자리가 걸리고 그중 1자리가 낱말 한가운데(앞이
+    한글)였다. 자기 줄 값을 먼저 지운 뒤 이 경계로 **새로 가리는 자리는 3,
+    그중 낱말 한가운데는 0**이다. **투자사명은 4자 이상 그대로다** — 2~3자
+    투자사명은 같은 자료에서 걸리는 자리가 0이라 더할 까닭이 없다.
+
+    길이 순서는 그대로 지킨다 — 그물 하나 안에서 4자 이상(긴 것부터) · 세 글자 ·
+    두 글자 순으로 대므로, 한 자리에서는 늘 긴 이름이 먼저 맞는다.
+
     ## 사람 이름은 여기 넣지 않는다
 
     두세 글자라 남의 멀쩡한 문장에 우연히 들어맞는다(바로 위 문단). 사람
@@ -807,16 +907,22 @@ def _org_pattern(db: Session):
     """
     from ..models import VcContact
 
-    values = {(c.name or "").strip()
-              for c in db.execute(select(IrCompany)).scalars().all()}
-    values |= {(c.firm or "").strip()
-               for c in db.execute(select(VcContact)).scalars().all()}
+    names = {(c.name or "").strip()
+             for c in db.execute(select(IrCompany)).scalars().all()}
+    values = names | {(c.firm or "").strip()
+                      for c in db.execute(select(VcContact)).scalars().all()}
     # 긴 것부터 — 짧은 것을 먼저 지우면 긴 상호의 나머지가 남는다.
-    picked = sorted((v for v in values if len(v) >= CROSS_MIN_LEN),
-                    key=len, reverse=True)
-    if not picked:
+    parts = [re.escape(v) for v in sorted(
+        (v for v in values if len(v) >= CROSS_MIN_LEN), key=len, reverse=True)]
+    for size, after in ((3, _ORG_AFTER), (2, None)):
+        short = sorted(v for v in names
+                       if len(v) == size and _SHORT_ORG.fullmatch(v))
+        if short:
+            parts.append(pref_notes.standalone(
+                "|".join(re.escape(v) for v in short), after))
+    if not parts:
         return None
-    return re.compile("|".join(re.escape(v) for v in picked))
+    return re.compile("|".join(parts))
 
 
 def _scrub(text: str, row=None,
@@ -828,7 +934,7 @@ def _scrub(text: str, row=None,
 
     **날짜는 건드리지 않는다**(`8/19 : 초기 기업보다는…`). 언제 들은 요청인지가
     그 자체로 정보라 사람이 남겨 달라고 못 박은 자리다 — 여기서 지우는 것은
-    이름·투자사명·연락처·이메일·카톡방 이름뿐이다.
+    이름·상호·연락처·이메일·주소·카톡방 이름·카톡 ID 뿐이다.
 
     긴 값부터 지운다. 카톡방 이름이 대개 투자사명을 품고 있어서(`○○벤처스
     Deal 공유`), 짧은 쪽을 먼저 지우면 방 이름의 나머지가 남는다.
@@ -844,7 +950,10 @@ def _scrub(text: str, row=None,
     if others is not None:
         text = others.sub(MASK, text)
     text = _PHONE.sub(MASK, text)
-    return _EMAIL.sub(MASK, text)
+    text = _EMAIL.sub(MASK, text)
+    # 카톡 ID 는 이메일을 가린 **뒤에** 본다. 먼저 보면 `abc@…` 의 `@` 앞만
+    # ID 로 가려지고, 이메일 모양이 깨져 뒤 주소가 그대로 남는다.
+    return _KAKAO_ID.sub(r"\g<label>" + MASK, text)
 
 
 def _fill(row, fields, scrub_with=None,

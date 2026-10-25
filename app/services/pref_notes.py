@@ -354,6 +354,20 @@ _NAME_SHAPE = re.compile(r"^[가-힣]{2,4}$")
 _SPLIT = re.compile(r"[\s/,·|()\[\]]+")
 
 
+def standalone(alt: str, after: Optional[str] = None) -> str:
+    """`alt` 가 **제 낱말로 서 있을 때만** 맞는 정규식 조각.
+
+    왼쪽은 늘 한글이 아니어야 하고, 오른쪽은 한글이 아니거나 **`after` 가
+    뒤따라야** 한다(`after` 를 안 주면 오른쪽도 한글이 아니어야만 한다).
+
+    아래 `team_pattern` ①(팀원 이름)과 `llm_brief._org_pattern` 의 **짧은
+    기업명**이 같은 경계를 쓴다. 두세 글자 말이 남의 낱말 한가운데 박히는
+    문제가 두 곳에서 똑같고, 경계를 두 곳에 따로 적으면 한쪽만 고쳐진다.
+    """
+    tail = rf"(?:(?={after})|(?![가-힣]))" if after else r"(?![가-힣])"
+    return rf"(?<![가-힣])(?:{alt}){tail}"
+
+
 def team_names(values) -> tuple:
     """적힌 대로의 담당자 값들 → **대 볼 이름 목록**. 한 곳에서만 만든다.
 
@@ -407,7 +421,7 @@ def team_pattern(names):
         short_alt = "|".join(re.escape(n) for n in sorted(short, key=len, reverse=True))
         # ③ 발화자 자리. 시각은 **다시 적어 놓아야** 하므로 따로 잡아 둔다.
         parts.append(rf"(?P<stamp>{_SPEAKER})(?P<spoke>{short_alt})(?![가-힣])")
-    parts.append(rf"(?<![가-힣])(?:{full_alt})(?:(?={_TITLE_ALT})|(?![가-힣]))")
+    parts.append(standalone(full_alt, _TITLE_ALT))
     if short:
         parts.append(rf"(?<![가-힣])(?:{short_alt})(?={_TITLE_ALT})")
     return re.compile("|".join(parts))
