@@ -159,7 +159,9 @@ def base_ctx(request: Request, db: Session, user: User, active: str) -> dict:
         "active": active,
         "user": user,
         "agent": agent_status(db, user.id),
-        "test_room": config.TEST_ROOM,
+        # 운영에서는 시험 자리가 늘 닫힌다(`routers/setup.test_tools_on`) — 그때
+        # `시험 단추만 이 방으로 갑니다` 띠를 세우면 없는 단추를 말하게 된다.
+        "test_room": "" if config.IS_PRODUCTION else config.TEST_ROOM,
         "current_path": request.url.path,
         "app_version": version.VERSION,
         "password_changed": request.query_params.get(PASSWORD_CHANGED) == "1",

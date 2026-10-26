@@ -473,8 +473,17 @@ def _named(db, users, name, sheet):
     return row
 
 
+def _mine(db, users, label):
+    """u1 을 그 탭의 주인으로 둔다 — 이름은 탭 주인 · 관리자만 바꾼다."""
+    from app.models import SheetOwner
+
+    db.add(SheetOwner(label=label, user_id=users["u1"].id))
+    db.commit()
+
+
 def test_a_list_sheet_can_be_renamed(logged_in, db, users):
     row = _named(db, users, "박준호", "옛 이름")
+    _mine(db, users, "옛 이름")
     r = logged_in.post("/api/contacts/sheets/rename",
                        data={"old": "옛 이름", "new": "새 이름"},
                        follow_redirects=False)
@@ -486,6 +495,7 @@ def test_a_list_sheet_can_be_renamed(logged_in, db, users):
 def test_renaming_does_not_smudge_the_other_lists(logged_in, db, users):
     """한 사람이 여러 명단에 겹친다 — 통째로 바꾸면 다른 명단까지 뭉개진다."""
     both = _named(db, users, "이서준", "옛 이름,다른 명단")
+    _mine(db, users, "옛 이름")
     logged_in.post("/api/contacts/sheets/rename",
                    data={"old": "옛 이름", "new": "새 이름"}, follow_redirects=False)
     db.refresh(both)
@@ -574,10 +584,61 @@ def test_쉼표가_든_이름은_받지_않는다(logged_in, db, users):
     이름에 쉼표가 들어가면 줄은 그대로인데 탭만 둘로 갈라져 읽힌다.
     """
     row = _named(db, users, "임도윤", "옛 이름")
+    _mine(db, users, "옛 이름")
     logged_in.post("/api/contacts/sheets/rename",
                    data={"old": "옛 이름", "new": "앞, 뒤"}, follow_redirects=False)
     db.refresh(row)
     assert row.source_sheet == "옛 이름"
+
+
+def test_남의_탭과_풀_탭_이름은_못_바꾼다(logged_in, db, users):
+    """이름 바꾸기는 탭 주인 · 관리자만 — 줄 넣기와 같은 판정(`may_add_row`)."""
+    from app.models import SheetOwner
+
+    others = _named(db, users, "남의담당", "남의 명단")
+    pool = _named(db, users, "풀사람", "풀 명단")
+    db.add(SheetOwner(label="남의 명단", user_id=users["u2"].id))
+    db.commit()
+
+    for old in ("남의 명단", "풀 명단"):
+        r = logged_in.post("/api/contacts/sheets/rename",
+                           data={"old": old, "new": "바꾼 이름"},
+                           follow_redirects=False)
+        assert r.status_code == 403, old
+    db.expire_all()
+    assert others.source_sheet == "남의 명단"
+    assert pool.source_sheet == "풀 명단"
+
+
+def test_이름_저장_칸은_바꿀_수_있는_사람에게만_선다(logged_in, db, users):
+    """화면과 서버가 같은 판정을 읽는다 — 눌러야 403 을 아는 칸을 세우지 않는다."""
+    from urllib.parse import quote
+
+    _named(db, users, "내사람", "내 명단")
+    _mine(db, users, "내 명단")
+    _named(db, users, "풀사람", "풀 명단")
+
+    form = 'action="/api/contacts/sheets/rename"'
+    assert form in logged_in.get(f"/contacts?sheet={quote('내 명단')}").text
+    pool = logged_in.get(f"/contacts?sheet={quote('풀 명단')}").text
+    assert 'class="sheet-fold"' in pool, "풀 명단 탭이 열리지 않았다"
+    assert form not in pool
+
+
+def test_관리자는_남의_탭_이름도_바꾼다(logged_in, db, users):
+    from app.models import SheetOwner
+
+    row = _named(db, users, "관리대상", "남의 명단")
+    db.add(SheetOwner(label="남의 명단", user_id=users["u2"].id))
+    users["u1"].role = "admin"
+    db.commit()
+
+    r = logged_in.post("/api/contacts/sheets/rename",
+                       data={"old": "남의 명단", "new": "바꾼 이름"},
+                       follow_redirects=False)
+    assert r.status_code == 303
+    db.refresh(row)
+    assert row.source_sheet == "바꾼 이름"
 
 # --- 화면에서 고친 값이 실제로 저장되는가 --------------------------------------
 #

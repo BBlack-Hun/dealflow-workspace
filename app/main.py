@@ -1,6 +1,8 @@
 """FastAPI application factory (ROADMAP task 1.1)."""
 from __future__ import annotations
 
+from urllib.parse import urlsplit
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -20,6 +22,44 @@ from .routers import (agent_api, companies, consulting, contacts, dashboard,
 from .routers import ir_link as ir_link_router
 from .routers import taxonomy as taxonomy_router
 from .routers import custom_columns as custom_columns_router
+
+
+# 화면이 불러도 되는 곳. 지금 화면은 **바깥 자원이 하나도 없다** — 스크립트·
+# 스타일·글꼴이 전부 `/static` 이고, 그림은 탭 아이콘(`data:` svg) 하나다.
+# 인라인 `<script>` 와 `onsubmit=` · `style=` 가 아직 많아서 `'unsafe-inline'` 은
+# 남긴다. 대신 바깥 스크립트·플러그인·`<base>`·다른 사이트의 틀 안에 넣기·
+# 바깥으로 폼 보내기를 막는다. 바깥 자원을 새로 쓰려면 여기부터 고친다.
+CONTENT_SECURITY_POLICY = "; ".join((
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data:",
+    "object-src 'none'",
+    "base-uri 'none'",
+    "frame-ancestors 'none'",
+    "form-action 'self'",
+))
+
+
+def cross_site_write(request: Request) -> bool:
+    """다른 사이트의 화면이 보낸 쓰기 요청인가.
+
+    `Origin`(없으면 `Referer`)의 호스트를 이 요청의 `Host` 와 견준다. 도메인을
+    적어 두지 않는 까닭: 테스트 서버(`localhost:8889`, 윈도우 PC 에서는 IP 로
+    연다)도 운영도 같은 판정으로 돌아야 한다.
+
+    둘 다 없으면 통과다 — 브라우저 밖 도구(검사 · 스크립트)는 그 머리글을
+    싣지 않는다. 발송기 API(`/api/agent/`)는 토큰으로 묻는 길이라 보지 않는다.
+    """
+    if request.method not in edit_log.WRITE_METHODS:
+        return False
+    if request.url.path.startswith("/api/agent/"):
+        return False
+    source = request.headers.get("origin") or request.headers.get("referer")
+    if not source:
+        return False
+    host = (request.headers.get("host") or "").lower()
+    return urlsplit(source).netloc.lower() != host
 
 
 def create_app() -> FastAPI:
@@ -72,7 +112,11 @@ def create_app() -> FastAPI:
     # `services/edit_log.py` 머리말).
     edit_log.install()
 
-    app = FastAPI(title="dealflow", version="0.1.0 (Sprint 1)")
+    # 운영에서는 API 문서(`/docs` · `/redoc` · `/openapi.json`)를 띄우지 않는다 —
+    # 운영에서 볼 사람이 없다. 로컬·테스트 서버는 그대로 열린다.
+    no_docs = ({"docs_url": None, "redoc_url": None, "openapi_url": None}
+               if config.IS_PRODUCTION else {})
+    app = FastAPI(title="dealflow", version="0.1.0 (Sprint 1)", **no_docs)
 
     app.mount("/static", StaticFiles(directory=str(config.STATIC_DIR)), name="static")
 
@@ -162,6 +206,19 @@ def create_app() -> FastAPI:
             return deps.consultant_block_response(request)
         return await call_next(request)
 
+    # 컨설턴트 차단보다 **나중에** 등록한다 = 바깥이다. 다른 사이트에서 온 쓰기는
+    # 쿠키를 읽기도 전에 끊는다.
+    @app.middleware("http")
+    async def _same_site_writes(request: Request, call_next):
+        """쓰기(POST·PUT·PATCH·DELETE)는 이 사이트의 화면에서 온 것만 받는다.
+
+        판정은 `cross_site_write` 한 곳이다.
+        """
+        if cross_site_write(request):
+            return JSONResponse({"detail": "다른 사이트에서 보낸 요청은 받지 않습니다"},
+                                status_code=403)
+        return await call_next(request)
+
     @app.middleware("http")
     async def _no_store(request: Request, call_next):
         """화면과 API 응답을 브라우저가 캐시하지 못하게 한다.
@@ -185,6 +242,20 @@ def create_app() -> FastAPI:
         else:
             # 지문 없이 부른 주소. 고친 것이 안 보이는 쪽이 느린 것보다 나쁘다.
             response.headers["Cache-Control"] = "no-cache"
+        return response
+
+    # **가장 나중에 등록한다 = 가장 바깥이다.** 위에서 바로 돌려주는 차단·
+    # 리다이렉트 응답에도 붙는다.
+    @app.middleware("http")
+    async def _content_security_policy(request: Request, call_next):
+        """모든 응답에 CSP 를 붙인다 — 값은 `CONTENT_SECURITY_POLICY` 한 곳.
+
+        Caddy 가 아니라 앱에서 붙이는 까닭: 테스트 서버는 Caddy 없이 뜬다.
+        여기 두면 운영과 테스트 서버가 같은 규칙으로 돌아, 테스트 서버에서 깨지는
+        화면이 운영에서도 깨진다.
+        """
+        response = await call_next(request)
+        response.headers["Content-Security-Policy"] = CONTENT_SECURITY_POLICY
         return response
 
     @app.exception_handler(NotAdmin)
