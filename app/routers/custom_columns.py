@@ -1,7 +1,8 @@
 """관리자 메뉴 `컬럼 관리` + 표에서 추가 칸 값 적기(개선 과제 #6 · #7 · #8 · #12 · #46).
 
-칸을 붙이고 · 이름을 바꾸고 · 옮기고 · 자리를 고르고 · 숨기는 것은 **전부 관리자만**이다
-(`deps.admin_only`, 10/16 사용자 결정). 지우는 길은 없다 — 숨긴다.
+칸을 붙이고 · 이름을 바꾸고 · 옮기고 · 자리를 고르고 · 숨기고 · 지우는 것은 **전부
+관리자만**이다(`deps.admin_only`, 10/16 사용자 결정). 지우면 적힌 값도 함께 사라진다 —
+값을 남기려면 숨긴다.
 
 값을 적는 길(`PUT /api/custom-values/…`)은 팀원 것이다. **고칠 수 있는 줄은 그
 표의 판정 그대로다**(`_row`) — 판정을 여기 새로 적으면 표에서는 못 고치는 줄의
@@ -59,6 +60,7 @@ def columns_page(request: Request, db: Session = Depends(get_db),
         "cols": cols,
         # 고른 자리 — 이름이 바뀐 머리글이면 새 이름(`svc.anchor_of` · #63).
         "afters": {c.id: svc.anchor_of(c) for c in cols},
+        "counts": svc.value_counts(db, cols),
         "anchors": svc.anchors(target),
         "kinds": svc.KINDS,
         "name_max": svc.NAME_MAX,
@@ -128,6 +130,18 @@ def hide_column(column_id: int, hidden: int = Form(...),
     db.commit()
     return _back(col.target, f"'{col.name}' 칸을 " + ("숨겼습니다 — 적힌 값은 그대로 남습니다"
                                                     if hidden else "다시 보이게 했습니다"))
+
+
+@router.post("/columns/{column_id}/delete", include_in_schema=False)
+def delete_column(column_id: int, db: Session = Depends(get_db),
+                  user: User = Depends(get_current_user)):
+    """칸과 그 칸의 값을 지운다 — 화면이 값이 든 줄 수를 보여 주고 한 번 더 묻는다."""
+    admin_only(user)
+    col = _column(db, column_id)
+    target, name = col.target, col.name
+    gone = svc.delete(db, col)
+    db.commit()
+    return _back(target, f"'{name}' 칸을 지웠습니다 — 값이 든 줄 {gone}개도 함께 지웠습니다")
 
 
 # ── 표에서 값 적기 ────────────────────────────────────────────────────────

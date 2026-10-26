@@ -425,12 +425,9 @@
   setTimeout(function () { location.reload(); }, 8000);
   {% endif %}
   (function () {
-    var table = document.getElementById("sourcing-table");
-    if (!table) return;
-
-    // 검색은 컬럼 필터와 **AND** 로 묶는다 — 둘이 서로 tr.hidden 을 덮어쓰면
-    // 검색과 필터가 번갈아 서로를 지운다.
     // 갈래에 사람 추가 — 지금 보고 있는 갈래로 들어간다.
+    // **표를 찾기 전에 잇는다** — [+ 탭 추가]로 막 만든 탭은 사람이 없어 표가 안
+    // 서고, 첫 사람을 넣을 길이 이 단추뿐이다(빈 탭 안내 `sourcing-empty-tab`).
     var addBtn = document.getElementById("sourcing-add");
     if (addBtn) addBtn.addEventListener("click", function () {
       var name = (prompt("이름을 입력하세요 (" + addBtn.getAttribute("data-bucket") + ")") || "").trim();
@@ -458,6 +455,9 @@
         addBtn.disabled = false;
       });
     });
+
+    var table = document.getElementById("sourcing-table");
+    if (!table) return;
 
     // 명단에서 빼기 — 되돌릴 수 없는 일이라 **누구를 지우는지** 이름을
     // 확인창에 넣는다. 투자사 관리 현황·IR 기업현황과 같은 순서다:
@@ -520,6 +520,8 @@
       d.row.setAttribute("data-f-assignee_name", d.data.assignee || "");
     });
 
+    // 검색은 컬럼 필터와 **AND** 로 묶는다 — 둘이 서로 tr.hidden 을 덮어쓰면
+    // 검색과 필터가 번갈아 서로를 지운다.
     var box = document.getElementById("sourcing-search");
     var api = window.DealflowFilters.init({
       table: "#sourcing-table",

@@ -43,14 +43,17 @@
             <a href="/setup">발송 프로그램 설치</a>
           </div>
           {% if view_as_targets %}
+          {# 고르기만 하면 바로 바뀐다(팀 현황의 권한·발송기 고르개와 같은 꼴). 첫 줄은
+             고를 수 없는 안내라, 아직 아무도 안 보는 때 첫 팀원이 미리 골라져
+             그 사람은 골라도 안 바뀌는 일이 없다. #}
           <form method="post" action="/account/view-as" class="view-as-pick" data-testid="view-as-form">
             <input type="hidden" name="next" value="{{ view_as_next }}">
-            <select name="member_id" aria-label="팀원 화면으로 보기">
+            <select name="member_id" aria-label="팀원 화면으로 보기" onchange="this.form.submit()">
+              <option value="" disabled {% if not view_as %}selected{% endif %}>팀원 화면으로 보기</option>
               {% for m in view_as_targets %}
               <option value="{{ m.id }}" {% if view_as and view_as.id == m.id %}selected{% endif %}>{{ m.name }}</option>
               {% endfor %}
             </select>
-            <button type="submit" class="linkbtn">팀원 화면으로 보기</button>
           </form>
           {# 되돌아오는 길도 고르개 곁에 — 위 띠의 [내 화면으로 돌아가기]와 같은 폼이다. #}
           {% if view_as %}

@@ -1,8 +1,8 @@
-"""리마인드 뒤 **답 없음 · 전화 필요** — 표시와 메모 (10/17 회의 #37).
+"""리마인드 뒤 **답 없음 · 전화 요청** — 표시와 메모 (10/17 회의 #37).
 
 리마인드 카톡을 보낸 뒤 팀원·담당자가 확인해서 답이 없으면 `답 없음 · 전화
 필요` 를 켜고, 들은 것·할 것을 메모로 남긴다. 켜 둔 동안은 그 투자사를 맡은
-팀원의 오늘 할 일에 `전화 필요` 로 서고, 끄면 빠진다.
+팀원의 오늘 할 일에 `전화 요청` 으로 서고, 끄면 빠진다.
 
 ## 딜 진행 관리에서 리마인드 카톡이 나가는 흐름 (코드 기준)
 
@@ -50,7 +50,7 @@ from ..models import (ContactActivity, DealFollowup, IrRequest, Meeting,
                       SendItem, SendSequence, User, VcContact)
 
 #: 배지 글자. 화면 · 오늘 할 일이 같은 말을 쓴다.
-LABEL = "답 없음 · 전화 필요"
+LABEL = "답 없음 · 전화 요청"
 #: 메모 길이 상한 — 한 줄 메모 칸이다. 넘는 것은 자른다(통째로 버리지 않는다).
 MEMO_MAX = 500
 
@@ -150,7 +150,7 @@ def _names(db: Session, ids: Iterable[Optional[int]]) -> Dict[int, str]:
 def views(db: Session, contact_ids: Optional[Iterable[int]] = None) -> Dict[int, dict]:
     """사람 → 화면이 그릴 값. **켜졌거나 메모가 있는 줄만** 든다.
 
-        on        `답 없음 · 전화 필요` 가 켜져 있나
+        on        `답 없음 · 전화 요청` 이 켜져 있나
         by · at   마지막으로 켜거나 끈 사람 · 때(`YYYY-MM-DD HH:MM`)
         memo      메모(없으면 빈 글자)
         memo_by · memo_at   메모를 마지막으로 적은 사람 · 때
