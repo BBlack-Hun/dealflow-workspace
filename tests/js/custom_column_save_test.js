@@ -7,6 +7,9 @@
 //   ① 추가 칸 → `PUT /api/custom-values/{표}/{줄}` 에 `{column_id, value}`.
 //   ② 같은 표의 **다른 칸은 그대로** 줄의 PATCH 로 간다.
 //   ③ 서버가 맞춘 값(`o` → `O`)으로 칸과 필터 값(`data-f-cc*`)을 다시 적는다.
+//   ④ 메모 칸은 여러 줄이다(#69) — 창에 `Enter 줄바꿈` 안내가 서고, 적은 줄바꿈이
+//      저장 값과 칸 글자에 그대로 남는다. 표에서 줄을 살리는 것은 app.css 의
+//      `.clamp2.keep-lines`(tests/test_custom_columns.py 가 화면마다 본다).
 //
 // 값은 전부 지어낸 것이다 — 저장소가 공개다.
 "use strict";
@@ -85,6 +88,45 @@ async function inlineEdit() {
   }, "보통 칸의 저장 길이 바뀌었다: " + JSON.stringify(sent[1]));
 }
 
+// ── ④ 메모 칸 — 여러 줄 ─────────────────────────────────────────────────────
+async function memoLines() {
+  const memo = D.el("div", { class: "cell clamp2 keep-lines", "data-field": "cc6",
+                             "data-custom": "6", "data-custom-rows": "sourcing_contacts",
+                             "data-type": "long" });
+  memo.textContent = "";
+  const outside = D.el("td", {});
+  const tr = D.el("tr", { "data-id": "4" }, [D.el("td", {}, [memo]), outside]);
+  const table = D.el("table", { id: "t", "data-inline-url": "/api/sourcing" },
+    [D.el("tbody", {}, [tr])]);
+  const root = D.el("div", {}, [table]);
+
+  D.resetHandlers();
+  const sent = [];
+  const document = D.makeDocument(root);
+  const lines = "다음 단계\n1. 자료 받기\n2. 미팅 잡기";
+  const sandbox = sandboxFor(document, sent, { value: lines });
+  const win = { innerWidth: 1400, innerHeight: 900,
+                addEventListener: function () {}, removeEventListener: function () {} };
+  sandbox.window = win;
+  win.document = document;
+  vm.createContext(sandbox);
+  vm.runInContext(INLINE, sandbox, { filename: "inline_edit.js" });
+
+  memo.fire("pointerdown");
+  memo.fire("click");
+  const pop = root.querySelector(".cell-pop");
+  assert.ok(pop, "메모 칸을 눌렀는데 여러 줄 창이 안 떴다");
+  const hint = pop.querySelector(".cell-pop-hint");
+  assert.ok(hint && hint.textContent.indexOf("Enter 줄바꿈") === 0,
+    "메모 창에 줄바꿈 안내가 없다: " + (hint && hint.textContent));
+  pop.querySelector(".cell-pop-input").value = lines;
+  outside.fire("pointerdown");
+  await flush();
+  await flush();
+  assert.strictEqual(sent[0].body.value, lines, "적은 줄바꿈이 저장 값에서 빠졌다");
+  assert.strictEqual(memo.textContent, lines, "칸 글자에서 줄바꿈이 빠졌다");
+}
+
 // ── consulting.js ───────────────────────────────────────────────────────────
 async function consulting() {
   const custom = D.el("td", { class: "cell", "data-field": "cc9", "data-custom": "9",
@@ -93,10 +135,13 @@ async function consulting() {
   custom.textContent = "";
   const region = D.el("td", { class: "cell", "data-field": "region" });
   region.textContent = "서울";
+  const memo = D.el("td", { class: "cell multi", "data-field": "cc8", "data-custom": "8",
+                            "data-custom-rows": "consulting_companies" });
+  memo.textContent = "";
   const tr = D.el("tr", {
     "data-id": "3", "data-search": "", "data-f-region": "서울", "data-f-cc9": "",
     "data-contacted": "0", "data-contacted-folded": "0", "data-contacted-prev": "0"
-  }, [custom, region]);
+  }, [custom, region, memo]);
   const table = D.el("table", { id: "cs-table", "data-contract-sheet": "0" },
     [D.el("tbody", {}, [tr])]);
   const root = D.el("div", {}, [
@@ -151,12 +196,21 @@ async function consulting() {
   assert.deepStrictEqual(sent[1], {
     url: "/api/consulting/3", method: "PATCH", body: { region: "부산" }
   }, "보통 칸의 저장 길이 바뀌었다: " + JSON.stringify(sent[1]));
+
+  // ④ 메모 칸 — 칸 안 입력창 밑에 같은 안내가 선다
+  memo.fire("click", { target: memo });
+  const area = memo.children.filter((c) => c.tag === "textarea")[0];
+  assert.ok(area, "투자컨설턴트 메모 칸이 여러 줄 입력창으로 안 열렸다");
+  const hint = memo.children.filter((c) => c.classList.contains("cell-pop-hint"))[0];
+  assert.ok(hint && hint.textContent.indexOf("Enter 줄바꿈") === 0,
+    "투자컨설턴트 메모 칸에 줄바꿈 안내가 없다");
 }
 
 (async function main() {
   await inlineEdit();
+  await memoLines();
   await consulting();
-  console.log("ok — 추가 칸은 칸 값 길로, 다른 칸은 그대로");
+  console.log("ok — 추가 칸은 칸 값 길로, 다른 칸은 그대로, 메모는 줄바꿈을 지킨다");
 })().catch(function (err) {
   console.error(err && err.stack || err);
   process.exit(1);
