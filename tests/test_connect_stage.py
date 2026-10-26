@@ -410,6 +410,77 @@ def test_assigning_twice_does_not_duplicate(logged, db, users):
     assert labels.count("내 명단") == 1
 
 
+def _foreign_row(db, users, sheet="남의 명단"):
+    """u2 가 맡은 줄 — u2 명단(또는 u2 의 `직접 추가`)에만 있다."""
+    from app.models import SheetOwner, VcContact
+
+    if sheet != "직접 추가":
+        db.add(SheetOwner(label=sheet, user_id=users["u2"].id))
+    row = VcContact(user_id=users["u2"].id, name="남의사람", firm="다라벤처스",
+                    source_sheet=sheet, connect_stage="connected")
+    db.add(row)
+    db.commit()
+    return row.id
+
+
+@pytest.mark.parametrize("sheet", ["남의 명단", "직접 추가"])
+@pytest.mark.parametrize("label", ["내 명단", "직접 추가"])
+def test_cannot_take_someone_elses_row(logged, db, users, sheet, label):
+    """남이 맡은 줄은 내 명단으로 가져올 수 없다 — 없는 줄과 똑같이 404."""
+    from app.models import VcContact
+
+    _pool_setup(db, users)
+    cid = _foreign_row(db, users, sheet)
+    r = logged.post("/api/contacts/assign", json={"contact_ids": [cid], "label": label})
+    assert r.status_code == 404
+    assert r.json() == logged.post(
+        "/api/contacts/assign",
+        json={"contact_ids": [999999], "label": label}).json()
+
+    db.expire_all()
+    row = db.get(VcContact, cid)
+    assert (row.user_id, row.source_sheet) == (users["u2"].id, sheet)
+
+
+def test_one_foreign_row_blocks_the_whole_assign(logged, db, users):
+    """섞어 보내면 통째로 막힌다 — 내 풀 줄도 옮겨지지 않는다."""
+    from app.models import VcContact
+
+    mine = _pool_setup(db, users)
+    cid = _foreign_row(db, users)
+    r = logged.post("/api/contacts/assign",
+                    json={"contact_ids": [mine, cid], "label": "내 명단"})
+    assert r.status_code == 404
+    db.expire_all()
+    assert db.get(VcContact, mine).source_sheet == "투자사 풀"
+
+
+def test_a_pool_only_row_can_be_taken_whoever_loaded_it(logged, db, users):
+    """풀(담당 없는 명단)에만 있는 줄은 누가 올렸든 뽑아 쓸 수 있다."""
+    from app.models import VcContact
+
+    cid = _pool_setup(db, users)
+    db.get(VcContact, cid).user_id = users["u2"].id
+    db.commit()
+    r = logged.post("/api/contacts/assign", json={"contact_ids": [cid], "label": "내 명단"})
+    assert r.status_code == 200, r.text
+    db.expire_all()
+    assert db.get(VcContact, cid).user_id == users["u1"].id
+
+
+def test_admin_can_assign_anyones_row(logged, db, users):
+    from app.models import VcContact
+
+    _pool_setup(db, users)
+    cid = _foreign_row(db, users)
+    users["u1"].role = "admin"
+    db.commit()
+    r = logged.post("/api/contacts/assign", json={"contact_ids": [cid], "label": "내 명단"})
+    assert r.status_code == 200, r.text
+    db.expire_all()
+    assert db.get(VcContact, cid).user_id == users["u1"].id
+
+
 # --- 방 나감 ----------------------------------------------------------------
 #
 # 카톡방에 들어왔다가 **나간** 사람. `참여 안 함` 과 뜻이 다르다 — 참여 안 함은
