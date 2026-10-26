@@ -17,7 +17,7 @@
   var resolve = document.getElementById("llm-resolve");
   var found = document.getElementById("llm-found");
   var foundState = document.getElementById("llm-found-state");
-  // '보낼 날' 칸과 이번 몫의 개수 줄(`이번 주는 3주차 — 그룹마다 많아야 8곳`).
+  // '보낼 날' 칸과 이번 몫의 개수 줄(`이번 주는 3주차 — 그룹마다 많아야 5곳`).
   var dayInput = document.getElementById("llm-for");
   var pick = document.getElementById("llm-pick");
 

@@ -29,8 +29,8 @@ from .conftest import DEMO_PASSWORD
 
 # 날짜가 바뀌어도 안 깨지게 못 박는다.
 FIXED_NOW = "2026-09-01T09:00:00+09:00"
-# 어느 날 보낼 몫인지도 못 박는다 — 뽑을 개수가 주차로 갈리므로(1·3주차 8곳,
-# 2·4주차 4곳) 오늘에 맡기면 검사가 도는 날에 따라 시킬 말의 수가 바뀐다.
+# 어느 날 보낼 몫인지도 못 박는다 — 뽑을 개수가 주차로 갈리므로(1·3주차 5곳,
+# 2·4주차 3곳) 오늘에 맡기면 검사가 도는 날에 따라 시킬 말의 수가 바뀐다.
 FIXED_DAY = date.fromisoformat(FIXED_NOW[:10])
 
 # 내보내도 되는 투자사 칸. **이 목록은 검사가 직접 들고 있다**(위 설명 참고).
@@ -1768,7 +1768,7 @@ def test_the_separate_group_is_marked_so_no_general_deal_is_picked_for_it(db, us
     assert group_name.SEPARATE not in out["prompt"]
 
 
-# ── 많아야 여덟, 맞는 것만 ─────────────────────────────────────────────────
+# ── 많아야 N곳, 맞는 것만 ─────────────────────────────────────────────────
 #
 # 사용자가 정한 것이다 — "기업이 8개가 안 되는 경우라면 보낼 수 있는 기업만이라도
 # 리스트업해서 보낼 수 있음." 수를 채우려고 안 맞는 곳을 끼워 넣으면 받는 분이
@@ -1776,7 +1776,7 @@ def test_the_separate_group_is_marked_so_no_general_deal_is_picked_for_it(db, us
 
 
 def test_the_prompt_says_the_number_is_a_ceiling_not_a_quota(db, users):
-    """**"8곳을 고르라" 가 아니라 "많아야 8곳, 맞는 것만" 이어야 한다.**
+    """**"5곳을 고르라" 가 아니라 "많아야 5곳, 맞는 것만" 이어야 한다.**
 
     사용자가 정한 것이다 — *"뽑는 개수가 너무 저조하거나 소개할 딜이 부족한
     경우에는 1개씩 나가도 괜찮음."* 그래서 **1곳만 골라도 된다**는 말과, 수를
@@ -1998,37 +1998,39 @@ def test_the_prompt_says_to_exclude_what_was_sent_and_to_answer_in_numbers(db,
 
 def test_the_number_to_pick_is_written_in_exactly_one_place(db, users,
                                                            monkeypatch):
-    """`8`·`4` 를 여기저기 적어 두면 한 곳만 고쳐진다 — 표를 바꿔 보고
+    """`5`·`3` 을 여기저기 적어 두면 한 곳만 고쳐진다 — 표를 바꿔 보고
     시킬 말과 화면 문장이 따라오는지 본다."""
     from app.services import llm_brief
 
     before = llm_brief.prompt(FIXED_DAY)
-    assert "8곳" in before
+    assert "5곳" in before
 
     monkeypatch.setattr(llm_brief, "PICK_BY_WEEK",
-                        {week: 5 for week in llm_brief.PICK_BY_WEEK})
+                        {week: 7 for week in llm_brief.PICK_BY_WEEK})
     after = llm_brief.prompt(FIXED_DAY)
-    assert "5곳" in after
-    assert "8곳" not in after and "4곳" not in after
+    assert "7곳" in after
+    # 답 예시의 `(3곳)` 은 개수를 적는 자리를 보여 주는 것이라 뺀다(`ANSWER_EXAMPLE`).
+    rest = after.replace(llm_brief.ANSWER_EXAMPLE, "")
+    assert "5곳" not in rest and "3곳" not in rest
     plan = llm_brief.pick_plan(FIXED_DAY)
-    assert plan["limit"] == 5 and "5곳" in plan["text"]
-    assert "8곳" not in plan["rule"] and "4곳" not in plan["rule"]
+    assert plan["limit"] == 7 and "7곳" in plan["text"]
+    assert "5곳" not in plan["rule"] and "3곳" not in plan["rule"]
 
 
 # ── 주차마다 몇 곳까지 ─────────────────────────────────────────────────────
 #
-# 사용자가 정한 것이다 — "1주 3주차는 8개 기준이고 2,4 주차는 4개를 뽑을 예정.
-# 그러나 뽑는 개수가 너무 저조하거나 소개할 딜이 부족한 경우에는 1개씩 나가도
-# 괜찮음." 5주차(29~31일)는 사용자가 정하지 않아 4곳으로 두었다(가정 —
+# 사용자가 정한 것이다(10/26) — "딜소개 수량도 1주 5 -> 2주 3 -> 3주 5 -> 4주 3".
+# 맞는 곳이 적으면 1곳씩 나가도 괜찮다는 것은 그 전 기준(8·4) 때부터다.
+# 5주차(29~31일)는 사용자가 정하지 않아 3곳으로 두었다(가정 —
 # `llm_brief.PICK_BY_WEEK` 설명).
 
 
 @pytest.mark.parametrize("day, week, limit", [
-    (1, 1, 8), (7, 1, 8),
-    (8, 2, 4), (14, 2, 4),
-    (15, 3, 8), (21, 3, 8),
-    (22, 4, 4), (28, 4, 4),
-    (29, 5, 4), (31, 5, 4),
+    (1, 1, 5), (7, 1, 5),
+    (8, 2, 3), (14, 2, 3),
+    (15, 3, 5), (21, 3, 5),
+    (22, 4, 3), (28, 4, 3),
+    (29, 5, 3), (31, 5, 3),
 ])
 def test_the_limit_follows_the_week_of_the_month(day, week, limit):
     """경계(7/8 · 14/15 · 21/22 · 28/29)와 달의 끝(31일)을 하나씩 본다."""
@@ -2056,9 +2058,9 @@ def test_the_limit_defaults_to_today(monkeypatch):
     from app.services import llm_brief
 
     monkeypatch.setattr(clock, "today", lambda: date(2026, 10, 8))
-    assert llm_brief.pick_count() == 4
+    assert llm_brief.pick_count() == 3
     monkeypatch.setattr(clock, "today", lambda: date(2026, 10, 15))
-    assert llm_brief.pick_count() == 8
+    assert llm_brief.pick_count() == 5
 
 
 def test_the_prompt_carries_the_number_for_that_week():
@@ -2067,15 +2069,15 @@ def test_the_prompt_carries_the_number_for_that_week():
 
     third = llm_brief.prompt(date(2026, 10, 15))
     assert "10월 3주차" in third
-    assert "많아야 기업 8곳" in third
+    assert "많아야 기업 5곳" in third
 
     second = llm_brief.prompt(date(2026, 10, 8))
     assert "10월 2주차" in second
-    assert "많아야 기업 4곳" in second
-    assert "많아야 기업 8곳" not in second
-    assert "많아야 4곳입니다" in second
+    assert "많아야 기업 3곳" in second
+    assert "많아야 기업 5곳" not in second
+    assert "많아야 3곳입니다" in second
     # 주차 표 전체도 함께 싣는다 — 왜 이 수인지 붙여 넣은 글만 보고 알게.
-    assert "1·3주차 8곳 · 2·4·5주차 4곳" in second
+    assert "1·3주차 5곳 · 2·4·5주차 3곳" in second
 
 
 def test_the_data_follows_a_frozen_today(db, users, monkeypatch):
@@ -2086,10 +2088,10 @@ def test_the_data_follows_a_frozen_today(db, users, monkeypatch):
     monkeypatch.setattr(clock, "today", lambda: date(2026, 10, 8))
     out = llm_brief.brief(db, users["u1"], now=FIXED_NOW)
     assert out["pick"] == {
-        "date": "2026-10-08", "week": 2, "limit": 4,
-        "text": "이번 주는 2주차 — 그룹마다 많아야 4곳",
-        "rule": "1·3주차 8곳 · 2·4·5주차 4곳"}
-    assert "많아야 기업 4곳" in out["prompt"]
+        "date": "2026-10-08", "week": 2, "limit": 3,
+        "text": "이번 주는 2주차 — 그룹마다 많아야 3곳",
+        "rule": "1·3주차 5곳 · 2·4·5주차 3곳"}
+    assert "많아야 기업 3곳" in out["prompt"]
 
 
 def test_another_days_share_says_which_day_it_is(monkeypatch):
@@ -2098,14 +2100,14 @@ def test_another_days_share_says_which_day_it_is(monkeypatch):
     from app.services import llm_brief
 
     monkeypatch.setattr(clock, "today", lambda: date(2026, 10, 9))
-    assert llm_brief.pick_plan()["text"] == "이번 주는 2주차 — 그룹마다 많아야 4곳"
+    assert llm_brief.pick_plan()["text"] == "이번 주는 2주차 — 그룹마다 많아야 3곳"
     # 같은 주차 칸이면 다른 날이어도 "이번 주" 다.
     assert llm_brief.pick_plan(date(2026, 10, 14))["text"].startswith("이번 주는")
     assert llm_brief.pick_plan(date(2026, 10, 15))["text"] == \
-        "10월 15일은 3주차 — 그룹마다 많아야 8곳"
+        "10월 15일은 3주차 — 그룹마다 많아야 5곳"
     # 다음 달 1주차도 "이번 주" 가 아니다.
     assert llm_brief.pick_plan(date(2026, 11, 2))["text"] == \
-        "11월 2일은 1주차 — 그룹마다 많아야 8곳"
+        "11월 2일은 1주차 — 그룹마다 많아야 5곳"
 
 
 def test_the_address_takes_the_day_to_send(logged_in, monkeypatch):
@@ -2115,20 +2117,20 @@ def test_the_address_takes_the_day_to_send(logged_in, monkeypatch):
     monkeypatch.setattr(clock, "today", lambda: date(2026, 10, 7))   # 1주차
     third = logged_in.get("/api/llm-brief.json?for=2026-10-15")
     assert third.status_code == 200
-    assert third.json()["pick"]["limit"] == 8
-    assert "많아야 기업 8곳" in third.json()["prompt"]
+    assert third.json()["pick"]["limit"] == 5
+    assert "많아야 기업 5곳" in third.json()["prompt"]
 
     second = logged_in.get("/api/llm-brief.json?for=2026-10-08").json()
-    assert second["pick"]["limit"] == 4
+    assert second["pick"]["limit"] == 3
     assert second["pick"]["date"] == "2026-10-08"
-    assert "많아야 기업 4곳" in second["prompt"]
+    assert "많아야 기업 3곳" in second["prompt"]
 
     # 안 주면(빈 값이어도) 오늘이다.
     for url in ("/api/llm-brief.json", "/api/llm-brief.json?for="):
         today = logged_in.get(url)
         assert today.status_code == 200, url
         assert today.json()["pick"]["date"] == "2026-10-07", url
-        assert today.json()["pick"]["limit"] == 8, url
+        assert today.json()["pick"]["limit"] == 5, url
 
 
 @pytest.mark.parametrize("bad", ["2026-13-01", "2026-02-30", "abc", "20261015",
@@ -2147,22 +2149,23 @@ def test_the_screen_says_this_weeks_limit(logged_in, monkeypatch):
     문장은 서버가 짓는다(`pick_plan`) — 템플릿이 주차를 세면 두 벌이 된다.
     """
     from app import clock
+    from app.services.llm_brief import PICK_BY_WEEK
 
     monkeypatch.setattr(clock, "today", lambda: date(2026, 10, 15))
     body = logged_in.get("/deals").text
-    assert "이번 주는 3주차 — 그룹마다 많아야 8곳" in body
+    assert "이번 주는 3주차 — 그룹마다 많아야 5곳" in body
     assert 'id="llm-for" value="2026-10-15"' in body
-    assert "1·3주차 8곳 · 2·4·5주차 4곳" in body
+    assert "1·3주차 5곳 · 2·4·5주차 3곳" in body
     assert "1곳만 골라도 됩니다" in body
 
     monkeypatch.setattr(clock, "today", lambda: date(2026, 10, 22))
-    assert "이번 주는 4주차 — 그룹마다 많아야 4곳" in logged_in.get("/deals").text
+    assert "이번 주는 4주차 — 그룹마다 많아야 3곳" in logged_in.get("/deals").text
 
     # 템플릿에는 그 숫자가 없다 — 표를 고치는 날 화면만 옛말을 하지 않게.
     src = (Path(__file__).resolve().parent.parent / "app" / "templates"
            / "deals.html").read_text(encoding="utf-8")
-    assert "주차 8곳" not in src and "많아야 8곳" not in src
-    assert "주차 4곳" not in src and "많아야 4곳" not in src
+    for n in set(PICK_BY_WEEK.values()):
+        assert f"주차 {n}곳" not in src and f"많아야 {n}곳" not in src, n
 
 
 def test_the_prompt_is_not_per_investor_and_not_one_set_for_everyone(db, users):
