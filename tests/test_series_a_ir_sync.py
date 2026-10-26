@@ -170,6 +170,33 @@ def test_Series_A에서_고치면_IR과_다른_날_줄이_따라오고_IR을_고
     assert first.ceo_name == "최샘플" and second.ceo_name == "최샘플"
 
 
+def test_IR을_고쳐도_Series_A에서_따로_쓰는_값은_두고_같던_값과_빈칸만_따라간다(
+        logged_in, db, ir):
+    """10/26 사용자: "딜 소싱쪽에서 별도로 사용된 값이 있는거라면 덮어쓰지 말아주면 됨"."""
+    same = _deal(db, name="샘플가람")    # 잇는 순간 IR 값으로 채워진 줄
+    own = _deal(db, name="샘플가람", ceo_name="박샘플", revenue_2026="20")
+    blank = _raw_set(db, _deal(db, name="샘플가람"), ceo_name=None, revenue_2026=None)
+    r = logged_in.patch(f"/api/companies/{ir.id}",
+                        json={"contact_name": "최샘플", "revenue_recent": "15"})
+    assert r.status_code == 200, r.text
+    same, own, blank = _fresh(db, same, own, blank)
+    assert (same.ceo_name, same.revenue_2026) == ("최샘플", "15")
+    assert (own.ceo_name, own.revenue_2026) == ("박샘플", "20"), "딜 소싱의 값을 덮었다"
+    assert (blank.ceo_name, blank.revenue_2026) == ("최샘플", "15")
+
+
+def test_Series_A_줄을_고치면_다른_Series_A_줄도_같던_값만_따라간다(logged_in, db, ir):
+    first = _deal(db, name="샘플가람")
+    second = _deal(db, name="샘플가람")
+    own = _deal(db, name="샘플가람", ceo_name="박샘플")
+    blank = _raw_set(db, _deal(db, name="샘플가람"), ceo_name=None)
+    r = logged_in.patch(f"/api/series-a-companies/{first.id}", json={"ceo_name": "최샘플"})
+    assert r.status_code == 200, r.text
+    company, second, own, blank = _fresh(db, ir, second, own, blank)
+    assert company.contact_name == "최샘플" and second.ceo_name == "최샘플"
+    assert own.ceo_name == "박샘플" and blank.ceo_name == "최샘플"
+
+
 def test_비운_칸은_안_따라간다(logged_in, db, ir):
     row = _deal(db, name="샘플가람")
     logged_in.patch(f"/api/series-a-companies/{row.id}", json={"ceo_name": ""})

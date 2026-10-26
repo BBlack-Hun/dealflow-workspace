@@ -56,7 +56,8 @@ IR 의 `미계약`(기본값)은 빈칸으로 본다.
 1. **빈칸이 아닌 값으로 고친 칸만** 따라간다. 비운 칸은 다른 쪽을 지우지 않는다(결정 6
    — 수정창은 모든 칸을 보낸다).
 2. 줄을 고치면 → IR → 그 IR 에 이어진 다른 줄 모두. IR 을 고치면 → 이어진 줄 모두.
-   한 flush 에서 같은 칸을 IR 과 줄이 같이 고쳤으면 IR 값이 이긴다.
+   한 flush 에서 같은 칸을 IR 과 줄이 같이 고쳤으면 IR 값이 이긴다. 단 Series A 줄은
+   빈칸 · IR 의 이전 값과 같던 칸만 따라간다 — 다른 값은 딜 소싱의 값이다(`_follows`).
 3. O/X 칸은 `O` · `X` 만 옮긴다. 자유 글(`10/1 초대함`)은 그 줄에 두고, 옮기지도
    덮지도 않는다 — 그 글이 그날의 기록이다. 계약서 수신 칸의 날짜 글(`9/25 계약서
    수신완료`)만은 IR 에 `O` 로 올리고 글은 그 줄에 둔다(결정 11).
@@ -414,6 +415,24 @@ def _changes(obj, places: Dict[str, str]) -> Dict[str, str]:
     return out
 
 
+def _before(company: IrCompany, field: str) -> Optional[str]:
+    """IR 칸의 이번 flush 전 값(옮길 꼴) — `_follows` 가 견준다."""
+    deleted = get_history(company, field).deleted
+    return norm(field, deleted[0] if deleted else None, field)
+
+
+def _follows(other: Row, where: str, field: str, before) -> bool:
+    """IR 을 따라 이 줄을 고쳐도 되나 — Series A 줄은 빈칸 · IR 의 이전 값과 같던 칸만.
+
+    다른 값은 딜 소싱에서 따로 쓰는 값이라 덮지 않는다(10/26 사용자: "딜 소싱쪽에서
+    별도로 사용된 값이 있는거라면 덮어쓰지 말아주면 됨"). 다른 표는 그대로 따라간다.
+    """
+    if not isinstance(other, SeriesACompany):
+        return True
+    current = _value(other, where, field)
+    return not current or same(field, current, before)
+
+
 def _places(row: Row, kinds: Dict[str, str]) -> Dict[str, str]:
     return {f: w for f in FIELDS if (w := slot(row, f, kinds))}
 
@@ -598,8 +617,9 @@ def before_flush(session: Session) -> None:
     for company, changed in ir_edits:
         for field, value in changed.items():
             wrote.add((company.id, field))
+            before = _before(company, field)
             for other in run.linked(company.id):
-                if (w := slot(other, field, run.kinds)):
+                if (w := slot(other, field, run.kinds)) and _follows(other, w, field, before):
                     _put(other, w, field, value, run.fill_only)
 
     # ⑤ 줄을 고쳤다 → IR → 그 IR 에 이어진 다른 줄.
@@ -611,6 +631,7 @@ def before_flush(session: Session) -> None:
         for field, value in changed.items():
             if (company.id, field) in wrote:
                 continue
+            before = _value(company, field, field)   # 고치기 전에 잡아 둔다(`_follows`)
             # IR 에도 같은 규칙(`_put`) — 빈칸만 모드 · 같은 값 · O/X 칸의 자유 글은 그대로.
             if not _put(company, field, field, value, run.fill_only) \
                     and not same(field, getattr(company, field), value):
@@ -619,7 +640,8 @@ def before_flush(session: Session) -> None:
             for other in run.linked(company.id):
                 # 같은 flush 에서 그 줄도 이 칸을 고쳤으면 제 손으로 고친 값을 둔다.
                 if (other is not row and field not in touched.get(id(other), ())
-                        and (w := slot(other, field, run.kinds))):
+                        and (w := slot(other, field, run.kinds))
+                        and _follows(other, w, field, before)):
                     _put(other, w, field, value, run.fill_only)
 
 
