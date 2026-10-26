@@ -11,11 +11,8 @@ NULL 이고 기본값이 없다 — 빈칸이 곧 `아직 안 적음` 이다. �
 빈 DB 는 `0001_initial` 이 `create_all()` 로 만든다 — 칸이 있는지 보고 붙인다(0119 와 같다).
 되돌리기: 칸을 뗀다(그 칸에 옮겨 적힌 값도 함께 사라진다 — `최근 매출액` 은 그대로다).
 
-★ 통합할 때 `down_revision` 을 `0120_contract_day7` 로 바꾼다. 이 브랜치에는 0120 이
-  없어서(다른 판이 동시에 만든다) 이주 사슬이 끊기지 않게 잠시 0119 에 걸어 두었다.
-
 Revision ID: 0121_ir_revenue_years
-Revises: 0119_ir_success_fee (통합 때 0120_contract_day7)
+Revises: 0120_contract_day7
 """
 from __future__ import annotations
 
@@ -23,7 +20,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "0121_ir_revenue_years"
-down_revision = "0119_ir_success_fee"
+down_revision = "0120_contract_day7"
 branch_labels = None
 depends_on = None
 
