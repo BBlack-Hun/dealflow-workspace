@@ -83,6 +83,25 @@ def _send_window_open(request):
         send_guard.window_open = real
 
 
+@pytest.fixture(autouse=True)
+def _revenue_year_2026():
+    """**연도별 매출 칸이 서는 해를 2026 으로 못 박는다**(#75 · `services/revenue_years.py`).
+
+    표 · 수정창 · 한줄 소개가 올해 기준 지난 세 해를 세운다. 실제 시계로 두면
+    `23년 매출` · `매출 23년 2억` 을 재는 검사들이 **2027년 1월 1일에 한꺼번에**
+    깨진다. 해를 바꿔 보는 검사는 스스로 민다(tests/test_revenue_years.py 의 `at`).
+    위와 같은 까닭으로 `monkeypatch` 를 쓰지 않고 손으로 바꾸고 되돌린다.
+    """
+    from app.services import revenue_years
+
+    real = revenue_years.this_year
+    revenue_years.this_year = lambda: 2026
+    try:
+        yield
+    finally:
+        revenue_years.this_year = real
+
+
 @pytest.fixture()
 def db():
     """매 테스트마다 빈 스키마. (SQLite 파일 하나라 drop/create 가 가장 단순하고 빠르다)"""

@@ -47,6 +47,7 @@ from __future__ import annotations
 import re
 from typing import List, Optional
 
+from . import revenue_years
 from .message_composer import format_eok
 
 # 조합에 쓰는 칸. 다른 곳(화면 안내·테스트)에서 "무엇이 합쳐지는가"를 물을 때
@@ -59,21 +60,19 @@ SOURCE_FIELDS = [
     # 이제 **스타트업DB 표의 `기업 한줄 소개` 가 곧 이 칸**이라(0058) 화면
     # 이름을 그것으로 맞춘다. 두 벌로 두면 화면과 이 목록이 갈린다.
     ("business_desc", "기업 한줄 소개"),
-    ("revenue_2022", "22년 매출"),
-    ("revenue_2023", "23년 매출"),
-    ("revenue_2024", "24년 매출"),
-    ("revenue_2025", "25년 매출"),
+    # 연도별 매출은 해마다 바뀌어 여기 못 박지 않는다 — 올해 기준 지난 세 해
+    # (`services/revenue_years.shown` · #75).
     ("funding_total", "누적투자금액"),
     ("raise_target", "투자유치 진행금액"),
     ("pre_value", "Pre Value"),
     ("competitiveness", "특이사항"),
 ]
 
-# 연도별 매출 칸 — **오래된 해부터** 적어 둔다. 적어 둔 차례가 곧 한 줄에
-# 늘어놓는 차례이고, 한 해뿐일 때는 맨 뒤가 가장 최근이다.
+# 연도별 매출 칸(`_revenue_segment`) — **오래된 해부터** 늘어놓는다. 한 해뿐일 때는
+# 맨 뒤가 가장 최근이다.
 #
-# 짝의 뒷값은 한 줄에 적을 **연도 글자**다. `2023년` 이 아니라 `23년` 인 것은
-# 실데이터가 그렇게 적기 때문이다 — 매출 토막 안의 연도 표기를 세면
+# 짝(`revenue_years.shown`)의 뒷값은 한 줄에 적을 **연도 글자**다. `2023년` 이 아니라
+# `23년` 인 것은 실데이터가 그렇게 적기 때문이다 — 매출 토막 안의 연도 표기를 세면
 # `23년` 꼴 25회 · `2023년` 꼴 6회다.
 #
 # **22년은 한동안 일부러 빼 두었다.** 그때 근거는 "소개 문구에 22년 매출을 적은
@@ -83,11 +82,11 @@ SOURCE_FIELDS = [
 # 없어서가 아니라 **한 줄에 한 해만 적는 표기**를 쓰고 있었기 때문이고, 여러
 # 해를 늘어놓게 된 지금은 뺄 이유가 없다.
 #
-# 해를 더할 때는 **여기와 SOURCE_FIELDS 를 함께** 고쳐야 한다. SOURCE_FIELDS 에
-# 없으면 그 칸을 고쳐도 한줄 소개가 다시 맞춰지지 않는다 — companies.py 의
-# `ONE_LINER_SOURCES` 가 저 목록으로 '고쳤을 때 반응할 칸' 을 정한다.
-REVENUE_YEARS = [("revenue_2022", "22"), ("revenue_2023", "23"),
-                 ("revenue_2024", "24"), ("revenue_2025", "25")]
+# ── 이제 해를 **못 박지 않는다** (#75) ──
+# 표 · 창과 같은 해, 곧 올해 기준 **지난 세 해**다(`services/revenue_years.shown`).
+# 2026년이면 23·24·25년 — 위에서 되돌린 22년은 표에서 빠지면서 조합에서도 빠진다
+# (값은 그대로 남는다). 표에 안 보이는 해가 문구에만 실리면 무엇을 고쳐야 그 토막이
+# 바뀌는지 화면에서 알 수 없다. 해가 바뀌면 저절로 한 해씩 넘어간다.
 
 
 def _text(value: Optional[str]) -> str:
@@ -184,7 +183,7 @@ def _revenue_segment(company) -> str:
     한 번 눌러 주면 다시 조합값과 같아진다.)
     """
     written = [(year, _text(getattr(company, attr, None)))
-               for attr, year in REVENUE_YEARS]
+               for attr, year in revenue_years.shown()]
     written = [(year, value) for year, value in written
                if value and _is_amount(value)]
     if not written:

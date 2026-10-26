@@ -26,7 +26,7 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from ..clock import now_iso
 from ..models import CustomColumn, CustomColumnValue
-from . import edit_log
+from . import edit_log, revenue_years
 
 #: 칸을 붙일 수 있는 **화면**과 그 화면이 그리는 줄의 표.
 #:
@@ -65,18 +65,22 @@ ROW_TARGET = {table: key for key, spec in TARGETS.items() for table in spec["tab
 #: 두었던 칸은 맨 끝으로 물러난다 — tests/test_custom_columns.py 가 화면과 대조한다.
 #: 고정 칸(`NO` · 고르기 칸)은 뺀다 — 그 사이에 끼면 가로 고정 자리 셈이 어긋난다.
 #: 반복문으로 머리글을 그리는 표(스타트업 · 딜 소싱 · 매출예상)는 그 목록을 읽는다.
+#: `_YEARS` · `_RECENT` 는 해마다 이름이 바뀌는 자리다 — 읽을 때 올해 이름으로 편다
+#: (`anchor_groups` · `services/revenue_years.py` · #75).
+_YEARS = "{연도별 매출}"
+_RECENT = "{최근 매출액}"
 _HAND_ANCHORS = {
     "companies": {
         "IR 기업 현황": (
-            "기업명", "수신일", "대분류", "소분류", "투자라운드", "수정한 날짜",
+            "기업명", "수신일", "대분류", "소분류", _YEARS, _RECENT, "누적투자금액",
+            "투자유치희망금액", "Pre Value", "투자라운드", "수정한 날짜",
             "딜 소개 문구", "담당자", "소개 횟수", "견적서 첨부 여부", "미팅제공일자",
             "계약여부", "계약서 수신 여부", "카톡 연결 여부", "홍보메일삭제",
             "핵심/TOP Deal", "IR 자료"),
         "스타트업DB": (
             "수신일", "기업명", "대표자명", "연락처", "이메일", "기업 한줄 소개",
-            "22년 매출", "23년 매출", "24년 매출", "25년 매출", "누적투자금액",
-            "투자유치희망금액", "Pre Value", "특이사항 (장점)", "최근 매출액",
-            "설립년도", "지역", "정책자금", "IR 자료"),
+            _YEARS, "누적투자금액", "투자유치희망금액", "Pre Value", "특이사항 (장점)",
+            _RECENT, "설립년도", "지역", "정책자금", "IR 자료"),
         "Series A 이상 딜 소싱": (
             "기업명", "수신 일자", "Type", "담당자", "공유 심사역", "회사", "대분류",
             "소분류", "투자라운드", "대표자명", "연락처", "이메일", "24년 매출",
@@ -123,13 +127,22 @@ RENAMED = {
 def anchor_of(col) -> str:
     """이 칸이 설 자리(기존 칸의 머리글 이름) — 옛 이름이면 새 이름으로. 없으면 `""`."""
     key = label_key(col.after_key)
+    if getattr(col, "target", None) == "companies" and key.startswith("최근 매출액"):
+        # 이름에 해가 붙어 해마다 바뀐다(`최근 매출액(26년)` · #75) — 옛 이름도 지난해
+        # 이름도 올해 그 칸 뒤에 선다.
+        return revenue_years.recent_label()
     return RENAMED.get(getattr(col, "target", None), {}).get(key, key)
 
 
 def anchor_groups(target: str) -> Dict[str, tuple]:
     """`{탭: 머리글 이름들}` — 그 화면의 기존 칸."""
     if target in _HAND_ANCHORS:
-        return _HAND_ANCHORS[target]
+        years = tuple(f"{yy}년 매출" for _f, yy in revenue_years.shown())
+        recent = (revenue_years.recent_label(),)
+        return {tab: tuple(x for label in labels for x in
+                           (years if label == _YEARS else
+                            recent if label == _RECENT else (label,)))
+                for tab, labels in _HAND_ANCHORS[target].items()}
     # 순환 import 를 피해 늦게 부른다 — 그 화면들이 이 모듈을 부른다.
     if target == "startup":
         from .contact_columns import STARTUP_LAYOUT, table_columns
