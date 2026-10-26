@@ -31,7 +31,7 @@ from datetime import datetime
 import pytest
 
 from tests.test_auto_sourcing_remind import (  # noqa: F401 - 픽스처를 함께 쓴다
-    WEEK2, _aware, _items, _run, _turn_on, people)
+    THU3, _aware, _items, _run, _turn_on, people)
 from tests.test_series_a_deal_share import (  # noqa: F401 - 픽스처를 함께 쓴다
     SHARE, _ids, _send, today, world)
 from tests.test_sourcing_link_confirm import _reimport
@@ -398,7 +398,7 @@ def test_A1_remind_skips_pending_people(db, users, people):
     people["b"].participation = CUSTOM
     db.commit()
     _turn_on(db)
-    result = _run(db, WEEK2)
+    result = _run(db, THU3)
     assert _items(db) == []
     assert any(ASKING in s for s in result["skipped"])
     assert any(CUSTOM in s for s in result["skipped"])
@@ -409,11 +409,11 @@ def test_A1_drops_someone_who_became_pending_before_release(db, users, people):
     from app.services import scheduled_send
 
     _turn_on(db)
-    _run(db, WEEK2)
+    _run(db, THU3)
     assert len(_items(db)) == 2
     db.get(SourcingContact, people["a"].id).participation = ASKING
     db.commit()
-    scheduled_send.run_once(db, _aware(datetime(2026, 10, 14, 11, 0, 20)))
+    scheduled_send.run_once(db, _aware(datetime(2026, 10, 15, 11, 0, 20)))
     status = {i.sourcing_contact_id: i.status for i in _items(db)}
     assert status[people["a"].id] == "canceled"
     assert status[people["b"].id] != "canceled"

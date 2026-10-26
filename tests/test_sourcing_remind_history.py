@@ -248,18 +248,18 @@ def test_a_real_automation_send_reads_as_auto(db, users, people):
     automation.save(db, automation.SOURCING_REMIND, enabled=True, user_id=None,
                     test_mode=False, test_room="자동화 시험방")
     result = runner.run_once(db, automation.SOURCING_REMIND,
-                             datetime(2026, 10, 14, 9, 0).astimezone())
+                             datetime(2026, 10, 15, 9, 0).astimezone())
     assert result["status"] == "ready"
     items = db.execute(select(SendItem)).scalars().all()
     assert {i.sourcing_contact_id for i in items} == {people["a"].id, people["b"].id}
     for item in items:
-        item.status, item.sent_at = "sent", "2026-10-14T11:00:20+09:00"
+        item.status, item.sent_at = "sent", "2026-10-15T11:00:20+09:00"
     db.commit()
 
     got = log.history(db, [people["a"].id, people["b"].id], log.months(TODAY))
     for who in ("a", "b"):
         assert [(s.when, s.how) for s in got[people[who].id]["2026-10"]] == [
-            ("10/14 11:00", "자동")]
+            ("10/15 11:00", "자동")]
 
 
 # ── ④ 보낸 것만 · 월간 리마인드만 · 실제 발송만 ─────────────────────────────
@@ -295,11 +295,11 @@ def test_test_mode_automation_sends_never_show(db, users, people):
     automation.save(db, automation.SOURCING_REMIND, enabled=True, user_id=None,
                     test_mode=True, test_room="자동화 시험방")
     assert runner.run_once(db, automation.SOURCING_REMIND,
-                           datetime(2026, 10, 14, 9, 0).astimezone())["status"] == "ready"
+                           datetime(2026, 10, 15, 9, 0).astimezone())["status"] == "ready"
     items = db.execute(select(SendItem)).scalars().all()
     assert items and all(i.sourcing_contact_id is None for i in items)
     for item in items:
-        item.status, item.sent_at = "sent", "2026-10-14T11:00:20+09:00"
+        item.status, item.sent_at = "sent", "2026-10-15T11:00:20+09:00"
     db.commit()
 
     assert log.history(db, [people["a"].id, people["b"].id], log.months(TODAY)) == {}

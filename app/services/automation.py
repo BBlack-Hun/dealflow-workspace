@@ -87,7 +87,7 @@ KINDS: List[Kind] = [
     Kind(MEETING_REQUEST, "미팅 요청 2회",
          "IR 자료 전달 7일 뒤 14:00 미팅 요청, 답이 없으면 10일 뒤 한 번 더"),
     Kind(SOURCING_REMIND, "소싱 리마인드",
-         "매월 2·3주차 수요일 11:00 — 이번 달 딜을 아직 안 준 심사역"),
+         "매월 3주차 목요일 11:00 — 이번 달 딜을 아직 안 준 심사역"),
     Kind(CHANNEL_TOP, "채널방 TOP·핵심 딜",
          "매주 수요일 13:30 — 오픈채팅방마다 TOP·핵심 딜 3곳"),
     Kind(STARTUP_MONTHLY, "스타트업 월간 발송",
