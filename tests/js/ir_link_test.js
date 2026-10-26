@@ -51,6 +51,15 @@ function submit(form) {
             "무엇을 푸는지 묻지 않았다");
   p = page(true);
   assert.strictEqual(submit(p.form), false, "예라고 했는데 막았다");
+  assert.ok(!/IR 에서 온 값/.test(p.env.asked[0]), "다른 탭 줄은 값을 안 지운다");
+
+  // Series A 줄(`data-clears`)은 IR 에서 온 값도 지운다는 것을 묻는다.
+  const sa = el("button", { class: "linkbtn ir-unlink-btn", "data-name": "샘플가람",
+                            "data-company": "(주)샘플가람", "data-clears": "1" });
+  const saForm = el("form", { class: "inline-form ir-unlink-form" }, [sa]);
+  const env = run("ir_link.js", el("div", {}, [saForm]), true);
+  assert.strictEqual(submit(saForm), false);
+  assert.ok(/IR 에서 온 값\(IR 과 같은 칸\)/.test(env.asked[0]), "지운다는 말이 없다");
 })();
 
 // ── 2. 일괄 연결 확인 화면 ─────────────────────────────────────────────────

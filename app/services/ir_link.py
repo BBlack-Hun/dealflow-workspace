@@ -64,7 +64,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, object_session
 
 from ..models import ConsultingCompany, IrCompany, SeriesACompany, VcContact
-from . import startup_handoff
+from . import company_sync, startup_handoff
 from .deal_history import _key as compare_key
 from .room_name import normalize_space
 
@@ -252,6 +252,9 @@ def unlink(db: Session, row: Row) -> bool:
     """이 줄의 연결을 푼다. 이어진 것이 없었으면 False."""
     if row.ir_company_id is None:
         return False
+    if isinstance(row, SeriesACompany):
+        # 딜 소싱 줄은 연결로 들어온 값(IR 과 같은 칸)도 걷는다 — 10/26 사용자 요청.
+        company_sync.clear_same(db, row)
     row.ir_company_id = None
     row.ir_link_auto = 0
     return True

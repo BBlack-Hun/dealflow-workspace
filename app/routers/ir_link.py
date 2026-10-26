@@ -413,7 +413,8 @@ def unlink_row(tab: str = Form(...), row_id: int = Form(...),
                show: str = Form(""), focus: int = Form(0),
                db: Session = Depends(get_db),
                user: User = Depends(get_current_user)):
-    """[연결 해제] — 이은 것만 푼다. 줄도 IR 기업도 그대로다."""
+    """[연결 해제] — 이은 것만 푼다. 줄도 IR 기업도 그대로다(Series A 줄만 IR 과 같은 칸을
+    비운다 — `ir_link.unlink`)."""
     kind = _kind(tab)
     row = editable_row(db, user, kind, row_id)
     name = ir_link.row_name(row) or f"#{row.id}"

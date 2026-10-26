@@ -575,6 +575,25 @@ def fill_blanks(session: Session, rows: Iterable[Row],
         return sum(_fill(run, r, fields) for r in rows if r.ir_company_id)
 
 
+def clear_same(session: Session, row: SeriesACompany) -> int:
+    """연결을 풀기 전 — Series A 줄에서 **지금 IR 과 같은 칸**만 비운다. 비운 칸 수.
+
+    10/26 사용자: "연결 해제를 할 경우에 연결된 정보도 지워지게". 어느 칸이 IR 에서 왔는지
+    적어 둔 곳이 없어 IR 과 같은 값을 IR 에서 온 값으로 본다 — 다른 값은 딜 소싱의 값이라
+    둔다(`_follows` 와 같은 결). IR 쪽은 안 건드린다(비우기는 따라가지 않는다 — `_changes`).
+    """
+    company = session.get(IrCompany, row.ir_company_id)
+    if company is None:
+        return 0
+    cleared = 0
+    for field, where in _places(row, {}).items():
+        theirs, mine = _value(company, field, field), _raw(_get(row, where))
+        if theirs and mine and same(field, mine, theirs):
+            _set(row, where, None)
+            cleared += 1
+    return cleared
+
+
 def before_flush(session: Session) -> None:
     """flush 직전 — 새 줄을 잇고, 이은 줄은 빈칸만 채우고, 고친 칸은 따라 고친다.
 
