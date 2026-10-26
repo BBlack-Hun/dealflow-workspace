@@ -42,7 +42,7 @@
     <a class="chip {% if not member %}active{% endif %}" href="{{ here }}{% if view_as %}&member=0{% endif %}">팀 전체</a>
     <a class="chip {% if member == user.id %}active{% endif %}" href="{{ here }}&member={{ user.id }}">내 것</a>
     <select class="chip-select" aria-label="팀원 선택"
-            onchange="location = '{{ here }}' + (this.value ? '&member=' + this.value : '')">
+            onchange='location = {{ here|tojson }} + (this.value ? "&member=" + this.value : "")'>
       <option value="">팀원 선택…</option>
       {% for m in members %}
       <option value="{{ m.id }}" {% if member == m.id %}selected{% endif %}>{{ m.name }}</option>

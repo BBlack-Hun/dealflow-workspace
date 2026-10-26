@@ -12,11 +12,18 @@ from __future__ import annotations
 
 import csv
 import io
+import zipfile
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 # 업로드 상한. 팀 시트는 수백 행이라 이보다 훨씬 작다. 큰 파일로 메모리를 먹는 것을 막는다.
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+# .xlsx 는 zip 이다. 위 상한은 압축된 크기라, 풀린 크기도 따로 막는다(작은 파일이 풀리며 커지는 것).
+MAX_UNZIPPED_BYTES = 100 * 1024 * 1024
+# 시트 하나(read_tabs 는 모든 탭 합)에서 읽는 행 · 열 상한. 팀 시트는 수백 행 · 수십 열이다.
+# 시트가 적어 둔 범위만큼 빈 칸까지 채워 읽으므로, 범위만 큰 파일이 메모리를 먹지 못하게 한다.
+MAX_ROWS = 50_000
+MAX_COLS = 300
 EXCEL_SUFFIXES = (".xlsx", ".xlsm")
 CSV_SUFFIXES = (".csv", ".tsv", ".txt")
 
@@ -39,6 +46,7 @@ def _cell_to_text(value: Any) -> str:
 
 def sheet_names(filename: str, data: bytes) -> List[str]:
     """엑셀이면 시트 이름 목록, CSV 면 빈 목록."""
+    _check_upload(filename, data)
     if not _is_excel(filename):
         return []
     wb = _load_workbook(data)
@@ -71,9 +79,12 @@ def read_tabs(filename: str, data: bytes) -> List[Tuple[str, List[List[str]]]]:
         return [("", _read_csv(data))]
     wb = _load_workbook(data)
     try:
-        return [(ws.title, [[_cell_to_text(c) for c in row]
-                            for row in ws.iter_rows(values_only=True)])
-                for ws in wb.worksheets]
+        tabs, left = [], MAX_ROWS
+        for ws in wb.worksheets:
+            rows = _sheet_rows(ws, left)
+            left -= len(rows)
+            tabs.append((ws.title, rows))
+        return tabs
     finally:
         wb.close()
 
@@ -97,16 +108,51 @@ def _is_excel(filename: str) -> bool:
     return filename.lower().endswith(EXCEL_SUFFIXES)
 
 
+_OPEN_FAILED = "엑셀 파일을 열지 못했습니다. 파일이 깨지지 않았는지, .xlsx 로 저장했는지 확인해주세요."
+
+
 def _load_workbook(data: bytes):
+    """올린 엑셀을 여는 유일한 자리 — 열기 전에 풀린 크기를 본다."""
     try:
         import openpyxl
     except ImportError:  # pragma: no cover - 배포 이미지에는 항상 있다
         raise SpreadsheetError("엑셀 읽기 모듈(openpyxl)이 설치되지 않았습니다.")
     try:
+        # 목록의 크기를 믿어도 된다 — zipfile 이 풀 때 그 크기를 넘는 내용은 버리고 오류를 낸다.
+        with zipfile.ZipFile(io.BytesIO(data)) as zf:
+            unzipped = sum(i.file_size for i in zf.infolist())
+    except Exception:
+        raise SpreadsheetError(_OPEN_FAILED)
+    if unzipped > MAX_UNZIPPED_BYTES:
+        raise SpreadsheetError(
+            f"엑셀 내용이 너무 큽니다(풀린 크기 {unzipped // 1024 // 1024}MB). "
+            f"{MAX_UNZIPPED_BYTES // 1024 // 1024}MB 이하로 줄여 올려주세요."
+        )
+    try:
         # data_only=True → 수식이 아니라 계산된 값을 읽는다(시트에 수식이 많다).
         return openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True)
-    except Exception as exc:
-        raise SpreadsheetError(f"엑셀 파일을 열지 못했습니다: {exc}")
+    except Exception:
+        # openpyxl 원문은 내부 경로 · 구조가 드러나서 사용자에게 싣지 않는다.
+        raise SpreadsheetError(_OPEN_FAILED)
+
+
+def _sheet_rows(ws, max_rows: int = MAX_ROWS) -> List[List[str]]:
+    """시트 하나 → 문자열 2차원 배열. 행 · 열 상한을 넘으면 읽다 말고 거절한다."""
+    if (ws.max_column or 0) > MAX_COLS:
+        raise SpreadsheetError(
+            f"'{ws.title}' 시트의 열이 너무 많습니다({ws.max_column}열). "
+            f"{MAX_COLS}열까지 읽습니다 — 쓰지 않는 열을 지우고 올려주세요."
+        )
+    # 적어 둔 범위가 없으면 열 상한까지 채운다. shortcut: 범위가 없는 파일은 MAX_COLS 너머 칸을 말없이 버린다.
+    rows = [[_cell_to_text(c) for c in row]
+            for row in ws.iter_rows(max_row=min(ws.max_row or max_rows + 1, max_rows + 1),
+                                    max_col=ws.max_column or MAX_COLS, values_only=True)]
+    if len(rows) > max_rows:
+        raise SpreadsheetError(
+            f"행이 너무 많습니다. 한 파일에서 {MAX_ROWS:,}행까지 읽습니다 — "
+            "쓰지 않는 행을 지우고 올려주세요."
+        )
+    return rows
 
 
 def _read_excel(data: bytes, sheet: Optional[str]) -> List[List[str]]:
@@ -120,7 +166,7 @@ def _read_excel(data: bytes, sheet: Optional[str]) -> List[List[str]]:
             ws = wb[sheet]
         else:
             ws = wb[wb.sheetnames[0]]
-        return [[_cell_to_text(c) for c in row] for row in ws.iter_rows(values_only=True)]
+        return _sheet_rows(ws)
     finally:
         wb.close()
 
@@ -163,6 +209,7 @@ def is_export_file(filename: str, data: bytes) -> bool:
     if not _is_excel(filename):
         return False
     try:
+        _check_upload(filename, data)
         wb = _load_workbook(data)
     except SpreadsheetError:
         return False
