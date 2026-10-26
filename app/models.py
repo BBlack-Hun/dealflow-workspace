@@ -769,6 +769,14 @@ class IrCompany(TimestampMixin, Base):
     revenue_2023: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     revenue_2024: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     revenue_2025: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # 26~30년은 **미리 판 칸**이다(0121 · #75). 표 · 창은 올해 기준 지난 세 해만 세우고
+    # (`services/revenue_years.py`), 해가 바뀌면 `revenue_recent` 가 지난해 칸으로 옮겨
+    # 적힌다. 2032년 1월 전에 `revenue_2031` 하나를 더한다 — 함께 적을 곳은 그 파일 머리말.
+    revenue_2026: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    revenue_2027: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    revenue_2028: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    revenue_2029: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    revenue_2030: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     founded_year: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     # 홍보메일 답장을 **받은 날**. 시트에서는 스타트업DB 의 맨 앞 칸이다.
     # 이 칸이 없어서 그 뒤가 통째로 한 칸씩 밀려 보였다.
@@ -2404,7 +2412,9 @@ class MonthlyColumnRun(TimestampMixin, Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    # 어느 표인가. consulting = 투자컨설턴트 · contact = 투자사 관리 현황
+    # 어느 표인가. consulting = 투자컨설턴트 · contact = 투자사 관리 현황 ·
+    # revenue_year = IR 기업 연도별 매출 옮겨 적기(해마다 한 번 — `month` 에 해,
+    # `services/revenue_years.roll_over`)
     target: Mapped[str] = mapped_column(String)
     # 그 표 안에서 칸이 갈리는 단위. 투자컨설턴트는 **사람마다·탭마다**라
     # `"3:스타트업"`, 투자사 관리 현황은 **명단마다**라 명단 이름 그대로다.

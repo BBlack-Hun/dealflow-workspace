@@ -454,7 +454,8 @@ def test_two_tabs_match_the_sheet(logged_in, company):
         assert col in status, f"IR 기업현황 탭에 '{col}' 이 없다"
 
     db_tab = logged_in.get("/companies?tab=db").text
-    for col in ("대표자명", "연락처", "이메일", "22년 매출", "25년 매출",
+    # 연도별 매출은 올해 기준 지난 세 해다 — 검사의 올해는 2026(tests/conftest.py · #75).
+    for col in ("대표자명", "연락처", "이메일", "23년 매출", "25년 매출",
                 "누적투자금액", "투자유치희망금액", "Pre Value",
                 "특이사항 (장점)", "설립년도", "정책자금"):
         assert col in db_tab, f"스타트업DB 탭에 '{col}' 이 없다"

@@ -67,13 +67,24 @@ SORT_VALUES = {
 #: 친 글자가 **번호 모양**인가 — `companies.js` 의 `PHONEISH` 와 같은 규칙.
 PHONEISH = re.compile(r"^[0-9][0-9\s().+-]*$")
 
-#: 파일 머리글 — IR 기업 현황 탭의 머리글 그대로(왼쪽부터).
+#: 파일 머리글 — IR 기업 현황 탭의 머리글 그대로(왼쪽부터). `소분류` 뒤의 매출 · 금액
+#: 칸은 해마다 이름이 바뀌어 `view_headers` 가 끼운다(#75 · `revenue_years.columns`).
 VIEW_HEADERS = [
     "NO", "기업명", "수신일", "대분류", "소분류", "투자라운드", "수정한 날짜",
     "딜 소개 문구", "담당자", "소개 횟수", "소개 발송(명)", "견적서 첨부 여부",
     "미팅제공일자", "계약여부", "계약서 수신 여부", "성공보수율", "카톡 연결 여부", "홍보메일삭제",
     "핵심/TOP Deal", "IR 자료",
 ]
+
+
+def view_headers(cols) -> List[str]:
+    """`VIEW_HEADERS` 의 `소분류` 바로 뒤에 매출 · 금액 머리글을 끼운다 — 화면과 같은 자리.
+
+    `cols` 는 `revenue_years.columns()` — 머리글과 칸(`to_cells`)이 같은 한 벌을 받아야
+    해가 바뀌는 순간에도 둘이 안 갈린다.
+    """
+    at = VIEW_HEADERS.index("소분류") + 1
+    return VIEW_HEADERS[:at] + [label for _f, label in cols] + VIEW_HEADERS[at:]
 
 
 def split_values(raw) -> List[str]:
@@ -208,12 +219,14 @@ def view_rows(rows: List[dict], filters: Dict[str, List[str]], q: str = "",
     return sort_rows(shown, sort)
 
 
-def to_cells(rows: List[dict]) -> List[list]:
-    """파일 줄 — `VIEW_HEADERS` 차례. `NO` 는 보이는 차례 1, 2, 3…"""
+def to_cells(rows: List[dict], cols) -> List[list]:
+    """파일 줄 — `view_headers(cols)` 차례. `NO` 는 보이는 차례 1, 2, 3…"""
     out = []
     for no, r in enumerate(rows, start=1):
         out.append([
             no, r["name"], r["received_at"], r["sector_major"], r["sector_minor"],
+            # 매출 · 금액 — 화면처럼 **적힌 그대로** 글자다(`amount_cell` 의 `eok`).
+            *[r[f] or "" for f, _label in cols],
             # 화면은 투자라운드를 **앞부분만** 보인다(`series_short` — 괄호 안 설명
             # 생략). 파일에서는 전체 값을 싣는다 — 짚어야 보이던 것이 칸에 바로 선다.
             r["series"], r["updated_at"], r["one_liner"], r["assignee"],

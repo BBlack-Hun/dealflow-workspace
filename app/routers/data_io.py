@@ -37,7 +37,7 @@ from ..deps import admin_only, doer, get_current_user, may_manage_team_contacts
 from ..models import IrCompany, SendItem, SendJob, User, VcContact
 from ..services import (amount, company_view, custom_columns, import_diff, investor_firms,
                         pipeline,
-                        report as report_svc, sheet_import, sheet_owner,
+                        report as report_svc, revenue_years, sheet_import, sheet_owner,
                         spreadsheet as sp)
 from .contacts import contact_rows
 
@@ -547,7 +547,7 @@ def export_companies_view(request: Request, q: str = "", sort: str = "",
     필터(주소의 `?sector=…` 등) · 검색(`q`) · 정렬(`sort`)을 **서버가 같은 규칙으로
     다시 건다** — 화면 글을 긁지 않는다(`services/company_view.py` 머리말).
     줄은 표가 먹는 한 벌(`companies.company_rows`)이고, 칸은 그 탭에 **보이는
-    칸**이다(`company_view.VIEW_HEADERS`).
+    칸**이다(`company_view.view_headers`).
 
     권한은 전체 내려받기와 같다 — 로그인한 계정이면 누구나(투자컨설턴트는
     `deps.CONSULTANT_PATHS` 밖이라 미들웨어가 막는다 — 전체 내려받기와 같다).
@@ -564,11 +564,14 @@ def export_companies_view(request: Request, q: str = "", sort: str = "",
     today = date.today().isoformat()
     # 이름은 전체 파일(`IR 기업현황_날짜.xlsx`)과 갈라 둔다 — 둘을 같은 폴더에
     # 받아 두면 어느 쪽이 거른 것인지 이름으로 보여야 한다.
-    put = custom_columns.arranger(company_view.VIEW_HEADERS, extra)
+    # 매출 · 금액 칸은 올해가 정한다(#75) — 머리글과 칸이 같은 한 벌을 받는다.
+    cols = revenue_years.columns()
+    head = company_view.view_headers(cols)
+    put = custom_columns.arranger(head, extra)
     cells = [put(line + custom_columns.cells(extra, r["id"]))
-             for r, line in zip(rows, company_view.to_cells(rows))]
+             for r, line in zip(rows, company_view.to_cells(rows, cols))]
     return _xlsx(f"IR 기업현황_화면_{today}.xlsx", "IR 기업현황 (화면)",
-                 put(company_view.VIEW_HEADERS + custom_columns.names(extra)), cells)
+                 put(head + custom_columns.names(extra)), cells)
 
 
 # `/api/export/reactions.xlsx` 는 뺐다 — 업무 보고 `이 달의 반응` 머리에 달려

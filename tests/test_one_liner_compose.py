@@ -104,23 +104,24 @@ def test_every_written_year_is_listed():
     assert made == "물류 최적화 | 매출 23년 2억, 24년 4억, 25년 11억"
 
 
-def test_2022_is_a_source_year_again():
-    """22년도 재료다.
+def test_the_years_are_the_three_shown_in_the_table():
+    """재료가 되는 해는 **표에 보이는 해**다 — 올해 기준 지난 세 해(#75).
 
-    한동안 일부러 빼 두었던 해다("소개 문구에 22년 매출을 적은 예가 시트에
-    하나도 없다"). 그 근거가 지금은 성립하지 않는다 — 운영 사본에 22년 값이
-    136곳(금액 92곳) 쌓였고, 사용자가 22·23년도 나오게 해 달라고 요청했다.
+    22년은 한동안 빠졌다가("소개 문구에 22년 매출을 적은 예가 시트에 하나도 없다")
+    사용자 요청으로 되돌아왔는데, 2026년부터는 표에서 빠지면서 조합에서도 빠진다.
+    표에 안 보이는 해가 문구에만 실리면 무엇을 고쳐야 그 토막이 바뀌는지 알 수 없다.
+    검사의 올해는 2026 이다(tests/conftest.py) — 해를 미는 검사는 test_revenue_years.py.
     """
     made = compose_one_liner(make(business_desc="소재 제조",
                                   revenue_2022="2.6억", revenue_2023="2.8억",
                                   revenue_2024="1.6억"))
-    assert made == "소재 제조 | 매출 22년 2.6억, 23년 2.8억, 24년 1.6억"
+    assert made == "소재 제조 | 매출 23년 2.8억, 24년 1.6억"
 
 
 def test_oldest_year_comes_first():
     """차례는 **오래된 해부터**다. 뒤집히면 추세를 거꾸로 읽는다."""
-    made = compose_one_liner(make(revenue_2025="11억", revenue_2022="1억"))
-    assert made == "매출 22년 1억, 25년 11억"
+    made = compose_one_liner(make(revenue_2025="11억", revenue_2023="1억"))
+    assert made == "매출 23년 1억, 25년 11억"
 
 
 def test_a_single_year_carries_no_year_label():
@@ -132,18 +133,18 @@ def test_a_single_year_carries_no_year_label():
     갈린다.
     """
     assert compose_one_liner(make(revenue_2024="13억")) == "매출 13억"
-    assert compose_one_liner(make(revenue_2022="13억")) == "매출 13억"
+    assert compose_one_liner(make(revenue_2023="13억")) == "매출 13억"
 
 
 def test_years_without_an_amount_drop_out_of_the_list():
     """가운데 해가 메모면 **그 해만** 빠진다 — 자리를 비워 두지 않는다."""
-    made = compose_one_liner(make(revenue_2022="4억", revenue_2023="확인안됨",
-                                  revenue_2024="9억"))
-    assert made == "매출 22년 4억, 24년 9억"
+    made = compose_one_liner(make(revenue_2023="4억", revenue_2024="확인안됨",
+                                  revenue_2025="9억"))
+    assert made == "매출 23년 4억, 25년 9억"
 
     # 그렇게 걸러 한 해만 남으면 연도가 다시 빠진다.
-    made = compose_one_liner(make(revenue_2022="확인안됨", revenue_2023="검색안됨",
-                                  revenue_2024="9억"))
+    made = compose_one_liner(make(revenue_2023="확인안됨", revenue_2024="검색안됨",
+                                  revenue_2025="9억"))
     assert made == "매출 9억"
 
 

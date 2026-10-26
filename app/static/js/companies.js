@@ -41,8 +41,11 @@
     // 발송 목록 화면에 그대로 드러난다 — 조용히 빠지지 않는다.
     "kakao_room_name",
     // 연도별 매출 — **글자**다(`19.8억` · `1,224백만원`). 숫자로 바꾸지 않는다.
-    // 23·24·25년은 한줄 소개 자동 조합의 재료다(services/one_liner.py).
-    "revenue_2022", "revenue_2023", "revenue_2024", "revenue_2025",
+    // 파 둔 해 **전부**다. 창에는 서버가 올해 기준 지난 세 해만 세우고
+    // (services/revenue_years.py), 안 선 칸은 `fill`·`collect` 가 건너뛴다 — 숨긴 해는
+    // 보내지 않으니 안 지워진다. 판을 더하면 여기도 한 줄(tests/test_revenue_years.py).
+    "revenue_2022", "revenue_2023", "revenue_2024", "revenue_2025", "revenue_2026",
+    "revenue_2027", "revenue_2028", "revenue_2029", "revenue_2030",
     "revenue_recent", "funding_total", "raise_target", "pre_value",
     "competitiveness",
     // `funding_status`(투자 현황)를 **뺐다.** 창에서 칸을 없앴으므로

@@ -7,7 +7,7 @@
 [수정] 창에 아예 없었다.
 
     수신일 · 대표자 · 연락처 · 이메일
-    22·23·24·25년 매출 · 설립년도 · 정책자금(그때 이름 `기보, 신보, 중진공`)
+    22·23·24·25년 매출(지금은 올해 기준 지난 세 해 — #75) · 설립년도 · 정책자금(그때 이름 `기보, 신보, 중진공`)
     사업 설명(business_desc)
 
 그 상태로 스타트업DB 탭을 지우면 **고칠 자리가 통째로 사라진다.** 특히
@@ -49,12 +49,17 @@ STARTUP_DB_FIELDS = [
     ("contact_name", "대표자명"),
     ("contact_phone", "연락처"),
     ("contact_email", "이메일"),
-    ("revenue_2022", "22년 매출"),
+    ("founded_year", "설립년도"),
+    ("guarantee", "정책자금"),
+]
+
+# 연도별 매출은 **반복 하나**로 서서(올해 기준 지난 세 해 — `services/revenue_years.py`
+# · #75) 템플릿 글자로는 못 잰다. 검사의 올해는 2026 이다(tests/conftest.py) — 그린
+# 화면으로 잰다(`test_연도별_매출도_표와_창에_같은_이름으로_선다`).
+YEARLY_FIELDS = [
     ("revenue_2023", "23년 매출"),
     ("revenue_2024", "24년 매출"),
     ("revenue_2025", "25년 매출"),
-    ("founded_year", "설립년도"),
-    ("guarantee", "정책자금"),
 ]
 
 # 실데이터에 실제로 있는 모양들. **숫자 칸·날짜 칸으로 바꿔 둔 순간 브라우저가
@@ -193,6 +198,17 @@ def test_창의_이름은_표_머리글과_한_글자도_다르지_않다():
             f"{attr}: 표 머리글이 '{label}' 이 아닙니다 — 창 쪽도 함께 보세요"
 
 
+def test_연도별_매출도_표와_창에_같은_이름으로_선다(logged_in, company):
+    """위 두 검사의 연도별 매출 몫 — 그린 화면에서 잰다(창 · 표 머리글 · 저장 목록)."""
+    html = logged_in.get("/companies?tab=db").text
+    fields = _panel_fields()
+    for attr, label in YEARLY_FIELDS:
+        assert f'id="f-{attr}"' in html, f"{label}({attr}) 칸이 창에 없습니다"
+        assert attr in fields, f"{label}({attr}) 이 companies.js 의 FIELDS 에 없습니다"
+        assert f"<span>{label}</span>" in html, f"{attr}: 창의 이름이 '{label}' 이 아닙니다"
+        assert f">{label}</th>" in html, f"{attr}: 표 머리글이 '{label}' 이 아닙니다"
+
+
 def test_재료_칸의_이름은_한_곳에서만_정해진다():
     """**자동 조합의 첫 재료**다(`business_desc`).
 
@@ -283,10 +299,13 @@ def test_창에서_고친_연도별_매출이_자동_조합에_쓰인다(logged_
     made = logged_in.get(f"/api/companies/{company.id}").json()["one_liner_suggestion"]
     assert "매출 23년 2억, 24년 4억, 25년 11억" in made, made
 
-    # 22년도 재료다 — 사용자 신고("22년이랑 23년 매출도 반영") 그대로.
+    # 22년은 2026년부터 표에서 빠지면서 조합에서도 빠진다 — 값은 남는다(#75 ·
+    # `one_liner._revenue_segment`). 표에 안 보이는 해가 문구에만 실리면 고칠 곳을 못 찾는다.
     _panel_save(logged_in, company.id, revenue_2022="1억")
-    made = logged_in.get(f"/api/companies/{company.id}").json()["one_liner_suggestion"]
-    assert "매출 22년 1억, 23년 2억, 24년 4억, 25년 11억" in made, made
+    row = logged_in.get(f"/api/companies/{company.id}").json()
+    assert row["revenue_2022"] == "1억"
+    made = row["one_liner_suggestion"]
+    assert "매출 23년 2억, 24년 4억, 25년 11억" in made and "22년" not in made, made
 
     # **고르면 그 줄이 칸에 들어간다** — 권하는 데서 끝나지 않는다.
     logged_in.post(f"/api/companies/{company.id}/one-liner")

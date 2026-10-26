@@ -43,6 +43,14 @@ HTML.replace(/id="f-([a-z_0-9]+)"/g, function (_all, f) {
   return _all;
 });
 
+// 연도별 매출은 **반복 하나**로 서 있다(`id="f-{{ f }}"`) — 서버가 올해 기준 지난 세 해를
+// 고른다(`services/revenue_years.py` · #75). 여기서는 2026년에 서는 세 칸을 세운다.
+// 해마다 바뀌는 칸이 창에 서는지 · 스크립트 목록이 파 둔 해를 다 갖는지는
+// tests/test_revenue_years.py 가 실제로 그린 화면으로 잰다.
+const YEARLY = /^revenue_\d{4}$/;
+assert.ok(HTML.indexOf('id="f-{{ f }}"') >= 0, "연도별 매출 칸의 반복을 창에서 못 찾았습니다");
+["revenue_2023", "revenue_2024", "revenue_2025"].forEach(function (f) { SHOWN.push(f); });
+
 // 저장 요청에 실리면 **안 되는** 칸.
 //   desc_backup   합치기 전 값(0051) — 읽기 전용이다. 실리면 되살리려고
 //                 열어 본 것만으로 백업이 덮인다.
@@ -174,8 +182,14 @@ async function main() {
   const listed = /var FIELDS = \[(.*?)\];/s.exec(src);
   assert.ok(listed, "companies.js 에서 FIELDS 를 못 찾았습니다");
   const inScript = listed[1].match(/"([a-z_0-9]+)"/g).map((s) => s.slice(1, -1));
+  // 스크립트는 파 둔 해를 **전부** 든다 — 창에 안 선 해는 `fill`·`collect` 가 건너뛴다.
+  // 그래서 연도별 매출은 창에 선 세 칸이 목록 안에 있는지만 보고, 나머지는 한 벌로 맞춘다.
+  FIELDS.filter((f) => YEARLY.test(f)).forEach(function (f) {
+    assert.ok(inScript.indexOf(f) >= 0, f + " 가 companies.js 의 FIELDS 에 없습니다");
+  });
   assert.deepStrictEqual(
-    FIELDS.slice().sort(), inScript.slice().sort(),
+    FIELDS.filter((f) => !YEARLY.test(f)).sort(),
+    inScript.filter((f) => !YEARLY.test(f)).sort(),
     "창에 세운 칸과 companies.js 의 FIELDS 가 갈렸습니다 ★ 갈린 칸은 조용히 저장이 안 됩니다");
 
   // ── 1. 되읽은 값이 하나도 빠짐없이 저장 요청에 실린다 ──────────────────
@@ -205,7 +219,7 @@ async function main() {
   // 숫자 칸으로 바꿔 두면 `1,224백만원` 이 통째로 사라지거나 `1` 이 된다.
   // 그 값이 그대로 딜소개 문구의 `매출 …` 토막이 된다.
   {
-    ["revenue_2022", "revenue_2023", "revenue_2024", "revenue_2025"].forEach(function (f) {
+    ["revenue_2023", "revenue_2024", "revenue_2025"].forEach(function (f) {
       assert.strictEqual(typeof sent[f], "string", f + ": 글자가 아닙니다");
       assert.strictEqual(sent[f], SAMPLE[f], f + ": 값이 다듬어졌습니다");
     });

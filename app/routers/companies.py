@@ -29,7 +29,7 @@ from ..db import get_db
 from ..deps import NotAdmin, admin_only, get_current_user, may_view_consulting, templates
 from ..models import ConsultingCompany, ConsultingSheet, IrCompany, OneLinerBackup, User
 from ..services import (amount, auth as auth_svc, custom_columns, deal_history, edit_log,
-                        email_domains, room_match)
+                        email_domains, revenue_years, room_match)
 from ..services.one_liner import (
     AUTO, apply_one_liner, bulk_rows, compose_one_liner, one_liner_status, origin,
 )
@@ -538,10 +538,9 @@ def company_rows(db: Session, sent=None) -> List[dict]:
             # 대표와의 카톡방 제목. 스타트업 월간 발송이 이 방으로 나간다
             # (`services/startup_send.py`) — 비면 그 기업은 못 보낸다.
             "kakao_room_name": c.kakao_room_name or "",
-            "revenue_2022": c.revenue_2022 or "",
-            "revenue_2023": c.revenue_2023 or "",
-            "revenue_2024": c.revenue_2024 or "",
-            "revenue_2025": c.revenue_2025 or "",
+            # 연도별 매출 — 파 둔 해를 **전부** 싣는다. 어느 해를 그릴지는 화면이 고르고
+            # (`revenue_years.shown`), 창은 이 한 벌에서 되읽는다(#75).
+            **{f: getattr(c, f) or "" for f in revenue_years.FIELDS},
             "founded_year": c.founded_year or "",
             "guarantee": c.guarantee or "",
             "business_desc": c.business_desc or "",
@@ -700,6 +699,10 @@ def companies_page(request: Request, db: Session = Depends(get_db),
     # 탭마다 달랐는데, 두 벌이던 그 판단을 하나로 합쳤다 — 그래서 탭은 이제
     # 어느 칸들을 그리느냐만 정한다(`companies.html`).
     co_tab = "db" if tab == "db" else "status"
+    # 연도별 매출 — 올해가 정한다(#75). 새해 첫 화면이면 `최근 매출액` 을 지난해 칸으로
+    # 옮겨 적고(해마다 한 번 · 수정 로그), 표 · 창은 지난 세 해와 `최근 매출액(올해)` 를 그린다.
+    year = revenue_years.this_year()
+    revenue_years.roll_over(db, user.id, year)
     # **훑기는 한 번이다.** 표의 `소개 횟수` 도, 창이 띄우는 `소개 이력` 도,
     # 아래 `막히는 것` 두 줄도 전부 이 하나에서 나온다
     # (`services/deal_history.py` 머리글).
@@ -709,6 +712,8 @@ def companies_page(request: Request, db: Session = Depends(get_db),
     ctx.update({
         "rows": rows,
         "co_tab": co_tab,
+        "revenue_years": revenue_years.shown(year),
+        "recent_label": revenue_years.recent_label(year),
         "msg": msg,
         "q": q,          # 발송 화면에서 '기업 정보 채우기' 로 넘어온 경우 그 기업을 바로 띄운다
         "counts": {
@@ -862,6 +867,12 @@ class CompanyIn(BaseModel):
     revenue_2023: Optional[str] = None
     revenue_2024: Optional[str] = None
     revenue_2025: Optional[str] = None
+    # 미리 판 해(0121 · #75). 판을 더하면 여기도 한 줄 — tests/test_revenue_years.py 가 잡는다.
+    revenue_2026: Optional[str] = None
+    revenue_2027: Optional[str] = None
+    revenue_2028: Optional[str] = None
+    revenue_2029: Optional[str] = None
+    revenue_2030: Optional[str] = None
     founded_year: Optional[str] = None
     guarantee: Optional[str] = None
     received_at: Optional[str] = None
