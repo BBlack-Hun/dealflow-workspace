@@ -79,6 +79,9 @@
   //   · `수신 일자` — 세울 값(`received_sort`). 날짜 모양도 서버가 맞춘다.
   //   · 검색 글자(`data-search`) — 안 고치면 고친 값이 새로고침 전까지 안 걸린다.
   //   · `IR 현황` 딱지 — 기업명을 고치면 맞는 기업이 달라진다.
+  //   · 나머지 칸 · `IR 기업:` 표시 — 기업명을 넣어 IR 기업에 이어지면 서버가 대표자 ·
+  //     매출 · 금액 빈칸을 IR 값으로 채운다(`services/company_sync.py`). 새로고침 없이
+  //     보이게 줄의 칸을 전부 응답으로 다시 그린다.
   table.addEventListener("inline-saved", function (e) {
     var data = e.detail.data || {};
     var row = e.detail.row;
@@ -98,6 +101,11 @@
         row.setAttribute("data-f-" + fkey, data[field] || "");
       }
     }
+    Array.prototype.forEach.call(row.querySelectorAll(".cell[data-field]"), function (other) {
+      var key = other.getAttribute("data-field");
+      if (other !== cell && key !== "series" && key in data) other.textContent = data[key] || "";
+    });
+    if (data.ir_link) renderIrLink(row.querySelector(".sa-ir-link"), data.ir_link);
     if ("search" in data) row.setAttribute("data-search", data.search || "");
     row.setAttribute("data-s-received_at", data.received_sort || "");
 
@@ -181,6 +189,48 @@
     try { info = JSON.parse(box.getAttribute("data-sharer") || "null"); }
     catch (e) { info = null; }
     renderSharer(box, info);
+  });
+
+  // ── IR 기업 연결 표시 ────────────────────────────────────────────────
+  //
+  // 기업명 밑 `IR 기업: ○○ (자동 연결 · 연결 풀기)` — 투자컨설턴트 표와 같은 글자다.
+  // 무엇을 보일지는 서버가 정해 실어 준다(`data-ir-link` · 저장 응답의 `ir_link` —
+  // `services/ir_link.badge`). 이어지지 않았고 이름이 같은 IR 기업도 없으면 숨는다.
+  function linkTo(text, href) {
+    var a = el("a", "", text);
+    a.setAttribute("href", href || "#");
+    return a;
+  }
+
+  function renderIrLink(box, info) {
+    if (!box) return;
+    info = info || {};
+    box.innerHTML = "";
+    box.hidden = !info.linked && !info.candidates;
+    if (box.hidden) return;
+    box.appendChild(el("span", "", "IR 기업: "));
+    if (info.linked) {
+      box.appendChild(linkTo(info.name, info.company_href));
+      if (info.auto) {
+        box.appendChild(el("span", "", " (자동 연결 · "));
+        box.appendChild(linkTo("연결 풀기", info.link_href));
+        box.appendChild(el("span", "", ")"));
+      } else {
+        box.appendChild(el("span", "", " (연결됨)"));
+      }
+    } else {
+      box.appendChild(el("span", "", "연결 안 됨 → "));
+      box.appendChild(linkTo("연결하기", info.link_href));
+    }
+  }
+
+  rows().forEach(function (tr) {
+    var box = tr.querySelector(".sa-ir-link");
+    if (!box) return;
+    var info = null;
+    try { info = JSON.parse(box.getAttribute("data-ir-link") || "null"); }
+    catch (e) { info = null; }
+    renderIrLink(box, info);
   });
 
   // ── 더하기 · 지우기 ───────────────────────────────────────────────────

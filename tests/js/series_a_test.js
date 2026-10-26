@@ -9,6 +9,7 @@
 //   ③ `수신 일자` 머리글을 눌러 세우고, 세운 뒤에도 번호를 다시 매긴다.
 //   ④ 저장 뒤 **서버만 아는 값**(투자라운드의 짧은 꼴 · IR 딱지)을 응답에서 받아 적는다.
 //   ⑤ [삭제] 는 이름을 대고 묻고, 아니라면 아무것도 안 보낸다.
+//   ⑥ 기업명을 넣어 IR 기업에 이어지면 채워진 칸 · `IR 기업:` 표시가 새로고침 없이 선다.
 //
 // 기업명은 전부 지어낸 것이다 — 저장소가 공개다.
 "use strict";
@@ -280,6 +281,47 @@ function saved(dom, row, cell, value, data) {
   dom.search.value = "샘플메디";
   dom.search.fire("input");
   assert.strictEqual(shown(dom), "", "옛 이름이 아직 검색에 걸린다");
+}
+
+// --- ⑥ 기업명을 넣으면 IR 기업에 이어지고 빈칸이 채워진다(기업 동기화 3단계) ------
+//
+// 서버는 저장할 때 이름이 정확히 하나 맞는 IR 기업에 잇고 대표자 · 매출 · 금액 빈칸을
+// 채운다(`services/company_sync.py`). 고친 칸만 다시 그리면 채워진 칸은 새로고침 전까지
+// 비어 보인다 — 줄의 칸 전부와 `IR 기업:` 표시를 응답으로 다시 그린다.
+{
+  const dom = build();
+  const row = dom.body.children[0];
+  const ceo = D.el("td", { class: "cell", "data-field": "ceo_name" });
+  const rev = D.el("td", { class: "cell num", "data-field": "revenue_2026" });
+  row.appendChild(ceo);
+  row.appendChild(rev);
+  const box = D.el("div", { class: "ir-link-sub muted sa-ir-link",
+                            "data-ir-link": JSON.stringify({ linked: false, candidates: 0 }) });
+  row.querySelector(".co-name").appendChild(box);
+  run(dom);
+  assert.strictEqual(box.hidden, true, "안 이었고 이름이 같은 IR 기업도 없는데 표시가 섰다");
+
+  const name = row.querySelector('[data-field="name"]');
+  name.textContent = "샘플가람";
+  saved(dom, row, name, "샘플가람", {
+    id: 1, name: "샘플가람", received_at: "2026-08-25", received_sort: "2026-08-25",
+    series: "Series B", series_short: "Series B", ir_name: "샘플가람",
+    ceo_name: "김샘플", revenue_2026: "12",
+    ir_link: { linked: true, auto: true, name: "샘플가람", company_id: 7,
+               company_href: "/companies?q=" + encodeURIComponent("샘플가람"),
+               link_href: "/ir-link?tab=series-a&row=1", candidates: 0 }
+  });
+  assert.strictEqual(ceo.textContent, "김샘플", "IR 에서 채운 대표자명이 새로고침 전에 안 보인다");
+  assert.strictEqual(rev.textContent, "12", "IR 에서 채운 매출이 새로고침 전에 안 보인다");
+  assert.strictEqual(box.hidden, false, "이어졌는데 `IR 기업:` 표시가 안 섰다");
+  // 이 DOM 은 글자를 칸마다 따로 담는다(`_dom.js`) — 자식 글자를 이어 읽는다.
+  const said = box.children.map((kid) => kid.textContent).join("");
+  assert.strictEqual(said, "IR 기업: 샘플가람 (자동 연결 · 연결 풀기)", said);
+  const links = box.querySelectorAll("a");
+  assert.strictEqual(links[links.length - 1].textContent, "연결 풀기");
+  assert.strictEqual(links[links.length - 1].getAttribute("href"), "/ir-link?tab=series-a&row=1");
+  // 투자라운드는 짧은 꼴 그대로(전체 글로 덮지 않는다).
+  assert.strictEqual(row.querySelector('[data-field="series"]').textContent, "Series B");
 }
 
 // --- ⑤ 삭제 --------------------------------------------------------------

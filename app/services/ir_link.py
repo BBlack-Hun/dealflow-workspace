@@ -10,6 +10,7 @@
   · `ConsultingCompany`  투자컨설턴트 줄. 기업명은 `company_name` 한 칸에
                          계약일·보수율과 섞여 있어 `startup_handoff.company_name_of`
                          로 꺼낸다.
+  · `SeriesACompany`     Series A 이상 딜 소싱 줄(받은 딜 한 건 — 10/26 3단계). `name`.
 
 세 표를 이어 주는 칸이 없었다(`models.IrCompany.contract_received` 주석). 그래서
 미팅일 · 담당자 · 연매출처럼 **같은 기업의 같은 사실**을 세 화면이 따로 적고,
@@ -52,7 +53,7 @@
 ## 값이 오간다 — `services/company_sync.py`(10/22, 1단계)
 
 대표자명 · 연락처 · 이메일 · 지역 · 견적서 첨부 여부 · 카톡 연결 여부는 이어진
-줄끼리 고칠 때 따라 고친다. 계약 · 미팅 칸은 2단계다.
+줄끼리 고칠 때 따라 고친다. 계약 · 미팅 칸은 2단계, Series A 줄은 3단계다.
 """
 from __future__ import annotations
 
@@ -62,17 +63,19 @@ from typing import Dict, Iterable, List, Optional, Union
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, object_session
 
-from ..models import ConsultingCompany, IrCompany, VcContact
+from ..models import ConsultingCompany, IrCompany, SeriesACompany, VcContact
 from . import startup_handoff
 from .deal_history import _key as compare_key
 from .room_name import normalize_space
 
-Row = Union[VcContact, ConsultingCompany]
+Row = Union[VcContact, ConsultingCompany, SeriesACompany]
 
-#: 화면의 두 탭. 주소(`/ir-link?tab=…`)와 저장 길이 같은 값을 쓴다.
+#: 화면의 탭. 주소(`/ir-link?tab=…`)와 저장 길이 같은 값을 쓴다.
 STARTUP = "startup"
 CONSULTING = "consulting"
-KINDS = (STARTUP, CONSULTING)
+SERIES_A = "series-a"     # IR 기업 현황의 그 탭 주소(`/companies?tab=series-a`)와 같은 글자
+KINDS = (STARTUP, CONSULTING, SERIES_A)
+MODELS = (VcContact, ConsultingCompany, SeriesACompany)
 
 #: 줄 하나의 상태. 화면의 거르기 칩과 머리의 숫자가 이 넷을 센다.
 LINKED = "linked"     # 사람이 이어 두었다
@@ -96,6 +99,8 @@ class NotLinkable(ValueError):
 
 
 def kind_of(row: Row) -> str:
+    if isinstance(row, SeriesACompany):
+        return SERIES_A
     return CONSULTING if isinstance(row, ConsultingCompany) else STARTUP
 
 
@@ -113,6 +118,8 @@ def row_name(row: Row) -> str:
     """
     if isinstance(row, ConsultingCompany):
         return startup_handoff.company_name_of(row.company_name)
+    if isinstance(row, SeriesACompany):
+        return normalize_space(row.name or "")
     return normalize_space(row.firm or "")
 
 
@@ -198,13 +205,13 @@ def search(idx: Index, query: Optional[str],
 
 
 def link_counts(db: Session) -> Dict[int, int]:
-    """IR 기업마다 **이어 둔 줄 수**(스타트업 명단 + 투자컨설턴트).
+    """IR 기업마다 **이어 둔 줄 수**(스타트업 명단 + 투자컨설턴트 + Series A).
 
     한 IR 기업에 여러 줄이 붙는 것은 막지 않는다(머리말). 대신 화면이 그 수를
     적어, 같은 기업이 어디에 몇 번 서 있는지를 사람이 볼 수 있게 한다.
     """
     out: Dict[int, int] = defaultdict(int)
-    for model in (VcContact, ConsultingCompany):
+    for model in MODELS:
         rows = db.execute(
             select(model.ir_company_id, func.count())
             .where(model.ir_company_id.isnot(None))
