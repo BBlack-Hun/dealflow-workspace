@@ -868,7 +868,7 @@ def _meetings_sheet(sheet, data, team_wide):
                 f"그걸 놓치면 계약이 흐지부지됩니다.")
     headers = (["날짜", "담당자", "투자사", "기업", "구분"]
                + (["팀원"] if team_wide else [])
-               + ["결과", "결과 문의", "후기 · 들은 내용"])
+               + ["결과", "결과 문의", "후기 · 투자사 답변 내용"])
     last = len(headers) - 1
     if not data["weeks"]:
         sheet.blank()
