@@ -1183,7 +1183,8 @@ def set_send_via(
 
     막는 것 — 계정이 정지됐거나 연결키(발송기 토큰)가 없는 발송기, 이미 남의
     발송기로 보내는 발송기, 남이 맡겨 둔 계정을 다시 남에게 맡기기(사슬),
-    딜소개를 보내지 않는 계정(투자컨설턴트)의 발송기. 사슬을
+    딜소개를 보내지 않는 계정(투자컨설턴트)의 발송기, 그 계정(또는 지금 그 계정을
+    대신 보내는 계정)의 회차가 아직 안 끝났을 때(`_send_via_busy`). 사슬을
     허락하면 맡긴 잡이 아무 발송기에도 안 내려간다(`agent_serves` 는 맡긴
     발송기에 빈 목록을 준다).
 
@@ -1217,6 +1218,8 @@ def set_send_via(
         elif backers:
             problem = (f"{', '.join(backers)} 님이 {member.name} 님 발송기로 보내고 있어 "
                        "다른 발송기로 맡길 수 없습니다")
+    if not problem and (target.id if target else None) != member.send_via_user_id:
+        problem = _send_via_busy(db, member)
     if problem:
         return RedirectResponse(f"/team?msg={quote(problem)}", status_code=303)
     member.send_via_user_id = target.id if target else None
@@ -1225,6 +1228,37 @@ def set_send_via(
             f"{member.name} 님 발송기는 꺼도 됩니다" if target else
             f"{member.name} 님은 본인 발송기로 보냅니다 — 그 PC 에서 발송기를 켜야 나갑니다")
     return RedirectResponse(f"/team?msg={quote(note)}", status_code=303)
+
+
+#: 발송기가 손에 쥐고 있거나 곧 집어갈 회차 — 이때 발송기를 바꾸면 안 된다.
+SEND_VIA_BUSY = ("queued", "running", "paused")
+
+
+def _send_via_busy(db: Session, member: User) -> str:
+    """발송기를 바꾸면 안 되는 까닭. 바꿔도 되면 빈 글.
+
+    발송기는 손에 쥔 회분의 결과를 **그 회차 주인을 맡은 발송기로만** 보고할 수
+    있다(`agent_api._serves`). 보내는 도중에 맡긴 곳을 바꾸면 이미 나간 건의 보고가
+    받아들여지지 않고, 그 건이 대기로 남아 새 발송기가 같은 사람에게 다시 보낸다.
+    그래서 이 계정과 지금 이 계정을 대신 보내는 계정의 회차가 대기 · 보내는 중 ·
+    멈춤이면 막는다. 메일만 있는 회차는 서버가 보내므로 세지 않는다.
+    """
+    from sqlalchemy import and_, exists
+
+    from ..models import SendItem, SendJob
+
+    owners = [i for i in (member.id, member.send_via_user_id) if i]
+    busy = db.execute(
+        select(SendJob).where(
+            SendJob.user_id.in_(owners), SendJob.status.in_(SEND_VIA_BUSY),
+            exists().where(and_(SendItem.job_id == SendJob.id,
+                                SendItem.channel != "email")))
+        .order_by(SendJob.id)).scalars().first()
+    if busy is None:
+        return ""
+    owner = db.get(User, busy.user_id)
+    return (f"{owner.name if owner else '-'} 님의 회차 #{busy.id} 가 아직 끝나지 않았습니다"
+            "(대기 · 보내는 중 · 멈춤) — 그 회차가 끝나거나 [중단] 한 뒤 발송기를 바꾸세요")
 
 
 @router.post("/team/send-caps", include_in_schema=False)
@@ -1719,7 +1753,8 @@ def deactivate_member(
     """퇴사 처리 — 계정을 지우지 않고 정지한다.
 
     지워 버리면 그 사람이 담당하던 투자사와 발송 이력이 주인을 잃는다.
-    로그인만 막고 기록은 남긴다. 열려 있던 세션도 함께 끊는다.
+    로그인만 막고 기록은 남긴다. 열려 있던 세션도 함께 끊는다. 아직 안 나간
+    회차(예약 · 대기)는 취소한다(`_cancel_unsent_jobs`).
     """
     admin_only(user)
     if member_id == user.id:
@@ -1735,6 +1770,33 @@ def deactivate_member(
     for backer in db.execute(select(User).where(
             User.send_via_user_id == member.id)).scalars().all():
         backer.send_via_user_id = None
+    canceled = _cancel_unsent_jobs(db, member.id)
     db.commit()
     auth_svc.destroy_all_sessions(db, member.id)
-    return RedirectResponse(f"/team?msg={member.name}+계정을+정지했습니다", status_code=303)
+    note = f" — 아직 안 나간 회차 {canceled}개를 취소했습니다" if canceled else ""
+    from urllib.parse import quote
+
+    return RedirectResponse(f"/team?msg={quote(f'{member.name} 계정을 정지했습니다{note}')}",
+                            status_code=303)
+
+
+def _cancel_unsent_jobs(db: Session, user_id: int) -> int:
+    """정지한 계정의 **아직 안 나간** 회차(예약 · 대기)를 취소한다. 취소한 수.
+
+    정지된 계정 이름으로 예약이 풀리거나 대기 회차가 나가면 안 된다. 손대는 것은
+    그 계정의 `draft` · `queued` 회차와 그 안의 대기 건뿐이다 — 보내는 중이거나
+    끝난 회차, 남의 회차는 그대로 둔다([중단] 과 같은 모양 — `jobs.cancel_job`).
+    """
+    from ..clock import now_iso
+    from ..models import SendJob
+
+    jobs = db.execute(select(SendJob).where(
+        SendJob.user_id == user_id,
+        SendJob.status.in_(("draft", "queued")))).scalars().all()
+    for job in jobs:
+        job.status = "canceled"
+        job.finished_at = now_iso()
+        for item in job.items:
+            if item.status == "pending":
+                item.status = "canceled"
+    return len(jobs)

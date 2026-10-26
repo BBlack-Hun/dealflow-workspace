@@ -148,3 +148,54 @@ def test_the_folder_is_not_baked_into_the_downloaded_config(logged_in, db, users
         config = zf.read("agent/config.yaml").decode("utf-8")
     assert MY_FOLDER not in config
     assert "ir_root:" not in config
+
+
+# ── 자료 폴더로 받지 않는 자리 ───────────────────────────────────────────────
+#
+# 서버는 그 PC 를 못 본다. 그래도 **글자만 보고도 자료 폴더가 아닌 자리**는
+# 저장하지 않고 까닭을 보여 준다(`routers/setup.ir_root_problem`).
+
+@pytest.mark.parametrize("value, why", [
+    ("\\\\fileserver\\share\\자료", "network"),
+    ("//fileserver/share", "network"),
+    ("C:\\", "root"),
+    ("d:/", "root"),
+    ("C:", "root"),
+    ("/", "root"),
+    ("C:\\Users\\tester", "home"),
+    ("c:/users/tester/", "home"),
+    ("C:\\Users", "home"),
+    ("/Users/tester", "home"),
+    ("/home/tester/", "home"),
+    ("~", "home"),
+    ("~/", "home"),
+    ("%USERPROFILE%", "home"),
+    ("$HOME", "home"),
+])
+def test_wide_or_network_folders_are_refused(logged_in, db, users, value, why):
+    from app.routers.setup import IR_ROOT_REFUSED
+
+    logged_in.post("/setup/ir-root", data={"ir_root": MY_FOLDER})
+    r = logged_in.post("/setup/ir-root", data={"ir_root": value}, follow_redirects=False)
+    assert r.status_code == 303
+    assert r.headers["location"] == f"/setup?ir_root_error={why}"
+    db.expire_all()
+    assert _device(db, users["u1"].id).ir_root == MY_FOLDER, "거부한 값이 저장됐다"
+    page = logged_in.get(r.headers["location"]).text
+    assert f"저장하지 않았습니다 — {IR_ROOT_REFUSED[why]}" in page
+
+
+@pytest.mark.parametrize("value", [
+    MY_FOLDER,
+    "C:\\Users\\tester\\Documents\\IR자료",
+    "D:\\IR자료",
+    "~/Share/자료폴더",
+    "/home/tester/ir",
+])
+def test_a_narrow_local_folder_is_accepted(logged_in, db, users, value):
+    from app.routers.setup import ir_root_problem
+
+    assert ir_root_problem(value) == ""
+    logged_in.post("/setup/ir-root", data={"ir_root": value})
+    db.expire_all()
+    assert _device(db, users["u1"].id).ir_root == value

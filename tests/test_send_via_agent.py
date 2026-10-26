@@ -244,3 +244,90 @@ def test_deactivating_the_delegate_returns_to_own_agent(client, db, users):
     client.post("/team/members/1/deactivate")
     db.expire_all()
     assert db.get(User, 2).send_via_user_id is None
+
+
+# ── 회차가 도는 중에는 바꾸지 않는다 ─────────────────────────────────────────
+
+def test_cannot_change_while_a_job_is_in_flight(client, db, users):
+    """보내는 도중 맡긴 곳을 바꾸면 이미 나간 건의 보고가 안 받아져 다시 나간다."""
+    from app.models import SendJob, User
+
+    _admin(db)
+    _via(db)  # 2 → 1
+    client.post("/login", data={"phone": "01000000009", "password": DEMO_PASSWORD})
+
+    for status in ("queued", "running", "paused"):
+        job = _job(db)                       # 윤서아(2) 회차
+        job.status = status
+        db.commit()
+        res = client.post("/team/members/2/send-via", data={"via": "0"},
+                          follow_redirects=False)
+        assert "%EC%95%84%EC%A7%81" in res.headers["location"]   # '아직' — 까닭을 보여 준다
+        db.expire_all()
+        assert db.get(User, 2).send_via_user_id == 1, f"{status} 회차가 있는데 바뀌었다"
+        db.get(SendJob, job.id).status = "done"
+        db.commit()
+
+    # 대신 보내는 계정(1)의 회차가 도는 중이어도 막는다.
+    mine = _job(db, user_id=1)
+    client.post("/team/members/2/send-via", data={"via": "0"})
+    db.expire_all()
+    assert db.get(User, 2).send_via_user_id == 1
+
+    # 다 끝나면 바뀐다.
+    db.get(SendJob, mine.id).status = "done_with_errors"
+    db.commit()
+    client.post("/team/members/2/send-via", data={"via": "0"})
+    db.expire_all()
+    assert db.get(User, 2).send_via_user_id is None
+
+
+def test_mail_only_or_draft_jobs_do_not_block(client, db, users):
+    """메일 회차는 서버가 보내고, 예약(draft)은 아직 아무 발송기도 안 쥐었다."""
+    from app.models import SendItem, SendJob, User
+
+    _admin(db)
+    mail = SendJob(user_id=2, kind="deal_intro", status="queued", total=1)
+    db.add(mail)
+    db.flush()
+    db.add(SendItem(job_id=mail.id, channel="email", room_name="vc@example.com",
+                    message="-", status="pending"))
+    _job(db).status = "draft"
+    db.commit()
+    client.post("/login", data={"phone": "01000000009", "password": DEMO_PASSWORD})
+
+    client.post("/team/members/2/send-via", data={"via": "1"})
+    db.expire_all()
+    assert db.get(User, 2).send_via_user_id == 1
+
+
+# ── 정지하면 아직 안 나간 회차를 취소한다 ───────────────────────────────────
+
+def test_deactivating_cancels_only_their_unsent_jobs(client, db, users):
+    from app.models import SendItem, SendJob
+
+    _admin(db)
+    draft = _job(db, user_id=1)
+    draft.status = "draft"
+    queued = _job(db, user_id=1)
+    running = _job(db, user_id=1)
+    running.status = "running"
+    done = _job(db, user_id=1, n=1)
+    done.status = "done"
+    db.query(SendItem).filter_by(job_id=done.id).update({"status": "sent"})
+    others = _job(db, user_id=2)            # 남의 회차
+    db.commit()
+    client.post("/login", data={"phone": "01000000009", "password": DEMO_PASSWORD})
+
+    res = client.post("/team/members/1/deactivate", follow_redirects=False)
+    assert res.status_code == 303
+
+    db.expire_all()
+    status = {j.id: db.get(SendJob, j.id).status
+              for j in (draft, queued, running, done, others)}
+    assert status == {draft.id: "canceled", queued.id: "canceled", running.id: "running",
+                      done.id: "done", others.id: "queued"}
+    items = {j.id: {i.status for i in db.get(SendJob, j.id).items}
+             for j in (draft, queued, done, others)}
+    assert items == {draft.id: {"canceled"}, queued.id: {"canceled"},
+                     done.id: {"sent"}, others.id: {"pending"}}

@@ -80,6 +80,7 @@
     <b>이 PC 에 실제로 있는 폴더</b>여야 하고, 보낼 자료를 <b>그 폴더 바로 안에</b> 넣어 둡니다.
   </p>
   {% if saved %}<p class="hint ok-note">저장했습니다. 발송 프로그램이 곧 받아 갑니다.</p>{% endif %}
+  {% if ir_root_error %}<p class="warn-box">저장하지 않았습니다 — {{ ir_root_error }}</p>{% endif %}
   <form method="post" action="/setup/ir-root" class="ir-root-form">
     <input type="text" name="ir_root" value="{{ ir_root }}" class="input wide"
            placeholder="예) /Users/이름/Share/자료폴더" autocomplete="off" spellcheck="false">
