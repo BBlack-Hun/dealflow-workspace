@@ -590,6 +590,35 @@ def test_투자컨설턴트_탭은_볼_수_있는_사람에게만(db, stage, por
     assert f'id="row-{stage["rows"]["other"].id}"' in html
 
 
+def test_IR_기업_현황_탭과_스타트업_툴바에_서고_좌측_메뉴에는_없다(db, stage, portal, people):
+    """좌측 메뉴가 아니라 IR 기업 현황의 넷째 탭 · 스타트업 툴바에 선다 —
+    볼 사람은 라우터와 같다(투자컨설턴트 역할만 빼고)."""
+    from app import ui
+
+    assert all(m["href"] != "/ir-link" for m in ui.MENU)
+    tab = re.compile(r'class="sheet-tab\s*(active)?"\s+href="/ir-link"')
+    menu = re.compile(r'class="menu-item[^"]*"\s+href="/ir-link"')
+    for who in ("u1", "u2", "admin"):
+        html = portal[who].get("/companies").text
+        nav = re.search(r'<nav class="sheet-tabs co-tabs">.*?</nav>', html, re.S).group(0)
+        m = tab.search(nav)
+        assert m and not m.group(1), who
+        assert 'id="ir-link-link" href="/ir-link?tab=startup"' in portal[who].get("/startup").text, who
+        assert not menu.search(html), who
+    # 이 화면에서는 그 탭에 불이 들어오고, 좌측 메뉴는 IR 기업 현황이 켜진다.
+    html = portal["u1"].get("/ir-link").text
+    nav = re.search(r'<nav class="sheet-tabs co-tabs">.*?</nav>', html, re.S).group(0)
+    assert tab.search(nav).group(1) == "active"
+    assert nav.count('class="sheet-tab active"') == 1
+    assert re.search(r'class="menu-item\s*active"\s+href="/companies"', html)
+    assert not menu.search(html)
+    # 투자컨설턴트(역할)에게는 어디에도 없다 — 판정은 메뉴의 것(`can_see`) 그대로다.
+    assert not ui.can_see(people["consultant"], {"href": "/ir-link"})
+    assert ui.can_see(people["admin"], {"href": "/ir-link"})
+    for path in ("/consulting", "/companies", "/startup", "/ir-link"):
+        assert 'href="/ir-link' not in portal["consultant"].get(path).text, path
+
+
 def test_수정창이_연결_표시를_받는다(db, stage, portal):
     row, ra = stage["rows"]["exact"], stage["ir"]["ra"]
     got = portal["u1"].get(f"/api/contacts/{row.id}").json()["ir_link"]

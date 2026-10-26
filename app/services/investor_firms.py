@@ -22,6 +22,7 @@
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Optional, Sequence
 
@@ -40,6 +41,16 @@ HEADERS = (HEAD_FIRM, HEAD_FUNDS)
 def firm_key(name: Optional[str]) -> str:
     """비교용 회사명 — `(주)`·띄어쓰기·대소문자를 지운 꼴."""
     return normalize_company_name(name or "").replace(" ", "").lower()
+
+
+def split_funds(text: Optional[str]) -> List[str]:
+    """소유 펀드 글 → 펀드 이름들. 투자사 관리 현황의 `소유 펀드` 필터가 세는 값이다.
+
+    쉼표·줄바꿈으로 나누고 앞뒤 공백을 걷고 겹친 공백을 하나로 줄인다. 이름을
+    고치거나 묶지 않는다 — 적힌 글자 그대로가 갈래다. 같은 이름이 두 번이면 한 번.
+    """
+    parts = (" ".join(p.split()) for p in re.split(r"[,\n]", text or ""))
+    return list(dict.fromkeys(p for p in parts if p))
 
 
 def funds_map(db: Session) -> Dict[str, str]:

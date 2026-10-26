@@ -172,6 +172,9 @@ def base_ctx(request: Request, db: Session, user: User, active: str) -> dict:
         # 있는** 화면이 남는다 — 이 저장소가 반복해 고쳐 온 그 거짓말이다.
         # 사이드바 메뉴가 `visible_menu` 한 곳에서 걸러지는 것과 같은 자리다.
         "may_auto_attach": may_auto_attach(user),
+        # [IR 기업 연결](`/ir-link`)로 가는 자리 — 좌측 메뉴가 아니라 IR 기업 현황의
+        # 탭 줄과 스타트업 툴바에 선다. 볼 사람은 메뉴 판정(`can_see`) 그대로다.
+        "can_ir_link": can_see(user, {"href": "/ir-link"}),
         # **아직 확인하지 않은 공지.** 비밀번호 변경 알림 바로 위, 같은 자리,
         # 같은 이유다 — 화면마다 심으면 새 화면이 하나 생겼을 때 그 화면만
         # 조용히 아무 말이 없다. 공지는 하필 **그 새 화면이 생겼다**고

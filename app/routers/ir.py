@@ -186,7 +186,7 @@ def ir_page(request: Request, db: Session = Depends(get_db),
             "mark_asked": pipeline.LABEL_MARK_ASKED,
             "requested": pipeline.LABEL_REQUESTED,
         },
-        # ── 답 없음 · 전화 필요 (#37) ─────────────────────────────────────
+        # ── 답 없음 · 전화 요청 (#37) ─────────────────────────────────────
         # 사람 → 표시·메모. 켜졌거나 메모가 있는 사람만 든다. 줄마다 붙일지는
         # 템플릿의 `call_flag` 매크로가 **그 줄에서 리마인드가 나갔는가**로 가른다.
         "call_flags": call_flags.views(db),
@@ -514,7 +514,7 @@ def mark_meeting_asked(contact_id: int, db: Session = Depends(get_db),
     return RedirectResponse(f"/ir?msg={quote(msg)}", status_code=303)
 
 
-# --- 답 없음 · 전화 필요 (10/17 회의 #37) ------------------------------------
+# --- 답 없음 · 전화 요청 (10/17 회의 #37) ------------------------------------
 #
 # 리마인드 카톡을 보낸 뒤 답이 없으면 팀원·담당자가 켜고, 메모를 남긴다. 판정과
 # 저장은 `services/call_flags.py` 한 곳이고, 여기서는 권한과 돌아갈 자리만 본다.
@@ -541,7 +541,7 @@ def _flag_back(back: str, msg: str) -> RedirectResponse:
 def set_call_needed(contact_id: int, on: int = Form(1), back: str = Form(""),
                     db: Session = Depends(get_db),
                     user: User = Depends(get_current_user)):
-    """`답 없음 · 전화 필요` 를 켜고 끈다. 누가 언제 했는지 줄에 남는다.
+    """`답 없음 · 전화 요청` 을 켜고 끈다. 누가 언제 했는지 줄에 남는다.
 
     **켜는 것은 리마인드가 나간 사람에게만** — 화면도 그런 줄에만 단추를 세운다.
     끄는 것은 언제나 된다(남은 표시를 치울 길은 늘 있어야 한다).
@@ -552,8 +552,8 @@ def set_call_needed(contact_id: int, on: int = Form(1), back: str = Form(""),
                             detail="리마인드 카톡이 나간 뒤에 표시할 수 있습니다")
     call_flags.set_call(db, contact.id, bool(on), user)
     db.commit()
-    return _flag_back(back, f"{call_flags.LABEL}로 표시했습니다" if on
-                      else "전화 필요 표시를 껐습니다")
+    return _flag_back(back, "전화 요청으로 표시했습니다" if on
+                      else "전화 요청을 취소했습니다")
 
 
 @router.post("/ir/contacts/{contact_id}/call-memo", include_in_schema=False)
