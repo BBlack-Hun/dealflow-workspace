@@ -10,7 +10,8 @@
 그래서 여기서 지키는 것은 셋이다.
 
 1. **하루 한 번 뜬다** — 그리고 오래된 것만 지운다. 성격이 다른 백업
-   (`predeploy-*` · `before-restore-*`)은 건드리지 않는다.
+   (`predeploy-*` · `before-restore-*`)은 7일 규칙으로 건드리지 않는다.
+   작업 전 사본(`snapshot-before-*` · `before-*` · `pre<태그>-<날짜>`)은 30일 뒤 지운다.
 2. **멈추면 화면이 안다** — 낡은 백업은 `stale` 로 뜬다.
 3. **되돌리면 진짜로 돌아온다** — 그리고 되돌리기 전 상태가 남는다.
 
@@ -147,6 +148,83 @@ def test_other_kinds_of_backup_are_never_deleted(backups):
         assert path.exists(), f"{path.name} 이 지워졌다"
     # 일일 백업만 7개로 줄었다.
     assert len(list(d.glob("daily-*.db"))) == 7
+
+
+# --- 2-1. 작업 전 사본은 30일 뒤 지운다 ---------------------------------------
+
+def _aged(path, days: float, now: datetime) -> None:
+    """빈 파일을 만들고 시각을 `days` 일 전으로 돌린다."""
+    import os
+
+    path.write_bytes(b"")
+    t = now.timestamp() - days * 86400
+    os.utime(path, (t, t))
+
+
+def test_prework_copies_older_than_30_days_are_deleted(backups):
+    """작업 전 사본마다 명단 전체가 들어 있다 — 기한 없이 두지 않는다.
+
+    모양이 맞는 것만 30일 뒤 지우고, 곁딸린 `-wal`·`-shm` 도 같이 치운다.
+    원본·일일·배포 직전·서버 크론 백업은 **아무리 낡아도** 건드리지 않는다.
+    """
+    d = backups.backup_dir()
+    now = datetime(2026, 10, 27, 12, 0).astimezone()
+    old = [d / "snapshot-before-tab-delete-a-20260901-101010.db",
+           d / "before-restore-20260901-000000.db",
+           d / "before-bulk-fix.db",
+           d / "premj-20260901.db",
+           d / "preimport-20260901-1200.db"]
+    young = [d / "snapshot-before-sync-20261001.db",
+             d / "before-restore-20261001-000000.db",
+             d / "preimport-20261001.db"]
+    never = [d / "predeploy-20250101-000000.db",
+             d / "backup-20250101.db",
+             d / "pref-baseline-20250101.json",
+             d / "pre-mj-20250101.db",          # 모양이 다르다(태그 앞에 '-')
+             d / "손으로뜬것.db"]
+    made = []
+    try:
+        for path in old:
+            _aged(path, 31, now)
+            for tail in ("-wal", "-shm"):
+                # 곁딸린 것은 읽을 때 새로 생겨 어리다 — 본체 나이를 따라야 한다.
+                sib = path.with_name(path.name + tail)
+                _aged(sib, 0, now)
+                made.append(sib)
+        orphan = d / "snapshot-before-gone-20260801.db-wal"
+        _aged(orphan, 40, now)
+        made.append(orphan)
+        for path in young:
+            _aged(path, 29, now)
+        for path in never:
+            _aged(path, 400, now)
+        made += old + young + never
+
+        removed = backups.prune_prework(now)
+
+        for path in old:
+            assert not path.exists(), f"{path.name} 이 남았다"
+            for tail in ("-wal", "-shm"):
+                assert not path.with_name(path.name + tail).exists()
+        assert not orphan.exists()
+        for path in young + never:
+            assert path.exists(), f"{path.name} 이 지워졌다"
+        assert backups.db_path().exists()
+        assert len(removed) == len(old) * 3 + 1
+    finally:
+        for path in made:
+            path.unlink(missing_ok=True)
+
+
+def test_the_daily_run_also_clears_old_prework_copies(backups):
+    """따로 도는 일이 아니다 — 매일 백업이 돌 때 같이 정리된다."""
+    d = backups.backup_dir()
+    stale = d / "snapshot-before-import-20250101.db"
+    _aged(stale, 60, datetime.now().astimezone())
+
+    backups.run_daily(TODAY)
+
+    assert not stale.exists()
 
 
 # --- 3. 멈추면 화면이 안다 ----------------------------------------------------

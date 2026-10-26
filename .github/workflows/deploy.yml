@@ -28,12 +28,20 @@ concurrency:
   group: deploy
   cancel-in-progress: false
 
+# 이 일은 저장소를 읽지도 쓰지도 않는다(ssh 와 curl 뿐) — 토큰 권한을 비운다.
+permissions: {}
+
 jobs:
   deploy:
     # workflow_run 은 테스트가 **실패해도** 트리거된다. 결과를 봐야 한다.
+    #
+    # 그리고 **이 저장소 main 에 push 되어** 돈 테스트일 때만 배포한다(이벤트가
+    # push, 커밋이 이 저장소 것). main 머지는 언제나 이 둘을 만족한다.
     if: >
       github.event_name == 'workflow_dispatch' ||
-      github.event.workflow_run.conclusion == 'success'
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

@@ -18,6 +18,10 @@ concurrency:
   group: tests-${{ github.ref }}
   cancel-in-progress: true
 
+# 코드를 받아 시험만 한다 — 읽기 권한이면 충분하다.
+permissions:
+  contents: read
+
 jobs:
   pytest:
     runs-on: ubuntu-latest
@@ -48,7 +52,8 @@ jobs:
       - name: 의존성 설치
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          # 시험 도구(pytest 등)는 운영 이미지에 넣지 않으려고 따로 둔다.
+          pip install -r requirements.txt -r requirements-dev.txt
 
       - name: 테스트
         # 테스트가 저장소 뿌리 기준으로 파일을 읽는다(CSS·템플릿을 훑는 검사).

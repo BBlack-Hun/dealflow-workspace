@@ -49,8 +49,14 @@ docker exec dealflow-public-web-1 python scripts/purge_demo.py --yes   # 실행
 
 ### 테스트
 
+시험 도구(pytest 등)는 `requirements-dev.txt` 에 따로 있고 **도커 이미지에는 들어가지
+않는다**(운영 이미지와 같은 Dockerfile 이다). 그래서 컨테이너 안이 아니라 로컬 가상환경에서
+돌린다 — CI(`.github/workflows/tests.yml`)도 같은 방식이다.
+
 ```bash
-docker exec dealflow-public-web-1 python -m pytest -q
+python3.12 -m venv .venv
+.venv/bin/pip install -r requirements.txt -r requirements-dev.txt
+DEALFLOW_TEST_ROOM="" DEALFLOW_SMTP_HOST="" .venv/bin/pytest -n auto --dist loadfile
 ```
 
 ---
