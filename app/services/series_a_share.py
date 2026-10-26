@@ -748,7 +748,10 @@ def sharer_views(db: Session, rows: Sequence[SeriesACompany]) -> Dict[int, dict]
         cid = _confirmed(row)
         if cid is not None:
             p = by_id.get(cid) or db.get(SourcingContact, cid)
-            confirmed = {"id": cid, "label": _person_label(p) if p else f"#{cid}"}
+            # `phone` — 표의 `휴대폰` 칸(#25). 그 분 딜 소싱 줄의 번호이고, 고치면 그
+            # 줄에 저장된다(`routers/series_a._set_sharer_phone`).
+            confirmed = {"id": cid, "label": _person_label(p) if p else f"#{cid}",
+                         "phone": (p.phone or "") if p else ""}
         keys, firm = _row_sig(row)
         seen: Set[int] = set()
         cands = []

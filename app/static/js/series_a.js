@@ -161,6 +161,17 @@
       });
     }
     box.hidden = !confirmed && !cands.length;
+    renderPhone(box.closest("tr"), confirmed);
+  }
+
+  // `휴대폰` 칸(#25) — 확정한 분의 딜 소싱 줄 번호. 확정한 분이 없으면 빈칸이고
+  // `cell` 을 떼어 눌러도 안 열린다(서버도 막는다 — `routers/series_a._set_sharer_phone`).
+  function renderPhone(tr, confirmed) {
+    var cell = tr && tr.querySelector(".sa-sharer-phone");
+    if (!cell) return;
+    cell.textContent = confirmed ? (confirmed.phone || "") : "";
+    cell.classList.toggle("cell", !!confirmed);
+    if (confirmed && !cell.hasAttribute("tabindex")) cell.setAttribute("tabindex", "0");
   }
 
   rows().forEach(function (tr) {
