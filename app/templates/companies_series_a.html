@@ -101,15 +101,16 @@
 
    ## 직접 적는 칸 — 대표자 · 매출 · 금액 (#24 · 0112)
 
-   시트에 없는 칸이라 **이 탭에서 사람이 적는다**(사용자 결정 — IR 기업 현황에서
-   옮겨 오지 않는다). 칸 이름은 스타트업DB 의 같은 칸 그대로다(`연락처` · `Pre Value` —
+   시트에 없는 칸이라 **이 탭에서 사람이 적는다**. IR 기업에 이어진 줄(이름 밑
+   `IR 기업:`)은 그 기업의 같은 칸과 따라 고친다(기업 동기화 3단계 — 10/26
+   `services/company_sync.py`). 칸 이름은 스타트업DB 의 같은 칸 그대로다(`연락처` · `Pre Value` —
    #63, 처음 요청한 말은 `핸드폰` · `프리밸류` 였다). 금액은
    단위 억, 적은 그대로 저장된다(`5-10억` · `~` 도 그대로). `투자라운드` 뒤 ·
    `상세 내용` 앞에 둔다 — 긴 글 두 칸(`상세 내용` · `딜소개 문구`)은 끝에 붙어
    있고, 요청 차례도 숫자 칸 뒤가 `딜소개 문구` 다. 칸 폭은 스타트업DB 의 같은 칸
    과 같다. 칸을 바꾸면 `routers/series_a.TYPED` · `app.css` 의 `#sa-table` 폭 ·
    `custom_columns._HAND_ANCHORS` 도 함께. #}
-{% set typed_tip = "이 탭에서 직접 적습니다 · 눌러서 수정" %}
+{% set typed_tip = "직접 적습니다 · IR 기업에 이어진 줄은 IR 기업 현황과 함께 고쳐집니다 · 눌러서 수정" %}
 {% set amount_tip = "단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 1억 미만은 `5천만원` · 모르면 `~` · 눌러서 수정" %}
 <div class="table-wrap wide">
   {# ── 왼쪽 두 칸(`NO` · `기업명`)은 가로로 밀어도 제자리 ──────────────────
@@ -200,6 +201,13 @@
           <a class="room-badge ok ir-link" {% if not r.ir_name %}hidden{% endif %}
              href="/companies?q={{ r.ir_name|urlencode }}"
              title="IR 기업 현황에도 있는 기업입니다 — 눌러서 그 탭에서 봅니다">IR 현황</a>
+          {# 이 줄을 **매어 둔** IR 기업(`ir_company_id` — 투자컨설턴트 표의 같은 표시).
+             이어진 줄은 대표자 · 매출 · 금액 칸을 IR 과 따라 고친다. 이름이 같은 IR 기업이
+             없는 줄(이 표의 대부분)은 아무것도 안 세운다 — 직접 이을 때는 IR 기업 연결 탭. #}
+          {# 그리는 것은 `series_a.js`(`renderIrLink`) — 기업명을 고쳐 저장하면 응답의
+             `ir_link` 로 새로고침 없이 다시 그린다(공유 심사역 후보 `data-sharer` 와 같은 방식). #}
+          <div class="ir-link-sub muted sa-ir-link" data-testid="sa-ir-link"
+               data-ir-link='{{ r.ir_link|tojson }}' hidden></div>
         </td>
         <td class="cell" data-field="received_at" data-type="date">{{ r.received_at }}</td>
         <td class="cell" data-field="deal_type" data-type="pick"
@@ -287,6 +295,12 @@
   <b>공유 심사역</b> 아래 후보는 딜 소싱 명단에서 이름이 같은 분입니다 — 그 딜을 넘겨 준 분께는 Series A 딜 공유에서
   이 딜이 빠지므로, 맞는 분을 <b>[이 분으로 확정]</b>하면 이름 · 회사로 짐작하지 않고 그 분만 뺍니다.
   확정한 분의 번호는 <b>휴대폰</b>에 보이고, 여기서 고치면 딜 소싱 · 투자사 관리 현황에도 반영됩니다.
+  기업명 밑 <b>IR 기업:</b> 은 IR 기업 현황의 그 기업과 이어진 줄입니다 — <b>대표자명 · 연락처 · 이메일 ·
+  매출 · 누적투자금액 · 투자유치희망금액 · Pre Value</b> 를 한쪽에서 고치면 다른 쪽도 따라 고칩니다
+  (비운 칸은 안 따라갑니다). {{ this_yy }}년 매출은 IR 의 <b>{{ ir_recent_label }}</b> 과 잇고, 앞으로 올 해 칸은 잇지 않습니다.
+  기업명을 넣거나 고치면 이름이 정확히 하나 맞는 IR 기업에 저절로 이어지고(<b>자동 연결</b> —
+  IR 기업 현황에 그 기업이 나중에 생겨도). 이름이 같은 IR 기업이 여럿인 줄과 서로 다른 값(<b>값 다름</b>)은
+  <a href="/ir-link?tab=series-a">IR 기업 연결 › Series A 이상 딜 소싱</a>에서 사람이 고릅니다.
 </p>
 {% endblock %}
 

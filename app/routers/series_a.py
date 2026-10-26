@@ -12,6 +12,10 @@
 있으면 이름 옆에 `IR 현황` 딱지를 세워 그 탭으로 잇는다 — 이름은
 `deal_history._key` 로 맞춘다(기업 이름을 맞추는 규칙은 저장소에 그 하나다).
 
+줄을 IR 기업에 **매는 것**(`ir_company_id` — 기업 동기화 3단계)은 따로다. 이름 밑의
+`IR 기업: ○○ (자동 연결 · 연결 풀기)` 가 그 표시이고(`ir_link.badges`), 이어진 줄의
+대표자 · 매출 · 금액 칸은 IR 과 따라 고친다(`services/company_sync.py`).
+
 ## 권한은 옆 두 탭과 **같은 판정**을 읽는다
 
   · 보기 · 고치기 · 더하기 — 로그인한 사람(투자컨설턴트는 미들웨어가 끊는다).
@@ -41,7 +45,8 @@ from ..clock import today
 from ..db import get_db
 from ..deps import NotAdmin, get_current_user, templates
 from ..models import IrCompany, SeriesACompany, SourcingContact, User
-from ..services import custom_columns, deal_history, series_a_share, sourcing_sync
+from ..services import (custom_columns, deal_history, ir_link, revenue_years, series_a_share,
+                        sourcing_sync)
 from ..services.series_a_import import day_text
 from ..ui import base_ctx
 
@@ -163,7 +168,10 @@ def table_rows(db: Session) -> List[dict]:
     people = series_a_share.contacts_by_company(db)
     companies = db.execute(select(SeriesACompany)).scalars().all()
     sharers = series_a_share.sharer_views(db, companies)
-    rows = [row_dict(c, known, people, sharers.get(c.id)) for c in companies]
+    # 이름 밑 `IR 기업: ○○ (자동 연결 · 연결 풀기)` — 투자컨설턴트 표와 같은 표시.
+    links = ir_link.badges(db, companies)
+    rows = [dict(row_dict(c, known, people, sharers.get(c.id)), ir_link=links[c.id])
+            for c in companies]
     return sort_rows(rows)
 
 
@@ -234,6 +242,9 @@ def render_page(request: Request, db: Session, user: User, msg: str = "", q: str
         "can_delete": can_delete_company(user),
         # [딜소개 문구 올리기] 를 보일지 — 관리자만(`can_upload_pitch`).
         "can_upload_pitch": can_upload_pitch(user),
+        # 안내 글 — 올해 매출 칸이 IR 의 어느 칸과 잇는지(`company_sync._year_slot`).
+        "ir_recent_label": revenue_years.recent_label(),
+        "this_yy": f"{revenue_years.this_year() % 100:02d}",
     })
     # 관리자가 붙인 추가 칸 — 옆 두 탭과 **같은 칸**(`custom_columns.TARGETS`).
     ctx.update(custom_columns.view(db, "companies", "series_a_companies"))
@@ -346,12 +357,15 @@ def _result(row: SeriesACompany, db: Session) -> dict:
     """
     data = row_dict(row, ir_names(db), sharer=series_a_share.sharer_view(db, row))
     # 고친 칸은 **서버가 저장한 값**으로 다시 그리고(`series_a.js`), 검색 글자도
-    # 갈아 끼운다 — 표에서 고치는 칸은 전부 돌려준다.
-    return {key: data[key] for key in (
+    # 갈아 끼운다 — 표에서 고치는 칸은 전부 돌려준다. 기업명을 넣어 IR 기업에 이어지면
+    # 대표자 · 매출 · 금액 빈칸이 채워지므로 화면은 줄의 칸을 전부 이 값으로 다시 그린다.
+    out = {key: data[key] for key in (
         "id", "name", "received_at", "deal_type", "assignee_name", "shared_by",
         "source_firm", "sector_major", "sector_minor", "series", "detail",
         "deal_pitch", *TYPED, "ir_file_name", "received_sort", "series_short", "ir_name",
         "ir_file", "search", "sharer", "sharer_phone")}
+    out["ir_link"] = ir_link.badge_for(db, row)
+    return out
 
 
 @router.post("/api/series-a-companies")

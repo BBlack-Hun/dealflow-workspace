@@ -516,6 +516,17 @@ def _sync_company_links(session, flush_context, instances) -> None:
 event.listen(OrmSession, "before_flush", _sync_company_links)
 
 
+def _link_new_company_names(session, flush_context) -> None:
+    """IR 기업이 새로 생기거나 이름이 바뀌면 그 이름의 Series A 줄을 잇는다 — 번호가
+    정해진 뒤라 flush 끝에서(`services/company_sync.after_flush`)."""
+    from .services import company_sync
+
+    company_sync.after_flush(session)
+
+
+event.listen(OrmSession, "after_flush_postexec", _link_new_company_names)
+
+
 def _stamp_contract_done(session, flush_context, instances) -> None:
     """IR 기업 계약여부가 계약 완료로 **바뀐 날**을 적는다(#9 — `IrCompany.contract_done_at`).
 
@@ -958,8 +969,12 @@ class SeriesACompany(TimestampMixin, Base):
     서야 하는 이 표의 모양도 못 담는다.
 
     **같은 기업이 IR 기업 현황에도 있으면 이름으로 그때그때 잇는다**
-    (`routers/series_a.py` 의 `IR 현황` 딱지). 값을 이 표로 옮겨 적지 않는다 —
-    옮기면 두 벌이 되어 한쪽만 고쳐진다.
+    (`routers/series_a.py` 의 `IR 현황` 딱지 — IR 자료를 어느 쪽에 적나).
+
+    **10/26 부터 줄을 IR 기업에 매어(`ir_company_id`) 칸을 따라 고친다**(기업 동기화
+    3단계 — `services/company_sync.py`). 투자컨설턴트 · 스타트업 명단과 같은 규칙이다:
+    새 줄은 이름이 정확히 하나 맞으면 저절로 잇고, 대표자 · 매출 · 금액 칸은 어느
+    쪽에서 고쳐도 다른 쪽이 따라온다(비운 칸은 안 따라간다).
 
     ## 칸
 
@@ -968,8 +983,9 @@ class SeriesACompany(TimestampMixin, Base):
 
     대표자 · 매출 · 금액 칸(0112 — 개선 과제 #24)은 **시트에 없고 탭에서 사람이
     적는다**(사용자 결정: "별도로 기록하고 있기 때문에 IR 기업현황에 자료가 없을것
-    … 직접 입력"). 시트 가져오기(`series_a_import.HEADERS`)는 이 칸을 안 건드리고,
-    IR 기업 현황의 같은 이름 칸에서 옮겨 오지도 않는다.
+    … 직접 입력"). 시트 가져오기(`series_a_import.HEADERS`)는 이 칸을 안 건드린다.
+    IR 기업에 이어진 줄은 그 기업의 같은 칸과 따라 고친다(위 · 10/26 사용자 제보 —
+    "기업명을 동일하게 넣었는데 대표자명이랑 연동이 안됨").
     """
 
     __tablename__ = "series_a_companies"
@@ -1043,6 +1059,13 @@ class SeriesACompany(TimestampMixin, Base):
     #: 막는다) — 그 이름의 요청은 IR 줄로 이어져(`pipeline.match_company`) IR 쪽 자료가
     #: 나가므로, 여기 적은 값은 아무 데도 안 쓰이는 두 번째 벌이 된다.
     ir_file_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: **이 딜이 IR 기업 현황의 어느 기업인가**(0122 · 기업 동기화 3단계). 투자컨설턴트 ·
+    #: 스타트업 명단의 같은 칸과 같다(`VcContact.ir_company_id` 주석). 한 기업이 여러 날
+    #: 들어오면 여러 줄이 한 IR 기업에 이어진다.
+    ir_company_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("ir_companies.id"), nullable=True)
+    #: 이름으로 **저절로**(또는 일괄 연결로) 이어졌는가 — 화면의 `자동 연결` 표시.
+    ir_link_auto: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
 
 class SeriesAShare(TimestampMixin, Base):
