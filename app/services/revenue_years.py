@@ -118,12 +118,16 @@ def roll_over(db: Session, actor_id: int, year: Optional[int] = None) -> int:
         return 0
     rows = [c for c in db.execute(select(IrCompany)).scalars()
             if not (getattr(c, field) or "").strip() and (c.revenue_recent or "").strip()]
+    from . import company_sync   # 그 모듈이 이 파일을 부른다
+
     token = edit_log.begin(actor_id, "GET", "/companies")
     try:
         for c in rows:
             recent = c.revenue_recent.strip()
             setattr(c, field, amount.phrase(recent) or recent)
-        db.flush()
+        # 저절로 하는 옮겨 적기다 — 이어진 Series A 줄은 빈칸만 채운다(사람이 적은 값을 안 덮는다).
+        with company_sync.fill_only(db):
+            db.flush()
     finally:
         edit_log.end(token)
     db.commit()

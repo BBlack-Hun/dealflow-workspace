@@ -43,14 +43,14 @@
 <header class="page-head">
   <h1>IR 기업 연결</h1>
   <p class="muted">
-    같은 기업이 <b>스타트업 명단</b> · <b>투자컨설턴트</b> · <b>IR 기업 현황</b>에 따로 적혀
-    있습니다. 여기서 각 줄을 <a href="/companies">IR 기업 현황</a>의 기업 하나에 잇습니다.
+    같은 기업이 <b>스타트업 명단</b> · <b>투자컨설턴트</b> · <b>Series A 이상 딜 소싱</b> ·
+    <b>IR 기업 현황</b>에 따로 적혀 있습니다. 여기서 각 줄을 <a href="/companies">IR 기업 현황</a>의 기업 하나에 잇습니다.
   </p>
   <p class="hint">
     ✋ 이름이 같은 IR 기업을 <b>후보</b>로 보여 줍니다 — 맞는 기업에서 <b>[이 기업으로 연결]</b> 을
     누르세요. 후보가 없으면 <b>직접 찾기</b> 로 고릅니다. 새로 생기는 줄은 이름이 정확히 하나 맞으면
     저절로 이어지고 <b>자동 연결</b> 로 보입니다(잘못 붙었으면 [연결 해제]).
-    이어진 줄끼리는 <b>대표자명 · 연락처 · 이메일 · 지역 · 견적서 첨부 여부 · 카톡 연결 여부</b>를
+    이어진 줄끼리는 <b>{{ synced }}</b>를
     한쪽에서 고치면 나머지도 따라 고칩니다. 이을 때는 빈칸만 채우고, 서로 다른 값은
     <b>값 다름</b> 에서 골라 맞춥니다. 연락처 · 이메일은 <b>[둘 다 남기기]</b> 로 두 값을
     <code>IR 값, 이 줄 값</code> 으로 이을 수 있습니다(앞이 정 — 메일은 첫 주소로만 갑니다).
@@ -154,7 +154,7 @@
     <thead>
       <tr>
         <th>기업명</th>
-        <th>{{ '명단' if kind == 'startup' else '탭' }}</th>
+        <th>{{ where_head }}</th>
         <th>담당</th>
         <th>상태</th>
         <th>IR 기업 현황</th>
@@ -176,7 +176,7 @@
           <div class="ir-cand current">
             {{ company_line(c) }}
             {# 한 IR 기업에 여러 줄이 이어져도 막지 않는다 — 대신 몇 줄인지 적는다. #}
-            {% if c.links > 1 %}<span class="room-badge warn" title="스타트업 명단과 투자컨설턴트를 합친 수입니다">이 기업에 이어진 줄 {{ c.links }}개</span>{% endif %}
+            {% if c.links > 1 %}<span class="room-badge warn" title="스타트업 명단 · 투자컨설턴트 · Series A 이상 딜 소싱을 합친 수입니다">이 기업에 이어진 줄 {{ c.links }}개</span>{% endif %}
             <form method="post" action="/ir-link/unlink" class="inline-form ir-unlink-form">
               <input type="hidden" name="tab" value="{{ kind }}">
               <input type="hidden" name="row_id" value="{{ r.id }}">

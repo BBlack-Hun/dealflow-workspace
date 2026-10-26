@@ -13,6 +13,7 @@
                    + `may_edit_row`). 하나를 고칠 때도 같은 문
                    (`consulting.owned`)이다. 볼 수만 있는 남의 줄은 여기 안
                    선다 — 서 있는데 [연결] 이 404 를 내는 화면이 되지 않게.
+  · Series A       팀 공용 표라 모든 줄(그 탭의 칸 고치기와 같은 판정 — 로그인한 사람).
 
 투자컨설턴트(역할)는 이 화면에 못 들어온다(`deps.CONSULTANT_PATHS` 밖이다) —
 IR 기업 현황 자체가 그 사람에게 닫혀 있다.
@@ -50,7 +51,7 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..deps import get_current_user, may_view_consulting, templates
-from ..models import ConsultingCompany, IrCompany, User, VcContact
+from ..models import ConsultingCompany, IrCompany, SeriesACompany, User, VcContact
 from ..services import company_sync, contact_columns, ir_link, sheet_owner
 from ..ui import base_ctx
 from . import consulting as consulting_router
@@ -66,7 +67,18 @@ HREF = "/ir-link"
 ACTIVE = "su"
 TITLE = "IR 기업 연결"
 
-TAB_LABELS = {ir_link.STARTUP: "스타트업 명단", ir_link.CONSULTING: "투자컨설턴트"}
+TAB_LABELS = {ir_link.STARTUP: "스타트업 명단", ir_link.CONSULTING: "투자컨설턴트",
+              ir_link.SERIES_A: "Series A 이상 딜 소싱"}
+#: 줄을 알아보는 칸(`_where`)의 머리글.
+WHERE_HEADS = {ir_link.STARTUP: "명단", ir_link.CONSULTING: "탭",
+               ir_link.SERIES_A: "수신 일자 · 회사"}
+#: 그 줄이 사는 화면.
+HOMES = {ir_link.STARTUP: "/startup", ir_link.CONSULTING: "/consulting",
+         ir_link.SERIES_A: "/companies?tab=series-a"}
+#: 이어진 줄끼리 따라 고치는 칸 — 머리 안내 · 일괄 연결 확인 화면이 같은 글자를 쓴다.
+SYNCED = {ir_link.SERIES_A: "대표자명 · 연락처 · 이메일 · 연도별 매출(올해 칸은 IR 의 "
+                            "최근 매출액) · 누적투자금액 · 투자유치희망금액 · Pre Value"}
+SYNCED_DEFAULT = "대표자명 · 연락처 · 이메일 · 지역 · 견적서 첨부 여부 · 카톡 연결 여부"
 
 #: 거르기 칩. 빈 값이 전체다.
 SHOW_LINKED = "linked"
@@ -83,7 +95,7 @@ def tabs_for(user: User) -> List[str]:
     out = [ir_link.STARTUP]
     if may_view_consulting(user):
         out.append(ir_link.CONSULTING)
-    return out
+    return out + [ir_link.SERIES_A]
 
 
 def startup_rows(db: Session, user: User,
@@ -120,10 +132,19 @@ def consulting_rows(db: Session, user: User) -> List[ConsultingCompany]:
             if consulting_router.may_edit_row(db, user, r.user_id, grants=grants)]
 
 
+def series_a_rows(db: Session) -> List[SeriesACompany]:
+    """Series A 이상 딜 소싱 줄 — 팀 공용 표라 전부(머리말)."""
+    rows = list(db.execute(select(SeriesACompany)).scalars())
+    rows.sort(key=lambda c: (ir_link.row_name(c), c.id))
+    return rows
+
+
 def rows_for(db: Session, user: User, kind: str,
              include_hidden: bool = False) -> list:
     if kind == ir_link.CONSULTING:
         return consulting_rows(db, user)
+    if kind == ir_link.SERIES_A:
+        return series_a_rows(db)
     return startup_rows(db, user, include_hidden=include_hidden)
 
 
@@ -135,6 +156,11 @@ def editable_row(db: Session, user: User, kind: str, row_id: int):
     if kind == ir_link.CONSULTING:
         consulting_router.require_access(user)
         return consulting_router.owned(db, ConsultingCompany, row_id, user, "기업")
+    if kind == ir_link.SERIES_A:
+        row = db.get(SeriesACompany, row_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="Series A 줄을 찾을 수 없습니다")
+        return row
     contact = owned_contact(db, row_id, user)
     labels = sheet_owner.page_labels(db, contact_columns.PAGE_STARTUP)
     if not sheet_owner.on_page(contact, labels):
@@ -165,6 +191,10 @@ def company_view(company: IrCompany, counts: Dict[int, int],
 
 def _where(db: Session, row, owners: Dict[int, str]) -> Tuple[str, str]:
     """(어느 명단·탭, 담당) — 줄을 알아보는 데 쓰는 두 칸."""
+    if isinstance(row, SeriesACompany):
+        # 한 기업이 여러 날 들어온다 — 받은 날 · 넘겨 준 투자사로 줄을 가른다.
+        return (" · ".join(filter(None, (row.received_at, row.source_firm))),
+                row.assignee_name or "")
     if isinstance(row, ConsultingCompany):
         where = row.sheet or ""
     else:
@@ -316,7 +346,9 @@ def ir_link_page(request: Request, db: Session = Depends(get_db),
         "dup_groups": len(idx.duplicate_keys()),
         "msg": msg,
         "back": _back(kind, show),
-        "home_href": "/startup" if kind == ir_link.STARTUP else "/consulting",
+        "home_href": HOMES[kind],
+        "where_head": WHERE_HEADS[kind],
+        "synced": SYNCED.get(kind, SYNCED_DEFAULT),
         # 위의 IR 기업 현황 탭 줄(`_company_tabs.html`) — 이 화면이 그 넷째 탭이다.
         "co_tab": "ir-link",
         "counts": company_tab_counts(db),
@@ -347,6 +379,8 @@ def bulk_confirm(request: Request, db: Session = Depends(get_db),
         "kind_label": TAB_LABELS[kind],
         "pairs": views,
         "back": _back(kind),
+        "where_head": WHERE_HEADS[kind],
+        "synced": SYNCED.get(kind, SYNCED_DEFAULT),
     })
     return templates.TemplateResponse("ir_link_bulk.html", ctx)
 
@@ -451,7 +485,7 @@ def resolve_diff(tab: str = Form(...), row_id: int = Form(...),
         return RedirectResponse(_back(kind, show, f"‘{name}’ — {exc}", anchor=row.id),
                                 status_code=303)
     db.commit()
-    label = company_sync.LABELS.get(field, field)
+    label = company_sync.label(field)
     if pick == "both":
         msg = f"‘{name}’ 의 {label} 을(를) 둘 다 남겼습니다 — 앞이 IR 값(정)입니다."
     else:

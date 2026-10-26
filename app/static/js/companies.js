@@ -594,7 +594,7 @@
     var L = plan.labels || {};
     var keep = [];
     ["sends", "ir_requests", "meetings", "startup_links", "consulting_links",
-     "forecasts"].forEach(function (k) {
+     "series_a_links", "forecasts"].forEach(function (k) {
       if (c[k]) keep.push(L[k] + " " + c[k] + "건");
     });
     var gone = [];

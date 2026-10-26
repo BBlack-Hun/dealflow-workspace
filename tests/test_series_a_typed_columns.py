@@ -1,8 +1,9 @@
 """`Series A 이상 딜 소싱` 탭 — 직접 적는 칸(개선 과제 #24 · 0112).
 
 사용자 요청: "대표자명 · 핸드폰 · 이메일 · 24~27년 매출 · 누적투자금액 ·
-투자유치희망금액 · 프리밸류 · 딜소개문구 컬럼 추가". 결정: **IR 기업 현황에서
-가져오지 않고 이 탭에서 사람이 적는다.** `딜소개 문구` 는 이미 있는 칸이다.
+투자유치희망금액 · 프리밸류 · 딜소개문구 컬럼 추가". 결정: **이 탭에서 사람이 적는다.**
+`딜소개 문구` 는 이미 있는 칸이다. 10/26 부터 IR 기업에 이어진 줄은 그 기업의 같은
+칸과 따라 고친다(기업 동기화 3단계 — tests/test_series_a_ir_sync.py).
 
 값은 전부 지어낸 것이다 — 저장소가 공개다.
 """
@@ -94,14 +95,21 @@ def test_적은_그대로_저장되고_응답과_검색에_실린다(logged_in, 
     assert db.get(SeriesACompany, deal.id).ceo_phone is None
 
 
-def test_IR_기업_현황에서_옮겨_오지_않고_시트_가져오기도_안_건드린다(logged_in, deal, db):
-    """사용자 결정 — 이 칸은 사람이 적는다. 같은 이름의 IR 기업이 있어도 비어 있고,
-    시트를 덮어쓰기로 다시 가져와도 적은 값이 남는다."""
+def test_안_이어진_줄은_IR에서_옮겨_오지_않고_시트_가져오기도_안_건드린다(logged_in, deal, db):
+    """이 칸은 사람이 적는다. IR 기업에 **안 이어진** 줄(사람이 [연결 풀기]한 줄)은 같은
+    이름의 IR 기업이 있어도 비어 있고, 시트를 덮어쓰기로 다시 가져와도 적은 값이 남는다.
+    이어진 줄의 따라 고치기는 tests/test_series_a_ir_sync.py."""
     from app.models import IrCompany, SeriesACompany
     from app.services import series_a_import as svc
 
     db.add(IrCompany(name="샘플애그", contact_name="김가나", contact_phone="010-1000-0002",
                      revenue_2024="9", pre_value="100"))
+    db.commit()
+    # 같은 이름의 IR 기업이 생기면 저절로 이어진다(3단계) — 사람이 푼 줄을 흉내 낸다.
+    table = SeriesACompany.__table__
+    db.execute(table.update().where(table.c.id == deal.id).values(
+        ir_company_id=None, ir_link_auto=0, ceo_name=None, ceo_phone=None,
+        revenue_2024=None, pre_value=None))
     db.commit()
     data = logged_in.patch(f"/api/series-a-companies/{deal.id}", json={"detail": "x"}).json()
     assert data["ir_name"] == "샘플애그"
