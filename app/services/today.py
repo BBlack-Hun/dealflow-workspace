@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from .. import clock
 from ..models import User
 from . import (auto_send, automation_runner, cadence, call_flags, pipeline,
-               readiness, scheduled_send, send_guard, sourcing_mail)
+               readiness, recontact, scheduled_send, send_guard, sourcing_mail)
 
 # 줄 하나 = 오늘 할 일 하나.
 #   kind  : 화면에서 묶어 보여줄 종류
@@ -101,6 +101,19 @@ def build(db: Session, user: User, today: Optional[date] = None) -> dict:
             ", ".join(f"{m['name']} 자동 문의함 {m['auto_asked_on']}".rstrip()
                       for m in ir["asked_followups"][:3]),
             "/ir#meetings", len(ir["asked_followups"])))
+
+    # **재접촉 시기**(#68) — 2차·후속 미팅을 보류로 마친 투자사에 90일마다. 알림만이다
+    # (아무것도 안 보낸다). 판정은 `recontact.due` 한 곳 — 매출예상리스트가 같은 목록을 그린다.
+    again = recontact.due(db, {user.id}, today)
+    if again:
+        names = []
+        for r in again[:3]:
+            about = " · ".join(p for p in (r["firm"], r["company_name"]) if p)
+            names.append(f"{r['name']}({about})" if about else r["name"])
+        items.append(_item(
+            "meeting", "soon", recontact.TITLE,
+            ", ".join(names) + (" 외" if len(again) > 3 else ""),
+            "/report/forecast#recontact", len(again)))
 
     # **걷기 전에 세워 둔 옛 `미팅 후기 자동` 목록**(#31 — 결과 문의는 이제 A7
     # 하나다). 예약 시각 없는 `draft` 라 **저절로 안 나간다** — 사람이 보내거나
