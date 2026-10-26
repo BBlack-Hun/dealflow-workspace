@@ -1183,8 +1183,8 @@ def set_send_via(
 
     막는 것 — 계정이 정지됐거나 연결키(발송기 토큰)가 없는 발송기, 이미 남의
     발송기로 보내는 발송기, 남이 맡겨 둔 계정을 다시 남에게 맡기기(사슬),
-    딜소개를 보내지 않는 계정(투자컨설턴트)의 발송기, 그 계정(또는 지금 그 계정을
-    대신 보내는 계정)의 회차가 아직 안 끝났을 때(`_send_via_busy`). 사슬을
+    딜소개를 보내지 않는 계정(투자컨설턴트)의 발송기, 그 계정의 회차가 아직 안
+    끝났을 때(`_send_via_busy`). 사슬을
     허락하면 맡긴 잡이 아무 발송기에도 안 내려간다(`agent_serves` 는 맡긴
     발송기에 빈 목록을 준다).
 
@@ -1240,24 +1240,24 @@ def _send_via_busy(db: Session, member: User) -> str:
     발송기는 손에 쥔 회분의 결과를 **그 회차 주인을 맡은 발송기로만** 보고할 수
     있다(`agent_api._serves`). 보내는 도중에 맡긴 곳을 바꾸면 이미 나간 건의 보고가
     받아들여지지 않고, 그 건이 대기로 남아 새 발송기가 같은 사람에게 다시 보낸다.
-    그래서 이 계정과 지금 이 계정을 대신 보내는 계정의 회차가 대기 · 보내는 중 ·
-    멈춤이면 막는다. 메일만 있는 회차는 서버가 보내므로 세지 않는다.
+    그래서 **이 계정 자신의** 회차가 대기 · 보내는 중 · 멈춤이면 막는다. 지금 이
+    계정을 대신 보내는 계정의 회차는 세지 않는다 — 그 회차는 그 계정 발송기가 계속
+    맡아(`_serves` 의 본인 잡) 바꿔도 보고가 끊기지 않는다. 메일만 있는 회차는
+    서버가 보내므로 세지 않는다.
     """
     from sqlalchemy import and_, exists
 
     from ..models import SendItem, SendJob
 
-    owners = [i for i in (member.id, member.send_via_user_id) if i]
     busy = db.execute(
         select(SendJob).where(
-            SendJob.user_id.in_(owners), SendJob.status.in_(SEND_VIA_BUSY),
+            SendJob.user_id == member.id, SendJob.status.in_(SEND_VIA_BUSY),
             exists().where(and_(SendItem.job_id == SendJob.id,
                                 SendItem.channel != "email")))
         .order_by(SendJob.id)).scalars().first()
     if busy is None:
         return ""
-    owner = db.get(User, busy.user_id)
-    return (f"{owner.name if owner else '-'} 님의 회차 #{busy.id} 가 아직 끝나지 않았습니다"
+    return (f"{member.name} 님의 회차 #{busy.id} 가 아직 끝나지 않았습니다"
             "(대기 · 보내는 중 · 멈춤) — 그 회차가 끝나거나 [중단] 한 뒤 발송기를 바꾸세요")
 
 

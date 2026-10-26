@@ -102,7 +102,7 @@ def import_contacts(
 
     # 다른 팀원 줄의 담당을 옮기는 것과 그 줄을 지금 누가 맡았는지 보는 것은
     # **팀 전체를 고칠 수 있는 사람만**이다(`may_manage_team_contacts`). 팀원이
-    # 올린 시트는 남의 줄을 늘 그대로 두고 자기 몫으로 따로 만든다.
+    # 올린 시트는 본인 줄만 고친다 — 남의 줄은 건너뛰고 새 줄은 본인 명단에만.
     team_wide = may_manage_team_contacts(user)
     if not team_wide:
         keep_other_owner = True
@@ -110,6 +110,7 @@ def import_contacts(
         db, parsed, user_id=user.id, dry_run=dry_run,
         source_label=(sheet or file.filename or "업로드"),
         keep_other_owner=keep_other_owner, holder_names=team_wide,
+        own_only=not team_wide,
     )
     if dry_run:
         db.rollback()   # 미리보기가 DB 를 건드리고 끝나면 안 된다
@@ -132,6 +133,8 @@ def import_contacts(
         "overlap_moved": report.overlap_moved,
         "overlaps": [{"name": n, "firm": f, "owner": h}
                      for n, f, h in report.overlaps[:50]],
+        # 팀원 업로드가 건너뛴 다른 팀원 줄 — 수만 싣는다.
+        "other_skipped": report.other_skipped,
         # **시트 값과 앱 값이 다른데 안 덮은 칸.** 이 화면이 답해야 하는 물음이
         # 바로 이것이다 — "드린 내용이 왜 그대로 반영이 안 되나".
         # 값 자체는 `as_rows` 가 갈래를 보고 싣거나 뺀다(메모는 길이만).

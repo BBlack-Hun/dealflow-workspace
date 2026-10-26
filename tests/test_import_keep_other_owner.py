@@ -10,8 +10,8 @@
   · 켜면 사본이 생기고 원래 줄은 한 칸도 안 바뀐다.
   · 같은 파일을 다시 올려도 사본이 늘지 않는다.
   · 미리보기가 겹친 수와 어떻게 할지를 [반영] 전에 말한다.
-  · 옮기기는 관리자만 — 팀원이 올리면 늘 따로 만들고, 겹친 줄의 지금 담당
-    이름은 관리자에게만 보인다.
+  · 옮기기는 관리자만 — 팀원이 올리면 본인 줄만 고친다. 남의 줄은 담당자
+    칸이 무엇이든 건너뛰고(사본도 없이) 건너뛴 수만 보인다.
   · 같은 분께 두 팀원 몫으로 같은 딜이 이번 주 두 번 나가지 않는다.
 """
 from __future__ import annotations
@@ -138,19 +138,116 @@ def test_preview_reports_overlap_before_apply(client, db, held):
 
 
 def test_member_upload_never_moves_and_hides_holder(client, db, held):
-    """팀원 — 옮기기를 골라 보내도 따로 만들고, 지금 담당 이름은 안 싣는다."""
+    """팀원 — 옮기기를 골라 보내도 남의 줄은 건너뛰고(사본도 없이), 누구 줄인지는 안 싣는다."""
     client.post("/login", data={"phone": "01000000002", "password": DEMO_PASSWORD})
     res = _up(client, keep=False, dry=True)
     assert res.status_code == 200
     body = res.json()
     assert body["keep_other_owner"] is True
-    assert body["overlap_kept"] == 1 and body["overlap_moved"] == 0
-    assert body["overlaps"] == [{"name": "홍길동", "firm": "가나다벤처스",
-                                 "owner": si.OTHER_HOLDER}]
+    assert body["overlap_total"] == 0 and body["overlap_moved"] == 0
+    assert body["other_skipped"] == 1
+    assert any(n.startswith(f"{si.OTHER_HOLDER} 줄 1개는 건너뜀") for n in body["notes"])
     assert "강민준" not in res.text           # 메모 · 요약에도 없다
 
     assert _up(client, keep=False, dry=False).status_code == 200
-    assert [r.user_id for r in _copies(db)] == [1, 2]   # 원래 줄은 u1 그대로
+    assert [r.user_id for r in _copies(db)] == [1]      # 원래 줄만, 사본 없음
+
+
+# ── 팀원 업로드는 본인 줄만 고친다 ──────────────────────────────────────────
+
+MONTH_ROW = ["", "", "", "", "", "", "", "", "", "", "", "8월", "", ""]
+FULL_HEADER = ["그룹", "담당자", "이름", "직함", "투자사명", "초대", "관심도",
+               "카톡방 참여여부", "휴대폰", "메모", "딜 소싱",
+               "1차 딜소개", "IR 요청", "미팅"]
+
+
+def _full(owner, name="홍길동", firm="가나다벤처스"):
+    return [MONTH_ROW, FULL_HEADER,
+            ["B", owner, name, "대표", firm, "완료", "상", "O", "010-0000-0099",
+             "새 메모", "Series A", "8/13(목) 샘플가", "8/19(수) 2번", ""]]
+
+
+def _post(client, rows, dry=False):
+    return client.post(
+        "/api/import/contacts",
+        files={"file": ("현황.xlsx", _xlsx(rows),
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        data={"dry_run": "true" if dry else "false", "year": "2026"})
+
+
+def _snapshot(db, contact_id):
+    from sqlalchemy import inspect
+
+    db.expire_all()
+    row = db.get(VcContact, contact_id)
+    return {a.key: getattr(row, a.key) for a in inspect(VcContact).column_attrs}
+
+
+@pytest.fixture()
+def third(db, users):
+    db.add(User(id=3, name="박지호", phone="01000000003", role="user"))
+    db.commit()
+
+
+@pytest.mark.parametrize("owner", ["", "강민준", "박지호", "없는사람"])
+def test_member_upload_leaves_other_rows_alone(client, db, held, third, owner):
+    """담당자 칸이 비었든 · 그 줄 주인이든 · 다른 팀원이든 · 계정 없는 이름이든 남의 줄은 그대로."""
+    from app.models import ContactActivity, SourcingContact
+
+    before = _snapshot(db, held)
+    client.post("/login", data={"phone": "01000000002", "password": DEMO_PASSWORD})
+    res = _post(client, _full(owner))
+    assert res.status_code == 200, res.text
+    assert res.json()["other_skipped"] == 1
+    assert res.json()["created"] == 0 and res.json()["updated"] == 0
+
+    assert _snapshot(db, held) == before
+    assert [r.user_id for r in _copies(db)] == [1]
+    assert db.query(ContactActivity).filter_by(contact_id=held).count() == 0
+    assert db.query(SourcingContact).count() == 0
+
+
+def test_member_upload_updates_own_rows_and_creates_only_in_own_list(client, db, held, third):
+    """본인 줄은 예전처럼 고치고, 새 줄은 담당자 칸에 다른 팀원 이름이 있어도 본인 명단에."""
+    from app.models import ContactActivity
+
+    mine = VcContact(user_id=2, name="김서연", title="대표", firm="마바벤처스",
+                     status="active")
+    db.add(mine)
+    db.commit()
+    client.post("/login", data={"phone": "01000000002", "password": DEMO_PASSWORD})
+
+    rows = _full("박지호", name="김서연", firm="마바벤처스")
+    rows.append(_full("박지호", name="이새봄", firm="사아벤처스")[2])
+    res = _post(client, rows)
+    assert res.status_code == 200, res.text
+    assert res.json()["updated"] == 1 and res.json()["created"] == 1
+    assert res.json()["other_skipped"] == 0
+
+    db.expire_all()
+    got = db.get(VcContact, mine.id)
+    assert got.user_id == 2
+    assert got.invited_status == "완료" and got.interest_level == "상"
+    assert got.phone == "010-0000-0099" and got.memo == "새 메모"
+    assert db.query(ContactActivity).filter_by(contact_id=mine.id).count() > 0
+    new = db.execute(select(VcContact).where(VcContact.name == "이새봄")).scalars().all()
+    assert [r.user_id for r in new] == [2]
+    assert db.query(VcContact).filter_by(user_id=3).count() == 0
+
+
+def test_admin_upload_still_updates_found_row(client, db, held):
+    """관리자 — 예전 그대로. 담당자 칸이 빈 시트도 찾은 줄을 고친다(소유는 그대로)."""
+    db.get(User, 2).role = "admin"
+    db.commit()
+    client.post("/login", data={"phone": "01000000002", "password": DEMO_PASSWORD})
+    res = _post(client, _full(""))
+    assert res.status_code == 200, res.text
+    assert res.json()["other_skipped"] == 0 and res.json()["updated"] == 1
+
+    db.expire_all()
+    got = db.get(VcContact, held)
+    assert got.user_id == 1
+    assert got.invited_status == "완료" and got.phone == "010-0000-0099"
 
 
 # ── 같은 분께 두 번 나가지 않게 ──────────────────────────────────────────────

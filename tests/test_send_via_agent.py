@@ -268,18 +268,30 @@ def test_cannot_change_while_a_job_is_in_flight(client, db, users):
         db.get(SendJob, job.id).status = "done"
         db.commit()
 
-    # 대신 보내는 계정(1)의 회차가 도는 중이어도 막는다.
-    mine = _job(db, user_id=1)
-    client.post("/team/members/2/send-via", data={"via": "0"})
-    db.expire_all()
-    assert db.get(User, 2).send_via_user_id == 1
-
     # 다 끝나면 바뀐다.
-    db.get(SendJob, mine.id).status = "done_with_errors"
-    db.commit()
     client.post("/team/members/2/send-via", data={"via": "0"})
     db.expire_all()
     assert db.get(User, 2).send_via_user_id is None
+
+
+def test_delegates_own_jobs_do_not_block(client, db, users):
+    """대신 보내 주는 계정(1) 본인의 회차는 막지 않는다 — 그 회차는 그 발송기가 계속 맡는다."""
+    from app.models import User
+
+    _admin(db)
+    _via(db)  # 2 → 1
+    for status in ("queued", "running", "paused"):
+        _job(db, user_id=1).status = status
+    db.commit()
+    client.post("/login", data={"phone": "01000000009", "password": DEMO_PASSWORD})
+
+    client.post("/team/members/2/send-via", data={"via": "0"})
+    db.expire_all()
+    assert db.get(User, 2).send_via_user_id is None
+    # 다시 맡길 때도 마찬가지다.
+    client.post("/team/members/2/send-via", data={"via": "1"})
+    db.expire_all()
+    assert db.get(User, 2).send_via_user_id == 1
 
 
 def test_mail_only_or_draft_jobs_do_not_block(client, db, users):
