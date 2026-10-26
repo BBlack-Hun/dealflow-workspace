@@ -286,6 +286,14 @@
     // 취소(Escape)한 칸에서 날짜만 조용히 없어진다.
     box.textContent = "";
     box.appendChild(input);
+    // 여러 줄 칸은 무엇이 저장인지 밑에 적는다(inline_edit.js 의 `startLong` 과 같은 말).
+    // 값 상자 안에 두어 끝낼 때 `box.textContent` 가 함께 치운다.
+    if (multi) {
+      var hint = document.createElement("div");
+      hint.className = "cell-pop-hint";
+      hint.textContent = "Enter 줄바꿈 · ⌘/Ctrl+Enter 저장 · Esc 취소";
+      box.appendChild(hint);
+    }
     // 고르는 칩은 **칸에** 붙인다 — 값 상자 안에 넣으면 저장할 때 같이 지워질
     // 자리이고, 잔글씨 아래에 서는 편이 값을 안 가린다.
     addChoices(cell, input, before);

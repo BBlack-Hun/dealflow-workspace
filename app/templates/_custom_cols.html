@@ -18,6 +18,10 @@
   (`inline_edit.js` · `consulting.js` 의 `save`). **O/X 칸만 필터를 세운다** — 메모는
   줄마다 글이 달라 고를 것이 없다. 줄이 싣는 값(`data-f-cc*`)과 머리글의 선언이
   같은 조건이라 한쪽만 서는 일이 없다(tests/test_filter_columns.py 의 2번).
+
+  메모 칸은 **적은 줄바꿈을 표에서도 살린다**(#69 — 한 칸 내려 1. 2. 3. 을 적는다).
+  `clamp2` 만 두면 줄바꿈이 지워져 한 줄로 붙는다 — `keep-lines`(app.css)가 되살리고,
+  두 줄 넘는 것은 그대로 자른다. 투자컨설턴트 표의 `td.cell` 은 원래 줄을 살린다.
 #}
 {% macro heads() -%}
 {%- for c in custom_cols %}
@@ -46,7 +50,7 @@
 <td class="cell{% if c.kind == 'memo' %} multi{% endif %}" data-field="cc{{ c.id }}" data-custom="{{ c.id }}" data-custom-rows="{{ custom_rows }}"
     {%- if c.kind == 'ox' %} data-choices="{{ ox_choices }}"{% endif %}>{{ v }}</td>
 {%- else %}
-<td title="{{ v }}"><div class="cell{% if c.kind == 'memo' %} clamp2{% endif %}" data-field="cc{{ c.id }}" data-custom="{{ c.id }}" data-custom-rows="{{ custom_rows }}"
+<td title="{{ v }}"><div class="cell{% if c.kind == 'memo' %} clamp2 keep-lines{% endif %}" data-field="cc{{ c.id }}" data-custom="{{ c.id }}" data-custom-rows="{{ custom_rows }}"
     {%- if c.kind == 'ox' %} data-type="pick" data-choices="{{ ox_choices }}"{% else %} data-type="long"{% endif %}>{{ v }}</div></td>
 {%- endif %}
 {%- endfor %}

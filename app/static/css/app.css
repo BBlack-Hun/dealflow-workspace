@@ -2105,6 +2105,9 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
 .clamp2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
           overflow: hidden; white-space: normal; line-height: 1.45;
           font-size: 12.5px; }
+/* 추가 메모 칸(`_custom_cols.html`)은 적은 줄바꿈을 살린다 — 「1. 2. 3.」 을 한 칸씩
+   내려 적는 칸이라, 한 줄로 붙이면 목록이 문장으로 뭉개진다. 두 줄 자르기는 그대로. */
+.clamp2.keep-lines { white-space: pre-line; }
 .th-note { display: block; font-weight: 400; font-size: 10.5px; opacity: .75; }
 
 /* 값이 정해져 있는 칸(분야·단계) — 쓰고 있는 값에서 고른다.
