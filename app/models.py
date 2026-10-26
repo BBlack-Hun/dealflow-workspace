@@ -92,6 +92,7 @@ class Session(TimestampMixin, Base):
     __tablename__ = "sessions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    #: 쿠키 토큰의 **sha256 값**(0123). 토큰 자체는 DB 에 없다 — `services/auth._token_key`.
     token: Mapped[str] = mapped_column(String, unique=True, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     expires_at: Mapped[str] = mapped_column(String)

@@ -393,7 +393,7 @@ def test_logout_and_login_clear_the_switch(client, users, admin):
     _login(client, "01000000009")
     _view_as(client, users["u1"].id)
     assert client.cookies.get("dealflow_view_as")
-    client.get("/logout")
+    client.post("/logout")
     assert client.cookies.get("dealflow_view_as") is None
     # 로그아웃 없이 다시 로그인해도(같은 브라우저의 다음 사람) 물려받지 않는다.
     _login(client, "01000000009")

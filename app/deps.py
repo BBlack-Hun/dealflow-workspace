@@ -81,6 +81,28 @@ class NotAuthenticated(HTTPException):
         super().__init__(status_code=401, detail="로그인이 필요합니다")
 
 
+# 초기 비밀번호를 쓰는 계정(`must_change_password`)은 바꾸기 전까지 변경 화면만
+# 쓴다. 로그인 직후 한 번 보내는 것으로 끝내지 않고 **매 요청 여기서** 본다.
+# 로그아웃·정적 파일은 애초에 로그인을 묻지 않아 따로 열 것이 없다. 발송기
+# API 는 토큰 방식이라 이 판정을 지나지 않는다(`get_agent_device`).
+PASSWORD_PATH = "/account/password"
+MUST_CHANGE_BLOCKED = "초기 비밀번호를 먼저 바꿔 주세요"
+
+
+class MustChangePassword(HTTPException):
+    """초기 비밀번호를 아직 안 바꿨다. 핸들러가 변경 화면으로 보낸다."""
+
+    def __init__(self) -> None:
+        super().__init__(status_code=403, detail=MUST_CHANGE_BLOCKED)
+
+
+def must_change_response(request: Request) -> Response:
+    """화면(주소창이 여는 GET)은 변경 화면으로, 그 밖은 403 그대로."""
+    if request.method == "GET" and not _wants_json(request):
+        return RedirectResponse(PASSWORD_PATH, status_code=303)
+    return JSONResponse({"detail": MUST_CHANGE_BLOCKED}, status_code=403)
+
+
 def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     """현재 로그인 사용자 (휴대폰번호 + 비밀번호 세션).
 
@@ -95,6 +117,9 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     user = auth_svc.user_for_token(db, request.cookies.get(auth_svc.SESSION_COOKIE))
     if user is None:
         raise NotAuthenticated()
+    # 로그인한 **본인** 것을 본다 — 팀원 화면으로 보는 중이어도 바꿔야 할 사람은 본인이다.
+    if user.must_change_password and request.url.path != PASSWORD_PATH:
+        raise MustChangePassword()
     member = view_as_member(db, user, request.cookies.get(VIEW_AS_COOKIE))
     # 밑틀의 띠와 발송 막기가 읽는다 — 관리자 본인 자리에서도 띠는 서야 한다.
     request.state.view_as = member
