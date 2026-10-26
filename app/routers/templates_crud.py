@@ -367,12 +367,12 @@ def templates_page(request: Request, db: Session = Depends(get_db),
 
     ctx = base_ctx(request, db, user, active="templates")
     ctx.update({"tabs": tabs, "others": others, "variables": VARIABLES, "msg": msg})
-    return jinja.TemplateResponse("templates.html", ctx)
+    return jinja.TemplateResponse(request, "templates.html", ctx)
 
 
 @router.post("/templates/choose", include_in_schema=False)
 def choose_template(
-    kind: str = Form(...),
+    kind: str = Form(""),
     template_id: int = Form(...),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -450,9 +450,9 @@ def _clean_body(body: str) -> str:
 
 @router.post("/templates/new", include_in_schema=False)
 def create_template(
-    kind: str = Form(...),
+    kind: str = Form(""),
     name: str = Form(""),
-    body: str = Form(...),
+    body: str = Form(""),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -470,7 +470,7 @@ def create_template(
 def edit_template(
     template_id: int,
     name: str = Form(""),
-    body: str = Form(...),
+    body: str = Form(""),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -506,10 +506,9 @@ def delete_template(
 
 
 @router.post("/templates/{template_id}/apply-all", include_in_schema=False)
-def apply_template_to_all(
+async def apply_template_to_all(
     template_id: int,
-    name: Optional[str] = Form(None),
-    body: Optional[str] = Form(None),
+    request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -528,6 +527,10 @@ def apply_template_to_all(
     if not template_apply.eligible(t):
         raise HTTPException(status_code=400,
                             detail="모든 팀원에게 적용할 수 있는 문구가 아닙니다")
+    # 폼을 직접 읽는다 — `Form(None)` 은 지운 칸("")도 None 으로 받아, 비운 채
+    # 누른 것을 '칸이 안 온 것'으로 보고 저장된 문구를 적용해 버린다.
+    form = await request.form()
+    name, body = form.get("name"), form.get("body")
     if body is not None and (
             _clean_body(body) != _clean_body(t.body)
             or (name or "").strip() != (t.name or "").strip()):

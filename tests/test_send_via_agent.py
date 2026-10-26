@@ -69,6 +69,38 @@ def test_delegate_agent_gets_the_delegators_job_and_it_stays_theirs(client, db, 
     assert state["canceled"] is False
 
 
+def test_delegate_agent_reports_the_delegators_results(client, db, users):
+    """맡은 발송기가 보낸 결과 · 회분 보고는 맡긴 계정의 잡에 그대로 적힌다."""
+    from app.models import SendJob
+
+    _via(db)
+    job = _job(db, n=1)
+    item_id = _poll(client, DEMO_TOKEN).json()["items"][0]["id"]
+
+    assert client.post(f"/api/agent/items/{item_id}/result", json={"status": "sent"},
+                       headers=auth(DEMO_TOKEN)).status_code == 200
+    assert client.post(f"/api/agent/jobs/{job.id}/status", json={"status": "done"},
+                       headers=auth(DEMO_TOKEN)).status_code == 200
+    db.expire_all()
+    assert db.get(SendJob, job.id).status == "done"
+
+
+def test_own_agent_finishes_what_it_took_before_delegating(client, db, users):
+    """맡기기 전에 물고 간 회분은 본인 발송기가 끝까지 보고한다(`job_state` 와 같다)."""
+    from app.models import SendJob
+
+    job = _job(db, n=1)
+    item_id = _poll(client, OTHER_TOKEN).json()["items"][0]["id"]
+    _via(db)
+
+    assert client.post(f"/api/agent/items/{item_id}/result", json={"status": "sent"},
+                       headers=auth(OTHER_TOKEN)).status_code == 200
+    assert client.post(f"/api/agent/jobs/{job.id}/status", json={"status": "done"},
+                       headers=auth(OTHER_TOKEN)).status_code == 200
+    db.expire_all()
+    assert db.get(SendJob, job.id).status == "done"
+
+
 def test_own_agent_of_a_delegating_account_gets_nothing(client, db, users):
     _via(db)
     _job(db)

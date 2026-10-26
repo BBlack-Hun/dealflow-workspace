@@ -300,7 +300,7 @@
           {% else %}
           <form method="post" action="/team/members/{{ m.id }}/consulting"
                 {% if m.consulting and m.consulting_only_screen %}
-                onsubmit="return confirm('{{ m.name }} 님의 투자현황을 막을까요?\n이 계정에는 다른 화면이 없어, 로그인해도 보실 수 있는 화면이 없습니다.')"
+                onsubmit='return confirm({{ (m.name ~ " 님의 투자현황을 막을까요?\n이 계정에는 다른 화면이 없어, 로그인해도 보실 수 있는 화면이 없습니다.")|tojson }})'
                 {% endif %}>
             <button class="linkbtn" type="submit">{{ label }}</button>
           </form>
@@ -361,11 +361,11 @@
              가는 길이 통째로 사라진다. #}
           <a class="linkbtn" href="/team?edit={{ m.id }}">이름·번호 수정</a>
           <form method="post" action="/team/members/{{ m.id }}/reset-password"
-                onsubmit="return confirm('{{ m.name }} 님의 비밀번호를 초기 비밀번호로 되돌릴까요?\n로그인된 기기가 모두 끊기고, 첫 로그인 때 새 비밀번호를 정하게 됩니다.')">
+                onsubmit='return confirm({{ (m.name ~ " 님의 비밀번호를 초기 비밀번호로 되돌릴까요?\n로그인된 기기가 모두 끊기고, 첫 로그인 때 새 비밀번호를 정하게 됩니다.")|tojson }})'>
             <button class="linkbtn" type="submit">비밀번호 초기화</button>
           </form>
           <form method="post" action="/team/members/{{ m.id }}/deactivate"
-                onsubmit="return confirm('{{ m.name }} 계정을 정지할까요?\n담당 투자사와 이력은 남습니다.')">
+                onsubmit='return confirm({{ (m.name ~ " 계정을 정지할까요?\n담당 투자사와 이력은 남습니다.")|tojson }})'>
             <button class="linkbtn danger" type="submit">계정 정지</button>
           </form>
           {% else %}<span class="muted">본인</span>{% endif %}

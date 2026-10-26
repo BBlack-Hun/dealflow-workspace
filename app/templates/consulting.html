@@ -604,7 +604,7 @@
              사라진다(`routers/consulting.py` 의 `may_edit_column`). #}
           {% if col.id in editable_columns %}
           <form method="post" action="/consulting/columns/{{ col.id }}/delete" class="col-del"
-                onsubmit="return confirm('{{ col.label }} 열을 지울까요?\n이 달에 적어 둔 내용도 함께 사라집니다.')">
+                onsubmit='return confirm({{ (col.label ~ " 열을 지울까요?\n이 달에 적어 둔 내용도 함께 사라집니다.")|tojson }})'>
             <button type="submit" class="linkbtn danger" title="열 삭제">✕</button>
           </form>
           {% endif %}

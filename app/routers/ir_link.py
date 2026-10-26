@@ -353,7 +353,7 @@ def ir_link_page(request: Request, db: Session = Depends(get_db),
         "co_tab": "ir-link",
         "counts": company_tab_counts(db),
     })
-    return templates.TemplateResponse("ir_link.html", ctx)
+    return templates.TemplateResponse(request, "ir_link.html", ctx)
 
 
 @router.get(HREF + "/bulk", response_class=HTMLResponse, include_in_schema=False)
@@ -382,13 +382,13 @@ def bulk_confirm(request: Request, db: Session = Depends(get_db),
         "where_head": WHERE_HEADS[kind],
         "synced": SYNCED.get(kind, SYNCED_DEFAULT),
     })
-    return templates.TemplateResponse("ir_link_bulk.html", ctx)
+    return templates.TemplateResponse(request, "ir_link_bulk.html", ctx)
 
 
 # ── 잇기 · 풀기 ─────────────────────────────────────────────────────────────
 
 @router.post(HREF + "/link", include_in_schema=False)
-def link_row(tab: str = Form(...), row_id: int = Form(...),
+def link_row(tab: str = Form(""), row_id: int = Form(...),
              company_id: int = Form(...), show: str = Form(""),
              db: Session = Depends(get_db),
              user: User = Depends(get_current_user)):
@@ -409,7 +409,7 @@ def link_row(tab: str = Form(...), row_id: int = Form(...),
 
 
 @router.post(HREF + "/unlink", include_in_schema=False)
-def unlink_row(tab: str = Form(...), row_id: int = Form(...),
+def unlink_row(tab: str = Form(""), row_id: int = Form(...),
                show: str = Form(""), focus: int = Form(0),
                db: Session = Depends(get_db),
                user: User = Depends(get_current_user)):
@@ -428,7 +428,7 @@ def unlink_row(tab: str = Form(...), row_id: int = Form(...),
 
 
 @router.post(HREF + "/bulk", include_in_schema=False)
-def bulk_link(tab: str = Form(...), pair: List[str] = Form(default=[]),
+def bulk_link(tab: str = Form(""), pair: List[str] = Form(default=[]),
               db: Session = Depends(get_db),
               user: User = Depends(get_current_user)):
     """확인 화면에서 보인 짝을 잇는다 — **그 짝이 아직 그대로인 줄만.**
@@ -468,8 +468,8 @@ def bulk_link(tab: str = Form(...), pair: List[str] = Form(default=[]),
 
 
 @router.post(HREF + "/resolve", include_in_schema=False)
-def resolve_diff(tab: str = Form(...), row_id: int = Form(...),
-                 field: str = Form(...), pick: str = Form(...), show: str = Form(""),
+def resolve_diff(tab: str = Form(""), row_id: int = Form(...),
+                 field: str = Form(""), pick: str = Form(""), show: str = Form(""),
                  db: Session = Depends(get_db),
                  user: User = Depends(get_current_user)):
     """`값 다름` 한 칸 맞추기 — [IR 값으로](`pick=ir`) · [이 줄 값으로](`pick=row`)

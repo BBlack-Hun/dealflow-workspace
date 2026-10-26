@@ -53,7 +53,7 @@ def taxonomy_page(request: Request, db: Session = Depends(get_db),
         "tree": tx.tree(db, include_hidden=True),
         "cleanup_only": tx.CLEANUP_ONLY_MAJORS,
     })
-    return templates.TemplateResponse("taxonomy.html", ctx)
+    return templates.TemplateResponse(request, "taxonomy.html", ctx)
 
 
 # ── 목록 ────────────────────────────────────────────────────────────────────

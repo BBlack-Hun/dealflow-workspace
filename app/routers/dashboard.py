@@ -66,7 +66,7 @@ def dashboard_page(request: Request, db: Session = Depends(get_db),
     ctx.update(dash.user_dashboard(db, user, top_n=top_n))
     ctx["top_n"] = top_n
     ctx["top_choices"] = dash.TOP_CHOICES
-    return templates.TemplateResponse("dashboard.html", ctx)
+    return templates.TemplateResponse(request, "dashboard.html", ctx)
 
 
 @router.get("/api/dashboard/top-requesters")
@@ -175,7 +175,7 @@ def todo_page(request: Request, db: Session = Depends(get_db),
         # 아무 표시가 없어서, 눌린 것인지 아닌지 알 수가 없었다.
         "moved": max(0, moved),
     })
-    return templates.TemplateResponse("todo.html", ctx)
+    return templates.TemplateResponse(request, "todo.html", ctx)
 
 
 def _as_week(value: str):
@@ -240,7 +240,7 @@ def _owned_routine(db: Session, routine_id: int, user: User) -> WeeklyRoutine:
 
 
 @router.post("/todo/tasks", include_in_schema=False)
-def add_task(category: str = Form(""), title: str = Form(...),
+def add_task(category: str = Form(""), title: str = Form(""),
              due_date: str = Form(""), week: str = Form(""),
              member: int = Form(0),
              db: Session = Depends(get_db),
@@ -318,7 +318,7 @@ def carry_over(week: str = Form(""), member: int = Form(0),
 
 
 @router.post("/todo/routines", include_in_schema=False)
-def add_routine(category: str = Form(""), title: str = Form(...),
+def add_routine(category: str = Form(""), title: str = Form(""),
                 weekdays: List[str] = Form([]), nth_weeks: List[str] = Form([]),
                 time_of_day: str = Form(""), week: str = Form(""),
                 member: int = Form(0),
@@ -414,7 +414,7 @@ def readiness_page(request: Request, db: Session = Depends(get_db),
     ctx = base_ctx(request, db, user, active="ready")
     ctx.update(readiness.report(db, user, rehearsal=rehearsal))
     ctx["mode"] = mode
-    return templates.TemplateResponse("readiness.html", ctx)
+    return templates.TemplateResponse(request, "readiness.html", ctx)
 
 
 @router.get("/team", response_class=HTMLResponse, include_in_schema=False)
@@ -459,7 +459,7 @@ def team_page(request: Request, db: Session = Depends(get_db),
     from ..services import sourcing_mail
 
     ctx["sourcing_mail"] = sourcing_mail.panel(db)
-    return templates.TemplateResponse("team.html", ctx)
+    return templates.TemplateResponse(request, "team.html", ctx)
 
 
 # --- 데이터 되돌리기 (관리자 전용) --------------------------------------------
@@ -503,7 +503,7 @@ def edit_log_page(request: Request, db: Session = Depends(get_db),
         "retention_months": edit_log.RETENTION_MONTHS,
         "page_size": edit_log.PAGE_SIZE,
     })
-    return templates.TemplateResponse("edit_log.html", ctx)
+    return templates.TemplateResponse(request, "edit_log.html", ctx)
 
 
 @router.get("/team/restore", response_class=HTMLResponse, include_in_schema=False)
@@ -537,7 +537,7 @@ def restore_page(request: Request, db: Session = Depends(get_db),
         "keep_days": backup.KEEP_DAILY_DAYS,
         "msg": msg,
     })
-    return templates.TemplateResponse("restore.html", ctx)
+    return templates.TemplateResponse(request, "restore.html", ctx)
 
 
 @router.post("/team/restore/apply", include_in_schema=False)
@@ -677,7 +677,7 @@ def report_page(request: Request, db: Session = Depends(get_db),
         "can_team": user.role == "admin",
         "scope": scope,
     })
-    return templates.TemplateResponse("report.html", ctx)
+    return templates.TemplateResponse(request, "report.html", ctx)
 
 
 @router.post("/team/mail-test", include_in_schema=False, dependencies=[Depends(no_send_as_member)])
@@ -746,8 +746,8 @@ def save_sourcing_mail(
 
 @router.post("/team/members", include_in_schema=False)
 def create_member(
-    name: str = Form(...),
-    phone: str = Form(...),
+    name: str = Form(""),
+    phone: str = Form(""),
     role: str = Form("user"),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -798,11 +798,30 @@ def create_member(
         status_code=303)
 
 
+def _reissue_agent_token(db: Session, member_id: int) -> None:
+    """이 계정의 발송기 연결키를 새로 발급한다 — 옛 PC 에 남은 키는 끊긴다.
+
+    번호 변경(계정 물려주기)과 정지가 함께 쓴다. 새 키는 그 계정으로 로그인해
+    [발송 프로그램 설치]에서 다시 내려받으면 박힌다(`routers/setup.py`).
+    """
+    device = db.execute(
+        select(AgentDevice).where(AgentDevice.user_id == member_id)
+    ).scalars().first()
+    if device is not None:
+        device.token = f"agt_{secrets.token_hex(16)}"
+        # 붙어 있던 PC 의 흔적도 지운다. 남겨 두면 팀 현황의 발송 프로그램
+        # 칸이 이제 못 붙는 기기를 '연결됨 · 퇴사자PC' 로 계속 보여 준다.
+        device.last_poll_at = None
+        device.hostname = ""
+        device.agent_version = ""
+        device.sender = None
+
+
 @router.post("/team/members/{member_id}/profile", include_in_schema=False)
 def edit_member_profile(
     member_id: int,
-    name: str = Form(...),
-    phone: str = Form(...),
+    name: str = Form(""),
+    phone: str = Form(""),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -895,17 +914,7 @@ def edit_member_profile(
         #
         # 이름만 고칠 때는 건드리지 않는다. 오타를 고치는 일에 남의 발송
         # 프로그램을 끊을 이유가 없다.
-        device = db.execute(
-            select(AgentDevice).where(AgentDevice.user_id == member.id)
-        ).scalars().first()
-        if device is not None:
-            device.token = f"agt_{secrets.token_hex(16)}"
-            # 붙어 있던 PC 의 흔적도 지운다. 남겨 두면 팀 현황의 발송 프로그램
-            # 칸이 이제 못 붙는 기기를 '연결됨 · 퇴사자PC' 로 계속 보여 준다.
-            device.last_poll_at = None
-            device.hostname = ""
-            device.agent_version = ""
-            device.sender = None
+        _reissue_agent_token(db, member.id)
         note = ("+로그인+ID+를+바꿨습니다.+열린+세션을+끊고+발송+프로그램+"
                 "연결키를+새로+발급했습니다+—+새+담당자가+[발송+프로그램+설치]"
                 "에서+다시+받아야+발송됩니다")
@@ -928,7 +937,7 @@ def edit_member_profile(
 @router.post("/team/members/{member_id}/role", include_in_schema=False)
 def change_member_role(
     member_id: int,
-    role: str = Form(...),
+    role: str = Form(""),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -1572,7 +1581,7 @@ def sender_rooms_page(request: Request, db: Session = Depends(get_db),
     ctx = base_ctx(request, db, user, active="admin")
     ctx.update({"board": sender_rooms.board(db, chosen), "senders": senders,
                 "msg": msg})
-    return templates.TemplateResponse("sender_rooms.html", ctx)
+    return templates.TemplateResponse(request, "sender_rooms.html", ctx)
 
 
 @router.post("/team/sender-rooms/check", include_in_schema=False,
@@ -1719,6 +1728,8 @@ def deactivate_member(
     if member is None:
         raise HTTPException(status_code=404, detail="계정을 찾을 수 없습니다")
     member.is_active = 0
+    # 그 PC 에 남은 발송기 연결키도 끊는다(번호 변경과 같은 방식).
+    _reissue_agent_token(db, member.id)
     # 이 계정 발송기로 맡겨 둔 계정은 본인 발송기로 되돌린다 — 정지된 계정의
     # 발송기에 남의 잡이 계속 내려가면 안 된다(`set_send_via` 가 막는 것과 같다).
     for backer in db.execute(select(User).where(

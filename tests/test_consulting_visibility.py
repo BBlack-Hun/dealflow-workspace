@@ -20,6 +20,7 @@
 """
 from __future__ import annotations
 
+import json
 import re
 
 import pytest
@@ -192,7 +193,9 @@ def test_switching_off_a_consultant_warns_first(portal, db):
     made = _make(db, "consultant", 1, "01000000076")
     cell = _raw_cell(_row(portal["admin"].get("/team").text, made.name),
                      "consulting-cell")
-    assert "confirm(" in cell and "다른 화면이 없어" in cell
+    # 문구는 `|tojson` 으로 들어간다 — 한글이 `\uXXXX` 로 적히므로 풀어서 본다.
+    ask = re.search(r"return confirm\((\".*?\")\)'", cell)
+    assert ask and "다른 화면이 없어" in json.loads(ask.group(1))
 
     # 팀원 줄에는 붙지 않는다 — 다른 화면이 얼마든지 남아 있다.
     plain = _make(db, "user", 1, "01000000077", name="팀원대상")

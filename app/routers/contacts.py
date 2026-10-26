@@ -612,9 +612,20 @@ def assign_to_my_sheet(body: AssignIn, db: Session = Depends(get_db),
     label = body.label.strip()
     if label not in sheet_owner.my_labels(db, user):
         raise HTTPException(status_code=403, detail="내 명단으로만 할당할 수 있습니다")
+    ids = set(body.contact_ids or [])
     rows = db.execute(
-        select(VcContact).where(VcContact.id.in_(body.contact_ids or []))
+        select(VcContact).where(VcContact.id.in_(ids))
     ).scalars().all()
+    # 가져올 수 있는 줄은 `_owned` 와 같은 판정(내 줄 · 관리자)에 더해 **풀에만
+    # 오른 줄**이다 — 풀은 누구의 담당도 아니라 뽑아 쓰라고 둔 명단이다. 남의
+    # 명단·남의 `직접 추가` 에 오른 줄은 안 된다. 하나라도 어긋나면 통째로,
+    # 없는 줄과 같은 404 로 답한다(남의 줄이 있다는 것도 흘리지 않는다).
+    pool = {x for x, uid in sheet_owner.owner_map(db).items()
+            if uid is None and x != MANUAL_SHEET}
+    if len(rows) != len(ids) or not all(
+            c.user_id == user.id or may_manage_team_contacts(user)
+            or set(sheet_owner.labels_of(c.source_sheet)) <= pool for c in rows):
+        raise HTTPException(status_code=404, detail="담당자를 찾을 수 없습니다")
     # 투자사로 세지 않기로 한 명단에서는 꺼내 오지 않는다. 여기서 내 명단에
     # 더하는 순간 그 사람들이 투자사 수에 다시 들어오고 발송 대상에도 뜬다 —
     # 방금 빼 둔 것을 되돌리는 길이 열려 있는 셈이다. 화면에서 이미 단추를
@@ -706,7 +717,7 @@ def transfer_contact(contact_id: int, body: TransferIn,
 
 @router.post("/sheets/assign", include_in_schema=False)
 def assign_sheet(
-    label: str = Form(...),
+    label: str = Form(""),
     user_id: str = Form(""),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -725,7 +736,7 @@ def assign_sheet(
 
 @router.post("/sheets/hide", include_in_schema=False)
 def toggle_sheet_hidden(
-    label: str = Form(...),
+    label: str = Form(""),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -757,7 +768,7 @@ def toggle_sheet_hidden(
 
 @router.post("/sheets/deal-list", include_in_schema=False)
 def toggle_sheet_deal_list(
-    label: str = Form(...),
+    label: str = Form(""),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -825,7 +836,7 @@ def _sheet_or_400(db: Session, label: str) -> str:
 
 
 @router.post("/columns", include_in_schema=False)
-def add_column(label: str = Form(...), sheet: str = Form(...),
+def add_column(label: str = Form(""), sheet: str = Form(""),
                db: Session = Depends(get_db),
                user: User = Depends(require_admin)):
     """달이 바뀌면 칸을 하나 늘린다. 새 칸이 **맨 앞**에 오도록 한다.
@@ -850,7 +861,7 @@ def add_column(label: str = Form(...), sheet: str = Form(...),
 
 
 @router.post("/columns/{column_id}/rename", include_in_schema=False)
-def rename_column(column_id: int, label: str = Form(...),
+def rename_column(column_id: int, label: str = Form(""),
                   db: Session = Depends(get_db),
                   user: User = Depends(require_admin)):
     col = db.get(ContactColumn, column_id)

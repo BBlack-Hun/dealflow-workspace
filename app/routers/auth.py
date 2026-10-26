@@ -31,7 +31,7 @@ def _safe_next(value: str) -> str:
 @router.get("/login", response_class=HTMLResponse, include_in_schema=False)
 def login_page(request: Request, next: str = "/", error: str = ""):
     return templates.TemplateResponse(
-        "login.html",
+        request, "login.html",
         {"request": request, "next": _safe_next(next), "error": error},
     )
 
@@ -39,8 +39,8 @@ def login_page(request: Request, next: str = "/", error: str = ""):
 @router.post("/login", include_in_schema=False)
 def login(
     request: Request,
-    phone: str = Form(...),
-    password: str = Form(...),
+    phone: str = Form(""),
+    password: str = Form(""),
     next: str = Form("/"),
     db: Session = Depends(get_db),
 ):
@@ -114,15 +114,15 @@ def password_page(request: Request, error: str = "",
     ctx = base_ctx(request, db, user, active="")
     ctx.update({"error": error,
                 "must_change": bool(user.must_change_password)})
-    return templates.TemplateResponse("password.html", ctx)
+    return templates.TemplateResponse(request, "password.html", ctx)
 
 
 @router.post("/account/password", include_in_schema=False)
 def change_password(
     request: Request,
-    current_password: str = Form(...),
-    new_password: str = Form(...),
-    confirm_password: str = Form(...),
+    current_password: str = Form(""),
+    new_password: str = Form(""),
+    confirm_password: str = Form(""),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):

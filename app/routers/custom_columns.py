@@ -66,11 +66,11 @@ def columns_page(request: Request, db: Session = Depends(get_db),
         "name_max": svc.NAME_MAX,
         "msg": msg,
     })
-    return templates.TemplateResponse("columns.html", ctx)
+    return templates.TemplateResponse(request, "columns.html", ctx)
 
 
 @router.post("/columns", include_in_schema=False)
-def add_column(target: str = Form(...), name: str = Form(""), kind: str = Form("memo"),
+def add_column(target: str = Form(""), name: str = Form(""), kind: str = Form("memo"),
                db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     admin_only(user)
     try:

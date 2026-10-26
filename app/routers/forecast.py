@@ -75,7 +75,7 @@ def forecast_page(request: Request, db: Session = Depends(get_db),
     })
     # 관리자가 붙인 추가 칸(`컬럼 관리` · `_custom_cols.html`).
     ctx.update(custom_columns.view(db, "forecast", "revenue_forecasts"))
-    return templates.TemplateResponse("forecast.html", ctx)
+    return templates.TemplateResponse(request, "forecast.html", ctx)
 
 
 @router.get("/api/export/forecast.xlsx")

@@ -282,13 +282,13 @@
       되돌리면 같은 자리에 다시 선다(명단 숨김과 같은 방식).
     #}
     <form method="post" action="/api/contacts/columns/{{ c.id }}/hide"
-          onsubmit="return confirm('{{ c.label }} 칸을 표에서 뺄까요?\n적힌 내용은 지워지지 않고, 아래에서 다시 되돌릴 수 있습니다.')">
+          onsubmit='return confirm({{ (c.label ~ " 칸을 표에서 뺄까요?\n적힌 내용은 지워지지 않고, 아래에서 다시 되돌릴 수 있습니다.")|tojson }})'>
       <button class="linkbtn" type="submit"
               title="표·수정창·엑셀에서 뺍니다. 적힌 내용은 그대로 남습니다.">칸 숨기기</button>
     </form>
     {# 칸을 지우면 **그 달의 기록도 함께 사라진다** — 한 번 더 묻는다. #}
     <form method="post" action="/api/contacts/columns/{{ c.id }}/delete"
-          onsubmit="return confirm('{{ c.label }} 칸을 지울까요?\n이 칸에 적힌 내용도 함께 사라집니다.')">
+          onsubmit='return confirm({{ (c.label ~ " 칸을 지울까요?\n이 칸에 적힌 내용도 함께 사라집니다.")|tojson }})'>
       <button class="linkbtn danger" type="submit">칸 삭제</button>
     </form>
   </span>

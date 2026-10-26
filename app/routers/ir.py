@@ -197,7 +197,7 @@ def ir_page(request: Request, db: Session = Depends(get_db),
         "today": today.isoformat(),
         "msg": msg,
     })
-    return templates.TemplateResponse("ir.html", ctx)
+    return templates.TemplateResponse(request, "ir.html", ctx)
 
 
 def _month_of(ym: str, today: date) -> tuple:
@@ -272,7 +272,7 @@ def meeting_calendar_page(request: Request, db: Session = Depends(get_db),
                     "prev_ym": f"{prev[0]}-{prev[1]:02d}",
                     "next_ym": f"{nxt[0]}-{nxt[1]:02d}",
                     **meeting_calendar.month(db, who, year, mon, today)})
-    return templates.TemplateResponse("meeting_calendar.html", ctx)
+    return templates.TemplateResponse(request, "meeting_calendar.html", ctx)
 
 
 # 경과일 거르기 칩 — 그 밖의 값은 `전체` 로 읽는다(주소를 손으로 고쳐도 500 이 안 난다).
@@ -319,7 +319,7 @@ def no_meeting_page(request: Request, db: Session = Depends(get_db),
     ctx.update(_no_meeting(request, db, user, view, days, sent, src, drop, member))
     ctx.update({"ir_tab": "no_meeting", "members": _members(db, user),
                 "day_steps": NO_MEETING_DAYS, "sources": ir_no_meeting.SOURCES})
-    return templates.TemplateResponse("ir_no_meeting.html", ctx)
+    return templates.TemplateResponse(request, "ir_no_meeting.html", ctx)
 
 
 @router.get("/api/export/ir-no-meeting.xlsx")
@@ -358,7 +358,7 @@ def last_batch(contact_id: int, db: Session = Depends(get_db),
 @router.post("/ir/requests", include_in_schema=False)
 def create_request(
     contact_id: int = Form(...),
-    company_name: str = Form(...),
+    company_name: str = Form(""),
     requested_at: str = Form(""),
     note: str = Form(""),
     db: Session = Depends(get_db),
@@ -581,7 +581,7 @@ def set_call_memo(contact_id: int, memo: str = Form(""), back: str = Form(""),
 @router.post("/ir/meetings", include_in_schema=False)
 def create_meeting(
     contact_id: int = Form(...),
-    scheduled_at: str = Form(...),
+    scheduled_at: str = Form(""),
     # 시각은 **선택**이다. 날짜만 아는 단계가 실제로 있고("다음 주 화요일쯤"),
     # 필수로 만들면 그 단계를 기록할 수 없다. 못 읽은 값은 `clean_time` 이
     # 버린다 — 자정 미팅을 지어내는 것보다 빈칸이 정확하다.

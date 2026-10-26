@@ -1,23 +1,25 @@
 # Web app + mock agent (Docker image). No Windows-only deps here so the image
 # builds cleanly on Linux/macOS.
-fastapi==0.115.6
+fastapi==0.133.1
+# fastapi 가 starlette 상한을 풀어 두어(>=0.40) 직접 고정한다 — 안 그러면 빌드 날마다 판이 바뀐다.
+starlette==1.3.1
 uvicorn[standard]==0.34.0
-jinja2==3.1.5
+jinja2==3.1.6
 sqlalchemy==2.0.36
 alembic==1.14.0
 pydantic==2.10.4
-requests==2.32.3
+requests==2.33.0
 pyyaml==6.0.2
 # tests
-pytest==8.3.4
+pytest==9.0.3
 # 검사를 여러 프로세스로 나눠 돌린다. 시험이 3,915 개인데 **가장 느린 하나가
 # 3.4 초**라, 느린 것을 고치는 것으로는 안 줄어든다 — 골고루 걸리는 시간이다.
 # 실측(같은 기계): 한 프로세스 677 초 → 둘 370 초 → 넷 194 초.
 pytest-xdist==3.8.0
 httpx==0.28.1
-python-multipart==0.0.20
+python-multipart==0.0.31
 # 투자사 현황 업로드 / 표 엑셀 내려받기 (순수 파이썬 — 컴파일러 불필요)
 openpyxl==3.1.5
 # 딜 소싱 메일 확인 — 팀 현황에서 넣은 POP3 비밀번호를 DB 에 **암호화해서** 둔다
 # (Fernet · app/services/secret_box.py). 리눅스 arm64/x86 모두 바퀴(wheel)가 있다.
-cryptography==43.0.3
+cryptography==50.0.0

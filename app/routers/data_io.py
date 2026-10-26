@@ -142,7 +142,8 @@ def import_contacts(
 
 
 @router.post("/api/import/contacts/sheets")
-def list_upload_sheets(file: UploadFile = File(...)):
+def list_upload_sheets(file: UploadFile = File(...),
+                       user: User = Depends(get_current_user)):
     """파일을 올리기 전에 어떤 시트가 들어 있는지 보여준다."""
     data = file.file.read()
     try:

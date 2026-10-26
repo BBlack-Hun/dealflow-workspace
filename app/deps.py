@@ -621,7 +621,7 @@ def _guard_page(request: Request, template: str, fallback_title: str,
         # 보세요" 라고 적으면 화면이 거짓말을 한다. 판정은 아래 한 곳이고
         # 템플릿은 읽기만 한다(팀 현황의 확인 문구가 읽는 것과 같은 함수다).
         ctx["no_other_screen"] = consulting_is_only_screen(user)
-        return templates.TemplateResponse(template, ctx, status_code=status_code)
+        return templates.TemplateResponse(request, template, ctx, status_code=status_code)
     finally:
         db.close()
 
@@ -637,7 +637,10 @@ def get_agent_device(
     device = db.execute(
         select(AgentDevice).where(AgentDevice.token == token)
     ).scalar_one_or_none()
-    if device is None:
+    # 정지한 계정의 발송기도 막는다 — 정지가 키를 바꾸지만(`deactivate_member`),
+    # 그 전에 정지된 계정의 PC 에 남은 키까지 끊는 것은 여기다.
+    owner = db.get(User, device.user_id) if device is not None else None
+    if owner is None or not owner.is_active:
         raise HTTPException(status_code=401, detail="Invalid agent token")
     return device
 

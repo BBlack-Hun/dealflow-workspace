@@ -219,6 +219,31 @@ def test_deactivate_keeps_the_record(admin_client, db, users):
     assert left.is_active == 0
 
 
+def test_deactivate_cuts_the_agent(admin_client, db, users):
+    """정지한 계정의 PC 에 남은 발송기 연결키는 더 못 쓴다 — 키도 새로 바뀐다."""
+    from app.models import AgentDevice
+
+    from .conftest import DEMO_TOKEN, OTHER_TOKEN, auth
+
+    admin_client.post(f"/team/members/{users['u1'].id}/deactivate", follow_redirects=False)
+    db.expire_all()
+    assert db.query(AgentDevice).filter_by(user_id=users["u1"].id).one().token != DEMO_TOKEN
+    assert admin_client.get("/api/agent/poll", headers=auth(DEMO_TOKEN)).status_code == 401
+    # 다른 계정의 발송기는 그대로 돈다.
+    assert admin_client.get("/api/agent/poll", headers=auth(OTHER_TOKEN)).status_code == 204
+
+
+def test_an_inactive_accounts_agent_token_is_refused(client, db, users):
+    """키를 바꾸기 전에 정지된 계정(예전 정지분)이어도 발송기는 막힌다."""
+    from .conftest import DEMO_TOKEN, auth
+
+    users["u1"].is_active = 0
+    db.commit()
+    assert client.get("/api/agent/poll", headers=auth(DEMO_TOKEN)).status_code == 401
+    assert client.post("/api/agent/heartbeat", json={},
+                       headers=auth(DEMO_TOKEN)).status_code == 401
+
+
 # --- 딜 기업 DB -------------------------------------------------------------
 
 def test_companies_page_opens(logged):

@@ -304,6 +304,14 @@ def test_고친_채로_누르면_적용하지_않는다(portal, db, people, stag
     assert "모든 팀원에게 적용했습니다" in _msg(r)
 
 
+def test_본문을_다_지운_채_누르면_적용하지_않는다(portal, db, people, stage):
+    """빈 칸도 고친 것이다 — 칸이 안 온 것(저장된 문구 적용)과 섞이면 안 된다."""
+    r = _apply(portal["admin"], stage["a"], name="가", body="")
+    assert "먼저 [저장]" in _msg(r)
+    assert _backups(db) == []
+    assert _choices(db)[people["u1"].id] == stage["mine"]
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # ③ 적용하면
 # ═══════════════════════════════════════════════════════════════════════════
