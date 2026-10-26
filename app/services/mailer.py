@@ -26,6 +26,7 @@ from __future__ import annotations
 import os
 import re
 import smtplib
+import ssl
 from dataclasses import dataclass
 from email.message import EmailMessage
 from email.utils import formataddr
@@ -159,12 +160,17 @@ def send_mail(to: str, subject: str, body: str,
 
 
 def _connect(s: MailSettings):
-    """SSL(465) 과 STARTTLS(587) 는 붙는 방식이 다르다."""
+    """SSL(465) 과 STARTTLS(587) 는 붙는 방식이 다르다.
+
+    두 길 모두 **메일 서버 인증서를 검증한다**(`ssl.create_default_context()`).
+    넘기지 않으면 표준 라이브러리는 검증하지 않는 쪽으로 붙는다.
+    """
     if s.use_ssl:
-        return smtplib.SMTP_SSL(s.host, s.port, timeout=20)
+        return smtplib.SMTP_SSL(s.host, s.port, timeout=20,
+                                context=ssl.create_default_context())
     smtp = smtplib.SMTP(s.host, s.port, timeout=20)
     if s.use_tls:
-        smtp.starttls()
+        smtp.starttls(context=ssl.create_default_context())
     return smtp
 
 

@@ -646,6 +646,11 @@ def start_scheduler() -> None:
                 # 풀렸는데 발송기가 못 집어간 채 시각을 넘긴 것 — 발송기가
                 # 늦게 켜져도 저절로 안 나가게 되돌린다(`expire_missed`).
                 expire_missed(db)
+                # 시간 · 하루 상한에 걸려 기다리던 메일 — 보내는 시간이 열리면
+                # 이어 보낸다(`mail_sender.resume_waiting`).
+                from . import mail_sender
+
+                mail_sender.resume_waiting(db)
             except Exception:  # noqa: BLE001 - 실이 죽으면 예약이 조용히 멎는다
                 log.exception("예약 발송을 살피다 실패했습니다")
             finally:

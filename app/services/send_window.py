@@ -4,6 +4,7 @@
 그래서 문구가 나가는 자리가 전부 이 폭을 지킨다:
 
 - 발송기에게 잡을 내주는 자리(`send_guard.window_open` → `agent_api.poll`)
+- 서버가 SMTP 로 바로 보내는 메일(`mail_sender._run` — 밖이면 대기로 두고 다음 창에)
 - 예약을 고르는 자리와 푸는 자리(`scheduled_send.check` · `deadline`)
 - 자동화 팀 공통의 '자동 발송 가능 시간대'(`automation.guard_window`)
 - 자동화·스타트업 월간 발송의 시각 칸(`startup_monthly.parse_time`)

@@ -17,6 +17,11 @@
 `poll` 하나뿐이다. 여기서 막으면 낡은 발송기를 쓰는 PC 에도 그대로 걸린다 —
 발송기를 다시 배포하지 않아도 된다.
 
+**메일도 같은 관문을 지난다** — 메일은 발송기를 거치지 않고 서버가 SMTP 로 바로
+보내므로 `poll` 에 걸리지 않는다. 그래서 메일을 보내는 자리(`mail_sender._run`)가
+한 통마다 같은 시간(`window_open`)과 상한(`remaining_today(mail=True)` — 메일끼리
+센다)을 본다. 밖이면 실패로 닫지 않고 대기로 두었다가 다음 창에서 이어 보낸다.
+
 **못 내주는 잡은 큐에 그대로 둔다.** 실패로 닫으면 사람이 다시 만들어야 한다.
 시간이 되면(다음 날 09시) 그대로 이어 나간다 — 자료 파일을 못 붙이는 발송기
 에게 잡을 안 내주는 것(`poll` 의 `can_attach`)과 같은 방식이다.
@@ -134,30 +139,34 @@ def daily_cap(user: Optional[User]) -> int:
     return clamp_daily_cap(raw) if raw else DEFAULT_DAILY_CAP
 
 
-def sent_today(db: Session, user_id: int, day: Optional[date] = None) -> int:
-    """그날 이 계정으로 **카톡으로 나간** 문구 수.
+def sent_today(db: Session, user_id: int, day: Optional[date] = None,
+               mail: bool = False) -> int:
+    """그날 이 계정으로 **카톡으로 나간** 문구 수(`mail` 이면 메일로 나간 수).
 
     `sent_at` 은 지역 시각 문자열이라(`clock.now_iso`) 앞 10자가 곧 그날이다.
-    메일 건은 세지 않는다 — 서버가 SMTP 로 보내 카톡 계정과 상관이 없다.
+    카톡과 메일은 **따로 센다** — 메일은 서버가 SMTP 로 보내 카톡 계정과 상관이
+    없다. 메일 쪽 상한도 같은 숫자(`daily_cap`)를 메일끼리 센다(`mail_sender`).
     """
     day = day or clock.today()
     start = day.isoformat()
     end = (day + timedelta(days=1)).isoformat()
+    channel = (SendItem.channel == "email") if mail else (SendItem.channel != "email")
     return int(db.execute(
         select(func.count(SendItem.id))
         .join(SendJob, SendJob.id == SendItem.job_id)
         .where(SendJob.user_id == user_id,
                SendJob.kind.in_(GATED_KINDS),
                SendItem.status == "sent",
-               SendItem.channel != "email",
+               channel,
                SendItem.sent_at >= start,
                SendItem.sent_at < end)
     ).scalar_one())
 
 
-def remaining_today(db: Session, user: User, day: Optional[date] = None) -> int:
+def remaining_today(db: Session, user: User, day: Optional[date] = None,
+                    mail: bool = False) -> int:
     """오늘 이 계정으로 더 보낼 수 있는 수. 0 아래로 내려가지 않는다."""
-    return max(0, daily_cap(user) - sent_today(db, user.id, day))
+    return max(0, daily_cap(user) - sent_today(db, user.id, day, mail=mail))
 
 
 @dataclass(frozen=True)
@@ -198,11 +207,13 @@ def describe(db: Session, job: SendJob, now: Optional[datetime] = None,
     gated = job.kind in GATED_KINDS
     owner = db.get(User, job.user_id)
     cap = daily_cap(owner)
-    used = sent_today(db, job.user_id, now.date()) if gated else 0
+    # 메일 회차는 메일끼리 센다 — 메일도 같은 시간·상한을 지킨다(`mail_sender`).
+    mail = bool(job.items) and all(i.channel == "email" for i in job.items)
+    used = sent_today(db, job.user_id, now.date(), mail=mail) if gated else 0
     left = max(0, cap - used)
     is_open = window_open(now)
     waiting = job.status == "queued" and any(
-        i.status == "pending" and i.channel != "email" for i in job.items)
+        i.status == "pending" and (i.channel == "email") == mail for i in job.items)
 
     sentence = ""
     if gated:
