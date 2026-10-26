@@ -313,8 +313,12 @@ def _build_info(os_kind: str) -> str:
 
 
 def _server_url(request: Request) -> str:
-    """사용자가 실제로 접속한 주소. 에이전트가 그대로 되돌아오면 된다."""
-    return str(request.base_url).rstrip("/")
+    """에이전트가 되돌아올 주소. 운영 도메인이 있으면 그 https 주소.
+
+    접속한 주소(`request.base_url`)만 믿으면 Caddy 뒤에서 http 로 잡혀
+    config.yaml 에 `http://` 가 구워진다. 도메인이 없는 로컬(8889)만 접속 주소를 쓴다.
+    """
+    return config.base_url() or str(request.base_url).rstrip("/")
 
 
 def _device(db: Session, user: User) -> AgentDevice:
@@ -378,7 +382,7 @@ def setup_page(
                 # 칸을 비운 채 눌렀을 때 되돌아오며 실려 오는 말.
                 "test_msg": TEST_INPUT_MISSING.get(
                     request.query_params.get("test", ""), "")})
-    return templates.TemplateResponse("setup.html", ctx)
+    return templates.TemplateResponse(request, "setup.html", ctx)
 
 
 @router.post("/setup/ir-root")

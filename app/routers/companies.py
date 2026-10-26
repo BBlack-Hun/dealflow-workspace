@@ -763,7 +763,7 @@ def companies_page(request: Request, db: Session = Depends(get_db),
     })
     # 관리자가 붙인 추가 칸 — 두 탭이 같은 칸을 쓴다(`_custom_cols.html`).
     ctx.update(custom_columns.view(db, "companies", "ir_companies"))
-    return templates.TemplateResponse("companies.html", ctx)
+    return templates.TemplateResponse(request, "companies.html", ctx)
 
 
 @router.post("/companies/ir-files", include_in_schema=False)

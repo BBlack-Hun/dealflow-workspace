@@ -57,7 +57,7 @@ def meeting_request_page(request: Request, db: Session = Depends(get_db),
         "next_rows": _rows(db, user, nxt, test, row),
         "next_label": f"{nxt.month}/{nxt.day}",
     })
-    return templates.TemplateResponse("auto_meeting_request.html", ctx)
+    return templates.TemplateResponse(request, "auto_meeting_request.html", ctx)
 
 
 def _contact_or_404(db: Session, contact_id: int, user: User):

@@ -118,7 +118,7 @@ def ir_report_list(
     ctx = base_ctx(request, db, user, STARTUP_PAGE.key)
     ctx.update(ir_monthly.overview(db, selected))
     ctx.update({"months": months, "selected": selected})
-    return templates.TemplateResponse("startup_ir_report.html", ctx)
+    return templates.TemplateResponse(request, "startup_ir_report.html", ctx)
 
 
 @router.get("/startup/ir-report/{company_id}", response_class=HTMLResponse)
@@ -151,7 +151,7 @@ def ir_report_doc(
     got = ir_monthly.report(db, company_id, selected)
     ctx = base_ctx(request, db, user, STARTUP_PAGE.key)
     ctx.update({"report": got, "show_person": bool(who), "selected": selected})
-    return templates.TemplateResponse("startup_ir_doc.html", ctx,
+    return templates.TemplateResponse(request, "startup_ir_doc.html", ctx,
                                       status_code=200 if got else 404)
 
 
@@ -233,5 +233,5 @@ def ir_kakao_message(
                 # 이다 — 여기만 따로 두면 못 여는 자리로 데려간다.
                 "send_here": startup_send.may_send(db, user),
                 "send_label": startup_send.LABEL})
-    return templates.TemplateResponse("startup_ir_kakao.html", ctx,
+    return templates.TemplateResponse(request, "startup_ir_kakao.html", ctx,
                                       status_code=200 if msg else 404)

@@ -56,7 +56,7 @@ def index(request: Request, db: Session = Depends(get_db),
     ctx.update(dash.user_dashboard(db, user, top_n=top_n))
     ctx["top_n"] = top_n
     ctx["top_choices"] = dash.TOP_CHOICES
-    return templates.TemplateResponse("dashboard.html", ctx)
+    return templates.TemplateResponse(request, "dashboard.html", ctx)
 
 
 def _drop_query(request: Request, key: str) -> str:
@@ -314,7 +314,7 @@ def deals_page(
         "manual_remind_note": manual_send.REMIND_NOTE,
         "manual_today": clock.today().isoformat(),
     })
-    return templates.TemplateResponse("deals.html", ctx)
+    return templates.TemplateResponse(request, "deals.html", ctx)
 
 
 # ── 명단을 보여 주는 화면 ───────────────────────────────────────────────────
@@ -756,7 +756,7 @@ def list_page(
     # 가리지 않고 같은 칸이다. 투자사 관리 현황에는 붙이지 않는다(요청 범위 밖).
     if page.key == STARTUP_PAGE.key:
         ctx.update(custom_columns.view(db, "startup", "vc_contacts"))
-    return templates.TemplateResponse("contacts.html", ctx)
+    return templates.TemplateResponse(request, "contacts.html", ctx)
 
 
 @router.get("/contacts", response_class=HTMLResponse)
@@ -810,7 +810,7 @@ def job_page(
         from ..services import automation_runner
 
         ctx["automation"] = automation_runner.job_notes(db, job)
-    return templates.TemplateResponse("progress.html", ctx)
+    return templates.TemplateResponse(request, "progress.html", ctx)
 
 
 @router.get("/{placeholder}", response_class=HTMLResponse)
@@ -828,4 +828,4 @@ def placeholder_page(
         raise HTTPException(status_code=404, detail="Not Found")
     ctx = _base_ctx(request, db, user, item["key"])
     ctx.update({"title": item["label"]})
-    return templates.TemplateResponse("placeholder.html", ctx)
+    return templates.TemplateResponse(request, "placeholder.html", ctx)

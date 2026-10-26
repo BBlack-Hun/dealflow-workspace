@@ -66,7 +66,7 @@ def dashboard_page(request: Request, db: Session = Depends(get_db),
     ctx.update(dash.user_dashboard(db, user, top_n=top_n))
     ctx["top_n"] = top_n
     ctx["top_choices"] = dash.TOP_CHOICES
-    return templates.TemplateResponse("dashboard.html", ctx)
+    return templates.TemplateResponse(request, "dashboard.html", ctx)
 
 
 @router.get("/api/dashboard/top-requesters")
@@ -175,7 +175,7 @@ def todo_page(request: Request, db: Session = Depends(get_db),
         # 아무 표시가 없어서, 눌린 것인지 아닌지 알 수가 없었다.
         "moved": max(0, moved),
     })
-    return templates.TemplateResponse("todo.html", ctx)
+    return templates.TemplateResponse(request, "todo.html", ctx)
 
 
 def _as_week(value: str):
@@ -240,7 +240,7 @@ def _owned_routine(db: Session, routine_id: int, user: User) -> WeeklyRoutine:
 
 
 @router.post("/todo/tasks", include_in_schema=False)
-def add_task(category: str = Form(""), title: str = Form(...),
+def add_task(category: str = Form(""), title: str = Form(""),
              due_date: str = Form(""), week: str = Form(""),
              member: int = Form(0),
              db: Session = Depends(get_db),
@@ -318,7 +318,7 @@ def carry_over(week: str = Form(""), member: int = Form(0),
 
 
 @router.post("/todo/routines", include_in_schema=False)
-def add_routine(category: str = Form(""), title: str = Form(...),
+def add_routine(category: str = Form(""), title: str = Form(""),
                 weekdays: List[str] = Form([]), nth_weeks: List[str] = Form([]),
                 time_of_day: str = Form(""), week: str = Form(""),
                 member: int = Form(0),
@@ -414,7 +414,7 @@ def readiness_page(request: Request, db: Session = Depends(get_db),
     ctx = base_ctx(request, db, user, active="ready")
     ctx.update(readiness.report(db, user, rehearsal=rehearsal))
     ctx["mode"] = mode
-    return templates.TemplateResponse("readiness.html", ctx)
+    return templates.TemplateResponse(request, "readiness.html", ctx)
 
 
 @router.get("/team", response_class=HTMLResponse, include_in_schema=False)
@@ -459,7 +459,7 @@ def team_page(request: Request, db: Session = Depends(get_db),
     from ..services import sourcing_mail
 
     ctx["sourcing_mail"] = sourcing_mail.panel(db)
-    return templates.TemplateResponse("team.html", ctx)
+    return templates.TemplateResponse(request, "team.html", ctx)
 
 
 # --- 데이터 되돌리기 (관리자 전용) --------------------------------------------
@@ -503,7 +503,7 @@ def edit_log_page(request: Request, db: Session = Depends(get_db),
         "retention_months": edit_log.RETENTION_MONTHS,
         "page_size": edit_log.PAGE_SIZE,
     })
-    return templates.TemplateResponse("edit_log.html", ctx)
+    return templates.TemplateResponse(request, "edit_log.html", ctx)
 
 
 @router.get("/team/restore", response_class=HTMLResponse, include_in_schema=False)
@@ -537,7 +537,7 @@ def restore_page(request: Request, db: Session = Depends(get_db),
         "keep_days": backup.KEEP_DAILY_DAYS,
         "msg": msg,
     })
-    return templates.TemplateResponse("restore.html", ctx)
+    return templates.TemplateResponse(request, "restore.html", ctx)
 
 
 @router.post("/team/restore/apply", include_in_schema=False)
@@ -677,7 +677,7 @@ def report_page(request: Request, db: Session = Depends(get_db),
         "can_team": user.role == "admin",
         "scope": scope,
     })
-    return templates.TemplateResponse("report.html", ctx)
+    return templates.TemplateResponse(request, "report.html", ctx)
 
 
 @router.post("/team/mail-test", include_in_schema=False, dependencies=[Depends(no_send_as_member)])
@@ -746,8 +746,8 @@ def save_sourcing_mail(
 
 @router.post("/team/members", include_in_schema=False)
 def create_member(
-    name: str = Form(...),
-    phone: str = Form(...),
+    name: str = Form(""),
+    phone: str = Form(""),
     role: str = Form("user"),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -820,8 +820,8 @@ def _reissue_agent_token(db: Session, member_id: int) -> None:
 @router.post("/team/members/{member_id}/profile", include_in_schema=False)
 def edit_member_profile(
     member_id: int,
-    name: str = Form(...),
-    phone: str = Form(...),
+    name: str = Form(""),
+    phone: str = Form(""),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -937,7 +937,7 @@ def edit_member_profile(
 @router.post("/team/members/{member_id}/role", include_in_schema=False)
 def change_member_role(
     member_id: int,
-    role: str = Form(...),
+    role: str = Form(""),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -1581,7 +1581,7 @@ def sender_rooms_page(request: Request, db: Session = Depends(get_db),
     ctx = base_ctx(request, db, user, active="admin")
     ctx.update({"board": sender_rooms.board(db, chosen), "senders": senders,
                 "msg": msg})
-    return templates.TemplateResponse("sender_rooms.html", ctx)
+    return templates.TemplateResponse(request, "sender_rooms.html", ctx)
 
 
 @router.post("/team/sender-rooms/check", include_in_schema=False,

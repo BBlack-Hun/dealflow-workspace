@@ -15,7 +15,10 @@ services:
       context: ..
       dockerfile: Dockerfile
     image: dealflow:prod
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    # Caddy 가 붙인 X-Forwarded-Proto/For 를 믿는다(안 믿으면 https 요청이 http 로 보인다).
+    # "*" 여도 되는 이유: 8000 은 호스트에 열지 않아(아래 expose) Caddy 만 닿는다.
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000",
+              "--proxy-headers", "--forwarded-allow-ips", "*"]
     env_file: [.env]
     environment:
       TZ: "${TZ:-Asia/Seoul}"

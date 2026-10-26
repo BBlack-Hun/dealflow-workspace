@@ -248,7 +248,7 @@ def render_page(request: Request, db: Session, user: User, msg: str = "", q: str
     })
     # 관리자가 붙인 추가 칸 — 옆 두 탭과 **같은 칸**(`custom_columns.TARGETS`).
     ctx.update(custom_columns.view(db, "companies", "series_a_companies"))
-    return templates.TemplateResponse("companies_series_a.html", ctx)
+    return templates.TemplateResponse(request, "companies_series_a.html", ctx)
 
 
 # --- 고치기 · 더하기 · 지우기 ------------------------------------------------
