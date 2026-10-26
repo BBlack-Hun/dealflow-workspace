@@ -82,15 +82,20 @@ def _meet(db, contact, company, day, kind="first", status="scheduled", user_id=1
 
 
 def _add(client, name="샘플가나랩", firm="가나벤처스"):
-    r = client.post("/api/forecast", json={"company_name": name, "firm": firm})
+    body = {"company_name": name} if firm is None else {"company_name": name, "firm": firm}
+    r = client.post("/api/forecast", json=body)
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def _cells_row(client, row_id, **body):
+    r = client.patch(f"/api/forecast/{row_id}", json=body)
     assert r.status_code == 200, r.text
     return r.json()
 
 
 def _cells(client, row_id, **body):
-    r = client.patch(f"/api/forecast/{row_id}", json=body)
-    assert r.status_code == 200, r.text
-    return r.json()["cells"]
+    return _cells_row(client, row_id, **body)["cells"]
 
 
 # --- 1. 자동 칸 · 우선순위 ----------------------------------------------------
@@ -228,6 +233,38 @@ def test_미팅은_같은_기업_같은_회사만_취소_빼고_외_N건(portal,
     _cells(portal["u1"], row_id, meeting_plan="2026-11-03")
     db.expire_all()
     assert db.get(RevenueForecast, row_id).meeting_plan is None, "가장 이른 날과 같으면 빈칸"
+
+
+def test_줄_추가는_기업명만_받으니_투자사는_그_기업_미팅_상대_회사에서_읽는다(portal, db, company):
+    """[줄 추가] 칸은 기업명 하나뿐이다 — 투자사가 비면 미팅 · 심사역이 하나도 안 이어졌다."""
+    from app.models import IrRequest, RevenueForecast
+
+    ga = _vc(db, "심사가", "010-0000-2222")
+    _meet(db, ga, company, "2026-11-03")
+    row = _add(portal["u1"], firm=None)
+    cells = row["cells"]
+    assert cells["firm"] == {"text": "(주)가나벤처스", "value": "(주)가나벤처스", "auto": True}
+    assert cells["vc_name"]["text"] == "심사가" and cells["vc_phone"]["text"] == "010-0000-2222"
+    assert cells["meeting_plan"]["text"] == "2026-11-03"
+    db.expire_all()
+    assert db.get(RevenueForecast, row["id"]).firm is None, "베껴 두지 않는다"
+
+    # 상대 회사가 둘이면 짐작하지 않고 후보를 띄운다 — 사람이 [이걸로].
+    ra = _vc(db, "심사라", "010-0000-5555", firm="라마파트너스")
+    _meet(db, ra, company, "2026-11-10")
+    row = _cells_row(portal["u1"], row["id"])
+    assert row["cells"]["firm"]["text"] == "" and row["cells"]["meeting_plan"]["text"] == ""
+    assert [c["name"] for c in row["firm_candidates"]] == ["(주)가나벤처스", "라마파트너스"]
+    assert "js-fc-firm" in portal["u1"].get("/report/forecast").text
+    cells = _cells(portal["u1"], row["id"], firm="라마파트너스")
+    assert cells["vc_name"]["text"] == "심사라" and cells["meeting_plan"]["text"] == "2026-11-10"
+
+    # 미팅이 없으면 IR 요청 상대 회사.
+    other = _add(portal["u1"], name="샘플없는기업", firm=None)
+    db.add(IrRequest(user_id=1, contact_id=ga.id, company_name="샘플없는기업",
+                     requested_at="2026-10-01"))
+    db.commit()
+    assert _cells(portal["u1"], other["id"])["firm"]["text"] == "(주)가나벤처스"
 
 
 # --- 5. 권한 · 엑셀 ---------------------------------------------------------------

@@ -101,6 +101,13 @@
             <span class="tag warn">스타트업DB에 없음</span>
             {% endif %}
           </div>
+          {% elif field == 'firm' and r.firm_candidates %}
+          <div class="cell-sub">
+            {% for o in r.firm_candidates %}
+            <span class="tag soft">{{ o.name }}</span>
+            <button type="button" class="linkbtn js-fc-firm" data-name="{{ o.name }}">이걸로</button>
+            {% endfor %}
+          </div>
           {% elif field == 'vc_name' and r.vc_candidates %}
           <div class="cell-sub">
             {% for o in r.vc_candidates %}

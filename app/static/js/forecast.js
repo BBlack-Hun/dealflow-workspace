@@ -53,6 +53,8 @@
     if (btn.classList.contains("js-fc-company")) {
       send("POST", url + "/company",
            { company_id: parseInt(btn.getAttribute("data-company"), 10) }).then(reload, fail);
+    } else if (btn.classList.contains("js-fc-firm")) {
+      send("PATCH", url, { firm: btn.getAttribute("data-name") }).then(reload, fail);
     } else if (btn.classList.contains("js-fc-vc")) {
       send("PATCH", url, { vc_name: btn.getAttribute("data-name") }).then(reload, fail);
     } else if (btn.classList.contains("js-fc-delete")) {
