@@ -1061,6 +1061,8 @@ def admin_dashboard(db: Session, today: Optional[date] = None) -> dict:
             # 정지된 계정인가. 자동화 판의 **보내는 계정 고르개**가 이것을 읽는다
             # — 정지된 사람을 고르면 목록이 서도 누를 사람이 없다.
             "active": bool(u.is_active),
+            # 계약 Day7 우편 발송(#9)이 이 팀원에게 보내는 카톡방 — 자동화 판에서 넣는다.
+            "kakao_room": u.kakao_room_name or "",
             "last_login": (u.last_login_at or "")[:10],
         })
 
