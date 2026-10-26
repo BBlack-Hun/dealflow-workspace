@@ -298,7 +298,7 @@ def deals_page(
         # — 그 차이는 [번호 → 이름 찾기] 가 못 읽는 답으로 돌아온다.
         "llm_answer_example": llm_brief.ANSWER_EXAMPLE,
         # 이번 몫이 **몇 주차라 많아야 몇 곳**인지(`이번 주는 3주차 — 그룹마다
-        # 많아야 8곳`). 주차를 여기서 세지 않는다 — 자료의 `pick` 칸과 같은
+        # 많아야 5곳`). 주차를 여기서 세지 않는다 — 자료의 `pick` 칸과 같은
         # 함수가 짓는다(`services/llm_brief.pick_plan`). '보낼 날' 칸의 처음
         # 값도 이것의 `date`(오늘)다.
         "llm_pick": llm_brief.pick_plan(),
