@@ -95,8 +95,15 @@ def test_다섯_번_틀리면_맞는_비밀번호도_15분_막힌다(client, use
 
 
 def test_IP_하나에서_여러_번호로_틀려도_막힌다(client, users):
-    for n in range(auth_svc.LOGIN_MAX_FAILS):
-        _login(client, phone=f"0109000000{n}", password="wrong-pass")
+    """IP 는 번호보다 넉넉하다(사무실 공용 주소) — 번호마다 4번씩 나눠 틀려도 30번이면 막힌다."""
+    def fail(n):
+        return _login(client, phone=f"01090{n // 4:06d}", password="wrong-pass")
+
+    for n in range(auth_svc.LOGIN_MAX_FAILS_PER_IP - 1):
+        assert fail(n).headers["location"].endswith("error=1"), n
+    assert "error=locked" not in _login(client).headers["location"], "29번에 막혔다"
+    client.cookies.clear()
+    fail(auth_svc.LOGIN_MAX_FAILS_PER_IP - 1)
     assert "error=locked" in _login(client).headers["location"]
 
 

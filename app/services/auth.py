@@ -106,11 +106,13 @@ def authenticate(db: OrmSession, phone: str, password: str) -> Optional[User]:
 
 # --- 로그인 시도 제한 -------------------------------------------------------
 #
-# 번호별·IP별로 15분 안에 5번 틀리면 그 번호(그 IP)를 15분 잠근다. 잠긴 동안에는
+# 15분 안에 번호별 5번 · IP별 30번 틀리면 그 번호(그 IP)를 15분 잠근다. 잠긴 동안에는
 # 비밀번호를 견주지 않는다(해시 계산을 아낀다). 없는 번호도 똑같이 센다.
 # 맞게 들어오면 그 번호의 실패만 지운다 — IP 쪽은 시간이 지나야 풀린다.
 # shortcut: 워커가 하나라 메모리에 둔다(다시 뜨면 풀린다) — 워커를 늘리면 DB 로 옮길 것.
 LOGIN_MAX_FAILS = 5
+# IP 는 사무실 공용 주소를 팀 전체가 같이 쓴다 — 번호만큼 낮으면 팀 전체가 막힌다.
+LOGIN_MAX_FAILS_PER_IP = 30
 LOGIN_LOCK_SECONDS = 15 * 60
 _limit_lock = threading.Lock()
 _fails: dict = {}    # 열쇠 → 최근 15분 안에 틀린 시각들
@@ -133,10 +135,11 @@ def note_login_failure(phone: str, ip: str, now: Optional[float] = None) -> list
     now = time.monotonic() if now is None else now
     newly = []
     with _limit_lock:
-        for key in _attempt_keys(phone, ip):
+        phone_key, ip_key = _attempt_keys(phone, ip)
+        for key, limit in ((phone_key, LOGIN_MAX_FAILS), (ip_key, LOGIN_MAX_FAILS_PER_IP)):
             recent = [t for t in _fails.get(key, ()) if now - t < LOGIN_LOCK_SECONDS]
             recent.append(now)
-            if len(recent) >= LOGIN_MAX_FAILS:
+            if len(recent) >= limit:
                 _locked[key] = now + LOGIN_LOCK_SECONDS
                 _fails.pop(key, None)
                 newly.append(key)
