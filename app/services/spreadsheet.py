@@ -12,16 +12,19 @@ from __future__ import annotations
 
 import csv
 import io
+import logging
 import zipfile
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Sequence, Tuple
+
+log = logging.getLogger(__name__)
 
 # 업로드 상한. 팀 시트는 수백 행이라 이보다 훨씬 작다. 큰 파일로 메모리를 먹는 것을 막는다.
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 # .xlsx 는 zip 이다. 위 상한은 압축된 크기라, 풀린 크기도 따로 막는다(작은 파일이 풀리며 커지는 것).
 MAX_UNZIPPED_BYTES = 100 * 1024 * 1024
 # 시트 하나(read_tabs 는 모든 탭 합)에서 읽는 행 · 열 상한. 팀 시트는 수백 행 · 수십 열이다.
-# 시트가 적어 둔 범위만큼 빈 칸까지 채워 읽으므로, 범위만 큰 파일이 메모리를 먹지 못하게 한다.
+# 열은 **값이 든 칸**으로 잰다 — 시트가 적어 둔 범위가 아니다(`_sheet_rows`).
 MAX_ROWS = 50_000
 MAX_COLS = 300
 EXCEL_SUFFIXES = (".xlsx", ".xlsm")
@@ -122,6 +125,7 @@ def _load_workbook(data: bytes):
         with zipfile.ZipFile(io.BytesIO(data)) as zf:
             unzipped = sum(i.file_size for i in zf.infolist())
     except Exception:
+        log.warning("올린 엑셀을 zip 으로 열지 못함", exc_info=True)
         raise SpreadsheetError(_OPEN_FAILED)
     if unzipped > MAX_UNZIPPED_BYTES:
         raise SpreadsheetError(
@@ -132,27 +136,71 @@ def _load_workbook(data: bytes):
         # data_only=True → 수식이 아니라 계산된 값을 읽는다(시트에 수식이 많다).
         return openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True)
     except Exception:
-        # openpyxl 원문은 내부 경로 · 구조가 드러나서 사용자에게 싣지 않는다.
+        # openpyxl 원문은 내부 경로 · 구조가 드러나서 사용자에게 싣지 않는다 — 로그에만.
+        log.warning("올린 엑셀을 열지 못함", exc_info=True)
         raise SpreadsheetError(_OPEN_FAILED)
 
 
 def _sheet_rows(ws, max_rows: int = MAX_ROWS) -> List[List[str]]:
-    """시트 하나 → 문자열 2차원 배열. 행 · 열 상한을 넘으면 읽다 말고 거절한다."""
-    if (ws.max_column or 0) > MAX_COLS:
-        raise SpreadsheetError(
-            f"'{ws.title}' 시트의 열이 너무 많습니다({ws.max_column}열). "
-            f"{MAX_COLS}열까지 읽습니다 — 쓰지 않는 열을 지우고 올려주세요."
-        )
-    # 적어 둔 범위가 없으면 열 상한까지 채운다. shortcut: 범위가 없는 파일은 MAX_COLS 너머 칸을 말없이 버린다.
-    rows = [[_cell_to_text(c) for c in row]
-            for row in ws.iter_rows(max_row=min(ws.max_row or max_rows + 1, max_rows + 1),
-                                    max_col=ws.max_column or MAX_COLS, values_only=True)]
-    if len(rows) > max_rows:
-        raise SpreadsheetError(
-            f"행이 너무 많습니다. 한 파일에서 {MAX_ROWS:,}행까지 읽습니다 — "
-            "쓰지 않는 행을 지우고 올려주세요."
-        )
-    return rows
+    """시트 하나 → 문자열 2차원 배열. 행 · 열 상한을 넘으면 읽다 말고 거절한다.
+
+    열은 **값이 든 칸**으로 잰다. 시트가 적어 둔 범위(dimension)는 서식만 넓게 깔려
+    있어도 커지고, 실제보다 좁게 적혀 있기도 하다 — 범위로 재면 정상 파일이 막히거나
+    값이 말없이 잘린다. 줄 폭은 값이 든 마지막 칸에 맞춰 고르게 채운다 — 예전처럼
+    모든 줄의 칸 수가 같다.
+    """
+    rows: List[List[str]] = []
+    width = 0
+    try:
+        for idx, cells in _written_cells(ws):
+            if idx > max_rows:
+                raise SpreadsheetError(
+                    f"행이 너무 많습니다. 한 파일에서 {MAX_ROWS:,}행까지 읽습니다 — "
+                    "쓰지 않는 행을 지우고 올려주세요."
+                )
+            if idx <= len(rows):        # 순서가 어긋난 줄은 openpyxl 처럼 건너뛴다
+                continue
+            values = {}
+            for cell in cells:
+                text = _cell_to_text(cell["value"])
+                if not text:
+                    continue
+                if cell["column"] > MAX_COLS:
+                    raise SpreadsheetError(
+                        f"'{ws.title}' 시트의 열이 너무 많습니다({MAX_COLS}열 너머에 값이 "
+                        f"있습니다). {MAX_COLS}열까지 읽습니다 — 쓰지 않는 열을 지우고 올려주세요."
+                    )
+                values[cell["column"]] = text
+            rows.extend([] for _ in range(idx - 1 - len(rows)))   # 파일에 없는 빈 줄
+            last = max(values, default=0)
+            rows.append([values.get(col, "") for col in range(1, last + 1)])
+            width = max(width, last)
+    except SpreadsheetError:
+        raise
+    except Exception:
+        # 칸은 읽으면서 푼다 — 여기서 깨진 것도 원문은 로그에만 남긴다.
+        log.warning("올린 엑셀의 '%s' 시트를 읽지 못함", ws.title, exc_info=True)
+        raise SpreadsheetError(_OPEN_FAILED)
+    return [row + [""] * (width - len(row)) for row in rows]
+
+
+def _written_cells(ws):
+    """줄마다 `(줄 번호, [칸, …])` — **파일에 적힌 칸만**, 빈 칸을 채우지 않고.
+
+    `ws.iter_rows` 는 줄마다 가장 오른쪽 칸까지 빈 칸을 채워 돌려준다. 서식만 끝
+    열(16,384번째)까지 깔린 줄이 수만 줄이면 그 채우기에만 수십 초가 든다. 그래서
+    openpyxl 이 읽기 전용 시트에서 쓰는 파서를 같은 인자로 직접 돌린다(3.1 의
+    `ReadOnlyWorksheet._cells_by_row` 와 같은 부름 — 판을 올리면 시험이 잡는다).
+    칸은 `{"column": 열 번호, "value": 값, …}` 이다.
+    """
+    from openpyxl.worksheet._reader import WorkSheetParser
+
+    wb = ws.parent
+    with ws._get_source() as src:
+        parser = WorkSheetParser(src, ws._shared_strings, data_only=wb.data_only,
+                                 epoch=wb.epoch, date_formats=wb._date_formats,
+                                 timedelta_formats=wb._timedelta_formats)
+        yield from parser.parse()
 
 
 def _read_excel(data: bytes, sheet: Optional[str]) -> List[List[str]]:
@@ -253,10 +301,7 @@ def write_plain_xlsx(sheet_title: str, rows: Sequence[Sequence[Any]],
     for i, width in enumerate(widths, start=1):
         ws.column_dimensions[get_column_letter(i)].width = width
 
-    buf = io.BytesIO()
-    wb.save(buf)
-    wb.close()
-    return buf.getvalue()
+    return workbook_bytes(wb)
 
 
 def write_xlsx(sheet_title: str, headers: Sequence[str],
@@ -317,8 +362,25 @@ def write_xlsx_sheets(sheets: Sequence[tuple]) -> bytes:
             )
             ws.column_dimensions[get_column_letter(i)].width = min(max(longest + 2, 8), 55)
 
+    return workbook_bytes(wb)
+
+
+def workbook_bytes(wb) -> bytes:
+    """워크북 → .xlsx 바이트. **앱이 만드는 엑셀은 모두 여기서 저장한다.**
+
+    openpyxl 은 `=` 로 시작하는 글자를 수식으로 저장한다. 내려받는 표의 글은 사람이
+    적은 값(이름 · 메모 · 회차명)이라 적힌 그대로 보여야 하고, 앱은 수식을 쓰지
+    않는다 — 그래서 수식으로 잡힌 칸은 모두 글자 칸으로 되돌린다. 숫자 · 날짜 칸은
+    건드리지 않는다. 저장을 이 한 곳에 모아 두어 새 내려받기도 따로 챙길 것이 없다.
+    """
+    for ws in wb.worksheets:
+        for row in ws.iter_rows():
+            for cell in row:
+                if cell.data_type == "f":
+                    cell.data_type = "s"
     buf = io.BytesIO()
     wb.save(buf)
+    wb.close()
     return buf.getvalue()
 
 
