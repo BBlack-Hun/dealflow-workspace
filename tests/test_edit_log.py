@@ -707,12 +707,14 @@ WRITE_ROUTES = {
     # 분야 기준 목록(#2 · #30, 관리자) — 목록 한 줄을 고치면 그 말을 쓰는 IR 기업
     # 현황 값과 투자사 선호분야 값이 함께 바뀐다. 셋 다 보는 표(공용 · 남의 것)다.
     # 관리자 메뉴 `컬럼 관리`(#6 · #7 · #8 · #12 · #46) — 표에 붙이는 추가 칸을
-    # 붙이고 · 이름을 바꾸고 · 옮기고 · 자리를 고르고 · 숨긴다(`custom_columns` 는 공용 표).
+    # 붙이고 · 이름을 바꾸고 · 옮기고 · 자리를 고르고 · 숨기고 · 지운다(`custom_columns` 는
+    # 공용 표). 지우면 함께 지운 값 수가 칸의 `삭제` 줄에 실린다(`edit_log.also`).
     ("POST", "/columns"): WATCHED,
     ("POST", "/columns/{column_id}/rename"): WATCHED,
     ("POST", "/columns/{column_id}/move"): WATCHED,
     ("POST", "/columns/{column_id}/place"): WATCHED,
     ("POST", "/columns/{column_id}/hidden"): WATCHED,
+    ("POST", "/columns/{column_id}/delete"): WATCHED,
     # 표에서 추가 칸 값 적기 — 값 줄은 안 보지만(`UNWATCHED` 의 그 표 설명) 고친
     # 일이 **그 줄의 로그**로 남는다(`custom_columns.write` → `edit_log.touched`).
     ("PUT", "/api/custom-values/{row_table}/{row_id}"): WATCHED,
@@ -898,11 +900,11 @@ def test_the_six_shared_routers_still_hold_the_forty_nine_paths(portal):
     # templates_crud 의 6 · 7번째는 관리자의 [모든 팀원에게 적용] 과 그
     # [되돌리기]다(`services/template_apply.py`).
     # forecast 의 넷은 매출예상리스트 줄 추가 · 고치기 · 기업 고르기 · 지우기다(#46).
-    # custom_columns 의 여섯은 관리자 `컬럼 관리` 다섯(붙이기 · 이름 · 순서 · 자리 ·
-    # 숨김)과 표에서 추가 칸 값 적기 하나다 — 지우는 길은 없다(사용자 결정: 숨김만).
+    # custom_columns 의 일곱은 관리자 `컬럼 관리` 여섯(붙이기 · 이름 · 순서 · 자리 ·
+    # 숨김 · 삭제)과 표에서 추가 칸 값 적기 하나다.
     assert counted == {"companies": 8, "ir": 14, "consulting": 9,
                        "templates_crud": 7, "sourcing": 12, "contacts": 23,
-                       "series_a": 5, "forecast": 4, "custom_columns": 6}
+                       "series_a": 5, "forecast": 4, "custom_columns": 7}
 
 
 def test_every_table_is_either_watched_or_explained(db):

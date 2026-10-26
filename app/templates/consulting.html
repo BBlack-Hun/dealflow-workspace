@@ -728,7 +728,11 @@
         {# `월`(`region`) 칸은 이 탭에 안 선다 — 머리글 쪽 주석 참고. #}
         <td class="cell" data-field="meeting_at">{{ r.meeting_at }}</td>
         <td class="cell strong" data-field="company_name">{{- ir_named(r) -}}</td>
-        <td class="cell" data-field="management" data-filter-key="mgmt">{{ r.management }}</td>
+        {# 보기(`무료` · `유료`)를 **골라서** 넣는다 — 한 곳은 `CONTRACT_TAB_CHOICES` 다.
+           보기 밖 옛 값은 적힌 그대로 보이고, 누르면 `옛 값:` 단추로 표시된다
+           (consulting.js 의 `addChoices`). 서버는 새 자유 글을 막는다. #}
+        <td class="cell" data-field="management" data-filter-key="mgmt"
+            data-choices="{{ contract_tab_choices }}">{{ r.management }}</td>
         {# `O` / `X` 를 **골라서** 넣는다. 그냥 타이핑하게 두면 같은 뜻이
            `O`·`o`·`ㅇ`·`○` 로 갈려 필터 목록에 네 줄로 서는데, 두 가지뿐인
            칸에서 그건 곧 필터가 못 쓰게 된다는 뜻이다. 내 투자사 화면의

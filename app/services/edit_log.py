@@ -393,7 +393,7 @@ WATCHED: Dict[str, Watch] = {
     "custom_columns": Watch(
         owner=None, href="/columns", label=_attr("name"),
         why="관리자가 표에 붙인 추가 칸(#6 · #7 · #8 · #12 · #46). 이름 하나를 바꾸거나 "
-            "숨기면 그 화면을 쓰는 **팀 전체의 머리글**이 바뀐다 — 주인 없는 공용 자리라 "
+            "숨기거나 지우면 그 화면을 쓰는 **팀 전체의 머리글**이 바뀐다 — 주인 없는 공용 자리라 "
             "누가 언제 바꿨는지가 여기 말고 안 남는다."),
 }
 
@@ -444,7 +444,9 @@ UNWATCHED: Dict[str, str] = {
                             "(`custom_columns.write` → `touched`) — 값 줄은 주인 칸이 "
                             "없어 여기서 보면 모든 고침이 `공용` 으로 쌓이는데, 그 줄이 "
                             "누구 것인지는 줄의 표(기업 · 명단 · 매출예상리스트)가 안다. "
-                            "줄과 함께 지워지는 값은 줄의 `삭제` 가 이미 말한다.",
+                            "줄과 함께 지워지는 값은 줄의 `삭제` 가 이미 말하고, "
+                            "칸째 지운 값은 그 수가 칸의 `삭제` 에 실린다"
+                            "(`custom_columns.delete` → `also`).",
     "notice_reads": "공지를 확인했다는 표시. 자기가 읽었다고 적는 줄이라 늘 자기 것이고"
                     "(남길 일이 아니다), 사람 수 × 공지 수만큼 쌓인다 — 남기면 로그가 "
                     "`누가 공지를 닫았다` 로 덮여 `누가 무엇을 고쳤나` 가 안 보인다. "
@@ -607,6 +609,8 @@ FIELD_LABELS = {
     "owned_funds": "소유 펀드", "display_name": "회사",
     # 줄 안에 없는 사실 — `also()` 로 얹는 칸(`routers/companies.py` 의 강제 삭제).
     "force_delete": "함께 움직인 것",
+    # 추가 칸 지우기(`custom_columns.delete`) — 칸과 함께 지운 값 줄 수.
+    "deleted_values": "함께 지운 값",
     # 시트 한 판(`log_import`). 표의 칸이 아니라 **그 판에 일어난 일**이라
     # 줄 안에서 읽어 올 수가 없다 — 부르는 쪽이 세어서 넘긴다.
     "import_source": "시트", "import_mode": "모드", "import_rows": "줄",
