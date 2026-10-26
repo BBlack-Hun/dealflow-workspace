@@ -173,8 +173,12 @@ token: "<웹 화면 [설정]에서 발급받은 값>"
 
 - 하루 한 번, `/app/data/daily-<날짜>.db` (= 이 서버의 `DEALFLOW_DATA_DIR`)
 - **최근 7일**만 남기고 오래된 것은 지운다
-- `predeploy-*.db`(배포 직전 · `deploy.sh` 가 뜬다)와
-  `before-restore-*.db`(되돌리기 직전)는 **지우지 않는다** — 성격이 다르다
+- `predeploy-*.db`(배포 직전 · `deploy.sh` 가 뜬다)는 7일 규칙으로 지우지 않는다 —
+  `deploy.sh` 가 배포에 성공할 때 2주 지난 것을 지운다
+- **작업 전 사본은 30일 뒤 지운다** — `snapshot-before-*`·`before-*`(되돌리기 직전
+  `before-restore-*` 포함)·`pre<태그>-<날짜>*.db`(`premj-…`·`preimport-…`, `predeploy-` 는
+  아님)와 그 `-wal`·`-shm`. 매일 백업이 돌 때 같이 정리한다(`app/services/backup.py`
+  `prune_prework`). 사본마다 명단 전체가 들어 있어서 기한 없이 두지 않는다
 - 뜨는 방법은 `scripts/db_snapshot.py` 와 같다(sqlite 백업 API). 서버를 멈출
   필요가 없고, WAL 에 남은 최근 쓰기까지 한 덩어리로 들어간다
 
@@ -240,21 +244,60 @@ docker compose -f docker-compose.prod.yml restart web
 블록 볼륨 스냅샷(콘솔 › Block Volumes › 백업 정책)도 함께 걸어 두면,
 인스턴스가 통째로 날아가도 되살릴 수 있다.
 
+## 배포 스크립트 (`deploy.sh`)
+
+main 에 머지되면 Actions 가 배포 키로 서버에 붙고, 그 키는 `authorized_keys` 의
+`command=` 로 서버의 `/home/dealflow/deploy.sh` 하나에 묶여 있다.
+
+저장소의 `deploy/deploy.sh` 는 그 **기록용 사본**이다. 배포가 서버 사본을 바꿔 주지
+않으므로, 이 파일을 고친 PR 이 배포된 뒤에 한 번 깐다:
+
+```bash
+sudo install -o dealflow -g dealflow -m 755 \
+  /home/dealflow/app/deploy/deploy.sh /home/dealflow/deploy.sh
+sudo diff /home/dealflow/app/deploy/deploy.sh /home/dealflow/deploy.sh && echo 같음
+```
+
+## Caddyfile 을 바꿨을 때
+
+배포(`up -d --build`)는 `web` 만 새로 띄운다. `caddy` 는 설정(compose)이 그대로면
+다시 뜨지 않고, Caddyfile 이 바뀐 것도 스스로 다시 읽지 않는다. 그래서 Caddyfile 을
+고친 PR 이 배포된 뒤에는 서버에서 따로 한다:
+
+```bash
+cd /home/dealflow/app/deploy
+# 1) 새 파일이 문법에 맞는지 (돌고 있는 caddy 는 건드리지 않는다)
+docker compose -f docker-compose.prod.yml run --rm --no-deps caddy \
+  caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+# 2) 맞으면 caddy 만 다시 만든다 (몇 초 끊긴다 · 인증서는 caddy_data 에 남는다)
+docker compose -f docker-compose.prod.yml up -d --force-recreate caddy
+```
+
+`caddy reload` 는 쓰지 않는다 — 파일 하나를 연결해 둔 것이라, `git reset` 이 파일을
+새로 쓰면 돌고 있는 컨테이너는 옛 내용을 계속 본다.
+
 ## 도메인
 
-`contactvc.duckdns.org` (DuckDNS · 서버 132.145.95.21)
+`contactvc.duckdns.org` (DuckDNS · 서버 `<서버 공인 IP>` — OCI 콘솔 › 인스턴스에서 확인)
+
+> 저장소가 공개라 서버 IP 는 여기에 적지 않는다.
 
 IP 가 바뀌어도 이름은 그대로라, 각자 PC 의 에이전트를 다시 손보지 않아도 된다.
 
 **이름 자체를 바꿀 때는 세 곳이 같이 움직여야 한다.** 하나라도 빠지면 화면은
 멀쩡한데 발송만 조용히 멎는다 — 에이전트가 옛 주소를 계속 두드리기 때문이다.
 
-1. 서버 `deploy/.env` 의 `DEALFLOW_DOMAIN` → `docker compose up -d --force-recreate caddy`
+1. 서버 `deploy/.env` 의 `DEALFLOW_DOMAIN` → `docker compose up -d --force-recreate web caddy`
    (Caddy 가 새 이름으로 Let's Encrypt 인증서를 알아서 받는다. DNS 가 먼저
-   이 서버를 가리키고 있어야 한다 — 아니면 발급이 실패하고 옛 인증서도 없다)
+   이 서버를 가리키고 있어야 한다 — 아니면 발급이 실패하고 옛 인증서도 없다.
+   `web` 도 다시 띄워야 새 이름을 읽는다 — 아래 3번과 문자 링크가 이 값을 쓴다)
 2. `.github/workflows/deploy.yml` 의 밖에서 확인하는 주소
-3. **각자 PC 의 `agent/config.yaml` 의 `server_url`** — 자동으로 안 따라온다.
-   이 파일은 PC 마다 따로 있어서 서버에서 밀어 넣을 방법이 없다.
+3. **각자 PC 의 발송기 설정을 다시 받는다.** 내려받는 발송기 zip 의
+   `config.yaml` `server_url` 은 이 설정 도메인(`DEALFLOW_DOMAIN` →
+   `app/config.py` `base_url()`, 언제나 `https://`)에서 나온다. 그래서 1번 뒤에
+   각자 **발송 프로그램 설치(`/setup`) › 내려받기**로 새로 받아야 새 주소가 들어간다.
+   이미 깔린 PC 의 `agent/config.yaml` 은 자동으로 안 따라온다 — PC 마다 따로 있어서
+   서버에서 밀어 넣을 방법이 없다(다시 받기 싫으면 `server_url` 한 줄을 손으로 고친다).
 
 옛 이름(`dealflow-imp.duckdns.org`)은 2026-09-01 에 여기서 떼어 냈다.
 DuckDNS 페이지에서 IP 만 갱신하면 된다.

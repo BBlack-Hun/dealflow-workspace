@@ -274,7 +274,7 @@ loop:
 ```bash
 cd dealflow
 python3.12 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt          # fastapi uvicorn jinja2 sqlalchemy apscheduler ...
+pip install -r requirements.txt -r requirements-dev.txt   # 앱 + 시험 도구(pytest 등 — 운영 이미지에는 없음)
 python scripts/bootstrap.py             # 팀 기본 문구 + 관리자 (데모는 DEALFLOW_SEED_DEMO=1)
 python scripts/import_sheets.py --sheet-a a.csv --sheet-b b.csv --user 1  # 구글시트 CSV 임포트
 uvicorn app.main:app --reload            # http://127.0.0.1:8000

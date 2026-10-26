@@ -7,8 +7,34 @@ data/
 agent_logs/
 ir_files/
 ir_materials/
-*.db
-*.db-wal
-*.db-shm
 .pytest_cache
 docs/
+
+# ── 비밀값 — 이미지에 넣지 않는다(이미지 층에 들어가면 지워지지 않는다) ─────
+# 운영 서버는 저장소 안에 `deploy/.env` 를 둔다(deploy/README.md 4장). 빌드 위치가
+# 저장소 뿌리(`COPY . .`)라 여기서 빼야 한다.
+.env
+.env.*
+deploy/.env
+**/.env
+**/.env.*
+agent/config.local.yaml
+**/*.key
+**/*.token
+
+# ── 데이터 — 명단·DB 사본이 저장소 폴더에 놓여 있어도 이미지로 가지 않게 ─────
+**/*.db
+**/*.db-wal
+**/*.db-shm
+**/*.sqlite
+**/*.sqlite3
+**/*.xlsx
+**/*.xls
+**/*.xlsm
+**/*.xltx
+**/*.csv
+
+# 예시 파일과 시험용 표는 비밀도 실데이터도 아니다(빼는 규칙보다 뒤에 둬야 살아난다).
+!.env.example
+!deploy/.env.example
+!tests/fixtures/*.csv

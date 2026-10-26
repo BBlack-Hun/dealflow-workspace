@@ -27,6 +27,15 @@ agent_logs/
 ir_files/
 ir_materials/
 *.log
+# 명단 엑셀·CSV — 저장소가 공개라 실수로 저장소 폴더에 저장하면 그대로 올라간다.
+# 시험용 표(tests/fixtures)만 예외다 — 가짜 이름·번호로 만든 것이다.
+*.xlsx
+*.xls
+*.xlsm
+*.xltx
+*.csv
+!tests/fixtures/*.csv
+!tests/fixtures/*.xlsx
 
 # ── 빌드 산출물 ───────────────────────────────────────────────
 dist/

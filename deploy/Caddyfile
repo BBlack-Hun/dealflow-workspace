@@ -9,10 +9,16 @@
 	encode gzip
 
 	# 실서버 IP 를 로그에 남긴다 — Caddy 를 거치면 전부 도커 내부 IP 로 보인다.
+	#
+	# 사고를 며칠 늦게 알아도 거슬러 볼 수 있게 **90일**을 남긴다. 자르는 기준은
+	# 날짜(roll_keep_for)이고, 개수(roll_keep)는 디스크가 넘치지 않게 막는 상한이다
+	# — 개수가 먼저 차면 90일보다 일찍 지워지므로 넉넉히 둔다. 지난 파일은 gzip 으로
+	# 줄여 둔다(기본값). 아래 poll 을 뺀 뒤 하루 10MiB 두세 개 꼴로 본다.
 	log {
 		output file /data/access.log {
 			roll_size 10MiB
-			roll_keep 5
+			roll_keep 300
+			roll_keep_for 90d
 		}
 	}
 
@@ -30,5 +36,21 @@
 		-Server
 	}
 
-	reverse_proxy web:8000
+	# 발송기는 몇 초마다 poll 한다. "할 일 없음"(204) 답까지 다 적으면 기록이 몇 시간
+	# 만에 밀려나서, 그 답만 기록에서 뺀다. 잡을 받아 간 poll(200)과 실패한 poll
+	# (401 등)은 그대로 남는다 — 누가 언제 잡을 가져갔는지는 지워지면 안 된다.
+	@agent_poll path /api/agent/poll
+	handle @agent_poll {
+		reverse_proxy web:8000 {
+			@idle status 204
+			handle_response @idle {
+				log_skip
+				copy_response
+			}
+		}
+	}
+
+	handle {
+		reverse_proxy web:8000
+	}
 }
