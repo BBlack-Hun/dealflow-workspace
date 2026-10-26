@@ -36,7 +36,7 @@
        고르개와 같은 모양). 고른 주를 그대로 둔다. #}
     {% if members %}
     <select id="todo-member-pick" class="chip-select"
-            onchange="location = '/todo?week={{ week_start }}' + (this.value ? '&member=' + this.value : '')">
+            onchange='location = {{ ("/todo?week=" ~ week_start)|tojson }} + (this.value ? "&member=" + this.value : "")'>
       <option value="">내 주간업무</option>
       {% for m in members %}{% if m.id != user.id %}
       <option value="{{ m.id }}" {% if member_id == m.id %}selected{% endif %}>{{ m.name }}</option>

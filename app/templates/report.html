@@ -76,7 +76,7 @@
     <a class="chip {% if team_wide %}active{% endif %}"
        href="/report?month={{ selected }}&scope=team">팀 전체</a>
     <select id="member-pick" class="chip-select"
-            onchange="location = '/report?month={{ selected }}&member=' + this.value">
+            onchange='location = {{ ("/report?month=" ~ selected ~ "&member=")|tojson }} + this.value'>
       <option value="">팀원 선택…</option>
       {% for m in members %}
       <option value="{{ m.id }}" {% if viewing and viewing.id == m.id %}selected{% endif %}>{{ m.name }}</option>
