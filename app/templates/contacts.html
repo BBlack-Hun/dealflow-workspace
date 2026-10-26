@@ -146,13 +146,15 @@
   <summary>⚙ 명단·칸 설정{% if month_columns %} · 달 칸 {{ month_columns|length }}개{% endif %}{% if hidden_months %} · 🙈 숨긴 칸 {{ hidden_months|length }}개{% endif %}</summary>
   <div class="sheet-fold-body">
 {# 참고 탭은 이름을 바꿀 수 있는데 명단 탭은 못 바꿨다. 원본 시트에서 이름을
-   다듬으면 앱만 옛 이름으로 남는다. #}
+   다듬으면 앱만 옛 이름으로 남는다. 탭 주인 · 관리자에게만 선다(`rename_sheet`). #}
+{% if rename_sheet %}
 <form method="post" action="/api/contacts/sheets/rename" class="ref-rename sheet-rename">
   <input type="text" name="new" value="{{ t.label }}" maxlength="80"
          aria-label="명단 이름" title="이름을 고치고 [이름 저장]을 누르세요">
   <input type="hidden" name="old" value="{{ t.label }}">
   <button class="linkbtn" type="submit">이름 저장</button>
 </form>
+{% endif %}
 {# 이름 칸 바로 아래에 같은 이름이 또 적혀 있었다 — 두 번 읽을 이유가 없다. #}
 {#
   명단 안내 줄(`담당 명단 · ○○ · 연결 완료 125/125명`)은 뺐다 — 탭에 이미

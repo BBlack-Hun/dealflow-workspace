@@ -2028,6 +2028,9 @@ def rename_list_sheet(old: str = Form(""), new: str = Form(""),
     **옮기는 일은 `sheet_owner.rename` 한 곳이 한다.** 이름은 설정 줄뿐 아니라
     사람·달 칸·달 표시에도 문자열로 박혀 있어서, 여기서 따로 적으면 스크립트로
     바꾼 명단과 화면으로 바꾼 명단이 서로 다르게 갈라진다(거기 설명 참고).
+
+    권한은 **탭 주인과 관리자**다 — 그 탭에 줄을 넣을 수 있는 사람과 같은 판정
+    (`sheet_owner.may_add_row`). 남의 탭·풀 탭 이름은 못 바꾼다.
     """
     from fastapi.responses import RedirectResponse
 
@@ -2037,6 +2040,9 @@ def rename_list_sheet(old: str = Form(""), new: str = Form(""),
     # 이름 없는 탭은 누를 자리가 없어진다.
     if not before or not after or before == after:
         return RedirectResponse(f"{_back(db, before)}?sheet={quote(before)}", status_code=303)
+    if not sheet_owner.may_add_row(db, user, before):
+        raise HTTPException(status_code=403,
+                            detail="이 탭의 담당자와 관리자만 이름을 바꿀 수 있습니다")
 
     try:
         sheet_owner.rename(db, before, after)
@@ -2081,7 +2087,21 @@ def _editable_ref(db: Session, sheet_id: int, user: User):
         raise HTTPException(status_code=404, detail="참고 시트를 찾을 수 없습니다")
     if not can_open(user, f"/{row.page or 'contacts'}"):
         raise HTTPException(status_code=403, detail="이 자료를 고칠 권한이 없습니다")
+    _consulting_ref_access(row.page, user)
     return row
+
+
+def _consulting_ref_access(page: str, user: User) -> None:
+    """투자현황 화면의 자료면 **그 화면을 볼 수 있는 계정**이어야 한다.
+
+    `can_open` 은 투자컨설턴트인지만 보므로, 투자현황 권한은 여기서 따로 본다.
+    판정은 화면이 쓰는 것(`consulting.require_access`)을 그대로 읽는다 —
+    만들기·고치기·지우기가 모두 이 함수를 지난다.
+    """
+    if page == "consulting":
+        from .consulting import require_access   # consulting → contacts 를 읽어 순환
+
+        require_access(user)
 
 
 def _ref_back(row, sheet: str = "") -> str:
@@ -2168,6 +2188,7 @@ def new_ref_sheet(page: str = Form(""), title: str = Form(""),
         raise HTTPException(status_code=404, detail="없는 화면입니다")
     if not can_open(user, f"/{page}"):
         raise HTTPException(status_code=403, detail="이 화면에 자료를 만들 권한이 없습니다")
+    _consulting_ref_access(page, user)
 
     def back(msg: str) -> RedirectResponse:
         """만들지 못했으면 **왜 못 만들었는지 적어** 돌려보낸다.

@@ -65,9 +65,11 @@ AUTO_ATTACH_BLOCKED = "자료 자동 첨부를 쓸 수 없는 계정입니다"
 # 설정되는 순간 `create_send_list` 가 **모든 발송**을 그 방으로 돌렸기 때문에,
 # 운영에 값을 넣는 것 자체가 사고였다. 지금은 아니다 — 일반 발송은 시험방을
 # 읽지 않는다(`app/config.py: TEST_ROOM`). **운영에 시험방이 켜져 있어도 된다**
-# 는 것이 이 변경의 목적이고, 그래서 이 자리는 운영에서도 열려 있을 수 있다.
-# 열려 있어도 새지 않는 까닭은 가르는 선이 값이 아니라 **잡 종류**이기 때문이다
-# (`models.TEST_SEND_KIND`).
+# 는 것이 이 변경의 목적이다. 새지 않는 까닭은 가르는 선이 값이 아니라 **잡
+# 종류**이기 때문이다(`models.TEST_SEND_KIND`).
+#
+# 그래도 **이 자리는 운영에서 늘 닫힌다**(`test_tools_on`). 운영 `.env` 에 시험방
+# 값이 남아 있어도 시험 단추는 테스트 서버·로컬에서만 선다.
 #
 # ## 왜 "임시" 로 두지 않았나
 #
@@ -183,29 +185,35 @@ def _test_meetings(db: Session, user: User) -> list:
 
 
 def test_tools_on() -> bool:
-    """시험용 자리를 내줄 것인가 — **시험방이 정해져 있을 때만.**
+    """시험용 자리를 내줄 것인가 — **운영이 아니고, 시험방이 정해져 있을 때만.**
 
     판정은 여기 하나뿐이다. 화면(`setup.html` 의 시험용 칸)과 두 라우터가
     같은 함수를 읽는다 — 화면만 감추면 주소로 부를 수 있고, 라우터만 막으면
     눌러야 막힌 것을 아는 단추가 남는다. 둘 다 이 저장소가 겪은 사고다.
 
+    운영(`config.IS_PRODUCTION`)이면 시험방 값이 있어도 거짓이다. 시험은
+    테스트 서버·로컬에서 한다.
+
     값을 모듈 상수로 굳히지 않고 부를 때마다 읽는다. 굳히면 검사에서 값을
     바꿔 끼울 수 없다(메일 설정이 `config.domain()` 을 함수로 둔 것과 같은 이유).
     """
+    if config.IS_PRODUCTION:
+        return False
     return bool((config.TEST_ROOM or "").strip())
 
 
 def _test_room() -> str:
-    """시험방 제목. 없으면 **이 자리는 없는 것으로 답한다(404).**
+    """시험방 제목. 자리가 닫혀 있으면 **없는 것으로 답한다(404).**
 
     403 이 아닌 이유: 권한이 모자란 것이 아니라 이 서버에 그런 자리가 없는
     것이다. 운영에서 주소를 쳐 본 사람에게 "막혔다" 가 아니라 "없다" 가
     사실이고, 없는 것을 있다고 알리면 그 자리를 찾아 헤매게 된다.
+
+    열렸는지는 화면과 같은 `test_tools_on` 이 정한다.
     """
-    room = (config.TEST_ROOM or "").strip()
-    if not room:
+    if not test_tools_on():
         raise HTTPException(status_code=404, detail="Not Found")
-    return room
+    return (config.TEST_ROOM or "").strip()
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 

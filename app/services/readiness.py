@@ -95,6 +95,11 @@ def _test_room_check(rehearsal: bool) -> dict:
                           f"'{room}' — 리허설 담당자가 이 방으로 받습니다", "")
         return _check(BLOCK, "시험방", "정해져 있지 않습니다",
                       "리허설 담당자를 만들 수 없습니다 — `.env` 에 넣고 다시 띄우세요")
+    if room and config.IS_PRODUCTION:
+        # 운영에서는 시험 자리가 늘 닫힌다(`routers/setup.test_tools_on`).
+        return _check(OK, "시험방",
+                      f"'{room}' — 운영이라 `/setup` 시험 자리는 닫혀 있습니다",
+                      "", "/setup")
     if room:
         return _check(OK, "시험방",
                       f"'{room}' — `/setup` 의 시험 단추만 이 방으로 갑니다",

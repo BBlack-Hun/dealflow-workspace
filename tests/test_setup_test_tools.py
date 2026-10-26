@@ -111,6 +111,22 @@ def test_a_blank_test_room_is_the_same_as_none(logged_in, may_attach, monkeypatc
     assert _jobs(db) == []
 
 
+def test_production_never_opens_the_test_tools(logged_in, rehearsal, may_attach,
+                                             monkeypatch, db):
+    """운영이면 시험방 값이 있어도 자리가 없다 — 화면에도, 주소로도."""
+    from app import config
+    from app.routers import setup as setup_router
+
+    monkeypatch.setattr(config, "IS_PRODUCTION", True)
+    assert setup_router.test_tools_on() is False
+    assert THE_PANEL not in logged_in.get("/setup").text
+    assert _press(logged_in, "/setup/test/attach", file_name="a.pdf").status_code == 404
+    assert _press(logged_in, "/setup/test/room", room_name="아무방").status_code == 404
+    assert _jobs(db) == []
+    # 없는 단추를 말하는 띠도 서지 않는다.
+    assert "시험방이 켜져 있습니다" not in logged_in.get("/contacts").text
+
+
 def test_the_screen_and_the_routes_read_one_function(rehearsal):
     """판정이 두 곳에 적히면 한쪽만 낡는다 — 화면과 라우터가 같은 함수를 읽는다."""
     from app.routers import setup as setup_router
