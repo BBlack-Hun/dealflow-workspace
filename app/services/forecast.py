@@ -3,6 +3,10 @@
 줄(`RevenueForecast`)은 **사람이 적은 값만** 든다. 비어 있는 자동 칸은 화면 ·
 엑셀이 열릴 때마다 여기서 원본을 읽어 채운다 — 옮겨 적으면 두 벌이 된다.
 
+    회사(투자사)           줄 담당자의 미팅(없으면 IR 요청) 중 같은 기업 — 상대 회사가
+                           **하나일 때만**. 둘 이상이면 후보 딱지(사람이 [이걸로]).
+                           [줄 추가] 는 기업명만 받아서, 이 칸이 비면 아래 심사역 ·
+                           미팅이 하나도 안 이어졌다(10/26)
     심사역 · 전화번호       투자사 관리 현황(`vc_contacts`) — 줄 담당자의 명단만,
                            투자사로 세는 줄만(`sheet_owner.is_investor`),
                            회사는 `investor_firms.firm_key` 로 맞춘다
@@ -48,7 +52,7 @@ from .investor_firms import firm_key
 #: 화면 · 엑셀의 칸 차례 — `(칸, 머리글, 자동이면 출처)`. 둘이 같은 목록을 읽는다.
 COLUMNS = (
     # 이름 통일(10/22) — 투자사 쪽은 투자사 관리 현황 낱말, 기업 쪽은 IR 기업 현황 낱말.
-    ("firm", "회사", None),
+    ("firm", "회사", "딜 진행 관리 미팅(없으면 IR 요청)의 투자사 — 하나일 때만"),
     ("vc_name", "심사역 이름", "투자사 관리 현황 — 이 줄 담당자의 명단"),
     ("vc_phone", "심사역 휴대폰", "투자사 관리 현황 — 그 심사역의 휴대폰"),
     ("company_name", "기업명", None),
@@ -194,24 +198,30 @@ class Source:
                 self.rates[company_id].add(rate(text))
 
     def view(self, row: RevenueForecast) -> dict:
-        """이 줄의 칸마다 `{text, value, auto}` + 기업 연결 · 심사역 후보."""
-        key = firm_key(row.firm)
+        """이 줄의 칸마다 `{text, value, auto}` + 기업 연결 · 투자사 · 심사역 후보."""
         company = self.idx.by_id.get(row.ir_company_id) if row.ir_company_id else None
         name_key = company_key(row.company_name)
 
-        def same(company_id, company_name, contact_id) -> bool:
-            if row.ir_company_id and company_id:
-                hit = company_id == row.ir_company_id
-            else:
-                hit = bool(name_key) and company_key(company_name) == name_key
-            contact = self.contacts.get(contact_id)
-            return hit and bool(key) and contact is not None \
-                and firm_key(contact.firm) == key
+        def same_company(item) -> bool:
+            if row.ir_company_id and item.company_id:
+                return item.company_id == row.ir_company_id
+            return bool(name_key) and company_key(item.company_name) == name_key
 
-        meets = [m for m in self.meetings[row.user_id]
-                 if same(m.company_id, m.company_name, m.contact_id)]
-        asks = [q for q in self.requests[row.user_id]
-                if same(q.company_id, q.company_name, q.contact_id)]
+        def firm_of(item) -> str:
+            contact = self.contacts.get(item.contact_id)
+            return firm_key(contact.firm) if contact is not None else ""
+
+        met = [m for m in self.meetings[row.user_id] if same_company(m)]
+        asked = [q for q in self.requests[row.user_id] if same_company(q)]
+        # 회사가 비면 이 기업 미팅(없으면 IR 요청)의 상대 회사 — 하나일 때만(머리말).
+        firms: Dict[str, str] = {}
+        for item in met or asked:
+            if firm_of(item):
+                firms.setdefault(firm_of(item), _text(self.contacts[item.contact_id].firm))
+        auto_firm = next(iter(firms.values())) if len(firms) == 1 else ""
+        key = firm_key(row.firm) or firm_key(auto_firm)
+        meets = [m for m in met if key and firm_of(m) == key]
+        asks = [q for q in asked if key and firm_of(q) == key]
 
         people: List[VcContact] = []
         for contact_id in [m.contact_id for m in meets] or [q.contact_id for q in asks]:
@@ -224,7 +234,8 @@ class Source:
         named = next((c for c in people + roster if c.name == _text(row.vc_name)), None)
         caller = named if _text(row.vc_name) else person
 
-        auto = {"vc_name": (person.name if person else "", 0),
+        auto = {"firm": (auto_firm, 0),
+                "vc_name": (person.name if person else "", 0),
                 "vc_phone": (_text(caller.phone) if caller else "", 0),
                 "meeting_plan": _dates([m for m in meets if m.status == "scheduled"]),
                 "meeting1_done": _dates([m for m in meets if m.status == "done"
@@ -259,6 +270,7 @@ class Source:
             "company_candidates": ([] if company else [
                 {"id": c.id, "label": _company_label(c)}
                 for c in self.idx.candidates(row.company_name)]),
+            "firm_candidates": ([] if key else [{"name": n} for n in sorted(firms.values())]),
             "vc_candidates": ([] if _text(row.vc_name) else [
                 {"name": c.name, "label": " · ".join(p for p in (c.name, c.title) if p)}
                 for c in candidates]),
