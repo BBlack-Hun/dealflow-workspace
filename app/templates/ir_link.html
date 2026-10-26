@@ -183,7 +183,8 @@
               <input type="hidden" name="show" value="{{ show }}">
               {% if focus %}<input type="hidden" name="focus" value="{{ r.id }}">{% endif %}
               <button type="submit" class="linkbtn ir-unlink-btn"
-                      data-name="{{ r.name }}" data-company="{{ c.name }}">연결 해제</button>
+                      data-name="{{ r.name }}" data-company="{{ c.name }}"
+                      {% if kind == 'series-a' %}data-clears="1"{% endif %}>연결 해제</button>
             </form>
           </div>
           {# 이을 때 양쪽에 다른 값이 있던 칸 — 덮지 않고 사람이 고른다(`company_sync.resolve`). #}

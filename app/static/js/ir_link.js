@@ -21,8 +21,11 @@
       var btn = form.querySelector(".ir-unlink-btn");
       var name = btn ? btn.getAttribute("data-name") || "" : "";
       var company = btn ? btn.getAttribute("data-company") || "" : "";
-      if (!window.confirm("'" + name + "' 줄을 IR 기업 '" + company + "' 에서 풉니다.\n" +
-          "(줄도 IR 기업도 지워지지 않습니다 — 이은 것만 풉니다)")) {
+      // Series A 줄은 IR 에서 온 값도 걷는다(`company_sync.clear_same`) — 미리 알린다.
+      var note = btn && btn.getAttribute("data-clears")
+        ? "(줄도 IR 기업도 남습니다 — 다만 IR 에서 온 값(IR 과 같은 칸)은 이 줄에서 지웁니다)"
+        : "(줄도 IR 기업도 지워지지 않습니다 — 이은 것만 풉니다)";
+      if (!window.confirm("'" + name + "' 줄을 IR 기업 '" + company + "' 에서 풉니다.\n" + note)) {
         e.preventDefault();
       }
     });
