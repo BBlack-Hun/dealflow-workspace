@@ -51,12 +51,13 @@ PREDEPLOY_PREFIX = "predeploy-"
 BEFORE_RESTORE_PREFIX = "before-restore-"
 # 관리자의 [탭 삭제] 직전에 뜨는 백업(`routers/contacts._snapshot_before_tab_delete`).
 # 탭 삭제는 그 탭에만 있는 투자사를 **이력째** 지운다 — 잘못 지웠을 때 돌아올
-# 곳이다. `daily-` 가 아니므로 정리 대상이 아니다.
+# 곳이다. `daily-` 가 아니므로 7일 규칙에는 안 걸린다 — 30일이 지나면 아래 '작업 전
+# 사본' 규칙으로 지운다.
 BEFORE_TAB_DELETE_PREFIX = "snapshot-before-tab-delete-"
 
 # 되돌리기 직전에 뜨는 백업. **이것이 있어야 잘못 되돌렸을 때 돌아올 곳이 있다.**
-# `daily-` 가 아니므로 정리 대상이 아니다 — 되돌린 날의 원래 상태는 7일 규칙과
-# 상관없이 남아야 한다. (30일이 지나면 아래 '작업 전 사본' 규칙으로 지운다.)
+# `daily-` 가 아니므로 7일 규칙에는 안 걸린다 — 되돌린 날의 원래 상태는 7일 규칙과
+# 상관없이 남아야 한다. 30일이 지나면 아래 '작업 전 사본' 규칙으로 지운다.
 
 # 작업 전 사본 — 큰 작업(탭 삭제·되돌리기·명단 들이기 …) 직전에 앱이나 사람이 뜬 것.
 # 이름이 제각각이라 **앞머리 모양으로만** 고르고, 모양이 조금이라도 다르면 건드리지 않는다.
@@ -191,6 +192,7 @@ def prune_daily(today: date, *, keep_days: int = KEEP_DAILY_DAYS) -> list:
 
     **`predeploy-*` 와 `before-restore-*` 는 건드리지 않는다.** 성격이 다른
     백업이고, 특히 되돌리기 직전 백업은 7일 규칙과 상관없이 남아야 한다.
+    (`before-restore-*` 는 30일 뒤 `prune_prework` 가 지운다.)
     """
     cutoff = today - timedelta(days=keep_days - 1)
     removed = []

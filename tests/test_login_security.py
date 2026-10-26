@@ -138,7 +138,7 @@ def test_없는_번호도_해시는_견주기_한_번뿐(db, monkeypatch):
     monkeypatch.setattr(auth_svc, "hash_password", lambda *a, **k: made.append(a))
     monkeypatch.setattr(auth_svc, "verify_password",
                         lambda *a: checked.append(a) or real_verify(*a))
-    assert auth_svc.authenticate(db, "01077776666", "anything-1") is None
+    assert auth_svc.authenticate(db, "01019998888", "anything-1") is None
     assert made == [] and len(checked) == 1
 
 
