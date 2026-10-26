@@ -217,6 +217,25 @@ def test_check_message_goes_to_the_test_room_from_the_sender(client, db, users):
                       headers=auth(DEMO_TOKEN)).status_code == 204
 
 
+
+def test_test_mode_does_not_lean_on_the_setup_test_tools(db, users, monkeypatch):
+    """운영에서 `/setup` 시험 자리가 닫혀도(`test_tools_on`) 자동화 시험 모드는 돈다 —
+    시험방이 `.env`(`DEALFLOW_TEST_ROOM`)가 아니라 자동화 줄(`Automation.test_room`)에 있다."""
+    from app import config
+    from app.models import TEST_SEND_KIND
+    from app.routers.setup import test_tools_on
+    from app.services import automation
+
+    monkeypatch.setattr(config, "IS_PRODUCTION", True)
+    monkeypatch.setattr(config, "TEST_ROOM", "")
+    assert not test_tools_on()
+    _startup_sender(db, users["u2"])
+    automation.save(db, automation.CHANNEL_TOP, enabled=False, user_id=None,
+                    test_mode=True, test_room=TEST_ROOM)
+    job = automation.queue_check(db, automation.CHANNEL_TOP)
+    assert job.kind == TEST_SEND_KIND
+    assert [i.room_name for i in job.items] == [TEST_ROOM]
+
 # ── 6. 팀 현황 ──────────────────────────────────────────────────────────────
 
 def _login(client, phone):

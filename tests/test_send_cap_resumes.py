@@ -570,10 +570,10 @@ def test_resuming_mail_items_wakes_the_server_not_the_agent(client, db, users, m
     login(client).post(f"/api/jobs/{job_id}/resume")
 
     assert woken == [job_id], "메일 건을 되살려 놓고 서버가 보내지 않았다"
-    # 메일 건은 발송 프로그램이 집어가면 방을 찾다가 실패한다.
+    # 메일 건은 발송 프로그램이 집어가면 방을 찾다가 실패한다 — 회차째 내주지 않는다.
     r = client.get("/api/agent/poll", params={"kinds": "deal_intro", "cap": 60},
                    headers=auth(DEMO_TOKEN))
-    assert r.json()["items"] == []
+    assert r.status_code == 204
 
 
 def test_resuming_a_mixed_job_moves_both_channels(client, db, users, monkeypatch):

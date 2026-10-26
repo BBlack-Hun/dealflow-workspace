@@ -86,7 +86,7 @@ def test_unknown_and_wrong_password_are_indistinguishable(client):
 def test_logout_clears_session(client, demo_user_password):
     client.post("/login", data={"phone": "01000000001", "password": demo_user_password})
     assert client.get("/deals", follow_redirects=False).status_code == 200
-    client.get("/logout", follow_redirects=False)
+    client.post("/logout", follow_redirects=False)
     assert client.get("/deals", follow_redirects=False).status_code == 303
 
 

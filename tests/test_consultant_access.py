@@ -57,7 +57,6 @@ EXPECTED_OPEN = {
     # 막으면 들어올 수도 나갈 수도 없다.
     ("GET", "/login"),
     ("POST", "/login"),
-    ("GET", "/logout"),
     ("POST", "/logout"),
     ("GET", "/account/password"),
     ("POST", "/account/password"),

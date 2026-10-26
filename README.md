@@ -26,6 +26,8 @@ docker compose --profile demo up -d     # (선택) 가짜 발송기까지 — �
 ```
 
 컨테이너 기동 시 마이그레이션 + 부트스트랩(팀 기본 문구 + 관리자 계정)이 자동 적용된다.
+관리자 계정은 관리자가 하나도 없을 때만 만들어지고, 그 비밀번호는 처음 뜰 때 로그에
+한 번만 찍힌다(`docker compose logs web | grep '첫 관리자'`). 로그인하면 바로 바꾸게 된다.
 가상 담당자·기업까지 넣어 둘러보려면 `DEALFLOW_SEED_DEMO=1` 로 띄운다.
 `딜소개 보내기`에서 기업·담당자를 고르고 **발송 목록 생성**을 누르면 큐에 등록되고,
 연결된 에이전트가 처리해 성공/실패가 화면에 반영된다.
@@ -49,8 +51,14 @@ docker exec dealflow-public-web-1 python scripts/purge_demo.py --yes   # 실행
 
 ### 테스트
 
+시험 도구(pytest 등)는 `requirements-dev.txt` 에 따로 있고 **도커 이미지에는 들어가지
+않는다**(운영 이미지와 같은 Dockerfile 이다). 그래서 컨테이너 안이 아니라 로컬 가상환경에서
+돌린다 — CI(`.github/workflows/tests.yml`)도 같은 방식이다.
+
 ```bash
-docker exec dealflow-public-web-1 python -m pytest -q
+python3.12 -m venv .venv
+.venv/bin/pip install -r requirements.txt -r requirements-dev.txt
+DEALFLOW_TEST_ROOM="" DEALFLOW_SMTP_HOST="" .venv/bin/pytest -n auto --dist loadfile
 ```
 
 ---

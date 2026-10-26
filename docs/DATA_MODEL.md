@@ -359,7 +359,7 @@ active(stage=1 발송됨)
 // vc_contacts (시트 A "홍길동 대표님 | 가나벤처스" 임포트 예)
 { "id": 12, "user_id": 1, "group_name": "A그룹", "name": "홍길동", "title": "대표님",
   "firm": "가나벤처스", "round_size": "라운드 30~100억",
-  "channel_kakao": 1, "channel_email": 1, "email": "cho@lfinvest.kr",
+  "channel_kakao": 1, "channel_email": 1, "email": "hong@example.com",
   "kakao_room_name": "홍길동 대표님(가나벤처스)", "room_verified": "verified",
   "stages": "SeriesA,SeriesB", "sectors": "AI,SaaS", "status": "active",
   "memo": "AI 인프라 선호, 리드 가능" }

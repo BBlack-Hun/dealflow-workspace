@@ -46,7 +46,8 @@
   </ul>
   <p class="hint">
     하루 한 번, 최근 {{ keep_days }}일치를 남기고 오래된 것은 지웁니다.
-    배포 직전 백업(<code>predeploy-*</code>)은 성격이 다른 백업이라 지우지 않습니다.
+    배포 직전 백업(<code>predeploy-*</code>)은 성격이 다른 백업이라 이 규칙으로 지우지 않습니다.
+    되돌리기 직전·탭 삭제 직전 같은 작업 전 사본은 30일 뒤 지웁니다.
   </p>
 </section>
 
@@ -126,7 +127,7 @@
   </div>
   <p class="hint">
     음수는 <b>사라지는 것</b>입니다. 되돌리기 직전 상태는 자동으로 한 벌 떠 두므로,
-    잘못 되돌렸으면 <code>before-restore-*</code> 지점으로 다시 돌아올 수 있습니다.
+    잘못 되돌렸으면 30일 안에 <code>before-restore-*</code> 지점으로 다시 돌아올 수 있습니다.
   </p>
 
   {% if picked.safe and not sending %}

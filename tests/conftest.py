@@ -102,6 +102,19 @@ def _revenue_year_2026():
         revenue_years.this_year = real
 
 
+@pytest.fixture(autouse=True)
+def _login_limits_clear():
+    """**로그인 시도 제한을 검사마다 비운다**(`services/auth.py` 의 로그인 시도 제한).
+
+    실패 횟수는 프로세스 메모리에 쌓이고, 검사 클라이언트는 모두 같은 주소에서
+    온다 — 비우지 않으면 앞 파일의 틀린 로그인이 쌓여 뒤 파일의 로그인이 잠긴다.
+    """
+    from app.services import auth as auth_svc
+
+    auth_svc.reset_login_limits()
+    yield
+
+
 @pytest.fixture()
 def db():
     """매 테스트마다 빈 스키마. (SQLite 파일 하나라 drop/create 가 가장 단순하고 빠르다)"""

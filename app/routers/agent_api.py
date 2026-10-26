@@ -16,6 +16,8 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import threading
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -37,6 +39,25 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/agent", tags=["agent"])
 
 AGENT_LOG_DIR = config.BASE_DIR / "agent_logs"
+
+# ── 진단 기록의 크기 · 보관 ──────────────────────────────────────────────────
+#
+# 진단(`/diagnostics`)과 실패 화면(`screenshot_b64`)은 서버 디스크에 쌓인다 — DB 와
+# 같은 볼륨이다. 크기와 보관 기한이 없으면 끝없이 쌓여 DB 쓰기와 백업까지 막는다.
+
+#: 진단 한 건의 상한(바이트). 실제 진단은 창 제목 · 로그 끝 40줄 · 파일 첨부 진단
+#: (최대 600줄 — `kakao_windows.UI_DUMP_MAX_LINES`)이라 많아야 수백 KB 다.
+DIAG_MAX_BYTES = 512 * 1024
+#: 하루치 진단 기록의 상한. 넘으면 그날은 더 적지 않는다.
+DIAG_DAY_MAX_BYTES = 20 * 1024 * 1024
+#: 진단 기록 · 실패 화면을 며칠 두나. 지난 것은 새 기록을 적을 때 지운다.
+DIAG_KEEP_DAYS = 30
+#: 실패 화면 한 장의 상한(base64 글자 수). 넘으면 저장하지 않는다.
+SHOT_MAX_B64 = 4 * 1024 * 1024
+#: 진단 기록 파일 이름. 날이 바뀌면 `agent_reports.log.YYYY-MM-DD` 로 돌린다.
+DIAG_LOG = "agent_reports.log"
+
+_DIAG_LOCK = threading.Lock()
 
 # 문구를 실제로 전송하는 잡 종류.
 SEND_KINDS = ("deal_intro", "ir_delivery")
@@ -188,6 +209,12 @@ def poll(
 
     # Find a candidate queued job owned by one of this agent's users.
     query = select(SendJob.id).where(SendJob.status == "queued", or_(*allowed))
+    # ★ **메일 건만 남은 회차는 내주지 않는다** — 메일은 서버가 보낸다
+    #   (`services/mail_sender.py`). 내주면 빈 회분으로 끝났다는 보고가 와서
+    #   (`_settle`) 시간 · 한도에 걸려 기다리던 메일 회차가 `done` 으로 닫힌다.
+    _waiting = and_(SendItem.job_id == SendJob.id, SendItem.status == "pending")
+    query = query.where(or_(exists().where(and_(_waiting, SendItem.channel != "email")),
+                            ~exists().where(and_(_waiting, SendItem.channel == "email"))))
     if held:
         query = query.where(SendJob.id.notin_(list(held)))
     if not can_attach:
@@ -567,13 +594,27 @@ def _pick_screen(company) -> str:
 
 
 def _save_screenshot(item_id: int, b64: str) -> Optional[str]:
+    if len(b64) > SHOT_MAX_B64:
+        return None         # 너무 크다 — 실패 사유는 그대로 남는다
     try:
         AGENT_LOG_DIR.mkdir(parents=True, exist_ok=True)
         path = AGENT_LOG_DIR / f"{item_id}.png"
         path.write_bytes(base64.b64decode(b64))
+        _prune_screenshots(clock.today())
         return str(path.relative_to(config.BASE_DIR))
     except Exception:  # noqa: BLE001 - screenshot is best-effort
         return None
+
+
+def _prune_screenshots(today: date) -> None:
+    """`DIAG_KEEP_DAYS` 일이 지난 실패 화면을 지운다. 건 번호 이름(`123.png`)만."""
+    edge = today - timedelta(days=DIAG_KEEP_DAYS)
+    for path in AGENT_LOG_DIR.glob("*.png"):
+        try:
+            if path.stem.isdigit() and date.fromtimestamp(path.stat().st_mtime) < edge:
+                path.unlink()
+        except OSError:
+            continue
 
 
 # 이 상태가 되면 에이전트는 **남은 건을 보내지 않는다**.
@@ -819,6 +860,7 @@ def diagnostics(
     """진단 스냅샷을 파일로 남긴다 (data/agent_reports.log).
 
     DB 스키마를 늘리지 않고도 서버에서 바로 열어볼 수 있게 로그 파일로 적재한다.
+    한 건 · 하루치 크기에 상한이 있고, 날마다 돌려 `DIAG_KEEP_DAYS` 일 둔다(위).
     """
     from .. import config as _config
 
@@ -828,11 +870,58 @@ def diagnostics(
         "hostname": device.hostname,
         **body.model_dump(exclude_none=True),
     }
+    text_line = json.dumps(line, ensure_ascii=False) + "\n"
+    if len(text_line.encode("utf-8")) > DIAG_MAX_BYTES:
+        db.commit()
+        raise HTTPException(status_code=413, detail="diagnostics too large")
     try:
-        path = Path(_config.DATA_DIR) / "agent_reports.log"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(line, ensure_ascii=False) + "\n")
+        if not _append_report(Path(_config.DATA_DIR), text_line, clock.today()):
+            return {"ok": False, "error": "오늘 진단 기록이 상한에 닿았습니다"}
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": str(exc)}
     return {"ok": True}
+
+
+def _append_report(folder: Path, text_line: str, today: date) -> bool:
+    """오늘 진단 기록에 한 줄을 덧붙인다. 하루 상한에 닿았으면 적지 않고 거짓.
+
+    날이 바뀌었으면 어제까지의 기록을 `agent_reports.log.YYYY-MM-DD` 로 돌리고,
+    `DIAG_KEEP_DAYS` 일이 지난 것을 지운다. 오늘 기록은 늘 같은 자리
+    (`data/agent_reports.log`)라 서버에서 여는 방법은 그대로다.
+    """
+    with _DIAG_LOCK:
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / DIAG_LOG
+        if path.exists():
+            day = date.fromtimestamp(path.stat().st_mtime)
+            if day < today:
+                rotated = folder / f"{DIAG_LOG}.{day.isoformat()}"
+                n = 1
+                while rotated.exists():
+                    rotated = folder / f"{DIAG_LOG}.{day.isoformat()}.{n}"
+                    n += 1
+                path.rename(rotated)
+                _prune_reports(folder, today)
+            elif path.stat().st_size >= DIAG_DAY_MAX_BYTES:
+                return False
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(text_line)
+    return True
+
+
+def _prune_reports(folder: Path, today: date) -> None:
+    """돌려 둔 진단 기록 중 `DIAG_KEEP_DAYS` 일이 지난 것을 지운다.
+
+    이름에서 날짜를 못 읽는 파일은 건드리지 않는다(모르는 것은 지우지 않는다).
+    """
+    edge = today - timedelta(days=DIAG_KEEP_DAYS)
+    for path in folder.glob(f"{DIAG_LOG}.*"):
+        try:
+            day = date.fromisoformat(path.name[len(DIAG_LOG) + 1:][:10])
+        except ValueError:
+            continue
+        if day < edge:
+            try:
+                path.unlink()
+            except OSError:
+                continue

@@ -22,7 +22,6 @@
 """
 from __future__ import annotations
 
-import io
 from datetime import date
 from typing import List, Optional
 
@@ -84,6 +83,7 @@ def import_contacts(
     dry_run: bool = Form(True),
     # 다른 팀원 명단에 이미 있는 분을 **옮기지 않고** 이 담당자 몫으로 따로
     # 만든다. 기본은 꺼짐 — 예전처럼 옮긴다(`sheet_import.apply_sheet_a`).
+    # **옮기기는 관리자만 고른다** — 팀원이 올리면 늘 켠 것으로 친다(아래).
     keep_other_owner: bool = Form(False),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -100,10 +100,17 @@ def import_contacts(
             detail += f" · 이 파일의 시트: {', '.join(names)}"
         raise HTTPException(status_code=400, detail=detail)
 
+    # 다른 팀원 줄의 담당을 옮기는 것과 그 줄을 지금 누가 맡았는지 보는 것은
+    # **팀 전체를 고칠 수 있는 사람만**이다(`may_manage_team_contacts`). 팀원이
+    # 올린 시트는 본인 줄만 고친다 — 남의 줄은 건너뛰고 새 줄은 본인 명단에만.
+    team_wide = may_manage_team_contacts(user)
+    if not team_wide:
+        keep_other_owner = True
     report = sheet_import.apply_sheet_a(
         db, parsed, user_id=user.id, dry_run=dry_run,
         source_label=(sheet or file.filename or "업로드"),
-        keep_other_owner=keep_other_owner,
+        keep_other_owner=keep_other_owner, holder_names=team_wide,
+        own_only=not team_wide,
     )
     if dry_run:
         db.rollback()   # 미리보기가 DB 를 건드리고 끝나면 안 된다
@@ -126,6 +133,8 @@ def import_contacts(
         "overlap_moved": report.overlap_moved,
         "overlaps": [{"name": n, "firm": f, "owner": h}
                      for n, f, h in report.overlaps[:50]],
+        # 팀원 업로드가 건너뛴 다른 팀원 줄 — 수만 싣는다.
+        "other_skipped": report.other_skipped,
         # **시트 값과 앱 값이 다른데 안 덮은 칸.** 이 화면이 답해야 하는 물음이
         # 바로 이것이다 — "드린 내용이 왜 그대로 반영이 안 되나".
         # 값 자체는 `as_rows` 가 갈래를 보고 싣거나 뺀다(메모는 길이만).
@@ -1021,10 +1030,7 @@ def report_workbook(data: dict, *, team_wide: bool, who: str,
                      7 if team_wide else 6),
         data, team_wide)
 
-    buf = io.BytesIO()
-    wb.save(buf)
-    wb.close()
-    return buf.getvalue()
+    return sp.workbook_bytes(wb)
 
 
 def _yearly_sheet(sheet, data):
@@ -1131,10 +1137,7 @@ def yearly_report_workbook(data: dict, *, who: str, today: date) -> bytes:
     sheet.blank()
     _yearly_sheet(sheet, data)
 
-    buf = io.BytesIO()
-    wb.save(buf)
-    wb.close()
-    return buf.getvalue()
+    return sp.workbook_bytes(wb)
 
 
 @router.get("/api/export/report.xlsx")

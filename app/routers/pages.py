@@ -679,6 +679,9 @@ def list_page(
         # 에게만 선다. 서버가 보는 판정(`routers/contacts.memo_intro_apply`)과 같다.
         "memo_intro": bool(selected and memo_intro.target_columns(all_months)
                            and sheet_owner.may_add_row(db, user, selected)),
+        # [이름 저장] — 탭 주인 · 관리자에게만 선다. 서버가 보는 판정
+        # (`routers/contacts.rename_list_sheet`)과 같다.
+        "rename_sheet": bool(selected and sheet_owner.may_add_row(db, user, selected)),
         "show_all_months": months == "all",
         # 감춘 줄 — 몇 줄인지와, 되돌리러 갈 자리.
         "hidden_count": len(hidden_rows),

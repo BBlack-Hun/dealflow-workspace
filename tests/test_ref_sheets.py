@@ -400,6 +400,32 @@ def test_a_consulting_script_can_be_renamed_and_edited(seeded, db, users):
     assert json.loads(row.content_json)["body"].endswith("마무리")
 
 
+def test_투자현황이_꺼진_계정은_그_화면_자료를_못_고친다(seeded, db, users):
+    """투자현황 자료는 그 화면을 볼 수 있는 계정만 — `consulting.require_access`.
+
+    만들기 · 이름 바꾸기 · 글 고치기 · 칸 고치기 · 지우기가 모두 같은 판정이다.
+    """
+    users["u1"].can_view_consulting = 0
+    db.commit()
+    row = _consult_sheet(db)
+    table = _table_on(db, "consulting")
+
+    assert seeded.post(f"/ref-sheets/{row.id}/rename", data={"title": "바꿈"},
+                       follow_redirects=False).status_code == 403
+    assert seeded.post(f"/ref-sheets/{row.id}/body", data={"body": "덮음"},
+                       follow_redirects=False).status_code == 403
+    assert seeded.patch(f"/api/ref-sheets/{table.id}/column",
+                        json={"col": 0, "value": "바꿈"}).status_code == 403
+    assert seeded.post(f"/ref-sheets/{row.id}/delete",
+                       follow_redirects=False).status_code == 403
+    assert _make(seeded, page="consulting", title="새 자료").status_code == 403
+
+    db.expire_all()
+    assert row.title == "IRDAY 진행 스크립트" and row.is_active == 1
+    assert "바꿈" not in table.content_json
+    assert _sheet(db, "새 자료") is None
+
+
 def test_existing_sheets_stayed_on_the_contacts_page(seeded, db):
     """옮기면서 기존 자료가 사라지면 안 된다."""
     row = _sheet(db, "카톡방 연결 순서")

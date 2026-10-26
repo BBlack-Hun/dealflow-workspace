@@ -51,12 +51,27 @@ PREDEPLOY_PREFIX = "predeploy-"
 BEFORE_RESTORE_PREFIX = "before-restore-"
 # 관리자의 [탭 삭제] 직전에 뜨는 백업(`routers/contacts._snapshot_before_tab_delete`).
 # 탭 삭제는 그 탭에만 있는 투자사를 **이력째** 지운다 — 잘못 지웠을 때 돌아올
-# 곳이다. `daily-` 가 아니므로 정리 대상이 아니다.
+# 곳이다. `daily-` 가 아니므로 7일 규칙에는 안 걸린다 — 30일이 지나면 아래 '작업 전
+# 사본' 규칙으로 지운다.
 BEFORE_TAB_DELETE_PREFIX = "snapshot-before-tab-delete-"
 
 # 되돌리기 직전에 뜨는 백업. **이것이 있어야 잘못 되돌렸을 때 돌아올 곳이 있다.**
-# `daily-` 가 아니므로 정리 대상이 아니다 — 되돌린 날의 원래 상태는 7일 규칙과
-# 상관없이 남아야 한다.
+# `daily-` 가 아니므로 7일 규칙에는 안 걸린다 — 되돌린 날의 원래 상태는 7일 규칙과
+# 상관없이 남아야 한다. 30일이 지나면 아래 '작업 전 사본' 규칙으로 지운다.
+
+# 작업 전 사본 — 큰 작업(탭 삭제·되돌리기·명단 들이기 …) 직전에 앱이나 사람이 뜬 것.
+# 이름이 제각각이라 **앞머리 모양으로만** 고르고, 모양이 조금이라도 다르면 건드리지 않는다.
+#
+#   snapshot-before-<작업>-….db    (탭 삭제 직전 백업도 여기 든다)
+#   before-<작업>-….db             (되돌리기 직전 백업 before-restore- 도 여기 든다)
+#   pre<태그>-<YYYYMMDD>….db       (premj-…·preimport-… — `predeploy-` 는 아니다)
+#
+# 원본 DB·`daily-`(7일)·`predeploy-`(서버 deploy.sh, 14일)·`backup-`(서버 크론, 14일)은
+# 어느 모양에도 걸리지 않는다. 사본마다 명단 전체가 들어 있어서, 기한 없이 두면 앱에서
+# 지운 개인정보가 옛 사본에 계속 남는다 — 그래서 30일 뒤 지운다.
+KEEP_PREWORK_DAYS = 30
+_PREWORK_RE = re.compile(
+    r"^(?:snapshot-before-.+|before-.+|pre(?!deploy-)[A-Za-z0-9_]+-\d{8}[^/]*)\.db$")
 
 # 며칠 치를 남길 것인가. 사용자가 "1주일이면 충분하다" 고 했다.
 KEEP_DAILY_DAYS = int(config.BACKUP_KEEP_DAILY_DAYS)
@@ -163,6 +178,7 @@ def run_daily(today: date, *, keep_days: int = KEEP_DAILY_DAYS) -> Optional[Path
                 return None
         _LAST_ERROR = None
         prune_daily(today, keep_days=keep_days)
+        prune_prework()
         return made
 
 
@@ -176,6 +192,7 @@ def prune_daily(today: date, *, keep_days: int = KEEP_DAILY_DAYS) -> list:
 
     **`predeploy-*` 와 `before-restore-*` 는 건드리지 않는다.** 성격이 다른
     백업이고, 특히 되돌리기 직전 백업은 7일 규칙과 상관없이 남아야 한다.
+    (`before-restore-*` 는 30일 뒤 `prune_prework` 가 지운다.)
     """
     cutoff = today - timedelta(days=keep_days - 1)
     removed = []
@@ -198,6 +215,45 @@ def prune_daily(today: date, *, keep_days: int = KEEP_DAILY_DAYS) -> list:
             # 못 지운 것은 넘어간다 — 지우기에 실패했다고 백업을 멈추면
             # 더 나쁘다.
             continue
+    return removed
+
+
+def prune_prework(now: Optional[datetime] = None, *,
+                  keep_days: int = KEEP_PREWORK_DAYS) -> list:
+    """30일 지난 **작업 전 사본**(`_PREWORK_RE`)과 그 `-wal`·`-shm` 을 지운다.
+
+    이름에 날짜가 없거나 모양이 제각각이라 **파일 시각(mtime)**으로 나이를 잰다.
+    곁딸린 `-wal`·`-shm` 은 본체의 나이를 따른다 — 목록을 그리며 읽기만 해도 새로
+    생겨서 제 시각은 늘 어리다. 본체가 이미 없으면 제 시각으로 잰다.
+    """
+    cutoff = (now or clock.now()).timestamp() - keep_days * 86400
+    try:
+        live = db_path().name
+    except BackupError:
+        return []
+    doomed = []
+    for path in backup_dir().iterdir():
+        name = path.name
+        base = name[:-4] if name.endswith(("-wal", "-shm")) else name
+        if base == live or not _PREWORK_RE.match(base):
+            continue
+        if path.is_symlink() or not path.is_file():
+            continue
+        main = path.with_name(base)
+        try:
+            age_from = main if main.exists() else path
+            if age_from.stat().st_mtime < cutoff:
+                doomed.append(path)
+        except OSError:
+            continue
+    # 나이를 다 잰 다음에 지운다. 본체를 먼저 지우면 곁딸린 것이 제 시각으로 재어져 남는다.
+    removed = []
+    for path in sorted(doomed):
+        try:
+            path.unlink()
+            removed.append(path.name)
+        except OSError:
+            continue  # 못 지운 것은 넘어간다 — 다음 날 다시 본다
     return removed
 
 

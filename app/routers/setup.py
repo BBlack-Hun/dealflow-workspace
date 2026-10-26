@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import zipfile
 from pathlib import Path
 
@@ -65,9 +66,11 @@ AUTO_ATTACH_BLOCKED = "자료 자동 첨부를 쓸 수 없는 계정입니다"
 # 설정되는 순간 `create_send_list` 가 **모든 발송**을 그 방으로 돌렸기 때문에,
 # 운영에 값을 넣는 것 자체가 사고였다. 지금은 아니다 — 일반 발송은 시험방을
 # 읽지 않는다(`app/config.py: TEST_ROOM`). **운영에 시험방이 켜져 있어도 된다**
-# 는 것이 이 변경의 목적이고, 그래서 이 자리는 운영에서도 열려 있을 수 있다.
-# 열려 있어도 새지 않는 까닭은 가르는 선이 값이 아니라 **잡 종류**이기 때문이다
-# (`models.TEST_SEND_KIND`).
+# 는 것이 이 변경의 목적이다. 새지 않는 까닭은 가르는 선이 값이 아니라 **잡
+# 종류**이기 때문이다(`models.TEST_SEND_KIND`).
+#
+# 그래도 **이 자리는 운영에서 늘 닫힌다**(`test_tools_on`). 운영 `.env` 에 시험방
+# 값이 남아 있어도 시험 단추는 테스트 서버·로컬에서만 선다.
 #
 # ## 왜 "임시" 로 두지 않았나
 #
@@ -183,29 +186,35 @@ def _test_meetings(db: Session, user: User) -> list:
 
 
 def test_tools_on() -> bool:
-    """시험용 자리를 내줄 것인가 — **시험방이 정해져 있을 때만.**
+    """시험용 자리를 내줄 것인가 — **운영이 아니고, 시험방이 정해져 있을 때만.**
 
     판정은 여기 하나뿐이다. 화면(`setup.html` 의 시험용 칸)과 두 라우터가
     같은 함수를 읽는다 — 화면만 감추면 주소로 부를 수 있고, 라우터만 막으면
     눌러야 막힌 것을 아는 단추가 남는다. 둘 다 이 저장소가 겪은 사고다.
 
+    운영(`config.IS_PRODUCTION`)이면 시험방 값이 있어도 거짓이다. 시험은
+    테스트 서버·로컬에서 한다.
+
     값을 모듈 상수로 굳히지 않고 부를 때마다 읽는다. 굳히면 검사에서 값을
     바꿔 끼울 수 없다(메일 설정이 `config.domain()` 을 함수로 둔 것과 같은 이유).
     """
+    if config.IS_PRODUCTION:
+        return False
     return bool((config.TEST_ROOM or "").strip())
 
 
 def _test_room() -> str:
-    """시험방 제목. 없으면 **이 자리는 없는 것으로 답한다(404).**
+    """시험방 제목. 자리가 닫혀 있으면 **없는 것으로 답한다(404).**
 
     403 이 아닌 이유: 권한이 모자란 것이 아니라 이 서버에 그런 자리가 없는
     것이다. 운영에서 주소를 쳐 본 사람에게 "막혔다" 가 아니라 "없다" 가
     사실이고, 없는 것을 있다고 알리면 그 자리를 찾아 헤매게 된다.
+
+    열렸는지는 화면과 같은 `test_tools_on` 이 정한다.
     """
-    room = (config.TEST_ROOM or "").strip()
-    if not room:
+    if not test_tools_on():
         raise HTTPException(status_code=404, detail="Not Found")
-    return room
+    return (config.TEST_ROOM or "").strip()
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -368,6 +377,9 @@ def setup_page(
                 "ir_root": saved_root if allowed else "",
                 "ir_root_kept": bool(saved_root.strip()) and not allowed,
                 "saved": request.query_params.get("saved") == "ir_root",
+                # 받지 않은 자료 폴더 — 까닭을 그 칸 위에 적는다(`ir_root_problem`).
+                "ir_root_error": IR_ROOT_REFUSED.get(
+                    request.query_params.get("ir_root_error", ""), ""),
                 # 시험용 자리를 그릴 것인가. **라우터와 같은 함수**를 읽는다 —
                 # 화면만 감추면 주소로 부를 수 있고, 라우터만 막으면 눌러야
                 # 막힌 것을 아는 단추가 남는다.
@@ -413,18 +425,58 @@ def save_ir_root(
     뒤지다 실패하고, 정작 본인은 자기가 넣지도 않은 값 때문에 막힌 줄을 모른다.
     그래서 로그인한 사람의 기기 줄에만 쓴다(대상 사용자를 **받지 않는다**).
 
-    ## 여기서 경로를 검사하지 않는 이유
+    ## 여기서 보는 것과 안 보는 것
 
     서버는 다른 기기다. 사용자 PC 에 그 폴더가 있는지 서버는 볼 수 없다.
     있는지·폴더인지는 **발송기가** 켜질 때와 보내기 전에 확인하고 분명히
-    실패한다(`agent/sender/base.py: ir_root`). 여기서는 앞뒤 공백만 턴다.
+    실패한다(`agent/sender/base.py: ir_root`).
+
+    다만 **글자만 보고도 자료 폴더가 아닌 자리**는 여기서 거부하고 까닭을 보여
+    준다(`ir_root_problem`) — 네트워크 경로, 드라이브 맨 위, 홈 폴더 그 자체.
+    자료 폴더는 자료만 넣어 둔 좁은 폴더여야 한다.
     """
     if not may_auto_attach(user):
         raise HTTPException(status_code=403, detail=AUTO_ATTACH_BLOCKED)
+    value = (ir_root or "").strip()
+    problem = ir_root_problem(value)
+    if problem:
+        return RedirectResponse(f"/setup?ir_root_error={problem}", status_code=303)
     device = _device(db, user)
-    device.ir_root = (ir_root or "").strip() or None
+    device.ir_root = value or None
     db.commit()
     return RedirectResponse("/setup?saved=ir_root", status_code=303)
+
+
+#: 자료 폴더로 받지 않는 자리 — 화면에 그대로 보이는 까닭.
+IR_ROOT_REFUSED = {
+    "network": "네트워크 경로(\\\\ 나 // 로 시작)는 자료 폴더로 쓸 수 없습니다 — 이 PC 안의 폴더를 넣어 주세요",
+    "root": "드라이브 맨 위(C:\\ · /)는 자료 폴더로 쓸 수 없습니다 — 자료만 넣어 둔 폴더를 따로 만들어 넣어 주세요",
+    "home": "내 홈 폴더 그 자체는 자료 폴더로 쓸 수 없습니다 — 그 안에 자료만 넣어 둔 폴더를 따로 만들어 넣어 주세요",
+}
+
+_DRIVE_ROOT = re.compile(r"^[A-Za-z]:[\\/]*$")
+_HOME = re.compile(
+    r"^(?:~|%userprofile%|\$home|\$\{home\}"
+    r"|[A-Za-z]:[\\/]+(?:users|documents and settings)(?:[\\/]+[^\\/]+)?"
+    r"|/(?:users|home)(?:/[^/]+)?|/root)[\\/]*$",
+    re.IGNORECASE)
+
+
+def ir_root_problem(value: str) -> str:
+    """이 값을 자료 폴더로 받으면 안 되는 까닭의 열쇠(`IR_ROOT_REFUSED`). 되면 빈 글.
+
+    빈 값은 받는다 — 비우는 것은 자동 첨부를 끄는 일이다.
+    """
+    text = (value or "").strip()
+    if not text:
+        return ""
+    if text.startswith(("\\\\", "//")):
+        return "network"
+    if text == "/" or _DRIVE_ROOT.match(text):
+        return "root"
+    if _HOME.match(text):
+        return "home"
+    return ""
 
 
 def _queue_test_job(db: Session, user: User, kind: str, room: str,

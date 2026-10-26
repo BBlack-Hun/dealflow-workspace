@@ -39,7 +39,10 @@
           {% if me.phone %}<div class="me-phone">{{ me.phone }}</div>{% endif %}
           <div class="me-links">
             <a href="/account/password">비밀번호 변경</a>
-            <a href="/logout">로그아웃</a>
+            {# 로그아웃은 POST 만 받는다 — 링크처럼 보이는 작은 폼이다. #}
+            <form method="post" action="/logout" class="logout-form">
+              <button type="submit" class="linkbtn">로그아웃</button>
+            </form>
             <a href="/setup">발송 프로그램 설치</a>
           </div>
           {% if view_as_targets %}

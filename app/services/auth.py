@@ -7,6 +7,7 @@
   충분한 강도를 확보하는 편이 배포가 단순하다.
 - 세션 토큰은 DB 에 저장하고 쿠키에는 토큰만 넣는다. 쿠키를 위조해도 서버가
   소유자를 판단하므로 '쿠키에 user_id 를 담던' 개발용 전환과 근본적으로 다르다.
+  DB 에는 토큰 자체가 아니라 **sha256 값만** 둔다(0123).
 """
 from __future__ import annotations
 
@@ -14,13 +15,15 @@ import hashlib
 import hmac
 import re
 import secrets
+import threading
+import time
 from datetime import datetime, timedelta
 from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
-from .. import clock
+from .. import clock, config
 from ..models import Session as SessionRow
 from ..models import User
 
@@ -67,6 +70,11 @@ def verify_password(password: str, stored: Optional[str]) -> bool:
     return hmac.compare_digest(calc.hex(), digest)
 
 
+# 없는 번호로 들어올 때 견줄 해시. 모듈을 불러올 때 **한 번만** 만들어 두고, 없는
+# 번호도 있는 번호와 같은 일(견주기 한 번)만 하게 한다.
+_DUMMY_HASH = hash_password(secrets.token_urlsafe(16))
+
+
 def password_problem(password: str) -> Optional[str]:
     """받아들일 수 없는 비밀번호면 사유를 돌려준다(통과하면 None)."""
     if len(password) < 8:
@@ -88,12 +96,74 @@ def authenticate(db: OrmSession, phone: str, password: str) -> Optional[User]:
         select(User).where(User.phone == normalize_phone(phone))
     ).scalars().first()
     if user is None or not user.is_active:
-        # 사용자가 없어도 해시 계산을 한 번 수행해 응답 시간 차이를 줄인다.
-        verify_password(password, hash_password("dummy"))
+        # 사용자가 없어도 있는 번호와 **똑같이 한 번만** 견준다(응답 시간이 같게).
+        verify_password(password, _DUMMY_HASH)
         return None
     if not verify_password(password, user.password_hash):
         return None
     return user
+
+
+# --- 로그인 시도 제한 -------------------------------------------------------
+#
+# 15분 안에 번호별 5번 · IP별 30번 틀리면 그 번호(그 IP)를 15분 잠근다. 잠긴 동안에는
+# 비밀번호를 견주지 않는다(해시 계산을 아낀다). 없는 번호도 똑같이 센다.
+# 맞게 들어오면 그 번호의 실패만 지운다 — IP 쪽은 시간이 지나야 풀린다.
+# shortcut: 워커가 하나라 메모리에 둔다(다시 뜨면 풀린다) — 워커를 늘리면 DB 로 옮길 것.
+LOGIN_MAX_FAILS = 5
+# IP 는 사무실 공용 주소를 팀 전체가 같이 쓴다 — 번호만큼 낮으면 팀 전체가 막힌다.
+LOGIN_MAX_FAILS_PER_IP = 30
+LOGIN_LOCK_SECONDS = 15 * 60
+_limit_lock = threading.Lock()
+_fails: dict = {}    # 열쇠 → 최근 15분 안에 틀린 시각들
+_locked: dict = {}   # 열쇠 → 잠금이 풀리는 시각
+
+
+def _attempt_keys(phone: str, ip: str) -> tuple:
+    return (f"phone:{normalize_phone(phone)}", f"ip:{ip or ''}")
+
+
+def login_locked(phone: str, ip: str, now: Optional[float] = None) -> bool:
+    """이 번호나 이 IP 가 지금 잠겨 있는가."""
+    now = time.monotonic() if now is None else now
+    with _limit_lock:
+        return any(_locked.get(k, 0) > now for k in _attempt_keys(phone, ip))
+
+
+def note_login_failure(phone: str, ip: str, now: Optional[float] = None) -> list:
+    """틀린 것을 센다. 이번에 새로 잠긴 열쇠들을 돌려준다(로그에 남기라고)."""
+    now = time.monotonic() if now is None else now
+    newly = []
+    with _limit_lock:
+        phone_key, ip_key = _attempt_keys(phone, ip)
+        for key, limit in ((phone_key, LOGIN_MAX_FAILS), (ip_key, LOGIN_MAX_FAILS_PER_IP)):
+            recent = [t for t in _fails.get(key, ()) if now - t < LOGIN_LOCK_SECONDS]
+            recent.append(now)
+            if len(recent) >= limit:
+                _locked[key] = now + LOGIN_LOCK_SECONDS
+                _fails.pop(key, None)
+                newly.append(key)
+            else:
+                _fails[key] = recent
+        if len(_fails) + len(_locked) > 1000:
+            # 번호가 많이 쌓여도 표가 끝없이 자라지 않게 지난 것을 걷는다.
+            for key in [k for k, ts in _fails.items() if now - ts[-1] >= LOGIN_LOCK_SECONDS]:
+                del _fails[key]
+            for key in [k for k, until in _locked.items() if until <= now]:
+                del _locked[key]
+    return newly
+
+
+def note_login_success(phone: str) -> None:
+    with _limit_lock:
+        _fails.pop(_attempt_keys(phone, "")[0], None)
+
+
+def reset_login_limits() -> None:
+    """검사가 매번 빈 상태에서 시작하게(`tests/conftest.py`)."""
+    with _limit_lock:
+        _fails.clear()
+        _locked.clear()
 
 
 # --- 세션 -------------------------------------------------------------------
@@ -108,10 +178,20 @@ def _now() -> datetime:
     return clock.now()
 
 
+def _token_key(token: str) -> str:
+    """DB 에 두는 세션 열쇠 — 쿠키의 토큰이 아니라 그 sha256 값이다.
+
+    토큰은 32바이트 난수라 소금이나 느린 해시가 필요 없다. 0123 이 옛 줄을 같은
+    값으로 바꿨다(그래서 이주해도 아무도 로그아웃되지 않는다).
+    """
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
 def create_session(db: OrmSession, user: User, user_agent: str = "") -> str:
+    """새 세션. 돌려주는 것은 **쿠키에 넣을 토큰**이고, DB 에는 그 해시만 남는다."""
     token = secrets.token_urlsafe(32)
     row = SessionRow(
-        token=token,
+        token=_token_key(token),
         user_id=user.id,
         # 초까지만 적는다 — 다른 시각 칸과 길이를 맞춘다(문자열로 견주는 자리가 있다).
         expires_at=(_now() + timedelta(days=SESSION_DAYS)).isoformat(timespec="seconds"),
@@ -129,19 +209,24 @@ def set_session_cookie(response, token: str) -> None:
     로그인(`routers/auth.py`)과 되돌리기 뒤 세션 잇기(`routers/dashboard.py`)가
     각자 `max_age`·`httponly`·`samesite` 를 적어 두면 하나는 반드시 낡는다 —
     이 저장소가 같은 부류로 여러 번 당했다. 유효기간은 `SESSION_DAYS` 하나에서
-    나온다.
+    나온다. 비밀번호를 바꾼 뒤 새로 굽는 자리도 이 함수다.
+
+    운영(https)에서는 `Secure` 를 붙여 https 로만 오가게 한다. 로컬·테스트
+    서버는 http 라 붙이지 않는다(붙이면 로그인이 안 된다).
     """
     response.set_cookie(
         SESSION_COOKIE, token,
         max_age=60 * 60 * 24 * SESSION_DAYS,
-        httponly=True, samesite="lax",
+        httponly=True, samesite="lax", secure=config.IS_PRODUCTION,
     )
 
 
 def user_for_token(db: OrmSession, token: Optional[str]) -> Optional[User]:
     if not token:
         return None
-    row = db.execute(select(SessionRow).where(SessionRow.token == token)).scalars().first()
+    row = db.execute(
+        select(SessionRow).where(SessionRow.token == _token_key(token))
+    ).scalars().first()
     if row is None:
         return None
     try:
@@ -160,7 +245,9 @@ def user_for_token(db: OrmSession, token: Optional[str]) -> Optional[User]:
 def destroy_session(db: OrmSession, token: Optional[str]) -> None:
     if not token:
         return
-    row = db.execute(select(SessionRow).where(SessionRow.token == token)).scalars().first()
+    row = db.execute(
+        select(SessionRow).where(SessionRow.token == _token_key(token))
+    ).scalars().first()
     if row:
         db.delete(row)
         db.commit()

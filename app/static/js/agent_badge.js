@@ -5,7 +5,8 @@
   if (!badge) return;
   function refresh() {
     fetch("/api/agent-status")
-      .then(function (r) { return r.json(); })
+      // 로그인이 끊겼거나 막힌 화면(초기 비밀번호 변경 전)이면 배지를 그대로 둔다.
+      .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
       .then(function (d) {
         badge.classList.toggle("on", !!d.online);
         badge.classList.toggle("off", !d.online);

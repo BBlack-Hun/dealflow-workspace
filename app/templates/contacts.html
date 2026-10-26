@@ -146,13 +146,15 @@
   <summary>⚙ 명단·칸 설정{% if month_columns %} · 달 칸 {{ month_columns|length }}개{% endif %}{% if hidden_months %} · 🙈 숨긴 칸 {{ hidden_months|length }}개{% endif %}</summary>
   <div class="sheet-fold-body">
 {# 참고 탭은 이름을 바꿀 수 있는데 명단 탭은 못 바꿨다. 원본 시트에서 이름을
-   다듬으면 앱만 옛 이름으로 남는다. #}
+   다듬으면 앱만 옛 이름으로 남는다. 탭 주인 · 관리자에게만 선다(`rename_sheet`). #}
+{% if rename_sheet %}
 <form method="post" action="/api/contacts/sheets/rename" class="ref-rename sheet-rename">
   <input type="text" name="new" value="{{ t.label }}" maxlength="80"
          aria-label="명단 이름" title="이름을 고치고 [이름 저장]을 누르세요">
   <input type="hidden" name="old" value="{{ t.label }}">
   <button class="linkbtn" type="submit">이름 저장</button>
 </form>
+{% endif %}
 {# 이름 칸 바로 아래에 같은 이름이 또 적혀 있었다 — 두 번 읽을 이유가 없다. #}
 {#
   명단 안내 줄(`담당 명단 · ○○ · 연결 완료 125/125명`)은 뺐다 — 탭에 이미
@@ -573,11 +575,14 @@
     </label>
     {# 다른 팀원 명단에 이미 있는 분을 어떻게 할지. **꺼 두면 예전처럼 옮긴다**
        — 새 팀원 시트를 넣을 때 그 동작에 기대 왔다. 같은 분을 두 팀원이 각자
-       맡을 때(이관받은 명단)만 켠다. #}
+       맡을 때(이관받은 명단)만 켠다. 옮기기는 관리자만 고른다 — 팀원이 올리면
+       서버가 늘 따로 만든다(`routers/data_io.import_contacts`). #}
+    {% if user.role == 'admin' %}
     <label class="inline-field" title="꺼 두면 시트의 담당자에게 옮깁니다(원래 팀원 명단에서 빠집니다)">
       <input type="checkbox" id="import-keep-other">
       <span>다른 팀원에게 이미 있는 사람은 옮기지 않고 이 담당자 몫으로 따로 만들기</span>
     </label>
+    {% endif %}
     <button type="button" class="secondary-btn" id="import-preview">미리보기</button>
     <button type="button" class="primary-btn inline" id="import-apply" disabled>반영하기</button>
   </div>

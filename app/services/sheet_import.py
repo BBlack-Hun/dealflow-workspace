@@ -1078,6 +1078,8 @@ class ImportReport:
     overlap_moved: int = 0
     #: 겹친 사람 목록 — `(이름, 투자사, 지금 담당 팀원)`. 화면이 몇 줄 보여 준다.
     overlaps: List[tuple] = field(default_factory=list)
+    #: `own_only` 로 건너뛴 **다른 팀원 줄** 수. 누구 줄인지는 싣지 않는다.
+    other_skipped: int = 0
 
     def as_text(self, title: str) -> str:
         lines = [
@@ -1141,20 +1143,29 @@ _DIFF_LABELS = {"title": "직함", "round_size": "라운드 사이즈(투자운�
 def apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
                   room_suffix: str = DEFAULT_SUFFIX, dry_run: bool = False,
                   source_label: Optional[str] = None,
-                  keep_other_owner: bool = False) -> ImportReport:
+                  keep_other_owner: bool = False,
+                  holder_names: bool = True,
+                  own_only: bool = False) -> ImportReport:
     """아래 `_apply_sheet_a` — IR 기업에 이어진 줄(스타트업 명단)은 따라 고치기를 빈칸만
     채우게 하고 돈다(10/22 결정 7 · `company_sync.fill_only`)."""
     from . import company_sync
 
     with company_sync.fill_only(db):
         return _apply_sheet_a(db, parsed, user_id, room_suffix=room_suffix, dry_run=dry_run,
-                              source_label=source_label, keep_other_owner=keep_other_owner)
+                              source_label=source_label, keep_other_owner=keep_other_owner,
+                              holder_names=holder_names, own_only=own_only)
+
+
+#: 겹친 줄의 지금 담당을 이름 대신 적는 말(`holder_names=False`).
+OTHER_HOLDER = "다른 팀원"
 
 
 def _apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
                    room_suffix: str = DEFAULT_SUFFIX, dry_run: bool = False,
                    source_label: Optional[str] = None,
-                   keep_other_owner: bool = False) -> ImportReport:
+                   keep_other_owner: bool = False,
+                   holder_names: bool = True,
+                   own_only: bool = False) -> ImportReport:
     """담당자 upsert (이름+투자사 기준) + 활동 이력 정규화 적재.
 
     소유자(user_id)는 시트의 **담당자 컬럼**이 정한다. 한 시트에 여러 팀원의 담당분이
@@ -1187,6 +1198,13 @@ def _apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
     어느 쪽이든 **이 담당자 몫이 이미 있으면 그 줄을 갱신한다.** 같은 파일을
     다시 올려도 사본이 또 생기지 않는다. 같은 분이 두 줄이 되면 같은 딜이 두
     번 나갈 수 있어, 발송 목록을 만드는 쪽이 막는다(`services/twin_send`).
+
+    화면 업로드에서 관리자가 아닌 사람이 올리면 `own_only=True` 로도 부른다
+    (`routers/data_io.import_contacts`) — **올린 사람 본인 줄만 고친다.** 시트의
+    담당자 칸은 소유를 정하지 않고(새 줄은 늘 올린 사람 몫), 이름+투자사로 찾은
+    줄이 남의 줄이면 그 줄은 한 칸도 안 건드리고 사본도 안 만든 채 건너뛴다
+    (칸 채우기 · 상태 칸 · 활동 이력 · 딜 소싱 갈래 모두). 리포트에는 건너뛴
+    수만 싣는다(`other_skipped`).
     """
     # `room_joined` 이 이 파일의 판정(`joined_state`)을 읽으므로 함수 안에서 부른다.
     from . import room_joined
@@ -1239,6 +1257,9 @@ def _apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
                 unmatched_owners[pc.owner_name] = unmatched_owners.get(pc.owner_name, 0) + 1
         else:
             no_owner_rows += 1
+        if own_only:
+            # 팀원 업로드 — 담당자 칸이 무엇이든 올린 사람 몫으로만 찾고 만든다.
+            owner_id = user_id
 
         # **이 담당자 몫을 먼저 찾는다.** 같은 분이 두 팀원 몫으로 나뉘어 있으면
         # (`keep_other_owner` 로 만든 사본) 이름+투자사만으로 찾을 때 남의 줄이
@@ -1261,10 +1282,15 @@ def _apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
         # 명단에 이미 있는 분**이다.
         other = (contact is not None and owner_id is not None
                  and contact.user_id != owner_id)
+        if other and own_only:
+            report.other_skipped += 1
+            continue
         if other:
             holder = db.get(User, contact.user_id)
-            report.overlaps.append((pc.name, pc.firm or "",
-                                    getattr(holder, "name", "") or ""))
+            holder_name = getattr(holder, "name", "") or ""
+            if not holder_names and contact.user_id != user_id:
+                holder_name = OTHER_HOLDER
+            report.overlaps.append((pc.name, pc.firm or "", holder_name))
 
         if contact is None or (other and keep_other_owner):
             # 사본은 **빈 줄에서 시작한다** — 원래 주인이 다듬은 방 이름·메모를
@@ -1516,6 +1542,10 @@ def _apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
         report.notes.insert(0, (
             f"다른 팀원 명단과 겹침 {len(report.overlaps)}명 → {how}: "
             f"{shown}{more}"))
+    if report.other_skipped:
+        report.notes.insert(0, (
+            f"{OTHER_HOLDER} 줄 {report.other_skipped}개는 건너뜀 — "
+            "올린 사람 본인 명단의 줄만 고치고 새 줄도 본인 명단에만 만듭니다"))
     if unmatched_owners:
         detail = ", ".join(f"{n}({c}명)" for n, c in sorted(unmatched_owners.items()))
         report.notes.append(

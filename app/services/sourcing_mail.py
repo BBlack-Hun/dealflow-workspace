@@ -522,7 +522,9 @@ def _redact(value, settings: Settings) -> str:
 
 def _connect(settings: Settings):
     try:
-        return poplib.POP3_SSL(settings.host, settings.port, timeout=TIMEOUT_SEC)
+        # 인증서를 검증한다 — 표준 라이브러리 기본값은 검증하지 않는다(`mailer._connect`).
+        return poplib.POP3_SSL(settings.host, settings.port, timeout=TIMEOUT_SEC,
+                               context=ssl.create_default_context())
     except ssl.SSLError as exc:
         log.warning("메일 확인 — 보안 연결 실패 (%s:%s): %s", settings.host,
                     settings.port, type(exc).__name__)

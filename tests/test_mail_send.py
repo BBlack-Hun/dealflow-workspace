@@ -168,8 +168,9 @@ def test_agent_does_not_pick_up_mail(logged, db, seed, mail_on, monkeypatch):
     token = db.query(AgentDevice).filter_by(user_id=1).first().token
     r = logged.get("/api/agent/poll?kinds=deal_intro,ir_delivery",
                    headers={"Authorization": f"Bearer {token}"})
-    assert r.status_code == 200
-    assert not r.json().get("items"), "발송 프로그램이 메일 건을 가져갔다"
+    # 메일 건만 있는 회차는 아예 내주지 않는다 — 빈 회분 보고로 회차가 닫히면
+    # 시간 · 한도에 걸려 기다리던 메일이 안 나간다(`agent_api.poll`).
+    assert r.status_code == 204, "발송 프로그램이 메일 회차를 가져갔다"
 
 
 # --- 실제 발송 -------------------------------------------------------------
