@@ -307,10 +307,79 @@ def test_표에_자동_연결과_연결_풀기가_서고_풀면_풀린다(logged
     assert info["link_href"] == f"/ir-link?tab=series-a&row={row.id}"
     focus = logged_in.get(f"/ir-link?tab=series-a&row={row.id}")
     assert focus.status_code == 200 and "연결 해제" in focus.text
+    assert 'data-clears="1"' in focus.text, "IR 값도 지운다는 확인 문구가 안 선다(ir_link.js)"
     r = logged_in.post("/ir-link/unlink", data={"tab": "series-a", "row_id": row.id},
                        follow_redirects=False)
     assert r.status_code == 303
     assert _fresh(db, row)[0].ir_company_id is None
+
+
+# ── 연결 풀기 — IR 에서 온 값도 걷는다 ─────────────────────────────────────
+
+def test_연결을_풀면_IR과_같은_칸만_비우고_딜_소싱_값과_IR은_둔다(db, ir):
+    """10/26 사용자: "딜소싱 기업리스트에서 연결 해제를 할 경우에 연결된 정보도 지워지게"."""
+    from app.services import ir_link
+
+    row = _deal(db, name="샘플가람", ceo_name="박샘플", revenue_2026="20")
+    # 꼴만 다른 같은 값(번호는 숫자만 · `8.2` 와 `8.2억`)도 IR 에서 온 값으로 본다.
+    row = _raw_set(db, row, ceo_phone="01000001111", revenue_2025="8.2")
+    assert row.pre_value == "100"
+    assert ir_link.unlink(db, row) is True
+    db.commit()
+    row, company = _fresh(db, row, ir)
+    assert (row.ir_company_id, row.ir_link_auto) == (None, 0)
+    assert (row.ceo_phone, row.pre_value, row.revenue_2025) == (None, None, None)
+    assert (row.ceo_name, row.revenue_2026, row.name) == ("박샘플", "20", "샘플가람"), \
+        "딜 소싱에서 따로 쓰는 값을 지웠다"
+    assert (company.contact_name, company.contact_phone, company.pre_value,
+            company.revenue_recent, company.revenue_2025) == \
+        ("김샘플", "010-0000-1111", "100", "12", "8.2억"), "IR 값을 지웠다"
+
+
+def test_연결_화면에서_풀어도_같고_수정_로그에_남고_다시_안_이어진다(logged_in, db, ir):
+    from app.models import EditLog
+
+    row = _deal(db, name="샘플가람")
+    r = logged_in.post("/ir-link/unlink", data={"tab": "series-a", "row_id": row.id},
+                       follow_redirects=False)
+    assert r.status_code == 303
+    row, company = _fresh(db, row, ir)
+    assert (row.ir_company_id, row.ceo_name, row.ceo_phone, row.pre_value,
+            row.revenue_2026) == (None, None, None, None, None)
+    assert (company.contact_name, company.pre_value) == ("김샘플", "100")
+    log = db.query(EditLog).filter(EditLog.table_name == "series_a_companies",
+                                   EditLog.path == "/ir-link/unlink").one()
+    assert {"ir_company_id", "ceo_name", "pre_value"} <= {
+        c["field"] for c in json.loads(log.changes_json)}
+    # 다른 칸을 고쳐도 · IR 을 고쳐도 다시 잇거나 채우지 않는다.
+    logged_in.patch(f"/api/series-a-companies/{row.id}", json={"detail": "샘플 메모"})
+    logged_in.patch(f"/api/companies/{ir.id}", json={"contact_name": "최샘플"})
+    row = _fresh(db, row)[0]
+    assert (row.ir_company_id, row.ceo_name, row.detail) == (None, None, "샘플 메모")
+    assert _fresh(db, ir)[0].contact_name == "최샘플"
+
+
+def test_투자컨설턴트_스타트업_줄은_풀어도_값을_둔다(db, users, ir):
+    from app.models import ConsultingCompany, VcContact
+    from app.services import consulting_sheets as cs
+    from app.services import ir_link
+
+    sheet = {s.kind: s.label for s in cs.ensure(db)}[cs.STARTUP]
+    meta = ConsultingCompany(user_id=users["u1"].id, sheet=sheet, position=1,
+                             company_name="샘플가람", ir_company_id=ir.id)
+    su = VcContact(user_id=users["u1"].id, source_sheet="샘플 명단", name="",
+                   firm="샘플가람", ir_company_id=ir.id)
+    db.add_all([meta, su])
+    db.commit()
+    meta, su = _fresh(db, meta, su)
+    assert (meta.ceo_name, su.name) == ("김샘플", "김샘플")
+    for row in (meta, su):
+        assert ir_link.unlink(db, row) is True
+    db.commit()
+    meta, su = _fresh(db, meta, su)
+    assert meta.ir_company_id is None and su.ir_company_id is None
+    assert (meta.ceo_name, meta.phone, su.name, su.phone) == \
+        ("김샘플", "010-0000-1111", "김샘플", "010-0000-1111")
 
 
 def test_연결_화면_Series_A_탭에_일괄_연결과_값_다름이_선다(logged_in, db, ir):
