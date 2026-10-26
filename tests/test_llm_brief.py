@@ -752,7 +752,8 @@ def test_a_short_org_name_does_not_blank_other_peoples_sentences(db, users):
     """짧은 값으로 남의 문장까지 지우면 멀쩡한 글이 뭉개진다.
 
     `카카오` 를 지우면 `카카오톡` 이야기가 `[가림]톡` 이 된다. 그래서 남의
-    상호는 **일정 길이 이상**만 지운다(`CROSS_MIN_LEN`).
+    상호는 일정 길이(`CROSS_MIN_LEN`) 아래면 **앞뒤 안 보고는** 지우지 않는다 —
+    짧은 기업명은 제 낱말로 서 있을 때만 지운다(아래 검사들).
     """
     from app.services.llm_brief import CROSS_MIN_LEN
 
@@ -762,6 +763,108 @@ def test_a_short_org_name_does_not_blank_other_peoples_sentences(db, users):
     _contact(db, users["u1"].id, firm="마바벤처스", memo="가나다라 분야를 본다")
 
     assert _brief(db, users["u1"])["investors"][0]["memo"] == "가나다라 분야를 본다"
+
+
+def test_a_short_company_name_standing_alone_in_a_memo_is_masked(db, users):
+    """**두세 글자 기업명도 제 낱말로 서 있으면 지운다.**
+
+    투자사 메모에 지난 딜 목록이 `다라, 가나랩 소개` 꼴로 적힌다. 4자 아래를
+    통째로 빼던 때는 이 이름들이 그대로 나갔다 — 기업을 번호로만 내보내는
+    뜻이 그 줄에서 사라진다.
+    """
+    from app.services.llm_brief import MASK
+
+    _company(db, name="다라")
+    _company(db, name="가나랩")
+    _contact(db, users["u1"].id, firm="마바벤처스",
+             memo="8/19 지난 딜: 다라, 가나랩 소개")
+
+    got = _brief(db, users["u1"])["investors"][0]["memo"]
+    assert got == f"8/19 지난 딜: {MASK}, {MASK} 소개"
+
+
+def test_the_same_letters_inside_a_longer_word_are_not_masked(db, users):
+    """같은 글자가 **더 긴 한글 낱말 속에** 있으면 이름이 아니다 — 안 지운다.
+
+    앞에 한글이 붙어도(`마다라`), 뒤에 한글이 붙어도(`다라니` · `가나랩스`)
+    낱말 한가운데다. 조사 모양 글자 뒤에 한글이 더 이어지는 것(`가나랩가방`)도
+    조사가 아니다 — 한 글자 조사는 아무 낱말의 첫 글자와도 같다.
+    """
+    _company(db, name="다라")
+    _company(db, name="가나랩")
+    memo = "마다라 지역 · 다라니 분야 · 가나랩스 · 가나랩가방 같은 곳"
+    _contact(db, users["u1"].id, firm="마바벤처스", memo=memo)
+
+    assert _brief(db, users["u1"])["investors"][0]["memo"] == memo
+
+
+def test_a_short_company_name_followed_by_a_particle_is_masked(db, users):
+    """세 글자 기업명 뒤에 **조사·`대표`·`측`** 이 붙어도 낱말 경계로 본다.
+
+    두 글자는 일부러 **조사를 안 받는다** — 흔한 낱말과 글자가 겹치기 쉬워
+    조사까지 받으면 멀쩡한 말을 뭉갠다. 그 대가로 `다라는` 은 못 거른다
+    (`llm_brief` 모듈 설명의 "못 거르는 것").
+    """
+    from app.services.llm_brief import MASK
+
+    _company(db, name="다라")
+    _company(db, name="가나랩")
+    _contact(db, users["u1"].id, firm="마바벤처스",
+             memo="가나랩에 소개 · 가나랩대표님께 회신 · 가나랩측에서는 보류 · 다라는 검토")
+
+    got = _brief(db, users["u1"])["investors"][0]["memo"]
+    assert got == (f"{MASK}에 소개 · {MASK}대표님께 회신 · {MASK}측에서는 보류 · "
+                   "다라는 검토")
+
+
+def test_a_kakao_id_in_a_memo_is_masked(db, users):
+    """카톡 ID 는 **값을 담는 칸이 앱에 없어서** 문장 모양으로 알아본다.
+
+    `카톡 ID` 표지는 남기고 ID 만 가린다. 표지 뒤에 ID 가 없거나 숫자·점뿐인
+    덩어리(날짜)면 그대로 둔다.
+    """
+    from app.services.llm_brief import MASK
+
+    _contact(db, users["u1"].id, firm="마바벤처스",
+             memo="8/19 카톡 ID gildong77 로 추가 · 카톡ID 추가 hong.sample 님",
+             sourcing_note="카톡 아이디로 연락 바람 · 카톡 ID 2024.10.12 공유")
+
+    got = _brief(db, users["u1"])["investors"][0]
+    assert "gildong77" not in got["memo"] and "hong.sample" not in got["memo"]
+    assert got["memo"] == f"8/19 카톡 ID {MASK} 로 추가 · 카톡ID 추가 {MASK} 님"
+    assert got["sourcing_note"] == "카톡 아이디로 연락 바람 · 카톡 ID 2024.10.12 공유"
+
+
+def test_the_rows_own_address_and_our_assignee_name_in_its_memo_are_masked(db, users):
+    """자기 줄의 **주소**와 **우리 쪽 담당 팀원 이름**도 그 줄을 가리킨다.
+
+    기업 쪽은 담당 팀원 이름을 이미 지우고 있었고 투자사 쪽만 빠져 있었다.
+    """
+    from app.services.llm_brief import MASK
+
+    _contact(db, users["u1"].id, firm="마바벤처스", assignee_name="김담당",
+             address="서울시 가상구 샘플로 1",
+             memo="서울시 가상구 샘플로 1 사무실 방문 · 김담당님 연결")
+
+    got = _brief(db, users["u1"])["investors"][0]["memo"]
+    assert got == f"{MASK} 사무실 방문 · {MASK}님 연결"
+
+
+def test_what_leaves_the_server_is_what_the_screen_shows(db, users, logged_in):
+    """짧은 기업명·카톡 ID 가 **주소가 실제로 돌려주는 바이트**에서도 가려진다.
+
+    화면의 [화면에서 보기] 도 같은 주소를 부르므로(`routers/llm_brief.py`)
+    미리 본 것과 내보낸 것이 같다. 서비스만 보면 라우터가 덧붙인 것을 놓친다.
+    """
+    _company(db, name="가나랩")
+    _contact(db, users["u1"].id, firm="마바벤처스",
+             memo="가나랩 소개 · 카톡 ID gildong77")
+
+    body = logged_in.get("/api/llm-brief.json").text
+    for secret in ("가나랩", "gildong77"):
+        assert secret not in body, f"내보낸 자료에 `{secret}` 이 들어 있습니다"
+    # 헛돌지 않았는지 — 메모가 실제로 실렸어야 한다.
+    assert "소개 · 카톡 ID" in body
 
 
 def test_someone_elses_person_name_is_left_alone_on_purpose(db, users):

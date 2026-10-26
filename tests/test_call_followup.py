@@ -190,7 +190,7 @@ def test_the_screen_has_a_tab_of_its_own(waiting_call, logged):
 def test_the_button_says_called_not_send(waiting_call, logged):
     """앱이 대신 걸 수 없다 — 할 수 있는 것은 **적는 일**뿐이다."""
     body = logged.get("/ir").text
-    panel = body[body.index('id="calls"'):body.index('id="meetings"')]
+    panel = body[body.index('id="calls"'):body.index('id="delivered"')]
     seq_id = waiting_call["seq"].id
 
     assert f'action="/followups/{seq_id}/called"' in panel
@@ -253,7 +253,7 @@ def test_a_scheduled_call_is_not_listed_twice(db, users, logged):
     assert "마바사" not in table, "전화가 `예약된 리마인드` 표에도 서 있다"
 
     # 제 구역에는 `예정` 으로 선다
-    calls = body[body.index('id="calls"'):body.index('id="meetings"')]
+    calls = body[body.index('id="calls"'):body.index('id="delivered"')]
     assert "마바사" in calls and "예정" in calls
 
 
@@ -413,5 +413,5 @@ def _call_ids(html: str) -> set:
     """전화 요청 구역에 서 있는 담당자 번호들."""
     if 'id="calls"' not in html:
         return set()
-    panel = html[html.index('id="calls"'):html.index('id="meetings"')]
+    panel = html[html.index('id="calls"'):html.index('id="delivered"')]
     return set(re.findall(r'/ir\?contact=(\d+)', panel))
