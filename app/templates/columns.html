@@ -4,7 +4,8 @@
   관리자 메뉴 `컬럼 관리`(#6 · #7 · #8 · #12 · #46) — 표에 붙이는 추가 칸.
 
   화면(`target`)을 탭으로 고르고, 그 화면의 칸을 붙이고 · 이름을 바꾸고 · 옮기고 ·
-  숨긴다. **지우는 단추는 없다** — 숨긴 칸은 표와 엑셀에서 빠지고 값은 남는다.
+  숨기고 · 지운다. 숨긴 칸은 표와 엑셀에서 빠지고 값은 남는다. 지우면 값도 함께
+  사라져서, 값이 든 줄 수를 보여 주고 한 번 더 묻는다.
   단추는 전부 평범한 폼이다(누르면 이 화면으로 돌아온다).
 #}
 
@@ -14,8 +15,9 @@
   <p class="muted">
     표에 붙는 칸을 정합니다. 칸마다 <b>어느 기존 칸 뒤에 둘지</b> 고를 수 있고, 안 고르면
     표 오른쪽 끝에 섭니다. 형식은 <b>메모(글)</b>와 <b>O/X</b> 두 가지이고,
-    팀원은 표에서 값만 적습니다. 칸은 지우지 않고 <b>숨깁니다</b> — 숨긴 칸은 표와
-    엑셀에서 빠지고, 적힌 값은 그대로 남아 다시 보이게 하면 함께 돌아옵니다.
+    팀원은 표에서 값만 적습니다. <b>숨긴</b> 칸은 표와 엑셀에서 빠지고, 적힌 값은
+    그대로 남아 다시 보이게 하면 함께 돌아옵니다. <b>칸 삭제</b>는 적힌 값까지 지우고
+    되돌릴 수 없습니다.
   </p>
 </header>
 
@@ -54,7 +56,7 @@
         <th style="width:90px">형식</th>
         <th style="width:300px">위치</th>
         <th style="width:90px">상태</th>
-        <th style="width:220px"></th>
+        <th style="width:290px"></th>
       </tr>
     </thead>
     <tbody>
@@ -94,6 +96,10 @@
           <form method="post" action="/columns/{{ c.id }}/hidden" class="inline-form">
             <input type="hidden" name="hidden" value="{{ 0 if c.is_hidden else 1 }}">
             <button type="submit" class="linkbtn">{{ '다시 보이기' if c.is_hidden else '숨기기' }}</button>
+          </form>
+          <form method="post" action="/columns/{{ c.id }}/delete" class="inline-form"
+                onsubmit='return confirm({{ ("'" ~ c.name ~ "' 칸을 지울까요?\n값이 든 줄 " ~ counts.get(c.id, 0) ~ "개가 함께 지워집니다. 되돌릴 수 없습니다 — 값을 남기려면 [숨기기]를 쓰세요.")|tojson }})'>
+            <button type="submit" class="linkbtn danger">칸 삭제</button>
           </form>
         </td>
       </tr>

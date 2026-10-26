@@ -16,6 +16,7 @@
 //   · 검색어를 지우면 전부 되돌아온다.
 //   · 폼 **둘 다**(요청 적기 · 미팅 등록) 붙는다 — 한쪽만 달리면 그게 원래 문제다.
 //   · [미팅 잡기] 로 사람을 넣는 길이 걸러 둔 목록에 막히지 않는다.
+//   · 구분이 없는 [미팅 잡기] 는 구분을 1차로 되돌린다 — 앞서 누른 2차가 안 남는다.
 //   · **상태 꼬리표(`[방 나감]`)로도 좁혀진다** — 화면에 적어 놓고 그 말로
 //     못 찾으면 꼬리표는 훑어야 보이는 글자일 뿐이다.
 //
@@ -335,6 +336,26 @@ function main() {
     enter(dom.request.box);
     assert.strictEqual(dom.request.select.value, "15",
       "꼬리표가 붙은 사람을 고르니 번호가 안 실린다 ★ 엉뚱한 사람에게 적힌다");
+  }
+
+  // ── 14. 구분이 없는 [미팅 잡기] 는 **1차로 되돌린다** ─────────────────
+  //
+  // 미팅 후기의 [2차 미팅 잡기](`data-kind="second"`) 를 누른 뒤 전달한 자료의
+  // [회의실 미팅 잡기](구분 없음) 를 누르면 `2차 미팅` 이 그대로 남아 있었다.
+  {
+    const dom = build();
+    run(dom);
+    const kind = dom.root.querySelector('select[name="kind"]');
+    dom.bookBtn.fire("click");
+    assert.strictEqual(kind.value, "second", "2차 미팅 잡기가 구분을 안 넣었다");
+    const plain = D.el("button", {
+      type: "button", class: "linkbtn js-book-meeting",
+      "data-contact": "11", "data-company": "샘플랩"
+    });
+    dom.root.appendChild(plain);
+    plain.fire("click");
+    assert.strictEqual(kind.value, "first",
+      "구분 없는 [미팅 잡기] 뒤에도 2차가 남았다 ★ 1차 미팅이 2차로 적힌다");
   }
 
   console.log("ir_contact_search_test OK");

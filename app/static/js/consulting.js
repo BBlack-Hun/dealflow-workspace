@@ -339,6 +339,22 @@
     if (!choices.length) return;
     var box = document.createElement("div");
     box.classList.add("cell-pop-choices");
+    // 계약 탭 `계약여부`(보기를 서버가 지키는 칸)의 보기 밖 옛 값은 지우지 않고
+    // `옛 값:` 으로 맨 앞에 세운다 — 누르면 그대로 둔다. 다른 고르는 칸은 예전대로.
+    if (before && choices.indexOf(before) < 0
+        && cell.getAttribute("data-field") === "management") {
+      var old = document.createElement("button");
+      old.type = "button";
+      old.classList.add("cell-pop-choice");
+      old.classList.add("on");
+      old.textContent = "옛 값: " + before;
+      old.addEventListener("mousedown", function (e) {
+        e.preventDefault();
+        input.value = before;
+        input.blur();
+      });
+      box.appendChild(old);
+    }
     // 마지막은 **비우는** 단추다. `O`/`X` 만 세워 두면 잘못 누른 것을 되돌릴
     // 길이 없는데, 이 칸에서 빈칸은 `아직 안 정함` 이라는 뜻을 가진 값이다
     // (전부 `X` 로 시작하지 않는 이유가 그것이다 — 0047 참고).
@@ -389,7 +405,11 @@
     })
       .then(function (r) {
         cell.classList.remove("saving");
-        if (!r.ok) throw new Error();
+        // 서버가 막은 까닭(계약여부 보기 밖 글자 등)을 그대로 띄운다.
+        if (!r.ok) {
+          return r.json().catch(function () { return {}; })
+            .then(function (d) { throw { detail: d && d.detail }; });
+        }
         // 응답 본문이 없거나 깨져도 저장은 된 것이다 — 날짜만 못 바꾼다.
         return r.json().catch(function () { return {}; });
       })
@@ -413,14 +433,15 @@
         // 걸리므로, 여기만 다르게 두면 같은 조작이 화면마다 달리 동작한다.
         apply();
       })
-      .catch(function () {
+      .catch(function (err) {
         cell.classList.remove("saving");
         cell.classList.add("save-failed");
         // 저장 못 했으면 화면도 되돌린다. **값 상자만** 되돌린다 — 칸을
         // 통째로 덮으면 잔글씨(`수정한 날짜`)가 같이 지워져, 실패했는데
         // 그 칸의 날짜만 사라진 화면이 된다.
         valueBox(cell).textContent = before;
-        alert("저장하지 못했습니다. 잠시 후 다시 시도하세요.");
+        alert((err && typeof err.detail === "string" && err.detail)
+              || "저장하지 못했습니다. 잠시 후 다시 시도하세요.");
       });
   }
 
