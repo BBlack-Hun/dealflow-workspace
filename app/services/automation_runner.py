@@ -195,6 +195,9 @@ class Spec:
     #: `automation.Kind.summary`(기본값 기준 글) 그대로다. 칸으로 동작이 꺼지는
     #: 자동화(A7 의 두 번째)는 기본값 글이 거짓말이 된다 — 그때 채운다.
     summary: Optional[Callable[[dict], str]] = None
+    #: 카톡 회차 밖에서 **서버가 바로** 보내는 것(계약 Day7 의 팀원 문자). 실이 깰
+    #: 때마다 `run_all` 이 부른다 — 켜짐 · 시험 모드 · 보내는 시간은 그 함수가 본다.
+    direct: Optional[Callable[[Session, datetime], dict]] = None
 
 
 REGISTRY: Dict[str, Spec] = {}
@@ -880,9 +883,11 @@ def run_all(db: Session, now: Optional[datetime] = None) -> Dict[str, dict]:
     """달린 자동화 전부를 한 번씩. 하나가 넘어져도 나머지는 돈다."""
     _load_all()
     out = {}
-    for key in REGISTRY:
+    for key, spec in REGISTRY.items():
         try:
             out[key] = run_once(db, key, now)
+            if spec.direct is not None:
+                out[key]["direct"] = spec.direct(db, now)
         except Exception:  # noqa: BLE001 - 실이 죽으면 다음 날이 조용히 멎는다
             db.rollback()
             log.exception("자동화 %s 를 살피다 실패했습니다", key)

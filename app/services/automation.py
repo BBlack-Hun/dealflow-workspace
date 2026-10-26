@@ -69,6 +69,7 @@ MEETING_REQUEST = "meeting_request"
 SOURCING_REMIND = "sourcing_remind"
 CHANNEL_TOP = "channel_top"
 STARTUP_MONTHLY = "startup_monthly"
+CONTRACT_DAY7 = "contract_day7"
 
 
 @dataclass(frozen=True)
@@ -93,6 +94,9 @@ KINDS: List[Kind] = [
     Kind(STARTUP_MONTHLY, "스타트업 월간 발송",
          "매월 26일 11:00 → 30일(없으면 말일) 13:00 → 28일 14:00 순환, "
          "토·일이면 앞 평일 — 스타트업 월간 발송 메뉴의 계정으로"),
+    Kind(CONTRACT_DAY7, "계약 Day7 우편 발송",
+         "계약 완료(무료·유료) 7일 뒤 10:00 계약 담당 팀원 카톡방에 계약서 우편 발송 알림, "
+         "계약서 수신이 O 가 아니면 14·21·28일 뒤 그 팀원에게 문자"),
 ]
 BY_KEY: Dict[str, Kind] = {k.key: k for k in KINDS}
 

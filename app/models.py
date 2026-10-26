@@ -79,6 +79,11 @@ class User(TimestampMixin, Base):
     # 이 계정 것이다(`deps.agent_user_id` · `deps.agent_serves`). 옆칸들처럼
     # 관리자가 팀 현황에서 정한다(`routers/dashboard.set_send_via`).
     send_via_user_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # **이 팀원에게 알릴 카톡방 제목**(0120 · #9). 계약 Day7 우편 발송 자동화가 계약
+    # 담당 팀원에게 보내는 방이다 — 자동 발송 계정(업무용 PC) 카톡 기준 제목이고,
+    # 관리자가 팀 현황 › 자동화 판에서 넣는다. 비면 그 팀원 몫은 안 나가고 판에
+    # 까닭이 선다(`services/automations/contract_day7.why_not`).
+    kakao_room_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
 
 class Session(TimestampMixin, Base):
@@ -511,6 +516,21 @@ def _sync_company_links(session, flush_context, instances) -> None:
 event.listen(OrmSession, "before_flush", _sync_company_links)
 
 
+def _stamp_contract_done(session, flush_context, instances) -> None:
+    """IR 기업 계약여부가 계약 완료로 **바뀐 날**을 적는다(#9 — `IrCompany.contract_done_at`).
+
+    무엇을 하는지는 `services/automations/contract_day7.before_flush`. 바로 위
+    `_sync_company_links` **뒤에** 건다 — 투자컨설턴트 · 스타트업 줄에서 IR 로 따라
+    고친 계약여부까지 여기서 읽혀야 한다.
+    """
+    from .services.automations import contract_day7
+
+    contract_day7.before_flush(session)
+
+
+event.listen(OrmSession, "before_flush", _stamp_contract_done)
+
+
 def _forget_series_a_sharers(session, flush_context, instances) -> None:
     """지워지는 딜 소싱 줄을 **확정한 공유 심사역**으로 가리키던 칸을 비운다.
 
@@ -589,7 +609,19 @@ class IrCompany(TimestampMixin, Base):
     #
     # 아직 안 정한 곳이 대부분이라 기본값을 두지 않는다 — 빈칸이 곧 `미정`이다.
     meeting_offered_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    contract_status: Mapped[str] = mapped_column(String, default="no")  # yes | no | pending
+    # `active_history` — 옛 값을 늘 읽어 둔다. 계약 완료로 **바뀐** 날을 적는 자리
+    # (`contract_done_at`)가 옛 값과 견준다 — 모르는 채로 견주면 옛 계약이 오늘 계약이 된다.
+    contract_status: Mapped[str] = mapped_column(String, default="no",
+                                                 active_history=True)  # yes | no | pending
+    # 계약여부가 **계약 완료(무료/유료)로 바뀐 날**(0120 · #9, `YYYY-MM-DD`). 바뀌는 길이
+    # 어디든(IR 화면 · 투자컨설턴트/스타트업 따라 고치기 · 시트 올리기) flush 한 자리가
+    # 적고, 계약 완료가 아니게 되면 비운다(`services/automations/contract_day7.before_flush`).
+    # 계약 Day7 우편 발송 자동화가 이 날에서 7 · 14 · 21 · 28일을 센다.
+    #
+    # **채워 넣지(backfill) 않는다** — 이 칸이 생기기 전에 맺은 계약은 비어 있어 그
+    # 자동화에 안 걸린다(사용자 결정: 기존 계약 기업에는 보내지 않는다). 처음부터 계약
+    # 완료로 만든 새 줄도 안 적는다 — 시트 · 엑셀로 들어오는 옛 계약과 가를 수 없다.
+    contract_done_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     # 계약서를 **실제로 받았는가** — `O` / `X`, 아직 안 정했으면 NULL(빈 칸).
     #
     # 위 `contract_status` 와 다른 사실이다. `유료계약완료` 인데 서류는 아직인

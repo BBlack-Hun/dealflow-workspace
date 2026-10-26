@@ -815,6 +815,27 @@
       </tbody>
     </table>
     </div>
+    {# **팀원 카톡방** — 계약 Day7 우편 발송(#9)이 계약 담당 팀원에게 보내는 방
+       (`User.kakao_room_name`). 자동 발송 계정 카톡 기준 제목이다 — 그 PC 에서 나간다.
+       비어 있으면 그 팀원 몫은 안 나가고 위 상태 칸 · 오늘 할 일에 까닭이 선다. #}
+    <form method="post" action="/team/member-rooms" class="rule-form" data-testid="member-rooms-form">
+      <div class="table-wrap">
+      <table class="grid-table compact">
+        <thead><tr><th style="width:140px">팀원</th>
+          <th>계약 알림 받을 카톡방 — 자동 발송 계정 카톡의 방 제목</th></tr></thead>
+        <tbody>
+        {% for m in members if m.active %}
+        <tr>
+          <td>{{ m.name }}</td>
+          <td><input type="text" name="room_{{ m.id }}" value="{{ m.kakao_room }}" maxlength="120"
+                     placeholder="그 팀원과의 방 제목" aria-label="{{ m.name }} 카톡방"></td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      </div>
+      <button class="secondary-btn" type="submit">팀원 카톡방 저장</button>
+    </form>
     <p class="hint">
       보내는 계정 카톡의 방 제목이 담당 팀원의 제목과 다를 수 있습니다 —
       <a class="linkbtn" href="/team/sender-rooms">보내는 계정 기준 방 제목</a> 에서
