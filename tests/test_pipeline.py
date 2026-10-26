@@ -389,7 +389,7 @@ def test_the_jump_bar_follows_the_working_order(client, db, users):
 
         딜 소개 → IR 자료 요청 → (반응 없음) 리마인드
                → (그래도 없음) 미팅을 청하고 사흘 뒤 전화 요청
-               → (반응 있음) 미팅 → 미팅 후기
+               → 전달한 자료(미팅 요청이 나갔나) → (반응 있음) 미팅 스케줄 → 미팅 후기
 
     **전화 요청은 리마인드와 미팅 사이다.** 미팅 요청 카톡을 보내고 답이 없을 때
     거는 것이라 그 자리가 맞다 — 미팅 뒤로 밀면 미팅이 잡히지도 않은 건이 미팅
@@ -401,8 +401,11 @@ def test_the_jump_bar_follows_the_working_order(client, db, users):
     body = client.get("/ir").text
     block = body[body.index("jump-bar"):]
     hrefs = re.findall(r'href="(#\w+)"', block[:1800])
-    assert hrefs[:5] == ["#requests", "#remind", "#calls",
+    assert hrefs[:6] == ["#requests", "#remind", "#calls", "#delivered",
                          "#meetings", "#reviews"], hrefs
+    # 판도 같은 차례로 선다 — 이동 바만 맞으면 누를 때마다 위아래로 튄다.
+    at = [body.index(f'id="{h[1:]}"') for h in hrefs[:6]]
+    assert at == sorted(at), hrefs
 
 
 def test_review_count_excludes_already_asked(db, users):

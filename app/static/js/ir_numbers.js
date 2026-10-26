@@ -99,7 +99,9 @@
     var companyInput = box.querySelector('input[name="company_name"]');
     if (companyInput) companyInput.value = company;
     var kindSelect = box.querySelector('select[name="kind"]');
-    if (kindSelect && kind) kindSelect.value = kind;
+    // 구분이 없는 단추([회의실 미팅 잡기])는 기본값(1차 — 서버 `Form("first")`)으로
+    // 되돌린다. 안 그러면 바로 전에 누른 [2차 미팅 잡기] 의 `2차` 가 남는다.
+    if (kindSelect) kindSelect.value = kind || "first";
 
     box.hidden = false;
     box.scrollIntoView({ block: "center" });

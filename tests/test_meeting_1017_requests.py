@@ -328,7 +328,7 @@ def test_리마인드가_나간_줄에_단추가_서고_켜면_누가_언제가_
     assert row.call_at and row.call_at[:10] == date.today().isoformat()
 
     body = logged.get("/ir").text
-    assert "📞 답 없음 · 전화 필요</span>" in body
+    assert "📞 답 없음 · 전화 요청</span>" in body
     assert f"강민준 · {date.today().isoformat()}" in body, "누가 언제가 배지에 없다"
     # `전화 요청` 구역 맨 위 묶음에도 선다.
     group = body[body.index('data-testid="call-needed"'):]
@@ -368,7 +368,7 @@ def test_끄면_오늘_할_일에서_빠진다(db, users, logged):
     assert len(call) == 1 and call[0]["count"] == 1
     assert "가담당(다라파트너스)" in call[0]["detail"]
     assert call[0]["href"] == "/ir#calls"
-    assert "전화 필요" in logged.get("/todo").text
+    assert "전화 요청 — 리마인드에 답 없음" in logged.get("/todo").text
 
     logged.post(f"/ir/contacts/{contact.id}/call-needed", data={"on": "0"})
     items = today_svc.build(db, users["u1"])["items"]

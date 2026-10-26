@@ -371,6 +371,10 @@ class ListPage:
     # 있으면 툴바에 [IR 기업 연결] 이, 수정창에 `IR 기업: ○○ (연결됨)` 표시가
     # 선다. 투자사 화면에는 없다 — 그쪽 `firm` 은 투자사라 IR 기업이 아니다.
     ir_link_href: str = ""
+    # 표 위 `⚙ 명단·칸 설정` 을 **펴 둔 채로** 여는가(`contacts.html` 의 `sheet-fold`).
+    # 투자사 화면은 펴 둔다(10/25 사용자 요청 — 설정이 안 보였다). 스타트업 화면은
+    # 표 자리를 돌려 달라는 요청으로 접었던 그대로 둔다. 어느 쪽이든 눌러 여닫는다.
+    settings_open: bool = False
 
     @property
     def href(self) -> str:
@@ -380,7 +384,7 @@ class ListPage:
 CONTACTS_PAGE = ListPage(key="vc", page=contact_columns.PAGE_CONTACTS,
                          investors=True, row_label="담당자",
                          default_layout=contact_columns.DEFAULT,
-                         room_check=True)
+                         room_check=True, settings_open=True)
 STARTUP_PAGE = ListPage(key="startup", page=contact_columns.PAGE_STARTUP,
                         investors=False, row_label="기업",
                         default_layout=contact_columns.STARTUP,

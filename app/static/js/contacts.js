@@ -770,6 +770,10 @@
     if (!("owned_funds" in data) || !data.firm_key || !table) return;
     table.querySelectorAll("tr[data-firm-key]").forEach(function (tr) {
       if (tr.getAttribute("data-firm-key") !== data.firm_key) return;
+      // 필터 값도 서버가 나눈 그대로(`investor_firms.split_funds`) — 화면에서 다시 나누면 규칙이 두 벌이다.
+      if (tr.hasAttribute("data-f-fund")) {
+        tr.setAttribute("data-f-fund", (data.owned_fund_list || []).join("|"));
+      }
       var cell = tr.querySelector('.cell[data-field="owned_funds"]');
       if (!cell) return;
       cell.textContent = data.owned_funds;

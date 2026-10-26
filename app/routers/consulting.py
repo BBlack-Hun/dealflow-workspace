@@ -119,6 +119,9 @@ TAIL_COLUMNS = [
 # `견적서 첨부 여부` 로 바뀌어 이제 `O`/`X` 만 받는다(아래 `STARTUP_COLUMNS`).
 # 문장으로 적을 자리는 `기업 관리` 한 칸이다.
 CONTRACT_DONE_CHOICES = (CONTRACT_LABELS["free"], CONTRACT_LABELS["paid"])
+# 계약 탭 `계약여부`(`management`)의 보기 — 그 탭이 쓰던 말 그대로(`무료` · `유료`).
+# 따라 고치기가 읽고 적는 말과 한 곳이다(`company_sync.TAB_WORDS`).
+CONTRACT_TAB_CHOICES = tuple(company_sync.TAB_WORDS)
 
 # 고르는 칸 `미팅종류` 의 보기. **여기가 이 말의 한 곳이다** — 위
 # `CONTRACT_DONE_CHOICES` 는 같은 말이 `routers/companies.py` 에 이미 있어서
@@ -250,7 +253,9 @@ CONTRACT_COLUMNS = [
     # 않는다(`split_contract_line` 참고).
     ("계약월", "meeting_at"),
     ("기업명", "company_name"),
-    ("계약여부", "management"),   # 무료 / 유료
+    # 보기 둘(`무료` · `유료` — `CONTRACT_TAB_CHOICES`) + 빈칸. 보기 밖 옛 값(자유 글)은
+    # 지우지 않고 그대로 보인다(`_check_contract_pick`).
+    ("계약여부", "management"),
     # 계약을 맺은 것과 **계약서를 받은 것**은 다른 사실이다. 앞 칸에 섞어 두면
     # 계약은 했는데 서류가 아직 안 온 곳을 가려낼 수가 없다.
     # 빈칸은 `아직 안 정함` 이다(`models.ConsultingCompany.contract_received`).
@@ -1126,6 +1131,8 @@ def consulting_page(request: Request, db: Session = Depends(get_db),
         # `note_stamp_key` 다.
         "note_stamp_key": note_stamp_key,
         "contract_done_choices": ",".join(CONTRACT_DONE_CHOICES),
+        # 계약 탭 `계약여부` 의 보기(위와 같은 방식 — 한 곳은 `CONTRACT_TAB_CHOICES`).
+        "contract_tab_choices": ",".join(CONTRACT_TAB_CHOICES),
         # `미팅종류` 의 보기. 위 칸과 **같은 방식**이다 — 화면에 글자를 적어
         # 두지 않는다. 한 곳은 `MEETING_KIND_CHOICES` 다.
         "meeting_kind_choices": ",".join(MEETING_KIND_CHOICES),
@@ -1275,6 +1282,22 @@ def _assign(company: ConsultingCompany, body: CompanyIn) -> None:
         company.field_stamps = json.dumps(stamps, ensure_ascii=False)
 
 
+def _check_contract_pick(db: Session, company: ConsultingCompany, body: CompanyIn) -> None:
+    """계약 탭 `계약여부`(`management`)는 보기(`CONTRACT_TAB_CHOICES`)나 빈칸만 받는다.
+
+    그 줄에 이미 적힌 보기 밖 옛 값(자유 글)은 그대로 다시 와도 받는다 — 지우지 않고
+    사람이 다시 고르게 둔다. 시트 올리기(`apply_rows`)는 여기를 안 지난다(적힌 그대로).
+    다른 탭의 `management` 는 `기업 관리` 자유 글이라 막지 않는다.
+    """
+    value = (body.management or "").strip()
+    if (not value or value in CONTRACT_TAB_CHOICES
+            or value == (company.management or "").strip()
+            or not is_contract(db, body.sheet or company.sheet or "")):
+        return
+    raise HTTPException(status_code=400, detail="계약여부는 "
+                        + " · ".join(CONTRACT_TAB_CHOICES) + " 중에서 고르거나 비워 두세요")
+
+
 @router.get("/api/consulting/{company_id}")
 def get_company(company_id: int, db: Session = Depends(get_db),
                 user: User = Depends(get_current_user)):
@@ -1316,6 +1339,7 @@ def create_company(body: CompanyIn, db: Session = Depends(get_db),
         ).scalar()
         body.position = (last or 0) + 1
     company = ConsultingCompany(user_id=user.id)
+    _check_contract_pick(db, company, body)
     _assign(company, body)
     db.add(company)
     db.commit()
@@ -1328,6 +1352,7 @@ def update_company(company_id: int, body: CompanyIn,
                    user: User = Depends(get_current_user)):
     require_access(user)
     company = owned(db, ConsultingCompany, company_id, user, "기업")
+    _check_contract_pick(db, company, body)
     _assign(company, body)
     db.commit()
     # **고친 시각을 응답에 싣는다.** 표의 잔글씨가 이것으로 그 자리에서

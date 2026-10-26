@@ -573,7 +573,9 @@ def test_투자컨설턴트_칸의_다른_계약_상태는_IR로_안_간다(logg
     """결정 4 — 투자컨설턴트가 IR 계약을 바꿀 수 있는 값은 무료 · 유료계약완료뿐."""
     for body in ({"contract_done": "계약검토중"}, {"contract_done": "딜소개 불가"}):
         logged_in.patch(f"/api/consulting/{linked['meta'].id}", json=body)
-    logged_in.patch(f"/api/consulting/{linked['contract'].id}", json={"management": "딜소개불가"})
+    # 계약 탭은 보기(무료 · 유료) 밖 새 글자를 아예 안 받는다(400).
+    r = logged_in.patch(f"/api/consulting/{linked['contract'].id}", json={"management": "딜소개불가"})
+    assert r.status_code == 400, r.text
     ir, su = _fresh(db, stage["ir"], linked["startup"])
     assert ir.contract_status == "no" and "contract" not in _notes(su)
 

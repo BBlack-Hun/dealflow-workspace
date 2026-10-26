@@ -228,6 +228,26 @@ def test_sidebar_has_the_way_back_only_while_viewing(client, users, admin):
     assert 'data-testid="view-as-back"' not in client.get(here).text
 
 
+def test_picking_a_member_switches_without_a_button(client, users, admin):
+    """고르기만 하면 바뀐다 — 단추가 없고, 첫 줄은 고를 수 없는 안내라 첫 팀원도 골라진다."""
+    import re
+
+    def picker(page):
+        return re.search(r'data-testid="view-as-form">(.*?)</form>', page, re.S)[1]
+
+    _login(client, "01000000009")
+    form = picker(client.get("/").text)
+    assert "<button" not in form
+    assert '<select name="member_id" aria-label="팀원 화면으로 보기" onchange="this.form.submit()">' in form
+    assert '<option value="" disabled selected>팀원 화면으로 보기</option>' in form
+    assert f'<option value="{users["u1"].id}" >' in form           # 아직 아무도 안 골라짐
+
+    _view_as(client, users["u1"].id)
+    form = picker(client.get("/").text)
+    assert '<option value="" disabled >팀원 화면으로 보기</option>' in form
+    assert f'<option value="{users["u1"].id}" selected>' in form
+
+
 def test_own_device_token_never_shows_the_members(client, users, admin):
     _login(client, "01000000009")
     _view_as(client, users["u1"].id)
