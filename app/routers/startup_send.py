@@ -128,7 +128,7 @@ def startup_ir_page(
         # (`services/automations/startup_monthly.header`).
         "a5": a5.header(db),
     })
-    return templates.TemplateResponse("startup_send.html", ctx)
+    return templates.TemplateResponse(request, "startup_send.html", ctx)
 
 
 @router.post("/deals/startup-ir/send", include_in_schema=False,
@@ -245,7 +245,7 @@ def rooms_page(
         "msg": msg,
         "no_room_label": startup_send.NO_ROOM,
     })
-    return templates.TemplateResponse("startup_room.html", ctx)
+    return templates.TemplateResponse(request, "startup_room.html", ctx)
 
 
 @router.post("/deals/startup-ir/rooms", include_in_schema=False)

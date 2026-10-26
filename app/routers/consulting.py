@@ -1178,7 +1178,7 @@ def consulting_page(request: Request, db: Session = Depends(get_db),
     })
     # 관리자가 붙인 추가 칸 — 탭을 가리지 않고 같은 칸(달 칸과 따로 · #8).
     ctx.update(custom_columns.view(db, "consulting", "consulting_companies"))
-    return templates.TemplateResponse("consulting.html", ctx)
+    return templates.TemplateResponse(request, "consulting.html", ctx)
 
 
 # --- 편집 -------------------------------------------------------------------
@@ -1572,7 +1572,7 @@ def rename_sheet(kind: str = Form(""), label: str = Form(""),
 
 
 @router.post("/consulting/columns", include_in_schema=False)
-def add_column(label: str = Form(...), sheet: str = Form(""),
+def add_column(label: str = Form(""), sheet: str = Form(""),
                db: Session = Depends(get_db),
                user: User = Depends(get_current_user)):
     """달이 바뀌면 칸을 하나 늘린다. 새 칸이 **맨 앞**에 오도록 한다.
@@ -1611,7 +1611,7 @@ def add_column(label: str = Form(...), sheet: str = Form(""),
 
 
 @router.post("/consulting/columns/{column_id}/rename", include_in_schema=False)
-def rename_column(column_id: int, label: str = Form(...),
+def rename_column(column_id: int, label: str = Form(""),
                   db: Session = Depends(get_db),
                   user: User = Depends(get_current_user)):
     require_access(user)

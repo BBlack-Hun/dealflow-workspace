@@ -706,7 +706,7 @@ def transfer_contact(contact_id: int, body: TransferIn,
 
 @router.post("/sheets/assign", include_in_schema=False)
 def assign_sheet(
-    label: str = Form(...),
+    label: str = Form(""),
     user_id: str = Form(""),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -725,7 +725,7 @@ def assign_sheet(
 
 @router.post("/sheets/hide", include_in_schema=False)
 def toggle_sheet_hidden(
-    label: str = Form(...),
+    label: str = Form(""),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -757,7 +757,7 @@ def toggle_sheet_hidden(
 
 @router.post("/sheets/deal-list", include_in_schema=False)
 def toggle_sheet_deal_list(
-    label: str = Form(...),
+    label: str = Form(""),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -825,7 +825,7 @@ def _sheet_or_400(db: Session, label: str) -> str:
 
 
 @router.post("/columns", include_in_schema=False)
-def add_column(label: str = Form(...), sheet: str = Form(...),
+def add_column(label: str = Form(""), sheet: str = Form(""),
                db: Session = Depends(get_db),
                user: User = Depends(require_admin)):
     """달이 바뀌면 칸을 하나 늘린다. 새 칸이 **맨 앞**에 오도록 한다.
@@ -850,7 +850,7 @@ def add_column(label: str = Form(...), sheet: str = Form(...),
 
 
 @router.post("/columns/{column_id}/rename", include_in_schema=False)
-def rename_column(column_id: int, label: str = Form(...),
+def rename_column(column_id: int, label: str = Form(""),
                   db: Session = Depends(get_db),
                   user: User = Depends(require_admin)):
     col = db.get(ContactColumn, column_id)

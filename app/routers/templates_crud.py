@@ -367,12 +367,12 @@ def templates_page(request: Request, db: Session = Depends(get_db),
 
     ctx = base_ctx(request, db, user, active="templates")
     ctx.update({"tabs": tabs, "others": others, "variables": VARIABLES, "msg": msg})
-    return jinja.TemplateResponse("templates.html", ctx)
+    return jinja.TemplateResponse(request, "templates.html", ctx)
 
 
 @router.post("/templates/choose", include_in_schema=False)
 def choose_template(
-    kind: str = Form(...),
+    kind: str = Form(""),
     template_id: int = Form(...),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -450,9 +450,9 @@ def _clean_body(body: str) -> str:
 
 @router.post("/templates/new", include_in_schema=False)
 def create_template(
-    kind: str = Form(...),
+    kind: str = Form(""),
     name: str = Form(""),
-    body: str = Form(...),
+    body: str = Form(""),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -470,7 +470,7 @@ def create_template(
 def edit_template(
     template_id: int,
     name: str = Form(""),
-    body: str = Form(...),
+    body: str = Form(""),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):

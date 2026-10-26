@@ -410,7 +410,7 @@ def sourcing_page(request: Request, db: Session = Depends(get_db),
     })
     # 관리자가 붙인 추가 칸 — 갈래(탭)를 가리지 않고 같은 칸(`_custom_cols.html`).
     ctx.update(custom_columns.view(db, "sourcing", "sourcing_contacts"))
-    return templates.TemplateResponse("sourcing.html", ctx)
+    return templates.TemplateResponse(request, "sourcing.html", ctx)
 
 
 # ── 엑셀 내려받기 ────────────────────────────────────────────────────────────

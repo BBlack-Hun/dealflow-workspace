@@ -121,7 +121,7 @@ def outreach_page(
         "rooms_href": ROOMS_HREF,
         "search_count": len(startup_room_pick.targets(db, user)),
     })
-    return templates.TemplateResponse("startup_msg.html", ctx)
+    return templates.TemplateResponse(request, "startup_msg.html", ctx)
 
 
 class PreviewIn(BaseModel):
@@ -250,7 +250,7 @@ def rooms_page(
         "msg_href": HREF,
         "msg_label": startup_outreach.LABEL,
     })
-    return templates.TemplateResponse("startup_room_pick.html", ctx)
+    return templates.TemplateResponse(request, "startup_room_pick.html", ctx)
 
 
 class RoomSearchIn(BaseModel):
