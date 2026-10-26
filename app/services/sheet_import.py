@@ -1141,20 +1141,27 @@ _DIFF_LABELS = {"title": "직함", "round_size": "라운드 사이즈(투자운�
 def apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
                   room_suffix: str = DEFAULT_SUFFIX, dry_run: bool = False,
                   source_label: Optional[str] = None,
-                  keep_other_owner: bool = False) -> ImportReport:
+                  keep_other_owner: bool = False,
+                  holder_names: bool = True) -> ImportReport:
     """아래 `_apply_sheet_a` — IR 기업에 이어진 줄(스타트업 명단)은 따라 고치기를 빈칸만
     채우게 하고 돈다(10/22 결정 7 · `company_sync.fill_only`)."""
     from . import company_sync
 
     with company_sync.fill_only(db):
         return _apply_sheet_a(db, parsed, user_id, room_suffix=room_suffix, dry_run=dry_run,
-                              source_label=source_label, keep_other_owner=keep_other_owner)
+                              source_label=source_label, keep_other_owner=keep_other_owner,
+                              holder_names=holder_names)
+
+
+#: 겹친 줄의 지금 담당을 이름 대신 적는 말(`holder_names=False`).
+OTHER_HOLDER = "다른 팀원"
 
 
 def _apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
                    room_suffix: str = DEFAULT_SUFFIX, dry_run: bool = False,
                    source_label: Optional[str] = None,
-                   keep_other_owner: bool = False) -> ImportReport:
+                   keep_other_owner: bool = False,
+                   holder_names: bool = True) -> ImportReport:
     """담당자 upsert (이름+투자사 기준) + 활동 이력 정규화 적재.
 
     소유자(user_id)는 시트의 **담당자 컬럼**이 정한다. 한 시트에 여러 팀원의 담당분이
@@ -1187,6 +1194,11 @@ def _apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
     어느 쪽이든 **이 담당자 몫이 이미 있으면 그 줄을 갱신한다.** 같은 파일을
     다시 올려도 사본이 또 생기지 않는다. 같은 분이 두 줄이 되면 같은 딜이 두
     번 나갈 수 있어, 발송 목록을 만드는 쪽이 막는다(`services/twin_send`).
+
+    화면 업로드에서 관리자가 아닌 사람이 올리면 `keep_other_owner=True` ·
+    `holder_names=False` 로 부른다(`routers/data_io.import_contacts`) — 남의 줄의
+    담당은 늘 그대로 두고, 겹친 줄의 지금 담당은 이름 대신 `다른 팀원` 으로
+    적는다(올린 사람 본인 줄은 이름 그대로).
     """
     # `room_joined` 이 이 파일의 판정(`joined_state`)을 읽으므로 함수 안에서 부른다.
     from . import room_joined
@@ -1263,8 +1275,10 @@ def _apply_sheet_a(db: Session, parsed: SheetAParse, user_id: int,
                  and contact.user_id != owner_id)
         if other:
             holder = db.get(User, contact.user_id)
-            report.overlaps.append((pc.name, pc.firm or "",
-                                    getattr(holder, "name", "") or ""))
+            holder_name = getattr(holder, "name", "") or ""
+            if not holder_names and contact.user_id != user_id:
+                holder_name = OTHER_HOLDER
+            report.overlaps.append((pc.name, pc.firm or "", holder_name))
 
         if contact is None or (other and keep_other_owner):
             # 사본은 **빈 줄에서 시작한다** — 원래 주인이 다듬은 방 이름·메모를

@@ -10,6 +10,8 @@
   · 켜면 사본이 생기고 원래 줄은 한 칸도 안 바뀐다.
   · 같은 파일을 다시 올려도 사본이 늘지 않는다.
   · 미리보기가 겹친 수와 어떻게 할지를 [반영] 전에 말한다.
+  · 옮기기는 관리자만 — 팀원이 올리면 늘 따로 만들고, 겹친 줄의 지금 담당
+    이름은 관리자에게만 보인다.
   · 같은 분께 두 팀원 몫으로 같은 딜이 이번 주 두 번 나가지 않는다.
 """
 from __future__ import annotations
@@ -107,16 +109,23 @@ def test_option_on_reupload_is_idempotent(db, held):
     assert off.overlap_moved == 0
 
 
+def _up(client, keep, dry):
+    return client.post(
+        "/api/import/contacts",
+        files={"file": ("현황.xlsx", _xlsx(_rows()),
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        data={"dry_run": "true" if dry else "false",
+              "keep_other_owner": "true" if keep else "false"})
+
+
 def test_preview_reports_overlap_before_apply(client, db, held):
+    """관리자 — 옮길지 따로 만들지 고르고, 겹친 줄의 지금 담당 이름이 보인다."""
+    db.get(User, 2).role = "admin"
+    db.commit()
     client.post("/login", data={"phone": "01000000002", "password": DEMO_PASSWORD})
 
     def up(keep, dry):
-        return client.post(
-            "/api/import/contacts",
-            files={"file": ("현황.xlsx", _xlsx(_rows()),
-                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
-            data={"dry_run": "true" if dry else "false",
-                  "keep_other_owner": "true" if keep else "false"})
+        return _up(client, keep, dry)
 
     off = up(False, True).json()
     assert off["overlap_total"] == 1 and off["overlap_moved"] == 1
@@ -126,6 +135,22 @@ def test_preview_reports_overlap_before_apply(client, db, held):
     assert len(_copies(db)) == 1          # 미리보기는 안 남긴다
     assert up(True, False).status_code == 200
     assert [r.user_id for r in _copies(db)] == [1, 2]
+
+
+def test_member_upload_never_moves_and_hides_holder(client, db, held):
+    """팀원 — 옮기기를 골라 보내도 따로 만들고, 지금 담당 이름은 안 싣는다."""
+    client.post("/login", data={"phone": "01000000002", "password": DEMO_PASSWORD})
+    res = _up(client, keep=False, dry=True)
+    assert res.status_code == 200
+    body = res.json()
+    assert body["keep_other_owner"] is True
+    assert body["overlap_kept"] == 1 and body["overlap_moved"] == 0
+    assert body["overlaps"] == [{"name": "홍길동", "firm": "가나다벤처스",
+                                 "owner": si.OTHER_HOLDER}]
+    assert "강민준" not in res.text           # 메모 · 요약에도 없다
+
+    assert _up(client, keep=False, dry=False).status_code == 200
+    assert [r.user_id for r in _copies(db)] == [1, 2]   # 원래 줄은 u1 그대로
 
 
 # ── 같은 분께 두 번 나가지 않게 ──────────────────────────────────────────────

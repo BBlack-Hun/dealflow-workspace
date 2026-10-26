@@ -183,7 +183,8 @@
   previewBtn.addEventListener("click", function () { send(true); });
   applyBtn.addEventListener("click", function () {
     if (!previewed) return;
-    var how = keepOther && keepOther.checked
+    // 고르개가 없으면(관리자가 아님) 서버가 늘 따로 만든다(`routers/data_io.import_contacts`).
+    var how = !keepOther || keepOther.checked
       ? "다른 팀원에게 이미 있는 분은 옮기지 않고 따로 만듭니다."
       : "다른 팀원에게 이미 있는 분은 시트의 담당자에게 옮깁니다.";
     if (!confirm("미리보기 결과대로 반영합니다.\n같은 이름+투자사인 담당자는 빈 칸을 채웁니다.\n" + how + " 계속할까요?")) return;

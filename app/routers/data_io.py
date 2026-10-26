@@ -22,7 +22,6 @@
 """
 from __future__ import annotations
 
-import io
 from datetime import date
 from typing import List, Optional
 
@@ -84,6 +83,7 @@ def import_contacts(
     dry_run: bool = Form(True),
     # 다른 팀원 명단에 이미 있는 분을 **옮기지 않고** 이 담당자 몫으로 따로
     # 만든다. 기본은 꺼짐 — 예전처럼 옮긴다(`sheet_import.apply_sheet_a`).
+    # **옮기기는 관리자만 고른다** — 팀원이 올리면 늘 켠 것으로 친다(아래).
     keep_other_owner: bool = Form(False),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -100,10 +100,16 @@ def import_contacts(
             detail += f" · 이 파일의 시트: {', '.join(names)}"
         raise HTTPException(status_code=400, detail=detail)
 
+    # 다른 팀원 줄의 담당을 옮기는 것과 그 줄을 지금 누가 맡았는지 보는 것은
+    # **팀 전체를 고칠 수 있는 사람만**이다(`may_manage_team_contacts`). 팀원이
+    # 올린 시트는 남의 줄을 늘 그대로 두고 자기 몫으로 따로 만든다.
+    team_wide = may_manage_team_contacts(user)
+    if not team_wide:
+        keep_other_owner = True
     report = sheet_import.apply_sheet_a(
         db, parsed, user_id=user.id, dry_run=dry_run,
         source_label=(sheet or file.filename or "업로드"),
-        keep_other_owner=keep_other_owner,
+        keep_other_owner=keep_other_owner, holder_names=team_wide,
     )
     if dry_run:
         db.rollback()   # 미리보기가 DB 를 건드리고 끝나면 안 된다
@@ -1021,10 +1027,7 @@ def report_workbook(data: dict, *, team_wide: bool, who: str,
                      7 if team_wide else 6),
         data, team_wide)
 
-    buf = io.BytesIO()
-    wb.save(buf)
-    wb.close()
-    return buf.getvalue()
+    return sp.workbook_bytes(wb)
 
 
 def _yearly_sheet(sheet, data):
@@ -1131,10 +1134,7 @@ def yearly_report_workbook(data: dict, *, who: str, today: date) -> bytes:
     sheet.blank()
     _yearly_sheet(sheet, data)
 
-    buf = io.BytesIO()
-    wb.save(buf)
-    wb.close()
-    return buf.getvalue()
+    return sp.workbook_bytes(wb)
 
 
 @router.get("/api/export/report.xlsx")
