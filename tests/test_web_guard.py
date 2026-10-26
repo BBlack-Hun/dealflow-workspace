@@ -147,3 +147,57 @@ def test_api_docs_are_off_in_production(db, users, monkeypatch):
     with TestClient(app) as c:
         for path in ("/docs", "/redoc", "/openapi.json"):
             assert c.get(path, follow_redirects=False).status_code != 200, path
+
+
+# --- 2차 통합: 로그인·세션(#400)과 같이 돈다 -----------------------------------
+#
+# 출처 검사와 CSP 는 미들웨어, 변경 강제는 예외 핸들러, 시도 제한은 라우터에 있다.
+# 각 갈래의 시험은 따로 돌아서, 같이 붙었을 때의 모양은 여기서 본다.
+
+SAME_SITE = {"Origin": "http://testserver"}
+
+
+def _login_form(client, password=None, **headers):
+    from .conftest import DEMO_PASSWORD
+
+    return client.post("/login", data={"phone": "01000000001",
+                                       "password": password or DEMO_PASSWORD},
+                       headers=headers, follow_redirects=False)
+
+
+def test_must_change_answers_carry_the_csp(client, db, users):
+    """변경 강제의 303(화면)·403(그 밖)에도 CSP 가 붙는다 — 핸들러는 미들웨어 안쪽이다."""
+    from app.main import CONTENT_SECURITY_POLICY
+
+    users["u1"].must_change_password = 1
+    db.commit()
+    assert _login_form(client, **SAME_SITE).headers["location"] == "/account/password"
+    page = client.get("/deals", follow_redirects=False)
+    write = client.post("/notices/seen", data={}, headers=SAME_SITE,
+                        follow_redirects=False)
+    assert (page.status_code, write.status_code) == (303, 403)
+    for r in (page, write):
+        assert r.headers["content-security-policy"] == CONTENT_SECURITY_POLICY
+
+
+def test_login_and_logout_forms_pass_the_origin_check(client, users):
+    """화면의 로그인 폼·로그아웃 폼(같은 출처)은 출처 검사에 안 걸린다."""
+    r = _login_form(client, **SAME_SITE)
+    assert r.status_code == 303 and "error" not in r.headers["location"]
+    assert client.get("/deals", follow_redirects=False).status_code == 200
+    out = client.post("/logout", headers=SAME_SITE, follow_redirects=False)
+    assert out.status_code == 303 and out.headers["location"] == "/login"
+    assert client.get("/deals", follow_redirects=False).status_code == 303
+
+
+def test_login_limit_still_counts_same_site_form_posts(client, users):
+    """시도 제한은 출처 검사를 지난 폼 POST 에서 그대로 센다. 다른 사이트의 POST 는
+    라우터에 닿지 않으니 세지 않는다."""
+    for _ in range(5):
+        assert _login_form(client, "wrong-pass",
+                           Origin=OTHER_SITE).status_code == 403
+    assert "error" not in _login_form(client, **SAME_SITE).headers["location"]
+    client.cookies.clear()
+    for _ in range(5):
+        _login_form(client, "wrong-pass", **SAME_SITE)
+    assert _login_form(client, **SAME_SITE).headers["location"].endswith("error=locked")
