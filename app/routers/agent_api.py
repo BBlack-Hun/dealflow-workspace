@@ -19,7 +19,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 from sqlalchemy import and_, exists, or_, select, text
 from sqlalchemy.orm import Session
@@ -70,6 +70,29 @@ def _touch_device(db: Session, device: AgentDevice, hostname: Optional[str] = No
         device.agent_version = version
     if sender:
         device.sender = sender
+
+
+def _serves(db: Session, device: AgentDevice, job: Optional[SendJob]) -> bool:
+    """이 발송기가 **이 잡을 맡는가** — 묻기(`job_state`) · 결과 · 회분 보고가 같이 읽는다.
+
+    본인 잡, 그리고 이 발송기로 맡긴 계정의 잡(`deps.agent_serves`). 본인 잡은
+    맡긴 뒤에도 맡는다 — 맡기기 전에 물고 간 회분을 중간에 끊지 않게.
+    """
+    return job is not None and (job.user_id == device.user_id
+                                or job.user_id in agent_serves(db, device.user_id))
+
+
+# 결과를 받는 잡 · 건. **발송기가 지금 손에 쥐고 있을 수 있는 것**만이다.
+#
+# 잡은 `running` 만이 아니다 — 발송기는 손에 쥔 회분을 끝까지 보고한다. 그 사이
+# [실패 재시도] · [취소분 재발송] 을 누르면 잡이 `queued` 로, 발송기가 묻지 못해
+# 멈추면 `paused` 로, [중단] 이면 `canceled` 로 바뀐다. 그때 실제로 나간 건을
+# 버리면 다음 회분에 같은 사람에게 또 나간다. 안 받는 것은 아직 안 내준 `draft`
+# 와 이미 끝난 `done` · `done_with_errors` 다.
+#
+# 건은 아직 안 끝난 것만. 취소된 건의 '보냄' 은 아래 `item_result` 가 따로 받는다.
+RESULT_JOBS = ("queued", "running", "paused", "canceled")
+RESULT_ITEMS = ("pending", "sending")
 
 
 def _agent_items(job: SendJob) -> list:
@@ -352,18 +375,22 @@ def item_result(
 ):
     _touch_device(db, device)
     item = db.get(SendItem, item_id)
-    if item is None:
+    job = item.job if item is not None else None
+    # 남의 잡은 없는 건과 같이 답한다(있다는 것도 흘리지 않는다).
+    if not _serves(db, device, job):
         db.commit()
-        return {"ok": False, "detail": "item not found"}
+        raise HTTPException(status_code=404, detail="item not found")
 
-    job = item.job
-    is_verify = job is not None and job.kind == VERIFY_KIND
+    is_verify = job.kind == VERIFY_KIND
     # [중단] 뒤에 온 결과는 버린다 — 단 **실제로 나갔다**는 보고는 적는다. 발송기는
     # 건과 건 사이에서만 [중단]을 물어서, 이미 손에 쥔 건(자료 파일 + 문구)은 끝까지
     # 나간다. 그걸 '취소' 로 남기면 [취소분 재발송] 이 같은 자료를 한 번 더 보낸다.
     if item.status == "canceled" and (body.status != "sent" or is_verify):
         db.commit()
         return {"ok": True, "detail": "item canceled, result ignored"}
+    if job.status not in RESULT_JOBS or item.status not in RESULT_ITEMS + ("canceled",):
+        db.commit()
+        raise HTTPException(status_code=409, detail="item is not waiting for a result")
 
     if is_verify:
         _apply_verify_result(item, body)
@@ -598,8 +625,7 @@ def job_state(
     """
     _touch_device(db, device)
     job = db.get(SendJob, job_id)
-    if job is None or (job.user_id != device.user_id
-                       and job.user_id not in agent_serves(db, device.user_id)):
+    if not _serves(db, device, job):
         db.commit()
         return {"ok": False, "detail": "job not found", "job_id": job_id,
                 "status": "unknown", "canceled": True, "canceled_items": []}
@@ -701,9 +727,9 @@ def job_status_update(
 ):
     _touch_device(db, device)
     job = db.get(SendJob, job_id)
-    if job is None:
+    if not _serves(db, device, job):
         db.commit()
-        return {"ok": False, "detail": "job not found"}
+        raise HTTPException(status_code=404, detail="job not found")
 
     # If the user canceled while the agent was working, keep it canceled.
     if job.status == "canceled":

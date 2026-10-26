@@ -637,7 +637,10 @@ def get_agent_device(
     device = db.execute(
         select(AgentDevice).where(AgentDevice.token == token)
     ).scalar_one_or_none()
-    if device is None:
+    # 정지한 계정의 발송기도 막는다 — 정지가 키를 바꾸지만(`deactivate_member`),
+    # 그 전에 정지된 계정의 PC 에 남은 키까지 끊는 것은 여기다.
+    owner = db.get(User, device.user_id) if device is not None else None
+    if owner is None or not owner.is_active:
         raise HTTPException(status_code=401, detail="Invalid agent token")
     return device
 

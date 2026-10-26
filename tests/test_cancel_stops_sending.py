@@ -29,7 +29,7 @@ import requests
 
 from agent.sender.base import stop_result
 
-from .conftest import DEMO_PASSWORD, DEMO_TOKEN, OTHER_TOKEN
+from .conftest import DEMO_PASSWORD, DEMO_TOKEN, OTHER_TOKEN, auth
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
@@ -398,6 +398,93 @@ def test_it_says_stop_about_someone_elses_job(client, db, users):
 
     missing = other.job_state(999999)
     assert missing["canceled"] is True
+
+
+def test_reports_about_someone_elses_job_are_404(client, db, users):
+    """남의 잡에는 결과도 회분 보고도 못 올린다 — 없는 잡과 똑같이 404."""
+    job_id = make_job(db, users["u1"], count=2)
+    item_id = agent_for(client, DEMO_TOKEN).poll()["items"][0]["id"]
+    other = auth(OTHER_TOKEN)
+
+    r = client.post(f"/api/agent/items/{item_id}/result", json={"status": "sent"},
+                    headers=other)
+    assert r.status_code == 404
+    assert client.post("/api/agent/items/999999/result", json={"status": "sent"},
+                       headers=other).json() == r.json()
+    assert client.post(f"/api/agent/jobs/{job_id}/status", json={"status": "done"},
+                       headers=other).status_code == 404
+    assert client.post("/api/agent/jobs/999999/status", json={"status": "done"},
+                       headers=other).status_code == 404
+
+    assert statuses(db, job_id) == ("running", ["pending", "pending"])
+
+
+def test_someone_elses_room_check_cannot_rename_the_room(client, db, users):
+    """방 확인 결과로 방 이름을 바꾸는 길도 남의 잡이면 막힌다."""
+    from app.models import SendItem, SendJob, VcContact
+
+    contact = VcContact(user_id=users["u1"].id, name="홍길동", kakao_room_name="원래 방")
+    job = SendJob(user_id=users["u1"].id, kind="verify_room", status="running", total=1)
+    db.add_all([contact, job])
+    db.flush()
+    item = SendItem(job_id=job.id, contact_id=contact.id, room_name="원래 방",
+                    message="", status="pending")
+    db.add(item)
+    db.commit()
+
+    r = client.post(f"/api/agent/items/{item.id}/result",
+                    json={"status": "sent", "verify_result": "verified",
+                          "found_room": "바뀐 방"}, headers=auth(OTHER_TOKEN))
+    assert r.status_code == 404
+    db.expire_all()
+    assert db.get(VcContact, contact.id).kakao_room_name == "원래 방"
+    assert db.get(SendItem, item.id).status == "pending"
+
+
+def test_a_result_is_taken_only_for_an_unfinished_item(client, db, users):
+    """끝난 건 · 끝난 잡 · 아직 안 내준 잡에는 결과를 받지 않는다."""
+    from app.models import SendJob
+
+    job_id = make_job(db, users["u1"], count=2)
+    ac = agent_for(client, DEMO_TOKEN)
+    first, second = [i["id"] for i in ac.poll()["items"]]
+
+    assert ac.report_item(first, "sent").status_code == 200
+    again = ac.report_item(first, "failed", error="늦게 온 보고")
+    assert again.status_code == 409
+    assert statuses(db, job_id) == ("running", ["sent", "pending"])
+
+    for status in ("done", "draft"):
+        db.get(SendJob, job_id).status = status
+        db.commit()
+        assert ac.report_item(second, "sent").status_code == 409
+        assert statuses(db, job_id) == (status, ["sent", "pending"])
+
+
+@pytest.mark.parametrize("hold", ["retry", "paused"])
+def test_a_late_result_still_counts_while_the_job_is_held(client, db, users, hold):
+    """발송기가 손에 쥔 회분을 보고하는 사이 잡이 바뀌어도 결과는 적힌다.
+
+    - 도는 중에 [실패 재시도] — 잡이 `queued` 로 돌아간다.
+    - 발송기가 묻지 못해 스스로 멈춤 — 잡이 `paused` 다.
+    실제로 나간 건을 버리면 다음 회분에 같은 사람에게 또 나간다.
+    """
+    job_id = make_job(db, users["u1"], count=3)
+    login(client)
+    ac = agent_for(client, DEMO_TOKEN)
+    first, second, _ = [i["id"] for i in ac.poll()["items"]]
+
+    if hold == "retry":
+        ac.report_item(first, "failed", error="방을 못 찾음")
+        assert client.post(f"/api/jobs/{job_id}/retry").status_code == 200
+    else:
+        ac.report_item(first, "sent")
+        ac.report_job(job_id, "paused")
+
+    assert ac.report_item(second, "sent").status_code == 200
+    job_status, items = statuses(db, job_id)
+    assert job_status == ("queued" if hold == "retry" else "paused")
+    assert items[1] == "sent"
 
 
 def test_asking_needs_the_agent_token(client, db, users):
