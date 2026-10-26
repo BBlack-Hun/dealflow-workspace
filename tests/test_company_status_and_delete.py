@@ -267,7 +267,12 @@ def test_the_panel_sends_every_field_it_shows():
         "창에는 있는데 companies.js 의 FIELDS 에 없습니다 — 고쳐도 조용히 "
         f"저장이 안 됩니다: {missing}")
 
-    orphan = [f for f in PANEL_FIELDS if f not in shown]
+    # 연도별 매출은 반복 하나(`id="f-{{ f }}"`)로 서서 올해 기준 세 해만 그려진다 —
+    # 목록은 파 둔 해를 다 들고 안 선 칸은 건너뛴다. 그린 화면으로 재는 것은
+    # tests/test_revenue_years.py(#75).
+    assert 'id="f-{{ f }}"' in html
+    orphan = [f for f in PANEL_FIELDS
+              if f not in shown and not re.fullmatch(r"revenue_\d{4}", f)]
     assert not orphan, (
         "FIELDS 에는 있는데 창에 칸이 없습니다 — 저장할 때 그 칸만 조용히 "
         f"빠집니다: {orphan}")

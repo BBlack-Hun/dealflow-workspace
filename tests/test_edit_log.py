@@ -664,6 +664,8 @@ WRITE_ROUTES = {
     ("POST", "/team/members/{member_id}/deactivate"): WATCHED,
     # 계정마다 하루 발송 상한 — `users.daily_send_cap` (발송 안전장치 판).
     ("POST", "/team/send-caps"): WATCHED,
+    # 계약 Day7 알림 받을 팀원 카톡방 — `users.kakao_room_name` (#9).
+    ("POST", "/team/member-rooms"): WATCHED,
     # 공지 — 관리자가 올리고 내리는 **팀 전원의 화면에 뜨는 글**이다.
     # 내린 것은 아무에게도 안 뜨는데 줄은 남으므로, 누가 언제 내렸는지를
     # 물을 자리가 로그 말고 없다(`edit_log.WATCHED["notices"]`).

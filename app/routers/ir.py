@@ -653,7 +653,7 @@ def finish_meeting(meeting_id: int, outcome: str = Form(""),
 
 @router.post("/ir/meetings/{meeting_id}/followup", include_in_schema=False)
 def mark_followup(meeting_id: int, outcome: str = Form(""),
-                  note: str = Form(""),
+                  note: str = Form(""), back: str = Form(""),
                   db: Session = Depends(get_db),
                   user: User = Depends(get_current_user)):
     """결과를 물어본 것을 기록한다.
@@ -675,6 +675,9 @@ def mark_followup(meeting_id: int, outcome: str = Form(""),
         meeting.followup_note = (f"{before}\n[{stamp}] {text}".strip()
                                  if before else f"[{stamp}] {text}")
     db.commit()
+    if back == "forecast":
+        # 매출예상리스트의 재접촉 시기(#68)에서 적었으면 그 화면으로 돌아간다.
+        return RedirectResponse("/report/forecast#recontact", status_code=303)
     return RedirectResponse("/ir?msg=결과 문의를 기록했습니다#reviews", status_code=303)
 
 

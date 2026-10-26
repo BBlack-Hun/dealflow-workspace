@@ -41,7 +41,7 @@ from ..clock import today
 from ..db import get_db
 from ..deps import NotAdmin, get_current_user, templates
 from ..models import IrCompany, SeriesACompany, SourcingContact, User
-from ..services import custom_columns, deal_history, series_a_share
+from ..services import custom_columns, deal_history, series_a_share, sourcing_sync
 from ..services.series_a_import import day_text
 from ..ui import base_ctx
 
@@ -141,6 +141,9 @@ def row_dict(c: SeriesACompany, known: Dict[str, tuple],
         # `공유 심사역` 칸 아래 — 확정한 분 · 이름이 같은 후보(`series_a_share.
         # sharer_views`). 화면(`series_a.js`)이 이 값으로 [이 분으로 확정]/[해제]를 그린다.
         "sharer": sharer or {"confirmed": None, "candidates": []},
+        # `공유 심사역` 오른쪽 `휴대폰` 칸(#25) — [이 분으로 확정]한 분의 딜 소싱 줄 번호.
+        # 확정한 분이 없으면 빈칸이고 고칠 수 없다(`_set_sharer_phone`).
+        "sharer_phone": ((sharer or {}).get("confirmed") or {}).get("phone", ""),
         "search": search_text(c),
     }
 
@@ -266,6 +269,27 @@ class SeriesAIn(BaseModel):
     pre_value: Optional[str] = None
     # 보낼 IR 자료 **파일 이름**(0118) — IR 기업 현황의 `IR 자료 파일명` 과 같은 규칙.
     ir_file_name: Optional[str] = None
+    # `휴대폰`(#25) — 이 줄의 칸이 아니라 확정한 공유 심사역의 딜 소싱 줄에 적는다.
+    sharer_phone: Optional[str] = None
+
+
+#: 확정한 공유 심사역이 없는데 `휴대폰` 을 적으려 할 때.
+NO_SHARER_PHONE = ("공유 심사역을 [이 분으로 확정]한 뒤에 적을 수 있습니다 — "
+                   "번호는 그 분의 딜 소싱 줄에 저장됩니다")
+
+
+def _set_sharer_phone(db: Session, row: SeriesACompany, raw: Optional[str]) -> None:
+    """`휴대폰` 칸 — 확정한 분의 **딜 소싱 줄**에 적는다(#25). 이어진 투자사 관리 현황
+    줄은 flush 때 따라 고쳐진다(`sourcing_sync.before_flush`). 번호가 바뀌어 투자사 줄과
+    새로 맞게 되면 잇는 것도 딜 소싱 표에서 고칠 때와 같다(`routers/sourcing.update_row`)."""
+    person = (db.get(SourcingContact, row.shared_by_contact_id)
+              if row.shared_by_contact_id else None)
+    if person is None:
+        raise HTTPException(status_code=400, detail=NO_SHARER_PHONE)
+    key_before = sourcing_sync.link_key(person)
+    person.phone = (raw or "").strip() or None
+    if sourcing_sync.link_key(person) != key_before:
+        sourcing_sync.auto_link(db, person)
 
 
 #: IR 기업 현황에도 있는 기업의 `IR 자료` 를 여기 적으려 할 때.
@@ -295,7 +319,7 @@ def _check_ir_file(db: Session, row: SeriesACompany, body: SeriesAIn) -> None:
 
 
 def _assign(row: SeriesACompany, body: SeriesAIn) -> None:
-    for field, value in body.model_dump(exclude_unset=True).items():
+    for field, value in body.model_dump(exclude_unset=True, exclude={"sharer_phone"}).items():
         text = (value or "").strip()
         if field == "shared_by" and text != (row.shared_by or "").strip():
             # 공유 심사역을 **다른 글자로** 고쳤다 — 확정해 둔 분을 푼다. 옛 분이
@@ -327,7 +351,7 @@ def _result(row: SeriesACompany, db: Session) -> dict:
         "id", "name", "received_at", "deal_type", "assignee_name", "shared_by",
         "source_firm", "sector_major", "sector_minor", "series", "detail",
         "deal_pitch", *TYPED, "ir_file_name", "received_sort", "series_short", "ir_name",
-        "ir_file", "search", "sharer")}
+        "ir_file", "search", "sharer", "sharer_phone")}
 
 
 @router.post("/api/series-a-companies")
@@ -356,6 +380,8 @@ def update_row(row_id: int, body: SeriesAIn, db: Session = Depends(get_db),
     if "ir_file_name" in body.model_fields_set:
         _check_ir_file(db, row, body)
     _assign(row, body)
+    if "sharer_phone" in body.model_fields_set:
+        _set_sharer_phone(db, row, body.sharer_phone)
     db.commit()
     return _result(row, db)
 

@@ -57,6 +57,43 @@
 </datalist>
 {% endfor %}
 
+{#
+  재접촉 시기(#68) — 2차·후속 미팅을 보류로 마친 투자사에 90일마다(`services/recontact.py`).
+  알림만이다 — 아무것도 보내지 않는다. 연락한 뒤 [다시 기록] 하면 그날부터 다시 세고,
+  결과를 거절로 고치면 빠진다. 적는 자리는 `/ir` 의 결과 문의와 같고 미팅 주인만 적는다.
+#}
+{% if recontact %}
+<div class="due-group" id="recontact">
+  <div class="due-head"><b>재접촉 시기 — 보류한 2차·후속 미팅</b>
+    <span class="count-pill on"><b>{{ recontact|length }}</b>건</span>
+    <span class="muted">90일마다 뜹니다 · 연락한 뒤 [다시 기록] 하면 그날부터 다시 셉니다</span></div>
+  <ul class="due-list">
+    {% for r in recontact %}
+    <li class="overdue">
+      <span class="due-when">{{ r.due }}</span>
+      <span class="due-who"><b>{{ r.name }}</b> <span class="muted">{{ r.firm }}</span>{% if r.company_name %} · {{ r.company_name }}{% endif %}</span>
+      <span class="due-from muted">{{ r.kind_label }} {{ r.met_on }} 보류{% if r.last_contact != r.met_on %} · 마지막 연락 {{ r.last_contact }}{% endif %} · {{ r.days }}일 지남</span>
+      <span class="due-acts">
+        {% if r.user_id == user.id %}
+        <form method="post" action="/ir/meetings/{{ r.meeting_id }}/followup">
+          <input type="hidden" name="back" value="forecast">
+          <select name="outcome">
+            <option value="">결과 그대로</option>
+            {% for key, label in outcomes.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+          </select>
+          <input type="text" name="note" placeholder="투자사 답변 내용" maxlength="500" autocomplete="off">
+          <button class="linkbtn" type="submit">다시 기록</button>
+        </form>
+        {% else %}
+        <span class="muted">{% for m in members if m.id == r.user_id %}{{ m.name }} 담당{% endfor %}</span>
+        {% endif %}
+      </span>
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
 {% if rows %}
 <p class="fc-total" id="fc-total">
   {% for label, value in fee_totals %}
@@ -100,6 +137,13 @@
             {% elif c.value %}
             <span class="tag warn">스타트업DB에 없음</span>
             {% endif %}
+          </div>
+          {% elif field == 'firm' and r.firm_candidates %}
+          <div class="cell-sub">
+            {% for o in r.firm_candidates %}
+            <span class="tag soft">{{ o.name }}</span>
+            <button type="button" class="linkbtn js-fc-firm" data-name="{{ o.name }}">이걸로</button>
+            {% endfor %}
           </div>
           {% elif field == 'vc_name' and r.vc_candidates %}
           <div class="cell-sub">

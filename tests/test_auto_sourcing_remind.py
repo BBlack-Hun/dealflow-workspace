@@ -1,11 +1,11 @@
-"""A1 소싱 리마인드 — **이 달 딜을 안 준 심사역에게 2·3주차 수요일 11:00.**
+"""A1 소싱 리마인드 — **이 달 딜을 안 준 심사역에게 3주차 목요일 11:00, 한 번.**
 
 손으로 보내는 월간 리마인드(main #283)를 자동으로 돌린 것이라, 표 · 문구 ·
 방 후보 찾기는 main 의 것을 그대로 쓴다(`sourcing_receipts` · `sourcing_msg`
 · `sourcing_rooms` — 그쪽 시험이 따로 있다). 여기서는 자동화만 본다.
 
-1. 정한 갈래의 사람 중 이 달 `딜 받음` 이 아닌 사람에게, 2주차·3주차 수요일
-   11:00 에 리마인드가 보내는 계정 것으로 예약된다(`topic=sourcing_remind`).
+1. 정한 갈래의 사람 중 이 달 `딜 받음` 이 아닌 사람에게, 3주차(15~21일) 목요일
+   11:00 에 리마인드가 보내는 계정 것으로 예약된다(`topic=sourcing_remind`, #70).
 2. 글은 손으로 보내는 월간 리마인드와 같다(인사말 + 리마인드 문구, `{월}`).
 3. `딜 받음` · `불참여` · 방 없음은 빠진다. 아침 뒤에 그리 되어도 풀릴 때 빠진다.
 4. 방 — 시리즈 A 갈래는 투자사 방을 이어받지 않는다(main #284). 다른 갈래는
@@ -22,7 +22,9 @@ from sqlalchemy import select
 TEST_ROOM = "자동화 시험방"
 GROUP = "시리즈 A 이상 딜 소싱 참여 심사역"
 OTHER = "M&A 찾는 투자사"
-# 2026-10-01 은 목요일 — 수요일: 10/7(1주차) · 10/14(2주차) · 10/21(3주차)
+# 2026-10-01 은 목요일 — 목요일: 10/1 · 10/8 · 10/15(3주차 = 기본 보내는 날) · 10/22 · 10/29
+THU3 = datetime(2026, 10, 15, 9, 0)
+# 갈래·주차·요일을 손으로 고른 시험이 쓰는 날 — 수요일: 10/14(2주차) · 10/21(3주차)
 WEEK2 = datetime(2026, 10, 14, 9, 0)
 WEEK3 = datetime(2026, 10, 21, 9, 0)
 
@@ -75,13 +77,14 @@ def _items(db):
     return db.execute(select(SendItem).order_by(SendItem.id)).scalars().all()
 
 
-def test_second_and_third_wednesday_at_eleven(db, users, people):
+def test_third_thursday_at_eleven_once_a_month(db, users, people):
     from app.services import scheduled_send, sourcing_msg
 
     _turn_on(db)
-    assert _run(db, datetime(2026, 10, 7, 9, 0))["status"] == "not_today"
-    assert _run(db, datetime(2026, 10, 13, 9, 0))["status"] == "not_today"
-    result = _run(db, WEEK2)
+    # 2주차 목요일 · 예전 날(2·3주차 수요일) · 4주차 목요일에는 안 선다.
+    for day in (8, 14, 21, 22):
+        assert _run(db, datetime(2026, 10, day, 9, 0))["status"] == "not_today", day
+    result = _run(db, THU3)
     assert result["status"] == "ready"
     items = _items(db)
     assert {i.sourcing_contact_id for i in items} == {people["a"].id, people["b"].id}
@@ -89,23 +92,21 @@ def test_second_and_third_wednesday_at_eleven(db, users, people):
     assert job.kind == "sourcing_intro" and job.user_id == users["u2"].id
     # 손으로 보낸 월간 리마인드와 같은 이름으로 남는다.
     assert job.topic == sourcing_msg.REMIND_KIND
-    assert scheduled_send.label(scheduled_send.scheduled_at(job)) == "10/14(수) 11:00"
+    assert scheduled_send.label(scheduled_send.scheduled_at(job)) == "10/15(목) 11:00"
     assert any("방 이름 없음" in s for s in result["skipped"])
-
-    assert _run(db, WEEK3)["status"] == "ready"      # 한 달에 두 번
-    assert len(_items(db)) == 4
+    assert len(_items(db)) == 2                      # 한 달에 한 번
 
 
 def test_message_is_the_manual_monthly_remind(db, users, people):
     from app.services import sourcing_msg
 
     _turn_on(db)
-    _run(db, WEEK2)
+    _run(db, THU3)
     items = {i.sourcing_contact_id: i for i in _items(db)}
     text = items[people["a"].id].message
     assert text.startswith("안녕하세요, 홍길동 심사역")
     # 손으로 보낼 때 고르는 그 문구 — `{월}` 은 보내는 날의 달.
-    body = sourcing_msg.remind_body_for(db, users["u2"], GROUP, date(2026, 10, 14))
+    body = sourcing_msg.remind_body_for(db, users["u2"], GROUP, date(2026, 10, 15))
     assert body in text
     assert sourcing_msg.MONTH_TOKEN not in text
     # 직함이 빈 줄은 갈래로 호칭을 채운다(딜 소싱 제안과 같은 규칙).
@@ -118,7 +119,7 @@ def test_received_this_month_is_left_out(db, users, people):
     sourcing_receipts.mark(db, people["a"].id, "2026-10")
     db.commit()
     _turn_on(db)
-    result = _run(db, WEEK2)
+    result = _run(db, THU3)
     assert [i.sourcing_contact_id for i in _items(db)] == [people["b"].id]
     assert any("이번 달 딜 받음" in s for s in result["skipped"])
 
@@ -129,7 +130,7 @@ def test_left_out_participation_is_skipped(db, users, people):
     people["a"].participation = sourcing_sync.LEFT
     db.commit()
     _turn_on(db)
-    result = _run(db, WEEK2)
+    result = _run(db, THU3)
     assert [i.sourcing_contact_id for i in _items(db)] == [people["b"].id]
     assert any(sourcing_sync.LEFT in s for s in result["skipped"])
 
@@ -139,13 +140,13 @@ def test_received_or_left_after_setup_drops_it_at_release(db, users, people):
     from app.services import scheduled_send, sourcing_receipts, sourcing_sync
 
     _turn_on(db)
-    _run(db, WEEK2)
+    _run(db, THU3)
     # 아침에 선 뒤 — 메일 확인이 b 를 `딜 받음` 으로, 사람이 a 를 `불참여` 로.
     sourcing_receipts.mark(db, people["b"].id, "2026-10",
                            source=sourcing_receipts.SOURCE_MAIL)
     db.get(SourcingContact, people["a"].id).participation = sourcing_sync.LEFT
     db.commit()
-    scheduled_send.run_once(db, _aware(datetime(2026, 10, 14, 11, 0, 20)))
+    scheduled_send.run_once(db, _aware(datetime(2026, 10, 15, 11, 0, 20)))
     status = {i.sourcing_contact_id: i.status for i in _items(db)}
     assert status == {people["a"].id: "canceled", people["b"].id: "canceled"}
 
@@ -166,7 +167,7 @@ def test_groups_are_a_setting(db, users, people):
 
 def test_test_mode_goes_to_the_test_room(db, users, people):
     _turn_on(db, test=True)
-    _run(db, WEEK2)
+    _run(db, THU3)
     items = _items(db)
     assert {i.room_name for i in items} == {TEST_ROOM}
     assert all(i.sourcing_contact_id is None for i in items)
@@ -215,19 +216,19 @@ def test_mail_check_runs_again_before_the_remind(db, users, people):
     from app.services.automations import sourcing_remind  # noqa: F401 — 고리를 단다
 
     assert sourcing_remind.remind_at in sourcing_mail.REMIND_SOURCES
-    wed = date(2026, 10, 14)
+    thu = date(2026, 10, 15)
 
     def pre(day):
         return [s for s in sourcing_mail.slots_on(db, day)
                 if s.key == sourcing_mail.SLOT_PRE]
 
-    assert pre(wed) == []                       # 꺼져 있으면 없다
+    assert pre(thu) == []                       # 꺼져 있으면 없다
     _turn_on(db)
-    [slot] = pre(wed)
+    [slot] = pre(thu)
     assert slot.at.strftime("%H:%M") == "10:30"
     assert slot.until.strftime("%H:%M") == "11:00"
-    assert pre(date(2026, 10, 7)) == []         # 1주차 — 리마인드가 없는 날
+    assert pre(date(2026, 10, 8)) == []         # 2주차 목요일 — 리마인드가 없는 날
 
     automation.save(db, automation.SOURCING_REMIND, enabled=False, user_id=None,
                     test_mode=False, test_room=TEST_ROOM)
-    assert pre(wed) == []
+    assert pre(thu) == []

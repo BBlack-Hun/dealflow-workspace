@@ -1267,6 +1267,53 @@ async def save_send_caps(
         status_code=303)
 
 
+@router.post("/team/member-rooms", include_in_schema=False)
+async def save_member_rooms(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """**팀원마다 알릴 카톡방** — 계약 Day7 우편 발송(#9)이 계약 담당 팀원에게 보내는 방.
+
+    폼은 `room_<계정번호>` 칸을 계정마다 보낸다. 폼에 없는 계정은 건드리지 않는다
+    (`save_send_caps` 와 같다). **실제 상대(투자사 · 소싱 명단 · 기업)의 방 이름은
+    받지 않는다** — 오타 하나로 팀원 알림이 투자사 방에 가면 계약 기업 이름이 샌다
+    (시험방 칸이 같은 까닭으로 막는다, `automation.test_room_problem`).
+    """
+    admin_only(user)
+    from urllib.parse import quote
+
+    from ..services import automation
+    from ..services.automation_dedup import room_key
+
+    form = await request.form()
+    real = {room_key(name) for name in automation.real_rooms(db)}
+    changed, refused = [], []
+    for key, raw in form.items():
+        if not key.startswith("room_"):
+            continue
+        try:
+            member = db.get(User, int(key[5:]))
+        except ValueError:
+            continue
+        if member is None:
+            continue
+        room = automation.clean_room(raw) or None
+        if room and room_key(room) in real:
+            refused.append(member.name)
+            continue
+        if member.kakao_room_name != room:
+            member.kakao_room_name = room
+            changed.append(member.name)
+    db.commit()
+    note = (f"팀원 카톡방을 바꿨습니다 — {', '.join(changed)}" if changed
+            else "바뀐 팀원 카톡방이 없습니다")
+    if refused:
+        note += (f" · {', '.join(refused)} 님 칸은 실제 상대의 카톡방 이름이라 "
+                 "저장하지 않았습니다(팀원과의 방 제목을 넣으세요)")
+    return RedirectResponse(f"/team?msg={quote(note)}#automations", status_code=303)
+
+
 @router.post("/team/startup-send", include_in_schema=False,
              dependencies=[Depends(no_send_as_member)])
 def save_startup_send(

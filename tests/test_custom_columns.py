@@ -512,6 +512,54 @@ def test_스타트업_명단에만_서고_투자사_관리_현황에는_안_선�
     assert _put(portal["u2"], "vc_contacts", startup.id, col.id, "몰래").status_code == 404
 
 
+def test_메모_칸은_화면마다_적은_줄바꿈을_살린다(portal, db, users, company):
+    """#69 — 한 칸 내려 「1. 2. 3.」 을 적는다. 값은 줄바꿈째 저장되고, 메모 칸을
+    쓰는 화면 전부가 줄을 살리는 칸(`keep-lines` · 투자컨설턴트는 `td.cell multi`)으로 그린다."""
+    from urllib.parse import quote
+
+    from app.models import (ConsultingCompany, RevenueForecast, SeriesACompany,
+                            SheetOwner, SourcingContact, VcContact)
+    from app.services import contact_columns as cc
+
+    db.add(SheetOwner(label="샘플 스타트업 명단", user_id=users["u1"].id,
+                      layout=cc.STARTUP, is_hidden=1))
+    db.flush()
+    rows = {
+        "ir_companies": company,
+        "series_a_companies": SeriesACompany(name="샘플딜", received_at="2026-10-01"),
+        "sourcing_contacts": SourcingContact(bucket="샘플갈래", name="샘플심사역"),
+        "revenue_forecasts": RevenueForecast(user_id=users["u1"].id, company_name="샘플랩"),
+        "vc_contacts": VcContact(user_id=users["u1"].id, source_sheet="샘플 스타트업 명단",
+                                 name="대표", firm="샘플스타트업"),
+        "consulting_companies": ConsultingCompany(user_id=users["u1"].id,
+                                                  company_name="샘플컨설팅", sheet="스타트업"),
+    }
+    db.add_all(rows.values())
+    db.commit()
+    text = "다음 단계\n1. 자료 받기\n2. 미팅 잡기"
+    member = portal["u1"]
+    screens = (("companies", "ir_companies", ["/companies", "/companies?tab=db"]),
+               ("companies", "series_a_companies", ["/companies?tab=series-a"]),
+               ("sourcing", "sourcing_contacts", ["/sourcing"]),
+               ("forecast", "revenue_forecasts", ["/report/forecast"]),
+               ("startup", "vc_contacts", ["/startup?sheet=" + quote("샘플 스타트업 명단")]),
+               ("consulting", "consulting_companies", ["/consulting?sheet=스타트업"]))
+    for target in {t for t, _table, _urls in screens}:
+        _add(portal, target, "단계 메모")
+    for target, table, urls in screens:
+        col = _col(db, target, "단계 메모")
+        r = _put(member, table, rows[table].id, col.id, text)
+        assert r.status_code == 200 and r.json()["value"] == text, table
+        cell = (f'<td class="cell multi" data-field="cc{col.id}"' if target == "consulting"
+                else f'<div class="cell clamp2 keep-lines" data-field="cc{col.id}"')
+        for url in urls:
+            html = member.get(url).text
+            assert cell in html, url
+            assert text in html, url
+    css = (Path(__file__).resolve().parents[1] / "app" / "static" / "css" / "app.css").read_text()
+    assert ".clamp2.keep-lines { white-space: pre-line; }" in css
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # 7. 수정 로그 — 그 줄의 주인 판정 그대로
 # ═══════════════════════════════════════════════════════════════════════════

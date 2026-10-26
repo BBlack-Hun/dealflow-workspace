@@ -8,6 +8,8 @@
 //   ① 서버가 실어 준 값(`data-sharer`)으로 후보 · 확정을 그린다 — 후보가 없으면 숨는다
 //   ② [이 분으로 확정] · [해제] 가 PUT 을 보내고 응답대로 다시 그린다
 //   ③ 칸을 고쳐 저장하면(`inline-saved`) 응답의 `sharer` 로 다시 그린다
+//   ④ 오른쪽 `휴대폰` 칸(#25) — 확정한 분의 번호를 싣고 고칠 수 있게(`cell`), 확정이
+//      없으면 빈칸에 못 고치게 한다
 //
 // 파일을 그대로 돌린다(`series_a.js`). 이름 · 회사는 가상값이다(공개 저장소).
 "use strict";
@@ -28,7 +30,7 @@ const CANDIDATES = {
   ]
 };
 const CONFIRMED = {
-  confirmed: { id: 12, label: "홍길동 팀장 (마바캐피탈)" },
+  confirmed: { id: 12, label: "홍길동 팀장 (마바캐피탈)", phone: "010-0000-0012" },
   candidates: CANDIDATES.candidates
 };
 
@@ -37,14 +39,15 @@ function build(info) {
   cell.textContent = "홍길동 이사";
   const box = D.el("div", { class: "cell-sub sa-sharer",
                             "data-sharer": JSON.stringify(info) });
+  const phone = D.el("td", { class: "sa-sharer-phone", "data-field": "sharer_phone" });
   const tr = D.el("tr", { "data-id": "5", "data-search": "홍길동" },
-                  [D.el("td", { class: "rowno" }), D.el("td", {}, [cell, box])]);
+                  [D.el("td", { class: "rowno" }), D.el("td", {}, [cell, box]), phone]);
   const table = D.el("table", { id: "sa-table", "data-inline-url": "/api/series-a-companies" },
                      [D.el("tbody", {}, [tr])]);
   const root = D.el("div", {}, [D.el("input", { id: "sa-search" }),
                                 D.el("button", { id: "sa-add" }),
                                 D.el("p", { id: "sa-note" }), table]);
-  return { root: root, table: table, tr: tr, cell: cell, box: box };
+  return { root: root, table: table, tr: tr, cell: cell, box: box, phone: phone };
 }
 
 function run(dom, reply) {
@@ -82,6 +85,9 @@ function texts(box, sel) {
     const dom = build(CANDIDATES);
     run(dom, function () { return { d: {} }; });
     assert.strictEqual(dom.box.hidden, false);
+    assert.strictEqual(dom.phone.textContent, "");
+    assert.strictEqual(dom.phone.classList.contains("cell"), false,
+                       "확정한 분이 없는데 휴대폰 칸이 열린다");
     assert.deepStrictEqual(texts(dom.box, ".sa-sharer-name"), [
       "홍길동 이사 (가나벤처스) · 이름 · 회사 같음",
       "홍길동 팀장 (마바캐피탈) · 이름만 같음"]);
@@ -122,11 +128,15 @@ function texts(box, sel) {
     const clear = D.queryAll(dom.box, ".js-sharer-clear");
     assert.strictEqual(clear.length, 1);
     assert.strictEqual(clear[0].textContent, "해제");
+    assert.strictEqual(dom.phone.textContent, "010-0000-0012", "확정한 분 번호가 안 섰다");
+    assert.strictEqual(dom.phone.classList.contains("cell"), true, "확정했는데 휴대폰 칸을 못 고친다");
 
     clear[0].fire("click");
     await tick();
     assert.deepStrictEqual(t.calls.pop().body, { contact_id: null });
     assert.strictEqual(D.queryAll(dom.box, ".js-sharer-pick").length, 2);
+    assert.strictEqual(dom.phone.textContent, "", "해제했는데 번호가 남았다");
+    assert.strictEqual(dom.phone.classList.contains("cell"), false, "해제했는데 휴대폰 칸이 열린다");
   }
   {
     // 서버가 거절하면 그 말을 띄우고 그대로 둔다

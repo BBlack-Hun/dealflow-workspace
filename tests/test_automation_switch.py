@@ -59,7 +59,7 @@ def test_no_row_means_off_and_test_mode(db, users):
 
     state = automation.status(db)
     assert [r["key"] for r in state["rows"]] == [k.key for k in automation.KINDS]
-    assert len(state["rows"]) == 5
+    assert len(state["rows"]) == 6
     for row in state["rows"]:
         assert row["enabled"] is False
         assert row["test_mode"] is True

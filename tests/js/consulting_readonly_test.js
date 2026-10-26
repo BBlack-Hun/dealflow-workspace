@@ -113,7 +113,8 @@ function click(tr) {
   const mine = click(dom.rows[0]);
   assert.ok(mine.opened,
     "내 줄인데 칸을 눌러도 편집이 안 시작됩니다 — 막는 김에 자기 것까지 막았습니다");
-  const input = mine.cell.children[mine.cell.children.length - 1];
+  // 여러 줄 칸은 입력칸 밑에 안내 줄(`.cell-pop-hint`)이 선다 — 입력칸만 골라 꺼낸다.
+  const input = mine.cell.children.filter(function (c) { return c.tag === "textarea"; })[0];
   input.value = "관리 중 · 재통화";
   input.fire("blur", { target: input });
   await new Promise(function (r) { setTimeout(r, 0); });

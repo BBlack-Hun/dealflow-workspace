@@ -141,6 +141,11 @@
         <th style="width:130px" data-filters="type:Type">Type<div class="th-filters"></div></th>
         <th style="width:110px" data-filters="assignee:담당자">담당자<div class="th-filters"></div></th>
         <th style="width:124px" data-filters="sharer:공유 심사역">공유 심사역<div class="th-filters"></div></th>
+        {# 공유 심사역의 번호(#25) — 이 줄의 칸이 아니라 [이 분으로 확정]한 분의 딜 소싱
+           줄 번호다. 고치면 그 줄에 저장되고 이어진 투자사 관리 현황 줄도 따라 고쳐진다.
+           이름은 그 두 화면의 말(`휴대폰`)이다 — 요청은 `핸드폰` 이었지만 그 말은 이 탭
+           `연락처`(대표 번호)의 옛 이름이다(#63). #}
+        <th style="width:110px" title="[이 분으로 확정]한 공유 심사역의 번호 · 고치면 딜 소싱 · 투자사 관리 현황에도 반영됩니다">휴대폰</th>
         {# 딜을 넘겨 준 **투자사**다 — 기업명이 아니다. #}
         <th style="width:140px" data-filters="firm:회사" title="딜을 넘겨 준 투자사">회사<div class="th-filters"></div></th>
         {# 필터 열쇠는 옆 탭과 같다(`sector` · `minor` · `series`) — 같은 칸을
@@ -213,6 +218,10 @@
           <div class="cell-sub sa-sharer" data-testid="sa-sharer"
                data-sharer='{{ r.sharer|tojson }}' hidden></div>
         </td>
+        {# 확정한 분이 없으면 `cell` 을 안 붙여 눌러도 안 열린다 — 확정 · 해제 뒤에는
+           `series_a.js` 의 `renderPhone` 이 다시 정한다. 서버도 막는다(`_set_sharer_phone`). #}
+        <td class="sa-sharer-phone{% if r.sharer.confirmed %} cell{% endif %}" data-field="sharer_phone"
+            data-testid="sa-sharer-phone">{{ r.sharer_phone }}</td>
         <td class="cell" data-field="source_firm" data-type="pick"
             data-filter-key="firm">{{ r.source_firm }}</td>
         <td title="{{ r.sector_major }}">
@@ -266,7 +275,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="24" class="muted">아직 받은 딜이 없습니다. [기업 추가]로 넣거나 시트를 가져오세요.</td></tr>
+      <tr><td colspan="25" class="muted">아직 받은 딜이 없습니다. [기업 추가]로 넣거나 시트를 가져오세요.</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -277,6 +286,7 @@
   <b>IR 자료</b>에 자료 폴더 안의 <b>파일 이름</b>을 적으면 딜 진행 관리의 <b>[자료 보내기]</b>가 그 파일을 붙여 보냅니다.
   <b>공유 심사역</b> 아래 후보는 딜 소싱 명단에서 이름이 같은 분입니다 — 그 딜을 넘겨 준 분께는 Series A 딜 공유에서
   이 딜이 빠지므로, 맞는 분을 <b>[이 분으로 확정]</b>하면 이름 · 회사로 짐작하지 않고 그 분만 뺍니다.
+  확정한 분의 번호는 <b>휴대폰</b>에 보이고, 여기서 고치면 딜 소싱 · 투자사 관리 현황에도 반영됩니다.
 </p>
 {% endblock %}
 

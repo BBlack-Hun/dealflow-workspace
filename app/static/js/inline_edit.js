@@ -439,7 +439,7 @@
         area.className = "cell-pop-input";
         area.value = before;
         api.pop.appendChild(area);
-        api.pop.appendChild(hintLine("⌘/Ctrl+Enter 저장 · Esc 취소"));
+        api.pop.appendChild(hintLine("Enter 줄바꿈 · ⌘/Ctrl+Enter 저장 · Esc 취소"));
 
         area.addEventListener("input", grow);
         area.addEventListener("keydown", function (e) {

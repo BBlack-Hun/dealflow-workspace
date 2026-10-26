@@ -147,10 +147,13 @@ function pick(dom, index) {
 // 자식을 지우지 않아서(글자를 한 칸에 담는 아주 작은 DOM 이다), 같은 칸을 두 번
 // 고치면 첫 번째 입력칸이 그대로 남아 `children[0]` 이 **옛 것**을 준다.
 // 그 옛 입력칸에 값을 넣으면 저장이 아예 안 나가 검사가 조용히 통과한다.
+// 여러 줄 칸은 입력칸 밑에 안내 줄(`.cell-pop-hint`)이 서서 입력칸만 골라 꺼낸다.
 function edit(tr, value) {
   const cell = tr.querySelector('[data-field="management"]');
   cell.fire("click", { target: cell });
-  const input = cell.children[cell.children.length - 1];
+  const input = cell.children.filter(function (c) {
+    return c.tag === "input" || c.tag === "textarea";
+  }).pop();
   assert.ok(input, "칸을 눌렀는데 입력칸이 안 생겼습니다");
   input.value = value;
   input.fire("blur", { target: input });

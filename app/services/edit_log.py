@@ -548,7 +548,7 @@ VALUE_FIELDS = frozenset({
     "requested_at", "delivered_at", "scheduled_at", "scheduled_time",
     "done_at", "followup_due", "followup_at", "meeting_offered_at",
     "received_at", "contract_month", "card_registered_at", "effective_from",
-    "founded_year", "last_login_at",
+    "founded_year", "last_login_at", "contract_done_at",
 
     # 추가 칸의 자리 — 어느 기존 칸 뒤인가(`custom_columns.after_key`). 머리글
     # 이름이라 짧고, 바뀌면 그 화면을 쓰는 팀 전체의 칸 차례가 바뀐다.
@@ -586,6 +586,7 @@ FIELD_LABELS = {
     "series": "라운드", "sector_major": "분야", "sector_minor": "세부 분야",
     "stages": "투자 단계", "interest_level": "관심도", "invited_status": "초대",
     "contract_status": "계약 상태", "funding_status": "투자 상태",
+    "contract_done_at": "계약 완료로 바뀐 날",
     "outcome": "결과", "meet_mode": "미팅 방식", "kind": "종류",
     "enabled": "켜짐", "firm_type": "기관 유형", "variant": "갈래",
     "vc_contact_id": "투자사 관리 현황 연결", "participation": "참여",

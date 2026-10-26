@@ -33,6 +33,7 @@ from sqlalchemy import select  # noqa: E402
 from app.db import SessionLocal  # noqa: E402
 from app.models import IrCompany  # noqa: E402
 from app.routers.companies import contract_key, top_deal_kind  # noqa: E402
+from app.services import revenue_years  # noqa: E402
 
 # 계약여부는 시트에 적힌 말 → 저장하는 값. **짝은 앱이 들고 있는 것 하나뿐이다**
 # (`routers/companies.py` 의 `CONTRACT_LABELS` → `contract_key`).
@@ -88,10 +89,9 @@ COLUMNS = [
     # 시트의 `사업분야` 는 카테고리가 아니라 **사업 설명**이다.
     # 카테고리(대분류/소분류)는 IR 기업현황 탭이 따로 들고 있다.
     ("사업분야", "business_desc"),
-    ("22년 매출", "revenue_2022"),
-    ("23년 매출", "revenue_2023"),
-    ("24년 매출", "revenue_2024"),
-    ("25년 매출", "revenue_2025"),
+    # 연도별 매출 — 파 둔 해를 **전부** 읽는다(`22년 매출` → `revenue_2022` …). 표에서
+    # 숨긴 해도 채운다 — 숨기기는 화면의 일이다(#75). 시트에 없는 해는 건너뛴다(`load`).
+    *[(f"{f[-2:]}년 매출", f) for f in revenue_years.FIELDS],
     ("특이사항", "competitiveness"),
     ("설립년도", "founded_year"),
     (("기보", "정책자금"), "guarantee"),

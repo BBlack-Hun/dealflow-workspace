@@ -9,6 +9,7 @@
 """
 from __future__ import annotations
 
+from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -20,7 +21,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import get_current_user, templates
 from ..models import IrCompany, RevenueForecast, User
-from ..services import custom_columns
+from ..services import custom_columns, pipeline, recontact
 from ..services import forecast as svc
 from ..ui import base_ctx
 from .data_io import _eok, _xlsx
@@ -62,6 +63,9 @@ def forecast_page(request: Request, db: Session = Depends(get_db),
         "firm_options": svc.firm_options(db, {r["owner"] for r in rows}),
         "columns": svc.COLUMNS,
         "report_tab": "forecast",
+        # 재접촉 시기(#68) — 화면 범위의 보류한 2차·후속 미팅. 오늘 할 일과 같은 판정.
+        "recontact": recontact.due(db, None if who is None else {who.id}, date.today()),
+        "outcomes": pipeline.OUTCOMES,
         "viewing": who,
         "team_wide": team_wide,
         "scope": scope,
