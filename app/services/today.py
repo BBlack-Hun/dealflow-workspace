@@ -67,14 +67,14 @@ def build(db: Session, user: User, today: Optional[date] = None) -> dict:
                       for r in ir["open_requests"][:3]),
             "/ir", len(ir["open_requests"])))
 
-    # 1-1) **답 없음 · 전화 필요**(10/17 회의 #37) — 리마인드 카톡을 보냈는데 답이
+    # 1-1) **답 없음 · 전화 요청**(10/17 회의 #37) — 리마인드 카톡을 보냈는데 답이
     # 없어서 팀원·담당자가 표시해 둔 곳. 그 투자사를 맡은 사람에게 선다(관리자가
     # 대신 켜도 맡은 사람에게 간다). 표시를 끄면 여기서 빠진다 — 따로 지울 것이
     # 없다. 세는 자리는 딜 진행 관리 `전화 요청` 구역과 같은 한 벌이다.
     calls = call_flags.needed_for(db, user)
     if calls:
         items.append(_item(
-            "call", "urgent", "전화 필요 — 리마인드에 답 없음",
+            "call", "urgent", "전화 요청 — 리마인드에 답 없음",
             ", ".join(f"{c['name']}({c['firm']})" if c["firm"] else c["name"]
                       for c in calls[:3])
             + (" 외" if len(calls) > 3 else ""),
@@ -97,7 +97,7 @@ def build(db: Session, user: User, today: Optional[date] = None) -> dict:
     # 위 `미팅 결과 문의` 에서는 빠져 있다(`pipeline.today_items`).
     if ir["asked_followups"]:
         items.append(_item(
-            "meeting", "soon", "자동 문의한 미팅 — 들은 답 적기",
+            "meeting", "soon", "자동 문의한 미팅 — 투자사 답변 적기",
             ", ".join(f"{m['name']} 자동 문의함 {m['auto_asked_on']}".rstrip()
                       for m in ir["asked_followups"][:3]),
             "/ir#meetings", len(ir["asked_followups"])))

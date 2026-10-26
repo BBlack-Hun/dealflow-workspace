@@ -1464,11 +1464,11 @@ CASCADING_LINKS = (
     # 보내는 계정 카톡에서의 이 담당자 방 제목(`services/sender_rooms.py`).
     # 담당자 줄이 없어지면 가리킬 곳이 없는 확인 기록이다 — 함께 지운다.
     ("sender_rooms", SenderRoom, "보내는 계정 방 제목"),
-    # 리마인드 뒤 `답 없음 · 전화 필요` 표시와 메모(`models.DealFollowup`).
+    # 리마인드 뒤 `답 없음 · 전화 요청` 표시와 메모(`models.DealFollowup`).
     # 그 사람에 대한 할 일 표시라 담당자 줄이 없어지면 가리킬 곳이 없다 — 함께
     # 지운다. (표시가 설 수 있는 사람은 리마인드가 나간 사람이라 대개 발송
     # 기록이 먼저 지우기를 막는다.)
-    ("call_flags", DealFollowup, "전화 필요 표시"),
+    ("call_flags", DealFollowup, "전화 요청 표시"),
 )
 
 #: 걸려 있으면 **못 지우는** 것들. 같은 모양이다.
