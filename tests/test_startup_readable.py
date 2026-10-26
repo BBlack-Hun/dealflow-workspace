@@ -291,6 +291,18 @@ def test_표_위의_설정은_접혀_있고_눌러서_펼_수_있다(sheets, db,
         assert name in m.group(1), f"[{name}] 이 접는 상자 안에 없습니다"
 
 
+def test_투자사_관리_현황은_설정을_펴_둔_채로_연다(sheets):  # noqa: F811
+    """10/25 사용자 요청 — 투자사 화면의 `명단·칸 설정` 이 접혀 있어 안 보였다.
+
+    펴 둔 채로 서되 `<details>` 그대로라 눌러 접을 수 있다. 스타트업 화면은 위
+    검사대로 접힌 채다.
+    """
+    body = sheets.get(_url(OTHER)).text
+    m = re.search(r'<details class="sheet-fold" open>(.*?)</details>', body, re.S)
+    assert m, "투자사 화면의 설정 상자가 펴진 채로 서지 않습니다"
+    assert "<summary>" in m.group(1) and "이름 저장" in m.group(1)
+
+
 def test_접힌_채로도_무엇이_들어_있는지_보인다(sheets):  # noqa: F811
     """숨긴 칸이 있는 것을 모르면 "왜 그 칸이 없지" 를 DB 에서 찾게 된다."""
     body = sheets.get(_url(LIST)).text

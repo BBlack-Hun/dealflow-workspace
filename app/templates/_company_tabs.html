@@ -14,6 +14,9 @@
   (`?tab=series-a`)는 그대로이고, 원본 구글 시트 탭은 여전히 옛 이름이라
   가져오기 주석의 `시트 …` 는 옛 이름을 가리킨다. 화면 문구에 옛 이름이 다시
   들어오지 않는지는 tests/test_series_a_rename.py 가 본다.
+
+  넷째 `IR 기업 연결` 은 다른 화면(`/ir-link`)이다 — 그 화면도 이 줄을 위에 세워
+  탭으로 읽힌다. 볼 사람은 좌측 메뉴 판정 그대로(`ui.base_ctx` 의 `can_ir_link`).
 #}
 <nav class="sheet-tabs co-tabs">
   <a class="sheet-tab {% if co_tab == 'status' %}active{% endif %}" href="/companies">
@@ -25,4 +28,7 @@
   <a class="sheet-tab {% if co_tab == 'series-a' %}active{% endif %}" href="/companies?tab=series-a">
     Series A 이상 딜 소싱 <span title="딜 소싱으로 받은 딜">{{ counts.series_a }}</span>
   </a>
+  {% if can_ir_link %}
+  <a class="sheet-tab {% if co_tab == 'ir-link' %}active{% endif %}" href="/ir-link">IR 기업 연결</a>
+  {% endif %}
 </nav>

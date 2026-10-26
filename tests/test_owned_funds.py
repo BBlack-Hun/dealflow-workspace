@@ -289,3 +289,57 @@ def test_양식은_두_칸_머리글이다(admin):
     ws = openpyxl.load_workbook(io.BytesIO(r.content)).active
     assert [c.value for c in ws[1]][:2] == ["투자사명", "소유 펀드"]
     assert 'id="funds-btn"' in admin.get("/contacts").text
+
+
+# ── 5. 소유 펀드 필터 (펀드마다 줄 수) ─────────────────────────────────────
+
+@pytest.mark.parametrize("text, funds", [
+    ("가상 1호, 가상 2호", ["가상 1호", "가상 2호"]),
+    ("  가상   1호 ,가상 2호  ,", ["가상 1호", "가상 2호"]),      # 앞뒤·겹친 공백 · 끝 쉼표
+    ("가상 1호\n가상 2호", ["가상 1호", "가상 2호"]),           # 엑셀 칸 안 줄바꿈
+    ("가상 1호, 가상  1호", ["가상 1호"]),                      # 다듬은 뒤 같은 이름은 한 번
+    ("Sample Fund I, sample fund i", ["Sample Fund I", "sample fund i"]),  # 글자는 안 바꾼다
+    ("", []), (None, []), (" , ", []),
+])
+def test_펀드_이름은_쉼표로_나누고_공백만_다듬는다(text, funds):
+    from app.services import investor_firms as f
+
+    assert f.split_funds(text) == funds
+
+
+def test_줄마다_자기_회사의_펀드를_필터_값으로_싣는다(member, db, users):
+    from app.services import investor_firms as f
+
+    _contact(db, users["u1"].id, "가나다", "가상벤처스")
+    _contact(db, users["u1"].id, "라마바", "가상 벤처스")
+    _contact(db, users["u1"].id, "사아자", "가상인베스트")
+    _contact(db, users["u1"].id, "차카타", "가상캐피탈")
+    f.set_funds(db, "가상벤처스", "가상 1호,  가상 2호", users["u1"].id)
+    f.set_funds(db, "가상인베스트", "가상 2호", users["u1"].id)
+    db.commit()
+
+    html = member.get("/contacts?sheet=all").text
+    assert 'data-filters="fund:소유 펀드"' in html
+    funds = dict(re.findall(r'data-name="([^"]+)"[^>]*?data-f-fund="([^"]*)"', html, re.S))
+    assert funds == {"가나다": "가상 1호|가상 2호", "라마바": "가상 1호|가상 2호",
+                     "사아자": "가상 2호", "차카타": ""}
+
+
+def test_한_줄에서_고치면_응답이_나눈_펀드도_싣는다(member, db, users):
+    a = _contact(db, users["u1"].id, "가나다", "가상벤처스")
+    r = member.patch(f"/api/contacts/{a.id}", json={"owned_funds": "가상 1호, 가상 2호"})
+    assert r.status_code == 200, r.text
+    assert r.json()["owned_fund_list"] == ["가상 1호", "가상 2호"]
+
+
+def test_필터_건수와_고친_뒤_같은_회사_줄_따라가기_node():
+    import shutil
+    import subprocess
+    from pathlib import Path
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node 미설치 — `node tests/js/contacts_fund_filter_test.js`")
+    script = Path(__file__).resolve().parent / "js" / "contacts_fund_filter_test.js"
+    out = subprocess.run([node, str(script)], capture_output=True, text=True, timeout=60)
+    assert out.returncode == 0, out.stdout + out.stderr

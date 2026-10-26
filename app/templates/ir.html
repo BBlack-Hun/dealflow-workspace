@@ -82,7 +82,7 @@
    title="Series A 이상 딜 소싱 기업 — 그 탭에서 보기">Series A</a>{% endmacro %}
 
 {% block content %}
-{# 리마인드 뒤 `답 없음 · 전화 필요` 배지 · 단추 · 메모 — 한 벌을 여러 줄이 나눠
+{# 리마인드 뒤 `답 없음 · 전화 요청` 배지 · 단추 · 메모 — 한 벌을 여러 줄이 나눠
    쓴다(`_call_flag.html`). 아래 두 조각(`_upcoming_followups` · `_closed_followups`)
    도 각자 같은 매크로를 부른다. #}
 {% from "_call_flag.html" import call_flag with context %}
@@ -226,8 +226,11 @@
   <div class="table-wrap">
   <table class="grid-table compact">
     {# 마지막 칸 104 → 168px — 단추 이름이 `전달함` 에서 `IR 자료 전달 완료` 로
-       길어졌다(10/17 회의 #35). 옆의 `보류` 와 함께 한 줄에 서야 한다. #}
-    <thead><tr><th style="width:96px">요청일</th><th>담당자</th><th>기업</th><th style="width:104px">자료</th><th class="num" style="width:78px">기다린 날</th><th style="width:168px"></th></tr></thead>
+       길어졌다(10/17 회의 #35). 옆의 `보류` 와 함께 한 줄에 서야 한다.
+       `기다린 날` → `IR 자료를 보내지 않은 기간`(10/26) — 78px 에서는 세 줄로
+       접혀 칸을 78 → 152px 로 넓혔다. 머리글은 한 줄에 든다(헤드리스 크롬 126px ·
+       tests/test_ui_layout.py 의 어림 151px). #}
+    <thead><tr><th style="width:96px">IR 자료 요청일</th><th>담당자</th><th>기업</th><th style="width:104px">자료</th><th class="num" style="width:152px">IR 자료를 보내지 않은 기간</th><th style="width:168px"></th></tr></thead>
     <tbody>
       {% for r in open_requests %}
       <tr class="{% if r.overdue %}overdue-row{% endif %}">
@@ -470,11 +473,11 @@
     <span class="hint">미팅 요청을 보내고 사흘 뒤 — <b>전화는 직접</b> 거셔야 합니다</span>
   </h2>
   {#
-    ── 답 없음 · 전화 필요 (10/17 회의 #37) ──────────────────────────────────
-    리마인드 카톡을 보낸 뒤 팀원·담당자가 `답 없음 · 전화 필요` 를 켜 둔 곳.
-    오늘 할 일의 `전화 필요` 줄이 여기로 온다. 이 사람이 **맡은 투자사**만
+    ── 답 없음 · 전화 요청 (10/17 회의 #37) ──────────────────────────────────
+    리마인드 카톡을 보낸 뒤 팀원·담당자가 `답 없음 · 전화 요청` 을 켜 둔 곳.
+    오늘 할 일의 `전화 요청` 줄이 여기로 온다. 이 사람이 **맡은 투자사**만
     선다(`call_flags.needed_for` — 관리자가 대신 켜도 맡은 사람에게 간다).
-    걸고 나서 [전화 필요 끄기] 를 누르면 여기서도 오늘 할 일에서도 빠진다.
+    걸고 나서 [전화 요청 취소] 를 누르면 여기서도 오늘 할 일에서도 빠진다.
   #}
   {% if call_needed_rows %}
   <div class="due-group" data-testid="call-needed">
@@ -575,9 +578,160 @@
   {% endif %}
 </section>
 
-<!-- 미팅 -->
+{#
+  「전달한 자료」는 「전화 요청」 다음, 「미팅 스케줄」 앞에 선다(10/26) — 자료를
+  보내고 미팅 요청이 나갔는지 본 다음에 미팅을 잡는 차례다. 그래서 「미팅 후기」와
+  한 격자에 있던 것을 갈라 세웠다(판 하나짜리 격자 둘 — 넓이 규칙은 그대로다).
+
+  **두 판 다 한 줄을 통째로 쓴다**(`.panel.wide`). 예전에는 이 격자가 둘을
+  나란히 세워 판 하나가 544px 였는데, 그 안에서 「전달한 자료」 표는 칸이
+  다섯이고 줄마다 단추가 셋이다. 헤드리스 크롬으로 재 보니 단추 칸은 207px 를
+  요구하는데 120px 를 받아 **`삭제` 가 통째로 잘려 안 보였고**(넘침 87px),
+  상태 칸은 `미팅 요청 보냄 · 2026-09-10` 이 147px 인데 104px 를 받아 날짜가
+  `202…` 에서 끊겼다(넘침 43px). 칸 너비만 늘리면 담당자·기업에 남는 폭이
+  44px 씩이라 이번에는 이름이 짜부라진다 — **판이 좁은 것이 원인**이라
+  자리를 만들어 준다.
+
+  「미팅 후기」도 같이 넓힌다. 하나만 넓히면 아래 줄 오른쪽이 빈 채로 남고,
+  저 표는 `min-width: 2030px` 라 절반 폭에서는 늘 가로로 굴려야 했다.
+#}
+<div class="dash-grid">
+  <section class="panel wide" id="delivered">
+    {# 자료를 보낸 다음에 하는 말이 **미팅 요청**이다. 그런데 자료를 전달하면
+       리마인드가 멈춰서(답이 왔으니 맞다), 미팅 요청을 안 보낸 담당자는 어느
+       목록에도 다시 안 뜬다 — 자료만 보내 놓고 끝나는 길이 열려 있었다.
+       여기서 세어 보여 준다. **줄이 아니라 담당자를 센다**(미팅 요청 카톡은
+       담당자당 한 통이다). #}
+    <h2 class="panel-title">전달한 자료 <span class="hint">{{ done_requests|length }}건</span></h2>
+    {% if meeting_ask_missing %}
+    <p class="hint {% if meeting_ask_overdue %}warn{% endif %}">
+      {{ labels.not_asked }} {{ meeting_ask_missing }}명
+      ({{ meeting_ask_days }}일 지남 {{ meeting_ask_overdue }}명)
+    </p>
+    {% endif %}
+    {% if done_requests %}
+    <div class="table-wrap">
+    <table class="grid-table compact" id="delivered-table">
+      {#
+        칸 너비를 안 주면 '상태' 가 제일 좁게 눌려서 배지가 중간에 끊긴다.
+        **그 이유는 그대로 두고 필요한 만큼만 넓혔다** — 값은 헤드리스 크롬에서
+        `scrollWidth` 로 잰 것이다.
+
+          상태   104 → 168px   (`미팅 요청 보냄 · 2026-09-10` 이 147px)
+          단추   120 → 216px   (`미팅 잡기`·`보냈음으로 표시`·`삭제` 가 207px)
+
+        **10/17 회의(#36·#41·#42)에서 말이 길어져 다시 쟀다**(헤드리스 크롬,
+        같은 CSS·같은 글꼴 — tests/test_meeting_ask_report.py 의 `NEEDS`).
+
+          상태   168 → 236px   (`회의실 미팅 톡 요청 보냄 완료 · 2026-09-10` 이 220px)
+          단추   216 → 284px   (`회의실 미팅 잡기`·`IR 자료 검토 요청 보냄`·`삭제` 가 273px)
+
+        상태 칸 아래에는 `답 없음 · 전화 요청`(#37) 줄도 서는데, 그 줄은 **접힌다**
+        (`app.css` 의 `.call-flag` — 칸 폭을 더 요구하지 않는다).
+
+        글자를 줄여 때우지 않는다 — `미팅 요청 보냄` 을 `보냄` 으로 줄이면
+        무엇을 보냈다는 말인지 알 수 없다.
+
+        `요청일` → `IR 자료 요청일`(10/26)은 68px 이라 96px 칸에 한 줄로 든다 —
+        폭은 그대로다(`app.css` 의 `min-width` 도 그대로).
+      #}
+      <thead><tr>
+        <th style="width:96px">IR 자료 요청일</th><th>담당자</th><th>기업</th>
+        <th style="width:236px">상태</th><th style="width:284px"></th>
+      </tr></thead>
+      <tbody>
+        {# 지난 줄은 위에 세워 두고(`routers/ir.py`), 20줄이 넘더라도
+           **한 줄도 안 자른다**. 재촉할 것이 잘려 안 보이면 세는 뜻이 없다. #}
+        {% for r in done_requests[:done_limit] %}
+        <tr class="{% if r.meeting_ask_overdue %}overdue-row{% endif %}">
+          <td class="muted">{{ r.requested_at }}</td>
+          {#
+            투자사명을 누르면 **딜 제안 관리의 `미팅 요청`** 으로 넘어간다 —
+            그 담당자가 골라진 채로 열린다. [자료 보내기] 가 여는 길과 같은
+            주소이고 방식(`mode`)만 다르다(`/deals?mode=ir&contacts=…` ↔
+            `/deals?mode=meeting&contacts=…`). 자료를 보냈으니 다음에 하는 말은
+            "미팅 가능하실지요" 인데, 지금은 화면을 옮겨 담당자를 다시 찾아
+            골라야 했다.
+
+            **기업은 안 싣는다.** 미팅 요청 문구는 기업 목록을 쓰지 않는다
+            (`routers/deals.py` 의 `MODES_WITH_COMPANIES` 는 딜 소개·자료 전달
+            둘뿐이라, 미팅 요청은 고른 기업이 있어도 `[]` 로 지나간다). 실어
+            봐야 문구에는 안 나오면서 화면에는 체크로 남아, 거기서 탭을 딜
+            소개로 바꾸면 엉뚱하게 골라진 목록이 나간다.
+
+            줄 전체를 링크로 두는 것은 이 화면의 다른 이름 링크와 같은 방식이다
+            (위 리마인드 구역의 `req-link`) — 투자사명만 눌리게 하면 투자사명이
+            빈 줄에서는 누를 곳이 없어진다.
+          #}
+          <td><a class="req-link"
+                 href="/deals?mode=meeting&contacts={{ r.contact_id }}"
+                 title="이 투자사에 미팅 요청 문구 보내기 — 담당자가 골라진 채로 열립니다"
+                >{{ r.name }} <span class="muted">{{ r.firm }}</span></a></td>
+          <td>{{ r.company_name }}{% if r.series_a %} {{ series_a_tag(r.series_a) }}{% endif %}</td>
+          {# 배지 옆에 날짜를 나란히 두면 좁은 칸에서 둘이 엉켜 끊긴다.
+             배지는 한 덩어리로 두고 날짜는 아랫줄로 내린다. #}
+          <td class="status-cell"><span class="status-badge">{{ r.status_label }}</span>
+            {% if r.delivered_at %}<span class="status-when muted">{{ r.delivered_at }}</span>{% endif %}
+            {#
+              **자료를 보낸 뒤 미팅 요청까지 갔는가.** 이 줄 하나가 아니라 이
+              **담당자**의 상태다 — 같은 사람의 자료 줄이 셋이면 셋 다 같은
+              표시가 붙는다(나가는 카톡은 한 통이다).
+
+              판정은 `services/pipeline.meeting_ask_state` 한 곳이 한다.
+              화면에서 다시 세지 않는다.
+
+              **글도 서버가 짓는다**(`pipeline.meeting_ask_note` — 업무 보고와
+              같은 글). 10/17 회의(#36·#39)부터 안 보낸 줄은 **지난 날을 그대로
+              센다** — `회의실 미팅 톡 요청 미완료 · 12일`. 예전에는 7일이 지난
+              줄에만 `{기한}일 지남` 이라는 고정된 말이 섰고(며칠째든 같은 수), 그 전에는
+              아무 표시도 없었다. 빛깔은 기한(7일)을 넘겼는가로 가른다.
+            #}
+            {% if r.meeting_ask_text %}
+            <span class="status-when {{ r.meeting_ask_level }}">{{ r.meeting_ask_text }}</span>
+            {% endif %}
+            {# 회의실 미팅 톡 요청이 나갔는데 답이 없으면 — 전화 요청(#37). #}
+            {{ call_flag(r.contact_id, r.meeting_asked, 'delivered') }}</td>
+          <td class="row-acts">
+            {# 미팅은 **자료를 보낸 그 건**에서 이어진다. 담당자·기업을 처음부터
+               다시 고르게 하면 이미 아는 정보를 사람이 또 타이핑하는 셈이다. #}
+            <button type="button" class="linkbtn js-book-meeting"
+                    data-contact="{{ r.contact_id }}"
+                    data-company="{{ r.company_name }}"
+                    data-name="{{ r.name }}">{{ labels.book }}</button>
+            {# 카톡으로 **사람이 직접** 보낸 건은 앱이 모른다. 적을 자리가
+               없으면 「안 보냄」이 영영 떠 있고, 거짓으로 뜨는 숫자는 곧
+               아무도 안 본다.
+
+               담당자에게 적는다(줄이 아니다) — 판정이 담당자 단위라 줄에
+               적으면 같은 사람의 다른 줄이 그대로 남는다. #}
+            {% if r.status == 'delivered' and not r.meeting_asked %}
+            <form method="post"
+                  action="/ir/contacts/{{ r.contact_id }}/meeting-asked">
+              {# 이름은 10/17 회의(#42)에서 `보냈음으로 표시` → `IR 자료 검토 요청
+                 보냄`. 하는 일은 그대로다 — 이 담당자에게 `손으로 보냄` 을 적고,
+                 상태 칸이 `회의실 미팅 톡 요청 보냄 완료` 로 바뀐다. #}
+              <button class="linkbtn" type="submit"
+                      title="카톡으로 이미 보냈다면 눌러 두세요 — 이 담당자에게 적히고 상태가 '{{ labels.asked }}' 로 바뀝니다"
+                      >{{ labels.mark_asked }}</button>
+            </form>
+            {% endif %}
+            <form method="post" action="/ir/requests/{{ r.id }}/delete"
+                  onsubmit="return confirm('이 기록을 지울까요?')">
+              <button class="linkbtn danger" type="submit">삭제</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}<p class="muted">아직 없습니다.</p>{% endif %}
+  </section>
+</div>
+
+<!-- 미팅 스케줄 -->
 <section class="panel" id="meetings">
-  <h2 class="panel-title">미팅
+  <h2 class="panel-title">미팅 스케줄
     <span class="count-pill {% if scheduled %}on{% endif %}"><b>{{ scheduled|length }}</b>건 예정</span>
     <button type="button" class="linkbtn" id="new-meeting-btn">미팅 등록</button>
   </h2>
@@ -646,11 +800,11 @@
   {% endif %}
 
   {# **자동화(A7)가 이미 물은 미팅**(#31) — 또 묻지 않는다. '자동 문의함 M/D' 와
-     **들은 답을 적는 칸**만 선다. 적으면 위 목록과 같은 자리(`/followup`)로
+     **투자사 답변 내용을 적는 칸**만 선다. 적으면 위 목록과 같은 자리(`/followup`)로
      가서 결과 문의가 닫힌다 — A7 이 묻는 것만으로는 닫지 않는다(답은 사람이 적는다). #}
   {% if items.asked_followups %}
   <div class="due-group" data-testid="asked-followups">
-    <div class="due-head"><b>자동화가 물었습니다 — 들은 답을 적어 주세요</b>
+    <div class="due-head"><b>자동화가 물었습니다 — 투자사 답변 내용을 적어 주세요</b>
       <span class="count-pill"><b>{{ items.asked_followups|length }}</b>건</span></div>
     <ul class="due-list">
       {% for m in items.asked_followups %}
@@ -664,7 +818,7 @@
               <option value="">결과 그대로</option>
               {% for key, label in outcomes.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
             </select>
-            <input type="text" name="note" placeholder="들은 답" maxlength="500" autocomplete="off">
+            <input type="text" name="note" placeholder="투자사 답변 내용" maxlength="500" autocomplete="off">
             <button class="linkbtn" type="submit">답 적기</button>
           </form>
         </span>
@@ -749,149 +903,7 @@
   {% endif %}
 </section>
 
-{#
-  **두 판 다 한 줄을 통째로 쓴다**(`.panel.wide`). 예전에는 이 격자가 둘을
-  나란히 세워 판 하나가 544px 였는데, 그 안에서 「전달한 자료」 표는 칸이
-  다섯이고 줄마다 단추가 셋이다. 헤드리스 크롬으로 재 보니 단추 칸은 207px 를
-  요구하는데 120px 를 받아 **`삭제` 가 통째로 잘려 안 보였고**(넘침 87px),
-  상태 칸은 `미팅 요청 보냄 · 2026-09-10` 이 147px 인데 104px 를 받아 날짜가
-  `202…` 에서 끊겼다(넘침 43px). 칸 너비만 늘리면 담당자·기업에 남는 폭이
-  44px 씩이라 이번에는 이름이 짜부라진다 — **판이 좁은 것이 원인**이라
-  자리를 만들어 준다.
-
-  「미팅 후기」도 같이 넓힌다. 하나만 넓히면 아래 줄 오른쪽이 빈 채로 남고,
-  저 표는 `min-width: 2030px` 라 절반 폭에서는 늘 가로로 굴려야 했다.
-#}
 <div class="dash-grid">
-  <section class="panel wide" id="delivered">
-    {# 자료를 보낸 다음에 하는 말이 **미팅 요청**이다. 그런데 자료를 전달하면
-       리마인드가 멈춰서(답이 왔으니 맞다), 미팅 요청을 안 보낸 담당자는 어느
-       목록에도 다시 안 뜬다 — 자료만 보내 놓고 끝나는 길이 열려 있었다.
-       여기서 세어 보여 준다. **줄이 아니라 담당자를 센다**(미팅 요청 카톡은
-       담당자당 한 통이다). #}
-    <h2 class="panel-title">전달한 자료 <span class="hint">{{ done_requests|length }}건</span></h2>
-    {% if meeting_ask_missing %}
-    <p class="hint {% if meeting_ask_overdue %}warn{% endif %}">
-      {{ labels.not_asked }} {{ meeting_ask_missing }}명
-      ({{ meeting_ask_days }}일 지남 {{ meeting_ask_overdue }}명)
-    </p>
-    {% endif %}
-    {% if done_requests %}
-    <div class="table-wrap">
-    <table class="grid-table compact" id="delivered-table">
-      {#
-        칸 너비를 안 주면 '상태' 가 제일 좁게 눌려서 배지가 중간에 끊긴다.
-        **그 이유는 그대로 두고 필요한 만큼만 넓혔다** — 값은 헤드리스 크롬에서
-        `scrollWidth` 로 잰 것이다.
-
-          상태   104 → 168px   (`미팅 요청 보냄 · 2026-09-10` 이 147px)
-          단추   120 → 216px   (`미팅 잡기`·`보냈음으로 표시`·`삭제` 가 207px)
-
-        **10/17 회의(#36·#41·#42)에서 말이 길어져 다시 쟀다**(헤드리스 크롬,
-        같은 CSS·같은 글꼴 — tests/test_meeting_ask_report.py 의 `NEEDS`).
-
-          상태   168 → 236px   (`회의실 미팅 톡 요청 보냄 완료 · 2026-09-10` 이 220px)
-          단추   216 → 284px   (`회의실 미팅 잡기`·`IR 자료 검토 요청 보냄`·`삭제` 가 273px)
-
-        상태 칸 아래에는 `답 없음 · 전화 필요`(#37) 줄도 서는데, 그 줄은 **접힌다**
-        (`app.css` 의 `.call-flag` — 칸 폭을 더 요구하지 않는다).
-
-        글자를 줄여 때우지 않는다 — `미팅 요청 보냄` 을 `보냄` 으로 줄이면
-        무엇을 보냈다는 말인지 알 수 없다.
-      #}
-      <thead><tr>
-        <th style="width:96px">요청일</th><th>담당자</th><th>기업</th>
-        <th style="width:236px">상태</th><th style="width:284px"></th>
-      </tr></thead>
-      <tbody>
-        {# 지난 줄은 위에 세워 두고(`routers/ir.py`), 20줄이 넘더라도
-           **한 줄도 안 자른다**. 재촉할 것이 잘려 안 보이면 세는 뜻이 없다. #}
-        {% for r in done_requests[:done_limit] %}
-        <tr class="{% if r.meeting_ask_overdue %}overdue-row{% endif %}">
-          <td class="muted">{{ r.requested_at }}</td>
-          {#
-            투자사명을 누르면 **딜 제안 관리의 `미팅 요청`** 으로 넘어간다 —
-            그 담당자가 골라진 채로 열린다. [자료 보내기] 가 여는 길과 같은
-            주소이고 방식(`mode`)만 다르다(`/deals?mode=ir&contacts=…` ↔
-            `/deals?mode=meeting&contacts=…`). 자료를 보냈으니 다음에 하는 말은
-            "미팅 가능하실지요" 인데, 지금은 화면을 옮겨 담당자를 다시 찾아
-            골라야 했다.
-
-            **기업은 안 싣는다.** 미팅 요청 문구는 기업 목록을 쓰지 않는다
-            (`routers/deals.py` 의 `MODES_WITH_COMPANIES` 는 딜 소개·자료 전달
-            둘뿐이라, 미팅 요청은 고른 기업이 있어도 `[]` 로 지나간다). 실어
-            봐야 문구에는 안 나오면서 화면에는 체크로 남아, 거기서 탭을 딜
-            소개로 바꾸면 엉뚱하게 골라진 목록이 나간다.
-
-            줄 전체를 링크로 두는 것은 이 화면의 다른 이름 링크와 같은 방식이다
-            (위 리마인드 구역의 `req-link`) — 투자사명만 눌리게 하면 투자사명이
-            빈 줄에서는 누를 곳이 없어진다.
-          #}
-          <td><a class="req-link"
-                 href="/deals?mode=meeting&contacts={{ r.contact_id }}"
-                 title="이 투자사에 미팅 요청 문구 보내기 — 담당자가 골라진 채로 열립니다"
-                >{{ r.name }} <span class="muted">{{ r.firm }}</span></a></td>
-          <td>{{ r.company_name }}{% if r.series_a %} {{ series_a_tag(r.series_a) }}{% endif %}</td>
-          {# 배지 옆에 날짜를 나란히 두면 좁은 칸에서 둘이 엉켜 끊긴다.
-             배지는 한 덩어리로 두고 날짜는 아랫줄로 내린다. #}
-          <td class="status-cell"><span class="status-badge">{{ r.status_label }}</span>
-            {% if r.delivered_at %}<span class="status-when muted">{{ r.delivered_at }}</span>{% endif %}
-            {#
-              **자료를 보낸 뒤 미팅 요청까지 갔는가.** 이 줄 하나가 아니라 이
-              **담당자**의 상태다 — 같은 사람의 자료 줄이 셋이면 셋 다 같은
-              표시가 붙는다(나가는 카톡은 한 통이다).
-
-              판정은 `services/pipeline.meeting_ask_state` 한 곳이 한다.
-              화면에서 다시 세지 않는다.
-
-              **글도 서버가 짓는다**(`pipeline.meeting_ask_note` — 업무 보고와
-              같은 글). 10/17 회의(#36·#39)부터 안 보낸 줄은 **지난 날을 그대로
-              센다** — `회의실 미팅 톡 요청 미완료 · 12일`. 예전에는 7일이 지난
-              줄에만 `{기한}일 지남` 이라는 고정된 말이 섰고(며칠째든 같은 수), 그 전에는
-              아무 표시도 없었다. 빛깔은 기한(7일)을 넘겼는가로 가른다.
-            #}
-            {% if r.meeting_ask_text %}
-            <span class="status-when {{ r.meeting_ask_level }}">{{ r.meeting_ask_text }}</span>
-            {% endif %}
-            {# 회의실 미팅 톡 요청이 나갔는데 답이 없으면 — 전화 필요(#37). #}
-            {{ call_flag(r.contact_id, r.meeting_asked, 'delivered') }}</td>
-          <td class="row-acts">
-            {# 미팅은 **자료를 보낸 그 건**에서 이어진다. 담당자·기업을 처음부터
-               다시 고르게 하면 이미 아는 정보를 사람이 또 타이핑하는 셈이다. #}
-            <button type="button" class="linkbtn js-book-meeting"
-                    data-contact="{{ r.contact_id }}"
-                    data-company="{{ r.company_name }}"
-                    data-name="{{ r.name }}">{{ labels.book }}</button>
-            {# 카톡으로 **사람이 직접** 보낸 건은 앱이 모른다. 적을 자리가
-               없으면 「안 보냄」이 영영 떠 있고, 거짓으로 뜨는 숫자는 곧
-               아무도 안 본다.
-
-               담당자에게 적는다(줄이 아니다) — 판정이 담당자 단위라 줄에
-               적으면 같은 사람의 다른 줄이 그대로 남는다. #}
-            {% if r.status == 'delivered' and not r.meeting_asked %}
-            <form method="post"
-                  action="/ir/contacts/{{ r.contact_id }}/meeting-asked">
-              {# 이름은 10/17 회의(#42)에서 `보냈음으로 표시` → `IR 자료 검토 요청
-                 보냄`. 하는 일은 그대로다 — 이 담당자에게 `손으로 보냄` 을 적고,
-                 상태 칸이 `회의실 미팅 톡 요청 보냄 완료` 로 바뀐다. #}
-              <button class="linkbtn" type="submit"
-                      title="카톡으로 이미 보냈다면 눌러 두세요 — 이 담당자에게 적히고 상태가 '{{ labels.asked }}' 로 바뀝니다"
-                      >{{ labels.mark_asked }}</button>
-            </form>
-            {% endif %}
-            <form method="post" action="/ir/requests/{{ r.id }}/delete"
-                  onsubmit="return confirm('이 기록을 지울까요?')">
-              <button class="linkbtn danger" type="submit">삭제</button>
-            </form>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    </div>
-    {% else %}<p class="muted">아직 없습니다.</p>{% endif %}
-  </section>
-
   {# 미팅 후기 — 끝난 미팅에 결과를 물었는지 보는 자리. 탭이 여기로 온다. #}
   <section class="panel wide" id="reviews">
     <h2 class="panel-title">미팅 후기
@@ -985,7 +997,7 @@
                 <option value="{{ key }}" {% if m.outcome == key %}selected{% endif %}>{{ label }}</option>
                 {% endfor %}
               </select>
-              <input type="text" name="note" placeholder="들은 내용"
+              <input type="text" name="note" placeholder="투자사 답변 내용"
                      maxlength="500" autocomplete="off">
               <button class="linkbtn" type="submit">
                 {% if m.followup_done %}다시 기록{% elif m.auto_asked %}답 적기{% else %}물어봤음{% endif %}
@@ -997,7 +1009,7 @@
             <div class="cell clamp2 followup-log" data-field="followup_note"
                  data-type="long" title="{{ m.followup_note }}">{{ m.followup_note }}</div>
             {% endif %}
-            {# 자동화(A7)가 결과를 물었는데 아직 답을 못 적은 줄 — 전화 필요(#37). #}
+            {# 자동화(A7)가 결과를 물었는데 아직 답을 못 적은 줄 — 전화 요청(#37). #}
             {{ call_flag(m.contact_id, m.auto_asked and m.needs_followup, 'reviews') }}
           </td>
           <td>
