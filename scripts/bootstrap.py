@@ -5,7 +5,8 @@
 샘플 기업·가상 담당자가 섞여 보였다. 그래서 둘을 갈랐다.
 
 - **부트스트랩**(항상): 팀 기본 문구 5종 + 관리자 계정 1개.
-  이게 없으면 문구를 조합할 수 없고 아무도 로그인할 수 없다.
+  이게 없으면 문구를 조합할 수 없고 아무도 로그인할 수 없다. 관리자는 활성
+  관리자가 하나도 없을 때만 만들고, 비밀번호는 난수로 로그에 한 번만 찍는다.
 - **데모 데이터**(``DEALFLOW_SEED_DEMO=1`` 일 때만): 가상 사용자·담당자·기업.
   처음 화면을 둘러보거나 mock 에이전트를 돌릴 때만 쓴다.
 
@@ -204,7 +205,7 @@ def _get_or_create(db, model, defaults=None, **filters):
 
 def bootstrap(db) -> dict:
     """어떤 환경에서도 필요한 최소한 — 팀 기본 문구 + 관리자 계정 + 발송 주기."""
-    made = {"templates": 0, "users": 0, "rules": 0, "tabs": 0}
+    made = {"templates": 0, "users": 0, "rules": 0}
 
     # 발송 주기는 코드가 아니라 DB 가 정한다 — 운영하며 바뀐다
     # (실제로 '매주'에서 '월 2회'로 한 번 바뀌었다).
@@ -231,31 +232,11 @@ def bootstrap(db) -> dict:
     made["templates"] += seed_sourcing_remind(db)
     made["templates"] += seed_series_a_share(db)
 
-    # 투자현황은 이제 **계정마다** 켜고 끈다(0054). 첫 관리자가 꺼진 채로
-    # 만들어지면 새로 깐 서버에서 그 화면을 아무도 못 연다 — 켜 줄 사람도
-    # 자기 자신뿐인데 본인 것은 못 켠다. 기본값 판정은 팀 현황의 계정 만들기와
-    # **같은 함수**를 읽는다.
-    _admin, created = _get_or_create(
-        db, User, phone=ADMIN_PHONE,
-        defaults=dict(name=ADMIN_NAME, role="admin",
-                      can_view_consulting=1 if deps.consulting_default_for("admin") else 0,
-                      # 자료 자동 첨부(0059)도 같은 자리를 읽는다. 지금은 꺼진
-                      # 채로 나오고, 첫 관리자가 **자기 것을 스스로 켤 수 있다**
-                      # (투자현황과 달리 본인 줄도 끄고 켠다).
-                      can_auto_attach_ir=1 if deps.auto_attach_default_for("admin") else 0),
-    )
-    made["users"] += int(created)
-
-    # 첫 관리자의 **개인 탭**도 함께 세운다. 새로 깐 서버에서 그 계정으로
-    # 로그인하면 투자사 관리 현황·스타트업이 빈 화면이고, 줄을 넣을 자리조차
-    # 없었다. 무슨 탭을 몇 개 만들지는 여기 적지 않고 한 곳에서 정한다 —
-    # 계정을 만드는 자리가 셋이라(팀 현황의 [계정 만들기] ·
-    # `scripts/add_user.py` · 여기) 각자 들고 있으면 그중 하나만 낡는다.
-    #
-    # **이미 있으면 아무 일도 안 한다.** 이 스크립트는 컨테이너가 뜰 때마다
-    # 돌고, 운영 DB 에는 이미 탭이 서 있다(`ensure_member_tabs` 는 그 사람이
-    # 그 화면의 탭을 하나라도 가졌으면 넘어간다).
-    made["tabs"] = len(sheet_owner.ensure_member_tabs(db, _admin))
+    # 첫 관리자는 **활성 관리자가 한 명도 없을 때만** 만든다. 이미 있으면 계정은
+    # 아무것도 건드리지 않는다 — 관리자 번호를 바꾼 서버에서도 그대로다.
+    if db.execute(select(User.id).where(User.role == "admin",
+                                        User.is_active == 1)).first() is None:
+        made["users"] += _first_admin(db)
 
     # 분야 기준 목록(#2)의 처음 값 — 목록이 **비어 있을 때만** 넣는다. 화면이
     # 처음 읽을 때도 넣지만(`taxonomy.ensure_seed`), 배포하는 날 바로 서 있게
@@ -264,6 +245,43 @@ def bootstrap(db) -> dict:
 
     made["sector_terms"] = int(taxonomy.ensure_seed(db))
     return made
+
+
+def _first_admin(db) -> int:
+    """새로 깐 서버의 첫 관리자. 만들었으면 1.
+
+    비밀번호는 팀 공통 초기값이 아니라 **난수**다. 로그에 한 번만 찍고(다음에
+    뜰 때는 관리자가 있어 여기 오지 않는다), 첫 로그인 때 바꾸게 한다.
+    """
+    password = secrets.token_urlsafe(12)
+    # 투자현황은 이제 **계정마다** 켜고 끈다(0054). 첫 관리자가 꺼진 채로
+    # 만들어지면 새로 깐 서버에서 그 화면을 아무도 못 연다 — 켜 줄 사람도
+    # 자기 자신뿐인데 본인 것은 못 켠다. 기본값 판정은 팀 현황의 계정 만들기와
+    # **같은 함수**를 읽는다.
+    admin, created = _get_or_create(
+        db, User, phone=ADMIN_PHONE,
+        defaults=dict(name=ADMIN_NAME, role="admin",
+                      password_hash=auth_svc.hash_password(password),
+                      must_change_password=1,
+                      can_view_consulting=1 if deps.consulting_default_for("admin") else 0,
+                      # 자료 자동 첨부(0059)도 같은 자리를 읽는다. 지금은 꺼진
+                      # 채로 나오고, 첫 관리자가 **자기 것을 스스로 켤 수 있다**
+                      # (투자현황과 달리 본인 줄도 끄고 켠다).
+                      can_auto_attach_ir=1 if deps.auto_attach_default_for("admin") else 0),
+    )
+    if created:
+        print(f"[bootstrap] 첫 관리자 — 번호 {ADMIN_PHONE} · 비밀번호 {password} "
+              "(이 줄은 다시 나오지 않습니다. 로그인하면 바로 바꾸게 됩니다)")
+
+    # 첫 관리자의 **개인 탭**도 함께 세운다. 새로 깐 서버에서 그 계정으로
+    # 로그인하면 투자사 관리 현황·스타트업이 빈 화면이고, 줄을 넣을 자리조차
+    # 없었다. 무슨 탭을 몇 개 만들지는 여기 적지 않고 한 곳에서 정한다 —
+    # 계정을 만드는 자리가 셋이라(팀 현황의 [계정 만들기] ·
+    # `scripts/add_user.py` · 여기) 각자 들고 있으면 그중 하나만 낡는다.
+    # 이미 있으면 아무 일도 안 한다(`ensure_member_tabs` 는 그 사람이 그 화면의
+    # 탭을 하나라도 가졌으면 넘어간다).
+    sheet_owner.ensure_member_tabs(db, admin)
+    return int(created)
 
 
 def seed_sourcing_remind(db) -> int:

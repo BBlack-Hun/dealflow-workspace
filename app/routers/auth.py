@@ -1,6 +1,8 @@
 """로그인 / 로그아웃 / 비밀번호 변경 (휴대폰번호 + 비밀번호)."""
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
@@ -11,8 +13,10 @@ from ..deps import (VIEW_AS_COOKIE, admin_only, can_open, get_current_user,
 from ..ui import PASSWORD_CHANGED, base_ctx
 from ..models import User
 from ..services import auth as auth_svc
+from ..services import sms
 
 router = APIRouter(tags=["auth"])
+log = logging.getLogger(__name__)
 
 
 def _safe_next(value: str) -> str:
@@ -45,12 +49,25 @@ def login(
     db: Session = Depends(get_db),
 ):
     target = _safe_next(next)
+    # 앞의 프록시(Caddy)가 적은 진짜 주소다 — uvicorn 이 프록시 머리글을 믿게 띄운다.
+    ip = request.client.host if request.client else ""
+    # 잠겨 있으면 비밀번호를 견주지도 않는다(`auth_svc.login_locked` 머리말).
+    if auth_svc.login_locked(phone, ip):
+        return RedirectResponse(
+            url=f"/login?next={target}&error=locked", status_code=303
+        )
     user = auth_svc.authenticate(db, phone, password)
     if user is None:
+        locked = auth_svc.note_login_failure(phone, ip)
+        # 번호는 가려서 남긴다 — 번호 가리기는 `sms.redact` 한 곳이다.
+        log.warning("로그인 실패: 번호 %s · IP %s%s",
+                    sms.redact(auth_svc.normalize_phone(phone)), ip,
+                    " — 15분 잠금" if locked else "")
         # 없는 번호인지 틀린 비밀번호인지 구분해 알리지 않는다(계정 존재 여부 노출 방지).
         return RedirectResponse(
             url=f"/login?next={target}&error=1", status_code=303
         )
+    auth_svc.note_login_success(phone)
 
     token = auth_svc.create_session(db, user, request.headers.get("user-agent", ""))
     # 관리자가 만들어준 임시 비밀번호면 먼저 바꾸게 한다.
@@ -69,7 +86,8 @@ def login(
     return resp
 
 
-@router.get("/logout", include_in_schema=False)
+# 상태를 바꾸는 길이라 **POST 만 받는다.** 화면의 로그아웃은 작은 폼이다
+# (`base.html` · `consulting_blocked.html`).
 @router.post("/logout", include_in_schema=False)
 def logout(request: Request, db: Session = Depends(get_db)):
     auth_svc.destroy_session(db, request.cookies.get(auth_svc.SESSION_COOKIE))
@@ -149,9 +167,5 @@ def change_password(
     # 정한다(로그인 직후와 같은 자리) — 여기 `/` 를 적으면 컨설턴트는 막힌
     # 화면으로 간다. 바뀌었다는 알림은 표시를 달아 도착지까지 데려간다.
     resp = RedirectResponse(f"{home_for(user)}?{PASSWORD_CHANGED}=1", status_code=303)
-    resp.set_cookie(
-        auth_svc.SESSION_COOKIE, token,
-        max_age=60 * 60 * 24 * auth_svc.SESSION_DAYS,
-        httponly=True, samesite="lax",
-    )
+    auth_svc.set_session_cookie(resp, token)
     return resp

@@ -12,7 +12,9 @@
     <div class="brand">CONTACTVC ASSET</div>
     <div class="brand-sub">딜소싱 워크스페이스</div>
 
-    {% if error %}
+    {% if error == "locked" %}
+    <p class="login-error">로그인 시도가 너무 많습니다. 15분 뒤에 다시 시도해 주세요.</p>
+    {% elif error %}
     <p class="login-error">휴대폰번호 또는 비밀번호가 올바르지 않습니다.</p>
     {% endif %}
 

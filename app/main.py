@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import config, deps
-from .deps import NoConsulting, NotAdmin, NotAuthenticated
+from .deps import MustChangePassword, NoConsulting, NotAdmin, NotAuthenticated
 from .services import (automation_runner, backup, edit_log, followup_sms,
                        scheduled_send, send_window, sourcing_mail)
 from .routers import auth as auth_router
@@ -207,6 +207,11 @@ def create_app() -> FastAPI:
         자리를 맴돈다 — 무슨 일이 일어났는지 글로 알려 준다.
         """
         return deps.consulting_block_response(request)
+
+    @app.exception_handler(MustChangePassword)
+    def _must_change_password(request: Request, exc: MustChangePassword):
+        """초기 비밀번호를 아직 안 바꾼 계정 — 판단은 `deps.must_change_response`."""
+        return deps.must_change_response(request)
 
     @app.exception_handler(NotAuthenticated)
     def _needs_login(request: Request, exc: NotAuthenticated):
