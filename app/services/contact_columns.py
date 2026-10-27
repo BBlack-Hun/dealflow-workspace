@@ -1060,13 +1060,17 @@ INVESTOR_MONTHLY_LAYOUT = Layout(
         Column("딜소싱 참여 투자사", "sourcing_note", 0, in_table=False),
         # **분야 기준 목록에서 고른다**(#2) — `kind="sectors"` 면 수정창이 고르는
         # 부품을 붙인다(`contacts.html` · `sector_picker.js`).
+        # 회사 단위 값 둘(`services/investor_firms.py`) — `선호 투자분야` 바로 앞.
+        # `소분류` 는 같은 고르는 부품을 쓰고, 서버가 목록의 소분류만 받는다.
+        Column("펀드 종류", "fund_types", 0, in_table=False),
+        Column("소분류", "sub_sectors", 0, in_table=False, kind="sectors"),
         Column("선호 투자분야", "sectors", 0, in_table=False, kind="sectors"),
         Column("TIPS 운영사", "tips_note", 0, in_table=False),
         Column("라운드 사이즈(투자운영금액)", "round_size", 0, in_table=False),
         # 회사 단위 값(#1) — `라운드 사이즈` 바로 뒤. 이 줄이 아니라 회사에 적힌다
         # (`services/investor_firms.py`). 행이 `owned_funds` 로 실어 오므로 엑셀도
         # 이 목록에서 그대로 나간다(`routers/data_io._export_sheet`).
-        Column("소유 펀드", "owned_funds", 0, in_table=False),
+        Column("챗GPT 조사 소유펀드", "owned_funds", 0, in_table=False),
         Column("근무처 전화", "office_phone", 0, in_table=False),
         Column("근무처 팩스", "office_fax", 0, in_table=False),
         Column("근무지 주소 번지", "address", 0, in_table=False),

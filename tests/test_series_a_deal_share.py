@@ -5,7 +5,8 @@
   ① 화면 — [보낼 문구]에 셋째 칩 · ① 칸에 `Series A 이상 딜 소싱` 고르개(이미 받은
      심사역 번호를 싣는다) · [이미 이 기업들을 받은 분 제외](기본 켬)
   ② 글 — 인사말(처음 안내와 같은 손, 빈 직함은 갈래 호칭) + 문구 + 기업마다 한
-     덩어리(`[기업N] 기업명 · 분야 · 투자라운드 · 소개`). 소개는 딜소개 문구, 없으면
+     덩어리(`[기업N]` · 분야 · 투자라운드 · 소개 — **기업명은 가린다**, 소개 속 이름도
+     번호로). 소개는 딜소개 문구, 없으면
      상세 내용 첫 문장(~120자, 줄바꿈 없이). 차례 = 고른 차례. `{기업 목록}` 이
      없는 문구는 첫 문단 뒤에 들어간다
   ③ 받는 사람 — 시리즈 A 갈래 · 참여만. 방 없음 · 불참여 · 다른 갈래는 빼고 이유를 말한다
@@ -41,6 +42,7 @@ TODAY = date(2026, 10, 15)
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+(\.[\w-]+)+")
 SHARE = "sourcing_deal_share"
 
+BIO_PITCH = "표적 항암제 후보물질 개발"
 LONG_DETAIL = (
     "- 공장 자동화용 협동로봇을 만드는 샘플로보틱스입니다. 다음 줄은 넘기지 않습니다.\n"
     "- 국내 제조사 12곳 납품\n"
@@ -172,19 +174,22 @@ def test_the_message_is_greeting_text_and_one_block_per_company(world, client):
 
     assert "Series A 이상 딜 네트워크를 통해 공유드릴 딜이 있어 연락드립니다." in a
     assert "{기업 목록}" not in a and "SERIES_A_COMPANIES" not in a
-    # 고른 차례 그대로 — 로보틱스가 [기업1]
-    assert a.index("[기업1] 샘플로보틱스") < a.index("[기업2] 샘플바이오") < a.index("[기업3] 샘플푸드")
-    # 덩어리 모양 — 기업명 · 분야(대분류/소분류) · 투자라운드(괄호 앞) · 소개
-    assert ("[기업2] 샘플바이오\n · 분야: 바이오 / 신약\n · 투자라운드: Series A\n"
+    # 고른 차례 그대로 — 로보틱스가 [기업1]. 기업명은 싣지 않는다(번호가 대신한다).
+    assert a.index("[기업1]\n · 분야: 로봇") < a.index("[기업2]\n · 분야: 바이오") < a.index(
+        "[기업3]")
+    for name in ("샘플로보틱스", "샘플바이오", "샘플푸드"):
+        assert name not in a, name
+    # 덩어리 모양 — 번호 · 분야(대분류/소분류) · 투자라운드(괄호 앞) · 소개
+    assert ("[기업2]\n · 분야: 바이오 / 신약\n · 투자라운드: Series A\n"
             " · 소개: 표적 항암제 후보물질 개발") in a
-    # 딜소개 문구가 없으면 상세 내용 첫 문장 — 글머리표를 떼고 한 줄로
-    assert (" · 소개: 공장 자동화용 협동로봇을 만드는 샘플로보틱스입니다.\n") in a
+    # 딜소개 문구가 없으면 상세 내용 첫 문장 — 글머리표를 떼고 한 줄로, 이름은 번호로
+    assert (" · 소개: 공장 자동화용 협동로봇을 만드는 [기업1]입니다.\n") in a
     assert "다음 줄은" not in a and "납품" not in a
     # 빈 칸은 그 줄째 빠진다 — 분야도 라운드도 소개도 없는 기업
-    food = a[a.index("[기업3] 샘플푸드"):]
+    food = a[a.index("[기업3]"):]
     assert "분야" not in food.split("\n\n")[0] and "소개" not in food.split("\n\n")[0]
     # 기업 목록 뒤로 문구의 나머지가 이어진다
-    assert a.index("[기업3] 샘플푸드") < a.index("관심 있는 기업이 있으시면 편하게 말씀 부탁드립니다.")
+    assert a.index("[기업3]") < a.index("관심 있는 기업이 있으시면 편하게 말씀 부탁드립니다.")
     assert a.rstrip().endswith("감사합니다.")
 
 
@@ -204,6 +209,33 @@ def test_a_long_detail_is_cut_on_one_line():
     assert series_a_share.pitch_of(row) == "첫 줄\n둘째 줄"
 
 
+def test_the_name_inside_the_pitch_becomes_the_number_too():
+    """소개 글에 적힌 기업명도 그 덩어리의 번호로 — 적힌 그대로와 법인 표기를 뗀 것 둘 다."""
+    from app.models import SeriesACompany
+    from app.services import series_a_share as sas
+
+    row = SeriesACompany(name="(주)샘플가", deal_pitch="샘플가는 (주)샘플가 이름으로 수출한다")
+    assert sas.block(3, row) == "[기업3]\n · 소개: [기업3]는 [기업3] 이름으로 수출한다"
+    # 한 글자 이름은 바꾸지 않는다 — 낱말 속 글자까지 번호가 된다
+    row = SeriesACompany(name="가", deal_pitch="가공 식품")
+    assert sas.block(1, row) == "[기업1]\n · 소개: 가공 식품"
+
+
+def test_an_edited_message_is_matched_by_the_whole_block_not_the_number():
+    """고친 글의 기록(`companies_in`)은 번호가 아니라 덩어리 글자로 찾는다(이름이 없다)."""
+    from app.models import SeriesACompany
+    from app.services import series_a_share as sas
+
+    x = SeriesACompany(id=1, name="샘플엑스", sector_major="바이오")
+    y = SeriesACompany(id=2, name="샘플와이", sector_major="바이오", deal_pitch="샘플와이 신약")
+    # 와이만 남은 글 — 엑스 덩어리(`분야: 바이오` 한 줄)가 와이 덩어리의 앞부분이어도 엑스가 아니다
+    text = "인사\n\n" + sas.block(2, y) + "\n\n감사합니다."
+    assert sas.companies_in(text, [x, y]) == [y]
+    # 번호가 달라도(받는 분마다 차례가 다르다) 같은 덩어리면 그 기업 · 글에 나온 차례
+    text = sas.block(1, y) + "\n\n" + sas.block(2, x)
+    assert sas.companies_in(text, [x, y]) == [y, x]
+
+
 def test_a_stored_template_without_the_slot_gets_blocks_after_the_first_paragraph(
         world, client, db):
     from app.models import MessageTemplate
@@ -212,7 +244,7 @@ def test_a_stored_template_without_the_slot_gets_blocks_after_the_first_paragrap
                            body="이번 주 공유 딜입니다.\n\n궁금하시면 말씀 주세요."))
     db.commit()
     a = _preview(client, _ids(world, "a"), _ids(world, "bio", kind="c"))["가심사"]["message"]
-    assert a.index("이번 주 공유 딜입니다.") < a.index("[기업1] 샘플바이오") < a.index(
+    assert a.index("이번 주 공유 딜입니다.") < a.index("[기업1]\n · 분야: 바이오") < a.index(
         "궁금하시면 말씀 주세요.")
 
     # 붙여 쓴 `{기업목록}`(딜 소개 · 자료 전달의 말)도 같은 자리로 받는다
@@ -220,7 +252,7 @@ def test_a_stored_template_without_the_slot_gets_blocks_after_the_first_paragrap
     row.body = "머리말\n{기업목록}\n꼬리말 {담당자명}"
     db.commit()
     a = _preview(client, _ids(world, "a"), _ids(world, "bio", kind="c"))["가심사"]["message"]
-    assert "머리말\n[기업1] 샘플바이오" in a and "꼬리말 가심사" in a
+    assert "머리말\n[기업1]\n · 분야: 바이오" in a and "꼬리말 가심사" in a
     assert "{기업목록}" not in a
 
 
@@ -254,7 +286,8 @@ def test_the_sample_preview_shows_the_slot_or_the_picked_companies(world, client
     r = client.post("/api/deals/preview", json={
         "contact_ids": [], "mode": "sourcing", "topic": SHARE,
         "series_a_ids": _ids(world, "bio", kind="c")})
-    assert "[기업1] 샘플바이오" in r.json()["previews"][0]["message"]
+    sample = r.json()["previews"][0]["message"]
+    assert "[기업1]\n · 분야: 바이오 / 신약" in sample and "샘플바이오" not in sample
 
 
 # ── ③ 받는 사람 · ④ 기록 ────────────────────────────────────────────────────
@@ -279,7 +312,8 @@ def test_sending_skips_no_room_left_and_other_bucket_and_records_shares(world, c
     assert "Series A 딜 공유" in db.get(DealBatch, job.batch_id).title
     items = db.query(SendItem).filter_by(job_id=job.id).all()
     assert {i.room_name for i in items} == {"가심사 소싱방", "나심사 소싱방"}
-    assert all("[기업1] 샘플바이오" in i.message for i in items)
+    assert all("[기업1]\n · 분야: 바이오 / 신약" in i.message for i in items)
+    assert not any("샘플바이오" in i.message or "샘플로보틱스" in i.message for i in items)
 
     shares = db.query(SeriesAShare).all()
     assert len(shares) == 4
@@ -300,15 +334,17 @@ def test_already_received_companies_are_dropped_per_person(world, client, db):
     # 미리보기 — 가심사는 바이오를 빼고, 나심사는 둘 다
     got = _preview(client, _ids(world, "a", "b"), [bio, robo])
     a, b = got["가심사"], got["나심사"]
-    assert "샘플바이오" not in a["message"] and "[기업1] 샘플로보틱스" in a["message"]
+    assert [c["name"] for c in a["series_a"]["send"]] == ["샘플로보틱스"]
+    assert BIO_PITCH not in a["message"] and "[기업1]\n · 분야: 로봇" in a["message"]
     assert any("이미 받은 기업 1곳" in w and "샘플바이오" in w for w in a["warnings"])
-    assert "[기업1] 샘플바이오" in b["message"] and "[기업2] 샘플로보틱스" in b["message"]
+    assert [c["name"] for c in b["series_a"]["send"]] == ["샘플바이오", "샘플로보틱스"]
+    assert "[기업1]\n · 분야: 바이오" in b["message"] and "[기업2]\n · 분야: 로봇" in b["message"]
 
     r = _send(client, _ids(world, "a", "b"), [bio, robo])
     assert r.status_code == 200 and r.json()["total"] == 2
     msgs = {i.recipient_name: i.message
             for i in db.query(SendItem).filter_by(job_id=r.json()["job_id"])}
-    assert "샘플바이오" not in msgs["가심사"]
+    assert BIO_PITCH not in msgs["가심사"]
 
     # 이제 둘 다 둘 다 받았다 — 고른 분 모두 빠지면 아무것도 안 만든다
     r = _send(client, _ids(world, "a", "b"), [bio, robo])
@@ -328,7 +364,7 @@ def test_already_received_companies_are_dropped_per_person(world, client, db):
     assert r.status_code == 200 and r.json()["total"] == 2
     msgs = {i.recipient_name: i.message
             for i in db.query(SendItem).filter_by(job_id=r.json()["job_id"])}
-    assert "[기업1] 샘플바이오" in msgs["가심사"]
+    assert f"[기업1]\n · 분야: 바이오 / 신약\n · 투자라운드: Series A\n · 소개: {BIO_PITCH}" in msgs["가심사"]
 
 
 def test_a_canceled_round_does_not_count(world, client, db):
@@ -345,16 +381,18 @@ def test_a_canceled_round_does_not_count(world, client, db):
 def test_an_edited_message_records_the_companies_it_still_carries(world, client, db):
     """고친 글로 보내도 기록은 **그 글에 든 기업**이다(`series_a_share.companies_in`).
 
-    덩어리 첫 줄(`[기업1] 기업명`)을 남겨 두고 고쳤으면 그 기업을 적고, 덩어리째
-    지웠으면 안 적는다 — 글에 없는 기업을 '받음' 으로 적으면 그 분은 영영 못 받는다
-    (PR #287 리뷰).
+    덩어리(`[기업1]` · 분야 · 투자라운드 · 소개)를 남겨 두고 둘레를 고쳤으면 그 기업을
+    적고, 덩어리째 지웠으면 안 적는다 — 글에 없는 기업을 '받음' 으로 적으면 그 분은
+    영영 못 받는다(PR #287 리뷰). 기업명은 글에 없으므로 덩어리 글자로 찾는다.
     """
     from app.models import SeriesAShare
 
     a = world["p"]["a"].id
+    robo = ("[기업1]\n · 분야: 로봇\n · 투자라운드: Series B\n"
+            " · 소개: 공장 자동화용 협동로봇을 만드는 [기업1]입니다.")
     r = _send(client, [a], _ids(world, "robo", kind="c"),
               overrides=[{"contact_id": a,
-                          "message": "직접 고친 문구\n\n[기업1] 샘플로보틱스\n · 소개: 고쳐 씀"}])
+                          "message": f"직접 고친 문구\n\n{robo}\n\n감사합니다."}])
     assert r.status_code == 200
     assert db.query(SeriesAShare).filter_by(sourcing_contact_id=a).count() == 1
     b = world["p"]["b"].id
@@ -362,6 +400,28 @@ def test_an_edited_message_records_the_companies_it_still_carries(world, client,
               overrides=[{"contact_id": b, "message": "직접 고친 문구"}])
     assert r.status_code == 200
     assert db.query(SeriesAShare).filter_by(sourcing_contact_id=b).count() == 0
+
+
+def test_company_names_go_out_as_numbers_but_stay_on_team_screens(world, client, db):
+    """사용자 요청(10/27): 딜 소싱에서 딜을 소개할 때도 기업명은 `[기업1]` `[기업2]` 로 가린다.
+
+    가리는 것은 **나가는 글**(미리보기 글 · 발송 건)뿐이다. 미리보기의 `보내는 기업` 줄과
+    딜 소싱 화면의 `Series A 딜 공유 N건` 은 팀이 보는 것이라 이름 그대로다.
+    """
+    from app.models import SendItem
+
+    ids = _ids(world, "robo", "bio", kind="c")
+    p = _preview(client, _ids(world, "a"), ids)["가심사"]
+    assert [(c["label"], c["name"]) for c in p["series_a"]["send"]] == [
+        ("[기업1]", "샘플로보틱스"), ("[기업2]", "샘플바이오")]
+    r = _send(client, _ids(world, "a"), ids)
+    assert r.status_code == 200, r.text
+    item = db.query(SendItem).filter_by(job_id=r.json()["job_id"]).one()
+    for text in (p["message"], item.message):
+        assert "[기업1]" in text and "[기업2]" in text
+        assert "샘플로보틱스" not in text and "샘플바이오" not in text, text
+    page = client.get(f"/sourcing?tab={quote(SERIES_A)}").text
+    assert "샘플로보틱스 · 샘플바이오" in page
 
 
 # ── ⑤ 보이는 곳 ─────────────────────────────────────────────────────────────

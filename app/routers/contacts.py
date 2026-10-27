@@ -191,9 +191,11 @@ def contact_rows(db: Session, user: User, team_wide: bool = False,
     # (갈래마다 한 줄)에서 읽는다(`services/sourcing_sync.py`). 딜 소싱 화면에서
     # 참여를 바꾸면 여기도 그대로다. 줄마다 묻지 않고 한 번에(두 칸이 질의 하나).
     sourcing_linked = sourcing_sync.linked_all(db, ids)
-    # `소유 펀드` — **회사 단위 값**이라 줄에 저장돼 있지 않다. 회사명에서 열쇠를
-    # 지어 회사 표에서 읽는다(`services/investor_firms.py`). 표 한 장에 질의 하나.
+    # `챗GPT 조사 소유펀드` · `펀드 종류` · `소분류` — **회사 단위 값**이라 줄에 저장돼
+    # 있지 않다. 회사명에서 열쇠를 지어 회사 표에서 읽는다(`services/investor_firms.py`).
     funds = investor_firms.funds_map(db)
+    fund_types = investor_firms.funds_map(db, "fund_types")
+    sub_sectors = investor_firms.funds_map(db, "sub_sectors")
 
     rows = []
     for c in contacts:
@@ -277,9 +279,16 @@ def contact_rows(db: Session, user: User, team_wide: bool = False,
             # (`static/js/contacts.js` 의 `syncFirmFunds`).
             "firm_key": investor_firms.firm_key(c.firm),
             "owned_funds": funds.get(investor_firms.firm_key(c.firm), ""),
-            # `소유 펀드` 필터가 세는 펀드 이름들 — 템플릿이 `|` 로 이어 행에 싣는다.
+            # `챗GPT 조사 소유펀드` 필터가 세는 펀드 이름들 — 템플릿이 `|` 로 이어 행에 싣는다.
             "owned_fund_list": investor_firms.split_funds(
                 funds.get(investor_firms.firm_key(c.firm))),
+            # 같은 길의 회사 단위 칸 둘 — 값과 필터 값(`FIRM_LISTS`).
+            "fund_types": fund_types.get(investor_firms.firm_key(c.firm), ""),
+            "fund_type_list": investor_firms.split_funds(
+                fund_types.get(investor_firms.firm_key(c.firm))),
+            "sub_sectors": sub_sectors.get(investor_firms.firm_key(c.firm), ""),
+            "sub_sector_list": investor_firms.split_funds(
+                sub_sectors.get(investor_firms.firm_key(c.firm))),
             # 시트에 있는데 그동안 화면·엑셀 어디에도 안 나오던 값들.
             "office_phone": c.office_phone or "",
             "office_fax": c.office_fax or "",
@@ -439,10 +448,12 @@ class ContactIn(BaseModel):
     stages: Optional[str] = None
     sectors: Optional[str] = None
     round_size: Optional[str] = None
-    # `소유 펀드` — **이 줄에 저장되지 않는다.** 이 줄의 회사(`firm`)의 값을
-    # 고친다 — 같은 회사의 다른 사람 줄에도 같은 값이 선다
-    # (`services/investor_firms.set_funds`). None 은 '안 바꿈' 이다.
+    # `챗GPT 조사 소유펀드` · `펀드 종류` · `소분류` — **이 줄에 저장되지 않는다.**
+    # 이 줄의 회사(`firm`)의 값을 고친다 — 같은 회사의 다른 사람 줄에도 같은 값이
+    # 선다(`services/investor_firms.set_funds`). None 은 '안 바꿈' 이다.
     owned_funds: Optional[str] = None
+    fund_types: Optional[str] = None
+    sub_sectors: Optional[str] = None
     status: Optional[str] = None
     memo: Optional[str] = None
     # 시트에 있던 값들 — 화면에서도 보고 고칠 수 있어야 한다.
@@ -1024,7 +1035,7 @@ def create_contact(
     # 잇는 줄이 이 줄 번호를 가리켜야 하므로 먼저 번호를 받는다.
     db.flush()
     sourcing = _sourcing_mark(db, contact, body, user)
-    _owned_funds(db, contact, body, user)
+    _firm_values(db, contact, body, user)
     db.commit()
     out = {"id": contact.id, "kakao_room_name": contact.kakao_room_name}
     if sourcing.get("message"):
@@ -1074,6 +1085,8 @@ def get_contact(
             "round_size": contact.round_size or "",
             # 회사 단위 값(#1). 이 줄에 저장된 것이 아니라 회사 표에서 읽는다.
             "owned_funds": investor_firms.funds_of(db, contact.firm),
+            "fund_types": investor_firms.funds_of(db, contact.firm, "fund_types"),
+            "sub_sectors": investor_firms.funds_of(db, contact.firm, "sub_sectors"),
             # 시트에 있는데 그동안 화면 어디에도 안 보이던 값들.
             "office_phone": contact.office_phone or "",
             "office_fax": contact.office_fax or "",
@@ -1322,7 +1335,7 @@ def update_contact(
     # 만들 때 방금 고친 이름 · 번호로 만들어야 한다.
     sourcing = _sourcing_mark(db, contact, body, user)
     # 회사 단위 값 — 위에서 회사명을 먼저 고친 뒤에 적는다(바뀐 회사의 값이다).
-    _owned_funds(db, contact, body, user)
+    _firm_values(db, contact, body, user)
     db.commit()
     linked = sourcing_sync.linked_all(db, [contact.id]).get(contact.id, {})
     # `connect_note` 는 **서버가 저 혼자 바꾼 것**을 화면이 사람에게 전할 자리다.
@@ -1346,12 +1359,14 @@ def update_contact(
            # 고른 글자를 그대로 두면 필터와 칸이 다른 말을 한다(`contacts.js`).
            # 갈래에 새 줄이 생기거나 이어지면 `참여 요청일` 도 함께 바뀐다.
            **_sourcing_cells(linked)}
-    if body.owned_funds is not None:
+    for field, list_key in FIRM_LISTS.items():
+        if getattr(body, field) is None:
+            continue
         # 같은 회사의 다른 줄을 화면이 그 자리에서 고쳐 그리게 열쇠와 값을 싣는다.
         out["firm_key"] = investor_firms.firm_key(contact.firm)
-        out["owned_funds"] = investor_firms.funds_of(db, contact.firm)
-        # 같은 회사 줄들의 필터 값(`data-f-fund`)도 서버가 나눈 그대로 다시 적는다.
-        out["owned_fund_list"] = investor_firms.split_funds(out["owned_funds"])
+        out[field] = investor_firms.funds_of(db, contact.firm, field)
+        # 같은 회사 줄들의 필터 값(`data-f-fund` …)도 서버가 나눈 그대로 다시 적는다.
+        out[list_key] = investor_firms.split_funds(out[field])
     if note:
         out["connect_note"] = note
     if sourcing.get("message"):
@@ -1359,23 +1374,41 @@ def update_contact(
     return out
 
 
-def _owned_funds(db: Session, contact: VcContact, body: ContactIn,
+#: 회사 단위 칸 → 행 · 응답에 싣는 나눈 값(필터 값)의 이름. 화면이 같은 이름으로 읽는다
+#: (`contacts.html` 의 `data-f-*` · `contacts.js` 의 `FIRM_FIELDS`).
+FIRM_LISTS = {"owned_funds": "owned_fund_list", "fund_types": "fund_type_list",
+              "sub_sectors": "sub_sector_list"}
+
+
+def _firm_values(db: Session, contact: VcContact, body: ContactIn,
                  user: User) -> None:
-    """`소유 펀드` 를 고친 요청이면 **이 줄의 회사** 값을 고친다(#1).
+    """회사 단위 칸(`investor_firms.FIELDS`)을 고친 요청이면 **이 줄의 회사** 값을 고친다(#1).
 
     이 줄을 고칠 수 있는 사람(`_owned`)이 그 칸을 고칠 수 있다 — 팀원이 값을
     적는 칸이다. 다만 값은 회사 단위라 같은 회사의 남의 줄에도 같이 보인다. 그
     일은 수정 로그에 `공용` 으로 남는다(`edit_log.WATCHED["investor_firms"]`).
     회사명이 빈 줄은 적을 자리가 없어 400 이다 — 조용히 버리면 저장된 줄 안다.
+    `소분류` 가 목록 밖이거나 5개를 넘어도, `펀드 종류` 가 정해 둔 말 밖이어도 400 이다
+    (커밋 전이라 아무것도 안 바뀐다).
     """
-    if body.owned_funds is None:
-        return
-    if not investor_firms.firm_key(contact.firm):
-        if (body.owned_funds or "").strip():
-            raise HTTPException(status_code=400,
-                                detail="투자사명이 없어 소유 펀드를 적을 수 없습니다")
-        return
-    investor_firms.set_funds(db, contact.firm, body.owned_funds, doer(user).id)
+    for field, label in investor_firms.FIELDS.items():
+        value = getattr(body, field)
+        if value is None:
+            continue
+        if not investor_firms.firm_key(contact.firm):
+            if value.strip():
+                raise HTTPException(status_code=400,
+                                    detail=f"투자사명이 없어 {label}를 적을 수 없습니다")
+            continue
+        try:
+            if field == "sub_sectors":
+                value = investor_firms.clean_sub_sectors(
+                    value, investor_firms.sub_sector_names(db))
+            elif field == "fund_types":
+                value = investor_firms.clean_fund_types(value)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        investor_firms.set_funds(db, contact.firm, value, doer(user).id, field)
 
 
 def _sourcing_cells(found: dict) -> dict:

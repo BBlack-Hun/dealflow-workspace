@@ -475,12 +475,13 @@
     {% if page.investors %}
     <button type="button" class="secondary-btn" id="import-btn">현황 업로드</button>
     {% endif %}
-    {# **소유 펀드 업로드**(#1) — 외부 조사로 모은 회사별 소유 펀드를 한 번에
+    {# **투자사 조사 업로드**(#1) — 외부 조사로 모은 회사별 `챗GPT 조사 소유펀드` ·
+       `펀드 종류` · `소분류` 를 한 번에
        넣는다. 회사 단위 값을 팀 전체 줄에 걸쳐 바꾸는 일이라 **관리자만**이다
        (서버도 같은 판정 — `routers/data_io.import_owned_funds`). 팀원은 줄에서
        칸을 눌러 한 회사씩 적는다. #}
     {% if page.investors and user.role == 'admin' %}
-    <button type="button" class="secondary-btn" id="funds-btn">소유 펀드 업로드</button>
+    <button type="button" class="secondary-btn" id="funds-btn">투자사 조사 업로드</button>
     {% endif %}
     {#
       [방 연결 확인] 은 **투자사 화면만의 것이 아니게 됐다** — 스타트업 명단에도
@@ -590,18 +591,19 @@
 </section>
 {% endif %}
 
-<!-- 소유 펀드 업로드 — 미리보기(맞춘 회사 / 못 맞춘 이름)로 본 뒤, 확인을 받고
+<!-- 투자사 조사 업로드 — 미리보기(맞춘 회사 / 못 맞춘 이름)로 본 뒤, 확인을 받고
      회사마다 값을 바꾼다. 여는 단추와 같은 조건으로 세운다(위 업로드와 같은 이유). -->
 {% if page.investors and user.role == 'admin' %}
 <section class="panel import-panel" id="funds-panel" hidden>
-  <h2 class="panel-title">소유 펀드 업로드 (회사 단위)
+  <h2 class="panel-title">투자사 조사 업로드 (회사 단위)
     <button type="button" class="linkbtn" id="funds-close">닫기 ✕</button>
   </h2>
   <p class="hint">
-    <b>투자사명</b>·<b>소유 펀드</b> 두 칸짜리 표를 올립니다.
+    <b>투자사명</b>과 <b>챗GPT 조사 소유펀드</b>·<b>펀드 종류</b>·<b>소분류</b>(있는 칸만) 표를 올립니다.
     <a href="/api/sample/owned-funds.xlsx" download><b>양식 내려받기</b></a>
     — 투자사명은 <code>(주)</code>·띄어쓰기·대소문자를 빼고 이 명단의 회사에 맞춥니다.
-    맞춘 회사는 <b>회사마다 값을 통째로 바꾸고</b>, 못 맞춘 이름과 빈 칸은 넣지 않습니다.
+    맞춘 회사는 <b>채운 칸만 통째로 바꾸고</b>, 못 맞춘 이름과 빈 칸은 넣지 않습니다(빈 칸 = 그대로).
+    소분류는 분야 기준 목록의 소분류만 · 5개까지 — 어긋난 줄은 넣지 않고 까닭을 보여 줍니다.
   </p>
   <div class="import-controls">
     <input type="file" id="funds-file" accept=".xlsx,.xlsm,.csv">
@@ -810,12 +812,24 @@
            폭은 딜 소싱 표의 같은 칸과 같은 124px — 필터 단추(`참여 요청일 (1) ▾`)와
            날짜(`2026-07-01`)가 한 줄에 든다. #}
         <th style="width:124px" data-sort="sourcing_date" data-filters="sourcing_date:참여 요청일">참여 요청일<div class="th-filters"></div></th>
+        {# **펀드 종류** · **소분류** — `챗GPT 조사 소유펀드` 와 같은 **회사 단위 값**이다
+           (`services/investor_firms.py` · 한 줄에서 고치면 같은 회사의 모든 줄에 — `contacts.js`
+           의 `syncFirmFunds`). 둘 다 쉼표로 여럿. `펀드 종류` 는 정해 둔 13가지만
+           (`investor_firms.FUND_TYPES`), `소분류` 는 분야 기준 목록의 소분류만 · 5개까지 —
+           어긋나면 서버가 막는다(`investor_firms.clean_fund_types` · `clean_sub_sectors`).
+           `소분류` 의 고르는 부품은 `선호 투자분야` 와 같다. 자리는 `선호 투자분야` 바로 왼쪽(요청). 머리글 풍선말은
+           값의 출처다. 필터는 `챗GPT 조사 소유펀드` 처럼 값마다 줄 수. #}
+        <th style="width:120px" data-filters="fund_type:펀드 종류"
+            title="2025년 이후 기사 기준 인터넷 조사">펀드 종류<div class="th-filters"></div></th>
+        <th style="width:134px" data-filters="sub_sector:소분류"
+            title="2025년 이후 기사 기준 인터넷 조사">소분류<div class="th-filters"></div></th>
         <th style="width:134px" data-filters="sector:선호 투자분야">선호 투자분야<div class="th-filters"></div></th>
         {# 필터 키는 **이 칸이 보여 주는 값**을 가리켜야 한다. 여기는 `round_size`
            인데 키가 `stage`(선호 단계) 였다 — 값이 0개인 다른 칸을 보고 있어서
            표에는 52줄이 보이는데 필터를 열면 늘 빈 목록이었다. #}
         <th style="width:204px" data-filters="round:라운드 사이즈(투자운영금액)">라운드 사이즈(투자운영금액)<div class="th-filters"></div></th>
-        {# **소유 펀드** — 회사 단위 값이다(#1 · `services/investor_firms.py`).
+        {# **챗GPT 조사 소유펀드**(옛 이름 `소유 펀드` — 필터 키 `fund` 는 그대로라 걸어 둔
+           주소도 그대로 산다) — 회사 단위 값이다(#1 · `services/investor_firms.py`).
            이 줄이 아니라 이 줄의 **회사**에 적힌다 — 한 줄에서 고치면 같은 회사
            (정규화한 회사명)의 모든 사람 줄에 같은 값이 선다(`contacts.js` 의
            `syncFirmFunds`). 원본 시트에 없는 앱 칸이지만 `라운드 사이즈` 바로
@@ -825,7 +839,7 @@
            회사의 줄은 그 펀드마다 센다. 나누는 규칙은 서버 한 곳
            (`investor_firms.split_funds`)이고, 값이 열 개를 넘으면 창 안에 값 검색이 선다.
            소유 펀드가 없는 줄은 `(비어 있음)` 으로 고른다. #}
-        <th style="width:160px" data-filters="fund:소유 펀드">소유 펀드<div class="th-filters"></div></th>
+        <th style="width:160px" data-filters="fund:챗GPT 조사 소유펀드">챗GPT 조사 소유펀드<div class="th-filters"></div></th>
         {# 컬럼 이름은 **원본 시트 그대로** 쓴다 — 시트와 나란히 놓고 대조한다.
            이 표에서 가장 긴 이름(40자)이라 폭을 여기서만은 **데이터가 아니라
            이름에 맞춘다.** 값은 306줄 중 3줄뿐이고 전부 `O` 라 데이터만 보면
@@ -936,6 +950,8 @@
           data-firm-key="{{ r.firm_key }}"
           data-f-sector="{{ r.sectors|join('|') }}"
           data-f-fund="{{ r.owned_fund_list|join('|') }}"
+          data-f-fund_type="{{ r.fund_type_list|join('|') }}"
+          data-f-sub_sector="{{ r.sub_sector_list|join('|') }}"
           data-f-dealstage="{{ r.deal_stage_label }}">
         {% if pool_view %}
         <td class="stick stick-lead"><input type="checkbox" class="pool-cb" value="{{ r.id }}"></td>
@@ -986,6 +1002,19 @@
            `sourcing_requested_at` 으로 다시 그린다(`contacts.js` — O 로 새 줄이 생기면
            그날이 선다). #}
         <td class="sourcing-requested" title="{{ r.sourcing_requested_at }}">{{ r.sourcing_requested_at }}</td>
+        {# `펀드 종류` · `소분류` — 회사 단위(머리글 주석). `펀드 종류` 는 정해 둔 말
+           (`investor_firms.FUND_TYPES`)을 체크해 여럿 고르고(`inline_edit.js` 의 `checks`),
+           `소분류` 는 `선호 투자분야` 와 같은 고르는 부품이다. 서버가 맞춘 목록 글자로 같은
+           회사의 줄을 다시 그린다. #}
+        <td title="{{ r.fund_types }}">
+          <div class="cell clamp2" data-field="fund_types" data-type="checks"
+               data-choices="{{ fund_type_choices|join(',') }}"
+               data-filter-key="fund_type" data-filter-sep=",">{{ r.fund_types }}</div>
+        </td>
+        <td title="{{ r.sub_sectors }}">
+          <div class="cell clamp2" data-field="sub_sectors" data-type="sectors"
+               data-filter-key="sub_sector" data-filter-sep=",">{{ r.sub_sectors }}</div>
+        </td>
         {# `data-type="sectors"` — **분야 기준 목록에서 여러 개 고른다**(#2 ·
            `sector_picker.js`). 자유 글로 적던 칸이라 목록 밖 옛 값이 남아 있을 수
            있다 — 고르는 창이 그 값을 지우지 않고 `목록 밖 값` 으로 보여 준다. #}
@@ -997,7 +1026,7 @@
           <div class="cell clamp2" data-field="round_size" data-type="long"
                data-filter-key="round">{{ r.round_size }}</div>
         </td>
-        {# `소유 펀드` — 회사 단위(머리글 주석). 저장 뒤 같은 회사의 줄이 칸도 필터 값도
+        {# `챗GPT 조사 소유펀드` — 회사 단위(머리글 주석). 저장 뒤 같은 회사의 줄이 칸도 필터 값도
            그 자리에서 따라 바뀐다(`contacts.js` 의 `syncFirmFunds`). #}
         <td title="{{ r.owned_funds }}">
           <div class="cell clamp2" data-field="owned_funds" data-type="long"
@@ -1547,6 +1576,13 @@
          저장 자리는 `stages` 그대로다. 안내 자리는 아래 칸들과 통일한다. #}
       <label class="field"><span>선호 투자단계</span>
         <input type="text" id="f-stages" placeholder="Seed, SeriesA — 쉼표로 구분"></label>
+      {# 회사 단위 값 둘(표 머리글 주석) — `선호 투자분야` 바로 앞, 표와 같은 차례. #}
+      <label class="field"><span>펀드 종류</span>
+        <input type="text" id="f-fund_types"
+               placeholder="정해 둔 말만 — 쉼표로 구분 · 표 칸에서 고를 수 있습니다"></label>
+      <label class="field"><span>소분류</span>
+        <input type="text" id="f-sub_sectors" data-sector-picker
+               placeholder="목록의 소분류만 — 5개까지 · 회사 단위"></label>
       {# **분야 기준 목록에서 고른다**(#2) — 칸은 읽기만 하고 [목록에서 고르기] 가
          펼친다(`sector_picker.js`). 표 칸과 같은 부품이다. #}
       <label class="field"><span>선호 투자분야</span>
@@ -1555,7 +1591,7 @@
       <label class="field wide"><span>라운드 사이즈(투자운영금액)</span><input type="text" id="f-round_size"></label>
       {# 회사 단위 값(#1) — 이 창에서 고쳐도 같은 회사의 모든 줄에 같은 값이 선다.
          이름은 표 머리글과 한 글자도 다르지 않게(`tests/test_ui_layout.py`). #}
-      <label class="field wide"><span>소유 펀드</span>
+      <label class="field wide"><span>챗GPT 조사 소유펀드</span>
         <input type="text" id="f-owned_funds"
                placeholder="회사 단위 — 같은 회사의 모든 줄에 같은 값이 보입니다"></label>
       {# `data-email-hint` — `@` 까지 치면 도메인 후보가 뜬다. 재 보니 이 명단의

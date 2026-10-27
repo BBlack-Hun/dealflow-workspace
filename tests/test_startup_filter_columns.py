@@ -426,9 +426,15 @@ def test_투자사_배치는_머리글도_필터도_안_바뀐다(sheets, db, us
     from app.models import ContactColumn, SheetOwner, VcContact
     from app.services import contact_columns as cc
 
-    # 투자사 명함 표 — 머리글이 템플릿에 적혀 있는 표.
-    heads = _thead(sheets.get(f"/{cc.page_of(cc.INVESTOR)}?sheet={quote(OTHER)}").text)
+    # 투자사 명함 표 — 머리글이 템플릿에 적혀 있는 표. `소분류` 는 이 표의 것이 따로
+    # 선다(투자사가 실제로 투자한 소분류 · 회사 단위 — `investor_firms`). 스타트업의
+    # `sector_minor` 가 아니라 자기 필터 키(`sub_sector`)여야 한다.
+    page = sheets.get(f"/{cc.page_of(cc.INVESTOR)}?sheet={quote(OTHER)}").text
+    heads = _thead(page)
     for label in COLUMNS:
+        if label == "소분류":
+            assert _filters(page)[label] == ["sub_sector:소분류"]
+            continue
         assert label not in heads, f"투자사 표에 `{label}` 이 끼어들었습니다"
 
     # 투자사 딜공유 — 같은 반복문으로 그리는 표. 필터는 `그룹` 하나 그대로다.

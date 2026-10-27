@@ -6,6 +6,7 @@
 //   2. 펀드 하나를 고르면 그 펀드를 가진 회사의 줄만 남는다.
 //   3. 건수는 다른 필터를 따라간다(다른 머리글 필터와 같은 `facets`).
 //   4. 한 줄에서 고치면 같은 회사의 다른 줄의 필터 값도 서버가 나눈 값으로 바뀐다.
+//   5. 같은 회사 단위 칸 `펀드 종류` · `소분류` 도 같은 길로 칸과 필터 값이 따라간다.
 //
 // 펀드·회사·이름은 지어낸 값이다 — 저장소가 공개다.
 "use strict";
@@ -49,9 +50,13 @@ assert.deepStrictEqual(counts({ group: ["1군"], fund: ["가상 1호"] }),
   const mk = (id, key, fund) => {
     const cell = D.el("div", { class: "cell clamp2", "data-field": "owned_funds",
                                "data-filter-key": "fund", "data-filter-sep": "," });
+    const sub = D.el("div", { class: "cell clamp2", "data-field": "sub_sectors",
+                              "data-filter-key": "sub_sector", "data-filter-sep": "," });
     const tr = D.el("tr", { class: "data-row", "data-id": id, "data-firm-key": key,
-                            "data-f-fund": fund }, [D.el("td", {}, [cell])]);
-    return { tr: tr, cell: cell };
+                            "data-f-fund": fund, "data-f-fund_type": "",
+                            "data-f-sub_sector": "" },
+                    [D.el("td", {}, [cell]), D.el("td", {}, [sub])]);
+    return { tr: tr, cell: cell, sub: sub };
   };
   const a = mk("1", "가상벤처스", "");
   const b = mk("2", "가상벤처스", "");
@@ -85,6 +90,19 @@ assert.deepStrictEqual(counts({ group: ["1군"], fund: ["가상 1호"] }),
   assert.strictEqual(c.tr.getAttribute("data-f-fund"), "가상 9호", "다른 회사 줄을 건드렸다");
   assert.deepStrictEqual(seen, ["가상 1호|가상 2호"],
     "필터가 다시 읽은 뒤에 행 값이 바뀌었다 — 차례가 거꾸로다");
+
+  // --- 5) `펀드 종류` · `소분류` — 같은 길(응답에 실린 칸만) -----------------
+  table.dispatchEvent({ type: "inline-saved", detail: { row: a.tr, cell: a.sub,
+    value: "ai saas, 로봇",
+    data: { ok: true, firm_key: "가상벤처스", sub_sectors: "AI SaaS, 로봇",
+            sub_sector_list: ["AI SaaS", "로봇"],
+            fund_types: "청년창업", fund_type_list: ["청년창업"] } } });
+  assert.strictEqual(b.tr.getAttribute("data-f-sub_sector"), "AI SaaS|로봇");
+  assert.strictEqual(b.sub.textContent, "AI SaaS, 로봇", "같은 회사 줄의 칸이 서버 글자로 안 바뀌었다");
+  assert.strictEqual(a.sub.textContent, "AI SaaS, 로봇");
+  assert.strictEqual(b.tr.getAttribute("data-f-fund_type"), "청년창업");
+  assert.strictEqual(b.tr.getAttribute("data-f-fund"), "가상 1호|가상 2호", "응답에 없는 칸을 건드렸다");
+  assert.strictEqual(c.tr.getAttribute("data-f-sub_sector"), "", "다른 회사 줄을 건드렸다");
 }
 
 console.log("contacts_fund_filter_test: ok");

@@ -15,7 +15,7 @@ from ..db import get_db
 from ..deps import get_current_user, may_manage_team_contacts, templates
 from ..models import ROOM_SEARCH_TOPIC, STARTUP_MSG_KIND, IrCompany, SendJob, User
 from ..services import (cadence, contact_columns, custom_columns, deal_history, deal_queue,
-                        deal_stage, email_domains, group_name, ir_attach,
+                        deal_stage, email_domains, group_name, investor_firms, ir_attach,
                         llm_brief, mailer, manual_send, memo_intro, ref_panel,
                         send_window, series_a_share, sheet_import,
                         sheet_owner, sourcing_link, sourcing_receipts,
@@ -752,6 +752,8 @@ def list_page(
         # 표 칸과 수정창이 이 한 벌을 읽는다(`sector_picker.js`). 숨긴 줄은 안
         # 실린다 — 고르는 자리에 숨긴 이름이 서면 숨긴 뜻이 없다.
         "sector_tree": taxonomy.picker_tree(db),
+        # `펀드 종류` 칸이 고를 말 — 서버 한 곳(`investor_firms.FUND_TYPES`).
+        "fund_type_choices": investor_firms.FUND_TYPES,
         # `딜 소싱` 칸 · 수정창이 고를 갈래(짧은 이름) — 서버 한 곳(`sourcing_sync.BRANCHES`).
         "sourcing_branch_labels": [label for label, _b in sourcing_sync.BRANCHES],
     })

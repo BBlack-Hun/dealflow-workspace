@@ -201,7 +201,8 @@
       if (type === "long") { startLong(cell, before, type); return; }
       if (type === "pick") { startPick(cell, before, type); return; }
       if (type === "email") { startEmail(cell, before, type); return; }
-      if (type === "branches") { startBranches(cell, before, type); return; }
+      // `checks` — 같은 체크 창, 보기만 칸의 `data-choices`(투자사 관리 현황 `펀드 종류`).
+      if (type === "branches" || type === "checks") { startBranches(cell, before, type); return; }
       if (type === "sectors" && global.DealflowSectorPicker) {
         startSectors(cell, before, type);
         return;
@@ -718,8 +719,10 @@
           return check;
         });
         api.pop.appendChild(box);
-        api.pop.appendChild(hintLine("체크하면 딜 소싱 그 갈래에 넣고, 풀면 불참여로 둡니다 · " +
-                                     "Tab 으로 옮겨 Space 로 체크 · Enter 또는 바깥을 누르면 저장 · Esc 취소"));
+        api.pop.appendChild(hintLine((type === "branches"
+          ? "체크하면 딜 소싱 그 갈래에 넣고, 풀면 불참여로 둡니다 · "
+          : "여러 개 고를 수 있습니다 · ") +
+          "Tab 으로 옮겨 Space 로 체크 · Enter 또는 바깥을 누르면 저장 · Esc 취소"));
         // 키보드로도 고른다 — Tab 은 상자 사이를 옮기고(끝에서는 창의 Tab: 저장하고 옆
         // 칸), Space 는 브라우저가 체크하고, Enter 는 어디서든 저장하고 아래 칸.
         var stops = [input].concat(boxes);
