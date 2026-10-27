@@ -186,8 +186,10 @@ CONTACT_HEADERS = [
     # `딜 소싱` 은 `Series A, M&A 불참여` 꼴 — 고른 갈래 · 빠진 갈래(`불참여`)를 쉼표로.
     # 엑셀 올리기가 받는 글자와 같다(`sourcing_sync.parse_branches`).
     "딜 소싱", "참여 요청일",
-    # `소유 펀드` — 회사 단위 값(#1). 화면처럼 라운드 바로 뒤에 선다.
-    "라운드 사이즈(투자운영금액)", "소유 펀드", "선호 투자단계", "선호 투자분야",
+    # `챗GPT 조사 소유펀드`(옛 이름 `소유 펀드`) — 회사 단위 값(#1). 라운드 바로 뒤.
+    # `펀드 종류` · `소분류` — 같은 회사 단위 값. 화면처럼 `선호 투자분야` 바로 왼쪽.
+    "라운드 사이즈(투자운영금액)", "챗GPT 조사 소유펀드", "선호 투자단계",
+    "펀드 종류", "소분류", "선호 투자분야",
     "휴대폰", "전자 메일 주소", "근무처 전화", "근무처 팩스", "근무지 주소", "명함 등록일",
     # `마지막 딜소개`·`회차 메모` 는 **딜소개만** 본다. `마지막 일` 은 그 뒤에
     # 온 IR 요청·전달·미팅까지 함께 보고 회차명으로 적는다(`09/16 (9월 3주차)
@@ -254,33 +256,36 @@ def sample_contacts(user: User = Depends(get_current_user)):
                     headers=sp.content_disposition("투자사 관리 현황_업로드양식.xlsx"))
 
 
-# --- 소유 펀드(회사 단위 · #1) -----------------------------------------------
+# --- 투자사 조사값(회사 단위 · #1) -------------------------------------------
 #
-# 외부 조사로 모은 회사별 소유 펀드를 한 번에 넣는 길. **관리자만**이다 — 회사
-# 단위 값을 팀 전체 줄에 걸쳐 바꾸는 일이다. 팀원은 줄에서 칸을 눌러 적는다.
+# 외부 조사로 모은 회사별 `챗GPT 조사 소유펀드` · `펀드 종류` · `소분류` 를 한 번에
+# 넣는 길. **관리자만**이다 — 회사 단위 값을 팀 전체 줄에 걸쳐 바꾸는 일이다. 팀원은
+# 줄에서 칸을 눌러 적는다.
 #
-# 두 걸음이다: 미리보기(맞춘 회사 · 못 맞춘 이름 · 빈 칸)를 본 뒤, 확인을 받고
-# 회사마다 값을 **바꾼다**(`services/investor_firms.apply_upload`).
+# 두 걸음이다: 미리보기(맞춘 회사 · 못 맞춘 이름 · 빈 칸 · 못 넣는 줄)를 본 뒤, 확인을
+# 받고 회사마다 **채운 칸만** 바꾼다(`services/investor_firms.apply_upload`).
 
 #: 양식에 채워 두는 보기 줄. 회사도 펀드도 지어낸 것이다(저장소가 공개다).
+#: 둘째 줄은 빈 칸이 '안 바꿈' 이라는 것을 보인다.
 FUNDS_SAMPLE_ROWS = [
-    ["가나벤처스", "가나 1호 투자조합, 가나 스케일업 펀드"],
-    ["(주)다라인베스트", "다라 혁신성장 펀드"],
+    ["가나벤처스", "가나 1호 투자조합, 가나 스케일업 펀드", "모태 문화계정, 청년창업",
+     "AI SaaS, 의료기기"],
+    ["(주)다라인베스트", "다라 혁신성장 펀드", "", "로봇"],
 ]
 
 
 @router.get("/api/sample/owned-funds.xlsx")
 def sample_owned_funds(user: User = Depends(get_current_user)):
-    """`소유 펀드` 업로드 양식 — 머리글 두 칸(`투자사명` · `소유 펀드`)."""
+    """투자사 조사값 업로드 양식 — 머리글 `투자사명` + `investor_firms.FIELDS`."""
     admin_only(user)
     try:
         content = sp.write_plain_xlsx(
-            "소유 펀드", [list(investor_firms.HEADERS), *FUNDS_SAMPLE_ROWS],
-            head_row=1, widths=[24, 48])
+            "투자사 조사", [list(investor_firms.HEADERS), *FUNDS_SAMPLE_ROWS],
+            head_row=1, widths=[24, 48, 32, 32])
     except sp.SpreadsheetError as exc:
         raise HTTPException(status_code=500, detail=str(exc))
     return Response(content=content, media_type=sp.XLSX_MEDIA_TYPE,
-                    headers=sp.content_disposition("소유 펀드_업로드양식.xlsx"))
+                    headers=sp.content_disposition("투자사 조사_업로드양식.xlsx"))
 
 
 @router.post("/api/import/owned-funds")
@@ -290,7 +295,7 @@ def import_owned_funds(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """소유 펀드 업로드. 기본은 미리보기 — 반영하려면 dry_run=false."""
+    """투자사 조사값 업로드. 기본은 미리보기 — 반영하려면 dry_run=false."""
     admin_only(user)
     data = file.file.read()
     try:
@@ -322,7 +327,7 @@ def _contact_row(r: dict) -> list:
             r["room_name"], r["room_label"], r["invited_status"], r["interest_level"],
             r["sourcing_filter"].replace("|", ", "), r["sourcing_requested_at"],
             r["round_size"], r["owned_funds"], ", ".join(r["stages"]),
-            ", ".join(r["sectors"]),
+            r["fund_types"], r["sub_sectors"], ", ".join(r["sectors"]),
             r["phone"], r["email"], r["office_phone"], r["office_fax"],
             r["address"], r["card_registered_at"],
             r["last_deal"] or "", r["last_deal_note"], r["last_act_text"],

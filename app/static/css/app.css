@@ -689,7 +689,9 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
     회사 단위 값(#1). contacts.html 의 그 머리글 주석) */
 /* (3,726 → 3,770 : `Series A 딜 소싱`(156px)을 갈래 딱지가 서는 `딜 소싱`(200px)으로
     바꿨다 — 딱지 둘이 한 줄에 든다. contacts.html 의 그 머리글 주석) */
-#contacts-table { min-width: 3770px; }
+/* (3,770 → 4,024 : `펀드 종류`(120px) · `소분류`(134px)를 `선호 투자분야` 바로 왼쪽에
+    세웠다 — 회사 단위 값. contacts.html 의 그 머리글 주석) */
+#contacts-table { min-width: 4024px; }
 /* `딜 소싱` 칸의 갈래 딱지 — 참여(초록) · 아직 동의 전(주황 — 딜 소싱 표의
    `part-pending` 과 같은 색) · 불참여(흐리게, 줄을 그어 빠진 것을 보인다).
    칸이 좁아 딱지가 넘치면 다음 줄로 접는다. */

@@ -3206,7 +3206,7 @@ class SectorTerm(TimestampMixin, Base):
 
 
 class InvestorFirm(TimestampMixin, Base):
-    """투자사 **회사 단위** 값 — 지금은 `소유 펀드` 하나다(개선 과제 #1).
+    """투자사 **회사 단위** 값 — `챗GPT 조사 소유펀드`(개선 과제 #1) · `펀드 종류` · `소분류`.
 
     투자사 관리 현황은 **사람 줄**이다(`VcContact`). 같은 회사의 심사역이
     여럿이면 줄도 여럿인데, 회사가 가진 펀드는 사람마다 다를 수가 없다. 사람
@@ -3231,8 +3231,13 @@ class InvestorFirm(TimestampMixin, Base):
     firm_key: Mapped[str] = mapped_column(String)
     #: 화면에 부르는 이름 — 처음 적힌 회사명 그대로.
     display_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    #: 소유 펀드. 자유 글(펀드 이름 여럿을 쉼표로 적는다).
+    #: 소유 펀드(화면 이름 `챗GPT 조사 소유펀드`). 자유 글(펀드 이름 여럿을 쉼표로 적는다).
     owned_funds: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    #: 펀드 종류 — 이 회사가 결성한 펀드의 갈래(`모태 문화계정, 청년창업`). 쉼표로 여럿(0124).
+    fund_types: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    #: 소분류 — 실제로 투자한 기업의 소분류. 분야 기준 목록의 소분류만 · 5개까지
+    #: (`services/investor_firms.clean_sub_sectors`). 쉼표로 여럿(0124).
+    sub_sectors: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     #: 마지막으로 고친 사람(언제는 `updated_at`).
     updated_by: Mapped[Optional[int]] = mapped_column(
         ForeignKey("users.id"), nullable=True)

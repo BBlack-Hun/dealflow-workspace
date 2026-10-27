@@ -1,4 +1,7 @@
-"""투자사 **회사 단위** 값 — `소유 펀드`(개선 과제 #1).
+"""투자사 **회사 단위** 값 — `챗GPT 조사 소유펀드`(개선 과제 #1) · `펀드 종류` · `소분류`.
+
+화면 이름은 `FIELDS` 한 곳에 있다. `소유 펀드` 는 옛 화면 이름이다 — 저장 칸
+(`owned_funds`)은 그대로이고, 옛 머리글로 만든 표도 그대로 받는다(`OLD_HEADS`).
 
 투자사 관리 현황은 사람 줄이라 같은 회사가 여러 줄에 선다. 회사가 가진 펀드는
 사람마다 다를 수 없으므로 값은 회사 하나에 한 번만 적고(`InvestorFirm`), 사람 줄은
@@ -13,12 +16,13 @@
 
 ## 엑셀로 한꺼번에 넣기
 
-외부 조사 결과(회사별 소유 펀드)를 `투자사명` · `소유 펀드` 두 칸짜리 표로 받아
+외부 조사 결과를 `투자사명` + 값 칸(`FIELDS` 의 머리글 — 있는 것만) 표로 받아
 넣는다(`parse_upload` → `match` → `apply_upload`). 이름은 위 열쇠로 투자사 관리
 현황의 회사에 맞추고, **못 맞춘 이름은 넣지 않고 보여만 준다** — 명단에 없는
-회사의 값은 아무 줄에도 안 보여서, 넣어도 확인할 길이 없다. 빈 칸은 건너뛴다
-(지우는 것은 화면에서 한다 — 빈 칸이 '지워라' 인지 '모른다' 인지 표만 보고는
-알 수 없다).
+회사의 값은 아무 줄에도 안 보여서, 넣어도 확인할 길이 없다. 빈 칸은 **그 칸만**
+건너뛴다(지우는 것은 화면에서 한다 — 빈 칸이 '지워라' 인지 '모른다' 인지 표만
+보고는 알 수 없다). `소분류` 가 목록 밖이거나 5개를 넘는 줄은 통째로 안 넣고
+까닭을 보여 준다(`errors`).
 """
 from __future__ import annotations
 
@@ -30,12 +34,18 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..models import InvestorFirm, VcContact
+from . import taxonomy
 from .sheet_import import normalize_company_name
 
-#: 업로드 양식의 머리글. 이 글자로 칸을 찾는다.
+#: 회사 단위 칸 → 화면 · 엑셀 머리글. 업로드도 이 글자로 칸을 찾는다.
+FIELDS = {"owned_funds": "챗GPT 조사 소유펀드", "fund_types": "펀드 종류",
+          "sub_sectors": "소분류"}
+#: 이름을 바꾼 머리글(옛 이름 → 칸) — 옛 양식으로 채운 표도 받는다.
+OLD_HEADS = {"소유 펀드": "owned_funds"}
 HEAD_FIRM = "투자사명"
-HEAD_FUNDS = "소유 펀드"
-HEADERS = (HEAD_FIRM, HEAD_FUNDS)
+HEADERS = (HEAD_FIRM, *FIELDS.values())
+#: `소분류` 는 몇 개까지 적나.
+MAX_SUB_SECTORS = 5
 
 
 def firm_key(name: Optional[str]) -> str:
@@ -44,7 +54,7 @@ def firm_key(name: Optional[str]) -> str:
 
 
 def split_funds(text: Optional[str]) -> List[str]:
-    """소유 펀드 글 → 펀드 이름들. 투자사 관리 현황의 `소유 펀드` 필터가 세는 값이다.
+    """쉼표 글 → 이름들. 투자사 관리 현황의 회사 단위 칸 필터(`챗GPT 조사 소유펀드` 등)가 세는 값이다.
 
     쉼표·줄바꿈으로 나누고 앞뒤 공백을 걷고 겹친 공백을 하나로 줄인다. 이름을
     고치거나 묶지 않는다 — 적힌 글자 그대로가 갈래다. 같은 이름이 두 번이면 한 번.
@@ -53,25 +63,50 @@ def split_funds(text: Optional[str]) -> List[str]:
     return list(dict.fromkeys(p for p in parts if p))
 
 
-def funds_map(db: Session) -> Dict[str, str]:
-    """열쇠 → 소유 펀드. 표 한 장에 질의 하나(줄마다 묻지 않는다)."""
-    return {row.firm_key: row.owned_funds or ""
+def funds_map(db: Session, field: str = "owned_funds") -> Dict[str, str]:
+    """열쇠 → 그 칸(`FIELDS`)의 값. 표 한 장에 질의 하나(줄마다 묻지 않는다)."""
+    return {row.firm_key: getattr(row, field)
             for row in db.execute(select(InvestorFirm)).scalars()
-            if row.owned_funds}
+            if getattr(row, field)}
 
 
-def funds_of(db: Session, firm: Optional[str]) -> str:
+def funds_of(db: Session, firm: Optional[str], field: str = "owned_funds") -> str:
     key = firm_key(firm)
     if not key:
         return ""
     row = db.execute(select(InvestorFirm).where(InvestorFirm.firm_key == key)
                      ).scalar_one_or_none()
-    return (row.owned_funds or "") if row else ""
+    return (getattr(row, field) or "") if row else ""
+
+
+def sub_sector_names(db: Session) -> Dict[str, str]:
+    """분야 기준 목록의 **보이는 소분류** — 견주는 꼴(`taxonomy.norm`) → 목록의 글자.
+
+    선호 투자분야를 고르는 목록(`taxonomy.tree`)과 같은 줄들이다 — 숨긴 · 합친 줄은 없다.
+    """
+    r = taxonomy.Resolver.load(db)
+    return {taxonomy.norm(m.name): m.name
+            for major in r.visible_majors() for m in r.visible_minors(major.id)}
+
+
+# shortcut: `펀드 종류` 는 정한 목록이 없어 글 그대로 받는다 — 시범 조사 뒤 목록이 정해지면 여기 검사를 두고 `_firm_values` · `match` 에서 부른다.
+def clean_sub_sectors(text: Optional[str], known: Dict[str, str]) -> str:
+    """`소분류` 글 → 목록의 글자로 맞춘 값. 목록 밖 말 · 5개 넘음은 ValueError(화면에 그대로)."""
+    tokens = split_funds(text)
+    bad = [t for t in tokens if taxonomy.norm(t) not in known]
+    if bad:
+        raise ValueError("소분류는 분야 기준 목록(IR 기업 현황 소분류)에 있는 말만 적을 수 "
+                         "있습니다 — 목록에 없는 말: " + ", ".join(bad))
+    names = list(dict.fromkeys(known[taxonomy.norm(t)] for t in tokens))
+    if len(names) > MAX_SUB_SECTORS:
+        raise ValueError(f"소분류는 {MAX_SUB_SECTORS}개까지 적을 수 있습니다 "
+                         f"— {len(names)}개를 적었습니다")
+    return ", ".join(names)
 
 
 def set_funds(db: Session, firm: Optional[str], value: Optional[str],
-              user_id: Optional[int]) -> Optional[InvestorFirm]:
-    """이 회사의 소유 펀드를 적는다. 회사명이 비면 적을 자리가 없어 None.
+              user_id: Optional[int], field: str = "owned_funds") -> Optional[InvestorFirm]:
+    """이 회사의 그 칸(`FIELDS`) 값을 적는다. 회사명이 비면 적을 자리가 없어 None.
 
     값이 같으면 아무것도 안 바꾼다(수정 로그에 빈 고침이 쌓이지 않게).
     커밋은 부르는 쪽.
@@ -87,10 +122,13 @@ def set_funds(db: Session, firm: Optional[str], value: Optional[str],
             return None
         row = InvestorFirm(firm_key=key, display_name=(firm or "").strip())
         db.add(row)
-    if (row.owned_funds or "") == text:
+    if (getattr(row, field) or "") == text:
         return row
-    row.owned_funds = text or None
+    setattr(row, field, text or None)
     row.updated_by = user_id
+    # autoflush 가 꺼져 있다 — 같은 판에서 이 회사의 다른 칸을 적을 때 새 줄을 다시
+    # 찾아야 한다(못 찾으면 줄을 또 만들어 `firm_key` 겹침으로 터진다).
+    db.flush()
     return row
 
 
@@ -104,31 +142,40 @@ class UploadError(Exception):
 class UploadRow:
     line: int
     name: str
-    funds: str
+    #: 칸(`FIELDS` 의 열쇠) → 적힌 글. 표에 있는 머리글의 칸만 — 빈 글은 '안 바꿈'.
+    values: Dict[str, str]
 
 
 def parse_upload(rows: Sequence[Sequence]) -> List[UploadRow]:
-    """표 → (줄 번호, 투자사명, 소유 펀드). 머리글 줄은 이름으로 찾는다(차례 무관)."""
+    """표 → (줄 번호, 투자사명, 칸별 값). 머리글 줄은 이름으로 찾는다(차례 무관)."""
     def cell(row, i):
         return str(row[i]).strip() if i is not None and i < len(row) and row[i] is not None else ""
 
-    head_at, cols = None, {}
+    def flat(text) -> str:
+        return str(text or "").replace(" ", "").strip()
+
+    heads = {flat(label): field for field, label in FIELDS.items()}
+    heads.update({flat(old): field for old, field in OLD_HEADS.items()})
+    head_at, firm_at, cols = None, None, {}
     for i, row in enumerate(rows[:20]):
-        labels = [str(c or "").replace(" ", "").strip() for c in row]
-        if HEAD_FIRM.replace(" ", "") in labels and HEAD_FUNDS.replace(" ", "") in labels:
-            head_at = i
-            cols = {"firm": labels.index(HEAD_FIRM.replace(" ", "")),
-                    "funds": labels.index(HEAD_FUNDS.replace(" ", ""))}
+        labels = [flat(c) for c in row]
+        if flat(HEAD_FIRM) in labels and any(label in heads for label in labels):
+            head_at, firm_at = i, labels.index(flat(HEAD_FIRM))
+            for j, label in enumerate(labels):
+                if label in heads:
+                    cols.setdefault(heads[label], j)
             break
     if head_at is None:
-        raise UploadError(f"머리글 `{HEAD_FIRM}` · `{HEAD_FUNDS}` 이 있는 줄을 못 찾았습니다 "
+        raise UploadError(f"머리글 `{HEAD_FIRM}` 과 `" + "` · `".join(FIELDS.values())
+                          + "` 중 하나 이상이 있는 줄을 못 찾았습니다 "
                           "— 양식을 내려받아 그 머리글 그대로 채워 주세요")
     out = []
     for i, row in enumerate(rows[head_at + 1:], start=head_at + 2):
-        name = cell(row, cols["firm"])
+        name = cell(row, firm_at)
         if not name:
             continue
-        out.append(UploadRow(line=i, name=name, funds=cell(row, cols["funds"])))
+        out.append(UploadRow(line=i, name=name,
+                             values={field: cell(row, j) for field, j in cols.items()}))
     return out
 
 
@@ -138,16 +185,20 @@ class Match:
     unmatched: List[dict] = field(default_factory=list)
     blank: List[dict] = field(default_factory=list)
     duplicates: List[dict] = field(default_factory=list)
+    #: 맞췄지만 값을 못 쓰는 줄(`소분류` 목록 밖 · 5개 넘음) — 그 줄은 통째로 안 넣는다.
+    errors: List[dict] = field(default_factory=list)
 
     def as_dict(self) -> dict:
         changes = [m for m in self.matched if m["changes"]]
         return {"matched": self.matched, "unmatched": self.unmatched,
                 "blank": self.blank, "duplicates": self.duplicates,
+                "errors": self.errors, "labels": FIELDS,
                 "counts": {"matched": len(self.matched), "changes": len(changes),
                            "unchanged": len(self.matched) - len(changes),
                            "unmatched": len(self.unmatched),
                            "blank": len(self.blank),
-                           "duplicates": len(self.duplicates)}}
+                           "duplicates": len(self.duplicates),
+                           "errors": len(self.errors)}}
 
 
 def _firms(db: Session) -> Dict[str, dict]:
@@ -182,7 +233,8 @@ def match(db: Session, rows: Iterable[UploadRow]) -> Match:
     — 그 사실은 `duplicates` 로 따로 보여 준다.
     """
     firms = _firms(db)
-    current = funds_map(db)
+    current = {f: funds_map(db, f) for f in FIELDS}
+    known = sub_sector_names(db)
     out = Match()
     seen: Dict[str, dict] = {}
     for row in rows:
@@ -190,13 +242,20 @@ def match(db: Session, rows: Iterable[UploadRow]) -> Match:
         if key not in firms:
             out.unmatched.append({"line": row.line, "name": row.name})
             continue
-        if not row.funds:
+        after = {f: v for f, v in row.values.items() if v}
+        if not after:
             out.blank.append({"line": row.line, "name": row.name})
             continue
+        if "sub_sectors" in after:
+            try:
+                after["sub_sectors"] = clean_sub_sectors(after["sub_sectors"], known)
+            except ValueError as exc:
+                out.errors.append({"line": row.line, "name": row.name, "reason": str(exc)})
+                continue
+        before = {f: current[f].get(key, "") for f in after}
         entry = {"line": row.line, "name": row.name, "key": key,
                  "firm": firms[key]["name"], "rows": firms[key]["rows"],
-                 "before": current.get(key, ""), "after": row.funds,
-                 "changes": current.get(key, "") != row.funds}
+                 "before": before, "after": after, "changes": before != after}
         if key in seen:
             out.duplicates.append({"line": seen[key]["line"], "name": seen[key]["name"],
                                    "kept_line": row.line})
@@ -214,7 +273,8 @@ def apply_upload(db: Session, rows: Iterable[UploadRow], user_id: Optional[int])
     for entry in plan.matched:
         if not entry["changes"]:
             continue
-        set_funds(db, names[entry["key"]]["name"], entry["after"], user_id)
+        for f, value in entry["after"].items():
+            set_funds(db, names[entry["key"]]["name"], value, user_id, f)
         changed += 1
     db.commit()
     return {"changed": changed, **plan.as_dict()["counts"]}

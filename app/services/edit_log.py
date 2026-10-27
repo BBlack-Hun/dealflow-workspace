@@ -379,8 +379,8 @@ WATCHED: Dict[str, Watch] = {
             "줄마다 남고, 목록이 언제 누구 손에 바뀌었는지는 여기 남는다."),
     "investor_firms": Watch(
         owner=None, href="/contacts", label=_attr("display_name"),
-        why="투자사 회사 단위 값(`소유 펀드` · #1). 주인 칸이 없다 — 팀원이 자기 줄에서 "
-            "고쳐도 **같은 회사의 남의 줄**에 같은 값이 서므로, 누가 언제 바꿨는지가 "
+        why="투자사 회사 단위 값(`챗GPT 조사 소유펀드` · `펀드 종류` · `소분류` · #1). "
+            "주인 칸이 없다 — 팀원이 자기 줄에서 고쳐도 **같은 회사의 남의 줄**에 같은 값이 서므로, 누가 언제 바꿨는지가 "
             "여기 말고는 안 남는다. 엑셀로 한꺼번에 넣은 것도 회사마다 남는다."),
     "notices": Watch(
         owner=None, href="/team", label=_attr("title"),
@@ -533,11 +533,11 @@ VALUE_FIELDS = frozenset({
     # **분야 기준 목록**(`sector_terms`) — 어느 대분류 아래인가 · 어디로 합쳤나.
     # 번호지만 짧고, 잘못 옮기면 그 소분류를 쓰는 기업의 대분류가 따라 움직인다.
     "parent_id", "merged_into_id",
-    # **투자사 회사 단위 값**(`investor_firms` · #1) — 회사 이름과 소유 펀드.
+    # **투자사 회사 단위 값**(`investor_firms` · #1) — 회사 이름과 소유 펀드 · 펀드 종류 · 소분류.
     # 한 줄에서 고쳐도 같은 회사의 남의 줄에 그대로 서는 값이라, 전→후가 안
     # 보이면 "누가 우리 회사 펀드를 바꿨나" 에 답할 수 없다. 펀드 이름 몇 개라
     # 짧고, 사람 · 연락처가 아니다(길면 `VALUE_MAX` 에서 잘린다).
-    "display_name", "owned_funds",
+    "display_name", "owned_funds", "fund_types", "sub_sectors",
 
     # **어느 IR 기업에 이어 두었나**(`services/ir_link.py`). 번호로 남고, 로그
     # 화면이 그 번호를 기업 이름으로 바꿔 보여 준다(`recent`). 잇고 푼 것은
@@ -606,7 +606,8 @@ FIELD_LABELS = {
     "summary": "요약", "business_desc": "사업 설명", "content_json": "내용",
     # 분야 기준 목록 · 회사 단위 값(#2 · #30 · #1).
     "parent_id": "대분류", "merged_into_id": "합친 곳", "sectors": "선호 투자분야",
-    "owned_funds": "소유 펀드", "display_name": "회사",
+    "owned_funds": "챗GPT 조사 소유펀드", "fund_types": "펀드 종류", "sub_sectors": "소분류",
+    "display_name": "회사",
     # 줄 안에 없는 사실 — `also()` 로 얹는 칸(`routers/companies.py` 의 강제 삭제).
     "force_delete": "함께 움직인 것",
     # 추가 칸 지우기(`custom_columns.delete`) — 칸과 함께 지운 값 줄 수.

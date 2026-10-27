@@ -1,4 +1,4 @@
-"""`소유 펀드`(#1) — 회사 단위 값 · 같은 회사 줄 전파 · 엑셀 올리기 매칭 · 칸 자리.
+"""`소유 펀드`(#1 · 화면 이름은 이제 `챗GPT 조사 소유펀드`) — 회사 단위 값 · 같은 회사 줄 전파 · 엑셀 올리기 매칭 · 칸 자리.
 
 회사 · 펀드 · 사람 이름은 전부 지어낸 것이다 — 저장소가 공개다.
 """
@@ -153,7 +153,7 @@ def test_표에서_라운드_사이즈_바로_오른쪽에_선다(member, db, us
     names = [re.sub(r"<[^>]+>", "", cell).strip()
              for cell in re.findall(r"<th\b[^>]*>(.*?)</th>", head, re.S)]
     at = names.index("라운드 사이즈(투자운영금액)")
-    assert names[at + 1] == "소유 펀드"
+    assert names[at + 1] == "챗GPT 조사 소유펀드"
     # 줄에서도 같은 자리다 — 머리글과 칸이 한 칸이라도 밀리면 안 된다.
     row = re.search(r'id="contacts-table".*?<tbody>(.*?)</tr>', html, re.S).group(1)
     fields = re.findall(r'data-field="([a-z_]+)"', row)
@@ -177,7 +177,7 @@ def test_엑셀_내려받기에도_실린다(member, db, users):
     assert r.status_code == 200
     ws = openpyxl.load_workbook(io.BytesIO(r.content)).active
     head = [c.value for c in ws[1]]
-    at = head.index("소유 펀드")
+    at = head.index("챗GPT 조사 소유펀드")
     assert head[at - 1] == "라운드 사이즈(투자운영금액)"
     values = [row[at] for row in ws.iter_rows(min_row=2, values_only=True)]
     assert "가상 1호" in values
@@ -191,7 +191,7 @@ def test_머리글은_이름으로_찾는다():
     rows = [["메모", ""], ["", "소유 펀드", "투자사명"], ["", "가상 1호", "가상벤처스"],
             ["", "", ""]]
     parsed = f.parse_upload(rows)
-    assert [(p.name, p.funds) for p in parsed] == [("가상벤처스", "가상 1호")]
+    assert [(p.name, p.values) for p in parsed] == [("가상벤처스", {"owned_funds": "가상 1호"})]
     with pytest.raises(f.UploadError):
         f.parse_upload([["회사", "펀드"]])
 
@@ -242,7 +242,7 @@ def test_같은_회사가_두_번이면_아래_줄을_쓴다(db, users):
     rows = f.parse_upload([["투자사명", "소유 펀드"], ["가상벤처스", "옛 값"],
                            ["가상 벤처스", "새 값"]])
     plan = f.match(db, rows).as_dict()
-    assert [m["after"] for m in plan["matched"]] == ["새 값"]
+    assert [m["after"] for m in plan["matched"]] == [{"owned_funds": "새 값"}]
     assert plan["duplicates"][0]["kept_line"] == 3
 
 
@@ -260,7 +260,7 @@ def test_미리보기는_안_쓰고_반영은_회사마다_바꾼다(admin, db, 
     assert preview.status_code == 200, preview.text
     body = preview.json()
     assert body["counts"]["changes"] == 1 and body["counts"]["unmatched"] == 1
-    assert body["matched"][0]["before"] == "옛 펀드"
+    assert body["matched"][0]["before"] == {"owned_funds": "옛 펀드"}
     db.expire_all()
     assert f.funds_of(db, "가상벤처스") == "옛 펀드", "미리보기가 썼다"
 
@@ -281,13 +281,13 @@ def test_올리기와_양식은_관리자만(member, db, users):
     assert 'id="funds-btn"' not in member.get("/contacts").text
 
 
-def test_양식은_두_칸_머리글이다(admin):
+def test_양식은_투자사명과_회사_단위_칸_머리글이다(admin):
     import openpyxl
 
     r = admin.get("/api/sample/owned-funds.xlsx")
     assert r.status_code == 200
     ws = openpyxl.load_workbook(io.BytesIO(r.content)).active
-    assert [c.value for c in ws[1]][:2] == ["투자사명", "소유 펀드"]
+    assert [c.value for c in ws[1]][:4] == ["투자사명", "챗GPT 조사 소유펀드", "펀드 종류", "소분류"]
     assert 'id="funds-btn"' in admin.get("/contacts").text
 
 
@@ -319,7 +319,7 @@ def test_줄마다_자기_회사의_펀드를_필터_값으로_싣는다(member,
     db.commit()
 
     html = member.get("/contacts?sheet=all").text
-    assert 'data-filters="fund:소유 펀드"' in html
+    assert 'data-filters="fund:챗GPT 조사 소유펀드"' in html
     funds = dict(re.findall(r'data-name="([^"]+)"[^>]*?data-f-fund="([^"]*)"', html, re.S))
     assert funds == {"가나다": "가상 1호|가상 2호", "라마바": "가상 1호|가상 2호",
                      "사아자": "가상 2호", "차카타": ""}

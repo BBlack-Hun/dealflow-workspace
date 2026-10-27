@@ -14,11 +14,11 @@
     // `불참여` 로 둔다(`services/sourcing_sync.py`). 고칠 때는 **사람이 이 칸을
     // 바꿨을 때만** 보낸다(`save` 의 `openedBranches`).
     "sourcing_branches",
-    // `소유 펀드` — **회사 단위 값**이다(`services/investor_firms.py`). 이 줄이
-    // 아니라 이 줄의 회사에 적히므로 `딜 소싱` 처럼 **바꿨을 때만**
-    // 보낸다(`save` 의 `openedFunds`) — 회사명을 고치는 저장에 옛 회사의 값이
-    // 딸려 가 새 회사에 적히면 안 된다.
-    "owned_funds",
+    // `챗GPT 조사 소유펀드` · `펀드 종류` · `소분류` — **회사 단위 값**이다
+    // (`services/investor_firms.py` · 아래 `FIRM_FIELDS`). 이 줄이 아니라 이 줄의
+    // 회사에 적히므로 `딜 소싱` 처럼 **바꿨을 때만** 보낸다(`save` 의 `openedFirm`)
+    // — 회사명을 고치는 저장에 옛 회사의 값이 딸려 가 새 회사에 적히면 안 된다.
+    "owned_funds", "fund_types", "sub_sectors",
     "assignee_name", "department", "office_phone", "office_fax",
     "address", "card_registered_at", "interest_level",
     // 연결 상태. `<select>` 라 값 읽기·쓰기는 다른 칸과 같다.
@@ -27,6 +27,13 @@
     // 증상이 똑같이 조용하다(예전에 `kakao_joined` 가 그랬다).
     "connect_stage"];
   var CHECKS = ["channel_kakao", "channel_email"];
+  // 회사 단위 칸 → [행의 필터 키, 응답에서 나눈 값(필터 값)의 이름] — 서버
+  // `routers/contacts.FIRM_LISTS` · `contacts.html` 의 `data-f-*` 와 같은 이름이다.
+  var FIRM_FIELDS = {
+    owned_funds: ["fund", "owned_fund_list"],
+    fund_types: ["fund_type", "fund_type_list"],
+    sub_sectors: ["sub_sector", "sub_sector_list"]
+  };
   var KIND_KO = {
     deal_intro: "딜소개", ir_request: "IR 요청",
     // 시트에서 옮겨 온 미팅은 **갈래가 넷**이다
@@ -52,8 +59,8 @@
   // 사이 딜 소싱에서 일어난 일(불참여로 바꿈 · 줄 삭제 · 저절로 이어짐)을
   // 되돌리거나 400 으로 다른 칸 수정까지 버린다(PR #284 리뷰).
   var openedBranches = null;
-  // 창을 열 때 읽은 `소유 펀드`(위 FIELDS 의 그 칸 주석).
-  var openedFunds = null;
+  // 창을 열 때 읽은 회사 단위 칸 값들(위 FIELDS 의 그 칸 주석).
+  var openedFirm = {};
   var filters = null;
 
   function esc(s) {
@@ -216,7 +223,9 @@
     var branches = (c.sourcing_branches || "").split(",").map(function (v) { return v.trim(); });
     branchBoxes().forEach(function (box) { box.checked = branches.indexOf(box.value) !== -1; });
     openedBranches = el("f-sourcing_branches") ? el("f-sourcing_branches").value.trim() : null;
-    openedFunds = el("f-owned_funds") ? el("f-owned_funds").value.trim() : null;
+    Object.keys(FIRM_FIELDS).forEach(function (f) {
+      openedFirm[f] = el("f-" + f) ? el("f-" + f).value.trim() : null;
+    });
     // 선호 투자분야 고르기 목록을 펼쳐 둔 채 줄을 바꾸면 앞 사람의 체크가 남아
     // 보인다 — 접어 두고, 다시 펼치면 이 줄의 값으로 세운다(`sector_picker.js`).
     if (window.DealflowSectorPicker) window.DealflowSectorPicker.closeAll();
@@ -439,11 +448,11 @@
         body.sourcing_branches === (current ? openedBranches : "")) {
       delete body.sourcing_branches;
     }
-    // `소유 펀드` 도 **바꿨을 때만**(위 `openedFunds`). 새로 넣는 줄은 빈 칸에서
+    // 회사 단위 칸도 **바꿨을 때만**(위 `openedFirm`). 새로 넣는 줄은 빈 칸에서
     // 시작하므로 적었으면 실린다.
-    if ("owned_funds" in body && body.owned_funds === (openedFunds || "")) {
-      delete body.owned_funds;
-    }
+    Object.keys(FIRM_FIELDS).forEach(function (f) {
+      if (f in body && body[f] === (openedFirm[f] || "")) delete body[f];
+    });
     var url = current ? "/api/contacts/" + current : "/api/contacts";
     fetch(url, {
       method: current ? "PATCH" : "POST",
@@ -759,7 +768,7 @@
     });
   }
 
-  // `소유 펀드` — **같은 회사의 다른 줄도 그 자리에서** 바꾼다(#1).
+  // 회사 단위 칸(`FIRM_FIELDS`) — **같은 회사의 다른 줄도 그 자리에서** 바꾼다(#1).
   //
   // 값은 회사 단위라(`services/investor_firms.py`) 한 줄에서 고치면 같은 회사의
   // 모든 줄이 같은 값이다. 새로고침해야 옆 줄이 바뀌면 그 사이 표가 서로 다른
@@ -767,19 +776,23 @@
   // 화면에서 회사명을 다시 정규화하면 규칙이 두 벌이 된다.
   function syncFirmFunds(e) {
     var data = (e && e.detail && e.detail.data) || {};
-    if (!("owned_funds" in data) || !data.firm_key || !table) return;
-    table.querySelectorAll("tr[data-firm-key]").forEach(function (tr) {
-      if (tr.getAttribute("data-firm-key") !== data.firm_key) return;
-      // 필터 값도 서버가 나눈 그대로(`investor_firms.split_funds`) — 화면에서 다시 나누면 규칙이 두 벌이다.
-      if (tr.hasAttribute("data-f-fund")) {
-        tr.setAttribute("data-f-fund", (data.owned_fund_list || []).join("|"));
-      }
-      var cell = tr.querySelector('.cell[data-field="owned_funds"]');
-      if (!cell) return;
-      cell.textContent = data.owned_funds;
-      if (cell.parentNode && cell.parentNode.tagName === "TD") {
-        cell.parentNode.setAttribute("title", data.owned_funds);
-      }
+    if (!data.firm_key || !table) return;
+    Object.keys(FIRM_FIELDS).forEach(function (field) {
+      if (!(field in data)) return;
+      var fkey = "data-f-" + FIRM_FIELDS[field][0];
+      table.querySelectorAll("tr[data-firm-key]").forEach(function (tr) {
+        if (tr.getAttribute("data-firm-key") !== data.firm_key) return;
+        // 필터 값도 서버가 나눈 그대로(`investor_firms.split_funds`) — 화면에서 다시 나누면 규칙이 두 벌이다.
+        if (tr.hasAttribute(fkey)) {
+          tr.setAttribute(fkey, (data[FIRM_FIELDS[field][1]] || []).join("|"));
+        }
+        var cell = tr.querySelector('.cell[data-field="' + field + '"]');
+        if (!cell) return;
+        cell.textContent = data[field];
+        if (cell.parentNode && cell.parentNode.tagName === "TD") {
+          cell.parentNode.setAttribute("title", data[field]);
+        }
+      });
     });
   }
   if (table) table.addEventListener("inline-saved", syncFirmFunds);

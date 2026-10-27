@@ -665,6 +665,10 @@ def test_every_editable_field_is_actually_saved():
     # 빠뜨린 칸까지 같이 적어 넣게 된다. 라우터가 `body.칸` 으로 실제로 읽는
     # 것을 세면, "스키마에만 있고 아무도 안 읽는 칸" 이라는 진짜 버그만 남는다.
     handled = listed | set(re.findall(r"body\.(\w+)", src))
+    # 회사 단위 칸은 `_firm_values` 가 `investor_firms.FIELDS` 를 돌며 읽는다.
+    if "for field, label in investor_firms.FIELDS.items():" in src:
+        from app.services.investor_firms import FIELDS
+        handled |= set(FIELDS)
     missing = sorted(fields - handled)
     assert not missing, f"고쳐도 저장되지 않는 칸: {missing}"
 
@@ -717,12 +721,15 @@ def test_the_detail_panel_can_read_and_write_every_table_column():
         detail.add("sourcing_branches")
     if "sourcing = _sourcing_mark(db, contact, body, user)" in py:
         saved.add("sourcing_branches")
-    # `소유 펀드` 도 **이 줄에 저장되지 않는 칸**이다 — 회사 단위 값이라 회사 표에서
-    # 읽고(`investor_firms.funds_of`) 회사 표를 고친다(`_owned_funds`).
-    if '"owned_funds": investor_firms.funds_of(db, contact.firm)' in py:
-        detail.add("owned_funds")
-    if "_owned_funds(db, contact, body, user)" in py:
-        saved.add("owned_funds")
+    # 회사 단위 칸(`챗GPT 조사 소유펀드` · `펀드 종류` · `소분류`)도 **이 줄에 저장되지
+    # 않는 칸**이다 — 회사 표에서 읽고(`investor_firms.funds_of`) 회사 표를 고친다
+    # (`_firm_values`).
+    from app.services.investor_firms import FIELDS
+    for field in FIELDS:
+        if f'"{field}": investor_firms.funds_of(db, contact.firm' in py:
+            detail.add(field)
+    if "_firm_values(db, contact, body, user)" in py:
+        saved |= set(FIELDS)
 
     assert not table - panel, f"창에 칸이 없다: {sorted(table - panel)}"
     assert not table - fields, f"JS 목록에 없어 안 채워진다: {sorted(table - fields)}"
