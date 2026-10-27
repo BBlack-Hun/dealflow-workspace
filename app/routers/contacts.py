@@ -1388,7 +1388,8 @@ def _firm_values(db: Session, contact: VcContact, body: ContactIn,
     적는 칸이다. 다만 값은 회사 단위라 같은 회사의 남의 줄에도 같이 보인다. 그
     일은 수정 로그에 `공용` 으로 남는다(`edit_log.WATCHED["investor_firms"]`).
     회사명이 빈 줄은 적을 자리가 없어 400 이다 — 조용히 버리면 저장된 줄 안다.
-    `소분류` 가 목록 밖이거나 5개를 넘어도 400 이다(커밋 전이라 아무것도 안 바뀐다).
+    `소분류` 가 목록 밖이거나 5개를 넘어도, `펀드 종류` 가 정해 둔 말 밖이어도 400 이다
+    (커밋 전이라 아무것도 안 바뀐다).
     """
     for field, label in investor_firms.FIELDS.items():
         value = getattr(body, field)
@@ -1399,12 +1400,14 @@ def _firm_values(db: Session, contact: VcContact, body: ContactIn,
                 raise HTTPException(status_code=400,
                                     detail=f"투자사명이 없어 {label}를 적을 수 없습니다")
             continue
-        if field == "sub_sectors":
-            try:
+        try:
+            if field == "sub_sectors":
                 value = investor_firms.clean_sub_sectors(
                     value, investor_firms.sub_sector_names(db))
-            except ValueError as exc:
-                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            elif field == "fund_types":
+                value = investor_firms.clean_fund_types(value)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         investor_firms.set_funds(db, contact.firm, value, doer(user).id, field)
 
 

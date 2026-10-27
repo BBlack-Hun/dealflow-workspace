@@ -3,6 +3,7 @@
   1. 이름 바꾸기 — 화면은 새 이름, 엑셀 올리기는 옛 머리글도 받는다
   2. 새 칸 둘 — 저장 · 같은 회사 줄 전파 · 표 · 수정창 · 엑셀의 자리(`선호 투자분야` 바로 왼쪽)
   3. `소분류` 검사 — 분야 기준 목록의 소분류만 · 5개까지 · 빈 값은 지움
+     `펀드 종류` 검사 — 정해 둔 13가지만 · 빈 값은 지움 · 표 칸은 체크해 고른다
   4. 업로드 — 빈 칸은 그대로 · 어긋난 줄은 안 넣고 까닭을 보인다
   5. 0124 오르내리기
 
@@ -114,32 +115,32 @@ def test_한_줄에서_적으면_같은_회사의_모든_줄에_선다(member, d
     b = _contact(db, users["u1"].id, "라마바", "테스트 벤처스")
     other = _contact(db, users["u1"].id, "사아자", "테스트인베스트")
 
-    r = member.patch(f"/api/contacts/{a.id}", json={"fund_types": "모태 문화계정,  청년창업"})
+    r = member.patch(f"/api/contacts/{a.id}", json={"fund_types": "모태 문화·콘텐츠,  PEF"})
     assert r.status_code == 200, r.text
-    assert r.json()["fund_type_list"] == ["모태 문화계정", "청년창업"]
+    assert r.json()["fund_type_list"] == ["모태 문화·콘텐츠", "PEF"]
     r = member.patch(f"/api/contacts/{a.id}", json={"sub_sectors": "로봇, 의료기기"})
     assert r.status_code == 200, r.text
     assert r.json()["sub_sectors"] == "로봇, 의료기기"
     assert r.json()["sub_sector_list"] == ["로봇", "의료기기"] and r.json()["firm_key"]
 
     rows = {row["name"]: row for row in contact_rows(db, users["u1"])}
-    assert rows["라마바"]["fund_types"] == "모태 문화계정,  청년창업"
+    assert rows["라마바"]["fund_types"] == "모태 문화·콘텐츠, PEF"
     assert rows["라마바"]["sub_sectors"] == "로봇, 의료기기"
     assert rows["사아자"]["fund_types"] == "" and rows["사아자"]["sub_sectors"] == ""
     got = member.get(f"/api/contacts/{b.id}").json()["contact"]
-    assert (got["fund_types"], got["sub_sectors"]) == ("모태 문화계정,  청년창업", "로봇, 의료기기")
+    assert (got["fund_types"], got["sub_sectors"]) == ("모태 문화·콘텐츠, PEF", "로봇, 의료기기")
     assert member.get(f"/api/contacts/{other.id}").json()["contact"]["sub_sectors"] == ""
 
 
 def test_남의_줄은_못_고친다(member, db, users):
     theirs = _contact(db, users["u2"].id, "가나다", "테스트벤처스")
     assert member.patch(f"/api/contacts/{theirs.id}",
-                        json={"fund_types": "청년창업"}).status_code == 404
+                        json={"fund_types": "PEF"}).status_code == 404
 
 
 def test_회사명이_없는_줄에는_적을_수_없다(member, db, users):
     a = _contact(db, users["u1"].id, "가나다", None)
-    r = member.patch(f"/api/contacts/{a.id}", json={"fund_types": "청년창업"})
+    r = member.patch(f"/api/contacts/{a.id}", json={"fund_types": "PEF"})
     assert r.status_code == 400 and "펀드 종류" in r.json()["detail"]
 
 
@@ -147,7 +148,7 @@ def test_표에서_선호_투자분야_바로_왼쪽이고_풍선말이_있다(m
     from app.services import investor_firms as f
 
     _contact(db, users["u1"].id, "가나다", "테스트벤처스")
-    f.set_funds(db, "테스트벤처스", "청년창업, 소부장", users["u1"].id, "fund_types")
+    f.set_funds(db, "테스트벤처스", "PEF, 신기사조합", users["u1"].id, "fund_types")
     f.set_funds(db, "테스트벤처스", "로봇", users["u1"].id, "sub_sectors")
     db.commit()
     html = member.get("/contacts?sheet=all").text
@@ -163,7 +164,11 @@ def test_표에서_선호_투자분야_바로_왼쪽이고_풍선말이_있다(m
     fields = re.findall(r'data-field="([a-z_]+)"', row)
     at = fields.index("sectors")
     assert fields[at - 2:at] == ["fund_types", "sub_sectors"]
-    assert 'data-f-fund_type="청년창업|소부장"' in row
+    assert 'data-f-fund_type="PEF|신기사조합"' in row
+    # `펀드 종류` 칸은 정해 둔 말을 체크해 고른다 — 보기는 서버 한 곳(`FUND_TYPES`).
+    cell = re.search(r'<div[^>]*data-field="fund_types"[^>]*>', row).group(0)
+    assert 'data-type="checks"' in cell
+    assert f'data-choices="{",".join(f.FUND_TYPES)}"' in html.replace("&amp;", "&")
     assert 'data-f-sub_sector="로봇"' in row
     # 수정창도 같은 차례 — `선호 투자단계` · `펀드 종류` · `소분류` · `선호 투자분야`.
     panel = re.findall(r'id="f-(stages|fund_types|sub_sectors|sectors)"', html)
@@ -185,7 +190,7 @@ def test_엑셀_내려받기의_차례와_값(member, db, users):
 
     a = _contact(db, users["u1"].id, "가나다", "테스트벤처스")
     member.patch(f"/api/contacts/{a.id}", json={
-        "owned_funds": "테스트 1호", "fund_types": "청년창업", "sub_sectors": "로봇"})
+        "owned_funds": "테스트 1호", "fund_types": "PEF", "sub_sectors": "로봇"})
     r = member.get("/api/export/contacts.xlsx")
     assert r.status_code == 200
     ws = openpyxl.load_workbook(io.BytesIO(r.content)).active
@@ -194,7 +199,7 @@ def test_엑셀_내려받기의_차례와_값(member, db, users):
     assert head[at - 1:at + 5] == ["라운드 사이즈(투자운영금액)", "챗GPT 조사 소유펀드",
                                    "선호 투자단계", "펀드 종류", "소분류", "선호 투자분야"]
     line = next(row for row in ws.iter_rows(min_row=2, values_only=True) if "가나다" in row)
-    assert (line[at], line[at + 2], line[at + 3]) == ("테스트 1호", "청년창업", "로봇")
+    assert (line[at], line[at + 2], line[at + 3]) == ("테스트 1호", "PEF", "로봇")
 
 
 # ── 3. 소분류 검사 ─────────────────────────────────────────────────────────
@@ -241,6 +246,48 @@ def test_소분류_5개는_된다_빈_값은_지운다(member, db, users):
     assert f.funds_of(db, "테스트벤처스", "sub_sectors") == ""
 
 
+def test_펀드_종류는_정해_둔_13가지다():
+    from app.services import investor_firms as f
+    from app.services import taxonomy
+
+    assert len(f.FUND_TYPES) == 13
+    # 견주는 꼴(띄어쓰기 · 가운뎃점 · 대소문자를 뺀 것)이 겹치면 맞추기가 어긋난다.
+    assert len({taxonomy.norm(n) for n in f.FUND_TYPES}) == 13
+    assert all("," not in n for n in f.FUND_TYPES), "쉼표가 든 이름은 쉼표 글로 못 적는다"
+
+
+def test_펀드_종류는_목록의_글자로_맞춰_적는다(member, db, users):
+    from app.services import investor_firms as f
+
+    a = _contact(db, users["u1"].id, "가나다", "테스트벤처스")
+    r = member.patch(f"/api/contacts/{a.id}", json={
+        "fund_types": "모태 창업초기 청년 ,  pef, 모태  스케일업 · 세컨더리 · M&A, PEF"})
+    assert r.status_code == 200, r.text
+    assert f.funds_of(db, "테스트벤처스", "fund_types") == \
+        "모태 창업초기·청년, PEF, 모태 스케일업·세컨더리·M&A"
+    assert r.json()["fund_type_list"] == ["모태 창업초기·청년", "PEF", "모태 스케일업·세컨더리·M&A"]
+
+
+def test_펀드_종류가_목록_밖이면_400이고_안_바뀐다(member, db, users):
+    from app.services import investor_firms as f
+
+    a = _contact(db, users["u1"].id, "가나다", "테스트벤처스")
+    assert member.patch(f"/api/contacts/{a.id}", json={"fund_types": "PEF"}).status_code == 200
+    r = member.patch(f"/api/contacts/{a.id}", json={"fund_types": "PEF, 청년창업",
+                                                     "memo": "같이 보낸 메모"})
+    assert r.status_code == 400
+    detail = r.json()["detail"]
+    assert "펀드 종류" in detail and "청년창업" in detail and "신기사조합" in detail
+    db.expire_all()
+    assert f.funds_of(db, "테스트벤처스", "fund_types") == "PEF"
+    assert a.memo is None, "막힌 요청의 다른 칸이 저장됐다"
+    # 빈 값은 지운다(소분류와 같다).
+    r = member.patch(f"/api/contacts/{a.id}", json={"fund_types": ""})
+    assert r.status_code == 200 and r.json()["fund_type_list"] == []
+    db.expire_all()
+    assert f.funds_of(db, "테스트벤처스", "fund_types") == ""
+
+
 # ── 4. 업로드 ──────────────────────────────────────────────────────────────
 
 def _upload(admin, rows, dry_run):
@@ -257,11 +304,11 @@ def test_업로드의_빈_칸은_그대로_두고_어긋난_줄은_안_넣는다
     _contact(db, users["u1"].id, "사아자", "테스트캐피탈")
     for firm in ("테스트벤처스", "테스트인베스트", "테스트캐피탈"):
         f.set_funds(db, firm, "옛 펀드", users["u1"].id)
-        f.set_funds(db, firm, "옛 종류", users["u1"].id, "fund_types")
+        f.set_funds(db, firm, "PEF", users["u1"].id, "fund_types")
         f.set_funds(db, firm, "센서", users["u1"].id, "sub_sectors")
     db.commit()
     rows = [["투자사명", "챗GPT 조사 소유펀드", "펀드 종류", "소분류"],
-            ["테스트벤처스", "", "청년창업", ""],              # 펀드 종류만 바뀐다
+            ["테스트벤처스", "", "모태 창업초기 청년", ""],    # 펀드 종류만 바뀐다(목록 글자로)
             ["테스트인베스트", "새 펀드", "", "없는분야"],      # 소분류가 목록 밖 — 통째로 안 넣는다
             ["테스트캐피탈", "", "", ""]]                        # 다 비었다 — 건너뜀
 
@@ -270,8 +317,8 @@ def test_업로드의_빈_칸은_그대로_두고_어긋난_줄은_안_넣는다
     body = preview.json()
     assert body["counts"]["changes"] == 1 and body["counts"]["errors"] == 1
     assert body["counts"]["blank"] == 1
-    assert body["matched"][0]["after"] == {"fund_types": "청년창업"}
-    assert body["matched"][0]["before"] == {"fund_types": "옛 종류"}
+    assert body["matched"][0]["after"] == {"fund_types": "모태 창업초기·청년"}
+    assert body["matched"][0]["before"] == {"fund_types": "PEF"}
     assert body["errors"][0]["name"] == "테스트인베스트" and "없는분야" in body["errors"][0]["reason"]
     assert body["labels"]["sub_sectors"] == "소분류"
 
@@ -279,11 +326,11 @@ def test_업로드의_빈_칸은_그대로_두고_어긋난_줄은_안_넣는다
     assert done.status_code == 200, done.text
     assert done.json()["changed"] == 1
     db.expire_all()
-    assert f.funds_of(db, "테스트벤처스", "fund_types") == "청년창업"
+    assert f.funds_of(db, "테스트벤처스", "fund_types") == "모태 창업초기·청년"
     assert f.funds_of(db, "테스트벤처스") == "옛 펀드", "빈 칸이 값을 지웠다"
     assert f.funds_of(db, "테스트벤처스", "sub_sectors") == "센서", "빈 칸이 값을 지웠다"
     assert f.funds_of(db, "테스트인베스트") == "옛 펀드", "어긋난 줄의 다른 칸을 넣었다"
-    assert f.funds_of(db, "테스트캐피탈", "fund_types") == "옛 종류"
+    assert f.funds_of(db, "테스트캐피탈", "fund_types") == "PEF"
 
 
 def test_업로드의_소분류도_5개까지고_목록_글자로_맞춘다(admin, db, users):
@@ -300,6 +347,36 @@ def test_업로드의_소분류도_5개까지고_목록_글자로_맞춘다(admi
     db.expire_all()
     assert f.funds_of(db, "테스트벤처스", "sub_sectors") == "AI SaaS, 로봇"
     assert f.funds_of(db, "테스트인베스트", "sub_sectors") == ""
+
+
+def test_업로드의_펀드_종류도_목록_밖이면_그_줄만_안_넣는다(admin, db, users):
+    from app.services import investor_firms as f
+
+    _contact(db, users["u1"].id, "가나다", "테스트벤처스")
+    _contact(db, users["u1"].id, "라마바", "테스트인베스트")
+    rows = [["투자사명", "챗GPT 조사 소유펀드", "펀드 종류"],
+            ["테스트벤처스", "테스트 1호", "신기사조합, pef"],
+            ["테스트인베스트", "테스트 2호", "PEF, 청년창업"]]
+    done = _upload(admin, rows, False)
+    assert done.status_code == 200, done.text
+    assert done.json()["changed"] == 1 and done.json()["errors"] == 1
+    db.expire_all()
+    assert f.funds_of(db, "테스트벤처스", "fund_types") == "신기사조합, PEF"
+    assert f.funds_of(db, "테스트인베스트", "fund_types") == ""
+    assert f.funds_of(db, "테스트인베스트") == "", "어긋난 줄의 다른 칸을 넣었다"
+
+
+def test_업로드_양식의_보기_줄은_그대로_올라간다(admin, db, users):
+    """양식에 채워 둔 보기 값이 검사에 걸리면 내려받은 그대로 올렸을 때 막힌다."""
+    from app.routers.data_io import FUNDS_SAMPLE_ROWS
+
+    for name, *_rest in FUNDS_SAMPLE_ROWS:
+        _contact(db, users["u1"].id, "가나다", name)
+    sample = admin.get("/api/sample/owned-funds.xlsx")
+    files = {"file": ("sample.xlsx", sample.content, "application/octet-stream")}
+    body = admin.post("/api/import/owned-funds", files=files, data={"dry_run": "true"}).json()
+    assert body["counts"]["errors"] == 0, body["errors"]
+    assert body["counts"]["changes"] == len(FUNDS_SAMPLE_ROWS)
 
 
 def test_업로드_머리글이_없으면_새_이름으로_안내한다():

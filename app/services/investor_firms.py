@@ -21,8 +21,8 @@
 현황의 회사에 맞추고, **못 맞춘 이름은 넣지 않고 보여만 준다** — 명단에 없는
 회사의 값은 아무 줄에도 안 보여서, 넣어도 확인할 길이 없다. 빈 칸은 **그 칸만**
 건너뛴다(지우는 것은 화면에서 한다 — 빈 칸이 '지워라' 인지 '모른다' 인지 표만
-보고는 알 수 없다). `소분류` 가 목록 밖이거나 5개를 넘는 줄은 통째로 안 넣고
-까닭을 보여 준다(`errors`).
+보고는 알 수 없다). `소분류` 가 목록 밖이거나 5개를 넘는 줄, `펀드 종류` 가 정해 둔
+말(`FUND_TYPES`) 밖인 줄은 통째로 안 넣고 까닭을 보여 준다(`errors`).
 """
 from __future__ import annotations
 
@@ -46,6 +46,14 @@ HEAD_FIRM = "투자사명"
 HEADERS = (HEAD_FIRM, *FIELDS.values())
 #: `소분류` 는 몇 개까지 적나.
 MAX_SUB_SECTORS = 5
+#: `펀드 종류` 로 적을 수 있는 말 — 정해 둔 13가지(사용자 결정 2026-10-27). 화면의
+#: 고르는 칸도 이 차례로 선다. 관리 화면 없이 여기서만 고친다.
+FUND_TYPES = (
+    "모태 창업초기·청년", "모태 문화·콘텐츠", "모태 소부장·딥테크",
+    "모태 미래환경·에너지", "모태 스케일업·세컨더리·M&A", "지역 펀드",
+    "농식품·해양수산", "산업은행·성장금융 정책펀드", "대기업·CVC 협업",
+    "민간 LP 블라인드", "신기사조합", "PEF", "개인투자조합",
+)
 
 
 def firm_key(name: Optional[str]) -> str:
@@ -89,15 +97,34 @@ def sub_sector_names(db: Session) -> Dict[str, str]:
             for major in r.visible_majors() for m in r.visible_minors(major.id)}
 
 
-# shortcut: `펀드 종류` 는 정한 목록이 없어 글 그대로 받는다 — 시범 조사 뒤 목록이 정해지면 여기 검사를 두고 `_firm_values` · `match` 에서 부른다.
-def clean_sub_sectors(text: Optional[str], known: Dict[str, str]) -> str:
-    """`소분류` 글 → 목록의 글자로 맞춘 값. 목록 밖 말 · 5개 넘음은 ValueError(화면에 그대로)."""
+def _canonical(text: Optional[str], known: Dict[str, str]) -> tuple:
+    """쉼표 글 → (목록 글자로 맞춘 이름들 — 겹침 뺌, 목록에 없는 말들).
+
+    띄어쓰기 · 가운뎃점 · 대소문자는 안 본다(`taxonomy.norm`) — `모태 창업초기 청년` 도
+    `모태 창업초기·청년` 으로 적힌다.
+    """
     tokens = split_funds(text)
     bad = [t for t in tokens if taxonomy.norm(t) not in known]
+    names = [known[taxonomy.norm(t)] for t in tokens if t not in bad]
+    return list(dict.fromkeys(names)), bad
+
+
+def clean_fund_types(text: Optional[str]) -> str:
+    """`펀드 종류` 글 → `FUND_TYPES` 글자로 맞춘 값. 목록 밖 말은 ValueError(화면에 그대로)."""
+    names, bad = _canonical(text, {taxonomy.norm(n): n for n in FUND_TYPES})
+    if bad:
+        raise ValueError(f"펀드 종류는 정해 둔 {len(FUND_TYPES)}가지 중에서만 적을 수 있습니다 "
+                         "— 목록에 없는 말: " + ", ".join(bad)
+                         + " (적을 수 있는 말: " + ", ".join(FUND_TYPES) + ")")
+    return ", ".join(names)
+
+
+def clean_sub_sectors(text: Optional[str], known: Dict[str, str]) -> str:
+    """`소분류` 글 → 목록의 글자로 맞춘 값. 목록 밖 말 · 5개 넘음은 ValueError(화면에 그대로)."""
+    names, bad = _canonical(text, known)
     if bad:
         raise ValueError("소분류는 분야 기준 목록(IR 기업 현황 소분류)에 있는 말만 적을 수 "
                          "있습니다 — 목록에 없는 말: " + ", ".join(bad))
-    names = list(dict.fromkeys(known[taxonomy.norm(t)] for t in tokens))
     if len(names) > MAX_SUB_SECTORS:
         raise ValueError(f"소분류는 {MAX_SUB_SECTORS}개까지 적을 수 있습니다 "
                          f"— {len(names)}개를 적었습니다")
@@ -185,7 +212,7 @@ class Match:
     unmatched: List[dict] = field(default_factory=list)
     blank: List[dict] = field(default_factory=list)
     duplicates: List[dict] = field(default_factory=list)
-    #: 맞췄지만 값을 못 쓰는 줄(`소분류` 목록 밖 · 5개 넘음) — 그 줄은 통째로 안 넣는다.
+    #: 맞췄지만 값을 못 쓰는 줄(`소분류` · `펀드 종류` 목록 밖 · 소분류 5개 넘음) — 그 줄은 통째로 안 넣는다.
     errors: List[dict] = field(default_factory=list)
 
     def as_dict(self) -> dict:
@@ -246,12 +273,14 @@ def match(db: Session, rows: Iterable[UploadRow]) -> Match:
         if not after:
             out.blank.append({"line": row.line, "name": row.name})
             continue
-        if "sub_sectors" in after:
-            try:
+        try:
+            if "sub_sectors" in after:
                 after["sub_sectors"] = clean_sub_sectors(after["sub_sectors"], known)
-            except ValueError as exc:
-                out.errors.append({"line": row.line, "name": row.name, "reason": str(exc)})
-                continue
+            if "fund_types" in after:
+                after["fund_types"] = clean_fund_types(after["fund_types"])
+        except ValueError as exc:
+            out.errors.append({"line": row.line, "name": row.name, "reason": str(exc)})
+            continue
         before = {f: current[f].get(key, "") for f in after}
         entry = {"line": row.line, "name": row.name, "key": key,
                  "firm": firms[key]["name"], "rows": firms[key]["rows"],

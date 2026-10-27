@@ -814,9 +814,10 @@
         <th style="width:124px" data-sort="sourcing_date" data-filters="sourcing_date:참여 요청일">참여 요청일<div class="th-filters"></div></th>
         {# **펀드 종류** · **소분류** — `챗GPT 조사 소유펀드` 와 같은 **회사 단위 값**이다
            (`services/investor_firms.py` · 한 줄에서 고치면 같은 회사의 모든 줄에 — `contacts.js`
-           의 `syncFirmFunds`). 둘 다 쉼표로 여럿. `소분류` 는 분야 기준 목록의 소분류만 ·
-           5개까지(서버가 막는다 — `investor_firms.clean_sub_sectors`) — 고르는 부품은
-           `선호 투자분야` 와 같다. 자리는 `선호 투자분야` 바로 왼쪽(요청). 머리글 풍선말은
+           의 `syncFirmFunds`). 둘 다 쉼표로 여럿. `펀드 종류` 는 정해 둔 13가지만
+           (`investor_firms.FUND_TYPES`), `소분류` 는 분야 기준 목록의 소분류만 · 5개까지 —
+           어긋나면 서버가 막는다(`investor_firms.clean_fund_types` · `clean_sub_sectors`).
+           `소분류` 의 고르는 부품은 `선호 투자분야` 와 같다. 자리는 `선호 투자분야` 바로 왼쪽(요청). 머리글 풍선말은
            값의 출처다. 필터는 `챗GPT 조사 소유펀드` 처럼 값마다 줄 수. #}
         <th style="width:120px" data-filters="fund_type:펀드 종류"
             title="2025년 이후 기사 기준 인터넷 조사">펀드 종류<div class="th-filters"></div></th>
@@ -1001,10 +1002,13 @@
            `sourcing_requested_at` 으로 다시 그린다(`contacts.js` — O 로 새 줄이 생기면
            그날이 선다). #}
         <td class="sourcing-requested" title="{{ r.sourcing_requested_at }}">{{ r.sourcing_requested_at }}</td>
-        {# `펀드 종류` · `소분류` — 회사 단위(머리글 주석). `소분류` 는 `선호 투자분야` 와
-           같은 고르는 부품이고, 서버가 맞춘 목록 글자로 같은 회사의 줄을 다시 그린다. #}
+        {# `펀드 종류` · `소분류` — 회사 단위(머리글 주석). `펀드 종류` 는 정해 둔 말
+           (`investor_firms.FUND_TYPES`)을 체크해 여럿 고르고(`inline_edit.js` 의 `checks`),
+           `소분류` 는 `선호 투자분야` 와 같은 고르는 부품이다. 서버가 맞춘 목록 글자로 같은
+           회사의 줄을 다시 그린다. #}
         <td title="{{ r.fund_types }}">
-          <div class="cell clamp2" data-field="fund_types" data-type="long"
+          <div class="cell clamp2" data-field="fund_types" data-type="checks"
+               data-choices="{{ fund_type_choices|join(',') }}"
                data-filter-key="fund_type" data-filter-sep=",">{{ r.fund_types }}</div>
         </td>
         <td title="{{ r.sub_sectors }}">
@@ -1575,7 +1579,7 @@
       {# 회사 단위 값 둘(표 머리글 주석) — `선호 투자분야` 바로 앞, 표와 같은 차례. #}
       <label class="field"><span>펀드 종류</span>
         <input type="text" id="f-fund_types"
-               placeholder="회사 단위 — 쉼표로 구분"></label>
+               placeholder="정해 둔 말만 — 쉼표로 구분 · 표 칸에서 고를 수 있습니다"></label>
       <label class="field"><span>소분류</span>
         <input type="text" id="f-sub_sectors" data-sector-picker
                placeholder="목록의 소분류만 — 5개까지 · 회사 단위"></label>
