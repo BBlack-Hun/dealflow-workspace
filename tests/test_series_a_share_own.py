@@ -208,8 +208,9 @@ def test_each_person_gets_the_first_two_that_are_not_their_own(world, client, db
     msgs = {i.sourcing_contact.name: i.message
             for i in db.query(SendItem).filter_by(job_id=r.json()["job_id"])}
     a = msgs["가심사"]
-    assert "[기업1] 샘플투" in a and "[기업2] 샘플쓰리" in a
-    assert "샘플원" not in a and "샘플포" not in a and "[기업3]" not in a
+    assert "[기업1]" in a and "[기업2]" in a and "[기업3]" not in a
+    # 기업명은 글에 없다(번호가 대신한다) — 누가 무엇을 받았나는 위 기록이 말한다
+    assert not any(n in a for n in ("샘플원", "샘플투", "샘플쓰리", "샘플포"))
 
 
 def test_per_person_count_follows_the_picked_order(world, client, db):
@@ -282,7 +283,8 @@ def test_preview_says_what_goes_and_what_was_dropped_and_why(world, client, db):
         ("샘플포", "사람당 2개 — 이번엔 안 보냄"),
         ("샘플파이브", "사람당 2개 — 이번엔 안 보냄")]
     assert "본인이 공유한 딜 1곳은 이 분 문구에서 뺐습니다: 샘플원" in a["warnings"]
-    assert "[기업1] 샘플투" in a["message"] and "샘플원" not in a["message"]
+    assert "[기업2]" in a["message"] and "[기업3]" not in a["message"]
+    assert "샘플투" not in a["message"] and "샘플원" not in a["message"]
 
     # 이미 받은 것 · 모자람 · 하나도 없음도 같은 자리에서 말한다.
     c1, c2, c3, c4, c5 = _all(world)
@@ -309,7 +311,8 @@ def test_the_sample_preview_shows_only_the_first_n(world, client):
         "contact_ids": [], "mode": "sourcing", "topic": SHARE,
         "series_a_ids": _all(world), "per_person": 2})
     text = r.json()["previews"][0]["message"]
-    assert "[기업1] 샘플원" in text and "[기업2] 샘플투" in text and "[기업3]" not in text
+    assert "[기업1]" in text and "[기업2]" in text and "[기업3]" not in text
+    assert "샘플원" not in text and "샘플투" not in text
 
 
 @pytest.mark.parametrize("n", [0, 11, -1])

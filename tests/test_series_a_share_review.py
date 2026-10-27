@@ -124,7 +124,7 @@ def test_an_edited_message_records_only_the_companies_it_carries(world, client, 
     a = world["p"]["a"]
     xyz = _ids(world, "x", "y", "z", kind="c")
     text = _preview(client, [a.id], xyz, per_person=3)[a.id]["message"]
-    assert "[기업3] 샘플제트" in text
+    assert "[기업3]\n · 소개: 제트 소개" in text and "샘플제트" not in text
     # 사람이 셋째 덩어리를 지우고 보냈다
     edited = text[:text.index("[기업3]")].rstrip() + "\n\n감사합니다.\n"
     r = _send(client, [a.id], xyz, per_person=3,
@@ -145,7 +145,8 @@ def test_an_old_edit_from_a_smaller_pick_does_not_record_the_new_company(world, 
     assert _recorded(db, b.id) == ["샘플엑스", "샘플와이"]
     # 그래서 샘플제트는 다음 공유에서 그대로 나간다
     again = _preview(client, [b.id], [z])[b.id]
-    assert "[기업1] 샘플제트" in again["message"]
+    assert [c["name"] for c in again["series_a"]["send"]] == ["샘플제트"]
+    assert "[기업1]\n · 소개: 제트 소개" in again["message"]
 
 
 def test_an_edit_without_any_company_block_records_nothing(world, client, db):
@@ -245,7 +246,7 @@ def test_an_abandoned_draft_stops_counting_after_seven_days(world, client, db):
     db.commit()
     assert sas.companies_by_contact(db, contact_ids=[a.id]) == {}
     assert sas.contacts_by_company(db) == {}
-    assert "[기업1] 샘플엑스" in _preview(client, [a.id], [x])[a.id]["message"]
+    assert "[기업1]\n · 소개: 엑스 소개" in _preview(client, [a.id], [x])[a.id]["message"]
     # 내보낸 회차(대기 중)는 오래돼도 센다 — 나간 것 · 나갈 것은 받은 것이다
     job.status = "queued"
     db.commit()
@@ -398,8 +399,9 @@ def test_confirming_a_sharer_decides_who_is_left_out(world, client, db):
     assert db.get(SeriesACompany, own.id).shared_by_contact_id == b.id
 
     got = _preview(client, [a.id, b.id], [own.id])
-    assert "[기업1] 샘플오운" in got[a.id]["message"], "확정을 무시하고 이름으로 또 뺐다"
-    assert "샘플오운" not in got[b.id]["message"]
+    sends = {cid: [c["name"] for c in p["series_a"]["send"]] for cid, p in got.items()}
+    assert sends[a.id] == ["샘플오운"], "확정을 무시하고 이름으로 또 뺐다"
+    assert sends[b.id] == []
     state = client.get("/api/series-a-share/state").json()
     assert {x["id"]: x["own_by"] for x in state["companies"]}[own.id] == [b.id]
 
@@ -407,7 +409,7 @@ def test_confirming_a_sharer_decides_who_is_left_out(world, client, db):
     r = client.put(url, json={"contact_id": None})
     assert r.status_code == 200 and r.json()["sharer"]["confirmed"] is None
     got = _preview(client, [a.id], [own.id])
-    assert "샘플오운" not in got[a.id]["message"]
+    assert got[a.id]["series_a"]["send"] == []
 
 
 def test_only_a_person_of_the_bucket_can_be_confirmed(world, client):
