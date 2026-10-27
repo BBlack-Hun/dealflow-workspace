@@ -22,7 +22,9 @@ NAME_IS_A_BUCKET`)이고, 고르는 차례도 같다: 갈래 문구 > 갈래 없
 덩어리**로 들어간다(`block`). 자리가 없으면 첫 문단 뒤에 넣는다(`slot`).
 
 기업 덩어리는 딜 소개와 같은 번호 모양(`[기업1]` — `deal_numbers.label`)으로
-시작한다. 심사역이 "기업2 IR 부탁드립니다" 로 답하는 그 글자다.
+시작한다. 심사역이 "기업2 IR 부탁드립니다" 로 답하는 그 글자다. **기업명은 싣지
+않는다** — 딜 소개처럼 번호가 이름을 대신하고, 소개 글 속 이름도 그 번호로 바꾼다
+(사용자 요청 10/27). 화면(미리보기의 `보내는 기업` 줄 · 경고)은 이름을 그대로 보인다.
 
 ## 기록 — 누가 무엇을 받았나
 
@@ -34,7 +36,7 @@ NAME_IS_A_BUCKET`)이고, 고르는 차례도 같다: 갈래 문구 > 갈래 없
 그 분을 영영 '받은 분' 으로 막지 않게(`_live_pairs`).
 
 사람이 미리보기에서 **고친 글**로 보내면 기록은 그 글에 실제로 든 기업만이다
-(`companies_in` — `[기업N] 기업명` 줄). 고른 기업과 고친 글이 갈려도 나간 글과
+(`companies_in` — 번호를 뺀 덩어리 글자로 찾는다). 고른 기업과 고친 글이 갈려도 나간 글과
 기록이 같다.
 
 이미 받은 기업은 기본으로 **그 분 문구에서 뺀다** — 고른 기업을 모두 받은 분은
@@ -80,6 +82,7 @@ from ..models import (SendItem, SendJob, SeriesACompany, SeriesAShare,
 from . import (amount, deal_history, deal_numbers, room_name, sourcing_buckets, sourcing_msg,
                twin_send)
 from . import message_composer as mc
+from .sheet_import import normalize_company_name
 from .sourcing_sync import SYNC_BUCKET
 
 #: 문구 종류 — 딜 소싱 제안 탭의 [보낼 문구]가 고르는 셋째 글. 갈래마다 하나다
@@ -247,9 +250,27 @@ def pitch_of(row: SeriesACompany) -> str:
     return cut.rstrip(" ,·") + "…"
 
 
+def _hide_name(text: str, name: Optional[str], tag: str) -> str:
+    """글 속 기업명을 번호(`tag`)로 — 적힌 그대로와 법인 표기를 뗀 것(`(주)샘플` · `샘플`).
+
+    shortcut: 글자가 똑같은 이름만 바꾼다(띄어쓰기 · 영문 표기가 다르면 그대로 나간다),
+    그런 소개가 실제로 보이면 기업마다 별칭 칸을 두어 같이 바꾼다.
+    """
+    raw = (name or "").strip()
+    for n in sorted({raw, normalize_company_name(raw)}, key=len, reverse=True):
+        if len(n) >= 2:            # 한 글자는 낱말 속 글자까지 바꾼다
+            text = text.replace(n, tag)
+    return text
+
+
 def block(no: int, row: SeriesACompany) -> str:
-    """기업 한 덩어리 — `[기업N] 기업명` · 분야 · 투자라운드 · 소개. 빈 칸은 그 줄째 뺀다."""
-    lines = [f"{deal_numbers.label(no)} {(row.name or '').strip()}"]
+    """기업 한 덩어리 — `[기업N]` · 분야 · 투자라운드 · 소개. 빈 칸은 그 줄째 뺀다.
+
+    **기업명은 싣지 않는다** — 딜 소개(`message_composer.compose_message`)처럼 번호가
+    이름을 대신한다. 소개 글에 적힌 이름도 그 번호로 바꾼다(`_hide_name`).
+    """
+    tag = deal_numbers.label(no)
+    lines = [tag]
     field = " / ".join(p.strip() for p in (row.sector_major, row.sector_minor)
                        if (p or "").strip())
     if field:
@@ -257,7 +278,7 @@ def block(no: int, row: SeriesACompany) -> str:
     rnd = short_series(row.series)
     if rnd:
         lines.append(f" · 투자라운드: {rnd}")
-    pitch = pitch_of(row)
+    pitch = _hide_name(pitch_of(row), row.name, tag)
     if pitch:
         lines.append(f" · 소개: {pitch}")
     return "\n".join(lines)
@@ -859,38 +880,45 @@ def plan_view(p: Plan) -> dict:
     }
 
 
-#: 기업 덩어리의 첫 줄 — `[기업2] 샘플바이오`(`block`). 번호 꼴은 `deal_numbers.
-#: parse_label` 이 읽는 그 모양이다(사람이 띄어 써도 받는다).
-_HEADER = re.compile(r"^[ \t]*(\[[^\]\n]*\])[ \t]*(\S[^\n]*?)[ \t]*$", re.M)
-
-
-def _name_key(name: Optional[str]) -> str:
-    return re.sub(r"\s+", " ", (name or "").strip())
+#: 번호 꼴(`[기업2]` · 띄어 쓴 `[ 기업 2 ]`). 고친 글과 견줄 때 번호를 지운다 — 같은
+#: 기업도 받는 분마다 번호가 다르고, 소개 속 이름도 그 번호로 바뀌어 있다(`_hide_name`).
+_LABEL_ANY = re.compile(r"\[\s*기업\s*\d+\s*\]")
+_NO_NUMBER = "[기업]"
 
 
 def companies_in(text: Optional[str],
                  candidates: Sequence[SeriesACompany]) -> List[SeriesACompany]:
-    """나간 글에 **실제로 든** 기업 — `[기업N] 기업명` 줄로 찾는다(글에 나온 차례).
+    """나간 글에 **실제로 든** 기업 — 기업 덩어리째(`block`) 찾는다(글에 나온 차례).
 
     사람이 미리보기에서 고친 글(`overrides`)로 보낼 때 기록이 이것을 따른다. 고친
     글은 그 시점의 고른 기업으로 지어진 것이라, 기업을 바꾼 뒤 예전에 고친 글이
     되살아나 나가면 지금 고른 기업(`plan`)과 글이 갈린다 — 그대로 적으면 글에 없는
     기업을 '받음' 으로 적어 그 분은 그 기업을 영영 못 받는다. 덩어리를 지웠으면
-    그 기업은 안 적는다. 견주는 것은 `candidates`(이번에 고른 기업)의 이름이다.
+    그 기업은 안 적는다. 견주는 것은 `candidates`(이번에 고른 기업)의 덩어리다.
+
+    덩어리 첫 줄은 번호뿐이라(기업명을 가린다) 이름으로는 못 찾고, 번호로 찾으면
+    되살아난 글의 `[기업1]` 이 지금 고른 다른 기업을 가리킨다 — 그래서 번호를 지운
+    덩어리 글자 전체(분야 · 투자라운드 · 소개)로 견준다. 덩어리 뒤에 `·` 줄이 더
+    붙어 있으면 다른 기업의 덩어리다(앞부분만 같은 것).
+
+    shortcut: 덩어리 글자를 고치면 그 기업은 못 알아봐 기록에서 빠진다(다음 공유 때
+    다시 갈 수 있다) · 분야 · 라운드 · 소개가 다 빈 기업도 못 찾는다 — 고쳐 보내는
+    일이 잦아지면 받는 분의 `plan` 번호로 되짚는 길을 더한다.
     """
-    by_name: Dict[str, SeriesACompany] = {}
+    flat = _LABEL_ANY.sub(_NO_NUMBER, _lf(text))
+    hits: List[Tuple[int, SeriesACompany]] = []
+    taken: Set[int] = set()
     for c in candidates:
-        by_name.setdefault(_name_key(c.name), c)
-    out: List[SeriesACompany] = []
-    seen: Set[int] = set()
-    for m in _HEADER.finditer(_lf(text)):
-        if deal_numbers.parse_label(m.group(1)) is None:
+        whole = _LABEL_ANY.sub(_NO_NUMBER, block(0, c))
+        if whole == _NO_NUMBER:
             continue
-        hit = by_name.get(_name_key(m.group(2)))
-        if hit is not None and hit.id not in seen:
-            seen.add(hit.id)
-            out.append(hit)
-    return out
+        found = re.finditer(rf"^[ \t]*{re.escape(whole)}(?=\Z|\n(?![ \t]*·))", flat, re.M)
+        # 덩어리가 똑같은 기업 둘 — 한 자리에는 하나만
+        at = next((m.start() for m in found if m.start() not in taken), None)
+        if at is not None:
+            taken.add(at)
+            hits.append((at, c))
+    return [c for _at, c in sorted(hits, key=lambda h: h[0])]
 
 
 def record(db: Session, item: SendItem, contact_id: int,
