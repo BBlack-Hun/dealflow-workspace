@@ -910,6 +910,43 @@ OX_FIELDS = {"contract_received": "계약서 수신 여부",
              "kakao_joined": "카톡 연결 여부"}
 
 
+def checked_contract(value) -> str:
+    """`계약여부` 에 저장할 열쇠 — 모르는 말이면 400. `Series A 이상 딜 소싱` 탭도 지난다.
+
+    표에서 누르면 **보이는 글자**(`딜소개 불가`)가, 수정 패널에서는 값(`blocked`)이
+    온다. 저장은 반드시 값이어야 한다 — 발송 화면이 컬럼을 그대로 견주기 때문이다
+    (routers/pages.py 의 `/deals`).
+
+    모르는 말은 조용히 넣지 않고 막는다. 넣어 두면 되읽을 때 `미계약` 으로 보여
+    **고친 적 없는 것처럼** 되고, `딜소개 불가` 로 바꿔 둔 줄 알았던 기업이 발송
+    목록에 그대로 남는다.
+    """
+    key = contract_key(value)
+    if key not in CONTRACT_LABELS:
+        raise HTTPException(
+            status_code=400,
+            detail="모르는 계약여부입니다: "
+                   f"{value!r} — {' · '.join(CONTRACT_LABELS.values())} "
+                   "중에서 고르세요")
+    return key
+
+
+def checked_ox(field: str, value) -> Optional[str]:
+    """`O` / `X` 칸(`OX_FIELDS`)에 저장할 값 — 빈 값은 지우기(None), 모르는 글자면 400.
+
+    빈 값은 지우는 것이다 — `미정` 으로 되돌릴 길이 있어야 한다. (잘못 찍은 `O` 를
+    `X` 로만 고칠 수 있으면 그것도 거짓말이 된다.)
+    """
+    key = received_key(value)
+    if key is not None and key not in RECEIVED_CHOICES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"모르는 {OX_FIELDS[field]}입니다: "
+                   f"{value!r} — {' · '.join(RECEIVED_CHOICES)} 중에서 "
+                   "고르거나, 아직 안 정했으면 비워 두세요")
+    return key
+
+
 def _assign(company: IrCompany, body: CompanyIn) -> None:
     data = body.model_dump(exclude_unset=True)
     for field, value in data.items():
@@ -921,32 +958,9 @@ def _assign(company: IrCompany, body: CompanyIn) -> None:
         elif field == "is_top_deal":
             company.is_top_deal = 1 if value else 0
         elif field == "contract_status":
-            # 표에서 누르면 **보이는 글자**(`딜소개 불가`)가, 수정 패널에서는
-            # 값(`blocked`)이 온다. 저장은 반드시 값이어야 한다 — 발송 화면이
-            # 컬럼을 그대로 견주기 때문이다(routers/pages.py 의 `/deals`).
-            #
-            # 모르는 말은 조용히 넣지 않고 막는다. 넣어 두면 되읽을 때 `미계약`
-            # 으로 보여 **고친 적 없는 것처럼** 되고, `딜소개 불가` 로 바꿔 둔
-            # 줄 알았던 기업이 발송 목록에 그대로 남는다.
-            key = contract_key(value)
-            if key not in CONTRACT_LABELS:
-                raise HTTPException(
-                    status_code=400,
-                    detail="모르는 계약여부입니다: "
-                           f"{value!r} — {' · '.join(CONTRACT_LABELS.values())} "
-                           "중에서 고르세요")
-            company.contract_status = key
+            company.contract_status = checked_contract(value)
         elif field in OX_FIELDS:
-            # 빈 값은 지우는 것이다 — `미정` 으로 되돌릴 길이 있어야 한다.
-            # (잘못 찍은 `O` 를 `X` 로만 고칠 수 있으면 그것도 거짓말이 된다.)
-            key = received_key(value)
-            if key is not None and key not in RECEIVED_CHOICES:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"모르는 {OX_FIELDS[field]}입니다: "
-                           f"{value!r} — {' · '.join(RECEIVED_CHOICES)} 중에서 "
-                           "고르거나, 아직 안 정했으면 비워 두세요")
-            setattr(company, field, key)
+            setattr(company, field, checked_ox(field, value))
         elif field == "kakao_room_name":
             # **방 이름을 적는 자리는 한 곳이다**(`services/room_match.set_room`).
             # 맞추기 화면(`/deals/startup-ir/rooms`)도 같은 함수를 지난다 —

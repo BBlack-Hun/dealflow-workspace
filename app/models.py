@@ -1034,6 +1034,12 @@ class SeriesACompany(TimestampMixin, Base):
     ceo_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     ceo_phone: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     ceo_email: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: 계약여부 · 계약서 수신 여부(0125 · 10/28 요청 — 탭의 `이메일` 오른쪽). IR 기업 현황의
+    #: 같은 두 칸과 **같은 값 · 같은 보기**다 — 계약여부는 열쇠(`paid`, 화면은
+    #: `companies.CONTRACT_LABELS` 의 말 · 비면 `미계약`), 계약서 수신은 `O` / `X` / 빈칸.
+    #: IR 기업에 이어진 줄은 따라 고친다(`company_sync.FIELDS` — `딜소개 불가` 는 저절로 안 옮긴다).
+    contract_status: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    contract_received: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     #: 연도별 매출 · 누적투자금액 · 투자유치희망금액 · 프리밸류 — 단위 억, **적은
     #: 그대로 글자**다(`IrCompany` 의 같은 이름 칸과 같은 까닭 — `5-10억` · `~`).
     #: 문구에 실리지 않는다. 숫자로 읽는 자리는 `raise_target` 하나 — Series A 딜 공유의

@@ -80,8 +80,13 @@
   //   · 검색 글자(`data-search`) — 안 고치면 고친 값이 새로고침 전까지 안 걸린다.
   //   · `IR 현황` 딱지 — 기업명을 고치면 맞는 기업이 달라진다.
   //   · 나머지 칸 · `IR 기업:` 표시 — 기업명을 넣어 IR 기업에 이어지면 서버가 대표자 ·
-  //     매출 · 금액 빈칸을 IR 값으로 채운다(`services/company_sync.py`). 새로고침 없이
-  //     보이게 줄의 칸을 전부 응답으로 다시 그린다.
+  //     매출 · 금액 · 계약 빈칸을 IR 값으로 채운다(`services/company_sync.py`). 새로고침 없이
+  //     보이게 줄의 칸을 전부 응답으로 다시 그린다(거르는 값도 함께).
+  //   · `계약여부` — 저장은 열쇠(`paid`), 칸 · 필터는 말(`contract_label`). IR 표와 같다.
+  function shown(data, key) {
+    return (key === "contract_status" ? data.contract_label : data[key]) || "";
+  }
+
   table.addEventListener("inline-saved", function (e) {
     var data = e.detail.data || {};
     var row = e.detail.row;
@@ -95,15 +100,18 @@
       if (cell.parentNode) cell.parentNode.title = data.series || "";
       row.setAttribute("data-f-series", data.series_short || "");
     } else if (field && field in data) {
-      cell.textContent = data[field] || "";
+      cell.textContent = shown(data, field);
       var fkey = cell.getAttribute("data-filter-key");
       if (fkey && row.hasAttribute("data-f-" + fkey)) {
-        row.setAttribute("data-f-" + fkey, data[field] || "");
+        row.setAttribute("data-f-" + fkey, shown(data, field));
       }
     }
     Array.prototype.forEach.call(row.querySelectorAll(".cell[data-field]"), function (other) {
       var key = other.getAttribute("data-field");
-      if (other !== cell && key !== "series" && key in data) other.textContent = data[key] || "";
+      if (other === cell || key === "series" || !(key in data)) return;
+      other.textContent = shown(data, key);
+      var okey = other.getAttribute("data-filter-key");
+      if (okey && row.hasAttribute("data-f-" + okey)) row.setAttribute("data-f-" + okey, shown(data, key));
     });
     if (data.ir_link) renderIrLink(row.querySelector(".sa-ir-link"), data.ir_link);
     if ("search" in data) row.setAttribute("data-search", data.search || "");

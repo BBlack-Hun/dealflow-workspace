@@ -324,6 +324,47 @@ function saved(dom, row, cell, value, data) {
   assert.strictEqual(row.querySelector('[data-field="series"]').textContent, "Series B");
 }
 
+// --- ⑦ 계약여부 · 계약서 수신 여부(0125) — 칸 · 필터는 **말**, 저장은 열쇠 ------------
+//
+// 응답의 `contract_status` 는 열쇠(`paid`)다. 그대로 적으면 칸에 `paid` 가 보이고 필터가
+// `유료계약완료` 와 두 벌로 갈린다 — `contract_label` 로 그린다(IR 표와 같다). 기업명을
+// 넣어 IR 에서 채워진 계약 칸도 새로고침 없이 말로 서고, 거르는 값도 따라간다.
+{
+  const dom = build();
+  const row = dom.body.children[0];
+  const contract = D.el("td", { class: "cell", "data-field": "contract_status",
+                                "data-type": "pick", "data-filter-key": "contract" });
+  const received = D.el("td", { class: "cell", "data-field": "contract_received",
+                                "data-type": "pick", "data-filter-key": "received" });
+  contract.textContent = "미계약";
+  row.setAttribute("data-f-contract", "미계약");
+  row.setAttribute("data-f-received", "");
+  row.appendChild(contract);
+  row.appendChild(received);
+  run(dom);
+
+  contract.textContent = "유료계약완료";
+  saved(dom, row, contract, "유료계약완료", {
+    id: 1, name: "가온샘플", received_sort: "2026-08-25", series: "Series B",
+    series_short: "Series B", ir_name: "",
+    contract_status: "paid", contract_label: "유료계약완료", contract_received: ""
+  });
+  assert.strictEqual(contract.textContent, "유료계약완료", "칸에 열쇠가 보인다");
+  assert.strictEqual(row.getAttribute("data-f-contract"), "유료계약완료");
+
+  const name = row.querySelector('[data-field="name"]');
+  saved(dom, row, name, "샘플가람", {
+    id: 1, name: "샘플가람", received_sort: "2026-08-25", series: "Series B",
+    series_short: "Series B", ir_name: "샘플가람",
+    contract_status: "free", contract_label: "무료계약완료", contract_received: "O"
+  });
+  assert.strictEqual(contract.textContent, "무료계약완료", "IR 에서 채운 계약여부가 말로 안 섰다");
+  assert.strictEqual(received.textContent, "O");
+  assert.strictEqual(row.getAttribute("data-f-contract"), "무료계약완료",
+    "다시 그린 칸의 필터 값이 옛 값에 남았다");
+  assert.strictEqual(row.getAttribute("data-f-received"), "O");
+}
+
 // --- ⑤ 삭제 --------------------------------------------------------------
 {
   const dom = build();
