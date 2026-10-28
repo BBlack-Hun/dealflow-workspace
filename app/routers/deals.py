@@ -172,6 +172,11 @@ FOLLOW_UP_MODES = {
 #: `{기업목록}` 에는 못 보낸 기업이 번호와 함께 들어간다(`deal_numbers.company_list`).
 IR_LATER_KIND = "ir_delivery_later"
 IR_LATER_FALLBACK = "{기업목록} 자료는 준비되는 대로 추후 보내 드리겠습니다."
+#: 리마인드를 받는 분의 **선호 투자분야(`VcContact.sectors`)가 비었으면** 글 끝에
+#: 빈 줄 하나 두고 붙는 되묻는 말(10/28). 관리자가 문구 화면에서 고친다 — 글자까지
+#: `scripts/bootstrap.TEAM_TEMPLATES` 의 같은 종류와 같아야 한다.
+REMIND_NO_SECTOR_KIND = "closing_remind_no_sector"
+REMIND_NO_SECTOR_FALLBACK = "선호하는 기업분야 말씀주시면\n맞추어\n딜 공유 드리겠습니다."
 #: 고른 기업 모두 파일명이 없을 때 — 발송 목록을 안 만들고 요청도 닫지 않는다.
 IR_NOTHING_NOTE = "보낼 자료가 하나도 없습니다 — 요청은 그대로 남습니다"
 #: 발송 화면의 **탭 → 문구 종류**. 한 곳에서 정해 두고 문구 관리 화면이
@@ -400,6 +405,13 @@ def _compose_for_contact(
         closing_body = closing_body.rstrip() + "\n" + _template_body(
             db, user.id, IR_LATER_KIND, IR_LATER_FALLBACK).replace(
             "{기업목록}", deal_numbers.company_list(db, contact.id, later))
+    # 리마인드 — 받는 **그 분의** 선호 투자분야가 비었을 때만 되묻는 말을 붙인다.
+    # 한 분 = 한 통이라(같은 방이어도 발송 건이 따로다) 그 분 칸만 본다. 가상의
+    # 받는 사람(`_SampleRecipient`, 기본 문구)에게는 붙이지 않는다.
+    if (mode == MODE_REMIND and isinstance(contact, VcContact)
+            and not (contact.sectors or "").strip()):
+        closing_body = closing_body.rstrip() + "\n\n" + _template_body(
+            db, user.id, REMIND_NO_SECTOR_KIND, REMIND_NO_SECTOR_FALLBACK).strip()
 
     who = _to_contact_view(contact)
     if mode == MODE_SOURCING and not (who.title or "").strip():

@@ -16,14 +16,14 @@ from typing import List, Optional
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..deps import get_current_user, no_send_as_member, require_admin, templates
+from ..deps import _wants_json, get_current_user, no_send_as_member, require_admin, templates
 from ..models import SendItem, SendJob, SourcingContact, User
 from ..services import (series_a_share, sourcing_buckets, sourcing_link,
                         sourcing_mail, sourcing_receipts, sourcing_rooms,
@@ -969,6 +969,22 @@ def mail_check_now(tab: str = Form(""), db: Session = Depends(get_db),
 
 # ── 카톡방 후보 찾기 · 확정 ────────────────────────────────────────────────
 
+def _answer(request: Request, tab: str, msg: str, status: int = 200, **extra) -> Response:
+    """방 찾기 · 확정의 답. 화면 스크립트(`sourcing_rooms.js` — `Accept: application/json`)
+    가 부르면 JSON 으로 답해 **그 줄만** 고치게 한다(사용자: "방 후보 누를때 비동기로
+    해줘… 계속 새로고침이 되서 연속해서 클릭을 못함"). 폼이 그대로 보내면 예전처럼
+    메시지를 달고 되돌아간다(`_back`).
+
+    성공에는 `ok` 를 싣는다 — 세션이 끊겨 로그인 화면으로 넘어간 답(200 · HTML)을
+    스크립트가 성공으로 읽지 않게.
+    """
+    if not _wants_json(request):
+        return _back(tab, msg)
+    if status >= 400:
+        return JSONResponse({"detail": msg}, status_code=status)
+    return JSONResponse({"ok": True, "msg": msg, **extra})
+
+
 def _ids(raw: str) -> Optional[List[int]]:
     """`3,5,8` → `[3, 5, 8]`. 비면 `None`(= 아무도 안 골랐다)."""
     out = [int(x) for x in re.findall(r"\d+", raw or "")]
@@ -977,7 +993,7 @@ def _ids(raw: str) -> Optional[List[int]]:
 
 @router.post("/sourcing/rooms/search", include_in_schema=False,
              dependencies=[Depends(no_send_as_member)])
-def search_rooms(tab: str = Form(""), ids: str = Form(""),
+def search_rooms(request: Request, tab: str = Form(""), ids: str = Form(""),
                  db: Session = Depends(get_db),
                  user: User = Depends(get_current_user)):
     """[방 후보 찾기] — **고른 줄**(`ids`) 중 방이 없는 줄을 **누른 사람 PC 의
@@ -997,20 +1013,22 @@ def search_rooms(tab: str = Form(""), ids: str = Form(""),
     """
     picked = _ids(ids)
     if not picked:
-        return _back(tab, "찾을 분을 먼저 고르세요 — 표 왼쪽 체크박스로 고릅니다")
+        return _answer(request, tab, "찾을 분을 먼저 고르세요 — 표 왼쪽 체크박스로 고릅니다", 400)
     bucket = "" if tab in ("", "all") else tab
     rows = sourcing_rooms.targets(db, bucket, picked)
     job = sourcing_rooms.queue_search(db, user, rows)
     if job is None:
-        return _back(tab, "찾을 줄이 없습니다 — 고른 분은 방 이름이 다 있습니다")
+        return _answer(request, tab, "찾을 줄이 없습니다 — 고른 분은 방 이름이 다 있습니다", 400)
     db.commit()
-    return _back(tab, f"{user.name} 님 PC 의 카톡에서 {job.total}명의 방을 찾습니다"
-                      f"(회차 #{job.id}) — 그 PC 의 발송 프로그램이 켜져 있어야 합니다. "
-                      "끝나면 이 화면을 새로고침해 후보를 고르세요")
+    return _answer(request, tab,
+                   f"{user.name} 님 PC 의 카톡에서 {job.total}명의 방을 찾습니다"
+                   f"(회차 #{job.id}) — 그 PC 의 발송 프로그램이 켜져 있어야 합니다. "
+                   "끝나면 이 화면을 새로고침해 후보를 고르세요",
+                   job_id=job.id, ids=[r.id for r in rows])
 
 
 @router.post("/sourcing/{row_id}/room-confirm", include_in_schema=False)
-def confirm_room(row_id: int, room: str = Form(""), tab: str = Form(""),
+def confirm_room(request: Request, row_id: int, room: str = Form(""), tab: str = Form(""),
                  db: Session = Depends(get_db),
                  user: User = Depends(get_current_user)):
     """[이 방으로 확정] — 카톡에서 찾은 후보를 이 줄의 방 이름으로(`확인됨`)."""
@@ -1021,6 +1039,7 @@ def confirm_room(row_id: int, room: str = Form(""), tab: str = Form(""),
         sourcing_rooms.confirm(row, room)
     except sourcing_rooms.NotPickable as exc:
         db.rollback()
-        return _back(tab, str(exc))
+        return _answer(request, tab, str(exc), 400)
     db.commit()
-    return _back(tab, f"{row.name} — 방을 확정했습니다: {row.kakao_room_name}")
+    return _answer(request, tab, f"{row.name} — 방을 확정했습니다: {row.kakao_room_name}",
+                   room=row.kakao_room_name)
