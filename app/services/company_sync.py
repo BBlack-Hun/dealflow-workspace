@@ -28,6 +28,7 @@
 
     ── 3단계(10/26) — Series A 이상 딜 소싱(`SeriesACompany`)은 셋째 자리 ──
     대표자명 · 연락처 · 이메일   →  `ceo_name` · `ceo_phone` · `ceo_email`
+    계약여부 · 계약서 수신 여부  →  같은 이름 칸(10/28 · 0125 — IR 과 같은 열쇠 · `O`/`X`)
     누적투자금액 · 투자유치희망금액 · Pre Value  →  같은 이름 칸(단위 억 글자)
     연도 매출  →  **해마다 짝이 바뀐다**(`_year_slot`). IR 은 올해 매출을 연도 칸이 아니라
                   `revenue_recent` 에 적는다(`revenue_years` 머리말). 그래서 Series A 의
@@ -41,7 +42,8 @@
 진행 기록(기업 관리 · 컨설팅 미팅일)은 잇지 않고 IR 화면에서 읽기만 한다(결정 3).
 
 계약여부는 **화면마다 값 꼴이 다르다** — IR 은 열쇠(`paid`), 메타는 보기 둘
-(`무료계약완료` · `유료계약완료` — 결정 4), 계약 탭은 `무료` · `유료`, 스타트업은 보기 넷.
+(`무료계약완료` · `유료계약완료` — 결정 4), 계약 탭은 `무료` · `유료`, 스타트업은 보기 넷,
+Series A 는 IR 과 같은 열쇠(`_out` 이 그대로 적는다).
 읽을 때는 `contract_key` 로 열쇠로 맞추고(`norm`), 적을 때는 그 자리의 말로 바꾼다
 (`_out` — 못 적는 상태면 안 적는다). 투자컨설턴트 칸에서는 무료 · 유료만 IR 로 간다.
 IR 의 `미계약`(기본값)은 빈칸으로 본다.
@@ -109,8 +111,8 @@ FIELDS = {
     "quote_attached": ("contract_management", "note:quote_attached", None),
     "kakao_joined": ("kakao_joined", "kakao_joined", None),
     # 2단계(#59)
-    "contract_status": ("contract_done", "note:contract", None),
-    "contract_received": ("contract_received", "note:invoice_received", None),
+    "contract_status": ("contract_done", "note:contract", "contract_status"),
+    "contract_received": ("contract_received", "note:invoice_received", "contract_received"),
     "meeting_offered_at": (None, "note:ir_meeting_offered_at", None),
     "success_fee": (None, "note:success_fee", None),
     # 3단계(Series A)
@@ -719,11 +721,12 @@ def differences(db: Session, rows: Iterable[Row]) -> Dict[int, List[dict]]:
             stuck = bool(mine) and not theirs and _guarded(field, theirs, _key(mine))
             if not stuck and not (mine and theirs and not same(field, mine, theirs)):
                 continue
-            shown = theirs
+            shown, mine_shown = theirs, mine
             if field == CONTRACT:
                 shown = CONTRACT_LABELS.get(_key(theirs), theirs)
+                mine_shown = CONTRACT_LABELS.get(mine, mine)   # Series A 줄은 열쇠(`paid`)를 적는다
             out.setdefault(row.id, []).append({
-                "field": field, "label": label(field), "row": mine, "ir": shown,
+                "field": field, "label": label(field), "row": mine_shown, "ir": shown,
                 "movable": norm(field, mine, where) is not None, "both": field in BOTH,
                 "blocked": _guarded(field, mine, _key(theirs))})
     return out
