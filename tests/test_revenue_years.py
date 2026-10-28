@@ -88,10 +88,10 @@ def test_지난_세_해와_올해_최근_매출액이다():
 
     assert ry.shown(2026) == [("revenue_2023", "23"), ("revenue_2024", "24"),
                                ("revenue_2025", "25")]
-    assert ry.recent_label(2026) == "최근 매출액(26년)"
+    assert ry.recent_label(2026) == "26년 매출"
     assert ry.shown(2027) == [("revenue_2024", "24"), ("revenue_2025", "25"),
                                ("revenue_2026", "26")]
-    assert ry.recent_label(2027) == "최근 매출액(27년)"
+    assert ry.recent_label(2027) == "27년 매출"
     # 칸을 안 판 해는 건너뛴다 — 판이 늦어도 화면은 안 죽는다.
     assert [f for f, _ in ry.shown(2033)] == ["revenue_2030"]
 
@@ -102,11 +102,13 @@ def test_지난_세_해와_올해_최근_매출액이다():
 ])
 def test_두_탭과_창에_올해_기준_해가_선다(logged_in, company, at, day, years, gone):
     at(day)
-    label = f"최근 매출액({day.year % 100}년)"
+    label = f"{day.year % 100}년 매출"
     db_tab = logged_in.get("/companies?tab=db").text
     heads = _heads(db_tab)
-    assert [h for h in heads if h.endswith("년 매출")] == [f"{y}년 매출" for y in years]
-    assert label in heads and "최근 매출액" not in heads
+    # 올해 칸(`revenue_recent`)이 지난 세 해 **바로 오른쪽**에 같은 꼴 이름으로 선다(#82).
+    assert [h for h in heads if h.endswith("년 매출")] == [f"{y}년 매출" for y in years] + [label]
+    assert heads[heads.index(label) + 1] == "누적투자금액"
+    assert not any(h.startswith("최근 매출액") for h in heads)
     # 숨긴 해는 표에서만 빠진다 — 창에도 안 서고(보내지 않으니 안 지워진다) 값은 남는다.
     status = logged_in.get("/companies").text
     for html in (db_tab, status):
@@ -135,7 +137,7 @@ def test_IR_탭은_소분류_바로_뒤에_매출_금액이_선다(logged_in, co
     assert fields[at_minor + 1:at_minor + 1 + len(block)] == [f for f, _h in block]
     if day == Y2026:
         assert [h for _f, h in block] == [
-            "23년 매출", "24년 매출", "25년 매출", "최근 매출액(26년)",
+            "23년 매출", "24년 매출", "25년 매출", "26년 매출",
             "누적투자금액", "투자유치희망금액", "Pre Value"]
 
 

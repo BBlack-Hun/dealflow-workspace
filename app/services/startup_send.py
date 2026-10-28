@@ -206,8 +206,10 @@ def rows(db: Session, month: str) -> dict:
             "company": company,
             "contract_label": row["contract_label"],
             "room": room,
-            # 그 달 말까지 쌓인 줄 수 — 글에 실리는 줄 수 그대로다.
+            # 그 달 말까지 쌓인 줄 수 — 글에 실리는 줄 수 그대로다(줄 하나 = 심사역 한 명).
             "count": row["total_count"],
+            # 그 줄들의 투자사 수(#86 — 화면이 `N곳 · M명` 으로 적는다).
+            "firms": row["total_firms"],
             "sendable": not reason,
             "reason": reason,
             # 그 방 제목을 카톡에서 확인했는가 — **보여 주기만 한다.**

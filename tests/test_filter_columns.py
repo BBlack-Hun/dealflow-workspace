@@ -74,7 +74,7 @@ class _TableReader(HTMLParser):
                            "id": a.get("id", ""),
                            "url": a.get("data-inline-url", ""),
                            "cols": [], "row": set(), "values": {},
-                           "cells": [], "seps": {}}
+                           "cells": [], "seps": {}, "derived": set()}
             self.tables.append(self._table)
             self._section = ""
             self._head_done = self._in_row = self._row_done = False
@@ -114,6 +114,10 @@ class _TableReader(HTMLParser):
                 key = a.get("data-filter-key") or a["data-field"]
                 self._table["cells"][-1] = key
                 self._table["seps"][key] = a.get("data-filter-sep")
+                # 필터 값을 서버가 세는 칸(금액 구간 — `data-filter-derived`)은 친 글자를
+                # 행에 안 적는다(`inline_edit.js`) — 아래 6 · 7 의 나누기 검사는 해당 없다.
+                if "data-filter-derived" in a:
+                    self._table["derived"].add(key)
 
     def handle_endtag(self, tag: str) -> None:
         if tag == "tr" and self._in_row:
@@ -581,7 +585,7 @@ def test_한_칸에_값이_여럿인_칸은_필터_구분자를_알려_줘야_�
     flat = []
     for page, table in _each_inline_table(screens):
         for key in table["cells"]:
-            if key is None or table["seps"].get(key):
+            if key is None or table["seps"].get(key) or key in table["derived"]:
                 continue
             many = next((v for v in table["values"].get(key, []) if "|" in v), None)
             if many is None:
@@ -604,7 +608,7 @@ def test_칸이_쓰는_구분자와_서버가_행에_적는_구분자가_같아�
     crossed = []
     for page, table in _each_inline_table(screens):
         for key, sep in table["seps"].items():
-            if not sep:
+            if not sep or key in table["derived"]:
                 continue
             left = next((v for v in table["values"].get(key, []) if sep in v), None)
             if left is not None:

@@ -47,7 +47,7 @@ from typing import Dict, List, Optional
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ..models import (MessageTemplate, SourcingContact, SourcingTab,
+from ..models import (DealBatch, DealQueueItem, MessageTemplate, SourcingContact, SourcingTab,
                       TemplateApplyBackup, TemplateChoice)
 from . import sourcing_msg, template_pick
 
@@ -263,6 +263,53 @@ def create(db: Session, name: Optional[str]) -> str:
     db.add(SourcingTab(name=label))
     db.flush()
     return label
+
+
+def delete(db: Session, label: Optional[str]) -> None:
+    """[탭 삭제](#78) — **사람이 0명인 탭만** 지운다. 그 이름의 문구 · 골라 둔 것 ·
+    되돌리기 버퍼 · 만든 탭 줄을 함께 지운다.
+
+    사람이 있으면 막는다 — 줄을 지우거나 옮기는 일은 보낸 이력이 걸려 있어 사람이
+    먼저 한다. 투자사 관리 현황과 잇는 갈래도 막는다(이름이 곧 잇는 열쇠다 — `rename`).
+    같은 이름 문구를 두고 가면 그 이름으로 탭을 다시 못 만든다(`label_in_use`) — 그래서
+    함께 지운다. 딜 소개 회차가 그 문구를 물고 있으면(외래키) 막는다.
+    `db.commit()` 은 부르는 쪽이 한다.
+    """
+    from . import sourcing_sync      # noqa: PLC0415 — 서로 참조한다
+
+    label = (label or "").strip()
+    if any(same(label, bucket) for bucket in sourcing_sync.SYNC_BUCKETS):
+        raise RenameError(f"'{label}' 은 투자사 관리 현황과 이어진 갈래라 지울 수 없습니다")
+    people = db.scalar(select(func.count()).select_from(SourcingContact).where(
+        SourcingContact.bucket.in_(variants(db, label)))) or 0
+    if people:
+        raise RenameError(f"'{label}' 탭에 {people}명이 있어 지울 수 없습니다 — "
+                          "먼저 줄을 지우거나 다른 탭으로 옮겨 주세요")
+    tabs = [t for t in db.execute(select(SourcingTab)).scalars() if same(t.name, label)]
+    texts = [t for t in db.execute(
+        select(MessageTemplate).where(MessageTemplate.kind.in_(KINDS))).scalars()
+        if same(t.name, label)]
+    if not tabs and not texts:
+        raise RenameError(f"없는 탭입니다: {label}")
+    ids = [t.id for t in texts]
+    if ids and (db.scalar(select(func.count()).select_from(DealBatch).where(
+            DealBatch.opening_template_id.in_(ids))) or db.scalar(
+            select(func.count()).select_from(DealQueueItem).where(
+                DealQueueItem.opening_template_id.in_(ids)
+                | DealQueueItem.closing_template_id.in_(ids)))):
+        raise RenameError(f"'{label}' 문구를 딜 소개 회차가 쓰고 있어 지울 수 없습니다")
+    for choice in db.execute(select(TemplateChoice).where(
+            TemplateChoice.kind.in_(KINDS))).scalars().all():
+        if same(choice.variant, label):
+            db.delete(choice)
+    for backup in db.execute(select(TemplateApplyBackup).where(
+            TemplateApplyBackup.kind.in_(KINDS))).scalars().all():
+        if same(backup.variant, label):
+            db.delete(backup)
+    db.flush()                       # 골라 둔 것이 문구를 물고 있다 — 먼저 지운다
+    for row in texts + tabs:
+        db.delete(row)
+    db.flush()
 
 
 def message_shape(bucket: str) -> dict:

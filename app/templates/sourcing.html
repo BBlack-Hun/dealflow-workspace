@@ -77,6 +77,18 @@
   <button class="linkbtn" type="submit">이름 저장</button>
   <span class="hint">이 갈래의 사람 · 문구가 함께 따라갑니다</span>
 </form>
+{# [탭 삭제](#78) — **사람이 0명인 탭만 · 관리자만.** 그 이름의 문구 · 골라 둔 것도
+   함께 지운다(`sourcing_buckets.delete`). 사람이 있으면 단추가 안 선다. #}
+{% set cur = tabs | selectattr("key", "equalto", selected) | first %}
+{% if is_admin and cur and not cur.count %}
+<form method="post" action="/sourcing/buckets/delete" class="ref-rename sheet-rename"
+      data-testid="sourcing-tab-delete"
+      onsubmit='return confirm({{ ("'" ~ selected ~ "' 탭을 지울까요?\n사람이 없는 탭입니다. 이 탭 이름의 딜 소싱 문구와 골라 둔 것도 함께 지워지고 되돌릴 수 없습니다.")|tojson }})'>
+  <input type="hidden" name="label" value="{{ selected }}">
+  <button class="linkbtn danger" type="submit">탭 삭제</button>
+  <span class="hint">사람이 0명인 탭이라 지울 수 있습니다(관리자)</span>
+</form>
+{% endif %}
 {% endif %}
 
 <div class="toolbar">

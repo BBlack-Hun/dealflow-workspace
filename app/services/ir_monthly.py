@@ -455,8 +455,10 @@ def overview(db: Session, month: str) -> dict:
             "company": company,
             "contract_label": contract_label(company),
             "count": len(got),
-            # 그 달 말까지 쌓인 수 — 카톡 글에 실리는 줄 수다.
+            # 그 달 말까지 쌓인 수 — 카톡 글에 실리는 줄 수다(줄 하나 = 심사역 한 명).
             "total_count": len(piled),
+            # 그 줄들이 몇 **곳**(투자사)인가 — 원래 이름으로 센다(`tally_of`).
+            "total_firms": total.tally_of(company.id).firms,
             # 보낼 수 있는 문서가 되는가. 0곳이면 적을 것이 없다.
             "sendable": bool(got),
             # 보낼 수 있는 **카톡 글**이 되는가. 누적이 0곳이면 짓지 않는다.
