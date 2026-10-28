@@ -396,10 +396,12 @@ def test_전달한_자료_판에_뜬다(db, users, logged):
 
     body = logged.get("/ir").text
     assert "7일 지남" in body
-    assert "회의실 미팅 톡 요청 미완료 1명" in body
+    # #79 — 전달 뒤 먼저 나가는 것이 IR 자료 검토 요청이라 경보도 그 말이다.
+    assert "IR 자료 검토 요청 미완료 1명" in body
     # 줄에는 **지난 날 그대로**가 선다(10/17 회의 #39) — 예전엔 `7일 지남` 고정.
-    assert 'class="status-when bad">회의실 미팅 톡 요청 미완료 · 30일' in body
+    assert 'class="status-when bad">IR 자료 검토 요청 미완료 · 30일' in body
     assert f"/ir/contacts/{contact.id}/meeting-asked" in body
+    assert f"/ir/contacts/{contact.id}/review-asked" in body
 
 
 def test_보낸_줄에는_보냄과_날짜가_뜬다(db, users, logged):
@@ -459,6 +461,6 @@ def test_지난_줄이_스무_개를_넘어도_안_자른다(db, users, logged):
     body = logged.get("/ir").text
     # 판 제목 옆 안내문(`(7일 지남 25명)`)과 갈라 **줄의 배지**만 센다 — 줄에는
     # 지난 날이 그대로 선다(10/17 회의 #39).
-    rows = body.count('class="status-when bad">회의실 미팅 톡 요청 미완료 · 30일')
+    rows = body.count('class="status-when bad">IR 자료 검토 요청 미완료 · 30일')
     assert rows == 25, rows
-    assert "회의실 미팅 톡 요청 미완료 25명" in body
+    assert "IR 자료 검토 요청 미완료 25명" in body

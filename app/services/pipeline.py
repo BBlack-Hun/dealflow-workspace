@@ -20,7 +20,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..models import (ContactActivity, IrCompany, IrRequest, Meeting, SendItem,
-                      SeriesACompany, User, VcContact)
+                      SendJob, SeriesACompany, User, VcContact)
 from . import cadence, calendar_link, deal_numbers
 from .sheet_import import normalize_company_name
 
@@ -52,6 +52,16 @@ MEETING_ASK_KIND = "meeting_ask"
 #: 투자사 관리 현황의 활동 이력에 이미 이 말로 수백 줄이 서 있다.)
 MEETING_ASK_BY_HAND = "미팅 요청 — 카톡으로 직접 보냄"
 
+#: **IR 자료 검토 요청**(#79 · 10/28 담당자 '추천대로') — 자료를 보낸 뒤 "검토해 보셨는지"
+#: 묻는 글. 흐름은 IR 자료 전달 → 검토 요청 → (상태 `IR 자료 검토 요청 완료`) → 미팅 요청.
+#:
+#: 이 한 글자를 세 자리가 같이 쓴다 — 문구 종류(`message_templates.kind` · 문구 관리에서
+#: 팀이 쓴다), 앱이 보낸 회차의 표시(`SendJob.topic` — 잡 종류는 리마인드처럼
+#: `deal_intro`, 단계 2), 사람이 손으로 보냈다고 표시한 자국(`ContactActivity.kind`).
+#: 그래서 새 표 · 새 칸 · 이주가 없다(`MEETING_ASK_KIND` 와 같은 방식).
+IR_REVIEW_KIND = "ir_review_request"
+IR_REVIEW_BY_HAND = "IR 자료 검토 요청 — 카톡으로 직접 보냄"
+
 # ── 딜 진행 관리의 **보이는 말** (10/17 회의 · 개선 과제 #35~#44) ──────────────
 #
 # 상태 코드(`open`·`delivered`)도, DB 값도, 주소도 그대로다 — **화면에 서는 말만**
@@ -64,12 +74,22 @@ MEETING_ASK_BY_HAND = "미팅 요청 — 카톡으로 직접 보냄"
 #   미팅 요청 안 보냄   → 회의실 미팅 톡 요청 미완료 (· N일 — 지난 날을 그대로 센다)
 #   미팅 잡기           → 회의실 미팅 잡기
 #   보냈음으로 표시     → IR 자료 검토 요청 보냄
+#
+# #79(10/28 '추천대로') — 자료 전달 뒤 먼저 **IR 자료 검토 요청**이 나간다.
+#   검토 요청 보냄      → IR 자료 검토 요청 완료 · 날짜
+#   검토 요청 안 보냄   → IR 자료 검토 요청 미완료 (· N일 — `/ir` 「전달한 자료」의 경보)
+#   [IR 자료 검토 요청 보냄]  → 이제 **검토 요청**을 손으로 보냈다는 표시다
+#   [미팅 요청 보냄]          → 미팅 요청을 손으로 보냈다는 표시(예전 그 단추의 일)
 LABEL_REQUESTED = "IR 자료 요청 받음"
 LABEL_DELIVERED = "IR 자료 전달 완료"
 LABEL_ASKED = "회의실 미팅 톡 요청 보냄 완료"
 LABEL_NOT_ASKED = "회의실 미팅 톡 요청 미완료"
 LABEL_BOOK_MEETING = "회의실 미팅 잡기"
 LABEL_MARK_ASKED = "IR 자료 검토 요청 보냄"
+LABEL_REVIEWED = "IR 자료 검토 요청 완료"
+LABEL_NOT_REVIEWED = "IR 자료 검토 요청 미완료"
+LABEL_MARK_MEETING = "미팅 요청 보냄"
+LABEL_MEETING_ASK = "미팅 요청"
 
 REQUEST_STATUS = {
     "open": LABEL_REQUESTED,
@@ -214,6 +234,11 @@ def meeting_ask_state(db: Session, requests, *,
         due           보내야 하는 날 (= 전달일 + `IR_MEETING_ASK_DAYS`)
         overdue       안 보냈는데 그 날이 지났다
         days          마지막 전달일에서 **오늘까지 지난 날** (상한 없음)
+        reviewed      IR 자료 검토 요청을 보냈는가(#79 — 앱 발송 · 손으로 보냄 표시)
+        reviewed_at   보냈으면 그 날 (안 보냈으면 빈 글자)
+
+    `asked` · `overdue` 는 **미팅 요청**만 본다 — 업무 보고의 수 · 자동화 A2 가 그 뜻으로
+    읽는다. 검토 요청을 보낸 줄의 경보를 거두는 것은 `/ir` 쪽이다(`request_rows`).
 
     ## 왜 이 판정이 필요한가
 
@@ -272,11 +297,12 @@ def meeting_ask_state(db: Session, requests, *,
     # 자리는 둘이지만 **판정은 여기 한 번**이다. 읽는 화면이 각자 세면
     # 업무 보고와 IR 화면이 서로 다른 수를 말한다.
     asked: Dict[int, str] = {}
+    reviewed: Dict[int, str] = {}
 
-    def _note(contact_id: int, when: Optional[str]) -> None:
+    def _note(contact_id: int, when: Optional[str], seen: Dict[int, str] = asked) -> None:
         day = (when or "")[:10]
-        if day and day > asked.get(contact_id, ""):
-            asked[contact_id] = day
+        if day and day > seen.get(contact_id, ""):
+            seen[contact_id] = day
 
     # ① 앱이 내보낸 것. `sent` 인 것만 — 대기·실패는 안 나간 것이다.
     for contact_id, when in db.execute(
@@ -299,11 +325,31 @@ def meeting_ask_state(db: Session, requests, *,
     ).all():
         _note(contact_id, when)
 
+    # ③④ IR 자료 검토 요청(#79) — 앱이 보낸 것(회차 표시 `topic`)과 손으로 보냄 표시.
+    for contact_id, when in db.execute(
+        select(SendItem.contact_id, func.max(SendItem.sent_at))
+        .join(SendJob, SendJob.id == SendItem.job_id)
+        .where(SendItem.contact_id.in_(ids), SendJob.topic == IR_REVIEW_KIND,
+               SendItem.status == "sent", SendItem.sent_at.isnot(None))
+        .group_by(SendItem.contact_id)
+    ).all():
+        _note(contact_id, when, reviewed)
+    for contact_id, when in db.execute(
+        select(ContactActivity.contact_id, func.max(ContactActivity.happened_at))
+        .where(ContactActivity.contact_id.in_(ids),
+               ContactActivity.kind == IR_REVIEW_KIND,
+               ContactActivity.happened_at.isnot(None))
+        .group_by(ContactActivity.contact_id)
+    ).all():
+        _note(contact_id, when, reviewed)
+
     out: Dict[int, dict] = {}
     now = today.isoformat()
     for contact_id, delivered in anchors.items():
         when = asked.get(contact_id, "")
         ok = bool(when) and when >= delivered
+        review = reviewed.get(contact_id, "")
+        review_ok = bool(review) and review >= delivered
         try:
             since = date.fromisoformat(delivered)
             due = (since + timedelta(days=IR_MEETING_ASK_DAYS)).isoformat()
@@ -326,6 +372,8 @@ def meeting_ask_state(db: Session, requests, *,
             "due": due,
             "overdue": bool(not ok and due and now >= due),
             "days": days,
+            "reviewed": review_ok,
+            "reviewed_at": review if review_ok else "",
         }
     return out
 
@@ -354,8 +402,32 @@ def meeting_ask_note(state: Optional[dict]) -> Tuple[str, str]:
     return f"{LABEL_NOT_ASKED}{tail}", ("bad" if state["overdue"] else "warn")
 
 
+def delivered_notes(state: Optional[dict]) -> List[Tuple[str, str]]:
+    """`/ir` 「전달한 자료」 상태 칸의 줄들 `[(글, 색)]` — 검토 요청 · 미팅 요청(#79).
+
+        IR 자료 검토 요청 완료 · 2026-09-10       ok
+        회의실 미팅 톡 요청 보냄 완료 · 2026-09-12  ok   (`meeting_ask_note` 그대로)
+        IR 자료 검토 요청 미완료 · 12일            bad / warn  (둘 다 아직이면 이 한 줄)
+
+    둘 다 안 보낸 줄의 날 수 · 빛깔은 미팅 요청 경보와 같은 자다(`IR_MEETING_ASK_DAYS`).
+    """
+    if not state:
+        return []
+    out = []
+    if state.get("reviewed"):
+        out.append((f"{LABEL_REVIEWED} · {state['reviewed_at']}", "ok"))
+    if state["asked"]:
+        out.append(meeting_ask_note(state))
+    if out:
+        return out
+    days = state.get("days")
+    tail = f" · {days}일" if days is not None else ""
+    return [(f"{LABEL_NOT_REVIEWED}{tail}", "bad" if state["overdue"] else "warn")]
+
+
 def record_meeting_ask(db: Session, contact_id: int,
-                       when: Optional[date] = None) -> bool:
+                       when: Optional[date] = None,
+                       kind: str = MEETING_ASK_KIND) -> bool:
     """미팅 요청을 **사람이 직접 보냈다**고 이력에 적는다. 새로 적었으면 `True`.
 
     **같은 날 두 번 눌러도 한 줄이다** — `ir_attach.record_delivery` 와 같은
@@ -364,16 +436,19 @@ def record_meeting_ask(db: Session, contact_id: int,
 
     기업은 안 본다 — 미팅 요청 카톡은 담당자당 한 통이고 딸 기업이 없다.
 
+    `kind=IR_REVIEW_KIND` 면 **IR 자료 검토 요청**을 손으로 보냈다는 표시다(#79 — 같은 길).
+
     커밋은 부르는 쪽이 한다(다른 변경과 한 번에 묶을 수 있게).
     """
     from .manual_send import existing
 
     day = (when or date.today()).isoformat()
-    if existing(db, contact_id, MEETING_ASK_KIND, day) is not None:
+    if existing(db, contact_id, kind, day) is not None:
         return False
     db.add(ContactActivity(
-        contact_id=contact_id, kind=MEETING_ASK_KIND, source="system",
-        content=MEETING_ASK_BY_HAND, happened_at=day, month=day[:7]))
+        contact_id=contact_id, kind=kind, source="system",
+        content=IR_REVIEW_BY_HAND if kind == IR_REVIEW_KIND else MEETING_ASK_BY_HAND,
+        happened_at=day, month=day[:7]))
     return True
 
 
@@ -431,10 +506,13 @@ def request_rows(db: Session, user: User,
         row["meeting_asked"] = bool(st and st["asked"])
         row["meeting_asked_at"] = st["asked_at"] if st else ""
         row["meeting_ask_due"] = st["due"] if st else ""
-        row["meeting_ask_overdue"] = bool(st and st["overdue"])
-        # 상태 칸에 서는 한 줄(`회의실 미팅 톡 요청 미완료 · 12일` 등)과 빛깔.
-        # 글자는 업무 보고와 **같은 함수**가 짓는다 — 화면마다 지으면 말이 갈린다.
-        row["meeting_ask_text"], row["meeting_ask_level"] = meeting_ask_note(st)
+        # IR 자료 검토 요청을 보냈는가(#79). 보냈으면 빨간 경보를 거둔다 — 다음 일은
+        # 미팅 요청이고, 그 단추 · 전화 요청은 줄에 그대로 선다.
+        row["reviewed"] = bool(st and st["reviewed"])
+        row["meeting_ask_overdue"] = bool(st and st["overdue"] and not st["reviewed"])
+        # 상태 칸에 서는 줄들(`IR 자료 검토 요청 완료 · 날짜` · `회의실 미팅 톡 요청
+        # 보냄 완료 · 날짜` · `IR 자료 검토 요청 미완료 · 12일`)과 빛깔.
+        row["ask_notes"] = delivered_notes(st)
 
     # 자료 **파일명**을 함께 준다 — 요청 화면에서 무엇을 보낼지 보이게.
     # (링크가 아니다: 파일은 각자 PC 의 자료 폴더에 있다 — 0056 참고)

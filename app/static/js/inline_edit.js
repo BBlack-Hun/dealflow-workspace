@@ -249,6 +249,14 @@
       cell.textContent = "";
       cell.appendChild(input);
 
+      // 스타트업 표 `기업명` — IR 기업 후보(#85 · `ir_company_hint.js`). 아래 keydown
+      // **보다 먼저** 붙여야 후보를 고르는 Enter · Esc 가 저장 · 취소로 새지 않는다
+      // (그 키는 후보 목록이 `preventDefault` 로 가져간다 — 아래 `defaultPrevented`).
+      // 고르면 곧바로 저장한다 — 이름이 하나 맞는 IR 기업에 서버가 잇는다.
+      if (cell.hasAttribute("data-ir-hint") && global.DealflowCompanyHint) {
+        global.DealflowCompanyHint.attach(input, { onPick: function () { input.blur(); } });
+      }
+
       // **빠져나갈 길을 먼저 만든다.** 아래에서 뭐라도 던지면 blur·Escape 가
       // 안 붙고, editing 이 이 칸에 물린 채 남아 표 전체가 먹통이 된다 —
       // 실제로 그랬다(아래 setSelectionRange 참고).
@@ -260,6 +268,7 @@
       // 가 버려서, 만들던 글자가 통째로 사라진다 — 이 앱은 적는 말이 죄다
       // 한글이라 그 자리가 곧 일상이다. `keyCode 229` 는 옛 브라우저의 같은 말.
       if (e.isComposing || e.keyCode === 229) return;
+      if (e.defaultPrevented) return;   // 붙은 후보 목록이 이미 쓴 키(위 IR 기업 후보)
         // 끝낸 뒤에 **초점을 그 칸에 돌려준다.** 안 돌려주면 초점이 문서 맨
         // 위(BODY)로 빠져서, 다음 칸을 마우스로 다시 조준해야 한다 — 이 고침이
         // 없애려는 바로 그것이다.

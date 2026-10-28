@@ -605,7 +605,7 @@
     <h2 class="panel-title">전달한 자료 <span class="hint">{{ done_requests|length }}건</span></h2>
     {% if meeting_ask_missing %}
     <p class="hint {% if meeting_ask_overdue %}warn{% endif %}">
-      {{ labels.not_asked }} {{ meeting_ask_missing }}명
+      {{ labels.not_reviewed }} {{ meeting_ask_missing }}명
       ({{ meeting_ask_days }}일 지남 {{ meeting_ask_overdue }}명)
     </p>
     {% endif %}
@@ -646,26 +646,26 @@
         <tr class="{% if r.meeting_ask_overdue %}overdue-row{% endif %}">
           <td class="muted">{{ r.requested_at }}</td>
           {#
-            투자사명을 누르면 **딜 제안 관리의 `미팅 요청`** 으로 넘어간다 —
-            그 담당자가 골라진 채로 열린다. [자료 보내기] 가 여는 길과 같은
-            주소이고 방식(`mode`)만 다르다(`/deals?mode=ir&contacts=…` ↔
-            `/deals?mode=meeting&contacts=…`). 자료를 보냈으니 다음에 하는 말은
-            "미팅 가능하실지요" 인데, 지금은 화면을 옮겨 담당자를 다시 찾아
-            골라야 했다.
+            투자사명을 누르면 **딜 제안 관리의 `IR 자료 검토 요청`** 으로 넘어간다 —
+            그 담당자가 골라진 채로 열린다(#79, 10/28 '추천대로' — 그 전에는 `미팅 요청`).
+            [자료 보내기] 가 여는 길과 같은 주소이고 방식(`mode`)만 다르다
+            (`/deals?mode=ir&contacts=…` ↔ `/deals?mode=ir_review&contacts=…`). 자료를
+            보냈으니 다음에 하는 말은 "검토해 보셨는지" 이고, 미팅 요청은 줄 오른쪽
+            [미팅 요청] 단추가 따로 연다(`mode=meeting`).
 
-            **기업은 안 싣는다.** 미팅 요청 문구는 기업 목록을 쓰지 않는다
+            **기업은 안 싣는다.** 검토 요청 · 미팅 요청 문구는 기업 목록을 쓰지 않는다
             (`routers/deals.py` 의 `MODES_WITH_COMPANIES` 는 딜 소개·자료 전달
-            둘뿐이라, 미팅 요청은 고른 기업이 있어도 `[]` 로 지나간다). 실어
-            봐야 문구에는 안 나오면서 화면에는 체크로 남아, 거기서 탭을 딜
-            소개로 바꾸면 엉뚱하게 골라진 목록이 나간다.
+            둘뿐이라, 고른 기업이 있어도 `[]` 로 지나간다). 실어 봐야 문구에는 안
+            나오면서 화면에는 체크로 남아, 거기서 탭을 딜 소개로 바꾸면 엉뚱하게
+            골라진 목록이 나간다.
 
             줄 전체를 링크로 두는 것은 이 화면의 다른 이름 링크와 같은 방식이다
             (위 리마인드 구역의 `req-link`) — 투자사명만 눌리게 하면 투자사명이
             빈 줄에서는 누를 곳이 없어진다.
           #}
           <td><a class="req-link"
-                 href="/deals?mode=meeting&contacts={{ r.contact_id }}"
-                 title="이 투자사에 미팅 요청 문구 보내기 — 담당자가 골라진 채로 열립니다"
+                 href="/deals?mode=ir_review&contacts={{ r.contact_id }}"
+                 title="이 투자사에 IR 자료 검토 요청 문구 보내기 — 담당자가 골라진 채로 열립니다"
                 >{{ r.name }} <span class="muted">{{ r.firm }}</span></a></td>
           <td>{{ r.company_name }}{% if r.series_a %} {{ series_a_tag(r.series_a) }}{% endif %}</td>
           {# 배지 옆에 날짜를 나란히 두면 좁은 칸에서 둘이 엉켜 끊긴다.
@@ -686,11 +686,13 @@
               줄에만 `{기한}일 지남` 이라는 고정된 말이 섰고(며칠째든 같은 수), 그 전에는
               아무 표시도 없었다. 빛깔은 기한(7일)을 넘겼는가로 가른다.
             #}
-            {% if r.meeting_ask_text %}
-            <span class="status-when {{ r.meeting_ask_level }}">{{ r.meeting_ask_text }}</span>
-            {% endif %}
-            {# 회의실 미팅 톡 요청이 나갔는데 답이 없으면 — 전화 요청(#37). #}
-            {{ call_flag(r.contact_id, r.meeting_asked, 'delivered') }}</td>
+            {# #79 — 검토 요청 · 미팅 요청이 나간 줄은 그 날짜가, 둘 다 아직이면
+               `IR 자료 검토 요청 미완료 · N일` 이 선다(`pipeline.delivered_notes`). #}
+            {% for text, level in r.ask_notes %}
+            <span class="status-when {{ level }}">{{ text }}</span>
+            {% endfor %}
+            {# 검토 요청 · 회의실 미팅 톡 요청이 나갔는데 답이 없으면 — 전화 요청(#37 · #79). #}
+            {{ call_flag(r.contact_id, r.meeting_asked or r.reviewed, 'delivered') }}</td>
           <td class="row-acts">
             {# 미팅은 **자료를 보낸 그 건**에서 이어진다. 담당자·기업을 처음부터
                다시 고르게 하면 이미 아는 정보를 사람이 또 타이핑하는 셈이다. #}
@@ -698,21 +700,33 @@
                     data-contact="{{ r.contact_id }}"
                     data-company="{{ r.company_name }}"
                     data-name="{{ r.name }}">{{ labels.book }}</button>
+            {# 미팅 요청 문구는 **줄에 따로** 연다(#79) — 투자사명은 검토 요청으로 간다. #}
+            <a class="linkbtn" href="/deals?mode=meeting&contacts={{ r.contact_id }}"
+               title="이 투자사에 미팅 요청 문구 보내기 — 담당자가 골라진 채로 열립니다">{{ labels.meeting_ask }}</a>
             {# 카톡으로 **사람이 직접** 보낸 건은 앱이 모른다. 적을 자리가
                없으면 「안 보냄」이 영영 떠 있고, 거짓으로 뜨는 숫자는 곧
                아무도 안 본다.
 
                담당자에게 적는다(줄이 아니다) — 판정이 담당자 단위라 줄에
                적으면 같은 사람의 다른 줄이 그대로 남는다. #}
+            {% if r.status == 'delivered' and not r.reviewed and not r.meeting_asked %}
+            <form method="post"
+                  action="/ir/contacts/{{ r.contact_id }}/review-asked">
+              {# 이름은 10/17 회의(#42)에서 `보냈음으로 표시` → `IR 자료 검토 요청
+                 보냄`. #79 부터 **이름대로** 검토 요청을 손으로 보냈다는 표시다 —
+                 상태 칸이 `IR 자료 검토 요청 완료` 로 바뀐다. 미팅 요청을 손으로
+                 보낸 것은 바로 아래 [미팅 요청 보냄] 이 적는다. #}
+              <button class="linkbtn" type="submit"
+                      title="카톡으로 이미 보냈다면 눌러 두세요 — 이 담당자에게 적히고 상태가 '{{ labels.reviewed }}' 로 바뀝니다"
+                      >{{ labels.mark_asked }}</button>
+            </form>
+            {% endif %}
             {% if r.status == 'delivered' and not r.meeting_asked %}
             <form method="post"
                   action="/ir/contacts/{{ r.contact_id }}/meeting-asked">
-              {# 이름은 10/17 회의(#42)에서 `보냈음으로 표시` → `IR 자료 검토 요청
-                 보냄`. 하는 일은 그대로다 — 이 담당자에게 `손으로 보냄` 을 적고,
-                 상태 칸이 `회의실 미팅 톡 요청 보냄 완료` 로 바뀐다. #}
               <button class="linkbtn" type="submit"
-                      title="카톡으로 이미 보냈다면 눌러 두세요 — 이 담당자에게 적히고 상태가 '{{ labels.asked }}' 로 바뀝니다"
-                      >{{ labels.mark_asked }}</button>
+                      title="미팅 요청을 카톡으로 이미 보냈다면 눌러 두세요 — 상태가 '{{ labels.asked }}' 로 바뀝니다"
+                      >{{ labels.mark_meeting }}</button>
             </form>
             {% endif %}
             <form method="post" action="/ir/requests/{{ r.id }}/delete"
@@ -932,7 +946,7 @@
             투자사명을 누르면 **딜 제안 관리의 `미팅 후기`** 로 넘어간다 —
             그 담당자가 골라진 채로 열린다. 위 [전달한 자료] 표의 이름이 여는
             길과 **같은 주소**이고 방식(`mode`)만 다르다
-            (`/deals?mode=meeting&contacts=…` ↔ `/deals?mode=review&contacts=…`).
+            (`/deals?mode=ir_review&contacts=…` ↔ `/deals?mode=review&contacts=…`).
 
             후기를 물으려면 화면을 옮겨 담당자를 목록에서 다시 찾아 골라야 했다.
             물어볼 사람이 이 표에 이미 줄로 서 있는데 그 줄에서 갈 길이 없었다.

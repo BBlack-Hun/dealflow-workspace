@@ -369,19 +369,19 @@ def test_ir_has_no_warning_once_the_file_name_is_set(client, db, seed):
 def test_mode_tabs_follow_the_actual_flow(client, db, seed):
     """탭 순서가 곧 일하는 순서여야 다음에 뭘 눌러야 할지 헤매지 않는다.
 
-        딜 소개 → (요청 오면) IR 자료 전달 → (반응 없으면) 리마인드
-               → 미팅 요청 → 미팅 후기 → 선호 분야 묻기
+        딜 소개 → (요청 오면) IR 자료 전달 → IR 자료 검토 요청(#79)
+               → (반응 없으면) 리마인드 → 미팅 요청 → 미팅 후기 → 선호 분야 묻기
     """
     import re
 
     client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
     body = client.get("/deals").text
     block = body[body.index('id="mode-tabs"'):]
-    order = re.findall(r'data-mode="(\w+)"', block[:2000])
+    order = re.findall(r'data-mode="(\w+)"', block[:2300])
     # 딜 소싱 제안은 맨 끝이다 — 딜소개 흐름이 다 끝난 뒤의 다른 일이다
-    assert order == ["deal", "ir", "remind", "meeting", "review", "ask",
+    assert order == ["deal", "ir", "ir_review", "remind", "meeting", "review", "ask",
                      "sourcing"], order
-    assert "disabled" not in block[:2000]
+    assert "disabled" not in block[:2300]
 
     # '기업 소개' 는 '딜 소개' 로 바뀌었다 — 다른 화면 용어와 맞춘다
     assert "딜 소개<span>" in body

@@ -76,8 +76,10 @@ def _flat(cell_html: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", frag)).strip()
 
 
-def _thead(html: str) -> list:
-    return [_flat(cell) for _attrs, cell in _thead_cells(html)]
+def _thead(html: str, ir: bool = True) -> list:
+    # `ir=False` — 이어진 IR 기업의 읽기 전용 칸(#85 · `ir-ro`)은 이 명단의 칸이 아니라
+    # 뺀다. 그 칸의 자리는 `tests/test_ir_readonly_cols.py` 가 지킨다.
+    return [_flat(cell) for attrs, cell in _thead_cells(html) if ir or "ir-ro" not in attrs]
 
 
 def _filters(html: str) -> dict:
@@ -199,7 +201,7 @@ def test_뒤따르는_차례는_한_칸도_안_바뀐다(sheets, db):
     """
     from app.services import contact_columns as cc
 
-    heads = _thead(sheets.get(_url()).text)
+    heads = _thead(sheets.get(_url()).text, ir=False)
     after = ["대표자명", "연락처", "이메일", "미팅제공일자",
              "투자유치 상태", "당사 협업 상태",
              "견적서 첨부 여부", "계약여부", "계약서 수신 여부", "수정한 날짜"]

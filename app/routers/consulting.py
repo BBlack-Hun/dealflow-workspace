@@ -37,7 +37,7 @@ from ..deps import (NoConsulting, can_open, doer, get_current_user,
                     may_view_all_consulting, may_view_consulting, templates)
 from ..models import (ConsultingColumn, ConsultingCompany, ConsultingRowGrant,
                       User, VcContact)
-from ..services import company_sync
+from ..services import company_sync, ir_readonly
 from ..services import consulting_sheets as cs
 from ..services import custom_columns
 from ..services import consulting_status as status
@@ -867,6 +867,8 @@ def company_rows(db: Session, user: User, sheet: str = "",
             # 중간이 비거나 3부터 시작해서, 몇 번째 줄인지 세는 데 쓸 수 없다.
             "no": order,
             "position": c.position,
+            # 이어 둔 IR 기업 — 표 오른쪽 읽기 전용 IR 칸이 이 번호로 값을 찾는다(#83).
+            "ir_company_id": c.ir_company_id,
             "region": c.region or "",
             "meeting_at": c.meeting_at or "",
             # 계약 탭에는 이 칸이 안 서지만 **늘 싣는다** — 화면이 탭마다 다른
@@ -1144,6 +1146,10 @@ def consulting_page(request: Request, db: Session = Depends(get_db),
         # 닫혀 있어 눌러도 갈 데가 없다(`deps.can_open`).
         "ir_badges": (_ir_badges(db, [r["id"] for r in rows])
                       if can_open(user, "/ir-link") else {}),
+        # 이어진 IR 기업의 칸을 **읽기만** — `이메일` 오른쪽(#83, 10/28 '추천대로' ·
+        # `services/ir_readonly.py`). 계약 탭은 대표자 · 이메일 칸부터 안 서는 다른 표라 뺀다.
+        "ir_cols": ([] if is_contract(db, selected) else ir_readonly.consulting_columns()),
+        "ir_values": ir_readonly.values(db, [r["ir_company_id"] for r in rows]),
         "msg": msg,
         "counts": {
             "total": len(rows),
