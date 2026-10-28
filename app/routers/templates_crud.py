@@ -42,6 +42,10 @@ KINDS = [
     ("opening_re", "인사말 — 재연락", "이미 보낸 적 있는 담당자에게"),
     ("closing_day1", "안내문 — 딜소개", "기업 목록 위에 오는 안내 문구"),
     ("closing_remind", "안내문 — 리마인드", "딜소개 발송 6~7일 뒤에 보냅니다"),
+    # 선호분야가 빈 분께만 리마인드 끝에 붙는다(`deals.REMIND_NO_SECTOR_KIND`).
+    ("closing_remind_no_sector", "안내문 — 리마인드 (선호분야 없는 분께 덧붙임)",
+     "리마인드를 보낼 때 투자사 관리 현황의 선호 투자분야가 빈 분께만 "
+     "글 끝(빈 줄 아래)에 붙습니다"),
     ("closing_meeting", "안내문 — 미팅 요청", "딜소개 발송 11~14일 뒤에 보냅니다"),
     # 미팅 요청 자동화의 **두 번째**(`services/automations/meeting_request.py`).
     ("closing_meeting_again", "안내문 — 미팅 요청 (두 번째)",
