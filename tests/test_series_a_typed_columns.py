@@ -22,6 +22,9 @@ ROOT = Path(__file__).resolve().parent.parent
 # 이름은 스타트업DB 의 같은 칸 그대로다(#63 — 처음 요청은 `핸드폰` · `프리밸류`).
 LABELS = ["대표자명", "연락처", "이메일", "24년 매출", "25년 매출", "26년 매출",
           "27년 매출", "누적투자금액", "투자유치희망금액", "Pre Value"]
+#: `이메일` 바로 오른쪽의 계약 칸 둘(0125 · tests/test_series_a_contract.py) — 화면 차례.
+CONTRACT = ["계약여부", "계약서 수신 여부"]
+SHOWN = LABELS[:3] + CONTRACT + LABELS[3:]
 
 
 @pytest.fixture()
@@ -47,13 +50,14 @@ def test_칸이_투자라운드_뒤_상세_내용_앞에_요청_차례로_선다
     html = logged_in.get("/companies?tab=series-a").text
     labels = [label for _a, label in _head(html)]
     at = labels.index("투자라운드")
-    assert labels[at + 1:at + 1 + len(LABELS)] == LABELS, labels
-    assert labels[at + 1 + len(LABELS)] == "상세 내용"
+    assert labels[at + 1:at + 1 + len(SHOWN)] == SHOWN, labels
+    assert labels[at + 1 + len(SHOWN)] == "상세 내용"
     # 줄마다 눌러 고치는 칸이 같은 차례로 선다(`inline_edit.js` 의 `.cell`).
     row = re.search(r"<tr data-id=.*?</tr>", html, re.S).group(0)
     fields = re.findall(r'class="cell[^"]*" data-field="([^"]+)"', row)
     at = fields.index("series")
-    assert fields[at + 1:at + 1 + len(TYPED)] == list(TYPED), fields
+    want = list(TYPED[:3]) + ["contract_status", "contract_received"] + list(TYPED[3:])
+    assert fields[at + 1:at + 1 + len(want)] == want, fields
 
 
 def test_표_폭이_칸_폭_합보다_넓다(logged_in, deal):
@@ -135,7 +139,7 @@ def test_추가_칸_자리_목록에도_선다():
 
     tab = svc.anchor_groups("companies")["Series A 이상 딜 소싱"]
     at = tab.index("투자라운드")
-    assert list(tab[at + 1:at + 1 + len(LABELS)]) == LABELS
+    assert list(tab[at + 1:at + 1 + len(SHOWN)]) == SHOWN
 
 
 # ── 판(0112) ────────────────────────────────────────────────────────────────

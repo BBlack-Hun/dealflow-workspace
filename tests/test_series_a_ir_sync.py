@@ -282,7 +282,9 @@ def test_시트를_다시_올려도_연결과_적은_값이_남고_새_딜도_�
 
 # ── 딜소개 불가 ─────────────────────────────────────────────────────────────
 
-def test_Series_A_줄은_계약여부를_건드리지_않는다(logged_in, db, ir):
+def test_Series_A_줄은_딜소개_불가를_저절로_옮기지_않는다(logged_in, db, ir):
+    """10/28(0125)부터 Series A 줄도 계약여부를 잇는다 — 그래도 `딜소개 불가` 가 끼는 변경은
+    저절로 안 한다(IR 이 그 값이면 딜 발송에서 빠진다 · `company_sync._guarded`)."""
     from app.services import company_sync
 
     ir.contract_status = "blocked"
@@ -292,7 +294,11 @@ def test_Series_A_줄은_계약여부를_건드리지_않는다(logged_in, db, i
     company, row = _fresh(db, ir, row)
     assert company.contact_name == "박샘플"
     assert company.contract_status == "blocked", "딜 발송 대상이 저절로 바뀌면 안 된다"
-    assert company_sync.slot(row, "contract_status", {}) is None
+    assert company_sync.slot(row, "contract_status", {}) == "contract_status"
+    assert row.contract_status is None, "잇는 순간 `딜소개 불가` 가 저절로 옮겨 왔다"
+    logged_in.patch(f"/api/series-a-companies/{row.id}", json={"contract_status": "유료계약완료"})
+    company, row = _fresh(db, ir, row)
+    assert (row.contract_status, company.contract_status) == ("paid", "blocked")
 
 
 # ── 화면 ────────────────────────────────────────────────────────────────────

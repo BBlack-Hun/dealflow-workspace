@@ -5,6 +5,10 @@ IR 기업 현황 ↔ 투자컨설턴트 ↔ 스타트업 명단이 따라 고친
 지금 이어진 줄은 이 칸들이 잇는 칸이 되기 **전에** 이어져, 잇는 순간 빈칸 채우기를 못 지났다.
 이 스크립트가 그 일을 한 번 한다 — `company_sync.fill_blanks`(잇는 순간과 같은 함수).
 
+10/28(0125) — `Series A 이상 딜 소싱` 줄에도 계약여부 · 계약서 수신 여부 칸이 생겼다. 이미
+이어진 Series A 줄도 같은 까닭으로 한 번 채운다(같은 함수 · 같은 규칙 — Series A 에 칸이
+없는 미팅제공일자 · 성공보수율은 건너뛴다).
+
     # ① 미리보기 (기본) — DB 를 읽기 전용으로 열어 **메모리에** 복사본을 뜨고 거기서 돌린다
     python scripts/company_sync_fill.py
 
@@ -39,13 +43,13 @@ def run(db, fields=FIELDS) -> Counter:
     커밋은 부르는 쪽."""
     from sqlalchemy import select
 
-    from app.models import ConsultingCompany, IrCompany, VcContact
+    from app.models import ConsultingCompany, IrCompany, SeriesACompany, VcContact
     from app.routers.companies import contract_key
     from app.services import company_sync as cs
     from app.services.ir_monthly import CONTRACTED
 
     fields = [f for f in fields if f in cs.FIELDS]
-    rows = [r for model in (ConsultingCompany, VcContact)
+    rows = [r for model in (ConsultingCompany, VcContact, SeriesACompany)
             for r in db.execute(select(model).where(model.ir_company_id.isnot(None))
                                 .order_by(model.id)).scalars()]
     companies = db.execute(select(IrCompany)).scalars().all()
