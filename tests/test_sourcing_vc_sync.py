@@ -824,6 +824,102 @@ def test_nothing_to_search_queues_nothing(board, db, users):
     assert db.query(SendJob).count() == 0
 
 
+# ── 새로고침 없이 — 화면 스크립트가 부르면 JSON(`sourcing_rooms.js`) ─────────────
+#
+# 사용자: "딜 소싱에서 방 후보 누를때 비동기로 해줘… 계속 새로고침이 되서… 연속해서
+# 클릭을 못함". 같은 주소 · 같은 처리이고, `Accept: application/json` 이면 되돌아가는
+# 대신 JSON 으로 답한다. 폼 그대로(머리글 없음)는 위 시험들처럼 303 그대로다.
+
+AJAX = {"Accept": "application/json"}
+
+
+def test_confirm_answers_json_to_the_page_script(board, db, users):
+    from app.models import SourcingContact
+    from app.services import room_match
+
+    row = sc(db)
+    room_match.save_candidates(row, ["홍길동 딜소싱", "홍길동 다른 방"],
+                               at="2026-10-28T10:00:00+09:00")
+    db.commit()
+
+    r = board.post(f"/sourcing/{row.id}/room-confirm", headers=AJAX,
+                   data={"room": "홍길동 딜소싱", "tab": SYNC}, follow_redirects=False)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["ok"] is True and body["room"] == "홍길동 딜소싱"
+    assert "방을 확정했습니다" in body["msg"]
+    db.expire_all()
+    got = db.get(SourcingContact, row.id)
+    assert (got.kakao_room_name, got.room_verified) == ("홍길동 딜소싱", "verified")
+
+
+def test_a_refused_confirm_answers_400_and_saves_nothing(board, db, users):
+    from app.models import SourcingContact
+
+    row = sc(db)
+    r = board.post(f"/sourcing/{row.id}/room-confirm", headers=AJAX,
+                   data={"room": "아무 방", "tab": SYNC}, follow_redirects=False)
+    assert r.status_code == 400
+    assert "후보가 아닙니다" in r.json()["detail"]
+    assert "ok" not in r.json()
+    db.expire_all()
+    assert not db.get(SourcingContact, row.id).kakao_room_name
+
+    r = board.post("/sourcing/999999/room-confirm", headers=AJAX,
+                   data={"room": "아무 방"}, follow_redirects=False)
+    assert r.status_code == 404
+
+
+def test_search_answers_json_with_the_job_and_rows(board, db, users):
+    from app.models import SendJob
+
+    a = sc(db, name="홍길동")
+    has_room = sc(db, name="김철수", phone="010-2222-3333", kakao_room_name="김철수 방",
+                  position=2)
+
+    r = board.post("/sourcing/rooms/search", headers=AJAX,
+                   data={"tab": SYNC, "ids": ""}, follow_redirects=False)
+    assert r.status_code == 400 and "먼저 고르세요" in r.json()["detail"]
+    r = board.post("/sourcing/rooms/search", headers=AJAX,
+                   data={"tab": SYNC, "ids": str(has_room.id)}, follow_redirects=False)
+    assert r.status_code == 400 and "찾을 줄이 없습니다" in r.json()["detail"]
+    assert db.query(SendJob).count() == 0
+
+    r = board.post("/sourcing/rooms/search", headers=AJAX,
+                   data={"tab": SYNC, "ids": f"{a.id},{has_room.id}"}, follow_redirects=False)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    [job] = db.query(SendJob).all()
+    assert body["ok"] is True and body["job_id"] == job.id
+    assert body["ids"] == [a.id], "방이 있는 줄까지 찾는다고 답했다"
+    assert "1명의 방을 찾습니다" in body["msg"]
+
+
+def test_json_answers_keep_the_same_gates(board, db, users):
+    """권한 · 로그인 · 팀원 화면 막기는 예전 그대로 — 스크립트에 JSON 성공으로 새지 않는다."""
+    from app.models import SendJob, User
+    from app.services import auth as auth_svc
+
+    row = sc(db)
+    db.add(User(id=93, name="컨설턴트시험", phone="01000000093", role="consultant",
+                password_hash=auth_svc.hash_password(DEMO_PASSWORD)))
+    db.commit()
+    board.post("/logout")
+    r = board.post("/login", data={"phone": "01000000093", "password": DEMO_PASSWORD},
+                   follow_redirects=False)
+    assert r.status_code == 303, r.text
+    for url, data in (("/sourcing/rooms/search", {"ids": str(row.id)}),
+                      (f"/sourcing/{row.id}/room-confirm", {"room": "아무 방"})):
+        r = board.post(url, headers=AJAX, data=data, follow_redirects=False)
+        assert r.status_code == 403, (url, r.status_code)
+
+    board.post("/logout")
+    r = board.post("/sourcing/rooms/search", headers=AJAX, data={"ids": str(row.id)},
+                   follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"].startswith("/login")
+    assert db.query(SendJob).count() == 0
+
+
 def _no_room_rows(page):
     """`방 없음` 표시(`data-no-room`)가 선 줄 번호 — 화면이 [방 후보 찾기]에 싣는 줄."""
     return [int(rid) for rid, attrs in re.findall(r'<tr data-id="(\d+)"([^>]*)>', page)
@@ -906,6 +1002,34 @@ def test_the_room_search_button_follows_the_picks():
     result = subprocess.run([shutil.which("node"), str(ROOM_JS)],
                             capture_output=True, text=True, timeout=60)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node 미설치 — 브라우저 로직 테스트 생략")
+def test_room_buttons_work_without_a_reload():
+    """방 찾기 · 확정이 새로고침 없이 그 줄만 고친다(`sourcing_rooms.js`).
+
+    로컬에서는 `node tests/js/sourcing_rooms_async_test.js` 로도 돈다.
+    """
+    result = subprocess.run([shutil.which("node"), str(ROOM_JS.parent / "sourcing_rooms_async_test.js")],
+                            capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_the_room_forms_are_marked_for_the_script(board, db, users):
+    """가로챌 폼 셋(툴바 찾기 · 줄 찾기 · 확정)에 표시가 있고, 스크립트가 실린다.
+    폼 자체(주소 · 보내는 칸)는 그대로다 — 스크립트가 없으면 예전처럼 보낸다."""
+    from app.services import room_match
+
+    row = sc(db)
+    room_match.save_candidates(row, ["홍길동 딜소싱"], at="2026-10-28T10:00:00+09:00")
+    db.commit()
+    page = board.get(f"/sourcing?tab={SYNC}").text
+    assert re.search(r'<form method="post" action="/sourcing/rooms/search" '
+                     r'class="inline-form js-room-search" data-send\s+id="sourcing-room-search"', page)
+    assert re.search(r'<form method="post" action="/sourcing/rooms/search" '
+                     r'class="inline-form js-room-search" data-send>', page)
+    assert f'action="/sourcing/{row.id}/room-confirm" class="inline-form js-room-confirm"' in page
+    assert "/static/js/sourcing_rooms.js" in page
 
 
 # ── PR #284 리뷰에서 짚인 것 ────────────────────────────────────────────────
