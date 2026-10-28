@@ -878,6 +878,32 @@
   });
 })();
 
+// 금액 모아 보기 · 수정한 팀원 — **응답 값을 그대로 적는다**(#88 · #89 · #90).
+//
+// 금액 칸의 필터 값은 친 글자가 아니라 서버가 센 구간(`5억 이상|10억 이상`)이라
+// 브라우저가 다시 셀 수 없다 — 금액을 읽는 규칙은 서버 한 곳이다(`services/amount.py`).
+// 그래서 `inline_edit.js` 는 그 칸(`data-filter-derived`)을 건너뛰고, 여기서 응답의
+// `bands` 를 줄에 적는다. 필터는 한 박자 뒤에 줄을 다시 읽는다(`filters.js`).
+(function () {
+  var table = document.getElementById("co-table");
+  if (!table) return;
+
+  table.addEventListener("inline-saved", function (e) {
+    var data = e.detail.data || {};
+    var row = e.detail.row;
+    if (!row) return;
+    var bands = data.bands || {};
+    Object.keys(bands).forEach(function (key) {
+      if (row.hasAttribute("data-f-" + key)) row.setAttribute("data-f-" + key, bands[key]);
+    });
+    var by = row.querySelector("td.updated-by");
+    if (by && "updated_by" in data) {
+      by.textContent = data.updated_by;
+      by.classList.remove("muted");
+    }
+  });
+})();
+
 // 미팅제공일자 — **세울 값을 응답에서 받아 적는다.**
 //
 // 이 칸으로 세우는 값은 화면 글자가 아니라 거기서 **날짜만 추려 낸 것**이다

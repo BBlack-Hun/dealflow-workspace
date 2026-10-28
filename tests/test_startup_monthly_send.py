@@ -242,6 +242,15 @@ def test_누르기_전에_몇_곳_어느_방인지_보인다(db, seeded, client)
     assert "1곳 대기 목록 만들기" in body, "몇 곳인지가 단추에 없다"
 
 
+def test_말까지_칸은_투자사_수와_심사역_수다(db, seeded, client):
+    """`N줄` 은 회사 수로 읽혔다(#86) — 줄 하나는 심사역 한 명이다."""
+    _turn_on(db, user_id=1)
+    body = _login(client).get("/deals/startup-ir").text
+
+    assert f"{seeded['month']} 말까지 요청한 투자사</th>" in body
+    assert "2곳 · 2명" in body
+
+
 def test_딜_제안_관리_링크에_이번_달_대상_수가_적힌다(db, seeded, client):
     """눌러 보기 전에는 이번 달 몇 곳에 나가는지 알 길이 없었다.
 

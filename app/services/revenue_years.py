@@ -11,9 +11,9 @@
 tests/test_revenue_years.py 가 잡는다. 칸이 모자라도 화면은 안 죽는다 — 없는 해는
 건너뛴다(`shown`).
 
-## 화면에 서는 해 — 올해 기준 **지난 세 해** + `최근 매출액(올해)`
+## 화면에 서는 해 — 올해 기준 **지난 세 해** + 올해(`revenue_recent`)
 
-2026년이면 23·24·25년과 `최근 매출액(26년)`. 올해 매출은 해가 안 끝나서 연도 칸이
+2026년이면 23·24·25년과 `26년 매출`(예전 이름 `최근 매출액(26년)` · #82). 올해 매출은 해가 안 끝나서 연도 칸이
 아니라 `revenue_recent` 가 그 자리다(옛 결정 — 딜소개 문구 · 소개 가능 판정 · 엑셀 ·
 LLM 이 읽는 칸이라 그대로 둔다).
 
@@ -87,8 +87,13 @@ def shown(year: Optional[int] = None) -> List[Tuple[str, str]]:
 
 
 def recent_label(year: Optional[int] = None) -> str:
-    """`revenue_recent` 의 이름 — `최근 매출액(26년)`. 표 · 창 · 엑셀이 같은 글자다."""
-    return f"최근 매출액({(year or this_year()) % 100:02d}년)"
+    """`revenue_recent` 의 이름 — `26년 매출`. 표 · 창 · 엑셀이 같은 글자다.
+
+    옆 칸(`25년 매출`) · Series A 탭(`26년 매출`)과 같은 말이다(#82 — 예전 이름
+    `최근 매출액(26년)`). 해가 바뀌면 이 값은 지난해 칸으로 옮겨 적히고(`roll_over`)
+    이 이름은 새해 글자가 된다 — 그래서 같은 해 이름이 두 칸에 서는 일은 없다.
+    """
+    return f"{(year or this_year()) % 100:02d}년 매출"
 
 
 def columns(year: Optional[int] = None) -> List[Tuple[str, str]]:

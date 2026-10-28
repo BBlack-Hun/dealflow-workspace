@@ -77,7 +77,7 @@ HOMES = {ir_link.STARTUP: "/startup", ir_link.CONSULTING: "/consulting",
          ir_link.SERIES_A: "/companies?tab=series-a"}
 #: 이어진 줄끼리 따라 고치는 칸 — 머리 안내 · 일괄 연결 확인 화면이 같은 글자를 쓴다.
 SYNCED = {ir_link.SERIES_A: "대표자명 · 연락처 · 이메일 · 연도별 매출(올해 칸은 IR 의 "
-                            "최근 매출액) · 누적투자금액 · 투자유치희망금액 · Pre Value"}
+                            "올해 매출) · 누적투자금액 · 투자유치희망금액 · Pre Value"}
 SYNCED_DEFAULT = "대표자명 · 연락처 · 이메일 · 지역 · 견적서 첨부 여부 · 카톡 연결 여부"
 
 #: 거르기 칩. 빈 값이 전체다.

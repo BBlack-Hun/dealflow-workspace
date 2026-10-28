@@ -38,6 +38,8 @@ import re
 import unicodedata
 from typing import Dict, List
 
+from . import revenue_years
+
 #: 화면의 `(비어 있음)` — `filters.js` 의 `EMPTY` 와 같은 글자.
 EMPTY = "(비어 있음)"
 
@@ -54,6 +56,10 @@ FILTER_VALUES = {
     "quote": lambda r: r["quote_attached"],
     "joined": lambda r: r["kakao_joined"],
     "ir": lambda r: "● 있음" if r["has_ir"] else "⚠ 없음",
+    # 금액 모아 보기(#88 · #90) — 화면처럼 서버가 센 구간(`companies.amount_bands`).
+    "raise_target": lambda r: r["bands"]["raise_target"],
+    "revenue_recent": lambda r: r["bands"]["revenue_recent"],
+    **{f: (lambda r, f=f: r["bands"][f]) for f in revenue_years.FIELDS},
 }
 
 #: 머리글 정렬 열쇠 → 세울 값. `companies.html` 의 `data-s-*` 와 한 벌이다.
@@ -70,7 +76,7 @@ PHONEISH = re.compile(r"^[0-9][0-9\s().+-]*$")
 #: 파일 머리글 — IR 기업 현황 탭의 머리글 그대로(왼쪽부터). `소분류` 뒤의 매출 · 금액
 #: 칸은 해마다 이름이 바뀌어 `view_headers` 가 끼운다(#75 · `revenue_years.columns`).
 VIEW_HEADERS = [
-    "NO", "기업명", "수신일", "대분류", "소분류", "투자라운드", "수정한 날짜",
+    "NO", "기업명", "수신일", "대분류", "소분류", "투자라운드", "수정한 날짜", "수정한 팀원",
     "딜 소개 문구", "담당자", "소개 횟수", "소개 발송(명)", "견적서 첨부 여부",
     "미팅제공일자", "계약여부", "계약서 수신 여부", "성공보수율", "카톡 연결 여부", "홍보메일삭제",
     "핵심/TOP Deal", "IR 자료",
@@ -229,7 +235,7 @@ def to_cells(rows: List[dict], cols) -> List[list]:
             *[r[f] or "" for f, _label in cols],
             # 화면은 투자라운드를 **앞부분만** 보인다(`series_short` — 괄호 안 설명
             # 생략). 파일에서는 전체 값을 싣는다 — 짚어야 보이던 것이 칸에 바로 선다.
-            r["series"], r["updated_at"], r["one_liner"], r["assignee"],
+            r["series"], r["updated_at"], r["updated_by"], r["one_liner"], r["assignee"],
             # 한 번도 안 나간 기업은 화면이 `–` 로 보인다 — 파일에서는 수 0 이다.
             r["sent_rounds"], r["sent_total"], r["quote_attached"],
             r["meeting_offered_at"], r["contract_label"], r["contract_received"],

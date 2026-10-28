@@ -808,7 +808,10 @@
           // 있는데 필터 목록에는 안 나온다(관심도를 채워도 필터가 비었다).
           var fkey = cell.getAttribute("data-filter-key")
             || cell.getAttribute("data-field");
-          if (row && row.hasAttribute("data-f-" + fkey)) {
+          // `data-filter-derived` — 필터 값이 친 글자가 아니라 서버가 센 값이다(IR 기업
+          // 현황의 금액 구간 · #88 · #90). 그건 응답을 받은 화면이 적는다(`companies.js`).
+          if (row && row.hasAttribute("data-f-" + fkey)
+              && !cell.hasAttribute("data-filter-derived")) {
             row.setAttribute("data-f-" + fkey, forFilter(cell, value));
           }
           // 세우는 값도 같은 이유로 행에 적어 둔다(`data-s-*` · table_sort.js).

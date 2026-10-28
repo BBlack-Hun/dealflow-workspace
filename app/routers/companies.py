@@ -16,24 +16,26 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..clock import stamp_text
 from ..db import get_db
 from ..deps import NotAdmin, admin_only, get_current_user, may_view_consulting, templates
-from ..models import ConsultingCompany, ConsultingSheet, IrCompany, OneLinerBackup, User
+from ..models import ConsultingCompany, ConsultingSheet, EditLog, IrCompany, OneLinerBackup, User
 from ..services import (amount, auth as auth_svc, custom_columns, deal_history, edit_log,
                         email_domains, revenue_years, room_match)
 from ..services.one_liner import (
     AUTO, apply_one_liner, bulk_rows, compose_one_liner, one_liner_status, origin,
 )
 from ..services.sector_hint import Hints
+from ..services.sheet_import import parse_money_to_million
 from ..ui import base_ctx
 
 router = APIRouter(tags=["companies"])
@@ -474,6 +476,65 @@ def history_rows(hist) -> List[dict]:
     } for r in hist.rounds]
 
 
+#: 금액 모아 보기(#88 · #90) — 머리글 필터에 서는 `N억 이상`. **겹쳐 든다**(30억은
+#: 5 · 10 · 20 · 30억 이상에 모두 든다) — 사람이 고르는 것이 '이만큼 넘는 곳' 이라서.
+RAISE_BANDS = (5, 10, 20, 30, 40, 50)
+REVENUE_BANDS = (10, 20, 30, 50, 100)
+#: 적혀는 있는데 금액으로 못 읽은 칸(`확인안됨` · `~`) — 빈 칸(`(비어 있음)`)과 가른다.
+BAND_UNREAD = "금액 못 읽음"
+
+
+def _band(million: Optional[int], text: Optional[str], edges) -> str:
+    """백만원 → 필터 값(`|` 로 이음). 구간 값은 **아래**로 센다(`amount.million` 과 같은 쪽)."""
+    if million is None:
+        return BAND_UNREAD if (text or "").strip() else ""
+    over = [f"{e}억 이상" for e in edges if million >= 100 * e]
+    return "|".join(over) or f"{edges[0]}억 미만"
+
+
+def amount_bands(c: IrCompany) -> dict:
+    """줄의 금액 필터 값 `{칸: "5억 이상|10억 이상"}` — 표 · PATCH 응답 · 화면 내려받기가 같은 한 벌.
+
+    금액 칸 둘은 앱의 규칙(`amount.million` — 맨숫자는 억)으로, 연도 칸은 시트 글자
+    그대로(`8.2억` · `1,224백만원`)라 시트 가져오기의 규칙(단위가 있어야 읽음)으로 읽는다.
+    """
+    out = {f: _band(amount.million(getattr(c, f)), getattr(c, f), edges)
+           for f, edges in (("raise_target", RAISE_BANDS), ("revenue_recent", REVENUE_BANDS))}
+    for f in revenue_years.FIELDS:
+        text = getattr(c, f)
+        out[f] = _band(parse_money_to_million(text), text, REVENUE_BANDS)
+    return out
+
+
+#: `수정한 팀원` 에 서는 말 — 마지막 손질이 사람이 누른 것이 아닐 때(#89).
+AUTO_EDITOR = "자동"
+
+
+def _same_moment(a: Optional[str], b: Optional[str]) -> bool:
+    """두 시각 글자가 1분 안인가 — 로그(`EditLog.at`)와 줄(`updated_at`)이 한 flush 에서 적힌 것인가."""
+    try:
+        return abs((datetime.fromisoformat(a) - datetime.fromisoformat(b)).total_seconds()) <= 60
+    except (TypeError, ValueError):
+        return False
+
+
+def last_editors(db: Session, companies) -> dict:
+    """줄마다 **마지막으로 고친 팀원** `{기업 id: 이름}` (#89) — 수정 로그의 그 줄 마지막 기록.
+
+    로그는 사람이 누른 요청에서만 남는다(`services/edit_log`). 그 뒤에 앱이 혼자 고쳐
+    `수정한 날짜` 가 로그보다 늦으면 그 이름은 그 날짜의 주인이 아니라 `자동` 이다.
+    로그가 없는 줄(시트로 들어와 아무도 안 고친 줄)은 빠진다 — 화면은 빈칸.
+    """
+    by_id = {c.id: c for c in companies}
+    last = (select(func.max(EditLog.id)).where(EditLog.table_name == IrCompany.__tablename__)
+            .group_by(EditLog.row_id))
+    found = db.execute(select(EditLog.row_id, EditLog.at, User.name)
+                       .join(User, User.id == EditLog.actor_user_id)
+                       .where(EditLog.id.in_(last))).all()
+    return {row_id: name if _same_moment(at, by_id[row_id].updated_at) else AUTO_EDITOR
+            for row_id, at, name in found if row_id in by_id}
+
+
 def company_rows(db: Session, sent=None) -> List[dict]:
     """표 한 벌. `sent` 는 `deal_history.scan()` 결과 — 안 주면 여기서 훑는다.
 
@@ -491,6 +552,7 @@ def company_rows(db: Session, sent=None) -> List[dict]:
     # 갈래 목록을 코드나 DB 에 따로 두면 사람이 갈래를 고친 날 어긋난다.
     # 한 번 배워 344행에 돌려 쓴다(행마다 배우면 344번 세게 된다).
     hints = Hints.learn(companies)
+    editors = last_editors(db, companies)
     rows = [
         {
             "id": c.id,
@@ -607,6 +669,10 @@ def company_rows(db: Session, sent=None) -> List[dict]:
             # 사실은 아무도 안 고친 줄이다. 화면이 옅게 적고 짚으면 말해 준다 —
             # 값을 비우지는 않는다(빈 칸은 '못 읽었다' 로도 읽힌다).
             "updated_never": stamp_text(c.updated_at) == stamp_text(c.created_at),
+            # 그 시각에 고친 팀원(#89 · `last_editors`). 로그가 없으면 빈칸.
+            "updated_by": editors.get(c.id, ""),
+            # 금액 모아 보기 필터 값(#88 · #90 · `amount_bands`).
+            "bands": amount_bands(c),
             "contract_month": c.contract_month or "",
             "is_top_deal": bool(c.is_top_deal),
             "summary_status": c.summary_status or "draft",
@@ -1095,6 +1161,10 @@ def update_company(company_id: int, body: CompanyIn,
     return {"id": company.id, "introducible": is_ready(company),
             "blocked_reason": blocked_reason(company),
             "updated_at": stamp_text(company.updated_at),
+            # 고친 팀원 · 금액 필터 값도 같은 까닭으로 싣는다 — 새로고침 없이 칸과
+            # 필터가 따라온다(`companies.js` 의 `inline-saved`).
+            "updated_by": last_editors(db, [company]).get(company.id, ""),
+            "bands": amount_bands(company),
             "meeting_sort": meeting_sort_key(company.meeting_offered_at),
             **_contract_result(company),
             **_one_liner_result(company)}

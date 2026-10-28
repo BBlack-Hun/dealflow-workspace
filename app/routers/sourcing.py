@@ -23,7 +23,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..deps import get_current_user, no_send_as_member, templates
+from ..deps import get_current_user, no_send_as_member, require_admin, templates
 from ..models import SendItem, SendJob, SourcingContact, User
 from ..services import (series_a_share, sourcing_buckets, sourcing_link,
                         sourcing_mail, sourcing_receipts, sourcing_rooms,
@@ -560,6 +560,23 @@ def add_bucket(name: str = Form(""), tab: str = Form(""),
             f"이미 있는 탭입니다: {(name or '').strip()}")
         return _back(tab, why)
     return RedirectResponse(f"/sourcing?tab={quote(label)}", status_code=303)
+
+
+@router.post("/sourcing/buckets/delete", include_in_schema=False)
+def delete_bucket(label: str = Form(""), db: Session = Depends(get_db),
+                  user: User = Depends(require_admin)):
+    """[탭 삭제](#78) — 사람이 0명인 탭만, 관리자만(`sourcing_buckets.delete`).
+
+    [+ 탭 추가]·[이름 저장]은 누구나지만, 지우기는 그 탭 이름의 문구까지 함께
+    사라지는 일이라 관리자만이다(10/28 담당자 결정).
+    """
+    try:
+        sourcing_buckets.delete(db, label)
+        db.commit()
+    except sourcing_buckets.RenameError as exc:
+        db.rollback()
+        return _back(label, str(exc))
+    return _back("all", f"'{label.strip()}' 탭을 지웠습니다")
 
 
 class SourcingIn(BaseModel):
