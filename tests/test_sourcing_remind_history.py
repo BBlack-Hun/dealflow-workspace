@@ -155,9 +155,11 @@ def test_the_month_columns_sit_right_after_participation(page, people):
     ths = re.findall(r"<th[\s>].*?</th>", head, re.S)
     labels = [re.sub(r"<[^>]+>", "", x).strip() for x in ths]
     # 시리즈 A 탭은 맨 왼쪽에 고르는 칸(빈 머리글)이 선다
-    assert labels[:8] == ["", "NO", "참여 요청일", "이름", "참여",
-                          "8월 리마인드", "9월 리마인드", "10월 리마인드"], labels
-    assert labels[8] == "담당자", labels
+    # 사람 칸 묶음 뒤에 참여 요청일 · 참여(#87), 리마인드 셋은 여전히 `참여` 바로 뒤.
+    assert labels[:12] == ["", "NO", "이름", "회사", "직함", "휴대폰", "이메일",
+                           "참여 요청일", "참여",
+                           "8월 리마인드", "9월 리마인드", "10월 리마인드"], labels
+    assert labels[12] == "담당자", labels
 
     # 읽기 전용 · 거르지 않는다 — 머리글 필터 선언이 없다
     months = [x for x in ths if 'data-testid="sourcing-remind-head"' in x]

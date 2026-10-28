@@ -135,25 +135,7 @@
            클릭을 오래된 순으로 만든다(`table_sort.js` 의 `nextState`). 안 적으면
            `↕` 로 보여, 첫 클릭이 뜻밖에 오래된 순이 된다. #}
         <th style="width:100px" data-sort="received_at" data-sort-default="desc"
-            title="딜을 받은 날 · 눌러서 수정">수신 일자</th>
-        {# 필터가 하나뿐인 칸은 이름 자리에 단추(`Type (1) ▾`)가 선다 — 폭은
-           **고른 뒤의 단추**에 맞춘다(옆 두 탭과 같은 셈: 단추 + th 여백 18px
-           + 단추 여백 14px). 값이 단추보다 넓은 칸은 값에 맞췄다. #}
-        <th style="width:130px" data-filters="type:Type">Type<div class="th-filters"></div></th>
-        <th style="width:110px" data-filters="assignee:담당자">담당자<div class="th-filters"></div></th>
-        <th style="width:124px" data-filters="sharer:공유 심사역">공유 심사역<div class="th-filters"></div></th>
-        {# 공유 심사역의 번호(#25) — 이 줄의 칸이 아니라 [이 분으로 확정]한 분의 딜 소싱
-           줄 번호다. 고치면 그 줄에 저장되고 이어진 투자사 관리 현황 줄도 따라 고쳐진다.
-           이름은 그 두 화면의 말(`휴대폰`)이다 — 요청은 `핸드폰` 이었지만 그 말은 이 탭
-           `연락처`(대표 번호)의 옛 이름이다(#63). #}
-        <th style="width:110px" title="[이 분으로 확정]한 공유 심사역의 번호 · 고치면 딜 소싱 · 투자사 관리 현황에도 반영됩니다">휴대폰</th>
-        {# 딜을 넘겨 준 **투자사**다 — 기업명이 아니다. #}
-        <th style="width:140px" data-filters="firm:회사" title="딜을 넘겨 준 투자사">회사<div class="th-filters"></div></th>
-        {# 필터 열쇠는 옆 탭과 같다(`sector` · `minor` · `series`) — 같은 칸을
-           같은 주소(`?sector=…`)로 거른다. #}
-        <th style="width:140px" data-filters="sector:대분류">대분류<div class="th-filters"></div></th>
-        <th style="width:150px" data-filters="minor:소분류">소분류<div class="th-filters"></div></th>
-        <th style="width:120px" data-filters="series:투자라운드">투자라운드<div class="th-filters"></div></th>
+            title="딜을 받은 날 · 눌러서 수정">수신일</th>
         <th style="width:70px" title="{{ typed_tip }}">대표자명</th>
         <th style="width:104px" title="{{ typed_tip }}">연락처</th>
         <th style="width:170px" title="{{ typed_tip }}">이메일</th>
@@ -164,6 +146,10 @@
             title="IR 기업 현황의 계약여부와 같은 보기 · IR 기업에 이어진 줄은 함께 고쳐집니다 · 눌러서 수정">계약여부<div class="th-filters"></div></th>
         <th style="width:148px" data-filters="received:계약서 수신 여부"
             title="O · X · 비움(아직 안 정함) · IR 기업에 이어진 줄은 함께 고쳐집니다 · 눌러서 수정">계약서 수신 여부<div class="th-filters"></div></th>
+        {# 필터 열쇠는 옆 탭과 같다(`sector` · `minor` · `series`) — 같은 칸을
+           같은 주소(`?sector=…`)로 거른다. #}
+        <th style="width:140px" data-filters="sector:대분류">대분류<div class="th-filters"></div></th>
+        <th style="width:150px" data-filters="minor:소분류">소분류<div class="th-filters"></div></th>
         <th class="num" style="width:74px" title="{{ amount_tip }}">24년 매출</th>
         <th class="num" style="width:74px" title="{{ amount_tip }}">25년 매출</th>
         <th class="num" style="width:74px" title="{{ amount_tip }}">26년 매출</th>
@@ -171,8 +157,22 @@
         <th class="num" style="width:96px" title="{{ amount_tip }}">누적투자금액</th>
         <th class="num" style="width:120px" title="{{ amount_tip }}">투자유치희망금액</th>
         <th class="num" style="width:76px" title="{{ amount_tip }}">Pre Value</th>
+        <th style="width:120px" data-filters="series:투자라운드">투자라운드<div class="th-filters"></div></th>
         <th title="두 줄까지 보입니다 · 눌러서 수정">상세 내용</th>
         <th style="width:280px" title="두 줄까지 보입니다 · 눌러서 수정">딜 소개 문구</th>
+        <th style="width:110px" data-filters="assignee:담당자">담당자<div class="th-filters"></div></th>
+        {# 필터가 하나뿐인 칸은 이름 자리에 단추(`Type (1) ▾`)가 선다 — 폭은
+           **고른 뒤의 단추**에 맞춘다(옆 두 탭과 같은 셈: 단추 + th 여백 18px
+           + 단추 여백 14px). 값이 단추보다 넓은 칸은 값에 맞췄다. #}
+        <th style="width:130px" data-filters="type:Type">Type<div class="th-filters"></div></th>
+        <th style="width:124px" data-filters="sharer:공유 심사역">공유 심사역<div class="th-filters"></div></th>
+        {# 공유 심사역의 번호(#25) — 이 줄의 칸이 아니라 [이 분으로 확정]한 분의 딜 소싱
+           줄 번호다. 고치면 그 줄에 저장되고 이어진 투자사 관리 현황 줄도 따라 고쳐진다.
+           이름은 그 두 화면의 말(`휴대폰`)이다 — 요청은 `핸드폰` 이었지만 그 말은 이 탭
+           `연락처`(대표 번호)의 옛 이름이다(#63). #}
+        <th style="width:110px" title="[이 분으로 확정]한 공유 심사역의 번호 · 고치면 딜 소싱 · 투자사 관리 현황에도 반영됩니다">휴대폰</th>
+        {# 딜을 넘겨 준 **투자사**다 — 기업명이 아니다. #}
+        <th style="width:140px" data-filters="firm:회사" title="딜을 넘겨 준 투자사">회사<div class="th-filters"></div></th>
         {# 보낼 IR 자료의 **파일 이름**(0118) — IR 기업 현황의 `IR 자료 파일명` 과 같은 칸 ·
            같은 규칙이다. 폴더 경로가 아니라 자료 폴더 안의 이름 하나를 적고, 딜 진행
            관리의 [자료 보내기]가 그 이름으로 파일을 붙인다(폴더는 각자 `/setup`). #}
@@ -219,10 +219,50 @@
                data-ir-link='{{ r.ir_link|tojson }}' hidden></div>
         </td>
         <td class="cell" data-field="received_at" data-type="date">{{ r.received_at }}</td>
-        <td class="cell" data-field="deal_type" data-type="pick"
-            data-filter-key="type">{{ r.deal_type }}</td>
+        {# 직접 적는 칸 — 적은 그대로 글자다(금액도 `data-type="number"` 를 두지 않는다:
+           화면이 `Number()` 로 읽으면 `5-10억` 이 통째로 사라진다 — 스타트업DB 와 같다). #}
+        <td class="cell" data-field="ceo_name">{{ r.ceo_name }}</td>
+        <td class="cell" data-field="ceo_phone">{{ r.ceo_phone }}</td>
+        <td class="cell ellipsis" data-field="ceo_email" title="{{ r.ceo_email }}">{{ r.ceo_email }}</td>
+        {# 칸에는 **말**이 보이고 저장되는 것은 열쇠다 — 저장 뒤 말은 응답(`contract_label`)이
+           준다(`series_a.js`). 보기는 늘 다 세운다(`data-choices` — IR 표와 같은 까닭). #}
+        <td class="cell" data-field="contract_status" data-type="pick"
+            data-filter-key="contract"
+            data-choices="{{ contract_labels.values()|join(', ') }}">{{ r.contract_label }}</td>
+        <td class="cell" data-field="contract_received" data-type="pick"
+            data-filter-key="received"
+            data-choices="O,X">{{ r.contract_received }}</td>
+        <td title="{{ r.sector_major }}">
+          <div class="cell clamp2" data-field="sector_major" data-type="pick"
+               data-filter-key="sector">{{ r.sector_major }}</div>
+        </td>
+        <td title="{{ r.sector_minor }}">
+          <div class="cell clamp2" data-field="sector_minor" data-type="pick"
+               data-filter-key="minor">{{ r.sector_minor }}</div>
+        </td>
+        <td class="cell num" data-field="revenue_2024">{{ r.revenue_2024 }}</td>
+        <td class="cell num" data-field="revenue_2025">{{ r.revenue_2025 }}</td>
+        <td class="cell num" data-field="revenue_2026">{{ r.revenue_2026 }}</td>
+        <td class="cell num" data-field="revenue_2027">{{ r.revenue_2027 }}</td>
+        <td class="cell num" data-field="funding_total">{{ r.funding_total }}</td>
+        <td class="cell num" data-field="raise_target">{{ r.raise_target }}</td>
+        <td class="cell num" data-field="pre_value">{{ r.pre_value }}</td>
+        {# 칸에는 짧은 꼴, 고칠 때는 **적힌 전체**(`data-value`)가 뜬다 — 옆 탭의
+           `투자라운드` 와 같다. 저장 뒤 짧은 꼴은 응답이 준다(`series_a.js`). #}
+        <td title="{{ r.series }}">
+          <div class="cell clamp2" data-field="series" data-type="pick"
+               data-filter-key="series" data-value="{{ r.series }}">{{ r.series_short }}</div>
+        </td>
+        <td title="{{ r.detail }}">
+          <div class="cell clamp2" data-field="detail" data-type="long">{{ r.detail }}</div>
+        </td>
+        <td title="{{ r.deal_pitch }}">
+          <div class="cell clamp2" data-field="deal_pitch" data-type="long">{{ r.deal_pitch }}</div>
+        </td>
         <td class="cell" data-field="assignee_name" data-type="pick"
             data-filter-key="assignee">{{ r.assignee_name }}</td>
+        <td class="cell" data-field="deal_type" data-type="pick"
+            data-filter-key="type">{{ r.deal_type }}</td>
         {# 칸 아래 — 이 글자를 딜 소싱 명단의 **그 분 줄로 확정**하는 자리.
            Series A 딜 공유는 "이 딜을 넘겨 준 분께는 이 딜을 빼고 보낸다" 를 이름 ·
            회사 짐작으로 정하는데(`series_a_share.is_own`), 틀리는 줄은 여기서
@@ -241,46 +281,6 @@
             data-testid="sa-sharer-phone">{{ r.sharer_phone }}</td>
         <td class="cell" data-field="source_firm" data-type="pick"
             data-filter-key="firm">{{ r.source_firm }}</td>
-        <td title="{{ r.sector_major }}">
-          <div class="cell clamp2" data-field="sector_major" data-type="pick"
-               data-filter-key="sector">{{ r.sector_major }}</div>
-        </td>
-        <td title="{{ r.sector_minor }}">
-          <div class="cell clamp2" data-field="sector_minor" data-type="pick"
-               data-filter-key="minor">{{ r.sector_minor }}</div>
-        </td>
-        {# 칸에는 짧은 꼴, 고칠 때는 **적힌 전체**(`data-value`)가 뜬다 — 옆 탭의
-           `투자라운드` 와 같다. 저장 뒤 짧은 꼴은 응답이 준다(`series_a.js`). #}
-        <td title="{{ r.series }}">
-          <div class="cell clamp2" data-field="series" data-type="pick"
-               data-filter-key="series" data-value="{{ r.series }}">{{ r.series_short }}</div>
-        </td>
-        {# 직접 적는 칸 — 적은 그대로 글자다(금액도 `data-type="number"` 를 두지 않는다:
-           화면이 `Number()` 로 읽으면 `5-10억` 이 통째로 사라진다 — 스타트업DB 와 같다). #}
-        <td class="cell" data-field="ceo_name">{{ r.ceo_name }}</td>
-        <td class="cell" data-field="ceo_phone">{{ r.ceo_phone }}</td>
-        <td class="cell ellipsis" data-field="ceo_email" title="{{ r.ceo_email }}">{{ r.ceo_email }}</td>
-        {# 칸에는 **말**이 보이고 저장되는 것은 열쇠다 — 저장 뒤 말은 응답(`contract_label`)이
-           준다(`series_a.js`). 보기는 늘 다 세운다(`data-choices` — IR 표와 같은 까닭). #}
-        <td class="cell" data-field="contract_status" data-type="pick"
-            data-filter-key="contract"
-            data-choices="{{ contract_labels.values()|join(', ') }}">{{ r.contract_label }}</td>
-        <td class="cell" data-field="contract_received" data-type="pick"
-            data-filter-key="received"
-            data-choices="O,X">{{ r.contract_received }}</td>
-        <td class="cell num" data-field="revenue_2024">{{ r.revenue_2024 }}</td>
-        <td class="cell num" data-field="revenue_2025">{{ r.revenue_2025 }}</td>
-        <td class="cell num" data-field="revenue_2026">{{ r.revenue_2026 }}</td>
-        <td class="cell num" data-field="revenue_2027">{{ r.revenue_2027 }}</td>
-        <td class="cell num" data-field="funding_total">{{ r.funding_total }}</td>
-        <td class="cell num" data-field="raise_target">{{ r.raise_target }}</td>
-        <td class="cell num" data-field="pre_value">{{ r.pre_value }}</td>
-        <td title="{{ r.detail }}">
-          <div class="cell clamp2" data-field="detail" data-type="long">{{ r.detail }}</div>
-        </td>
-        <td title="{{ r.deal_pitch }}">
-          <div class="cell clamp2" data-field="deal_pitch" data-type="long">{{ r.deal_pitch }}</div>
-        </td>
         {# IR 기업 현황에도 있는 기업은 **그쪽 자료**가 나간다(`pipeline.match_company` 가
            요청을 IR 줄로 잇는다) — 여기서는 고치지 않고 IR 쪽 파일 이름을 보여만 준다.
            서버도 이 줄에 적기를 막는다(`series_a._check_ir_file`). #}

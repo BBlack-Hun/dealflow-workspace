@@ -108,20 +108,24 @@ def test_every_column_has_a_cell(seeded):
     assert order == [f for f, _label, _w, _filt in COLUMNS], order
 
 
-def test_participation_sits_right_after_the_name(seeded):
-    """`참여` 는 **이름 바로 뒤** — 맨 오른쪽이면 가로로 끝까지 밀어야 보였다."""
+def test_people_columns_lead_and_participation_follows_the_requested_date(seeded):
+    """사람 칸 묶음(이름 → 회사 → 직함 → 휴대폰 → 이메일)이 앞이고, 그 뒤 이 화면의 일
+    (`참여 요청일` → `참여`)이 붙어 선다(#87 · 10/29 — 투자사 관리 현황과 같은 차례).
+    `참여` 가 맨 오른쪽이면 가로로 끝까지 밀어야 보였다 — 사람 칸 바로 뒤라 가깝다."""
     import re
 
     body = seeded.get("/sourcing").text
     head = body[body.index("<thead>"):body.index("</thead>")]
     labels = [re.sub(r"<[^>]+>", "", x).strip()
               for x in re.findall(r"<th[\s>].*?</th>", head, re.S)]
-    assert labels[2:5] == ["참여 요청일", "이름", "참여"], labels
+    assert labels[2:9] == ["이름", "회사", "직함", "휴대폰", "이메일",
+                           "참여 요청일", "참여"], labels
 
     first_row = body[body.index("<tbody>"):body.index("</tbody>")]
     first_row = first_row[:first_row.index("</tr>")]
     order = re.findall(r'data-field="(\w+)"', first_row)
-    assert order.index("participation") == order.index("name") + 1, order
+    assert order.index("participation") == order.index("requested_at") + 1, order
+    assert order.index("firm") == order.index("name") + 1, order
 
 
 def test_the_room_name_is_editable(seeded, db):

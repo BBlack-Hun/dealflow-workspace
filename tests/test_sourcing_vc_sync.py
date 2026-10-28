@@ -391,7 +391,7 @@ def test_the_column_sits_right_after_the_sheet_sourcing_column(board, db, users)
     head = body[body.index("<thead>"):body.index("</thead>")]
     labels = [re.sub(r"<[^>]+>", "", x).strip()
               for x in re.findall(r"<th[\s>].*?</th>", head, re.S)]
-    at = labels.index("딜소싱 참여 투자사")
+    at = labels.index("딜 소싱 참여 투자사")   # #87 — 메뉴 이름과 같은 띄어쓰기
     assert labels[at + 1] == "딜 소싱", labels
     assert labels.count("딜 소싱") == 1
 
@@ -1467,5 +1467,5 @@ def test_the_link_badge_names_every_shared_field(board, db, users):
     contact = vc(db, users)
     mark(board, contact.id, "O")
     body = board.get(f"/sourcing?tab={SYNC}").text
-    assert ("두 화면이 같이 바뀌는 칸: 이름 · 직함 · 회사 · 휴대폰 · 전자 메일 주소 · "
+    assert ("두 화면이 같이 바뀌는 칸: 이름 · 직함 · 회사 · 휴대폰 · 이메일 · "
             "선호 투자분야 · 라운드 사이즈(투자운영금액) (메모는 따로)") in body

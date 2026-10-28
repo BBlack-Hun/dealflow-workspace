@@ -44,19 +44,28 @@ def _head(html: str) -> list:
             for attrs, text in re.findall(r"<th\b([^>]*)>(.*?)</th>", thead, re.S)]
 
 
-def test_칸이_투자라운드_뒤_상세_내용_앞에_요청_차례로_선다(logged_in, deal):
+def test_칸이_IR_기업_현황_차례로_선다(logged_in, deal):
+    """#87(10/29) — 기업 쪽 표는 IR 기업 현황 차례다: `수신일` 뒤에 대표자 묶음 · 계약 두 칸
+    (10/28 요청대로 `이메일` 바로 오른쪽), `소분류` 뒤에 매출 · 금액, 그다음 `투자라운드` →
+    `상세 내용`. 예전에는 이 칸들이 `투자라운드` 와 `상세 내용` 사이에 한 무리로 섰다."""
     from app.routers.series_a import TYPED
 
     html = logged_in.get("/companies?tab=series-a").text
     labels = [label for _a, label in _head(html)]
-    at = labels.index("투자라운드")
-    assert labels[at + 1:at + 1 + len(SHOWN)] == SHOWN, labels
-    assert labels[at + 1 + len(SHOWN)] == "상세 내용"
+    at = labels.index("수신일")
+    assert labels[at + 1:at + 6] == LABELS[:3] + CONTRACT, labels
+    assert labels[at + 6:at + 8] == ["대분류", "소분류"], labels
+    at = labels.index("소분류")
+    money = LABELS[3:]
+    assert labels[at + 1:at + 1 + len(money)] == money, labels
+    assert labels[at + 1 + len(money):at + 3 + len(money)] == ["투자라운드", "상세 내용"]
     # 줄마다 눌러 고치는 칸이 같은 차례로 선다(`inline_edit.js` 의 `.cell`).
     row = re.search(r"<tr data-id=.*?</tr>", html, re.S).group(0)
     fields = re.findall(r'class="cell[^"]*" data-field="([^"]+)"', row)
-    at = fields.index("series")
-    want = list(TYPED[:3]) + ["contract_status", "contract_received"] + list(TYPED[3:])
+    at = fields.index("received_at")
+    want = (list(TYPED[:3]) + ["contract_status", "contract_received",
+                               "sector_major", "sector_minor"]
+            + list(TYPED[3:]) + ["series", "detail"])
     assert fields[at + 1:at + 1 + len(want)] == want, fields
 
 
@@ -138,8 +147,10 @@ def test_추가_칸_자리_목록에도_선다():
     from app.services import custom_columns as svc
 
     tab = svc.anchor_groups("companies")["Series A 이상 딜 소싱"]
-    at = tab.index("투자라운드")
-    assert list(tab[at + 1:at + 1 + len(SHOWN)]) == SHOWN
+    at = tab.index("수신일")
+    assert list(tab[at + 1:at + 6]) == LABELS[:3] + CONTRACT
+    at = tab.index("소분류")
+    assert list(tab[at + 1:at + 1 + len(LABELS[3:])]) == LABELS[3:]
 
 
 # ── 판(0112) ────────────────────────────────────────────────────────────────

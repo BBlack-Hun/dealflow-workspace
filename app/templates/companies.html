@@ -230,8 +230,6 @@
     <thead>
       <tr>
         <th class="num" style="width:36px" title="눌러서 수정">NO</th>
-        {# 시트의 맨 앞 칸이다. 이게 없어서 그 뒤가 한 칸씩 밀려 보였다. #}
-        <th style="width:96px" title="홍보메일 답장 받은 날 · 표의 기본 차례가 이 칸 최신순입니다">수신일</th>
         {# **이름순은 이 머리글로 고른다** — 옆 탭과 같은 단추 하나다(`?sort=name`).
            두 탭의 기본 차례가 같은 규칙(`sort_by_received`)이므로 그것을
            벗어나는 길도 같아야 한다. 까닭은 옆 탭의 `기업명` 머리글 주석에.
@@ -242,6 +240,9 @@
            `기업명 ↕` 는 60px 안팎이다. #}
         <th style="width:160px" data-sort="name"
             title="누르면 이름순 · 한 번 더 누르면 거꾸로 · 세 번째는 기본 차례(수신일 최신순)">기업명</th>
+        {# `기업명 → 수신일` — 옆 탭(IR 기업 현황)과 같은 차례(#87 · 10/29). 예전에는
+           시트의 맨 앞 칸이라 `기업명` 앞에 섰다. #}
+        <th style="width:96px" title="홍보메일 답장 받은 날 · 표의 기본 차례가 이 칸 최신순입니다">수신일</th>
         {# 예전 이름 `대표자`. 폭은 그대로 70px 이다 — 한 글자(10.5px)가 늘어도
            `대표자명`(42 + th 좌우 여백 18 = 60px)이 넉넉히 선다. #}
         <th style="width:70px">대표자명</th>
@@ -316,8 +317,8 @@
            달아 companies.js 의 그 handler 를 탄다 — 여기에 두 번째 길을
            내면 한쪽만 고쳐지고 조용히 갈린다. #}
         <td class="rowno muted js-co-edit" title="눌러서 수정"></td>
-        <td class="cell" data-field="received_at" data-type="date">{{ r.received_at }}</td>
         <td class="co-name"><b class="cell" data-field="name">{{ r.name }}</b></td>
+        <td class="cell" data-field="received_at" data-type="date">{{ r.received_at }}</td>
         <td class="cell" data-field="contact_name">{{ r.contact_name }}</td>
         <td class="cell" data-field="contact_phone">{{ r.contact_phone }}</td>
         {# `data-type="email"` — 눌러 고칠 때 `@` 뒤 도메인 후보가 뜬다.

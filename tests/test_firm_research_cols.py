@@ -144,7 +144,9 @@ def test_회사명이_없는_줄에는_적을_수_없다(member, db, users):
     assert r.status_code == 400 and "펀드 종류" in r.json()["detail"]
 
 
-def test_표에서_선호_투자분야_바로_왼쪽이고_풍선말이_있다(member, db, users):
+def test_표에서_펀드_종류_선호_투자분야_선호_소분류_차례이고_풍선말이_있다(member, db, users):
+    """#87(10/29) — 소분류는 이름이 `선호 소분류`, 자리는 `선호 투자분야` 바로 오른쪽
+    (큰 분류 먼저 · IR 기업 현황의 `대분류 → 소분류` 차례). 예전에는 요청으로 왼쪽이었다."""
     from app.services import investor_firms as f
 
     _contact(db, users["u1"].id, "가나다", "테스트벤처스")
@@ -155,24 +157,24 @@ def test_표에서_선호_투자분야_바로_왼쪽이고_풍선말이_있다(m
     heads = _heads(html)
     names = [n for _a, n in heads]
     at = names.index("선호 투자분야")
-    assert names[at - 2:at] == ["펀드 종류", "소분류"]
-    for attrs, name in heads[at - 2:at]:
+    assert names[at - 1:at + 2] == ["펀드 종류", "선호 투자분야", "선호 소분류"]
+    for attrs, name in (heads[at - 1], heads[at + 1]):
         assert f'title="{TIP}"' in attrs, name
     assert 'data-filters="fund_type:펀드 종류"' in html
-    assert 'data-filters="sub_sector:소분류"' in html
+    assert 'data-filters="sub_sector:선호 소분류"' in html
     row = re.search(r'id="contacts-table".*?<tbody>(.*?)</tr>', html, re.S).group(1)
     fields = re.findall(r'data-field="([a-z_]+)"', row)
     at = fields.index("sectors")
-    assert fields[at - 2:at] == ["fund_types", "sub_sectors"]
+    assert fields[at - 1:at + 2] == ["fund_types", "sectors", "sub_sectors"]
     assert 'data-f-fund_type="PEF|신기사조합"' in row
     # `펀드 종류` 칸은 정해 둔 말을 체크해 고른다 — 보기는 서버 한 곳(`FUND_TYPES`).
     cell = re.search(r'<div[^>]*data-field="fund_types"[^>]*>', row).group(0)
     assert 'data-type="checks"' in cell
     assert f'data-choices="{",".join(f.FUND_TYPES)}"' in html.replace("&amp;", "&")
     assert 'data-f-sub_sector="로봇"' in row
-    # 수정창도 같은 차례 — `선호 투자단계` · `펀드 종류` · `소분류` · `선호 투자분야`.
+    # 수정창도 같은 차례 — `선호 투자단계` · `펀드 종류` · `선호 투자분야` · `선호 소분류`.
     panel = re.findall(r'id="f-(stages|fund_types|sub_sectors|sectors)"', html)
-    assert panel == ["stages", "fund_types", "sub_sectors", "sectors"]
+    assert panel == ["stages", "fund_types", "sectors", "sub_sectors"]
 
 
 def test_달마다_늘어나는_명단의_수정창에도_같은_자리다():
@@ -181,7 +183,8 @@ def test_달마다_늘어나는_명단의_수정창에도_같은_자리다():
     cols = cc.INVESTOR_MONTHLY_LAYOUT.extra
     keys = [c.key for c in cols]
     at = keys.index("sectors")
-    assert keys[at - 2:at] == ["fund_types", "sub_sectors"]
+    assert keys[at - 1:at + 2] == ["fund_types", "sectors", "sub_sectors"]
+    assert {c.key: c.label for c in cols}["sub_sectors"] == "선호 소분류"
     assert {c.key: c.label for c in cols}["owned_funds"] == "챗GPT 조사 소유펀드"
 
 

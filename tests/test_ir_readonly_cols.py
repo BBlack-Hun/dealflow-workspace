@@ -75,8 +75,8 @@ def test_스타트업_표_이메일_오른쪽에_IR_칸이_읽기_전용으로_�
     heads = _heads(html)
     names = [n for n, _ in heads]
     want = [c.label for c in ir_readonly.startup_columns()]
-    at = names.index("미팅제공일자")
-    assert names[at - 1] == "이메일"
+    # `이메일` 바로 오른쪽(#85). #87 로 `미팅제공일자` 가 견적서 뒤로 옮겨 간 뒤의 자리다.
+    at = names.index("이메일")
     assert names[at + 1:at + 1 + len(want)] == want, names
     assert all(ro for _, ro in heads[at + 1:at + 1 + len(want)])
     assert want[0].endswith("년 매출")     # 해마다 이름이 바뀐다(`revenue_years.columns`)

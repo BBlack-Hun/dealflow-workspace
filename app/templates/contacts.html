@@ -721,7 +721,27 @@
            (아래 `<tr>` 참고) — 짝이 하나라도 빠지면 머리글만 눌리고 아무 일도
            안 일어난다. 한글 차례는 `localeCompare('ko')` 가 정한다. #}
         <th class="stick stick-b" style="width:96px" data-sort="name">이름</th>
-        {# 이 칸에 서는 사람은 **우리 팀원**이다 — 이 줄을 맡아 연결을 끌고
+        {# ── 사람 칸 묶음 — 이름 → 회사 → 부서 → 직함 → 휴대폰 → 이메일 (#87) ──
+           딜 소싱 · 딜공유 탭과 같은 차례다. 기업 쪽 표가 `기업명 → 대표자명 →
+           연락처 → 이메일` 을 맨 앞에 두는 것과 같은 규칙 — 누구인지 · 어디 사람인지
+           · 어떻게 닿는지를 먼저 읽는다. 이름은 `전자 메일 주소` → `이메일`(#87 · 10). #}
+        {# 같은 어긋남이 여기에도 있었다. 이 칸은 투자사명(`firm`)을 보여 주는데
+           키는 `owner`(그 명단을 맡은 우리 팀원)였다 — 라벨은 `회사`인데 열면
+           팀원 이름이 나왔고, 명단이 한 사람 것이면 고를 값이 하나뿐이었다.
+           담당 팀원으로 나누는 일은 이미 위의 **명단 탭**이 한다. #}
+        <th style="width:150px" data-filters="firm:회사">회사<div class="th-filters"></div></th>
+        <th style="width:130px">부서</th>
+        <th style="width:82px">직함</th>
+        <th style="width:104px">휴대폰</th>
+        <th style="width:170px">이메일</th>
+        {# **#87 로 이름이 `담당자` 가 됐다**(사용자 결정 2026-10-29). 우리 팀원을
+           부르는 말이 화면마다 `연결 담당` · `담당` · `팀원` 으로 갈려 있던 것을 IR 기업
+           현황 · Series A · 딜 소싱이 쓰던 `담당자` 하나로 맞췄다. 같은 말이 투자사 쪽
+           사람을 가리키던 자리(딜 진행 관리 · 업무 보고)는 `심사역` 으로 바꿔 두 뜻을
+           갈랐다. 머리글 풍선말이 "우리 팀원" 이라고 한 번 더 말한다. 아래는 그 전의
+           `연결 담당` 이름을 쓰던 때의 사정이다.
+
+           이 칸에 서는 사람은 **우리 팀원**이다 — 이 줄을 맡아 연결을 끌고
            가는 사람. 같은 표의 `부서`·`직함` 은 **투자사 쪽 사람**의 것이라,
            `담당자` 라고만 적혀 있으면 둘 중 누구를 가리키는 이름인지 화면만
            보고는 가릴 길이 없었다. 그래서 **대시보드가 이미 이 값을 부르던
@@ -750,7 +770,8 @@
            필터가 하나뿐인 칸은 이름이 지워지고 단추가 그 자리를 대신한다.
            이름이 한 자 늘어 단추가 91px → 105px 이 되었다. 92px 에 그대로
            두면 `연결 담당` / `(1) ▾` 로 접힌다. 여유 7px 을 두어 112px. #}
-        <th style="width:112px" data-filters="assignee:연결 담당">연결 담당<div class="th-filters"></div></th>
+        <th style="width:112px" data-filters="assignee:담당자"
+            title="우리 팀원 — 이 분을 맡아 연결을 챙기는 사람">담당자<div class="th-filters"></div></th>
         {# `(월말기준)` 을 뗐다 — **앱이 지키지 않는 약속**이었다. 어느 달
            기준인지 적는 칸이 없고, 달이 바뀔 때 이 값을 비우거나 달 이름을
            붙이는 코드도 없다. 안 지키는 약속을 이름에 달아 두니 뒤쪽 `상태`
@@ -771,8 +792,8 @@
            표 전체 폭은 그대로다. #}
         <th style="width:144px" data-filters="joined:카톡방 참여여부">카톡방 참여여부<div class="th-filters"></div></th>
         <th style="width:276px"
-            title="메모 ( 통화내용 /  카톡내용  /  카톡답신내용)">메모 ( 통화내용 /  카톡내용  /  카톡답신내용)</th>
-        <th style="width:180px">딜소싱 참여 투자사</th>
+            title="통화내용 / 카톡내용 / 카톡답신내용">메모</th>
+        <th style="width:180px">딜 소싱 참여 투자사</th>
         {# **딜 소싱과 이어진 칸** — 딜 소싱의 잇는 갈래(`Series A` · `M&A` · `구주·후속` ·
            `대표` · `개인참여` — `sourcing_sync.BRANCHES`) 중 어디에 이 분이 있나(`services/sourcing_sync.py`).
            원본 시트에는 없는, 앱이 만든 칸이다. 예전 `Series A 딜 소싱`(O/X) 칸을
@@ -823,13 +844,14 @@
            의 `syncFirmFunds`). 둘 다 쉼표로 여럿. `펀드 종류` 는 정해 둔 13가지만
            (`investor_firms.FUND_TYPES`), `소분류` 는 분야 기준 목록의 소분류만 · 5개까지 —
            어긋나면 서버가 막는다(`investor_firms.clean_fund_types` · `clean_sub_sectors`).
-           `소분류` 의 고르는 부품은 `선호 투자분야` 와 같다. 자리는 `선호 투자분야` 바로 왼쪽(요청). 머리글 풍선말은
+           `소분류` 의 고르는 부품은 `선호 투자분야` 와 같다. 이름은 `선호 소분류`, 자리는 `선호 투자분야` 바로 오른쪽
+           — 큰 분류 먼저(#87 · IR 기업 현황의 `대분류 → 소분류` 차례. 예전에는 요청으로 왼쪽이었다). 머리글 풍선말은
            값의 출처다. 필터는 `챗GPT 조사 소유펀드` 처럼 값마다 줄 수. #}
         <th style="width:120px" data-filters="fund_type:펀드 종류"
             title="2025년 이후 기사 기준 인터넷 조사">펀드 종류<div class="th-filters"></div></th>
-        <th style="width:134px" data-filters="sub_sector:소분류"
-            title="2025년 이후 기사 기준 인터넷 조사">소분류<div class="th-filters"></div></th>
         <th style="width:134px" data-filters="sector:선호 투자분야">선호 투자분야<div class="th-filters"></div></th>
+        <th style="width:134px" data-filters="sub_sector:선호 소분류"
+            title="2025년 이후 기사 기준 인터넷 조사">선호 소분류<div class="th-filters"></div></th>
         {# 필터 키는 **이 칸이 보여 주는 값**을 가리켜야 한다. 여기는 `round_size`
            인데 키가 `stage`(선호 단계) 였다 — 값이 0개인 다른 칸을 보고 있어서
            표에는 52줄이 보이는데 필터를 열면 늘 빈 목록이었다. #}
@@ -853,17 +875,10 @@
            아래로 밀어냈다. 두 줄에 들어가는 최소 폭이 210px 근처라
            220px 로 둔다(메모 칸과 같은 폭이라 눈에도 덜 튄다).
            마우스를 올리지 않아도 읽히지만 잘림 대비로 title 은 남긴다. #}
-        <th style="width:220px"
-            title="TIPS 운영사 투자금 1-10억 스타트업매출액 3-20억 기업에 주로 투자">TIPS 운영사 투자금 1-10억 스타트업매출액 3-20억 기업에 주로 투자</th>
-        <th style="width:104px">휴대폰</th>
-        {# 같은 어긋남이 여기에도 있었다. 이 칸은 투자사명(`firm`)을 보여 주는데
-           키는 `owner`(그 명단을 맡은 우리 팀원)였다 — 라벨은 `회사`인데 열면
-           팀원 이름이 나왔고, 명단이 한 사람 것이면 고를 값이 하나뿐이었다.
-           담당 팀원으로 나누는 일은 이미 위의 **명단 탭**이 한다. #}
-        <th style="width:150px" data-filters="firm:회사">회사<div class="th-filters"></div></th>
-        <th style="width:130px">부서</th>
-        <th style="width:82px">직함</th>
-        <th style="width:170px">전자 메일 주소</th>
+        {# 이름은 수정창과 같은 `TIPS 운영사`(#87 · 12) — 원본 시트의 긴 문장은
+           머리글에 마우스를 올리면 뜬다. 값이 짧아(`O`) 폭을 이름 단추에 맞춘다. #}
+        <th style="width:120px"
+            title="TIPS 운영사 투자금 1-10억 스타트업매출액 3-20억 기업에 주로 투자">TIPS 운영사</th>
         <th style="width:96px">근무처 전화</th>
         <th style="width:96px">근무처 팩스</th>
         <th style="width:190px">근무지 주소 번지</th>
@@ -974,6 +989,16 @@
         <td class="rowno muted js-detail stick stick-a" title="활동 이력 보기"></td>
         {# 시트 컬럼 — 이름·순서를 그대로 따른다 #}
         <td class="stick stick-b"><b class="cell" data-field="name">{{ r.name }}</b></td>
+        <td class="cell ellipsis" data-field="firm" title="{{ r.firm }}">{{ r.firm }}</td>
+        <td class="cell" data-field="department" data-type="pick">{{ r.department }}</td>
+        <td class="cell" data-field="title" data-type="pick">{{ r.title }}</td>
+        <td class="cell" data-field="phone">{{ r.phone }}</td>
+        {# `data-type="email"` — 눌러 고칠 때 `@` 뒤 도메인 후보가 뜬다.
+           수정창의 메일 칸과 **같은 부품**을 쓴다(`static/js/email_hint.js`) —
+           들어온 길에 따라 되고 안 되는 칸이 되면 안 된다.
+           스타트업 표의 같은 칸은 배치가 정한다(`contact_columns` 의 `kind`). #}
+        <td class="cell ellipsis{% if ',' in r.email %} mail-primary{% endif %}" data-field="email" data-type="email"
+            title="{{ r.email }}">{{ r.email }}</td>
         {# 칸 이름(`assignee_name`)과 필터 키(`assignee`)가 다르다 —
            `data-filter-key` 가 없으면 여기서 고쳐도 행 값이 그대로라
            **채워 넣어도 필터는 계속 비어 있다.** #}
@@ -1017,16 +1042,16 @@
                data-choices="{{ fund_type_choices|join(',') }}"
                data-filter-key="fund_type" data-filter-sep=",">{{ r.fund_types }}</div>
         </td>
-        <td title="{{ r.sub_sectors }}">
-          <div class="cell clamp2" data-field="sub_sectors" data-type="sectors"
-               data-filter-key="sub_sector" data-filter-sep=",">{{ r.sub_sectors }}</div>
-        </td>
         {# `data-type="sectors"` — **분야 기준 목록에서 여러 개 고른다**(#2 ·
            `sector_picker.js`). 자유 글로 적던 칸이라 목록 밖 옛 값이 남아 있을 수
            있다 — 고르는 창이 그 값을 지우지 않고 `목록 밖 값` 으로 보여 준다. #}
         <td title="{{ r.sectors|join(', ') }}">
           <div class="cell clamp2" data-field="sectors" data-type="sectors"
                data-filter-key="sector" data-filter-sep=",">{{ r.sectors|join(', ') }}</div>
+        </td>
+        <td title="{{ r.sub_sectors }}">
+          <div class="cell clamp2" data-field="sub_sectors" data-type="sectors"
+               data-filter-key="sub_sector" data-filter-sep=",">{{ r.sub_sectors }}</div>
         </td>
         <td title="{{ r.round_size }}">
           <div class="cell clamp2" data-field="round_size" data-type="long"
@@ -1041,16 +1066,6 @@
         <td title="{{ r.tips_note }}">
           <div class="cell clamp2" data-field="tips_note" data-type="long">{{ r.tips_note }}</div>
         </td>
-        <td class="cell" data-field="phone">{{ r.phone }}</td>
-        <td class="cell ellipsis" data-field="firm" title="{{ r.firm }}">{{ r.firm }}</td>
-        <td class="cell" data-field="department" data-type="pick">{{ r.department }}</td>
-        <td class="cell" data-field="title" data-type="pick">{{ r.title }}</td>
-        {# `data-type="email"` — 눌러 고칠 때 `@` 뒤 도메인 후보가 뜬다.
-           수정창의 메일 칸과 **같은 부품**을 쓴다(`static/js/email_hint.js`) —
-           들어온 길에 따라 되고 안 되는 칸이 되면 안 된다.
-           스타트업 표의 같은 칸은 배치가 정한다(`contact_columns` 의 `kind`). #}
-        <td class="cell ellipsis{% if ',' in r.email %} mail-primary{% endif %}" data-field="email" data-type="email"
-            title="{{ r.email }}">{{ r.email }}</td>
         <td class="cell" data-field="office_phone">{{ r.office_phone }}</td>
         <td class="cell" data-field="office_fax">{{ r.office_fax }}</td>
         <td class="cell ellipsis" data-field="address" title="{{ r.address }}">{{ r.address }}</td>
@@ -1440,7 +1455,7 @@
 
             표 `선호 투자분야`      ↔  수정 `섹터 태그 (쉼표)`
             표 `회사`               ↔  수정 `투자사`
-            표 `전자 메일 주소`     ↔  수정 `이메일`
+            표 `전자 메일 주소`     ↔  수정 `이메일`   (#87 로 표도 `이메일` 이 됐다)
 
         고칠 때는 **표 쪽이 정답**이다 — 표 이름은 시트에서 그대로 온 것이라
         여기 맞춰 바꾸면 시트와 대조가 안 된다.
@@ -1594,18 +1609,19 @@
          저장 자리는 `stages` 그대로다. 안내 자리는 아래 칸들과 통일한다. #}
       <label class="field"><span>선호 투자단계</span>
         <input type="text" id="f-stages" placeholder="Seed, SeriesA — 쉼표로 구분"></label>
-      {# 회사 단위 값 둘(표 머리글 주석) — `선호 투자분야` 바로 앞, 표와 같은 차례. #}
+      {# 회사 단위 값 둘(표 머리글 주석) — `펀드 종류` 는 `선호 투자분야` 앞, `선호 소분류` 는
+         바로 뒤 — 표와 같은 차례(#87). #}
       <label class="field"><span>펀드 종류</span>
         <input type="text" id="f-fund_types"
                placeholder="정해 둔 말만 — 쉼표로 구분 · 표 칸에서 고를 수 있습니다"></label>
-      <label class="field"><span>소분류</span>
-        <input type="text" id="f-sub_sectors" data-sector-picker
-               placeholder="목록의 소분류만 — 5개까지 · 회사 단위"></label>
       {# **분야 기준 목록에서 고른다**(#2) — 칸은 읽기만 하고 [목록에서 고르기] 가
          펼친다(`sector_picker.js`). 표 칸과 같은 부품이다. #}
       <label class="field"><span>선호 투자분야</span>
         <input type="text" id="f-sectors" data-sector-picker
                placeholder="목록에서 고릅니다 — 여러 개 고를 수 있습니다"></label>
+      <label class="field"><span>선호 소분류</span>
+        <input type="text" id="f-sub_sectors" data-sector-picker
+               placeholder="목록의 소분류만 — 5개까지 · 회사 단위"></label>
       <label class="field wide"><span>라운드 사이즈(투자운영금액)</span><input type="text" id="f-round_size"></label>
       {# 회사 단위 값(#1) — 이 창에서 고쳐도 같은 회사의 모든 줄에 같은 값이 선다.
          이름은 표 머리글과 한 글자도 다르지 않게(`tests/test_ui_layout.py`). #}
@@ -1616,7 +1632,7 @@
          주소 753개가 도메인 503가지인데 **절반 가까운 347개**가 두 번 이상 쓰인
          도메인이다(`services/email_domains.py` 에 근거가 적혀 있다). 주소 자체는
          후보가 못 된다 — 줄마다 다르고, 눌리면 남의 주소가 들어앉는다. #}
-      <label class="field"><span>전자 메일 주소</span>
+      <label class="field"><span>이메일</span>
         <input type="text" id="f-email" data-email-hint
                placeholder="예: hong@example.com (고르거나 새로 적습니다)"></label>
       <label class="field"><span>휴대폰</span><input type="text" id="f-phone"></label>
@@ -1628,7 +1644,7 @@
          쪽 사람**의 것이라, 이름만으로는 우리 팀원 칸인지 가릴 수가 없었다 —
          그 자리 관계가 이 창에서 제일 잘 보인다. 저장 자리는 `assignee_name`
          그대로고, 왜 이 이름인지는 표 머리글 쪽 주석에 적어 두었다. #}
-      <label class="field"><span>연결 담당</span><input type="text" id="f-assignee_name"></label>
+      <label class="field" title="우리 팀원 — 이 분을 맡아 연결을 챙기는 사람"><span>담당자</span><input type="text" id="f-assignee_name"></label>
       {#
         아래는 시트에 있는데 표에는 안 넣은 값들. 표에 다 넣으면 20칸이 되어
         정작 매일 보는 칸이 눌린다 — 가끔 찾는 값은 여기서 본다.
@@ -1656,7 +1672,7 @@
           <option value="중간"></option>
           <option value="낮음"></option>
         </datalist></label>
-      <label class="field wide"><span>딜소싱 참여 투자사</span><input type="text" id="f-sourcing_note"></label>
+      <label class="field wide"><span>딜 소싱 참여 투자사</span><input type="text" id="f-sourcing_note"></label>
       {# 표의 `딜 소싱` 칸과 **같은 칸**이다 — 이름도 보기(`sourcing_branch_labels`)도 표와 같게.
          바로 위 시트 칸은 자유 글이고, 이 칸이 딜 소싱과 **이어진** 칸이다
          (`services/sourcing_sync.py`). 체크 상자가 숨은 칸(`f-sourcing_branches`)에
@@ -1672,7 +1688,7 @@
       </div>
       <label class="field wide"
              title="TIPS 운영사 투자금 1-10억 스타트업매출액 3-20억 기업에 주로 투자">
-        <span>TIPS 운영사 투자금 1-10억 스타트업매출액 3-20억 기업에 주로 투자</span>
+        <span>TIPS 운영사</span>
         <input type="text" id="f-tips_note" placeholder="O / 공란"></label>
       <label class="field checks">
         <span>채널</span>
@@ -1681,11 +1697,10 @@
           <label><input type="checkbox" id="f-channel_email"> 메일</label>
         </span>
       </label>
-      {# 이름이 길지만 표 머리글을 그대로 쓴다 — 이 칸에 무엇을 적는 것인지가
-         이름 안에 들어 있어서, 줄여 `메모` 라고만 두면 아래 `투자 현황` 류의
-         다른 메모와 구별되지 않는다. #}
-      <label class="field wide"><span>메모 ( 통화내용 /  카톡내용  /  카톡답신내용)</span>
-        <textarea id="f-memo" rows="3"></textarea></label>
+      {# 이름은 표 머리글과 같은 `메모`(#87 · 11 — 딜 소싱 · 스타트업과 같은 말).
+         무엇을 적는 칸인지는 원본 시트 이름 그대로 칸 안 안내 글로 남긴다. #}
+      <label class="field wide"><span>메모</span>
+        <textarea id="f-memo" rows="3" placeholder="통화내용 / 카톡내용 / 카톡답신내용"></textarea></label>
       {#
         ── 달마다 늘어나는 칸 (`8월 딜소개` · `7월 IR 요청` …) ──────────────
 

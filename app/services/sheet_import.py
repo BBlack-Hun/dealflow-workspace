@@ -1136,7 +1136,7 @@ _DIFF_FIELDS = ("title", "round_size", "stages", "memo", "phone",
 _DIFF_LABELS = {"title": "직함", "round_size": "라운드 사이즈(투자운영금액)",
                 "stages": "선호 투자단계", "memo": "메모", "phone": "연락처",
                 "office_phone": "유선전화", "address": "주소",
-                "department": "부서", "email": "전자 메일 주소", "sectors": "선호 투자분야",
+                "department": "부서", "email": "이메일", "sectors": "선호 투자분야",
                 "group_name": "그룹"}
 
 

@@ -213,18 +213,19 @@ def test_계약_탭의_머리글은_시트가_부르는_이름이다(allowed, db
     #
     # `계약서 수신여부` 는 `계약여부` **바로 오른쪽**이다. 계약을 맺은 것과
     # 계약서를 받은 것은 다른 사실이라 나란히 놓고 봐야 뜻이 갈린다.
-    # `담당` 은 여러 사람의 표를 같이 보는 사람에게만 선다(이 검사의 `allowed`
+    # `담당자`(옛 이름 `담당` — #87) 는 여러 사람의 표를 같이 보는 사람에게만 선다(이 검사의 `allowed`
     # 가 그렇다). 탭과 무관한 칸이라 계약 탭에도 같은 자리에 있다.
     #
     # **`월` 은 안 선다**(사용자 요청). 시트의 월 묶음 제목이 `region` 에 담겨
     # 서 있던 칸인데, 바로 옆 `계약월`(`meeting_at`)이 같은 물음을 받고 있어
     # 달을 적을 자리는 그대로 남는다 — 아래 검사가 그것을 짚는다.
-    assert heads == ["NO", "담당", "계약월", "기업명", "계약여부",
+    # #87(10/29) — 기업 쪽 표는 `기업명` 이 맨 앞(IR 기업 현황 차례).
+    assert heads == ["NO", "담당자", "기업명", "계약월", "계약여부",
                      "계약서 수신 여부", "성공보수율", "계약금", ""], heads
     # 머리글과 데이터 칸이 **같은 순서로** 갈라져야 한다. 어긋나면 그 뒤가
     # 통째로 한 칸씩 밀린다.
     assert _fields(_open(allowed, CONTRACT)) == [
-        "meeting_at", "company_name", "management",
+        "company_name", "meeting_at", "management",
         "contract_received", "success_fee", "contract_fee"]
 
 
@@ -335,16 +336,15 @@ def test_다른_탭의_표는_한_칸도_안_바뀐다(allowed, db, users):
     _row(db, users["u1"].id, company_name="샘플자", region="서울",
          ceo_name="김샘플", phone="010-0000-0000", email="a@example.com")
     body = _open(allowed, "스타트업")
-    assert _heads(body) == ["NO", "담당", "지역", "컨설팅 미팅일", "미팅종류", "기업명", "기업 관리", "기업 내용",
-                            "견적서 첨부 여부", "계약여부",
-                            "계약서 수신 여부", "소개 메모",
-                            "카톡 연결 여부",
-                            "대표자명", "연락처", "이메일", ""], _heads(body)
-    assert _fields(body) == ["region", "meeting_at", "meeting_kind", "company_name",
-                             "management", "management_detail", "contract_management",
-                             "contract_done", "contract_received",
-                             "deal_pitch",
-                             "kakao_joined", "ceo_name", "phone", "email"]
+    assert _heads(body) == ["NO", "담당자", "기업명", "대표자명", "연락처", "이메일",
+                            "지역", "컨설팅 미팅일", "미팅종류", "기업 관리", "기업 내용",
+                            "소개 메모", "견적서 첨부 여부", "계약여부",
+                            "계약서 수신 여부", "카톡 연결 여부", ""], _heads(body)
+    assert _fields(body) == ["company_name", "ceo_name", "phone", "email",
+                             "region", "meeting_at", "meeting_kind",
+                             "management", "management_detail", "deal_pitch",
+                             "contract_management", "contract_done", "contract_received",
+                             "kakao_joined"]
 
 
 def test_화면에서_뺀_칸의_값은_지워지지_않는다(allowed, db, users):
@@ -512,16 +512,15 @@ def test_계약_탭에만_있는_칸은_다른_탭으로_안_샌다(allowed, db,
     # 탭에 대고 따로 정한 자리라 여기 들어 있다
     # (`tests/test_consulting_contract_done.py` ·
     #  `tests/test_consulting_deal_pitch.py`).
-    assert _heads(body) == ["NO", "담당", "지역", "컨설팅 미팅일", "미팅종류", "기업명", "기업 관리", "기업 내용",
-                            "견적서 첨부 여부", "계약여부",
-                            "계약서 수신 여부", "소개 메모",
-                            "카톡 연결 여부",
-                            "대표자명", "연락처", "이메일", ""], _heads(body)
-    assert _fields(body) == ["region", "meeting_at", "meeting_kind", "company_name",
-                             "management", "management_detail", "contract_management",
-                             "contract_done", "contract_received",
-                             "deal_pitch",
-                             "kakao_joined", "ceo_name", "phone", "email"]
+    assert _heads(body) == ["NO", "담당자", "기업명", "대표자명", "연락처", "이메일",
+                            "지역", "컨설팅 미팅일", "미팅종류", "기업 관리", "기업 내용",
+                            "소개 메모", "견적서 첨부 여부", "계약여부",
+                            "계약서 수신 여부", "카톡 연결 여부", ""], _heads(body)
+    assert _fields(body) == ["company_name", "ceo_name", "phone", "email",
+                             "region", "meeting_at", "meeting_kind",
+                             "management", "management_detail", "deal_pitch",
+                             "contract_management", "contract_done", "contract_received",
+                             "kakao_joined"]
 
 
 def test_칩과_KPI_는_이_칸을_안_본다():

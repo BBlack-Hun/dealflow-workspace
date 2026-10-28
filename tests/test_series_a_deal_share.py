@@ -437,7 +437,7 @@ def test_the_series_a_tab_counts_who_got_each_company(world, client, db):
     head = re.search(r'id="sa-table".*?</thead>', page, re.S).group(0)
     heads = [re.sub(r"<[^>]+>", "", h).strip()
              for h in re.findall(r"<th\b[^>]*>(.*?)</th>", head, re.S)]
-    assert heads[:3] == ["NO", "기업명", "수신 일자"], heads
+    assert heads[:3] == ["NO", "기업명", "수신일"], heads   # #87 — 옆 두 탭과 같은 이름
     assert "공유한 심사역" not in heads
     rows = re.findall(r"<tr data-id=.*?</tr>", page, re.S)
     bio = next(r for r in rows if "샘플바이오" in r)
@@ -486,7 +486,7 @@ def test_the_sourcing_screen_has_the_button_and_the_row_note(world, client, db):
 
 
 def test_the_series_a_tab_has_a_pick_column_before_no(world, client):
-    """체크박스 칸은 맨 왼쪽(`NO` 앞) — 그 뒤 차례(참여 요청일 · 이름 · 참여)는 그대로."""
+    """체크박스 칸은 맨 왼쪽(`NO` 앞) — 그 뒤 차례는 `COLUMNS` 그대로(#87 · 이름 → 회사 …)."""
     from app.routers.sourcing import COLUMNS
     from app.services.sourcing_remind_log import MONTHS
 
@@ -497,7 +497,7 @@ def test_the_series_a_tab_has_a_pick_column_before_no(world, client):
     assert len(ths) == len(COLUMNS) + 2 + MONTHS
     assert 'id="sourcing-check-all"' in ths[0] and 'type="checkbox"' in ths[0]
     labels = [re.sub(r"<[^>]+>", "", x).strip() for x in ths]
-    assert labels[:5] == ["", "NO", "참여 요청일", "이름", "참여"], labels
+    assert labels[:5] == ["", "NO", "이름", "회사", "직함"], labels
 
     body = page[page.index("<tbody>"):page.index("</tbody>")]
     rows = re.findall(r"<tr data-id=\"(\d+)\".*?</tr>", body, re.S)
