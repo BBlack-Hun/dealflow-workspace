@@ -51,6 +51,9 @@ TEAM_TEMPLATES = [
     ("opening_re", "안녕하세요, {담당자명} {직함}\n우리브이씨 ASSET입니다."),
     ("closing_day1", "핵심 딜 {개수}개사 간단히 공유드립니다.\n관심 가시는 기업 있으시면 IR Deck 공유드리겠습니다."),
     ("closing_remind", "지난번 공유드린 기업들 검토 중 궁금하신 점 있으시면 말씀 부탁드립니다."),
+    # 선호분야가 빈 분께만 리마인드 끝에 붙는 말. 글자까지
+    # `routers/deals.REMIND_NO_SECTOR_FALLBACK` 과 같아야 한다.
+    ("closing_remind_no_sector", "선호하는 기업분야 말씀주시면\n맞추어\n딜 공유 드리겠습니다."),
     ("closing_meeting", "다음주 또는 다다음주 20~30분 정도 간단히 미팅 가능하실지요?"),
     # 미팅 요청 자동화의 **두 번째** — 첫 번째에 답이 없을 때 조금 다른 말로.
     # 글자까지 `routers/deals.MEETING_ASK_AGAIN_FALLBACK` 과 같아야 한다(문구틀을
