@@ -317,7 +317,7 @@ def test_series_a_share_sees_every_spelling(client, db, users, spread):
 
 
 def test_no_room_borrowing_for_any_spelling(db, users, spread):
-    """시리즈 A 갈래는 투자사 방을 이어받지 않는다 — 어느 글자의 줄이어도."""
+    """어느 갈래도 투자사 방을 이어받지 않는다 — 어느 글자의 줄이어도."""
     from app.models import SheetOwner
     from app.services import sourcing_link
 
@@ -325,9 +325,7 @@ def test_no_room_borrowing_for_any_spelling(db, users, spread):
     _vc(db, users, "다심사", "010-0000-0005", kakao_room_name="다심사 딜소개 방")
     _vc(db, users, "박다른", "010-0000-0006", kakao_room_name="박다른 딜소개 방")
 
-    linked = sourcing_link.linked_rooms(db, list(spread.values()))
-    assert spread["choi"].id not in linked
-    assert linked[spread["mna"].id]["room"] == "박다른 딜소개 방"
+    assert sourcing_link.linked_rooms(db, list(spread.values())) == {}
 
 
 def test_a1_groups_reach_every_spelling(db, users, spread):

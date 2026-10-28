@@ -20,10 +20,8 @@
     편지함(POP3) 확인이 저절로 세운다(`services/sourcing_mail.py`). 리마인드가
     나가는 날에는 **30분 전에 메일을 한 번 더 본다** — 아래 `remind_at` 을
     메일 확인의 고리(`sourcing_mail.register_remind_source`)에 단다.
-  · 방 — 그 줄의 방 이름, 없으면 투자사 명단에서 휴대폰 번호로 이어진 방
-    (`sourcing_link.linked_rooms` — **시리즈 A 갈래는 이어받지 않는다**, 그
-    갈래는 자기 방이 없으면 방 없음). 이어진 방은 보내는 계정 카톡 기준
-    제목으로 고른다(`sender_rooms.room_for`). 방이 없는 줄은 뺀다 — 딜 소싱
+  · 방 — 그 줄의 방 이름. 투자사 명단의 방은 **어느 갈래도 이어받지 않는다**
+    (`sourcing_link.linked_rooms`). 방이 없는 줄은 뺀다 — 딜 소싱
     화면의 [방 후보 찾기](`services/sourcing_rooms.py`)로 채운다.
 
 ## 글

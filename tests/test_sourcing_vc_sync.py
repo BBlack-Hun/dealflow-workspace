@@ -726,13 +726,13 @@ def test_series_a_rows_never_send_into_the_investor_room(board, db, users):
     assert "카톡방" in r.json()["detail"]
 
 
-def test_other_buckets_keep_borrowing_as_before(board, db, users):
-    """다른 갈래는 예전 그대로 — 번호가 맞는 투자사 줄의 방을 이어받는다."""
+def test_other_buckets_do_not_borrow_either(board, db, users):
+    """다른 갈래도 시리즈 A 처럼 — 번호가 맞는 투자사 줄의 방을 이어받지 않는다."""
     from app.services import sourcing_link
 
     vc(db, users, phone="010-1234-5678")
     other = sc(db, bucket=MNA)
-    assert sourcing_link.linked_rooms(db, [other])[other.id]["room"] == "홍길동 방"
+    assert sourcing_link.linked_rooms(db, [other]) == {}
 
 
 def _poll(client, token=DEMO_TOKEN):

@@ -175,8 +175,8 @@ def test_test_mode_goes_to_the_test_room(db, users, people):
 
 
 def test_rooms_follow_the_sourcing_link_rule(db, users, people):
-    """시리즈 A 갈래는 투자사 방을 이어받지 않는다(main #284 — 남의 딜소개 방).
-    다른 갈래는 번호로 이어받되, 보내는 계정 카톡 기준 제목으로(#274)."""
+    """어느 갈래도 투자사 방을 이어받지 않는다(남의 딜소개 방) — 보내는 계정
+    카톡 기준 제목(#274)이 확인돼 있어도 딜 소싱 줄에 자기 방이 없으면 뺀다."""
     from app.models import SenderRoom, SourcingContact, VcContact
     from app.services import automation, automation_runner as runner
 
@@ -204,10 +204,10 @@ def test_rooms_follow_the_sourcing_link_rule(db, users, people):
     _turn_on(db)
     result = _run(db, WEEK2)
     rooms = {i.sourcing_contact_id: i.room_name for i in _items(db)}
-    assert series_a.id not in rooms
-    assert any(s.startswith("최연결(") and "방 이름 없음" in s
-               for s in result["skipped"])
-    assert rooms[other.id] == "정이어 (보내는 계정 제목)"
+    assert series_a.id not in rooms and other.id not in rooms
+    for who in ("최연결(", "정이어("):
+        assert any(s.startswith(who) and "방 이름 없음" in s
+                   for s in result["skipped"]), who
 
 
 def test_mail_check_runs_again_before_the_remind(db, users, people):

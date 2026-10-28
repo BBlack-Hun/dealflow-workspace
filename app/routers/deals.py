@@ -255,7 +255,7 @@ def _not_taking_part(contact, topic: str = "") -> str:
 
 
 #: 딜 소싱 줄에 **보낼 방이 없다** — 미리보기 경고와 발송 목록에서 뺀 이유.
-#: 시리즈 A 갈래는 투자사 방을 이어받지 않으므로(`sourcing_link.linked_rooms`)
+#: 어느 갈래도 투자사 방을 이어받지 않으므로(`sourcing_link.linked_rooms`)
 #: 자기 방 이름이 없으면 여기 걸린다 — 딜 소싱 화면의 [방 후보 찾기]로 채운다.
 NO_ROOM_NOTE = "딜 소싱 카톡방 없음 — 딜 소싱 화면의 [방 후보 찾기]로 보내는 분 카톡에서 찾아 확정하세요"
 #: 딜 소개에 **따로 딜을 받는 갈래**(`group_name.SEPARATE`)가 섞였다 — 막지 않고
@@ -1257,7 +1257,7 @@ def create_send_list(
     # (`sourcing_sync.takes_part`), 참여 안내(처음)는 참여 · 불참여 · 사람이 적은 문구
     # (`can_get_invite` — 제안 대기중 · 물어보는 중만 받는다). 화면도 같은 판정으로
     # 카드를 막는다(`deals.js` 의 `data-out` · `data-invite-only`). 메일 채널도 같다.
-    # 방 없음 — 시리즈 A 갈래는 투자사 딜소개 방을 이어받지 않는다
+    # 방 없음 — 어느 갈래도 투자사 딜소개 방을 이어받지 않는다
     # (`sourcing_link.linked_rooms`). 그 방으로 보내는 대신 **빼고 이유를 말한다.**
     # **카톡으로 보낼 때만**이다 — 메일은 방이 아니라 주소로 나간다(주소가
     # 없으면 아래 `mail_sender.address_problem` 이 막는다). 불참여 · 갈래는

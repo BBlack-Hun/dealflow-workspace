@@ -454,11 +454,11 @@ def test_the_importer_replaces_a_bucket_wholesale(db, users):
     assert "delete(SourcingContact).where(SourcingContact.bucket.in_(stored))" in src
     assert "stored = sourcing_buckets.variants(db, bucket)" in src
 
-# --- 투자사 명단에서 방 이어받기 ---------------------------------------------
+# --- 투자사 명단의 방은 이어받지 않는다(모든 갈래) ---------------------------
 #
-# 같은 사람이 두 표에 있다. 투자사 관리 현황에서 이미 카톡방까지 연결해 둔
-# 사람이면 딜 소싱에서 방 이름을 다시 적을 이유가 없다 — 손으로 옮겨 적으면
-# 한 글자만 달라도 발송이 통째로 skip 된다.
+# 딜 소싱 줄의 방은 보내는 사람 카톡의 딜 소싱 방이다. 번호가 같은 투자사 줄의
+# 방은 그 줄 담당 팀원의 딜소개 방이라, 이어받으면 남의 방으로 나간다
+# (`sourcing_link` 머리말). 자기 방이 없으면 `방 없음` — [방 후보 찾기]로 채운다.
 
 def _vc(db, users, name, phone, room, firm="가나벤처스"):
     from app.models import VcContact
@@ -481,14 +481,14 @@ def _sc(db, name, phone, bucket="시리즈 A 이상", room=None):
     return row
 
 
-def test_the_room_comes_from_the_contact_list(seeded, db, users):
+def test_no_bucket_borrows_the_investor_room(seeded, db, users):
     from app.services import sourcing_link
 
     _vc(db, users, "박세준", "010-1111-2222", "박세준 이사님 가나벤처스 Deal 공유")
-    who = _sc(db, "박세준", "010-1111-2222")
+    rows = [_sc(db, "박세준", "010-1111-2222", bucket=b)
+            for b in ("시리즈 A 이상", "M&A", "구주·후속", "대표", "개인참여")]
 
-    linked = sourcing_link.linked_rooms(db, [who])
-    assert linked[who.id]["room"] == "박세준 이사님 가나벤처스 Deal 공유"
+    assert sourcing_link.linked_rooms(db, rows) == {}
 
 
 def test_a_room_written_here_wins(seeded, db, users):
@@ -502,60 +502,22 @@ def test_a_room_written_here_wins(seeded, db, users):
     assert sourcing_link.room_for(who, {}) == "소싱쪽 방"
 
 
-def test_names_are_never_used_to_link(seeded, db, users):
-    """같은 이름이 여럿 있다 — 이름으로 이으면 남의 방으로 나간다."""
-    from app.services import sourcing_link
-
-    _vc(db, users, "홍길동", "010-3333-4444", "홍길동 이사님 가나벤처스 Deal 공유")
-    who = _sc(db, "홍길동", "")          # 번호가 없다
-    assert sourcing_link.linked_rooms(db, [who]) == {}
-
-
-def test_a_shared_phone_links_to_nobody(seeded, db, users):
-    """같은 번호가 둘이면 어느 쪽 방인지 알 수 없다 — 하나를 고르면 반은 틀린다."""
-    from app.services import sourcing_link
-
-    _vc(db, users, "홍길동", "010-5555-6666", "홍길동 방", firm="가나벤처스")
-    _vc(db, users, "김서연", "010-5555-6666", "김서연 방", firm="다라인베스트")
-    who = _sc(db, "홍길동", "010-5555-6666")
-    assert sourcing_link.linked_rooms(db, [who]) == {}
-
-
-def test_a_short_number_does_not_link(seeded, db, users):
-    """내선번호끼리 우연히 맞아 엉뚱한 사람과 이어지면 안 된다."""
-    from app.services import sourcing_link
-
-    _vc(db, users, "홍길동", "1234", "홍길동 방")
-    who = _sc(db, "박세준", "1234")
-    assert sourcing_link.linked_rooms(db, [who]) == {}
-
-
-def test_sending_uses_the_linked_room(seeded, db, users):
-    from app.models import SendItem
-
+def test_sending_skips_a_row_without_its_own_room(seeded, db, users):
+    """M&A 줄도 — 번호가 같은 투자사 줄에 방이 있어도 보내지 않고 이유를 말한다."""
     _vc(db, users, "박세준", "010-1111-2222", "박세준 이사님 가나벤처스 Deal 공유")
-    who = _sc(db, "박세준", "010-1111-2222")
+    who = _sc(db, "박세준", "010-1111-2222", bucket="M&A")
 
     r = seeded.post("/api/deals/send",
                     json={"contact_ids": [who.id], "mode": "sourcing",
                           "topic": "sourcing_remind"})
-    assert r.status_code == 200, r.text
-    item = db.query(SendItem).filter_by(job_id=r.json()["job_id"]).one()
-    assert item.room_name == "박세준 이사님 가나벤처스 Deal 공유"
-    assert item.sourcing_contact_id == who.id
-
-
-def test_the_preview_says_where_the_room_came_from(seeded, db, users):
-    """화면에는 '방 미등록' 인데 실제로는 나가면, 어디로 갈지 모른 채 누른다."""
-    _vc(db, users, "박세준", "010-1111-2222", "박세준 이사님 가나벤처스 Deal 공유")
-    who = _sc(db, "박세준", "010-1111-2222")
+    assert r.status_code == 400
+    assert "카톡방" in r.json()["detail"]
 
     r = seeded.post("/api/deals/preview",
                     json={"contact_ids": [who.id], "mode": "sourcing"})
     p = r.json()["previews"][0]
-    assert p["room_name"] == "박세준 이사님 가나벤처스 Deal 공유"
-    assert p["room_from"] == "투자사 명단"
-    assert not p["room_warning"]
+    assert not p["room_name"]
+    assert p["room_warning"]
 
 def test_the_default_preview_works_without_anyone_picked(seeded, db, users):
     """담당자를 고르기 전 기본 문구 미리보기가 터졌다.
