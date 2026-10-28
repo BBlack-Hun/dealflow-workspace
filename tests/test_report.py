@@ -224,7 +224,7 @@ def _meeting_table(body):
     """'{달}월 미팅 총 N개사' 패널의 첫 주차 표 → (머리글, 행들).
 
     주차마다 표가 하나씩이라 첫 표를 본다. 찾는 기준은 머리글 첫 두 칸이다 —
-    화면에는 표가 여럿 있고, 그중 이것만 `담당자 / 투자사` 로 시작한다.
+    화면에는 표가 여럿 있고, 그중 이것만 `심사역 / 회사` 로 시작한다(#87 — 옛 이름 `담당자 / 투자사`).
     """
     def text(cell):
         return " ".join("".join(cell).split())
@@ -234,7 +234,7 @@ def _meeting_table(body):
     seen = [([text(c) for c in t["head"]],
              [[text(c) for c in r] for r in t["rows"]])
             for t in reader.tables]
-    found = [t for t in seen if t[0][:2] == ["날짜", "담당자 / 투자사"]]
+    found = [t for t in seen if t[0][:2] == ["날짜", "심사역 / 회사"]]
     assert found, f"미팅 표를 못 찾았다 — 화면의 표들: {[t[0] for t in seen]}"
     return found[0]
 
@@ -245,19 +245,19 @@ def test_the_meeting_table_has_a_company_column(logged, db, users):
     _meeting(db, users, date(2026, 6, 10), company="가나테크")
 
     head, rows = _meeting_table(logged.get("/report?month=2026-06").text)
-    assert "기업" in head, f"기업 칸이 없다: {head}"
-    assert rows[0][head.index("기업")] == "가나테크"
+    assert "기업명" in head, f"기업명 칸이 없다: {head}"
+    assert rows[0][head.index("기업명")] == "가나테크"
 
 
 def test_the_meeting_columns_follow_the_reaction_table(logged, db, users):
     """같은 화면의 '이 달의 반응' 표·엑셀 미팅 시트와 **차례가 같다** —
-    날짜 · 담당자 · 투자사 · 기업 · 구분. 한 화면에서 두 표가 같은 것을
+    날짜 · 심사역 · 회사 · 기업명 · 구분(#87 로 이름만 바뀌었다). 한 화면에서 두 표가 같은 것을
     다른 자리에 그리면 읽는 사람이 매번 다시 찾아야 한다."""
     _meeting(db, users, date(2026, 6, 10), company="가나테크")
 
     head, _ = _meeting_table(logged.get("/report?month=2026-06").text)
-    assert head.index("기업") == head.index("담당자 / 투자사") + 1
-    assert head.index("기업") < head.index("구분")
+    assert head.index("기업명") == head.index("심사역 / 회사") + 1
+    assert head.index("기업명") < head.index("구분")
 
 
 @pytest.mark.parametrize("scope, wide", [("", False), ("team", True)])
@@ -273,7 +273,8 @@ def test_the_meeting_header_and_body_have_the_same_cells(client, db, users,
 
     head, rows = _meeting_table(
         client.get(f"/report?month=2026-06&scope={scope}").text)
-    assert ("팀원" in head) is wide, f"scope={scope!r} 인데 머리글이 {head}"
+    # 우리 팀원 칸은 #87 로 `담당자`(투자사 쪽 사람은 `심사역`).
+    assert ("담당자" in head) is wide, f"scope={scope!r} 인데 머리글이 {head}"
     assert rows, "미팅 한 건은 나와야 한다"
     for row in rows:
         assert len(row) == len(head), (
@@ -287,7 +288,7 @@ def test_a_meeting_with_no_company_leaves_the_cell_empty(logged, db, users):
     _meeting(db, users, date(2026, 6, 10))      # 기업을 안 적었다
 
     head, rows = _meeting_table(logged.get("/report?month=2026-06").text)
-    assert rows[0][head.index("기업")] == ""
+    assert rows[0][head.index("기업명")] == ""
     assert len(rows[0]) == len(head), "빈 칸이어도 칸은 서 있어야 한다"
 
 

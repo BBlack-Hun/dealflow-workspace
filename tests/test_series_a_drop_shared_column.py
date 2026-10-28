@@ -46,7 +46,7 @@ def test_the_column_is_gone(logged_in, companies):
     assert "공유한 심사역" not in heads, heads
     # 이 딜을 **우리에게** 넘겨 준 분 칸은 그대로다 — 남는 쪽이다.
     assert "공유 심사역" in heads
-    assert heads[:3] == ["NO", "기업명", "수신 일자"], heads
+    assert heads[:3] == ["NO", "기업명", "수신일"], heads   # #87 — 옆 두 탭과 같은 이름
     assert 'class="sa-shared"' not in table and 'data-testid="sa-shared"' not in table
 
 

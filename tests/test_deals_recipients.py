@@ -898,8 +898,9 @@ def test_미팅_후기에_어느_기업_미팅이었는지_나온다(logged_in, 
     html = logged_in.get("/ir").text
     review = html.split('id="reviews"', 1)
     assert len(review) == 2, "미팅 후기 구역이 없다"
-    assert "<th style=\"width:120px\">기업</th>" in review[1], \
-        "미팅 후기 표에 기업 칸이 없다"
+    # 이름은 #87(10/29)로 IR 기업 현황과 같은 `기업명`.
+    assert "<th style=\"width:120px\">기업명</th>" in review[1], \
+        "미팅 후기 표에 기업명 칸이 없다"
     assert "샘플애그" in review[1]
 
 

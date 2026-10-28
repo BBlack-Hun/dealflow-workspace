@@ -252,7 +252,7 @@ SHARED_FIELDS = ("name", "title", "firm", "phone", "email", "sectors", "round_si
 #: 화면에 부를 이름. 딜 소싱 표의 머리글과 같은 말이고, 그 머리글은 투자사 관리
 #: 현황의 말이다(#63 — 같은 칸은 같은 이름).
 SHARED_LABELS = {"name": "이름", "title": "직함", "firm": "회사",
-                 "phone": "휴대폰", "email": "전자 메일 주소",
+                 "phone": "휴대폰", "email": "이메일",
                  "sectors": "선호 투자분야", "round_size": "라운드 사이즈(투자운영금액)"}
 
 #: 휴대폰으로 인정할 최소 자릿수 — 방을 잇는 규칙과 **같은 값**이다.

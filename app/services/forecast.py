@@ -58,10 +58,12 @@ COLUMNS = (
     ("company_name", "기업명", None),
     ("ceo_name", "대표자명", "스타트업DB — 대표자명"),
     ("ceo_phone", "연락처", "스타트업DB — 대표자 연락처"),
-    ("pre_value", "Pre Value", "스타트업DB — Pre Value"),
+    # #87(10/29) — 금액은 IR 기업 현황 차례(`투자유치희망금액 → Pre Value`), 이름은
+    # `Pre Value` 와 짝인 `Post Value` · `대표자명` 과 같은 `대표자 지분율`.
     ("raise_target", "투자유치희망금액", "스타트업DB — 투자유치희망금액"),
-    ("post_value", "포스트밸류", None),
-    ("ceo_share", "대표이사 지분율", None),
+    ("pre_value", "Pre Value", "스타트업DB — Pre Value"),
+    ("post_value", "Post Value", None),
+    ("ceo_share", "대표자 지분율", None),
     ("meeting_plan", "투자사 미팅 예정일", "딜 진행 관리 미팅 — 예정(아직 안 한 것)"),
     ("meeting1_done", "1차 미팅 완료일", "딜 진행 관리 미팅 — 1차 · 완료"),
     ("meeting2_done", "2차 미팅 완료일", "딜 진행 관리 미팅 — 2차 · 완료"),

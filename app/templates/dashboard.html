@@ -212,11 +212,11 @@
   {% endfor %}
   {% if pipeline.owners %}
   {# 누구 이름이 적혀 있으면 그 사람 몫만 보고 싶어진다 — 이름마다 걸어 둔다.
-     `미지정` 은 **연결 담당이 안 정해진 사람**이라 그 자체가 할 일이다.
+     `미지정` 은 **담당자(우리 팀원)가 안 정해진 사람**이라 그 자체가 할 일이다.
      거는 값은 화면 글자(`미지정`)가 아니라 필터가 쓰는 말이다
      (`dashboard.FILTER_EMPTY`) — 화면 글자로 걸면 눌러도 0줄이 뜬다. #}
   <p class="hint">
-    연결 담당:
+    담당자:
     {% for o in pipeline.owners %}<a href="{{ o.href }}"><b>{{ o.name }}</b> {{ o.count }}명</a>{% if not loop.last %} · {% endif %}{% endfor %}
     — 연결이 끝나야 딜소개 대상이 됩니다.
   </p>
@@ -231,7 +231,7 @@
     그대로 열린다(빠진 것은 이 패널에서지 명단에서가 아니다).
   #}
   {% if pipeline.done %}
-  {# 모양은 바로 위 `연결 담당` 줄과 같게 둔다 — 같은 자리에 서는 요약 줄이
+  {# 모양은 바로 위 `담당자` 줄과 같게 둔다 — 같은 자리에 서는 요약 줄이
      서로 다르게 생기면 하나만 다른 종류의 것으로 읽힌다. #}
   <p class="hint">더 진행하지 않기로 한 명단:
     {% for d in pipeline.done %}<a href="{{ d.href }}">{{ d.label }} {{ d.count }}명</a>{% if not loop.last %} · {% endif %}{% endfor %}

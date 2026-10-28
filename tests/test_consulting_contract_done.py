@@ -277,15 +277,15 @@ def test_기업_관리_바로_뒤에_차례대로_선다(allowed, db, users):
     # 탭이 함께 쓰는 칸 묶음 바로 뒤에 차례대로 선다**는 것.
     at = heads.index("기업 내용")
     assert heads[at - 1] == "기업 관리", heads
-    # 세 마디 뒤로 `소개 메모` · `카톡 연결 여부` 가 차례로 선다(카톡 칸의
-    # 자리는 사용자가 정했다 — `tests/test_consulting_kakao_joined.py`).
-    assert heads[at + 1:at + 6] == [label for label, _f, _k in COLUMNS] \
-        + ["소개 메모", "카톡 연결 여부"], heads
+    # #87(10/29) — IR 기업 현황 차례: `소개 메모`(IR `딜 소개 문구` 자리) → 세 마디 →
+    # `카톡 연결 여부`(`tests/test_consulting_kakao_joined.py`).
+    assert heads[at + 1:at + 6] == ["소개 메모"] + [label for label, _f, _k in COLUMNS] \
+        + ["카톡 연결 여부"], heads
     fields = _fields(body)
     at = fields.index("management_detail")
     assert fields[at - 1] == "management", fields
-    assert fields[at + 1:at + 6] == [field for _l, field, _k in COLUMNS] \
-        + ["deal_pitch", "kakao_joined"], fields
+    assert fields[at + 1:at + 6] == ["deal_pitch"] + [field for _l, field, _k in COLUMNS] \
+        + ["kakao_joined"], fields
 
 
 def test_머리글_수와_몸통_칸_수가_같다(allowed, db, users):
@@ -399,9 +399,11 @@ def test_표_모양은_이름이_아니라_열쇠로_짝짓는다(db):
 
     assert consulting.SHEET_LAYOUTS[cs.STARTUP] == (
         consulting.STARTUP_COLUMNS, consulting.TAIL_COLUMNS)
+    # #87(10/29) — `소개 메모` 가 세 마디 앞(IR 기업 현황 차례), `카톡 연결 여부` 가 맨 뒤.
     assert consulting.STARTUP_COLUMNS[len(consulting.FIXED_COLUMNS):] == [
+        ("소개 메모", "deal_pitch")] + [
         (label, field) for label, field, _key in COLUMNS
-    ] + [("소개 메모", "deal_pitch"), ("카톡 연결 여부", "kakao_joined")]
+    ] + [("카톡 연결 여부", "kakao_joined")]
     assert consulting.layout_of(db, "경영본부 전달 기업") == (
         consulting.FIXED_COLUMNS, consulting.TAIL_COLUMNS)
 

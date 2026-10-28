@@ -54,16 +54,14 @@ OTHER = "샘플 투자사 20"
 # 서 있다가 사용자 요청으로 빠졌고(`tests/test_startup_reply_status_removed.py`),
 # 같은 요청으로 `수정한 날짜` 가 들어왔다(`tests/test_startup_updated_at.py`).
 HEAD = ["NO", "기업명",
-        # "이 기업이 무엇인가" — 걸러 보려고 수정창에서 표로 올렸다. IR 기업
-        # 현황 표와 같은 차례다(`tests/test_startup_filter_columns.py`).
-        "대분류", "소분류", "투자라운드", "IR 자료 유무",
+        # #87(10/29) — 기업 쪽 표는 IR 기업 현황 차례: 대표자 묶음 → 분야 둘 →
+        # 투자라운드(`tests/test_startup_filter_columns.py`).
         "대표자명", "연락처", "이메일",
-        # 사용자가 자리를 못 박았다 — 「이메일 컬럼 오른쪽」
-        # (`tests/test_startup_ir_meeting_date.py`). 아래 흐름 묶음 **앞**이라
-        # ①②→계약 세 칸의 상대 차례는 그대로다.
-        "미팅제공일자",
+        "대분류", "소분류", "투자라운드",
         "투자유치 상태", "당사 협업 상태",
-        "견적서 첨부 여부", "계약여부", "계약서 수신 여부",
+        # `미팅제공일자` 는 IR 기업 현황처럼 `견적서 첨부 여부` 뒤(#87 — 예전에는
+        # 「이메일 컬럼 오른쪽」 요청으로 이메일 바로 뒤였다).
+        "견적서 첨부 여부", "미팅제공일자", "계약여부", "계약서 수신 여부",
         # 사용자가 말한 자리 — **월별 리마인드 앞쪽**. 월별 묶음이 `head` 와
         # `tail` 사이에 통째로 서므로 `head` 의 맨 끝이 곧 그 자리다.
         # 앱이 적는 값이라 눌러 고칠 수 없다(`tests/test_startup_updated_at.py`).
@@ -91,8 +89,9 @@ MONTH_HEADS = [f"{label}{MONTH_SUFFIX}" for label in MONTHS]
 # `카톡 연결 여부` 는 **월별 칸 뒤**다. 사용자가 `IR 자료 수신 여부`(그때
 # 이름은 `회신`) 바로 앞이라고 한 자리이고, 그 자리가 마침 `tail` 의 맨
 # 앞이라 달 칸 묶음을 쪼개지 않는다(`contact_columns.STARTUP_LAYOUT` 의 그 칸 주석).
-TAIL = ["카톡 연결 여부", "IR 자료 수신 여부",
-        "메모 ( 통화내용 /  카톡내용  /  카톡답신내용)"]
+# `IR 자료`(옛 `IR 자료 유무`)는 IR 기업 현황처럼 IR 칸 묶음 자리 — 그 짝 바로 뒤(#87).
+# `메모` 는 투자사 관리 현황 · 딜 소싱과 같은 이름(#87 — 시트 이름은 `메모 ( 통화내용 / …)`).
+TAIL = ["카톡 연결 여부", "IR 자료 수신 여부", "IR 자료", "메모"]
 
 
 def _same(text: str) -> str:
@@ -462,9 +461,10 @@ def test_계약여부_앞뒤에_견적서와_계약서_칸이_선다(sheets):
     **셋의 상대 차례**이고, 묶음의 자리는 아래 `흐름` 검사가 통째로 본다.
     """
     head = _thead(sheets.get(_url(LIST)).text)
-    want = ["견적서 첨부 여부", "계약여부", "계약서 수신 여부"]
+    # #87 — IR 기업 현황처럼 견적서와 계약 사이에 `미팅제공일자` 가 선다.
+    want = ["견적서 첨부 여부", "미팅제공일자", "계약여부", "계약서 수신 여부"]
     at = head.index("견적서 첨부 여부")
-    assert head[at:at + 3] == want, head
+    assert head[at:at + 4] == want, head
     assert head.index("계약서 수신 여부") < head.index(MONTH_HEADS[0]), head
 
 
@@ -1217,13 +1217,13 @@ def test_투자사_관리_현황의_필터는_한_개도_안_바뀐다(sheets):
     """매일 보는 화면이다. 스타트업 쪽을 손보다가 여기가 바뀌면 안 된다.
 
     **재는 것은 필터 키다.** 머리글 이름은 바뀔 수 있고 실제로 바뀌었다
-    (`담당자` → `연결 담당` · `관심도 (월말기준)` → `관심도`). 바뀌면 안 되는
+    (`담당자` → `연결 담당` → #87 로 다시 `담당자` · `관심도 (월말기준)` → `관심도`). 바뀌면 안 되는
     것은 키 쪽이다 — 대시보드 링크와 저장해 둔 주소가 그 키로 들어온다
     (`tests/test_edit_panel_labels.py` 가 이름과 키를 따로 지킨다).
     """
     got = _thead_filters(sheets.get(_url(OTHER)).text)
     want = {
-        "연결 담당": ["assignee"],
+        "담당자": ["assignee"],
         "관심도": ["interest"],
         "카톡방 참여여부": ["joined"],
         "선호 투자분야": ["sector"],
@@ -1252,7 +1252,8 @@ def test_IR_Deck_은_화면에서_바르게_적고_시트는_옛_철자로_읽�
     labels = [c.label for c in contact_columns.STARTUP_LAYOUT.head
               + contact_columns.STARTUP_LAYOUT.extra
               + contact_columns.STARTUP_LAYOUT.tail]
-    assert "IR 자료 유무" in labels, labels
+    # 화면 이름은 #87 로 IR 기업 현황과 같은 `IR 자료`(옛 `IR Deck 유무` → `IR 자료 유무`).
+    assert "IR 자료" in labels, labels
     assert "IR dack 유무" not in labels
 
     # 시트에서 읽는 쪽은 옛 철자 그대로여야 한다.

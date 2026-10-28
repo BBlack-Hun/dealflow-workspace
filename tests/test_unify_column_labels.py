@@ -4,7 +4,8 @@
 말로, 기업 쪽 칸은 IR 기업 현황의 말로 맞춘다. **값 · 동기화 범위는 그대로**다 —
 이름만 바뀐다.
 
-  ① 딜 소싱 머리글 — `선호 투자분야` · `라운드 사이즈(투자운영금액)` · `전자 메일 주소`.
+  ① 딜 소싱 머리글 — `선호 투자분야` · `라운드 사이즈(투자운영금액)` · `전자 메일 주소`
+     (#87 · 10/29 로 화면은 두 화면 다 기업 쪽과 같은 `이메일` — 엑셀 머리글은 그대로).
      이어진 줄 표시(`SHARED_LABELS`)도 같은 말.
   ② 딜 소싱 분야 칸은 투자사 관리 현황과 **같은 고르는 부품**(`data-type="sectors"`).
   ③ 투자사 딜공유 배치 — `회사` · `라운드 사이즈(투자운영금액)`.
@@ -30,7 +31,10 @@ CONTACTS_HTML = (ROOT / "templates" / "contacts.html").read_text(encoding="utf-8
 
 SECTORS = "선호 투자분야"
 ROUND = "라운드 사이즈(투자운영금액)"
+# 엑셀(내려받기 · 올리기) 머리글은 옛 이름 그대로다 — 받아 쓰는 수식이 있다.
 EMAIL = "전자 메일 주소"
+# 화면 머리글은 #87(10/29) 로 기업 쪽과 같은 `이메일`.
+EMAIL_SCREEN = "이메일"
 STAGES = "선호 투자단계"
 FIRM = "회사"
 
@@ -61,10 +65,10 @@ def test_딜_소싱의_같은_칸은_투자사_관리_현황의_말이다():
     labels = {field: label for field, label, _w, _f in COLUMNS}
     assert labels["sectors"] == SECTORS
     assert labels["round_size"] == ROUND
-    assert labels["email"] == EMAIL
+    assert labels["email"] == EMAIL_SCREEN
     # 투자사 관리 현황 표에 **그 글자 그대로** 서 있는 이름이어야 한다.
     heads = _contacts_heads()
-    for word in (SECTORS, ROUND, EMAIL, FIRM, "휴대폰", "직함"):
+    for word in (SECTORS, ROUND, EMAIL_SCREEN, FIRM, "휴대폰", "직함"):
         assert word in heads, f"투자사 관리 현황 머리글에 '{word}' 가 없다: {heads}"
     for field in ("firm", "phone", "title"):
         assert labels[field] in heads
@@ -74,9 +78,9 @@ def test_딜_소싱_화면에_새_이름이_서고_옛_이름은_머리글에_�
     html = seeded.get("/sourcing").text
     heads = [re.sub(r"<[^>]+>", "", m).strip()
              for m in re.findall(r"<th[^>]*>(.*?)</th>", html, re.S)]
-    for word in (SECTORS, ROUND, EMAIL):
+    for word in (SECTORS, ROUND, EMAIL_SCREEN):
         assert word in heads, heads
-    for old in ("투자분야", "라운드 사이즈", "이메일 주소"):
+    for old in ("투자분야", "라운드 사이즈", "이메일 주소", EMAIL):
         assert old not in heads, f"옛 머리글 '{old}' 이 남았다"
     # 필터 선언도 새 이름 — 단추 글자가 이 이름에서 선다(`filters.js`).
     assert f'data-filters="sectors:{SECTORS}"' in html
@@ -147,7 +151,7 @@ def test_투자사_딜공유_배치도_같은_말이다():
     assert labels["firm"] == FIRM
     assert labels["round_size"] == ROUND
     assert labels["sectors"] == SECTORS
-    assert labels["email"] == EMAIL
+    assert labels["email"] == EMAIL_SCREEN
     # 사람이 주인공이라는 판정은 이름이 아니라 차례에서 읽는다 — 그대로다.
     assert cc.firm_leads(cc.INVESTOR_MONTHLY) is False
 
@@ -255,7 +259,7 @@ def test_비교_표의_칸_이름도_같은_말이다():
     from app.services import sheet_import
 
     assert sheet_import._DIFF_LABELS["round_size"] == ROUND
-    assert sheet_import._DIFF_LABELS["email"] == EMAIL
+    assert sheet_import._DIFF_LABELS["email"] == EMAIL_SCREEN
     assert sheet_import._DIFF_LABELS["stages"] == STAGES
     assert sheet_import._DIFF_LABELS["sectors"] == SECTORS
 
