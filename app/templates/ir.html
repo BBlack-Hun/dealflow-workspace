@@ -918,7 +918,7 @@
          같은 미팅을 두 표에서 보는데 칸 순서가 다르면 눈이 매번 다시 찾는다. #}
       <thead><tr>
         <th style="width:118px">날짜 · 시간</th><th style="width:150px">담당자</th>
-        <th style="width:60px">구분</th><th style="width:120px">기업</th>
+        <th style="width:76px">구분</th><th style="width:120px">기업</th>
         <th style="width:72px">결과</th>
         <th style="width:250px">미팅 후기</th>
         <th style="width:300px">결과 문의</th><th style="width:96px"></th>
@@ -956,7 +956,9 @@
                  title="이 투자사에 미팅 후기를 묻는 카톡 보내기 — 담당자가 골라진 채로 열립니다"
                 >{{ m.name }} <span class="muted">{{ m.firm }}</span></a>
             {% else %}{{ m.name }} <span class="muted">{{ m.firm }}</span>{% endif %}</td>
-          <td class="muted">{{ m.kind_label }}</td>
+          {# [2차 미팅 잡기] 는 새 2차 줄을 만든다 — 그 줄이 생기면 1차 줄에 이어진 것을 단다(#77). #}
+          <td class="muted">{{ m.kind_label }}{% if m.next_second %}<br><span class="ok"
+              data-testid="next-second">→ 2차 미팅</span>{% endif %}</td>
           {#
             어느 기업 미팅이었는지. 값은 미팅에 적어 둔 기업 이름(`Meeting.company_name`)
             그대로다 — 등록할 때 적었거나, [전달한 자료]에서 [미팅 잡기]로 넘어오며

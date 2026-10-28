@@ -114,9 +114,13 @@ def _headers(html: str) -> list:
 
 def test_머리글은_탭마다_다른_이름이다(logged_in, composed):
     """같은 이름이면 어느 쪽이 조합 결과인지 화면에서 가를 수 없다."""
-    status = _headers(logged_in.get("/companies").text)
+    html = logged_in.get("/companies").text
+    status = _headers(html)
     assert "딜 소개 문구" in status, status
-    assert "기업 한줄 소개" not in status, "IR 기업 현황에 옛 이름이 남아 있다"
+    # #84 — IR 기업 현황에도 **재료 칸**(`business_desc`)이 옆 탭과 같은 이름으로 선다.
+    # 조합 결과(`one_liner`)는 여전히 `딜 소개 문구` 하나뿐이라 두 칸이 갈린다.
+    assert status.count("기업 한줄 소개") == 1 and status.count("딜 소개 문구") == 1, status
+    assert 'data-field="business_desc"' in _table(html, "status")
 
     db_tab = _headers(logged_in.get("/companies?tab=db").text)
     assert "기업 한줄 소개" in db_tab, db_tab

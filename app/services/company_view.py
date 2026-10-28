@@ -76,7 +76,8 @@ PHONEISH = re.compile(r"^[0-9][0-9\s().+-]*$")
 #: 파일 머리글 — IR 기업 현황 탭의 머리글 그대로(왼쪽부터). `소분류` 뒤의 매출 · 금액
 #: 칸은 해마다 이름이 바뀌어 `view_headers` 가 끼운다(#75 · `revenue_years.columns`).
 VIEW_HEADERS = [
-    "NO", "기업명", "수신일", "대분류", "소분류", "투자라운드", "수정한 날짜", "수정한 팀원",
+    "NO", "기업명", "수신일", "대표자명", "연락처", "이메일", "기업 한줄 소개",
+    "대분류", "소분류", "투자라운드", "수정한 날짜", "수정한 팀원",
     "딜 소개 문구", "담당자", "소개 횟수", "소개 발송(명)", "견적서 첨부 여부",
     "미팅제공일자", "계약여부", "계약서 수신 여부", "성공보수율", "카톡 연결 여부", "홍보메일삭제",
     "핵심/TOP Deal", "IR 자료",
@@ -230,7 +231,9 @@ def to_cells(rows: List[dict], cols) -> List[list]:
     out = []
     for no, r in enumerate(rows, start=1):
         out.append([
-            no, r["name"], r["received_at"], r["sector_major"], r["sector_minor"],
+            no, r["name"], r["received_at"],
+            r["contact_name"], r["contact_phone"], r["contact_email"], r["business_desc"],
+            r["sector_major"], r["sector_minor"],
             # 매출 · 금액 — 화면처럼 **적힌 그대로** 글자다(`amount_cell` 의 `eok`).
             *[r[f] or "" for f, _label in cols],
             # 화면은 투자라운드를 **앞부분만** 보인다(`series_short` — 괄호 안 설명

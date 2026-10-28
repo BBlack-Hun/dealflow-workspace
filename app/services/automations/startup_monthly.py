@@ -4,12 +4,15 @@
 `services/startup_monthly` 의 실은 걷었다). 같은 대표가 매달 같은 날 같은 시각에
 글자 하나 안 다른 글을 받으면 자동으로 찍어 보내는 것으로 읽힌다. 이 자동화는
 
-  · **날짜·시각을 달마다 돌린다** — 기본 `26일 11:00 → 30일 13:00 → 28일 14:00`
-    (자동화 판에서 고친다, 한 줄에 `일 시각`). 몇 번째를 쓰는지는 **달의 번호**
-    로 정한다(연·월로 센 수를 목록 길이로 나눈 나머지) — 서버가 멈췄다 켜져도
-    차례가 밀리지 않는다. 그 달에 없는 날이면 말일, **토·일이면 앞 평일**이다
-    (`slot_for`). 글이 `{달} 말 기준` 현황이라 날짜를 월말에 둔다(사용자 결정
-    2026-10-17).
+  · **날짜·시각을 달마다 돌린다** — 기본 `3주 목 11:00 / 4주 수 11:00`, 곧
+    **홀수 달 셋째 목요일 · 짝수 달 넷째 수요일 11:00**(#73, 사용자 결정
+    2026-10-28 — 10/17 의 월말 순환 `26 11:00 → 30 13:00 → 28 14:00` 을 대신한다).
+    자동화 판에서 고친다 — 한 줄에 `일 시각`(`26 11:00`) 또는 `N주 요일 시각`
+    (`3주 목 11:00`, 1~7일이 1주차라 곧 N번째 그 요일). 몇 번째 줄을 쓰는지는
+    **달의 번호**로 정한다(연·월로 센 수를 목록 길이로 나눈 나머지 — 두 줄이면
+    홀수 달이 첫 줄) — 서버가 멈췄다 켜져도 차례가 밀리지 않는다. 그 달에 없는
+    날이면 말일(N주가 없으면 마지막 그 요일), **토·일이면 앞 평일**이다
+    (`slot_for`). 달 중간에 나가므로 글은 `{날짜} 기준`(보내는 날)이다.
   · **문구를 최대 셋 중에서 돌린다** — 1번은 지금의 `startup_sms` ·
     `startup_sms_tail`, 2·3번은 새 초안(`ir_kakao.VARIANT_KINDS`). 자료(요약 ·
     요청 투자사 목록)와 모양은 같고 인사·맺음 문장만 다르다.
@@ -50,21 +53,33 @@ from .. import automation_runner as runner
 
 log = logging.getLogger(__name__)
 
-DEFAULT_SLOTS = ["26 11:00", "30 13:00", "28 14:00"]
+DEFAULT_SLOTS = ["3주 목 11:00", "4주 수 11:00"]
 
 #: A5 가 꺼져(시험 모드여도) 있을 때 이 달 날짜를 며칠 앞부터 알리나.
 REMIND_DAYS = 10
 
 _SLOT = re.compile(r"(\d{1,2})\s+(\d{1,2}:\d{2})")
+_WEEK_SLOT = re.compile(r"(\d)\s*주(?:차)?\s*(\S)(?:요일)?\s+(\d{1,2}:\d{2})")
 
 
-def parse_slots(lines) -> List[Tuple[int, str]]:
-    """`26 11:00` 줄들 → `[(26, "11:00"), …]`. 못 읽으면 `ValueError`."""
+def parse_slots(lines) -> List[Tuple[object, str]]:
+    """`26 11:00` · `3주 목 11:00` 줄들 → `[(26, "11:00"), ((3, 3), "11:00"), …]`
+    — 날은 일(int) 또는 (주차, 요일 0=월). 못 읽으면 `ValueError`."""
     out = []
     for line in lines:
-        found = _SLOT.fullmatch(str(line).strip())
+        text = str(line).strip()
+        week = _WEEK_SLOT.fullmatch(text)
+        found = week or _SLOT.fullmatch(text)
         if not found:
-            raise ValueError(f"'{line}' — '26 11:00' 처럼 일과 시각을 넣으세요")
+            raise ValueError(f"'{line}' — '26 11:00'(일 시각) 또는 "
+                             "'3주 목 11:00'(주차 요일 시각)처럼 넣으세요")
+        if week:
+            nth = int(week.group(1))
+            if not 1 <= nth <= 5:
+                raise ValueError(f"'{line}' — 주차는 1~5")
+            out.append(((nth, runner.parse_weekday(week.group(2))),
+                        runner.parse_time(week.group(3))))
+            continue
         day = int(found.group(1))
         if not 1 <= day <= 31:
             raise ValueError(f"'{line}' — 날짜는 1~31")
@@ -79,8 +94,11 @@ def _check(values: dict) -> None:
 
 
 FIELDS = (
-    runner.Field("slots", "날짜·시각 순환(한 줄에 '일 시각')", "lines", DEFAULT_SLOTS,
-                 hint="달마다 차례로 — 그 달에 없는 날이면 말일, 토·일이면 앞 평일"),
+    runner.Field("slots", "날짜·시각 순환(한 줄에 '3주 목 11:00' 또는 '26 11:00')",
+                 "lines", DEFAULT_SLOTS,
+                 hint="달마다 차례로 — 두 줄이면 홀수 달 첫 줄 · 짝수 달 둘째 줄. "
+                      "'3주 목' 은 셋째 목요일(1~7일이 1주차, 없으면 마지막 그 요일), "
+                      "'26' 은 26일(없으면 말일) · 토·일이면 앞 평일"),
     runner.Field("variants", "문구 순환 개수", "int", 3, low=1, high=3,
                  hint="1 이면 지금 문구만, 2·3 이면 순환 초안까지 달마다 돌린다"),
 )
@@ -93,9 +111,9 @@ def month_index(day: date) -> int:
 def _weekday_in_month(day: date) -> date:
     """토·일이면 **앞** 평일로 — 대표방이 주말에 울리지 않게(사용자 결정 2026-10-17).
 
-    앞으로 당기는 것은 글이 `{달} 말 기준` 이라 **다음 달로 넘어가면 안 되기**
-    때문이다. 앞 평일이 지난달이면(1일이 토·일) 그 달 첫 평일로 민다 — 어느 쪽이든
-    그 달 안이다.
+    앞으로 당기는 것은 그 달 회차가 **다음 달로 넘어가면 안 되기** 때문이다(한 달에
+    한 번 판정이 달로 센다). 앞 평일이 지난달이면(1일이 토·일) 그 달 첫 평일로
+    민다 — 어느 쪽이든 그 달 안이다.
     """
     back = day
     while back.weekday() >= 5:         # 5=토 6=일
@@ -108,9 +126,17 @@ def _weekday_in_month(day: date) -> date:
 
 
 def slot_for(values: dict, year: int, month: int) -> Tuple[date, str]:
-    """그 달에 나가는 날·시각 — 순환 차례, 없는 날이면 말일, 주말이면 앞 평일."""
+    """그 달에 나가는 날·시각 — 순환 차례, 없는 날이면 말일(없는 N주면 마지막 그
+    요일), 주말이면 앞 평일."""
+    from .. import cadence
+
     slots = parse_slots(values["slots"])
     day, hhmm = slots[month_index(date(year, month, 1)) % len(slots)]
+    if isinstance(day, tuple):
+        when = cadence.nth_weekday(year, month, day[1], day[0])
+        if when.month != month:
+            when -= timedelta(days=7)
+        return _weekday_in_month(when), hhmm
     last = calendar.monthrange(year, month)[1]
     return _weekday_in_month(date(year, month, min(day, last))), hhmm
 
