@@ -304,11 +304,45 @@ def test_투자사_관리_현황은_설정을_펴_둔_채로_연다(sheets):  # 
 
 
 def test_접힌_채로도_무엇이_들어_있는지_보인다(sheets):  # noqa: F811
-    """숨긴 칸이 있는 것을 모르면 "왜 그 칸이 없지" 를 DB 에서 찾게 된다."""
+    """숨긴 칸이 있는 것을 모르면 "왜 그 칸이 없지" 를 DB 에서 찾게 된다.
+
+    10/28 부터 개수는 한 겹 더 접은 `그 밖의 설정` 여는 줄에 붙는다.
+    """
     body = sheets.get(_url(LIST)).text
     summary = re.search(r"<summary>(.*?)</summary>", body, re.S).group(1)
     assert "명단" in summary and "칸" in summary, summary
-    assert "달 칸" in summary, f"달 칸이 몇 개인지 접힌 줄에 안 적혀 있습니다: {summary}"
+    more = re.search(r'<details class="sheet-fold sheet-fold-more">\s*<summary>(.*?)</summary>',
+                     body, re.S)
+    assert more, "그 밖의 설정 상자가 없습니다"
+    assert "달 칸" in more.group(1), \
+        f"달 칸이 몇 개인지 접힌 줄에 안 적혀 있습니다: {more.group(1)}"
+
+
+def test_설정_상자를_열면_이름_고치기만_보인다(sheets, db, users):  # noqa: F811
+    """10/28 사용자 요청 — 이름 고치기만 바로 보이고 나머지는 한 겹 더 접는다.
+
+    지우지 않고 접은 것이라 관리자 단추·안내 줄은 안쪽 상자에 그대로 있다.
+    """
+    users["u1"].role = "admin"
+    db.commit()
+    for sheet in (LIST, OTHER):          # 스타트업 · 투자사 두 화면이 같은 틀이다
+        body = sheets.get(_url(sheet)).text
+        outer = re.search(r'<details class="sheet-fold"(?: open)?>(.*)</details>\s*</div>\s*</details>',
+                          body, re.S)
+        assert outer, f"{sheet}: 설정 상자를 못 찾았습니다"
+        inner = re.search(r'<details class="sheet-fold sheet-fold-more">(.*)', outer.group(1), re.S)
+        assert inner, f"{sheet}: 그 밖의 설정 상자가 없습니다"
+        assert "<details class=\"sheet-fold sheet-fold-more\" open" not in body, \
+            "그 밖의 설정이 펴진 채로 섭니다"
+        before = outer.group(1)[:inner.start()]
+        assert 'action="/api/contacts/sheets/rename"' in before, \
+            f"{sheet}: 이름 고치기가 접힌 상자 밖에 없습니다"
+        # [칸 추가] 는 달 칸이 서는 배치(스타트업 명단)에만 선다.
+        month = ('action="/api/contacts/columns"',) if sheet == LIST else ()
+        for hidden in ('action="/api/contacts/sheets/assign"', 'id="tab-delete-btn"',
+                       "<p class=\"hint\">", *month):
+            assert hidden not in before, f"{sheet}: {hidden} 가 접히지 않았습니다"
+            assert hidden in inner.group(1), f"{sheet}: {hidden} 가 사라졌습니다"
 
 
 def test_지난_칸_펴기는_접지_않는다(sheets):  # noqa: F811

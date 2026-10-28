@@ -105,6 +105,16 @@ def ir_names(db: Session) -> Dict[str, tuple]:
     return out
 
 
+def _contract(c: SeriesACompany) -> dict:
+    """`계약여부`(열쇠와 칸에 보일 말)와 `계약서 수신 여부` — IR 기업 현황 표와 같은 꼴
+    (`companies.company_rows`). 비어 있으면 `미계약` 이다(IR 의 기본값과 같다)."""
+    from .companies import CONTRACT_LABELS, contract_key
+
+    key = contract_key(c.contract_status)
+    return {"contract_status": key, "contract_label": CONTRACT_LABELS.get(key, "미계약"),
+            "contract_received": c.contract_received or ""}
+
+
 def row_dict(c: SeriesACompany, known: Dict[str, tuple],
              people: Optional[Dict[int, Set[int]]] = None,
              sharer: Optional[dict] = None) -> dict:
@@ -134,6 +144,8 @@ def row_dict(c: SeriesACompany, known: Dict[str, tuple],
         "detail": c.detail or "",
         "deal_pitch": c.deal_pitch or "",
         **{f: getattr(c, f) or "" for f in TYPED},
+        # `계약여부` · `계약서 수신 여부`(0125) — IR 기업 현황과 같은 열쇠 · 같은 말.
+        **_contract(c),
         # IR 기업 현황에 같은 기업이 있으면 그 탭에 적힌 이름 — 딱지가 그 이름으로
         # 그 탭을 연다(`/companies?q=…` 가 검색칸을 채운다).
         "ir_name": ir_name,
@@ -227,7 +239,7 @@ def count(db: Session) -> int:
 
 def render_page(request: Request, db: Session, user: User, msg: str = "", q: str = ""):
     """`/companies?tab=series-a` — `companies.companies_page` 가 부른다."""
-    from .companies import can_delete_company, tab_counts
+    from .companies import CONTRACT_LABELS, can_delete_company, tab_counts
 
     rows = table_rows(db)
     ctx = base_ctx(request, db, user, active="su")
@@ -245,6 +257,8 @@ def render_page(request: Request, db: Session, user: User, msg: str = "", q: str
         # 안내 글 — 올해 매출 칸이 IR 의 어느 칸과 잇는지(`company_sync._year_slot`).
         "ir_recent_label": revenue_years.recent_label(),
         "this_yy": f"{revenue_years.this_year() % 100:02d}",
+        # `계약여부` 고르개의 보기 — IR 기업 현황 표와 같은 목록.
+        "contract_labels": CONTRACT_LABELS,
     })
     # 관리자가 붙인 추가 칸 — 옆 두 탭과 **같은 칸**(`custom_columns.TARGETS`).
     ctx.update(custom_columns.view(db, "companies", "series_a_companies"))
@@ -278,6 +292,9 @@ class SeriesAIn(BaseModel):
     funding_total: Optional[str] = None
     raise_target: Optional[str] = None
     pre_value: Optional[str] = None
+    # `계약여부` · `계약서 수신 여부`(0125) — IR 기업 현황과 같은 판정으로 거른다(`_assign`).
+    contract_status: Optional[str] = None
+    contract_received: Optional[str] = None
     # 보낼 IR 자료 **파일 이름**(0118) — IR 기업 현황의 `IR 자료 파일명` 과 같은 규칙.
     ir_file_name: Optional[str] = None
     # `휴대폰`(#25) — 이 줄의 칸이 아니라 확정한 공유 심사역의 딜 소싱 줄에 적는다.
@@ -330,6 +347,8 @@ def _check_ir_file(db: Session, row: SeriesACompany, body: SeriesAIn) -> None:
 
 
 def _assign(row: SeriesACompany, body: SeriesAIn) -> None:
+    from .companies import checked_contract, checked_ox
+
     for field, value in body.model_dump(exclude_unset=True, exclude={"sharer_phone"}).items():
         text = (value or "").strip()
         if field == "shared_by" and text != (row.shared_by or "").strip():
@@ -345,6 +364,11 @@ def _assign(row: SeriesACompany, body: SeriesAIn) -> None:
             # 시트 가져오기와 **같은 모양**으로 맞춘다(`2026.7.1` → `2026-07-01`).
             # 다르게 넣으면 같은 딜이 다음 가져오기에서 다른 열쇠로 읽힌다.
             row.received_at = day_text(text) or None
+        elif field == "contract_status":
+            # IR 기업 현황과 같은 판정 — 칸에 보이는 말(`유료계약완료`)도 열쇠로 받고, 모르는 말은 400.
+            row.contract_status = checked_contract(text)
+        elif field == "contract_received":
+            row.contract_received = checked_ox(field, text)
         else:
             setattr(row, field, text or None)
 
@@ -362,7 +386,8 @@ def _result(row: SeriesACompany, db: Session) -> dict:
     out = {key: data[key] for key in (
         "id", "name", "received_at", "deal_type", "assignee_name", "shared_by",
         "source_firm", "sector_major", "sector_minor", "series", "detail",
-        "deal_pitch", *TYPED, "ir_file_name", "received_sort", "series_short", "ir_name",
+        "deal_pitch", *TYPED, "contract_status", "contract_label", "contract_received",
+        "ir_file_name", "received_sort", "series_short", "ir_name",
         "ir_file", "search", "sharer", "sharer_phone")}
     out["ir_link"] = ir_link.badge_for(db, row)
     return out

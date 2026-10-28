@@ -7,8 +7,8 @@
 
   시트 `Series A 이상 기업` 을 옮긴 표다. **한 줄은 딜 소싱으로 받은 딜 한 건**
   이고(`models.SeriesACompany`), 옆 두 탭(`ir_companies`)과 다른 표다. 그래서
-  화면 파일도 따로다 — 옆 두 탭의 [수정] 창 · 소개 가능 판정 · 계약 칸이 이
-  표에는 하나도 안 맞는다. 같이 쓰는 것은 탭 줄(`_company_tabs.html`)과 표
+  화면 파일도 따로다 — 옆 두 탭의 [수정] 창 · 소개 가능 판정이 이 표에는 안
+  맞는다(계약 두 칸은 0125 에 IR 표와 같은 보기로 더했다 — `이메일` 오른쪽). 같이 쓰는 것은 탭 줄(`_company_tabs.html`)과 표
   부품 넷(`inline_edit.js` · `filters.js` · `table_sort.js` + 이 화면의
   `series_a.js`)이다.
 
@@ -157,6 +157,13 @@
         <th style="width:70px" title="{{ typed_tip }}">대표자명</th>
         <th style="width:104px" title="{{ typed_tip }}">연락처</th>
         <th style="width:170px" title="{{ typed_tip }}">이메일</th>
+        {# 계약여부 · 계약서 수신 여부(0125 · 10/28 요청 "이메일 오른쪽으로"). IR 기업 현황의
+           같은 두 칸과 **같은 보기 · 같은 폭 · 같은 필터 열쇠**다(`companies.html` 의 그 칸 주석 —
+           폭은 가장 긴 값 · 고른 뒤의 필터 단추에 맞췄다). IR 기업에 이어진 줄은 따라 고친다. #}
+        <th style="width:134px" data-filters="contract:계약여부"
+            title="IR 기업 현황의 계약여부와 같은 보기 · IR 기업에 이어진 줄은 함께 고쳐집니다 · 눌러서 수정">계약여부<div class="th-filters"></div></th>
+        <th style="width:148px" data-filters="received:계약서 수신 여부"
+            title="O · X · 비움(아직 안 정함) · IR 기업에 이어진 줄은 함께 고쳐집니다 · 눌러서 수정">계약서 수신 여부<div class="th-filters"></div></th>
         <th class="num" style="width:74px" title="{{ amount_tip }}">24년 매출</th>
         <th class="num" style="width:74px" title="{{ amount_tip }}">25년 매출</th>
         <th class="num" style="width:74px" title="{{ amount_tip }}">26년 매출</th>
@@ -186,6 +193,8 @@
           data-f-sector="{{ r.sector_major }}"
           data-f-minor="{{ r.sector_minor }}"
           data-f-series="{{ r.series_short }}"
+          data-f-contract="{{ r.contract_label }}"
+          data-f-received="{{ r.contract_received }}"
           {# 세울 값 — 날짜로 적힌 것만(`received_sort_key`). 날짜가 아닌 줄은 빈
              값이라 방향과 상관없이 늘 끝에 선다(`table_sort.js`). #}
           data-s-received_at="{{ r.received_sort }}"
@@ -251,6 +260,14 @@
         <td class="cell" data-field="ceo_name">{{ r.ceo_name }}</td>
         <td class="cell" data-field="ceo_phone">{{ r.ceo_phone }}</td>
         <td class="cell ellipsis" data-field="ceo_email" title="{{ r.ceo_email }}">{{ r.ceo_email }}</td>
+        {# 칸에는 **말**이 보이고 저장되는 것은 열쇠다 — 저장 뒤 말은 응답(`contract_label`)이
+           준다(`series_a.js`). 보기는 늘 다 세운다(`data-choices` — IR 표와 같은 까닭). #}
+        <td class="cell" data-field="contract_status" data-type="pick"
+            data-filter-key="contract"
+            data-choices="{{ contract_labels.values()|join(', ') }}">{{ r.contract_label }}</td>
+        <td class="cell" data-field="contract_received" data-type="pick"
+            data-filter-key="received"
+            data-choices="O,X">{{ r.contract_received }}</td>
         <td class="cell num" data-field="revenue_2024">{{ r.revenue_2024 }}</td>
         <td class="cell num" data-field="revenue_2025">{{ r.revenue_2025 }}</td>
         <td class="cell num" data-field="revenue_2026">{{ r.revenue_2026 }}</td>
@@ -283,7 +300,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="25" class="muted">아직 받은 딜이 없습니다. [기업 추가]로 넣거나 시트를 가져오세요.</td></tr>
+      <tr><td colspan="27" class="muted">아직 받은 딜이 없습니다. [기업 추가]로 넣거나 시트를 가져오세요.</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -296,8 +313,8 @@
   이 딜이 빠지므로, 맞는 분을 <b>[이 분으로 확정]</b>하면 이름 · 회사로 짐작하지 않고 그 분만 뺍니다.
   확정한 분의 번호는 <b>휴대폰</b>에 보이고, 여기서 고치면 딜 소싱 · 투자사 관리 현황에도 반영됩니다.
   기업명 밑 <b>IR 기업:</b> 은 IR 기업 현황의 그 기업과 이어진 줄입니다 — <b>대표자명 · 연락처 · 이메일 ·
-  매출 · 누적투자금액 · 투자유치희망금액 · Pre Value</b> 를 한쪽에서 고치면 다른 쪽도 따라 고칩니다
-  (비운 칸은 안 따라갑니다). {{ this_yy }}년 매출은 IR 의 <b>{{ ir_recent_label }}</b> 과 잇고, 앞으로 올 해 칸은 잇지 않습니다.
+  계약여부 · 계약서 수신 여부 · 매출 · 누적투자금액 · 투자유치희망금액 · Pre Value</b> 를 한쪽에서 고치면
+  다른 쪽도 따라 고칩니다(비운 칸은 안 따라가고, <b>딜소개 불가</b>는 저절로 옮기지 않습니다). {{ this_yy }}년 매출은 IR 의 <b>{{ ir_recent_label }}</b> 과 잇고, 앞으로 올 해 칸은 잇지 않습니다.
   기업명을 넣거나 고치면 이름이 정확히 하나 맞는 IR 기업에 저절로 이어지고(<b>자동 연결</b> —
   IR 기업 현황에 그 기업이 나중에 생겨도). 이름이 같은 IR 기업이 여럿인 줄과 서로 다른 값(<b>값 다름</b>)은
   <a href="/ir-link?tab=series-a">IR 기업 연결 › Series A 이상 딜 소싱</a>에서 사람이 고릅니다.
