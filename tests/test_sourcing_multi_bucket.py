@@ -297,16 +297,14 @@ def test_candidates_skip_investors_already_linked_in_the_same_branch(board, db, 
     assert [x["id"] for x in picks[in_sa.id]] == [contact.id]   # 시리즈 A 에서는 후보
 
 
-def test_m_and_a_rows_still_borrow_the_investor_room(board, db, users):
-    """방 규칙은 그대로 — M&A 줄은 자기 방이 없으면 투자사 방을 이어받는다."""
+def test_m_and_a_rows_do_not_borrow_the_investor_room(board, db, users):
+    """M&A 줄도 시리즈 A 처럼 — 자기 방이 없으면 `방 없음`, 투자사 방을 안 이어받는다."""
     from app.services import sourcing_link
 
     contact = vc(db, users)
     pick(board, contact.id, "Series A, M&A")
     sa, mna = rows_of(db, SYNC)[0], rows_of(db, MNA)[0]
-    linked = sourcing_link.linked_rooms(db, [sa, mna])
-    assert sa.id not in linked
-    assert linked[mna.id]["room"] == "홍길동 방"
+    assert sourcing_link.linked_rooms(db, [sa, mna]) == {}
 
 
 # ── ⑥ M&A 월간 리마인드 ─────────────────────────────────────────────────────
@@ -472,15 +470,14 @@ def test_auto_link_pass_runs_on_ceo_and_solo_tabs(board, db, users):
 
 
 def test_ceo_and_solo_sending_rules_stay_as_they_were(board, db, users):
-    """잇기만 늘었다 — 방은 예전처럼 투자사 방을 이어받고(시리즈 A 만 안 받는다),
+    """잇기만 늘었다 — 방은 시리즈 A 처럼 투자사 방을 이어받지 않고,
     Series A 딜 공유는 시리즈 A 에만, 호칭 · 개수는 갈래 이름 그대로."""
     from app.services import series_a_share, sourcing_link, sourcing_msg
 
     contact = vc(db, users)
     pick(board, contact.id, "대표, 개인참여")
     ceo, solo = rows_of(db, CEO)[0], rows_of(db, SOLO)[0]
-    linked = sourcing_link.linked_rooms(db, [ceo, solo])
-    assert linked[ceo.id]["room"] == linked[solo.id]["room"] == "홍길동 방"
+    assert sourcing_link.linked_rooms(db, [ceo, solo]) == {}
     assert not series_a_share.is_share_bucket(CEO) and not series_a_share.is_share_bucket(SOLO)
     assert (sourcing_msg.honorific(CEO), sourcing_msg.deal_count(CEO)) == ("대표", 5)
     assert (sourcing_msg.honorific(SOLO), sourcing_msg.deal_count(SOLO)) == ("심사역", 2)

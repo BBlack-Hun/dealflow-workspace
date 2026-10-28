@@ -337,14 +337,3 @@ def test_canceled_twin_send_does_not_block(client, db, twins):
     r = _send(client, twins["company"], [twins["b"]])
     assert r.status_code == 200 and r.json()["skipped"] == []
 
-
-def test_sourcing_link_keeps_room_for_twin_copies(db, users):
-    """같은 분의 두 팀원 몫(번호·방 같음)은 번호 겹침으로 치지 않는다."""
-    from app.services import sourcing_link
-    room = "홍길동 심사역님 가나다벤처스"
-    rows = [VcContact(user_id=u, name="홍길동", firm="가나다벤처스",
-                      phone="010-0000-0000", kakao_room_name=room)
-            for u in (1, 2)]
-    assert sourcing_link._by_phone(rows)["01000000000"].kakao_room_name == room
-    rows[1].kakao_room_name = "다른 방"
-    assert "01000000000" not in sourcing_link._by_phone(rows)

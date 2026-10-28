@@ -79,7 +79,7 @@ def query_of(contact: SourcingContact) -> str:
 def needs_room(db: Session, rows: Iterable[SourcingContact]) -> List[SourcingContact]:
     """보낼 방이 **없는** 줄 — 자기 방 이름도, 이어받을 투자사 방도 없다.
 
-    이어받기 규칙은 `sourcing_link.linked_rooms` 한 곳이다(시리즈 A 갈래는 안
+    이어받기 규칙은 `sourcing_link.linked_rooms` 한 곳이다(어느 갈래도 안
     이어받는다). 발송이 방을 고르는 그 함수를 같이 지나야 '방 없음' 표시와
     실제로 못 보내는 줄이 같다.
     """
