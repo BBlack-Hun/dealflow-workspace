@@ -358,6 +358,20 @@ function main() {
       "구분 없는 [미팅 잡기] 뒤에도 2차가 남았다 ★ 1차 미팅이 2차로 적힌다");
   }
 
+  // ── 15. [2차 미팅 잡기] 는 폼을 열고 **날짜 칸에 바로 커서**(#77) ────────
+  {
+    const dom = build();
+    run(dom);
+    const box = dom.root.querySelector("#new-meeting");
+    const when = D.el("input", { type: "date", name: "scheduled_at" });
+    box.querySelector("form").appendChild(when);
+    let focused = 0;
+    when.focus = function () { focused += 1; };
+    dom.bookBtn.fire("click");
+    assert.strictEqual(box.hidden, false, "미팅 등록 폼이 안 열렸다");
+    assert.strictEqual(focused, 1, "날짜 칸에 커서가 안 갔다");
+  }
+
   console.log("ir_contact_search_test OK");
 }
 

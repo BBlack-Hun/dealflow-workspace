@@ -613,6 +613,13 @@ def meeting_rows(db: Session, user: User) -> List[dict]:
         if when_iso > latest.get(row.contact_id, ""):
             latest[row.contact_id] = when_iso
 
+    # 담당자·기업별 **취소 안 된 2차 미팅 날짜들** — 1차 줄에 '→ 2차 미팅' 을 단다(#77).
+    seconds: Dict[Tuple[int, str], List[str]] = {}
+    for row in rows:
+        if row.kind == "second" and row.status != "canceled":
+            seconds.setdefault((row.contact_id, (row.company_name or "").strip()),
+                               []).append(row.scheduled_at or "")
+
     out = []
     for row in rows:
         contact = contacts.get(row.contact_id)
@@ -668,6 +675,10 @@ def meeting_rows(db: Session, user: User) -> List[dict]:
                                and (row.outcome or "") not in NO_FOLLOWUP_OUTCOMES
                                and not superseded),
             "superseded": superseded,
+            # 같은 담당자·같은 기업의 2차 미팅이 이 1차 뒤로 잡혀 있다(#77).
+            "next_second": row.kind == "first" and any(
+                at >= (row.scheduled_at or "") for at in seconds.get(
+                    (row.contact_id, (row.company_name or "").strip()), [])),
             # 결과를 물어볼 날이 지났는데 아직 안 물어봤다
             "followup_due_now": bool(
                 row.status == "done" and not row.followup_done

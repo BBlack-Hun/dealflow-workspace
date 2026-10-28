@@ -479,6 +479,39 @@ def test_a_reviewing_meeting_can_loop_back_to_a_second_one(client, db, users):
     assert 'data-kind="second"' in body
 
 
+def test_the_first_meeting_row_says_a_second_one_followed(client, db, users):
+    """#77 — [2차 미팅 잡기] 로 새 2차 줄이 생기면 1차 줄 구분 옆에 '→ 2차 미팅'.
+    다른 기업의 2차 · 취소된 2차 · 1차보다 앞선 2차는 이어진 것이 아니다."""
+    from app.models import Meeting, VcContact
+    from app.services import pipeline
+
+    contact = VcContact(user_id=users["u1"].id, name="홍길동", firm="가나벤처스")
+    db.add(contact)
+    db.commit()
+
+    def meeting(kind, when, company, status="done"):
+        row = Meeting(user_id=users["u1"].id, contact_id=contact.id, kind=kind,
+                      status=status, company_name=company, scheduled_at=when)
+        db.add(row)
+        db.commit()
+        return row.id
+
+    linked = meeting("first", "2026-10-01", "샘플애그")
+    meeting("second", "2026-10-20", "샘플애그 ", status="scheduled")
+    other = meeting("first", "2026-10-02", "샘플랩")
+    meeting("second", "2026-10-21", "샘플바이오", status="canceled")
+    late = meeting("first", "2026-10-25", "샘플바이오")
+    flags = {r["id"]: r["next_second"] for r in pipeline.meeting_rows(db, users["u1"])}
+    assert flags[linked] is True
+    assert flags[other] is False and flags[late] is False
+
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    body = client.get("/ir").text
+    reviews = body.split('id="review-table"', 1)[1]
+    assert reviews.count('data-testid="next-second"') == 1
+    assert "→ 2차 미팅" in reviews
+
+
 def test_a_rejected_meeting_does_not_suggest_another(client, db, users):
     """이미 거절·보류로 끝난 건에 다음 미팅을 권하면 안 된다."""
     from datetime import date
