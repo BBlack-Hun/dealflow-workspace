@@ -184,7 +184,11 @@ def _heads(html: str) -> list:
     m = re.search(r"<thead>(.*?)</thead>", html, re.S)
     assert m, "표 머리글을 찾지 못했습니다"
     out = []
-    for cell in re.findall(r"<th\b[^>]*>(.*?)</th>", m.group(1), re.S):
+    # 이어진 IR 기업의 읽기 전용 칸(#83 · `ir-ro`)은 이 표의 칸이 아니라 뺀다 — 자리는
+    # `tests/test_ir_readonly_cols.py` 가 지킨다.
+    for attrs, cell in re.findall(r"<th\b([^>]*)>(.*?)</th>", m.group(1), re.S):
+        if "ir-ro" in attrs:
+            continue
         # 월 열의 [✕](삭제 폼)은 이름이 아니다.
         cell = re.sub(r"<form\b.*?</form>", " ", cell, flags=re.S)
         out.append(" ".join(re.sub(r"<[^>]+>", " ", cell).split()))

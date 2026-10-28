@@ -31,7 +31,7 @@ from ..models import (AutomationSend, ContactActivity, ContactColumn, DealFollow
                       Meeting, SendItem, SendJob, SenderRoom, SendSequence,
                       SourcingContact, User, VcContact)
 from ..services import (contact_columns, deal_stage, firm_type, investor_firms,
-                        last_activity, manual_send, meeting_kind, memo_intro,
+                        ir_readonly, last_activity, manual_send, meeting_kind, memo_intro,
                         room_joined,
                         room_name, sheet_import, sheet_owner, sourcing_sync)
 from ..services.room_name import DEFAULT_SUFFIX, build_room_name
@@ -353,6 +353,8 @@ def contact_rows(db: Session, user: User, team_wide: bool = False,
             # 아무도 안 고친 줄이다. 화면이 옅게 적고 짚어서 말해 준다 —
             # 값을 비우지는 않는다(빈 칸은 '못 읽었다' 로도 읽힌다).
             "updated_never": stamp_text(c.updated_at) == stamp_text(c.created_at),
+            # 이어 둔 IR 기업 — 스타트업 표의 읽기 전용 IR 칸이 이 번호로 값을 찾는다(#85).
+            "ir_company_id": c.ir_company_id,
         })
     return rows
 
@@ -1358,7 +1360,11 @@ def update_contact(
            # `딜 소싱` 칸은 **서버가 읽은 값**으로 다시 그린다(갈래마다 딱지) — 화면이
            # 고른 글자를 그대로 두면 필터와 칸이 다른 말을 한다(`contacts.js`).
            # 갈래에 새 줄이 생기거나 이어지면 `참여 요청일` 도 함께 바뀐다.
-           **_sourcing_cells(linked)}
+           **_sourcing_cells(linked),
+           # 이어진 IR 기업의 읽기 전용 칸(#85) — 기업명을 고쳐 새로 이어지면(또는 풀리면)
+           # 그 자리에서 다시 그린다(`contacts.js`). 안 이었으면 빈 묶음이다.
+           "ir_values": ir_readonly.values(db, [contact.ir_company_id]).get(
+               contact.ir_company_id, {})}
     for field, list_key in FIRM_LISTS.items():
         if getattr(body, field) is None:
             continue

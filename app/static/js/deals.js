@@ -37,7 +37,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   // 딜소개 말고는 전부 기업 목록 없이 문구만 나간다.
   // 이미 목록을 받은 사람에게 같은 목록을 다시 밀어 넣는 것은 후속이 아니라 재발송이다.
   var FOLLOW_UP = { ask: "선호 분야 묻기", remind: "리마인드", meeting: "미팅 요청",
-                    review: "미팅 후기", ir: "IR 자료 전달",
+                    review: "미팅 후기", ir: "IR 자료 전달", ir_review: "IR 자료 검토 요청",
                     sourcing: "딜 소싱 제안" };
   // ── 딜 소싱 제안의 [보낼 문구] ─────────────────────────────────────────
   //
@@ -1085,12 +1085,13 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     opening_first: "첫 연락", opening_re: "재연락",
     closing_day1: "딜소개", closing_remind: "리마인드",
     closing_meeting: "미팅 요청", ask_preference: "선호 분야",
-    meeting_review: "미팅 후기", ir_delivery: "IR 자료 전달"
+    meeting_review: "미팅 후기", ir_delivery: "IR 자료 전달",
+    ir_review_request: "IR 자료 검토 요청"
   };
   // 고르지 않았을 때 쓰는 문구의 이름. '기본' 만으로는 무엇의 기본인지 모른다.
   var CLOSING_DEFAULT = {
     deal: "기본 안내문", remind: "기본 안내문", meeting: "기본 안내문",
-    review: "기본 문구", ask: "기본 문구", ir: "기본 문구",
+    review: "기본 문구", ask: "기본 문구", ir: "기본 문구", ir_review: "기본 문구",
     sourcing: "갈래별 기본 문구"
   };
 
@@ -1108,6 +1109,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     var kindByMode = { ask: "ask_preference", remind: "closing_remind",
                        meeting: "closing_meeting", review: "meeting_review",
                        deal: "closing_day1", ir: "ir_delivery",
+                       ir_review: "ir_review_request",
                        sourcing: "sourcing_intro" };
     // 딜 소싱은 [보낼 문구]가 종류를 정한다(처음 안내 / 월간 리마인드).
     var closingKind = mode === "sourcing" ? sourcingTopic : kindByMode[mode];

@@ -258,6 +258,10 @@ class Layout:
     # 줄을 받는다 — 이름이 없는 줄은 표에서 빈칸으로 서서 어느 기업인지 알
     # 수가 없다(그리고 지우려 해도 무엇을 지우는지 확인창이 말해 주지 못한다).
     required: str = "name"
+    #: 이 칸 **바로 뒤**에 이어진 IR 기업의 칸을 읽기만 하는 묶음을 세운다(#85 —
+    #: `services/ir_readonly.py`). 비면 안 세운다. 표에만 서고 수정창 · 엑셀에는 없다
+    #: (`panel_columns` 는 `head` 를 그대로 읽는다 — 고치는 곳은 IR 기업 현황이다).
+    ir_after: str = ""
     #: 그 칸을 사람에게 부르는 말. **표 머리글이 있으면 그것을 그대로 쓴다**
     #: (아래 `required_label`) — 두 곳에 적어 두면 표는 `기업명`, 안내는
     #: `회사명` 이 되어 같은 칸인지 알아볼 수가 없다. 이 값은 머리글이 화면에
@@ -412,6 +416,11 @@ STARTUP_LAYOUT = Layout(
     # 이 명단에서 줄 하나를 알아보는 이름은 **기업명**이다(`이름` 이 아니다).
     # 성함은 비어 있는 줄이 흔하다 — 담당자를 아직 모르는 기업이 그렇다.
     required="firm",
+    # 이어진 IR 기업의 매출 · 금액 · 특이사항 · 설립년도 · 지역 · 정책자금 — `이메일`
+    # 오른쪽(#85, 10/28 '추천대로'). `이메일` **바로** 오른쪽은 사용자가 `미팅제공일자`
+    # 로 못 박은 자리라(그 칸도 IR 과 따라 고치는 칸이다) 그 칸 바로 뒤에 선다.
+    # 읽기만 한다(`services/ir_readonly.py`).
+    ir_after="ir_meeting_offered_at",
     # 이 배치를 쓰는 명단은 좌측 [스타트업] 화면에 선다 — 투자사
     # 관리 현황이 아니다. 두 곳에 다 뜨면 어느 쪽이 최신인지 알 수 없다.
     page=PAGE_STARTUP,
@@ -1360,9 +1369,14 @@ def table_columns(layout: Layout, months: List[ContactColumn]) -> List[Column]:
     **월별 칸은 배치가 부를 때만 선다**(`layout.monthly`). 명단에 달 칸이 있어도
     표에 안 세우는 배치가 있다 — 투자사 명함 표가 그렇다(위 주석 참고).
     """
-    return ([c for c in layout.head if c.in_table]
-            + ([as_column(m, layout) for m in months] if layout.monthly else [])
-            + [c for c in layout.tail if c.in_table])
+    out = ([c for c in layout.head if c.in_table]
+           + ([as_column(m, layout) for m in months] if layout.monthly else [])
+           + [c for c in layout.tail if c.in_table])
+    at = next((i for i, c in enumerate(out) if c.key == layout.ir_after), None)
+    if layout.ir_after and at is not None:
+        from .ir_readonly import startup_columns   # 그 모듈이 이 파일의 `Column` 을 읽는다
+        out[at + 1:at + 1] = startup_columns()
+    return out
 
 
 # 여러 명단을 **한 표로** 볼 때만 서는 칸 — 그 줄이 어느 명단의 줄인가(#22).

@@ -108,12 +108,16 @@ def _same(text: str) -> str:
 
 # ── 화면 읽기 ───────────────────────────────────────────────────────────────
 
-def _thead(html: str) -> list:
-    """그려진 표의 머리글 이름들. **정적 글자가 아니라 그려진 화면**을 본다."""
+def _thead(html: str, ir: bool = True) -> list:
+    """그려진 표의 머리글 이름들. **정적 글자가 아니라 그려진 화면**을 본다.
+
+    `ir=False` — 이어진 IR 기업의 읽기 전용 칸(#85 · `ir-ro`)은 시트에 없는 칸이라
+    뺀다. 그 칸의 자리는 `tests/test_ir_readonly_cols.py` 가 지킨다."""
     m = re.search(r"<thead>(.*?)</thead>", html, re.S)
     assert m, "표 머리글을 찾지 못했습니다"
-    return [_flat(cell) for _attrs, cell
-            in re.findall(r"<th\b([^>]*)>(.*?)</th>", m.group(1), re.S)]
+    return [_flat(cell) for attrs, cell
+            in re.findall(r"<th\b([^>]*)>(.*?)</th>", m.group(1), re.S)
+            if ir or "ir-ro" not in attrs]
 
 
 def _thead_cells(html: str) -> list:
@@ -206,7 +210,7 @@ def test_이_명단의_머리글은_원본_시트와_같다(sheets):
     원본 시트를 쓰던 사람이 자기 칸을 찾을 수 있어야 한다. 한 글자라도 다르면
     시트와 나란히 놓고 대조할 때마다 "이게 그 칸인가" 를 멈춰서 확인해야 한다.
     """
-    got = _thead(sheets.get(_url(LIST)).text)
+    got = _thead(sheets.get(_url(LIST)).text, ir=False)
     # 마지막 칸은 [수정] 단추 자리라 이름이 없다.
     want = [_same(t) for t in HEAD + MONTH_HEADS + TAIL]
     assert got[:-1] == want, (
@@ -714,7 +718,7 @@ def test_숨김을_되돌리면_칸도_값도_그대로_돌아온다(sheets, db,
     assert _hide(sheets, column.id).status_code == 303
     assert _hide(sheets, column.id).status_code == 303
     html = sheets.get(_url(LIST)).text
-    assert _thead(html)[:-1] == [_same(t) for t in HEAD + MONTH_HEADS + TAIL]
+    assert _thead(html, ir=False)[:-1] == [_same(t) for t in HEAD + MONTH_HEADS + TAIL]
     body = _rows(html)[0]
     assert ">O<" in body, "되돌렸는데 값이 안 보입니다"
 

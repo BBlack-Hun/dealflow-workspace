@@ -373,7 +373,7 @@ function buildDom(people) {
   simple.push(el("select", { id: "mail-subject-tpl" }));
 
   const arrow = el("span", { class: "ss-arrow" });
-  const modeTabs = ["deal", "ir", "remind", "meeting", "review", "ask", "sourcing"]
+  const modeTabs = ["deal", "ir", "ir_review", "remind", "meeting", "review", "ask", "sourcing"]
     .map(function (m, i) {
       return el("button", { class: i === 0 ? "mode-tab active" : "mode-tab", "data-mode": m });
     });

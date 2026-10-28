@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {# 관리자가 붙인 추가 칸 — 스타트업 명단 표에만 실린다(`routers/pages.list_page`). #}
 {% import "_custom_cols.html" as cc with context %}
+{% import "_ir_cols.html" as irc %}
 {% block content %}
 {#
   투자사 명단 시트(`투자사 150/98/30`)를 그대로 옮긴 표. 컬럼 **이름과 순서**가
@@ -1169,6 +1170,9 @@
         {% if c.source == 'row_no' %}
         <th class="num{{ sc }}" style="width:{{ c.width }}px"
             title="누르면 활동 이력이 열립니다">{{ c.label }}</th>
+        {% elif c.source == 'ir' %}
+        {# 이어진 IR 기업의 칸 — 읽기만(#85 · `_ir_cols.html`). #}
+        {{ irc.head(c, sc) }}
         {% else %}
         {# **고를 수 있는 칸**(`Column.filterable`)에 필터를 세운다. 자유롭게
            적는 칸(이름·연락처·메모)은 서른두 줄에 서른두 가지가 나와 고를
@@ -1231,6 +1235,8 @@
         <td class="updated-at{{ sc }}{% if r.updated_never %} muted{% endif %}"
             title="{% if r.updated_never %}만든 뒤로 아직 고친 적이 없습니다 — 만든 시각입니다{% else %}마지막으로 고친 시각{% endif %}"
         >{{ r[c.key] }}</td>
+        {% elif c.source == 'ir' %}
+        {{ irc.cell(c, ir_values.get(r.ir_company_id)) }}
         {% elif c.source == 'list' %}
         {# **어느 명단의 줄인가**(스타트업 `전체` 에만 선다 — `contact_columns.
            LIST_COLUMN`). 눌러 고치는 칸이 아니다 — 명단을 옮기는 것은 수정창의
@@ -1269,8 +1275,12 @@
            그러면 보기는 **다른 줄이 이미 쓰고 있는 값**뿐이라, 아무도 안 채운
            칸에서는 빈 칸에 타이핑하게 된다 — `A` 와 `a그룹`, `O` 와 `o`·`완료`
            로 갈리는 바로 그 자리다. #}
+        {# `data-ir-hint` — 스타트업 표 `기업명` 칸에 IR 기업 후보를 띄운다(#85 ·
+           `inline_edit.js`). 골라 저장하면 이름이 하나 맞는 IR 기업에 이어진다
+           (`company_sync` 의 자동 연결). 후보 이름은 아래 `#opts-ir-company`. #}
         <td class="cell ellipsis{{ sc }}{% if c.kind == 'email' and ',' in (r[c.key] or '') %} mail-primary{% endif %}" data-field="{{ c.key }}" data-type="{{ c.kind }}"
             {% if c.choices %}data-choices="{{ c.choices }}"{% endif %}
+            {% if ir_names and c.key == layout.required %}data-ir-hint{% endif %}
             title="{{ r[c.key] }}">{{ r[c.key] }}</td>
         {% endif %}
         {% endfor %}
@@ -1359,6 +1369,8 @@
        글자를 화면에 적지 않고 서버가 넘긴 목록 하나를 쓴다(`taxonomy.picker_tree`)
        — 관리자가 목록을 고치면 다음 화면부터 그대로 따라온다. #}
     <div id="sector-taxonomy" hidden data-tree='{{ sector_tree|tojson }}'></div>
+    {# IR 기업 후보 이름(#85) — 표와 수정창의 `기업명` 칸이 읽는다(`ir_company_hint.js`). #}
+    {% if ir_names %}<div id="opts-ir-company" hidden data-names='{{ ir_names|tojson }}'></div>{% endif %}
     {#
       ── 명단이 정한 칸으로 세우는 수정창 ────────────────────────────────────
 
@@ -1404,6 +1416,7 @@
                {% if c.source == 'note' %}id="f-note-{{ c.key }}" data-note="{{ c.key }}"
                {% else %}id="f-{{ c.key }}"{% endif %}
                {% if c.kind == 'email' %}data-email-hint{% endif %}
+               {% if ir_names and c.key == layout.required %}data-company-hint{% endif %}
                {% if c.kind == 'sectors' %}data-sector-picker{% endif %}
                {% if c.choices %}list="opts-panel-{{ c.key }}"{% endif %}
                {% if c.hint %}placeholder="{{ c.hint }}"
@@ -1822,6 +1835,8 @@ window.DEALFLOW_ADD_ROW = {{ (add_row or none)|tojson }};</script>
 {# 선호 투자분야 고르기 부품 — 표 칸(`inline_edit.js`)과 수정창이 함께 쓰므로
    그 둘보다 먼저 싣는다. 고를 거리는 `#sector-taxonomy` 에서 읽는다. #}
 <script src="{{ asset('js/sector_picker.js') }}"></script>
+{# IR 기업 후보(#85) — 표 칸(`inline_edit.js`)이 쓰므로 그보다 먼저 싣는다. #}
+{% if ir_names %}<script src="{{ asset('js/ir_company_hint.js') }}"></script>{% endif %}
 <script src="{{ asset('js/inline_edit.js') }}"></script>
 <script src="{{ asset('js/pool_assign.js') }}"></script>
 {# 감춘 줄 골라 지우기. 막대가 없으면(평소 화면) 아무 일도 하지 않는다. #}

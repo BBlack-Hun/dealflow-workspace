@@ -32,7 +32,8 @@ from ..models import (
 from ..services import mail_sender, mailer, matcher
 from ..services import message_composer as mc
 from ..services import (deal_history, deal_numbers, deal_queue, group_name, ir_attach,
-                        ir_kakao, ir_monthly, manual_send, scheduled_send, series_a_share,
+                        ir_kakao, ir_monthly, manual_send, pipeline, scheduled_send,
+                        series_a_share,
                         sheet_owner, sourcing_link, sourcing_msg,
                         sourcing_receipts, sourcing_sync,
                         startup_outreach, startup_send, template_pick,
@@ -113,6 +114,9 @@ MODE_REMIND = "remind"      # 리마인드
 MODE_MEETING = "meeting"    # 미팅 요청
 MODE_IR = "ir"              # IR 자료 전달
 MODE_REVIEW = "review"      # 미팅 후기 — 미팅 열흘 뒤 결과 문의
+# IR 자료 검토 요청 — 자료를 보낸 뒤 "검토해 보셨는지"(#79). 문구만 나가고, 회차에
+# `topic` 으로 표시가 남아 `/ir` 「전달한 자료」 상태가 읽는다(`pipeline.IR_REVIEW_KIND`).
+MODE_IR_REVIEW = "ir_review"
 # 딜 소싱 제안 — 받는 사람이 다른 명단(딜 소싱)에 있고, 부탁하는 것도 다르다.
 # 우리 딜을 보여 주는 게 아니라 **당신이 뺀 딜을 달라**고 청한다.
 MODE_SOURCING = "sourcing"
@@ -134,6 +138,10 @@ MODE_STARTUP = "startup"
 #   · 문구는 화면이 고른 문구틀(`req.topic`)과 사람이 고친 본문(`req.body`)을
 #     `services/startup_outreach.render` 가 줄마다 채운다.
 MODE_STARTUP_MSG = "startup_msg"
+
+#: IR 자료 검토 요청(#79)의 폴백 — 문구 관리에 팀 문구가 없을 때.
+IR_REVIEW_FALLBACK = ("지난번 전달드린 IR 자료는 검토해 보셨을지요?\n"
+                      "궁금하신 점이나 추가로 필요하신 자료 있으시면 말씀 부탁드립니다.")
 
 # 딜소개 말고는 전부 **기업 목록 없이 문구만** 나간다.
 # 이미 목록을 받은 사람에게 같은 목록을 다시 밀어 넣는 것은 후속이 아니라 재발송이다.
@@ -159,6 +167,9 @@ FOLLOW_UP_MODES = {
     MODE_IR: ("ir_delivery",
               "{기업목록} IR deck 먼저 전달드리겠습니다.",
               mc.STAGE_REMIND),
+    # 리마인드와 같은 단계(2)다 — 원래 요청이 "전달한 자료 → 리마인드". 문구는 팀이
+    # 문구 관리에서 쓴다. 폴백은 `scripts/bootstrap.TEAM_TEMPLATES` 와 글자까지 같다.
+    MODE_IR_REVIEW: (pipeline.IR_REVIEW_KIND, IR_REVIEW_FALLBACK, mc.STAGE_REMIND),
     # 미팅 뒤 열흘쯤 지나 결과를 묻는다. 원본 시트에도 "결과확인전화가 없으면
     # 계약을 잊어버리는 경우가 발생할 수 있습니다" 라고 적혀 있었다.
     MODE_REVIEW: ("meeting_review",
@@ -185,6 +196,7 @@ IR_NOTHING_NOTE = "보낼 자료가 하나도 없습니다 — 요청은 그대�
 MODE_TEMPLATE_KIND = {
     MODE_DEAL: "closing_day1",
     MODE_IR: "ir_delivery",
+    MODE_IR_REVIEW: pipeline.IR_REVIEW_KIND,
     MODE_REMIND: "closing_remind",
     MODE_MEETING: "closing_meeting",
     MODE_REVIEW: "meeting_review",
@@ -197,6 +209,7 @@ MODE_TITLES = {
     MODE_REMIND: "리마인드",
     MODE_MEETING: "미팅 요청",
     MODE_IR: "IR 자료 전달",
+    MODE_IR_REVIEW: "IR 자료 검토 요청",
     MODE_REVIEW: "미팅 후기",
     MODE_SOURCING: "딜 소싱 제안",
     MODE_STARTUP: "스타트업 월간 발송",
@@ -1491,7 +1504,10 @@ def create_send_list(
         # `sourcing_intro` 라(발송 프로그램이 아는 종류), 무슨 글이었는지는 이
         # 칸으로만 갈린다. 처음 안내는 지금까지처럼 비워 둔다.
         # Series A 딜 공유도 같은 자리에 남는다(`sourcing_deal_share`).
+        # IR 자료 검토 요청(#79)도 남긴다 — `/ir` 「전달한 자료」 상태가 이 표시로
+        # `IR 자료 검토 요청 완료` 를 세운다(`pipeline.meeting_ask_state`).
         topic=(req.topic.strip() if req.mode == MODE_STARTUP_MSG
+               else pipeline.IR_REVIEW_KIND if req.mode == MODE_IR_REVIEW
                else sourcing_topic
                if sourcing_topic in (sourcing_msg.REMIND_KIND,
                                      sourcing_msg.SHARE_KIND) else None),

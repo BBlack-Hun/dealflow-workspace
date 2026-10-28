@@ -540,6 +540,8 @@ WRITE_ROUTES = {
     # 적히는 길이라 갈래는 보는 쪽이다. 손으로 적는 쪽은 아래
     # `/api/deals/manual-sends` 이고 그쪽은 실제로 줄마다 남는다.
     ("POST", "/ir/contacts/{contact_id}/meeting-asked"): WATCHED,
+    # IR 자료 검토 요청을 손으로 보냈다는 표시(#79) — 위와 같은 길 · 같은 갈래.
+    ("POST", "/ir/contacts/{contact_id}/review-asked"): WATCHED,
     # 리마인드 뒤 `답 없음 · 전화 필요` 켜고 끄기 · 메모(10/17 회의 #37). 관리자와
     # 그 투자사의 줄을 가진 팀원도 닿는 길이라(`call_flags.may_edit`) 갈래는 보는
     # 쪽이다. 표(`deal_followups`)는 **누가 언제를 줄 자체가 적어서** 로그에는
@@ -880,6 +882,7 @@ def test_the_six_shared_routers_still_hold_the_forty_nine_paths(portal):
     # 활동 이력(`/memo-intro` — #52)이다.
     # ir 의 12번째는 미팅 요청을 손으로 보냈다고 적는 자리다. 13 · 14번째는
     # 리마인드 뒤 `답 없음 · 전화 필요` 켜고 끄기와 그 메모다(10/17 회의 #37).
+    # 15번째는 IR 자료 검토 요청을 손으로 보냈다고 적는 자리다(#79).
     #
     # **`consulting` 의 아홉 번째는 주소가 `/api/contacts/from-consulting` 이다**
     # — 여기서 세는 것은 주소가 아니라 **그 길을 담고 있는 파일**이라
@@ -906,7 +909,7 @@ def test_the_six_shared_routers_still_hold_the_forty_nine_paths(portal):
     # forecast 의 넷은 매출예상리스트 줄 추가 · 고치기 · 기업 고르기 · 지우기다(#46).
     # custom_columns 의 일곱은 관리자 `컬럼 관리` 여섯(붙이기 · 이름 · 순서 · 자리 ·
     # 숨김 · 삭제)과 표에서 추가 칸 값 적기 하나다.
-    assert counted == {"companies": 8, "ir": 14, "consulting": 9,
+    assert counted == {"companies": 8, "ir": 15, "consulting": 9,
                        "templates_crud": 7, "sourcing": 13, "contacts": 23,
                        "series_a": 5, "forecast": 4, "custom_columns": 7}
 

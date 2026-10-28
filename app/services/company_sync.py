@@ -73,7 +73,8 @@ IR 의 `미계약`(기본값)은 빈칸으로 본다.
    새로 생기거나 이름이 바뀌면** 그 이름의 안 이은 줄도 저절로 잇는다(10/26 사용자:
    "버튼을 눌러서 가져오는게 아니라 기업명을 넣었을때 자동으로"). 사람이 고른 연결은
    기업명을 고쳐도 그대로다. IR 쪽은 번호가 정해진 뒤라 `after_flush` 에서 잇고, 빈칸
-   채우기는 커밋이 이어서 부르는 flush 가 한다.
+   채우기는 커밋이 이어서 부르는 flush 가 한다. 스타트업 명단 줄도 **기업명을 고친 줄**은
+   잇는다(#85 — `기업명` 칸 후보에서 IR 기업을 고르는 길).
 7. 수정 로그는 flush 자리라 `edit_log` 가 그대로 남긴다 — 컨설턴트가 고친 값이 IR
    공용 칸을 바꿀 수 있고(결정 13), 따라 고친 남의 줄은 `남의 것` 으로 남는다.
 
@@ -503,10 +504,11 @@ def _auto_link(session: Session, rows: List[Row]) -> None:
 
 
 def _renamed(obj) -> bool:
-    """이번 flush 에서 이름이 **비교용 이름까지** 바뀌었나(띄어쓰기 · `(주)` 만 고친 것은 아니다)."""
+    """이번 flush 에서 이름이 **비교용 이름까지** 바뀌었나(띄어쓰기 · `(주)` 만 고친 것은 아니다).
+    스타트업 명단 줄은 기업명이 `firm` 이다(`name` 은 대표 성함 — `ir_link.row_name`)."""
     from .deal_history import _key
 
-    history = get_history(obj, "name")
+    history = get_history(obj, "firm" if isinstance(obj, VcContact) else "name")
     if not history.added:
         return False
     before = history.deleted[0] if history.deleted else None
@@ -614,9 +616,11 @@ def before_flush(session: Session) -> None:
         c for c in companies if _renamed(c)]
     if not rows and not companies:
         return
-    # 새 줄 · 기업명을 고친 Series A 줄(안 이었거나 저절로 이은 줄 — 사람이 고른 연결은 둔다).
+    # 새 줄 · 기업명을 고친 Series A · 스타트업 명단 줄(안 이었거나 저절로 이은 줄 — 사람이
+    # 고른 연결은 둔다). 스타트업 줄은 #85 — `기업명` 칸 후보에서 IR 기업을 고르면 잇는다
+    # (투자사 줄은 `_auto_link` 가 거른다).
     fresh = [r for r in rows if (r in session.new and not r.ir_company_id) or (
-        isinstance(r, SeriesACompany) and r not in session.new
+        isinstance(r, (SeriesACompany, VcContact)) and r not in session.new
         and (not r.ir_company_id or r.ir_link_auto) and _renamed(r))]
     if fresh and not session.info.get(NO_AUTO_LINK):
         _auto_link(session, fresh)

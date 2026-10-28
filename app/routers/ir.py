@@ -115,7 +115,10 @@ def ir_page(request: Request, db: Session = Depends(get_db),
     # **담당자 단위로 센다.** 한 투자사가 기업 3곳 자료를 받아도 미팅 요청
     # 카톡은 한 통이라, 줄마다 세면 한 번 보낼 일이 세 건으로 보인다.
     delivered = [r for r in done if r["status"] == "delivered"]
-    ask_missing = {r["contact_id"] for r in delivered if not r["meeting_asked"]}
+    # 검토 요청(#79)이나 미팅 요청 둘 중 하나라도 나갔으면 센 데서 뺀다 — 머리 글이
+    # `IR 자료 검토 요청 미완료 N명` 이다.
+    ask_missing = {r["contact_id"] for r in delivered
+                   if not (r["meeting_asked"] or r["reviewed"])}
     ask_overdue = {r["contact_id"] for r in delivered if r["meeting_ask_overdue"]}
 
     ctx = base_ctx(request, db, user, active="flow")
@@ -185,6 +188,11 @@ def ir_page(request: Request, db: Session = Depends(get_db),
             "book": pipeline.LABEL_BOOK_MEETING,
             "mark_asked": pipeline.LABEL_MARK_ASKED,
             "requested": pipeline.LABEL_REQUESTED,
+            # #79 — IR 자료 검토 요청 · 줄에 따로 선 미팅 요청 단추.
+            "reviewed": pipeline.LABEL_REVIEWED,
+            "not_reviewed": pipeline.LABEL_NOT_REVIEWED,
+            "mark_meeting": pipeline.LABEL_MARK_MEETING,
+            "meeting_ask": pipeline.LABEL_MEETING_ASK,
         },
         # ── 답 없음 · 전화 요청 (#37) ─────────────────────────────────────
         # 사람 → 표시·메모. 켜졌거나 메모가 있는 사람만 든다. 줄마다 붙일지는
@@ -507,10 +515,26 @@ def mark_meeting_asked(contact_id: int, db: Session = Depends(get_db),
     contact = _owned_contact(db, contact_id, user)
     pipeline.record_meeting_ask(db, contact.id)
     db.commit()
-    # 단추 이름이 `IR 자료 검토 요청 보냄` 이 됐다(10/17 회의 #42). 누르면 그
-    # 담당자 줄들이 `회의실 미팅 톡 요청 보냄 완료` 로 바뀐다 — 둘 다 말해 준다.
-    msg = (f"{pipeline.LABEL_MARK_ASKED}으로 표시했습니다 — "
+    # 단추 이름은 `미팅 요청 보냄`(#79 — 그 전에는 `IR 자료 검토 요청 보냄` 이 이 일을
+    # 했다). 누르면 그 담당자 줄들이 `회의실 미팅 톡 요청 보냄 완료` 로 바뀐다.
+    msg = (f"{pipeline.LABEL_MARK_MEETING}으로 표시했습니다 — "
            f"{pipeline.LABEL_ASKED}")
+    return RedirectResponse(f"/ir?msg={quote(msg)}", status_code=303)
+
+
+@router.post("/ir/contacts/{contact_id}/review-asked", include_in_schema=False)
+def mark_review_asked(contact_id: int, db: Session = Depends(get_db),
+                      user: User = Depends(get_current_user)):
+    """IR 자료 검토 요청을 **카톡으로 직접 보냈다**고 표시한다(#79 · [IR 자료 검토 요청 보냄]).
+
+    미팅 요청 표시(위)와 같은 길 · 같은 판정이다 — 담당자에게 적고, 같은 날 두 번
+    눌러도 한 줄이다(`pipeline.record_meeting_ask`).
+    """
+    contact = _owned_contact(db, contact_id, user)
+    pipeline.record_meeting_ask(db, contact.id, kind=pipeline.IR_REVIEW_KIND)
+    db.commit()
+    msg = (f"{pipeline.LABEL_MARK_ASKED}으로 표시했습니다 — "
+           f"{pipeline.LABEL_REVIEWED}")
     return RedirectResponse(f"/ir?msg={quote(msg)}", status_code=303)
 
 
