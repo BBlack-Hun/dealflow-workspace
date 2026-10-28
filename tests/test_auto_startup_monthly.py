@@ -1,6 +1,6 @@
 """A5 스타트업 월간 발송 순환 — **날짜·시각과 문구를 달마다 돌린다, 한 달에 한 번.**
 
-1. 기본 순환 26일 11:00 → 30일 13:00 → 28일 14:00 — 달의 번호로 고른다
+1. 순환(월말 줄 26일 11:00 → 30일 13:00 → 28일 14:00) — 달의 번호로 고른다
    (#31 — 월말 · 주말이면 앞 평일은 `test_startup_monthly_a5_only.py`).
 2. 문구도 최대 셋 중에서 달마다(1번 = 지금 문구, 2·3번 = 초안). 자료는 같다.
 3. 그날 아침 스타트업 화면과 같은 글로 회차가 서고 그 시각 예약이 걸린다.
@@ -59,13 +59,13 @@ def _run(db, hour=9):
 def test_rotation_of_days_times_and_wording():
     from app.services.automations import startup_monthly as a5
 
-    values = _values()
+    values = {"slots": ["26 11:00", "30 13:00", "28 14:00"], "variants": 3}
     assert a5.slot_for(values, 2026, 10) == (date(2026, 10, 26), "11:00")
     assert a5.slot_for(values, 2026, 11) == (date(2026, 11, 30), "13:00")
     assert a5.slot_for(values, 2026, 12) == (date(2026, 12, 28), "14:00")
     assert a5.slot_for(values, 2027, 1) == (date(2027, 1, 26), "11:00")
     assert [a5.variant_for(values, date(2026, m, 1)) for m in (10, 11, 12)] == [1, 2, 3]
-    assert a5.variant_for({"slots": a5.DEFAULT_SLOTS, "variants": 1},
+    assert a5.variant_for({"slots": values["slots"], "variants": 1},
                           date(2026, 11, 1)) == 1
     # 그 달에 없는 날이면 말일(2028-02-29 · 화).
     assert a5.slot_for({"slots": ["31 10:00"], "variants": 1}, 2028, 2) == (

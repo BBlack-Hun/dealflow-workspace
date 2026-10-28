@@ -36,7 +36,7 @@
 
 안녕하세요 대표님.
 
-샘플에너지의 9월 말 기준 IR 진행 현황을 안내드립니다.
+샘플에너지의 9월 17일 기준 IR 진행 현황을 안내드립니다.
 
 ■ 누적 IR 자료 요청 투자사 : 9개사
 ■ 9월 신규 요청 : 2개사
@@ -148,7 +148,9 @@ CONTACTVC ASSET
 """
 from __future__ import annotations
 
+import calendar
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Dict, List, Optional, Sequence
 
 from sqlalchemy.orm import Session
@@ -200,6 +202,9 @@ COMPANY_SEP = " , "
 #: 팀이 제목에 연월을 다시 넣고 싶으면 문구 화면에서 적기만 하면 된다.
 MONTH_TOKEN = "{달}"
 YEARMONTH_TOKEN = "{연월}"
+#: 보내는 날(`11월 19일`) — 월간 발송이 달 중간에 나가서 `{달} 말 기준` 이 맞지 않는다
+#: (#73, 2026-10-28). 운영에 저장된 `{달} 말 기준` 은 0126 이주가 이것으로 바꿨다.
+DAY_TOKEN = "{날짜}"
 COMPANIES_TOKEN = "{기업들}"
 
 #: 목록의 위·아래 테두리. **짧게 잡는다** — 카톡은 글자폭도 화면 너비도
@@ -224,7 +229,7 @@ DEFAULT_HEAD = "\n".join([
     "",
     HELLO,
     "",
-    f"{COMPANIES_TOKEN}의 {MONTH_TOKEN} 말 기준 IR 진행 현황을 안내드립니다.",
+    f"{COMPANIES_TOKEN}의 {DAY_TOKEN} 기준 IR 진행 현황을 안내드립니다.",
 ])
 
 #: 맺음말 문구가 비어 있을 때 쓰는 글. 시드와 같은 글이다.
@@ -261,7 +266,7 @@ VARIANT_HEADS = {
         "",
         "안녕하세요 대표님, 한 달 동안 잘 지내셨는지요.",
         "",
-        f"{COMPANIES_TOKEN}의 {MONTH_TOKEN} 말 기준 IR 진행 현황을 정리하여 전달드립니다.",
+        f"{COMPANIES_TOKEN}의 {DAY_TOKEN} 기준 IR 진행 현황을 정리하여 전달드립니다.",
     ]),
     3: "\n".join([
         "[CONTACTVC ASSET]",
@@ -270,7 +275,7 @@ VARIANT_HEADS = {
         "안녕하세요 대표님.",
         "이번 달 IR 진행 상황 공유드립니다.",
         "",
-        f"{COMPANIES_TOKEN}의 {MONTH_TOKEN} 말 기준 현황입니다.",
+        f"{COMPANIES_TOKEN}의 {DAY_TOKEN} 기준 현황입니다.",
     ]),
 }
 VARIANT_TAILS = {
@@ -390,6 +395,17 @@ def month_label(month: str) -> str:
     if not ir_monthly.is_month(month):
         return ""
     return f"{int(month[5:7])}월"
+
+
+def send_day_label(month: str) -> str:
+    """`{날짜}` — 오늘(`11월 19일`), 지난 달 글이면 그 달 말일(목록이 거기까지다)."""
+    from .. import clock
+
+    if not ir_monthly.is_month(month):
+        return ""
+    year, mon = int(month[:4]), int(month[5:7])
+    day = min(clock.today(), date(year, mon, calendar.monthrange(year, mon)[1]))
+    return f"{day.month}월 {day.day}일"
 
 
 def ym_label(month: str) -> str:
@@ -590,6 +606,7 @@ def header(month: str, companies: Sequence[str], body: str = "",
                               contact or mc.ContactView(name=""),
                               company_name=joined)
     return (text.replace(YEARMONTH_TOKEN, ym_label(month))
+                .replace(DAY_TOKEN, send_day_label(month))
                 .replace(MONTH_TOKEN, month_label(month))
                 .replace(COMPANIES_TOKEN, joined)).strip()
 

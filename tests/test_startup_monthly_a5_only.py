@@ -4,8 +4,9 @@
 
 1. 옛 30일 자동(`services/startup_monthly` 의 실 · `monthly_auto`)은 걷는다. 표와
    이력(`auto_send_settings` · `auto_send_runs`)은 남긴다.
-2. 매월은 A5 하나 — 기본 순환은 **월말** `26 11:00 / 30 13:00 / 28 14:00`(30일이
-   없으면 말일). 그날이 토·일이면 **앞 평일**(다음 달로 넘어가지 않는다).
+2. 매월은 A5 하나 — 10/17 의 순환은 **월말** `26 11:00 / 30 13:00 / 28 14:00`(30일이
+   없으면 말일 — #73 부터 기본은 `3주 목 / 4주 수`, 월말 줄도 그대로 받는다).
+   그날이 토·일이면 **앞 평일**(다음 달로 넘어가지 않는다).
    같은 달 두 번은 없다(`month_job` — 사람이 세운 것 · 옛 자동이 세운 것도 센다).
 3. A5 의 보내는 계정은 **스타트업 월간 발송 메뉴의 계정**과 같다 — 다른 계정은
    받지 않고, 판에 그 계정을 보여 준다. 메뉴 판은 `메뉴·보내는 계정` 만 남는다.
@@ -26,6 +27,9 @@ from tests.test_startup_monthly_send import (  # noqa: F401 - 픽스처를 함�
     _jobs, _login, _turn_on, seeded)
 
 TEST_ROOM = "자동화 시험방"
+
+
+MONTH_END = ["26 11:00", "30 13:00", "28 14:00"]
 
 
 def _defaults():
@@ -66,11 +70,10 @@ def test_the_old_thirtieth_engine_is_gone(db, users, client):
 
 # ── 2. 월말 순환 · 주말이면 앞 평일 ─────────────────────────────────────────
 
-def test_default_rotation_is_month_end():
+def test_month_end_rotation_still_works():
     from app.services.automations import startup_monthly as a5
 
-    values = _defaults()
-    assert a5.DEFAULT_SLOTS == ["26 11:00", "30 13:00", "28 14:00"]
+    values = {"slots": MONTH_END, "variants": 3}
     assert a5.slot_for(values, 2026, 10) == (date(2026, 10, 26), "11:00")
     assert a5.slot_for(values, 2026, 11) == (date(2026, 11, 30), "13:00")
     assert a5.slot_for(values, 2026, 12) == (date(2026, 12, 28), "14:00")
@@ -106,11 +109,11 @@ def test_the_plan_fires_on_the_moved_day_only(db, users):
     assert plan is not None and plan.at.strftime("%m/%d %H:%M") == "09/25 11:00"
 
 
-def test_panel_summary_says_month_end():
+def test_panel_summary_says_odd_and_even_months():
     from app.services import automation
 
     summary = automation.BY_KEY[automation.STARTUP_MONTHLY].summary
-    assert "26일 11:00" in summary and "30일" in summary and "28일 14:00" in summary
+    assert "홀수 달 3주차 목요일" in summary and "짝수 달 4주차 수요일" in summary
     assert "앞 평일" in summary
 
 
@@ -252,7 +255,7 @@ def test_header_skips_a_month_that_is_already_sent(db, seeded):
     db.commit()
     head = a5.header(db, now)
     assert head["on"] and head["skip"]["month"] == "2026-10"
-    assert head["next_label"].startswith("11/30")
+    assert head["next_label"].startswith("11/19")      # 홀수 달 3주차 목요일
 
 
 def test_an_empty_a5_day_shows_in_today(db, users):
@@ -281,7 +284,7 @@ def _css() -> str:
 
 
 def test_the_rotation_preview_is_not_cut_off(db, users, client):
-    """A5 순환 미리보기('순환: 10/26 … → 11/30 … → 12/28 …')가 좁은 칸에서 `…` 로
+    """A5 순환 미리보기('순환: 10/28 … → 11/19 … → 12/23 …')가 좁은 칸에서 `…` 로
     잘렸다 — 자동화 표의 칸 아래 줄은 접히고, 다 적은 글은 풍선말로도 단다."""
     from app.services import automation_runner as runner
 
@@ -324,9 +327,9 @@ def test_the_team_sender_default_names_the_menu_account(db, users, client):
 
 # ── PR #315 리뷰 ─────────────────────────────────────────────────────────────
 #
-# 날짜를 박는다 — 2026-10 의 A5 날짜는 기본 순환으로 10/26(월) 11:00, 11월은 11/30.
-
-OCT_SLOT = datetime(2026, 10, 26, 11, 0)
+# 날짜를 박는다 — 2026-10 의 A5 날짜는 기본 순환으로 10/28(수, 짝수 달 4주차) 11:00,
+# 11월은 11/19(목, 홀수 달 3주차). 검사 날은 10/28·10/29 를 피한다 — 그날 돌면
+# `today._at` 이 진짜 시계를 쓴다.
 
 
 def _at(*args):
@@ -416,7 +419,7 @@ def _missed_month(db):
     _turn_on(db, user_id=1)
     _a5(db, test=False)
     assert runner.run_once(db, automation.STARTUP_MONTHLY,
-                           _at(2026, 10, 26, 9, 0))["status"] == "empty"
+                           _at(2026, 10, 28, 9, 0))["status"] == "empty"
 
 
 def test_a_missed_month_warns_every_day_until_the_month_ends(db, users):
@@ -424,30 +427,30 @@ def test_a_missed_month_warns_every_day_until_the_month_ends(db, users):
     (관리자 · 보내는 계정). 옛 30일 자동이 한 달 내내 띄우던 경고 자리."""
     _missed_month(db)
     needle = "10월분이 아직 안 나갔습니다"
-    for day in (date(2026, 10, 27), date(2026, 10, 30)):
+    for day in (date(2026, 10, 30), date(2026, 10, 31)):
         [line] = _lines(db, users["u1"], day, needle)
         assert line["level"] == "urgent"
-        assert "10/26" in line["detail"] and "0곳" in line["detail"]
+        assert "10/28" in line["detail"] and "0곳" in line["detail"]
         assert "손으로" in line["detail"]
-    assert _lines(db, users["u1"], date(2026, 10, 25), needle) == []   # 날짜 전
-    assert _lines(db, users["u2"], date(2026, 10, 27), needle) == []   # 남의 일
+    assert _lines(db, users["u1"], date(2026, 10, 27), needle) == []   # 날짜 전
+    assert _lines(db, users["u2"], date(2026, 10, 30), needle) == []   # 남의 일
     users["u2"].role = "admin"
     db.commit()
-    assert len(_lines(db, users["u2"], date(2026, 10, 27), needle)) == 1
+    assert len(_lines(db, users["u2"], date(2026, 10, 30), needle)) == 1
 
 
 def test_the_missed_month_warning_goes_once_something_is_sent(db, users):
     _missed_month(db)
-    _startup_job(db, created="2026-10-27T15:00:00+09:00")
-    assert _lines(db, users["u1"], date(2026, 10, 28), "아직 안 나갔습니다") == []
+    _startup_job(db, created="2026-10-28T15:00:00+09:00")
+    assert _lines(db, users["u1"], date(2026, 10, 30), "아직 안 나갔습니다") == []
 
 
 def test_a_list_that_never_went_out_does_not_count_as_sent(db, users):
     """사람이 세우고 안 누른 목록 · 다 실패한 회차는 '나간 회차' 가 아니다."""
     _missed_month(db)
-    _startup_job(db, created="2026-10-27T15:00:00+09:00", status="draft",
+    _startup_job(db, created="2026-10-28T15:00:00+09:00", status="draft",
                  item_status="pending")
-    assert len(_lines(db, users["u1"], date(2026, 10, 28), "아직 안 나갔습니다")) == 1
+    assert len(_lines(db, users["u1"], date(2026, 10, 30), "아직 안 나갔습니다")) == 1
 
 
 def test_the_missed_month_shows_in_the_startup_header(db, users, client, monkeypatch):
@@ -455,7 +458,7 @@ def test_the_missed_month_shows_in_the_startup_header(db, users, client, monkeyp
     from app.services.automations import startup_monthly as a5
 
     _missed_month(db)
-    when = _at(2026, 10, 28, 9, 0)
+    when = _at(2026, 10, 30, 9, 0)
     assert a5.header(db, when)["missed"]["month"] == "2026-10"
     monkeypatch.setattr(clock, "now", lambda: when)
     page = _login(client).get("/deals/startup-ir").text
@@ -469,25 +472,25 @@ OFF_NEEDLE = "스타트업 월간 발송(A5)이"
 
 def test_a5_off_reminds_ten_days_before_the_slot(db, users):
     _turn_on(db, user_id=1)                          # 메뉴 켜짐 · A5 줄 없음 = 꺼짐
-    [line] = _lines(db, users["u1"], date(2026, 10, 17), OFF_NEEDLE)
+    [line] = _lines(db, users["u1"], date(2026, 10, 18), OFF_NEEDLE)
     assert line["title"] == ("스타트업 월간 발송(A5)이 꺼져 있어 이번 달 발송이 안 "
                              "나갑니다 — 팀 현황 › 자동화에서 켜세요")
-    assert "10/26" in line["detail"] and line["href"] == "/team#automations"
-    assert _lines(db, users["u1"], date(2026, 10, 15), OFF_NEEDLE) == []   # 11일 전
-    assert _lines(db, users["u2"], date(2026, 10, 17), OFF_NEEDLE) == []   # 남의 일
+    assert "10/28" in line["detail"] and line["href"] == "/team#automations"
+    assert _lines(db, users["u1"], date(2026, 10, 17), OFF_NEEDLE) == []   # 11일 전
+    assert _lines(db, users["u2"], date(2026, 10, 18), OFF_NEEDLE) == []   # 남의 일
     users["u2"].role = "admin"
     db.commit()
-    assert len(_lines(db, users["u2"], date(2026, 10, 17), OFF_NEEDLE)) == 1
+    assert len(_lines(db, users["u2"], date(2026, 10, 18), OFF_NEEDLE)) == 1
 
 
 def test_a5_off_reminds_after_the_slot_passed_without_a_job(db, users):
     _turn_on(db, user_id=1)
-    [line] = _lines(db, users["u1"], date(2026, 10, 28), OFF_NEEDLE)
+    [line] = _lines(db, users["u1"], date(2026, 10, 30), OFF_NEEDLE)
     assert line["level"] == "urgent" and "손으로" in line["detail"]
 
 
 def test_no_off_reminder_when_the_month_already_has_a_job(db, users):
-    """운영 모양 — 10월은 이미 회차가 있다. 11월 날짜(11/30)는 10일보다 멀다."""
+    """운영 모양 — 10월은 이미 회차가 있다. 11월 날짜(11/19)는 10일보다 멀다."""
     _turn_on(db, user_id=1)
     _startup_job(db)
     assert _lines(db, users["u1"], date(2026, 10, 17), OFF_NEEDLE) == []
@@ -503,7 +506,7 @@ def test_no_off_reminder_without_the_menu(db, users):
 def test_test_mode_a5_reminds_too(db, users):
     _turn_on(db, user_id=1)
     _a5(db, test=True)
-    [line] = _lines(db, users["u1"], date(2026, 10, 17), OFF_NEEDLE)
+    [line] = _lines(db, users["u1"], date(2026, 10, 18), OFF_NEEDLE)
     assert "시험 모드" in line["title"]
 
 
