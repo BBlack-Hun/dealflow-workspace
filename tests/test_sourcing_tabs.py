@@ -140,3 +140,54 @@ def test_the_empty_tab_has_its_own_sheet(page, db):
     book = openpyxl.load_workbook(io.BytesIO(r.content))
     assert book.sheetnames[-1] == NEW
     assert book[NEW].max_row == 1                  # 머리글만
+
+
+# ── [탭 삭제] (#78) — 사람이 0명인 탭만 · 관리자만 ─────────────────────────────
+
+@pytest.fixture()
+def admin(page, db, users):
+    users["u2"].role = "admin"
+    db.commit()
+    return page
+
+
+def _delete(client, label):
+    return client.post("/sourcing/buckets/delete", data={"label": label},
+                       follow_redirects=False)
+
+
+def test_an_admin_deletes_an_empty_tab_with_its_texts(admin, db, users):
+    from app.models import MessageTemplate, TemplateChoice
+
+    _add(admin, NEW)
+    text = MessageTemplate(kind="sourcing_intro", name=NEW, body="안내")
+    db.add(text)
+    db.flush()
+    db.add(TemplateChoice(user_id=users["u2"].id, kind="sourcing_intro", variant=NEW,
+                          template_id=text.id))
+    db.commit()
+    assert 'data-testid="sourcing-tab-delete"' in admin.get(
+        "/sourcing", params={"tab": NEW}).text
+
+    r = _delete(admin, NEW)
+    assert r.status_code == 303 and "지웠습니다" in unquote(r.headers["location"])
+    assert NEW not in [t[0] for t in _tabs(db)]
+    assert db.query(MessageTemplate).filter_by(name=NEW).count() == 0
+    assert db.query(TemplateChoice).filter_by(variant=NEW).count() == 0
+    assert _add(admin, NEW).status_code == 303 and (NEW, 0) in _tabs(db)  # 다시 만들 수 있다
+
+
+def test_a_tab_with_people_is_not_deleted(admin, db):
+    body = admin.get("/sourcing", params={"tab": "시리즈 A 이상"}).text
+    assert 'data-testid="sourcing-tab-delete"' not in body
+    r = _delete(admin, "시리즈 A 이상")
+    assert "옮겨 주세요" in unquote(r.headers["location"])
+    assert ("시리즈 A 이상", 1) in _tabs(db)
+
+
+def test_only_an_admin_deletes(page, db):
+    _add(page, NEW)
+    assert 'data-testid="sourcing-tab-delete"' not in page.get(
+        "/sourcing", params={"tab": NEW}).text
+    assert _delete(page, NEW).status_code != 303
+    assert (NEW, 0) in _tabs(db)

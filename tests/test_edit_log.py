@@ -599,6 +599,9 @@ WRITE_ROUTES = {
     ("POST", "/sourcing/buckets/rename"): WATCHED,
     # [+ 탭 추가] — 사람이 없는 새 갈래(`edit_log.WATCHED["sourcing_tabs"]`).
     ("POST", "/sourcing/buckets/add"): WATCHED,
+    # [탭 삭제](#78) — 사람이 0명인 탭 줄과 그 이름 문구를 지운다(`sourcing_tabs` ·
+    # `message_templates` 가 줄마다 남는다).
+    ("POST", "/sourcing/buckets/delete"): WATCHED,
     ("POST", "/api/sourcing"): WATCHED,
     ("PATCH", "/api/sourcing/{row_id}"): WATCHED,
     ("DELETE", "/api/sourcing/{row_id}"): WATCHED,
@@ -892,6 +895,7 @@ def test_the_six_shared_routers_still_hold_the_forty_nine_paths(portal):
     # 확정] · [연결 풀기](#28 — `services/sourcing_sync.confirm_link` · `unlink`)다.
     # 11번째는 갈래 하나의 [저절로 잇기](`sourcing_sync.auto_link_all`)다.
     # 12번째는 [+ 탭 추가](`sourcing_buckets.create` — 사람이 없는 새 갈래)다.
+    # 13번째는 관리자의 [탭 삭제](#78 — `sourcing_buckets.delete`, 사람이 0명인 탭만)다.
     # series_a 의 셋은 IR 기업 현황 메뉴의 `Series A 이상 딜 소싱` 탭을 더하기 ·
     # 고치기 · 지우기다(`routers/series_a.py`). 옆 두 탭과 같은 공용 화면이다.
     # 넷째는 `공유 심사역` 확정 · 해제(`/sharer` — Series A 딜 공유에서 이 딜을
@@ -903,7 +907,7 @@ def test_the_six_shared_routers_still_hold_the_forty_nine_paths(portal):
     # custom_columns 의 일곱은 관리자 `컬럼 관리` 여섯(붙이기 · 이름 · 순서 · 자리 ·
     # 숨김 · 삭제)과 표에서 추가 칸 값 적기 하나다.
     assert counted == {"companies": 8, "ir": 14, "consulting": 9,
-                       "templates_crud": 7, "sourcing": 12, "contacts": 23,
+                       "templates_crud": 7, "sourcing": 13, "contacts": 23,
                        "series_a": 5, "forecast": 4, "custom_columns": 7}
 
 

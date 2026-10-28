@@ -231,7 +231,7 @@ def test_2026년에는_26년_칸이_최근_매출액이고_27년_칸은_안_잇�
     assert company.revenue_2027 is None, "앞으로 올 해는 IR 에 받을 칸이 없다"
     # `3` 과 `3억` 은 같은 값이다 — 값 다름에 안 선다.
     assert company_sync.differences(db, [_fresh(db, row)[0]]) == {}
-    assert company_sync.label("revenue_recent") == "최근 매출액(26년)"
+    assert company_sync.label("revenue_recent") == "26년 매출"
 
 
 def test_2027년에는_27년_칸이_최근_매출액이고_26년_칸은_IR_26년과_잇는다(

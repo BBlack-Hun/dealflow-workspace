@@ -18,8 +18,11 @@
    칸이 매크로 안에 숨어 있으면 템플릿에서 머리글과 칸 수를 세는 검사들
    (tests/test_ui_layout.py · test_company_updated_at.py)이 그 표를 짝지을 수 없어
    통째로 건너뛴다 — IR 기업 현황 탭에 금액 칸이 들면서 그 표까지 빠질 뻔했다(#75). #}
-{% macro amount_cell(value, field) -%}
-  <span class="cell" data-field="{{ field }}">{{ eok(value) }}</span>
+{# `derived` — 이 칸의 필터 값은 서버가 센 금액 구간이다(#88 · #90 · `amount_bands`).
+   눌러 고치면 `inline_edit.js` 가 친 글자를 필터 값으로 적지 않고, 응답 값을
+   `companies.js` 가 적는다. #}
+{% macro amount_cell(value, field, derived=false) -%}
+  <span class="cell" data-field="{{ field }}"{% if derived %} data-filter-derived{% endif %}>{{ eok(value) }}</span>
   {%- set warn = amount_warn(value) -%}
   {%- if warn %}
   <span class="cell-hint warn-hint" title="{{ warn }}">⚠ 문구에서 빠짐</span>
@@ -264,12 +267,14 @@
         {% for f, yy in revenue_years %}
         <th class="num" style="width:74px">{{ yy }}년 매출</th>
         {% endfor %}
+        {# 올해 매출(`revenue_recent`) — 이름이 `26년 매출` 이라 **25년 매출 바로 오른쪽**이다
+           (#82 — 예전에는 `최근 매출액(26년)` 이라는 이름으로 `특이사항` 뒤에 떨어져 있었다).
+           폭 108px 은 그대로 — 옆 탭과 같다. #}
+        <th class="num" style="width:108px" title="올해 매출 — 해가 안 끝나 지금까지 알려진 최근 매출을 적습니다 · 해가 바뀌면 지난해 칸으로 옮겨 적힙니다 · 단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 1억 미만은 `5천만원` · 모르면 `~`">{{ recent_label }}</th>
         <th class="num" style="width:96px" title="단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 1억 미만은 `5천만원` · 모르면 `~`">누적투자금액</th>
         <th class="num" style="width:120px" title="단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 1억 미만은 `5천만원` · 모르면 `~`">투자유치희망금액</th>
         <th class="num" style="width:76px" title="단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 1억 미만은 `5천만원` · 모르면 `~`">Pre Value</th>
         <th style="width:260px">특이사항 (장점)</th>
-        {# 이름에 올해가 붙는다(`최근 매출액(26년)` — #75). 폭은 그 이름: 87px + th 좌우 여백 18px + 3px. #}
-        <th class="num" style="width:108px" title="올해 자리입니다 — 해가 바뀌면 지난해 칸으로 옮겨 적힙니다 · 단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 1억 미만은 `5천만원` · 모르면 `~`">{{ recent_label }}</th>
         <th style="width:72px">설립년도</th>
         {# 0116 — 투자컨설턴트 메타에서 올라온 기업 사실. 이어진 컨설턴트 줄과 서로
            따라 고친다(`services/company_sync.py`). 자유 글이라 필터는 안 단다. #}
@@ -331,13 +336,13 @@
         {# 금액 넷도 **적은 그대로** 글자다(0074) — `5-10억 사이` · `~` 가 들어온다.
            단위는 억이고 표 머리글이 그 단위를 말한다. `data-type="number"` 를
            두면 화면이 `Number()` 로 읽어 구간이 통째로 사라진다. #}
+        <td class="num">{{ amount_cell(r.revenue_recent, "revenue_recent") }}</td>
         <td class="num">{{ amount_cell(r.funding_total, "funding_total") }}</td>
         <td class="num">{{ amount_cell(r.raise_target, "raise_target") }}</td>
         <td class="num">{{ amount_cell(r.pre_value, "pre_value") }}</td>
         <td title="{{ r.competitiveness }}">
           <div class="cell clamp2" data-field="competitiveness" data-type="long">{{ r.competitiveness }}</div>
         </td>
-        <td class="num">{{ amount_cell(r.revenue_recent, "revenue_recent") }}</td>
         <td class="cell" data-field="founded_year">{{ r.founded_year }}</td>
         <td class="cell" data-field="region">{{ r.region }}</td>
         <td title="{{ r.guarantee }}">
@@ -526,12 +531,14 @@
            해는 올해 기준 지난 세 해 + `최근 매출액(올해)` 다(`services/revenue_years.py`
            — 차례는 `columns`, 화면 그대로 엑셀도 같은 차례다). 칸이 든 만큼 app.css 의
            `#co-table` min-width 를 올렸다(74 × 3 + 108 + 96 + 120 + 76 = 622px). #}
+        {# 매출 · 투자유치희망금액 머리글의 필터는 **금액 구간**이다(#88 · #90) — 칸 글자가
+           아니라 서버가 센 `N억 이상`(`routers/companies.amount_bands`, 겹쳐 든다). #}
         {% for f, yy in revenue_years %}
-        <th class="num" style="width:74px">{{ yy }}년 매출</th>
+        <th class="num" style="width:74px" data-filters="{{ f }}:{{ yy }}년 매출">{{ yy }}년 매출<div class="th-filters"></div></th>
         {% endfor %}
-        <th class="num" style="width:108px" title="올해 자리입니다 — 해가 바뀌면 지난해 칸으로 옮겨 적힙니다 · 단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 1억 미만은 `5천만원` · 모르면 `~`">{{ recent_label }}</th>
+        <th class="num" data-filters="revenue_recent:{{ recent_label }}" style="width:108px" title="올해 매출 — 해가 안 끝나 지금까지 알려진 최근 매출을 적습니다 · 해가 바뀌면 지난해 칸으로 옮겨 적힙니다 · 단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 1억 미만은 `5천만원` · 모르면 `~`">{{ recent_label }}<div class="th-filters"></div></th>
         <th class="num" style="width:96px" title="단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 1억 미만은 `5천만원` · 모르면 `~`">누적투자금액</th>
-        <th class="num" style="width:120px" title="단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 1억 미만은 `5천만원` · 모르면 `~`">투자유치희망금액</th>
+        <th class="num" style="width:144px" data-filters="raise_target:투자유치희망금액" title="단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 1억 미만은 `5천만원` · 모르면 `~`">투자유치희망금액<div class="th-filters"></div></th>
         <th class="num" style="width:76px" title="단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 1억 미만은 `5천만원` · 모르면 `~`">Pre Value</th>
         {# 예전 이름 `기업구분`. 넷 중 **이름이 길어지는 유일한 칸**이다(4→5자).
            필터를 고른 뒤 실제로 서는 글자는 `투자라운드 (1) ▾` 로 112px 인데,
@@ -616,6 +623,11 @@
            세울 값은 `data-s-updated`(아래 `<tr>`). #}
         <th style="width:130px" data-sort="updated"
             title="이 줄을 마지막으로 고친 시각 — 앱이 적습니다(눌러 고칠 수 없습니다)">수정한 날짜</th>
+        {# ── 그 시각에 **누가** 고쳤나 (#89, 사용자 요청) — 수정 로그의 그 줄 마지막 기록
+           (`routers/companies.last_editors`). 사람 손 없이 앱이 바꾼 것이 마지막이면 `자동`,
+           로그가 없는 줄은 빈칸. 앱이 적는 칸이라 눌러 고치지 않는다. 폭 76px = 이름 넉 자
+           (52px) + td 좌우 여백 18px + 여유 — app.css 의 `#co-table` min-width 도 그만큼. #}
+        <th style="width:76px" title="이 줄을 마지막으로 고친 팀원 — 수정 로그 기준 · 사람 손 없이 앱이 바꾼 것이 마지막이면 '자동'">수정한 팀원</th>
         {# 시트의 칸 이름(`한줄 소개`)과 다르다 — 가져오기는 시트 쪽 이름을 그대로
            찾으므로(scripts/import_company_sheets.py) 여기만 바꾼다.
            이름이 `기업 한줄 소개` 였다. 그 이름은 이제 **옆 탭의 재료 칸**
@@ -774,6 +786,9 @@
           data-f-quote="{{ r.quote_attached }}"
           data-f-joined="{{ r.kakao_joined }}"
           data-f-ir="{{ '● 있음' if r.has_ir else '⚠ 없음' }}"
+          data-f-raise_target="{{ r.bands.raise_target }}"
+          data-f-revenue_recent="{{ r.bands.revenue_recent }}"
+          {% for f, yy in revenue_years %}data-f-{{ f }}="{{ r.bands[f] }}" {% endfor %}
           {# ── 세울 값(`data-s-*`) ── 머리글의 `data-sort` 와 짝이다.
              선언만 하고 안 실으면 머리글이 단추로 서기만 하고 아무 줄도 안
              움직인다(tests/test_contacts_sort.py 가 모든 화면을 훑는다).
@@ -864,13 +879,14 @@
           <div class="cell clamp2" data-field="sector_minor" data-type="pick"
                data-filter-key="minor">{{ r.sector_minor }}</div>
         </td>
-        {# 매출 · 금액(#75) — 스타트업DB 탭과 한 글자도 다르지 않게 그린다(머리글 주석). #}
+        {# 매출 · 금액(#75) — 스타트업DB 탭과 같은 칸이다(머리글 주석). 이 탭만 필터 값이
+           금액 구간이라 `data-filter-derived` 가 붙는다(#88 · #90). #}
         {% for f, yy in revenue_years %}
-        <td class="cell num" data-field="{{ f }}">{{ r[f] }}</td>
+        <td class="cell num" data-field="{{ f }}" data-filter-derived>{{ r[f] }}</td>
         {% endfor %}
-        <td class="num">{{ amount_cell(r.revenue_recent, "revenue_recent") }}</td>
+        <td class="num">{{ amount_cell(r.revenue_recent, "revenue_recent", true) }}</td>
         <td class="num">{{ amount_cell(r.funding_total, "funding_total") }}</td>
-        <td class="num">{{ amount_cell(r.raise_target, "raise_target") }}</td>
+        <td class="num">{{ amount_cell(r.raise_target, "raise_target", true) }}</td>
         <td class="num">{{ amount_cell(r.pre_value, "pre_value") }}</td>
         <td title="{{ r.series }}">
           <div class="cell clamp2" data-field="series" data-type="pick"
@@ -891,6 +907,7 @@
            짚으면 그렇다고 말해 준다 — 지우면 "못 읽었다" 와 구분이 안 된다. #}
         <td class="updated-at{% if r.updated_never %} muted{% endif %}"
             title="{% if r.updated_never %}만든 뒤로 아직 고친 적이 없습니다 — 만든 시각입니다{% else %}마지막으로 고친 시각{% endif %}">{{ r.updated_at }}</td>
+        <td class="updated-by{% if r.updated_never %} muted{% endif %}">{{ r.updated_by }}</td>
         <td title="{{ r.one_liner }}">
           <div class="cell clamp2" data-field="one_liner" data-type="long">{{ r.one_liner }}</div>
         </td>
@@ -997,7 +1014,7 @@
         <td><button type="button" class="linkbtn js-co-edit">수정</button></td>
       </tr>
       {% else %}
-      <tr><td colspan="27" class="muted">등록된 기업이 없습니다. [기업 추가]로 시작하세요.</td></tr>
+      <tr><td colspan="28" class="muted">등록된 기업이 없습니다. [기업 추가]로 시작하세요.</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -1264,8 +1281,8 @@
     {# ── 올해 = `최근 매출액` ────────────────────────────────────────────
        그림의 「26년 (현재 최근매출액으로 반영)」. 올해 칸은 연도 칸이 아니라 이 칸이고,
        해가 바뀌면 지난해 칸으로 옮겨 적힌다(이 창 머리 주석).
-       **이름은 표 머리글(`최근 매출액(26년)`) 그대로**여야 한다 — 설명은 `title`. #}
-    <label class="field" title="올해 자리입니다 — 올해는 아직 안 끝나서 지금의 최근 매출액으로 반영하고, 해가 바뀌면 지난해 칸으로 옮겨 적힙니다 · 단위: 억"><span>{{ recent_label }}</span><input type="text" id="f-revenue_recent" placeholder="18.3 · 5천만원 · 5-10억 · ~"></label>
+       **이름은 표 머리글(`26년 매출` — #82, 예전 `최근 매출액(26년)`) 그대로**여야 한다 — 설명은 `title`. #}
+    <label class="field" title="올해 매출 — 해가 안 끝나 지금까지 알려진 최근 매출을 적습니다 · 해가 바뀌면 지난해 칸으로 옮겨 적힙니다 · 단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 1억 미만은 `5천만원` · 모르면 `~`"><span>{{ recent_label }}</span><input type="text" id="f-revenue_recent" placeholder="18.3 · 5천만원 · 5-10억 · ~"></label>
     {# 누적투자금액 옆이 그림에서는 `정책자금 (기보 / 신보 / 중진공)` 이다.
        그 칸이 곧 아래 `정책자금`(`guarantee`) — 위 `1. 기본정보` 에서 옮겨 왔다.
        **이름을 그림의 말로 바꿨다**(예전 이름 `기보, 신보, 중진공`). 괄호 안의

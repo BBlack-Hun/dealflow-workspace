@@ -607,7 +607,11 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
     (지난 세 해 74 × 3 · `최근 매출액(26년)` 108 · 누적투자 96 · 희망 120 · Pre Value 76
     = 622px). 든 만큼만 올린다. 스타트업DB 탭은 한 해가 빠지고 `최근 매출액` 이 18px
     넓어졌지만 폭 합이 이 값보다 한참 좁아 상관없다.) */
-#co-table { min-width: 3620px; }
+/* (3,620 → 3,720 : #89 — `수정한 날짜` 옆 `수정한 팀원`(76px) + #88 — `투자유치희망금액`
+    머리글에 필터가 서며 120 → 144px(필터를 고른 뒤 `투자유치희망금액 (1) ▾` 가 한 줄에
+    서는 폭). 든 만큼만 올린다.) */
+#co-table { min-width: 3720px; }
+#co-table td.updated-by { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* IR 기업 현황 › Series A 이상 딜 소싱 — 넓은 표 공통 값(2,030px)에 직접 적는 칸
    열(#24 · `companies_series_a.html` 의 `대표자명` ~ `Pre Value`, 폭 합 932px)을 **든 만큼만**
    더한다. 안 올리면 폭을 안 준 `상세 내용` 이 그 932px 을 내어 주다 0 으로 짜부라진다.

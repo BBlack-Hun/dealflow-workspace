@@ -232,7 +232,7 @@ def same(field: str, a, b) -> bool:
 
 
 def label(field: str) -> str:
-    """화면 이름 — 연도 매출은 그해 글자(`25년 매출` · `최근 매출액(26년)`)."""
+    """화면 이름 — 연도 매출은 그해 글자(`25년 매출` · 올해 칸 `26년 매출`)."""
     if field == "revenue_recent":
         return revenue_years.recent_label()
     if field in revenue_years.FIELDS:
