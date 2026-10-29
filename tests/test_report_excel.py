@@ -84,7 +84,8 @@ def test_the_send_panel_is_in_the_file(logged, db, users):
            kind="sourcing_intro", sent=2)
 
     wb = _book(_download(logged))
-    assert wb.sheetnames == ["2026-08 발송", "2026-08 미팅", "2026-08 반응"], \
+    assert wb.sheetnames == ["2026-08 발송", "2026-08 미팅", "2026-08 반응",
+                             "2026-08 소개한 기업", "2026-08 소개 상세"], \
         "화면 순서대로 — 파일을 열면 첫 장이 화면 맨 위여야 한다"
 
     grid = _grid(wb["2026-08 발송"])
@@ -378,7 +379,8 @@ def test_the_meeting_company_column_is_named_the_same_everywhere(logged, db, use
 def test_a_month_with_no_sends_still_opens(logged, db, users):
     """보고는 아무 일도 없던 달에도 열린다 — 거기서 깨지면 아무도 안 쓴다."""
     wb = _book(_download(logged, month="2026-02"))
-    assert wb.sheetnames == ["2026-02 발송", "2026-02 미팅", "2026-02 반응"]
+    assert wb.sheetnames == ["2026-02 발송", "2026-02 미팅", "2026-02 반응",
+                             "2026-02 소개한 기업", "2026-02 소개 상세"]
 
     flat = [str(c) for row in _grid(wb["2026-02 발송"]) for c in row]
     assert any("이 달에는 나간 회차가 없습니다" in c for c in flat)
@@ -541,7 +543,8 @@ def test_the_year_comes_down_as_one_sheet(logged, db, users):
            sent=18, canceled=98, status="canceled")
 
     wb = _book(_download_year(logged))
-    assert wb.sheetnames == ["2026 연간"], "한 장이다 — 달마다 나누지 않는다"
+    assert wb.sheetnames == ["2026 연간", "2026 소개한 기업", "2026 소개 상세"], \
+        "합계는 한 장이다 — 달마다 나누지 않는다(뒤 두 장은 #92 소개한 기업)"
 
     grid = _grid(wb["2026 연간"])
     flat = [str(c) for row in grid for c in row]
@@ -647,7 +650,7 @@ def test_a_broken_year_falls_back_to_this_year(logged, db, users):
     assert report.parse_year("2024", date(2026, 5, 2)) == 2024
 
     wb = _book(logged.get("/api/export/report.xlsx?span=year&year=zzz"))
-    assert wb.sheetnames == [f"{date.today().year} 연간"]
+    assert wb.sheetnames[0] == f"{date.today().year} 연간"
 
 
 # --- 6. 화면 연간 보고 — **월간 보고와 같은 모양** -------------------------------

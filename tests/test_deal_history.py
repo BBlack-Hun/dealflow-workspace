@@ -150,6 +150,85 @@ def test_deals_page_marks_recent_companies(logged, db, users):
     assert "일 전 소개" in body
 
 
+# --- 내 명단 기준(#92) -------------------------------------------------------
+#
+# 고르는 사람이 묻는 것은 "**내가** 이 기업을 내 투자사들에게 보냈나" 다.
+# 세 출처(시트 · 손으로 적음 · 앱 발송)를 모두 세고, 안 나간 앱 발송(실패 ·
+# 취소)과 **남의 명단**이 받은 것은 세지 않는다.
+
+def _mine_history(db, users):
+    from app.models import (ContactActivity, DealBatch, DealBatchCompany, SendItem,
+                            SendJob, VcContact)
+
+    agg = _company(db, "샘플애그")
+    medi = _company(db, "샘플메디")
+    mine = [VcContact(user_id=users["u1"].id, name=f"가상{i}", firm="가나벤처스")
+            for i in range(4)]
+    other = VcContact(user_id=users["u2"].id, name="가상남", firm="다라벤처스")
+    db.add_all(mine + [other])
+    db.flush()
+    sheet, manual, app_sent, app_failed = mine
+    db.add_all([
+        ContactActivity(contact_id=sheet.id, kind="deal_intro", content="공유",
+                        happened_at="2026-08-10", source="import",
+                        company_names=json.dumps(["샘플애그"], ensure_ascii=False)),
+        ContactActivity(contact_id=manual.id, kind="deal_intro", content="공유",
+                        happened_at="2026-08-15", source="manual",
+                        company_names=json.dumps(["샘플애그"], ensure_ascii=False)),
+        # 남의 명단이 받은 것 — 팀 이력에는 들고 내 수에는 안 든다.
+        ContactActivity(contact_id=other.id, kind="deal_intro", content="공유",
+                        happened_at="2026-08-20",
+                        company_names=json.dumps(["샘플메디"], ensure_ascii=False)),
+    ])
+    ok = DealBatch(user_id=users["u1"].id, title="회차1", sent_date="2026-09-01")
+    bad = DealBatch(user_id=users["u1"].id, title="회차2", sent_date="2026-09-05")
+    db.add_all([ok, bad])
+    db.flush()
+    db.add_all([DealBatchCompany(batch_id=ok.id, company_id=agg.id, position=1),
+                DealBatchCompany(batch_id=bad.id, company_id=medi.id, position=1)])
+    job_ok = SendJob(user_id=users["u1"].id, kind="deal_intro", batch_id=ok.id)
+    job_bad = SendJob(user_id=users["u1"].id, kind="deal_intro", batch_id=bad.id)
+    db.add_all([job_ok, job_bad])
+    db.flush()
+    db.add_all([
+        SendItem(job_id=job_ok.id, contact_id=app_sent.id, room_name="방",
+                 message="본문", status="sent"),
+        SendItem(job_id=job_bad.id, contact_id=app_failed.id, room_name="방",
+                 message="본문", status="failed"),
+        SendItem(job_id=job_bad.id, contact_id=app_sent.id, room_name="방",
+                 message="본문", status="canceled"),
+    ])
+    db.commit()
+    return agg, medi, {c.id for c in mine}
+
+
+def test_my_count_takes_every_source_but_not_failed_sends(db, users):
+    from app.services import deal_history
+
+    agg, medi, mine = _mine_history(db, users)
+    info = deal_history.annotate([agg, medi], deal_history.scan(db),
+                                 today=date(2026, 9, 10), mine=mine)
+    # 시트 · 손으로 적음 · 앱 발송(나간 것) — 셋 다 센다. 마지막 날은 그중 최근.
+    assert info[agg.id]["my_got"] == 3
+    assert info[agg.id]["my_last"] == "2026-09-01"
+    # 실패 · 취소된 앱 발송은 안 받은 것이다. 남의 명단이 받은 것도 안 센다.
+    assert info[medi.id]["my_got"] == 0
+    assert info[medi.id]["my_last"] == ""
+    # 팀 전체 이력(`N회`)은 그대로 남의 명단까지 센다.
+    assert info[medi.id]["investors"] == 1
+
+
+def test_deals_page_shows_my_count_and_unsent_filter(logged, db, users):
+    _mine_history(db, users)
+
+    body = logged.get("/deals").text
+    assert "내 투자사 3/4 · 09/01" in body
+    assert "내 투자사 0/4" in body
+    assert 'data-my-got="3"' in body and 'data-my-got="0"' in body
+    assert 'id="only-unsent"' in body
+    assert "내가 아직 소개 안 한 기업만 (1개)" in body
+
+
 # --- IR 자료 파일명 일괄 입력 -----------------------------------------------
 
 def test_bulk_files_apply(logged, db):

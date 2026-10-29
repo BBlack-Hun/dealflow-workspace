@@ -174,7 +174,12 @@ def deals_page(
     #
     # **훑기는 한 번이다**(`deal_history.scan`) — `최근에 소개함` 표시와 카드에
     # 서는 `N회` 가 같은 훑기에서 나와야 둘이 갈리지 않는다.
-    history = deal_history.annotate(companies, deal_history.scan(db))
+    #
+    # `N회` · 45일 숨기기는 **팀 전체** 이력이다. 고르는 사람이 묻는 것은 "**내가**
+    # 이 기업을 보냈나" 라서(#92) 내 딜소개 명단(위 `딜소개 명단 N명` 과 같은
+    # 모집단 — `deal_list_contacts`) 중 받은 사람 수도 같은 훑기에서 함께 센다.
+    my_list = {c.id for c in sheet_owner.deal_list_contacts(db, user)}
+    history = deal_history.annotate(companies, deal_history.scan(db), mine=my_list)
     # 회차명은 **보내는 날에서 만든다.** 손으로 적으면 "8월회차" · "8월 셋째주" ·
     # "0826" 이 섞여 남아, 나중에 몇 주차에 뭘 보냈는지 찾을 때 이력이 갈라진다.
     #
@@ -209,6 +214,8 @@ def deals_page(
         "history": history,
         "recent_count": sum(1 for h in history.values() if h["recent"]),
         "recent_days": deal_history.RECENT_DAYS,
+        "my_total": len(my_list),
+        "my_unsent_count": sum(1 for h in history.values() if not h["my_got"]),
         "contacts": contacts,
         "recipient_counts": recipient_counts,
         # 그룹으로 묶어 둔 사람만 추리는 필터. 투자사 관리 현황의 `그룹` 칸이

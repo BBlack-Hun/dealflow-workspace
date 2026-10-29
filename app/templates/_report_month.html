@@ -152,6 +152,12 @@
   {% endif %}
 </section>
 
+{# 소개한 기업(#92) — 연간 보기는 달마다가 아니라 한 해치 한 표를 합계표 쪽에 세운다. #}
+{% if not yearly_view %}
+{% set intro_label = rep.month ~ '월' %}
+{% include "_report_intros.html" %}
+{% endif %}
+
 <section class="panel">
   <h2 class="panel-title">{{ rep.month }}월 미팅 총 {{ rep.total }}개사</h2>
   {% if rep.weeks %}

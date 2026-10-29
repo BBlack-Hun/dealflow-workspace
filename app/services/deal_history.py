@@ -41,7 +41,7 @@ import json
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, NamedTuple, Optional, Set, Tuple
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -135,6 +135,9 @@ class CompanyHistory:
     #: 발송 건수 — 회차마다의 사람 수를 그대로 더한 값이다.
     sends: int = 0
     last_sent: str = ""
+    #: {투자사 번호: 마지막으로 받은 날}. **밖으로 그대로 내지 않는다**(머리글) —
+    #: `annotate(mine=...)` 가 부르는 쪽 명단과 겹친 **수**와 날짜만 낸다.
+    reached: Dict[int, str] = field(default_factory=dict)
 
     @property
     def days(self) -> int:
@@ -157,11 +160,35 @@ class CountOnly:
     days: List[str] = field(default_factory=list)
 
 
+class Receipt(NamedTuple):
+    """**투자사 한 명이 이 기업을 받은 기록 한 줄** — 업무 보고의 `소개한 기업`(#92).
+
+    `user_id` 는 **누구의 것으로 세나**다. 업무 보고가 쓰는 기준 그대로 —
+    앱 발송은 발송을 누른 계정(`SendJob.user_id`), 시트·손 기록은 그 투자사를
+    **지금** 담당하는 계정(`VcContact.user_id`, `manual_send.counted` 와 같다).
+
+    투자사는 번호만 담는다(머리글 '수로만 낸다'). 이름은 부르는 쪽이 제 권한
+    범위로 거른 뒤에 읽는다(`report.intro_companies`).
+    """
+
+    key: str            # `_key` 로 맞춘 기업명
+    day: str            # YYYY-MM-DD (없으면 빈 글자)
+    contact_id: int
+    source: str         # SHEET · APP · MANUAL
+    user_id: Optional[int]
+
+
 @dataclass
 class Scan:
     """한 번의 훑기 결과. 화면이 묻는 것은 전부 여기서 나온다."""
 
     companies: Dict[str, CompanyHistory] = field(default_factory=dict)
+    #: 받은 기록을 **줄 그대로**. 위 `companies` 가 기업마다 접은 것을
+    #: 기간·사람으로 다시 자를 수 있게 펴 둔다 — 세는 기준은 같은 훑기다.
+    receipts: List[Receipt] = field(default_factory=list)
+    #: {정규화한 기업명: 화면에 쓸 이름}. 기업 목록에 있으면 그 이름, 없으면
+    #: 기록에 적힌 이름이다.
+    names: Dict[str, str] = field(default_factory=dict)
     count_only: CountOnly = field(default_factory=CountOnly)
     #: 이력에는 있는데 지금 기업 목록에 **없는 이름**이 몇 곳인가.
     #: 이름은 담지 않는다 — `llm_brief.sent_before_unmatched` 와 같은 방식이다.
@@ -233,6 +260,7 @@ def scan(db: Session) -> Scan:
     known = set()
     for company in db.execute(select(IrCompany)).scalars().all():
         known.add(_key(company.name))
+        out.names.setdefault(_key(company.name), company.name)
     known.discard("")
 
     # ① 시트에서 옮겨 온 지난 발송 기록 + 손으로 적은 줄
@@ -261,8 +289,11 @@ def scan(db: Session) -> Scan:
             if not key:
                 continue
             seen_names.add(key)
+            out.names.setdefault(key, name)
             spot = bucket(key, (source, day), day, source)
             spot.contacts.add(act.contact_id)
+            out.receipts.append(Receipt(key, day, act.contact_id, source,
+                                        owner_of.get(act.contact_id)))
             if act.weekday:
                 spot.weekdays[act.weekday] += 1
             if who:
@@ -297,6 +328,7 @@ def scan(db: Session) -> Scan:
     # (그룹마다 한 잡) — 그래서 회차로 묶어 사람을 센다.
     sent_by_batch: Dict[int, set] = {}
     job_users: Dict[int, Counter] = {}
+    sent_pairs: Dict[int, set] = {}        # 회차 → {(받은 사람, 누른 계정)}
     for batch_id, user_id, contact_id in db.execute(
         select(SendJob.batch_id, SendJob.user_id, SendItem.contact_id)
         .join(SendItem, SendItem.job_id == SendJob.id)
@@ -305,15 +337,19 @@ def scan(db: Session) -> Scan:
                SendJob.batch_id.isnot(None))
     ).all():
         sent_by_batch.setdefault(batch_id, set()).add(contact_id)
+        sent_pairs.setdefault(batch_id, set()).add((contact_id, user_id))
         # 앱 발송은 **실제로 누가 눌렀는지**가 남는다 — 추정이 아니다.
         job_users.setdefault(batch_id, Counter())[user_id] += 1
 
-    for spots in acc.values():
+    for key, spots in acc.items():
         for at, spot in spots.items():
             if spot.source != APP:
                 continue
             batch_id = at[1]
             spot.contacts |= sent_by_batch.get(batch_id, set())
+            out.receipts.extend(Receipt(key, spot.day, contact_id, APP, user_id)
+                                for contact_id, user_id in
+                                sent_pairs.get(batch_id, ()) if contact_id)
             for user_id, n in (job_users.get(batch_id) or Counter()).items():
                 who = names.get(user_id, "")
                 if who:
@@ -322,15 +358,17 @@ def scan(db: Session) -> Scan:
     for key, spots in acc.items():
         rounds = sorted((spot.round() for spot in spots.values()),
                         key=lambda r: (r.day, r.source), reverse=True)
-        everyone: set = set()
+        everyone: Dict[int, str] = {}
         for spot in spots.values():
-            everyone |= spot.contacts
+            for contact_id in spot.contacts:
+                everyone[contact_id] = max(everyone.get(contact_id, ""), spot.day)
         days = [r.day for r in rounds if r.day]
         out.companies[key] = CompanyHistory(
             rounds=rounds,
             investors=len(everyone),
             sends=sum(r.investors for r in rounds),
-            last_sent=max(days) if days else "")
+            last_sent=max(days) if days else "",
+            reached=everyone)
     return out
 
 
@@ -345,16 +383,24 @@ def last_sent_map(db: Session) -> Dict[str, str]:
 
 
 def annotate(companies: List[IrCompany], sent: Scan,
-             today: Optional[date] = None) -> Dict[int, dict]:
-    """{기업 id: {last_sent, days_ago, recent, rounds, investors, sends}}.
+             today: Optional[date] = None,
+             mine: Set[int] = frozenset()) -> Dict[int, dict]:
+    """{기업 id: {last_sent, days_ago, recent, rounds, investors, sends,
+    my_got, my_last}}.
 
     `rounds` 는 **보낸 날 수**다. 발송 건수(`sends`)와 나란히 둔다 — 회차 수만
     보이면 180명짜리와 103명짜리가 똑같이 `6회` 로 읽힌다(머리글 참고).
+
+    여기까지는 **팀 전체** 이력이다. `mine`(투자사 번호들)을 주면 그 명단 중
+    이 기업을 받은 사람 수(`my_got`)와 그중 마지막 날(`my_last`)을 함께 낸다 —
+    딜 제안 관리에서 "내가 아직 소개 안 한 기업" 을 고르는 자리(#92). 세는
+    기준은 위 훑기 그대로다(앱 발송은 실제로 나간 것만 · 시트 · 손으로 적음).
     """
     today = today or date.today()
     out: Dict[int, dict] = {}
     for company in companies:
         hist = sent.of(company.name)
+        got = [day for cid, day in hist.reached.items() if cid in mine]
         when = hist.last_sent
         days = None
         if when:
@@ -369,5 +415,7 @@ def annotate(companies: List[IrCompany], sent: Scan,
             "rounds": hist.days,
             "investors": hist.investors,
             "sends": hist.sends,
+            "my_got": len(got),
+            "my_last": max(got, default=""),
         }
     return out
