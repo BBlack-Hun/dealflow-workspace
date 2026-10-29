@@ -1061,8 +1061,14 @@ def get_contact(
         select(SendItem, SendJob)
         .join(SendJob, SendJob.id == SendItem.job_id)
         .where(SendItem.contact_id == contact.id, SendJob.kind != "verify_room")
-        .order_by(SendItem.id.desc()).limit(20)
+        # 한도를 두지 않는다 — 20건에서 잘라 옛 딜소개가 이력에서 빠졌다(#92).
+        # 시트 기록(`acts`)처럼 한 사람 몫이라 많아야 한 해 수십 건이다.
+        .order_by(SendItem.id.desc())
     ).all()
+    # 보낸 팀원 이름 — 담당이 넘어간 줄은 지금 담당과 보낸 사람이 다르다.
+    senders = dict(db.execute(
+        select(User.id, User.name).where(User.id.in_({j.user_id for _i, j in sends}))
+    ).all())
 
     known = _known_company_names(db)
     # 발송 이력에도 **그 회차에 보낸 기업**을 붙인다. 없으면 카톡방 이름만 남아
@@ -1131,7 +1137,8 @@ def get_contact(
         # 아래에 묻혀서, 무슨 일이 언제 있었는지 읽을 수가 없다.
         "timeline": sorted(
             [_activity_view(a, known) for a in acts]
-            + [_send_view(item, job, batch_names.get(job.batch_id, []), known)
+            + [_send_view(item, job, batch_names.get(job.batch_id, []), known,
+                          senders.get(job.user_id) or "")
                for item, job in sends]
             + _pipeline_views(db, contact.id),
             key=lambda row: row.get("date") or "",
@@ -1271,11 +1278,14 @@ def _batch_company_names(db: Session, batch_ids: set) -> Dict[int, List[str]]:
 
 
 def _send_view(item: SendItem, job: SendJob, names: List[str],
-               known: Dict[str, str]) -> dict:
+               known: Dict[str, str], sender: str = "") -> dict:
     """발송 1건 → 화면용. **시트에서 옮겨 온 줄과 같은 모양**이어야 한다.
 
     예전에는 `딜소개 발송 성공 · {카톡방 이름}` 이라 기업 자리에 담당자 이름이
     찍혔다. 이력을 훑는 목적은 '언제 어떤 기업을 보냈나' 인데 그게 안 보였다.
+
+    `state` — 안 나간 건(실패 · 취소 · 대기)의 이름. 기업 칩만 그리면 성공한
+    딜소개와 똑같이 보여서(#92) 화면이 이 값으로 표시를 단다. 나간 건은 빈 글자.
     """
     date = (item.sent_at or item.created_at or "")[:10]
     return {
@@ -1283,6 +1293,8 @@ def _send_view(item: SendItem, job: SendJob, names: List[str],
         "month": None,
         "kind": job.kind,
         "content": _send_summary(item, job),
+        "state": "" if item.status == "sent" else _SEND_STATES.get(item.status, item.status),
+        "sender": sender,
         "source": "system",
         "companies": [
             {"name": name,
@@ -1293,6 +1305,9 @@ def _send_view(item: SendItem, job: SendJob, names: List[str],
         "weekday": sheet_import.weekday_of(date) if date else None,
         "week": sheet_import.week_of_month(date) if date else None,
     }
+
+
+_SEND_STATES = {"failed": "실패", "pending": "대기", "canceled": "취소"}
 
 
 def _send_summary(item: SendItem, job: SendJob) -> str:
@@ -1310,8 +1325,7 @@ def _send_summary(item: SendItem, job: SendJob) -> str:
         label = {"deal_intro": "딜소개", "ir_delivery": "IR 전달"}.get(job.kind, job.kind)
     if item.status == "sent":
         return label
-    state = {"failed": "실패", "pending": "대기",
-             "canceled": "취소"}.get(item.status, item.status)
+    state = _SEND_STATES.get(item.status, item.status)
     detail = f" — {item.error}" if item.status == "failed" and item.error else ""
     return f"{label} {state}{detail}"
 

@@ -172,6 +172,7 @@
   {% for rep in month_reports %}
   <a href="#m-{{ rep.month }}" class="{% if rep.empty %}empty{% endif %}">{{ rep.month }}월</a>
   {% endfor %}
+  <a href="#intros">소개한 기업</a>
   <a href="#year-total">연간 합계표</a>
 </nav>
 
@@ -189,6 +190,11 @@
   {% endif %}
 </section>
 {% endfor %}
+
+{# 소개한 기업(#92) — 한 해치를 기업마다 한 줄로, 합계표(맨 앞이 발송 판) 바로 위.
+   합계표 안에 끼우지 않는다 — 합계표의 판 차례는 엑셀 `연간` 시트와 같아야 한다. #}
+{% set intro_label = year ~ '년' %}
+{% include "_report_intros.html" %}
 
 <div id="year-total">
 <h2 class="year-month-head">{{ year }}년 합계표

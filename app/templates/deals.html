@@ -453,12 +453,18 @@
         <input type="checkbox" id="hide-recent"> 최근 {{ recent_days }}일 내 소개한 {{ recent_count }}개 숨기기
       </label>
       {% endif %}
+      {# 위 숨기기와 `N회` 는 팀 전체 이력이다. 이것은 **내 딜소개 명단** 기준이다(#92). #}
+      {% if my_total %}
+      <label class="only-picked" title="내 딜소개 명단 {{ my_total }}명 중 아무도 받지 않은 기업만 봅니다">
+        <input type="checkbox" id="only-unsent"> 내가 아직 소개 안 한 기업만 ({{ my_unsent_count }}개)
+      </label>
+      {% endif %}
     </div>
     <div class="card-list" id="company-list">
       {% for c in companies %}
       {% set h = history.get(c.id, {}) %}
       <label class="pick-card {% if not c.introducible %}thin{% endif %} {% if h.recent %}recent-sent{% endif %}"
-             data-recent="{{ 1 if h.recent else 0 }}"
+             data-recent="{{ 1 if h.recent else 0 }}" data-my-got="{{ h.my_got or 0 }}"
              data-search="{{ (c.name ~ ' ' ~ (c.sector_major or '') ~ ' ' ~ (c.sector_minor or '') ~ ' ' ~ (c.one_liner or '') ~ ' ' ~ (c.series or ''))|lower }}">
         {# 자료 파일 이름은 여기 싣지 않는다. [보낼 자료] 목록은 서버가 문구와
            **같은 응답**에 실어 준 값으로 그린다(`attachments[].file`) — 번호가
@@ -485,6 +491,11 @@
             {% if h.rounds %}
             <span class="tag soft"
                   title="보낸 날 {{ h.rounds }}번 · 서로 다른 투자사 {{ h.investors }}곳 · 발송 {{ h.sends }}명 — 자세한 것은 IR 기업 현황의 [수정] 창">{{ h.rounds }}회</span>
+            {% endif %}
+            {# **내** 명단 중 받은 사람 / 내 명단 전체 · 내가 마지막으로 보낸 날. #}
+            {% if my_total %}
+            <span class="tag {{ 'soft' if h.my_got else '' }}"
+                  title="내 딜소개 명단 {{ my_total }}명 중 {{ h.my_got }}명이 받음{% if h.my_last %} · 마지막 {{ h.my_last }}{% endif %}">내 투자사 {{ h.my_got }}/{{ my_total }}{% if h.my_last %} · {{ h.my_last[5:]|replace('-', '/') }}{% endif %}</span>
             {% endif %}
           </div>
           <div class="pick-sub muted">[{{ c.sector_major or '-' }}] {{ c.one_liner or '' }}</div>

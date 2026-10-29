@@ -295,6 +295,8 @@
         '<span class="tl-kind">' + esc(KIND_KO[t.kind] || t.kind) + "</span>" +
         '<span class="tl-body">' + bodyHtml(t) + "</span>" +
         (t.source === "import" ? '<span class="tl-src">시트</span>' : "") +
+        // 앱 발송은 **누가 보냈는지**가 남는다(`_send_view` 의 `sender`).
+        (t.sender ? '<span class="tl-src">' + esc(t.sender) + "</span>" : "") +
         // 손으로 적은 줄만 되돌릴 수 있다 — 세울지는 서버가 정한다
         // (`manual_send.undoable`). 여기서 `source === "manual"` 을 다시 보면
         // 판정이 두 벌이 된다.
@@ -322,6 +324,10 @@
     if (t.week) head += '<span class="tl-week">' + t.week + "주차</span> ";
     if (t.company_count) head += "<b>" + t.company_count + "개사</b> ";
     if (t.companies && t.companies.length) {
+      // 안 나간 발송(실패 · 취소 · 대기)은 기업 칩만 그리면 성공한 딜소개와
+      // 똑같이 보인다 — 표시를 단다. 사유는 `content` 에 있다(`_send_summary`).
+      // 기업이 없는 줄은 본문(`content`)이 이미 `딜소개 실패 — …` 라 안 단다.
+      if (t.state) head = '<span class="tag warn" title="' + esc(t.content) + '">' + esc(t.state) + "</span> " + head;
       // 딜 기업 DB에 있는 기업은 표시만 다르게(없는 기업이 더 많아 오류로 다루지 않는다).
       return head + t.companies.map(function (c) {
         return '<span class="tl-co' + (c.known ? " known" : "") + '">' + esc(c.name) + "</span>";

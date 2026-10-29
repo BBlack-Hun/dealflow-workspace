@@ -242,4 +242,37 @@
   </p>
 </form>
 
+{#
+  계약 안 한 기업 — **보기만 한다**(#93). 폼 **밖**에 두고 체크칸·입력을 두지
+  않는다: 여기 줄이 `company_ids` 로 넘어가면 대표 카톡방으로 나간다. 왜 안
+  보내는지는 `services/ir_monthly.CONTRACTED` 머리말에 있다.
+#}
+{% if uncontracted %}
+<section class="miss-box" data-testid="startup-uncontracted">
+  <h2 class="panel-title">계약 안 한 기업 — 보내지 않음</h2>
+  <div class="table-wrap">
+    <table class="grid-table">
+      <thead>
+        <tr>
+          <th>기업명</th>
+          <th>계약여부</th>
+          <th>대표 카톡방</th>
+          <th>{{ selected }} 말까지 요청한 투자사</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in uncontracted %}
+        <tr class="ir-row-off">
+          <td>{{ row.company.name }}</td>
+          <td>{{ row.contract_label }}</td>
+          <td>{{ (row.company.kakao_room_name or '')|trim or '—' }}</td>
+          <td class="tabular">{{ row.total_firms }}곳 · {{ row.total_count }}명</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
 {% endblock %}
