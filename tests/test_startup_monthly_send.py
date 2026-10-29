@@ -501,3 +501,60 @@ def test_고른_달이_그대로_실린다(db, seeded, client):
 
     composed = ir_kakao.for_company(db, db.get(User, 1), seeded["ok"].id, last)
     assert _jobs(db)[0].items[0].message == composed.text
+
+
+# ── 계약 안 한 기업은 보기만 한다 (#93)  ★ ──────────────────────────────────
+
+def test_계약_안_한_기업은_보기만_하고_보내지_않는다(db, seeded, client):
+    """미계약·계약검토중은 표 아래 회색 구역에 **보이기만** 하고, 손 발송
+    (`sendable_ids`)에도 A5 수집에도 안 든다. 딜소개 불가와 요청 0건은 그
+    구역에도 없다.
+
+    방 이름까지 채워 둔다 — 대상에 섞였다면 보낼 수 있는 줄이 됐을 기업이다."""
+    from app import clock
+    from app.models import IrCompany, IrRequest, User, VcContact
+    from app.services import automation, automation_runner as runner, startup_send
+    from app.services.automations import startup_monthly as a5
+
+    def company(name, status):
+        made = IrCompany(name=name, contract_status=status,
+                         kakao_room_name=f"{name} 대표님")
+        db.add(made)
+        db.flush()
+        return made
+
+    none_ = company("샘플디", "none")
+    review = company("샘플이", "review")
+    blocked = company("샘플에프", "blocked")
+    idle = company("샘플지", "none")            # 요청 0건
+    contact = VcContact(user_id=1, name=PERSON, firm=FIRM)
+    db.add(contact)
+    db.flush()
+    for c in (none_, review, blocked):
+        db.add(IrRequest(user_id=1, contact_id=contact.id, company_id=c.id,
+                         company_name=c.name, requested_at=f"{seeded['month']}-05"))
+    db.commit()
+    month = seeded["month"]
+
+    shown = {r["company"].id for r in startup_send.rows(db, month)["uncontracted"]}
+    assert shown == {none_.id, review.id}
+
+    off = {none_.id, review.id, blocked.id, idle.id}
+    assert not off & set(startup_send.sendable_ids(db, month))
+
+    _turn_on(db, user_id=1)
+    row = automation.save(db, automation.STARTUP_MONTHLY, enabled=True,
+                          user_id=None, test_mode=False, test_room="")
+    batch = a5.collect(db, row, db.get(User, 1),
+                       runner.Plan(period=0, at=clock.now()))
+    assert [o.ir_company_id for o in batch.outs] == [seeded["ok"].id]
+
+    page = _login(client).get(f"/deals/startup-ir?month={month}").text
+    box = page.split('data-testid="startup-uncontracted"', 1)[1].split("</section>", 1)[0]
+    assert "계약 안 한 기업 — 보내지 않음" in box
+    assert "샘플디" in box and "샘플이" in box and "계약검토중" in box
+    assert "샘플에프" not in box and "샘플지" not in box
+    # 체크칸도 입력도 없다 — 그 구역에서 고를 수 있는 것이 하나도 없다.
+    assert "<input" not in box
+    for c in (none_, review):
+        assert f'name="company_ids" value="{c.id}"' not in page
