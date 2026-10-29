@@ -235,6 +235,9 @@ def rows(db: Session, month: str) -> dict:
         # 보이면 아직 아무도 확인하지 않은 이름으로 회차를 세우게 된다.
         "verified_count": sum(1 for r in out if r["verified"]),
         "no_lines_count": sum(1 for r in out if r["reason"] == NO_LINES),
+        # 계약 안 한 기업 — 표 아래 회색 구역에 **보기만** 한다(#93). `out` 에
+        # 섞지 않으므로 `sendable_ids` · A5 대상은 그대로 계약 기업뿐이다.
+        "uncontracted": over["uncontracted"],
         # 어느 기업 몫인지 몰라 어디에도 못 붙인 요청. 스타트업 화면이 이미
         # 적고 있는 값이고, 여기서도 보여야 한다 — 이 화면에서 보내는 사람은
         # 그 화면으로 돌아가지 않는다.

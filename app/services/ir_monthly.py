@@ -396,6 +396,18 @@ def contracted(db: Session) -> List[IrCompany]:
     return [c for c in rows if contract_key(c.contract_status) in CONTRACTED]
 
 
+def uncontracted(db: Session) -> List[IrCompany]:
+    """계약 기업도 `딜소개 불가` 도 아닌 나머지 전부, 이름 순 — **보기만 한다**(#93).
+
+    미계약 · 빈칸 · 계약검토중 · 목록에 없는 글자가 다 든다. 문서·카톡·발송은
+    이것을 읽지 않는다 — 받는 기업은 위 `contracted()` 하나다."""
+    from ..routers.companies import BLOCKED_CONTRACT, contract_key
+
+    rows = db.execute(select(IrCompany).order_by(IrCompany.name)).scalars().all()
+    return [c for c in rows
+            if contract_key(c.contract_status) not in CONTRACTED + (BLOCKED_CONTRACT,)]
+
+
 def contract_label(company: IrCompany) -> str:
     """`무료계약완료` 처럼 **화면에 보이는 말**. 말은 이미 있는 곳에서 가져온다 —
     여기서 다시 적으면 IR 기업 현황과 다른 말이 뜬다."""
@@ -467,9 +479,17 @@ def overview(db: Session, month: str) -> dict:
             # 누구인지 짐작할 여지가 가장 큰 자리라, 보내는 사람이 알고 보내야 한다.
             "alone": len(got) == 1,
         })
+    # 계약 안 한 기업 중 그 달 말까지 요청이 쌓인 곳 — **보기만 한다**(#93).
+    # `rows` 에 섞지 않는다: 섞으면 `sendable` 을 지나 대표 카톡방으로 나간다.
+    uncontracted_rows = [
+        {"company": c, "contract_label": contract_label(c),
+         "total_count": len(total.of(c.id)),
+         "total_firms": total.tally_of(c.id).firms}
+        for c in uncontracted(db) if total.of(c.id)]
     return {
         "month": month,
         "rows": rows,
+        "uncontracted": uncontracted_rows,
         "skipped": data.skipped,
         "skipped_count": data.skipped_count,
         "sendable_count": sum(1 for r in rows if r["sendable"]),
