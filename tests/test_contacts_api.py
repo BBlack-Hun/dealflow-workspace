@@ -182,6 +182,34 @@ def test_detail_returns_timeline_of_import_and_system(logged_in, db, contacts):
     assert "import" in sources and "system" in sources
 
 
+def test_timeline_keeps_every_send_and_marks_failed(logged_in, db, contacts):
+    """앱 발송이 **20건에서 잘려** 옛 딜소개가 빠졌고, 실패한 발송도 기업 칩만
+    그려져 성공과 똑같이 보였다(#92). 보낸 팀원 이름도 함께 싣는다."""
+    from app.models import DealBatch, DealBatchCompany, IrCompany
+
+    hong = db.execute(select(VcContact).where(VcContact.name == "홍길동")).scalar_one()
+    company = IrCompany(name="샘플애그")
+    batch = DealBatch(user_id=1, title="회차", sent_date="2026-08-01")
+    db.add_all([company, batch])
+    db.flush()
+    db.add(DealBatchCompany(batch_id=batch.id, company_id=company.id, position=1))
+    job = SendJob(user_id=1, kind="deal_intro", status="done", total=26, batch_id=batch.id)
+    db.add(job)
+    db.flush()
+    for day in range(1, 26):
+        db.add(SendItem(job_id=job.id, contact_id=hong.id, room_name="방", message="본문",
+                        status="sent", sent_at=f"2026-08-{day:02d}T10:00:00"))
+    db.add(SendItem(job_id=job.id, contact_id=hong.id, room_name="방", message="본문",
+                    status="failed", error="방 없음", sent_at="2026-08-26T10:00:00"))
+    db.commit()
+
+    body = logged_in.get(f"/api/contacts/{hong.id}").json()
+    sends = [t for t in body["timeline"] if t["kind"] == "deal_intro"]
+    assert len(sends) == 26
+    assert [t["state"] for t in sends if t["state"]] == ["실패"]
+    assert {t["sender"] for t in sends} == {"강민준"}
+
+
 def test_timeline_shows_round_structure_for_viewing(logged_in, db, contacts):
     """'월별로 특정 주·요일에 보낸 딜 리스트'를 화면에서 확인할 수 있어야 한다."""
     from app.models import IrCompany

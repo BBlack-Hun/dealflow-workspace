@@ -200,6 +200,19 @@ def month_range(year: int, month: int) -> tuple:
 def monthly(db: Session, year: int, month: int,
             user: Optional[User] = None, today: Optional[date] = None) -> dict:
     """한 달치 보고. `user` 를 주면 그 사람 것만, 없으면 팀 전체."""
+    start, end = month_range(year, month)
+    return {**_month(db, year, month, user, today),
+            "intro_companies": intro_companies(db, start, end, user)}
+
+
+def _month(db: Session, year: int, month: int, user: Optional[User],
+           today: Optional[date]) -> dict:
+    """`monthly` 의 몸통 — `소개한 기업` 만 뺐다.
+
+    연간 보고가 이것을 열두 번 부른다. `소개한 기업` 은 이력 전체를 한 번
+    훑어야 나오는 값이라, 달마다 부르면 같은 훑기를 열두 번 한다 — 연간은
+    한 해치를 한 번에 센다(`yearly`).
+    """
     today = today or date.today()
     start, end = month_range(year, month)
 
@@ -1178,7 +1191,7 @@ def yearly(db: Session, year: int, user: Optional[User] = None,
     # — 월간 보기와 **같은 조각**). 위에서 세는 김에 받은 것이라 질의는 안 는다.
     month_reports: List[dict] = []
     for mon in range(1, 13):
-        got = monthly(db, year, mon, user, today)
+        got = _month(db, year, mon, user, today)
         month_reports.append({**got, "empty": is_empty_month(got)})
         months.append({
             "month": mon,
@@ -1213,7 +1226,70 @@ def yearly(db: Session, year: int, user: Optional[User] = None,
         # 보기가 이것을 월간과 같은 모양(카드 · 발송 · 미팅 · 결과 · IR · 반응)
         # 으로 열두 번 이어 그린다. `empty` 인 달은 머리 한 줄로 접는다.
         "month_reports": month_reports,
+        # 한 해치를 **한 번에** 센다 — 달마다 세어 더하면 같은 기업이 열두 줄로
+        # 갈리고, 이력 훑기도 열두 번이 된다.
+        "intro_companies": intro_companies(db, date(year, 1, 1),
+                                           date(year, 12, 31), user),
     }
+
+
+def intro_companies(db: Session, start: date, end: date,
+                    user: Optional[User]) -> dict:
+    """그 기간에 **소개한 기업 — 기업마다 한 줄**(#92 팀원 요청).
+
+    회차 표는 회차마다 한 줄이라 "이번 달에 어느 기업을 몇 번, 몇 명에게
+    보냈나" 를 보려면 회차를 하나씩 열어 더해야 했다.
+
+    **세는 기준은 딜 제안 관리의 `내 투자사 N/M` 과 같다** — 같은 훑기
+    (`deal_history.scan`)의 받은 기록을 기간·사람으로 자를 뿐이다. 앱 발송은
+    실제로 나간 것만, 시트에서 옮긴 기록과 손으로 적은 기록은 되돌린 것만 빼고
+    든다. 누구의 것인가도 업무 보고 기준 그대로다(`deal_history.Receipt`).
+
+    받은 기록은 투자사 번호만 들고 온다. 이름은 **사람으로 거른 뒤에** 읽는다 —
+    팀원이 남의 투자사 이름을 보는 길이 되면 안 된다.
+
+    돌려주는 것: `{"rows": [기업 줄…], "details": 펼친 줄 수}`. 기업 줄은
+    `company · times(서로 다른 날) · investors(서로 다른 사람) · first · last ·
+    rows(날짜 · 회사 · 이름 · 출처)` 이고, 마지막 날 최신순이다.
+    """
+    from . import deal_history
+
+    sent = deal_history.scan(db)
+    lo, hi = start.isoformat(), end.isoformat()
+    # (기업, 날짜, 투자사, 출처) 하나가 한 줄 — 같은 날 같은 사람이 같은
+    # 출처로 두 번 적혀 있거나 두 계정이 눌렀어도 받은 것은 한 번이다.
+    got = {(r.key, r.day, r.contact_id, r.source) for r in sent.receipts
+           if r.day and lo <= r.day <= hi
+           and (user is None or r.user_id == user.id)}
+    people = {c.id: c for c in db.execute(
+        select(VcContact).where(VcContact.id.in_({g[2] for g in got} or {0}))
+    ).scalars().all()}
+
+    by_company: Dict[str, list] = {}
+    for key, day, contact_id, source in sorted(got, reverse=True):
+        c = people.get(contact_id)
+        by_company.setdefault(key, []).append({
+            "day": day,
+            "contact_id": contact_id,
+            "firm": (c.firm or "") if c else "",
+            "name": c.name if c else "-",
+            "source": deal_history.SOURCE_LABELS.get(source, source),
+        })
+    rows = []
+    for key, details in by_company.items():
+        days = {d["day"] for d in details}
+        rows.append({
+            "company": sent.names.get(key, key),
+            "times": len(days),
+            "investors": len({d["contact_id"] for d in details}),
+            "first": min(days),
+            "last": max(days),
+            "rows": details,
+        })
+    # 마지막 날 최신순, 같은 날은 기업명 순.
+    rows.sort(key=lambda r: r["company"])
+    rows.sort(key=lambda r: r["last"], reverse=True)
+    return {"rows": rows, "details": len(got)}
 
 
 def is_empty_month(data: dict) -> bool:
