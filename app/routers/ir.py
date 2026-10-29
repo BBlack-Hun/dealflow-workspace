@@ -358,7 +358,10 @@ def last_batch(contact_id: int, db: Session = Depends(get_db),
     지난 카톡을 뒤지지 않는다.
     """
     _owned_contact(db, contact_id, user)
-    return pipeline.last_batch_items(db, contact_id)
+    out = pipeline.last_batch_items(db, contact_id)
+    # 딜 소싱(Series A 딜 공유)으로 받은 기업 — 화면이 따로 한 줄로 세운다.
+    out["sourcing"] = pipeline.last_share_items(db, contact_id)
+    return out
 
 
 # --- IR 요청 ----------------------------------------------------------------

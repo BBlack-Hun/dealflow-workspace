@@ -425,6 +425,25 @@ def shared_companies(db: Session, contact_ids: Iterable[int]) -> Dict[int, List[
             for contact_id, got in by_contact.items()}
 
 
+def names_by_item(db: Session, item_ids: Iterable[int]) -> Dict[int, List[str]]:
+    """발송 건 → 그 건에 실린 기업 이름(문구 차례) — 투자사 활동 이력의 딜 소싱 줄.
+
+    상태는 보지 않는다 — 안 나간 건의 표시는 이력 쪽이 단다(`contacts._send_view`).
+    """
+    ids = list(item_ids)
+    out: Dict[int, List[str]] = {}
+    if not ids:
+        return out
+    for item_id, name in db.execute(
+        select(SeriesAShare.send_item_id, SeriesACompany.name)
+        .join(SeriesACompany, SeriesACompany.id == SeriesAShare.series_a_company_id)
+        .where(SeriesAShare.send_item_id.in_(ids))
+        .order_by(SeriesAShare.send_item_id, SeriesAShare.position)
+    ).all():
+        out.setdefault(item_id, []).append((name or "").strip())
+    return out
+
+
 def _names(rows: Sequence[SeriesACompany]) -> str:
     return ", ".join((c.name or "").strip() for c in rows)
 
