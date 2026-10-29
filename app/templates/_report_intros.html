@@ -1,0 +1,67 @@
+{#
+  ── 소개한 기업 (#92 팀원 요청) — 월간 보기와 연간 보기가 같이 쓰는 조각 ─────────
+
+  위 발송 표는 회차마다 한 줄이라 "이 기간에 어느 기업을 몇 번, 몇 명에게
+  보냈나" 를 보려면 회차를 하나씩 더해야 했다. 여기는 **기업마다 한 줄**이다.
+
+  값은 `intro_companies`(`report.intro_companies`) — 딜 제안 관리의
+  `내 투자사 N/M` 과 같은 받은 기록을 기간·사람으로 자른 것이다. 엑셀의
+  `소개한 기업`·`소개 상세` 시트가 같은 dict 를 그대로 적는다.
+
+  **펼치기는 브라우저가 한다**(`<details>`) — 여닫이 하나 때문에 JS 를 붙이지
+  않는다(`_ref_new.html` 과 같은 까닭).
+
+  부르는 쪽이 `intro_label`(`10월` · `2026년`)을 정해 둔다.
+#}
+<section class="panel" id="intros">
+  {# 머리는 월간 `N월 발송` 판과 같은 모양이다(이름 + 오른쪽 안내). 연간 합계표의
+     판(`<h2><span>`)이 아니다 — 그 판들은 엑셀 `연간` 시트와 차례가 같아야 한다. #}
+  <h2 class="panel-title">{{ intro_label }} 소개한 기업
+    <span class="hint">{{ intro_companies.rows|length }}개사 · 투자사가 실제로 받은 것만 셉니다 · 기업명을 누르면 받은 투자사가 펼쳐집니다</span>
+  </h2>
+  {% if intro_companies.rows %}
+  <div class="table-wrap">
+  <table class="grid-table compact">
+    <thead><tr>
+      <th>기업명</th>
+      {# 같은 날 여러 명에게 보낸 것은 한 번이다 — 회차 수가 아니라 날 수. #}
+      <th class="num" style="width:96px" title="서로 다른 날짜 수입니다">소개한 횟수</th>
+      <th class="num" style="width:110px" title="같은 사람이 여러 번 받았으면 한 명으로 셉니다">받은 투자사 수</th>
+      <th style="width:96px">처음 날짜</th>
+      <th style="width:96px">마지막 날짜</th>
+    </tr></thead>
+    <tbody>
+      {% for c in intro_companies.rows %}
+      <tr>
+        <td>
+          <details>
+            <summary><b>{{ c.company }}</b></summary>
+            <table class="grid-table compact">
+              <thead><tr>
+                <th style="width:96px">날짜</th><th>투자사</th><th style="width:76px">출처</th>
+              </tr></thead>
+              <tbody>
+                {% for d in c['rows'] %}
+                <tr>
+                  <td class="tabular">{{ d.day }}</td>
+                  <td><b>{{ d.name }}</b> <span class="muted">{{ d.firm }}</span></td>
+                  <td class="muted">{{ d.source }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </details>
+        </td>
+        <td class="num">{{ c.times }}</td>
+        <td class="num">{{ c.investors }}</td>
+        <td class="tabular">{{ c.first }}</td>
+        <td class="tabular">{{ c.last }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="muted bucket-empty">이 기간에 소개한 기업이 없습니다.</p>
+  {% endif %}
+</section>

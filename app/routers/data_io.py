@@ -989,6 +989,41 @@ def _buckets_sheet(sheet, data, team_wide):
                       wraps={status_col})
 
 
+def _intro_sheets(wb, tag: str, label: str, data: dict, who: str,
+                  today: date) -> None:
+    """`소개한 기업` · `소개 상세` 두 장(#92) — 화면의 `소개한 기업` 표 그대로.
+
+    줄은 화면과 **같은 dict**(`report.intro_companies`)에서 받는다. 상세는 화면에서
+    기업 줄을 펼친 것을 한 장에 이어 적은 것이다(기업 차례 · 그 안은 최근 날부터).
+    """
+    got = data["intro_companies"]
+    sub = f"{who} · {today.isoformat()} 뽑음 · 투자사가 실제로 받은 것만 셉니다"
+
+    sheet = _ReportSheet(wb.create_sheet(f"{tag} 소개한 기업"),
+                         [34, 12, 14, 12, 12], 5)
+    sheet.title(f"{label} 소개한 기업  {len(got['rows'])}개사", sub)
+    sheet.blank()
+    if not got["rows"]:
+        sheet.note("이 기간에 소개한 기업이 없습니다.")
+    else:
+        sheet.head(["기업명", "소개한 횟수", "받은 투자사 수", "처음 날짜", "마지막 날짜"])
+        for c in got["rows"]:
+            sheet.row([c["company"], c["times"], c["investors"], c["first"],
+                       c["last"]], nums={1, 2})
+
+    detail = _ReportSheet(wb.create_sheet(f"{tag} 소개 상세"),
+                          [12, 30, 24, 14, 12], 5)
+    detail.title(f"{label} 소개 상세  {got['details']}건", sub)
+    detail.blank()
+    if not got["rows"]:
+        detail.note("이 기간에 소개한 기업이 없습니다.")
+        return
+    detail.head(["날짜", "기업", "투자사 회사", "투자사 이름", "출처"])
+    for c in got["rows"]:
+        for d in c["rows"]:
+            detail.row([d["day"], c["company"], d["firm"], d["name"], d["source"]])
+
+
 def report_workbook(data: dict, *, team_wide: bool, who: str,
                     today: date) -> bytes:
     """업무 보고 한 달치 → 리포트 엑셀 바이트.
@@ -1036,6 +1071,7 @@ def report_workbook(data: dict, *, team_wide: bool, who: str,
                      [12, 14, 12, 26, 26, 36, 10],
                      7 if team_wide else 6),
         data, team_wide)
+    _intro_sheets(wb, tag, f"{year}년 {month}월", data, who, today)
 
     return sp.workbook_bytes(wb)
 
@@ -1119,7 +1155,8 @@ def yearly_report_workbook(data: dict, *, who: str, today: date) -> bytes:
     같은 약속이다. 여기서 다시 세지 않으므로 화면과 파일의 숫자가 갈릴 자리가
     없다.
 
-    **시트가 하나다.** 왜 열둘이 아닌지는 위 `_yearly_sheet` 에 적어 두었다.
+    **합계 시트는 하나다.** 왜 열둘이 아닌지는 위 `_yearly_sheet` 에 적어 두었다.
+    그 뒤에 한 해치 `소개한 기업` · `소개 상세` 두 장이 붙는다(#92).
     """
     try:
         import openpyxl
@@ -1143,6 +1180,7 @@ def yearly_report_workbook(data: dict, *, who: str, today: date) -> bytes:
                 f"— 한 달치 회차·미팅·반응은 그 달 파일에 있습니다.")
     sheet.blank()
     _yearly_sheet(sheet, data)
+    _intro_sheets(wb, str(year), f"{year}년", data, who, today)
 
     return sp.workbook_bytes(wb)
 
