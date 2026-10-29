@@ -10,6 +10,7 @@
 //   ② 단추 글자는 `Series A 딜 소개 (선택 N명)` — 체크한 참여 분 수
 //   ③ 체크한 불참여 분은 싣지 않고 몇 명 뺐는지 옆에 적는다
 //   ④ 머리글 체크 = 지금 보이는 줄 모두(걸러진 줄은 안 켠다) · 다시 누르면 푼다
+//      켤 때는 숨은 줄에 남은 체크를 끈다 — 고른 것 = 지금 걸린 필터를 다 지난 줄(⑦)
 //   ⑤ 필터 · 검색으로 **숨은 줄의 체크는 남는다** — '검색 → 체크 → 다음 검색' 으로
 //      여러 명을 고른다. 단추는 체크한 분 전부를 세고, 숨은 분이 있으면 그렇다고 적는다
 //
@@ -180,8 +181,10 @@ function locked(btn) { return btn.getAttribute("aria-disabled") === "true"; }
   assert.strictEqual(t.hint.hidden, false);
   assert.ok(/체크한 1명은 지금 검색 · 필터에 가려 있습니다/.test(t.hint.textContent),
             t.hint.textContent);
-  // 머리글 체크는 **보이는 줄만** — 숨은 11 은 건드리지 않는다
-  assert.strictEqual(t.all.checked, true);
+  // 숨은 11 의 체크가 남아 있으니 머리글은 `모두` 가 아니라 `일부` 다
+  assert.strictEqual(t.all.checked, false);
+  assert.strictEqual(t.all.indeterminate, true);
+  // 끌 때는 **보이는 줄만** — 숨은 11 은 건드리지 않는다
   clickAll(t, false);
   assert.strictEqual(rows[1].querySelector(".js-sourcing-pick").checked, false);
   assert.strictEqual(rows[0].querySelector(".js-sourcing-pick").checked, true);
@@ -207,6 +210,34 @@ function locked(btn) { return btn.getAttribute("aria-disabled") === "true"; }
   assert.strictEqual(t.hint.textContent,
                      "체크한 불참여 1명은 빼고 엽니다 · " +
                      "체크한 참여 확인 전(제안 대기·물어보는 중 등) 2명은 빼고 엽니다");
+}
+
+// --- ⑦ 참여 + 담당자 필터를 다 건 뒤 전체선택 — 담당자 필터 밖 줄은 안 실린다 -----
+// 사용자: "참여랑, 담당자 둘다 필터 걸고 전체선택했는데, 담당자까지 필터건 내역에
+// 반영이 안됨". `참여` 만 걸고 전체선택한 체크가 `담당자` 로 숨은 줄에 남아 실렸다.
+{
+  const rows = [row(11, "참여"), row(12, "참여"), row(13, "불참여"), row(14, "참여")];
+  const who = { 11: "가담당", 12: "나담당", 13: "가담당", 14: "가담당" };
+  const t = setup(rows);
+  // `참여` 만 건다 → 전체선택
+  rows[2].hidden = true;
+  t.refilter();
+  clickAll(t, true);
+  assert.strictEqual(t.btn.getAttribute("href"), BASE + "&contacts=11,12,14");
+  // `담당자: 가담당` 을 더 건다 — 12(나담당)가 숨는다
+  rows.forEach(function (r) {
+    if (who[r.getAttribute("data-id")] !== "가담당") r.hidden = true;
+  });
+  t.refilter();
+  assert.strictEqual(t.all.checked, false, "숨은 줄에 체크가 남았는데 머리글이 `모두` 다");
+  assert.strictEqual(t.all.indeterminate, true);
+  clickAll(t, true);
+  assert.strictEqual(rows[1].querySelector(".js-sourcing-pick").checked, false,
+                     "담당자 필터 밖(나담당) 줄이 전체선택에 남았다");
+  assert.strictEqual(t.btn.getAttribute("href"), BASE + "&contacts=11,14");
+  assert.strictEqual(t.btn.textContent, "Series A 딜 소개 (선택 2명)");
+  assert.strictEqual(t.all.checked, true);
+  assert.strictEqual(t.all.indeterminate, false);
 }
 
 console.log("sourcing_share_link_test: ok");

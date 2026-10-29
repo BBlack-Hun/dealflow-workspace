@@ -582,7 +582,9 @@
     // 적은 문구 — `data-part-kind`)은 싣지 않는다(딜 제안 관리에도 안 뜨고 발송도
     // 막힌다) — 조용히 빼지 않고 불참여 · 확인 전을 나눠 몇 명 뺐는지 옆에 적는다. 검색 · 필터로 **숨은 줄의 체크도
     // 싣는다** — 그렇다고 단추(`일부 숨김`)와 옆 말에 적는다. 머리글 체크는 지금
-    // 보이는 줄만 켜고 끈다.
+    // 보이는 줄만 켜고 끈다 — **켤 때는 숨은 줄의 체크를 끈다**(고른 것 = 지금 걸린
+    // 모든 필터 · 검색을 지난 줄). 안 그러면 `참여` 로 전체선택한 뒤 `담당자` 를 더
+    // 걸고 다시 눌러도 다른 담당의 줄이 그대로 실렸다.
     var shareBtn = document.getElementById("sourcing-share-btn");
     var shareHint = document.getElementById("sourcing-share-hint");
     var checkAll = document.getElementById("sourcing-check-all");
@@ -615,8 +617,10 @@
       if (!checkAll) return;
       var vis = visiblePicks();
       var on = vis.filter(function (cb) { return cb.checked; }).length;
-      checkAll.checked = vis.length > 0 && on === vis.length;
-      checkAll.indeterminate = on > 0 && on < vis.length;
+      // 숨은 줄에 체크가 남았으면 `모두` 가 아니라 `일부` — 한 번 누르면 보이는 줄로 맞춘다.
+      var hiddenOn = pickBoxes().filter(function (cb) { return cb.checked; }).length - on;
+      checkAll.checked = vis.length > 0 && on === vis.length && !hiddenOn;
+      checkAll.indeterminate = !checkAll.checked && on + hiddenOn > 0;
     }
     function syncShareLink() {
       syncCheckAll();
@@ -700,7 +704,9 @@
     });
     if (checkAll) checkAll.addEventListener("change", function () {
       var on = !!checkAll.checked;
-      visiblePicks().forEach(function (cb) { cb.checked = on; });
+      var vis = visiblePicks();
+      if (on) pickBoxes().forEach(function (cb) { if (vis.indexOf(cb) < 0) cb.checked = false; });
+      vis.forEach(function (cb) { cb.checked = on; });
       syncShareLink();
     });
     table.addEventListener("change", function (e) {
