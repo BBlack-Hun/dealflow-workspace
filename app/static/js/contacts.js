@@ -50,7 +50,10 @@
     ir_review_request: "IR 자료 검토 요청",
     // 스타트업 안내 카톡(`services/startup_outreach.py`). 어느 문구였는지는
     // 줄의 본문이 적는다(`안내 카톡 · 견적서 공유 안내`).
-    startup_msg: "안내 카톡"
+    startup_msg: "안내 카톡",
+    // 딜 소싱 화면에서 이어진 소싱 줄로 나간 것(`contacts._SEND_LABELS` 와 같은 이름).
+    sourcing_intro: "딜 소싱(참여 안내)", sourcing_remind: "딜 소싱(월간 리마인드)",
+    sourcing_deal_share: "딜 소싱(Series A 딜 공유)"
   };
 
   var panel = document.getElementById("detail-panel");

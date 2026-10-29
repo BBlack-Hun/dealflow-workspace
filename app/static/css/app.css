@@ -2037,6 +2037,8 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
 .num-chip.picked { background: #e6efff; border-color: var(--brand); color: var(--brand);
   font-weight: 600; }
 .num-chip.no-link { border-style: dashed; }
+/* 딜 소싱(Series A 딜 공유)으로 받은 기업의 머리말 — 딜 소개 번호와 줄을 가른다(`ir_numbers.js`). */
+.num-pick > em { flex-basis: 100%; font-size: 12px; }
 .field.inline-field.wide { flex-basis: 100%; }
 
 .pick-tags { display: flex; flex-wrap: wrap; gap: 3px; margin: 3px 0; }

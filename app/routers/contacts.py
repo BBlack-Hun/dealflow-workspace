@@ -33,7 +33,8 @@ from ..models import (AutomationSend, ContactActivity, ContactColumn, DealFollow
 from ..services import (contact_columns, deal_stage, firm_type, investor_firms,
                         ir_readonly, last_activity, manual_send, meeting_kind, memo_intro,
                         room_joined,
-                        room_name, sheet_import, sheet_owner, sourcing_sync)
+                        room_name, series_a_share, sheet_import, sheet_owner, sourcing_msg,
+                        sourcing_sync)
 from ..services.room_name import DEFAULT_SUFFIX, build_room_name
 from .sourcing import requested_sort
 
@@ -1057,14 +1058,23 @@ def get_contact(
     ).scalars().all()
     acts.sort(key=lambda a: (_activity_date(a) or "", a.id), reverse=True)
 
+    # 딜 소싱 발송은 받는 줄이 딜 소싱 명단이라 `contact_id` 가 비어 있다 — 이 투자사
+    # 줄에 **이어진** 소싱 줄(`SourcingContact.vc_contact_id`, 갈래마다 한 줄)로 찾는다.
+    # 이름으로 짐작하지 않는다 — 잇기가 없으면 남의 이력이 붙을 수 있다.
+    linked = select(SourcingContact.id).where(SourcingContact.vc_contact_id == contact.id)
     sends = db.execute(
         select(SendItem, SendJob)
         .join(SendJob, SendJob.id == SendItem.job_id)
-        .where(SendItem.contact_id == contact.id, SendJob.kind != "verify_room")
+        .where((SendItem.contact_id == contact.id)
+               | SendItem.sourcing_contact_id.in_(linked),
+               SendJob.kind != "verify_room")
         # 한도를 두지 않는다 — 20건에서 잘라 옛 딜소개가 이력에서 빠졌다(#92).
         # 시트 기록(`acts`)처럼 한 사람 몫이라 많아야 한 해 수십 건이다.
         .order_by(SendItem.id.desc())
     ).all()
+    # Series A 딜 공유는 사람마다 실린 기업이 달라 회차가 아니라 **건마다** 적혀 있다.
+    shared = series_a_share.names_by_item(
+        db, [i.id for i, _j in sends if i.sourcing_contact_id])
     # 보낸 팀원 이름 — 담당이 넘어간 줄은 지금 담당과 보낸 사람이 다르다.
     senders = dict(db.execute(
         select(User.id, User.name).where(User.id.in_({j.user_id for _i, j in sends}))
@@ -1137,7 +1147,8 @@ def get_contact(
         # 아래에 묻혀서, 무슨 일이 언제 있었는지 읽을 수가 없다.
         "timeline": sorted(
             [_activity_view(a, known) for a in acts]
-            + [_send_view(item, job, batch_names.get(job.batch_id, []), known,
+            + [_send_view(item, job,
+                          shared.get(item.id) or batch_names.get(job.batch_id, []), known,
                           senders.get(job.user_id) or "")
                for item, job in sends]
             + _pipeline_views(db, contact.id),
@@ -1291,7 +1302,7 @@ def _send_view(item: SendItem, job: SendJob, names: List[str],
     return {
         "date": date,
         "month": None,
-        "kind": job.kind,
+        "kind": _history_kind(job),
         "content": _send_summary(item, job),
         "state": "" if item.status == "sent" else _SEND_STATES.get(item.status, item.status),
         "sender": sender,
@@ -1308,6 +1319,17 @@ def _send_view(item: SendItem, job: SendJob, names: List[str],
 
 
 _SEND_STATES = {"failed": "실패", "pending": "대기", "canceled": "취소"}
+#: 이력 줄의 갈래 이름. 딜 소싱은 `topic` 으로 가른다(비면 참여 안내). 화면의 같은 이름은
+#: `static/js/contacts.js` 의 `KIND_KO`.
+_SEND_LABELS = {"deal_intro": "딜소개", "ir_delivery": "IR 전달",
+                sourcing_msg.KIND: "딜 소싱(참여 안내)",
+                sourcing_msg.REMIND_KIND: "딜 소싱(월간 리마인드)",
+                sourcing_msg.SHARE_KIND: f"딜 소싱({series_a_share.LABEL})"}
+
+
+def _history_kind(job: SendJob) -> str:
+    """이력 줄의 갈래 — 딜 소싱은 잡 종류 하나에 글이 셋이라 `topic` 으로 가른다."""
+    return (job.topic or job.kind) if job.kind == sourcing_msg.KIND else job.kind
 
 
 def _send_summary(item: SendItem, job: SendJob) -> str:
@@ -1322,7 +1344,8 @@ def _send_summary(item: SendItem, job: SendJob) -> str:
     if job.kind == startup_outreach.KIND:
         label = startup_outreach.history_label(job.topic)
     else:
-        label = {"deal_intro": "딜소개", "ir_delivery": "IR 전달"}.get(job.kind, job.kind)
+        kind = _history_kind(job)
+        label = _SEND_LABELS.get(kind, kind)
     if item.status == "sent":
         return label
     state = _SEND_STATES.get(item.status, item.status)

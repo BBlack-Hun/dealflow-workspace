@@ -34,21 +34,34 @@
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (d) {
         if (mine !== turn) return;          // 그 사이 다른 담당자를 골랐다
-        if (!d || !d.items || !d.items.length) return;
+        var items = (d && d.items) || [];
+        // 딜 소싱(Series A 딜 공유)으로 받은 기업 — 번호가 딜 소개와 겹쳐 머리말을
+        // 달고 뒤에 따로 선다. 눌러서 **이름으로** 적는다(번호로 적는 길은 딜 소개 것).
+        var share = (d && d.sourcing && d.sourcing.items) || [];
+        if (!items.length && !share.length) return;
         pick.innerHTML = "";
         box.hidden = false;
-        title.textContent = d.title + (d.sent_date ? " · " + d.sent_date : "");
-        d.items.forEach(function (item) {
-          var b = document.createElement("button");
-          b.type = "button";
-          b.className = "num-chip" + (item.has_file ? "" : " no-link");
-          b.textContent = item.label + " " + item.name;
-          b.title = item.has_file ? item.name : item.name + " — IR 자료 파일명 없음";
-          b.addEventListener("click", function () { toggle(b, item.name); });
-          pick.appendChild(b);
-        });
+        title.textContent = items.length ? d.title + (d.sent_date ? " · " + d.sent_date : "") : "";
+        items.forEach(chip);
+        if (share.length) {
+          var head = document.createElement("em");
+          head.className = "muted";
+          head.textContent = d.sourcing.title + (d.sourcing.sent_date ? " · " + d.sourcing.sent_date : "");
+          pick.appendChild(head);
+          share.forEach(chip);
+        }
       })
       .catch(function () { /* 지난 회차가 없어도 직접 적으면 된다 */ });
+  }
+
+  function chip(item) {
+    var b = document.createElement("button");
+    b.type = "button";
+    b.className = "num-chip" + (item.has_file ? "" : " no-link");
+    b.textContent = item.label + " " + item.name;
+    b.title = item.has_file ? item.name : item.name + " — IR 자료 파일명 없음";
+    b.addEventListener("click", function () { toggle(b, item.name); });
+    pick.appendChild(b);
   }
 
   function toggle(button, name) {

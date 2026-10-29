@@ -3,10 +3,11 @@
 매 회차 같은 기업을 또 보내면 받는 쪽에서는 이쪽이 지난번을 기억 못 한다고 읽는다.
 그래서 기업을 고를 때 **최근에 보낸 것**이 눈에 띄어야 한다.
 
-이력은 두 곳에 있다.
+이력은 세 곳에 있다.
 - `deal_batch_companies` — 이 시스템으로 보낸 회차
 - `contact_activities` — 시트에서 옮겨 온 지난 발송 기록(문구 안에 기업명이 적혀 있다)
   그리고 사람이 손으로 적은 줄(`services/manual_send.py`, `source="manual"`)
+- `series_a_shares` — 딜 소싱의 Series A 딜 공유 중 투자사 줄에 이어진 분께 나간 것
 
 시스템으로 보내기 시작한 것이 최근이라, 지금은 두 번째가 대부분이다.
 
@@ -43,11 +44,12 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Dict, List, NamedTuple, Optional, Set, Tuple
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..models import (SEND_KINDS, ContactActivity, DealBatch, DealBatchCompany,
-                      IrCompany, SendItem, SendJob, User, VcContact)
+                      IrCompany, SendItem, SendJob, SeriesACompany, SeriesAShare,
+                      SourcingContact, User, VcContact)
 from .sheet_import import normalize_company_name
 
 # 이 안에 보낸 기업은 '최근에 보냄'으로 표시한다.
@@ -67,7 +69,10 @@ SENT_STATUS = "sent"
 SHEET = "sheet"
 APP = "app"
 MANUAL = "manual"
-SOURCE_LABELS = {SHEET: "시트", APP: "앱 발송", MANUAL: "손으로 적음"}
+#: 딜 소싱 화면의 Series A 딜 공유 — 투자사 줄에 이어진 소싱 줄로 나간 것(훑기 ③).
+SOURCING = "sourcing"
+SOURCE_LABELS = {SHEET: "시트", APP: "앱 발송", MANUAL: "손으로 적음",
+                 SOURCING: "딜 소싱"}
 
 #: 보낸 사람을 **추정으로 적었다**는 표시.
 #:
@@ -354,6 +359,38 @@ def scan(db: Session) -> Scan:
                 who = names.get(user_id, "")
                 if who:
                     spot.senders[(who, False)] += n
+
+    # ③ 딜 소싱의 Series A 딜 공유 — 받는 줄이 딜 소싱 명단이라 위 ②(`contact_id`)에
+    # 안 잡힌다. **투자사 줄에 이어진** 소싱 줄(`vc_contact_id`)로 실제로 나간 것만
+    # 그 투자사가 받은 것으로 센다 — 이름으로 짐작하지 않고, 안 이어진 분은 투자사
+    # 명단에 없는 사람이라 세지 않는다. 자리는 ②와 같이 **회차 하나**라, 딜 소개와
+    # 따로 받았으면 `N회` 가 하나 늘고 마지막 날(45일 표시)도 이 날까지 본다.
+    for batch_id, day, title, user_id, contact_id, name in db.execute(
+        select(DealBatch.id, DealBatch.sent_date, DealBatch.title, SendJob.user_id,
+               SourcingContact.vc_contact_id,
+               # IR 기업에 이어진 딜이면 그 이름으로 — 같은 기업의 딜 소개 이력과 한 줄이다.
+               func.coalesce(IrCompany.name, SeriesACompany.name))
+        .select_from(SeriesAShare)
+        .join(SendItem, SendItem.id == SeriesAShare.send_item_id)
+        .join(SendJob, SendJob.id == SendItem.job_id)
+        .join(DealBatch, DealBatch.id == SendJob.batch_id)
+        .join(SourcingContact, SourcingContact.id == SeriesAShare.sourcing_contact_id)
+        .join(SeriesACompany, SeriesACompany.id == SeriesAShare.series_a_company_id)
+        .outerjoin(IrCompany, IrCompany.id == SeriesACompany.ir_company_id)
+        .where(SendItem.status == SENT_STATUS, SendJob.kind.in_(SEND_KINDS),
+               SourcingContact.vc_contact_id.isnot(None))
+    ).all():
+        key = _key(name)
+        if not key:
+            continue
+        day = (day or "")[:10]
+        out.names.setdefault(key, name)
+        spot = bucket(key, (SOURCING, batch_id), day, SOURCING)
+        spot.title = title or ""
+        spot.contacts.add(contact_id)
+        out.receipts.append(Receipt(key, day, contact_id, SOURCING, user_id))
+        if names.get(user_id):
+            spot.senders[(names[user_id], False)] += 1
 
     for key, spots in acc.items():
         rounds = sorted((spot.round() for spot in spots.values()),

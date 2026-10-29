@@ -823,6 +823,46 @@ def last_batch_items(db: Session, contact_id: int) -> dict:
     }
 
 
+def last_share_items(db: Session, contact_id: int) -> dict:
+    """이 투자사 줄에 **이어진 딜 소싱 줄**이 마지막으로 받은 Series A 딜 공유의 번호와 기업.
+
+    딜 소싱으로 나간 글은 받는 줄이 딜 소싱 명단이라 위 `last_batch_items` 에 안
+    잡힌다. 잇기(`SourcingContact.vc_contact_id`)로만 찾는다 — 이름으로 짐작하지 않는다.
+    번호는 그 글의 `[기업N]` 이다. 딜 소개 번호와 겹치므로 **번호로 적는 길
+    (`resolve_request_names`)에는 섞지 않는다** — 화면은 눌러서 이름으로 적는다.
+    """
+    from ..models import DealBatch, SeriesAShare, SourcingContact
+    from .series_a_share import KIND, LABEL
+
+    linked = select(SourcingContact.id).where(SourcingContact.vc_contact_id == contact_id)
+    row = db.execute(
+        select(SendItem.id, DealBatch.sent_date)
+        .join(SendJob, SendJob.id == SendItem.job_id)
+        .join(DealBatch, DealBatch.id == SendJob.batch_id)
+        .where(SendItem.sourcing_contact_id.in_(linked), SendItem.status == "sent",
+               SendJob.topic == KIND)
+        .order_by(SendItem.id.desc()).limit(1)
+    ).first()
+    out = {"title": f"딜 소싱({LABEL})", "sent_date": "", "items": []}
+    if row is None:
+        return out
+    item_id, out["sent_date"] = row[0], row[1] or ""
+    for position, name, own_file, ir_file in db.execute(
+        select(SeriesAShare.position, SeriesACompany.name, SeriesACompany.ir_file_name,
+               IrCompany.ir_file_name)
+        .join(SeriesACompany, SeriesACompany.id == SeriesAShare.series_a_company_id)
+        # IR 기업에 이어진 딜은 그쪽 자료가 나간다(`series_a_rows` 머리말).
+        .outerjoin(IrCompany, IrCompany.id == SeriesACompany.ir_company_id)
+        .where(SeriesAShare.send_item_id == item_id)
+        .order_by(SeriesAShare.position)
+    ).all():
+        out["items"].append({"position": position,
+                             "label": deal_numbers.label(position),
+                             "name": name,
+                             "has_file": bool((own_file or ir_file or "").strip())})
+    return out
+
+
 def resolve_request_names(db: Session, contact_id: int,
                           raw: str) -> tuple:
     """적어 넣은 것을 기업으로 푼다. **번호도 이름처럼 받는다.**
