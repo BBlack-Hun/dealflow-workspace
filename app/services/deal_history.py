@@ -41,7 +41,7 @@ import json
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -135,6 +135,9 @@ class CompanyHistory:
     #: 발송 건수 — 회차마다의 사람 수를 그대로 더한 값이다.
     sends: int = 0
     last_sent: str = ""
+    #: {투자사 번호: 마지막으로 받은 날}. **밖으로 그대로 내지 않는다**(머리글) —
+    #: `annotate(mine=...)` 가 부르는 쪽 명단과 겹친 **수**와 날짜만 낸다.
+    reached: Dict[int, str] = field(default_factory=dict)
 
     @property
     def days(self) -> int:
@@ -322,15 +325,17 @@ def scan(db: Session) -> Scan:
     for key, spots in acc.items():
         rounds = sorted((spot.round() for spot in spots.values()),
                         key=lambda r: (r.day, r.source), reverse=True)
-        everyone: set = set()
+        everyone: Dict[int, str] = {}
         for spot in spots.values():
-            everyone |= spot.contacts
+            for contact_id in spot.contacts:
+                everyone[contact_id] = max(everyone.get(contact_id, ""), spot.day)
         days = [r.day for r in rounds if r.day]
         out.companies[key] = CompanyHistory(
             rounds=rounds,
             investors=len(everyone),
             sends=sum(r.investors for r in rounds),
-            last_sent=max(days) if days else "")
+            last_sent=max(days) if days else "",
+            reached=everyone)
     return out
 
 
@@ -345,16 +350,24 @@ def last_sent_map(db: Session) -> Dict[str, str]:
 
 
 def annotate(companies: List[IrCompany], sent: Scan,
-             today: Optional[date] = None) -> Dict[int, dict]:
-    """{기업 id: {last_sent, days_ago, recent, rounds, investors, sends}}.
+             today: Optional[date] = None,
+             mine: Set[int] = frozenset()) -> Dict[int, dict]:
+    """{기업 id: {last_sent, days_ago, recent, rounds, investors, sends,
+    my_got, my_last}}.
 
     `rounds` 는 **보낸 날 수**다. 발송 건수(`sends`)와 나란히 둔다 — 회차 수만
     보이면 180명짜리와 103명짜리가 똑같이 `6회` 로 읽힌다(머리글 참고).
+
+    여기까지는 **팀 전체** 이력이다. `mine`(투자사 번호들)을 주면 그 명단 중
+    이 기업을 받은 사람 수(`my_got`)와 그중 마지막 날(`my_last`)을 함께 낸다 —
+    딜 제안 관리에서 "내가 아직 소개 안 한 기업" 을 고르는 자리(#92). 세는
+    기준은 위 훑기 그대로다(앱 발송은 실제로 나간 것만 · 시트 · 손으로 적음).
     """
     today = today or date.today()
     out: Dict[int, dict] = {}
     for company in companies:
         hist = sent.of(company.name)
+        got = [day for cid, day in hist.reached.items() if cid in mine]
         when = hist.last_sent
         days = None
         if when:
@@ -369,5 +382,7 @@ def annotate(companies: List[IrCompany], sent: Scan,
             "rounds": hist.days,
             "investors": hist.investors,
             "sends": hist.sends,
+            "my_got": len(got),
+            "my_last": max(got, default=""),
         }
     return out
