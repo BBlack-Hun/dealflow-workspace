@@ -155,11 +155,12 @@ def test_옆_칸과_같은_방식으로_골라_넣는다(allowed, db, users):
 
 # --- 2. 자리 -----------------------------------------------------------------
 
-def test_딜_소개문구_다음에_맨_뒤로_선다(allowed, db, users):
-    """사용자가 정한 자리 그대로다 — `딜 소개문구` **다음**, 묶음의 맨 뒤다.
+def test_계약서_수신_여부_다음_맨_뒤로_선다(allowed, db, users):
+    """묶음의 맨 뒤 — IR 기업 현황처럼 `계약서 수신 여부` 바로 다음이다.
 
-    한 번 `계약서 수신완료여부` 뒤로 세웠다가 사용자가 고쳐 정했다. 계약 세
-    마디의 흐름에 끼는 칸이 아니라 그 뒤에 따로 붙는 칸이다.
+    사용자가 한 번 `딜 소개문구` 다음으로 고쳐 정한 자리였는데, #87(10/29)에
+    `소개 메모` 가 IR 기업 현황 차례대로 견적서 앞으로 가면서 이 칸은 계약 두 칸
+    바로 뒤가 됐다. 묶음의 맨 뒤라는 것은 그대로다.
 
     머리글 차례와 칸 차례가 어긋나면 그 뒤가 통째로 밀린다 — 화면에서는 그냥
     값이 이상해 보일 뿐이라 원인을 못 찾는다.
@@ -170,16 +171,16 @@ def test_딜_소개문구_다음에_맨_뒤로_선다(allowed, db, users):
          management="관리 중", contract_received="O", kakao_joined="O")
     heads = _heads(_open(allowed, STARTUP))
     at = heads.index("계약서 수신 여부")
-    assert heads[at + 1:at + 3] == ["소개 메모", LABEL], heads
+    assert heads[at + 1] == LABEL, heads
     fields = _fields(_open(allowed, STARTUP))
     at = fields.index("contract_received")
-    assert fields[at + 1:at + 3] == ["deal_pitch", FIELD], fields
+    assert fields[at + 1] == FIELD, fields
     # 칸 묶음 쪽도 같은 차례다 — 화면만 고치고 묶음을 안 고치면 탭 하나가
     # 다른 차례로 그려진다.
     labels = [label for label, _f in consulting.STARTUP_COLUMNS]
     at = labels.index("계약서 수신 여부")
-    assert labels[at + 1:at + 3] == ["소개 메모", LABEL], labels
-    assert consulting.STARTUP_COLUMNS[at + 2] == (LABEL, FIELD)
+    assert labels[at + 1] == LABEL, labels
+    assert consulting.STARTUP_COLUMNS[at + 1] == (LABEL, FIELD)
     # 묶음의 **맨 뒤** 칸이다 — 뒤에 무엇이 붙으면 이 검사가 먼저 깨진다.
     assert consulting.STARTUP_COLUMNS[-1] == (LABEL, FIELD)
 

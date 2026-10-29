@@ -61,7 +61,11 @@ def _heads(html: str) -> list:
     m = re.search(r"<thead>(.*?)</thead>", html, re.S)
     assert m, "표 머리글을 찾지 못했습니다"
     out = []
-    for cell in re.findall(r"<th\b[^>]*>(.*?)</th>", m.group(1), re.S):
+    # 이어진 IR 기업의 읽기 전용 칸(#83 · `ir-ro`)은 이 표의 칸이 아니라 뺀다 — 자리는
+    # `tests/test_ir_readonly_cols.py` 가 지킨다.
+    for attrs, cell in re.findall(r"<th\b([^>]*)>(.*?)</th>", m.group(1), re.S):
+        if "ir-ro" in attrs:
+            continue
         cell = re.sub(r"<form\b.*?</form>", " ", cell, flags=re.S)   # 월 열의 [✕]
         out.append(" ".join(re.sub(r"<[^>]+>", " ", cell).split()))
     return out
@@ -231,9 +235,10 @@ def test_다른_두_탭에는_칸도_값도_안_선다(allowed, db, users):
     # 갈리면서 모든 탭에 서는 칸이라(`feat/consulting-owner-filter`) 여기에도
     # 있다 — 이 검사가 지키는 것은 **`딜 소개문구` 가 스타트업 탭에만 선다**는
     # 것이지 머리글 전체가 영영 안 바뀐다는 것이 아니다.
+    # #87(10/29) — `기업명 → 대표자명 → 연락처 → 이메일` 이 맨 앞, `담당` 은 `담당자`.
     assert _heads(_open(allowed, HANDOVER)) == [
-        "NO", "담당", "지역", "컨설팅 미팅일", "미팅종류", "기업명", "기업 관리", "기업 내용",
-        "대표자명", "연락처", "이메일", ""]
+        "NO", "담당자", "기업명", "대표자명", "연락처", "이메일",
+        "지역", "컨설팅 미팅일", "미팅종류", "기업 관리", "기업 내용", ""]
 
 
 def test_스타트업_탭에서만_서는_칸들_끝에_선다(allowed, db, users):
@@ -261,12 +266,13 @@ def test_스타트업_탭에서만_서는_칸들_끝에_선다(allowed, db, user
     # **기준점이 `기업 관리` 에서 `기업 내용` 으로 옮겨 갔다** — 그 칸이
     # `기업 관리` 바로 오른쪽에 새로 서면서 이 묶음의 앞자리가 그쪽이 됐다
     # (`tests/test_consulting_management_detail.py`).
-    assert heads[heads.index("기업 내용") + 4] == "소개 메모", heads
-    assert heads[heads.index("소개 메모") + 1] == "카톡 연결 여부", heads
+    # #87(10/29) — IR 기업 현황 차례대로 `기업 내용` 바로 뒤(견적서 · 계약 앞)로 왔다.
+    assert heads[heads.index("기업 내용") + 1] == "소개 메모", heads
+    assert heads[heads.index("소개 메모") + 1] == "견적서 첨부 여부", heads
     # 머리글과 칸이 같은 차례인가 — 이름은 다르지만 자리가 같아야 한다.
     assert fields.index("deal_pitch") - fields.index("management_detail") \
         == heads.index("소개 메모") - heads.index("기업 내용"), (heads, fields)
-    assert fields[fields.index("deal_pitch") + 1] == "kakao_joined", fields
+    assert fields[fields.index("deal_pitch") + 1] == "contract_management", fields
 
 
 def test_다른_탭에_값이_남아_있어도_그_탭_화면에는_안_나온다(allowed, db, users):
@@ -315,7 +321,8 @@ def test_표_모양은_이름이_아니라_열쇠로_짝짓는다(db):
 
     assert consulting.SHEET_LAYOUTS[cs.STARTUP] == (
         consulting.STARTUP_COLUMNS, consulting.TAIL_COLUMNS)
-    assert consulting.STARTUP_COLUMNS[-2] == ("소개 메모", "deal_pitch")
+    # #87(10/29) — 이 탭만의 묶음 맨 앞(IR 기업 현황의 `딜 소개 문구` 자리).
+    assert consulting.STARTUP_COLUMNS[len(consulting.FIXED_COLUMNS)] == ("소개 메모", "deal_pitch")
     # 경영본부 탭과 사람이 만든 탭은 지금까지의 묶음 그대로다.
     assert cs.HANDOVER not in consulting.SHEET_LAYOUTS
     assert consulting.layout_of(db, "경영본부 전달 기업") == (

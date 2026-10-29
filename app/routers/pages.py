@@ -16,7 +16,7 @@ from ..deps import get_current_user, may_manage_team_contacts, templates
 from ..models import ROOM_SEARCH_TOPIC, STARTUP_MSG_KIND, IrCompany, SendJob, User
 from ..services import (cadence, contact_columns, custom_columns, deal_history, deal_queue,
                         deal_stage, email_domains, group_name, investor_firms, ir_attach,
-                        llm_brief, mailer, manual_send, memo_intro, ref_panel,
+                        ir_readonly, llm_brief, mailer, manual_send, memo_intro, ref_panel,
                         send_window, series_a_share, sheet_import,
                         sheet_owner, sourcing_link, sourcing_receipts,
                         sourcing_sync, startup_send, taxonomy)
@@ -655,6 +655,12 @@ def list_page(
         # ── 명단이 정한 표 배치 ──
         "layout": layout,
         "table_columns": table_cols,
+        # 이어진 IR 기업의 읽기 전용 칸(#85 — `contact_columns.Layout.ir_after`) 값과,
+        # `기업명` 칸에 띄울 IR 기업 후보 이름(`static/js/ir_company_hint.js`). 칸이 안
+        # 서는 표에서는 둘 다 비어 아무것도 안 그린다.
+        **({"ir_values": ir_readonly.values(db, [r["ir_company_id"] for r in rows]),
+            "ir_names": sorted({n for (n,) in db.execute(select(IrCompany.name)) if n})}
+           if any(c.source == "ir" for c in table_cols) else {"ir_values": {}, "ir_names": []}),
         # ── 머리글 필터 ──
         #
         # 어느 칸을 거를 수 있는지는 **배치가 정한다**(`Column.filterable`).

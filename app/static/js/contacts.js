@@ -45,6 +45,9 @@
     // (`services/pipeline.MEETING_ASK_KIND`). 여기 없으면 이력에 코드값
     // `meeting_ask` 가 그대로 찍힌다.
     memo: "메모", ir_delivery: "IR 전달", meeting_ask: "미팅 요청",
+    // 자료를 보낸 뒤 **IR 자료 검토 요청**을 손으로 보냈다고 표시한 줄(#79 ·
+    // `services/pipeline.IR_REVIEW_KIND`).
+    ir_review_request: "IR 자료 검토 요청",
     // 스타트업 안내 카톡(`services/startup_outreach.py`). 어느 문구였는지는
     // 줄의 본문이 적는다(`안내 카톡 · 견적서 공유 안내`).
     startup_msg: "안내 카톡"
@@ -948,6 +951,15 @@
     var data = detail.data || {};
     if (!("updated_at" in data)) return;
     var row = detail.row;
+    // 이어진 IR 기업의 읽기 전용 칸(#85 · `_ir_cols.html`) — 기업명을 고쳐 새로 이어지면
+    // 응답의 값(`ir_values`)으로 그 자리에서 다시 채운다.
+    if (row && data.ir_values) {
+      Array.prototype.forEach.call(row.querySelectorAll("td[data-ir]"), function (td) {
+        var v = data.ir_values[td.getAttribute("data-ir")] || "";
+        td.title = v;
+        if (td.firstElementChild) td.firstElementChild.textContent = v;
+      });
+    }
     var cell = row && row.querySelector("td.updated-at");
     if (!cell) return;
     cell.textContent = data.updated_at;

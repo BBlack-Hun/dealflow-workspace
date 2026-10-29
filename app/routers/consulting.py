@@ -37,7 +37,7 @@ from ..deps import (NoConsulting, can_open, doer, get_current_user,
                     may_view_all_consulting, may_view_consulting, templates)
 from ..models import (ConsultingColumn, ConsultingCompany, ConsultingRowGrant,
                       User, VcContact)
-from ..services import company_sync
+from ..services import company_sync, ir_readonly
 from ..services import consulting_sheets as cs
 from ..services import custom_columns
 from ..services import consulting_status as status
@@ -189,6 +189,13 @@ MEETING_KIND_CHOICES = ("화상미팅", "회의실 미팅")
 # 표 자체가 다르다. 그래서 `FIXED_COLUMNS` 에 넣지 않고 이 탭만의 묶음을 따로
 # 둔다 — `FIXED_COLUMNS` 는 지금도 스타트업·경영본부 두 탭이 함께 쓴다.
 STARTUP_COLUMNS = FIXED_COLUMNS + [
+    # **#87(사용자 결정 2026-10-29) — 화면 차례는 IR 기업 현황을 따른다**: 소개 메모
+    # (IR `딜 소개 문구` 자리) → 견적서 → 계약 두 칸 → 카톡 연결 여부. 화면에서는
+    # `기업명 → 대표자명 → 연락처 → 이메일` 이 맨 앞이지만, 이 목록의 앞 묶음
+    # (`FIXED_COLUMNS`)은 엑셀 차례도 정하므로(`CONSULTING_EXPORT_HEADERS`) 그대로 둔다.
+    #
+    # 이름 통일(10/22): 발송에 안 쓰이는 메모라 IR `딜 소개 문구` 와 갈라 부른다.
+    ("소개 메모", "deal_pitch"),
     # 견적서를 보냈는가. **`O`/`X` 를 골라 넣는다** — 아래 두 칸과 같은
     # 방식이다(화면의 `data-choices="O,X"` · 빈칸은 `아직 안 정함`).
     # 자유 글이 아니다: 값이 두 가지뿐인 칸을 손으로 적게 두면 같은 뜻이
@@ -200,14 +207,11 @@ STARTUP_COLUMNS = FIXED_COLUMNS + [
     ("계약여부", "contract_done"),
     # 계약 탭과 **같은 칸**이다(이름만 탭이 정한다 — 위 참고).
     ("계약서 수신 여부", "contract_received"),   # O / X
-    # 이름 통일(10/22): 발송에 안 쓰이는 메모라 IR `딜 소개 문구` 와 갈라 부른다.
-    ("소개 메모", "deal_pitch"),
-    # 이 기업과 카톡방이 연결됐는가. **자리는 사용자가 정했다** — 이 묶음의
-    # **맨 뒤**, `딜 소개문구` 다음이다. (처음에는 `IR 자료 회신여부` 앞이라고
-    # 불렀는데 이 탭에는 그런 칸이 없어 자리를 다시 물었고, 한 번 `계약서
-    # 수신완료여부` 뒤로 세웠다가 사용자가 `딜 소개문구` 다음으로 고쳐
-    # 정했다. 그러니 계약 세 마디의 흐름에 낀 칸이 아니라 **그 뒤에 따로
-    # 붙는 칸**이다.)
+    # 이 기업과 카톡방이 연결됐는가. 이 묶음의 **맨 뒤**다. (처음에는 `IR 자료
+    # 회신여부` 앞이라고 불렀는데 이 탭에는 그런 칸이 없어 자리를 다시 물었고, 한
+    # 번 `계약서 수신완료여부` 뒤로 세웠다가 사용자가 `딜 소개문구` 다음으로 고쳐
+    # 정했다. #87(10/29)에 `소개 메모` 가 IR 기업 현황 차례대로 견적서 앞으로 가면서
+    # 이 칸은 IR 기업 현황처럼 `계약서 수신 여부` 바로 뒤 — 맨 뒤 그대로다.)
     #
     # 계약 세 마디와 같은 `O`/`X` 칸이다(빈칸은 `아직 안 정함`).
     #
@@ -867,6 +871,8 @@ def company_rows(db: Session, user: User, sheet: str = "",
             # 중간이 비거나 3부터 시작해서, 몇 번째 줄인지 세는 데 쓸 수 없다.
             "no": order,
             "position": c.position,
+            # 이어 둔 IR 기업 — 표 오른쪽 읽기 전용 IR 칸이 이 번호로 값을 찾는다(#83).
+            "ir_company_id": c.ir_company_id,
             "region": c.region or "",
             "meeting_at": c.meeting_at or "",
             # 계약 탭에는 이 칸이 안 서지만 **늘 싣는다** — 화면이 탭마다 다른
@@ -1144,6 +1150,10 @@ def consulting_page(request: Request, db: Session = Depends(get_db),
         # 닫혀 있어 눌러도 갈 데가 없다(`deps.can_open`).
         "ir_badges": (_ir_badges(db, [r["id"] for r in rows])
                       if can_open(user, "/ir-link") else {}),
+        # 이어진 IR 기업의 칸을 **읽기만** — `이메일` 오른쪽(#83, 10/28 '추천대로' ·
+        # `services/ir_readonly.py`). 계약 탭은 대표자 · 이메일 칸부터 안 서는 다른 표라 뺀다.
+        "ir_cols": ([] if is_contract(db, selected) else ir_readonly.consulting_columns()),
+        "ir_values": ir_readonly.values(db, [r["ir_company_id"] for r in rows]),
         "msg": msg,
         "counts": {
             "total": len(rows),

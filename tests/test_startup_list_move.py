@@ -404,9 +404,10 @@ def test_계약까지_가는_세_칸이_흐름_안에서_나란히_선다(lists)
     """
     head = _thead(lists.get(
         _pages()["startup"] + f"?sheet={quote(STARTUP_LISTS[0])}").text)
-    want = ["견적서 첨부 여부", "계약여부", "계약서 수신 여부"]
+    # #87 — IR 기업 현황처럼 견적서와 계약 사이에 `미팅제공일자` 가 선다.
+    want = ["견적서 첨부 여부", "미팅제공일자", "계약여부", "계약서 수신 여부"]
     at = head.index("견적서 첨부 여부")
-    assert head[at:at + 3] == want, head
+    assert head[at:at + 4] == want, head
     # 사람 정보 뒤이고, 월별 칸보다 앞이다.
     assert head.index("이메일") < at, head
     assert head.index("계약서 수신 여부") < head.index(

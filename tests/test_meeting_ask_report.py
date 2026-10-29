@@ -369,7 +369,9 @@ def test_업무_보고_숫자와_ir_숫자가_같다(db, users, logged):
     ir = logged.get("/ir").text
     report = _report(logged, when)
 
-    assert _n(ir, r"회의실 미팅 톡 요청 미완료 (\d+)명") == \
+    # `/ir` 머리 글은 #79 부터 `IR 자료 검토 요청 미완료` 다(검토 요청 · 미팅 요청 둘 다
+    # 안 나간 담당자). 검토 요청이 없는 자료라 업무 보고의 미팅 요청 수와 같다.
+    assert _n(ir, r"IR 자료 검토 요청 미완료 (\d+)명") == \
         _n(report, r"회의실 미팅 톡 요청 미완료</span> ?<b[^>]*>(\d+)명")
     assert _n(ir, r"일 지남 (\d+)명\s*\)") == \
         _n(report, r"일 지남 (\d+)명\s*\)")
@@ -525,7 +527,8 @@ def test_두_달에_걸쳐_받은_담당자는_보고와_ir_의_날_수가_같�
     _delivered(db, users, contact, "샘플메디", when=last)
 
     said = f"회의실 미팅 톡 요청 미완료 · {(date.today() - last).days}일"
-    assert said in logged.get("/ir").text
+    # `/ir` 은 #79 부터 같은 날 수를 `IR 자료 검토 요청 미완료` 로 말한다.
+    assert f"IR 자료 검토 요청 미완료 · {(date.today() - last).days}일" in logged.get("/ir").text
     rows = _bucket_rows(_report(logged, before), "IR 요청 투자사")
     assert len(rows) == 1 and said in rows[0], rows
 

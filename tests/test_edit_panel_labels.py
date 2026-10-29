@@ -9,6 +9,9 @@
 다섯 군데만 손봤다. 이 파일은 그 다섯을 각각 지킨다.
 
     ① `담당자`            → `연결 담당`      (우리 팀원 ↔ 옆 `부서`·`직함` 은 투자사 쪽)
+                            → #87(10/29) 로 다시 `담당자` — 투자사 쪽 사람을 부르던 다른
+                              화면의 `담당자` 를 `심사역` 으로 바꿔 두 뜻을 갈랐다.
+                              우리 팀원이라는 말은 머리글 · 수정창 풍선말이 한다.
     ② `단계 태그`         → `선호 투자단계`  (라운드의 단계가 아니라 선호 투자 단계)
     ③ `관심도 (월말기준)` → `관심도`         (`(월말기준)` 은 앱이 안 지키는 약속)
     ④ `카톡방 참여여부`   → `연결 상태` 아래로 자리 이동 (이름은 그대로)
@@ -109,9 +112,9 @@ def _th(head_html: str, key: str):
     return None
 
 
-# ── ① 담당자 → 연결 담당 ────────────────────────────────────────────────────
+# ── ① 담당자 → 연결 담당 → (#87) 담당자 ────────────────────────────────────────────────────
 
-def test_담당자는_투자사_쪽_사람이_아니라_우리_팀원이라_연결_담당이다(head, panel):
+def test_담당자는_우리_팀원이고_풍선말이_그렇게_말한다(head, panel):
     """옆 칸 `부서`·`직함` 은 **투자사 쪽 사람**의 것이다.
 
     `담당자` 라고만 적혀 있으면 둘 중 누구를 가리키는지 화면만 보고는 가릴
@@ -122,16 +125,19 @@ def test_담당자는_투자사_쪽_사람이_아니라_우리_팀원이라_연�
     got = _th(head, "assignee")
     assert got, "표에 `assignee` 필터를 단 칸이 없습니다"
     name, label, _px = got
-    assert name == label == "연결 담당", f"표 머리글이 `연결 담당` 이 아닙니다: {got}"
-    assert _label_of(panel, "assignee_name") == "연결 담당", \
+    assert name == label == "담당자", f"표 머리글이 `담당자` 가 아닙니다: {got}"
+    assert _label_of(panel, "assignee_name") == "담당자", \
         "수정창 라벨이 표 머리글과 다릅니다"
+    # 옆 칸 `부서`·`직함` 은 투자사 쪽 사람의 것이라, 누구인지 풍선말이 말한다.
+    assert 'title="우리 팀원' in head[head.index('data-filters="assignee:'):][:200], \
+        "머리글 풍선말이 우리 팀원이라고 말하지 않습니다"
 
 
 def test_대시보드가_부르는_이름과_같은_말이어야_한다():
     """이름을 맞추는 상대는 **이미 그렇게 부르고 있던 쪽**이다."""
     dash_py = (ROOT / "app" / "services" / "dashboard.py").read_text(encoding="utf-8")
     dash_html = (ROOT / "app" / "templates" / "dashboard.html").read_text(encoding="utf-8")
-    assert "연결 담당" in dash_py and "연결 담당" in dash_html
+    assert "담당자:" in dash_html
 
 
 # ── ② 단계 태그 → 선호 투자단계 ─────────────────────────────────────────────
@@ -238,7 +244,7 @@ def test_부서는_회사_옆이지_연결_담당_옆이_아니다(panel):
 
     assert at_firm < at_dept, "`부서` 가 `회사` 위에 있습니다"
     assert at_dept < at_assignee, \
-        "`부서` 가 아직 `연결 담당` 뒤에 있습니다 — 옮기다 만 것입니다"
+        "`부서` 가 아직 `담당자` 뒤에 있습니다 — 옮기다 만 것입니다"
 
     # `회사` 가 닫힌 자리부터 `부서` 가 **열리는** 자리까지 다른 칸이 없어야
     # 한다(위 `카톡방 참여여부` 검사와 같은 자다).
@@ -373,9 +379,9 @@ def test_모델_칸_이름은_하나도_안_바뀐다():
 def test_그린_화면에도_새_이름으로_선다(logged_in):
     """템플릿 글자만 재면 `{% if %}` 안에 갇힌 칸을 놓친다 — 그려서도 본다."""
     html = logged_in.get("/contacts").text
-    for word in ("연결 담당", "선호 투자단계", "관심도"):
+    for word in ("담당자", "선호 투자단계", "관심도"):
         assert word in html, f"화면에 `{word}` 가 없습니다"
     for word in ("단계 태그", "관심도 (월말기준)", 'id="f-invited_status"'):
         assert word not in html, f"화면에 `{word}` 가 아직 있습니다"
-    assert 'data-filters="assignee:연결 담당"' in html
+    assert 'data-filters="assignee:담당자"' in html
     assert 'data-filters="interest:관심도"' in html

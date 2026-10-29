@@ -22,6 +22,11 @@
    칸이 `head` 와 `extra` 에 같이 있으면 그렇게 된다), 저장 자리가 그대로이고,
    투자사 쪽 배치는 머리글도 필터도 안 바뀐다.
 
+**#87(사용자 결정 2026-10-29)로 자리와 이름이 바뀌었다.** 기업 쪽 모든 표가 IR 기업
+현황 차례(`기업명 → 대표자명 → 연락처 → 이메일 → 대분류 → 소분류 → … → 투자라운드`)를
+따른다. 그래서 분야 둘 · 투자라운드는 `이메일` 뒤로 갔고, `IR 자료 유무` 는 IR 기업
+현황과 같은 `IR 자료` 라는 이름으로 `tail` 의 `IR 자료 수신 여부` 뒤로 옮겼다. 표에 서고 필터가 붙는다는 이 파일의 약속은 그대로다.
+
 이름·회사·번호는 전부 지어낸 값이다 — 저장소가 공개다.
 """
 from __future__ import annotations
@@ -40,11 +45,12 @@ OTHER = "샘플 투자사 20"
 DEAL = "샘플 딜공유 20"
 
 # 이번에 표로 올린 넷. **차례가 곧 요청의 절반**이라 여기 적는다.
-COLUMNS = ["대분류", "소분류", "투자라운드", "IR 자료 유무"]
+COLUMNS = ["대분류", "소분류", "투자라운드", "IR 자료"]
 KEYS = ["sector_major", "sector_minor", "company_kind", "ir_deck"]
 # 넷의 폭. 필터를 건 뒤의 머리글(`… (1) ▾`)에 몇 px 을 얹은 값이다 —
 # 왜 그 값인지는 `contact_columns.STARTUP_LAYOUT` 의 그 자리 주석에 있다.
-WIDTHS = [140, 100, 120, 130]
+# `IR 자료` 는 IR 기업 현황의 같은 칸과 같은 102px(`IR 자료 (1) ▾` 단추).
+WIDTHS = [140, 100, 120, 102]
 
 # 머리글 필터 단추는 고른 수가 붙어 `라벨 (1) ▾` 로 선다. 그 상태까지 잰다
 # (`tests/test_startup_tab.py` 의 `머리글은_필터_단추까지_한_줄에_들어간다` 와 같은 자).
@@ -76,8 +82,10 @@ def _flat(cell_html: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", frag)).strip()
 
 
-def _thead(html: str) -> list:
-    return [_flat(cell) for _attrs, cell in _thead_cells(html)]
+def _thead(html: str, ir: bool = True) -> list:
+    # `ir=False` — 이어진 IR 기업의 읽기 전용 칸(#85 · `ir-ro`)은 이 명단의 칸이 아니라
+    # 뺀다. 그 칸의 자리는 `tests/test_ir_readonly_cols.py` 가 지킨다.
+    return [_flat(cell) for attrs, cell in _thead_cells(html) if ir or "ir-ro" not in attrs]
 
 
 def _filters(html: str) -> dict:
@@ -177,32 +185,31 @@ def test_값이_칸에_보이고_표에서_눌러_고칠_수_있다(sheets):
 
 # ── 2. 자리 ─────────────────────────────────────────────────────────────────
 
-def test_기업명_바로_뒤에_넷이_붙어_선다(sheets):
-    """IR 기업 현황 표와 같은 차례 — 왼쪽 무리가 "이 기업이 무엇인가" 다."""
-    heads = _thead(sheets.get(_url()).text)
+def test_대표자_묶음_뒤에_분야_둘과_투자라운드가_선다(sheets):
+    """IR 기업 현황 표와 같은 차례(#87) — `기업명 → 대표자명 → 연락처 → 이메일 →
+    대분류 → 소분류 → 투자라운드`. `IR 자료` 는 IR 기업 현황처럼 IR 칸 묶음 자리다.
+    (이어진 IR 기업의 읽기 전용 칸 묶음 — #85 — 은 빼고 잰다.)"""
+    heads = _thead(sheets.get(_url()).text, ir=False)
     at = heads.index("기업명")
-    assert heads[at + 1:at + 1 + len(COLUMNS)] == COLUMNS, (
-        f"`기업명` 바로 뒤에 넷이 차례대로 붙어 있지 않습니다: {heads}")
-    # 그다음은 한 사람에게 닿는 묶음이다 — 사이에 안 끼운다.
-    assert heads[at + 1 + len(COLUMNS):at + 4 + len(COLUMNS)] == \
-        ["대표자명", "연락처", "이메일"], heads
+    assert heads[at + 1:at + 7] == ["대표자명", "연락처", "이메일",
+                                    "대분류", "소분류", "투자라운드"], heads
+    ir = heads.index("IR 자료")
+    # `카톡 연결 여부 → IR 자료 수신 여부` 짝(예전 요청) 바로 뒤.
+    assert heads[ir - 2:ir + 1] == ["카톡 연결 여부", "IR 자료 수신 여부", "IR 자료"], heads
 
 
-def test_뒤따르는_차례는_한_칸도_안_바뀐다(sheets, db):
-    """넷을 앞에 끼웠다고 **그 뒤의 차례**가 흔들리면 안 된다.
-
-    `이메일` 바로 뒤는 사용자가 `IR 미팅 제공일자` 로 못 박은 자리고, 그 뒤는
-    일이 진행되는 차례(①② → 계약 세 칸)다. `수정한 날짜` 는 `head` 의 끝이라
-    월별 묶음 바로 앞이다(`tests/test_startup_ir_meeting_date.py` ·
-    `tests/test_startup_updated_at.py` 가 각자 그 자리를 지킨다 — 여기서는
-    넷이 들어온 뒤에도 그 차례가 통째로 이어지는지만 본다).
+def test_뒤따르는_차례는_IR_기업_현황_차례다(sheets, db):
+    """#87 의 차례가 통째로 이어진다 — 일이 진행되는 차례(①② → 견적서 → 미팅제공일자
+    → 계약 두 칸)이고 `수정한 날짜` 는 `head` 의 끝이라 월별 묶음 바로 앞이다
+    (`미팅제공일자` 는 예전 요청으로 `이메일` 바로 뒤였다가, #87 에서 IR 기업 현황과
+    같은 `견적서 첨부 여부` 뒤로 옮겼다).
     """
     from app.services import contact_columns as cc
 
-    heads = _thead(sheets.get(_url()).text)
-    after = ["대표자명", "연락처", "이메일", "미팅제공일자",
-             "투자유치 상태", "당사 협업 상태",
-             "견적서 첨부 여부", "계약여부", "계약서 수신 여부", "수정한 날짜"]
+    heads = _thead(sheets.get(_url()).text, ir=False)
+    after = ["대표자명", "연락처", "이메일", "대분류", "소분류", "투자라운드",
+             "투자유치 상태", "당사 협업 상태", "견적서 첨부 여부", "미팅제공일자",
+             "계약여부", "계약서 수신 여부", "수정한 날짜"]
     at = heads.index(after[0])
     assert heads[at:at + len(after)] == after, heads
     first_month = cc.month_label(cc.STARTUP_LAYOUT, f"{_month()}월 리마인드 문자")
@@ -267,7 +274,7 @@ def test_보기를_안_적은_셋도_필터가_붙는다():
     """
     from app.services import contact_columns as cc
 
-    by_key = {c.key: c for c in cc.STARTUP_LAYOUT.head}
+    by_key = {c.key: c for c in list(cc.STARTUP_LAYOUT.head) + list(cc.STARTUP_LAYOUT.tail)}
     for key in ("sector_major", "sector_minor", "company_kind"):
         column = by_key[key]
         assert column.kind == "pick" and not column.choices, column
@@ -321,7 +328,7 @@ def test_폭은_필터를_건_뒤의_머리글이_한_줄에_들어가는_선이
     """
     from app.services import contact_columns as cc
 
-    by_label = {c.label: c for c in cc.STARTUP_LAYOUT.head}
+    by_label = {c.label: c for c in list(cc.STARTUP_LAYOUT.head) + list(cc.STARTUP_LAYOUT.tail)}
     for label, want in zip(COLUMNS, WIDTHS):
         column = by_label[label]
         need = round(_text_px(label + _FILTER_SUFFIX) + _PAD + _BUTTON)
@@ -399,8 +406,9 @@ def test_엑셀에는_화면과_같은_차례로_한_번씩_나온다(sheets):
     head = [str(c or "") for c in rows[0]]
     for label in COLUMNS:
         assert head.count(label) == 1, f"엑셀에 `{label}` 이 {head.count(label)}번 나옵니다"
-    at = head.index("기업명")
-    assert head[at + 1:at + 1 + len(COLUMNS)] == COLUMNS, head
+    at = head.index("이메일")
+    assert head[at + 1:at + 4] == COLUMNS[:3], head
+    assert head[head.index("IR 자료 수신 여부") + 1] == "IR 자료", head
     by_firm = {r[head.index("기업명")]: r for r in rows[1:]}
     assert by_firm["샘플기업1"][head.index("대분류")] == "에듀테크"
 
@@ -431,10 +439,9 @@ def test_투자사_배치는_머리글도_필터도_안_바뀐다(sheets, db, us
     # `sector_minor` 가 아니라 자기 필터 키(`sub_sector`)여야 한다.
     page = sheets.get(f"/{cc.page_of(cc.INVESTOR)}?sheet={quote(OTHER)}").text
     heads = _thead(page)
+    # #87 로 이름이 `선호 소분류` 가 됐다 — 기업의 `소분류` 와 갈린다.
+    assert _filters(page)["선호 소분류"] == ["sub_sector:선호 소분류"]
     for label in COLUMNS:
-        if label == "소분류":
-            assert _filters(page)[label] == ["sub_sector:소분류"]
-            continue
         assert label not in heads, f"투자사 표에 `{label}` 이 끼어들었습니다"
 
     # 투자사 딜공유 — 같은 반복문으로 그리는 표. 필터는 `그룹` 하나 그대로다.

@@ -1,0 +1,23 @@
+{#
+  이어진 IR 기업의 칸 — **읽기만**(#83 투자컨설턴트 · #85 스타트업 명단).
+
+  칸 목록과 값은 `services/ir_readonly.py` 한 곳에서 온다. 두 표가 이 조각 하나를 쓴다.
+  눌러 고치는 칸이 아니다 — `class="cell"` 도 `data-field` 도 안 준다(`inline_edit.js` 는
+  둘을 함께 찾는다). 고치는 곳은 IR 기업 현황이고, 그 줄과 안 이은 줄은 빈칸이다.
+
+    {% import "_ir_cols.html" as irc %}
+    <th>…</th>{{ irc.head(c) }}
+    <td>…</td>{{ irc.cell(c, ir_values.get(r.ir_company_id)) }}
+
+  `data-ir` — 스타트업 표에서 기업명을 고쳐 새로 이어지면 `contacts.js` 가 응답의
+  `ir_values` 로 그 자리에서 다시 채운다.
+#}
+{% macro head(c, extra='') -%}
+<th class="ir-ro{{ extra }}" style="width:{{ c.width }}px"
+    title="{{ c.label }} — 이어진 IR 기업 현황의 값입니다(읽기만 · 고치는 곳은 IR 기업 현황)">{{ c.label }}</th>
+{%- endmacro %}
+
+{% macro cell(c, vals) -%}
+{%- set v = (vals or {}).get(c.key, '') -%}
+<td class="ir-ro" data-ir="{{ c.key }}" title="{{ v }}"><div class="{{ 'clamp2' if c.kind == 'long' else 'ellipsis' }}">{{ v }}</div></td>
+{%- endmacro %}

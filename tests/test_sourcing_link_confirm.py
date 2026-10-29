@@ -395,7 +395,7 @@ def test_the_requested_date_sits_right_after_series_a_and_is_read_only(board, db
     head = body[body.index("<thead>"):body.index("</thead>")]
     labels = [re.sub(r"<[^>]+>", "", x).strip()
               for x in re.findall(r"<th[\s>].*?</th>", head, re.S)]
-    at = labels.index("딜소싱 참여 투자사")
+    at = labels.index("딜 소싱 참여 투자사")   # #87 — 메뉴 이름과 같은 띄어쓰기
     assert labels[at + 1:at + 3] == ["딜 소싱", "참여 요청일"], labels
 
     rows = body[body.index("<tbody>"):body.index("</tbody>")]

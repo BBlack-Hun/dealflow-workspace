@@ -141,7 +141,7 @@
       notes.push("못 맞춘 줄은 이 탭에 없는 딜입니다 — 줄을 새로 만들지 않습니다.");
     }
     if (d.ambiguous) {
-      notes.push("애매한 줄은 이 탭에 같은 기업명 · 수신 일자의 줄이 둘 이상이거나, " +
+      notes.push("애매한 줄은 이 탭에 같은 기업명 · 수신일의 줄이 둘 이상이거나, " +
                  "그 줄을 바라는 파일 줄이 둘 이상입니다 — 표에서 겹친 줄을 정리한 뒤 다시 올리세요.");
     }
     if (d.duplicates) notes.push("파일 안에서 같은 딜이 겹친 줄은 앞 줄만 씁니다.");
@@ -181,7 +181,7 @@
   }
 
   function heads() {
-    return "<th>기업명</th><th>수신 일자</th><th>공유 심사역</th><th>회사</th>";
+    return "<th>기업명</th><th>수신일</th><th>공유 심사역</th><th>회사</th>";
   }
 
   function idCells(r) {

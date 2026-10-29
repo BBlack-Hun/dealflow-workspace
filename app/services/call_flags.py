@@ -12,8 +12,9 @@
      가 2 이상이면 리마인드가 나간 것이다.
   2. **IR 자료 전달 뒤 미팅 요청**(화면 말 `회의실 미팅 톡 요청`) — 자동화 A2
      (`automations/meeting_request.py`: 7일 뒤 · 답이 없으면 10일 뒤 다시) 또는
-     사람이 보낸 것(발송 화면 `미팅 요청` 탭 · [IR 자료 검토 요청 보냄] 표시).
-     판정은 `pipeline.meeting_ask_state`.
+     사람이 보낸 것(발송 화면 `미팅 요청` 탭 · [미팅 요청 보냄] 표시). 그 앞에 나가는
+     **IR 자료 검토 요청**(#79 — `IR 자료 검토 요청` 탭 · [IR 자료 검토 요청 보냄] 표시)도
+     리마인드로 본다. 판정은 `pipeline.meeting_ask_state`.
   3. **미팅 뒤 결과 문의** — 자동화 A7(`automations/meeting_review.py`). 사람이
      보낸 미팅 후기 탭 발송도 같은 단계(stage 3)로 남는다.
 
@@ -47,7 +48,7 @@ from sqlalchemy.orm import Session
 from .. import clock
 from ..deps import doer, may_manage_team_contacts
 from ..models import (ContactActivity, DealFollowup, IrRequest, Meeting,
-                      SendItem, SendSequence, User, VcContact)
+                      SendItem, SendJob, SendSequence, User, VcContact)
 
 #: 배지 글자. 화면 · 오늘 할 일이 같은 말을 쓴다.
 LABEL = "답 없음 · 전화 요청"
@@ -64,13 +65,14 @@ def reminded_contacts(db: Session, contact_ids: Iterable[int]) -> Set[int]:
       · 미팅 요청 · 미팅 후기가 실제로 나갔다 — `SendItem.stage == 3` · `sent`
         (A2 · A7 자동화도 이 단계로 남는다)
       · 사람이 카톡으로 직접 보내고 표시했다 — `ContactActivity` 의 `meeting_ask`
+      · IR 자료 검토 요청이 나갔다(#79) — 앱 발송(회차 표시 `topic`) · 손으로 보냄 표시
 
     IR 자료 전달 발송은 `stage` 가 2 로 적히지만(`deals.FOLLOW_UP_MODES`) 리마인드가
     아니라서 `SendItem.stage == 2` 는 **안 본다** — 시퀀스 단계로만 본다(자료
     전달은 시퀀스를 올리지 않고 멈춘다 — `cadence.advance`).
     """
     from .cadence import STAGE_MEETING, STAGE_REMIND
-    from .pipeline import MEETING_ASK_KIND
+    from .pipeline import IR_REVIEW_KIND, MEETING_ASK_KIND
 
     ids = sorted({int(i) for i in contact_ids if i})
     if not ids:
@@ -87,7 +89,12 @@ def reminded_contacts(db: Session, contact_ids: Iterable[int]) -> Set[int]:
     out |= set(db.execute(
         select(ContactActivity.contact_id)
         .where(ContactActivity.contact_id.in_(ids),
-               ContactActivity.kind == MEETING_ASK_KIND)).scalars().all())
+               ContactActivity.kind.in_((MEETING_ASK_KIND, IR_REVIEW_KIND)))).scalars().all())
+    out |= set(db.execute(
+        select(SendItem.contact_id)
+        .join(SendJob, SendJob.id == SendItem.job_id)
+        .where(SendItem.contact_id.in_(ids), SendJob.topic == IR_REVIEW_KIND,
+               SendItem.status == "sent")).scalars().all())
     return {i for i in out if i}
 
 

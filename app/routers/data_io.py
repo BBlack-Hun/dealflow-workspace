@@ -849,7 +849,7 @@ def _sends_sheet(sheet, data, team_wide):
     # (늘 0 인 칸이 눈을 잡으므로), 엑셀은 칸 폭이 시트 단위라 그룹마다 칸이
     # 어긋나면 두 표가 서로 다른 자리에 서 버린다.
     headers = ["날짜", "회차명", "딜 소개", "대상", "완료", "안 나감",
-               "안 나간 사유", "상태"] + (["팀원"] if team_wide else [])
+               "안 나간 사유", "상태"] + (["담당자"] if team_wide else [])
     nums = {2, 3, 4, 5}
     for group in sends["groups"]:
         sheet.blank()
@@ -884,8 +884,10 @@ def _meetings_sheet(sheet, data, team_wide):
     sheet.title(f"{data['year']}년 {data['month']}월 미팅  총 {data['total']}개사",
                 f"결과 문의는 미팅 뒤 {data['followup_days']}일쯤 겁니다 — "
                 f"그걸 놓치면 계약이 흐지부지됩니다.")
-    headers = (["날짜", "담당자", "투자사", "기업", "구분"]
-               + (["팀원"] if team_wide else [])
+    # 화면의 미팅 표와 **같은 이름**이다(#87 — 투자사 쪽 사람은 `심사역`, 우리 팀원은
+    # `담당자`, 기업은 `기업명`). 화면은 `심사역 / 회사` 를 한 칸에 얹고 파일은 나눈다.
+    headers = (["날짜", "심사역", "회사", "기업명", "구분"]
+               + (["담당자"] if team_wide else [])
                + ["결과", "결과 문의", "후기 · 투자사 답변 내용"])
     last = len(headers) - 1
     if not data["weeks"]:
@@ -962,8 +964,8 @@ def _buckets_sheet(sheet, data, team_wide):
     """
     sheet.title(f"{data['year']}년 {data['month']}월 · 이 달의 반응",
                 "숫자만 보면 '그게 누구였지' 가 이어집니다 — 이름과 날짜를 함께 둡니다.")
-    headers = (["날짜", "담당자", "직함", "투자사", "기업", "상태"]
-               + (["담당 팀원"] if team_wide else []))
+    headers = (["날짜", "심사역", "직함", "회사", "기업명", "상태"]
+               + (["담당자"] if team_wide else []))
     status_col = 5
     for bucket in data["buckets"]:
         sheet.blank()

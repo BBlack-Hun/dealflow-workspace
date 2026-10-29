@@ -156,7 +156,9 @@ def test_전달한_자료_표의_말이_바뀌었다(db, users, logged):
     for old in (">미팅 잡기</button>", ">보냈음으로 표시</button>", ">전달함</span>"):
         assert old not in body, old
     # 2차 미팅 잡기(미팅 후기 표)는 다른 단추라 그대로다 — 요청은 `미팅 잡기` 하나.
-    assert "회의실 미팅 톡 요청 미완료 1명" in body
+    # #79 — 전달 뒤 먼저 나가는 것이 IR 자료 검토 요청이라 머리 글도 그 말이다.
+    assert "IR 자료 검토 요청 미완료 1명" in body
+    assert ">미팅 요청 보냄</button>" in body
 
 
 def test_IR_자료_검토_요청_보냄을_누르면_보냄_완료로_바뀐다(db, users, logged):
@@ -235,7 +237,7 @@ def test_기한_전에도_일_수가_화면에_선다(db, users, logged):
     _delivered(db, users, contact, "샘플애그", when=date.today() - timedelta(days=3))
 
     body = logged.get("/ir").text
-    assert 'class="status-when warn">회의실 미팅 톡 요청 미완료 · 3일' in body
+    assert 'class="status-when warn">IR 자료 검토 요청 미완료 · 3일' in body
 
 
 def test_업무_보고_줄도_지난_날을_센다(db, users, logged):
