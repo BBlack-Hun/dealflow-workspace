@@ -127,7 +127,7 @@ def _requeue(db: Session, job: SendJob, items: list[SendItem],
 
     **어떤 건을 되살릴지는 부르는 쪽이 정한다.** 여기서는 받은 것만 손댄다.
     단 딜 소싱 글 회차는 나가는 순간 참여를 다시 보고(`_drop_not_taking_part`),
-    스타트업 월간 발송은 그 달 글을 이미 받은 기업을 뺀다(`_drop_already_received`).
+    스타트업 월간 발송은 회차를 세운 뒤 그 달 글을 받은 기업을 뺀다(`_drop_already_received`).
     """
     for item in items:
         item.status = "pending"
@@ -185,17 +185,19 @@ def _drop_not_taking_part(db: Session, job: SendJob) -> None:
 
 
 def _drop_already_received(db: Session, job: SendJob) -> None:
-    """스타트업 월간 발송 — **나가는 순간** 그 달 글을 이미 받은 기업의 대기 건은 취소.
+    """스타트업 월간 발송 — **나가는 순간**, 이 회차를 세운 뒤에 그 달 글을 받은 기업의
+    대기 건은 취소.
 
-    대기 목록을 세울 때 걸렀어도(`startup_send.rows`) 옛 draft 이거나 그 사이 다른
-    회차가 먼저 나갔을 수 있다. 판정은 대기 목록과 같은 함수다
-    (`startup_monthly.received`) — 다른 회차에서 지금 나가는 중인 기업도 뺀다.
-    한 회차 안에 같은 기업이 두 줄이면 앞 줄만 남긴다. 다른 종류의 회차는 그대로.
+    회차를 세운 뒤 다른 회차가 먼저 나갔을 수 있다(옛 draft · 취소한 회차를 두고 새로
+    세운 회차). 세울 때 이미 받았던 기업은 사람이 묻는 창을 보고 넣은 것이라 그대로
+    보낸다. 판정은 대기 목록과 같은 함수다(`startup_monthly.received`) — 다른 회차에서
+    지금 나가는 중인 기업도 뺀다. 한 회차 안에 같은 기업이 두 줄이면 앞 줄만 남긴다.
+    다른 종류의 회차는 그대로.
     """
     if job.kind != STARTUP_SEND_KIND:
         return
     taken = startup_monthly.received(db, startup_monthly.job_month(db, job),
-                                     sending_job=job.id)
+                                     sending_job=job)
     for item in job.items:
         if item.status != "pending" or item.ir_company_id is None:
             continue

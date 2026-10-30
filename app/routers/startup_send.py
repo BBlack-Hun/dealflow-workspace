@@ -58,7 +58,7 @@ from ..db import get_db
 from ..deps import get_current_user, no_send_as_member, templates
 from ..models import IrCompany, SendItem, SendJob, User
 from ..services import (cadence, ir_monthly, room_match, scheduled_send,
-                        send_window, startup_send)
+                        send_window, startup_monthly, startup_send)
 from ..services.automations import startup_monthly as a5
 from ..ui import base_ctx
 # 방 확인 잡의 종류는 **한 곳에만 적는다**(`agent_api.VERIFY_KIND`). 여기에
@@ -136,6 +136,7 @@ def startup_ir_page(
 def make_draft(
     background: BackgroundTasks,
     company_ids: List[int] = Form(default=[]),
+    resend_ids: List[int] = Form(default=[]),
     month: str = Form(""),
     title: str = Form(""),
     scheduled_at: str = Form(""),
@@ -178,6 +179,15 @@ def make_draft(
     unknown = [cid for cid in company_ids if cid not in allowed]
     if unknown:
         return _back(month, "보낼 수 없는 기업이 섞였습니다 — 목록을 다시 보세요")
+
+    # 그 달 글을 **이미 받은** 기업은 사람이 묻는 창에서 [확인] 한 것(`resend_ids` —
+    # `static/js/startup_resend.js`)만 넣는다. 확인 값이 없으면 뺀다 — 전체 선택이나
+    # 오래된 탭으로 딸려 온 체크가 그대로 두 번째 발송이 되지 않게.
+    got = startup_monthly.received(db, month)
+    company_ids = [cid for cid in company_ids if cid not in got or cid in resend_ids]
+    if not company_ids:
+        return _back(month, f"{month} 월간 글을 이미 받은 기업만 골랐습니다 — 다시 보내려면 "
+                            "체크한 뒤 묻는 창에서 [확인]을 누르세요")
 
     try:
         made = create_send_list(
