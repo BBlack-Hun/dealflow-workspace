@@ -59,7 +59,7 @@ from typing import List, Optional
 from sqlalchemy.orm import Session
 
 from ..models import AutoSendSetting, IrCompany, User
-from . import auto_send, ir_monthly, room_match
+from . import auto_send, ir_monthly, room_match, startup_monthly
 
 #: 이 발송의 종류. `auto_send_settings.kind` 이자 발송 잡의 종류
 #: (`models.STARTUP_SEND_KIND`)다. **같은 것을 가리키므로 글자도 같다** —
@@ -193,10 +193,17 @@ def rows(db: Session, month: str) -> dict:
     세면 화면의 수와 나가는 글의 줄 수가 갈린다.
     """
     over = ir_monthly.overview(db, month)
+    # 그 달 글을 **이미 받은** 기업 — 막지는 않는다. 기본으로 꺼 두고 전체 선택도
+    # 건너뛰며, 사람이 켜면 묻는다(`static/js/startup_resend.js`). 판정은 나가는
+    # 순간과 같은 함수다(`startup_monthly.received` · `routers/jobs._requeue`).
+    got = startup_monthly.received(db, month)
+    this = "이번 달" if month == ir_monthly.this_month() else month
     out = []
     for row in over["rows"]:
         company = row["company"]
         room = room_of(company)
+        sent = got.get(company.id)
+        sent_on = (sent.sent_at or "")[5:10].replace("-", "/") if sent else ""
         # 까닭이 둘 다면 **방 이름을 먼저** 적는다. 실을 줄은 다음 달에 생길 수
         # 있지만 방 이름은 사람이 넣어 주기 전에는 영영 안 생긴다 — 손댈 수
         # 있는 쪽을 먼저 보여 준다.
@@ -212,6 +219,10 @@ def rows(db: Session, month: str) -> dict:
             "firms": row["total_firms"],
             "sendable": not reason,
             "reason": reason,
+            # 그 달 글을 이미 받았으면 그날(`10/30`), 아니면 빈 글자. 화면은 이 줄을
+            # 꺼 두고 `data-sent-this-month` 를 단다 — 전체 선택이 건너뛴다.
+            "sent_on": sent_on,
+            "sent_label": f"{this} 보냄({sent_on})" if sent else "",
             # 그 방 제목을 카톡에서 확인했는가 — **보여 주기만 한다.**
             #
             # `sendable` 에 넣지 않는다. 보낼 수 있는지는 위 두 가지(방 이름이
@@ -226,7 +237,9 @@ def rows(db: Session, month: str) -> dict:
     return {
         "month": month,
         "rows": out,
-        "sendable_count": sum(1 for r in out if r["sendable"]),
+        # **처음부터 켜져 있는** 줄 수 — 단추에 적힌다. 이미 보낸 곳은 꺼져 있으니
+        # 따로 센다(`sent_count`).
+        "sendable_count": sum(1 for r in out if r["sendable"] and not r["sent_label"]),
         # **방 이름이 없어 못 보내는 기업 수.** 화면이 이 수를 따로 적는다 —
         # `보낼 수 있는 곳 3` 만 보이면 나머지가 왜 빠졌는지 물을 자리가 없다.
         "no_room_count": sum(1 for r in out if r["reason"] == NO_ROOM),
@@ -235,6 +248,8 @@ def rows(db: Session, month: str) -> dict:
         # 보이면 아직 아무도 확인하지 않은 이름으로 회차를 세우게 된다.
         "verified_count": sum(1 for r in out if r["verified"]),
         "no_lines_count": sum(1 for r in out if r["reason"] == NO_LINES),
+        # 그 달 글을 이미 받아 **꺼 둔** 줄 수(켜면 묻는다).
+        "sent_count": sum(1 for r in out if r["sendable"] and r["sent_label"]),
         # 계약 안 한 기업 — 표 아래 회색 구역에 **보기만** 한다(#93). `out` 에
         # 섞지 않으므로 `sendable_ids` · A5 대상은 그대로 계약 기업뿐이다.
         "uncontracted": over["uncontracted"],

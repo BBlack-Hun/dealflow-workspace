@@ -17,6 +17,9 @@
   `send_window`). `automation_runner.parse_time` 이 그대로 부른다.
 - `month_job` — **그 달 회차가 이미 있는가.** A5 가 같은 달 두 번 보내지 않게
   하는 판정이다. 사람이 세운 것 · 옛 30일 자동이 세운 것도 센다.
+- `received` — **그 달 글을 이미 받은 기업.** 대기 목록(`startup_send.rows` — 꺼
+  두고 켜면 묻는다)과 나가는 순간(`routers/jobs._requeue` — 회차를 세운 뒤에 생긴
+  발송과 겹치면 뺀다)이 같이 읽는다. 회차가 아니라 기업 단위다.
 
 ## 시각
 
@@ -26,7 +29,7 @@
 from __future__ import annotations
 
 import re
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -84,3 +87,63 @@ def month_job(db: Session, month: str) -> Optional[SendJob]:
     """
     jobs = month_jobs(db, month)
     return jobs[0] if jobs else None
+
+
+def job_month(db: Session, job: SendJob) -> str:
+    """이 회차가 어느 달치인가 — `_job_month` 를 회차 하나로 부르는 자리."""
+    batch = db.get(DealBatch, job.batch_id) if job.batch_id else None
+    return _job_month(job, batch.title if batch else "")
+
+
+def received(db: Session, month: str,
+             sending_job: Optional[SendJob] = None) -> Dict[int, SendItem]:
+    """{기업 id: 그 건} — 그 달 월간 글을 **이미 받은**(`sent`) 기업.
+
+    10/30 에 취소된 회차에서 9곳이 나간 뒤 같은 40곳으로 새 회차가 서서 그 9곳에
+    같은 글이 다시 나갔다. 회차 단위(`month_job`)가 아니라 **기업 단위**로 본다.
+    실패 · 취소만 있는 기업은 안 받은 것이다.
+
+    **막지는 않는다**(사용자 결정 10/30 — 잘못 보내고 지웠을 수도 있다). 대기 목록은
+    이 기업을 꺼 둔 채로 보여 주고, 사람이 켜면 묻는다(`startup_send.rows`).
+
+    `sending_job` 을 주면 그 회차를 지금 내보내려는 참이다 — **그 회차를 세운 뒤에**
+    생긴 발송만 센다. 세울 때 이미 있던 것은 사람이 보고(묻는 창을 지나) 넣은 것이다.
+    다른 회차에서 지금 **나가는 중인** 건(보내는 중 · 큐에 선 회차의 대기)도 센다 —
+    그 발송은 이 회차를 세운 뒤에 생기고, 둘 다 큐에 서면 둘 다 이 확인을 이미 지난
+    뒤라 둘 다 나간다. `draft` · 멈춘 회차의 대기는 안 센다 — 그쪽이 나갈 때 이
+    확인을 다시 지난다.
+
+    shortcut: 달은 회차명에서 읽는다(`_job_month`) — 사람이 이름에서 달을 지우면
+    만든 달로 친다. 회차에 달 칸이 생기면 그것으로 바꾼다.
+    """
+    rows = db.execute(
+        select(SendItem, SendJob, DealBatch.title)
+        .join(SendJob, SendJob.id == SendItem.job_id)
+        .outerjoin(DealBatch, DealBatch.id == SendJob.batch_id)
+        .where(SendJob.kind == STARTUP_SEND_KIND,
+               SendItem.ir_company_id.isnot(None),
+               SendItem.status.in_(("sent", "sending", "pending")))
+    ).all()
+    # 시각은 이 앱이 한 모양으로 적는다(`clock.now_iso`) — 글자로 비교해도 차례가 같다.
+    since = (sending_job.created_at or "") if sending_job is not None else None
+    out: Dict[int, SendItem] = {}
+    # 보낸 건이 먼저 — 받은 날을 적어야 하고, 나가는 중인 건보다 확실한 사실이다.
+    for item, job, title in sorted(rows, key=lambda r: (r[0].status != "sent", r[0].id)):
+        if item.ir_company_id in out or _job_month(job, title or "") != month:
+            continue
+        if item.status == "sent":
+            hit = since is None or (item.sent_at or "") > since
+        else:
+            hit = (since is not None and job.id != sending_job.id
+                   and (item.status == "sending" or job.status in ("queued", "running")))
+        if hit:
+            out[item.ir_company_id] = item
+    return out
+
+
+def received_note(item: SendItem) -> str:
+    """뺀 까닭 — 진행 화면의 표가 그대로 적는다."""
+    if item.status == "sent":
+        when = (item.sent_at or "")[:16].replace("T", " ")
+        return f"이 회차를 세운 뒤 이 달 월간 글을 받은 기업(#{item.job_id} 회차 {when})"
+    return f"이 달 월간 글이 #{item.job_id} 회차로 나가는 중인 기업"

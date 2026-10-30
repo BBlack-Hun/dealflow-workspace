@@ -72,6 +72,7 @@
   · 방 확인 <b>{{ verified_count }}곳</b>
   {% if no_room_count %}· {{ no_room_label }} <b>{{ no_room_count }}곳</b>{% endif %}
   {% if no_lines_count %}· 요청 없음 <b>{{ no_lines_count }}곳</b>{% endif %}
+  {% if sent_count %}· 이미 보냄 <b>{{ sent_count }}곳</b>{% endif %}
 </p>
 
 {% if msg %}
@@ -152,7 +153,19 @@
               계약 기업인데 왜 안 보이는지 물을 자리가 없어진다.
             #}
             {% if row.sendable %}
+            {#
+              그 달 글을 **이미 받은** 줄은 꺼 둔다 — 막지는 않는다. 전체 선택은
+              `data-sent-this-month` 줄을 건너뛰고, 사람이 켜면 묻는다. [확인] 이면
+              옆의 `resend_ids` 가 살아나 함께 간다(`static/js/startup_resend.js`) —
+              그 값이 없으면 서버가 뺀다(`routers/startup_send.make_draft`).
+            #}
+            {% if row.sent_label %}
+            <input type="checkbox" name="company_ids" value="{{ row.company.id }}"
+                   data-sent-this-month="{{ row.sent_on }}">
+            <input type="hidden" name="resend_ids" value="{{ row.company.id }}" disabled>
+            {% else %}
             <input type="checkbox" name="company_ids" value="{{ row.company.id }}" checked>
+            {% endif %}
             {% else %}
             <span class="muted">—</span>
             {% endif %}
@@ -182,8 +195,8 @@
             {{ row.firms }}곳 · {{ row.count }}명
             {% if row.reason and not row.room %}
             {# 까닭을 줄에도 적는다. 머리의 안내를 지나친 사람이 여기서 본다. #}
-            {% elif row.reason %}
-            <span class="status-badge warn">{{ row.reason }}</span>
+            {% elif row.reason or row.sent_label %}
+            <span class="status-badge warn">{{ row.reason or row.sent_label }}</span>
             {% endif %}
           </td>
         </tr>
@@ -217,7 +230,7 @@
     **몇 곳에 가는지 단추에 적는다.** 취소분 재발송·이어 보내기가 같은 이유로
     단추에 수를 적는다 — 누른 뒤에 숫자를 아는 것은 늦다.
   #}
-  <button type="submit" class="primary" {% if not sendable_count %}disabled{% endif %}>
+  <button type="submit" class="primary" {% if not sendable_count and not sent_count %}disabled{% endif %}>
     {{ sendable_count }}곳 대기 목록 만들기
   </button>
   <p class="hint">
@@ -241,8 +254,13 @@
     <br>({{ no_lines_count }}곳은 {{ selected }} 말까지 요청한 투자사가 없어
     보낼 글이 없습니다 — 빈 목록을 보내면 대표는 우리가 아무것도 안 한 줄로 읽습니다.)
     {% endif %}
+    {% if sent_count %}
+    <br><b>{{ sent_count }}곳</b>은 {{ selected }} 글을 <b>이미 보냈습니다</b> — 꺼 두었고,
+    직접 켜면 다시 보낼지 묻습니다.
+    {% endif %}
   </p>
 </form>
+<script src="{{ asset('js/startup_resend.js') }}" defer></script>
 
 {#
   계약 안 한 기업 — **보기만 한다**(#93). 폼 **밖**에 두고 체크칸·입력을 두지
