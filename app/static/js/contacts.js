@@ -629,6 +629,8 @@
       // 눌러서 바로 고치는 칸(메모·방 이름)은 상세 패널을 열지 않는다 —
       // 고치려고 누를 때마다 패널이 튀어나오면 고칠 수가 없다.
       if (e.target.closest(".cell[data-field]")) return;
+      // 그 칸을 감싼 td 의 빈 자리도 칸이다 — 편집기가 연다(`inline_edit.js`, #97).
+      if (e.target.tagName === "TD" && e.target.querySelector(".cell[data-field]")) return;
       if (e.target.classList.contains("cell-input")) return;
       loadContact(parseInt(tr.getAttribute("data-id"), 10));
     });

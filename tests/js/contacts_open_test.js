@@ -162,13 +162,28 @@ async function main() {
     const { dom, calls } = run();
     const target = {
       tagName: "TD", classList: { contains() { return false; } },
-      closest(sel) { return sel === "tr.data-row" ? dom.tr : null; }
+      closest(sel) { return sel === "tr.data-row" ? dom.tr : null; },
+      querySelector() { return null; }          // 눌러 고치는 칸이 없는 td
     };
     dom.nodes["contacts-table"].fire("click", { target: target });
     assert.deepStrictEqual(calls, ["/api/contacts/7"], "줄을 눌렀는데 안 불러온다");
     await flush();
     assert.strictEqual(dom.nodes["detail-panel"].hidden, false,
       "줄을 눌렀는데 상세가 안 열린다");
+  }
+
+  // --- 눌러 고치는 칸(메모)을 감싼 td 의 빈 자리는 상세를 안 연다 -------------
+  //
+  // 그 자리는 칸 편집기가 연다(`inline_edit.js`, #97) — 둘 다 열리면 고칠 수가 없다.
+  {
+    const { dom, calls } = run();
+    const target = {
+      tagName: "TD", classList: { contains() { return false; } },
+      closest(sel) { return sel === "tr.data-row" ? dom.tr : null; },
+      querySelector(sel) { return sel === ".cell[data-field]" ? makeEl("memo") : null; }
+    };
+    dom.nodes["contacts-table"].fire("click", { target: target });
+    assert.deepStrictEqual(calls, [], "메모 칸의 빈 자리를 눌렀는데 상세까지 불러왔다");
   }
 
   // --- loadContact 이 부르는 자리에서 닿는 범위에 있는가 ----------------------

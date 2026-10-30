@@ -214,6 +214,7 @@ async function main() {
     t2.dom.nodes["contacts-table"].fire("click", {
       target: {
         tagName: "TD", classList: { contains() { return false; } },
+        querySelector() { return null; },     // 눌러 고치는 칸이 없는 td
         closest(sel) {
           if (sel !== "tr.data-row") return null;
           const tr = makeEl("tr");
