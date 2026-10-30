@@ -612,7 +612,9 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
     서는 폭). 든 만큼만 올린다.) */
 /* (3,720 → 4,364 : #84 — `수신일` 뒤 `대표자명`·`연락처`·`이메일`·`기업 한줄 소개`
     (스타트업DB 탭과 같은 70 · 104 · 170 · 300 = 644px). 든 만큼만 올린다.) */
-#co-table { min-width: 4364px; }
+/* (4,364 → 4,708 : `딜 소개 문구` 에 폭 344px 을 줬다 — 폭이 없어 #75 부터 0px 이었다
+    (companies.html 참고). 든 만큼만 올려 `%` 칸 넷은 지금 폭 그대로다.) */
+#co-table { min-width: 4708px; }
 #co-table td.updated-by { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* IR 기업 현황 › Series A 이상 딜 소싱 — 넓은 표 공통 값(2,030px)에 직접 적는 칸
    열(#24 · `companies_series_a.html` 의 `대표자명` ~ `Pre Value`, 폭 합 932px)을 **든 만큼만**
