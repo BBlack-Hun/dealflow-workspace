@@ -3,12 +3,13 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import date, timedelta
 
 from typing import List, Optional, Sequence
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import exists, select
+from sqlalchemy import and_, exists, func, or_, select
 from sqlalchemy.orm import Session
 
 from .. import clock
@@ -192,6 +193,34 @@ IR_LATER_FALLBACK = "{기업목록} 자료는 준비되는 대로 추후 보내 
 #: `scripts/bootstrap.TEAM_TEMPLATES` 의 같은 종류와 같아야 한다.
 REMIND_NO_SECTOR_KIND = "closing_remind_no_sector"
 REMIND_NO_SECTOR_FALLBACK = "선호하는 기업분야 말씀주시면\n맞추어\n딜 공유 드리겠습니다."
+#: 선호 분야를 물은 분께 **다시 묻지 않는 날 수**(#101) — 사람 단위로 중복 발송을 막는다.
+ASK_AGAIN_DAYS = 30
+#: 이날부터 리마인드 끝에 위 되묻는 말이 붙었다 — 그 전 리마인드는 묻지 않았다.
+REMIND_ASKS_SINCE = "2026-10-28"
+
+
+def asked_lately(db: Session, contact_ids, today: date, *, reminds: bool) -> set:
+    """최근 `ASK_AGAIN_DAYS` 일 안에 선호 분야를 물은 분(#101).
+
+    묻기 회차(`ASK_TOPIC`)에 든 분, `reminds` 면 `REMIND_ASKS_SINCE` 뒤 리마인드
+    회차(`deal_intro` · 단계 2 · 표시 없음)에 든 분까지. 대기·보내는 중도 든다 —
+    세워 둔 회차가 곧 나간다. 실패·취소는 안 나간 것이라 안 든다.
+    표시 없이 나간 옛 묻기는 10/28 뒤 것만 리마인드로 잡힌다(같은 모양이다).
+    """
+    since = (today - timedelta(days=ASK_AGAIN_DAYS)).isoformat()
+    when = func.coalesce(SendItem.sent_at, SendItem.created_at)
+    which = SendJob.topic == ASK_TOPIC
+    if reminds:
+        which = or_(which, and_(SendJob.kind == "deal_intro", SendJob.topic.is_(None),
+                                SendItem.stage == mc.STAGE_REMIND,
+                                when >= REMIND_ASKS_SINCE))
+    return set(db.execute(
+        select(SendItem.contact_id)
+        .join(SendJob, SendJob.id == SendItem.job_id)
+        .where(SendItem.contact_id.in_(list(contact_ids)),
+               SendItem.status.in_(("pending", "sending", "sent")),
+               when >= since, which)
+    ).scalars())
 #: 고른 기업 모두 파일명이 없을 때 — 발송 목록을 안 만들고 요청도 닫지 않는다.
 IR_NOTHING_NOTE = "보낼 자료가 하나도 없습니다 — 요청은 그대로 남습니다"
 #: 발송 화면의 **탭 → 문구 종류**. 한 곳에서 정해 두고 문구 관리 화면이
@@ -425,8 +454,10 @@ def _compose_for_contact(
     # 리마인드 — 받는 **그 분의** 선호 투자분야가 비었을 때만 되묻는 말을 붙인다.
     # 한 분 = 한 통이라(같은 방이어도 발송 건이 따로다) 그 분 칸만 본다. 가상의
     # 받는 사람(`_SampleRecipient`, 기본 문구)에게는 붙이지 않는다.
+    # 최근 선호 분야 묻기를 받은 분께는 붙이지 않는다 — 같은 말을 두 번 묻게 된다(#101).
     if (mode == MODE_REMIND and isinstance(contact, VcContact)
-            and not (contact.sectors or "").strip()):
+            and not (contact.sectors or "").strip()
+            and not asked_lately(db, [contact.id], clock.today(), reminds=False)):
         closing_body = closing_body.rstrip() + "\n\n" + _template_body(
             db, user.id, REMIND_NO_SECTOR_KIND, REMIND_NO_SECTOR_FALLBACK).strip()
 

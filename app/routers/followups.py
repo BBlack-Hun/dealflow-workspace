@@ -9,20 +9,20 @@
 """
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..deps import get_current_user, templates
-from ..models import ScheduleRule, SendItem, SendJob, SendSequence, User, VcContact
+from ..models import ScheduleRule, SendSequence, User, VcContact
 from ..services import cadence, flow, sheet_owner
 from ..ui import base_ctx
-from .deals import ASK_TOPIC
+from .deals import ASK_AGAIN_DAYS, asked_lately
 
 router = APIRouter(tags=["followups"])
 
@@ -34,10 +34,6 @@ def _owned(db: Session, sequence_id: int, user: User) -> SendSequence:
     return seq
 
 
-#: 선호 분야 묻기를 받은 분께 **다시 묻지 않는 날 수**(#101).
-ASK_AGAIN_DAYS = 30
-
-
 def no_sector_rows(db: Session, user: User, today: date) -> List[VcContact]:
     """선호 투자분야가 빈 분 — 리마인드 구역의 [선호 분야 묻기 보내기] 묶음(#101).
 
@@ -45,23 +41,14 @@ def no_sector_rows(db: Session, user: User, today: date) -> List[VcContact]:
     딜 소개 명단 · 카톡방 연결 · 숨김·검토중단 아님) 중 선호 투자분야 칸이 빈 분이다.
     같은 목록이라 [보내기] 가 여는 발송 화면에서 한 분도 빠짐없이 켜진다.
 
-    최근 `ASK_AGAIN_DAYS` 일 안에 묻기 회차에 든 분은 뺀다 — 대기·보내는 중도 든다
-    (회차를 세워 두고 돌아와 또 누르면 두 번 묻는다). 실패·취소는 안 나간 것이다.
-    묻기는 회차 표시(`deals.ASK_TOPIC`)로만 안다: 표시 없이 나간 옛 묻기는 셈에 없다.
+    최근에 이미 물은 분은 뺀다 — 묻기 회차와, 끝에 되묻는 말이 붙는 10/28 뒤
+    리마인드 회차(`deals.asked_lately`). 표시 없이 나간 10/28 전 묻기는 셈에 없다.
     """
     people = [c for c in sheet_owner.recipients(db, user)
               if not (c.sectors or "").strip()]
     if not people:
         return []
-    since = (today - timedelta(days=ASK_AGAIN_DAYS)).isoformat()
-    asked = set(db.execute(
-        select(SendItem.contact_id)
-        .join(SendJob, SendJob.id == SendItem.job_id)
-        .where(SendJob.topic == ASK_TOPIC,
-               SendItem.contact_id.in_([c.id for c in people]),
-               SendItem.status.in_(("pending", "sending", "sent")),
-               func.coalesce(SendItem.sent_at, SendItem.created_at) >= since)
-    ).scalars())
+    asked = asked_lately(db, [c.id for c in people], today, reminds=True)
     return [c for c in people if c.id not in asked]
 
 

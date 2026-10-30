@@ -4,7 +4,9 @@
    방 나감 · 검토중단 · 숨김 · 분야 있음은 안 선다.
 2. 선호 분야 묻기 회차에 표시(`SendJob.topic`)가 남고, 최근 30일 안에 물은 분은
    묶음에서 빠진다. 30일이 지났거나 실패한 묻기는 다시 선다.
-3. /ir 리마인드 구역의 단추가 지금 발송 화면(`/deals?mode=ask&contacts=…`)을 연다.
+3. 끝에 되묻는 말이 붙는 10/28 뒤 리마인드를 받은 분도 빠진다 — 10/27 전 리마인드는 아니다.
+4. /ir 리마인드 구역의 단추가 지금 발송 화면(`/deals?mode=ask&contacts=…`)을 연다.
+5. 반대로, 최근 묻기를 받은 분께 가는 리마인드에는 되묻는 말이 안 붙는다.
 
 이름·회사명은 전부 가상이다(공개 저장소).
 """
@@ -27,13 +29,13 @@ def _contact(db, users, name, stage="connected", **extra):
     return row
 
 
-def _asked(db, users, contact, when, status="sent"):
-    """`when` 날짜에 나간 선호 분야 묻기 한 건(회차 표시가 있는)."""
+def _asked(db, users, contact, when, status="sent", remind=False):
+    """`when` 날짜에 나간 선호 분야 묻기 한 건(회차 표시가 있는) — `remind` 면 리마인드."""
     from app.models import SendItem, SendJob
     from app.routers.deals import ASK_TOPIC
 
     job = SendJob(user_id=users["u1"].id, kind="deal_intro", status="done",
-                  topic=ASK_TOPIC)
+                  topic=None if remind else ASK_TOPIC)
     db.add(job)
     db.flush()
     stamp = f"{when.isoformat()}T10:00:00+09:00"
@@ -57,10 +59,17 @@ def test_group_is_empty_sector_recipients_not_asked_lately(client, db, users):
     _asked(db, users, old, today - timedelta(days=31))
     failed = _contact(db, users, "자담당")
     _asked(db, users, failed, today - timedelta(days=1), status="failed")
+    reminded = _contact(db, users, "차담당")
+    _asked(db, users, reminded, date(2026, 10, 28), remind=True)
+    remind_before = _contact(db, users, "카담당")
+    _asked(db, users, remind_before, date(2026, 10, 27), remind=True)
+    remind_failed = _contact(db, users, "타담당")
+    _asked(db, users, remind_failed, date(2026, 10, 29), status="canceled", remind=True)
     db.commit()
 
     got = [c.id for c in followups.no_sector_rows(db, users["u1"], today)]
-    assert sorted(got) == sorted([empty.id, blank.id, old.id, failed.id])
+    assert sorted(got) == sorted([empty.id, blank.id, old.id, failed.id,
+                                  remind_before.id, remind_failed.id])
 
 
 def test_ask_send_is_marked_and_drops_out_of_the_group(client, db, users):
@@ -86,3 +95,23 @@ def test_ask_send_is_marked_and_drops_out_of_the_group(client, db, users):
     # 아직 대기 중이어도 뺀다 — 돌아와 또 누르면 두 번 묻는다.
     left = followups.no_sector_rows(db, users["u1"], date.today())
     assert [c.id for c in left] == [second.id]
+
+
+def test_remind_skips_the_ask_tail_for_who_was_just_asked(client, db, users):
+    from app import clock
+
+    asked = _contact(db, users, "가담당")
+    _asked(db, users, asked, clock.today() - timedelta(days=3))
+    fresh = _contact(db, users, "나담당")
+    db.commit()
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+
+    r = client.post("/api/deals/preview", json={"mode": "remind",
+                                                "contact_ids": [asked.id, fresh.id]})
+    assert r.status_code == 200, r.text
+    got = {p["contact_id"]: p["message"] for p in r.json()["previews"]}
+    tail = "\n\n선호하는 기업분야 말씀주시면\n맞추어\n딜 공유 드리겠습니다.\n"
+    assert got[fresh.id].endswith(tail)
+    assert "선호하는 기업분야" not in got[asked.id]
+    # 리마인드 본문은 그대로 간다 — 붙는 말만 빠진다(이름 줄만 다르다).
+    assert got[fresh.id][: -len(tail)].replace("나담당", "가담당") == got[asked.id].rstrip("\n")
