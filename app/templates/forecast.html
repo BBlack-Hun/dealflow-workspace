@@ -120,7 +120,7 @@
       <tr data-id="{{ r.id }}"{{ cc.attrs(r.id) }}>
         {% for field, label, src in columns %}
         {% set c = r.cells[field] %}
-        <td {% if src %}title="{{ '직접 적음 · 지우면 자동(' ~ src ~ ')' if c.value and not c.auto else '자동 — ' ~ src }}"{% elif field == 'expected_month' %}title="YYYY-MM — 예: 2027-03"{% endif %}>
+        <td {% if src %}title="{{ '직접 적음 · 지우면 자동(' ~ src ~ ')' if c.value and not c.auto else '자동 — ' ~ src }}"{% elif field in ('expected_month', 'follow_round_month') %}title="YYYY-MM — 예: 2027-03"{% endif %}>
           <div class="cell {% if c.auto %}fc-auto{% endif %}" data-field="{{ field }}"
                data-value="{{ c.value }}"
                {% if field.startswith('meeting') %}data-type="date"{% elif field == 'result_note' %}data-type="long"{% elif field == 'likelihood' %}data-type="pick" data-choices="상,중,하"{% endif %}

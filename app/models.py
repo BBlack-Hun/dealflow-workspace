@@ -3345,6 +3345,9 @@ class RevenueForecast(TimestampMixin, Base):
     ceo_share: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     #: 예상 시기 `YYYY-MM` · 가능성 `상`/`중`/`하` — 적을 때 맞춘다(`forecast.clean`).
     expected_month: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: 후속라운드 시작 `YYYY-MM`(#94 · 0128) — 관리자 추가 칸이던 것을 칸으로 올렸다.
+    #: 이 값으로 `automations/follow_round` 가 팀원에게 세 번 알린다.
+    follow_round_month: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     likelihood: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     result_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 

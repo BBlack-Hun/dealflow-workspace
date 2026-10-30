@@ -127,6 +127,7 @@ class ForecastIn(BaseModel):
     fee_rate: Optional[str] = None
     expected_fee: Optional[str] = None
     expected_month: Optional[str] = None
+    follow_round_month: Optional[str] = None
     likelihood: Optional[str] = None
     result_note: Optional[str] = None
 
