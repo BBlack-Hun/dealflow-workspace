@@ -38,7 +38,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..models import (DealBatch, DealBatchCompany, IrCompany, IrRequest,
-                      Meeting, SendItem, SendJob, SendSequence, User, VcContact)
+                      Meeting, SendItem, SendJob, SendSequence, SourcingContact,
+                      User, VcContact)
 # 후속 단계(`STAGE_CALL`)와 그 주기는 **캐던스가 정한 것**을 읽는다 — 보고가
 # 제 손으로 "미팅 요청 사흘 뒤" 를 세면, 주기를 바꾼 날 화면과 보고가 다른
 # 날짜를 말한다.
@@ -109,6 +110,29 @@ SEND_GROUPS = (
     (GROUP_MEETING, "미팅 요청 · 미팅 후기", False),
     (GROUP_SOURCING, "딜 소싱", True),
 )
+
+#: 회차 줄에 **받은 분(투자사 · 심사역)** 을 적는 묶음(#102). 미팅 요청·후기는
+#: 회차마다 한 분, 딜 소싱은 몇 분이라 한 칸에 다 들어간다. 딜 소개·리마인드는
+#: 회차마다 수십~백여 분이라 이름을 늘어놓으면 표가 명부가 된다 — 싣지 않는다.
+NAMED_GROUPS = (GROUP_MEETING, GROUP_SOURCING)
+
+
+def _recipient_labels(db: Session, keys) -> Dict[tuple, str]:
+    """`("c", 담당자 번호)` · `("s", 소싱 명단 번호)` → `투자사 심사역`.
+
+    키는 `_sends` 가 받는 사람을 세는 키 그대로다. 소싱 명단은 제 줄에 투자사와
+    성함을 따로 갖고 있어(투자사 관리 현황과 안 이어진 분도 있다) 그 줄을 읽는다.
+    """
+    out: Dict[tuple, str] = {}
+    for tag, model in (("c", VcContact), ("s", SourcingContact)):
+        ids = [i for t, i in keys if t == tag]
+        if not ids:
+            continue
+        for id_, name, firm in db.execute(
+                select(model.id, model.name, model.firm).where(model.id.in_(ids))):
+            out[(tag, id_)] = " ".join(
+                p for p in ((firm or "").strip(), (name or "").strip()) if p)
+    return out
 
 
 def send_group_key(kind: str, stage: Optional[int]) -> str:
@@ -632,6 +656,19 @@ def _sends(db: Session, start: date, end: date, user: Optional[User],
     # 손으로 보낸 것 — 회차가 없으므로 **판(`batch_key`)마다 한 줄**로 세운다.
     manual_rounds = _manual_rounds(db, start, end, user, owners)
 
+    # 받은 분 이름 — `NAMED_GROUPS` 의 회차만 한 번에 찾아 둔다.
+    wanted: set = set()
+    for job, _ in jobs:
+        if belongs[job.id] in NAMED_GROUPS:
+            wanted |= people.get(job.id, set())
+    for key in NAMED_GROUPS:
+        for got in manual_rounds.get(key, []):
+            wanted |= got["people"]
+    labels_of = _recipient_labels(db, wanted)
+
+    def who_got(keys) -> List[str]:
+        return sorted(labels_of[k] for k in keys if k in labels_of)
+
     groups = []
     for key, label, always in SEND_GROUPS:
         # **회차마다 한 줄.** 같은 날 회차가 둘이어도 합치지 않는다 — 8/27 에
@@ -643,9 +680,11 @@ def _sends(db: Session, start: date, end: date, user: Optional[User],
         # 화면과 엑셀이 같은 묶음을 본다(까닭은 `SEND_GROUPS`).
         if not picked and not always:
             continue
+        named_group = key in NAMED_GROUPS
         rows, targeted, companies = [], set(), set()
         for got in manual_rounds.get(key, []):
-            rows.append(got["row"])
+            rows.append({**got["row"],
+                         "recipients": who_got(got["people"]) if named_group else []})
             targeted |= got["people"]
             companies.update(got["companies"])
         for job, batch in picked:
@@ -665,6 +704,9 @@ def _sends(db: Session, start: date, end: date, user: Optional[User],
                 "day": day_label(when),
                 "companies": len(names),
                 "company_names": names,
+                # 받은 분(대상 전부) — `NAMED_GROUPS` 만. 나머지는 빈 목록.
+                "recipients": (who_got(people.get(job.id, set()))
+                               if named_group else []),
                 # 대상 = 발송 목록에 오른 사람. 완료 = 실제로 도착한 건.
                 "target": target,
                 "sent": sent,
@@ -694,6 +736,8 @@ def _sends(db: Session, start: date, end: date, user: Optional[User],
         groups.append({
             "key": key,
             "label": label,
+            # 회차 줄에 받은 분 칸을 세우는가(화면이 읽는다 — 엑셀은 칸이 늘 있고 빈다).
+            "named": named_group,
             "rows": rows,
             "rounds": len(rows),
             # 그 달에 **대상이 된 사람** 수. 사용자가 `총 126명` 이라고 적던 칸.

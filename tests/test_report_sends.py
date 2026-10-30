@@ -629,3 +629,48 @@ def test_a_meeting_round_made_by_the_app_lands_in_the_meeting_group(
     assert _group(data, "deal_intro_meeting")["rounds"] == 1
     deal = _group(data, "deal_intro")
     assert not [r for r in deal["rows"] if r["title"] == "09/10 (미팅 요청)"]
+
+
+# --- 받은 분 이름(#102) ---------------------------------------------------------
+
+def test_meeting_and_sourcing_rounds_show_who_got_them(logged, db, users):
+    """미팅 요청·후기와 딜 소싱 회차는 줄마다 **투자사 · 심사역** 이 선다.
+
+    숫자만 있으면 "그 미팅 요청이 누구였지" 를 다시 찾아야 했다. 딜 소개는
+    회차마다 수십 명이라 이름을 싣지 않는다 — 표가 명부가 된다.
+    """
+    import io
+
+    import openpyxl
+
+    from app.models import SourcingContact
+    from app.services import report
+
+    _round(db, users, title="9/02 (9월 1주차)", when=date(2026, 9, 2),
+           sent=2, companies=1, stage=1)
+    _round(db, users, title="09/10 (미팅 요청)", when=date(2026, 9, 10),
+           sent=1, stage=3, people_from=500)
+    _round(db, users, title="09/11 (딜 소싱)", when=date(2026, 9, 11),
+           kind="sourcing_intro", sent=2)
+    for row in db.query(SourcingContact).all():
+        row.firm = "다라파트너스"
+    db.commit()
+
+    data = report.monthly(db, 2026, 9, users["u1"], today=date(2026, 9, 30))
+    assert _group(data, "deal_intro_meeting")["rows"][0]["recipients"] == \
+        ["가나벤처스 담당자500"]
+    assert _group(data, "sourcing_intro")["rows"][0]["recipients"] == \
+        ["다라파트너스 소싱대상0", "다라파트너스 소싱대상1"]
+    assert _group(data, "deal_intro")["rows"][0]["recipients"] == []
+    assert not _group(data, "deal_intro")["named"]
+
+    body = logged.get("/report?month=2026-09").text
+    assert "투자사 · 심사역" in body
+    assert "가나벤처스 담당자500" in body
+    assert "다라파트너스 소싱대상0, 다라파트너스 소싱대상1" in body
+
+    wb = openpyxl.load_workbook(io.BytesIO(
+        logged.get("/api/export/report.xlsx?month=2026-09").content))
+    cells = {c.value for row in wb.worksheets[0].iter_rows() for c in row}
+    assert "투자사 · 심사역" in cells
+    assert "가나벤처스 담당자500" in cells
