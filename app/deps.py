@@ -137,11 +137,12 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
 #
 # 팀원 쪽으로 바뀌는 것은 **누구의 데이터인가** 하나다. 권한(`role`)은 진짜
 # 관리자 것 그대로라 관리자 메뉴·화면마다의 팀원 고르개가 그대로 서고, 없던
-# 권한이 생기지도 않는다. 팀 결정 "관리자 대리는 보기·수정까지, 발송은 안 됨"
-# — 발송 쪽은 `no_send_as_member` 한 곳이 끊는다. 고친 것은 수정 로그에 관리자
+# 권한이 생기지도 않는다. 팀 결정은 "관리자 대리는 보기·수정까지, 발송은 안 됨"
+# 이었다가 10/30 에 **방 찾기 · 딜 소개 발송만** 열었다 — 발송 쪽은
+# `no_send_as_member` 한 곳이 허용 목록으로 가른다. 고친 것은 수정 로그에 관리자
 # 이름으로 남는다(로그는 세션 쿠키를 읽는다 — `edit_log.actor_from_request`).
 VIEW_AS_COOKIE = "dealflow_view_as"
-VIEW_AS_BLOCKED = "팀원 화면으로 보는 중에는 발송·예약·방 확인을 할 수 없습니다"
+VIEW_AS_BLOCKED = "팀원 화면으로 보는 중에는 방 찾기·딜 소개 발송 말고는 발송·예약을 할 수 없습니다"
 
 # 보는 중에도 **관리자 본인으로** 여는 자리. 팀원 쪽으로 가면 안 되는 것들이다:
 # 팀 현황의 "나 자신은 정지 못 함" 같은 판정 · 비밀번호 바꾸기 · 발송 프로그램
@@ -202,18 +203,87 @@ def doer(user: User) -> User:
     return getattr(user, "viewed_by", None) or user
 
 
-def no_send_as_member(request: Request, user: User = Depends(get_current_user)) -> None:
-    """팀원 화면으로 보는 중이면 발송·예약·방 확인을 끊는다.
+# 보는 중에도 **여는** 길(10/30) — 허용 목록이다. 여기 없는 발송 길은 그대로 막힌다.
+# 잡은 `_acting` 덕에 **그 팀원 계정**에 서서 그 팀원 PC 의 발송기가 집어간다 — 방도
+# 방 제목도 그 팀원 카톡 기준이다. 09~19시 · 하루 상한 · 중복 막이는 잡 주인 기준으로
+# 내주는 자리(`agent_api.poll`)와 발송 목록을 만드는 자리가 그대로 본다.
+VIEW_AS_OPEN_PATHS = {
+    "/api/contacts/verify-rooms",          # 투자사 관리 현황 [방 연결 확인]
+    "/sourcing/rooms/search",              # 딜 소싱 [방 후보 찾기]
+    "/api/deals/queue",                    # 딜 소개 예약 큐 — 늘 딜 소개
+    "/api/deals/queue/{item_id}/start",
+}
+#: 탭이 여럿인 발송 목록 만들기 — 딜 소개 탭 · 카톡만(`_open_while_viewing`).
+VIEW_AS_SEND_PATH = "/api/deals/send"
+#: 회차 화면의 단추들 — 위 길이 세운 회차만(`proxy_job`).
+VIEW_AS_JOB_PATHS = {f"/api/jobs/{{job_id}}/{a}"
+                     for a in ("start", "schedule", "retry", "resend-canceled", "resume")}
+
+
+def proxy_job(db: Session, job) -> bool:
+    """팀원 화면으로 보는 중에도 다룰 수 있는 회차인가 — 방 확인이거나 딜 소개 탭이
+    카톡으로 세운 회차. 회차에 기업이 실리는 `deal_intro` 는 딜 소개 탭뿐이다
+    (리마인드 · 미팅 요청 같은 후속 문구 · 자동화 회차는 같은 종류지만 기업이 없다)."""
+    from .models import DealBatchCompany
+
+    if job.kind == "verify_room":
+        return True
+    return (job.kind == "deal_intro" and job.batch_id is not None
+            and all(i.channel != "email" for i in job.items)
+            and db.execute(select(DealBatchCompany.company_id)
+                           .where(DealBatchCompany.batch_id == job.batch_id)
+                           .limit(1)).first() is not None)
+
+
+async def _open_while_viewing(request: Request, db: Session) -> bool:
+    route = getattr(request.scope.get("route"), "path", "")
+    if route in VIEW_AS_OPEN_PATHS:
+        return True
+    if route == VIEW_AS_SEND_PATH:
+        try:
+            body = await request.json()
+        except ValueError:
+            return False
+        return (isinstance(body, dict) and body.get("mode", "deal") == "deal"
+                and body.get("channel", "kakao") == "kakao")
+    if route in VIEW_AS_JOB_PATHS:
+        from .models import SendJob
+
+        raw = str(request.path_params.get("job_id", ""))
+        job = db.get(SendJob, int(raw)) if raw.isdigit() else None
+        return job is not None and proxy_job(db, job)
+    return False
+
+
+async def no_send_as_member(request: Request, user: User = Depends(get_current_user),
+                            db: Session = Depends(get_db)) -> None:
+    """팀원 화면으로 보는 중이면 발송·예약을 끊는다 — 위 허용 목록만 빼고.
 
     **판정은 여기 하나뿐이다.** 발송 회차를 세우거나 · 예약을 걸거나 풀거나 ·
     발송기에 방 확인을 시키는 길마다 `dependencies=[Depends(no_send_as_member)]`
-    로 건다 — 길이 하나 늘면 그 길에 이 한 줄을 붙인다.
+    로 건다 — 길이 하나 늘면 그 길에 이 한 줄을 붙인다(기본은 막힘).
+
+    보는 중(`view_as`)은 로그인한 사람이 관리자일 때만 선다(`view_as_member`) —
+    팀원이 쿠키를 심어도 여기까지 오지 않고 제 계정으로 보낸다.
 
     **멈추는 길([중단] · 예약 취소 · 대기 예약 취소)에는 걸지 않는다.** 멈춤은
     안전 조치라 누가 어떤 화면에서 누르든 언제나 먹어야 한다.
     """
-    if getattr(request.state, "view_as", None) is not None:
+    if getattr(request.state, "view_as", None) is None:
+        return
+    if not await _open_while_viewing(request, db):
         raise HTTPException(status_code=403, detail=VIEW_AS_BLOCKED)
+
+
+def view_as_send_note(db: Session, member: User, online: bool) -> str:
+    """보는 중에 방 찾기 · 딜 소개 발송을 누를 때 확인창 첫 줄 — **어느 PC 카톡인가.**"""
+    pc = db.get(User, agent_user_id(db, member.id)) or member
+    note = f"{pc.name} 계정 PC 카톡으로 나갑니다"
+    if not online:
+        # 회차 화면의 `standing-note`(progress.js)와 같은 말이다.
+        note += (" — 지금 그 PC 의 발송 프로그램이 연결되어 있지 않습니다. 회차는 큐에 "
+                 "그대로 서서 기다리다 그 PC 에서 발송 프로그램을 켜면 이어서 나갑니다")
+    return note + "."
 
 
 # --- 관리자 전용 ------------------------------------------------------------

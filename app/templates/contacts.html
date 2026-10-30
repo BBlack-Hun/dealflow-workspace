@@ -496,7 +496,7 @@
       주는지는 서버가 정한다(`sheet_owner.room_checkable`).
     #}
     {% if page.room_check %}
-    <button type="button" class="secondary-btn" id="verify-btn" data-send>방 연결 확인</button>
+    <button type="button" class="secondary-btn" id="verify-btn" data-send="proxy">방 연결 확인</button>
     {% endif %}
     {#
       [방 후보 찾기] · [방 매칭] — 방 이름이 **없는** 줄을 회사명으로 카톡에서
@@ -1818,7 +1818,7 @@
        (`ListPage.room_check` — 툴바의 [방 연결 확인] 과 같은 값). 스타트업
        배치의 수정창에도 이제 방 이름 칸이 있다(`STARTUP_LAYOUT.extra`). #}
     {% if page.room_check %}
-    <button type="button" class="secondary-btn" id="verify-one-btn" data-send>이 방만 확인</button>
+    <button type="button" class="secondary-btn" id="verify-one-btn" data-send="proxy">이 방만 확인</button>
     {% endif %}
     {# 방 이름을 모르는 줄은 확인할 것이 없다 — 회사명으로 후보를 찾는다
        (툴바의 [방 후보 찾기] 와 같은 길, 이 한 줄만). #}
