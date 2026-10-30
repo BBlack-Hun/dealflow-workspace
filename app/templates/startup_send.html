@@ -133,7 +133,9 @@
     <table class="grid-table">
       <thead>
         <tr>
-          <th>보냄</th>
+          {# 머리 체크 = 보낼 수 있는 줄 모두 켜기/끄기(스크립트는 맨 아래). #}
+          <th><label><input type="checkbox" id="startup-check-all"
+              title="보낼 수 있는 기업을 모두 고르거나 풉니다"> 보냄</label></th>
           <th>기업명</th>
           <th>계약여부</th>
           <th>대표 카톡방</th>
@@ -275,4 +277,36 @@
 </section>
 {% endif %}
 
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // [보냄] 머리 체크 — `sourcing.html` 의 `syncCheckAll` 과 같은 규칙: 지금 보이는 줄만
+  // 켜고 끄며 숨은 줄 체크는 남기지 않는다(숨은 체크가 남으면 `일부`). 폼 안만 훑으므로
+  // 못 보내는 줄(체크칸 없음 · 꺼진 칸)과 폼 밖의 미계약 구역은 닿지 않는다.
+  (function () {
+    var all = document.getElementById("startup-check-all");
+    if (!all) return;
+    var form = all.closest("form");
+    function boxes() {
+      return Array.prototype.filter.call(form.querySelectorAll('input[name="company_ids"]'),
+        function (cb) { return !cb.disabled; });
+    }
+    function shown(cb) { return !cb.closest("tr").hidden; }
+    function sync() {
+      var bs = boxes(), vis = bs.filter(shown);
+      var on = vis.filter(function (cb) { return cb.checked; }).length;
+      var hiddenOn = bs.filter(function (cb) { return cb.checked; }).length - on;
+      all.disabled = !vis.length;
+      all.checked = vis.length > 0 && on === vis.length && !hiddenOn;
+      all.indeterminate = !all.checked && on + hiddenOn > 0;
+    }
+    all.addEventListener("change", function () {
+      var on = all.checked;
+      boxes().forEach(function (cb) { cb.checked = on && shown(cb); });
+    });
+    form.addEventListener("change", sync);   // 머리 체크의 change 도 여기로 올라온다
+    sync();
+  })();
+</script>
 {% endblock %}
