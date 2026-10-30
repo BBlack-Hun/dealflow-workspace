@@ -9,7 +9,8 @@
 //   ④ 숨은 줄은 켜지 않고, 숨은 줄에 체크가 남으면 머리는 `일부`
 //      (`sourcing.html` 의 `syncCheckAll` 과 같은 규칙)
 //   ⑤ 보낼 수 있는 줄이 없으면 머리가 잠긴다
-//   ⑥ 이번 달 이미 보낸 줄(`data-sent-this-month`)은 켜지도 끄지도 않고 셈에서 뺀다
+//   ⑥ 이번 달 이미 보낸 줄(`data-sent-this-month`)은 켤 때만 건너뛰고, 끌 때는 함께 끈다
+//      (change 를 보내 `startup_resend.js` 가 `resend_ids` 를 끄게). 체크돼 있으면 `일부`
 //
 // 화면 스크립트는 `startup_send.html` 안에 있다 — 그 글을 그대로 읽어 돌린다.
 "use strict";
@@ -55,9 +56,13 @@ function setup(rows) {
   const outside = el("input", { type: "checkbox", name: "company_ids", value: "999" });
   root.appendChild(f);
   root.appendChild(el("section", { "data-testid": "startup-uncontracted" }, [outside]));
-  vm.runInNewContext(inline, { document: dom_.makeDocument(root), console: console },
+  const doc = dom_.makeDocument(root);
+  const fired = [];   // 머리가 바꾼 줄이 change 를 알렸는가 — `startup_resend.js` 가 그것을 듣는다
+  doc.addEventListener("change", function (ev) { if (ev.target !== all) fired.push(ev.target); });
+  const Event = function (type, init) { this.type = type; this.bubbles = !!(init && init.bubbles); };
+  vm.runInNewContext(inline, { document: doc, console: console, Event: Event },
                      { filename: "startup_send.html<script>" });
-  return { all: all, outside: outside };
+  return { all: all, outside: outside, fired: fired };
 }
 
 function box(tr) { return tr.querySelector('input[name="company_ids"]'); }
@@ -138,7 +143,7 @@ function state(all) { return all.checked ? "all" : all.indeterminate ? "some" : 
   assert.strictEqual(state(t.all), "none");
 }
 
-// --- ⑥ 이번 달 보냄 칸은 전체 선택이 안 켬 ---------------------------------------
+// --- ⑥ 이번 달 보냄 칸 — 켤 때는 건너뛰고, 끌 때는 함께 끈다 ------------------
 {
   const rows = [row(1), row(2, { checked: false, sent: "10/02" }), row(3, { checked: false })];
   const t = setup(rows);
@@ -146,14 +151,34 @@ function state(all) { return all.checked ? "all" : all.indeterminate ? "some" : 
   clickAll(t);
   assert.strictEqual(box(rows[1]).checked, false, "이번 달 보냄 칸을 전체 선택이 켰다");
   assert.strictEqual(box(rows[0]).checked && box(rows[2]).checked, true);
-  assert.strictEqual(state(t.all), "all", "이번 달 보냄 칸은 셈에서 빠져야 한다");
+  assert.strictEqual(state(t.all), "all", "이번 달 보냄 칸은 `전부` 셈에서 빠져야 한다");
   pick(rows[1], true);                                 // 사람이 직접 켜고 확인한 경우
-  assert.strictEqual(state(t.all), "all", "직접 켠 이번 달 보냄 칸이 머리 셈에 들었다");
+  assert.strictEqual(state(t.all), "all");
+  t.fired.length = 0;
   clickAll(t);
-  assert.strictEqual(box(rows[1]).checked, true, "직접 켠 이번 달 보냄 칸을 전체 해제가 껐다");
+  assert.strictEqual(box(rows[1]).checked, false, "전체 해제가 이번 달 보냄 칸을 남겼다");
   assert.strictEqual(state(t.all), "none");
+  assert.ok(t.fired.indexOf(box(rows[1])) >= 0, "끈 이번 달 보냄 칸이 change 를 안 알렸다");
+  pick(rows[1], true);
+  assert.strictEqual(state(t.all), "some", "이번 달 보냄 칸만 체크됐는데 `없음` 으로 보인다");
+  clickAll(t);                                         // 일부 → 전부(보냄 칸은 그대로)
+  assert.strictEqual(box(rows[1]).checked, true, "켤 때 이번 달 보냄 칸을 건드렸다");
+  assert.strictEqual(state(t.all), "all");
+}
+// 이번 달 보냄 줄만 있을 때 — 꺼져 있으면 잠기고, 체크돼 있으면 머리로 끈다
+{
   const only = setup([row(4, { checked: false, sent: "10/02" })]);
   assert.strictEqual(only.all.disabled, true, "이번 달 보냄 줄만 있는데 머리가 눌린다");
+  const rows = [row(5, { sent: "10/02" }), offRow(), row(6, { checked: false, disabled: true })];
+  const t = setup(rows);
+  assert.strictEqual(t.all.disabled, false, "체크된 이번 달 보냄 줄이 있는데 머리가 잠겼다");
+  assert.strictEqual(state(t.all), "some");
+  clickAll(t);
+  assert.strictEqual(box(rows[0]).checked, false, "머리로 이번 달 보냄 줄을 못 껐다");
+  assert.ok(t.fired.indexOf(box(rows[0])) >= 0, "끈 이번 달 보냄 칸이 change 를 안 알렸다");
+  assert.strictEqual(box(rows[2]).checked, false);
+  assert.strictEqual(state(t.all), "none");
+  assert.strictEqual(t.all.disabled, true, "끈 뒤에는 고를 줄이 없으니 잠겨야 한다");
 }
 
 console.log("startup_send_check_all_test: ok");
