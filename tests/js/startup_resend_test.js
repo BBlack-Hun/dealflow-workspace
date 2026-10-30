@@ -6,6 +6,8 @@
 //  3. 다시 끄면 `resend_ids` 도 죽는다 — 끈 줄이 확인 값만 남겨 딸려 가지 않게.
 //  4. 이미 받지 않은 줄은 묻지 않는다.
 //  5. 표가 없는 화면에서도 터지지 않는다.
+//  6. [취소] 로 도로 끈 것을 change 로 다시 알린다(전체 선택 머리가 다시 센다) — 그 change
+//     가 다시 묻지는 않는다.
 //
 // 체크칸 · 숨은 칸의 모양이 실제 화면과 같은지는 파이썬 쪽이 본다
 // (`tests/test_startup_monthly_dedupe.py`).
@@ -39,12 +41,14 @@ function build(answer) {
   const root = el("div", {}, [form]);
   const asked = [];
   const win = { confirm: function (msg) { asked.push(msg); return answer; } };
-  const ctx = { document: dom_.makeDocument(root), window: win, console: console };
+  const Event = function (type, init) { this.type = type; this.bubbles = !!(init && init.bubbles); };
+  const ctx = { document: dom_.makeDocument(root), window: win, console: console, Event: Event };
   const JS = path.join(__dirname, "..", "..", "app", "static", "js");
   vm.runInNewContext(fs.readFileSync(path.join(JS, "startup_resend.js"), "utf8"),
                      ctx, { filename: "startup_resend.js" });
   const rows = root.querySelectorAll("tr");
   return {
+    form: form,
     asked: asked,
     box: function (i) { return rows[i].querySelector('input[name="company_ids"]'); },
     ok: function () { return rows[0].querySelector('input[name="resend_ids"]'); },
@@ -69,6 +73,17 @@ function build(answer) {
   s.toggle(0, true);
   assert.strictEqual(s.box(0).checked, false, "[취소] 했는데 켜진 채다");
   assert.strictEqual(s.ok().disabled, true, "[취소] 했는데 확인 값이 간다");
+}());
+
+(function 취소하면다시알린다() {
+  const s = build(false);
+  const seen = [];   // 폼이 들은 change 마다 그 칸이 켜져 있었는가 — 전체 선택 머리가 폼에서 듣는다
+  s.form.addEventListener("change", function (ev) { seen.push(ev.target.checked); });
+  s.toggle(0, true);
+  assert.deepStrictEqual(seen, [true, false], "[취소] 로 끈 것을 다시 알리지 않았다");
+  assert.strictEqual(s.asked.length, 1, "다시 알린 change 가 또 물었다");
+  assert.strictEqual(s.box(0).checked, false);
+  assert.strictEqual(s.ok().disabled, true);
 }());
 
 (function 안받은줄은묻지않는다() {
