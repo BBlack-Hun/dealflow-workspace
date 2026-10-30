@@ -994,6 +994,10 @@ class SeriesACompany(TimestampMixin, Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     #: 수신 일자 — `YYYY-MM-DD` 글자. 표가 이 칸으로 최신순이다.
     received_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: 후속라운드 시작 — `YYYY-MM`(#98 · 0127, 탭의 `수신일` 오른쪽). 사람이 적는다 —
+    #: 매출예상리스트의 `후속라운드 시작 년월`(관리자 추가 칸 · 기업 × 투자사 줄마다)과는
+    #: 줄의 단위가 달라 값을 나누지 않는다. 적는 꼴은 그 화면 `예상 시기` 와 같다(`forecast.month`).
+    follow_round_month: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     #: Type — 딜이 들어온 길(`딜 소싱 네트워크` · `후속 투자 연계`).
     deal_type: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     #: 담당팀원 — 우리 팀에서 이 딜을 맡은 사람.

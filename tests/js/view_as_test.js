@@ -7,6 +7,9 @@
  *   · `data-send` 단추를 누르면 페이지 스크립트까지 가지 않고 사유가 뜬다.
  *   · `data-send` 폼은 제출만 막고, 안의 칸을 누르는 것은 막지 않는다.
  *   · 보는 중이 아니면(띠 속성이 없으면) 아무것도 하지 않는다.
+ *   · `data-send="proxy"`(방 찾기 · 딜 소개 발송)는 막지 않고 어느 PC 로 나가는지
+ *     확인창을 먼저 띄운다 — 취소하면 페이지 스크립트까지 가지 않는다. 값은 누르는
+ *     순간 읽는다(딜 제안 관리가 탭마다 바꾼다).
  */
 const assert = require("assert");
 const fs = require("fs");
@@ -15,7 +18,8 @@ const vm = require("vm");
 
 const SRC = fs.readFileSync(
   path.join(__dirname, "..", "..", "app", "static", "js", "view_as.js"), "utf8");
-const NOTE = "팀원 화면으로 보는 중에는 발송·예약·방 확인을 할 수 없습니다";
+const NOTE = "팀원 화면으로 보는 중에는 방 찾기·딜 소개 발송 말고는 발송·예약을 할 수 없습니다";
+const SEND = "강민준 계정 PC 카톡으로 나갑니다.";
 
 function el(tag, attrs, parent) {
   const a = Object.assign({}, attrs);
@@ -32,10 +36,11 @@ function el(tag, attrs, parent) {
   };
 }
 
-function run(note, marked) {
+function run(note, marked, answer) {
   const handlers = {};
   const alerts = [];
-  const body = el("BODY", note ? { "data-view-as-note": note } : {});
+  const asked = [];
+  const body = el("BODY", note ? { "data-view-as-note": note, "data-view-as-send": SEND } : {});
   const document = {
     body: body,
     addEventListener(type, fn, capture) {
@@ -44,7 +49,8 @@ function run(note, marked) {
     },
     querySelectorAll() { return { forEach(fn) { marked.forEach(fn); } }; },
   };
-  vm.runInNewContext(SRC, { document: document, alert(m) { alerts.push(m); } });
+  vm.runInNewContext(SRC, { document: document, alert(m) { alerts.push(m); },
+                           confirm(m) { asked.push(m); return !!answer; } });
   function fire(type, target) {
     const ev = { target: target, prevented: false, stopped: false,
                  preventDefault() { this.prevented = true; },
@@ -52,7 +58,7 @@ function run(note, marked) {
     if (handlers[type]) handlers[type](ev);
     return ev;
   }
-  return { fire: fire, alerts: alerts, handlers: handlers };
+  return { fire: fire, alerts: alerts, asked: asked, handlers: handlers };
 }
 
 // ── 보는 중: 단추는 막히고 사유가 뜬다 ──────────────────────────────────────
@@ -78,6 +84,33 @@ function run(note, marked) {
 
   const other = page.fire("click", plain);
   assert.ok(!other.prevented, "발송과 상관없는 단추까지 막았다");
+}
+
+// ── 방 찾기 · 딜 소개 발송: 확인창을 거쳐 연다 ─────────────────────────────────
+{
+  const button = el("BUTTON", { "data-send": "proxy" });
+  const form = el("FORM", { "data-send": "proxy" });
+  const ok = run(NOTE, [button, form], true);
+  assert.strictEqual(button.title, undefined, "열린 단추에 막힌 사유를 달았다");
+  assert.strictEqual(button.getAttribute("aria-disabled"), null);
+
+  const click = ok.fire("click", button);
+  assert.ok(!click.prevented && !click.stopped, "확인했는데 막았다");
+  assert.ok(ok.asked[0].startsWith(SEND), "어느 PC 로 나가는지 묻지 않았다");
+  assert.deepStrictEqual(ok.alerts, []);
+  assert.ok(!ok.fire("submit", form).prevented, "확인했는데 폼을 막았다");
+
+  const no = run(NOTE, [button], false);
+  const back = no.fire("click", button);
+  assert.ok(back.prevented && back.stopped, "취소했는데 페이지 스크립트까지 갔다");
+  const sent = no.fire("submit", form);
+  assert.ok(sent.prevented && sent.stopped, "취소했는데 폼이 제출됐다");
+
+  // 딜 제안 관리가 탭을 바꿔 값을 비우면 그때부터 막힌다.
+  button.setAttribute("data-send", "");
+  const later = no.fire("click", button);
+  assert.ok(later.prevented && later.stopped);
+  assert.deepStrictEqual(no.alerts, [NOTE]);
 }
 
 // ── 보는 중이 아니면 아무것도 하지 않는다 ────────────────────────────────────

@@ -136,6 +136,11 @@
            `↕` 로 보여, 첫 클릭이 뜻밖에 오래된 순이 된다. #}
         <th style="width:100px" data-sort="received_at" data-sort-default="desc"
             title="딜을 받은 날 · 눌러서 수정">수신일</th>
+        {# 후속라운드 시작(#98 · 0127) — `YYYY-MM` 으로 적는다(`2027.3` 도 받아 `2027-03` 으로 맞춘다 —
+           매출예상리스트 `예상 시기` 와 같은 규칙 · `forecast.month`). 매출예상리스트의
+           `후속라운드 시작 년월` 과는 따로 적는다 — 그 칸은 관리자 추가 칸이고 줄이 기업 × 투자사라
+           한 값으로 맞출 자리가 없다(`models.SeriesACompany.follow_round_month`). #}
+        <th style="width:120px" title="YYYY-MM — 예: 2027-03 · 눌러서 수정">후속라운드 시작</th>
         <th style="width:70px" title="{{ typed_tip }}">대표자명</th>
         <th style="width:104px" title="{{ typed_tip }}">연락처</th>
         <th style="width:170px" title="{{ typed_tip }}">이메일</th>
@@ -219,6 +224,7 @@
                data-ir-link='{{ r.ir_link|tojson }}' hidden></div>
         </td>
         <td class="cell" data-field="received_at" data-type="date">{{ r.received_at }}</td>
+        <td class="cell" data-field="follow_round_month">{{ r.follow_round_month }}</td>
         {# 직접 적는 칸 — 적은 그대로 글자다(금액도 `data-type="number"` 를 두지 않는다:
            화면이 `Number()` 로 읽으면 `5-10억` 이 통째로 사라진다 — 스타트업DB 와 같다). #}
         <td class="cell" data-field="ceo_name">{{ r.ceo_name }}</td>
@@ -300,7 +306,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="27" class="muted">아직 받은 딜이 없습니다. [기업 추가]로 넣거나 시트를 가져오세요.</td></tr>
+      <tr><td colspan="28" class="muted">아직 받은 딜이 없습니다. [기업 추가]로 넣거나 시트를 가져오세요.</td></tr>
       {% endfor %}
     </tbody>
   </table>

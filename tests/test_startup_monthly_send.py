@@ -558,3 +558,35 @@ def test_계약_안_한_기업은_보기만_하고_보내지_않는다(db, seede
     assert "<input" not in box
     for c in (none_, review):
         assert f'name="company_ids" value="{c.id}"' not in page
+
+
+# ── 전체 선택(머리 체크) ──────────────────────────────────────────────────────
+
+def test_전체_선택은_node_로_잰다():
+    """`tests/js/startup_send_check_all_test.js` — 머리 체크가 보낼 수 있는 줄만
+    켜고 끄며(꺼진 칸 · 숨은 줄 · 폼 밖은 그대로) 줄마다 전부/일부/없음을 따라가는가.
+    `node` 가 없으면 건너뛴다."""
+    import shutil
+    import subprocess
+    from pathlib import Path
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node 미설치 — 브라우저 로직 검사 생략 "
+                    "(호스트에서 `node tests/js/startup_send_check_all_test.js`)")
+    js = Path(__file__).resolve().parent / "js" / "startup_send_check_all_test.js"
+    done = subprocess.run([node, str(js)], capture_output=True, text=True, timeout=60)
+    assert done.returncode == 0, done.stdout + done.stderr
+
+
+def test_전체_선택은_발송_폼_안에_선다(db, seeded, client):
+    """머리 체크는 `closest("form")` 안의 `company_ids` 만 훑는다 — 폼 밖에 서면
+    아무것도 못 켜고, 미계약 구역은 폼 밖이라 닿지 않는다. 머리 체크에 이름이
+    있으면 그 값이 `company_ids` 와 함께 실려 나가므로 이름도 없어야 한다."""
+    _turn_on(db, user_id=1)
+    page = _login(client).get("/deals/startup-ir").text
+    form = page.split('action="/deals/startup-ir/send"', 1)[1].split("</form>", 1)[0]
+    head = form.split('id="startup-check-all"', 1)
+    assert len(head) == 2, "머리 체크가 발송 폼 안에 없다"
+    assert "name=" not in head[1].split(">", 1)[0], "머리 체크에 이름이 붙어 함께 실린다"
+    assert f'name="company_ids" value="{seeded["ok"].id}" checked' in form

@@ -614,15 +614,17 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
     (스타트업DB 탭과 같은 70 · 104 · 170 · 300 = 644px). 든 만큼만 올린다.) */
 /* (4,364 → 4,708 : `딜 소개 문구` 에 폭 344px 을 줬다 — 폭이 없어 #75 부터 0px 이었다
     (companies.html 참고). 든 만큼만 올려 `%` 칸 넷은 지금 폭 그대로다.) */
-#co-table { min-width: 4708px; }
+/* (4,708 → 4,948 : #103 — `IR 자료` 앞 `메모`(240px). 든 만큼만 올린다.) */
+#co-table { min-width: 4948px; }
 #co-table td.updated-by { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* IR 기업 현황 › Series A 이상 딜 소싱 — 넓은 표 공통 값(2,030px)에 직접 적는 칸
    열(#24 · `companies_series_a.html` 의 `대표자명` ~ `Pre Value`, 폭 합 932px)을 **든 만큼만**
    더한다. 안 올리면 폭을 안 준 `상세 내용` 이 그 932px 을 내어 주다 0 으로 짜부라진다.
    (2,962 → 3,142 : 0118 의 `IR 자료`(180px) — 든 만큼만 올린다.)
    (3,142 → 3,252 : #25 의 `휴대폰`(110px) — 든 만큼만 올린다.)
-   (3,252 → 3,534 : 0125 의 `계약여부`(134px) · `계약서 수신 여부`(148px) — 든 만큼만 올린다.) */
-#sa-table { min-width: 3534px; }
+   (3,252 → 3,534 : 0125 의 `계약여부`(134px) · `계약서 수신 여부`(148px) — 든 만큼만 올린다.)
+   (3,534 → 3,654 : #98 · 0127 의 `후속라운드 시작`(120px) — 든 만큼만 올린다.) */
+#sa-table { min-width: 3654px; }
 /* 표의 `소개 횟수` — 회차 수와 사람 수를 **위아래로** 세운다(사용자 요청,
    「세로 좌측 정렬」). 둘을 함께 두는 까닭은 `services/deal_history.py`
    머리글에 있다(회차 수만 보면 180명짜리와 103명짜리가 똑같이 `6회` 로 읽힌다).
@@ -668,8 +670,9 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
    창은 520px(폰에서는 화면 폭 전체)이라 칸 여섯이 그대로는 안 선다. 폭을
    못 박고 `.table-wrap` 이 가로로 굴리게 둔다 — 안 박으면 `table-layout:
    fixed` 가 `보낸 사람`·`회차명` 을 40px 남짓으로 눌러 글자가 한 자씩 끊긴다.
-   (폭을 못 박는 규칙과 가로 스크롤은 늘 한 쌍이다 — tests/test_mobile_layout.py) */
-.table-wrap #co-history { min-width: 460px; }
+   (폭을 못 박는 규칙과 가로 스크롤은 늘 한 쌍이다 — tests/test_mobile_layout.py)
+   (460 → 496 : 맨 왼쪽 `NO`(36px, #100) — 든 만큼만 올려 두 글 칸 폭은 그대로다.) */
+.table-wrap #co-history { min-width: 496px; }
 /* 보낸 사람이 **추정**인 줄. 글자에 `(담당)` 이 이미 붙어 있고(서비스가 짓는다),
    여기서는 그것이 단언이 아니라는 것만 색으로 거든다. */
 #co-history td.guessed { color: var(--muted); }
@@ -1043,7 +1046,7 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
 .view-as-pick select { max-width: 100%; font-size: 11.5px; padding: 3px 6px; border-radius: 6px;
                        border: 1px solid #2a3342; background: #1b2330; color: #e6e9ee; }
 .view-as-pick .linkbtn { padding: 0; white-space: nowrap; color: #8fb3ff; }
-body[data-view-as-note] [data-send] { opacity: .45; cursor: not-allowed; }
+body[data-view-as-note] [data-send]:not([data-send="proxy"]) { opacity: .45; cursor: not-allowed; }
 
 /* ── 기업 검색 (딜소개 보내기) ─────────────────────────────── */
 .picker-search { display: flex; gap: 10px; align-items: center; margin: 8px 0 10px; }
@@ -1397,6 +1400,36 @@ a.secondary-btn { display: inline-flex; align-items: center; text-decoration: no
    `td.` 를 붙여 `.grid-table td` 와 **같은 무게**로 만든다(뒤에 있어 이긴다).
    클래스만 적어 두면 표 규칙에 져서 11px 이 조용히 사라진다. */
 td.rowno, .rowno { text-align: right; font-variant-numeric: tabular-nums; font-size: 11px; }
+/* ── 모든 목록 표의 맨 왼쪽 `NO`(#100) ─────────────────────────────────────
+   표마다 `<td>` 를 더하지 않고 **줄 앞에 CSS 칸 하나**(`tr::before`)를 세운다.
+   DOM 에는 칸이 없으므로 칸 차례로 값을 찾는 스크립트(필터·정렬·칸 편집·추가 칸
+   옮기기), `칸 수 = 머리글 수` 검사, 엑셀 내려받기(서버가 짓는다)는 그대로다.
+   번호는 CSS 카운터라 **지금 보이는 줄**만 센다 — 필터가 감춘 줄(`hidden` =
+   display:none)은 안 세고, 정렬로 차례가 바뀌면 그 차례로 다시 센다.
+
+   빼는 표(맨 아래 `content: none`): 이미 `NO` 칸이 있는 표(넷은 JS 가 같은 '보이는
+   줄' 번호를 매기고, 투자컨설턴트는 시트의 NO 값을 보인다)와 항목 × 달 집계표
+   (`.year-report`). 목록이 템플릿과 맞는지는 tests/test_row_numbers.py 가 본다.
+   폭 36px 은 기존 `NO` 칸과 같다. 칸 폭 합으로 맞춘 표(`#team-table`)는 그만큼
+   넓어질 뿐 칸이 눌리지 않는다 — `table-layout: fixed` 는 합이 넘치면 표를 늘린다. */
+:is(.grid-table, .log-table) { counter-reset: rowno; }
+:is(.grid-table, .log-table) > :is(thead, tbody) > tr::before {
+  display: table-cell; box-sizing: border-box; width: 36px; padding: 6px;
+  border-bottom: 1px solid var(--line); text-align: right; vertical-align: top;
+  color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+:is(.grid-table, .log-table) > thead > tr::before { content: "NO"; vertical-align: middle;
+  font-size: 12px; font-weight: 700; line-height: 1.35; background: #f7f8fa; }
+:is(.grid-table, .log-table) > tbody > tr::before { content: counter(rowno); counter-increment: rowno; }
+/* 빈 표 안내 줄(`<td colspan>` 하나)은 셀 줄이 아니다 — 칸만 세우고 번호는 안 붙인다. */
+:is(.grid-table, .log-table) > tbody > tr:has(> td[colspan]:only-child)::before {
+  content: ""; counter-increment: none; }
+/* 발송 진행 표(`.log-table` 만 — 수정 로그는 `.grid-table` 이 여백을 정한다)의 칸 여백 9px. */
+.log-table:not(.grid-table) > tbody > tr::before { padding-block: 9px; }
+/* 넓은 표는 머리행 고정(`.table-wrap.wide thead th`)과 얇은 줄(td 4px)을 같이 따른다. */
+.table-wrap.wide .grid-table > thead > tr::before { position: sticky; top: 0; z-index: 3; }
+.table-wrap.wide .grid-table > tbody > tr::before { padding-block: 4px; }
+:is(#contacts-table, #co-table, #sa-table, #sourcing-table, #cs-table, .year-report) > * > tr::before {
+  content: none; }
 .field.wide { grid-column: 1 / -1; }
 .hint.ok { color: var(--green); }
 .hint.warn { color: var(--amber); }
