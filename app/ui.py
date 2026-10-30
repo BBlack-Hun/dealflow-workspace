@@ -12,7 +12,8 @@ from sqlalchemy.orm import Session
 
 from . import config, version
 from .deps import (VIEW_AS_BLOCKED, agent_status, consultant_may_open, doer,
-                   may_auto_attach, may_view_consulting, view_as_targets)
+                   may_auto_attach, may_view_consulting, view_as_send_note,
+                   view_as_targets)
 from .models import User
 from .services import notices
 
@@ -144,11 +145,16 @@ def base_ctx(request: Request, db: Session, user: User, active: str) -> dict:
     # 팀원 화면으로 보는 중이면 `user` 는 그 팀원이다(`deps.get_current_user`).
     # 사이드바의 내 계정 칸 · 팀원 고르개 · 공지는 **로그인한 본인** 것이다.
     me = doer(user)
+    view_as = getattr(request.state, "view_as", None)
+    agent = agent_status(db, user.id)
     return {
         "me": me,
-        "view_as": getattr(request.state, "view_as", None),
+        "view_as": view_as,
         "view_as_targets": view_as_targets(db, me),
         "view_as_note": VIEW_AS_BLOCKED,
+        # 보는 중에도 열린 방 찾기 · 딜 소개 발송의 확인창 첫 줄(`view_as.js`).
+        "view_as_send_note": (view_as_send_note(db, view_as, agent["online"])
+                              if view_as else ""),
         # 켜고 끈 뒤 **같은 주소**로 돌아온다 — `?view=year&y=2026` 같은 조건이
         # 빠지면 다른 화면이 된다(`current_path` 는 경로뿐이다).
         "view_as_next": (f"{request.url.path}?{request.url.query}"
@@ -158,7 +164,7 @@ def base_ctx(request: Request, db: Session, user: User, active: str) -> dict:
         "menu": visible_menu(user),
         "active": active,
         "user": user,
-        "agent": agent_status(db, user.id),
+        "agent": agent,
         # 운영에서는 시험 자리가 늘 닫힌다(`routers/setup.test_tools_on`) — 그때
         # `시험 단추만 이 방으로 갑니다` 띠를 세우면 없는 단추를 말하게 된다.
         "test_room": "" if config.IS_PRODUCTION else config.TEST_ROOM,

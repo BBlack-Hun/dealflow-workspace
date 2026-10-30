@@ -5,7 +5,9 @@
 1. 관리자만 켠다 — 팀원은 켜는 길(403)도, 쿠키를 손으로 심는 길도 막힌다.
 2. 켜면 "내 것" 을 읽는 화면이 그 팀원 것으로 바뀐다(대시보드 · 딜 제안 관리 ·
    딜 진행 관리 · 주간업무). 관리자 권한은 그대로다(팀 현황이 열린다).
-3. 켜져 있는 동안 발송·예약·방 확인 길은 **전부** 403 — 끄면 다시 된다.
+3. 켜져 있는 동안 발송·예약 길은 403 — 끄면 다시 된다. 10/30 부터 **방 찾기 ·
+   딜 소개 발송만** 열린다(허용 목록 `OPEN_ROUTES`). 잡은 그 팀원 계정에 서서
+   그 팀원 발송기가 집어가고, 하루 상한도 그 팀원 것으로 센다.
 4. 고친 것은 관리자 이름으로 남는다(수정 로그 · `누가` 칸).
 """
 from __future__ import annotations
@@ -18,7 +20,7 @@ import pytest
 
 from .conftest import DEMO_PASSWORD, DEMO_TOKEN
 
-BLOCKED = "팀원 화면으로 보는 중에는 발송·예약·방 확인을 할 수 없습니다"
+BLOCKED = "팀원 화면으로 보는 중에는 방 찾기·딜 소개 발송 말고는 발송·예약을 할 수 없습니다"
 
 # 발송 회차를 세우거나 · 예약을 걸고 풀거나 · 발송기에 방 확인을 시키는 길 전부.
 # 하나가 늘면 여기와 라우터(`dependencies=[Depends(no_send_as_member)]`)를 같이 고친다.
@@ -50,6 +52,16 @@ SEND_ROUTES = {
     ("POST", "/team/automations/{key}"),
     ("POST", "/team/automation-team"),
     ("POST", "/team/startup-send"),
+}
+
+# 보는 중에도 길 자체는 열린 것(10/30). `/api/deals/send` 는 딜 소개 탭 · 카톡만,
+# 회차 단추(`/api/jobs/…`)는 딜 소개 · 방 확인 회차만 연다 — 아래 3-2 에서 본다.
+OPEN_ROUTES = {
+    ("POST", "/api/contacts/verify-rooms"),
+    ("POST", "/sourcing/rooms/search"),
+    ("POST", "/api/deals/send"),
+    ("POST", "/api/deals/queue"),
+    ("POST", "/api/deals/queue/{item_id}/start"),
 }
 
 STOP_ROUTES = {
@@ -255,13 +267,13 @@ def test_own_device_token_never_shows_the_members(client, users, admin):
     assert DEMO_TOKEN not in page
 
 
-# ── 3. 발송·예약·방 확인은 전부 막힌다 ────────────────────────────────────────
+# ── 3. 발송·예약은 막힌다(허용 목록 밖) ──────────────────────────────────────
 
 def test_every_send_route_carries_the_one_guard():
     assert _guarded_routes() == SEND_ROUTES
 
 
-@pytest.mark.parametrize("method, path", sorted(SEND_ROUTES))
+@pytest.mark.parametrize("method, path", sorted(SEND_ROUTES - OPEN_ROUTES))
 def test_send_routes_are_blocked_while_viewing(client, users, admin, method, path):
     _login(client, "01000000009")
     _view_as(client, users["u1"].id)
@@ -318,19 +330,229 @@ def test_send_works_again_after_switching_back(client, db, users, admin):
                     connect_stage="connected")
     db.add_all([company, own])
     db.commit()
-    body = {"company_ids": [company.id], "contact_ids": [own.id]}
+    body = {"company_ids": [company.id], "contact_ids": [own.id], "mode": "remind"}
     _login(client, "01000000009")
     _view_as(client, users["u1"].id)
     assert client.post("/api/deals/send", json=body).status_code == 403
-    assert client.post("/api/contacts/verify-rooms",
-                       json={"contact_ids": [own.id]}).status_code == 403
 
     _off(client)
     r = client.post("/api/deals/send", json=body)
     assert r.status_code == 200, r.text
     assert r.json()["job_id"]
-    r = client.post("/api/contacts/verify-rooms", json={"contact_ids": [own.id]})
+
+
+# ── 3-2. 방 찾기 · 딜 소개 발송은 열린다 — 그 팀원 계정 회차로 ──────────────
+# 10/30 결정 변경. 투자사 방과 방 제목이 그 팀원 카톡에 있으므로 잡은 그 팀원
+# 계정에 서고(그 팀원 발송기가 집어간다), 하루 상한도 그 팀원 것으로 센다.
+
+def _member_deal(db, users):
+    from app.models import IrCompany, VcContact
+
+    company = IrCompany(name="샘플애그", one_liner="소개", revenue_recent=10)
+    mine = VcContact(user_id=users["u1"].id, name="팀원담당", firm="가나벤처스",
+                     kakao_room_name="팀원담당 방", room_verified="verified",
+                     connect_stage="connected")
+    db.add_all([company, mine])
+    db.commit()
+    return company, mine
+
+
+def _viewing(client, users):
+    _login(client, "01000000009")
+    _view_as(client, users["u1"].id)
+
+
+def test_deal_send_while_viewing_is_the_members_job(client, db, users, admin):
+    from app.models import DealBatch, SendJob
+    from app.services import send_guard
+
+    from .conftest import auth
+
+    company, mine = _member_deal(db, users)
+    _viewing(client, users)
+    r = client.post("/api/deals/send",
+                    json={"company_ids": [company.id], "contact_ids": [mine.id]})
     assert r.status_code == 200, r.text
+    db.expire_all()
+    job = db.get(SendJob, r.json()["job_id"])
+    assert (job.user_id, job.kind, job.status) == (users["u1"].id, "deal_intro", "queued")
+    assert db.get(DealBatch, job.batch_id).user_id == users["u1"].id
+    # 그 팀원 발송기가 집어간다.
+    got = client.get("/api/agent/poll", params={"kinds": "deal_intro"},
+                     headers=auth(DEMO_TOKEN))
+    assert got.status_code == 200 and got.json()["job_id"] == job.id
+    [item] = got.json()["items"]
+    assert item["room_name"] == "팀원담당 방"
+
+    # 하루 상한은 그 팀원 것으로 센다 — 관리자 몫은 그대로다.
+    res = client.post(f"/api/agent/items/{item['id']}/result", headers=auth(DEMO_TOKEN),
+                      json={"status": "sent"})
+    assert res.status_code == 200, res.text
+    db.expire_all()
+    assert send_guard.sent_today(db, users["u1"].id) == 1
+    assert send_guard.sent_today(db, admin.id) == 0
+    member = db.get(type(admin), users["u1"].id)
+    assert send_guard.remaining_today(db, member) == send_guard.daily_cap(member) - 1
+
+
+def test_deal_send_reservation_while_viewing(client, db, users, admin):
+    """예약을 걸어 세우고 · 회차 화면에서 시각을 바꾸고 · [발송 시작] 까지 열린다."""
+    from datetime import timedelta
+
+    from app import clock
+    from app.models import SendJob
+
+    company, mine = _member_deal(db, users)
+    _viewing(client, users)
+    day = (clock.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+    r = client.post("/api/deals/send",
+                    json={"company_ids": [company.id], "contact_ids": [mine.id],
+                          "scheduled_at": f"{day}T10:00"})
+    assert r.status_code == 200, r.text
+    job_id = r.json()["job_id"]
+    page = client.get(f"/jobs/{job_id}").text
+    assert 'id="start-btn" class="primary-btn inline" hidden data-send="proxy"' in page
+    assert 'id="schedule-btn" class="secondary-btn inline" data-send="proxy"' in page
+
+    r = client.post(f"/api/jobs/{job_id}/schedule", json={"at": f"{day}T11:00"})
+    assert r.status_code == 200, r.text
+    r = client.post(f"/api/jobs/{job_id}/start")
+    assert r.status_code == 200, r.text
+    db.expire_all()
+    job = db.get(SendJob, job_id)
+    assert (job.user_id, job.status) == (users["u1"].id, "queued")
+
+
+def test_deal_queue_while_viewing_is_the_members_job(client, db, users, admin):
+    from app.models import DealQueueItem, SendJob
+
+    company, mine = _member_deal(db, users)
+    _viewing(client, users)
+    r = client.post("/api/deals/queue", json={"company_ids": [company.id]})
+    assert r.status_code == 200, r.text
+    item_id = r.json()["item_id"]
+    assert db.get(DealQueueItem, item_id).user_id == users["u1"].id
+    r = client.post(f"/api/deals/queue/{item_id}/start", json={})
+    assert r.status_code == 200, r.text
+    db.expire_all()
+    assert db.get(SendJob, r.json()["job_id"]).user_id == users["u1"].id
+
+
+@pytest.mark.parametrize("extra", [{"mode": "remind"}, {"mode": "ask"},
+                                   {"mode": "meeting"}, {"mode": "ir"},
+                                   {"mode": "ir_review"}, {"mode": "review"},
+                                   {"mode": "sourcing"}, {"mode": "startup"},
+                                   {"mode": "startup_msg"}, {"channel": "email"}])
+def test_other_sends_stay_blocked_while_viewing(client, db, users, admin, extra):
+    from app.models import SendJob
+
+    company, mine = _member_deal(db, users)
+    _viewing(client, users)
+    r = client.post("/api/deals/send", json={"company_ids": [company.id],
+                                             "contact_ids": [mine.id], **extra})
+    assert r.status_code == 403 and r.json()["detail"] == BLOCKED
+    assert db.query(SendJob).count() == 0
+
+
+def test_job_buttons_open_only_for_deal_intro_while_viewing(client, db, users, admin):
+    """회차 단추는 딜 소개 · 방 확인 회차만 — IR 전달 · 리마인드 회차는 그대로 막힌다."""
+    from app.models import DealBatch, DealBatchCompany, IrCompany, SendItem, SendJob
+
+    company = IrCompany(name="샘플애그", one_liner="소개", revenue_recent=10)
+    db.add(company)
+    db.flush()
+
+    def draft(kind, with_company, channel="kakao"):
+        batch = DealBatch(user_id=users["u1"].id, title="회차")
+        db.add(batch)
+        db.flush()
+        if with_company:
+            db.add(DealBatchCompany(batch_id=batch.id, company_id=company.id, position=1))
+        job = SendJob(user_id=users["u1"].id, kind=kind, batch_id=batch.id,
+                      status="draft", total=1, sent=0, failed=0)
+        db.add(job)
+        db.flush()
+        db.add(SendItem(job_id=job.id, room_name="방", message="문구",
+                        channel=channel, status="pending"))
+        db.commit()
+        return job.id
+
+    intro = draft("deal_intro", True)
+    remind = draft("deal_intro", False)            # 후속 문구 — 기업이 없다
+    ir = draft("ir_delivery", True)
+    mail = draft("deal_intro", True, channel="email")
+    _viewing(client, users)
+    for job_id in (remind, ir, mail):
+        r = client.post(f"/api/jobs/{job_id}/start")
+        assert r.status_code == 403 and r.json()["detail"] == BLOCKED, job_id
+        assert 'data-send="proxy"' not in client.get(f"/jobs/{job_id}").text
+    assert client.post(f"/api/jobs/{intro}/start").status_code == 200
+
+
+def test_room_check_while_viewing_is_the_members_job(client, db, users, admin):
+    from app.models import SendJob, VcContact
+
+    mine = VcContact(user_id=users["u1"].id, name="팀원담당", firm="가나벤처스",
+                     kakao_room_name="팀원담당 방", connect_stage="connected")
+    db.add(mine)
+    db.commit()
+    _viewing(client, users)
+    page = client.get("/contacts").text
+    assert 'id="verify-btn" data-send="proxy"' in page
+    r = client.post("/api/contacts/verify-rooms", json={"contact_ids": [mine.id]})
+    assert r.status_code == 200, r.text
+    db.expire_all()
+    job = db.get(SendJob, r.json()["job_id"])
+    assert (job.user_id, job.kind) == (users["u1"].id, "verify_room")
+    # 방 확인 회차의 단추도 열린다(불일치 재확인 등).
+    assert 'id="retry-btn" class="secondary-btn" hidden data-send="proxy"' in \
+        client.get(f"/jobs/{job.id}").text
+
+
+def test_sourcing_room_search_while_viewing_is_the_members_job(client, db, users, admin):
+    from app.models import SendJob, SourcingContact
+
+    row = SourcingContact(bucket="시리즈 A 이상 딜 소싱 참여 심사역", position=1,
+                          name="홍길동", phone="010-1234-5678", firm="가나다벤처스")
+    db.add(row)
+    db.commit()
+    _viewing(client, users)
+    r = client.post("/sourcing/rooms/search", data={"tab": "all", "ids": str(row.id)},
+                    headers={"Accept": "application/json"})
+    assert r.status_code == 200, r.text
+    assert "강민준 님 PC 의 카톡에서" in r.json()["msg"]
+    db.expire_all()
+    [job] = db.query(SendJob).all()
+    assert (job.user_id, job.kind) == (users["u1"].id, "verify_room")
+
+
+def test_member_cannot_send_as_someone_else(client, db, users, admin):
+    """팀원은 쿠키를 심어도 남의 계정으로 못 보낸다 — 제 계정 회차로만 선다."""
+    from app.models import SendJob
+
+    company, mine = _member_deal(db, users)          # u1 의 담당
+    _login(client, "01000000002")
+    client.cookies.set("dealflow_view_as", str(users["u1"].id))
+    r = client.post("/api/deals/send",
+                    json={"company_ids": [company.id], "contact_ids": [mine.id]})
+    assert r.status_code == 404                       # u2 에게는 없는 담당자
+    r = client.post("/api/contacts/verify-rooms", json={"contact_ids": [mine.id]})
+    assert r.status_code == 400                       # u2 의 명단에서만 찾는다
+    assert db.query(SendJob).count() == 0
+
+
+def test_confirm_note_names_the_pc_and_waits_when_off(client, db, users, admin):
+    from app import clock
+    from app.models import AgentDevice
+
+    _viewing(client, users)
+    page = client.get("/deals").text
+    assert ('data-view-as-send="강민준 계정 PC 카톡으로 나갑니다 — 지금 그 PC 의 발송 '
+            '프로그램이 연결되어 있지 않습니다.') in page
+    device = db.query(AgentDevice).filter_by(user_id=users["u1"].id).one()
+    device.last_poll_at = clock.now_iso()
+    db.commit()
+    assert 'data-view-as-send="강민준 계정 PC 카톡으로 나갑니다."' in client.get("/deals").text
 
 
 @pytest.mark.skipif(shutil.which("node") is None,
@@ -350,7 +572,11 @@ def test_send_buttons_are_marked_on_the_member_screen(client, users, admin):
     page = client.get("/deals").text
     assert f'data-view-as-note="{BLOCKED}"' in page
     assert "js/view_as.js" in page
-    assert 'id="send-btn" class="primary-btn" disabled data-send' in page
+    # 딜 소개 탭의 [발송] 은 열린다 — 확인창 첫 줄이 어느 PC 인지 말한다.
+    assert 'id="send-btn" class="primary-btn" disabled data-send="proxy"' in page
+    assert 'data-view-as-send="강민준 계정 PC 카톡으로 나갑니다' in page
+    # 손으로 보낸 것 기록은 그대로 막힌다.
+    assert 'id="manual-btn" disabled data-send>' in page
 
     _off(client)
     page = client.get("/deals").text

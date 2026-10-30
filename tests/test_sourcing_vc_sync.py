@@ -1025,9 +1025,9 @@ def test_the_room_forms_are_marked_for_the_script(board, db, users):
     db.commit()
     page = board.get(f"/sourcing?tab={SYNC}").text
     assert re.search(r'<form method="post" action="/sourcing/rooms/search" '
-                     r'class="inline-form js-room-search" data-send\s+id="sourcing-room-search"', page)
+                     r'class="inline-form js-room-search" data-send="proxy"\s+id="sourcing-room-search"', page)
     assert re.search(r'<form method="post" action="/sourcing/rooms/search" '
-                     r'class="inline-form js-room-search" data-send>', page)
+                     r'class="inline-form js-room-search" data-send="proxy">', page)
     assert f'action="/sourcing/{row.id}/room-confirm" class="inline-form js-room-confirm"' in page
     assert "/static/js/sourcing_rooms.js" in page
 

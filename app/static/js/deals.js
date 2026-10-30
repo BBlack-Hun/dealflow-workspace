@@ -1446,6 +1446,8 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     if (queuePanel && !queuePanel.hasAttribute("data-off")) {
       queuePanel.hidden = mode !== "deal";
     }
+    // 팀원 화면으로 보는 중에 열리는 발송은 딜 소개 탭뿐이다(`view_as.js` · 서버 `deps`).
+    sendBtn.setAttribute("data-send", mode === "deal" ? "proxy" : "");
     applyContactFilter();
     // 설명 줄은 화면에서 뺐다. 없어도 터지지 않아야 한다.
     var help = document.getElementById("mode-help");

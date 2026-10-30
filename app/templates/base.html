@@ -10,8 +10,9 @@
   <link rel="stylesheet" href="{{ asset('css/app.css') }}">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>📨</text></svg>">
 </head>
-{# 팀원 화면으로 보는 중이면 발송·예약·방 확인 단추(`data-send`)를 끈다(`view_as.js`). #}
-<body{% if view_as %} data-view-as-note="{{ view_as_note }}"{% endif %}>
+{# 팀원 화면으로 보는 중이면 발송·예약 단추(`data-send`)를 끈다 — `data-send="proxy"`
+   (방 찾기 · 딜 소개 발송)만 그 팀원 PC 로 나간다는 확인창을 거쳐 연다(`view_as.js`). #}
+<body{% if view_as %} data-view-as-note="{{ view_as_note }}" data-view-as-send="{{ view_as_send_note }}"{% endif %}>
   <div class="layout">
     <aside class="sidebar">
       <a class="brand-link" href="/">
@@ -83,7 +84,8 @@
           <input type="hidden" name="next" value="{{ view_as_next }}">
           <button type="submit" class="linkbtn">[내 화면으로 돌아가기]</button>
         </form>
-        <br>보기·수정만 됩니다(고친 것은 내 이름으로 남습니다) — {{ view_as_note }}.
+        <br>보기·수정과 방 찾기·딜 소개 발송이 됩니다(고친 것은 내 이름으로 남고,
+        방 찾기·딜 소개는 {{ view_as.name }} 계정 회차로 서서 그 계정 발송기가 보냅니다) — {{ view_as_note }}.
       </div>
       {% endif %}
       {# 테스트 서버에서 보내는 시간(09:00~19:00) 제한을 껐다는 표시. 관리자에게만 —

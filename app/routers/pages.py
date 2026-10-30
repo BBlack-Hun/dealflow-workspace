@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from .. import clock
 from ..db import get_db
-from ..deps import get_current_user, may_manage_team_contacts, templates
+from ..deps import get_current_user, may_manage_team_contacts, proxy_job, templates
 from ..models import ROOM_SEARCH_TOPIC, STARTUP_MSG_KIND, IrCompany, SendJob, User
 from ..services import (cadence, contact_columns, custom_columns, deal_history, deal_queue,
                         deal_stage, email_domains, group_name, investor_firms, ir_attach,
@@ -822,7 +822,9 @@ def job_page(
                 "rooms_href": STARTUP_PAGE.rooms_href,
                 "again_href": (f"{STARTUP_PAGE.msg_href}?topic={job.topic or ''}"
                                if outreach else "/deals"),
-                "readonly": can_view and job.user_id != user.id})
+                "readonly": can_view and job.user_id != user.id,
+                # 팀원 화면으로 보는 중에도 단추를 여는 회차(`deps.proxy_job`).
+                "proxy_job": can_view and proxy_job(db, job)})
     if can_view:
         # **2단계 자동화 회차**면 무엇을 왜 뺐나(중복 방지 · 조건)와 건 사이 간격.
         from ..services import automation_runner
