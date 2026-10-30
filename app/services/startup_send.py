@@ -59,7 +59,7 @@ from typing import List, Optional
 from sqlalchemy.orm import Session
 
 from ..models import AutoSendSetting, IrCompany, User
-from . import auto_send, ir_monthly, room_match
+from . import auto_send, ir_monthly, room_match, startup_monthly
 
 #: 이 발송의 종류. `auto_send_settings.kind` 이자 발송 잡의 종류
 #: (`models.STARTUP_SEND_KIND`)다. **같은 것을 가리키므로 글자도 같다** —
@@ -193,15 +193,21 @@ def rows(db: Session, month: str) -> dict:
     세면 화면의 수와 나가는 글의 줄 수가 갈린다.
     """
     over = ir_monthly.overview(db, month)
+    # 그 달 글을 **이미 받은** 기업 — 고를 수 없게 한다. 판정은 나가는 순간과 같은
+    # 함수다(`startup_monthly.received` · `routers/jobs._requeue`).
+    got = startup_monthly.received(db, month)
+    this = "이번 달" if month == ir_monthly.this_month() else month
     out = []
     for row in over["rows"]:
         company = row["company"]
         room = room_of(company)
+        sent = got.get(company.id)
         # 까닭이 둘 다면 **방 이름을 먼저** 적는다. 실을 줄은 다음 달에 생길 수
         # 있지만 방 이름은 사람이 넣어 주기 전에는 영영 안 생긴다 — 손댈 수
         # 있는 쪽을 먼저 보여 준다.
-        reason = ("" if room and row["msg_sendable"]
-                  else NO_ROOM if not room else NO_LINES)
+        when = (sent.sent_at or "")[5:10].replace("-", "/") if sent else ""
+        reason = (NO_ROOM if not room else f"{this} 보냄({when})" if sent
+                  else NO_LINES if not row["msg_sendable"] else "")
         out.append({
             "company": company,
             "contract_label": row["contract_label"],
@@ -235,6 +241,8 @@ def rows(db: Session, month: str) -> dict:
         # 보이면 아직 아무도 확인하지 않은 이름으로 회차를 세우게 된다.
         "verified_count": sum(1 for r in out if r["verified"]),
         "no_lines_count": sum(1 for r in out if r["reason"] == NO_LINES),
+        # 그 달 글을 이미 받아 못 고르는 기업 수(방 이름 없음으로 센 곳은 빼고).
+        "sent_count": sum(1 for r in out if r["room"] and r["company"].id in got),
         # 계약 안 한 기업 — 표 아래 회색 구역에 **보기만** 한다(#93). `out` 에
         # 섞지 않으므로 `sendable_ids` · A5 대상은 그대로 계약 기업뿐이다.
         "uncontracted": over["uncontracted"],

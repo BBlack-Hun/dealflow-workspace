@@ -8,9 +8,9 @@ from sqlalchemy.orm import Session
 from ..clock import now_iso
 from ..db import get_db
 from ..deps import agent_status, get_current_user, no_send_as_member
-from ..models import SendItem, SendJob, SourcingContact, User
+from ..models import STARTUP_SEND_KIND, SendItem, SendJob, SourcingContact, User
 from ..services import (automation_runner, mail_sender, scheduled_send, send_guard,
-                        sourcing_msg, sourcing_sync)
+                        sourcing_msg, sourcing_sync, startup_monthly)
 
 router = APIRouter(prefix="/api", tags=["jobs"])
 
@@ -126,12 +126,14 @@ def _requeue(db: Session, job: SendJob, items: list[SendItem],
     두면 한쪽만 고쳐져 어긋난다(카톡은 되살아나는데 메일은 안 나가는 식으로).
 
     **어떤 건을 되살릴지는 부르는 쪽이 정한다.** 여기서는 받은 것만 손댄다.
-    단 딜 소싱 글 회차는 나가는 순간 참여를 다시 본다(`_drop_not_taking_part`).
+    단 딜 소싱 글 회차는 나가는 순간 참여를 다시 보고(`_drop_not_taking_part`),
+    스타트업 월간 발송은 그 달 글을 이미 받은 기업을 뺀다(`_drop_already_received`).
     """
     for item in items:
         item.status = "pending"
         item.error = None
     _drop_not_taking_part(db, job)
+    _drop_already_received(db, job)
     items = [i for i in items if i.status == "pending"]
     if not any(i.status == "pending" for i in job.items):
         # 다시 본 판정으로 전부 빠졌다 — 큐에 세우지 않는다. 예약으로 서 있던
@@ -180,6 +182,28 @@ def _drop_not_taking_part(db: Session, job: SendJob) -> None:
         if why:
             item.status = "canceled"
             item.error = f"{why} — 나가기 전에 다시 보고 뺐습니다"
+
+
+def _drop_already_received(db: Session, job: SendJob) -> None:
+    """스타트업 월간 발송 — **나가는 순간** 그 달 글을 이미 받은 기업의 대기 건은 취소.
+
+    대기 목록을 세울 때 걸렀어도(`startup_send.rows`) 옛 draft 이거나 그 사이 다른
+    회차가 먼저 나갔을 수 있다. 판정은 대기 목록과 같은 함수다
+    (`startup_monthly.received`) — 다른 회차에서 지금 나가는 중인 기업도 뺀다.
+    한 회차 안에 같은 기업이 두 줄이면 앞 줄만 남긴다. 다른 종류의 회차는 그대로.
+    """
+    if job.kind != STARTUP_SEND_KIND:
+        return
+    taken = startup_monthly.received(db, startup_monthly.job_month(db, job),
+                                     sending_job=job.id)
+    for item in job.items:
+        if item.status != "pending" or item.ir_company_id is None:
+            continue
+        got = taken.setdefault(item.ir_company_id, item)
+        if got is not item:
+            item.status = "canceled"
+            item.error = (f"{startup_monthly.received_note(got)} — "
+                          "나가기 전에 다시 보고 뺐습니다")
 
 
 def _screen_auto(db: Session, job: SendJob, items: list[SendItem]) -> list[SendItem]:

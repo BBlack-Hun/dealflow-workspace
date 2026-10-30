@@ -36,8 +36,8 @@ from ..services import (deal_history, deal_numbers, deal_queue, group_name, ir_a
                         series_a_share,
                         sheet_owner, sourcing_link, sourcing_msg,
                         sourcing_receipts, sourcing_sync,
-                        startup_outreach, startup_send, template_pick,
-                        twin_send)
+                        startup_monthly, startup_outreach, startup_send,
+                        template_pick, twin_send)
 from ..services.message_composer import MAX_COMPANIES_PER_SEND
 
 router = APIRouter(prefix="/api/deals", tags=["deals"])
@@ -1187,6 +1187,13 @@ def create_send_list(
         if req.channel == "email":
             raise HTTPException(status_code=400,
                                 detail="스타트업 월간 발송은 카톡으로만 나갑니다")
+        # 그 달 글을 **이미 받은** 기업이 섞이면 세우지 않는다. 화면은 이미 못
+        # 고르게 하지만(`startup_send.rows`), 주소로 곧장 `queued` 회차를 세우면
+        # 나가는 순간의 확인(`jobs._requeue`)을 지나지 않는다.
+        if set(req.contact_ids) & set(startup_monthly.received(db, req.month)):
+            raise HTTPException(status_code=400,
+                                detail=f"{req.month} 월간 글을 이미 받은 기업이 섞였습니다 "
+                                       "— 목록을 다시 보세요")
 
     # ── 스타트업 안내 카톡 — 문구가 무엇인지 **먼저** 정한다 ────────────────
     #

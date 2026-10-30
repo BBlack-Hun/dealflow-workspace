@@ -72,6 +72,7 @@
   · 방 확인 <b>{{ verified_count }}곳</b>
   {% if no_room_count %}· {{ no_room_label }} <b>{{ no_room_count }}곳</b>{% endif %}
   {% if no_lines_count %}· 요청 없음 <b>{{ no_lines_count }}곳</b>{% endif %}
+  {% if sent_count %}· 이미 보냄 <b>{{ sent_count }}곳</b>{% endif %}
 </p>
 
 {% if msg %}
