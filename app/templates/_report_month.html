@@ -109,6 +109,8 @@
       <thead><tr>
         <th style="width:104px">날짜</th>
         <th>회차명</th>
+        {# 받은 분(#102) — 미팅 요청·후기 · 딜 소싱만(`report.NAMED_GROUPS`). #}
+        {% if g.named %}<th>투자사 · 심사역</th>{% endif %}
         {# 소싱 회차는 기업을 붙이지 않는다 — 늘 0 인 칸을 세워 두면 읽는 눈만 잡는다. #}
         {% if g.companies %}<th class="num" style="width:74px">딜 소개</th>{% endif %}
         <th class="num" style="width:64px">대상</th>
@@ -123,6 +125,7 @@
         <tr>
           <td class="tabular">{{ r.day or '-' }}</td>
           <td class="ellipsis" title="{{ r.title }}"><b>{{ r.title }}</b></td>
+          {% if g.named %}<td>{{ r.recipients|join(', ') or '-' }}</td>{% endif %}
           {% if g.companies %}
           <td class="num" title="{{ r.company_names|join(', ') }}">{{ r.companies or '-' }}</td>
           {% endif %}

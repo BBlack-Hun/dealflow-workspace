@@ -848,8 +848,9 @@ def _sends_sheet(sheet, data, team_wide):
     # 딜 소개 칸은 **두 그룹 모두에 세운다.** 화면은 소싱에서 이 칸을 빼는데
     # (늘 0 인 칸이 눈을 잡으므로), 엑셀은 칸 폭이 시트 단위라 그룹마다 칸이
     # 어긋나면 두 표가 서로 다른 자리에 서 버린다.
+    # `투자사 · 심사역` 은 미팅 요청·후기 · 딜 소싱 줄만 찬다(`report.NAMED_GROUPS`).
     headers = ["날짜", "회차명", "딜 소개", "대상", "완료", "안 나감",
-               "안 나간 사유", "상태"] + (["담당자"] if team_wide else [])
+               "안 나간 사유", "상태", "투자사 · 심사역"] + (["담당자"] if team_wide else [])
     nums = {2, 3, 4, 5}
     for group in sends["groups"]:
         sheet.blank()
@@ -865,9 +866,10 @@ def _sends_sheet(sheet, data, team_wide):
         for r in group["rows"]:
             sheet.row(
                 [r["day"] or "-", r["title"], r["companies"], r["target"],
-                 r["sent"], r["left"], r["left_label"], r["status_label"]]
+                 r["sent"], r["left"], r["left_label"], r["status_label"],
+                 ", ".join(r["recipients"])]
                 + ([r["owner"]] if team_wide else []),
-                level=r["level"], nums=nums, wraps={6})
+                level=r["level"], nums=nums, wraps={6, 8})
         # 합계는 **건을 더한 값**이다. 위 그룹 머리의 '대상 N명' 과 다를 수 있는데,
         # 그쪽은 겹치는 사람을 한 명으로 센 값이라 그렇다(회차 둘의 대상이 겹친다).
         #
@@ -875,7 +877,7 @@ def _sends_sheet(sheet, data, team_wide):
         # 더하면 같은 기업을 여러 번 센다 — 8개사 회차를 다시 돌린 달이 16개사가
         # 된다. 그 달에 소개한 기업 수는 위 그룹 머리가 겹치지 않게 세어 말한다.
         sheet.row(["합계", "", "", group["target"], group["sent"], group["left"],
-                   "", ""] + ([""] if team_wide else []),
+                   "", "", ""] + ([""] if team_wide else []),
                   level="warn" if group["left"] else "", nums=nums)
 
 
@@ -1047,8 +1049,8 @@ def report_workbook(data: dict, *, team_wide: bool, who: str,
 
     ws = wb.active
     ws.title = f"{tag} 발송"
-    sends = _ReportSheet(ws, [12, 34, 10, 9, 9, 10, 30, 15, 10],
-                         9 if team_wide else 8)
+    sends = _ReportSheet(ws, [12, 34, 10, 9, 9, 10, 30, 15, 30, 10],
+                         10 if team_wide else 9)
     sends.title(f"{year}년 {month}월 업무 보고",
                 f"{who} · {today.isoformat()} 뽑음 · "
                 f"'완료'는 실제로 도착한 건만 셉니다(중단된 회차는 완료가 아닙니다).")
