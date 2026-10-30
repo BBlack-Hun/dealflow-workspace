@@ -179,6 +179,10 @@ FOLLOW_UP_MODES = {
     # `sourcing_msg.body_for()` 가 갈래를 보고 고른다.
     MODE_SOURCING: (sourcing_msg.KIND, "", mc.STAGE_REMIND),
 }
+#: 선호 분야 묻기 회차의 표시(`SendJob.topic`, #101). 단계가 리마인드와 같아 이 표시가
+#: 없으면 둘이 갈리지 않는다 — 리마인드 구역의 `선호 투자분야가 빈 분` 묶음이 이것으로
+#: 최근에 물은 분을 뺀다(`followups.no_sector_rows`). 10/30 전 묻기에는 표시가 없다.
+ASK_TOPIC = FOLLOW_UP_MODES[MODE_ASK][0]
 #: IR 자료 전달에서 **파일명이 없어 이번에 못 보낸 기업**을 글 끝에 알리는 한 줄(#53).
 #: `{기업목록}` 에는 못 보낸 기업이 번호와 함께 들어간다(`deal_numbers.company_list`).
 IR_LATER_KIND = "ir_delivery_later"
@@ -1508,6 +1512,7 @@ def create_send_list(
         # `IR 자료 검토 요청 완료` 를 세운다(`pipeline.meeting_ask_state`).
         topic=(req.topic.strip() if req.mode == MODE_STARTUP_MSG
                else pipeline.IR_REVIEW_KIND if req.mode == MODE_IR_REVIEW
+               else ASK_TOPIC if req.mode == MODE_ASK
                else sourcing_topic
                if sourcing_topic in (sourcing_msg.REMIND_KIND,
                                      sourcing_msg.SHARE_KIND) else None),
