@@ -302,27 +302,42 @@
   // [보냄] 머리 체크 — `sourcing.html` 의 `syncCheckAll` 과 같은 규칙: 지금 보이는 줄만
   // 켜고 끄며 숨은 줄 체크는 남기지 않는다(숨은 체크가 남으면 `일부`). 폼 안만 훑으므로
   // 못 보내는 줄(체크칸 없음 · 꺼진 칸)과 폼 밖의 미계약 구역은 닿지 않는다.
-  // 그 달 글을 이미 받은 줄(`data-sent-this-month`)도 건너뛴다 — 사람이 직접 켜고 확인해야 간다.
+  // 그 달 글을 이미 받은 줄(`data-sent-this-month`)은 **켤 때만** 건너뛴다 — 끌 때는 함께
+  // 끄고, 체크돼 있으면 머리는 `일부` 다(체크된 줄이 있는데 `없음` 으로 보이지 않게).
   (function () {
     var all = document.getElementById("startup-check-all");
     if (!all) return;
     var form = all.closest("form");
     function boxes() {
       return Array.prototype.filter.call(form.querySelectorAll('input[name="company_ids"]'),
-        function (cb) { return !cb.disabled && !cb.hasAttribute("data-sent-this-month"); });
+        function (cb) { return !cb.disabled; });
     }
+    function sent(cb) { return cb.hasAttribute("data-sent-this-month"); }
     function shown(cb) { return !cb.closest("tr").hidden; }
+    function checked(cb) { return cb.checked; }
     function sync() {
-      var bs = boxes(), vis = bs.filter(shown);
-      var on = vis.filter(function (cb) { return cb.checked; }).length;
-      var hiddenOn = bs.filter(function (cb) { return cb.checked; }).length - on;
-      all.disabled = !vis.length;
+      var bs = boxes(), tg = bs.filter(function (cb) { return !sent(cb); }), vis = tg.filter(shown);
+      var on = vis.filter(checked).length;
+      var hiddenOn = tg.filter(checked).length - on;
+      var any = bs.some(checked);
+      all.disabled = !vis.length && !any;
       all.checked = vis.length > 0 && on === vis.length && !hiddenOn;
-      all.indeterminate = !all.checked && on + hiddenOn > 0;
+      all.indeterminate = !all.checked && any;
+    }
+    function set(cb, v) {
+      if (cb.checked === v) return;
+      cb.checked = v;
+      // 줄을 손으로 바꾼 것처럼 알린다 — `startup_resend.js` 가 이것을 듣고 `resend_ids` 를 끈다.
+      cb.dispatchEvent(new Event("change", { bubbles: true }));
     }
     all.addEventListener("change", function () {
-      var on = all.checked;
-      boxes().forEach(function (cb) { cb.checked = on && shown(cb); });
+      var bs = boxes();
+      // 켤 줄이 없으면(이번 달 보냄 줄만 체크돼 있으면) 누름은 끄기다.
+      var on = all.checked && bs.some(function (cb) { return !sent(cb) && shown(cb); });
+      bs.forEach(function (cb) {
+        if (!on) set(cb, false);
+        else if (!sent(cb)) set(cb, shown(cb));
+      });
     });
     form.addEventListener("change", sync);   // 머리 체크의 change 도 여기로 올라온다
     sync();
