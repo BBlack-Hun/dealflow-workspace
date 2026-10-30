@@ -61,6 +61,7 @@ from ..services import (cadence, ir_monthly, room_match, scheduled_send,
                         send_window, startup_send)
 from ..services.automations import startup_monthly as a5
 from ..ui import base_ctx
+from .data_io import _xlsx
 # 방 확인 잡의 종류는 **한 곳에만 적는다**(`agent_api.VERIFY_KIND`). 여기에
 # 글자를 한 벌 더 두면 잡은 서는데 발송기가 집어가지 않는 날이 온다 —
 # `services/startup_send.KIND` 머리말이 같은 사고를 적어 두었다.
@@ -129,6 +130,24 @@ def startup_ir_page(
         "a5": a5.header(db),
     })
     return templates.TemplateResponse(request, "startup_send.html", ctx)
+
+
+@router.get("/api/export/startup-uncontracted.xlsx")
+def export_uncontracted(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    month: str = "",
+):
+    """표 아래 「계약 안 한 기업 — 보내지 않음」 구역 그대로(#93). 화면과 같은 자리
+    (`_guard`)·같은 값(`startup_send.rows` 의 `uncontracted`)을 읽는다."""
+    _guard(db, user)
+    selected = _month(month)
+    heads = ["기업명", "계약여부", "대표 카톡방",
+             f"{selected} 말까지 요청한 투자사(곳)", "요청한 심사역(명)"]
+    rows = [[r["company"].name, r["contract_label"], startup_send.room_of(r["company"]),
+             r["total_firms"], r["total_count"]]
+            for r in startup_send.rows(db, selected)["uncontracted"]]
+    return _xlsx(f"계약 안 한 기업_{selected}.xlsx", "계약 안 한 기업", heads, rows)
 
 
 @router.post("/deals/startup-ir/send", include_in_schema=False,

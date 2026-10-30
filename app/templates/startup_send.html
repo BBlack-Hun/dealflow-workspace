@@ -250,6 +250,8 @@
 {% if uncontracted %}
 <section class="miss-box" data-testid="startup-uncontracted">
   <h2 class="panel-title">계약 안 한 기업 — 보내지 않음</h2>
+  <p><a class="secondary-btn" href="/api/export/startup-uncontracted.xlsx?month={{ selected|urlencode }}"
+        download data-testid="startup-uncontracted-xlsx">엑셀 내려받기</a></p>
   <div class="table-wrap">
     <table class="grid-table">
       <thead>
