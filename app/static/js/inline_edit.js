@@ -78,6 +78,14 @@
           cell = hint.parentNode.querySelector(".cell[data-field]");
         }
       }
+      // **td 의 빈 자리도 그 칸이다**(#97). 칸이 td 안쪽 div 이면(메모 · 선호 투자분야)
+      // 누를 자리는 글자 한 줄 높이뿐인데, 줄은 옆 칸(이름 밑 단추 · 연결 표시) 때문에
+      // 몇 배 높다 — 빈 칸은 그 한 줄도 안 보여, 눌러도 안 열려 고장으로 읽혔다.
+      // td **자신**을 누른 것만 본다 — 안의 단추 · 링크 · 곁말은 제 일을 한다.
+      if (!cell && e.target.tagName === "TD") {
+        var inner = e.target.querySelectorAll(".cell[data-field]");
+        if (inner.length === 1) cell = inner[0];
+      }
       if (!cell || cell === editing || !table.contains(cell)) return;
       try {
         start(cell);
