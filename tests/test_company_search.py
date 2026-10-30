@@ -133,6 +133,17 @@ def test_both_tabs_search_on_the_same_thing(logged_in, company):
             assert wanted in text, f"{tab} 탭에서 {wanted} 로 검색이 안 된다"
 
 
+def test_표에서_고치면_응답이_새_검색_글자를_준다(logged_in, company):
+    """#99 — 줄의 검색 글자는 처음 그린 값이다. 표에서 `기업 한줄 소개` 를 고쳐도
+    응답이 새 글자를 안 주면 새로고침 전까지 방금 적은 말로는 안 걸린다
+    (`companies.js` 가 이 값으로 `data-search` 를 갈아 끼운다)."""
+    res = logged_in.patch(f"/api/companies/{company.id}",
+                          json={"business_desc": "스마트팜 관제 솔루션"})
+    assert res.status_code == 200, res.text
+    text = res.json()["search"]
+    assert "스마트팜" in text and NAME.lower() in text and DIGITS in text
+
+
 # ── ③ 무엇으로 찾을 수 있는지 화면이 말해 주는가 ────────────────────────────
 
 def test_the_search_box_says_what_it_searches():
@@ -146,7 +157,8 @@ def test_the_search_box_says_what_it_searches():
     assert placeholder, "자리표시 글자가 없다"
     # `대표자` 는 2026-09 에 `대표자명` 이 됐다(사용자 요청 — 칸은
     # `contact_name` 그대로다). 자리표시에 실제로 적힌 말로 잰다.
-    for word in ("기업명", "대표자명", "연락처", "이메일"):
+    # `한줄 소개` 는 9/23 부터 걸렸는데 자리표시에 없어 "안 된다" 로 읽혔다(#99).
+    for word in ("기업명", "대표자명", "연락처", "이메일", "한줄 소개"):
         assert word in placeholder.group(1), f"검색되는데 자리표시에 {word} 가 없다"
 
     # 자리표시에 다 못 적는 것(번호 모양·분야·소개)은 `title` 이 받는다.

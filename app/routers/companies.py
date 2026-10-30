@@ -352,6 +352,8 @@ def search_text(c: IrCompany) -> str:
         # 잃는 것도 없다: 값 281줄 중 258줄은 바로 위 두 칸과 글자까지 같은
         # 사본이고, 나머지 19줄은 `메모`(`note`)로 옮겨 두었다.
         c.one_liner, c.business_desc, c.competitiveness,
+        # `메모` — IR 기업 현황 탭에 칸으로 선 뒤로(#103) 보이는 칸이라 싣는다.
+        c.note,
     ]
     return " ".join(filter(None, parts)).lower()
 
@@ -1166,6 +1168,9 @@ def update_company(company_id: int, body: CompanyIn,
             "updated_by": last_editors(db, [company]).get(company.id, ""),
             "bands": amount_bands(company),
             "meeting_sort": meeting_sort_key(company.meeting_offered_at),
+            # 검색 글자(#99) — 표에서 `기업 한줄 소개` 를 고치고 바로 찾으면 옛 글자로
+            # 걸렀다(새로고침 전까지). Series A 탭(`series_a._result`)과 같은 짝.
+            "search": search_text(company),
             **_contract_result(company),
             **_one_liner_result(company)}
 

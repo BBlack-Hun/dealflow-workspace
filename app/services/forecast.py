@@ -117,6 +117,17 @@ def fee_of(target, fee_rate) -> str:
     return "" if base is None or pct is None else number(base * pct / 100)
 
 
+def month(text: str) -> Optional[str]:
+    """`2027-3` · `2027.03` · `2027/3` → `2027-03`. 못 읽으면 None.
+
+    `예상 시기` 와 Series A 탭의 `후속라운드 시작`(#98)이 같은 꼴로 적는다.
+    """
+    hit = _MONTH_RE.match(text)
+    if not hit or not 1 <= int(hit.group(2)) <= 12:
+        return None
+    return f"{hit.group(1)}-{int(hit.group(2)):02d}"
+
+
 def clean(field: str, text: str) -> str:
     """적는 값을 맞춘다 — 못 받는 값은 `InputError`. 빈 값은 지우기라 그대로 둔다."""
     if not text:
@@ -128,10 +139,10 @@ def clean(field: str, text: str) -> str:
     if field == "expected_fee" and amount.state(text) == amount.UNREADABLE:
         raise InputError("예상 수수료는 억 단위 숫자로 적으세요 — 예: 0.5 · 5천만원")
     if field == "expected_month":
-        hit = _MONTH_RE.match(text)
-        if not hit or not 1 <= int(hit.group(2)) <= 12:
+        found = month(text)
+        if not found:
             raise InputError("예상 시기는 YYYY-MM 으로 적으세요 — 예: 2027-03")
-        return f"{hit.group(1)}-{int(hit.group(2)):02d}"
+        return found
     if field == "likelihood" and text not in CHANCES:
         raise InputError("가능성은 상 · 중 · 하 중에서 고르세요")
     return text

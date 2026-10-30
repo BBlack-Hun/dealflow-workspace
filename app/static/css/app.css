@@ -614,15 +614,17 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
     (스타트업DB 탭과 같은 70 · 104 · 170 · 300 = 644px). 든 만큼만 올린다.) */
 /* (4,364 → 4,708 : `딜 소개 문구` 에 폭 344px 을 줬다 — 폭이 없어 #75 부터 0px 이었다
     (companies.html 참고). 든 만큼만 올려 `%` 칸 넷은 지금 폭 그대로다.) */
-#co-table { min-width: 4708px; }
+/* (4,708 → 4,948 : #103 — `IR 자료` 앞 `메모`(240px). 든 만큼만 올린다.) */
+#co-table { min-width: 4948px; }
 #co-table td.updated-by { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* IR 기업 현황 › Series A 이상 딜 소싱 — 넓은 표 공통 값(2,030px)에 직접 적는 칸
    열(#24 · `companies_series_a.html` 의 `대표자명` ~ `Pre Value`, 폭 합 932px)을 **든 만큼만**
    더한다. 안 올리면 폭을 안 준 `상세 내용` 이 그 932px 을 내어 주다 0 으로 짜부라진다.
    (2,962 → 3,142 : 0118 의 `IR 자료`(180px) — 든 만큼만 올린다.)
    (3,142 → 3,252 : #25 의 `휴대폰`(110px) — 든 만큼만 올린다.)
-   (3,252 → 3,534 : 0125 의 `계약여부`(134px) · `계약서 수신 여부`(148px) — 든 만큼만 올린다.) */
-#sa-table { min-width: 3534px; }
+   (3,252 → 3,534 : 0125 의 `계약여부`(134px) · `계약서 수신 여부`(148px) — 든 만큼만 올린다.)
+   (3,534 → 3,654 : #98 · 0127 의 `후속라운드 시작`(120px) — 든 만큼만 올린다.) */
+#sa-table { min-width: 3654px; }
 /* 표의 `소개 횟수` — 회차 수와 사람 수를 **위아래로** 세운다(사용자 요청,
    「세로 좌측 정렬」). 둘을 함께 두는 까닭은 `services/deal_history.py`
    머리글에 있다(회차 수만 보면 180명짜리와 103명짜리가 똑같이 `6회` 로 읽힌다).
