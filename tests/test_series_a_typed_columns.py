@@ -52,7 +52,8 @@ def test_칸이_IR_기업_현황_차례로_선다(logged_in, deal):
 
     html = logged_in.get("/companies?tab=series-a").text
     labels = [label for _a, label in _head(html)]
-    at = labels.index("수신일")
+    # `수신일` 바로 뒤는 `후속라운드 시작`(#98 · tests/test_series_a_follow_round.py) — 그 뒤부터.
+    at = labels.index("후속라운드 시작")
     assert labels[at + 1:at + 6] == LABELS[:3] + CONTRACT, labels
     assert labels[at + 6:at + 8] == ["대분류", "소분류"], labels
     at = labels.index("소분류")
@@ -62,7 +63,7 @@ def test_칸이_IR_기업_현황_차례로_선다(logged_in, deal):
     # 줄마다 눌러 고치는 칸이 같은 차례로 선다(`inline_edit.js` 의 `.cell`).
     row = re.search(r"<tr data-id=.*?</tr>", html, re.S).group(0)
     fields = re.findall(r'class="cell[^"]*" data-field="([^"]+)"', row)
-    at = fields.index("received_at")
+    at = fields.index("follow_round_month")
     want = (list(TYPED[:3]) + ["contract_status", "contract_received",
                                "sector_major", "sector_minor"]
             + list(TYPED[3:]) + ["series", "detail"])
@@ -147,7 +148,7 @@ def test_추가_칸_자리_목록에도_선다():
     from app.services import custom_columns as svc
 
     tab = svc.anchor_groups("companies")["Series A 이상 딜 소싱"]
-    at = tab.index("수신일")
+    at = tab.index("후속라운드 시작")
     assert list(tab[at + 1:at + 6]) == LABELS[:3] + CONTRACT
     at = tab.index("소분류")
     assert list(tab[at + 1:at + 1 + len(LABELS[3:])]) == LABELS[3:]

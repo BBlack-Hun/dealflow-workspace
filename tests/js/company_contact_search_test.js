@@ -216,4 +216,19 @@ check("01000009999", [], "없는 번호인데 뭔가 걸린다");
     "검색어를 지웠더니 컬럼 필터까지 같이 풀렸다");
 }
 
+// ── 표에서 고친 `기업 한줄 소개` 로 바로 찾는다(#99) ─────────────────────────
+// 줄의 검색 글자는 처음 그린 값이라, 응답(`search`)으로 안 갈아 끼우면 새로고침
+// 전까지 방금 적은 말로는 안 걸린다.
+{
+  const dom = run();
+  type(dom, "스마트팜");
+  assert.deepStrictEqual(shown(dom), [], "아직 안 적은 말인데 걸린다");
+  const table = dom.document.getElementById("co-table");
+  table.fire("inline-saved", { detail: { row: dom.trs[2], cell: el("td"),
+    data: { search: searchText(ROWS[2]) + " 스마트팜 관제" } } });
+  type(dom, "스마트팜");
+  assert.deepStrictEqual(shown(dom), ["마바에너지"],
+    "표에서 고친 한줄 소개로 새로고침 전에는 안 걸린다");
+}
+
 console.log("company_contact_search_test: 통과");

@@ -45,8 +45,8 @@ from ..clock import today
 from ..db import get_db
 from ..deps import NotAdmin, get_current_user, templates
 from ..models import IrCompany, SeriesACompany, SourcingContact, User
-from ..services import (custom_columns, deal_history, ir_link, revenue_years, series_a_share,
-                        sourcing_sync)
+from ..services import (custom_columns, deal_history, forecast, ir_link, revenue_years,
+                        series_a_share, sourcing_sync)
 from ..services.series_a_import import day_text
 from ..ui import base_ctx
 
@@ -88,8 +88,8 @@ def short_series(value: Optional[str]) -> str:
 
 def search_text(c: SeriesACompany) -> str:
     """줄에 실어 둘 검색용 글자. 표에 보이는 칸은 다 찾아져야 한다."""
-    parts = [c.name, c.received_at, c.deal_type, c.assignee_name, c.shared_by,
-             c.source_firm, c.sector_major, c.sector_minor, c.series,
+    parts = [c.name, c.received_at, c.follow_round_month, c.deal_type, c.assignee_name,
+             c.shared_by, c.source_firm, c.sector_major, c.sector_minor, c.series,
              c.detail, c.deal_pitch, c.ir_file_name] + [getattr(c, f) for f in TYPED]
     return " ".join(filter(None, parts)).lower()
 
@@ -133,6 +133,7 @@ def row_dict(c: SeriesACompany, known: Dict[str, tuple],
         "name": c.name or "",
         "received_at": c.received_at or "",
         "received_sort": received_sort_key(c.received_at),
+        "follow_round_month": c.follow_round_month or "",
         "deal_type": c.deal_type or "",
         "assignee_name": c.assignee_name or "",
         "shared_by": c.shared_by or "",
@@ -272,6 +273,8 @@ class SeriesAIn(BaseModel):
 
     name: Optional[str] = None
     received_at: Optional[str] = None
+    # `후속라운드 시작`(#98 · 0127) — `YYYY-MM` 으로 맞춰 넣는다(`_assign`).
+    follow_round_month: Optional[str] = None
     deal_type: Optional[str] = None
     assignee_name: Optional[str] = None
     shared_by: Optional[str] = None
@@ -364,6 +367,13 @@ def _assign(row: SeriesACompany, body: SeriesAIn) -> None:
             # 시트 가져오기와 **같은 모양**으로 맞춘다(`2026.7.1` → `2026-07-01`).
             # 다르게 넣으면 같은 딜이 다음 가져오기에서 다른 열쇠로 읽힌다.
             row.received_at = day_text(text) or None
+        elif field == "follow_round_month":
+            # 매출예상리스트 `예상 시기` 와 같은 꼴 · 같은 규칙(`forecast.month` — `2027.3` → `2027-03`).
+            found = forecast.month(text)
+            if text and not found:
+                raise HTTPException(status_code=400,
+                                    detail="후속라운드 시작은 YYYY-MM 으로 적으세요 — 예: 2027-03")
+            row.follow_round_month = found
         elif field == "contract_status":
             # IR 기업 현황과 같은 판정 — 칸에 보이는 말(`유료계약완료`)도 열쇠로 받고, 모르는 말은 400.
             row.contract_status = checked_contract(text)
@@ -384,8 +394,8 @@ def _result(row: SeriesACompany, db: Session) -> dict:
     # 갈아 끼운다 — 표에서 고치는 칸은 전부 돌려준다. 기업명을 넣어 IR 기업에 이어지면
     # 대표자 · 매출 · 금액 빈칸이 채워지므로 화면은 줄의 칸을 전부 이 값으로 다시 그린다.
     out = {key: data[key] for key in (
-        "id", "name", "received_at", "deal_type", "assignee_name", "shared_by",
-        "source_firm", "sector_major", "sector_minor", "series", "detail",
+        "id", "name", "received_at", "follow_round_month", "deal_type", "assignee_name",
+        "shared_by", "source_firm", "sector_major", "sector_minor", "series", "detail",
         "deal_pitch", *TYPED, "contract_status", "contract_label", "contract_received",
         "ir_file_name", "received_sort", "series_short", "ir_name",
         "ir_file", "search", "sharer", "sharer_phone")}

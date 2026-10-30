@@ -901,6 +901,9 @@
       by.textContent = data.updated_by;
       by.classList.remove("muted");
     }
+    // 검색 글자도 응답 값으로(#99) — 안 고치면 방금 고친 `기업 한줄 소개` 로는
+    // 새로고침 전까지 안 걸린다. 필터가 한 박자 뒤에 이 글자로 다시 거른다.
+    if ("search" in data) row.setAttribute("data-search", data.search || "");
   });
 })();
 
