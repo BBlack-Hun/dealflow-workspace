@@ -9,6 +9,7 @@
 //   ④ 숨은 줄은 켜지 않고, 숨은 줄에 체크가 남으면 머리는 `일부`
 //      (`sourcing.html` 의 `syncCheckAll` 과 같은 규칙)
 //   ⑤ 보낼 수 있는 줄이 없으면 머리가 잠긴다
+//   ⑥ 이번 달 이미 보낸 줄(`data-sent-this-month`)은 켜지도 끄지도 않고 셈에서 뺀다
 //
 // 화면 스크립트는 `startup_send.html` 안에 있다 — 그 글을 그대로 읽어 돌린다.
 "use strict";
@@ -34,6 +35,7 @@ function row(id, opts) {
   const cb = el("input", { type: "checkbox", name: "company_ids", value: String(id) });
   cb.checked = opts.checked !== false;
   cb.disabled = !!opts.disabled;
+  if (opts.sent) cb.setAttribute("data-sent-this-month", opts.sent);
   const tr = el("tr", {}, [el("td", {}, [cb])]);
   tr.hidden = !!opts.hidden;
   return tr;
@@ -134,6 +136,24 @@ function state(all) { return all.checked ? "all" : all.indeterminate ? "some" : 
   const t = setup([offRow(), offRow()]);
   assert.strictEqual(t.all.disabled, true, "고를 줄이 없는데 머리가 눌린다");
   assert.strictEqual(state(t.all), "none");
+}
+
+// --- ⑥ 이번 달 보냄 칸은 전체 선택이 안 켬 ---------------------------------------
+{
+  const rows = [row(1), row(2, { checked: false, sent: "10/02" }), row(3, { checked: false })];
+  const t = setup(rows);
+  assert.strictEqual(state(t.all), "some");
+  clickAll(t);
+  assert.strictEqual(box(rows[1]).checked, false, "이번 달 보냄 칸을 전체 선택이 켰다");
+  assert.strictEqual(box(rows[0]).checked && box(rows[2]).checked, true);
+  assert.strictEqual(state(t.all), "all", "이번 달 보냄 칸은 셈에서 빠져야 한다");
+  pick(rows[1], true);                                 // 사람이 직접 켜고 확인한 경우
+  assert.strictEqual(state(t.all), "all", "직접 켠 이번 달 보냄 칸이 머리 셈에 들었다");
+  clickAll(t);
+  assert.strictEqual(box(rows[1]).checked, true, "직접 켠 이번 달 보냄 칸을 전체 해제가 껐다");
+  assert.strictEqual(state(t.all), "none");
+  const only = setup([row(4, { checked: false, sent: "10/02" })]);
+  assert.strictEqual(only.all.disabled, true, "이번 달 보냄 줄만 있는데 머리가 눌린다");
 }
 
 console.log("startup_send_check_all_test: ok");
