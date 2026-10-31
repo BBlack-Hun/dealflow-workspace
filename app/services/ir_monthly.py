@@ -43,8 +43,8 @@ from ..models import ContactActivity, IrCompany, IrRequest, SeriesACompany, VcCo
 from . import ir_mask
 from .sheet_import import normalize_company_name
 
-# 이 문서를 받는 기업. **관계가 맺어진 곳만**이다 — 계약검토중·미계약 기업에
-# 우리가 받은 투자사 반응을 보내면 그것 자체가 영업 자료가 된다.
+# 이 문서를 받는 기업. **관계가 맺어진 곳만**이다 — 계약검토중·계약진행중·미계약
+# 기업에 우리가 받은 투자사 반응을 보내면 그것 자체가 영업 자료가 된다.
 #
 # 계약 둘(`free`·`paid`)에 더해 **무료 IR 미팅 둘**(`free_meet_planned` ·
 # `free_meet_done`)도 대상이다. 무료 IR 미팅은 계약 전 단계지만 이미 미팅을
@@ -57,6 +57,9 @@ from .sheet_import import normalize_company_name
 # **대상을 고르는 곳은 여기 한 줄뿐이다.** 아래 `contracted()` 만 이것을 읽고,
 # 문서·보고·카톡 세 화면이 모두 그 함수를 지난다. 화면마다 따로 세면 문서에는
 # 실리고 카톡에는 안 실리는 기업이 생긴다.
+#
+# **폐업한 기업은 계약여부와 상관없이 뺀다**(사용자 결정 2026-10-31). 팀은 폐업을
+# 계약여부 칸이 아니라 이름 뒤 표시(`[26년 3월 폐업함]`)로 적는다 — `is_closed`.
 CONTRACTED = ("free", "paid", "free_meet_planned", "free_meet_done")
 
 # 못 맞춘 까닭. 화면에 그대로 뜬다 — 숫자만 보여 주면 무엇을 고쳐야 할지 모른다.
@@ -385,27 +388,37 @@ def monthly_requests(db: Session, month: str,
 
 # ── 문서가 읽는 것 ───────────────────────────────────────────────────────────
 
-def contracted(db: Session) -> List[IrCompany]:
-    """문서를 받는 기업 — `CONTRACTED` 에 든 곳만, 이름 순.
+def is_closed(company: IrCompany) -> bool:
+    """폐업한 기업인가 — 이름에 `폐업` 이 들었나(`[딜소개 불가/폐업함]` 등).
+    `폐업위기` 는 아직 폐업이 아니라 세지 않는다 — 계약이 있으면 받는다.
 
-    무엇이 대상인지는 **위 `CONTRACTED` 한 줄이 정한다.** 여기서 조건을 다시
-    적지 않는다."""
+    계약여부 칸은 `유료계약완료` 그대로 남아 있어 칸만 보면 대상에 든다."""
+    return "폐업" in (company.name or "").replace("폐업위기", "")
+
+
+def contracted(db: Session) -> List[IrCompany]:
+    """문서를 받는 기업 — `CONTRACTED` 에 들고 **폐업이 아닌** 곳만, 이름 순.
+
+    무엇이 대상인지는 **위 `CONTRACTED` 한 줄과 `is_closed` 가 정한다.** 여기서
+    조건을 다시 적지 않는다."""
     from ..routers.companies import contract_key   # 순환 import 를 피해 늦게 부른다
 
     rows = db.execute(select(IrCompany).order_by(IrCompany.name)).scalars().all()
-    return [c for c in rows if contract_key(c.contract_status) in CONTRACTED]
+    return [c for c in rows
+            if contract_key(c.contract_status) in CONTRACTED and not is_closed(c)]
 
 
 def uncontracted(db: Session) -> List[IrCompany]:
-    """계약 기업도 `딜소개 불가` 도 아닌 나머지 전부, 이름 순 — **보기만 한다**(#93).
+    """받는 기업도 `딜소개 불가` 도 아닌 나머지 전부, 이름 순 — **보기만 한다**(#93).
 
-    미계약 · 빈칸 · 계약검토중 · 목록에 없는 글자가 다 든다. 문서·카톡·발송은
-    이것을 읽지 않는다 — 받는 기업은 위 `contracted()` 하나다."""
+    미계약 · 빈칸 · 계약검토중 · 계약진행중 · 목록에 없는 글자 · **폐업**이 다 든다.
+    문서·카톡·발송은 이것을 읽지 않는다 — 받는 기업은 위 `contracted()` 하나다."""
     from ..routers.companies import BLOCKED_CONTRACT, contract_key
 
+    sent = {c.id for c in contracted(db)}
     rows = db.execute(select(IrCompany).order_by(IrCompany.name)).scalars().all()
     return [c for c in rows
-            if contract_key(c.contract_status) not in CONTRACTED + (BLOCKED_CONTRACT,)]
+            if c.id not in sent and contract_key(c.contract_status) != BLOCKED_CONTRACT]
 
 
 def contract_label(company: IrCompany) -> str:
@@ -481,11 +494,14 @@ def overview(db: Session, month: str) -> dict:
         })
     # 계약 안 한 기업 중 그 달 말까지 요청이 쌓인 곳 — **보기만 한다**(#93).
     # `rows` 에 섞지 않는다: 섞으면 `sendable` 을 지나 대표 카톡방으로 나간다.
+    # 폐업 기업은 요청이 없어도 남긴다 — 대상 목록에서 말없이 사라지면 왜 빠졌는지
+    # 물을 데가 없다. 계약여부 옆에 `· 폐업` 을 붙여 까닭을 보인다(엑셀도 이 값).
     uncontracted_rows = [
-        {"company": c, "contract_label": contract_label(c),
+        {"company": c,
+         "contract_label": contract_label(c) + (" · 폐업" if is_closed(c) else ""),
          "total_count": len(total.of(c.id)),
          "total_firms": total.tally_of(c.id).firms}
-        for c in uncontracted(db) if total.of(c.id)]
+        for c in uncontracted(db) if total.of(c.id) or is_closed(c)]
     return {
         "month": month,
         "rows": rows,

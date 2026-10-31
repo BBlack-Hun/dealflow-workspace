@@ -96,12 +96,9 @@
        있고 검색창 글자만 붙인다). 스크립트가 없으면 화면도 안 걸러지므로 이
        주소 그대로(= 전체)가 곧 지금 화면이다.
 
-       IR 기업 현황 탭에만 선다 — 스타트업DB 탭은 칸이 다른 표라 이번 범위
-       밖이다(그 탭의 칸으로 뽑는 길은 따로 정한다). #}
-    {% if co_tab != 'db' %}
+       옛 스타트업DB 탭의 칸도 이 탭에 합쳐졌으므로(#105 · #106) 그 칸들도 함께 받는다. #}
     <a class="secondary-btn" id="co-export-view" href="/api/export/companies-view.xlsx" download
        title="지금 걸어 둔 필터·검색·정렬 그대로, 이 탭에 보이는 칸만 엑셀로 받습니다 (전체는 [엑셀 내려받기])">지금 화면 내려받기</a>
-    {% endif %}
     <button type="button" class="secondary-btn" id="ir-bulk-btn">IR 파일명 일괄 입력</button>
     {# 관리자만. 한 번에 수백 줄의 소개를 바꾸는 일이라 라우터도 같이 막는다
        (`companies.can_bulk_one_liner` — 화면과 라우터가 같은 판정을 읽는다). #}
@@ -176,17 +173,16 @@
   시트의 하단 탭을 그대로 옮긴다 — 컬럼 이름·순서·필터까지.
   쓰던 사람이 같은 자리에서 같은 것을 찾을 수 있어야 한다.
 
-  두 탭은 **같은 기업 레코드의 두 가지 보기**다. 그래서 스타트업DB 에 값을
-  넣으면 IR 기업 현황의 같은 항목이 저절로 따라온다 — 맞춰 주는 코드가 따로
-  없다. 두 벌로 두면 반드시 어긋난다.
+  시트에는 `IR 기업현황` · `스타트업DB` 두 탭이 있었고 화면도 같은 기업 줄을 두 칸
+  묶음으로 그렸다. #105 · #106(10/31)에 **한 탭으로 합쳤다** — 두 탭의 칸을 하나도
+  빼지 않고 한 표에 세운다(겹치는 칸은 한 번). 옛 주소(`?tab=db`)도 이 표를 그린다.
 #}
 {# 탭 줄은 세 탭이 **한 조각**을 같이 쓴다 — 세 번째 탭(`Series A 이상 딜 소싱`)은
    다른 화면 파일이라, 여기 적어 두면 두 벌이 되어 한쪽만 고쳐진다. #}
 {% include "_company_tabs.html" %}
 
 {# ── 표의 기본 차례를 **말로** 적는다 ──────────────────────────────────────
-   두 탭 다 **수신일 최신순**이다(`routers/companies.py` 의 `sort_by_received`
-   — 규칙 하나를 두 탭이 함께 쓴다). `수신일` 칸이 보여도 그 칸으로 세워져
+   **수신일 최신순**이다(`routers/companies.py` 의 `sort_by_received`). `수신일` 칸이 보여도 그 칸으로 세워져
    있다는 표시는 머리글 어디에도 없다 — 꼬리표(`▲`/`▼`)는 사람이 머리글을
    눌러 고른 차례에만 선다(`table_sort.js`). 표시가 없으면 "왜 이 순서지"
    를 다시 묻게 되므로 한 줄로 적는다.
@@ -214,164 +210,17 @@
    이미 필터가 있고,
    filters.js 는 빈 값을 `(비어 있음)` 한 덩어리로 모아 둔다 — 이 단추는 그
    필터를 대신 눌러 줄 뿐이다(`data-preset`, contacts.html 의 단계 단추와 같다).
-   따로 세면 표와 단추가 다른 수를 보이게 된다.
-
-   스타트업DB 탭에는 세우지 않는다. 그 탭에는 사업분야 칸도 그 필터도 없어서,
-   눌러도 filters.js 가 모르는 키라 **필터가 통째로 풀리기만 한다.** #}
-{% if co_tab != 'db' and counts.no_sector %}
+   따로 세면 표와 단추가 다른 수를 보이게 된다. #}
+{% if counts.no_sector %}
 <div class="chip-row">
   <button type="button" class="filter-chip" data-preset="sector={{ '(비어 있음)'|urlencode }}"
           title="대분류가 비어 있는 기업만 봅니다. 한줄 소개가 있는 곳에는 후보를 함께 띄웁니다.">사업분야 없음 {{ counts.no_sector }}</button>
 </div>
 {% endif %}
 
-{# 두 탭 다 화면보다 넓다(진행관리 12칸 · 스타트업DB 19칸). 높이를 잘라
+{# 표가 화면보다 넓다(서른 칸 남짓). 높이를 잘라
    가로 스크롤바가 표 바로 아래 붙게 한다 — 안 그러면 문서 맨 아래로 밀린다. #}
 <div class="table-wrap wide">
-{% if co_tab == 'db' %}
-  {# ── 스타트업DB(기업정보) ── 시트 컬럼 그대로 #}
-  <table class="grid-table" data-inline-url="/api/companies" id="co-table">
-    <thead>
-      <tr>
-        <th class="num" style="width:36px" title="눌러서 수정">NO</th>
-        {# **이름순은 이 머리글로 고른다** — 옆 탭과 같은 단추 하나다(`?sort=name`).
-           두 탭의 기본 차례가 같은 규칙(`sort_by_received`)이므로 그것을
-           벗어나는 길도 같아야 한다. 까닭은 옆 탭의 `기업명` 머리글 주석에.
-
-           이 탭에 붙는 정렬은 **이것 하나**다. `수신일`·매출·금액 같은 날짜·숫자
-           칸은 이번 범위가 아니다(붙일지는 따로 정한다 — tests/test_company_sort.py
-           의 옆 탭 검사가 그 경계를 지킨다). 폭은 그대로 160px —
-           `기업명 ↕` 는 60px 안팎이다. #}
-        <th style="width:160px" data-sort="name"
-            title="누르면 이름순 · 한 번 더 누르면 거꾸로 · 세 번째는 기본 차례(수신일 최신순)">기업명</th>
-        {# `기업명 → 수신일` — 옆 탭(IR 기업 현황)과 같은 차례(#87 · 10/29). 예전에는
-           시트의 맨 앞 칸이라 `기업명` 앞에 섰다. #}
-        <th style="width:96px" title="홍보메일 답장 받은 날 · 표의 기본 차례가 이 칸 최신순입니다">수신일</th>
-        {# 예전 이름 `대표자`. 폭은 그대로 70px 이다 — 한 글자(10.5px)가 늘어도
-           `대표자명`(42 + th 좌우 여백 18 = 60px)이 넉넉히 선다. #}
-        <th style="width:70px">대표자명</th>
-        <th style="width:104px">연락처</th>
-        <th style="width:170px">이메일</th>
-        {# ── 여기는 **재료**다(`business_desc`), 조합된 문구가 아니다(0058) ──
-           옆 탭(IR 기업 현황)의 `딜 소개 문구`(`one_liner`)와 **다른
-           칸**이다. 0051 이 둘을 한 칸으로 합쳐 이 자리에도 `one_liner` 을
-           세웠는데, 그러자 자동 조합의 결과가 이 탭에 그대로 나왔다 —
-           `설명 | 매출 13억 | 누적투자금액 11억 | Pre Value 200억`.
-           스타트업DB 는 **넣는 자리**라 조합 결과가 아니라 넣은 값이 보여야
-           한다(사용자 요청). 그래서 조합의 첫 토막이자 유일한 사람 글인
-           `business_desc` 로 되돌린다 — 새 칸을 파지 않는다. 조합된 문구는
-           옆 탭에 `딜 소개 문구` 라는 이름으로 그대로 남는다.
-
-           **머리글은 `기업 한줄 소개` 그대로다.** 이 칸이 담는 것이 곧 그것이고,
-           이름을 `사업분야` 로 되돌리면 옆 탭의 `대분류`(`sector_major`)와
-           같은 말이 되어 서로 다른 두 칸을 가리킨다(0051 이 겪은 일이다).
-           안내는 `title` 로 둔다 — 머리글 아래 줄로 붙이면 이름이 두 줄이 된다. #}
-        <th style="width:300px" title="딜 소개 문구의 첫 토막이 됩니다 · 눌러서 수정">기업 한줄 소개</th>
-        {# 연도별 매출 — 올해 기준 **지난 세 해**(#75 · `services/revenue_years.py`).
-           오래된 해는 표에서만 빠지고 값은 남는다. #}
-        {% for f, yy in revenue_years %}
-        <th class="num" style="width:74px">{{ yy }}년 매출</th>
-        {% endfor %}
-        {# 올해 매출(`revenue_recent`) — 이름이 `26년 매출` 이라 **25년 매출 바로 오른쪽**이다
-           (#82 — 예전에는 `최근 매출액(26년)` 이라는 이름으로 `특이사항` 뒤에 떨어져 있었다).
-           폭 108px 은 그대로 — 옆 탭과 같다. #}
-        <th class="num" style="width:108px" title="올해 매출 — 해가 안 끝나 지금까지 알려진 최근 매출을 적습니다 · 해가 바뀌면 지난해 칸으로 옮겨 적힙니다 · 단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 1억 미만은 `5천만원` · 모르면 `~`">{{ recent_label }}</th>
-        <th class="num" style="width:96px" title="단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 1억 미만은 `5천만원` · 모르면 `~`">누적투자금액</th>
-        <th class="num" style="width:120px" title="단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 1억 미만은 `5천만원` · 모르면 `~`">투자유치희망금액</th>
-        <th class="num" style="width:76px" title="단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 1억 미만은 `5천만원` · 모르면 `~`">Pre Value</th>
-        <th style="width:260px">특이사항 (장점)</th>
-        <th style="width:72px">설립년도</th>
-        {# 0116 — 투자컨설턴트 메타에서 올라온 기업 사실. 이어진 컨설턴트 줄과 서로
-           따라 고친다(`services/company_sync.py`). 자유 글이라 필터는 안 단다. #}
-        <th style="width:80px">지역</th>
-        {# 예전 이름 `기보, 신보, 중진공`. 이름은 11자에서 4자로 줄었지만
-           **폭은 130px 그대로 둔다.** 이 칸에 드는 값은 `기보 3억, 신보 2억`
-           처럼 이름보다 길고(가장 긴 값 72자) 두 줄까지 보이는 칸이라
-           (`clamp2`), 폭을 정하는 쪽이 이름이 아니라 값이다. 좁히면 그 값이
-           더 일찍 잘린다. 표 전체 폭도 `app.css` 의 `#co-table` min-width 가
-           따로 정하므로 여기서 줄인다고 표가 좁아지지도 않는다. #}
-        <th style="width:130px">정책자금</th>
-        {# IR 자료는 어느 탭에서 보든 맨 끝에 그대로 둔다. #}
-        {# 폭은 이름(`IR 자료`)이 아니라 **필터를 고른 뒤의 단추**(`IR 자료 (1) ▾`)에
-           맞춘다 — 고르고 나면 `(1)` 이 붙어 13px 이 더 든다. 82px 에서는 화면에서
-           `IR` / `자료 (1) ▾` 두 줄이었다. 두 자리 수(`(12)`)까지 들어가게 여유를
-           두어 102px(단추 77px + th 좌우 여백 18px + 한 자리 여유 7px). #}
-        <th style="width:102px" data-filters="ir:IR 자료">IR 자료<div class="th-filters"></div></th>
-        {{ cc.heads() }}
-        <th style="width:52px"></th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for r in rows %}
-      {# 이 탭이 세운 필터는 `IR 자료` 하나다. 담당자·대분류는 옆 탭(IR 기업 현황)의
-         칸이라 여기서는 걸 곳이 없다 — 싣기만 하면 아무도 안 보는 죽은 속성이 된다
-         (tests/test_filter_columns.py 가 그것을 막는다).
-
-         [수정] 창의 `대분류`·`소분류` 에서 고를 목록도 **여기서 모으지
-         않는다.** 그 목록은 탭을 안 가려야 하는데 이 탭에는 그 칸이 없다 —
-         그래서 아래 `<datalist>` 가 `rows` 에서 바로 모은다(한 곳이다).
-
-         `data-s-name` 은 `기업명` 머리글(이름순)이 세울 값이다 — 옆 탭과 같다. #}
-      <tr data-id="{{ r.id }}" data-search="{{ r.search }}"
-          data-f-ir="{{ '● 있음' if r.has_ir else '⚠ 없음' }}"
-          data-s-name="{{ r.name }}"{{ cc.attrs(r.id) }}>
-        {# 번호를 눌러도 [수정] 창이 열린다 — 표가 2,030px 라 오른쪽 끝의
-           [수정] 단추까지 가로로 밀어야 닿는데, 줄을 짚는 손은 이미 왼쪽
-           번호에 있다. **여는 길은 그대로 하나다**: 같은 `js-co-edit` 을
-           달아 companies.js 의 그 handler 를 탄다 — 여기에 두 번째 길을
-           내면 한쪽만 고쳐지고 조용히 갈린다. #}
-        <td class="rowno muted js-co-edit" title="눌러서 수정"></td>
-        <td class="co-name"><b class="cell" data-field="name">{{ r.name }}</b></td>
-        <td class="cell" data-field="received_at" data-type="date">{{ r.received_at }}</td>
-        <td class="cell" data-field="contact_name">{{ r.contact_name }}</td>
-        <td class="cell" data-field="contact_phone">{{ r.contact_phone }}</td>
-        {# `data-type="email"` — 눌러 고칠 때 `@` 뒤 도메인 후보가 뜬다.
-           수정창의 메일 칸과 **같은 부품**을 쓴다(`static/js/email_hint.js`) —
-           들어온 길에 따라 되고 안 되는 칸이 되면 안 된다. #}
-        <td class="cell ellipsis{% if ',' in r.contact_email %} mail-primary{% endif %}" data-field="contact_email" data-type="email"
-            title="{{ r.contact_email }}">{{ r.contact_email }}</td>
-        <td title="{{ r.business_desc }}">
-          <div class="cell clamp2" data-field="business_desc" data-type="long">{{ r.business_desc }}</div>
-        </td>
-        {# 금액은 **적은 그대로** 글자다 — 원본에 억·백만원·범위가 섞여 있어
-           숫자로 바꾸면 100배가 틀어진 채 딜소개 문구에 실려 나간다. #}
-        {% for f, yy in revenue_years %}
-        <td class="cell num" data-field="{{ f }}">{{ r[f] }}</td>
-        {% endfor %}
-        {# 금액 넷도 **적은 그대로** 글자다(0074) — `5-10억 사이` · `~` 가 들어온다.
-           단위는 억이고 표 머리글이 그 단위를 말한다. `data-type="number"` 를
-           두면 화면이 `Number()` 로 읽어 구간이 통째로 사라진다. #}
-        <td class="num">{{ amount_cell(r.revenue_recent, "revenue_recent") }}</td>
-        <td class="num">{{ amount_cell(r.funding_total, "funding_total") }}</td>
-        <td class="num">{{ amount_cell(r.raise_target, "raise_target") }}</td>
-        <td class="num">{{ amount_cell(r.pre_value, "pre_value") }}</td>
-        <td title="{{ r.competitiveness }}">
-          <div class="cell clamp2" data-field="competitiveness" data-type="long">{{ r.competitiveness }}</div>
-        </td>
-        <td class="cell" data-field="founded_year">{{ r.founded_year }}</td>
-        <td class="cell" data-field="region">{{ r.region }}</td>
-        <td title="{{ r.guarantee }}">
-          <div class="cell clamp2" data-field="guarantee" data-type="long">{{ r.guarantee }}</div>
-        </td>
-        <td>
-          {# **링크가 아니다.** 이 칸에는 자료 폴더 안의 파일명이 들어 있고(0056),
-             파일은 각자 PC 에 있다 — 브라우저가 열 수 있는 자리가 아니다.
-             이름 전체는 짚어 보면 뜨고, 고치는 자리는 [수정] 창이다. #}
-          {% if r.has_ir %}
-            <span class="room-badge ok" title="자료 파일: {{ r.ir_file_name }}">📎 있음</span>
-          {% else %}
-            <span class="room-badge warn" title="IR 요청이 와도 바로 보낼 자료가 없습니다">⚠ 없음</span>
-          {% endif %}
-        </td>
-        {{ cc.cells(r.id) }}
-        <td><button type="button" class="linkbtn js-co-edit">수정</button></td>
-      </tr>
-      {% else %}
-      <tr><td colspan="21" class="muted">등록된 기업이 없습니다. [기업 추가]로 시작하세요.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
-{% else %}
   {# ── IR 기업 현황(진행관리) ── 시트 컬럼 그대로 #}
   {# ── 왼쪽 두 칸은 **가로로 밀어도 제자리** ──────────────────────────────
      이 표는 2,386px 인데 1440px 화면에서 보이는 자리는 1,184px 뿐이다. 오른쪽
@@ -519,62 +368,10 @@
            그리고 이 칸은 `날짜 미정` 이 섞인 글자 칸이라, 세울 값을 따로 추려
            싣는 짝(`미팅제공일자` 의 `meeting_sort` 처럼)이 함께 와야 한다. #}
         <th style="width:96px" title="홍보메일 답장 받은 날 · 표의 기본 차례가 이 칸 최신순입니다">수신일</th>
-        {# ── 대표자명 · 연락처 · 이메일 · 기업 한줄 소개 (#84, 10/28 사용자 '추천대로') ──
-           스타트업DB 탭의 그 넷을 **같은 차례 · 같은 칸**으로 `수신일` 뒤에 세운다. 같은 줄의
-           같은 칸이라(`ir_companies`) 맞춰 주는 코드가 없다 — 어느 탭에서 고쳐도 둘 다 바뀐다.
-           폭도 옆 탭과 같다(70 · 104 · 170 · 300 = 644px — app.css 의 `#co-table` min-width).
-           자유 글이라 필터는 안 단다(옆 탭도 없다). #}
-        <th style="width:70px">대표자명</th>
-        <th style="width:104px">연락처</th>
-        <th style="width:170px">이메일</th>
-        <th style="width:300px" title="딜 소개 문구의 첫 토막이 됩니다 · 눌러서 수정">기업 한줄 소개</th>
-        {# 예전 이름 `사업분야 대분류`. **필터 열쇠(`sector`)는 그대로다** —
-           filters.js 는 열쇠로 주소를 짓고 이름은 단추 글자로만 쓴다
-           (`data-preset="sector=…"` 도 같은 열쇠를 부른다). 이름을 바꿨다고
-           걸어 둔 필터가 풀리거나 주소가 갈리지 않는다.
-           폭은 10% 그대로다 — 이름이 8자에서 3자로 줄었지만 이 칸의 폭을
-           정하는 것은 값(`헬스케어`)이고, `%` 칸을 줄이면 표의 폭 설계를
-           통째로 다시 나눠야 한다. #}
-        <th style="width:10%" data-filters="sector:대분류">대분류<div class="th-filters"></div></th>
-        <th style="width:9%" data-filters="minor:소분류">소분류<div class="th-filters"></div></th>
-        {# ── 매출 · 금액 — **`소분류` 바로 뒤** (#75, 팀원 요청) ─────────────────
-           스타트업DB 탭의 칸을 이 탭에도 세운다. **같은 줄의 같은 칸**이라(`ir_companies`)
-           맞춰 주는 코드가 없다 — 여기서 고치면 스타트업DB 탭에 그대로 보인다.
-           칸 · 고치기 · 폭은 그 탭과 똑같다(`amount_cell` · 인라인 → PATCH).
-
-           해는 올해 기준 지난 세 해 + `최근 매출액(올해)` 다(`services/revenue_years.py`
-           — 차례는 `columns`, 화면 그대로 엑셀도 같은 차례다). 칸이 든 만큼 app.css 의
-           `#co-table` min-width 를 올렸다(74 × 3 + 108 + 96 + 120 + 76 = 622px). #}
-        {# 매출 · 투자유치희망금액 머리글의 필터는 **금액 구간**이다(#88 · #90) — 칸 글자가
-           아니라 서버가 센 `N억 이상`(`routers/companies.amount_bands`, 겹쳐 든다). #}
-        {% for f, yy in revenue_years %}
-        <th class="num" style="width:74px" data-filters="{{ f }}:{{ yy }}년 매출">{{ yy }}년 매출<div class="th-filters"></div></th>
-        {% endfor %}
-        <th class="num" data-filters="revenue_recent:{{ recent_label }}" style="width:108px" title="올해 매출 — 해가 안 끝나 지금까지 알려진 최근 매출을 적습니다 · 해가 바뀌면 지난해 칸으로 옮겨 적힙니다 · 단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 1억 미만은 `5천만원` · 모르면 `~`">{{ recent_label }}<div class="th-filters"></div></th>
-        <th class="num" style="width:96px" title="단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 1억 미만은 `5천만원` · 모르면 `~`">누적투자금액</th>
-        <th class="num" style="width:144px" data-filters="raise_target:투자유치희망금액" title="단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 1억 미만은 `5천만원` · 모르면 `~`">투자유치희망금액<div class="th-filters"></div></th>
-        <th class="num" style="width:76px" title="단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 1억 미만은 `5천만원` · 모르면 `~`">Pre Value</th>
-        {# 예전 이름 `기업구분`. 넷 중 **이름이 길어지는 유일한 칸**이다(4→5자).
-           필터를 고른 뒤 실제로 서는 글자는 `투자라운드 (1) ▾` 로 112px 인데,
-           9% 는 1440px 화면에서 226px 이라 넉넉하다. 열쇠(`series`)는 그대로. #}
-        <th style="width:9%" data-filters="series:투자라운드">투자라운드<div class="th-filters"></div></th>
         {# ── 이 줄을 언제 마지막으로 고쳤나 (사용자 요청) ──────────────────────
-           **`투자라운드` 바로 뒤**다. 왼쪽 칸들(번호·이름·수신일·분야 둘·구분)은 "이
-           기업이 무엇인가(언제 들어왔나)" 이고, 그 다음에 오는 것들은 "그래서 어떻게 되고
-           있나" 다 — 이 칸은 뒤쪽 무리의 첫 물음("이 줄이 최근 것인가")이라
-           그 경계에 선다.
-
-           **왼쪽 두 칸이 가로로 고정돼 있다**(#194). 새 칸이 그 밑으로 들어가
-           가려지지는 않는다 — 고정 폭은 `NO` 36px + `기업명` 13%(1440px 화면에서
-           327px)로 363px 이고, 보이는 자리는 1,184px 이라 뒤에 821px 이 남는다.
-           1440px 에서 704px 을 밀면 이 칸(130px)이 고정 칸 **바로 오른쪽**에
-           통째로 선다(헤드리스 크롬으로 칸 가로 아홉 점을 찍어 확인 —
-           전부 이 칸이었다. 표가 20px 좁아지면서 `%` 칸들도 같이 좁아져
-           710 → 704px 이 됐다). 390px 에서는 고정 자체가 풀린다
-           (`app.css` 의 `max-width: 720px` 규칙) — 거기서도 한 줄로 온전히 선다.
-           (위 px 들은 `수신일`(96px)이 `기업명` 뒤에 들기 **전**에 잰 값이다.
-            그 칸만큼 이 칸이 오른쪽으로 갔을 뿐 고정 칸과의 관계는 그대로라
-            다시 재지 않았다 — 표 폭은 `app.css` 의 `#co-table` 주석.)
+           **`수신일` 바로 오른쪽**이다(#105 · #106, 10/31 사용자 요청 — 예전에는 `투자라운드`
+           뒤). "언제 들어왔나" 옆에 "언제 마지막으로 고쳤나 · 누가" 를 나란히 읽는다.
+           왼쪽 두 칸(`NO`·`기업명`)만 가로로 고정돼 있어 이 칸들은 고정 칸 뒤에 선다.
 
            ## 값
 
@@ -642,9 +439,19 @@
            로그가 없는 줄은 빈칸. 앱이 적는 칸이라 눌러 고치지 않는다. 폭 76px = 이름 넉 자
            (52px) + td 좌우 여백 18px + 여유 — app.css 의 `#co-table` min-width 도 그만큼. #}
         <th style="width:76px" title="이 줄을 마지막으로 고친 팀원 — 수정 로그 기준 · 사람 손 없이 앱이 바꾼 것이 마지막이면 '자동'">수정한 팀원</th>
-        {# 시트의 칸 이름(`한줄 소개`)과 다르다 — 가져오기는 시트 쪽 이름을 그대로
+        {# ── 대표자명 · 연락처 · 이메일 · 기업 한줄 소개 (#84, 10/28 사용자 '추천대로') ──
+           옛 스타트업DB 탭의 그 넷을 같은 차례 · 같은 칸 · 같은 폭(70 · 104 · 170 · 300px)으로
+           세운다. 자유 글이라 필터는 안 단다. #}
+        <th style="width:70px">대표자명</th>
+        <th style="width:104px">연락처</th>
+        <th style="width:170px">이메일</th>
+        <th style="width:300px" title="딜 소개 문구의 첫 토막이 됩니다 · 눌러서 수정">기업 한줄 소개</th>
+        {# **`기업 한줄 소개` 바로 오른쪽**이다(#105 · #106, 10/31 사용자 요청) — 재료와
+           그 재료로 만든 문구를 나란히 읽는다.
+
+           시트의 칸 이름(`한줄 소개`)과 다르다 — 가져오기는 시트 쪽 이름을 그대로
            찾으므로(scripts/import_company_sheets.py) 여기만 바꾼다.
-           이름이 `기업 한줄 소개` 였다. 그 이름은 이제 **옆 탭의 재료 칸**
+           이름이 `기업 한줄 소개` 였다. 그 이름은 이제 **바로 왼쪽의 재료 칸**
            (`business_desc`)이 쓴다 — 여기 실리는 것은 그 재료에 매출·누적투자
            금액·Pre Value 를 이어 붙인 **조합 결과**이고, 딜소개에 그대로 나가는
            회사 개요다(0058, 사용자 요청).
@@ -664,6 +471,44 @@
            `컨설팅` 두 칸이 보이는 계정은 10/22)부터 0px 로 짜부라져 화면에서 사라졌다.
            px 칸은 `table-layout: fixed` 가 먼저 준다. #}
         <th style="width:344px" title="사람이 쓴 문구가 기본입니다 · 자동 조합은 [수정] 창에서 고릅니다 · 두 줄까지 보입니다 · 눌러서 수정">딜 소개 문구</th>
+        {# 예전 이름 `사업분야 대분류`. **필터 열쇠(`sector`)는 그대로다** —
+           filters.js 는 열쇠로 주소를 짓고 이름은 단추 글자로만 쓴다
+           (`data-preset="sector=…"` 도 같은 열쇠를 부른다). 이름을 바꿨다고
+           걸어 둔 필터가 풀리거나 주소가 갈리지 않는다.
+           폭은 10% 그대로다 — 이름이 8자에서 3자로 줄었지만 이 칸의 폭을
+           정하는 것은 값(`헬스케어`)이고, `%` 칸을 줄이면 표의 폭 설계를
+           통째로 다시 나눠야 한다. #}
+        <th style="width:10%" data-filters="sector:대분류">대분류<div class="th-filters"></div></th>
+        <th style="width:9%" data-filters="minor:소분류">소분류<div class="th-filters"></div></th>
+        {# ── 매출 · 금액 — **`소분류` 바로 뒤** (#75, 팀원 요청) ─────────────────
+           옛 스타트업DB 탭의 칸 · 고치기 · 폭 그대로다(`amount_cell` · 인라인 → PATCH).
+
+           해는 올해 기준 지난 세 해 + `최근 매출액(올해)` 다(`services/revenue_years.py`
+           — 차례는 `columns`, 화면 그대로 엑셀도 같은 차례다). 칸이 든 만큼 app.css 의
+           `#co-table` min-width 를 올렸다(74 × 3 + 108 + 96 + 120 + 76 = 622px). #}
+        {# 매출 · 투자유치희망금액 머리글의 필터는 **금액 구간**이다(#88 · #90) — 칸 글자가
+           아니라 서버가 센 `N억 이상`(`routers/companies.amount_bands`, 겹쳐 든다). #}
+        {% for f, yy in revenue_years %}
+        <th class="num" style="width:74px" data-filters="{{ f }}:{{ yy }}년 매출">{{ yy }}년 매출<div class="th-filters"></div></th>
+        {% endfor %}
+        <th class="num" data-filters="revenue_recent:{{ recent_label }}" style="width:108px" title="올해 매출 — 해가 안 끝나 지금까지 알려진 최근 매출을 적습니다 · 해가 바뀌면 지난해 칸으로 옮겨 적힙니다 · 단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 1억 미만은 `5천만원` · 모르면 `~`">{{ recent_label }}<div class="th-filters"></div></th>
+        <th class="num" style="width:96px" title="단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 1억 미만은 `5천만원` · 모르면 `~`">누적투자금액</th>
+        <th class="num" style="width:144px" data-filters="raise_target:투자유치희망금액" title="단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 1억 미만은 `5천만원` · 모르면 `~`">투자유치희망금액<div class="th-filters"></div></th>
+        <th class="num" style="width:76px" title="단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 1억 미만은 `5천만원` · 모르면 `~`">Pre Value</th>
+        {# 예전 이름 `기업구분`. 넷 중 **이름이 길어지는 유일한 칸**이다(4→5자).
+           필터를 고른 뒤 실제로 서는 글자는 `투자라운드 (1) ▾` 로 112px 인데,
+           9% 는 1440px 화면에서 226px 이라 넉넉하다. 열쇠(`series`)는 그대로. #}
+        <th style="width:9%" data-filters="series:투자라운드">투자라운드<div class="th-filters"></div></th>
+        {# ── 옛 스타트업DB 탭에만 있던 넷(#105 · #106 — 탭을 합치며 하나도 안 뺀다) ──
+           그 탭의 차례 · 폭 그대로 `투자라운드` 뒤에 선다(기업이 무엇인가 쪽 칸).
+           자유 글이라 필터는 안 단다(그 탭에도 없었다). #}
+        <th style="width:260px">특이사항 (장점)</th>
+        <th style="width:72px">설립년도</th>
+        {# 0116 — 투자컨설턴트 메타에서 올라온 기업 사실. 이어진 컨설턴트 줄과 서로
+           따라 고친다(`services/company_sync.py`). #}
+        <th style="width:80px">지역</th>
+        {# 예전 이름 `기보, 신보, 중진공`. 값(`기보 3억, 신보 2억`)이 이름보다 길어 폭은 값에 맞춘다. #}
+        <th style="width:130px">정책자금</th>
         <th style="width:100px" data-filters="assignee:담당자">담당자<div class="th-filters"></div></th>
         {# 이 기업을 **몇 번** 딜 소개에 넣었나. `담당자` 바로 뒤다 — 누가 맡은
            기업인지를 읽은 그 눈으로 "그래서 몇 번 나갔나" 를 이어 읽는다.
@@ -780,8 +625,7 @@
            [수정] 창에만 있던 칸이다(시트의 `비고` 를 옮겨 온 칸 · 10/27 TIPS 조사 메모
            45곳도 여기 있다). `IR 자료` 는 맨 끝 그대로 두고(tests/test_inline_edit.py) 그
            바로 앞에 선다 — 관리자가 붙인 칸(`TIPS` 등)은 `IR 자료` 오른쪽이라 가깝다.
-           추가 메모 칸처럼 적은 줄바꿈을 살리고 두 줄에서 자른다 — 전체는 `title`.
-           스타트업DB 탭에는 안 세운다(요청은 이 탭). #}
+           추가 메모 칸처럼 적은 줄바꿈을 살리고 두 줄에서 자른다 — 전체는 `title`. #}
         <th style="width:240px" title="두 줄까지 보입니다 · 눌러서 수정 · [수정] 창의 메모와 같은 칸">메모</th>
         {# IR 자료는 맨 끝에 그대로 둔다 — 요청이 왔을 때 바로 꺼내 쓰는 칸이다. #}
         {# 폭은 이름(`IR 자료`)이 아니라 **필터를 고른 뒤의 단추**(`IR 자료 (1) ▾`)에
@@ -875,16 +719,33 @@
         <td class="co-name stick stick-b">
           <b class="cell" data-field="name">{{ r.name }}</b>
         </td>
-        {# 표의 기본 차례를 정하는 값이다(`sort_by_received`). 옆 탭의 같은 칸과
-           **한 글자도 다르지 않게** 그린다 — 머리글 주석 참고. #}
+        {# 표의 기본 차례를 정하는 값이다(`sort_by_received`) — 머리글 주석 참고. #}
         <td class="cell" data-field="received_at" data-type="date">{{ r.received_at }}</td>
-        {# #84 — 옆 탭(스타트업DB)의 네 칸과 한 글자도 다르지 않게 그린다. #}
+        {# **눌러 고치는 칸이 아니다** — `cell` 도 `data-field` 도 안 준다.
+           앱이 적는 값이라 사람이 고치면 "언제 고쳤나" 가 곧 거짓이 된다.
+           둘 중 하나만 빠뜨려도 안 된다: inline_edit.js 는 `.cell[data-field]`
+           둘을 함께 찾으므로, 지금 이 칸은 눌러도 아무 일이 없다
+           (`tests/js/company_updated_at_test.js` 가 그것을 지킨다).
+
+           `num` 을 안 준다 — 오른쪽으로 미는 칸이 아니다. 이 표의 다른 날짜
+           칸(`미팅제공일자`)과 같은 자리에서 시작해야 세로로 훑을 때 눈이
+           한 줄에 선다. `num` 은 자릿수를 맞춰 읽는 **수**에 붙는 것이고
+           (`소개 횟수`·매출), 시각은 자릿수가 늘 같아서 맞출 것이 없다.
+
+           한 번도 안 고친 줄은 **만든 시각**이 그대로 들어 있다. 옅게 적고
+           짚으면 그렇다고 말해 준다 — 지우면 "못 읽었다" 와 구분이 안 된다. #}
+        <td class="updated-at{% if r.updated_never %} muted{% endif %}"
+            title="{% if r.updated_never %}만든 뒤로 아직 고친 적이 없습니다 — 만든 시각입니다{% else %}마지막으로 고친 시각{% endif %}">{{ r.updated_at }}</td>
+        <td class="updated-by{% if r.updated_never %} muted{% endif %}">{{ r.updated_by }}</td>
         <td class="cell" data-field="contact_name">{{ r.contact_name }}</td>
         <td class="cell" data-field="contact_phone">{{ r.contact_phone }}</td>
         <td class="cell ellipsis{% if ',' in r.contact_email %} mail-primary{% endif %}" data-field="contact_email" data-type="email"
             title="{{ r.contact_email }}">{{ r.contact_email }}</td>
         <td title="{{ r.business_desc }}">
           <div class="cell clamp2" data-field="business_desc" data-type="long">{{ r.business_desc }}</div>
+        </td>
+        <td title="{{ r.one_liner }}">
+          <div class="cell clamp2" data-field="one_liner" data-type="long">{{ r.one_liner }}</div>
         </td>
         {# `data-filter-key` — 고친 값이 그 칸의 필터 목록에도 나오게 한다.
            칸 이름(DB 컬럼)과 필터 키가 다르면 이것이 없는 한 저장해도 행 값이
@@ -913,8 +774,8 @@
           <div class="cell clamp2" data-field="sector_minor" data-type="pick"
                data-filter-key="minor">{{ r.sector_minor }}</div>
         </td>
-        {# 매출 · 금액(#75) — 스타트업DB 탭과 같은 칸이다(머리글 주석). 이 탭만 필터 값이
-           금액 구간이라 `data-filter-derived` 가 붙는다(#88 · #90). #}
+        {# 매출 · 금액(#75 · 머리글 주석). 필터 값이 금액 구간이라 `data-filter-derived` 가
+           붙는다(#88 · #90). #}
         {% for f, yy in revenue_years %}
         <td class="cell num" data-field="{{ f }}" data-filter-derived>{{ r[f] }}</td>
         {% endfor %}
@@ -926,24 +787,13 @@
           <div class="cell clamp2" data-field="series" data-type="pick"
                data-value="{{ r.series }}">{{ r.series_short }}</div>
         </td>
-        {# **눌러 고치는 칸이 아니다** — `cell` 도 `data-field` 도 안 준다.
-           앱이 적는 값이라 사람이 고치면 "언제 고쳤나" 가 곧 거짓이 된다.
-           둘 중 하나만 빠뜨려도 안 된다: inline_edit.js 는 `.cell[data-field]`
-           둘을 함께 찾으므로, 지금 이 칸은 눌러도 아무 일이 없다
-           (`tests/js/company_updated_at_test.js` 가 그것을 지킨다).
-
-           `num` 을 안 준다 — 오른쪽으로 미는 칸이 아니다. 이 표의 다른 날짜
-           칸(`미팅제공일자`)과 같은 자리에서 시작해야 세로로 훑을 때 눈이
-           한 줄에 선다. `num` 은 자릿수를 맞춰 읽는 **수**에 붙는 것이고
-           (`소개 횟수`·매출), 시각은 자릿수가 늘 같아서 맞출 것이 없다.
-
-           한 번도 안 고친 줄은 **만든 시각**이 그대로 들어 있다. 옅게 적고
-           짚으면 그렇다고 말해 준다 — 지우면 "못 읽었다" 와 구분이 안 된다. #}
-        <td class="updated-at{% if r.updated_never %} muted{% endif %}"
-            title="{% if r.updated_never %}만든 뒤로 아직 고친 적이 없습니다 — 만든 시각입니다{% else %}마지막으로 고친 시각{% endif %}">{{ r.updated_at }}</td>
-        <td class="updated-by{% if r.updated_never %} muted{% endif %}">{{ r.updated_by }}</td>
-        <td title="{{ r.one_liner }}">
-          <div class="cell clamp2" data-field="one_liner" data-type="long">{{ r.one_liner }}</div>
+        <td title="{{ r.competitiveness }}">
+          <div class="cell clamp2" data-field="competitiveness" data-type="long">{{ r.competitiveness }}</div>
+        </td>
+        <td class="cell" data-field="founded_year">{{ r.founded_year }}</td>
+        <td class="cell" data-field="region">{{ r.region }}</td>
+        <td title="{{ r.guarantee }}">
+          <div class="cell clamp2" data-field="guarantee" data-type="long">{{ r.guarantee }}</div>
         </td>
         <td class="cell" data-field="assignee_name" data-type="pick"
             data-filter-key="assignee">{{ r.assignee }}</td>
@@ -1051,11 +901,10 @@
         <td><button type="button" class="linkbtn js-co-edit">수정</button></td>
       </tr>
       {% else %}
-      <tr><td colspan="33" class="muted">등록된 기업이 없습니다. [기업 추가]로 시작하세요.</td></tr>
+      <tr><td colspan="37" class="muted">등록된 기업이 없습니다. [기업 추가]로 시작하세요.</td></tr>
       {% endfor %}
     </tbody>
   </table>
-{% endif %}
 </div>
 <p class="hint">
   금액 단위는 <b>억</b>입니다 — <code>18.3</code> 처럼 소수점도 됩니다.
@@ -1104,7 +953,7 @@
   {#
     ── 칸 이름은 **표 머리글과 한 글자도 다르지 않게** ──
 
-    이 패널 하나가 두 탭(IR 기업 현황 · 스타트업DB)을 함께 고친다. 그런데 이름을
+    이 패널은 IR 기업 현황 표(옛 스타트업DB 칸 포함)를 고친다. 그런데 이름을
     저마다 줄여 부르고 있어서, 표에서 `대분류`(그때 이름 `사업분야 대분류`)를 보고 [수정]을 열면
     `분야 (대)` 가 나왔다 — 같은 칸인지 아닌지가 이름으로는 판별이 안 됐다.
 
@@ -1679,8 +1528,8 @@
     {# 무엇이 같이 지워지는지 **숫자로**. `companies.js` 가 채운다. #}
     <ul class="force-del-plan" id="co-force-plan"></ul>
     <p class="warn-box">
-      이 기업은 <b>IR 기업 현황과 스타트업DB 두 탭에서 함께</b> 사라집니다 —
-      두 탭은 같은 기업 줄의 두 가지 보기입니다.
+      이 기업은 <b>IR 기업 현황 표에서 줄째로</b> 사라집니다 — 옛 스타트업DB 칸
+      (대표자명 · 매출 · 특이사항 …)도 같은 줄이라 함께 지워집니다.
     </p>
     {#
       **되돌리는 길을 정확히 적는다.** 사용자는 `어차피 백업하고 있으니 복구
