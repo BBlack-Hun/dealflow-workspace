@@ -389,6 +389,41 @@
   {% endif %}
 </section>
 
+{# ── 선호 투자분야가 빈 분 (#101) ──────────────────────────────────────
+   날짜가 아니라 **칸이 빈 것**이 세우는 묶음이라 위 판의 단계 묶음에 섞지 않는다.
+   [보내기] 는 지금 발송 화면의 `선호 분야 묻기` 탭을 그대로 연다 — 새 발송 길이
+   아니다. 누가 서는지 · 며칠 안 묻는지는 `followups.no_sector_rows` 한 곳이다. #}
+{% if no_sector_rows %}
+<section class="panel" id="ask-sector">
+  <h2 class="panel-title">선호 투자분야가 빈 분
+    <span class="hint">카톡 연결된 내 명단 · 최근 {{ ask_again_days }}일 안에 물은 분은 뺐습니다</span>
+  </h2>
+  <div class="due-group">
+    <div class="due-head">
+      <b>선호 분야 묻기</b>
+      <span class="count-pill on"><b>{{ no_sector_rows|length }}</b>명</span>
+      <a class="primary-btn inline" href="/deals?mode=ask&contacts={{ no_sector_rows|map(attribute='id')|join(',') }}">
+        선호 분야 묻기 보내기
+      </a>
+    </div>
+    <details>
+      <summary class="muted">명단 보기</summary>
+      <ul class="due-list">
+        {% for c in no_sector_rows %}
+        <li>
+          <span class="due-who">
+            <a class="req-link" href="/contacts?contact={{ c.id }}" title="투자사 관리 현황에서 선호 투자분야 적기">
+              <b>{{ c.name }}</b> {{ c.title or '' }} <span class="muted">{{ c.firm or '' }}</span>
+            </a>
+          </span>
+        </li>
+        {% endfor %}
+      </ul>
+    </details>
+  </div>
+</section>
+{% endif %}
+
 <div class="dash-grid">
   {# 예약된 리마인드 — 딜 진행 관리와 옛 화면(`followups.html`)이
      **같은 파일**을 쓴다. 한 벌씩 들고 있으면 한쪽에만 검색칸이 달린다. #}

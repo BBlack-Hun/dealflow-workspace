@@ -19,9 +19,10 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..deps import get_current_user, templates
-from ..models import ScheduleRule, SendSequence, User
+from ..models import ScheduleRule, SendSequence, User, VcContact
 from ..services import cadence, flow, sheet_owner
 from ..ui import base_ctx
+from .deals import ASK_AGAIN_DAYS, asked_lately
 
 router = APIRouter(tags=["followups"])
 
@@ -31,6 +32,24 @@ def _owned(db: Session, sequence_id: int, user: User) -> SendSequence:
     if seq is None or seq.user_id != user.id:
         raise HTTPException(status_code=404, detail="리마인드 건을 찾을 수 없습니다")
     return seq
+
+
+def no_sector_rows(db: Session, user: User, today: date) -> List[VcContact]:
+    """선호 투자분야가 빈 분 — 리마인드 구역의 [선호 분야 묻기 보내기] 묶음(#101).
+
+    대상은 딜 제안 관리가 목록으로 그리는 **그 사람들**(`sheet_owner.recipients` —
+    딜 소개 명단 · 카톡방 연결 · 숨김·검토중단 아님) 중 선호 투자분야 칸이 빈 분이다.
+    같은 목록이라 [보내기] 가 여는 발송 화면에서 한 분도 빠짐없이 켜진다.
+
+    최근에 이미 물은 분은 뺀다 — 묻기 회차와, 끝에 되묻는 말이 붙는 10/28 뒤
+    리마인드 회차(`deals.asked_lately`). 표시 없이 나간 10/28 전 묻기는 셈에 없다.
+    """
+    people = [c for c in sheet_owner.recipients(db, user)
+              if not (c.sectors or "").strip()]
+    if not people:
+        return []
+    asked = asked_lately(db, [c.id for c in people], today, reminds=True)
+    return [c for c in people if c.id not in asked]
 
 
 def remind_context(db: Session, user: User, today: date) -> dict:
@@ -113,6 +132,8 @@ def remind_context(db: Session, user: User, today: date) -> dict:
         },
         "rules": _rule_views(db),
         "next_send": cadence.upcoming_send_dates(db, today)[0],
+        "no_sector_rows": no_sector_rows(db, user, today),
+        "ask_again_days": ASK_AGAIN_DAYS,
     }
 
 

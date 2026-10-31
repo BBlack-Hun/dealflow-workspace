@@ -74,6 +74,8 @@ COLUMNS = (
     ("expected_fee", "예상 수수료(억)",
      "투자유치희망금액(구간이면 아래) × 성공보수율(%) ÷ 100"),
     ("expected_month", "예상 시기", None),
+    # #94 — 관리자 추가 칸이던 `후속라운드 시작 년월` 을 칸으로(0128). 이름은 그대로 둔다.
+    ("follow_round_month", "후속라운드 시작 년월", None),
     ("likelihood", "가능성", None),
     ("result_note", "결과 상세", None),
 )
@@ -83,6 +85,9 @@ FIELDS = tuple(f for f, _l, _s in COLUMNS)
 #: IR 기업 칸 → 자동 칸.
 _FROM_COMPANY = {"ceo_name": "contact_name", "ceo_phone": "contact_phone",
                  "pre_value": "pre_value", "raise_target": "raise_target"}
+
+#: `YYYY-MM` 으로 맞춰 받는 칸 → 까닭 글 머리(조사까지).
+MONTH_FIELDS = {"expected_month": "예상 시기는", "follow_round_month": "후속라운드 시작은"}
 
 #: 가능성 칸의 보기 — 합계도 이 차례로 나눈다.
 CHANCES = ("상", "중", "하")
@@ -138,10 +143,10 @@ def clean(field: str, text: str) -> str:
         return number(rate(text))
     if field == "expected_fee" and amount.state(text) == amount.UNREADABLE:
         raise InputError("예상 수수료는 억 단위 숫자로 적으세요 — 예: 0.5 · 5천만원")
-    if field == "expected_month":
+    if field in MONTH_FIELDS:
         found = month(text)
         if not found:
-            raise InputError("예상 시기는 YYYY-MM 으로 적으세요 — 예: 2027-03")
+            raise InputError(f"{MONTH_FIELDS[field]} YYYY-MM 으로 적으세요 — 예: 2027-03")
         return found
     if field == "likelihood" and text not in CHANCES:
         raise InputError("가능성은 상 · 중 · 하 중에서 고르세요")
