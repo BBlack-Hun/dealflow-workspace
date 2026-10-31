@@ -66,6 +66,9 @@ CONTRACT_LABELS = {
     "free": "무료계약완료",
     "paid": "유료계약완료",
     "review": "계약검토중",
+    # 검토를 지나 계약을 맺는 중(#104). 아직 계약이 아니라 월간 발송 대상이 아니다
+    # (`services/ir_monthly.CONTRACTED`). 시트의 `진행중` 한 마디는 전처럼 `계약검토중`.
+    "in_progress": "계약진행중",
     "free_meet_planned": "무료IR 미팅제공예정",
     "free_meet_done": "무료 IR 미팅제공완료함",
     "blocked": "딜소개 불가",
