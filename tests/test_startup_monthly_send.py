@@ -552,13 +552,65 @@ def test_계약_안_한_기업은_보기만_하고_보내지_않는다(db, seede
 
     page = _login(client).get(f"/deals/startup-ir?month={month}").text
     box = page.split('data-testid="startup-uncontracted"', 1)[1].split("</section>", 1)[0]
-    assert "계약 안 한 기업 — 보내지 않음" in box
+    assert "계약 안 한 기업·폐업 — 보내지 않음" in box
     assert "샘플디" in box and "샘플이" in box and "계약검토중" in box
     assert "샘플오" in box and "계약진행중" in box
     assert "샘플에프" not in box and "샘플지" not in box
     # 체크칸도 입력도 없다 — 그 구역에서 고를 수 있는 것이 하나도 없다.
     assert "<input" not in box
     for c in (none_, review, progress):
+        assert f'name="company_ids" value="{c.id}"' not in page
+
+
+def test_폐업_기업은_유료계약이어도_보내지_않는다(db, seeded, client):
+    """이름에 `폐업` 이 붙은 기업은 계약여부가 `유료계약완료` 여도 대상이 아니다
+    (사용자 결정 2026-10-31). 손 발송 · A5 · 문구 어디에도 안 들고, 회색 구역에
+    `· 폐업` 을 달고 **요청이 없어도** 보인다. 딜소개 불가는 전처럼 안 보인다."""
+    from app import clock
+    from app.models import IrCompany, IrRequest, User, VcContact
+    from app.services import (automation, automation_runner as runner, ir_kakao,
+                              ir_monthly, startup_send)
+    from app.services.automations import startup_monthly as a5
+
+    def company(name, status):
+        made = IrCompany(name=name, contract_status=status,
+                         kakao_room_name=f"{name} 대표님")
+        db.add(made)
+        db.flush()
+        return made
+
+    closed = company("샘플케이[26년 3월 폐업함]", "paid")
+    quiet = company("샘플엘[딜소개 불가/폐업함]", "free")     # 요청 0건
+    gone = company("샘플엠 폐업", "blocked")
+    contact = VcContact(user_id=1, name=PERSON, firm=FIRM)
+    db.add(contact)
+    db.flush()
+    db.add(IrRequest(user_id=1, contact_id=contact.id, company_id=closed.id,
+                     company_name=closed.name, requested_at=f"{seeded['month']}-05"))
+    db.commit()
+    month = seeded["month"]
+    off = {closed.id, quiet.id, gone.id}
+
+    assert not off & {c.id for c in ir_monthly.contracted(db)}
+    assert not off & set(startup_send.sendable_ids(db, month))
+    assert ir_kakao.for_company(db, db.get(User, 1), closed.id, month) is None
+
+    _turn_on(db, user_id=1)
+    row = automation.save(db, automation.STARTUP_MONTHLY, enabled=True,
+                          user_id=None, test_mode=False, test_room="")
+    batch = a5.collect(db, row, db.get(User, 1),
+                       runner.Plan(period=0, at=clock.now()))
+    assert [o.ir_company_id for o in batch.outs] == [seeded["ok"].id]
+
+    shown = {r["company"].id: r["contract_label"]
+             for r in startup_send.rows(db, month)["uncontracted"]}
+    assert shown == {closed.id: "유료계약완료 · 폐업", quiet.id: "무료계약완료 · 폐업"}
+
+    page = _login(client).get(f"/deals/startup-ir?month={month}").text
+    box = page.split('data-testid="startup-uncontracted"', 1)[1].split("</section>", 1)[0]
+    assert "샘플케이" in box and "유료계약완료 · 폐업" in box and "샘플엘" in box
+    assert "샘플엠" not in box
+    for c in (closed, quiet):
         assert f'name="company_ids" value="{c.id}"' not in page
 
 
