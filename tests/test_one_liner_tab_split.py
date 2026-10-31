@@ -9,7 +9,9 @@
 
 스타트업DB 는 그 조각들을 **넣는 자리**다. 넣는 자리에 결과가 서 있으면 무엇을
 고쳐야 그 줄이 바뀌는지 화면에서 알 수 없고, 매출·누적투자금액은 바로 옆 칸에
-또 적혀 있어 같은 숫자가 한 줄에 두 번 보인다. 그래서 두 탭이 다른 칸을 본다.
+또 적혀 있어 같은 숫자가 한 줄에 두 번 보인다. 그래서 두 머리글이 다른 칸을 본다.
+#105 · #106(10/31)에 두 탭을 한 표로 합친 뒤로는 두 칸이 나란히 선다(재료 바로 오른쪽이
+결과).
 
     IR 기업 현황  머리글 `딜 소개 문구`  → one_liner      (조합 결과)
     스타트업DB    머리글 `기업 한줄 소개`         → business_desc  (재료)
@@ -19,8 +21,8 @@
 
 ## 무엇을 못 박나
 
-1. 스타트업DB 탭에 **조합 문구가 안 나온다** (매출·누적투자금액 토막이 없다)
-2. IR 기업 현황 탭에는 **조합 문구가 그대로** 나온다
+1. 재료 칸(`기업 한줄 소개`)에 **조합 문구가 안 나온다** (매출·누적투자금액 토막이 없다)
+2. `딜 소개 문구` 칸에는 **조합 문구가 그대로** 나온다
 3. 두 머리글 이름, 그리고 [수정] 창이 부르는 이름
 4. 갈라도 **아무 값이 안 지워진다** — 이주는 빈 칸만 채우고, 화면에서 재료를
    고쳐도 사람이 쓴 딜 소개 문구는 그대로다
@@ -72,32 +74,31 @@ def _table(html: str, tab: str) -> str:
     return body.split("</table>", 1)[0]
 
 
-# --- ① 스타트업DB 탭에는 조합 문구가 없다 -------------------------------------
+# --- ① 재료 칸에는 조합 문구가 없다 -------------------------------------------
 
-def test_스타트업DB_탭에는_조합_문구가_안_나온다(logged_in, composed):
+def test_재료_칸에는_조합_문구가_안_나온다(logged_in, composed):
     """넣는 자리에 결과가 서 있으면 무엇을 고쳐야 바뀌는지 알 수 없다."""
-    table = _table(logged_in.get("/companies?tab=db").text, "db")
+    table = _table(logged_in.get("/companies").text, "status")
 
     assert "비전AI 기반 미세먼지 측정 솔루션" in table, "재료가 안 보인다"
     assert 'data-field="business_desc"' in table, "고칠 칸이 재료 칸이 아니다"
+    cell = table.split('data-field="business_desc"', 1)[1].split("</td>", 1)[0]
     for piece in ("매출 23년 2억", "누적투자금액 11억", "Pre Value 200억"):
-        assert piece not in table.split('data-field="business_desc"', 1)[1] \
-            .split("</td>", 1)[0], f"소개 칸에 조합 토막 `{piece}` 이 남아 있다"
-    assert COMPOSED not in table, "조합 문구가 통째로 실려 있다"
+        assert piece not in cell, f"소개 칸에 조합 토막 `{piece}` 이 남아 있다"
 
 
 def test_숫자는_제_칸에_그대로_있다(logged_in, composed):
     """조합을 뺐다고 숫자가 사라지는 것은 아니다 — 원래 제 칸이 따로 있다."""
-    table = _table(logged_in.get("/companies?tab=db").text, "db")
+    table = _table(logged_in.get("/companies").text, "status")
     for field, shown in (("revenue_2023", "2억"), ("revenue_2024", "4억"),
                          ("funding_total", "11"), ("pre_value", "200")):
         cell = table.split(f'data-field="{field}"', 1)[1].split("</td>", 1)[0]
         assert shown in cell, f"{field} 칸에 {shown} 이 없다"
 
 
-# --- ② IR 기업 현황 탭에는 그대로 나온다 --------------------------------------
+# --- ② `딜 소개 문구` 칸에는 그대로 나온다 -------------------------------------
 
-def test_IR_기업_현황_탭에는_조합_문구가_그대로_나온다(logged_in, composed):
+def test_딜_소개_문구_칸에는_조합_문구가_그대로_나온다(logged_in, composed):
     """딜 소개 문구에 그대로 나가는 줄이다 — 여기서까지 빠지면 쓸 곳이 없다."""
     table = _table(logged_in.get("/companies").text, "status")
     assert COMPOSED in table, "조합 문구가 IR 기업 현황에서 사라졌다"
@@ -112,7 +113,7 @@ def _headers(html: str) -> list:
             for _attrs, cell in re.findall(r"<th\b([^>]*)>(.*?)</th>", head, re.S)]
 
 
-def test_머리글은_탭마다_다른_이름이다(logged_in, composed):
+def test_두_칸은_다른_이름이다(logged_in, composed):
     """같은 이름이면 어느 쪽이 조합 결과인지 화면에서 가를 수 없다."""
     html = logged_in.get("/companies").text
     status = _headers(html)
@@ -121,10 +122,6 @@ def test_머리글은_탭마다_다른_이름이다(logged_in, composed):
     # 조합 결과(`one_liner`)는 여전히 `딜 소개 문구` 하나뿐이라 두 칸이 갈린다.
     assert status.count("기업 한줄 소개") == 1 and status.count("딜 소개 문구") == 1, status
     assert 'data-field="business_desc"' in _table(html, "status")
-
-    db_tab = _headers(logged_in.get("/companies?tab=db").text)
-    assert "기업 한줄 소개" in db_tab, db_tab
-    assert "딜 소개 문구" not in db_tab, "재료 칸이 결과 이름을 쓰고 있다"
 
 
 def test_수정_창도_같은_두_이름으로_부른다():
@@ -157,9 +154,9 @@ def test_재료를_고쳐도_사람이_쓴_딜_소개_문구는_그대로다(log
     assert got["business_desc"] == "고급 소재 제조"
 
 
-def test_스타트업DB_에서_친_글자로_검색이_된다(logged_in, composed):
+def test_재료_칸의_글자로_검색이_된다(logged_in, composed):
     """보이는 칸으로는 찾아져야 한다 — 검색은 탭을 가리지 않는다."""
-    row = logged_in.get("/companies?tab=db").text
+    row = logged_in.get("/companies").text
     line = row.split('data-search="', 1)[1].split('"', 1)[0]
     assert "비전ai 기반 미세먼지 측정 솔루션" in line, line
 

@@ -342,10 +342,8 @@ def search_text(c: IrCompany) -> str:
         c.name, c.contact_name, c.contact_email, phone,
         digits if digits != phone else "",
         c.sector_major, c.sector_minor, c.series,
-        # 두 탭이 서로 다른 칸을 보여 준다(0058) — `딜 소개 문구`
-        # (`one_liner`)는 IR 기업 현황에, `기업 한줄 소개`(`business_desc`)는
-        # 스타트업DB 에 선다. **둘 다 싣는다**: 검색은 탭을 가리지 않으므로
-        # 한쪽만 실으면 눈앞에 보이는 글자를 쳤는데 아무 줄도 안 걸린다.
+        # `딜 소개 문구`(`one_liner`)와 `기업 한줄 소개`(`business_desc`)는 다른
+        # 칸이다(0058) — 한 표에 나란히 서므로(#105 · #106) **둘 다 싣는다**.
         # `funding_status`(투자 현황)는 **안 싣는다.** 화면에서 뺀 칸이라
         # (`companies.html` 의 `그 밖` 묶음 머리 주석) 그 글자로 줄이 걸리면
         # 왜 걸렸는지 화면 어디에도 안 보인다 — 짚을 데 없는 검색 결과가 된다.
@@ -722,32 +720,19 @@ def consulting_view(db: Session) -> dict:
 
 
 def tab_counts(db: Session) -> dict:
-    """탭 이름 옆의 수 셋 — **세 탭이 다 같은 함수를 읽는다.**
+    """탭 이름 옆의 수 — **탭 줄을 세우는 화면이 다 같은 함수를 읽는다.**
 
-    탭 줄은 세 화면(IR 기업 현황 · 스타트업DB · Series A 이상 딜 소싱)에 똑같이
+    탭 줄은 IR 기업 현황 · Series A 이상 딜 소싱 · IR 기업 연결에 똑같이
     서므로(`_company_tabs.html`), 화면마다 따로 세면 탭을 옮길 때 숫자가
-    바뀐다. 기업 줄을 다 그리지 않고(`company_rows` 는 발송 이력까지 훑는다)
-    칸 셋만 읽어 센다.
-
-    `with_info` — 스타트업DB 탭에 볼 것이 있는 기업. 대표자·연락처 같은
-    기초자료가 하나라도 들어온 곳이다. 전체와 나란히 놓으면 얼마나 채웠는지
-    보인다. **뱃지가 세는 것과 탭을 열었을 때 보이는 것이 같아야 한다.**
-    0051 이 이 자리에 `one_liner` 을 세워 그것을 셌는데, 0058 이 그 칸을 옆
-    탭(`딜 소개 문구`)으로 돌려보내고 이 탭에는 재료인 `business_desc`
-    (머리글 `기업 한줄 소개`)를 세웠다 — 세는 칸도 함께 따라간다.
+    바뀐다. 기업 줄을 다 그리지 않고(`company_rows` 는 발송 이력까지 훑는다) 센다.
 
     `series_a` — `Series A 이상 딜 소싱` 탭의 줄 수(받은 딜 수). 다른 표다
     (`models.SeriesACompany`).
     """
     from . import series_a
 
-    total = with_info = 0
-    for ceo, phone, desc in db.execute(select(
-            IrCompany.contact_name, IrCompany.contact_phone, IrCompany.business_desc)):
-        total += 1
-        if ceo or phone or desc:
-            with_info += 1
-    return {"total": total, "with_info": with_info, "series_a": series_a.count(db)}
+    total = db.scalar(select(func.count()).select_from(IrCompany))
+    return {"total": total, "series_a": series_a.count(db)}
 
 
 @router.get("/companies", response_class=HTMLResponse, include_in_schema=False)
@@ -761,12 +746,9 @@ def companies_page(request: Request, db: Session = Depends(get_db),
 
     if tab == series_a.TAB:
         return series_a.render_page(request, db, user, msg=msg, q=q)
-    # 시트의 하단 탭 두 개. 같은 레코드를 다르게 보는 것뿐이라, 한쪽에서
-    # 고치면 다른 쪽이 저절로 따라온다 — 맞춰 주는 코드가 없어야 안 어긋난다.
-    # **차례도 같다**(수신일 최신순, `sort_by_received`). 예전에는 차례 하나가
-    # 탭마다 달랐는데, 두 벌이던 그 판단을 하나로 합쳤다 — 그래서 탭은 이제
-    # 어느 칸들을 그리느냐만 정한다(`companies.html`).
-    co_tab = "db" if tab == "db" else "status"
+    # 예전 `스타트업DB` 탭(`?tab=db`)은 같은 줄의 다른 칸 묶음이었다. #105 · #106 에
+    # 한 표로 합쳤다 — 옛 주소(즐겨찾기 · 옛 링크)도 그 표를 그린다.
+    co_tab = "status"
     # 연도별 매출 — 올해가 정한다(#75). 새해 첫 화면이면 `최근 매출액` 을 지난해 칸으로
     # 옮겨 적고(해마다 한 번 · 수정 로그), 표 · 창은 지난 세 해와 `최근 매출액(올해)` 를 그린다.
     year = revenue_years.this_year()
@@ -785,7 +767,7 @@ def companies_page(request: Request, db: Session = Depends(get_db),
         "msg": msg,
         "q": q,          # 발송 화면에서 '기업 정보 채우기' 로 넘어온 경우 그 기업을 바로 띄운다
         "counts": {
-            # 탭 이름 옆의 수 셋(`total` · `with_info` · `series_a`). 세 탭이
+            # 탭 이름 옆의 수(`total` · `series_a`). 탭 줄을 세우는 화면이
             # 같은 함수를 읽는다 — 무엇을 세는지는 `tab_counts` 에 있다.
             **tab_counts(db),
             "introducible": sum(1 for r in rows if r["introducible"]),
@@ -829,7 +811,7 @@ def companies_page(request: Request, db: Session = Depends(get_db),
         # 투자컨설턴트 진행 기록(읽기만 · 결정 3). 그 화면을 볼 수 있는 사람에게만 선다.
         "consulting": consulting_view(db) if may_view_consulting(user) else None,
     })
-    # 관리자가 붙인 추가 칸 — 두 탭이 같은 칸을 쓴다(`_custom_cols.html`).
+    # 관리자가 붙인 추가 칸(`_custom_cols.html`).
     ctx.update(custom_columns.view(db, "companies", "ir_companies"))
     return templates.TemplateResponse(request, "companies.html", ctx)
 
