@@ -582,6 +582,7 @@ def test_폐업_기업은_유료계약이어도_보내지_않는다(db, seeded, 
     closed = company("샘플케이[26년 3월 폐업함]", "paid")
     quiet = company("샘플엘[딜소개 불가/폐업함]", "free")     # 요청 0건
     gone = company("샘플엠 폐업", "blocked")
+    risky = company("샘플엔 (딜소개 불가) 기업폐업위기", "paid")   # 아직 폐업이 아니다
     contact = VcContact(user_id=1, name=PERSON, firm=FIRM)
     db.add(contact)
     db.flush()
@@ -592,6 +593,8 @@ def test_폐업_기업은_유료계약이어도_보내지_않는다(db, seeded, 
     off = {closed.id, quiet.id, gone.id}
 
     assert not off & {c.id for c in ir_monthly.contracted(db)}
+    # 폐업위기는 대상 표에 남는다(회색 구역에는 없다 — 아래 `shown`)
+    assert risky.id in {r["company"].id for r in startup_send.rows(db, month)["rows"]}
     assert not off & set(startup_send.sendable_ids(db, month))
     assert ir_kakao.for_company(db, db.get(User, 1), closed.id, month) is None
 

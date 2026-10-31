@@ -390,9 +390,10 @@ def monthly_requests(db: Session, month: str,
 
 def is_closed(company: IrCompany) -> bool:
     """폐업한 기업인가 — 이름에 `폐업` 이 들었나(`[딜소개 불가/폐업함]` 등).
+    `폐업위기` 는 아직 폐업이 아니라 세지 않는다 — 계약이 있으면 받는다.
 
     계약여부 칸은 `유료계약완료` 그대로 남아 있어 칸만 보면 대상에 든다."""
-    return "폐업" in (company.name or "")
+    return "폐업" in (company.name or "").replace("폐업위기", "")
 
 
 def contracted(db: Session) -> List[IrCompany]:
