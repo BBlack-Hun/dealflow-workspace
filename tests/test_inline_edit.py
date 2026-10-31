@@ -585,7 +585,7 @@ def test_contract_has_every_state_operations_uses(logged_in, company):
     from app.routers.companies import CONTRACT_LABELS, contract_key
 
     assert set(CONTRACT_LABELS.values()) == {
-        "미계약", "무료계약완료", "유료계약완료", "계약검토중", "딜소개 불가",
+        "미계약", "무료계약완료", "유료계약완료", "계약검토중", "계약진행중", "딜소개 불가",
         "무료IR 미팅제공예정", "무료 IR 미팅제공완료함"}
     # 예전 값도 그대로 읽힌다
     assert contract_key("yes") == "paid"

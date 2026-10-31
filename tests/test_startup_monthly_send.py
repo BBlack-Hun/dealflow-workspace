@@ -506,7 +506,7 @@ def test_고른_달이_그대로_실린다(db, seeded, client):
 # ── 계약 안 한 기업은 보기만 한다 (#93)  ★ ──────────────────────────────────
 
 def test_계약_안_한_기업은_보기만_하고_보내지_않는다(db, seeded, client):
-    """미계약·계약검토중은 표 아래 회색 구역에 **보이기만** 하고, 손 발송
+    """미계약·계약검토중·계약진행중(#104)은 표 아래 회색 구역에 **보이기만** 하고, 손 발송
     (`sendable_ids`)에도 A5 수집에도 안 든다. 딜소개 불가와 요청 0건은 그
     구역에도 없다.
 
@@ -525,21 +525,22 @@ def test_계약_안_한_기업은_보기만_하고_보내지_않는다(db, seede
 
     none_ = company("샘플디", "none")
     review = company("샘플이", "review")
+    progress = company("샘플오", "in_progress")
     blocked = company("샘플에프", "blocked")
     idle = company("샘플지", "none")            # 요청 0건
     contact = VcContact(user_id=1, name=PERSON, firm=FIRM)
     db.add(contact)
     db.flush()
-    for c in (none_, review, blocked):
+    for c in (none_, review, progress, blocked):
         db.add(IrRequest(user_id=1, contact_id=contact.id, company_id=c.id,
                          company_name=c.name, requested_at=f"{seeded['month']}-05"))
     db.commit()
     month = seeded["month"]
 
     shown = {r["company"].id for r in startup_send.rows(db, month)["uncontracted"]}
-    assert shown == {none_.id, review.id}
+    assert shown == {none_.id, review.id, progress.id}
 
-    off = {none_.id, review.id, blocked.id, idle.id}
+    off = {none_.id, review.id, progress.id, blocked.id, idle.id}
     assert not off & set(startup_send.sendable_ids(db, month))
 
     _turn_on(db, user_id=1)
@@ -553,10 +554,11 @@ def test_계약_안_한_기업은_보기만_하고_보내지_않는다(db, seede
     box = page.split('data-testid="startup-uncontracted"', 1)[1].split("</section>", 1)[0]
     assert "계약 안 한 기업 — 보내지 않음" in box
     assert "샘플디" in box and "샘플이" in box and "계약검토중" in box
+    assert "샘플오" in box and "계약진행중" in box
     assert "샘플에프" not in box and "샘플지" not in box
     # 체크칸도 입력도 없다 — 그 구역에서 고를 수 있는 것이 하나도 없다.
     assert "<input" not in box
-    for c in (none_, review):
+    for c in (none_, review, progress):
         assert f'name="company_ids" value="{c.id}"' not in page
 
 
