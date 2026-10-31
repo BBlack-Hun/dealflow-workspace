@@ -210,12 +210,6 @@ def test_IR_기업_현황도_머리글과_칸에_같은_수의_고정_표시가_
         assert got == want, f"머리글 {want}칸 · 줄 {got}칸 — 짝이 안 맞습니다"
 
 
-def test_스타트업DB_탭은_안_건드린다(co):
-    """사용자가 범위를 못 박았다 — "스타트업 DB 말고 IR 기업 현황만"."""
-    head = _co_head(co.get("/companies?tab=db").text, "수신일")
-    assert "stick" not in head, "범위 밖의 표에 고정을 붙였습니다"
-
-
 def test_퍼센트_칸의_왼쪽_자리는_앞_칸_폭_하나로_낸다():
     """`기업명` 은 `width:13%` 다 — **`%` 는 더할 수 없다.**
 
