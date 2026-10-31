@@ -556,8 +556,8 @@ def test_화면이_두_탭과_백업_되돌리기를_적는다(portal):
     html = portal["admin"].get("/companies").text
     assert 'id="co-force"' in html, "강제 삭제 상자가 없다"
     assert 'id="co-force-name"' in html, "기업명을 적는 칸이 없다"
-    # 두 탭에서 함께 사라진다.
-    assert "스타트업DB" in html and "두 탭" in html
+    # 한 줄이라 옛 스타트업DB 칸도 함께 사라진다(#105 · #106 — 탭은 하나로 합쳤다).
+    assert "옛 스타트업DB 칸" in html and "두 탭에서" not in html
     # 되돌리는 길과 그 한계.
     assert "/team/restore" in html
     assert "DB 전체를 그날로 되돌리는 일" in html

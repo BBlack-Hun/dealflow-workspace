@@ -35,15 +35,14 @@ const listened = /classList\.contains\("([\w-]+)"\)/.exec(src);
 assert.ok(listened, "companies.js 에서 여는 class 를 못 찾았습니다");
 const OPEN_CLASS = listened[1];
 
-// 번호 칸은 두 탭(IR 기업 현황 · 스타트업DB)에 하나씩 있다. **둘 다** 열려야
-// 한다 — 같은 창을 쓰는데 한쪽 탭에서만 되면 고장으로 읽힌다.
+// 번호 칸은 IR 기업 현황 표에 하나다(#105 · #106 — 스타트업DB 탭을 합쳤다).
 const ROWNO = [];
 HTML.replace(/<td class="(rowno[^"]*)"/g, function (_all, cls) {
   ROWNO.push(cls);
   return _all;
 });
-assert.strictEqual(ROWNO.length, 2,
-  "companies.html 의 번호 칸이 둘이 아닙니다(탭마다 하나): " + JSON.stringify(ROWNO));
+assert.strictEqual(ROWNO.length, 1,
+  "companies.html 의 번호 칸이 하나가 아닙니다: " + JSON.stringify(ROWNO));
 ROWNO.forEach(function (cls, i) {
   assert.ok(cls.split(/\s+/).indexOf(OPEN_CLASS) >= 0,
     "번호 칸 " + (i + 1) + " 에 `" + OPEN_CLASS + "` 이 없습니다 ★ 눌러도 창이 안 열립니다: " + cls);
@@ -68,7 +67,8 @@ function row(id, rownoClass) {
 }
 
 function build() {
-  const rows = ROWNO.map(function (cls, i) { return row(7 + i * 2, cls); });
+  // 줄 둘 — 누른 **그 줄의** 창이 열리는지 가르려면 둘이 있어야 한다.
+  const rows = [0, 1].map(function (i) { return row(7 + i * 2, ROWNO[0]); });
   const table = D.el("table", { id: "co-table", "data-inline-url": "/api/companies" },
                      [D.el("tbody", {}, rows.map(function (r) { return r.tr; }))]);
 
@@ -133,8 +133,8 @@ const flush = () => new Promise((r) => setTimeout(r, 0));
 async function main() {
   // ── 1. 번호를 누르면 **그 줄의** 창이 열린다 ───────────────────────────
   //
-  // 탭마다 한 벌씩 — 번호 칸 두 개를 각각 눌러 본다.
-  for (let i = 0; i < ROWNO.length; i += 1) {
+  // 두 줄의 번호 칸을 각각 눌러 본다.
+  for (let i = 0; i < 2; i += 1) {
     const dom = build();
     run(dom, "샘플가나헬스");
     const target = dom.rows[i];
@@ -184,7 +184,7 @@ async function main() {
     assert.strictEqual(dom.panel.hidden, true, "한줄 소개를 눌렀는데 창이 열렸습니다");
   }
 
-  console.log("ok — 번호 칸이 [수정] 창을 연다 (탭 " + ROWNO.length + "곳)");
+  console.log("ok — 번호 칸이 [수정] 창을 연다");
 }
 
 main().catch(function (e) { console.error(e); process.exit(1); });

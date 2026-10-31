@@ -85,11 +85,9 @@ def _tables() -> list:
 
 
 def _status_tab_markup() -> str:
-    """IR 기업 현황(기본) 탭의 표. 두 탭이 같은 id 를 쓰므로 **두 번째**다."""
-    tables = _tables()
-    assert len(tables) >= 2, "표가 둘보다 적습니다 — 화면 구조가 바뀌었습니다"
-    markup = tables[1]
-    assert "수정한 날짜" in markup, "두 번째 표가 IR 기업 현황 탭이 아닙니다"
+    """IR 기업 현황 탭의 표 — 첫 번째다(#105 · #106 에 스타트업DB 탭 표를 합쳐 지웠다)."""
+    markup = _tables()[0]
+    assert "수정한 날짜" in markup, "첫 번째 표가 IR 기업 현황 탭이 아닙니다"
     return markup
 
 
@@ -335,23 +333,6 @@ def test_정렬을_NO_다시_매기기와_한_자리에_건다():
     assert "DealflowSort.init" in text, "`companies.js` 가 정렬을 안 겁니다"
     assert re.search(r"DealflowSort\.init\(\{[^}]*onChange:\s*renumber", text, re.S), (
         "세우고 나서 `NO` 를 다시 매기지 않습니다 — 번호가 `3,5,1,4,2` 로 남습니다")
-
-
-# ── ⑤ 옆 탭 ─────────────────────────────────────────────────────────────────
-
-def test_스타트업DB_탭은_이름순_하나만():
-    """날짜·숫자 칸 정렬은 `IR 기업 현황` 탭의 요청이었다.
-
-    이 탭에 붙는 것은 **`기업명`(이름순) 하나**다 — 두 탭의 기본 차례가 같은
-    규칙(수신일 최신순)이 되면서, 거기서 벗어나는 길도 두 탭이 같아야 해서다.
-    (이 탭에도 날짜·숫자 칸이 많지만 — `수신일`·연도별 매출·금액 셋 — 이번
-     범위가 아니다. 붙일지는 따로 정한다.)
-    """
-    db_tab = _tables()[0]
-    assert re.findall(r'data-sort="([^"]+)"', db_tab) == ["name"], (
-        "스타트업DB 탭의 정렬은 `기업명` 하나여야 합니다")
-    assert sorted(set(re.findall(r"data-s-([\w-]+)=", db_tab))) == ["name"], (
-        "스타트업DB 탭에 이름 말고 다른 세울 값이 들어갔습니다")
 
 
 # ── ⑥ 브라우저 ──────────────────────────────────────────────────────────────
