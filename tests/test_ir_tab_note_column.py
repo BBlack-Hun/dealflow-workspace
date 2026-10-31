@@ -2,7 +2,7 @@
 
 [수정] 창에만 있던 칸이다(시트 `비고` 를 옮겨 온 칸 · 10/27 TIPS 조사 메모도 여기).
 `IR 자료` 바로 앞 — `IR 자료` 는 맨 끝 그대로다(관리자가 붙인 칸 `TIPS` 등은 그 오른쪽).
-표에서 눌러 고치고, 고친 값은 검색에도 걸린다. 스타트업DB 탭은 그대로다.
+표에서 눌러 고치고, 고친 값은 검색에도 걸린다.
 값은 지어낸 것이다(공개 저장소).
 """
 from __future__ import annotations
@@ -26,13 +26,12 @@ def logged(client, users, db):
     return client
 
 
-def test_IR_탭에만_IR_자료_앞에_메모가_선다(logged):
+def test_IR_자료_앞에_메모가_선다(logged):
     html = logged.get("/companies").text
     names = _head_names(html)
     assert names[names.index("IR 자료") - 1] == "메모", names
     body = html.split("<tbody>", 1)[1]
     assert 'data-field="note" data-type="long">TIPS 가능\n누적 투자 12억</div>' in body
-    assert "메모" not in _head_names(logged.get("/companies?tab=db").text)
 
 
 def test_표에서_고치면_저장되고_검색에_걸린다(logged, db):
