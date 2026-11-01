@@ -283,6 +283,38 @@ def meeting_calendar_page(request: Request, db: Session = Depends(get_db),
     return templates.TemplateResponse(request, "meeting_calendar.html", ctx)
 
 
+@router.get("/report/meetings", response_class=HTMLResponse, include_in_schema=False)
+def meeting_list_page(request: Request, db: Session = Depends(get_db),
+                      user: User = Depends(get_current_user),
+                      month: str = "", member: int = 0):
+    """업무 보고 › `IR 미팅진행 리스트`(#120) — 그 달 미팅 한 줄씩 + 명단 `미팅` 칸 글.
+
+    범위는 미팅 달력과 같다(`_who`) — 팀원은 제 것만, 관리자는 팀 전체가 기본. 팀원 한
+    사람은 왼쪽 `팀원 화면으로 보기` 로 고른다(업무 보고처럼 고르개는 한 곳 — #444).
+    투자컨설턴트는 다른 업무 보고 탭처럼 미들웨어가 막는다(`deps.CONSULTANT_PATHS`).
+    """
+    from ..services import report
+
+    today = date.today()
+    who, member, member_q = _who(request, user, member)
+    year, mon = _month_of(month, today)
+    ctx = base_ctx(request, db, user, active="report")
+    ctx.update({
+        "report_tab": "meetings",
+        "member": member,
+        "member_q": member_q,
+        "can_team": user.role == "admin",
+        "month_options": [(y, m, f"{y}-{m:02d}")
+                          for y, m in report.recent_months(today, count=36)],
+        "selected": f"{year}-{mon:02d}",
+        "year": year,
+        "month": mon,
+        "meetings": meeting_calendar.listing(db, who, year, mon),
+        "memos": meeting_calendar.memo_rows(db, who, year, mon, today),
+    })
+    return templates.TemplateResponse(request, "report_meetings.html", ctx)
+
+
 # 경과일 거르기 칩 — 그 밖의 값은 `전체` 로 읽는다(주소를 손으로 고쳐도 500 이 안 난다).
 NO_MEETING_DAYS = ("7", "30", "90")
 
