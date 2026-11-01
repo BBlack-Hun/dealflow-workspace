@@ -36,7 +36,7 @@ from ..db import get_db
 from ..deps import (NoConsulting, can_open, doer, get_current_user,
                     may_view_all_consulting, may_view_consulting, templates)
 from ..models import (ConsultingColumn, ConsultingCompany, ConsultingRowGrant,
-                      User, VcContact)
+                      IrCompany, User, VcContact)
 from ..services import company_sync, ir_readonly
 from ..services import consulting_sheets as cs
 from ..services import custom_columns
@@ -955,6 +955,9 @@ def company_rows(db: Session, user: User, sheet: str = "",
             # "아직 안 했다" 만 나온다.
             "contacted_prev": status.contacted(notes.get(k, "") for k in prev_keys),
             "updated_at": (c.updated_at or "")[:10],
+            # `등록일` 칸(`이메일` 오른쪽) — 줄이 처음 생긴 날. 시각은 떼고 날짜만 보인다.
+            # 검색 재료에는 안 넣는다 — 편집 칸(`td.cell`)이 아니라 브라우저도 안 넣는다.
+            "created_at": (c.created_at or "")[:10],
             "search": " ".join(filter(None, [
                 # `월`(`region`)은 계약 탭에서 **화면에 안 선다.** 칸이 없는
                 # 탭에서까지 걸면 화면 어디에도 없는 글자로 줄이 걸려 왜
@@ -1154,6 +1157,11 @@ def consulting_page(request: Request, db: Session = Depends(get_db),
         # `services/ir_readonly.py`). 계약 탭은 대표자 · 이메일 칸부터 안 서는 다른 표라 뺀다.
         "ir_cols": ([] if is_contract(db, selected) else ir_readonly.consulting_columns()),
         "ir_values": ir_readonly.values(db, [r["ir_company_id"] for r in rows]),
+        # `기업명` 칸 · [기업 추가] 칸에 띄울 IR 기업 후보 이름(`static/js/ir_company_hint.js`
+        # — 스타트업 표 #85 와 같은 부품 · 같은 질의). 위 `ir_badges` 와 같은 문이다 —
+        # 투자컨설턴트(역할)에게는 IR 기업 현황이 닫혀 있어 목록을 싣지 않는다.
+        "ir_names": (sorted({n for (n,) in db.execute(select(IrCompany.name)) if n})
+                     if can_open(user, "/ir-link") else []),
         "msg": msg,
         "counts": {
             "total": len(rows),
@@ -1362,6 +1370,7 @@ def update_company(company_id: int, body: CompanyIn,
                    user: User = Depends(get_current_user)):
     require_access(user)
     company = owned(db, ConsultingCompany, company_id, user, "기업")
+    linked_before = company.ir_company_id
     _check_contract_pick(db, company, body)
     _assign(company, body)
     db.commit()
@@ -1376,7 +1385,18 @@ def update_company(company_id: int, body: CompanyIn,
     # **줄 전체를 돌려주지 않는다.** 그러면 `company_rows` 를 한 번 더 도는데,
     # 거기에는 이 응답에 필요 없는 조회가 둘 붙어 있다(줄 편집 허용 ·
     # 스타트업 명단에 이미 있는 기업).
-    return {"id": company.id, "stamps": shown_stamps(company)}
+    out = {"id": company.id, "stamps": shown_stamps(company)}
+    # 기업명을 고쳐 IR 기업에 **새로 이어졌다**(`company_sync` 자동 연결) — 이어진 순간
+    # 채워진 칸(`company_sync.slot`)을 실어 화면이 그 자리에서 적는다. 화면을 다시 받지
+    # 않는 까닭은 `tests/test_consulting_startup_fold.py`(고르던 체크가 풀린다).
+    if company.ir_company_id and company.ir_company_id != linked_before:
+        kinds = company_sync.sheet_kinds(db)
+        out["linked"] = {
+            "ir_name": db.get(IrCompany, company.ir_company_id).name or "",
+            "fields": {w: getattr(company, w) or "" for f in company_sync.FIELDS
+                       if (w := company_sync.slot(company, f, kinds))},
+        }
+    return out
 
 
 @router.delete("/api/consulting/{company_id}")
