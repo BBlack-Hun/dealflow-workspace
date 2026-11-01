@@ -3130,6 +3130,7 @@ a.primary-btn[aria-disabled="true"] { background: #b8c4d8; cursor: not-allowed; 
 .sector-pick-item.major { width: 100%; font-weight: 700; }
 .cell-pop-choices.sector-pop { display: block; max-height: 260px; }
 .sector-pick-toggle { margin-top: 4px; }
+.sector-pick-clear { align-self: flex-start; padding: 0; }
 input[data-sector-picker] + .sector-pick-toggle + div { margin-top: 6px; max-height: 280px;
   overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
 /* 수정창(`.form-grid`) 안에서는 칸 규칙 `.form-grid input`(폭 100% · 안쪽 여백)이 목록의

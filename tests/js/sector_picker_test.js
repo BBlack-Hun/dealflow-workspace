@@ -9,6 +9,8 @@
 //   사람이 끄면 그때 빠진다. 창을 여는 것만으로 옛 글이 사라지면 안 된다.
 // · 철자만 다른 말(`ai saas`)은 목록의 철자(`AI SaaS`)로 돌린다.
 // · Esc 는 되돌린다(저장이 안 나간다).
+// · [전체 해제] 는 고른 것(옛 값도)을 한 번에 풀고, 저장은 창이 닫힐 때다.
+//   고른 게 없으면 흐려 둔다.
 //
 // 목록 이름은 사용자가 정한 표의 일부다. 사람 · 회사 이름은 없다.
 "use strict";
@@ -152,6 +154,33 @@ async function main() {
     await flush();
     assert.deepStrictEqual(t.sent, [], "Esc 를 눌렀는데 저장이 나갔다");
     assert.strictEqual(dom.cell.textContent, "로봇", "Esc 뒤 칸이 원래 값으로 안 돌아왔다");
+  }
+
+  // ── 5. [전체 해제] 는 한 번에 풀고, 닫을 때 저장된다 ─────────────────────
+  {
+    const dom = build("6/17 반도체 위주, 로봇, AI·SaaS·데이터");
+    const t = run(dom);
+    t.press(dom.cell);
+    const clear = t.pop().querySelector(".sector-pick-clear");
+    assert.ok(clear, "[전체 해제] 단추가 없다");
+    assert.strictEqual(clear.disabled, false, "고른 게 있는데 단추가 흐리다");
+    clear.fire("click");
+    assert.deepStrictEqual(t.boxes().filter((b) => b.checked), [],
+      "[전체 해제] 뒤에도 체크가 남았다");
+    assert.strictEqual(clear.disabled, true, "다 풀었는데 단추가 안 흐려졌다");
+    assert.deepStrictEqual(t.sent, [], "풀기만 했는데 저장이 나갔다");
+    t.toggle("반도체");
+    assert.strictEqual(clear.disabled, false, "다시 골랐는데 단추가 흐린 채다");
+    dom.plain.fire("pointerdown");
+    await flush();
+    assert.strictEqual(t.sent[0].body.sectors, "반도체", "풀고 다시 고른 값이 아니다");
+  }
+  {
+    const dom = build("");
+    const t = run(dom);
+    t.press(dom.cell);
+    assert.strictEqual(t.pop().querySelector(".sector-pick-clear").disabled, true,
+      "고른 게 없는데 [전체 해제] 가 눌린다");
   }
 
   console.log("sector_picker_test: ok");
