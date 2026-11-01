@@ -23,7 +23,7 @@ openpyxl = pytest.importorskip("openpyxl")
 def stage(client, db, users):
     from app.models import IrCompany, IrRequest, Meeting, SeriesACompany, VcContact
 
-    agg = IrCompany(name="샘플애그", raise_target="18.3")
+    agg = IrCompany(name="샘플애그", raise_target="18.3", sector_major="AI")   # 소개 가능(#122 묶음)
     medi = IrCompany(name="샘플메디", raise_target="5-10억 사이")
     who = VcContact(user_id=users["u1"].id, name="홍길동", title="심사역", firm="가나벤처스")
     db.add_all([agg, medi, who,
