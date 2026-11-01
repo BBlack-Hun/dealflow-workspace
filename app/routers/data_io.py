@@ -949,6 +949,8 @@ def _meetings_sheet(sheet, data, team_wide):
     stats.append((f"그중 {data['ir_meeting_ask_days']}일 지남(명)",
                   data["ir_meeting_ask_overdue"]))
     sheet.stats(stats)
+    if data["ir_delivered_note"]:
+        sheet.note(f"{pipeline.LABEL_DELIVERED} = {data['ir_delivered_note']}")
     if data["ir_meeting_ask_rows_why"]:
         sheet.note(data["ir_meeting_ask_rows_why"])
 

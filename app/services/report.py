@@ -45,6 +45,7 @@ from ..models import (DealBatch, DealBatchCompany, IrCompany, IrRequest,
 # 날짜를 말한다.
 from . import cadence
 from . import manual_send
+from . import memo_delivered
 from . import memo_intro
 # 단계 값(`STAGE_*`)은 **문구를 짓는 쪽이 정한 것**을 그대로 읽는다.
 # 여기 숫자를 다시 적어 두면 한쪽이 바뀔 때 보고만 옛 값으로 남는다
@@ -230,12 +231,13 @@ def monthly(db: Session, year: int, month: int,
 
 
 def _month(db: Session, year: int, month: int, user: Optional[User],
-           today: Optional[date]) -> dict:
+           today: Optional[date], memo: Optional[tuple] = None) -> dict:
     """`monthly` 의 몸통 — `소개한 기업` 만 뺐다.
 
     연간 보고가 이것을 열두 번 부른다. `소개한 기업` 은 이력 전체를 한 번
     훑어야 나오는 값이라, 달마다 부르면 같은 훑기를 열두 번 한다 — 연간은
-    한 해치를 한 번에 센다(`yearly`).
+    한 해치를 한 번에 센다(`yearly`). 명단 칸의 전달 기록(`memo`)도 같은
+    까닭으로 연간이 한 번 읽어 넘긴다.
     """
     today = today or date.today()
     start, end = month_range(year, month)
@@ -383,6 +385,14 @@ def _month(db: Session, year: int, month: int, user: Optional[User],
                    if cid in ask and not ask[cid]["asked"])
     ask_count, ask_why = meeting_ask_count_note(ask_missing, ask_rows)
 
+    # 명단 `N월 IR 요청` 칸에 손으로 적은 `전달` — 앱 기록과 겹치는 쌍은 뺀다
+    # (`services/memo_delivered.py`). 사람은 명단 주인으로 센다.
+    rows_, app_ = memo or (None, None)
+    by_memo = memo_delivered.month_count(db, year, month,
+                                         user.id if user is not None else None,
+                                         today, rows_, app_)
+    ir_app = sum(1 for r in requests if r.status == "delivered")
+
     return {
         "year": year,
         "month": month,
@@ -417,7 +427,14 @@ def _month(db: Session, year: int, month: int, user: Optional[User],
             1 for w in rows for x in w["items"] if x["followup_late"]),
         "outcomes": sorted(outcome_counts.items(), key=lambda t: -t[1]),
         "ir_requested": len(requests),
-        "ir_delivered": sum(1 for r in requests if r.status == "delivered"),
+        # **앱 기록 + 명단 칸 기록.** 화면·엑셀이 같은 수를 쓰고, 둘로 가른 글자는
+        # `ir_delivered_note` 하나가 짓는다(명단 기록이 없으면 빈 글자).
+        "ir_delivered": ir_app + by_memo["count"],
+        "ir_delivered_memo": by_memo["count"],
+        "ir_delivered_note": (
+            f"앱 {ir_app} + 명단 기록 {by_memo['count']}"
+            + (f" (기업명 못 읽은 줄 {by_memo['unnamed']}건 포함)" if by_memo["unnamed"] else "")
+            if by_memo["count"] else ""),
         "ir_open": sum(1 for r in requests if r.status == "open"),
         # **자료를 보내 놓고 아무 말도 안 한 건.** 전달하면 리마인드가 멈춰서
         # (답이 왔으니 맞다) 미팅 요청을 안 보낸 담당자는 어느 목록에도 다시
@@ -1234,8 +1251,9 @@ def yearly(db: Session, year: int, user: Optional[User] = None,
     # 스타일로"). 화면이 이것을 열두 번 이어 그린다(`templates/_report_month.html`
     # — 월간 보기와 **같은 조각**). 위에서 세는 김에 받은 것이라 질의는 안 는다.
     month_reports: List[dict] = []
+    memo = (memo_delivered.entries(db, today), memo_delivered.app_delivered(db))
     for mon in range(1, 13):
-        got = _month(db, year, mon, user, today)
+        got = _month(db, year, mon, user, today, memo)
         month_reports.append({**got, "empty": is_empty_month(got)})
         months.append({
             "month": mon,
@@ -1346,7 +1364,8 @@ def is_empty_month(data: dict) -> bool:
     판단은 월간 dict 의 **수**로만 한다 — 회차 · 미팅 · IR 요청 · 전화 요청 ·
     반응 갈래의 줄. 하나라도 있으면 펼친다.
     """
-    if data.get("send_rounds") or data.get("total") or data.get("ir_requested"):
+    if (data.get("send_rounds") or data.get("total") or data.get("ir_requested")
+            or data.get("ir_delivered")):
         return False
     if data.get("call_open") or data.get("call_done"):
         return False
