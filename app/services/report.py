@@ -1381,7 +1381,8 @@ def unintroduced_big(db: Session, intros: dict) -> List[dict]:
 
     '소개했다' 는 같은 달 `소개한 기업`(`intros` — 받은 기록 `deal_history.Receipt`)과 같은
     기준이다. 소개할 수 있는 기업만 센다 — `딜소개 불가` 계약값 · 이름의 `딜소개 불가` 표시 ·
-    폐업(`ir_monthly.is_closed`)은 뺀다. 금액을 못 읽거나 빈 기업도 빠진다.
+    폐업(`ir_monthly.is_closed`) · 문구를 못 만드는 기업(`IrCompany.introducible` 거짓 — 화면의
+    '소개 가능 기업' 수와 같은 기준)은 뺀다. 금액을 못 읽거나 빈 기업도 빠진다.
     """
     from ..routers.companies import BLOCKED_CONTRACT, CONTRACT_LABELS, _short, contract_key
     from . import deal_history, ir_monthly
@@ -1392,6 +1393,7 @@ def unintroduced_big(db: Session, intros: dict) -> List[dict]:
         low = amount.eok(c.raise_target)
         key = contract_key(c.contract_status)
         if (low is None or low < BIG_EOK or key == BLOCKED_CONTRACT or ir_monthly.is_closed(c)
+                or not c.introducible
                 or "딜소개불가" in (c.name or "").replace(" ", "")
                 or deal_history._key(c.name) in done):
             continue

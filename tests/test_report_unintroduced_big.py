@@ -27,14 +27,17 @@ def stage(db, users):
     db.add_all([
         IrCompany(name="샘플큰가", raise_target="30", sector_major="AI",
                   series="Series A (누적 10억 이상)", contract_status="paid"),
-        IrCompany(name="샘플큰나", raise_target="10-20억"),
-        IrCompany(name="샘플보냄", raise_target="40", contract_status="free",
+        IrCompany(name="샘플큰나", raise_target="10-20억", sector_major="바이오"),
+        IrCompany(name="샘플보냄", raise_target="40", sector_major="AI", contract_status="free",
                   contract_received="O"),
         IrCompany(name="샘플작음", raise_target="5~15억"),                 # 아래값 5억
         IrCompany(name="샘플막힘", raise_target="50", contract_status="blocked"),
         IrCompany(name="샘플표시 [딜소개 불가]", raise_target="50"),
         IrCompany(name="샘플닫음 [26년 3월 폐업함]", raise_target="50"),
         IrCompany(name="샘플빈칸"),
+        IrCompany(name="샘플보류", raise_target="60", sector_major="AI",
+                  summary_status="insufficient"),                         # 소개 가능 아님
+        IrCompany(name="샘플분야없음", raise_target="70"),                 # 문구 못 만듦
         SeriesACompany(name="샘플에이랩", contract_status="paid", contract_received="X"),
     ])
     who = VcContact(user_id=users["u1"].id, name="가상갑", firm="가나벤처스")
@@ -73,7 +76,7 @@ def test_보는_달에_안_보낸_10억_이상만_금액_높은_순(stage, db, u
 def test_화면은_10곳만_펼치고_엑셀에_계약_칸(stage, client, db, users):
     from app.models import IrCompany
 
-    db.add_all([IrCompany(name=f"샘플더{i:02d}", raise_target=str(11 + i)) for i in range(10)])
+    db.add_all([IrCompany(name=f"샘플더{i:02d}", raise_target=str(11 + i), sector_major="AI") for i in range(10)])
     db.commit()
     client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
 
