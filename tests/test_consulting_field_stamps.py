@@ -353,6 +353,15 @@ def test_날짜를_붙여도_질의가_한_번도_안_는다(allowed, db, users)
     assert note_stamp_key(col.id) in _stamps(db, rows[0].id)
 
 
+def test_질의를_세는_동안_앱의_주기_실이_안_돈다(client):
+    """`_count_render` 는 엔진 전체를 센다 — 주기 실이 떠 있으면 그 질의까지 섞여
+    위 검사가 가끔 116 == 113 으로 깨진다(conftest `_no_background_threads`)."""
+    import threading
+
+    ticks = {"scheduled-send", "automations", "sourcing-mail-tick"}
+    assert not ticks & {t.name for t in threading.enumerate()}
+
+
 # --- 5. `edit_logs` 로는 못 한다 (실제로 돌려 보인다) --------------------------
 
 def test_수정_로그로는_못_한다(allowed, db, users):
