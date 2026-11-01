@@ -59,6 +59,7 @@ from . import meeting_kind as mk
 #: 값·같은 이유), 그 두 곳과 이 곳이 세는 것이 갈리면 표의 단계와 이력이 서로
 #: 다른 말을 한다.
 from .deal_history import SENT_STATUS
+from .pipeline import SENT_STATUSES as IR_SENT_STATUSES
 
 # 사다리. 왼쪽이 낮고 오른쪽이 높다 — 순서가 곧 의미다.
 NONE = "none"
@@ -200,7 +201,7 @@ def of_many(db: Session, contact_ids: Iterable[int]) -> Dict[int, str]:
         select(IrRequest.contact_id, IrRequest.status)
         .where(IrRequest.contact_id.in_(ids))
     ).all():
-        raise_to(contact_id, IR_SENT if status == "delivered" else IR_ASKED)
+        raise_to(contact_id, IR_SENT if status in IR_SENT_STATUSES else IR_ASKED)
 
     for meeting in db.execute(
         select(Meeting).where(Meeting.contact_id.in_(ids))

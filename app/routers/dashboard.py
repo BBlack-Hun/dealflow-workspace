@@ -149,11 +149,6 @@ def todo_page(request: Request, db: Session = Depends(get_db),
         "owner": owner,
         "viewing_other": other,
         "member_id": owner.id if other else 0,
-        # 관리자에게만 — 팀원 고르개. 정지된 계정은 뺀다(고칠 주간업무가 없다).
-        "members": ([{"id": u.id, "name": u.name} for u in
-                     db.execute(select(User).where(User.is_active == 1)
-                                .order_by(User.id)).scalars().all()]
-                    if user.role == "admin" else []),
         "tasks": rows,
         "summary": weekly.summary(rows),
         "week_start": start,
@@ -648,6 +643,14 @@ def report_page(request: Request, db: Session = Depends(get_db),
         # 월간 몸통(`_report_month.html`)은 **`rep` 한 dict** 를 읽는다 — 연간
         # 보기가 같은 조각을 달마다 다른 dict 로 열두 번 그리기 때문이다(#38).
         ctx["rep"] = data
+        # 드랍 의심(#116 2차) — 달과 상관없는 **지금 남은 일**이라 월간 보기에만 한 번 세운다.
+        # 범위는 이 보고와 같다 — 링크의 `member` 를 `IR 요청 후 미팅 없음` 이 그대로 읽는다.
+        from ..services import ir_no_meeting
+
+        found = ir_no_meeting.rows(db, who.id if who else None, today)[0]
+        ctx.update({"ir_drop_days": ir_no_meeting.DROP_SUSPECT_DAYS,
+                    "ir_drop_suspect": sum(1 for r in found if r["suspect"]),
+                    "ir_drop_href": f"/ir/no-meeting?view=drop&member={who.id if who else 0}"})
     # 화면 말(10/17 회의 #35·#36·#40) — `/ir` 과 같은 말을 같은 자리에서 읽는다.
     from ..services import pipeline as _pipeline
 

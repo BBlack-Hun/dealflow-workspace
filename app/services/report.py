@@ -58,6 +58,7 @@ from .pipeline import (IR_MEETING_ASK_DAYS, LABEL_DELIVERED, LABEL_REQUESTED,
                        company_finder, meeting_ask_state, raise_target)
 from .pipeline import meeting_ask_note as _pipeline_meeting_ask_note
 from .weekly import WEEKDAYS
+from .pipeline import SENT_STATUSES
 
 WEEK_NAMES = ["첫주", "둘째주", "셋째주", "넷째주", "다섯째주", "여섯째주"]
 
@@ -398,7 +399,7 @@ def _month(db: Session, year: int, month: int, user: Optional[User],
     by_memo = memo_delivered.month_count(db, year, month,
                                          user.id if user is not None else None,
                                          today, rows_, app_)
-    ir_app = sum(1 for r in requests if r.status == "delivered")
+    ir_app = sum(1 for r in requests if r.status in SENT_STATUSES)   # 드랍도 보낸 것
 
     return {
         "year": year,
