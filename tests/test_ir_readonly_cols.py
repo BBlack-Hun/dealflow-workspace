@@ -7,7 +7,7 @@
    서고, 이은 줄은 IR 값, 안 이은 줄은 빈칸이다. 눌러 고치는 칸이 아니다.
 2. 스타트업 표 `기업명` 을 IR 기업 이름으로 고치면 그 기업에 이어지고, 응답에 IR 값이
    실려 그 자리에서 다시 그린다(후보창에서 고르는 길).
-3. 투자컨설턴트 — 스타트업 탭 `이메일` 오른쪽에 같은 묶음, 계약 탭에는 없다.
+3. 투자컨설턴트 — 스타트업 탭 `이메일` · `등록일` 오른쪽에 같은 묶음, 계약 탭에는 없다.
 
 이름·기업명·금액은 전부 지어낸 값이다 — 저장소가 공개다.
 """
@@ -136,8 +136,10 @@ def test_투자컨설턴트_스타트업_탭에만_IR_칸이_선다(client, db, 
     html = client.get("/consulting?sheet=" + quote("스타트업")).text
     names = [n for n, _ in _heads(html)]
     want = [c.label for c in ir_readonly.consulting_columns()]
+    # `이메일` 바로 오른쪽은 `등록일`(11/01 사용자 요청), IR 칸은 그 뒤다.
     at = names.index("이메일")
-    assert names[at + 1:at + 1 + len(want)] == want, names
+    assert names[at + 1] == "등록일", names
+    assert names[at + 2:at + 2 + len(want)] == want, names
     assert "수신일" not in want and "성공보수율" not in want and "담당자" not in want
     assert 'data-ir="business_desc" title="스마트팜 설비"' in html
     assert 'data-ir="ir_file_name" title="있음"' in html
