@@ -119,7 +119,10 @@ def test_투자사_표도_같은_규칙이다(sheets):  # noqa: F811
     한쪽만 고정하면 화면을 옮길 때마다 규칙이 바뀐다 — "일관된 UX 규칙이
     없다" 는 그 불만이 그대로 남는다.
     """
-    cells = _thead_cells(sheets.get(_url(OTHER)).text)
+    # 맨 앞 체크 칸(고른 줄 이관 — `routers/pages.py` 의 `bulk_transfer`)은 줄을
+    # 고르는 자리라 세지 않는다. 그 칸도 고정되는지는 아래 짝 검사가 본다.
+    cells = [c for c in _thead_cells(sheets.get(_url(OTHER)).text)
+             if "stick-lead" not in c[0]]
     assert "stick stick-a" in cells[0][0], cells[0]
     assert "stick stick-b" in cells[1][0], cells[1]
     assert "이름" in cells[1][1], cells[1]
