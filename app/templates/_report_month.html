@@ -178,6 +178,7 @@
          이름은 `기업` 이다 — 옆 표·IR 화면·엑셀이 모두 그렇게 부른다. #}
       <thead><tr><th style="width:88px">날짜</th><th style="width:170px">심사역 / 회사</th>
         <th style="width:132px">기업명</th>
+        <th class="num" style="width:120px">투자유치희망금액</th>
         <th style="width:62px">구분</th>{% if team_wide %}<th style="width:70px">담당자</th>{% endif %}
         <th style="width:72px">결과</th><th style="width:130px">결과 문의</th>
         {# 딜 진행 관리에서 적은 것을 그대로 가져온다 — 보고를 쓰려고 같은 말을
@@ -191,6 +192,7 @@
           {# 적어 두지 않은 미팅은 빈 칸으로 둔다 — 없는 것을 `-` 로 지어내지
              않는다. 옆 표('이 달의 반응')와 엑셀도 그렇게 둔다. #}
           <td class="ellipsis" title="{{ m.company }}">{{ m.company }}</td>
+          <td class="num">{{ m.raise_target }}</td>
           <td>{{ m.kind }}</td>
           {% if team_wide %}<td class="muted">{{ m.owner }}</td>{% endif %}
           <td>{{ m.outcome or '-' }}</td>
@@ -339,6 +341,7 @@
         <th style="width:22%">심사역</th>
         <th style="width:22%">회사</th>
         <th>기업명</th>
+        <th class="num" style="width:120px">투자유치희망금액</th>
         {# 상태 칸이 `미팅 요청 보냄 · 날짜` 를 함께 인다. 96px 로는 날짜가
            `202…` 에서 끊긴다 — `/ir` 의 같은 칸에서 실제로 끊겼던 자리다.
            여기서 제일 긴 글은 `미팅 요청 안 보냄 · 2026-09-17까지` 로,
@@ -360,6 +363,7 @@
           <td><b>{{ r.name }}</b> <span class="muted">{{ r.title }}</span></td>
           <td class="ellipsis" title="{{ r.firm }}">{{ r.firm }}</td>
           <td class="ellipsis" title="{{ r.company }}">{{ r.company }}</td>
+          <td class="num">{{ r.raise_target }}</td>
           {#
             **누가 미팅 요청을 안 보냈는가.** 숫자(위 `IR 자료 요청` 판)만으로는
             대상을 알 수 없어 딜 진행 관리로 건너가 다시 찾아야 했다.

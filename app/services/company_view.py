@@ -82,7 +82,7 @@ VIEW_HEADERS = [
     "기업 한줄 소개", "딜 소개 문구", "대분류", "소분류", "투자라운드",
     "특이사항 (장점)", "설립년도", "지역", "정책자금",
     "담당자", "소개 횟수", "소개 발송(명)", "견적서 첨부 여부",
-    "미팅제공일자", "계약여부", "계약서 수신 여부", "성공보수율", "카톡 연결 여부", "홍보메일삭제",
+    "미팅제공일자", "계약년월", "계약여부", "계약서 수신 여부", "성공보수율", "카톡 연결 여부", "홍보메일삭제",
     "핵심/TOP Deal", "메모", "IR 자료",
 ]
 
@@ -245,7 +245,7 @@ def to_cells(rows: List[dict], cols) -> List[list]:
             r["assignee"],
             # 한 번도 안 나간 기업은 화면이 `–` 로 보인다 — 파일에서는 수 0 이다.
             r["sent_rounds"], r["sent_total"], r["quote_attached"],
-            r["meeting_offered_at"], r["contract_label"], r["contract_received"],
+            r["meeting_offered_at"], r["contract_ym"], r["contract_label"], r["contract_received"],
             r["success_fee"], r["kakao_joined"], r["contract_month"],
             r["top_deal_kind"] or "", r["note"], r["ir_file_name"] if r["has_ir"] else "없음",
         ])

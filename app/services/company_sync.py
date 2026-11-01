@@ -29,6 +29,7 @@
     ── 3단계(10/26) — Series A 이상 딜 소싱(`SeriesACompany`)은 셋째 자리 ──
     대표자명 · 연락처 · 이메일   →  `ceo_name` · `ceo_phone` · `ceo_email`
     계약여부 · 계약서 수신 여부  →  같은 이름 칸(10/28 · 0125 — IR 과 같은 열쇠 · `O`/`X`)
+    계약년월                     →  같은 이름 칸(11/01 · 0129 · #122 — `YYYY-MM`)
     누적투자금액 · 투자유치희망금액 · Pre Value  →  같은 이름 칸(단위 억 글자)
     연도 매출  →  **해마다 짝이 바뀐다**(`_year_slot`). IR 은 올해 매출을 연도 칸이 아니라
                   `revenue_recent` 에 적는다(`revenue_years` 머리말). 그래서 Series A 의
@@ -120,6 +121,7 @@ FIELDS = {
     "funding_total": (None, None, "funding_total"),
     "raise_target": (None, None, "raise_target"),
     "pre_value": (None, None, "pre_value"),
+    "contract_ym": (None, None, "contract_ym"),
     "revenue_recent": (None, None, YEAR),
     **{f: (None, None, YEAR) for f in revenue_years.FIELDS},
 }
@@ -135,7 +137,8 @@ LABELS = {"contact_name": "대표자명", "contact_phone": "연락처", "contact
           "kakao_joined": "카톡 연결 여부", "contract_status": "계약여부",
           "contract_received": "계약서 수신 여부", "meeting_offered_at": "미팅제공일자",
           "success_fee": "성공보수율", "funding_total": "누적투자금액",
-          "raise_target": "투자유치희망금액", "pre_value": "Pre Value"}
+          "raise_target": "투자유치희망금액", "pre_value": "Pre Value",
+          "contract_ym": "계약년월"}
 #: `O` / `X` 만 옮기는 칸.
 OX = ("quote_attached", "kakao_joined", "contract_received")
 #: 투자컨설턴트에서 **메타(관리 스타트업) 탭에만** 서는 칸(계약 탭은 `CONTRACT_TAB`).

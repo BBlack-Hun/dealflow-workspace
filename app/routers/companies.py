@@ -30,7 +30,7 @@ from ..db import get_db
 from ..deps import NotAdmin, admin_only, get_current_user, may_view_consulting, templates
 from ..models import ConsultingCompany, ConsultingSheet, EditLog, IrCompany, OneLinerBackup, User
 from ..services import (amount, auth as auth_svc, custom_columns, deal_history, edit_log,
-                        email_domains, revenue_years, room_match)
+                        email_domains, forecast, revenue_years, room_match)
 from ..services.one_liner import (
     AUTO, apply_one_liner, bulk_rows, compose_one_liner, one_liner_status, origin,
 )
@@ -647,6 +647,8 @@ def company_rows(db: Session, sent=None) -> List[dict]:
             # 필터는 그것을 `(비어 있음)` 으로 모은다 — 없는 값을 지어내
             # `X` 로 채우면 "확인했는데 안 왔다" 는 뜻이 되어 버린다.
             "contract_received": c.contract_received or "",
+            # 계약년월(0129 · #122) — `YYYY-MM`. 빈칸은 아직 모름(지난 계약은 빈칸으로 시작했다).
+            "contract_ym": c.contract_ym or "",
             # 0116 — 투자컨설턴트 메타에서 올라온 기업 사실 셋. 빈칸은 `아직 안 정함`.
             "region": c.region or "",
             "quote_attached": c.quote_attached or "",
@@ -951,6 +953,8 @@ class CompanyIn(BaseModel):
     # 0119 — 성공보수율(결정 10). 글자 그대로 받는다(`3%` · `3프로`).
     success_fee: Optional[str] = None
     meeting_offered_at: Optional[str] = None
+    # 계약년월(0129 · #122) — `YYYY-MM` 으로 맞춰 넣는다(`checked_ym`).
+    contract_ym: Optional[str] = None
     contract_month: Optional[str] = None
     is_top_deal: Optional[bool] = None
     summary_status: Optional[str] = None
@@ -1000,6 +1004,17 @@ def checked_ox(field: str, value) -> Optional[str]:
     return key
 
 
+def checked_ym(value) -> Optional[str]:
+    """`계약년월`(#122)에 저장할 값 — `YYYY-MM`(`2026.3` → `2026-03`, `forecast.month`). 빈 값은
+    지우기(None), 못 읽으면 400. `Series A 이상 딜 소싱` 탭도 지난다."""
+    text = (value or "").strip()
+    found = forecast.month(text)
+    if text and not found:
+        raise HTTPException(status_code=400,
+                            detail="계약년월은 YYYY-MM 으로 적으세요 — 예: 2026-11")
+    return found
+
+
 def _assign(company: IrCompany, body: CompanyIn) -> None:
     data = body.model_dump(exclude_unset=True)
     for field, value in data.items():
@@ -1012,6 +1027,8 @@ def _assign(company: IrCompany, body: CompanyIn) -> None:
             company.is_top_deal = 1 if value else 0
         elif field == "contract_status":
             company.contract_status = checked_contract(value)
+        elif field == "contract_ym":
+            company.contract_ym = checked_ym(value)
         elif field in OX_FIELDS:
             setattr(company, field, checked_ox(field, value))
         elif field == "kakao_room_name":
@@ -1089,6 +1106,8 @@ def _contract_result(company: IrCompany) -> dict:
     return {"contract_status": key,
             "contract_label": CONTRACT_LABELS.get(key, "미계약"),
             "blocked": key == BLOCKED_CONTRACT,
+            # 계약 완료로 바꾸면 비어 있던 계약년월이 그 달로 채워진다 — 화면이 그 칸도 되그린다.
+            "contract_ym": company.contract_ym or "",
             **{f: getattr(company, f) or "" for f in OX_FIELDS}}
 
 

@@ -147,6 +147,9 @@
         {# 계약여부 · 계약서 수신 여부(0125 · 10/28 요청 "이메일 오른쪽으로"). IR 기업 현황의
            같은 두 칸과 **같은 보기 · 같은 폭 · 같은 필터 열쇠**다(`companies.html` 의 그 칸 주석 —
            폭은 가장 긴 값 · 고른 뒤의 필터 단추에 맞췄다). IR 기업에 이어진 줄은 따라 고친다. #}
+        {# 계약년월(0129 · #122) — `계약여부` 왼쪽(사용자 요청). IR 기업 현황의 같은 칸과 같은 폭 ·
+           같은 규칙이고, IR 기업에 이어진 줄은 따라 고친다. #}
+        <th style="width:84px" title="YYYY-MM — 계약 완료로 바꾸면 비어 있을 때 그 달이 들어갑니다 · IR 기업에 이어진 줄은 함께 고쳐집니다 · 눌러서 수정">계약년월</th>
         <th style="width:134px" data-filters="contract:계약여부"
             title="IR 기업 현황의 계약여부와 같은 보기 · IR 기업에 이어진 줄은 함께 고쳐집니다 · 눌러서 수정">계약여부<div class="th-filters"></div></th>
         <th style="width:148px" data-filters="received:계약서 수신 여부"
@@ -232,6 +235,7 @@
         <td class="cell ellipsis" data-field="ceo_email" title="{{ r.ceo_email }}">{{ r.ceo_email }}</td>
         {# 칸에는 **말**이 보이고 저장되는 것은 열쇠다 — 저장 뒤 말은 응답(`contract_label`)이
            준다(`series_a.js`). 보기는 늘 다 세운다(`data-choices` — IR 표와 같은 까닭). #}
+        <td class="cell" data-field="contract_ym">{{ r.contract_ym }}</td>
         <td class="cell" data-field="contract_status" data-type="pick"
             data-filter-key="contract"
             data-choices="{{ contract_labels.values()|join(', ') }}">{{ r.contract_label }}</td>
@@ -306,7 +310,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="28" class="muted">아직 받은 딜이 없습니다. [기업 추가]로 넣거나 시트를 가져오세요.</td></tr>
+      <tr><td colspan="29" class="muted">아직 받은 딜이 없습니다. [기업 추가]로 넣거나 시트를 가져오세요.</td></tr>
       {% endfor %}
     </tbody>
   </table>

@@ -112,7 +112,9 @@ def _contract(c: SeriesACompany) -> dict:
 
     key = contract_key(c.contract_status)
     return {"contract_status": key, "contract_label": CONTRACT_LABELS.get(key, "미계약"),
-            "contract_received": c.contract_received or ""}
+            "contract_received": c.contract_received or "",
+            # 계약년월(0129 · #122) — IR 기업 현황과 같은 칸.
+            "contract_ym": c.contract_ym or ""}
 
 
 def row_dict(c: SeriesACompany, known: Dict[str, tuple],
@@ -298,6 +300,8 @@ class SeriesAIn(BaseModel):
     # `계약여부` · `계약서 수신 여부`(0125) — IR 기업 현황과 같은 판정으로 거른다(`_assign`).
     contract_status: Optional[str] = None
     contract_received: Optional[str] = None
+    # `계약년월`(0129 · #122) — `YYYY-MM` 으로 맞춰 넣는다(`companies.checked_ym`).
+    contract_ym: Optional[str] = None
     # 보낼 IR 자료 **파일 이름**(0118) — IR 기업 현황의 `IR 자료 파일명` 과 같은 규칙.
     ir_file_name: Optional[str] = None
     # `휴대폰`(#25) — 이 줄의 칸이 아니라 확정한 공유 심사역의 딜 소싱 줄에 적는다.
@@ -350,7 +354,7 @@ def _check_ir_file(db: Session, row: SeriesACompany, body: SeriesAIn) -> None:
 
 
 def _assign(row: SeriesACompany, body: SeriesAIn) -> None:
-    from .companies import checked_contract, checked_ox
+    from .companies import checked_contract, checked_ox, checked_ym
 
     for field, value in body.model_dump(exclude_unset=True, exclude={"sharer_phone"}).items():
         text = (value or "").strip()
@@ -379,6 +383,8 @@ def _assign(row: SeriesACompany, body: SeriesAIn) -> None:
             row.contract_status = checked_contract(text)
         elif field == "contract_received":
             row.contract_received = checked_ox(field, text)
+        elif field == "contract_ym":
+            row.contract_ym = checked_ym(text)
         else:
             setattr(row, field, text or None)
 
@@ -397,7 +403,7 @@ def _result(row: SeriesACompany, db: Session) -> dict:
         "id", "name", "received_at", "follow_round_month", "deal_type", "assignee_name",
         "shared_by", "source_firm", "sector_major", "sector_minor", "series", "detail",
         "deal_pitch", *TYPED, "contract_status", "contract_label", "contract_received",
-        "ir_file_name", "received_sort", "series_short", "ir_name",
+        "contract_ym", "ir_file_name", "received_sort", "series_short", "ir_name",
         "ir_file", "search", "sharer", "sharer_phone")}
     out["ir_link"] = ir_link.badge_for(db, row)
     return out

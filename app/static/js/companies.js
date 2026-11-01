@@ -57,6 +57,8 @@
     "ir_file_name",
     // 무료 IR 미팅 제공일 — **글자다**(`9월 중` 같은 말이 들어온다).
     "contract_status", "contract_received", "meeting_offered_at", "contract_month",
+    // 계약년월(#122) — `YYYY-MM`.
+    "contract_ym",
     "summary_status", "note"];
 
   function rows() {
@@ -749,6 +751,19 @@
       row.setAttribute("data-f-contract", data.contract_label);
     }
     row.classList.toggle("blocked-row", !!data.blocked);
+  });
+})();
+
+// 계약년월(#122) — 서버가 맞춘 꼴(`2026.3` → `2026-03`)로 되그린다. 계약여부를 계약 완료로
+// 바꾸면 비어 있던 이 칸이 그 달로 채워져 오므로(`_contract_result`) 어느 칸을 고쳤든 그린다.
+(function () {
+  var table = document.getElementById("co-table");
+  if (!table) return;
+
+  table.addEventListener("inline-saved", function (e) {
+    var data = e.detail.data || {};
+    var cell = e.detail.row && e.detail.row.querySelector('[data-field="contract_ym"]');
+    if (cell && "contract_ym" in data) cell.textContent = data.contract_ym;
   });
 })();
 
