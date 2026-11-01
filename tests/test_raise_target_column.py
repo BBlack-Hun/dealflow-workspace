@@ -10,6 +10,7 @@ from __future__ import annotations
 import io
 import re
 from datetime import date
+from pathlib import Path
 
 import pytest
 
@@ -103,3 +104,44 @@ def test_소개한_기업에도_선다(db, users):
     db.commit()
     got = report.intro_companies(db, date(2026, 1, 1), date(2026, 12, 31), users["u1"])
     assert [(c["company"], c["raise_target"]) for c in got["rows"]] == [("샘플애그", "12억")]
+
+
+# --- 칸 폭: 금액 칸을 더해도 표가 감싸개를 넘지 않는다 -------------------------
+#: 헤드리스 크롬(같은 CSS·글꼴)으로 잰 값(px).
+#:   감싸개     1600px 창에서 `/ir` 판 안 `.table-wrap` 의 폭              1295
+#:   날짜       `2026-08-24`(13px · tabular) — 넓은 숫자가 든 날            75
+#:   다음 2차   `→ 2차 미팅`(미팅 후기 구분 칸 둘째 줄)                     60
+#:   문의 한 줄 고르개 89 + 입력칸 최소 110 + 단추 54 + 사이 4·4            261
+WRAP_1600, DATE_TEXT, NEXT_SECOND, ASK_ROW = 1295, 75, 60, 261
+NO_PX = 36    # 줄 앞 `NO` 칸(app.css `tr::before`)
+
+
+def _head(path: str, marker: str) -> list:
+    """marker(머리글 안 글자, 또는 그 표의 id)가 가리키는 표 머리글의 `<th>` 폭들(px,
+    안 준 칸은 0)."""
+    html = (Path("app/templates") / path).read_text(encoding="utf-8")
+    at = html.index(marker)
+    start = html.rfind("<thead>", 0, at)
+    if start < 0 or html.find("</thead>", start) < at:    # marker 가 표 id 다
+        start = html.index("<thead>", at)
+    head = html[start:html.index("</thead>", start)]
+    return [int(m.group(1)) if (m := re.search(r"width:\s*(\d+)px", a)) else 0
+            for a in re.findall(r"<th(?=[\s>])([^>]*)>", head)]
+
+
+def test_미팅_후기_표가_1600px_창에서_가로로_밀리지_않는다():
+    """금액 칸 120px 을 더했더니 1339px 로 감싸개(1295px)를 44px 넘어 가로로 밀렸다."""
+    widths = _head("ir.html", 'id="review-table"')
+    assert all(widths), f"폭을 안 준 칸이 있으면 합을 못 잰다: {widths}"
+    total = NO_PX + sum(widths) + 2           # 2 = 표 테두리
+    assert total <= WRAP_1600, f"미팅 후기 표 {total}px — 감싸개 {WRAP_1600}px 를 넘는다"
+    # `.table-wrap.wide` 라 칸 여백이 9px 씩이다.
+    gubun, ask = widths[2], widths[7]
+    assert gubun - 18 >= NEXT_SECOND, f"구분 칸 {gubun}px — `→ 2차 미팅` 이 또 꺾인다(세 줄)"
+    assert ask - 18 >= ASK_ROW, f"결과 문의 칸 {ask}px — 물어봤음 줄이 두 줄로 접힌다"
+
+
+def test_업무_보고_미팅_표의_날짜가_꺾이지_않는다():
+    """88px 에서 `2026-08-24` 가 `2026-08-` / `24` 로 꺾였다(1600px 창 캡처)."""
+    date_px = _head("_report_month.html", "심사역 / 회사")[0]
+    assert date_px - 16 >= DATE_TEXT, f"날짜 칸 {date_px}px — 날짜가 두 줄로 꺾인다"
