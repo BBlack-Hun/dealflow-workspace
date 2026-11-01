@@ -238,9 +238,9 @@ def test_가리는_규칙은_한_곳에만_적혀_있다():
     """별표를 만드는 자리가 둘이면 한쪽이 낡고, **낡은 쪽이 이름을 내보낸다.**
 
     앱 코드에서 별표를 짓는 곳은 `services/ir_mask.py` 하나여야 한다.
-    (`services/sms.py` 는 전화번호를 가린다 — 사람·회사 이름과 다른 일이다.)
+    (`services/auth.py` 의 `redact` 는 로그의 전화번호를 가린다 — 사람·회사 이름과 다른 일이다.)
     """
-    allowed = {"app/services/ir_mask.py", "app/services/sms.py"}
+    allowed = {"app/services/ir_mask.py", "app/services/auth.py"}
     # 별표를 **짓는** 모양만 본다: `"***"` 같은 글자 뭉치와 `"*" * n` 같은 반복.
     # (설명글의 `**굵게**` 는 별표를 짓는 것이 아니다.)
     makes_stars = re.compile(r"""(["'])\*{2,}\1|["']\*["']\s*\*""")

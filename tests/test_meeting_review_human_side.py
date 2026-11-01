@@ -5,7 +5,7 @@
 4. A7 이 물은 미팅(`automation_sends` 의 `meeting:<미팅>` · `meeting30:<미팅>`, 실제
    모드 · 나간 것)은 사람 쪽 결과 문의 자리에서 **'물어보세요' 가 아니라 '자동
    문의함 M/D'** 로 서고 답 적는 칸만 남는다 — `/ir` 결과 문의 · 오늘 할 일 ·
-   결과 문의 문자(그 미팅은 빠진다) · 발송 화면의 미팅 후기 탭. `followup_done`
+   결과 문의 알림(그 미팅은 빠진다) · 발송 화면의 미팅 후기 탭. `followup_done`
    은 켜지 않는다 — 답은 사람이 적는다.
 5. 전환하는 날 밀린 결과 문의는 저절로 안 나간다 — 오늘 할 일에 수 한 줄
    (`자동화 전환 전 밀린 결과 문의 N건 — 손으로 확인`).
@@ -111,17 +111,22 @@ def test_the_thirty_day_decision_ask_counts_too_and_the_latest_date_shows(db, us
     assert asked["auto_asked_on"] == "10/14"
 
 
-# ── 결과 문의 문자 ─────────────────────────────────────────────────────────
+# ── 결과 문의 알림(카톡) ───────────────────────────────────────────────────
 
-def test_the_reminder_sms_skips_an_auto_asked_meeting(db, users, world):
-    from app.services import followup_sms
+def test_the_reminder_notice_skips_an_auto_asked_meeting(db, users, world):
+    from datetime import date
 
+    from app.services import automation_runner as runner
+    from app.services.automations import followup_notice as fn
+
+    users["u1"].kakao_room_name = "결과 알림 테스트방"
     _asked(db, world["meetings"]["asked"])
-    [(user, rows)] = followup_sms.recipients(db)
-    assert user.id == users["u1"].id
-    assert [r["id"] for r in rows] == [world["meetings"]["manual"].id]
+    plan_ = runner.Plan(period=1, at=runner.at_on(date(2026, 11, 2), "10:00"))
+    [out] = fn.collect(db, None, users["u2"], plan_).outs
+    assert out.room == "결과 알림 테스트방"
+    assert out.message.split("\n")[0] == "[결과 문의] 김서연님(마바벤처스)"
     _asked(db, world["meetings"]["manual"])
-    assert followup_sms.recipients(db) == []
+    assert fn.collect(db, None, users["u2"], plan_).outs == []
 
 
 # ── /ir ────────────────────────────────────────────────────────────────────

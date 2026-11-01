@@ -22,7 +22,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import clock
-from . import (automation, cadence, followup_sms, ir_monthly, mailer,
+from . import (automation, cadence, ir_monthly, mailer,
                manual_send, meeting_kind as mk, pipeline, report, send_guard,
                sheet_owner, startup_send)
 from .. import deps, version
@@ -1099,9 +1099,6 @@ def admin_dashboard(db: Session, today: Optional[date] = None) -> dict:
         },
         "sectors": _distribution([c.sector_major for c in companies if c.sector_major], top=8),
         "mail": mailer.status(),
-        # 결과 문의 문자도 메일과 **나란히** 선다 — 켜졌는지, 무엇이
-        # 없는지, 그리고 오늘 나간 것이 어떻게 됐는지.
-        "sms": followup_sms.status(db),
         # 스타트업 월간 발송 — **누가 보낼 수 있는가** 하나만 담긴 판.
         # 옆의 자동 준비와 같은 표를 쓰지만 때맞춰 저절로 서지는 않는다
         # (`services/startup_send.py` 머리말).

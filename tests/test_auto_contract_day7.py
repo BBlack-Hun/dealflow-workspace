@@ -1,12 +1,12 @@
-"""#9 계약 Day7 우편 발송 + 미수신 문자 3회 — **계약 완료로 바뀐 날**에서 센다.
+"""#9 계약 Day7 우편 발송 + 미수신 확인 3회 — **계약 완료로 바뀐 날**에서 센다.
 
 1. 계약여부가 계약 완료(무료/유료)로 바뀌면 그날이 적히고(IR 화면 · 따라 고치기 · 시트
    어느 길이든 flush 한 자리), 계약 완료가 아니게 되면 빈다. 새 줄 · 무료 ↔ 유료는 안 적는다.
 2. 7일 뒤 판의 시각에 계약 담당 팀원의 카톡방으로 한 통 — 같은 날 두 번 돌아도 한 번.
-3. 계약서 수신이 O 가 아니면 14 · 21 · 28일 뒤 그 팀원에게 문자(n/3), O 가 되면 멈춘다.
+3. 계약서 수신이 O 가 아니면 14 · 21 · 28일 뒤 같은 카톡방으로(n/3), O 가 되면 멈춘다.
 4. 담당자를 못 맞추거나 팀원 카톡방이 비었으면 안 보내고 까닭을 남긴다.
 5. 날이 안 적힌 기존 계약 기업 · 꺼진 자동화는 아무것도 안 한다.
-6. 시험 모드에서는 문자도 시험방 카톡으로 간다(진짜 문자는 안 나간다).
+6. 시험 모드에서는 수신 확인도 시험방으로 간다.
 """
 from __future__ import annotations
 
@@ -37,18 +37,6 @@ def company(db, users):
     db.add(row)
     db.commit()
     return row
-
-
-@pytest.fixture()
-def texts(monkeypatch):
-    """문자 업체 대신 — 보낸 (번호, 글)을 모은다."""
-    from app.services import sms
-
-    sent = []
-    monkeypatch.setattr(sms, "is_configured", lambda: True)
-    monkeypatch.setattr(sms, "load_settings", lambda: None)
-    monkeypatch.setattr(sms, "send", lambda to, text, settings=None: sent.append((to, text)) or "m1")
-    return sent
 
 
 def _turn_on(db, users, test=False):
@@ -160,7 +148,7 @@ def test_문구는_문구_화면에서_고친다(db, users, company):
     from app.routers.templates_crud import KIND_LABELS
     from app.services.automations import contract_day7 as c7
 
-    assert {c7.POST_KIND, c7.SMS_TEMPLATE_KIND} <= set(KIND_LABELS)
+    assert {c7.POST_KIND, c7.RECEIPT_KIND} <= set(KIND_LABELS)
     db.add(MessageTemplate(kind=c7.POST_KIND, name="우편", body="우편 {기업명} {계약일}"))
     db.commit()
     due = c7.Due(company, 0)
@@ -169,45 +157,42 @@ def test_문구는_문구_화면에서_고친다(db, users, company):
         "[계약서 수신 확인 2/3] 샘플우편 계약서 받으셨으면 IR 기업현황 '계약서 수신'을 O로 바꿔 주세요.")
 
 
-# ── 3. 14 · 21 · 28일 문자 ───────────────────────────────────────────────────
+# ── 3. 14 · 21 · 28일 수신 확인 — 같은 카톡방 ────────────────────────────────
 
-def test_14_21_28일_문자_O가_되면_멈춘다(db, users, company, texts):
-    from app.models import SmsNotice
-    from app.services.automations import contract_day7 as c7
+def _receipt(n):
+    return (f"[계약서 수신 확인 {n}/3] 샘플우편 계약서 받으셨으면 IR 기업현황 "
+            "'계약서 수신'을 O로 바꿔 주세요.")
+
+
+def test_14_21_28일_같은_방으로_O가_되면_멈춘다(db, users, company):
+    from app.models import AutomationSend
+    from app.services import scheduled_send
 
     _turn_on(db, users)
-    assert c7.send_sms(db, _at(2026, 10, 19, 9, 30))["status"] == "not_now"   # 판의 시각 전
-    assert c7.send_sms(db, _at(2026, 10, 19, 10, 30))["sent"] == 1
-    assert c7.send_sms(db, _at(2026, 10, 19, 11, 0))["sent"] == 0             # 같은 날 또
-    assert c7.send_sms(db, _at(2026, 10, 20, 10, 30))["sent"] == 0            # 다음 날도
-    assert c7.send_sms(db, _at(2026, 10, 26, 10, 30))["sent"] == 1
-    assert texts == [
-        ("01000000001", "[계약서 수신 확인 1/3] 샘플우편 계약서 받으셨으면 IR 기업현황 "
-                        "'계약서 수신'을 O로 바꿔 주세요."),
-        ("01000000001", "[계약서 수신 확인 2/3] 샘플우편 계약서 받으셨으면 IR 기업현황 "
-                        "'계약서 수신'을 O로 바꿔 주세요.")]
+    assert _run(db, _at(2026, 10, 19))["status"] == "ready"
+    assert _run(db, _at(2026, 10, 19, 9, 30))["status"] == "done"     # 같은 날 또 — 그대로
+    [item] = _items(db)
+    assert item.room_name == MEMBER_ROOM and item.message == _receipt(1)
+    assert scheduled_send.label(scheduled_send.scheduled_at(item.job)) == "10/19(월) 10:00"
+    item.status, item.sent_at = "sent", "2026-10-19T10:00:30+09:00"
+    db.commit()
+    assert _run(db, _at(2026, 10, 20))["status"] == "empty"           # 다음 날도 안 간다
+    assert _run(db, _at(2026, 10, 26))["status"] == "ready"
+    assert [i.message for i in _items(db)] == [_receipt(1), _receipt(2)]
     company.contract_received = "O"
     db.commit()
-    assert c7.send_sms(db, _at(2026, 11, 2, 10, 30))["sent"] == 0
-    assert len(texts) == 2
-    kinds = db.execute(select(SmsNotice.kind, SmsNotice.status)).all()
-    assert sorted(kinds) == [(f"contract_receipt:{company.id}:1", "sent"),
-                             (f"contract_receipt:{company.id}:2", "sent")]
-
-
-def test_실제_모드_문자는_카톡_회차에_안_실린다(db, users, company, texts):
-    _turn_on(db, users)
-    result = _run(db, _at(2026, 10, 19))
-    assert result["status"] == "empty" and _items(db) == []
+    assert _run(db, _at(2026, 11, 2))["status"] == "empty"
+    assert len(_items(db)) == 2
+    refs = sorted(r for (r,) in db.execute(select(AutomationSend.ref)).all())
+    assert refs == [f"receipt:{company.id}:1", f"receipt:{company.id}:2"]
 
 
 # ── 4. 못 맞추면 안 보내고 까닭을 남긴다 ─────────────────────────────────────
 
-def test_담당자_못_맞춤_방_비었음이면_안_보내고_까닭이_선다(db, users, company, texts, monkeypatch):
+def test_담당자_못_맞춤_방_비었음이면_안_보내고_까닭이_선다(db, users, company, monkeypatch):
     from app import clock
     from app.models import IrCompany
     from app.services import automation_runner as runner
-    from app.services.automations import contract_day7 as c7
 
     users["u1"].kakao_room_name = None
     db.add(IrCompany(name="샘플없는", contract_status="free", contract_done_at=DONE_ON,
@@ -223,49 +208,45 @@ def test_담당자_못_맞춤_방_비었음이면_안_보내고_까닭이_선다
     state = runner.status_of(db, "contract_day7")
     assert "안 보내는 까닭 2" in state["describe"] and "없는팀원" in state["describe"]
     assert "없는팀원" in state["today"]["error"]
-    # 문자는 방이 아니라 번호로 간다 — 못 맞춘 곳만 빠진다.
-    assert c7.send_sms(db, _at(2026, 10, 19, 10, 30))["sent"] == 1
-    assert [t for _n, t in texts if "샘플없는" in t] == []
+    # 수신 확인도 같은 방으로 간다 — 방이 비면 그 회차도 안 나간다.
+    result = _run(db, _at(2026, 10, 19))
+    assert result["status"] == "empty" and _items(db) == []
+    assert ("샘플우편 · 수신 확인 1/3 — 강민준 님의 카톡방 이름이 비어 있습니다"
+            in " / ".join(result["skipped"]))
 
 
 # ── 5. 기존 계약 · 꺼짐 ──────────────────────────────────────────────────────
 
-def test_날이_안_적힌_기존_계약_기업은_안_건다(db, users, texts):
+def test_날이_안_적힌_기존_계약_기업은_안_건다(db, users):
     from app.models import IrCompany
-    from app.services.automations import contract_day7 as c7
 
     users["u1"].kakao_room_name = MEMBER_ROOM
     db.add(IrCompany(name="샘플옛계약", contract_status="paid", assignee_name="강민준"))
     db.commit()
     _turn_on(db, users)
     assert _run(db, _at(2026, 10, 12))["status"] == "empty"
-    assert c7.send_sms(db, _at(2026, 10, 19, 10, 30))["sent"] == 0
-    assert _items(db) == [] and texts == []
+    assert _run(db, _at(2026, 10, 19))["status"] == "empty"
+    assert _items(db) == []
 
 
-def test_꺼져_있으면_아무것도_안_한다(db, users, company, texts):
-    from app.models import AutoSendRun, SmsNotice
-    from app.services.automations import contract_day7 as c7
+def test_꺼져_있으면_아무것도_안_한다(db, users, company):
+    from app.models import AutoSendRun
 
     assert _run(db, _at(2026, 10, 12))["status"] == "off"
-    assert c7.send_sms(db, _at(2026, 10, 19, 10, 30))["status"] == "off"
-    assert _items(db) == [] and texts == []
+    assert _run(db, _at(2026, 10, 19))["status"] == "off"
+    assert _items(db) == []
     assert db.execute(select(AutoSendRun)).first() is None
-    assert db.execute(select(SmsNotice)).first() is None
 
 
 # ── 6. 시험 모드 ─────────────────────────────────────────────────────────────
 
-def test_시험_모드에서는_문자도_시험방_카톡으로(db, users, company, texts):
-    from app.services.automations import contract_day7 as c7
-
+def test_시험_모드에서는_수신_확인도_시험방으로(db, users, company):
     _turn_on(db, users, test=True)
     assert _run(db, _at(2026, 10, 19))["status"] == "ready"
-    item = _items(db)[0]
+    [item] = _items(db)
     assert item.room_name == TEST_ROOM and item.job.kind == "test_send"
-    assert item.message.startswith("[시험] 원래 받을 방: 문자 → 강민준")
-    assert "[계약서 수신 확인 1/3] 샘플우편" in item.message
-    assert c7.send_sms(db, _at(2026, 10, 19, 10, 30))["status"] == "off" and texts == []
+    assert item.message.startswith(f"[시험] 원래 받을 방: {MEMBER_ROOM}")
+    assert _receipt(1) in item.message
 
 
 # ── 팀 현황 — 팀원 카톡방 ────────────────────────────────────────────────────

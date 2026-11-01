@@ -1,4 +1,4 @@
-"""#94 · #98 **후속라운드 시작 알림** — 팀원에게 카톡 · 문자로 세 번.
+"""#94 · #98 **후속라운드 시작 알림** — 팀원에게 카톡으로 세 번.
 
 두 곳의 `후속라운드 시작`(`YYYY-MM`)을 읽는다.
 
@@ -20,43 +20,34 @@
 (살아 있는 계정과 **정확히** 같은 이름). 기본은 앞의 둘이다. 못 정한 줄은 보내지 않고
 까닭을 남긴다(판의 상태 칸 · 그날 회차의 뺀 곳).
 
-## 어떻게 — 카톡과 문자
+## 어떻게 — 카톡
 
-  · **카톡** — 그 팀원의 카톡방(`User.kakao_room_name`, 팀 현황 › 자동화의 팀원 카톡방)으로
-    자동 발송 계정 PC 에서. 방 이름이 비면 카톡만 건너뛴다.
-  · **문자** — 서버가 바로 보낸다(`send_sms` — `runner.run_all` 이 실이 깰 때마다 부른다).
-    문자 설정(솔라피)이 없거나 번호가 없으면 문자만 건너뛴다. 받는 사람은 팀원뿐이다
-    (`followup_sms.assert_team_phone`). 시험 모드에서는 문자도 **시험방 카톡**으로 간다.
+그 팀원의 카톡방(`User.kakao_room_name`, 팀 현황 › 자동화의 팀원 카톡방)으로 자동 발송
+계정 PC 에서. 방 이름이 비면 건너뛰고 까닭을 남긴다. 문자도 같이 나갔는데 문자 발송을
+앱에서 걷으며 뺐다(사용자 결정 2026-11-01).
 
 ## 한 번만
 
-카톡은 틀의 `automation_sends` `(자동화, ref, 시험)` 이 지킨다. 실제 모드 문자는
-`sms_notices` 에 **(알림 · 받는 사람)마다** 한 줄을 보내기 전에 넣고, 있으면 날이 달라도
-다시 안 보낸다 — 성공이든 실패든(계약 Day7 과 같은 까닭).
+틀의 `automation_sends` `(자동화, ref, 시험)` 이 지킨다.
 """
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from typing import List, Optional, Tuple
 
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ... import clock
 from ...models import (Automation, AutomationSend, IrCompany, RevenueForecast,
-                       SeriesACompany, SmsNotice, User)
-from .. import (automation, cadence, followup_sms, forecast, scheduled_send, send_window,
-                sms)
+                       SeriesACompany, User)
+from .. import automation, cadence, forecast
 from .. import automation_runner as runner
 from .contract_day7 import member_of
 
-log = logging.getLogger(__name__)
-
 KEY = automation.FOLLOW_ROUND
-#: 실제 모드 회차의 `SendJob.topic` · `sms_notices.kind` 머리.
+#: 실제 모드 회차의 `SendJob.topic`.
 TOPIC = "follow_round"
 LOOKBACK_DAYS = 3
 #: 읽는 곳 — 열쇠 머리.
@@ -68,8 +59,8 @@ TEXT = "{기업명} {월}월 라운드 시작입니다 ({회차}/3)"
 
 FIELDS = (
     runner.Field("time", "보낼 시각", "time", "10:00",
-                 hint="한 달 전 1일 · 전달 15일 · 당월 1일 이 시각에 카톡이 서고 문자도 이 시각 뒤에 "
-                      "서버가 보냅니다 — 주말이면 다음 평일"),
+                 hint="한 달 전 1일 · 전달 15일 · 당월 1일 이 시각에 카톡이 섭니다 "
+                      "— 주말이면 다음 평일"),
     runner.Field("recipients", "받는 팀원(한 줄에 하나)", "lines", [OWNER, SENDER],
                  hint=f"'{OWNER}'(그 줄 담당) · '{SENDER}'(보내는 계정 주인) · 팀원 이름"),
 )
@@ -185,11 +176,8 @@ def plan(db: Session, row: Automation, day: date) -> Optional[runner.Plan]:
 
 def collect(db: Session, row: Automation, sender: User,
             plan_: runner.Plan) -> runner.Batch:
-    """카톡 — 받는 팀원의 카톡방으로. 시험 모드면 문자도 시험방 카톡으로 싣는다.
-    실제 모드 문자는 여기서 안 보낸다(`send_sms`)."""
-    test = automation.is_test(row)
+    """카톡 — 받는 팀원의 카톡방으로(시험 모드면 틀이 시험방으로 바꾼다)."""
     batch = runner.Batch(note="오늘 후속라운드 시작을 알릴 곳이 없습니다")
-    later = 0
     for due in due_on(db, plan_.at.date()):
         users, whys = recipients(db, row, sender, due.target)
         batch.skipped.extend(f"{due.label} — {why}" for why in whys)
@@ -201,19 +189,7 @@ def collect(db: Session, row: Automation, sender: User,
                                                  ref=f"kakao:{due.key}:{user.id}"))
             else:
                 batch.skipped.append(f"{due.label} — {user.name} 님의 카톡방 이름이 비어 있어 "
-                                     f"카톡은 건너뜁니다(팀 현황 › 자동화)")
-            if not sms.digits(user.phone):
-                batch.skipped.append(f"{due.label} — {user.name} 님의 휴대폰 번호가 없어 "
-                                     f"문자는 건너뜁니다")
-            elif test:
-                batch.outs.append(automation.Out(room=f"문자 → {user.name}", message=text,
-                                                 ref=f"sms:{due.key}:{user.id}"))
-            elif not texted(db, due, user.id):
-                later += 1
-    if later:
-        batch.note += (f" — 문자 {later}건은 {plan_.at:%H:%M} 이후 서버가 보냅니다"
-                       if sms.is_configured() else
-                       f" — 문자 설정이 없어 문자 {later}건은 건너뜁니다")
+                                     f"건너뜁니다(팀 현황 › 자동화)")
     return batch
 
 
@@ -236,8 +212,6 @@ def describe(db: Session, row: Optional[Automation]) -> str:
     waiting = [t for t in targets(db)
                if alert_days(t.month)[-1] + timedelta(days=LOOKBACK_DAYS) >= today]
     problems: List[str] = []
-    if not sms.is_configured():
-        problems.append("문자 설정(솔라피 키 · 발신번호)이 없어 문자는 건너뜁니다")
     sender = automation.sender(db, row)
     for target in waiting:
         users, whys = recipients(db, row, sender, target)
@@ -251,70 +225,6 @@ def describe(db: Session, row: Optional[Automation]) -> str:
     return text
 
 
-# ── 실제 모드 문자 ───────────────────────────────────────────────────────────
-
-def _sms_kind(due: Due) -> str:
-    return f"{TOPIC}:{due.key}"
-
-
-def texted(db: Session, due: Due, user_id: int) -> bool:
-    """이 알림을 이 사람에게 문자로 보낸 줄이 있나(성공이든 실패든 — 다시 안 보낸다)."""
-    return db.execute(select(SmsNotice.id).where(
-        SmsNotice.kind == _sms_kind(due), SmsNotice.user_id == user_id)).first() is not None
-
-
-def _claim(db: Session, due: Due, user_id: int, day: date) -> Optional[SmsNotice]:
-    """이 알림 · 이 사람의 문자 자리를 **보내기 전에** 잡는다. 이미 있으면 `None`."""
-    if texted(db, due, user_id):
-        return None
-    notice = SmsNotice(kind=_sms_kind(due), day=day.isoformat(), user_id=user_id, count=1,
-                       status="sending")
-    db.add(notice)
-    try:
-        db.commit()
-    except IntegrityError:
-        db.rollback()
-        return None
-    return notice
-
-
-def send_sms(db: Session, now: Optional[datetime] = None) -> dict:
-    """문자 — 켜져 있고 **실제 모드**이고 그날 판의 시각이 지났고 보내는 시간
-    (`send_window`) 안이고 문자 설정이 있을 때만. 받는 사람은 팀원뿐이다."""
-    now = scheduled_send._aware(now or clock.now())
-    row = automation.load(db, KEY)
-    if not automation.is_on(row) or automation.is_test(row):
-        return {"status": "off"}
-    plan_ = plan(db, row, now.date())
-    if plan_ is None or now < scheduled_send._aware(plan_.at) or not send_window.contains(now):
-        return {"status": "not_now"}
-    if not sms.is_configured():
-        return {"status": "no_sms"}
-    settings = sms.load_settings()
-    sender = automation.sender(db, row)
-    result = {"status": "done", "sent": 0, "failed": 0}
-    for due in due_on(db, now.date()):
-        users, _whys = recipients(db, row, sender, due.target)
-        for user in users:
-            notice = _claim(db, due, user.id, now.date()) if sms.digits(user.phone) else None
-            if notice is None:
-                continue
-            try:
-                phone = followup_sms.assert_team_phone(db, user.phone)
-                sms.send(phone, message(due), settings=settings)
-            except Exception as exc:  # noqa: BLE001 - 한 통 실패가 나머지를 막지 않는다
-                notice.status, notice.error = "failed", sms.redact(str(exc))[:500]
-                db.commit()
-                log.warning("후속라운드 문자 실패 열쇠=%s 받는이=%s: %s",
-                            due.key, user.id, notice.error)
-                result["failed"] += 1
-                continue
-            notice.status, notice.sent_at, notice.error = "sent", clock.now_iso(), None
-            db.commit()
-            result["sent"] += 1
-    return result
-
-
 runner.register(runner.Spec(
     key=KEY, kind="deal_intro", topic=TOPIC, plan=plan, collect=collect,
-    still_ok=still_ok, describe=describe, fields=FIELDS, direct=send_sms))
+    still_ok=still_ok, describe=describe, fields=FIELDS))

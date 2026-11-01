@@ -418,7 +418,7 @@ UNWATCHED: Dict[str, str] = {
                        "(`send_items` 와 같은 결). 사람이 고치는 길이 없다.",
     "monthly_column_runs": "이달 열을 이미 세웠다는 표시. 사람이 보는 자료가 아니다.",
     "weekly_routine_runs": "주간 업무를 이번 주에 이미 세웠다는 표시.",
-    "sms_notices": "문자 알림 발송 기록.",
+    "sms_notices": "옛 문자 알림 발송 기록(문자 발송은 걷었다 — 표만 남았다).",
     "one_liner_backups": "한 줄 소개 되돌리기용 버퍼. 되돌릴 값을 담아 두는 자리이고, "
                          "무엇이 바뀌었는지는 `ir_companies` 쪽에 이미 남는다.",
     "template_apply_backups": "[모든 팀원에게 적용] 되돌리기용 버퍼(`services/template_apply.py`). "
