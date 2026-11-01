@@ -79,10 +79,11 @@ def test_admin_sees_the_members_week_with_a_banner(client, db, users, admin):
     assert f"&member={users['u1'].id}" in body
 
 
-def test_admin_has_a_member_picker_and_members_do_not(client, db, users, admin):
+def test_no_right_side_member_picker(client, db, users, admin):
+    """팀원은 왼쪽 메뉴의 `팀원 화면으로 보기` 로 고른다 — 오른쪽 고르개는 뺐다(#113)."""
     _login(client, "01000000009")
     body = client.get("/todo").text
-    assert 'id="todo-member-pick"' in body
+    assert 'id="todo-member-pick"' not in body
     assert 'data-testid="todo-viewing-other"' not in body
 
     _login(client, "01000000001")

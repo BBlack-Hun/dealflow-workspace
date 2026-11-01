@@ -176,8 +176,12 @@
          (날짜 · 담당자 · 투자사 · 기업 · 구분 …). 기업은 담당자 칸 안에
          태그로 붙어 있었는데, 머리글이 없으니 그게 무엇인지 알 수 없었다.
          이름은 `기업` 이다 — 옆 표·IR 화면·엑셀이 모두 그렇게 부른다. #}
-      <thead><tr><th style="width:88px">날짜</th><th style="width:170px">심사역 / 회사</th>
+      {# 날짜 칸은 옆 표('이 달의 반응' · 회차 표)와 같은 96px · `tabular` 다. 88px 에서는
+         `2026-08-24` 처럼 넓은 숫자가 든 날이 `2026-08-` / `24` 로 꺾였다(글자 73~75px +
+         여백 16px). #}
+      <thead><tr><th style="width:96px">날짜</th><th style="width:170px">심사역 / 회사</th>
         <th style="width:132px">기업명</th>
+        <th class="num" style="width:104px">투자유치희망금액</th>
         <th style="width:62px">구분</th>{% if team_wide %}<th style="width:70px">담당자</th>{% endif %}
         <th style="width:72px">결과</th><th style="width:130px">결과 문의</th>
         {# 딜 진행 관리에서 적은 것을 그대로 가져온다 — 보고를 쓰려고 같은 말을
@@ -186,11 +190,12 @@
       <tbody>
         {% for m in w['items'] %}
         <tr class="{% if m.followup_late %}overdue-row{% endif %}">
-          <td class="muted">{{ m.date }}</td>
+          <td class="muted tabular">{{ m.date }}</td>
           <td><b>{{ m.name }}</b> <span class="muted">{{ m.firm }}</span></td>
           {# 적어 두지 않은 미팅은 빈 칸으로 둔다 — 없는 것을 `-` 로 지어내지
              않는다. 옆 표('이 달의 반응')와 엑셀도 그렇게 둔다. #}
           <td class="ellipsis" title="{{ m.company }}">{{ m.company }}</td>
+          <td class="num">{{ m.raise_target }}</td>
           <td>{{ m.kind }}</td>
           {% if team_wide %}<td class="muted">{{ m.owner }}</td>{% endif %}
           <td>{{ m.outcome or '-' }}</td>
@@ -245,6 +250,11 @@
       <li><span>{{ labels.delivered }}</span><b class="ok">{{ rep.ir_delivered }}{% if rep.ir_delivered_note %}
           <span class="hint">({{ rep.ir_delivered_note }})</span>{% endif %}</b></li>
       <li><span>IR 자료 아직 안 보냄</span><b class="{% if rep.ir_open %}warn{% endif %}">{{ rep.ir_open }}</b></li>
+      {# 드랍 의심(#116 2차) — 월간 보기에만 선다(달과 상관없는 지금 수 · `report_page`). #}
+      {% if ir_drop_href %}
+      <li><span>전달 후 {{ ir_drop_days }}일 미팅 없음</span>
+        <b class="{% if ir_drop_suspect %}warn{% endif %}"><a href="{{ ir_drop_href }}">{{ ir_drop_suspect }}건</a></b></li>
+      {% endif %}
       {#
         **자료를 보내 놓고 아무 말도 안 한 건.** 자료를 전달하면 리마인드가
         멈춘다(답이 왔으니 맞다) — 그래서 미팅 요청을 안 보낸 담당자는
@@ -339,6 +349,7 @@
         <th style="width:22%">심사역</th>
         <th style="width:22%">회사</th>
         <th>기업명</th>
+        <th class="num" style="width:104px">투자유치희망금액</th>
         {# 상태 칸이 `미팅 요청 보냄 · 날짜` 를 함께 인다. 96px 로는 날짜가
            `202…` 에서 끊긴다 — `/ir` 의 같은 칸에서 실제로 끊겼던 자리다.
            여기서 제일 긴 글은 `미팅 요청 안 보냄 · 2026-09-17까지` 로,
@@ -360,6 +371,7 @@
           <td><b>{{ r.name }}</b> <span class="muted">{{ r.title }}</span></td>
           <td class="ellipsis" title="{{ r.firm }}">{{ r.firm }}</td>
           <td class="ellipsis" title="{{ r.company }}">{{ r.company }}</td>
+          <td class="num">{{ r.raise_target }}</td>
           {#
             **누가 미팅 요청을 안 보냈는가.** 숫자(위 `IR 자료 요청` 판)만으로는
             대상을 알 수 없어 딜 진행 관리로 건너가 다시 찾아야 했다.

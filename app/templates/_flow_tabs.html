@@ -6,7 +6,7 @@
         → 반응이 없으면 리마인드를 보낸다           [리마인드]
         → 그래도 없으면 미팅을 청하고,
           사흘 뒤 전화로 다시 청한다                [전화 요청]
-        → 보낸 자료마다 미팅 요청이 나갔는지 본다    [전달한 자료]
+        → 보낸 자료마다 미팅 요청이 나갔는지 본다    [IR 전달기업]
         → 반응이 있으면 미팅을 잡는다               [미팅 스케줄]
         → 미팅이 끝나면 열흘쯤 뒤 결과를 묻는다      [미팅 후기]
 
@@ -45,11 +45,11 @@
     {% else %}<span>{{ flow_counts.call_open }}</span>{% endif %}
   </a>
   <i class="jump-arrow">›</i>
-  {# 「전달한 자료」 판이 이미 센 수를 그대로 쓴다(`routers/ir.py`) — 급한 수는
+  {# 「IR 전달기업」 판(11/01 #118 — 예전 이름 `전달한 자료`)이 이미 센 수를 그대로 쓴다(`routers/ir.py`) — 급한 수는
      자료를 보내고 미팅 요청 기한(`pipeline.IR_MEETING_ASK_DAYS`)을 넘긴 담당자,
      아니면 전달한 건수. 판 머리와 같은 값이라 눌러 가서 수가 어긋나지 않는다. #}
   <a href="#delivered">
-    전달한 자료
+    IR 전달기업
     {% if meeting_ask_overdue %}<span class="warn">{{ meeting_ask_overdue }}</span>
     {% else %}<span>{{ done_requests|length }}</span>{% endif %}
   </a>

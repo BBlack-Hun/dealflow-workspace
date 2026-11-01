@@ -12,18 +12,64 @@
   않는다(`_ref_new.html` 과 같은 까닭).
 
   부르는 쪽이 `intro_label`(`10월` · `2026년`)을 정해 둔다.
+
+  **맨 위 `아직 소개 안 한 10억 이상` 묶음(#122)** — 월간 보기에서 '본인' 이 있을 때만
+  선다(`report.unintroduced_big` · `intro_left`). 10곳만 펼치고 나머지는 `<details>` 로 접는다.
 #}
+{% macro big_table(rows) %}
+<div class="table-wrap">
+<table class="grid-table compact">
+  <thead><tr>
+    <th>기업명</th>
+    <th class="num" style="width:104px">투자유치희망금액</th>
+    <th style="width:140px">대분류</th>
+    <th style="width:120px">투자라운드</th>
+    <th style="width:134px">계약여부</th>
+  </tr></thead>
+  <tbody>
+    {% for c in rows %}
+    <tr>
+      <td><b>{{ c.company }}</b></td>
+      <td class="num">{{ c.raise_target }}</td>
+      <td>{{ c.sector }}</td>
+      <td>{{ c.series }}</td>
+      <td>{{ c.contract_label }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endmacro %}
 <section class="panel" id="intros">
   {# 머리는 월간 `N월 발송` 판과 같은 모양이다(이름 + 오른쪽 안내). 연간 합계표의
      판(`<h2><span>`)이 아니다 — 그 판들은 엑셀 `연간` 시트와 차례가 같아야 한다. #}
   <h2 class="panel-title">{{ intro_label }} 소개한 기업
     <span class="hint">{{ intro_companies.rows|length }}개사 · 투자사가 실제로 받은 것만 셉니다 · 기업명을 누르면 받은 투자사가 펼쳐집니다</span>
   </h2>
+  {% if intro_left %}
+  <div class="bucket" id="intro-left">
+    <h3 class="bucket-head">아직 소개 안 한 10억 이상 {{ intro_left|length }}곳
+      <span class="hint">투자유치희망금액(구간이면 아래값) 높은 순 · 이 달에 이 팀원이 안 보낸 소개 가능 기업</span>
+    </h3>
+    {{ big_table(intro_left[:10]) }}
+    {% if intro_left|length > 10 %}
+    <details>
+      <summary>더 보기 — 나머지 {{ intro_left|length - 10 }}곳</summary>
+      {{ big_table(intro_left[10:]) }}
+    </details>
+    {% endif %}
+  </div>
+  {% endif %}
   {% if intro_companies.rows %}
   <div class="table-wrap">
   <table class="grid-table compact">
     <thead><tr>
       <th>기업명</th>
+      {# 기업명 옆 투자유치희망금액(#118) — IR 기업 현황(없으면 Series A)에서 그때그때 읽는다. #}
+      <th class="num" style="width:104px">투자유치희망금액</th>
+      {# 그 오른쪽 계약여부 · 계약서 수신 여부(#122) — 같은 길로 읽기만. #}
+      <th style="width:134px">계약여부</th>
+      <th style="width:110px">계약서 수신 여부</th>
       {# 같은 날 여러 명에게 보낸 것은 한 번이다 — 회차 수가 아니라 날 수. #}
       <th class="num" style="width:96px" title="서로 다른 날짜 수입니다">소개한 횟수</th>
       <th class="num" style="width:110px" title="같은 사람이 여러 번 받았으면 한 명으로 셉니다">받은 투자사 수</th>
@@ -52,6 +98,9 @@
             </table>
           </details>
         </td>
+        <td class="num">{{ c.raise_target }}</td>
+        <td>{{ c.contract_label }}</td>
+        <td>{{ c.contract_received }}</td>
         <td class="num">{{ c.times }}</td>
         <td class="num">{{ c.investors }}</td>
         <td class="tabular">{{ c.first }}</td>

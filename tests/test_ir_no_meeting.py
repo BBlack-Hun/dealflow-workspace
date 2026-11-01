@@ -13,7 +13,7 @@
    IR 요청 글의 `미팅완료`·`미팅확정` 도 미팅이다(확정은 날짜가 뒤면 예정).
    `미팅 요청` · `미팅 진행하지 않겠다` 는 아니다. IR 기업 현황에서 못 찾은 기업은 뺀다.
 3. 한 쌍에 요청이 여럿이면 한 줄 — 건수 · 첫/최근 요청일 · 전달 여부 · 경과일 · 출처.
-4. 팀원은 제 것만, 관리자는 팀 전체가 기본(고르개) · 팀원 화면으로 보는 중이면 그 팀원.
+4. 팀원은 제 것만, 관리자는 팀 전체가 기본(`member=` · 왼쪽 메뉴) · 팀원 화면으로 보는 중이면 그 팀원.
 5. 거르기(경과일 · 전달 여부 · 출처 · 보내지 않음 · 미팅 예정) — 화면과 엑셀이 같은 줄.
 6. 딜 진행 관리 탭 줄에 선다.
 
@@ -228,7 +228,9 @@ def test_admin_sees_team_and_can_pick(client, db, users):
     db.commit()
     c = _login(client)
     html = c.get("/ir/no-meeting").text
-    assert "홍길동" in html and "성춘향" in html and "팀원 선택" in html
+    assert "홍길동" in html and "성춘향" in html and "팀 전체" in html
+    # 팀원 한 사람은 왼쪽 메뉴의 `팀원 화면으로 보기` 로 고른다(#113 — 오른쪽 고르개는 뺐다)
+    assert "팀원 선택" not in html
     html = c.get(f"/ir/no-meeting?member={users['u2'].id}").text
     assert "성춘향" in html and "홍길동" not in html
     # 고른 팀원이 거르기 · 엑셀 주소에 이어 붙는다
@@ -268,7 +270,7 @@ def test_filters(client, db, users):
     html = c.get("/ir/no-meeting").text
     rows = _rows(html)
     assert len(rows) == 7 and not any("보류기업" in r for r in rows)
-    assert "보내지 않음 보기" in html
+    assert "보내지 않음·드랍 보기" in html
     assert ir_no_meeting.NOTE_OVERDUE in next(r for r in rows if "보기팜" in r)
     assert ir_no_meeting.NOTE_COLLEAGUE in next(r for r in rows if "임꺽정" in r)
     assert len(_rows(c.get("/ir/no-meeting?days=30").text)) == 4      # 10·22·25일 빠짐
@@ -277,7 +279,7 @@ def test_filters(client, db, users):
     assert len(_rows(c.get("/ir/no-meeting?sent=no").text)) == 6
     assert len(_rows(c.get("/ir/no-meeting?src=app").text)) == 4
     assert len(_rows(c.get("/ir/no-meeting?src=sheet").text)) == 3
-    rows = _rows(c.get("/ir/no-meeting?drop=show").text)              # [보내지 않음 보기]
+    rows = _rows(c.get("/ir/no-meeting?drop=show").text)              # [보내지 않음·드랍 보기]
     assert len(rows) == 8 and any("보류기업" in r for r in rows)
     planned = c.get("/ir/no-meeting?view=scheduled").text
     rows = _rows(planned)

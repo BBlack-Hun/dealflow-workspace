@@ -634,6 +634,12 @@ class IrCompany(TimestampMixin, Base):
     # 자동화에 안 걸린다(사용자 결정: 기존 계약 기업에는 보내지 않는다). 처음부터 계약
     # 완료로 만든 새 줄도 안 적는다 — 시트 · 엑셀로 들어오는 옛 계약과 가를 수 없다.
     contract_done_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # 계약년월(0129 · #122) — `YYYY-MM` 글자. 화면은 `미팅제공일자` 와 `계약여부` 사이에 선다.
+    # 사람이 고치고(`companies.checked_ym`), 계약여부가 계약 완료로 **바뀌는 순간** 비어 있으면
+    # 그 달을 적는다(위 `contract_done_at` 과 같은 자리 — `contract_day7.before_flush`). 이미
+    # 있으면 안 건드리고, 지난 계약은 빈칸으로 시작한다. Series A 줄과 따라 고친다
+    # (`company_sync.FIELDS`). 홍보메일삭제(`contract_month`)와 다른 칸이다.
+    contract_ym: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     # 계약서를 **실제로 받았는가** — `O` / `X`, 아직 안 정했으면 NULL(빈 칸).
     #
     # 위 `contract_status` 와 다른 사실이다. `유료계약완료` 인데 서류는 아직인
@@ -1042,8 +1048,12 @@ class SeriesACompany(TimestampMixin, Base):
     #: 같은 두 칸과 **같은 값 · 같은 보기**다 — 계약여부는 열쇠(`paid`, 화면은
     #: `companies.CONTRACT_LABELS` 의 말 · 비면 `미계약`), 계약서 수신은 `O` / `X` / 빈칸.
     #: IR 기업에 이어진 줄은 따라 고친다(`company_sync.FIELDS` — `딜소개 불가` 는 저절로 안 옮긴다).
-    contract_status: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    contract_status: Mapped[Optional[str]] = mapped_column(String, nullable=True,
+                                                           active_history=True)
     contract_received: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: 계약년월(0129 · #122) — `IrCompany.contract_ym` 과 같은 칸 · 같은 규칙(탭의 `계약여부` 왼쪽).
+    #: 위 `contract_status` 는 옛 값을 늘 읽어 둔다 — 계약 완료로 **바뀐** 순간을 가른다.
+    contract_ym: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     #: 연도별 매출 · 누적투자금액 · 투자유치희망금액 · 프리밸류 — 단위 억, **적은
     #: 그대로 글자**다(`IrCompany` 의 같은 이름 칸과 같은 까닭 — `5-10억` · `~`).
     #: 문구에 실리지 않는다. 숫자로 읽는 자리는 `raise_target` 하나 — Series A 딜 공유의
@@ -3350,7 +3360,7 @@ class RevenueForecast(TimestampMixin, Base):
     #: 예상 시기 `YYYY-MM` · 가능성 `상`/`중`/`하` — 적을 때 맞춘다(`forecast.clean`).
     expected_month: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     #: 후속라운드 시작 `YYYY-MM`(#94 · 0128) — 관리자 추가 칸이던 것을 칸으로 올렸다.
-    #: 이 값으로 `automations/follow_round` 가 팀원에게 세 번 알린다.
+    #: 이 값(그달 1일)으로 `automations/remind_ahead` 가 팀원에게 D-10·7·4·1 에 알린다.
     follow_round_month: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     likelihood: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     result_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

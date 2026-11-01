@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+
+{#
+  업무 보고 › `IR 미팅진행 리스트`(#120). 위는 딜 진행 관리 [미팅 잡기]로 잡은 미팅
+  한 줄 = 한 건(취소 제외 — `meeting_calendar.listing`), 아래 `지난 기록` 은 명단 월별
+  `미팅` 칸 글을 원문 그대로(`meeting_calendar.memo_rows`). 둘 다 읽기만 한다.
+#}
+{% block content %}
+<header class="page-head">
+  <h1>{{ page_title }}</h1>
+  <p class="muted">
+    딜 진행 관리 [미팅 잡기]로 잡은 미팅을 한 줄씩 봅니다(취소한 미팅은 뺍니다).
+    아래 <b>지난 기록</b>은 명단 월별 '미팅' 칸에 적힌 글을 그대로 옮겨 보여 줍니다 — 여기서는 고치지 않습니다.
+  </p>
+</header>
+{% include "_report_tabs.html" %}
+
+<div class="toolbar">
+  <div class="quick-chips report-picker">
+    <select class="chip-select" aria-label="달 고르기" onchange="location = this.value">
+      {% for y, m, key in month_options %}
+      <option value="/report/meetings?month={{ key }}{{ member_q }}"
+              {% if selected == key %}selected{% endif %}>{{ y }}년 {{ m }}월</option>
+      {% endfor %}
+    </select>
+  </div>
+  {% if can_team %}
+  {# 팀원 한 사람 것은 왼쪽 메뉴의 `팀원 화면으로 보기` 로 본다 — 업무 보고처럼 고르개는 한 곳(#444). #}
+  <div class="toolbar-right">
+    <a class="chip {% if member == user.id %}active{% endif %}"
+       href="/report/meetings?month={{ selected }}&member={{ user.id }}">내 것</a>
+    <a class="chip {% if not member %}active{% endif %}"
+       href="/report/meetings?month={{ selected }}{% if view_as %}&member=0{% endif %}">팀 전체</a>
+  </div>
+  {% endif %}
+</div>
+
+<section class="panel">
+  {% set done = meetings|selectattr('done')|list|length %}
+  <h2 class="panel-title">{{ year }}년 {{ month }}월 IR 미팅
+    <span class="hint"><span class="cal-chip plan">예정 {{ meetings|length - done }}</span>
+      <span class="cal-chip done">✓ 완료 {{ done }}</span></span>
+  </h2>
+  {% if meetings %}
+  <div class="table-wrap">
+  <table class="grid-table compact">
+    <thead><tr><th style="width:96px">날짜</th><th style="width:70px">팀원</th>
+      <th style="width:170px">심사역 / 회사</th><th style="width:132px">기업명</th>
+      <th style="width:104px">투자유치희망금액</th><th style="width:62px">차수</th>
+      <th style="width:66px">대면/화상</th><th style="width:66px">예정/완료</th><th>결과</th></tr></thead>
+    <tbody>
+      {% for m in meetings %}
+      <tr>
+        <td class="muted">{{ m.date }}{% if m.time %} {{ m.time }}{% endif %}</td>
+        <td class="muted">{{ m.owner }}</td>
+        <td><b>{{ m.who }}</b> <span class="muted">{{ m.firm }}</span></td>
+        <td class="ellipsis" title="{{ m.company }}">{{ m.company }}</td>
+        <td>{{ m.raise_target }}</td>
+        <td>{{ m.kind }}</td>
+        <td>{{ m.mode }}</td>
+        <td><span class="cal-chip {{ 'done' if m.done else 'plan' }}">{{ m.status }}</span></td>
+        <td>{{ m.outcome }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="muted">앱에 잡힌 미팅이 없습니다. <a href="/ir">딜 진행 관리</a> [미팅 잡기]로 적으면 여기에 쌓입니다.</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h2 class="panel-title">지난 기록 <span class="hint">명단 {{ month }}월 '미팅' 칸에 적힌 글 그대로 · {{ memos|length }}칸</span></h2>
+  {% if memos %}
+  <div class="table-wrap">
+  <table class="grid-table compact">
+    <thead><tr><th style="width:70px">팀원</th><th style="width:150px">명단</th>
+      <th style="width:150px">칸</th><th style="width:170px">투자사</th><th>적힌 글</th></tr></thead>
+    <tbody>
+      {% for r in memos %}
+      <tr>
+        <td class="muted">{{ r.owner }}</td>
+        <td class="muted">{{ r.sheet }}</td>
+        <td class="muted">{{ r.column }}</td>
+        <td><b>{{ r.firm }}</b> <span class="muted">{{ r.name }}</span></td>
+        <td class="ref-cell">{{ r.text }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="muted bucket-empty">이 달 명단 '미팅' 칸에 적힌 글이 없습니다.</p>
+  {% endif %}
+</section>
+{% endblock %}

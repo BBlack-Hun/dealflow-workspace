@@ -20,8 +20,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..deps import doer, get_current_user, now_iso, templates
-from ..models import IrCompany, IrRequest, Meeting, User, VcContact
+from ..deps import doer, get_current_user, may_manage_team_contacts, now_iso, templates
+from ..models import IrCompany, IrRequest, Meeting, SeriesACompany, User, VcContact
 from ..services import (call_flags, cadence, flow, ir_attach, ir_no_meeting,
                         meeting_calendar, pipeline, sheet_owner)
 from . import followups
@@ -283,6 +283,38 @@ def meeting_calendar_page(request: Request, db: Session = Depends(get_db),
     return templates.TemplateResponse(request, "meeting_calendar.html", ctx)
 
 
+@router.get("/report/meetings", response_class=HTMLResponse, include_in_schema=False)
+def meeting_list_page(request: Request, db: Session = Depends(get_db),
+                      user: User = Depends(get_current_user),
+                      month: str = "", member: int = 0):
+    """업무 보고 › `IR 미팅진행 리스트`(#120) — 그 달 미팅 한 줄씩 + 명단 `미팅` 칸 글.
+
+    범위는 미팅 달력과 같다(`_who`) — 팀원은 제 것만, 관리자는 팀 전체가 기본. 팀원 한
+    사람은 왼쪽 `팀원 화면으로 보기` 로 고른다(업무 보고처럼 고르개는 한 곳 — #444).
+    투자컨설턴트는 다른 업무 보고 탭처럼 미들웨어가 막는다(`deps.CONSULTANT_PATHS`).
+    """
+    from ..services import report
+
+    today = date.today()
+    who, member, member_q = _who(request, user, member)
+    year, mon = _month_of(month, today)
+    ctx = base_ctx(request, db, user, active="report")
+    ctx.update({
+        "report_tab": "meetings",
+        "member": member,
+        "member_q": member_q,
+        "can_team": user.role == "admin",
+        "month_options": [(y, m, f"{y}-{m:02d}")
+                          for y, m in report.recent_months(today, count=36)],
+        "selected": f"{year}-{mon:02d}",
+        "year": year,
+        "month": mon,
+        "meetings": meeting_calendar.listing(db, who, year, mon),
+        "memos": meeting_calendar.memo_rows(db, who, year, mon, today),
+    })
+    return templates.TemplateResponse(request, "report_meetings.html", ctx)
+
+
 # 경과일 거르기 칩 — 그 밖의 값은 `전체` 로 읽는다(주소를 손으로 고쳐도 500 이 안 난다).
 NO_MEETING_DAYS = ("7", "30", "90")
 
@@ -291,18 +323,21 @@ def _no_meeting(request: Request, db: Session, user: User, view: str, days: str,
                 sent: str, src: str, drop: str, member: int) -> dict:
     """`IR 요청 후 미팅 없음` 화면과 엑셀이 **같이 읽는** 줄 — 거르기까지 한 번에."""
     who, member, member_q = _who(request, user, member)
-    view = "scheduled" if view == "scheduled" else "none"
+    view = view if view in ("scheduled", "drop") else "none"
     days = days if days in NO_MEETING_DAYS else ""
     sent = sent if sent in ("yes", "no") else ""
-    src = src if src in ("app", "sheet") else ""
-    drop = "show" if drop == "show" else ""     # `보내지 않음` 은 기본으로 뺀다 — 칩으로 본다
+    src = src if src in ir_no_meeting.SOURCES else ""
+    drop = "show" if drop == "show" else ""     # `보내지 않음` · `드랍` 은 기본으로 뺀다 — 칩으로 본다
     found, skipped = ir_no_meeting.rows(db, who, date.today())
     rows = [r for r in found
             if (not days or (r["days"] or 0) >= int(days))
             and (not sent or (r["state"] == "delivered") == (sent == "yes"))
-            and (not src or (r["src"] == "sheet") == (src == "sheet"))
-            and (drop or r["state"] != "dropped")]
+            # `앱 기록` 은 앱 요청이 든 줄, 나머지 둘은 그 출처만 있는 줄.
+            and (not src or (src in r["srcs"] if src == "app" else r["srcs"] == {src}))
+            and (drop or r["state"] not in ("dropped", "lost"))]
     planned = [r for r in rows if r["scheduled"]]
+    # 드랍 의심 — 오래 조용한 것부터(정의는 `services/ir_no_meeting.py` 첫머리).
+    suspects = sorted((r for r in rows if r["suspect"]), key=lambda r: -r["quiet_days"])
     params = {"view": view, "days": days, "sent": sent, "src": src, "drop": drop}
 
     def href(path: str = "/ir/no-meeting", **change) -> str:
@@ -312,8 +347,10 @@ def _no_meeting(request: Request, db: Session, user: User, view: str, days: str,
     return {
         **params, "who": who, "member": member, "href": href, "skipped": skipped,
         "here": f"/ir/no-meeting?{urlencode({k: v for k, v in params.items() if v})}",
-        "rows": planned if view == "scheduled" else [r for r in rows if not r["scheduled"]],
+        "rows": (planned if view == "scheduled" else suspects if view == "drop"
+                 else [r for r in rows if not r["scheduled"]]),
         "n_none": len(rows) - len(planned), "n_planned": len(planned),
+        "n_drop": len(suspects), "drop_days": ir_no_meeting.DROP_SUSPECT_DAYS,
     }
 
 
@@ -326,7 +363,7 @@ def no_meeting_page(request: Request, db: Session = Depends(get_db),
     ctx = base_ctx(request, db, user, active="flow")
     ctx.update(_no_meeting(request, db, user, view, days, sent, src, drop, member))
     ctx.update({"ir_tab": "no_meeting", "members": _members(db, user),
-                "day_steps": NO_MEETING_DAYS, "sources": ir_no_meeting.SOURCES})
+                "day_steps": NO_MEETING_DAYS})
     return templates.TemplateResponse(request, "ir_no_meeting.html", ctx)
 
 
@@ -337,16 +374,82 @@ def export_no_meeting(request: Request, db: Session = Depends(get_db),
                       member: int = 0):
     """화면과 같은 범위 · 같은 거르기. 요청일은 첫·최근 두 칸으로 가른다."""
     got = _no_meeting(request, db, user, view, days, sent, src, drop, member)
-    planned = got["view"] == "scheduled"
-    heads = ["기업명", "투자사", "심사역", "첫 요청일", "최근 요청일", "요청 상태", "전달일",
-             "경과일", "담당", "요청 건수", "출처", "비고"] + (["미팅 예정일"] if planned else [])
+    planned, suspect = got["view"] == "scheduled", got["view"] == "drop"
+    heads = (["기업명", "투자사", "심사역", "첫 요청일", "최근 요청일", "요청 상태", "전달일",
+              "경과일", "담당", "요청 건수", "출처", "비고"] + (["미팅 예정일"] if planned else [])
+             + (["전달 후 경과일"] if suspect else []))
     rows = [[r["company"], r["firm"], f"{r['contact_name']} {r['contact_title']}".strip(),
              r["first_at"], r["last_at"], r["status_label"], r["delivered_at"], r["days"],
-             r["owners"], r["count"], ir_no_meeting.SOURCES[r["src"]], r["note"]]
-            + ([r["scheduled_on"]] if planned else [])
+             r["owners"], r["count"], r["src_label"], r["note"]]
+            + ([r["scheduled_on"]] if planned else []) + ([r["quiet_days"]] if suspect else [])
             for r in got["rows"]]
-    title = "IR 요청 후 미팅 예정" if planned else "IR 요청 후 미팅 없음"
+    title = ("IR 요청 후 미팅 예정" if planned else
+             f"IR 전달 후 {got['drop_days']}일 미팅 없음" if suspect else "IR 요청 후 미팅 없음")
     return _xlsx(f"{title}_{date.today().isoformat()}.xlsx", title, heads, rows)
+
+
+def _back_to_no_meeting(back: str) -> RedirectResponse:
+    """보던 거르기로 돌아간다 — 그 화면 주소만 받는다(폼 글자를 그대로 믿지 않는다)."""
+    ok = back.startswith("/ir/no-meeting?") or back == "/ir/no-meeting"
+    return RedirectResponse(back if ok else "/ir/no-meeting", status_code=303)
+
+
+#: 드랍 의심에서 고칠 수 있는 상태 — (지금 → 바꿀 값). 드랍 확정과 드랍 취소 둘뿐이다.
+_DROP_MOVES = {"lost": "delivered", "delivered": "lost"}
+
+
+@router.post("/ir/no-meeting/status", include_in_schema=False)
+def set_drop_status(ids: str = Form(""), to: str = Form(""), back: str = Form(""),
+                    db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """[드랍 확정] (전달 완료 → 드랍) · [드랍 취소] (드랍 → 전달 완료) — #116 2차.
+
+    팀원은 제 요청만, 관리자는 화면에 보이는 팀 전체(`may_manage_team_contacts` — 보이는데
+    못 고치는 일이 없게). 다른 상태의 줄은 건드리지 않는다(두 번 눌러도 같다). ORM 으로
+    고치므로 남의 줄을 고친 일은 수정 로그에 남는다(`edit_log.WATCHED["ir_requests"]`).
+    """
+    if to not in _DROP_MOVES:
+        raise HTTPException(status_code=400, detail="바꿀 상태가 아닙니다")
+    for raw in ids.split(","):
+        if not raw.strip().isdigit():
+            continue
+        row = db.get(IrRequest, int(raw))
+        if row is None or not (row.user_id == user.id or may_manage_team_contacts(user)):
+            raise HTTPException(status_code=404, detail="요청을 찾을 수 없습니다")
+        if row.status == _DROP_MOVES[to]:
+            row.status = to
+    db.commit()
+    return _back_to_no_meeting(back)
+
+
+@router.post("/ir/no-meeting/adopt", include_in_schema=False)
+def adopt_memo(contact_id: int = Form(...), month: str = Form(""), company: str = Form(""),
+               back: str = Form(""), db: Session = Depends(get_db),
+               user: User = Depends(get_current_user)):
+    """[앱 기록으로] — 명단 칸에만 적힌 `…전달` 한 건을 앱 요청(전달 완료)으로 옮긴다.
+
+    서버가 명단 칸을 **다시 읽어** 그 건이 있을 때만 옮긴다 — 폼 글자로 요청을 짓지 않는다.
+    옮기면 앱 기록과 겹쳐 명단 기록 줄은 저절로 빠지고(`memo_delivered.overlaps`), 그 줄에
+    [드랍 확정] 이 선다. 업무 보고 전달 수는 그대로다(명단 → 앱으로 자리만 옮긴다).
+    """
+    from ..services import memo_delivered
+    from ..services.ir_monthly import _Index
+
+    today = date.today()
+    entry = next((e for e in memo_delivered.entries(db, today)
+                  if e["contact_id"] == contact_id and e["month"] == month
+                  and e["company"] and e["company"] == company), None)
+    if entry is None or not (entry["owner"] == user.id or may_manage_team_contacts(user)):
+        raise HTTPException(status_code=404, detail="명단 기록을 찾을 수 없습니다")
+    if not memo_delivered.overlaps(entry, memo_delivered.app_delivered(db)):
+        index = _Index(db.execute(select(IrCompany)).scalars().all(),
+                       db.execute(select(SeriesACompany.name)).scalars())
+        day = entry["date"] or f"{month}-01"
+        db.add(IrRequest(user_id=entry["owner"] or user.id, contact_id=contact_id,
+                         company_id=index.find(company)[0], company_name=company,
+                         requested_at=day, status="delivered", delivered_at=day,
+                         note="명단 기록에서 옮김"))
+        db.commit()
+    return _back_to_no_meeting(back)
 
 
 @router.get("/api/ir/last-batch/{contact_id}")

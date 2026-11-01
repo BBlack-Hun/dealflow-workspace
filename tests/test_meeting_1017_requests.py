@@ -197,7 +197,8 @@ def test_업무_보고의_IR_판도_같은_말이다(db, users, logged):
 def test_상태_코드는_그대로고_말만_바뀐다():
     from app.services import pipeline
 
-    assert set(pipeline.REQUEST_STATUS) == {"open", "delivered", "dropped"}
+    # `lost`(드랍 — 미팅 없이 끝남)는 #116 2차에서 더했다. 있던 코드는 그대로다.
+    assert set(pipeline.REQUEST_STATUS) == {"open", "delivered", "dropped", "lost"}
     assert pipeline.REQUEST_STATUS["open"] == "IR 자료 요청 받음"
     assert pipeline.REQUEST_STATUS["delivered"] == "IR 자료 전달 완료"
 

@@ -571,6 +571,11 @@
         <th style="width:150px" data-filters="quote:견적서 첨부 여부">견적서 첨부 여부<div class="th-filters"></div></th>
         <th style="width:100px" data-sort="meeting"
             title="무료 IR 미팅을 언제 제공하는지 · 눌러서 수정">미팅제공일자</th>
+        {# 계약년월(0129 · #122) — `미팅제공일자` 오른쪽 · `계약여부` 왼쪽(사용자 요청). `YYYY-MM`
+           으로 맞춰 받고, 계약여부를 계약 완료로 바꾸면 비어 있을 때 그 달이 들어간다. 필터는
+           안 단다(줄마다 다른 달). 폭은 이름(`계약년월` 42px + th 좌우 여백 18px)과 값
+           `2026-11` 에 여유를 더한 84px. #}
+        <th style="width:84px" title="YYYY-MM — 계약 완료로 바꾸면 비어 있을 때 그 달이 들어갑니다 · 눌러서 수정">계약년월</th>
         {# **여기는 값이 이름보다 넓다.** 새로 든 `무료 IR 미팅제공완료함` 은
            115px 이라 110px 에서는 `무료 IR 미팅제공완` / `료함` 으로 낱말
            한가운데가 끊겼고, 그 줄만 키가 커져 표가 들쭉날쭉해졌다. 값까지
@@ -853,6 +858,7 @@
         <td class="cell" data-field="quote_attached" data-type="pick"
             data-filter-key="quote" data-choices="O,X">{{ r.quote_attached }}</td>
         <td class="cell" data-field="meeting_offered_at">{{ r.meeting_offered_at }}</td>
+        <td class="cell" data-field="contract_ym">{{ r.contract_ym }}</td>
         {# 칸에는 **말**이 보이고, 저장되는 것은 값(`blocked`)이다. 라우터가
            그 짝을 맞춘다(`CONTRACT_FROM_LABEL`) — 여기서 값을 보여 주면
            고르는 사람이 `blocked` 라는 글자를 읽게 된다.
@@ -904,7 +910,7 @@
         <td><button type="button" class="linkbtn js-co-edit">수정</button></td>
       </tr>
       {% else %}
-      <tr><td colspan="37" class="muted">등록된 기업이 없습니다. [기업 추가]로 시작하세요.</td></tr>
+      <tr><td colspan="38" class="muted">등록된 기업이 없습니다. [기업 추가]로 시작하세요.</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -1355,6 +1361,10 @@
     <label class="field" title="무료 IR 미팅을 언제 제공하는지">
       <span>미팅제공일자</span>
       <input type="text" id="f-meeting_offered_at" placeholder="예: 2026-09-15"></label>
+    {# 표의 `계약년월`(#122) — 같은 자리(미팅제공일자 뒤 · 계약여부 앞). #}
+    <label class="field" title="YYYY-MM — 계약 완료로 바꾸면 비어 있을 때 그 달이 들어갑니다">
+      <span>계약년월</span>
+      <input type="text" id="f-contract_ym" placeholder="예: 2026-11"></label>
     {# 보기는 **한 곳에서** 온다(`routers/companies.py` 의 `CONTRACT_LABELS`).
        손으로 적어 두었더니 그 목록에 새 상태를 더해도 이 창만 옛 다섯 가지를
        보여 주었다 — 표에서는 고를 수 있는데 수정창에서는 없는 상태가 된다.

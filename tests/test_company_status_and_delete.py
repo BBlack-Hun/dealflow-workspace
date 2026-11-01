@@ -804,7 +804,9 @@ def test_표는_미팅제공일자를_계약여부_바로_앞에_세운다(logge
     names = [re.sub(r"<[^>]+>", "", c).strip()
              for c in re.findall(r"<th\b[^>]*>(.*?)</th>", head.group(1), re.S)]
     assert "미팅제공일자" in names, names
-    assert names[names.index("계약여부") - 1] == "미팅제공일자", names
+    # 사이에는 `계약년월`(0129 · #122 — "미팅제공일자 오른쪽에 계약년월")만 선다.
+    at = names.index("계약여부")
+    assert names[at - 2:at] == ["미팅제공일자", "계약년월"], names
 
 
 def test_미팅제공일자는_달력이_아니라_글자로_적는다(logged_in, db, company):

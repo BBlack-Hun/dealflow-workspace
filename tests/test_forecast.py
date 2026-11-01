@@ -304,6 +304,9 @@ def test_남의_줄은_404_관리자는_고치고_로그가_남는다(portal, db
     assert f'data-id="{rid}"' not in portal["admin"].get("/report/forecast").text
     assert f'data-id="{rid}"' in portal["admin"].get("/report/forecast?scope=team").text
     assert f'data-id="{rid}"' in portal["admin"].get("/report/forecast?member=1").text
+    # 팀원 한 사람은 왼쪽 메뉴로 고른다 — 오른쪽 `팀원 선택…` 은 뺐다(#113). 주소의 `member=` 는 그대로.
+    page = portal["admin"].get("/report/forecast").text
+    assert "팀원 선택" not in page and "팀 전체" in page
 
     assert portal["admin"].patch(f"/api/forecast/{rid}",
                                  json={"ceo_share": "30%"}).status_code == 200

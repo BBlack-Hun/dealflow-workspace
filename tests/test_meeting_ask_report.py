@@ -110,7 +110,8 @@ def _css() -> str:
 
 
 def _delivered_table_head() -> list:
-    """「전달한 자료」 표의 `<th>` 들을 순서대로."""
+    """「IR 전달기업」(예전 `전달한 자료`) 표의 `<th>` 들을 순서대로 —
+    요청일 · 심사역 · 기업명 · 투자유치희망금액(#118) · 상태 · 단추."""
     html = IR_HTML.read_text(encoding="utf-8")
     start = html.index('id="delivered-table"')
     head = html[start:html.index("</thead>", start)]
@@ -132,8 +133,8 @@ def test_상태_칸이_미팅_요청_한_줄을_담을_만큼_넓다():
     무엇을 보냈다는 말인지 알 수 없다. 자리를 만드는 쪽으로 푼다.
     """
     widths = [_width(a) for a in _delivered_table_head()]
-    assert widths[3] >= NEEDS["상태"], (
-        f"상태 칸이 {widths[3]}px — {NEEDS['상태']}px 이 필요하다(잰 값)")
+    assert widths[4] >= NEEDS["상태"], (
+        f"상태 칸이 {widths[4]}px — {NEEDS['상태']}px 이 필요하다(잰 값)")
 
 
 def test_단추_칸이_단추_셋을_담을_만큼_넓다():
@@ -142,8 +143,8 @@ def test_단추_칸이_단추_셋을_담을_만큼_넓다():
     모자라면 `삭제` 가 통째로 화면 밖으로 나가 **누를 수가 없었다.**
     """
     widths = [_width(a) for a in _delivered_table_head()]
-    assert widths[4] >= NEEDS["단추"], (
-        f"단추 칸이 {widths[4]}px — {NEEDS['단추']}px 이 필요하다(잰 값)")
+    assert widths[5] >= NEEDS["단추"], (
+        f"단추 칸이 {widths[5]}px — {NEEDS['단추']}px 이 필요하다(잰 값)")
 
 
 def test_담당자와_기업_칸에도_남는_폭이_있다():
@@ -198,7 +199,7 @@ def test_상태_배지는_여전히_한_덩어리다():
     """
     assert re.search(r"\.status-badge\s*\{[^}]*white-space:\s*nowrap", _css())
     widths = [_width(a) for a in _delivered_table_head()]
-    assert widths[3], "상태 칸의 너비를 아예 없애면 배지가 제일 좁게 눌린다"
+    assert widths[4], "상태 칸의 너비를 아예 없애면 배지가 제일 좁게 눌린다"
 
 
 # --- 2) 세 단추가 다 눌린다 ---------------------------------------------------

@@ -513,6 +513,8 @@ COMPANY_HEADERS = [
     "지역", "견적서 첨부 여부", "카톡 연결 여부",
     # 0119(결정 10) — 같은 까닭으로 끝에 붙인다.
     "성공보수율",
+    # 0129(#122) — 같은 까닭으로 끝에 붙인다.
+    "계약년월",
 ]
 
 
@@ -543,7 +545,7 @@ def export_companies(db: Session = Depends(get_db),
              "★" if c.is_top_deal else "", c.funding_status or "",
              c.summary_status or "", c.ir_file_name or "",
              c.region or "", c.quote_attached or "", c.kakao_joined or "",
-             c.success_fee or ""]
+             c.success_fee or "", c.contract_ym or ""]
             + custom_columns.cells(extra, c.id))
         for c in companies
     ]
@@ -894,7 +896,7 @@ def _meetings_sheet(sheet, data, team_wide):
                 f"그걸 놓치면 계약이 흐지부지됩니다.")
     # 화면의 미팅 표와 **같은 이름**이다(#87 — 투자사 쪽 사람은 `심사역`, 우리 팀원은
     # `담당자`, 기업은 `기업명`). 화면은 `심사역 / 회사` 를 한 칸에 얹고 파일은 나눈다.
-    headers = (["날짜", "심사역", "회사", "기업명", "구분"]
+    headers = (["날짜", "심사역", "회사", "기업명", "투자유치희망금액", "구분"]
                + (["담당자"] if team_wide else [])
                + ["결과", "결과 문의", "후기 · 투자사 답변 내용"])
     last = len(headers) - 1
@@ -921,7 +923,7 @@ def _meetings_sheet(sheet, data, team_wide):
             told = [t for t in (m["note"], (f"문의: {m['followup_note']}"
                                             if m["followup_note"] else "")) if t]
             sheet.row(
-                [m["date"], m["name"], m["firm"], m["company"], m["kind"]]
+                [m["date"], m["name"], m["firm"], m["company"], m["raise_target"], m["kind"]]
                 + ([m["owner"]] if team_wide else [])
                 + [m["outcome"] or "-", ask, "\n".join(told)],
                 level="bad" if m["followup_late"] else "", wraps={last})
@@ -974,9 +976,9 @@ def _buckets_sheet(sheet, data, team_wide):
     """
     sheet.title(f"{data['year']}년 {data['month']}월 · 이 달의 반응",
                 "숫자만 보면 '그게 누구였지' 가 이어집니다 — 이름과 날짜를 함께 둡니다.")
-    headers = (["날짜", "심사역", "직함", "회사", "기업명", "상태"]
+    headers = (["날짜", "심사역", "직함", "회사", "기업명", "투자유치희망금액", "상태"]
                + (["담당자"] if team_wide else []))
-    status_col = 5
+    status_col = 6
     for bucket in data["buckets"]:
         sheet.blank()
         sheet.group(f"{bucket['label']}   {len(bucket['rows'])}건")
@@ -991,7 +993,7 @@ def _buckets_sheet(sheet, data, team_wide):
             # 한 낱말처럼 읽힌다.
             status = r["note"] + (f"\n{r['ask']}" if r["ask"] else "")
             sheet.row([r["date"], r["name"], r["title"], r["firm"],
-                       r["company"], status]
+                       r["company"], r["raise_target"], status]
                       + ([r["owner"]] if team_wide else []),
                       # 지난 줄은 화면의 `overdue-row` 와 같이 눈에 띄어야
                       # 한다. 인쇄해서 보는 문서라 더 그렇다.
@@ -1010,16 +1012,18 @@ def _intro_sheets(wb, tag: str, label: str, data: dict, who: str,
     sub = f"{who} · {today.isoformat()} 뽑음 · 투자사가 실제로 받은 것만 셉니다"
 
     sheet = _ReportSheet(wb.create_sheet(f"{tag} 소개한 기업"),
-                         [34, 12, 14, 12, 12], 5)
+                         [34, 16, 16, 14, 12, 14, 12, 12], 8)
     sheet.title(f"{label} 소개한 기업  {len(got['rows'])}개사", sub)
     sheet.blank()
     if not got["rows"]:
         sheet.note("이 기간에 소개한 기업이 없습니다.")
     else:
-        sheet.head(["기업명", "소개한 횟수", "받은 투자사 수", "처음 날짜", "마지막 날짜"])
+        sheet.head(["기업명", "투자유치희망금액", "계약여부", "계약서 수신 여부", "소개한 횟수",
+                    "받은 투자사 수", "처음 날짜", "마지막 날짜"])
         for c in got["rows"]:
-            sheet.row([c["company"], c["times"], c["investors"], c["first"],
-                       c["last"]], nums={1, 2})
+            sheet.row([c["company"], c["raise_target"], c["contract_label"],
+                       c["contract_received"], c["times"], c["investors"], c["first"],
+                       c["last"]], nums={4, 5})
 
     detail = _ReportSheet(wb.create_sheet(f"{tag} 소개 상세"),
                           [12, 30, 24, 14, 12], 5)
@@ -1070,16 +1074,16 @@ def report_workbook(data: dict, *, team_wide: bool, who: str,
 
     _meetings_sheet(
         _ReportSheet(wb.create_sheet(f"{tag} 미팅"),
-                     [12, 14, 24, 20, 10, 10, 12, 18, 46],
-                     9 if team_wide else 8),
+                     [12, 14, 24, 20, 16, 10, 10, 12, 18, 46],
+                     10 if team_wide else 9),
         data, team_wide)
     _buckets_sheet(
         # 상태 칸이 16 → 26 → 36. `회의실 미팅 톡 요청 보냄 완료 · 2026-09-10`
         # 이 한 줄에 들어가야 한다(10/17 회의에서 말이 길어졌다) — 모자라면
         # 접혀서 날짜만 아랫줄로 떨어진다.
         _ReportSheet(wb.create_sheet(f"{tag} 반응"),
-                     [12, 14, 12, 26, 26, 36, 10],
-                     7 if team_wide else 6),
+                     [12, 14, 12, 26, 26, 16, 36, 10],
+                     8 if team_wide else 7),
         data, team_wide)
     _intro_sheets(wb, tag, f"{year}년 {month}월", data, who, today)
 

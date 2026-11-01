@@ -15,7 +15,13 @@
     취소한 미팅은 없던 일로 봅니다. 시트의 ‘미팅확정’은 만난 것으로 봅니다.
     날짜가 아직 오지 않은 예정 미팅만 있는 쌍은 <b>미팅 예정</b>에 따로 서고,
     예정일이 지났는데 완료 처리가 안 된 미팅은 미팅 없음으로 보고 비고에 적습니다.
-    ‘보내지 않음’ 요청은 기본으로 뺍니다.
+    ‘보내지 않음’·‘드랍’ 요청은 기본으로 뺍니다. 명단 월별 ‘IR 요청’ 칸에만 적힌 ‘…전달’도
+    <b>명단 기록</b>으로 함께 봅니다(앱 기록과 겹치면 뺍니다).
+  </p>
+  <p class="muted">
+    <b>드랍 의심</b> — 자료를 전달하고 {{ drop_days }}일이 지나도록 같은 투자사에 완료·예정 미팅이 없는 건입니다.
+    미팅 요청을 보냈으면 <b>어레인지중</b>이고 그날부터 다시 {{ drop_days }}일을 셉니다.
+    확인해서 [드랍 확정]을 누르면 요청 상태가 ‘드랍’(미팅 없이 끝남)이 되고, ‘보내지 않음·드랍 보기’에서 [드랍 취소]로 되돌립니다.
   </p>
 </header>
 
@@ -26,21 +32,18 @@
     <span class="seg-toggle">
       <a class="chip {% if view == 'none' %}active{% endif %}" href="{{ href(view='none') }}">미팅 없음 {{ n_none }}</a>
       <a class="chip {% if view == 'scheduled' %}active{% endif %}" href="{{ href(view='scheduled') }}">미팅 예정 {{ n_planned }}</a>
+      <a class="chip {% if view == 'drop' %}active{% endif %}" href="{{ href(view='drop') }}">드랍 의심 {{ n_drop }}</a>
     </span>
     <a class="secondary-btn" href="{{ href('/api/export/ir-no-meeting.xlsx') }}" download>엑셀</a>
   </div>
   {% if members %}
-  {# 관리자 — 팀 전체가 기본, 한 사람만 따로 볼 수도 있다(미팅 달력의 고르개와 같은 모양). #}
+  {# 관리자 — 팀 전체가 기본. #}
+  {# 팀원 한 사람 것은 **왼쪽 메뉴의 `팀원 화면으로 보기`** 로 본다 — 여기에도 팀원 고르개를
+     두면 같은 이름이 화면 왼쪽과 오른쪽에 두 번 섰다(#113 — 업무 보고처럼 뺐다). 주소의
+     `member=` 는 그대로 받는다(옛 링크 · 엑셀 링크). #}
   <div class="toolbar-right">
     <a class="chip {% if not member %}active{% endif %}" href="{{ here }}{% if view_as %}&member=0{% endif %}">팀 전체</a>
     <a class="chip {% if member == user.id %}active{% endif %}" href="{{ here }}&member={{ user.id }}">내 것</a>
-    <select class="chip-select" aria-label="팀원 선택"
-            onchange='location = {{ here|tojson }} + (this.value ? "&member=" + this.value : "")'>
-      <option value="">팀원 선택…</option>
-      {% for m in members %}
-      <option value="{{ m.id }}" {% if member == m.id %}selected{% endif %}>{{ m.name }}</option>
-      {% endfor %}
-    </select>
   </div>
   {% endif %}
 </div>
@@ -62,15 +65,22 @@
       <a class="chip {% if not src %}active{% endif %}" href="{{ href(src='') }}">출처 전체</a>
       <a class="chip {% if src == 'app' %}active{% endif %}" href="{{ href(src='app') }}">앱 기록</a>
       <a class="chip {% if src == 'sheet' %}active{% endif %}" href="{{ href(src='sheet') }}">시트 이력만</a>
+      <a class="chip {% if src == 'memo' %}active{% endif %}" href="{{ href(src='memo') }}">명단 기록만</a>
     </span>
-    <a class="chip {% if drop %}active{% endif %}" href="{{ href(drop='' if drop else 'show') }}">보내지 않음 보기</a>
+    <a class="chip {% if drop %}active{% endif %}" href="{{ href(drop='' if drop else 'show') }}">보내지 않음·드랍 보기</a>
   </div>
 </div>
 
 <section class="panel">
+  {% if view == 'drop' %}
+  <h2 class="panel-title">드랍 의심
+    <span class="hint">{{ rows|length }}쌍 · 전달(미팅 요청) 후 {{ drop_days }}일 넘게 미팅 없음 · 오래된 것부터</span>
+  </h2>
+  {% else %}
   <h2 class="panel-title">{{ '미팅 예정' if view == 'scheduled' else '미팅 없음' }}
     <span class="hint">{{ rows|length }}쌍 · 최근 요청에서 오래된 것부터</span>
   </h2>
+  {% endif %}
   {% if skipped %}
   <p class="hint">시트 이력의 IR 요청 중 기업을 IR 기업 현황에서 찾지 못한 {{ skipped }}건(기업 칸에 섞인 메모 · “핵심 딜 8개사” 처럼 개수만 적힌 줄)은 뺐습니다.</p>
   {% endif %}
@@ -83,6 +93,8 @@
       {% if not who %}<th>담당자</th>{% endif %}
       <th class="num" style="width:56px">건수</th><th style="width:80px">출처</th><th>비고</th>
       {% if view == 'scheduled' %}<th style="width:96px">미팅 예정일</th>{% endif %}
+      {% if view == 'drop' %}<th class="num" style="width:72px" title="마지막 전달일(미팅 요청을 보냈으면 그날)부터">전달 후</th>{% endif %}
+      {% if view == 'drop' or drop %}<th style="width:110px"></th>{% endif %}
     </tr></thead>
     <tbody>
       {% for r in rows %}
@@ -97,13 +109,41 @@
           {% if user.id in r.app_owner_ids %}<a class="status-badge" href="/ir#{{ 'requests' if r.state == 'open' else 'delivered' }}">{{ r.status_label }}</a>
           {% else %}<span class="status-badge">{{ r.status_label }}</span>{% endif %}
           {% if r.delivered_at %}<span class="status-when muted">{{ r.delivered_at }}</span>{% endif %}
+          {% if r.asked_at %}<span class="status-when muted">미팅 요청 {{ r.asked_at }}</span>{% endif %}
         </td>
         <td class="num">{% if r.days is not none %}{{ r.days }}일{% else %}-{% endif %}</td>
         {% if not who %}<td>{{ r.owners }}</td>{% endif %}
         <td class="num">{{ r.count }}</td>
-        <td class="muted">{{ sources[r.src] }}</td>
+        <td class="muted">{{ r.src_label }}</td>
         <td class="muted">{{ r.note }}</td>
         {% if view == 'scheduled' %}<td>{{ r.scheduled_on or '날짜 미기재' }}</td>{% endif %}
+        {% if view == 'drop' %}<td class="num">{{ r.quiet_days }}일</td>{% endif %}
+        {# 드랍 확정 · 취소는 앱 요청에만 — 명단 기록은 [앱 기록으로] 옮긴 뒤에 고른다. #}
+        {% if view == 'drop' or drop %}<td>
+          {% if r.state == 'lost' and r.lost_ids %}
+          <form method="post" action="/ir/no-meeting/status" class="inline-form">
+            <input type="hidden" name="ids" value="{{ r.lost_ids|join(',') }}">
+            <input type="hidden" name="to" value="delivered">
+            <input type="hidden" name="back" value="{{ href() }}">
+            <button type="submit" class="linkbtn">드랍 취소</button>
+          </form>
+          {% elif r.suspect and r.sent_ids %}
+          <form method="post" action="/ir/no-meeting/status" class="inline-form">
+            <input type="hidden" name="ids" value="{{ r.sent_ids|join(',') }}">
+            <input type="hidden" name="to" value="lost">
+            <input type="hidden" name="back" value="{{ href() }}">
+            <button type="submit" class="secondary-btn">드랍 확정</button>
+          </form>
+          {% elif r.suspect %}{% for m in r.memos %}
+          <form method="post" action="/ir/no-meeting/adopt" class="inline-form">
+            <input type="hidden" name="contact_id" value="{{ m.contact_id }}">
+            <input type="hidden" name="month" value="{{ m.month }}">
+            <input type="hidden" name="company" value="{{ m.company }}">
+            <input type="hidden" name="back" value="{{ href() }}">
+            <button type="submit" class="linkbtn" title="명단 칸의 {{ m.month }} 전달 기록을 앱 요청(전달 완료)으로 옮깁니다">앱 기록으로</button>
+          </form>
+          {% endfor %}{% endif %}
+        </td>{% endif %}
       </tr>
       {% endfor %}
     </tbody>

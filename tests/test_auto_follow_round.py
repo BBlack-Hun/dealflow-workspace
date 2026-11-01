@@ -1,5 +1,8 @@
 """#94 · #98 후속라운드 시작 알림 — 한 달 전 1일 · 전달 15일 · 당월 1일, 카톡.
 
+Series A 이상 딜 소싱 줄만 읽는다 — 매출예상리스트 줄은 미리 알림(`remind_ahead`,
+`test_auto_remind_ahead`)으로 옮겼다(사용자 결정 2026-11-01).
+
 1. 세 날짜 — 주말이면 다음 평일.
 2. 받는 팀원(기본: 그 줄 담당 + 자동 발송 계정 주인)의 카톡방으로 한 번씩, 같은 날 또 돌아도 그대로.
 3. 받는 사람마다 회차마다 한 번씩 — 날이 달라도 다시 안 보낸다.
@@ -7,6 +10,7 @@
 5. 못 정한 받는 팀원 · 빈 카톡방은 건너뛰고 까닭이 선다.
 6. 시험 모드에서는 시험방으로. 풀기 직전에 값이 바뀌었으면 뺀다.
 7. 매출예상리스트 칸(0128) — `YYYY-MM` 으로 맞춰 받고, 관리자 추가 칸 값을 옮긴다.
+   그 줄은 여기서 안 보낸다.
 
 값(기업명 · 방 이름)은 지어낸 것이다.
 """
@@ -31,12 +35,11 @@ def _at(y, m, d, hh=9, mm=0):
 
 @pytest.fixture()
 def row(db, users):
-    from app.models import RevenueForecast
+    from app.models import SeriesACompany
 
     users["u1"].kakao_room_name = U1_ROOM
     users["u2"].kakao_room_name = U2_ROOM
-    found = RevenueForecast(user_id=users["u1"].id, company_name="샘플후속",
-                            follow_round_month=MONTH)
+    found = SeriesACompany(name="샘플후속", assignee_name="강민준", follow_round_month=MONTH)
     db.add(found)
     db.commit()
     return found
@@ -104,7 +107,7 @@ def test_받는_사람마다_회차마다_한_번(db, users, row):
         (U1_ROOM, "샘플후속 5월 라운드 시작입니다 (1/3)"),
         (U1_ROOM, "샘플후속 5월 라운드 시작입니다 (2/3)")]
     refs = {r for (r,) in db.execute(select(AutomationSend.ref)).all()}
-    assert f"kakao:fc:{row.id}:{MONTH}:1:{users['u1'].id}" in refs
+    assert f"kakao:sa:{row.id}:{MONTH}:1:{users['u1'].id}" in refs
 
 
 def test_Series_A_줄은_담당자_칸의_지금_담당자에게(db, users):
@@ -157,6 +160,17 @@ def test_풀기_직전에_값이_바뀌었으면_뺀다(db, users, row):
     job = _items(db)[0].job
     assert runner.prune(db, job, _at(2027, 4, 1, 10, 0)) == 0
     assert "후속라운드 시작이 바뀌었습니다" in _items(db)[0].error
+
+
+def test_매출예상리스트_줄은_여기서_안_보낸다(db, users):
+    from app.models import RevenueForecast
+
+    users["u1"].kakao_room_name = U1_ROOM
+    db.add(RevenueForecast(user_id=users["u1"].id, company_name="샘플매출",
+                           follow_round_month=MONTH))
+    db.commit()
+    _turn_on(db, users, recipients="담당 팀원")
+    assert _run(db, _at(2027, 4, 1))["status"] == "empty" and _items(db) == []
 
 
 # ── 매출예상리스트 칸(0128) ────────────────────────────────────────────────────
