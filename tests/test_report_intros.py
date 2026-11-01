@@ -132,8 +132,10 @@ def test_excel_gets_two_intro_sheets(logged, db, users):
     assert wb.sheetnames[-2:] == ["2026 소개한 기업", "2026 소개 상세"]
 
     summary = _grid(wb["2026 소개한 기업"])
-    assert ["기업명", "소개한 횟수", "받은 투자사 수", "처음 날짜", "마지막 날짜"] in summary
-    assert ["샘플애그", 3, 3, "2026-08-10", "2026-09-01"] in summary
+    # 기업명 바로 오른쪽 `투자유치희망금액`(#118) — 샘플애그는 금액을 안 적어 빈칸이다.
+    assert ["기업명", "투자유치희망금액", "소개한 횟수", "받은 투자사 수", "처음 날짜",
+            "마지막 날짜"] in summary
+    assert ["샘플애그", "", 3, 3, "2026-08-10", "2026-09-01"] in summary
 
     detail = _grid(wb["2026 소개 상세"])
     assert ["날짜", "기업", "투자사 회사", "투자사 이름", "출처"] in detail

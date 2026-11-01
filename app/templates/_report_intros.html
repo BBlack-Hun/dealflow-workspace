@@ -24,6 +24,8 @@
   <table class="grid-table compact">
     <thead><tr>
       <th>기업명</th>
+      {# 기업명 옆 투자유치희망금액(#118) — IR 기업 현황(없으면 Series A)에서 그때그때 읽는다. #}
+      <th class="num" style="width:120px">투자유치희망금액</th>
       {# 같은 날 여러 명에게 보낸 것은 한 번이다 — 회차 수가 아니라 날 수. #}
       <th class="num" style="width:96px" title="서로 다른 날짜 수입니다">소개한 횟수</th>
       <th class="num" style="width:110px" title="같은 사람이 여러 번 받았으면 한 명으로 셉니다">받은 투자사 수</th>
@@ -52,6 +54,7 @@
             </table>
           </details>
         </td>
+        <td class="num">{{ c.raise_target }}</td>
         <td class="num">{{ c.times }}</td>
         <td class="num">{{ c.investors }}</td>
         <td class="tabular">{{ c.first }}</td>

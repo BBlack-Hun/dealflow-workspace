@@ -54,7 +54,7 @@ from . import message_composer as mc
 from .pipeline import (IR_MEETING_ASK_DAYS, LABEL_DELIVERED, LABEL_REQUESTED,
                        MEETING_FOLLOWUP_DAYS, MEETING_KINDS,
                        NO_FOLLOWUP_OUTCOMES, OUTCOMES, REQUEST_STATUS,
-                       meeting_ask_state)
+                       company_finder, meeting_ask_state, raise_target)
 from .pipeline import meeting_ask_note as _pipeline_meeting_ask_note
 from .weekly import WEEKDAYS
 
@@ -293,6 +293,8 @@ def _month(db: Session, year: int, month: int, user: Optional[User],
                 and (m.outcome or "") not in NO_FOLLOWUP_OUTCOMES
                 and (m.scheduled_at or "") >= latest.get(m.contact_id, ""))
 
+    # 기업명 옆 `투자유치희망금액`(#118) — 미팅 · 반응 표가 같은 한 벌을 읽는다.
+    find = company_finder(db)
     weeks: Dict[int, List[dict]] = {}
     for meeting in meetings:
         when = _as_date(meeting.scheduled_at)
@@ -305,6 +307,7 @@ def _month(db: Session, year: int, month: int, user: Optional[User],
             "name": contact.name if contact else "-",
             "firm": (contact.firm or "") if contact else "",
             "company": meeting.company_name or "",
+            "raise_target": raise_target(find(meeting.company_id, meeting.company_name)),
             "kind": MEETING_KINDS.get(meeting.kind, meeting.kind),
             "status": meeting.status,
             "outcome": OUTCOMES.get(meeting.outcome or "", ""),
@@ -402,7 +405,7 @@ def _month(db: Session, year: int, month: int, user: Optional[User],
         # 미팅 요청을 안 보냈는지 말한다. 갈래가 다시 세지 않고 위에서 이미
         # 한 판정을 받아 쓴다(두 곳에서 세면 숫자가 갈린다).
         "buckets": _buckets(meetings, requests, contacts, owners, today,
-                            open_followup, ask, calls),
+                            open_followup, ask, calls, find),
         # 그 달에 나간 회차. 카톡으로 손으로 쓰던 보고가 이것이다.
         "sends": sends,
         # 연간 보고가 달마다 더해 쓰는 값. **월간과 같은 곳에서 나와야** 두
@@ -915,7 +918,7 @@ def meeting_ask_count_note(missing: int, requests: int) -> tuple:
 
 
 def _buckets(meetings, requests, contacts, owners, today, open_followup,
-             ask: Dict[int, dict], calls: List[SendSequence]) -> List[dict]:
+             ask: Dict[int, dict], calls: List[SendSequence], find) -> List[dict]:
     """반응 갈래를 **그 달치로, 날짜와 함께**.
 
     숫자만 보면 "그게 누구였지" 가 이어진다. 보고에서는 이름과 날짜가
@@ -932,11 +935,12 @@ def _buckets(meetings, requests, contacts, owners, today, open_followup,
             return {"name": "-", "title": "", "firm": ""}
         return {"name": c.name, "title": c.title or "", "firm": c.firm or ""}
 
-    def row(when, contact_id, company, note, user_id):
+    def row(when, contact_id, company, note, user_id, company_id=None):
         # `ask`·`ask_state` 는 IR 갈래만 채운다. 그래도 **모든 줄에 둔다** —
         # 화면과 엑셀이 갈래를 가리지 않고 같은 고리를 도는데, 한 갈래에만
         # 있으면 파일 쪽이 `KeyError` 로 통째로 안 받아진다.
         return {"date": when or "", **who(contact_id), "company": company or "",
+                "raise_target": raise_target(find(company_id, company)),
                 "note": note or "", "owner": owners.get(user_id, ""),
                 "ask": "", "ask_state": ""}
 
@@ -958,7 +962,7 @@ def _buckets(meetings, requests, contacts, owners, today, open_followup,
     ir = []
     for r in requests:
         one = row(r.requested_at, r.contact_id, r.company_name,
-                  REQUEST_STATUS.get(r.status, r.status), r.user_id)
+                  REQUEST_STATUS.get(r.status, r.status), r.user_id, r.company_id)
         if r.status == "delivered":
             one["ask"], one["ask_state"] = meeting_ask_note(ask.get(r.contact_id))
         ir.append(one)
@@ -975,16 +979,17 @@ def _buckets(meetings, requests, contacts, owners, today, open_followup,
         {"key": "ir", "label": "IR 요청 투자사", "rows": ir},
         {"key": "meet_ask", "label": "IR 미팅 요청 투자사",
          "rows": [row(m.scheduled_at, m.contact_id, m.company_name,
-                      MEETING_KINDS.get(m.kind, m.kind), m.user_id) for m in asked]},
+                      MEETING_KINDS.get(m.kind, m.kind), m.user_id, m.company_id)
+                  for m in asked]},
         {"key": "meet_done", "label": "IR 미팅완료 투자사",
          "rows": [row(m.scheduled_at, m.contact_id, m.company_name,
-                      OUTCOMES.get(m.outcome or "", "결과 미정"), m.user_id)
+                      OUTCOMES.get(m.outcome or "", "결과 미정"), m.user_id, m.company_id)
                   for m in done]},
         # 여기 뜨는 건 **전화할 곳**이다. 상태는 언제 걸어야 하는지를 말해야
         # 쓸모가 있다 — `예정` 만으로는 오늘 걸 곳인지 알 수 없다.
         {"key": "call", "label": "IR 미팅완료 리마인드 TEL 투자사",
          "rows": [row(m.followup_due or m.scheduled_at, m.contact_id, m.company_name,
-                      _call_state(m.followup_due, today), m.user_id)
+                      _call_state(m.followup_due, today), m.user_id, m.company_id)
                   for m in call]},
         # ── 미팅 요청을 보내 놓고 답이 없어 **전화로 다시 청하는** 곳 ────────
         #
@@ -1337,11 +1342,14 @@ def intro_companies(db: Session, start: date, end: date,
             "name": c.name if c else "-",
             "source": deal_history.SOURCE_LABELS.get(source, source),
         })
+    find = company_finder(db)
     rows = []
     for key, details in by_company.items():
         days = {d["day"] for d in details}
         rows.append({
             "company": sent.names.get(key, key),
+            # 기업명 옆 `투자유치희망금액`(#118) — IR 기업 현황(없으면 Series A)에서 읽는다.
+            "raise_target": raise_target(find(None, sent.names.get(key, key))),
             "times": len(days),
             "investors": len({d["contact_id"] for d in details}),
             "first": min(days),

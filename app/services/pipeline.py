@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 
 from ..models import (ContactActivity, IrCompany, IrRequest, Meeting, SendItem,
                       SendJob, SeriesACompany, User, VcContact)
-from . import cadence, calendar_link, deal_numbers
+from . import amount, cadence, calendar_link, deal_numbers
 from .sheet_import import normalize_company_name
 
 # 미팅이 끝나고 결과를 물어보기까지. 운영에서 쓰던 간격 그대로다.
@@ -173,6 +173,32 @@ def series_a_rows(db: Session) -> Dict[str, SeriesACompany]:
                               and not (out[key].ir_file_name or "").strip()):
             out[key] = row
     return out
+
+
+def company_finder(db: Session):
+    """표의 줄 → 그 기업(`IrCompany` · `SeriesACompany`) — 이어진 IR 번호 → IR 기업명 →
+    Series A 같은 이름. 없으면 None.
+
+    표 하나를 그릴 때 **한 번** 부르고 줄마다 묻는다(질의는 여기서 끝난다). 값은
+    저장하지 않고 그때그때 읽는다 — IR 기업 현황에서 고치면 다음 화면이 바로 따른다(#118).
+    """
+    ir = db.execute(select(IrCompany).order_by(IrCompany.id)).scalars().all()
+    by_id = {c.id: c for c in ir}
+    by_key: Dict[str, IrCompany] = {}
+    for c in ir:
+        by_key.setdefault(_key(c.name), c)
+    sa = series_a_rows(db)
+
+    def find(company_id: Optional[int], name: Optional[str]):
+        key = _key(name)
+        return by_id.get(company_id or 0) or (
+            (by_key.get(key) or sa.get(key)) if key else None)
+    return find
+
+
+def raise_target(company) -> str:
+    """표에 실을 투자유치희망금액 — `18.3억` · `5~10억`(`amount.phrase`). 없거나 못 읽으면 빈칸."""
+    return (amount.phrase(company.raise_target) if company is not None else None) or ""
 
 
 def followup_date(done_on: date) -> date:
@@ -534,6 +560,10 @@ def request_rows(db: Session, user: User,
                 row["series_a_id"] = hit.id
                 # Series A 탭 `IR 자료` 칸(0118) — 있으면 IR 기업처럼 [자료 보내기]에 실린다.
                 row["ir_file"] = (hit.ir_file_name or "").strip()
+    # 기업명 옆 `투자유치희망금액`(#118) — 저장하지 않고 IR 기업 현황(없으면 Series A)에서 읽는다.
+    find = company_finder(db)
+    for row in out:
+        row["raise_target"] = raise_target(find(row["company_id"], row["company_name"]))
     return out
 
 
@@ -682,6 +712,7 @@ def meeting_rows(db: Session, user: User) -> List[dict]:
     from .automations import meeting_review as a7
 
     asked = a7.asked_on(db, [r.id for r in rows if r.status == "done"])
+    find = company_finder(db)
 
     # 담당자별 **가장 나중 미팅 날짜**. 2차 미팅을 이미 잡았다면 1차에
     # "그 뒤 어떻게 되셨나요" 를 물을 이유가 없다 — 이미 이어졌다.
@@ -712,6 +743,9 @@ def meeting_rows(db: Session, user: User) -> List[dict]:
             "title": (contact.title or "") if contact else "",
             "firm": (contact.firm or "") if contact else "",
             "company_name": row.company_name or "",
+            "company_id": row.company_id,
+            # 기업명 옆 `투자유치희망금액`(#118 — `request_rows` 와 같은 길).
+            "raise_target": raise_target(find(row.company_id, row.company_name)),
             "scheduled_at": row.scheduled_at,
             # 몇 시 미팅인지. 안 적어 둔 건은 빈 문자열이다 — 화면이 날짜만
             # 보여주면 된다(없는 시각을 지어내면 그 시간에 간다).
