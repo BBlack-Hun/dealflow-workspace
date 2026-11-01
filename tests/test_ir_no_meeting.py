@@ -268,7 +268,7 @@ def test_filters(client, db, users):
     html = c.get("/ir/no-meeting").text
     rows = _rows(html)
     assert len(rows) == 7 and not any("보류기업" in r for r in rows)
-    assert "보내지 않음 보기" in html
+    assert "보내지 않음·드랍 보기" in html
     assert ir_no_meeting.NOTE_OVERDUE in next(r for r in rows if "보기팜" in r)
     assert ir_no_meeting.NOTE_COLLEAGUE in next(r for r in rows if "임꺽정" in r)
     assert len(_rows(c.get("/ir/no-meeting?days=30").text)) == 4      # 10·22·25일 빠짐
@@ -277,7 +277,7 @@ def test_filters(client, db, users):
     assert len(_rows(c.get("/ir/no-meeting?sent=no").text)) == 6
     assert len(_rows(c.get("/ir/no-meeting?src=app").text)) == 4
     assert len(_rows(c.get("/ir/no-meeting?src=sheet").text)) == 3
-    rows = _rows(c.get("/ir/no-meeting?drop=show").text)              # [보내지 않음 보기]
+    rows = _rows(c.get("/ir/no-meeting?drop=show").text)              # [보내지 않음·드랍 보기]
     assert len(rows) == 8 and any("보류기업" in r for r in rows)
     planned = c.get("/ir/no-meeting?view=scheduled").text
     rows = _rows(planned)

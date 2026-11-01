@@ -37,6 +37,26 @@
 투자사는 이미 만난 것이다. 요청의 담당은 앱은 적은 사람, 시트는 그 명단 주인이다.
 
 `보내지 않음`(`dropped`) 요청도 싣는다 — 상태 칸에 그대로 적히고, 화면은 기본으로 뺀다(칩으로 본다).
+`드랍`(`lost`)도 같다. 드랍 뒤에 새 요청 · 전달이 오면 그 줄은 다시 산다(아래 `_state`).
+
+## 명단 기록 — 세 번째 출처(#116 2차)
+
+명단 월별 `IR 요청` 칸에 손으로 적은 `…전달`(`memo_delivered.entries`)도 줄로 싣는다 —
+읽기만 하고(출처 `명단 기록`), 앱 전달 기록과 겹치면 안 싣는다(`memo_delivered.overlaps` —
+업무 보고 수와 같은 판정). 기업은 시트 이력처럼 IR 기업 현황에서 찾은 것만이다.
+
+## 드랍 의심 — 전달 뒤 `DROP_SUSPECT_DAYS`일 동안 미팅이 없다(#116 2차 B안)
+
+자료를 보낸 뒤 피드백 없이 끝난 건을 사람이 확정하게 띄운다. 조건은 넷 다:
+
+- 줄 상태가 전달 완료(앱 `delivered` 또는 명단 기록의 전달)
+- 같은 **투자사** · 같은 기업에 완료 · 예정 미팅이 없다 — 다른 심사역이 만났거나 잡았어도,
+  예정일이 지난 채 완료 처리 안 된 미팅이 있어도 뺀다(미팅 기록을 고칠 일이지 드랍이 아니다)
+- 마지막 전달일에서 오늘까지 `DROP_SUSPECT_DAYS`일 이상
+- 다만 그 뒤 **미팅 요청을 보냈으면**(`pipeline.meeting_ask_state` — 앱 발송 · 손 표시)
+  `어레인지중` 이고, 시계는 미팅 요청 보낸 날부터 다시 센다
+
+날짜를 못 읽은 건(날짜 없는 명단 기록)은 띄우지 않는다 — 근거 없는 경보가 제일 나쁘다.
 """
 from __future__ import annotations
 
@@ -55,10 +75,15 @@ from .ir_monthly import _Index, _key
 
 #: 줄의 요청 상태 — 앱 요청은 `ir_requests.status`, 시트 이력은 전달 여부를 모른다.
 LABELS = {"delivered": pipeline.LABEL_DELIVERED, "open": pipeline.LABEL_REQUESTED,
-          "dropped": pipeline.REQUEST_STATUS["dropped"], "sheet": "시트 이력"}
-#: 한 쌍에 요청이 여럿이면 가장 멀리 간 상태가 그 줄의 상태다.
-_RANK = {"sheet": 0, "dropped": 1, "open": 2, "delivered": 3}
-SOURCES = {"app": "앱", "sheet": "시트 이력", "both": "앱 · 시트"}
+          "dropped": pipeline.REQUEST_STATUS["dropped"], "sheet": "시트 이력",
+          "lost": pipeline.REQUEST_STATUS["lost"]}
+#: 한 쌍에 요청이 여럿이면 가장 멀리 간 상태가 그 줄의 상태다(`lost` 는 `_state` 가 따로 본다).
+_RANK = {"sheet": 0, "dropped": 1, "lost": 1, "open": 2, "delivered": 3}
+SOURCES = {"app": "앱", "sheet": "시트 이력", "memo": "명단 기록"}
+#: 전달 뒤 미팅 요청을 보낸 줄의 상태 글자 — '어레인지중' = 앱의 `미팅 요청 보냄`.
+LABEL_ARRANGING = "어레인지중"
+#: 전달(또는 미팅 요청) 뒤 이 날 수 동안 미팅이 없으면 드랍 의심(11/01 결정).
+DROP_SUSPECT_DAYS = 21
 
 #: IR 요청 칸 글에 붙은 **안 만났다는 말**. `미팅 진행하지 않겠다` 는 `of_content` 가
 #: `미팅 진행` 으로 읽어 완료가 된다. 여기서만 거른다 — `meeting_kind._NEGATIVE` 에
@@ -84,6 +109,22 @@ def _meeting_of(act: ContactActivity) -> Optional[str]:
     else:
         kind = act.kind
     return {mk.DONE: "done", mk.SET: "scheduled"}.get(kind)
+
+
+def _when(item: dict) -> str:
+    return item["delivered_at"] or item["date"]
+
+
+def _state(its: List[dict]) -> str:
+    """쌍의 상태 — 드랍이 **가장 늦은 일**이면 드랍, 아니면 남은 것 중 가장 멀리 간 상태.
+
+    드랍 뒤에 새 요청 · 전달이 오면 다시 산 것이다 — 그래서 드랍만은 순위로 고르지 않는다.
+    """
+    live = [i for i in its if i["state"] != "lost"]
+    lost = max((_when(i) for i in its if i["state"] == "lost"), default="")
+    if lost and all(_when(i) <= lost for i in live):
+        return "lost"
+    return max((i["state"] for i in live), key=_RANK.get)
 
 
 def rows(db: Session, user_id: Optional[int], today: date) -> Tuple[List[dict], int]:
@@ -115,15 +156,32 @@ def rows(db: Session, user_id: Optional[int], today: date) -> Tuple[List[dict], 
         elif state == "overdue":
             overdue.add(pair)
 
-    for r in db.execute(select(IrRequest)).scalars():
+    requests = db.execute(select(IrRequest)).scalars().all()
+    for r in requests:
         contact = contacts.get(r.contact_id)
         if contact is not None:
             key, name = company(r.company_id, r.company_name)
             items.append({"contact": contact, "key": key, "name": name,
                           "date": r.requested_at or "", "owner": r.user_id, "src": "app",
-                          "state": r.status if r.status in _RANK else "open",
+                          "state": r.status if r.status in _RANK else "open", "id": r.id,
                           "delivered_at": (r.delivered_at or "")[:10]
-                          if r.status == "delivered" else ""})
+                          if r.status in pipeline.SENT_STATUSES else ""})
+    asks = pipeline.meeting_ask_state(db, requests, today=today)
+
+    # 명단 칸의 `…전달` — 앱 전달 기록과 겹치면 뺀다(업무 보고 수와 같은 판정).
+    from . import memo_delivered    # 그 모듈이 이 모듈의 `_person` 을 읽는다 — 순환을 피한다
+    app_sent = memo_delivered.app_delivered(db)
+    for e in memo_delivered.entries(db, today):
+        contact = contacts.get(e["contact_id"])
+        cid = index.find(e["company"])[0] if e["company"] else None
+        if contact is None or not cid or memo_delivered.overlaps(e, app_sent):
+            continue
+        day = e["date"] or e["month"]
+        items.append({"contact": contact, "key": cid, "name": names[cid], "date": day,
+                      "owner": e["owner"], "src": "memo", "state": "delivered",
+                      "delivered_at": e["date"],
+                      "memo": {"contact_id": e["contact_id"], "month": e["month"],
+                               "company": e["company"]}})
 
     for m in db.execute(select(Meeting).where(Meeting.status != "canceled")).scalars():
         contact = contacts.get(m.contact_id)
@@ -163,16 +221,25 @@ def rows(db: Session, user_id: Optional[int], today: date) -> Tuple[List[dict], 
 
     # 같은 투자사(사람 키의 앞자리)에서 그 기업을 만난 사람이 있나 — 이 줄의 사람은 안 만났다.
     firm_met = {(p[0], key) for p, key in done if p[0] != "#"}
+    # 드랍 의심은 투자사 단위 — 누가 만났든 · 잡았든(예정일 지남 포함) 미팅이 있으면 아니다.
+    firm_seen = firm_met | {(p[0], key) for p, key in (*planned, *overdue) if p[0] != "#"}
     owners = dict(db.execute(select(User.id, User.name)).all())
     out = []
     for pair, its in groups.items():
         its.sort(key=lambda i: i["date"])
         last = its[-1]
         contact = last["contact"]
-        state = max((i["state"] for i in its), key=_RANK.get)
-        delivered = sorted(i["delivered_at"] for i in its if i["delivered_at"])
+        state = _state(its)
+        delivered = sorted(i["delivered_at"] for i in its
+                           if i["delivered_at"] and (state == "lost") == (i["state"] == "lost"))
         since = pipeline._as_date(last["date"])
         srcs = {i["src"] for i in its}
+        # 어레인지중 — 마지막 전달 뒤에 미팅 요청이 나갔다(판정은 `meeting_ask_state` 한 곳).
+        asked = max((asks[i["contact"].id]["asked_at"] for i in its
+                     if i["src"] == "app" and i["contact"].id in asks), default="")
+        asked = asked if state == "delivered" and delivered and asked >= delivered[-1] else ""
+        clock = pipeline._as_date(asked or (delivered[-1] if delivered else ""))
+        quiet = (today - clock).days if clock and state == "delivered" else None
         out.append({
             "contact_name": contact.name,
             "contact_title": contact.title or "",
@@ -185,9 +252,21 @@ def rows(db: Session, user_id: Optional[int], today: date) -> Tuple[List[dict], 
             "days": (today - since).days if since else None,   # 최근 요청에서 오늘까지
             "count": len(its),
             "state": state,
-            "status_label": LABELS[state],
+            "status_label": LABEL_ARRANGING if asked else LABELS[state],
+            "asked_at": asked,
+            # 마지막 전달(미팅 요청을 보냈으면 그날)에서 오늘까지 — 드랍 의심의 시계.
+            "quiet_days": quiet,
+            "suspect": bool(quiet is not None and quiet >= DROP_SUSPECT_DAYS
+                            and pair not in planned and pair not in overdue
+                            and (pair[0][0], pair[1]) not in firm_seen),
+            # [드랍 확정] · [드랍 취소] 가 고칠 앱 요청 — 명단 기록은 [앱 기록으로] 옮긴다.
+            "sent_ids": [i["id"] for i in its if i["src"] == "app" and i["state"] == "delivered"],
+            "lost_ids": [i["id"] for i in its if i["src"] == "app" and i["state"] == "lost"],
+            "memos": [i["memo"] for i in its if i["src"] == "memo"],
             "delivered_at": delivered[-1] if delivered else "",
-            "src": "both" if len(srcs) > 1 else srcs.pop(),
+            "src": "both" if len(srcs) > 1 else next(iter(srcs)),
+            "srcs": srcs,
+            "src_label": " · ".join(v for k, v in SOURCES.items() if k in srcs),
             # 딜 진행 관리로 이을 수 있는 사람 — 앱 요청을 적은 사람만(그 화면은 제 것만 보인다).
             "app_owner_ids": {i["owner"] for i in its if i["src"] == "app"},
             "owners": ", ".join(sorted({owners.get(i["owner"], "") for i in its} - {""})),

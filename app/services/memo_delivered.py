@@ -46,7 +46,7 @@ from sqlalchemy.orm import Session
 
 from ..models import ContactColumn, IrRequest, SheetOwner, VcContact
 from . import company_names as cn
-from . import contact_columns, monthly_columns, sheet_owner
+from . import contact_columns, monthly_columns, pipeline, sheet_owner
 from .ir_monthly import _key
 from .ir_no_meeting import _person
 
@@ -125,9 +125,10 @@ def _same_company(a: str, b: str) -> bool:
 
 
 def entries(db: Session, today: date) -> List[dict]:
-    """명단 칸에서 읽은 전달 **전부** — `{owner, contact_id, person, month, company}`.
+    """명단 칸에서 읽은 전달 **전부** — `{owner, contact_id, person, month, date, company}`.
 
-    `company` 가 빈 글자면 기업을 못 읽은 회차다. 같은 사람 · 달 · 기업은 한 번만 싣는다
+    `date` 는 글 앞 날짜(`YYYY-MM-DD` — 날짜가 없으면 빈 글자). `company` 가 빈 글자면
+    기업을 못 읽은 회차다. 같은 사람 · 달 · 기업은 한 번만 싣는다
     (두 칸이나 두 명단에 같은 일을 적었다).
     """
     owners = {r.label: r.user_id for r in db.execute(select(SheetOwner)).scalars()}
@@ -160,7 +161,8 @@ def entries(db: Session, today: date) -> List[dict]:
                             continue
                         seen.add(key)
                         out.append({"owner": owners.get(sheet), "contact_id": person.id,
-                                    "person": who, "month": month, "company": name})
+                                    "person": who, "month": month, "company": name,
+                                    "date": f"{month}-{day[1]:02d}" if day else ""})
     return out
 
 
@@ -169,11 +171,17 @@ def app_delivered(db: Session) -> Dict[tuple, List[str]]:
     out: Dict[tuple, List[str]] = {}
     for req, contact in db.execute(
             select(IrRequest, VcContact).join(VcContact, VcContact.id == IrRequest.contact_id)
-            .where(IrRequest.status == "delivered")).all():
+            .where(IrRequest.status.in_(pipeline.SENT_STATUSES))).all():
         who = _person(contact)
         for when in {(req.requested_at or "")[:7], (req.delivered_at or "")[:7]} - {""}:
             out.setdefault((who, when), []).append(_key(req.company_name))
     return out
+
+
+def overlaps(row: dict, app: Dict[tuple, List[str]]) -> bool:
+    """이 명단 기록을 앱 전달 기록이 이미 적었나 — 같은 달 · 같은 사람 · 같은 기업."""
+    return any(_same_company(_key(row["company"]), k)
+               for k in app.get((row["person"], row["month"]), []))
 
 
 def month_count(db: Session, year: int, month: int, user_id: Optional[int],
@@ -193,8 +201,7 @@ def month_count(db: Session, year: int, month: int, user_id: Optional[int],
             continue
         if not row["company"]:
             unnamed += 1
-        elif any(_same_company(_key(row["company"]), k)
-                 for k in app.get((row["person"], want), [])):
+        elif overlaps(row, app):
             overlap += 1
             continue
         count += 1
