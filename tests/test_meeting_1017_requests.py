@@ -638,11 +638,12 @@ def test_전체_내려받기는_그대로_전부다(db, users, logged):
     assert len(rows) == 5
 
 
-def test_단추는_IR_기업_현황_탭에만(db, users, logged):
+def test_단추는_IR_기업_현황_탭에_선다(db, users, logged):
     body = logged.get("/companies").text
     assert 'id="co-export-view"' in body
     assert 'href="/api/export/companies.xlsx"' in body, "전체 내려받기는 그대로"
-    assert 'id="co-export-view"' not in logged.get("/companies?tab=db").text
+    # 옛 스타트업DB 주소도 합친 탭이라 같이 선다(#105 · #106).
+    assert 'id="co-export-view"' in logged.get("/companies?tab=db").text
 
 
 def test_정렬_규칙이_table_sort_와_같다():

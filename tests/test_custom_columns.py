@@ -669,7 +669,8 @@ def test_관리자만_자리를_고르고_그_화면에_없는_칸은_거절한�
     assert '<option value="">맨 끝</option>' in page
     # 몇 탭에만 있는 칸은 그 탭을 적는다 — 없는 탭에서는 맨 끝에 선다.
     assert ">기업명 뒤</option>" in page
-    assert ">정책자금 뒤 (스타트업DB 탭만)</option>" in page
+    # 옛 스타트업DB 탭의 칸은 합친 IR 기업 현황 탭의 칸이다(#105 · #106).
+    assert ">정책자금 뒤 (IR 기업 현황 탭만)</option>" in page
 
     before = db.query(EditLog).count()
     r = admin.post(f"/columns/{col.id}/place", data={"after": "기업명"},
@@ -742,7 +743,6 @@ def test_자리_목록의_칸이_그_화면_머리글에_다_있다(portal, db, 
 
     pages = {
         ("companies", "IR 기업 현황"): "/companies",
-        ("companies", "스타트업DB"): "/companies?tab=db",
         ("companies", "Series A 이상 딜 소싱"): "/companies?tab=series-a",
         ("consulting", "스타트업"): "/consulting?sheet=" + quote("스타트업"),
         ("consulting", "그 밖의"): "/consulting?sheet=" + quote("경영본부 전달 기업"),

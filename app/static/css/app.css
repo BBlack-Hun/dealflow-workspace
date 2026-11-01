@@ -615,7 +615,10 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
 /* (4,364 → 4,708 : `딜 소개 문구` 에 폭 344px 을 줬다 — 폭이 없어 #75 부터 0px 이었다
     (companies.html 참고). 든 만큼만 올려 `%` 칸 넷은 지금 폭 그대로다.) */
 /* (4,708 → 4,948 : #103 — `IR 자료` 앞 `메모`(240px). 든 만큼만 올린다.) */
-#co-table { min-width: 4948px; }
+/* (4,948 → 5,490 : #105 · #106 — 스타트업DB 탭을 합치며 그 탭에만 있던 넷
+    `특이사항 (장점)` 260 · `설립년도` 72 · `지역` 80 · `정책자금` 130 = 542px. 칸을 옮긴 것
+    (`수정한 날짜`·`수정한 팀원`·`딜 소개 문구`)은 폭이 그대로다. 든 만큼만 올린다.) */
+#co-table { min-width: 5490px; }
 #co-table td.updated-by { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* IR 기업 현황 › Series A 이상 딜 소싱 — 넓은 표 공통 값(2,030px)에 직접 적는 칸
    열(#24 · `companies_series_a.html` 의 `대표자명` ~ `Pre Value`, 폭 합 932px)을 **든 만큼만**

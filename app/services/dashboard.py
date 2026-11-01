@@ -581,8 +581,8 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None,
             "count": not_introducible, "label": "발송 목록에 안 뜨는 기업",
             "hint": "한줄소개 또는 숫자(매출·투자금)가 비어 소개 문구를 만들 수 없습니다",
             # 표에서 '소개 가능' 컬럼을 뺐으므로 그 필터로 보내면 갈 곳이 없다.
-            # 채워야 하는 값이 있는 스타트업DB 탭으로 보낸다.
-            "href": "/companies?tab=db", "level": "warn",
+            # 채워야 하는 값(옛 스타트업DB 칸)이 있는 IR 기업 현황으로 보낸다(#105 · #106).
+            "href": "/companies", "level": "warn",
         })
 
     device = db.execute(

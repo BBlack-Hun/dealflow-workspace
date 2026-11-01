@@ -119,40 +119,12 @@ def _panel_save(client, company_id: int, **over):
 
 # --- ① 표에 있는 칸은 창에도 있다 --------------------------------------------
 
-def _db_tab_fields(text: str) -> set:
-    """스타트업DB 표가 눌러 고치게 열어 둔 칸 — `data-field="…"`.
-
-    두 표는 `{% if co_tab == 'db' %}` … `{% else %}` 로 갈라져 있다. 앞쪽
-    덩어리만 본다 — **없어질 탭은 이쪽**이라, 여기 있는 칸이 창에도 있어야
-    탭을 지워도 고칠 자리가 남는다.
-    """
-    head = text.split("{% if co_tab == 'db' %}", 1)[1]
-    return set(re.findall(r'data-field="([a-z_0-9]+)"', head.split("{% else %}", 1)[0]))
-
-
 # IR 기업 현황 표에서만 고치는 칸. **왜 창에 없는지 여기 적어 둔다** — 이유 없이
 # 목록만 늘면 아래 검사가 아무것도 안 지키게 된다.
-#
-# 이 둘은 없어질 탭(스타트업DB)이 아니라 **남는 탭**의 칸이라 급하지 않다.
 IR_TAB_ONLY = {
-    "assignee_name": "담당자 — 남는 탭의 칸이고, 표에서 목록으로 골라 고친다",
+    "assignee_name": "담당자 — 표에서 목록으로 골라 고친다",
     "top_deal_kind": "핵심/TOP Deal — 창에는 `추천 딜 (★)` 체크박스가 그 자리다",
 }
-
-
-def test_없어질_탭에서_눌러_고치는_칸은_모두_창에도_있다():
-    """칸이 하나 늘 때 창에 넣는 것을 잊으면 여기서 잡힌다.
-
-    잊으면 그 칸은 **스타트업DB 표에서 눌러 고치는 것이 유일한 입구**가 된다.
-    지금은 표가 있으니 티가 안 나지만, 그 탭을 지우는 날 고칠 자리가 통째로
-    사라진다 — 이 판이 막으려는 것이 바로 그것이다.
-    """
-    text = TEMPLATE.read_text(encoding="utf-8")
-    in_panel = set(re.findall(r'id="f-([a-z_0-9]+)"', text))
-    missing = sorted(_db_tab_fields(text) - in_panel)
-    assert not missing, (
-        "스타트업DB 표에서는 눌러 고칠 수 있는데 [수정] 창에는 없는 칸입니다 — "
-        f"그 탭을 지우면 고칠 자리가 사라집니다: {missing}")
 
 
 def test_IR_탭에만_있는_칸은_이유가_적혀_있다():
@@ -206,7 +178,9 @@ def test_연도별_매출도_표와_창에_같은_이름으로_선다(logged_in,
         assert f'id="f-{attr}"' in html, f"{label}({attr}) 칸이 창에 없습니다"
         assert attr in fields, f"{label}({attr}) 이 companies.js 의 FIELDS 에 없습니다"
         assert f"<span>{label}</span>" in html, f"{attr}: 창의 이름이 '{label}' 이 아닙니다"
-        assert f">{label}</th>" in html, f"{attr}: 표 머리글이 '{label}' 이 아닙니다"
+        # 머리글에 금액 구간 필터 자리가 붙는다(#88 · #90).
+        assert re.search(rf">{label}(<div class=\"th-filters\"></div>)?</th>", html), \
+            f"{attr}: 표 머리글이 '{label}' 이 아닙니다"
 
 
 def test_재료_칸의_이름은_한_곳에서만_정해진다():
@@ -371,15 +345,14 @@ def test_창의_저장은_브라우저에_있으니_거기서_잰다():
 # 다음에 창 여는 규칙이 바뀔 때 한쪽만 고쳐지고 조용히 갈린다. 그래서 번호
 # 칸은 [수정] 단추와 같은 class 를 달아 companies.js 의 그 handler 를 탄다.
 
-def test_두_탭의_번호_칸이_수정_창을_연다():
+def test_번호_칸이_수정_창을_연다():
     """번호 칸이 **[수정] 단추와 같은 class** 를 달고 있는가.
 
-    두 탭(IR 기업 현황 · 스타트업DB)에 하나씩 있다 — 같은 창을 쓰는데 한쪽
-    탭에서만 열리면 고장으로 읽힌다.
+    IR 기업 현황 표에 하나다(#105 · #106 — 스타트업DB 탭을 합쳤다).
     """
     text = TEMPLATE.read_text(encoding="utf-8")
     rowno = re.findall(r'<td class="(rowno[^"]*)"', text)
-    assert len(rowno) == 2, f"번호 칸이 탭마다 하나씩 둘이 아닙니다: {rowno}"
+    assert len(rowno) == 1, f"번호 칸이 하나가 아닙니다: {rowno}"
     for cls in rowno:
         assert "js-co-edit" in cls.split(), \
             f"번호 칸에 js-co-edit 이 없습니다 ★ 눌러도 창이 안 열립니다: {cls}"

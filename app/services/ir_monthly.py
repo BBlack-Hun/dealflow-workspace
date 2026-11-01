@@ -43,8 +43,8 @@ from ..models import ContactActivity, IrCompany, IrRequest, SeriesACompany, VcCo
 from . import ir_mask
 from .sheet_import import normalize_company_name
 
-# 이 문서를 받는 기업. **관계가 맺어진 곳만**이다 — 계약검토중·미계약 기업에
-# 우리가 받은 투자사 반응을 보내면 그것 자체가 영업 자료가 된다.
+# 이 문서를 받는 기업. **관계가 맺어진 곳만**이다 — 계약검토중·계약진행중·미계약
+# 기업에 우리가 받은 투자사 반응을 보내면 그것 자체가 영업 자료가 된다.
 #
 # 계약 둘(`free`·`paid`)에 더해 **무료 IR 미팅 둘**(`free_meet_planned` ·
 # `free_meet_done`)도 대상이다. 무료 IR 미팅은 계약 전 단계지만 이미 미팅을
@@ -399,7 +399,7 @@ def contracted(db: Session) -> List[IrCompany]:
 def uncontracted(db: Session) -> List[IrCompany]:
     """계약 기업도 `딜소개 불가` 도 아닌 나머지 전부, 이름 순 — **보기만 한다**(#93).
 
-    미계약 · 빈칸 · 계약검토중 · 목록에 없는 글자가 다 든다. 문서·카톡·발송은
+    미계약 · 빈칸 · 계약검토중 · 계약진행중 · 목록에 없는 글자가 다 든다. 문서·카톡·발송은
     이것을 읽지 않는다 — 받는 기업은 위 `contracted()` 하나다."""
     from ..routers.companies import BLOCKED_CONTRACT, contract_key
 

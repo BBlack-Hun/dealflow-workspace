@@ -260,13 +260,6 @@ def test_사업분야가_다_차_있으면_단추를_세우지_않는다(logged_
     assert "data-preset=\"sector=" not in logged_in.get("/companies").text
 
 
-def test_스타트업DB_탭에는_단추를_세우지_않는다(logged_in, db):
-    """그 탭에는 사업분야 필터가 없어 눌러도 필터가 풀리기만 한다."""
-    db.add(_c(name="가상빈칸"))
-    db.commit()
-    assert "data-preset=\"sector=" not in logged_in.get("/companies?tab=db").text
-
-
 # --- 7. 화면 쪽 규칙은 node 로 돌린다 --------------------------------------
 #
 # 후보를 목록 맨 앞에 세우는 일은 브라우저에서 일어난다. 파이썬으로 다시

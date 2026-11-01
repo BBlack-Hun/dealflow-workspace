@@ -779,6 +779,23 @@ def test_표에서_눌러_고쳐도_수정창에서_골라도_같은_값이_남�
     assert logged_in.get(f"/api/companies/{company.id}").json()["contract_label"] == _MEET_DONE
 
 
+def test_계약진행중을_표와_수정창에서_골라_저장한다(logged_in, db, company):
+    """#104 — `계약진행중` 이 계약여부 보기에 선다. 표는 말을, 수정창은 값을 보낸다."""
+    html = logged_in.get("/companies").text
+    cell = re.search(r'data-field="contract_status"[^>]*data-choices="([^"]*)"', html)
+    assert cell and "계약진행중" in cell.group(1)
+    panel = re.search(r'<select id="f-contract_status">(.*?)</select>', html, re.S)
+    assert panel and '<option value="in_progress">계약진행중</option>' in panel.group(1)
+
+    r = logged_in.patch(f"/api/companies/{company.id}", json={"contract_status": "계약 진행중"})
+    assert r.status_code == 200
+    db.expire_all()
+    db.refresh(company)
+    assert company.contract_status == "in_progress"
+    assert r.json()["contract_label"] == "계약진행중"
+    assert r.json()["blocked"] is False
+
+
 def test_표는_미팅제공일자를_계약여부_바로_앞에_세운다(logged_in, company):
     """자리가 뜻이다(사용자 요청). 옆 칸의 두 상태가 곧 이 날짜를 묻는 말이라,
     날짜를 먼저 읽고 상태를 읽는 차례로 서야 한 줄로 읽힌다."""
@@ -879,6 +896,9 @@ def test_시트에_적힌_말도_그대로_새_상태로_들어온다():
     # 띄어쓰기가 달라도 같은 값이다 — 사람은 `무료IR` 과 `무료 IR` 을 섞어 쓴다.
     assert _contract_status("무료 IR 미팅제공예정") == "free_meet_planned"
     assert _contract_status("무료계약완료") == "free"
+    # `계약진행중`(#104) 은 말이 먼저다 — 어림짐작이 먼저면 `진행` 에 걸려 계약검토중이 된다.
+    assert _contract_status("계약진행중") == "in_progress"
+    assert _contract_status("계약 진행중") == "in_progress"
     # 말이 아닌 값(옛 시트의 `완료`·`진행중`)은 하던 대로 읽는다
     assert _contract_status("완료") == "yes"
     assert _contract_status("진행중") == "pending"
@@ -906,8 +926,8 @@ def test_무료IR_미팅_두_상태도_문서_대상이다(db):
 
     받는다 = {"샘플유료": "paid", "샘플무료": "free",
               "샘플예정": "free_meet_planned", "샘플완료": "free_meet_done"}
-    못받는다 = {"샘플검토": "review", "샘플미계약": "none", "샘플불가": "blocked",
-                "샘플옛미계약": "no", "샘플옛검토": "pending"}
+    못받는다 = {"샘플검토": "review", "샘플진행": "in_progress", "샘플미계약": "none",
+                "샘플불가": "blocked", "샘플옛미계약": "no", "샘플옛검토": "pending"}
     for name, status in {**받는다, **못받는다}.items():
         db.add(IrCompany(name=name, contract_status=status))
     db.commit()

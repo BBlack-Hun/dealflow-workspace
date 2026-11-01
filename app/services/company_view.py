@@ -73,14 +73,17 @@ SORT_VALUES = {
 #: 친 글자가 **번호 모양**인가 — `companies.js` 의 `PHONEISH` 와 같은 규칙.
 PHONEISH = re.compile(r"^[0-9][0-9\s().+-]*$")
 
-#: 파일 머리글 — IR 기업 현황 탭의 머리글 그대로(왼쪽부터). `소분류` 뒤의 매출 · 금액
-#: 칸은 해마다 이름이 바뀌어 `view_headers` 가 끼운다(#75 · `revenue_years.columns`).
+#: 파일 머리글 — IR 기업 현황 탭의 머리글 그대로(왼쪽부터 · 옛 스타트업DB 칸 포함,
+#: #105 · #106). `소분류` 뒤의 매출 · 금액 칸은 해마다 이름이 바뀌어 `view_headers` 가
+#: 끼운다(#75 · `revenue_years.columns`). 화면과 같은지는 tests/test_ir_tab_merge.py 가 본다
+#: (`컨설팅 상태`·`컨설팅 미팅일` 은 볼 수 있는 계정에만 서는 읽기 칸이라 안 싣는다).
 VIEW_HEADERS = [
-    "NO", "기업명", "수신일", "대표자명", "연락처", "이메일", "기업 한줄 소개",
-    "대분류", "소분류", "투자라운드", "수정한 날짜", "수정한 팀원",
-    "딜 소개 문구", "담당자", "소개 횟수", "소개 발송(명)", "견적서 첨부 여부",
+    "NO", "기업명", "수신일", "수정한 날짜", "수정한 팀원", "대표자명", "연락처", "이메일",
+    "기업 한줄 소개", "딜 소개 문구", "대분류", "소분류", "투자라운드",
+    "특이사항 (장점)", "설립년도", "지역", "정책자금",
+    "담당자", "소개 횟수", "소개 발송(명)", "견적서 첨부 여부",
     "미팅제공일자", "계약여부", "계약서 수신 여부", "성공보수율", "카톡 연결 여부", "홍보메일삭제",
-    "핵심/TOP Deal", "IR 자료",
+    "핵심/TOP Deal", "메모", "IR 자료",
 ]
 
 
@@ -231,19 +234,20 @@ def to_cells(rows: List[dict], cols) -> List[list]:
     out = []
     for no, r in enumerate(rows, start=1):
         out.append([
-            no, r["name"], r["received_at"],
+            no, r["name"], r["received_at"], r["updated_at"], r["updated_by"],
             r["contact_name"], r["contact_phone"], r["contact_email"], r["business_desc"],
-            r["sector_major"], r["sector_minor"],
+            r["one_liner"], r["sector_major"], r["sector_minor"],
             # 매출 · 금액 — 화면처럼 **적힌 그대로** 글자다(`amount_cell` 의 `eok`).
             *[r[f] or "" for f, _label in cols],
             # 화면은 투자라운드를 **앞부분만** 보인다(`series_short` — 괄호 안 설명
             # 생략). 파일에서는 전체 값을 싣는다 — 짚어야 보이던 것이 칸에 바로 선다.
-            r["series"], r["updated_at"], r["updated_by"], r["one_liner"], r["assignee"],
+            r["series"], r["competitiveness"], r["founded_year"], r["region"], r["guarantee"],
+            r["assignee"],
             # 한 번도 안 나간 기업은 화면이 `–` 로 보인다 — 파일에서는 수 0 이다.
             r["sent_rounds"], r["sent_total"], r["quote_attached"],
             r["meeting_offered_at"], r["contract_label"], r["contract_received"],
             r["success_fee"], r["kakao_joined"], r["contract_month"],
-            r["top_deal_kind"] or "", r["ir_file_name"] if r["has_ir"] else "없음",
+            r["top_deal_kind"] or "", r["note"], r["ir_file_name"] if r["has_ir"] else "없음",
         ])
     return out
 

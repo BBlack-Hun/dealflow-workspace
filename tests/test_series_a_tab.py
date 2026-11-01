@@ -95,15 +95,16 @@ def _names(html: str) -> list:
 
 # ── ① 화면 ──────────────────────────────────────────────────────────────────
 
-def test_탭이_열리고_세_탭이_한_줄로_선다(logged_in, rows):
+def test_탭이_열리고_두_탭이_한_줄로_선다(logged_in, rows):
     res = logged_in.get("/companies?tab=series-a")
     assert res.status_code == 200
     html = res.text
     tabs = re.search(r'<nav class="sheet-tabs co-tabs">.*?</nav>', html, re.S).group(0)
-    assert "IR 기업 현황" in tabs and "스타트업DB" in tabs and "Series A 이상 딜 소싱" in tabs
+    assert "IR 기업 현황" in tabs and "Series A 이상 딜 소싱" in tabs
+    assert "스타트업DB" not in tabs, "#105 · #106 — 스타트업DB 탭은 IR 기업 현황으로 합쳤다"
     active = re.findall(r'class="sheet-tab active" href="([^"]+)"', tabs)
     assert active == ["/companies?tab=series-a"], active
-    # 셋째 탭의 수 = 이 표의 줄 수.
+    # 둘째 탭의 수 = 이 표의 줄 수.
     assert re.search(r"Series A 이상 딜 소싱 <span[^>]*>4</span>", tabs), tabs
 
 
