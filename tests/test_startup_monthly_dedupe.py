@@ -19,7 +19,7 @@
 from __future__ import annotations
 
 import re
-from datetime import timedelta
+from datetime import datetime, timedelta
 from urllib.parse import unquote
 
 import pytest
@@ -55,7 +55,11 @@ def _later() -> str:
 
 def _past_job(db, company_id, month, *, status="sent", job_status="done", sent_at=None):
     """그 달치 회차 하나를 바로 심는다 — 회차명에 달이 적힌다(화면의 기본 이름).
-    `sent_at` 이 없으면 그 달 1일 아침(어느 회차보다 **앞**)."""
+    `sent_at` 이 없으면 그 달 1일 0시(어느 회차보다 **앞**).
+
+    앱은 시각을 글자로 견준다(`startup_monthly.received`) — 프로세스 시간대로 적어야
+    `clock.now_iso` 와 같은 꼴이 된다. `+09:00` 을 박으면 UTC 로 도는 CI 에서
+    1일 0~9시(UTC)에 회차보다 **뒤**로 읽혔다(11/01 main CI)."""
     from app.models import DealBatch, SendItem, SendJob
 
     batch = DealBatch(user_id=1, title=f"10/30 (스타트업 월간 발송 {month})")
@@ -67,7 +71,8 @@ def _past_job(db, company_id, month, *, status="sent", job_status="done", sent_a
     db.flush()
     db.add(SendItem(job_id=job.id, ir_company_id=company_id, room_name="방",
                     message="글", status=status,
-                    sent_at=(sent_at or f"{month}-01T09:00:00+09:00")
+                    sent_at=(sent_at or datetime.fromisoformat(f"{month}-01")
+                             .astimezone().isoformat(timespec="seconds"))
                     if status == "sent" else None))
     db.commit()
     return job
