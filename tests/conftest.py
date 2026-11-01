@@ -108,6 +108,25 @@ def _login_limits_clear():
     yield
 
 
+@pytest.fixture(autouse=True, scope="session")
+def _no_background_threads():
+    """**앱이 띄우는 주기 실을 검사 중에는 안 띄운다**(예약 발송 30초 · 자동화 5분 · 딜 소싱 메일 5분).
+
+    `create_app()` 이 띄운 실은 그 프로세스가 끝날 때까지 같은 검사 DB 에 질의를
+    쏜다. 질의 수를 세는 검사는 엔진 전체에 귀를 대므로(`before_cursor_execute`)
+    실이 그 사이에 깨어나면 남의 질의가 섞인다 — 투자컨설턴트 화면이 113번이 아니라
+    116번으로 세어져 CI 에서만 가끔 깨졌다(3 = 예약 발송 실 한 바퀴의 질의 수).
+    파일 하나만 돌리면 30초가 안 차서 늘 통과했다. 예약 회차를 만들어 놓고 보는
+    검사도 실이 먼저 풀어 버릴 수 있다. 실이 하는 일은 검사가 `run_once` 등을 직접
+    불러 본다. 앱에는 끄는 스위치를 두지 않으므로(`main.create_app` 주석) 여기서만
+    막는다 — 위 백업 실을 `DEALFLOW_DAILY_BACKUP=0` 으로 끈 것과 같은 까닭이다.
+    """
+    from app.services import automation_runner, scheduled_send, sourcing_mail
+
+    for mod in (scheduled_send, automation_runner, sourcing_mail):
+        mod.start_scheduler = lambda: None
+
+
 @pytest.fixture()
 def db():
     """매 테스트마다 빈 스키마. (SQLite 파일 하나라 drop/create 가 가장 단순하고 빠르다)"""
