@@ -61,14 +61,15 @@ def test_이메일_바로_오른쪽에_두_칸이_서고_보기와_필터가_IR_
     labels = [re.sub(r"<[^>]+>", "", t).strip()
               for t in re.findall(r"<th\b[^>]*>(.*?)</th>", thead, re.S)]
     at = labels.index("이메일")
-    assert labels[at + 1:at + 3] == ["계약여부", "계약서 수신 여부"], labels
+    # 사이에 `계약년월`(0129 · #122 — 계약여부 왼쪽)이 선다.
+    assert labels[at + 1:at + 4] == ["계약년월", "계약여부", "계약서 수신 여부"], labels
     assert 'data-filters="contract:계약여부"' in thead
     assert 'data-filters="received:계약서 수신 여부"' in thead
 
     row = re.search(r"<tr data-id=.*?</tr>", html, re.S).group(0)
     fields = re.findall(r'data-field="([^"]+)"', row)
     at = fields.index("ceo_email")
-    assert fields[at + 1:at + 3] == ["contract_status", "contract_received"], fields
+    assert fields[at + 1:at + 4] == ["contract_ym", "contract_status", "contract_received"], fields
     # 비어 있으면 IR 표처럼 `미계약` — 보기는 늘 다 선다(`data-choices`).
     assert ('data-choices="' + ", ".join(CONTRACT_LABELS.values()) + '">미계약</td>') in row
     assert 'data-f-contract="미계약"' in row and 'data-f-received=""' in row

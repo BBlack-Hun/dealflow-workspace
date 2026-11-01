@@ -79,8 +79,9 @@ def test_딜_진행_관리_네_표에_선다(stage):
 def test_업무_보고_화면과_엑셀에_선다(stage):
     client = stage["client"]
     page = client.get("/report?month=2026-08").text
-    # 미팅 표 둘(샘플애그 · 샘플메디) + 반응 표(IR 요청 둘 · 미팅 요청 · 미팅완료 · 리마인드 TEL).
-    assert page.count('<td class="num">18.3억</td>') == 3
+    # 미팅 표 둘(샘플애그 · 샘플메디) + 반응 표(IR 요청 둘 · 미팅 요청 · 미팅완료 · 리마인드 TEL)
+    # + `아직 소개 안 한 10억 이상` 묶음(#122)의 샘플애그 한 줄.
+    assert page.count('<td class="num">18.3억</td>') == 4
     assert page.count('<td class="num">30억</td>') == 1
     assert page.count('<td class="num">5~10억</td>') >= 2
 

@@ -23,7 +23,8 @@ ROOT = Path(__file__).resolve().parent.parent
 LABELS = ["대표자명", "연락처", "이메일", "24년 매출", "25년 매출", "26년 매출",
           "27년 매출", "누적투자금액", "투자유치희망금액", "Pre Value"]
 #: `이메일` 바로 오른쪽의 계약 칸 둘(0125 · tests/test_series_a_contract.py) — 화면 차례.
-CONTRACT = ["계약여부", "계약서 수신 여부"]
+#: 그 왼쪽에 `계약년월`(0129 · #122 — tests/test_contract_ym.py)이 선다.
+CONTRACT = ["계약년월", "계약여부", "계약서 수신 여부"]
 SHOWN = LABELS[:3] + CONTRACT + LABELS[3:]
 
 
@@ -54,8 +55,9 @@ def test_칸이_IR_기업_현황_차례로_선다(logged_in, deal):
     labels = [label for _a, label in _head(html)]
     # `수신일` 바로 뒤는 `후속라운드 시작`(#98 · tests/test_series_a_follow_round.py) — 그 뒤부터.
     at = labels.index("후속라운드 시작")
-    assert labels[at + 1:at + 6] == LABELS[:3] + CONTRACT, labels
-    assert labels[at + 6:at + 8] == ["대분류", "소분류"], labels
+    end = at + 1 + len(LABELS[:3] + CONTRACT)
+    assert labels[at + 1:end] == LABELS[:3] + CONTRACT, labels
+    assert labels[end:end + 2] == ["대분류", "소분류"], labels
     at = labels.index("소분류")
     money = LABELS[3:]
     assert labels[at + 1:at + 1 + len(money)] == money, labels
@@ -64,7 +66,7 @@ def test_칸이_IR_기업_현황_차례로_선다(logged_in, deal):
     row = re.search(r"<tr data-id=.*?</tr>", html, re.S).group(0)
     fields = re.findall(r'class="cell[^"]*" data-field="([^"]+)"', row)
     at = fields.index("follow_round_month")
-    want = (list(TYPED[:3]) + ["contract_status", "contract_received",
+    want = (list(TYPED[:3]) + ["contract_ym", "contract_status", "contract_received",
                                "sector_major", "sector_minor"]
             + list(TYPED[3:]) + ["series", "detail"])
     assert fields[at + 1:at + 1 + len(want)] == want, fields
@@ -149,7 +151,7 @@ def test_추가_칸_자리_목록에도_선다():
 
     tab = svc.anchor_groups("companies")["Series A 이상 딜 소싱"]
     at = tab.index("후속라운드 시작")
-    assert list(tab[at + 1:at + 6]) == LABELS[:3] + CONTRACT
+    assert list(tab[at + 1:at + 1 + len(LABELS[:3] + CONTRACT)]) == LABELS[:3] + CONTRACT
     at = tab.index("소분류")
     assert list(tab[at + 1:at + 1 + len(LABELS[3:])]) == LABELS[3:]
 

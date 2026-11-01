@@ -50,7 +50,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import get_history
 
 from ... import clock
-from ...models import Automation, AutomationSend, IrCompany, User
+from ...models import Automation, AutomationSend, IrCompany, SeriesACompany, User
 from .. import automation, cadence, pipeline, template_pick
 from .. import automation_runner as runner
 
@@ -100,15 +100,22 @@ def before_flush(session: Session) -> None:
 
     무료 ↔ 유료는 계약 완료끼리라 날을 안 바꾼다. 새 줄(옛 값이 없다)은 안 적는다 —
     시트 · 엑셀로 들어오는 옛 계약과 가를 수 없다(`models.IrCompany.contract_done_at`).
+
+    같은 순간에 **계약년월**(#122)이 비어 있으면 그 달을 적는다 — IR 기업 · Series A 줄
+    둘 다. 이미 있으면 안 건드리고, 계약 완료가 아니게 돼도 지우지 않는다.
     """
     for company in session.dirty:
-        if not isinstance(company, IrCompany) or company in session.deleted:
+        if not isinstance(company, (IrCompany, SeriesACompany)) or company in session.deleted:
             continue
         history = get_history(company, "contract_status")
         if not history.added or not history.deleted:
             continue
         was = _key(history.deleted[0]) in DONE
         now = _key(history.added[0]) in DONE
+        if now and not was and not company.contract_ym:
+            company.contract_ym = clock.today().isoformat()[:7]
+        if not isinstance(company, IrCompany):
+            continue
         if now and not was:
             company.contract_done_at = clock.today().isoformat()
         elif was and not now:

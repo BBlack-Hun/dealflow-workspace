@@ -43,10 +43,12 @@ function build() {
   const name = D.el("td", { class: "cell", "data-field": "name" });
   name.textContent = "샘플에이";
 
+  const ym = D.el("td", { class: "cell", "data-field": "contract_ym" });
+
   const tr = D.el("tr", {
     "data-id": "7", "data-search": "",
     "data-f-contract": "유료계약완료", "data-f-received": ""
-  }, [D.el("td", { class: "rowno muted" }), name, contract, received]);
+  }, [D.el("td", { class: "rowno muted" }), name, ym, contract, received]);
 
   const table = D.el("table", { id: "co-table", "data-inline-url": "/api/companies" }, [
     D.el("tbody", {}, [tr])
@@ -65,7 +67,7 @@ function build() {
     D.el("button", { id: "co-save" })
   ]);
   return { root: root, table: table, tr: tr, received: received,
-           contract: contract, name: name };
+           contract: contract, name: name, ym: ym };
 }
 
 // --- companies.js 를 그대로 돌린다 ------------------------------------------
@@ -158,6 +160,16 @@ function saved(dom, cell, data) {
     "계약여부 되그리기가 안 걸렸습니다");
   assert.strictEqual(dom.received.textContent, "X",
     "계약여부를 고쳤는데 계약서 수신 여부 칸까지 덮였습니다");
+}
+
+// ── 5. 계약 완료로 바꾸면 채워진 계약년월(#122)도 그 줄에 그린다 ───────────
+{
+  const dom = build();
+  run(dom);
+  saved(dom, dom.contract, { contract_label: "유료계약완료", blocked: false,
+                             contract_received: "", contract_ym: "2026-11" });
+  assert.strictEqual(dom.ym.textContent, "2026-11",
+    "서버가 채운 계약년월이 새로고침 전까지 안 보입니다");
 }
 
 console.log("company_contract_received_test OK");

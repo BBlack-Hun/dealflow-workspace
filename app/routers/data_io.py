@@ -513,6 +513,8 @@ COMPANY_HEADERS = [
     "지역", "견적서 첨부 여부", "카톡 연결 여부",
     # 0119(결정 10) — 같은 까닭으로 끝에 붙인다.
     "성공보수율",
+    # 0129(#122) — 같은 까닭으로 끝에 붙인다.
+    "계약년월",
 ]
 
 
@@ -543,7 +545,7 @@ def export_companies(db: Session = Depends(get_db),
              "★" if c.is_top_deal else "", c.funding_status or "",
              c.summary_status or "", c.ir_file_name or "",
              c.region or "", c.quote_attached or "", c.kakao_joined or "",
-             c.success_fee or ""]
+             c.success_fee or "", c.contract_ym or ""]
             + custom_columns.cells(extra, c.id))
         for c in companies
     ]
@@ -1010,17 +1012,18 @@ def _intro_sheets(wb, tag: str, label: str, data: dict, who: str,
     sub = f"{who} · {today.isoformat()} 뽑음 · 투자사가 실제로 받은 것만 셉니다"
 
     sheet = _ReportSheet(wb.create_sheet(f"{tag} 소개한 기업"),
-                         [34, 16, 12, 14, 12, 12], 6)
+                         [34, 16, 16, 14, 12, 14, 12, 12], 8)
     sheet.title(f"{label} 소개한 기업  {len(got['rows'])}개사", sub)
     sheet.blank()
     if not got["rows"]:
         sheet.note("이 기간에 소개한 기업이 없습니다.")
     else:
-        sheet.head(["기업명", "투자유치희망금액", "소개한 횟수", "받은 투자사 수", "처음 날짜",
-                    "마지막 날짜"])
+        sheet.head(["기업명", "투자유치희망금액", "계약여부", "계약서 수신 여부", "소개한 횟수",
+                    "받은 투자사 수", "처음 날짜", "마지막 날짜"])
         for c in got["rows"]:
-            sheet.row([c["company"], c["raise_target"], c["times"], c["investors"], c["first"],
-                       c["last"]], nums={2, 3})
+            sheet.row([c["company"], c["raise_target"], c["contract_label"],
+                       c["contract_received"], c["times"], c["investors"], c["first"],
+                       c["last"]], nums={4, 5})
 
     detail = _ReportSheet(wb.create_sheet(f"{tag} 소개 상세"),
                           [12, 30, 24, 14, 12], 5)

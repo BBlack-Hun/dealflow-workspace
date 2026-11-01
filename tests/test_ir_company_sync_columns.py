@@ -70,11 +70,12 @@ def test_화면에_칸과_필터가_선다(logged_in, db, company):
     assert 'data-filters="joined:카톡 연결 여부"' in html
     assert 'data-f-quote="O"' in html and 'data-f-joined="X"' in html
     assert 'data-field="kakao_joined"' in html and 'id="f-kakao_joined"' in html
-    # 견적서 → 미팅제공일자 → 계약여부 → 계약서 수신 여부 → 성공보수율(0119) → 카톡 연결 여부
+    # 견적서 → 미팅제공일자 → 계약년월(0129 · #122) → 계약여부 → 계약서 수신 여부 → 성공보수율(0119)
+    # → 카톡 연결 여부
     heads = [re.sub(r"<[^>]+>", "", h).strip() for h in re.findall(
         r"<th\b[^>]*>(.*?)</th>", re.search(r"<thead>(.*?)</thead>", html, re.S).group(1), re.S)]
     at = heads.index("견적서 첨부 여부")
-    assert heads[at:at + 6] == ["견적서 첨부 여부", "미팅제공일자", "계약여부",
+    assert heads[at:at + 7] == ["견적서 첨부 여부", "미팅제공일자", "계약년월", "계약여부",
                                 "계약서 수신 여부", "성공보수율", "카톡 연결 여부"], heads
     db_tab = logged_in.get("/companies?tab=db").text
     assert ">지역</th>" in db_tab and 'data-field="region">부산<' in db_tab
@@ -85,9 +86,10 @@ def test_엑셀_두_벌에_다_실린다(logged_in, db, company, u1_admin):
     company.quote_attached, company.kakao_joined, company.region = "O", "X", "부산"
     db.commit()
     head, rows = _sheet(logged_in.get("/api/export/companies.xlsx"))
-    # 옛 IR 엑셀은 끝에 붙인다(결정 9) — 받아 쓰던 수식의 칸이 안 밀린다.
-    assert head[-4:-1] == ["지역", "견적서 첨부 여부", "카톡 연결 여부"], head
-    assert rows[0][-4:-1] == ["부산", "O", "X"]
+    # 옛 IR 엑셀은 끝에 붙인다(결정 9) — 받아 쓰던 수식의 칸이 안 밀린다. 뒤에 성공보수율(0119) ·
+    # 계약년월(0129)이 차례로 붙었다.
+    assert head[-5:-2] == ["지역", "견적서 첨부 여부", "카톡 연결 여부"], head
+    assert rows[0][-5:-2] == ["부산", "O", "X"]
     head, rows = _sheet(logged_in.get("/api/export/companies-view.xlsx"))
     assert rows[0][head.index("견적서 첨부 여부")] == "O"
     assert rows[0][head.index("카톡 연결 여부")] == "X"
@@ -140,6 +142,6 @@ def test_성공보수율은_0118_다음_빈칸_칸이고_수정창_표_엑셀에
     html = logged_in.get("/companies").text
     assert 'id="f-success_fee"' in html and 'data-field="success_fee"' in html
     head, rows = _sheet(logged_in.get("/api/export/companies.xlsx"))
-    assert head[-1] == "성공보수율" and rows[0][-1] == "3%"       # 옛 엑셀은 끝에(결정 9)
+    assert head[-2] == "성공보수율" and rows[0][-2] == "3%"       # 옛 엑셀은 끝에(결정 9) — 그 뒤 계약년월(0129)
     head, rows = _sheet(logged_in.get("/api/export/companies-view.xlsx"))
     assert rows[0][head.index("성공보수율")] == "3%"

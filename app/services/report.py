@@ -43,6 +43,7 @@ from ..models import (DealBatch, DealBatchCompany, IrCompany, IrRequest,
 # 후속 단계(`STAGE_CALL`)와 그 주기는 **캐던스가 정한 것**을 읽는다 — 보고가
 # 제 손으로 "미팅 요청 사흘 뒤" 를 세면, 주기를 바꾼 날 화면과 보고가 다른
 # 날짜를 말한다.
+from . import amount
 from . import cadence
 from . import manual_send
 from . import memo_delivered
@@ -226,8 +227,11 @@ def monthly(db: Session, year: int, month: int,
             user: Optional[User] = None, today: Optional[date] = None) -> dict:
     """한 달치 보고. `user` 를 주면 그 사람 것만, 없으면 팀 전체."""
     start, end = month_range(year, month)
+    intros = intro_companies(db, start, end, user)
     return {**_month(db, year, month, user, today),
-            "intro_companies": intro_companies(db, start, end, user)}
+            "intro_companies": intros,
+            # 아직 소개 안 한 10억 이상(#122) — '본인' 이 있는 보기에만(팀 전체 · 연간은 안 띄운다).
+            "intro_left": unintroduced_big(db, intros) if user is not None else []}
 
 
 def _month(db: Session, year: int, month: int, user: Optional[User],
@@ -1319,6 +1323,7 @@ def intro_companies(db: Session, start: date, end: date,
     `company · times(서로 다른 날) · investors(서로 다른 사람) · first · last ·
     rows(날짜 · 회사 · 이름 · 출처)` 이고, 마지막 날 최신순이다.
     """
+    from ..routers.companies import CONTRACT_LABELS, contract_key   # 순환 import 를 피해 늦게 부른다
     from . import deal_history
 
     sent = deal_history.scan(db)
@@ -1346,10 +1351,15 @@ def intro_companies(db: Session, start: date, end: date,
     rows = []
     for key, details in by_company.items():
         days = {d["day"] for d in details}
+        found = find(None, sent.names.get(key, key))
         rows.append({
             "company": sent.names.get(key, key),
             # 기업명 옆 `투자유치희망금액`(#118) — IR 기업 현황(없으면 Series A)에서 읽는다.
-            "raise_target": raise_target(find(None, sent.names.get(key, key))),
+            "raise_target": raise_target(found),
+            # 그 오른쪽 계약여부 · 계약서 수신 여부(#122) — 같은 길로 읽기만. 어느 표에도 없으면 빈칸.
+            "contract_label": (CONTRACT_LABELS.get(contract_key(found.contract_status), "미계약")
+                               if found is not None else ""),
+            "contract_received": (found.contract_received or "") if found is not None else "",
             "times": len(days),
             "investors": len({d["contact_id"] for d in details}),
             "first": min(days),
@@ -1360,6 +1370,36 @@ def intro_companies(db: Session, start: date, end: date,
     rows.sort(key=lambda r: r["company"])
     rows.sort(key=lambda r: r["last"], reverse=True)
     return {"rows": rows, "details": len(got)}
+
+
+#: `아직 소개 안 한 10억 이상` 의 선 — 투자유치희망금액, 구간이면 아래값(`amount.eok`)(#122).
+BIG_EOK = 10
+
+
+def unintroduced_big(db: Session, intros: dict) -> List[dict]:
+    """그 달 이 팀원이 **아직 소개 안 한** 10억 이상 IR 기업 — 금액 높은 순(#122).
+
+    '소개했다' 는 같은 달 `소개한 기업`(`intros` — 받은 기록 `deal_history.Receipt`)과 같은
+    기준이다. 소개할 수 있는 기업만 센다 — `딜소개 불가` 계약값 · 이름의 `딜소개 불가` 표시 ·
+    폐업(`ir_monthly.is_closed`)은 뺀다. 금액을 못 읽거나 빈 기업도 빠진다.
+    """
+    from ..routers.companies import BLOCKED_CONTRACT, CONTRACT_LABELS, _short, contract_key
+    from . import deal_history, ir_monthly
+
+    done = {deal_history._key(c["company"]) for c in intros["rows"]}
+    out = []
+    for c in db.execute(select(IrCompany).order_by(IrCompany.name)).scalars():
+        low = amount.eok(c.raise_target)
+        key = contract_key(c.contract_status)
+        if (low is None or low < BIG_EOK or key == BLOCKED_CONTRACT or ir_monthly.is_closed(c)
+                or "딜소개불가" in (c.name or "").replace(" ", "")
+                or deal_history._key(c.name) in done):
+            continue
+        out.append({"company": c.name, "eok": low, "raise_target": raise_target(c),
+                    "sector": c.sector_major or "", "series": _short(c.series),
+                    "contract_label": CONTRACT_LABELS.get(key, "미계약")})
+    out.sort(key=lambda r: -r["eok"])   # 같은 금액은 이름 순 그대로
+    return out
 
 
 def is_empty_month(data: dict) -> bool:
