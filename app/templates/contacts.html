@@ -428,6 +428,29 @@
 </div>
 {% endif %}
 
+{#
+  ── 고른 줄 한 번에 이관 ──────────────────────────────────────────────────
+
+  줄 하나 넘기기(수정창의 [이관])를 여러 줄에 한 번에 한다. 모양은 위 두
+  막대(풀 할당 · 감춘 줄 지우기)와 같고, **하나라도 고르면 그때 선다** — 늘
+  떠 있으면 고르지도 않았는데 이관 단추가 화면을 먹는다. 넘길 곳은 수정창의
+  [이관] 과 같은 목록(`transfer_targets`)이다.
+  (서 있을지는 `routers/pages.py` 의 `bulk_transfer` 가 정한다)
+#}
+{% if bulk_transfer %}
+<div class="assign-bar" id="transfer-bar" hidden>
+  <span class="muted" id="transfer-count">0명 선택</span>
+  <select id="bulk-transfer-target" aria-label="받을 담당자 명단">
+    <option value="">받을 담당자 고르기…</option>
+    {% for t in transfer_targets %}
+    <option value="{{ t.label }}" data-owner="{{ t.owner }}">{{ t.owner }} · {{ t.label }}{% if t.is_hidden %} (투자사로 안 셈){% endif %}</option>
+    {% endfor %}
+  </select>
+  <button type="button" class="primary-btn inline" id="transfer-bulk-btn">선택한 0명 이관</button>
+  <span class="hint">지금 명단에서 빠지고 고른 담당자의 대시보드 · 딜 소개 발송 대상으로 옮겨 갑니다.</span>
+</div>
+{% endif %}
+
 <div class="toolbar">
   <div class="toolbar-right">
     {# 275명에서 한 사람을 찾는 데 컬럼 필터로는 안 된다 — 이름을 아는데
@@ -665,9 +688,10 @@
     그대로 적혀 있어서 px 도 여기 적는다. 두 표가 다르게 굴면 "일관된 UX 규칙이
     없다" 는 그 불만이 그대로 남는다.
 
-    앞에 붙는 체크상자 칸(풀 할당 · 감춘 줄 지우기)은 **한 번에 하나만** 선다.
+    앞에 붙는 체크상자 칸(풀 할당 · 감춘 줄 지우기 · 고른 줄 이관)은 **한 번에
+    하나만** 선다.
   #}
-  {% set stick_lead = 32 if (pool_view or delete_view) else 0 %}
+  {% set stick_lead = 32 if (pool_view or delete_view or bulk_transfer) else 0 %}
   <table class="grid-table" id="contacts-table" data-inline-url="/api/contacts"
          style="--stick-a:{{ stick_lead }}px; --stick-b:{{ stick_lead + 34 }}px">
     <thead>
@@ -676,6 +700,11 @@
         {# 감춘 줄 골라 지우기. `pool_view` 와 같은 자리·같은 폭이다 —
            한 번에 하나만 선다(풀 탭에는 감춘 줄을 함께 보는 길이 없다). #}
         {% if delete_view %}<th class="stick stick-lead" style="width:32px"></th>{% endif %}
+        {# 고른 줄 이관 — 위 둘이 아닐 때만 선다(`routers/pages.py` 의 `bulk_transfer`).
+           머리글의 [전체 선택]은 **지금 보이는(걸러진) 줄만** 고른다(딜 소싱 표의
+           `sourcing-check-all` 과 같은 자리). #}
+        {% if bulk_transfer %}<th class="stick stick-lead" style="width:32px"><input type="checkbox" id="transfer-pick-all"
+            aria-label="지금 보이는 줄 모두 고르기" title="지금 보이는(걸러진) 줄을 모두 고르거나 풉니다"></th>{% endif %}
         {#
           시트의 칸을 **이름·순서 그대로** 세운다. 앱이 만든 칸(그룹 · 진행
           단계 · 채널)은 뒤로 뺀다 — 시트 부분이 앞에서 끊기지 않아야 눈으로
@@ -984,6 +1013,11 @@
         <td class="stick stick-lead">{% if r.is_hidden %}<input type="checkbox" class="hidden-del-cb"
               value="{{ r.id }}" data-name="{{ r.name }}">{% endif %}</td>
         {% endif %}
+        {# 고른 줄 이관. 이 칸을 눌러도 수정창은 안 열린다(`contacts.js` 의 줄 누름). #}
+        {% if bulk_transfer %}
+        <td class="stick stick-lead"><input type="checkbox" class="transfer-cb" value="{{ r.id }}"
+              data-name="{{ r.name }}" aria-label="{{ r.name }} 이관할 줄로 고르기"></td>
+        {% endif %}
         {# 월별 딜소개 이력은 옆으로 끝없이 늘어나는 칸이라 표에 넣지 않는다.
            NO 를 누르면 그 담당자의 활동 이력이 열린다. #}
         <td class="rowno muted js-detail stick stick-a" title="활동 이력 보기"></td>
@@ -1158,7 +1192,7 @@
     한쪽만 고쳐지는 날 고정된 칸이 반 칸씩 어긋나 글자가 겹쳐 보인다.
     여기서 더해 넘겨 주면 어긋날 자리가 없다(표 폭 `min-width` 와 같은 방식).
   #}
-  {% set stick_lead = 32 if delete_view else 0 %}
+  {% set stick_lead = 32 if (delete_view or bulk_transfer) else 0 %}
   {% set stick_no = table_columns[0].width
                     if table_columns and table_columns[0].source == 'row_no' else 0 %}
   {# 표 폭은 **적어 둔 칸 폭의 합**이다. app.css 에 숫자를 또 적어 두면 칸이
@@ -1167,14 +1201,16 @@
   <table class="grid-table startup-table" id="contacts-table"
          data-inline-url="/api/contacts"
          style="min-width:{{ table_columns|sum(attribute='width') + 44
-                              + (32 if delete_view else 0) + (cc.width()|int) }}px;
+                              + stick_lead + (cc.width()|int) }}px;
                 --stick-a:{{ stick_lead }}px;
                 --stick-b:{{ stick_lead + stick_no }}px">
     <thead>
       <tr>
-        {# 감춘 줄 골라 지우기 — 위 명함 표와 같은 자리·같은 폭.
+        {# 감춘 줄 골라 지우기 · 고른 줄 이관 — 위 명함 표와 같은 자리·같은 폭.
            폭은 표 전체 폭(min-width)에도 더해야 머리글이 두 줄로 안 접힌다. #}
         {% if delete_view %}<th class="stick stick-lead" style="width:32px"></th>{% endif %}
+        {% if bulk_transfer %}<th class="stick stick-lead" style="width:32px"><input type="checkbox" id="transfer-pick-all"
+            aria-label="지금 보이는 줄 모두 고르기" title="지금 보이는(걸러진) 줄을 모두 고르거나 풉니다"></th>{% endif %}
         {% for c in table_columns %}
         {# 왼쪽 몇 칸을 고정할지는 배치가 정한다(`Layout.sticky`). 여기서는
            그 칸에 표시만 붙이고, 어디에 서는지는 위에서 넘긴 `--stick-*` 와
@@ -1222,6 +1258,10 @@
         {% if delete_view %}
         <td class="stick stick-lead">{% if r.is_hidden %}<input type="checkbox" class="hidden-del-cb"
               value="{{ r.id }}" data-name="{{ r.name }}">{% endif %}</td>
+        {% endif %}
+        {% if bulk_transfer %}
+        <td class="stick stick-lead"><input type="checkbox" class="transfer-cb" value="{{ r.id }}"
+              data-name="{{ r.name }}" aria-label="{{ r.name }} 이관할 줄로 고르기"></td>
         {% endif %}
         {% for c in table_columns %}
         {# 머리글과 **같은 셈**으로 고정 표시를 붙인다. 한쪽만 붙이면 머리글은
@@ -1856,6 +1896,8 @@ window.DEALFLOW_ADD_ROW = {{ (add_row or none)|tojson }};</script>
 <script src="{{ asset('js/pool_assign.js') }}"></script>
 {# 감춘 줄 골라 지우기. 막대가 없으면(평소 화면) 아무 일도 하지 않는다. #}
 <script src="{{ asset('js/hidden_delete.js') }}"></script>
+{# 고른 줄 한 번에 이관. 막대가 없으면(넘길 수 없는 자리) 아무 일도 하지 않는다. #}
+<script src="{{ asset('js/bulk_transfer.js') }}"></script>
 {# 탭 지우기(관리자). 단추가 없으면(팀원 · 탭을 안 고른 화면) 아무 일도 하지 않는다. #}
 <script src="{{ asset('js/tab_delete.js') }}"></script>
 {% if memo_intro %}<script src="{{ asset('js/memo_intro.js') }}"></script>{% endif %}

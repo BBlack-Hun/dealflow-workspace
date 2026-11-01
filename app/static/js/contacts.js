@@ -626,6 +626,9 @@
       var tr = e.target.closest ? e.target.closest("tr.data-row") : null;
       if (!tr) return;
       if (e.target.tagName === "A") return;      // 바로가기 링크는 그대로
+      // 맨 앞 체크 칸(풀 할당 · 감춘 줄 지우기 · 고른 줄 이관)은 줄을 **고르는**
+      // 자리다 — 고를 때마다 수정창이 튀어나오면 여러 줄을 고를 수가 없다.
+      if (e.target.closest(".stick-lead")) return;
       // 눌러서 바로 고치는 칸(메모·방 이름)은 상세 패널을 열지 않는다 —
       // 고치려고 누를 때마다 패널이 튀어나오면 고칠 수가 없다.
       if (e.target.closest(".cell[data-field]")) return;
