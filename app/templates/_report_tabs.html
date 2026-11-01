@@ -1,5 +1,6 @@
-{# 업무 보고 메뉴의 탭 줄 — `report.html` · `forecast.html` 이 같이 쓴다(#46). #}
+{# 업무 보고 메뉴의 탭 줄 — `report.html` · `report_meetings.html`(#120) · `forecast.html` 이 같이 쓴다(#46). #}
 <nav class="sheet-tabs">
-  <a class="sheet-tab {% if report_tab != 'forecast' %}active{% endif %}" href="/report">업무 보고</a>
+  <a class="sheet-tab {% if not report_tab %}active{% endif %}" href="/report">업무 보고</a>
+  <a class="sheet-tab {% if report_tab == 'meetings' %}active{% endif %}" href="/report/meetings">IR 미팅진행 리스트</a>
   <a class="sheet-tab {% if report_tab == 'forecast' %}active{% endif %}" href="/report/forecast">매출예상리스트</a>
 </nav>
