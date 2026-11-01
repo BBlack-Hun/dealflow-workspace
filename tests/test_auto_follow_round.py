@@ -1,11 +1,11 @@
-"""#94 · #98 후속라운드 시작 알림 — 한 달 전 1일 · 전달 15일 · 당월 1일, 카톡 · 문자.
+"""#94 · #98 후속라운드 시작 알림 — 한 달 전 1일 · 전달 15일 · 당월 1일, 카톡.
 
 1. 세 날짜 — 주말이면 다음 평일.
 2. 받는 팀원(기본: 그 줄 담당 + 자동 발송 계정 주인)의 카톡방으로 한 번씩, 같은 날 또 돌아도 그대로.
-3. 실제 모드 문자는 서버가 받는 사람마다 한 번씩 — 날이 달라도 다시 안 보낸다.
+3. 받는 사람마다 회차마다 한 번씩 — 날이 달라도 다시 안 보낸다.
 4. Series A 이상 딜 소싱 줄은 `담당자` 칸의 지금 담당자에게.
-5. 못 정한 받는 팀원 · 빈 카톡방 · 문자 설정 없음은 건너뛰고 까닭이 선다.
-6. 시험 모드에서는 문자도 시험방 카톡으로. 풀기 직전에 값이 바뀌었으면 뺀다.
+5. 못 정한 받는 팀원 · 빈 카톡방은 건너뛰고 까닭이 선다.
+6. 시험 모드에서는 시험방으로. 풀기 직전에 값이 바뀌었으면 뺀다.
 7. 매출예상리스트 칸(0128) — `YYYY-MM` 으로 맞춰 받고, 관리자 추가 칸 값을 옮긴다.
 
 값(기업명 · 방 이름)은 지어낸 것이다.
@@ -40,18 +40,6 @@ def row(db, users):
     db.add(found)
     db.commit()
     return found
-
-
-@pytest.fixture()
-def texts(monkeypatch):
-    """문자 업체 대신 — 보낸 (번호, 글)을 모은다."""
-    from app.services import sms
-
-    sent = []
-    monkeypatch.setattr(sms, "is_configured", lambda: True)
-    monkeypatch.setattr(sms, "load_settings", lambda: None)
-    monkeypatch.setattr(sms, "send", lambda to, text, settings=None: sent.append((to, text)) or "m1")
-    return sent
 
 
 def _turn_on(db, users, test=False, **params):
@@ -100,22 +88,23 @@ def test_담당과_계정_주인_카톡방으로_한_번씩(db, users, row):
     assert all(i.contact_id is None for i in items)
 
 
-def test_문자는_받는_사람마다_회차마다_한_번(db, users, row, texts):
-    from app.models import SmsNotice
-    from app.services.automations import follow_round as fr
+def test_받는_사람마다_회차마다_한_번(db, users, row):
+    from app.models import AutomationSend
 
     _turn_on(db, users)
-    assert fr.send_sms(db, _at(2027, 4, 1, 9, 30))["status"] == "not_now"    # 판의 시각 전
-    assert fr.send_sms(db, _at(2027, 4, 1, 10, 30))["sent"] == 2
-    assert fr.send_sms(db, _at(2027, 4, 2, 10, 30))["sent"] == 0             # 다음 날도
-    assert fr.send_sms(db, _at(2027, 4, 15, 10, 30))["sent"] == 2
-    assert sorted(texts) == [
-        ("01000000001", "샘플후속 5월 라운드 시작입니다 (1/3)"),
-        ("01000000001", "샘플후속 5월 라운드 시작입니다 (2/3)"),
-        ("01000000002", "샘플후속 5월 라운드 시작입니다 (1/3)"),
-        ("01000000002", "샘플후속 5월 라운드 시작입니다 (2/3)")]
-    kinds = db.execute(select(SmsNotice.kind, SmsNotice.user_id)).all()
-    assert (f"follow_round:fc:{row.id}:{MONTH}:1", users["u1"].id) in kinds
+    assert _run(db, _at(2027, 4, 1))["status"] == "ready"
+    for item in _items(db):
+        item.status, item.sent_at = "sent", "2027-04-01T10:00:30+09:00"
+    db.commit()
+    assert _run(db, _at(2027, 4, 2))["status"] == "empty"             # 다음 날도 안 간다
+    assert _run(db, _at(2027, 4, 15))["status"] == "ready"
+    assert sorted((i.room_name, i.message) for i in _items(db)) == [
+        (U2_ROOM, "샘플후속 5월 라운드 시작입니다 (1/3)"),
+        (U2_ROOM, "샘플후속 5월 라운드 시작입니다 (2/3)"),
+        (U1_ROOM, "샘플후속 5월 라운드 시작입니다 (1/3)"),
+        (U1_ROOM, "샘플후속 5월 라운드 시작입니다 (2/3)")]
+    refs = {r for (r,) in db.execute(select(AutomationSend.ref)).all()}
+    assert f"kakao:fc:{row.id}:{MONTH}:1:{users['u1'].id}" in refs
 
 
 def test_Series_A_줄은_담당자_칸의_지금_담당자에게(db, users):
@@ -143,21 +132,19 @@ def test_못_정한_받는_팀원과_빈_카톡방은_건너뛰고_까닭이_선
     assert result["status"] == "empty" and _items(db) == []
     joined = " / ".join(result["skipped"])
     assert "받는 팀원 '없는사람' 을 계정에서 못 찾았습니다" in joined
-    assert "강민준 님의 카톡방 이름이 비어 있어 카톡은 건너뜁니다" in joined
+    assert "강민준 님의 카톡방 이름이 비어 있어 건너뜁니다" in joined
     monkeypatch.setattr(clock, "now", lambda: _at(2027, 4, 1, 9, 5))
     state = runner.status_of(db, "follow_round")
-    assert "문자 설정" in state["describe"] and "없는사람" in state["describe"]
+    assert "강민준 님 카톡방 이름 없음" in state["describe"] and "없는사람" in state["describe"]
+    assert "문자" not in state["describe"]
 
 
-def test_시험_모드에서는_문자도_시험방_카톡으로(db, users, row, texts):
-    from app.services.automations import follow_round as fr
-
+def test_시험_모드에서는_시험방으로(db, users, row):
     _turn_on(db, users, test=True, recipients="담당 팀원")
     assert _run(db, _at(2027, 4, 1))["status"] == "ready"
-    items = _items(db)
-    assert {i.room_name for i in items} == {TEST_ROOM}
-    assert any(i.message.startswith("[시험] 원래 받을 방: 문자 → 강민준") for i in items)
-    assert fr.send_sms(db, _at(2027, 4, 1, 10, 30))["status"] == "off" and texts == []
+    [item] = _items(db)
+    assert item.room_name == TEST_ROOM and item.job.kind == "test_send"
+    assert item.message.startswith(f"[시험] 원래 받을 방: {U1_ROOM}")
 
 
 def test_풀기_직전에_값이_바뀌었으면_뺀다(db, users, row):

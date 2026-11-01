@@ -962,7 +962,7 @@ def today_items(db: Session, user: User, today: Optional[date] = None) -> dict:
                               and m["scheduled_at"] > today.isoformat()],
         # 물을 때가 된 결과 문의 — **A7 이 이미 물은 것은 뺀다**(#31). 이 목록이
         # 화면(`/ir`)의 '물어볼 때' · 오늘 할 일의 `미팅 결과 문의` · 결과 문의
-        # 문자(`followup_sms`) · 대시보드 수가 함께 읽는 '사람이 물어볼 것' 이다.
+        # 알림(`automations/followup_notice`) · 대시보드 수가 함께 읽는 '사람이 물어볼 것' 이다.
         "due_followups": [m for m in meetings
                           if m["followup_due_now"] and not m["auto_asked"]],
         # A7 이 물었고 들은 답을 아직 안 적은 것 — '자동 문의함 M/D' + 답 적는 칸만.

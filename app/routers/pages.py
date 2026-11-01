@@ -770,6 +770,14 @@ def list_page(
         # `딜 소싱` 칸 · 수정창이 고를 갈래(짧은 이름) — 서버 한 곳(`sourcing_sync.BRANCHES`).
         "sourcing_branch_labels": [label for label, _b in sourcing_sync.BRANCHES],
     })
+    # 고른 줄 여러 개를 한 번에 넘기는 체크 칸 — **투자사 관리 현황만.** 누가
+    # 넘길 수 있는지는 여기서 가르지 않는다: 이 표에 뜨는 줄이 곧 넘길 수 있는
+    # 줄이고(`contact_rows` 의 `team_wide`), 서버가 줄 하나 넘기기와 같은 판정
+    # (`routers/contacts.py` 의 `_owned`)을 한 번 더 본다. 넘길 곳이 없으면 안
+    # 세운다. 앞 체크 칸은 한 번에 하나라 풀 할당 · 감춘 줄 지우기 자리에서는
+    # 그쪽이 선다.
+    ctx["bulk_transfer"] = bool(page.investors and ctx["transfer_targets"]
+                                and not ctx["pool_view"] and not ctx["delete_view"])
     # 관리자가 붙인 추가 칸 — **스타트업 화면의 명단 표에만**(#7). 명단(탭)을
     # 가리지 않고 같은 칸이다. 투자사 관리 현황에는 붙이지 않는다(요청 범위 밖).
     if page.key == STARTUP_PAGE.key:

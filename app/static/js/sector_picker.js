@@ -80,12 +80,29 @@
         var at = chosen.indexOf(name);
         if (input.checked && at === -1) chosen.push(name);
         if (!input.checked && at !== -1) chosen.splice(at, 1);
+        clear.disabled = !chosen.length;
         if (onChange) onChange(current());
       });
       wrap.appendChild(input);
       wrap.appendChild(document.createTextNode(" " + label));
       return wrap;
     }
+
+    // [전체 해제] — 이 칸에서 고른 것(목록 밖 옛 값도)을 한 번에 푼다. 저장은 쓰는 자리가
+    // 하던 대로다: 수정창은 [저장], 표 칸은 창이 닫힐 때(Esc 는 되돌림). 고른 게 없으면 흐린다.
+    var clear = document.createElement("button");
+    clear.type = "button";
+    clear.className = "linkbtn sector-pick-clear";
+    clear.textContent = "전체 해제";
+    clear.disabled = !chosen.length;
+    clear.addEventListener("click", function () {
+      chosen.length = 0;
+      container.querySelectorAll(".sector-pick-item input")
+        .forEach(function (b) { b.checked = false; });
+      clear.disabled = true;
+      if (onChange) onChange(current());
+    });
+    container.appendChild(clear);
 
     if (outside.length) {
       var old = document.createElement("div");

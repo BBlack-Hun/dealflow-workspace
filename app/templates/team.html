@@ -573,43 +573,6 @@
     </p>
   </section>
 
-  <section class="panel">
-    <h2 class="panel-title">결과 문의 문자 알림</h2>
-    {% if sms.configured %}
-    <ul class="import-stats">
-      <li><span>발송 업체</span><b>{{ sms.vendor }}</b></li>
-      <li><span>발신번호</span><b>{{ sms.sender }}</b></li>
-      <li><span>API 키</span><b>{{ '저장됨' if sms.has_key else '없음' }}</b></li>
-      <li><span>API 시크릿</span><b>{{ '저장됨' if sms.has_secret else '없음' }}</b></li>
-      <li><span>보내는 때</span><b>{{ sms.window }}</b></li>
-    </ul>
-    <p class="hint ok">✅ 미팅 결과를 물어볼 때가 되면 담당자에게 문자가 갑니다.</p>
-    {% if sms.today %}
-    <ul class="import-stats">
-      {% for row in sms.today %}
-      <li><span>{{ row.name }}{% if row.sent_at %} · {{ row.sent_at }}{% endif %}</span>
-        {% if row.status == 'sent' %}<b class="ok">{{ row.count }}건 알림</b>
-        {% elif row.status == 'failed' %}<b class="warn">실패</b>
-        {% else %}<b class="warn">보내는 중</b>{% endif %}</li>
-      {% if row.error %}<li><span>사유</span><b class="warn">{{ row.error }}</b></li>{% endif %}
-      {% endfor %}
-    </ul>
-    {% else %}
-    <p class="hint">오늘 나간 알림은 없습니다.</p>
-    {% endif %}
-    {% else %}
-    <p class="hint warn">
-      아직 켜지지 않았습니다. 필요한 값: <b>{{ sms.missing|join(', ') }}</b>
-    </p>
-    {% endif %}
-    <p class="hint">
-      미팅이 끝나고 열흘 뒤 결과를 물어볼 때가 되면, 그 미팅을 맡은 팀원에게
-      <b>문자</b>로 알립니다. 문자는 각자 PC 가 아니라 <b>서버가 바로</b> 보내므로
-      발송 프로그램을 켜 둘 필요가 없습니다.
-      <b>받는 사람은 우리 팀원뿐입니다</b> — 투자사에게는 이 길로 가지 않습니다.
-    </p>
-  </section>
-
   {# **발송 안전장치** — 보내는 시간과 계정마다 하루 상한.
 
      자동화가 사람 확인 없이 돌기 시작하면, 사람이 눈으로 막아 주던 것을 서버가
@@ -815,14 +778,14 @@
       </tbody>
     </table>
     </div>
-    {# **팀원 카톡방** — 계약 Day7 우편 발송(#9)이 계약 담당 팀원에게 보내는 방
+    {# **팀원 카톡방** — 계약 Day7 · 후속라운드 · 결과 문의 알림이 팀원에게 보내는 방
        (`User.kakao_room_name`). 자동 발송 계정 카톡 기준 제목이다 — 그 PC 에서 나간다.
        비어 있으면 그 팀원 몫은 안 나가고 위 상태 칸 · 오늘 할 일에 까닭이 선다. #}
     <form method="post" action="/team/member-rooms" class="rule-form" data-testid="member-rooms-form">
       <div class="table-wrap">
       <table class="grid-table compact">
         <thead><tr><th style="width:140px">팀원</th>
-          <th>팀원 알림(계약 Day7 · 후속라운드) 받을 카톡방 — 자동 발송 계정 카톡의 방 제목 · 계정 주인 본인은 '나와의 채팅' 제목</th></tr></thead>
+          <th>팀원 알림(계약 Day7 · 후속라운드 · 결과 문의) 받을 카톡방 — 자동 발송 계정 카톡의 방 제목 · 계정 주인 본인은 '나와의 채팅' 제목</th></tr></thead>
         <tbody>
         {% for m in members if m.active %}
         <tr>

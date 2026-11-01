@@ -138,7 +138,7 @@ def export_uncontracted(
     user: User = Depends(get_current_user),
     month: str = "",
 ):
-    """표 아래 「계약 안 한 기업 — 보내지 않음」 구역 그대로(#93). 화면과 같은 자리
+    """표 아래 「계약 안 한 기업·폐업 — 보내지 않음」 구역 그대로(#93). 화면과 같은 자리
     (`_guard`)·같은 값(`startup_send.rows` 의 `uncontracted`)을 읽는다."""
     _guard(db, user)
     selected = _month(month)

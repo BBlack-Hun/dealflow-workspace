@@ -9,8 +9,8 @@ from fastapi.staticfiles import StaticFiles
 
 from . import config, deps
 from .deps import MustChangePassword, NoConsulting, NotAdmin, NotAuthenticated
-from .services import (automation_runner, backup, edit_log, followup_sms,
-                       scheduled_send, send_window, sourcing_mail)
+from .services import (automation_runner, backup, edit_log, scheduled_send,
+                       send_window, sourcing_mail)
 from .routers import auth as auth_router
 from .routers import templates_crud
 from .routers import setup as setup_router
@@ -75,11 +75,6 @@ def create_app() -> FastAPI:
     # 이미지 안으로 들여왔다(왜 그런지는 `app/services/backup.py` 머리말).
     # 검사에서는 꺼진다(`config.BACKUP_ENABLED`).
     backup.start_scheduler()
-
-    # 미팅 결과 문의 알림도 **같은 방식**으로 이 프로세스 안에서 돈다(30분마다
-    # 깨어나 오늘 것이 나갔는지 본다 — `services/followup_sms.py`).
-    # 문자 발송 설정이 없으면 실 자체가 뜨지 않는다: 안 켜면 아무 일도 없다.
-    followup_sms.start_scheduler()
 
     # 예약 발송도 같은 얼개다 — 30초마다 깨어나, **시각이 된 회차**를
     # [발송 시작] 과 같은 길로 내보낸다(`services/scheduled_send.py`).

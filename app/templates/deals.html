@@ -414,7 +414,8 @@
     <h2 class="panel-title">
       ① 회차 · 기업 선택
       <span class="count-pill" id="company-pill"><b>0</b> / 10</span>
-      <a class="linkbtn" href="/api/export/companies.xlsx" download>엑셀 내려받기</a>
+      {# IR 기업현황 전체 내려받기와 같은 주소 — 관리자만 열린다(11/01 · `data_io.export_companies`). #}
+      {% if user.role == 'admin' %}<a class="linkbtn" href="/api/export/companies.xlsx" download>엑셀 내려받기</a>{% endif %}
     </h2>
     {# 회차명은 **방식마다 다르다.** 정규 발송(딜 소개)만 `09/16 (9월 3주차)`
        처럼 주차를 단다 — 주차가 곧 그 회차의 이름이라 뜻이 있다. 나머지는

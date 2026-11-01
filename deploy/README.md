@@ -290,7 +290,7 @@ IP 가 바뀌어도 이름은 그대로라, 각자 PC 의 에이전트를 다시
 1. 서버 `deploy/.env` 의 `DEALFLOW_DOMAIN` → `docker compose up -d --force-recreate web caddy`
    (Caddy 가 새 이름으로 Let's Encrypt 인증서를 알아서 받는다. DNS 가 먼저
    이 서버를 가리키고 있어야 한다 — 아니면 발급이 실패하고 옛 인증서도 없다.
-   `web` 도 다시 띄워야 새 이름을 읽는다 — 아래 3번과 문자 링크가 이 값을 쓴다)
+   `web` 도 다시 띄워야 새 이름을 읽는다 — 아래 3번과 결과 문의 알림 링크가 이 값을 쓴다)
 2. `.github/workflows/deploy.yml` 의 밖에서 확인하는 주소
 3. **각자 PC 의 발송기 설정을 다시 받는다.** 내려받는 발송기 zip 의
    `config.yaml` `server_url` 은 이 설정 도메인(`DEALFLOW_DOMAIN` →

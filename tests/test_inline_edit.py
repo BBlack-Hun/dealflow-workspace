@@ -386,7 +386,7 @@ def test_the_edit_modal_is_in_eok_too(logged_in, company):
     # (`test_the_screen_never_does_arithmetic_on_the_money_fields` 가 지킨다).
 
 
-def test_the_excel_matches_the_screen(logged_in, db):
+def test_the_excel_matches_the_screen(logged_in, db, u1_admin):
     """표와 엑셀을 나란히 놓고 보는 사람에게 100배 차이가 나면 안 된다."""
     import io
 
@@ -412,7 +412,7 @@ def test_the_excel_matches_the_screen(logged_in, db):
     assert isinstance(row[col["최근매출(억)"]], (int, float))
 
 
-def test_the_excel_keeps_a_range_a_range(logged_in, db):
+def test_the_excel_keeps_a_range_a_range(logged_in, db, u1_admin):
     """구간은 **적은 그대로** 내려간다 — 하한 숫자로 눌러 담지 않는다.
 
     `5~10억` 을 `5` 로 내려보내면 엑셀만 보는 사람에게는 그것이 **틀린 단정**

@@ -1050,21 +1050,18 @@ def test_a_regular_user_still_cannot_see_someone_elses_job(client, db, users):
 
 # --- 관리자가 팀원 업무보고를 골라 본다 ---------------------------------------
 
-def test_the_picker_is_wired_not_just_the_backend(client, db, users):
-    """`member=` 파라미터는 이미 처리하고 있었는데 **고를 UI 가 없었다** —
-    주소를 직접 쳐야만 되는 기능은 없는 것과 같다."""
+def test_member_names_stand_in_one_place(client, db, users):
+    """팀원은 왼쪽 메뉴의 `팀원 화면으로 보기` 로 고른다 — 업무 보고 오른쪽에도
+    고르개가 있어 같은 이름이 두 번 섰다(사용자 요청으로 오른쪽을 뺐다)."""
     users["u2"].role = "admin"
     db.commit()
     client.post("/login", data={"phone": "01000000002", "password": DEMO_PASSWORD})
 
     body = client.get("/report").text
-    assert 'id="member-pick"' in body
-    assert "홍길동" not in body or True  # 드롭다운에 팀원 목록이 있는지는 아래서
-
-    from app.models import User
-    names = [u.name for u in db.query(User).all()]
-    for name in names:
-        assert name in body, f"'{name}' 이 팀원 선택 목록에 없다"
+    assert 'id="member-pick"' not in body
+    assert 'data-testid="view-as-form"' in body
+    assert body.count(users["u1"].name) == 1, "팀원 이름은 왼쪽 고르개 한 곳에만"
+    assert "팀 전체" in body
 
 
 def test_picking_a_member_shows_only_their_report(client, db, users):
@@ -1082,9 +1079,9 @@ def test_picking_a_member_shows_only_their_report(client, db, users):
     db.commit()
 
     client.post("/login", data={"phone": "01000000002", "password": DEMO_PASSWORD})
+    # 고르개는 뺐어도 주소의 `member=` 는 그대로 받는다(옛 링크 · 엑셀 링크).
     body = client.get(f"/report?member={users['u1'].id}").text
     assert "홍길동" in body
-    assert '<option value="' + str(users["u1"].id) + '" selected>' in body
 
 
 def test_non_admin_gets_no_picker(client, db, users):

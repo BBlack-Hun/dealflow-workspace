@@ -216,7 +216,8 @@
 
     function render() {
       var at = token(input.value, cursor());
-      var hit = matches(list, at.text);
+      // `opts.min` — 몇 글자부터 띄우나(투자컨설턴트 `기업명` 칸은 두 글자 · 기본은 한 글자).
+      var hit = at.text.length < (opts.min || 1) ? [] : matches(list, at.text);
       // 후보가 없으면 **조용히** 닫는다 — 안내도 경고도 없다.
       if (!hit.length) { close(); return; }
 

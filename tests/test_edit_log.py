@@ -628,6 +628,8 @@ WRITE_ROUTES = {
     ("POST", "/api/contacts/verify-rooms"): WATCHED,
     ("POST", "/api/contacts/assign"): WATCHED,
     ("POST", "/api/contacts/{contact_id}/transfer"): WATCHED,
+    # 고른 줄 여러 개를 한 번에 넘긴다 — 줄 하나 넘기기와 같은 판정, 줄마다 남는다.
+    ("POST", "/api/contacts/bulk-transfer"): WATCHED,
     ("POST", "/api/contacts/sheets/assign"): WATCHED,
     ("POST", "/api/contacts/sheets/hide"): WATCHED,
     ("POST", "/api/contacts/sheets/deal-list"): WATCHED,
@@ -876,10 +878,11 @@ def test_the_six_shared_routers_still_hold_the_forty_nine_paths(portal):
     for (_m, _p), mod in _write_routes(portal["app"]).items():
         if mod in SHARED_ROUTERS:
             counted[mod] = counted.get(mod, 0) + 1
-    # contacts 는 명단 라우터 17 + 참고 자료 6 이다(참고 자료는 주소에 접두가
+    # contacts 는 명단 라우터 18 + 참고 자료 6 이다(참고 자료는 주소에 접두가
     # 없어 파일만 같이 쓴다). 15번째가 감춘 줄 한꺼번에 지우기(`/bulk-delete`),
     # 16번째가 관리자의 탭 지우기(`/sheets/delete`)다. 17번째가 딜소개 메모 →
-    # 활동 이력(`/memo-intro` — #52)이다.
+    # 활동 이력(`/memo-intro` — #52)이다. 18번째가 고른 줄 한 번에 이관
+    # (`/bulk-transfer`)이다.
     # ir 의 12번째는 미팅 요청을 손으로 보냈다고 적는 자리다. 13 · 14번째는
     # 리마인드 뒤 `답 없음 · 전화 필요` 켜고 끄기와 그 메모다(10/17 회의 #37).
     # 15번째는 IR 자료 검토 요청을 손으로 보냈다고 적는 자리다(#79).
@@ -910,7 +913,7 @@ def test_the_six_shared_routers_still_hold_the_forty_nine_paths(portal):
     # custom_columns 의 일곱은 관리자 `컬럼 관리` 여섯(붙이기 · 이름 · 순서 · 자리 ·
     # 숨김 · 삭제)과 표에서 추가 칸 값 적기 하나다.
     assert counted == {"companies": 8, "ir": 15, "consulting": 9,
-                       "templates_crud": 7, "sourcing": 13, "contacts": 23,
+                       "templates_crud": 7, "sourcing": 13, "contacts": 24,
                        "series_a": 5, "forecast": 4, "custom_columns": 7}
 
 

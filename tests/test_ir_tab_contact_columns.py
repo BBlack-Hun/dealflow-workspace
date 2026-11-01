@@ -42,7 +42,7 @@ def test_the_ir_tab_shows_the_four_after_received_date(logged):
         assert f'data-field="{field}"' in body and value in body, field
 
 
-def test_the_view_export_and_anchors_follow(logged):
+def test_the_view_export_and_anchors_follow(logged, u1_admin):
     import openpyxl
 
     from app.services import custom_columns

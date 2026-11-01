@@ -695,28 +695,8 @@ def transfer_contact(contact_id: int, body: TransferIn,
     """
     contact = _owned(db, contact_id, user)
     label = (body.label or "").strip()
-
-    # 넘길 수 있는 곳인가. **담당이 정해진 명단만** 받는다 — 풀로 넘기면 넘긴
-    # 줄의 담당을 정할 수가 없다. 화면이 이미 그런 곳을 안 보여 주지만, 화면만
-    # 감추면 이름을 직접 보내는 길이 남는다(`assign_to_my_sheet` 이 같은 이유로
-    # 막는다).
-    #
-    # 감춘 명단은 **막지 않는다.** 스타트업 화면의 명단은 원래 전부 감춰져 있어
-    # (투자사가 아니라서) 막으면 그 화면에서는 이관 자체가 안 된다. 대신 고르는
-    # 칸이 `(투자사로 안 셈)` 이라고 적는다 — 이유는 `sheet_owner.transfer_targets`.
-    targets = {t["label"]: t for t in sheet_owner.transfer_targets(db)}
-    target = targets.get(label)
-    if target is None:
-        raise HTTPException(
-            status_code=400,
-            detail="담당이 정해진 명단으로만 넘길 수 있습니다")
-
-    # **화면을 건너뛰지 않는다.** 투자사 줄을 스타트업 명단으로 넘기면 그 줄이
-    # 다른 화면으로 사라져, 넘긴 사람은 어디로 갔는지 찾을 수가 없다. 이관은
-    # *누가 맡는지*를 바꾸는 일이지 화면을 옮기는 일이 아니다.
-    here = {sheet_owner.page_of(db, x)
-            for x in sheet_owner.labels_of(contact.source_sheet)}
-    if sheet_owner.page_of(db, label) not in here:
+    target = _transfer_target(db, label)
+    if _crosses_page(db, contact, label):
         raise HTTPException(
             status_code=400,
             detail="다른 화면의 명단으로는 넘길 수 없습니다")
@@ -727,6 +707,83 @@ def transfer_contact(contact_id: int, body: TransferIn,
     # 한다 — 옛 명단 이름이 응답에 없으면 잘못 넘겼을 때 되돌릴 근거가 없다.
     return {"ok": True, "moved": moved, "label": label,
             "owner": target["owner"]}
+
+
+def _transfer_target(db: Session, label: str) -> dict:
+    """넘길 수 있는 곳인가. **담당이 정해진 명단만** 받는다.
+
+    풀로 넘기면 넘긴 줄의 담당을 정할 수가 없다. 화면이 이미 그런 곳을 안
+    보여 주지만, 화면만 감추면 이름을 직접 보내는 길이 남는다
+    (`assign_to_my_sheet` 이 같은 이유로 막는다).
+
+    감춘 명단은 **막지 않는다.** 스타트업 화면의 명단은 원래 전부 감춰져 있어
+    (투자사가 아니라서) 막으면 그 화면에서는 이관 자체가 안 된다. 대신 고르는
+    칸이 `(투자사로 안 셈)` 이라고 적는다 — 이유는 `sheet_owner.transfer_targets`.
+    """
+    target = {t["label"]: t for t in sheet_owner.transfer_targets(db)}.get(label)
+    if target is None:
+        raise HTTPException(
+            status_code=400,
+            detail="담당이 정해진 명단으로만 넘길 수 있습니다")
+    return target
+
+
+def _crosses_page(db: Session, contact: VcContact, label: str) -> bool:
+    """그 명단으로 넘기면 줄이 **다른 화면으로 사라지는가.**
+
+    투자사 줄을 스타트업 명단으로 넘기면 넘긴 사람은 어디로 갔는지 찾을 수가
+    없다. 이관은 *누가 맡는지*를 바꾸는 일이지 화면을 옮기는 일이 아니다.
+    """
+    here = {sheet_owner.page_of(db, x)
+            for x in sheet_owner.labels_of(contact.source_sheet)}
+    return sheet_owner.page_of(db, label) not in here
+
+
+class BulkTransferIn(BaseModel):
+    contact_ids: List[int]
+    label: str
+
+
+@router.post("/bulk-transfer")
+def bulk_transfer_contacts(body: BulkTransferIn, db: Session = Depends(get_db),
+                           user: User = Depends(get_current_user)):
+    """고른 줄 **여러 개**를 한 담당자의 명단으로 넘긴다(투자사 관리 현황 체크 칸).
+
+    줄 하나 넘기기(`transfer_contact`)와 **같은 판정 · 같은 함수**
+    (`_owned` · `_transfer_target` · `_crosses_page` · `sheet_owner.move_to`)를
+    한 요청 안에서 줄마다 되풀이한다. 화면이 줄마다 따로 부르지 않는 까닭:
+    수정 로그가 한 요청(`edit_log.begin`) 안에서 같은 주소로 묶여 남고, 저장도
+    한 번이라 중간에 끊겨 반만 넘어가는 일이 없다.
+
+    남의 줄이 하나라도 섞이면 **통째로 404** — 한 줄도 안 옮긴다
+    (`bulk_delete_contacts` · `assign_to_my_sheet` 와 같다). 넘길 곳이 틀려도 400.
+    줄마다 건너뛰는 것은 둘이다 — 이미 그 명단 · 그 담당인 줄, 다른 화면의
+    명단으로 가는 줄. 건너뛴 줄은 이유와 함께 돌려준다(말하지 않으면 다 넘어간
+    줄 안다).
+    """
+    ids = list(dict.fromkeys(int(i) for i in (body.contact_ids or [])))
+    if not ids:
+        raise HTTPException(status_code=400, detail="넘길 줄을 고르지 않았습니다")
+    rows = [_owned(db, cid, user) for cid in ids]
+    label = (body.label or "").strip()
+    target = _transfer_target(db, label)
+
+    moved, skipped = [], []
+    for contact in rows:
+        if (contact.user_id == target["owner_id"]
+                and label in sheet_owner.labels_of(contact.source_sheet)):
+            why = "이미 그 명단에 있습니다"
+        elif _crosses_page(db, contact, label):
+            why = "다른 화면의 명단으로는 넘길 수 없습니다"
+        else:
+            moved.append({"id": contact.id, "name": contact.name or "",
+                          "moved": sheet_owner.move_to(db, contact, label,
+                                                       target["owner_id"])})
+            continue
+        skipped.append({"id": contact.id, "name": contact.name or "", "why": why})
+    db.commit()
+    return {"ok": True, "label": label, "owner": target["owner"],
+            "moved": moved, "skipped": skipped}
 
 
 @router.post("/sheets/assign", include_in_schema=False)

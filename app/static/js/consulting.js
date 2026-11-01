@@ -297,6 +297,13 @@
     // 고르는 칩은 **칸에** 붙인다 — 값 상자 안에 넣으면 저장할 때 같이 지워질
     // 자리이고, 잔글씨 아래에 서는 편이 값을 안 가린다.
     addChoices(cell, input, before);
+    // `기업명` — 두 글자부터 IR 기업 후보(`ir_company_hint.js` · 스타트업 표 #85 와 같은
+    // 부품). 아래 keydown **보다 먼저** 붙여야 후보를 고르는 Enter · Esc 가 저장 · 취소로
+    // 새지 않는다(`defaultPrevented`). 고르면 곧바로 저장한다 — 이름이 하나 맞는 IR 기업에
+    // 서버가 잇고 빈칸을 채운다(`company_sync`). 후보를 안 실은 화면이면 그냥 글자 칸이다.
+    if (cell.getAttribute("data-field") === "company_name" && window.DealflowCompanyHint) {
+      window.DealflowCompanyHint.attach(input, { min: 2, onPick: function () { input.blur(); } });
+    }
     grow();
     input.focus();
     input.setSelectionRange(input.value.length, input.value.length);
@@ -307,6 +314,7 @@
       // 가로채면 만들던 글자째 칸이 닫힌다(inline_edit.js · ref_edit.js 와 같은
       // 막음 — `keyCode 229` 는 옛 브라우저의 같은 말).
       if (e.isComposing || e.keyCode === 229) return;
+      if (e.defaultPrevented) return;   // 위 IR 기업 후보 목록이 이미 쓴 키
       if (e.key === "Escape") { input.value = before; input.blur(); }
       // 여러 줄 칸에서는 엔터가 줄바꿈이어야 한다. 저장은 Ctrl/Cmd+Enter.
       if (e.key === "Enter" && (!multi || e.metaKey || e.ctrlKey)) {
@@ -432,6 +440,18 @@
           valueBox(cell).textContent = data.value;
           var fk = "data-f-" + cell.getAttribute("data-field");
           if (tr.hasAttribute(fk)) tr.setAttribute(fk, data.value);
+        }
+        // 기업명으로 IR 기업에 새로 이어졌다 — 이어진 순간 채워진 칸을 그 자리에서 적는다
+        // (`routers/consulting.py` 의 `update_company`). 아래 `refreshRowFlags` 가 필터·검색
+        // 값을 따라 고친다. 읽기 전용 IR 칸 · 연결 링크는 다음에 화면을 열 때 선다.
+        var linked = data && data.linked;
+        if (linked) {
+          Object.keys(linked.fields || {}).forEach(function (f) {
+            var td = tr.querySelector('td.cell[data-field="' + f + '"]');
+            if (td) valueBox(td).textContent = linked.fields[f];
+          });
+          var sub = cell.querySelector(".ir-link-sub");
+          if (sub) sub.textContent = "IR 기업: " + linked.ir_name + " (자동 연결)";
         }
         refreshRowFlags(tr);
         // 플래그만 고치고 끝내면 **화면은 옛 조건 그대로**다. `드랍` 만 보는
@@ -560,16 +580,20 @@
 
   // ── 추가 · 삭제 ────────────────────────────────────────────
   var addBtn = document.getElementById("cs-add");
-  addBtn.addEventListener("click", function () {
-    // 어느 탭에 들어가는지 물어볼 때 미리 알려 준다 — 딜 소싱의 `[○○에 추가]`와 같다.
+  // 기업명은 툴바의 칸(`#cs-add-name`)에 적는다 — 예전 `prompt()` 창에는 IR 기업 후보를
+  // 붙일 수 없다. 처음 누르면 칸이 열리고, 적은 뒤 [기업 추가] · Enter 로 넣는다.
+  // 후보를 고르면 바로 넣는다 — 새 줄은 이름이 하나 맞는 IR 기업에 서버가 잇는다.
+  var addName = document.getElementById("cs-add-name");
+  function addCompany() {
+    // 어느 탭에 들어가는지는 칸의 안내 글에 적혀 있다 — 딜 소싱의 `[○○에 추가]`와 같다.
     var sheet = (addBtn.getAttribute("data-sheet") || "").trim();
-    var name = prompt("기업명을 입력하세요" + (sheet ? " (" + sheet + ")" : ""));
-    if (!name || !name.trim()) return;
+    var name = addName.value.trim();
+    if (addName.hidden || !name) { addName.hidden = false; addName.focus(); return; }
     // **지금 보고 있는 탭을 함께 보낸다.** 안 보내면 서버가 첫 탭에 넣어서,
     // 다른 탭에서 누른 사람에게는 추가가 안 된 것처럼 보였다(줄은 만들어졌지만
     // 보고 있는 탭에 없다). 서버는 `sheet` 가 없으면 예전처럼 첫 탭에 넣으므로,
     // 빈 값이면 아예 싣지 않아 옛 동작을 그대로 둔다.
-    var body = { company_name: name.trim() };
+    var body = { company_name: name };
     if (sheet) body.sheet = sheet;
     fetch("/api/consulting", {
       method: "POST",
@@ -581,7 +605,19 @@
         if (!res.ok) { alert(res.d.detail || "추가 실패"); return; }
         window.location.reload();
       });
-  });
+  }
+  addBtn.addEventListener("click", addCompany);
+  if (addName) {
+    // 후보 목록을 먼저 붙인다 — 후보를 고르는 Enter · Esc 가 아래로 새지 않게(위 `startEdit` 와 같다).
+    if (window.DealflowCompanyHint) {
+      window.DealflowCompanyHint.attach(addName, { min: 2, onPick: addCompany });
+    }
+    addName.addEventListener("keydown", function (e) {
+      if (e.isComposing || e.keyCode === 229 || e.defaultPrevented) return;
+      if (e.key === "Enter") { e.preventDefault(); addCompany(); }
+      if (e.key === "Escape") { addName.value = ""; addName.hidden = true; }
+    });
+  }
 
   table.addEventListener("click", function (e) {
     if (!e.target.classList.contains("js-cs-del")) return;

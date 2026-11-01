@@ -263,13 +263,13 @@
 <script src="{{ asset('js/startup_resend.js') }}" defer></script>
 
 {#
-  계약 안 한 기업 — **보기만 한다**(#93). 폼 **밖**에 두고 체크칸·입력을 두지
+  계약 안 한 기업·폐업 — **보기만 한다**(#93). 폼 **밖**에 두고 체크칸·입력을 두지
   않는다: 여기 줄이 `company_ids` 로 넘어가면 대표 카톡방으로 나간다. 왜 안
   보내는지는 `services/ir_monthly.CONTRACTED` 머리말에 있다.
 #}
 {% if uncontracted %}
 <section class="miss-box" data-testid="startup-uncontracted">
-  <h2 class="panel-title">계약 안 한 기업 — 보내지 않음</h2>
+  <h2 class="panel-title">계약 안 한 기업·폐업 — 보내지 않음</h2>
   <p><a class="secondary-btn" href="/api/export/startup-uncontracted.xlsx?month={{ selected|urlencode }}"
         download data-testid="startup-uncontracted-xlsx">엑셀 내려받기</a></p>
   <div class="table-wrap">

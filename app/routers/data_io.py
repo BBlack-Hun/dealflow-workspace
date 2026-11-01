@@ -519,7 +519,12 @@ COMPANY_HEADERS = [
 @router.get("/api/export/companies.xlsx")
 def export_companies(db: Session = Depends(get_db),
                      user: User = Depends(get_current_user)):
-    """IR 기업현황 → 엑셀. 소개 가능 여부를 함께 내보내 어디를 채워야 할지 보이게 한다."""
+    """IR 기업현황 → 엑셀. 소개 가능 여부를 함께 내보내 어디를 채워야 할지 보이게 한다.
+
+    **관리자만**(11/01 요청) — 기업 자료 전체가 한 파일로 나가는 길이다. 화면의
+    단추도 같은 판정(`role == 'admin'`)으로 관리자에게만 선다(`companies.html`).
+    """
+    admin_only(user)
     companies = db.execute(select(IrCompany).order_by(IrCompany.name)).scalars().all()
     # 관리자가 붙인 추가 칸 — 숨긴 칸은 빠지고 고른 자리에 선다(화면과 같다).
     extra = custom_columns.view(db, "companies", "ir_companies")
@@ -564,9 +569,10 @@ def export_companies_view(request: Request, q: str = "", sort: str = "",
     줄은 표가 먹는 한 벌(`companies.company_rows`)이고, 칸은 그 탭에 **보이는
     칸**이다(`company_view.view_headers`).
 
-    권한은 전체 내려받기와 같다 — 로그인한 계정이면 누구나(투자컨설턴트는
-    `deps.CONSULTANT_PATHS` 밖이라 미들웨어가 막는다 — 전체 내려받기와 같다).
+    권한은 전체 내려받기와 같다 — **관리자만**(11/01). 거른 화면이라도 같은 기업
+    자료가 파일로 나가는 길이라 한쪽만 막으면 다른 쪽으로 그대로 받는다.
     """
+    admin_only(user)
     from .companies import company_rows
 
     # 추가 칸도 화면처럼 고른 자리(안 고르면 끝)에 붙이고, 그 칸의 O/X 필터도 같이
@@ -949,6 +955,8 @@ def _meetings_sheet(sheet, data, team_wide):
     stats.append((f"그중 {data['ir_meeting_ask_days']}일 지남(명)",
                   data["ir_meeting_ask_overdue"]))
     sheet.stats(stats)
+    if data["ir_delivered_note"]:
+        sheet.note(f"{pipeline.LABEL_DELIVERED} = {data['ir_delivered_note']}")
     if data["ir_meeting_ask_rows_why"]:
         sheet.note(data["ir_meeting_ask_rows_why"])
 

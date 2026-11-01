@@ -445,7 +445,7 @@ def _asked_days(db: Session, meeting_ids) -> Dict[int, str]:
 
 def asked_on(db: Session, meeting_ids) -> Dict[int, str]:
     """A7 이 물은 미팅 → 물은 날(`10/14`). 사람 쪽 결과 문의 자리(`/ir` · 오늘 할 일 ·
-    결과 문의 문자)가 '물어보세요' 대신 '자동 문의함 M/D' 를 적는 근거다
+    결과 문의 알림)가 '물어보세요' 대신 '자동 문의함 M/D' 를 적는 근거다
     (`pipeline.meeting_rows` 의 `auto_asked`). **결과를 적었다는 표시
     (`followup_done`)는 켜지 않는다** — 들은 답은 사람이 적는다(사용자 결정 2026-10-17)."""
     return {mid: _md(day) for mid, day in _asked_days(db, meeting_ids).items()}

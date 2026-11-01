@@ -100,7 +100,7 @@ def _cells(client, row_id, **body):
 
 # --- 1. 자동 칸 · 우선순위 ----------------------------------------------------
 
-def test_빈_칸은_원본에서_읽고_빨갛게_보인다(portal, db, company):
+def test_빈_칸은_원본에서_읽는다(portal, db, company):
     _vc(db, "심사가", "010-0000-2222")
     row = _add(portal["u1"])
     cells = row["cells"]
@@ -112,6 +112,28 @@ def test_빈_칸은_원본에서_읽고_빨갛게_보인다(portal, db, company)
     page = portal["u1"].get("/report/forecast").text
     assert 'class="cell fc-auto" data-field="ceo_name"' in page
     assert "비면 자동 — 스타트업DB — 대표자명" in page
+
+
+def test_글자는_검정이고_리마인드_두_칸_값만_빨강(portal, db, company):
+    """11/01 요청 — 운영팀이 리마인드를 잊지 않게 `투자사 미팅 예정일` · `후속라운드
+    시작 년월` 값만 빨갛게. 자동 값은 색 대신 회색 `자동` 딱지로 가른다."""
+    from pathlib import Path
+
+    row = _add(portal["u1"])
+    _cells(portal["u1"], row["id"], follow_round_month="2027-03")
+    page = portal["u1"].get("/report/forecast").text
+    assert 'fc-remind" data-field="meeting_plan"' in page, "빈칸이어도 붙는다 — 색만 의미 없다"
+    assert 'class="cell fc-remind" data-field="follow_round_month"' in page
+    assert 'class="cell fc-auto" data-field="ceo_name"' in page, "다른 칸은 빨강 없음"
+    assert page.count("fc-remind\" data-field") == 2
+
+    css = (Path(__file__).parent.parent / "app" / "static" / "css" / "app.css").read_text()
+    assert ".fc-remind { color: var(--red); }" in css
+    assert ".grid-table.fc-table th { color: var(--ink); }" in css
+    assert ".fc-auto, .grid-table th.fc-auto { color: var(--red); }" not in css
+    # 자동이라는 뜻은 색 대신 회색 `자동` 딱지로 남는다.
+    assert '.cell.fc-auto:not(:has(.cell-input))::after {\n  content: "\\C790\\B3D9"' in css
+    assert '<span class="tag soft">자동</span> 딱지' in page
 
 
 def test_적은_값이_우선이고_비우면_자동_원본과_같으면_빈칸(portal, db, company):

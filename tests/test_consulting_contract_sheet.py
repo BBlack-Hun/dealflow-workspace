@@ -221,7 +221,7 @@ def test_계약_탭의_머리글은_시트가_부르는_이름이다(allowed, db
     # 달을 적을 자리는 그대로 남는다 — 아래 검사가 그것을 짚는다.
     # #87(10/29) — 기업 쪽 표는 `기업명` 이 맨 앞(IR 기업 현황 차례).
     assert heads == ["NO", "담당자", "기업명", "계약월", "계약여부",
-                     "계약서 수신 여부", "성공보수율", "계약금", ""], heads
+                     "계약서 수신 여부", "성공보수율", "계약금", "등록일", ""], heads
     # 머리글과 데이터 칸이 **같은 순서로** 갈라져야 한다. 어긋나면 그 뒤가
     # 통째로 한 칸씩 밀린다.
     assert _fields(_open(allowed, CONTRACT)) == [
@@ -337,7 +337,7 @@ def test_다른_탭의_표는_한_칸도_안_바뀐다(allowed, db, users):
          ceo_name="김샘플", phone="010-0000-0000", email="a@example.com")
     body = _open(allowed, "스타트업")
     assert _heads(body) == ["NO", "담당자", "기업명", "대표자명", "연락처", "이메일",
-                            "지역", "컨설팅 미팅일", "미팅종류", "기업 관리", "기업 내용",
+                            "등록일", "지역", "컨설팅 미팅일", "미팅종류", "기업 관리", "기업 내용",
                             "소개 메모", "견적서 첨부 여부", "계약여부",
                             "계약서 수신 여부", "카톡 연결 여부", ""], _heads(body)
     assert _fields(body) == ["company_name", "ceo_name", "phone", "email",
@@ -513,7 +513,7 @@ def test_계약_탭에만_있는_칸은_다른_탭으로_안_샌다(allowed, db,
     # (`tests/test_consulting_contract_done.py` ·
     #  `tests/test_consulting_deal_pitch.py`).
     assert _heads(body) == ["NO", "담당자", "기업명", "대표자명", "연락처", "이메일",
-                            "지역", "컨설팅 미팅일", "미팅종류", "기업 관리", "기업 내용",
+                            "등록일", "지역", "컨설팅 미팅일", "미팅종류", "기업 관리", "기업 내용",
                             "소개 메모", "견적서 첨부 여부", "계약여부",
                             "계약서 수신 여부", "카톡 연결 여부", ""], _heads(body)
     assert _fields(body) == ["company_name", "ceo_name", "phone", "email",
