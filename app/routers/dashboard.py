@@ -1316,7 +1316,7 @@ async def save_member_rooms(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """**팀원마다 알릴 카톡방** — 계약 Day7 · 후속라운드 · 결과 문의 알림이 팀원에게 보내는 방.
+    """**팀원마다 알릴 카톡방** — 계약 Day7 · 후속라운드 · 결과 문의 · 미리 알림이 팀원에게 보내는 방.
 
     폼은 `room_<계정번호>` 칸을 계정마다 보낸다. 폼에 없는 계정은 건드리지 않는다
     (`save_send_caps` 와 같다). **실제 상대(투자사 · 소싱 명단 · 기업)의 방 이름은
