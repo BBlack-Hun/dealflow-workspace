@@ -13,7 +13,6 @@ from ..deps import (VIEW_AS_COOKIE, admin_only, can_open, get_current_user,
 from ..ui import PASSWORD_CHANGED, base_ctx
 from ..models import User
 from ..services import auth as auth_svc
-from ..services import sms
 
 router = APIRouter(tags=["auth"])
 log = logging.getLogger(__name__)
@@ -59,9 +58,9 @@ def login(
     user = auth_svc.authenticate(db, phone, password)
     if user is None:
         locked = auth_svc.note_login_failure(phone, ip)
-        # 번호는 가려서 남긴다 — 번호 가리기는 `sms.redact` 한 곳이다.
+        # 번호는 가려서 남긴다 — 번호 가리기는 `auth_svc.redact` 한 곳이다.
         log.warning("로그인 실패: 번호 %s · IP %s%s",
-                    sms.redact(auth_svc.normalize_phone(phone)), ip,
+                    auth_svc.redact(auth_svc.normalize_phone(phone)), ip,
                     " — 15분 잠금" if locked else "")
         # 없는 번호인지 틀린 비밀번호인지 구분해 알리지 않는다(계정 존재 여부 노출 방지).
         return RedirectResponse(

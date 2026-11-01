@@ -71,6 +71,7 @@ CHANNEL_TOP = "channel_top"
 STARTUP_MONTHLY = "startup_monthly"
 CONTRACT_DAY7 = "contract_day7"
 FOLLOW_ROUND = "follow_round"
+FOLLOWUP_NOTICE = "followup_notice"
 
 
 @dataclass(frozen=True)
@@ -97,10 +98,13 @@ KINDS: List[Kind] = [
          "토·일이면 앞 평일 — 스타트업 월간 발송 메뉴의 계정으로"),
     Kind(CONTRACT_DAY7, "계약 Day7 우편 발송",
          "계약 완료(무료·유료) 7일 뒤 10:00 계약 담당 팀원 카톡방에 계약서 우편 발송 알림, "
-         "계약서 수신이 O 가 아니면 14·21·28일 뒤 그 팀원에게 문자"),
+         "계약서 수신이 O 가 아니면 14·21·28일 뒤 같은 방에 수신 확인"),
     Kind(FOLLOW_ROUND, "후속라운드 시작 알림",
          "매출예상리스트 · Series A 이상 딜 소싱의 후속라운드 시작(년월) 한 달 전 1일 · "
-         "전달 15일 · 당월 1일 10:00(주말이면 다음 평일) — 받는 팀원에게 카톡 · 문자"),
+         "전달 15일 · 당월 1일 10:00(주말이면 다음 평일) — 받는 팀원 카톡방에"),
+    Kind(FOLLOWUP_NOTICE, "결과 문의 알림",
+         "평일 10:00 — 오늘 결과를 물어볼 미팅이 있는 팀원의 카톡방에 "
+         "'[결과 문의] ○○님(투자사) 외 N건' + 결과 문의 화면 링크 한 통"),
 ]
 BY_KEY: Dict[str, Kind] = {k.key: k for k in KINDS}
 

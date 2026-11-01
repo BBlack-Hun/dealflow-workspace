@@ -9,5 +9,6 @@ from . import meeting_request  # noqa: F401,E402  A2 미팅 요청 2회
 from . import sourcing_remind  # noqa: F401,E402  A1 소싱 리마인드
 from . import channel_top  # noqa: F401,E402  A3 채널방 TOP·핵심 딜
 from . import startup_monthly  # noqa: F401,E402  A5 스타트업 월간 발송 순환
-from . import contract_day7  # noqa: F401,E402  #9 계약 Day7 우편 발송 + 문자 3회
+from . import contract_day7  # noqa: F401,E402  #9 계약 Day7 우편 발송 + 수신 확인 3회
 from . import follow_round  # noqa: F401,E402  #94 · #98 후속라운드 시작 알림 3회
+from . import followup_notice  # noqa: F401,E402  결과 문의 알림(옛 결과 문의 문자)
