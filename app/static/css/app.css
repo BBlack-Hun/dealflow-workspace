@@ -3160,9 +3160,17 @@ input[data-sector-picker] + .sector-pick-toggle + div { margin-top: 6px; max-hei
 .tx-table td.tx-pre { white-space: pre-wrap; word-break: break-word; max-width: 320px; }
 .tx-suggest td { background: #fffbeb; }
 
-/* 업무 보고 › 매출예상리스트(#46) — 비면 자동인 칸의 머리글과 자동 값은 빨간 글씨. */
-/* 머리글은 `.grid-table th` 의 회색이 이겨서 한 단계 더 좁혀 건다. */
-.fc-auto, .grid-table th.fc-auto { color: var(--red); }
+/* 업무 보고 › 매출예상리스트(#46) — 글자는 검정, 리마인드할 두 칸(투자사 미팅 예정일 ·
+   후속라운드 시작 년월)의 값만 빨강(11/01 요청). 머리글은 `.grid-table th` 의 회색을 이기게 좁혀 건다. */
+.grid-table.fc-table th { color: var(--ink); }
+.fc-remind { color: var(--red); }
+/* 자동으로 읽어 온 값은 색 대신 회색 `자동` 딱지(`.tag.soft` 와 같은 모양). 칸 글자는 값
+   그대로여야 해서(`inline_edit.js` 가 textContent 를 읽는다) 요소를 끼우지 않고 ::after 로
+   단다. 고치는 중(입력칸이 든 동안)에는 뗀다. 글자는 `자동` 의 유니코드 이스케이프다 — 주석 밖
+   한글은 막아 둔다(tests/test_ir_number_matches_deal.py). */
+.fc-table .cell.fc-auto:not(:has(.cell-input))::after {
+  content: "\C790\B3D9"; font-size: 11px; background: var(--line); color: var(--muted);
+  border-radius: 6px; padding: 1px 7px; margin-left: 4px; }
 .fc-table .cell-sub { margin-top: 2px; }
 .fc-total { margin: 8px 0; font-size: 13px; }
 

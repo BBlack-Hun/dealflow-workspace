@@ -650,7 +650,7 @@ def test_수정창의_빈_값은_필터가_쓰는_말과_같은_글자다(logged
     assert [v for v, _ in values] == ["", "O", "X"], values
 
 
-def test_엑셀에도_화면과_같은_이름으로_계약_바로_뒤에_실린다(logged_in, db):
+def test_엑셀에도_화면과_같은_이름으로_계약_바로_뒤에_실린다(logged_in, db, u1_admin):
     """엑셀은 화면과 나란히 놓고 대조하는 자리다 — 이름도 자리도 같아야 한다."""
     import io
 
@@ -847,7 +847,7 @@ def test_적은_날짜가_저장되고_되읽힌다(logged_in, db, company):
     assert company.meeting_offered_at is None
 
 
-def test_엑셀에도_미팅제공일자가_계약_바로_앞에_실린다(logged_in, db):
+def test_엑셀에도_미팅제공일자가_계약_바로_앞에_실린다(logged_in, db, u1_admin):
     """IR 기업현황 엑셀은 머리글을 **손으로 적어 두는** 자리다. 표에 칸을
     세우고 그것을 잊으면 엑셀에서만 칸이 빠진 채 내려온다 — 예전에 그렇게
     한 번 빠졌다. 새 상태도 값 그대로 실린다."""

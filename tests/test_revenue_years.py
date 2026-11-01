@@ -153,7 +153,7 @@ def test_IR_탭에서_고친_값이_스타트업DB_탭에_보인다(logged_in, c
     assert "1,224백만원" in db_tab and "120억" in db_tab
 
 
-def test_화면_그대로_엑셀에도_같은_자리에_선다(logged_in, company, at):
+def test_화면_그대로_엑셀에도_같은_자리에_선다(logged_in, company, at, u1_admin):
     import openpyxl
 
     from app.services import revenue_years as ry
