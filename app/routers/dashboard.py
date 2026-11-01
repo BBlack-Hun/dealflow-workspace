@@ -149,11 +149,6 @@ def todo_page(request: Request, db: Session = Depends(get_db),
         "owner": owner,
         "viewing_other": other,
         "member_id": owner.id if other else 0,
-        # 관리자에게만 — 팀원 고르개. 정지된 계정은 뺀다(고칠 주간업무가 없다).
-        "members": ([{"id": u.id, "name": u.name} for u in
-                     db.execute(select(User).where(User.is_active == 1)
-                                .order_by(User.id)).scalars().all()]
-                    if user.role == "admin" else []),
         "tasks": rows,
         "summary": weekly.summary(rows),
         "week_start": start,

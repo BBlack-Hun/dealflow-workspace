@@ -38,16 +38,13 @@
     <a class="secondary-btn" href="/api/export/forecast.xlsx?{{ q }}" download>엑셀</a>
   </form>
   {% if members %}
+  {# 팀원 한 사람 것은 **왼쪽 메뉴의 `팀원 화면으로 보기`** 로 본다 — 여기에도 팀원 고르개를
+     두면 같은 이름이 화면 왼쪽과 오른쪽에 두 번 섰다(#113 — 업무 보고처럼 뺐다). 주소의
+     `member=` 는 그대로 받는다(옛 링크 · 엑셀 링크). #}
   <div class="toolbar-right">
     <a class="chip {% if not team_wide and viewing and viewing.id == user.id %}active{% endif %}"
        href="/report/forecast">내 것</a>
     <a class="chip {% if team_wide %}active{% endif %}" href="/report/forecast?scope=team">팀 전체</a>
-    <select class="chip-select" onchange="location = '/report/forecast?member=' + this.value">
-      <option value="">팀원 선택…</option>
-      {% for m in members %}
-      <option value="{{ m.id }}" {% if viewing and viewing.id == m.id %}selected{% endif %}>{{ m.name }}</option>
-      {% endfor %}
-    </select>
   </div>
   {% endif %}
 </div>

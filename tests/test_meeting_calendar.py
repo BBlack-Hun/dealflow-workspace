@@ -137,7 +137,8 @@ def test_admin_sees_the_team_and_can_pick_one(client, db, meetings, users):
     # 팀 전체일 때는 누구 미팅인지 적는다 · 남의 미팅은 /ir 에 안 보이므로 잇지 않는다
     other = _cell(html, 15)
     assert "윤서아" in other and "<a " not in other
-    assert "팀원 선택" in html
+    # 팀원 한 사람은 왼쪽 메뉴의 `팀원 화면으로 보기` 로 고른다(#113 — 오른쪽 고르개는 뺐다)
+    assert "팀원 선택" not in html and "팀 전체" in html
 
     html = c.get(f"/ir/calendar?ym=2026-10&member={users['u2'].id}").text
     assert "남의기업" in html and "샘플애그" not in html
@@ -158,7 +159,7 @@ def test_view_as_defaults_to_the_viewed_member(client, db, meetings, users):
 
     html = client.get("/ir/calendar?ym=2026-10").text
     assert "남의기업" in html and "샘플애그" not in html
-    assert "팀원 선택" in html                                  # 관리자 고르개는 그대로
+    assert "팀원 선택" not in html                              # 오른쪽 고르개는 뺐다(#113)
     assert f"ym=2026-11&amp;member={users['u2'].id}" in html   # 앞뒤 이동도 그 팀원
     assert 'ym=2026-10&member=0">팀 전체' in html               # `내 것` 처럼 템플릿 글자 `&`
 
