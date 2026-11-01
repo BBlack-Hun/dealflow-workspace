@@ -102,7 +102,7 @@ def test_자리_고르기는_합친_탭_하나다():
     assert set(_old_db()) <= set(groups["IR 기업 현황"])
 
 
-def test_지금_화면_내려받기는_합친_탭의_칸_그대로다(logged):
+def test_지금_화면_내려받기는_합친_탭의_칸_그대로다(logged, u1_admin):
     import openpyxl
 
     html = logged.get("/companies").text

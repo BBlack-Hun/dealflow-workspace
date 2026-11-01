@@ -562,7 +562,7 @@ def _sheet(resp):
     return rows[0], rows[1:]
 
 
-def test_지금_화면_내려받기는_보이는_칸_그대로다(db, users, logged):
+def test_지금_화면_내려받기는_보이는_칸_그대로다(db, users, logged, u1_admin):
     from app.services import company_view, revenue_years
 
     _companies(db, users)
@@ -580,7 +580,7 @@ def test_지금_화면_내려받기는_보이는_칸_그대로다(db, users, log
     assert by["샘플나루랩스"][-1] == "없음"
 
 
-def test_머리글_필터가_서버에서_같게_걸린다(db, users, logged):
+def test_머리글_필터가_서버에서_같게_걸린다(db, users, logged, u1_admin):
     _companies(db, users)
     # 칸끼리 AND, 한 칸 안에서는 OR — filters.js 의 matchRow.
     _, rows = _sheet(logged.get(
@@ -609,7 +609,7 @@ def test_머리글_필터가_서버에서_같게_걸린다(db, users, logged):
     assert [r[1] for r in rows] == ["샘플가온헬스"]
 
 
-def test_검색과_정렬도_화면과_같다(db, users, logged):
+def test_검색과_정렬도_화면과_같다(db, users, logged, u1_admin):
     _companies(db, users)
     # 번호는 어느 모양으로 쳐도 — 뒷자리만으로도.
     _, rows = _sheet(logged.get("/api/export/companies-view.xlsx?q=5678"))
@@ -631,19 +631,39 @@ def test_검색과_정렬도_화면과_같다(db, users, logged):
     assert [r[1] for r in rows] == ["샘플라온푸드", "샘플나루랩스", "샘플가온헬스"]
 
 
-def test_전체_내려받기는_그대로_전부다(db, users, logged):
+def test_전체_내려받기는_그대로_전부다(db, users, logged, u1_admin):
     _companies(db, users)
     _, rows = _sheet(logged.get(
         "/api/export/companies.xlsx?sector=AI"))   # 조건을 붙여도 전체다
     assert len(rows) == 5
 
 
-def test_단추는_IR_기업_현황_탭에_선다(db, users, logged):
+def test_단추는_IR_기업_현황_탭에_선다(db, users, logged, u1_admin):
     body = logged.get("/companies").text
     assert 'id="co-export-view"' in body
     assert 'href="/api/export/companies.xlsx"' in body, "전체 내려받기는 그대로"
     # 옛 스타트업DB 주소도 합친 탭이라 같이 선다(#105 · #106).
     assert 'id="co-export-view"' in logged.get("/companies?tab=db").text
+
+
+def test_IR_기업현황_내려받기는_관리자만(db, users, logged):
+    """11/01 요청 — 기업 자료가 파일로 나가는 두 길(전체 · 지금 화면)은 관리자만.
+    단추도 같은 판정으로 관리자에게만 선다(같은 주소를 거는 발송 화면 링크도)."""
+    _companies(db, users)
+    urls = ("/api/export/companies.xlsx", "/api/export/companies-view.xlsx")
+    body = logged.get("/companies").text
+    assert 'href="/api/export/companies.xlsx"' not in body
+    assert 'id="co-export-view"' not in body
+    assert 'href="/api/export/companies.xlsx"' not in logged.get("/deals").text
+    for url in urls:
+        assert logged.get(url).status_code == 403, url
+
+    users["u1"].role = "admin"
+    db.commit()
+    assert 'id="co-export-view"' in logged.get("/companies").text
+    assert 'href="/api/export/companies.xlsx"' in logged.get("/deals").text
+    for url in urls:
+        assert logged.get(url).status_code == 200, url
 
 
 def test_정렬_규칙이_table_sort_와_같다():

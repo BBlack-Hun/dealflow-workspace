@@ -347,7 +347,7 @@ def test_the_migration_moves_old_rows_without_losing_a_single_one(tmp_path):
         con.close()
 
 
-def test_the_excel_still_holds_a_number_for_old_values(logged_in, db):
+def test_the_excel_still_holds_a_number_for_old_values(logged_in, db, u1_admin):
     """엑셀에서 계산할 수 있게 **숫자로** 둔다 — 옛 값은 예전과 같은 숫자다.
 
     `5천만원` 처럼 억이 아닌 단위로 적힌 값도 **억으로 옮겨** 숫자로 나간다.

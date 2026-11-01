@@ -81,7 +81,7 @@ def test_화면에_칸과_필터가_선다(logged_in, db, company):
     assert 'id="f-region"' in db_tab
 
 
-def test_엑셀_두_벌에_다_실린다(logged_in, db, company):
+def test_엑셀_두_벌에_다_실린다(logged_in, db, company, u1_admin):
     company.quote_attached, company.kakao_joined, company.region = "O", "X", "부산"
     db.commit()
     head, rows = _sheet(logged_in.get("/api/export/companies.xlsx"))
@@ -128,7 +128,7 @@ def test_컨설팅_진행_기록은_읽기만_한다(logged_in, db, users, compa
 
 # ── 0119 — 성공보수율(결정 10 · 기업 동기화 2단계) ──────────────────────────────
 
-def test_성공보수율은_0118_다음_빈칸_칸이고_수정창_표_엑셀에_선다(logged_in, db, company):
+def test_성공보수율은_0118_다음_빈칸_칸이고_수정창_표_엑셀에_선다(logged_in, db, company, u1_admin):
     src = (ROOT / "alembic" / "versions" / "0119_ir_success_fee.py").read_text("utf-8")
     assert 'down_revision = "0118_series_a_ir_file"' in src
     assert "nullable=True" in src and "server_default" not in src

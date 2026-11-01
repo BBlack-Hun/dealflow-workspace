@@ -172,5 +172,12 @@ def logged_in(client, users):
     return client
 
 
+@pytest.fixture()
+def u1_admin(users, db):
+    """u1 을 관리자로 — 관리자만 열리는 길(IR 기업현황 엑셀 · 11/01)을 u1 로 부를 때."""
+    users["u1"].role = "admin"
+    db.commit()
+
+
 def auth(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}

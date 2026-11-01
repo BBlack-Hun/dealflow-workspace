@@ -345,16 +345,16 @@ def test_숨긴_칸은_화면과_엑셀에서_빠지고_값은_남는다(portal,
     member = portal["u1"]
     _put(member, "ir_companies", company.id, col.id, "남아야 할 메모")
     assert "남아야 할 메모" in member.get("/companies").text
-    full = _sheet(member.get("/api/export/companies.xlsx"))
+    full = _sheet(portal["admin"].get("/api/export/companies.xlsx"))
     assert full[0][-1] == "검토 메모" and full[1][-1] == "남아야 할 메모"
-    view = _sheet(member.get("/api/export/companies-view.xlsx"))
+    view = _sheet(portal["admin"].get("/api/export/companies-view.xlsx"))
     assert view[0][-1] == "검토 메모" and view[1][-1] == "남아야 할 메모"
 
     portal["admin"].post(f"/columns/{col.id}/hidden", data={"hidden": 1})
     html = member.get("/companies").text
     assert "남아야 할 메모" not in html and "검토 메모" not in html
-    assert "검토 메모" not in _sheet(member.get("/api/export/companies.xlsx"))[0]
-    assert "검토 메모" not in _sheet(member.get("/api/export/companies-view.xlsx"))[0]
+    assert "검토 메모" not in _sheet(portal["admin"].get("/api/export/companies.xlsx"))[0]
+    assert "검토 메모" not in _sheet(portal["admin"].get("/api/export/companies-view.xlsx"))[0]
     assert _values(db)[(col.id, "ir_companies", company.id)] == "남아야 할 메모"
     # 숨긴 칸에는 적지 못한다 — 화면에 없는 칸이다.
     assert _put(member, "ir_companies", company.id, col.id, "새 글").status_code == 400
@@ -372,7 +372,7 @@ def test_화면_엑셀의_OX_필터도_추가_칸을_건다(portal, db):
     _add(portal, "companies", "투자 검토", "ox")
     ox = _col(db, "companies", "투자 검토")
     _put(portal["u1"], "ir_companies", a.id, ox.id, "O")
-    got = _sheet(portal["u1"].get(f"/api/export/companies-view.xlsx?cc{ox.id}=O"))
+    got = _sheet(portal["admin"].get(f"/api/export/companies-view.xlsx?cc{ox.id}=O"))
     assert [r[1] for r in got[1:]] == ["샘플가"]
 
 
@@ -776,7 +776,7 @@ def test_엑셀도_고른_자리에_서고_파일에_없는_칸이면_맨_끝이
     _put(member, "ir_companies", company.id, memo2.id, "둘째 글")
 
     for url in ("/api/export/companies.xlsx", "/api/export/companies-view.xlsx"):
-        got = _sheet(member.get(url))
+        got = _sheet(admin.get(url))
         at = got[0].index("기업명")
         # 같은 칸 뒤 둘은 `position` 차례, 안 고른 칸은 맨 끝.
         assert got[0][at + 1:at + 3] == ["투자 검토", "둘째 메모"], url
@@ -785,7 +785,7 @@ def test_엑셀도_고른_자리에_서고_파일에_없는_칸이면_맨_끝이
 
     # 파일 머리글에 그 칸이 없으면(화면에만 있는 칸) 맨 끝이다.
     admin.post(f"/columns/{ox.id}/place", data={"after": "홍보메일삭제"})
-    got = _sheet(member.get("/api/export/companies.xlsx"))
+    got = _sheet(portal["admin"].get("/api/export/companies.xlsx"))
     assert "홍보메일삭제" not in got[0]
     assert got[0][-2:] == ["투자 검토", "검토 메모"]
 
