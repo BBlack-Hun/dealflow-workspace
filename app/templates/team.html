@@ -778,14 +778,14 @@
       </tbody>
     </table>
     </div>
-    {# **팀원 카톡방** — 계약 Day7 · 후속라운드 · 결과 문의 알림이 팀원에게 보내는 방
+    {# **팀원 카톡방** — 계약 Day7 · 후속라운드 · 결과 문의 · 미리 알림이 팀원에게 보내는 방
        (`User.kakao_room_name`). 자동 발송 계정 카톡 기준 제목이다 — 그 PC 에서 나간다.
        비어 있으면 그 팀원 몫은 안 나가고 위 상태 칸 · 오늘 할 일에 까닭이 선다. #}
     <form method="post" action="/team/member-rooms" class="rule-form" data-testid="member-rooms-form">
       <div class="table-wrap">
       <table class="grid-table compact">
         <thead><tr><th style="width:140px">팀원</th>
-          <th>팀원 알림(계약 Day7 · 후속라운드 · 결과 문의) 받을 카톡방 — 자동 발송 계정 카톡의 방 제목 · 계정 주인 본인은 '나와의 채팅' 제목</th></tr></thead>
+          <th>팀원 알림(계약 Day7 · 후속라운드 · 결과 문의 · 미리 알림) 받을 카톡방 — 자동 발송 계정 카톡의 방 제목 · 계정 주인 본인은 '나와의 채팅' 제목</th></tr></thead>
         <tbody>
         {% for m in members if m.active %}
         <tr>

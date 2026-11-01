@@ -1,11 +1,9 @@
 """#94 · #98 **후속라운드 시작 알림** — 팀원에게 카톡으로 세 번.
 
-두 곳의 `후속라운드 시작`(`YYYY-MM`)을 읽는다.
-
-  · 업무 보고 › 매출예상리스트 `후속라운드 시작 년월`(`RevenueForecast.follow_round_month`
-    — 0128). 그 줄의 담당은 줄을 만든 팀원(`user_id`)이다.
-  · IR 기업 현황 › Series A 이상 딜 소싱 `후속라운드 시작`(`SeriesACompany.follow_round_month`
-    — 0127). 담당은 `담당자` 칸의 지금 담당자(`contract_day7.member_of` 와 같은 규칙)다.
+IR 기업 현황 › Series A 이상 딜 소싱 `후속라운드 시작`(`SeriesACompany.follow_round_month`
+— 0127, `YYYY-MM`)을 읽는다. 담당은 `담당자` 칸의 지금 담당자(`contract_day7.member_of` 와
+같은 규칙)다. 매출예상리스트 `후속라운드 시작 년월`(0128)도 여기서 읽었는데, D-10·7·4·1 의
+미리 알림(`remind_ahead`)으로 옮겼다(사용자 결정 2026-11-01 — Series A 쪽은 그대로).
 
 ## 언제 — 세 번
 
@@ -40,8 +38,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ... import clock
-from ...models import (Automation, AutomationSend, IrCompany, RevenueForecast,
-                       SeriesACompany, User)
+from ...models import Automation, AutomationSend, SeriesACompany, User
 from .. import automation, cadence, forecast
 from .. import automation_runner as runner
 from .contract_day7 import member_of
@@ -50,8 +47,8 @@ KEY = automation.FOLLOW_ROUND
 #: 실제 모드 회차의 `SendJob.topic`.
 TOPIC = "follow_round"
 LOOKBACK_DAYS = 3
-#: 읽는 곳 — 열쇠 머리.
-FORECAST, SERIES_A = "fc", "sa"
+#: 읽는 곳 — 열쇠 머리. 매출예상리스트(`fc`)는 `remind_ahead` 로 옮겼다.
+SERIES_A = "sa"
 #: '받는 팀원' 칸의 두 낱말.
 OWNER, SENDER = "담당 팀원", "자동 발송 계정"
 #: 원문(#94) "000기업 5월 라운드시작입니다" 에 회차를 붙인다.
@@ -86,19 +83,8 @@ def alert_days(month: str) -> List[date]:
 
 
 def targets(db: Session) -> List[Target]:
-    """후속라운드 시작이 적힌 줄 — 매출예상리스트 · Series A 이상 딜 소싱."""
+    """후속라운드 시작이 적힌 줄 — Series A 이상 딜 소싱."""
     out = []
-    for row in db.execute(select(RevenueForecast).where(
-            RevenueForecast.follow_round_month.isnot(None))).scalars():
-        name = (row.company_name or "").strip()
-        if not name and row.ir_company_id:
-            company = db.get(IrCompany, row.ir_company_id)
-            name = company.name if company else ""
-        owner = db.get(User, row.user_id)
-        ok = owner is not None and owner.is_active
-        out.append(Target(FORECAST, row.id, name or "(기업명 없음)", row.follow_round_month,
-                          owner if ok else None,
-                          "" if ok else "매출예상리스트 줄의 담당 계정이 없거나 꺼져 있습니다"))
     for row in db.execute(select(SeriesACompany).where(
             SeriesACompany.follow_round_month.isnot(None))).scalars():
         owner, why = member_of(db, row)
@@ -197,10 +183,11 @@ def still_ok(db: Session, rec: AutomationSend) -> str:
     """풀리기 직전 — 그사이 줄이 지워졌거나 후속라운드 시작이 바뀌었으면 뺀다."""
     try:
         _channel, src, row_id, month = rec.ref.split(":")[:4]
-        model = RevenueForecast if src == FORECAST else SeriesACompany
-        row = db.get(model, int(row_id))
+        row = db.get(SeriesACompany, int(row_id))
     except ValueError:
         return ""
+    if src != SERIES_A:          # 옮기기 전에 선 매출예상리스트 회차
+        return "매출예상리스트 후속라운드는 미리 알림 자동화로 옮겼습니다"
     if row is None:
         return "줄이 지워졌습니다"
     return "" if row.follow_round_month == month else "후속라운드 시작이 바뀌었습니다"
