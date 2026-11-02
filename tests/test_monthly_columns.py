@@ -677,6 +677,21 @@ def test_이미_9월이_선_명단은_건드리지_않는다(db):
     assert _contact_labels(db, "샘플 딜소개현황(정상)") == healthy
 
 
+def test_딜소개_칸_이름을_바꿔도_같은_달을_또_만들지_않는다(db):
+    """`N월 1차 딜소개` → `N월 딜소개` 이름 바꾸기(2026-11-02) 뒤의 모양. 달은 이름에서
+    읽으니 이번 달 칸이 그대로 있다고 보고, 다음 달은 바뀐 이름을 본뜬다."""
+    from datetime import date
+
+    from app.services import monthly_columns as mc
+
+    renamed = ["11월 딜소개", "10월 딜소개", "9월 딜소개", "7월 딜소개(2)",
+               "7월 IR 요청", "4월 딜소개(중복)", "4월 딜소개"]
+    _contact_cols(db, renamed, sheet="샘플 딜공유(이름 바꿈)")
+    assert mc.ensure_contact(db, "샘플 딜공유(이름 바꿈)", today=date(2026, 11, 2)) == []
+    assert mc.ensure_contact(db, "샘플 딜공유(이름 바꿈)",
+                             today=date(2026, 12, 1)) == ["12월 딜소개"]
+
+
 def test_명단이_다르면_따로_선다(db):
     from app.services import monthly_columns as mc
 
