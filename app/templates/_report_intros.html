@@ -13,7 +13,7 @@
 
   부르는 쪽이 `intro_label`(`10월` · `2026년`)을 정해 둔다.
 
-  **맨 위 `아직 소개 안 한 10억 이상` 묶음(#122)** — 월간 보기에서 '본인' 이 있을 때만
+  **맨 아래 `소개 후보` 묶음(#122 · 아직 소개 안 한 10억 이상)** — 월간 보기에서 '본인' 이 있을 때만
   선다(`report.unintroduced_big` · `intro_left`). 10곳만 펼치고 나머지는 `<details>` 로 접는다.
 #}
 {% macro big_table(rows) %}
@@ -46,20 +46,6 @@
   <h2 class="panel-title">{{ intro_label }} 소개한 기업
     <span class="hint">{{ intro_companies.rows|length }}개사 · 투자사가 실제로 받은 것만 셉니다 · 기업명을 누르면 받은 투자사가 펼쳐집니다</span>
   </h2>
-  {% if intro_left %}
-  <div class="bucket" id="intro-left">
-    <h3 class="bucket-head">아직 소개 안 한 10억 이상 {{ intro_left|length }}곳
-      <span class="hint">투자유치희망금액(구간이면 아래값) 높은 순 · 이 달에 이 팀원이 안 보낸 소개 가능 기업</span>
-    </h3>
-    {{ big_table(intro_left[:10]) }}
-    {% if intro_left|length > 10 %}
-    <details>
-      <summary>더 보기 — 나머지 {{ intro_left|length - 10 }}곳</summary>
-      {{ big_table(intro_left[10:]) }}
-    </details>
-    {% endif %}
-  </div>
-  {% endif %}
   {% if intro_companies.rows %}
   <div class="table-wrap">
   <table class="grid-table compact">
@@ -112,5 +98,20 @@
   </div>
   {% else %}
   <p class="muted bucket-empty">이 기간에 소개한 기업이 없습니다.</p>
+  {% endif %}
+  {# 소개한 기업 표·빈칸 문구 **아래** — 위에 두면 소개 0개사인 달에 '소개한 기업' 처럼 읽혔다(11/02). #}
+  {% if intro_left %}
+  <div class="bucket" id="intro-left">
+    <h3 class="bucket-head">소개 후보 — {{ intro_label }}에 아직 안 보낸 10억 이상 {{ intro_left|length }}곳
+      <span class="hint">투자유치희망금액(구간이면 아래값) 높은 순 · 이 달에 이 팀원이 안 보낸 소개 가능 기업</span>
+    </h3>
+    {{ big_table(intro_left[:10]) }}
+    {% if intro_left|length > 10 %}
+    <details>
+      <summary>더 보기 — 나머지 {{ intro_left|length - 10 }}곳</summary>
+      {{ big_table(intro_left[10:]) }}
+    </details>
+    {% endif %}
+  </div>
   {% endif %}
 </section>

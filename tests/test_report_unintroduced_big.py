@@ -1,9 +1,10 @@
-"""업무 보고 `소개한 기업`(#122) — 계약 두 칸 + 맨 위 `아직 소개 안 한 10억 이상` 묶음.
+"""업무 보고 `소개한 기업`(#122) — 계약 두 칸 + 맨 아래 `소개 후보`(아직 소개 안 한 10억 이상) 묶음.
 
   1. 기업명(· 투자유치희망금액) 오른쪽 계약여부 · 계약서 수신 여부 — IR 값, IR 에 없으면 Series A
   2. 묶음 — 소개 가능한 IR 기업 중 투자유치희망금액(구간이면 아래값) 10억 이상이고 **보는 달에**
      그 팀원 받은 기록에 없는 곳, 금액 높은 순. 팀 전체(본인 없음)에는 안 띄운다.
   3. 화면 — 10곳만 펼치고 나머지는 `더 보기`
+  4. 화면 차례 — 소개한 기업 표(없으면 빈칸 문구)가 먼저, 후보 묶음은 그 아래(11/02)
 
 이름은 전부 지어낸 것이다 — 저장소가 공개다.
 """
@@ -81,11 +82,11 @@ def test_화면은_10곳만_펼치고_엑셀에_계약_칸(stage, client, db, us
     client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
 
     page = client.get("/report?month=2026-08").text
-    assert "아직 소개 안 한 10억 이상 12곳" in page
+    assert "소개 후보 — 8월에 아직 안 보낸 10억 이상 12곳" in page
     head, _, more = page.partition("더 보기 — 나머지 2곳")
     assert more, "10곳이 넘으면 나머지는 접혀야 한다"
     assert "샘플더09" in head and "샘플큰나" in more, "금액 높은 순으로 10곳이 먼저 선다"
-    assert "아직 소개 안 한 10억 이상" not in client.get("/report?span=year&year=2026").text
+    assert "소개 후보 —" not in client.get("/report?span=year&year=2026").text
 
     wb = openpyxl.load_workbook(io.BytesIO(
         client.get("/api/export/report.xlsx?month=2026-08").content))
@@ -93,3 +94,16 @@ def test_화면은_10곳만_펼치고_엑셀에_계약_칸(stage, client, db, us
     head = next(r for r in rows if r and r[0] == "기업명")
     assert head[:4] == ["기업명", "투자유치희망금액", "계약여부", "계약서 수신 여부"]
     assert ["샘플보냄", "40억", "무료계약완료", "O"] in [r[:4] for r in rows]
+
+
+def test_소개_0인_달은_빈칸_문구가_후보보다_먼저(stage, client, users):
+    """9월엔 보낸 게 없다 — 후보 표가 위에 서면 '소개한 기업' 처럼 읽혔다(11/02)."""
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+
+    page = client.get("/report?month=2026-09").text
+    empty = page.index("이 기간에 소개한 기업이 없습니다.")
+    assert "9월 소개한 기업" in page[:empty]
+    assert empty < page.index("소개 후보 — 9월에 아직 안 보낸 10억 이상 3곳")
+    # 보낸 달도 소개한 기업 표가 먼저다.
+    aug = client.get("/report?month=2026-08").text
+    assert aug.index("<summary><b>샘플보냄</b></summary>") < aug.index("소개 후보 — 8월에")
