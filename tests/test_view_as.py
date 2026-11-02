@@ -59,6 +59,7 @@ SEND_ROUTES = {
 OPEN_ROUTES = {
     ("POST", "/api/contacts/verify-rooms"),
     ("POST", "/sourcing/rooms/search"),
+    ("POST", "/api/startup-rooms/search"),
     ("POST", "/api/deals/send"),
     ("POST", "/api/deals/queue"),
     ("POST", "/api/deals/queue/{item_id}/start"),
@@ -524,6 +525,33 @@ def test_sourcing_room_search_while_viewing_is_the_members_job(client, db, users
     db.expire_all()
     [job] = db.query(SendJob).all()
     assert (job.user_id, job.kind) == (users["u1"].id, "verify_room")
+
+
+def test_startup_room_search_while_viewing_is_the_members_job(client, db, users, admin):
+    """스타트업 [방 후보 찾기](11/02) — 그 팀원 줄로 그 팀원 계정 잡이 선다."""
+    from urllib.parse import quote
+
+    from app.models import ROOM_SEARCH_TOPIC, SendJob, SheetOwner, VcContact
+
+    db.add(SheetOwner(label="스타트업 · 강민준", user_id=1, layout="startup", is_hidden=1))
+    row = VcContact(user_id=users["u1"].id, source_sheet="스타트업 · 강민준",
+                    name="홍길동", firm="가나다랩스")
+    db.add(row)
+    db.commit()
+    _viewing(client, users)
+    page = client.get(f"/startup?sheet={quote('스타트업 · 강민준')}").text
+    assert 'id="room-search-btn" data-send="proxy"' in page
+    assert 'id="room-search-one-btn" data-send="proxy"' in page
+    r = client.post("/api/startup-rooms/search", json={"contact_ids": [row.id]})
+    assert r.status_code == 200, r.text
+    db.expire_all()
+    job = db.get(SendJob, r.json()["job_id"])
+    assert (job.user_id, job.kind, job.topic) == (users["u1"].id, "verify_room",
+                                                  ROOM_SEARCH_TOPIC)
+    assert [i.contact_id for i in job.items] == [row.id]
+    # 안내 카톡 발송은 그대로 막힌다(나머지 길은 `test_send_routes_are_blocked_while_viewing`).
+    r = client.post("/api/startup-msg/send", json={})
+    assert r.status_code == 403 and r.json()["detail"] == BLOCKED
 
 
 def test_member_cannot_send_as_someone_else(client, db, users, admin):
