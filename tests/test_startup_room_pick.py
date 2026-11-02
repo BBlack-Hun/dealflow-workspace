@@ -230,7 +230,7 @@ def test_폴링이_회사명과_기업_표시를_내준다(db, seeded, client):
     assert all("홍길동" not in i["query"] for i in got["items"])
 
 
-def test_투자사_담당자_방_확인은_이름과_직함으로_그대로_나간다(db, seeded, client):
+def test_투자사_담당자_방_확인은_기업_규칙을_안_탄다(db, seeded, client):
     me = _login(client)
     res = me.post("/api/contacts/verify-rooms",
                   json={"contact_ids": [seeded["investor"].id]})
@@ -239,7 +239,8 @@ def test_투자사_담당자_방_확인은_이름과_직함으로_그대로_나�
     assert job.topic is None
 
     item = _poll(me)["items"][0]
-    assert item["query"] == "김투자 이사님"
+    # 적어 둔 방 이름(기본값 아님)부터 찾는다 — 회사명 하나가 아니다.
+    assert item["query"] == "김투자 이사님 다라마벤처스"
     assert item["name"] == "김투자"
     assert item["firm"] == "다라마벤처스"
     assert "target" not in item
