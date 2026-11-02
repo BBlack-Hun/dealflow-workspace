@@ -28,8 +28,8 @@ from sqlalchemy.orm import Session
 
 from .. import clock, config
 from ..db import get_db
-from ..services import (cadence, pipeline, room_joined, scheduled_send,
-                        send_guard, sourcing_sync)
+from ..services import (cadence, pipeline, room_joined, room_match,
+                        scheduled_send, send_guard, sourcing_sync)
 from ..deps import agent_serves, get_agent_device, may_auto_attach, now_iso
 from ..models import (ROOM_SEARCH_TOPIC, SENDER_ROOM_TOPIC, SOURCING_ROOM_TOPIC,
                       AgentDevice, SendItem, SendJob, User)
@@ -444,6 +444,8 @@ def item_result(
             pipeline.close_requests_for(db, job, item.contact_id)
         # 참여 안내가 나간 `제안 대기중` 줄 → `물어보는 중`(`sourcing_sync.mark_invited`).
         sourcing_sync.mark_invited(db, item, f"/agent/items/{item_id}/result")
+        # 월간 IR 이 그 방으로 나갔다 → 대표 카톡방 확인됨 + 카톡 연결 여부 O(i130).
+        room_match.verify_sent(item)
     else:
         item.status = "failed"
         item.error = body.error or "unknown error"

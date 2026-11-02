@@ -319,6 +319,7 @@ def save_rooms(
         return _back_rooms("저장할 줄이 없습니다")
 
     allowed = set(room_match.company_ids(db))
+    known = room_match.investor_rooms(db)
     changed, unknown = 0, 0
     for company_id, value in zip(company_ids, rooms):
         if company_id not in allowed:
@@ -327,6 +328,8 @@ def save_rooms(
         company = db.get(IrCompany, company_id)
         if company is not None and room_match.set_room(company, value):
             changed += 1
+            # 카톡 후보에서 고른 제목이면 확인됨 + 카톡 연결 여부 O(i130).
+            room_match.verify_picked(company, known)
     db.commit()
 
     parts = [f"{changed}곳의 방 제목을 넣었습니다" if changed else "바뀐 줄이 없습니다"]
