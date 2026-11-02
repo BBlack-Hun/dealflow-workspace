@@ -1389,7 +1389,7 @@ _SEND_STATES = {"failed": "실패", "pending": "대기", "canceled": "취소"}
 #: `static/js/contacts.js` 의 `KIND_KO`.
 _SEND_LABELS = {"deal_intro": "딜소개", "ir_delivery": "IR 전달",
                 sourcing_msg.KIND: "딜 소싱(참여 안내)",
-                sourcing_msg.REMIND_KIND: "딜 소싱(월간 리마인드)",
+                sourcing_msg.REMIND_KIND: f"딜 소싱({sourcing_msg.REMIND_LABEL})",
                 sourcing_msg.SHARE_KIND: f"딜 소싱({series_a_share.LABEL})"}
 
 
