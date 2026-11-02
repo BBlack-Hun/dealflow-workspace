@@ -39,6 +39,12 @@
     분야 · 투자라운드 · 딜소개 문구는 잇지 않는다 — Series A 는 시트 낱말 · 받은 날의 라운드
     · Series A 딜 공유용 문구라 IR 칸과 뜻이 갈린다(`models.SeriesACompany`).
 
+    ── 4단계(11/02 · i126) — 스타트업 명단만(Series A 는 위 까닭으로 안 잇는다) ──
+    대분류 `sector_major`        →  대분류 `notes.sector_major`
+    소분류 `sector_minor`        →  소분류 `notes.sector_minor`
+    투자라운드 `series`          →  투자라운드 `notes.company_kind`(띄어쓰기 수는 안 가린다)
+    기업 한줄 소개 `business_desc` →  기업 한줄 소개 `notes.one_liner`
+
 월간 계약 탭은 계약 칸(`CONTRACT_TAB`)만 잇는다 — 그 탭의 `region` 은 달 묶음 이름이다.
 진행 기록(기업 관리 · 컨설팅 미팅일)은 잇지 않고 IR 화면에서 읽기만 한다(결정 3).
 
@@ -76,6 +82,8 @@ IR 의 `미계약`(기본값)은 빈칸으로 본다.
    기업명을 고쳐도 그대로다. IR 쪽은 번호가 정해진 뒤라 `after_flush` 에서 잇고, 빈칸
    채우기는 커밋이 이어서 부르는 flush 가 한다. 스타트업 명단 줄도 **기업명을 고친 줄**은
    잇는다(#85 — `기업명` 칸 후보에서 IR 기업을 고르는 길). 투자컨설턴트 줄도 같다(11/01).
+   IR 에 기업이 새로 생기거나 이름이 바뀔 때 잇는 것도 스타트업 명단 · 투자컨설턴트
+   줄까지 한다(11/02 · i126 — 이름이 정확히 하나 맞을 때만, 위와 같은 규칙).
 7. 수정 로그는 flush 자리라 `edit_log` 가 그대로 남긴다 — 컨설턴트가 고친 값이 IR
    공용 칸을 바꿀 수 있고(결정 13), 따라 고친 남의 줄은 `남의 것` 으로 남는다.
 
@@ -124,6 +132,11 @@ FIELDS = {
     "contract_ym": (None, None, "contract_ym"),
     "revenue_recent": (None, None, YEAR),
     **{f: (None, None, YEAR) for f in revenue_years.FIELDS},
+    # 4단계(i126 · 11/02) — 스타트업 명단만
+    "sector_major": (None, "note:sector_major", None),
+    "sector_minor": (None, "note:sector_minor", None),
+    "series": (None, "note:company_kind", None),
+    "business_desc": (None, "note:one_liner", None),
 }
 #: Series A 의 연도 매출 칸(0112 — 24~27년).
 SERIES_A_YEARS = frozenset(c.key for c in SeriesACompany.__table__.columns
@@ -138,7 +151,8 @@ LABELS = {"contact_name": "대표자명", "contact_phone": "연락처", "contact
           "contract_received": "계약서 수신 여부", "meeting_offered_at": "미팅제공일자",
           "success_fee": "성공보수율", "funding_total": "누적투자금액",
           "raise_target": "투자유치희망금액", "pre_value": "Pre Value",
-          "contract_ym": "계약년월"}
+          "contract_ym": "계약년월", "sector_major": "대분류", "sector_minor": "소분류",
+          "series": "투자라운드", "business_desc": "기업 한줄 소개"}
 #: `O` / `X` 만 옮기는 칸.
 OX = ("quote_attached", "kakao_joined", "contract_received")
 #: 투자컨설턴트에서 **메타(관리 스타트업) 탭에만** 서는 칸(계약 탭은 `CONTRACT_TAB`).
@@ -232,6 +246,8 @@ def same(field: str, a, b) -> bool:
         return _raw(a).upper() == _raw(b).upper()
     elif field in revenue_years.FIELDS:
         return (norm(field, a) or "") == (norm(field, b) or "")   # `18.3` 과 `18.3억` 은 같다
+    elif field == "series":
+        return " ".join(_raw(a).split()) == " ".join(_raw(b).split())   # IR 에 두 칸 띄운 값이 있다
     return _raw(a) == _raw(b)
 
 
@@ -525,7 +541,8 @@ def _renamed(obj) -> bool:
 
 def after_flush(session: Session) -> None:
     """IR 기업이 새로 생기거나 이름이 바뀌었다 → 그 이름이 **정확히 하나** 맞는, 아직 안
-    이은 Series A 줄을 잇는다(머리말 규칙 6). `app/models.py` 가 `after_flush_postexec` 로
+    이은 Series A · 스타트업 명단 · 투자컨설턴트 줄을 잇는다(머리말 규칙 6 — 스타트업 · 투자
+    컨설턴트는 11/02 i126). `app/models.py` 가 `after_flush_postexec` 로
     건다 — 새 기업은 이제야 번호가 있다. 여기서 바꾼 줄은 커밋이 한 번 더 flush 하고
     (`Session.commit` 이 깨끗해질 때까지 flush 한다), 그 `before_flush` 가 빈칸을 채운다.
     """
@@ -537,10 +554,18 @@ def after_flush(session: Session) -> None:
     keys = {_key(c.name) for c in companies if c.id and c not in session.deleted} - {""}
     if not keys:
         return
+    from . import ir_link
+
     with session.no_autoflush:
-        rows = [r for r in session.execute(select(SeriesACompany).where(
-                    SeriesACompany.ir_company_id.is_(None))).scalars()
-                if _key(r.name) in keys]
+        rows = [r for model in (SeriesACompany, ConsultingCompany)
+                for r in session.execute(select(model).where(
+                    model.ir_company_id.is_(None))).scalars()
+                if _key(ir_link.row_name(r)) in keys]
+        # 투자사 줄이 수백이라 기업명만 읽어 맞는 줄만 꺼낸다 — 스타트업 화면 줄만
+        # `_auto_link` 가 남긴다(투자사 줄의 `firm` 은 투자사다).
+        rows += [session.get(VcContact, i) for i, firm in session.execute(
+                     select(VcContact.id, VcContact.firm).where(
+                         VcContact.ir_company_id.is_(None))) if _key(firm) in keys]
     if rows:
         _auto_link(session, rows)
 

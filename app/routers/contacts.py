@@ -30,7 +30,7 @@ from ..models import (AutomationSend, ContactActivity, ContactColumn, DealFollow
                       IrCompany, IrRequest,
                       Meeting, SendItem, SendJob, SenderRoom, SendSequence,
                       SourcingContact, User, VcContact)
-from ..services import (contact_columns, deal_stage, firm_type, investor_firms,
+from ..services import (company_sync, contact_columns, deal_stage, firm_type, investor_firms,
                         ir_readonly, last_activity, manual_send, meeting_kind, memo_intro,
                         room_joined,
                         room_name, series_a_share, sheet_import, sheet_owner, sourcing_msg,
@@ -1419,6 +1419,7 @@ def update_contact(
 ):
     contact = _owned(db, contact_id, user)
     was = room_joined.before(contact)
+    linked_before = contact.ir_company_id
     if (body.name or "").strip():
         contact.name = body.name.strip()
     note = _assign(contact, body)
@@ -1471,6 +1472,16 @@ def update_contact(
         out["connect_note"] = note
     if sourcing.get("message"):
         out["sourcing_msg"] = sourcing["message"]
+    # 기업명을 고쳐 IR 기업에 **새로 이어졌다**(`company_sync` 자동 연결 · i126) — 이어진
+    # 순간 채워진 칸을 실어 화면이 그 자리에서 적는다(투자컨설턴트 `update_company` 와 같은 꼴).
+    # 열쇠는 표의 `data-field` 다(`note:` 를 뗀 notes 열쇠 · 모델 칸 이름).
+    if contact.ir_company_id and contact.ir_company_id != linked_before:
+        out["linked"] = {
+            "ir_name": db.get(IrCompany, contact.ir_company_id).name or "",
+            "fields": {w.removeprefix("note:"): company_sync._raw(company_sync._get(contact, w))
+                       for f in company_sync.FIELDS
+                       if (w := company_sync.slot(contact, f, {}))},
+        }
     return out
 
 

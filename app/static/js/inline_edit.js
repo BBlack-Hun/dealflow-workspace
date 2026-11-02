@@ -262,7 +262,7 @@
       // (그 키는 후보 목록이 `preventDefault` 로 가져간다 — 아래 `defaultPrevented`).
       // 고르면 곧바로 저장한다 — 이름이 하나 맞는 IR 기업에 서버가 잇는다.
       if (cell.hasAttribute("data-ir-hint") && global.DealflowCompanyHint) {
-        global.DealflowCompanyHint.attach(input, { onPick: function () { input.blur(); } });
+        global.DealflowCompanyHint.attach(input, { min: 2, onPick: function () { input.blur(); } });
       }
 
       // **빠져나갈 길을 먼저 만든다.** 아래에서 뭐라도 던지면 blur·Escape 가

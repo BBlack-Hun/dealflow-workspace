@@ -111,9 +111,13 @@ def stage(db, users, people):
     db.add_all(cons.values())
     db.commit()
     # IR 기업은 **줄 다음에** 넣는다 — 새 줄 자동 연결(`company_sync`)이 안 걸린,
-    # 예전부터 있던 줄이다.
+    # 예전부터 있던 줄이다. 새 IR 기업이 그 이름의 줄을 잇는 것(11/02 · i126)도 끈다.
+    from app.services import company_sync
+
+    db.info[company_sync.NO_AUTO_LINK] = True
     db.add_all(ir.values())
     db.commit()
+    db.info.pop(company_sync.NO_AUTO_LINK)
     return {"ir": ir, "rows": rows, "cons": cons}
 
 

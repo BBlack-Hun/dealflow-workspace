@@ -15,6 +15,11 @@ IR 기업 현황 ↔ 투자컨설턴트 ↔ 스타트업 명단이 따라 고친
     # ② 실제로 저장 — 수정 로그에 남을 계정을 꼭 준다
     python scripts/company_sync_fill.py --apply --user-id N
 
+11/02(i126) — 스타트업 명단의 대분류 · 소분류 · 투자라운드 · 기업 한줄 소개도 잇는 칸이 됐다
+(4단계). 이미 이어진 줄은 칸을 골라 같은 일을 한 번 한다:
+
+    python scripts/company_sync_fill.py --fields sector_major,sector_minor,series,business_desc
+
 · 양쪽에 다른 값이 있으면 덮지 않는다 — `/ir-link` 의 `값 다름` 에 남아 사람이 고른다(결정 5).
 · **`딜소개 불가` 는 적지도 지우지도 않는다** — IR 이 그 값이 되면 그 기업이 딜 발송에서
   빠진다. `값 다름` 에 `딜소개 불가` 딱지로 남는다. 끝에 그 수를 따로 찍는다.
@@ -81,6 +86,8 @@ def run(db, fields=FIELDS) -> Counter:
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(description="이어진 줄의 2단계 칸(계약 · 미팅 · 보수율) 빈칸 채우기")
     ap.add_argument("--user-id", type=int, default=None, help="수정 로그에 남을 계정(--apply 때 꼭)")
+    ap.add_argument("--fields", default=",".join(FIELDS),
+                    help="채울 IR 칸(쉼표로) — 기본은 2단계 넷")
     mode = ap.add_mutually_exclusive_group()
     mode.add_argument("--dry-run", action="store_true", help="미리보기(기본)")
     mode.add_argument("--apply", action="store_true", help="실제로 저장")
@@ -91,6 +98,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     from app.services import company_sync as cs
     from app.services import edit_log
 
+    fields = [f.strip() for f in args.fields.split(",") if f.strip()]
+    if not fields or any(f not in cs.FIELDS for f in fields):
+        print(f"--fields 는 잇는 칸 이름이어야 합니다: {args.fields}", file=sys.stderr)
+        return 2
     if args.apply and args.user_id is None:
         print("--apply 에는 --user-id 가 있어야 합니다(수정 로그에 남을 계정).", file=sys.stderr)
         return 2
@@ -114,7 +125,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 print(f"--user-id {args.user_id} 계정이 없습니다.", file=sys.stderr)
                 return 2
             token = edit_log.begin(user.id, "SCRIPT", "scripts/company_sync_fill.py")
-        counts = run(db)
+        counts = run(db, fields)
         if args.apply:
             db.commit()
         else:
@@ -125,8 +136,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         db.close()
 
     print("저장했습니다." if args.apply else "미리보기 — DB 에는 쓰지 않았습니다(메모리 복사본에서 돌림)")
-    for f in FIELDS:
-        print(f"  {cs.LABELS[f]}: 채운 칸 {counts[f]}(그중 IR {counts['ir:' + f]})"
+    for f in fields:
+        print(f"  {cs.label(f)}: 채운 칸 {counts[f]}(그중 IR {counts['ir:' + f]})"
               f" · 남은 값 다름 {counts['left:' + f]}(그중 줄 값을 못 옮김 {counts['stuck:' + f]})")
     print(f"딜소개 불가가 낀 값 다름 {counts['blocked']} — 사람이 /ir-link 에서 고른다"
           f" | 딜소개 불가로 바뀌거나 풀린 IR {counts['blocked_changed']}(늘 0이어야 한다)"

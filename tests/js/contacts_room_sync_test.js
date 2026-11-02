@@ -61,7 +61,7 @@ function run(dom) {
     init: function () {
       return {
         apply: function () {},
-        refresh: function () { seenByFilter.push(dom.row.getAttribute("data-f-room")); }
+        refresh: function () { seenByFilter.push(dom.row.getAttribute(dom.watch || "data-f-room")); }
       };
     }
   };
@@ -149,6 +149,39 @@ function saved(dom, cell, value, data) {
   assert.strictEqual(row.getAttribute("data-f-joined"), "X");
   assert.strictEqual(row.hasAttribute("data-f-room"), false,
     "없던 거를 값을 새로 세우면 선언 없는 죽은 속성이 된다");
+}
+
+// --- 5) 스타트업 `기업명` 으로 IR 기업에 새로 이어짐 — 채워진 칸이 그 자리에서 선다(i126) --
+//
+// 응답의 `linked.fields` 열쇠는 표의 `data-field` 다. 고른 칸(기업명)은 inline_edit.js 가
+// 그렸으니 안 건드리고, 필터 값(`data-f-*`)은 필터가 다시 읽기 **전에** 맞춘다.
+{
+  const firm = D.el("td", { class: "cell", "data-field": "firm" });
+  firm.textContent = "가나다랩";
+  const name = D.el("td", { class: "cell", "data-field": "name", title: "" });
+  const major = D.el("div", { class: "cell ellipsis", "data-field": "sector_major", "data-note": "" });
+  const majorTd = D.el("td", { title: "" }, [major]);
+  const round = D.el("div", { class: "cell ellipsis", "data-field": "company_kind", "data-note": "" });
+  const row = D.el("tr", { class: "data-row", "data-id": "11", "data-f-sector_major": "" },
+                   [firm, name, majorTd, D.el("td", {}, [round])]);
+  const table = D.el("table", { id: "contacts-table" },
+                     [D.el("thead"), D.el("tbody", {}, [row])]);
+  const dom = { root: D.el("div", {}, [table]), table: table, row: row,
+                watch: "data-f-sector_major" };
+  const at = run(dom);
+  saved(dom, firm, "가나다랩", {
+    ok: true, linked: { ir_name: "가나다랩", fields: {
+      firm: "엉뚱한 값", name: "김대표", sector_major: "바이오", company_kind: "Pre A, Bridge  (x)",
+      one_liner: "표에 없는 칸" } }
+  });
+  assert.strictEqual(firm.textContent, "가나다랩", "방금 고른 기업명 칸을 응답이 덮었다");
+  assert.strictEqual(name.textContent, "김대표");
+  assert.strictEqual(name.getAttribute("title"), "김대표");
+  assert.strictEqual(major.textContent, "바이오");
+  assert.strictEqual(majorTd.getAttribute("title"), "바이오", "칸 풍선말은 바깥 td 에 있다");
+  assert.strictEqual(round.textContent, "Pre A, Bridge  (x)");
+  assert.strictEqual(row.getAttribute("data-f-sector_major"), "바이오");
+  assert.deepStrictEqual(at.seenByFilter, ["바이오"], "필터가 다시 읽은 뒤에야 칸이 채워졌다");
 }
 
 console.log("contacts_room_sync_test: ok");
