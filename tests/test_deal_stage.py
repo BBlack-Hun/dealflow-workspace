@@ -152,7 +152,7 @@ def test_funnel_keeps_empty_steps():
                               3: deal_stage.MEET_DONE})
     assert [r["key"] for r in rows] == deal_stage.LADDER
     counts = {r["label"]: r["count"] for r in rows}
-    assert counts["1차 딜소개"] == 2
+    assert counts["딜소개"] == 2
     assert counts["IR 자료 전달"] == 0
     assert counts["미팅 완료"] == 1
 
@@ -203,7 +203,7 @@ def _item(db, job, contact_id, status: str = "sent", channel: str = "kakao"):
 
 
 def test_an_app_send_alone_raises_the_stage(db, contact):
-    """**시트 기록이 하나도 없어도** 앱으로 보냈으면 `1차 딜소개` 다.
+    """**시트 기록이 하나도 없어도** 앱으로 보냈으면 `딜소개` 다.
 
     운영에서 앱으로만 보낸 담당자 13명이 `접촉 전` 에 서 있었다. 앞으로 넣는
     사람에게는 옛 기록이 아예 없으므로 전부 이 자리에 걸린다.
@@ -229,7 +229,7 @@ def test_what_never_went_out_does_not_count(db, contact, status):
     """**안 나간 것을 보냈다고 세면 안 된다.**
 
     운영에는 `failed` 235 · `canceled` 156 · `pending` 15 건이 있다. 그것을
-    세면 보낸 적 없는 사람이 `1차 딜소개` 로 서고, 그건 이 버그의 반대 방향이라
+    세면 보낸 적 없는 사람이 `딜소개` 로 서고, 그건 이 버그의 반대 방향이라
     더 나쁘다 — 정작 보내야 할 사람이 명단에서 빠진다.
     """
     _item(db, _job(db, contact), contact.id, status=status)
@@ -329,7 +329,7 @@ def test_the_funnel_and_the_table_filter_agree_after_an_app_send(client, db, con
     """깔때기와 표 필터가 **같은 값**을 쓰는지 — 앱 발송 뒤에도.
 
     깔때기는 표에 실린 `deal_stage` 를 그대로 세고(`routers/pages.py`), 표 필터는
-    같은 줄의 한글 이름으로 거른다. 둘이 갈리면 `1차 딜소개` 를 눌렀는데 아무도
+    같은 줄의 한글 이름으로 거른다. 둘이 갈리면 `딜소개` 를 눌렀는데 아무도
     안 나오는 화면이 된다.
     """
     _item(db, _job(db, contact), contact.id)
@@ -338,6 +338,6 @@ def test_the_funnel_and_the_table_filter_agree_after_an_app_send(client, db, con
     client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
     body = client.get("/contacts").text
 
-    assert 'data-f-dealstage="1차 딜소개"' in body          # 표의 줄
-    assert '<b>1</b><span>1차 딜소개</span>' in body        # 깔때기의 수
+    assert 'data-f-dealstage="딜소개"' in body          # 표의 줄
+    assert '<b>1</b><span>딜소개</span>' in body        # 깔때기의 수
     assert '<b>0</b><span>접촉 전</span>' in body           # 더는 여기 없다

@@ -61,7 +61,7 @@ def deal_row(name, firm, aug="", memo="") -> list:
     return ["Pre IPO", name, firm, memo, aug, "", "", "", "", ""]
 
 
-def book(tmp_path: Path, cards, deals, name="book.xlsx") -> str:
+def book(tmp_path: Path, cards, deals, name="book.xlsx", head=None) -> str:
     """탭 두 장짜리 엑셀. 원본 워크북과 **같은 모양**으로 만든다."""
     import openpyxl
 
@@ -73,7 +73,7 @@ def book(tmp_path: Path, cards, deals, name="book.xlsx") -> str:
         ws.append(row)
     ws2 = wb.create_sheet("딜공유탭")
     ws2.append(DEAL_GROUP)
-    ws2.append(DEAL_HEAD)
+    ws2.append(head or DEAL_HEAD)
     for row in deals:
         ws2.append(row)
     path = tmp_path / name
@@ -193,6 +193,28 @@ def test_다시_넣어도_칸이_두_벌이_되지_않는다(monkeypatch, db, ow
     run_book(monkeypatch, sample, LIST, owners["a"], "--apply")
     db.expire_all()
     assert [c.label for c in cc.month_columns(db, LIST, today=date(2026, 8, 15))] == before
+
+
+def test_이름을_바꾼_딜소개_칸에_옛_머리글_시트가_붙는다(monkeypatch, db, owners, tmp_path):
+    """앱에서 `8월 1차 딜소개` → `8월 딜소개` 로 이름만 바꾼 뒤(2026-11-02) 옛 머리글
+    시트를 다시 올려도 같은 칸에 붙는다 — 칸이 두 벌 서면 그 달 기록이 갈린다."""
+    from app.models import ContactColumn
+    from app.services import contact_columns as cc
+
+    head = ["1차 딜소개" if i == 4 else h for i, h in enumerate(DEAL_HEAD)]
+    first = book(tmp_path, [], [deal_row("박샘플", "샘플캐피탈", "8/5 샘플가")], head=head)
+    run_book(monkeypatch, first, LIST, owners["a"], "--apply")
+    col = db.query(ContactColumn).filter_by(sheet=LIST, label="8월 1차 딜소개").one()
+    col.label = "8월 딜소개"
+    db.commit()
+
+    again = book(tmp_path, [], [deal_row("박샘플", "샘플캐피탈", "8/5 샘플가 8/12 샘플다")],
+                 name="again.xlsx", head=head)
+    run_book(monkeypatch, again, LIST, owners["a"], "--apply")
+    db.expire_all()
+    labels = [c.label for c in cc.month_columns(db, LIST, today=date(2026, 8, 15))]
+    assert "8월 1차 딜소개" not in labels and labels.count("8월 딜소개") == 1, labels
+    assert month_values(db, rows_in(db, LIST)[0], LIST)["8월 딜소개"] == "8/5 샘플가 8/12 샘플다"
 
 
 # ── 2. 번호가 없어도 들어간다 ───────────────────────────────────────────────

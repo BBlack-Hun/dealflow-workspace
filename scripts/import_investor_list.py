@@ -575,7 +575,7 @@ def apply_values(contact, item, columns) -> None:
     values = cc.load_notes(contact.notes)
     values.update(item["notes"])
     for label, text in item["months"].items():
-        values[cc.note_key(columns[label].id)] = text
+        values[cc.note_key(column_of(columns, label).id)] = text
     contact.notes = cc.dump_notes(values)
 
     joined = item["fields"].get("kakao_joined", "")
@@ -626,6 +626,16 @@ def existing_columns(db, sheet: str) -> dict:
         .order_by(ContactColumn.position, ContactColumn.id)).scalars()}
 
 
+def column_of(columns: dict, label: str):
+    """시트 머리글 → 이미 서 있는 달 칸. 없으면 None.
+
+    이름 그대로 먼저 찾고, 없으면 `1차 딜소개` 를 `딜소개` 로 읽어 한 번 더 찾는다.
+    앱에서 `N월 1차 딜소개` 칸 이름을 `N월 딜소개` 로 바꿨다(2026-11-02) — 옛 시트를
+    다시 올려도 같은 칸에 붙어야 같은 달 칸이 두 벌 서지 않는다.
+    """
+    return columns.get(label) or columns.get(label.replace("1차 딜소개", "딜소개"))
+
+
 def fill_plan(contact, item, columns, labels=None) -> tuple:
     """채우기가 이 줄에 **무엇을 얹을지** · **무엇이 다른지** 미리 정한다.
 
@@ -672,7 +682,7 @@ def fill_plan(contact, item, columns, labels=None) -> tuple:
         if not values.get(key):
             todo.append((f"note:{key}", value))
     for label, text in item["months"].items():
-        column = columns.get(label)
+        column = column_of(columns, label)
         if column is None:
             unknown.append(label)
             continue
@@ -1176,7 +1186,7 @@ def main() -> int:
     # 월별 칸이 먼저다 — 줄의 값이 칸 id 를 키로 쓴다.
     columns = {c.label: c for c in cc.month_columns(db, args.sheet, create=False)}
     for pos, label in enumerate(parsed["columns"]):
-        if label not in columns:
+        if column_of(columns, label) is None:
             columns[label] = ContactColumn(sheet=args.sheet, label=label,
                                            position=pos)
             db.add(columns[label])
