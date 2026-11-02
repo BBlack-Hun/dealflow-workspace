@@ -737,6 +737,19 @@
       if (joined && joined !== detail.cell) joined.textContent = data.kakao_joined;
       if (row.hasAttribute("data-f-joined")) row.setAttribute("data-f-joined", data.kakao_joined);
     }
+    // 기업명으로 IR 기업에 새로 이어진 순간 채워진 칸(대표자명 · 분야 · 투자라운드 …) —
+    // 응답의 `linked`(`routers/contacts.update_contact` · i126)로 그 자리에서 적는다.
+    if (data.linked) {
+      Object.keys(data.linked.fields || {}).forEach(function (f) {
+        var box = row.querySelector('.cell[data-field="' + f + '"]');
+        var v = data.linked.fields[f];
+        if (box && box !== detail.cell) {
+          box.textContent = v;
+          (box.tagName === "TD" ? box : box.parentNode).setAttribute("title", v);
+        }
+        if (row.hasAttribute("data-f-" + f)) row.setAttribute("data-f-" + f, v);
+      });
+    }
     // `딜 소싱` 은 **방금 고친 칸이어도 서버 값으로 다시 그린다**(갈래마다 딱지 —
     // `drawSourcing`). 저장된 글자가 아니라 이어진 딜 소싱 줄들에서 읽은 값이라,
     // 고른 그대로 두면 칸과 필터가 서버와 다른 말을 한다(`M&A` 를 골랐어도 같은

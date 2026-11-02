@@ -210,6 +210,7 @@ def doer(user: User) -> User:
 VIEW_AS_OPEN_PATHS = {
     "/api/contacts/verify-rooms",          # 투자사 관리 현황 [방 연결 확인]
     "/sourcing/rooms/search",              # 딜 소싱 [방 후보 찾기]
+    "/api/startup-rooms/search",           # 스타트업 [방 후보 찾기](11/02)
     "/api/deals/queue",                    # 딜 소개 예약 큐 — 늘 딜 소개
     "/api/deals/queue/{item_id}/start",
 }

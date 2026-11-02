@@ -99,8 +99,10 @@ def test_잇는_순간에는_양쪽_빈칸만_채우고_다른_값은_목록에_
     from app.models import IrCompany
 
     ir = IrCompany(name="(주)샘플가람", contact_phone="010-0000-1111", kakao_joined="O")
+    db.info[company_sync.NO_AUTO_LINK] = True   # 새 IR 기업이 줄을 잇는 길(i126)은 따로 본다
     db.add(ir)
     db.commit()
+    db.info.pop(company_sync.NO_AUTO_LINK)
     assert _fresh(db, meta)[0].ir_company_id is None
     meta.ir_company_id = ir.id
     db.commit()
@@ -723,3 +725,149 @@ def test_채우기_스크립트_미리보기는_DB를_안_바꾼다(db, stage, l
     assert company_sync_fill.main([]) == 0
     assert "미리보기" in capsys.readouterr().out
     assert _fresh(db, stage["ir"])[0].contract_status == "no"
+
+
+# ── 8. 4단계 — 대분류 · 소분류 · 투자라운드 · 기업 한줄 소개(i126 · 11/02) ────────
+#
+# IR `sector_major` · `sector_minor` · `series` · `business_desc` ↔ 스타트업 notes
+# `sector_major` · `sector_minor` · `company_kind` · `one_liner`. Series A 는 안 잇는다.
+
+STEP4 = ("sector_major", "sector_minor", "series", "business_desc")
+
+
+def test_4단계_잇는_순간에는_양쪽_빈칸만_채운다(db, users, stage):
+    from app.services import company_sync
+
+    ir = stage["ir"]
+    ir.sector_major, ir.series = "바이오", "Pre A, Bridge  (누적 10억)"
+    db.commit()
+    su = _startup(db, users, name="", firm="샘플가람", notes=json.dumps(
+        {"sector_minor": "신약", "company_kind": "Seed", "one_liner": "줄 설명"},
+        ensure_ascii=False))
+    su, ir = _fresh(db, su, ir)
+    assert su.ir_company_id == ir.id
+    notes = _notes(su)
+    # 빈칸끼리 채움 — 줄 → IR(소분류 · 한줄 소개), IR → 줄(대분류)
+    assert (ir.sector_minor, ir.business_desc) == ("신약", "줄 설명")
+    assert notes["sector_major"] == "바이오"
+    # 다른 값은 그대로 — 값 다름에 선다
+    assert ir.series == "Pre A, Bridge  (누적 10억)" and notes["company_kind"] == "Seed"
+    diffs = {d["field"]: d for d in company_sync.differences(db, [su])[su.id]}
+    assert set(diffs) == {"series"} and diffs["series"]["label"] == "투자라운드"
+
+
+def test_4단계_고친_값은_양쪽으로_따라간다(logged_in, db, stage, linked):
+    from app.services import company_sync
+
+    su = linked["startup"]
+    r = logged_in.patch(f"/api/contacts/{su.id}",
+                        json={"notes": {"sector_major": "에너지", "one_liner": "새 설명"}})
+    assert r.status_code == 200, r.text
+    ir, meta = _fresh(db, stage["ir"], linked["meta"])
+    assert (ir.sector_major, ir.business_desc) == ("에너지", "새 설명")
+    r = logged_in.patch(f"/api/companies/{stage['ir'].id}",
+                        json={"series": "Series A", "sector_minor": "수소"})
+    assert r.status_code == 200, r.text
+    su = _fresh(db, su)[0]
+    assert (_notes(su)["company_kind"], _notes(su)["sector_minor"]) == ("Series A", "수소")
+    # 투자컨설턴트에는 이 칸들이 없다 — 따라 고칠 자리가 없다.
+    kinds = company_sync.sheet_kinds(db)
+    assert all(company_sync.slot(meta, f, kinds) is None for f in STEP4)
+
+
+def test_4단계_띄어쓰기만_다른_투자라운드는_같은_값이다(db, stage, linked):
+    from app.services import company_sync
+
+    su = _raw_set(db, linked["startup"], notes=json.dumps(
+        {"company_kind": "Pre A, Bridge (누적 10억)"}, ensure_ascii=False))
+    _raw_set(db, stage["ir"], series="Pre A, Bridge  (누적 10억)")
+    assert company_sync.same("series", " Pre A,  Bridge (누적 10억)", "Pre A, Bridge  (누적 10억)")
+    assert not company_sync.same("series", "Pre A", "PreA")
+    assert su.id not in company_sync.differences(db, [su])
+    # 띄어쓰기만 고쳐도 IR 을 다시 적지 않는다.
+    _set_note(db, su, company_kind="Pre A,  Bridge (누적 10억)")
+    assert _fresh(db, stage["ir"])[0].series == "Pre A, Bridge  (누적 10억)"
+
+
+def test_4단계_Series_A_줄은_분야_라운드가_안_바뀐다(logged_in, db, stage, linked):
+    from app.models import SeriesACompany
+
+    deal = SeriesACompany(name="샘플가람", sector_major="딜 소싱 낱말", series="Series B")
+    db.add(deal)
+    db.commit()
+    deal = _fresh(db, deal)[0]
+    assert deal.ir_company_id == stage["ir"].id
+    r = logged_in.patch(f"/api/companies/{stage['ir'].id}",
+                        json={"sector_major": "바이오", "sector_minor": "신약",
+                              "series": "Seed", "business_desc": "IR 설명"})
+    assert r.status_code == 200, r.text
+    deal = _fresh(db, deal)[0]
+    assert (deal.sector_major, deal.sector_minor, deal.series) == ("딜 소싱 낱말", None, "Series B")
+
+
+def test_4단계_저장_응답에_이어진_순간_채운_칸을_싣는다(logged_in, db, users, stage):
+    ir = stage["ir"]
+    ir.sector_major, ir.business_desc, ir.contact_name = "바이오", "IR 설명", "김샘플"
+    db.commit()
+    su = _startup(db, users, name="", firm="이어지지 않는 이름")
+    assert _fresh(db, su)[0].ir_company_id is None
+    r = logged_in.patch(f"/api/contacts/{su.id}", json={"firm": "샘플가람"})
+    assert r.status_code == 200, r.text
+    linked = r.json()["linked"]
+    assert linked["ir_name"] == "(주)샘플가람"
+    assert linked["fields"]["sector_major"] == "바이오"
+    assert linked["fields"]["one_liner"] == "IR 설명"
+    assert linked["fields"]["name"] == "김샘플"
+    assert linked["fields"]["company_kind"] == ""
+    # 이미 이어진 줄을 고치면 싣지 않는다.
+    r = logged_in.patch(f"/api/contacts/{su.id}", json={"notes": {"memo": "통화함"}})
+    assert "linked" not in r.json()
+
+
+def test_IR에_기업이_새로_생기면_스타트업과_투자컨설턴트_줄도_잇는다(db, users, stage):
+    from app.models import IrCompany, VcContact
+
+    su = _startup(db, users, name="", firm="샘플새싹")
+    meta = _consulting(db, users, stage["sheets"]["startup"], company_name="샘플새싹 / 무료")
+    inv = VcContact(user_id=users["u1"].id, source_sheet=INVESTORS, name="투자담당",
+                    firm="샘플새싹")
+    db.add(inv)
+    db.commit()
+    assert all(r.ir_company_id is None for r in _fresh(db, su, meta, inv))
+    ir = IrCompany(name="(주)샘플새싹", sector_major="에너지")
+    db.add(ir)
+    db.commit()
+    su, meta, inv = _fresh(db, su, meta, inv)
+    assert (su.ir_company_id, su.ir_link_auto) == (ir.id, 1)
+    assert (meta.ir_company_id, meta.ir_link_auto) == (ir.id, 1)
+    assert inv.ir_company_id is None            # 투자사 줄의 `firm` 은 투자사다
+    assert _notes(su)["sector_major"] == "에너지"   # 이은 뒤 flush 가 빈칸을 채웠다
+    # 이름을 바꿔도 — 그 이름이 둘이면 잇지 않는다.
+    su2 = _startup(db, users, name="", firm="샘플쌍둥")
+    other = IrCompany(name="샘플다른이름")
+    db.add(other)
+    db.commit()
+    other.name = "샘플 쌍둥"
+    db.commit()
+    assert _fresh(db, su2)[0].ir_company_id is None
+
+
+def test_4단계_채우기_스크립트와_시트_올리기_보호(db, stage, linked):
+    from scripts import company_sync_fill
+
+    from app.services import company_sync
+
+    # 4단계 칸이 잇는 칸이 되기 전에 이어진 줄 — 따라 고치기를 안 지나고 값만 넣는다.
+    _raw_set(db, stage["ir"], sector_major="바이오", business_desc="IR 설명")
+    su = _raw_set(db, linked["startup"], notes=json.dumps(
+        {"sector_minor": "신약", "one_liner": "줄 설명"}, ensure_ascii=False))
+    counts = company_sync_fill.run(db, STEP4)
+    db.commit()
+    ir, su = _fresh(db, stage["ir"], su)
+    assert (ir.sector_major, ir.sector_minor, ir.business_desc) == ("바이오", "신약", "IR 설명")
+    assert (_notes(su)["sector_major"], _notes(su)["one_liner"]) == ("바이오", "줄 설명")
+    assert counts["sector_major"] == 1 and counts["ir:sector_minor"] == 1
+    assert counts["left:business_desc"] == 1
+    # 시트 다시 올리기는 이어진 줄의 이 칸들을 덮지 않는다(`startup_keeps`).
+    assert {"note:sector_major", "note:sector_minor", "note:one_liner"} <= \
+        company_sync.startup_keeps(su)

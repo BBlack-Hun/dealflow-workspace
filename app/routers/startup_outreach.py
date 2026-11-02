@@ -287,6 +287,12 @@ def search_rooms(body: RoomSearchIn, db: Session = Depends(get_db),
     """
     ids = None if body.contact_ids is None else list(dict.fromkeys(body.contact_ids))
     targets = startup_room_pick.targets(db, user, ids)
+    if not targets and ids and not set(ids) & {
+            c.id for c in startup_outreach.my_rows(db, user)}:
+        raise HTTPException(
+            status_code=400,
+            detail=("본인 줄만 찾을 수 있습니다 — 다른 팀원 탭의 줄은 관리자가 "
+                    "'팀원 화면으로 보기'로 그 팀원 화면에서 찾으세요"))
     if not targets:
         raise HTTPException(
             status_code=400,
