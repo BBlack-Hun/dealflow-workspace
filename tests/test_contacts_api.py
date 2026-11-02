@@ -351,6 +351,20 @@ def test_verify_result_updates_room_badge(logged_in, db, contacts):
     assert "여러 개" in by_id[kim_item]["error"]
 
 
+def test_verify_searches_typed_room_name_first(logged_in, db, contacts):
+    """적어 둔 방 이름이 있으면 그것부터, 기본값(이름·직함·투자사로 지은 값)이면
+    지금까지대로 이름+직함부터 찾는다. 못 찾으면 발송기가 `name` 으로 한 번 더."""
+    kim = db.execute(select(VcContact).where(VcContact.name == "김서연")).scalar_one()
+    kim.kakao_room_name = "김서연님 마바 딜방"
+    db.commit()
+
+    logged_in.post("/api/contacts/verify-rooms", json={})
+    claimed = logged_in.get("/api/agent/poll?kinds=verify_room", headers=auth(DEMO_TOKEN)).json()
+    terms = {i["name"]: (i["query"], i["firm"]) for i in claimed["items"]}
+    assert terms["김서연"] == ("김서연님 마바 딜방", "마바벤처스")
+    assert terms["홍길동"] == ("홍길동 대표님", "가나벤처스")   # 기본값 그대로인 줄
+
+
 def test_verify_without_verdict_never_marks_verified(logged_in, db, contacts):
     """판정이 없으면 '확인됨'으로 올리지 않는다 (모르면 미확인이 안전하다)."""
     logged_in.post("/api/contacts/verify-rooms", json={})

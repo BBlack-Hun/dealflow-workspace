@@ -349,7 +349,17 @@ def _verify_search(job: SendJob, item: SendItem) -> dict:
         # 고를 **후보 전부**다 — 서버가 미리 줄이면 맞는 방이 화면에 서지도 못한다.
         return _company_search(company)
     if item.contact is not None:
-        # 담당자 쪽 확인 — 검색어는 이름+직함.
+        from ..services.room_name import build_room_name, normalize_space
+
+        contact = item.contact
+        room = normalize_space(contact.kakao_room_name or "")
+        if room and room != build_room_name(contact.name, contact.title, contact.firm):
+            # 적어 둔 방 이름(저절로 지은 기본값이 아닌 것)이 있으면 **그것부터** 찾고,
+            # 못 찾으면 발송기가 이름으로 한 번 더 찾는다 — 보내는 계정 방 확인
+            # (`sender_rooms.search_terms`)과 같은 순서. 발송기는 두 번까지만 찾아서
+            # 이름+직함 단계는 빠진다(이름 검색이 그 결과를 다 품는다).
+            return {"query": room, "name": contact.name, "firm": contact.firm or ""}
+        # 빈칸·기본값이면 지금까지대로 — 검색어는 이름+직함.
         return {"query": f"{item.contact.name} {item.contact.title or ''}".strip(),
                 # 직함이 시트와 실제 방에서 다른 경우가 있어(이직·표기 차이)
                 # 이름만으로 재검색할 수 있게 함께 준다. 동명이인은 회사로 가린다.
