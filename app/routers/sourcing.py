@@ -230,6 +230,41 @@ def assignee_chips(rows: List[SourcingContact]) -> List[dict]:
             for k, v in sorted(counted.items(), key=lambda kv: (-kv[1], kv[0]))]
 
 
+# ── 시리즈 A 탭 나눠 보기(i128 · i129) — 머리글 필터를 주소로 거는 칩 ──────────
+#: (칩 이름, `참여` 칸 값들). `검토가능` = 참여 안내(처음)를 받는 분(`INVITE_OK`).
+#: 담당별 칩에는 앞의 둘(검토가능 · 참여 — 담당 폴더)만 단다.
+SPLITS = (("검토가능", sourcing_sync.INVITE_OK), ("참여", (sourcing_sync.JOINED,)),
+          ("불참여", (sourcing_sync.LEFT,)))
+
+
+def split_chips(rows: List[SourcingContact], tab: str) -> dict:
+    """시리즈 A 탭 위 칩 두 줄 — `참여` 칸 값별 · 담당별 수와 그 필터를 건 주소.
+
+    주소는 `filters.js` 가 읽는 꼴(`participation=값,값` · `assignee_name=이름`)이라 새
+    필터 코드가 없다. 줄을 다른 갈래로 옮기지 않는다 — 갈래 이름에 문구 · 투자사 관리
+    현황 잇기가 묶여 있다. 수는 그 필터가 거르는 글자(적힌 값 — 빈 칸은 `(비어 있음)`)로
+    센다: 칩을 누르면 그 수만큼 줄이 뜬다. 칸을 고치면 화면이 같은 규칙으로 다시 센다
+    (`sourcing.html` 의 `syncSplit`).
+    """
+    def href(values=(), who=""):
+        url = "/sourcing?tab=" + quote(tab, safe="")
+        if values:
+            url += "&participation=" + ",".join(quote(v, safe="") for v in values)
+        return url + ("&assignee_name=" + quote(who, safe="") if who else "")
+
+    def parts(subset, who="", splits=SPLITS):
+        return [{"label": label, "part": "|".join(values), "who": who,
+                 "href": href(values, who),
+                 "count": sum((r.participation or "").strip() in values for r in subset)}
+                for label, values in splits]
+
+    return {"parts": parts(rows),
+            "assignees": [dict(a, href=href(who=a["name"]),
+                               parts=parts([r for r in rows if assignee_of(r) == a["name"]],
+                                           a["name"], SPLITS[:2]))
+                          for a in assignee_chips(rows)]}
+
+
 @router.get("/api/sourcing/state")
 def sourcing_state(db: Session = Depends(get_db),
                    user: User = Depends(get_current_user)):
@@ -396,6 +431,8 @@ def sourcing_page(request: Request, db: Session = Depends(get_db),
         "share_bucket": series_a_share.BUCKET,
         "share_topic": series_a_share.KIND,
         "share_tab": series_a_share.is_share_bucket(selected),
+        # 그 탭 위 칩 두 줄 — 검토가능 · 참여 · 불참여 · 담당별(`split_chips`).
+        "split": split_chips(rows, selected) if series_a_share.is_share_bucket(selected) else None,
         # 투자사 관리 현황과 잇는 갈래 탭인가 — [저절로 잇기] 단추가 선다.
         "sync_tab": bool(selected) and sourcing_sync.branch_of(selected) is not None,
         # [+ 탭 추가] 안내의 '잇는 갈래' — 목록은 서버 한 곳(`BRANCHES`)에서.

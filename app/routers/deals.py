@@ -311,7 +311,7 @@ SEPARATE_NOTE = f"{group_name.SEPARATE} {{n}}명이 들어 있습니다 — 이�
 AUTO_ASKED_NOTE = ("자동 문의함 {day} — 미팅 후 검토결과 문의 자동화가 이미 물었습니다. "
                    "같은 글을 또 보내기 전에 답이 왔는지 보세요")
 #: 문구 화면(`/templates`)이 그 탭 아래에 구간을 하나 더 세울 때 읽는다.
-MODE_TOPIC_KINDS = {MODE_SOURCING: ((sourcing_msg.REMIND_KIND, "월간 리마인드"),
+MODE_TOPIC_KINDS = {MODE_SOURCING: ((sourcing_msg.REMIND_KIND, sourcing_msg.REMIND_LABEL),
                                     (sourcing_msg.SHARE_KIND, series_a_share.LABEL))}
 
 
@@ -326,7 +326,8 @@ def _sourcing_topic(mode: str, raw: Optional[str]) -> str:
     topic = sourcing_msg.topic_of(raw)
     if topic is None:
         raise HTTPException(status_code=400,
-                            detail="보낼 문구를 고르세요 — 참여 안내(처음) · 월간 리마인드 · "
+                            detail="보낼 문구를 고르세요 — 참여 안내(처음) · "
+                                   f"{sourcing_msg.REMIND_LABEL} · "
                                    f"{series_a_share.LABEL}")
     return topic
 

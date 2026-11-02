@@ -173,6 +173,27 @@
   </div>
 </div>
 
+{# **시리즈 A 탭 나눠 보기**(i128 · i129) — 칩은 머리글 필터(`참여` · `담당자`)를 주소로
+   거는 링크다(`routers/sourcing.split_chips`). 담당 옆 작은 링크가 그 담당의 검토가능 ·
+   참여 묶음(담당 폴더). `참여` 를 고치면 아래 `syncSplit` 이 그 자리에서 다시 센다. #}
+{% if split and rows %}
+<div class="pick-filters" id="sourcing-split" data-testid="sourcing-split">
+  <div class="filter-line">
+    <span class="filter-label">참여</span>
+    {% for p in split.parts %}
+    <a class="chip" href="{{ p.href }}" data-part="{{ p.part }}" data-who="">{{ p.label }} <b>{{ p.count }}</b></a>
+    {% endfor %}
+  </div>
+  <div class="filter-line">
+    <span class="filter-label">담당</span>
+    {% for a in split.assignees %}
+    <a class="chip" href="{{ a.href }}" data-part="" data-who="{{ a.name }}">{{ a.name }} <b>{{ a.count }}</b></a>
+    <span class="chip-note">{% for p in a.parts %}<a href="{{ p.href }}" data-part="{{ p.part }}" data-who="{{ p.who }}">{{ p.label }} <b>{{ p.count }}</b></a>{% if not loop.last %} · {% endif %}{% endfor %}</span>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
 <div class="chip-row" data-filter-chips></div>
 
 {% if rows %}
@@ -532,9 +553,25 @@
       // 세울 값(`참여 요청일` — 서버가 날짜로 읽은 것)을 다시 적고 한 박자 뒤에 다시 읽는다.
       if ("requested_sort" in d.data) d.row.setAttribute("data-s-requested_at", d.data.requested_sort);
       if (sort) setTimeout(sort.refresh, 0);
-      if (d.data.assignee === undefined || field !== "assignee_name") return;
-      d.row.setAttribute("data-f-assignee_name", d.data.assignee || "");
+      if (d.data.assignee !== undefined && field === "assignee_name")
+        d.row.setAttribute("data-f-assignee_name", d.data.assignee || "");
+      syncSplit();
     });
+
+    // 시리즈 A 탭 위 칩 수(i133) — `참여` · `담당자` 를 고치면 새로고침 없이 다시 센다.
+    // 세는 값은 머리글 필터가 거르는 그 글자(`data-f-*`)다 — 서버(`split_chips`)와 같은 규칙.
+    function syncSplit() {
+      document.querySelectorAll("#sourcing-split a").forEach(function (a) {
+        var part = a.getAttribute("data-part"), who = a.getAttribute("data-who"), n = 0;
+        table.querySelectorAll("tbody tr").forEach(function (tr) {
+          if (part && part.split("|").indexOf((tr.getAttribute("data-f-participation") || "").trim()) < 0) return;
+          if (who && (tr.getAttribute("data-f-assignee_name") || "").trim() !== who) return;
+          n += 1;
+        });
+        var b = a.querySelector("b");
+        if (b) b.textContent = n;
+      });
+    }
 
     // 검색은 컬럼 필터와 **AND** 로 묶는다 — 둘이 서로 tr.hidden 을 덮어쓰면
     // 검색과 필터가 번갈아 서로를 지운다.

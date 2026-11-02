@@ -308,9 +308,10 @@ function buildDom(people) {
   SOURCING.forEach(function (s) {
     if (bucketNames.indexOf(s[2]) < 0) bucketNames.push(s[2]);
   });
-  const bucketChips = [el("button", { class: "chip active", "data-value": "" })]
+  // 칩 안의 `<b>` 는 수 — 고른 글에 따라 다시 센다(`deals.js` 의 `syncAssigneeCounts`).
+  const bucketChips = [el("button", { class: "chip active", "data-value": "" }, [el("b", {})])]
     .concat(bucketNames.map(function (b) {
-      return el("button", { class: "chip", "data-value": b });
+      return el("button", { class: "chip", "data-value": b }, [el("b", {})]);
     }));
   const bucketBar = el("div", { id: "bucket-filter" }, bucketChips);
   // 담당 칩 — 서버가 지금 담당마다 하나씩 세우고(`sourcing.assignee_chips`),
