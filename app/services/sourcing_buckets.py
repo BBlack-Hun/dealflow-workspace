@@ -88,6 +88,17 @@ def same(a: Optional[str], b: Optional[str]) -> bool:
     return key(a) == key(b)
 
 
+def shown(name: Optional[str]) -> str:
+    """갈래 → **화면에 세울 이름**(i137). 저장 글자는 그대로 둔다.
+
+    시리즈 A 갈래만 바꿔 부른다(`sourcing_sync.SYNC_LABEL`). 그 글자가 곧 열쇠라
+    (줄 · 문구 · 골라 둔 것 · 자동 리마인드 · 잇기 · 문구 모양) 옮기지 않고 보이는 곳만 바꾼다.
+    """
+    from . import sourcing_sync      # noqa: PLC0415 — 서로 참조한다
+
+    return sourcing_sync.SYNC_LABEL if same(name, sourcing_sync.SYNC_BUCKET) else (name or "")
+
+
 def _made(db: Session) -> List[str]:
     """[+ 탭 추가]로 만든 탭 이름(`SourcingTab`) — 만든 차례."""
     return list(db.execute(select(SourcingTab.name).order_by(SourcingTab.id)).scalars())

@@ -103,7 +103,9 @@ def test_one_tab_holds_every_spelling(db, users, spread):
     from app.routers.sourcing import buckets
 
     tabs = buckets(db)
-    assert [(t["label"], t["count"]) for t in tabs] == [(TIGHT, 5), (MNA, 2)]
+    assert [(t["key"], t["count"]) for t in tabs] == [(TIGHT, 5), (MNA, 2)]
+    # 탭에 서는 이름만 바뀐다(i137) — 열쇠(`key`)는 저장 글자 그대로.
+    assert [t["label"] for t in tabs] == ["Series A 이상 딜 검토 가능 심사역", MNA]
     assert sorted(tabs[0]["variants"]) == sorted([TIGHT, SYNC, WIDE])
 
 

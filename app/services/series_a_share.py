@@ -83,7 +83,7 @@ from . import (amount, deal_history, deal_numbers, room_name, sourcing_buckets, 
                twin_send)
 from . import message_composer as mc
 from .sheet_import import normalize_company_name
-from .sourcing_sync import SYNC_BUCKET
+from .sourcing_sync import SYNC_BUCKET, SYNC_LABEL
 
 #: 문구 종류 — 딜 소싱 제안 탭의 [보낼 문구]가 고르는 셋째 글. 갈래마다 하나다
 #: (`template_pick.NAME_IS_A_BUCKET`).
@@ -125,7 +125,7 @@ DRAFT_WINDOW_DAYS = twin_send.WINDOW_DAYS
 SAMPLE_SLOT = "(고른 기업이 이 자리에 기업마다 한 덩어리씩 들어갑니다)"
 
 #: 받는 분이 이 갈래가 아닐 때 — 미리보기 경고 · 발송에서 뺀 이유.
-NOT_BUCKET_NOTE = f"{LABEL}는 '{BUCKET}' 갈래에만 보냅니다 — 뺐습니다"
+NOT_BUCKET_NOTE = f"{LABEL}는 '{SYNC_LABEL}' 갈래에만 보냅니다 — 뺐습니다"
 #: 본인이 공유한 기업 · 이미 받은 기업을 빼고 나니 **보낼 기업이 하나도 없는** 분 —
 #: 미리보기 경고 · 발송에서 뺀 이유(`skipped`).
 NOTHING_LEFT_NOTE = "보낼 기업 없음 (본인 공유/이미 받음)"

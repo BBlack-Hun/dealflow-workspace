@@ -201,6 +201,10 @@ from . import edit_log, sheet_owner, sourcing_buckets, sourcing_link
 #: 견줄 때는 **띄어쓰기를 빼고** 본다(`sourcing_buckets.same`) — 저장된 줄이
 #: `딜소싱` 처럼 띄어쓰기만 달라도 이 갈래다. 새 줄은 저장된 글자로 적는다(`create_row`).
 SYNC_BUCKET = "시리즈 A 이상 딜 소싱 참여 심사역"
+#: 그 갈래의 **화면 이름**(i137 — 11/02). 저장 글자(`SYNC_BUCKET`)는 그대로다 — 줄 · 문구 ·
+#: 자동 리마인드 · 스킬이 그 글자로 찾고, 문구 모양도 이름으로 읽는다(`sourcing_msg.is_series_a`).
+#: 화면에 세울 때는 `sourcing_buckets.shown` 을 지난다.
+SYNC_LABEL = "Series A 이상 딜 검토 가능 심사역"
 MNA_BUCKET = "M&A 찾는 투자사"
 FOLLOW_BUCKET = "구주매각 / 후속투자사 찾는 투자사 / 공동투자사 / 앵커투자사"
 #: 운영 시트의 탭 이름 그대로(가운데 두 칸 공백) — 견줄 때는 띄어쓰기를 안 본다.
@@ -594,12 +598,12 @@ def find_row(db: Session, contact: VcContact,
             owner = db.get(VcContact, taken[0].vc_contact_id)
             who = sheet_owner.labels_of(owner.source_sheet)[0] if owner else "다른"
             raise SyncError(
-                f"딜 소싱 › {bucket} 의 '{taken[0].name}' 줄이 이미 투자사 관리 "
+                f"딜 소싱 › {sourcing_buckets.shown(bucket)} 의 '{taken[0].name}' 줄이 이미 투자사 관리 "
                 f"현황의 다른 줄({who} 명단)과 이어져 있습니다 — 같은 분이면 그 줄에서 "
                 "딜 소싱 칸을 고치세요(한 분께 딜 소싱 제안이 두 번 나가지 않게 한 줄만 잇습니다).")
         if len(mine) > 1:
             raise SyncError(
-                f"딜 소싱 › {bucket} 에 {how}이 같은 줄이 {len(mine)}개라 어느 줄인지 "
+                f"딜 소싱 › {sourcing_buckets.shown(bucket)} 에 {how}이 같은 줄이 {len(mine)}개라 어느 줄인지 "
                 "정할 수 없습니다 — 딜 소싱 화면에서 겹친 줄을 먼저 정리해 주세요.")
         return mine[0] if mine else None
 
@@ -612,7 +616,7 @@ def find_row(db: Session, contact: VcContact,
                            and not _phone_conflict(r, phone)], "이름 · 회사"), "이름 · 회사"
     if found is not None and (len(phone) < MIN_DIGITS or link_key(found) != (name, phone)):
         raise SyncError(
-            f"딜 소싱 › {bucket} 의 '{found.name}' 줄과 {how}만 같아 잇지 않았습니다 "
+            f"딜 소싱 › {sourcing_buckets.shown(bucket)} 의 '{found.name}' 줄과 {how}만 같아 잇지 않았습니다 "
             "— 같은 분이면 딜 소싱 화면 그 줄의 [이 분으로 확정]으로 이어 주세요(이름과 "
             "번호가 둘 다 같을 때만 저절로 잇습니다). 다른 분이면 딜 소싱 화면에서 따로 넣으세요.")
     return found
@@ -743,7 +747,7 @@ def set_mark(db: Session, contact: VcContact, value: Optional[str],
     if not mark:
         if row is not None:
             raise SyncError(
-                f"딜 소싱 › {bucket} 에 이어진 분이라 비울 수 없습니다 — 빠지시면 "
+                f"딜 소싱 › {sourcing_buckets.shown(bucket)} 에 이어진 분이라 비울 수 없습니다 — 빠지시면 "
                 "X(불참여)로 두세요. 줄을 아예 빼려면 딜 소싱 화면에서 [삭제] 합니다.")
         return {"mark": "", "message": "", "action": ACT_NONE, "participation": ""}
 
@@ -758,15 +762,15 @@ def set_mark(db: Session, contact: VcContact, value: Optional[str],
         if row is not None:
             link(row, contact)
             action = ACT_LINKED
-            message = f"딜 소싱 › {bucket} 에 있던 '{row.name}' 줄과 이었습니다."
+            message = f"딜 소싱 › {sourcing_buckets.shown(bucket)} 에 있던 '{row.name}' 줄과 이었습니다."
         elif mark == MARK_LEFT:
             raise SyncError(
-                f"딜 소싱 › {bucket} 에 없는 분이라 X 로 둘 줄이 없습니다 — "
+                f"딜 소싱 › {sourcing_buckets.shown(bucket)} 에 없는 분이라 X 로 둘 줄이 없습니다 — "
                 "빈칸이 '딜 소싱에 없음' 입니다.")
         else:
             row = create_row(db, contact, revive, user, assignee=assignee, bucket=bucket)
             action = ACT_CREATED
-            message = (f"딜 소싱 › {bucket} 에 '{row.participation}' 으로 새로 "
+            message = (f"딜 소싱 › {sourcing_buckets.shown(bucket)} 에 '{row.participation}' 으로 새로 "
                        "넣었습니다 — 카톡방은 딜 소싱 화면의 [방 후보 찾기]로 보내는 분 "
                        "카톡에서 찾아 확정하세요.")
             if not takes_part(row):
@@ -774,7 +778,7 @@ def set_mark(db: Session, contact: VcContact, value: Optional[str],
                             "딜이 나갑니다.")
             others = other_buckets(db, contact, bucket)
             if others:
-                message += (f" 다른 갈래({', '.join(others)})에도 있는 분이라 그 줄은 "
+                message += (f" 다른 갈래({', '.join(map(sourcing_buckets.shown, others))})에도 있는 분이라 그 줄은 "
                             "그대로 둡니다.")
             return {"mark": mark_of(row), "message": message, "action": action,
                     "participation": participation_of(row)}
@@ -788,7 +792,7 @@ def set_mark(db: Session, contact: VcContact, value: Optional[str],
         row.participation = want
         if action == ACT_KEPT:
             action = ACT_CHANGED
-        note = f"딜 소싱 › {bucket} 에서 '{want}' 으로 바꿨습니다."
+        note = f"딜 소싱 › {sourcing_buckets.shown(bucket)} 에서 '{want}' 으로 바꿨습니다."
         message = f"{message} {note}".strip()
     return {"mark": mark, "message": message, "action": action,
             "participation": participation_of(row)}

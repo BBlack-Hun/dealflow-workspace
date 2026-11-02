@@ -116,7 +116,8 @@ def test_the_all_view_adds_a_bucket_column(client, db, board):
     [(title, rows)] = sheet.items()
     assert title == "전체"
     assert rows[0][0] == "갈래"
-    assert {r[0] for r in rows[1:]} == {SYNC, CEO, other}
+    # 시리즈 A 갈래는 탭에 보이는 이름으로 적는다(i137 — 저장 글자는 그대로).
+    assert {r[0] for r in rows[1:]} == {"Series A 이상 딜 검토 가능 심사역", CEO, other}
     by_bucket = {r[0]: dict(zip(rows[0], r)) for r in rows[1:]}
     # 대표 갈래는 잇는 갈래(2026-10-22) — 안 이어진 줄은 `안 이어짐`
     assert by_bucket[CEO]["투자사 관리 현황"] == "안 이어짐"

@@ -337,6 +337,8 @@ def test_OX_칸은_필터를_세우고_메모는_안_세운다(portal, db, compa
     assert f"data-filters=\"cc{memo.id}:" not in html
     assert f"data-f-cc{memo.id}=" not in html
     assert 'data-choices="O,X"' in html
+    at = html.index(f'data-field="cc{ox.id}"')
+    assert "data-memo-date" not in html[at:html.index(">", at)], "O/X 칸에 날짜 표시가 섰다(i139)"
 
 
 def test_숨긴_칸은_화면과_엑셀에서_빠지고_값은_남는다(portal, db, company):
@@ -556,6 +558,9 @@ def test_메모_칸은_화면마다_적은_줄바꿈을_살린다(portal, db, us
             html = member.get(url).text
             assert cell in html, url
             assert text in html, url
+            # i139 — 메모 칸은 새로 다는 줄 앞에 오늘 날짜(`memo_date.js`).
+            tag = html[html.index(cell):html.index(">", html.index(cell))]
+            assert "data-memo-date" in tag, url
     css = (Path(__file__).resolve().parents[1] / "app" / "static" / "css" / "app.css").read_text()
     assert ".clamp2.keep-lines { white-space: pre-line; }" in css
 

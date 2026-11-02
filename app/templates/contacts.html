@@ -1050,7 +1050,7 @@
         <td class="cell" data-field="kakao_joined" data-type="pick"
             data-choices="O,X" data-filter-key="joined">{{ r.kakao_joined }}</td>
         <td title="{{ r.memo }}">
-          <div class="cell clamp2" data-field="memo" data-type="long">{{ r.memo }}</div>
+          <div class="cell clamp2" data-field="memo" data-type="long" data-memo-date>{{ r.memo }}</div>
         </td>
         <td title="{{ r.sourcing_note }}">
           <div class="cell clamp2" data-field="sourcing_note" data-type="long">{{ r.sourcing_note }}</div>
@@ -1319,6 +1319,7 @@
         {# 원본 메모가 길다(233자). 표에서는 두 줄까지, 전문은 수정창에서. #}
         <td title="{{ r[c.key] }}">
           <div class="cell clamp2" data-field="{{ c.key }}" data-type="long"
+               {%- if c.key == 'memo' %} data-memo-date{% endif %}
           >{{ r[c.key] }}</div>
         </td>
         {% else %}

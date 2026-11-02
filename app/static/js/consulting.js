@@ -267,7 +267,10 @@
     var multi = cell.classList.contains("multi");
     var input = document.createElement(multi ? "textarea" : "input");
     input.className = "cell-input";
-    input.value = before;
+    // 추가 메모 칸(`data-memo-date`)은 맨 끝 새 줄에 오늘 날짜를 채워 연다(inline_edit.js 의 `startLong` 과 같다).
+    var memo = multi && cell.hasAttribute("data-memo-date") && window.DealflowMemoDate;
+    var opened = Date.now();
+    input.value = memo ? memo.open(before, opened) : before;
     if (multi) input.rows = Math.min(6, Math.max(2, before.split("\n").length + 1));
     // 여러 줄 칸은 **쓰는 만큼 자란다.** 여섯 줄에 묶어 두면 딜 소개문구 같은
     // 문단이 칸 안에서만 굴러 어디를 고치는지 안 보인다(참고 표 칸과 같은
@@ -326,7 +329,7 @@
     function finishEdit() {
       if (editing !== cell) return;
       editing = null;
-      var after = input.value.trim();
+      var after = (memo ? memo.close(input.value, before, opened) : input.value).trim();
       box.textContent = after;
       // 고르는 칩은 편집이 끝나면 치운다 — 예전에는 `cell.textContent = …` 이
       // 칸을 통째로 비우면서 같이 사라졌는데, 이제 값 상자만 비우므로 남는다.

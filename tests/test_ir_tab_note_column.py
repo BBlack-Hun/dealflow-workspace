@@ -31,7 +31,7 @@ def test_IR_자료_앞에_메모가_선다(logged):
     names = _head_names(html)
     assert names[names.index("IR 자료") - 1] == "메모", names
     body = html.split("<tbody>", 1)[1]
-    assert 'data-field="note" data-type="long">TIPS 가능\n누적 투자 12억</div>' in body
+    assert 'data-field="note" data-type="long" data-memo-date>TIPS 가능\n누적 투자 12억</div>' in body
 
 
 def test_표에서_고치면_저장되고_검색에_걸린다(logged, db):
