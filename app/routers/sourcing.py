@@ -23,9 +23,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..deps import _wants_json, get_current_user, no_send_as_member, require_admin, templates
+from ..deps import (_wants_json, get_current_user, no_send_as_member, require_admin,
+                    sends_deals, templates)
 from ..models import SendItem, SendJob, SourcingContact, User
-from ..services import (series_a_share, sourcing_buckets, sourcing_link,
+from ..services import (series_a_share, sheet_owner, sourcing_buckets, sourcing_link,
                         sourcing_mail, sourcing_receipts, sourcing_rooms,
                         sourcing_sync, spreadsheet)
 from ..services import custom_columns, sourcing_remind_log, taxonomy
@@ -117,7 +118,7 @@ def buckets(db: Session) -> List[dict]:
     **띄어쓰기만 다른 글자는 탭 하나다**(`sourcing_buckets.groups`) — 수는 합친
     것, 이름은 그 갈래가 쓰는 글자. `variants` 는 그 탭에 묶인 저장 글자들이다.
     """
-    out = [{"key": g["label"], "label": g["label"], "count": g["count"],
+    out = [{"key": g["label"], "label": sourcing_buckets.shown(g["label"]), "count": g["count"],
             "pos": g["pos"], "variants": g["variants"]}
            for g in sourcing_buckets.groups(db)]
     return sorted(out, key=lambda x: (x["pos"], x["label"]))
@@ -228,6 +229,21 @@ def assignee_chips(rows: List[SourcingContact]) -> List[dict]:
             counted[who] = counted.get(who, 0) + 1
     return [{"name": k, "count": v}
             for k, v in sorted(counted.items(), key=lambda kv: (-kv[1], kv[0]))]
+
+
+def assignee_choices(db: Session) -> str:
+    """[담당자] 칸 고르는 창이 먼저 세울 보기(i138) — 팀 활성 계정의 **사람 이름**.
+
+    보기가 표에 이미 적힌 글자뿐이라, 그 탭에 아직 없는 팀원은 고를 수 없었다.
+    칸은 그대로 자유 글이다(표시용 — 보내는 사람과 상관없다). 계정 이름 뒤
+    `_BACKUP…` 꼬리(11/02~)는 사람 이름이 아니라 뗀다. 투자컨설턴트는 뺀다(`sends_deals`).
+    """
+    names: List[str] = []
+    for u in db.execute(select(User).where(User.is_active == 1)).scalars():
+        name = re.sub(r"_BACKUP\w*$", "", sheet_owner.real_name(u), flags=re.I).strip()
+        if name and sends_deals(u) and name not in names:
+            names.append(name)
+    return ",".join(sorted(names))
 
 
 # ── 시리즈 A 탭 나눠 보기(i128 · i129) — 머리글 필터를 주소로 거는 칩 ──────────
@@ -421,6 +437,7 @@ def sourcing_page(request: Request, db: Session = Depends(get_db),
         # [담당자] 필터가 거르는 값 — 칸에 적힌 글자가 아니라 **지금 맡은 사람**
         # (`assignee_of`). 딜 제안 관리의 [담당] 칩과 같은 값이다.
         "assignees": {r.id: assignee_of(r) for r in rows},
+        "assignee_choices": assignee_choices(db),
         # ── Series A 딜 공유 (`services/series_a_share.py`) ──
         # 줄마다 받은 기업 이름 — `Series A 딜 공유 N건` 과 그 풍선말.
         "shared": series_a_share.shared_companies(db, [r.id for r in rows]),
@@ -509,7 +526,7 @@ def _export_table(db: Session, rows: List[SourcingContact], extra: dict,
         if field == REMIND_AFTER:
             heads += [m.label for m in months]
     put = custom_columns.arranger(heads, extra)
-    lines = [put(([r.bucket] if with_bucket else [])
+    lines = [put(([sourcing_buckets.shown(r.bucket)] if with_bucket else [])
                  + [v for field, *_ in COLUMNS for v in cell(r, field)]
                  + custom_columns.cells(extra, r.id))
              for r in rows]
@@ -542,9 +559,10 @@ def export_sourcing(tab: str = "", ids: Optional[str] = None, every: int = 0,
         if ids is not None:
             order = {int(x): i for i, x in enumerate(re.findall(r"\d+", ids))}
             rows = sorted((r for r in rows if r.id in order), key=lambda r: order[r.id])
-        sheets = [(selected or "전체", *_export_table(db, rows, extra, not selected))]
+        shown = sourcing_buckets.shown(selected) or "전체"
+        sheets = [(shown, *_export_table(db, rows, extra, not selected))]
         # 갈래 이름의 `/`(구주매각 / 후속…)는 파일 이름에 못 쓴다.
-        name = f"딜 소싱_{re.sub(r'[/:*?<>|]+', ' ', selected or '전체')}_{today}.xlsx"
+        name = f"딜 소싱_{re.sub(r'[/:*?<>|]+', ' ', shown)}_{today}.xlsx"
     try:
         content = spreadsheet.write_xlsx_sheets(sheets)
     except spreadsheet.SpreadsheetError as exc:
@@ -566,8 +584,8 @@ def rename_bucket(old: str = Form(""), new: str = Form(""),
 
     이 화면을 볼 수 있는 사람이면 바꿀 수 있다 — 명단 이름 바꾸기와 같은
     권한이다. 사람 수나 발송 대상이 바뀌는 조작이 아니다.
-    `시리즈 A 이상 딜 소싱 참여 심사역` 은 바꿀 수 없다 — 투자사 관리 현황과
-    이어진 갈래다(`sourcing_buckets.rename` 이 막는다).
+    잇는 갈래(`sourcing_sync.BRANCHES`)는 바꿀 수 없다 — 투자사 관리 현황과
+    이어진 갈래다(`sourcing_buckets.rename` 이 막는다). 그 탭에는 이 폼이 안 선다.
     """
     before, after = (old or "").strip(), sourcing_buckets.normalize_label(new)
     if not before or not after or before == after:

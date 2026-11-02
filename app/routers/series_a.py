@@ -465,7 +465,7 @@ def set_sharer(row_id: int, body: SharerIn, db: Session = Depends(get_db),
         if person is None or not series_a_share.is_share_bucket(person.bucket):
             raise HTTPException(
                 status_code=400,
-                detail=f"'{series_a_share.BUCKET}' 갈래의 딜 소싱 심사역만 확정할 수 있습니다")
+                detail=f"'{sourcing_sync.SYNC_LABEL}' 갈래의 딜 소싱 심사역만 확정할 수 있습니다")
     row.shared_by_contact_id = body.contact_id
     db.commit()
     return {"id": row.id, "sharer": series_a_share.sharer_view(db, row)}

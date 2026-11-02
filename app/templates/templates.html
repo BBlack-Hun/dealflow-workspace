@@ -28,7 +28,7 @@
   <form method="post" action="/templates/choose" class="tpl-item">
     <input type="hidden" name="kind" value="{{ g.kind }}">
     <div class="tpl-head">
-      <b>내가 쓸 문구{% if g.has_buckets and s.variant %} — {{ s.variant }}{% endif %}</b>
+      <b>내가 쓸 문구{% if g.has_buckets and s.variant %} — {{ bucket_label(s.variant) }}{% endif %}</b>
       {% if s.undecided %}
       <span class="tag warn">아직 고르지 않았습니다</span>
       {% endif %}
@@ -125,7 +125,7 @@
   {% if g.has_buckets and g.slots|length > 1 %}
   {# 딜 소싱은 갈래마다 호칭·전달 개수·찾는 범위가 다르다 — 갈래가 다르면
      아예 다른 문구라 한 덩어리로 묶으면 안 된다. #}
-  <h3 class="panel-title">{{ s.variant or "갈래 없는 문구" }}</h3>
+  <h3 class="panel-title">{{ bucket_label(s.variant) or "갈래 없는 문구" }}</h3>
   {% endif %}
   {{ slot_block(g, s) }}
   {% endfor %}

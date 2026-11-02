@@ -806,8 +806,8 @@
         <button type="button" class="chip active" data-value="">
           전체 <b>{{ sourcing_contacts|length }}</b></button>
         {% for b in sourcing_buckets %}
-        <button type="button" class="chip" data-value="{{ b.name }}">
-          {{ b.name }} <b>{{ b.count }}</b></button>
+        <button type="button" class="chip" data-value="{{ b.name }}" data-label="{{ bucket_label(b.name) }}">
+          {{ bucket_label(b.name) }} <b>{{ b.count }}</b></button>
         {% endfor %}
       </div>
       {# 우리 쪽 담당 심사역. 39명을 통째로 훑는 것과 내 담당만 보는 것은
@@ -1003,7 +1003,7 @@
           <div class="pick-name">{{ c.name }} <span class="muted">{{ c.title or '' }}</span></div>
           <div class="pick-sub muted">{{ c.firm or '' }}</div>
           {# 갈래가 곧 문구다 — 무엇이 나갈지 고르는 자리에서 보여야 한다. #}
-          <div class="pick-tags"><span class="tag">{{ bucket }}</span>
+          <div class="pick-tags"><span class="tag">{{ bucket_label(bucket) }}</span>
             <span class="tag soft received-tag"{% if c.id not in sourcing_received %} hidden{% endif %}>{{ sourcing_month_label }} 딜 받음</span>
             {# 받지 않는 분 · 참여 안내만 받는 분의 딱지 — 글자는 서버가 짓는다
                (`sourcing.out_label` — `딜 소싱 불참여` · `참여 확인 전 · 딜 소싱 참여

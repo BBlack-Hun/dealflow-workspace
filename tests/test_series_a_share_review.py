@@ -416,7 +416,8 @@ def test_only_a_person_of_the_bucket_can_be_confirmed(world, client):
     own = world["c"]["own"]
     url = f"/api/series-a-companies/{own.id}/sharer"
     r = client.put(url, json={"contact_id": world["p"]["m"].id})
-    assert r.status_code == 400 and SERIES_A in r.json()["detail"]
+    # 안내는 탭에 보이는 이름으로 부른다(i137 — 저장 글자는 그대로).
+    assert r.status_code == 400 and "Series A 이상 딜 검토 가능 심사역" in r.json()["detail"]
     assert client.put(url, json={"contact_id": 99999}).status_code == 400
     assert client.put("/api/series-a-companies/99999/sharer",
                       json={"contact_id": None}).status_code == 404

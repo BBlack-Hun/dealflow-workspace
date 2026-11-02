@@ -68,8 +68,10 @@
 </nav>
 
 {# 갈래 이름 바꾸기 — 투자사 관리 현황·투자컨설턴트의 [이름 저장]과 같은 모양.
-   그 이름을 단 줄(사람·문구·골라 둔 것)이 함께 따라간다. #}
-{% if selected %}
+   그 이름을 단 줄(사람·문구·골라 둔 것)이 함께 따라간다. 잇는 갈래(`sync_tab`)는
+   이름 바꾸기 · 지우기를 서버가 늘 막으므로 폼을 세우지 않는다 — 세우면 칸에 탭 이름
+   대신 저장 글자가 보인다(i137 — 시리즈 A 탭은 보이는 이름만 바꿨다). #}
+{% if selected and not sync_tab %}
 <form method="post" action="/sourcing/buckets/rename" class="ref-rename sheet-rename">
   <input type="text" name="new" value="{{ selected }}" maxlength="80"
          aria-label="갈래 이름">
@@ -164,8 +166,8 @@
        넣은 사람의 `직접 추가` 명단에 새로(`sourcing_sync.add_from_sourcing`). #}
     {% if selected %}
     <button type="button" class="primary-btn inline" id="sourcing-add"
-            data-bucket="{{ selected }}" data-testid="sourcing-add"
-            title="{% if sync_tab %}투자사 관리 현황에도 같이 들어갑니다 — 이름 · 휴대폰이 같은 분이 있으면 그 줄과 잇고, 없으면 내 '직접 추가' 명단에 새로 만듭니다{% else %}이 갈래는 투자사 관리 현황과 잇지 않습니다 — 딜 소싱에만 들어갑니다{% endif %}">{{ selected }}에 추가</button>
+            data-bucket="{{ selected }}" data-label="{{ bucket_label(selected) }}" data-testid="sourcing-add"
+            title="{% if sync_tab %}투자사 관리 현황에도 같이 들어갑니다 — 이름 · 휴대폰이 같은 분이 있으면 그 줄과 잇고, 없으면 내 '직접 추가' 명단에 새로 만듭니다{% else %}이 갈래는 투자사 관리 현황과 잇지 않습니다 — 딜 소싱에만 들어갑니다{% endif %}">{{ bucket_label(selected) }}에 추가</button>
     {% if not sync_tab %}<span class="hint" data-testid="sourcing-add-unsynced">이 갈래는 투자사 관리 현황과 잇지 않습니다</span>{% endif %}
     {% else %}
     <span class="hint">갈래 탭을 고르면 사람을 추가할 수 있습니다</span>
@@ -368,7 +370,9 @@
         </td>
         {% endfor %}
 
-        <td class="cell" data-field="assignee_name" data-type="pick">{{ r.assignee_name or '' }}</td>
+        {# 보기는 팀원 이름 먼저(`assignee_choices` — i138), 그 뒤 표에 적힌 글자. 직접 적어도 된다. #}
+        <td class="cell" data-field="assignee_name" data-type="pick"
+            data-choices="{{ assignee_choices }}">{{ r.assignee_name or '' }}</td>
         {# `data-type="sectors"` — 투자사 관리 현황의 같은 칸과 **같은 부품**으로 분야 기준
            목록에서 고른다(#63 · `sector_picker.js`). 자유 글로 적던 옛 값은 지우지 않고
            고르는 창이 `목록 밖 값` 으로 보여 준다. #}
@@ -439,7 +443,7 @@
 {% elif selected %}
 {# [+ 탭 추가]로 막 만든 탭 — 사람이 아직 없다. #}
 <p class="muted" data-testid="sourcing-empty-tab">이 탭에는 아직 사람이 없습니다 —
-  위 <b>[{{ selected }}에 추가]</b>로 넣으세요.</p>
+  위 <b>[{{ bucket_label(selected) }}에 추가]</b>로 넣으세요.</p>
 {% else %}
 <p class="muted">
   아직 명단이 없습니다 — <code>scripts/import_sourcing.py</code> 로 시트를 가져오세요.
@@ -467,7 +471,7 @@
     // 서고, 첫 사람을 넣을 길이 이 단추뿐이다(빈 탭 안내 `sourcing-empty-tab`).
     var addBtn = document.getElementById("sourcing-add");
     if (addBtn) addBtn.addEventListener("click", function () {
-      var name = (prompt("이름을 입력하세요 (" + addBtn.getAttribute("data-bucket") + ")") || "").trim();
+      var name = (prompt("이름을 입력하세요 (" + addBtn.getAttribute("data-label") + ")") || "").trim();
       if (!name) return;
       // 휴대폰 — 투자사 관리 현황의 같은 분을 찾는 열쇠(이름 + 번호). 비워도 넣는다.
       var phone = prompt("휴대폰 (비워도 됩니다 — 투자사 관리 현황의 같은 분을 찾는 데 씁니다)");

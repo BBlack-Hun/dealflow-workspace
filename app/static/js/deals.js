@@ -603,7 +603,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
         note.textContent = shown + " / " + total + "명 표시 중" +
           (q ? " (검색: " + box.value.trim() + ")" : "") +
           (groupFilter ? " (그룹: " + groupFilter + ")" : "") +
-          (bucketFilter ? " (갈래: " + bucketFilter + ")" : "") +
+          (bucketFilter ? " (갈래: " + bucketLabel(bucketFilter) + ")" : "") +
           (assigneeFilter ? " (담당: " + assigneeFilter + ")" : "") +
           // 조건 밖인데 이미 고른 사람은 그대로 발송에 들어간다 — 숫자만
           // 줄어든 줄 알고 보내면 안 되므로 몇 명인지 말해 준다.
@@ -667,6 +667,13 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   }
   var bucketBar = bindFilter("bucket-filter", function (v) { bucketFilter = v; },
                              schedulePreview);
+  // 갈래 칩의 화면 이름(`data-label` — i137). 값(`data-value`)은 저장 글자 그대로다.
+  function bucketLabel(v) {
+    var chip = bucketBar && [].filter.call(bucketBar.querySelectorAll(".chip"), function (c) {
+      return c.getAttribute("data-value") === v;
+    })[0];
+    return (chip && chip.getAttribute("data-label")) || v;
+  }
   var assigneeBar = bindFilter("assignee-filter", function (v) { assigneeFilter = v; });
 
   // [담당] 칩 수 = **지금 고른 글에서 뜨는 카드 수**(`isExcluded` 가 아닌 카드). 서버는
@@ -1031,7 +1038,7 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
     note.hidden = names.length < 2;
     if (!note.hidden) {
       note.textContent = "갈래 " + names.length + "개가 섞여 있습니다 — " +
-        "갈래마다 다른 문구가 나갑니다 (" + names.join(" · ") + ")";
+        "갈래마다 다른 문구가 나갑니다 (" + names.map(bucketLabel).join(" · ") + ")";
     }
   }
 

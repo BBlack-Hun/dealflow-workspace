@@ -304,7 +304,7 @@ def test_sending_skips_no_room_left_and_other_bucket_and_records_shares(world, c
     assert set(reasons) == {"다심사", "라심사", "마투자"}
     assert "카톡방 없음" in reasons["다심사"]
     assert "불참여" in reasons["라심사"]
-    assert SERIES_A in reasons["마투자"]
+    assert "Series A 이상 딜 검토 가능 심사역" in reasons["마투자"]   # 탭에 보이는 이름(i137)
 
     job = db.get(SendJob, out["job_id"])
     # 잡 종류는 그대로(발송 프로그램이 아는 종류) — 글은 topic 이 말한다
