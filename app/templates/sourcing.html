@@ -379,7 +379,7 @@
           <div class="cell clamp2" data-field="round_size" data-type="long">{{ r.round_size or '' }}</div>
         </td>
         <td title="{{ r.memo or '' }}">
-          <div class="cell clamp2" data-field="memo" data-type="long">{{ r.memo or '' }}</div>
+          <div class="cell clamp2" data-field="memo" data-type="long" data-memo-date>{{ r.memo or '' }}</div>
         </td>
         {# 여기가 비면 딜 제안 관리에서 이 사람을 고를 수 없다 — 보낼 방이 없다. #}
         {# 투자사 관리 현황에서 이미 연결해 둔 방이 있으면 그것을 쓴다 —
