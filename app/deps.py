@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from . import assets, clock, config
 from .db import SessionLocal, get_db
 from .models import AgentDevice, User
-from .services import send_window
+from .services import send_window, sourcing_buckets
 
 def _eok(value) -> str:
     """금액 칸을 화면에 **적은 그대로**. `"5-10억 사이"` → `5-10억 사이`.
@@ -67,6 +67,9 @@ templates.env.globals["amount_warn"] = _amount_warn
 # 띠가 빠진다. 함수 그대로 건다 — 화면을 그릴 때마다 다시 읽는다.
 templates.env.globals["send_window_off"] = send_window.off
 templates.env.globals["send_window_banner"] = send_window.BANNER
+# 딜 소싱 갈래의 화면 이름(i137) — 탭 · 딜 제안 관리 칩 · 문구 화면이 같은 이름을 쓴다.
+# 저장 글자는 그대로라 값(`data-*` · 폼)에는 쓰지 않는다(`sourcing_buckets.shown`).
+templates.env.globals["bucket_label"] = sourcing_buckets.shown
 
 
 # 저장용 시각은 `app/clock.py` 하나에서만 만든다 — 왜 지역시간인지는 그쪽에.
