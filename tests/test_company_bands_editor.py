@@ -41,7 +41,8 @@ def test_금액_구간은_겹쳐_들고_못_읽는_글은_따로_모인다(compa
 
 def test_머리글이_금액_필터를_세우고_줄이_그_값을_싣는다(logged_in, company):
     html = logged_in.get("/companies").text
-    assert 'data-filters="raise_target:투자유치희망금액"' in html
+    # 라벨의 `&#8203;` 은 머리글 단추가 두 줄로 접힐 자리다(i132) — 보이는 이름은 같다.
+    assert 'data-filters="raise_target:투자유치&#8203;희망금액"' in html
     assert 'data-filters="revenue_2025:25년 매출"' in html
     assert 'data-filters="revenue_recent:26년 매출"' in html
     assert 'data-f-raise_target="5억 이상|10억 이상|20억 이상|30억 이상"' in html
@@ -77,3 +78,35 @@ def test_로그가_없는_줄은_빈칸이다(db, company):
     from app.routers.companies import last_editors
 
     assert last_editors(db, [company]) == {}
+
+
+def test_수정한_팀원으로_거르고_빈칸은_비어_있음으로_모인다(logged_in, u1_admin, company, db, users):
+    """i131 — `수정한 팀원` 머리글 필터(`editor`). 줄은 고친 팀원을 싣고, 로그가 없는 줄은
+    빈 값 그대로(10/31 결정 — 채우지 않는다) `(비어 있음)` 으로 골라진다. 지금 화면 내려받기도
+    같은 값으로 거른다(`company_view.FILTER_VALUES`)."""
+    import io
+    from urllib.parse import quote
+
+    import openpyxl
+
+    from app.models import IrCompany
+    from app.services.company_view import EMPTY
+
+    db.add(IrCompany(name="샘플빈칸테크"))
+    db.commit()
+    assert logged_in.patch(f"/api/companies/{company.id}",
+                           json={"raise_target": "50억"}).status_code == 200
+    name = users["u1"].name
+    html = logged_in.get("/companies").text
+    assert 'data-filters="editor:수정한 팀원"' in html
+    assert f'data-f-editor="{name}"' in html
+    assert 'data-f-editor=""' in html
+
+    def names(value):
+        r = logged_in.get(f"/api/export/companies-view.xlsx?editor={quote(value)}")
+        assert r.status_code == 200
+        ws = openpyxl.load_workbook(io.BytesIO(r.content)).active
+        return [row[1] for row in ws.iter_rows(min_row=2, values_only=True)]
+
+    assert names(name) == ["샘플모아테크"]
+    assert names(EMPTY) == ["샘플빈칸테크"]

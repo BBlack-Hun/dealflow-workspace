@@ -11,6 +11,7 @@
 """
 from __future__ import annotations
 
+import html
 import pathlib
 import re
 import unicodedata
@@ -241,6 +242,13 @@ def test_머리글은_왼쪽에서_시작하고_세로로만_가운데다():
 # 값이 306줄 중 3줄뿐인 칸에 그만한 자리를 내주면 매일 보는 칸이 눌린다.
 _TWO_LINE_OK = "TIPS 운영사 투자금 1-10억 스타트업매출액 3-20억 기업에 주로 투자"
 
+# 값은 `O`/`X`·짧은 글인데 머리글 때문에 넓던 IR 기업현황 칸(i131 · i132, 11/02 사용자
+# 결정) — 필터 단추를 옆 매출 칸처럼 **일부러 두 줄로** 접는다(매출 칸은 머리글을 Jinja 로
+# 세워 이 검사에 안 걸릴 뿐 이미 두 줄이다). 여기 든 칸도 세 줄은 안 된다(`_wrapped_lines`).
+_TWO_LINE_FILTERS = {"companies.html": {
+    "수정한 팀원", "투자유치희망금액", "견적서 첨부 여부", "계약서 수신 여부",
+    "카톡 연결 여부", "핵심/TOP Deal"}}
+
 # 필터가 하나뿐인 칸은 **이름 글자가 지워지고** `계약여부 ▾` 단추가 그 자리에
 # 선다(filters.js 의 `solo`). 단추는 이름보다 넓다 — ` ▾`(약 6px) 와 자기
 # padding·테두리(6+6+1+1 = 14px)가 더 붙는다.
@@ -289,8 +297,31 @@ def _filter_labels(attrs: str) -> list:
     out = []
     for spec in m.group(1).split("|"):
         if ":" in spec:
-            out.append(spec.split(":", 1)[1].strip())
+            # `&#8203;`(폭 없는 공백) — 띄어쓰기 없는 이름의 단추가 접힐 자리(i132)
+            out.append(html.unescape(spec.split(":", 1)[1].strip()))
     return out
+
+
+def _wrapped_lines(label: str, have: float) -> int:
+    """단추 `라벨 (1) ▾` 가 `have` px 칸에서 몇 줄로 서는지.
+
+    `.filter-btn` 은 `keep-all` 이라 띄어쓰기(와 폭 없는 공백)에서만 접히고, 꼬리표는
+    줄바꿈 없는 공백으로 마지막 낱말에 붙는다(filters.js). 낱말 하나가 칸보다 넓으면
+    접을 수 없어 칸 밖으로 넘친다 — 99 를 돌려준다. 맞는지는 위 검사와 같은 셈
+    (`round(글자 + 18 + 14) <= 칸`)으로 본다.
+    """
+    words = re.split(r"[ \u200b]", label)
+    words[-1] += _FILTER_SUFFIX
+    lines, line = 0, None
+    for word in words:
+        px = _text_px(word)
+        if round(px + 32) > have:
+            return 99
+        if line is not None and round(line + _PX_PUNCT + px + 32) <= have:
+            line += _PX_PUNCT + px
+        else:
+            lines, line = lines + 1, px
+    return lines
 
 
 # 값을 고르면 라벨 뒤에 `(고른 개수)` 가 붙는다. **그 상태까지 재야 한다** —
@@ -416,7 +447,13 @@ def test_컬럼_이름이_두_줄로_접히면_머리글_줄이_들쭉날쭉해�
                         and name != _TWO_LINE_OK and len(labels) != 1:
                     shown.append((name, 0))
                 # 18px = th 좌우 padding, 14px = 단추 padding·테두리
-                shown += [(label + _FILTER_SUFFIX, 14) for label in labels]
+                two = _TWO_LINE_FILTERS.get(path.name, set())
+                for label in labels:
+                    if label.replace("\u200b", "") not in two:
+                        shown.append((label + _FILTER_SUFFIX, 14))
+                    elif _wrapped_lines(label, have) > 2:
+                        problems.append(f"{path.name}: {label}{_FILTER_SUFFIX} "
+                                        f"({have:.0f}px 에서 두 줄에도 안 들어갑니다)")
                 for text, extra in shown:
                     need = round(_text_px(text) + 18 + extra)
                     if need > have:

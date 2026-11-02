@@ -52,7 +52,7 @@
     // 줄의 본문이 적는다(`안내 카톡 · 견적서 공유 안내`).
     startup_msg: "안내 카톡",
     // 딜 소싱 화면에서 이어진 소싱 줄로 나간 것(`contacts._SEND_LABELS` 와 같은 이름).
-    sourcing_intro: "딜 소싱(참여 안내)", sourcing_remind: "딜 소싱(월간 리마인드)",
+    sourcing_intro: "딜 소싱(참여 안내)", sourcing_remind: "딜 소싱(딜 발송 요청)",
     sourcing_deal_share: "딜 소싱(Series A 딜 공유)"
   };
 

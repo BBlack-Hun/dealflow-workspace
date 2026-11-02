@@ -97,7 +97,8 @@ from typing import Iterable, List, Optional, Set, Tuple
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..models import IrCompany, VcContact
+from ..models import STARTUP_SEND_KIND, IrCompany, VcContact
+from . import room_joined
 from .ir_monthly import contracted
 from .room_name import normalize_space
 from .sheet_import import normalize_company_name
@@ -446,6 +447,43 @@ def set_room(company: IrCompany, value: Optional[str]) -> bool:
         return False
     company.kakao_room_name = new
     company.room_verified = UNVERIFIED
+    return True
+
+
+# ── 확인됨이 되는 두 길(11/02 · i130) ────────────────────────────────────────
+#
+# 둘 다 `room_joined.set_verdict` 를 지난다 — `카톡 연결 여부` 가 빈칸 · `X` 면
+# `O` 가 되고(규칙 1), 이어진 줄로는 `company_sync` 가 옮긴다. 못 찾았다고 `X` 를
+# 적는 길은 없다(규칙 4). 사람이 직접 적은 방 이름만으로는 아무것도 안 바뀐다.
+
+def verify_picked(company: IrCompany, known: InvestorRooms) -> bool:
+    """방 이름이 **카톡에서 찾아 온 후보 제목 그대로**면 `확인됨`. 근거가 있으면 True.
+
+    고를 수 있는 후보와 같은 판정이다 — 투자사 방으로 걸러진 제목(`rows`)과
+    같은 제목이 여럿 걸린 제목(`startup_room_pick.confirm`)은 근거가 안 된다.
+    """
+    room = (company.kakao_room_name or "").strip()
+    found = candidates(company)
+    shown, _ = drop_investor_rooms(found["rooms"], company.name, known)
+    if not room or room not in shown or room in found["same"]:
+        return False
+    room_joined.set_verdict(company, room_joined.VERIFIED)
+    return True
+
+
+def verify_sent(item) -> bool:
+    """월간 IR 이 **이 기업의 지금 방 이름 그대로** 나갔으면 `확인됨`. 근거가 있으면 True.
+
+    발송기가 그 제목의 방을 카톡에서 열어 보냈다는 뜻이다. 시험방으로 바꿔
+    보낸 건 · 목록을 만든 뒤 방 이름을 고친 건은 방 제목이 달라 근거가 안 된다.
+    """
+    company = item.ir_company
+    if company is None or item.job is None or item.job.kind != STARTUP_SEND_KIND:
+        return False
+    room = (company.kakao_room_name or "").strip()
+    if not room or (item.room_name or "").strip() != room:
+        return False
+    room_joined.set_verdict(company, room_joined.VERIFIED)
     return True
 
 

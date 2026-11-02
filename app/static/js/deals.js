@@ -675,12 +675,21 @@ var WARN_CHARS = 3000;    // 서버 MESSAGE_WARN_CHARS 와 동일하게 유지
   // (`rebuildAssigneeChips` 와 같은 까닭). `data-count` 는 서버 값 그대로 둔다(다시 읽기 비교용).
   function syncAssigneeCounts() {
     if (!assigneeBar || mode !== "sourcing") return;
-    var per = {};
+    var per = {}, perBucket = {}, all = 0;
     var list = activeList();
     (list ? list.querySelectorAll(".pick-card") : []).forEach(function (card) {
       if (isExcluded(card)) return;
       var who = card.getAttribute("data-assignee") || "";
       per[who] = (per[who] || 0) + 1;
+      var bucket = card.getAttribute("data-bucket") || "";
+      perBucket[bucket] = (perBucket[bucket] || 0) + 1;
+      all += 1;
+    });
+    // [갈래] 칩 수도 같은 셈이다(i128 — 참여 안내인데 시리즈 A 가 106 이었다). 0 이어도
+    // 숨기지 않는다 — 갈래 칩은 문구도 고르므로(`schedulePreview`) 저절로 풀리면 안 된다.
+    if (bucketBar) bucketBar.querySelectorAll(".chip").forEach(function (c) {
+      var b = c.querySelector("b"), name = c.getAttribute("data-value") || "";
+      if (b) b.textContent = name ? (perBucket[name] || 0) : all;
     });
     var chips = Array.prototype.slice.call(assigneeBar.querySelectorAll(".chip"));
     chips.slice(1).forEach(function (c) {

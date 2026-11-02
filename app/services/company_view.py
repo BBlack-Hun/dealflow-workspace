@@ -51,6 +51,7 @@ FILTER_VALUES = {
     "minor": lambda r: r["sector_minor"],
     "series": lambda r: r["series_short"],
     "assignee": lambda r: r["assignee"],
+    "editor": lambda r: r["updated_by"],
     "contract": lambda r: r["contract_label"],
     "received": lambda r: r["contract_received"],
     "quote": lambda r: r["quote_attached"],

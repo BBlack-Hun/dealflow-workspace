@@ -74,7 +74,7 @@ def test_the_tab_has_a_message_picker(people, client):
     bar = body[body.index('id="sourcing-topic"'):]
     bar = bar[:bar.index("</div>")]
     assert 'data-value="sourcing_intro"' in bar and "참여 안내 (처음)" in bar
-    assert 'data-value="sourcing_remind"' in bar and "월간 리마인드" in bar
+    assert 'data-value="sourcing_remind"' in bar and "딜 발송 요청" in bar
     # 처음 안내가 기본이다 — 지금까지 이 탭이 하던 일
     assert re.search(r'class="chip active" data-value="sourcing_intro"', bar)
     # 이 달 딜 받음 제외 안내와 포함 칸
@@ -318,7 +318,7 @@ def test_the_templates_page_shows_the_remind_with_the_month(people, client, db):
     body = client.get("/templates").text
     section = body[body.index('id="sourcing_remind"'):]
     section = section[:section.index('class="tpl-new"')]
-    assert "딜 소싱 제안 — 월간 리마인드" in section
+    assert "딜 소싱 제안 — 딜 발송 요청" in section
     # 미리보기는 인사말 + 이 달로 채운 글, 고칠 칸에는 저장된 글 그대로
     assert "10월 딜 부탁드립니다" in section
     assert "{월}월 딜 부탁드립니다" in section

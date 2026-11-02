@@ -41,11 +41,14 @@
 (`PATCH /api/contacts/{id}`). 그래서 이 규칙이 그 화면에도 그대로 걸린다 —
 화면마다 규칙을 따로 두지 않는다.
 
-**다른 표의 비슷한 칸과는 잇지 않는다.** 스타트업 월간 IR 의 대표 카톡방
-확인(`IrCompany.room_verified`)에는 참여여부 칸이 없고, 투자컨설턴트의
-`카톡 연결 여부`(`ConsultingCompany.kakao_joined`)에는 방 확인 칸이 없다. 셋을
-잇는 열쇠도 없다 — 기업명으로 맞추면 같은 이름의 다른 기업 줄로 값이 넘어간다
-(`models.ConsultingCompany.kakao_joined` 주석).
+**IR 기업 줄(`IrCompany`)도 규칙 1·4 를 탄다**(11/02 · i130). 그 줄의
+`카톡 연결 여부`(`kakao_joined`)가 이 칸과 같은 물음이고, 대표 카톡방 확인
+(`room_verified`)이 `확인됨` 이 되는 길 — 맞추기 화면에서 카톡 후보를 골라
+저장했거나 월간 IR 이 그 방으로 나갔을 때(`room_match.verify_picked` ·
+`verify_sent`) — 이 `set_verdict` 를 지난다. 그 줄에는 연결 단계가 없다.
+이어진 스타트업 · 투자컨설턴트 줄로는 `company_sync` 가 `O` 를 옮긴다.
+투자컨설턴트의 `카톡 연결 여부`(`ConsultingCompany.kakao_joined`)에는 방 확인
+칸이 없다.
 
 ## 무엇을 보내는가는 이 파일이 안 정한다
 
@@ -109,11 +112,13 @@ def set_verdict(contact, verdict: str) -> None:
     if verdict != VERIFIED:
         # 규칙 4 — 못 찾았다는 것은 그 사람이 방에 없다는 뜻이 아니다.
         return
-    if (contact.connect_stage or "") in CONNECT_DONE:
+    # IR 기업 줄(`IrCompany`)에는 연결 단계가 없다.
+    stage = getattr(contact, "connect_stage", None) or ""
+    if stage in CONNECT_DONE:
         # 규칙 2 에서 따라 나오는 것 — 나갔다고 적힌 줄에 `확인됨` 을 달지 않는다.
         contact.room_verified = UNVERIFIED
         return
-    joined = joined_after_verified(contact.kakao_joined, contact.connect_stage)
+    joined = joined_after_verified(contact.kakao_joined, stage)
     if joined is not None:
         contact.kakao_joined = joined
 

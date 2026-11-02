@@ -253,7 +253,8 @@ def test_필터를_안_세운다():
     head = re.search(r'<th style="width:%dpx"[^>]*>\s*%s' % (WIDTH_PX, COLUMN),
                      markup)
     assert head, f"`{COLUMN}` 머리글을 못 찾았습니다"
-    block = markup[head.start():head.end() + 80]
+    # 그 머리글 하나만 본다 — 바로 옆 `수정한 팀원` 에는 필터가 선다(i131).
+    block = markup[head.start():markup.index("</th>", head.end())]
     assert "data-filters" not in block, "시각은 골라서 거를 값이 아닙니다"
 
 
@@ -403,7 +404,11 @@ def test_표_min_width_이_칸_폭을_따라간다():
     #   · `메모` 240px — #103(`IR 자료` 앞, [수정] 창에만 있던 칸을 표에)
     #   · 옛 스타트업DB 탭에만 있던 넷 542px — #105 · #106(탭을 합침 · 260 + 72 + 80 + 130)
     #   · `계약년월` 84px — #122 · 0129(`미팅제공일자` 와 `계약여부` 사이)
-    later = 96 + 150 + 140 + 96 + 622 + 76 + 24 + 644 + 344 + 240 + 542 + 84
+    #   · i132 — 머리글을 두 줄로 접어 여섯 칸을 줄였다(견적서 −62 · 계약서 수신 −60 ·
+    #     카톡 −52 · 핵심/TOP −44 · 투자유치희망금액 −40 · 계약여부 −24 = −282)
+    #   · i131 — `수정한 팀원` 76 → 96px(머리글 필터가 섰다)
+    later = (96 + 150 + 140 + 96 + 622 + 76 + 24 + 644 + 344 + 240 + 542 + 84
+             - 282 + 20)
     assert int(m.group(1)) == 2386 + WIDTH_PX + later, (
         f"`{COLUMN}` 은 {WIDTH_PX}px 인데 표 폭이 {m.group(1)}px 입니다 — "
         f"{2386 + WIDTH_PX + later}px 여야 합니다")
