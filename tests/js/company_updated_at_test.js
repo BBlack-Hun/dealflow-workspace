@@ -210,6 +210,19 @@ async function main() {
       "시각을 되그리면서 옆 칸까지 건드렸다");
   }
 
+  // ── 6. 고친 팀원이 `수정한 팀원` 필터 값에도 든다(i131) ───────────────
+  //
+  // 눌러 고치는 칸이 아니라 `inline_edit.js` 가 행 값을 못 고친다 — 안 적으면
+  // 필터 목록에는 새로고침 전까지 옛 팀원(또는 `(비어 있음)`)이 남는다.
+  {
+    const dom = build();
+    dom.tr.setAttribute("data-f-editor", "");
+    runCompanies(dom);
+    saved(dom, dom.name, { updated_at: NEW, updated_by: "샘플팀원" });
+    assert.strictEqual(dom.tr.getAttribute("data-f-editor"), "샘플팀원",
+      "고쳤는데 `수정한 팀원` 필터 값이 그대로다");
+  }
+
   console.log("company_updated_at_test OK");
 }
 
