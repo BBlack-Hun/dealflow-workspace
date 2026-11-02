@@ -206,6 +206,29 @@ def test_남의_계정으로는_내_줄을_찾지_않는다(db, seeded, client):
     assert [i.contact_id for i in job.items] == [seeded["twin"].id]
 
 
+def test_남의_탭_줄이면_본인_줄만이라고_알린다(db, seeded, client):
+    me = _login(client)
+    res = _search(me, [seeded["twin"].id])
+    assert res.status_code == 400
+    assert "본인 줄만 찾을 수 있습니다" in res.json()["detail"]
+    assert "팀원 화면으로 보기" in res.json()["detail"]
+
+    res = me.post("/api/contacts/verify-rooms", json={"contact_ids": [seeded["twin"].id]})
+    assert res.status_code == 400
+    assert "본인 줄만 확인할 수 있습니다" in res.json()["detail"]
+    assert not _jobs(db)
+
+
+def test_방_이름_없는_스타트업_줄의_연결_확인은_후보_찾기로_안내한다(db, seeded, client):
+    me = _login(client)
+    res = me.post("/api/contacts/verify-rooms",
+                  json={"contact_ids": [seeded["noroom"].id, seeded["nofirm"].id]})
+    assert res.status_code == 400
+    assert "[방 후보 찾기]" in res.json()["detail"]
+    assert "[방 매칭]" in res.json()["detail"]
+    assert not _jobs(db)
+
+
 # ── 2. 발송기에 무엇이 가나 — 발송기는 안 고쳤다 ─────────────────────────────
 
 def test_폴링이_회사명과_기업_표시를_내준다(db, seeded, client):

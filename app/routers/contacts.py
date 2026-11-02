@@ -538,8 +538,8 @@ def verify_rooms(
     # 카톡을 보낸다(`services/startup_outreach.py`). 그 명단은 숨긴 명단이라
     # 확인해도 딜소개 대상·투자사 수에는 안 들어간다. 무엇을 넣는지는
     # `sheet_owner.room_checkable` 한 곳이 정한다.
-    contacts = sheet_owner.room_checkable(
-        db, db.execute(query.order_by(VcContact.id)).scalars().all())
+    own = db.execute(query.order_by(VcContact.id)).scalars().all()
+    contacts = sheet_owner.room_checkable(db, own)
 
     # 메일 채널로만 관리하는 담당자는 카톡방이 없는 게 정상이라 확인 대상이 아니다.
     def _is_kakao(c) -> bool:
@@ -570,9 +570,18 @@ def verify_rooms(
 
     if not targets:
         detail = "확인할 카톡방 이름이 등록된 담당자가 없습니다"
+        startup = sheet_owner.page_labels(db, contact_columns.PAGE_STARTUP)
         if conflicts:
             detail = (f"동명이인이라 방 이름만으로 구별되지 않습니다: "
                       f"{', '.join(conflicts[:5])} — 방 이름에 투자사명을 넣어주세요")
+        elif req.contact_ids and not own:
+            # 고른 줄이 전부 남의 줄(다른 팀원 탭) — "등록된 담당자가 없다" 는 틀린 말이다.
+            detail = ("본인 줄만 확인할 수 있습니다 — 다른 팀원 탭의 줄은 관리자가 "
+                      "'팀원 화면으로 보기'로 그 팀원 화면에서 확인하세요")
+        elif any(sheet_owner.on_page(c, startup) for c in contacts):
+            # 스타트업 줄은 대개 방 이름이 없다 — 대조할 이름부터 찾아야 한다.
+            detail = ("방 이름이 적힌 줄이 없습니다 — [방 후보 찾기]로 회사명으로 먼저 "
+                      "찾고 [방 매칭]에서 확정하세요")
         db.commit()
         raise HTTPException(status_code=400, detail=detail)
 
