@@ -619,7 +619,11 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
     `특이사항 (장점)` 260 · `설립년도` 72 · `지역` 80 · `정책자금` 130 = 542px. 칸을 옮긴 것
     (`수정한 날짜`·`수정한 팀원`·`딜 소개 문구`)은 폭이 그대로다. 든 만큼만 올린다.) */
 /* (5,490 → 5,574 : #122 · 0129 의 `계약년월`(84px) — 든 만큼만 올린다.) */
-#co-table { min-width: 5574px; }
+/* (5,574 → 5,312 : i132 — 값은 짧은데 머리글 때문에 넓던 여섯 칸을 머리글 두 줄로 접어
+    줄였다(견적서 150→88 · 계약서 수신 148→88 · 카톡 140→88 · 핵심/TOP 144→100 ·
+    투자유치희망금액 144→104 · 계약여부 134→110 = −282) + i131 — `수정한 팀원` 에 필터가
+    서며 76→96(+20). **준 만큼만** 내린다.) */
+#co-table { min-width: 5312px; }
 #co-table td.updated-by { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* IR 기업 현황 › Series A 이상 딜 소싱 — 넓은 표 공통 값(2,030px)에 직접 적는 칸
    열(#24 · `companies_series_a.html` 의 `대표자명` ~ `Pre Value`, 폭 합 932px)을 **든 만큼만**

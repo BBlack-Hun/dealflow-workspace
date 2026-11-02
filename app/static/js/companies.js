@@ -893,7 +893,7 @@
   });
 })();
 
-// 금액 모아 보기 · 수정한 팀원 — **응답 값을 그대로 적는다**(#88 · #89 · #90).
+// 금액 모아 보기 · 수정한 팀원 — **응답 값을 그대로 적는다**(#88 · #89 · #90 · i131).
 //
 // 금액 칸의 필터 값은 친 글자가 아니라 서버가 센 구간(`5억 이상|10억 이상`)이라
 // 브라우저가 다시 셀 수 없다 — 금액을 읽는 규칙은 서버 한 곳이다(`services/amount.py`).
@@ -915,6 +915,10 @@
     if (by && "updated_by" in data) {
       by.textContent = data.updated_by;
       by.classList.remove("muted");
+    }
+    // `수정한 팀원` 필터(i131) — 눌러 고치는 칸이 아니라 inline_edit.js 가 못 닿는다.
+    if ("updated_by" in data && row.hasAttribute("data-f-editor")) {
+      row.setAttribute("data-f-editor", data.updated_by);
     }
     // 검색 글자도 응답 값으로(#99) — 안 고치면 방금 고친 `기업 한줄 소개` 로는
     // 새로고침 전까지 안 걸린다. 필터가 한 박자 뒤에 이 글자로 다시 거른다.
