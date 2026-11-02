@@ -48,10 +48,10 @@
 {%- for c in custom_cols %}{% set v = got.get(c.id, '') %}
 {%- if td %}
 <td class="cell{% if c.kind == 'memo' %} multi{% endif %}" data-field="cc{{ c.id }}" data-custom="{{ c.id }}" data-custom-rows="{{ custom_rows }}"
-    {%- if c.kind == 'ox' %} data-choices="{{ ox_choices }}"{% endif %}>{{ v }}</td>
+    {%- if c.kind == 'ox' %} data-choices="{{ ox_choices }}"{% else %} data-memo-date{% endif %}>{{ v }}</td>
 {%- else %}
 <td title="{{ v }}"><div class="cell{% if c.kind == 'memo' %} clamp2 keep-lines{% endif %}" data-field="cc{{ c.id }}" data-custom="{{ c.id }}" data-custom-rows="{{ custom_rows }}"
-    {%- if c.kind == 'ox' %} data-type="pick" data-choices="{{ ox_choices }}"{% else %} data-type="long"{% endif %}>{{ v }}</div></td>
+    {%- if c.kind == 'ox' %} data-type="pick" data-choices="{{ ox_choices }}"{% else %} data-type="long" data-memo-date{% endif %}>{{ v }}</div></td>
 {%- endif %}
 {%- endfor %}
 {%- endmacro %}

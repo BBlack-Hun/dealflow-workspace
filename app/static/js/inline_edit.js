@@ -437,8 +437,9 @@
         global.removeEventListener("scroll", place, true);
         global.removeEventListener("resize", place);
 
-        var after = canceled ? before
-          : (picked !== undefined ? picked : input.value).trim();
+        var raw = picked !== undefined ? picked : input.value;
+        if (api.clean) raw = api.clean(raw);      // 메모 칸 — 미리 채운 날짜 줄을 거둔다(`startLong`)
+        var after = canceled ? before : raw.trim();
         if (pop.parentNode) pop.parentNode.removeChild(pop);
         // `branches` 칸은 딱지를 그대로 둔다 — 저장 뒤 화면(`contacts.js`)이 서버 값으로
         // 다시 그린다. 글자로 덮으면 딱지가 사라진 채 응답을 기다린다.
@@ -452,10 +453,15 @@
     }
 
     function startLong(cell, before, type) {
+      // 메모 칸(`data-memo-date`)은 맨 끝 새 줄에 오늘 날짜를 채워 연다(`memo_date.js` · i139).
+      // 연 시각을 잡아 둔다 — 자정을 넘겨 닫아도 채운 그 날짜를 알아보고 거둔다.
+      var memo = cell.hasAttribute("data-memo-date") && global.DealflowMemoDate;
+      var opened = Date.now();
       popover(cell, before, type, function (api) {
         var area = document.createElement("textarea");
         area.className = "cell-pop-input";
-        area.value = before;
+        area.value = memo ? memo.open(before, opened) : before;
+        if (memo) api.clean = function (value) { return memo.close(value, before, opened); };
         api.pop.appendChild(area);
         api.pop.appendChild(hintLine("Enter 줄바꿈 · ⌘/Ctrl+Enter 저장 · Esc 취소"));
 
