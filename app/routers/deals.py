@@ -1442,6 +1442,13 @@ def create_send_list(
                 detail=(f"'{held[0].name}' "
                         f"{sheet_owner.STATUS_LABELS[sheet_owner.STATUS_PAUSED]}"
                         " — 발송 대상에서 제외하세요"))
+        # 문자로만 받는 분도 같다 — 팀원이 휴대폰으로 직접 보낸다(`sheet_owner.sms_only`).
+        texting = [c for c in contacts if sheet_owner.sms_only(c)]
+        if texting:
+            raise HTTPException(
+                status_code=400,
+                detail=(f"'{texting[0].name}' {sheet_owner.SMS_LABEL}"
+                        " — 문자로 직접 보내는 분이라 발송 대상에서 제외하세요"))
     for contact in contacts:
         if by_email:
             # 주소가 없으면 보낼 방법이 없다. 목록을 만들기 **전에** 막는다 —

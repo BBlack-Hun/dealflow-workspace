@@ -232,6 +232,9 @@ class VcContact(TimestampMixin, Base):
     source_sheet: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     channel_kakao: Mapped[int] = mapped_column(Integer, default=0)
     channel_email: Mapped[int] = mapped_column(Integer, default=0)
+    # 팀원이 휴대폰 문자로 **직접** 보내는 투자사라는 표시. 앱은 문자를 안 보낸다(11/01 폐지) —
+    # 카톡·메일이 다 꺼지고 이것만 켜지면 자동 발송에서 빠진다(`sheet_owner.sms_only`).
+    channel_sms: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     email: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     phone: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     # Kakao chat-room name — agent search key, must match exactly.

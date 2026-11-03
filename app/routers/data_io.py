@@ -322,6 +322,8 @@ def _contact_row(r: dict) -> list:
         marks.append("카톡")
     if r["channel_email"]:
         marks.append("메일")
+    if r["channel_sms"]:
+        marks.append("문자")
     return [r["owner"], r["assignee"], r["connect_label"], r["group_name"],
             r["name"], r["title"], r["firm"], r["department"], "/".join(marks),
             r["room_name"], r["room_label"], r["invited_status"], r["interest_level"],

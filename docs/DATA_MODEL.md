@@ -77,6 +77,7 @@ weekly_stats   (퇴사 삭제 후에도 남는 익명화 집계)
 | round_size | TEXT NULL | 시트 A '투자분야/라운드사이즈' 중 라운드 사이즈 부분 |
 | channel_kakao | INTEGER | 카톡 연결 여부 0/1 |
 | channel_email | INTEGER | 메일 연결 여부 0/1 |
+| channel_sms | INTEGER | 문자(팀원이 휴대폰으로 직접 발송) 0/1 — 카톡·메일 없이 이것만 1이면 자동 발송 제외 |
 | email | TEXT NULL | |
 | phone | TEXT NULL | |
 | kakao_room_name | TEXT NULL | **카톡 채팅방 이름(에이전트 검색 키, 정확 일치)** |

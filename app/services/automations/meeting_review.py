@@ -220,6 +220,8 @@ def _contact_problem(db: Session, contact: Optional[VcContact]) -> str:
         return "투자사 명단에 없는 줄입니다"
     if sheet_owner.is_paused(contact):
         return "검토중단"
+    if sheet_owner.sms_only(contact):
+        return sheet_owner.SMS_LABEL
     if not sheet_owner.is_connected(contact):
         return "카톡방 연결 전"
     if not (contact.kakao_room_name or "").strip():

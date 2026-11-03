@@ -553,11 +553,12 @@ def test_빠진_사람은_사유마다_한_번씩만_세어진다(db, users, mix
     blocked = [c for c in rows if not sheet_owner.can_send_to(c)]
     assert counts["blocked"] == len(blocked)
     assert counts["paused"]["count"], "시험용 명단에 멈춘 사람이 없다 — 검사가 헛돈다"
-    assert (counts["paused"]["count"]
+    assert (counts["paused"]["count"] + counts["sms"]["count"]
             + sum(s["count"] for s in counts["blocked_by_stage"])) == counts["blocked"], (
         "사유별 수를 다 더해도 빠진 사람 수가 안 된다 — 겹쳐 세거나 빠뜨렸다")
 
     seen = [p["id"] for p in counts["paused"]["people"]]
+    seen += [p["id"] for p in counts["sms"]["people"]]
     seen += [p["id"] for s in counts["blocked_by_stage"] for p in s["people"]]
     assert len(seen) == len(set(seen)), "한 사람이 두 사유에 걸쳐 세어졌다"
     assert set(seen) == {c.id for c in blocked}, (

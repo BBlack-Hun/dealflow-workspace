@@ -71,7 +71,10 @@ def _room_state(c: VcContact) -> str:
     """발송 준비 관점에서 본 방 상태."""
     if not c.channel_kakao:
         # 카톡 채널이 아니면 방 이름이 있어도 카톡 발송 대상이 아니다.
-        return "email" if c.channel_email else "no_channel"
+        if c.channel_email:
+            return "email"
+        # 문자만 켠 분은 팀원이 휴대폰으로 직접 보낸다 — '보낼 길이 없는' 줄과 다르다.
+        return "sms" if sheet_owner.sms_only(c) else "no_channel"
     if not (c.kakao_room_name or "").strip():
         return "missing"
     # 처음 보는 값은 '확인 안 됨'이 아니라 **보낼 수 없음**으로 본다.
@@ -209,6 +212,8 @@ ROOM_LABELS = {
     # '미지정' 은 아직 안 정한 것처럼 읽혀서, 채우면 보낼 수 있는 줄로 오해된다.
     # 카톡도 메일도 아닌 사람이라 **보낼 길이 없는** 줄이다.
     "no_channel": ("채널 불가 투자사", "muted"),
+    # 앱은 문자를 안 보낸다(11/01 폐지) — 팀원이 휴대폰으로 직접 보내는 분.
+    "sms": (sheet_owner.SMS_LABEL, "muted"),
 }
 
 
@@ -631,7 +636,7 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None,
              "percent": round(rooms.get(s, 0) * 100 / (len(sending) or 1)),
              "href": _room_href(s, room_ids.get(s, []), sheet_scope)}
             for s in ("verified", "unverified", "failed", "missing",
-                      "email", "no_channel")
+                      "email", "sms", "no_channel")
             if rooms.get(s, 0)
         ],
         "blockers": blockers,
@@ -806,7 +811,7 @@ def _pipeline_view(rows: List[VcContact], waiting: List[VcContact],
          "count": by_room[s], "href": room_href(s, sheet, STAGE_CONNECTED),
          "people": _people([c for c in stuck if _room_state(c) == s], sheet),
          "more": max(by_room[s] - PIPELINE_NAMES, 0)}
-        for s in ("missing", "failed", "unverified", "email", "no_channel")
+        for s in ("missing", "failed", "unverified", "email", "sms", "no_channel")
         if by_room.get(s)
     ]
 

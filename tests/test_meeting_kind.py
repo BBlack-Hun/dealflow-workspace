@@ -279,7 +279,7 @@ def test_the_screen_and_the_excel_read_one_function():
     counted = {"meet_recent": 3, "meet_total": 7}
     fake = dict(counted, owner="", assignee="", connect_label="", group_name="",
                 name="", title="", firm="", department="", channel_kakao=0,
-                channel_email=0, room_name="", room_label="",
+                channel_email=0, channel_sms=0, room_name="", room_label="",
                 invited_status="", interest_level="", sourcing_filter="",
                 sourcing_requested_at="", round_size="", owned_funds="",
                 fund_types="", sub_sectors="",
