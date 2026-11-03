@@ -511,7 +511,7 @@ VALUE_FIELDS = frozenset({
 
     # 켜짐 · 꺼짐. 하나 잘못 켜지면 안 나가야 할 곳으로 나간다.
     "is_active", "is_hidden", "is_deal_list", "is_top_deal", "enabled",
-    "channel_kakao", "channel_email", "room_verified", "kakao_joined",
+    "channel_kakao", "channel_email", "channel_sms", "room_verified", "kakao_joined",
     "can_view_consulting", "can_auto_attach_ir",
     "contract_received", "contract_done", "followup_done", "skip_weekend",
     "weekly_goal_sends", "from_hour", "until_hour", "max_per_day",
@@ -578,6 +578,7 @@ FIELD_LABELS = {
     "company_name": "기업", "connect_stage": "연결 단계", "status": "상태",
     "kakao_room_name": "카톡방 이름", "room_verified": "방 확인",
     "channel_kakao": "카톡 발송", "channel_email": "메일 발송",
+    "channel_sms": "문자(직접 발송)",
     "is_hidden": "숨김", "is_active": "사용", "is_deal_list": "딜 명단",
     "can_view_consulting": "투자현황", "can_auto_attach_ir": "자료 자동 첨부",
     "daily_send_cap": "하루 발송 상한", "send_via_user_id": "발송기",

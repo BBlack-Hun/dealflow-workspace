@@ -26,7 +26,7 @@
     // 안 된다 — 스키마·저장 목록·되읽기 응답·화면 넷 중 하나만 빠져도
     // 증상이 똑같이 조용하다(예전에 `kakao_joined` 가 그랬다).
     "connect_stage"];
-  var CHECKS = ["channel_kakao", "channel_email"];
+  var CHECKS = ["channel_kakao", "channel_email", "channel_sms"];
   // 회사 단위 칸 → [행의 필터 키, 응답에서 나눈 값(필터 값)의 이름] — 서버
   // `routers/contacts.FIRM_LISTS` · `contacts.html` 의 `data-f-*` 와 같은 이름이다.
   var FIRM_FIELDS = {

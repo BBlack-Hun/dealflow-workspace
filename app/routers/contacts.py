@@ -259,10 +259,12 @@ def contact_rows(db: Session, user: User, team_wide: bool = False,
             "group_name": c.group_name or "",
             "channel_kakao": c.channel_kakao,
             "channel_email": c.channel_email,
+            "channel_sms": c.channel_sms,
             # 대시보드의 '메일 채널 3' · '채널 불가 투자사 6' 에서 눌러 오는 자리다.
             # 세는 것만 보여주고 갈 곳이 없으면, 그 6명이 누구인지 알 수 없다.
             "channel_label": ("카톡" if c.channel_kakao else
-                              "메일" if c.channel_email else "미지정"),
+                              "메일" if c.channel_email else
+                              "문자" if c.channel_sms else "미지정"),
             "room_name": c.kakao_room_name or "",
             "room_verified": room_state,
             "room_class": room_class,
@@ -413,6 +415,8 @@ def _channel_tags(c: VcContact) -> List[str]:
         tags.append("카톡")
     if c.channel_email:
         tags.append("메일")
+    if c.channel_sms:
+        tags.append("문자")
     return tags
 
 
@@ -446,6 +450,7 @@ class ContactIn(BaseModel):
     invited_status: Optional[str] = None
     channel_kakao: Optional[int] = None
     channel_email: Optional[int] = None
+    channel_sms: Optional[int] = None
     email: Optional[str] = None
     phone: Optional[str] = None
     stages: Optional[str] = None
@@ -1162,6 +1167,7 @@ def get_contact(
             "invited_status": contact.invited_status or "",
             "channel_kakao": contact.channel_kakao,
             "channel_email": contact.channel_email,
+            "channel_sms": contact.channel_sms,
             "email": contact.email or "",
             "phone": contact.phone or "",
             "stages": contact.stages or "",
@@ -2107,6 +2113,8 @@ def _assign(contact: VcContact, body: ContactIn) -> str:
         contact.channel_kakao = 1 if body.channel_kakao else 0
     if body.channel_email is not None:
         contact.channel_email = 1 if body.channel_email else 0
+    if body.channel_sms is not None:
+        contact.channel_sms = 1 if body.channel_sms else 0
     if body.is_hidden is not None:
         contact.is_hidden = 1 if body.is_hidden else 0
     if body.notes is not None:

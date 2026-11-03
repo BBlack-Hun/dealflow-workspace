@@ -646,9 +646,9 @@
       잘못 나가는 길이다. 숫자는 전부 `sheet_owner.recipient_counts` 한 곳에서 온다.
     #}
     {#
-      **왜 목록에 없는가** — 사유를 한 줄로 세워 둔다. 사유는 두 갈래이고
-      (멈춰 둠 · 연결이 안 끝남) 서로 **겹치지 않는다**(`sheet_owner` 의
-      `paused_block` 과 `blocked_stages`). 요약 줄과 접힌 칸이 같은 것을 세야
+      **왜 목록에 없는가** — 사유를 한 줄로 세워 둔다. 사유는 세 갈래이고
+      (멈춰 둠 · 문자로만 받음 · 연결이 안 끝남) 서로 **겹치지 않는다**(`sheet_owner` 의
+      `paused_block` · `sms_block` · `blocked_stages`). 요약 줄과 접힌 칸이 같은 것을 세야
       하므로 여기서 한 번만 만들어 두 곳이 같이 읽는다 — 각자 이어 붙이면
       한쪽만 사유가 하나 빠진 채로 남는다. 멈춘 사람을 **앞에** 둔다:
       연결은 이어 놓고 사람이 멈춘 것이라 사정이 다르다.
@@ -658,6 +658,8 @@
        쓰면 Jinja 가 블록 전체에서 이 값으로 잡아 위쪽 딱지가 통째로 죽는다. #}
     {% set miss_reasons = ([recipient_counts.paused]
                            if recipient_counts.paused.count else [])
+                          + ([recipient_counts.sms]
+                             if recipient_counts.sms.count else [])
                           + recipient_counts.blocked_by_stage %}
     <p class="hint" id="recipient-note">
       {% if recipient_counts.managed %}
@@ -678,8 +680,10 @@
           하면 없는 할 일을 찾아 투자사 관리 현황을 뒤지게 된다. #}
       {%- if recipient_counts.blocked_by_stage %}
       <a href="/contacts">투자사 관리 현황</a> 에서 연결을 이어 주세요.
-      {%- else %}
+      {%- elif recipient_counts.paused.count %}
       <a href="/contacts">투자사 관리 현황</a> 에서 상태를 되돌리면 다시 대상이 됩니다.
+      {%- else %}
+      휴대폰 문자로 직접 보내 주세요.
       {%- endif %}
       {%- else %}. 이 명단은 <b>전원 연결이 끝났습니다</b>.{% endif %}
       {% if recipient_counts.off_list %}
@@ -934,6 +938,22 @@
              title="이 투자사 상세 열기"><b>{{ p.name }}</b>
             <span class="muted">{{ p.firm }}</span>{% if p.room %}
             <span class="room-badge muted">💬 방 있음</span>{% endif %}</a>{% if not loop.last %}<span class="sep">·</span>{% endif %}{% endfor %}
+        </p>
+      </div>
+      {% endif %}
+      {# 문자로만 받는 분 — 앱은 문자를 안 보낸다(11/01 폐지). 팀원이 휴대폰으로 직접
+         보낼 분을 한데 모아 둔다. 이름 링크가 그 줄(전화번호)을 열어 준다. #}
+      {% if recipient_counts.sms.count %}
+      <div class="miss-stage" id="sms-contacts">
+        <p class="miss-head">
+          <span class="tag soft">{{ recipient_counts.sms.label }}</span>
+          <b>{{ recipient_counts.sms.count }}</b>명
+          <span class="muted">— 연락 채널이 문자뿐인 분이라 앱이 보내지 않습니다. 휴대폰 문자로 직접 보내 주세요</span>
+        </p>
+        <p class="miss-people name-line">
+          {% for p in recipient_counts.sms.people %}<a class="req-link" href="{{ p.href }}"
+             title="이 투자사 상세 열기"><b>{{ p.name }}</b>
+            <span class="muted">{{ p.firm }}</span></a>{% if not loop.last %}<span class="sep">·</span>{% endif %}{% endfor %}
         </p>
       </div>
       {% endif %}

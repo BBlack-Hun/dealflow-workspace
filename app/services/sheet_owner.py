@@ -355,15 +355,32 @@ def left_room(contact: VcContact) -> bool:
     return contact.connect_stage == STAGE_LEFT_ROOM
 
 
+#: 문자로만 연락하는 투자사를 부르는 말 — 카톡방 상태(`dashboard.ROOM_LABELS`) ·
+#: 딜 제안 관리의 빠진 사유 · 자동화의 건너뛴 까닭이 같은 말을 쓴다.
+SMS_LABEL = "문자(직접 발송)"
+
+
+def sms_only(contact: VcContact) -> bool:
+    """**문자로만** 연락하는 투자사인가 — 카톡·메일이 다 꺼지고 문자만 켜진 줄.
+
+    앱은 문자를 보내지 않는다(11/01 폐지). 이 표시는 팀원이 휴대폰으로 직접
+    보낸다는 뜻이라, 앱의 자동 발송(딜 소개 · 리마인드 · 미팅 자동화)에서 뺀다.
+    카톡이나 메일이 하나라도 켜져 있으면 문자 칸은 아무 일도 하지 않는다.
+    """
+    return bool(contact.channel_sms) and not (
+        contact.channel_kakao or contact.channel_email)
+
+
 def can_send_to(contact: VcContact) -> bool:
     """지금 이 사람에게 문구를 보낼 수 있는가.
 
-    문이 둘이다 — **연결이 끝났는가**(`is_connected`)와 **멈춰 두지
-    않았는가**(`is_paused`). 발송 대상을 세는 곳은 전부 여기를 지난다
+    문이 셋이다 — **연결이 끝났는가**(`is_connected`), **멈춰 두지
+    않았는가**(`is_paused`), **문자로만 받는 분이 아닌가**(`sms_only`).
+    발송 대상을 세는 곳은 전부 여기를 지난다
     (`recipients` · `recipient_counts` · 대시보드 · 회차 준비 점검). 화면이나
     라우터에 조건을 또 적으면 하나가 늘 때 한쪽만 고쳐진다.
     """
-    return is_connected(contact) and not is_paused(contact)
+    return is_connected(contact) and not is_paused(contact) and not sms_only(contact)
 
 
 def deal_list_contacts(db: Session, user: User) -> List[VcContact]:
@@ -457,6 +474,23 @@ def paused_block(rows: List[VcContact]) -> dict:
         "count": len(people),
         "people": _named(people),
     }
+
+
+def sms_rows(rows: List[VcContact]) -> List[VcContact]:
+    """**문자로만 받는 것 하나 때문에** 빠지는 사람 — 연결이 끝났고 멈추지도 않은 줄.
+
+    연결 전 · 멈춤은 그쪽 사유(`blocked_stages` · `paused_rows`)가 먼저 선다 —
+    한 사람을 두 사유에 세우지 않는다(`paused_rows` 와 같은 나눔).
+    """
+    return [c for c in rows
+            if is_connected(c) and not is_paused(c) and sms_only(c)]
+
+
+def sms_block(rows: List[VcContact]) -> dict:
+    """문자로 직접 보낼 분 — 몇 명이고 누구인지. `paused_block` 과 같은 모양."""
+    people = sms_rows(rows)
+    return {"key": "sms", "label": SMS_LABEL, "count": len(people),
+            "people": _named(people)}
 
 
 def blocked_stages(db: Session, rows: List[VcContact]) -> List[dict]:
@@ -596,6 +630,9 @@ def pick_note(contact: VcContact, off: Set[str]) -> str:
     status = (contact.status or "").strip()
     if status and status != STATUS_ACTIVE:
         parts.append(STATUS_LABELS.get(status, status))
+    # 문자로만 받는 분 — 딜 제안 관리에 안 뜨는 또 하나의 까닭(`can_send_to`).
+    if sms_only(contact):
+        parts.append(SMS_LABEL)
 
     # ② 연결 단계. `연결 완료` 말고는 전부 적는다 — 그 사람들이 딜 제안
     #    관리에 안 뜨는 이유다(`is_connected`).
@@ -675,9 +712,12 @@ def recipient_counts(db: Session, user: User, *,
         # 안 적으면, 빠진 사람이 누구인지 알 길이 없어 손을 쓸 수가 없다.
         "blocked_by_stage": blocked_stages(db, mine),
         # 연결은 끝났는데 **멈춰 둔** 사람. 위 단계별 수와 **겹치지 않는다** —
-        # 둘을 더하면 정확히 `blocked` 다. 겹쳐 세면 접힌 줄의 `빠진 N명` 이
+        # 아래 `sms` 까지 더하면 정확히 `blocked` 다. 겹쳐 세면 접힌 줄의 `빠진 N명` 이
         # 실제보다 커지고, 어느 쪽도 안 세면 그 사람이 화면에서 사라진다.
         "paused": paused_block(mine),
+        # 연결이 끝났고 멈추지도 않았는데 **문자로만** 받는 분 — 팀원이 휴대폰으로
+        # 직접 보낸다. 위 둘과 겹치지 않는다(셋을 더하면 `blocked`).
+        "sms": sms_block(mine),
         # 투자사 관리 현황이 보여 주는 수. 관리자만 본인 담당분과 다르다.
         "team_total": (len(managed(db, user, team_wide=True)) if team_wide
                        else len(held)),

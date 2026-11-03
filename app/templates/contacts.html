@@ -1736,6 +1736,8 @@
         <span class="check-row">
           <label><input type="checkbox" id="f-channel_kakao"> 카톡</label>
           <label><input type="checkbox" id="f-channel_email"> 메일</label>
+          {# 앱은 문자를 안 보낸다 — 팀원이 휴대폰으로 직접 보내는 분이라는 표시(`sheet_owner.sms_only`). #}
+          <label title="팀원이 휴대폰 문자로 직접 보내는 분 — 카톡·메일을 다 끄고 이것만 켜면 자동 발송에서 빠집니다"><input type="checkbox" id="f-channel_sms"> 문자</label>
         </span>
       </label>
       {# 이름은 표 머리글과 같은 `메모`(#87 · 11 — 딜 소싱 · 스타트업과 같은 말).
