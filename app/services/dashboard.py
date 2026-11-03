@@ -1054,6 +1054,9 @@ def admin_dashboard(db: Session, today: Optional[date] = None) -> dict:
             # 것과 **같은 함수**다(`deps.may_auto_attach`). 표에는 켜졌다고
             # 떠 있는데 그 사람 화면에는 칸이 없는, 그 어긋남을 막는다.
             "auto_attach": deps.may_auto_attach(u),
+            # IR 기업현황 엑셀 내려받기 — 라우터와 같은 함수(`deps.may_export_companies`).
+            # 관리자 줄은 칸과 무관하게 늘 `켜짐` 이다(실제로 늘 받는다).
+            "export_companies": deps.may_export_companies(u),
             # 딜소개를 보내지 않는 계정(투자컨설턴트)은 담당 투자사·발송 칸이
             # **원래 비어 있다.** 0 으로 그리면 설정이 덜 된 사람처럼 읽힌다.
             "sends_deals": deps.sends_deals(u),

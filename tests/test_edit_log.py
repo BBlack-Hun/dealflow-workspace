@@ -669,6 +669,8 @@ WRITE_ROUTES = {
     # 누구의 줄을 누가 고쳐도 되는가 — 권한을 넓힌 것 자체가 남아야 한다.
     ("POST", "/team/members/{member_id}/consulting-editors"): WATCHED,
     ("POST", "/team/members/{member_id}/auto-attach"): WATCHED,
+    # IR 기업현황 엑셀 내려받기를 계정마다 연다 — `users.can_export_companies`.
+    ("POST", "/team/members/{member_id}/export-companies"): WATCHED,
     # 이 계정의 잡을 누구의 발송기가 집어가나 — `users.send_via_user_id`.
     ("POST", "/team/members/{member_id}/send-via"): WATCHED,
     ("POST", "/team/members/{member_id}/reset-password"): WATCHED,

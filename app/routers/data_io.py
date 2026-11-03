@@ -32,7 +32,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..deps import admin_only, doer, get_current_user, may_manage_team_contacts
+from ..deps import (NotAdmin, admin_only, doer, get_current_user, may_export_companies,
+                    may_manage_team_contacts)
 from ..models import IrCompany, SendItem, SendJob, User, VcContact
 from ..services import (amount, company_view, custom_columns, import_diff, investor_firms,
                         pipeline,
@@ -525,10 +526,12 @@ def export_companies(db: Session = Depends(get_db),
                      user: User = Depends(get_current_user)):
     """IR 기업현황 → 엑셀. 소개 가능 여부를 함께 내보내 어디를 채워야 할지 보이게 한다.
 
-    **관리자만**(11/01 요청) — 기업 자료 전체가 한 파일로 나가는 길이다. 화면의
-    단추도 같은 판정(`role == 'admin'`)으로 관리자에게만 선다(`companies.html`).
+    **관리자만**(11/01 요청) — 기업 자료 전체가 한 파일로 나가는 길이다. 관리자가
+    팀 현황에서 켜 준 계정만 예외다. 화면의 단추도 같은 판정
+    (`deps.may_export_companies`)으로 선다(`companies.html`).
     """
-    admin_only(user)
+    if not may_export_companies(user):
+        raise NotAdmin()
     companies = db.execute(select(IrCompany).order_by(IrCompany.name)).scalars().all()
     # 관리자가 붙인 추가 칸 — 숨긴 칸은 빠지고 고른 자리에 선다(화면과 같다).
     extra = custom_columns.view(db, "companies", "ir_companies")
@@ -573,10 +576,11 @@ def export_companies_view(request: Request, q: str = "", sort: str = "",
     줄은 표가 먹는 한 벌(`companies.company_rows`)이고, 칸은 그 탭에 **보이는
     칸**이다(`company_view.view_headers`).
 
-    권한은 전체 내려받기와 같다 — **관리자만**(11/01). 거른 화면이라도 같은 기업
-    자료가 파일로 나가는 길이라 한쪽만 막으면 다른 쪽으로 그대로 받는다.
+    권한은 전체 내려받기와 같다 — **관리자만**(11/01) + 켜 준 계정. 거른 화면이라도
+    같은 기업 자료가 파일로 나가는 길이라 한쪽만 막으면 다른 쪽으로 그대로 받는다.
     """
-    admin_only(user)
+    if not may_export_companies(user):
+        raise NotAdmin()
     from .companies import company_rows
 
     # 추가 칸도 화면처럼 고른 자리(안 고르면 끝)에 붙이고, 그 칸의 O/X 필터도 같이

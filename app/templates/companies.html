@@ -87,8 +87,9 @@
            style="min-width:300px"
            title="기업명 · 대표자명 · 연락처(전화번호) · 이메일 · 분야 · 기업 한줄 소개 · 딜 소개 문구 · 특이사항 · 메모로 찾습니다. 전화번호는 하이픈이 있든 없든, 뒷자리만으로도 찾아집니다."
            value="{{ q }}" autocomplete="off">
-    {# 내려받기 둘은 **관리자만**(11/01) — 라우터도 같은 판정으로 막는다(`data_io.export_companies*`). #}
-    {% if user.role == 'admin' %}
+    {# 내려받기 둘은 **관리자 + 팀 현황에서 켜 준 계정**(11/01 · 0132) — 라우터도 같은
+       판정으로 막는다(`deps.may_export_companies` · `data_io.export_companies*`). #}
+    {% if can_export %}
     <a class="secondary-btn" href="/api/export/companies.xlsx" download>엑셀 내려받기</a>
     {# ── 지금 화면 내려받기 (10/17 회의 #43) ─────────────────────────────────
        위 단추는 언제나 **전체**다(그대로 둔다). 이것은 지금 걸어 둔 머리글 필터 ·
