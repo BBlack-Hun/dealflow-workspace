@@ -41,7 +41,7 @@
 <div class="toolbar">
   <div class="toolbar-right">
     <input type="search" id="sa-search" placeholder="기업명 · 회사 · 심사역 · 내용"
-           title="기업명 · 회사 · 공유 심사역 · 담당자 · 분야 · 투자라운드 · 대표자명 · 연락처 · 이메일 · 상세 내용 · 딜 소개 문구로 찾습니다."
+           title="기업명 · 메모 · 회사 · 공유 심사역 · 담당자 · 분야 · 투자라운드 · 대표자명 · 연락처 · 이메일 · 상세 내용 · 딜 소개 문구로 찾습니다."
            value="{{ q }}" autocomplete="off">
     {# 관리자만 — 단추와 길이 같은 판정(`series_a.can_upload_pitch`)을 읽는다. #}
     {% if can_upload_pitch %}
@@ -124,6 +124,15 @@
       <tr>
         <th class="num stick stick-a" style="width:{{ no_w }}px">NO</th>
         <th class="stick stick-b" style="width:200px">기업명</th>
+        {# 메모 · 수정한 팀원 · 수정한 날짜(#142 — "기업명 컬럼 오른쪽에 메모 컬럼 삽입, 수정담당자명,
+           수정일 컬럼"). 메모는 IR 기업 현황의 `메모` 와 같은 보기 · 같은 폭이다(오늘 날짜를 달고 연다 —
+           `data-memo-date`). 뒤 두 칸은 앱이 적는 칸이라 눌러 고치지 않는다 — IR 기업 현황의 같은 두 칸과
+           **같은 이름 · 같은 셈**이다(`updated_at` · 수정 로그 `companies.last_editors`, 로그가 없으면 빈칸).
+           요청한 말(`수정담당자명` · `수정일`)이 아니라 그 탭의 이름을 단다 — 같은 메뉴에서 같은 칸을
+           탭마다 다르게 부르면 같은 칸인지 알 수 없다(위 머리 주석). 차례는 요청대로 팀원 → 날짜. #}
+        <th style="width:240px" title="두 줄까지 보입니다 · 눌러서 수정">메모</th>
+        <th style="width:76px" title="이 줄을 마지막으로 고친 팀원 — 수정 로그 기준 · 사람 손 없이 앱이 바꾼 것이 마지막이면 '자동'">수정한 팀원</th>
+        <th style="width:130px" title="이 줄을 마지막으로 고친 시각 — 앱이 적습니다(눌러 고칠 수 없습니다)">수정한 날짜</th>
         {# `공유한 심사역`(Series A 딜 공유로 이 기업을 받은 심사역 수) 칸은 **뺐다**
            (#24) — 사용자: "공유심사역 컬럼이 있고, 공유한 심사역 컬럼이 있는데 같은
            의미임, 공유한 심사역 컬럼 없애줘". 이름이 한 글자 차이라 같은 칸으로
@@ -141,6 +150,10 @@
            `후속라운드 시작 년월` 과는 따로 적는다 — 그 칸은 관리자 추가 칸이고 줄이 기업 × 투자사라
            한 값으로 맞출 자리가 없다(`models.SeriesACompany.follow_round_month`). #}
         <th style="width:120px" title="YYYY-MM — 예: 2027-03 · 눌러서 수정">후속라운드 시작</th>
+        {# IR 투자컨설팅 미팅일시(#143 · 0131) — `YYYY-MM-DD HH:MM`(`2026.11.5 14:00` 도 받아 맞춘다 · 시각을
+           모르면 날짜만 — `series_a.meeting_text`). 투자컨설턴트의 `컨설팅 미팅일` 과는 잇지 않는다 — 그 칸은
+           자유 글이고, 이 표의 줄 대부분은 투자컨설턴트에 없는 기업이다. 폭은 머리글이 한 줄에 서는 값. #}
+        <th style="width:134px" title="YYYY-MM-DD HH:MM — 예: 2026-11-05 14:00 · 시각을 모르면 날짜만 · 눌러서 수정">IR 투자컨설팅 미팅일시</th>
         <th style="width:70px" title="{{ typed_tip }}">대표자명</th>
         <th style="width:104px" title="{{ typed_tip }}">연락처</th>
         <th style="width:170px" title="{{ typed_tip }}">이메일</th>
@@ -226,8 +239,15 @@
           <div class="ir-link-sub muted sa-ir-link" data-testid="sa-ir-link"
                data-ir-link='{{ r.ir_link|tojson }}' hidden></div>
         </td>
+        <td title="{{ r.memo }}">
+          <div class="cell clamp2 keep-lines" data-field="memo" data-type="long" data-memo-date>{{ r.memo }}</div>
+        </td>
+        <td class="updated-by{% if r.updated_never %} muted{% endif %}">{{ r.updated_by }}</td>
+        <td class="updated-at{% if r.updated_never %} muted{% endif %}"
+            title="{% if r.updated_never %}만든 뒤로 아직 고친 적이 없습니다 — 만든 시각입니다{% else %}마지막으로 고친 시각{% endif %}">{{ r.updated_at }}</td>
         <td class="cell" data-field="received_at" data-type="date">{{ r.received_at }}</td>
         <td class="cell" data-field="follow_round_month">{{ r.follow_round_month }}</td>
+        <td class="cell" data-field="consulting_meeting_at">{{ r.consulting_meeting_at }}</td>
         {# 직접 적는 칸 — 적은 그대로 글자다(금액도 `data-type="number"` 를 두지 않는다:
            화면이 `Number()` 로 읽으면 `5-10억` 이 통째로 사라진다 — 스타트업DB 와 같다). #}
         <td class="cell" data-field="ceo_name">{{ r.ceo_name }}</td>
@@ -310,7 +330,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="29" class="muted">아직 받은 딜이 없습니다. [기업 추가]로 넣거나 시트를 가져오세요.</td></tr>
+      <tr><td colspan="33" class="muted">아직 받은 딜이 없습니다. [기업 추가]로 넣거나 시트를 가져오세요.</td></tr>
       {% endfor %}
     </tbody>
   </table>

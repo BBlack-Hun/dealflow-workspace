@@ -113,6 +113,15 @@
       var okey = other.getAttribute("data-filter-key");
       if (okey && row.hasAttribute("data-f-" + okey)) row.setAttribute("data-f-" + okey, shown(data, key));
     });
+    // 수정한 팀원 · 수정한 날짜(#142) — 앱이 적는 칸이라 `.cell` 이 아니다. 응답 값 그대로 적고
+    // `만든 뒤로 안 고침` 옅은 글씨를 걷는다(IR 기업 현황 `companies.js` 와 같다).
+    [["td.updated-by", "updated_by"], ["td.updated-at", "updated_at"]].forEach(function (pair) {
+      var td = row.querySelector(pair[0]);
+      if (!td || !(pair[1] in data)) return;
+      td.textContent = data[pair[1]] || "";
+      td.classList.remove("muted");
+      if (pair[1] === "updated_at") td.title = "마지막으로 고친 시각";
+    });
     if (data.ir_link) renderIrLink(row.querySelector(".sa-ir-link"), data.ir_link);
     if ("search" in data) row.setAttribute("data-search", data.search || "");
     row.setAttribute("data-s-received_at", data.received_sort || "");
