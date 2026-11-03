@@ -365,6 +365,32 @@ function saved(dom, row, cell, value, data) {
   assert.strictEqual(row.getAttribute("data-f-received"), "O");
 }
 
+// --- ⑧ 수정한 팀원 · 수정한 날짜(#142) — 앱이 적는 칸도 응답 값으로 그 자리에서 ------------
+//
+// 눌러 고치는 칸(`.cell`)이 아니라 위의 "줄의 칸 전부 다시 그리기" 가 닿지 않는다. 안 적으면
+// 메모를 고쳐도 새로고침 전까지 옛 팀원 · 옛 시각(옅은 글씨)이 앉아 있다.
+{
+  const dom = build();
+  const row = dom.body.children[0];
+  const by = D.el("td", { class: "updated-by muted" });
+  const at = D.el("td", { class: "updated-at muted" });
+  at.textContent = "2026-08-25 09:00";
+  row.appendChild(by);
+  row.appendChild(at);
+  run(dom);
+  const name = row.querySelector('[data-field="name"]');
+  saved(dom, row, name, "가온샘플", {
+    id: 1, name: "가온샘플", received_sort: "2026-08-25", series: "Series B",
+    series_short: "Series B", ir_name: "", memo: "샘플 메모",
+    updated_at: "2026-11-03 10:15", updated_by: "강샘플"
+  });
+  assert.strictEqual(by.textContent, "강샘플", "고친 팀원이 새로고침 전에 안 보인다");
+  assert.strictEqual(at.textContent, "2026-11-03 10:15", "수정한 날짜가 옛 시각에 남았다");
+  assert.ok(!by.classList.contains("muted") && !at.classList.contains("muted"),
+    "방금 고쳤는데 `만든 뒤로 안 고침` 옅은 글씨가 남았다");
+  assert.strictEqual(at.title, "마지막으로 고친 시각", "짚으면 아직 `안 고친 줄` 이라고 말한다");
+}
+
 // --- ⑤ 삭제 --------------------------------------------------------------
 {
   const dom = build();
