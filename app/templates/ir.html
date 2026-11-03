@@ -895,7 +895,18 @@
         {# 시간을 안 적어 둔 미팅은 날짜만 나온다 — 없는 시각을 지어내면
            그 시간에 맞춰 나갈 준비를 하게 된다. #}
         <td class="muted">{{ m.scheduled_at }}
-          {% if m.scheduled_time %}<b>{{ m.scheduled_time }}</b>{% endif %}</td>
+          {% if m.scheduled_time %}<b>{{ m.scheduled_time }}</b>{% endif %}
+          {# 미팅은 옮겨진다(#144) — 접어 두었다가 눌러 연다(`_call_flag.html` 메모와 같은 모양). #}
+          <details class="meeting-when">
+            <summary class="linkbtn" title="미팅 날짜·시간 바꾸기">변경</summary>
+            <form method="post" action="/ir/meetings/{{ m.id }}/time">
+              <input type="date" name="scheduled_at" value="{{ m.scheduled_at }}" required
+                     aria-label="{{ m.name }} 미팅 새 날짜">
+              <input type="time" name="scheduled_time" value="{{ m.scheduled_time }}"
+                     aria-label="{{ m.name }} 미팅 새 시간 (비우면 안 정함)">
+              <button class="linkbtn" type="submit">저장</button>
+            </form>
+          </details></td>
         <td><b>{{ m.name }}</b> {{ m.title }} <span class="muted">{{ m.firm }}</span></td>
         <td>{{ m.kind_label }}</td>
         {#

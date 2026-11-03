@@ -1767,6 +1767,12 @@ td.cell.save-failed { background: #fdecec; }
 .call-flag-memo form { display: flex; gap: 6px; align-items: center; margin-top: 4px; }
 .call-flag-memo input[type="text"] { flex: 1; min-width: 0; max-width: 360px;
   padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; font-size: 12px; }
+/* 미팅 스케줄 날짜 칸의 [변경](#144) — 132px 칸 안에 날짜 · 시간 · 저장을 세로로 쌓는다. */
+.meeting-when summary { display: inline-block; padding: 0; cursor: pointer; list-style: none; }
+.meeting-when summary::-webkit-details-marker { display: none; }
+.meeting-when form { display: flex; flex-direction: column; align-items: flex-start;
+  gap: 4px; margin-top: 4px; }
+.meeting-when input { width: 100%; box-sizing: border-box; font-size: 12px; }
 .followup-strip { border-left: 4px solid var(--brand); }
 /* ── 한 줄 입력 폼(주간 업무·반복 업무·규칙 추가) ──────────────────────
    라벨이 붙은 칸과 안 붙은 버튼을 같은 줄에 세우는 자리다.
