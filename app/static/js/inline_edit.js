@@ -5,7 +5,7 @@
 //
 // 쓰는 법: 표에 data-inline-url 을 주고, 고칠 칸에 .cell 과 data-field 를 준다.
 //   <table data-inline-url="/api/companies">        ← PATCH /api/companies/{id}
-//     <tr data-id="3">
+//     <tr data-id="3">                              (줄에 data-inline-url 이 있으면 그 주소)
 //       <td class="cell" data-field="name">샘플애그</td>
 //       <td class="cell multi" data-field="memo">…</td>          여러 줄
 //       <td class="cell" data-field="due_date" data-type="date">2026-08-26</td>
@@ -798,7 +798,8 @@
       if (!id) return;
       var body = {};
       var field = cell.getAttribute("data-field");
-      var target = url + "/" + id;
+      // 줄에 제 저장 주소가 있으면 그쪽이다 — 업무 보고처럼 IR · Series A 줄이 한 표에 섞인 곳(#147).
+      var target = (row.getAttribute("data-inline-url") || url) + "/" + id;
       var method = "PATCH";
       if (cell.hasAttribute("data-custom")) {
         // 관리자가 붙인 추가 칸(`_custom_cols.html`)은 줄의 표가 아니라 칸 값 길로

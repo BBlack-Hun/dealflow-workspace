@@ -276,3 +276,8 @@
 {% include "_report_month.html" %}
 {% endif %}
 {% endblock %}
+
+{% block scripts %}
+{# 소개한 기업 · 소개 후보 표의 계약여부를 골라서 바로 고친다(#147 · `_report_intros.html`). #}
+<script src="{{ asset('js/inline_edit.js') }}"></script>
+{% endblock %}
