@@ -639,6 +639,14 @@ def report_page(request: Request, db: Session = Depends(get_db),
             target, team_wide = picked, False
     ctx = base_ctx(request, db, user, active="report")
     who = None if team_wide else target
+    # 진행 단계 깔때기 — 투자사 관리 현황의 깔때기와 **같은 수**다(`deal_stage`).
+    # 단계는 '어디까지 갔었나' 라 기간이 없다: 고른 달·해와 상관없이 **지금 기준**이고,
+    # 그래서 연간 보기에서도 맨 위에 한 번만 선다. 범위는 이 보고와 같다 — 팀 전체면
+    # 팀 전체, 아니면 보고 있는 그 사람이 맡은 투자사(`sheet_owner.managed`).
+    from ..services import deal_stage
+
+    ctx["stage_funnel"] = deal_stage.reach(deal_stage.funnel(deal_stage.of_many(
+        db, [c.id for c in sheet_owner.managed(db, target, team_wide=team_wide)])))
     if yearly_view:
         ctx.update(report.yearly(db, year_, who, today))
     else:
