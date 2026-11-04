@@ -847,6 +847,7 @@
       {% endfor %}
       {% if gd.subfolders and gd.subfolder_count %}<li><span>하위 폴더</span><b>{{ gd.subfolder_count }}개</b></li>{% endif %}
       <li><span>적은 수</span><b data-testid="gdrive-ir-written">{{ gd.written }}</b></li>
+      {% if gd.kind_skipped %}<li><span>파일 종류로 건너뜀</span><b>{{ gd.kind_skipped }}</b></li>{% endif %}
       <li><span>확인 필요</span><b>{{ gd.review|length }}</b></li>
     </ul>
     <form method="post" action="/team/gdrive-ir" class="rule-form" data-testid="gdrive-ir-form">
@@ -865,10 +866,12 @@
       <button class="secondary-btn" type="submit">저장</button>
     </form>
     <p class="hint">
-      드라이브 폴더를 <b>읽기만</b> 합니다. 파일 이름에서 기업(IR 기업 현황 · Series A 이상 딜 소싱)이
+      드라이브 폴더를 <b>읽기만</b> 합니다. <b>PDF · PPT</b>(pdf · ppt · pptx · key · 구글 슬라이드)만 보고,
+      그 밖의 파일은 <b>건너뜀 (파일 종류)</b> 으로 기록만 합니다. 파일 이름에서 기업이
       <b>하나로 정해질 때만</b> 그 기업의 <b>{{ gd.column }}</b> 칸에
-      <code>2026/11/04 수신완료 (드라이브: 파일이름)</code> 꼴로 적습니다(날짜는 드라이브에 올라온 날).
-      <b>이미 값이 있는 칸은 덮지 않습니다</b> — 같은 기업의 파일이 또 오면 건너뛰고 아래 기록에만 남깁니다.
+      <code>2026/11/04 수신완료 (드라이브: 파일이름)</code> 꼴로 적습니다(날짜는 드라이브에 올라온 날) —
+      <b>IR 기업 현황 · Series A 이상 딜 소싱 두 탭 모두</b>.
+      <b>이미 값이 있는 칸은 덮지 않습니다</b>(줄마다 따로) — 같은 기업의 파일이 또 오면 건너뛰고 아래 기록에만 남깁니다.
       <b>IR 자료</b> 칸(발송 PC 가 붙일 파일 이름)은 건드리지 않습니다. 수정 기록에는 <b>자동</b>으로 남습니다.
       키 · 폴더는 서버 환경변수({{ gd.env_sa }} · {{ gd.env_folders }})입니다.
     </p>
@@ -899,7 +902,7 @@
       <tbody>
       {% for r in gd.recent %}
       <tr><td>{{ r.name }}</td><td>{{ r.company }}{% if r.via %} <span class="muted">({{ r.via }})</span>{% endif %}</td>
-        <td>{{ r.result }}</td><td>{{ r.at }}</td></tr>
+        <td>{{ r.result }}{% if r.rows %}<div class="cell-sub">{{ r.rows }}</div>{% endif %}</td><td>{{ r.at }}</td></tr>
       {% endfor %}
       </tbody>
     </table>

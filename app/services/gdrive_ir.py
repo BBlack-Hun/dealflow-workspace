@@ -11,17 +11,20 @@
      `modifiedTime > T or createdTime > T`. 둘 다 보는 까닭: 드라이브에 올린 파일은
      PC 의 수정 시각을 그대로 들고 와 `modifiedTime` 이 올린 시각보다 **이르다**
      (실제 폴더에서 확인했다). `createdTime` 만 올린 시각이다.
-  3. 파일 이름에서 기업명을 찾아(`Index`) **기업이 정확히 하나일 때만** 그 기업 줄의
-     추가 칸 `IR 자료 수신` 에 `2026/11/04 수신완료 (드라이브: 파일이름)` 을 적는다.
-     날짜는 드라이브에 그 파일이 생긴 날(한국 시각)이다.
-  4. 0곳 · 여러 곳이면 적지 않고 **확인 필요** 목록에 남긴다(팀 현황 판에 보인다).
+  3. **PDF · PPT 만**(pdf · ppt · pptx · key, 구글 슬라이드 — `is_deck`) 본다. 그 밖의
+     파일은 `건너뜀 (파일 종류)` 으로 기록만 하고 확인 필요에도 안 올린다.
+  4. 파일 이름에서 기업명을 찾아(`Index`) **기업이 정확히 하나일 때만** 그 기업의 줄에
+     추가 칸 `IR 자료 수신` 을 `2026/11/04 수신완료 (드라이브: 파일이름)` 으로 적는다.
+     IR 기업 현황 줄과 그 기업으로 판정된 Series A 줄 — **두 탭 모두**. 날짜는 드라이브에
+     그 파일이 생긴 날(한국 시각)이다.
+  5. 0곳 · 여러 곳이면 적지 않고 **확인 필요** 목록에 남긴다(팀 현황 판에 보인다).
 
 ## 적지 않는 것
 
   · **`IR 자료`(`ir_file_name`) 칸에는 쓰지 않는다.** 그 칸이 차 있으면 딜 소개 때
     발송 PC 가 같은 이름의 **로컬 파일**을 찾아 붙인다(`agent/sender/base.py`
     `check_ir_file_name` 근처) — 드라이브에만 있는 파일이면 첨부가 실패한다.
-  · **값이 있는 칸은 덮지 않는다.** 사람이 적었을 수 있다. 같은 기업에 파일이 또
+  · **값이 있는 칸은 덮지 않는다** — 줄마다 따로 본다. 사람이 적었을 수 있다. 같은 기업에 파일이 또
     오면(새 판 · 같은 자료 사본) **건너뛰고 기록만** 남긴다 — 이 칸이 답하는 물음은
     "IR 을 받았나 · 처음 언제" 이고, 두 번째 파일로 첫 수신일을 지우면 그 답이 틀린다.
     덧붙이면 판마다 한 줄씩 쌓여 칸이 읽히지 않는다. 건너뛴 것은 판의 `최근 처리` 에 선다.
@@ -69,7 +72,7 @@ import logging
 import os
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -136,13 +139,28 @@ _ID = re.compile(r"[A-Za-z0-9_-]{10,128}")
 #: 폴더 주소를 통째로 붙여 넣어도 id 를 꺼낸다.
 _FOLDER_URL = re.compile(r"/folders/([A-Za-z0-9_-]{10,128})")
 
+#: 적는 파일 종류 — **PDF · PPT 만**(11/04 사용자 결정). 확장자나 mimeType 하나만 맞으면 된다.
+#: 구글 슬라이드(`…google-apps.presentation`)도 든다 — PPT 와 같은 발표 자료인데 확장자가
+#: 없어 mimeType 으로만 알아본다. 빼면 슬라이드로 받은 IR 이 '파일 종류' 로 빠진다.
+DECK_EXTENSIONS = frozenset({"pdf", "ppt", "pptx", "key"})
+DECK_MIMES = frozenset({
+    "application/pdf",
+    "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "application/vnd.apple.keynote", "application/x-iwork-keynote-sffkey",
+    "application/vnd.google-apps.presentation",
+})
+
 # 결과
 WRITTEN = "written"     # 적음
 REVIEW = "review"       # 확인 필요
 SKIPPED = "skipped"     # 값이 있어 건너뜀
+KIND = "kind"           # PDF · PPT 가 아니라 건너뜀(확인 필요에 안 올린다)
 BASELINE = "baseline"   # 처음 확인 때 이미 있던 파일(적지 않기로 했을 때)
 RESULT_LABELS = {WRITTEN: "적음", REVIEW: "확인 필요", SKIPPED: "건너뜀 (이미 값 있음)",
-                 BASELINE: "처음부터 있던 파일"}
+                 KIND: "건너뜀 (파일 종류)", BASELINE: "처음부터 있던 파일"}
+#: 파일이 바뀌면(이름 · 판) 다시 보는 결과 — 나머지는 끝난 것이다.
+RETRY = (REVIEW, KIND)
 
 # 밖에 보이는 실패 사유 — **정해 둔 말뿐이다**(응답 원문 · 예외 글을 싣지 않는다).
 ERR_LIB = "구글 인증 라이브러리(google-auth)가 설치되어 있지 않습니다"
@@ -506,11 +524,15 @@ def file_tokens(file_name: str) -> List[str]:
 
 @dataclass
 class Company:
-    """적을 기업 하나 — `row` 가 그 기업의 줄(IR 이 있으면 IR 줄)."""
+    """적을 기업 하나 — `rows` 가 그 기업의 줄 전부(IR 줄 먼저, 이어서 Series A 줄들).
+
+    IR 기업 현황과 Series A 이상 딜 소싱 **두 탭 모두에** 같은 글을 적는다(11/04 사용자
+    결정). 덮지 않는 규칙은 줄마다 따로다.
+    """
 
     ident: tuple
     label: str
-    row: object
+    rows: List[object] = field(default_factory=list)
 
 
 class Index:
@@ -520,8 +542,8 @@ class Index:
       · IR 줄 하나 = 기업 하나.
       · Series A 줄은 이어진 IR(`ir_company_id`)이나 **같은 이름**(`deal_history._key`)의
         IR 이 있으면 그 IR 기업이다(`pipeline.series_a_rows` 와 같은 규칙 — IR 이 먼저).
-        없으면 같은 이름 줄끼리 한 기업(받은 딜마다 줄이 선다) — 적는 줄은 IR 자료 파일을
-        적은 줄, 없으면 먼저 들어온 줄.
+        없으면 같은 이름 줄끼리 한 기업(받은 딜마다 줄이 선다).
+      · 적는 줄은 그 기업의 줄 전부 — IR 줄과 그 기업으로 판정된 Series A 줄들.
     꼬리표를 뗀 열쇠가 겹치는 다른 기업(`샘플가` · `샘플가 [딜소개 불가/폐업]`)은 **여럿**이다.
     """
 
@@ -539,7 +561,7 @@ class Index:
         by_id = {}
         by_raw: Dict[str, Company] = {}
         for c in ir:
-            company = Company(("ir", c.id), c.name or "", c)
+            company = Company(("ir", c.id), c.name or "", [c])
             by_id[c.id] = company
             by_raw.setdefault(raw_key(c.name), company)
             index._add(name_key(c.name), company)
@@ -550,10 +572,8 @@ class Index:
             if company is None:
                 company = sa_groups.get(raw)
                 if company is None:
-                    company = sa_groups[raw] = Company(("sa", raw), r.name or "", r)
-                elif ((r.ir_file_name or "").strip()
-                      and not (company.row.ir_file_name or "").strip()):
-                    company.row = r
+                    company = sa_groups[raw] = Company(("sa", raw), r.name or "")
+            company.rows.append(r)
             index._add(name_key(r.name), company)
         return index
 
@@ -631,6 +651,28 @@ def receipt_text(file: dict) -> str:
     when = _parse(file.get("createdTime")) or _parse(file.get("modifiedTime"))
     day = when.astimezone(KST).strftime("%Y/%m/%d") if when else clock.today().strftime("%Y/%m/%d")
     return f"{day} 수신완료 (드라이브: {_clean_name(file.get('name', ''))})"
+
+
+def is_deck(file: dict) -> bool:
+    """IR 자료로 적을 파일인가 — PDF · PPT(확장자 또는 mimeType)."""
+    name = _clean_name(file.get("name", ""))
+    ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    return ext in DECK_EXTENSIONS or file.get("mimeType") in DECK_MIMES
+
+
+_TABLE_LABELS = {"ir_companies": "IR", "series_a_companies": "Series A"}
+
+
+def _rows_note(done: List[Tuple[str, bool]]) -> str:
+    """줄마다 결과 → `IR 적음 · Series A 2줄 건너뜀`."""
+    tally: Dict[Tuple[str, bool], int] = {}
+    for table, wrote in done:
+        tally[(table, wrote)] = tally.get((table, wrote), 0) + 1
+    parts = []
+    for (table, wrote), n in tally.items():
+        name = _TABLE_LABELS.get(table, table)
+        parts.append(f"{name}{f' {n}줄' if n > 1 else ''} {'적음' if wrote else '건너뜀'}")
+    return " · ".join(parts)
 
 
 def _link(file: dict) -> str:
@@ -768,10 +810,16 @@ def _decide(index: Index, writer: _Writer, file: dict, folder_name: str) -> Tupl
     entry["company"] = company.label
     if via_folder:
         entry["via"] = "폴더 이름"
-    if writer.current(company.row):
-        return SKIPPED, entry
-    writer.write(company.row, receipt_text(file))
-    return WRITTEN, entry
+    # 두 탭 모두 — 덮지 않는 규칙은 줄마다 따로(값이 있는 줄만 건너뛴다).
+    text = receipt_text(file)
+    done = []
+    for row in company.rows:
+        wrote = not writer.current(row)
+        if wrote:
+            writer.write(row, text)
+        done.append((row.__tablename__, wrote))
+    entry["rows"] = _rows_note(done)
+    return (WRITTEN if any(w for _t, w in done) else SKIPPED), entry
 
 
 def run(db: Session, cfg: Config, st: Settings, now: Optional[datetime] = None,
@@ -797,7 +845,7 @@ def run(db: Session, cfg: Config, st: Settings, now: Optional[datetime] = None,
         recent: List[dict] = list(state.get("recent") or [])
         roots = set(cfg.folders)
         folders = state.get("folders") or {}
-        counts = {WRITTEN: 0, REVIEW: 0, SKIPPED: 0, BASELINE: 0}
+        counts = {WRITTEN: 0, REVIEW: 0, SKIPPED: 0, KIND: 0, BASELINE: 0}
         baseline = first and not st.backfill
         handled = set()
 
@@ -810,10 +858,10 @@ def run(db: Session, cfg: Config, st: Settings, now: Optional[datetime] = None,
                 review[fid] = entry
             else:
                 review.pop(fid, None)
-                if result in (WRITTEN, SKIPPED):
+                if result in (WRITTEN, SKIPPED, KIND):
                     recent.insert(0, {"name": entry["name"], "company": entry.get("company", ""),
                                       "result": result, "at": _iso(now),
-                                      "via": entry.get("via", "")})
+                                      "via": entry.get("via", ""), "rows": entry.get("rows", "")})
 
         # 이른 파일부터 — 같은 기업이면 먼저 온 파일의 날짜가 칸에 선다.
         for file in sorted(listing.values(),
@@ -823,11 +871,15 @@ def run(db: Session, cfg: Config, st: Settings, now: Optional[datetime] = None,
             prev = seen.get(fid)
             if prev and list(prev[:2]) == sig:
                 continue
-            if prev and len(prev) > 2 and prev[2] != REVIEW:
+            if prev and len(prev) > 2 and prev[2] not in RETRY:
                 seen[fid] = sig + [prev[2]]      # 이미 끝난 파일 — 판이 바뀌어도 다시 안 적는다
                 continue
             if baseline:
                 record(fid, sig, BASELINE, {})
+                continue
+            if not is_deck(file):
+                # PDF · PPT 가 아니다 — 기록만 남기고 확인 필요에는 안 올린다.
+                record(fid, sig, KIND, {"name": sig[1]})
                 continue
             parent = next((p for p in file.get("parents") or [] if p in folders), "")
             folder_name = folders.get(parent, "") if parent and parent not in roots else ""
@@ -862,6 +914,7 @@ def run(db: Session, cfg: Config, st: Settings, now: Optional[datetime] = None,
         review=sorted(review.values(), key=lambda r: r.get("at", ""), reverse=True)[:MAX_REVIEW],
         recent=recent[:MAX_RECENT],
         written=int(state.get("written") or 0) + counts[WRITTEN],
+        kind_skipped=int(state.get("kind_skipped") or 0) + counts[KIND],
         since=_iso(now.astimezone(timezone.utc)),
         last_ok_at=_iso(now), error="", error_at="",
         incomplete=drive.incomplete,
@@ -869,8 +922,8 @@ def run(db: Session, cfg: Config, st: Settings, now: Optional[datetime] = None,
     _save_state(db, state)
     db.commit()
     if counts[WRITTEN] or counts[REVIEW]:
-        log.info("%s — 적음 %d · 확인 필요 %d · 건너뜀 %d", LABEL, counts[WRITTEN],
-                 counts[REVIEW], counts[SKIPPED])
+        log.info("%s — 적음 %d · 확인 필요 %d · 건너뜀 %d · 파일 종류 %d", LABEL,
+                 counts[WRITTEN], counts[REVIEW], counts[SKIPPED], counts[KIND])
     return {"status": "ok", "full": full, **counts}
 
 
@@ -934,7 +987,7 @@ def panel(db: Session, now: Optional[datetime] = None) -> dict:
                        "folder": r.get("folder", ""), "at": _stamp(r.get("at"))})
     recent = [{"name": r.get("name", ""), "company": r.get("company", ""),
                "result": RESULT_LABELS.get(r.get("result"), r.get("result", "")),
-               "via": r.get("via", ""), "at": _stamp(r.get("at"))}
+               "via": r.get("via", ""), "rows": r.get("rows", ""), "at": _stamp(r.get("at"))}
               for r in (state.get("recent") or [])[:10]]
     return {
         "label": LABEL, "column": COLUMN, "status": status,
@@ -950,6 +1003,7 @@ def panel(db: Session, now: Optional[datetime] = None) -> dict:
         "last_run": _stamp(state.get("last_run_at")), "last_ok": _stamp(state.get("last_ok_at")),
         "error": state.get("error", ""), "next": next_label,
         "written": int(state.get("written") or 0),
+        "kind_skipped": int(state.get("kind_skipped") or 0),
         "seen": len(state.get("files") or {}),
         "incomplete": bool(state.get("incomplete")),
         "review": review, "recent": recent,

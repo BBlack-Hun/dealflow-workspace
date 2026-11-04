@@ -210,17 +210,17 @@ def test_series_a_companies_count_once(db):
     from app.services import gdrive_ir
 
     ir = _company(db, "샘플가")
-    _deal(db, "샘플가")                                  # 같은 이름 — IR 기업이다
+    same = _deal(db, "샘플가")                               # 같은 이름 — IR 기업이다
     linked = _deal(db, "샘플가바이오", ir_company_id=ir.id)  # 이은 줄 — IR 기업이다
     first = _deal(db, "사아로보")
     second = _deal(db, "사아로보", ir_file_name="사아로보_IR.pdf")
     index = gdrive_ir.Index.build(db)
     found = index.find("샘플가_IR.pdf")
-    assert [c.row for c in found] == [ir]
-    assert [c.row for c in index.find("샘플가바이오 deck.pdf")] == [ir]
+    # 한 기업 — 적을 줄은 IR 줄 먼저, 이어서 그 기업의 Series A 줄 전부(두 탭 모두).
+    assert len(found) == 1 and found[0].rows == [ir, same, linked]
+    assert index.find("샘플가바이오 deck.pdf")[0].rows == [ir, same, linked]
     found = index.find("사아로보 IR.pdf")
-    assert len(found) == 1 and found[0].row is second and found[0].row is not first
-    assert linked.id
+    assert len(found) == 1 and found[0].rows == [first, second]
 
 
 def test_folder_ids_accept_commas_spaces_and_urls():
@@ -337,6 +337,95 @@ def test_only_new_or_changed_files_are_read_and_handled(db, admin, configured):
     again = gdrive_ir.tick(db, now=T0 + timedelta(minutes=60), drive=drive)
     assert (again["written"], again["skipped"]) == (0, 0)
     assert _state(db)["written"] == 2
+
+
+def test_only_pdf_and_ppt_files_are_written(db, admin, configured):
+    from app.services import gdrive_ir
+
+    rows = {n: _company(db, n) for n in ("샘플가", "마바텍", "다라텍", "사아로보", "가나다", "라마바")}
+    _turn_on(db, admin)
+    deck = lambda fid, name, mime: dict(_f(fid, name, "2026-11-04T00:00:00Z"), mimeType=mime)
+    drive = FakeDrive([
+        _f("file000000001", "샘플가_IR.pdf", "2026-11-04T00:00:00Z"),
+        deck("file000000002", "마바텍 IR.pptx",
+             "application/vnd.openxmlformats-officedocument.presentationml.presentation"),
+        deck("file000000003", "다라텍 IR.key", "application/octet-stream"),   # 확장자로
+        deck("file000000004", "사아로보 IR 발표", "application/vnd.google-apps.presentation"),
+        deck("file000000005", "가나다 IR.PPT", "application/vnd.ms-powerpoint"),
+        # 아래는 PDF · PPT 가 아니다 — 기업이 맞아도, 못 찾아도 적지 않고 확인 필요에도 안 올린다.
+        deck("file000000006", "라마바 서면 질의 답변서.docx",
+             "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+        deck("file000000007", "모르는회사 재무제표.xlsx",
+             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+        deck("file000000008", "샘플가 로고.png", "image/png"),
+    ])
+    result = gdrive_ir.tick(db, now=T0, drive=drive)
+    assert (result["written"], result["kind"], result["review"]) == (5, 3, 0)
+    for name in ("샘플가", "마바텍", "다라텍", "사아로보", "가나다"):
+        assert _cell(db, rows[name]).startswith("2026/11/04 수신완료"), name
+    assert _cell(db, rows["라마바"]) is None
+    assert _cell(db, rows["샘플가"]).endswith("(드라이브: 샘플가_IR.pdf)")   # 로고 그림은 안 적힘
+    panel = gdrive_ir.panel(db)
+    assert panel["review"] == [] and panel["kind_skipped"] == 3
+    kinds = {r["name"] for r in panel["recent"] if r["result"] == "건너뜀 (파일 종류)"}
+    assert kinds == {"라마바 서면 질의 답변서.docx", "모르는회사 재무제표.xlsx", "샘플가 로고.png"}
+    # 같은 파일을 PDF 로 바꿔 올리면(이름이 바뀐다) 그때 적는다.
+    drive.files[5] = dict(drive.files[5], name="라마바 IR.pdf", mimeType="application/pdf",
+                          modifiedTime="2026-11-04T01:20:00Z")
+    assert gdrive_ir.tick(db, now=T0 + timedelta(minutes=30), drive=drive)["written"] == 1
+    assert _cell(db, rows["라마바"]).endswith("(드라이브: 라마바 IR.pdf)")
+
+
+def test_both_tabs_get_the_receipt(db, admin, configured):
+    from app.models import EditLog
+    from app.services import edit_log, gdrive_ir
+
+    edit_log.install()
+    ir = _company(db, "샘플가")
+    linked = _deal(db, "샘플가 (시리즈A)", ir_company_id=ir.id)
+    same = _deal(db, "샘플가")
+    only_deal = _deal(db, "사아로보")
+    only_deal2 = _deal(db, "사아로보")
+    _turn_on(db, admin)
+    gdrive_ir.tick(db, now=T0, drive=FakeDrive([
+        _f("file000000001", "샘플가_IR.pdf", "2026-11-04T00:00:00Z"),
+        _f("file000000002", "사아로보 IR.pdf", "2026-11-03T00:00:00Z")]))
+    text = "2026/11/04 수신완료 (드라이브: 샘플가_IR.pdf)"
+    assert [_cell(db, r) for r in (ir, linked, same)] == [text, text, text]
+    assert [_cell(db, r) for r in (only_deal, only_deal2)] == [
+        "2026/11/03 수신완료 (드라이브: 사아로보 IR.pdf)"] * 2
+    logs = db.execute(select(EditLog.table_name, EditLog.method)).all()
+    assert sorted(t for t, _m in logs if t != "custom_columns") == [
+        "ir_companies", "series_a_companies", "series_a_companies",
+        "series_a_companies", "series_a_companies"]
+    assert {m for _t, m in logs} == {edit_log.AUTO_METHOD}
+    recent = {r["name"]: r for r in gdrive_ir.panel(db)["recent"]}
+    assert recent["샘플가_IR.pdf"]["rows"] == "IR 적음 · Series A 2줄 적음"
+
+
+def test_each_row_keeps_its_own_value(db, admin, configured):
+    from app.services import custom_columns, gdrive_ir
+
+    ir = _company(db, "샘플가")
+    deal = _deal(db, "샘플가", ir_company_id=ir.id)
+    col = custom_columns.add(db, "companies", "IR 자료 수신", "memo", admin.id)
+    db.flush()
+    custom_columns.write(db, ir, col, "10/30 메일로 받음", admin.id)
+    db.commit()
+    _turn_on(db, admin)
+    drive = FakeDrive([_f("file000000001", "샘플가_IR.pdf", "2026-11-04T00:00:00Z")])
+    result = gdrive_ir.tick(db, now=T0, drive=drive)
+    # IR 줄은 사람이 적은 그대로, 빈 Series A 줄에만 적는다 — 한 줄이라도 적었으면 '적음'.
+    assert (result["written"], result["skipped"]) == (1, 0)
+    assert _cell(db, ir) == "10/30 메일로 받음"
+    assert _cell(db, deal) == "2026/11/04 수신완료 (드라이브: 샘플가_IR.pdf)"
+    assert gdrive_ir.panel(db)["recent"][0]["rows"] == "IR 건너뜀 · Series A 적음"
+    # 새 판이 오면 두 줄 다 값이 있다 — 건너뛰고 기록만.
+    drive.files.append(_f("file000000002", "샘플가_IR_v2.pdf", "2026-11-04T01:10:00Z"))
+    later = gdrive_ir.tick(db, now=T0 + timedelta(minutes=30), drive=drive)
+    assert (later["written"], later["skipped"]) == (0, 1)
+    assert _cell(db, deal).endswith("(드라이브: 샘플가_IR.pdf)")
+    assert gdrive_ir.panel(db)["recent"][0]["rows"] == "IR 건너뜀 · Series A 건너뜀"
 
 
 def test_a_cell_with_a_value_is_never_overwritten(db, admin, configured):
