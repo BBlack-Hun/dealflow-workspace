@@ -10,6 +10,8 @@
 //   ④ 저장 뒤 **서버만 아는 값**(투자라운드의 짧은 꼴 · IR 딱지)을 응답에서 받아 적는다.
 //   ⑤ [삭제] 는 이름을 대고 묻고, 아니라면 아무것도 안 보낸다.
 //   ⑥ 기업명을 넣어 IR 기업에 이어지면 채워진 칸 · `IR 기업:` 표시가 새로고침 없이 선다.
+//   ⑨ 번호는 하이픈이 있든 없든 · 뒷자리만으로도 찾힌다(#152).
+//   ⑩ 추가 칸을 적은 응답(`id` 가 없다)의 검색 글자도 받아 적는다(#152).
 //
 // 기업명은 전부 지어낸 것이다 — 저장소가 공개다.
 "use strict";
@@ -389,6 +391,48 @@ function saved(dom, row, cell, value, data) {
   assert.ok(!by.classList.contains("muted") && !at.classList.contains("muted"),
     "방금 고쳤는데 `만든 뒤로 안 고침` 옅은 글씨가 남았다");
   assert.strictEqual(at.title, "마지막으로 고친 시각", "짚으면 아직 `안 고친 줄` 이라고 말한다");
+}
+
+// --- ⑨ 번호는 어느 모양으로 쳐도(#152) --------------------------------------
+//
+// 줄에는 적은 그대로와 숫자만 남긴 꼴이 함께 실린다(`routers/series_a.search_text`).
+// 친 글자가 번호 모양이면 숫자만 남겨 한 번 더 견준다 — `companies.js` 와 같은 규칙.
+{
+  const dom = build();
+  dom.body.children[0].setAttribute("data-search", "가온샘플 010-0000-2233 01000002233");
+  dom.body.children[1].setAttribute("data-search", "샘플메디 24년 매출 12억");
+  run(dom);
+  ["01000002233", "010-0000-2233", "010 0000 2233", "2233"].forEach(function (typed) {
+    dom.search.value = typed;
+    dom.search.fire("input");
+    assert.strictEqual(shown(dom), "1", typed + " 로 번호가 안 찾힌다");
+  });
+  // 번호 모양이 아닌 글자는 숫자만 남기지 않는다 — `24년` 이 `24` 로 줄면 엉뚱한 줄이 걸린다.
+  dom.search.value = "2233년";
+  dom.search.fire("input");
+  assert.strictEqual(shown(dom), "", "번호 모양이 아닌데 숫자만 남겨 견줬다");
+}
+
+// --- ⑩ 추가 칸을 적으면 검색 글자도 바뀐다(#152) -----------------------------
+//
+// 추가 칸은 칸 값 길(`PUT /api/custom-values/…`)로 저장되고 응답에 `id` 가 없다. 그래도
+// 응답의 `search` 는 받아 적어야 방금 적은 글로 찾힌다 — 줄의 다른 값은 건드리지 않는다.
+{
+  const dom = build();
+  run(dom);
+  const row = dom.body.children[0];
+  const memo = D.el("div", { class: "cell", "data-field": "cc5", "data-custom": "5" });
+  row.appendChild(D.el("td", {}, [memo]));
+  memo.textContent = "샘플 재검토";
+  saved(dom, row, memo, "샘플 재검토", {
+    value: "샘플 재검토", updated_at: "2026-11-04 10:00",
+    search: "가온샘플 딜 소싱 네트워크 샘플 재검토"
+  });
+  assert.strictEqual(row.getAttribute("data-s-received_at"), "2026-08-25",
+    "추가 칸 응답으로 세울 값이 지워졌다");
+  dom.search.value = "재검토";
+  dom.search.fire("input");
+  assert.strictEqual(shown(dom), "1", "추가 칸에 적은 글이 새로고침 전에 안 찾힌다");
 }
 
 // --- ⑤ 삭제 --------------------------------------------------------------

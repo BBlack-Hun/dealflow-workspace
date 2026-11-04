@@ -87,13 +87,26 @@ def short_series(value: Optional[str]) -> str:
     return _short(value)
 
 
-def search_text(c: SeriesACompany) -> str:
-    """줄에 실어 둘 검색용 글자. 표에 보이는 칸은 다 찾아져야 한다."""
+def search_text(c: SeriesACompany, extra=()) -> str:
+    """줄에 실어 둘 검색용 글자. 표에 보이는 글 칸은 다 찾아져야 한다(#152).
+
+    안 싣는 칸과 그 까닭은 IR 기업 현황과 같다(`companies.search_text` 머리말 —
+    `수정한 팀원` · `수정한 날짜` 는 앱이 적는 도장, `계약서 수신 여부` · 추가 O/X 칸은
+    `O` · `X` 한 글자). `계약여부` 는 칸에 보이는 말(`유료계약완료`)로 싣는다.
+
+    번호(`연락처`)는 적은 그대로와 숫자만 남긴 꼴을 함께 싣는다 — IR 기업 현황과 같은
+    규칙(`companies.phone_digits`)이고, 친 글자를 숫자만 남기는 일은 `series_a.js` 가 한다.
+    `extra` 는 이 줄의 칸이 아니라 서버가 맞춰 보이는 값이다(`row_dict` — IR 쪽 자료
+    이름 · 확정한 공유 심사역의 `휴대폰` · 추가 칸의 글).
+    """
+    from .companies import phone_digits
+
     parts = [c.name, c.memo, c.received_at, c.follow_round_month, c.consulting_meeting_at,
              c.deal_type, c.assignee_name, c.shared_by, c.source_firm, c.sector_major,
              c.sector_minor, c.series, c.detail, c.deal_pitch,
-             c.ir_file_name] + [getattr(c, f) for f in TYPED]
-    return " ".join(filter(None, parts)).lower()
+             c.ir_file_name, c.contract_ym, _contract(c)["contract_label"],
+             *(getattr(c, f) for f in TYPED), phone_digits(c.ceo_phone), *extra]
+    return " ".join(str(p) for p in parts if p).lower()
 
 
 def ir_names(db: Session) -> Dict[str, tuple]:
@@ -121,8 +134,12 @@ def _contract(c: SeriesACompany) -> dict:
 
 def row_dict(c: SeriesACompany, known: Dict[str, tuple],
              people: Optional[Dict[int, Set[int]]] = None,
-             sharer: Optional[dict] = None) -> dict:
+             sharer: Optional[dict] = None, custom=()) -> dict:
+    """`custom` — 이 줄의 추가 칸 글(`custom_columns.search_values`). 검색 글자에만 싣는다."""
+    from .companies import phone_digits
+
     ir_name, ir_file = known.get(deal_history._key(c.name), ("", ""))
+    sharer_phone = ((sharer or {}).get("confirmed") or {}).get("phone", "")
     # **Series A 딜 공유로 이 기업을 받은 심사역** — 딜 제안 관리 › 딜 소싱 제안의
     # [Series A 딜 공유]가 적은 기록(`services/series_a_share.py`). 대기 · 보내는
     # 중 · 보냄만 센다(중단 · 실패한 건은 안 센다).
@@ -171,8 +188,9 @@ def row_dict(c: SeriesACompany, known: Dict[str, tuple],
         "sharer": sharer or {"confirmed": None, "candidates": []},
         # `공유 심사역` 오른쪽 `휴대폰` 칸(#25) — [이 분으로 확정]한 분의 딜 소싱 줄 번호.
         # 확정한 분이 없으면 빈칸이고 고칠 수 없다(`_set_sharer_phone`).
-        "sharer_phone": ((sharer or {}).get("confirmed") or {}).get("phone", ""),
-        "search": search_text(c),
+        "sharer_phone": sharer_phone,
+        # 칸에 보이는 그대로 — IR 쪽 자료 이름(`IR 자료` 칸이 그것을 보인다) · `휴대폰`(두 꼴).
+        "search": search_text(c, [ir_file, sharer_phone, phone_digits(sharer_phone), *custom]),
     }
 
 
@@ -196,7 +214,10 @@ def table_rows(db: Session) -> List[dict]:
     # 이름 밑 `IR 기업: ○○ (자동 연결 · 연결 풀기)` — 투자컨설턴트 표와 같은 표시.
     links = ir_link.badges(db, companies)
     editors = last_editors(db, companies, SeriesACompany.__tablename__)
-    rows = [dict(row_dict(c, known, people, sharers.get(c.id)), ir_link=links[c.id],
+    # 추가 칸 글도 검색에 싣는다(#152) — 줄마다 묻지 않고 한 번에 읽는다.
+    custom = custom_columns.search_values(db, SeriesACompany.__tablename__)
+    rows = [dict(row_dict(c, known, people, sharers.get(c.id), custom.get(c.id, ())),
+                 ir_link=links[c.id],
                  updated_by=editors.get(c.id, ""))
             for c in companies]
     return sort_rows(rows)
@@ -434,6 +455,18 @@ def _assign(row: SeriesACompany, body: SeriesAIn) -> None:
             setattr(row, field, text or None)
 
 
+def _one(db: Session, row: SeriesACompany) -> dict:
+    """줄 하나를 표와 같은 값으로 — IR 쪽 이름 · 확정한 공유 심사역 · 추가 칸 글까지."""
+    custom = custom_columns.search_values(db, SeriesACompany.__tablename__, [row.id])
+    return row_dict(row, ir_names(db), sharer=series_a_share.sharer_view(db, row),
+                    custom=custom.get(row.id, ()))
+
+
+def row_search(db: Session, row: SeriesACompany) -> str:
+    """줄 하나의 검색 글자 — 추가 칸을 적은 뒤 · 공유 심사역을 확정한 뒤 응답이 싣는다."""
+    return _one(db, row)["search"]
+
+
 def _result(row: SeriesACompany, db: Session) -> dict:
     """PATCH 응답 — 화면이 **브라우저에서 다시 만들 수 없는 값**을 함께 준다.
 
@@ -442,7 +475,7 @@ def _result(row: SeriesACompany, db: Session) -> dict:
     """
     from .companies import last_editors
 
-    data = row_dict(row, ir_names(db), sharer=series_a_share.sharer_view(db, row))
+    data = _one(db, row)
     # 고친 칸은 **서버가 저장한 값**으로 다시 그리고(`series_a.js`), 검색 글자도
     # 갈아 끼운다 — 표에서 고치는 칸은 전부 돌려준다. 기업명을 넣어 IR 기업에 이어지면
     # 대표자 · 매출 · 금액 빈칸이 채워지므로 화면은 줄의 칸을 전부 이 값으로 다시 그린다.
@@ -517,7 +550,9 @@ def set_sharer(row_id: int, body: SharerIn, db: Session = Depends(get_db),
                 detail=f"'{sourcing_sync.SYNC_LABEL}' 갈래의 딜 소싱 심사역만 확정할 수 있습니다")
     row.shared_by_contact_id = body.contact_id
     db.commit()
-    return {"id": row.id, "sharer": series_a_share.sharer_view(db, row)}
+    # 검색 글자도 — 확정한 분의 `휴대폰` 이 칸에 서고 그 번호로 찾아져야 한다(#152).
+    return {"id": row.id, "sharer": series_a_share.sharer_view(db, row),
+            "search": row_search(db, row)}
 
 
 @router.delete("/api/series-a-companies/{row_id}")
