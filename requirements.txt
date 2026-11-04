@@ -17,3 +17,7 @@ openpyxl==3.1.5
 # 딜 소싱 메일 확인 — 팀 현황에서 넣은 POP3 비밀번호를 DB 에 **암호화해서** 둔다
 # (Fernet · app/services/secret_box.py). 리눅스 arm64/x86 모두 바퀴(wheel)가 있다.
 cryptography==50.0.0
+# 구글 드라이브 IR 수신 확인(#155) — 서비스 계정 키로 토큰을 받아 Drive API 를 **읽기만**
+# 한다(`app/services/gdrive_ir.py`). 무거운 google-api-python-client 대신 인증 꾸러미만 —
+# HTTP 는 위 requests 로. 딸려 오는 것은 pyasn1-modules 뿐이다(cryptography 는 위에 있다).
+google-auth==2.60.0

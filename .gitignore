@@ -5,6 +5,9 @@
 *.key
 *.token
 agent/config.local.yaml
+# 구글 서비스 계정 키(#155) — 서버의 데이터 폴더(`secrets/`)에 둔다. 저장소에 놓여도 안 올라가게.
+secrets/
+gdrive-sa*.json
 
 # ── 파이썬 ────────────────────────────────────────────────────
 __pycache__/

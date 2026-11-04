@@ -120,6 +120,12 @@ ACTION_DELETE = "delete"
 #: 위 셋과 다른 말을 쓴다(`log_import`).
 ACTION_IMPORT = "import"
 
+#: **사람이 누른 요청이 아니라 앱이 혼자 고친 일** — `begin` 의 메서드 자리에 이 값을
+#: 넣는다(구글 드라이브 IR 수신 확인 · #155). 계정 칸에는 그 자동화를 켠 관리자가 남고
+#: (표가 계정을 요구한다), 로그 화면과 표의 `수정한 팀원` 은 `자동` 으로 읽는다.
+AUTO_METHOD = "AUTO"
+AUTO_ACTOR = "자동"
+
 #: 값 하나를 로그에 남길 때의 길이 상한. 넘으면 잘리고 `…` 이 붙는다.
 #: 허용 목록에 있는 칸은 원래 짧지만, 누가 긴 글을 그 칸에 넣기 시작해도
 #: 로그가 통째로 부풀지 않게 막아 둔다.
@@ -1211,7 +1217,8 @@ def recent(db, *, scope: str = "", screen: str = "", limit: int = PAGE_SIZE):
             changes = []
         out.append({
             "at": row.at or "",
-            "actor": names.get(row.actor_user_id, f"#{row.actor_user_id}"),
+            "actor": (AUTO_ACTOR if row.method == AUTO_METHOD
+                      else names.get(row.actor_user_id, f"#{row.actor_user_id}")),
             "target": (names.get(row.target_user_id, f"#{row.target_user_id}")
                        if row.target_user_id else ""),
             "scope": row.scope,

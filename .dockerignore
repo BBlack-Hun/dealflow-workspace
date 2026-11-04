@@ -21,6 +21,9 @@ deploy/.env
 agent/config.local.yaml
 **/*.key
 **/*.token
+# 구글 서비스 계정 키(#155) — 이미지 층에 들어가면 지워지지 않는다.
+**/secrets/
+**/gdrive-sa*.json
 
 # ── 데이터 — 명단·DB 사본이 저장소 폴더에 놓여 있어도 이미지로 가지 않게 ─────
 **/*.db

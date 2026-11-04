@@ -1563,6 +1563,31 @@ def job_notes(db: Session, job: SendJob, now: Optional[datetime] = None,
 
 # ── 실 ──────────────────────────────────────────────────────────────────────
 
+def run_round() -> None:
+    """실 한 바퀴 — 자동화 전부, 이어서 구글 드라이브 IR 수신 확인. 어느 쪽이 넘어져도 실은 산다.
+
+    **구글 드라이브 IR 수신 확인**(#155)은 보내는 일이 아니라 회차 틀(`run_all` — 보내는
+    계정 · 시험방 · 예약)에는 달지 않고 같은 실에서 이어 부른다. 간격(기본 30분) ·
+    스위치 · 서버 설정은 그쪽이 본다(`gdrive_ir.tick`). 넘어져도 다음 바퀴에 다시 본다.
+    """
+    db = SessionLocal()
+    try:
+        try:
+            run_all(db)
+        except Exception:  # noqa: BLE001
+            log.exception("자동화를 살피다 실패했습니다")
+        try:
+            from . import gdrive_ir
+
+            db.rollback()
+            gdrive_ir.tick(db)
+        except Exception:  # noqa: BLE001
+            db.rollback()
+            log.exception("구글 드라이브 IR 수신 확인을 하다 실패했습니다")
+    finally:
+        db.close()
+
+
 def start_scheduler() -> None:
     """웹 프로세스 안에서 5분마다 깨어나 본다 — 예약 발송·월간 자동과 같은 얼개.
 
@@ -1580,13 +1605,7 @@ def start_scheduler() -> None:
     def loop() -> None:
         while True:
             _time.sleep(CHECK_INTERVAL_SEC)
-            db = SessionLocal()
-            try:
-                run_all(db)
-            except Exception:  # noqa: BLE001
-                log.exception("자동화를 살피다 실패했습니다")
-            finally:
-                db.close()
+            run_round()
 
     _SCHEDULER = threading.Thread(target=loop, daemon=True, name="automations")
     _SCHEDULER.start()

@@ -826,6 +826,90 @@
     </p>
   </section>
 
+  {# **구글 드라이브 IR 수신 확인**(#155) — 자동화 판과 같은 자리 · 같은 켜기 방식.
+     보내는 일이 아니라 위 표(보내는 계정 · 시험방)에 넣지 않았다. 서비스 계정으로
+     폴더를 **읽기만** 하고, 파일 이름에서 기업이 하나로 정해지면 `IR 자료 수신` 칸에
+     적는다(`services/gdrive_ir.py`). **키 내용 · 경로 · 폴더 id 는 그리지 않는다.** #}
+  {% set gd = gdrive_ir %}
+  <section class="panel" id="gdrive-ir" data-testid="gdrive-ir-panel">
+    <h2 class="panel-title">자동화 · {{ gd.label }}</h2>
+    <p class="hint {% if gd.ready and gd.enabled and not gd.error %}ok{% else %}warn{% endif %}" data-testid="gdrive-ir-status">
+      {{ gd.status }}
+      {% if gd.last_run %}· 마지막 확인 {{ gd.last_run }}{% endif %}
+      {% if gd.next %}· 다음 {{ gd.next }}{% endif %}
+    </p>
+    {% if gd.error %}<p class="hint warn" data-testid="gdrive-ir-error">⚠ {{ gd.error }}{% if gd.last_ok %} (마지막 성공 {{ gd.last_ok }}){% endif %}</p>{% endif %}
+    <ul class="import-stats">
+      <li><span>키</span><b>{{ gd.key_text }}</b></li>
+      <li><span>폴더</span><b>{% if gd.folders_set %}{{ gd.folders_set }}개{% else %}없음 — 서버에 {{ gd.env_folders }} 가 없습니다{% endif %}{% if gd.bad_folders %} · 읽지 못한 값 {{ gd.bad_folders }}개{% endif %}</b></li>
+      {% for r in gd.roots %}
+      <li><span>{{ r.name }}</span><b>{% if r.ok %}접근 성공{% else %}<span class="warn">접근 실패 — {{ r.error }}</span>{% endif %}</b></li>
+      {% endfor %}
+      {% if gd.subfolders and gd.subfolder_count %}<li><span>하위 폴더</span><b>{{ gd.subfolder_count }}개</b></li>{% endif %}
+      <li><span>적은 수</span><b data-testid="gdrive-ir-written">{{ gd.written }}</b></li>
+      {% if gd.kind_skipped %}<li><span>파일 종류로 건너뜀</span><b>{{ gd.kind_skipped }}</b></li>{% endif %}
+      <li><span>확인 필요</span><b>{{ gd.review|length }}</b></li>
+    </ul>
+    <form method="post" action="/team/gdrive-ir" class="rule-form" data-testid="gdrive-ir-form">
+      <label class="field inline-field"><span>켜기</span>
+        <select name="enabled">
+          <option value="">꺼짐</option>
+          <option value="on" {% if gd.enabled %}selected{% endif %}>켜짐</option>
+        </select></label>
+      <label class="field inline-field" title="{{ gd.min_interval }}~{{ gd.max_interval }}분 — 바뀐 파일만 묻습니다"><span>확인 간격(분)</span>
+        <input type="number" name="interval_min" value="{{ gd.interval_min }}"
+               min="{{ gd.min_interval }}" max="{{ gd.max_interval }}" style="width:80px"></label>
+      <label class="field inline-field"><span>하위 폴더까지</span>
+        <input type="checkbox" name="subfolders" value="on" {% if gd.subfolders %}checked{% endif %}></label>
+      <label class="field inline-field" title="끄면 처음 확인 때 폴더에 이미 있던 파일은 본 것으로만 두고 적지 않습니다 — 그 뒤에 올라온 파일만 적습니다"><span>처음 확인 때 이미 있던 파일도 적기</span>
+        <input type="checkbox" name="backfill" value="on" {% if gd.backfill %}checked{% endif %}></label>
+      <button class="secondary-btn" type="submit">저장</button>
+    </form>
+    <p class="hint">
+      드라이브 폴더를 <b>읽기만</b> 합니다. <b>PDF · PPT</b>(pdf · ppt · pptx · key · 구글 슬라이드)만 보고,
+      그 밖의 파일은 <b>건너뜀 (파일 종류)</b> 으로 기록만 합니다. 파일 이름에서 기업이
+      <b>하나로 정해질 때만</b> 그 기업의 <b>{{ gd.column }}</b> 칸에
+      <code>2026/11/04 수신완료 (드라이브: 파일이름)</code> 꼴로 적습니다(날짜는 드라이브에 올라온 날) —
+      <b>IR 기업 현황 · Series A 이상 딜 소싱 두 탭 모두</b>.
+      <b>이미 값이 있는 칸은 덮지 않습니다</b>(줄마다 따로) — 같은 기업의 파일이 또 오면 건너뛰고 아래 기록에만 남깁니다.
+      <b>IR 자료</b> 칸(발송 PC 가 붙일 파일 이름)은 건드리지 않습니다. 수정 기록에는 <b>자동</b>으로 남습니다.
+      키 · 폴더는 서버 환경변수({{ gd.env_sa }} · {{ gd.env_folders }})입니다.
+    </p>
+    {% if gd.review %}
+    <h3 class="panel-title">확인 필요 — 손으로 기업을 찾아 {{ gd.column }} 칸에 적어 주세요</h3>
+    <div class="table-wrap">
+    <table class="grid-table compact automation-table" data-testid="gdrive-ir-review">
+      <thead><tr><th>파일</th><th>까닭</th><th>후보 기업</th><th style="width:90px">본 때</th></tr></thead>
+      <tbody>
+      {% for r in gd.review %}
+      <tr>
+        <td>{% if r.link %}<a class="linkbtn" href="{{ r.link }}" target="_blank" rel="noopener noreferrer">{{ r.name }}</a>{% else %}{{ r.name }}{% endif %}
+          {% if r.folder %}<div class="cell-sub">폴더: {{ r.folder }}</div>{% endif %}</td>
+        <td>{{ r.why }}</td>
+        <td>{{ r.candidates|join(', ') or '—' }}</td>
+        <td>{{ r.at }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% endif %}
+    {% if gd.recent %}
+    <h3 class="panel-title">최근 처리</h3>
+    <div class="table-wrap">
+    <table class="grid-table compact automation-table" data-testid="gdrive-ir-recent">
+      <thead><tr><th>파일</th><th>기업</th><th>결과</th><th style="width:90px">때</th></tr></thead>
+      <tbody>
+      {% for r in gd.recent %}
+      <tr><td>{{ r.name }}</td><td>{{ r.company }}{% if r.via %} <span class="muted">({{ r.via }})</span>{% endif %}</td>
+        <td>{{ r.result }}{% if r.rows %}<div class="cell-sub">{{ r.rows }}</div>{% endif %}</td><td>{{ r.at }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% endif %}
+  </section>
+
   {# 스타트업 월간 발송 — **메뉴 · 보내는 계정** 한 가지만 정하는 판.
 
      매월 저절로 서는 회차는 위 자동화 판의 A5 하나다(#31 — 옛 30일 자동은
