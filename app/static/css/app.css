@@ -2792,6 +2792,16 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
 a.guard-go { display: block; width: 100%; text-align: center; text-decoration: none; }
 a.guard-go:hover { background: #1e4fd0; text-decoration: none; }
 
+/* 옛 발송기 알림(`_agent_update.html`). `<dialog open>` 자체가 뒷막이다 — 닫히면
+   (`open` 이 빠지면) 뒷막도 함께 사라지고 좌측 메뉴도 다시 밝아진다. 안 상자는
+   위 `.guard-modal` 그대로, 위아래 순서도 같다(뒷막 39 · 창 40). */
+.agent-update { position: fixed; inset: 0; z-index: 39; width: auto; height: auto;
+  max-width: none; max-height: none; margin: 0; padding: 0; border: 0;
+  background: rgba(16,21,29,.28); }
+.layout:has(.agent-update[open]) .sidebar { filter: brightness(.45); }
+.agent-update-list { text-align: left; font-size: 13px; margin: 10px 0 0; padding-left: 20px; }
+.agent-update-later { margin: 10px 0 0; }
+
 /* IR 진행 관리의 [자료 보내기] 창 — **화면을 옮기지 않고 그 자리에서 끝낸다.**
 
    뒷막(`.guard-backdrop`)과 z-index 는 위 안내창과 같은 것을 그대로 쓴다.
