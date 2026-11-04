@@ -916,15 +916,27 @@
         <td title="{{ r.note }}">
           <div class="cell clamp2 keep-lines" data-field="note" data-type="long" data-memo-date>{{ r.note }}</div>
         </td>
-        <td>
+        <td class="ir-file">
           {# **링크가 아니다.** 이 칸에는 자료 폴더 안의 파일명이 들어 있고(0056),
              파일은 각자 PC 에 있다 — 브라우저가 열 수 있는 자리가 아니다.
-             이름 전체는 짚어 보면 뜨고, 고치는 자리는 [수정] 창이다. #}
+
+             **눌러서 바로 고친다**(#151) — Series A 탭의 같은 칸과 같은 길이다
+             (`inline_edit.js` → `PATCH /api/companies/{id}` 의 `ir_file_name`). 비우면 `없음`.
+             배지는 칸 **밖** 형제로 둔다: inline_edit.js 는 칸의 글자를 곧 지금 값으로
+             읽으므로(`before`), 배지 글자가 칸 안에 있으면 그것이 파일 이름으로 저장된다
+             (`대분류` 의 `추천` 딱지와 같은 까닭). 배지에 `cell-hint` 를 달아 배지를 눌러도
+             칸이 열린다 — 빈 칸은 글자가 없어 누를 자리가 배지뿐이다. 저장 뒤 배지와 줄의
+             `data-f-ir` 는 `companies.js` 가 응답(`has_ir`)으로 다시 그린다 — 필터 값은 친
+             파일 이름이 아니라 `● 있음`/`⚠ 없음` 이라 `data-filter-derived`(금액 칸과 같은 표시)로
+             inline_edit.js 가 친 글자를 행에 적지 않게 한다. #}
           {% if r.has_ir %}
-            <span class="room-badge ok" title="자료 파일: {{ r.ir_file_name }}">📎 있음</span>
+            <span class="room-badge ok cell-hint ir-badge" title="자료 파일: {{ r.ir_file_name }} — 눌러서 고칩니다">📎 있음</span>
           {% else %}
-            <span class="room-badge warn" title="IR 요청이 와도 바로 보낼 자료가 없습니다">⚠ 없음</span>
+            <span class="room-badge warn cell-hint ir-badge" title="IR 요청이 와도 바로 보낼 자료가 없습니다 — 눌러서 파일 이름을 적습니다">⚠ 없음</span>
           {% endif %}
+          <div class="cell ellipsis ir-file-name" data-field="ir_file_name"
+               data-filter-key="ir" data-filter-derived
+               title="{{ r.ir_file_name }}">{{ r.ir_file_name }}</div>
         </td>
         {{ cc.cells(r.id) }}
         <td><button type="button" class="linkbtn js-co-edit">수정</button></td>
@@ -937,7 +949,7 @@
 </div>
 <p class="hint">
   금액 단위는 <b>억</b>입니다 — <code>18.3</code> 처럼 소수점도 됩니다.
-  <b>IR 자료</b>는 자료 폴더에 넣어 둔 <b>파일 이름</b>을 적습니다(주소가 아닙니다).
+  <b>IR 자료</b>는 자료 폴더에 넣어 둔 <b>파일 이름</b>을 적습니다(주소가 아닙니다) — 칸을 눌러 바로 적고, 비우면 <b>없음</b>이 됩니다.
   그러면 자료 요청이 왔을 때 <a href="/deals">딜 제안 관리 → IR 자료 전달</a>에서
   바로 보낼 수 있습니다.
   {# 자료 폴더를 정하러 가라는 말은 **그 칸이 그려지는 계정에만** 한다 —
@@ -1357,7 +1369,9 @@
     {# **주소 칸이 아니다**(0056). 자료 폴더 안의 **파일 이름 하나**를 적는다 —
        폴더 경로는 PC 마다 달라서 각자 `/setup` 에서 정하고, 발송기가
        `폴더 + 이름` 으로 조립해 붙여 보낸다. 경로·주소는 발송기가 거부한다. #}
-    <label class="field wide"><span>IR 자료 파일명</span>
+    {# 이름은 표 머리글과 같은 `IR 자료`(tests/test_ui_layout.py) — #151 로 표에서도 고치는
+       칸이 되며 둘이 짝지어졌다. 파일 이름을 적는다는 말은 placeholder 에 있다. #}
+    <label class="field wide"><span>IR 자료</span>
       <input type="text" id="f-ir_file_name"
              placeholder="예: 샘플애그_IR_2026.pdf — 자료 폴더에 넣어 둔 파일 이름"></label>
     {#

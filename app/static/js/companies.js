@@ -951,3 +951,35 @@
     }
   });
 })();
+
+// IR 자료(#151) — 표에서 눌러 파일 이름을 고치면 **배지와 필터 값을 응답으로** 다시 그린다.
+//
+// 칸에는 파일 이름이, 그 위 배지에는 `📎 있음`/`⚠ 없음` 이 선다(companies.html). inline_edit.js
+// 는 칸 글자만 고친다 — 배지와 줄의 `data-f-ir` 는 칸 이름(`ir_file_name`)과 필터 키(`ir`)가
+// 달라 그쪽이 못 닿는다. 안 맞추면 `⚠ 없음` 으로 걸러 둔 표에 방금 채운 기업이 그대로 남고,
+// 필터의 수도 옛 수다. 값은 **응답이 준 것**을 쓴다 — 서버가 앞뒤 빈칸을 떼어 넣는다.
+(function () {
+  var table = document.getElementById("co-table");
+  if (!table) return;
+
+  table.addEventListener("inline-saved", function (e) {
+    var data = e.detail.data || {};
+    var cell = e.detail.cell;
+    if (!cell || cell.getAttribute("data-field") !== "ir_file_name" || !("has_ir" in data)) return;
+    var name = data.ir_file_name || "";
+    cell.textContent = name;
+    cell.title = name;
+    var badge = cell.parentNode && cell.parentNode.querySelector(".ir-badge");
+    if (badge) {
+      badge.className = "room-badge cell-hint ir-badge " + (data.has_ir ? "ok" : "warn");
+      badge.textContent = data.has_ir ? "📎 있음" : "⚠ 없음";
+      badge.title = data.has_ir ? "자료 파일: " + name + " — 눌러서 고칩니다"
+        : "IR 요청이 와도 바로 보낼 자료가 없습니다 — 눌러서 파일 이름을 적습니다";
+    }
+    // 처음 그릴 때와 같은 말이다(companies.html 의 `data-f-ir` · `company_view.FILTER_VALUES["ir"]`).
+    var row = e.detail.row;
+    if (row && row.hasAttribute("data-f-ir")) {
+      row.setAttribute("data-f-ir", data.has_ir ? "● 있음" : "⚠ 없음");
+    }
+  });
+})();

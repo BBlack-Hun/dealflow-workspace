@@ -355,14 +355,13 @@ def _check_ir_file(db: Session, row: SeriesACompany, body: SeriesAIn) -> None:
     중이면 고친 이름)의 기업이 있으면 받지 않는다 — 그 이름의 요청은 IR 줄로 이어져
     IR 쪽 자료가 나가므로, 여기 적으면 안 쓰이는 두 번째 벌이 된다. 비우기는 늘 된다.
     """
-    from .companies import _looks_like_a_file_name
+    from .companies import NOT_A_FILE_NAME, _looks_like_a_file_name
 
     text = (body.ir_file_name or "").strip()
     if not text:
         return
     if not _looks_like_a_file_name(text):
-        raise HTTPException(status_code=400,
-                            detail="자료 폴더 안의 파일 이름만 적습니다 — 폴더 경로·주소는 받지 않습니다")
+        raise HTTPException(status_code=400, detail=NOT_A_FILE_NAME)
     name = (body.name or "").strip() or row.name
     if deal_history._key(name) in ir_names(db):
         raise HTTPException(status_code=400, detail=IR_TWIN_FILE)
