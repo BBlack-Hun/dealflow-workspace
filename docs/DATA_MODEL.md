@@ -134,6 +134,8 @@ weekly_stats   (퇴사 삭제 후에도 남는 익명화 집계)
 | introducible | INTEGER | (파생) | `summary_status != insufficient` AND 이름 AND (`sector_major` **또는** `one_liner`) AND 금액 넷 중 하나(`services/amount.is_countable`) — **`딜 소개 문구`는 필수가 아니다**(비면 재료로 조합해 나간다) |
 
 > **파일 저장 없음(확정)**: IR 파일은 서버에 업로드하지 않는다. 사용자가 구글 드라이브에 수기 업로드 후 `ir_drive_url`만 등록하며, 발송 메시지 본문에 링크 텍스트로 포함된다.
+>
+> **지금은 `ir_file_name`(0056)** — 링크가 아니라 자료 폴더 안의 **파일 이름**이고, 비었는지가 곧 표의 `IR 자료` 배지(`📎 있음`/`⚠ 없음`)다. 표에서 그 칸을 눌러 바로 적는다(#151 · [수정] 창 · 일괄 붙여넣기도 그대로). 경로 · 주소(`/` `\` `:` 가 들거나 `.` 으로 시작)는 400 이고, **값이 바뀔 때만** 거른다 — 이미 문장이 든 줄도 다른 칸은 저장된다(`routers/companies.checked_ir_file`).
 
 ### 2.5-1 series_a_companies — Series A 이상 딜 소싱(받은 딜 한 건)
 

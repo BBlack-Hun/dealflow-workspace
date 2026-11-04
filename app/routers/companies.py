@@ -866,6 +866,24 @@ def _looks_like_a_file_name(value: str) -> bool:
         and not any(bad in value for bad in ("/", "\\", ":", "\x00"))
 
 
+#: 파일 이름이 아닌 값을 적으려 할 때 — `Series A 이상 딜 소싱` 탭(`series_a._check_ir_file`)도 같은 말.
+NOT_A_FILE_NAME = "자료 폴더 안의 파일 이름만 적습니다 — 폴더 경로·주소는 받지 않습니다"
+
+
+def checked_ir_file(company: IrCompany, value) -> Optional[str]:
+    """`IR 자료`(파일 이름)에 저장할 값 — 빈 값은 지우기(None), 파일 이름이 아니면 400(#151).
+
+    **값이 바뀔 때만** 거른다. 이미 적혀 있는 이상한 값(파일 이름 대신 문장이 든 줄이
+    있다)을 그대로 실어 보내는 저장은 통과해야 한다 — [수정] 창은 [저장] 한 번에 모든
+    칸을 보내므로, 여기서 늘 거르면 그 줄은 메모 하나도 못 고친다.
+    """
+    text = (value or "").strip()
+    if text and text != (company.ir_file_name or "").strip() \
+            and not _looks_like_a_file_name(text):
+        raise HTTPException(status_code=400, detail=NOT_A_FILE_NAME)
+    return text or None
+
+
 def _apply_ir_files(db: Session, pasted: str) -> tuple:
     """붙여넣은 텍스트 → (반영 수, 못 찾은 기업명, 파일명이 아닌 줄 수)."""
     from ..services.sheet_import import normalize_company_name
@@ -1035,6 +1053,8 @@ def _assign(company: IrCompany, body: CompanyIn) -> None:
             company.contract_ym = checked_ym(value)
         elif field in OX_FIELDS:
             setattr(company, field, checked_ox(field, value))
+        elif field == "ir_file_name":
+            company.ir_file_name = checked_ir_file(company, value)
         elif field == "kakao_room_name":
             # **방 이름을 적는 자리는 한 곳이다**(`services/room_match.set_room`).
             # 맞추기 화면(`/deals/startup-ir/rooms`)도 같은 함수를 지난다 —
@@ -1179,6 +1199,10 @@ def update_company(company_id: int, body: CompanyIn,
             # 검색 글자(#99) — 표에서 `기업 한줄 소개` 를 고치고 바로 찾으면 옛 글자로
             # 걸렀다(새로고침 전까지). Series A 탭(`series_a._result`)과 같은 짝.
             "search": search_text(company),
+            # IR 자료(#151) — 표에서 눌러 고치면 배지(`📎 있음`/`⚠ 없음`)와 필터 값을 이것으로
+            # 다시 그린다. 다듬은 값(앞뒤 빈칸을 뗀)을 준다 — 칸과 DB 가 같은 글자로 남게.
+            "ir_file_name": company.ir_file_name or "",
+            "has_ir": bool((company.ir_file_name or "").strip()),
             **_contract_result(company),
             **_one_liner_result(company)}
 

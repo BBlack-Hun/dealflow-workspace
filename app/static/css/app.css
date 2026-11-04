@@ -2282,6 +2282,13 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
                        cursor: help; }
 .cell-hint.warn-hint:hover { border-color: #a4560b; }
 
+/* IR 기업 현황 `IR 자료`(#151) — 배지(`📎 있음`/`⚠ 없음`)를 눌러도 아래 파일 이름 칸이
+   열린다(`cell-hint`). 생김새는 **배지 그대로** 둔다 — 파란 안내 딱지 테두리가 얹히면
+   `있음`·`없음` 의 초록·빨강이 흐려진다. 파일 이름은 작게 한 줄, 넘치면 말줄임(전체는 짚으면). */
+.room-badge.cell-hint { border: 0; border-radius: 6px; padding: 2px 6px; margin-top: 0;
+                        font-weight: normal; line-height: inherit; }
+#co-table .ir-file-name { margin-top: 2px; min-height: 1.2em; font-size: 11px; color: var(--muted); }
+
 /* 리마인드 구역에서 이름을 눌러 IR 요청 기록으로 — 누를 수 있다는 게 보여야 한다. */
 .req-link { color: inherit; text-decoration: none; border-bottom: 1px dotted var(--line); }
 .req-link:hover { border-bottom-color: var(--accent); }
