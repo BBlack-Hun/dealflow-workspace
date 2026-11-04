@@ -781,3 +781,71 @@ def test_예정_표에서_대면_화상을_고를_수_있다(logged_in, schedule
     assert 'name="meet_mode"' in html
     # 안 고른 것을 고를 수 있어야 되돌릴 수 있다.
     assert "안 정함" in html
+
+
+# ── 잡아 둔 미팅의 날짜·시간 옮기기(#144) ─────────────────────────────────────
+
+def test_미팅을_옮기면_캘린더_묶음도_따라간다(logged_in, db, users, scheduled_meetings):
+    """날짜를 읽는 곳은 그때그때 이 칸을 읽는다 — 옮긴 날의 묶음에 들어간다.
+    시간을 비우면 `안 정함` 으로 돌아간다(등록과 같은 규칙)."""
+    from app.models import User
+    from app.services import pipeline
+
+    _first, _second, alone = scheduled_meetings["rows"]
+    soon = scheduled_meetings["when"]
+    resp = logged_in.post(f"/ir/meetings/{alone.id}/time", follow_redirects=False,
+                          data={"scheduled_at": soon.isoformat(), "scheduled_time": "15:00"})
+    assert resp.status_code == 303 and resp.headers["location"].endswith("#meetings")
+    db.refresh(alone)
+    assert (alone.scheduled_at, alone.scheduled_time) == (soon.isoformat(), "15:00")
+    rows = {r["id"]: r for r in pipeline.meeting_rows(db, db.get(User, 1))}
+    assert rows[alone.id]["gcal_count"] == 3
+
+    logged_in.post(f"/ir/meetings/{alone.id}/time",
+                   data={"scheduled_at": soon.isoformat(), "scheduled_time": ""})
+    db.refresh(alone)
+    assert alone.scheduled_time is None
+
+
+def test_못_읽는_날짜와_끝난_미팅은_안_옮긴다(logged_in, db, users, scheduled_meetings):
+    first, second, _alone = scheduled_meetings["rows"]
+    before = first.scheduled_at
+    logged_in.post(f"/ir/meetings/{first.id}/time", data={"scheduled_at": "다음 주"})
+    db.refresh(first)
+    assert first.scheduled_at == before
+
+    # 끝난 미팅의 날짜는 결과 문의 · 2차 미팅 판정이 기댄다.
+    second.status = "done"
+    db.commit()
+    logged_in.post(f"/ir/meetings/{second.id}/time",
+                   data={"scheduled_at": "2030-01-02", "scheduled_time": "10:00"})
+    db.refresh(second)
+    assert (second.scheduled_at, second.scheduled_time) == (before, "14:30")
+
+
+def test_남의_미팅은_못_옮긴다(logged_in, db, users):
+    from app.models import Meeting, VcContact
+
+    contact = VcContact(user_id=users["u2"].id, name="홍길동",
+                        connect_stage="connected")
+    db.add(contact)
+    db.flush()
+    when = (date.today() + timedelta(days=2)).isoformat()
+    row = Meeting(user_id=users["u2"].id, contact_id=contact.id, scheduled_at=when)
+    db.add(row)
+    db.commit()
+
+    resp = logged_in.post(f"/ir/meetings/{row.id}/time",
+                          data={"scheduled_at": "2030-01-02", "scheduled_time": "10:00"})
+    assert resp.status_code == 404
+    db.refresh(row)
+    assert (row.scheduled_at, row.scheduled_time) == (when, None)
+
+
+def test_예정_표에_날짜_시간_변경_칸이_선다(logged_in, scheduled_meetings):
+    html = logged_in.get("/ir").text
+    for row in scheduled_meetings["rows"]:
+        assert f'action="/ir/meetings/{row.id}/time"' in html
+    # 지금 값이 채워진 채로 열린다 — 시간만 바꿀 때 날짜를 다시 고르지 않게.
+    assert f'value="{scheduled_meetings["when"].isoformat()}" required' in html
+    assert 'name="scheduled_time" value="13:20"' in html
