@@ -533,11 +533,13 @@ def last_editors(db: Session, companies, table: str = IrCompany.__tablename__) -
     by_id = {c.id: c for c in companies}
     last = (select(func.max(EditLog.id)).where(EditLog.table_name == table)
             .group_by(EditLog.row_id))
-    found = db.execute(select(EditLog.row_id, EditLog.at, User.name)
+    found = db.execute(select(EditLog.row_id, EditLog.at, User.name, EditLog.method)
                        .join(User, User.id == EditLog.actor_user_id)
                        .where(EditLog.id.in_(last))).all()
-    return {row_id: name if _same_moment(at, by_id[row_id].updated_at) else AUTO_EDITOR
-            for row_id, at, name in found if row_id in by_id}
+    # 앱이 혼자 적은 기록(`edit_log.AUTO_METHOD` — 드라이브 IR 수신 #155)도 `자동` 이다.
+    return {row_id: (name if _same_moment(at, by_id[row_id].updated_at)
+                     and method != edit_log.AUTO_METHOD else AUTO_EDITOR)
+            for row_id, at, name, method in found if row_id in by_id}
 
 
 def company_rows(db: Session, sent=None) -> List[dict]:

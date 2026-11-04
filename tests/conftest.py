@@ -31,6 +31,10 @@ for _name in ("HOST", "PORT", "USER", "PASSWORD", "FROM", "TLS", "SSL"):
 for _name in ("HOST", "PORT", "USER", "PASSWORD"):
     os.environ[f"DEALFLOW_POP3_{_name}"] = ""
 os.environ["DEALFLOW_SECRET_KEY"] = ""
+# 구글 드라이브 IR 수신 확인(#155)도 비운다 — 키가 있는 환경에서 돌려도 '설정이 없으면
+# 꺼짐' 으로 돈다. 켜 보는 검사는 그 검사가 가짜 값을 스스로 넣는다.
+os.environ["DEALFLOW_GDRIVE_SA_FILE"] = ""
+os.environ["DEALFLOW_GDRIVE_FOLDER_ID"] = ""
 os.environ["DEALFLOW_DOMAIN"] = ""
 # 테스트 서버의 '보내는 시간 제한 끄기' 스위치를 지운다. 테스트 서버 컨테이너
 # 안에서 검사를 돌려도 **운영과 같은 09~19시**로 돈다(`app/services/send_window.py`).

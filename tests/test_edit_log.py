@@ -707,6 +707,8 @@ WRITE_ROUTES = {
     ("POST", "/automations/meeting-request/{contact_id}/replied/undo"): MACHINE,
     # 딜 소싱 메일 확인이 읽을 편지함(`sourcing_mail_settings`) — 비밀번호는 `바뀜` 으로만.
     ("POST", "/team/sourcing-mail"): WATCHED,
+    # 구글 드라이브 IR 수신 확인 판(#155) — `automations` 의 예약 줄 `_gdrive_ir`.
+    ("POST", "/team/gdrive-ir"): WATCHED,
 
     # 대표 카톡방 맞추기 [저장] — **공용 표(`ir_companies`)의 방 이름**을
     # 수십 줄 한꺼번에 바꾼다. 이 앱에서 오발송에 가장 가까운 칸이라

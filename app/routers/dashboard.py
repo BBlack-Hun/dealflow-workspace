@@ -454,6 +454,10 @@ def team_page(request: Request, db: Session = Depends(get_db),
     from ..services import sourcing_mail
 
     ctx["sourcing_mail"] = sourcing_mail.panel(db)
+    # 구글 드라이브 IR 수신 확인(#155) — **키 내용 · 경로 · 폴더 id 는 싣지 않는다**.
+    from ..services import gdrive_ir
+
+    ctx["gdrive_ir"] = gdrive_ir.panel(db)
     return templates.TemplateResponse(request, "team.html", ctx)
 
 
@@ -749,6 +753,41 @@ def save_sourcing_mail(
         return back("딜 소싱 메일 확인 설정을 저장했습니다")
     row = sourcing_mail.check_connection(db, user)
     return back(sourcing_mail.connection_text(row))
+
+
+@router.post("/team/gdrive-ir", include_in_schema=False)
+def save_gdrive_ir(
+    enabled: str = Form(""),
+    interval_min: str = Form(""),
+    subfolders: str = Form(""),
+    backfill: str = Form(""),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """**구글 드라이브 IR 수신 확인**(#155) 판 — 켜기 · 확인 간격 · 하위 폴더 · 처음 파일.
+
+    관리자만. 키와 폴더는 서버 환경변수라 여기서 고치지 않는다(`docs/GDRIVE_IR.md`).
+    저장한 관리자가 수정 기록의 계정 칸에 남는다(주체는 `자동`).
+    """
+    admin_only(user)
+    from urllib.parse import quote
+
+    from ..services import gdrive_ir
+
+    def back(text: str) -> RedirectResponse:
+        return RedirectResponse(f"/team?msg={quote(text)}#gdrive-ir", status_code=303)
+
+    try:
+        saved = gdrive_ir.save_settings(
+            db, enabled=enabled == "on", interval_min=interval_min or gdrive_ir.DEFAULT_INTERVAL_MIN,
+            subfolders=subfolders == "on", backfill=backfill == "on", user_id=user.id)
+    except ValueError as exc:
+        db.rollback()
+        return back(f"{gdrive_ir.LABEL} — 저장하지 않았습니다: {exc}")
+    if not saved.enabled:
+        return back(f"{gdrive_ir.LABEL}을 껐습니다")
+    tail = "" if gdrive_ir.config().ready else " — 서버 설정(키 · 폴더)이 없어 아직 돌지 않습니다"
+    return back(f"{gdrive_ir.LABEL} 켜짐 — {saved.interval_min}분마다 확인합니다{tail}")
 
 
 @router.post("/team/members", include_in_schema=False)
