@@ -768,6 +768,35 @@ def set_meeting_mode(meeting_id: int, meet_mode: str = Form(""),
     return RedirectResponse("/ir#meetings", status_code=303)
 
 
+@router.post("/ir/meetings/{meeting_id}/time", include_in_schema=False)
+def set_meeting_time(meeting_id: int, scheduled_at: str = Form(""),
+                     scheduled_time: str = Form(""),
+                     db: Session = Depends(get_db),
+                     user: User = Depends(get_current_user)):
+    """잡아 둔 미팅의 **날짜·시간을 옮긴다**(#144). 등록과 같은 규칙으로 읽는다 —
+    시간을 비우면 `안 정함` 으로 돌아간다.
+
+    미팅 날짜를 읽는 곳(미리 알림 · 달력 · 업무 보고 · 캘린더 링크)은 전부 그때그때
+    이 칸을 읽으므로 따로 옮길 것이 없다. **이미 구글 캘린더에 저장한 일정은 앱이
+    못 고친다** — 주소만 만들어 주기 때문이라(`services/calendar_link.py`) 알림 글로 알린다.
+    """
+    meeting = _owned_meeting(db, meeting_id, user)
+    # 끝난 미팅의 날짜는 결과 문의 · 2차 미팅 판정이 기댄다 — 예정일 때만 옮긴다.
+    if meeting.status != "scheduled":
+        return RedirectResponse("/ir?msg=예정된 미팅만 옮길 수 있습니다#meetings",
+                                status_code=303)
+    try:
+        when = date.fromisoformat(scheduled_at.strip())
+    except ValueError:
+        return RedirectResponse("/ir?msg=미팅 날짜를 확인해 주세요#meetings", status_code=303)
+    meeting.scheduled_at = when.isoformat()
+    meeting.scheduled_time = pipeline.clean_time(scheduled_time)
+    db.commit()
+    return RedirectResponse(
+        "/ir?msg=미팅 시간을 바꿨습니다 — 구글 캘린더에 이미 넣었다면 그 일정도 고쳐 주세요#meetings",
+        status_code=303)
+
+
 @router.post("/ir/meetings/{meeting_id}/done", include_in_schema=False)
 def finish_meeting(meeting_id: int, outcome: str = Form(""),
                    db: Session = Depends(get_db),
