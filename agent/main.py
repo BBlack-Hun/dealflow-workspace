@@ -32,7 +32,7 @@ from typing import List
 import requests
 import yaml
 
-from .sender.base import SendResult
+from .sender.base import SendResult, same_title
 from .version import VERSION
 
 log = logging.getLogger("agent")
@@ -717,7 +717,11 @@ def process_verify_job(client: AgentClient, sender, job: dict, cfg: dict):
         checked = True
 
         room = item["room_name"]
-        query = (item.get("query") or "").strip() or room
+        # (0.11.14) 서버가 `exact` 를 붙인 건(담당자 줄 [방 연결 확인] · 시험 확인)은
+        # **적어 둔 방 이름 그대로만** 찾는다 — 이름만으로 다시 찾지도, 회사로
+        # 좁히지도 않는다. 찾은 제목 중 그 이름과 **글자까지 같은 것**만 센다.
+        exact = bool(item.get("exact"))
+        query = room if exact else ((item.get("query") or "").strip() or room)
         marker = str(cfg.get("room_marker", "") or "")
         try:
             # 방 이름은 생성으로 맞출 수 없다 → 이름+직함으로 **검색해 실제 제목을 찾는다**.
@@ -725,23 +729,32 @@ def process_verify_job(client: AgentClient, sender, job: dict, cfg: dict):
             # 받는 쪽이 **스타트업 기업**이면 서버가 `target: company` 를 붙인다.
             # 그때만 넘긴다 — 담당자 쪽 확인은 찾는 방이 곧 투자사 방이다.
             extra = {"company": True} if item.get("target") == "company" else {}
+            if exact:
+                # 결과 목록이 **이번 검색어의 것**이 될 때까지 기다리게 한다. 첫 낱말이
+                # 든 줄만 보고 넘어가면 **앞 건의 결과**를 이 건의 것으로 읽는다
+                # (11/05 — 건마다 바로 앞 건의 방 이름이 올라와 한 칸씩 밀렸다).
+                extra["exact"] = True
             if hasattr(sender, "discover_rooms"):
                 found = sender.discover_rooms(query, marker=marker, **extra)
                 # 직함이 시트와 다를 수 있다(예: 시트 '제너럴파트너님' ↔ 방 '심사역님').
                 # 이름만으로 한 번 더 찾아본다.
-                name_only = (item.get("name") or "").strip()
+                name_only = "" if exact else (item.get("name") or "").strip()
                 if not found and name_only and name_only != query:
                     found = sender.discover_rooms(name_only, marker=marker,
                                                   **extra)
                 # 동명이인이면 회사명으로 가린다(방 제목에 회사가 들어가는 경우).
-                firm = (item.get("firm") or "").strip()
+                firm = "" if exact else (item.get("firm") or "").strip()
                 if len(found) > 1 and firm:
                     key = firm.replace("(주)", "").replace("㈜", "").strip()
                     narrowed = [f for f in found if key and key[:6] in f]
                     if len(narrowed) == 1:
                         found = narrowed
+            # 비슷한 남의 방 하나가 걸렸다고 확인됨으로 올리지 않는다 — `exact` 건에서
+            # 찾은 다른 제목은 참고로만 올린다(`candidates`).
+            hits = [f for f in found if same_title(f, room)] if exact else found
             if found:
-                verdict = "verified" if len(found) == 1 else "ambiguous"
+                verdict = ("verified" if len(hits) == 1
+                           else "ambiguous" if hits else "not_found")
             else:
                 verdict = sender.verify_room(room)
         except Exception as exc:  # noqa: BLE001 - 한 건 실패로 전체를 멈추지 않는다
@@ -755,7 +768,7 @@ def process_verify_job(client: AgentClient, sender, job: dict, cfg: dict):
             any_fail = any_fail or not ok
             client.report_item(item["id"], "sent" if ok else "failed",
                                verify_result=verdict,
-                               found_room=found[0] if len(found) == 1 else None,
+                               found_room=hits[0] if len(hits) == 1 else None,
                                candidates=found or None)
             log.info("  [%d/%d] %s query=%r found=%r", i, len(items), verdict, query, found)
 

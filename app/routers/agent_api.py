@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session
 
 from .. import clock, config
 from ..db import get_db
-from ..services import (cadence, pipeline, room_joined, room_match,
+from ..services import (cadence, pipeline, room_joined, room_match, room_name,
                         scheduled_send, send_guard, sourcing_sync)
 from ..deps import agent_serves, get_agent_device, may_auto_attach, now_iso
 from ..models import (ROOM_SEARCH_TOPIC, SENDER_ROOM_TOPIC, SOURCING_ROOM_TOPIC,
@@ -309,7 +309,7 @@ def _company_row(job: SendJob, item: SendItem):
 
     **내주는 자리(`poll`)와 결과를 받는 자리(`_apply_verify_result`)가 이 한
     함수를 지난다.** 둘이 따로 가르면 회사명으로 찾아 놓고 결과는 담당자 쪽
-    규칙(하나면 방 이름으로 넣기)으로 받는 날이 온다 — 그것이 곧 짐작이다.
+    규칙(적어 둔 방 이름과 대조)으로 받는 날이 온다 — 회사명은 방 이름이 아니다.
 
     `ROOM_SEARCH_TOPIC` 이 없는 담당자 줄 확인(투자사 · [방 연결 확인])은
     여기 걸리지 않는다 — 지금까지와 같다.
@@ -349,23 +349,22 @@ def _verify_search(job: SendJob, item: SendItem) -> dict:
         # 고를 **후보 전부**다 — 서버가 미리 줄이면 맞는 방이 화면에 서지도 못한다.
         return _company_search(company)
     if item.contact is not None:
-        from ..services.room_name import build_room_name, normalize_space
+        from ..services.room_name import normalize_space
 
-        contact = item.contact
-        room = normalize_space(contact.kakao_room_name or "")
-        if room and room != build_room_name(contact.name, contact.title, contact.firm):
-            # 적어 둔 방 이름(저절로 지은 기본값이 아닌 것)이 있으면 **그것부터** 찾고,
-            # 못 찾으면 발송기가 이름으로 한 번 더 찾는다 — 보내는 계정 방 확인
-            # (`sender_rooms.search_terms`)과 같은 순서. 발송기는 두 번까지만 찾아서
-            # 이름+직함 단계는 빠진다(이름 검색이 그 결과를 다 품는다).
-            return {"query": room, "name": contact.name, "firm": contact.firm or ""}
-        # 빈칸·기본값이면 지금까지대로 — 검색어는 이름+직함.
-        return {"query": f"{item.contact.name} {item.contact.title or ''}".strip(),
-                # 직함이 시트와 실제 방에서 다른 경우가 있어(이직·표기 차이)
-                # 이름만으로 재검색할 수 있게 함께 준다. 동명이인은 회사로 가린다.
-                "name": item.contact.name,
-                "firm": item.contact.firm or ""}
-    return {}
+        # ★ **적어 둔 방 이름 그대로만** 찾는다 — 표준 꼴(이름 · 직함 · 회사로 지은
+        #   값)과 같아도 이름+직함으로 바꿔 찾지 않는다. 확인은 그 이름과 **글자까지
+        #   같은 제목**만 세기 때문이다(`_exact_verdict`, 11/05).
+        #
+        #   `name` · `firm` 은 **안 보낸다.** 낡은 발송기도 이 칸이 없으면 이름만으로
+        #   다시 찾거나(같은 성함이 든 남의 방이 걸린다) 회사로 좁히지(글자까지 같은
+        #   방을 버릴 수 있다) 않는다(`agent/main.py: process_verify_job`).
+        #
+        #   `exact` 를 아는 발송기(0.11.14~)는 결과 목록이 이번 검색어의 것이 될
+        #   때까지 기다리고, 글자까지 같은 제목만 `verified` 로 올린다. 모르는 낡은
+        #   판은 그냥 지나치고, 서버가 결과에서 다시 가른다.
+        return {"query": normalize_space(item.room_name or ""), "exact": True}
+    # 담당자 없는 시험 확인(`/setup`)도 적어 넣은 이름 그대로를 대조한다.
+    return {"exact": True}
 
 
 def _company_search(company) -> dict:
@@ -397,8 +396,8 @@ class ItemResult(BaseModel):
     screenshot_b64: Optional[str] = None
     # kind=verify_room 잡에서만: verified | not_found | ambiguous
     verify_result: Optional[str] = None
-    # 검색으로 찾아낸 실제 방 제목(단일 후보일 때만). 방 이름은 생성으로 맞출 수
-    # 없어서, 확인 잡이 곧 '방 이름 알아내기' 역할을 한다.
+    # 검색으로 찾아낸 실제 방 제목(단일 후보일 때만). 담당자 줄 확인에서는
+    # **대조에만** 쓴다 — 방 이름 칸을 이 값으로 바꾸지 않는다(`_exact_verdict`).
     found_room: Optional[str] = None
     candidates: Optional[list] = None
 
@@ -430,7 +429,7 @@ def item_result(
         raise HTTPException(status_code=409, detail="item is not waiting for a result")
 
     if is_verify:
-        _apply_verify_result(item, body)
+        _apply_verify_result(item, body, device)
     elif body.status == "sent":
         item.status = "sent"
         item.sent_at = now_iso()
@@ -459,7 +458,8 @@ def item_result(
     return {"ok": True}
 
 
-def _apply_verify_result(item: SendItem, body: ItemResult) -> None:
+def _apply_verify_result(item: SendItem, body: ItemResult,
+                         device: Optional[AgentDevice] = None) -> None:
     """방 연결 확인 결과를 담당자 배지(vc_contacts.room_verified)에 반영한다.
 
     화면에서는 '성공/실패'로 읽히는 편이 자연스러우므로 verified 만 sent 로 두고
@@ -494,24 +494,114 @@ def _apply_verify_result(item: SendItem, body: ItemResult) -> None:
         _apply_company_candidates(item, company, body, verdict)
         return
 
+    # ★ **담당자 줄 · 시험 확인 — 적어 둔 방 이름을 절대 바꾸지 않는다** (11/05).
+    #
+    #   예전에는 발송기가 올린 제목(`found_room`)으로 방 이름 칸과 건의 방 이름을
+    #   덮었다. 발송기는 검색어가 **든** 제목을 넉넉히 모으고(이름만으로 다시 찾기 ·
+    #   맨 위 방 열기 · 회사로 좁히기) 하나만 걸리면 `verified` 로 올려서, 카톡에서
+    #   복사해 넣은 이름이 **비슷한 남의 방 이름**으로 바뀌고 확인됨이 됐다. 전체
+    #   목록을 돌리면 건마다 남의 제목이 올라와 성함과 방 이름 짝이 뒤섞였다.
+    #
+    #   이제 판정은 서버가 **글자까지 같은 제목**으로 다시 한다(`_exact_verdict`) —
+    #   낡은 발송기가 보낸 결과도 같은 규칙을 지난다. 찾은 다른 제목은 사유에
+    #   참고로만 적는다. 짝은 건(`item`) → 그 건의 줄(`contact_id`)로만 잇는다.
+    want = item.room_name or ""
+    verdict, titles = _exact_verdict(want, body, verdict)
+    blind = verdict == "verified" and not titles and _blind_verifier(device)
+    if blind:
+        # 제목 없이 `verified` 만 온 것은 발송기가 글자까지 견준 판정이어야 한다 —
+        # 0.11.0 보다 낡은 Windows 발송기는 그 자리가 **무조건 verified** 였다.
+        verdict = "not_found"
     contact = item.contact
-    if contact is not None:
+    renamed = contact is not None and not room_name.same_title(
+        contact.kakao_room_name, want)
+    if contact is not None and not renamed:
         # 결과를 적는 자리는 **한 곳**이다 — `카톡방 참여여부` 도 거기서 함께
         # 맞춘다(확인됨이면 `O`. 못 찾았으면 참여여부는 그대로).
         room_joined.set_verdict(contact, verdict)
-        # ★ 검색으로 찾아낸 실제 방 제목을 저장한다.
-        # 방 이름은 우리가 만들어 맞출 수 없다(접미사·담당자명이 방마다 다름).
-        # 확인 잡이 사실상 '방 이름 알아내기'이므로 결과를 반영해야 발송이 된다.
-        if verdict == "verified" and body.found_room:
-            found = body.found_room.strip()
-            if found and found != contact.kakao_room_name:
-                item.room_name = found
-                contact.kakao_room_name = found
-    item.status = "sent" if verdict == "verified" else "failed"
-    item.sent_at = now_iso() if verdict == "verified" else None
-    item.error = None if verdict == "verified" else (
-        body.error or VERIFY_ERRORS.get(verdict, verdict)
-    )
+    ok = verdict == "verified" and not renamed
+    item.status = "sent" if ok else "failed"
+    item.sent_at = now_iso() if ok else None
+    if ok:
+        item.error = None
+    elif renamed:
+        # 잡을 세운 뒤 방 이름을 고쳤다 — 옛 이름의 결과를 새 이름에 달지 않는다.
+        item.error = "확인하는 사이 방 이름이 바뀌어 결과를 적지 않았습니다 — 다시 확인하세요"
+    elif blind:
+        item.error = ("이 발송기 판은 방 제목을 대조하지 못합니다 — 발송 프로그램을 새로 "
+                      "받아 다시 확인하세요")
+    elif verdict == "not_found" and titles:
+        item.error = _mismatch_error(titles, _other_rooms(item))
+    else:
+        item.error = body.error or VERIFY_ERRORS.get(verdict, verdict)
+
+
+def _exact_verdict(want: str, body: ItemResult, verdict: str) -> tuple:
+    """담당자 줄 방 확인의 판정 — **적어 둔 이름과 글자까지 같은 제목**만 센다.
+
+    돌려주는 값: (판정, 발송기가 찾아 올린 제목들).
+
+    - 올린 제목(`candidates` · `found_room`) 중 같은 것이 하나 → `verified`
+      (발송기가 여럿이라 `ambiguous` 라 했어도 — 같은 제목은 하나뿐이다)
+    - 같은 것이 둘 이상 → `ambiguous` (어느 방인지 모른다 — 고르지 않는다)
+    - 올린 제목은 있는데 같은 것이 없다 → `not_found` (비슷한 남의 방이다)
+    - 올린 제목이 없다 → 발송기의 판정 그대로. 그 판정은 검색 결과 줄을 글자까지
+      견준 것이다(`sender.verify_room` — `agent/main.py: process_verify_job`).
+
+    비교는 앞뒤 · 연속 공백과 자모 조합 형태만 맞춘다(`room_name.title_key`).
+    """
+    titles = [str(t).strip() for t in (body.candidates or []) if str(t).strip()]
+    found = (body.found_room or "").strip()
+    if found and not any(room_name.same_title(found, t) for t in titles):
+        titles.insert(0, found)
+    if not titles:
+        return verdict, titles
+    hits = sum(1 for t in titles if room_name.same_title(t, want))
+    return ("verified" if hits == 1 else "ambiguous" if hits else "not_found"), titles
+
+
+def _blind_verifier(device: Optional[AgentDevice]) -> bool:
+    """이 발송기의 '제목 없는 `verified`' 를 믿을 수 없는가.
+
+    0.11.0 보다 낡은 **Windows** 발송기의 `verify_room` 은 화면을 못 읽어 무조건
+    `verified` 를 올렸다(`app/version.py` 0.11.0). macOS 는 처음부터 제목을 글자까지
+    견줬다. 판 · 발송기 이름은 발송기가 폴링 · 박동 때 밝힌 값이다.
+    """
+    from .. import version
+
+    return (device is not None and (device.sender or "") == "kakao_windows"
+            and version.as_tuple(device.agent_version or "") < (0, 11, 0))
+
+
+def _other_rooms(item: SendItem) -> set:
+    """같은 회차 **다른 건**의 방 이름들(`title_key`) — 앞 검색 결과가 늦게 읽힌 것을 짚는다."""
+    job = item.job
+    if job is None:
+        return set()
+    return {room_name.title_key(i.room_name) for i in job.items
+            if i.id != item.id and (i.room_name or "").strip()}
+
+
+def _mismatch_error(titles: list, others: set = frozenset()) -> str:
+    """찾은 제목이 적어 둔 이름과 다를 때의 사유 — 찾은 제목을 **참고로** 싣는다.
+
+    찾은 제목이 **같은 회차 다른 줄의 방 이름**이면 그렇다고 적는다. 발송기가 앞
+    건의 검색 결과를 이 건의 것으로 읽은 것이다(11/05 — 건마다 바로 앞 건의 방
+    이름이 올라와 한 칸씩 밀렸다).
+    """
+    def clip(t: str) -> str:
+        t = " ".join(t.split())
+        return t if len(t) <= 60 else t[:60] + "…"
+
+    shown = ", ".join(f"'{clip(t)}'" for t in titles[:3])
+    if len(titles) > 3:
+        shown += f" 외 {len(titles) - 3}개"
+    if any(room_name.title_key(t) in others for t in titles):
+        return ("찾은 제목이 이 회차 다른 줄의 방 이름입니다 — 앞 건의 검색 결과가 늦게 "
+                "읽힌 것으로 보입니다. 방 이름은 그대로 두었습니다(발송 프로그램을 새로 "
+                "받아 다시 확인하세요)")
+    return ("카톡에서 찾은 방 제목이 적어 둔 방 이름과 다릅니다 — 찾은 제목: "
+            f"{shown} (맞는 방이면 그 제목을 방 이름 칸에 그대로 넣고 다시 확인하세요)")
 
 
 def _apply_company_candidates(item: SendItem, company, body: ItemResult,
@@ -523,12 +613,12 @@ def _apply_company_candidates(item: SendItem, company, body: ItemResult,
 
     ## 바로 위 담당자 쪽과 **갈리는 한 가지**  ★★
 
-    담당자 쪽은 결과가 하나뿐이면 그 제목을 `kakao_room_name` 에 **넣는다**.
-    여기서는 **안 넣는다.**
+    담당자 쪽은 적어 둔 방 이름과 **글자까지 같은 제목**이 하나면 확인됨이다
+    (방 이름은 바꾸지 않는다 — `_exact_verdict`). 여기서는 비교할 이름이 없어
+    `room_verified` 도 `kakao_room_name` 도 **건드리지 않는다.**
 
     갈리는 까닭은 들고 있는 근거가 다르기 때문이다. 담당자 쪽은 사람이 이미
-    적어 둔 방 이름을 **대조**하는 길이라, 그 이름으로 검색해 나온 방 하나는
-    같은 방일 근거가 있다. 여기는 적어 둔 것이 아무것도 없는 상태에서
+    적어 둔 방 이름을 **대조**하는 길이다. 여기는 적어 둔 것이 아무것도 없는 상태에서
     **회사명으로 처음 찾는** 길이다 — 그 회사 이름이 든 방이 꼭 대표와의
     방인 것은 아니고(그 회사 얘기를 하는 다른 방일 수 있다), 카톡 검색은
     참여자 이름에도 걸린다. 근거 없이 넣으면 **엉뚱한 방으로 간다** —

@@ -143,8 +143,8 @@ def test_나갔다고_적힌_줄은_확인돼도_확인됨을_달지_않는다(l
 
 def test_동명이인이라_확인을_못_보낸_줄도_참여여부는_그대로다(logged_in, db):
     """[방 연결 확인] 이 보내기 전에 막는 줄(`복수 매칭`)도 같은 자리를 지난다."""
-    first = _contact(db, joined="X", room="홍길동")
-    second = _contact(db, joined="X", room="홍길동 님", firm="가나다벤처스2")
+    first = _contact(db, joined="X", room="홍길동 님")
+    second = _contact(db, joined="X", room="홍길동  님", firm="가나다벤처스2")
     logged_in.post("/api/contacts/verify-rooms", json={"contact_ids": [first.id, second.id]})
     for row_id in (first.id, second.id):
         row = _fresh(db, row_id)
