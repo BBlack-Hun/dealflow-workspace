@@ -40,8 +40,11 @@
 
 <div class="toolbar">
   <div class="toolbar-right">
-    <input type="search" id="sa-search" placeholder="기업명 · 회사 · 심사역 · 내용"
-           title="기업명 · 메모 · 회사 · 공유 심사역 · 담당자 · 분야 · 투자라운드 · 대표자명 · 연락처 · 이메일 · 상세 내용 · 딜 소개 문구로 찾습니다."
+    {# 표의 글 칸 전부가 걸린다(#152 · `series_a.search_text`) — 자리표시도 `모든 칸` 이라고
+       말하고, 그 말이 안 잘리게 IR 기업 현황 탭의 검색칸과 같은 폭으로 넓힌다. #}
+    <input type="search" id="sa-search" placeholder="모든 칸에서 찾기 (기업명 · 회사 · 심사역 …)"
+           style="min-width:300px"
+           title="표에 보이는 글 칸을 모두 찾습니다 — 기업명 · 메모 · 수신일 · 미팅일시 · 대표자명 · 연락처 · 이메일 · 계약 칸 · 분야 · 매출 · 금액 · 투자라운드 · 상세 내용 · 딜 소개 문구 · 담당자 · Type · 공유 심사역 · 휴대폰 · 회사 · IR 자료 · 추가 칸. 전화번호는 하이픈이 있든 없든, 뒷자리만으로도 찾아집니다. O/X 칸 · 수정한 날짜 · 수정한 팀원은 찾지 않습니다(O/X 칸은 머리글 필터로 거릅니다)."
            value="{{ q }}" autocomplete="off">
     {# 관리자만 — 단추와 길이 같은 판정(`series_a.can_upload_pitch`)을 읽는다. #}
     {% if can_upload_pitch %}

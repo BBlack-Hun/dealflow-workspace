@@ -198,4 +198,13 @@ def put_value(row_table: str, row_id: int, body: ValueIn,
     db.commit()
     # `수정한 날짜` 칸이 있는 표는 이 값으로 그 자리에서 바뀐다(`companies.js` ·
     # `contacts.js` 의 `updated_at`) — 칸 값을 고친 것도 그 줄을 고친 것이다.
-    return {"value": value, "updated_at": stamp_text(row.updated_at)}
+    out = {"value": value, "updated_at": stamp_text(row.updated_at)}
+    # IR 기업 현황 두 탭은 추가 칸 글로도 찾는다(#152) — 새 검색 글자를 함께 준다.
+    # 안 주면 방금 적은 말로는 새로고침 전까지 안 걸린다(`companies.js` · `series_a.js`).
+    if row_table == "ir_companies":
+        from .companies import row_search
+        out["search"] = row_search(db, row)
+    elif row_table == "series_a_companies":
+        from .series_a import row_search
+        out["search"] = row_search(db, row)
+    return out
