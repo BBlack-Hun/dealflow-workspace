@@ -734,9 +734,9 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
    필요한 자리가 전혀 다르다. 마지막 동작 칸(단추 셋)이 1,920px 에서도 148px 밖에
    못 받아 잘렸다 — 화면을 넓혀도 나아지지 않는 부류다.
 
-   **th 폭 합계와 맞춰 둔다(현재 1,416px).** 모자라면 fixed 가 칸을 비율대로 눌러
+   **th 폭 합계와 맞춰 둔다(현재 1,774px).** 모자라면 fixed 가 칸을 비율대로 눌러
    다시 잘린다. th 폭을 고치면 여기도 같이. */
-#team-table { min-width: 1670px; }
+#team-table { min-width: 1774px; }
 /* 딜 소싱 — `참여` 뒤에 **월간 리마인드 이력** 달 칸 셋(124px × 3)이 들었다(#14,
    `services/sourcing_remind_log.py`). 공용 규칙(.wide 2,030px)은 미팅 후기도 같이
    쓰는 값이라 올리지 않고, 이 표만 **든 만큼만** 올린다(2,030 + 372) — 안 올리면

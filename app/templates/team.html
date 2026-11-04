@@ -195,6 +195,7 @@
         <th style="width:88px">투자현황</th>
         <th style="width:150px">줄 편집 허용</th>
         <th style="width:104px">자료 자동첨부</th>
+        <th style="width:104px">엑셀 내려받기</th>
         <th style="width:270px"></th>
       </tr>
     </thead>
@@ -350,6 +351,20 @@
               {{ '켜짐' if m.auto_attach else '꺼짐' }}</button>
           </form>
         </td>
+        {# IR 기업현황 엑셀 내려받기(0132) — 옆칸과 같은 모양이다(`m.export_companies`,
+           판정은 `deps.may_export_companies`). 관리자는 칸과 무관하게 늘 받으므로
+           단추를 두지 않는다 — 눌러도 아무것도 안 바뀌는 단추가 된다. #}
+        <td class="export-companies-cell">
+          {% if m.role == 'admin' %}
+          <span class="muted">켜짐 · 관리자</span>
+          {% else %}
+          <form method="post" action="/team/members/{{ m.id }}/export-companies">
+            <button class="linkbtn" type="submit"
+                    aria-label="{{ m.name }} 엑셀 내려받기">
+              {{ '켜짐' if m.export_companies else '꺼짐' }}</button>
+          </form>
+          {% endif %}
+        </td>
         {# 비밀번호를 잊으면 화면에는 되돌릴 길이 없어서 서버에 들어가 DB 를
            직접 고쳐야 했다. 본인 것은 여기서 하지 않는다 — 비밀번호는 계정
            메뉴에서 현재 값을 대고 바꾸고, 본인 계정을 정지하면 다시 들어올
@@ -381,7 +396,7 @@
          적으면 그 자리에서 세션이 끊겨 어느 번호로도 못 들어온다. #}
       {% if edit_id == m.id and m.id != user.id %}
       <tr class="member-edit-row">
-        <td colspan="13">
+        <td colspan="14">
           <div class="member-form">
             <form method="post" action="/team/members/{{ m.id }}/profile">
               <label class="field inline-field"><span>이름</span>
@@ -418,7 +433,7 @@
          끼우므로 화면에 없는 사람이 서버에만 남을 자리가 없다. #}
       {% if grant_id == m.id %}
       <tr class="member-edit-row">
-        <td colspan="13">
+        <td colspan="14">
           <div class="member-form">
             <form method="post" action="/team/members/{{ m.id }}/consulting-editors">
               {% if grant_candidates %}

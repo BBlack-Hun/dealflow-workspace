@@ -1171,6 +1171,33 @@ def toggle_auto_attach(
         status_code=303)
 
 
+@router.post("/team/members/{member_id}/export-companies", include_in_schema=False)
+def toggle_export_companies(
+    member_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """IR 기업현황 엑셀 내려받기를 열거나 막는다 — **계정마다**(0132).
+
+    바로 위 자료 자동 첨부와 같은 자리, 같은 모양이다. 내려받기는 관리자
+    전용이고(11/01), 여기서 켠 일반 팀원만 예외로 받는다
+    (`deps.may_export_companies`). 관리자는 이 칸과 무관하게 늘 받으므로 본인
+    줄을 막을 까닭도 없다 — 잠기는 화면이 없다.
+    """
+    admin_only(user)
+    member = db.get(User, member_id)
+    if member is None:
+        raise HTTPException(status_code=404, detail="계정을 찾을 수 없습니다")
+    member.can_export_companies = 0 if member.can_export_companies else 1
+    db.commit()
+    state = "받을+수+있게" if member.can_export_companies else "받을+수+없게"
+    from urllib.parse import quote
+
+    return RedirectResponse(
+        f"/team?msg={quote(member.name)}+님이+엑셀+내려받기를+{state}+했습니다",
+        status_code=303)
+
+
 @router.post("/team/members/{member_id}/send-via", include_in_schema=False)
 def set_send_via(
     member_id: int,

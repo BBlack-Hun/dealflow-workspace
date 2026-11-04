@@ -40,6 +40,7 @@ weekly_stats   (퇴사 삭제 후에도 남는 익명화 집계)
 | role | TEXT | `user` \| `admin` |
 | weekly_goal_sends | INTEGER | 주간 딜소개 발송 목표(달성률 계산용, 기본 30) |
 | is_active | INTEGER | 1=재직, 0=삭제 진행 중(트랜잭션 안전용, 최종은 행 삭제) |
+| can_export_companies | INTEGER NOT NULL DEFAULT 0 | 1=IR 기업현황 엑셀 내려받기 허용(관리자가 팀 현황에서 켬, 0132). 관리자는 이 값과 무관하게 늘 허용 |
 
 ### 2.2 auth_otps / sessions — 인증
 | 테이블 | 주요 필드 |

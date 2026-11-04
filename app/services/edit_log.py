@@ -512,7 +512,7 @@ VALUE_FIELDS = frozenset({
     # 켜짐 · 꺼짐. 하나 잘못 켜지면 안 나가야 할 곳으로 나간다.
     "is_active", "is_hidden", "is_deal_list", "is_top_deal", "enabled",
     "channel_kakao", "channel_email", "channel_sms", "room_verified", "kakao_joined",
-    "can_view_consulting", "can_auto_attach_ir",
+    "can_view_consulting", "can_auto_attach_ir", "can_export_companies",
     "contract_received", "contract_done", "followup_done", "skip_weekend",
     "weekly_goal_sends", "from_hour", "until_hour", "max_per_day",
     # 계정마다 하루 발송 상한(`services/send_guard.py`) — 잘못 낮추면 그 계정의
@@ -582,6 +582,7 @@ FIELD_LABELS = {
     "channel_sms": "문자(직접 발송)",
     "is_hidden": "숨김", "is_active": "사용", "is_deal_list": "딜 명단",
     "can_view_consulting": "투자현황", "can_auto_attach_ir": "자료 자동 첨부",
+    "can_export_companies": "엑셀 내려받기",
     "daily_send_cap": "하루 발송 상한", "send_via_user_id": "발송기",
     "must_change_password": "비밀번호 변경 필요", "password_hash": "비밀번호",
     "password_enc": "비밀번호", "host": "메일 서버", "username": "계정",

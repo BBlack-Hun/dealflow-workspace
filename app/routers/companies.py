@@ -27,7 +27,8 @@ from sqlalchemy.orm import Session
 
 from ..clock import stamp_text
 from ..db import get_db
-from ..deps import NotAdmin, admin_only, get_current_user, may_view_consulting, templates
+from ..deps import (NotAdmin, admin_only, get_current_user, may_export_companies,
+                    may_view_consulting, templates)
 from ..models import ConsultingCompany, ConsultingSheet, EditLog, IrCompany, OneLinerBackup, User
 from ..services import (amount, auth as auth_svc, custom_columns, deal_history, edit_log,
                         email_domains, forecast, revenue_years, room_match)
@@ -793,6 +794,8 @@ def companies_page(request: Request, db: Session = Depends(get_db),
         "can_delete": can_delete_company(user),
         # [전체 자동조합]을 보일지. 라우터가 막는 것과 **같은 판정**을 읽는다.
         "can_bulk_one_liner": can_bulk_one_liner(user),
+        # [엑셀 내려받기] 두 단추를 보일지. 라우터(`data_io.export_companies*`)와 같은 판정.
+        "can_export": may_export_companies(user),
         # 메일 칸에 띄울 **도메인 후보**. 세는 자리는 한 곳이고
         # (`services/email_domains.py`), 재료는 지금 그리는 줄들이라 표에
         # 보이는 것과 후보가 갈릴 자리가 없다. 탭을 안 가린다 — `rows` 는 두

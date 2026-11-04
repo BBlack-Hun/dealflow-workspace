@@ -575,6 +575,18 @@ def may_auto_attach(user: User) -> bool:
     return bool(user.can_auto_attach_ir)
 
 
+def may_export_companies(user: User) -> bool:
+    """IR 기업현황 엑셀을 내려받을 수 있는가 — 관리자, 그리고 관리자가 켜 준 계정.
+
+    내려받기는 **관리자 전용**이다(11/01 — 기업 자료 전체가 한 파일로 나가는
+    길). 그 원칙은 두고, 팀 현황에서 켠 계정(`users.can_export_companies`, 0132)
+    만 예외로 연다. 라우터 두 길(`data_io.export_companies*`)과 화면의 단추
+    (`companies.html` 의 `can_export`)가 이 함수 하나를 읽는다. 막힐 때의 답은
+    관리자 전용과 같다(`NotAdmin`).
+    """
+    return user.role == "admin" or bool(user.can_export_companies)
+
+
 def auto_attach_default_for(role: str) -> bool:
     """이 역할로 **새로 만드는 계정**의 자료 자동 첨부를 기본으로 켤 것인가.
 

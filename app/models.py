@@ -63,6 +63,11 @@ class User(TimestampMixin, Base):
     # 이 칸이 꺼져 있으면 `agent_devices.ir_root` 를 **읽지 않는다.** 지우지는
     # 않는다 — 다시 켜면 넣어 둔 폴더가 그대로 되돌아와야 한다.
     can_auto_attach_ir: Mapped[int] = mapped_column(Integer, default=0)
+    # IR 기업현황 **엑셀 내려받기**를 쓸 수 있는 일반 팀원인가(0132). 내려받기는
+    # 관리자 전용(11/01)이고, 관리자가 팀 현황에서 켜 준 계정만 예외로 연다 —
+    # 옆 두 칸과 같은 모양이다. 판정은 `deps.may_export_companies` 하나다.
+    can_export_companies: Mapped[int] = mapped_column(Integer, default=0,
+                                                      server_default="0")
     # **이 계정으로 하루에 몇 통까지 보내나**(0086). 문구가 받는 사람에게 가는
     # 잡 전부를 합친 수다 — 발송기가 잡을 집어갈 때 서버가 그날 나간 수를 세어
     # 남은 만큼만 내준다(`services/send_guard.py`). 발송기의 `job_cap` 은 **잡
