@@ -561,6 +561,8 @@ WRITE_ROUTES = {
     ("POST", "/api/deals/manual-sends"): WATCHED,
     ("POST", "/api/deals/manual-sends/{batch_key}/undo"): WATCHED,
     ("POST", "/ir/meetings/{meeting_id}/mode"): WATCHED,
+    # 잡아 둔 미팅의 날짜·시간 옮기기(#144) — `/mode` 와 같은 줄의 칸.
+    ("POST", "/ir/meetings/{meeting_id}/time"): WATCHED,
     ("POST", "/ir/meetings/{meeting_id}/done"): WATCHED,
     ("POST", "/ir/meetings/{meeting_id}/followup"): WATCHED,
     ("PATCH", "/api/meetings/{meeting_id}"): WATCHED,
@@ -892,7 +894,8 @@ def test_the_six_shared_routers_still_hold_the_forty_nine_paths(portal):
     # ir 의 12번째는 미팅 요청을 손으로 보냈다고 적는 자리다. 13 · 14번째는
     # 리마인드 뒤 `답 없음 · 전화 필요` 켜고 끄기와 그 메모다(10/17 회의 #37).
     # 15번째는 IR 자료 검토 요청을 손으로 보냈다고 적는 자리다(#79). 16 · 17번째는
-    # 미팅 없음의 [드랍 확정 · 취소] 와 [앱 기록으로]다(#116 2차).
+    # 미팅 없음의 [드랍 확정 · 취소] 와 [앱 기록으로]다(#116 2차). 18번째는 잡아 둔
+    # 미팅의 날짜·시간 옮기기(`/time` — #144)다.
     #
     # **`consulting` 의 아홉 번째는 주소가 `/api/contacts/from-consulting` 이다**
     # — 여기서 세는 것은 주소가 아니라 **그 길을 담고 있는 파일**이라
@@ -919,7 +922,7 @@ def test_the_six_shared_routers_still_hold_the_forty_nine_paths(portal):
     # forecast 의 넷은 매출예상리스트 줄 추가 · 고치기 · 기업 고르기 · 지우기다(#46).
     # custom_columns 의 일곱은 관리자 `컬럼 관리` 여섯(붙이기 · 이름 · 순서 · 자리 ·
     # 숨김 · 삭제)과 표에서 추가 칸 값 적기 하나다.
-    assert counted == {"companies": 8, "ir": 17, "consulting": 9,
+    assert counted == {"companies": 8, "ir": 18, "consulting": 9,
                        "templates_crud": 7, "sourcing": 13, "contacts": 24,
                        "series_a": 5, "forecast": 4, "custom_columns": 7}
 

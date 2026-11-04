@@ -1012,6 +1012,10 @@ class SeriesACompany(TimestampMixin, Base):
     #: 매출예상리스트의 `후속라운드 시작 년월`(관리자 추가 칸 · 기업 × 투자사 줄마다)과는
     #: 줄의 단위가 달라 값을 나누지 않는다. 적는 꼴은 그 화면 `예상 시기` 와 같다(`forecast.month`).
     follow_round_month: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    #: IR 투자컨설팅 미팅일시 — `YYYY-MM-DD HH:MM`, 시각을 모르면 날짜만(#143 · 0131, 탭의
+    #: `후속라운드 시작` 오른쪽 · `routers/series_a.meeting_text`). 사람이 적는다. 투자컨설턴트의
+    #: `컨설팅 미팅일`(자유 글)과는 잇지 않는다 — 진행 기록은 안 잇는다(`company_sync` 결정 3).
+    consulting_meeting_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     #: Type — 딜이 들어온 길(`딜 소싱 네트워크` · `후속 투자 연계`).
     deal_type: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     #: 담당팀원 — 우리 팀에서 이 딜을 맡은 사람.
@@ -1036,6 +1040,9 @@ class SeriesACompany(TimestampMixin, Base):
     source_firm: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     #: 기업명 — 받은 딜의 기업.
     name: Mapped[str] = mapped_column(String)
+    #: 메모(#142 · 0131, 탭의 `기업명` 오른쪽) — 이 딜에 팀이 적는 글. IR 기업 현황의 `메모`
+    #: (`IrCompany.note`)와 같은 보기지만 줄 단위(받은 딜 한 건)가 달라 잇지 않는다.
+    memo: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     #: 대분류(시트 머리글 `사업분야 대분류`) · 소분류.
     sector_major: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     sector_minor: Mapped[Optional[str]] = mapped_column(String, nullable=True)

@@ -549,6 +549,7 @@ VALUE_FIELDS = frozenset({
     "done_at", "followup_due", "followup_at", "meeting_offered_at",
     "received_at", "contract_month", "card_registered_at", "effective_from",
     "founded_year", "last_login_at", "contract_done_at", "follow_round_month", "contract_ym",
+    "consulting_meeting_at",
 
     # 추가 칸의 자리 — 어느 기존 칸 뒤인가(`custom_columns.after_key`). 머리글
     # 이름이라 짧고, 바뀌면 그 화면을 쓰는 팀 전체의 칸 차례가 바뀐다.
@@ -600,6 +601,7 @@ FIELD_LABELS = {
     # 이 탭만의 이름(기업명 · 투자라운드 · 담당팀원)으로 바꾸지 않는다 — 바꾸면
     # 다른 표의 로그가 틀린 이름을 단다.
     "received_at": "수신일", "follow_round_month": "후속라운드 시작", "contract_ym": "계약년월",
+    "consulting_meeting_at": "IR 투자컨설팅 미팅일시",
     "detail": "상세 내용", "deal_pitch": "딜 소개 문구",
     # 보낼 IR 자료 파일 이름 — IR 기업 현황 · `Series A 이상 딜 소싱`(0118) 두 탭의 `IR 자료`.
     "ir_file_name": "IR 자료",

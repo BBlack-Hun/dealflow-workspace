@@ -625,6 +625,7 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
     서며 76→96(+20). **준 만큼만** 내린다.) */
 #co-table { min-width: 5312px; }
 #co-table td.updated-by { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#sa-table td.updated-by { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* IR 기업 현황 › Series A 이상 딜 소싱 — 넓은 표 공통 값(2,030px)에 직접 적는 칸
    열(#24 · `companies_series_a.html` 의 `대표자명` ~ `Pre Value`, 폭 합 932px)을 **든 만큼만**
    더한다. 안 올리면 폭을 안 준 `상세 내용` 이 그 932px 을 내어 주다 0 으로 짜부라진다.
@@ -632,8 +633,10 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
    (3,142 → 3,252 : #25 의 `휴대폰`(110px) — 든 만큼만 올린다.)
    (3,252 → 3,534 : 0125 의 `계약여부`(134px) · `계약서 수신 여부`(148px) — 든 만큼만 올린다.)
    (3,534 → 3,654 : #98 · 0127 의 `후속라운드 시작`(120px) — 든 만큼만 올린다.)
-   (3,654 → 3,738 : #122 · 0129 의 `계약년월`(84px) — 든 만큼만 올린다.) */
-#sa-table { min-width: 3738px; }
+   (3,654 → 3,738 : #122 · 0129 의 `계약년월`(84px) — 든 만큼만 올린다.)
+   (3,738 → 4,318 : #142 의 `메모`(240px) · `수정한 팀원`(76px) · `수정한 날짜`(130px) + #143 · 0131 의
+    `IR 투자컨설팅 미팅일시`(134px — 머리글이 한 줄에 서는 폭) — 든 만큼만 올린다.) */
+#sa-table { min-width: 4318px; }
 /* 표의 `소개 횟수` — 회차 수와 사람 수를 **위아래로** 세운다(사용자 요청,
    「세로 좌측 정렬」). 둘을 함께 두는 까닭은 `services/deal_history.py`
    머리글에 있다(회차 수만 보면 180명짜리와 103명짜리가 똑같이 `6회` 로 읽힌다).
@@ -674,6 +677,7 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
    넘치는 것은 `.grid-table td { overflow: hidden }` 이 잘라 준다 — 그러면
    화면이 "칸이 좁다" 고 말해 주는데, 접히면 아무 말 없이 표만 들쭉날쭉해진다. */
 #co-table td.updated-at { white-space: nowrap; }
+#sa-table td.updated-at { white-space: nowrap; }
 
 /* ── [수정] 창의 `소개 이력` 표 ────────────────────────────────────────────
    창은 520px(폰에서는 화면 폭 전체)이라 칸 여섯이 그대로는 안 선다. 폭을
@@ -1767,6 +1771,12 @@ td.cell.save-failed { background: #fdecec; }
 .call-flag-memo form { display: flex; gap: 6px; align-items: center; margin-top: 4px; }
 .call-flag-memo input[type="text"] { flex: 1; min-width: 0; max-width: 360px;
   padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; font-size: 12px; }
+/* 미팅 스케줄 날짜 칸의 [변경](#144) — 132px 칸 안에 날짜 · 시간 · 저장을 세로로 쌓는다. */
+.meeting-when summary { display: inline-block; padding: 0; cursor: pointer; list-style: none; }
+.meeting-when summary::-webkit-details-marker { display: none; }
+.meeting-when form { display: flex; flex-direction: column; align-items: flex-start;
+  gap: 4px; margin-top: 4px; }
+.meeting-when input { width: 100%; box-sizing: border-box; font-size: 12px; }
 .followup-strip { border-left: 4px solid var(--brand); }
 /* ── 한 줄 입력 폼(주간 업무·반복 업무·규칙 추가) ──────────────────────
    라벨이 붙은 칸과 안 붙은 버튼을 같은 줄에 세우는 자리다.

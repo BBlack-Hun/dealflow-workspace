@@ -11,7 +11,7 @@
 되돌리기: 칸을 뗀다(켜 준 팀원만 다시 막힌다).
 
 Revision ID: 0132_export_companies_access
-Revises: 0130_channel_sms
+Revises: 0131_series_a_memo_meeting
 """
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "0132_export_companies_access"
-down_revision = "0130_channel_sms"
+down_revision = "0131_series_a_memo_meeting"
 branch_labels = None
 depends_on = None
 
