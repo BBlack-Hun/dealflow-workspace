@@ -26,13 +26,14 @@ def test_투자컨설턴트_머리글():
     meta = _labels(c.STARTUP_COLUMNS)
     assert meta["contract_done"] == "계약여부"
     assert meta["contract_received"] == "계약서 수신 여부"
-    assert meta["deal_pitch"] == "소개 메모"
+    # #154(11/04) — `소개 메모` → `메모`(`tests/test_consulting_sticky_contract_cols.py`).
+    assert meta["deal_pitch"] == "메모"
     assert _labels(c.CONTRACT_COLUMNS)["contract_received"] == "계약서 수신 여부"
     assert c.CONTRACT_EXPORT_HEADERS[-1] == "계약서 수신 여부"
-    assert c.STARTUP_EXPORT_HEADERS == ["소개 메모", "견적서 첨부 여부", "계약여부",
+    assert c.STARTUP_EXPORT_HEADERS == ["메모", "견적서 첨부 여부", "계약여부",
                                         "카톡 연결 여부"]
     html = (ROOT / "app" / "templates" / "consulting.html").read_text("utf-8")
-    for label in ("컨설팅 미팅일", "대표자명", "소개 메모"):
+    for label in ("컨설팅 미팅일", "대표자명", "메모"):
         assert f">{label}</th>" in html, label
     for flt in ("done:계약여부", "received:계약서 수신 여부"):
         assert f'data-filters="{flt}"' in html, flt
@@ -118,7 +119,9 @@ def test_추가_칸의_자리는_옛_이름으로_골라_둔_것도_새_이름�
 
     cases = {
         "consulting": {"미팅일": "컨설팅 미팅일", "대표자": "대표자명",
-                       "계약완료여부": "계약여부", "딜 소개문구": "소개 메모",
+                       "계약완료여부": "계약여부", "딜 소개문구": "메모",
+                       # #154(11/04)
+                       "소개 메모": "메모",
                        "계약서 수신완료여부": "계약서 수신 여부"},
         "startup": {"성함": "대표자명", "사업분야 대분류": "대분류",
                     "기업구분": "투자라운드", "IR Deck 유무": "IR 자료",

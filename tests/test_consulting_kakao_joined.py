@@ -169,16 +169,18 @@ def test_계약서_수신_여부_다음_맨_뒤로_선다(allowed, db, users):
 
     _row(db, users["u1"].id, sheet=STARTUP, position=1, company_name="샘플마",
          management="관리 중", contract_received="O", kakao_joined="O")
+    # #154(11/04) — 계약 두 칸이 `등록일` 오른쪽으로 옮겨 가면서 바로 앞은
+    # `견적서 첨부 여부` 가 됐다. 묶음의 맨 뒤라는 것은 그대로다.
     heads = _heads(_open(allowed, STARTUP))
-    at = heads.index("계약서 수신 여부")
+    at = heads.index("견적서 첨부 여부")
     assert heads[at + 1] == LABEL, heads
     fields = _fields(_open(allowed, STARTUP))
-    at = fields.index("contract_received")
+    at = fields.index("contract_management")
     assert fields[at + 1] == FIELD, fields
     # 칸 묶음 쪽도 같은 차례다 — 화면만 고치고 묶음을 안 고치면 탭 하나가
     # 다른 차례로 그려진다.
     labels = [label for label, _f in consulting.STARTUP_COLUMNS]
-    at = labels.index("계약서 수신 여부")
+    at = labels.index("견적서 첨부 여부")
     assert labels[at + 1] == LABEL, labels
     assert consulting.STARTUP_COLUMNS[at + 1] == (LABEL, FIELD)
     # 묶음의 **맨 뒤** 칸이다 — 뒤에 무엇이 붙으면 이 검사가 먼저 깨진다.

@@ -438,6 +438,15 @@
         // **고친 시각을 그 자리에서.** 서버가 보내 준 글자를 그대로 적는다
         // (꼴을 정하는 자리는 `app/clock.py` 의 `stamp_text` 한 곳이다).
         showStamp(cell, data && data.stamps);
+        // **저장된 값으로 다시 적는다.** 서버가 꼴을 맞추는 칸이 있다 — `계약년월` 은
+        // `2026.3` 을 `2026-03` 으로 담는다(`routers/consulting.py` 의 `checked_ym`).
+        // 친 글자를 그대로 두면 새로고침 전까지 담긴 값과 다른 글자가 서 있다.
+        var field = cell.getAttribute("data-field");
+        // 그사이 같은 칸을 다시 열었으면 건드리지 않는다 — 치는 중인 입력칸이 지워진다.
+        if (!custom && !noteId && editing !== cell && data && data.values
+            && typeof data.values[field] === "string") {
+          valueBox(cell).textContent = data.values[field];
+        }
         // 추가 칸 — 서버가 맞춘 값으로 칸과 필터 값(`data-f-cc*`)을 다시 적는다.
         if (custom && data && typeof data.value === "string") {
           valueBox(cell).textContent = data.value;

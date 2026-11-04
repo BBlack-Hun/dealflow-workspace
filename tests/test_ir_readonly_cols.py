@@ -136,10 +136,12 @@ def test_투자컨설턴트_스타트업_탭에만_IR_칸이_선다(client, db, 
     html = client.get("/consulting?sheet=" + quote("스타트업")).text
     names = [n for n, _ in _heads(html)]
     want = [c.label for c in ir_readonly.consulting_columns()]
-    # `이메일` 바로 오른쪽은 `등록일`(11/01 사용자 요청), IR 칸은 그 뒤다.
+    # `이메일` 바로 오른쪽은 `등록일`(11/01 사용자 요청), 그 뒤 계약 넷(#154 · 11/04),
+    # IR 칸은 그 뒤다.
     at = names.index("이메일")
     assert names[at + 1] == "등록일", names
-    assert names[at + 2:at + 2 + len(want)] == want, names
+    assert names[at + 2:at + 6] == ["계약년월", "계약여부", "계약서 수신 여부", "성공보수율"]
+    assert names[at + 6:at + 6 + len(want)] == want, names
     assert "수신일" not in want and "성공보수율" not in want and "담당자" not in want
     assert 'data-ir="business_desc" title="스마트팜 설비"' in html
     assert 'data-ir="ir_file_name" title="있음"' in html

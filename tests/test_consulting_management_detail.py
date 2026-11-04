@@ -211,7 +211,10 @@ def test_엑셀에도_실리고_이미_받아_둔_파일의_자리는_안_밀린
     res = allowed.get("/api/export/consulting.xlsx")
     rows = sp.read_rows("x.xlsx", res.content, None)
     head = [str(c or "").strip() for c in rows[0]]
-    assert head[-1] == LABEL, head
+    # 뒤에는 그 뒤로 는 칸(`LATE_EXPORT` — #154 `계약년월`)만 붙는다. 앞자리는 그대로다.
+    late = [label for label, _f in consulting.LATE_EXPORT]
+    assert head[-len(late):] == late, head
+    assert head[-len(late) - 1] == LABEL, head
     assert head.count(LABEL) == 1, head
     assert consulting.FIXED_EXTRA_EXPORT[-1] == (LABEL, FIELD)
     mine = next(r for r in rows[1:] if "샘플차" in " ".join(str(c or "") for c in r))
