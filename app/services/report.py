@@ -1305,6 +1305,20 @@ def yearly(db: Session, year: int, user: Optional[User] = None,
     }
 
 
+def edit_target(found) -> dict:
+    """업무 보고 표에서 계약여부를 골라 고칠 곳(#147) — 값을 읽어 온 **그 줄 하나**.
+
+    `company_kind` 가 `ir` 이면 `PATCH /api/companies/{id}`, `series_a` 면
+    `PATCH /api/series-a-companies/{id}` 로 간다(`_report_intros.html`). 두 표의 칸 고치기와
+    같은 길이라 계약년월 · 계약 완료일 · 따라 고치기(`company_sync`)도 똑같이 돈다.
+    이름으로 짝을 못 찾은 기업은 고칠 줄이 없다 — `None` · 빈 글자(칸은 글자로만 선다).
+    """
+    if found is None:
+        return {"company_id": None, "company_kind": ""}
+    return {"company_id": found.id,
+            "company_kind": "ir" if isinstance(found, IrCompany) else "series_a"}
+
+
 def intro_companies(db: Session, start: date, end: date,
                     user: Optional[User]) -> dict:
     """그 기간에 **소개한 기업 — 기업마다 한 줄**(#92 팀원 요청).
@@ -1361,6 +1375,8 @@ def intro_companies(db: Session, start: date, end: date,
             "contract_label": (CONTRACT_LABELS.get(contract_key(found.contract_status), "미계약")
                                if found is not None else ""),
             "contract_received": (found.contract_received or "") if found is not None else "",
+            # 계약여부를 표에서 골라 고칠 줄(#147) — 위 값을 읽어 온 그 줄 하나.
+            **edit_target(found),
             "times": len(days),
             "investors": len({d["contact_id"] for d in details}),
             "first": min(days),
@@ -1400,7 +1416,8 @@ def unintroduced_big(db: Session, intros: dict) -> List[dict]:
             continue
         out.append({"company": c.name, "eok": low, "raise_target": raise_target(c),
                     "sector": c.sector_major or "", "series": _short(c.series),
-                    "contract_label": CONTRACT_LABELS.get(key, "미계약")})
+                    "contract_label": CONTRACT_LABELS.get(key, "미계약"),
+                    **edit_target(c)})
     out.sort(key=lambda r: -r["eok"])   # 같은 금액은 이름 순 그대로
     return out
 

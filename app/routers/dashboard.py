@@ -651,6 +651,10 @@ def report_page(request: Request, db: Session = Depends(get_db),
         ctx.update({"ir_drop_days": ir_no_meeting.DROP_SUSPECT_DAYS,
                     "ir_drop_suspect": sum(1 for r in found if r["suspect"]),
                     "ir_drop_href": f"/ir/no-meeting?view=drop&member={who.id if who else 0}"})
+    # 소개한 기업 · 소개 후보 표의 계약여부 고르기 보기(#147) — IR 표와 같은 여덟 말.
+    from .companies import CONTRACT_LABELS
+
+    ctx["contract_labels"] = CONTRACT_LABELS
     # 화면 말(10/17 회의 #35·#36·#40) — `/ir` 과 같은 말을 같은 자리에서 읽는다.
     from ..services import pipeline as _pipeline
 
