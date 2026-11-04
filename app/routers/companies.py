@@ -322,42 +322,78 @@ def blocked_reason(c: IrCompany) -> str:
     return f"{head}{more} 없음"
 
 
-def search_text(c: IrCompany) -> str:
+def phone_digits(phone) -> str:
+    """번호를 **숫자만 남긴 꼴** — 검색 글자에 적은 그대로와 함께 싣는다(`search_text`).
+
+    이미 숫자뿐인 번호면 빈 글자다 — 같은 글자가 두 번 실려도 걸리는 것은 똑같고
+    줄만 길어진다. Series A 탭의 번호 칸도 이 규칙을 쓴다(`series_a.search_text`).
+    """
+    text = (phone or "").strip()
+    digits = auth_svc.normalize_phone(text)
+    return digits if digits != text else ""
+
+
+def search_text(c: IrCompany, extra=()) -> str:
     """줄에 실어 둘 검색용 글자 한 덩이. 화면(companies.js)은 이것만 본다.
 
-    기업명·분야만 담고 있었다. 그런데 표에는 대표자·연락처·이메일이 버젓이
-    보이므로, 눈앞의 값을 그대로 쳐도 아무 줄이 안 걸렸다 — 사람에게는
-    "검색이 고장났다" 로 보인다. 보이는 칸으로는 찾아져야 한다.
+    ## 표에 보이는 **글 칸은 전부** 싣는다 (#152)
 
-    전화번호는 **적은 그대로와 숫자만 남긴 꼴을 함께** 싣는다. 원본에
-    `010-1234-5678` · `01012345678` · `010 1234 5678` 이 섞여 있어서, 한 모양만
-    실어 두면 다른 모양으로 친 사람에게는 없는 줄이 된다. 숫자만 남긴 꼴이
-    있으면 뒷자리(`5678`)로도 닿는다 — 실제로 번호는 이렇게 찾는다.
+    처음에는 기업명·분야뿐이었고, 대표자·연락처·이메일(9월) · 한줄 소개(#99) ·
+    메모(#103)가 하나씩 붙었다. 칸 하나가 빠질 때마다 "눈앞에 보이는 글자를 쳐도
+    안 걸린다 → 검색이 고장났다" 가 되풀이됐다(팀원 요청 #152 「모든 컬럼에 들어가
+    있는 거로 … 모두 다 검색 되게」). 그래서 이제는 **표의 글 칸을 다 싣고**, 안
+    싣는 것만 까닭과 함께 적는다:
 
-    친 글자 쪽을 숫자만 남기는 일은 companies.js 가 맡는다. 양쪽이 다 있어야
-    `010 1234 5678` 로 쳐서 `010-1234-5678` 인 줄에 닿는다.
+      · `수정한 날짜` · `수정한 팀원` — 앱이 적는 도장이다. 팀원 이름을 치면
+        `담당자` 가 아니라 **마지막에 고친 줄**까지 걸려 담당 기업 찾기를 흐린다
+        (고친 팀원으로 좁히는 길은 머리글 필터다).
+      · `소개 횟수` — 이력에서 센 수. `견적서 첨부 여부` · `계약서 수신 여부` ·
+        `카톡 연결 여부` · 추가 O/X 칸 — `O` · `X` 한 글자라 검색으로 가릴 것이
+        없고, 머리글 필터가 그 일을 한다.
+      · `컨설팅 상태` · `컨설팅 미팅일` — 투자컨설턴트 화면의 값을 **볼 수 있는
+        계정에만** 세우는 읽기 칸이다. 이 글자는 모든 계정의 화면에 실리므로 넣으면
+        못 보는 사람에게 값이 샌다.
+      · `투자 현황`(`funding_status`) — 화면에서 뺀 칸이라(`companies.html` 의 `그 밖`
+        묶음 머리 주석) 그 글자로 줄이 걸리면 왜 걸렸는지 화면 어디에도 안 보인다.
+        잃는 것도 없다: 값 281줄 중 258줄은 `기업 한줄 소개` · `딜 소개 문구` 와
+        글자까지 같은 사본이고, 나머지 19줄은 `메모` 로 옮겨 두었다.
 
-    숫자만 남긴 꼴이 원본과 같으면(이미 숫자뿐인 번호) 넣지 않는다 — 같은
-    글자가 두 번 실려도 걸리는 것은 똑같고, 줄만 길어진다.
+    **[수정] 창에만 있는 글**(`대표 카톡방` · `합치기 전 값`)은 싣는다 — 걸린 까닭을
+    그 창을 열어 짚을 수 있다. `extra` 는 줄 밖에서 읽는 값이다(관리자가 붙인 추가
+    칸의 글 — `custom_columns.search_values` · `row_search`).
+
+    ## 번호는 두 꼴로
+
+    전화번호는 **적은 그대로와 숫자만 남긴 꼴을 함께** 싣는다(`phone_digits`).
+    원본에 `010-1234-5678` · `01012345678` · `010 1234 5678` 이 섞여 있어서, 한
+    모양만 실어 두면 다른 모양으로 친 사람에게는 없는 줄이 된다. 숫자만 남긴
+    꼴이 있으면 뒷자리(`5678`)로도 닿는다. 친 글자 쪽을 숫자만 남기는 일은
+    companies.js 가 맡는다(`textMatch` — 번호 모양일 때만).
     """
     phone = (c.contact_phone or "").strip()
-    digits = auth_svc.normalize_phone(phone)
     parts = [
-        c.name, c.contact_name, c.contact_email, phone,
-        digits if digits != phone else "",
-        c.sector_major, c.sector_minor, c.series,
+        c.name, c.received_at, c.contact_name, phone, phone_digits(phone), c.contact_email,
         # `딜 소개 문구`(`one_liner`)와 `기업 한줄 소개`(`business_desc`)는 다른
         # 칸이다(0058) — 한 표에 나란히 서므로(#105 · #106) **둘 다 싣는다**.
-        # `funding_status`(투자 현황)는 **안 싣는다.** 화면에서 뺀 칸이라
-        # (`companies.html` 의 `그 밖` 묶음 머리 주석) 그 글자로 줄이 걸리면
-        # 왜 걸렸는지 화면 어디에도 안 보인다 — 짚을 데 없는 검색 결과가 된다.
-        # 잃는 것도 없다: 값 281줄 중 258줄은 바로 위 두 칸과 글자까지 같은
-        # 사본이고, 나머지 19줄은 `메모`(`note`)로 옮겨 두었다.
-        c.one_liner, c.business_desc, c.competitiveness,
-        # `메모` — IR 기업 현황 탭에 칸으로 선 뒤로(#103) 보이는 칸이라 싣는다.
-        c.note,
+        c.business_desc, c.one_liner, c.sector_major, c.sector_minor,
+        # 매출 · 금액 — 표에 선 해만(`revenue_years.columns` — 머리글과 같은 한 벌).
+        *(getattr(c, f) for f, _label in revenue_years.columns()),
+        c.series, c.competitiveness, c.founded_year, c.region, c.guarantee,
+        c.assignee_name, c.meeting_offered_at, c.contract_ym,
+        # 칸에 보이는 말(`유료계약완료`) — 저장된 열쇠(`paid`)가 아니다.
+        CONTRACT_LABELS.get(contract_key(c.contract_status), "미계약"),
+        c.success_fee, c.contract_month, c.top_deal_kind, c.note, c.ir_file_name,
+        # [수정] 창에만 있는 글.
+        c.kakao_room_name, *c.desc_before_merge.values(),
+        *extra,
     ]
-    return " ".join(filter(None, parts)).lower()
+    return " ".join(str(p) for p in parts if p).lower()
+
+
+def row_search(db: Session, c: IrCompany) -> str:
+    """줄 하나의 검색 글자 — 추가 칸 값까지(저장 응답 · `custom_columns.put_value`)."""
+    custom = custom_columns.search_values(db, IrCompany.__tablename__, [c.id])
+    return search_text(c, custom.get(c.id, ()))
 
 
 # 두 탭의 차례를 정하는 `수신일` 이 **날짜로 적혀 있는가**(`sort_by_received`).
@@ -560,6 +596,8 @@ def company_rows(db: Session, sent=None) -> List[dict]:
     # 한 번 배워 344행에 돌려 쓴다(행마다 배우면 344번 세게 된다).
     hints = Hints.learn(companies)
     editors = last_editors(db, companies)
+    # 추가 칸 글도 검색에 싣는다(#152) — 줄마다 묻지 않고 한 번에 읽는다.
+    custom = custom_columns.search_values(db, IrCompany.__tablename__)
     rows = [
         {
             "id": c.id,
@@ -690,7 +728,7 @@ def company_rows(db: Session, sent=None) -> List[dict]:
             "blocked_reason": blocked_reason(c),
             "note": c.note or "",
             # 검색용 — 화면에서 즉시 필터링한다. 무엇이 들어가는지는 `search_text`.
-            "search": search_text(c),
+            "search": search_text(c, custom.get(c.id, ())),
         }
         for c in companies
     ]
@@ -1200,7 +1238,7 @@ def update_company(company_id: int, body: CompanyIn,
             "meeting_sort": meeting_sort_key(company.meeting_offered_at),
             # 검색 글자(#99) — 표에서 `기업 한줄 소개` 를 고치고 바로 찾으면 옛 글자로
             # 걸렀다(새로고침 전까지). Series A 탭(`series_a._result`)과 같은 짝.
-            "search": search_text(company),
+            "search": row_search(db, company),
             # IR 자료(#151) — 표에서 눌러 고치면 배지(`📎 있음`/`⚠ 없음`)와 필터 값을 이것으로
             # 다시 그린다. 다듬은 값(앞뒤 빈칸을 뗀)을 준다 — 칸과 DB 가 같은 글자로 남게.
             "ir_file_name": company.ir_file_name or "",

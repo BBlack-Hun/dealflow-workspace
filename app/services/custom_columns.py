@@ -10,6 +10,7 @@
 화면 · 엑셀 · 지우기가 모두 이 모듈 하나를 읽는다:
 
     view(db, target, row_table)   그 화면에 보일 칸과 값(숨긴 칸은 빠진다)
+    search_values(db, row_table)  줄의 검색 글자에 실을 메모 칸 값(IR 기업 현황 두 탭 · #152)
     cells(view, row_id)           엑셀 한 줄 끝에 붙일 값
     forget_deleted(session)       줄이 지워지면 그 줄의 값도 함께(세션 flush)
 
@@ -91,10 +92,11 @@ _HAND_ANCHORS = {
             "공유 심사역", "휴대폰", "회사", "IR 자료"),
     },
     "consulting": {
+        # 계약 넷은 `이메일`(·`등록일`) 오른쪽 · `소개 메모` → `메모`(#154 · 11/04).
         "스타트업": (
-            "기업명", "대표자명", "연락처", "이메일", "지역", "컨설팅 미팅일", "미팅종류",
-            "기업 관리", "기업 내용", "소개 메모", "견적서 첨부 여부", "계약여부",
-            "계약서 수신 여부", "카톡 연결 여부"),
+            "기업명", "대표자명", "연락처", "이메일", "계약년월", "계약여부",
+            "계약서 수신 여부", "성공보수율", "지역", "컨설팅 미팅일", "미팅종류",
+            "기업 관리", "기업 내용", "메모", "견적서 첨부 여부", "카톡 연결 여부"),
         "그 밖의": (
             "기업명", "대표자명", "연락처", "이메일", "지역", "컨설팅 미팅일", "미팅종류",
             "기업 관리", "기업 내용"),
@@ -120,7 +122,9 @@ RENAMED = {
     # 이름 통일(10/22) — 기업 쪽은 IR 기업 현황 낱말, 투자사 쪽은 투자사 관리 현황 낱말.
     "consulting": {"미팅일": "컨설팅 미팅일", "대표자": "대표자명",
                    "계약완료여부": "계약여부", "계약서 수신완료여부": "계약서 수신 여부",
-                   "계약서 수신여부": "계약서 수신 여부", "딜 소개문구": "소개 메모"},
+                   "계약서 수신여부": "계약서 수신 여부", "딜 소개문구": "메모",
+                   # #154(11/04) — `소개 메모` → `메모`.
+                   "소개 메모": "메모"},
     "startup": {"성함": "대표자명", "사업분야 대분류": "대분류", "기업구분": "투자라운드",
                 "IR Deck 유무": "IR 자료", "IR 미팅 제공일자": "미팅제공일자",
                 # #87(10/29) — IR 기업 현황과 같은 `IR 자료` · 딜 소싱과 같은 `메모`.
@@ -216,6 +220,27 @@ def values(db: Session, row_table: str, cols) -> Dict[int, Dict[int, str]]:
             CustomColumnValue.row_table == row_table,
             CustomColumnValue.column_id.in_(ids))).scalars():
         out.setdefault(cell.row_id, {})[cell.column_id] = cell.value
+    return out
+
+
+def search_values(db: Session, row_table: str, ids=None) -> Dict[int, List[str]]:
+    """검색 글자에 실을 추가 칸 값 — `{줄 번호: [값, …]}`(#152 · IR 기업 현황 두 탭).
+
+    **보이는 메모 칸만** 싣는다. 숨긴 칸은 화면에 없고(`columns`), O/X 칸은 머리글
+    필터로 고르는 값이라 `o` · `x` 한 글자를 섞어 봐야 검색으로 가려지는 줄이 없다.
+    `ids` 를 주면 그 줄만 읽는다(저장 응답 한 줄). 한 번의 쿼리다.
+    """
+    cols = [c.id for c in columns(db, ROW_TARGET[row_table]) if c.kind == "memo"]
+    if not cols:
+        return {}
+    stmt = select(CustomColumnValue.row_id, CustomColumnValue.value).where(
+        CustomColumnValue.row_table == row_table, CustomColumnValue.column_id.in_(cols))
+    if ids is not None:
+        stmt = stmt.where(CustomColumnValue.row_id.in_(list(ids)))
+    out: Dict[int, List[str]] = {}
+    for row_id, value in db.execute(stmt.order_by(CustomColumnValue.column_id)):
+        if value:
+            out.setdefault(row_id, []).append(value)
     return out
 
 

@@ -336,15 +336,18 @@ def test_다른_탭의_표는_한_칸도_안_바뀐다(allowed, db, users):
     _row(db, users["u1"].id, company_name="샘플자", region="서울",
          ceo_name="김샘플", phone="010-0000-0000", email="a@example.com")
     body = _open(allowed, "스타트업")
+    # #154(11/04) — 계약 넷(계약년월 · 계약여부 · 계약서 수신 여부 · 성공보수율)은
+    # `등록일` 바로 오른쪽 · `소개 메모` 는 `메모`(`tests/test_consulting_sticky_contract_cols.py`).
     assert _heads(body) == ["NO", "담당자", "기업명", "대표자명", "연락처", "이메일",
-                            "등록일", "지역", "컨설팅 미팅일", "미팅종류", "기업 관리", "기업 내용",
-                            "소개 메모", "견적서 첨부 여부", "계약여부",
-                            "계약서 수신 여부", "카톡 연결 여부", ""], _heads(body)
+                            "등록일", "계약년월", "계약여부", "계약서 수신 여부", "성공보수율",
+                            "지역", "컨설팅 미팅일", "미팅종류", "기업 관리", "기업 내용",
+                            "메모", "견적서 첨부 여부", "카톡 연결 여부", ""], _heads(body)
     assert _fields(body) == ["company_name", "ceo_name", "phone", "email",
+                             "contract_ym", "contract_done", "contract_received",
+                             "success_fee",
                              "region", "meeting_at", "meeting_kind",
                              "management", "management_detail", "deal_pitch",
-                             "contract_management", "contract_done", "contract_received",
-                             "kakao_joined"]
+                             "contract_management", "kakao_joined"]
 
 
 def test_화면에서_뺀_칸의_값은_지워지지_않는다(allowed, db, users):
@@ -502,25 +505,30 @@ def test_계약_탭에만_있는_칸은_다른_탭으로_안_샌다(allowed, db,
     """
     _row(db, users["u1"].id, company_name="샘플더", management="관리 중 : 미팅 완")
     body = _open(allowed, "스타트업")
-    for label in ("성공보수율", "계약금", "계약월"):
+    # `성공보수율` 은 #154(11/04) 부터 스타트업(메타) 탭에도 **같은 칸**으로 선다
+    # (`등록일` 오른쪽 계약 넷 — `계약서 수신 여부` 와 같은 사정). `계약금` · `계약월` 은
+    # 여전히 계약 줄에만 있는 개념이다(`계약년월` 은 다른 칸 — 아래 머리글 참고).
+    for label in ("계약금", "계약월"):
         assert label not in body, label
-    for field in ("success_fee", "contract_fee"):
-        assert field not in body, field
+    assert "contract_fee" not in body
     # 10/22 이름 통일 — 두 탭이 같은 칸을 같은 이름(`계약서 수신 여부`)으로 부른다.
     assert 'data-filters="received:계약서 수신 여부"' in body
     # `견적서 첨부 여부`·`계약완료여부`·`계약서 수신완료여부`·`딜 소개문구` 는
     # 탭에 대고 따로 정한 자리라 여기 들어 있다
     # (`tests/test_consulting_contract_done.py` ·
     #  `tests/test_consulting_deal_pitch.py`).
+    # #154(11/04) — 계약 넷(계약년월 · 계약여부 · 계약서 수신 여부 · 성공보수율)은
+    # `등록일` 바로 오른쪽 · `소개 메모` 는 `메모`(`tests/test_consulting_sticky_contract_cols.py`).
     assert _heads(body) == ["NO", "담당자", "기업명", "대표자명", "연락처", "이메일",
-                            "등록일", "지역", "컨설팅 미팅일", "미팅종류", "기업 관리", "기업 내용",
-                            "소개 메모", "견적서 첨부 여부", "계약여부",
-                            "계약서 수신 여부", "카톡 연결 여부", ""], _heads(body)
+                            "등록일", "계약년월", "계약여부", "계약서 수신 여부", "성공보수율",
+                            "지역", "컨설팅 미팅일", "미팅종류", "기업 관리", "기업 내용",
+                            "메모", "견적서 첨부 여부", "카톡 연결 여부", ""], _heads(body)
     assert _fields(body) == ["company_name", "ceo_name", "phone", "email",
+                             "contract_ym", "contract_done", "contract_received",
+                             "success_fee",
                              "region", "meeting_at", "meeting_kind",
                              "management", "management_detail", "deal_pitch",
-                             "contract_management", "contract_done", "contract_received",
-                             "kakao_joined"]
+                             "contract_management", "kakao_joined"]
 
 
 def test_칩과_KPI_는_이_칸을_안_본다():

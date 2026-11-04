@@ -18,10 +18,21 @@
 
   // 검색창은 컬럼 필터 위에 AND 로 얹는다 — 둘이 각자 tr.hidden 을 만지면
   // 검색과 필터가 번갈아 서로를 지운다(`companies.js` 와 같은 이유).
+  //
+  // 번호는 어느 모양으로 쳐도 닿는다(#152) — `companies.js` 의 `textMatch` 와 같은 규칙.
+  // 줄에는 적은 그대로와 숫자만 남긴 꼴이 함께 실려 있고(`series_a.search_text`), 친
+  // 글자가 **번호 모양**이면 숫자만 남겨 한 번 더 견준다. 아무 글자에나 숫자만 남기면
+  // `24년 매출` 이 `24` 로 줄어 엉뚱한 줄까지 걸린다.
+  var PHONEISH = /^[0-9][0-9\s().+-]*$/;
+
   function textMatch(tr) {
     var q = (search.value || "").trim().toLowerCase();
     if (!q) return true;
-    return (tr.getAttribute("data-search") || "").indexOf(q) !== -1;
+    var hay = tr.getAttribute("data-search") || "";
+    if (hay.indexOf(q) !== -1) return true;
+    if (!PHONEISH.test(q)) return false;
+    var digits = q.replace(/[^0-9]/g, "");
+    return !!digits && hay.indexOf(digits) !== -1;
   }
 
   // 줄 번호는 **보이는 것 기준**이다 — 걸러낸 뒤 몇 건인지 세려고.
@@ -91,6 +102,9 @@
     var data = e.detail.data || {};
     var row = e.detail.row;
     var cell = e.detail.cell;
+    // 검색 글자는 **먼저** — 추가 칸 저장(`PUT /api/custom-values/…`)의 응답에는 `id` 가
+    // 없어 아래에서 돌아가지만, 적은 글로 바로 찾아져야 한다(#152).
+    if (row && "search" in data) row.setAttribute("data-search", data.search || "");
     if (!row || !("id" in data)) return;
     var field = cell && cell.getAttribute("data-field");
 
@@ -123,7 +137,6 @@
       if (pair[1] === "updated_at") td.title = "마지막으로 고친 시각";
     });
     if (data.ir_link) renderIrLink(row.querySelector(".sa-ir-link"), data.ir_link);
-    if ("search" in data) row.setAttribute("data-search", data.search || "");
     row.setAttribute("data-s-received_at", data.received_sort || "");
 
     var link = row.querySelector(".ir-link");
@@ -288,6 +301,8 @@
       .then(function (res) {
         if (!res.ok) { alert(res.d.detail || "확정하지 못했습니다"); return; }
         renderSharer(box, res.d.sharer);
+        // 확정한 분의 `휴대폰` 으로도 바로 찾아지게(#152 — 서버가 새 검색 글자를 준다).
+        if ("search" in res.d) tr.setAttribute("data-search", res.d.search || "");
       }).catch(function () { alert("확정 요청 오류"); });
   });
 

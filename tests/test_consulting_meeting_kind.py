@@ -312,7 +312,10 @@ def test_엑셀에도_실리고_이미_받아_둔_파일의_자리는_안_밀린
     # **뒤에 붙는 묶음 안**에 있다. 그 묶음이 자랄 수 있으므로 `맨 뒤` 로
     # 못 박지 않는다 — 지키는 것은 **앞자리를 하나도 안 밀었다**는 것이다.
     tail = [label for label, _f in consulting.FIXED_EXTRA_EXPORT]
-    assert head[-len(tail):] == tail, head
+    # 그 뒤로 는 칸(`LATE_EXPORT` — #154 `계약년월`)은 이 묶음 **뒤**에 붙는다.
+    late = [label for label, _f in consulting.LATE_EXPORT]
+    assert head[-len(late):] == late, head
+    assert head[-len(late) - len(tail):-len(late)] == tail, head
     assert (LABEL, FIELD) in consulting.FIXED_EXTRA_EXPORT
     # **머리글에 두 번 서지 않는다.** `CONSULTING_EXPORT_HEADERS` 가
     # `FIXED_COLUMNS` 에서 뽑으므로, 빼 두지 않으면 같은 칸이 앞뒤 두 자리에
@@ -320,7 +323,7 @@ def test_엑셀에도_실리고_이미_받아_둔_파일의_자리는_안_밀린
     # 한 칸씩 밀린다**(기업명 자리에 지역이 찍힌다). 실제로 그렇게 났다.
     assert head.count(LABEL) == 1, head
     # 그 앞자리들은 **하나도 안 밀렸다.**
-    assert head[-len(tail) - 1] == "카톡 연결 여부", head
+    assert head[-len(late) - len(tail) - 1] == "카톡 연결 여부", head
     mine = next(r for r in rows[1:] if "샘플파" in " ".join(str(c or "") for c in r))
     # 머리글 수와 값 수가 같아야 한 칸도 안 밀린다.
     assert len(mine) == len(head), (len(mine), len(head))
