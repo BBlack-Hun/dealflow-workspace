@@ -33,6 +33,7 @@
 from __future__ import annotations
 
 import re
+from datetime import date
 from typing import Dict, List, Optional, Set
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
@@ -41,7 +42,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ..clock import today
+from ..clock import stamp_text, today
 from ..db import get_db
 from ..deps import NotAdmin, get_current_user, templates
 from ..models import IrCompany, SeriesACompany, SourcingContact, User
@@ -88,9 +89,10 @@ def short_series(value: Optional[str]) -> str:
 
 def search_text(c: SeriesACompany) -> str:
     """줄에 실어 둘 검색용 글자. 표에 보이는 칸은 다 찾아져야 한다."""
-    parts = [c.name, c.received_at, c.follow_round_month, c.deal_type, c.assignee_name,
-             c.shared_by, c.source_firm, c.sector_major, c.sector_minor, c.series,
-             c.detail, c.deal_pitch, c.ir_file_name] + [getattr(c, f) for f in TYPED]
+    parts = [c.name, c.memo, c.received_at, c.follow_round_month, c.consulting_meeting_at,
+             c.deal_type, c.assignee_name, c.shared_by, c.source_firm, c.sector_major,
+             c.sector_minor, c.series, c.detail, c.deal_pitch,
+             c.ir_file_name] + [getattr(c, f) for f in TYPED]
     return " ".join(filter(None, parts)).lower()
 
 
@@ -133,9 +135,15 @@ def row_dict(c: SeriesACompany, known: Dict[str, tuple],
     return {
         "id": c.id,
         "name": c.name or "",
+        # 메모(#142) · 수정한 날짜 — IR 기업 현황 표와 같은 값 · 같은 꼴(`companies.company_rows`).
+        # 수정한 팀원(`updated_by`)은 수정 로그를 한 번에 읽는 자리(`table_rows` · `_result`)가 얹는다.
+        "memo": c.memo or "",
+        "updated_at": stamp_text(c.updated_at),
+        "updated_never": stamp_text(c.updated_at) == stamp_text(c.created_at),
         "received_at": c.received_at or "",
         "received_sort": received_sort_key(c.received_at),
         "follow_round_month": c.follow_round_month or "",
+        "consulting_meeting_at": c.consulting_meeting_at or "",
         "deal_type": c.deal_type or "",
         "assignee_name": c.assignee_name or "",
         "shared_by": c.shared_by or "",
@@ -179,13 +187,17 @@ def sort_rows(rows: List[dict]) -> List[dict]:
 
 
 def table_rows(db: Session) -> List[dict]:
+    from .companies import last_editors
+
     known = ir_names(db)
     people = series_a_share.contacts_by_company(db)
     companies = db.execute(select(SeriesACompany)).scalars().all()
     sharers = series_a_share.sharer_views(db, companies)
     # 이름 밑 `IR 기업: ○○ (자동 연결 · 연결 풀기)` — 투자컨설턴트 표와 같은 표시.
     links = ir_link.badges(db, companies)
-    rows = [dict(row_dict(c, known, people, sharers.get(c.id)), ir_link=links[c.id])
+    editors = last_editors(db, companies, SeriesACompany.__tablename__)
+    rows = [dict(row_dict(c, known, people, sharers.get(c.id)), ir_link=links[c.id],
+                 updated_by=editors.get(c.id, ""))
             for c in companies]
     return sort_rows(rows)
 
@@ -274,9 +286,12 @@ class SeriesAIn(BaseModel):
     """칸 이름은 **모델 칸 이름 그대로**다 — 표의 `data-field` 가 이 이름으로 보낸다."""
 
     name: Optional[str] = None
+    memo: Optional[str] = None
     received_at: Optional[str] = None
     # `후속라운드 시작`(#98 · 0127) — `YYYY-MM` 으로 맞춰 넣는다(`_assign`).
     follow_round_month: Optional[str] = None
+    # `IR 투자컨설팅 미팅일시`(#143 · 0131) — `YYYY-MM-DD HH:MM` 으로 맞춰 넣는다(`meeting_text`).
+    consulting_meeting_at: Optional[str] = None
     deal_type: Optional[str] = None
     assignee_name: Optional[str] = None
     shared_by: Optional[str] = None
@@ -353,6 +368,32 @@ def _check_ir_file(db: Session, row: SeriesACompany, body: SeriesAIn) -> None:
         raise HTTPException(status_code=400, detail=IR_TWIN_FILE)
 
 
+_MEETING_AT = re.compile(r"(.+?)(?:[T\s]+(\d{1,2}):(\d{2})(?::\d{2})?)?")
+#: 못 읽는 미팅일시를 적으려 할 때.
+MEETING_FORMAT = ("IR 투자컨설팅 미팅일시는 YYYY-MM-DD HH:MM 으로 적으세요 — 예: 2026-11-05 14:00"
+                  " · 시각을 모르면 날짜만")
+
+
+def meeting_text(text: str) -> Optional[str]:
+    """`IR 투자컨설팅 미팅일시`(#143) — `2026.11.5 14:00` → `2026-11-05 14:00`. 못 읽으면 None.
+
+    날짜는 `수신일` 과 같은 규칙(`day_text`), 화면 꼴은 딜 진행 관리 미팅의 `날짜 시각`
+    (`pipeline.when_label`)이다. 시각은 없어도 된다 — 모르는 시각을 지어내지 않는다.
+    """
+    hit = _MEETING_AT.fullmatch(text)
+    day = day_text(hit.group(1)) if hit else ""
+    try:
+        # `day_text` 는 없는 날(`2026-13-01`)을 적힌 그대로 돌려준다 — 날짜로 다시 읽어 거른다.
+        if date.fromisoformat(day).isoformat() != day:
+            return None
+    except ValueError:
+        return None
+    if hit.group(2) is None:
+        return day
+    hour, minute = int(hit.group(2)), int(hit.group(3))
+    return f"{day} {hour:02d}:{minute:02d}" if hour < 24 and minute < 60 else None
+
+
 def _assign(row: SeriesACompany, body: SeriesAIn) -> None:
     from .companies import checked_contract, checked_ox, checked_ym
 
@@ -378,6 +419,11 @@ def _assign(row: SeriesACompany, body: SeriesAIn) -> None:
                 raise HTTPException(status_code=400,
                                     detail="후속라운드 시작은 YYYY-MM 으로 적으세요 — 예: 2027-03")
             row.follow_round_month = found
+        elif field == "consulting_meeting_at":
+            found = meeting_text(text)
+            if text and not found:
+                raise HTTPException(status_code=400, detail=MEETING_FORMAT)
+            row.consulting_meeting_at = found
         elif field == "contract_status":
             # IR 기업 현황과 같은 판정 — 칸에 보이는 말(`유료계약완료`)도 열쇠로 받고, 모르는 말은 400.
             row.contract_status = checked_contract(text)
@@ -395,17 +441,21 @@ def _result(row: SeriesACompany, db: Session) -> dict:
     `투자라운드` 의 짧은 꼴 · 세울 날짜 · IR 현황 딱지는 서버 규칙에서 나온다.
     화면에 같은 규칙을 또 적으면 두 벌이 되어 한쪽만 고쳐진다.
     """
+    from .companies import last_editors
+
     data = row_dict(row, ir_names(db), sharer=series_a_share.sharer_view(db, row))
     # 고친 칸은 **서버가 저장한 값**으로 다시 그리고(`series_a.js`), 검색 글자도
     # 갈아 끼운다 — 표에서 고치는 칸은 전부 돌려준다. 기업명을 넣어 IR 기업에 이어지면
     # 대표자 · 매출 · 금액 빈칸이 채워지므로 화면은 줄의 칸을 전부 이 값으로 다시 그린다.
     out = {key: data[key] for key in (
-        "id", "name", "received_at", "follow_round_month", "deal_type", "assignee_name",
+        "id", "name", "memo", "updated_at", "received_at", "follow_round_month",
+        "consulting_meeting_at", "deal_type", "assignee_name",
         "shared_by", "source_firm", "sector_major", "sector_minor", "series", "detail",
         "deal_pitch", *TYPED, "contract_status", "contract_label", "contract_received",
         "contract_ym", "ir_file_name", "received_sort", "series_short", "ir_name",
         "ir_file", "search", "sharer", "sharer_phone")}
     out["ir_link"] = ir_link.badge_for(db, row)
+    out["updated_by"] = last_editors(db, [row], SeriesACompany.__tablename__).get(row.id, "")
     return out
 
 

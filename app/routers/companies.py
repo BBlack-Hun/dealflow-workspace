@@ -521,15 +521,16 @@ def _same_moment(a: Optional[str], b: Optional[str]) -> bool:
         return False
 
 
-def last_editors(db: Session, companies) -> dict:
+def last_editors(db: Session, companies, table: str = IrCompany.__tablename__) -> dict:
     """줄마다 **마지막으로 고친 팀원** `{기업 id: 이름}` (#89) — 수정 로그의 그 줄 마지막 기록.
 
     로그는 사람이 누른 요청에서만 남는다(`services/edit_log`). 그 뒤에 앱이 혼자 고쳐
     `수정한 날짜` 가 로그보다 늦으면 그 이름은 그 날짜의 주인이 아니라 `자동` 이다.
     로그가 없는 줄(시트로 들어와 아무도 안 고친 줄)은 빠진다 — 화면은 빈칸.
+    `table` — Series A 탭(#142)도 같은 셈으로 읽는다(`series_a_companies` · 공용 표라 다 남는다).
     """
     by_id = {c.id: c for c in companies}
-    last = (select(func.max(EditLog.id)).where(EditLog.table_name == IrCompany.__tablename__)
+    last = (select(func.max(EditLog.id)).where(EditLog.table_name == table)
             .group_by(EditLog.row_id))
     found = db.execute(select(EditLog.row_id, EditLog.at, User.name)
                        .join(User, User.id == EditLog.actor_user_id)
