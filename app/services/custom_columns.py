@@ -10,6 +10,7 @@
 화면 · 엑셀 · 지우기가 모두 이 모듈 하나를 읽는다:
 
     view(db, target, row_table)   그 화면에 보일 칸과 값(숨긴 칸은 빠진다)
+    search_values(db, row_table)  줄의 검색 글자에 실을 메모 칸 값(IR 기업 현황 두 탭 · #152)
     cells(view, row_id)           엑셀 한 줄 끝에 붙일 값
     forget_deleted(session)       줄이 지워지면 그 줄의 값도 함께(세션 flush)
 
@@ -216,6 +217,27 @@ def values(db: Session, row_table: str, cols) -> Dict[int, Dict[int, str]]:
             CustomColumnValue.row_table == row_table,
             CustomColumnValue.column_id.in_(ids))).scalars():
         out.setdefault(cell.row_id, {})[cell.column_id] = cell.value
+    return out
+
+
+def search_values(db: Session, row_table: str, ids=None) -> Dict[int, List[str]]:
+    """검색 글자에 실을 추가 칸 값 — `{줄 번호: [값, …]}`(#152 · IR 기업 현황 두 탭).
+
+    **보이는 메모 칸만** 싣는다. 숨긴 칸은 화면에 없고(`columns`), O/X 칸은 머리글
+    필터로 고르는 값이라 `o` · `x` 한 글자를 섞어 봐야 검색으로 가려지는 줄이 없다.
+    `ids` 를 주면 그 줄만 읽는다(저장 응답 한 줄). 한 번의 쿼리다.
+    """
+    cols = [c.id for c in columns(db, ROW_TARGET[row_table]) if c.kind == "memo"]
+    if not cols:
+        return {}
+    stmt = select(CustomColumnValue.row_id, CustomColumnValue.value).where(
+        CustomColumnValue.row_table == row_table, CustomColumnValue.column_id.in_(cols))
+    if ids is not None:
+        stmt = stmt.where(CustomColumnValue.row_id.in_(list(ids)))
+    out: Dict[int, List[str]] = {}
+    for row_id, value in db.execute(stmt.order_by(CustomColumnValue.column_id)):
+        if value:
+            out.setdefault(row_id, []).append(value)
     return out
 
 
