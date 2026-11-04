@@ -1695,6 +1695,12 @@ td.cell.strong { font-weight: 600; }
 td.cell.saving { background: #fff8e6; }
 td.cell.saved { background: #eaf7ee; transition: background .6s; }
 td.cell.save-failed { background: #fdecec; }
+/* 투자컨설턴트의 고정된 `기업명`(#153)도 저장 색을 받는다 — 고정 칸은 바탕을 깔고 서서
+   (`.table-wrap.wide td.stick` · 줄 hover) 위 세 규칙을 이긴다. 그대로 두면 기업명을
+   고쳤을 때만 저장 중 · 저장됨 · 실패가 안 보인다. */
+#cs-table td.stick.saving { background: #fff8e6; }
+#cs-table td.stick.saved { background: #eaf7ee; }
+#cs-table td.stick.save-failed { background: #fdecec; }
 /* **키보드가 지금 어느 칸에 있는가.**
    칸이 스무 개 넘고 화면보다 1,900px 넓은 표에서 초점 표시가 없으면, 키를
    눌러 옮겨 다닐 때 어디에 서 있는지 알 수가 없다 — 그러면 키로 다니지

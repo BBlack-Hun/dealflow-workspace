@@ -2067,8 +2067,16 @@ class ConsultingCompany(TimestampMixin, Base):
     # 다른 탭에서는 비어 있다 — 탭마다 표가 다르다는 것은 화면이 정하고
     # (`routers/consulting.py` 의 `SHEET_LAYOUTS`) 칸은 그냥 비워 둔다.
     # 시트마다 테이블을 나누면 같은 성격의 줄이 두 곳에 흩어진다.
+    #
+    # ★ 11/04 #154 — `성공보수율` 은 **메타(관리 스타트업) 탭에도 선다**(`등록일` 오른쪽
+    #   계약 묶음). 같은 칸이고, 이어진 줄은 IR 과 따라 고친다(`company_sync.FIELDS`).
     success_fee: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # 성공보수율
     contract_fee: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # 계약금
+    # 계약년월(0133 · #154) — `YYYY-MM` 글자. `IrCompany.contract_ym` 과 같은 이름 · 같은 꼴
+    # (`companies.checked_ym` 을 지난다). 메타 탭 `등록일` 오른쪽 계약 묶음의 첫 칸이고,
+    # 이어진 줄은 IR 과 따라 고친다(`company_sync.FIELDS`). 계약 탭의 `계약월`
+    # (`meeting_at` — `미정` · `8` 같은 글)과는 다른 칸이다. 지난 줄은 빈칸으로 시작한다.
+    contract_ym: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     # 계약서를 받았는가 — `O` / `X`. **빈칸은 `아직 안 정함`이다.**
     #
     # 두 값뿐이면 미정을 적을 자리가 없다. 그렇다고 이미 들어 있는 줄을 전부

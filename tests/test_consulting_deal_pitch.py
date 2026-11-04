@@ -202,7 +202,8 @@ def test_엑셀에도_실린다(allowed, db, users):
     # **뒤에** 붙는다 — 이미 내려받아 둔 파일의 칸 자리가 안 밀려야 한다.
     # 목록 전체를 못 박으면 칸을 더할 때마다 이 줄이 같이 빨개지는데, 그때
     # 이 검사가 지키려던 것(`딜 소개문구` 가 엑셀에 실린다)은 멀쩡하다.
-    assert STARTUP_EXPORT_HEADERS[0] == "소개 메모"
+    # #154(11/04) — 이름이 `메모` 로 바뀌었다(자리는 그대로).
+    assert STARTUP_EXPORT_HEADERS[0] == "메모"
     # 계약 탭 칸들 뒤에 붙는다 — 이미 내려받아 둔 파일의 칸 자리가 안 밀린다.
     src = pathlib.Path("app/routers/consulting.py").read_text(encoding="utf-8")
     assert "CONTRACT_EXPORT_HEADERS\n               + STARTUP_EXPORT_HEADERS" in src
@@ -267,11 +268,12 @@ def test_스타트업_탭에서만_서는_칸들_끝에_선다(allowed, db, user
     # `기업 관리` 바로 오른쪽에 새로 서면서 이 묶음의 앞자리가 그쪽이 됐다
     # (`tests/test_consulting_management_detail.py`).
     # #87(10/29) — IR 기업 현황 차례대로 `기업 내용` 바로 뒤(견적서 · 계약 앞)로 왔다.
-    assert heads[heads.index("기업 내용") + 1] == "소개 메모", heads
-    assert heads[heads.index("소개 메모") + 1] == "견적서 첨부 여부", heads
+    # #154(11/04) — 이름이 `메모` 로 바뀌었다(자리는 그대로).
+    assert heads[heads.index("기업 내용") + 1] == "메모", heads
+    assert heads[heads.index("메모") + 1] == "견적서 첨부 여부", heads
     # 머리글과 칸이 같은 차례인가 — 이름은 다르지만 자리가 같아야 한다.
     assert fields.index("deal_pitch") - fields.index("management_detail") \
-        == heads.index("소개 메모") - heads.index("기업 내용"), (heads, fields)
+        == heads.index("메모") - heads.index("기업 내용"), (heads, fields)
     assert fields[fields.index("deal_pitch") + 1] == "contract_management", fields
 
 
@@ -321,8 +323,9 @@ def test_표_모양은_이름이_아니라_열쇠로_짝짓는다(db):
 
     assert consulting.SHEET_LAYOUTS[cs.STARTUP] == (
         consulting.STARTUP_COLUMNS, consulting.TAIL_COLUMNS)
-    # #87(10/29) — 이 탭만의 묶음 맨 앞(IR 기업 현황의 `딜 소개 문구` 자리).
-    assert consulting.STARTUP_COLUMNS[len(consulting.FIXED_COLUMNS)] == ("소개 메모", "deal_pitch")
+    # #87(10/29) — IR 기업 현황의 `딜 소개 문구` 자리. #154(11/04) 부터 이름은 `메모`이고,
+    # 이 탭만의 묶음에서 `등록일` 오른쪽 계약 넷 바로 뒤다.
+    assert consulting.STARTUP_COLUMNS[len(consulting.FIXED_COLUMNS) + 4] == ("메모", "deal_pitch")
     # 경영본부 탭과 사람이 만든 탭은 지금까지의 묶음 그대로다.
     assert cs.HANDOVER not in consulting.SHEET_LAYOUTS
     assert consulting.layout_of(db, "경영본부 전달 기업") == (

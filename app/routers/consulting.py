@@ -48,7 +48,7 @@ from ..services import startup_handoff
 from ..ui import base_ctx, menu_label
 # 계약을 부르는 말이 있는 곳. 여기에 다시 적지 않는다 —
 # `CONTRACT_DONE_CHOICES` 주석 참고(`routers/pages.py` 도 같은 방식이다).
-from .companies import CONTRACT_LABELS
+from .companies import CONTRACT_LABELS, checked_ym
 # **줄을 새로 넣는 길은 저것 하나다.** 아래 `send_to_startup` 이 그대로 부른다 —
 # 왜 여기서 `VcContact(...)` 를 만들지 않는지는 `services/startup_handoff.py`
 # 첫머리에 적혀 있다.
@@ -148,7 +148,9 @@ CONTRACT_TAB_CHOICES = tuple(company_sync.TAB_WORDS)
 # 규칙이기 때문이다(머리글 필터가 `(비어 있음)` 으로 세워 준다).
 MEETING_KIND_CHOICES = ("화상미팅", "회의실 미팅")
 
-# `관리 스타트업` 탭에만 서는 칸들 — 전부 `기업 관리` **오른쪽**이다.
+# `관리 스타트업` 탭에만 서는 칸들 — 전부 `기업 관리` **오른쪽**이었다.
+# (#154 · 11/04 부터 계약 넷 — 계약년월 · 계약여부 · 계약서 수신 여부 · 성공보수율 —
+#  은 `등록일` 바로 오른쪽에 모여 선다. 아래 목록의 첫 묶음이다.)
 #
 # 앞의 셋은 **견적서 첨부 여부 → 계약완료여부 → 계약서 수신완료여부**,
 # 컨설턴트가 기업 하나를 붙들고 가는 흐름의 세 마디다(견적서를 보냈나 →
@@ -189,13 +191,26 @@ MEETING_KIND_CHOICES = ("화상미팅", "회의실 미팅")
 # 표 자체가 다르다. 그래서 `FIXED_COLUMNS` 에 넣지 않고 이 탭만의 묶음을 따로
 # 둔다 — `FIXED_COLUMNS` 는 지금도 스타트업·경영본부 두 탭이 함께 쓴다.
 STARTUP_COLUMNS = FIXED_COLUMNS + [
-    # **#87(사용자 결정 2026-10-29) — 화면 차례는 IR 기업 현황을 따른다**: 소개 메모
-    # (IR `딜 소개 문구` 자리) → 견적서 → 계약 두 칸 → 카톡 연결 여부. 화면에서는
-    # `기업명 → 대표자명 → 연락처 → 이메일` 이 맨 앞이지만, 이 목록의 앞 묶음
-    # (`FIXED_COLUMNS`)은 엑셀 차례도 정하므로(`CONSULTING_EXPORT_HEADERS`) 그대로 둔다.
+    # **#154(11/04 팀원 요청) — 계약 넷은 `등록일` 오른쪽에 모아 둔다**: 계약년월 →
+    # 계약여부 → 계약서 수신 여부 → 성공보수율. IR 기업 현황의 같은 네 칸 차례 그대로다.
+    # 예전에는 계약 두 칸이 `견적서 첨부 여부` 뒤(표 오른쪽 끝)에 있어, 읽기 전용 IR 칸
+    # 스무 개 남짓을 밀어야 보였다. 계약년월은 0133 의 새 칸이고, 성공보수율은 계약 탭과
+    # 같은 칸(`success_fee`)이다 — 둘 다 이어진 줄은 IR 과 따라 고친다(`company_sync`).
+    ("계약년월", "contract_ym"),
+    # 보기 둘 + 빈칸. 값은 `CONTRACT_DONE_CHOICES` 한 곳에서 온다.
+    ("계약여부", "contract_done"),
+    # 계약 탭과 **같은 칸**이다(이름만 탭이 정한다 — 위 참고).
+    ("계약서 수신 여부", "contract_received"),   # O / X
+    ("성공보수율", "success_fee"),
+    # **#87(사용자 결정 2026-10-29) — 화면 차례는 IR 기업 현황을 따른다**: 메모
+    # (IR `딜 소개 문구` 자리) → 견적서 → 카톡 연결 여부. 화면에서는
+    # `기업명 → 대표자명 → 연락처 → 이메일 → 등록일 → 계약 넷` 이 맨 앞이지만, 이 목록의
+    # 앞 묶음(`FIXED_COLUMNS`)은 엑셀 차례도 정하므로(`CONSULTING_EXPORT_HEADERS`) 그대로 둔다.
     #
-    # 이름 통일(10/22): 발송에 안 쓰이는 메모라 IR `딜 소개 문구` 와 갈라 부른다.
-    ("소개 메모", "deal_pitch"),
+    # 이름(#154 · 11/04 팀원 요청): `소개 메모` → `메모`. 이름 통일(10/22) 때 IR
+    # `딜 소개 문구` 와 갈라 부르려고 붙인 `소개` 를 뗐다 — 발송에 안 쓰이는 메모라는 것은
+    # 그대로다(IR `딜 소개 문구` 와 다른 칸 · `models.ConsultingCompany.deal_pitch`).
+    ("메모", "deal_pitch"),
     # 견적서를 보냈는가. **`O`/`X` 를 골라 넣는다** — 아래 두 칸과 같은
     # 방식이다(화면의 `data-choices="O,X"` · 빈칸은 `아직 안 정함`).
     # 자유 글이 아니다: 값이 두 가지뿐인 칸을 손으로 적게 두면 같은 뜻이
@@ -203,15 +218,13 @@ STARTUP_COLUMNS = FIXED_COLUMNS + [
     #
     # 담기는 칸은 `contract_management` 그대로다(위 묶음 주석 참고).
     ("견적서 첨부 여부", "contract_management"),
-    # 보기 둘 + 빈칸. 값은 `CONTRACT_DONE_CHOICES` 한 곳에서 온다.
-    ("계약여부", "contract_done"),
-    # 계약 탭과 **같은 칸**이다(이름만 탭이 정한다 — 위 참고).
-    ("계약서 수신 여부", "contract_received"),   # O / X
     # 이 기업과 카톡방이 연결됐는가. 이 묶음의 **맨 뒤**다. (처음에는 `IR 자료
     # 회신여부` 앞이라고 불렀는데 이 탭에는 그런 칸이 없어 자리를 다시 물었고, 한
     # 번 `계약서 수신완료여부` 뒤로 세웠다가 사용자가 `딜 소개문구` 다음으로 고쳐
     # 정했다. #87(10/29)에 `소개 메모` 가 IR 기업 현황 차례대로 견적서 앞으로 가면서
-    # 이 칸은 IR 기업 현황처럼 `계약서 수신 여부` 바로 뒤 — 맨 뒤 그대로다.)
+    # 이 칸은 IR 기업 현황처럼 `계약서 수신 여부` 바로 뒤 — 맨 뒤 그대로다.
+    # #154(11/04)에 계약 두 칸이 `등록일` 오른쪽으로 옮겨 가면서 `견적서 첨부 여부` 바로
+    # 뒤가 됐다 — 여전히 맨 뒤다.)
     #
     # 계약 세 마디와 같은 `O`/`X` 칸이다(빈칸은 `아직 안 정함`).
     #
@@ -920,6 +933,9 @@ def company_rows(db: Session, user: User, sheet: str = "",
             # 자리를 만들지 않으려는 것이다.
             "success_fee": c.success_fee or "",
             "contract_fee": c.contract_fee or "",
+            # 계약년월(0133 · #154) — 메타 탭 `등록일` 오른쪽. 다른 탭은 빈 문자열이다(위와 같은
+            # 이유로 늘 싣는다).
+            "contract_ym": c.contract_ym or "",
             # 빈 문자열이 곧 `아직 안 정함` 이다 — 머리글 필터가 그것을
             # `(비어 있음)` 으로 세워 준다(`static/js/filters.js`).
             "contract_received": c.contract_received or "",
@@ -1004,6 +1020,7 @@ def company_rows(db: Session, user: User, sheet: str = "",
                 # 결과가 달라진다.
                 c.contract_management if startup else "",
                 c.contract_done if startup else "",
+                c.contract_ym if startup else "",
                 c.kakao_joined if startup else "",
                 *notes.values(),
             ])).lower(),
@@ -1226,6 +1243,8 @@ class CompanyIn(BaseModel):
     success_fee: Optional[str] = None
     contract_fee: Optional[str] = None
     contract_received: Optional[str] = None
+    # 메타 탭 `계약년월`(0133 · #154) — `YYYY-MM` 으로 맞춰 넣는다(`_assign` · `checked_ym`).
+    contract_ym: Optional[str] = None
     # `관리 스타트업` 탭의 칸. **긴 글이라 줄바꿈이 그대로 들어온다** —
     # `_assign` 이 앞뒤 공백만 떼므로 가운데 줄바꿈은 살아서 저장된다.
     deal_pitch: Optional[str] = None
@@ -1272,6 +1291,9 @@ def _assign(company: ConsultingCompany, body: CompanyIn) -> None:
     """
     data = body.model_dump(exclude_unset=True)
     notes = data.pop("notes", None)
+    if "contract_ym" in data:
+        # `2026.3` → `2026-03` — IR 기업 현황 `계약년월` 과 같은 함수 · 같은 꼴(못 읽으면 400).
+        data["contract_ym"] = checked_ym(data["contract_ym"])
     at = clock.now_iso()
     stamps = _stamps(company)
     touched = False
@@ -1385,7 +1407,11 @@ def update_company(company_id: int, body: CompanyIn,
     # **줄 전체를 돌려주지 않는다.** 그러면 `company_rows` 를 한 번 더 도는데,
     # 거기에는 이 응답에 필요 없는 조회가 둘 붙어 있다(줄 편집 허용 ·
     # 스타트업 명단에 이미 있는 기업).
-    out = {"id": company.id, "stamps": shown_stamps(company)}
+    out = {"id": company.id, "stamps": shown_stamps(company),
+           # **저장된 값 그대로** — 서버가 꼴을 맞추는 칸(`계약년월` 의 `2026.3` → `2026-03`)은
+           # 화면이 친 글자와 다르다. 표가 이것으로 그 칸을 다시 적는다(`consulting.js` 의 `save`).
+           "values": {f: getattr(company, f) or "" for f in body.model_fields_set
+                      if f not in ("notes", "sheet")}}
     # 기업명을 고쳐 IR 기업에 **새로 이어졌다**(`company_sync` 자동 연결) — 이어진 순간
     # 채워진 칸(`company_sync.slot`)을 실어 화면이 그 자리에서 적는다. 화면을 다시 받지
     # 않는 까닭은 `tests/test_consulting_startup_fold.py`(고르던 체크가 풀린다).
@@ -1757,8 +1783,13 @@ CONTRACT_EXPORT_HEADERS = ["성공보수율", "계약금", "계약서 수신 여
 # `contract_received` 라 위 `CONTRACT_EXPORT_HEADERS` 의 `계약서 수신여부` 로
 # 이미 실린다. 엑셀은 탭을 가리지 않고 한 장이므로 여기 또 세우면 **같은 값이
 # 두 칸에** 나오고, 그 파일을 여는 사람은 둘이 다른 사실인 줄 안다.
-STARTUP_EXPORT_HEADERS = ["소개 메모", "견적서 첨부 여부", "계약여부",
+#
+# 첫 칸 이름은 화면과 같은 `메모`다(#154 · 11/04 — 예전 `소개 메모`). 자리는 그대로다.
+STARTUP_EXPORT_HEADERS = ["메모", "견적서 첨부 여부", "계약여부",
                           "카톡 연결 여부"]
+# 메타 탭 `계약년월`(0133 · #154). **맨 끝**(추가 칸 앞)에 붙인다 — 위 목록들과 같은 이유로,
+# 이미 내려받아 둔 파일의 칸 차례가 안 밀리게 한다. 다른 탭 줄에서는 빈 칸이다.
+LATE_EXPORT = [("계약년월", "contract_ym")]
 
 
 @router.get("/api/export/consulting.xlsx")
@@ -1780,7 +1811,8 @@ def export_consulting(db: Session = Depends(get_db),
                + [c.label for c in cols]
                + [label for label, _ in TAIL_COLUMNS] + CONTRACT_EXPORT_HEADERS
                + STARTUP_EXPORT_HEADERS
-               + [label for label, _field in FIXED_EXTRA_EXPORT])
+               + [label for label, _field in FIXED_EXTRA_EXPORT]
+               + [label for label, _field in LATE_EXPORT])
     put = custom_columns.arranger(headers, extra)
     headers = put(headers + custom_columns.names(extra))
     rows = [
@@ -1792,6 +1824,7 @@ def export_consulting(db: Session = Depends(get_db),
             + [r["deal_pitch"], r["contract_management"], r["contract_done"],
                r["kakao_joined"]]
             + [r[field] for _label, field in FIXED_EXTRA_EXPORT]
+            + [r[field] for _label, field in LATE_EXPORT]
             + custom_columns.cells(extra, r["id"]))
         for r in company_rows(db, user)
     ]

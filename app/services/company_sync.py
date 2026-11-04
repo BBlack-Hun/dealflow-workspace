@@ -24,7 +24,10 @@
                       계약 탭 `management`)
     계약서 수신 여부  계약서 수신 여부(메타 · 계약 탭)   계약서 수신 여부 `notes.invoice_received`
     미팅제공일자      —                                 미팅제공일자 `notes.ir_meeting_offered_at`
-    성공보수율        성공보수율(계약 탭만)              성공보수율 `notes.success_fee`(결정 10)
+    성공보수율        성공보수율(계약 탭 · 메타 탭        성공보수율 `notes.success_fee`(결정 10)
+                      — 메타는 11/04 #154)
+    계약년월          계약년월(메타 탭만 · 11/04 #154    —
+                      · 0133 `contract_ym`)
 
     ── 3단계(10/26) — Series A 이상 딜 소싱(`SeriesACompany`)은 셋째 자리 ──
     대표자명 · 연락처 · 이메일   →  `ceo_name` · `ceo_phone` · `ceo_email`
@@ -124,12 +127,14 @@ FIELDS = {
     "contract_status": ("contract_done", "note:contract", "contract_status"),
     "contract_received": ("contract_received", "note:invoice_received", "contract_received"),
     "meeting_offered_at": (None, "note:ir_meeting_offered_at", None),
-    "success_fee": (None, "note:success_fee", None),
+    # 11/04 #154 — 메타 탭에도 `성공보수율` · `계약년월` 이 선다(`등록일` 오른쪽 계약 묶음).
+    # 계약 탭은 `CONTRACT_TAB` 이 먼저 고르고(성공보수율만), 경영본부 탭은 `META_ONLY` 로 뺀다.
+    "success_fee": ("success_fee", "note:success_fee", None),
     # 3단계(Series A)
     "funding_total": (None, None, "funding_total"),
     "raise_target": (None, None, "raise_target"),
     "pre_value": (None, None, "pre_value"),
-    "contract_ym": (None, None, "contract_ym"),
+    "contract_ym": ("contract_ym", None, "contract_ym"),
     "revenue_recent": (None, None, YEAR),
     **{f: (None, None, YEAR) for f in revenue_years.FIELDS},
     # 4단계(i126 · 11/02) — 스타트업 명단만
@@ -156,7 +161,8 @@ LABELS = {"contact_name": "대표자명", "contact_phone": "연락처", "contact
 #: `O` / `X` 만 옮기는 칸.
 OX = ("quote_attached", "kakao_joined", "contract_received")
 #: 투자컨설턴트에서 **메타(관리 스타트업) 탭에만** 서는 칸(계약 탭은 `CONTRACT_TAB`).
-META_ONLY = ("quote_attached", "kakao_joined", "contract_status", "contract_received")
+META_ONLY = ("quote_attached", "kakao_joined", "contract_status", "contract_received",
+             "success_fee", "contract_ym")
 #: 시트 올리기가 덮지 않는 투자컨설턴트 칸(이어진 줄에서 — 결정 7). 올리기는 메타 탭에 든다.
 CONSULTING_SLOTS = frozenset(c for c, *_ in FIELDS.values() if c)
 

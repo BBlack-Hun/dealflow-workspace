@@ -277,15 +277,21 @@ def test_기업_관리_바로_뒤에_차례대로_선다(allowed, db, users):
     # 탭이 함께 쓰는 칸 묶음 바로 뒤에 차례대로 선다**는 것.
     at = heads.index("기업 내용")
     assert heads[at - 1] == "기업 관리", heads
-    # #87(10/29) — IR 기업 현황 차례: `소개 메모`(IR `딜 소개 문구` 자리) → 세 마디 →
-    # `카톡 연결 여부`(`tests/test_consulting_kakao_joined.py`).
-    assert heads[at + 1:at + 6] == ["소개 메모"] + [label for label, _f, _k in COLUMNS] \
-        + ["카톡 연결 여부"], heads
+    # #87(10/29) — IR 기업 현황 차례: `메모`(IR `딜 소개 문구` 자리) → 견적서 →
+    # `카톡 연결 여부`(`tests/test_consulting_kakao_joined.py`). #154(11/04) 부터 계약 두
+    # 마디(계약여부 · 계약서 수신 여부)는 `등록일` 오른쪽 계약 넷으로 옮겨 갔다
+    # (`tests/test_consulting_sticky_contract_cols.py`) — 견적서만 여기 남는다.
+    quote, *contract = COLUMNS
+    assert heads[at + 1:at + 4] == ["메모", quote[0], "카톡 연결 여부"], heads
     fields = _fields(body)
     at = fields.index("management_detail")
     assert fields[at - 1] == "management", fields
-    assert fields[at + 1:at + 6] == ["deal_pitch"] + [field for _l, field, _k in COLUMNS] \
-        + ["kakao_joined"], fields
+    assert fields[at + 1:at + 4] == ["deal_pitch", quote[1], "kakao_joined"], fields
+    # 옮겨 간 두 마디는 `등록일`(편집 칸이 아니다 — `email` 바로 뒤) 오른쪽, 계약년월 다음.
+    at = fields.index("email")
+    assert fields[at + 1:at + 4] == ["contract_ym"] + [f for _l, f, _k in contract], fields
+    at = heads.index("등록일")
+    assert heads[at + 1:at + 4] == ["계약년월"] + [label for label, _f, _k in contract], heads
 
 
 def test_머리글_수와_몸통_칸_수가_같다(allowed, db, users):
@@ -399,11 +405,11 @@ def test_표_모양은_이름이_아니라_열쇠로_짝짓는다(db):
 
     assert consulting.SHEET_LAYOUTS[cs.STARTUP] == (
         consulting.STARTUP_COLUMNS, consulting.TAIL_COLUMNS)
-    # #87(10/29) — `소개 메모` 가 세 마디 앞(IR 기업 현황 차례), `카톡 연결 여부` 가 맨 뒤.
+    # #154(11/04) — 계약 넷이 맨 앞(`등록일` 오른쪽), 그 뒤 `메모` → 견적서 → 카톡(맨 뒤).
+    quote, done, received = ((label, field) for label, field, _key in COLUMNS)
     assert consulting.STARTUP_COLUMNS[len(consulting.FIXED_COLUMNS):] == [
-        ("소개 메모", "deal_pitch")] + [
-        (label, field) for label, field, _key in COLUMNS
-    ] + [("카톡 연결 여부", "kakao_joined")]
+        ("계약년월", "contract_ym"), done, received, ("성공보수율", "success_fee"),
+        ("메모", "deal_pitch"), quote, ("카톡 연결 여부", "kakao_joined")]
     assert consulting.layout_of(db, "경영본부 전달 기업") == (
         consulting.FIXED_COLUMNS, consulting.TAIL_COLUMNS)
 
@@ -486,7 +492,7 @@ def test_엑셀에도_실리고_이미_받아_둔_파일의_자리는_안_밀린
     from app.routers.consulting import (CONTRACT_EXPORT_HEADERS,
                                         STARTUP_EXPORT_HEADERS)
 
-    assert STARTUP_EXPORT_HEADERS == ["소개 메모", "견적서 첨부 여부",
+    assert STARTUP_EXPORT_HEADERS == ["메모", "견적서 첨부 여부",
                                       "계약여부", "카톡 연결 여부"]
     assert "계약서 수신 여부" in CONTRACT_EXPORT_HEADERS
 
