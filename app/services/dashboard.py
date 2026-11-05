@@ -22,7 +22,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import clock
-from . import (automation, cadence, ir_monthly, mailer,
+from . import (agent_update, automation, cadence, ir_monthly, mailer,
                manual_send, meeting_kind as mk, pipeline, report, send_guard,
                sheet_owner, startup_send)
 from .. import deps, version
@@ -1040,6 +1040,9 @@ def admin_dashboard(db: Session, today: Optional[date] = None) -> dict:
             "agent_version": (device.agent_version if device else "") or "",
             "agent_old": bool(device and device.last_poll_at
                               and version.agent_is_old(device.agent_version)),
+            # 최신 판(`version.VERSION`)보다 낡았다 — 그 사람 화면에 알림 창이 뜨는
+            # 것과 같은 판정이다(`agent_update.outdated`). 위 `agent_old` 는 더 낡아 위험한 판.
+            "agent_outdated": agent_update.outdated(device),
             "password_pending": bool(u.must_change_password),
             # 화면은 판정하지 않고 읽기만 한다. 예전에는 여기서 조건을 따로
             # 적어(`can_view_consulting or admin`) 라우터가 보는 조건과 갈렸고,
