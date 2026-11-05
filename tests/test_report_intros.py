@@ -12,7 +12,9 @@
 from __future__ import annotations
 
 import io
+import re
 from datetime import date
+from pathlib import Path
 
 import pytest
 
@@ -148,3 +150,59 @@ def test_excel_gets_two_intro_sheets(logged, db, users):
     assert month.sheetnames[-2:] == ["2026-10 소개한 기업", "2026-10 소개 상세"]
     flat = [str(c) for row in _grid(month["2026-10 소개한 기업"]) for c in row]
     assert "이 기간에 소개한 기업이 없습니다." in flat
+
+
+# --- 펼친 투자사 표가 기업명 칸에서 안 잘린다(11/05) ------------------------------
+#
+# 기업명 칸만 폭이 없어 나머지 칸을 뺀 자투리를 받는다. 1280px 화면에서 190px 남짓 —
+# 그 칸 안에서 펼친 투자사 표(NO·날짜·출처 고정폭)가 넘쳐 `td { overflow: hidden }` 에
+# 잘렸다. 표에 `min-width` 를 못 박아 모자라면 `.table-wrap` 이 가로로 굴리게 했다.
+
+_ROOT = Path(__file__).resolve().parents[1]
+_INTROS_HTML = _ROOT / "app/templates/_report_intros.html"
+_CSS = _ROOT / "app/static/css/app.css"
+_SEL = r"#intros\s*>\s*\.table-wrap\s*>\s*\.grid-table"   # app.css 가 이 표를 잡는 선택자
+_NO_COL = 36        # 줄 앞 `NO` 칸(`tr::before`) — 바깥 표에도 안쪽 표에도 선다
+_TD_PAD = 16        # `.grid-table.compact td` 좌우 여백 8px × 2
+_INVESTOR_MIN = 80  # 안쪽 표의 `투자사`(이름 + 회사) 칸이 이만큼은 남아야 읽힌다
+
+
+def _th_widths(html: str) -> list:
+    return [int(w) if w else 0 for w in
+            re.findall(r"<th\b[^>]*?(?:width:\s*(\d+)px[^>]*)?>", html)]
+
+
+def _intro_heads():
+    """(바깥 표 머리글 폭들, 펼친 안쪽 표 머리글 폭들)."""
+    html = _INTROS_HTML.read_text(encoding="utf-8")
+    start = html.index("<table", html.index('id="intros"'))
+    outer_head = html[start:html.index("</thead>", start)]
+    inner_at = html.index("<details>", start)
+    inner_head = html[inner_at:html.index("</thead>", inner_at)]
+    return _th_widths(outer_head), _th_widths(inner_head)
+
+
+def test_펼친_투자사_표가_기업명_칸에_들어간다():
+    outer, inner = _intro_heads()
+    assert outer[0] == 0, "기업명 칸은 폭 없이 남는 자리를 받는 칸이다"
+    css = re.sub(r"/\*.*?\*/", "", _CSS.read_text(encoding="utf-8"), flags=re.S)
+    hit = re.search(_SEL + r"\s*\{[^}]*min-width:\s*(\d+)px", css)
+    assert hit, "소개한 기업 표에 min-width 가 없다 — 좁은 화면에서 기업명 칸이 0px 로 눌린다"
+    company_col = int(hit.group(1)) - sum(outer) - _NO_COL
+    investor_col = company_col - _TD_PAD - sum(inner) - _NO_COL
+    assert investor_col >= _INVESTOR_MIN, (
+        f"min-width {hit.group(1)}px — 펼친 표의 투자사 칸이 {investor_col}px 뿐이다")
+    # 안쪽 표도 `.table-wrap` 안이라 폰 규칙(760px)을 받는다 — 빼 주지 않으면 칸 밖으로 잘린다.
+    assert re.search(_SEL + r"\s+\.grid-table\s*\{[^}]*min-width:\s*0", css), \
+        "펼친 안쪽 표가 폰 규칙의 min-width 760px 를 그대로 받는다"
+
+
+def test_폭_규칙이_잡는_자리에_펼치는_표가_있다(logged, db, users):
+    """CSS 가 `#intros > .table-wrap > .grid-table` 로 잡는다 — 화면의 짜임이 달라지면
+    규칙은 소리 없이 논다. 그 자리에 기업명을 펼치는 표가 서는지 본다."""
+    _mine_history(db, users)
+    page = logged.get("/report?month=2026-08").text
+    m = re.search(r'id="intros">.*?</h2>\s*<div class="table-wrap">\s*'
+                  r'<table class="grid-table\b(.*?)</section>', page, re.S)
+    assert m, "소개한 기업 표가 `#intros > .table-wrap >` 바로 아래에 없다"
+    assert "<details>" in m.group(1) and "샘플애그" in m.group(1)
