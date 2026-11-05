@@ -72,10 +72,18 @@ def test_이름_없는_분야로는_그룹을_만들지_않는다():
 
     갈래 이름을 그대로 그룹으로 쓰면 그룹이 줄 수만큼 늘어난다 — 이 칸이 이미
     한 번 겪은 그것이다(문장 158줄).
+
+    **사람이 직접 고른 이름은 따로다.** `헬스케어·바이오` 는 사용자가 한 분을
+    그 이름으로 묶어(2026-11-05) 그룹 칸이 받아들이지만(`gn.KNOWN`), 규칙은
+    그 이름을 내놓지 않는다 — 바이오 선호 줄은 여전히 `특정분야` 로 간다.
+    그런 이름이 늘면 여기 적는다. 몰래 늘면 이 검사가 걸린다.
     """
+    hand_picked = {"헬스케어·바이오"}
     for name, _words in pg.OTHER_SECTORS:
         assert name not in pg.OUTPUTS, name
-        assert name not in gn.KNOWN, name
+        assert (name in gn.KNOWN) == (name in hand_picked), name
+    got = pg.decide(Fake(sectors="바이오"))
+    assert (got.group, got.sector) == (pg.SMALL, "헬스케어·바이오")
 
 
 def test_사다리의_모든_칸이_어느_갈래엔가_든다():

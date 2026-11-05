@@ -100,6 +100,28 @@ def test_프롭테크_스마트시티는_IR_대분류_글자_그대로_그룹으
     assert name in gn.options([]).split(",")
 
 
+def test_헬스케어_바이오는_IR_대분류_글자_그대로_그룹으로_남는다():
+    """사용자가 한 분의 그룹을 이 이름으로 따로 묶었다(2026-11-05). `NAMED` 에
+    없으면 다음 시트 업로드·정리 스크립트가 문장으로 보고 메모로 옮기고, 그룹
+    다시 나누기 도구도 모르는 이름이라 안 받는다."""
+    from app.services import taxonomy
+
+    name = "헬스케어·바이오"
+    assert name in [major for major, _ in taxonomy.SEED]   # IR 대분류 글자 그대로
+    assert name in gn.KNOWN
+    assert gn.decide(name) == gn.Decision(gn.KEEP, group=name)
+    # 선호 칸이 같은 분야를 말해도 겹침으로 지우지 않는다(② 가 ③ 보다 앞).
+    assert gn.decide(name, sectors="바이오, 헬스케어").action == gn.KEEP
+    # 가운뎃점·띄어쓰기만 다른 것은 제 글자로 모인다.
+    for raw in ("헬스케어 / 바이오", "헬스케어바이오", " 헬스케어 · 바이오 "):
+        assert gn.decide(raw).group == name, raw
+    # 고르는 칸의 보기에도 선다.
+    assert name in gn.CHOICES.split(",")
+    assert name in gn.options([]).split(",")
+    # 재분류 규칙(`pref_group`)이 이 이름을 내놓지 않는다는 것은
+    # `tests/test_pref_group.py` 가 본다.
+
+
 def test_이름은_적어_둔_글자_그대로_돌려준다():
     """표기가 갈린 것은 **제 글자로 모은다.** 표에서 고른 값과 창에서 친 값이
     한 글자라도 다르면 딜 제안 관리에서 다른 그룹이 된다."""
