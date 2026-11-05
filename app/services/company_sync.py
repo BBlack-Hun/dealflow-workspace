@@ -45,7 +45,7 @@
     ── 4단계(11/02 · i126) — 스타트업 명단만(Series A 는 위 까닭으로 안 잇는다) ──
     대분류 `sector_major`        →  대분류 `notes.sector_major`
     소분류 `sector_minor`        →  소분류 `notes.sector_minor`
-    투자라운드 `series`          →  투자라운드 `notes.company_kind`(띄어쓰기 수는 안 가린다)
+    투자라운드 `series`          →  투자라운드 `notes.company_kind`(같은 단계면 같은 값 — #162)
     기업 한줄 소개 `business_desc` →  기업 한줄 소개 `notes.one_liner`
 
 월간 계약 탭은 계약 칸(`CONTRACT_TAB`)만 잇는다 — 그 탭의 `region` 은 달 묶음 이름이다.
@@ -106,7 +106,7 @@ from sqlalchemy.orm.attributes import get_history
 
 from .. import clock
 from ..models import ConsultingCompany, ConsultingSheet, IrCompany, SeriesACompany, VcContact
-from . import amount, revenue_years
+from . import amount, revenue_years, series_stage
 
 Row = Union[ConsultingCompany, VcContact, SeriesACompany]
 #: IR 기업에 이어지는 줄의 표.
@@ -234,6 +234,10 @@ def norm(field: str, value, where: Optional[str] = None) -> Optional[str]:
         # 연도 칸은 적힌 그대로 한줄 소개에 실린다 — Series A 의 `18.3`(단위 억)은 `18.3억`
         # 으로 맞춘다(`revenue_years.roll_over` 와 같은 규칙). 단위가 적힌 글은 그대로.
         return text if UNIT.search(text) else (amount.phrase(text) or text)
+    if field == "series":
+        # 일곱 단계로 맞춘 값(#162) — 옛 글(`Angel, Seed (…)`)과 `Seed` 는 같은 값이라
+        # 맞추기만 한 것은 고친 것으로 안 읽힌다(`_changes`).
+        return series_stage.clean(" ".join(text.split()))
     return text
 
 
@@ -253,7 +257,7 @@ def same(field: str, a, b) -> bool:
     elif field in revenue_years.FIELDS:
         return (norm(field, a) or "") == (norm(field, b) or "")   # `18.3` 과 `18.3억` 은 같다
     elif field == "series":
-        return " ".join(_raw(a).split()) == " ".join(_raw(b).split())   # IR 에 두 칸 띄운 값이 있다
+        return series_stage.same(_raw(a), _raw(b))   # 같은 단계 · 띄어쓰기 수는 안 가린다
     return _raw(a) == _raw(b)
 
 

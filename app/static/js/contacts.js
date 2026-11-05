@@ -737,6 +737,16 @@
       if (joined && joined !== detail.cell) joined.textContent = data.kakao_joined;
       if (row.hasAttribute("data-f-joined")) row.setAttribute("data-f-joined", data.kakao_joined);
     }
+    // `투자라운드` — 서버가 일곱 단계로 맞춘 값(`시리즈A` → `Series A`, #162)으로 다시 그린다.
+    // 방금 고친 칸이어도 그린다 — 친 글자를 두면 칸 · 필터가 저장된 값과 갈린다.
+    if ("company_kind" in data) {
+      var kind = row.querySelector('.cell[data-field="company_kind"]');
+      if (kind) {
+        kind.textContent = data.company_kind;
+        kind.parentNode.setAttribute("title", data.company_kind);
+      }
+      if (row.hasAttribute("data-f-company_kind")) row.setAttribute("data-f-company_kind", data.company_kind);
+    }
     // 기업명으로 IR 기업에 새로 이어진 순간 채워진 칸(대표자명 · 분야 · 투자라운드 …) —
     // 응답의 `linked`(`routers/contacts.update_contact` · i126)로 그 자리에서 적는다.
     if (data.linked) {

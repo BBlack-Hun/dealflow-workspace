@@ -204,21 +204,24 @@ def test_clamp_never_sits_on_a_td(logged_in, company):
 
 def test_series_shows_the_name_but_keeps_the_whole_value(logged_in, db):
     """단계 값은 40자가 넘는다 — 괄호 안은 297행에 똑같이 반복되는 설명이다.
-    표에는 이름만 보이되, 저장된 값은 그대로 지켜져야 한다."""
+    표에는 이름만 보이되, 저장된 값은 그대로 지켜져야 한다.
+
+    #162 부터 읽히는 값은 일곱 단계로 맞춰 들어가므로(`series_stage`), 괄호가 남는 것은
+    **못 읽어 그대로 둔 값**뿐이다 — 그 값으로 잰다."""
     from app.models import IrCompany
     from app.routers.companies import _short
 
-    full = "Pre A, Bridge (누적투자금 5억미만, 년매출액 10억이상)"
+    full = "Series C 이상 (누적투자금 50억 이상, 년매출액 80억이상)"
     db.add(IrCompany(name="샘플메디", series=full))
     db.commit()
-    assert _short(full) == "Pre A, Bridge"
+    assert _short(full) == "Series C 이상"
     assert _short(None) == ""
     assert _short("Series A") == "Series A"          # 괄호가 없으면 그대로
 
     html = logged_in.get("/companies").text
     assert f'data-value="{full}"' in html            # 전체 값은 들고 있다
-    assert ">Pre A, Bridge<" in html                 # 보이는 건 이름만
-    assert 'data-f-series="Pre A, Bridge"' in html   # 필터 목록도 이름으로
+    assert ">Series C 이상<" in html                 # 보이는 건 이름만
+    assert 'data-f-series="Series C 이상"' in html   # 필터 목록도 이름으로
 
 
 def test_sector_and_series_use_the_pick_editor(logged_in, company):

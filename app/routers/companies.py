@@ -1243,6 +1243,8 @@ def update_company(company_id: int, body: CompanyIn,
             # 다시 그린다. 다듬은 값(앞뒤 빈칸을 뗀)을 준다 — 칸과 DB 가 같은 글자로 남게.
             "ir_file_name": company.ir_file_name or "",
             "has_ir": bool((company.ir_file_name or "").strip()),
+            # 투자라운드(#162) — 일곱 단계로 맞춘 값(`시리즈A` → `Series A`)으로 칸을 다시 그린다.
+            "series": company.series or "",
             **_contract_result(company),
             **_one_liner_result(company)}
 

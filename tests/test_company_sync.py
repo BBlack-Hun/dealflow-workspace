@@ -750,8 +750,8 @@ def test_4단계_잇는_순간에는_양쪽_빈칸만_채운다(db, users, stage
     # 빈칸끼리 채움 — 줄 → IR(소분류 · 한줄 소개), IR → 줄(대분류)
     assert (ir.sector_minor, ir.business_desc) == ("신약", "줄 설명")
     assert notes["sector_major"] == "바이오"
-    # 다른 값은 그대로 — 값 다름에 선다
-    assert ir.series == "Pre A, Bridge  (누적 10억)" and notes["company_kind"] == "Seed"
+    # 다른 값은 그대로 — 값 다름에 선다(IR 값은 일곱 단계로 맞춰 들어갔다 — #162)
+    assert ir.series == "Pre-A" and notes["company_kind"] == "Seed"
     diffs = {d["field"]: d for d in company_sync.differences(db, [su])[su.id]}
     assert set(diffs) == {"series"} and diffs["series"]["label"] == "투자라운드"
 
@@ -782,7 +782,12 @@ def test_4단계_띄어쓰기만_다른_투자라운드는_같은_값이다(db, 
         {"company_kind": "Pre A, Bridge (누적 10억)"}, ensure_ascii=False))
     _raw_set(db, stage["ir"], series="Pre A, Bridge  (누적 10억)")
     assert company_sync.same("series", " Pre A,  Bridge (누적 10억)", "Pre A, Bridge  (누적 10억)")
-    assert not company_sync.same("series", "Pre A", "PreA")
+    # #162 — 같은 단계면 같은 값이다(옛 글 ↔ 맞춘 단계). 못 읽는 값은 띄어쓰기만 맞춰 견준다.
+    assert company_sync.same("series", "Pre A", "PreA")
+    assert company_sync.same("series", "Pre A, Bridge  (누적 10억)", "Pre-A")
+    assert not company_sync.same("series", "Pre-A", "Bridge")
+    assert company_sync.same("series", "Series C  이상", "Series C 이상")
+    assert not company_sync.same("series", "Series C 이상", "Series C이상")
     assert su.id not in company_sync.differences(db, [su])
     # 띄어쓰기만 고쳐도 IR 을 다시 적지 않는다.
     _set_note(db, su, company_kind="Pre A,  Bridge (누적 10억)")

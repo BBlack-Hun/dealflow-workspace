@@ -40,6 +40,7 @@ from app.db import SessionLocal  # noqa: E402
 from app.models import ContactColumn, RefSheet, VcContact  # noqa: E402
 from app.services import company_sync  # noqa: E402
 from app.services import contact_columns as cc  # noqa: E402
+from app.services import series_stage  # noqa: E402
 from app.services import sheet_owner  # noqa: E402
 from app.services import spreadsheet as sp  # noqa: E402
 
@@ -249,6 +250,9 @@ def parse(rows, is_row=None, aliases=None) -> dict:
         for key, i in notes_at.items():
             if i is not None and norm(cells[i]):
                 item["notes"][key] = norm(cells[i])
+        if "company_kind" in item["notes"]:
+            # `투자라운드` — 일곱 단계로 맞춰 넣는다(#162 · 화면에서 고칠 때와 같은 손).
+            item["notes"]["company_kind"] = series_stage.clean(item["notes"]["company_kind"])
         item["months"] = {label: norm(cells[i]) for i, label in months
                           if norm(cells[i])}
         items.append(item)

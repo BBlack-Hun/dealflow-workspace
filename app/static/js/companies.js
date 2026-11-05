@@ -806,6 +806,11 @@
   table.addEventListener("inline-saved", function (e) {
     var cell = e.detail.cell;
     if (!cell.hasAttribute("data-value")) return;
+    // 서버가 일곱 단계로 맞춘 값(#162 — `시리즈A` → `Series A`)이 있으면 그것으로 그린다.
+    var saved = (e.detail.data || {}).series;
+    if (cell.getAttribute("data-field") === "series" && typeof saved === "string") {
+      cell.setAttribute("data-value", saved);
+    }
     var full = cell.getAttribute("data-value") || "";
     var short = full.split(" (")[0].trim();
     cell.textContent = short;

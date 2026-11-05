@@ -15,13 +15,13 @@ from typing import Optional
 from sqlalchemy import (ForeignKey, Index, Integer, String, Text,
                         UniqueConstraint, event)
 from sqlalchemy.orm import (Mapped, Session as OrmSession, mapped_column,
-                            relationship, with_loader_criteria)
+                            relationship, validates, with_loader_criteria)
 
 from .clock import now_iso as _now_iso
 from .db import Base
 # 금액 글자에서 숫자를 뽑는 **하나뿐인 규칙**. 여기서 다시 해석하지 않는다.
 # (`amount` 는 표준 라이브러리만 쓰므로 모델이 불러도 서로 물리지 않는다.)
-from .services import amount
+from .services import amount, series_stage
 
 
 class TimestampMixin:
@@ -585,6 +585,11 @@ class IrCompany(TimestampMixin, Base):
     sector_major_raw: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     sector_minor_raw: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     series: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+    @validates("series")
+    def _series_stage(self, _key, value):
+        """`투자라운드` 는 일곱 단계로 맞춰 넣는다(#162 — 못 읽는 값은 그대로)."""
+        return series_stage.clean(value)
     # IR 기업 현황의 **`딜 소개 문구`**(예전 이름 `딜 소개 문구 회사개요`).
     # 딜소개에 그대로 실려 나가는 회사 개요 한 줄이다.
     #
@@ -993,8 +998,8 @@ class SeriesACompany(TimestampMixin, Base):
 
     ## 칸
 
-    글자는 **적힌 그대로**다(`series` 는 `Series A (누적투자금 10억이상, …)` 처럼
-    길게 오고, 표에서만 괄호 앞을 보인다 — IR 기업 현황의 `투자라운드` 와 같다).
+    글자는 **적힌 그대로**다. `series`(투자라운드)만은 일곱 단계로 맞춰 넣는다(#162 —
+    `services/series_stage.py`, IR 기업 현황의 `투자라운드` 와 같다).
 
     대표자 · 매출 · 금액 칸(0112 — 개선 과제 #24)은 **시트에 없고 탭에서 사람이
     적는다**(사용자 결정: "별도로 기록하고 있기 때문에 IR 기업현황에 자료가 없을것
@@ -1046,8 +1051,12 @@ class SeriesACompany(TimestampMixin, Base):
     #: 대분류(시트 머리글 `사업분야 대분류`) · 소분류.
     sector_major: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     sector_minor: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    #: 투자라운드(시트 머리글 `기업구분`) — 적힌 그대로.
+    #: 투자라운드(시트 머리글 `기업구분`) — 일곱 단계로 맞춰 넣는다(#162 · IR 기업 현황과 같다).
     series: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+    @validates("series")
+    def _series_stage(self, _key, value):
+        return series_stage.clean(value)
     #: 상세 내용 — 여러 줄 글(천 자가 넘는 줄도 있다).
     detail: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     #: 딜소개 문구. IR 기업 현황의 `딜 소개 문구`(`IrCompany.one_liner`)와

@@ -160,11 +160,14 @@ def test_고르는_칸에_머리글_필터가_선다(logged_in, rows):
     assert re.search(r'DealflowFilters\.init\(\{[\s\S]{0,200}table: "#sa-table"', src)
 
 
-def test_투자라운드는_괄호_앞만_보이고_고칠_때는_전체다(logged_in, rows):
+def test_투자라운드는_일곱_단계로_맞춰_들어가고_보기가_선다(logged_in, rows):
+    """옛 시트 글(`Series A (누적투자금 …)`)은 단계 이름으로 맞춰 들어간다(#162)."""
     html = logged_in.get("/companies?tab=series-a").text
     row = next(r for r in _body_rows(html) if "샘플애그" in r)
     assert 'data-f-series="Series A"' in row
-    assert 'data-value="Series A (누적투자금 10억이상, 년매출액 10억이상)">Series A<' in row
+    assert 'data-value="Series A">Series A<' in row
+    assert ('data-choices="Seed,Pre-A,Bridge,Series A,Series B,Series C,Pre-IPO"'
+            in row)
 
 
 def test_IR_기업_현황에도_있는_기업에는_딱지가_선다(logged_in, rows):
@@ -319,7 +322,8 @@ def test_머리글로_칸을_찾고_옛_이름도_읽는다():
     parsed = svc.parse(_sheet_rows())
     assert len(parsed.records) == 3 and parsed.no_name == 1
     first = parsed.records[0]
-    assert first["series"] == "Series A (누적투자금 10억이상)", "`기업구분 `(뒤 공백)을 못 읽었습니다"
+    # 일곱 단계로 맞춰 읽는다(#162).
+    assert first["series"] == "Series A", "`기업구분 `(뒤 공백)을 못 읽었습니다"
     assert first["sector_major"] == "애그테크"
     assert first["shared_by"] == "박영희 이사" and first["source_firm"] == "가나벤처스"
     assert first["detail"] == "스마트팜 관제\n후속 라운드 준비", "줄바꿈이 사라졌습니다"
