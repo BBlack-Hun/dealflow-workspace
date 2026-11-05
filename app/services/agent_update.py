@@ -21,8 +21,16 @@
   다시 열어 창이 또 뜬다.
 - 비밀번호를 아직 안 바꾼 계정 — 어디를 눌러도 비밀번호 화면으로 돌아간다.
 
-닫는 것은 **그 화면에서만**이다(`_agent_update.html`). 기억하지 않으므로 다른
-화면을 열면 또 뜨고, 새 판을 받아 기기가 새 판을 보고하면 바로 안 뜬다.
+닫는 것은 **그 화면에서만**이다(`_agent_update.html`). 다른 화면을 열면 또
+뜨고, 새 판을 받아 기기가 새 판을 보고하면 바로 안 뜬다.
+
+## [오늘 하루 보지 않기]
+
+고르고 닫으면 브라우저가 쿠키(`HIDE_COOKIE`)에 **오늘 날짜**를 적는다 — 날짜는
+서버가 창에 실어 준 값이다(`today`, 한국 날짜 `clock.today()`). 쿠키 날짜가 오늘과
+같으면 띄우지 않고, 자정이 지나면 날짜가 어긋나 저절로 다시 뜬다. 쿠키는 그
+브라우저 것이라 다른 PC·다른 브라우저에서는 그대로 뜬다. 적는 쪽은
+`static/js/agent_badge.js` 다(모든 화면이 이미 불러오는 파일).
 """
 from __future__ import annotations
 
@@ -40,6 +48,8 @@ from ..models import AgentDevice, User
 STALE_DAYS = 30
 #: 내려받기 화면 — 여기서는 띄우지 않는다.
 SKIP_PATHS = ("/setup", "/download")
+#: [오늘 하루 보지 않기] 를 고르고 닫으면 브라우저가 오늘 날짜를 적는 쿠키(`agent_badge.js`).
+HIDE_COOKIE = "agent_update_hide"
 
 _VERSION = re.compile(r"\d+(?:\.\d+)*")
 
@@ -77,15 +87,22 @@ def outdated(device: Optional[AgentDevice]) -> bool:
     return age <= timedelta(days=STALE_DAYS) and is_older(device.agent_version)
 
 
-def notice(db: Session, me: User, path: str) -> Optional[dict]:
+def notice(db: Session, me: User, path: str,
+           hidden_on: Optional[str] = None) -> Optional[dict]:
     """밑틀이 띄울 창의 내용 — 띄울 것이 없으면 None.
 
     `me` 는 **로그인한 본인**이다(`deps.doer`). 관리자가 팀원 화면으로 보는 중이어도
     그 팀원 기기가 아니라 관리자 본인 기기를 본다 — 대리 보기는 보기·수정만이다.
+
+    `hidden_on` 은 요청에 실린 `HIDE_COOKIE` 값이다. 오늘(한국 날짜)과 같으면
+    [오늘 하루 보지 않기] 를 고르고 닫은 날이라 띄우지 않는다.
     """
     if me is None or me.must_change_password:
         return None
     if any(path == p or path.startswith(p + "/") for p in SKIP_PATHS):
+        return None
+    today = clock.today().isoformat()
+    if hidden_on == today:
         return None
     old = [d for d in db.execute(
         select(AgentDevice).where(AgentDevice.user_id == me.id)
@@ -93,5 +110,6 @@ def notice(db: Session, me: User, path: str) -> Optional[dict]:
     if not old:
         return None
     return {"latest": version.VERSION,
+            "today": today,
             "devices": [{"name": (d.hostname or "").strip() or "이름 없는 PC",
                          "version": d.agent_version.strip()} for d in old]}

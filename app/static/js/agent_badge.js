@@ -83,3 +83,19 @@
       "</li>";
   }
 })();
+
+// 옛 발송기 알림(`_agent_update.html`) — [오늘 하루 보지 않기] 를 고르고 닫으면
+// 오늘은 다시 안 띄운다. 쿠키에 적는 날짜는 서버가 창에 실어 준 한국 날짜
+// (`data-today`)이고, 띄울지는 서버가 그 쿠키를 오늘과 견주어 정한다
+// (`services/agent_update.HIDE_COOKIE`) — 자정이 지나면 날짜가 어긋나 다시 뜬다.
+// 닫기는 브라우저가 한다(`method="dialog"`). 여기는 적기만 한다.
+(function () {
+  var box = document.querySelector("dialog.agent-update");
+  if (!box) return;
+  box.addEventListener("close", function () {
+    var skip = document.getElementById("agent-update-skip");
+    var day = box.getAttribute("data-today");
+    if (!skip || !skip.checked || !day) return;
+    document.cookie = "agent_update_hide=" + day + "; path=/; max-age=86400; SameSite=Lax";
+  });
+})();

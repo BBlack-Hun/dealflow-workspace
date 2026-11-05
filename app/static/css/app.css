@@ -2829,7 +2829,12 @@ a.guard-go:hover { background: #1e4fd0; text-decoration: none; }
   background: rgba(16,21,29,.28); }
 .layout:has(.agent-update[open]) .sidebar { filter: brightness(.45); }
 .agent-update-list { text-align: left; font-size: 13px; margin: 10px 0 0; padding-left: 20px; }
-.agent-update-later { margin: 10px 0 0; }
+/* [오늘 하루 보지 않기] 는 왼쪽, [나중에] 는 오른쪽 — 한 줄이다. */
+.agent-update-later { margin: 12px 0 0; display: flex; align-items: center;
+  justify-content: space-between; gap: 12px; }
+.agent-update-skip { display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--muted); cursor: pointer; }
+.agent-update-skip input { margin: 0; }
 
 /* IR 진행 관리의 [자료 보내기] 창 — **화면을 옮기지 않고 그 자리에서 끝낸다.**
 

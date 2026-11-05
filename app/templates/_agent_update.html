@@ -2,16 +2,21 @@
   옛 발송기 알림. **밑틀이 부른다**(`base.html`) — 띄울지는 서버가 정한다
   (`services/agent_update.notice`). 여기는 받은 값을 그리기만 한다.
 
-  **스크립트가 없다.** `<dialog open>` 은 그린 그대로 뜨고, [나중에] 는
+  **닫는 데는 스크립트가 없다.** `<dialog open>` 은 그린 그대로 뜨고, [나중에] 는
   `method="dialog"` 폼이라 브라우저가 스스로 닫는다 — 스크립트가 어긋나도
-  창이 화면을 가린 채 남지 않는다. 기억하지 않으므로 닫아도 **그 화면에서만**
-  닫히고, 다른 화면을 열면 또 뜬다(새 판을 받아 보고하면 그때 사라진다).
+  창이 화면을 가린 채 남지 않는다. 그냥 닫으면 **그 화면에서만** 닫히고, 다른
+  화면을 열면 또 뜬다(새 판을 받아 보고하면 그때 사라진다).
+
+  [오늘 하루 보지 않기] 를 고르고 닫을 때만 스크립트가 쿠키에 `data-today`(서버가
+  정한 한국 날짜)를 적는다(`agent_badge.js`). 그 날은 서버가 창을 안 그린다
+  (`agent_update.HIDE_COOKIE`). 스크립트가 없으면 고른 것만 안 남을 뿐 닫히기는 한다.
 
   안 상자는 권한 안내창과 같은 `.guard-modal` 이다. 뒷막은 이 `<dialog>`
   자체다 — 닫히면 뒷막도 함께 사라진다(`app.css` 의 `.agent-update`).
 #}
 {% set one = agent_update.devices|length == 1 %}
-<dialog open class="agent-update" aria-labelledby="agent-update-title" data-testid="agent-update">
+<dialog open class="agent-update" aria-labelledby="agent-update-title" data-testid="agent-update"
+        data-today="{{ agent_update.today }}">
   <div class="guard-modal">
     <p class="guard-emoji" aria-hidden="true">⬆️</p>
     <h2 class="guard-title" id="agent-update-title">발송기 업데이트가 필요합니다</h2>
@@ -28,6 +33,9 @@
     {% endif %}
     <a class="primary-btn guard-go" href="/setup">새 발송기 내려받기</a>
     <form method="dialog" class="agent-update-later">
+      <label class="agent-update-skip">
+        <input type="checkbox" id="agent-update-skip"> 오늘 하루 보지 않기
+      </label>
       <button type="submit" class="linkbtn">나중에</button>
     </form>
   </div>

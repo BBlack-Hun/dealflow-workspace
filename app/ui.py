@@ -166,8 +166,10 @@ def base_ctx(request: Request, db: Session, user: User, active: str) -> dict:
         "user": user,
         "agent": agent,
         # 로그인한 **본인** 발송기가 최신보다 낡았으면 화면마다 뜨는 창 — 띄울지는
-        # 여기 한 곳이 정한다(내려받기 화면 · 오래 안 쓴 PC 는 뺀다).
-        "agent_update": agent_update.notice(db, me, request.url.path),
+        # 여기 한 곳이 정한다(내려받기 화면 · 오래 안 쓴 PC · [오늘 하루 보지 않기]
+        # 를 고른 날은 뺀다).
+        "agent_update": agent_update.notice(
+            db, me, request.url.path, request.cookies.get(agent_update.HIDE_COOKIE)),
         # 운영에서는 시험 자리가 늘 닫힌다(`routers/setup.test_tools_on`) — 그때
         # `시험 단추만 이 방으로 갑니다` 띠를 세우면 없는 단추를 말하게 된다.
         "test_room": "" if config.IS_PRODUCTION else config.TEST_ROOM,
