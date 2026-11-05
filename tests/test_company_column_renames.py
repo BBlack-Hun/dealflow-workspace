@@ -216,7 +216,8 @@ def test_스크립트가_두_머리글을_다_읽는다(swap, where):
     imp.load(ws, columns, by_name, SimpleNamespace(overwrite=True))
 
     assert row.sector_major == "애그테크", f"{where} 머리글: 대분류"
-    assert row.series == "Pre A, Bridge", f"{where} 머리글: 투자라운드"
+    # 일곱 단계로 맞춰 들어간다(#162 — 옛 `Pre A, Bridge` 한 갈래는 앞 단계).
+    assert row.series == "Pre-A", f"{where} 머리글: 투자라운드"
     assert row.contact_name == "김가나", f"{where} 머리글: 대표자명"
     assert row.guarantee == "기보 3억", f"{where} 머리글: 정책자금"
 

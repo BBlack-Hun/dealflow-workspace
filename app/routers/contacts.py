@@ -33,8 +33,8 @@ from ..models import (AutomationSend, ContactActivity, ContactColumn, DealFollow
 from ..services import (company_sync, contact_columns, deal_stage, firm_type, investor_firms,
                         ir_readonly, last_activity, manual_send, meeting_kind, memo_intro,
                         room_joined,
-                        room_name, series_a_share, sheet_import, sheet_owner, sourcing_msg,
-                        sourcing_sync)
+                        room_name, series_a_share, series_stage, sheet_import, sheet_owner,
+                        sourcing_msg, sourcing_sync)
 from ..services.room_name import DEFAULT_SUFFIX, build_room_name
 from .sourcing import requested_sort
 
@@ -1487,6 +1487,9 @@ def update_contact(
         out[list_key] = investor_firms.split_funds(out[field])
     if note:
         out["connect_note"] = note
+    if body.notes and "company_kind" in body.notes:
+        # 맞춰 넣은 `투자라운드`(#162) — 친 글자(`시리즈A`)가 아니라 저장한 값으로 다시 그린다.
+        out["company_kind"] = contact_columns.load_notes(contact.notes).get("company_kind", "")
     if sourcing.get("message"):
         out["sourcing_msg"] = sourcing["message"]
     # 기업명을 고쳐 IR 기업에 **새로 이어졌다**(`company_sync` 자동 연결 · i126) — 이어진
@@ -2125,6 +2128,9 @@ def _assign(contact: VcContact, body: ContactIn) -> str:
         # (`ConsultingCompany` 도 같은 이유로 합친다)
         merged = contact_columns.load_notes(contact.notes)
         merged.update({k: (v or "").strip() for k, v in body.notes.items()})
+        if "company_kind" in body.notes:
+            # `투자라운드` — 일곱 단계로 맞춰 넣는다(#162 · IR 기업 현황과 같은 손).
+            merged["company_kind"] = series_stage.clean(merged["company_kind"])
         contact.notes = contact_columns.dump_notes(merged)
 
     # ── 연결 단계 ──────────────────────────────────────────────────────────

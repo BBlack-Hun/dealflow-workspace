@@ -437,12 +437,13 @@ def test_표에서_뺀_칸도_수정창에_서고_저장되고_다시_읽힌다(
 def test_금액과_비율은_적힌_그대로_남는다(sheets, db):
     """`2.5%` 를 `0.025` 로, `900,000` 을 `900000` 으로 고쳐 쓰지 않는다.
 
-    계약서에 적힌 말이라 앱이 다듬을 것이 아니다.
+    계약서에 적힌 말이라 앱이 다듬을 것이 아니다. (`투자라운드` 는 #162 부터 일곱 단계로
+    맞춰 넣는 칸이라 여기서 빠진다 — `tests/test_series_stage.py`.)
     """
     from app.models import VcContact
 
     contact = db.query(VcContact).filter(VcContact.source_sheet == LIST).first()
-    raw = {"success_fee": "2.5%", "contract": "미계약", "company_kind": "Angel, Seed (누적투자금 0)"}
+    raw = {"success_fee": "2.5%", "contract": "미계약"}
     sheets.patch(f"/api/contacts/{contact.id}", json={"notes": raw})
     got = sheets.get(f"/api/contacts/{contact.id}").json()["contact"]["notes"]
     for key, value in raw.items():

@@ -284,6 +284,7 @@
            `투자라운드` 와 같다. 저장 뒤 짧은 꼴은 응답이 준다(`series_a.js`). #}
         <td title="{{ r.series }}">
           <div class="cell clamp2" data-field="series" data-type="pick"
+               data-choices="{{ series_stages|join(',') }}"
                data-filter-key="series" data-value="{{ r.series }}">{{ r.series_short }}</div>
         </td>
         <td title="{{ r.detail }}">

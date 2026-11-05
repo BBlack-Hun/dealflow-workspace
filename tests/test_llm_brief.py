@@ -547,8 +547,8 @@ def test_the_line_is_read_from_both_the_series_column_and_the_recent_number(db,
 
     # 투자라운드만으로 넘는다(최근매출은 비어 있다).
     assert _over(db, users, series=PRE_A_SERIES, revenue_recent=None) == OVER_YES
-    # 최근매출만으로 넘는다(투자라운드에는 매출 기준이 없다).
-    assert _over(db, users, series="Series A", revenue_recent="7") == OVER_YES
+    # 최근매출만으로 넘는다(투자라운드가 비어 있다).
+    assert _over(db, users, series=None, revenue_recent="7") == OVER_YES
     # 둘이 어긋나면 넘는 쪽이 이긴다 — 넘는다는 근거가 한 곳에라도 있으면 된다.
     assert _over(db, users, series=SEED_SERIES, revenue_recent="7") == OVER_YES
     # 둘 다 못 넘는다.
@@ -566,13 +566,37 @@ def test_unknown_is_never_folded_into_no(db, users):
     # 아무 근거도 없다.
     assert _over(db, users, series=None, revenue_recent=None) == OVER_UNKNOWN
     # `~` 는 '적었는데 모른다' 다 — 빈 칸과 같이 다뤄진다(`services/amount.py`).
-    assert _over(db, users, series="Series A", revenue_recent="~") == OVER_UNKNOWN
+    # 투자라운드는 일곱 단계로 못 읽어 그대로 둔 값이라 매출 기준이 없다(#162).
+    assert _over(db, users, series="Series C 이상", revenue_recent="~") == OVER_UNKNOWN
     # 기준선을 **걸치는** 구간. 아래만 보고 `아니오` 라 적으면 모르는 것을
     # 뭉개는 것이 된다 — 실제로 넘을 수도 있다.
     assert _over(db, users, series=None, revenue_recent="3~10억") == OVER_UNKNOWN
     # 투자라운드이 걸치는 조건을 적어 둔 경우도 같다.
     assert _over(db, users, series="Series X (년매출액 10억미만)",
                  revenue_recent=None) == OVER_UNKNOWN
+
+
+def test_the_seven_stages_keep_the_old_sheet_verdict(db, users):
+    """#162 — 투자라운드를 단계 이름만으로 맞춘 뒤에도 **옛 시트 글과 같은 판정**이다.
+
+    옛 값은 괄호에 `년매출액 …` 을 적어 두었고 판정이 그것을 읽었다. 맞춘 값(`Seed`)
+    에는 괄호가 없으므로 그 단계의 옛 글(`series_stage.CRITERIA`)을 읽는다.
+    """
+    from app.services import llm_brief, series_stage
+
+    old = [SEED_SERIES, PRE_A_SERIES,
+           "Series A (누적투자금 10억이상, 년매출액 10억이상)",
+           "Series B (누적투자금 20억 이상, 년매출액 50억이상)",
+           "Series C (누적투자금 50억 이상, 년매출액 80억이상)",
+           "Pre IPO  (누적투자금 80억이상 년매출액 80억이상)"]
+    for text in old:
+        stage = series_stage.stage_of(text)
+        assert stage in series_stage.STAGES, text
+        assert llm_brief._over_from_series(stage) == llm_brief._over_from_series(text), text
+    # 나가는 자료에서도 같다 — 저장할 때 단계로 맞춰져도(`IrCompany.series`) 판정이 선다.
+    assert _over(db, users, series=SEED_SERIES, revenue_recent=None) == llm_brief.OVER_NO
+    assert _over(db, users, series="Series B", revenue_recent=None) == llm_brief.OVER_YES
+    assert _over(db, users, series="Bridge", revenue_recent=None) == llm_brief.OVER_YES
 
 
 def test_a_zero_revenue_is_a_known_fact_not_an_unknown(db, users):

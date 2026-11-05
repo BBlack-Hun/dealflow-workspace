@@ -146,7 +146,7 @@ from sqlalchemy.orm import Session
 from .. import clock
 from ..models import IrCompany, User
 from . import amount as amount_text
-from . import group_name, pref_notes, sheet_owner
+from . import group_name, pref_notes, series_stage, sheet_owner
 # 방이 살아 있는지는 **대시보드가 세는 그 판정**을 그대로 쓴다. 여기에 다시
 # 적으면 화면 숫자와 어긋난다 — 투자사 관리 현황 117명 · 대시보드 123명으로
 # 갈렸던 사고가 판정을 두 벌로 적어 둔 탓이었다(`readiness.py` 도 같은 것을
@@ -349,8 +349,13 @@ def _over_from_series(value) -> str:
 
     숫자를 여기서 읽지 않는다 — `억` 을 백만원으로 옮기는 일은
     `services/amount.py` 한 곳뿐이다(`tests/test_amount_range.py: READERS`).
+
+    #162(11/05)부터 칸에는 **단계 이름만** 있다(`Series A`). 그때는 그 단계의 옛 시트
+    기준(`series_stage.CRITERIA` — 괄호에 적혀 있던 글 그대로)을 읽어 판정이 그대로다.
     """
-    found = _SERIES_REVENUE.search(value or "")
+    text = value or ""
+    found = (_SERIES_REVENUE.search(text)
+             or _SERIES_REVENUE.search(series_stage.CRITERIA.get(text.strip(), "")))
     if not found:
         return OVER_UNKNOWN
     bound = amount_text.million(found.group(1))
@@ -599,7 +604,7 @@ def note() -> str:
             f"`revenue_over` 는 그 기업의 년매출이 **{REVENUE_GATE}"
             f"{AMOUNT_UNIT} 이상인지**를 "
             f"`{OVER_YES}` · `{OVER_NO}` · `{OVER_UNKNOWN}` 셋으로 적은 "
-            "것입니다. 투자라운드(`series`)에 적힌 매출 기준과 최근매출"
+            "것입니다. 투자라운드(`series`) 단계의 매출 기준과 최근매출"
             "(`revenue_recent`) 중 **하나라도 넘으면** `"
             f"{OVER_YES}` 이고, 두 곳 다 알 수 없으면 `{OVER_UNKNOWN}` 입니다 "
             f"— `{OVER_UNKNOWN}` 은 `{OVER_NO}` 가 아닙니다(못 넘는다는 뜻이 "

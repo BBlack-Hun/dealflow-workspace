@@ -268,17 +268,21 @@ def test_그려진_머리글에_필터가_서고_행이_값을_싣는다(sheets)
 def test_보기를_안_적은_셋도_필터가_붙는다():
     """판정은 `choices` 가 아니라 **고르는 칸이냐**다(`Column.filterable`).
 
-    분야 둘·기업구분은 보기를 코드에 적지 않는다 — 갈래를 한 벌 더 적으면
-    사람이 쌓아 온 값과 어긋난다. 그 셋에서 필터가 조용히 빠지면 이번 일의
-    절반이 사라진다.
+    분야 둘은 보기를 코드에 적지 않는다 — 갈래를 한 벌 더 적으면 사람이 쌓아
+    온 값과 어긋난다(기업구분 = `투자라운드` 는 #162 부터 팀이 정한 일곱 단계를
+    적는다). 그 셋에서 필터가 조용히 빠지면 이번 일의 절반이 사라진다.
     """
     from app.services import contact_columns as cc
 
     by_key = {c.key: c for c in list(cc.STARTUP_LAYOUT.head) + list(cc.STARTUP_LAYOUT.tail)}
-    for key in ("sector_major", "sector_minor", "company_kind"):
+    for key in ("sector_major", "sector_minor"):
         column = by_key[key]
         assert column.kind == "pick" and not column.choices, column
         assert column.filterable, f"`{column.label}` 에 필터가 안 붙습니다"
+    # 기업구분(`투자라운드`)은 #162 부터 팀이 정한 일곱 단계를 보기로 적는다 — 필터는 그대로.
+    kind = by_key["company_kind"]
+    assert kind.kind == "pick" and kind.filterable, kind
+    assert kind.choices == "Seed,Pre-A,Bridge,Series A,Series B,Series C,Pre-IPO"
     deck = by_key["ir_deck"]
     assert deck.choices == "O,X", "IR Deck 유무는 O/X 둘 중에서 고른다"
 
@@ -295,6 +299,10 @@ def test_보기를_안_적은_칸은_표에서_다른_줄의_값을_보기로_�
         assert len({c for c in cells if c}) == 2, (
             f"`{key}` 칸에 줄마다의 값이 안 그려졌습니다: {cells}")
         tag = re.search(rf'<div[^>]*data-field="{key}"[^>]*>', html).group(0)
+        if key == "company_kind":
+            # #162 — 일곱 단계가 먼저 서고, 다른 줄이 쓰는 값은 그 뒤에 모인다.
+            assert 'data-choices="Seed,Pre-A,Bridge,Series A' in tag, tag
+            continue
         assert "data-choices" not in tag, (
             f"`{key}` 에 보기를 적었습니다 — 데이터에서 모으기로 한 칸입니다")
     deck = re.search(r'<div[^>]*data-field="ir_deck"[^>]*>', html).group(0)

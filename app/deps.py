@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from . import assets, clock, config
 from .db import SessionLocal, get_db
 from .models import AgentDevice, User
-from .services import send_window, sourcing_buckets
+from .services import send_window, series_stage, sourcing_buckets
 
 def _eok(value) -> str:
     """금액 칸을 화면에 **적은 그대로**. `"5-10억 사이"` → `5-10억 사이`.
@@ -70,6 +70,8 @@ templates.env.globals["send_window_banner"] = send_window.BANNER
 # 딜 소싱 갈래의 화면 이름(i137) — 탭 · 딜 제안 관리 칩 · 문구 화면이 같은 이름을 쓴다.
 # 저장 글자는 그대로라 값(`data-*` · 폼)에는 쓰지 않는다(`sourcing_buckets.shown`).
 templates.env.globals["bucket_label"] = sourcing_buckets.shown
+# `투자라운드` 의 일곱 단계(#162) — IR 기업 현황 · Series A 탭의 고르는 칸이 같은 목록을 쓴다.
+templates.env.globals["series_stages"] = series_stage.STAGES
 
 
 # 저장용 시각은 `app/clock.py` 하나에서만 만든다 — 왜 지역시간인지는 그쪽에.

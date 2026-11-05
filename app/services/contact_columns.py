@@ -66,7 +66,7 @@ from sqlalchemy.orm import Session
 
 from .. import clock
 from ..models import ContactColumn
-from . import group_name, monthly_columns
+from . import group_name, monthly_columns, series_stage
 
 # 배치를 쓰는 명단이 뜨는 화면(= 주소 조각). `Layout.page` 참고.
 PAGE_CONTACTS = "contacts"
@@ -488,8 +488,8 @@ STARTUP_LAYOUT = Layout(
         # 머리글 선언(`header_filters`)과 행이 싣는 값(`filter_columns`)에 함께
         # 들어간다. 화면·라우터에 손댈 곳이 없다.
         #
-        # 셋(분야 둘 · 기업구분)은 보기를 **적지 않는다.** 갈래를 코드에 한 벌 더
-        # 적으면 사람이 쌓아 온 값과 어긋난다(`services/sector_hint.py` 첫머리가
+        # 분야 둘은 보기를 **적지 않는다**(`투자라운드` 는 #162 부터 일곱 단계를 적는다).
+        # 갈래를 코드에 한 벌 더 적으면 사람이 쌓아 온 값과 어긋난다(`services/sector_hint.py` 첫머리가
         # 같은 이유로 갈래를 데이터에서 읽는다). 보기가 없어도 고르는 칸이다 —
         # 표에서 눌러 고칠 때는 **다른 줄이 이미 쓰고 있는 값**이 보기로 뜨고
         # (`static/js/inline_edit.js` 의 `startPick` · `knownValues`), 필터 목록도
@@ -547,8 +547,10 @@ STARTUP_LAYOUT = Layout(
         Column("대분류", "sector_major", 140, source="note",
                kind="pick"),
         Column("소분류", "sector_minor", 100, source="note", kind="pick"),
+        # `투자라운드` 만은 보기를 적는다 — 팀이 정한 일곱 단계(#162 · `series_stage`).
+        # 저장할 때도 그 단계로 맞춘다(`routers/contacts._assign`).
         Column("투자라운드", "company_kind", 120, source="note", kind="pick",
-               hint="Angel, Seed (누적투자금 0, 년매출액 3억미만)"),
+               choices=series_stage.CHOICES),
         # ── 여기부터는 **일이 진행되는 차례**다 ────────────────────────────
         #
         # 담당 기업이 여든인 팀원이 이렇게 적어 보냈다. 그대로 옮긴다.

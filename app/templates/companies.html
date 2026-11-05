@@ -812,8 +812,10 @@
         <td class="num">{{ amount_cell(r.funding_total, "funding_total") }}</td>
         <td class="num">{{ amount_cell(r.raise_target, "raise_target", true) }}</td>
         <td class="num">{{ amount_cell(r.pre_value, "pre_value") }}</td>
+        {# 보기는 팀이 정한 일곱 단계(#162 · `services/series_stage.py`) — 저장할 때도 그 단계로 맞춘다. #}
         <td title="{{ r.series }}">
           <div class="cell clamp2" data-field="series" data-type="pick"
+               data-choices="{{ series_stages|join(',') }}"
                data-value="{{ r.series }}">{{ r.series_short }}</div>
         </td>
         <td title="{{ r.competitiveness }}">
@@ -1114,8 +1116,17 @@
        라, 이 칸이 담는 것은 처음부터 라운드였다. 표 머리글 · 필터 단추 ·
        시트 가져오기를 **함께** 고쳤다 — 가져오기 쪽은 옛 머리글(`기업구분`)도
        계속 읽는다(`services/sheet_import.py` ·
-       `scripts/import_company_sheets.py`). #}
-    <label class="field"><span>투자라운드</span><input type="text" id="f-series" placeholder="예: Seed / SeriesA"></label>
+       `scripts/import_company_sheets.py`).
+
+       #162(11/05) — 보기는 일곱 단계(`series_stages`)이고 저장할 때 그 단계로 맞춘다.
+       `<select>` 가 아닌 것은 위 분야 칸과 같은 까닭이다: 못 읽어 그대로 둔 옛 값이
+       창을 [저장]하는 것만으로 지워지면 안 된다. #}
+    <label class="field"><span>투자라운드</span>
+      <input type="text" id="f-series" list="opts-series"
+             placeholder="예: Seed / Series A (고르거나 새로 적습니다)"></label>
+    <datalist id="opts-series">
+      {% for v in series_stages %}<option value="{{ v }}"></option>{% endfor %}
+    </datalist>
     {# **글자 칸이다.** `설립년도` 는 얼핏 숫자 같지만 실데이터 262곳 중
        `2015년` 237 · `2015-03-01 00:00:00` 21 · `회사정보 검색안됨` · `2015년
        (법인설립예정` 이 섞여 있다. `type="number"` 로 두면 브라우저가 이 값들을

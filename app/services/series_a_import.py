@@ -76,6 +76,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..models import SeriesACompany
+from . import series_stage
 from .deal_history import _key as name_key
 
 #: 모델 칸 → 받는 시트 머리글(띄어쓰기를 지우고 소문자로 견준다). **차례가 곧
@@ -183,6 +184,10 @@ def parse(rows: Sequence[Sequence]) -> Parsed:
             continue
         if "received_at" in values:
             values["received_at"] = day_text(values["received_at"])
+        if values.get("series"):
+            # 일곱 단계로 맞춘 값으로 견준다(#162) — 앱에는 맞춘 값이 있어 옛 글 그대로면
+            # 다시 가져올 때마다 `다르다` 로 세인다.
+            values["series"] = series_stage.clean(values["series"])
         out.records.append(values)
     return out
 
