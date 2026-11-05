@@ -121,6 +121,8 @@
          조용히 아무 말이 없다. 관리자가 팀 현황에서 적고, [확인] 을 누른
          사람에게는 다시 안 뜬다(`services/notices.py`). #}
       {% if notices %}{% include "_notices.html" %}{% endif %}
+      {# 본인 발송기가 최신보다 낡았으면 **화면마다** 뜨는 창(`services/agent_update.py`). #}
+      {% if agent_update %}{% include "_agent_update.html" %}{% endif %}
       {% block content %}{% endblock %}
     </main>
   </div>

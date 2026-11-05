@@ -254,6 +254,7 @@
         <td class="{% if m.agent_old %}warn{% elif m.agent_ok %}ok{% else %}muted{% endif %}"
             title="{% if m.agent_version %}v{{ m.agent_version }}{% else %}버전 미상{% endif %}">
           {{ m.agent }}
+          {% if m.agent_outdated and not m.agent_old %}<span class="tag warn" title="새 발송기 v{{ app_version }}">옛 버전</span>{% endif %}
           {# 한 PC 의 한 카톡에 두 계정 발송기가 붙으면 서로 부딪친다 — 이 계정의
              잡을 누구의 발송기가 집어갈지(`routers/dashboard.set_send_via`). 남이
              맡긴 줄은 고르개 대신 그 계정을 적는다(사슬은 라우터가 막는다). #}

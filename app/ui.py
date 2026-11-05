@@ -15,7 +15,7 @@ from .deps import (VIEW_AS_BLOCKED, agent_status, consultant_may_open, doer,
                    may_auto_attach, may_view_consulting, view_as_send_note,
                    view_as_targets)
 from .models import User
-from .services import notices
+from .services import agent_update, notices
 
 # 좌측 메뉴. 쓰는 순서대로 둔다.
 #
@@ -165,6 +165,9 @@ def base_ctx(request: Request, db: Session, user: User, active: str) -> dict:
         "active": active,
         "user": user,
         "agent": agent,
+        # 로그인한 **본인** 발송기가 최신보다 낡았으면 화면마다 뜨는 창 — 띄울지는
+        # 여기 한 곳이 정한다(내려받기 화면 · 오래 안 쓴 PC 는 뺀다).
+        "agent_update": agent_update.notice(db, me, request.url.path),
         # 운영에서는 시험 자리가 늘 닫힌다(`routers/setup.test_tools_on`) — 그때
         # `시험 단추만 이 방으로 갑니다` 띠를 세우면 없는 단추를 말하게 된다.
         "test_room": "" if config.IS_PRODUCTION else config.TEST_ROOM,

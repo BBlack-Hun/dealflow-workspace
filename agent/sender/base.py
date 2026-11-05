@@ -194,6 +194,15 @@ def nfc(text: str) -> str:
     return unicodedata.normalize("NFC", text or "")
 
 
+def same_title(left: str, right: str) -> bool:
+    """두 방 제목이 **글자까지 같은가** (0.11.14). 공백(앞뒤 · 연속)과 자모 조합
+    형태만 맞춘다 — Windows 가 보낼 때 창 제목을 견주는 규칙(`_norm_title`)과 같다.
+    빈 값끼리는 같지 않다. 서버에 같은 규칙이 있다(`app/services/room_name.same_title`).
+    """
+    key = " ".join(nfc(left).split())
+    return bool(key) and key == " ".join(nfc(right).split())
+
+
 def same_file_name(left: str, right: str) -> bool:
     """두 파일명이 **같은 파일을 가리키나.** 자모 조합 형태만 맞춰 견준다.
 
