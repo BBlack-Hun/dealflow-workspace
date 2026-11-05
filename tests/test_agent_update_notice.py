@@ -4,11 +4,13 @@
 
 1. **판은 숫자로 견준다.** `0.10.0` 은 `0.9.0` 보다 새것이다. 못 읽는 판은 낡았다고
    하지 않는다 — 모르는 판으로 모든 화면을 가리면 받아도 안 사라진다.
-2. **화면마다 뜬다.** 밑틀을 쓰는 화면을 훑는다(손으로 목록을 적지 않는다). 닫는
-   것은 그 화면에서만 — 기억하는 장치가 없다.
+2. **화면마다 뜬다.** 밑틀을 쓰는 화면을 훑는다(손으로 목록을 적지 않는다). 그냥
+   닫는 것은 그 화면에서만이다.
 3. **안 뜨는 자리.** 로그인 화면 · 내려받기 화면 · 최신 판 · 빈 판 · 오래 안 쓴 PC ·
    남의 기기 · 팀원 화면으로 보는 중의 그 팀원 기기.
 4. **새 판을 보고하면 바로 사라진다.** 발송기가 실제로 두드리는 길(박동)로 본다.
+6. **[오늘 하루 보지 않기].** 쿠키 날짜가 오늘(한국 날짜)이면 안 뜨고, 어제면 다시
+   뜬다. 쿠키를 적는 브라우저 쪽은 `tests/js/agent_update_skip_test.js` 가 본다.
 """
 from __future__ import annotations
 
@@ -71,7 +73,7 @@ def test_an_old_agent_brings_up_the_notice(client, db, users):
     assert "<b>0.5.0</b>" in html                      # 지금 판
     assert f"<b>{version.VERSION}</b>" in html         # 새 판 — 내려받기가 싣는 그 값
     assert 'href="/setup">새 발송기 내려받기' in html  # 기존 내려받기 화면
-    # 닫기는 브라우저가 한다 — 스크립트도 기억하는 장치도 없다
+    # 닫기는 브라우저가 한다(스크립트 없이도 닫힌다)
     assert '<form method="dialog"' in html and "나중에" in html
 
 
@@ -103,7 +105,7 @@ def test_it_shows_on_every_screen_but_the_download_screen(client, db, users):
 
 
 def test_closing_is_for_this_screen_only(client, db, users):
-    """닫아도 서버는 모른다 — 같은 화면을 다시 열어도, 다른 화면을 열어도 또 뜬다."""
+    """그냥 닫으면 서버는 모른다 — 같은 화면을 다시 열어도, 다른 화면을 열어도 또 뜬다."""
     _set_device(db, users["u1"].id, "0.5.0")
     _login(client)
     for path in ("/", "/contacts", "/deals", "/"):
@@ -203,3 +205,56 @@ def test_team_screen_tags_old_versions(client, db, users):
     _set_device(db, users["u2"].id, version.VERSION)
     html = _login(client, "01000000002").get("/team").text
     assert html.count(">옛 버전</span>") == 1
+
+
+# ── 6. [오늘 하루 보지 않기] ─────────────────────────────────────────────────
+
+def _hide(client, day):
+    client.cookies.set(agent_update.HIDE_COOKIE, day)
+
+
+def test_the_skip_box_and_todays_date_are_drawn(client, db, users):
+    """창에 고르는 칸과 **서버가 정한 오늘 날짜**가 실린다 — 브라우저는 그 날짜를 그대로 적는다."""
+    _set_device(db, users["u1"].id, "0.5.0")
+    html = _login(client).get("/").text
+    assert MARK in html
+    assert f'data-today="{clock.today().isoformat()}"' in html
+    assert 'id="agent-update-skip"' in html and "오늘 하루 보지 않기" in html
+    # 고르는 칸은 닫는 폼 안에 있다 — [나중에] 와 한 줄이다
+    form = html[html.index('<form method="dialog"'):]
+    form = form[:form.index("</form>")]
+    assert 'id="agent-update-skip"' in form and "나중에" in form
+
+
+def test_hidden_for_today_stays_quiet_on_every_screen(client, db, users):
+    _set_device(db, users["u1"].id, "0.5.0")
+    _login(client)
+    _hide(client, clock.today().isoformat())
+    for path in ("/", "/contacts", "/deals"):
+        assert MARK not in client.get(path).text, path
+
+
+def test_hidden_yesterday_shows_again(client, db, users):
+    """자정이 지나면 쿠키 날짜가 어제가 된다 — 다시 뜬다."""
+    _set_device(db, users["u1"].id, "0.5.0")
+    _login(client)
+    _hide(client, (clock.today() - timedelta(days=1)).isoformat())
+    assert MARK in client.get("/").text
+
+
+@pytest.mark.parametrize("value", [None, "", "1", "2026-1-5", "yes"])
+def test_no_or_odd_cookie_still_shows(client, db, users, value):
+    _set_device(db, users["u1"].id, "0.5.0")
+    _login(client)
+    if value is not None:
+        _hide(client, value)
+    assert MARK in client.get("/").text
+
+
+def test_the_browser_writes_the_cookie_the_server_reads():
+    """쿠키 이름이 두 곳(서버 · `agent_badge.js`)에 적힌다 — 어긋나면 골라도 안 먹는다."""
+    from pathlib import Path
+
+    js = (Path(__file__).resolve().parent.parent / "app" / "static" / "js"
+          / "agent_badge.js").read_text(encoding="utf-8")
+    assert f'"{agent_update.HIDE_COOKIE}="' in js
