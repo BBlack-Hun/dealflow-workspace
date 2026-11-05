@@ -86,12 +86,34 @@ def test_only_duplicated_names_are_flagged():
 
 
 def test_both_sides_of_a_clash_are_flagged():
+    """방 이름까지 같은 동명이인 — 회사도 안 적혀 있으면 둘 다 걸린다."""
     people = [_C("홍길동", "가나벤처스", "홍길동 이사님 Deal 공유"),
-              _C("홍길동", "다라인베스트", "홍길동 팀장님 다라인베스트 Deal 공유"),
+              _C("홍길동", "다라인베스트", "홍길동  이사님 Deal 공유 "),
+              _C("홍길동", "마바캐피탈", "홍길동 팀장님 마바캐피탈 Deal 공유"),
               _C("김서연", "마바캐피탈", "김서연 팀장님 마바캐피탈 Deal 공유")]
     flagged = {c.firm for c in rn.ambiguous_contacts(people)}
-    # 회사가 적힌 쪽은 구별된다 — 안 적힌 쪽만 걸린다
-    assert flagged == {"가나벤처스"}
+    # 회사가 적힌 쪽은 구별된다 — 같은 방 이름에 회사가 안 적힌 쪽만 걸린다
+    assert flagged == {"가나벤처스", "다라인베스트"}
+
+
+def test_namesakes_with_distinct_room_names_are_not_flagged():
+    """방 이름이 서로 다르면 회사명이 없어도 걸지 않는다 — 확인은 글자까지 같은
+    제목만 세므로 남의 방이 걸릴 일이 없다(11/05: 또렷한 방 이름을 넣어도
+    동명이인은 확인에 실리지조차 않았다)."""
+    people = [_C("홍길동", "가나벤처스", "홍길동 이사님 딜방 (판교)"),
+              _C("홍길동", "다라인베스트", "홍길동 팀장님 딜방 (여의도)")]
+    assert rn.ambiguous_contacts(people) == []
+
+
+def test_same_title_only_forgives_spacing_and_jamo_form():
+    import unicodedata
+
+    room = "홍길동 이사님 딜방"
+    assert rn.same_title(room, "  홍길동  이사님 딜방 ")
+    assert rn.same_title(room, unicodedata.normalize("NFD", room))
+    assert not rn.same_title(room, "홍길동 이사님 딜방 2기")
+    assert not rn.same_title(room, "홍길동이사님 딜방")
+    assert not rn.same_title("", "")
 
 
 def test_an_empty_room_is_flagged_when_the_name_repeats():

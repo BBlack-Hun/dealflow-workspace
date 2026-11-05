@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 import re
+import unicodedata
 from typing import Optional
 
 # 조직 고정 접미사.
@@ -27,6 +28,22 @@ DEFAULT_SUFFIX = os.environ.get("DEALFLOW_ROOM_SUFFIX", "Deal 공유 우리브�
 def normalize_space(text: str) -> str:
     """연속 공백을 하나로 줄이고 앞뒤 공백 제거 (방 제목 비교용)."""
     return re.sub(r"\s+", " ", (text or "")).strip()
+
+
+def title_key(text: Optional[str]) -> str:
+    """방 제목 **글자 대조용** — 공백(앞뒤 · 연속)과 한글 자모 조합 형태(NFC)만 맞춘다.
+
+    발송기가 보낼 때 창 제목을 견주는 규칙과 같다(`agent/sender/kakao_windows.
+    _norm_title`). 그 밖의 보정은 하지 않는다 — 한 글자만 달라도 다른 방이다.
+    NFKC 가 아니라 NFC 인 까닭은 `agent/sender/base.nfc` 에 적혀 있다.
+    """
+    return normalize_space(unicodedata.normalize("NFC", text or ""))
+
+
+def same_title(left: Optional[str], right: Optional[str]) -> bool:
+    """두 방 제목이 **글자까지 같은가**(`title_key`). 빈 값끼리는 같지 않다."""
+    key = title_key(left)
+    return bool(key) and key == title_key(right)
 
 
 def build_room_name(
@@ -84,6 +101,12 @@ def ambiguous_contacts(contacts) -> list:
     """이름이 겹치는데 방 이름으로 구별되지 않는 담당자.
 
     발송 전에 걸러야 한다 — 나가고 나서 알면 이미 남의 방이다.
+
+    방 확인은 **글자까지 같은 제목**만 확인됨으로 센다(`routers/agent_api.
+    _exact_verdict`). 그래서 동명이인이라도 방 이름이 서로 다르면 각자 제 방
+    제목으로만 확인된다 — 방 이름에 회사명이 없다고 막지 않는다(11/05: 방 이름을
+    또렷하게 넣어도 동명이인은 확인에 실리지조차 않았다). 걸리는 것은 방 이름이
+    비었거나, 같은 성함의 **다른 줄과 방 이름까지 같은데** 회사로도 못 가르는 줄이다.
     """
     by_name: dict = {}
     for c in contacts:
@@ -94,7 +117,11 @@ def ambiguous_contacts(contacts) -> list:
         if len(group) < 2:
             continue
         for c in group:
-            if not tells_people_apart(c.kakao_room_name, c.firm):
+            if tells_people_apart(c.kakao_room_name, c.firm):
+                continue
+            room = title_key(c.kakao_room_name)
+            if not room or any(d is not c and title_key(d.kakao_room_name) == room
+                               for d in group):
                 out.append(c)
     return out
 

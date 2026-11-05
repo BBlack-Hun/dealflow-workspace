@@ -259,8 +259,8 @@ class VcContact(TimestampMixin, Base):
     #
     # 후보가 하나뿐이어도 위 `kakao_room_name` 에 저절로 들어가지 않는다 — 회사명이
     # 든 방이 꼭 그 대표와의 방인 것은 아니다. 투자사 줄은 이 칸을 쓰지 않는다
-    # (그쪽은 적어 둔 방 이름을 대조하는 길이라 결과 하나를 그대로 넣는다 —
-    # `routers/agent_api._apply_verify_result`).
+    # (그쪽은 적어 둔 방 이름을 글자까지 대조할 뿐 바꾸지 않는다 —
+    # `routers/agent_api._exact_verdict`).
     room_candidates: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     stages: Mapped[Optional[str]] = mapped_column(String, nullable=True)   # CSV: Seed,SeriesA
     sectors: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # CSV: AI,헬스케어
