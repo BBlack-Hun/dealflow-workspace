@@ -524,7 +524,7 @@ class KakaoMacSender(Sender):
     # --- Sender 인터페이스 ---------------------------------------------------
 
     def discover_rooms(self, query: str, marker: str = "",
-                       company: bool = False) -> List[str]:
+                       company: bool = False, exact: bool = False) -> List[str]:
         """검색어로 카톡방을 찾아 **실제 방 제목 목록**을 돌려준다.
 
         방 이름을 우리가 만들어 맞추는 건 불가능하다는 게 실기에서 드러났다:
@@ -540,6 +540,12 @@ class KakaoMacSender(Sender):
         `company` 는 Windows 쪽과 **모양을 맞추려고만** 받는다(그쪽은 맨 위 방
         열기에서 투자사 방을 버린다). 여기서는 목록을 그대로 올리고, 투자사
         방은 서버가 거른다(`app/services/room_match.drop_investor_rooms`).
+
+        `exact` 가 참이면(0.11.14 — [방 연결 확인] 담당자 줄) **검색어 전체가 든 줄**이
+        보일 때까지 기다린다. 첫 낱말만 보면 앞 건의 결과 목록에도 그 낱말이 들어
+        있을 때 **앞 건의 결과를 이 건의 것으로** 읽는다(11/05 — 건마다 바로 앞 건의
+        방 이름이 올라와 한 칸씩 밀렸다). 끝내 안 보이면 읽은 것을 그대로 돌려주고,
+        글자까지 같은 제목인지는 부르는 쪽이 가린다(`agent/main.process_verify_job`).
         """
         if not query.strip():
             return []
@@ -555,6 +561,7 @@ class KakaoMacSender(Sender):
         # 잡힌다(실기 확인: '가나' 검색인데 '다라' 방이 나옴 → 엉뚱한 방 저장 위험).
         # 그래서 "검색어의 이름이 포함된 행"이 나타날 때까지만 통과시킨다.
         needle = query.split()[0] if query.split() else query
+        wait_for = " ".join(query.split()) if exact else needle
         raw = _osa(
             f'tell application "System Events" to tell process "{APP}"\n'
             f'  set sf to {field}\n'
@@ -579,7 +586,7 @@ class KakaoMacSender(Sender):
             f'            set acc to acc & (value of (first static text of (UI element 1 of rw))) & "\\n"\n'
             f'          end try\n'
             f'        end repeat\n'
-            f'        if acc contains "{_esc(needle)}" then exit repeat\n'
+            f'        if acc contains "{_esc(wait_for)}" then exit repeat\n'
             f'      end if\n'
             f'    end try\n'
             f'  end repeat\n'

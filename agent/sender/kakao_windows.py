@@ -410,7 +410,7 @@ class KakaoDesktopSender(Sender):
         return conf
 
     def discover_rooms(self, query: str, marker: str = "",
-                       company: bool = False) -> List[str]:
+                       company: bool = False, exact: bool = False) -> List[str]:
         """검색어로 카톡방을 찾아 **실제 방 제목 목록**을 돌려준다.
 
         mac 쪽(`kakao_mac.discover_rooms`)과 **같은 모양으로 답한다** — 서버는
@@ -437,6 +437,10 @@ class KakaoDesktopSender(Sender):
           방 제목에도 그 글자가 들어 있다(실기 0.11.2). 담당자 쪽 확인에서는
           찾는 방이 곧 투자사 방이라 안 버린다.
 
+        ★ `exact` 가 참이면(0.11.14 — [방 연결 확인] 담당자 줄) 결과 줄에 **검색어
+          전체**가 보일 때까지 기다린다(`_read_search`). 첫 낱말만 보면 앞 건의 결과
+          목록을 이 건의 것으로 읽는다(11/05 — 한 칸씩 밀렸다).
+
         ★ 못 하면 **빈 목록**이다. 카톡이 검색을 안 보여 주거나 컨트롤을 못 찾거나
           포커스를 못 잡으면 0건으로 답하고 넘어간다. **거짓 후보를 지어내지
           않는다** — 화면은 후보가 0건이어도 초안·직접 적기로 돌아간다
@@ -455,7 +459,8 @@ class KakaoDesktopSender(Sender):
                 log.warning("discover_rooms: 카톡 포커스 실패 — 후보 0건 query=%r", query)
                 return []
             fallback = bool(conf.get("open_top_fallback", True))
-            titles = self._search_titles(win, query, conf, keep_open=fallback)
+            titles = self._search_titles(win, query, conf, keep_open=fallback,
+                                         exact=exact)
             # ↑ keep_open 이면 검색창이 **열린 채** 돌아온다. 아래에서 반드시 닫는다.
             found: List[str] = []
             opened = False
@@ -503,7 +508,10 @@ class KakaoDesktopSender(Sender):
             if not self._focus_verified(win):
                 log.warning("verify_room: 카톡 포커스 실패 room=%r", room_name)
                 return "not_found"
-            titles = self._search_titles(win, room_name, self.room_search_conf)
+            # 판정은 글자까지 같은 줄을 세므로 결과도 **이 이름의 것**이 될 때까지
+            # 기다린다(`exact`, 0.11.14).
+            titles = self._search_titles(win, room_name, self.room_search_conf,
+                                         exact=True)
         except Exception:  # noqa: BLE001
             log.exception("verify_room 실패 room=%r", room_name)
             return "not_found"
@@ -780,7 +788,8 @@ class KakaoDesktopSender(Sender):
                 log.info("방 인원 추정: %d", count)
 
     def _search_titles(self, win, query: str, conf: dict,
-                       keep_open: bool = False) -> Optional[List[str]]:
+                       keep_open: bool = False,
+                       exact: bool = False) -> Optional[List[str]]:
         """검색칸에 `query` 를 넣고 **결과 줄의 제목들**을 읽는다.
 
         돌려주는 값:
@@ -812,7 +821,7 @@ class KakaoDesktopSender(Sender):
         #    누르면 그 키가 다른 앱으로 간다.
         self._pyautogui.hotkey(*self.sel.get("search_hotkey", ["ctrl", "f"]))
         try:
-            titles = self._read_search(win, query, conf)
+            titles = self._read_search(win, query, conf, exact=exact)
         except BaseException:
             self._close_search()
             raise
@@ -824,8 +833,12 @@ class KakaoDesktopSender(Sender):
             self._close_search()
         return titles
 
-    def _read_search(self, win, query: str, conf: dict) -> Optional[List[str]]:
-        """`_search_titles` 의 ②~④ — 검색창이 **열린 뒤** 글자를 넣고 줄을 읽는다."""
+    def _read_search(self, win, query: str, conf: dict,
+                     exact: bool = False) -> Optional[List[str]]:
+        """`_search_titles` 의 ②~④ — 검색창이 **열린 뒤** 글자를 넣고 줄을 읽는다.
+
+        `exact` 면 ④ 에서 **검색어 전체가 든 줄**을 기다린다(`result_is_fresh`).
+        """
         needle = needle_of(query)
         max_rows = _max_rows(conf)
         time.sleep(self._t("after_search_hotkey", 0.4))
@@ -862,7 +875,7 @@ class KakaoDesktopSender(Sender):
                 titles = [row_title(r,
                                     conf.get("item_text_control_type", "Text"))
                           for r in rows[:max_rows]]
-                if needle and any(nfc(needle) in nfc(t) for t in titles):
+                if result_is_fresh(titles, query, exact=exact):
                     self._last_search_state = "read"
                     return titles
             if time.monotonic() >= deadline:
@@ -2280,6 +2293,22 @@ def needle_of(query: str) -> str:
     """
     parts = (query or "").split()
     return parts[0] if parts else (query or "").strip()
+
+
+def result_is_fresh(titles, query: str, exact: bool = False) -> bool:
+    """읽은 결과 줄이 **이번 검색어의 것**으로 보이는가 — 검색 결과는 한 박자 늦게
+    바뀐다(직전 검색의 목록이 잡힌다).
+
+    기본은 검색어의 **첫 낱말**이 든 줄이 있는가(`needle_of`). `exact`(0.11.14 —
+    [방 연결 확인])면 **검색어 전체**(공백 · 자모 조합만 맞춤)가 든 줄이 있는가다.
+    첫 낱말만 보면 앞 건의 결과에도 그 낱말이 들어 있을 때 앞 건의 목록을 이 건의
+    것으로 읽는다(11/05 — 건마다 바로 앞 건의 방 이름이 올라와 한 칸씩 밀렸다).
+    """
+    if exact:
+        want = _norm_title(query)
+        return bool(want) and any(want in _norm_title(t) for t in titles or [])
+    needle = needle_of(query)
+    return bool(needle) and any(nfc(needle) in nfc(t) for t in titles or [])
 
 
 def filter_room_titles(titles, query: str, marker: str = "",

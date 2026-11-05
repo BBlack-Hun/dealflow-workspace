@@ -262,10 +262,13 @@ def test_투자사_담당자_방_확인은_기업_규칙을_안_탄다(db, seede
     assert job.topic is None
 
     item = _poll(me)["items"][0]
-    # 적어 둔 방 이름(기본값 아님)부터 찾는다 — 회사명 하나가 아니다.
+    # 적어 둔 방 이름 그대로만 찾는다 — 회사명 하나가 아니다. 글자까지 같은 제목만
+    # 세라는 표시(`exact`)를 붙이고, 성함으로 다시 찾거나 회사로 좁히지 않게
+    # `name` · `firm` 은 안 보낸다(11/05).
     assert item["query"] == "김투자 이사님 다라마벤처스"
-    assert item["name"] == "김투자"
-    assert item["firm"] == "다라마벤처스"
+    assert "name" not in item
+    assert "firm" not in item
+    assert item["exact"] is True
     assert "target" not in item
 
 
@@ -371,13 +374,28 @@ def test_후보의_가운데_공백은_그대로_담는다(db, seeded, client):
     assert room_match.candidates(seeded["noroom"])["rooms"] == ["홍길동  대표님 가나다랩스"]
 
 
-def test_투자사_담당자_확인은_하나면_그대로_넣는다(db, seeded, client):
-    """투자사 줄은 **적어 둔 이름을 대조**하는 길이라 결과 하나를 넣는다 —
-    지금까지와 같다. 후보 칸도 안 쓴다."""
+def test_투자사_담당자_확인은_적어_둔_이름을_안_바꾼다(db, seeded, client):
+    """투자사 줄은 **적어 둔 이름을 대조**하는 길이다 — 다른 제목 하나가 걸려도
+    그 제목으로 바꾸지 않고 확인됨도 아니다(11/05 — 예전에는 넣었다). 후보 칸도
+    안 쓴다."""
     me = _login(client)
     me.post("/api/contacts/verify-rooms", json={"contact_ids": [seeded["investor"].id]})
     item = _jobs(db)[0].items[0]
     found = "김투자 이사님 다라마벤처스 Deal 공유"
+    _report(me, item.id, verdict="verified", found_room=found, candidates=[found])
+    db.expire_all()
+
+    row = seeded["investor"]
+    assert row.kakao_room_name == "김투자 이사님 다라마벤처스"
+    assert row.room_verified == "not_found"
+    assert row.room_candidates is None
+
+
+def test_투자사_담당자_확인은_같은_제목이면_확인됨(db, seeded, client):
+    me = _login(client)
+    me.post("/api/contacts/verify-rooms", json={"contact_ids": [seeded["investor"].id]})
+    item = _jobs(db)[0].items[0]
+    found = "김투자 이사님 다라마벤처스"
     _report(me, item.id, verdict="verified", found_room=found, candidates=[found])
     db.expire_all()
 

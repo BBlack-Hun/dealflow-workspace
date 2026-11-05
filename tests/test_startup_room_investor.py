@@ -236,7 +236,7 @@ class StickyKakao(FakeKakao):
 
 
 class StickyWin(FakeWin):
-    def _search_titles(self, win, query, conf, keep_open=False):
+    def _search_titles(self, win, query, conf, keep_open=False, exact=False):
         original = self._pyautogui.hotkey
         state = {"all": False}
 
@@ -256,7 +256,7 @@ class StickyWin(FakeWin):
         self._pyautogui.hotkey = hotkey
         try:
             return kw.KakaoDesktopSender._search_titles(
-                self, win, query, conf, keep_open=keep_open)
+                self, win, query, conf, keep_open=keep_open, exact=exact)
         finally:
             self._pyautogui.hotkey = original
 
