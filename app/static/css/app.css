@@ -2018,6 +2018,18 @@ td.row-acts > form + a { margin-left: 8px; }
    236·284px 이 되면서 96+236+284=616 에 132px 씩 = 880px 이다. 11/01(#118) 기업명 옆에
    `투자유치희망금액`(104px — 머리글 한 줄 99px)이 서서 720 에 140px 씩 = 1000px 이다. */
 .table-wrap #delivered-table { min-width: 1000px; }
+/* 업무 보고 `소개한 기업`(`_report_intros.html`) — 폭을 안 준 칸은 `기업명` 하나라,
+   이 칸은 나머지 일곱 칸(746px)과 맨 왼쪽 `NO`(36px)를 뺀 **자투리**만 받는다
+   (1280px 화면에서 190px 남짓, 폰은 0px). 기업명을 누르면 받은 투자사 표가 그 칸
+   **안에서** 펼쳐지는데(NO·날짜·출처 208px + 투자사), 칸이 그보다 좁으면 투자사 칸이
+   0px 로 눌리고 넘친 것은 `.grid-table td { overflow: hidden }` 이 잘라 표가 통째로
+   짤려 보였다(11/05). 그래서 표 폭을 못 박고 모자라면 `.table-wrap` 이 가로로 굴린다 —
+   1,090px 면 기업명 칸에 안쪽 표 + 투자사 84px 가 들어가고, 1,400px 화면(표 1,095px)
+   부터는 지금 모양 그대로다. 안쪽 표는 폰 규칙(`.table-wrap .grid-table` 760px)에서
+   뺀다 — 그것도 `.table-wrap` 안이라 760px 로 벌어져 칸 밖으로 잘린다.
+   (`#intros > .table-wrap >` 로 잡아 아래 `소개 후보` 표(`#intro-left` 안)는 안 건드린다.) */
+#intros > .table-wrap > .grid-table { min-width: 1090px; }
+#intros > .table-wrap > .grid-table .grid-table { min-width: 0; }
 /* 이어진 IR 기업의 칸 — 읽기만(#83 · #85 · `_ir_cols.html`). 옅은 바탕으로 눌러 고치는
    칸과 가른다(고치는 곳은 IR 기업 현황). */
 th.ir-ro, td.ir-ro { background: #f7f9fc; }
