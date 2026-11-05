@@ -245,3 +245,39 @@ def funnel(stages: Dict[int, str]) -> List[dict]:
         counts[key] = counts.get(key, 0) + 1
     return [{"key": key, "label": LABELS[key], "count": counts[key],
              "cls": CLASSES[key]} for key in LADDER]
+
+
+def reach(rows: List[dict]) -> List[dict]:
+    """`funnel()` 을 **깔때기 막대**로 — 칸마다 '그 칸까지 온 사람'을 더한다.
+
+    `funnel()` 의 수는 *가장 멀리 간 칸* 이라 칸끼리 겹치지 않는다. 그 수를 바로
+    앞 칸에 나누면 **비율이 거짓**이 된다 — `IR 자료 요청 10 · IR 자료 전달 5` 의
+    10명은 전달까지 못 간 사람들이지, 전달 받은 5명이 거쳐 온 앞 칸이 아니다.
+    그래서 칸마다 **그 칸 이상 간 사람**(`reached` — 뒤 칸들의 합)을 세고, 그
+    수끼리 나눈다. 그래야 '앞 칸까지 온 사람 중 몇 %가 여기까지 왔나' 가 된다.
+
+    단계를 새로 매기지 않는다(그건 `of_many` 한 곳) — 받은 수를 더하고 나눌 뿐이다.
+    `count`(지금 이 칸에 선 사람)는 그대로 둔다.
+
+      · `width` — 첫 칸(전체) 대비 막대 폭 %.
+      · `rate`  — 바로 앞 칸 대비 %. 첫 칸이거나 앞 칸이 0 이면 `None`.
+      · `lost`  — 앞 칸에서 여기로 못 넘어온 사람 수.
+      · `worst` — `lost` 가 가장 큰 칸 **하나**(같으면 앞 칸). 아무도 안 빠졌으면 없다.
+    """
+    out = [dict(r) for r in rows]
+    total = 0
+    for r in reversed(out):
+        total += r["count"]
+        r["reached"] = total
+    top = out[0]["reached"] if out else 0
+    worst, most = None, 0
+    for i, r in enumerate(out):
+        prev = out[i - 1]["reached"] if i else None
+        r["width"] = round(r["reached"] * 100 / top, 1) if top else 0
+        r["rate"] = round(r["reached"] * 100 / prev) if prev else None
+        r["lost"] = prev - r["reached"] if prev is not None else 0
+        if r["lost"] > most:
+            worst, most = i, r["lost"]
+    for i, r in enumerate(out):
+        r["worst"] = i == worst
+    return out

@@ -80,6 +80,58 @@
   {% endif %}
 </div>
 
+{#
+  ── 진행 단계 깔때기 ── 보고의 맨 위, 달·해 몸통보다 먼저 **한 번만** 선다.
+
+  수는 투자사 관리 현황의 깔때기와 같은 것(`deal_stage.funnel`)이고, 막대는 그
+  수를 `deal_stage.reach` 가 '그 단계까지 온 사람' 으로 더한 것이다 — 그래야 %가
+  바로 앞 단계 대비 전환율이 된다. 단계는 '어디까지 갔었나' 라 **기간이 없다**:
+  고른 달·해와 상관없이 지금 기준이라, 달마다 반복하지 않고 제목에 그렇게 적는다.
+  월간 카드(건·개사·명이 섞여 있다)와는 엮지 않는다 — 단위가 달라 비율이 거짓이 된다.
+
+  막대는 서버가 정한 폭(`style="width:…%"`)만 싣는다 — 스크립트 없이 그린다.
+  화면 읽기 프로그램은 `aria-label` 한 문장으로 같은 값을 읽는다.
+#}
+{% set funnel_top = stage_funnel[0].reached if stage_funnel else 0 %}
+{% set funnel_ns = namespace(desc=[]) %}
+{% for f in stage_funnel %}
+  {% if loop.first %}
+    {% set funnel_ns.desc = funnel_ns.desc + ['전체 ' ~ f.reached ~ '명(접촉 전 ' ~ f.count ~ '명)'] %}
+  {% else %}
+    {% set funnel_ns.desc = funnel_ns.desc + [f.label ~ ' ' ~ f.reached ~ '명'
+        ~ (', 앞 단계의 ' ~ f.rate ~ '%' if f.rate is not none else '')
+        ~ (', 가장 많이 빠짐 ' ~ f.lost ~ '명' if f.worst else '')] %}
+  {% endif %}
+{% endfor %}
+<section class="panel stage-funnel">
+  <h2 class="panel-title"><span>진행 단계 —
+    {% if team_wide %}팀 전체{% elif viewing and viewing.id != user.id %}{{ viewing.name }} 님 담당{% else %}내 담당{% endif %}
+    투자사 {{ funnel_top }}명, 지금 기준</span></h2>
+  <p class="hint">
+    줄마다 <b>그 단계까지 온 사람</b>(더 멀리 간 사람 포함)을 셉니다. %는 바로 앞 단계
+    대비입니다. 고른 {% if yearly_view %}해와{% else %}달과{% endif %} 상관없이 지금까지의
+    기록으로 세고, 거절돼도 단계는 내려가지 않습니다 —
+    <a href="/contacts">투자사 관리 현황</a>의 깔때기와 같은 기준입니다.
+  </p>
+  <div class="stage-bars" role="img"
+       aria-label="진행 단계 깔때기, 지금 기준: {{ funnel_ns.desc|join('; ') }}">
+    {% for f in stage_funnel %}
+    <div class="stage-bar{% if f.worst %} worst{% endif %}{% if not f.reached %} zero{% endif %}">
+      <span class="stage-bar-label">{{ '전체' if loop.first else f.label }}</span>
+      <span class="stage-bar-track"><span style="width:{{ f.width }}%"></span></span>
+      <span class="stage-bar-num"><b>{{ f.reached }}</b>명</span>
+      <span class="stage-bar-rate">{% if not loop.first %}{% if f.rate is none %}—{% else %}{{ f.rate }}%{% endif %}{% endif %}</span>
+      {% set here = f.count != f.reached %}
+      {% if loop.first %}
+      <span class="stage-bar-note">접촉 전 {{ f.count }}명</span>
+      {% elif here or f.worst %}
+      <span class="stage-bar-note">{% if here %}지금 여기 {{ f.count }}명{% endif %}{% if here and f.worst %} · {% endif %}{% if f.worst %}<em>▼ 가장 많이 빠짐 {{ f.lost }}명</em>{% endif %}</span>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
 {% if yearly_view %}
 {#
   ── 연간 업무보고 — **월간 보고를 열두 달 이어 붙인다** (10/17 회의 #38) ──────

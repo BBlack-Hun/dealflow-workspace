@@ -2153,6 +2153,31 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
 .stage-pill.good  { background:#e8f6ec; border-color:#a8d8b8; color:#1f7a3d; }
 .stage-pill.done  { background:#e8f0fc; border-color:#a9c4ec; color:#1a5fb4; }
 
+/* 업무 보고 맨 위의 진행 단계 깔때기(`report.html`) — 위 깔때기와 같은 수를
+   **폭이 수에 비례하는 막대**로. 막대는 한 색(브랜드), 강조는 가장 많이 빠진 칸
+   하나뿐이다. 0 인 칸도 줄은 남긴다. 좁은 화면에서는 막대를 이름·수 아래로 내린다. */
+.stage-funnel { margin-bottom: 12px; }
+.stage-bars { display: grid; gap: 6px; margin-top: 10px; }
+.stage-bar { display: grid; align-items: center; column-gap: 10px; row-gap: 3px;
+  grid-template-columns: 96px minmax(0, 1fr) 64px 44px minmax(0, 210px);
+  grid-template-areas: "label track num rate note"; font-size: 13px; }
+.stage-bar-label { grid-area: label; word-break: keep-all; }
+.stage-bar-track { grid-area: track; height: 12px; background: var(--bg);
+  border-radius: 2px; overflow: hidden; }
+/* 인쇄는 기본으로 배경색을 빼므로, 막대가 종이에서 사라지지 않게 붙잡는다. */
+.stage-bar-track > span { display: block; height: 100%; min-width: 2px;
+  background: var(--brand); border-radius: 0 4px 4px 0;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.stage-bar.zero .stage-bar-track > span { min-width: 0; }
+.stage-bar-num { grid-area: num; text-align: right; font-size: 12px; color: var(--muted);
+  font-variant-numeric: tabular-nums; white-space: nowrap; }
+.stage-bar-num b { font-size: 14px; color: var(--ink); }
+.stage-bar.zero .stage-bar-num b { color: var(--muted); }
+.stage-bar-rate { grid-area: rate; text-align: right; font-variant-numeric: tabular-nums; }
+.stage-bar-note { grid-area: note; font-size: 12px; color: var(--muted); }
+.stage-bar-note em { font-style: normal; font-weight: 700; color: #b45309; }
+.stage-bar.worst .stage-bar-rate { font-weight: 700; color: #b45309; }
+
 /* 딜 진행 관리 탭 — 급한 건수는 눈에 띄게. */
 .flow-tabs { margin-bottom: 12px; }
 .flow-tabs .sheet-tab span.warn { background:#f6c344; color:#4a3400; }
@@ -2504,6 +2529,10 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
   /* 시간·이름·내용이 칸으로 나뉘던 줄은 세로로 */
   .tl-item { grid-template-columns: 1fr; gap: 2px; }
   .bar-row { grid-template-columns: 72px 1fr 30px; }
+  /* 진행 단계 깔때기 — 이름·수·% 를 한 줄에, 막대는 그 아래 한 줄을 다 쓴다. */
+  .stage-bars { gap: 9px; }
+  .stage-bar { grid-template-columns: minmax(0, 1fr) 64px 44px;
+    grid-template-areas: "label num rate" "track track track" "note note note"; }
 
   /* 폰에서 뜨는 편집창은 화면을 벗어나면 안 된다 */
   .cell-pop { width: calc(100vw - 24px) !important; left: 12px !important; }
@@ -3015,6 +3044,8 @@ a.guard-go:hover { background: #1e4fd0; text-decoration: none; }
      투자사 이름 없이 날짜만 남아, 무엇의 날짜인지 알 수 없게 된다. */
   .ir-doc-table tr { break-inside: avoid; page-break-inside: avoid; }
   .ir-doc-table thead { display: table-header-group; }
+  /* 업무 보고의 진행 단계 깔때기는 한 장에 통째로 — 막대가 쪽 사이에서 갈리지 않게. */
+  .stage-funnel { break-inside: avoid; page-break-inside: avoid; }
   @page { margin: 18mm 16mm; }
 }
 

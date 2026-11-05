@@ -712,9 +712,14 @@ def _year_tables(body):
 
 
 def _panel_titles(body):
-    """연간 화면의 판 이름들 — 위에서 아래로."""
+    """연간 화면의 판 이름들 — 위에서 아래로.
+
+    **연간 합계표(`id="year-total"`) 안만** 본다. 엑셀 연간 시트와 짝인 판은
+    거기 있다 — 화면 맨 위의 진행 단계 깔때기는 '지금 기준' 이라 파일에 없는 판이다.
+    """
     return [t.strip() for t in
-            re.findall(r'<h2 class="panel-title"><span>([^<]+)', body)]
+            re.findall(r'<h2 class="panel-title"><span>([^<]+)',
+                       body[body.index('id="year-total"'):])]
 
 
 def _bands(ws):
