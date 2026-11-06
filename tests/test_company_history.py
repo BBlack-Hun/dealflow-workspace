@@ -320,8 +320,8 @@ def test_소개_횟수_칸에는_필터를_안_건다():
     from pathlib import Path
 
     text = Path(TEMPLATE).read_text(encoding="utf-8")
-    head = re.search(r'<th style="width:84px"[^>]*>소개 횟수</th>', text)
-    assert head, "`소개 횟수` 머리글 모양이 바뀌었다"
+    head = re.search(r'<th style="width:100px"[^>]*>총 소개 횟수</th>', text)
+    assert head, "`총 소개 횟수` 머리글 모양이 바뀌었다"
     assert "data-filters" not in head.group(0)
     assert "data-f-sent" not in text, "행에 안 쓰이는 필터 값을 싣고 있다"
 
@@ -340,7 +340,7 @@ def test_소개_횟수는_왼쪽에_선다():
     from pathlib import Path
 
     text = Path(TEMPLATE).read_text(encoding="utf-8")
-    head = re.search(r'<th[^>]*>소개 횟수</th>', text)
+    head = re.search(r'<th[^>]*>총 소개 횟수</th>', text)
     assert head and "num" not in head.group(0), "머리글이 아직 오른쪽 정렬이다 ★"
     cell = re.search(r'<td class="[^"]*sent-count[^"]*"', text)
     assert cell and "num" not in cell.group(0), "칸이 아직 오른쪽 정렬이다 ★"

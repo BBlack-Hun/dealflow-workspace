@@ -92,8 +92,9 @@ def test_화면은_10곳만_펼치고_엑셀에_계약_칸(stage, client, db, us
         client.get("/api/export/report.xlsx?month=2026-08").content))
     rows = [list(r) for r in wb["2026-08 소개한 기업"].iter_rows(values_only=True)]
     head = next(r for r in rows if r and r[0] == "기업명")
-    assert head[:4] == ["기업명", "투자유치희망금액", "계약여부", "계약서 수신 여부"]
-    assert ["샘플보냄", "40억", "무료계약완료", "O"] in [r[:4] for r in rows]
+    # 기업명 바로 오른쪽은 소개한 횟수다(#165) — 그 옆으로 금액 · 계약 두 칸.
+    assert head[:5] == ["기업명", "본인 소개 횟수", "투자유치희망금액", "계약여부", "계약서 수신 여부"]
+    assert ["샘플보냄", 1, "40억", "무료계약완료", "O"] in [r[:5] for r in rows]
 
 
 def test_소개_0인_달은_빈칸_문구가_후보보다_먼저(stage, client, users):

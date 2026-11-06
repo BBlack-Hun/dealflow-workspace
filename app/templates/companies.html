@@ -553,9 +553,27 @@
            바닥이 된다: 이 칸은 정렬 단추가 서는 칸이라 화면에 실제로 서는
            글자가 `소개 횟수 ↕` 이고, 그 단추가 58.1px + th 좌우 여백 18px =
            76.1px 을 먹는다(헤드리스 크롬 실측). 두 자리 수 여유 7px 을 더해
-           84px — 옆 칸들과 같은 셈이다. 그래서 **좁힐 자리가 없다.** #}
-        <th style="width:84px" data-sort="sent"
-            title="딜 소개에 넣은 날 수 · 발송 건수 — 짚으면 마지막 날짜">소개 횟수</th>
+           84px — 옆 칸들과 같은 셈이다. 그래서 **좁힐 자리가 없다.**
+
+           ## `총 소개 횟수` — 업무 보고와 같은 셈(#165 · 11/06 팀원 요청)
+
+           "IR 기업현황 담당별로 소개한 횟수 나오고 총 소개 횟수 나오게". 이 칸이 곧 `총` 이라
+           새 칸을 하나 더 세우지 않고 **이름과 셈을 바꿨다** — 옛 셈(회차 수: 같은 날 계정마다 ·
+           그룹마다 따로 세고, 안 나간 회차도 셌다)과 새 셈이 나란히 서면 같은 것을 두 수로 읽는다.
+           이제 업무 보고 `소개한 기업` 의 `소개한 횟수` 와 같다 — 투자사가 실제로 받은 **서로 다른
+           날 수**(`deal_history.intro_times`). 아래 `명` 은 그대로 발송 건수다.
+           폭: 정렬 단추 `총 소개 횟수 ↕` 가 한 줄에 서는 폭(84 + `총 ` 16px). #}
+        <th style="width:100px" data-sort="sent"
+            title="투자사가 실제로 받은 서로 다른 날 수(같은 날 여러 계정 · 여러 회차는 한 번) · 아래는 발송 건수 — 업무 보고 '소개한 기업' 과 같은 셈 · 짚으면 마지막 날짜">총 소개 횟수</th>
+        {# 계정마다 그 기업을 소개한 횟수(#165) — `계정 n · 계정 n`, 많은 순. 계정 수만큼 칸을
+           늘리지 않는다(표가 이미 5천 px 이 넘고, 계정은 늘고 준다). 셈은 위 칸과 한 벌이고,
+           '누구 것' 은 업무 보고 기준이다(앱 발송은 누른 계정 · 시트 · 손 기록은 지금 담당).
+           계정마다 센 수의 합은 위 `총` 보다 클 수 있다 — 같은 날 두 계정이 보냈으면 팀으로는
+           하루다. 업무 보고 `소개 후보` 의 `본인 누적 소개` 가 이 칸의 그 계정 수와 같다.
+           필터 · 정렬은 안 세운다(`소개 횟수` 와 같은 까닭 — 고를 목록이 아니다). 두 줄에서
+           자르고(`clamp2` — 줄 키를 안 키운다) 전체는 짚으면 보인다. #}
+        <th style="width:170px"
+            title="계정마다 이 기업을 소개한 횟수(서로 다른 날 수) — 앱 발송은 보낸 계정, 시트 · 손으로 적은 기록은 지금 담당 계정으로 셉니다">담당별 소개</th>
         {# 폭은 **이름이 아니라 단추**에 맞춘다. 필터가 하나뿐인 칸은 filters.js 가
            이름 글자를 지우고 `계약여부 ▾` 단추를 그 자리에 세우는데, 단추는 ` ▾` 와
            자기 padding·테두리(14px)만큼 이름보다 넓다. 이름(66px)만 보고 72px 를
@@ -735,7 +753,7 @@
              **방향과 상관없이 늘 끝**에 선다(`table_sort.js` 의 `order`). #}
           data-s-name="{{ r.name }}"
           data-s-updated="{{ r.updated_at }}"
-          data-s-sent="{{ r.sent_rounds }}"
+          data-s-sent="{{ r.intro_total }}"
           data-s-meeting="{{ r.meeting_sort }}"{{ cc.attrs(r.id) }}>
         {# 번호를 눌러도 [수정] 창이 열린다 — 표가 2,030px 라 오른쪽 끝의
            [수정] 단추까지 가로로 밀어야 닿는데, 줄을 짚는 손은 이미 왼쪽
@@ -863,14 +881,23 @@
 
            ## 세우는 값은 안 건드린다
 
-           정렬은 그대로 **회차 수** 기준이다(`data-s-sent` = `sent_rounds`,
+           정렬은 굵게 선 **앞의 수** 기준이다(`data-s-sent` = `intro_total`,
            위 `<tr>` 주석). 화면이 두 줄이 됐다고 세우는 값이 달라지지 않는다 —
-           굵게 선 쪽이 여전히 `회` 이고, 칸 이름도 그 수다. #}
+           굵게 선 쪽이 여전히 `회` 이고, 칸 이름도 그 수다. (#165 부터 그 수는
+           회차 수가 아니라 업무 보고와 같은 서로 다른 날 수 — 머리글 주석.) #}
         <td class="sent-count"
-            title="{% if r.sent_rounds %}마지막 {{ r.last_sent }} · 서로 다른 투자사 {{ r.sent_investors }}곳 · 발송 {{ r.sent_total }}명{% else %}아직 딜 소개에 넣은 적이 없습니다{% endif %}">
-          {% if r.sent_rounds %}
-          <div class="cell-main">{{ r.sent_rounds }}회</div>
+            title="{% if r.intro_total %}마지막 {{ r.last_sent }} · 서로 다른 투자사 {{ r.sent_investors }}곳 · 발송 {{ r.sent_total }}명{% else %}아직 딜 소개에 넣은 적이 없습니다{% endif %}">
+          {% if r.intro_total %}
+          <div class="cell-main">{{ r.intro_total }}회</div>
           <div class="cell-sub muted">{{ r.sent_total }}명</div>
+          {% else %}
+          <span class="muted">–</span>
+          {% endif %}
+        </td>
+        <td class="intro-by-owner"
+            title="{% for o in r.intro_by_owner %}{{ o.name }} {{ o.times }}회{% if not loop.last %} · {% endif %}{% endfor %}">
+          {% if r.intro_by_owner %}
+          <div class="clamp2">{% for o in r.intro_by_owner %}<span class="owner-times">{{ o.name }} <b>{{ o.times }}</b></span>{% if not loop.last %} · {% endif %}{% endfor %}</div>
           {% else %}
           <span class="muted">–</span>
           {% endif %}
@@ -945,7 +972,7 @@
         <td><button type="button" class="linkbtn js-co-edit">수정</button></td>
       </tr>
       {% else %}
-      <tr><td colspan="38" class="muted">등록된 기업이 없습니다. [기업 추가]로 시작하세요.</td></tr>
+      <tr><td colspan="39" class="muted">등록된 기업이 없습니다. [기업 추가]로 시작하세요.</td></tr>
       {% endfor %}
     </tbody>
   </table>

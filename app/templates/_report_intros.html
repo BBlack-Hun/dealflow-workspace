@@ -21,6 +21,17 @@
   Series A 줄이면 `/api/series-a-companies`(줄의 `data-inline-url` — `inline_edit.js`).
   이름으로 짝을 못 찾은 줄은 고칠 곳이 없어 글자로만 선다. 같은 기업이 이름 표기가 달라
   두 줄로 나오면 한 줄을 고친 뒤 다른 줄은 새로고침해야 맞는다.
+
+  **소개한 횟수는 기업명 바로 오른쪽**(#165) — 본인 보기는 `본인 소개 횟수`, 팀 전체는
+  `팀 소개 횟수`(같은 날 여러 계정이 보냈으면 하루). 셈은 IR 기업 현황의 `총 소개 횟수` ·
+  `담당별 소개` 와 한 벌이다(`deal_history.intro_times`) — 이 표는 기간으로 자를 뿐이다.
+  `소개 후보` 의 `본인 누적 소개` 는 기간 없이 센 그 계정 수라 IR 의 `담당별 소개` 와 같다.
+
+  **소개 후보에서 골라 딜 소개로 넘긴다**(#164) — 줄 맨 왼쪽 체크 → [딜 소개] 가 고른 기업을
+  담은 채 딜 제안 관리(`/deals?companies=…`)를 연다. 보내는 길은 새로 안 만든다: 받는 분 ·
+  문구 · 확인 · 발송 시간 관문은 그 화면 그대로다. 체크는 보고의 주인이 지금 그 계정일 때만
+  선다(`viewing.id == user.id` — 팀원 화면으로 보기 중이면 그 팀원). 관리자가 주소의
+  `member=` 로 남의 보고를 열었으면 [딜 소개] 가 관리자 계정 명단으로 열려 엉뚱하므로 안 세운다.
 #}
 {% macro edit_row(c) %}{% if c.company_id %} data-id="{{ c.company_id }}"{% if c.company_kind == 'series_a' %} data-inline-url="/api/series-a-companies"{% else %} data-inline-url="/api/companies"{% endif %}{% endif %}{% endmacro %}
 {% macro contract_cell(c) -%}
@@ -31,11 +42,14 @@
   <td>{{ c.contract_label }}</td>
   {%- endif -%}
 {%- endmacro %}
-{% macro big_table(rows) %}
+{% macro big_table(rows, pick=false) %}
 <div class="table-wrap">
 <table class="grid-table compact" data-inline-url="/api/companies">
   <thead><tr>
+    {% if pick %}<th class="pick-col" style="width:32px" title="딜 소개에 담을 기업을 고릅니다"></th>{% endif %}
     <th>기업명</th>
+    <th class="num" style="width:96px"
+        title="지금까지(기간 없이) 본인이 이 기업을 소개한 횟수 — 서로 다른 날 수 · IR 기업 현황 '담당별 소개' 의 본인 계정 수와 같습니다">본인 누적 소개</th>
     <th class="num" style="width:104px">투자유치희망금액</th>
     <th style="width:140px">대분류</th>
     <th style="width:120px">투자라운드</th>
@@ -44,7 +58,10 @@
   <tbody>
     {% for c in rows %}
     <tr{{ edit_row(c) }}>
+      {% if pick %}<td class="pick-col"><input type="checkbox" class="js-intro-pick" value="{{ c.company_id }}"
+          aria-label="{{ c.company }} 고르기"></td>{% endif %}
       <td><b>{{ c.company }}</b></td>
+      <td class="num">{{ c.mine_times or '–' }}</td>
       <td class="num">{{ c.raise_target }}</td>
       <td>{{ c.sector }}</td>
       <td>{{ c.series }}</td>
@@ -66,13 +83,15 @@
   <table class="grid-table compact" data-inline-url="/api/companies">
     <thead><tr>
       <th>기업명</th>
-      {# 기업명 옆 투자유치희망금액(#118) — IR 기업 현황(없으면 Series A)에서 그때그때 읽는다. #}
+      {# 기업명 바로 오른쪽 소개한 횟수(#165). 같은 날 여러 명에게 보낸 것은 한 번이다 — 회차 수가
+         아니라 날 수. 본인 보기는 그 사람 것, 팀 전체는 팀(같은 날 두 계정이 보냈어도 하루). #}
+      <th class="num" style="width:96px"
+          title="{% if team_wide %}이 기간에 팀이 소개한 서로 다른 날 수 — 같은 날 여러 계정이 보냈으면 한 번입니다 · IR 기업 현황 '총 소개 횟수' 와 같은 셈입니다{% else %}이 기간에 본인이 소개한 서로 다른 날 수입니다 · IR 기업 현황 '담당별 소개' 와 같은 셈입니다{% endif %}">{% if team_wide %}팀{% else %}본인{% endif %} 소개 횟수</th>
+      {# 그 옆 투자유치희망금액(#118) — IR 기업 현황(없으면 Series A)에서 그때그때 읽는다. #}
       <th class="num" style="width:104px">투자유치희망금액</th>
       {# 그 오른쪽 계약여부 · 계약서 수신 여부(#122) — 같은 길로 읽기만. #}
       <th style="width:134px">계약여부</th>
       <th style="width:110px">계약서 수신 여부</th>
-      {# 같은 날 여러 명에게 보낸 것은 한 번이다 — 회차 수가 아니라 날 수. #}
-      <th class="num" style="width:96px" title="서로 다른 날짜 수입니다">소개한 횟수</th>
       <th class="num" style="width:110px" title="같은 사람이 여러 번 받았으면 한 명으로 셉니다">받은 투자사 수</th>
       <th style="width:96px">처음 날짜</th>
       <th style="width:96px">마지막 날짜</th>
@@ -99,10 +118,10 @@
             </table>
           </details>
         </td>
+        <td class="num">{{ c.times }}</td>
         <td class="num">{{ c.raise_target }}</td>
         {{ contract_cell(c) }}
         <td>{{ c.contract_received }}</td>
-        <td class="num">{{ c.times }}</td>
         <td class="num">{{ c.investors }}</td>
         <td class="tabular">{{ c.first }}</td>
         <td class="tabular">{{ c.last }}</td>
@@ -116,15 +135,29 @@
   {% endif %}
   {# 소개한 기업 표·빈칸 문구 **아래** — 위에 두면 소개 0개사인 달에 '소개한 기업' 처럼 읽혔다(11/02). #}
   {% if intro_left %}
+  {# 체크 · [딜 소개] 는 보고의 주인이 지금 계정일 때만(머리 주석 · #164). #}
+  {% set pick = viewing is not none and viewing.id == user.id %}
   <div class="bucket" id="intro-left">
     <h3 class="bucket-head">소개 후보 — {{ intro_label }}에 아직 안 보낸 10억 이상 {{ intro_left|length }}곳
       <span class="hint">투자유치희망금액(구간이면 아래값) 높은 순 · 이 달에 이 팀원이 안 보낸 소개 가능 기업</span>
     </h3>
-    {{ big_table(intro_left[:10]) }}
+    {% if pick %}
+    {# `<a>` 라 `:disabled` 가 없어 `aria-disabled` 로 잠근다 — 딜 소싱의 [Series A 딜 소개] 와 같은
+       모양(`report_intro_pick.js` 가 고른 수 · 주소를 채우고, 잠긴 동안 눌림을 막는다). #}
+    <div class="toolbar intro-pick-bar">
+      <a class="primary-btn inline" id="intro-left-send" data-testid="intro-left-send"
+         aria-disabled="true" data-base="/deals" data-max="{{ max_companies }}"
+         title="체크한 기업을 담아 딜 제안 관리(딜 소개)를 엽니다 — 받는 분 · 문구는 거기서 고르고 미리보기 · 확인 뒤 보냅니다">딜 소개 (선택 0개)</a>
+      <span class="hint" id="intro-left-hint" data-testid="intro-left-hint">왼쪽 체크박스로 소개할 기업을 고르세요 (한 번에 {{ max_companies }}개까지)</span>
+    </div>
+    {% elif viewing is not none %}
+    <p class="hint">딜 소개로 넘기는 체크는 왼쪽 메뉴의 '팀원 화면으로 보기' 로 그 팀원 화면을 열면 섭니다.</p>
+    {% endif %}
+    {{ big_table(intro_left[:10], pick) }}
     {% if intro_left|length > 10 %}
     <details>
       <summary>더 보기 — 나머지 {{ intro_left|length - 10 }}곳</summary>
-      {{ big_table(intro_left[10:]) }}
+      {{ big_table(intro_left[10:], pick) }}
     </details>
     {% endif %}
   </div>
