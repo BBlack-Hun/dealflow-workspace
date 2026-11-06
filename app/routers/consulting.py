@@ -1412,6 +1412,10 @@ def update_company(company_id: int, body: CompanyIn,
            # 화면이 친 글자와 다르다. 표가 이것으로 그 칸을 다시 적는다(`consulting.js` 의 `save`).
            "values": {f: getattr(company, f) or "" for f in body.model_fields_set
                       if f not in ("notes", "sheet")}}
+    # IR 기업 현황의 `컨설팅 상태` 는 `기업 관리` 의 **갈래**를 보여 준다(#166 — 거기서 이 길로
+    # 고친다). 갈래는 서버 한 곳이 센다(`consulting_status`) — 화면이 다시 세면 두 번째 규칙이다.
+    if "management" in body.model_fields_set and not is_contract(db, company.sheet or ""):
+        out["management_tag"] = status.tag_value(company.management or "")
     # 기업명을 고쳐 IR 기업에 **새로 이어졌다**(`company_sync` 자동 연결) — 이어진 순간
     # 채워진 칸(`company_sync.slot`)을 실어 화면이 그 자리에서 적는다. 화면을 다시 받지
     # 않는 까닭은 `tests/test_consulting_startup_fold.py`(고르던 체크가 풀린다).

@@ -1,8 +1,9 @@
 """IR 기업 현황 새 칸 셋(0116) — 지역 · 견적서 첨부 여부 · 카톡 연결 여부.
 
 투자컨설턴트 메타 탭에만 있던 **기업 사실**을 기준 표(IR 기업 현황)에도 세운다.
-컨설팅 **진행 기록**(기업 관리 · 컨설팅 미팅일)은 IR 에 저장하지 않고 읽기만 한다
-(결정 3 — `routers/companies.consulting_view`).
+컨설팅 **진행 기록**(기업 관리 · 컨설팅 미팅일)은 IR 에 저장하지 않는다(결정 3 —
+`routers/companies.consulting_view`). 고치면 이어진 컨설턴트 줄에 담긴다(#166 ·
+`tests/test_ir_consulting_edit.py`).
 """
 from __future__ import annotations
 
@@ -98,7 +99,7 @@ def test_엑셀_두_벌에_다_실린다(logged_in, db, company, u1_admin):
     assert rows == []
 
 
-def test_컨설팅_진행_기록은_읽기만_한다(logged_in, db, users, company):
+def test_컨설팅_진행_기록은_IR_에_저장하지_않는다(logged_in, db, users, company):
     from app.models import ConsultingCompany
     from app.services import consulting_sheets as cs
 
@@ -119,10 +120,10 @@ def test_컨설팅_진행_기록은_읽기만_한다(logged_in, db, users, compa
     db.commit()
     html = logged_in.get("/companies").text
     assert ">컨설팅 상태</th>" in html and ">컨설팅 미팅일</th>" in html
-    assert 'title="관리 중">관리 중<' in html
-    assert 'title="9/16 PM2">9/16 PM2<' in html
+    assert ">관리 중</td>" in html
+    assert ">9/16 PM2</td>" in html
     assert ">8<" not in html
-    # IR 에는 저장하지 않는다 — 고칠 칸도 없다.
+    # IR 에는 저장하지 않는다 — 고치면 이어진 컨설턴트 줄에 담긴다(#166).
     from app.models import IrCompany
 
     assert not hasattr(IrCompany, "consulting_status")
