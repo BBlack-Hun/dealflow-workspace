@@ -124,6 +124,10 @@ def _panel_save(client, company_id: int, **over):
 IR_TAB_ONLY = {
     "assignee_name": "담당자 — 표에서 목록으로 골라 고친다",
     "top_deal_kind": "핵심/TOP Deal — 창에는 `추천 딜 (★)` 체크박스가 그 자리다",
+    # #166 — IR 줄의 칸이 아니라 이어진 **투자컨설턴트 줄**의 칸이다(`PATCH /api/consulting/{id}`).
+    # 창은 IR 줄을 저장하므로 넣으면 IR 에 모르는 칸을 보내게 된다.
+    "management": "컨설팅 상태 — 이어진 투자컨설턴트 줄의 `기업 관리`, 표에서만 고친다",
+    "meeting_at": "컨설팅 미팅일 — 이어진 투자컨설턴트 줄의 칸, 표에서만 고친다",
 }
 
 

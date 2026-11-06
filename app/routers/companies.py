@@ -30,8 +30,9 @@ from ..db import get_db
 from ..deps import (NotAdmin, admin_only, get_current_user, may_export_companies,
                     may_view_consulting, templates)
 from ..models import ConsultingCompany, ConsultingSheet, EditLog, IrCompany, OneLinerBackup, User
-from ..services import (amount, auth as auth_svc, custom_columns, deal_history, edit_log,
-                        email_domains, forecast, revenue_years, room_match)
+from ..services import (amount, auth as auth_svc, consulting_status, custom_columns,
+                        deal_history, edit_log, email_domains, forecast, revenue_years,
+                        room_match)
 from ..services.one_liner import (
     AUTO, apply_one_liner, bulk_rows, compose_one_liner, one_liner_status, origin,
 )
@@ -351,8 +352,8 @@ def search_text(c: IrCompany, extra=()) -> str:
         `카톡 연결 여부` · 추가 O/X 칸 — `O` · `X` 한 글자라 검색으로 가릴 것이
         없고, 머리글 필터가 그 일을 한다.
       · `컨설팅 상태` · `컨설팅 미팅일` — 투자컨설턴트 화면의 값을 **볼 수 있는
-        계정에만** 세우는 읽기 칸이다. 이 글자는 모든 계정의 화면에 실리므로 넣으면
-        못 보는 사람에게 값이 샌다.
+        계정에만** 세우는 칸이다(값은 이어진 컨설턴트 줄에 산다 · #166). 이 글자는
+        모든 계정의 화면에 실리므로 넣으면 못 보는 사람에게 값이 샌다.
       · `투자 현황`(`funding_status`) — 화면에서 뺀 칸이라(`companies.html` 의 `그 밖`
         묶음 머리 주석) 그 글자로 줄이 걸리면 왜 걸렸는지 화면 어디에도 안 보인다.
         잃는 것도 없다: 값 281줄 중 258줄은 `기업 한줄 소개` · `딜 소개 문구` 와
@@ -752,15 +753,52 @@ def company_rows(db: Session, sent=None) -> List[dict]:
     return sort_by_received(rows)
 
 
-def consulting_view(db: Session) -> dict:
-    """IR 기업마다 이어진 투자컨설턴트 줄의 **진행 기록** — 읽기만 한다(결정 3).
+# `컨설팅 상태` 를 고를 보기(#166) — 시트 머리글이 정해 둔 세 마디, 말의 한 곳은 `consulting_status`.
+CONSULTING_STATUS_CHOICES = ",".join((consulting_status.MANAGED, consulting_status.DROPPED,
+                                      consulting_status.BACKUP))
 
-    `{IR 번호: {"status": 컨설팅 상태, "meeting": 컨설팅 미팅일}}`. IR 에 저장하지
-    않는다 — 같은 기업이 두 컨설턴트 표에 있는 곳이 있어, 한 칸에 담으면 서로 덮는다.
-    여럿이면 ` · ` 로 잇는다. 계약 탭은 뺀다 — 거기 `meeting_at` 은 계약월,
-    `management` 는 계약여부라 다른 물음이다.
+_DOTTED_DAY = re.compile(r"^(\d{4})\s*[.\-/]\s*(\d{1,2})\s*[.\-/]\s*(\d{1,2})\.?$")
+
+
+def meeting_day(text: str) -> str:
+    """`컨설팅 미팅일` 을 날짜 입력이 담을 꼴로 — 날짜뿐인 값만 `YYYY-MM-DD` 로 바꾼다(#166).
+
+    그 칸은 자유 글이라(`9/16 PM2 (화상)`) 시트에서 온 `2025.09.16` 이 가장 많다. 날짜 입력은
+    `YYYY-MM-DD` 만 담으므로 그대로 넘기면 글자 칸으로 열린다(`inline_edit.js` 의 `isDay`).
+    **저장된 글자는 안 바꾼다** — 편집창이 처음 짚을 값(`data-value`)만 이 꼴이다. 시각·말이
+    붙은 값은 그대로 돌려주어 글자 칸으로 열린다(날짜 입력에 넣으면 그 글자가 지워진다).
     """
-    from ..services import consulting_sheets, consulting_status
+    value = (text or "").strip()
+    m = _DOTTED_DAY.match(value)
+    if not m:
+        return value
+    try:
+        return datetime(int(m[1]), int(m[2]), int(m[3])).strftime("%Y-%m-%d")
+    except ValueError:
+        return value
+
+
+def consulting_view(db: Session, user: User) -> dict:
+    """IR 기업마다 이어진 투자컨설턴트 줄의 **진행 기록**(결정 3 · #166 부터 여기서도 고친다).
+
+    `{IR 번호: {"status": 컨설팅 상태, "meeting": 컨설팅 미팅일, "edit": 고칠 줄 | None}}`.
+    IR 에 저장하지 않는다 — 같은 기업이 두 컨설턴트 표에 있는 곳이 있어, 한 칸에 담으면
+    서로 덮는다. 여럿이면 ` · ` 로 잇는다. 계약 탭은 뺀다 — 거기 `meeting_at` 은 계약월,
+    `management` 는 계약여부라 다른 물음이다.
+
+    ## 고치는 길은 투자컨설턴트 화면의 그 길이다 (#166)
+
+    `edit` 가 있으면 칸이 눌러 고치는 칸이 되고, 저장은 **그 줄의 저장 주소**
+    (`PATCH /api/consulting/{id}`)로 간다 — 값은 컨설턴트 줄 한 곳에만 산다. 고칠 수 있는지도
+    그 화면의 판정 하나(`consulting.may_edit_row`)를 그대로 읽는다: 자기 줄 · 관리자 · 관리자가
+    맡겨 준 사람의 줄. 수정 로그도 그 길이 남기는 그대로다(`edit_log` 의 `consulting_companies`).
+
+    **이어진 줄이 하나일 때만** 고친다. 둘 이상이면 칸에 ` · ` 로 이어 보이는데, 어느 줄을
+    고치는지 칸이 말해 주지 못한다 — 그때는 투자컨설턴트 화면에서 고친다. 이어진 줄이 없으면
+    고칠 값이 아예 없다(IR 에 새로 두지 않는다).
+    """
+    from ..services import consulting_sheets
+    from .consulting import grant_owner_ids, may_edit_row
 
     contract = {s.label for s in db.execute(select(ConsultingSheet)).scalars()
                 if s.kind == consulting_sheets.CONTRACT}
@@ -770,13 +808,23 @@ def consulting_view(db: Session) -> dict:
             .order_by(ConsultingCompany.id)).scalars():
         if row.sheet in contract:
             continue
-        at = found.setdefault(row.ir_company_id, {"status": [], "meeting": []})
+        at = found.setdefault(row.ir_company_id, {"status": [], "meeting": [], "rows": []})
+        at["rows"].append(row)
         for key, value in (("status", consulting_status.tag_value(row.management)),
                            ("meeting", (row.meeting_at or "").strip())):
             if value and value not in at[key]:
                 at[key].append(value)
-    return {k: {"status": " · ".join(v["status"]), "meeting": " · ".join(v["meeting"])}
-            for k, v in found.items()}
+    grants = grant_owner_ids(db, user)
+    out = {}
+    for k, v in found.items():
+        only = v["rows"][0] if len(v["rows"]) == 1 else None
+        edit = None
+        if only is not None and may_edit_row(db, user, only.user_id, grants=grants):
+            edit = {"id": only.id, "management": (only.management or "").strip(),
+                    "meeting": meeting_day(only.meeting_at)}
+        out[k] = {"status": " · ".join(v["status"]), "meeting": " · ".join(v["meeting"]),
+                  "links": len(v["rows"]), "edit": edit}
+    return out
 
 
 def tab_counts(db: Session) -> dict:
@@ -870,8 +918,10 @@ def companies_page(request: Request, db: Session = Depends(get_db),
         "required_fields": [label for _a, label in REQUIRED_FIELDS],
         "summary_labels": SUMMARY_LABELS,
         "contract_labels": CONTRACT_LABELS,
-        # 투자컨설턴트 진행 기록(읽기만 · 결정 3). 그 화면을 볼 수 있는 사람에게만 선다.
-        "consulting": consulting_view(db) if may_view_consulting(user) else None,
+        # 투자컨설턴트 진행 기록(결정 3). 그 화면을 볼 수 있는 사람에게만 선다 — 고칠 수 있는
+        # 줄은 그 화면의 저장 길로 고친다(#166 · `consulting_view`).
+        "consulting": consulting_view(db, user) if may_view_consulting(user) else None,
+        "consulting_choices": CONSULTING_STATUS_CHOICES,
     })
     # 관리자가 붙인 추가 칸(`_custom_cols.html`).
     ctx.update(custom_columns.view(db, "companies", "ir_companies"))

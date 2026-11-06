@@ -659,13 +659,14 @@
         {# 같은 이유로 두 줄이던 칸. `핵심/TOP Deal (1) ▾` 는 한 줄에 118px 이 필요하다.
            144 → 100px(i132 — 값은 짧은데 머리글 때문에 넓던 칸이라 머리글을 매출 칸처럼 두 줄로 접는다: `핵심/TOP` / `Deal (1) ▾`). #}
         <th style="width:100px" data-filters="top:핵심/TOP Deal">핵심/TOP Deal<div class="th-filters"></div></th>
-        {# ── 투자컨설턴트 진행 기록 — **읽기만**(결정 3) ──────────────────────
-           이어진 투자컨설턴트 줄의 `기업 관리` 갈래 · `컨설팅 미팅일` 을 보여 줄 뿐
+        {# ── 투자컨설턴트 진행 기록(결정 3) ─────────────────────────────────
+           이어진 투자컨설턴트 줄의 `기업 관리` 갈래 · `컨설팅 미팅일` 을 보여 주고,
            IR 에는 저장하지 않는다(`routers/companies.consulting_view`). 그 화면을
-           볼 수 있는 사람에게만 선다. 고치는 곳은 투자컨설턴트 화면이다. #}
+           볼 수 있는 사람에게만 선다. #166 부터 **여기서도 고친다** — 저장은 그 줄의
+           저장 길이고, 고칠 수 있는 사람도 그 화면과 같다(아래 칸의 주석). #}
         {% if consulting is not none %}
-        <th style="width:110px" title="이어진 투자컨설턴트 줄의 기업 관리 — 읽기만">컨설팅 상태</th>
-        <th style="width:120px" title="이어진 투자컨설턴트 줄의 컨설팅 미팅일 — 읽기만">컨설팅 미팅일</th>
+        <th style="width:110px" title="이어진 투자컨설턴트 줄의 기업 관리 — 눌러서 고르면 그 줄에 저장됩니다">컨설팅 상태</th>
+        <th style="width:120px" title="이어진 투자컨설턴트 줄의 컨설팅 미팅일 — 눌러서 고치면 그 줄에 저장됩니다">컨설팅 미팅일</th>
         {% endif %}
         {# ── 메모(`note`) — #103 "컬럼 메모 노출되게" ─────────────────────────────
            [수정] 창에만 있던 칸이다(시트의 `비고` 를 옮겨 온 칸 · 10/27 TIPS 조사 메모
@@ -940,8 +941,25 @@
             data-filter-key="top">{{ r.top_deal_kind }}</td>
         {% if consulting is not none %}
         {% set cv = consulting.get(r.id, {}) %}
-        <td class="muted" title="{{ cv.status }}">{{ cv.status }}</td>
-        <td class="muted" title="{{ cv.meeting }}">{{ cv.meeting }}</td>
+        {% set ce = cv.edit %}
+        {# #166 — 이어진 컨설턴트 줄이 하나이고 고칠 수 있으면 **그 줄의 저장 길**로 고친다
+           (`data-save-url` → `PATCH /api/consulting/{id}` · `routers/companies.consulting_view`).
+           IR 줄에는 안 담는다. 칸에는 갈래(`관리 중`)가 보이고 편집창은 적힌 글 그대로
+           (`data-value`)에서 시작한다 — 보기를 고르면 `상태 : 상세` 의 머리만 바뀐다
+           (`data-pick-head` · inline_edit.js). 미팅일은 날짜 입력이고, 시각·말이 붙은 값은
+           글자 칸으로 열린다(지우지 않게 — `meeting_day`). #}
+        {% set why = ('이어진 투자컨설턴트 줄이 없습니다' if not cv.links
+                      else ('투자컨설턴트 줄 ' ~ cv.links ~ '개에 이어져 있어 투자컨설턴트 화면에서 고칩니다'
+                            if cv.links > 1 else '그 줄을 고칠 수 있는 계정만 고칩니다')) %}
+        <td {% if ce %}class="cell" data-field="management" data-type="pick" data-fixed-choices data-pick-head
+            data-choices="{{ consulting_choices }}" data-value="{{ ce.management }}"
+            data-save-url="/api/consulting/{{ ce.id }}"
+            title="{{ ce.management or '눌러서 고릅니다' }}"{% else %}class="muted"
+            title="{{ (cv.status ~ ' — ' ~ why) if cv.status else why }}"{% endif %}>{{ cv.status }}</td>
+        <td {% if ce %}class="cell" data-field="meeting_at" data-type="date" data-value="{{ ce.meeting }}"
+            data-save-url="/api/consulting/{{ ce.id }}"
+            title="{{ cv.meeting or '눌러서 날짜를 고릅니다' }}"{% else %}class="muted"
+            title="{{ (cv.meeting ~ ' — ' ~ why) if cv.meeting else why }}"{% endif %}>{{ cv.meeting }}</td>
         {% endif %}
         <td title="{{ r.note }}">
           <div class="cell clamp2 keep-lines" data-field="note" data-type="long" data-memo-date>{{ r.note }}</div>
