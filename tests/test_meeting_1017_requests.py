@@ -671,9 +671,9 @@ def test_정렬_규칙이_table_sort_와_같다():
     """빈 값은 방향과 상관없이 끝 · 같은 값은 처음 차례 · 숫자는 숫자로."""
     from app.services import company_view
 
-    rows = [{"name": "가", "updated_at": "", "sent_rounds": 3, "meeting_sort": "2026-09-01"},
-            {"name": "나", "updated_at": "", "sent_rounds": 10, "meeting_sort": ""},
-            {"name": "다", "updated_at": "", "sent_rounds": 3, "meeting_sort": "2026-08-01"}]
+    rows = [{"name": "가", "updated_at": "", "intro_total": 3, "meeting_sort": "2026-09-01"},
+            {"name": "나", "updated_at": "", "intro_total": 10, "meeting_sort": ""},
+            {"name": "다", "updated_at": "", "intro_total": 3, "meeting_sort": "2026-08-01"}]
     asc = [r["name"] for r in company_view.sort_rows(rows, "sent")]
     desc = [r["name"] for r in company_view.sort_rows(rows, "-sent")]
     assert asc == ["가", "다", "나"], "10 이 3 보다 앞에 오면 글자 차례로 센 것이다"
