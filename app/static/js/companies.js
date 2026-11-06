@@ -825,6 +825,34 @@
   });
 })();
 
+// 컨설팅 상태 · 컨설팅 미팅일(#166) — 이어진 투자컨설턴트 줄에 저장하는 칸이라
+// (`data-save-url` → `PATCH /api/consulting/{id}`) 응답도 그 길의 꼴이다: 저장된 값은
+// `values`, `기업 관리` 의 갈래는 `management_tag`(서버 한 곳이 센다 — `consulting_status`).
+// 칸에는 **갈래**를 다시 그리고, 다음에 열 편집창이 짚을 값(`data-value`)은 적힌 글 그대로
+// 둔다. 미팅일은 저장된 글자 그대로 — 날짜 입력은 편집 중에 `data-value` 를 안 고친다.
+(function () {
+  var table = document.getElementById("co-table");
+  if (!table) return;
+
+  table.addEventListener("inline-saved", function (e) {
+    var cell = e.detail.cell;
+    if (!cell || !cell.hasAttribute("data-save-url")) return;
+    var data = e.detail.data || {};
+    var values = data.values || {};
+    var field = cell.getAttribute("data-field");
+    if (!(field in values)) return;
+    var saved = values[field] || "";
+    cell.setAttribute("data-value", saved);
+    if (field === "management" && "management_tag" in data) {
+      cell.textContent = data.management_tag || "";
+      cell.title = saved || "눌러서 고릅니다";
+    } else {
+      cell.textContent = saved;
+      cell.title = saved || "눌러서 날짜를 고릅니다";
+    }
+  });
+})();
+
 // 핵심/TOP Deal 을 비우면 행에는 `일반` 이 실린다 — 표를 처음 그릴 때와 같은
 // 규칙이다. 빈 값 그대로 두면 같은 뜻이 필터 목록에 `일반` 과 `(비어 있음)`
 // 두 벌로 갈린다.

@@ -254,6 +254,9 @@
       input.addEventListener("input", mark);
       input.addEventListener("change", mark);
 
+      // 보이는 글자와 저장된 값이 다른 칸(`data-value`)은 **보이던 글자**를 쥐어 둔다 —
+      // 안 고치고 나오면 그 글자로 돌려 그린다(아래 `finish`).
+      var shown = cell.textContent;
       cell.textContent = "";
       cell.appendChild(input);
 
@@ -319,7 +322,10 @@
         // 견주는 것은 **칸에 적혀 있던 원래 값**(`before`)이다. 날짜 입력이 사람
         // 손 없이 비었으면 고친 것이 없다 — 원래 값으로 돌려 그린다(위 `touched`).
         var after = input.type === "date" && !touched ? before : input.value.trim();
-        cell.textContent = type === "number" ? withCommas(after) : after;
+        // 안 고쳤으면 보이던 글자 그대로 — 값을 그려 넣으면 `data-value` 칸은 화면이 바뀐다
+        // (IR `컨설팅 미팅일` 의 `2025.09.16` 이 편집창이 짚은 `2025-09-16` 으로 · #166).
+        if (after === before && cell.hasAttribute("data-value")) cell.textContent = shown;
+        else cell.textContent = type === "number" ? withCommas(after) : after;
         if (after !== before) save(cell, after, before, type);
       }
     }
@@ -443,7 +449,10 @@
         if (pop.parentNode) pop.parentNode.removeChild(pop);
         // `branches` 칸은 딱지를 그대로 둔다 — 저장 뒤 화면(`contacts.js`)이 서버 값으로
         // 다시 그린다. 글자로 덮으면 딱지가 사라진 채 응답을 기다린다.
-        if (type !== "branches") {
+        // 안 고친 `data-value` 칸은 손대지 않는다 — 보이는 글자가 값과 다르다(단계는 짧은 이름,
+        // IR `컨설팅 상태` 는 갈래 · #166). 값을 그려 넣으면 안 고쳤는데 화면이 바뀐다.
+        var keep = after === before && cell.hasAttribute("data-value");
+        if (type !== "branches" && !keep) {
           cell.textContent = after;
           cell.title = after;
         }
@@ -506,9 +515,13 @@
           .split(",").map(function (v) { return v.trim(); })
           .filter(function (v) { return v; });
         var used = fixed.slice();
-        knownValues(cell.getAttribute("data-field")).forEach(function (v) {
-          if (used.indexOf(v) === -1) used.push(v);
-        });
+        // `data-fixed-choices` — 보기는 `data-choices` 뿐이다. 표에서 모으면 다른 줄에 적힌
+        // **문장**(`드랍 : 몇 차례 …`)이 보기로 선다(IR 기업 현황 `컨설팅 상태` · #166).
+        if (!cell.hasAttribute("data-fixed-choices")) {
+          knownValues(cell.getAttribute("data-field")).forEach(function (v) {
+            if (used.indexOf(v) === -1) used.push(v);
+          });
+        }
 
         // 서버가 골라 준 후보(`data-suggest`)를 맨 앞으로.
         var picked = suggestedFirst(used, cell.getAttribute("data-suggest"));
@@ -544,12 +557,15 @@
             // mousedown 이라야 input 의 blur 보다 먼저 잡힌다.
             chip.addEventListener("mousedown", function (e) {
               e.preventDefault();
-              api.commit(value);
+              api.commit(chosen(value));
             });
             chips.push(chip);
             box.appendChild(chip);
           });
           api.pop.appendChild(box);
+        }
+        if (cell.hasAttribute("data-pick-head") && before) {
+          api.pop.appendChild(hintLine("보기를 고르면 앞의 상태만 바뀝니다 — 적어 둔 내용은 뒤에 그대로 남습니다"));
         }
         api.pop.appendChild(hintLine(
           suggested.length
@@ -587,8 +603,13 @@
         // 것이 이 표에서 하는 일이다.
         function take(value) {
           var to = downward(cell, 1) || cell;
-          api.commit(value);
+          api.commit(chosen(value));
           focusCell(to);
+        }
+
+        // `data-pick-head` — 보기는 `상태 : 상세` 의 **머리만** 바꾼다(#166 · 아래 `withHead`).
+        function chosen(value) {
+          return cell.hasAttribute("data-pick-head") ? withHead(before, value, fixed) : value;
         }
 
         // **직접 적기 시작하면 숫자 단축키를 거둔다.** 값에 숫자가 들어가는
@@ -800,6 +821,10 @@
       var field = cell.getAttribute("data-field");
       // 줄에 제 저장 주소가 있으면 그쪽이다 — 업무 보고처럼 IR · Series A 줄이 한 표에 섞인 곳(#147).
       var target = (row.getAttribute("data-inline-url") || url) + "/" + id;
+      // **칸에 제 저장 주소가 있으면 그쪽이 먼저다**(`data-save-url` — 번호까지 든 주소).
+      // 값이 그 줄이 아닌 다른 표에 사는 칸이다: IR 기업 현황의 `컨설팅 상태` 는 이어진
+      // 투자컨설턴트 줄에 산다(#166 — `PATCH /api/consulting/{id}`).
+      if (cell.hasAttribute("data-save-url")) target = cell.getAttribute("data-save-url");
       var method = "PATCH";
       if (cell.hasAttribute("data-custom")) {
         // 관리자가 붙인 추가 칸(`_custom_cols.html`)은 줄의 표가 아니라 칸 값 길로
@@ -971,6 +996,25 @@
   // 늘어도 안 터진다).
   var SELECTABLE = { "": true, text: true, search: true, url: true, tel: true,
                      password: true };
+
+  // 보기 하나를 `상태 : 상세` 의 **머리 자리에** 넣는다(`data-pick-head` · #166).
+  //
+  // 투자컨설턴트 `기업 관리` 칸은 시트 머리글부터 `[ 드랍 이유 상세하게 기입 / 관리중 /
+  // 백업팀으로 전환 ]` 이라 `드랍 : 몇 차례 연락 …` 처럼 한 칸에 상태와 상세가 같이
+  // 적혀 있다. 보기를 누른 것이 칸 전체를 갈아 끼우면 **적어 둔 상세가 사라진다** —
+  // 그래서 머리만 바꾼다.
+  //   `관리 중 : 미팅 완`  + 드랍 → `드랍 : 미팅 완`
+  //   `관리중` · 빈칸       + 드랍 → `드랍`          (상태만 적힌 칸 — 보기와 띄어쓰기만 다르면 같다)
+  //   `연락 안 됨`(구분 없음) + 드랍 → `드랍 : 연락 안 됨`
+  // 사람이 글자를 고쳐 적으면 이 길을 안 지난다 — 적은 그대로 저장된다.
+  function withHead(before, value, choices) {
+    var text = String(before || "").trim();
+    var m = /^[^:：]*[:：]\s*([\s\S]*)$/.exec(text);
+    var tail = m ? m[1].trim() : text;
+    var bare = function (v) { return String(v).replace(/\s+/g, ""); };
+    if (!m && choices.some(function (c) { return bare(c) === bare(text); })) tail = "";
+    return tail ? value + " : " + tail : value;
+  }
 
   // 날짜 입력이 담을 수 있는 값인가 — `YYYY-MM-DD` 이고 **있는 날**이어야 한다
   // (`2026-02-30` 은 모양이 맞아도 날짜 입력이 빈 값으로 바꾼다).
