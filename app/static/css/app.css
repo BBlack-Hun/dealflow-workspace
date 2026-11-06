@@ -26,6 +26,12 @@
   --amber: #d97706;
   --red: #dc2626;
   --gray: #9aa4b0;
+  /* 표 칸의 **좌우 안쪽 여백** — 앱의 모든 표가 이 값 하나를 쓴다(#167 · 11/06 팀원 요청
+     「공간폭을 최대한 줄여주세요 읽기좋게」). 9px(표 목록) · 12px(발송 진행 · 수정 로그) ·
+     8px(촘촘한 표)로 갈려 있던 것을 6px 한 값으로 모았다 — 칸 사이 빈자리는 이웃 두 칸의
+     여백 합(12px)이다. 위아래 여백(줄 높이)은 표마다 그대로다. 머리글 폭 검사
+     (tests/test_ui_layout.py)가 이 값을 읽어 셈한다. */
+  --cell-x: 6px;
 }
 
 * { box-sizing: border-box; }
@@ -287,7 +293,7 @@ td.mail-primary:has(.cell-input)::before { display: none; }
 .status-cell .status-when.warn { color: var(--amber); }
 
 .log-table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
-.log-table th, .log-table td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); font-size: 13px; }
+.log-table th, .log-table td { text-align: left; padding: 9px var(--cell-x); border-bottom: 1px solid var(--line); font-size: 13px; }
 .log-table th { background: #f7f8fa; font-size: 12px; color: var(--muted); }
 .st { font-weight: 700; font-size: 12px; }
 .st-sent { color: var(--green); } .st-failed { color: var(--red); }
@@ -625,7 +631,14 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
     서며 76→96(+20). **준 만큼만** 내린다.) */
 /* (5,312 → 5,498 : #165 — `소개 횟수` 가 `총 소개 횟수` 가 되며 84 → 100px(+16 — 정렬 단추
     `총 소개 횟수 ↕` 가 한 줄에 서는 폭) + 그 옆 `담당별 소개`(170px). 든 만큼만 올린다.) */
-#co-table { min-width: 5498px; }
+/* (5,498 → 4,610 : #167 — 팀원 요청 「대분류 , 소분류 , 23년 매출 사이간격을 줄이면」. `%` 로 준
+    넷(`기업명` 13 · `대분류` 10 · `소분류` 9 · `투자라운드` 9%)은 이 값이 오를 때마다 따라 넓어져
+    278 · 214 · 192 · 192px 까지 갔다 — 값은 80px 안팎인데. 넷을 px(200 · 96 · 120 · 110)로 못
+    박고 `성공보수율` 96 → 72 · `홍보메일삭제` 110 → 96 으로 줄인 뒤, 표 폭을 **칸 폭 합**에 맞춘다
+    (NO 36 + 적어 둔 칸 4,574 · 투자컨설턴트 두 칸 230px 은 그 화면을 보는 계정에만 서서 빼 둔다 —
+    서면 표가 그만큼 넓어질 뿐 칸이 눌리지 않는다. 관리자가 붙인 추가 칸도 같다).
+    이제 남는 자리를 나눠 갖는 `%` 칸이 없으므로 **칸을 더하면 이 값을 그 칸 폭만큼 올린다.**) */
+#co-table { min-width: 4610px; }
 #co-table td.updated-by { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #sa-table td.updated-by { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* IR 기업 현황 › Series A 이상 딜 소싱 — 넓은 표 공통 값(2,030px)에 직접 적는 칸
@@ -722,7 +735,10 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
     바꿨다 — 딱지 둘이 한 줄에 든다. contacts.html 의 그 머리글 주석) */
 /* (3,770 → 4,024 : `펀드 종류`(120px) · `소분류`(134px)를 `선호 투자분야` 바로 왼쪽에
     세웠다 — 회사 단위 값. contacts.html 의 그 머리글 주석) */
-#contacts-table { min-width: 4024px; }
+/* (4,024 → 3,916 : #167 — 값이 짧은데 이름 단추 때문에 넓던 넷을 줄였다. `담당자` 112 → 96 ·
+    `관심도` 100 → 92 · `카톡방 참여여부` 144 → 100(단추를 두 줄로) · `TIPS 운영사` 120 → 80.
+    준 만큼만 내린다. contacts.html 의 그 머리글 주석) */
+#contacts-table { min-width: 3916px; }
 /* `딜 소싱` 칸의 갈래 딱지 — 참여(초록) · 아직 동의 전(주황 — 딜 소싱 표의
    `part-pending` 과 같은 색) · 불참여(흐리게, 줄을 그어 빠진 것을 보인다).
    칸이 좁아 딱지가 넘치면 다음 줄로 접는다. */
@@ -764,7 +780,7 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
               background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
 /* 표 밀도. 8px/10px 이던 것을 6px/9px 로 — 글자 수 대비 자리가 남는 칸이
    많았다(초대완료여부·진행 단계 같은 짧은 배지 칸). 줄 사이가 붙지 않을
-   만큼만 줄인다. */
+   만큼만 줄인다. (#167 — 좌우는 다시 9 → 6px, 값은 `:root` 의 `--cell-x` 한 곳.) */
 /* 머리글은 **위**를 기준으로 맞춘다. 길이가 제각각이라(`NO` 두 글자,
    `라운드 사이즈(투자운영금액)` 열세 글자) 가운데 정렬이면 짧은 이름이
    아래로 처져 줄이 들쭉날쭉해 보인다.
@@ -777,7 +793,7 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
    (`display` 는 건드리지 않는다. th/td 에 flex·-webkit-box 를 걸면 표
     레이아웃이 깨진다 — tests/test_ui_layout.py) */
 .grid-table th { text-align: left; vertical-align: top; line-height: 1.35;
-                 padding: 6px 9px; font-size: 12px; color: var(--muted);
+                 padding: 6px var(--cell-x); font-size: 12px; color: var(--muted);
                  background: #f7f8fa; border-bottom: 1px solid var(--line); position: relative; }
 
 /* ── 표 머리글: 다 보이게 · 왼쪽 · 세로 가운데 ─────────────────────
@@ -811,7 +827,7 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
    물려받고, 바로 옆의 `td.cell` 은 제 규칙대로 12px 이라 **한 줄 안에서 두 크기가
    섞여** 보였다. 크기를 정하는 자리는 여기 하나다 — 화면마다 따로 적으면
    화면이 하나 늘 때 또 갈린다(주간 업무가 그래서 제 값을 따로 들고 있었다). */
-.grid-table td { padding: 6px 9px; border-bottom: 1px solid var(--line); vertical-align: top;
+.grid-table td { padding: 6px var(--cell-x); border-bottom: 1px solid var(--line); vertical-align: top;
                  overflow: hidden; font-size: 13px; }
 .grid-table tbody tr:hover { background: #f8faff; cursor: pointer; }
 
@@ -824,7 +840,7 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
    **`.table-wrap.wide` 안에서만** 줄인다. 여든 줄을 훑는 표가 그 안에 있고,
    바깥의 짧은 표(주간 업무·팀 현황)는 줄 수가 문제가 된 적이 없다 — 거기까지
    좁히면 얻는 것 없이 모양만 빽빽해진다. */
-.table-wrap.wide .grid-table td { padding: 4px 9px; }
+.table-wrap.wide .grid-table td { padding: 4px var(--cell-x); }
 .table-wrap.wide .grid-table .clamp2 { line-height: 1.35; }
 
 /* [촘촘히 보기] 는 **긴 글도 한 줄로** 접는다.
@@ -832,10 +848,10 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
    여서, 눌러도 줄 수가 거의 안 늘었다. 여기서 한 줄로 접으면 같은 화면에
    여덟 줄쯤이 더 선다. 잘린 글은 마우스를 올리면(`title`) 그 자리에서,
    전문은 [수정] 창에서 본다 — 값은 어디로도 가지 않는다. */
-.grid-table.dense td { padding: 3px 9px; }
+.grid-table.dense td { padding: 3px var(--cell-x); }
 /* 넓은 표에서도 촘촘히가 이긴다. 위 `.table-wrap.wide .grid-table td` 와 셈이
    같아 뒤에 적는 것만으로는 안 걸린다 — 눌러도 아무 일이 없던 자리다. */
-.table-wrap.wide .grid-table.dense td { padding: 3px 9px; }
+.table-wrap.wide .grid-table.dense td { padding: 3px var(--cell-x); }
 .grid-table.dense .clamp2 { -webkit-line-clamp: 1; }
 .grid-table.dense .cell-sub { display: none; }
 /* 줄 끝의 [수정] 은 **글자 단추**다. 브라우저 기본 여백이 붙어 30px 이라,
@@ -1413,7 +1429,7 @@ a.secondary-btn { display: inline-flex; align-items: center; text-decoration: no
    이 표에 따라 12px 과 13px 로 갈렸다 — 이 표가 앱의 표 절반 이상(IR·업무 보고·
    수정 로그·되살리기·팀 현황·참고 시트)이라 "표 글자는 13px" 이 사실이 아니게
    된다. 머리글 12px 은 `.grid-table th` 가 이미 같은 값으로 정하고 있다. */
-.grid-table.compact td, .grid-table.compact th { padding: 6px 8px; }
+.grid-table.compact td, .grid-table.compact th { padding: 6px var(--cell-x); }
 .ellipsis { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* 줄번호는 표 글자(13px)보다 작다 — 칸마다 반복되는 번호라 읽는 값이 아니다.
    `td.` 를 붙여 `.grid-table td` 와 **같은 무게**로 만든다(뒤에 있어 이긴다).
@@ -2726,7 +2742,7 @@ a.react:hover { border-color: var(--brand); background: #fafbfc; }
 .report-picker { display: flex; align-items: center; gap: 8px; }
 .seg-toggle { display: flex; gap: 2px; }
 .grid-table tfoot th { background: #f7f8fa; border-top: 2px solid var(--line);
-                       font-size: 12px; padding: 6px 9px; }
+                       font-size: 12px; padding: 6px var(--cell-x); }
 /* ── 숫자 칸 정렬 ─────────────────────────────────────────────
    자릿수가 다른 값이 왼쪽에 붙어 있으면 크기를 눈으로 비교할 수 없다.
    6 과 117 이 같은 자리에서 시작해 버린다.

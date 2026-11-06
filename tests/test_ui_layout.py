@@ -247,7 +247,15 @@ _TWO_LINE_OK = "TIPS 운영사 투자금 1-10억 스타트업매출액 3-20억 �
 # 세워 이 검사에 안 걸릴 뿐 이미 두 줄이다). 여기 든 칸도 세 줄은 안 된다(`_wrapped_lines`).
 _TWO_LINE_FILTERS = {"companies.html": {
     "수정한 팀원", "투자유치희망금액", "견적서 첨부 여부", "계약서 수신 여부",
-    "카톡 연결 여부", "핵심/TOP Deal"}}
+    "카톡 연결 여부", "핵심/TOP Deal"},
+    # #167(11/06 팀원 요청 — 칸 사이 간격을 줄여 달라) — 같은 결의 칸(값이 `O`/`X`).
+    "contacts.html": {"카톡방 참여여부"}}
+
+# 머리글 칸의 **좌우 여백 합** — app.css 의 `--cell-x`(칸 한쪽 여백) 두 배다. 예전에는 9px 씩
+# 18px 를 여기 숫자로 적어 두었는데, #167 에 여백을 6px 로 줄이며 그 값 한 곳(`:root`)에서
+# 읽게 했다 — 숫자로 두면 CSS 를 고친 날 이 검사가 엉뚱한 폭을 요구한다.
+_CELL_X = int(re.search(r"--cell-x:\s*(\d+)px", CSS.read_text(encoding="utf-8")).group(1))
+_TH_PAD = _CELL_X * 2
 
 # 필터가 하나뿐인 칸은 **이름 글자가 지워지고** `계약여부 ▾` 단추가 그 자리에
 # 선다(filters.js 의 `solo`). 단추는 이름보다 넓다 — ` ▾`(약 6px) 와 자기
@@ -308,16 +316,16 @@ def _wrapped_lines(label: str, have: float) -> int:
     `.filter-btn` 은 `keep-all` 이라 띄어쓰기(와 폭 없는 공백)에서만 접히고, 꼬리표는
     줄바꿈 없는 공백으로 마지막 낱말에 붙는다(filters.js). 낱말 하나가 칸보다 넓으면
     접을 수 없어 칸 밖으로 넘친다 — 99 를 돌려준다. 맞는지는 위 검사와 같은 셈
-    (`round(글자 + 18 + 14) <= 칸`)으로 본다.
+    (`round(글자 + 칸 여백 + 14) <= 칸`)으로 본다.
     """
     words = re.split(r"[ \u200b]", label)
     words[-1] += _FILTER_SUFFIX
     lines, line = 0, None
     for word in words:
         px = _text_px(word)
-        if round(px + 32) > have:
+        if round(px + _TH_PAD + 14) > have:
             return 99
-        if line is not None and round(line + _PX_PUNCT + px + 32) <= have:
+        if line is not None and round(line + _PX_PUNCT + px + _TH_PAD + 14) <= have:
             line += _PX_PUNCT + px
         else:
             lines, line = lines + 1, px
@@ -446,7 +454,7 @@ def test_컬럼_이름이_두_줄로_접히면_머리글_줄이_들쭉날쭉해�
                 if name and "{{" not in name and "{%" not in name \
                         and name != _TWO_LINE_OK and len(labels) != 1:
                     shown.append((name, 0))
-                # 18px = th 좌우 padding, 14px = 단추 padding·테두리
+                # `_TH_PAD` = th 좌우 padding(`--cell-x` 두 배), 14px = 단추 padding·테두리
                 two = _TWO_LINE_FILTERS.get(path.name, set())
                 for label in labels:
                     if label.replace("\u200b", "") not in two:
@@ -455,7 +463,7 @@ def test_컬럼_이름이_두_줄로_접히면_머리글_줄이_들쭉날쭉해�
                         problems.append(f"{path.name}: {label}{_FILTER_SUFFIX} "
                                         f"({have:.0f}px 에서 두 줄에도 안 들어갑니다)")
                 for text, extra in shown:
-                    need = round(_text_px(text) + 18 + extra)
+                    need = round(_text_px(text) + _TH_PAD + extra)
                     if need > have:
                         problems.append(
                             f"{path.name}: {text} ({have:.0f}px → {need}px 필요)")
