@@ -623,7 +623,9 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
     줄였다(견적서 150→88 · 계약서 수신 148→88 · 카톡 140→88 · 핵심/TOP 144→100 ·
     투자유치희망금액 144→104 · 계약여부 134→110 = −282) + i131 — `수정한 팀원` 에 필터가
     서며 76→96(+20). **준 만큼만** 내린다.) */
-#co-table { min-width: 5312px; }
+/* (5,312 → 5,498 : #165 — `소개 횟수` 가 `총 소개 횟수` 가 되며 84 → 100px(+16 — 정렬 단추
+    `총 소개 횟수 ↕` 가 한 줄에 서는 폭) + 그 옆 `담당별 소개`(170px). 든 만큼만 올린다.) */
+#co-table { min-width: 5498px; }
 #co-table td.updated-by { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #sa-table td.updated-by { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* IR 기업 현황 › Series A 이상 딜 소싱 — 넓은 표 공통 값(2,030px)에 직접 적는 칸
@@ -671,6 +673,10 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
 #co-table td.sent-count .cell-main,
 #co-table td.sent-count .cell-sub { line-height: 1.35; }
 #co-table td.sent-count .cell-sub { margin-top: 0; }
+/* `담당별 소개`(#165) — `계정 n · 계정 n`. 한 계정의 이름과 수는 안 떼고(그 사이에서 줄이
+   넘어가면 수가 다음 계정 것으로 읽힌다), 넘치면 두 줄(`clamp2`)에서 자른다 — 전체는 `title`. */
+#co-table td.intro-by-owner { font-variant-numeric: tabular-nums; }
+#co-table td.intro-by-owner .owner-times { white-space: nowrap; }
 /* 표의 `수정한 날짜` — `2026-09-16 16:31` 을 **한 줄로** 세운다.
    `table-layout: fixed` 라 칸이 조금이라도 좁아지면(칸이 하나 더 들어 `%` 칸들이
    넓어지는 날) 빈칸 자리에서 접혀 그 줄만 키가 커진다. 접히느니 넘치게 두고,
@@ -2030,6 +2036,9 @@ td.row-acts > form + a { margin-left: 8px; }
    (`#intros > .table-wrap >` 로 잡아 아래 `소개 후보` 표(`#intro-left` 안)는 안 건드린다.) */
 #intros > .table-wrap > .grid-table { min-width: 1090px; }
 #intros > .table-wrap > .grid-table .grid-table { min-width: 0; }
+/* 소개 후보 → [딜 소개](#164) 줄 — 단추와 안내를 왼쪽에 붙여 세운다(`.toolbar` 의 양끝 정렬이면
+   안내가 표 오른쪽 끝으로 떨어져 단추와 따로 읽힌다). */
+#intro-left .intro-pick-bar { justify-content: flex-start; margin: 4px 0 8px; }
 /* 이어진 IR 기업의 칸 — 읽기만(#83 · #85 · `_ir_cols.html`). 옅은 바탕으로 눌러 고치는
    칸과 가른다(고치는 곳은 IR 기업 현황). */
 th.ir-ro, td.ir-ro { background: #f7f9fc; }

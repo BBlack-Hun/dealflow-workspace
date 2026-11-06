@@ -28,8 +28,9 @@
 ## 칸 — **보이는 칸 그대로**
 
 IR 기업 현황 탭의 머리글 순서·이름 그대로다(`VIEW_HEADERS`). `NO` 는 화면처럼
-**보이는 것 기준 1, 2, 3…** 이다. `소개 횟수` 는 화면에서 두 수(`6회` · `180명`)가
-한 칸에 서는데, 파일에서는 세고 거를 수 있게 두 칸으로 나눈다.
+**보이는 것 기준 1, 2, 3…** 이다. `총 소개 횟수` 는 화면에서 두 수(`6회` · `180명`)가
+한 칸에 서는데, 파일에서는 세고 거를 수 있게 두 칸으로 나눈다. `담당별 소개`(#165)는
+화면 글자 그대로(`계정 n · 계정 n`) 한 칸이다.
 """
 from __future__ import annotations
 
@@ -67,7 +68,8 @@ FILTER_VALUES = {
 SORT_VALUES = {
     "name": lambda r: r["name"],
     "updated": lambda r: r["updated_at"],
-    "sent": lambda r: r["sent_rounds"],
+    # `총 소개 횟수`(#165) — 업무 보고와 같은 셈(`deal_history.intro_times`).
+    "sent": lambda r: r["intro_total"],
     "meeting": lambda r: r["meeting_sort"],
 }
 
@@ -82,7 +84,7 @@ VIEW_HEADERS = [
     "NO", "기업명", "수신일", "수정한 날짜", "수정한 팀원", "대표자명", "연락처", "이메일",
     "기업 한줄 소개", "딜 소개 문구", "대분류", "소분류", "투자라운드",
     "특이사항 (장점)", "설립년도", "지역", "정책자금",
-    "담당자", "소개 횟수", "소개 발송(명)", "견적서 첨부 여부",
+    "담당자", "총 소개 횟수", "소개 발송(명)", "담당별 소개", "견적서 첨부 여부",
     "미팅제공일자", "계약년월", "계약여부", "계약서 수신 여부", "성공보수율", "카톡 연결 여부", "홍보메일삭제",
     "핵심/TOP Deal", "메모", "IR 자료",
 ]
@@ -230,6 +232,11 @@ def view_rows(rows: List[dict], filters: Dict[str, List[str]], q: str = "",
     return sort_rows(shown, sort)
 
 
+def owner_times_text(by_owner) -> str:
+    """`담당별 소개` 칸 글자 — 화면과 같은 `계정 n · 계정 n`(많은 순). 없으면 빈칸."""
+    return " · ".join(f"{o['name']} {o['times']}" for o in by_owner)
+
+
 def to_cells(rows: List[dict], cols) -> List[list]:
     """파일 줄 — `view_headers(cols)` 차례. `NO` 는 보이는 차례 1, 2, 3…"""
     out = []
@@ -245,7 +252,8 @@ def to_cells(rows: List[dict], cols) -> List[list]:
             r["series"], r["competitiveness"], r["founded_year"], r["region"], r["guarantee"],
             r["assignee"],
             # 한 번도 안 나간 기업은 화면이 `–` 로 보인다 — 파일에서는 수 0 이다.
-            r["sent_rounds"], r["sent_total"], r["quote_attached"],
+            r["intro_total"], r["sent_total"], owner_times_text(r["intro_by_owner"]),
+            r["quote_attached"],
             r["meeting_offered_at"], r["contract_ym"], r["contract_label"], r["contract_received"],
             r["success_fee"], r["kakao_joined"], r["contract_month"],
             r["top_deal_kind"] or "", r["note"], r["ir_file_name"] if r["has_ir"] else "없음",

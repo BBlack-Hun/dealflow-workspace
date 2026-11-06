@@ -1008,28 +1008,30 @@ def _buckets_sheet(sheet, data, team_wide):
 
 
 def _intro_sheets(wb, tag: str, label: str, data: dict, who: str,
-                  today: date) -> None:
+                  today: date, team_wide: bool = False) -> None:
     """`소개한 기업` · `소개 상세` 두 장(#92) — 화면의 `소개한 기업` 표 그대로.
 
     줄은 화면과 **같은 dict**(`report.intro_companies`)에서 받는다. 상세는 화면에서
     기업 줄을 펼친 것을 한 장에 이어 적은 것이다(기업 차례 · 그 안은 최근 날부터).
+    소개한 횟수는 화면처럼 기업명 바로 오른쪽이고 이름도 같다(#165 — 본인 · 팀).
     """
     got = data["intro_companies"]
     sub = f"{who} · {today.isoformat()} 뽑음 · 투자사가 실제로 받은 것만 셉니다"
 
     sheet = _ReportSheet(wb.create_sheet(f"{tag} 소개한 기업"),
-                         [34, 16, 16, 14, 12, 14, 12, 12], 8)
+                         [34, 14, 16, 16, 14, 14, 12, 12], 8)
     sheet.title(f"{label} 소개한 기업  {len(got['rows'])}개사", sub)
     sheet.blank()
     if not got["rows"]:
         sheet.note("이 기간에 소개한 기업이 없습니다.")
     else:
-        sheet.head(["기업명", "투자유치희망금액", "계약여부", "계약서 수신 여부", "소개한 횟수",
+        sheet.head(["기업명", "팀 소개 횟수" if team_wide else "본인 소개 횟수",
+                    "투자유치희망금액", "계약여부", "계약서 수신 여부",
                     "받은 투자사 수", "처음 날짜", "마지막 날짜"])
         for c in got["rows"]:
-            sheet.row([c["company"], c["raise_target"], c["contract_label"],
-                       c["contract_received"], c["times"], c["investors"], c["first"],
-                       c["last"]], nums={4, 5})
+            sheet.row([c["company"], c["times"], c["raise_target"], c["contract_label"],
+                       c["contract_received"], c["investors"], c["first"],
+                       c["last"]], nums={1, 5})
 
     detail = _ReportSheet(wb.create_sheet(f"{tag} 소개 상세"),
                           [12, 30, 24, 14, 12], 5)
@@ -1091,7 +1093,7 @@ def report_workbook(data: dict, *, team_wide: bool, who: str,
                      [12, 14, 12, 26, 26, 16, 36, 10],
                      8 if team_wide else 7),
         data, team_wide)
-    _intro_sheets(wb, tag, f"{year}년 {month}월", data, who, today)
+    _intro_sheets(wb, tag, f"{year}년 {month}월", data, who, today, team_wide)
 
     return sp.workbook_bytes(wb)
 
@@ -1168,7 +1170,8 @@ def _yearly_sheet(sheet, data):
         sheet.note(f"{data['year']}년에는 기록된 것이 없습니다.")
 
 
-def yearly_report_workbook(data: dict, *, who: str, today: date) -> bytes:
+def yearly_report_workbook(data: dict, *, who: str, today: date,
+                           team_wide: bool = False) -> bytes:
     """업무 보고 한 해치 → 리포트 엑셀 바이트.
 
     `data` 는 화면이 쓰는 것과 **같은 dict**(`report.yearly`)다 — 월간 파일과
@@ -1200,7 +1203,7 @@ def yearly_report_workbook(data: dict, *, who: str, today: date) -> bytes:
                 f"— 한 달치 회차·미팅·반응은 그 달 파일에 있습니다.")
     sheet.blank()
     _yearly_sheet(sheet, data)
-    _intro_sheets(wb, str(year), f"{year}년", data, who, today)
+    _intro_sheets(wb, str(year), f"{year}년", data, who, today, team_wide)
 
     return sp.workbook_bytes(wb)
 
@@ -1227,7 +1230,8 @@ def export_report(month: str = "", scope: str = "", member: int = 0,
     if span == "year":
         year_ = report_svc.parse_year(year, today)
         content = yearly_report_workbook(
-            report_svc.yearly(db, year_, who, today), who=whose, today=today)
+            report_svc.yearly(db, year_, who, today), who=whose, today=today,
+            team_wide=team_wide)
         return Response(content=content, media_type=sp.XLSX_MEDIA_TYPE,
                         headers=sp.content_disposition(
                             f"업무보고_{year_}년.xlsx"))

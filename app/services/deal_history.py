@@ -409,6 +409,48 @@ def scan(db: Session) -> Scan:
     return out
 
 
+# ── 소개한 횟수 — 업무 보고와 IR 기업 현황이 같이 쓰는 셈(#165) ─────────────────
+
+def received_days(sent: Scan, lo: str = "", hi: str = "") -> Dict[str, Dict[Optional[int], Set[str]]]:
+    """{기업 열쇠: {계정 번호: {받은 날…}}} — 받은 기록(`receipts`)을 기업 · 계정으로 모은다.
+
+    `소개한 횟수` 는 이 날짜 묶음의 **크기**다(`intro_times`). 업무 보고의 `소개한 기업`
+    (기간 · 사람으로 자름)과 IR 기업 현황의 `총 소개 횟수` · `담당별 소개`(기간 없음)가 이
+    한 벌을 읽는다 — 두 화면이 각자 세면 같은 기업이 화면마다 다른 수가 된다.
+    날짜가 없는 줄(시트에 날짜 없이 적힌 것)은 어느 기간에도 못 넣어 업무 보고처럼 뺀다.
+    `lo` · `hi` 는 `YYYY-MM-DD` — 비우면 그쪽 끝이 없다.
+    """
+    out: Dict[str, Dict[Optional[int], Set[str]]] = {}
+    for r in sent.receipts:
+        if r.day and (not lo or lo <= r.day) and (not hi or r.day <= hi):
+            out.setdefault(r.key, {}).setdefault(r.user_id, set()).add(r.day)
+    return out
+
+
+def intro_times(per_account: Dict[Optional[int], Set[str]],
+                user_id: Optional[int] = None) -> int:
+    """소개한 횟수 = **서로 다른 날 수.** `user_id` 를 주면 그 계정 것만, 안 주면 팀 전체.
+
+    같은 날 여러 명에게(여러 회차로) 보낸 것은 한 번이다. 팀 전체는 계정마다 센 수의
+    합이 아니다 — 같은 날 두 계정이 보냈으면 팀으로는 그날 하루다(업무 보고 `팀 전체`).
+    """
+    if user_id is None:
+        return len(set().union(*per_account.values())) if per_account else 0
+    return len(per_account.get(user_id, ()))
+
+
+def account_times(per_account: Dict[Optional[int], Set[str]],
+                  names: Dict[int, str]) -> List[Tuple[str, int]]:
+    """`[(계정 이름, 소개한 횟수)…]` — 많은 순, 같으면 이름 순(IR 기업 현황 `담당별 소개`).
+
+    계정은 업무 보고가 '누구 것' 으로 세는 그 계정이다(`Receipt.user_id` — 앱 발송은 누른
+    계정, 시트 · 손 기록은 그 투자사를 지금 맡은 계정). 담당이 없는 줄은 팀 전체에만 든다.
+    """
+    rows = [(names.get(uid) or f"계정 {uid}", len(days))
+            for uid, days in per_account.items() if uid is not None and days]
+    return sorted(rows, key=lambda r: (-r[1], r[0]))
+
+
 def last_sent_map(db: Session) -> Dict[str, str]:
     """{정규화한 기업명: 마지막으로 소개한 날(YYYY-MM-DD)}.
 

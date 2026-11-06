@@ -667,6 +667,10 @@ def report_page(request: Request, db: Session = Depends(get_db),
     from .companies import CONTRACT_LABELS
 
     ctx["contract_labels"] = CONTRACT_LABELS
+    # 소개 후보 → [딜 소개](#164) 가 한 번에 담을 수 있는 기업 수 — 딜 제안 관리가 막는 그 수.
+    from ..services.message_composer import MAX_COMPANIES_PER_SEND
+
+    ctx["max_companies"] = MAX_COMPANIES_PER_SEND
     # 화면 말(10/17 회의 #35·#36·#40) — `/ir` 과 같은 말을 같은 자리에서 읽는다.
     from ..services import pipeline as _pipeline
 

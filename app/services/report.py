@@ -227,12 +227,17 @@ def month_range(year: int, month: int) -> tuple:
 def monthly(db: Session, year: int, month: int,
             user: Optional[User] = None, today: Optional[date] = None) -> dict:
     """한 달치 보고. `user` 를 주면 그 사람 것만, 없으면 팀 전체."""
+    from . import deal_history
+
     start, end = month_range(year, month)
-    intros = intro_companies(db, start, end, user)
+    # 훑기는 한 번 — `소개한 기업` 과 `소개 후보` 의 누적 횟수가 같은 훑기를 읽는다.
+    sent = deal_history.scan(db)
+    intros = intro_companies(db, start, end, user, sent=sent)
     return {**_month(db, year, month, user, today),
             "intro_companies": intros,
             # 아직 소개 안 한 10억 이상(#122) — '본인' 이 있는 보기에만(팀 전체 · 연간은 안 띄운다).
-            "intro_left": unintroduced_big(db, intros) if user is not None else []}
+            "intro_left": (unintroduced_big(db, intros, user=user, sent=sent)
+                           if user is not None else [])}
 
 
 def _month(db: Session, year: int, month: int, user: Optional[User],
@@ -1320,7 +1325,7 @@ def edit_target(found) -> dict:
 
 
 def intro_companies(db: Session, start: date, end: date,
-                    user: Optional[User]) -> dict:
+                    user: Optional[User], sent=None) -> dict:
     """그 기간에 **소개한 기업 — 기업마다 한 줄**(#92 팀원 요청).
 
     회차 표는 회차마다 한 줄이라 "이번 달에 어느 기업을 몇 번, 몇 명에게
@@ -1341,7 +1346,7 @@ def intro_companies(db: Session, start: date, end: date,
     from ..routers.companies import CONTRACT_LABELS, contract_key   # 순환 import 를 피해 늦게 부른다
     from . import deal_history
 
-    sent = deal_history.scan(db)
+    sent = deal_history.scan(db) if sent is None else sent
     lo, hi = start.isoformat(), end.isoformat()
     # (기업, 날짜, 투자사, 출처) 하나가 한 줄 — 같은 날 같은 사람이 같은
     # 출처로 두 번 적혀 있거나 두 계정이 눌렀어도 받은 것은 한 번이다.
@@ -1363,6 +1368,9 @@ def intro_companies(db: Session, start: date, end: date,
             "source": deal_history.SOURCE_LABELS.get(source, source),
         })
     find = company_finder(db)
+    # `소개한 횟수` 는 IR 기업 현황의 `총 소개 횟수` · `담당별 소개` 와 **같은 셈**이다(#165 ·
+    # `deal_history.intro_times`) — 여기는 기간으로 자를 뿐이다.
+    per_company = deal_history.received_days(sent, lo, hi)
     rows = []
     for key, details in by_company.items():
         days = {d["day"] for d in details}
@@ -1377,7 +1385,8 @@ def intro_companies(db: Session, start: date, end: date,
             "contract_received": (found.contract_received or "") if found is not None else "",
             # 계약여부를 표에서 골라 고칠 줄(#147) — 위 값을 읽어 온 그 줄 하나.
             **edit_target(found),
-            "times": len(days),
+            "times": deal_history.intro_times(per_company.get(key, {}),
+                                              user.id if user is not None else None),
             "investors": len({d["contact_id"] for d in details}),
             "first": min(days),
             "last": max(days),
@@ -1393,17 +1402,25 @@ def intro_companies(db: Session, start: date, end: date,
 BIG_EOK = 10
 
 
-def unintroduced_big(db: Session, intros: dict) -> List[dict]:
+def unintroduced_big(db: Session, intros: dict, user: Optional[User] = None,
+                     sent=None) -> List[dict]:
     """그 달 이 팀원이 **아직 소개 안 한** 10억 이상 IR 기업 — 금액 높은 순(#122).
 
     '소개했다' 는 같은 달 `소개한 기업`(`intros` — 받은 기록 `deal_history.Receipt`)과 같은
     기준이다. 소개할 수 있는 기업만 센다 — `딜소개 불가` 계약값 · 이름의 `딜소개 불가` 표시 ·
     폐업(`ir_monthly.is_closed`) · 문구를 못 만드는 기업(`IrCompany.introducible` 거짓 — 화면의
     '소개 가능 기업' 수와 같은 기준)은 뺀다. 금액을 못 읽거나 빈 기업도 빠진다.
+
+    `mine_times` — 그 팀원이 **지금까지**(기간 없이) 이 기업을 소개한 횟수(#165). IR 기업
+    현황 `담당별 소개` 의 그 계정 수와 같은 셈이다(`deal_history.intro_times`). `user` 가
+    없으면 0 이다(팀 전체에는 이 묶음이 안 선다).
     """
     from ..routers.companies import BLOCKED_CONTRACT, CONTRACT_LABELS, _short, contract_key
     from . import deal_history, ir_monthly
 
+    ever = {}
+    if user is not None:
+        ever = deal_history.received_days(deal_history.scan(db) if sent is None else sent)
     done = {deal_history._key(c["company"]) for c in intros["rows"]}
     out = []
     for c in db.execute(select(IrCompany).order_by(IrCompany.name)).scalars():
@@ -1417,6 +1434,9 @@ def unintroduced_big(db: Session, intros: dict) -> List[dict]:
         out.append({"company": c.name, "eok": low, "raise_target": raise_target(c),
                     "sector": c.sector_major or "", "series": _short(c.series),
                     "contract_label": CONTRACT_LABELS.get(key, "미계약"),
+                    "mine_times": (deal_history.intro_times(
+                        ever.get(deal_history._key(c.name), {}), user.id)
+                        if user is not None else 0),
                     **edit_target(c)})
     out.sort(key=lambda r: -r["eok"])   # 같은 금액은 이름 순 그대로
     return out

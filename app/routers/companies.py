@@ -591,6 +591,12 @@ def company_rows(db: Session, sent=None) -> List[dict]:
     made = {c.id: compose_one_liner(c) for c in companies}
     # 이력도 한 번만 찾는다 — 줄마다 네 값을 각자 찾으면 344행 × 4번이 된다.
     seen = {c.id: sent.of(c.name) for c in companies}
+    # `총 소개 횟수` · `담당별 소개`(#165) — 업무 보고 `소개한 기업` 과 **같은 셈**
+    # (`deal_history.received_days` · `intro_times`), 기간만 없다. 받은 기록을 한 번 모아
+    # 줄마다 꺼내 쓴다(줄마다 훑지 않는다). 계정 이름도 한 번만 읽는다.
+    days = deal_history.received_days(sent)
+    account_names = {u.id: (u.name or "").strip() for u in db.execute(select(User)).scalars()}
+    per_account = {c.id: days.get(deal_history._key(c.name), {}) for c in companies}
     # 사업분야 제안의 잣대. **지금 화면에 뜨는 기업들에서 그때그때 배운다** —
     # 갈래 목록을 코드나 DB 에 따로 두면 사람이 갈래를 고친 날 어긋난다.
     # 한 번 배워 344행에 돌려 쓴다(행마다 배우면 344번 세게 된다).
@@ -662,6 +668,13 @@ def company_rows(db: Session, sent=None) -> List[dict]:
             # (`services/deal_history.py` 머리글). 자세한 줄은 [수정] 창에
             # 있고, 같은 훑기에서 나온다.
             "sent_rounds": seen[c.id].days,
+            # 표의 `총 소개 횟수` — 투자사가 실제로 받은 **서로 다른 날 수**(팀 전체, 같은 날
+            # 여러 계정 · 여러 회차는 하루). 한 번도 안 나갔으면 0(정렬이 '영 회' 로 센다).
+            "intro_total": deal_history.intro_times(per_account[c.id]),
+            # `담당별 소개` — `[{"name": 계정, "times": 횟수}…]`, 많은 순. 계정마다 센 수의 합은
+            # 위 총 횟수보다 클 수 있다(같은 날 두 계정이 보냈으면 팀으로는 하루).
+            "intro_by_owner": [{"name": n, "times": t} for n, t in
+                               deal_history.account_times(per_account[c.id], account_names)],
             "sent_investors": seen[c.id].investors,
             "sent_total": seen[c.id].sends,
             "last_sent": seen[c.id].last_sent,
