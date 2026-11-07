@@ -371,9 +371,10 @@
   // 따지면 같은 판단이 두 곳에 생겨 반드시 한쪽이 낡는다
   // (services/one_liner.py 의 `origin`).
   //
-  // **칸의 기본은 사용자 정의 문구다.** 저장하는 길에서는 자동 조합이 절대 안
-  // 들어간다 — 그러니 화면이 할 일은 둘이다: 지금 값이 그대로 남는다고 **말해
-  // 주는 것**, 그리고 자동 조합을 쓰고 싶을 때 누를 곳을 **또렷하게 두는 것**.
+  // **사람이 쓴 문구는 저절로 안 덮인다.** 재료를 고쳐 저장하면 비었거나 조합값
+  // 그대로인 칸만 따라 바뀐다(과제 168 · 170 — services/one_liner.py 의 `follow`).
+  // 그러니 화면이 할 일은 둘이다: 저장하면 어떻게 되는지 **말해 주는 것**, 그리고
+  // 사람이 쓴 문구를 조합으로 바꾸고 싶을 때 누를 곳을 **또렷하게 두는 것**.
   // 그래서 만들어질 한 줄을 단추 아래에 그대로 펼쳐 둔다(`one-liner-preview`).
   var suggestion = "";                 // 지금 칸들로 만들면 나올 한 줄
 
@@ -392,12 +393,12 @@
     // 두면 "그래서 어쩌라는 것인가" 가 남는다.
     if (!current) {
       state.textContent = suggestion
-        ? "아직 비어 있습니다 — 기본은 직접 쓴 문구입니다. 아래 조합을 쓰려면 단추를 누르세요."
-        : "아직 비어 있습니다 — 직접 쓰거나, 사업 설명 · 연도별 매출 · 금액을 채우면 자동 조합을 고를 수 있습니다.";
+        ? "아직 비어 있습니다 — 재료를 고쳐 저장하면 아래 조합이 저절로 들어갑니다."
+        : "아직 비어 있습니다 — 직접 쓰거나, 기업 한줄 소개 · 연도별 매출 · 금액을 채우면 자동으로 만들어집니다.";
     } else if (auto) {
-      state.textContent = "자동으로 만든 값과 같습니다 — 재료를 고쳐도 이 칸은 저절로 안 바뀝니다.";
+      state.textContent = "자동으로 만든 값입니다 — 재료를 고쳐 저장하면 함께 바뀝니다.";
     } else {
-      state.textContent = "직접 쓰신 값입니다 — 기본이라 재료를 고쳐도 그대로 둡니다.";
+      state.textContent = "직접 쓰신 값입니다 — 재료를 고쳐도 그대로 둡니다. 자동 조합을 쓰려면 단추를 누르세요.";
     }
 
     // 이미 조합 결과와 같은 줄에는 단추를 안 보인다 — 눌러도 아무 일이 안
@@ -956,6 +957,23 @@
     // 검색 글자도 응답 값으로(#99) — 안 고치면 방금 고친 `기업 한줄 소개` 로는
     // 새로고침 전까지 안 걸린다. 필터가 한 박자 뒤에 이 글자로 다시 거른다.
     if ("search" in data) row.setAttribute("data-search", data.search || "");
+  });
+})();
+
+// 딜 소개 문구 — 재료(매출 · 금액 · 기업 한줄 소개 …)를 고치면 서버가 따라 고쳐 줄 수
+// 있다(과제 168 · 170 — 비었거나 조합값 그대로일 때만, services/one_liner.py 의 `follow`).
+// 그래서 **어느 칸을 고쳤든** 응답의 `one_liner` 로 그 칸을 다시 그린다 — 안 그리면
+// 새로고침 전까지 옛 문구가 떠 있다. 검색 글자는 위 블록이 응답의 `search` 로 고친다.
+(function () {
+  var table = document.getElementById("co-table");
+  if (!table) return;
+
+  table.addEventListener("inline-saved", function (e) {
+    var data = e.detail.data || {};
+    var cell = e.detail.row && e.detail.row.querySelector('[data-field="one_liner"]');
+    if (!cell || typeof data.one_liner !== "string") return;
+    cell.textContent = data.one_liner;
+    if (cell.parentNode) cell.parentNode.title = data.one_liner;
   });
 })();
 

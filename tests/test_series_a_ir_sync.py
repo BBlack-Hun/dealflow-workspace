@@ -215,7 +215,7 @@ def test_수정_로그에_남는다(logged_in, db, ir):
 
 # ── 연도 매출 — 해마다 짝이 바뀐다 ─────────────────────────────────────────
 
-def test_2026년에는_26년_칸이_최근_매출액이고_27년_칸은_안_잇는다(logged_in, db, ir):
+def test_2026년에는_26년_칸이_최근_매출액이고_27년_칸은_IR_예상매출과_잇는다(logged_in, db, ir):
     from app.services import company_sync
 
     row = _deal(db, name="샘플가람")
@@ -228,10 +228,12 @@ def test_2026년에는_26년_칸이_최근_매출액이고_27년_칸은_안_잇�
     assert company.revenue_recent == "15"
     # 지난 해 칸은 단위를 붙여 적는다 — 연도 칸은 적힌 그대로 한줄 소개에 실린다.
     assert company.revenue_2024 == "3억"
-    assert company.revenue_2027 is None, "앞으로 올 해는 IR 에 받을 칸이 없다"
+    # 내년 칸은 IR 의 내년 예상매출(과제 169 — `revenue_years.forecast`)과 잇는다.
+    assert company.revenue_2027 == "30억"
     # `3` 과 `3억` 은 같은 값이다 — 값 다름에 안 선다.
     assert company_sync.differences(db, [_fresh(db, row)[0]]) == {}
     assert company_sync.label("revenue_recent") == "26년 매출"
+    assert company_sync.label("revenue_2027") == "27년 예상매출"
 
 
 def test_2027년에는_27년_칸이_최근_매출액이고_26년_칸은_IR_26년과_잇는다(

@@ -19,6 +19,7 @@
 """
 from __future__ import annotations
 
+import re
 from typing import Dict, List, Optional
 
 from sqlalchemy import delete as sql_delete, func, select
@@ -71,13 +72,18 @@ ROW_TARGET = {table: key for key, spec in TARGETS.items() for table in spec["tab
 #: (`anchor_groups` · `services/revenue_years.py` · #75).
 _YEARS = "{연도별 매출}"
 _RECENT = "{최근 매출액}"
+#: 내년 예상매출(과제 169 — `revenue_years.forecast`). 판이 없는 해에는 칸이 안 선다.
+_FORECAST = "{예상매출}"
+#: Series A 탭의 매출 칸 — 이름이 해마다 `27년 예상매출` → `27년 매출` 로 넘어간다.
+_SA_YEARS = "{Series A 연도별 매출}"
+_SA_REVENUE = ("revenue_2024", "revenue_2025", "revenue_2026", "revenue_2027")
 _HAND_ANCHORS = {
     "companies": {
         # 옛 `스타트업DB` 탭의 칸(`특이사항 (장점)` · `설립년도` · `지역` · `정책자금` 등)도
         # 여기 있다(#105 · #106) — 그 뒤에 골라 둔 칸도 합친 탭에서 제자리에 선다.
         "IR 기업 현황": (
             "기업명", "수신일", "수정한 날짜", "수정한 팀원", "대표자명", "연락처", "이메일",
-            "기업 한줄 소개", "딜 소개 문구", "대분류", "소분류", _YEARS, _RECENT,
+            "기업 한줄 소개", "딜 소개 문구", "대분류", "소분류", _YEARS, _RECENT, _FORECAST,
             "누적투자금액", "투자유치희망금액", "Pre Value", "투자라운드",
             "특이사항 (장점)", "설립년도", "지역", "정책자금",
             "담당자", "총 소개 횟수", "담당별 소개", "견적서 첨부 여부", "미팅제공일자", "계약년월",
@@ -86,8 +92,7 @@ _HAND_ANCHORS = {
         "Series A 이상 딜 소싱": (
             "기업명", "메모", "수정한 팀원", "수정한 날짜", "수신일", "후속라운드 시작",
             "IR 투자컨설팅 미팅일시", "대표자명", "연락처", "이메일", "계약년월", "계약여부",
-            "계약서 수신 여부", "대분류", "소분류", "24년 매출",
-            "25년 매출", "26년 매출", "27년 매출", "누적투자금액", "투자유치희망금액",
+            "계약서 수신 여부", "대분류", "소분류", _SA_YEARS, "누적투자금액", "투자유치희망금액",
             "Pre Value", "투자라운드", "상세 내용", "딜 소개 문구", "담당자", "Type",
             "공유 심사역", "휴대폰", "회사", "IR 자료"),
     },
@@ -150,6 +155,10 @@ def anchor_of(col) -> str:
         # 이름도 올해 그 칸 뒤에 선다. #82 로 이름이 `26년 매출` 이 됐다 — 그 뒤로 고른
         # 자리는 그 글자 그대로라, 해가 바뀌면 같은 값이 옮겨 간 `26년 매출` 칸 뒤에 선다.
         return revenue_years.recent_label()
+    year = re.fullmatch(r"(\d\d)년 (?:예상)?매출", key)
+    if getattr(col, "target", None) == "companies" and year:
+        # 앞으로 올 해는 `27년 예상매출`, 그해가 오면 `27년 매출` — 같은 칸이다(과제 169).
+        return revenue_years.label(f"revenue_20{year.group(1)}")
     return RENAMED.get(getattr(col, "target", None), {}).get(key, key)
 
 
@@ -158,9 +167,10 @@ def anchor_groups(target: str) -> Dict[str, tuple]:
     if target in _HAND_ANCHORS:
         years = tuple(f"{yy}년 매출" for _f, yy in revenue_years.shown())
         recent = (revenue_years.recent_label(),)
-        return {tab: tuple(x for label in labels for x in
-                           (years if label == _YEARS else
-                            recent if label == _RECENT else (label,)))
+        ahead = revenue_years.forecast()
+        spread = {_YEARS: years, _RECENT: recent, _FORECAST: (ahead[1],) if ahead else (),
+                  _SA_YEARS: tuple(revenue_years.label(f) for f in _SA_REVENUE)}
+        return {tab: tuple(x for label in labels for x in spread.get(label, (label,)))
                 for tab, labels in _HAND_ANCHORS[target].items()}
     # 순환 import 를 피해 늦게 부른다 — 그 화면들이 이 모듈을 부른다.
     if target == "startup":

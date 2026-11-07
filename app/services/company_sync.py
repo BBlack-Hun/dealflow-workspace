@@ -36,9 +36,9 @@
     누적투자금액 · 투자유치희망금액 · Pre Value  →  같은 이름 칸(단위 억 글자)
     연도 매출  →  **해마다 짝이 바뀐다**(`_year_slot`). IR 은 올해 매출을 연도 칸이 아니라
                   `revenue_recent` 에 적는다(`revenue_years` 머리말). 그래서 Series A 의
-                  올해 칸 ↔ IR `revenue_recent`, 지난 해 칸 ↔ IR 같은 해 칸이고, 앞으로 올
-                  해 칸(26년의 `27년 매출`)은 잇지 않는다. 지난 해 칸으로 갈 때는 단위를
-                  붙인다(`18.3` → `18.3억` — 연도 칸은 적힌 그대로 한줄 소개에 실린다).
+                  올해 칸 ↔ IR `revenue_recent`, 지난 해 칸 ↔ IR 같은 해 칸, 내년 칸(26년의
+                  `27년 예상매출`) ↔ IR 같은 해 칸(과제 169 — IR 에도 그 칸이 선다). 연도 칸으로
+                  갈 때는 단위를 붙인다(`18.3` → `18.3억` — 연도 칸은 적힌 그대로 한줄 소개에 실린다).
     분야 · 투자라운드 · 딜소개 문구는 잇지 않는다 — Series A 는 시트 낱말 · 받은 날의 라운드
     · Series A 딜 공유용 문구라 IR 칸과 뜻이 갈린다(`models.SeriesACompany`).
 
@@ -263,11 +263,11 @@ def same(field: str, a, b) -> bool:
 
 
 def label(field: str) -> str:
-    """화면 이름 — 연도 매출은 그해 글자(`25년 매출` · 올해 칸 `26년 매출`)."""
+    """화면 이름 — 연도 매출은 그해 글자(`25년 매출` · 올해 칸 `26년 매출` · `27년 예상매출`)."""
     if field == "revenue_recent":
         return revenue_years.recent_label()
     if field in revenue_years.FIELDS:
-        return f"{field[-2:]}년 매출"
+        return revenue_years.label(field)
     return LABELS.get(field, field)
 
 
@@ -345,14 +345,15 @@ def sheet_kinds(session: Session) -> Dict[str, str]:
 def _year_slot(field: str) -> Optional[str]:
     """IR 연도 매출 칸 `field` 를 받는 Series A 칸 — 올해(`revenue_years.this_year`) 기준.
 
-    올해 칸 ↔ IR `revenue_recent`, 지난 해 칸 ↔ IR 같은 해 칸. 앞으로 올 해 칸은
-    None — IR 에 받을 칸이 없다(그해가 오면 `revenue_recent` 와 잇는다).
+    올해 칸 ↔ IR `revenue_recent`, 지난 해 칸 ↔ IR 같은 해 칸, 내년 칸 ↔ IR 의 내년
+    예상매출 칸(`revenue_years.forecast` · 과제 169). IR 의 올해 연도 칸은 None — 올해는
+    `revenue_recent` 가 받는다(그 칸은 해가 지나야 선다).
     """
     year = revenue_years.this_year()
     if field == "revenue_recent":
         want = f"revenue_{year}"
     else:
-        want = field if int(field[-4:]) < year else None
+        want = field if int(field[-4:]) < year or int(field[-4:]) == year + 1 else None
     return want if want in SERIES_A_YEARS else None
 
 
