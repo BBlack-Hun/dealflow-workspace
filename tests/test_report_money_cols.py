@@ -22,8 +22,8 @@ import pytest
 
 from .conftest import DEMO_PASSWORD
 
-#: 2026년(conftest 가 못 박는다)에 늘 서는 칸 — 앞 넷은 매출, 끝은 누적투자금액.
-HEADS = ["23년 매출", "24년 매출", "25년 매출", "26년 매출"]
+#: 2026년(conftest 가 못 박는다)에 서는 칸 — 요청의 여섯 칸 그대로(27년은 #490 의 `revenue_years.forecast`).
+HEADS = ["23년 매출", "24년 매출", "25년 매출", "26년 매출", "27년 예상매출", "누적투자금액"]
 
 
 @pytest.fixture()
@@ -32,12 +32,13 @@ def stage(db, users):
 
     ir = IrCompany(name="샘플보냄", sector_major="AI", raise_target="40",
                    revenue_2023="8.2억", revenue_2024="12", revenue_2025="1,224백만원",
-                   revenue_recent="18.3", funding_total="11")
+                   revenue_recent="18.3", revenue_2027="25", funding_total="11")
     big = IrCompany(name="샘플큰가", sector_major="AI", raise_target="30", revenue_recent="5")
     db.add_all([ir, big])
     db.flush()
     linked = SeriesACompany(name="샘플 보냄")          # 같은 이름 — 저절로 잇는다
-    sa = SeriesACompany(name="샘플에이랩", revenue_2024="3", revenue_2026="4", funding_total="2")
+    sa = SeriesACompany(name="샘플에이랩", revenue_2024="3", revenue_2026="4", revenue_2027="7",
+                        funding_total="2")
     db.add_all([linked, sa])
     who = VcContact(user_id=users["u1"].id, name="가상갑", firm="가나벤처스")
     db.add(who)
@@ -60,7 +61,7 @@ def test_칸은_IR_기업_현황과_같은_차례_같은_이름(stage, db, users
     from app.services import report, revenue_years
 
     heads = [h for _f, h in report.money_columns()]
-    assert heads[:4] == HEADS and heads[-1] == "누적투자금액"
+    assert heads == HEADS
     assert heads == [h for f, h in revenue_years.columns() if f not in ("raise_target", "pre_value")]
     assert "투자유치희망금액" not in heads, "투자유치희망금액은 이 표가 따로 세운다(#118)"
 
@@ -71,13 +72,15 @@ def test_값은_IR_줄에서_없으면_Series_A_줄에서_읽는다(stage, db, u
     got = report.intro_companies(db, date(2026, 8, 1), date(2026, 8, 31), users["u1"])
     rows = {c["company"]: _cells(c) for c in got["rows"]}
     ir = rows["샘플보냄"]
-    assert [ir[h] for h in HEADS + ["누적투자금액"]] == [
+    assert [ir[h] for h in HEADS] == [
         ("revenue_2023", "8.2억"), ("revenue_2024", "12"), ("revenue_2025", "1,224백만원"),
-        ("revenue_recent", "18.3"), ("funding_total", "11")], "글자는 IR 표처럼 적힌 그대로"
+        ("revenue_recent", "18.3"), ("revenue_2027", "25"), ("funding_total", "11")], \
+        "글자는 IR 표처럼 적힌 그대로"
     sa = rows["샘플에이랩"]
-    assert [sa[h] for h in HEADS + ["누적투자금액"]] == [
+    assert [sa[h] for h in HEADS] == [
         ("", ""), ("revenue_2024", "3"), ("revenue_2025", ""), ("revenue_2026", "4"),
-        ("funding_total", "2")], "Series A 는 23년 칸이 없고, 올해 매출은 revenue_2026 이다"
+        ("revenue_2027", "7"), ("funding_total", "2")], \
+        "Series A 는 23년 칸이 없고, 올해 매출은 revenue_2026 이다"
     assert set(rows["샘플어디에도없음"].values()) == {("", "")}
 
     left = report.monthly(db, 2026, 8, users["u1"], today=date(2026, 11, 7))["intro_left"]
@@ -132,6 +135,7 @@ def test_고칠_곳이_있는_칸만_눌러_고치는_칸이다(page, stage):
     assert 'data-inline-url="/api/companies"' in ir
     assert '<td class="cell num" data-field="revenue_2023">8.2억</td>' in ir
     assert '<td class="cell num" data-field="funding_total">11</td>' in ir
+    assert '<td class="cell num" data-field="revenue_2027">25</td>' in ir
 
     sa = _outer(page, "샘플에이랩")
     assert 'data-inline-url="/api/series-a-companies"' in sa
