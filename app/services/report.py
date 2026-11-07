@@ -252,11 +252,7 @@ def _month(db: Session, year: int, month: int, user: Optional[User],
     today = today or date.today()
     start, end = month_range(year, month)
 
-    stmt = select(Meeting).where(Meeting.scheduled_at >= start.isoformat(),
-                                 Meeting.scheduled_at <= end.isoformat())
-    if user is not None:
-        stmt = stmt.where(Meeting.user_id == user.id)
-    meetings = db.execute(stmt.order_by(Meeting.scheduled_at)).scalars().all()
+    meetings = month_meetings(db, year, month, user)
 
     # IR 요청도 같은 달로 함께 읽는다. 미팅만으로는 그 달의 반응이 안 보인다.
     ir_stmt = select(IrRequest).where(IrRequest.requested_at >= start.isoformat(),
@@ -288,20 +284,7 @@ def _month(db: Session, year: int, month: int, user: Optional[User],
     }
     owners = {u.id: u.name for u in db.execute(select(User)).scalars().all()}
 
-    # 결과를 물어볼 필요가 남은 건만 센다. 규칙은 딜 진행 관리와 같아야 한다 —
-    # 한쪽에서는 "물어봐야 함", 다른 쪽에서는 "끝남" 이면 어느 쪽을 믿을지 모른다.
-    #   거절로 끝났다     → 물어볼 것이 없다
-    #   다음 미팅을 잡았다 → 이미 이어졌다
-    latest: Dict[int, str] = {}
-    for m in meetings:
-        when_iso = m.scheduled_at or ""
-        if when_iso > latest.get(m.contact_id, ""):
-            latest[m.contact_id] = when_iso
-
-    def open_followup(m) -> bool:
-        return (not m.followup_done
-                and (m.outcome or "") not in NO_FOLLOWUP_OUTCOMES
-                and (m.scheduled_at or "") >= latest.get(m.contact_id, ""))
+    open_followup = followup_check(meetings)
 
     # 기업명 옆 `투자유치희망금액`(#118) — 미팅 · 반응 표가 같은 한 벌을 읽는다.
     find = company_finder(db)
@@ -338,7 +321,8 @@ def _month(db: Session, year: int, month: int, user: Optional[User],
             "needs_followup": meeting.status == "done" and open_followup(meeting),
         })
 
-    done = [m for m in meetings if m.status == "done"]
+    cards = meeting_cards(meetings, open_followup)
+    done = cards["done"]
 
     rows = [
         {"week": w, "label": f"{month}월 {WEEK_NAMES[w - 1] if w <= len(WEEK_NAMES) else f'{w}주'}",
@@ -427,14 +411,15 @@ def _month(db: Session, year: int, month: int, user: Optional[User],
         # 화면 안내문이 "미팅 뒤 N일쯤" 이라고 말할 때 쓰는 값 — 코드와
         # 화면이 다른 숫자를 말하면 안 된다.
         "followup_days": MEETING_FOLLOWUP_DAYS,
-        "total": len(meetings),
+        # 카드 넷은 `meeting_cards` 의 줄 수다 — 카드를 누르면 뜨는 목록(#177)이 같은 줄을 그린다.
+        "total": len(cards["total"]),
         "done": len(done),
         "canceled": sum(1 for m in meetings if m.status == "canceled"),
-        "followup_done": sum(1 for m in done if m.followup_done),
+        "followup_done": len(cards["followup_done"]),
         # **아직 안 물어본 것 전부.** 예전엔 '날짜가 지난 것'만 셌는데, 물어볼
         # 날이 아직 안 온 건은 어느 칸에도 안 잡혀서 미팅 2건이 대기 중인데도
         # 화면에는 0 / 0 으로 떠 아무것도 없는 것처럼 보였다.
-        "followup_open": sum(1 for m in done if open_followup(m)),
+        "followup_open": len(cards["followup_open"]),
         # 그중 날짜가 지난 것 — 이건 급한 것이라 따로 센다.
         "followup_late": sum(
             1 for w in rows for x in w["items"] if x["followup_late"]),
@@ -484,6 +469,55 @@ def _month(db: Session, year: int, month: int, user: Optional[User],
         # 박아 두면 늘린 날 화면만 옛말을 한다.
         "call_days": cadence.get_rule(db, "call").get("offset_min_days"),
     }
+
+
+def month_meetings(db: Session, year: int, month: int, user: Optional[User]) -> list:
+    """그 달에 잡힌 미팅 — `user` 를 주면 그 사람 것만, 없으면 팀 전체. 날짜 순."""
+    start, end = month_range(year, month)
+    stmt = select(Meeting).where(Meeting.scheduled_at >= start.isoformat(),
+                                 Meeting.scheduled_at <= end.isoformat())
+    if user is not None:
+        stmt = stmt.where(Meeting.user_id == user.id)
+    return db.execute(stmt.order_by(Meeting.scheduled_at)).scalars().all()
+
+
+def followup_check(meetings):
+    """이 미팅에 결과를 물어볼 일이 남았나 — 판정 함수를 돌려준다.
+
+    결과를 물어볼 필요가 남은 건만 센다. 규칙은 딜 진행 관리와 같아야 한다 —
+    한쪽에서는 "물어봐야 함", 다른 쪽에서는 "끝남" 이면 어느 쪽을 믿을지 모른다.
+      거절로 끝났다     → 물어볼 것이 없다
+      다음 미팅을 잡았다 → 이미 이어졌다(같은 묶음 `meetings` 안에서 본다)
+    """
+    latest: Dict[int, str] = {}
+    for m in meetings:
+        when_iso = m.scheduled_at or ""
+        if when_iso > latest.get(m.contact_id, ""):
+            latest[m.contact_id] = when_iso
+
+    def open_followup(m) -> bool:
+        return (not m.followup_done
+                and (m.outcome or "") not in NO_FOLLOWUP_OUTCOMES
+                and (m.scheduled_at or "") >= latest.get(m.contact_id, ""))
+    return open_followup
+
+
+#: 업무 보고 미팅 카드 넷 — (열쇠, 이름). 화면 카드 · 눌러 여는 목록(#177)이 같이 읽는다.
+MEETING_CARDS = (("total", "잡은 미팅"), ("done", "진행한 미팅"),
+                 ("followup_done", "결과 물어봄"), ("followup_open", "아직 안 물어봄"))
+
+
+def meeting_cards(meetings, open_followup=None) -> Dict[str, list]:
+    """미팅 카드 넷이 세는 미팅 — 카드의 숫자는 이 목록의 길이다.
+
+    숫자와 눌러 여는 목록(`services/drilldown.py`)이 **이 한 벌**을 읽는다. 연간은 달마다
+    부른 것을 이어 붙인다 — 연간 카드도 달마다 센 것을 더한 수다(`yearly`).
+    """
+    open_followup = open_followup or followup_check(meetings)
+    done = [m for m in meetings if m.status == "done"]
+    return {"total": list(meetings), "done": done,
+            "followup_done": [m for m in done if m.followup_done],
+            "followup_open": [m for m in done if open_followup(m)]}
 
 
 def _job_date(job: SendJob, batch: Optional[DealBatch]) -> str:

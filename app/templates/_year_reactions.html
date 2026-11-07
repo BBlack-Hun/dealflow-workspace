@@ -1,0 +1,18 @@
+{#
+  연간 보기의 **반응 다섯 칸**(#182) — 대시보드 `반응` 패널과 같은 칸 · 같은 셈을 고른 해치로.
+  범위는 이 보고와 같다(내 것 · 팀 전체 · 팀원 한 사람 — `report.scope_for`). 숫자를 누르면
+  대시보드와 같은 상세 목록(`/reactions/list`)이 뜬다. 칸과 수는 `services/drilldown.year_cells`.
+#}
+<section class="panel">
+  <h2 class="panel-title">{{ year }}년 반응 <span class="hint">대시보드 반응과 같은 칸 · 그 해치</span></h2>
+  <div class="react-row">
+    {% for c in year_reactions %}
+    <a class="react {% if c.value %}{{ 'warn' if c.key == 'meeting_call' else 'ok' }}{% endif %}" href="{{ c.href }}">
+      <b>{{ c.value }}</b><span>{{ c.label }}</span></a>
+    {% endfor %}
+  </div>
+  <p class="hint">
+    숫자를 누르면 그 수를 이룬 심사역 · 기업 · 미팅이 한 표로 뜹니다.
+    <b>미팅완료 리마인드 TEL</b> 은 그 해에 끝난 미팅 중 <b>지금</b> 아직 결과를 안 물어본 곳입니다.
+  </p>
+</section>

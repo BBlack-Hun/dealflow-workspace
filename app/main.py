@@ -22,6 +22,7 @@ from .routers import (agent_api, companies, consulting, contacts, dashboard,
 from .routers import ir_link as ir_link_router
 from .routers import taxonomy as taxonomy_router
 from .routers import custom_columns as custom_columns_router
+from .routers import drilldown as drilldown_router
 
 
 # 화면이 불러도 되는 곳. 지금 화면은 **바깥 자원이 하나도 없다** — 스크립트·
@@ -159,6 +160,8 @@ def create_app() -> FastAPI:
     app.include_router(auth_router.router)
     app.include_router(templates_crud.router)
     app.include_router(setup_router.router)
+    # 숫자를 누르면 뜨는 상세 목록(`/reactions/list`) — 위와 같은 까닭으로 캐치올보다 먼저.
+    app.include_router(drilldown_router.router)
     app.include_router(pages.router)
 
     # **가장 먼저 등록한다 = 가장 안쪽이다.** 컨설턴트 차단보다 안쪽에 두어야
