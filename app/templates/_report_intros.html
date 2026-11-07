@@ -13,8 +13,13 @@
 
   부르는 쪽이 `intro_label`(`10월` · `2026년`)을 정해 둔다.
 
-  **맨 아래 `소개 후보` 묶음(#122 · 아직 소개 안 한 10억 이상)** — 월간 보기에서 '본인' 이 있을 때만
+  **맨 아래 `소개 후보` 묶음(#122 · 아직 소개 안 한 기업 — 처음엔 10억 이상만)** — 월간 보기에서 '본인' 이 있을 때만
   선다(`report.unintroduced_big` · `intro_left`). 10곳만 펼치고 나머지는 `<details>` 로 접는다.
+  **#174 부터 금액과 상관없이 다 세우고** 투자유치희망금액 묶음(5억 이하 · 5~10억 · 10억 이상 ·
+  알 수 없음 — `report.raise_band`)으로 골라 본다. 고르기는 주소의 `band=` 다(링크 — 고른 묶음
+  밖의 줄은 화면에 아예 없어서, 안 보이는 체크가 [딜 소개] 에 섞이지 않는다).
+
+  **두 표에 매출 · 누적투자금액 칸**(#173 · `_report_money_cols.html`) — 투자유치희망금액 바로 뒤.
 
   **계약여부는 두 표 모두 골라서 바로 고친다**(#147) — IR 표와 같은 고르기 칸 · 같은 여덟 말
   (`contract_labels`). 값은 읽어 온 줄 한 곳에만 저장한다: IR 줄이면 `/api/companies`,
@@ -33,6 +38,7 @@
   선다(`viewing.id == user.id` — 팀원 화면으로 보기 중이면 그 팀원). 관리자가 주소의
   `member=` 로 남의 보고를 열었으면 [딜 소개] 가 관리자 계정 명단으로 열려 엉뚱하므로 안 세운다.
 #}
+{% from "_report_money_cols.html" import money_heads, money_cells %}
 {% macro edit_row(c) %}{% if c.company_id %} data-id="{{ c.company_id }}"{% if c.company_kind == 'series_a' %} data-inline-url="/api/series-a-companies"{% else %} data-inline-url="/api/companies"{% endif %}{% endif %}{% endmacro %}
 {% macro contract_cell(c) -%}
   {%- if c.company_id -%}
@@ -51,6 +57,7 @@
     <th class="num" style="width:96px"
         title="지금까지(기간 없이) 본인이 이 기업을 소개한 횟수 — 서로 다른 날 수 · IR 기업 현황 '담당별 소개' 의 본인 계정 수와 같습니다">본인 누적 소개</th>
     <th class="num" style="width:104px">투자유치희망금액</th>
+    {{ money_heads(rows) }}
     <th style="width:140px">대분류</th>
     <th style="width:120px">투자라운드</th>
     <th style="width:134px">계약여부</th>
@@ -63,6 +70,7 @@
       <td><b>{{ c.company }}</b></td>
       <td class="num">{{ c.mine_times or '–' }}</td>
       <td class="num">{{ c.raise_target }}</td>
+      {{ money_cells(c) }}
       <td>{{ c.sector }}</td>
       <td>{{ c.series }}</td>
       {{ contract_cell(c) }}
@@ -89,6 +97,8 @@
           title="{% if team_wide %}이 기간에 팀이 소개한 서로 다른 날 수 — 같은 날 여러 계정이 보냈으면 한 번입니다 · IR 기업 현황 '총 소개 횟수' 와 같은 셈입니다{% else %}이 기간에 본인이 소개한 서로 다른 날 수입니다 · IR 기업 현황 '담당별 소개' 와 같은 셈입니다{% endif %}">{% if team_wide %}팀{% else %}본인{% endif %} 소개 횟수</th>
       {# 그 옆 투자유치희망금액(#118) — IR 기업 현황(없으면 Series A)에서 그때그때 읽는다. #}
       <th class="num" style="width:104px">투자유치희망금액</th>
+      {# 그 옆 매출 · 누적투자금액(#173) — 같은 줄에서 읽고, 고치면 그 줄에 담는다. #}
+      {{ money_heads(intro_companies.rows) }}
       {# 그 오른쪽 계약여부 · 계약서 수신 여부(#122) — 같은 길로 읽기만. #}
       <th style="width:134px">계약여부</th>
       <th style="width:110px">계약서 수신 여부</th>
@@ -120,6 +130,7 @@
         </td>
         <td class="num">{{ c.times }}</td>
         <td class="num">{{ c.raise_target }}</td>
+        {{ money_cells(c) }}
         {{ contract_cell(c) }}
         <td>{{ c.contract_received }}</td>
         <td class="num">{{ c.investors }}</td>
@@ -137,10 +148,24 @@
   {% if intro_left %}
   {# 체크 · [딜 소개] 는 보고의 주인이 지금 계정일 때만(머리 주석 · #164). #}
   {% set pick = viewing is not none and viewing.id == user.id %}
+  {# 투자유치희망금액 묶음(#174) — 주소의 `band=`. 모르는 값이면 전체. 단추 주소는 `?…` 만 적는다 —
+     `request.url` 통째로 적으면 앞단(프록시) 뒤에서 안쪽 주소가 실린다. #}
+  {% set band = request.query_params.get('band', '') %}
+  {% set band = band if band in intro_bands|map('first')|list else '' %}
+  {% set left = intro_left|selectattr('band', 'equalto', band)|list if band else intro_left %}
   <div class="bucket" id="intro-left">
-    <h3 class="bucket-head">소개 후보 — {{ intro_label }}에 아직 안 보낸 10억 이상 {{ intro_left|length }}곳
-      <span class="hint">투자유치희망금액(구간이면 아래값) 높은 순 · 이 달에 이 팀원이 안 보낸 소개 가능 기업</span>
+    <h3 class="bucket-head">소개 후보 — {{ intro_label }}에 아직 안 보낸 기업 {{ intro_left|length }}곳
+      <span class="hint">투자유치희망금액(구간이면 아래값) 높은 순 · 금액을 모르는 곳은 맨 아래 · 이 달에 이 팀원이 안 보낸 소개 가능 기업</span>
     </h3>
+    <nav class="quick-chips intro-bands" aria-label="투자유치희망금액으로 고르기" data-testid="intro-bands">
+      <a class="chip{% if not band %} active{% endif %}"
+         href="?{{ request.url.remove_query_params('band').query }}#intro-left">전체 <b>{{ intro_left|length }}</b></a>
+      {% for key, name in intro_bands %}
+      <a class="chip{% if band == key %} active{% endif %}"
+         href="?{{ request.url.include_query_params(band=key).query }}#intro-left"
+         {% if key == 'unknown' %}title="투자유치희망금액이 비었거나 `~` · 숫자로 못 읽는 글자인 곳"{% endif %}>{{ name }} <b>{{ intro_left|selectattr('band', 'equalto', key)|list|length }}</b></a>
+      {% endfor %}
+    </nav>
     {% if pick %}
     {# `<a>` 라 `:disabled` 가 없어 `aria-disabled` 로 잠근다 — 딜 소싱의 [Series A 딜 소개] 와 같은
        모양(`report_intro_pick.js` 가 고른 수 · 주소를 채우고, 잠긴 동안 눌림을 막는다). #}
@@ -153,11 +178,15 @@
     {% elif viewing is not none %}
     <p class="hint">딜 소개로 넘기는 체크는 왼쪽 메뉴의 '팀원 화면으로 보기' 로 그 팀원 화면을 열면 섭니다.</p>
     {% endif %}
-    {{ big_table(intro_left[:10], pick) }}
-    {% if intro_left|length > 10 %}
+    {% if left %}
+    {{ big_table(left[:10], pick) }}
+    {% else %}
+    <p class="muted bucket-empty">이 금액에 드는 소개 후보가 없습니다.</p>
+    {% endif %}
+    {% if left|length > 10 %}
     <details>
-      <summary>더 보기 — 나머지 {{ intro_left|length - 10 }}곳</summary>
-      {{ big_table(intro_left[10:], pick) }}
+      <summary>더 보기 — 나머지 {{ left|length - 10 }}곳</summary>
+      {{ big_table(left[10:], pick) }}
     </details>
     {% endif %}
   </div>
