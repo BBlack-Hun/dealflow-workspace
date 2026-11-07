@@ -778,6 +778,24 @@ def meeting_day(text: str) -> str:
         return value
 
 
+def progress_rows(db: Session, company_id: Optional[int] = None) -> List[ConsultingCompany]:
+    """IR 기업에 이어진 투자컨설턴트 줄 중 **진행 기록을 보여 줄 줄** — 계약 탭은 뺀다.
+
+    계약 탭의 `meeting_at` 은 계약월, `management` 는 계약여부라 다른 물음이다. 표를 그리는
+    자리(`consulting_view`)와 저장하는 자리(`save_consulting`)가 같은 줄을 세야 칸에 보이는
+    `이어진 줄 N개` 와 저장이 고르는 줄이 갈리지 않는다.
+    """
+    from ..services import consulting_sheets
+
+    contract = {s.label for s in db.execute(select(ConsultingSheet)).scalars()
+                if s.kind == consulting_sheets.CONTRACT}
+    stmt = select(ConsultingCompany).where(ConsultingCompany.ir_company_id.isnot(None))
+    if company_id is not None:
+        stmt = stmt.where(ConsultingCompany.ir_company_id == company_id)
+    return [row for row in db.execute(stmt.order_by(ConsultingCompany.id)).scalars()
+            if row.sheet not in contract]
+
+
 def consulting_view(db: Session, user: User) -> dict:
     """IR 기업마다 이어진 투자컨설턴트 줄의 **진행 기록**(결정 3 · #166 부터 여기서도 고친다).
 
@@ -793,21 +811,18 @@ def consulting_view(db: Session, user: User) -> dict:
     그 화면의 판정 하나(`consulting.may_edit_row`)를 그대로 읽는다: 자기 줄 · 관리자 · 관리자가
     맡겨 준 사람의 줄. 수정 로그도 그 길이 남기는 그대로다(`edit_log` 의 `consulting_companies`).
 
-    **이어진 줄이 하나일 때만** 고친다. 둘 이상이면 칸에 ` · ` 로 이어 보이는데, 어느 줄을
-    고치는지 칸이 말해 주지 못한다 — 그때는 투자컨설턴트 화면에서 고친다. 이어진 줄이 없으면
-    고칠 값이 아예 없다(IR 에 새로 두지 않는다).
+    **이어진 줄이 하나일 때만** 그 줄을 고친다. 둘 이상이면 칸에 ` · ` 로 이어 보이는데, 어느
+    줄을 고치는지 칸이 말해 주지 못한다 — 그때는 투자컨설턴트 화면에서 고친다.
+
+    **이어진 줄이 없으면 처음 적는 순간 줄을 세운다**(11/07 — 팀원: "데이터가 들어가야지만
+    수정이 가능"). 이 표의 대부분이 그 기업이라 빈 칸을 못 고치면 칸이 고장으로
+    읽힌다. 그 기업은 여기에 없고, 칸은 IR 쪽 주소(`save_consulting`)를 든다 — 값은
+    여전히 컨설턴트 줄 한 곳에만 산다(IR 에 새로 두지 않는다).
     """
-    from ..services import consulting_sheets
     from .consulting import grant_owner_ids, may_edit_row
 
-    contract = {s.label for s in db.execute(select(ConsultingSheet)).scalars()
-                if s.kind == consulting_sheets.CONTRACT}
     found: dict = {}
-    for row in db.execute(select(ConsultingCompany).where(
-            ConsultingCompany.ir_company_id.isnot(None))
-            .order_by(ConsultingCompany.id)).scalars():
-        if row.sheet in contract:
-            continue
+    for row in progress_rows(db):
         at = found.setdefault(row.ir_company_id, {"status": [], "meeting": [], "rows": []})
         at["rows"].append(row)
         for key, value in (("status", consulting_status.tag_value(row.management)),
@@ -924,6 +939,8 @@ def companies_page(request: Request, db: Session = Depends(get_db),
         # 줄은 그 화면의 저장 길로 고친다(#166 · `consulting_view`).
         "consulting": consulting_view(db, user) if may_view_consulting(user) else None,
         "consulting_choices": CONSULTING_STATUS_CHOICES,
+        # 이어진 줄이 없는 기업에 처음 적으면 줄이 서는 탭(`save_consulting`) — 칸의 안내 말.
+        "consulting_new_tab": consulting_new_tab(db) if may_view_consulting(user) else "",
     })
     # 관리자가 붙인 추가 칸(`_custom_cols.html`).
     ctx.update(custom_columns.view(db, "companies", "ir_companies"))
@@ -1300,6 +1317,78 @@ def update_company(company_id: int, body: CompanyIn,
             "series": company.series or "",
             **_contract_result(company),
             **_one_liner_result(company, sent)}
+
+
+class ConsultingCellIn(BaseModel):
+    """IR 기업 현황에서 고치는 투자컨설턴트 칸 둘(#166) — 이 길로는 이것만 받는다."""
+
+    management: Optional[str] = None
+    meeting_at: Optional[str] = None
+
+
+def consulting_new_tab(db: Session) -> str:
+    """이어진 줄이 없는 기업에 처음 적을 때 줄이 서는 탭 — [기업 추가] 의 기본 탭과 같다."""
+    from ..services import consulting_sheets
+
+    return consulting_sheets.default_label(db)
+
+
+@router.patch("/api/companies/{company_id}/consulting")
+def save_consulting(company_id: int, body: ConsultingCellIn,
+                    db: Session = Depends(get_db),
+                    user: User = Depends(get_current_user)):
+    """IR 기업 현황의 `컨설팅 상태` · `컨설팅 미팅일` — **이어진 줄이 없는 기업**의 칸이 부른다.
+
+    11/07 팀원: "데이터가 들어가야지만 수정이 가능". #166 은 이어진 줄이 하나인 기업만
+    고치게 했는데, 표의 대부분은 아직 이어진 줄이 없는 기업이다. 그 칸을 처음 적으면 **그
+    기업에 이어진 투자컨설턴트 줄을 하나 세우고 거기에 담는다.**
+
+    · **값은 여전히 한 곳**(컨설턴트 줄)이다 — IR 에 칸을 새로 두면 두 표가 같은 물음에
+      다르게 답한다(결정 3). 세우는 길도 [기업 추가] 와 같다(`consulting.add_company` —
+      주인은 누른 사람, 탭은 첫 탭, 번호는 그 탭 맨 아래). 잇는 것은 이름 맞추기가 아니라
+      이 기업 번호다(사람이 고른 연결 — 자동 연결 표시 없음). 이은 순간 대표자명 · 연락처
+      같은 잇는 칸의 빈칸은 IR 값으로 채워진다(`company_sync` — 다른 줄과 같다).
+    · **사람이 한 단계도 더 밟지 않는다.** 줄을 세울지 묻지 않는다 — 칸 하나 적으려다
+      창을 하나 더 거치면 그 칸을 안 쓴다.
+    · **수정 로그에 남긴다**(`edit_log.always`). 자기 줄이라 보통은 안 남는데, 누른 사람은
+      칸 하나를 적었을 뿐 줄을 세운 줄 모른다.
+    · 그사이 누가 줄을 이었으면(창을 연 뒤) 새로 안 세우고 **그 줄의 저장 길**로 간다 — 판정도
+      그 길 그대로(`consulting.update_company`). 둘 이상이면 어느 줄인지 몰라 막는다.
+    """
+    from ..services import consulting_status as status
+    from ..services import edit_log
+    from . import consulting
+
+    consulting.require_access(user)
+    company = db.get(IrCompany, company_id)
+    if company is None:
+        raise HTTPException(status_code=404, detail="기업을 찾을 수 없습니다")
+    fields = body.model_dump(exclude_unset=True)
+    if not fields:
+        raise HTTPException(status_code=400, detail="고칠 칸이 없습니다")
+    rows = progress_rows(db, company.id)
+    if len(rows) > 1:
+        raise HTTPException(status_code=409, detail=f"투자컨설턴트 줄 {len(rows)}개에 이어져 "
+                                                     "있어 투자컨설턴트 화면에서 고칩니다")
+    if rows:
+        return consulting.update_company(rows[0].id, consulting.CompanyIn(**fields),
+                                         db=db, user=user)
+    values = {f: (v or "").strip() for f, v in fields.items()}
+    if not any(values.values()):
+        # 빈 값을 적으려고 줄을 세우지는 않는다 — 고칠 것이 없었다.
+        return {"id": None, "values": values,
+                **({"management_tag": ""} if "management" in values else {})}
+    row = consulting.add_company(db, user, consulting.CompanyIn(
+        company_name=company.name, **fields))
+    row.ir_company_id = company.id
+    row.ir_link_auto = 0
+    edit_log.always(row)
+    db.commit()
+    out = {"id": row.id, "created": True,
+           "values": {f: getattr(row, f) or "" for f in fields}}
+    if "management" in fields:
+        out["management_tag"] = status.tag_value(row.management or "")
+    return out
 
 
 @router.get("/api/companies/{company_id}/one-liner")

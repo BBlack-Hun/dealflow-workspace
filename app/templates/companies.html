@@ -961,18 +961,24 @@
            IR 줄에는 안 담는다. 칸에는 갈래(`관리 중`)가 보이고 편집창은 적힌 글 그대로
            (`data-value`)에서 시작한다 — 보기를 고르면 `상태 : 상세` 의 머리만 바뀐다
            (`data-pick-head` · inline_edit.js). 미팅일은 날짜 입력이고, 시각·말이 붙은 값은
-           글자 칸으로 열린다(지우지 않게 — `meeting_day`). #}
-        {% set why = ('이어진 투자컨설턴트 줄이 없습니다' if not cv.links
-                      else ('투자컨설턴트 줄 ' ~ cv.links ~ '개에 이어져 있어 투자컨설턴트 화면에서 고칩니다'
-                            if cv.links > 1 else '그 줄을 고칠 수 있는 계정만 고칩니다')) %}
-        <td {% if ce %}class="cell" data-field="management" data-type="pick" data-fixed-choices data-pick-head
-            data-choices="{{ consulting_choices }}" data-value="{{ ce.management }}"
-            data-save-url="/api/consulting/{{ ce.id }}"
-            title="{{ ce.management or '눌러서 고릅니다' }}"{% else %}class="muted"
+           글자 칸으로 열린다(지우지 않게 — `meeting_day`).
+           **이어진 줄이 없으면**(11/07 — "데이터가 들어가야지만 수정이 가능") 칸은 IR 쪽 주소
+           (`PATCH /api/companies/{id}/consulting` · `save_consulting`)를 든다 — 처음 적는 순간 그
+           기업에 이어진 줄이 투자컨설턴트 첫 탭에 서고 값은 거기 담긴다. #}
+        {% set fresh = not cv.links %}
+        {% set save = ('/api/consulting/' ~ ce.id) if ce
+                      else (('/api/companies/' ~ r.id ~ '/consulting') if fresh else '') %}
+        {% set born = ' — 처음 적으면 투자컨설턴트 「' ~ consulting_new_tab ~ '」 탭에 이 기업 줄이 생기고 거기 저장됩니다' %}
+        {% set why = ('투자컨설턴트 줄 ' ~ cv.links ~ '개에 이어져 있어 투자컨설턴트 화면에서 고칩니다'
+                      if (cv.links or 0) > 1 else '그 줄을 고칠 수 있는 계정만 고칩니다') %}
+        <td {% if save %}class="cell" data-field="management" data-type="pick" data-fixed-choices data-pick-head
+            data-choices="{{ consulting_choices }}" data-value="{{ ce.management if ce else '' }}"
+            data-save-url="{{ save }}"
+            title="{{ ce.management if ce and ce.management else ('눌러서 고릅니다' ~ (born if fresh else '')) }}"{% else %}class="muted"
             title="{{ (cv.status ~ ' — ' ~ why) if cv.status else why }}"{% endif %}>{{ cv.status }}</td>
-        <td {% if ce %}class="cell" data-field="meeting_at" data-type="date" data-value="{{ ce.meeting }}"
-            data-save-url="/api/consulting/{{ ce.id }}"
-            title="{{ cv.meeting or '눌러서 날짜를 고릅니다' }}"{% else %}class="muted"
+        <td {% if save %}class="cell" data-field="meeting_at" data-type="date" data-value="{{ ce.meeting if ce else '' }}"
+            data-save-url="{{ save }}"
+            title="{{ cv.meeting or ('눌러서 날짜를 고릅니다' ~ (born if fresh else '')) }}"{% else %}class="muted"
             title="{{ (cv.meeting ~ ' — ' ~ why) if cv.meeting else why }}"{% endif %}>{{ cv.meeting }}</td>
         {% endif %}
         <td title="{{ r.note }}">

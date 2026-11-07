@@ -843,6 +843,15 @@
     var field = cell.getAttribute("data-field");
     if (!(field in values)) return;
     var saved = values[field] || "";
+    // 이어진 줄이 없던 기업에 처음 적어 **줄이 새로 섰다**(`save_consulting`) — 그 줄의 두 칸이
+    // 이제부터 그 줄의 저장 길로 간다. 옆 칸(미팅일)도 같이 바꿔야 다음에 적을 때 같은 줄에 담긴다.
+    if (data.created && data.id && e.detail.row) {
+      e.detail.row.querySelectorAll("[data-save-url]").forEach(function (c) {
+        if (/\/api\/companies\/\d+\/consulting$/.test(c.getAttribute("data-save-url"))) {
+          c.setAttribute("data-save-url", "/api/consulting/" + data.id);
+        }
+      });
+    }
     cell.setAttribute("data-value", saved);
     if (field === "management" && "management_tag" in data) {
       cell.textContent = data.management_tag || "";

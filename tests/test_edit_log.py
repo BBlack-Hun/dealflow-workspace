@@ -509,6 +509,10 @@ WRITE_ROUTES = {
     ("POST", "/companies/ir-files"): WATCHED,
     ("POST", "/api/companies"): WATCHED,
     ("PATCH", "/api/companies/{company_id}"): WATCHED,
+    # IR 기업 현황의 `컨설팅 상태` · `컨설팅 미팅일` — 이어진 줄이 없는 기업이면 그 기업에
+    # 이어진 투자컨설턴트 줄을 세운다(자기 줄이라도 남긴다 · `edit_log.always`), 있으면 그
+    # 줄의 저장 길(`PATCH /api/consulting/{id}`) 그대로다.
+    ("PATCH", "/api/companies/{company_id}/consulting"): WATCHED,
     ("POST", "/api/companies/{company_id}/one-liner"): WATCHED,
     ("POST", "/api/one-liner/bulk"): WATCHED,
     ("POST", "/api/one-liner/bulk/undo"): WATCHED,
@@ -906,6 +910,8 @@ def test_the_six_shared_routers_still_hold_the_forty_nine_paths(portal):
     # companies 의 여덟 번째가 **기업 강제 삭제**(`/force-delete`)다. 평범한
     # [삭제] 가 이력이 붙은 기업을 막는 것을 무시하는 길이라, 길을 따로 냈다 —
     # 같은 주소에 깃발 하나로 붙이면 잘못 눌렀을 때 그대로 지워진다.
+    # 아홉 번째는 표의 `컨설팅 상태` · `컨설팅 미팅일`(`/consulting` — 이어진 줄이 없는
+    # 기업이면 투자컨설턴트 줄을 세운다 · 11/07)이다.
     # sourcing 의 5 · 6번째는 이 달 `딜 받음` 단추와 [지금 메일 확인]이다
     # (`services/sourcing_receipts.py` · `services/sourcing_mail.py`).
     # 7 · 8번째는 카톡방 [방 후보 찾기] · [이 방으로 확정]이다
@@ -924,7 +930,7 @@ def test_the_six_shared_routers_still_hold_the_forty_nine_paths(portal):
     # forecast 의 넷은 매출예상리스트 줄 추가 · 고치기 · 기업 고르기 · 지우기다(#46).
     # custom_columns 의 일곱은 관리자 `컬럼 관리` 여섯(붙이기 · 이름 · 순서 · 자리 ·
     # 숨김 · 삭제)과 표에서 추가 칸 값 적기 하나다.
-    assert counted == {"companies": 8, "ir": 18, "consulting": 9,
+    assert counted == {"companies": 9, "ir": 18, "consulting": 9,
                        "templates_crud": 7, "sourcing": 13, "contacts": 24,
                        "series_a": 5, "forecast": 4, "custom_columns": 7}
 
