@@ -271,6 +271,7 @@
         <b>{{ reactions.meeting_done }}</b><span>IR 미팅완료 투자사</span></a>
       <a class="react {% if reactions.meeting_call %}warn{% endif %}" href="/reactions/list?key=meeting_call{{ rq }}">
         <b>{{ reactions.meeting_call }}</b><span>미팅완료 리마인드 TEL</span></a>
+      {% include "_meeting_results_tile.html" %}
     </div>
     <p class="hint">
       숫자를 누르면 그 수를 이룬 심사역 · 기업 · 미팅이 한 표로 뜹니다.

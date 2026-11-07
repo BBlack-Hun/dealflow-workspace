@@ -526,6 +526,35 @@ def monthly_reactions(db: Session, contact_ids: List[int],
     return out
 
 
+def meeting_results(db: Session, contact_ids: List[int], year: int = 0) -> List[dict]:
+    """끝난 미팅의 결과별 건수(#183) — 반응 패널 `미팅완료 리마인드 TEL` 오른쪽 칸.
+
+    보기는 고를 수 있는 셋(`pipeline.OUTCOME_CHOICES`) 그대로, 그 차례로 선다. 값은
+    딜 진행 관리 › 미팅 후기의 `결과` 칸(`Meeting.outcome`)이고 거기서 고른다(#176).
+
+    **미팅 건수를 센다**(투자사 수가 아니다) — 한 투자사가 기업 둘을 만나 하나는 보류,
+    하나는 검토 진행일 수 있다. 업무 보고의 `미팅 결과` 와 같은 단위다. 모집단은 위
+    반응 칸들과 같은 `contact_ids` 이고, 취소·예정 미팅은 안 센다.
+
+    `year=2026` 이면 그 해치(업무 보고 연간 반응 칸 · #182) — 해의 경계는 반응 칸과 같은
+    `_period` 의 미팅일이다. 그래서 결과별 수는 `IR 미팅완료 투자사` 상세 목록의 `미팅 결과`
+    칸에서 그 결과인 줄 수와 같다(tests/test_drilldown.py 가 지킨다).
+    """
+    counts: Dict[str, int] = {}
+    period = _period(year=year)
+    if contact_ids and period is not None:
+        _prefix, start, end = period
+        stmt = (select(Meeting.outcome, func.count())
+                .where(Meeting.contact_id.in_(contact_ids), Meeting.status == "done",
+                       Meeting.outcome.in_(list(pipeline.OUTCOME_CHOICES))))
+        if start is not None:
+            stmt = stmt.where(Meeting.scheduled_at >= start.isoformat(),
+                              Meeting.scheduled_at <= end.isoformat())
+        counts = dict(db.execute(stmt.group_by(Meeting.outcome)).all())
+    return [{"key": key, "label": label, "count": counts.get(key, 0)}
+            for key, label in pipeline.OUTCOME_CHOICES.items()]
+
+
 def _company_names(raw: Optional[str]) -> List[str]:
     import json
 
@@ -729,6 +758,8 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None,
         # 관리자는 **팀원 것을 모두 합친 수**(#175) — 모집단은 `reaction_ids` 한 곳이고,
         # 숫자를 누르면 뜨는 목록(`/reactions/list?scope=team`)도 같은 것을 읽는다.
         "reactions": _reaction_summary(db, react_ids),
+        # 미팅 결과 칸(#183)도 같은 모집단 — 관리자 화면에서 옆 칸과 범위가 갈리면 안 된다.
+        "meeting_results": meeting_results(db, react_ids),
         # 같은 다섯 수치를 **달로 갈라** 한 번 더. 모집단(`react_ids`)이 같아야
         # 위 누적과 아래 달별이 서로 어긋나 보이지 않는다.
         "reaction_months": monthly_reactions(db, react_ids, today),

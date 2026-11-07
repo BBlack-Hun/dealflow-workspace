@@ -220,12 +220,23 @@ def href(key: str, *, month: str = "", year: int = 0, scope: str = "",
     return "/reactions/list?" + "&".join(parts)
 
 
+def _year_ids(db: Session, user: User, scope: str, member: int) -> List[int]:
+    """연간 반응 칸의 모집단 — 이 보고와 같은 범위(`report.scope_for`)."""
+    who, team_wide, _viewing = report.scope_for(db, user, scope, member)
+    return dashboard.reaction_ids(db, who or user, team_wide=team_wide)
+
+
 def year_cells(db: Session, user: User, year: int, scope: str = "",
                member: int = 0) -> List[dict]:
     """업무 보고 연간 보기의 반응 다섯 칸(#182) — 대시보드 패널과 같은 칸 · 같은 셈, 그 해치."""
-    who, team_wide, _viewing = report.scope_for(db, user, scope, member)
-    got = dashboard._reaction_summary(
-        db, dashboard.reaction_ids(db, who or user, team_wide=team_wide), year=year)
+    got = dashboard._reaction_summary(db, _year_ids(db, user, scope, member), year=year)
     return [{"key": k, "label": REACTION_LABELS[k], "value": got[k],
              "href": href(k, year=year, scope=scope, member=member)}
             for k in dashboard.REACTION_KEYS]
+
+
+def year_results(db: Session, user: User, year: int, scope: str = "",
+                 member: int = 0) -> List[dict]:
+    """연간 반응 칸 옆 `미팅 결과`(#182 의 `미팅완료 결과` · #183) — 대시보드 칸과 같은 셈을
+    그 해치로. 모집단은 위 다섯 칸과 같다(`_year_ids`)."""
+    return dashboard.meeting_results(db, _year_ids(db, user, scope, member), year=year)

@@ -141,13 +141,24 @@ def test_admin_dashboard_sums_the_team(client, db, users, data):
     """#175 — 관리자 대시보드의 반응은 팀원 것을 모두 합친 수다. 팀원은 그대로 본인 것."""
     from app.services import dashboard
 
-    mine = dashboard.user_dashboard(db, users["u1"])["reactions"]
+    from app.models import Meeting
+
+    db.query(Meeting).filter_by(contact_id=data["other"].id).update({"outcome": "pass"})
+    db.commit()
+    mine_all = dashboard.user_dashboard(db, users["u1"])
+    mine = mine_all["reactions"]
     users["u2"].role = "admin"
     db.commit()
     team = dashboard.user_dashboard(db, users["u2"])
     assert team["reaction_team"] is True
     assert team["reactions"]["ir_contacts"] == mine["ir_contacts"] + 1
     assert team["reactions"]["meeting_done"] == mine["meeting_done"] + 1
+    # 옆 `미팅 결과` 칸(#183)도 같은 팀 합계 — 범위가 옆 칸과 갈리면 안 된다.
+    def results(d):
+        return {r["key"]: r["count"] for r in d["meeting_results"]}
+
+    assert results(mine_all) == {"pass": 0, "hold": 1, "investing": 0}
+    assert results(team) == {"pass": 1, "hold": 1, "investing": 0}, "내 보류 + 남의 의사 없음"
 
     body = _login(client, "01000000002").get("/").text
     assert 'href="/reactions/list?key=ir_contacts&amp;scope=team"' in body
@@ -184,6 +195,29 @@ def test_monthly_numbers_and_report_cards_link_to_the_list(client, db, users, da
         assert f'href="/reactions/list?key={key}&amp;year=2026"' in yearly, key
     page = client.get("/reactions/list?key=meeting_done&year=2026")
     assert page.status_code == 200 and "심사역가" in page.text
+
+
+def test_year_meeting_results_match_the_meeting_done_list(client, db, users, data):
+    """#182 연간 반응 칸의 `미팅 결과`(결과별 건수 · #183)는 `IR 미팅완료 투자사` 상세 목록과
+    같은 조건이다 — 결과별 수 = 그 목록의 `미팅 결과` 칸이 그 결과인 줄 수(모집단 · 해 같음)."""
+    from collections import Counter
+
+    from app.services import drilldown, pipeline
+
+    for year in (2026, 2025):
+        got = drilldown.build(db, users["u1"], "meeting_done", year=str(year))
+        col = got["headers"].index("미팅 결과")
+        listed = Counter(r["cells"][col] for r in got["rows"])
+        results = drilldown.year_results(db, users["u1"], year)
+        assert [(r["label"], r["count"]) for r in results] == [
+            (label, listed.get(label, 0)) for label in pipeline.OUTCOME_CHOICES.values()], year
+    assert {r["key"]: r["count"] for r in drilldown.year_results(db, users["u1"], 2026)} == {
+        "pass": 0, "hold": 1, "investing": 0}
+
+    yearly = _login(client).get("/report?span=year&year=2026").text
+    panel = yearly.split("2026년 반응", 1)[1].split("</section>", 1)[0]
+    assert "meeting-results" in panel, "연간 반응 칸에도 미팅 결과가 선다"
+    assert f"<b>1</b>{pipeline.OUTCOME_CHOICES['hold']}" in panel
 
 
 def test_unknown_key_or_unsplittable_month_is_404(client, db, users, data):
