@@ -535,6 +535,9 @@
         // `data-no-keys` 칸은 숫자키로 고르지 않는다 — 딜 소싱 참여 칸에
         // "11월 재연락" 을 치면 첫 `1` 이 '참여' 를 저장해 발송 대상이 됐다.
         var numKeys = !cell.hasAttribute("data-no-keys");
+        // `data-choices-only` 칸은 보기 밖의 말을 서버가 받지 않는다(미팅 후기 `결과` · #176)
+        // — 안내에 `새로 적어도 됩니다` 를 세우면 적었다가 저장이 거절된다.
+        var onlyChoices = cell.hasAttribute("data-choices-only");
         var how = numKeys ? "↑↓ 또는 숫자키로" : "↑↓ 로";
 
         if (used.length) {
@@ -572,7 +575,8 @@
             ? "앞 " + suggested.length + "개는 한줄 소개를 보고 고른 후보입니다 "
               + "— 맞는 것이 없으면 아래에서 고르세요 · " + how + " 고르기 "
               + "· Enter 저장 · Esc 취소"
-            : used.length ? how + " 고릅니다(새로 적어도 됩니다) "
+            : used.length ? how + (onlyChoices ? " " + used.length + "가지 중에서 고릅니다 "
+                                               : " 고릅니다(새로 적어도 됩니다) ")
                             + "· Enter 저장 · Esc 취소"
                           : "Enter 저장 · Esc 취소"));
 

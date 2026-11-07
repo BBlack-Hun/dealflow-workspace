@@ -120,12 +120,18 @@ MEETING_MODES = {"in_person": "대면", "video": "화상"}
 #: 사무실 주소를 장소로 넣으면 아침에 그것을 본 사람이 그리로 나선다.
 #: 어느 말이 화상인지 아는 곳은 여기 하나다(`calendar_link` 는 `remote` 참/거짓만 받는다).
 REMOTE_MODES = {"video"}
-OUTCOMES = {
-    "reviewing": "검토 중",
-    "investing": "투자 검토",
-    "hold": "보류",
-    "pass": "거절",
+#: 미팅 결과 — **고를 수 있는 것은 이 셋이다**(#176 · #183 — 사용자가 정한 말과 차례).
+#: DB 에는 예전 코드 그대로 남는다(`거절`→`pass` · `보류`→`hold` · `투자 검토`→`investing`)
+#: — 자동 발송(A7)·재접촉이 코드로 가르므로 말만 바꿨다. 빈칸은 `결과 미정`.
+OUTCOME_CHOICES = {
+    "pass": "투자 의사 없음",
+    "hold": "투자 보류",
+    "investing": "투자 검토 진행",
 }
+#: 화면에 이름을 붙일 결과 — 고르는 셋 + 예전에 고를 수 있던 `검토 중`. 이미 그렇게
+#: 적힌 미팅이 있어 이름은 남긴다(고르는 목록에서만 뺐다). A7 은 이 값을 빈칸처럼
+#: `아직 모름` 으로 본다(`automations/meeting_review.ASKABLE_OUTCOMES`).
+OUTCOMES = {**OUTCOME_CHOICES, "reviewing": "검토 중"}
 
 
 def _key(name: Optional[str]) -> str:
@@ -1078,6 +1084,30 @@ def needs_followup(meeting: Meeting) -> bool:
     return (meeting.status == "done"
             and not meeting.followup_done
             and (meeting.outcome or "") not in NO_FOLLOWUP_OUTCOMES)
+
+
+def set_outcome(meeting: Meeting, value: Optional[str]) -> None:
+    """미팅 결과만 고친다(#176 — 딜 진행 관리 › 미팅 후기의 `결과` 칸).
+
+    결과 문의를 했다는 기록(`followup_done`)은 **건드리지 않는다** — 결과만 바로잡을
+    길이 없어, 고치려면 [물어봤음] 을 눌러 문의까지 닫아야 했다. 보기 이름
+    (`투자 보류`)도 코드(`hold`)도 받고, 비우면 `결과 미정` 이다. 그 밖의 말은 받지
+    않는다(`ValueError`) — 같은 뜻이 여러 말로 갈리면 업무 보고의 결과 수가 갈린다.
+
+    끝난 미팅에 물을 날이 없으면(거절로 마쳐 안 잡혔다) 완료 처리와 같은 규칙으로 잡는다
+    — 안 잡으면 그 미팅은 결과 문의 목록에 영영 안 뜬다.
+    """
+    text = (value or "").strip()
+    key = text if text in OUTCOMES else next(
+        (k for k, label in OUTCOMES.items() if label == text), None)
+    if text and key is None:
+        raise ValueError("미팅 결과는 " + " · ".join(OUTCOME_CHOICES.values())
+                         + " 중에서 고르거나 비워 주세요")
+    meeting.outcome = key
+    if (meeting.status == "done" and not meeting.followup_due
+            and (key or "") not in NO_FOLLOWUP_OUTCOMES):
+        done_on = _as_date(meeting.done_at) or date.today()
+        meeting.followup_due = followup_date(done_on).isoformat()
 
 
 def complete_meeting(db: Session, meeting: Meeting, outcome: str = "",

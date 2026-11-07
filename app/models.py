@@ -2614,7 +2614,8 @@ class Meeting(TimestampMixin, Base):
     # scheduled(예정) | done(완료) | canceled(취소)
     status: Mapped[str] = mapped_column(String, default="scheduled")
     done_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    # 미팅 결과 — reviewing(검토 중) | investing(투자 검토) | hold(보류) | pass(거절)
+    # 미팅 결과 — pass(투자 의사 없음) | hold(투자 보류) | investing(투자 검토 진행)
+    #   | reviewing(검토 중 — 예전 값, 이제 안 고른다). 이름은 `pipeline.OUTCOMES`.
     outcome: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     # 미팅 뒤 결과를 물어볼 날. 완료 처리하면 자동으로 잡힌다.
     followup_due: Mapped[Optional[str]] = mapped_column(String, nullable=True)
