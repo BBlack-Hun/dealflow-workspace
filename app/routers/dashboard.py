@@ -649,6 +649,12 @@ def report_page(request: Request, db: Session = Depends(get_db),
         db, [c.id for c in sheet_owner.managed(db, target, team_wide=team_wide)])))
     if yearly_view:
         ctx.update(report.yearly(db, year_, who, today))
+        # 대시보드 반응 다섯 칸을 그 해치로(#182) — 숫자를 누르면 같은 상세 목록이 뜬다.
+        from ..services import drilldown
+
+        ctx["year_reactions"] = drilldown.year_cells(db, user, year_, scope, member)
+        # 그 오른쪽 `미팅 결과`(결과별 건수) — 대시보드와 같은 부분 템플릿을 쓴다.
+        ctx["meeting_results"] = drilldown.year_results(db, user, year_, scope, member)
     else:
         data = report.monthly(db, year_, mon, who, today)
         ctx.update(data)

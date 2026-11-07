@@ -110,8 +110,10 @@ def test_report_page_shows_the_table(logged, db, users):
     page = logged.get("/report?month=2026-08")
     assert page.status_code == 200
     assert "8월 소개한 기업" in page.text and "샘플애그" in page.text
-    # 팀원은 `팀 전체` 를 달아도 제 것만 본다 — 남의 명단이 받은 샘플메디가 없다.
-    assert "샘플메디" not in logged.get("/report?month=2026-08&scope=team").text
+    # 팀원은 `팀 전체` 를 달아도 제 것만 본다 — 남의 명단이 받은 샘플메디가 `소개한 기업` 에 없다
+    # (내가 안 보낸 기업이라 아래 `소개 후보` 에는 선다 — #174).
+    assert "<summary><b>샘플메디</b></summary>" not in \
+        logged.get("/report?month=2026-08&scope=team").text
 
     assert "이 기간에 소개한 기업이 없습니다" in logged.get("/report?month=2026-10").text
 

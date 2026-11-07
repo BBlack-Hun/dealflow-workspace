@@ -176,7 +176,8 @@ def ir_page(request: Request, db: Session = Depends(get_db),
         # 같은 칸에 함께 뜨는 **Series A 이상 딜 소싱** 기업 — 화면이 `Series A`
         # 딱지를 붙인다. IR 기업 현황에 같은 기업이 있으면 IR 쪽 하나로만 선다.
         "series_a_names": sorted(pipeline.series_a_names(db).values()),
-        "outcomes": pipeline.OUTCOMES,
+        # 고르는 보기는 셋(#176) — 예전 `검토 중` 은 이름만 남았다(`pipeline.OUTCOMES`).
+        "outcomes": pipeline.OUTCOME_CHOICES,
         "kinds": pipeline.MEETING_KINDS,
         "meet_modes": pipeline.MEETING_MODES,
         "followup_days": pipeline.MEETING_FOLLOWUP_DAYS,
@@ -843,15 +844,23 @@ def mark_followup(meeting_id: int, outcome: str = Form(""),
 class MeetingNoteIn(BaseModel):
     note: Optional[str] = None
     followup_note: Optional[str] = None
+    # 미팅 후기 표의 `결과` 칸(#176) — 보기 이름(`투자 보류`)이 온다.
+    outcome: Optional[str] = None
 
 
 @router.patch("/api/meetings/{meeting_id}", include_in_schema=False)
 def edit_meeting_note(meeting_id: int, body: MeetingNoteIn,
                       db: Session = Depends(get_db),
                       user: User = Depends(get_current_user)):
-    """미팅 후기·결과 문의 메모를 표에서 바로 고친다."""
+    """미팅 후기·결과 문의 메모 · 결과를 표에서 바로 고친다."""
     meeting = _owned_meeting(db, meeting_id, user)
-    for field, value in body.model_dump(exclude_unset=True).items():
+    changes = body.model_dump(exclude_unset=True)
+    if "outcome" in changes:
+        try:
+            pipeline.set_outcome(meeting, changes.pop("outcome"))
+        except ValueError as err:
+            raise HTTPException(status_code=400, detail=str(err))
+    for field, value in changes.items():
         setattr(meeting, field, (value or "").strip() or None)
     db.commit()
     return {"ok": True}

@@ -116,7 +116,8 @@ def test_outcomes_are_counted(db, users):
     _meeting(db, users, date(2026, 6, 12), outcome="pass")
 
     data = report.monthly(db, 2026, 6, users["u1"], today=date(2026, 7, 1))
-    assert dict(data["outcomes"]) == {"투자 검토": 2, "거절": 1}
+    # 이름은 #176 · #183 에서 사용자가 정한 말(코드는 그대로 `investing` · `pass`).
+    assert dict(data["outcomes"]) == {"투자 검토 진행": 2, "투자 의사 없음": 1}
 
 
 def test_ir_requests_are_counted_too(db, users):
