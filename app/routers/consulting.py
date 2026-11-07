@@ -1355,7 +1355,18 @@ def create_company(body: CompanyIn, db: Session = Depends(get_db),
     require_access(user)
     if not (body.company_name or "").strip():
         raise HTTPException(status_code=400, detail="기업명을 입력하세요")
+    company = add_company(db, user, body)
+    db.commit()
+    return {"id": company.id}
 
+
+def add_company(db: Session, user: User, body: CompanyIn) -> ConsultingCompany:
+    """줄 하나를 세운다 — 주인은 누른 사람, 탭은 화면이 준 탭(없으면 첫 탭). 커밋은 부르는 쪽.
+
+    [기업 추가](`create_company`)와 IR 기업 현황의 `컨설팅 상태` · `컨설팅 미팅일`
+    (이어진 줄이 없는 기업 — `routers/companies.save_consulting`)이 **같이 지난다.**
+    두 벌이면 한쪽만 탭 검사 · 번호 매기기 · 칸 날짜가 낡는다.
+    """
     # 화면이 보내 준 탭에 넣는다. 안 보내면 예전처럼 첫 탭이다.
     #
     # 아무 값이나 받으면 오타 하나로 **없던 탭이 생긴다** — `sheet_tabs` 가
@@ -1382,8 +1393,7 @@ def create_company(body: CompanyIn, db: Session = Depends(get_db),
     _check_contract_pick(db, company, body)
     _assign(company, body)
     db.add(company)
-    db.commit()
-    return {"id": company.id}
+    return company
 
 
 @router.patch("/api/consulting/{company_id}")
