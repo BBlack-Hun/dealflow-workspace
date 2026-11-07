@@ -107,14 +107,18 @@ def test_두_탭과_창에_올해_기준_해가_선다(logged_in, company, at, d
     heads = _heads(db_tab)
     # 올해 칸(`revenue_recent`)이 지난 세 해 **바로 오른쪽**에 같은 꼴 이름으로 선다(#82).
     assert [h for h in heads if h.endswith("년 매출")] == [f"{y}년 매출" for y in years] + [label]
-    assert heads[heads.index(label) + 1] == "누적투자금액"
+    # 그 오른쪽이 내년 예상매출(과제 169), 그다음이 금액이다.
+    ahead = f"{day.year % 100 + 1}년 예상매출"
+    assert heads[heads.index(label) + 1] == ahead
+    assert heads[heads.index(label) + 2] == "누적투자금액"
     assert not any(h.startswith("최근 매출액") for h in heads)
     # 숨긴 해는 표에서만 빠진다 — 창에도 안 서고(보내지 않으니 안 지워진다) 값은 남는다.
     status = logged_in.get("/companies").text
     for html in (db_tab, status):
         ids = _panel_ids(html)
         assert [i for i in ids if re.fullmatch(r"revenue_\d{4}", i)] == \
-            [f"revenue_20{y}" for y in years]
+            [f"revenue_20{y}" for y in years] + [f"revenue_{day.year + 1}"]
+        assert f"<span>{ahead}</span>" in html, "창의 이름이 표 머리글과 다릅니다"
         assert f"<span>{label}</span>" in html, "창의 이름이 표 머리글과 다릅니다"
         assert f'data-field="revenue_20{gone}"' not in html
     assert logged_in.get(f"/api/companies/{company.id}").json()[f"revenue_20{gone}"]
@@ -137,7 +141,7 @@ def test_IR_탭은_소분류_바로_뒤에_매출_금액이_선다(logged_in, co
     assert fields[at_minor + 1:at_minor + 1 + len(block)] == [f for f, _h in block]
     if day == Y2026:
         assert [h for _f, h in block] == [
-            "23년 매출", "24년 매출", "25년 매출", "26년 매출",
+            "23년 매출", "24년 매출", "25년 매출", "26년 매출", "27년 예상매출",
             "누적투자금액", "투자유치희망금액", "Pre Value"]
 
 
@@ -167,7 +171,7 @@ def test_화면_그대로_엑셀에도_같은_자리에_선다(logged_in, compan
     assert head[at_minor + 1:at_minor + 1 + len(block)] == [h for _f, h in block]
     # 숫자로만 적힌 글자는 파일에서 수로 선다(`_xlsx` — 엑셀에서 더할 수 있게).
     assert row[at_minor + 1:at_minor + 1 + len(block)] == [
-        "3억", "4억", "5억", 6.5, 10, "5-10억 사이", "~"]
+        "3억", "4억", "5억", 6.5, None, 10, "5-10억 사이", "~"]   # 28년 예상매출은 빈칸
 
 
 def test_한줄_소개는_보이는_세_해만_싣는다(at):

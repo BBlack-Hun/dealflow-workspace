@@ -1,15 +1,14 @@
-"""스타트업DB 칸 → `딜 소개 문구` 자동 조합. **고를 때만 들어간다.**
+"""스타트업DB 칸 → `딜 소개 문구` 자동 조합. **재료를 고치면 따라온다 — 사람이 쓴 문구만 빼고.**
 
 시트를 쓰던 사람은 스타트업DB 탭에 값을 넣는데, 정작 딜소개에 쓰이는 것은 옆
 탭의 한 칸이라 같은 내용을 두 번 적고 있었다. 이 검사는 그 조합이 **실데이터의
-표기 그대로** 나오는지, 그리고 **칸의 기본이 사용자 정의 문구**인지를 지킨다.
+표기 그대로** 나오는지, 그리고 칸이 **언제 따라 바뀌는지**를 지킨다.
 
-기본이 무엇인지가 이 파일의 절반이다. 예전에는 조합값과 글자가 같은 줄
-(`AUTO`)이 재료를 고칠 때마다 저절로 다시 쓰였고 칸을 비우면 조합값이 도로
-들어왔다 — 칸의 기본이 자동이었다. 사용자가 그 기본을 뒤집었다("기본 값은
-사용자 정의 문구 사용"). 그래서 이제 **저장하는 길은 이 칸을 건드리지 않고**,
-자동 조합은 사람이 고르는 세 자리에서만 들어간다 — 창의 [자동 조합으로 바꾸기]
-(→ [저장]), 표 위의 [전체 자동조합], `POST /api/companies/{id}/one-liner`.
+칸의 기본은 한때 자동 조합이었다가 사용자 정의 문구로 뒤집혔고("기본 값은 사용자 정의
+문구 사용"), 11/07 다시 "컬럼에 내용 기입하면 딜소개 문구 자동으로 기입되게" 가 왔다
+(과제 168 · 170). 지금 규칙은 둘을 함께 지킨다 — 재료를 고쳐 저장하면 **비었거나 조합값
+그대로인 칸만** 따라 바뀌고, 사람이 쓴 문구는 사람이 고르는 세 자리에서만 바뀐다
+(창의 [자동 조합으로 바꾸기], 표 위의 [전체 자동조합], `POST /api/companies/{id}/one-liner`).
 
 기대값의 표기(`누적투자금액 N억` · `N억 투자유치중` · `Pre Value N억`)는 지어낸
 것이 아니라 344행에서 가장 많이 쓰인 모양을 세어 뽑은 것이다 —
@@ -303,10 +302,9 @@ def test_manual_line_is_never_replaced():
 
 
 def test_a_line_that_matches_the_auto_one_is_not_refreshed_either():
-    """전에 조합값을 넣어 둔 줄도 **저절로는** 안 바뀐다 — 이게 뒤집힌 기본이다.
+    """`one_liner_status` 는 조합값 그대로인 줄도 **안 고친다** — 읽기만 한다.
 
-    예전 규칙에서는 이런 줄(`origin == auto`)이 재료를 고칠 때마다 따라왔다.
-    그 자동 갱신이 곧 '기본이 자동' 이었다.
+    따라 고치는 것은 flush 한 자리(`one_liner.follow`)의 몫이다 — 아래 화면/API 검사.
     """
     c = make(one_liner="소재 제조", business_desc="소재 제조", funding_total="10")
     result = one_liner_status(c)
@@ -360,13 +358,10 @@ def company(db):
     return row
 
 
-def test_filling_the_startup_db_tab_only_offers_the_line(logged_in, db, company):
-    """요청의 핵심 — 스타트업DB 를 채워도 칸은 그대로고, 만들 줄만 따라온다.
-
-    **기본은 사용자 정의 문구다.** 채운 재료로 만들 수 있는 한 줄은 응답에
-    실려 오고(화면이 [자동 조합으로 바꾸기] 로 권한다), 칸에 넣을지는 사람이
-    누른다.
-    """
+def test_filling_the_startup_db_tab_fills_an_empty_line(logged_in, db, company):
+    """요청의 핵심(과제 170) — 문구가 빈 기업은 재료를 채우면 그 자리에서 문구가 들어간다."""
+    company.one_liner = None            # 재료는 있고 문구만 빈 운영의 줄(재료는 안 건드린다)
+    db.commit()
     r = logged_in.patch(f"/api/companies/{company.id}",
                         json={"revenue_2024": "8.9억", "funding_total": "40",
                               "raise_target": "10", "pre_value": "120",
@@ -374,28 +369,20 @@ def test_filling_the_startup_db_tab_only_offers_the_line(logged_in, db, company)
     assert r.status_code == 200, r.text
     made = ("산업용 센서 제조 | 매출 8.9억 | 누적투자금액 40억 | "
             "10억 투자유치중 | Pre Value 120억 | TIPS 선정")
-    assert r.json()["one_liner_applied"] is False
+    assert r.json()["one_liner_applied"] is True
+    assert r.json()["one_liner"] == made, "화면이 이 값으로 칸을 다시 그린다"
     assert r.json()["one_liner_suggestion"] == made
-    db.refresh(company)
-    assert company.one_liner is None, "저장했더니 자동 조합이 칸에 들어갔다"
-
-    # 그리고 **누르면** 들어간다 — 길이 막힌 것이 아니다.
-    logged_in.post(f"/api/companies/{company.id}/one-liner")
     db.refresh(company)
     assert company.one_liner == made
 
 
-def test_an_auto_looking_line_is_not_refreshed_by_a_source_edit(logged_in, db, company):
-    """조합값이 들어 있던 줄도 재료를 고쳤다고 **저절로** 바뀌지 않는다.
-
-    뒤집힌 기본이 바로 이것이다. 예전에는 이 줄이 따라 바뀌었다.
-    """
-    company.one_liner = "산업용 센서 제조"          # 그때의 조합값 그대로
-    db.commit()
+def test_an_auto_looking_line_follows_a_source_edit(logged_in, db, company):
+    """조합값이 들어 있던 줄(사람이 손대지 않은 줄)은 재료를 고치면 따라 바뀐다."""
+    assert company.one_liner == "산업용 센서 제조"   # 만들 때 저절로 들어간 조합값
 
     logged_in.patch(f"/api/companies/{company.id}", json={"funding_total": "40"})
     db.refresh(company)
-    assert company.one_liner == "산업용 센서 제조", "칸이 저절로 다시 쓰였다"
+    assert company.one_liner == "산업용 센서 제조 | 누적투자금액 40억"
 
 
 def test_hand_written_line_survives_a_startup_db_edit(logged_in, db, company):
@@ -414,23 +401,25 @@ def test_hand_written_line_survives_a_startup_db_edit(logged_in, db, company):
 
 def test_unrelated_edit_does_not_touch_the_line(logged_in, db, company):
     """계약여부처럼 상관없는 칸을 고쳤는데 소개가 바뀌면 이유를 알 수 없다."""
+    company.one_liner = None
+    db.commit()
     logged_in.patch(f"/api/companies/{company.id}", json={"contract_status": "paid"})
     db.refresh(company)
     assert company.one_liner is None
 
 
-def test_creating_a_company_does_not_fill_the_line(logged_in, db):
-    """새 기업도 마찬가지다 — 재료를 함께 적어 넣어도 칸은 사람이 쓴 것만 담는다."""
+def test_creating_a_company_fills_an_empty_line(logged_in, db):
+    """새 기업도 마찬가지다 — 문구를 비워 두고 재료를 적어 넣으면 조합값이 들어간다."""
     from app.models import IrCompany
 
     r = logged_in.post("/api/companies",
                        json={"name": "샘플마바에듀", "business_desc": "교육 플랫폼",
                              "funding_total": "40"})
     assert r.status_code == 200, r.text
-    assert r.json()["one_liner_applied"] is False
+    assert r.json()["one_liner_applied"] is True
     assert r.json()["one_liner_suggestion"] == "교육 플랫폼 | 누적투자금액 40억"
     row = db.get(IrCompany, r.json()["id"])
-    assert row.one_liner is None, "새 기업에 자동 조합이 저절로 들어갔다"
+    assert row.one_liner == "교육 플랫폼 | 누적투자금액 40억"
 
 
 def test_a_line_typed_on_create_is_kept_as_is(logged_in, db):
