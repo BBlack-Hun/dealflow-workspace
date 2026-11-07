@@ -2431,6 +2431,13 @@ class SheetOwner(TimestampMixin, Base):
     #   0     사람이 껐다 — 할당받은 명단이어도 딜 소개는 안 보낸다
     is_deal_list: Mapped[Optional[int]] = mapped_column(
         Integer, nullable=True, default=None)
+    # **탭 차례**(#181). 작은 수가 앞이고, 비어 있으면 지금까지의 차례(연결 완료 →
+    # 인원 → 이름)로 그 뒤에 선다(`services/sheet_owner.sheet_rows`). 위 두 칸과
+    # 같은 이유로 **명단에 붙은 값**이다 — 이름으로 차례를 적으면 탭 이름이 바뀔
+    # 때마다(11/04 처럼) 조용히 어긋난다. 화면에서 고치는 자리는 없다(관리자가
+    # 청하면 운영에서 값만 넣는다).
+    position: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True, default=None)
 
 
 class ContactColumn(TimestampMixin, Base):
