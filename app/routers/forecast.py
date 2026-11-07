@@ -65,7 +65,7 @@ def forecast_page(request: Request, db: Session = Depends(get_db),
         "report_tab": "forecast",
         # 재접촉 시기(#68) — 화면 범위의 보류한 2차·후속 미팅. 오늘 할 일과 같은 판정.
         "recontact": recontact.due(db, None if who is None else {who.id}, date.today()),
-        "outcomes": pipeline.OUTCOMES,
+        "outcomes": pipeline.OUTCOME_CHOICES,
         "viewing": who,
         "team_wide": team_wide,
         "scope": scope,

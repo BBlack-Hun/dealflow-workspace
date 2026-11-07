@@ -454,6 +454,27 @@ def monthly_reactions(db: Session, contact_ids: List[int],
     return out
 
 
+def meeting_results(db: Session, contact_ids: List[int]) -> List[dict]:
+    """끝난 미팅의 결과별 건수(#183) — 반응 패널 `미팅완료 리마인드 TEL` 오른쪽 칸.
+
+    보기는 고를 수 있는 셋(`pipeline.OUTCOME_CHOICES`) 그대로, 그 차례로 선다. 값은
+    딜 진행 관리 › 미팅 후기의 `결과` 칸(`Meeting.outcome`)이고 거기서 고른다(#176).
+
+    **미팅 건수를 센다**(투자사 수가 아니다) — 한 투자사가 기업 둘을 만나 하나는 보류,
+    하나는 검토 진행일 수 있다. 업무 보고의 `미팅 결과` 와 같은 단위다. 모집단은 위
+    반응 칸들과 같은 `contact_ids` 이고, 취소·예정 미팅은 안 센다.
+    """
+    counts: Dict[str, int] = {}
+    if contact_ids:
+        counts = dict(db.execute(
+            select(Meeting.outcome, func.count())
+            .where(Meeting.contact_id.in_(contact_ids), Meeting.status == "done",
+                   Meeting.outcome.in_(list(pipeline.OUTCOME_CHOICES)))
+            .group_by(Meeting.outcome)).all())
+    return [{"key": key, "label": label, "count": counts.get(key, 0)}
+            for key, label in pipeline.OUTCOME_CHOICES.items()]
+
+
 def _company_names(raw: Optional[str]) -> List[str]:
     import json
 
@@ -652,6 +673,7 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None,
         # 대시보드와 투자사 목록의 수가 어긋난 적이 있어 테스트가 지키고 있다.
         "sendable": sendable,
         "reactions": _reaction_summary(db, ids),
+        "meeting_results": meeting_results(db, ids),
         # 같은 다섯 수치를 **달로 갈라** 한 번 더. 모집단(`ids`)이 같아야
         # 위 누적과 아래 달별이 서로 어긋나 보이지 않는다.
         "reaction_months": monthly_reactions(db, ids, today),

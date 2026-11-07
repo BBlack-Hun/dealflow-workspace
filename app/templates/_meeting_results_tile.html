@@ -1,0 +1,15 @@
+{#
+  미팅 결과(#183) — 반응 패널의 `미팅완료 리마인드 TEL` 오른쪽 칸.
+
+  끝난 미팅을 결과별로 센 수다(`dashboard.meeting_results` — 미팅 건수). 보기는 고를 수
+  있는 셋 그대로 선다(`pipeline.OUTCOME_CHOICES`). **결과는 여기서 적지 않는다** — 누르면
+  딜 진행 관리 › 미팅 후기로 가고, 그 표의 `결과` 칸을 눌러 고른다(#176). 적는 자리가
+  둘이면 한쪽에서 고친 것이 다른 쪽에 늦게 보이고, 대시보드는 숫자만 보는 자리다.
+#}
+<a class="react meeting-results" href="/ir#reviews"
+   title="끝난 미팅의 결과 — 딜 진행 관리 › 미팅 후기의 결과 칸을 눌러 고릅니다">
+  <span class="result-counts">
+    {% for r in meeting_results %}<span class="result-count"><b>{{ r.count }}</b>{{ r.label }}</span>{% endfor %}
+  </span>
+  <span>미팅 결과</span>
+</a>

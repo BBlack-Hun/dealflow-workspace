@@ -1327,6 +1327,10 @@ a.secondary-btn { display: inline-flex; align-items: center; text-decoration: no
 .react-row { display: flex; gap: 10px; align-items: stretch; }
 .react { display: flex; flex-direction: column; justify-content: center;
          gap: 3px; min-width: 0; }
+/* 미팅 결과(#183) — 한 칸에 결과 셋의 수를 나란히. 셋이 들어 다른 칸의 두 몫을 쓴다. */
+.react.meeting-results { flex: 2; }
+.react .result-counts { display: flex; justify-content: center; gap: 10px; }
+.react .result-count { flex: 1; min-width: 0; word-break: keep-all; }
 
 /* 달별 반응 — 위 누적과 같은 다섯(중 넷)을 달로 갈라 놓은 표.
 
