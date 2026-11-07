@@ -20,8 +20,9 @@ from .test_migrations import _alembic
 ROOT = Path(__file__).resolve().parent.parent
 
 # 이름은 스타트업DB 의 같은 칸 그대로다(#63 — 처음 요청은 `핸드폰` · `프리밸류`).
+# 앞으로 올 해는 `예상매출`(과제 169 — 검사의 올해는 2026, tests/conftest.py).
 LABELS = ["대표자명", "연락처", "이메일", "24년 매출", "25년 매출", "26년 매출",
-          "27년 매출", "누적투자금액", "투자유치희망금액", "Pre Value"]
+          "27년 예상매출", "누적투자금액", "투자유치희망금액", "Pre Value"]
 #: `이메일` 바로 오른쪽의 계약 칸 둘(0125 · tests/test_series_a_contract.py) — 화면 차례.
 #: 그 왼쪽에 `계약년월`(0129 · #122 — tests/test_contract_ym.py)이 선다.
 CONTRACT = ["계약년월", "계약여부", "계약서 수신 여부"]

@@ -86,6 +86,10 @@ def world(client, db, users):
     }
     db.add_all(rows.values())
     db.commit()
+    # 새 줄의 빈 문구는 금액으로 저절로 채워진다(과제 168 — `one_liner.follow`). 문구 없는
+    # 옛 줄을 만들려고 금액은 안 건드리고 다시 비운다.
+    rows["d"].deal_pitch = None
+    db.commit()
     client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
     return rows
 
