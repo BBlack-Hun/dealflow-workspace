@@ -24,8 +24,8 @@
     같은 심사역 × 기업의 가장 최근 미팅(취소 제외)을 붙인다. 결과 글자는 `OUTCOMES`
     를 읽고, 모르는 값이면 적힌 그대로 둔다 — 결과 칸은 따로 손보는 중이다(#176 · #183).
 
-연도 매출은 IR 기업 현황 탭과 같은 `revenue_years.columns` 에서 **뒤의 넷**(지난 두 해 ·
-올해 · 내년 예상)을 고른다 — 2026년이면 24~27년.
+연도 매출은 지난 두 해 · 올해 · 내년 예상(`revenue_years.shown` · `recent_label` · `forecast`)
+— 2026년이면 24~27년(27년은 예상매출). IR 기업 현황 탭과 같은 글자다.
 """
 from __future__ import annotations
 
@@ -50,8 +50,15 @@ _MONEY = {"pre_value", "funding_total", "raise_target", "revenue_recent",
 
 
 def columns(year: Optional[int] = None) -> List[tuple]:
-    """목록 칸 `[(열쇠, 머리글)]` — 화면이 이 차례 그대로 그린다."""
-    years = [c for c in revenue_years.columns(year) if c[0].startswith("revenue_")][-4:]
+    """목록 칸 `[(열쇠, 머리글)]` — 화면이 이 차례 그대로 그린다.
+
+    연도 매출은 지난 두 해 · 올해(`revenue_recent`) · 내년 예상(`revenue_years.forecast`) —
+    2026년이면 `24년 매출` ~ `27년 예상매출`. 이름은 IR 기업 현황 탭과 같은 글자다.
+    """
+    ahead = revenue_years.forecast(year)
+    years = ([(f, f"{yy}년 매출") for f, yy in revenue_years.shown(year)[-2:]]
+             + [("revenue_recent", revenue_years.recent_label(year))]
+             + ([ahead] if ahead else []))
     return ([("day", "날짜"), ("vc_name", "심사역 이름"), ("firm", "투자사명"),
              ("phone", "연락처"), ("address", "회사주소"), ("company", "스타트업명"),
              ("ceo_name", "기업 담당자"), ("ceo_phone", "기업 담당자 연락처"),

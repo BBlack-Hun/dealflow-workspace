@@ -27,7 +27,7 @@ def data(db, users):
     other = VcContact(user_id=users["u2"].id, name="남의심사역", firm="마바파트너스",
                       source_sheet="남의 명단")
     co = IrCompany(name="샘플애그", contact_name="대표가", contact_phone="010-0000-2222",
-                   pre_value="120", revenue_2025="3억", revenue_recent="5",
+                   pre_value="120", revenue_2025="3억", revenue_recent="5", revenue_2027="9",
                    funding_total="20", raise_target="30")
     db.add_all([a, b, other, co])
     db.commit()
@@ -105,8 +105,9 @@ def test_columns_read_the_source_rows(db, users, data):
     heads = got["headers"]
     for h in ("심사역 이름", "투자사명", "연락처", "회사주소", "스타트업명", "기업 담당자",
               "기업 담당자 연락처", "Pre Value", "누적투자금액", "투자유치희망금액",
-              "미팅 일시", "미팅 결과", "25년 매출", "26년 매출"):
+              "미팅 일시", "미팅 결과", "24년 매출", "25년 매출", "26년 매출", "27년 예상매출"):
         assert h in heads, h
+    assert "23년 매출" not in heads, "연도 매출은 24~27년(27년 예상) 넷"
     row = next(dict(zip(heads, r["cells"])) for r in got["rows"]
                if r["cells"][heads.index("심사역 이름")] == "심사역가")
     assert row["투자사명"] == "가나벤처스"
@@ -117,6 +118,7 @@ def test_columns_read_the_source_rows(db, users, data):
     assert row["Pre Value"] == "120억"
     assert row["26년 매출"] == "5억"
     assert row["25년 매출"] == "3억"
+    assert row["27년 예상매출"] == "9억"
     assert row["미팅 일시"] == "2026-09-15 14:00"
     # 결과 글자는 `pipeline.OUTCOMES` 를 읽는다 — 결과 칸 말을 바꿔도(#176 · #183) 따라간다.
     assert row["미팅 결과"] == pipeline.OUTCOMES["hold"]
