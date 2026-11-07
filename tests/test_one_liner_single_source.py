@@ -353,14 +353,13 @@ def test_두_탭은_이제_서로_다른_칸을_보여_준다(logged_in, merged)
     assert "시트에 적혀 있던 사업 설명" in db_tab
 
 
-def test_재료를_고치면_새_조합값을_권해_온다(logged_in, db):
+def test_재료를_고치면_조합값이_따라온다(logged_in, db):
     """0051 이 지키려던 것 — "고쳤는데 저쪽이 그대로" 가 없어야 한다.
 
-    **다만 따라오는 것은 조합값이지 칸이 아니다.** 칸의 기본은 사용자 정의
-    문구라(사용자 요청) 재료를 고쳐도 적힌 문장은 그대로 있는다 — 대신 새
-    재료로 만든 한 줄이 `one_liner_suggestion` 으로 따라와, 화면이 그것으로
-    [자동 조합으로 바꾸기] 를 권한다. "고쳤는데 아무 말이 없다" 가 없어야 한다는
-    뜻은 그대로 지킨다(tests/test_one_liner_manual_default.py).
+    칸이 조합값 그대로(사람이 손대지 않은 줄)면 재료를 고칠 때 **칸이 따라온다**
+    (과제 168 · 170 — `one_liner.follow`). 사람이 쓴 문장은 그대로 두고, 새 재료로 만든
+    한 줄은 `one_liner_suggestion` 으로 따라와 화면이 [자동 조합으로 바꾸기] 를 권한다
+    (tests/test_one_liner_manual_default.py).
     """
     from app.models import IrCompany
 
@@ -373,10 +372,7 @@ def test_재료를_고치면_새_조합값을_권해_온다(logged_in, db):
                            json={"business_desc": "스타트업DB 에서 고친 소개"}).json()
     assert "스타트업DB 에서 고친 소개" in logged_in.get("/companies?tab=db").text
     assert body["one_liner_suggestion"] == "스타트업DB 에서 고친 소개", body
-    assert body["one_liner"] == "물류 최적화 SaaS", "고르지도 않았는데 칸이 바뀌었다"
-
-    # 고르면 그때 따라온다.
-    logged_in.post(f"/api/companies/{row.id}/one-liner")
+    assert body["one_liner"] == "스타트업DB 에서 고친 소개", "조합값 그대로인 칸이 안 따라왔다"
     assert "스타트업DB 에서 고친 소개" in logged_in.get("/companies").text
 
 
