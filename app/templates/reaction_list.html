@@ -2,7 +2,9 @@
 {#
   숫자를 누르면 뜨는 상세 목록 — 대시보드 반응 · 달별 반응 · 업무 보고 미팅 카드 ·
   연간 반응이 모두 이 한 장을 연다. 무엇을 싣는지는 `services/drilldown.py` 첫머리.
-  `No.` 는 묶음(투자사 · 기업 · 미팅)마다 하나 — 마지막 No. 가 누른 숫자와 같다.
+  `NO` 는 묶음(투자사 · 기업 · 미팅)마다 하나 — 마지막 NO 가 누른 숫자와 같다. 번호 칸은 이것
+  하나다 — 모든 표에 서는 CSS 자동 번호(`tr::before` · #100)는 app.css 빼는 목록으로 뺀다
+  (`#reaction-list`). 둘이 서면 줄 번호와 묶음 번호가 나란히 서서 헷갈린다.
 #}
 {% block content %}
 <header class="page-head">
@@ -23,7 +25,7 @@
   <div class="table-wrap">
   <table class="grid-table compact" id="reaction-list">
     <thead><tr>
-      <th class="num">No.</th>
+      <th class="num">NO</th>
       {% for h in headers %}<th>{{ h }}</th>{% endfor %}
     </tr></thead>
     <tbody>

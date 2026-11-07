@@ -1472,7 +1472,8 @@ td.rowno, .rowno { text-align: right; font-variant-numeric: tabular-nums; font-s
 /* 넓은 표는 머리행 고정(`.table-wrap.wide thead th`)과 얇은 줄(td 4px)을 같이 따른다. */
 .table-wrap.wide .grid-table > thead > tr::before { position: sticky; top: 0; z-index: 3; }
 .table-wrap.wide .grid-table > tbody > tr::before { padding-block: 4px; }
-:is(#contacts-table, #co-table, #sa-table, #sourcing-table, #cs-table, .year-report) > * > tr::before {
+:is(#contacts-table, #co-table, #sa-table, #sourcing-table, #cs-table, #reaction-list,
+    .year-report) > * > tr::before {
   content: none; }
 .field.wide { grid-column: 1 / -1; }
 .hint.ok { color: var(--green); }

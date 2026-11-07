@@ -1,6 +1,6 @@
 """숫자를 누르면 뜨는 상세 목록(#175 · #177 · #178 · #179 · #182) — `services/drilldown.py`.
 
-지키는 것은 하나다: **화면 숫자와 목록이 같은 조건이다.** 목록의 묶음 수(`No.`)가
+지키는 것은 하나다: **화면 숫자와 목록이 같은 조건이다.** 목록의 묶음 수(`NO`)가
 누른 숫자와 같아야 한다 — 반응 다섯 칸 · 달별 · 연간 · 업무 보고 미팅 카드 넷 모두.
 """
 from __future__ import annotations
@@ -218,6 +218,16 @@ def test_year_meeting_results_match_the_meeting_done_list(client, db, users, dat
     panel = yearly.split("2026년 반응", 1)[1].split("</section>", 1)[0]
     assert "meeting-results" in panel, "연간 반응 칸에도 미팅 결과가 선다"
     assert f"<b>1</b>{pipeline.OUTCOME_CHOICES['hold']}" in panel
+
+
+def test_list_has_one_number_column(client, db, users, data):
+    """번호 칸은 묶음 번호(`NO`) 하나 — CSS 자동 줄 번호(#100)는 이 표에서 뺀다."""
+    from .test_row_numbers import _opt_out
+
+    page = _login(client).get("/reactions/list?key=ir_contacts").text
+    table = page.split('id="reaction-list"', 1)[1].split("</thead>", 1)[0]
+    assert table.count(">NO</th>") == 1
+    assert "#reaction-list" in _opt_out(), "자동 번호가 같이 서서 번호 칸이 둘이 된다"
 
 
 def test_unknown_key_or_unsplittable_month_is_404(client, db, users, data):
