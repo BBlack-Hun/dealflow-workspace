@@ -16,8 +16,8 @@
   2. 고른 것만 바뀐다
   3. 되돌리면 **바꾸기 전 값 그대로** 돌아오고, 그 뒤에 손으로 고친 줄은
      되돌리기가 건드리지 않는다
-  4. 적용한 줄은 **AUTO 가 되어** 그다음부터 스타트업DB 를 고치면 따라온다
-     — 사용자가 "동기화가 안 된다" 고 한 것의 진짜 해결이 이것이다
+  4. 적용한 줄은 **조합값 그대로**라 그다음부터 스타트업DB 를 고치면 따라온다
+     (과제 168 · 170 — `one_liner.follow`). 적용 전 사람이 쓴 줄은 안 따라온다
 
 기업명은 **전부 지어낸 것**이다(공개 저장소).
 """
@@ -88,6 +88,10 @@ def rows(db):
         "bare": IrCompany(name="라마핀테크", one_liner="사람이 쓴 소개뿐"),
     }
     db.add_all(list(made.values()))
+    db.commit()
+    # 새 줄의 빈 문구는 저절로 채워진다(`one_liner.follow`) — 운영의 빈 칸(재료는 있고
+    # 문구만 빈 줄)을 만들려고 재료를 안 건드리고 다시 비운다.
+    made["empty"].one_liner = None
     db.commit()
     return made
 
@@ -242,17 +246,12 @@ def test_되돌릴_것이_있는지_화면이_안다(portal, rows):
     assert _preview(portal["admin"])["undo"]["count"] == 1
 
 
-# --- ④ 적용한 줄도 그 뒤로 **저절로는** 안 따라온다 ---------------------------
+# --- ④ 적용한 줄은 그 뒤로 따라온다 -----------------------------------------
 
-def test_적용한_줄도_스타트업DB_를_고치면_저절로_따라오지_않는다(portal, db, rows):
-    """칸의 기본이 **사용자 정의 문구**라서다(사용자 요청으로 뒤집혔다).
+def test_적용한_줄은_스타트업DB_를_고치면_따라온다(portal, db, rows):
+    """적용하기 전 사람이 쓴 줄은 안 따라오고, 적용한 뒤에는 따라온다(과제 168 · 170).
 
-    예전에는 이랬다: 일괄 적용으로 한 번 정리해 두면 그 줄이 `AUTO` 가 되어
-    그다음부터 스타트업DB 를 고칠 때마다 저절로 따라왔다. 그 자동 갱신이 곧
-    '칸의 기본은 자동 조합' 이었다.
-
-    지금은 아니다. 다시 맞추고 싶으면 **[전체 자동조합] 을 한 번 더** 누른다 —
-    미리보기에 그 줄이 다시 올라오고, 무엇이 어떻게 바뀌는지 보고 고르게 된다.
+    적용한 줄은 조합값과 글자까지 같아 '사람이 손대지 않은 줄' 로 읽힌다(`one_liner.follow`).
     """
     admin = portal["admin"]
     cid = rows["manual"].id
@@ -266,18 +265,11 @@ def test_적용한_줄도_스타트업DB_를_고치면_저절로_따라오지_�
     db.refresh(rows["manual"])
     assert rows["manual"].one_liner == "산업용 센서 제조 | 매출 10억"
 
-    # 적용 뒤에도 마찬가지다 — 고른 적 없는 갱신은 일어나지 않는다.
+    # 적용 뒤 — 재료를 고치면 새 조합값으로 따라온다.
     admin.patch(f"/api/companies/{cid}", json={"revenue_2025": "20억"})
     db.refresh(rows["manual"])
-    assert rows["manual"].one_liner == "산업용 센서 제조 | 매출 10억", \
-        "고른 적 없는데 칸이 저절로 다시 쓰였다"
-
-    # 다시 맞추는 길은 열려 있다 — 미리보기에 올라오고, 누르면 들어간다.
-    listed = [r["id"] for r in _preview(admin)["rows"]]
-    assert cid in listed, "다시 맞출 줄이 미리보기에 안 올라온다"
-    admin.post("/api/one-liner/bulk", json={"company_ids": [cid]})
-    db.refresh(rows["manual"])
     assert rows["manual"].one_liner == "산업용 센서 제조 | 매출 24년 10억, 25년 20억"
+    assert cid not in [r["id"] for r in _preview(admin)["rows"]], "이미 같은 줄은 목록에 안 선다"
 
 
 # --- ⑤ 누가 쓸 수 있나 --------------------------------------------------------

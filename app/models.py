@@ -525,6 +525,20 @@ def _sync_company_links(session, flush_context, instances) -> None:
 event.listen(OrmSession, "before_flush", _sync_company_links)
 
 
+def _follow_pitch(session, flush_context, instances) -> None:
+    """재료 칸이 바뀐 줄의 딜 소개 문구를 따라 고친다(과제 168 · 170 — `services/one_liner.follow`).
+
+    바로 위 `_sync_company_links` **뒤에** 건다 — 이어진 줄에서 따라 고친 매출 · 금액까지
+    여기서 읽혀야 한다. 수정 로그보다 먼저라 고친 문구도 그 로그에 남는다.
+    """
+    from .services import one_liner
+
+    one_liner.follow(session)
+
+
+event.listen(OrmSession, "before_flush", _follow_pitch)
+
+
 def _link_new_company_names(session, flush_context) -> None:
     """IR 기업이 새로 생기거나 이름이 바뀌면 그 이름의 Series A 줄을 잇는다 — 번호가
     정해진 뒤라 flush 끝에서(`services/company_sync.after_flush`)."""
@@ -601,7 +615,8 @@ class IrCompany(TimestampMixin, Base):
     #     · 여기(`IrCompany.one_liner`)  — IR 기업 현황 표. 344곳짜리 기업 DB 의
     #       한 줄이고, 투자사에게 나가는 딜소개 문구에 **그대로 실린다.**
     #       스타트업DB 칸들로 자동 조합할 수 있다(`services/one_liner.py`) —
-    #       다만 **기본은 사람이 쓴 문구**이고 자동 조합은 고를 때만 들어온다.
+    #       재료를 고치면 비었거나 조합값 그대로인 칸만 따라 바뀌고(과제 168 · 170),
+    #       **사람이 쓴 문구는 안 덮는다**(`one_liner.follow`).
     #     · 저기(`ConsultingCompany.deal_pitch`) — 투자컨설턴트 `관리 스타트업`
     #       탭. 컨설팅 계약을 맺은 기업을 어떻게 소개할지 담당자가 **메모처럼**
     #       쓰는 자유 문장이고, 딜소개 발송에는 쓰이지 않는다.
@@ -1080,7 +1095,8 @@ class SeriesACompany(TimestampMixin, Base):
     contract_ym: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     #: 연도별 매출 · 누적투자금액 · 투자유치희망금액 · 프리밸류 — 단위 억, **적은
     #: 그대로 글자**다(`IrCompany` 의 같은 이름 칸과 같은 까닭 — `5-10억` · `~`).
-    #: 문구에 실리지 않는다. 숫자로 읽는 자리는 `raise_target` 하나 — Series A 딜 공유의
+    #: 이 줄의 `딜 소개 문구`(`deal_pitch`)가 이 칸들로 따라 만들어진다(과제 168 — 비었거나
+    #: 조합값 그대로일 때만, `one_liner.follow`). 숫자로 읽는 자리는 `raise_target` 하나 — Series A 딜 공유의
     #: [후보 자동 채우기] 차례(`services/series_a_share.autofill` → `amount.million_top`).
     revenue_2024: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     revenue_2025: Mapped[Optional[str]] = mapped_column(String, nullable=True)
