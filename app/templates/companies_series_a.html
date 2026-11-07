@@ -174,9 +174,10 @@
            같은 주소(`?sector=…`)로 거른다. #}
         <th style="width:140px" data-filters="sector:대분류">대분류<div class="th-filters"></div></th>
         <th style="width:150px" data-filters="minor:소분류">소분류<div class="th-filters"></div></th>
-        {# 이름은 해가 정한다(`revenue_years.label`) — 앞으로 올 해는 `27년 예상매출`(과제 169). #}
+        {# 이름은 해가 정한다(`revenue_years.label`) — 앞으로 올 해는 `27년 예상매출`(과제 169).
+           27년 칸은 그 이름이 한 줄에 서는 88px(IR 기업 현황의 같은 칸과 같다). #}
         {% for f in ("revenue_2024", "revenue_2025", "revenue_2026", "revenue_2027") %}
-        <th class="num" style="width:74px" title="{{ amount_tip }}">{{ revenue_labels[f] }}</th>
+        <th class="num" style="width:{{ 88 if f == 'revenue_2027' else 74 }}px" title="{{ amount_tip }}">{{ revenue_labels[f] }}</th>
         {% endfor %}
         <th class="num" style="width:96px" title="{{ amount_tip }}">누적투자금액</th>
         <th class="num" style="width:120px" title="{{ amount_tip }}">투자유치희망금액</th>
