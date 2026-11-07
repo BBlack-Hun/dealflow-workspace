@@ -16,7 +16,7 @@ from __future__ import annotations
 from collections import Counter
 from urllib.parse import quote
 from datetime import date, datetime, timedelta
-from typing import Dict, List, Optional
+from typing import Dict, List, NamedTuple, Optional
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -289,8 +289,115 @@ def top_requesters(db: Session, contact_ids: List[int], limit: int = 10) -> List
     return out
 
 
+class ReactionHit(NamedTuple):
+    """반응 칸 하나가 센 **한 줄** — 무엇으로 묶어 세나(`group`)와 그 줄의 원천.
+
+    `group` 은 투자사 칸이면 담당자 id, `requested_companies` 면 기업명이다 —
+    칸의 숫자는 이 묶음의 수다. 업무 보고의 미팅 카드도 같은 모양으로 넘긴다
+    (`group` = 미팅 id — 카드는 건수다).
+    """
+    group: object
+    contact_id: int
+    company: str                      # 적힌 그대로의 기업명. 없으면 빈 글자
+    company_id: Optional[int]         # 이은 IR 기업 번호(있으면)
+    day: str                          # 요청일 · 미팅일(시트 줄은 달만 적힌 것도 있다)
+    meeting: Optional[Meeting] = None
+
+
+#: 반응 다섯 칸 — 대시보드 패널의 차례 그대로.
+REACTION_KEYS = ("ir_contacts", "meeting_contacts", "requested_companies",
+                 "meeting_done", "meeting_call")
+
+
+def _period(month: str = "", year: int = 0):
+    """`month="2026-09"` · `year=2026` → (활동 달의 머리 글자, 첫날, 끝날).
+
+    둘 다 없으면 `("", None, None)` — 전체 기간. 못 읽으면 None.
+    """
+    try:
+        if month:
+            y, m = (int(x) for x in month.split("-")[:2])
+            start, end = report.month_range(y, m)
+            return f"{y:04d}-{m:02d}", start, end
+        if year:
+            return f"{int(year):04d}", date(int(year), 1, 1), date(int(year), 12, 31)
+    except (ValueError, TypeError):
+        return None
+    return "", None, None
+
+
+def reaction_hits(db: Session, contact_ids: List[int], month: str = "",
+                  year: int = 0) -> Dict[str, List[ReactionHit]]:
+    """반응 다섯 칸이 **무엇을** 세었나 — 칸마다 센 줄(`ReactionHit`).
+
+    숫자(`_reaction_summary`)와 눌러 여는 목록(`services/drilldown.py`)이 이 한
+    벌을 읽는다. 조건은 아래 주석 그대로다(옮겨 왔을 뿐 바꾸지 않았다).
+    """
+    hits: Dict[str, List[ReactionHit]] = {k: [] for k in REACTION_KEYS}
+    period = _period(month, year)
+    if not contact_ids or period is None:
+        return hits
+    prefix, start, end = period
+
+    act_stmt = (
+        select(ContactActivity.kind, ContactActivity.contact_id,
+               ContactActivity.company_names,
+               ContactActivity.happened_at, ContactActivity.month)
+        .where(ContactActivity.contact_id.in_(contact_ids),
+               # 미팅은 갈래가 넷이다(요청·확정·완료·아직 안 가른 줄).
+               # 이 줄이 세는 `IR 미팅 요청 투자사` 는 **청했든 만났든**
+               # 말이 오간 투자사라 넷을 다 본다(`REACTION_ROWS` 의 글자
+               # 그대로다). 갈래 목록은 `services/meeting_kind` 한 곳이다.
+               ContactActivity.kind.in_(("ir_request",) + mk.ALL)))
+    ir_stmt = (select(IrRequest.contact_id, IrRequest.company_name,
+                      IrRequest.company_id, IrRequest.requested_at)
+               .where(IrRequest.contact_id.in_(contact_ids)))
+    meet_stmt = select(Meeting).where(Meeting.contact_id.in_(contact_ids))
+    if start is not None:
+        # 달의 경계는 업무 보고가 쓰는 것과 **같은 자리**에서 나와야 한다.
+        # 여기서 월말을 다시 계산하면 그 계산이 두 화면에서 따로 틀린다.
+        ir_stmt = ir_stmt.where(IrRequest.requested_at >= start.isoformat(),
+                                IrRequest.requested_at <= end.isoformat())
+        meet_stmt = meet_stmt.where(Meeting.scheduled_at >= start.isoformat(),
+                                    Meeting.scheduled_at <= end.isoformat())
+
+    for kind, contact_id, names, happened_at, act_mon in db.execute(act_stmt).all():
+        # 시트에서 옮겨 온 줄은 날짜가 빈 것이 있어 달만 적혀 있다.
+        if prefix and not ir_monthly.act_month(happened_at, act_mon).startswith(prefix):
+            continue
+        day = happened_at or act_mon or ""
+        key = "ir_contacts" if kind == "ir_request" else "meeting_contacts"
+        for name in _company_names(names) or [""]:
+            hits[key].append(ReactionHit(contact_id, contact_id, name, None, day))
+            if kind == "ir_request" and name:
+                hits["requested_companies"].append(
+                    ReactionHit(name, contact_id, name, None, day))
+
+    # 이 시스템으로 받은 요청도 함께 센다(시트 이력만 보면 최근 것이 빠진다).
+    for contact_id, company_name, company_id, requested_at in db.execute(ir_stmt).all():
+        name = (company_name or "").strip()
+        hits["ir_contacts"].append(
+            ReactionHit(contact_id, contact_id, name, company_id, requested_at or ""))
+        if name:
+            hits["requested_companies"].append(
+                ReactionHit(name, contact_id, name, company_id, requested_at or ""))
+    # 미팅은 '요청' 과 '완료' 를 나눠 센다. 끝난 미팅은 다음 할 일이 다르다 —
+    # 열흘 뒤 결과를 물어봐야 하고, 그걸 놓치면 계약을 통째로 잊는다.
+    for meeting in db.execute(meet_stmt).scalars().all():
+        hit = ReactionHit(meeting.contact_id, meeting.contact_id,
+                          (meeting.company_name or "").strip(), meeting.company_id,
+                          meeting.scheduled_at or "", meeting)
+        hits["meeting_contacts"].append(hit)
+        if meeting.status == "done":
+            hits["meeting_done"].append(hit)
+            # 결과 문의를 아직 안 한 곳 — 전화할 대상이다.
+            if not meeting.followup_done:
+                hits["meeting_call"].append(hit)
+    return hits
+
+
 def _reaction_summary(db: Session, contact_ids: List[int],
-                      month: str = "") -> dict:
+                      month: str = "", year: int = 0) -> dict:
     """반응 요약. `month` 가 없으면 **기간을 자르지 않는다**.
 
     예전엔 '최근 60일'이었는데, 61일째가 되면 숫자가 갑자기 줄어드는 것을
@@ -315,73 +422,38 @@ def _reaction_summary(db: Session, contact_ids: List[int],
     이라 지금 상태일 뿐이고(전화를 걸면 지난달 수가 소급해서 줄어든다), 지난
     달의 값을 만들어 낼 방법이 없다. `month` 를 주면 `None` 으로 돌려준다 —
     0 으로 두면 "그 달엔 전화할 곳이 없었다" 는 없는 사실이 된다.
+
+    ### `year=2026` — 그 해치만 (업무 보고 연간 보기 · #182)
+
+    달과 같은 판정을 해의 경계로 쓴다(활동은 `act_month` 의 앞 네 자리). 연간
+    보기에서는 `meeting_call` 도 센다 — **그 해에 끝난 미팅 중 지금 아직 결과를 안
+    물어본 곳**이다(지금 상태라 전화를 걸면 줄어든다 — 화면이 `지금 기준` 이라 적는다).
+
+    ### 세는 줄은 `reaction_hits` 한 곳이다
+
+    여기서는 그 줄을 **묶음(투자사 · 기업) 수로 세기만** 한다. 숫자를 누르면 뜨는
+    목록(`services/drilldown.py`)이 같은 줄을 그대로 그린다 — 조건이 두 곳에 있으면
+    숫자와 목록 줄 수가 갈린다.
     """
-    blank = {"ir_contacts": 0, "meeting_contacts": 0, "requested_companies": 0,
-             "meeting_done": 0, "meeting_call": None if month else 0}
-    if not contact_ids:
-        return blank
-
-    act_stmt = (
-        select(ContactActivity.kind, ContactActivity.contact_id,
-               ContactActivity.company_names,
-               ContactActivity.happened_at, ContactActivity.month)
-        .where(ContactActivity.contact_id.in_(contact_ids),
-               # 미팅은 갈래가 넷이다(요청·확정·완료·아직 안 가른 줄).
-               # 이 줄이 세는 `IR 미팅 요청 투자사` 는 **청했든 만났든**
-               # 말이 오간 투자사라 넷을 다 본다(`REACTION_ROWS` 의 글자
-               # 그대로다). 갈래 목록은 `services/meeting_kind` 한 곳이다.
-               ContactActivity.kind.in_(("ir_request",) + mk.ALL)))
-    ir_stmt = (select(IrRequest.contact_id, IrRequest.company_name)
-               .where(IrRequest.contact_id.in_(contact_ids)))
-    meet_stmt = select(Meeting).where(Meeting.contact_id.in_(contact_ids))
+    got = {key: len({h.group for h in rows})
+           for key, rows in reaction_hits(db, contact_ids, month, year).items()}
     if month:
-        # 달의 경계는 업무 보고가 쓰는 것과 **같은 자리**에서 나와야 한다.
-        # 여기서 월말을 다시 계산하면 그 계산이 두 화면에서 따로 틀린다.
-        try:
-            year, mon = (int(x) for x in month.split("-")[:2])
-            start, end = report.month_range(year, mon)
-        except (ValueError, TypeError):
-            return blank
-        ir_stmt = ir_stmt.where(IrRequest.requested_at >= start.isoformat(),
-                                IrRequest.requested_at <= end.isoformat())
-        meet_stmt = meet_stmt.where(Meeting.scheduled_at >= start.isoformat(),
-                                    Meeting.scheduled_at <= end.isoformat())
+        got["meeting_call"] = None
+    return got
 
-    ir_contacts, meeting_contacts, companies = set(), set(), set()
-    for kind, contact_id, names, happened_at, act_mon in db.execute(act_stmt).all():
-        # 시트에서 옮겨 온 줄은 날짜가 빈 것이 있어 달만 적혀 있다.
-        if month and ir_monthly.act_month(happened_at, act_mon) != month:
-            continue
-        if kind == "ir_request":
-            ir_contacts.add(contact_id)
-            for name in _company_names(names):
-                companies.add(name)
-        else:
-            meeting_contacts.add(contact_id)
 
-    # 이 시스템으로 받은 요청도 함께 센다(시트 이력만 보면 최근 것이 빠진다).
-    for contact_id, company_name in db.execute(ir_stmt).all():
-        ir_contacts.add(contact_id)
-        if company_name:
-            companies.add(company_name.strip())
-    # 미팅은 '요청' 과 '완료' 를 나눠 센다. 끝난 미팅은 다음 할 일이 다르다 —
-    # 열흘 뒤 결과를 물어봐야 하고, 그걸 놓치면 계약을 통째로 잊는다.
-    done_contacts, call_contacts = set(), set()
-    for meeting in db.execute(meet_stmt).scalars().all():
-        meeting_contacts.add(meeting.contact_id)
-        if meeting.status == "done":
-            done_contacts.add(meeting.contact_id)
-            # 결과 문의를 아직 안 한 곳 — 전화할 대상이다.
-            if not meeting.followup_done:
-                call_contacts.add(meeting.contact_id)
+def reaction_ids(db: Session, user: User, *, team_wide: bool = False) -> List[int]:
+    """반응 칸의 **모집단** — 팀원은 내 명단(`sheet_owner.my_contacts`), 관리자가 팀
+    전체를 보면 팀 투자사 전부(`sheet_owner.managed(team_wide=True)` — 권한은 거기서
+    다시 본다 · #175 "팀원 것을 모두 합친 숫자").
 
-    return {
-        "meeting_done": len(done_contacts),
-        "meeting_call": None if month else len(call_contacts),
-        "ir_contacts": len(ir_contacts),
-        "meeting_contacts": len(meeting_contacts),
-        "requested_companies": len(companies),
-    }
+    대시보드 · 업무 보고 연간 반응 · 눌러 여는 목록이 이 하나를 읽는다 — 각자
+    모으면 숫자와 목록이 갈린다. (2026-11 운영 값으로 팀원 명단을 다 합친 것과
+    팀 투자사 전부가 같은 736명이었다.)
+    """
+    rows = (sheet_owner.managed(db, user, team_wide=True) if team_wide
+            else sheet_owner.my_contacts(db, user))
+    return [c.id for c in rows]
 
 
 #: 달로 **가를 수 있는** 반응과 그 이름.
@@ -454,7 +526,7 @@ def monthly_reactions(db: Session, contact_ids: List[int],
     return out
 
 
-def meeting_results(db: Session, contact_ids: List[int]) -> List[dict]:
+def meeting_results(db: Session, contact_ids: List[int], year: int = 0) -> List[dict]:
     """끝난 미팅의 결과별 건수(#183) — 반응 패널 `미팅완료 리마인드 TEL` 오른쪽 칸.
 
     보기는 고를 수 있는 셋(`pipeline.OUTCOME_CHOICES`) 그대로, 그 차례로 선다. 값은
@@ -463,14 +535,22 @@ def meeting_results(db: Session, contact_ids: List[int]) -> List[dict]:
     **미팅 건수를 센다**(투자사 수가 아니다) — 한 투자사가 기업 둘을 만나 하나는 보류,
     하나는 검토 진행일 수 있다. 업무 보고의 `미팅 결과` 와 같은 단위다. 모집단은 위
     반응 칸들과 같은 `contact_ids` 이고, 취소·예정 미팅은 안 센다.
+
+    `year=2026` 이면 그 해치(업무 보고 연간 반응 칸 · #182) — 해의 경계는 반응 칸과 같은
+    `_period` 의 미팅일이다. 그래서 결과별 수는 `IR 미팅완료 투자사` 상세 목록의 `미팅 결과`
+    칸에서 그 결과인 줄 수와 같다(tests/test_drilldown.py 가 지킨다).
     """
     counts: Dict[str, int] = {}
-    if contact_ids:
-        counts = dict(db.execute(
-            select(Meeting.outcome, func.count())
-            .where(Meeting.contact_id.in_(contact_ids), Meeting.status == "done",
-                   Meeting.outcome.in_(list(pipeline.OUTCOME_CHOICES)))
-            .group_by(Meeting.outcome)).all())
+    period = _period(year=year)
+    if contact_ids and period is not None:
+        _prefix, start, end = period
+        stmt = (select(Meeting.outcome, func.count())
+                .where(Meeting.contact_id.in_(contact_ids), Meeting.status == "done",
+                       Meeting.outcome.in_(list(pipeline.OUTCOME_CHOICES))))
+        if start is not None:
+            stmt = stmt.where(Meeting.scheduled_at >= start.isoformat(),
+                              Meeting.scheduled_at <= end.isoformat())
+        counts = dict(db.execute(stmt.group_by(Meeting.outcome)).all())
     return [{"key": key, "label": label, "count": counts.get(key, 0)}
             for key, label in pipeline.OUTCOME_CHOICES.items()]
 
@@ -631,6 +711,9 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None,
     upcoming = cadence.upcoming_send_dates(db, today)
     next_send = upcoming[0]
 
+    react_team = deps.may_manage_team_contacts(user)
+    react_ids = reaction_ids(db, user, team_wide=True) if react_team else ids
+
     return {
         "kpis": [
             # 이름만 보고 무엇을 세는지 알 수 있어야 한다.
@@ -672,12 +755,16 @@ def user_dashboard(db: Session, user: User, today: Optional[date] = None,
         # 화면에는 안 띄우지만 값은 남긴다 — 발송 대상 판정이 이 기준을 쓰고,
         # 대시보드와 투자사 목록의 수가 어긋난 적이 있어 테스트가 지키고 있다.
         "sendable": sendable,
-        "reactions": _reaction_summary(db, ids),
-        "meeting_results": meeting_results(db, ids),
-        # 같은 다섯 수치를 **달로 갈라** 한 번 더. 모집단(`ids`)이 같아야
+        # 관리자는 **팀원 것을 모두 합친 수**(#175) — 모집단은 `reaction_ids` 한 곳이고,
+        # 숫자를 누르면 뜨는 목록(`/reactions/list?scope=team`)도 같은 것을 읽는다.
+        "reactions": _reaction_summary(db, react_ids),
+        # 미팅 결과 칸(#183)도 같은 모집단 — 관리자 화면에서 옆 칸과 범위가 갈리면 안 된다.
+        "meeting_results": meeting_results(db, react_ids),
+        # 같은 다섯 수치를 **달로 갈라** 한 번 더. 모집단(`react_ids`)이 같아야
         # 위 누적과 아래 달별이 서로 어긋나 보이지 않는다.
-        "reaction_months": monthly_reactions(db, ids, today),
+        "reaction_months": monthly_reactions(db, react_ids, today),
         "reaction_rows": REACTION_ROWS,
+        "reaction_team": react_team,
         "stages": _distribution([s for c in contacts for s in _split_csv(c.stages)]),
         "sectors": _distribution([s for c in contacts for s in _split_csv(c.sectors)]),
         # 다음 회차에 누구를 먼저 챙길지 — 자료를 달라고 한 횟수가 관심의 크기다.

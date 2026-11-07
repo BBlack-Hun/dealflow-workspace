@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{#
+  숫자를 누르면 뜨는 상세 목록 — 대시보드 반응 · 달별 반응 · 업무 보고 미팅 카드 ·
+  연간 반응이 모두 이 한 장을 연다. 무엇을 싣는지는 `services/drilldown.py` 첫머리.
+  `NO` 는 묶음(투자사 · 기업 · 미팅)마다 하나 — 마지막 NO 가 누른 숫자와 같다. 번호 칸은 이것
+  하나다 — 모든 표에 서는 CSS 자동 번호(`tr::before` · #100)는 app.css 빼는 목록으로 뺀다
+  (`#reaction-list`). 둘이 서면 줄 번호와 묶음 번호가 나란히 서서 헷갈린다.
+#}
+{% block content %}
+<header class="page-head">
+  <h1>{{ page_title }}</h1>
+  <p class="muted">
+    {{ period }} · {{ whose }} · <b>{{ count }}{{ unit }}</b>{% if rows|length != count %} (기록 {{ rows|length }}줄){% endif %}
+    — 누른 숫자와 같은 조건으로 뽑았습니다.
+    {% if key == 'meeting_call' %}<b>지금 기준</b>(아직 결과를 안 물어본 곳)입니다.{% endif %}
+    <a class="linkbtn" href="{{ back }}">돌아가기</a>
+  </p>
+  <p class="hint">
+    값은 투자사 명단 · IR 기업 현황 · 미팅 기록에 적힌 것을 그대로 읽어 옵니다 — 빈칸은 그 화면에서 아직 안 적은 칸입니다.
+    미팅 기록이 없는 줄(IR 요청 · 시트 이력)에는 같은 심사역 × 기업의 가장 최근 미팅을 붙입니다.
+  </p>
+</header>
+<section class="panel">
+  {% if rows %}
+  <div class="table-wrap">
+  <table class="grid-table compact" id="reaction-list">
+    <thead><tr>
+      <th class="num">NO</th>
+      {% for h in headers %}<th>{{ h }}</th>{% endfor %}
+    </tr></thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td class="num">{{ r.no or '' }}</td>
+        {% for c in r.cells %}<td>{{ c }}</td>{% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="muted">이 조건에 맞는 기록이 없습니다.</p>
+  {% endif %}
+</section>
+{% endblock %}
