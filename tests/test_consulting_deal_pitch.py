@@ -92,7 +92,7 @@ def test_딜_소개문구는_고쳐지고_다시_읽힌다(allowed, db, users):
     # 값은 `.cell-main` 안에 있다 — 같은 칸에 `수정한 날짜` 잔글씨가 같이 서게
     # 되면서 감쌌다(`tests/test_consulting_field_stamps.py`). 편집기는 그 상자
     # 하나만 읽는다(`consulting.js` 의 `valueBox`).
-    assert ('<td class="cell multi" data-field="deal_pitch">'
+    assert ('<td class="cell multi" data-field="deal_pitch" data-memo-date>'
             '<div class="cell-main">스마트팜 관제 SaaS</div>'
             in _open(allowed, STARTUP))
 
@@ -117,7 +117,7 @@ def test_줄바꿈이_살아남는다(allowed, db, users):
 
     body = _open(allowed, STARTUP)
     # 값 상자 **안**을 본다 — 옆에 `수정한 날짜` 잔글씨가 같이 서 있다(위 참고).
-    cell = re.search(r'<td class="cell multi" data-field="deal_pitch">'
+    cell = re.search(r'<td class="cell multi" data-field="deal_pitch" data-memo-date>'
                      r'<div class="cell-main">(.*?)</div>', body, re.S)
     assert cell and cell.group(1) == PITCH, repr(cell and cell.group(1))
     # 화면이 줄바꿈을 접지 않고 그대로 그리는가 — 이 칸이 기대는 규칙이다.
@@ -136,7 +136,7 @@ def test_긴_글_칸은_이_표가_쓰는_표시를_단다():
     `기업 관리` 와 같은 `multi` 를 쓴다.
     """
     html = pathlib.Path("app/templates/consulting.html").read_text(encoding="utf-8")
-    assert '<td class="cell multi" data-field="deal_pitch">' in html
+    assert '<td class="cell multi" data-field="deal_pitch" data-memo-date>' in html
     assert 'data-field="deal_pitch" data-type=' not in html
     js = pathlib.Path("app/static/js/consulting.js").read_text(encoding="utf-8")
     assert 'classList.contains("multi")' in js, \

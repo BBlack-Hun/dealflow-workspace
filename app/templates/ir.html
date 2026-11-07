@@ -996,7 +996,9 @@
       </tr></thead>
       <tbody>
         {% for m in finished[:20] %}
-        <tr>
+        {# `data-id` — 칸을 눌러 고치는 편집기(`inline_edit.js`)가 저장할 줄을 이것으로 안다.
+           없으면 `미팅 후기` 를 적어도 조용히 안 저장됐다(#176 에서 찾았다). #}
+        <tr data-id="{{ m.id }}">
           <td class="muted">{{ m.scheduled_at }}
             {% if m.scheduled_time %}<b>{{ m.scheduled_time }}</b>{% endif %}</td>
           {#
@@ -1041,7 +1043,20 @@
           #}
           <td class="ellipsis" title="{{ m.company_name }}">{{ m.company_name }}</td>
           <td class="num">{{ m.raise_target }}</td>
-          <td>{{ m.outcome_label or '-' }}</td>
+          {#
+            결과는 **칸을 눌러 바로 고른다**(#176). 보기는 셋(`pipeline.OUTCOME_CHOICES`)이고
+            비우면 `결과 미정` 이다. 옆 [물어봤음] 과 달리 **결과 문의를 닫지 않는다** —
+            결과만 바로잡을 길이 없어 문의까지 닫아야 했다. 대시보드 `미팅 결과` 가 이 값을
+            센다(#183). 취소된 미팅에는 결과가 없어 글자로 둔다.
+          #}
+          {% if m.status == 'done' %}
+          {# `data-choices-only` — 보기 밖의 말은 서버가 받지 않는다(400). 그래서 고르개 안내에
+             `새로 적어도 됩니다` 를 세우지 않는다(`inline_edit.js` · 다른 콤보 칸 안내는 그대로). #}
+          <td class="cell" data-field="outcome" data-type="pick" data-fixed-choices data-choices-only
+              data-choices="{{ outcomes.values()|join(',') }}"
+              data-placeholder="눌러서 고르기"
+              title="눌러서 결과 고르기 — 비우면 결과 미정">{{ m.outcome_label }}</td>
+          {% else %}<td>{{ m.outcome_label or '-' }}</td>{% endif %}
           {# 미팅 자리에서 들은 것. 열흘 뒤 통화와 다른 시점의 이야기라 칸을
              나눠 둔다 — 한 칸에 섞으면 언제 들은 말인지 알 수 없다. #}
           <td title="{{ m.note or '' }}">

@@ -185,7 +185,7 @@ def test_값은_cell_main_안에_들어간다(allowed, db, users):
     _row(db, users["u1"].id, sheet=STARTUP, position=1, company_name="샘플마",
          deal_pitch="스마트팜 관제")
     body = _open(allowed)
-    assert '<td class="cell multi" data-field="deal_pitch">' \
+    assert '<td class="cell multi" data-field="deal_pitch" data-memo-date>' \
            '<div class="cell-main">스마트팜 관제</div>' in body, \
         "값이 `.cell-main` 으로 안 감싸져 있습니다"
 

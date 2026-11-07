@@ -48,6 +48,7 @@ from . import cadence
 from . import manual_send
 from . import memo_delivered
 from . import memo_intro
+from . import revenue_years
 # 단계 값(`STAGE_*`)은 **문구를 짓는 쪽이 정한 것**을 그대로 읽는다.
 # 여기 숫자를 다시 적어 두면 한쪽이 바뀔 때 보고만 옛 값으로 남는다
 # (`routers/deals.py` 도 같은 곳을 `mc` 로 읽는다).
@@ -235,9 +236,10 @@ def monthly(db: Session, year: int, month: int,
     intros = intro_companies(db, start, end, user, sent=sent)
     return {**_month(db, year, month, user, today),
             "intro_companies": intros,
-            # 아직 소개 안 한 10억 이상(#122) — '본인' 이 있는 보기에만(팀 전체 · 연간은 안 띄운다).
+            # 아직 소개 안 한 기업(#122 · #174) — '본인' 이 있는 보기에만(팀 전체 · 연간은 안 띄운다).
             "intro_left": (unintroduced_big(db, intros, user=user, sent=sent)
-                           if user is not None else [])}
+                           if user is not None else []),
+            "intro_bands": RAISE_BANDS}
 
 
 def _month(db: Session, year: int, month: int, user: Optional[User],
@@ -252,11 +254,7 @@ def _month(db: Session, year: int, month: int, user: Optional[User],
     today = today or date.today()
     start, end = month_range(year, month)
 
-    stmt = select(Meeting).where(Meeting.scheduled_at >= start.isoformat(),
-                                 Meeting.scheduled_at <= end.isoformat())
-    if user is not None:
-        stmt = stmt.where(Meeting.user_id == user.id)
-    meetings = db.execute(stmt.order_by(Meeting.scheduled_at)).scalars().all()
+    meetings = month_meetings(db, year, month, user)
 
     # IR 요청도 같은 달로 함께 읽는다. 미팅만으로는 그 달의 반응이 안 보인다.
     ir_stmt = select(IrRequest).where(IrRequest.requested_at >= start.isoformat(),
@@ -288,20 +286,7 @@ def _month(db: Session, year: int, month: int, user: Optional[User],
     }
     owners = {u.id: u.name for u in db.execute(select(User)).scalars().all()}
 
-    # 결과를 물어볼 필요가 남은 건만 센다. 규칙은 딜 진행 관리와 같아야 한다 —
-    # 한쪽에서는 "물어봐야 함", 다른 쪽에서는 "끝남" 이면 어느 쪽을 믿을지 모른다.
-    #   거절로 끝났다     → 물어볼 것이 없다
-    #   다음 미팅을 잡았다 → 이미 이어졌다
-    latest: Dict[int, str] = {}
-    for m in meetings:
-        when_iso = m.scheduled_at or ""
-        if when_iso > latest.get(m.contact_id, ""):
-            latest[m.contact_id] = when_iso
-
-    def open_followup(m) -> bool:
-        return (not m.followup_done
-                and (m.outcome or "") not in NO_FOLLOWUP_OUTCOMES
-                and (m.scheduled_at or "") >= latest.get(m.contact_id, ""))
+    open_followup = followup_check(meetings)
 
     # 기업명 옆 `투자유치희망금액`(#118) — 미팅 · 반응 표가 같은 한 벌을 읽는다.
     find = company_finder(db)
@@ -338,7 +323,8 @@ def _month(db: Session, year: int, month: int, user: Optional[User],
             "needs_followup": meeting.status == "done" and open_followup(meeting),
         })
 
-    done = [m for m in meetings if m.status == "done"]
+    cards = meeting_cards(meetings, open_followup)
+    done = cards["done"]
 
     rows = [
         {"week": w, "label": f"{month}월 {WEEK_NAMES[w - 1] if w <= len(WEEK_NAMES) else f'{w}주'}",
@@ -427,14 +413,15 @@ def _month(db: Session, year: int, month: int, user: Optional[User],
         # 화면 안내문이 "미팅 뒤 N일쯤" 이라고 말할 때 쓰는 값 — 코드와
         # 화면이 다른 숫자를 말하면 안 된다.
         "followup_days": MEETING_FOLLOWUP_DAYS,
-        "total": len(meetings),
+        # 카드 넷은 `meeting_cards` 의 줄 수다 — 카드를 누르면 뜨는 목록(#177)이 같은 줄을 그린다.
+        "total": len(cards["total"]),
         "done": len(done),
         "canceled": sum(1 for m in meetings if m.status == "canceled"),
-        "followup_done": sum(1 for m in done if m.followup_done),
+        "followup_done": len(cards["followup_done"]),
         # **아직 안 물어본 것 전부.** 예전엔 '날짜가 지난 것'만 셌는데, 물어볼
         # 날이 아직 안 온 건은 어느 칸에도 안 잡혀서 미팅 2건이 대기 중인데도
         # 화면에는 0 / 0 으로 떠 아무것도 없는 것처럼 보였다.
-        "followup_open": sum(1 for m in done if open_followup(m)),
+        "followup_open": len(cards["followup_open"]),
         # 그중 날짜가 지난 것 — 이건 급한 것이라 따로 센다.
         "followup_late": sum(
             1 for w in rows for x in w["items"] if x["followup_late"]),
@@ -484,6 +471,55 @@ def _month(db: Session, year: int, month: int, user: Optional[User],
         # 박아 두면 늘린 날 화면만 옛말을 한다.
         "call_days": cadence.get_rule(db, "call").get("offset_min_days"),
     }
+
+
+def month_meetings(db: Session, year: int, month: int, user: Optional[User]) -> list:
+    """그 달에 잡힌 미팅 — `user` 를 주면 그 사람 것만, 없으면 팀 전체. 날짜 순."""
+    start, end = month_range(year, month)
+    stmt = select(Meeting).where(Meeting.scheduled_at >= start.isoformat(),
+                                 Meeting.scheduled_at <= end.isoformat())
+    if user is not None:
+        stmt = stmt.where(Meeting.user_id == user.id)
+    return db.execute(stmt.order_by(Meeting.scheduled_at)).scalars().all()
+
+
+def followup_check(meetings):
+    """이 미팅에 결과를 물어볼 일이 남았나 — 판정 함수를 돌려준다.
+
+    결과를 물어볼 필요가 남은 건만 센다. 규칙은 딜 진행 관리와 같아야 한다 —
+    한쪽에서는 "물어봐야 함", 다른 쪽에서는 "끝남" 이면 어느 쪽을 믿을지 모른다.
+      거절로 끝났다     → 물어볼 것이 없다
+      다음 미팅을 잡았다 → 이미 이어졌다(같은 묶음 `meetings` 안에서 본다)
+    """
+    latest: Dict[int, str] = {}
+    for m in meetings:
+        when_iso = m.scheduled_at or ""
+        if when_iso > latest.get(m.contact_id, ""):
+            latest[m.contact_id] = when_iso
+
+    def open_followup(m) -> bool:
+        return (not m.followup_done
+                and (m.outcome or "") not in NO_FOLLOWUP_OUTCOMES
+                and (m.scheduled_at or "") >= latest.get(m.contact_id, ""))
+    return open_followup
+
+
+#: 업무 보고 미팅 카드 넷 — (열쇠, 이름). 화면 카드 · 눌러 여는 목록(#177)이 같이 읽는다.
+MEETING_CARDS = (("total", "잡은 미팅"), ("done", "진행한 미팅"),
+                 ("followup_done", "결과 물어봄"), ("followup_open", "아직 안 물어봄"))
+
+
+def meeting_cards(meetings, open_followup=None) -> Dict[str, list]:
+    """미팅 카드 넷이 세는 미팅 — 카드의 숫자는 이 목록의 길이다.
+
+    숫자와 눌러 여는 목록(`services/drilldown.py`)이 **이 한 벌**을 읽는다. 연간은 달마다
+    부른 것을 이어 붙인다 — 연간 카드도 달마다 센 것을 더한 수다(`yearly`).
+    """
+    open_followup = open_followup or followup_check(meetings)
+    done = [m for m in meetings if m.status == "done"]
+    return {"total": list(meetings), "done": done,
+            "followup_done": [m for m in done if m.followup_done],
+            "followup_open": [m for m in done if open_followup(m)]}
 
 
 def _job_date(job: SendJob, batch: Optional[DealBatch]) -> str:
@@ -1371,6 +1407,7 @@ def intro_companies(db: Session, start: date, end: date,
     # `소개한 횟수` 는 IR 기업 현황의 `총 소개 횟수` · `담당별 소개` 와 **같은 셈**이다(#165 ·
     # `deal_history.intro_times`) — 여기는 기간으로 자를 뿐이다.
     per_company = deal_history.received_days(sent, lo, hi)
+    cols = money_columns()
     rows = []
     for key, details in by_company.items():
         days = {d["day"] for d in details}
@@ -1385,6 +1422,8 @@ def intro_companies(db: Session, start: date, end: date,
             "contract_received": (found.contract_received or "") if found is not None else "",
             # 계약여부를 표에서 골라 고칠 줄(#147) — 위 값을 읽어 온 그 줄 하나.
             **edit_target(found),
+            # 매출 · 누적투자금액(#173) — 같은 줄에서 읽고, 고치면 그 줄에 담는다.
+            "money": money_cells(found, cols),
             "times": deal_history.intro_times(per_company.get(key, {}),
                                               user.id if user is not None else None),
             "investors": len({d["contact_id"] for d in details}),
@@ -1398,18 +1437,81 @@ def intro_companies(db: Session, start: date, end: date,
     return {"rows": rows, "details": len(got)}
 
 
-#: `아직 소개 안 한 10억 이상` 의 선 — 투자유치희망금액, 구간이면 아래값(`amount.eok`)(#122).
+def money_columns() -> List[tuple]:
+    """업무 보고 두 표의 매출 · 누적투자금액 칸 `[(IR 칸, 머리글)]`(#173) — IR 기업 현황과 같은 차례 · 같은 이름.
+
+    `revenue_years.columns()` 에서 투자유치희망금액(이 표는 따로 세운다 — #118) · Pre Value 만
+    뺐다. 2026년이면 `23년 매출` ~ `26년 매출` · `27년 예상매출` · `누적투자금액` 이고, 해가
+    바뀌면 IR 표와 같이 넘어간다.
+    """
+    return [(f, head) for f, head in revenue_years.columns()
+            if f not in ("raise_target", "pre_value")]
+
+
+def money_cells(found, columns: List[tuple]) -> List[dict]:
+    """그 기업의 매출 · 누적투자금액 `[{head, ir, field, value}]`(#173) — 값을 **읽어 온 줄 하나**에서 읽는다.
+
+    `head` · `ir` 는 머리글과 IR 칸 이름이다 — 표가 첫 줄의 것으로 머리를 세운다(줄이 없으면
+    표도 안 선다).
+
+    줄은 `edit_target` 과 같다(IR, 없으면 Series A). 표에 따로 적어 두지 않으므로 IR 기업 현황이나
+    Series A 탭에서 고치면 다음 화면이 그대로 따르고, 여기서 고치면 그 줄에 담겨 이어진 줄로
+    따라간다(`company_sync`). Series A 줄은 그 칸을 받는 자리로 읽는다(`company_sync.slot` — 올해
+    매출은 `revenue_2026`, Series A 에 없는 해는 빈칸). `field` 가 빈 칸은 고칠 곳이 없다.
+    글자는 적힌 그대로다(IR 표와 같다 — `8.2억` · `5-10억`).
+    """
+    from . import company_sync
+
+    out = []
+    for field, head in columns:
+        where = None
+        if isinstance(found, IrCompany):
+            where = field
+        elif found is not None:
+            where = company_sync.slot(found, field, {})
+        out.append({"head": head, "ir": field, "field": where or "",
+                    "value": amount.text(getattr(found, where)) if where else ""})
+    return out
+
+
+#: 소개 후보 금액 묶음의 두 선(#174) — 투자유치희망금액, 억. 10억은 예전 `10억 이상` 후보의 선이다(#122).
 BIG_EOK = 10
+SMALL_EOK = 5
+#: 소개 후보 금액 묶음 `(열쇠, 이름)` — 화면 단추 차례(#174). 팀원 요청 그대로 셋 + 못 읽는 값.
+RAISE_BANDS = (("le5", "5억 이하"), ("5to10", "5~10억"), ("ge10", "10억 이상"),
+               ("unknown", "알 수 없음"))
+
+
+def raise_band(value) -> str:
+    """투자유치희망금액 → 소개 후보 금액 묶음 열쇠(#174 · `RAISE_BANDS`).
+
+    숫자는 `amount.bounds`(억 · 구간이면 아래와 위)로 읽는다. 아래가 10억 이상이면
+    `10억 이상`(예전 #122 의 선 그대로), 위가 5억 이하면 `5억 이하`, 나머지는 `5~10억` —
+    `5-10억` 처럼 선에 걸친 구간은 가운데에 든다. 딱 5억은 `5억 이하`, 딱 10억은 `10억 이상`.
+    빈칸 · `~` · 숫자로 못 읽는 글자는 `알 수 없음`.
+    """
+    pair = amount.bounds(value)
+    if pair is None:
+        return "unknown"
+    low, high = pair
+    if low >= BIG_EOK:
+        return "ge10"
+    if high <= SMALL_EOK:
+        return "le5"
+    return "5to10"
 
 
 def unintroduced_big(db: Session, intros: dict, user: Optional[User] = None,
                      sent=None) -> List[dict]:
-    """그 달 이 팀원이 **아직 소개 안 한** 10억 이상 IR 기업 — 금액 높은 순(#122).
+    """그 달 이 팀원이 **아직 소개 안 한** 소개 가능 IR 기업 **모두** — 금액 높은 순(#122 · #174).
+
+    예전에는 10억 이상만 세웠다(#122 — 이름은 그때 것). #174 부터는 금액과 상관없이 다 세우고,
+    줄마다 금액 묶음(`band` — `raise_band`)을 달아 화면이 골라 본다. 금액을 모르는 곳은 맨 아래.
 
     '소개했다' 는 같은 달 `소개한 기업`(`intros` — 받은 기록 `deal_history.Receipt`)과 같은
     기준이다. 소개할 수 있는 기업만 센다 — `딜소개 불가` 계약값 · 이름의 `딜소개 불가` 표시 ·
     폐업(`ir_monthly.is_closed`) · 문구를 못 만드는 기업(`IrCompany.introducible` 거짓 — 화면의
-    '소개 가능 기업' 수와 같은 기준)은 뺀다. 금액을 못 읽거나 빈 기업도 빠진다.
+    '소개 가능 기업' 수와 같은 기준)은 뺀다.
 
     `mine_times` — 그 팀원이 **지금까지**(기간 없이) 이 기업을 소개한 횟수(#165). IR 기업
     현황 `담당별 소개` 의 그 계정 수와 같은 셈이다(`deal_history.intro_times`). `user` 가
@@ -1422,23 +1524,27 @@ def unintroduced_big(db: Session, intros: dict, user: Optional[User] = None,
     if user is not None:
         ever = deal_history.received_days(deal_history.scan(db) if sent is None else sent)
     done = {deal_history._key(c["company"]) for c in intros["rows"]}
+    cols = money_columns()
     out = []
     for c in db.execute(select(IrCompany).order_by(IrCompany.name)).scalars():
-        low = amount.eok(c.raise_target)
         key = contract_key(c.contract_status)
-        if (low is None or low < BIG_EOK or key == BLOCKED_CONTRACT or ir_monthly.is_closed(c)
+        if (key == BLOCKED_CONTRACT or ir_monthly.is_closed(c)
                 or not c.introducible
                 or "딜소개불가" in (c.name or "").replace(" ", "")
                 or deal_history._key(c.name) in done):
             continue
-        out.append({"company": c.name, "eok": low, "raise_target": raise_target(c),
+        out.append({"company": c.name, "eok": amount.eok(c.raise_target),
+                    "band": raise_band(c.raise_target),
+                    "raise_target": raise_target(c),
                     "sector": c.sector_major or "", "series": _short(c.series),
                     "contract_label": CONTRACT_LABELS.get(key, "미계약"),
                     "mine_times": (deal_history.intro_times(
                         ever.get(deal_history._key(c.name), {}), user.id)
                         if user is not None else 0),
+                    "money": money_cells(c, cols),
                     **edit_target(c)})
-    out.sort(key=lambda r: -r["eok"])   # 같은 금액은 이름 순 그대로
+    # 같은 금액은 이름 순 그대로 · 금액을 모르는 곳은 맨 아래.
+    out.sort(key=lambda r: (r["eok"] is None, -(r["eok"] or 0)))
     return out
 
 

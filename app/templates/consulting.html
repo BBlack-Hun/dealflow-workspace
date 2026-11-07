@@ -886,7 +886,9 @@
            바뀌어 보인다. 칸마다 따로 찍는 자리는 `routers/consulting.py` 의
            `_assign` 이고, 꼴을 정하는 자리는 `app/clock.py` 의 `stamp_text`
            한 곳이다(위 `stamped` 매크로 주석 참고). #}
-        <td class="cell multi" data-field="deal_pitch">{{- stamped(r.deal_pitch, r.stamps.get('deal_pitch')) -}}</td>
+        {# 머리글이 `메모` 라 새로 다는 줄 앞에 오늘 날짜가 선다(`data-memo-date` · `memo_date.js` —
+           #172). 발송에 안 쓰이는 칸이라 날짜가 밖으로 나가지 않는다(`models.IrCompany.one_liner` 주석). #}
+        <td class="cell multi" data-field="deal_pitch" data-memo-date>{{- stamped(r.deal_pitch, r.stamps.get('deal_pitch')) -}}</td>
         {# `O` / `X` 를 **골라서** 넣는다 — 아래 `계약서 수신완료여부` 와 글자
            하나까지 같은 방식이다(consulting.js 의 `addChoices`). 그냥 타이핑하게
            두면 같은 뜻이 `O`·`o`·`ㅇ`·`○` 로 갈려, 두 가지뿐인 칸에서 그건 곧

@@ -1,0 +1,27 @@
+{#
+  ── 업무 보고 두 표의 매출 · 누적투자금액 칸(#173) — `_report_intros.html` 이 부른다 ─────
+
+  팀원 요청: "업무보고 > 23년 매출, 24년 매출, 25년 매출, 26년 매출, 27년 예상매출액,
+  누적투자금액 컬럼 추가 > 내용도 자동으로 기입되게".
+
+  칸 차례 · 이름은 IR 기업 현황과 같다(`report.money_columns` → `revenue_years.columns`).
+  **값은 따로 적어 두지 않는다** — 줄마다 IR 기업 현황(없으면 Series A)의 그 칸을 읽고
+  (`report.money_cells`), 눌러 고치면 그 줄에 담긴다(줄의 `data-inline-url` — 계약여부와
+  같은 길 · `inline_edit.js`). 이어진 줄은 `company_sync` 가 따라 고친다. 고칠 곳이 없는 칸
+  (짝 못 찾은 기업 · Series A 에 없는 해)은 글자로만 선다.
+#}
+{# 머리는 첫 줄의 칸에서 세운다(`head` · `ir`) — 줄이 없으면 표가 안 선다. #}
+{% macro money_heads(rows) -%}
+  {%- for m in rows[0].money %}
+  <th class="num" style="width:{{ 96 if m.ir == 'funding_total' else 74 }}px">{{ m.head }}</th>
+  {%- endfor %}
+{%- endmacro %}
+{% macro money_cells(c) -%}
+  {%- for m in c.money %}
+  {%- if m.field and c.company_id %}
+  <td class="cell num" data-field="{{ m.field }}">{{ m.value }}</td>
+  {%- else %}
+  <td class="num">{{ m.value }}</td>
+  {%- endif %}
+  {%- endfor %}
+{%- endmacro %}

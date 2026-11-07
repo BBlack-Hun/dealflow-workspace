@@ -1329,6 +1329,10 @@ a.secondary-btn { display: inline-flex; align-items: center; text-decoration: no
 .react-row { display: flex; gap: 10px; align-items: stretch; }
 .react { display: flex; flex-direction: column; justify-content: center;
          gap: 3px; min-width: 0; }
+/* 미팅 결과(#183) — 한 칸에 결과 셋의 수를 나란히. 셋이 들어 다른 칸의 두 몫을 쓴다. */
+.react.meeting-results { flex: 2; }
+.react .result-counts { display: flex; justify-content: center; gap: 10px; }
+.react .result-count { flex: 1; min-width: 0; word-break: keep-all; }
 
 /* 달별 반응 — 위 누적과 같은 다섯(중 넷)을 달로 갈라 놓은 표.
 
@@ -1398,6 +1402,9 @@ a.secondary-btn { display: inline-flex; align-items: center; text-decoration: no
 /* 0 은 흐리게 — 숫자가 있는 달이 눈에 먼저 걸려야 한다. 자료가 6월부터라
    그 앞 여덟 달은 통째로 0 이다. 감추지 않는다(언제부터 쌓였는지가 보인다). */
 .month-react .zero { color: var(--muted); font-weight: 400; }
+/* 숫자를 누르면 그 달 · 그 칸의 상세 목록(#179) — 숫자 모양은 그대로 둔다. */
+.month-react td a { color: inherit; text-decoration: none; }
+.month-react td a:hover { color: var(--brand); text-decoration: underline; }
 /* 미니 막대 차트 (라이브러리 없이) */
 .mini-charts { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .mini-title { font-size: 12px; color: var(--muted); margin: 0 0 6px; font-weight: 600; }
@@ -1465,7 +1472,8 @@ td.rowno, .rowno { text-align: right; font-variant-numeric: tabular-nums; font-s
 /* 넓은 표는 머리행 고정(`.table-wrap.wide thead th`)과 얇은 줄(td 4px)을 같이 따른다. */
 .table-wrap.wide .grid-table > thead > tr::before { position: sticky; top: 0; z-index: 3; }
 .table-wrap.wide .grid-table > tbody > tr::before { padding-block: 4px; }
-:is(#contacts-table, #co-table, #sa-table, #sourcing-table, #cs-table, .year-report) > * > tr::before {
+:is(#contacts-table, #co-table, #sa-table, #sourcing-table, #cs-table, #reaction-list,
+    .year-report) > * > tr::before {
   content: none; }
 .field.wide { grid-column: 1 / -1; }
 .hint.ok { color: var(--green); }
@@ -2052,12 +2060,17 @@ td.row-acts > form + a { margin-left: 8px; }
    1,090px 면 기업명 칸에 안쪽 표 + 투자사 84px 가 들어가고, 1,400px 화면(표 1,095px)
    부터는 지금 모양 그대로다. 안쪽 표는 폰 규칙(`.table-wrap .grid-table` 760px)에서
    뺀다 — 그것도 `.table-wrap` 안이라 760px 로 벌어져 칸 밖으로 잘린다.
-   (`#intros > .table-wrap >` 로 잡아 아래 `소개 후보` 표(`#intro-left` 안)는 안 건드린다.) */
-#intros > .table-wrap > .grid-table { min-width: 1090px; }
+   (`#intros > .table-wrap >` 로 잡아 아래 `소개 후보` 표(`#intro-left` 안)는 안 건드린다.)
+   11/07(#173) 매출 · 누적투자금액 여섯 칸(74 × 5 + 96 = 466px)이 서서 1,090 + 466 → 1,560px.
+   `소개 후보` 표도 같은 여섯 칸이 서서 폭을 박는다 — 고정 칸 1,092px + 기업명 200px 남짓. */
+#intros > .table-wrap > .grid-table { min-width: 1560px; }
+#intro-left .table-wrap > .grid-table { min-width: 1300px; }
 #intros > .table-wrap > .grid-table .grid-table { min-width: 0; }
 /* 소개 후보 → [딜 소개](#164) 줄 — 단추와 안내를 왼쪽에 붙여 세운다(`.toolbar` 의 양끝 정렬이면
    안내가 표 오른쪽 끝으로 떨어져 단추와 따로 읽힌다). */
 #intro-left .intro-pick-bar { justify-content: flex-start; margin: 4px 0 8px; }
+/* 소개 후보 금액 묶음 단추(#174) — 머리 바로 밑, [딜 소개] 줄 위. */
+#intro-left .intro-bands { margin: 4px 0 6px; }
 /* 이어진 IR 기업의 칸 — 읽기만(#83 · #85 · `_ir_cols.html`). 옅은 바탕으로 눌러 고치는
    칸과 가른다(고치는 곳은 IR 기업 현황). */
 th.ir-ro, td.ir-ro { background: #f7f9fc; }
