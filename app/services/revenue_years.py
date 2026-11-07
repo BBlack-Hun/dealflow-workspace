@@ -5,8 +5,8 @@
 `ir_companies.revenue_2022` ~ `revenue_2030`(0019 · 0121). 해마다 판을 만들지 않으려고
 다섯 해치를 한 번에 팠다 — Series A 탭이 24~27년을 미리 판 것과 같은 방식이다(0112).
 
-**2032년 1월 전에 `revenue_2031` 판 하나만 더한다.** 그해에 처음으로 지난해 칸
-(`revenue_2031`)이 필요해진다. 판과 함께 한 줄씩 적을 곳이 셋이다 — 모델 ·
+**2030년 1월 전에 `revenue_2031` 판 하나만 더한다.** 그해에 처음으로 내년 예상 칸
+(`revenue_2031` — 아래 `forecast`)이 필요해진다. 판과 함께 한 줄씩 적을 곳이 셋이다 — 모델 ·
 `routers/companies.CompanyIn` · `static/js/companies.js` 의 `FIELDS`. 빠뜨리면
 tests/test_revenue_years.py 가 잡는다. 칸이 모자라도 화면은 안 죽는다 — 없는 해는
 건너뛴다(`shown`).
@@ -21,6 +21,17 @@ LLM 이 읽는 칸이라 그대로 둔다).
 **이 파일 하나**를 읽는다. 오래된 해는 **표에서 빠질 뿐** 값은 그대로다 — 창에도 안
 서므로 [저장]이 그 칸을 보내지 않고, 시트 가져오기는 모든 해를 채운다
 (`scripts/import_company_sheets.py`).
+
+## 내년 예상매출 — `revenue_{올해+1}` (과제 169)
+
+2026년이면 `27년 예상매출`(`revenue_2027`) 이 `26년 매출` 바로 뒤에 선다(`forecast`).
+판은 0121 이 이미 파 두었다 — 새 판 없이 **세우기만** 한다. Series A 탭의 `27년` 칸
+(0112)과 따라 고친다(`company_sync._year_slot`). 해가 바뀌면 이름이 그해 글자로 넘어간다
+(2027년이면 `28년 예상매출` · `revenue_2028`).
+
+shortcut: 2028년 첫 화면의 `roll_over` 는 `revenue_2027` 이 비었을 때만 `revenue_recent` 를
+옮겨 적는다 — 2026년에 적은 27년 예상값이 남아 있으면 실제 27년 매출로 안 바뀐다. 그 전에
+'예상값은 덮는다' 를 정할 것.
 
 ## 해가 바뀌면 — `최근 매출액` 을 지난해 칸으로 **옮겨 적는다** (`roll_over`)
 
@@ -96,11 +107,25 @@ def recent_label(year: Optional[int] = None) -> str:
     return f"{(year or this_year()) % 100:02d}년 매출"
 
 
+def label(field: str, year: Optional[int] = None) -> str:
+    """연도 매출 칸의 이름 — 지난 해 · 올해는 `25년 매출`, 앞으로 올 해는 `27년 예상매출`."""
+    future = int(field[-4:]) > (year or this_year())
+    return f"{field[-2:]}년 {'예상매출' if future else '매출'}"
+
+
+def forecast(year: Optional[int] = None) -> Optional[Tuple[str, str]]:
+    """내년 예상매출 칸 `(칸, 머리글)` — `("revenue_2027", "27년 예상매출")`. 판이 없으면 None."""
+    field = f"revenue_{(year or this_year()) + 1}"
+    return (field, label(field, year)) if field in FIELDS else None
+
+
 def columns(year: Optional[int] = None) -> List[Tuple[str, str]]:
     """IR 기업 현황 탭이 `소분류` 바로 뒤에 세우는 칸 `[(칸, 머리글)]` — 표와 엑셀의 차례."""
     year = year or this_year()
+    ahead = forecast(year)
     return ([(f, f"{yy}년 매출") for f, yy in shown(year)]
-            + [("revenue_recent", recent_label(year)), ("funding_total", "누적투자금액"),
+            + [("revenue_recent", recent_label(year))] + ([ahead] if ahead else [])
+            + [("funding_total", "누적투자금액"),
                ("raise_target", "투자유치희망금액"), ("pre_value", "Pre Value")])
 
 

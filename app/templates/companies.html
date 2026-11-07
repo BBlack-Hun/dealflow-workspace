@@ -143,10 +143,9 @@
    이미 적힌 문장을 갈아엎는 일이라(사본 344곳 중 181곳이 그렇다) 미리 보지
    않고 누르게 하면 안 된다.
 
-   **칸의 기본이 사용자 정의 문구가 된 뒤로는 이것이 '여러 줄을 한 번에 다시
-   맞추는' 유일한 길이다.** 예전에는 한 번 적용해 둔 줄이 그 뒤로 재료를 고칠
-   때마다 저절로 따라왔는데, 이제는 따라오지 않는다 — 다시 맞추고 싶으면 여기서
-   한 번 더 고르면 되고, 그때도 무엇이 어떻게 바뀌는지 먼저 보게 된다. #}
+   **사람이 쓴 문구를 여러 줄 한 번에 조합으로 바꾸는 유일한 길이다.** 적용한 줄은
+   조합값 그대로라 그 뒤로 재료를 고치면 저절로 따라온다(과제 168 · 170 —
+   `one_liner.follow`). 사람이 쓴 줄은 따라오지 않으니, 맞추고 싶으면 여기서 고른다. #}
 <section class="panel" id="ol-bulk" hidden>
   <h2 class="panel-title">전체 자동조합
     <button type="button" class="linkbtn" id="ol-bulk-close">닫기 ✕</button>
@@ -472,10 +471,10 @@
            하나만** 다른 이름이 됐다 — 둘은 표도 값도 서로 남남이다. 갈라 보는
            기준은 `app/models.py` 의 두 칸 주석에 나란히 적어 두었다.
 
-           **칸의 기본은 사용자 정의 문구다.** 여기 적힌 문장은 스타트업DB 를
-           고쳐도 안 바뀐다 — 자동 조합은 [수정] 창의 [자동 조합으로 바꾸기] 나
-           위의 [전체 자동조합] 으로 **고를 때만** 들어온다
-           (`services/one_liner.py` 의 '조합값은 권할 뿐이다').
+           **사람이 쓴 문장은 재료를 고쳐도 안 바뀐다.** 비었거나 조합값 그대로인 칸만
+           재료(매출 · 금액 · 기업 한줄 소개 …)를 고칠 때 따라 바뀌고(과제 168 · 170),
+           사람이 쓴 문장을 조합으로 바꾸는 것은 [수정] 창의 [자동 조합으로 바꾸기] 나
+           위의 [전체 자동조합] 이다(`services/one_liner.py` 의 '따라 고치기').
 
            **폭을 px 로 못 박는다(344px, 10/30).** 폭을 안 준 채 남는 자리만 받던 칸이라,
            칸이 들 때마다 `%` 칸 넷이 표 폭 증가분의 41% 를 먼저 가져가 #75(10/26 ·
@@ -505,6 +504,11 @@
         <th class="num" style="width:74px" data-filters="{{ f }}:{{ yy }}년 매출">{{ yy }}년 매출<div class="th-filters"></div></th>
         {% endfor %}
         <th class="num" data-filters="revenue_recent:{{ recent_label }}" style="width:108px" title="올해 매출 — 해가 안 끝나 지금까지 알려진 최근 매출을 적습니다 · 해가 바뀌면 지난해 칸으로 옮겨 적힙니다 · 단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 1억 미만은 `5천만원` · 모르면 `~`">{{ recent_label }}<div class="th-filters"></div></th>
+        {# 내년 예상매출(과제 169 · `revenue_years.forecast` — 2026년이면 `27년 예상매출`). 연도 칸과
+           같은 꼴(글자 그대로 · 금액 구간 필터)이고, 딜 소개 문구에 `27년(예상)` 으로 실린다. #}
+        {% if forecast %}
+        <th class="num" style="width:88px" data-filters="{{ forecast[0] }}:{{ forecast[1] }}" title="내년 예상 매출 — 단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 1억 미만은 `5천만원` · 모르면 `~` · Series A 이상 딜 소싱의 같은 해 칸과 함께 고쳐집니다">{{ forecast[1] }}<div class="th-filters"></div></th>
+        {% endif %}
         <th class="num" style="width:96px" title="단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 1억 미만은 `5천만원` · 모르면 `~`">누적투자금액</th>
         {# 144 → 104px(i132 — 값은 짧은데 머리글 때문에 넓던 칸이라 머리글을 매출 칸처럼 두 줄로 접는다).
            띄어쓰기가 없는 이름이라 단추(`keep-all`)가 접을 자리가 없어 칸 밖으로 넘친다 —
@@ -713,6 +717,7 @@
           data-f-raise_target="{{ r.bands.raise_target }}"
           data-f-revenue_recent="{{ r.bands.revenue_recent }}"
           {% for f, yy in revenue_years %}data-f-{{ f }}="{{ r.bands[f] }}" {% endfor %}
+          {% if forecast %}data-f-{{ forecast[0] }}="{{ r.bands[forecast[0]] }}"{% endif %}
           {# ── 세울 값(`data-s-*`) ── 머리글의 `data-sort` 와 짝이다.
              선언만 하고 안 실으면 머리글이 단추로 서기만 하고 아무 줄도 안
              움직인다(tests/test_contacts_sort.py 가 모든 화면을 훑는다).
@@ -834,6 +839,9 @@
         <td class="cell num" data-field="{{ f }}" data-filter-derived>{{ r[f] }}</td>
         {% endfor %}
         <td class="num">{{ amount_cell(r.revenue_recent, "revenue_recent", true) }}</td>
+        {% if forecast %}
+        <td class="cell num" data-field="{{ forecast[0] }}" data-filter-derived>{{ r[forecast[0]] }}</td>
+        {% endif %}
         <td class="num">{{ amount_cell(r.funding_total, "funding_total") }}</td>
         <td class="num">{{ amount_cell(r.raise_target, "raise_target", true) }}</td>
         <td class="num">{{ amount_cell(r.pre_value, "pre_value") }}</td>
@@ -996,7 +1004,7 @@
         <td><button type="button" class="linkbtn js-co-edit">수정</button></td>
       </tr>
       {% else %}
-      <tr><td colspan="39" class="muted">등록된 기업이 없습니다. [기업 추가]로 시작하세요.</td></tr>
+      <tr><td colspan="40" class="muted">등록된 기업이 없습니다. [기업 추가]로 시작하세요.</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -1273,6 +1281,9 @@
        해가 바뀌면 지난해 칸으로 옮겨 적힌다(이 창 머리 주석).
        **이름은 표 머리글(`26년 매출` — #82, 예전 `최근 매출액(26년)`) 그대로**여야 한다 — 설명은 `title`. #}
     <label class="field" title="올해 매출 — 해가 안 끝나 지금까지 알려진 최근 매출을 적습니다 · 해가 바뀌면 지난해 칸으로 옮겨 적힙니다 · 단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 1억 미만은 `5천만원` · 모르면 `~`"><span>{{ recent_label }}</span><input type="text" id="f-revenue_recent" placeholder="18.3 · 5천만원 · 5-10억 · ~"></label>
+    {% if forecast %}
+    <label class="field" title="내년 예상 매출 — 단위: 억 · `18.3` 처럼 숫자로도, `5-10억` 처럼 구간으로도 적습니다 · 1억 미만은 `5천만원` · 모르면 `~` · Series A 이상 딜 소싱의 같은 해 칸과 함께 고쳐집니다"><span>{{ forecast[1] }}</span><input type="text" id="f-{{ forecast[0] }}" placeholder="18.3 · 5천만원 · 5-10억 · ~"></label>
+    {% endif %}
     {# 누적투자금액 옆이 그림에서는 `정책자금 (기보 / 신보 / 중진공)` 이다.
        그 칸이 곧 아래 `정책자금`(`guarantee`) — 위 `1. 기본정보` 에서 옮겨 왔다.
        **이름을 그림의 말로 바꿨다**(예전 이름 `기보, 신보, 중진공`). 괄호 안의
@@ -1332,7 +1343,7 @@
        하나만 다르지만 **다른 표의 다른 값**이다(app/models.py 의 두 주석). #}
     <label class="field wide"><span>딜 소개 문구</span>
       <textarea id="f-one_liner" rows="2"
-                placeholder="여기 쓴 문장이 딜소개에 그대로 나갑니다 — 비워 두면 빈 채로 저장됩니다"></textarea></label>
+                placeholder="여기 쓴 문장이 딜소개에 그대로 나갑니다 — 비워 두면 재료(매출 · 금액 …)를 고칠 때 자동으로 채워집니다"></textarea></label>
     {# ── 이 소개가 자동으로 만들어진 값인가, 사람이 쓴 값인가 ─────────────
        **읽기 전용으로 잠그지 않는다.** 344곳 중 293곳에 사람이 쓴 소개가 이미
        있고, 스타트업DB 칸이 빈 기업은 자동 조합에 재료가 없어 잠그면 소개가
@@ -1349,10 +1360,9 @@
        저장 길을 그대로 지나고, 그 값은 조합 결과와 글자까지 같으므로 다음에
        열 때 다시 `자동` 으로 읽힌다 — 되돌리는 길을 새로 파지 않았다.
 
-       **칸을 비우면 빈 채로 저장된다.** 예전에는 비워 보내는 것을 "자동 조합을
-       다시 넣어 달라" 는 뜻으로 받았는데, 그건 칸의 기본이 자동일 때의 규칙이다 —
-       기본이 사용자 정의 문구가 된 지금 비우는 것은 **비우겠다는 뜻**이고,
-       자동 조합은 이 단추로만 들어온다.
+       **칸을 비우면 그 저장에서는 빈 채로 저장된다** — 비우는 것도 사람의 결정이다.
+       다음에 재료(매출 · 금액 …)를 고쳐 저장하면 빈 칸이라 조합값이 들어간다
+       (과제 168 · 170 — `one_liner.follow`).
 
        **만들어질 한 줄을 누르기 전에 보여 준다**(`one-liner-preview`). 안 보여
        주면 무엇으로 바뀌는지 모르는 채 눌러야 하고, 그러면 위 칸의 손글씨를

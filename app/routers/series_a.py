@@ -293,6 +293,11 @@ def render_page(request: Request, db: Session, user: User, msg: str = "", q: str
         # 안내 글 — 올해 매출 칸이 IR 의 어느 칸과 잇는지(`company_sync._year_slot`).
         "ir_recent_label": revenue_years.recent_label(),
         "this_yy": f"{revenue_years.this_year() % 100:02d}",
+        # 매출 칸 머리글 — 앞으로 올 해는 `27년 예상매출`(과제 169).
+        "revenue_labels": {f: revenue_years.label(f) for f in TYPED if f.startswith("revenue_")},
+        # 안내 글 — 내년 칸이 IR 의 내년 예상매출과 잇는다(`company_sync._year_slot`).
+        "next_label": next((revenue_years.label(f) for f in TYPED
+                            if f == f"revenue_{revenue_years.this_year() + 1}"), ""),
         # `계약여부` 고르개의 보기 — IR 기업 현황 표와 같은 목록.
         "contract_labels": CONTRACT_LABELS,
     })

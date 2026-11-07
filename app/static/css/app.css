@@ -638,7 +638,8 @@ a.primary-btn.inline { display: inline-flex; align-items: center; text-decoratio
     (NO 36 + 적어 둔 칸 4,574 · 투자컨설턴트 두 칸 230px 은 그 화면을 보는 계정에만 서서 빼 둔다 —
     서면 표가 그만큼 넓어질 뿐 칸이 눌리지 않는다. 관리자가 붙인 추가 칸도 같다).
     이제 남는 자리를 나눠 갖는 `%` 칸이 없으므로 **칸을 더하면 이 값을 그 칸 폭만큼 올린다.**) */
-#co-table { min-width: 4610px; }
+/* (4,610 → 4,698 : 과제 169 의 `27년 예상매출`(88px — 머리글이 한 줄에 서는 폭) — 든 만큼만 올린다.) */
+#co-table { min-width: 4698px; }
 #co-table td.updated-by { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #sa-table td.updated-by { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* IR 기업 현황 › Series A 이상 딜 소싱 — 넓은 표 공통 값(2,030px)에 직접 적는 칸
@@ -1620,8 +1621,9 @@ td.rowno, .rowno { text-align: right; font-variant-numeric: tabular-nums; font-s
   overflow-wrap: break-word; }
 
 /* 자동 조합 미리보기 — [수정] 창의 `딜 소개 문구` 아래.
-   칸의 기본은 **사람이 쓴 문구**라 자동 조합은 고를 때만 들어간다. 그러니
-   [자동 조합으로 바꾸기] 를 누르기 전에 **무엇이 들어오는지** 보여야 한다.
+   사람이 쓴 문구는 자동 조합으로 저절로 안 바뀐다(과제 168 · 170 — 비었거나 조합값
+   그대로인 칸만 따라온다). 그러니 [자동 조합으로 바꾸기] 를 누르기 전에 **무엇이
+   들어오는지** 보여야 한다.
    위의 `.backup-box` 와 같은 결(점선·옅은 바탕)로 둔다 — 둘 다 "적는 자리가
    아니라 읽는 자리" 다. 조합값에는 `|` 로 이어 붙인 긴 줄이 오므로 줄바꿈을
    살리고(`pre-wrap`) 긴 낱말이 창을 밀지 않게 끊어 준다. */
