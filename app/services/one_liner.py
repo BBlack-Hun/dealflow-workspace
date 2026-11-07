@@ -1,11 +1,11 @@
-"""스타트업DB 칸 → IR 기업현황 `딜 소개 문구` 의 **자동 조합(고를 때만)**.
+"""스타트업DB 칸 → IR 기업현황 `딜 소개 문구` 의 **자동 조합** — 재료를 고치면 따라온다.
 
-**기본은 사용자 정의 문구다.** 이 파일이 만드는 한 줄은 어디에서도 저절로
-칸에 들어가지 않는다 — 사람이 [자동 조합으로 바꾸기] 를 누르거나(창),
-[전체 자동조합] 으로 고르거나, `POST /api/companies/{id}/one-liner` 를 부를
-때만 들어간다(사용자 요청). 재료를 고치면 화면은 "이렇게 만들 수 있다"를
-보여 줄 뿐이고, 칸에 적힌 문장은 그대로 있는다. 아래 `조합값은 권할 뿐이다`
-칸을 보라.
+**재료 칸을 저장하면 문구가 따라 바뀐다**(과제 168 · 170 — "컬럼에 내용 기입하면 딜소개
+문구 자동으로 기입되게"). 단 **사람이 쓴 문장은 저절로 안 덮는다** — 따라 바뀌는 것은
+칸이 비었거나, 칸의 글자가 **고치기 전 재료로 만든 조합값 그대로**일 때뿐이다(`follow`).
+손으로 쓴 문장을 조합으로 갈아 끼우는 길은 예전 그대로 사람이 고르는 자리다 —
+[자동 조합으로 바꾸기](창) · [전체 자동조합] · `POST /api/companies/{id}/one-liner`.
+아래 `따라 고치기` 칸을 보라.
 
 시트를 쓰던 사람은 **스타트업DB 탭**(기업 한줄 소개 · 연도별 매출 · 누적투자금액 ·
 투자유치희망금액 · Pre Value · 특이사항)에 값을 넣는다. 그런데 정작 딜소개에
@@ -45,9 +45,13 @@
 from __future__ import annotations
 
 import re
-from typing import List, Optional
+from types import SimpleNamespace
+from typing import List, Optional, Tuple
 
-from . import revenue_years
+from sqlalchemy.orm.attributes import get_history
+
+from ..models import IrCompany, SeriesACompany
+from . import amount, revenue_years
 from .message_composer import format_eok
 
 # 조합에 쓰는 칸. 다른 곳(화면 안내·테스트)에서 "무엇이 합쳐지는가"를 물을 때
@@ -60,8 +64,8 @@ SOURCE_FIELDS = [
     # 이제 **스타트업DB 표의 `기업 한줄 소개` 가 곧 이 칸**이라(0058) 화면
     # 이름을 그것으로 맞춘다. 두 벌로 두면 화면과 이 목록이 갈린다.
     ("business_desc", "기업 한줄 소개"),
-    # 연도별 매출은 해마다 바뀌어 여기 못 박지 않는다 — 올해 기준 지난 세 해
-    # (`services/revenue_years.shown` · #75).
+    # 연도별 매출은 해마다 바뀌어 여기 못 박지 않는다 — 올해 기준 지난 세 해 · 올해 ·
+    # 내년 예상(`ir_revenue` · #75 · 과제 168).
     ("funding_total", "누적투자금액"),
     ("raise_target", "투자유치 진행금액"),
     ("pre_value", "Pre Value"),
@@ -87,6 +91,11 @@ SOURCE_FIELDS = [
 # 2026년이면 23·24·25년 — 위에서 되돌린 22년은 표에서 빠지면서 조합에서도 빠진다
 # (값은 그대로 남는다). 표에 안 보이는 해가 문구에만 실리면 무엇을 고쳐야 그 토막이
 # 바뀌는지 화면에서 알 수 없다. 해가 바뀌면 저절로 한 해씩 넘어간다.
+#
+# ── 올해 · 내년 예상도 싣는다 (과제 168 · 170) ──
+# 사용자가 차례를 정했다: `23년 · 24년 · 25년 · 26년 매출, 27년 예상매출액`. 표에 선 칸
+# 그대로라(`revenue_years.columns` — 올해 `revenue_recent` · 내년 `forecast`) 위 규칙과도
+# 맞는다. 내년 칸은 `27년(예상) 30억` 으로 적어 실제 매출과 갈라 읽히게 한다.
 
 
 def _text(value: Optional[str]) -> str:
@@ -102,6 +111,8 @@ _SEPARATOR = re.compile(r"\s*\|\s*|\s+[Il]\s+|\s*ㅣ\s*")
 # `-` 하나만 적힌 토막. 시트에서 '해당 없음'을 그렇게 적어 뒀다.
 # 그대로 이어 붙이면 `… | - | …` 라는 **빈 칸이 보이는 줄**이 된다.
 _PLACEHOLDER = re.compile(r"^[-–—·.\s]*$")
+# 금액에 단위가 적혀 있나(`8.2억` · `5천만원`) — `company_sync.UNIT` 과 같은 규칙.
+_UNIT = re.compile(r"[억만천원]")
 
 
 def _clean(value: Optional[str]) -> str:
@@ -142,11 +153,54 @@ def _is_amount(value: str) -> bool:
     return any(ch.isdigit() for ch in value)
 
 
-def _revenue_segment(company) -> str:
-    """`매출 …` 토막. 값이 **적힌 그대로**다 — 단위를 붙이거나 고치지 않는다.
+def _yy(year: int) -> str:
+    return f"{year % 100:02d}"
+
+
+def ir_revenue(year: Optional[int] = None, legacy: bool = False) -> List[Tuple[str, str, bool]]:
+    """IR 기업에서 조합에 싣는 매출 칸 `[(칸, 연도 글자, 단위가 억인 칸인가)]` — 오래된 해부터.
+
+    표의 차례 그대로다(`revenue_years.columns`): 지난 세 해 · 올해(`revenue_recent`) ·
+    내년 예상(과제 168 · 170 — "23년 · 24년 · 25년 · 26년 매출, 27년 예상매출액").
+    올해 · 내년 칸은 단위가 억으로 정해진 칸이라 `18.3` → `18.3억` 으로 단위를 붙여 싣는다
+    (`revenue_years.roll_over` 와 같은 규칙). 지난 해 칸은 **적힌 그대로**다(아래).
+
+    `legacy` 는 과제 168 전의 모양(지난 세 해만)이다 — 그때 만들어 둔 줄을 알아보는 데만
+    쓴다(`_auto_texts`).
+    """
+    year = year or revenue_years.this_year()
+    rows = [(f, f"{yy}년", False) for f, yy in revenue_years.shown(year)]
+    if legacy:
+        return rows
+    rows.append(("revenue_recent", f"{_yy(year)}년", True))
+    ahead = revenue_years.forecast(year)
+    if ahead:
+        rows.append((ahead[0], f"{_yy(year + 1)}년(예상)", True))
+    return rows
+
+
+def series_a_revenue(year: Optional[int] = None) -> List[Tuple[str, str, bool]]:
+    """Series A 줄에서 싣는 매출 칸 — 지난 세 해 · 올해 · 내년 예상(그 표에 판 해만, 0112).
+
+    그 표의 매출 칸은 모두 단위 억 글자다(`models.SeriesACompany`).
+    """
+    year = year or revenue_years.this_year()
+    return [(f"revenue_{y}", f"{_yy(y)}년(예상)" if y > year else f"{_yy(y)}년", True)
+            for y in range(year - revenue_years.SHOWN, year + 2)]
+
+
+def _unit(value: str) -> str:
+    """단위가 억인 칸의 맨 숫자에 `억` 을 붙인다(`18.3` → `18.3억`). 단위가 적힌 글은 그대로."""
+    return value if _UNIT.search(value) else (amount.phrase(value) or value)
+
+
+def _revenue_segment(company, revenue=None) -> str:
+    """`매출 …` 토막. 지난 해 칸은 **적힌 그대로**다 — 단위를 붙이거나 고치지 않는다.
+    (단위가 억으로 정해진 올해 · 내년 칸만 맨 숫자에 `억` 을 붙인다 — `ir_revenue`.)
 
     - 한 해뿐   `매출 13억`
-    - 여러 해   `매출 23년 2억, 24년 4억, 25년 11억`
+    - 여러 해   `매출 23년 2억, 24년 4억, 25년 11억, 26년 15억, 27년(예상) 30억`
+    - 예상뿐    `매출 27년(예상) 30억`
 
     **한 해뿐일 때 연도를 안 붙이는 것도 잰 결과다.** 사람이 쓴 매출 토막 중
     `매출 …` 로 시작하는 짧은 것 139개에는 연도가 없고, 연도를 적은 17개는
@@ -176,21 +230,21 @@ def _revenue_segment(company) -> str:
     근거로는 쓰지 않는다.
 
     (되돌리고 싶어지면 이 함수만 고치면 된다. 다만 **형식을 바꾸면 예전에 자동
-    으로 만들어 둔 줄이 `origin()` 에 '사람이 쓴 값' 으로 보인다** — 창에 뜨는
-    말이 `자동으로 만든 값입니다` 에서 `직접 쓰신 값입니다` 로 바뀐다. 칸이
-    저절로 바뀌지는 않는다(기본이 사용자 정의 문구라 어차피 아무 줄도 따라오지
-    않는다). 이 판의 운영 사본에서는 5곳이 그랬고, [자동 조합으로 바꾸기] 를
-    한 번 눌러 주면 다시 조합값과 같아진다.)
+    으로 만들어 둔 줄이 '사람이 쓴 값' 으로 보여 더는 따라오지 않는다** — 그래서
+    바꾸기 전 모양을 `ir_revenue(legacy=True)` 로 남겨 두고 함께 알아본다(`_auto_texts`).
+    과제 168 이 올해 · 내년 칸을 더할 때 테스트 사본에서 15곳이 그랬다.)
     """
-    written = [(year, _text(getattr(company, attr, None)))
-               for attr, year in revenue_years.shown()]
-    written = [(year, value) for year, value in written
-               if value and _is_amount(value)]
+    written = []
+    for attr, year, unit in (ir_revenue() if revenue is None else revenue):
+        value = _text(getattr(company, attr, None))
+        if value and _is_amount(value):
+            written.append((year, _unit(value) if unit else value))
     if not written:
         return ""
-    if len(written) == 1:
+    # 한 해뿐이어도 **예상**이면 연도를 붙인다 — 안 붙이면 실제 매출로 읽힌다.
+    if len(written) == 1 and "예상" not in written[0][0]:
         return f"매출 {written[0][1]}"
-    return "매출 " + ", ".join(f"{year}년 {value}" for year, value in written)
+    return "매출 " + ", ".join(f"{year} {value}" for year, value in written)
 
 
 def _eok_segment(value, template: str) -> str:
@@ -207,7 +261,7 @@ def _eok_segment(value, template: str) -> str:
     return "" if quantity is None else template.format(quantity)
 
 
-def compose_one_liner(company) -> str:
+def compose_one_liner(company, revenue=None) -> str:
     """스타트업DB 칸들을 이어 붙인 `기업 한줄 소개` 한 줄.
 
     **빈 칸은 토막째 빠진다.** 실데이터는 대부분 일부만 차 있어서(누적투자금액은
@@ -239,7 +293,7 @@ def compose_one_liner(company) -> str:
     # 이미 말한 내용. 사업분야에 통째로 적혀 온 줄과 겹치지 않게 한다.
     said = head
 
-    revenue = _revenue_segment(company)
+    revenue = _revenue_segment(company, revenue)
     if revenue and "매출" not in said:
         segments.append(revenue)
 
@@ -262,81 +316,163 @@ def compose_one_liner(company) -> str:
     return " | ".join(segments)
 
 
-# --- 조합값은 권할 뿐이다 — 칸의 기본은 **사용자 정의 문구** ------------------
+# --- 따라 고치기 — 비었거나 **자동 조합 그대로**인 칸만 (과제 168 · 170) -----------
 #
 # 지금 344곳 중 293곳에 **사람이 쓴 한줄 소개**가 들어 있다. 스타트업DB 를 고칠
 # 때마다 무턱대고 덮으면 그게 소리 없이 사라진다 — 되돌릴 수 없다.
 #
-# 한동안은 **자동으로 만든 줄인지 사람이 쓴 줄인지 가려내서** 자동인 줄만 따라
-# 갱신했다(아래 `origin`). 그 규칙에서는 칸의 기본이 사실상 '자동' 이었다:
-# 한 번 조합값과 글자가 같아진 줄은 재료를 고칠 때마다 저절로 다시 쓰였고,
-# 칸을 비워서 저장하면 자동 조합이 도로 들어왔다.
+# 한때 사용자는 기본을 **사용자 정의 문구**로 정했다(#203 — "기본 값은 사용자 정의 문구
+# 사용"). 그 뒤로는 재료를 고쳐도 칸이 그대로였고 조합값은 화면에 권하기만 했다.
+# 11/07 사용자가 다시 요청했다(과제 168 · 170): **재료 칸에 값을 넣으면 딜소개 문구에도
+# 저절로 들어가게.** 두 요청을 함께 지키는 규칙이 아래다 — 사람이 쓴 글은 여전히
+# 기본이라 안 덮고, 사람이 안 쓴 칸(빈칸 · 조합값 그대로)만 따라온다.
 #
-# **사용자가 그 기본을 뒤집었다**("기본 값은 사용자 정의 문구 사용"). 그래서
-# 이제 **칸에 값을 넣는 함수는 `apply_one_liner` 하나뿐이고, 그것은 사람이
-# 골랐을 때만 불린다.** 저장하는 길(PATCH/POST)은 조합값을 만들어 **돌려주기만**
-# 한다 — 무엇으로 바뀔 수 있는지는 화면이 보여 주고, 바꿀지는 사람이 누른다.
-#
-#   · 재료를 고쳐 저장   → 칸은 그대로. 새 조합값은 `suggestion` 으로 따라온다
-#   · 칸을 비워서 저장   → **빈 채로 둔다.** 비우는 것도 사람의 결정이다
+#   · 재료를 고쳐 저장, 칸이 비었다            → 새 조합값이 들어간다
+#   · 재료를 고쳐 저장, 칸 = 고치기 전 조합값   → 새 조합값으로 바뀐다
+#   · 재료를 고쳐 저장, 칸 = 사람이 쓴 글       → **그대로 둔다**
+#   · 같은 저장에서 칸을 비웠다                → 빈 채로 둔다(비우는 것도 사람의 결정)
+#   · IR 기업에 기업 한줄 소개가 없다           → 안 만든다(숫자뿐인 문구 — `_HEAD`)
 #   · [자동 조합으로 바꾸기] · [전체 자동조합] · `POST …/one-liner`
-#                        → 이때만 칸에 들어간다
+#                                            → 사람이 쓴 글까지 덮는 길(예전 그대로)
 #
-# **자동 조합을 없앤 것이 아니다.** 스타트업DB 를 채우면 한 줄이 만들어지고,
-# 그 줄은 표와 창에 나란히 보인다(`one_liner_suggestion`). 달라진 것은 **누가
-# 넣기로 정하는가** 하나다.
+# '조합값 그대로인가' 는 표시 칸을 새로 파지 않고 **고치기 전 재료로 다시 만들어 맞춰
+# 본다**(`_auto_texts`). 세션 flush 한 자리에서 한다(`follow` — `app/models.py` 가 건다).
+# 화면 PATCH · 창 · 시트 올리기 · 따라 고치기(`company_sync`) 어느 길로 재료가 바뀌어도
+# 지나고, 바뀐 칸은 같은 flush 의 수정 로그(`edit_log`)에 남는다.
 #
-# `origin()` 은 남는다. 이제는 '덮을지' 를 정하는 자리가 아니라 **지금 칸에 든
-# 글자가 조합값과 같은지**를 화면에 알려 주는 자리다(`자동으로 만든 값입니다` /
-# `직접 쓰신 값입니다`). 표시를 새로 남기는 대신 **다시 만들어 맞춰 보는** 방식
-# 그대로다 — 모델에 '자동/수동' 칸을 파지 않아도 되고, 이미 쌓인 344행에 표시를
-# 소급해 넣을 필요도 없다.
+# Series A 이상 딜 소싱의 `딜 소개 문구`(`SeriesACompany.deal_pitch`)도 같은 규칙으로
+# 그 줄의 매출 · 금액 칸에서 만든다(`series_a_revenue`). 그 표에는 기업 한줄 소개 ·
+# 특이사항 칸이 없어 그 두 토막은 빠진다. IR 의 문구와 잇지는 않는다 — 두 칸은 다른
+# 표의 다른 값이다(`company_sync` 머리말 · Series A 딜 공유용 문구).
+#
+# **회사명은 싣지 않는다.** 딜 소개는 기업을 `[기업1]` 번호로 부르고(`deal_numbers`),
+# Series A 딜 공유도 소개 속 이름을 번호로 바꾼다(`series_a_share._hide_name`) — 이름을
+# 문구에 넣으면 가리던 이름이 그대로 나간다.
 
-AUTO = "auto"        # 칸에 든 글자가 **지금 재료로 만든** 조합값과 같다
+AUTO = "auto"        # 칸에 든 글자가 지금 재료로 만든 조합값과 같다
 MANUAL = "manual"    # 사람이 쓴 글자다(조합값을 넣은 뒤 손댄 것도 여기다)
 EMPTY = "empty"      # 아직 비어 있다
 
 
-def origin(current: Optional[str], suggestion: Optional[str]) -> str:
+def origin(current: Optional[str], suggestion) -> str:
     """지금 칸에 든 글자가 조합값 그대로인가, 사람이 쓴 것인가. **읽기만 한다.**
 
-    `suggestion` 은 지금 재료로 만든 한 줄(`compose_one_liner`)이다.
+    `suggestion` 은 지금 재료로 만든 한 줄(`compose_one_liner`) — 또는 그 모양들
+    (`_auto_texts`, 예전 모양 · 지난해 모양까지).
     """
     text = _text(current)
     if not text:
         return EMPTY
-    return AUTO if text == _text(suggestion) else MANUAL
+    made = {suggestion} if suggestion is None or isinstance(suggestion, str) else suggestion
+    return AUTO if text in {_text(m) for m in made} else MANUAL
 
 
-def one_liner_status(company) -> dict:
+def _layouts(obj) -> list:
+    """이 줄을 조합할 매출 칸 모양들 — 맨 앞이 지금 모양, 뒤는 **알아보기만** 하는 모양.
+
+    지난해 모양은 해가 바뀐 뒤 첫 저장에서 작년에 만든 줄을 알아보려고, 예전 모양은
+    과제 168 전에 만든 줄을 알아보려고 둔다. 안 두면 그 줄들이 '사람이 쓴 값' 으로 굳는다.
+    """
+    year = revenue_years.this_year()
+    if isinstance(obj, SeriesACompany):
+        return [series_a_revenue(year), series_a_revenue(year - 1)]
+    return [ir_revenue(year), ir_revenue(year - 1), ir_revenue(year, legacy=True)]
+
+
+def _auto_texts(snapshot, layouts) -> set:
+    return {t for t in (compose_one_liner(snapshot, r) for r in layouts) if t}
+
+
+def auto_texts(company) -> set:
+    """이 기업 칸에 들어 있으면 '자동 조합 그대로' 로 읽는 글자들(`origin` 에 넘긴다)."""
+    return _auto_texts(company, _layouts(company))
+
+
+def one_liner_status(company, applied: bool = False) -> dict:
     """저장 응답에 실을 `딜 소개 문구` 의 상태. **칸을 건드리지 않는다.**
 
-    (예전 이름은 `sync_one_liner` 였고, 이름 그대로 조건이 맞으면 칸을 갱신했다.
-    기본이 사용자 정의 문구가 되면서 **맞출 일 자체가 없어졌다** — 이름도 하는
-    일에 맞춰 바꾼다. 갱신하는 길은 `apply_one_liner` 하나다.)
-
     돌려주는 값:
-      applied     칸에 조합값을 넣었는가 — **언제나 False** 다. 키를 남겨 두는
-                  것은 응답 모양(`one_liner_applied`)을 읽는 곳이 있어서고,
-                  실제로 넣는 길(`POST …/one-liner`)은 제 값을 따로 돌려준다.
+      applied     이 저장에서 칸이 조합값으로 따라 바뀌었는가 — 부르는 쪽이 안다
+                  (`routers/companies._one_liner_result`)
       suggestion  지금 재료로 만든 한 줄. 화면이 이것으로 "이렇게 바꿀까요?" 를 권한다
       kept        사람이 쓴 문장을 그대로 두었는가
       origin      지금 칸의 출처(auto/manual/empty)
     """
     suggestion = compose_one_liner(company)
-    where = origin(getattr(company, "one_liner", None), suggestion)
-    return {"applied": False, "suggestion": suggestion,
+    where = origin(getattr(company, "one_liner", None), auto_texts(company) | {suggestion})
+    return {"applied": applied, "suggestion": suggestion,
             "kept": where == MANUAL, "origin": where}
+
+
+#: 표마다 문구 칸.
+_PITCH = {IrCompany: "one_liner", SeriesACompany: "deal_pitch"}
+#: 이 칸이 비면 저절로 안 만든다 — IR 문구가 숫자뿐이면 딜 소개에 기업 설명 없이 나가고,
+#: 문구가 비었을 때 나가던 `[대분류] | …` 보다도 못하다(`message_composer.auto_company_summary`).
+#: 문구가 생기면 '소개 가능'(대분류 또는 문구 + 금액)에도 서므로 숫자만으로 세우지 않는다.
+#: Series A 딜 공유는 분야 · 투자라운드를 따로 싣는다(`series_a_share.block`) — 그 표는 매출 ·
+#: 금액만으로 만든다(그 표에 기업 한줄 소개 칸이 없다).
+_HEAD = {IrCompany: "business_desc"}
+#: 조합 재료 — 매출 칸은 표에 판 해 전부(`_sources`).
+_PLAIN = ("business_desc", "funding_total", "raise_target", "pre_value", "competitiveness",
+          "revenue_recent")
+
+
+def _sources(model) -> List[str]:
+    cols = model.__table__.columns.keys()
+    return [c for c in cols if c in _PLAIN or re.fullmatch(r"revenue_\d{4}", c)]
+
+
+def _before(obj, new: bool):
+    """이번 flush 전의 재료 값 — 새 줄은 모두 빈칸. 전 값을 모르는 칸도 빈칸으로 본다(덮지 않는 쪽)."""
+    values = {}
+    for attr in _sources(type(obj)):
+        if new:
+            values[attr] = None
+            continue
+        history = get_history(obj, attr)
+        if history.added:
+            values[attr] = history.deleted[0] if history.deleted else None
+        else:
+            values[attr] = getattr(obj, attr)
+    return SimpleNamespace(**values)
+
+
+def follow(session) -> None:
+    """flush 직전 — 재료가 바뀐 줄의 문구를 따라 고친다. 규칙은 위 `따라 고치기` 칸.
+
+    `company_sync.before_flush` **뒤에** 걸린다(`app/models.py`) — 이어진 줄에서 따라 고친
+    매출 · 금액도 여기서 읽힌다. 수정 로그(`edit_log`)보다는 앞이라 고친 문구가 함께 남는다.
+    """
+    for obj in list(session.new) + list(session.dirty):
+        field = _PITCH.get(type(obj))
+        if field is None or obj in session.deleted:
+            continue
+        head = _HEAD.get(type(obj))
+        if head and not _clean(getattr(obj, head)):
+            continue          # 기업 한줄 소개 없이 숫자만 든 IR 문구는 안 만든다(`_HEAD`)
+        layouts = _layouts(obj)
+        before = _before(obj, obj in session.new)
+        now = compose_one_liner(obj, layouts[0])
+        if not now or now == compose_one_liner(before, layouts[0]):
+            continue          # 만들 것이 없거나(빈 줄로 안 지운다) 재료가 안 바뀌었다
+        text = _text(getattr(obj, field))
+        if not text:
+            history = get_history(obj, field)
+            if history.deleted and _text(history.deleted[0]):
+                continue      # 같은 저장에서 사람이 비웠다
+        elif text not in _auto_texts(before, layouts):
+            continue          # 사람이 쓴 글 — 안 덮는다
+        setattr(obj, field, now)
 
 
 def apply_one_liner(company) -> str:
     """사람이 "자동 조합을 쓰겠다"고 고른 경우 — 손으로 쓴 소개까지 덮는다.
 
-    **이 파일에서 `one_liner` 에 값을 넣는 함수는 이것 하나뿐이다.** 부르는 곳도
-    사람이 고른 자리 셋뿐이다(창의 [자동 조합으로 바꾸기] 는 칸에 넣어만 주고,
-    `POST /api/companies/{id}/one-liner` 와 [전체 자동조합] 이 저장한다).
-    새로 부르는 곳을 만들 때는 **사람이 누른 결과인지** 먼저 따져라 — 아니면
-    293곳의 손글씨가 소리 없이 사라지는 길이 하나 더 생기는 것이다.
+    **사람이 쓴 글을 덮는 길은 이것 하나뿐이다**(저절로 따라 고치는 `follow` 는 비었거나
+    조합값 그대로인 칸만 고친다). 부르는 곳도 사람이 고른 자리뿐이다
+    (`POST /api/companies/{id}/one-liner` · [전체 자동조합] — 창의 [자동 조합으로 바꾸기]
+    는 칸에 넣어만 준다). 새로 부르는 곳을 만들 때는 **사람이 누른 결과인지** 먼저
+    따져라 — 아니면 293곳의 손글씨가 소리 없이 사라지는 길이 하나 더 생기는 것이다.
 
     조합할 내용이 없으면 아무것도 하지 않는다(빈 줄로 지우지 않는다).
     """
