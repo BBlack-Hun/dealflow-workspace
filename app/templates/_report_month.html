@@ -24,6 +24,10 @@
   발송이 맨 앞이다 — 한 달은 회차로 시작해서 반응·미팅으로 이어지고,
   카톡으로 쓰던 보고도 발송부터 적었다.
 #}
+{#
+  미팅 카드 넷은 누르면 그 수를 이룬 미팅이 한 표로 뜬다(`/reactions/list` · #177) —
+  카드 숫자와 목록은 같은 `report.meeting_cards` 를 읽는다.
+#}
 <div class="kpi-row slim">
   <div class="kpi-card static">
     <span class="kpi-label">보낸 건수</span>
@@ -32,26 +36,26 @@
       {% if rep.sends.left %}회차 {{ rep.sends.rounds }}개 · <b>{{ rep.sends.left }}건</b> 안 나감
       {% else %}회차 {{ rep.sends.rounds }}개 · 도착 성공{% endif %}
     </span></div>
-  <div class="kpi-card static">
+  <a class="kpi-card" href="/reactions/list?key=total&month={{ rep.year }}-{{ '%02d'|format(rep.month) }}{% if scope %}&scope={{ scope }}{% endif %}{% if viewing and members %}&member={{ viewing.id }}{% endif %}">
     <span class="kpi-label">잡은 미팅</span>
     <span class="kpi-value">{{ rep.total }}</span>
-    <span class="kpi-sub">{{ rep.month }}월에 잡힌 전체</span></div>
-  <div class="kpi-card static">
+    <span class="kpi-sub">{{ rep.month }}월에 잡힌 전체</span></a>
+  <a class="kpi-card" href="/reactions/list?key=done&month={{ rep.year }}-{{ '%02d'|format(rep.month) }}{% if scope %}&scope={{ scope }}{% endif %}{% if viewing and members %}&member={{ viewing.id }}{% endif %}">
     <span class="kpi-label">진행한 미팅</span>
     <span class="kpi-value ok">{{ rep.done }}</span>
-    <span class="kpi-sub">실제로 만난 건 · 취소 제외</span></div>
-  <div class="kpi-card static">
+    <span class="kpi-sub">실제로 만난 건 · 취소 제외</span></a>
+  <a class="kpi-card" href="/reactions/list?key=followup_done&month={{ rep.year }}-{{ '%02d'|format(rep.month) }}{% if scope %}&scope={{ scope }}{% endif %}{% if viewing and members %}&member={{ viewing.id }}{% endif %}">
     <span class="kpi-label">결과 물어봄</span>
     <span class="kpi-value">{{ rep.followup_done }}</span>
-    <span class="kpi-sub">미팅 뒤 {{ rep.followup_days }}일쯤 확인 완료</span></div>
-  <div class="kpi-card static">
+    <span class="kpi-sub">미팅 뒤 {{ rep.followup_days }}일쯤 확인 완료</span></a>
+  <a class="kpi-card" href="/reactions/list?key=followup_open&month={{ rep.year }}-{{ '%02d'|format(rep.month) }}{% if scope %}&scope={{ scope }}{% endif %}{% if viewing and members %}&member={{ viewing.id }}{% endif %}">
     <span class="kpi-label">아직 안 물어봄</span>
     <span class="kpi-value {% if rep.followup_late %}bad{% elif rep.followup_open %}warn{% endif %}">{{ rep.followup_open }}</span>
     <span class="kpi-sub">
       {% if rep.followup_late %}그중 <b>{{ rep.followup_late }}건</b>은 날짜가 지났습니다
       {% elif rep.followup_open %}아직 물어볼 날 전입니다
       {% else %}다 물어봤습니다{% endif %}
-    </span></div>
+    </span></a>
 </div>
 {# 이 안내는 **한 번만** 말한다 — 연간 보기에서는 맨 위에 이미 한 번 섰다.
    열두 달마다 같은 문장이 서면 정작 달마다 다른 것이 안 읽힌다. #}

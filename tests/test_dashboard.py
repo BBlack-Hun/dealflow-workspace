@@ -795,8 +795,8 @@ def test_the_dashboard_shows_the_five_reactions(client, db, users):
     for label in ("IR 요청 투자사", "IR 미팅 요청 투자사", "IR 요청받은 기업",
                   "IR 미팅완료 투자사", "미팅완료 리마인드 TEL"):
         assert label in body, f"'{label}' 타일이 없다"
-    # 숫자를 누르면 그 목록으로 가야 한다 — 세기만 하면 다음 할 일을 모른다
-    assert "/ir#reviews" in body
+    # 숫자를 누르면 그 수를 이룬 줄이 뜬다(#175 · #178) — 세기만 하면 누구인지 모른다
+    assert 'href="/reactions/list?key=meeting_call"' in body
     # 날짜별로 훑는 자리도 가리킨다
     assert "/report" in body
 

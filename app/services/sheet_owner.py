@@ -1359,8 +1359,12 @@ def sheet_rows(db: Session, contacts: List[VcContact],
                    if row.user_id in empty_for}
 
     out = []
-    for label in sorted(labels,
-                        key=lambda k: (-connected.get(k, 0), -total.get(k, 0), k)):
+    def order(k):
+        # 사람이 정한 차례(`SheetOwner.position` · #181)가 먼저, 없으면 지금까지의 차례.
+        pos = settings[k].position if k in settings else None
+        return (pos is None, pos or 0, -connected.get(k, 0), -total.get(k, 0), k)
+
+    for label in sorted(labels, key=order):
         row = settings.get(label)
         uid = row.user_id if row else None
         layout = _layout_key(row)

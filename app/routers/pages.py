@@ -508,6 +508,10 @@ def list_page(
         rows = [r for r in all_rows
                 if not r["is_hidden"]
                 and any(s not in hidden_sheets for s in r["sheets"])]
+        # 줄도 **탭 차례대로** 묶는다(#181). 같은 명단 안은 `그룹 → 이름` 그대로다
+        # (`managed` 가 그 차례로 주고 `sort` 는 같은 값끼리 차례를 안 바꾼다).
+        rank = {t["key"]: i for i, t in enumerate(tabs)}
+        rows.sort(key=lambda r: min(rank.get(s, len(rank)) for s in r["sheets"]))
     elif all_view:
         # 스타트업의 `전체` — **이 화면 탭에 선 명단**의 줄 전부. 남의 화면
         # (투자사 명단) 줄은 끌어오지 않는다. 한 줄이 두 명단에 있어도 한 번만
