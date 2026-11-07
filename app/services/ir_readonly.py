@@ -48,7 +48,9 @@ def _col(key: str, label: str, width: int) -> Column:
 
 
 def _amounts() -> List[Column]:
-    return [_col(f, label, _AMOUNT_WIDTH.get(f, 74)) for f, label in revenue_years.columns()]
+    # 내년 예상매출(과제 169)은 머리글이 길어 IR 기업 현황 표와 같은 88px.
+    return [_col(f, label, _AMOUNT_WIDTH.get(f, 88 if label.endswith("예상매출") else 74))
+            for f, label in revenue_years.columns()]
 
 
 def startup_columns() -> List[Column]:

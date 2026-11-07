@@ -247,9 +247,9 @@ async function main() {
   // 서버는 진작부터 `one_liner_auto` 를 실어 보내고 있었는데 화면이 안 읽어서,
   // 스타트업DB 를 채워도 소개가 왜 그대로인지 알 길이 없었다.
   //
-  // **칸의 기본은 사용자 정의 문구다.** 저장하는 길에서는 자동 조합이 절대 안
-  // 들어가므로, 자동 조합을 쓰려면 사람이 눌러야 한다 — 그 단추와 **무엇이
-  // 들어오는지**(미리보기)가 창에 또렷이 있어야 한다.
+  // **사람이 쓴 문구는 저절로 안 덮인다.** 재료를 고쳐 저장하면 비었거나 조합값
+  // 그대로인 칸만 따라 바뀐다(과제 168 · 170). 사람이 쓴 문구를 조합으로 바꾸려면
+  // 사람이 눌러야 한다 — 그 단추와 **무엇이 들어오는지**(미리보기)가 창에 또렷이 있어야 한다.
   {
     const base = { id: 1, name: "샘플나다물류", introducible: true };
     FIELDS.forEach(function (f) { base[f] = ""; });
@@ -265,7 +265,7 @@ async function main() {
     await flush();
     let state = dom.root.querySelector("#one-liner-state").textContent;
     assert.ok(/직접 쓰신/.test(state), "손으로 쓴 값인 것이 안 보입니다: " + state);
-    assert.ok(/기본/.test(state), "이 값이 기본이라는 말이 없습니다: " + state);
+    assert.ok(/그대로 둡니다/.test(state), "재료를 고쳐도 안 덮는다는 말이 없습니다: " + state);
     assert.strictEqual(dom.root.querySelector("#one-liner-auto").hidden, false,
       "자동 조합을 부르는 길이 없습니다");
 
@@ -294,7 +294,7 @@ async function main() {
     await flush();
     state = dom.root.querySelector("#one-liner-state").textContent;
     assert.ok(/자동으로 만든/.test(state), "자동으로 만든 값인 것이 안 보입니다: " + state);
-    assert.ok(/저절로/.test(state), "재료를 고쳐도 안 바뀐다는 말이 없습니다: " + state);
+    assert.ok(/함께 바뀝니다/.test(state), "재료를 고치면 따라 바뀐다는 말이 없습니다: " + state);
     assert.strictEqual(dom.root.querySelector("#one-liner-auto").hidden, true,
       "눌러도 아무 일이 안 일어나는 단추가 떠 있습니다");
     assert.strictEqual(dom.root.querySelector("#one-liner-preview").hidden, true,
@@ -312,8 +312,8 @@ async function main() {
     assert.strictEqual(dom.root.querySelector("#one-liner-auto").hidden, true,
       "조합할 재료가 없는데 바꾸기 단추가 떠 있습니다");
 
-    // (라) 비어 있고 조합할 재료가 있다 — **여기서도 자동은 저절로 안 들어온다.**
-    // 화면이 할 일은 "누르면 이게 들어옵니다" 를 보여 주는 것뿐이다.
+    // (라) 비어 있고 조합할 재료가 있다 — 저장하면 서버가 채운다(`one_liner.follow`).
+    // 창은 칸에 미리 넣지 않는다 — "저장하면 이게 들어옵니다" 를 보여 줄 뿐이다.
     dom = build();
     run(dom, Object.assign({}, base, {
       one_liner: "", one_liner_suggestion: "자동 조합 | 매출 3억",
@@ -322,7 +322,7 @@ async function main() {
     dom.row.querySelector("button.js-co-edit").fire("click");
     await flush();
     state = dom.root.querySelector("#one-liner-state").textContent;
-    assert.ok(/기본은 직접 쓴 문구/.test(state), "기본이 무엇인지 안 보입니다: " + state);
+    assert.ok(/저절로 들어갑니다/.test(state), "저장하면 채워진다는 말이 없습니다: " + state);
     assert.strictEqual(dom.root.querySelector("#one-liner-auto").hidden, false,
       "조합할 재료가 있는데 바꾸기 단추가 없습니다");
     assert.strictEqual(dom.inputs.one_liner.value, "",
