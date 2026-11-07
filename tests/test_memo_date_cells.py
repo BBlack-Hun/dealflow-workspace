@@ -65,3 +65,23 @@ def test_메모_칸에만_날짜_표시가_선다(logged, url, memo, others):
 
 def test_화면마다_날짜를_붙이는_부품이_실린다(logged):
     assert "/static/js/memo_date.js" in logged.get("/contacts").text
+
+
+def test_투자컨설턴트_메모_칸에도_날짜_표시가_선다(client, db, users):
+    """#172 — 투자컨설턴트 `관리 스타트업` 탭의 `메모`(`deal_pitch`, 11/04 에 이름이 바뀐 칸).
+
+    같은 표의 `기업 관리` · `기업 내용` 은 메모 칸이 아니라 안 붙는다.
+    """
+    from app.models import ConsultingCompany
+
+    users["u1"].can_view_consulting = 1
+    db.add(ConsultingCompany(user_id=users["u1"].id, sheet="스타트업", position=1,
+                             company_name="샘플가", deal_pitch="소개 메모",
+                             management="관리 중", management_detail="상세"))
+    db.commit()
+    client.post("/login", data={"phone": "01000000001", "password": DEMO_PASSWORD})
+    html = client.get("/consulting?sheet=" + quote("스타트업")).text
+    cells = dict(re.findall(r'<td class="cell multi" data-field="(\w+)"([^>]*)>', html))
+    assert "data-memo-date" in cells["deal_pitch"], cells
+    assert "data-memo-date" not in cells["management"], cells
+    assert "data-memo-date" not in cells["management_detail"], cells
