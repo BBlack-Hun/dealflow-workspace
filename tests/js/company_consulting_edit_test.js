@@ -9,6 +9,9 @@
 //   ③ 보기를 고르면 `상태 : 상세` 의 머리만 바뀐다(`data-pick-head`) — 적어 둔 상세가 산다.
 //   ④ 안 고치고 나오면 보이던 글자 그대로다 — 칸에는 갈래, 편집창은 적힌 글에서 시작한다.
 //   ⑤ 저장 뒤 companies.js 가 응답의 갈래(`management_tag`)로 칸을 다시 그린다.
+//   ⑥ 이어진 줄이 없는 기업(11/07 — "데이터가 들어가야지만 수정이 가능")은 **빈 칸도 열리고**
+//      IR 쪽 주소(`/api/companies/{id}/consulting`)로 저장한다. 줄이 새로 섰다는 응답이 오면
+//      그 줄의 두 칸이 그 줄의 저장 길(`/api/consulting/{새 번호}`)로 바뀐다.
 //
 // 값은 전부 지어낸 것이다 — 저장소가 공개다.
 "use strict";
@@ -187,6 +190,66 @@ async function main() {
       id: 42, stamps: {}, values: { meeting_at: "2025-10-01" } } } });
     assert.strictEqual(dom.meet.textContent, "2025-10-01");
     assert.strictEqual(dom.meet.getAttribute("data-value"), "2025-10-01");
+  }
+
+  // ⑥ 이어진 줄이 없는 기업 — 빈 칸이 열리고, IR 쪽 주소로 저장하고, 새 줄이 서면 주소가 바뀐다
+  {
+    const fresh = "/api/companies/7/consulting";
+    const st = D.el("td", {
+      class: "cell", "data-field": "management", "data-type": "pick",
+      "data-fixed-choices": "", "data-pick-head": "", "data-choices": CHOICES,
+      "data-value": "", "data-save-url": fresh
+    });
+    const day = D.el("td", {
+      class: "cell", "data-field": "meeting_at", "data-type": "date",
+      "data-value": "", "data-save-url": fresh
+    });
+    const tr = D.el("tr", { "data-id": "7" }, [D.el("td", {}), st, day]);
+    const table = D.el("table", { id: "co-table", "data-inline-url": "/api/companies" },
+                       [D.el("tbody", {}, [tr])]);
+    const page = ["co-search", "co-note", "co-status", "co-panel", "co-backdrop", "co-add",
+                  "co-close", "co-cancel", "co-save"].map(function (id) {
+      return D.el(id === "co-search" ? "input" : "div", { id: id });
+    });
+    const dom = { root: D.el("div", {}, [table].concat(page)), table: table };
+    const sent = runInline(dom);
+
+    choose(dom, st, "드랍");
+    await flush();
+    assert.deepStrictEqual(sent, [{ url: fresh, method: "PATCH", body: { management: "드랍" } }],
+      "빈 칸에서 고른 값이 IR 쪽 주소로 안 갔다: " + JSON.stringify(sent));
+
+    day.fire("pointerdown");
+    day.fire("click");
+    const input = day.querySelector("input");
+    assert.ok(input, "빈 미팅일 칸이 안 열렸다");
+    assert.strictEqual(input.type, "date", "빈 미팅일 칸이 날짜 입력으로 안 열렸다");
+    input.blur();
+    await flush();
+    assert.strictEqual(sent.length, 1, "안 고쳤는데 저장이 나갔다");
+
+    // 저장 응답 — 줄이 새로 섰다(`save_consulting` 의 `created`).
+    D.resetHandlers();
+    const sandbox = {
+      document: D.makeDocument(dom.root),
+      window: { location: { reload: function () {} }, DealflowFilters: undefined },
+      setTimeout: setTimeout, alert: function () {}, confirm: function () { return true; },
+      fetch: function () {
+        return Promise.resolve({ ok: true, json: function () { return Promise.resolve({}); } });
+      }
+    };
+    vm.createContext(sandbox);
+    vm.runInContext(MODAL, sandbox, { filename: "panel_modal.js" });
+    vm.runInContext(COMPANIES, sandbox, { filename: "companies.js" });
+    st.textContent = "드랍";
+    table.fire("inline-saved", { detail: { row: tr, cell: st, data: {
+      id: 501, created: true, values: { management: "드랍" }, management_tag: "드랍" } } });
+    assert.strictEqual(st.getAttribute("data-save-url"), "/api/consulting/501",
+      "새 줄이 섰는데 상태 칸이 계속 IR 쪽 주소를 든다");
+    assert.strictEqual(day.getAttribute("data-save-url"), "/api/consulting/501",
+      "새 줄이 섰는데 옆 칸(미팅일)이 계속 IR 쪽 주소를 든다 — 다음 저장이 같은 줄에 안 담긴다");
+    assert.strictEqual(st.textContent, "드랍");
+    assert.strictEqual(st.getAttribute("data-value"), "드랍");
   }
 
   console.log("ok — company_consulting_edit");
