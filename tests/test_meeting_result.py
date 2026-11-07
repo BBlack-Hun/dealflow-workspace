@@ -110,6 +110,9 @@ def test_미팅_후기_표의_결과_칸은_세_가지에서_고른다(logged, d
     assert 'data-id="' in table
     cell = table.split('data-field="outcome"', 1)[1].split("</td>", 1)[0]
     assert 'data-type="pick"' in cell and "data-fixed-choices" in cell
+    # 보기 밖의 말은 400 이라 고르개 안내에 `새로 적어도 됩니다` 를 안 세운다(JS 쪽 검사:
+    # tests/js/meeting_outcome_pick_hint_test.js).
+    assert "data-choices-only" in cell
     assert f'data-choices="{",".join(THREE)}"' in cell
     assert cell.rstrip().endswith(">투자 보류")
     # 취소된 미팅에는 고를 칸이 없다.
