@@ -514,6 +514,29 @@ def test_스타트업_명단에만_서고_투자사_관리_현황에는_안_선�
     assert _put(portal["u2"], "vc_contacts", startup.id, col.id, "몰래").status_code == 404
 
 
+def test_관리자는_표_툴바에서_그_표의_컬럼_관리로_간다(portal, db, users):
+    """#195 — 칸을 붙이고 이름을 바꾸는 자리가 좌측 메뉴 끝에만 있어 표를 보다가는 못 찾았다.
+    관리자에게만 툴바에 그 표의 `컬럼 관리` 길이 선다. 추가 칸이 없는 투자사 관리 현황엔 안 선다."""
+    from urllib.parse import quote
+
+    from app.models import SheetOwner
+    from app.services import contact_columns as cc
+
+    db.add(SheetOwner(label="샘플 스타트업 명단", user_id=users["u1"].id, layout=cc.STARTUP))
+    db.commit()
+    link = 'data-testid="custom-cols-manage"'
+    pages = {"/companies": "companies", "/companies?tab=series-a": "companies",
+             "/consulting": "consulting", "/sourcing": "sourcing",
+             "/report/forecast": "forecast",
+             "/startup?sheet=" + quote("샘플 스타트업 명단"): "startup"}
+    for url, target in pages.items():
+        html = portal["admin"].get(url).text
+        assert f'href="/columns?target={target}" {link}' in html, url
+        assert link not in portal["u1"].get(url).text, url
+    assert link not in portal["admin"].get("/contacts").text
+    assert 'data-testid="columns-where-else"' in portal["admin"].get("/columns").text
+
+
 def test_메모_칸은_화면마다_적은_줄바꿈을_살린다(portal, db, users, company):
     """#69 — 한 칸 내려 「1. 2. 3.」 을 적는다. 값은 줄바꿈째 저장되고, 메모 칸을
     쓰는 화면 전부가 줄을 살리는 칸(`keep-lines` · 투자컨설턴트는 `td.cell multi`)으로 그린다."""

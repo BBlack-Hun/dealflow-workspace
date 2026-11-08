@@ -106,6 +106,7 @@
     <a class="secondary-btn" data-testid="sourcing-export-all" download
        href="/api/sourcing/export.xlsx?every=1"
        title="거르지 않은 전체 명단을 탭마다 한 장(시트)씩 받습니다">엑셀 (전체 탭)</a>
+    {{ cc.manage() }}
     {# [지금 메일 확인] — 관리자. 받은 편지함의 머리글만 읽는다(지우지도, 본문을
        받지도 않는다). 결과는 위 머리 줄에 선다. #}
     {% if is_admin %}
