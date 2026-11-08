@@ -14,6 +14,12 @@
 //   · 표의 칸(`data-type="sectors"`) — `inline_edit.js` 의 떠서 고치는 창 안에
 //   · 수정창의 칸(`input[data-sector-picker]`) — 칸 아래에 펼치는 목록으로
 // 두 벌로 만들면 "목록 밖 값을 어떻게 다루나" 가 갈린다.
+//
+// **소분류만 고르는 칸**(`minorsOnly` — IR 기업 현황 `소분류`, 과제 185)도 이 부품이다.
+// 그 칸의 보기는 표의 다른 줄에 적힌 값뿐이라(`inline_edit.js` 의 `pick`) 아무 기업도
+// 따로 안 쓴 기준 소분류는 고를 수가 없었다. 여기서는 대분류를 머리글로만 세우고(대분류
+// 이름이 소분류 칸에 들어가면 안 된다) 소분류만 체크한다. 칸을 가르는 글자도 서버의
+// `taxonomy.split_minor` 와 같게 쉼표와 `/` 다.
 (function (global) {
   "use strict";
 
@@ -24,8 +30,8 @@
     return String(text == null ? "" : text).replace(SKIP, "").toLowerCase();
   }
 
-  function split(value) {
-    return String(value == null ? "" : value).split(",")
+  function split(value, sep) {
+    return String(value == null ? "" : value).split(sep || ",")
       .map(function (v) { return v.trim(); })
       .filter(function (v) { return v.length > 0; });
   }
@@ -42,11 +48,12 @@
     return cached;
   }
 
-  // 목록의 이름 → 그 이름(같은 꼴이면 목록의 철자로 돌린다).
-  function names() {
+  // 목록의 이름 → 그 이름(같은 꼴이면 목록의 철자로 돌린다). 소분류만 고르는 칸은
+  // 대분류 이름을 모른다 — 그 칸에 적힌 대분류 이름은 `목록 밖 값` 으로 선다.
+  function names(minorsOnly) {
     var out = {};
     tree().forEach(function (major) {
-      out[norm(major.name)] = major.name;
+      if (!minorsOnly) out[norm(major.name)] = major.name;
       (major.minors || []).forEach(function (minor) { out[norm(minor)] = minor; });
     });
     return out;
@@ -54,11 +61,12 @@
 
   // `container` 를 고르는 목록으로 채운다. 고를 때마다 `onChange(값)` 을 부른다.
   // 돌려주는 것은 지금 값을 읽는 함수다.
-  function build(container, value, onChange) {
-    var known = names();
+  function build(container, value, onChange, opts) {
+    var minorsOnly = !!(opts && opts.minorsOnly);
+    var known = names(minorsOnly);
     // 지금 고른 것 — **적힌 차례 그대로**. 목록의 말은 목록의 철자로 돌린다.
     var chosen = [];
-    split(value).forEach(function (v) {
+    split(value, minorsOnly ? /[,\/]/ : ",").forEach(function (v) {
       var name = known[norm(v)] || v;
       if (chosen.indexOf(name) === -1) chosen.push(name);
     });
@@ -118,7 +126,14 @@
     tree().forEach(function (major) {
       var group = document.createElement("div");
       group.className = "sector-pick-group";
-      group.appendChild(box(major.name, major.name + " (분야 전체)", "major"));
+      if (minorsOnly) {
+        var title = document.createElement("div");
+        title.className = "sector-pick-title";
+        title.textContent = major.name;
+        group.appendChild(title);
+      } else {
+        group.appendChild(box(major.name, major.name + " (분야 전체)", "major"));
+      }
       (major.minors || []).forEach(function (minor) {
         group.appendChild(box(minor, minor, ""));
       });

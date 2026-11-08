@@ -508,3 +508,21 @@ def test_투자사_화면은_고를_목록과_부품을_싣는다(member, db, us
     assert page.index("js/sector_picker.js") < page.index("js/inline_edit.js")
     assert 'data-field="sectors" data-type="sectors"' in page
     assert 'id="f-sectors" data-sector-picker' in page
+
+
+def test_IR_기업현황_소분류_칸은_기준_목록에서_고른다(member, db):
+    """과제 185 — 예전 `pick` 칸은 다른 줄에 적힌 값만 보기로 세워, 아무 기업도 따로 안 쓴
+    기준 소분류는 고를 수가 없었다. 이제 분야 기준 목록을 싣고 소분류만 체크한다."""
+    import html
+    import json
+    import re
+
+    _company(db, "샘플가나", "AI·SaaS·데이터", "생성형AI")
+    db.commit()
+    page = member.get("/companies").text
+    found = re.search(r"id=\"sector-taxonomy\" hidden data-tree='([^']*)'", page)
+    assert found, "고를 목록이 화면에 없다"
+    tree = json.loads(html.unescape(found.group(1)))
+    assert "MLOps" in tree[0]["minors"], "다른 줄이 안 쓴 기준 소분류도 고를 거리에 서야 한다"
+    assert page.index("js/sector_picker.js") < page.index("js/inline_edit.js")
+    assert 'data-field="sector_minor" data-type="sectors" data-minors-only' in page

@@ -32,7 +32,7 @@ from ..deps import (NotAdmin, admin_only, get_current_user, may_export_companies
 from ..models import ConsultingCompany, ConsultingSheet, EditLog, IrCompany, OneLinerBackup, User
 from ..services import (amount, auth as auth_svc, consulting_status, custom_columns,
                         deal_history, edit_log, email_domains, forecast, revenue_years,
-                        room_match)
+                        room_match, taxonomy)
 from ..services.one_liner import (
     AUTO, apply_one_liner, auto_texts, bulk_rows, compose_one_liner, one_liner_status, origin,
 )
@@ -920,6 +920,8 @@ def companies_page(request: Request, db: Session = Depends(get_db),
         # 탭이 같은 것이고, 메일 칸은 한쪽 탭에만 서 있다.
         "email_domains": email_domains.domain_options(
             r["contact_email"] for r in rows),
+        # `소분류` 칸이 고를 분야 기준 목록(과제 185 · `sector_picker.js`).
+        "sector_tree": taxonomy.picker_tree(db),
         # ── 합계가 안 맞는 이유. **화면이 말해야 한다** ──────────────────
         #
         # 기업 줄에서 출발하는 집계라, 다음 둘은 이 표 어디에도 안 잡힌다.

@@ -829,8 +829,11 @@
                   title="한줄 소개를 보고 고른 후보 {{ r.sector_suggestions|length }}개입니다. 눌러서 고르세요 — 저절로 들어가지는 않습니다.">추천 {{ r.sector_suggestions|length }}</button>
           {% endif %}
         </td>
+        {# 소분류는 **분야 기준 목록에서 여러 개 체크해** 고른다(과제 185 — `data-type="sectors"`
+           + `data-minors-only`). 예전 `pick` 은 다른 줄에 적힌 값만 보기로 세워서, 아무 기업도
+           따로 안 쓴 기준 소분류는 고를 수가 없었다. 목록 밖 옛 값은 체크된 채 남는다. #}
         <td title="{{ r.sector_minor }}">
-          <div class="cell clamp2" data-field="sector_minor" data-type="pick"
+          <div class="cell clamp2" data-field="sector_minor" data-type="sectors" data-minors-only
                data-filter-key="minor">{{ r.sector_minor }}</div>
         </td>
         {# 매출 · 금액(#75 · 머리글 주석). 필터 값이 금액 구간이라 `data-filter-derived` 가
@@ -1258,6 +1261,9 @@
 
        값이 하나도 없으면 빈 목록이고, 그때 메일 칸은 그냥 보통 글자 칸이다. #}
     <div id="opts-email-domain" hidden data-domains='{{ email_domains|tojson }}'></div>
+    {# **분야 기준 목록** — 표의 `소분류` 칸이 고를 거리로 읽는다(`sector_picker.js` · 과제 185).
+       투자사 관리 현황의 선호 투자분야와 같은 목록 하나다(`taxonomy.picker_tree`). #}
+    <div id="sector-taxonomy" hidden data-tree='{{ sector_tree|tojson }}'></div>
   </div>
 
   {# ── 2. 재무·투자현황 — **두 성질의 칸이 한 묶음에 든다** ────────────────
@@ -1705,6 +1711,8 @@
 {# 메일 칸의 도메인 후보. `inline_edit.js` 가 표 칸에서 이 부품을 쓰므로
    **먼저** 실려야 한다 — 없으면 표 쪽만 조용히 후보 없는 칸이 된다. #}
 <script src="{{ asset('js/email_hint.js') }}"></script>
+{# 분야 기준 목록 고르기 부품(`소분류` 칸) — 표 칸(`inline_edit.js`)이 쓰므로 그보다 먼저. #}
+<script src="{{ asset('js/sector_picker.js') }}"></script>
 <script src="{{ asset('js/inline_edit.js') }}"></script>
 <script src="{{ asset('js/filters.js') }}"></script>
 {# 수정창을 모달로 세우는 공통 부품 — **companies.js 보다 먼저** 와야 한다.

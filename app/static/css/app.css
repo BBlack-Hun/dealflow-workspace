@@ -3260,6 +3260,8 @@ a.primary-btn[aria-disabled="true"] { background: #b8c4d8; cursor: not-allowed; 
 .sector-pick-head { width: 100%; font-size: 11px; color: var(--amber); }
 .sector-pick-item { font-size: 12px; white-space: nowrap; cursor: pointer; }
 .sector-pick-item.major { width: 100%; font-weight: 700; }
+/* 소분류만 고르는 칸(IR 기업 현황 `소분류` · 과제 185)의 대분류 — 고를 수 없는 머리글이다. */
+.sector-pick-title { width: 100%; font-size: 12px; font-weight: 700; }
 .cell-pop-choices.sector-pop { display: block; max-height: 260px; }
 .sector-pick-toggle { margin-top: 4px; }
 .sector-pick-clear { align-self: flex-start; padding: 0; }

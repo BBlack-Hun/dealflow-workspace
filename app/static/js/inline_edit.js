@@ -715,10 +715,11 @@
         var list = document.createElement("div");
         list.className = "cell-pop-choices sector-pop";
         api.pop.appendChild(list);
+        // `data-minors-only` — 소분류만 고르는 칸(IR 기업 현황 `소분류` · 과제 185).
         global.DealflowSectorPicker.build(list, before, function (value) {
           input.value = value;
           api.place();
-        });
+        }, { minorsOnly: cell.hasAttribute("data-minors-only") });
         api.pop.appendChild(hintLine("여러 개 고를 수 있습니다 · Enter 또는 바깥을 누르면 저장 · Esc 취소"));
         input.addEventListener("keydown", function (e) {
           if (e.isComposing || e.keyCode === 229) return;
