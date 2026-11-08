@@ -271,7 +271,9 @@ def view(db: Session, target: str, row_table: str) -> dict:
     cols = columns(db, target)
     return {"custom_cols": cols, "custom_vals": values(db, row_table, cols),
             "custom_rows": row_table, "ox_choices": OX_CHOICES,
-            "custom_after": {c.id: anchor_of(c) for c in cols}}
+            "custom_after": {c.id: anchor_of(c) for c in cols},
+            # 관리자에게 이 표의 `컬럼 관리` 로 가는 길을 세울 때(`_custom_cols.html` 의 `manage`).
+            "custom_target": target}
 
 
 def names(v: dict) -> List[str]:

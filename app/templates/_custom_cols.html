@@ -31,6 +31,16 @@
 {%- endfor %}
 {%- endmacro %}
 
+{# 관리자에게만 — 이 표의 `컬럼 관리` 로 가는 길(#195). 칸을 붙이고 이름을 바꾸는 자리가
+   좌측 메뉴 끝(`컬럼 관리`)에만 있어 표를 보다가는 찾을 수 없었다. 툴바에 둔다.
+   컨텍스트(`custom_target`)를 안 실은 화면에서는 안 선다. 서버도 관리자만 연다. #}
+{% macro manage() -%}
+{%- if custom_target and user and user.role == 'admin' %}
+<a class="linkbtn" href="/columns?target={{ custom_target }}" data-testid="custom-cols-manage"
+   title="이 표에 칸을 붙이거나, 붙인 칸의 이름 · 자리를 바꿉니다(컬럼 관리). 원래 있던 칸의 이름은 바꿀 수 없습니다">칸 추가 · 이름 바꾸기</a>
+{%- endif %}
+{%- endmacro %}
+
 {# 추가 칸이 차지하는 폭 — 칸 폭의 합으로 `min-width` 를 세우는 표(스타트업 명단)가 더한다. #}
 {% macro width() -%}
 {%- set ns = namespace(w=0) -%}
