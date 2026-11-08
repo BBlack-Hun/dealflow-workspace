@@ -274,6 +274,19 @@ def test_dash_placeholder_is_dropped():
     assert made == "광 다이오드 칩 | 투자유치 진행중"
 
 
+def test_a_long_edge_of_five_lines_or_more_stays_out_of_the_line():
+    """과제 187 — "특이사항(기업장점) 5줄 이상부터는 딜소개 문구에 안 들어가게".
+
+    4줄까지는 그대로 붙고, 빈 줄을 뺀 줄이 5줄 이상이면 특이사항 토막만 빠진다.
+    """
+    four = "TIPS 선정\n특허 3건\n\n대기업 납품\n해외 진출"
+    assert compose_one_liner(make(business_desc="측정 엔진", competitiveness=four)) == \
+        "측정 엔진 | " + four
+    five = four + "\n수상 2회"
+    assert compose_one_liner(make(business_desc="측정 엔진", funding_total="11",
+                                  competitiveness=five)) == "측정 엔진 | 누적투자금액 11억"
+
+
 # --- 기본은 사용자 정의 문구 — 저장하는 길은 칸을 안 건드린다 ----------------
 #
 # `one_liner_status` 는 **읽기만 한다.** 여기서 칸이 한 글자라도 바뀌면 운영
@@ -383,6 +396,19 @@ def test_an_auto_looking_line_follows_a_source_edit(logged_in, db, company):
     logged_in.patch(f"/api/companies/{company.id}", json={"funding_total": "40"})
     db.refresh(company)
     assert company.one_liner == "산업용 센서 제조 | 누적투자금액 40억"
+
+
+def test_an_auto_line_drops_the_edge_once_it_reaches_five_lines(logged_in, db, company):
+    """과제 187 — 조합값 그대로인 줄은 특이사항이 5줄이 되는 순간 그 토막이 빠진다."""
+    logged_in.patch(f"/api/companies/{company.id}", json={"competitiveness": "특허 3건"})
+    db.refresh(company)
+    assert company.one_liner == "산업용 센서 제조 | 특허 3건"
+
+    long_edge = "\n".join(["특허 3건", "TIPS 선정", "대기업 납품", "해외 진출", "수상 2회"])
+    logged_in.patch(f"/api/companies/{company.id}", json={"competitiveness": long_edge})
+    db.refresh(company)
+    assert company.one_liner == "산업용 센서 제조"
+    assert company.competitiveness == long_edge, "특이사항 값은 그대로 남아야 한다"
 
 
 def test_hand_written_line_survives_a_startup_db_edit(logged_in, db, company):

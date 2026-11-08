@@ -52,7 +52,7 @@ from sqlalchemy.orm.attributes import get_history
 
 from ..models import IrCompany, SeriesACompany
 from . import amount, revenue_years
-from .message_composer import format_eok
+from .message_composer import format_eok, pitch_edge
 
 # 조합에 쓰는 칸. 다른 곳(화면 안내·테스트)에서 "무엇이 합쳐지는가"를 물을 때
 # 목록을 두 벌로 적지 않게 여기 한 군데만 둔다.
@@ -309,7 +309,8 @@ def compose_one_liner(company, revenue=None) -> str:
     if pre and not any(k in said.lower() for k in ("pre value", "pre-value", "프리벨류", "밸류")):
         segments.append(pre)
 
-    edge = _clean(getattr(company, "competitiveness", None))
+    # 특이사항이 5줄 이상이면 싣지 않는다(과제 187 — `message_composer.pitch_edge`).
+    edge = _clean(pitch_edge(getattr(company, "competitiveness", None)))
     if edge and edge not in said:
         segments.append(edge)
 

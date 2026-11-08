@@ -95,6 +95,23 @@ def format_eok(value) -> Optional[str]:
     return amount.phrase(value)
 
 
+#: 특이사항(기업 장점)이 이 줄 수를 **넘으면**(5줄 이상) 딜 소개 문구에 싣지 않는다(과제 187 —
+#: "특이사항 5줄 이상부터는 딜소개 문구에 안 들어가게"). 운영 IR 124곳 중 14곳이 5줄 이상이고
+#: 길게는 천 자가 넘는다 — 한 줄 소개에 붙이면 문구가 특이사항으로 덮인다.
+EDGE_MAX_LINES = 4
+
+
+def pitch_edge(value: Optional[str]) -> str:
+    """문구에 실을 특이사항 — 빈 줄을 뺀 줄이 5줄 이상이면 통째로 빈칸이다(값은 그대로 둔다).
+
+    자동 조합(`one_liner.compose_one_liner`)과 문구가 빈 기업의 발송 토막
+    (`auto_company_summary`)이 이 하나를 쓴다 — 두 곳이 따로 세면 한쪽만 실린다.
+    """
+    text = (value or "").strip() if isinstance(value, str) else ""
+    lines = [line for line in text.splitlines() if line.strip()]
+    return "" if len(lines) > EDGE_MAX_LINES else text
+
+
 def auto_company_summary(company: CompanyView) -> str:
     """딜 소개에 실을 기업 한 토막.
 
@@ -181,8 +198,9 @@ def auto_company_summary(company: CompanyView) -> str:
     if pre_value is not None:
         segments.append(f"Pre Value 약 {pre_value}")
 
-    if company.competitiveness and company.competitiveness.strip():
-        segments.append(company.competitiveness.strip())
+    edge = pitch_edge(company.competitiveness)      # 5줄 이상이면 안 싣는다(과제 187)
+    if edge:
+        segments.append(edge)
 
     return " | ".join(segments)
 
