@@ -123,6 +123,8 @@
       {% if notices %}{% include "_notices.html" %}{% endif %}
       {# 본인 발송기가 최신보다 낡았으면 **화면마다** 뜨는 창(`services/agent_update.py`). #}
       {% if agent_update %}{% include "_agent_update.html" %}{% endif %}
+      {# 보내는 계정으로 로그인했으면 자동 발송 전날 · 당일 · 끝난 뒤 뜨는 창(`automation_runner.alert_for`). #}
+      {% if auto_alert %}{% include "_auto_alert.html" %}{% endif %}
       {% block content %}{% endblock %}
     </main>
   </div>

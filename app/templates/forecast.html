@@ -36,6 +36,7 @@
            aria-label="기업명" required>
     <button type="submit" class="primary-btn inline">줄 추가</button>
     <a class="secondary-btn" href="/api/export/forecast.xlsx?{{ q }}" download>엑셀</a>
+    {{ cc.manage() }}
   </form>
   {% if members %}
   {# 팀원 한 사람 것은 **왼쪽 메뉴의 `팀원 화면으로 보기`** 로 본다 — 여기에도 팀원 고르개를

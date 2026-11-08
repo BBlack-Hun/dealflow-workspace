@@ -45,7 +45,11 @@ def _rows(db: Session, user_id: Optional[int], start: str, end: str) -> List[Mee
     return list(db.execute(q).scalars().all())
 
 
-def _month_rows(db: Session, user_id: Optional[int], year: int, mon: int) -> List[Meeting]:
+def _month_rows(db: Session, user_id: Optional[int], year: int,
+                mon: Optional[int]) -> List[Meeting]:
+    """그 달 미팅. `mon` 이 없으면 그 해 전체(업무 보고 › IR 미팅진행 리스트 `연간` — #184)."""
+    if mon is None:
+        return _rows(db, user_id, f"{year:04d}-01-01", f"{year + 1:04d}-01-01")
     end = date(year + mon // 12, mon % 12 + 1, 1)
     return _rows(db, user_id, date(year, mon, 1).isoformat(), end.isoformat())
 
@@ -97,29 +101,38 @@ def year(db: Session, user_id: Optional[int], year: int) -> List[dict]:
     return months
 
 
-def listing(db: Session, user_id: Optional[int], year: int, mon: int) -> List[dict]:
-    """한 달 미팅 **한 줄 = 한 건** — 예정은 다가오는 차례로 위에, 완료는 최근 차례로 아래에.
+def listing(db: Session, user_id: Optional[int], year: int,
+            mon: Optional[int]) -> List[dict]:
+    """한 달(`mon` 이 없으면 한 해) 미팅 **한 줄 = 한 건** — 예정은 다가오는 차례로 위에,
+    완료는 최근 차례로 아래에.
 
-    투자유치희망금액은 미팅에 이어 둔 IR 기업(`company_id` — [미팅 잡기] 가 이름으로
-    잇는다)의 `raise_target` 이다. 안 이었으면 빈칸 — 이름으로 짐작하지 않는다.
+    투자유치희망금액 · 후속라운드는 미팅에 이어 둔 IR 기업(`company_id` — [미팅 잡기] 가
+    이름으로 잇는다)의 `raise_target` · `series`(IR 기업 현황 `투자라운드` — #184) 다. 안
+    이었으면 빈칸 — 이름으로 짐작하지 않는다. 값을 베껴 두지 않으니 고치는 곳은 IR 기업 현황이다.
     """
     rows = _month_rows(db, user_id, year, mon)
     rows = [r for r in rows if r.status != "done"] + [r for r in rows if r.status == "done"][::-1]
     contacts = pipeline._contact_map(db, [r.contact_id for r in rows])
     owners = dict(db.execute(select(User.id, User.name)).all())
-    targets = dict(db.execute(select(IrCompany.id, IrCompany.raise_target).where(
-        IrCompany.id.in_({r.company_id for r in rows if r.company_id} or {0}))).all())
+    companies = {cid: (target, series) for cid, target, series in db.execute(
+        select(IrCompany.id, IrCompany.raise_target, IrCompany.series).where(
+            IrCompany.id.in_({r.company_id for r in rows if r.company_id} or {0}))).all()}
     out = []
     for r in rows:
         c = contacts.get(r.contact_id)
+        target, series = companies.get(r.company_id, (None, None))
         out.append({
+            # 줄 번호 · 주인 — `미팅결과` 칸을 눌러 고칠 때 쓴다(#184 · 제 미팅만 고친다).
+            "id": r.id,
+            "user_id": r.user_id,
             "date": r.scheduled_at,
             "time": r.scheduled_time or "",
             "owner": owners.get(r.user_id, ""),
             "who": f"{c.name} {c.title or ''}".strip() if c else "-",
             "firm": (c.firm or "") if c else "",
             "company": r.company_name or "",
-            "raise_target": amount.phrase(targets.get(r.company_id)) or "",
+            "raise_target": amount.phrase(target) or "",
+            "series": series or "",
             "kind": pipeline.MEETING_KINDS.get(r.kind, r.kind),
             "mode": pipeline.MEETING_MODES.get(r.meet_mode or "", ""),
             "done": r.status == "done",
@@ -129,9 +142,11 @@ def listing(db: Session, user_id: Optional[int], year: int, mon: int) -> List[di
     return out
 
 
-def memo_rows(db: Session, user_id: Optional[int], year: int, mon: int,
+def memo_rows(db: Session, user_id: Optional[int], year: int, mon: Optional[int],
               today: date) -> List[dict]:
     """명단 월별 `미팅` 칸(이름에 `N월` 과 `미팅`, 숨긴 칸 제외)에 적힌 글 — **원문 그대로.**
+
+    `mon` 이 없으면 그 해 열두 달 칸 전부(`연간` — #184), 달 차례로 싣는다.
 
     읽기만 한다. 글에서 기업·날짜를 뽑지 않는다 — 적는 꼴이 제각각이라 뽑으면 틀린 줄이
     생긴다. 칸의 달 · 값 읽기 · 사람(명단 주인 `SheetOwner.user_id`)은 명단 `전달` 읽기
@@ -140,9 +155,11 @@ def memo_rows(db: Session, user_id: Optional[int], year: int, mon: int,
     owners = {r.label: r.user_id for r in db.execute(select(SheetOwner)).scalars()}
     by_sheet: Dict[str, List[ContactColumn]] = {}
     for col in db.execute(select(ContactColumn)).scalars():
-        if (not col.is_hidden and "미팅" in (col.label or "")
-                and monthly_columns.month_of(col.label) is not None
-                and _column_month(col, today) == (year, mon)
+        if (col.is_hidden or "미팅" not in (col.label or "")
+                or monthly_columns.month_of(col.label) is None):
+            continue
+        col_year, col_mon = _column_month(col, today)
+        if (col_year == year and mon in (None, col_mon)
                 and (user_id is None or owners.get(col.sheet) == user_id)):
             by_sheet.setdefault(col.sheet, []).append(col)
     if not by_sheet:
@@ -159,6 +176,7 @@ def memo_rows(db: Session, user_id: Optional[int], year: int, mon: int,
                     row = {"owner": names.get(owners.get(sheet), ""), "sheet": sheet,
                            "column": col.label, "firm": person.firm or "",
                            "name": person.name or "", "text": text}
-                    out.append(((sheet, col.position, row["firm"], row["name"]), row))
-    # 명단 → 칸(명단 화면의 왼→오 차례) → 투자사 → 이름.
+                    out.append(((_column_month(col, today), sheet, col.position,
+                                 row["firm"], row["name"]), row))
+    # 달 → 명단 → 칸(명단 화면의 왼→오 차례) → 투자사 → 이름. 한 달만 보면 달은 다 같다.
     return [row for _key, row in sorted(out, key=lambda x: x[0])]

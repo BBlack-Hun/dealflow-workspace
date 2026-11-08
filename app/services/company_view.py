@@ -30,7 +30,16 @@
 IR 기업 현황 탭의 머리글 순서·이름 그대로다(`VIEW_HEADERS`). `NO` 는 화면처럼
 **보이는 것 기준 1, 2, 3…** 이다. `총 소개 횟수` 는 화면에서 두 수(`6회` · `180명`)가
 한 칸에 서는데, 파일에서는 세고 거를 수 있게 두 칸으로 나눈다. `담당별 소개`(#165)는
-화면 글자 그대로(`계정 n · 계정 n`) 한 칸이다.
+화면 글자 그대로(`계정 n · 계정 n`) 한 칸이다. `컨설팅 상태` · `컨설팅 미팅일` 은 화면처럼
+투자컨설턴트 화면을 볼 수 있는 계정에게만 선다(#192).
+
+## 전체 내려받기에도 화면 칸을 — **끝에 붙인다** (#192)
+
+`엑셀 내려받기`(전체)의 머리글은 받아 쓰던 수식 때문에 옛 이름·차례를 지킨다
+(`data_io.COMPANY_HEADERS`). 그래서 대표자명 · 연락처 · 메모처럼 나중에 화면에 선 칸이
+전체 파일에는 없었다. 화면 칸 중 **전체 파일에 같은 값이 이미 있는 칸**(`IN_FULL` —
+`대분류` 는 `분야(대)`)은 다시 싣지 않고, 나머지는 화면 이름 · 화면 차례 그대로 **끝에**
+붙인다(`full_extra`). 앞의 옛 칸은 한 칸도 안 밀린다.
 """
 from __future__ import annotations
 
@@ -79,7 +88,7 @@ PHONEISH = re.compile(r"^[0-9][0-9\s().+-]*$")
 #: 파일 머리글 — IR 기업 현황 탭의 머리글 그대로(왼쪽부터 · 옛 스타트업DB 칸 포함,
 #: #105 · #106). `소분류` 뒤의 매출 · 금액 칸은 해마다 이름이 바뀌어 `view_headers` 가
 #: 끼운다(#75 · `revenue_years.columns`). 화면과 같은지는 tests/test_ir_tab_merge.py 가 본다
-#: (`컨설팅 상태`·`컨설팅 미팅일` 은 볼 수 있는 계정에만 서는 컨설턴트 줄의 칸이라 안 싣는다).
+#: (`컨설팅 상태`·`컨설팅 미팅일` 은 볼 수 있는 계정에만 서서 `view_headers` 가 끼운다).
 VIEW_HEADERS = [
     "NO", "기업명", "수신일", "수정한 날짜", "수정한 팀원", "대표자명", "연락처", "이메일",
     "기업 한줄 소개", "딜 소개 문구", "대분류", "소분류", "투자라운드",
@@ -89,15 +98,47 @@ VIEW_HEADERS = [
     "핵심/TOP Deal", "메모", "IR 자료",
 ]
 
+#: 투자컨설턴트 진행 기록 두 칸 — 화면에서 `핵심/TOP Deal` 바로 뒤, 그 화면을 볼 수 있는
+#: 계정에만 선다(`companies.html` 의 `consulting is not none`). 파일도 같은 계정에게만(#192).
+CONSULTING_HEADERS = ["컨설팅 상태", "컨설팅 미팅일"]
 
-def view_headers(cols) -> List[str]:
+#: 화면 칸 → 전체 파일(`data_io.COMPANY_HEADERS`)에서 **같은 값**을 싣는 칸(#192). 여기 있는
+#: 화면 칸은 전체 파일에 다시 안 붙는다. 이름만 같고 값이 다른 칸은 넣지 않는다 —
+#: `계약여부`(화면 글자) ↔ `계약`(저장 값 `free_meet_planned`), `핵심/TOP Deal` ↔ `탑딜`(★ 만).
+IN_FULL = {
+    "NO": None,   # 화면 차례 번호 — 전체 파일은 이름순이라 뜻이 없다
+    "기업명": "기업명", "대분류": "분야(대)", "소분류": "분야(소)",
+    "딜 소개 문구": "한줄소개", "투자라운드": "기업구분", "특이사항 (장점)": "경쟁력",
+    "미팅제공일자": "미팅제공일자", "계약년월": "계약년월", "계약서 수신 여부": "계약서 수신 여부",
+    "성공보수율": "성공보수율", "지역": "지역", "견적서 첨부 여부": "견적서 첨부 여부",
+    "카톡 연결 여부": "카톡 연결 여부",
+    "홍보메일삭제": "계약월",   # 같은 `contract_month` — 옛 이름 그대로다
+    "IR 자료": "IR 자료 파일명",
+}
+#: 매출 · 금액 칸 중 전체 파일에 있는 것 — 머리글이 해마다 바뀌어 칸으로 짚는다.
+AMOUNTS_IN_FULL = {"revenue_recent": "최근매출(억)", "funding_total": "누적투자(억)",
+                   "raise_target": "희망투자(억)", "pre_value": "Pre Value(억)"}
+
+
+def view_headers(cols, consulting: bool = False) -> List[str]:
     """`VIEW_HEADERS` 의 `소분류` 바로 뒤에 매출 · 금액 머리글을 끼운다 — 화면과 같은 자리.
 
     `cols` 는 `revenue_years.columns()` — 머리글과 칸(`to_cells`)이 같은 한 벌을 받아야
-    해가 바뀌는 순간에도 둘이 안 갈린다.
+    해가 바뀌는 순간에도 둘이 안 갈린다. `consulting` 이면 `핵심/TOP Deal` 뒤에
+    `CONSULTING_HEADERS` 를 끼운다(화면과 같은 자리).
     """
     at = VIEW_HEADERS.index("소분류") + 1
-    return VIEW_HEADERS[:at] + [label for _f, label in cols] + VIEW_HEADERS[at:]
+    head = VIEW_HEADERS[:at] + [label for _f, label in cols] + VIEW_HEADERS[at:]
+    if consulting:
+        top = head.index("핵심/TOP Deal") + 1
+        head[top:top] = CONSULTING_HEADERS
+    return head
+
+
+def full_extra(cols, consulting: bool = False) -> List[int]:
+    """`view_headers(cols, consulting)` 중 전체 파일 끝에 붙일 칸의 자리(화면 차례)."""
+    have = set(IN_FULL) | {label for f, label in cols if f in AMOUNTS_IN_FULL}
+    return [i for i, h in enumerate(view_headers(cols, consulting)) if h not in have]
 
 
 def split_values(raw) -> List[str]:
@@ -237,10 +278,15 @@ def owner_times_text(by_owner) -> str:
     return " · ".join(f"{o['name']} {o['times']}" for o in by_owner)
 
 
-def to_cells(rows: List[dict], cols) -> List[list]:
-    """파일 줄 — `view_headers(cols)` 차례. `NO` 는 보이는 차례 1, 2, 3…"""
+def to_cells(rows: List[dict], cols, consulting=None) -> List[list]:
+    """파일 줄 — `view_headers(cols, consulting is not None)` 차례. `NO` 는 보이는 차례 1, 2, 3…
+
+    `consulting` 은 `companies.consulting_view` 가 준 것(볼 수 없는 계정이면 None) — 칸에는
+    화면 글자 그대로(여럿이면 ` · ` 로 이은 것)를 싣는다.
+    """
     out = []
     for no, r in enumerate(rows, start=1):
+        cv = None if consulting is None else consulting.get(r["id"], {})
         out.append([
             no, r["name"], r["received_at"], r["updated_at"], r["updated_by"],
             r["contact_name"], r["contact_phone"], r["contact_email"], r["business_desc"],
@@ -256,7 +302,9 @@ def to_cells(rows: List[dict], cols) -> List[list]:
             r["quote_attached"],
             r["meeting_offered_at"], r["contract_ym"], r["contract_label"], r["contract_received"],
             r["success_fee"], r["kakao_joined"], r["contract_month"],
-            r["top_deal_kind"] or "", r["note"], r["ir_file_name"] if r["has_ir"] else "없음",
+            r["top_deal_kind"] or "",
+            *([] if cv is None else [cv.get("status", ""), cv.get("meeting", "")]),
+            r["note"], r["ir_file_name"] if r["has_ir"] else "없음",
         ])
     return out
 

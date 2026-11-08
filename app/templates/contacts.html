@@ -495,6 +495,8 @@
        href="/api/export/contacts.xlsx{% if selected_sheet %}?sheet={{ selected_sheet|urlencode }}{% endif %}"
     >엑셀 내려받기</a>
     {% endif %}
+    {# 스타트업 명단에만 선다 — 투자사 화면은 추가 칸 컨텍스트를 안 싣는다(#195). #}
+    {{ cc.manage() }}
     {#
       아래 둘은 **투자사 명단에만 뜻이 있다.** 업로드가 읽는 양식은 `이름`·
       `회사`(옛 이름 `투자사명` 도 받는다)이고(`/api/sample/contacts.xlsx`), 방 연결 확인은 딜소개를
