@@ -99,3 +99,25 @@
     document.cookie = "agent_update_hide=" + day + "; path=/; max-age=86400; SameSite=Lax";
   });
 })();
+
+// 자동 발송 알림(`_auto_alert.html`) — [확인] 으로 닫으면 그 알림의 열쇠(`data-key`)를
+// 쿠키에 `|` 로 이어 적는다. 같은 열쇠의 창은 서버가 다시 안 띄우고
+// (`automation_runner.ALERT_COOKIE`), 다음 단계(당일 · 끝난 뒤)는 열쇠가 달라 뜬다.
+// [자세히 보기] 로 넘어가도 본 것으로 적는다 — 넘어간 화면에서 같은 창이 또 뜨지 않게.
+// 닫기는 브라우저가 한다(`method="dialog"`). 여기는 적기만 한다.
+(function () {
+  var box = document.querySelector("dialog.auto-alert");
+  if (!box) return;
+  function seen() {
+    var key = box.getAttribute("data-key");
+    if (!key) return;
+    var found = document.cookie.match(/(?:^|; )auto_alert_seen=([^;]*)/);
+    var keys = (found ? found[1].split("|") : []).filter(function (k) { return k && k !== key; });
+    keys.push(key);
+    document.cookie = "auto_alert_seen=" + keys.slice(-6).join("|") +
+      "; path=/; max-age=" + 7 * 86400 + "; SameSite=Lax";
+  }
+  box.addEventListener("close", seen);
+  var go = box.querySelector("a.guard-go");
+  if (go) go.addEventListener("click", seen);
+})();

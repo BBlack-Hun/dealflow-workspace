@@ -15,7 +15,7 @@ from .deps import (VIEW_AS_BLOCKED, agent_status, consultant_may_open, doer,
                    may_auto_attach, may_view_consulting, view_as_send_note,
                    view_as_targets)
 from .models import User
-from .services import agent_update, notices
+from .services import agent_update, automation_runner, notices
 
 # 좌측 메뉴. 쓰는 순서대로 둔다.
 #
@@ -196,4 +196,8 @@ def base_ctx(request: Request, db: Session, user: User, active: str) -> dict:
         # 값싸다: 켜져 있는 공지가 대개 없고, 있어도 한둘이다. 없으면
         # 밑틀은 아무 것도 그리지 않는다(`_notices.html`).
         "notices": notices.unread(db, me),
+        # 로그인한 본인이 자동화의 **보내는 계정**이면 그 PC 카톡을 켜 두라는 창
+        # (`automation_runner.alert_for` — 전날 · 당일 · 다 나간 뒤, 단계마다 한 번).
+        "auto_alert": automation_runner.alert_for(
+            db, me, request.cookies.get(automation_runner.ALERT_COOKIE)),
     }

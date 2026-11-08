@@ -67,6 +67,7 @@ log = logging.getLogger(__name__)
 MEETING_REVIEW = "meeting_review"
 MEETING_REQUEST = "meeting_request"
 SOURCING_REMIND = "sourcing_remind"
+SOURCING_INVITE = "sourcing_invite"
 CHANNEL_TOP = "channel_top"
 STARTUP_MONTHLY = "startup_monthly"
 CONTRACT_DAY7 = "contract_day7"
@@ -92,6 +93,9 @@ KINDS: List[Kind] = [
          "IR 자료 전달 7일 뒤 14:00 미팅 요청, 답이 없으면 10일 뒤 한 번 더"),
     Kind(SOURCING_REMIND, "소싱 리마인드",
          "매월 3주차 목요일 11:00 — 이번 달 딜을 아직 안 준 심사역"),
+    Kind(SOURCING_INVITE, "딜 소싱 참여 제안",
+         "매월 3주차 화요일 10:00 — 딜 소싱 '제안 대기중' 분께 참여 안내(처음) 문구, "
+         "한 분께 한 번(나가면 '물어보는 중'으로 바뀌어 다음 달엔 안 감)"),
     Kind(CHANNEL_TOP, "채널방 TOP·핵심 딜",
          "매주 수요일 13:30 — 오픈채팅방마다 TOP·핵심 딜 3곳"),
     Kind(STARTUP_MONTHLY, "스타트업 월간 발송",
