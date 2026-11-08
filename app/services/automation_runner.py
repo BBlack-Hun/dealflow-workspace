@@ -195,6 +195,9 @@ class Spec:
     #: `automation.Kind.summary`(기본값 기준 글) 그대로다. 칸으로 동작이 꺼지는
     #: 자동화(A7 의 두 번째)는 기본값 글이 거짓말이 된다 — 그때 채운다.
     summary: Optional[Callable[[dict], str]] = None
+    #: 보내는 계정으로 로그인한 사람에게 **화면마다 알림 창**을 띄우나(`alert_for`) —
+    #: 전날 · 당일 나가기 전 · 다 나간 뒤. 업무용 PC 의 카톡을 켜 두게 하려는 것이다.
+    alert: bool = False
 
 
 REGISTRY: Dict[str, Spec] = {}
@@ -1497,6 +1500,97 @@ def _stop_lines(db: Session, key: str, label: str, row: Optional[Automation],
                               "detail": f"{reason} — 거둔 회차는 나가지 않습니다",
                               "href": f"/jobs/{stopped[0].id}", "count": len(stopped)})
     return lines
+
+
+# ── 보내는 계정 알림 창 (`Spec.alert`) ──────────────────────────────────────
+
+#: 알림 창을 [확인] 으로 닫으면 브라우저가 그 알림의 열쇠를 `|` 로 이어 적는 쿠키
+#: (`agent_badge.js`). 같은 열쇠의 창은 다시 안 뜬다 — 다음 단계는 열쇠가 달라 뜬다.
+ALERT_COOKIE = "auto_alert_seen"
+
+
+def alert_for(db: Session, me: Optional[User], seen: Optional[str] = None,
+              now: Optional[datetime] = None) -> Optional[dict]:
+    """로그인한 본인이 **보내는 계정(또는 그 계정이 맡긴 발송기의 주인)** 인 자동화의
+    알림 창 하나. 없으면 `None`. 밑틀이 화면마다 부른다(`ui.base_ctx`).
+
+    업무용 PC 의 카톡 · 발송기가 꺼져 있으면 자동 회차가 그냥 지나간다 — 그 PC 를 쓰는
+    사람이 미리 알고 켜 두게 하려는 창이다. 단계마다 한 번:
+
+      · 전날 — `내일 10:00 … 자동 발송 예정`
+      · 당일 — 아침에 회차가 서면 `오늘 10:00 … N건`(서기 전이면 건수 없이), 나가는
+        중이면 남은 건수
+      · 다 나간 뒤(대기 · 보내는 중이 없을 때) — `보냄 n건 · 실패 n건`
+
+    0곳 · 실패로 못 선 날은 띄우지 않는다 — 오늘 할 일에 이미 선다(`today_items`).
+    관리자가 팀원 화면으로 보는 중이어도 `me` 는 로그인한 본인이다(`deps.doer`).
+    창 하나 때문에 화면이 죽으면 안 된다 — 못 만들면 `None`.
+    """
+    if me is None or getattr(me, "must_change_password", False):
+        return None
+    try:
+        _load_all()
+        keys = [key for key, spec in REGISTRY.items() if spec.alert]
+        if not keys:
+            return None
+        from ..deps import agent_user_id
+
+        now = scheduled_send._aware(now or clock.now())
+        hidden = set((seen or "").split("|"))
+        for key in keys:
+            row = automation.load(db, key)
+            if not automation.is_on(row):
+                continue
+            sender_id = automation.sender_id(db, row)
+            if not sender_id or me.id not in (sender_id, agent_user_id(db, sender_id)):
+                continue
+            found = _alert_one(db, key, row, now)
+            if found is not None and found["key"] not in hidden:
+                return found
+    except Exception:  # noqa: BLE001 - 알림 창 하나 때문에 화면이 죽으면 안 된다
+        log.exception("자동화 알림 창을 못 만들었습니다")
+    return None
+
+
+def _alert_one(db: Session, key: str, row: Automation, now: datetime) -> Optional[dict]:
+    spec = REGISTRY[key]
+    label = automation.BY_KEY[key].label
+    test = automation.is_test(row)
+    mode = " (시험 모드 — 시험방으로만 갑니다)" if test else ""
+    keep_on = "보내는 PC 의 카카오톡과 발송기를 켜 두세요."
+    today = now.date()
+
+    def card(stage: str, title: str, body: str = keep_on, href: str = "/team#automations",
+             level: str = "info") -> dict:
+        return {"key": f"{key}:{today.isoformat()}:{stage}", "title": title + mode,
+                "body": body, "href": href, "level": level}
+
+    plan = spec.plan(db, row, today)
+    if plan is None:
+        ahead = spec.plan(db, row, today + timedelta(days=1))
+        if ahead is None:
+            return None
+        return card("eve", f"내일 {ahead.at.strftime('%H:%M')} {label} 자동 발송 예정")
+    at = scheduled_send._aware(plan.at)
+    run = run_row(db, key, test, plan.period)
+    if run is None or run.status == STATUS_CLAIMED:
+        return None if now >= at else card("day", f"오늘 {at.strftime('%H:%M')} {label} 자동 발송 예정")
+    if run.status != STATUS_READY:
+        return None
+    items = [item for job in _run_jobs(db, run) for item in job.items]
+    live = sum(1 for item in items if item.status in ("pending", "sending"))
+    href = f"/jobs/{run.job_id}"
+    if live:
+        title = (f"오늘 {at.strftime('%H:%M')} {label} 자동 발송 {live}건 예정" if now < at
+                 else f"{label} 자동 발송 중 — 남은 {live}건")
+        return card("ready", title, href=href)
+    sent = sum(1 for item in items if item.status == "sent")
+    failed = sum(1 for item in items if item.status == "failed")
+    if not (sent or failed):
+        return None
+    return card("done", f"{label} 자동 발송 끝 — 보냄 {sent}건 · 실패 {failed}건",
+                body=FAILED_NOTE if failed else "보낸 결과는 회차 화면에서 봅니다.",
+                href=href, level="urgent" if failed else "info")
 
 
 # ── 뺀 것 모아 보기 ──────────────────────────────────────────────────────────
